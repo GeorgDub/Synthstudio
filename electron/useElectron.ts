@@ -103,6 +103,15 @@ const browserAPI = {
   onUpdaterDownloadProgress: noopDataListener<any>(),
   onUpdaterUpdateDownloaded: noopDataListener<any>(),
   onUpdaterError: noopDataListener<any>(),
+
+  // Store
+  storeGet: async <K extends keyof import("./store").AppStoreData>(_key: K) => ({ success: false, error: "Nicht in Electron" }),
+  storeSet: async <K extends keyof import("./store").AppStoreData>(_key: K, _value: import("./store").AppStoreData[K]) => ({ success: false, error: "Nicht in Electron" }),
+  storeGetRecent: async () => ({ success: false, error: "Nicht in Electron" }),
+  storeAddRecent: async (_filePath: string) => ({ success: false, error: "Nicht in Electron" }),
+  storeRemoveRecent: async (_filePath: string) => ({ success: false, error: "Nicht in Electron" }),
+  storeClearRecent: async () => ({ success: false, error: "Nicht in Electron" }),
+  onRecentProjectsChanged: noopDataListener<import("./store").RecentProject[]>(),
 };
 
 // ─── Haupt-Hook ───────────────────────────────────────────────────────────────
@@ -161,6 +170,13 @@ export function useElectron() {
     onUpdaterDownloadProgress: api.onUpdaterDownloadProgress,
     onUpdaterUpdateDownloaded: api.onUpdaterUpdateDownloaded,
     onUpdaterError: api.onUpdaterError,
+    storeGet: api.storeGet,
+    storeSet: api.storeSet,
+    storeGetRecent: api.storeGetRecent,
+    storeAddRecent: api.storeAddRecent,
+    storeRemoveRecent: api.storeRemoveRecent,
+    storeClearRecent: api.storeClearRecent,
+    onRecentProjectsChanged: api.onRecentProjectsChanged,
   };
 }
 
