@@ -6,9 +6,10 @@
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "NODE_ENV=development tsx watch server/_core/index.ts",
-    "dev:electron": "concurrently \"cross-env VITE_DEV_SERVER_URL=http://localhost:3000 npm run dev\" \"wait-on http://localhost:3000 && electron .\"",
+    "dev:electron": "concurrently \"cross-env VITE_DEV_SERVER_URL=http://localhost:3000 pnpm dev\" \"wait-on http://localhost:3000 && electron .\"",
     "build": "vite build && esbuild server/_core/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist",
-    "build:electron": "npm run build && tsc electron/main.ts --outDir dist-electron --module commonjs && tsc electron/preload.ts --outDir dist-electron --module commonjs && electron-builder",
+    "build:electron": "pnpm build && tsc --project tsconfig.electron.json && electron-builder",
+    "compile:electron": "tsc --project tsconfig.electron.json",
     "start": "NODE_ENV=production node dist/index.js",
     "start:electron": "electron .",
     "check": "tsc --noEmit",
