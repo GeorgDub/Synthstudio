@@ -9,16 +9,21 @@
     "dev:electron": "concurrently \"cross-env VITE_DEV_SERVER_URL=http://localhost:3000 pnpm dev\" \"wait-on http://localhost:3000 && electron .\"",
     "build": "vite build && esbuild server/_core/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist",
     "build:electron": "pnpm build && tsc --project tsconfig.electron.json && electron-builder",
+    "build:electron:win": "pnpm build && tsc -p tsconfig.electron.json && electron-builder --win",
+    "build:electron:mac": "pnpm build && tsc -p tsconfig.electron.json && electron-builder --mac",
+    "build:electron:linux": "pnpm build && tsc -p tsconfig.electron.json && electron-builder --linux",
     "compile:electron": "tsc --project tsconfig.electron.json",
+    "generate:icons": "npx tsx electron/assets/create-icons.ts",
     "start": "NODE_ENV=production node dist/index.js",
     "start:electron": "electron .",
     "check": "tsc --noEmit",
     "format": "prettier --write .",
     "test": "vitest run",
-    "db:push": "drizzle-kit generate && drizzle-kit migrate",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
-    "test:e2e:report": "playwright show-report"
+    "test:e2e:report": "playwright show-report",
+    "db:push": "drizzle-kit generate && drizzle-kit migrate",
+    "release": "pnpm build:electron --publish always"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.693.0",
@@ -102,6 +107,7 @@
     "@vitejs/plugin-react": "^5.0.4",
     "add": "^2.0.6",
     "autoprefixer": "^10.4.20",
+    "canvas": "^2.11.0",
     "concurrently": "^9.2.1",
     "cross-env": "^10.1.0",
     "drizzle-kit": "^0.31.4",
@@ -110,6 +116,7 @@
     "electron-updater": "^6.8.3",
     "esbuild": "^0.25.0",
     "playwright": "^1.58.2",
+    "png-to-ico": "^2.1.8",
     "pnpm": "^10.15.1",
     "postcss": "^8.4.47",
     "prettier": "^3.6.2",
@@ -129,43 +136,92 @@
     },
     "overrides": {
       "tailwindcss>nanoid": "3.3.7"
-    }
+    },
+    "onlyBuiltDependencies": ["canvas", "esbuild", "electron", "@tailwindcss/oxide"]
   },
   "build": {
-    "appId": "com.korg.esx1studio",
-    "productName": "KORG ESX-1 Studio",
+    "appId": "com.synthstudio.esx1",
+    "productName": "Synthstudio",
+    "copyright": "Copyright © 2025 Synthstudio",
     "directories": {
-      "output": "release"
+      "output": "release",
+      "buildResources": "assets"
     },
     "files": [
       "dist/**/*",
-      "dist-electron/**/*",
-      "package.json"
+      "electron/dist/**/*",
+      "assets/**/*",
+      "!**/*.map",
+      "!**/*.ts",
+      "!node_modules/.cache/**/*"
     ],
-    "mac": {
-      "category": "public.app-category.music",
-      "target": [
-        "dmg",
-        "zip"
-      ]
-    },
+    "extraResources": [
+      {
+        "from": "assets/samples",
+        "to": "samples",
+        "filter": ["**/*.wav"]
+      }
+    ],
     "win": {
       "target": [
-        "nsis",
-        "portable"
+        { "target": "nsis", "arch": ["x64", "ia32"] }
+      ],
+      "icon": "assets/icon.ico",
+      "verifyUpdateCodeSignature": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "allowElevation": true,
+      "installerIcon": "assets/icon.ico",
+      "uninstallerIcon": "assets/icon.ico",
+      "installerHeaderIcon": "assets/icon.ico",
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Synthstudio"
+    },
+    "mac": {
+      "target": [
+        { "target": "dmg", "arch": ["x64", "arm64"] },
+        { "target": "zip", "arch": ["x64", "arm64"] }
+      ],
+      "icon": "assets/icon.icns",
+      "category": "public.app-category.music",
+      "darkModeSupport": true,
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "assets/entitlements.mac.plist",
+      "entitlementsInherit": "assets/entitlements.mac.plist"
+    },
+    "dmg": {
+      "title": "Synthstudio ${version}",
+      "icon": "assets/icon.icns",
+      "background": "assets/dmg-background.png",
+      "window": { "width": 540, "height": 380 },
+      "contents": [
+        { "x": 130, "y": 220, "type": "file" },
+        { "x": 410, "y": 220, "type": "link", "path": "/Applications" }
       ]
     },
     "linux": {
       "target": [
-        "AppImage",
-        "deb"
+        { "target": "AppImage", "arch": ["x64"] },
+        { "target": "deb", "arch": ["x64"] }
       ],
-      "category": "Audio"
+      "icon": "assets/icon.png",
+      "category": "Audio",
+      "synopsis": "KORG ESX-1 Sample-Manager und Synthesizer-Studio",
+      "description": "Professioneller Sample-Manager und Synthesizer-Studio für den KORG ESX-1"
+    },
+    "deb": {
+      "depends": ["libgtk-3-0", "libnotify4", "libnss3", "libxss1", "libxtst6", "xdg-utils", "libatspi2.0-0", "libuuid1"],
+      "recommends": ["libappindicator3-1"]
     },
     "publish": {
       "provider": "github",
       "owner": "GeorgDub",
-      "repo": "Synthstudio"
+      "repo": "Synthstudio",
+      "releaseType": "release"
     }
   }
 }

@@ -259,7 +259,7 @@ interface ElectronAPI {
   onMenuExportProject(callback: () => void): ElectronCleanup;
   onMenuImportProject(callback: () => void): ElectronCleanup;
   onMenuImportSamples(callback: (filePaths?: string[]) => void): ElectronCleanup;
-  onMenuImportFolder(callback: (folderPath?: string) => void): ElectronCleanup;
+  onMenuImportSampleFolder(callback: (folderPath?: string) => void): ElectronCleanup;
   onMenuOpenSampleLibrary(callback: () => void): ElectronCleanup;
   onMenuOpenSampleBrowser(callback: () => void): ElectronCleanup;
   onMenuUndo(callback: () => void): ElectronCleanup;

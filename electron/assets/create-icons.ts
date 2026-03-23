@@ -10,6 +10,11 @@
 import * as path from "path";
 import * as fs from "fs";
 import * as os from "os";
+import { fileURLToPath } from "url";
+
+// ESM-kompatibler __dirname
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const ASSETS_DIR = path.resolve(__dirname, "../../assets");
 
@@ -19,7 +24,7 @@ async function createPngIcon(): Promise<string> {
   let createCanvas: (w: number, h: number) => import("canvas").Canvas;
 
   try {
-    const canvasModule = require("canvas") as typeof import("canvas");
+    const canvasModule = await import("canvas") as typeof import("canvas");
     createCanvas = canvasModule.createCanvas;
   } catch {
     console.error("\n[Icons] ❌ Paket 'canvas' nicht installiert.");
@@ -103,7 +108,6 @@ async function createPngIcon(): Promise<string> {
   // ── Untertitel ────────────────────────────────────────────────────────────
   ctx.fillStyle = "#06b6d4";
   ctx.font = `${Math.floor(SIZE * 0.072)}px "Courier New", Courier, monospace`;
-  ctx.letterSpacing = "4px";
   ctx.fillText("1  STUDIO", SIZE / 2, SIZE / 2 + 32);
 
   // ── Speichern ─────────────────────────────────────────────────────────────

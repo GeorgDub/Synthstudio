@@ -89,7 +89,7 @@ export function useElectronMenuBindings(bindings: MenuBindings): void {
       cleanups.push(api.onMenuImportSamples?.(bindings.onImportSamples));
     }
     if (bindings.onImportFolder) {
-      cleanups.push(api.onMenuImportFolder?.(bindings.onImportFolder));
+      cleanups.push(api.onMenuImportSampleFolder?.(bindings.onImportFolder));
     }
     if (bindings.onOpenSampleLibrary) {
       cleanups.push(api.onMenuOpenSampleLibrary?.(bindings.onOpenSampleLibrary));
