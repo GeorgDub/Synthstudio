@@ -11,7 +11,7 @@ Dieses Dokument dient als zentraler Anlaufpunkt für die Koordination der 6 para
 | Agent | Rolle | Status | Letzter Commit | Verifiziert |
 |---|---|---|---|---|
 | **Backend** | Main-Prozess, Store, Menüs | ✅ Fertig | `c7f6852` – AppStore, Menü, Auto-Updater | ✅ Koordinator |
-| **IPC-Bridge** | `preload.ts`, `types.d.ts`, Hooks | ✅ Fertig | `ef1b9a5` – Store-Kanäle, Fallbacks | ✅ Koordinator |
+| **IPC-Bridge** | `preload.ts`, `types.d.ts`, Hooks | ✅ Fertig & verifiziert | `91dd61e` – BUG-001, get-recent-projects | ✅ Koordinator |
 | **Frontend** | React-Integration, Komponenten | ✅ Fertig & verifiziert | `2eee91f` – vollständige Integration | ✅ Koordinator |
 | **Audio-Engine** | Waveform, Export, Worker | ✅ Fertig | `0668fcf` – Worker, Cache, Stereo | ✅ Koordinator |
 | **Build** | Icons, `package.json`, Packaging | ✅ Fertig & verifiziert | `6164853` – Icons, Build-Konfig | ✅ Koordinator |
@@ -79,7 +79,7 @@ Der Build-Agent hat `onMenuImportFolder → onMenuImportSampleFolder` in `types.
 
 | Priorität | Aufgabe | Zuständig | Blockiert durch |
 |---|---|---|---|
-| 🔴 Hoch | Namenskonflikt `onMenuImportFolder` vs. `onMenuImportSampleFolder` klären | **IPC-Bridge** ← nächster Agent | – |
+| ~~🔴 Hoch~~ | ~~Namenskonflikt `onMenuImportFolder` vs. `onMenuImportSampleFolder` klären~~ | ~~IPC-Bridge~~ | ✅ Behoben |
 | 🔴 Hoch | Vollständigen Build testen: `pnpm build:electron` | Build | – |
 | 🟡 Mittel | E2E-Tests ausführen: `pnpm test:e2e` | Testing | Build-Test |
 | 🟡 Mittel | Worker-Pfad-Auflösung in Produktion testen | Audio-Engine | Build-Test |
@@ -124,4 +124,23 @@ Der Build-Agent hat `onMenuImportFolder → onMenuImportSampleFolder` in `types.
 
 ---
 
-*Zuletzt aktualisiert: 23. März 2026 – Koordinator nach Testing-Agent-Verifikation*
+---
+
+## 🔍 Koordinator-Verifikation: IPC-Bridge-Agent
+
+**Geprüft am: 23. März 2026**
+
+| Prüfpunkt | Ergebnis | Details |
+|---|---|---|
+| BUG-001 behoben | ✅ Bestanden | `onMenuImportSampleFolder` kanonisch in allen Dateien |
+| Alle `ipcMain.handle()`-Kanäle exponiert | ✅ Bestanden | `window:get-recent-projects` ergänzt |
+| Updater-Events vollständig | ✅ Bestanden | 5 Events in preload.ts + useElectron.ts |
+| `store:recent-changed` verdrahtet | ✅ Bestanden | `onRecentProjectsChanged` in preload, useElectron, useElectronStore |
+| `types.d.ts` sauber strukturiert | ✅ Bestanden | Abschnitte: Store, Multi-Window, System, Auto-Updater |
+| Kein `nodeIntegration: true` | ✅ Bestanden | Alles über `contextBridge` |
+
+**Nächster Schritt:** Build-Agent soll `pnpm build:electron` ausführen und den vollständigen Build testen.
+
+---
+
+*Zuletzt aktualisiert: 23. März 2026 – Koordinator nach IPC-Bridge-Agent-Verifikation*
