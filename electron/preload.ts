@@ -391,49 +391,7 @@ const electronAPI = {
     error?: string;
   }> => ipcRenderer.invoke("export:import-project", filePath),
 
-  // ── Store ───────────────────────────────────────────────────────────────
-  storeGet: <K extends keyof AppStoreData>(key: K) =>
-    ipcRenderer.invoke("store:get", key) as Promise<{
-      success: boolean;
-      data?: AppStoreData[K];
-      error?: string;
-    }>,
-
-  storeSet: <K extends keyof AppStoreData>(key: K, value: AppStoreData[K]) =>
-    ipcRenderer.invoke("store:set", key, value) as Promise<{
-      success: boolean;
-      error?: string;
-    }>,
-
-  storeGetRecent: () =>
-    ipcRenderer.invoke("store:get-recent") as Promise<{
-      success: boolean;
-      data?: RecentProject[];
-      error?: string;
-    }>,
-
-  storeAddRecent: (filePath: string) =>
-    ipcRenderer.invoke("store:add-recent", filePath) as Promise<{
-      success: boolean;
-      error?: string;
-    }>,
-
-  storeRemoveRecent: (filePath: string) =>
-    ipcRenderer.invoke("store:remove-recent", filePath) as Promise<{
-      success: boolean;
-      error?: string;
-    }>,
-
-  storeClearRecent: () =>
-    ipcRenderer.invoke("store:clear-recent") as Promise<{
-      success: boolean;
-      error?: string;
-    }>,
-
-  onRecentProjectsChanged: createEventListener<RecentProject[]>("store:recent-changed"),
 };
-
-// ─── API exponieren ──────────────────────────────────────────────────────────
 
 contextBridge.exposeInMainWorld("electronAPI", electronAPI);
 
