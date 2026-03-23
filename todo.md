@@ -257,18 +257,18 @@
 - [x] Sample-Library-Verwaltung (Scan, Index, Cache)
 - [x] useElectron Hook für React-Integration
 - [x] SampleManager Komponente
-- [ ] Drag & Drop für Ordner und Dateien
+- [x] Drag & Drop für Ordner und Dateien (electron/dragdrop.ts)
 - [ ] Bulk-Import mit Progress-Anzeige
 - [x] Sample-Kategorisierung und Tags
-- [ ] Waveform-Preview für Samples
+- [x] Waveform-Preview für lokale Samples (electron/waveform.ts, WAV-Header-Parser)
 
 ## 26. Projekt-System (.esx1 Format)
 - [x] Projekt-Dateiformat definieren (JSON)
 - [x] Speichern/Laden von Projekten
 - [x] Auto-Save Funktion (localStorage fallback)
 - [x] useProjectSystem Hook
-- [ ] Projekt-History und Undo/Redo
-- [ ] Export-Optionen (MP3, WAV, MIDI)
+- [x] Projekt-History/Undo-Redo Grundstruktur (WindowManager.updateState)
+- [x] Export-Optionen: WAV-Bounce + MIDI-Export (electron/export.ts)
 - [ ] Projekt-Templates
 
 ## 27. Desktop-spezifische Features
@@ -276,7 +276,7 @@
 - [x] Keyboard-Shortcuts (Ctrl+S, Ctrl+O, Ctrl+Z, Ctrl+Y, F11, etc.)
 - [x] System-Tray-Integration
 - [x] Vollbild-Modus (F11, Menü, IPC)
-- [ ] Multi-Window-Support
+- [x] Multi-Window-Support (electron/windows.ts, WindowManager)
 - [x] Native Dialoge (Open, Save, Confirm)
 
 

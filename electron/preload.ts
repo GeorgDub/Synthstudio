@@ -188,7 +188,7 @@ const electronAPI = {
   onShortcutTransportToggle: createVoidListener("shortcut:transport-toggle"),
   onShortcutTransportStop: createVoidListener("shortcut:transport-stop"),
 
-  // ── Auto-Updater ─────────────────────────────────────────────────────────────
+  // ── Auto-Updater ──────────────────────────────────────────────────────────
 
   checkForUpdates: (): void => {
     ipcRenderer.send("updater:check");
@@ -211,6 +211,139 @@ const electronAPI = {
     "updater:update-downloaded"
   ),
   onUpdaterError: createEventListener<{ message: string }>("updater:error"),
+
+  // ── Waveform-Preview ──────────────────────────────────────────────────────
+
+  /** Waveform-Peaks für eine lokale Audio-Datei abrufen */
+  getWaveformPeaks: (
+    filePath: string,
+    numPeaks?: number
+  ): Promise<{
+    success: boolean;
+    peaks?: number[];
+    duration?: number;
+    sampleRate?: number;
+    channels?: number;
+    bitDepth?: number;
+    fileSize?: number;
+    error?: string;
+  }> => ipcRenderer.invoke("waveform:get-peaks", filePath, numPeaks ?? 200),
+
+  /** Audio-Datei-Metadaten abrufen */
+  getAudioMetadata: (
+    filePath: string
+  ): Promise<{
+    success: boolean;
+    sampleRate?: number;
+    channels?: number;
+    bitDepth?: number;
+    duration?: number;
+    fileSize?: number;
+    format?: string;
+    error?: string;
+  }> => ipcRenderer.invoke("waveform:get-metadata", filePath),
+
+  // ── Drag & Drop ──────────────────────────────────────────────────────────
+
+  /** Gedropte Dateipfade verarbeiten und kategorisieren */
+  processDragDropFiles: (
+    filePaths: string[]
+  ): Promise<{
+    audioFiles: Array<{ path: string; name: string; ext: string; size: number }>;
+    folders: Array<{ path: string; name: string }>;
+    projectFiles: Array<{ path: string; name: string }>;
+  }> => ipcRenderer.invoke("dragdrop:process-files", filePaths),
+
+  onDragDropOpenProject: createEventListener<string>("dragdrop:open-project"),
+  onDragDropLoadSample: createEventListener<{ path: string; name: string }>("dragdrop:load-sample"),
+  onDragDropBulkImport: createEventListener<{
+    audioFiles: Array<{ path: string; name: string; ext: string; size: number }>;
+    folders: Array<{ path: string; name: string }>;
+    projectFiles: Array<{ path: string; name: string }>;
+  }>("dragdrop:bulk-import"),
+
+  // ── Multi-Window ──────────────────────────────────────────────────────────
+
+  /** Neues Fenster öffnen (optional mit Projekt-Pfad) */
+  openNewWindow: (projectPath?: string): Promise<{ windowId: number }> =>
+    ipcRenderer.invoke("window:new", projectPath),
+
+  /** Alle offenen Fenster auflisten */
+  listWindows: (): Promise<Array<{
+    id: number;
+    title: string;
+    projectPath: string | null;
+    projectName: string;
+    isDirty: boolean;
+    isFocused: boolean;
+  }>> => ipcRenderer.invoke("window:list"),
+
+  /** Fenster fokussieren */
+  focusWindow: (windowId: number): Promise<{ success: boolean }> =>
+    ipcRenderer.invoke("window:focus", windowId),
+
+  /** Fenster-Zustand aktualisieren (Titel, isDirty, canUndo, canRedo) */
+  updateWindowState: (updates: {
+    projectPath?: string;
+    projectName?: string;
+    isDirty?: boolean;
+    canUndo?: boolean;
+    canRedo?: boolean;
+    undoLabel?: string;
+    redoLabel?: string;
+  }): Promise<{ success: boolean }> =>
+    ipcRenderer.invoke("window:update-state", updates),
+
+  /** Fenster schließen (auch wenn ungespeicherte Änderungen) */
+  forceCloseWindow: (): Promise<void> =>
+    ipcRenderer.invoke("window:force-close"),
+
+  onWindowConfirmClose: createVoidListener("window:confirm-close"),
+
+  // ── Export ──────────────────────────────────────────────────────────────
+
+  /** WAV-Export: PCM-Daten als WAV-Datei speichern */
+  exportWav: (options: {
+    pcmData: number[];
+    sampleRate: number;
+    channels: number;
+    suggestedName?: string;
+  }): Promise<{ success: boolean; filePath?: string; canceled?: boolean; error?: string }> =>
+    ipcRenderer.invoke("export:wav", options),
+
+  /** MIDI-Export: Pattern als MIDI-Datei speichern */
+  exportMidi: (options: {
+    tracks: Array<{
+      name: string;
+      notes: Array<{
+        channel: number;
+        note: number;
+        velocity: number;
+        startTick: number;
+        durationTicks: number;
+      }>;
+    }>;
+    bpm: number;
+    suggestedName?: string;
+  }): Promise<{ success: boolean; filePath?: string; canceled?: boolean; error?: string }> =>
+    ipcRenderer.invoke("export:midi", options),
+
+  /** Projekt-Export: JSON-Daten als .esx1-Datei speichern */
+  exportProject: (options: {
+    projectData: string;
+    suggestedName?: string;
+    filePath?: string;
+  }): Promise<{ success: boolean; filePath?: string; canceled?: boolean; error?: string }> =>
+    ipcRenderer.invoke("export:project", options),
+
+  /** Projekt-Import: .esx1/.json-Datei lesen */
+  importProjectFile: (filePath?: string): Promise<{
+    success: boolean;
+    data?: string;
+    filePath?: string;
+    canceled?: boolean;
+    error?: string;
+  }> => ipcRenderer.invoke("export:import-project", filePath),
 };
 
 // ─── API exponieren ──────────────────────────────────────────────────────────

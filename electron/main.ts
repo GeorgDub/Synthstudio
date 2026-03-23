@@ -29,6 +29,15 @@ import {
 import * as path from "path";
 import * as fs from "fs";
 
+// ─── Electron-Module ─────────────────────────────────────────────────────────
+import { setupDragDrop } from "./dragdrop";
+import { registerWaveformHandlers } from "./waveform";
+import { WindowManager, registerWindowHandlers } from "./windows";
+import { registerExportHandlers } from "./export";
+import { setupAutoUpdater } from "./updater";
+
+const windowManager = new WindowManager();
+
 // ─── Konstanten ──────────────────────────────────────────────────────────────
 
 const isDev = process.env.NODE_ENV === "development";
@@ -791,10 +800,20 @@ function registerGlobalShortcuts(): void {
 
 app.whenReady().then(() => {
   registerIpcHandlers();
+  registerWaveformHandlers();
+  registerExportHandlers();
+  registerWindowHandlers(windowManager);
   buildMenu();
   createWindow();
   createTray();
   registerGlobalShortcuts();
+
+  // Drag & Drop für das Hauptfenster einrichten
+  if (mainWindow) {
+    setupDragDrop(mainWindow);
+    // Auto-Updater (nur in Produktion aktiv)
+    setupAutoUpdater(mainWindow);
+  }
 
   // macOS: Fenster neu erstellen wenn Dock-Icon geklickt
   app.on("activate", () => {
