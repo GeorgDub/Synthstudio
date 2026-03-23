@@ -250,7 +250,7 @@
 - [x] Preload Script für sichere IPC-Kommunikation
 - [x] Window-Management (BrowserWindow, Menu, Tray)
 - [x] Build-Scripts für Windows/Mac/Linux
-- [ ] Auto-Updater integrieren
+- [x] Auto-Updater Grundstruktur (electron/updater.ts, bereit für electron-updater)
 
 ## 25. Lokale Sample-Verwaltung
 - [x] Dateisystem-API für Ordner-Browser
@@ -272,12 +272,12 @@
 - [ ] Projekt-Templates
 
 ## 27. Desktop-spezifische Features
-- [ ] Native Menüs (File, Edit, View, Help)
-- [ ] Keyboard-Shortcuts (Ctrl+S, Ctrl+O, etc.)
-- [ ] System-Tray-Integration
-- [ ] Vollbild-Modus
+- [x] Native Menüs (File, Edit, View, Help)
+- [x] Keyboard-Shortcuts (Ctrl+S, Ctrl+O, Ctrl+Z, Ctrl+Y, F11, etc.)
+- [x] System-Tray-Integration
+- [x] Vollbild-Modus (F11, Menü, IPC)
 - [ ] Multi-Window-Support
-- [ ] Native Dialoge (Open, Save, Confirm)
+- [x] Native Dialoge (Open, Save, Confirm)
 
 
 ## 28. FL Studio-ähnlicher Sample-Browser
@@ -305,8 +305,8 @@
 - [x] Ordnerstruktur-basierte Kategorisierung (Kicks/, Snares/, etc.)
 - [x] Base64-Encoding für Audio-Dateien
 - [x] Relative Pfade für Ordner-Hierarchie
-- [ ] Progress-Events an Frontend senden
-- [ ] Error-Handling für fehlende Berechtigungen
+- [x] Progress-Events an Frontend senden (alle 5 Dateien)
+- [x] Error-Handling für fehlende Berechtigungen
 - [x] Integration mit SampleBrowser testen
 
 ## 30. Intelligente Sample-Kategorisierung
@@ -328,8 +328,8 @@
 - [x] Electron Main Process: countFiles() + Progress-Callback
 - [x] Progress-Updates alle 10 Dateien + Final-Update
 - [x] Toast-Benachrichtigung bei Abschluss
-- [ ] Cancel-Button für laufende Imports
-- [ ] Error-Handling bei Import-Fehlern
+- [x] Cancel-Button für laufende Imports (importCancelFlags Map)
+- [x] Error-Handling bei Import-Fehlern (pro Datei + Gesamt)
 
 
 ## 32. Waveform-Cache mit IndexedDB

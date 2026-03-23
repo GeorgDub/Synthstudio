@@ -1,108 +1,220 @@
 /**
- * Synthstudio – Electron Preload Script
+ * Synthstudio – Electron Preload Script (v2)
  *
- * Dieses Script läuft in einem isolierten Kontext und stellt der
- * Web-App (Renderer) eine sichere API zur Verfügung, ohne Node.js
- * direkt zu exponieren (contextIsolation: true).
+ * Stellt der Web-App (Renderer) eine sichere API bereit über window.electronAPI.
+ * contextIsolation: true – kein direkter Node.js-Zugriff aus dem Renderer.
  *
- * Alle Funktionen sind über window.electronAPI zugänglich.
+ * Neue Kanäle in v2:
+ * - Dateisystem: readFile, listDirectory, writeFile
+ * - Folder-Import: importFolder, cancelImport + Progress/Cancel/Complete-Events
+ * - Dialoge: openFile, saveFile, showMessage
+ * - Fenster: setFullscreen, isFullscreen, minimize, maximize
+ * - App: getVersion, getPlatform, getPath
+ * - Benachrichtigungen: showNotification
+ * - Menü-Events: alle Menü-Aktionen
+ * - Shortcuts: Media-Keys
+ * - Updater: check, Events
  */
 
 import { contextBridge, ipcRenderer } from "electron";
 
-// ─── Typen ────────────────────────────────────────────────────────────────────
+// ─── Hilfsfunktion: Event-Listener mit Cleanup ────────────────────────────────
 
-export interface ElectronAPI {
-  /** Plattform: 'win32' | 'darwin' | 'linux' */
-  platform: string;
-  /** App-Version aus package.json */
-  getVersion: () => Promise<string>;
+function createEventListener<T = void>(channel: string) {
+  return (callback: (data: T) => void): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, data: T) => callback(data);
+    ipcRenderer.on(channel, handler);
+    return () => ipcRenderer.removeListener(channel, handler);
+  };
+}
 
-  // ── Dateisystem ─────────────────────────────────────────────────────────────
-  /** Datei als ArrayBuffer lesen (für lokale Samples) */
-  readFile: (
-    filePath: string
-  ) => Promise<{ success: boolean; data?: ArrayBuffer; error?: string }>;
-  /** Verzeichnis-Inhalt auflisten */
-  listDirectory: (
-    dirPath: string
-  ) => Promise<{
-    success: boolean;
-    entries?: Array<{ name: string; isDirectory: boolean; path: string }>;
-    error?: string;
-  }>;
-
-  // ── Menü-Events (Main → Renderer) ───────────────────────────────────────────
-  onMenuExportProject: (callback: () => void) => () => void;
-  onMenuImportProject: (callback: () => void) => () => void;
-  onMenuOpenSampleBrowser: (callback: () => void) => () => void;
-  onMenuImportSamples: (callback: (filePaths: string[]) => void) => () => void;
-  onMenuImportSampleFolder: (callback: (folderPath: string) => void) => () => void;
-
-  /** Gibt zurück ob die App in Electron läuft (immer true im Electron-Kontext) */
-  isElectron: true;
+function createVoidListener(channel: string) {
+  return (callback: () => void): (() => void) => {
+    const handler = () => callback();
+    ipcRenderer.on(channel, handler);
+    return () => ipcRenderer.removeListener(channel, handler);
+  };
 }
 
 // ─── API-Implementierung ─────────────────────────────────────────────────────
 
-const electronAPI: ElectronAPI = {
-  platform: process.platform,
-  isElectron: true,
+const electronAPI = {
+  /** true wenn in Electron */
+  isElectron: true as const,
+  /** Plattform */
+  platform: process.platform as "win32" | "darwin" | "linux",
 
-  getVersion: () => ipcRenderer.invoke("app:get-version"),
+  // ── App-Info ─────────────────────────────────────────────────────────────────
+  getVersion: (): Promise<string> =>
+    ipcRenderer.invoke("app:get-version"),
 
-  // Dateisystem
-  readFile: (filePath: string) =>
+  getPlatform: (): Promise<string> =>
+    ipcRenderer.invoke("app:get-platform"),
+
+  /** Gibt einen bekannten App-Pfad zurück: home, documents, downloads, music, desktop */
+  getPath: (name: string): Promise<string | null> =>
+    ipcRenderer.invoke("app:get-path", name),
+
+  // ── Dateisystem ──────────────────────────────────────────────────────────────
+
+  readFile: (filePath: string): Promise<{ success: boolean; data?: ArrayBuffer; error?: string }> =>
     ipcRenderer.invoke("fs:read-file", filePath),
 
-  listDirectory: (dirPath: string) =>
-    ipcRenderer.invoke("fs:list-directory", dirPath),
+  listDirectory: (
+    dirPath: string
+  ): Promise<{
+    success: boolean;
+    entries?: Array<{ name: string; isDirectory: boolean; path: string; isAudio: boolean }>;
+    error?: string;
+  }> => ipcRenderer.invoke("fs:list-directory", dirPath),
 
-  // Menü-Events: Gibt eine Cleanup-Funktion zurück
-  onMenuExportProject: (callback) => {
-    const handler = () => callback();
-    ipcRenderer.on("menu:export-project", handler);
-    return () => ipcRenderer.removeListener("menu:export-project", handler);
+  writeFile: (
+    filePath: string,
+    data: string
+  ): Promise<{ success: boolean; error?: string }> =>
+    ipcRenderer.invoke("fs:write-file", filePath, data),
+
+  // ── Folder-Import ────────────────────────────────────────────────────────────
+
+  /** Startet einen Folder-Import und gibt die importId zurück */
+  importFolder: (folderPath: string): Promise<{ importId: string }> =>
+    ipcRenderer.invoke("samples:import-folder", folderPath),
+
+  /** Bricht einen laufenden Import ab */
+  cancelImport: (importId: string): Promise<{ success: boolean; error?: string }> =>
+    ipcRenderer.invoke("samples:cancel-import", importId),
+
+  // Import-Events
+  onImportStarted: createEventListener<{ importId: string }>("samples:import-started"),
+  onImportProgress: createEventListener<{
+    importId: string;
+    current: number;
+    total: number;
+    percentage: number;
+    phase: string;
+    currentFile?: string;
+    relativePath?: string;
+  }>("samples:import-progress"),
+  onImportComplete: createEventListener<{
+    importId: string;
+    imported: number;
+    errors: number;
+    samples?: Array<{ id: string; name: string; path: string; category: string; size: number }>;
+    message: string;
+  }>("samples:import-complete"),
+  onImportCancelled: createEventListener<{
+    importId: string;
+    imported: number;
+    errors: number;
+  }>("samples:import-cancelled"),
+  onImportError: createEventListener<{
+    importId: string;
+    filePath: string;
+    error: string;
+  }>("samples:import-error"),
+
+  // ── Dialoge ──────────────────────────────────────────────────────────────────
+
+  openFileDialog: (options: {
+    title?: string;
+    filters?: Array<{ name: string; extensions: string[] }>;
+    multiSelections?: boolean;
+  }): Promise<{ canceled: boolean; filePaths: string[] }> =>
+    ipcRenderer.invoke("dialog:open-file", {
+      title: options.title,
+      filters: options.filters,
+      properties: options.multiSelections
+        ? ["openFile", "multiSelections"]
+        : ["openFile"],
+    }),
+
+  saveFileDialog: (options: {
+    title?: string;
+    defaultPath?: string;
+    filters?: Array<{ name: string; extensions: string[] }>;
+  }): Promise<{ canceled: boolean; filePath?: string }> =>
+    ipcRenderer.invoke("dialog:save-file", options),
+
+  showMessageDialog: (options: {
+    type?: "none" | "info" | "error" | "question" | "warning";
+    title?: string;
+    message: string;
+    detail?: string;
+    buttons?: string[];
+    defaultId?: number;
+  }): Promise<{ response: number }> =>
+    ipcRenderer.invoke("dialog:message", options),
+
+  // ── Fenster-Steuerung ────────────────────────────────────────────────────────
+
+  setFullscreen: (fullscreen: boolean): Promise<{ success: boolean }> =>
+    ipcRenderer.invoke("window:set-fullscreen", fullscreen),
+
+  isFullscreen: (): Promise<boolean> =>
+    ipcRenderer.invoke("window:is-fullscreen"),
+
+  minimizeWindow: (): Promise<void> =>
+    ipcRenderer.invoke("window:minimize"),
+
+  maximizeWindow: (): Promise<void> =>
+    ipcRenderer.invoke("window:maximize"),
+
+  // Fullscreen-Change-Event
+  onFullscreenChanged: createEventListener<boolean>("window:fullscreen-changed"),
+
+  // ── Benachrichtigungen ───────────────────────────────────────────────────────
+
+  showNotification: (title: string, body: string): Promise<void> =>
+    ipcRenderer.invoke("notification:show", title, body),
+
+  // ── Menü-Events (Main → Renderer) ────────────────────────────────────────────
+
+  onMenuNewProject: createVoidListener("menu:new-project"),
+  onMenuOpenProject: createEventListener<string>("menu:open-project"),
+  onMenuSaveProject: createVoidListener("menu:save-project"),
+  onMenuSaveProjectAs: createEventListener<string>("menu:save-project-as"),
+  onMenuExportProject: createVoidListener("menu:export-project"),
+  onMenuImportProject: createVoidListener("menu:import-project"),
+  onMenuUndo: createVoidListener("menu:undo"),
+  onMenuRedo: createVoidListener("menu:redo"),
+  onMenuOpenSampleBrowser: createVoidListener("menu:open-sample-browser"),
+  onMenuImportSamples: createEventListener<string[]>("menu:import-samples"),
+  onMenuImportSampleFolder: createEventListener<string>("menu:import-sample-folder"),
+  onMenuTransportToggle: createVoidListener("menu:transport-toggle"),
+  onMenuTransportRecord: createVoidListener("menu:transport-record"),
+
+  // ── Keyboard-Shortcuts (globale Media-Keys) ──────────────────────────────────
+
+  onShortcutTransportToggle: createVoidListener("shortcut:transport-toggle"),
+  onShortcutTransportStop: createVoidListener("shortcut:transport-stop"),
+
+  // ── Auto-Updater ─────────────────────────────────────────────────────────────
+
+  checkForUpdates: (): void => {
+    ipcRenderer.send("updater:check");
   },
 
-  onMenuImportProject: (callback) => {
-    const handler = () => callback();
-    ipcRenderer.on("menu:import-project", handler);
-    return () => ipcRenderer.removeListener("menu:import-project", handler);
-  },
-
-  onMenuOpenSampleBrowser: (callback) => {
-    const handler = () => callback();
-    ipcRenderer.on("menu:open-sample-browser", handler);
-    return () =>
-      ipcRenderer.removeListener("menu:open-sample-browser", handler);
-  },
-
-  onMenuImportSamples: (callback) => {
-    const handler = (_event: Electron.IpcRendererEvent, filePaths: string[]) =>
-      callback(filePaths);
-    ipcRenderer.on("menu:import-samples", handler);
-    return () => ipcRenderer.removeListener("menu:import-samples", handler);
-  },
-
-  onMenuImportSampleFolder: (callback) => {
-    const handler = (
-      _event: Electron.IpcRendererEvent,
-      folderPath: string
-    ) => callback(folderPath);
-    ipcRenderer.on("menu:import-sample-folder", handler);
-    return () =>
-      ipcRenderer.removeListener("menu:import-sample-folder", handler);
-  },
+  onUpdaterChecking: createVoidListener("updater:checking"),
+  onUpdaterUpdateAvailable: createEventListener<{
+    version: string;
+    releaseDate: string;
+    releaseNotes?: string;
+  }>("updater:update-available"),
+  onUpdaterUpToDate: createVoidListener("updater:up-to-date"),
+  onUpdaterDownloadProgress: createEventListener<{
+    percent: number;
+    transferred: number;
+    total: number;
+    bytesPerSecond: number;
+  }>("updater:download-progress"),
+  onUpdaterUpdateDownloaded: createEventListener<{ version: string }>(
+    "updater:update-downloaded"
+  ),
+  onUpdaterError: createEventListener<{ message: string }>("updater:error"),
 };
 
 // ─── API exponieren ──────────────────────────────────────────────────────────
 
 contextBridge.exposeInMainWorld("electronAPI", electronAPI);
 
-// TypeScript-Deklaration für window.electronAPI
-declare global {
-  interface Window {
-    electronAPI?: ElectronAPI;
-  }
-}
+export type ElectronAPIType = typeof electronAPI;
