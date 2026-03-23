@@ -14,6 +14,19 @@ export default defineConfig({
   },
   test: {
     environment: "node",
-    include: ["server/**/*.test.ts", "server/**/*.spec.ts"],
+    // Unit-Tests: server/ und tests/electron/ (ohne E2E-Unterordner)
+    include: [
+      "server/**/*.test.ts",
+      "server/**/*.spec.ts",
+      "tests/electron/**/*.test.ts",
+      "tests/electron/**/*.spec.ts",
+    ],
+    // E2E-Tests laufen ausschließlich über Playwright, nicht über Vitest
+    exclude: [
+      "**/node_modules/**",
+      "**/dist/**",
+      "**/dist-electron/**",
+      "tests/electron/e2e/**",
+    ],
   },
 });
