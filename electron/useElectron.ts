@@ -158,7 +158,7 @@ export function useElectron() {
     onMenuRedo: api.onMenuRedo,
     onMenuOpenSampleBrowser: api.onMenuOpenSampleBrowser,
     onMenuImportSamples: api.onMenuImportSamples,
-    onMenuImportSampleFolder: api.onMenuImportSampleFolder,
+    onMenuImportSampleFolder: api.onMenuImportFolder,
     onMenuTransportToggle: api.onMenuTransportToggle,
     onMenuTransportRecord: api.onMenuTransportRecord,
     onShortcutTransportToggle: api.onShortcutTransportToggle,
