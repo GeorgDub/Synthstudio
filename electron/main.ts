@@ -1,5 +1,5 @@
 /**
- * Synthstudio – Electron Main Process (v2)
+ * Synthstudio – Electron Main Process (v3)
  *
  * Features:
  * - BrowserWindow mit nativen Menüs
@@ -9,7 +9,10 @@
  * - Native Dialoge (Open, Save, Confirm)
  * - Folder-Import mit Progress-Events und Cancel-Unterstützung
  * - Error-Handling für fehlende Berechtigungen
- * - Auto-Updater Grundstruktur (bereit für electron-updater)
+ * - AppStore-Integration (zuletzt geöffnete Projekte, WindowBounds, Theme)
+ * - Dynamisches Menü "Zuletzt geöffnete Projekte"
+ * - IPC-Handler für den Store
+ * - Auto-Updater (electron-updater, aktiviert in Produktion)
  *
  * Die Web-App (client/, server/, shared/) bleibt vollständig unverändert.
  */
@@ -34,7 +37,8 @@ import { setupDragDrop } from "./dragdrop";
 import { registerWaveformHandlers } from "./waveform";
 import { WindowManager, registerWindowHandlers } from "./windows";
 import { registerExportHandlers } from "./export";
-import { setupAutoUpdater } from "./updater";
+import { setupAutoUpdater, checkForUpdatesManually } from "./updater";
+import { initStore, registerStoreHandlers, type AppStore } from "./store";
 
 const windowManager = new WindowManager();
 
@@ -49,15 +53,15 @@ const AUDIO_EXTENSIONS = new Set([".wav", ".mp3", ".ogg", ".flac", ".aiff", ".ai
 
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
+let appStore: AppStore | null = null;
 
 /** Aktive Import-Abbruch-Flags: importId → aborted */
 const importCancelFlags = new Map<string, boolean>();
 
 // ─── Hilfsfunktionen ─────────────────────────────────────────────────────────
 
-/** Erstellt ein einfaches Tray-Icon (16×16 Pixel, schwarz) */
+/** Erstellt ein einfaches Tray-Icon (16×16 Pixel) */
 function createTrayIcon(): Electron.NativeImage {
-  // Kleines Fallback-Icon – in Produktion durch echte Icon-Datei ersetzen
   const iconPath = path.join(__dirname, "..", "client", "public", "favicon.ico");
   if (fs.existsSync(iconPath)) {
     return nativeImage.createFromPath(iconPath).resize({ width: 16, height: 16 });
@@ -70,7 +74,7 @@ function createTrayIcon(): Electron.NativeImage {
 async function countAudioFiles(dirPath: string): Promise<number> {
   let count = 0;
   try {
-    const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+    const entries = await fs.promises.readdir(dirPath, { withFileTypes: true });
     for (const entry of entries) {
       const fullPath = path.join(dirPath, entry.name);
       if (entry.isDirectory()) {
@@ -114,9 +118,17 @@ function detectCategory(filePath: string): string {
 // ─── Haupt-Fenster ───────────────────────────────────────────────────────────
 
 function createWindow(): void {
+  // Gespeicherte Fenstergröße/-position aus dem Store laden
+  const savedBounds = appStore?.get("windowBounds");
+  const windowWidth = savedBounds?.width ?? 1440;
+  const windowHeight = savedBounds?.height ?? 900;
+  const windowX = savedBounds?.x;
+  const windowY = savedBounds?.y;
+
   mainWindow = new BrowserWindow({
-    width: 1440,
-    height: 900,
+    width: windowWidth,
+    height: windowHeight,
+    ...(windowX !== undefined && windowY !== undefined ? { x: windowX, y: windowY } : {}),
     minWidth: 1024,
     minHeight: 700,
     title: APP_NAME,
@@ -129,6 +141,11 @@ function createWindow(): void {
       webSecurity: !isDev,
     },
   });
+
+  // Maximiert-Zustand wiederherstellen
+  if (savedBounds?.isMaximized) {
+    mainWindow.maximize();
+  }
 
   // ── Inhalt laden ────────────────────────────────────────────────────────────
   if (isDev) {
@@ -146,6 +163,20 @@ function createWindow(): void {
   });
 
   // ── Fenster-Events ──────────────────────────────────────────────────────────
+  mainWindow.on("close", () => {
+    // Fenstergröße und -position vor dem Schließen speichern
+    if (mainWindow && appStore) {
+      const bounds = mainWindow.getBounds();
+      appStore.saveWindowBounds({
+        x: bounds.x,
+        y: bounds.y,
+        width: bounds.width,
+        height: bounds.height,
+        isMaximized: mainWindow.isMaximized(),
+      });
+    }
+  });
+
   mainWindow.on("closed", () => {
     mainWindow = null;
   });
@@ -235,6 +266,65 @@ function createTray(): void {
   updateTrayMenu();
 }
 
+// ─── Dynamisches Menü "Zuletzt geöffnete Projekte" ───────────────────────────
+
+/**
+ * Erstellt die Menüeinträge für "Zuletzt geöffnete Projekte".
+ * Wird bei jedem buildMenu()-Aufruf neu generiert.
+ */
+function buildRecentProjectsSubmenu(): Electron.MenuItemConstructorOptions[] {
+  if (!appStore) return [{ label: "Keine zuletzt geöffneten Projekte", enabled: false }];
+
+  const recentProjects = appStore.getRecentProjects();
+
+  if (recentProjects.length === 0) {
+    return [{ label: "Keine zuletzt geöffneten Projekte", enabled: false }];
+  }
+
+  const items: Electron.MenuItemConstructorOptions[] = recentProjects.map((project) => ({
+    label: project.name,
+    sublabel: project.filePath,
+    click: () => {
+      // Prüfen ob Datei noch existiert (asynchron, kein Blockieren)
+      fs.promises
+        .access(project.filePath, fs.constants.R_OK)
+        .then(() => {
+          mainWindow?.webContents.send("menu:open-project", project.filePath);
+          // Zugriffszeitpunkt aktualisieren
+          appStore?.addRecentProject(project.filePath);
+          // Menü neu aufbauen damit Reihenfolge aktualisiert wird
+          buildMenu();
+        })
+        .catch(() => {
+          // Datei nicht mehr vorhanden – aus Liste entfernen
+          appStore?.removeRecentProject(project.filePath);
+          buildMenu();
+          dialog.showMessageBox(mainWindow!, {
+            type: "warning",
+            title: "Datei nicht gefunden",
+            message: `Die Datei "${project.name}" wurde nicht gefunden.`,
+            detail: project.filePath,
+            buttons: ["OK"],
+          });
+        });
+    },
+  }));
+
+  items.push(
+    { type: "separator" },
+    {
+      label: "Zuletzt geöffnete Projekte löschen",
+      click: () => {
+        appStore?.clearRecentProjects();
+        mainWindow?.webContents.send("store:recent-changed", []);
+        buildMenu();
+      },
+    }
+  );
+
+  return items;
+}
+
 // ─── Anwendungsmenü ──────────────────────────────────────────────────────────
 
 function buildMenu(): void {
@@ -284,10 +374,24 @@ function buildMenu(): void {
               properties: ["openFile"],
             });
             if (!result.canceled && result.filePaths.length > 0) {
-              mainWindow?.webContents.send("menu:open-project", result.filePaths[0]);
+              const filePath = result.filePaths[0];
+              mainWindow?.webContents.send("menu:open-project", filePath);
+              // Zu zuletzt geöffneten Projekten hinzufügen
+              appStore?.addRecentProject(filePath);
+              mainWindow?.webContents.send(
+                "store:recent-changed",
+                appStore?.getRecentProjects() ?? []
+              );
+              buildMenu();
             }
           },
         },
+        // ── Zuletzt geöffnete Projekte ────────────────────────────────────
+        {
+          label: "Zuletzt geöffnete Projekte",
+          submenu: buildRecentProjectsSubmenu(),
+        },
+        { type: "separator" },
         {
           label: "Projekt speichern",
           accelerator: "CmdOrCtrl+S",
@@ -307,6 +411,13 @@ function buildMenu(): void {
             });
             if (!result.canceled && result.filePath) {
               mainWindow?.webContents.send("menu:save-project-as", result.filePath);
+              // Gespeichertes Projekt zu zuletzt geöffneten hinzufügen
+              appStore?.addRecentProject(result.filePath);
+              mainWindow?.webContents.send(
+                "store:recent-changed",
+                appStore?.getRecentProjects() ?? []
+              );
+              buildMenu();
             }
           },
         },
@@ -480,7 +591,11 @@ function buildMenu(): void {
           : [
               {
                 label: "Nach Updates suchen…",
-                click: () => mainWindow?.webContents.send("updater:check"),
+                click: () => {
+                  if (mainWindow) {
+                    checkForUpdatesManually(mainWindow);
+                  }
+                },
               },
             ]),
       ],
@@ -497,7 +612,6 @@ async function startFolderImport(importId: string, folderPath: string): Promise<
   importCancelFlags.set(importId, false);
 
   try {
-    // Gesamtzahl der Dateien zählen
     const totalFiles = await countAudioFiles(folderPath);
     mainWindow?.webContents.send("samples:import-progress", {
       importId,
@@ -534,7 +648,7 @@ async function startFolderImport(importId: string, folderPath: string): Promise<
         if (importCancelFlags.get(importId)) return false; // abgebrochen
 
         try {
-          const stat = fs.statSync(filePath);
+          const stat = await fs.promises.stat(filePath);
           const relativePath = path.relative(folderPath, filePath);
           const category = detectCategory(filePath);
 
@@ -621,7 +735,7 @@ async function scanAndImport(
 
   let entries: fs.Dirent[];
   try {
-    entries = fs.readdirSync(currentPath, { withFileTypes: true });
+    entries = await fs.promises.readdir(currentPath, { withFileTypes: true });
   } catch (err) {
     mainWindow?.webContents.send("samples:import-error", {
       importId,
@@ -659,7 +773,7 @@ function registerIpcHandlers(): void {
       if (!AUDIO_EXTENSIONS.has(ext) && ext !== ".json" && ext !== ".esx1") {
         return { success: false, error: "Dateityp nicht erlaubt" };
       }
-      const buffer = fs.readFileSync(filePath);
+      const buffer = await fs.promises.readFile(filePath);
       return { success: true, data: buffer.buffer };
     } catch (err) {
       return { success: false, error: String(err) };
@@ -668,7 +782,7 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle("fs:list-directory", async (_event, dirPath: string) => {
     try {
-      const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+      const entries = await fs.promises.readdir(dirPath, { withFileTypes: true });
       return {
         success: true,
         entries: entries
@@ -692,8 +806,8 @@ function registerIpcHandlers(): void {
       if (ext !== ".esx1" && ext !== ".json") {
         return { success: false, error: "Nur .esx1 und .json Dateien erlaubt" };
       }
-      fs.mkdirSync(path.dirname(filePath), { recursive: true });
-      fs.writeFileSync(filePath, data, "utf-8");
+      await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
+      await fs.promises.writeFile(filePath, data, "utf-8");
       return { success: true };
     } catch (err) {
       return { success: false, error: String(err) };
@@ -780,6 +894,14 @@ function registerIpcHandlers(): void {
       }
     }
   );
+
+  // ── Auto-Updater (manueller Check aus dem Renderer) ──────────────────────────
+
+  ipcMain.on("updater:check", () => {
+    if (mainWindow) {
+      checkForUpdatesManually(mainWindow);
+    }
+  });
 }
 
 // ─── Globale Keyboard-Shortcuts ──────────────────────────────────────────────
@@ -799,12 +921,24 @@ function registerGlobalShortcuts(): void {
 // ─── App-Lifecycle ───────────────────────────────────────────────────────────
 
 app.whenReady().then(() => {
+  // AppStore initialisieren (muss vor buildMenu() erfolgen)
+  appStore = initStore(app.getPath("userData"));
+
+  // Basis-IPC-Handler registrieren (kein mainWindow erforderlich)
   registerIpcHandlers();
   registerWaveformHandlers();
   registerExportHandlers();
   registerWindowHandlers(windowManager);
+
+  // Menü aufbauen (nutzt appStore für zuletzt geöffnete Projekte)
   buildMenu();
+
+  // Fenster erstellen – danach ist mainWindow gesetzt
   createWindow();
+
+  // Store-IPC-Handler registrieren (nach createWindow, damit mainWindow gesetzt ist)
+  registerStoreHandlers(ipcMain, mainWindow);
+
   createTray();
   registerGlobalShortcuts();
 

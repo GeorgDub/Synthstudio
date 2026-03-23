@@ -103,6 +103,7 @@
     "drizzle-kit": "^0.31.4",
     "electron": "^40.6.1",
     "electron-builder": "^26.8.1",
+    "electron-updater": "^6.8.3",
     "esbuild": "^0.25.0",
     "pnpm": "^10.15.1",
     "postcss": "^8.4.47",
@@ -138,14 +139,28 @@
     ],
     "mac": {
       "category": "public.app-category.music",
-      "target": ["dmg", "zip"]
+      "target": [
+        "dmg",
+        "zip"
+      ]
     },
     "win": {
-      "target": ["nsis", "portable"]
+      "target": [
+        "nsis",
+        "portable"
+      ]
     },
     "linux": {
-      "target": ["AppImage", "deb"],
+      "target": [
+        "AppImage",
+        "deb"
+      ],
       "category": "Audio"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "GeorgDub",
+      "repo": "Synthstudio"
     }
   }
 }

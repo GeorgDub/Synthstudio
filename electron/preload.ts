@@ -213,6 +213,40 @@ const electronAPI = {
   ),
   onUpdaterError: createEventListener<{ message: string }>("updater:error"),
 
+  // ── App-Store ─────────────────────────────────────────────────────────────
+
+  /** Einen Store-Wert lesen */
+  storeGet: (key: string): Promise<{ success: boolean; data?: unknown; error?: string }> =>
+    ipcRenderer.invoke("store:get", key),
+
+  /** Einen Store-Wert setzen */
+  storeSet: (key: string, value: unknown): Promise<{ success: boolean; error?: string }> =>
+    ipcRenderer.invoke("store:set", key, value),
+
+  /** Zuletzt geöffnete Projekte abrufen */
+  storeGetRecent: (): Promise<{
+    success: boolean;
+    data?: Array<{ filePath: string; name: string; lastOpened: string }>;
+    error?: string;
+  }> => ipcRenderer.invoke("store:get-recent"),
+
+  /** Projekt zu zuletzt geöffneten hinzufügen */
+  storeAddRecent: (filePath: string): Promise<{ success: boolean; error?: string }> =>
+    ipcRenderer.invoke("store:add-recent", filePath),
+
+  /** Projekt aus zuletzt geöffneten entfernen */
+  storeRemoveRecent: (filePath: string): Promise<{ success: boolean; error?: string }> =>
+    ipcRenderer.invoke("store:remove-recent", filePath),
+
+  /** Alle zuletzt geöffneten Projekte löschen */
+  storeClearRecent: (): Promise<{ success: boolean; error?: string }> =>
+    ipcRenderer.invoke("store:clear-recent"),
+
+  /** Listener für Änderungen an zuletzt geöffneten Projekten */
+  onRecentProjectsChanged: createEventListener<
+    Array<{ filePath: string; name: string; lastOpened: string }>
+  >("store:recent-changed"),
+
   // ── Waveform-Preview ──────────────────────────────────────────────────────
 
   /** Waveform-Peaks für eine lokale Audio-Datei abrufen */
