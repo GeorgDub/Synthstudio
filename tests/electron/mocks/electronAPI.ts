@@ -2,7 +2,7 @@
  * Synthstudio – Electron API Mock (Testing-Agent)
  *
  * Vollständiger vi.fn()-Mock für window.electronAPI.
- * Für alle Unit-Tests und Komponenten-Tests die Electron-Features nutzen.
+ * Alle Methoden aus electron/types.d.ts sind abgedeckt.
  *
  * Verwendung:
  * ```ts
@@ -12,8 +12,17 @@
  * afterEach(() => resetElectronMock());
  *
  * // Mit partiellen Overrides:
- * setupElectronMock({ openFileDialog: vi.fn().mockResolvedValue({ canceled: false, filePaths: ["/test.wav"] }) });
+ * setupElectronMock({
+ *   openFileDialog: vi.fn().mockResolvedValue({ canceled: false, filePaths: ["/test.wav"] })
+ * });
  * ```
+ *
+ * WICHTIG: Namenskonflikt gelöst (COORDINATION.md §4):
+ *   types.d.ts definiert `onMenuImportSampleFolder` (nicht `onMenuImportFolder`).
+ *   Dieser Mock verwendet ausschließlich `onMenuImportSampleFolder`.
+ *
+ * STRIKTE TRENNUNG: Dieser Mock darf NICHT in E2E-Tests verwendet werden.
+ * E2E-Tests starten die echte App ohne Mocks.
  */
 import { vi } from "vitest";
 import type { RecentProject } from "../../../electron/store";
@@ -31,9 +40,19 @@ export type ElectronMockOverrides = Partial<Record<string, MockFn>>;
 const DEFAULT_FILE_DIALOG_RESULT = { canceled: false, filePaths: ["/test/sample.wav"] };
 const DEFAULT_SAVE_DIALOG_RESULT = { canceled: false, filePath: "/test/export.wav" };
 const DEFAULT_CONFIRM_RESULT = { response: 0 }; // 0 = Bestätigt
+const DEFAULT_MESSAGE_RESULT = { response: 0 };
 const DEFAULT_RECENT_PROJECTS: RecentProject[] = [
   { filePath: "/projects/test.esx1", name: "test", lastOpened: "2025-01-01T00:00:00Z" },
 ];
+const DEFAULT_WAVEFORM_RESULT = {
+  success: true,
+  peaks: new Array(200).fill(0).map((_, i) => Math.abs(Math.sin(i * 0.1))),
+  duration: 2.5,
+  sampleRate: 44100,
+  channels: 1,
+  bitDepth: 16,
+  fileSize: 220500,
+};
 
 // ─── Listener-Mock-Factory ────────────────────────────────────────────────────
 
@@ -46,47 +65,119 @@ function mockListener(): MockFn {
 
 export function createElectronMock(overrides: ElectronMockOverrides = {}): typeof window.electronAPI {
   const mock = {
-    // ── Datei-Dialoge ────────────────────────────────────────────────────────
+    // ── Identifikation (readonly) ────────────────────────────────────────────
+    isElectron: true as const,
+    platform: "linux" as const,
+
+    // ── App-Info ─────────────────────────────────────────────────────────────
+    getVersion: vi.fn().mockResolvedValue("1.0.0"),
+    getPlatform: vi.fn().mockResolvedValue("linux"),
+    getPath: vi.fn().mockImplementation((name: string) => {
+      const paths: Record<string, string> = {
+        home: "/home/testuser",
+        documents: "/home/testuser/Documents",
+        downloads: "/home/testuser/Downloads",
+        music: "/home/testuser/Music",
+        desktop: "/home/testuser/Desktop",
+      };
+      return Promise.resolve(paths[name] ?? null);
+    }),
+
+    // ── Dateisystem ──────────────────────────────────────────────────────────
+    readFile: vi.fn().mockResolvedValue({ success: true, data: Buffer.from([]).toString("base64") }),
+    listDirectory: vi.fn().mockResolvedValue({
+      success: true,
+      entries: [
+        { name: "sample.wav", isDirectory: false, path: "/test/sample.wav", isAudio: true },
+        { name: "subdir", isDirectory: true, path: "/test/subdir", isAudio: false },
+      ],
+    }),
+    writeFile: vi.fn().mockResolvedValue({ success: true }),
+    fileExists: vi.fn().mockResolvedValue({ exists: true }),
+    getFileStats: vi.fn().mockResolvedValue({
+      success: true,
+      stats: { size: 1024, mtime: Date.now() },
+    }),
+
+    // ── Folder-Import ────────────────────────────────────────────────────────
+    importSamples: vi.fn().mockResolvedValue({ success: true, importedCount: 1, errors: [] }),
+    importFolder: vi.fn().mockResolvedValue({ importId: "test-import-1" }),
+    cancelImport: vi.fn().mockResolvedValue({ success: true }),
+
+    // ── Import-Events ────────────────────────────────────────────────────────
+    onImportStarted: mockListener(),
+    onImportProgress: mockListener(),
+    onImportComplete: mockListener(),
+    onImportCancelled: mockListener(),
+    onImportError: mockListener(),
+
+    // ── Dialoge ───────────────────────────────────────────────────────────────
     openFileDialog: vi.fn().mockResolvedValue(DEFAULT_FILE_DIALOG_RESULT),
     openFolderDialog: vi.fn().mockResolvedValue({ canceled: false, filePaths: ["/test/samples"] }),
     saveFileDialog: vi.fn().mockResolvedValue(DEFAULT_SAVE_DIALOG_RESULT),
+    showMessageDialog: vi.fn().mockResolvedValue(DEFAULT_MESSAGE_RESULT),
     showConfirmDialog: vi.fn().mockResolvedValue(DEFAULT_CONFIRM_RESULT),
     showErrorDialog: vi.fn().mockResolvedValue(undefined),
     showInfoDialog: vi.fn().mockResolvedValue(undefined),
 
-    // ── Dateisystem ──────────────────────────────────────────────────────────
-    readFile: vi.fn().mockResolvedValue({ success: true, data: Buffer.from([]).toString("base64") }),
-    writeFile: vi.fn().mockResolvedValue({ success: true }),
-    fileExists: vi.fn().mockResolvedValue({ exists: true }),
-    getFileStats: vi.fn().mockResolvedValue({ success: true, stats: { size: 1024, mtime: Date.now() } }),
+    // ── Fenster-Steuerung ────────────────────────────────────────────────────
+    setFullscreen: vi.fn().mockResolvedValue({ success: true }),
+    isFullscreen: vi.fn().mockResolvedValue({ isFullscreen: false }),
+    minimizeWindow: vi.fn(),
+    maximizeWindow: vi.fn(),
+    forceCloseWindow: vi.fn(),
+    setWindowTitle: vi.fn(),
+    onFullscreenChanged: mockListener(),
 
-    // ── Sample-Import ────────────────────────────────────────────────────────
-    importSamples: vi.fn().mockResolvedValue({ success: true, importedCount: 1, errors: [] }),
-    importFolder: vi.fn().mockResolvedValue({ success: true, importedCount: 5, errors: [] }),
-    cancelImport: vi.fn().mockResolvedValue({ success: true }),
+    // ── Benachrichtigungen ───────────────────────────────────────────────────
+    showNotification: vi.fn(),
 
-    // ── Import-Events ────────────────────────────────────────────────────────
-    onImportProgress: mockListener(),
-    onImportComplete: mockListener(),
-    onImportError: mockListener(),
+    // ── Menü-Events ──────────────────────────────────────────────────────────
+    onMenuNewProject: mockListener(),
+    onMenuOpenProject: mockListener(),
+    onMenuSaveProject: mockListener(),
+    onMenuSaveProjectAs: mockListener(),
+    onMenuExportProject: mockListener(),
+    onMenuImportProject: mockListener(),
+    onMenuImportSamples: mockListener(),
+    // BUG-001: Namenskonflikt – types.d.ts definiert onMenuImportSampleFolder,
+    // aber ältere Versionen des Mocks und des Frontend-Hooks nutzten onMenuImportFolder.
+    // Korrekt laut types.d.ts: onMenuImportSampleFolder
+    onMenuImportSampleFolder: mockListener(),
+    onMenuOpenSampleLibrary: mockListener(),
+    onMenuOpenSampleBrowser: mockListener(),
+    onMenuUndo: mockListener(),
+    onMenuRedo: mockListener(),
+    onMenuRecord: mockListener(),
+    onMenuToggleFullscreen: mockListener(),
+    onMenuBounce: mockListener(),
+    onMenuTransportToggle: mockListener(),
+    onMenuTransportRecord: mockListener(),
 
-    // ── Waveform ─────────────────────────────────────────────────────────────
-    analyzeWaveform: vi.fn().mockResolvedValue({
-      success: true,
-      peaks: new Array(200).fill(0).map((_, i) => Math.abs(Math.sin(i * 0.1))),
-      duration: 2.5,
-      sampleRate: 44100,
-      channels: 1,
-    }),
+    // ── Keyboard-Shortcuts ────────────────────────────────────────────────────
+    onShortcutPlayStop: mockListener(),
+    onShortcutUndo: mockListener(),
+    onShortcutRedo: mockListener(),
+    onShortcutSave: mockListener(),
+    onShortcutTransportToggle: mockListener(),
+    onShortcutTransportStop: mockListener(),
 
-    // ── Export ───────────────────────────────────────────────────────────────
+    // ── Drag & Drop ──────────────────────────────────────────────────────────
+    onDragDropBulkImport: mockListener(),
+    onDragDropLoadSample: mockListener(),
+    onDragDropOpenProject: mockListener(),
+
+    // ── Waveform (Audio-Engine-Agent) ────────────────────────────────────────
+    analyzeWaveform: vi.fn().mockResolvedValue(DEFAULT_WAVEFORM_RESULT),
+
+    // ── Export (Audio-Engine-Agent) ───────────────────────────────────────────
     exportWav: vi.fn().mockResolvedValue({ success: true, filePath: "/test/export.wav" }),
     exportWavStereo: vi.fn().mockResolvedValue({ success: true, filePath: "/test/export-stereo.wav" }),
     exportMidi: vi.fn().mockResolvedValue({ success: true, filePath: "/test/export.mid" }),
     exportProject: vi.fn().mockResolvedValue({ success: true, filePath: "/test/project.esx1" }),
     importProject: vi.fn().mockResolvedValue({ success: true, data: {} }),
 
-    // ── Store ────────────────────────────────────────────────────────────────
+    // ── Store (Backend-Agent) ────────────────────────────────────────────────
     storeGet: vi.fn().mockResolvedValue({ success: true, data: "dark" }),
     storeSet: vi.fn().mockResolvedValue({ success: true }),
     storeGetRecent: vi.fn().mockResolvedValue({ success: true, data: DEFAULT_RECENT_PROJECTS }),
@@ -95,48 +186,18 @@ export function createElectronMock(overrides: ElectronMockOverrides = {}): typeo
     storeClearRecent: vi.fn().mockResolvedValue({ success: true }),
     onRecentProjectsChanged: mockListener(),
 
-    // ── Fenster-Steuerung ────────────────────────────────────────────────────
-    minimizeWindow: vi.fn(),
-    maximizeWindow: vi.fn(),
-    forceCloseWindow: vi.fn(),
-    setFullscreen: vi.fn().mockResolvedValue({ success: true }),
-    isFullscreen: vi.fn().mockResolvedValue({ isFullscreen: false }),
-    setWindowTitle: vi.fn(),
-
-    // ── Menü-Events ──────────────────────────────────────────────────────────
-    onMenuNewProject: mockListener(),
-    onMenuOpenProject: mockListener(),
-    onMenuSaveProject: mockListener(),
-    onMenuSaveProjectAs: mockListener(),
-    onMenuExportProject: mockListener(),
-    onMenuImportSamples: mockListener(),
-    onMenuImportFolder: mockListener(),
-    onMenuOpenSampleLibrary: mockListener(),
-    onMenuUndo: mockListener(),
-    onMenuRedo: mockListener(),
-    onMenuRecord: mockListener(),
-    onMenuToggleFullscreen: mockListener(),
-    onMenuBounce: mockListener(),
-
-    // ── Shortcuts ────────────────────────────────────────────────────────────
-    onShortcutPlayStop: mockListener(),
-    onShortcutUndo: mockListener(),
-    onShortcutRedo: mockListener(),
-    onShortcutSave: mockListener(),
-
-    // ── Drag & Drop ──────────────────────────────────────────────────────────
-    onDragDropBulkImport: mockListener(),
-    onDragDropLoadSample: mockListener(),
-    onDragDropOpenProject: mockListener(),
-
-    // ── Benachrichtigungen ───────────────────────────────────────────────────
-    showNotification: vi.fn(),
-
     // ── System ───────────────────────────────────────────────────────────────
-    getAppVersion: vi.fn().mockResolvedValue("1.0.0"),
-    getPlatform: vi.fn().mockReturnValue("linux"),
     openExternal: vi.fn().mockResolvedValue({ success: true }),
     showItemInFolder: vi.fn(),
+
+    // ── Auto-Updater (Build-Agent) ────────────────────────────────────────────
+    checkForUpdates: vi.fn(),
+    onUpdaterChecking: mockListener(),
+    onUpdaterUpdateAvailable: mockListener(),
+    onUpdaterUpToDate: mockListener(),
+    onUpdaterDownloadProgress: mockListener(),
+    onUpdaterUpdateDownloaded: mockListener(),
+    onUpdaterError: mockListener(),
 
     // Overrides anwenden
     ...overrides,
