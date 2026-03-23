@@ -4,7 +4,7 @@
     "module": "commonjs",
     "lib": ["ES2020", "DOM"],
     "jsx": "react-jsx",
-    "outDir": "dist-electron",
+    "outDir": ".",
     "rootDir": "electron",
     "strict": true,
     "esModuleInterop": true,
