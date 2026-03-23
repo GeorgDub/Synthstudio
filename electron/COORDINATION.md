@@ -15,7 +15,7 @@ Dieses Dokument dient als zentraler Anlaufpunkt für die Koordination der 6 para
 | **Frontend** | React-Integration, Komponenten | ✅ Fertig & verifiziert | `2eee91f` – vollständige Integration | ✅ Koordinator |
 | **Audio-Engine** | Waveform, Export, Worker | ✅ Fertig | `0668fcf` – Worker, Cache, Stereo | ✅ Koordinator |
 | **Build** | Icons, `package.json`, Packaging | ✅ Fertig & verifiziert | `6164853` – Icons, Build-Konfig | ✅ Koordinator |
-| **Testing** | Unit-Tests, Mocks, E2E | ✅ Fertig | `3228cc9` – Playwright, E2E-Setup | 🔲 Ausstehend |
+| **Testing** | Unit-Tests, Mocks, E2E | ✅ Fertig & verifiziert | `69ae513` – 145 Tests, wav-writer, E2E | ✅ Koordinator |
 
 ---
 
@@ -79,7 +79,7 @@ Der Build-Agent hat `onMenuImportFolder → onMenuImportSampleFolder` in `types.
 
 | Priorität | Aufgabe | Zuständig | Blockiert durch |
 |---|---|---|---|
-| 🔴 Hoch | Namenskonflikt `onMenuImportFolder` vs. `onMenuImportSampleFolder` klären | IPC-Bridge | – |
+| 🔴 Hoch | Namenskonflikt `onMenuImportFolder` vs. `onMenuImportSampleFolder` klären | **IPC-Bridge** ← nächster Agent | – |
 | 🔴 Hoch | Vollständigen Build testen: `pnpm build:electron` | Build | – |
 | 🟡 Mittel | E2E-Tests ausführen: `pnpm test:e2e` | Testing | Build-Test |
 | 🟡 Mittel | Worker-Pfad-Auflösung in Produktion testen | Audio-Engine | Build-Test |
@@ -104,4 +104,24 @@ Der Build-Agent hat `onMenuImportFolder → onMenuImportSampleFolder` in `types.
 
 ---
 
-*Zuletzt aktualisiert: 23. März 2026 – Koordinator nach Frontend-Agent-Verifikation*
+---
+
+## 🔍 Koordinator-Verifikation: Testing-Agent
+
+**Geprüft am: 23. März 2026**
+
+| Prüfpunkt | Ergebnis | Details |
+|---|---|---|
+| Unit-Tests laufen ohne Electron-Import | ✅ Bestanden | `wav-writer.ts` als reine Node.js-Schicht extrahiert |
+| 145 Tests, alle grün | ✅ Bestanden | 29 Store + 64 Export + 52 bestehende |
+| Mock konsistent mit `types.d.ts` | ✅ Bestanden | `onMenuImportSampleFolder` korrekt, BUG-001 dokumentiert |
+| E2E-Setup vorhanden | ✅ Bestanden | `tests/electron/e2e/setup.ts` mit 5 Szenarien |
+| Strikte Trennung Unit/E2E | ✅ Bestanden | Playwright-Ausschluss in `vitest.config.ts` korrekt |
+
+**Wichtigster Beitrag:** Der Testing-Agent hat `electron/wav-writer.ts` als eigenständiges, testbares Modul extrahiert – das ist ein wertvolles Architektur-Refactoring, das die Testbarkeit dauerhaft verbessert.
+
+**BUG-001 dokumentiert:** `onMenuImportFolder` (Frontend) vs. `onMenuImportSampleFolder` (types.d.ts) – muss vom IPC-Bridge-Agenten behoben werden.
+
+---
+
+*Zuletzt aktualisiert: 23. März 2026 – Koordinator nach Testing-Agent-Verifikation*
