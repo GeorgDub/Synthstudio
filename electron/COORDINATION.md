@@ -14,7 +14,7 @@ Dieses Dokument dient als zentraler Anlaufpunkt für die Koordination der 6 para
 | **IPC-Bridge** | `preload.ts`, `types.d.ts`, Hooks | ✅ Fertig & verifiziert | `91dd61e` – BUG-001, get-recent-projects | ✅ Koordinator |
 | **Frontend** | React-Integration, Komponenten | ✅ Fertig & verifiziert | `2eee91f` – vollständige Integration | ✅ Koordinator |
 | **Audio-Engine** | Waveform, Export, Worker | ✅ Fertig | `0668fcf` – Worker, Cache, Stereo | ✅ Koordinator |
-| **Build** | Icons, `package.json`, Packaging | ✅ Fertig & verifiziert | `6164853` – Icons, Build-Konfig | ✅ Koordinator |
+| **Build** | Icons, `package.json`, Packaging | ✅ **Build erfolgreich** | `22765f2` – asar-Fix, 263MB Build | ✅ Koordinator |
 | **Testing** | Unit-Tests, Mocks, E2E | ✅ Fertig & verifiziert | `69ae513` – 145 Tests, wav-writer, E2E | ✅ Koordinator |
 
 ---
@@ -80,9 +80,9 @@ Der Build-Agent hat `onMenuImportFolder → onMenuImportSampleFolder` in `types.
 | Priorität | Aufgabe | Zuständig | Blockiert durch |
 |---|---|---|---|
 | ~~🔴 Hoch~~ | ~~Namenskonflikt `onMenuImportFolder` vs. `onMenuImportSampleFolder` klären~~ | ~~IPC-Bridge~~ | ✅ Behoben |
-| 🔴 Hoch | Vollständigen Build testen: `pnpm build:electron` | Build | – |
-| 🟡 Mittel | E2E-Tests ausführen: `pnpm test:e2e` | Testing | Build-Test |
-| 🟡 Mittel | Worker-Pfad-Auflösung in Produktion testen | Audio-Engine | Build-Test |
+| ~~🔴 Hoch~~ | ~~Vollständigen Build testen: `pnpm build:electron`~~ | ~~Build~~ | ✅ Behoben – 263MB asar, Executable vorhanden |
+| 🟡 Mittel | E2E-Tests ausführen: `pnpm test:e2e` | Testing | – |
+| 🟡 Mittel | Worker-Pfad-Auflösung in Produktion testen | Audio-Engine | – |
 | 🟢 Niedrig | GitHub Actions Workflow manuell über GitHub Web-UI hinzufügen | Build | – |
 
 ---
@@ -143,4 +143,21 @@ Der Build-Agent hat `onMenuImportFolder → onMenuImportSampleFolder` in `types.
 
 ---
 
-*Zuletzt aktualisiert: 23. März 2026 – Koordinator nach IPC-Bridge-Agent-Verifikation*
+---
+
+## 🔍 Koordinator-Verifikation: Build-Agent (vollständiger Build)
+
+**Geprüft am: 24. März 2026**
+
+| Prüfpunkt | Ergebnis | Details |
+|---|---|---|
+| TypeScript-Kompilierung | ✅ Bestanden | 0 Fehler, alle Module kompiliert |
+| Vite-Build | ✅ Bestanden | `dist/public/` erzeugt |
+| electron-builder asar | ✅ Bestanden | 263MB asar mit main.js, preload.js, store.js, workers/, dist/public/ |
+| Executable | ✅ Bestanden | `release/linux-unpacked/korg-synth-studio` (194MB) |
+| Worker-Pfad | ✅ Bestanden | `workers/waveform.worker.js` im asar |
+| pnpm-Kompatibilität | ✅ Behoben | `outDir: '.'` statt `dist-electron/` löst pnpm-asar-Bug |
+
+**Root-Cause des Build-Bugs:** electron-builder v26 mit pnpm ignoriert `files[]`-Glob-Patterns für Nicht-`node_modules`-Verzeichnisse. Lösung: TypeScript direkt ins Projekt-Root kompilieren (`outDir: '.'`), dann greift das explizite Auflisten der `.js`-Dateien in `files[]`.
+
+*Zuletzt aktualisiert: 24. März 2026 – Koordinator nach vollständigem Build-Test*
