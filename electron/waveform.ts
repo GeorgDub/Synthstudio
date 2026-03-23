@@ -26,6 +26,8 @@
 import { ipcMain } from "electron";
 import * as fs from "fs";
 import * as path from "path";
+import { Worker } from "worker_threads";
+import { waveformCache } from "./waveform-cache";
 
 // ─── Typen ────────────────────────────────────────────────────────────────────
 
@@ -97,102 +99,52 @@ function findWavDataChunk(buffer: Buffer): { offset: number; size: number } | nu
   return null;
 }
 
-// ─── Waveform-Extraktion ──────────────────────────────────────────────────────
+// ─── Worker-Integration ───────────────────────────────────────────────────────
 
-/**
- * Extrahiert Waveform-Peaks aus einer WAV-Datei.
- * Liest nur so viele Bytes wie nötig (max 10 MB für Preview).
- */
-function extractWavPeaks(
-  buffer: Buffer,
-  numPeaks: number
-): { peaks: number[]; sampleRate: number; channels: number; bitDepth: number; duration: number } | null {
-  const header = parseWavHeader(buffer);
-  if (!header) return null;
+function analyzeWithWorker(filePath: string, numPeaks: number): Promise<WaveformResult> {
+  return new Promise((resolve) => {
+    const workerPath = path.join(__dirname, "workers", "waveform.worker.js");
+    
+    // Fallback falls die kompilierte JS-Datei nicht existiert (z.B. in Dev-Umgebung mit ts-node)
+    const actualWorkerPath = fs.existsSync(workerPath) 
+      ? workerPath 
+      : path.join(__dirname, "workers", "waveform.worker.ts");
 
-  const dataChunk = findWavDataChunk(buffer);
-  if (!dataChunk) return null;
+    const worker = new Worker(actualWorkerPath, {
+      // Wenn es eine TS-Datei ist, ts-node/register verwenden
+      execArgv: actualWorkerPath.endsWith('.ts') ? ['-r', 'ts-node/register'] : undefined
+    });
 
-  const { sampleRate, channels, bitDepth } = header;
-  const bytesPerSample = bitDepth / 8;
-  const bytesPerFrame = bytesPerSample * channels;
-
-  const dataStart = dataChunk.offset;
-  const dataEnd = Math.min(dataStart + dataChunk.size, buffer.length);
-  const dataLength = dataEnd - dataStart;
-
-  const totalFrames = Math.floor(dataLength / bytesPerFrame);
-  const duration = totalFrames / sampleRate;
-
-  // Frames in numPeaks Blöcke aufteilen
-  const framesPerBlock = Math.max(1, Math.floor(totalFrames / numPeaks));
-  const peaks: number[] = [];
-
-  for (let i = 0; i < numPeaks; i++) {
-    const blockStart = dataStart + i * framesPerBlock * bytesPerFrame;
-    if (blockStart >= dataEnd) {
-      peaks.push(0);
-      continue;
-    }
-
-    let maxAbs = 0;
-
-    // Nur ersten Kanal lesen für Performance
-    for (let f = 0; f < framesPerBlock; f++) {
-      const sampleOffset = blockStart + f * bytesPerFrame;
-      if (sampleOffset + bytesPerSample > dataEnd) break;
-
-      let sample = 0;
-      if (bitDepth === 16) {
-        sample = buffer.readInt16LE(sampleOffset) / 32768;
-      } else if (bitDepth === 8) {
-        sample = (buffer.readUInt8(sampleOffset) - 128) / 128;
-      } else if (bitDepth === 24) {
-        // 24-bit: 3 Bytes lesen
-        const b0 = buffer.readUInt8(sampleOffset);
-        const b1 = buffer.readUInt8(sampleOffset + 1);
-        const b2 = buffer.readUInt8(sampleOffset + 2);
-        let val = (b2 << 16) | (b1 << 8) | b0;
-        if (val >= 0x800000) val -= 0x1000000;
-        sample = val / 8388608;
-      } else if (bitDepth === 32) {
-        sample = buffer.readFloatLE(sampleOffset);
+    worker.on("message", (msg: any) => {
+      if (msg.type === "result") {
+        resolve({
+          success: true,
+          peaks: msg.peaks,
+          duration: msg.duration,
+          sampleRate: msg.sampleRate,
+          channels: msg.channels,
+          bitDepth: msg.bitDepth,
+          fileSize: msg.fileSize,
+        });
+      } else if (msg.type === "error") {
+        resolve({ success: false, error: msg.message });
       }
+      worker.terminate();
+    });
 
-      const abs = Math.abs(sample);
-      if (abs > maxAbs) maxAbs = abs;
-    }
+    worker.on("error", (err) => {
+      resolve({ success: false, error: String(err) });
+      worker.terminate();
+    });
 
-    peaks.push(Math.min(1, maxAbs));
-  }
+    worker.on("exit", (code) => {
+      if (code !== 0) {
+        resolve({ success: false, error: `Worker stopped with exit code ${code}` });
+      }
+    });
 
-  return { peaks, sampleRate, channels, bitDepth, duration };
-}
-
-/**
- * Schätzt Waveform-Peaks für MP3/OGG/FLAC (ohne vollständige Dekodierung).
- * Gibt gleichmäßige Zufalls-Peaks zurück als Platzhalter.
- * Für echte MP3-Dekodierung wäre node-lame oder ffmpeg nötig.
- */
-function estimatePeaksForCompressedAudio(
-  fileSize: number,
-  numPeaks: number
-): { peaks: number[]; duration: number } {
-  // Grobe Schätzung: MP3 bei 128kbps ≈ 16 KB/s
-  const estimatedDuration = fileSize / (128 * 1024 / 8);
-
-  // Pseudo-zufällige aber konsistente Peaks basierend auf Dateigröße
-  const peaks: number[] = [];
-  let seed = fileSize;
-  for (let i = 0; i < numPeaks; i++) {
-    // Einfacher LCG für konsistente Werte
-    seed = (seed * 1664525 + 1013904223) & 0xffffffff;
-    const normalized = (seed >>> 0) / 0xffffffff;
-    // Wellenform-ähnliche Verteilung
-    peaks.push(0.3 + normalized * 0.6);
-  }
-
-  return { peaks, duration: estimatedDuration };
+    worker.postMessage({ type: "analyze", filePath, numPeaks });
+  });
 }
 
 // ─── IPC-Handler ─────────────────────────────────────────────────────────────
@@ -216,36 +168,39 @@ export function registerWaveformHandlers(): void {
           return { success: false, error: "Kein Audio-Dateiformat" };
         }
 
-        if (ext === ".wav" || ext === ".aiff" || ext === ".aif") {
-          // WAV: Direkte Analyse (max 50 MB lesen)
-          const maxBytes = Math.min(fileSize, 50 * 1024 * 1024);
-          const buffer = Buffer.alloc(maxBytes);
-          const fd = fs.openSync(filePath, "r");
-          fs.readSync(fd, buffer, 0, maxBytes, 0);
-          fs.closeSync(fd);
-
-          const result = extractWavPeaks(buffer, numPeaks);
-          if (result) {
-            return {
-              success: true,
-              peaks: result.peaks,
-              duration: result.duration,
-              sampleRate: result.sampleRate,
-              channels: result.channels,
-              bitDepth: result.bitDepth,
-              fileSize,
-            };
-          }
+        // Cache prüfen
+        const cacheKey = `${filePath}_${numPeaks}`;
+        const cached = waveformCache.get(cacheKey);
+        
+        // Wenn Datei sich geändert hat, Cache invalidieren
+        if (cached && cached.fileSize === fileSize) {
+          return {
+            success: true,
+            peaks: cached.peaks,
+            duration: cached.duration,
+            sampleRate: cached.sampleRate,
+            channels: cached.channels,
+            bitDepth: cached.bitDepth,
+            fileSize: cached.fileSize,
+          };
         }
 
-        // MP3/OGG/FLAC: Schätzung
-        const { peaks, duration } = estimatePeaksForCompressedAudio(fileSize, numPeaks);
-        return {
-          success: true,
-          peaks,
-          duration,
-          fileSize,
-        };
+        // Analyse im Worker-Thread durchführen
+        const result = await analyzeWithWorker(filePath, numPeaks);
+
+        // Bei Erfolg im Cache speichern
+        if (result.success && result.peaks) {
+          waveformCache.set(cacheKey, {
+            peaks: result.peaks,
+            duration: result.duration || 0,
+            sampleRate: result.sampleRate || 0,
+            channels: result.channels || 0,
+            bitDepth: result.bitDepth || 0,
+            fileSize: fileSize,
+          });
+        }
+
+        return result;
       } catch (err) {
         return { success: false, error: String(err) };
       }

@@ -2,7 +2,8 @@
  * Synthstudio – Electron Export-Handler
  *
  * Verwaltet den Export von Projekten in verschiedene Formate:
- * - WAV: Renderer rendert Audio und sendet PCM-Daten → Main schreibt WAV-Datei
+ * - WAV (Mono): Renderer rendert Audio und sendet PCM-Daten → Main schreibt WAV-Datei
+ * - WAV (Stereo): Renderer sendet L/R-Kanäle → Main schreibt interleaved Stereo-WAV
  * - MIDI: Renderer serialisiert Pattern → Main schreibt MIDI-Datei
  * - Projekt (.esx1): JSON-Serialisierung des gesamten Projektzustands
  *
@@ -16,12 +17,17 @@
 import { ipcMain, dialog, BrowserWindow } from "electron";
 import * as fs from "fs";
 import * as path from "path";
+import { writeWavFileStereo, registerStereoExportHandlers } from "./export-stereo";
 
 // ─── WAV-Datei schreiben ──────────────────────────────────────────────────────
 
 /**
  * Schreibt einen WAV-Header + PCM-Daten in eine Datei.
  * Der Renderer liefert die PCM-Daten als Float32Array (normalisiert -1..1).
+ *
+ * Unterstützt Mono (1 Kanal) und Stereo (2 Kanäle, interleaved).
+ * Bei Stereo wird writeWavFileStereo aus export-stereo.ts verwendet,
+ * um korrekte RIFF-Konformität und optionale Normalisierung sicherzustellen.
  */
 function writeWavFile(
   filePath: string,
@@ -29,6 +35,25 @@ function writeWavFile(
   sampleRate: number,
   numChannels: number
 ): void {
+  if (numChannels === 2) {
+    // Stereo: PCM-Daten sind interleaved (L0, R0, L1, R1, ...)
+    // De-interleaving für writeWavFileStereo
+    const frameCount = Math.floor(pcmData.length / 2);
+    const leftData: number[] = new Array(frameCount);
+    const rightData: number[] = new Array(frameCount);
+
+    for (let i = 0; i < frameCount; i++) {
+      leftData[i] = pcmData[i * 2];
+      rightData[i] = pcmData[i * 2 + 1];
+    }
+
+    writeWavFileStereo(filePath, leftData, rightData, sampleRate, {
+      metadata: { software: "Synthstudio" },
+    });
+    return;
+  }
+
+  // Mono-Pfad (1 Kanal)
   const bitDepth = 16;
   const bytesPerSample = bitDepth / 8;
   const blockAlign = numChannels * bytesPerSample;
@@ -211,7 +236,9 @@ function writeMidiFile(
 
 export function registerExportHandlers(): void {
   /**
-   * WAV-Export: Renderer sendet PCM-Daten, Main schreibt WAV-Datei
+   * WAV-Export: Renderer sendet PCM-Daten, Main schreibt WAV-Datei.
+   * Unterstützt Mono (channels=1) und Stereo (channels=2).
+   * Bei Stereo werden die interleaved PCM-Daten an writeWavFileStereo delegiert.
    */
   ipcMain.handle(
     "export:wav",
@@ -245,6 +272,10 @@ export function registerExportHandlers(): void {
       }
     }
   );
+
+  // Stereo-Export-Handler aus export-stereo.ts registrieren
+  // Stellt den IPC-Kanal "export:wav-stereo" bereit
+  registerStereoExportHandlers();
 
   /**
    * MIDI-Export: Renderer sendet Pattern-Daten, Main schreibt MIDI-Datei

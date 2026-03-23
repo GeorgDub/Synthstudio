@@ -337,6 +337,17 @@ const electronAPI = {
   }): Promise<{ success: boolean; filePath?: string; canceled?: boolean; error?: string }> =>
     ipcRenderer.invoke("export:project", options),
 
+  /** Stereo WAV-Export: Separate L/R-Kanäle als Stereo-WAV-Datei speichern */
+  exportWavStereo: (options: {
+    leftChannel: number[];
+    rightChannel: number[];
+    sampleRate: number;
+    normalize?: boolean;
+    metadata?: { title?: string; artist?: string; software?: string };
+    suggestedName?: string;
+  }): Promise<{ success: boolean; filePath?: string; canceled?: boolean; error?: string }> =>
+    ipcRenderer.invoke("export:wav-stereo", options),
+
   /** Projekt-Import: .esx1/.json-Datei lesen */
   importProjectFile: (filePath?: string): Promise<{
     success: boolean;
