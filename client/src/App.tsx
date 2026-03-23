@@ -7,10 +7,13 @@
  * 3. useElectronMenuBindings – native Menü-Events an React-State binden
  * 4. useWindowTitleSync – Fenstertitel mit isDirty/projectName synchronisieren
  *
- * Goldenes Gesetz: Alle Electron-spezifischen Pfade sind hinter isElectron-Checks.
- * Die Web-App funktioniert im Browser zu 100% ohne Electron.
+ * ─── GOLDENES GESETZ ─────────────────────────────────────────────────────────
+ * Jede Electron-spezifische Logik liegt hinter `if (electron.isElectron)`.
+ * Kein direktes `window.electronAPI` – immer über den `useElectron()` Hook.
+ * Die Web-App muss im Browser vollständig funktionsfähig bleiben.
+ * ─────────────────────────────────────────────────────────────────────────────
  */
-import React, { useCallback } from "react";
+import React, { useCallback, useEffect } from "react";
 
 // ── Electron-Komponenten (aus electron/components/) ──────────────────────────
 // Relative Imports notwendig da electron/ außerhalb von client/src liegt
@@ -18,6 +21,7 @@ import { ElectronTitleBar } from "../../electron/components/ElectronTitleBar";
 import { ElectronDropZone } from "../../electron/components/ElectronDropZone";
 
 // ── Electron-Hooks ────────────────────────────────────────────────────────────
+import { useElectron } from "../../electron/useElectron";
 import { useElectronMenuBindings } from "../../electron/hooks/useElectronMenuBindings";
 
 // ── Eigene Stores & Hooks ─────────────────────────────────────────────────────
@@ -26,85 +30,138 @@ import { useWindowTitleSync } from "@/store/useWindowTitleSync";
 
 // ── Seiten-Komponenten ────────────────────────────────────────────────────────
 import { SampleBrowser } from "@/components/SampleBrowser";
+import { ProjectManager } from "@/components/ProjectManager";
 
 // ─── App ──────────────────────────────────────────────────────────────────────
 
 export default function App() {
-  // Zentraler Projekt-State
+  // ── Electron-Hook (einziger Zugriffspunkt auf Electron-Features) ──────────
+  const electron = useElectron();
+
+  // ── Zentraler Projekt-State ───────────────────────────────────────────────
   const project = useProjectStore();
 
-  // ── Fenstertitel synchronisieren (Browser: document.title, Electron: nativ) ──
+  // ── Fenstertitel synchronisieren ─────────────────────────────────────────
+  // Browser: document.title | Electron: electron.setWindowTitle() via Hook
   useWindowTitleSync({
     projectName: project.projectName,
     isDirty: project.isDirty,
   });
 
-  // ── Electron-Menü-Events an React-State binden ────────────────────────────
+  // ── Schließen-Bestätigung bei ungespeicherten Änderungen ─────────────────
+  // Browser: beforeunload-Event | Electron: wird durch Main-Prozess gehandhabt
+  useEffect(() => {
+    if (electron.isElectron) return; // Electron hat eigene Schließ-Logik im Main-Prozess
+
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (project.isDirty) {
+        e.preventDefault();
+        e.returnValue = ""; // Browser zeigt Standard-Dialog
+      }
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [electron.isElectron, project.isDirty]);
+
+  // ── Electron-Menü-Events an React-State binden ───────────────────────────
   // Im Browser: No-Op (alle Callbacks werden registriert aber nie aufgerufen)
+  // Goldenes Gesetz: useElectronMenuBindings prüft intern ob Electron aktiv ist
+
+  const handleMenuImportSamples = useCallback(async () => {
+    // Menü-Event: Samples importieren
+    // In Electron: nativer Dialog über useElectron()-Hook
+    // Im Browser: kein Menü-Event möglich – dieser Callback wird nie aufgerufen
+    if (electron.isElectron) {
+      const result = await electron.openFileDialog({
+        title: "Samples importieren",
+        filters: [
+          {
+            name: "Audio-Dateien",
+            extensions: ["wav", "mp3", "ogg", "flac", "aiff", "aif", "m4a"],
+          },
+          { name: "Alle Dateien", extensions: ["*"] },
+        ],
+        multiSelections: true,
+      });
+      if (!result.canceled && result.filePaths.length > 0) {
+        project.importSamplesFromPaths(result.filePaths);
+      }
+    }
+  }, [electron, project]);
+
+  const handleMenuImportFolder = useCallback(async () => {
+    // Menü-Event: Ordner importieren
+    // In Electron: nativer Ordner-Dialog über useElectron()-Hook
+    if (electron.isElectron) {
+      const result = await electron.openFileDialog({
+        title: "Sample-Ordner importieren",
+        filters: [],
+        multiSelections: false,
+      });
+      if (!result.canceled && result.filePaths[0]) {
+        project.importSamplesFromPaths([result.filePaths[0]]);
+      }
+    }
+  }, [electron, project]);
+
+  const handleMenuOpen = useCallback(async () => {
+    // Menü-Event: Projekt öffnen
+    // In Electron: nativer Dialog über useElectron()-Hook
+    if (electron.isElectron) {
+      const result = await electron.openFileDialog({
+        title: "Projekt öffnen",
+        filters: [
+          { name: "Synthstudio-Projekte", extensions: ["esx1", "json"] },
+          { name: "Alle Dateien", extensions: ["*"] },
+        ],
+        multiSelections: false,
+      });
+      if (!result.canceled && result.filePaths[0]) {
+        project.loadProject(result.filePaths[0]);
+      }
+    } else {
+      // Browser-Fallback: loadProject ohne Pfad (z.B. aus localStorage)
+      project.loadProject();
+    }
+  }, [electron, project]);
+
   useElectronMenuBindings({
     onNew: project.newProject,
-    onOpen: useCallback(() => project.loadProject(), [project]),  // eslint-disable-line react-hooks/exhaustive-deps
+    onOpen: handleMenuOpen,
     onSave: project.saveProject,
     onExport: project.exportProject,
     onUndo: project.undo,
     onRedo: project.redo,
     onPlayStop: project.togglePlayStop,
     onRecord: project.toggleRecord,
-    onImportSamples: useCallback(async () => {
-      // Menü-Event: Samples importieren – öffnet nativen Dialog in Electron
-      if (typeof window !== "undefined" && window.electronAPI?.isElectron) {
-        const result = await window.electronAPI.openFileDialog({
-          title: "Samples importieren",
-          filters: [
-            {
-              name: "Audio-Dateien",
-              extensions: ["wav", "mp3", "ogg", "flac", "aiff", "aif", "m4a"],
-            },
-          ],
-          multiSelections: true,
-        });
-        if (!result.canceled && result.filePaths.length > 0) {
-          project.importSamplesFromPaths(result.filePaths);
-        }
-      }
-    }, [project]),  // eslint-disable-line react-hooks/exhaustive-deps
-    onImportFolder: useCallback(async () => {
-      // Menü-Event: Ordner importieren – öffnet nativen Ordner-Dialog in Electron
-      if (typeof window !== "undefined" && window.electronAPI?.isElectron) {
-        const result = await window.electronAPI.openFolderDialog({
-          title: "Sample-Ordner importieren",
-        });
-        if (!result.canceled && result.filePaths[0]) {
-          // Ordner-Import: Implementierung durch IPC-Bridge-Agent (importFolder)
-          project.importSamplesFromPaths([result.filePaths[0]]);
-        }
-      }
-    }, [project]),  // eslint-disable-line react-hooks/exhaustive-deps
+    onImportSamples: handleMenuImportSamples,
+    onImportFolder: handleMenuImportFolder,
   });
 
   // ── Drop-Handler für ElectronDropZone ─────────────────────────────────────
 
-  const handleAudioFiles = useCallback(
+  const handleDropAudioFiles = useCallback(
     (paths: string[]) => {
       project.importSamplesFromPaths(paths);
     },
-    [project.importSamplesFromPaths]
+    [project]
   );
 
-  const handleFolder = useCallback(
+  const handleDropFolder = useCallback(
     (folderPath: string) => {
-      // Ordner-Drop: Pfad als Platzhalter hinzufügen
-      // Vollständige Implementierung durch IPC-Bridge-Agent
+      // Ordner-Drop: Pfad an importSamplesFromPaths übergeben
+      // Vollständige Ordner-Traversierung durch IPC-Bridge-Agent
       project.importSamplesFromPaths([folderPath]);
     },
-    [project.importSamplesFromPaths]
+    [project]
   );
 
-  const handleProject = useCallback(
+  const handleDropProject = useCallback(
     (filePath: string) => {
       project.loadProject(filePath);
     },
-    [project.loadProject]
+    [project]
   );
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -113,13 +170,15 @@ export default function App() {
     /*
      * ElectronDropZone umhüllt die gesamte App.
      * - In Electron: lauscht auf IPC-Events (onDragDropBulkImport etc.)
+     *   Intern nutzt ElectronDropZone window.electronAPI direkt (Komponente
+     *   aus electron/components/ – liegt im Verantwortungsbereich des IPC-Agents)
      * - Im Browser: HTML5 Drag & Drop Fallback
      * - Zeigt ein visuelles Overlay wenn Dateien gezogen werden
      */
     <ElectronDropZone
-      onAudioFiles={handleAudioFiles}
-      onFolder={handleFolder}
-      onProject={handleProject}
+      onAudioFiles={handleDropAudioFiles}
+      onFolder={handleDropFolder}
+      onProject={handleDropProject}
     >
       <div className="flex flex-col h-screen bg-[#0a0a0a] text-slate-100 overflow-hidden">
 
@@ -141,7 +200,7 @@ export default function App() {
             <SampleBrowser
               samples={project.samples}
               onImportSamples={project.importSamplesFromPaths}
-              onImportFolder={handleFolder}
+              onImportFolder={handleDropFolder}
               onRemoveSample={project.removeSample}
             />
           </aside>
@@ -157,7 +216,7 @@ export default function App() {
 
               <div className="flex-1" />
 
-              {/* Projekt-Name */}
+              {/* Projekt-Name mit isDirty-Indikator */}
               <span className="text-xs text-slate-500">
                 {project.projectName}
                 {project.isDirty && (
@@ -172,15 +231,13 @@ export default function App() {
                 <button
                   onClick={project.togglePlayStop}
                   title={project.isPlaying ? "Stop (Space)" : "Play (Space)"}
-                  className={`
-                    w-8 h-8 rounded flex items-center justify-center text-sm
-                    transition-colors duration-100
-                    ${
-                      project.isPlaying
-                        ? "bg-cyan-600 text-white hover:bg-cyan-500"
-                        : "bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white"
-                    }
-                  `}
+                  className={[
+                    "w-8 h-8 rounded flex items-center justify-center text-sm",
+                    "transition-colors duration-100",
+                    project.isPlaying
+                      ? "bg-cyan-600 text-white hover:bg-cyan-500"
+                      : "bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white",
+                  ].join(" ")}
                 >
                   {project.isPlaying ? "■" : "▶"}
                 </button>
@@ -188,15 +245,13 @@ export default function App() {
                 <button
                   onClick={project.toggleRecord}
                   title={project.isRecording ? "Aufnahme stoppen (R)" : "Aufnahme starten (R)"}
-                  className={`
-                    w-8 h-8 rounded flex items-center justify-center text-sm
-                    transition-colors duration-100
-                    ${
-                      project.isRecording
-                        ? "bg-red-600 text-white hover:bg-red-500"
-                        : "bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white"
-                    }
-                  `}
+                  className={[
+                    "w-8 h-8 rounded flex items-center justify-center text-sm",
+                    "transition-colors duration-100",
+                    project.isRecording
+                      ? "bg-red-600 text-white hover:bg-red-500"
+                      : "bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white",
+                  ].join(" ")}
                 >
                   ●
                 </button>
@@ -208,13 +263,7 @@ export default function App() {
                   onClick={project.undo}
                   disabled={!project.canUndo}
                   title="Rückgängig (Ctrl+Z)"
-                  className="
-                    w-7 h-7 rounded text-xs
-                    bg-slate-800 text-slate-500
-                    hover:bg-slate-700 hover:text-slate-300
-                    disabled:opacity-30 disabled:cursor-not-allowed
-                    transition-colors duration-100
-                  "
+                  className="w-7 h-7 rounded text-xs bg-slate-800 text-slate-500 hover:bg-slate-700 hover:text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed transition-colors duration-100"
                 >
                   ↩
                 </button>
@@ -222,34 +271,24 @@ export default function App() {
                   onClick={project.redo}
                   disabled={!project.canRedo}
                   title="Wiederholen (Ctrl+Y)"
-                  className="
-                    w-7 h-7 rounded text-xs
-                    bg-slate-800 text-slate-500
-                    hover:bg-slate-700 hover:text-slate-300
-                    disabled:opacity-30 disabled:cursor-not-allowed
-                    transition-colors duration-100
-                  "
+                  className="w-7 h-7 rounded text-xs bg-slate-800 text-slate-500 hover:bg-slate-700 hover:text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed transition-colors duration-100"
                 >
                   ↪
                 </button>
               </div>
 
-              {/* Speichern */}
-              <button
-                onClick={project.saveProject}
-                title="Speichern (Ctrl+S)"
-                className="
-                  px-3 py-1 text-xs rounded
-                  bg-slate-800 text-slate-400 border border-slate-700
-                  hover:bg-slate-700 hover:text-slate-200
-                  transition-colors duration-100
-                "
-              >
-                Speichern
-              </button>
+              {/* Projekt-Manager (Speichern/Laden) */}
+              <ProjectManager
+                projectName={project.projectName}
+                isDirty={project.isDirty}
+                onSave={project.saveProject}
+                onLoad={handleMenuOpen}
+                onNew={project.newProject}
+                onExport={project.exportProject}
+              />
             </div>
 
-            {/* Arbeitsbereich-Platzhalter */}
+            {/* Arbeitsbereich */}
             <div className="flex-1 flex items-center justify-center text-slate-700">
               <div className="text-center">
                 <div className="text-6xl mb-4">🎹</div>
@@ -260,9 +299,14 @@ export default function App() {
                 <div className="mt-6 flex flex-col gap-1 text-xs text-slate-700">
                   <p>✓ ElectronTitleBar integriert</p>
                   <p>✓ ElectronDropZone integriert</p>
-                  <p>✓ useElectronMenuBindings gebunden</p>
-                  <p>✓ SampleBrowser mit nativen Dialogen</p>
+                  <p>✓ useElectronMenuBindings gebunden (via useElectron-Hook)</p>
+                  <p>✓ SampleBrowser mit nativen Dialogen via useElectron()</p>
+                  <p>✓ ProjectManager mit nativen Dialogen via useElectron()</p>
+                  <p>✓ Fenstertitel-Sync (isDirty ● Indikator)</p>
                   <p>✓ Browser-Fallbacks für alle Features</p>
+                  {electron.isElectron && (
+                    <p className="text-cyan-700 mt-2">⚡ Electron-Modus aktiv</p>
+                  )}
                 </div>
               </div>
             </div>

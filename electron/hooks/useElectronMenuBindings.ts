@@ -4,6 +4,11 @@
  * Custom Hook der alle nativen Electron-Menü-Events an React-Callbacks bindet.
  * Cleanup erfolgt automatisch beim Unmount der Komponente.
  *
+ * ─── GOLDENES GESETZ ─────────────────────────────────────────────────────────
+ * Alle Electron-Aufrufe gehen über den useElectron()-Hook.
+ * Kein direktes window.electronAPI. Im Browser ist dieser Hook ein No-Op.
+ * ─────────────────────────────────────────────────────────────────────────────
+ *
  * Verwendung:
  * ```tsx
  * useElectronMenuBindings({
@@ -12,10 +17,12 @@
  *   onOpen: () => openProjectDialog(),
  *   onExport: () => exportDialog(),
  *   onImportSamples: () => importSamplesDialog(),
+ *   onImportFolder: () => importFolderDialog(),
  * });
  * ```
  */
 import { useEffect } from "react";
+import { useElectron } from "../useElectron";
 
 // ─── Typen ────────────────────────────────────────────────────────────────────
 
@@ -30,9 +37,16 @@ export interface MenuBindings {
   onSaveAs?: () => void;
   /** Datei → Exportieren (Ctrl+E) */
   onExport?: () => void;
-  /** Audio → Samples importieren (Ctrl+I) */
+  /**
+   * Audio → Samples importieren (Ctrl+I)
+   * Entspricht onMenuImportSamples in der Electron-API.
+   */
   onImportSamples?: () => void;
-  /** Audio → Ordner importieren (Ctrl+Shift+I) */
+  /**
+   * Audio → Ordner importieren (Ctrl+Shift+I)
+   * Entspricht onMenuImportFolder in der Electron-API (types.d.ts).
+   * Im useElectron()-Hook als onMenuImportSampleFolder exponiert.
+   */
   onImportFolder?: () => void;
   /** Audio → Sample-Bibliothek öffnen */
   onOpenSampleLibrary?: () => void;
@@ -55,70 +69,81 @@ export interface MenuBindings {
 /**
  * Bindet alle nativen Electron-Menü-Events an React-Callbacks.
  * Funktioniert nur in Electron; im Browser ist der Hook ein No-Op.
+ * Alle Electron-Aufrufe gehen über den useElectron()-Hook.
  *
  * @param bindings - Objekt mit optionalen Callback-Funktionen
  */
 export function useElectronMenuBindings(bindings: MenuBindings): void {
-  const isElectron = typeof window !== "undefined" && !!window.electronAPI;
+  // ── Einziger Zugriffspunkt auf Electron-Features ──────────────────────────
+  const electron = useElectron();
 
   useEffect(() => {
-    if (!isElectron || !window.electronAPI) return;
+    // Im Browser: No-Op – kein Menü vorhanden
+    if (!electron.isElectron) return;
 
-    const api = window.electronAPI;
     const cleanups: Array<(() => void) | undefined> = [];
 
     // ── Datei-Menü ──────────────────────────────────────────────────────────
     if (bindings.onNew) {
-      cleanups.push(api.onMenuNewProject?.(bindings.onNew));
+      cleanups.push(electron.onMenuNewProject?.(bindings.onNew));
     }
     if (bindings.onOpen) {
-      cleanups.push(api.onMenuOpenProject?.(bindings.onOpen));
+      // onMenuOpenProject liefert optional einen filePath – wir ignorieren ihn hier
+      // da App.tsx den Dialog selbst öffnet
+      cleanups.push(electron.onMenuOpenProject?.(() => bindings.onOpen!()));
     }
     if (bindings.onSave) {
-      cleanups.push(api.onMenuSaveProject?.(bindings.onSave));
+      cleanups.push(electron.onMenuSaveProject?.(bindings.onSave));
     }
     if (bindings.onSaveAs) {
-      cleanups.push(api.onMenuSaveProjectAs?.(bindings.onSaveAs));
+      cleanups.push(electron.onMenuSaveProjectAs?.(() => bindings.onSaveAs!()));
     }
     if (bindings.onExport) {
-      cleanups.push(api.onMenuExportProject?.(bindings.onExport));
+      cleanups.push(electron.onMenuExportProject?.(bindings.onExport));
     }
 
     // ── Audio-Menü ──────────────────────────────────────────────────────────
     if (bindings.onImportSamples) {
-      cleanups.push(api.onMenuImportSamples?.(bindings.onImportSamples));
+      cleanups.push(electron.onMenuImportSamples?.(() => bindings.onImportSamples!()));
     }
     if (bindings.onImportFolder) {
-      cleanups.push(api.onMenuImportSampleFolder?.(bindings.onImportFolder));
+      // Hinweis: In useElectron() ist onMenuImportSampleFolder ein Alias für
+      // api.onMenuImportFolder (types.d.ts). Wir nutzen hier den Hook-Namen.
+      cleanups.push(electron.onMenuImportSampleFolder?.(() => bindings.onImportFolder!()));
     }
     if (bindings.onOpenSampleLibrary) {
-      cleanups.push(api.onMenuOpenSampleLibrary?.(bindings.onOpenSampleLibrary));
+      cleanups.push(electron.onMenuOpenSampleBrowser?.(bindings.onOpenSampleLibrary));
     }
 
     // ── Bearbeiten-Menü ─────────────────────────────────────────────────────
     if (bindings.onUndo) {
-      cleanups.push(api.onMenuUndo?.(bindings.onUndo));
+      cleanups.push(electron.onMenuUndo?.(bindings.onUndo));
     }
     if (bindings.onRedo) {
-      cleanups.push(api.onMenuRedo?.(bindings.onRedo));
+      cleanups.push(electron.onMenuRedo?.(bindings.onRedo));
     }
 
     // ── Transport ───────────────────────────────────────────────────────────
+    // onMenuTransportToggle = Play/Stop (Space) – entspricht onShortcutPlayStop
     if (bindings.onPlayStop) {
-      cleanups.push(api.onShortcutPlayStop?.(bindings.onPlayStop));
+      cleanups.push(electron.onMenuTransportToggle?.(bindings.onPlayStop));
     }
+    // onMenuTransportRecord = Aufnahme starten/stoppen
     if (bindings.onRecord) {
-      cleanups.push(api.onMenuRecord?.(bindings.onRecord));
+      cleanups.push(electron.onMenuTransportRecord?.(bindings.onRecord));
     }
 
-    // ── Ansicht ─────────────────────────────────────────────────────────────
-    if (bindings.onToggleFullscreen) {
-      cleanups.push(api.onMenuToggleFullscreen?.(bindings.onToggleFullscreen));
+    // ── Ansicht & Bounce ─────────────────────────────────────────────────────
+    // onMenuToggleFullscreen und onMenuBounce sind in types.d.ts vorhanden
+    // und werden über den useElectron()-Hook als optionale Methoden genutzt.
+    // Da sie noch nicht im browserAPI-Fallback sind, prüfen wir explizit.
+    if (bindings.onToggleFullscreen && "onMenuToggleFullscreen" in electron) {
+      const fn = (electron as unknown as Record<string, ((cb: () => void) => (() => void) | undefined)>)["onMenuToggleFullscreen"];
+      cleanups.push(fn?.(bindings.onToggleFullscreen));
     }
-
-    // ── Projekt ─────────────────────────────────────────────────────────────
-    if (bindings.onBounce) {
-      cleanups.push(api.onMenuBounce?.(bindings.onBounce));
+    if (bindings.onBounce && "onMenuBounce" in electron) {
+      const fn = (electron as unknown as Record<string, ((cb: () => void) => (() => void) | undefined)>)["onMenuBounce"];
+      cleanups.push(fn?.(bindings.onBounce));
     }
 
     // ── Cleanup ─────────────────────────────────────────────────────────────
@@ -126,7 +151,7 @@ export function useElectronMenuBindings(bindings: MenuBindings): void {
       cleanups.forEach((cleanup) => cleanup?.());
     };
   }, [
-    isElectron,
+    electron,
     bindings.onNew,
     bindings.onOpen,
     bindings.onSave,
@@ -149,6 +174,7 @@ export function useElectronMenuBindings(bindings: MenuBindings): void {
 /**
  * Vereinfachter Hook für die häufigsten Menü-Bindings.
  * Ideal für die Haupt-App-Komponente.
+ * Alle Electron-Aufrufe gehen über useElectron().
  */
 export function useElectronAppMenu(options: {
   save: () => void;

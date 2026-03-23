@@ -3,13 +3,14 @@
  *
  * Zeigt die importierten Samples an und ermöglicht den Import neuer Samples.
  *
- * Goldenes Gesetz:
- * - In Electron: native Datei-Dialoge über window.electronAPI
- * - Im Browser: HTML <input type="file"> Fallback
- *
- * Kein Code der nur in Electron funktioniert darf ohne if (isElectron) verwendet werden.
+ * ─── GOLDENES GESETZ ─────────────────────────────────────────────────────────
+ * Alle Electron-Aufrufe gehen ausschließlich über den useElectron()-Hook.
+ * Kein direktes window.electronAPI. Jede Electron-Logik hinter if (electron.isElectron).
+ * ─────────────────────────────────────────────────────────────────────────────
  */
 import React, { useRef, useCallback } from "react";
+
+import { useElectron } from "../../../../electron/useElectron";
 import type { Sample } from "../../store/useProjectStore";
 
 // ─── Typen ────────────────────────────────────────────────────────────────────
@@ -40,21 +41,24 @@ export function SampleBrowser({
   onImportFolder,
   onRemoveSample,
 }: SampleBrowserProps) {
+  // ── Einziger Zugriffspunkt auf Electron-Features ──────────────────────────
+  const electron = useElectron();
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
-
-  // Prüfen ob wir in Electron laufen
-  const isElectron = typeof window !== "undefined" && !!window.electronAPI?.isElectron;
 
   // ── Import: Einzelne Dateien ──────────────────────────────────────────────
 
   const handleImportFiles = useCallback(async () => {
-    if (isElectron) {
-      // Nativer Electron-Dialog
-      const result = await window.electronAPI!.openFileDialog({
+    if (electron.isElectron) {
+      // Nativer Electron-Dialog – kein Browser-Popup
+      const result = await electron.openFileDialog({
         title: "Samples importieren",
         filters: [
-          { name: "Audio-Dateien", extensions: ["wav", "mp3", "ogg", "flac", "aiff", "aif", "m4a"] },
+          {
+            name: "Audio-Dateien",
+            extensions: ["wav", "mp3", "ogg", "flac", "aiff", "aif", "m4a"],
+          },
           { name: "Alle Dateien", extensions: ["*"] },
         ],
         multiSelections: true,
@@ -66,15 +70,17 @@ export function SampleBrowser({
       // Browser-Fallback: <input type="file"> öffnen
       fileInputRef.current?.click();
     }
-  }, [isElectron, onImportSamples]);
+  }, [electron, onImportSamples]);
 
   // ── Import: Ordner ────────────────────────────────────────────────────────
 
   const handleImportFolder = useCallback(async () => {
-    if (isElectron) {
+    if (electron.isElectron) {
       // Nativer Electron-Ordner-Dialog
-      const result = await window.electronAPI!.openFolderDialog({
+      const result = await electron.openFileDialog({
         title: "Sample-Ordner importieren",
+        filters: [],
+        multiSelections: false,
       });
       if (!result.canceled && result.filePaths[0]) {
         onImportFolder?.(result.filePaths[0]);
@@ -83,7 +89,7 @@ export function SampleBrowser({
       // Browser-Fallback: <input type="file" webkitdirectory> öffnen
       folderInputRef.current?.click();
     }
-  }, [isElectron, onImportFolder]);
+  }, [electron, onImportFolder]);
 
   // ── Browser-Fallback: Datei-Input onChange ────────────────────────────────
 
@@ -129,13 +135,8 @@ export function SampleBrowser({
           {/* Dateien importieren */}
           <button
             onClick={handleImportFiles}
-            title="Samples importieren"
-            className="
-              px-3 py-1 text-xs rounded
-              bg-cyan-900/40 text-cyan-400 border border-cyan-800
-              hover:bg-cyan-800/60 hover:text-cyan-300
-              transition-colors duration-100
-            "
+            title={electron.isElectron ? "Nativer Datei-Dialog" : "Dateien auswählen"}
+            className="px-3 py-1 text-xs rounded bg-cyan-900/40 text-cyan-400 border border-cyan-800 hover:bg-cyan-800/60 hover:text-cyan-300 transition-colors duration-100"
           >
             + Dateien
           </button>
@@ -143,13 +144,8 @@ export function SampleBrowser({
           {/* Ordner importieren */}
           <button
             onClick={handleImportFolder}
-            title="Ordner importieren"
-            className="
-              px-3 py-1 text-xs rounded
-              bg-slate-800/60 text-slate-400 border border-slate-700
-              hover:bg-slate-700/60 hover:text-slate-300
-              transition-colors duration-100
-            "
+            title={electron.isElectron ? "Nativer Ordner-Dialog" : "Ordner auswählen"}
+            className="px-3 py-1 text-xs rounded bg-slate-800/60 text-slate-400 border border-slate-700 hover:bg-slate-700/60 hover:text-slate-300 transition-colors duration-100"
           >
             + Ordner
           </button>
@@ -163,7 +159,7 @@ export function SampleBrowser({
             <div className="text-4xl">🎚️</div>
             <p className="text-sm">Keine Samples geladen</p>
             <p className="text-xs text-slate-700">
-              {isElectron
+              {electron.isElectron
                 ? "Dateien hierher ziehen oder ueber '+ Dateien' importieren"
                 : "Ueber '+ Dateien' importieren oder per Drag & Drop"}
             </p>
@@ -173,11 +169,7 @@ export function SampleBrowser({
             {samples.map((sample) => (
               <li
                 key={sample.id}
-                className="
-                  flex items-center gap-3 px-4 py-2
-                  hover:bg-slate-800/30 transition-colors duration-75
-                  group
-                "
+                className="flex items-center gap-3 px-4 py-2 hover:bg-slate-800/30 transition-colors duration-75 group"
               >
                 {/* Icon */}
                 <span className="text-cyan-600 text-sm flex-shrink-0">♪</span>
@@ -204,12 +196,7 @@ export function SampleBrowser({
                   <button
                     onClick={() => onRemoveSample(sample.id)}
                     title="Sample entfernen"
-                    className="
-                      opacity-0 group-hover:opacity-100
-                      text-slate-600 hover:text-red-400
-                      transition-all duration-100
-                      text-xs px-1
-                    "
+                    className="opacity-0 group-hover:opacity-100 text-slate-600 hover:text-red-400 transition-all duration-100 text-xs px-1"
                   >
                     ✕
                   </button>
@@ -226,14 +213,17 @@ export function SampleBrowser({
           {samples.length === 0
             ? "Keine Samples"
             : `${samples.length} Sample${samples.length !== 1 ? "s" : ""}`}
-          {isElectron && (
+          {electron.isElectron && (
             <span className="ml-2 text-cyan-800">• Electron</span>
           )}
         </p>
       </div>
 
-      {/* Versteckte Browser-Fallback-Inputs (nur im Browser sichtbar/aktiv) */}
-      {!isElectron && (
+      {/*
+       * Versteckte Browser-Fallback-Inputs.
+       * Nur im Browser gerendert – in Electron werden native Dialoge genutzt.
+       */}
+      {!electron.isElectron && (
         <>
           <input
             ref={fileInputRef}

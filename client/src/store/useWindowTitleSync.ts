@@ -1,13 +1,19 @@
 /**
  * Synthstudio – useWindowTitleSync
  *
- * Synchronisiert den React-Zustand (isDirty, projectName) mit dem Electron-Fenstertitel.
- * Im Browser: setzt document.title.
- * In Electron: ruft window.electronAPI.setWindowTitle() auf.
+ * Synchronisiert den React-Zustand (isDirty, projectName) mit dem Fenstertitel.
+ * Browser: setzt document.title.
+ * Electron: ruft electron.setWindowTitle() auf – ausschließlich über useElectron()-Hook.
  *
- * Goldenes Gesetz: Alle Electron-Aufrufe sind hinter isElectron-Check.
+ * ─── GOLDENES GESETZ ─────────────────────────────────────────────────────────
+ * Kein direktes window.electronAPI. Alle Electron-Aufrufe über useElectron().
+ * Electron-Logik hinter if (electron.isElectron).
+ * ─────────────────────────────────────────────────────────────────────────────
  */
 import { useEffect } from "react";
+
+// Relativer Import da electron/ außerhalb von client/src liegt
+import { useElectron } from "../../../electron/useElectron";
 
 interface WindowTitleSyncOptions {
   projectName: string;
@@ -15,19 +21,24 @@ interface WindowTitleSyncOptions {
 }
 
 export function useWindowTitleSync({ projectName, isDirty }: WindowTitleSyncOptions): void {
+  // ── Einziger Zugriffspunkt auf Electron-Features ──────────────────────────
+  const electron = useElectron();
+
   useEffect(() => {
     const appName = "KORG ESX-1 Studio";
-    const dirtyMarker = isDirty ? " ●" : "";
+    // isDirty-Indikator: ● als Präfix (Desktop-Konvention) und Suffix (Browser-Konvention)
+    const dirtyPrefix = isDirty ? "● " : "";
     const title = projectName
-      ? `${appName} – ${projectName}${dirtyMarker}`
-      : `${appName}${dirtyMarker}`;
+      ? `${dirtyPrefix}${appName} – ${projectName}`
+      : `${dirtyPrefix}${appName}`;
 
-    // Browser: document.title setzen
+    // Browser: document.title setzen (immer)
     document.title = title;
 
     // Electron: nativen Fenstertitel setzen
-    if (typeof window !== "undefined" && window.electronAPI?.isElectron) {
-      window.electronAPI.setWindowTitle(title);
+    // Goldenes Gesetz: nur wenn electron.isElectron true ist
+    if (electron.isElectron) {
+      electron.setWindowTitle(title);
     }
-  }, [projectName, isDirty]);
+  }, [projectName, isDirty, electron]);
 }
