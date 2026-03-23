@@ -44,8 +44,8 @@ export interface MenuBindings {
   onImportSamples?: () => void;
   /**
    * Audio → Ordner importieren (Ctrl+Shift+I)
-   * Entspricht onMenuImportFolder in der Electron-API (types.d.ts).
-   * Im useElectron()-Hook als onMenuImportSampleFolder exponiert.
+   * Entspricht `onMenuImportSampleFolder` in der Electron-API (types.d.ts).
+   * BUG-001 behoben: kanonischer Name ist onMenuImportSampleFolder.
    */
   onImportFolder?: () => void;
   /** Audio → Sample-Bibliothek öffnen */
@@ -107,8 +107,7 @@ export function useElectronMenuBindings(bindings: MenuBindings): void {
       cleanups.push(electron.onMenuImportSamples?.(() => bindings.onImportSamples!()));
     }
     if (bindings.onImportFolder) {
-      // Hinweis: In useElectron() ist onMenuImportSampleFolder ein Alias für
-      // api.onMenuImportFolder (types.d.ts). Wir nutzen hier den Hook-Namen.
+      // onMenuImportSampleFolder ist der kanonische Name laut types.d.ts (BUG-001 behoben).
       cleanups.push(electron.onMenuImportSampleFolder?.(() => bindings.onImportFolder!()));
     }
     if (bindings.onOpenSampleLibrary) {

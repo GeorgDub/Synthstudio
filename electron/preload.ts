@@ -333,6 +333,13 @@ const electronAPI = {
   forceCloseWindow: (): Promise<void> =>
     ipcRenderer.invoke("window:force-close"),
 
+  /** Zuletzt geöffnete Projekte aus dem Fenster-Manager abrufen */
+  getRecentProjectsFromWindows: (): Promise<Array<{
+    windowId: number;
+    projectPath: string;
+    projectName: string;
+  }>> => ipcRenderer.invoke("window:get-recent-projects"),
+
   onWindowConfirmClose: createVoidListener("window:confirm-close"),
 
   // ── Export ──────────────────────────────────────────────────────────────

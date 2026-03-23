@@ -306,11 +306,14 @@ interface ElectronAPI {
   storeClearRecent(): Promise<StoreResult>;
   onRecentProjectsChanged(callback: (projects: RecentProject[]) => void): ElectronCleanup;
 
-  // ── System ────────────────────────────────────────────────────────────────
+  // ── Multi-Window (IPC-Bridge-Agent) ──────────────────────────────────────────
+  getRecentProjectsFromWindows(): Promise<Array<{ windowId: number; projectPath: string; projectName: string }>>;
+
+  // ── System ────────────────────────────────────────────────────────────────────────────
   openExternal(url: string): Promise<{ success: boolean }>;
   showItemInFolder(filePath: string): void;
 
-  // ── Auto-Updater (Build-Agent) ────────────────────────────────────────────
+  // ── Auto-Updater (Build-Agent) ────────────────────────────────────────────────
   checkForUpdates(): void;
   onUpdaterChecking(callback: () => void): ElectronCleanup;
   onUpdaterUpdateAvailable(callback: (info: ElectronUpdaterInfo) => void): ElectronCleanup;
