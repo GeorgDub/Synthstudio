@@ -39,6 +39,7 @@ import { WindowManager, registerWindowHandlers } from "./windows";
 import { registerExportHandlers } from "./export";
 import { setupAutoUpdater, checkForUpdatesManually } from "./updater";
 import { initStore, registerStoreHandlers, type AppStore } from "./store";
+import { registerZipImportHandlers } from "./zip-import";
 
 const windowManager = new WindowManager();
 
@@ -528,6 +529,24 @@ function buildMenu(): void {
             }
           },
         },
+        {
+          label: "ZIP-Archiv importieren…",
+          click: async () => {
+            const result = await dialog.showOpenDialog(mainWindow!, {
+              title: "ZIP-Archiv mit Samples importieren",
+              filters: [
+                { name: "ZIP-Archive", extensions: ["zip"] },
+              ],
+              properties: ["openFile"],
+            });
+            if (!result.canceled && result.filePaths.length > 0) {
+              const importId = `zip_import_${Date.now()}`;
+              mainWindow?.webContents.send("samples:import-started", { importId });
+              const { importZipFile } = await import("./zip-import");
+              importZipFile(result.filePaths[0], importId, mainWindow!);
+            }
+          },
+        },
         { type: "separator" },
         {
           label: "Transport: Play/Stop",
@@ -945,6 +964,7 @@ app.whenReady().then(() => {
   // Drag & Drop für das Hauptfenster einrichten
   if (mainWindow) {
     setupDragDrop(mainWindow);
+    registerZipImportHandlers(mainWindow);
     // Auto-Updater (nur in Produktion aktiv)
     setupAutoUpdater(mainWindow);
   }

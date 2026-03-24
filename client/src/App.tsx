@@ -13,7 +13,7 @@
  * Die Web-App muss im Browser vollständig funktionsfähig bleiben.
  * ─────────────────────────────────────────────────────────────────────────────
  */
-import React, { useCallback, useEffect } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 
 // ── Electron-Komponenten (aus electron/components/) ──────────────────────────
 // Relative Imports notwendig da electron/ außerhalb von client/src liegt
@@ -31,12 +31,15 @@ import { useWindowTitleSync } from "@/store/useWindowTitleSync";
 // ── Seiten-Komponenten ────────────────────────────────────────────────────────
 import { SampleBrowser } from "@/components/SampleBrowser";
 import { ProjectManager } from "@/components/ProjectManager";
+import { NewProjectDialog } from "@/components/NewProjectDialog";
 
 // ─── App ──────────────────────────────────────────────────────────────────────
 
 export default function App() {
-  // ── Electron-Hook (einziger Zugriffspunkt auf Electron-Features) ──────────
+  // ── Electron-Hook (einziger Zugriffspunkt auf Electron-Features) ────────────
   const electron = useElectron();
+  // ── Dialog-State ────────────────────────────────────────────────────────────────
+  const [showNewProjectDialog, setShowNewProjectDialog] = useState(false);
 
   // ── Zentraler Projekt-State ───────────────────────────────────────────────
   const project = useProjectStore();
@@ -126,8 +129,12 @@ export default function App() {
     }
   }, [electron, project]);
 
+  const handleNewProject = useCallback(() => {
+    setShowNewProjectDialog(true);
+  }, []);
+
   useElectronMenuBindings({
-    onNew: project.newProject,
+    onNew: handleNewProject,
     onOpen: handleMenuOpen,
     onSave: project.saveProject,
     onExport: project.exportProject,
@@ -202,6 +209,7 @@ export default function App() {
               onImportSamples={project.importSamplesFromPaths}
               onImportFolder={handleDropFolder}
               onRemoveSample={project.removeSample}
+              onSamplesImported={project.addSamples}
             />
           </aside>
 
@@ -283,7 +291,7 @@ export default function App() {
                 isDirty={project.isDirty}
                 onSave={project.saveProject}
                 onLoad={handleMenuOpen}
-                onNew={project.newProject}
+                onNew={handleNewProject}
                 onExport={project.exportProject}
               />
             </div>
@@ -313,6 +321,12 @@ export default function App() {
           </main>
         </div>
       </div>
+      {/* Neues-Projekt-Dialog mit Template-Auswahl */}
+      <NewProjectDialog
+        isOpen={showNewProjectDialog}
+        onClose={() => setShowNewProjectDialog(false)}
+        onCreateProject={project.newProjectFromTemplate}
+      />
     </ElectronDropZone>
   );
 }

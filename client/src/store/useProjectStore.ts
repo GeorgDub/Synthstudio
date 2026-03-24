@@ -6,6 +6,7 @@
  * Isomorph: Funktioniert im Browser und in Electron.
  */
 import { useState, useCallback } from "react";
+import type { templateToProjectState } from "./projectTemplates";
 
 export interface Sample {
   id: string;
@@ -31,14 +32,18 @@ export interface ProjectState {
   isPlaying: boolean;
   /** Ob die Aufnahme aktiv ist */
   isRecording: boolean;
+  /** BPM (Beats per Minute) */
+  bpm: number;
 }
 
 export interface ProjectActions {
   setProjectName: (name: string) => void;
   setDirty: (dirty: boolean) => void;
+  setBpm: (bpm: number) => void;
   saveProject: () => void;
   loadProject: (filePath?: string) => void;
   newProject: () => void;
+  newProjectFromTemplate: (state: ReturnType<typeof templateToProjectState>) => void;
   exportProject: () => void;
   undo: () => void;
   redo: () => void;
@@ -57,6 +62,7 @@ const DEFAULT_STATE: ProjectState = {
   samples: [],
   isPlaying: false,
   isRecording: false,
+  bpm: 120,
 };
 
 /**
@@ -74,6 +80,10 @@ export function useProjectStore(): ProjectState & ProjectActions {
     setState((prev) => ({ ...prev, isDirty: dirty }));
   }, []);
 
+  const setBpm = useCallback((bpm: number) => {
+    setState((prev) => ({ ...prev, bpm: Math.max(20, Math.min(300, bpm)), isDirty: true }));
+  }, []);
+
   const saveProject = useCallback(() => {
     // Im Browser: localStorage-Speicherung
     // In Electron: wird über native Dialoge im IPC-Bridge-Agent gehandhabt
@@ -88,11 +98,26 @@ export function useProjectStore(): ProjectState & ProjectActions {
 
   const newProject = useCallback(() => {
     console.log("[ProjectStore] newProject aufgerufen");
-    setState({
-      ...DEFAULT_STATE,
-      projectName: "Neues Projekt",
-    });
+    setState({ ...DEFAULT_STATE });
   }, []);
+
+  /**
+   * Neues Projekt aus einem Template erstellen.
+   * Setzt BPM, Projekt-Name und Platzhalter-Samples aus dem Template.
+   */
+  const newProjectFromTemplate = useCallback(
+    (templateState: ReturnType<typeof templateToProjectState>) => {
+      console.log("[ProjectStore] newProjectFromTemplate aufgerufen", templateState.projectName);
+      setState({
+        ...DEFAULT_STATE,
+        projectName: templateState.projectName,
+        bpm: templateState.bpm,
+        samples: templateState.samples,
+        isDirty: false,
+      });
+    },
+    []
+  );
 
   const exportProject = useCallback(() => {
     console.log("[ProjectStore] exportProject aufgerufen");
@@ -162,9 +187,11 @@ export function useProjectStore(): ProjectState & ProjectActions {
     ...state,
     setProjectName,
     setDirty,
+    setBpm,
     saveProject,
     loadProject,
     newProject,
+    newProjectFromTemplate,
     exportProject,
     undo,
     redo,

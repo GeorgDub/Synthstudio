@@ -61,6 +61,8 @@ const browserAPI = {
 
   importFolder: async (_folderPath: string) => ({ importId: "" }),
   cancelImport: async (_importId: string) => ({ success: false, error: "Nicht in Electron" }),
+  importZip: async (_zipPath: string) => ({ importId: "" }),
+  cleanupZip: async (_importId: string) => ({ success: false }),
   onImportStarted: noopDataListener<{ importId: string }>(),
   onImportProgress: noopDataListener<any>(),
   onImportComplete: noopDataListener<any>(),
@@ -154,6 +156,8 @@ export function useElectron() {
     writeFile: api.writeFile,
     importFolder: api.importFolder,
     cancelImport: api.cancelImport,
+    importZip: api.importZip,
+    cleanupZip: api.cleanupZip,
     onImportStarted: api.onImportStarted,
     onImportProgress: api.onImportProgress,
     onImportComplete: api.onImportComplete,

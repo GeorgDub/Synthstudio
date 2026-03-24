@@ -85,6 +85,14 @@ const electronAPI = {
   cancelImport: (importId: string): Promise<{ success: boolean; error?: string }> =>
     ipcRenderer.invoke("samples:cancel-import", importId),
 
+  /** Startet einen ZIP-Import und gibt die importId zurück */
+  importZip: (zipPath: string): Promise<{ importId: string }> =>
+    ipcRenderer.invoke("samples:import-zip", zipPath),
+
+  /** Räumt temporäre ZIP-Extraktions-Dateien auf */
+  cleanupZip: (importId: string): Promise<{ success: boolean }> =>
+    ipcRenderer.invoke("samples:cleanup-zip", importId),
+
   // Import-Events
   onImportStarted: createEventListener<{ importId: string }>("samples:import-started"),
   onImportProgress: createEventListener<{
