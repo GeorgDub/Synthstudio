@@ -253,7 +253,8 @@
       ],
       "recommends": [
         "libappindicator3-1"
-      ]
+      ],
+      "maintainer": "GeorgDub <synthstudio@example.com>"
     },
     "publish": {
       "provider": "github",
@@ -281,5 +282,10 @@
         ]
       }
     ]
-  }
+  },
+  "author": {
+    "name": "GeorgDub",
+    "email": "synthstudio@example.com"
+  },
+  "description": "Professioneller Sample-Manager und Synthesizer-Studio für den KORG ESX-1"
 }
