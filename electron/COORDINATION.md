@@ -15,7 +15,7 @@ Dieses Dokument dient als zentraler Anlaufpunkt für die Koordination der 6 para
 | **Frontend** | React-Integration, Komponenten | ✅ Fertig & verifiziert | `2eee91f` – vollständige Integration | ✅ Koordinator |
 | **Audio-Engine** | Waveform, Export, Worker | ✅ Fertig | `0668fcf` – Worker, Cache, Stereo | ✅ Koordinator |
 | **Build** | Icons, `package.json`, Packaging | ✅ **Build erfolgreich** | `22765f2` – asar-Fix, 263MB Build | ✅ Koordinator |
-| **Testing** | Unit-Tests, Mocks, E2E | ✅ Fertig & verifiziert | `69ae513` – 145 Tests, wav-writer, E2E | ✅ Koordinator |
+| **Testing** | Unit-Tests, Mocks, E2E | ✅ **Vollständig verifiziert** | `1034bca` – 16/16 E2E grün, .cjs-Fix | ✅ Koordinator |
 
 ---
 
@@ -81,7 +81,7 @@ Der Build-Agent hat `onMenuImportFolder → onMenuImportSampleFolder` in `types.
 |---|---|---|---|
 | ~~🔴 Hoch~~ | ~~Namenskonflikt `onMenuImportFolder` vs. `onMenuImportSampleFolder` klären~~ | ~~IPC-Bridge~~ | ✅ Behoben |
 | ~~🔴 Hoch~~ | ~~Vollständigen Build testen: `pnpm build:electron`~~ | ~~Build~~ | ✅ Behoben – 263MB asar, Executable vorhanden |
-| 🟡 Mittel | E2E-Tests ausführen: `pnpm test:e2e` | Testing | – |
+| ~~🟡 Mittel~~ | ~~E2E-Tests ausführen: `pnpm test:e2e`~~ | ~~Testing~~ | ✅ 16/16 bestanden |
 | 🟡 Mittel | Worker-Pfad-Auflösung in Produktion testen | Audio-Engine | – |
 | 🟢 Niedrig | GitHub Actions Workflow manuell über GitHub Web-UI hinzufügen | Build | – |
 
@@ -160,4 +160,21 @@ Der Build-Agent hat `onMenuImportFolder → onMenuImportSampleFolder` in `types.
 
 **Root-Cause des Build-Bugs:** electron-builder v26 mit pnpm ignoriert `files[]`-Glob-Patterns für Nicht-`node_modules`-Verzeichnisse. Lösung: TypeScript direkt ins Projekt-Root kompilieren (`outDir: '.'`), dann greift das explizite Auflisten der `.js`-Dateien in `files[]`.
 
-*Zuletzt aktualisiert: 24. März 2026 – Koordinator nach vollständigem Build-Test*
+---
+
+## 🔍 Koordinator-Verifikation: Testing-Agent (E2E-Abschluss)
+
+**Geprüft am: 24. März 2026**
+
+| Prüfpunkt | Ergebnis | Details |
+|---|---|---|
+| 145/145 Unit-Tests | ✅ Bestanden | waveform, dragdrop, store, export |
+| 16/16 E2E-Tests | ✅ Bestanden | Alle 5 Szenarien, 17 Sekunden Laufzeit |
+| Mock vollständig | ✅ Bestanden | Alle 76 fehlenden Methoden ergänzt |
+| ESM-Konflikt gelöst | ✅ Bestanden | `.cjs`-Endung umgeht `type:module` in Root-`package.json` |
+| `electron-dist/package.json` | ✅ Bestanden | `type:commonjs` für korrekte Modul-Auflösung |
+| Playwright `executablePath` | ✅ Bestanden | `createRequire` für ESM-Kontext |
+
+**Alle 6 Agenten sind vollständig abgeschlossen und verifiziert.**
+
+*Zuletzt aktualisiert: 24. März 2026 – Koordinator nach Testing-Agent-Abschluss*
