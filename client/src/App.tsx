@@ -112,7 +112,7 @@ export default function App() {
       const result = await electron.openFileDialog({
         title: "Projekt öffnen",
         filters: [
-          { name: "Synthstudio-Projekte", extensions: ["esx1", "json"] },
+          { name: "Synthstudio-Projekte", extensions: ["synth", "json"] },
           { name: "Alle Dateien", extensions: ["*"] },
         ],
         multiSelections: false,
@@ -211,7 +211,7 @@ export default function App() {
             {/* Transport-Leiste */}
             <div className="flex items-center gap-4 px-6 py-3 bg-[#0d0d0d] border-b border-slate-800">
               <h1 className="text-sm font-bold text-cyan-400 tracking-widest uppercase">
-                KORG ESX-1 Studio
+                Synthstudio
               </h1>
 
               <div className="flex-1" />

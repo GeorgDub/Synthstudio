@@ -7,7 +7,7 @@
  * - Einzelne Audio-Dateien → direkt auf Drum-Pad laden
  * - Mehrere Audio-Dateien → Sample-Browser Import
  * - Ordner → Folder-Import mit Progress
- * - .synth / .json Projekt-Dateien → Projekt öffnen
+ * - .esx1 / .json Projekt-Dateien → Projekt öffnen
  *
  * INTEGRATION in main.ts:
  * ```ts
@@ -57,7 +57,7 @@ const fs = __importStar(require("fs"));
 const AUDIO_EXTENSIONS = new Set([
     ".wav", ".mp3", ".ogg", ".flac", ".aiff", ".aif", ".m4a",
 ]);
-const PROJECT_EXTENSIONS = new Set([".synth", ".json"]);
+const PROJECT_EXTENSIONS = new Set([".esx1", ".json"]);
 /**
  * Analysiert eine Liste von gedropten Pfaden und kategorisiert sie.
  */

@@ -59,7 +59,7 @@ const electron_1 = require("electron");
 const path = __importStar(require("path"));
 const isDev = process.env.NODE_ENV === "development";
 const devServerUrl = process.env.VITE_DEV_SERVER_URL ?? "http://localhost:3000";
-const APP_NAME = "Synthstudio";
+const APP_NAME = "KORG ESX-1 Studio";
 // ─── WindowManager ────────────────────────────────────────────────────────────
 class WindowManager {
     constructor() {

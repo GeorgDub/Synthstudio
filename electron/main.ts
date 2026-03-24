@@ -46,7 +46,7 @@ const windowManager = new WindowManager();
 
 const isDev = process.env.NODE_ENV === "development";
 const devServerUrl = process.env.VITE_DEV_SERVER_URL ?? "http://localhost:3000";
-const APP_NAME = "KORG ESX-1 Studio";
+const APP_NAME = "Synthstudio";
 const AUDIO_EXTENSIONS = new Set([".wav", ".mp3", ".ogg", ".flac", ".aiff", ".aif", ".m4a"]);
 
 // ─── Zustand ─────────────────────────────────────────────────────────────────
@@ -368,7 +368,7 @@ function buildMenu(): void {
             const result = await dialog.showOpenDialog(mainWindow!, {
               title: "Projekt öffnen",
               filters: [
-                { name: "ESX-1 Studio Projekt", extensions: ["esx1", "json"] },
+                { name: "Synthstudio Projekt", extensions: ["synth", "json"] },
                 { name: "Alle Dateien", extensions: ["*"] },
               ],
               properties: ["openFile"],
@@ -403,9 +403,9 @@ function buildMenu(): void {
           click: async () => {
             const result = await dialog.showSaveDialog(mainWindow!, {
               title: "Projekt speichern unter",
-              defaultPath: "mein-projekt.esx1",
+              defaultPath: "mein-projekt.synth",
               filters: [
-                { name: "ESX-1 Studio Projekt", extensions: ["esx1"] },
+                { name: "Synthstudio Projekt", extensions: ["synth"] },
                 { name: "JSON", extensions: ["json"] },
               ],
             });
@@ -570,10 +570,10 @@ function buildMenu(): void {
       role: "help" as const,
       submenu: [
         {
-          label: "KORG ESX-1 Handbuch",
+          label: "Synthstudio Dokumentation",
           click: () =>
             shell.openExternal(
-              "https://www.korg.com/us/support/download/manual/0/126/1835/"
+              "https://github.com/GeorgDub/Synthstudio"
             ),
         },
         {
@@ -770,7 +770,7 @@ function registerIpcHandlers(): void {
     try {
       // Sicherheitscheck: Nur Audio-Dateien erlauben
       const ext = path.extname(filePath).toLowerCase();
-      if (!AUDIO_EXTENSIONS.has(ext) && ext !== ".json" && ext !== ".esx1") {
+      if (!AUDIO_EXTENSIONS.has(ext) && ext !== ".json" && ext !== ".synth") {
         return { success: false, error: "Dateityp nicht erlaubt" };
       }
       const buffer = await fs.promises.readFile(filePath);
@@ -801,10 +801,10 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle("fs:write-file", async (_event, filePath: string, data: string) => {
     try {
-      // Nur .esx1 und .json erlauben
+      // Nur .synth und .json erlauben
       const ext = path.extname(filePath).toLowerCase();
-      if (ext !== ".esx1" && ext !== ".json") {
-        return { success: false, error: "Nur .esx1 und .json Dateien erlaubt" };
+      if (ext !== ".synth" && ext !== ".json") {
+        return { success: false, error: "Nur .synth und .json Dateien erlaubt" };
       }
       await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
       await fs.promises.writeFile(filePath, data, "utf-8");

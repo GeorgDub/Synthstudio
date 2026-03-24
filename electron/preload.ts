@@ -370,7 +370,7 @@ const electronAPI = {
   }): Promise<{ success: boolean; filePath?: string; canceled?: boolean; error?: string }> =>
     ipcRenderer.invoke("export:midi", options),
 
-  /** Projekt-Export: JSON-Daten als .esx1-Datei speichern */
+  /** Projekt-Export: JSON-Daten als .synth-Datei speichern */
   exportProject: (options: {
     projectData: string;
     suggestedName?: string;
@@ -389,7 +389,7 @@ const electronAPI = {
   }): Promise<{ success: boolean; filePath?: string; canceled?: boolean; error?: string }> =>
     ipcRenderer.invoke("export:wav-stereo", options),
 
-  /** Projekt-Import: .esx1/.json-Datei lesen */
+  /** Projekt-Import: .synth/.json-Datei lesen */
   importProjectFile: (filePath?: string): Promise<{
     success: boolean;
     data?: string;

@@ -55,17 +55,17 @@ const electron_1 = require("electron");
 const path = __importStar(require("path"));
 const fs = __importStar(require("fs"));
 // ─── Electron-Module ─────────────────────────────────────────────────────────
-const dragdrop_1 = require("./dragdrop");
-const waveform_1 = require("./waveform");
-const windows_1 = require("./windows");
-const export_1 = require("./export");
-const updater_1 = require("./updater");
-const store_1 = require("./store");
+const dragdrop_1 = require("./dragdrop.cjs");
+const waveform_1 = require("./waveform.cjs");
+const windows_1 = require("./windows.cjs");
+const export_1 = require("./export.cjs");
+const updater_1 = require("./updater.cjs");
+const store_1 = require("./store.cjs");
 const windowManager = new windows_1.WindowManager();
 // ─── Konstanten ──────────────────────────────────────────────────────────────
 const isDev = process.env.NODE_ENV === "development";
 const devServerUrl = process.env.VITE_DEV_SERVER_URL ?? "http://localhost:3000";
-const APP_NAME = "Synthstudio";
+const APP_NAME = "KORG ESX-1 Studio";
 const AUDIO_EXTENSIONS = new Set([".wav", ".mp3", ".ogg", ".flac", ".aiff", ".aif", ".m4a"]);
 // ─── Zustand ─────────────────────────────────────────────────────────────────
 let mainWindow = null;
@@ -352,7 +352,7 @@ function buildMenu() {
                         const result = await electron_1.dialog.showOpenDialog(mainWindow, {
                             title: "Projekt öffnen",
                             filters: [
-                                { name: "Synthstudio Projekt", extensions: ["synth", "json"] },
+                                { name: "ESX-1 Studio Projekt", extensions: ["esx1", "json"] },
                                 { name: "Alle Dateien", extensions: ["*"] },
                             ],
                             properties: ["openFile"],
@@ -384,9 +384,9 @@ function buildMenu() {
                     click: async () => {
                         const result = await electron_1.dialog.showSaveDialog(mainWindow, {
                             title: "Projekt speichern unter",
-                            defaultPath: "mein-projekt.synth",
+                            defaultPath: "mein-projekt.esx1",
                             filters: [
-                                { name: "Synthstudio Projekt", extensions: ["synth"] },
+                                { name: "ESX-1 Studio Projekt", extensions: ["esx1"] },
                                 { name: "JSON", extensions: ["json"] },
                             ],
                         });
@@ -543,8 +543,8 @@ function buildMenu() {
             role: "help",
             submenu: [
                 {
-                    label: "Synthstudio Dokumentation",
-                    click: () => electron_1.shell.openExternal("https://github.com/GeorgDub/Synthstudio"),
+                    label: "KORG ESX-1 Handbuch",
+                    click: () => electron_1.shell.openExternal("https://www.korg.com/us/support/download/manual/0/126/1835/"),
                 },
                 {
                     label: "GitHub Repository",
@@ -714,7 +714,7 @@ function registerIpcHandlers() {
         try {
             // Sicherheitscheck: Nur Audio-Dateien erlauben
             const ext = path.extname(filePath).toLowerCase();
-            if (!AUDIO_EXTENSIONS.has(ext) && ext !== ".json" && ext !== ".synth") {
+            if (!AUDIO_EXTENSIONS.has(ext) && ext !== ".json" && ext !== ".esx1") {
                 return { success: false, error: "Dateityp nicht erlaubt" };
             }
             const buffer = await fs.promises.readFile(filePath);
@@ -745,10 +745,10 @@ function registerIpcHandlers() {
     });
     electron_1.ipcMain.handle("fs:write-file", async (_event, filePath, data) => {
         try {
-            // Nur .synth und .json erlauben
+            // Nur .esx1 und .json erlauben
             const ext = path.extname(filePath).toLowerCase();
-            if (ext !== ".synth" && ext !== ".json") {
-                return { success: false, error: "Nur .synth und .json Dateien erlaubt" };
+            if (ext !== ".esx1" && ext !== ".json") {
+                return { success: false, error: "Nur .esx1 und .json Dateien erlaubt" };
             }
             await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
             await fs.promises.writeFile(filePath, data, "utf-8");

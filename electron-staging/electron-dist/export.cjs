@@ -6,7 +6,7 @@
  * - WAV (Mono): Renderer rendert Audio und sendet PCM-Daten → Main schreibt WAV-Datei
  * - WAV (Stereo): Renderer sendet L/R-Kanäle → Main schreibt interleaved Stereo-WAV
  * - MIDI: Renderer serialisiert Pattern → Main schreibt MIDI-Datei
- * - Projekt (.synth): JSON-Serialisierung des gesamten Projektzustands
+ * - Projekt (.esx1): JSON-Serialisierung des gesamten Projektzustands
  *
  * INTEGRATION in main.ts:
  * ```ts
@@ -52,7 +52,7 @@ exports.registerExportHandlers = registerExportHandlers;
 const electron_1 = require("electron");
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
-const export_stereo_1 = require("./export-stereo");
+const export_stereo_1 = require("./export-stereo.cjs");
 // ─── WAV-Datei schreiben ──────────────────────────────────────────────────────
 /**
  * Schreibt einen WAV-Header + PCM-Daten in eine Datei.
@@ -278,7 +278,7 @@ function registerExportHandlers() {
         }
     });
     /**
-     * Projekt-Export (.synth): JSON-Daten vom Renderer als Datei speichern
+     * Projekt-Export (.esx1): JSON-Daten vom Renderer als Datei speichern
      */
     electron_1.ipcMain.handle("export:project", async (event, options) => {
         const win = electron_1.BrowserWindow.fromWebContents(event.sender);
@@ -286,9 +286,9 @@ function registerExportHandlers() {
         if (!targetPath) {
             const result = await electron_1.dialog.showSaveDialog(win, {
                 title: "Projekt speichern",
-                defaultPath: options.suggestedName ?? "mein-projekt.synth",
+                defaultPath: options.suggestedName ?? "mein-projekt.esx1",
                 filters: [
-                    { name: "Synthstudio Projekt", extensions: ["synth"] },
+                    { name: "ESX-1 Studio Projekt", extensions: ["esx1"] },
                     { name: "JSON", extensions: ["json"] },
                 ],
             });
@@ -316,7 +316,7 @@ function registerExportHandlers() {
             const result = await electron_1.dialog.showOpenDialog(win, {
                 title: "Projekt öffnen",
                 filters: [
-                    { name: "Synthstudio Projekt", extensions: ["synth", "json"] },
+                    { name: "ESX-1 Studio Projekt", extensions: ["esx1", "json"] },
                 ],
                 properties: ["openFile"],
             });

@@ -80,7 +80,7 @@ export function ElectronTitleBar({
   }, [api]);
 
   // ── Titel zusammensetzen ──────────────────────────────────────────────────
-  const appName = "KORG ESX-1 Studio";
+  const appName = "Synthstudio";
   const titleParts: string[] = [appName];
   if (projectName) titleParts.push(projectName);
   const title = titleParts.join(" – ");

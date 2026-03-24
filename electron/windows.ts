@@ -24,7 +24,7 @@ import * as path from "path";
 
 const isDev = process.env.NODE_ENV === "development";
 const devServerUrl = process.env.VITE_DEV_SERVER_URL ?? "http://localhost:3000";
-const APP_NAME = "KORG ESX-1 Studio";
+const APP_NAME = "Synthstudio";
 
 // ─── Fenster-Zustand ──────────────────────────────────────────────────────────
 

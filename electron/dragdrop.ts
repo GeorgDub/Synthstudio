@@ -6,7 +6,7 @@
  * - Einzelne Audio-Dateien → direkt auf Drum-Pad laden
  * - Mehrere Audio-Dateien → Sample-Browser Import
  * - Ordner → Folder-Import mit Progress
- * - .esx1 / .json Projekt-Dateien → Projekt öffnen
+ * - .synth / .json Projekt-Dateien → Projekt öffnen
  *
  * INTEGRATION in main.ts:
  * ```ts
@@ -24,7 +24,7 @@ const AUDIO_EXTENSIONS = new Set([
   ".wav", ".mp3", ".ogg", ".flac", ".aiff", ".aif", ".m4a",
 ]);
 
-const PROJECT_EXTENSIONS = new Set([".esx1", ".json"]);
+const PROJECT_EXTENSIONS = new Set([".synth", ".json"]);
 
 export interface DragDropFile {
   path: string;

@@ -5,7 +5,7 @@
  * - WAV (Mono): Renderer rendert Audio und sendet PCM-Daten → Main schreibt WAV-Datei
  * - WAV (Stereo): Renderer sendet L/R-Kanäle → Main schreibt interleaved Stereo-WAV
  * - MIDI: Renderer serialisiert Pattern → Main schreibt MIDI-Datei
- * - Projekt (.esx1): JSON-Serialisierung des gesamten Projektzustands
+ * - Projekt (.synth): JSON-Serialisierung des gesamten Projektzustands
  *
  * INTEGRATION in main.ts:
  * ```ts
@@ -312,7 +312,7 @@ export function registerExportHandlers(): void {
   );
 
   /**
-   * Projekt-Export (.esx1): JSON-Daten vom Renderer als Datei speichern
+   * Projekt-Export (.synth): JSON-Daten vom Renderer als Datei speichern
    */
   ipcMain.handle(
     "export:project",
@@ -330,9 +330,9 @@ export function registerExportHandlers(): void {
       if (!targetPath) {
         const result = await dialog.showSaveDialog(win!, {
           title: "Projekt speichern",
-          defaultPath: options.suggestedName ?? "mein-projekt.esx1",
+          defaultPath: options.suggestedName ?? "mein-projekt.synth",
           filters: [
-            { name: "ESX-1 Studio Projekt", extensions: ["esx1"] },
+            { name: "Synthstudio Projekt", extensions: ["synth"] },
             { name: "JSON", extensions: ["json"] },
           ],
         });
@@ -364,7 +364,7 @@ export function registerExportHandlers(): void {
       const result = await dialog.showOpenDialog(win!, {
         title: "Projekt öffnen",
         filters: [
-          { name: "ESX-1 Studio Projekt", extensions: ["esx1", "json"] },
+          { name: "Synthstudio Projekt", extensions: ["synth", "json"] },
         ],
         properties: ["openFile"],
       });

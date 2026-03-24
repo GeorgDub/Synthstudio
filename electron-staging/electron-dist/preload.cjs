@@ -150,11 +150,11 @@ const electronAPI = {
     exportWav: (options) => electron_1.ipcRenderer.invoke("export:wav", options),
     /** MIDI-Export: Pattern als MIDI-Datei speichern */
     exportMidi: (options) => electron_1.ipcRenderer.invoke("export:midi", options),
-    /** Projekt-Export: JSON-Daten als .synth-Datei speichern */
+    /** Projekt-Export: JSON-Daten als .esx1-Datei speichern */
     exportProject: (options) => electron_1.ipcRenderer.invoke("export:project", options),
     /** Stereo WAV-Export: Separate L/R-Kanäle als Stereo-WAV-Datei speichern */
     exportWavStereo: (options) => electron_1.ipcRenderer.invoke("export:wav-stereo", options),
-    /** Projekt-Import: .synth/.json-Datei lesen */
+    /** Projekt-Import: .esx1/.json-Datei lesen */
     importProjectFile: (filePath) => electron_1.ipcRenderer.invoke("export:import-project", filePath),
 };
 electron_1.contextBridge.exposeInMainWorld("electronAPI", electronAPI);

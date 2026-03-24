@@ -25,7 +25,7 @@ export function useWindowTitleSync({ projectName, isDirty }: WindowTitleSyncOpti
   const electron = useElectron();
 
   useEffect(() => {
-    const appName = "KORG ESX-1 Studio";
+    const appName = "Synthstudio";
     // isDirty-Indikator: ● als Präfix (Desktop-Konvention) und Suffix (Browser-Konvention)
     const dirtyPrefix = isDirty ? "● " : "";
     const title = projectName

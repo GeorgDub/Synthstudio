@@ -23,7 +23,7 @@ export interface ElectronDropZoneProps {
   onAudioFiles?: (filePaths: string[]) => void;
   /** Callback wenn ein Ordner gedroppt wurde */
   onFolder?: (folderPath: string) => void;
-  /** Callback wenn eine Projekt-Datei (.esx1) gedroppt wurde */
+  /** Callback wenn eine Projekt-Datei (.synth) gedroppt wurde */
   onProject?: (filePath: string) => void;
   /** Kinder-Elemente (optional) */
   children?: React.ReactNode;
@@ -34,7 +34,7 @@ type DropType = "audio" | "folder" | "project" | "unknown" | null;
 // ─── Hilfsfunktionen ─────────────────────────────────────────────────────────
 
 const AUDIO_EXTENSIONS = new Set([".wav", ".mp3", ".ogg", ".flac", ".aiff", ".aif", ".m4a"]);
-const PROJECT_EXTENSIONS = new Set([".esx1", ".json"]);
+const PROJECT_EXTENSIONS = new Set([".synth", ".json"]);
 
 function getFileExtension(name: string): string {
   const dot = name.lastIndexOf(".");
@@ -208,7 +208,7 @@ export function ElectronDropZone({
           <p className="text-sm text-slate-400">
             {dropType === "audio" && "WAV, MP3, OGG, FLAC, AIFF werden unterstützt"}
             {dropType === "folder" && "Alle Audio-Dateien im Ordner werden importiert"}
-            {dropType === "project" && ".esx1 Projektdatei wird geöffnet"}
+            {dropType === "project" && ".synth Projektdatei wird geöffnet"}
             {dropType === "unknown" && "Datei wird analysiert..."}
           </p>
         </div>

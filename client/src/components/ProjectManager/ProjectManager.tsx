@@ -48,9 +48,9 @@ export function ProjectManager({
         // In Electron: nativer Speichern-Dialog über saveFileDialog
         const result = await electron.saveFileDialog({
           title: "Projekt speichern",
-          defaultPath: `${projectName}.esx1`,
+          defaultPath: `${projectName}.synth`,
           filters: [
-            { name: "Synthstudio-Projekte", extensions: ["esx1"] },
+            { name: "Synthstudio-Projekte", extensions: ["synth"] },
             { name: "JSON", extensions: ["json"] },
           ],
         });

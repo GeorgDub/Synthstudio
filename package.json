@@ -1,5 +1,5 @@
 {
-  "name": "korg-synth-studio",
+  "name": "synthstudio",
   "version": "1.0.0",
   "type": "module",
   "license": "MIT",
@@ -142,7 +142,7 @@
     ]
   },
   "build": {
-    "appId": "com.synthstudio.esx1",
+    "appId": "com.synthstudio.app",
     "productName": "Synthstudio",
     "copyright": "Copyright © 2025 Synthstudio",
     "directories": {
@@ -237,8 +237,8 @@
       ],
       "icon": "assets/icon.png",
       "category": "Audio",
-      "synopsis": "KORG ESX-1 Sample-Manager und Synthesizer-Studio",
-      "description": "Professioneller Sample-Manager und Synthesizer-Studio für den KORG ESX-1"
+      "synopsis": "Professioneller Sample-Synthesizer und Drum Machine",
+      "description": "Synthstudio – Professioneller Sample-Synthesizer und Drum Machine"
     },
     "deb": {
       "depends": [
@@ -289,5 +289,5 @@
     "name": "GeorgDub",
     "email": "synthstudio@example.com"
   },
-  "description": "Professioneller Sample-Manager und Synthesizer-Studio für den KORG ESX-1"
+  "description": "Professioneller Sample-Synthesizer und Drum Machine"
 }

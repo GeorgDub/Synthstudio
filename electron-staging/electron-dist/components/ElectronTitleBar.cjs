@@ -42,7 +42,7 @@ function ElectronTitleBar({ projectName, isDirty = false, className = "", }) {
         api.forceCloseWindow?.();
     }, [api]);
     // ── Titel zusammensetzen ──────────────────────────────────────────────────
-    const appName = "Synthstudio";
+    const appName = "KORG ESX-1 Studio";
     const titleParts = [appName];
     if (projectName)
         titleParts.push(projectName);
