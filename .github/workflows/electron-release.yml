@@ -44,17 +44,16 @@ jobs:
       - name: pnpm einrichten
         uses: pnpm/action-setup@v4
         with:
-          version: 9
+          version: 10.4.1
 
       - name: Dependencies installieren
         run: pnpm install --frozen-lockfile
 
       - name: TypeScript kompilieren (Electron)
-        shell: bash
-        run: |
-          pnpm exec tsc --project tsconfig.electron.json
-          find electron-dist -name "*.js" -exec sh -c 'mv "$1" "${1%.js}.cjs"' _ {} \;
-          find electron-dist -name "*.cjs" -exec sed -i 's/require("\(\.[^"]*\)")/require("\1.cjs")/g' {} \;
+        run: pnpm exec tsc --project tsconfig.electron.json
+
+      - name: JS zu CJS umbenennen
+        run: node scripts/rename-to-cjs.cjs
 
       - name: React-App bauen (Vite)
         run: pnpm exec vite build
@@ -62,19 +61,25 @@ jobs:
       - name: Staging-Verzeichnis erstellen
         run: node scripts/prepare-electron-build.cjs
 
-      - name: Electron-App bauen
-        shell: bash
+      - name: Electron-App bauen (Linux)
+        if: matrix.platform == 'linux'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CSC_IDENTITY_AUTO_DISCOVERY: false
-        run: |
-          if [ "${{ matrix.platform }}" = "linux" ]; then
-            pnpm exec electron-builder --linux AppImage deb
-          elif [ "${{ matrix.platform }}" = "windows" ]; then
-            pnpm exec electron-builder --win nsis
-          elif [ "${{ matrix.platform }}" = "mac" ]; then
-            pnpm exec electron-builder --mac dmg zip
-          fi
+        run: pnpm exec electron-builder --linux AppImage deb
+
+      - name: Electron-App bauen (Windows)
+        if: matrix.platform == 'windows'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: pnpm exec electron-builder --win nsis
+
+      - name: Electron-App bauen (macOS)
+        if: matrix.platform == 'mac'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: pnpm exec electron-builder --mac dmg zip
 
       - name: Build-Artefakte hochladen
         uses: actions/upload-artifact@v4
@@ -124,4 +129,3 @@ jobs:
             release-artifacts/**/*.dmg
             release-artifacts/**/*.zip
           token: ${{ secrets.GITHUB_TOKEN }}
-
