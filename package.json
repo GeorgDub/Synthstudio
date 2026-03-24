@@ -1,6 +1,6 @@
 {
   "name": "synthstudio",
-  "version": "1.7.2",
+  "version": "1.7.3",
   "type": "module",
   "license": "MIT",
   "main": "electron-dist/main.cjs",
@@ -166,7 +166,6 @@
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,
       "allowElevation": true,
-      "requestedExecutionLevel": "asInvoker",
       "installerIcon": "assets/icon.ico",
       "uninstallerIcon": "assets/icon.ico",
       "installerHeaderIcon": "assets/icon.ico",
