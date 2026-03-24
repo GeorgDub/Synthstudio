@@ -13,7 +13,7 @@
  */
 import { useState, useCallback, useRef, useEffect } from "react";
 import { waveformCache, type CachedWaveformData } from "@/utils/waveformCache";
-import { useElectron } from "../../electron/useElectron";
+import { useElectron } from "../../../electron/useElectron";
 
 // ─── Typen ────────────────────────────────────────────────────────────────────
 
