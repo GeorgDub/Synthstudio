@@ -190,6 +190,9 @@ export function createElectronMock(overrides: ElectronMockOverrides = {}): typeo
     openExternal: vi.fn().mockResolvedValue({ success: true }),
     showItemInFolder: vi.fn(),
 
+    // ── Multi-Window (Backend-Agent) ────────────────────────────────────────────
+    getRecentProjectsFromWindows: vi.fn().mockResolvedValue([]),
+
     // ── Auto-Updater (Build-Agent) ────────────────────────────────────────────
     checkForUpdates: vi.fn(),
     onUpdaterChecking: mockListener(),

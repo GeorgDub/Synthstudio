@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "type": "module",
   "license": "MIT",
-  "main": "main.js",
+  "main": "electron-dist/main.cjs",
   "scripts": {
     "dev": "NODE_ENV=development tsx watch server/_core/index.ts",
     "dev:electron": "concurrently \"cross-env VITE_DEV_SERVER_URL=http://localhost:3000 pnpm dev\" \"wait-on http://localhost:3000 && electron .\"",
@@ -146,20 +146,9 @@
       "buildResources": "assets"
     },
     "files": [
-      "main.js",
-      "preload.js",
-      "store.js",
-      "windows.js",
-      "dragdrop.js",
-      "export.js",
-      "export-stereo.js",
-      "waveform.js",
-      "waveform-cache.js",
-      "updater.js",
-      "wav-writer.js",
       {
-        "from": "workers",
-        "to": "workers",
+        "from": "electron-dist",
+        "to": "electron-dist",
         "filter": ["**/*.js"]
       },
       {
