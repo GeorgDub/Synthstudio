@@ -83,9 +83,9 @@ Der Build-Agent hat `onMenuImportFolder → onMenuImportSampleFolder` in `types.
 | ~~🔴 Hoch~~ | ~~Vollständigen Build testen: `pnpm build:electron`~~ | ~~Build~~ | ✅ Behoben – 263MB asar, Executable vorhanden |
 | ~~🟡 Mittel~~ | ~~E2E-Tests ausführen: `pnpm test:e2e`~~ | ~~Testing~~ | ✅ 16/16 bestanden |
 | ~~🟡 Mittel~~ | ~~Worker-Pfad-Auflösung in Produktion testen~~ | ~~Audio-Engine~~ | ✅ .cjs → .js → .ts Fallback |
-| 🟢 Niedrig | GitHub Actions Workflow manuell über GitHub Web-UI hinzufügen | Build | – |
+| ~~🟢 Niedrig~~ | ~~GitHub Actions Workflow manuell über GitHub Web-UI hinzufügen~~ | ~~Build~~ | ✅ Erledigt – 127 Zeilen, YAML gültig |
 
-> **🎉 Alle 6 Agenten vollständig abgeschlossen und verifiziert.**
+> **🎉 Alle 6 Agenten + CI/CD vollständig abgeschlossen und verifiziert. Das Projekt ist release-bereit.**
 
 ---
 
@@ -196,7 +196,16 @@ Der Build-Agent hat `onMenuImportFolder → onMenuImportSampleFolder` in `types.
 
 **Gesamt: 6/6 Agenten vollständig abgeschlossen.**
 
-### Bekannte Einschränkung
-GitHub Actions Workflow (`.github/workflows/electron-release.yml`) muss manuell über GitHub Web-UI hinzugefügt werden, da die GitHub App keine `workflows`-Permission hat.
+### CI/CD: Vollständig eingerichtet ✅
+`.github/workflows/electron-release.yml` – 127 Zeilen, YAML gültig
+- **Trigger:** `git tag v*.*.*` oder manuell via `workflow_dispatch`
+- **Plattformen:** Linux (AppImage + deb), Windows (NSIS), macOS (dmg + zip)
+- **Release:** Automatischer GitHub Release mit allen Installationsdateien
 
-*Zuletzt aktualisiert: 24. März 2026 – Koordinator, Abschluss aller Agenten*
+### Release auslösen
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+*Zuletzt aktualisiert: 24. März 2026 – Koordinator, vollständiger Abschluss inkl. CI/CD*
