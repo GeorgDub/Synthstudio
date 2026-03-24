@@ -1,22 +1,31 @@
 /**
- * Synthstudio – SampleBrowser (v2)
+ * Synthstudio – SampleBrowser (v3)
  *
  * Zeigt die importierten Samples an und ermöglicht den Import neuer Samples.
- * Neu in v2:
- * - Tag-Filterung nach Kategorie (Kicks, Snares, Hats, etc.)
- * - Volltextsuche nach Sample-Namen
- * - ZIP-Import (Electron + Browser-Fallback)
- * - Fortschrittsanzeige beim Import
+ * Neu in v3:
+ * - Waveform-Visualisierung (Canvas) beim Selektieren eines Samples
+ * - Audio-Preview direkt im Waveform-Panel (Playhead-Animation)
+ * - Sample-Details: Dauer, Samplerate, Kanäle, BPM, Dateigröße
+ * - Seek per Klick auf Waveform
+ * - Zoom (Scroll-Wheel) und Pan (Alt+Drag)
  *
  * ─── GOLDENES GESETZ ─────────────────────────────────────────────────────────
  * Alle Electron-Aufrufe gehen ausschließlich über den useElectron()-Hook.
  * Kein direktes window.electronAPI. Jede Electron-Logik hinter if (electron.isElectron).
  * ─────────────────────────────────────────────────────────────────────────────
  */
-import React, { useRef, useCallback, useState, useMemo, useEffect } from "react";
+import React, {
+  useRef,
+  useCallback,
+  useState,
+  useMemo,
+  useEffect,
+} from "react";
 
 import { useElectron } from "../../../../electron/useElectron";
 import type { Sample } from "../../store/useProjectStore";
+import { WaveformDisplay } from "../WaveformDisplay";
+import { useAudioAnalysis } from "../../hooks/useAudioAnalysis";
 
 // ─── Typen ────────────────────────────────────────────────────────────────────
 
@@ -49,6 +58,21 @@ const CATEGORIES: Array<{ id: string; label: string; color: string }> = [
   { id: "imported",   label: "Importiert",  color: "bg-slate-800/60 text-slate-400" },
 ];
 
+// Farbe pro Kategorie für Waveform
+const CATEGORY_WAVEFORM_COLORS: Record<string, string> = {
+  kicks:      "#ef4444",
+  snares:     "#f97316",
+  hihats:     "#eab308",
+  claps:      "#22c55e",
+  toms:       "#14b8a6",
+  percussion: "#06b6d4",
+  fx:         "#3b82f6",
+  loops:      "#6366f1",
+  vocals:     "#a855f7",
+  other:      "#64748b",
+  imported:   "#22d3ee",
+};
+
 // ─── Hilfsfunktionen ─────────────────────────────────────────────────────────
 
 function formatBytes(bytes?: number): string {
@@ -58,8 +82,21 @@ function formatBytes(bytes?: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function formatDuration(seconds?: number): string {
+  if (!seconds) return "";
+  if (seconds < 1) return `${(seconds * 1000).toFixed(0)} ms`;
+  if (seconds < 60) return `${seconds.toFixed(2)} s`;
+  const m = Math.floor(seconds / 60);
+  const s = (seconds % 60).toFixed(1);
+  return `${m}:${s.padStart(4, "0")}`;
+}
+
 function getCategoryColor(categoryId: string): string {
   return CATEGORIES.find((c) => c.id === categoryId)?.color ?? "bg-slate-800/60 text-slate-400";
+}
+
+function getWaveformColor(categoryId: string): string {
+  return CATEGORY_WAVEFORM_COLORS[categoryId] ?? "#22d3ee";
 }
 
 // ─── Import-Fortschritts-Overlay ─────────────────────────────────────────────
@@ -112,6 +149,93 @@ function ImportProgress({ current, total, percentage, phase, currentFile, onCanc
   );
 }
 
+// ─── Waveform-Panel ───────────────────────────────────────────────────────────
+
+interface WaveformPanelProps {
+  sample: Sample;
+  isPlaying: boolean;
+  playbackPosition: number;
+  onSeek: (position: number) => void;
+  onPlayToggle: () => void;
+  analysisResult: { peaks: number[]; duration: number; sampleRate?: number; channels?: number; estimatedBpm?: number } | null;
+  isAnalyzing: boolean;
+}
+
+function WaveformPanel({
+  sample,
+  isPlaying,
+  playbackPosition,
+  onSeek,
+  onPlayToggle,
+  analysisResult,
+  isAnalyzing,
+}: WaveformPanelProps) {
+  const waveformColor = getWaveformColor(sample.category);
+
+  return (
+    <div className="border-t border-slate-800 bg-[#0a0a0a] flex flex-col">
+      {/* Sample-Name */}
+      <div className="flex items-center justify-between px-3 py-1.5 border-b border-slate-800/50">
+        <span className="text-xs text-cyan-300 font-medium truncate flex-1" title={sample.name}>
+          {sample.name}
+        </span>
+        <button
+          onClick={onPlayToggle}
+          className={[
+            "ml-2 w-7 h-7 rounded flex items-center justify-center text-xs transition-all duration-100 flex-shrink-0",
+            isPlaying
+              ? "bg-orange-600 text-white"
+              : "bg-slate-700 text-slate-300 hover:bg-slate-600 hover:text-white",
+          ].join(" ")}
+          title={isPlaying ? "Preview stoppen (Leertaste)" : "Preview abspielen (Leertaste)"}
+        >
+          {isPlaying ? "■" : "▶"}
+        </button>
+      </div>
+
+      {/* Waveform */}
+      <div className="px-2 py-1.5">
+        <WaveformDisplay
+          peaks={analysisResult?.peaks ?? []}
+          duration={analysisResult?.duration ?? 0}
+          playbackPosition={playbackPosition}
+          isPlaying={isPlaying}
+          onSeek={onSeek}
+          color={waveformColor}
+          height={72}
+          isLoading={isAnalyzing}
+          zoomEnabled={true}
+          className="rounded overflow-hidden"
+        />
+      </div>
+
+      {/* Sample-Details */}
+      <div className="flex flex-wrap gap-x-3 gap-y-0.5 px-3 pb-2 text-[10px] text-slate-600">
+        {analysisResult?.duration != null && (
+          <span title="Dauer">⏱ {formatDuration(analysisResult.duration)}</span>
+        )}
+        {analysisResult?.sampleRate != null && (
+          <span title="Samplerate">{(analysisResult.sampleRate / 1000).toFixed(1)} kHz</span>
+        )}
+        {analysisResult?.channels != null && (
+          <span title="Kanäle">{analysisResult.channels === 1 ? "Mono" : "Stereo"}</span>
+        )}
+        {analysisResult?.estimatedBpm != null && (
+          <span title="Geschätztes BPM" className="text-cyan-900">
+            ♩ {analysisResult.estimatedBpm} BPM
+          </span>
+        )}
+        {sample.size != null && (
+          <span title="Dateigröße">{formatBytes(sample.size)}</span>
+        )}
+        {isAnalyzing && (
+          <span className="text-cyan-900 animate-pulse">Analysiere…</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Hauptkomponente ──────────────────────────────────────────────────────────
 
 export function SampleBrowser({
@@ -123,6 +247,7 @@ export function SampleBrowser({
 }: SampleBrowserProps) {
   // ── Einziger Zugriffspunkt auf Electron-Features ──────────────────────────
   const electron = useElectron();
+  const { analyzeFile, isAnalyzing } = useAudioAnalysis();
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
@@ -132,10 +257,22 @@ export function SampleBrowser({
   const [activeCategory, setActiveCategory] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState<string>("");
 
-  // ── Sample-Navigation (Prev/Next) ─────────────────────────────────────────
+  // ── Sample-Navigation und Selektion ──────────────────────────────────────
   const [selectedSampleId, setSelectedSampleId] = useState<string | null>(null);
   const [isPreviewPlaying, setIsPreviewPlaying] = useState(false);
+  const [playbackPosition, setPlaybackPosition] = useState(0);
   const audioPreviewRef = useRef<HTMLAudioElement | null>(null);
+  const rafRef = useRef<number>(0);
+
+  // ── Waveform-Analyse-Cache ────────────────────────────────────────────────
+  const [analysisCache, setAnalysisCache] = useState<Record<string, {
+    peaks: number[];
+    duration: number;
+    sampleRate?: number;
+    channels?: number;
+    estimatedBpm?: number;
+  }>>({});
+  const [analyzingId, setAnalyzingId] = useState<string | null>(null);
 
   // ── Import-Fortschritt ────────────────────────────────────────────────────
   const [importProgress, setImportProgress] = useState<{
@@ -191,7 +328,7 @@ export function SampleBrowser({
     };
   }, [electron, onSamplesImported]);
 
-  // ── Gefilterte Samples (muss vor Navigation-Callbacks stehen) ─────────────────
+  // ── Gefilterte Samples ─────────────────────────────────────────────────────
   const filteredSamples = useMemo(() => {
     return samples.filter((sample) => {
       const matchesCategory = activeCategory === "all" || sample.category === activeCategory;
@@ -206,45 +343,150 @@ export function SampleBrowser({
     return filteredSamples.findIndex((s) => s.id === selectedSampleId);
   }, [selectedSampleId, filteredSamples]);
 
-  // ── Sample-Navigation Callbacks ─────────────────────────────────────────
+  const selectedSample = useMemo(() =>
+    samples.find((s) => s.id === selectedSampleId) ?? null,
+    [samples, selectedSampleId]
+  );
 
+  // ── Waveform-Analyse beim Selektieren ─────────────────────────────────────
+  useEffect(() => {
+    if (!selectedSampleId || !selectedSample) return;
+    if (analysisCache[selectedSampleId]) return; // Bereits gecacht
+
+    setAnalyzingId(selectedSampleId);
+
+    const run = async () => {
+      try {
+        let audioData: ArrayBuffer | undefined;
+
+        // Im Browser: Datei als ArrayBuffer laden
+        if (!electron.isElectron && selectedSample.path) {
+          try {
+            const response = await fetch(selectedSample.path);
+            audioData = await response.arrayBuffer();
+          } catch {
+            // Fetch fehlgeschlagen (z.B. lokaler Dateipfad) – ohne AudioData analysieren
+          }
+        }
+
+        const result = await analyzeFile(selectedSample.path, audioData);
+
+        if (result) {
+          setAnalysisCache((prev) => ({
+            ...prev,
+            [selectedSampleId]: {
+              peaks: result.peaks,
+              duration: result.duration,
+              sampleRate: result.sampleRate,
+              channels: result.channels,
+              estimatedBpm: result.estimatedBpm,
+            },
+          }));
+        }
+      } catch (err) {
+        console.warn("[SampleBrowser] Analyse fehlgeschlagen:", err);
+      } finally {
+        setAnalyzingId(null);
+      }
+    };
+
+    run();
+  }, [selectedSampleId, selectedSample, analysisCache, analyzeFile, electron.isElectron]);
+
+  // ── Playback-Position-Tracking ────────────────────────────────────────────
+  useEffect(() => {
+    const audio = audioPreviewRef.current;
+    if (!audio || !isPreviewPlaying) return;
+
+    const update = () => {
+      if (audio.duration > 0) {
+        setPlaybackPosition(audio.currentTime / audio.duration);
+      }
+      rafRef.current = requestAnimationFrame(update);
+    };
+
+    rafRef.current = requestAnimationFrame(update);
+    return () => cancelAnimationFrame(rafRef.current);
+  }, [isPreviewPlaying]);
+
+  // ── Sample-Selektion ──────────────────────────────────────────────────────
   const handleSelectSample = useCallback((sample: Sample) => {
     setSelectedSampleId(sample.id);
     if (audioPreviewRef.current) {
       audioPreviewRef.current.pause();
       audioPreviewRef.current = null;
       setIsPreviewPlaying(false);
+      setPlaybackPosition(0);
     }
   }, []);
 
-  const handlePreviewToggle = useCallback((sample: Sample) => {
+  // ── Preview-Toggle ────────────────────────────────────────────────────────
+  const handlePreviewToggle = useCallback((sample?: Sample) => {
+    const target = sample ?? selectedSample;
+    if (!target) return;
+
     if (audioPreviewRef.current && isPreviewPlaying) {
       audioPreviewRef.current.pause();
       audioPreviewRef.current = null;
       setIsPreviewPlaying(false);
+      setPlaybackPosition(0);
       return;
     }
-    const audio = new Audio(sample.path);
-    audio.volume = 0.8;
-    audio.onended = () => { setIsPreviewPlaying(false); audioPreviewRef.current = null; };
-    audio.onerror = () => { setIsPreviewPlaying(false); audioPreviewRef.current = null; };
-    audioPreviewRef.current = audio;
-    audio.play().then(() => setIsPreviewPlaying(true)).catch(() => setIsPreviewPlaying(false));
-  }, [isPreviewPlaying]);
 
+    const audio = new Audio(target.path);
+    audio.volume = 0.8;
+    audio.onended = () => {
+      setIsPreviewPlaying(false);
+      setPlaybackPosition(0);
+      audioPreviewRef.current = null;
+    };
+    audio.onerror = () => {
+      setIsPreviewPlaying(false);
+      audioPreviewRef.current = null;
+    };
+    audioPreviewRef.current = audio;
+    audio.play()
+      .then(() => setIsPreviewPlaying(true))
+      .catch(() => setIsPreviewPlaying(false));
+  }, [isPreviewPlaying, selectedSample]);
+
+  // ── Seek per Waveform-Klick ───────────────────────────────────────────────
+  const handleSeek = useCallback((position: number) => {
+    const audio = audioPreviewRef.current;
+    if (audio && audio.duration > 0) {
+      audio.currentTime = position * audio.duration;
+      setPlaybackPosition(position);
+    } else if (selectedSample) {
+      // Noch nicht gestartet: starten und sofort zur Position springen
+      const newAudio = new Audio(selectedSample.path);
+      newAudio.volume = 0.8;
+      newAudio.onloadedmetadata = () => {
+        newAudio.currentTime = position * newAudio.duration;
+        newAudio.play().then(() => setIsPreviewPlaying(true)).catch(() => {});
+      };
+      newAudio.onended = () => {
+        setIsPreviewPlaying(false);
+        setPlaybackPosition(0);
+        audioPreviewRef.current = null;
+      };
+      audioPreviewRef.current = newAudio;
+    }
+  }, [selectedSample]);
+
+  // ── Navigation ────────────────────────────────────────────────────────────
   const handleNavigatePrev = useCallback(() => {
     if (filteredSamples.length === 0) return;
     const idx = selectedIndex <= 0 ? filteredSamples.length - 1 : selectedIndex - 1;
-    setSelectedSampleId(filteredSamples[idx].id);
-  }, [filteredSamples, selectedIndex]);
+    handleSelectSample(filteredSamples[idx]);
+  }, [filteredSamples, selectedIndex, handleSelectSample]);
 
   const handleNavigateNext = useCallback(() => {
     if (filteredSamples.length === 0) return;
     const idx = selectedIndex >= filteredSamples.length - 1 ? 0 : selectedIndex + 1;
-    setSelectedSampleId(filteredSamples[idx].id);
-  }, [filteredSamples, selectedIndex]);
+    handleSelectSample(filteredSamples[idx]);
+  }, [filteredSamples, selectedIndex, handleSelectSample]);
 
-  // Keyboard-Shortcuts für Navigation
+  // Keyboard-Shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (document.activeElement?.tagName === "INPUT") return;
@@ -252,13 +494,12 @@ export function SampleBrowser({
       if (e.key === "ArrowDown") { e.preventDefault(); handleNavigateNext(); }
       if (e.key === " " && selectedSampleId) {
         e.preventDefault();
-        const sample = filteredSamples.find((s) => s.id === selectedSampleId);
-        if (sample) handlePreviewToggle(sample);
+        handlePreviewToggle();
       }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [handleNavigatePrev, handleNavigateNext, handlePreviewToggle, selectedSampleId, filteredSamples]);
+  }, [handleNavigatePrev, handleNavigateNext, handlePreviewToggle, selectedSampleId]);
 
   // ── Kategorie-Zähler ──────────────────────────────────────────────────────
   const categoryCounts = useMemo(() => {
@@ -270,16 +511,12 @@ export function SampleBrowser({
   }, [samples]);
 
   // ── Import: Einzelne Dateien ──────────────────────────────────────────────
-
   const handleImportFiles = useCallback(async () => {
     if (electron.isElectron) {
       const result = await electron.openFileDialog({
         title: "Samples importieren",
         filters: [
-          {
-            name: "Audio-Dateien",
-            extensions: ["wav", "mp3", "ogg", "flac", "aiff", "aif", "m4a"],
-          },
+          { name: "Audio-Dateien", extensions: ["wav", "mp3", "ogg", "flac", "aiff", "aif", "m4a"] },
           { name: "Alle Dateien", extensions: ["*"] },
         ],
         multiSelections: true,
@@ -293,12 +530,9 @@ export function SampleBrowser({
   }, [electron, onImportSamples]);
 
   // ── Import: Ordner ────────────────────────────────────────────────────────
-
   const handleImportFolder = useCallback(async () => {
     if (electron.isElectron) {
-      const result = await electron.openFolderDialog({
-        title: "Sample-Ordner importieren",
-      });
+      const result = await electron.openFolderDialog({ title: "Sample-Ordner importieren" });
       if (!result.canceled && result.filePaths[0]) {
         onImportFolder?.(result.filePaths[0]);
       }
@@ -308,7 +542,6 @@ export function SampleBrowser({
   }, [electron, onImportFolder]);
 
   // ── Import: ZIP-Archiv ────────────────────────────────────────────────────
-
   const handleImportZip = useCallback(async () => {
     if (electron.isElectron) {
       const result = await electron.openFileDialog({
@@ -320,13 +553,11 @@ export function SampleBrowser({
         await electron.importZip(result.filePaths[0]);
       }
     } else {
-      // Browser-Fallback: ZIP via jszip im Browser verarbeiten
       zipInputRef.current?.click();
     }
   }, [electron]);
 
   // ── Import: Abbrechen ─────────────────────────────────────────────────────
-
   const handleCancelImport = useCallback(() => {
     if (importProgress?.importId && electron.isElectron) {
       electron.cancelImport(importProgress.importId);
@@ -335,7 +566,6 @@ export function SampleBrowser({
   }, [electron, importProgress]);
 
   // ── Browser-Fallback: Datei-Input onChange ────────────────────────────────
-
   const handleFileInputChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const files = Array.from(e.target.files ?? []);
@@ -366,11 +596,10 @@ export function SampleBrowser({
       if (!file) return;
       e.target.value = "";
 
-      // Browser: JSZip direkt im Browser verarbeiten
       try {
         const JSZip = (await import("jszip")).default;
         const zip = await JSZip.loadAsync(file);
-        const audioEntries: Array<{ name: string; file: JSZip.JSZipObject }> = [];
+        const audioEntries: Array<{ name: string; file: import("jszip").JSZipObject }> = [];
 
         zip.forEach((relativePath, zipFile) => {
           if (zipFile.dir) return;
@@ -515,7 +744,7 @@ export function SampleBrowser({
       )}
 
       {/* ── Sample-Liste ─────────────────────────────────────────────────────── */}
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto min-h-0">
         {samples.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full gap-3 text-slate-600">
             <div className="text-4xl">🎚️</div>
@@ -538,8 +767,7 @@ export function SampleBrowser({
           </div>
         ) : (
           <>
-          {/* Prev/Next Navigation-Leiste */}
-          {filteredSamples.length > 0 && (
+            {/* Prev/Next Navigation-Leiste */}
             <div className="flex items-center gap-2 px-3 py-1.5 border-b border-slate-800/50 bg-[#0d0d0d]/50">
               <button
                 onClick={handleNavigatePrev}
@@ -564,80 +792,98 @@ export function SampleBrowser({
                 ↑↓ navigieren · Leertaste = Preview
               </span>
             </div>
-          )}
-          <ul className="divide-y divide-slate-800/50">
-            {filteredSamples.map((sample) => {
-              const isSelected = sample.id === selectedSampleId;
-              const isThisPlaying = isSelected && isPreviewPlaying;
-              return (
-              <li
-                key={sample.id}
-                onClick={() => handleSelectSample(sample)}
-                className={[
-                  "flex items-center gap-2 px-3 py-1.5 transition-colors duration-75 group cursor-pointer",
-                  isSelected
-                    ? "bg-cyan-900/20 border-l-2 border-cyan-500"
-                    : "hover:bg-slate-800/30 border-l-2 border-transparent",
-                ].join(" ")}
-              >
-                {/* Kategorie-Badge */}
-                <span
-                  className={`text-[10px] px-1.5 py-0.5 rounded-full flex-shrink-0 ${getCategoryColor(sample.category)}`}
-                  title={sample.category}
-                >
-                  {sample.category.slice(0, 3).toUpperCase()}
-                </span>
 
-                {/* Name + Pfad */}
-                <div className="flex-1 min-w-0">
-                  <p className={`text-xs truncate ${isSelected ? "text-cyan-300" : "text-slate-200"}`}>
-                    {sample.name}
-                  </p>
-                  {sample.path !== sample.name && (
-                    <p className="text-[10px] text-slate-600 truncate" title={sample.path}>
-                      {sample.path}
-                    </p>
-                  )}
-                </div>
-
-                {/* Größe */}
-                {sample.size && (
-                  <span className="text-[10px] text-slate-600 flex-shrink-0">
-                    {formatBytes(sample.size)}
-                  </span>
-                )}
-
-                {/* Preview-Button */}
-                <button
-                  onClick={(e) => { e.stopPropagation(); handlePreviewToggle(sample); }}
-                  title={isThisPlaying ? "Preview stoppen (Leertaste)" : "Preview abspielen (Leertaste)"}
-                  className={[
-                    "w-6 h-6 rounded flex items-center justify-center text-[10px] transition-all duration-100",
-                    isThisPlaying
-                      ? "bg-cyan-600 text-white opacity-100"
-                      : "opacity-0 group-hover:opacity-100 bg-slate-700 text-slate-400 hover:bg-slate-600 hover:text-white",
-                  ].join(" ")}
-                >
-                  {isThisPlaying ? "■" : "▶"}
-                </button>
-
-                {/* Entfernen-Button */}
-                {onRemoveSample && (
-                  <button
-                    onClick={(e) => { e.stopPropagation(); onRemoveSample(sample.id); }}
-                    title="Sample entfernen"
-                    className="opacity-0 group-hover:opacity-100 text-slate-600 hover:text-red-400 transition-all duration-100 text-xs px-1"
+            <ul className="divide-y divide-slate-800/50">
+              {filteredSamples.map((sample) => {
+                const isSelected = sample.id === selectedSampleId;
+                const isThisPlaying = isSelected && isPreviewPlaying;
+                return (
+                  <li
+                    key={sample.id}
+                    onClick={() => handleSelectSample(sample)}
+                    className={[
+                      "flex items-center gap-2 px-3 py-1.5 transition-colors duration-75 group cursor-pointer",
+                      isSelected
+                        ? "bg-cyan-900/20 border-l-2 border-cyan-500"
+                        : "hover:bg-slate-800/30 border-l-2 border-transparent",
+                    ].join(" ")}
                   >
-                    ✕
-                  </button>
-                )}
-              </li>
-              );
-            })}
-          </ul>
+                    {/* Kategorie-Badge */}
+                    <span
+                      className={`text-[10px] px-1.5 py-0.5 rounded-full flex-shrink-0 ${getCategoryColor(sample.category)}`}
+                      title={sample.category}
+                    >
+                      {sample.category.slice(0, 3).toUpperCase()}
+                    </span>
+
+                    {/* Name + Pfad */}
+                    <div className="flex-1 min-w-0">
+                      <p className={`text-xs truncate ${isSelected ? "text-cyan-300" : "text-slate-200"}`}>
+                        {sample.name}
+                      </p>
+                      {sample.path !== sample.name && (
+                        <p className="text-[10px] text-slate-600 truncate" title={sample.path}>
+                          {sample.path}
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Größe */}
+                    {sample.size && (
+                      <span className="text-[10px] text-slate-600 flex-shrink-0">
+                        {formatBytes(sample.size)}
+                      </span>
+                    )}
+
+                    {/* Waveform-Mini-Indikator (wenn gecacht) */}
+                    {analysisCache[sample.id] && !isSelected && (
+                      <span className="text-[8px] text-slate-700 flex-shrink-0">≋</span>
+                    )}
+
+                    {/* Preview-Button */}
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handlePreviewToggle(sample); }}
+                      title={isThisPlaying ? "Preview stoppen (Leertaste)" : "Preview abspielen (Leertaste)"}
+                      className={[
+                        "w-6 h-6 rounded flex items-center justify-center text-[10px] transition-all duration-100",
+                        isThisPlaying
+                          ? "bg-cyan-600 text-white opacity-100"
+                          : "opacity-0 group-hover:opacity-100 bg-slate-700 text-slate-400 hover:bg-slate-600 hover:text-white",
+                      ].join(" ")}
+                    >
+                      {isThisPlaying ? "■" : "▶"}
+                    </button>
+
+                    {/* Entfernen-Button */}
+                    {onRemoveSample && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); onRemoveSample(sample.id); }}
+                        title="Sample entfernen"
+                        className="opacity-0 group-hover:opacity-100 text-slate-600 hover:text-red-400 transition-all duration-100 text-xs px-1"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
           </>
         )}
       </div>
+
+      {/* ── Waveform-Panel (wenn Sample selektiert) ──────────────────────────── */}
+      {selectedSample && (
+        <WaveformPanel
+          sample={selectedSample}
+          isPlaying={isPreviewPlaying}
+          playbackPosition={playbackPosition}
+          onSeek={handleSeek}
+          onPlayToggle={() => handlePreviewToggle()}
+          analysisResult={analysisCache[selectedSample.id] ?? null}
+          isAnalyzing={analyzingId === selectedSample.id}
+        />
+      )}
 
       {/* ── Status-Leiste ─────────────────────────────────────────────────────── */}
       <div className="px-3 py-1 bg-[#0d0d0d] border-t border-slate-800">
