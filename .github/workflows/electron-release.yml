@@ -43,8 +43,6 @@ jobs:
 
       - name: pnpm einrichten
         uses: pnpm/action-setup@v4
-        with:
-          version: 10.4.1
 
       - name: Dependencies installieren
         run: pnpm install --frozen-lockfile
