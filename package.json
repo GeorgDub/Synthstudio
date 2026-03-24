@@ -262,7 +262,8 @@
       "releaseType": "release"
     },
     "asar": false,
-    "extraResources": [
+    "files": [
+      "package.json",
       {
         "from": "electron-dist",
         "to": "electron-dist",
