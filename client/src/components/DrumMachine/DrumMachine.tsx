@@ -431,17 +431,7 @@ export function DrumMachine({
   const [metronomOn, setMetronomOn] = useState(false);
   const bpmInputRef = useRef<HTMLInputElement>(null);
 
-  // Keyboard-Shortcuts
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-      if (e.code === "Space") { e.preventDefault(); onPlayStop(); }
-      if (e.code === "KeyZ" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); dm.undo(); }
-      if (e.code === "KeyY" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); dm.redo(); }
-    };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [onPlayStop, dm]);
+  // Keyboard-Shortcuts werden zentral durch useKeyboardShortcuts in App.tsx gehandhabt
 
   if (!pattern) return null;
 

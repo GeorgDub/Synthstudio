@@ -41,6 +41,10 @@ import { useSongStore } from "@/store/useSongStore";
 import { useHumanizerStore } from "@/store/useHumanizerStore";
 import { useDrumMachineStore } from "@/store/useDrumMachineStore";
 import { useTransport } from "@/hooks/useTransport";
+import { useMidi } from "@/hooks/useMidi";
+import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
+import { MidiSettings } from "@/components/MidiSettings";
+import { ShortcutsHelp } from "@/components/ShortcutsHelp";
 
 // ─── App ──────────────────────────────────────────────────────────────────────
 
@@ -68,6 +72,40 @@ export default function App() {
 
   // ── Arbeitsbereich-Tabs ────────────────────────────────────────────────────
   const [activeTab, setActiveTab] = useState<"sequencer" | "song" | "humanizer">("sequencer");
+
+  // ── Dialog-State für MIDI und Shortcuts ──────────────────────────────────
+  const [showMidiSettings, setShowMidiSettings] = useState(false);
+  const [showShortcutsHelp, setShowShortcutsHelp] = useState(false);
+
+  // ── MIDI-Hook ─────────────────────────────────────────────────────────────
+  const midi = useMidi({
+    onBpmChange: project.setBpm,
+    onPlayStop: project.togglePlayStop,
+    onClockBpm: (bpm) => project.setBpm(Math.round(bpm)),
+    onPartTrigger: (partId, velocity) => {
+      // MIDI-Note → Step im aktiven Pattern triggern (Live-Recording)
+      const pattern = dm.getActivePattern();
+      if (!pattern) return;
+      const part = pattern.parts.find(p => p.id === partId);
+      if (part && project.isRecording) {
+        dm.toggleStep(partId, dm.currentStep);
+      }
+    },
+    parts: dm.getActivePattern()?.parts ?? [],
+  });
+
+  // ── Zentrale Tastatur-Shortcuts ───────────────────────────────────────────
+  useKeyboardShortcuts({
+    dm,
+    isPlaying: project.isPlaying,
+    bpm: project.bpm,
+    onPlayStop: project.togglePlayStop,
+    onRecord: project.toggleRecord,
+    onBpmChange: project.setBpm,
+    onToggleSampleBrowser: () => {}, // Sample-Browser ist immer sichtbar
+    onToggleMidiSettings: () => setShowMidiSettings(prev => !prev),
+    onToggleShortcutsHelp: () => setShowShortcutsHelp(prev => !prev),
+  });
 
   // ── Fenstertitel synchronisieren ─────────────────────────────────────────
   // Browser: document.title | Electron: electron.setWindowTitle() via Hook
@@ -310,6 +348,30 @@ export default function App() {
                 </button>
               </div>
 
+              {/* MIDI-Status-Button */}
+              <button
+                onClick={() => setShowMidiSettings(true)}
+                title="MIDI-Einstellungen (Ctrl+M)"
+                className={[
+                  "w-8 h-8 rounded flex items-center justify-center text-xs",
+                  "transition-colors duration-100",
+                  midi.isEnabled
+                    ? "bg-cyan-900 text-cyan-400 hover:bg-cyan-800"
+                    : "bg-slate-800 text-slate-500 hover:bg-slate-700 hover:text-slate-300",
+                ].join(" ")}
+              >
+                🎹
+              </button>
+
+              {/* Shortcuts-Hilfe-Button */}
+              <button
+                onClick={() => setShowShortcutsHelp(true)}
+                title="Tastatur-Shortcuts (?)"
+                className="w-8 h-8 rounded flex items-center justify-center text-xs bg-slate-800 text-slate-500 hover:bg-slate-700 hover:text-slate-300 transition-colors duration-100"
+              >
+                ?
+              </button>
+
               {/* Projekt-Manager (Speichern/Laden) */}
               <ProjectManager
                 projectName={project.projectName}
@@ -390,6 +452,20 @@ export default function App() {
           </main>
         </div>
       </div>
+      {/* MIDI-Einstellungen-Dialog */}
+      {showMidiSettings && (
+        <MidiSettings
+          midi={midi}
+          parts={dm.getActivePattern()?.parts.map(p => ({ id: p.id, name: p.name })) ?? []}
+          onClose={() => setShowMidiSettings(false)}
+        />
+      )}
+
+      {/* Tastatur-Shortcuts-Hilfe */}
+      {showShortcutsHelp && (
+        <ShortcutsHelp onClose={() => setShowShortcutsHelp(false)} />
+      )}
+
       {/* Neues-Projekt-Dialog mit Template-Auswahl */}
       <NewProjectDialog
         isOpen={showNewProjectDialog}
