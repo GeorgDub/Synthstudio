@@ -280,7 +280,9 @@
           "**/*",
           "!**/*.map"
         ]
-      }
+      },
+      "!node_modules/**/*",
+      "!**/node_modules/**/*"
     ]
   },
   "author": {
