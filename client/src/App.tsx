@@ -34,10 +34,13 @@ import { ProjectManager } from "@/components/ProjectManager";
 import { NewProjectDialog } from "@/components/NewProjectDialog";
 import { SongTimeline } from "@/components/SongTimeline";
 import { Humanizer } from "@/components/Humanizer";
+import { DrumMachine } from "@/components/DrumMachine";
 
 // ── Stores für neue Features ──────────────────────────────────────────────────
 import { useSongStore } from "@/store/useSongStore";
 import { useHumanizerStore } from "@/store/useHumanizerStore";
+import { useDrumMachineStore } from "@/store/useDrumMachineStore";
+import { useTransport } from "@/hooks/useTransport";
 
 // ─── App ──────────────────────────────────────────────────────────────────────
 
@@ -51,6 +54,17 @@ export default function App() {
   const project = useProjectStore();
   const song = useSongStore();
   const humanizer = useHumanizerStore();
+  const dm = useDrumMachineStore();
+
+  // ── Transport (Audio-Engine ↔ React-State) ────────────────────────────────────
+  useTransport({
+    isPlaying: project.isPlaying,
+    bpm: project.bpm,
+    dm,
+    onPlayStateChange: (playing) => {
+      if (!playing && project.isPlaying) project.togglePlayStop();
+    },
+  });
 
   // ── Arbeitsbereich-Tabs ────────────────────────────────────────────────────
   const [activeTab, setActiveTab] = useState<"sequencer" | "song" | "humanizer">("sequencer");
@@ -338,29 +352,17 @@ export default function App() {
             {/* Arbeitsbereich-Inhalt */}
             <div className="flex-1 overflow-hidden">
 
-              {/* Sequencer-Tab (Platzhalter für Drum Machine) */}
+              {/* Sequencer-Tab: Drum Machine */}
               {activeTab === "sequencer" && (
-                <div className="flex items-center justify-center h-full text-slate-700">
-                  <div className="text-center">
-                    <div className="text-6xl mb-4">🎹</div>
-                    <p className="text-lg font-semibold">Drum Machine / Sequencer</p>
-                    <p className="text-sm mt-2 text-slate-600">
-                      Wird in der nächsten Phase implementiert
-                    </p>
-                    <div className="mt-6 flex flex-col gap-1 text-xs text-slate-700">
-                      <p>✓ SampleBrowser mit Tag-Filterung + Prev/Next Navigation</p>
-                      <p>✓ ZIP-Import (Electron + Browser)</p>
-                      <p>✓ Projekt-Templates (Techno, House, Hip-Hop)</p>
-                      <p>✓ Song-Modus (Tab → Song-Modus)</p>
-                      <p>✓ Smart Humanizer (Tab → Humanizer)</p>
-                      <p>✓ Waveform-Cache (IndexedDB)</p>
-                      <p>✓ BPM-Detection + Auto-Tagging</p>
-                      {electron.isElectron && (
-                        <p className="text-cyan-700 mt-2">⚡ Electron-Modus aktiv</p>
-                      )}
-                    </div>
-                  </div>
-                </div>
+                <DrumMachine
+                  dm={dm}
+                  samples={project.samples}
+                  isPlaying={project.isPlaying}
+                  bpm={project.bpm}
+                  onPlayStop={project.togglePlayStop}
+                  onBpmChange={project.setBpm}
+                  className="h-full"
+                />
               )}
 
               {/* Song-Modus-Tab */}
