@@ -2,33 +2,132 @@
  * Synthstudio – ZIP-Import Handler
  *
  * Verarbeitet den Import von ZIP-Archiven mit Audio-Samples.
- * Extrahiert Audio-Dateien aus dem ZIP, speichert sie temporär und
- * importiert sie wie normale Dateien mit Fortschrittsanzeige.
+ * Verwendet ausschließlich Node.js-interne Module (zlib, fs, path) –
+ * keine externen Abhängigkeiten wie jszip.
  *
- * Unterstützte Formate: .wav, .mp3, .ogg, .flac, .aiff, .aif, .m4a
- *
- * INTEGRATION in main.ts:
- * ```ts
- * import { registerZipImportHandlers } from "./zip-import";
- * registerZipImportHandlers(mainWindow);
- * ```
+ * ZIP-Format Referenz: https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT
  */
 
 import { ipcMain, BrowserWindow, app } from "electron";
 import * as fs from "fs";
 import * as path from "path";
-import * as os from "os";
-import JSZip from "jszip";
+import * as zlib from "zlib";
+import { promisify } from "util";
 
-// ─── Konstanten ───────────────────────────────────────────────────────────────
+const inflateRaw = promisify(zlib.inflateRaw);
 
-const AUDIO_EXTENSIONS = new Set([".wav", ".mp3", ".ogg", ".flac", ".aiff", ".aif", ".m4a"]);
+// ─── Unterstützte Audio-Formate ───────────────────────────────────────────────
 
-// ─── Kategorie-Erkennung (identisch mit main.ts) ─────────────────────────────
+const AUDIO_EXTENSIONS = new Set([
+  ".wav", ".wave",
+  ".mp3",
+  ".ogg", ".oga",
+  ".flac",
+  ".aiff", ".aif",
+  ".m4a", ".mp4",
+  ".wma",
+  ".opus",
+]);
+
+// ─── ZIP-Format Konstanten ────────────────────────────────────────────────────
+
+const LOCAL_FILE_HEADER_SIG    = 0x04034b50;
+const CENTRAL_DIR_SIG          = 0x02014b50;
+const END_OF_CENTRAL_DIR_SIG   = 0x06054b50;
+
+interface ZipEntry {
+  fileName: string;
+  compressedSize: number;
+  uncompressedSize: number;
+  compressionMethod: number;
+  localHeaderOffset: number;
+  isDirectory: boolean;
+}
+
+// ─── ZIP-Datei parsen (Central Directory) ────────────────────────────────────
+
+function parseZip(buffer: Buffer): ZipEntry[] {
+  const entries: ZipEntry[] = [];
+
+  // End of Central Directory von hinten suchen
+  let eocdOffset = -1;
+  for (let i = buffer.length - 22; i >= Math.max(0, buffer.length - 65558); i--) {
+    if (buffer.readUInt32LE(i) === END_OF_CENTRAL_DIR_SIG) {
+      eocdOffset = i;
+      break;
+    }
+  }
+
+  if (eocdOffset === -1) {
+    throw new Error("Ungültige ZIP-Datei: End of Central Directory nicht gefunden");
+  }
+
+  const entryCount       = buffer.readUInt16LE(eocdOffset + 10);
+  const centralDirOffset = buffer.readUInt32LE(eocdOffset + 16);
+
+  let offset = centralDirOffset;
+
+  for (let i = 0; i < entryCount; i++) {
+    if (offset + 46 > buffer.length) break;
+    if (buffer.readUInt32LE(offset) !== CENTRAL_DIR_SIG) break;
+
+    const compressionMethod = buffer.readUInt16LE(offset + 10);
+    const compressedSize    = buffer.readUInt32LE(offset + 20);
+    const uncompressedSize  = buffer.readUInt32LE(offset + 24);
+    const fileNameLength    = buffer.readUInt16LE(offset + 28);
+    const extraFieldLength  = buffer.readUInt16LE(offset + 30);
+    const commentLength     = buffer.readUInt16LE(offset + 32);
+    const localHeaderOffset = buffer.readUInt32LE(offset + 42);
+
+    const fileName = buffer.toString("utf8", offset + 46, offset + 46 + fileNameLength);
+    const isDirectory = fileName.endsWith("/") || fileName.endsWith("\\");
+
+    entries.push({
+      fileName,
+      compressedSize,
+      uncompressedSize,
+      compressionMethod,
+      localHeaderOffset,
+      isDirectory,
+    });
+
+    offset += 46 + fileNameLength + extraFieldLength + commentLength;
+  }
+
+  return entries;
+}
+
+// ─── Einzelne Datei aus ZIP extrahieren ──────────────────────────────────────
+
+async function extractEntry(buffer: Buffer, entry: ZipEntry): Promise<Buffer> {
+  const localOffset = entry.localHeaderOffset;
+
+  if (buffer.readUInt32LE(localOffset) !== LOCAL_FILE_HEADER_SIG) {
+    throw new Error(`Ungültiger Local File Header für: ${entry.fileName}`);
+  }
+
+  const fileNameLength   = buffer.readUInt16LE(localOffset + 26);
+  const extraFieldLength = buffer.readUInt16LE(localOffset + 28);
+  const dataOffset = localOffset + 30 + fileNameLength + extraFieldLength;
+
+  const compressedData = buffer.slice(dataOffset, dataOffset + entry.compressedSize);
+
+  if (entry.compressionMethod === 0) {
+    // Stored – keine Komprimierung
+    return compressedData;
+  } else if (entry.compressionMethod === 8) {
+    // Deflate
+    return (await inflateRaw(compressedData)) as Buffer;
+  } else {
+    throw new Error(`Nicht unterstützte Komprimierungsmethode: ${entry.compressionMethod}`);
+  }
+}
+
+// ─── Kategorie-Erkennung ─────────────────────────────────────────────────────
 
 function detectCategory(filePath: string): string {
   const name = path.basename(filePath).toLowerCase();
-  const dir = path.dirname(filePath).toLowerCase();
+  const dir  = path.dirname(filePath).toLowerCase();
   const combined = `${dir} ${name}`;
 
   const patterns: Record<string, string[]> = {
@@ -51,7 +150,7 @@ function detectCategory(filePath: string): string {
   return "other";
 }
 
-// ─── Temporäres Verzeichnis für extrahierte Samples ──────────────────────────
+// ─── Temp-Verzeichnis ─────────────────────────────────────────────────────────
 
 function getTempDir(): string {
   const tempBase = path.join(app.getPath("temp"), "synthstudio-zip-import");
@@ -79,7 +178,6 @@ export async function importZipFile(
   fs.mkdirSync(tempDir, { recursive: true });
 
   try {
-    // ZIP-Datei lesen
     win.webContents.send("samples:import-progress", {
       importId,
       current: 0,
@@ -90,19 +188,22 @@ export async function importZipFile(
     });
 
     const zipBuffer = await fs.promises.readFile(zipPath);
-    const zip = await JSZip.loadAsync(zipBuffer);
 
-    // Audio-Dateien im ZIP zählen
-    const audioFiles: JSZip.JSZipObject[] = [];
-    zip.forEach((relativePath, file) => {
-      if (file.dir) return;
-      const ext = path.extname(relativePath).toLowerCase();
-      if (AUDIO_EXTENSIONS.has(ext)) {
-        audioFiles.push(file);
-      }
+    let entries: ZipEntry[];
+    try {
+      entries = parseZip(zipBuffer);
+    } catch (err) {
+      throw new Error(`ZIP-Datei konnte nicht gelesen werden: ${String(err)}`);
+    }
+
+    // Nur Audio-Dateien
+    const audioEntries = entries.filter((e) => {
+      if (e.isDirectory) return false;
+      const ext = path.extname(e.fileName).toLowerCase();
+      return AUDIO_EXTENSIONS.has(ext);
     });
 
-    if (audioFiles.length === 0) {
+    if (audioEntries.length === 0) {
       win.webContents.send("samples:import-complete", {
         importId,
         imported: 0,
@@ -116,12 +217,11 @@ export async function importZipFile(
     win.webContents.send("samples:import-progress", {
       importId,
       current: 0,
-      total: audioFiles.length,
+      total: audioEntries.length,
       percentage: 0,
       phase: "extracting",
     });
 
-    // Audio-Dateien extrahieren und importieren
     const samples: Array<{
       id: string;
       name: string;
@@ -133,17 +233,16 @@ export async function importZipFile(
     let imported = 0;
     let errors = 0;
 
-    for (const file of audioFiles) {
+    for (const entry of audioEntries) {
       try {
-        const fileName = path.basename(file.name);
-        const extractPath = path.join(tempDir, fileName);
+        const fileName = path.basename(entry.fileName);
+        const extractPath = path.join(tempDir, `${imported}_${fileName}`);
 
-        // Datei aus ZIP extrahieren
-        const content = await file.async("nodebuffer");
+        const content = await extractEntry(zipBuffer, entry);
         await fs.promises.writeFile(extractPath, content);
 
         const stat = await fs.promises.stat(extractPath);
-        const category = detectCategory(file.name);
+        const category = detectCategory(entry.fileName);
 
         samples.push({
           id: `zip_sample_${Date.now()}_${imported}`,
@@ -155,13 +254,12 @@ export async function importZipFile(
 
         imported++;
 
-        // Fortschritt senden
-        if (imported % 5 === 0 || imported === audioFiles.length) {
+        if (imported % 5 === 0 || imported === audioEntries.length) {
           win.webContents.send("samples:import-progress", {
             importId,
             current: imported,
-            total: audioFiles.length,
-            percentage: Math.round((imported / audioFiles.length) * 100),
+            total: audioEntries.length,
+            percentage: Math.round((imported / audioEntries.length) * 100),
             phase: "extracting",
             currentFile: fileName,
           });
@@ -170,7 +268,7 @@ export async function importZipFile(
         errors++;
         win.webContents.send("samples:import-error", {
           importId,
-          filePath: file.name,
+          filePath: entry.fileName,
           error: String(err),
         });
       }
@@ -183,7 +281,6 @@ export async function importZipFile(
       samples,
       message: `${imported} Samples aus ZIP importiert${errors > 0 ? `, ${errors} Fehler` : ""}.`,
     });
-
   } catch (err) {
     win.webContents.send("samples:import-complete", {
       importId,
@@ -198,20 +295,12 @@ export async function importZipFile(
 // ─── IPC-Handler registrieren ─────────────────────────────────────────────────
 
 export function registerZipImportHandlers(win: BrowserWindow): void {
-  /**
-   * ZIP-Datei importieren: Extrahiert Audio-Samples aus einem ZIP-Archiv
-   * und importiert sie wie normale Dateien.
-   */
   ipcMain.handle("samples:import-zip", async (_event, zipPath: string) => {
     const importId = `zip_import_${Date.now()}`;
-    // Asynchron starten – Fortschritt über IPC-Events
     importZipFile(zipPath, importId, win);
     return { importId };
   });
 
-  /**
-   * Temporäre ZIP-Extraktions-Dateien aufräumen (nach dem Import)
-   */
   ipcMain.handle("samples:cleanup-zip", async (_event, importId: string) => {
     cleanTempDir(importId);
     return { success: true };
