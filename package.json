@@ -1,6 +1,6 @@
 {
   "name": "synthstudio",
-  "version": "1.7.0",
+  "version": "1.7.2",
   "type": "module",
   "license": "MIT",
   "main": "electron-dist/main.cjs",
@@ -154,8 +154,7 @@
         {
           "target": "nsis",
           "arch": [
-            "x64",
-            "ia32"
+            "x64"
           ]
         }
       ],
@@ -164,14 +163,23 @@
     },
     "nsis": {
       "oneClick": false,
+      "perMachine": false,
       "allowToChangeInstallationDirectory": true,
       "allowElevation": true,
+      "requestedExecutionLevel": "asInvoker",
       "installerIcon": "assets/icon.ico",
       "uninstallerIcon": "assets/icon.ico",
       "installerHeaderIcon": "assets/icon.ico",
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Synthstudio"
+      "shortcutName": "Synthstudio",
+      "deleteAppDataOnUninstall": false,
+      "runAfterFinish": true,
+      "installerLanguages": [
+        "de_DE",
+        "en_US"
+      ],
+      "language": "1031"
     },
     "mac": {
       "target": [
