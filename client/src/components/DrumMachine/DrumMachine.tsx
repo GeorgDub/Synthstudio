@@ -1,28 +1,26 @@
 /**
- * Synthstudio – DrumMachine.tsx
+ * Synthstudio – DrumMachine.tsx  (v2)
  *
  * Vollständige Drum Machine UI:
- * - Step-Grid mit 16/32 Steps
- * - Part-Zeilen mit Sample-Zuweisung, Mute/Solo, Volume, Pan
- * - Velocity-Editing (Rechtsklick oder Velocity-Modus)
- * - Pattern-Auswahl und -Verwaltung
- * - Keyboard-Shortcuts
+ * - 9 Kanäle mit eigenen Effekt-Reglern (Filter, EQ, Reverb, Delay, Distortion, Compressor)
+ * - Step-Auflösung (1/8, 1/16, 1/32) pro Pattern und pro Kanal
+ * - Pattern-BPM-Sync (eigenes BPM pro Pattern oder globales BPM)
+ * - 16/32-Step-Grid mit Velocity-Farbkodierung
+ * - Velocity-Editing per Drag
+ * - Pitch-Popover per Rechtsklick
+ * - Sample-Picker per Drag & Drop
  */
 
-import React, {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
+import React, { useState, useRef, useCallback, useEffect } from "react";
 import type { DrumMachineState, DrumMachineActions } from "@/store/useDrumMachineStore";
-import type { Sample } from "@/store/useProjectStore";
+import type { PartData, ChannelFx, StepResolution } from "@/audio/AudioEngine";
+import { AudioEngine } from "@/audio/AudioEngine";
 
-// ─── Props ────────────────────────────────────────────────────────────────────
+// ─── Typen ────────────────────────────────────────────────────────────────────
 
-interface DrumMachineProps {
+interface Props {
   dm: DrumMachineState & DrumMachineActions;
-  samples: Sample[];
+  samples: Array<{ id: string; name: string; url: string }>;
   isPlaying: boolean;
   bpm: number;
   onPlayStop: () => void;
@@ -32,411 +30,469 @@ interface DrumMachineProps {
 
 // ─── Hilfsfunktionen ──────────────────────────────────────────────────────────
 
-function velocityToColor(velocity: number, active: boolean): string {
-  if (!active) return "";
+function velocityColor(velocity: number, active: boolean): string {
+  if (!active) return "bg-slate-800 hover:bg-slate-700";
   const v = velocity / 127;
-  if (v > 0.85) return "bg-cyan-400";
-  if (v > 0.65) return "bg-cyan-500";
-  if (v > 0.45) return "bg-cyan-600";
-  if (v > 0.25) return "bg-cyan-700";
-  return "bg-cyan-800";
+  if (v > 0.85) return "bg-cyan-400 hover:bg-cyan-300";
+  if (v > 0.65) return "bg-cyan-500 hover:bg-cyan-400";
+  if (v > 0.45) return "bg-cyan-600 hover:bg-cyan-500";
+  if (v > 0.25) return "bg-cyan-700 hover:bg-cyan-600";
+  return "bg-cyan-800 hover:bg-cyan-700";
 }
 
-function groupLabel(stepIndex: number): string {
-  const beat = Math.floor(stepIndex / 4) + 1;
-  const sub = stepIndex % 4;
-  return sub === 0 ? String(beat) : "";
+function stepGroupBorder(index: number, total: number): string {
+  if (total === 16) {
+    return index % 4 === 0 ? "ml-1" : "";
+  }
+  return index % 8 === 0 ? "ml-1.5" : index % 4 === 0 ? "ml-0.5" : "";
 }
 
-// ─── Step-Button ──────────────────────────────────────────────────────────────
+// ─── FX-Panel ─────────────────────────────────────────────────────────────────
 
-interface StepButtonProps {
-  active: boolean;
-  velocity: number;
-  pitch: number;
-  isCurrent: boolean;
-  isVelocityMode: boolean;
-  isPitchMode: boolean;
-  stepIndex: number;
-  groupStart: boolean;
-  onToggle: () => void;
-  onVelocityChange: (v: number) => void;
-  onPitchChange: (p: number) => void;
+interface FxPanelProps {
+  part: PartData;
+  onFxChange: (fx: Partial<ChannelFx>) => void;
+  onClose: () => void;
 }
 
-const StepButton = React.memo(function StepButton({
-  active,
-  velocity,
-  pitch,
-  isCurrent,
-  isVelocityMode,
-  isPitchMode,
-  stepIndex,
-  groupStart,
-  onToggle,
-  onVelocityChange,
-  onPitchChange,
-}: StepButtonProps) {
-  const [showPopover, setShowPopover] = useState(false);
-  const isDragging = useRef(false);
-  const dragStartY = useRef(0);
-  const dragStartVal = useRef(0);
+function Knob({ label, value, min, max, step = 0.01, onChange, unit = "" }: {
+  label: string; value: number; min: number; max: number; step?: number;
+  onChange: (v: number) => void; unit?: string;
+}) {
+  return (
+    <div className="flex flex-col items-center gap-0.5 min-w-[52px]">
+      <span className="text-[9px] text-slate-500 uppercase tracking-wide">{label}</span>
+      <input
+        type="range"
+        min={min} max={max} step={step}
+        value={value}
+        onChange={e => onChange(parseFloat(e.target.value))}
+        className="w-12 accent-cyan-500 cursor-pointer"
+        style={{ writingMode: "horizontal-tb" }}
+      />
+      <span className="text-[9px] text-slate-400 font-mono">
+        {value.toFixed(unit === "Hz" ? 0 : unit === "dB" ? 1 : 2)}{unit}
+      </span>
+    </div>
+  );
+}
 
-  const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    if (isVelocityMode && active) {
-      e.preventDefault();
-      isDragging.current = true;
-      dragStartY.current = e.clientY;
-      dragStartVal.current = velocity;
-    } else if (isPitchMode && active) {
-      e.preventDefault();
-      isDragging.current = true;
-      dragStartY.current = e.clientY;
-      dragStartVal.current = pitch;
-    }
-  }, [isVelocityMode, isPitchMode, active, velocity, pitch]);
+function Toggle({ label, value, onChange }: { label: string; value: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <button
+      onClick={() => onChange(!value)}
+      className={[
+        "px-2 py-0.5 rounded text-[10px] font-medium transition-colors",
+        value ? "bg-cyan-600 text-white" : "bg-slate-700 text-slate-400 hover:bg-slate-600",
+      ].join(" ")}
+    >
+      {label}
+    </button>
+  );
+}
 
-  const handleMouseMove = useCallback((e: MouseEvent) => {
-    if (!isDragging.current) return;
-    const delta = Math.round((dragStartY.current - e.clientY) / 2);
-    if (isVelocityMode) {
-      onVelocityChange(Math.max(1, Math.min(127, dragStartVal.current + delta)));
-    } else if (isPitchMode) {
-      onPitchChange(Math.max(-24, Math.min(24, dragStartVal.current + delta)));
-    }
-  }, [isVelocityMode, isPitchMode, onVelocityChange, onPitchChange]);
-
-  const handleMouseUp = useCallback(() => {
-    isDragging.current = false;
-  }, []);
-
-  useEffect(() => {
-    if (isVelocityMode || isPitchMode) {
-      window.addEventListener("mousemove", handleMouseMove);
-      window.addEventListener("mouseup", handleMouseUp);
-      return () => {
-        window.removeEventListener("mousemove", handleMouseMove);
-        window.removeEventListener("mouseup", handleMouseUp);
-      };
-    }
-  }, [isVelocityMode, isPitchMode, handleMouseMove, handleMouseUp]);
-
-  const colorClass = active ? velocityToColor(velocity, active) : "";
+function FxPanel({ part, onFxChange, onClose }: FxPanelProps) {
+  const fx = part.fx;
+  const [tab, setTab] = useState<"filter" | "eq" | "dynamics" | "delay" | "reverb">("filter");
 
   return (
-    <div className="relative">
-      <button
-        onMouseDown={handleMouseDown}
-        onClick={(!isVelocityMode && !isPitchMode) ? onToggle : undefined}
-        onContextMenu={(e) => { e.preventDefault(); setShowPopover(v => !v); }}
-        title={active ? `Velocity: ${velocity}  Pitch: ${pitch > 0 ? "+" : ""}${pitch}` : `Step ${stepIndex + 1}`}
-        className={[
-          "w-full h-8 rounded-sm transition-all duration-75 border",
-          groupStart ? "ml-0.5" : "",
-          active
-            ? `${colorClass} border-cyan-300/30 shadow-sm shadow-cyan-500/20`
-            : "bg-slate-800 border-slate-700 hover:bg-slate-700 hover:border-slate-600",
-          isCurrent
-            ? "ring-1 ring-white/60 ring-offset-0"
-            : "",
-          (isVelocityMode || isPitchMode) && active
-            ? "cursor-ns-resize"
-            : "cursor-pointer",
-        ].join(" ")}
-      >
-        {/* Velocity-Balken im Step */}
-        {active && isVelocityMode && (
-          <div
-            className="absolute bottom-0 left-0 right-0 bg-white/20 rounded-b-sm"
-            style={{ height: `${(velocity / 127) * 100}%` }}
-          />
-        )}
-        {/* Pitch-Indikator */}
-        {active && isPitchMode && pitch !== 0 && (
-          <span className="text-[8px] text-white/70 leading-none">
-            {pitch > 0 ? `+${pitch}` : pitch}
-          </span>
-        )}
-      </button>
+    <div className="absolute z-50 left-0 top-full mt-1 bg-[#111] border border-slate-700 rounded-lg shadow-2xl p-3 w-[340px]">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-xs font-semibold text-slate-300">FX: {part.name}</span>
+        <button onClick={onClose} className="text-slate-500 hover:text-white text-sm leading-none">✕</button>
+      </div>
 
-      {/* Popover für Velocity/Pitch-Eingabe */}
-      {showPopover && active && (
-        <div className="absolute z-50 bottom-10 left-1/2 -translate-x-1/2 bg-slate-900 border border-slate-600 rounded p-2 shadow-xl min-w-[120px]">
-          <div className="text-[10px] text-slate-400 mb-1">Step {stepIndex + 1}</div>
-          <label className="flex items-center gap-1 text-[10px] text-slate-300">
-            Vel
-            <input
-              type="range" min={1} max={127} value={velocity}
-              onChange={e => onVelocityChange(Number(e.target.value))}
-              className="w-16 accent-cyan-500"
-            />
-            <span className="w-6 text-right">{velocity}</span>
-          </label>
-          <label className="flex items-center gap-1 text-[10px] text-slate-300 mt-1">
-            Pitch
-            <input
-              type="range" min={-24} max={24} value={pitch}
-              onChange={e => onPitchChange(Number(e.target.value))}
-              className="w-16 accent-purple-500"
-            />
-            <span className="w-6 text-right">{pitch > 0 ? `+${pitch}` : pitch}</span>
-          </label>
+      {/* Tabs */}
+      <div className="flex gap-1 mb-3 border-b border-slate-800 pb-2">
+        {(["filter", "eq", "dynamics", "delay", "reverb"] as const).map(t => (
           <button
-            onClick={() => setShowPopover(false)}
-            className="mt-1 w-full text-[10px] text-slate-500 hover:text-slate-300"
+            key={t}
+            onClick={() => setTab(t)}
+            className={[
+              "px-2 py-0.5 rounded text-[10px] capitalize transition-colors",
+              tab === t ? "bg-cyan-700 text-white" : "text-slate-500 hover:text-slate-300",
+            ].join(" ")}
           >
-            ✕ Schließen
+            {t === "dynamics" ? "Comp" : t.charAt(0).toUpperCase() + t.slice(1)}
+          </button>
+        ))}
+      </div>
+
+      {/* Filter */}
+      {tab === "filter" && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <Toggle label="Filter" value={fx.filterEnabled} onChange={v => onFxChange({ filterEnabled: v })} />
+            <select
+              value={fx.filterType}
+              onChange={e => onFxChange({ filterType: e.target.value as ChannelFx["filterType"] })}
+              className="bg-slate-800 text-slate-300 text-[10px] rounded px-1 py-0.5 border border-slate-700"
+            >
+              <option value="lowpass">Low Pass</option>
+              <option value="highpass">High Pass</option>
+              <option value="bandpass">Band Pass</option>
+              <option value="notch">Notch</option>
+            </select>
+          </div>
+          <div className="flex gap-3 flex-wrap">
+            <Knob label="Freq" value={fx.filterFreq} min={20} max={20000} step={10}
+              onChange={v => onFxChange({ filterFreq: v })} unit="Hz" />
+            <Knob label="Resonanz" value={fx.filterQ} min={0.1} max={20} step={0.1}
+              onChange={v => onFxChange({ filterQ: v })} />
+          </div>
+          <div className="border-t border-slate-800 pt-2">
+            <div className="flex items-center gap-2 mb-2">
+              <Toggle label="Distortion" value={fx.distortionEnabled} onChange={v => onFxChange({ distortionEnabled: v })} />
+            </div>
+            <Knob label="Drive" value={fx.distortionAmount} min={0} max={400} step={1}
+              onChange={v => onFxChange({ distortionAmount: v })} />
+          </div>
+        </div>
+      )}
+
+      {/* EQ */}
+      {tab === "eq" && (
+        <div className="space-y-3">
+          <Toggle label="3-Band EQ" value={fx.eqEnabled} onChange={v => onFxChange({ eqEnabled: v })} />
+          <div className="flex gap-3">
+            <Knob label="Low" value={fx.eqLow} min={-15} max={15} step={0.5}
+              onChange={v => onFxChange({ eqLow: v })} unit="dB" />
+            <Knob label="Mid" value={fx.eqMid} min={-15} max={15} step={0.5}
+              onChange={v => onFxChange({ eqMid: v })} unit="dB" />
+            <Knob label="High" value={fx.eqHigh} min={-15} max={15} step={0.5}
+              onChange={v => onFxChange({ eqHigh: v })} unit="dB" />
+          </div>
+        </div>
+      )}
+
+      {/* Compressor */}
+      {tab === "dynamics" && (
+        <div className="space-y-3">
+          <Toggle label="Compressor" value={fx.compressorEnabled} onChange={v => onFxChange({ compressorEnabled: v })} />
+          <div className="flex gap-3 flex-wrap">
+            <Knob label="Threshold" value={fx.compressorThreshold} min={-60} max={0} step={0.5}
+              onChange={v => onFxChange({ compressorThreshold: v })} unit="dB" />
+            <Knob label="Ratio" value={fx.compressorRatio} min={1} max={20} step={0.5}
+              onChange={v => onFxChange({ compressorRatio: v })} />
+            <Knob label="Attack" value={fx.compressorAttack} min={0} max={1} step={0.001}
+              onChange={v => onFxChange({ compressorAttack: v })} />
+            <Knob label="Release" value={fx.compressorRelease} min={0} max={1} step={0.01}
+              onChange={v => onFxChange({ compressorRelease: v })} />
+          </div>
+        </div>
+      )}
+
+      {/* Delay */}
+      {tab === "delay" && (
+        <div className="space-y-3">
+          <Toggle label="Delay" value={fx.delayEnabled} onChange={v => onFxChange({ delayEnabled: v })} />
+          <div className="flex gap-3 flex-wrap">
+            <Knob label="Zeit" value={fx.delayTime} min={0.01} max={2} step={0.01}
+              onChange={v => onFxChange({ delayTime: v })} />
+            <Knob label="Feedback" value={fx.delayFeedback} min={0} max={0.95} step={0.01}
+              onChange={v => onFxChange({ delayFeedback: v })} />
+            <Knob label="Mix" value={fx.delayMix} min={0} max={1} step={0.01}
+              onChange={v => onFxChange({ delayMix: v })} />
+          </div>
+        </div>
+      )}
+
+      {/* Reverb */}
+      {tab === "reverb" && (
+        <div className="space-y-3">
+          <Toggle label="Reverb" value={fx.reverbEnabled} onChange={v => onFxChange({ reverbEnabled: v })} />
+          <div className="flex gap-3">
+            <Knob label="Decay" value={fx.reverbDecay} min={0.1} max={10} step={0.1}
+              onChange={v => onFxChange({ reverbDecay: v })} />
+            <Knob label="Mix" value={fx.reverbMix} min={0} max={1} step={0.01}
+              onChange={v => onFxChange({ reverbMix: v })} />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Kanal-Strip ──────────────────────────────────────────────────────────────
+
+interface ChannelStripProps {
+  part: PartData;
+  partIndex: number;
+  stepCount: number;
+  currentStep: number;
+  isActive: boolean;
+  velocityMode: boolean;
+  pitchMode: boolean;
+  patternResolution: StepResolution;
+  fxPanelOpen: boolean;
+  samples: Props["samples"];
+  onToggleStep: (stepIndex: number) => void;
+  onSetVelocity: (stepIndex: number, v: number) => void;
+  onSetPitch: (stepIndex: number, p: number) => void;
+  onMute: () => void;
+  onSolo: () => void;
+  onVolumeChange: (v: number) => void;
+  onPanChange: (v: number) => void;
+  onSampleDrop: (url: string, name: string) => void;
+  onFxChange: (fx: Partial<ChannelFx>) => void;
+  onFxToggle: () => void;
+  onResolutionChange: (res: StepResolution | undefined) => void;
+  onClick: () => void;
+}
+
+function ChannelStrip({
+  part, partIndex, stepCount, currentStep, isActive,
+  velocityMode, pitchMode, patternResolution, fxPanelOpen,
+  samples, onToggleStep, onSetVelocity, onSetPitch,
+  onMute, onSolo, onVolumeChange, onPanChange,
+  onSampleDrop, onFxChange, onFxToggle, onResolutionChange, onClick,
+}: ChannelStripProps) {
+  const [isDragOver, setIsDragOver] = useState(false);
+  const [pitchPopover, setPitchPopover] = useState<number | null>(null);
+  const [dragVelocityStep, setDragVelocityStep] = useState<number | null>(null);
+  const stripRef = useRef<HTMLDivElement>(null);
+
+  const effectiveResolution = part.stepResolution ?? patternResolution;
+  const hasActiveFx = part.fx.filterEnabled || part.fx.reverbEnabled ||
+    part.fx.delayEnabled || part.fx.distortionEnabled ||
+    part.fx.compressorEnabled || part.fx.eqEnabled;
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(false);
+    const sampleId = e.dataTransfer.getData("sampleId");
+    const sampleUrl = e.dataTransfer.getData("sampleUrl");
+    const sampleName = e.dataTransfer.getData("sampleName");
+    if (sampleUrl) onSampleDrop(sampleUrl, sampleName || "Sample");
+  };
+
+  const handleStepMouseDown = (stepIndex: number, e: React.MouseEvent) => {
+    if (e.button === 2) {
+      e.preventDefault();
+      setPitchPopover(stepIndex);
+      return;
+    }
+    if (velocityMode) {
+      setDragVelocityStep(stepIndex);
+      return;
+    }
+    onToggleStep(stepIndex);
+  };
+
+  const handleMouseMove = (e: React.MouseEvent, stepIndex: number) => {
+    if (dragVelocityStep === null) return;
+    const rect = (e.target as HTMLElement).getBoundingClientRect();
+    const relY = 1 - (e.clientY - rect.top) / rect.height;
+    onSetVelocity(stepIndex, Math.max(1, Math.min(127, Math.round(relY * 127))));
+  };
+
+  return (
+    <div
+      ref={stripRef}
+      className={[
+        "flex items-center gap-1 px-2 py-1 border-b border-slate-800/50 relative",
+        "transition-colors duration-75",
+        isActive ? "bg-slate-900/80" : "hover:bg-slate-900/40",
+        part.muted ? "opacity-50" : "",
+      ].join(" ")}
+      onClick={onClick}
+      onDragOver={e => { e.preventDefault(); setIsDragOver(true); }}
+      onDragLeave={() => setIsDragOver(false)}
+      onDrop={handleDrop}
+    >
+      {isDragOver && (
+        <div className="absolute inset-0 border-2 border-cyan-500 rounded pointer-events-none z-10 bg-cyan-500/10" />
+      )}
+
+      {/* Kanal-Name + Sample-Anzeige */}
+      <div className="w-[88px] flex-shrink-0">
+        <div className="text-[10px] font-medium text-slate-300 truncate leading-tight">
+          {part.name}
+        </div>
+        <div className="text-[9px] text-slate-600 truncate leading-tight">
+          {part.sampleUrl ? "● " + (part.sampleUrl.split("/").pop()?.slice(0, 14) ?? "Sample") : "– kein Sample –"}
+        </div>
+      </div>
+
+      {/* Mute / Solo */}
+      <button
+        onClick={e => { e.stopPropagation(); onMute(); }}
+        title="Mute"
+        className={[
+          "w-5 h-5 rounded text-[9px] font-bold flex-shrink-0 transition-colors",
+          part.muted ? "bg-yellow-600 text-black" : "bg-slate-800 text-slate-500 hover:bg-slate-700",
+        ].join(" ")}
+      >M</button>
+      <button
+        onClick={e => { e.stopPropagation(); onSolo(); }}
+        title="Solo"
+        className={[
+          "w-5 h-5 rounded text-[9px] font-bold flex-shrink-0 transition-colors",
+          part.soloed ? "bg-green-600 text-black" : "bg-slate-800 text-slate-500 hover:bg-slate-700",
+        ].join(" ")}
+      >S</button>
+
+      {/* Volume */}
+      <input
+        type="range" min={0} max={1} step={0.01} value={part.volume}
+        onChange={e => { e.stopPropagation(); onVolumeChange(parseFloat(e.target.value)); }}
+        onClick={e => e.stopPropagation()}
+        title={`Volume: ${Math.round(part.volume * 100)}%`}
+        className="w-12 flex-shrink-0 accent-cyan-600 cursor-pointer"
+      />
+
+      {/* Pan */}
+      <input
+        type="range" min={-1} max={1} step={0.01} value={part.pan}
+        onChange={e => { e.stopPropagation(); onPanChange(parseFloat(e.target.value)); }}
+        onClick={e => e.stopPropagation()}
+        title={`Pan: ${part.pan > 0 ? "R" : part.pan < 0 ? "L" : "C"}${Math.abs(Math.round(part.pan * 100))}`}
+        className="w-10 flex-shrink-0 accent-slate-400 cursor-pointer"
+      />
+
+      {/* Step-Auflösung pro Kanal */}
+      <select
+        value={part.stepResolution ?? ""}
+        onChange={e => {
+          e.stopPropagation();
+          onResolutionChange(e.target.value === "" ? undefined : e.target.value as StepResolution);
+        }}
+        onClick={e => e.stopPropagation()}
+        title="Step-Auflösung für diesen Kanal"
+        className="bg-slate-800 text-slate-400 text-[9px] rounded px-1 py-0.5 border border-slate-700 flex-shrink-0 w-14"
+      >
+        <option value="">Auto</option>
+        <option value="1/8">1/8</option>
+        <option value="1/16">1/16</option>
+        <option value="1/32">1/32</option>
+      </select>
+
+      {/* FX-Button */}
+      <button
+        onClick={e => { e.stopPropagation(); onFxToggle(); }}
+        title="Effekte"
+        className={[
+          "w-6 h-5 rounded text-[9px] flex-shrink-0 transition-colors font-medium",
+          hasActiveFx ? "bg-purple-700 text-white" : "bg-slate-800 text-slate-500 hover:bg-slate-700",
+          fxPanelOpen ? "ring-1 ring-purple-400" : "",
+        ].join(" ")}
+      >FX</button>
+
+      {/* FX-Panel */}
+      {fxPanelOpen && (
+        <FxPanel
+          part={part}
+          onFxChange={onFxChange}
+          onClose={onFxToggle}
+        />
+      )}
+
+      {/* Step-Grid */}
+      <div
+        className="flex gap-[2px] flex-1 min-w-0"
+        onMouseLeave={() => setDragVelocityStep(null)}
+        onMouseUp={() => setDragVelocityStep(null)}
+        onContextMenu={e => e.preventDefault()}
+      >
+        {Array.from({ length: stepCount }).map((_, i) => {
+          const step = part.steps[i];
+          const isCurrentStep = i === currentStep;
+          const isActive = step?.active ?? false;
+          const velocity = step?.velocity ?? 100;
+
+          return (
+            <button
+              key={i}
+              onMouseDown={e => handleStepMouseDown(i, e)}
+              onMouseMove={e => dragVelocityStep !== null && handleMouseMove(e, i)}
+              onMouseEnter={e => dragVelocityStep !== null && handleMouseMove(e, i)}
+              className={[
+                "flex-1 h-7 rounded-sm transition-colors duration-75 relative",
+                stepGroupBorder(i, stepCount),
+                velocityColor(velocity, isActive),
+                isCurrentStep ? "ring-1 ring-white/60" : "",
+              ].join(" ")}
+              title={`Step ${i + 1} | Velocity: ${velocity}`}
+            >
+              {isCurrentStep && (
+                <div className="absolute inset-0 bg-white/10 rounded-sm pointer-events-none" />
+              )}
+              {velocityMode && isActive && (
+                <div
+                  className="absolute bottom-0 left-0 right-0 bg-cyan-300/40 rounded-b-sm pointer-events-none"
+                  style={{ height: `${(velocity / 127) * 100}%` }}
+                />
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Pitch-Popover */}
+      {pitchPopover !== null && (
+        <div
+          className="absolute z-50 bg-[#111] border border-slate-700 rounded-lg p-3 shadow-2xl"
+          style={{ bottom: "calc(100% + 4px)", left: "200px" }}
+          onClick={e => e.stopPropagation()}
+        >
+          <div className="text-[10px] text-slate-400 mb-2">Step {pitchPopover + 1} – Pitch</div>
+          <input
+            type="range" min={-24} max={24} step={1}
+            value={part.steps[pitchPopover]?.pitch ?? 0}
+            onChange={e => onSetPitch(pitchPopover, parseInt(e.target.value))}
+            className="w-32 accent-cyan-500"
+          />
+          <div className="text-center text-[10px] text-slate-300 mt-1">
+            {part.steps[pitchPopover]?.pitch ?? 0} Halbtöne
+          </div>
+          <button
+            onClick={() => setPitchPopover(null)}
+            className="mt-2 w-full text-[10px] bg-slate-700 hover:bg-slate-600 rounded py-0.5 text-slate-300"
+          >
+            Schließen
           </button>
         </div>
       )}
     </div>
   );
-});
-
-// ─── Part-Zeile ───────────────────────────────────────────────────────────────
-
-interface PartRowProps {
-  part: DrumMachineState["patterns"][0]["parts"][0];
-  currentStep: number;
-  isVelocityMode: boolean;
-  isPitchMode: boolean;
-  samples: Sample[];
-  isActive: boolean;
-  onSelect: () => void;
-  onToggleStep: (stepIndex: number) => void;
-  onVelocity: (stepIndex: number, v: number) => void;
-  onPitch: (stepIndex: number, p: number) => void;
-  onMute: () => void;
-  onSolo: () => void;
-  onVolumeChange: (v: number) => void;
-  onPanChange: (p: number) => void;
-  onSampleDrop: (sampleUrl: string, sampleName: string) => void;
-  onClear: () => void;
-  onRandomize: () => void;
-  onShiftLeft: () => void;
-  onShiftRight: () => void;
 }
-
-const PartRow = React.memo(function PartRow({
-  part,
-  currentStep,
-  isVelocityMode,
-  isPitchMode,
-  samples,
-  isActive,
-  onSelect,
-  onToggleStep,
-  onVelocity,
-  onPitch,
-  onMute,
-  onSolo,
-  onVolumeChange,
-  onPanChange,
-  onSampleDrop,
-  onClear,
-  onRandomize,
-  onShiftLeft,
-  onShiftRight,
-}: PartRowProps) {
-  const [showSamplePicker, setShowSamplePicker] = useState(false);
-  const [showControls, setShowControls] = useState(false);
-
-  const handleDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "copy";
-  }, []);
-
-  const handleDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    const sampleId = e.dataTransfer.getData("application/synthstudio-sample");
-    if (sampleId) {
-      const sample = samples.find(s => s.id === sampleId);
-      if (sample) {
-        onSampleDrop(sample.path, sample.name);
-      }
-    }
-  }, [samples, onSampleDrop]);
-
-  return (
-    <div
-      className={[
-        "flex items-center gap-1 px-2 py-0.5 group",
-        isActive ? "bg-slate-800/50" : "hover:bg-slate-900/30",
-        part.muted ? "opacity-40" : "",
-      ].join(" ")}
-      onClick={onSelect}
-    >
-      {/* Part-Label / Sample-Zuweisung */}
-      <div
-        className="w-28 flex-shrink-0 relative"
-        onDragOver={handleDragOver}
-        onDrop={handleDrop}
-      >
-        <button
-          onClick={(e) => { e.stopPropagation(); setShowSamplePicker(v => !v); }}
-          title={part.sampleUrl ? `Sample: ${part.name}` : "Sample zuweisen (Drag & Drop oder klicken)"}
-          className={[
-            "w-full text-left px-1.5 py-0.5 rounded text-[11px] truncate",
-            "border transition-colors",
-            part.sampleUrl
-              ? "border-cyan-800/50 text-cyan-300 bg-cyan-950/30 hover:bg-cyan-900/30"
-              : "border-slate-700 text-slate-500 bg-slate-800/50 hover:bg-slate-700/50",
-          ].join(" ")}
-        >
-          {part.name}
-        </button>
-
-        {/* Sample-Picker Dropdown */}
-        {showSamplePicker && (
-          <div className="absolute z-50 top-7 left-0 bg-slate-900 border border-slate-600 rounded shadow-xl w-48 max-h-48 overflow-y-auto">
-            <div className="px-2 py-1 text-[10px] text-slate-500 border-b border-slate-700">
-              Sample wählen
-            </div>
-            {samples.length === 0 ? (
-              <div className="px-2 py-2 text-[10px] text-slate-600">Keine Samples geladen</div>
-            ) : (
-              samples.map(s => (
-                <button
-                  key={s.id}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onSampleDrop(s.path, s.name);
-                    setShowSamplePicker(false);
-                  }}
-                  className="w-full text-left px-2 py-1 text-[11px] text-slate-300 hover:bg-slate-700 truncate"
-                >
-                  {s.name}
-                </button>
-              ))
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* Mute / Solo */}
-      <button
-        onClick={(e) => { e.stopPropagation(); onMute(); }}
-        title="Mute"
-        className={[
-          "w-5 h-5 rounded text-[9px] font-bold flex-shrink-0 transition-colors",
-          part.muted
-            ? "bg-yellow-600 text-yellow-100"
-            : "bg-slate-700 text-slate-500 hover:bg-slate-600 hover:text-slate-300",
-        ].join(" ")}
-      >
-        M
-      </button>
-      <button
-        onClick={(e) => { e.stopPropagation(); onSolo(); }}
-        title="Solo"
-        className={[
-          "w-5 h-5 rounded text-[9px] font-bold flex-shrink-0 transition-colors",
-          part.soloed
-            ? "bg-green-600 text-green-100"
-            : "bg-slate-700 text-slate-500 hover:bg-slate-600 hover:text-slate-300",
-        ].join(" ")}
-      >
-        S
-      </button>
-
-      {/* Step-Grid */}
-      <div className="flex-1 grid gap-0.5" style={{ gridTemplateColumns: `repeat(${part.steps.length}, 1fr)` }}>
-        {part.steps.map((step, i) => (
-          <StepButton
-            key={i}
-            active={step.active}
-            velocity={step.velocity ?? 100}
-            pitch={step.pitch ?? 0}
-            isCurrent={currentStep === i}
-            isVelocityMode={isVelocityMode}
-            isPitchMode={isPitchMode}
-            stepIndex={i}
-            groupStart={i > 0 && i % 4 === 0}
-            onToggle={() => onToggleStep(i)}
-            onVelocityChange={v => onVelocity(i, v)}
-            onPitchChange={p => onPitch(i, p)}
-          />
-        ))}
-      </div>
-
-      {/* Volume-Slider (kompakt) */}
-      <div className="w-12 flex-shrink-0 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-        <input
-          type="range" min={0} max={1} step={0.01} value={part.volume}
-          onChange={e => { e.stopPropagation(); onVolumeChange(Number(e.target.value)); }}
-          onClick={e => e.stopPropagation()}
-          title={`Volume: ${Math.round(part.volume * 100)}%`}
-          className="w-full accent-cyan-500 h-1"
-        />
-      </div>
-
-      {/* Kontext-Menü */}
-      <div className="relative flex-shrink-0">
-        <button
-          onClick={(e) => { e.stopPropagation(); setShowControls(v => !v); }}
-          className="w-5 h-5 rounded text-[10px] text-slate-600 hover:text-slate-300 hover:bg-slate-700 opacity-0 group-hover:opacity-100 transition-opacity"
-          title="Mehr Optionen"
-        >
-          ⋮
-        </button>
-        {showControls && (
-          <div className="absolute z-50 right-0 top-6 bg-slate-900 border border-slate-600 rounded shadow-xl w-36">
-            <button onClick={(e) => { e.stopPropagation(); onClear(); setShowControls(false); }}
-              className="w-full text-left px-3 py-1.5 text-[11px] text-slate-300 hover:bg-slate-700">
-              ✕ Leeren
-            </button>
-            <button onClick={(e) => { e.stopPropagation(); onRandomize(); setShowControls(false); }}
-              className="w-full text-left px-3 py-1.5 text-[11px] text-slate-300 hover:bg-slate-700">
-              ⚄ Zufällig
-            </button>
-            <div className="border-t border-slate-700 my-0.5" />
-            <button onClick={(e) => { e.stopPropagation(); onShiftLeft(); setShowControls(false); }}
-              className="w-full text-left px-3 py-1.5 text-[11px] text-slate-300 hover:bg-slate-700">
-              ← Verschieben
-            </button>
-            <button onClick={(e) => { e.stopPropagation(); onShiftRight(); setShowControls(false); }}
-              className="w-full text-left px-3 py-1.5 text-[11px] text-slate-300 hover:bg-slate-700">
-              → Verschieben
-            </button>
-            <div className="border-t border-slate-700 my-0.5" />
-            <label className="flex items-center gap-1 px-3 py-1.5 text-[11px] text-slate-300">
-              Pan
-              <input
-                type="range" min={-1} max={1} step={0.01} value={part.pan}
-                onChange={e => { e.stopPropagation(); onPanChange(Number(e.target.value)); }}
-                onClick={e => e.stopPropagation()}
-                className="w-16 accent-purple-500"
-              />
-            </label>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-});
 
 // ─── Haupt-Komponente ─────────────────────────────────────────────────────────
 
-export function DrumMachine({
-  dm,
-  samples,
-  isPlaying,
-  bpm,
-  onPlayStop,
-  onBpmChange,
-  className = "",
-}: DrumMachineProps) {
+export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChange, className = "" }: Props) {
   const pattern = dm.getActivePattern();
   const [showPatternMenu, setShowPatternMenu] = useState(false);
   const [metronomOn, setMetronomOn] = useState(false);
+  const [bpmInput, setBpmInput] = useState(String(bpm));
   const bpmInputRef = useRef<HTMLInputElement>(null);
 
   // Keyboard-Shortcuts werden zentral durch useKeyboardShortcuts in App.tsx gehandhabt
 
+  // BPM-Input synchronisieren
+  useEffect(() => {
+    setBpmInput(String(bpm));
+  }, [bpm]);
+
+  // Metronom-Sync
+  useEffect(() => {
+    AudioEngine.setMetronom(metronomOn);
+  }, [metronomOn]);
+
+  // Effekte live aktualisieren
+  useEffect(() => {
+    if (!pattern) return;
+    pattern.parts.forEach(part => {
+      AudioEngine.updateChannelFx(part.id, part.fx);
+    });
+  }, [pattern]);
+
   if (!pattern) return null;
 
+  const effectiveBpm = pattern.bpm ?? bpm;
+
   return (
-    <div className={`flex flex-col bg-[#0a0a0a] text-slate-100 select-none ${className}`}>
+    <div className={`flex flex-col bg-[#0a0a0a] text-slate-100 select-none overflow-hidden ${className}`}>
 
       {/* ── Toolbar ─────────────────────────────────────────────────────── */}
       <div className="flex items-center gap-2 px-3 py-2 bg-[#0d0d0d] border-b border-slate-800 flex-wrap">
@@ -444,57 +500,85 @@ export function DrumMachine({
         {/* Pattern-Auswahl */}
         <div className="relative">
           <button
-            onClick={() => setShowPatternMenu(v => !v)}
-            className="flex items-center gap-1 px-2 py-1 bg-slate-800 hover:bg-slate-700 rounded text-xs text-slate-300 border border-slate-700"
+            onClick={() => setShowPatternMenu(prev => !prev)}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 rounded text-xs font-medium transition-colors"
           >
-            <span className="max-w-[100px] truncate">{pattern.name}</span>
+            <span>{pattern.name}</span>
             <span className="text-slate-500">▾</span>
           </button>
           {showPatternMenu && (
-            <div className="absolute z-50 top-8 left-0 bg-slate-900 border border-slate-600 rounded shadow-xl w-44">
+            <div className="absolute top-full left-0 mt-1 bg-[#111] border border-slate-700 rounded-lg shadow-xl z-50 min-w-[180px]">
               {dm.patterns.map(p => (
-                <button
-                  key={p.id}
-                  onClick={() => { dm.setActivePattern(p.id); setShowPatternMenu(false); }}
-                  className={[
-                    "w-full text-left px-3 py-1.5 text-xs truncate",
-                    p.id === dm.activePatternId
-                      ? "text-cyan-400 bg-slate-800"
-                      : "text-slate-300 hover:bg-slate-700",
-                  ].join(" ")}
-                >
-                  {p.name}
-                </button>
+                <div key={p.id} className="flex items-center group">
+                  <button
+                    onClick={() => { dm.setActivePattern(p.id); setShowPatternMenu(false); }}
+                    className={[
+                      "flex-1 text-left px-3 py-1.5 text-xs transition-colors",
+                      p.id === dm.activePatternId
+                        ? "text-cyan-400 bg-cyan-900/30"
+                        : "text-slate-300 hover:bg-slate-800",
+                    ].join(" ")}
+                  >
+                    {p.name}
+                    {p.bpm !== null && (
+                      <span className="ml-1 text-[9px] text-slate-500">{p.bpm} BPM</span>
+                    )}
+                  </button>
+                  <button
+                    onClick={() => dm.duplicatePattern(p.id)}
+                    className="px-1.5 py-1.5 text-slate-600 hover:text-slate-300 text-xs opacity-0 group-hover:opacity-100"
+                    title="Duplizieren"
+                  >⧉</button>
+                  {dm.patterns.length > 1 && (
+                    <button
+                      onClick={() => dm.removePattern(p.id)}
+                      className="px-1.5 py-1.5 text-slate-600 hover:text-red-400 text-xs opacity-0 group-hover:opacity-100"
+                      title="Löschen"
+                    >✕</button>
+                  )}
+                </div>
               ))}
-              <div className="border-t border-slate-700 my-0.5" />
-              <button
-                onClick={() => { dm.addPattern(); setShowPatternMenu(false); }}
-                className="w-full text-left px-3 py-1.5 text-xs text-slate-400 hover:bg-slate-700"
-              >
-                + Neues Pattern
-              </button>
-              {dm.patterns.length > 1 && (
+              <div className="border-t border-slate-800 p-1">
                 <button
-                  onClick={() => { dm.duplicatePattern(dm.activePatternId); setShowPatternMenu(false); }}
-                  className="w-full text-left px-3 py-1.5 text-xs text-slate-400 hover:bg-slate-700"
+                  onClick={() => { dm.addPattern(); setShowPatternMenu(false); }}
+                  className="w-full text-left px-2 py-1 text-xs text-slate-500 hover:text-slate-300 hover:bg-slate-800 rounded"
                 >
-                  ⎘ Duplizieren
+                  + Neues Pattern
                 </button>
-              )}
+              </div>
             </div>
           )}
         </div>
 
+        {/* Step-Auflösung (Pattern-Global) */}
+        <div className="flex items-center gap-1">
+          <span className="text-[10px] text-slate-500">Auflösung:</span>
+          {(["1/8", "1/16", "1/32"] as StepResolution[]).map(res => (
+            <button
+              key={res}
+              onClick={() => dm.setPatternStepResolution(pattern.id, res)}
+              className={[
+                "px-2 py-0.5 rounded text-[10px] font-mono transition-colors",
+                pattern.stepResolution === res
+                  ? "bg-cyan-700 text-white"
+                  : "bg-slate-800 text-slate-400 hover:bg-slate-700",
+              ].join(" ")}
+            >
+              {res}
+            </button>
+          ))}
+        </div>
+
         {/* Step-Count */}
-        <div className="flex rounded overflow-hidden border border-slate-700">
+        <div className="flex items-center gap-1">
           {([16, 32] as const).map(n => (
             <button
               key={n}
               onClick={() => dm.setStepCount(n)}
               className={[
-                "px-2 py-1 text-xs transition-colors",
+                "px-2 py-0.5 rounded text-[10px] font-mono transition-colors",
                 pattern.stepCount === n
-                  ? "bg-cyan-700 text-white"
+                  ? "bg-slate-600 text-white"
                   : "bg-slate-800 text-slate-500 hover:bg-slate-700",
               ].join(" ")}
             >
@@ -503,182 +587,198 @@ export function DrumMachine({
           ))}
         </div>
 
-        {/* Editing-Modi */}
+        <div className="flex-1" />
+
+        {/* Pattern-BPM-Sync */}
+        <div className="flex items-center gap-1.5">
+          <span className="text-[10px] text-slate-500">BPM:</span>
+          <button
+            onClick={() => dm.setPatternBpm(pattern.id, pattern.bpm === null ? bpm : null)}
+            title={pattern.bpm === null ? "Eigenes BPM setzen" : "Globales BPM verwenden"}
+            className={[
+              "px-2 py-0.5 rounded text-[9px] transition-colors",
+              pattern.bpm !== null ? "bg-amber-700 text-white" : "bg-slate-800 text-slate-500 hover:bg-slate-700",
+            ].join(" ")}
+          >
+            {pattern.bpm !== null ? "Eigenes" : "Global"}
+          </button>
+          {pattern.bpm !== null && (
+            <input
+              type="number" min={20} max={300}
+              value={pattern.bpm}
+              onChange={e => dm.setPatternBpm(pattern.id, parseInt(e.target.value) || bpm)}
+              className="w-14 bg-slate-800 text-slate-200 text-xs rounded px-1.5 py-0.5 border border-slate-700 text-center"
+            />
+          )}
+        </div>
+
+        {/* Velocity / Pitch Mode */}
         <button
           onClick={() => dm.setVelocityMode(!dm.velocityMode)}
-          title="Velocity-Modus (Drag zum Anpassen)"
           className={[
-            "px-2 py-1 rounded text-xs border transition-colors",
-            dm.velocityMode
-              ? "bg-cyan-800 border-cyan-600 text-cyan-200"
-              : "bg-slate-800 border-slate-700 text-slate-500 hover:bg-slate-700",
+            "px-2 py-1 rounded text-[10px] font-medium transition-colors",
+            dm.velocityMode ? "bg-amber-700 text-white" : "bg-slate-800 text-slate-500 hover:bg-slate-700",
           ].join(" ")}
-        >
-          VEL
-        </button>
+          title="Velocity-Modus"
+        >VEL</button>
+
         <button
           onClick={() => dm.setPitchMode(!dm.pitchMode)}
-          title="Pitch-Modus"
           className={[
-            "px-2 py-1 rounded text-xs border transition-colors",
-            dm.pitchMode
-              ? "bg-purple-800 border-purple-600 text-purple-200"
-              : "bg-slate-800 border-slate-700 text-slate-500 hover:bg-slate-700",
+            "px-2 py-1 rounded text-[10px] font-medium transition-colors",
+            dm.pitchMode ? "bg-purple-700 text-white" : "bg-slate-800 text-slate-500 hover:bg-slate-700",
           ].join(" ")}
-        >
-          PITCH
-        </button>
-
-        <div className="flex-1" />
+          title="Pitch-Modus (Rechtsklick auf Step)"
+        >PITCH</button>
 
         {/* Metronom */}
         <button
-          onClick={() => setMetronomOn(v => !v)}
-          title="Metronom"
+          onClick={() => setMetronomOn(prev => !prev)}
           className={[
-            "px-2 py-1 rounded text-xs border transition-colors",
-            metronomOn
-              ? "bg-amber-800 border-amber-600 text-amber-200"
-              : "bg-slate-800 border-slate-700 text-slate-500 hover:bg-slate-700",
+            "px-2 py-1 rounded text-[10px] transition-colors",
+            metronomOn ? "bg-slate-600 text-white" : "bg-slate-800 text-slate-500 hover:bg-slate-700",
           ].join(" ")}
-        >
-          ♩
-        </button>
+          title="Metronom"
+        >♩</button>
 
-        {/* BPM */}
-        <div className="flex items-center gap-1">
-          <button
-            onClick={() => onBpmChange(Math.max(20, bpm - 1))}
-            className="w-5 h-6 bg-slate-800 hover:bg-slate-700 rounded text-xs text-slate-400"
-          >−</button>
-          <input
-            ref={bpmInputRef}
-            type="number"
-            min={20} max={300} value={bpm}
-            onChange={e => onBpmChange(Number(e.target.value))}
-            className="w-12 text-center bg-slate-800 border border-slate-700 rounded text-xs text-slate-200 py-0.5 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-          />
-          <button
-            onClick={() => onBpmChange(Math.min(300, bpm + 1))}
-            className="w-5 h-6 bg-slate-800 hover:bg-slate-700 rounded text-xs text-slate-400"
-          >+</button>
-          <span className="text-[10px] text-slate-600">BPM</span>
-        </div>
+        {/* Clear */}
+        <button
+          onClick={dm.clearPattern}
+          className="px-2 py-1 rounded text-[10px] bg-slate-800 text-slate-500 hover:bg-red-900 hover:text-red-300 transition-colors"
+          title="Pattern leeren"
+        >CLR</button>
+
+        {/* Undo/Redo */}
+        <button onClick={dm.undo} disabled={!dm.canUndo}
+          className="w-6 h-6 rounded text-xs bg-slate-800 text-slate-500 hover:bg-slate-700 disabled:opacity-30 transition-colors"
+          title="Rückgängig (Ctrl+Z)">↩</button>
+        <button onClick={dm.redo} disabled={!dm.canRedo}
+          className="w-6 h-6 rounded text-xs bg-slate-800 text-slate-500 hover:bg-slate-700 disabled:opacity-30 transition-colors"
+          title="Wiederholen (Ctrl+Y)">↪</button>
 
         {/* Play/Stop */}
         <button
           onClick={onPlayStop}
           title={isPlaying ? "Stop (Space)" : "Play (Space)"}
           className={[
-            "w-8 h-7 rounded flex items-center justify-center text-sm transition-colors",
+            "w-8 h-8 rounded flex items-center justify-center text-sm font-bold transition-colors",
             isPlaying
-              ? "bg-cyan-600 text-white hover:bg-cyan-500"
-              : "bg-slate-700 text-slate-300 hover:bg-slate-600",
+              ? "bg-red-600 hover:bg-red-500 text-white"
+              : "bg-cyan-600 hover:bg-cyan-500 text-white",
           ].join(" ")}
         >
           {isPlaying ? "■" : "▶"}
         </button>
 
-        {/* Undo/Redo */}
-        <button
-          onClick={dm.undo}
-          disabled={!dm.canUndo}
-          title="Rückgängig (Ctrl+Z)"
-          className="w-6 h-6 rounded text-xs bg-slate-800 text-slate-500 hover:bg-slate-700 disabled:opacity-30 disabled:cursor-not-allowed"
-        >↩</button>
-        <button
-          onClick={dm.redo}
-          disabled={!dm.canRedo}
-          title="Wiederholen (Ctrl+Y)"
-          className="w-6 h-6 rounded text-xs bg-slate-800 text-slate-500 hover:bg-slate-700 disabled:opacity-30 disabled:cursor-not-allowed"
-        >↪</button>
+        {/* BPM */}
+        <div className="flex items-center gap-1">
+          <button onClick={() => onBpmChange(Math.max(20, bpm - 1))}
+            className="w-5 h-6 rounded text-xs bg-slate-800 text-slate-500 hover:bg-slate-700">−</button>
+          <input
+            ref={bpmInputRef}
+            type="number" min={20} max={300}
+            value={bpmInput}
+            onChange={e => setBpmInput(e.target.value)}
+            onBlur={() => {
+              const v = parseInt(bpmInput);
+              if (!isNaN(v)) onBpmChange(Math.max(20, Math.min(300, v)));
+              else setBpmInput(String(bpm));
+            }}
+            onKeyDown={e => {
+              if (e.key === "Enter") bpmInputRef.current?.blur();
+            }}
+            className="w-14 bg-slate-800 text-slate-200 text-xs rounded px-1.5 py-1 border border-slate-700 text-center"
+          />
+          <button onClick={() => onBpmChange(Math.min(300, bpm + 1))}
+            className="w-5 h-6 rounded text-xs bg-slate-800 text-slate-500 hover:bg-slate-700">+</button>
+        </div>
 
-        {/* Pattern leeren */}
+        {/* Kanal hinzufügen */}
         <button
-          onClick={dm.clearPattern}
-          title="Pattern leeren"
-          className="px-2 py-1 rounded text-xs bg-slate-800 border border-slate-700 text-slate-500 hover:bg-red-900/50 hover:text-red-300 hover:border-red-800 transition-colors"
-        >
-          ✕ Leeren
-        </button>
+          onClick={() => dm.addPart()}
+          className="px-2 py-1 rounded text-[10px] bg-slate-800 text-slate-500 hover:bg-slate-700 transition-colors"
+          title="Kanal hinzufügen"
+        >+ Kanal</button>
       </div>
 
-      {/* ── Step-Nummern-Header ──────────────────────────────────────────── */}
-      <div className="flex items-center gap-1 px-2 py-0.5 bg-[#0c0c0c] border-b border-slate-800/50">
-        <div className="w-28 flex-shrink-0" />
+      {/* ── Step-Grid Header ─────────────────────────────────────────────── */}
+      <div className="flex items-center gap-1 px-2 py-1 bg-[#0d0d0d] border-b border-slate-800/50">
+        {/* Platzhalter für Kanal-Steuerung */}
+        <div className="w-[88px] flex-shrink-0" />
         <div className="w-5 flex-shrink-0" />
         <div className="w-5 flex-shrink-0" />
-        <div
-          className="flex-1 grid gap-0.5"
-          style={{ gridTemplateColumns: `repeat(${pattern.stepCount}, 1fr)` }}
-        >
-          {Array.from({ length: pattern.stepCount }, (_, i) => (
+        <div className="w-12 flex-shrink-0" />
+        <div className="w-10 flex-shrink-0" />
+        <div className="w-14 flex-shrink-0" />
+        <div className="w-6 flex-shrink-0" />
+
+        {/* Step-Nummern */}
+        <div className="flex gap-[2px] flex-1 min-w-0">
+          {Array.from({ length: pattern.stepCount }).map((_, i) => (
             <div
               key={i}
               className={[
-                "text-center text-[8px] leading-none py-0.5",
-                i % 4 === 0 ? "text-slate-400 font-medium" : "text-slate-700",
-                i > 0 && i % 4 === 0 ? "border-l border-slate-700/50" : "",
+                "flex-1 text-center text-[8px] leading-none py-0.5",
+                stepGroupBorder(i, pattern.stepCount),
+                i === dm.currentStep ? "text-cyan-400 font-bold" : "text-slate-700",
+                i % 4 === 0 ? "text-slate-500" : "",
               ].join(" ")}
             >
-              {groupLabel(i)}
+              {i % 4 === 0 ? i + 1 : "·"}
             </div>
           ))}
         </div>
-        <div className="w-12 flex-shrink-0" />
-        <div className="w-5 flex-shrink-0" />
       </div>
 
-      {/* ── Part-Zeilen ──────────────────────────────────────────────────── */}
+      {/* ── Kanal-Zeilen ─────────────────────────────────────────────────── */}
       <div className="flex-1 overflow-y-auto">
-        {pattern.parts.map((part, idx) => (
-          <PartRow
+        {pattern.parts.map((part, partIndex) => (
+          <ChannelStrip
             key={part.id}
             part={part}
+            partIndex={partIndex}
+            stepCount={pattern.stepCount}
             currentStep={dm.currentStep}
-            isVelocityMode={dm.velocityMode}
-            isPitchMode={dm.pitchMode}
-            samples={samples}
             isActive={dm.activePartId === part.id}
-            onSelect={() => dm.setActivePart(part.id)}
+            velocityMode={dm.velocityMode}
+            pitchMode={dm.pitchMode}
+            patternResolution={pattern.stepResolution}
+            fxPanelOpen={dm.fxPanelPartId === part.id}
+            samples={samples}
             onToggleStep={stepIndex => dm.toggleStep(part.id, stepIndex)}
-            onVelocity={(stepIndex, v) => dm.setStepVelocity(part.id, stepIndex, v)}
-            onPitch={(stepIndex, p) => dm.setStepPitch(part.id, stepIndex, p)}
+            onSetVelocity={(stepIndex, v) => dm.setStepVelocity(part.id, stepIndex, v)}
+            onSetPitch={(stepIndex, p) => dm.setStepPitch(part.id, stepIndex, p)}
             onMute={() => dm.setPartMuted(part.id, !part.muted)}
             onSolo={() => dm.setPartSoloed(part.id, !part.soloed)}
             onVolumeChange={v => dm.setPartVolume(part.id, v)}
-            onPanChange={p => dm.setPartPan(part.id, p)}
+            onPanChange={v => dm.setPartPan(part.id, v)}
             onSampleDrop={(url, name) => dm.setPartSample(part.id, url, name)}
-            onClear={() => dm.fillPattern(part.id, 0)}
-            onRandomize={() => dm.randomizePattern(part.id)}
-            onShiftLeft={() => dm.shiftPattern(part.id, "left")}
-            onShiftRight={() => dm.shiftPattern(part.id, "right")}
+            onFxChange={fx => {
+              dm.setPartFx(part.id, fx);
+              // Live-Update der Audio-Engine
+              const updatedPart = { ...part, fx: { ...part.fx, ...fx } };
+              AudioEngine.updateChannelFx(part.id, updatedPart.fx);
+            }}
+            onFxToggle={() => dm.setFxPanelPartId(dm.fxPanelPartId === part.id ? null : part.id)}
+            onResolutionChange={res => dm.setPartStepResolution(part.id, res)}
+            onClick={() => dm.setActivePart(part.id)}
           />
         ))}
-
-        {/* Part hinzufügen */}
-        <button
-          onClick={() => dm.addPart()}
-          className="w-full py-1.5 text-xs text-slate-700 hover:text-slate-400 hover:bg-slate-900/50 transition-colors border-t border-slate-800/50 mt-0.5"
-        >
-          + Part hinzufügen
-        </button>
       </div>
 
       {/* ── Status-Leiste ────────────────────────────────────────────────── */}
-      <div className="flex items-center gap-3 px-3 py-1 bg-[#0d0d0d] border-t border-slate-800 text-[10px] text-slate-600">
-        <span>{pattern.parts.length} Parts</span>
+      <div className="flex items-center gap-3 px-3 py-1 bg-[#0d0d0d] border-t border-slate-800 text-[9px] text-slate-600">
+        <span>{pattern.parts.length} Kanäle</span>
+        <span>·</span>
         <span>{pattern.stepCount} Steps</span>
-        <span>{bpm} BPM</span>
-        {isPlaying && (
-          <span className="text-cyan-700">
-            ● Step {dm.currentStep + 1}/{pattern.stepCount}
-          </span>
-        )}
-        {dm.velocityMode && <span className="text-cyan-600">VEL-Modus aktiv</span>}
-        {dm.pitchMode && <span className="text-purple-600">PITCH-Modus aktiv</span>}
-        <span className="flex-1" />
-        <span className="text-slate-700">Leertaste = Play/Stop  •  Rechtsklick = Step-Details</span>
+        <span>·</span>
+        <span>{pattern.stepResolution}</span>
+        <span>·</span>
+        <span>{effectiveBpm} BPM{pattern.bpm !== null ? " (eigenes)" : ""}</span>
+        <span>·</span>
+        <span>Step {dm.currentStep + 1}/{pattern.stepCount}</span>
+        {dm.velocityMode && <><span>·</span><span className="text-amber-400">VELOCITY-MODUS</span></>}
+        {dm.pitchMode && <><span>·</span><span className="text-purple-400">PITCH-MODUS</span></>}
       </div>
     </div>
   );

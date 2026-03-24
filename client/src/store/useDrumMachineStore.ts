@@ -1,17 +1,17 @@
 /**
- * Synthstudio – useDrumMachineStore.ts
+ * Synthstudio – useDrumMachineStore.ts  (v2)
  *
- * Zentraler State für die Drum Machine.
- * Verwaltet:
- * - Patterns (mehrere, wechselbar)
- * - Parts (Zeilen) mit Sample-Zuweisung, Mute/Solo, Volume, Pan
- * - Steps mit Velocity und Pitch
+ * Erweiterter State für die Drum Machine:
+ * - 9 Kanäle (Kick, Snare, Hi-Hat cl./op., Clap, Tom Hi/Lo, Perc, FX)
+ * - Per-Kanal Effekt-State (Filter, Reverb, Delay, Distortion, Compressor, EQ)
+ * - Step-Auflösung (1/8, 1/16, 1/32) pro Pattern und pro Kanal
+ * - BPM-Sync: Patterns können eigenes BPM oder globales BPM nutzen
  * - Undo/Redo (bis 50 Schritte)
- * - Aktiver Step (für Playback-Visualisierung)
  */
 
 import { useState, useCallback, useRef } from "react";
-import type { PatternData, PartData, StepData } from "../audio/AudioEngine";
+import type { PatternData, PartData, StepData, StepResolution, ChannelFx } from "../audio/AudioEngine";
+import { DEFAULT_CHANNEL_FX } from "../audio/AudioEngine";
 
 // ─── Typen ────────────────────────────────────────────────────────────────────
 
@@ -20,21 +20,20 @@ export interface DrumMachineState {
   activePatternId: string;
   activePartId: string | null;
   currentStep: number;
-  /** Ob Velocity-Editing-Modus aktiv */
   velocityMode: boolean;
-  /** Ob Pitch-Editing-Modus aktiv */
   pitchMode: boolean;
+  fxPanelPartId: string | null;
 }
 
 export interface DrumMachineActions {
-  // Pattern-Verwaltung
   addPattern: (name?: string) => void;
   removePattern: (id: string) => void;
   renamePattern: (id: string, name: string) => void;
   setActivePattern: (id: string) => void;
   duplicatePattern: (id: string) => void;
+  setPatternBpm: (id: string, bpm: number | null) => void;
+  setPatternStepResolution: (id: string, res: StepResolution) => void;
 
-  // Part-Verwaltung
   addPart: (name?: string) => void;
   removePart: (id: string) => void;
   renamePart: (id: string, name: string) => void;
@@ -43,10 +42,13 @@ export interface DrumMachineActions {
   setPartSoloed: (partId: string, soloed: boolean) => void;
   setPartVolume: (partId: string, volume: number) => void;
   setPartPan: (partId: string, pan: number) => void;
+  setPartStepResolution: (partId: string, res: StepResolution | undefined) => void;
   setActivePart: (partId: string | null) => void;
   movePart: (fromIndex: number, toIndex: number) => void;
 
-  // Step-Verwaltung
+  setPartFx: (partId: string, fx: Partial<ChannelFx>) => void;
+  setFxPanelPartId: (partId: string | null) => void;
+
   toggleStep: (partId: string, stepIndex: number) => void;
   setStepVelocity: (partId: string, stepIndex: number, velocity: number) => void;
   setStepPitch: (partId: string, stepIndex: number, pitch: number) => void;
@@ -55,23 +57,16 @@ export interface DrumMachineActions {
   randomizePattern: (partId: string) => void;
   shiftPattern: (partId: string, direction: "left" | "right") => void;
 
-  // Step-Count
   setStepCount: (count: 16 | 32) => void;
-
-  // Playback-Position
   setCurrentStep: (step: number) => void;
-
-  // Editing-Modi
   setVelocityMode: (active: boolean) => void;
   setPitchMode: (active: boolean) => void;
 
-  // Undo/Redo
   undo: () => void;
   redo: () => void;
   canUndo: boolean;
   canRedo: boolean;
 
-  // Getter
   getActivePattern: () => PatternData | undefined;
 }
 
@@ -94,46 +89,48 @@ function makePart(name: string, stepCount: number): PartData {
     soloed: false,
     volume: 1.0,
     pan: 0,
+    stepResolution: undefined,
     steps: makeSteps(stepCount),
+    fx: { ...DEFAULT_CHANNEL_FX },
   };
 }
 
+const DEFAULT_PART_NAMES = [
+  "Kick", "Snare", "Hi-Hat cl.", "Hi-Hat op.",
+  "Clap", "Tom Hi", "Tom Lo", "Perc", "FX",
+];
+
 function makePattern(name: string, stepCount: 16 | 32 = 16): PatternData {
-  const defaultParts = [
-    "Kick", "Snare", "Hi-Hat (cl.)", "Hi-Hat (op.)",
-    "Clap", "Tom Hi", "Tom Lo", "FX",
-  ];
   return {
     id: makeId(),
     name,
     stepCount,
-    parts: defaultParts.map(n => makePart(n, stepCount)),
+    stepResolution: "1/16",
+    bpm: null,
+    parts: DEFAULT_PART_NAMES.map(n => makePart(n, stepCount)),
   };
 }
 
 const INITIAL_PATTERN = makePattern("Pattern 1");
 
-const INITIAL_STATE: DrumMachineState = {
-  patterns: [INITIAL_PATTERN],
-  activePatternId: INITIAL_PATTERN.id,
-  activePartId: null,
-  currentStep: 0,
-  velocityMode: false,
-  pitchMode: false,
-};
-
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
 export function useDrumMachineStore(): DrumMachineState & DrumMachineActions {
-  const [state, setState] = useState<DrumMachineState>(INITIAL_STATE);
+  const [state, setState] = useState<DrumMachineState>({
+    patterns: [INITIAL_PATTERN],
+    activePatternId: INITIAL_PATTERN.id,
+    activePartId: INITIAL_PATTERN.parts[0]?.id ?? null,
+    currentStep: 0,
+    velocityMode: false,
+    pitchMode: false,
+    fxPanelPartId: null,
+  });
 
-  // Undo/Redo-Stack (nur Pattern-Daten, nicht UI-State)
   const undoStack = useRef<PatternData[][]>([]);
   const redoStack = useRef<PatternData[][]>([]);
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
 
-  // Snapshot für Undo pushen
   const pushUndo = useCallback((patterns: PatternData[]) => {
     undoStack.current.push(JSON.parse(JSON.stringify(patterns)));
     if (undoStack.current.length > 50) undoStack.current.shift();
@@ -142,7 +139,6 @@ export function useDrumMachineStore(): DrumMachineState & DrumMachineActions {
     setCanRedo(false);
   }, []);
 
-  // Pattern-Update mit Undo-Support
   const updatePatterns = useCallback(
     (updater: (patterns: PatternData[]) => PatternData[], withUndo = true) => {
       setState(prev => {
@@ -154,15 +150,19 @@ export function useDrumMachineStore(): DrumMachineState & DrumMachineActions {
     [pushUndo]
   );
 
-  // ── Pattern-Aktionen ────────────────────────────────────────────────────
+  // ── Pattern ───────────────────────────────────────────────────────────────
 
   const addPattern = useCallback((name?: string) => {
-    const p = makePattern(name ?? `Pattern ${Date.now() % 1000}`);
-    setState(prev => ({
-      ...prev,
-      patterns: [...prev.patterns, p],
-      activePatternId: p.id,
-    }));
+    setState(prev => {
+      const stepCount = prev.patterns.find(p => p.id === prev.activePatternId)?.stepCount ?? 16;
+      const p = makePattern(name ?? `Pattern ${prev.patterns.length + 1}`, stepCount);
+      return {
+        ...prev,
+        patterns: [...prev.patterns, p],
+        activePatternId: p.id,
+        activePartId: p.parts[0]?.id ?? null,
+      };
+    });
   }, []);
 
   const removePattern = useCallback((id: string) => {
@@ -182,7 +182,14 @@ export function useDrumMachineStore(): DrumMachineState & DrumMachineActions {
   }, [updatePatterns]);
 
   const setActivePattern = useCallback((id: string) => {
-    setState(prev => ({ ...prev, activePatternId: id }));
+    setState(prev => {
+      const pattern = prev.patterns.find(p => p.id === id);
+      return {
+        ...prev,
+        activePatternId: id,
+        activePartId: pattern?.parts[0]?.id ?? null,
+      };
+    });
   }, []);
 
   const duplicatePattern = useCallback((id: string) => {
@@ -198,15 +205,31 @@ export function useDrumMachineStore(): DrumMachineState & DrumMachineActions {
     });
   }, []);
 
-  // ── Part-Aktionen ───────────────────────────────────────────────────────
+  const setPatternBpm = useCallback((id: string, bpm: number | null) => {
+    updatePatterns(ps => ps.map(p => p.id === id ? { ...p, bpm } : p), false);
+  }, [updatePatterns]);
+
+  const setPatternStepResolution = useCallback((id: string, res: StepResolution) => {
+    updatePatterns(ps => ps.map(p => p.id === id ? { ...p, stepResolution: res } : p), false);
+  }, [updatePatterns]);
+
+  // ── Parts ─────────────────────────────────────────────────────────────────
 
   const addPart = useCallback((name?: string) => {
-    updatePatterns(ps => ps.map(p => {
-      if (p.id !== state.activePatternId) return p;
-      const part = makePart(name ?? `Part ${p.parts.length + 1}`, p.stepCount);
-      return { ...p, parts: [...p.parts, part] };
-    }));
-  }, [updatePatterns, state.activePatternId]);
+    setState(prev => {
+      const pattern = prev.patterns.find(p => p.id === prev.activePatternId);
+      if (!pattern) return prev;
+      pushUndo(prev.patterns);
+      const part = makePart(name ?? `Kanal ${pattern.parts.length + 1}`, pattern.stepCount);
+      return {
+        ...prev,
+        patterns: prev.patterns.map(p =>
+          p.id === prev.activePatternId ? { ...p, parts: [...p.parts, part] } : p
+        ),
+        activePartId: part.id,
+      };
+    });
+  }, [pushUndo]);
 
   const removePart = useCallback((id: string) => {
     updatePatterns(ps => ps.map(p => ({
@@ -242,11 +265,9 @@ export function useDrumMachineStore(): DrumMachineState & DrumMachineActions {
   const setPartSoloed = useCallback((partId: string, soloed: boolean) => {
     updatePatterns(ps => ps.map(p => ({
       ...p,
-      // Solo: alle anderen desoloen, außer wenn man den aktiven deaktiviert
       parts: p.parts.map(pt => ({
         ...pt,
         soloed: pt.id === partId ? soloed : false,
-        muted: soloed && pt.id !== partId ? true : (pt.id === partId ? false : pt.muted),
       })),
     })), false);
   }, [updatePatterns]);
@@ -265,6 +286,13 @@ export function useDrumMachineStore(): DrumMachineState & DrumMachineActions {
     })), false);
   }, [updatePatterns]);
 
+  const setPartStepResolution = useCallback((partId: string, res: StepResolution | undefined) => {
+    updatePatterns(ps => ps.map(p => ({
+      ...p,
+      parts: p.parts.map(pt => pt.id === partId ? { ...pt, stepResolution: res } : pt),
+    })), false);
+  }, [updatePatterns]);
+
   const setActivePart = useCallback((partId: string | null) => {
     setState(prev => ({ ...prev, activePartId: partId }));
   }, []);
@@ -279,7 +307,22 @@ export function useDrumMachineStore(): DrumMachineState & DrumMachineActions {
     }));
   }, [updatePatterns, state.activePatternId]);
 
-  // ── Step-Aktionen ───────────────────────────────────────────────────────
+  // ── Effekte ───────────────────────────────────────────────────────────────
+
+  const setPartFx = useCallback((partId: string, fxUpdate: Partial<ChannelFx>) => {
+    updatePatterns(ps => ps.map(p => ({
+      ...p,
+      parts: p.parts.map(pt =>
+        pt.id === partId ? { ...pt, fx: { ...pt.fx, ...fxUpdate } } : pt
+      ),
+    })), false);
+  }, [updatePatterns]);
+
+  const setFxPanelPartId = useCallback((partId: string | null) => {
+    setState(prev => ({ ...prev, fxPanelPartId: partId }));
+  }, []);
+
+  // ── Steps ─────────────────────────────────────────────────────────────────
 
   const toggleStep = useCallback((partId: string, stepIndex: number) => {
     updatePatterns(ps => ps.map(p => ({
@@ -287,10 +330,7 @@ export function useDrumMachineStore(): DrumMachineState & DrumMachineActions {
       parts: p.parts.map(pt => {
         if (pt.id !== partId) return pt;
         const steps = [...pt.steps];
-        steps[stepIndex] = {
-          ...steps[stepIndex],
-          active: !steps[stepIndex].active,
-        };
+        steps[stepIndex] = { ...steps[stepIndex], active: !steps[stepIndex].active };
         return { ...pt, steps };
       }),
     })));
@@ -314,7 +354,7 @@ export function useDrumMachineStore(): DrumMachineState & DrumMachineActions {
       parts: p.parts.map(pt => {
         if (pt.id !== partId) return pt;
         const steps = [...pt.steps];
-        steps[stepIndex] = { ...steps[stepIndex], pitch: Math.max(-24, Math.min(24, pitch)) };
+        steps[stepIndex] = { ...steps[stepIndex], pitch };
         return { ...pt, steps };
       }),
     })), false);
@@ -327,60 +367,51 @@ export function useDrumMachineStore(): DrumMachineState & DrumMachineActions {
         ...p,
         parts: p.parts.map(pt => ({
           ...pt,
-          steps: makeSteps(p.stepCount),
+          steps: pt.steps.map(() => ({ active: false, velocity: 100, pitch: 0 })),
         })),
       };
     }));
   }, [updatePatterns, state.activePatternId]);
 
-  const fillPattern = useCallback((partId: string, density = 1.0) => {
-    updatePatterns(ps => ps.map(p => ({
-      ...p,
-      parts: p.parts.map(pt => {
-        if (pt.id !== partId) return pt;
-        return {
-          ...pt,
-          steps: pt.steps.map((s, i) => ({
-            ...s,
-            active: i % Math.round(1 / density) === 0,
-          })),
-        };
-      }),
-    })));
-  }, [updatePatterns]);
+  const fillPattern = useCallback((partId: string, density = 0.5) => {
+    updatePatterns(ps => ps.map(p => {
+      if (p.id !== state.activePatternId) return p;
+      return {
+        ...p,
+        parts: p.parts.map(pt => {
+          if (pt.id !== partId) return pt;
+          return {
+            ...pt,
+            steps: pt.steps.map(() => ({
+              active: Math.random() < density,
+              velocity: Math.floor(80 + Math.random() * 47),
+              pitch: 0,
+            })),
+          };
+        }),
+      };
+    }));
+  }, [updatePatterns, state.activePatternId]);
 
   const randomizePattern = useCallback((partId: string) => {
-    updatePatterns(ps => ps.map(p => ({
-      ...p,
-      parts: p.parts.map(pt => {
-        if (pt.id !== partId) return pt;
-        return {
-          ...pt,
-          steps: pt.steps.map(s => ({
-            ...s,
-            active: Math.random() < 0.3,
-            velocity: Math.floor(Math.random() * 60) + 67,
-          })),
-        };
-      }),
-    })));
-  }, [updatePatterns]);
+    fillPattern(partId, 0.35);
+  }, [fillPattern]);
 
   const shiftPattern = useCallback((partId: string, direction: "left" | "right") => {
-    updatePatterns(ps => ps.map(p => ({
-      ...p,
-      parts: p.parts.map(pt => {
-        if (pt.id !== partId) return pt;
-        const steps = [...pt.steps];
-        if (direction === "right") {
-          steps.unshift(steps.pop()!);
-        } else {
-          steps.push(steps.shift()!);
-        }
-        return { ...pt, steps };
-      }),
-    })));
-  }, [updatePatterns]);
+    updatePatterns(ps => ps.map(p => {
+      if (p.id !== state.activePatternId) return p;
+      return {
+        ...p,
+        parts: p.parts.map(pt => {
+          if (pt.id !== partId) return pt;
+          const steps = [...pt.steps];
+          if (direction === "left") steps.push(steps.shift()!);
+          else steps.unshift(steps.pop()!);
+          return { ...pt, steps };
+        }),
+      };
+    }));
+  }, [updatePatterns, state.activePatternId]);
 
   const setStepCount = useCallback((count: 16 | 32) => {
     updatePatterns(ps => ps.map(p => {
@@ -389,10 +420,11 @@ export function useDrumMachineStore(): DrumMachineState & DrumMachineActions {
         ...p,
         stepCount: count,
         parts: p.parts.map(pt => {
-          const newSteps = makeSteps(count);
-          // Vorhandene Steps übernehmen
-          pt.steps.forEach((s, i) => { if (i < count) newSteps[i] = { ...s }; });
-          return { ...pt, steps: newSteps };
+          if (pt.steps.length === count) return pt;
+          if (count > pt.steps.length) {
+            return { ...pt, steps: [...pt.steps, ...makeSteps(count - pt.steps.length)] };
+          }
+          return { ...pt, steps: pt.steps.slice(0, count) };
         }),
       };
     }));
@@ -410,31 +442,31 @@ export function useDrumMachineStore(): DrumMachineState & DrumMachineActions {
     setState(prev => ({ ...prev, pitchMode: active, velocityMode: active ? false : prev.velocityMode }));
   }, []);
 
-  // ── Undo/Redo ───────────────────────────────────────────────────────────
+  // ── Undo/Redo ─────────────────────────────────────────────────────────────
 
   const undo = useCallback(() => {
-    const prev = undoStack.current.pop();
-    if (!prev) return;
-    setState(s => {
-      redoStack.current.push(JSON.parse(JSON.stringify(s.patterns)));
+    if (undoStack.current.length === 0) return;
+    setState(prev => {
+      const previous = undoStack.current.pop()!;
+      redoStack.current.unshift(JSON.parse(JSON.stringify(prev.patterns)));
+      if (redoStack.current.length > 50) redoStack.current.pop();
       setCanUndo(undoStack.current.length > 0);
       setCanRedo(true);
-      return { ...s, patterns: prev };
+      return { ...prev, patterns: previous };
     });
   }, []);
 
   const redo = useCallback(() => {
-    const next = redoStack.current.pop();
-    if (!next) return;
-    setState(s => {
-      undoStack.current.push(JSON.parse(JSON.stringify(s.patterns)));
-      setCanUndo(true);
+    if (redoStack.current.length === 0) return;
+    setState(prev => {
+      const next = redoStack.current.shift()!;
+      undoStack.current.push(JSON.parse(JSON.stringify(prev.patterns)));
+      if (undoStack.current.length > 50) undoStack.current.shift();
       setCanRedo(redoStack.current.length > 0);
-      return { ...s, patterns: next };
+      setCanUndo(true);
+      return { ...prev, patterns: next };
     });
   }, []);
-
-  // ── Getter ──────────────────────────────────────────────────────────────
 
   const getActivePattern = useCallback(() => {
     return state.patterns.find(p => p.id === state.activePatternId);
@@ -442,36 +474,17 @@ export function useDrumMachineStore(): DrumMachineState & DrumMachineActions {
 
   return {
     ...state,
-    canUndo,
-    canRedo,
-    addPattern,
-    removePattern,
-    renamePattern,
-    setActivePattern,
-    duplicatePattern,
-    addPart,
-    removePart,
-    renamePart,
-    setPartSample,
-    setPartMuted,
-    setPartSoloed,
-    setPartVolume,
-    setPartPan,
-    setActivePart,
-    movePart,
-    toggleStep,
-    setStepVelocity,
-    setStepPitch,
-    clearPattern,
-    fillPattern,
-    randomizePattern,
-    shiftPattern,
-    setStepCount,
-    setCurrentStep,
-    setVelocityMode,
-    setPitchMode,
-    undo,
-    redo,
+    addPattern, removePattern, renamePattern, setActivePattern, duplicatePattern,
+    setPatternBpm, setPatternStepResolution,
+    addPart, removePart, renamePart, setPartSample,
+    setPartMuted, setPartSoloed, setPartVolume, setPartPan,
+    setPartStepResolution, setActivePart, movePart,
+    setPartFx, setFxPanelPartId,
+    toggleStep, setStepVelocity, setStepPitch,
+    clearPattern, fillPattern, randomizePattern, shiftPattern,
+    setStepCount, setCurrentStep,
+    setVelocityMode, setPitchMode,
+    undo, redo, canUndo, canRedo,
     getActivePattern,
   };
 }
