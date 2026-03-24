@@ -132,6 +132,11 @@ export function SampleBrowser({
   const [activeCategory, setActiveCategory] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState<string>("");
 
+  // ── Sample-Navigation (Prev/Next) ─────────────────────────────────────────
+  const [selectedSampleId, setSelectedSampleId] = useState<string | null>(null);
+  const [isPreviewPlaying, setIsPreviewPlaying] = useState(false);
+  const audioPreviewRef = useRef<HTMLAudioElement | null>(null);
+
   // ── Import-Fortschritt ────────────────────────────────────────────────────
   const [importProgress, setImportProgress] = useState<{
     active: boolean;
@@ -186,7 +191,7 @@ export function SampleBrowser({
     };
   }, [electron, onSamplesImported]);
 
-  // ── Gefilterte Samples ────────────────────────────────────────────────────
+  // ── Gefilterte Samples (muss vor Navigation-Callbacks stehen) ─────────────────
   const filteredSamples = useMemo(() => {
     return samples.filter((sample) => {
       const matchesCategory = activeCategory === "all" || sample.category === activeCategory;
@@ -195,6 +200,65 @@ export function SampleBrowser({
       return matchesCategory && matchesSearch;
     });
   }, [samples, activeCategory, searchQuery]);
+
+  const selectedIndex = useMemo(() => {
+    if (!selectedSampleId) return -1;
+    return filteredSamples.findIndex((s) => s.id === selectedSampleId);
+  }, [selectedSampleId, filteredSamples]);
+
+  // ── Sample-Navigation Callbacks ─────────────────────────────────────────
+
+  const handleSelectSample = useCallback((sample: Sample) => {
+    setSelectedSampleId(sample.id);
+    if (audioPreviewRef.current) {
+      audioPreviewRef.current.pause();
+      audioPreviewRef.current = null;
+      setIsPreviewPlaying(false);
+    }
+  }, []);
+
+  const handlePreviewToggle = useCallback((sample: Sample) => {
+    if (audioPreviewRef.current && isPreviewPlaying) {
+      audioPreviewRef.current.pause();
+      audioPreviewRef.current = null;
+      setIsPreviewPlaying(false);
+      return;
+    }
+    const audio = new Audio(sample.path);
+    audio.volume = 0.8;
+    audio.onended = () => { setIsPreviewPlaying(false); audioPreviewRef.current = null; };
+    audio.onerror = () => { setIsPreviewPlaying(false); audioPreviewRef.current = null; };
+    audioPreviewRef.current = audio;
+    audio.play().then(() => setIsPreviewPlaying(true)).catch(() => setIsPreviewPlaying(false));
+  }, [isPreviewPlaying]);
+
+  const handleNavigatePrev = useCallback(() => {
+    if (filteredSamples.length === 0) return;
+    const idx = selectedIndex <= 0 ? filteredSamples.length - 1 : selectedIndex - 1;
+    setSelectedSampleId(filteredSamples[idx].id);
+  }, [filteredSamples, selectedIndex]);
+
+  const handleNavigateNext = useCallback(() => {
+    if (filteredSamples.length === 0) return;
+    const idx = selectedIndex >= filteredSamples.length - 1 ? 0 : selectedIndex + 1;
+    setSelectedSampleId(filteredSamples[idx].id);
+  }, [filteredSamples, selectedIndex]);
+
+  // Keyboard-Shortcuts für Navigation
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (document.activeElement?.tagName === "INPUT") return;
+      if (e.key === "ArrowUp") { e.preventDefault(); handleNavigatePrev(); }
+      if (e.key === "ArrowDown") { e.preventDefault(); handleNavigateNext(); }
+      if (e.key === " " && selectedSampleId) {
+        e.preventDefault();
+        const sample = filteredSamples.find((s) => s.id === selectedSampleId);
+        if (sample) handlePreviewToggle(sample);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [handleNavigatePrev, handleNavigateNext, handlePreviewToggle, selectedSampleId, filteredSamples]);
 
   // ── Kategorie-Zähler ──────────────────────────────────────────────────────
   const categoryCounts = useMemo(() => {
@@ -473,11 +537,48 @@ export function SampleBrowser({
             </button>
           </div>
         ) : (
+          <>
+          {/* Prev/Next Navigation-Leiste */}
+          {filteredSamples.length > 0 && (
+            <div className="flex items-center gap-2 px-3 py-1.5 border-b border-slate-800/50 bg-[#0d0d0d]/50">
+              <button
+                onClick={handleNavigatePrev}
+                title="Vorheriges Sample (Pfeil hoch)"
+                className="w-6 h-6 rounded bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white transition-colors text-xs"
+              >
+                ▲
+              </button>
+              <button
+                onClick={handleNavigateNext}
+                title="Nächstes Sample (Pfeil runter)"
+                className="w-6 h-6 rounded bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white transition-colors text-xs"
+              >
+                ▼
+              </button>
+              {selectedIndex >= 0 && (
+                <span className="text-[10px] text-slate-600">
+                  {selectedIndex + 1} / {filteredSamples.length}
+                </span>
+              )}
+              <span className="text-[10px] text-slate-700 ml-auto">
+                ↑↓ navigieren · Leertaste = Preview
+              </span>
+            </div>
+          )}
           <ul className="divide-y divide-slate-800/50">
-            {filteredSamples.map((sample) => (
+            {filteredSamples.map((sample) => {
+              const isSelected = sample.id === selectedSampleId;
+              const isThisPlaying = isSelected && isPreviewPlaying;
+              return (
               <li
                 key={sample.id}
-                className="flex items-center gap-2 px-3 py-1.5 hover:bg-slate-800/30 transition-colors duration-75 group"
+                onClick={() => handleSelectSample(sample)}
+                className={[
+                  "flex items-center gap-2 px-3 py-1.5 transition-colors duration-75 group cursor-pointer",
+                  isSelected
+                    ? "bg-cyan-900/20 border-l-2 border-cyan-500"
+                    : "hover:bg-slate-800/30 border-l-2 border-transparent",
+                ].join(" ")}
               >
                 {/* Kategorie-Badge */}
                 <span
@@ -489,7 +590,9 @@ export function SampleBrowser({
 
                 {/* Name + Pfad */}
                 <div className="flex-1 min-w-0">
-                  <p className="text-xs text-slate-200 truncate">{sample.name}</p>
+                  <p className={`text-xs truncate ${isSelected ? "text-cyan-300" : "text-slate-200"}`}>
+                    {sample.name}
+                  </p>
                   {sample.path !== sample.name && (
                     <p className="text-[10px] text-slate-600 truncate" title={sample.path}>
                       {sample.path}
@@ -504,10 +607,24 @@ export function SampleBrowser({
                   </span>
                 )}
 
+                {/* Preview-Button */}
+                <button
+                  onClick={(e) => { e.stopPropagation(); handlePreviewToggle(sample); }}
+                  title={isThisPlaying ? "Preview stoppen (Leertaste)" : "Preview abspielen (Leertaste)"}
+                  className={[
+                    "w-6 h-6 rounded flex items-center justify-center text-[10px] transition-all duration-100",
+                    isThisPlaying
+                      ? "bg-cyan-600 text-white opacity-100"
+                      : "opacity-0 group-hover:opacity-100 bg-slate-700 text-slate-400 hover:bg-slate-600 hover:text-white",
+                  ].join(" ")}
+                >
+                  {isThisPlaying ? "■" : "▶"}
+                </button>
+
                 {/* Entfernen-Button */}
                 {onRemoveSample && (
                   <button
-                    onClick={() => onRemoveSample(sample.id)}
+                    onClick={(e) => { e.stopPropagation(); onRemoveSample(sample.id); }}
                     title="Sample entfernen"
                     className="opacity-0 group-hover:opacity-100 text-slate-600 hover:text-red-400 transition-all duration-100 text-xs px-1"
                   >
@@ -515,8 +632,10 @@ export function SampleBrowser({
                   </button>
                 )}
               </li>
-            ))}
+              );
+            })}
           </ul>
+          </>
         )}
       </div>
 

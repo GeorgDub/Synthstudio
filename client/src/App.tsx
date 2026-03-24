@@ -32,6 +32,12 @@ import { useWindowTitleSync } from "@/store/useWindowTitleSync";
 import { SampleBrowser } from "@/components/SampleBrowser";
 import { ProjectManager } from "@/components/ProjectManager";
 import { NewProjectDialog } from "@/components/NewProjectDialog";
+import { SongTimeline } from "@/components/SongTimeline";
+import { Humanizer } from "@/components/Humanizer";
+
+// ── Stores für neue Features ──────────────────────────────────────────────────
+import { useSongStore } from "@/store/useSongStore";
+import { useHumanizerStore } from "@/store/useHumanizerStore";
 
 // ─── App ──────────────────────────────────────────────────────────────────────
 
@@ -41,8 +47,13 @@ export default function App() {
   // ── Dialog-State ────────────────────────────────────────────────────────────────
   const [showNewProjectDialog, setShowNewProjectDialog] = useState(false);
 
-  // ── Zentraler Projekt-State ───────────────────────────────────────────────
+  // ── Zentraler Projekt-State ────────────────────────────────────────────────────
   const project = useProjectStore();
+  const song = useSongStore();
+  const humanizer = useHumanizerStore();
+
+  // ── Arbeitsbereich-Tabs ────────────────────────────────────────────────────
+  const [activeTab, setActiveTab] = useState<"sequencer" | "song" | "humanizer">("sequencer");
 
   // ── Fenstertitel synchronisieren ─────────────────────────────────────────
   // Browser: document.title | Electron: electron.setWindowTitle() via Hook
@@ -296,27 +307,83 @@ export default function App() {
               />
             </div>
 
-            {/* Arbeitsbereich */}
-            <div className="flex-1 flex items-center justify-center text-slate-700">
-              <div className="text-center">
-                <div className="text-6xl mb-4">🎹</div>
-                <p className="text-lg font-semibold">Synthesizer-Arbeitsbereich</p>
-                <p className="text-sm mt-2 text-slate-600">
-                  Weitere Komponenten werden durch die anderen Agenten implementiert
-                </p>
-                <div className="mt-6 flex flex-col gap-1 text-xs text-slate-700">
-                  <p>✓ ElectronTitleBar integriert</p>
-                  <p>✓ ElectronDropZone integriert</p>
-                  <p>✓ useElectronMenuBindings gebunden (via useElectron-Hook)</p>
-                  <p>✓ SampleBrowser mit nativen Dialogen via useElectron()</p>
-                  <p>✓ ProjectManager mit nativen Dialogen via useElectron()</p>
-                  <p>✓ Fenstertitel-Sync (isDirty ● Indikator)</p>
-                  <p>✓ Browser-Fallbacks für alle Features</p>
-                  {electron.isElectron && (
-                    <p className="text-cyan-700 mt-2">⚡ Electron-Modus aktiv</p>
+            {/* Arbeitsbereich-Tabs */}
+            <div className="flex gap-0 border-b border-slate-800 bg-[#0d0d0d]">
+              {([
+                { id: "sequencer", label: "Sequencer" },
+                { id: "song",      label: "Song-Modus" },
+                { id: "humanizer", label: "Humanizer" },
+              ] as const).map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={[
+                    "px-5 py-2 text-xs font-medium border-b-2 transition-colors duration-100",
+                    activeTab === tab.id
+                      ? "border-cyan-500 text-cyan-400 bg-[#111]"
+                      : "border-transparent text-slate-600 hover:text-slate-400 hover:bg-[#111]/50",
+                  ].join(" ")}
+                >
+                  {tab.label}
+                  {tab.id === "song" && song.songModeActive && (
+                    <span className="ml-1.5 w-1.5 h-1.5 rounded-full bg-cyan-500 inline-block" />
                   )}
+                  {tab.id === "humanizer" && humanizer.global.enabled && (
+                    <span className="ml-1.5 w-1.5 h-1.5 rounded-full bg-green-500 inline-block" />
+                  )}
+                </button>
+              ))}
+            </div>
+
+            {/* Arbeitsbereich-Inhalt */}
+            <div className="flex-1 overflow-hidden">
+
+              {/* Sequencer-Tab (Platzhalter für Drum Machine) */}
+              {activeTab === "sequencer" && (
+                <div className="flex items-center justify-center h-full text-slate-700">
+                  <div className="text-center">
+                    <div className="text-6xl mb-4">🎹</div>
+                    <p className="text-lg font-semibold">Drum Machine / Sequencer</p>
+                    <p className="text-sm mt-2 text-slate-600">
+                      Wird in der nächsten Phase implementiert
+                    </p>
+                    <div className="mt-6 flex flex-col gap-1 text-xs text-slate-700">
+                      <p>✓ SampleBrowser mit Tag-Filterung + Prev/Next Navigation</p>
+                      <p>✓ ZIP-Import (Electron + Browser)</p>
+                      <p>✓ Projekt-Templates (Techno, House, Hip-Hop)</p>
+                      <p>✓ Song-Modus (Tab → Song-Modus)</p>
+                      <p>✓ Smart Humanizer (Tab → Humanizer)</p>
+                      <p>✓ Waveform-Cache (IndexedDB)</p>
+                      <p>✓ BPM-Detection + Auto-Tagging</p>
+                      {electron.isElectron && (
+                        <p className="text-cyan-700 mt-2">⚡ Electron-Modus aktiv</p>
+                      )}
+                    </div>
+                  </div>
                 </div>
-              </div>
+              )}
+
+              {/* Song-Modus-Tab */}
+              {activeTab === "song" && (
+                <div className="h-full overflow-y-auto p-4">
+                  <SongTimeline
+                    song={song}
+                    isPlaying={project.isPlaying}
+                    className="h-full"
+                  />
+                </div>
+              )}
+
+              {/* Humanizer-Tab */}
+              {activeTab === "humanizer" && (
+                <div className="h-full overflow-y-auto p-4">
+                  <Humanizer
+                    humanizer={humanizer}
+                    className="max-w-lg"
+                  />
+                </div>
+              )}
+
             </div>
           </main>
         </div>
