@@ -205,10 +205,14 @@ interface ElectronAPI {
   fileExists(filePath: string): Promise<{ exists: boolean }>;
   getFileStats(filePath: string): Promise<{ success: boolean; stats?: { size: number; mtime: number }; error?: string }>;
 
-  // ── Folder-Import ─────────────────────────────────────────────────────────
+  // ── Folder-Import ─────────────────────────────────────────────────────────────────────────────
   importFolder(folderPath: string): Promise<{ importId: string }>;
   importSamples(filePaths: string[]): Promise<{ success: boolean; importedCount: number; errors: string[] }>;
   cancelImport(importId: string): Promise<{ success: boolean; error?: string }>;
+
+  // ── ZIP-Import ───────────────────────────────────────────────────────────────────────────────────
+  importZip(zipPath: string): Promise<{ importId: string }>;
+  cleanupZip(importId: string): Promise<{ success: boolean }>;
   onImportStarted(callback: (data: { importId: string }) => void): ElectronCleanup;
   onImportProgress(callback: (data: ElectronImportProgress) => void): ElectronCleanup;
   onImportComplete(callback: (data: ElectronImportComplete) => void): ElectronCleanup;
