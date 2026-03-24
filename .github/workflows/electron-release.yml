@@ -127,3 +127,4 @@ jobs:
             release-artifacts/**/*.dmg
             release-artifacts/**/*.zip
           token: ${{ secrets.GITHUB_TOKEN }}
+
