@@ -8,11 +8,11 @@
     "dev": "NODE_ENV=development tsx watch server/_core/index.ts",
     "dev:electron": "concurrently \"cross-env VITE_DEV_SERVER_URL=http://localhost:3000 pnpm dev\" \"wait-on http://localhost:3000 && electron .\"",
     "build": "vite build && esbuild server/_core/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist",
-    "build:electron": "vite build && tsc --project tsconfig.electron.json && electron-builder",
+    "build:electron": "vite build && node scripts/prepare-electron-build.cjs && electron-builder",
     "build:electron:win": "vite build && tsc -p tsconfig.electron.json && electron-builder --win",
     "build:electron:mac": "vite build && tsc -p tsconfig.electron.json && electron-builder --mac",
     "build:electron:linux": "vite build && tsc -p tsconfig.electron.json && electron-builder --linux",
-    "compile:electron": "tsc --project tsconfig.electron.json",
+    "compile:electron": "tsc --project tsconfig.electron.json && find electron-dist -name \"*.js\" -exec bash -c 'mv \"$1\" \"${1%.js}.cjs\"' _ {} \\; && find electron-dist -name \"*.cjs\" -exec sed -i 's/require(\"\\(\\..*\\)\")/require(\"\\1.cjs\")/g' {} \\;",
     "generate:icons": "npx tsx electron/assets/create-icons.ts",
     "start": "NODE_ENV=production node dist/index.js",
     "start:electron": "electron .",
@@ -135,7 +135,11 @@
     "overrides": {
       "tailwindcss>nanoid": "3.3.7"
     },
-    "onlyBuiltDependencies": ["esbuild", "electron", "@tailwindcss/oxide"]
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "electron",
+      "@tailwindcss/oxide"
+    ]
   },
   "build": {
     "appId": "com.synthstudio.esx1",
@@ -143,23 +147,18 @@
     "copyright": "Copyright © 2025 Synthstudio",
     "directories": {
       "output": "release",
-      "buildResources": "assets"
+      "buildResources": "assets",
+      "app": "electron-staging"
     },
-    "files": [
-      {
-        "from": "electron-dist",
-        "to": "electron-dist",
-        "filter": ["**/*.js"]
-      },
-      {
-        "from": "dist/public",
-        "to": "dist/public",
-        "filter": ["**/*", "!**/*.map"]
-      }
-    ],
     "win": {
       "target": [
-        { "target": "nsis", "arch": ["x64", "ia32"] }
+        {
+          "target": "nsis",
+          "arch": [
+            "x64",
+            "ia32"
+          ]
+        }
       ],
       "icon": "assets/icon.ico",
       "verifyUpdateCodeSignature": false
@@ -177,8 +176,20 @@
     },
     "mac": {
       "target": [
-        { "target": "dmg", "arch": ["x64", "arm64"] },
-        { "target": "zip", "arch": ["x64", "arm64"] }
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
       ],
       "icon": "assets/icon.icns",
       "category": "public.app-category.music",
@@ -192,16 +203,38 @@
       "title": "Synthstudio ${version}",
       "icon": "assets/icon.icns",
       "background": "assets/dmg-background.png",
-      "window": { "width": 540, "height": 380 },
+      "window": {
+        "width": 540,
+        "height": 380
+      },
       "contents": [
-        { "x": 130, "y": 220, "type": "file" },
-        { "x": 410, "y": 220, "type": "link", "path": "/Applications" }
+        {
+          "x": 130,
+          "y": 220,
+          "type": "file"
+        },
+        {
+          "x": 410,
+          "y": 220,
+          "type": "link",
+          "path": "/Applications"
+        }
       ]
     },
     "linux": {
       "target": [
-        { "target": "AppImage", "arch": ["x64"] },
-        { "target": "deb", "arch": ["x64"] }
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "deb",
+          "arch": [
+            "x64"
+          ]
+        }
       ],
       "icon": "assets/icon.png",
       "category": "Audio",
@@ -209,14 +242,26 @@
       "description": "Professioneller Sample-Manager und Synthesizer-Studio für den KORG ESX-1"
     },
     "deb": {
-      "depends": ["libgtk-3-0", "libnotify4", "libnss3", "libxss1", "libxtst6", "xdg-utils", "libatspi2.0-0", "libuuid1"],
-      "recommends": ["libappindicator3-1"]
+      "depends": [
+        "libgtk-3-0",
+        "libnotify4",
+        "libnss3",
+        "libxss1",
+        "libxtst6",
+        "xdg-utils",
+        "libatspi2.0-0",
+        "libuuid1"
+      ],
+      "recommends": [
+        "libappindicator3-1"
+      ]
     },
     "publish": {
       "provider": "github",
       "owner": "GeorgDub",
       "repo": "Synthstudio",
       "releaseType": "release"
-    }
+    },
+    "asar": true
   }
 }

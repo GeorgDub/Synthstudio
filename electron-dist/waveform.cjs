@@ -110,11 +110,16 @@ function findWavDataChunk(buffer) {
 // ─── Worker-Integration ───────────────────────────────────────────────────────
 function analyzeWithWorker(filePath, numPeaks) {
     return new Promise((resolve) => {
-        const workerPath = path.join(__dirname, "workers", "waveform.worker.js");
-        // Fallback falls die kompilierte JS-Datei nicht existiert (z.B. in Dev-Umgebung mit ts-node)
-        const actualWorkerPath = fs.existsSync(workerPath)
-            ? workerPath
-            : path.join(__dirname, "workers", "waveform.worker.ts");
+        // Unterstützt .cjs (Produktions-Build via tsconfig.electron.json),
+        // .js (Legacy-Build) und .ts (Dev-Modus mit ts-node)
+        const workerPathCjs = path.join(__dirname, "workers", "waveform.worker.cjs");
+        const workerPathJs = path.join(__dirname, "workers", "waveform.worker.js");
+        const workerPathTs = path.join(__dirname, "workers", "waveform.worker.ts");
+        const actualWorkerPath = fs.existsSync(workerPathCjs)
+            ? workerPathCjs
+            : fs.existsSync(workerPathJs)
+                ? workerPathJs
+                : workerPathTs;
         const worker = new worker_threads_1.Worker(actualWorkerPath, {
             // Wenn es eine TS-Datei ist, ts-node/register verwenden
             execArgv: actualWorkerPath.endsWith('.ts') ? ['-r', 'ts-node/register'] : undefined
