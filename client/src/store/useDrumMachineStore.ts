@@ -249,7 +249,7 @@ export function useDrumMachineStore(): DrumMachineState & DrumMachineActions {
     updatePatterns(ps => ps.map(p => ({
       ...p,
       parts: p.parts.map(pt => pt.id === partId
-        ? { ...pt, sampleUrl, name: sampleName ?? pt.name }
+        ? { ...pt, sampleUrl, sampleName: sampleName ?? pt.sampleName }
         : pt
       ),
     })));

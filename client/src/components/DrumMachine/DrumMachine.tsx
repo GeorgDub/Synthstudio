@@ -20,7 +20,7 @@ import { AudioEngine } from "@/audio/AudioEngine";
 
 interface Props {
   dm: DrumMachineState & DrumMachineActions;
-  samples: Array<{ id: string; name: string; url: string }>;
+  samples: Array<{ id: string; name: string; path: string; category: string }>;
   isPlaying: boolean;
   bpm: number;
   onPlayStop: () => void;
@@ -226,7 +226,7 @@ interface ChannelStripProps {
   pitchMode: boolean;
   patternResolution: StepResolution;
   fxPanelOpen: boolean;
-  samples: Props["samples"];
+  samples: Array<{ id: string; name: string; path: string; category: string }>;
   onToggleStep: (stepIndex: number) => void;
   onSetVelocity: (stepIndex: number, v: number) => void;
   onSetPitch: (stepIndex: number, p: number) => void;
@@ -310,8 +310,16 @@ function ChannelStrip({
         <div className="text-[10px] font-medium text-slate-300 truncate leading-tight">
           {part.name}
         </div>
-        <div className="text-[9px] text-slate-600 truncate leading-tight">
-          {part.sampleUrl ? "● " + (part.sampleUrl.split("/").pop()?.slice(0, 14) ?? "Sample") : "– kein Sample –"}
+        <div
+          className={[
+            "text-[9px] truncate leading-tight",
+            part.sampleUrl ? "text-cyan-700" : "text-slate-700",
+          ].join(" ")}
+          title={part.sampleUrl ? (part.sampleName ?? part.sampleUrl) : "Kein Sample – Sample aus Browser ziehen oder doppelklicken"}
+        >
+          {part.sampleUrl
+            ? "● " + ((part.sampleName ?? part.sampleUrl.split("/").pop() ?? "Sample").slice(0, 14))
+            : "– kein Sample"}
         </div>
       </div>
 

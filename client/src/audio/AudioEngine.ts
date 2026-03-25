@@ -105,6 +105,8 @@ export interface PartData {
   id: string;
   name: string;
   sampleUrl?: string;
+  /** Anzeigename des zugewiesenen Samples (z.B. Dateiname ohne Pfad) */
+  sampleName?: string;
   muted: boolean;
   soloed: boolean;
   volume: number;      // 0–1

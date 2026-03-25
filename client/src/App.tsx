@@ -13,7 +13,7 @@
  * Die Web-App muss im Browser vollständig funktionsfähig bleiben.
  * ─────────────────────────────────────────────────────────────────────────────
  */
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState, useMemo } from "react";
 
 // ── Electron-Komponenten (aus electron/components/) ──────────────────────────
 // Relative Imports notwendig da electron/ außerhalb von client/src liegt
@@ -209,6 +209,36 @@ export default function App() {
     onImportFolder: handleMenuImportFolder,
   });
 
+  // ── Sample auf aktiven Kanal legen ──────────────────────────────────────────
+  const handleAssignToChannel = useCallback(
+    (sampleUrl: string, sampleName: string) => {
+      const pattern = dm.getActivePattern();
+      if (!pattern) return;
+      const partId = dm.activePartId ?? pattern.parts[0]?.id;
+      if (!partId) return;
+      dm.setPartSample(partId, sampleUrl, sampleName);
+    },
+    [dm]
+  );
+
+  // Aktiver Kanal-Name für Anzeige im SampleBrowser
+  const activeChannelName = useMemo(() => {
+    const pattern = dm.getActivePattern();
+    if (!pattern) return undefined;
+    const partId = dm.activePartId ?? pattern.parts[0]?.id;
+    return pattern.parts.find(p => p.id === partId)?.name;
+  }, [dm]);
+
+  // Kategorie eines Samples aktualisieren
+  const handleUpdateSampleCategory = useCallback(
+    (id: string, category: string) => {
+      project.addSamples(
+        project.samples.map(s => s.id === id ? { ...s, category } : s)
+      );
+    },
+    [project]
+  );
+
   // ── Drop-Handler für ElectronDropZone ─────────────────────────────────────
 
   const handleDropAudioFiles = useCallback(
@@ -273,6 +303,9 @@ export default function App() {
               onImportFolder={handleDropFolder}
               onRemoveSample={project.removeSample}
               onSamplesImported={project.addSamples}
+              onAssignToChannel={handleAssignToChannel}
+              activeChannelName={activeChannelName}
+              onUpdateSampleCategory={handleUpdateSampleCategory}
             />
           </aside>
 
