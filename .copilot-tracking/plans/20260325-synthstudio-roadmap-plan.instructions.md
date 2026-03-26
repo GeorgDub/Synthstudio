@@ -166,7 +166,7 @@ Implementierung von 8 differenzierenden Features und vollständiger Test-Abdecku
 - [x] Task 9.3: song-store.test.ts (Pattern-Chaining, Loop-Mode, Position)
   - Details: .copilot-tracking/details/20260325-synthstudio-roadmap-details.md (Zeilen 1361–1400)
 
-- [ ] Task 9.4: E2E-Tests – drum-machine.spec.ts, sample-import.spec.ts  ← offen (Playwright E2E)
+- [x] Task 9.4: E2E-Tests – drum-machine.spec.ts, sample-import.spec.ts
   - Details: .copilot-tracking/details/20260325-synthstudio-roadmap-details.md (Zeilen 1401–1455)
 
 ## Dependencies
