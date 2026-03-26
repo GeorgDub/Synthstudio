@@ -10,8 +10,9 @@
  */
 
 import { useState, useCallback, useRef } from "react";
-import type { PatternData, PartData, StepData, StepResolution, ChannelFx } from "../audio/AudioEngine";
+import type { PatternData, PartData, StepData, StepResolution, ChannelFx, StepCondition } from "../audio/AudioEngine";
 import { DEFAULT_CHANNEL_FX } from "../audio/AudioEngine";
+import { euclidean } from "../utils/euclidean";
 
 // ─── Typen ────────────────────────────────────────────────────────────────────
 
@@ -52,6 +53,9 @@ export interface DrumMachineActions {
   toggleStep: (partId: string, stepIndex: number) => void;
   setStepVelocity: (partId: string, stepIndex: number, velocity: number) => void;
   setStepPitch: (partId: string, stepIndex: number, pitch: number) => void;
+  setStepProbability: (partId: string, stepIndex: number, probability: number) => void;
+  setStepCondition: (partId: string, stepIndex: number, condition: StepCondition) => void;
+  setPartEuclidean: (partId: string, hits: number, steps: number, rotation?: number) => void;
   clearPattern: () => void;
   fillPattern: (partId: string, density?: number) => void;
   randomizePattern: (partId: string) => void;
@@ -360,6 +364,44 @@ export function useDrumMachineStore(): DrumMachineState & DrumMachineActions {
     })), false);
   }, [updatePatterns]);
 
+  const setStepProbability = useCallback((partId: string, stepIndex: number, probability: number) => {
+    updatePatterns(ps => ps.map(p => ({
+      ...p,
+      parts: p.parts.map(pt => {
+        if (pt.id !== partId) return pt;
+        const steps = [...pt.steps];
+        steps[stepIndex] = { ...steps[stepIndex], probability: Math.max(0, Math.min(100, probability)) };
+        return { ...pt, steps };
+      }),
+    })), false);
+  }, [updatePatterns]);
+
+  const setStepCondition = useCallback((partId: string, stepIndex: number, condition: StepCondition) => {
+    updatePatterns(ps => ps.map(p => ({
+      ...p,
+      parts: p.parts.map(pt => {
+        if (pt.id !== partId) return pt;
+        const steps = [...pt.steps];
+        steps[stepIndex] = { ...steps[stepIndex], condition };
+        return { ...pt, steps };
+      }),
+    })), false);
+  }, [updatePatterns]);
+
+  const setPartEuclidean = useCallback((partId: string, hits: number, steps: number, rotation = 0) => {
+    const pattern = euclidean(hits, steps, rotation);
+    updatePatterns(ps => ps.map(p => ({
+      ...p,
+      parts: p.parts.map(pt => {
+        if (pt.id !== partId) return pt;
+        return {
+          ...pt,
+          steps: pt.steps.map((s, i) => ({ ...s, active: pattern[i] ?? false })),
+        };
+      }),
+    })));
+  }, [updatePatterns]);
+
   const clearPattern = useCallback(() => {
     updatePatterns(ps => ps.map(p => {
       if (p.id !== state.activePatternId) return p;
@@ -480,7 +522,7 @@ export function useDrumMachineStore(): DrumMachineState & DrumMachineActions {
     setPartMuted, setPartSoloed, setPartVolume, setPartPan,
     setPartStepResolution, setActivePart, movePart,
     setPartFx, setFxPanelPartId,
-    toggleStep, setStepVelocity, setStepPitch,
+    toggleStep, setStepVelocity, setStepPitch, setStepProbability, setStepCondition, setPartEuclidean,
     clearPattern, fillPattern, randomizePattern, shiftPattern,
     setStepCount, setCurrentStep,
     setVelocityMode, setPitchMode,

@@ -37,8 +37,10 @@ export interface MenuBindings {
   onSaveAs?: () => void;
   /** Datei → Exportieren (Ctrl+E) */
   onExport?: () => void;
+  /** Datei → Projekt importieren (Ctrl+I aus Datei-Menü) */
+  onImportProject?: () => void;
   /**
-   * Audio → Samples importieren (Ctrl+I)
+   * Audio → Samples importieren
    * Entspricht onMenuImportSamples in der Electron-API.
    */
   onImportSamples?: () => void;
@@ -101,6 +103,9 @@ export function useElectronMenuBindings(bindings: MenuBindings): void {
     if (bindings.onExport) {
       cleanups.push(electron.onMenuExportProject?.(bindings.onExport));
     }
+    if (bindings.onImportProject) {
+      cleanups.push(electron.onMenuImportProject?.(bindings.onImportProject));
+    }
 
     // ── Audio-Menü ──────────────────────────────────────────────────────────
     if (bindings.onImportSamples) {
@@ -133,16 +138,11 @@ export function useElectronMenuBindings(bindings: MenuBindings): void {
     }
 
     // ── Ansicht & Bounce ─────────────────────────────────────────────────────
-    // onMenuToggleFullscreen und onMenuBounce sind in types.d.ts vorhanden
-    // und werden über den useElectron()-Hook als optionale Methoden genutzt.
-    // Da sie noch nicht im browserAPI-Fallback sind, prüfen wir explizit.
-    if (bindings.onToggleFullscreen && "onMenuToggleFullscreen" in electron) {
-      const fn = (electron as unknown as Record<string, ((cb: () => void) => (() => void) | undefined)>)["onMenuToggleFullscreen"];
-      cleanups.push(fn?.(bindings.onToggleFullscreen));
+    if (bindings.onToggleFullscreen) {
+      cleanups.push(electron.onMenuToggleFullscreen?.(bindings.onToggleFullscreen));
     }
-    if (bindings.onBounce && "onMenuBounce" in electron) {
-      const fn = (electron as unknown as Record<string, ((cb: () => void) => (() => void) | undefined)>)["onMenuBounce"];
-      cleanups.push(fn?.(bindings.onBounce));
+    if (bindings.onBounce) {
+      cleanups.push(electron.onMenuBounce?.(bindings.onBounce));
     }
 
     // ── Cleanup ─────────────────────────────────────────────────────────────
@@ -156,6 +156,7 @@ export function useElectronMenuBindings(bindings: MenuBindings): void {
     bindings.onSave,
     bindings.onSaveAs,
     bindings.onExport,
+    bindings.onImportProject,
     bindings.onImportSamples,
     bindings.onImportFolder,
     bindings.onOpenSampleLibrary,

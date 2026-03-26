@@ -44,7 +44,7 @@ interface ElectronImportSample {
   size: number;
 }
 
-interface ElectronImportProgress {
+export interface ElectronImportProgress {
   importId: string;
   current: number;
   total: number;
@@ -54,7 +54,7 @@ interface ElectronImportProgress {
   relativePath?: string;
 }
 
-interface ElectronImportComplete {
+export interface ElectronImportComplete {
   importId: string;
   imported: number;
   errors: number;
@@ -62,25 +62,25 @@ interface ElectronImportComplete {
   message: string;
 }
 
-interface ElectronImportCancelled {
+export interface ElectronImportCancelled {
   importId: string;
   imported: number;
   errors: number;
 }
 
-interface ElectronImportError {
+export interface ElectronImportError {
   importId: string;
   filePath: string;
   error: string;
 }
 
-interface ElectronUpdaterInfo {
+export interface ElectronUpdaterInfo {
   version: string;
   releaseDate: string;
   releaseNotes?: string;
 }
 
-interface ElectronDownloadProgress {
+export interface ElectronDownloadProgress {
   percent: number;
   transferred: number;
   total: number;
@@ -135,6 +135,17 @@ interface WaveformResult {
   error?: string;
 }
 
+interface AudioMetadataResult {
+  success: boolean;
+  sampleRate?: number;
+  channels?: number;
+  bitDepth?: number;
+  duration?: number;
+  fileSize?: number;
+  format?: string;
+  error?: string;
+}
+
 // ─── Export-Typen (Audio-Engine-Agent) ───────────────────────────────────────
 
 interface ExportResult {
@@ -144,7 +155,7 @@ interface ExportResult {
   error?: string;
 }
 
-interface StereoExportOptions {
+export interface StereoExportOptions {
   leftChannel: number[];
   rightChannel: number[];
   sampleRate: number;
@@ -157,34 +168,48 @@ interface StereoExportOptions {
   suggestedName?: string;
 }
 
-interface MidiExportOptions {
-  patterns: Array<{
-    name: string;
-    steps: Array<{
-      active: boolean;
-      note: number;
-      velocity: number;
-    }>;
-    bpm: number;
-  }>;
+export interface MidiNote {
+  channel: number;    // 0-15
+  note: number;       // 0-127
+  velocity: number;   // 0-127
+  startTick: number;
+  durationTicks: number;
+}
+
+export interface MidiTrack {
+  name: string;
+  notes: MidiNote[];
+}
+
+export interface MidiExportOptions {
+  tracks: MidiTrack[];
+  bpm: number;
   suggestedName?: string;
 }
 
 // ─── Drag & Drop Typen (Frontend-Agent) ──────────────────────────────────────
 
-interface DragDropBulkData {
-  audioFiles: string[];
-  folders: string[];
-  totalFiles: number;
+export interface DragDropAudioFile {
+  path: string;
+  name: string;
+  ext: string;
+  size: number;
 }
 
-interface DragDropSampleData {
-  filePath: string;
-  fileName: string;
+export interface DragDropFolder {
+  path: string;
+  name: string;
 }
 
-interface DragDropProjectData {
-  filePath: string;
+export interface DragDropBulkData {
+  audioFiles: DragDropAudioFile[];
+  folders: DragDropFolder[];
+  projectFiles: DragDropFolder[];
+}
+
+export interface DragDropSampleData {
+  path: string;
+  name: string;
 }
 
 // ─── Haupt-API ───────────────────────────────────────────────────────────────
@@ -245,10 +270,9 @@ interface ElectronAPI {
 
   // ── Fenster ───────────────────────────────────────────────────────────────
   setFullscreen(fullscreen: boolean): Promise<{ success: boolean }>;
-  isFullscreen(): Promise<{ isFullscreen: boolean }>;
-  minimizeWindow(): void;
-  maximizeWindow(): void;
-  forceCloseWindow(): void;
+  isFullscreen(): Promise<boolean>;
+  minimizeWindow(): Promise<void>;
+  maximizeWindow(): Promise<void>;
   setWindowTitle(title: string): void;
   onFullscreenChanged(callback: (isFullscreen: boolean) => void): ElectronCleanup;
 
@@ -285,21 +309,30 @@ interface ElectronAPI {
   // ── Drag & Drop ───────────────────────────────────────────────────────────
   onDragDropBulkImport(callback: (data: DragDropBulkData) => void): ElectronCleanup;
   onDragDropLoadSample(callback: (data: DragDropSampleData) => void): ElectronCleanup;
-  onDragDropOpenProject(callback: (data: DragDropProjectData) => void): ElectronCleanup;
+  onDragDropOpenProject(callback: (filePath: string) => void): ElectronCleanup;
 
-  // ── Waveform (Audio-Engine-Agent) ─────────────────────────────────────────
+  // ── Waveform & Audio-Metadaten (Audio-Engine-Agent) ────────────────────
   analyzeWaveform(filePath: string, numPeaks?: number): Promise<WaveformResult>;
+  getAudioMetadata(filePath: string): Promise<AudioMetadataResult>;
+
+  // ── processDragDropFiles (IPC-Bridge) ───────────────────────────────────
+  processDragDropFiles(filePaths: string[]): Promise<DragDropBulkData>;
 
   // ── Export (Audio-Engine-Agent) ───────────────────────────────────────────
   exportWav(options: {
-    audioData: number[];
+    pcmData: number[];
     sampleRate: number;
+    channels: number;
     suggestedName?: string;
   }): Promise<ExportResult>;
   exportWavStereo(options: StereoExportOptions): Promise<ExportResult>;
   exportMidi(options: MidiExportOptions): Promise<ExportResult>;
-  exportProject(data: unknown): Promise<ExportResult>;
-  importProject(): Promise<{ success: boolean; data?: unknown; canceled?: boolean; error?: string }>;
+  exportProject(options: {
+    projectData: string;
+    suggestedName?: string;
+    filePath?: string;
+  }): Promise<ExportResult>;
+  importProject(filePath?: string): Promise<{ success: boolean; data?: string; filePath?: string; canceled?: boolean; error?: string }>;
 
   // ── Store (Backend-Agent) ─────────────────────────────────────────────────
   storeGet<K extends keyof AppStoreData>(key: K): Promise<StoreResult<AppStoreData[K]>>;
@@ -310,8 +343,29 @@ interface ElectronAPI {
   storeClearRecent(): Promise<StoreResult>;
   onRecentProjectsChanged(callback: (projects: RecentProject[]) => void): ElectronCleanup;
 
-  // ── Multi-Window (IPC-Bridge-Agent) ──────────────────────────────────────────
+  // ── Multi-Window (IPC-Bridge-Agent) ──────────────────────────────────────
+  openNewWindow(projectPath?: string): Promise<{ windowId: number }>;
+  listWindows(): Promise<Array<{
+    id: number;
+    title: string;
+    projectPath: string | null;
+    projectName: string;
+    isDirty: boolean;
+    isFocused: boolean;
+  }>>;
+  focusWindow(windowId: number): Promise<{ success: boolean }>;
+  updateWindowState(updates: {
+    projectPath?: string;
+    projectName?: string;
+    isDirty?: boolean;
+    canUndo?: boolean;
+    canRedo?: boolean;
+    undoLabel?: string;
+    redoLabel?: string;
+  }): Promise<{ success: boolean }>;
+  forceCloseWindow(): Promise<void>;
   getRecentProjectsFromWindows(): Promise<Array<{ windowId: number; projectPath: string; projectName: string }>>;
+  onWindowConfirmClose(callback: () => void): ElectronCleanup;
 
   // ── System ────────────────────────────────────────────────────────────────────────────
   openExternal(url: string): Promise<{ success: boolean }>;

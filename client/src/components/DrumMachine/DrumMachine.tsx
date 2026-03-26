@@ -472,6 +472,15 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
   const pattern = dm.getActivePattern();
   const [showPatternMenu, setShowPatternMenu] = useState(false);
   const [metronomOn, setMetronomOn] = useState(false);
+  const [metronomGain, setMetronomGain] = useState(0.5);
+  const [metronomAccent, setMetronomAccent] = useState(1.0);
+  const [metronomTone, setMetronomTone] = useState(0.5);
+  const [metronomBeatsPerBar, setMetronomBeatsPerBar] = useState(4);
+  const [metronomOscType, setMetronomOscType] = useState<OscillatorType>("sine");
+  const [metronomSubdivision, setMetronomSubdivision] = useState<"beat" | "eighth" | "sixteenth">("beat");
+  const [showMetronomPanel, setShowMetronomPanel] = useState(false);
+  const metronomPanelRef = useRef<HTMLDivElement>(null);
+  const [masterVolume, setMasterVolume] = useState(0.85);
   const [bpmInput, setBpmInput] = useState(String(bpm));
   const bpmInputRef = useRef<HTMLInputElement>(null);
 
@@ -482,10 +491,32 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
     setBpmInput(String(bpm));
   }, [bpm]);
 
+  // Metronom-Panel schließen bei Klick außerhalb
+  useEffect(() => {
+    if (!showMetronomPanel) return;
+    const handler = (e: MouseEvent) => {
+      if (!metronomPanelRef.current?.contains(e.target as Node)) {
+        setShowMetronomPanel(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [showMetronomPanel]);
+
   // Metronom-Sync
   useEffect(() => {
-    AudioEngine.setMetronom(metronomOn);
-  }, [metronomOn]);
+    const downbeatFreq = 800 + metronomTone * 1200;
+    const beatFreq = 500 + metronomTone * 700;
+    AudioEngine.setMetronom(
+      metronomOn, metronomGain, metronomAccent, downbeatFreq, beatFreq,
+      metronomBeatsPerBar, metronomSubdivision, metronomOscType,
+    );
+  }, [metronomOn, metronomGain, metronomAccent, metronomTone, metronomBeatsPerBar, metronomOscType, metronomSubdivision]);
+
+  // Master-Volume-Sync
+  useEffect(() => {
+    AudioEngine.setMasterVolume(masterVolume);
+  }, [masterVolume]);
 
   // Effekte live aktualisieren
   useEffect(() => {
@@ -640,14 +671,129 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
         >PITCH</button>
 
         {/* Metronom */}
-        <button
-          onClick={() => setMetronomOn(prev => !prev)}
-          className={[
-            "px-2 py-1 rounded text-[10px] transition-colors",
-            metronomOn ? "bg-slate-600 text-white" : "bg-slate-800 text-slate-500 hover:bg-slate-700",
-          ].join(" ")}
-          title="Metronom"
-        >♩</button>
+        <div ref={metronomPanelRef} className="relative">
+          <div className="flex items-center gap-0.5 px-1.5 py-1 rounded bg-slate-900 border border-slate-800">
+            <button
+              onClick={() => setMetronomOn(prev => !prev)}
+              className={[
+                "px-2 py-0.5 rounded text-[10px] transition-colors",
+                metronomOn ? "bg-slate-600 text-white" : "bg-slate-800 text-slate-500 hover:bg-slate-700",
+              ].join(" ")}
+              title={metronomOn ? "Metronom aus" : "Metronom ein"}
+            >♩</button>
+            <button
+              onClick={() => setShowMetronomPanel(prev => !prev)}
+              className={[
+                "px-1.5 py-0.5 rounded text-[10px] transition-colors",
+                showMetronomPanel ? "bg-slate-600 text-white" : "text-slate-600 hover:text-slate-300",
+              ].join(" ")}
+              title="Metronom-Einstellungen"
+            >⚙</button>
+          </div>
+
+          {showMetronomPanel && (
+            <div className="absolute top-full right-0 z-50 mt-1 p-3 bg-[#111] border border-slate-700 rounded-lg shadow-xl w-64">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-xs font-semibold text-slate-300">Metronom</span>
+                <button onClick={() => setShowMetronomPanel(false)} className="text-slate-500 hover:text-white text-sm leading-none">✕</button>
+              </div>
+
+              {/* Schieberegler */}
+              <div className="space-y-2 mb-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] text-slate-400 w-16 shrink-0">Lautstärke</span>
+                  <input type="range" min={0} max={1} step={0.01} value={metronomGain}
+                    onChange={e => setMetronomGain(parseFloat(e.target.value))}
+                    className="flex-1 accent-slate-300 cursor-pointer" />
+                  <span className="text-[10px] text-slate-500 w-8 text-right">{Math.round(metronomGain * 100)}%</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] text-slate-400 w-16 shrink-0">Akzent</span>
+                  <input type="range" min={0.2} max={2} step={0.01} value={metronomAccent}
+                    onChange={e => setMetronomAccent(parseFloat(e.target.value))}
+                    className="flex-1 accent-amber-500 cursor-pointer" />
+                  <span className="text-[10px] text-slate-500 w-8 text-right">{metronomAccent.toFixed(1)}×</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] text-slate-400 w-16 shrink-0">Tonhöhe</span>
+                  <input type="range" min={0} max={1} step={0.01} value={metronomTone}
+                    onChange={e => setMetronomTone(parseFloat(e.target.value))}
+                    className="flex-1 accent-indigo-500 cursor-pointer" />
+                  <span className="text-[10px] text-slate-500 w-8 text-right">{Math.round(metronomTone * 100)}%</span>
+                </div>
+              </div>
+
+              <div className="border-t border-slate-800 my-2" />
+
+              {/* Schläge / Takt */}
+              <div className="mb-2">
+                <span className="text-[10px] text-slate-500 block mb-1">Schläge / Takt</span>
+                <div className="flex gap-1">
+                  {([2, 3, 4, 5, 6, 7] as const).map(n => (
+                    <button key={n} onClick={() => setMetronomBeatsPerBar(n)}
+                      className={[
+                        "flex-1 py-0.5 rounded text-[10px] font-mono transition-colors",
+                        metronomBeatsPerBar === n
+                          ? "bg-cyan-700 text-white"
+                          : "bg-slate-800 text-slate-500 hover:bg-slate-700",
+                      ].join(" ")}>{n}</button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Unterteilung */}
+              <div className="mb-2">
+                <span className="text-[10px] text-slate-500 block mb-1">Unterteilung</span>
+                <div className="flex gap-1">
+                  {(["beat", "eighth", "sixteenth"] as const).map(sub => (
+                    <button key={sub} onClick={() => setMetronomSubdivision(sub)}
+                      className={[
+                        "flex-1 py-0.5 rounded text-[10px] transition-colors",
+                        metronomSubdivision === sub
+                          ? "bg-cyan-700 text-white"
+                          : "bg-slate-800 text-slate-500 hover:bg-slate-700",
+                      ].join(" ")}>
+                      {sub === "beat" ? "1/4" : sub === "eighth" ? "1/8" : "1/16"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Klangtyp */}
+              <div>
+                <span className="text-[10px] text-slate-500 block mb-1">Klangtyp</span>
+                <div className="flex gap-1">
+                  {(["sine", "square", "triangle"] as const).map(type => (
+                    <button key={type} onClick={() => setMetronomOscType(type)}
+                      className={[
+                        "flex-1 py-0.5 rounded text-[10px] transition-colors",
+                        metronomOscType === type
+                          ? "bg-indigo-700 text-white"
+                          : "bg-slate-800 text-slate-500 hover:bg-slate-700",
+                      ].join(" ")}>
+                      {type === "sine" ? "Sinus" : type === "square" ? "Rechteck" : "Dreieck"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Master */}
+        <div className="flex items-center gap-1">
+          <span className="text-[10px] text-slate-500">Master</span>
+          <input
+            type="range"
+            min={0}
+            max={1}
+            step={0.01}
+            value={masterVolume}
+            onChange={e => setMasterVolume(parseFloat(e.target.value))}
+            title={`Master-Lautstärke: ${Math.round(masterVolume * 100)}%`}
+            className="w-16 accent-cyan-500 cursor-pointer"
+          />
+        </div>
 
         {/* Clear */}
         <button

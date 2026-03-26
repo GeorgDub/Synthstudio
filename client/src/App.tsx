@@ -157,16 +157,36 @@ export default function App() {
   }, [electron, project]);
 
   const handleMenuImportFolder = useCallback(async () => {
-    // Menü-Event: Ordner importieren
-    // In Electron: nativer Ordner-Dialog über useElectron()-Hook
+    // Menü-Event: Ordner importieren – nativer Folder-Dialog + rekursiver Import mit Progress
+    if (electron.isElectron) {
+      const result = await electron.openFolderDialog({ title: "Sample-Ordner importieren" });
+      if (!result.canceled && result.filePaths[0]) {
+        const started = await electron.importFolder(result.filePaths[0]).catch(() => null);
+        if (!started?.importId) {
+          // Fallback: flaches Verzeichnis-Listing
+          const dir = await electron.listDirectory(result.filePaths[0]);
+          if (dir.success && dir.entries) {
+            const paths = dir.entries.filter(e => !e.isDirectory && e.isAudio).map(e => e.path);
+            if (paths.length > 0) project.importSamplesFromPaths(paths);
+          }
+        }
+      }
+    }
+  }, [electron, project]);
+
+  const handleMenuImportProject = useCallback(async () => {
+    // Menü-Event: Projekt importieren (Ctrl+I aus Datei-Menü)
     if (electron.isElectron) {
       const result = await electron.openFileDialog({
-        title: "Sample-Ordner importieren",
-        filters: [],
+        title: "Projekt importieren",
+        filters: [
+          { name: "Synthstudio-Projekte", extensions: ["synth", "json"] },
+          { name: "Alle Dateien", extensions: ["*"] },
+        ],
         multiSelections: false,
       });
       if (!result.canceled && result.filePaths[0]) {
-        project.importSamplesFromPaths([result.filePaths[0]]);
+        project.loadProject(result.filePaths[0]);
       }
     }
   }, [electron, project]);
@@ -207,6 +227,7 @@ export default function App() {
     onRecord: project.toggleRecord,
     onImportSamples: handleMenuImportSamples,
     onImportFolder: handleMenuImportFolder,
+    onImportProject: handleMenuImportProject,
   });
 
   // ── Sample auf aktiven Kanal legen ──────────────────────────────────────────
@@ -306,6 +327,7 @@ export default function App() {
               onAssignToChannel={handleAssignToChannel}
               activeChannelName={activeChannelName}
               onUpdateSampleCategory={handleUpdateSampleCategory}
+              onReorderSamples={project.reorderSamples}
             />
           </aside>
 

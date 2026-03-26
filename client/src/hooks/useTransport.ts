@@ -16,8 +16,6 @@ interface UseTransportOptions {
   isPlaying: boolean;
   bpm: number;
   dm: DrumMachineState & DrumMachineActions;
-  metronomEnabled?: boolean;
-  metronomGain?: number;
   onPlayStateChange?: (playing: boolean) => void;
 }
 
@@ -25,8 +23,6 @@ export function useTransport({
   isPlaying,
   bpm,
   dm,
-  metronomEnabled = false,
-  metronomGain = 0.5,
   onPlayStateChange,
 }: UseTransportOptions) {
   const prevPlaying = useRef(false);
@@ -39,7 +35,7 @@ export function useTransport({
   useEffect(() => {
     AudioEngine.setPatternGetter(() => {
       const p = patternRef.current();
-      if (!p) return { id: "", name: "", stepCount: 16, parts: [] };
+      if (!p) return { id: "", name: "", stepCount: 16 as const, stepResolution: "1/16" as const, bpm: null, parts: [] };
       return p;
     });
   }, []);
@@ -51,11 +47,6 @@ export function useTransport({
       prevBpm.current = bpm;
     }
   }, [bpm]);
-
-  // Metronom synchronisieren
-  useEffect(() => {
-    AudioEngine.setMetronom(metronomEnabled, metronomGain);
-  }, [metronomEnabled, metronomGain]);
 
   // Play/Stop synchronisieren
   useEffect(() => {

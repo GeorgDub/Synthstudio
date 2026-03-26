@@ -21,7 +21,7 @@ const jsx_runtime_1 = require("react/jsx-runtime");
 const react_1 = require("react");
 // ─── Hilfsfunktionen ─────────────────────────────────────────────────────────
 const AUDIO_EXTENSIONS = new Set([".wav", ".mp3", ".ogg", ".flac", ".aiff", ".aif", ".m4a"]);
-const PROJECT_EXTENSIONS = new Set([".esx1", ".json"]);
+const PROJECT_EXTENSIONS = new Set([".synth", ".json"]);
 function getFileExtension(name) {
     const dot = name.lastIndexOf(".");
     return dot >= 0 ? name.slice(dot).toLowerCase() : "";
@@ -149,6 +149,6 @@ function ElectronDropZone({ onAudioFiles, onFolder, onProject, children, }) {
             flex flex-col items-center justify-center gap-4
             border-4 border-dashed transition-all duration-150
             ${style.border} ${style.bg}
-          `, children: [(0, jsx_runtime_1.jsx)("div", { className: `text-6xl ${style.text}`, children: dropType === "folder" ? "📁" : dropType === "project" ? "🎵" : "🎚️" }), (0, jsx_runtime_1.jsx)("p", { className: `text-2xl font-bold tracking-wide ${style.text}`, children: style.label }), (0, jsx_runtime_1.jsxs)("p", { className: "text-sm text-slate-400", children: [dropType === "audio" && "WAV, MP3, OGG, FLAC, AIFF werden unterstützt", dropType === "folder" && "Alle Audio-Dateien im Ordner werden importiert", dropType === "project" && ".esx1 Projektdatei wird geöffnet", dropType === "unknown" && "Datei wird analysiert..."] })] }))] }));
+          `, children: [(0, jsx_runtime_1.jsx)("div", { className: `text-6xl ${style.text}`, children: dropType === "folder" ? "📁" : dropType === "project" ? "🎵" : "🎚️" }), (0, jsx_runtime_1.jsx)("p", { className: `text-2xl font-bold tracking-wide ${style.text}`, children: style.label }), (0, jsx_runtime_1.jsxs)("p", { className: "text-sm text-slate-400", children: [dropType === "audio" && "WAV, MP3, OGG, FLAC, AIFF werden unterstützt", dropType === "folder" && "Alle Audio-Dateien im Ordner werden importiert", dropType === "project" && ".synth Projektdatei wird geöffnet", dropType === "unknown" && "Datei wird analysiert..."] })] }))] }));
 }
 exports.default = ElectronDropZone;

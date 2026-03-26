@@ -74,7 +74,7 @@ export function autoTagFromFilename(filePath: string): string[] {
   if (/\blong\b/.test(name)) tags.push("long");
   if (/\bshort\b/.test(name)) tags.push("short");
 
-  return [...new Set(tags)]; // Duplikate entfernen
+  return Array.from(new Set(tags)); // Duplikate entfernen
 }
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
@@ -186,7 +186,7 @@ export function useBpmDetection() {
           sampleId: sample.id,
           bpm,
           confidence,
-          tags: [...new Set(autoTags)],
+          tags: Array.from(new Set(autoTags)),
         };
       } catch {
         return null;

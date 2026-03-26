@@ -14,6 +14,37 @@
 
 export type StepResolution = "1/8" | "1/16" | "1/32";
 
+// ─── Step Probability & Conditional Triggers (Phase 1) ───────────────────────
+
+export type StepCondition =
+  | { type: "always" }
+  | { type: "every"; n: number; of: number }
+  | { type: "fill" }
+  | { type: "not_fill" };
+
+// ─── Modulationsmatrix-Typen (Phase 6) ────────────────────────────────────────
+
+export type ModSource =
+  | { type: "lfo"; partId: string }
+  | { type: "stepSeq"; partId: string; stepIndex: number }
+  | { type: "midiCC"; ccNumber: number }
+  | { type: "envelope"; partId: string }
+  | { type: "random" };
+
+export type ModTarget =
+  | { type: "channelFx"; partId: string; param: string }
+  | { type: "pitch"; partId: string }
+  | { type: "volume"; partId: string }
+  | { type: "pan"; partId: string };
+
+export interface ModMatrixEntry {
+  id: string;
+  source: ModSource;
+  target: ModTarget;
+  amount: number;    // -1..+1 (bipolar)
+  enabled: boolean;
+}
+
 export interface ScheduledStep {
   partIndex: number;
   stepIndex: number;
@@ -97,8 +128,10 @@ export const DEFAULT_CHANNEL_FX: ChannelFx = {
 
 export interface StepData {
   active: boolean;
-  velocity?: number;   // 0–127
-  pitch?: number;      // Halbtöne
+  velocity?: number;       // 0–127
+  pitch?: number;          // Halbtöne
+  probability?: number;    // NEU: 0–100, default 100
+  condition?: StepCondition; // NEU: default { type: "always" }
 }
 
 export interface PartData {
@@ -115,6 +148,10 @@ export interface PartData {
   stepResolution?: StepResolution;
   steps: StepData[];
   fx: ChannelFx;
+  /** NEU (Phase 5): Quelle des Sounds – Sample oder Synthesizer */
+  sourceType?: "sample" | "wavetable" | "fm";
+  /** NEU (Phase 5): Synthesizer-Parameter (nur wenn sourceType !== "sample") */
+  synthParams?: import("./SynthEngine").SynthParams;
 }
 
 export interface PatternData {
@@ -174,10 +211,25 @@ class AudioEngineClass {
   private stepCallbacks: StepCallback[] = [];
   private positionCallbacks: PositionCallback[] = [];
   private patternGetter: (() => PatternData) | null = null;
+  private patternSwitchCallback: ((patternId: string) => void) | null = null;
+
+  // Probability / Fill state (Phase 1)
+  private loopCount = 0;
+  private isFillActive = false;
+
+  // Performance Mode – Queued Pattern Switch (Phase 4)
+  private queuedPatternId: string | null = null;
+  private quantizeMode: "bar" | "beat" | "step" = "bar";
 
   // Metronom
   private _metronomEnabled = false;
   private _metronomGain = 0.5;
+  private _metronomAccent = 1.0;
+  private _metronomDownbeatFreq = 1200;
+  private _metronomBeatFreq = 800;
+  private _metronomBeatsPerBar = 4;
+  private _metronomOscType: OscillatorType = "sine";
+  private _metronomSubdivision: "beat" | "eighth" | "sixteenth" = "beat";
 
   get isPlaying() { return this._isPlaying; }
   get bpm() { return this._bpm; }
@@ -199,9 +251,24 @@ class AudioEngineClass {
   setSteps(steps: 16 | 32) { this._steps = steps; }
   setStepResolution(res: StepResolution) { this._stepResolution = res; }
 
-  setMetronom(enabled: boolean, gain = 0.5) {
+  setMetronom(
+    enabled: boolean,
+    gain = 0.5,
+    accent = 1.0,
+    downbeatFreq = 1200,
+    beatFreq = 800,
+    beatsPerBar = 4,
+    subdivision: "beat" | "eighth" | "sixteenth" = "beat",
+    oscType: OscillatorType = "sine",
+  ) {
     this._metronomEnabled = enabled;
     this._metronomGain = gain;
+    this._metronomAccent = Math.max(0.2, Math.min(2, accent));
+    this._metronomDownbeatFreq = Math.max(200, Math.min(4000, downbeatFreq));
+    this._metronomBeatFreq = Math.max(200, Math.min(4000, beatFreq));
+    this._metronomBeatsPerBar = Math.max(1, Math.min(12, beatsPerBar));
+    this._metronomSubdivision = subdivision;
+    this._metronomOscType = oscType;
   }
 
   setMasterVolume(vol: number) {
@@ -274,6 +341,26 @@ class AudioEngineClass {
     this._applyFxToNodes(nodes, fx);
   }
 
+  /** Fill-Mode aktiv/deaktiv setzen (für Conditional Triggers) */
+  setFillActive(active: boolean) { this.isFillActive = active; }
+
+  /** Performance Mode: Pattern mit Quantisierung wechseln */
+  setQueuedPattern(patternId: string, quantize: "bar" | "beat" | "step" = "bar") {
+    // Gleiche Pattern nochmal → Queue leeren
+    if (this.queuedPatternId === patternId) {
+      this.queuedPatternId = null;
+    } else {
+      this.queuedPatternId = patternId;
+      this.quantizeMode = quantize;
+    }
+  }
+
+  /** Callback wenn Pattern gewechselt wird (quantisiert) */
+  onPatternSwitch(cb: (patternId: string) => void) {
+    this.patternSwitchCallback = cb;
+    return () => { this.patternSwitchCallback = null; };
+  }
+
   // ─── Private: Step-Dauer ──────────────────────────────────────────────────
 
   private _stepDuration(resolution?: StepResolution): number {
@@ -293,9 +380,50 @@ class AudioEngineClass {
 
     while (this._nextStepTime < lookAheadUntil) {
       this._scheduleStep(this._currentStep, this._nextStepTime);
+      // Loop-Count inkrementieren wenn Pattern-Wrap erfolgt
+      if (this._currentStep === this._steps - 1) {
+        this.loopCount++;
+        // Quantisierter Pattern-Wechsel (Performance Mode)
+        if (this.queuedPatternId && this.quantizeMode === "bar") {
+          const nextId = this.queuedPatternId;
+          this.queuedPatternId = null;
+          this.patternSwitchCallback?.(nextId);
+        }
+      } else if (this._currentStep === 0 && this.queuedPatternId && this.quantizeMode === "beat") {
+        const stepsPerBeat = Math.round(this._steps / this._metronomBeatsPerBar);
+        if (this._currentStep % stepsPerBeat === 0) {
+          const nextId = this.queuedPatternId;
+          this.queuedPatternId = null;
+          this.patternSwitchCallback?.(nextId);
+        }
+      }
       this._currentStep = (this._currentStep + 1) % this._steps;
       this._nextStepTime += this._stepDuration();
+      // Sofortiger Wechsel (quantizeMode=step)
+      if (this.queuedPatternId && this.quantizeMode === "step") {
+        const nextId = this.queuedPatternId;
+        this.queuedPatternId = null;
+        this.patternSwitchCallback?.(nextId);
+      }
     }
+  }
+
+  // ─── Private: Probability-Check ──────────────────────────────────────────
+
+  /** Prüft ob ein Step ausgelöst werden soll (Probability + Condition) */
+  shouldTriggerStep(step: StepData): boolean {
+    if (!step.active) return false;
+    const prob = Math.max(0, Math.min(100, step.probability ?? 100));
+    if (prob <= 0) return false;
+    if (prob < 100 && Math.random() * 100 > prob) return false;
+    const condition = step.condition;
+    if (!condition || condition.type === "always") return true;
+    if (condition.type === "every") {
+      return (this.loopCount % condition.of) === (condition.n - 1);
+    }
+    if (condition.type === "fill") return this.isFillActive;
+    if (condition.type === "not_fill") return !this.isFillActive;
+    return true;
   }
 
   private _scheduleStep(stepIndex: number, time: number) {
@@ -306,8 +434,37 @@ class AudioEngineClass {
 
     // Metronom
     if (this._metronomEnabled && this.ctx && this.masterGain) {
-      const isDownbeat = stepIndex % 4 === 0;
-      this._playClick(time, isDownbeat ? 1.0 : 0.4, isDownbeat ? 1200 : 800);
+      const beatsPerBar = this._metronomBeatsPerBar;
+      const totalSteps = this._steps;
+
+      // Korrekte Beat-Erkennung für beliebige Taktarten:
+      // Beat b liegt genau bei Step = round(b * totalSteps / beatsPerBar).
+      // Wir prüfen, ob stepIndex der repräsentative Step für den nächsten Beat ist.
+      const closestBeat = Math.round((stepIndex * beatsPerBar) / totalSteps);
+      const representStep = Math.round((closestBeat * totalSteps) / beatsPerBar) % totalSteps;
+      const isBeat = representStep === stepIndex;
+      const isDownbeat = stepIndex === 0;
+
+      // Unterteilung
+      const stepsPerHalfBeat = Math.max(1, Math.round(totalSteps / beatsPerBar / 2));
+      let shouldClick = false;
+      if (this._metronomSubdivision === "beat") {
+        shouldClick = isBeat;
+      } else if (this._metronomSubdivision === "eighth") {
+        shouldClick = stepIndex % stepsPerHalfBeat === 0;
+      } else {
+        shouldClick = true; // sixteenth: jeder Step
+      }
+
+      if (shouldClick) {
+        const vol = isDownbeat
+          ? Math.max(0.2, this._metronomAccent)
+          : isBeat
+            ? Math.max(0.05, 0.7 / Math.max(0.2, this._metronomAccent))
+            : Math.max(0.02, 0.3 / Math.max(0.2, this._metronomAccent));
+        const freq = isDownbeat ? this._metronomDownbeatFreq : this._metronomBeatFreq;
+        this._playClick(time, vol, freq);
+      }
     }
 
     if (!this.patternGetter) return;
@@ -325,7 +482,7 @@ class AudioEngineClass {
 
       const partRes = part.stepResolution ?? effectiveResolution;
       const step = part.steps[stepIndex];
-      if (!step?.active) return;
+      if (!step || !this.shouldTriggerStep(step)) return;
 
       const scheduled: ScheduledStep = {
         partIndex,
@@ -373,6 +530,42 @@ class AudioEngineClass {
 
     source.connect(nodes.input);
     source.start(Math.max(time, this.ctx.currentTime));
+  }
+
+  /** Sample mit optionaler Slice-Region abspielen */
+  triggerDrum(
+    partId: string,
+    buf: AudioBuffer,
+    time: number,
+    volume: number,
+    pan: number,
+    pitch: number,
+    part: PartData,
+    options?: {
+      sliceStart?: number;  // Sekunden
+      sliceEnd?: number;    // Sekunden
+      loopMode?: "one-shot" | "loop" | "ping-pong";
+      reverse?: boolean;
+    }
+  ) {
+    if (!this.ctx || !this.masterGain) return;
+    const source = this.ctx.createBufferSource();
+    source.buffer = buf;
+    if (pitch !== 0) source.playbackRate.value = Math.pow(2, pitch / 12);
+    if (options?.reverse) source.playbackRate.value *= -1;
+    if (options?.loopMode === "loop" || options?.loopMode === "ping-pong") {
+      source.loop = true;
+      if (options.sliceStart != null) source.loopStart = options.sliceStart;
+      if (options.sliceEnd != null) source.loopEnd = options.sliceEnd;
+    }
+    const nodes = this._getOrCreateChannelNodes(part.id, part.fx);
+    nodes.input.gain.value = Math.max(0, Math.min(2, volume));
+    nodes.panner.pan.value = Math.max(-1, Math.min(1, pan));
+    source.connect(nodes.input);
+    const startTime = Math.max(time, this.ctx.currentTime);
+    const offset = options?.sliceStart ?? 0;
+    const duration = options?.sliceEnd != null ? options.sliceEnd - offset : undefined;
+    source.start(startTime, offset, duration);
   }
 
   /** Direktes Triggern ohne Effektkette (für Preview) */
@@ -551,7 +744,7 @@ class AudioEngineClass {
     }
   }
 
-  private _makeDistortionCurve(amount: number): Float32Array {
+  private _makeDistortionCurve(amount: number): Float32Array<ArrayBuffer> {
     const samples = 256;
     const curve = new Float32Array(samples);
     const k = amount;
@@ -597,10 +790,22 @@ class AudioEngineClass {
 
     const promise = (async () => {
       try {
-        const response = await fetch(url);
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const arrayBuffer = await response.arrayBuffer();
-        const audioBuffer = await this.ctx!.decodeAudioData(arrayBuffer);
+        const localPath = this._toLocalFilePath(url);
+
+        let arrayBuffer: ArrayBuffer;
+        if (localPath && typeof window !== "undefined" && window.electronAPI?.readFile) {
+          const result = await window.electronAPI.readFile(localPath);
+          if (!result.success || !result.data) {
+            throw new Error(result.error || "fs:read-file fehlgeschlagen");
+          }
+          arrayBuffer = result.data;
+        } else {
+          const response = await fetch(url);
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          arrayBuffer = await response.arrayBuffer();
+        }
+
+        const audioBuffer = await this.ctx!.decodeAudioData(arrayBuffer.slice(0));
         this.bufferCache.set(url, audioBuffer);
         this.loadingPromises.delete(url);
         return audioBuffer;
@@ -615,18 +820,37 @@ class AudioEngineClass {
     return promise;
   }
 
+  private _toLocalFilePath(url: string): string | null {
+    const value = (url || "").trim();
+    if (!value) return null;
+
+    // Windows absolute paths, UNC shares and POSIX absolute paths.
+    if (/^[a-zA-Z]:[\\/]/.test(value) || value.startsWith("\\\\") || value.startsWith("/")) {
+      return value;
+    }
+
+    if (!value.startsWith("file://")) return null;
+
+    const decoded = decodeURI(value.replace(/^file:\/\//i, ""));
+    if (/^\/[a-zA-Z]:\//.test(decoded)) {
+      return decoded.slice(1).replace(/\//g, "\\");
+    }
+    return decoded;
+  }
+
   private _playClick(time: number, volume: number, freq: number) {
     if (!this.ctx || !this.masterGain) return;
     const osc = this.ctx.createOscillator();
     const gain = this.ctx.createGain();
     osc.frequency.value = freq;
-    osc.type = "sine";
+    osc.type = this._metronomOscType;
+    const clickDur = this._metronomOscType === "sine" ? 0.05 : 0.03;
     gain.gain.setValueAtTime(volume * this._metronomGain, time);
-    gain.gain.exponentialRampToValueAtTime(0.001, time + 0.05);
+    gain.gain.exponentialRampToValueAtTime(0.001, time + clickDur);
     osc.connect(gain);
     gain.connect(this.masterGain);
     osc.start(time);
-    osc.stop(time + 0.06);
+    osc.stop(time + clickDur + 0.01);
   }
 }
 

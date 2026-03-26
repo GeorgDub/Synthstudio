@@ -116,7 +116,27 @@ function detectCategory(filePath: string): string {
   return "other";
 }
 
-// ─── Haupt-Fenster ───────────────────────────────────────────────────────────
+/** Generiert Auto-Tags aus dem Dateinamen (kick, snare, loop, …) */
+function autoTag(filePath: string): string[] {
+  const name = path.basename(filePath).toLowerCase();
+  if (/kick|bd|bass.?drum|bassdrum/.test(name)) return ["kick"];
+  if (/snare|sd|rimshot/.test(name)) return ["snare"];
+  if (/clap/.test(name)) return ["clap"];
+  if (/hihat|hh|hat/.test(name)) {
+    if (/open|oh/.test(name)) return ["open-hat"];
+    return ["closed-hat"];
+  }
+  if (/tom|floor|rack/.test(name)) return ["tom"];
+  if (/crash|ride|cym/.test(name)) return ["cymbal"];
+  if (/perc|conga|bongo|shaker|tamb/.test(name)) return ["percussion"];
+  if (/bass|sub/.test(name)) return ["bass"];
+  if (/lead|synth|pad|keys/.test(name)) return ["synth"];
+  if (/fx|effect|noise|sweep/.test(name)) return ["fx"];
+  if (/loop|break/.test(name)) return ["loop"];
+  if (/vocal|vox|voice/.test(name)) return ["vocal"];
+  return [];
+}
+
 
 function createWindow(): void {
   // Gespeicherte Fenstergröße/-position aus dem Store laden
@@ -135,7 +155,7 @@ function createWindow(): void {
     title: APP_NAME,
     backgroundColor: "#0a0a0a",
     webPreferences: {
-      preload: path.join(__dirname, "preload.js"),
+      preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
       autoplayPolicy: "no-user-gesture-required",
@@ -660,6 +680,7 @@ async function startFolderImport(importId: string, folderPath: string): Promise<
       path: string;
       category: string;
       size: number;
+      tags: string[];
     }> = [];
 
     await scanAndImport(folderPath, folderPath, importId, {
@@ -677,6 +698,7 @@ async function startFolderImport(importId: string, folderPath: string): Promise<
             path: filePath,
             category,
             size: stat.size,
+            tags: autoTag(filePath),
           });
 
           imported++;
@@ -793,7 +815,8 @@ function registerIpcHandlers(): void {
         return { success: false, error: "Dateityp nicht erlaubt" };
       }
       const buffer = await fs.promises.readFile(filePath);
-      return { success: true, data: buffer.buffer };
+      const data = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
+      return { success: true, data };
     } catch (err) {
       return { success: false, error: String(err) };
     }
@@ -836,9 +859,26 @@ function registerIpcHandlers(): void {
   // ── Folder-Import ────────────────────────────────────────────────────────────
 
   ipcMain.handle("samples:import-folder", async (_event, folderPath: string) => {
+    if (!folderPath || typeof folderPath !== "string") {
+      throw new Error("Ungültiger Ordnerpfad");
+    }
+
+    const resolvedPath = path.resolve(folderPath);
+    let stat: fs.Stats;
+    try {
+      stat = await fs.promises.stat(resolvedPath);
+    } catch {
+      throw new Error("Ordnerpfad nicht gefunden");
+    }
+
+    if (!stat.isDirectory()) {
+      throw new Error("Der angegebene Pfad ist kein Ordner");
+    }
+
     const importId = `import_${Date.now()}`;
-    // Import asynchron starten (nicht await – Progress-Events kommen über webContents.send)
-    startFolderImport(importId, folderPath);
+    // Import-Start signalisieren, dann asynchron starten
+    mainWindow?.webContents.send("samples:import-started", { importId });
+    void startFolderImport(importId, resolvedPath);
     return { importId };
   });
 

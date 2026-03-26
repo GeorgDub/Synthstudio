@@ -24,6 +24,20 @@
  */
 
 import { useEffect, useCallback, useRef } from "react";
+import type {
+  ElectronImportProgress,
+  ElectronImportComplete,
+  ElectronImportCancelled,
+  ElectronImportError,
+  DragDropAudioFile,
+  DragDropFolder,
+  DragDropBulkData,
+  DragDropSampleData,
+  StereoExportOptions,
+  MidiExportOptions,
+  ElectronUpdaterInfo,
+  ElectronDownloadProgress,
+} from "./types";
 
 // ─── Typen ────────────────────────────────────────────────────────────────────
 
@@ -64,42 +78,48 @@ const browserAPI = {
   importZip: async (_zipPath: string) => ({ importId: "" }),
   cleanupZip: async (_importId: string) => ({ success: false }),
   onImportStarted: noopDataListener<{ importId: string }>(),
-  onImportProgress: noopDataListener<any>(),
-  onImportComplete: noopDataListener<any>(),
-  onImportCancelled: noopDataListener<any>(),
-  onImportError: noopDataListener<any>(),
+  onImportProgress: noopDataListener<ElectronImportProgress>(),
+  onImportComplete: noopDataListener<ElectronImportComplete>(),
+  onImportCancelled: noopDataListener<ElectronImportCancelled>(),
+  onImportError: noopDataListener<ElectronImportError>(),
 
-  openFileDialog: async (_options: any) => ({ canceled: true, filePaths: [] as string[] }),
-  saveFileDialog: async (_options: any) => ({ canceled: true }),
-  showMessageDialog: async (_options: any) => ({ response: 0 }),
+  openFileDialog: async (_options: { title?: string; filters?: Array<{ name: string; extensions: string[] }>; multiSelections?: boolean }) => ({ canceled: true, filePaths: [] as string[] }),
+  saveFileDialog: async (_options: { title?: string; defaultPath?: string; filters?: Array<{ name: string; extensions: string[] }> }) => ({ canceled: true }),
+  showMessageDialog: async (_options: { type?: "none" | "info" | "error" | "question" | "warning"; title?: string; message: string; detail?: string; buttons?: string[]; defaultId?: number }) => ({ response: 0 }),
 
   setFullscreen: async (_fullscreen: boolean) => ({ success: false }),
-  isFullscreen: async () => ({ isFullscreen: false }),
-  minimizeWindow: () => {},
-  maximizeWindow: () => {},
-  forceCloseWindow: () => {},
+  isFullscreen: async () => false as boolean,
+  minimizeWindow: async () => {},
+  maximizeWindow: async () => {},
+  forceCloseWindow: async () => {},
   setWindowTitle: (_title: string) => {},
   onFullscreenChanged: noopDataListener<boolean>(),
 
   showNotification: (_title: string, _body: string) => {},
-  showConfirmDialog: async (_options: any) => ({ response: 0 }),
+  showConfirmDialog: async (_options: { title?: string; message: string }) => ({ response: 0 }),
   showErrorDialog: async (_title: string, _message: string) => {},
   showInfoDialog: async (_title: string, _message: string) => {},
-  openFolderDialog: async (_options?: any) => ({ canceled: true, filePaths: [] as string[] }),
+  openFolderDialog: async (_options?: { title?: string }) => ({ canceled: true, filePaths: [] as string[] }),
   openExternal: async (_url: string) => ({ success: false }),
   showItemInFolder: (_filePath: string) => {},
   fileExists: async (_filePath: string) => ({ exists: false }),
-  getFileStats: async (_filePath: string) => ({ success: false }),
+  getFileStats: async (_filePath: string) => ({ success: false as boolean }),
   importSamples: async (_filePaths: string[]) => ({ success: false, importedCount: 0, errors: [] as string[] }),
-  analyzeWaveform: async (_filePath: string, _numPeaks?: number) => ({ success: false }),
-  exportWav: async (_options: any) => ({ success: false, canceled: false }),
-  exportWavStereo: async (_options: any) => ({ success: false, canceled: false }),
-  exportMidi: async (_options: any) => ({ success: false, canceled: false }),
-  exportProject: async (_data: unknown) => ({ success: false, canceled: false }),
-  importProject: async () => ({ success: false, canceled: true }),
-  onDragDropBulkImport: noopDataListener<any>(),
-  onDragDropLoadSample: noopDataListener<any>(),
-  onDragDropOpenProject: noopDataListener<any>(),
+  analyzeWaveform: async (_filePath: string, _numPeaks?: number) => ({ success: false as boolean }),
+  getAudioMetadata: async (_filePath: string) => ({ success: false as boolean }),
+  processDragDropFiles: async (_filePaths: string[]) => ({
+    audioFiles: [] as DragDropAudioFile[],
+    folders: [] as DragDropFolder[],
+    projectFiles: [] as DragDropFolder[],
+  }),
+  exportWav: async (_options: { pcmData: number[]; sampleRate: number; channels: number; suggestedName?: string }) => ({ success: false, canceled: false }),
+  exportWavStereo: async (_options: StereoExportOptions) => ({ success: false, canceled: false }),
+  exportMidi: async (_options: MidiExportOptions) => ({ success: false, canceled: false }),
+  exportProject: async (_options: { projectData: string; suggestedName?: string; filePath?: string }) => ({ success: false, canceled: false }),
+  importProject: async (_filePath?: string) => ({ success: false, canceled: true }),
+  onDragDropBulkImport: noopDataListener<DragDropBulkData>(),
+  onDragDropLoadSample: noopDataListener<DragDropSampleData>(),
+  onDragDropOpenProject: noopDataListener<string>(),
 
   onMenuNewProject: noopVoidListener,
   onMenuOpenProject: noopDataListener<string>(),
@@ -110,21 +130,37 @@ const browserAPI = {
   onMenuUndo: noopVoidListener,
   onMenuRedo: noopVoidListener,
   onMenuOpenSampleBrowser: noopVoidListener,
+  onMenuOpenSampleLibrary: noopVoidListener,
   onMenuImportSamples: noopDataListener<string[]>(),
   onMenuImportSampleFolder: noopDataListener<string>(),
   onMenuTransportToggle: noopVoidListener,
   onMenuTransportRecord: noopVoidListener,
+  onMenuRecord: noopVoidListener,
+  onMenuToggleFullscreen: noopVoidListener,
+  onMenuBounce: noopVoidListener,
 
   onShortcutTransportToggle: noopVoidListener,
   onShortcutTransportStop: noopVoidListener,
+  onShortcutPlayStop: noopVoidListener,
+  onShortcutUndo: noopVoidListener,
+  onShortcutRedo: noopVoidListener,
+  onShortcutSave: noopVoidListener,
+
+  // Multi-Window
+  openNewWindow: async (_projectPath?: string) => ({ windowId: -1 }),
+  listWindows: async () => [] as Array<{ id: number; title: string; projectPath: string | null; projectName: string; isDirty: boolean; isFocused: boolean }>,
+  focusWindow: async (_windowId: number) => ({ success: false }),
+  updateWindowState: async (_updates: { projectPath?: string; projectName?: string; isDirty?: boolean; canUndo?: boolean; canRedo?: boolean; undoLabel?: string; redoLabel?: string }) => ({ success: false }),
+  getRecentProjectsFromWindows: async () => [] as Array<{ windowId: number; projectPath: string; projectName: string }>,
+  onWindowConfirmClose: noopVoidListener,
 
   checkForUpdates: () => {},
   onUpdaterChecking: noopVoidListener,
-  onUpdaterUpdateAvailable: noopDataListener<any>(),
+  onUpdaterUpdateAvailable: noopDataListener<ElectronUpdaterInfo>(),
   onUpdaterUpToDate: noopVoidListener,
-  onUpdaterDownloadProgress: noopDataListener<any>(),
-  onUpdaterUpdateDownloaded: noopDataListener<any>(),
-  onUpdaterError: noopDataListener<any>(),
+  onUpdaterDownloadProgress: noopDataListener<ElectronDownloadProgress>(),
+  onUpdaterUpdateDownloaded: noopDataListener<{ version: string }>(),
+  onUpdaterError: noopDataListener<{ message: string }>(),
 
   // Store
   storeGet: async <K extends keyof import("./store").AppStoreData>(_key: K) => ({ success: false, error: "Nicht in Electron" }),
@@ -205,8 +241,16 @@ export function useElectron() {
     onMenuImportSampleFolder: api.onMenuImportSampleFolder,
     onMenuTransportToggle: api.onMenuTransportToggle,
     onMenuTransportRecord: api.onMenuTransportRecord,
+    onMenuRecord: api.onMenuRecord,
+    onMenuToggleFullscreen: api.onMenuToggleFullscreen,
+    onMenuBounce: api.onMenuBounce,
+    onMenuOpenSampleLibrary: api.onMenuOpenSampleLibrary,
     onShortcutTransportToggle: api.onShortcutTransportToggle,
     onShortcutTransportStop: api.onShortcutTransportStop,
+    onShortcutPlayStop: api.onShortcutPlayStop,
+    onShortcutUndo: api.onShortcutUndo,
+    onShortcutRedo: api.onShortcutRedo,
+    onShortcutSave: api.onShortcutSave,
     checkForUpdates: api.checkForUpdates,
     onUpdaterChecking: api.onUpdaterChecking,
     onUpdaterUpdateAvailable: api.onUpdaterUpdateAvailable,
@@ -221,6 +265,14 @@ export function useElectron() {
     storeRemoveRecent: api.storeRemoveRecent,
     storeClearRecent: api.storeClearRecent,
     onRecentProjectsChanged: api.onRecentProjectsChanged,
+    getAudioMetadata: api.getAudioMetadata,
+    processDragDropFiles: api.processDragDropFiles,
+    openNewWindow: api.openNewWindow,
+    listWindows: api.listWindows,
+    focusWindow: api.focusWindow,
+    updateWindowState: api.updateWindowState,
+    getRecentProjectsFromWindows: api.getRecentProjectsFromWindows,
+    onWindowConfirmClose: api.onWindowConfirmClose,
   };
 }
 
@@ -248,8 +300,16 @@ export function useElectronEvent(
     | "onMenuOpenSampleBrowser"
     | "onMenuTransportToggle"
     | "onMenuTransportRecord"
+    | "onMenuRecord"
+    | "onMenuToggleFullscreen"
+    | "onMenuBounce"
     | "onShortcutTransportToggle"
     | "onShortcutTransportStop"
+    | "onShortcutPlayStop"
+    | "onShortcutUndo"
+    | "onShortcutRedo"
+    | "onShortcutSave"
+    | "onWindowConfirmClose"
     | "onUpdaterChecking"
     | "onUpdaterUpToDate"
   >,

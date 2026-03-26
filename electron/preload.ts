@@ -144,6 +144,12 @@ const electronAPI = {
   }): Promise<{ canceled: boolean; filePath?: string }> =>
     ipcRenderer.invoke("dialog:save-file", options),
 
+  openFolderDialog: (options?: { title?: string }): Promise<{ canceled: boolean; filePaths: string[] }> =>
+    ipcRenderer.invoke("dialog:open-file", {
+      title: options?.title,
+      properties: ["openDirectory"],
+    }),
+
   showMessageDialog: (options: {
     type?: "none" | "info" | "error" | "question" | "warning";
     title?: string;
@@ -153,6 +159,35 @@ const electronAPI = {
     defaultId?: number;
   }): Promise<{ response: number }> =>
     ipcRenderer.invoke("dialog:message", options),
+
+  showConfirmDialog: (options: { title?: string; message: string }): Promise<{ response: number }> =>
+    ipcRenderer.invoke("dialog:message", {
+      type: "question",
+      title: options.title,
+      message: options.message,
+      buttons: ["OK", "Abbrechen"],
+      defaultId: 0,
+    }),
+
+  showErrorDialog: async (title: string, message: string): Promise<void> => {
+    await ipcRenderer.invoke("dialog:message", {
+      type: "error",
+      title,
+      message,
+      buttons: ["OK"],
+      defaultId: 0,
+    });
+  },
+
+  showInfoDialog: async (title: string, message: string): Promise<void> => {
+    await ipcRenderer.invoke("dialog:message", {
+      type: "info",
+      title,
+      message,
+      buttons: ["OK"],
+      defaultId: 0,
+    });
+  },
 
   // ── Fenster-Steuerung ────────────────────────────────────────────────────────
 
@@ -168,6 +203,10 @@ const electronAPI = {
   maximizeWindow: (): Promise<void> =>
     ipcRenderer.invoke("window:maximize"),
 
+  setWindowTitle: (title: string): void => {
+    document.title = title;
+  },
+
   // Fullscreen-Change-Event
   onFullscreenChanged: createEventListener<boolean>("window:fullscreen-changed"),
 
@@ -175,6 +214,16 @@ const electronAPI = {
 
   showNotification: (title: string, body: string): Promise<void> =>
     ipcRenderer.invoke("notification:show", title, body),
+
+  openExternal: async (url: string): Promise<{ success: boolean }> => {
+    window.open(url, "_blank", "noopener,noreferrer");
+    return { success: true };
+  },
+
+  showItemInFolder: (_filePath: string): void => {},
+  fileExists: async (_filePath: string): Promise<{ exists: boolean }> => ({ exists: false }),
+  getFileStats: async (_filePath: string): Promise<{ success: boolean; stats?: { size: number; mtime: number }; error?: string }> => ({ success: false }),
+  importSamples: async (_filePaths: string[]): Promise<{ success: boolean; importedCount: number; errors: string[] }> => ({ success: false, importedCount: 0, errors: [] }),
 
   // ── Menü-Events (Main → Renderer) ────────────────────────────────────────────
 
@@ -191,11 +240,19 @@ const electronAPI = {
   onMenuImportSampleFolder: createEventListener<string>("menu:import-sample-folder"),
   onMenuTransportToggle: createVoidListener("menu:transport-toggle"),
   onMenuTransportRecord: createVoidListener("menu:transport-record"),
+  onMenuRecord: createVoidListener("menu:record"),
+  onMenuToggleFullscreen: createVoidListener("menu:toggle-fullscreen"),
+  onMenuBounce: createVoidListener("menu:bounce"),
+  onMenuOpenSampleLibrary: createVoidListener("menu:open-sample-library"),
 
   // ── Keyboard-Shortcuts (globale Media-Keys) ──────────────────────────────────
 
   onShortcutTransportToggle: createVoidListener("shortcut:transport-toggle"),
   onShortcutTransportStop: createVoidListener("shortcut:transport-stop"),
+  onShortcutPlayStop: createVoidListener("shortcut:play-stop"),
+  onShortcutUndo: createVoidListener("shortcut:undo"),
+  onShortcutRedo: createVoidListener("shortcut:redo"),
+  onShortcutSave: createVoidListener("shortcut:save"),
 
   // ── Auto-Updater ──────────────────────────────────────────────────────────
 
@@ -258,7 +315,7 @@ const electronAPI = {
   // ── Waveform-Preview ──────────────────────────────────────────────────────
 
   /** Waveform-Peaks für eine lokale Audio-Datei abrufen */
-  getWaveformPeaks: (
+  analyzeWaveform: (
     filePath: string,
     numPeaks?: number
   ): Promise<{
@@ -398,7 +455,7 @@ const electronAPI = {
     ipcRenderer.invoke("export:wav-stereo", options),
 
   /** Projekt-Import: .synth/.json-Datei lesen */
-  importProjectFile: (filePath?: string): Promise<{
+  importProject: (filePath?: string): Promise<{
     success: boolean;
     data?: string;
     filePath?: string;

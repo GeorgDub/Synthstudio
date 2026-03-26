@@ -53,6 +53,10 @@ const electronAPI = {
     importFolder: (folderPath) => electron_1.ipcRenderer.invoke("samples:import-folder", folderPath),
     /** Bricht einen laufenden Import ab */
     cancelImport: (importId) => electron_1.ipcRenderer.invoke("samples:cancel-import", importId),
+    /** Startet einen ZIP-Import und gibt die importId zurück */
+    importZip: (zipPath) => electron_1.ipcRenderer.invoke("samples:import-zip", zipPath),
+    /** Räumt temporäre ZIP-Extraktions-Dateien auf */
+    cleanupZip: (importId) => electron_1.ipcRenderer.invoke("samples:cleanup-zip", importId),
     // Import-Events
     onImportStarted: createEventListener("samples:import-started"),
     onImportProgress: createEventListener("samples:import-progress"),
@@ -68,16 +72,56 @@ const electronAPI = {
             : ["openFile"],
     }),
     saveFileDialog: (options) => electron_1.ipcRenderer.invoke("dialog:save-file", options),
+    openFolderDialog: (options) => electron_1.ipcRenderer.invoke("dialog:open-file", {
+        title: options?.title,
+        properties: ["openDirectory"],
+    }),
     showMessageDialog: (options) => electron_1.ipcRenderer.invoke("dialog:message", options),
+    showConfirmDialog: (options) => electron_1.ipcRenderer.invoke("dialog:message", {
+        type: "question",
+        title: options.title,
+        message: options.message,
+        buttons: ["OK", "Abbrechen"],
+        defaultId: 0,
+    }),
+    showErrorDialog: async (title, message) => {
+        await electron_1.ipcRenderer.invoke("dialog:message", {
+            type: "error",
+            title,
+            message,
+            buttons: ["OK"],
+            defaultId: 0,
+        });
+    },
+    showInfoDialog: async (title, message) => {
+        await electron_1.ipcRenderer.invoke("dialog:message", {
+            type: "info",
+            title,
+            message,
+            buttons: ["OK"],
+            defaultId: 0,
+        });
+    },
     // ── Fenster-Steuerung ────────────────────────────────────────────────────────
     setFullscreen: (fullscreen) => electron_1.ipcRenderer.invoke("window:set-fullscreen", fullscreen),
     isFullscreen: () => electron_1.ipcRenderer.invoke("window:is-fullscreen"),
     minimizeWindow: () => electron_1.ipcRenderer.invoke("window:minimize"),
     maximizeWindow: () => electron_1.ipcRenderer.invoke("window:maximize"),
+    setWindowTitle: (title) => {
+        document.title = title;
+    },
     // Fullscreen-Change-Event
     onFullscreenChanged: createEventListener("window:fullscreen-changed"),
     // ── Benachrichtigungen ───────────────────────────────────────────────────────
     showNotification: (title, body) => electron_1.ipcRenderer.invoke("notification:show", title, body),
+    openExternal: async (url) => {
+        window.open(url, "_blank", "noopener,noreferrer");
+        return { success: true };
+    },
+    showItemInFolder: (_filePath) => { },
+    fileExists: async (_filePath) => ({ exists: false }),
+    getFileStats: async (_filePath) => ({ success: false }),
+    importSamples: async (_filePaths) => ({ success: false, importedCount: 0, errors: [] }),
     // ── Menü-Events (Main → Renderer) ────────────────────────────────────────────
     onMenuNewProject: createVoidListener("menu:new-project"),
     onMenuOpenProject: createEventListener("menu:open-project"),
@@ -150,11 +194,11 @@ const electronAPI = {
     exportWav: (options) => electron_1.ipcRenderer.invoke("export:wav", options),
     /** MIDI-Export: Pattern als MIDI-Datei speichern */
     exportMidi: (options) => electron_1.ipcRenderer.invoke("export:midi", options),
-    /** Projekt-Export: JSON-Daten als .esx1-Datei speichern */
+    /** Projekt-Export: JSON-Daten als .synth-Datei speichern */
     exportProject: (options) => electron_1.ipcRenderer.invoke("export:project", options),
     /** Stereo WAV-Export: Separate L/R-Kanäle als Stereo-WAV-Datei speichern */
     exportWavStereo: (options) => electron_1.ipcRenderer.invoke("export:wav-stereo", options),
-    /** Projekt-Import: .esx1/.json-Datei lesen */
+    /** Projekt-Import: .synth/.json-Datei lesen */
     importProjectFile: (filePath) => electron_1.ipcRenderer.invoke("export:import-project", filePath),
 };
 electron_1.contextBridge.exposeInMainWorld("electronAPI", electronAPI);

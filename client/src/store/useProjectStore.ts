@@ -15,6 +15,8 @@ export interface Sample {
   path: string;
   category: string;
   size?: number;
+  /** Auto-Tags aus Dateiname (kick, snare, loop, …) */
+  tags?: string[];
 }
 
 export interface ProjectState {
@@ -52,6 +54,8 @@ export interface ProjectActions {
   addSamples: (samples: Sample[]) => void;
   removeSample: (id: string) => void;
   importSamplesFromPaths: (paths: string[]) => void;
+  /** Reihenfolge der Samples ändern: draggedId wird vor targetId eingesetzt. */
+  reorderSamples: (draggedId: string, targetId: string) => void;
 }
 
 const DEFAULT_STATE: ProjectState = {
@@ -183,6 +187,20 @@ export function useProjectStore(): ProjectState & ProjectActions {
     addSamples(newSamples);
   }, [addSamples]);
 
+  const reorderSamples = useCallback((draggedId: string, targetId: string) => {
+    if (draggedId === targetId) return;
+    setState((prev) => {
+      const arr = [...prev.samples];
+      const fromIdx = arr.findIndex((s) => s.id === draggedId);
+      if (fromIdx === -1) return prev;
+      const [moved] = arr.splice(fromIdx, 1);
+      const toIdx = arr.findIndex((s) => s.id === targetId);
+      if (toIdx === -1) return prev;
+      arr.splice(toIdx, 0, moved);
+      return { ...prev, samples: arr, isDirty: true };
+    });
+  }, []);
+
   return {
     ...state,
     setProjectName,
@@ -200,5 +218,6 @@ export function useProjectStore(): ProjectState & ProjectActions {
     addSamples,
     removeSample,
     importSamplesFromPaths,
+    reorderSamples,
   };
 }

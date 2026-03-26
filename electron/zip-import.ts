@@ -296,8 +296,24 @@ export async function importZipFile(
 
 export function registerZipImportHandlers(win: BrowserWindow): void {
   ipcMain.handle("samples:import-zip", async (_event, zipPath: string) => {
+    if (!zipPath || typeof zipPath !== "string") {
+      throw new Error("Ungültiger ZIP-Pfad");
+    }
+
+    const resolvedPath = path.resolve(zipPath);
+    let stat: fs.Stats;
+    try {
+      stat = await fs.promises.stat(resolvedPath);
+    } catch {
+      throw new Error("ZIP-Datei nicht gefunden");
+    }
+
+    if (!stat.isFile() || path.extname(resolvedPath).toLowerCase() !== ".zip") {
+      throw new Error("Der angegebene Pfad ist keine ZIP-Datei");
+    }
+
     const importId = `zip_import_${Date.now()}`;
-    importZipFile(zipPath, importId, win);
+    void importZipFile(resolvedPath, importId, win);
     return { importId };
   });
 

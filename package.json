@@ -1,20 +1,20 @@
 {
   "name": "synthstudio",
-  "version": "1.7.5",
+  "version": "1.8.0",
   "type": "module",
   "license": "MIT",
   "main": "electron-dist/main.cjs",
   "scripts": {
-    "dev": "NODE_ENV=development tsx watch server/_core/index.ts",
-    "dev:electron": "concurrently \"cross-env VITE_DEV_SERVER_URL=http://localhost:3000 pnpm dev\" \"wait-on http://localhost:3000 && electron .\"",
+    "dev": "cross-env NODE_ENV=development vite",
+    "dev:electron": "concurrently \"cross-env VITE_DEV_SERVER_URL=http://localhost:5173 pnpm dev\" \"wait-on http://localhost:5173 && electron .\"",
     "build": "vite build && esbuild server/_core/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist",
     "build:electron": "vite build && electron-builder",
     "build:electron:win": "vite build && tsc -p tsconfig.electron.json && electron-builder --win",
     "build:electron:mac": "vite build && tsc -p tsconfig.electron.json && electron-builder --mac",
     "build:electron:linux": "vite build && tsc -p tsconfig.electron.json && electron-builder --linux",
-    "compile:electron": "tsc --project tsconfig.electron.json && find electron-dist -name \"*.js\" -exec bash -c 'mv \"$1\" \"${1%.js}.cjs\"' _ {} \\; && find electron-dist -name \"*.cjs\" -exec sed -i 's/require(\"\\(\\..*\\)\")/require(\"\\1.cjs\")/g' {} \\;",
+    "compile:electron": "tsc --project tsconfig.electron.json && node scripts/rename-to-cjs.cjs",
     "generate:icons": "npx tsx electron/assets/create-icons.ts",
-    "start": "NODE_ENV=production node dist/index.js",
+    "start": "cross-env NODE_ENV=production node dist/index.js",
     "start:electron": "electron .",
     "check": "tsc --noEmit",
     "format": "prettier --write .",
@@ -270,6 +270,11 @@
       "releaseType": "release"
     },
     "asar": false,
+    "npmRebuild": false,
+    "nodeGypRebuild": false,
+    "extraMetadata": {
+      "dependencies": {}
+    },
     "files": [
       "package.json",
       {

@@ -61,11 +61,12 @@ const windows_1 = require("./windows.cjs");
 const export_1 = require("./export.cjs");
 const updater_1 = require("./updater.cjs");
 const store_1 = require("./store.cjs");
+const zip_import_1 = require("./zip-import.cjs");
 const windowManager = new windows_1.WindowManager();
 // ─── Konstanten ──────────────────────────────────────────────────────────────
 const isDev = process.env.NODE_ENV === "development";
 const devServerUrl = process.env.VITE_DEV_SERVER_URL ?? "http://localhost:3000";
-const APP_NAME = "KORG ESX-1 Studio";
+const APP_NAME = "Synthstudio";
 const AUDIO_EXTENSIONS = new Set([".wav", ".mp3", ".ogg", ".flac", ".aiff", ".aif", ".m4a"]);
 // ─── Zustand ─────────────────────────────────────────────────────────────────
 let mainWindow = null;
@@ -143,7 +144,7 @@ function createWindow() {
         title: APP_NAME,
         backgroundColor: "#0a0a0a",
         webPreferences: {
-            preload: path.join(__dirname, "preload.js"),
+            preload: path.join(__dirname, "preload.cjs"),
             contextIsolation: true,
             nodeIntegration: false,
             autoplayPolicy: "no-user-gesture-required",
@@ -352,7 +353,7 @@ function buildMenu() {
                         const result = await electron_1.dialog.showOpenDialog(mainWindow, {
                             title: "Projekt öffnen",
                             filters: [
-                                { name: "ESX-1 Studio Projekt", extensions: ["esx1", "json"] },
+                                { name: "Synthstudio Projekt", extensions: ["synth", "json"] },
                                 { name: "Alle Dateien", extensions: ["*"] },
                             ],
                             properties: ["openFile"],
@@ -384,9 +385,9 @@ function buildMenu() {
                     click: async () => {
                         const result = await electron_1.dialog.showSaveDialog(mainWindow, {
                             title: "Projekt speichern unter",
-                            defaultPath: "mein-projekt.esx1",
+                            defaultPath: "mein-projekt.synth",
                             filters: [
-                                { name: "ESX-1 Studio Projekt", extensions: ["esx1"] },
+                                { name: "Synthstudio Projekt", extensions: ["synth"] },
                                 { name: "JSON", extensions: ["json"] },
                             ],
                         });
@@ -503,6 +504,24 @@ function buildMenu() {
                         }
                     },
                 },
+                {
+                    label: "ZIP-Archiv importieren…",
+                    click: async () => {
+                        const result = await electron_1.dialog.showOpenDialog(mainWindow, {
+                            title: "ZIP-Archiv mit Samples importieren",
+                            filters: [
+                                { name: "ZIP-Archive", extensions: ["zip"] },
+                            ],
+                            properties: ["openFile"],
+                        });
+                        if (!result.canceled && result.filePaths.length > 0) {
+                            const importId = `zip_import_${Date.now()}`;
+                            mainWindow?.webContents.send("samples:import-started", { importId });
+                            const { importZipFile } = await Promise.resolve().then(() => __importStar(require("./zip-import.cjs")));
+                            importZipFile(result.filePaths[0], importId, mainWindow);
+                        }
+                    },
+                },
                 { type: "separator" },
                 {
                     label: "Transport: Play/Stop",
@@ -543,8 +562,8 @@ function buildMenu() {
             role: "help",
             submenu: [
                 {
-                    label: "KORG ESX-1 Handbuch",
-                    click: () => electron_1.shell.openExternal("https://www.korg.com/us/support/download/manual/0/126/1835/"),
+                    label: "Synthstudio Dokumentation",
+                    click: () => electron_1.shell.openExternal("https://github.com/GeorgDub/Synthstudio"),
                 },
                 {
                     label: "GitHub Repository",
@@ -714,11 +733,12 @@ function registerIpcHandlers() {
         try {
             // Sicherheitscheck: Nur Audio-Dateien erlauben
             const ext = path.extname(filePath).toLowerCase();
-            if (!AUDIO_EXTENSIONS.has(ext) && ext !== ".json" && ext !== ".esx1") {
+            if (!AUDIO_EXTENSIONS.has(ext) && ext !== ".json" && ext !== ".synth") {
                 return { success: false, error: "Dateityp nicht erlaubt" };
             }
             const buffer = await fs.promises.readFile(filePath);
-            return { success: true, data: buffer.buffer };
+            const data = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
+            return { success: true, data };
         }
         catch (err) {
             return { success: false, error: String(err) };
@@ -745,10 +765,10 @@ function registerIpcHandlers() {
     });
     electron_1.ipcMain.handle("fs:write-file", async (_event, filePath, data) => {
         try {
-            // Nur .esx1 und .json erlauben
+            // Nur .synth und .json erlauben
             const ext = path.extname(filePath).toLowerCase();
-            if (ext !== ".esx1" && ext !== ".json") {
-                return { success: false, error: "Nur .esx1 und .json Dateien erlaubt" };
+            if (ext !== ".synth" && ext !== ".json") {
+                return { success: false, error: "Nur .synth und .json Dateien erlaubt" };
             }
             await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
             await fs.promises.writeFile(filePath, data, "utf-8");
@@ -857,6 +877,7 @@ electron_1.app.whenReady().then(() => {
     // Drag & Drop für das Hauptfenster einrichten
     if (mainWindow) {
         (0, dragdrop_1.setupDragDrop)(mainWindow);
+        (0, zip_import_1.registerZipImportHandlers)(mainWindow);
         // Auto-Updater (nur in Produktion aktiv)
         (0, updater_1.setupAutoUpdater)(mainWindow);
     }

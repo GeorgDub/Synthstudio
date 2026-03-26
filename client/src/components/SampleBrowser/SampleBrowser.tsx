@@ -48,6 +48,8 @@ export interface SampleBrowserProps {
   onAssignToChannel?: (sampleUrl: string, sampleName: string) => void;
   /** Name des aktuell aktiven Kanals (für Anzeige) */
   activeChannelName?: string;
+  /** Callback zum Umsortieren der Sample-Liste per Drag & Drop */
+  onReorderSamples?: (draggedId: string, targetId: string) => void;
   /** Callback wenn Kategorie eines Samples geändert wurde */
   onUpdateSampleCategory?: (id: string, category: string) => void;
 }
@@ -499,6 +501,7 @@ export function SampleBrowser({
   onAssignToChannel,
   activeChannelName,
   onUpdateSampleCategory,
+  onReorderSamples,
 }: SampleBrowserProps) {
   // ── Einziger Zugriffspunkt auf Electron-Features ──────────────────────────
   const electron = useElectron();
@@ -514,6 +517,10 @@ export function SampleBrowser({
   // ── Filter-State ──────────────────────────────────────────────────────────
   const [activeCategory, setActiveCategory] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState<string>("");
+  const [activeTag, setActiveTag] = useState<string>("");
+
+  // ── Reorder-DnD-State ─────────────────────────────────────────────────────
+  const [dragOverSampleId, setDragOverSampleId] = useState<string | null>(null);
 
   // ── Playlist-State ────────────────────────────────────────────────────────
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
@@ -538,6 +545,7 @@ export function SampleBrowser({
     sampleRate?: number;
     channels?: number;
     estimatedBpm?: number;
+    tags?: string[];
   }>>({});
   const [analyzingId, setAnalyzingId] = useState<string | null>(null);
 
@@ -552,6 +560,10 @@ export function SampleBrowser({
     currentFile?: string;
   } | null>(null);
 
+  // Stabiler Ref für onSamplesImported – verhindert Listener-Teardown während laufendem Import
+  const onSamplesImportedRef = useRef(onSamplesImported);
+  useEffect(() => { onSamplesImportedRef.current = onSamplesImported; });
+
   // ── Electron Import-Events abonnieren ─────────────────────────────────────
   useEffect(() => {
     const cleanupStarted = electron.onImportStarted((data) => {
@@ -565,21 +577,23 @@ export function SampleBrowser({
       });
     });
 
+    // Kein prev-Guard: Progress-Events initialisieren den Overlay auch ohne started-Event
     const cleanupProgress = electron.onImportProgress((data) => {
-      setImportProgress((prev) => prev ? {
-        ...prev,
+      setImportProgress({
+        active: true,
+        importId: data.importId,
         current: data.current,
         total: data.total,
         percentage: data.percentage,
         phase: data.phase,
         currentFile: data.currentFile,
-      } : null);
+      });
     });
 
     const cleanupComplete = electron.onImportComplete((data) => {
       setImportProgress(null);
-      if (data.samples && data.samples.length > 0 && onSamplesImported) {
-        onSamplesImported(data.samples);
+      if (data.samples && data.samples.length > 0 && onSamplesImportedRef.current) {
+        onSamplesImportedRef.current(data.samples);
       }
     });
 
@@ -593,7 +607,8 @@ export function SampleBrowser({
       cleanupComplete();
       cleanupCancelled();
     };
-  }, [electron, onSamplesImported]);
+  // electron ist stabil; onSamplesImported wird per Ref abgeholt – kein erneutes Abonnieren
+  }, [electron]);
 
   // ── Gefilterte Samples (mit Playlist-Filter) ──────────────────────────────
   const filteredSamples = useMemo(() => {
@@ -611,9 +626,22 @@ export function SampleBrowser({
       const matchesCategory = activeCategory === "all" || sample.category === activeCategory;
       const matchesSearch = searchQuery === "" ||
         sample.name.toLowerCase().includes(searchQuery.toLowerCase());
-      return matchesCategory && matchesSearch;
+      const matchesTag = activeTag === "" ||
+        (sample.tags?.includes(activeTag) ?? false) ||
+        (analysisCache[sample.id]?.tags?.includes(activeTag) ?? false);
+      return matchesCategory && matchesSearch && matchesTag;
     });
-  }, [samples, activeCategory, searchQuery, activePlaylistId, playlists]);
+  }, [samples, activeCategory, searchQuery, activeTag, activePlaylistId, playlists, analysisCache]);
+
+  // ── Verfügbare Tags aller Samples (aus Import + Analyse-Cache) ─────────────
+  const availableTags = useMemo(() => {
+    const tagSet = new Set<string>();
+    for (const sample of samples) {
+      sample.tags?.forEach(t => tagSet.add(t));
+      analysisCache[sample.id]?.tags?.forEach(t => tagSet.add(t));
+    }
+    return Array.from(tagSet).sort();
+  }, [samples, analysisCache]);
 
   const selectedIndex = useMemo(() => {
     if (!selectedSampleId) return -1;
@@ -668,6 +696,7 @@ export function SampleBrowser({
               sampleRate: result.sampleRate,
               channels: result.channels,
               estimatedBpm: result.estimatedBpm,
+              tags: result.tags,
             },
           }));
         }
@@ -679,7 +708,7 @@ export function SampleBrowser({
     };
 
     run();
-  }, [selectedSampleId, selectedSample, analysisCache, analyzeFile, electron.isElectron]);
+  }, [selectedSampleId, selectedSample, analyzeFile, electron.isElectron]);
 
   // ── Playback-Position-Tracking ────────────────────────────────────────────
   useEffect(() => {
@@ -800,12 +829,35 @@ export function SampleBrowser({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [handleNavigatePrev, handleNavigateNext, handlePreviewToggle, selectedSampleId, selectedSample, onAssignToChannel]);
 
-  // ── Drag-Start (für Drag & Drop auf Kanal-Zeilen) ─────────────────────────
+  // ── Drag-Start (für Drag & Drop auf Kanal-Zeilen + Reordering) ───────────
   const handleDragStart = useCallback((e: React.DragEvent, sample: Sample) => {
     e.dataTransfer.setData("sampleId", sample.id);
     e.dataTransfer.setData("sampleUrl", sample.path);
     e.dataTransfer.setData("sampleName", sample.name);
-    e.dataTransfer.effectAllowed = "copy";
+    e.dataTransfer.effectAllowed = "copyMove";
+  }, []);
+
+  // ── Reorder-Handler für interne Liste ────────────────────────────────────
+  const handleDragOverSample = useCallback((e: React.DragEvent, targetId: string) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    setDragOverSampleId(targetId);
+  }, []);
+
+  const handleDropOnSample = useCallback((e: React.DragEvent, targetId: string) => {
+    e.preventDefault();
+    setDragOverSampleId(null);
+    const draggedId = e.dataTransfer.getData("sampleId");
+    if (draggedId && draggedId !== targetId && onReorderSamples) {
+      onReorderSamples(draggedId, targetId);
+    }
+  }, [onReorderSamples]);
+
+  const handleDragLeaveSample = useCallback((e: React.DragEvent) => {
+    // Nur zurücksetzen wenn der Cursor das <li> wirklich verlässt (nicht in Kindelement)
+    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+      setDragOverSampleId(null);
+    }
   }, []);
 
   // ── Kategorie-Änderung ────────────────────────────────────────────────────
@@ -875,12 +927,37 @@ export function SampleBrowser({
     if (electron.isElectron) {
       const result = await electron.openFolderDialog({ title: "Sample-Ordner importieren" });
       if (!result.canceled && result.filePaths[0]) {
-        onImportFolder?.(result.filePaths[0]);
+        const folderPath = result.filePaths[0];
+        // Primär den nativen rekursiven Import mit Progress nutzen.
+        const started = await electron.importFolder(folderPath).catch(() => null);
+
+        // Fallback: Falls kein Import gestartet werden kann, Verzeichnisinhalt direkt importieren.
+        if (!started?.importId) {
+          const dirResult = await electron.listDirectory(folderPath);
+          if (dirResult.success && dirResult.entries) {
+            const audioPaths = dirResult.entries
+              .filter((entry) => !entry.isDirectory && entry.isAudio)
+              .map((entry) => entry.path);
+            if (audioPaths.length > 0) {
+              onImportSamples(audioPaths);
+            } else {
+              await electron.showErrorDialog(
+                "Import fehlgeschlagen",
+                "Der Ordner enthält keine direkt importierbaren Audio-Dateien."
+              );
+            }
+          } else {
+            await electron.showErrorDialog(
+              "Import fehlgeschlagen",
+              dirResult.error ?? "Ordner konnte nicht gelesen werden."
+            );
+          }
+        }
       }
     } else {
       folderInputRef.current?.click();
     }
-  }, [electron, onImportFolder]);
+  }, [electron, onImportSamples]);
 
   // ── Import: ZIP-Archiv ────────────────────────────────────────────────────
   const handleImportZip = useCallback(async () => {
@@ -891,7 +968,20 @@ export function SampleBrowser({
         multiSelections: false,
       });
       if (!result.canceled && result.filePaths[0]) {
-        await electron.importZip(result.filePaths[0]);
+        try {
+          const started = await electron.importZip(result.filePaths[0]);
+          if (!started?.importId) {
+            await electron.showErrorDialog(
+              "ZIP-Import fehlgeschlagen",
+              "Der ZIP-Import konnte nicht gestartet werden."
+            );
+          }
+        } catch (err) {
+          await electron.showErrorDialog(
+            "ZIP-Import fehlgeschlagen",
+            err instanceof Error ? err.message : String(err)
+          );
+        }
       }
     } else {
       zipInputRef.current?.click();
@@ -1166,6 +1256,27 @@ export function SampleBrowser({
             </div>
           )}
 
+          {/* Tag-Filter */}
+          {availableTags.length > 0 && (
+            <div className="flex flex-wrap gap-1 px-3 py-2 border-b border-slate-800/50">
+              {availableTags.map(tag => (
+                <button
+                  key={tag}
+                  onClick={() => setActiveTag(activeTag === tag ? "" : tag)}
+                  title={`Nach Tag #${tag} filtern`}
+                  className={[
+                    "px-2 py-0.5 text-[10px] rounded-full border transition-all duration-100",
+                    activeTag === tag
+                      ? "bg-cyan-900/60 text-cyan-300 border-cyan-700"
+                      : "bg-transparent text-slate-600 border-slate-800 hover:text-slate-400 hover:border-slate-700",
+                  ].join(" ")}
+                >
+                  #{tag}
+                </button>
+              ))}
+            </div>
+          )}
+
           {/* Sample-Liste */}
           <div className="flex-1 overflow-y-auto min-h-0">
             {samples.length === 0 ? (
@@ -1182,7 +1293,7 @@ export function SampleBrowser({
               <div className="flex flex-col items-center justify-center h-full gap-2 text-slate-600">
                 <p className="text-sm">Keine Treffer</p>
                 <button
-                  onClick={() => { setActiveCategory("all"); setSearchQuery(""); setActivePlaylistId(null); }}
+                  onClick={() => { setActiveCategory("all"); setSearchQuery(""); setActivePlaylistId(null); setActiveTag(""); }}
                   className="text-xs text-cyan-700 hover:text-cyan-500 transition-colors"
                 >
                   Filter zurücksetzen
@@ -1212,15 +1323,27 @@ export function SampleBrowser({
                   </span>
                 </div>
 
-                <ul className="divide-y divide-slate-800/50">
+                <ul
+                  className="divide-y divide-slate-800/50"
+                  onDragLeave={(e) => {
+                    // Cursor hat die gesamte Liste verlassen
+                    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                      setDragOverSampleId(null);
+                    }
+                  }}
+                >
                   {filteredSamples.map((sample) => {
                     const isSelected = sample.id === selectedSampleId;
                     const isThisPlaying = isSelected && isPreviewPlaying;
+                    const isDragTarget = dragOverSampleId === sample.id;
                     return (
                       <li
                         key={sample.id}
                         draggable
                         onDragStart={(e) => handleDragStart(e, sample)}
+                        onDragOver={(e) => handleDragOverSample(e, sample.id)}
+                        onDrop={(e) => handleDropOnSample(e, sample.id)}
+                        onDragLeave={handleDragLeaveSample}
                         onClick={() => handleSelectSample(sample)}
                         onDoubleClick={() => handleDoubleClickSample(sample)}
                         onContextMenu={(e) => {
@@ -1233,12 +1356,13 @@ export function SampleBrowser({
                           });
                         }}
                         className={[
-                          "flex items-center gap-2 px-3 py-1.5 transition-colors duration-75 group cursor-pointer",
+                          "flex items-center gap-2 px-3 py-1.5 group cursor-pointer",
+                          isDragTarget ? "border-t-2 border-cyan-400 bg-cyan-900/10" : "border-t border-slate-800/50",
                           isSelected
                             ? "bg-cyan-900/20 border-l-2 border-cyan-500"
                             : "hover:bg-slate-800/30 border-l-2 border-transparent",
                         ].join(" ")}
-                        title={onAssignToChannel ? "Doppelklick: auf aktiven Kanal legen | Ziehen: auf Kanal-Zeile" : "Klick: auswählen | Ziehen: auf Kanal"}
+                        title={onAssignToChannel ? "Doppelklick: auf aktiven Kanal legen | Ziehen: auf Kanal-Zeile oder zum Umsortieren" : "Klick: auswählen | Ziehen: umsortieren oder auf Kanal"}
                       >
                         {/* Kategorie-Badge (Rechtsklick zum Ändern) */}
                         <span

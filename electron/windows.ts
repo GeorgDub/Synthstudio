@@ -47,7 +47,7 @@ export class WindowManager {
   private indexPath: string;
 
   constructor() {
-    this.preloadPath = path.join(__dirname, "preload.js");
+    this.preloadPath = path.join(__dirname, "preload.cjs");
     this.indexPath = path.join(__dirname, "..", "dist", "public", "index.html");
   }
 

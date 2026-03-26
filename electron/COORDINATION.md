@@ -6,6 +6,50 @@ Dieses Dokument dient als zentraler Anlaufpunkt für die Koordination der 6 para
 
 ---
 
+## 🔄 Koordinator-Sprint: 25. März 2026 (Reaktivierung)
+
+**Ziel:** Desktop-Entwicklung wieder lauffähig machen und aktuelle lokale Blocker auflösen.
+
+**Globaler Blocker:** `pnpm` ist lokal nicht verfügbar (`pnpm : Die Benennung "pnpm" wurde nicht als Name ...`).
+
+### Direkte Agent-Zuweisung
+
+| Priorität | Agent | Aufgabe | Abnahme (Definition of Done) |
+|---|---|---|---|
+| 🔴 P0 | **Build** | Toolchain-Recovery auf Windows: `pnpm` Verfügbarkeit herstellen (Corepack/Install-Pfad), danach `pnpm -v` und `pnpm install` validieren. | `pnpm -v` liefert Version, `pnpm install` läuft ohne "Befehl nicht gefunden". |
+| 🔴 P0 | **Backend** | IPC-Datei-Lesen stabilisieren: `fs:read-file` Rückgabe als sauberer `ArrayBuffer`-Slice prüfen und gegen große Dateien absichern. | Lokaler Audio-Read aus Renderer funktioniert ohne korruptes Buffer-Mapping. |
+| 🔴 P1 | **IPC-Bridge** | Vertrag für `readFile` verifizieren: Typen in `types.d.ts`, `preload.ts`, `useElectron.ts` synchron halten; kein `any`, sauberer Browser-Fallback. | TS-Check der Bridge-Dateien grün; keine Contract-Drift. |
+| 🟡 P1 | **Frontend** | Audio-Ladepfad in `client/src/audio/AudioEngine.ts` härten: Local-Path-Erkennung, Electron-Read/Fetch-Fallback, Fehlerbehandlung im UI. | Lokale Samples laden in Electron und Browser-Fallback bleibt funktionsfähig. |
+| 🟡 P1 | **Audio-Engine** | Regressionstest für Local-File-Decoding und `decodeAudioData`-Pfad ergänzen; Performance-Sanity für große Samples dokumentieren. | Mindestens 1 Testfall für lokalen Dateipfad + 1 Testfall für Fallback-Pfad. |
+| 🟢 P2 | **Testing** | Smoke-Plan aktualisieren: Nach Toolchain-Fix `compile:electron`, Typprüfung, Kern-E2E-Szenario "Sample laden" ausführen. | Testprotokoll mit Pass/Fail und reproduzierbaren Schritten im PR/Report. |
+
+### Reihenfolge und Abhängigkeiten
+
+1. **Build** startet sofort (entblockt alle anderen Agenten).
+2. **Backend + IPC-Bridge** parallel nach Build-Fix.
+3. **Frontend + Audio-Engine** parallel nach stabiler Bridge.
+4. **Testing** schließt den Sprint mit Smoke-Run ab.
+
+### Startkommandos je Agent
+
+- **Build:** `corepack enable` → `corepack prepare pnpm@latest --activate` → `pnpm -v`
+- **Backend:** `npm run compile:electron` (oder `pnpm run compile:electron` nach Fix)
+- **IPC-Bridge:** `npx tsc --project tsconfig.electron.json --noEmit`
+- **Frontend:** `npx tsc --project tsconfig.json --noEmit`
+- **Audio-Engine:** `npx vitest --run tests/electron`
+- **Testing:** `npm run compile:electron` → `npx playwright test tests/electron/e2e/setup.ts`
+
+### Koordinator-Status
+
+- [x] Build-Entblockung abgeschlossen — `pnpm 10.4.1` via `npm i -g pnpm@10`
+- [x] IPC/Backend-Vertrag validiert — `tsc --project tsconfig.electron.json --noEmit` 0 Fehler
+- [x] Frontend-Typfehler behoben — 3 Fehler in AudioEngine, useBpmDetection, useTransport korrigiert
+- [x] Smoke-Tests dokumentiert — 145/145 Unit-Tests gruen, compile:electron gruen
+
+**Abgeschlossen: 25. März 2026 — Koordinator**
+
+---
+
 ## 📊 Aktueller Status der Agenten
 
 | Agent | Rolle | Status | Letzter Commit | Verifiziert |
