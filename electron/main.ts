@@ -569,6 +569,20 @@ function buildMenu(): void {
         },
         { type: "separator" },
         {
+          label: "MIDI-Datei importieren…",
+          click: async () => {
+            const result = await dialog.showOpenDialog(mainWindow!, {
+              title: "MIDI-Datei importieren",
+              filters: [{ name: "MIDI-Dateien", extensions: ["mid", "midi"] }],
+              properties: ["openFile"],
+            });
+            if (!result.canceled && result.filePaths.length > 0) {
+              mainWindow?.webContents.send("menu:import-midi", result.filePaths[0]);
+            }
+          },
+        },
+        { type: "separator" },
+        {
           label: "Transport: Play/Stop",
           accelerator: "Space",
           click: () => mainWindow?.webContents.send("menu:transport-toggle"),
@@ -953,6 +967,38 @@ function registerIpcHandlers(): void {
       }
     }
   );
+
+  // ── MIDI-Datei-Import ─────────────────────────────────────────────────────────
+
+  ipcMain.handle("midi:import-file", async (_event, filePath: string) => {
+    // Sicherheitscheck: Nur .mid und .midi erlaubt
+    const ext = path.extname(filePath).toLowerCase();
+    if (ext !== ".mid" && ext !== ".midi") {
+      return { success: false as const, error: "Nur .mid/.midi Dateien erlaubt" };
+    }
+    const resolvedPath = path.resolve(filePath);
+    try {
+      await fs.promises.access(resolvedPath, fs.constants.R_OK);
+    } catch {
+      return { success: false as const, error: "Datei nicht lesbar" };
+    }
+    try {
+      const buffer = await fs.promises.readFile(resolvedPath);
+      const data = Uint8Array.from(buffer);
+      return { success: true as const, data: Array.from(data), fileName: path.basename(resolvedPath) };
+    } catch (err) {
+      return { success: false as const, error: String(err) };
+    }
+  });
+
+  ipcMain.handle("midi:open-dialog", async () => {
+    const result = await dialog.showOpenDialog(mainWindow!, {
+      title: "MIDI-Datei importieren",
+      filters: [{ name: "MIDI-Dateien", extensions: ["mid", "midi"] }],
+      properties: ["openFile"],
+    });
+    return result;
+  });
 
   // ── Auto-Updater (manueller Check aus dem Renderer) ──────────────────────────
 

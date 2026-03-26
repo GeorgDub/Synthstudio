@@ -93,6 +93,22 @@ const electronAPI = {
   cleanupZip: (importId: string): Promise<{ success: boolean }> =>
     ipcRenderer.invoke("samples:cleanup-zip", importId),
 
+  // ── MIDI-Import ────────────────────────────────────────────────────────────
+
+  /** Öffnet den nativen MIDI-Datei-Dialog und gibt den gewählten Pfad zurück */
+  openMidiDialog: (): Promise<{ canceled: boolean; filePaths: string[] }> =>
+    ipcRenderer.invoke("midi:open-dialog"),
+
+  /**
+   * Liest eine MIDI-Datei und gibt die Bytes als Array zurück.
+   * Verwendet Uint8Array-serialisierung (Array<number>), da ArrayBuffer nicht
+   * direkt über den IPC-Kanal übertragen werden kann.
+   */
+  importMidiFile: (
+    filePath: string
+  ): Promise<{ success: boolean; data?: number[]; fileName?: string; error?: string }> =>
+    ipcRenderer.invoke("midi:import-file", filePath),
+
   // Import-Events
   onImportStarted: createEventListener<{ importId: string }>("samples:import-started"),
   onImportProgress: createEventListener<{
@@ -238,6 +254,7 @@ const electronAPI = {
   onMenuOpenSampleBrowser: createVoidListener("menu:open-sample-browser"),
   onMenuImportSamples: createEventListener<string[]>("menu:import-samples"),
   onMenuImportSampleFolder: createEventListener<string>("menu:import-sample-folder"),
+  onMenuImportMidi: createEventListener<string>("menu:import-midi"),
   onMenuTransportToggle: createVoidListener("menu:transport-toggle"),
   onMenuTransportRecord: createVoidListener("menu:transport-record"),
   onMenuRecord: createVoidListener("menu:record"),
@@ -462,6 +479,25 @@ const electronAPI = {
     canceled?: boolean;
     error?: string;
   }> => ipcRenderer.invoke("export:import-project", filePath),
+
+  /** Bundle-Export: WAV-Stems + MIDI + Metadaten als ZIP */
+  exportBundle: (options: {
+    stems: Array<{ name: string; pcmData: number[]; sampleRate: number; channels: number }>;
+    midiTracks?: Array<{
+      name: string;
+      notes: Array<{
+        channel: number;
+        note: number;
+        velocity: number;
+        startTick: number;
+        durationTicks: number;
+      }>;
+    }>;
+    bpm?: number;
+    projectData?: string;
+    suggestedName?: string;
+  }): Promise<{ success: boolean; filePath?: string; canceled?: boolean; error?: string }> =>
+    ipcRenderer.invoke("export:bundle", options),
 
 };
 

@@ -97,7 +97,7 @@ function writeWavFile(
 
 // ─── MIDI-Datei schreiben ─────────────────────────────────────────────────────
 
-interface MidiNote {
+export interface MidiNote {
   channel: number;    // 0-15
   note: number;       // 0-127 (MIDI-Note)
   velocity: number;   // 0-127
@@ -105,7 +105,7 @@ interface MidiNote {
   durationTicks: number;
 }
 
-interface MidiTrack {
+export interface MidiTrack {
   name: string;
   notes: MidiNote[];
 }
@@ -230,6 +230,136 @@ function writeMidiFile(
 
   const midiData = Buffer.concat([midiHeader, ...trackBuffers]);
   fs.writeFileSync(filePath, midiData);
+}
+
+// ─── Buffer-Helfer für Bundle-Export ─────────────────────────────────────────
+
+/**
+ * Baut einen WAV-Buffer aus PCM-Float32-Daten ohne Dateisystem-Zugriff.
+ * Mono (1 Kanal) oder Stereo interleaved (2 Kanäle).
+ * @internal Exportiert für Tests.
+ */
+export function buildWavBuffer(
+  pcmData: Float32Array,
+  sampleRate: number,
+  numChannels: number
+): Buffer {
+  const bitDepth = 16;
+  const bytesPerSample = bitDepth / 8;
+  const blockAlign = numChannels * bytesPerSample;
+  const byteRate = sampleRate * blockAlign;
+  const dataSize = pcmData.length * bytesPerSample;
+  const headerSize = 44;
+  const totalSize = headerSize + dataSize;
+
+  const buffer = Buffer.alloc(totalSize);
+  let offset = 0;
+
+  buffer.write("RIFF", offset); offset += 4;
+  buffer.writeUInt32LE(totalSize - 8, offset); offset += 4;
+  buffer.write("WAVE", offset); offset += 4;
+  buffer.write("fmt ", offset); offset += 4;
+  buffer.writeUInt32LE(16, offset); offset += 4;
+  buffer.writeUInt16LE(1, offset); offset += 2;         // PCM
+  buffer.writeUInt16LE(numChannels, offset); offset += 2;
+  buffer.writeUInt32LE(sampleRate, offset); offset += 4;
+  buffer.writeUInt32LE(byteRate, offset); offset += 4;
+  buffer.writeUInt16LE(blockAlign, offset); offset += 2;
+  buffer.writeUInt16LE(bitDepth, offset); offset += 2;
+  buffer.write("data", offset); offset += 4;
+  buffer.writeUInt32LE(dataSize, offset); offset += 4;
+
+  for (let i = 0; i < pcmData.length; i++) {
+    const clamped = Math.max(-1, Math.min(1, pcmData[i]));
+    buffer.writeInt16LE(Math.round(clamped * 32767), offset);
+    offset += 2;
+  }
+
+  return buffer;
+}
+
+/**
+ * Baut einen MIDI-Buffer (Format 1, Multi-Track) ohne Dateisystem-Zugriff.
+ * @internal Exportiert für Tests.
+ */
+export function buildMidiBuffer(tracks: MidiTrack[], bpm = 120, ticksPerQuarter = 480): Buffer {
+  const microsecondsPerBeat = Math.round(60_000_000 / bpm);
+
+  function writeVarLen(value: number): Buffer {
+    const bytes: number[] = [];
+    bytes.push(value & 0x7f);
+    value >>= 7;
+    while (value > 0) {
+      bytes.unshift((value & 0x7f) | 0x80);
+      value >>= 7;
+    }
+    return Buffer.from(bytes);
+  }
+
+  function buildTempoTrack(): Buffer {
+    const events: Buffer[] = [];
+    events.push(writeVarLen(0));
+    events.push(Buffer.from([0xff, 0x51, 0x03]));
+    events.push(Buffer.from([
+      (microsecondsPerBeat >> 16) & 0xff,
+      (microsecondsPerBeat >> 8) & 0xff,
+      microsecondsPerBeat & 0xff,
+    ]));
+    events.push(writeVarLen(0));
+    events.push(Buffer.from([0xff, 0x2f, 0x00]));
+    const data = Buffer.concat(events);
+    const header = Buffer.alloc(8);
+    header.write("MTrk", 0);
+    header.writeUInt32BE(data.length, 4);
+    return Buffer.concat([header, data]);
+  }
+
+  function buildNoteTrack(track: MidiTrack): Buffer {
+    const events: Array<{ tick: number; data: Buffer }> = [];
+    const nameBytes = Buffer.from(track.name, "utf8");
+    events.push({
+      tick: 0,
+      data: Buffer.concat([
+        Buffer.from([0xff, 0x03]),
+        writeVarLen(nameBytes.length),
+        nameBytes,
+      ]),
+    });
+    for (const note of track.notes) {
+      events.push({
+        tick: note.startTick,
+        data: Buffer.from([0x90 | (note.channel & 0x0f), note.note & 0x7f, note.velocity & 0x7f]),
+      });
+      events.push({
+        tick: note.startTick + note.durationTicks,
+        data: Buffer.from([0x80 | (note.channel & 0x0f), note.note & 0x7f, 0]),
+      });
+    }
+    events.sort((a, b) => a.tick - b.tick);
+    const trackData: Buffer[] = [];
+    let lastTick = 0;
+    for (const ev of events) {
+      trackData.push(writeVarLen(ev.tick - lastTick));
+      trackData.push(ev.data);
+      lastTick = ev.tick;
+    }
+    trackData.push(writeVarLen(0));
+    trackData.push(Buffer.from([0xff, 0x2f, 0x00]));
+    const data = Buffer.concat(trackData);
+    const header = Buffer.alloc(8);
+    header.write("MTrk", 0);
+    header.writeUInt32BE(data.length, 4);
+    return Buffer.concat([header, data]);
+  }
+
+  const midiHeader = Buffer.alloc(14);
+  midiHeader.write("MThd", 0);
+  midiHeader.writeUInt32BE(6, 4);
+  midiHeader.writeUInt16BE(1, 8);
+  midiHeader.writeUInt16BE(tracks.length + 1, 10);
+  midiHeader.writeUInt16BE(ticksPerQuarter, 12);
+
+  return Buffer.concat([midiHeader, buildTempoTrack(), ...tracks.map(buildNoteTrack)]);
 }
 
 // ─── IPC-Handler ─────────────────────────────────────────────────────────────
@@ -382,4 +512,83 @@ export function registerExportHandlers(): void {
       return { success: false, error: String(err) };
     }
   });
+
+  /**
+   * Bundle-Export: WAV-Stems + MIDI + Metadaten als ZIP-Archiv.
+   * Der Renderer liefert mehrere PCM-Stem-Arrays; Main baut das ZIP mit JSZip.
+   */
+  ipcMain.handle(
+    "export:bundle",
+    async (
+      event,
+      options: {
+        stems: Array<{
+          name: string;
+          pcmData: number[];
+          sampleRate: number;
+          channels: number;
+        }>;
+        midiTracks?: MidiTrack[];
+        bpm?: number;
+        projectData?: string;
+        suggestedName?: string;
+      }
+    ) => {
+      const win = BrowserWindow.fromWebContents(event.sender);
+
+      const result = await dialog.showSaveDialog(win!, {
+        title: "Bundle exportieren",
+        defaultPath: options.suggestedName ?? "synthstudio-bundle.zip",
+        filters: [{ name: "ZIP-Archiv", extensions: ["zip"] }],
+      });
+
+      if (result.canceled || !result.filePath) {
+        return { success: false, canceled: true };
+      }
+
+      try {
+        const JSZip = (await import("jszip")).default;
+        const zip = new JSZip();
+        const stemFolder = zip.folder("stems")!;
+
+        for (const stem of options.stems) {
+          const pcm = new Float32Array(stem.pcmData);
+          const wavBuffer = buildWavBuffer(pcm, stem.sampleRate, stem.channels);
+          // Sanitize filename: allow only word chars, hyphens, spaces
+          const safeName = stem.name.replace(/[^\w\- ]/g, "_");
+          stemFolder.file(`${safeName}.wav`, wavBuffer);
+        }
+
+        const bpm = options.bpm ?? 120;
+
+        if (options.midiTracks && options.midiTracks.length > 0) {
+          const midiBuffer = buildMidiBuffer(options.midiTracks, bpm);
+          zip.file("pattern.mid", midiBuffer);
+        }
+
+        const metadata = {
+          exportedAt: new Date().toISOString(),
+          bpm,
+          stemCount: options.stems.length,
+          stems: options.stems.map((s) => s.name),
+        };
+        zip.file("metadata.json", JSON.stringify(metadata, null, 2));
+
+        if (options.projectData) {
+          zip.file("project.synth", options.projectData);
+        }
+
+        const zipBuffer = await zip.generateAsync({
+          type: "nodebuffer",
+          compression: "DEFLATE",
+          compressionOptions: { level: 6 },
+        });
+        fs.writeFileSync(result.filePath, zipBuffer);
+
+        return { success: true, filePath: result.filePath };
+      } catch (err) {
+        return { success: false, error: String(err) };
+      }
+    }
+  );
 }

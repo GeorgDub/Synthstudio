@@ -1,5 +1,83 @@
 @import "tailwindcss";
 
+/* ==========================================================================
+   Synthstudio – Design Token System (Phase 1, Roadmap v1.9)
+   ==========================================================================
+   Token-Schema:
+     --ss-bg-*       : Hintergründe (base → panel → elevated)
+     --ss-accent-*   : Akzentfarben (primary, secondary, success, danger)
+     --ss-text-*     : Texte (primary, muted, dim)
+     --ss-border*    : Rahmen (default + subtle)
+     --ss-glow       : Glow-Box-Shadow-Fragment
+   Aktivierung via data-theme="neon" | "analog" auf <html>.
+   Kein data-theme (oder data-theme="dark") → DarkStudio.
+   ========================================================================== */
+
+/* ── 1. DarkStudio (Standard) ─────────────────────────────────────────────── */
+:root,
+[data-theme="dark"] {
+  --ss-bg-base:     #121218;
+  --ss-bg-panel:    #1e1e2a;
+  --ss-bg-elevated: #252535;
+
+  --ss-accent-primary:   #f59e0b;
+  --ss-accent-secondary: #06b6d4;
+  --ss-accent-success:   #10b981;
+  --ss-accent-danger:    #f43f5e;
+
+  --ss-text-primary: #f8fafc;
+  --ss-text-muted:   #94a3b8;
+  --ss-text-dim:     #64748b;
+
+  --ss-border:        #2a2a3a;
+  --ss-border-subtle: #1e1e2e;
+
+  --ss-glow: 0 0 8px rgba(245, 158, 11, 0.3);
+}
+
+/* ── 2. NeonCircuit ───────────────────────────────────────────────────────── */
+[data-theme="neon"] {
+  --ss-bg-base:     #0a0a0f;
+  --ss-bg-panel:    #0d1117;
+  --ss-bg-elevated: #111827;
+
+  --ss-accent-primary:   #00fff5;
+  --ss-accent-secondary: #ff00ff;
+  --ss-accent-success:   #39ff14;
+  --ss-accent-danger:    #ff2d55;
+
+  --ss-text-primary: #e0e0ff;
+  --ss-text-muted:   #8888cc;
+  --ss-text-dim:     #555588;
+
+  --ss-border:        #1a1a2e;
+  --ss-border-subtle: #0f0f1a;
+
+  --ss-glow: 0 0 20px rgba(0, 255, 245, 0.6);
+}
+
+/* ── 3. AnalogHardware ────────────────────────────────────────────────────── */
+[data-theme="analog"] {
+  --ss-bg-base:     #1a1a2e;
+  --ss-bg-panel:    #2a2a3e;
+  --ss-bg-elevated: #33334a;
+
+  --ss-accent-primary:   #ff6b35;
+  --ss-accent-secondary: #00f5d4;
+  --ss-accent-success:   #00ff88;
+  --ss-accent-danger:    #ff3355;
+
+  --ss-text-primary: #e8e8d8;
+  --ss-text-muted:   #9999aa;
+  --ss-text-dim:     #666677;
+
+  --ss-border:        #3a3a5a;
+  --ss-border-subtle: #252540;
+
+  --ss-glow: 0 0 16px rgba(255, 107, 53, 0.5);
+}
+
+/* ── Tailwind / Legacy-Kompatibilität ─────────────────────────────────────── */
 :root {
   --background: 0 0% 5%;
   --foreground: 210 40% 98%;
@@ -15,7 +93,7 @@ body,
   height: 100%;
   margin: 0;
   padding: 0;
-  background-color: #0a0a0a;
-  color: #f8fafc;
+  background-color: var(--ss-bg-base, #0a0a0a);
+  color: var(--ss-text-primary, #f8fafc);
   font-family: "JetBrains Mono", "Fira Code", ui-monospace, monospace;
 }
