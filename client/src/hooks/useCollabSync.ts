@@ -28,6 +28,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { CollabEvent } from "../../../electron/collab-server";
 import { addCollabEventHandler } from "./useCollabSession";
+import { addParticipantJoinedHandler } from "./useCollabSession";
 import { getSessionState, useSessionStore } from "../store/useSessionStore";
 import type { DrumMachineState, DrumMachineActions } from "@/store/useDrumMachineStore";
 import type { Sample } from "@/store/useProjectStore";
@@ -52,6 +53,7 @@ interface CollabSyncOptions {
   dm: DrumMachineState & DrumMachineActions;
   setBpm: (bpm: number) => void;
   isPlaying: boolean;
+  bpm: number;
   togglePlayStop: () => void;
   /** Aktuelle Sample-Bibliothek für snapshot:full */
   samples?: Sample[];
@@ -71,12 +73,16 @@ export function useCollabSync({
   dm,
   setBpm,
   isPlaying,
+  bpm,
   togglePlayStop,
   samples = [],
 }: CollabSyncOptions) {
   // Refs damit Callbacks in Closures immer aktuelle Werte haben
   const isPlayingRef = useRef(isPlaying);
   useEffect(() => { isPlayingRef.current = isPlaying; }, [isPlaying]);
+
+  const bpmRef = useRef(bpm);
+  useEffect(() => { bpmRef.current = bpm; }, [bpm]);
 
   const broadcastRef = useRef(broadcast);
   useEffect(() => { broadcastRef.current = broadcast; }, [broadcast]);
@@ -131,7 +137,7 @@ export function useCollabSync({
         type: "snapshot:full",
         patterns: dm.patterns,
         activePatternId: dm.activePatternId,
-        bpm: 120, // bpm wird über collabBpmChange separat synchronisiert
+        bpm: bpmRef.current,
         isPlaying: isPlayingRef.current,
         samples: samplesRef.current.map(s => ({
           id: s.id,
@@ -297,6 +303,32 @@ export function useCollabSync({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Intentionally no deps – handler ist stable via Refs
 
+  // ── Snapshot an neue Teilnehmer senden (Host sendet sofort snapshot:full) ─
+  useEffect(() => {
+    const unsub = addParticipantJoinedHandler(() => {
+      // Kurze Verzögerung damit der neue Teilnehmer die WS-Verbindung aufgebaut hat
+      setTimeout(() => {
+        const dm = dmRef.current;
+        if (!isInSession()) return;
+        broadcastRef.current({
+          type: "snapshot:full",
+          patterns: dm.patterns,
+          activePatternId: dm.activePatternId,
+          bpm: bpmRef.current,
+          isPlaying: isPlayingRef.current,
+          samples: samplesRef.current.map(s => ({
+            id: s.id,
+            name: s.name,
+            path: s.path,
+            category: s.category,
+          })),
+        });
+      }, 300);
+    });
+    return unsub;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // ── Pattern-Wechsel beobachten und senden (kein Prop-Callback vorhanden) ──
 
   useEffect(() => {
@@ -402,7 +434,7 @@ export function useCollabSync({
       type: "snapshot:full",
       patterns: dm.patterns,
       activePatternId: dm.activePatternId,
-      bpm: 120,
+      bpm: bpmRef.current,
       isPlaying: isPlayingRef.current,
       samples: samplesRef.current.map(s => ({
         id: s.id,

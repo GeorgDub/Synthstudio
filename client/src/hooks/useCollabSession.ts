@@ -26,13 +26,25 @@ import {
   setRemoteBpm,
   resetSession,
   getSessionState,
+  type SessionParticipant,
 } from "../store/useSessionStore";
 
 // ─── Singleton-WebSocket-Referenz ─────────────────────────────────────────────
 
 let _ws: WebSocket | null = null;
+let _reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+let _reconnectAttempts = 0;
+const MAX_RECONNECT_ATTEMPTS = 5;
+// Letzte Verbindungsparameter für Auto-Reconnect
+let _lastUrl = "";
+let _lastRoomCode = "";
+let _lastUserId = "";
+let _lastUserName = "";
+let _lastMode: "create" | "join" = "join";
 
 function closeSocket(): void {
+  if (_reconnectTimer) { clearTimeout(_reconnectTimer); _reconnectTimer = null; }
+  _reconnectAttempts = 0;
   if (_ws) {
     _ws.onclose = null;
     _ws.onerror = null;
@@ -46,6 +58,15 @@ function closeSocket(): void {
 
 type CollabEventHandler = (event: CollabEvent, fromUserId: string) => void;
 const _eventHandlers = new Set<CollabEventHandler>();
+
+type ParticipantJoinedHandler = (userId: string) => void;
+const _participantJoinedHandlers = new Set<ParticipantJoinedHandler>();
+
+/** Registriert einen Handler der aufgerufen wird wenn ein neuer Teilnehmer beitritt. */
+export function addParticipantJoinedHandler(handler: ParticipantJoinedHandler): () => void {
+  _participantJoinedHandlers.add(handler);
+  return () => _participantJoinedHandlers.delete(handler);
+}
 
 /** Registriert einen globalen Handler für eingehende Collab-Events. */
 export function addCollabEventHandler(handler: CollabEventHandler): () => void {
@@ -71,10 +92,18 @@ function openSocket(
   setSessionStatus("connecting");
   setWsUrl(url);
 
+  // Verbindungsparameter für Auto-Reconnect merken
+  _lastUrl = url;
+  _lastRoomCode = roomCode;
+  _lastUserId = userId;
+  _lastUserName = userName;
+  _lastMode = mode;
+
   const ws = new WebSocket(url);
   _ws = ws;
 
   ws.onopen = () => {
+    _reconnectAttempts = 0;
     const msg =
       mode === "create"
         ? { type: "create", roomCode, userId, userName, snapshot: snapshot ?? { bpm: 120, isPlaying: false } }
@@ -97,8 +126,17 @@ function openSocket(
 
   ws.onclose = () => {
     const s = getSessionState();
-    if (s.status === "hosting" || s.status === "joined") {
-      setSessionError("Verbindung getrennt");
+    if (s.status !== "hosting" && s.status !== "joined") return;
+
+    _reconnectAttempts++;
+    if (_reconnectAttempts <= MAX_RECONNECT_ATTEMPTS && _lastUrl) {
+      const delay = Math.min(1000 * Math.pow(2, _reconnectAttempts - 1), 15000);
+      setSessionError(`Verbindung unterbrochen – Wiederverbindung in ${Math.round(delay / 1000)}s… (${_reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`);
+      _reconnectTimer = setTimeout(() => {
+        openSocket(_lastUrl, _lastRoomCode, _lastUserId, _lastUserName, _lastMode);
+      }, delay);
+    } else {
+      setSessionError("Verbindung getrennt – maximale Wiederverbindungsversuche erreicht");
     }
   };
 }
@@ -113,7 +151,7 @@ function handleServerMessage(data: Record<string, unknown>, _mode: "create" | "j
 
     case "joined":
       setSessionCode(data.roomCode as string);
-      setParticipants((data.participants as typeof import("../store/useSessionStore").SessionParticipant[]) ?? []);
+      setParticipants((data.participants as SessionParticipant[]) ?? []);
       setSessionStatus("joined");
       setSessionError(null);
       if ((data.snapshot as Record<string, unknown>)?.bpm) {
@@ -123,7 +161,9 @@ function handleServerMessage(data: Record<string, unknown>, _mode: "create" | "j
 
     case "participant_joined":
       if (data.participant) {
-        addParticipant(data.participant as import("../store/useSessionStore").SessionParticipant);
+        addParticipant(data.participant as SessionParticipant);
+        // Alle Handler benachrichtigen, damit Host sofort Snapshot schickt
+        _participantJoinedHandlers.forEach(h => h((data.participant as { userId: string }).userId));
       }
       break;
 

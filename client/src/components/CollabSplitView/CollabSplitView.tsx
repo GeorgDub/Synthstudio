@@ -154,6 +154,125 @@ function useRemoteDmAdapter(
   }, [remote, activePartId, velocityMode, pitchMode, fxPanelPartId, remoteToggleStep, remoteSetActivePattern]);
 }
 
+// ─── Partner-Sample-Browser (kompakte Sidebar) ────────────────────────────────
+
+const CATEGORIES = ["Alle", "Kicks", "Snares", "Hi-Hats", "Claps", "Toms", "Perc", "FX", "Loops", "Vocals", "Sonstige"];
+
+function PartnerSampleBrowser({
+  samples,
+  partnerColor,
+}: {
+  samples: Array<{ id: string; name: string; path: string; category: string }>;
+  partnerColor: string | null;
+}) {
+  const [search, setSearch] = useState("");
+  const [category, setCategory] = useState("Alle");
+
+  const filtered = useMemo(() => {
+    return samples.filter(s => {
+      const matchCat = category === "Alle" || s.category === category;
+      const matchSearch = !search || s.name.toLowerCase().includes(search.toLowerCase());
+      return matchCat && matchSearch;
+    });
+  }, [samples, category, search]);
+
+  const accent = partnerColor ?? "#7c3aed";
+
+  const handleDragStart = (e: React.DragEvent, sample: { name: string; path: string }) => {
+    e.dataTransfer.setData("sampleUrl", sample.path);
+    e.dataTransfer.setData("sampleName", sample.name);
+    e.dataTransfer.effectAllowed = "copy";
+  };
+
+  return (
+    <aside className="w-52 flex-shrink-0 border-l border-slate-800 flex flex-col overflow-hidden">
+      {/* Header */}
+      <div
+        className="px-3 py-1.5 bg-[#111] border-b border-slate-800 flex-shrink-0 flex items-center gap-1.5"
+        style={{ borderBottomColor: `${accent}40` }}
+      >
+        <span
+          className="w-1.5 h-1.5 rounded-full flex-shrink-0"
+          style={{ background: accent }}
+        />
+        <span className="text-[10px] uppercase tracking-widest" style={{ color: accent }}>
+          Partner-Samples
+        </span>
+      </div>
+
+      {/* Suchfeld */}
+      <div className="px-2 pt-2 pb-1 flex-shrink-0">
+        <input
+          type="text"
+          placeholder="Suchen…"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          className="w-full bg-slate-900 border border-slate-700 rounded text-[10px] text-slate-300 placeholder-slate-600 px-2 py-1 outline-none focus:border-slate-500"
+        />
+      </div>
+
+      {/* Kategorie-Filter */}
+      <div className="px-2 pb-1 flex flex-wrap gap-1 flex-shrink-0">
+        {CATEGORIES.filter(c => c === "Alle" || samples.some(s => s.category === c)).map(cat => (
+          <button
+            key={cat}
+            onClick={() => setCategory(cat)}
+            className={[
+              "text-[9px] px-1.5 py-0.5 rounded transition-colors",
+              category === cat
+                ? "text-black"
+                : "bg-slate-800 text-slate-500 hover:bg-slate-700",
+            ].join(" ")}
+            style={category === cat ? { background: accent, color: "#000" } : {}}
+          >
+            {cat}
+          </button>
+        ))}
+      </div>
+
+      {/* Sample-Liste */}
+      <div className="flex-1 overflow-y-auto px-1 pb-2">
+        {filtered.length === 0 ? (
+          <div className="text-[10px] text-slate-700 text-center mt-4 px-3">
+            {samples.length === 0
+              ? "Partner hat noch keine Samples"
+              : "Keine Treffer"}
+          </div>
+        ) : (
+          filtered.map(sample => (
+            <div
+              key={sample.id}
+              draggable
+              onDragStart={e => handleDragStart(e, sample)}
+              className="flex items-center gap-1.5 px-2 py-1 rounded cursor-grab hover:bg-slate-800/60 transition-colors group"
+              title={`Auf eigenen Kanal ziehen: ${sample.name}`}
+            >
+              <span
+                className="text-[9px] flex-shrink-0 opacity-60 group-hover:opacity-100 transition-opacity"
+                style={{ color: accent }}
+              >
+                ⠿
+              </span>
+              <span className="text-[10px] text-slate-400 group-hover:text-slate-200 truncate transition-colors">
+                {sample.name}
+              </span>
+            </div>
+          ))
+        )}
+      </div>
+
+      {/* Footer */}
+      {samples.length > 0 && (
+        <div className="px-2 py-1 border-t border-slate-800 flex-shrink-0">
+          <p className="text-[9px] text-slate-700 text-center">
+            {filtered.length}/{samples.length} · ziehen zum Zuweisen
+          </p>
+        </div>
+      )}
+    </aside>
+  );
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function CollabSplitView({
@@ -339,8 +458,10 @@ export function CollabSplitView({
           </div>
         </div>
 
-        {/* ── Rechte Hälfte: Partner-Sequencer ─────────────── */}
-        <div className="flex-1 flex flex-col overflow-hidden min-w-0">
+        {/* ── Rechte Hälfte: Partner-Sequencer + Partner-Samples ─── */}
+        <div className="flex-1 flex overflow-hidden min-w-0">
+          {/* Partner-Sequencer */}
+          <div className="flex-1 flex flex-col overflow-hidden min-w-0">
           <div
             className="px-4 py-1 bg-[#111] border-b border-slate-800 flex-shrink-0 flex items-center gap-2"
             style={{
@@ -399,6 +520,13 @@ export function CollabSplitView({
               />
             )}
           </div>
+          </div>{/* Ende Partner-Sequencer */}
+
+          {/* ── Partner-Sample-Browser ──────────────────────── */}
+          <PartnerSampleBrowser
+            samples={remote.samples}
+            partnerColor={remote.color}
+          />
         </div>
       </div>{/* Ende Split-Bereich */}
       </div>{/* Ende Haupt-Layout */}

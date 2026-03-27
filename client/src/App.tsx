@@ -171,6 +171,7 @@ export default function App() {
     dm,
     setBpm: project.setBpm,
     isPlaying: project.isPlaying,
+    bpm: project.bpm,
     togglePlayStop: project.togglePlayStop,
     samples: project.samples,
   });
