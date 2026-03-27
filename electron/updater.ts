@@ -27,7 +27,10 @@
  * 4. Beim nächsten App-Start wird das Update automatisch erkannt
  */
 
-import { BrowserWindow, dialog, app } from "electron";
+import { BrowserWindow, dialog, app, shell } from "electron";
+
+// GitHub Releases Seite (Fallback wenn Auto-Update fehlschlägt)
+const RELEASES_URL = "https://github.com/GeorgDub/Synthstudio/releases";
 
 // Dynamischer Import um Fehler zu vermeiden wenn electron-updater nicht installiert ist
 let autoUpdater: any = null;
@@ -39,9 +42,32 @@ async function loadAutoUpdater(): Promise<boolean> {
     return true;
   } catch {
     console.log("[Updater] electron-updater nicht installiert – Auto-Updates deaktiviert");
-    console.log("[Updater] Installieren mit: pnpm add -D electron-updater");
     return false;
   }
+}
+
+/** Zeigt Fehler-Dialog mit Option zum manuellen Öffnen der Releases-Seite */
+function showUpdateError(mainWindow: BrowserWindow, message: string): void {
+  const isPrivateRepo = message.includes("404") || message.includes("HttpError: 404");
+  const detail = isPrivateRepo
+    ? "Das Repository ist privat oder es gibt noch keine veröffentlichten Releases.\n\nDu kannst Updates manuell von der GitHub-Releases-Seite herunterladen."
+    : message;
+
+  dialog
+    .showMessageBox(mainWindow, {
+      type: "error",
+      title: "Update-Check fehlgeschlagen",
+      message: "Update-Check fehlgeschlagen",
+      detail,
+      buttons: isPrivateRepo ? ["Releases öffnen", "OK"] : ["OK"],
+      defaultId: isPrivateRepo ? 0 : 0,
+      cancelId: isPrivateRepo ? 1 : 0,
+    })
+    .then(({ response }) => {
+      if (isPrivateRepo && response === 0) {
+        void shell.openExternal(RELEASES_URL);
+      }
+    });
 }
 
 export async function setupAutoUpdater(mainWindow: BrowserWindow): Promise<void> {
@@ -133,6 +159,7 @@ export async function setupAutoUpdater(mainWindow: BrowserWindow): Promise<void>
   autoUpdater.on("error", (err: Error) => {
     mainWindow.webContents.send("updater:error", { message: err.message });
     console.error("[Updater] Fehler:", err.message);
+    showUpdateError(mainWindow, err.message);
   });
 
   // ── Ersten Check nach 10 Sekunden ──────────────────────────────────────────
@@ -160,11 +187,6 @@ export async function checkForUpdatesManually(mainWindow: BrowserWindow): Promis
   try {
     await autoUpdater.checkForUpdates();
   } catch (err) {
-    dialog.showMessageBox(mainWindow, {
-      type: "error",
-      title: "Update-Fehler",
-      message: "Update-Check fehlgeschlagen",
-      detail: String(err),
-    });
+    showUpdateError(mainWindow, String(err));
   }
 }

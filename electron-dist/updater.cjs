@@ -15398,6 +15398,7 @@ __export(updater_exports, {
 });
 module.exports = __toCommonJS(updater_exports);
 var import_electron = require("electron");
+var RELEASES_URL = "https://github.com/GeorgDub/Synthstudio/releases";
 var autoUpdater = null;
 async function loadAutoUpdater() {
   try {
@@ -15406,9 +15407,25 @@ async function loadAutoUpdater() {
     return true;
   } catch {
     console.log("[Updater] electron-updater nicht installiert \u2013 Auto-Updates deaktiviert");
-    console.log("[Updater] Installieren mit: pnpm add -D electron-updater");
     return false;
   }
+}
+function showUpdateError(mainWindow, message) {
+  const isPrivateRepo = message.includes("404") || message.includes("HttpError: 404");
+  const detail = isPrivateRepo ? "Das Repository ist privat oder es gibt noch keine ver\xF6ffentlichten Releases.\n\nDu kannst Updates manuell von der GitHub-Releases-Seite herunterladen." : message;
+  import_electron.dialog.showMessageBox(mainWindow, {
+    type: "error",
+    title: "Update-Check fehlgeschlagen",
+    message: "Update-Check fehlgeschlagen",
+    detail,
+    buttons: isPrivateRepo ? ["Releases \xF6ffnen", "OK"] : ["OK"],
+    defaultId: isPrivateRepo ? 0 : 0,
+    cancelId: isPrivateRepo ? 1 : 0
+  }).then(({ response }) => {
+    if (isPrivateRepo && response === 0) {
+      void import_electron.shell.openExternal(RELEASES_URL);
+    }
+  });
 }
 async function setupAutoUpdater(mainWindow) {
   if (process.env.NODE_ENV === "development") {
@@ -15479,6 +15496,7 @@ async function setupAutoUpdater(mainWindow) {
   autoUpdater.on("error", (err) => {
     mainWindow.webContents.send("updater:error", { message: err.message });
     console.error("[Updater] Fehler:", err.message);
+    showUpdateError(mainWindow, err.message);
   });
   setTimeout(() => {
     autoUpdater.checkForUpdates().catch((err) => {
@@ -15500,12 +15518,7 @@ async function checkForUpdatesManually(mainWindow) {
   try {
     await autoUpdater.checkForUpdates();
   } catch (err) {
-    import_electron.dialog.showMessageBox(mainWindow, {
-      type: "error",
-      title: "Update-Fehler",
-      message: "Update-Check fehlgeschlagen",
-      detail: String(err)
-    });
+    showUpdateError(mainWindow, String(err));
   }
 }
 // Annotate the CommonJS export names for ESM import in node:
