@@ -48,12 +48,17 @@ import { useMidi } from "@/hooks/useMidi";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { MidiSettings } from "@/components/MidiSettings";
 import { ShortcutsHelp } from "@/components/ShortcutsHelp";
+import { UpdateBadge } from "@/components/UpdateBadge";
+import { useCollabSession } from "@/hooks/useCollabSession";
+import { useCollabSync } from "@/hooks/useCollabSync";
 
 // ─── App ──────────────────────────────────────────────────────────────────────
 
 export default function App() {
   // ── Electron-Hook (einziger Zugriffspunkt auf Electron-Features) ────────────
   const electron = useElectron();
+  // ── Kollaborations-Session (für Sync) ─────────────────────────────────────────
+  const collab = useCollabSession();
   // ── Dialog-State ────────────────────────────────────────────────────────────────
   const [showNewProjectDialog, setShowNewProjectDialog] = useState(false);
 
@@ -143,6 +148,20 @@ export default function App() {
     return () => window.removeEventListener("pattern-generator:apply", handleApply);
   }, [dm, project]);
 
+  // ── Kollaborations-Sync ──────────────────────────────────────────────────────
+  const { collabToggleStep, collabBpmChange, collabPlayStop } = useCollabSync({
+    broadcast: collab.broadcast,
+    dm,
+    setBpm: project.setBpm,
+    isPlaying: project.isPlaying,
+    togglePlayStop: project.togglePlayStop,
+  });
+  // dm-Objekt mit collab-fähigem toggleStep (kapselt Senden des Events)
+  const collabDm = useMemo(
+    () => ({ ...dm, toggleStep: collabToggleStep }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [dm, collabToggleStep]
+  );
   // ── Schließen-Bestätigung bei ungespeicherten Änderungen ─────────────────
   // Browser: beforeunload-Event | Electron: wird durch Main-Prozess gehandhabt
   useEffect(() => {
@@ -456,6 +475,9 @@ export default function App() {
                 ?
               </button>
 
+              {/* Auto-Updater-Status (nur in Electron sichtbar) */}
+              {electron.isElectron && <UpdateBadge />}
+
               {/* Projekt-Manager (Speichern/Laden) */}
               <ProjectManager
                 projectName={project.projectName}
@@ -507,8 +529,8 @@ export default function App() {
                   samples={project.samples}
                   isPlaying={project.isPlaying}
                   bpm={project.bpm}
-                  onPlayStop={project.togglePlayStop}
-                  onBpmChange={project.setBpm}
+                  onPlayStop={collabPlayStop}
+                  onBpmChange={collabBpmChange}
                   className="h-full"
                 />
               )}
