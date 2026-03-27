@@ -53,6 +53,9 @@ jobs:
       - name: JS zu CJS umbenennen
         run: node scripts/rename-to-cjs.cjs
 
+      - name: collab-server mit ws bündeln (esbuild)
+        run: pnpm exec esbuild electron/collab-server.ts --bundle --platform=node --format=cjs --external:bufferutil --external:utf-8-validate --outfile=electron-dist/collab-server.cjs
+
       - name: React-App bauen (Vite)
         run: pnpm exec vite build
 
