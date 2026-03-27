@@ -1,6 +1,6 @@
 {
   "name": "synthstudio",
-  "version": "1.10.6",
+  "version": "1.10.7",
   "type": "module",
   "license": "MIT",
   "main": "electron-dist/main.cjs",
@@ -268,7 +268,7 @@
     "publish": {
       "provider": "github",
       "owner": "GeorgDub",
-      "repo": "Synthstudio",
+      "repo": "Synthstudio-releases",
       "releaseType": "release"
     },
     "asar": false,

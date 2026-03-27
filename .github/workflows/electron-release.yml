@@ -11,8 +11,10 @@ on:
         required: true
         default: "1.0.0"
 
+# Nur Lesezugriff auf das eigene (private) Repo nötig.
+# Schreibzugriff auf Synthstudio-releases erfolgt über RELEASES_TOKEN.
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build:
@@ -65,28 +67,28 @@ jobs:
       - name: Staging-Verzeichnis erstellen
         run: node scripts/prepare-electron-build.cjs
 
+      # RELEASES_TOKEN = PAT mit "repo"-Scope auf GeorgDub/Synthstudio-releases
+      # (im privaten Repo als Repository Secret hinterlegen)
       - name: Electron-App bauen (Linux)
         if: matrix.platform == 'linux'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
         run: pnpm exec electron-builder --linux AppImage deb --publish always
 
       - name: Electron-App bauen (Windows)
         if: matrix.platform == 'windows'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
         run: pnpm exec electron-builder --win nsis --publish always
 
       - name: Electron-App bauen (macOS)
         if: matrix.platform == 'mac'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
         run: pnpm exec electron-builder --mac dmg zip --publish always
 
-      # electron-builder mit --publish always hat die Release-Assets bereits hochgeladen.
-      # Wir sichern dennoch die Artefakte lokal fuer Debugging-Zwecke.
       - name: Build-Artefakte sichern (lokal)
         uses: actions/upload-artifact@v4
         with:

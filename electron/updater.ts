@@ -30,7 +30,7 @@
 import { BrowserWindow, dialog, app, shell } from "electron";
 
 // GitHub Releases Seite (Fallback wenn Auto-Update fehlschlägt)
-const RELEASES_URL = "https://github.com/GeorgDub/Synthstudio/releases";
+const RELEASES_URL = "https://github.com/GeorgDub/Synthstudio-releases/releases";
 
 // Dynamischer Import um Fehler zu vermeiden wenn electron-updater nicht installiert ist
 let autoUpdater: any = null;

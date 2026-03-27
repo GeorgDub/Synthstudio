@@ -15398,7 +15398,7 @@ __export(updater_exports, {
 });
 module.exports = __toCommonJS(updater_exports);
 var import_electron = require("electron");
-var RELEASES_URL = "https://github.com/GeorgDub/Synthstudio/releases";
+var RELEASES_URL = "https://github.com/GeorgDub/Synthstudio-releases/releases";
 var autoUpdater = null;
 async function loadAutoUpdater() {
   try {
