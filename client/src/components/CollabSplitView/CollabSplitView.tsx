@@ -20,12 +20,13 @@
 
 import React, { useMemo, useState } from "react";
 import { DrumMachine } from "@/components/DrumMachine";
+import { SampleBrowser } from "@/components/SampleBrowser";
 import { useRemotePeerStore, setRemotePartMuted, setRemotePartVolume } from "@/store/useRemotePeerStore";
 import { useSessionStore } from "@/store/useSessionStore";
 import type { DrumMachineState, DrumMachineActions } from "@/store/useDrumMachineStore";
 import type { OutputMode } from "@/hooks/useCollabSync";
 import type { Sample } from "@/store/useProjectStore";
-import type { ChannelFx, StepCondition, StepResolution } from "@/audio/AudioEngine";
+import type { ChannelFx, StepCondition } from "@/audio/AudioEngine";
 
 // ─── Typen ────────────────────────────────────────────────────────────────────
 
@@ -52,6 +53,15 @@ interface Props {
   remoteSetActivePattern: (patternId: string) => void;
   /** Session-Ende-Handler */
   onLeave: () => void;
+  // ── SampleBrowser-Props (weitergeleitet aus App.tsx) ─────────
+  onImportSamples: (paths: string[]) => void;
+  onImportFolder?: (folderPath: string) => void;
+  onRemoveSample?: (id: string) => void;
+  onSamplesImported?: (samples: Sample[]) => void;
+  onAssignToChannel?: (sampleUrl: string, sampleName: string) => void;
+  onUpdateSampleCategory?: (id: string, category: string) => void;
+  onReorderSamples?: (draggedId: string, targetId: string) => void;
+  activeChannelName?: string;
 }
 
 // ─── Hilfsfunktion: Remote-DrumMachine-Adapter ───────────────────────────────
@@ -158,9 +168,18 @@ export function CollabSplitView({
   remoteToggleStep,
   remoteSetActivePattern,
   onLeave,
+  onImportSamples,
+  onImportFolder,
+  onRemoveSample,
+  onSamplesImported,
+  onAssignToChannel,
+  onUpdateSampleCategory,
+  onReorderSamples,
+  activeChannelName,
 }: Props) {
   const remote = useRemotePeerStore();
   const session = useSessionStore();
+  const [showSampleBrowser, setShowSampleBrowser] = useState(true);
 
   const remoteDm = useRemoteDmAdapter(remote, remoteToggleStep, remoteSetActivePattern);
 
@@ -243,8 +262,52 @@ export function CollabSplitView({
         </button>
       </div>
 
-      {/* ── Split-Bereich ─────────────────────────────────────── */}
+      {/* ── Haupt-Layout: Sidebar + Split ─────────────────────── */}
       <div className="flex flex-1 overflow-hidden min-h-0">
+
+        {/* ── Sample-Browser-Sidebar ────────────────────────── */}
+        {showSampleBrowser && (
+          <aside className="w-64 flex-shrink-0 border-r border-slate-800 overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between px-3 py-1 bg-[#111] border-b border-slate-800 flex-shrink-0">
+              <span className="text-[10px] text-slate-500 uppercase tracking-widest">Samples</span>
+              <button
+                onClick={() => setShowSampleBrowser(false)}
+                className="text-slate-600 hover:text-slate-400 text-xs leading-none"
+                title="Samples ausblenden"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="flex-1 overflow-hidden min-h-0">
+              <SampleBrowser
+                samples={samples}
+                onImportSamples={onImportSamples}
+                onImportFolder={onImportFolder}
+                onRemoveSample={onRemoveSample}
+                onSamplesImported={onSamplesImported}
+                onAssignToChannel={onAssignToChannel}
+                activeChannelName={activeChannelName}
+                onUpdateSampleCategory={onUpdateSampleCategory}
+                onReorderSamples={onReorderSamples}
+              />
+            </div>
+          </aside>
+        )}
+
+        {/* Samples-Button wenn Sidebar ausgeblendet */}
+        {!showSampleBrowser && (
+          <button
+            onClick={() => setShowSampleBrowser(true)}
+            title="Sample-Browser einblenden"
+            className="flex-shrink-0 w-7 bg-[#0d0d0d] border-r border-slate-800 flex items-center justify-center text-slate-600 hover:text-slate-300 hover:bg-slate-800 transition-colors"
+            style={{ writingMode: "vertical-rl" }}
+          >
+            <span className="text-[10px] tracking-widest rotate-180">▶ Samples</span>
+          </button>
+        )}
+
+        {/* ── Split-Bereich ─────────────────────────────────────── */}
+        <div className="flex flex-1 overflow-hidden min-h-0">
 
         {/* ── Linke Hälfte: Mein Sequencer ─────────────────── */}
         <div className="flex-1 flex flex-col overflow-hidden border-r border-slate-800/60 min-w-0">
@@ -337,7 +400,8 @@ export function CollabSplitView({
             )}
           </div>
         </div>
-      </div>
+      </div>{/* Ende Split-Bereich */}
+      </div>{/* Ende Haupt-Layout */}
     </div>
   );
 }

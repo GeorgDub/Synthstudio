@@ -640,6 +640,14 @@ export default function App() {
           remoteToggleStep={remoteToggleStep}
           remoteSetActivePattern={remoteSetActivePattern}
           onLeave={() => collab.leaveSession()}
+          onImportSamples={project.importSamplesFromPaths}
+          onImportFolder={handleDropFolder}
+          onRemoveSample={project.removeSample}
+          onSamplesImported={project.addSamples}
+          onAssignToChannel={handleAssignToChannel}
+          activeChannelName={activeChannelName}
+          onUpdateSampleCategory={handleUpdateSampleCategory}
+          onReorderSamples={project.reorderSamples}
         />
       )}
 
