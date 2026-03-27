@@ -40,6 +40,13 @@ import { registerExportHandlers } from "./export";
 import { setupAutoUpdater, checkForUpdatesManually } from "./updater";
 import { initStore, registerStoreHandlers, type AppStore } from "./store";
 import { registerZipImportHandlers } from "./zip-import";
+import {
+  startCollabServer,
+  stopCollabServer,
+  isCollabServerRunning,
+  getCollabServerPort,
+  getLocalIp,
+} from "./collab-server";
 
 const windowManager = new WindowManager();
 
@@ -998,6 +1005,34 @@ function registerIpcHandlers(): void {
       properties: ["openFile"],
     });
     return result;
+  });
+
+  // ── Kollaborations-Server ─────────────────────────────────────────────────────
+
+  ipcMain.handle("collab:start", async () => {
+    try {
+      const port = await startCollabServer(0);
+      return { success: true, port };
+    } catch (err) {
+      return { success: false, error: String(err) };
+    }
+  });
+
+  ipcMain.handle("collab:stop", async () => {
+    try {
+      await stopCollabServer();
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: String(err) };
+    }
+  });
+
+  ipcMain.handle("collab:get-address", () => {
+    return {
+      ip: getLocalIp(),
+      port: getCollabServerPort(),
+      running: isCollabServerRunning(),
+    };
   });
 
   // ── Auto-Updater (manueller Check aus dem Renderer) ──────────────────────────

@@ -1,6 +1,6 @@
 {
   "name": "synthstudio",
-  "version": "1.9.0",
+  "version": "1.10.0",
   "type": "module",
   "license": "MIT",
   "main": "electron-dist/main.cjs",
@@ -59,6 +59,7 @@
     "@trpc/client": "^11.6.0",
     "@trpc/react-query": "^11.6.0",
     "@trpc/server": "^11.6.0",
+    "@types/ws": "^8.18.1",
     "axios": "^1.12.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -91,6 +92,7 @@
     "tone": "^15.1.22",
     "vaul": "^1.1.2",
     "wouter": "^3.3.5",
+    "ws": "^8.20.0",
     "zod": "^4.1.12"
   },
   "devDependencies": {

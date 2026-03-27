@@ -499,6 +499,20 @@ const electronAPI = {
   }): Promise<{ success: boolean; filePath?: string; canceled?: boolean; error?: string }> =>
     ipcRenderer.invoke("export:bundle", options),
 
+  // ── Kollaborations-Session ────────────────────────────────────────────────────
+
+  /** Startet den lokalen Kollaborations-WebSocket-Server. */
+  startCollabServer: (): Promise<{ success: boolean; port?: number; error?: string }> =>
+    ipcRenderer.invoke("collab:start"),
+
+  /** Stoppt den Kollaborations-Server. */
+  stopCollabServer: (): Promise<{ success: boolean; error?: string }> =>
+    ipcRenderer.invoke("collab:stop"),
+
+  /** Gibt lokale IP-Adresse und Server-Port zurück. */
+  getCollabAddress: (): Promise<{ ip: string; port: number; running: boolean }> =>
+    ipcRenderer.invoke("collab:get-address"),
+
 };
 
 contextBridge.exposeInMainWorld("electronAPI", electronAPI);
