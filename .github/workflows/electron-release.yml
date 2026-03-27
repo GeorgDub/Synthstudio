@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Version (z.B. 1.0.0)"
-        required: true
-        default: "1.0.0"
+        description: "Version (z.B. 1.0.0) – optional, überschreibt package.json"
+        required: false
+        default: ""
 
 # Nur Lesezugriff auf das eigene (private) Repo nötig.
 # Schreibzugriff auf Synthstudio-releases erfolgt über RELEASES_TOKEN.
@@ -35,8 +35,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          ref: electron-dev
 
       - name: Node.js einrichten
         uses: actions/setup-node@v4
@@ -45,6 +43,11 @@ jobs:
 
       - name: pnpm einrichten
         uses: pnpm/action-setup@v4
+
+      - name: Version aus workflow_dispatch übernehmen (optional)
+        if: github.event_name == 'workflow_dispatch' && inputs.version != ''
+        run: |
+          node -e "const fs=require('fs'); const p=JSON.parse(fs.readFileSync('package.json','utf8')); p.version='${{ inputs.version }}'; fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\n');"
 
       - name: Dependencies installieren
         run: pnpm install --frozen-lockfile
