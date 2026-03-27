@@ -212,6 +212,7 @@ class AudioEngineClass {
   private positionCallbacks: PositionCallback[] = [];
   private patternGetter: (() => PatternData) | null = null;
   private patternSwitchCallback: ((patternId: string) => void) | null = null;
+  private melodicGetter: ((partId: string) => { active: boolean; note: number; velocity: number }[] | undefined) | null = null;
 
   // Probability / Fill state (Phase 1)
   private loopCount = 0;
@@ -280,6 +281,11 @@ class AudioEngineClass {
   }
 
   setPatternGetter(getter: () => PatternData) { this.patternGetter = getter; }
+
+  /** Melodic getter: liefert PitchSteps für eine Part-ID aus dem useMelodicPartStore */
+  setMelodicGetter(getter: (partId: string) => { active: boolean; note: number; velocity: number }[] | undefined) {
+    this.melodicGetter = getter;
+  }
 
   onStep(cb: StepCallback) {
     this.stepCallbacks.push(cb);
@@ -503,6 +509,24 @@ class AudioEngineClass {
         });
       }
     });
+
+    // ─── Melodische Parts (Piano Roll) ────────────────────────────────────
+    if (this.melodicGetter) {
+      pattern.parts.forEach((part) => {
+        if (part.muted) return;
+        const anySolo = pattern.parts.some(p => p.soloed);
+        if (anySolo && !part.soloed) return;
+
+        const melodicSteps = this.melodicGetter!(part.id);
+        if (!melodicSteps) return;
+        const mStep = melodicSteps[stepIndex];
+        if (!mStep?.active) return;
+
+        const vol = (mStep.velocity / 127) * (part.volume ?? 1.0);
+        const freq = 440 * Math.pow(2, (mStep.note - 69) / 12);
+        this._triggerMelodicNote(time, freq, vol, part.pan ?? 0);
+      });
+    }
   }
 
   // ─── Private: Sample triggern mit Effektkette ─────────────────────────────
@@ -530,6 +554,30 @@ class AudioEngineClass {
 
     source.connect(nodes.input);
     source.start(Math.max(time, this.ctx.currentTime));
+  }
+
+  /** Melodische Note als kurzen Sinus-Ton abspielen (Piano Roll Playback) */
+  private _triggerMelodicNote(time: number, freq: number, volume: number, pan: number): void {
+    if (!this.ctx || !this.masterGain) return;
+    const now = Math.max(time, this.ctx.currentTime);
+    const duration = Math.max(0.05, 60 / this._bpm / 4); // 1/16-Note
+
+    const osc = this.ctx.createOscillator();
+    const env = this.ctx.createGain();
+    const panner = this.ctx.createStereoPanner();
+
+    osc.type = "triangle";
+    osc.frequency.value = freq;
+    env.gain.setValueAtTime(0, now);
+    env.gain.linearRampToValueAtTime(Math.max(0, Math.min(1, volume)) * 0.5, now + 0.005);
+    env.gain.exponentialRampToValueAtTime(0.001, now + duration);
+    panner.pan.value = Math.max(-1, Math.min(1, pan));
+
+    osc.connect(env);
+    env.connect(panner);
+    panner.connect(this.masterGain);
+    osc.start(now);
+    osc.stop(now + duration + 0.01);
   }
 
   /** Sample mit optionaler Slice-Region abspielen */

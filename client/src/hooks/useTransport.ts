@@ -11,6 +11,7 @@
 import { useEffect, useRef, useCallback } from "react";
 import { AudioEngine } from "../audio/AudioEngine";
 import type { DrumMachineState, DrumMachineActions } from "@/store/useDrumMachineStore";
+import { getPattern } from "@/store/useMelodicPartStore";
 
 interface UseTransportOptions {
   isPlaying: boolean;
@@ -37,6 +38,11 @@ export function useTransport({
       const p = patternRef.current();
       if (!p) return { id: "", name: "", stepCount: 16 as const, stepResolution: "1/16" as const, bpm: null, parts: [] };
       return p;
+    });
+    // Melodic getter: liest direkt aus dem Modul-Singleton (kein React-State nötig)
+    AudioEngine.setMelodicGetter((partId: string) => {
+      const pattern = getPattern(partId);
+      return pattern?.steps;
     });
   }, []);
 

@@ -15,6 +15,7 @@ import React, { useState, useRef, useCallback, useEffect } from "react";
 import type { DrumMachineState, DrumMachineActions } from "@/store/useDrumMachineStore";
 import type { PartData, ChannelFx, StepResolution } from "@/audio/AudioEngine";
 import { AudioEngine } from "@/audio/AudioEngine";
+import { PianoRollModal } from "@/components/PianoRoll/PianoRollModal";
 
 // ─── Typen ────────────────────────────────────────────────────────────────────
 
@@ -239,6 +240,7 @@ interface ChannelStripProps {
   onFxToggle: () => void;
   onResolutionChange: (res: StepResolution | undefined) => void;
   onClick: () => void;
+  onPianoRollOpen: () => void;
 }
 
 function ChannelStrip({
@@ -246,7 +248,7 @@ function ChannelStrip({
   velocityMode, pitchMode, patternResolution, fxPanelOpen,
   samples, onToggleStep, onSetVelocity, onSetPitch,
   onMute, onSolo, onVolumeChange, onPanChange,
-  onSampleDrop, onFxChange, onFxToggle, onResolutionChange, onClick,
+  onSampleDrop, onFxChange, onFxToggle, onResolutionChange, onClick, onPianoRollOpen,
 }: ChannelStripProps) {
   const [isDragOver, setIsDragOver] = useState(false);
   const [pitchPopover, setPitchPopover] = useState<number | null>(null);
@@ -387,6 +389,13 @@ function ChannelStrip({
         ].join(" ")}
       >FX</button>
 
+      {/* Piano Roll Button */}
+      <button
+        onClick={e => { e.stopPropagation(); onPianoRollOpen(); }}
+        title="Piano Roll – melodische Noten programmieren"
+        className="w-6 h-5 rounded text-[9px] flex-shrink-0 transition-colors font-medium bg-slate-800 text-slate-500 hover:bg-indigo-700 hover:text-white"
+      >PR</button>
+
       {/* FX-Panel */}
       {fxPanelOpen && (
         <FxPanel
@@ -483,6 +492,7 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
   const [masterVolume, setMasterVolume] = useState(0.85);
   const [bpmInput, setBpmInput] = useState(String(bpm));
   const bpmInputRef = useRef<HTMLInputElement>(null);
+  const [pianoRollPartId, setPianoRollPartId] = useState<string | null>(null);
 
   // Keyboard-Shortcuts werden zentral durch useKeyboardShortcuts in App.tsx gehandhabt
 
@@ -916,6 +926,7 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
             onFxToggle={() => dm.setFxPanelPartId(dm.fxPanelPartId === part.id ? null : part.id)}
             onResolutionChange={res => dm.setPartStepResolution(part.id, res)}
             onClick={() => dm.setActivePart(part.id)}
+            onPianoRollOpen={() => setPianoRollPartId(part.id)}
           />
         ))}
       </div>
@@ -934,6 +945,19 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
         {dm.velocityMode && <><span>·</span><span className="text-amber-400">VELOCITY-MODUS</span></>}
         {dm.pitchMode && <><span>·</span><span className="text-purple-400">PITCH-MODUS</span></>}
       </div>
+
+      {/* ── Piano Roll Modal ─────────────────────────────────────────────── */}
+      {pianoRollPartId && (() => {
+        const prPart = pattern.parts.find(p => p.id === pianoRollPartId);
+        return (
+          <PianoRollModal
+            partId={pianoRollPartId}
+            partName={prPart?.name ?? pianoRollPartId}
+            isOpen={true}
+            onClose={() => setPianoRollPartId(null)}
+          />
+        );
+      })()}
     </div>
   );
 }
