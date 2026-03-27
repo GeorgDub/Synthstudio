@@ -12,7 +12,7 @@
     "build:electron:win": "vite build && pnpm compile:electron && electron-builder --win",
     "build:electron:mac": "vite build && pnpm compile:electron && electron-builder --mac",
     "build:electron:linux": "vite build && pnpm compile:electron && electron-builder --linux",
-    "compile:electron": "tsc --project tsconfig.electron.json && node scripts/rename-to-cjs.cjs && esbuild electron/collab-server.ts --bundle --platform=node --format=cjs --external:bufferutil --external:utf-8-validate --outfile=electron-dist/collab-server.cjs",
+    "compile:electron": "tsc --project tsconfig.electron.json && node scripts/rename-to-cjs.cjs && esbuild electron/collab-server.ts --bundle --platform=node --format=cjs --external:bufferutil --external:utf-8-validate --outfile=electron-dist/collab-server.cjs && esbuild electron/updater.ts --bundle --platform=node --format=cjs --external:electron --outfile=electron-dist/updater.cjs",
     "generate:icons": "npx tsx electron/assets/create-icons.ts",
     "start": "cross-env NODE_ENV=production node dist/index.js",
     "start:electron": "electron .",
