@@ -35,6 +35,9 @@ import { NewProjectDialog } from "@/components/NewProjectDialog";
 import { SongTimeline } from "@/components/SongTimeline";
 import { Humanizer } from "@/components/Humanizer";
 import { DrumMachine } from "@/components/DrumMachine";
+import { SessionPanel } from "@/components/CollabSession";
+import { PatternGeneratorPanel } from "@/components/PatternGenerator";
+import { ArpeggiatorPanel } from "@/components/Arpeggiator";
 
 // ── Stores für neue Features ──────────────────────────────────────────────────
 import { useSongStore } from "@/store/useSongStore";
@@ -71,7 +74,7 @@ export default function App() {
   });
 
   // ── Arbeitsbereich-Tabs ────────────────────────────────────────────────────
-  const [activeTab, setActiveTab] = useState<"sequencer" | "song" | "humanizer">("sequencer");
+  const [activeTab, setActiveTab] = useState<"sequencer" | "song" | "humanizer" | "tools" | "kollaboration">("sequencer");
 
   // ── Dialog-State für MIDI und Shortcuts ──────────────────────────────────
   const [showMidiSettings, setShowMidiSettings] = useState(false);
@@ -113,6 +116,32 @@ export default function App() {
     projectName: project.projectName,
     isDirty: project.isDirty,
   });
+
+  // ── Pattern-Generator Apply-Event ─────────────────────────────────────────
+  useEffect(() => {
+    const handleApply = (e: Event) => {
+      const generated = (e as CustomEvent).detail as {
+        bpm: number;
+        parts: Array<{ name: string; steps: Array<{ active: boolean; velocity: number }> }>;
+      };
+      const pattern = dm.getActivePattern();
+      if (!pattern) return;
+      // BPM übernehmen
+      project.setBpm(generated.bpm);
+      // Steps der ersten N Parts (nach Index) in die DM-Parts übertragen
+      generated.parts.forEach((genPart, i) => {
+        const dmPart = pattern.parts[i];
+        if (!dmPart) return;
+        dm.setPartSteps(
+          dmPart.id,
+          genPart.steps.map(s => s.active),
+          genPart.steps.map(s => s.velocity),
+        );
+      });
+    };
+    window.addEventListener("pattern-generator:apply", handleApply);
+    return () => window.removeEventListener("pattern-generator:apply", handleApply);
+  }, [dm, project]);
 
   // ── Schließen-Bestätigung bei ungespeicherten Änderungen ─────────────────
   // Browser: beforeunload-Event | Electron: wird durch Main-Prozess gehandhabt
@@ -440,10 +469,12 @@ export default function App() {
 
             {/* Arbeitsbereich-Tabs */}
             <div className="flex gap-0 border-b border-slate-800 bg-[#0d0d0d]">
-              {([
-                { id: "sequencer", label: "Sequencer" },
-                { id: "song",      label: "Song-Modus" },
-                { id: "humanizer", label: "Humanizer" },
+              {([  
+                { id: "sequencer",    label: "Sequencer" },
+                { id: "song",         label: "Song-Modus" },
+                { id: "humanizer",    label: "Humanizer" },
+                { id: "tools",        label: "Tools" },
+                { id: "kollaboration",label: "Kollaboration" },
               ] as const).map((tab) => (
                 <button
                   key={tab.id}
@@ -500,6 +531,25 @@ export default function App() {
                     humanizer={humanizer}
                     className="max-w-lg"
                   />
+                </div>
+              )}
+
+              {/* Tools-Tab: Pattern Generator + Arpeggiator */}
+              {activeTab === "tools" && (
+                <div className="h-full overflow-y-auto p-4">
+                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 max-w-4xl">
+                    <PatternGeneratorPanel />
+                    <ArpeggiatorPanel />
+                  </div>
+                </div>
+              )}
+
+              {/* Kollaboration-Tab: Session Panel */}
+              {activeTab === "kollaboration" && (
+                <div className="h-full overflow-y-auto p-4">
+                  <div className="max-w-md">
+                    <SessionPanel />
+                  </div>
                 </div>
               )}
 

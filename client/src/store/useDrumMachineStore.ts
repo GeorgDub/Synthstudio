@@ -51,6 +51,7 @@ export interface DrumMachineActions {
   setFxPanelPartId: (partId: string | null) => void;
 
   toggleStep: (partId: string, stepIndex: number) => void;
+  setPartSteps: (partId: string, steps: boolean[], velocities?: number[]) => void;
   setStepVelocity: (partId: string, stepIndex: number, velocity: number) => void;
   setStepPitch: (partId: string, stepIndex: number, pitch: number) => void;
   setStepProbability: (partId: string, stepIndex: number, probability: number) => void;
@@ -340,6 +341,21 @@ export function useDrumMachineStore(): DrumMachineState & DrumMachineActions {
     })));
   }, [updatePatterns]);
 
+  const setPartSteps = useCallback((partId: string, newActive: boolean[], velocities?: number[]) => {
+    updatePatterns(ps => ps.map(p => ({
+      ...p,
+      parts: p.parts.map(pt => {
+        if (pt.id !== partId) return pt;
+        const steps: StepData[] = newActive.map((active, i) => ({
+          ...pt.steps[i],
+          active,
+          ...(velocities?.[i] !== undefined ? { velocity: velocities[i] } : {}),
+        }));
+        return { ...pt, steps };
+      }),
+    })));
+  }, [updatePatterns]);
+
   const setStepVelocity = useCallback((partId: string, stepIndex: number, velocity: number) => {
     updatePatterns(ps => ps.map(p => ({
       ...p,
@@ -522,7 +538,7 @@ export function useDrumMachineStore(): DrumMachineState & DrumMachineActions {
     setPartMuted, setPartSoloed, setPartVolume, setPartPan,
     setPartStepResolution, setActivePart, movePart,
     setPartFx, setFxPanelPartId,
-    toggleStep, setStepVelocity, setStepPitch, setStepProbability, setStepCondition, setPartEuclidean,
+    toggleStep, setPartSteps, setStepVelocity, setStepPitch, setStepProbability, setStepCondition, setPartEuclidean,
     clearPattern, fillPattern, randomizePattern, shiftPattern,
     setStepCount, setCurrentStep,
     setVelocityMode, setPitchMode,
