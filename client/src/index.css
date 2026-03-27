@@ -77,6 +77,69 @@
   --ss-glow: 0 0 16px rgba(255, 107, 53, 0.5);
 }
 
+/* ── 4. Nacht (Dunkles Lila) ──────────────────────────────────────────────── */
+[data-theme="purple"] {
+  --ss-bg-base:     #0a080f;
+  --ss-bg-panel:    #110e18;
+  --ss-bg-elevated: #1a1526;
+
+  --ss-accent-primary:   #a855f7;
+  --ss-accent-secondary: #7c3aed;
+  --ss-accent-success:   #10b981;
+  --ss-accent-danger:    #f43f5e;
+
+  --ss-text-primary: #f0e8ff;
+  --ss-text-muted:   #9a88bb;
+  --ss-text-dim:     #665577;
+
+  --ss-border:        #2a1a40;
+  --ss-border-subtle: #180f2a;
+
+  --ss-glow: 0 0 10px rgba(168, 85, 247, 0.45);
+}
+
+/* ── 5. Sonnenuntergang (Warm / Terracotta) ────────────────────────────────── */
+[data-theme="warm"] {
+  --ss-bg-base:     #0f0a08;
+  --ss-bg-panel:    #1a110a;
+  --ss-bg-elevated: #261810;
+
+  --ss-accent-primary:   #f97316;
+  --ss-accent-secondary: #fbbf24;
+  --ss-accent-success:   #10b981;
+  --ss-accent-danger:    #ef4444;
+
+  --ss-text-primary: #fef3c7;
+  --ss-text-muted:   #a88b6a;
+  --ss-text-dim:     #6b5040;
+
+  --ss-border:        #3a2010;
+  --ss-border-subtle: #251506;
+
+  --ss-glow: 0 0 10px rgba(249, 115, 22, 0.4);
+}
+
+/* ── 6. OLED-Schwarz ─────────────────────────────────────────────────────────*/
+[data-theme="oled"] {
+  --ss-bg-base:     #000000;
+  --ss-bg-panel:    #080808;
+  --ss-bg-elevated: #111111;
+
+  --ss-accent-primary:   #06b6d4;
+  --ss-accent-secondary: #0891b2;
+  --ss-accent-success:   #10b981;
+  --ss-accent-danger:    #ef4444;
+
+  --ss-text-primary: #f8fafc;
+  --ss-text-muted:   #64748b;
+  --ss-text-dim:     #374151;
+
+  --ss-border:        #1a1a1a;
+  --ss-border-subtle: #0d0d0d;
+
+  --ss-glow: 0 0 6px rgba(6, 182, 212, 0.3);
+}
+
 /* ── Tailwind / Legacy-Kompatibilität ─────────────────────────────────────── */
 :root {
   --background: 0 0% 5%;
@@ -97,3 +160,74 @@ body,
   color: var(--ss-text-primary, #f8fafc);
   font-family: "JetBrains Mono", "Fira Code", ui-monospace, monospace;
 }
+
+/* ── Tailwind Cyan-Klassen-Overrides für Nicht-Standard-Themes ───────────────
+   Diese Overrides ersetzen die hartcodierten bg-cyan-* Klassen in DrumMachine
+   und anderen Komponenten, wenn ein alternatives Theme aktiv ist.
+   !important ist notwendig da Tailwind-Utilities in einer CSS-Schicht liegen.
+   ─────────────────────────────────────────────────────────────────────────── */
+
+/* ── Analog-Theme (Orange Akzent) ─────────────── */
+[data-theme="analog"] .bg-cyan-400  { background-color: #fb923c !important; }
+[data-theme="analog"] .bg-cyan-500  { background-color: #f97316 !important; }
+[data-theme="analog"] .bg-cyan-600  { background-color: #ea580c !important; }
+[data-theme="analog"] .bg-cyan-700  { background-color: #c2410c !important; }
+[data-theme="analog"] .bg-cyan-800  { background-color: #9a3412 !important; }
+[data-theme="analog"] .bg-cyan-900  { background-color: #7c2d12 !important; }
+[data-theme="analog"] .text-cyan-400 { color: #fb923c !important; }
+[data-theme="analog"] .text-cyan-500 { color: #f97316 !important; }
+[data-theme="analog"] .border-cyan-500 { border-color: #f97316 !important; }
+[data-theme="analog"] .border-t-cyan-600 { border-top-color: #ea580c !important; }
+[data-theme="analog"] .hover\:bg-cyan-300:hover { background-color: #fdba74 !important; }
+[data-theme="analog"] .hover\:bg-cyan-400:hover { background-color: #fb923c !important; }
+[data-theme="analog"] .hover\:bg-cyan-500:hover { background-color: #f97316 !important; }
+[data-theme="analog"] .hover\:bg-cyan-600:hover { background-color: #ea580c !important; }
+[data-theme="analog"] .bg-cyan-500\/10 { background-color: rgba(249,115,22,0.1) !important; }
+[data-theme="analog"] .bg-cyan-300\/40 { background-color: rgba(253,186,116,0.4) !important; }
+[data-theme="analog"] .bg-cyan-900\/30 { background-color: rgba(124,45,18,0.3) !important; }
+
+/* ── Purple-Theme (Lila Akzent) ────────────────── */
+[data-theme="purple"] .bg-cyan-400  { background-color: #c084fc !important; }
+[data-theme="purple"] .bg-cyan-500  { background-color: #a855f7 !important; }
+[data-theme="purple"] .bg-cyan-600  { background-color: #9333ea !important; }
+[data-theme="purple"] .bg-cyan-700  { background-color: #7e22ce !important; }
+[data-theme="purple"] .bg-cyan-800  { background-color: #6b21a8 !important; }
+[data-theme="purple"] .bg-cyan-900  { background-color: #581c87 !important; }
+[data-theme="purple"] .text-cyan-400 { color: #c084fc !important; }
+[data-theme="purple"] .text-cyan-500 { color: #a855f7 !important; }
+[data-theme="purple"] .border-cyan-500 { border-color: #a855f7 !important; }
+[data-theme="purple"] .border-t-cyan-600 { border-top-color: #9333ea !important; }
+[data-theme="purple"] .hover\:bg-cyan-300:hover { background-color: #d8b4fe !important; }
+[data-theme="purple"] .hover\:bg-cyan-400:hover { background-color: #c084fc !important; }
+[data-theme="purple"] .hover\:bg-cyan-500:hover { background-color: #a855f7 !important; }
+[data-theme="purple"] .hover\:bg-cyan-600:hover { background-color: #9333ea !important; }
+[data-theme="purple"] .bg-cyan-500\/10 { background-color: rgba(168,85,247,0.1) !important; }
+[data-theme="purple"] .bg-cyan-300\/40 { background-color: rgba(216,180,254,0.4) !important; }
+[data-theme="purple"] .bg-cyan-900\/30 { background-color: rgba(88,28,135,0.3) !important; }
+
+/* ── Warm-Theme (Bernstein / Orange Akzent) ────── */
+[data-theme="warm"] .bg-cyan-400  { background-color: #fbbf24 !important; }
+[data-theme="warm"] .bg-cyan-500  { background-color: #f59e0b !important; }
+[data-theme="warm"] .bg-cyan-600  { background-color: #d97706 !important; }
+[data-theme="warm"] .bg-cyan-700  { background-color: #b45309 !important; }
+[data-theme="warm"] .bg-cyan-800  { background-color: #92400e !important; }
+[data-theme="warm"] .bg-cyan-900  { background-color: #78350f !important; }
+[data-theme="warm"] .text-cyan-400 { color: #fbbf24 !important; }
+[data-theme="warm"] .text-cyan-500 { color: #f59e0b !important; }
+[data-theme="warm"] .border-cyan-500 { border-color: #f59e0b !important; }
+[data-theme="warm"] .border-t-cyan-600 { border-top-color: #d97706 !important; }
+[data-theme="warm"] .hover\:bg-cyan-300:hover { background-color: #fde68a !important; }
+[data-theme="warm"] .hover\:bg-cyan-400:hover { background-color: #fbbf24 !important; }
+[data-theme="warm"] .hover\:bg-cyan-500:hover { background-color: #f59e0b !important; }
+[data-theme="warm"] .hover\:bg-cyan-600:hover { background-color: #d97706 !important; }
+[data-theme="warm"] .bg-cyan-500\/10 { background-color: rgba(245,158,11,0.1) !important; }
+[data-theme="warm"] .bg-cyan-300\/40 { background-color: rgba(253,230,138,0.4) !important; }
+[data-theme="warm"] .bg-cyan-900\/30 { background-color: rgba(120,53,15,0.3) !important; }
+
+/* ── OLED-Theme (Schwarzer Hintergrund, Cyan bleibt) ─ */
+[data-theme="oled"] .bg-\[\#0a0a0a\],
+[data-theme="oled"] .bg-\[\#0d0d0d\],
+[data-theme="oled"] .bg-\[\#111\] { background-color: #000000 !important; }
+
+/* ── App-Hintergrund via CSS-Variable ─────────────────────────────────────── */
+.ss-bg-base { background-color: var(--ss-bg-base, #0a0a0a); }

@@ -43,7 +43,7 @@ export function ThemeSwitcher() {
             type="button"
             onClick={() => setTheme(theme.id)}
             aria-pressed={isActive}
-            aria-label={${theme.name}: }
+            aria-label={`${theme.name}: ${theme.description}`}
             title={theme.description}
             style={{
               display: "flex",

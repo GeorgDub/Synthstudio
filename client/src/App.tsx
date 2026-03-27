@@ -51,6 +51,9 @@ import { ShortcutsHelp } from "@/components/ShortcutsHelp";
 import { UpdateBadge } from "@/components/UpdateBadge";
 import { useCollabSession } from "@/hooks/useCollabSession";
 import { useCollabSync } from "@/hooks/useCollabSync";
+import { useSessionStore } from "@/store/useSessionStore";
+import { CollabSplitView } from "@/components/CollabSplitView";
+import { ThemeSettings, initTheme } from "@/components/Settings";
 
 // ─── App ──────────────────────────────────────────────────────────────────────
 
@@ -59,6 +62,8 @@ export default function App() {
   const electron = useElectron();
   // ── Kollaborations-Session (für Sync) ─────────────────────────────────────────
   const collab = useCollabSession();
+  const session = useSessionStore();
+  const inSession = session.status === "hosting" || session.status === "joined";
   // ── Dialog-State ────────────────────────────────────────────────────────────────
   const [showNewProjectDialog, setShowNewProjectDialog] = useState(false);
 
@@ -81,9 +86,13 @@ export default function App() {
   // ── Arbeitsbereich-Tabs ────────────────────────────────────────────────────
   const [activeTab, setActiveTab] = useState<"sequencer" | "song" | "humanizer" | "tools" | "kollaboration">("sequencer");
 
-  // ── Dialog-State für MIDI und Shortcuts ──────────────────────────────────
+  // ── Dialog-State für MIDI, Shortcuts und Einstellungen ──────────────────
   const [showMidiSettings, setShowMidiSettings] = useState(false);
   const [showShortcutsHelp, setShowShortcutsHelp] = useState(false);
+  const [showThemeSettings, setShowThemeSettings] = useState(false);
+
+  // ── Theme beim Start laden ─────────────────────────────────────────────────
+  React.useEffect(() => { initTheme(); }, []);
 
   // ── MIDI-Hook ─────────────────────────────────────────────────────────────
   const midi = useMidi({
@@ -149,12 +158,21 @@ export default function App() {
   }, [dm, project]);
 
   // ── Kollaborations-Sync ──────────────────────────────────────────────────────
-  const { collabToggleStep, collabBpmChange, collabPlayStop } = useCollabSync({
+  const {
+    collabToggleStep,
+    collabBpmChange,
+    collabPlayStop,
+    remoteToggleStep,
+    remoteSetActivePattern,
+    outputMode,
+    setOutputMode,
+  } = useCollabSync({
     broadcast: collab.broadcast,
     dm,
     setBpm: project.setBpm,
     isPlaying: project.isPlaying,
     togglePlayStop: project.togglePlayStop,
+    samples: project.samples,
   });
   // dm-Objekt mit collab-fähigem toggleStep (kapselt Senden des Events)
   const collabDm = useMemo(
@@ -475,6 +493,15 @@ export default function App() {
                 ?
               </button>
 
+              {/* Theme-Einstellungen-Button */}
+              <button
+                onClick={() => setShowThemeSettings(true)}
+                title="Design-Einstellungen"
+                className="w-8 h-8 rounded flex items-center justify-center text-xs bg-slate-800 text-slate-500 hover:bg-slate-700 hover:text-slate-300 transition-colors duration-100"
+              >
+                🎨
+              </button>
+
               {/* Auto-Updater-Status (nur in Electron sichtbar) */}
               {electron.isElectron && <UpdateBadge />}
 
@@ -591,6 +618,29 @@ export default function App() {
       {/* Tastatur-Shortcuts-Hilfe */}
       {showShortcutsHelp && (
         <ShortcutsHelp onClose={() => setShowShortcutsHelp(false)} />
+      )}
+
+      {/* Design-Theme-Einstellungen */}
+      <ThemeSettings
+        isOpen={showThemeSettings}
+        onClose={() => setShowThemeSettings(false)}
+      />
+
+      {/* Kollaborations-Splitscreen (Vollbild-Overlay wenn Session aktiv) */}
+      {inSession && (
+        <CollabSplitView
+          localDm={collabDm}
+          samples={project.samples}
+          bpm={project.bpm}
+          isPlaying={project.isPlaying}
+          onPlayStop={collabPlayStop}
+          onBpmChange={collabBpmChange}
+          outputMode={outputMode}
+          onOutputModeChange={setOutputMode}
+          remoteToggleStep={remoteToggleStep}
+          remoteSetActivePattern={remoteSetActivePattern}
+          onLeave={() => collab.leaveSession()}
+        />
       )}
 
       {/* Neues-Projekt-Dialog mit Template-Auswahl */}
