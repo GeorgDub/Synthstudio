@@ -57,6 +57,15 @@ const electronAPI = {
     importZip: (zipPath) => electron_1.ipcRenderer.invoke("samples:import-zip", zipPath),
     /** Räumt temporäre ZIP-Extraktions-Dateien auf */
     cleanupZip: (importId) => electron_1.ipcRenderer.invoke("samples:cleanup-zip", importId),
+    // ── MIDI-Import ────────────────────────────────────────────────────────────
+    /** Öffnet den nativen MIDI-Datei-Dialog und gibt den gewählten Pfad zurück */
+    openMidiDialog: () => electron_1.ipcRenderer.invoke("midi:open-dialog"),
+    /**
+     * Liest eine MIDI-Datei und gibt die Bytes als Array zurück.
+     * Verwendet Uint8Array-serialisierung (Array<number>), da ArrayBuffer nicht
+     * direkt über den IPC-Kanal übertragen werden kann.
+     */
+    importMidiFile: (filePath) => electron_1.ipcRenderer.invoke("midi:import-file", filePath),
     // Import-Events
     onImportStarted: createEventListener("samples:import-started"),
     onImportProgress: createEventListener("samples:import-progress"),
@@ -134,11 +143,20 @@ const electronAPI = {
     onMenuOpenSampleBrowser: createVoidListener("menu:open-sample-browser"),
     onMenuImportSamples: createEventListener("menu:import-samples"),
     onMenuImportSampleFolder: createEventListener("menu:import-sample-folder"),
+    onMenuImportMidi: createEventListener("menu:import-midi"),
     onMenuTransportToggle: createVoidListener("menu:transport-toggle"),
     onMenuTransportRecord: createVoidListener("menu:transport-record"),
+    onMenuRecord: createVoidListener("menu:record"),
+    onMenuToggleFullscreen: createVoidListener("menu:toggle-fullscreen"),
+    onMenuBounce: createVoidListener("menu:bounce"),
+    onMenuOpenSampleLibrary: createVoidListener("menu:open-sample-library"),
     // ── Keyboard-Shortcuts (globale Media-Keys) ──────────────────────────────────
     onShortcutTransportToggle: createVoidListener("shortcut:transport-toggle"),
     onShortcutTransportStop: createVoidListener("shortcut:transport-stop"),
+    onShortcutPlayStop: createVoidListener("shortcut:play-stop"),
+    onShortcutUndo: createVoidListener("shortcut:undo"),
+    onShortcutRedo: createVoidListener("shortcut:redo"),
+    onShortcutSave: createVoidListener("shortcut:save"),
     // ── Auto-Updater ──────────────────────────────────────────────────────────
     checkForUpdates: () => {
         electron_1.ipcRenderer.send("updater:check");
@@ -166,7 +184,7 @@ const electronAPI = {
     onRecentProjectsChanged: createEventListener("store:recent-changed"),
     // ── Waveform-Preview ──────────────────────────────────────────────────────
     /** Waveform-Peaks für eine lokale Audio-Datei abrufen */
-    getWaveformPeaks: (filePath, numPeaks) => electron_1.ipcRenderer.invoke("waveform:get-peaks", filePath, numPeaks ?? 200),
+    analyzeWaveform: (filePath, numPeaks) => electron_1.ipcRenderer.invoke("waveform:get-peaks", filePath, numPeaks ?? 200),
     /** Audio-Datei-Metadaten abrufen */
     getAudioMetadata: (filePath) => electron_1.ipcRenderer.invoke("waveform:get-metadata", filePath),
     // ── Drag & Drop ──────────────────────────────────────────────────────────
@@ -199,6 +217,25 @@ const electronAPI = {
     /** Stereo WAV-Export: Separate L/R-Kanäle als Stereo-WAV-Datei speichern */
     exportWavStereo: (options) => electron_1.ipcRenderer.invoke("export:wav-stereo", options),
     /** Projekt-Import: .synth/.json-Datei lesen */
-    importProjectFile: (filePath) => electron_1.ipcRenderer.invoke("export:import-project", filePath),
+    importProject: (filePath) => electron_1.ipcRenderer.invoke("export:import-project", filePath),
+    /** Bundle-Export: WAV-Stems + MIDI + Metadaten als ZIP */
+    exportBundle: (options) => electron_1.ipcRenderer.invoke("export:bundle", options),
+    // ── Kollaborations-Session ────────────────────────────────────────────────────
+    /** Startet den lokalen Kollaborations-WebSocket-Server. */
+    startCollabServer: () => electron_1.ipcRenderer.invoke("collab:start"),
+    /** Stoppt den Kollaborations-Server. */
+    stopCollabServer: () => electron_1.ipcRenderer.invoke("collab:stop"),
+    /** Gibt lokale IP-Adresse und Server-Port zurück. */
+    getCollabAddress: () => electron_1.ipcRenderer.invoke("collab:get-address"),
+    /** Startet UDP-Broadcast damit andere die Session finden. */
+    startCollabAnnounce: (roomCode) => electron_1.ipcRenderer.invoke("collab:announce-start", roomCode),
+    /** Stoppt den UDP-Broadcast. */
+    stopCollabAnnounce: () => electron_1.ipcRenderer.invoke("collab:announce-stop"),
+    /** Startet den UDP-Listener für entdeckte Sessions. */
+    startCollabDiscovery: () => electron_1.ipcRenderer.invoke("collab:discovery-start"),
+    /** Stoppt den UDP-Listener. */
+    stopCollabDiscovery: () => electron_1.ipcRenderer.invoke("collab:discovery-stop"),
+    /** Gibt alle aktuell sichtbaren Sessions im Netzwerk zurück. */
+    getDiscoveredSessions: () => electron_1.ipcRenderer.invoke("collab:get-discovered"),
 };
 electron_1.contextBridge.exposeInMainWorld("electronAPI", electronAPI);

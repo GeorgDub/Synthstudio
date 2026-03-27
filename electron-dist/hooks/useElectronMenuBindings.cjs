@@ -61,6 +61,9 @@ function useElectronMenuBindings(bindings) {
         if (bindings.onExport) {
             cleanups.push(electron.onMenuExportProject?.(bindings.onExport));
         }
+        if (bindings.onImportProject) {
+            cleanups.push(electron.onMenuImportProject?.(bindings.onImportProject));
+        }
         // ── Audio-Menü ──────────────────────────────────────────────────────────
         if (bindings.onImportSamples) {
             cleanups.push(electron.onMenuImportSamples?.(() => bindings.onImportSamples()));
@@ -89,16 +92,11 @@ function useElectronMenuBindings(bindings) {
             cleanups.push(electron.onMenuTransportRecord?.(bindings.onRecord));
         }
         // ── Ansicht & Bounce ─────────────────────────────────────────────────────
-        // onMenuToggleFullscreen und onMenuBounce sind in types.d.ts vorhanden
-        // und werden über den useElectron()-Hook als optionale Methoden genutzt.
-        // Da sie noch nicht im browserAPI-Fallback sind, prüfen wir explizit.
-        if (bindings.onToggleFullscreen && "onMenuToggleFullscreen" in electron) {
-            const fn = electron["onMenuToggleFullscreen"];
-            cleanups.push(fn?.(bindings.onToggleFullscreen));
+        if (bindings.onToggleFullscreen) {
+            cleanups.push(electron.onMenuToggleFullscreen?.(bindings.onToggleFullscreen));
         }
-        if (bindings.onBounce && "onMenuBounce" in electron) {
-            const fn = electron["onMenuBounce"];
-            cleanups.push(fn?.(bindings.onBounce));
+        if (bindings.onBounce) {
+            cleanups.push(electron.onMenuBounce?.(bindings.onBounce));
         }
         // ── Cleanup ─────────────────────────────────────────────────────────────
         return () => {
@@ -111,6 +109,7 @@ function useElectronMenuBindings(bindings) {
         bindings.onSave,
         bindings.onSaveAs,
         bindings.onExport,
+        bindings.onImportProject,
         bindings.onImportSamples,
         bindings.onImportFolder,
         bindings.onOpenSampleLibrary,

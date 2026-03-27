@@ -47,6 +47,13 @@ import {
   getCollabServerPort,
   getLocalIp,
 } from "./collab-server";
+import {
+  startDiscoveryAnnounce,
+  stopDiscoveryAnnounce,
+  startDiscoveryListen,
+  stopDiscoveryListen,
+  getDiscoveredSessions,
+} from "./collab-discovery";
 
 const windowManager = new WindowManager();
 
@@ -1021,6 +1028,7 @@ function registerIpcHandlers(): void {
   ipcMain.handle("collab:stop", async () => {
     try {
       await stopCollabServer();
+      stopDiscoveryAnnounce();
       return { success: true };
     } catch (err) {
       return { success: false, error: String(err) };
@@ -1033,6 +1041,31 @@ function registerIpcHandlers(): void {
       port: getCollabServerPort(),
       running: isCollabServerRunning(),
     };
+  });
+
+  ipcMain.handle("collab:announce-start", (_event, roomCode: string) => {
+    const port = getCollabServerPort();
+    if (port > 0) startDiscoveryAnnounce(roomCode, port);
+    return { success: true };
+  });
+
+  ipcMain.handle("collab:announce-stop", () => {
+    stopDiscoveryAnnounce();
+    return { success: true };
+  });
+
+  ipcMain.handle("collab:discovery-start", () => {
+    startDiscoveryListen();
+    return { success: true };
+  });
+
+  ipcMain.handle("collab:discovery-stop", () => {
+    stopDiscoveryListen();
+    return { success: true };
+  });
+
+  ipcMain.handle("collab:get-discovered", () => {
+    return getDiscoveredSessions();
   });
 
   // ── Auto-Updater (manueller Check aus dem Renderer) ──────────────────────────

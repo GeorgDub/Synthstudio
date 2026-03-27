@@ -62,6 +62,8 @@ const export_1 = require("./export.cjs");
 const updater_1 = require("./updater.cjs");
 const store_1 = require("./store.cjs");
 const zip_import_1 = require("./zip-import.cjs");
+const collab_server_1 = require("./collab-server.cjs");
+const collab_discovery_1 = require("./collab-discovery.cjs");
 const windowManager = new windows_1.WindowManager();
 // ─── Konstanten ──────────────────────────────────────────────────────────────
 const isDev = process.env.NODE_ENV === "development";
@@ -127,7 +129,38 @@ function detectCategory(filePath) {
     }
     return "other";
 }
-// ─── Haupt-Fenster ───────────────────────────────────────────────────────────
+/** Generiert Auto-Tags aus dem Dateinamen (kick, snare, loop, …) */
+function autoTag(filePath) {
+    const name = path.basename(filePath).toLowerCase();
+    if (/kick|bd|bass.?drum|bassdrum/.test(name))
+        return ["kick"];
+    if (/snare|sd|rimshot/.test(name))
+        return ["snare"];
+    if (/clap/.test(name))
+        return ["clap"];
+    if (/hihat|hh|hat/.test(name)) {
+        if (/open|oh/.test(name))
+            return ["open-hat"];
+        return ["closed-hat"];
+    }
+    if (/tom|floor|rack/.test(name))
+        return ["tom"];
+    if (/crash|ride|cym/.test(name))
+        return ["cymbal"];
+    if (/perc|conga|bongo|shaker|tamb/.test(name))
+        return ["percussion"];
+    if (/bass|sub/.test(name))
+        return ["bass"];
+    if (/lead|synth|pad|keys/.test(name))
+        return ["synth"];
+    if (/fx|effect|noise|sweep/.test(name))
+        return ["fx"];
+    if (/loop|break/.test(name))
+        return ["loop"];
+    if (/vocal|vox|voice/.test(name))
+        return ["vocal"];
+    return [];
+}
 function createWindow() {
     // Gespeicherte Fenstergröße/-position aus dem Store laden
     const savedBounds = appStore?.get("windowBounds");
@@ -524,6 +557,20 @@ function buildMenu() {
                 },
                 { type: "separator" },
                 {
+                    label: "MIDI-Datei importieren…",
+                    click: async () => {
+                        const result = await electron_1.dialog.showOpenDialog(mainWindow, {
+                            title: "MIDI-Datei importieren",
+                            filters: [{ name: "MIDI-Dateien", extensions: ["mid", "midi"] }],
+                            properties: ["openFile"],
+                        });
+                        if (!result.canceled && result.filePaths.length > 0) {
+                            mainWindow?.webContents.send("menu:import-midi", result.filePaths[0]);
+                        }
+                    },
+                },
+                { type: "separator" },
+                {
                     label: "Transport: Play/Stop",
                     accelerator: "Space",
                     click: () => mainWindow?.webContents.send("menu:transport-toggle"),
@@ -632,6 +679,7 @@ async function startFolderImport(importId, folderPath) {
                         path: filePath,
                         category,
                         size: stat.size,
+                        tags: autoTag(filePath),
                     });
                     imported++;
                     // Progress alle 5 Dateien oder bei letzter Datei senden
@@ -780,9 +828,24 @@ function registerIpcHandlers() {
     });
     // ── Folder-Import ────────────────────────────────────────────────────────────
     electron_1.ipcMain.handle("samples:import-folder", async (_event, folderPath) => {
+        if (!folderPath || typeof folderPath !== "string") {
+            throw new Error("Ungültiger Ordnerpfad");
+        }
+        const resolvedPath = path.resolve(folderPath);
+        let stat;
+        try {
+            stat = await fs.promises.stat(resolvedPath);
+        }
+        catch {
+            throw new Error("Ordnerpfad nicht gefunden");
+        }
+        if (!stat.isDirectory()) {
+            throw new Error("Der angegebene Pfad ist kein Ordner");
+        }
         const importId = `import_${Date.now()}`;
-        // Import asynchron starten (nicht await – Progress-Events kommen über webContents.send)
-        startFolderImport(importId, folderPath);
+        // Import-Start signalisieren, dann asynchron starten
+        mainWindow?.webContents.send("samples:import-started", { importId });
+        void startFolderImport(importId, resolvedPath);
         return { importId };
     });
     electron_1.ipcMain.handle("samples:cancel-import", async (_event, importId) => {
@@ -838,6 +901,85 @@ function registerIpcHandlers() {
         if (electron_1.Notification.isSupported()) {
             new electron_1.Notification({ title, body }).show();
         }
+    });
+    // ── MIDI-Datei-Import ─────────────────────────────────────────────────────────
+    electron_1.ipcMain.handle("midi:import-file", async (_event, filePath) => {
+        // Sicherheitscheck: Nur .mid und .midi erlaubt
+        const ext = path.extname(filePath).toLowerCase();
+        if (ext !== ".mid" && ext !== ".midi") {
+            return { success: false, error: "Nur .mid/.midi Dateien erlaubt" };
+        }
+        const resolvedPath = path.resolve(filePath);
+        try {
+            await fs.promises.access(resolvedPath, fs.constants.R_OK);
+        }
+        catch {
+            return { success: false, error: "Datei nicht lesbar" };
+        }
+        try {
+            const buffer = await fs.promises.readFile(resolvedPath);
+            const data = Uint8Array.from(buffer);
+            return { success: true, data: Array.from(data), fileName: path.basename(resolvedPath) };
+        }
+        catch (err) {
+            return { success: false, error: String(err) };
+        }
+    });
+    electron_1.ipcMain.handle("midi:open-dialog", async () => {
+        const result = await electron_1.dialog.showOpenDialog(mainWindow, {
+            title: "MIDI-Datei importieren",
+            filters: [{ name: "MIDI-Dateien", extensions: ["mid", "midi"] }],
+            properties: ["openFile"],
+        });
+        return result;
+    });
+    // ── Kollaborations-Server ─────────────────────────────────────────────────────
+    electron_1.ipcMain.handle("collab:start", async () => {
+        try {
+            const port = await (0, collab_server_1.startCollabServer)(0);
+            return { success: true, port };
+        }
+        catch (err) {
+            return { success: false, error: String(err) };
+        }
+    });
+    electron_1.ipcMain.handle("collab:stop", async () => {
+        try {
+            await (0, collab_server_1.stopCollabServer)();
+            (0, collab_discovery_1.stopDiscoveryAnnounce)();
+            return { success: true };
+        }
+        catch (err) {
+            return { success: false, error: String(err) };
+        }
+    });
+    electron_1.ipcMain.handle("collab:get-address", () => {
+        return {
+            ip: (0, collab_server_1.getLocalIp)(),
+            port: (0, collab_server_1.getCollabServerPort)(),
+            running: (0, collab_server_1.isCollabServerRunning)(),
+        };
+    });
+    electron_1.ipcMain.handle("collab:announce-start", (_event, roomCode) => {
+        const port = (0, collab_server_1.getCollabServerPort)();
+        if (port > 0)
+            (0, collab_discovery_1.startDiscoveryAnnounce)(roomCode, port);
+        return { success: true };
+    });
+    electron_1.ipcMain.handle("collab:announce-stop", () => {
+        (0, collab_discovery_1.stopDiscoveryAnnounce)();
+        return { success: true };
+    });
+    electron_1.ipcMain.handle("collab:discovery-start", () => {
+        (0, collab_discovery_1.startDiscoveryListen)();
+        return { success: true };
+    });
+    electron_1.ipcMain.handle("collab:discovery-stop", () => {
+        (0, collab_discovery_1.stopDiscoveryListen)();
+        return { success: true };
+    });
+    electron_1.ipcMain.handle("collab:get-discovered", () => {
+        return (0, collab_discovery_1.getDiscoveredSessions)();
     });
     // ── Auto-Updater (manueller Check aus dem Renderer) ──────────────────────────
     electron_1.ipcMain.on("updater:check", () => {

@@ -83,15 +83,17 @@ function ElectronDropZone({ onAudioFiles, onFolder, onProject, children, }) {
         if (!isElectronEnv || !window.electronAPI)
             return;
         const cleanupBulk = window.electronAPI.onDragDropBulkImport?.((data) => {
-            onAudioFiles?.(data.audioFiles ?? []);
+            const audioPaths = data.audioFiles.map((f) => f.path);
+            if (audioPaths.length > 0)
+                onAudioFiles?.(audioPaths);
             if (data.folders?.[0])
-                onFolder?.(data.folders[0]);
+                onFolder?.(data.folders[0].path);
         });
         const cleanupSample = window.electronAPI.onDragDropLoadSample?.((data) => {
-            onAudioFiles?.([data.filePath]);
+            onAudioFiles?.([data.path]);
         });
-        const cleanupProject = window.electronAPI.onDragDropOpenProject?.((data) => {
-            onProject?.(data.filePath);
+        const cleanupProject = window.electronAPI.onDragDropOpenProject?.((filePath) => {
+            onProject?.(filePath);
         });
         return () => {
             cleanupBulk?.();

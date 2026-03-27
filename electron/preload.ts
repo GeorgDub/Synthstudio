@@ -513,6 +513,32 @@ const electronAPI = {
   getCollabAddress: (): Promise<{ ip: string; port: number; running: boolean }> =>
     ipcRenderer.invoke("collab:get-address"),
 
+  /** Startet UDP-Broadcast damit andere die Session finden. */
+  startCollabAnnounce: (roomCode: string): Promise<{ success: boolean }> =>
+    ipcRenderer.invoke("collab:announce-start", roomCode),
+
+  /** Stoppt den UDP-Broadcast. */
+  stopCollabAnnounce: (): Promise<{ success: boolean }> =>
+    ipcRenderer.invoke("collab:announce-stop"),
+
+  /** Startet den UDP-Listener für entdeckte Sessions. */
+  startCollabDiscovery: (): Promise<{ success: boolean }> =>
+    ipcRenderer.invoke("collab:discovery-start"),
+
+  /** Stoppt den UDP-Listener. */
+  stopCollabDiscovery: (): Promise<{ success: boolean }> =>
+    ipcRenderer.invoke("collab:discovery-stop"),
+
+  /** Gibt alle aktuell sichtbaren Sessions im Netzwerk zurück. */
+  getDiscoveredSessions: (): Promise<Array<{
+    roomCode: string;
+    hostIp: string;
+    hostName: string;
+    port: number;
+    lastSeen: number;
+  }>> =>
+    ipcRenderer.invoke("collab:get-discovered"),
+
 };
 
 contextBridge.exposeInMainWorld("electronAPI", electronAPI);

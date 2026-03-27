@@ -272,8 +272,22 @@ async function importZipFile(zipPath, importId, win) {
 // ─── IPC-Handler registrieren ─────────────────────────────────────────────────
 function registerZipImportHandlers(win) {
     electron_1.ipcMain.handle("samples:import-zip", async (_event, zipPath) => {
+        if (!zipPath || typeof zipPath !== "string") {
+            throw new Error("Ungültiger ZIP-Pfad");
+        }
+        const resolvedPath = path.resolve(zipPath);
+        let stat;
+        try {
+            stat = await fs.promises.stat(resolvedPath);
+        }
+        catch {
+            throw new Error("ZIP-Datei nicht gefunden");
+        }
+        if (!stat.isFile() || path.extname(resolvedPath).toLowerCase() !== ".zip") {
+            throw new Error("Der angegebene Pfad ist keine ZIP-Datei");
+        }
         const importId = `zip_import_${Date.now()}`;
-        importZipFile(zipPath, importId, win);
+        void importZipFile(resolvedPath, importId, win);
         return { importId };
     });
     electron_1.ipcMain.handle("samples:cleanup-zip", async (_event, importId) => {
