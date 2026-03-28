@@ -1,0 +1,6 @@
+# Kompilierte Electron-Dateien (werden von tsc generiert)
+# Diese landen in dist-electron/ im Root-Verzeichnis
+*.js
+*.js.map
+*.d.ts
+!types.d.ts

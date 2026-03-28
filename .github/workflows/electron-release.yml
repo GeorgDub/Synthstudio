@@ -1,0 +1,107 @@
+name: Electron Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version (z.B. 1.0.0) – optional, überschreibt package.json"
+        required: false
+        default: ""
+
+# Nur Lesezugriff auf das eigene (private) Repo nötig.
+# Schreibzugriff auf Synthstudio-releases erfolgt über RELEASES_TOKEN.
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux
+          - os: windows-latest
+            platform: windows
+          - os: macos-latest
+            platform: mac
+
+    runs-on: ${{ matrix.os }}
+    name: Build (${{ matrix.platform }})
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Node.js einrichten
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: pnpm einrichten
+        uses: pnpm/action-setup@v4
+
+      - name: Version aus workflow_dispatch übernehmen (optional)
+        if: github.event_name == 'workflow_dispatch' && inputs.version != ''
+        run: |
+          node -e "const fs=require('fs'); const p=JSON.parse(fs.readFileSync('package.json','utf8')); p.version='${{ inputs.version }}'; fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\n');"
+
+      - name: Dependencies installieren
+        run: pnpm install --frozen-lockfile
+
+      - name: TypeScript kompilieren (Electron)
+        run: pnpm exec tsc --project tsconfig.electron.json
+
+      - name: JS zu CJS umbenennen
+        run: node scripts/rename-to-cjs.cjs
+
+      - name: collab-server mit ws bündeln (esbuild)
+        run: pnpm exec esbuild electron/collab-server.ts --bundle --platform=node --format=cjs --external:bufferutil --external:utf-8-validate --outfile=electron-dist/collab-server.cjs
+
+      - name: updater mit electron-updater bündeln (esbuild)
+        run: pnpm exec esbuild electron/updater.ts --bundle --platform=node --format=cjs --external:electron --outfile=electron-dist/updater.cjs
+
+      - name: React-App bauen (Vite)
+        run: pnpm exec vite build
+
+      - name: Staging-Verzeichnis erstellen
+        run: node scripts/prepare-electron-build.cjs
+
+      # RELEASES_TOKEN = PAT mit "repo"-Scope auf GeorgDub/Synthstudio-releases
+      # (im privaten Repo als Repository Secret hinterlegen)
+      - name: Electron-App bauen (Linux)
+        if: matrix.platform == 'linux'
+        env:
+          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+        run: pnpm exec electron-builder --linux AppImage deb --publish always
+
+      - name: Electron-App bauen (Windows)
+        if: matrix.platform == 'windows'
+        env:
+          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: pnpm exec electron-builder --win nsis --publish always
+
+      - name: Electron-App bauen (macOS)
+        if: matrix.platform == 'mac'
+        env:
+          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: pnpm exec electron-builder --mac dmg zip --publish always
+
+      - name: Build-Artefakte sichern (lokal)
+        uses: actions/upload-artifact@v4
+        with:
+          name: electron-${{ matrix.platform }}
+          path: |
+            release/**/*.AppImage
+            release/**/*.deb
+            release/**/*.exe
+            release/**/*.dmg
+            release/**/*.zip
+            release/**/*.yml
+          retention-days: 7
+

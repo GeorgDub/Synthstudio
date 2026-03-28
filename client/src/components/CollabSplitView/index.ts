@@ -1,0 +1,1 @@
+export { CollabSplitView } from "./CollabSplitView";

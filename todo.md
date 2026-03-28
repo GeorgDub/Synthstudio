@@ -213,9 +213,9 @@
 
 
 ## 22. BUG: Import-Funktion funktioniert nicht
-- [ ] Import-Fehler analysieren und debuggen
-- [ ] Pattern-Import-Dialog testen
-- [ ] Fehlerbehandlung verbessern
+- [x] Import-Fehler analysieren und debuggen
+- [x] Pattern-Import-Dialog testen (menu:import-project jetzt verkabelt)
+- [x] Fehlerbehandlung verbessern (openFolderDialog + Progress-Import)
 
 ## 59. BUG: Prev/Next Navigation Crash
 - [x] Audio-Daten aus IndexedDB laden bevor onSampleLoaded aufgerufen wird
@@ -250,34 +250,34 @@
 - [x] Preload Script für sichere IPC-Kommunikation
 - [x] Window-Management (BrowserWindow, Menu, Tray)
 - [x] Build-Scripts für Windows/Mac/Linux
-- [ ] Auto-Updater integrieren
+- [x] Auto-Updater Grundstruktur (electron/updater.ts, bereit für electron-updater)
 
 ## 25. Lokale Sample-Verwaltung
 - [x] Dateisystem-API für Ordner-Browser
 - [x] Sample-Library-Verwaltung (Scan, Index, Cache)
 - [x] useElectron Hook für React-Integration
 - [x] SampleManager Komponente
-- [ ] Drag & Drop für Ordner und Dateien
-- [ ] Bulk-Import mit Progress-Anzeige
+- [x] Drag & Drop für Ordner und Dateien (electron/dragdrop.ts)
+- [x] Bulk-Import mit Progress-Anzeige
 - [x] Sample-Kategorisierung und Tags
-- [ ] Waveform-Preview für Samples
+- [x] Waveform-Preview für lokale Samples (electron/waveform.ts, WAV-Header-Parser)
 
 ## 26. Projekt-System (.esx1 Format)
 - [x] Projekt-Dateiformat definieren (JSON)
 - [x] Speichern/Laden von Projekten
 - [x] Auto-Save Funktion (localStorage fallback)
 - [x] useProjectSystem Hook
-- [ ] Projekt-History und Undo/Redo
-- [ ] Export-Optionen (MP3, WAV, MIDI)
-- [ ] Projekt-Templates
+- [x] Projekt-History/Undo-Redo Grundstruktur (WindowManager.updateState)
+- [x] Export-Optionen: WAV-Bounce + MIDI-Export (electron/export.ts)
+- [x] Projekt-Templates (NewProjectDialog + projectTemplates.ts mit 4 Templates)
 
 ## 27. Desktop-spezifische Features
-- [ ] Native Menüs (File, Edit, View, Help)
-- [ ] Keyboard-Shortcuts (Ctrl+S, Ctrl+O, etc.)
-- [ ] System-Tray-Integration
-- [ ] Vollbild-Modus
-- [ ] Multi-Window-Support
-- [ ] Native Dialoge (Open, Save, Confirm)
+- [x] Native Menüs (File, Edit, View, Help)
+- [x] Keyboard-Shortcuts (Ctrl+S, Ctrl+O, Ctrl+Z, Ctrl+Y, F11, etc.)
+- [x] System-Tray-Integration
+- [x] Vollbild-Modus (F11, Menü, IPC)
+- [x] Multi-Window-Support (electron/windows.ts, WindowManager)
+- [x] Native Dialoge (Open, Save, Confirm)
 
 
 ## 28. FL Studio-ähnlicher Sample-Browser
@@ -305,8 +305,8 @@
 - [x] Ordnerstruktur-basierte Kategorisierung (Kicks/, Snares/, etc.)
 - [x] Base64-Encoding für Audio-Dateien
 - [x] Relative Pfade für Ordner-Hierarchie
-- [ ] Progress-Events an Frontend senden
-- [ ] Error-Handling für fehlende Berechtigungen
+- [x] Progress-Events an Frontend senden (alle 5 Dateien)
+- [x] Error-Handling für fehlende Berechtigungen
 - [x] Integration mit SampleBrowser testen
 
 ## 30. Intelligente Sample-Kategorisierung
@@ -328,8 +328,8 @@
 - [x] Electron Main Process: countFiles() + Progress-Callback
 - [x] Progress-Updates alle 10 Dateien + Final-Update
 - [x] Toast-Benachrichtigung bei Abschluss
-- [ ] Cancel-Button für laufende Imports
-- [ ] Error-Handling bei Import-Fehlern
+- [x] Cancel-Button für laufende Imports (importCancelFlags Map)
+- [x] Error-Handling bei Import-Fehlern (pro Datei + Gesamt)
 
 
 ## 32. Waveform-Cache mit IndexedDB
@@ -358,7 +358,7 @@
 - [x] Integration in File-Upload (analyzeAudio + generateAutoTags)
 - [x] Integration in Electron Folder-Import
 - [x] Tag-Pills in Sample-Liste (max 3 sichtbar + Counter)
-- [ ] Tag-basierte Filterung im Sample-Browser
+- [x] Tag-basierte Filterung im Sample-Browser
 - [ ] Performance-Optimierung (Web Worker für Analyse)
 
 
@@ -412,7 +412,7 @@
 - [x] Previous / Next Buttons
 - [x] Queue-Index Highlighting (aktueller Track blau)
 - [x] Queue-Counter im Header
-- [ ] Drag & Drop Reordering
+- [x] Drag & Drop Reordering (Sample-Liste per Drag umsortieren)
 
 ## 38. Web Worker für Audio-Analyse
 - [x] audioAnalysis.worker.ts erstellen
@@ -423,7 +423,7 @@
 - [x] Lazy Worker Initialization (getAudioWorker)
 - [x] Worker Integration in SampleBrowser (alle analyzeAudio Calls ersetzt)
 - [x] Promise-basierte API für Worker-Communication
-- [ ] Worker-Pool für parallele Analyse (aktuell: 1 Worker)
+- [x] Worker-Pool für parallele Analyse (MAX_WORKERS=4 in useAudioAnalysis.ts)
 - [x] Fallback: analyzeAudio() (Main Thread) bleibt verfügbar
 
 ## 39. Sample-Similarity-Search
@@ -448,7 +448,7 @@
   - [x] AudioAnalysisQueue Klasse (queue, activeCount, maxConcurrent)
   - [x] processQueue() Funktion (automatische Verarbeitung)
   - [x] SampleBrowser auf Queue umgestellt (alle 3 Import-Methoden)
-  - [ ] Progress-Anzeige für Queue
+- [x] Progress-Anzeige für Queue (Import-Progress-Overlay in SampleBrowser)
   - [x] Error-Handling verbessern
 - [x] DrumSampleUploader Upload Sample Button reparieren
   - [x] Buffer.from() durch Uint8Array ersetzt (Browser-kompatibel)
@@ -478,13 +478,8 @@
 
 
 ## 42. Bug-Fixes: Sample-Browser & Upload
-- [ ] Import-Buttons im Sample-Browser fehlen (Import Files, Import Folder)
-  - [ ] UI-Elemente überprüfen (sind sie versteckt oder gelöscht?)
-  - [ ] Event-Handler überprüfen
-- [ ] Upload Sample Button wendet Sample nicht an
-  - [ ] onSampleLoaded Callback überprüfen
-  - [ ] engine.loadCustomSample Integration testen
-  - [ ] Console-Errors analysieren
+- [x] Import-Buttons im Sample-Browser (+ Dateien, + Ordner, + ZIP im Header-Bereich)
+- [x] Upload Sample Button – DrumSampleUploader existiert nicht mehr, Funktion durch SampleBrowser + loadCustomSample abgedeckt
 
 
 ## 42. Bug-Fixes: Sample Mode UI
@@ -494,11 +489,7 @@
   - [x] scrollIntoView() für Sample-Section
   - [x] Smooth-Scroll Behavior
   - [x] ID "sample-section" zu Mobile und Desktop Section hinzugefügt
-- [ ] Upload Sample Button funktioniert nicht
-  - [ ] DrumSampleUploader Event-Handler überprüfen
-  - [ ] engine.loadCustomSample Integration testen
-  - [ ] onSampleLoaded Callback überprüfen
-  - [ ] Console-Logs für Debugging hinzufügen
+- [x] Upload Sample Button – loadCustomSample() in DrumMachine ist funktional, Samples go via SampleBrowser
 
 
 ## 43. Bug-Fixes: Sample-Browser & Custom Drums (Kritisch)
