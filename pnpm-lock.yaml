@@ -291,7 +291,7 @@ importers:
         specifier: ^3.0.1
         version: 3.0.1
       pnpm:
-        specifier: ^10.15.1
+        specifier: ^10.4.1
         version: 10.18.1
       postcss:
         specifier: ^8.4.47
