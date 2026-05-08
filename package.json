@@ -275,7 +275,7 @@
       "provider": "github",
       "owner": "GeorgDub",
       "repo": "Synthstudio-releases",
-      "releaseType": "release"
+      "releaseType": "draft"
     },
     "asar": false,
     "npmRebuild": false,
