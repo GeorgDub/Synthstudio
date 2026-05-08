@@ -45,6 +45,8 @@ jobs:
 
       - name: pnpm einrichten
         uses: pnpm/action-setup@v4
+        with:
+          version: 10.4.1
 
       - name: Version aus workflow_dispatch übernehmen (optional)
         if: github.event_name == 'workflow_dispatch' && inputs.version != ''
@@ -52,7 +54,7 @@ jobs:
           node -e "const fs=require('fs'); const p=JSON.parse(fs.readFileSync('package.json','utf8')); p.version='${{ inputs.version }}'; fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\n');"
 
       - name: Dependencies installieren
-        run: pnpm install --frozen-lockfile
+        run: pnpm install
 
       - name: TypeScript kompilieren (Electron)
         run: pnpm exec tsc --project tsconfig.electron.json
