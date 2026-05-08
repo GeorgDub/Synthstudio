@@ -212,7 +212,6 @@
         }
       ],
       "icon": "assets/icon.ico",
-      "publisherName": "Synthstudio",
       "verifyUpdateCodeSignature": false
     },
     "nsis": {
@@ -282,9 +281,6 @@
     "asar": false,
     "npmRebuild": false,
     "nodeGypRebuild": false,
-    "extraMetadata": {
-      "dependencies": {}
-    },
     "files": [
       "package.json",
       {
@@ -305,8 +301,7 @@
       },
       "!node_modules/**/*",
       "!**/node_modules/**/*"
-    ],
-    "buildVersion": "1.7.0"
+    ]
   },
   "author": {
     "name": "GeorgDub",
