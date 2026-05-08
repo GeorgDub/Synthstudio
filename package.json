@@ -5,6 +5,7 @@
   "license": "MIT",
   "main": "electron-dist/main.cjs",
   "scripts": {
+
     "dev": "cross-env NODE_ENV=development vite",
     "dev:electron": "concurrently \"cross-env VITE_DEV_SERVER_URL=http://localhost:5173 pnpm dev\" \"wait-on http://localhost:5173 && electron .\"",
     "build": "vite build && esbuild server/_core/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist",
@@ -15,15 +16,29 @@
     "compile:electron": "tsc --project tsconfig.electron.json && node scripts/rename-to-cjs.cjs && esbuild electron/collab-server.ts --bundle --platform=node --format=cjs --external:bufferutil --external:utf-8-validate --outfile=electron-dist/collab-server.cjs && esbuild electron/updater.ts --bundle --platform=node --format=cjs --external:electron --outfile=electron-dist/updater.cjs",
     "generate:icons": "npx tsx electron/assets/create-icons.ts",
     "start": "cross-env NODE_ENV=production node dist/index.js",
+
+    "dev": "NODE_ENV=development tsx watch server/_core/index.ts",
+    "dev:electron": "concurrently \"cross-env VITE_DEV_SERVER_URL=http://localhost:3000 npm run dev\" \"wait-on http://localhost:3000 && electron .\"",
+    "build": "vite build && esbuild server/_core/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist",
+    "build:electron": "npm run build && npm run compile:electron && electron-builder",
+    "build:electron:win": "npm run build && npm run compile:electron && electron-builder --win",
+    "build:electron:mac": "npm run build && npm run compile:electron && electron-builder --mac",
+    "build:electron:linux": "npm run build && npm run compile:electron && electron-builder --linux",
+    "compile:electron": "tsc --project tsconfig.electron.json",
+    "start": "NODE_ENV=production node dist/index.js",
+
     "start:electron": "electron .",
     "check": "tsc --noEmit",
     "format": "prettier --write .",
     "test": "vitest run",
+
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:report": "playwright show-report",
     "db:push": "drizzle-kit generate && drizzle-kit migrate",
+    "generate:icons": "tsx electron/assets/icon-generator.ts",
     "release": "pnpm build:electron --publish always"
+
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.693.0",
@@ -109,6 +124,7 @@
     "@vitejs/plugin-react": "^5.0.4",
     "add": "^2.0.6",
     "autoprefixer": "^10.4.20",
+    "canvas": "^3.2.2",
     "concurrently": "^9.2.1",
     "cross-env": "^10.1.0",
     "drizzle-kit": "^0.31.4",
@@ -116,7 +132,11 @@
     "electron-builder": "^26.8.1",
     "electron-updater": "^6.8.3",
     "esbuild": "^0.25.0",
+
     "playwright": "^1.58.2",
+
+    "png-to-ico": "^3.0.1",
+
     "pnpm": "^10.15.1",
     "postcss": "^8.4.47",
     "prettier": "^3.6.2",
@@ -144,28 +164,111 @@
     ]
   },
   "build": {
+
     "appId": "com.synthstudio.app",
+
+    "appId": "com.synthstudio.esx1",
+
     "productName": "Synthstudio",
     "copyright": "Copyright © 2025 Synthstudio",
     "directories": {
       "output": "release",
       "buildResources": "assets"
+
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "assets/**/*",
+      "package.json",
+      "!**/*.map",
+      "!**/*.ts",
+      "!node_modules/.cache/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "assets/samples",
+        "to": "samples",
+        "filter": [
+          "**/*.wav"
+        ]
+      }
+    ],
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "icon": "assets/icon.icns",
+      "category": "public.app-category.music",
+      "darkModeSupport": true,
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "assets/entitlements.mac.plist",
+      "entitlementsInherit": "assets/entitlements.mac.plist"
+    },
+    "dmg": {
+      "title": "Synthstudio ${version}",
+      "icon": "assets/icon.icns",
+      "background": "assets/dmg-background.png",
+      "window": {
+        "width": 540,
+        "height": 380
+      },
+      "contents": [
+        {
+          "x": 130,
+          "y": 220,
+          "type": "file"
+        },
+        {
+          "x": 410,
+          "y": 220,
+          "type": "link",
+          "path": "/Applications"
+        }
+      ]
+
     },
     "win": {
       "target": [
         {
           "target": "nsis",
           "arch": [
-            "x64"
+
+            "x64",
+
+            "x64",
+            "ia32"
+
           ]
         }
       ],
       "icon": "assets/icon.ico",
+
+
+      "publisherName": "Synthstudio",
+
       "verifyUpdateCodeSignature": false
     },
     "nsis": {
       "oneClick": false,
+
       "perMachine": false,
+
+
       "allowToChangeInstallationDirectory": true,
       "allowElevation": true,
       "installerIcon": "assets/icon.ico",
@@ -174,6 +277,7 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "Synthstudio",
+
       "deleteAppDataOnUninstall": false,
       "runAfterFinish": true,
       "installerLanguages": [
@@ -227,7 +331,10 @@
           "type": "link",
           "path": "/Applications"
         }
-      ]
+      ],
+
+      "include": "assets/installer.nsh"
+
     },
     "linux": {
       "target": [
@@ -246,8 +353,10 @@
       ],
       "icon": "assets/icon.png",
       "category": "Audio",
+
       "synopsis": "Professioneller Sample-Synthesizer und Drum Machine",
       "description": "Synthstudio – Professioneller Sample-Synthesizer und Drum Machine"
+
     },
     "deb": {
       "depends": [
@@ -262,12 +371,16 @@
       ],
       "recommends": [
         "libappindicator3-1"
+
       ],
       "maintainer": "GeorgDub <synthstudio@example.com>"
+
+
     },
     "publish": {
       "provider": "github",
       "owner": "GeorgDub",
+
       "repo": "Synthstudio-releases",
       "releaseType": "release"
     },
