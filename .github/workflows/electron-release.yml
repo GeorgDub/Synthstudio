@@ -45,8 +45,7 @@ jobs:
 
       - name: pnpm einrichten
         uses: pnpm/action-setup@v4
-        with:
-          version: 10.4.1
+
 
       - name: Version aus workflow_dispatch übernehmen (optional)
         if: github.event_name == 'workflow_dispatch' && inputs.version != ''
