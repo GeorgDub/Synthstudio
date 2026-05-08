@@ -166,6 +166,7 @@
       "verifyUpdateCodeSignature": false
     },
     "nsis": {
+      "warningsAsErrors": false,
       "oneClick": false,
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,

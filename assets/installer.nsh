@@ -16,6 +16,10 @@
 ; Finish page
 !insertmacro MUI_PAGE_FINISH
 
+; Uninstall pages (must be declared before MUI_LANGUAGE)
+!insertmacro MUI_UNPAGE_CONFIRM
+!insertmacro MUI_UNPAGE_INSTFILES
+
 ; Language
 !insertmacro MUI_LANGUAGE "English"
 !insertmacro MUI_LANGUAGE "German"
