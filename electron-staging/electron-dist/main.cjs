@@ -877,7 +877,9 @@ electron_1.app.on("window-all-closed", () => {
     }
 });
 electron_1.app.on("will-quit", () => {
-    electron_1.globalShortcut.unregisterAll();
+    if (electron_1.app.isReady()) {
+        electron_1.globalShortcut.unregisterAll();
+    }
 });
 // Sicherheit: Neue Fenster und Navigation verhindern
 electron_1.app.on("web-contents-created", (_event, contents) => {
