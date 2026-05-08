@@ -72,10 +72,11 @@ jobs:
 
       # RELEASES_TOKEN = PAT mit "repo"-Scope auf GeorgDub/Synthstudio-releases
       # (im privaten Repo als Repository Secret hinterlegen)
-      - name: Electron-App bauen (Linux)
+            - name: Electron-App bauen (Linux)
         if: matrix.platform == 'linux'
         env:
           GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+          ELECTRON_BUILDER_DISABLE_PNPM_COLLECTOR: "true"
         run: pnpm exec electron-builder --linux AppImage deb --publish always
 
       - name: Electron-App bauen (Windows)
@@ -83,6 +84,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
+          ELECTRON_BUILDER_DISABLE_PNPM_COLLECTOR: "true"
         run: pnpm exec electron-builder --win nsis --publish always
 
       - name: Electron-App bauen (macOS)
@@ -90,7 +92,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
+          ELECTRON_BUILDER_DISABLE_PNPM_COLLECTOR: "true"
         run: pnpm exec electron-builder --mac dmg zip --publish always
+
 
       - name: Build-Artefakte sichern (lokal)
         uses: actions/upload-artifact@v4
