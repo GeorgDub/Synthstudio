@@ -141,7 +141,11 @@
     "overrides": {
       "tailwindcss>nanoid": "3.3.7"
     },
-    "dangerouslyAllowAllBuilds": true
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "electron",
+      "@tailwindcss/oxide"
+    ]
   },
   "build": {
     "appId": "com.synthstudio.app",
