@@ -20,9 +20,9 @@
 !insertmacro MUI_LANGUAGE "English"
 !insertmacro MUI_LANGUAGE "German"
 
-; Custom installer branding
-!define MUI_ICON "assets\icon.ico"
-!define MUI_UNICON "assets\icon.ico"
+; Note: MUI_ICON and MUI_UNICON are intentionally not defined here.
+; Icon configuration is owned by electron-builder via the "nsis" section in package.json
+; (installerIcon / uninstallerIcon). Redefining them here would cause a duplicate-define error.
 
 ; Default installation folder
 InstallDir "$PROGRAMFILES\Synthstudio"
