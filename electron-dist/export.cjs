@@ -514,4 +514,6 @@ function registerExportHandlers() {
             return { success: false, error: String(err) };
         }
     });
+    // Registriere Stereo-Export-Handler
+    (0, export_stereo_1.registerStereoExportHandlers)();
 }

@@ -54,6 +54,8 @@ import { useCollabSync } from "@/hooks/useCollabSync";
 import { useSessionStore } from "@/store/useSessionStore";
 import { CollabSplitView } from "@/components/CollabSplitView";
 import { ThemeSettings, initTheme } from "@/components/Settings";
+import { MixerView } from "@/components/Mixer";
+import { useMixerStore } from "@/store/useMixerStore";
 
 // ─── App ──────────────────────────────────────────────────────────────────────
 
@@ -72,6 +74,7 @@ export default function App() {
   const song = useSongStore();
   const humanizer = useHumanizerStore();
   const dm = useDrumMachineStore();
+  const mixer = useMixerStore();
 
   // ── Transport (Audio-Engine ↔ React-State) ────────────────────────────────────
   useTransport({
@@ -84,7 +87,7 @@ export default function App() {
   });
 
   // ── Arbeitsbereich-Tabs ────────────────────────────────────────────────────
-  const [activeTab, setActiveTab] = useState<"sequencer" | "song" | "humanizer" | "tools" | "kollaboration">("sequencer");
+  const [activeTab, setActiveTab] = useState<"sequencer" | "mixer" | "song" | "humanizer" | "tools" | "kollaboration">("sequencer");
 
   // ── Dialog-State für MIDI, Shortcuts und Einstellungen ──────────────────
   const [showMidiSettings, setShowMidiSettings] = useState(false);
@@ -521,6 +524,7 @@ export default function App() {
             <div className="flex gap-0 border-b border-slate-800 bg-[#0d0d0d]">
               {([  
                 { id: "sequencer",    label: "Sequencer" },
+                { id: "mixer",        label: "Mixer" },
                 { id: "song",         label: "Song-Modus" },
                 { id: "humanizer",    label: "Humanizer" },
                 { id: "tools",        label: "Tools" },
@@ -559,6 +563,15 @@ export default function App() {
                   bpm={project.bpm}
                   onPlayStop={collabPlayStop}
                   onBpmChange={collabBpmChange}
+                  className="h-full"
+                />
+              )}
+
+              {/* Mixer-Tab */}
+              {activeTab === "mixer" && (
+                <MixerView
+                  dm={dm}
+                  mixer={mixer}
                   className="h-full"
                 />
               )}
