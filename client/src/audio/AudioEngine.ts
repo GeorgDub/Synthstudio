@@ -182,6 +182,9 @@ interface ChannelNodes {
   reverbWet: GainNode;
   output: GainNode;
   panner: StereoPannerNode;
+  // Global-Bus Sends
+  globalReverbSend: GainNode;
+  globalDelaySend: GainNode;
 }
 
 // ─── Engine ───────────────────────────────────────────────────────────────────
@@ -193,6 +196,13 @@ class AudioEngineClass {
   private loadingPromises = new Map<string, Promise<AudioBuffer | null>>();
   private channelNodes = new Map<string, ChannelNodes>();
   private reverbBuffers = new Map<string, AudioBuffer>(); // decay → buffer
+
+  // Global Send Buses
+  private _globalReverbBus: ConvolverNode | null = null;
+  private _globalReverbWet: GainNode | null = null;
+  private _globalDelayBus: DelayNode | null = null;
+  private _globalDelayFeedback: GainNode | null = null;
+  private _globalDelayWet: GainNode | null = null;
 
   // Scheduling
   private schedulerTimer: ReturnType<typeof setInterval> | null = null;
@@ -242,6 +252,28 @@ class AudioEngineClass {
     this.masterGain = this.ctx.createGain();
     this.masterGain.gain.value = 0.85;
     this.masterGain.connect(this.ctx.destination);
+
+    // Global Reverb Bus (Plate-ähnlich, 2s Decay)
+    this._globalReverbBus = this.ctx.createConvolver();
+    this._globalReverbWet = this.ctx.createGain();
+    this._globalReverbWet.gain.value = 0.6;
+    this._getOrCreateReverbBuffer(2.0).then(buf => {
+      if (buf && this._globalReverbBus) this._globalReverbBus.buffer = buf;
+    });
+    this._globalReverbBus.connect(this._globalReverbWet);
+    this._globalReverbWet.connect(this.masterGain);
+
+    // Global Delay Bus (1/4 Note bei 120 BPM ≈ 0.5s)
+    this._globalDelayBus = this.ctx.createDelay(2.0);
+    this._globalDelayBus.delayTime.value = 0.5;
+    this._globalDelayFeedback = this.ctx.createGain();
+    this._globalDelayFeedback.gain.value = 0.35;
+    this._globalDelayWet = this.ctx.createGain();
+    this._globalDelayWet.gain.value = 0.5;
+    this._globalDelayBus.connect(this._globalDelayFeedback);
+    this._globalDelayFeedback.connect(this._globalDelayBus);
+    this._globalDelayBus.connect(this._globalDelayWet);
+    this._globalDelayWet.connect(this.masterGain);
   }
 
   async resume(): Promise<void> {
@@ -281,6 +313,52 @@ class AudioEngineClass {
   }
 
   setPatternGetter(getter: () => PatternData) { this.patternGetter = getter; }
+
+  /** Persistente Kanal-Lautstärke setzen (Mixer-Fader) */
+  setChannelVolume(partId: string, vol: number) {
+    const nodes = this.channelNodes.get(partId);
+    if (nodes) {
+      nodes.output.gain.setTargetAtTime(
+        Math.max(0, Math.min(2, vol)),
+        this.ctx?.currentTime ?? 0,
+        0.01
+      );
+    }
+  }
+
+  /** Persistente Kanal-Pan setzen (Mixer-Pan) */
+  setChannelPan(partId: string, pan: number) {
+    const nodes = this.channelNodes.get(partId);
+    if (nodes) {
+      nodes.panner.pan.setTargetAtTime(
+        Math.max(-1, Math.min(1, pan)),
+        this.ctx?.currentTime ?? 0,
+        0.01
+      );
+    }
+  }
+
+  /** Send-Level zu globalem Reverb- oder Delay-Bus setzen */
+  setChannelSend(partId: string, bus: "reverb" | "delay", level: number) {
+    const nodes = this.channelNodes.get(partId);
+    if (!nodes) return;
+    const clampedLevel = Math.max(0, Math.min(1, level));
+    if (bus === "reverb") {
+      nodes.globalReverbSend.gain.setTargetAtTime(clampedLevel, this.ctx?.currentTime ?? 0, 0.01);
+    } else {
+      nodes.globalDelaySend.gain.setTargetAtTime(clampedLevel, this.ctx?.currentTime ?? 0, 0.01);
+    }
+  }
+
+  /** Globale Delay-Zeit mit BPM synchronisieren */
+  syncGlobalDelayToBpm(bpm: number, division: "1/4" | "1/8" | "3/16" = "1/4") {
+    if (!this._globalDelayBus || !this.ctx) return;
+    const beatDur = 60 / bpm;
+    const delayTime = division === "1/8" ? beatDur / 2 : division === "3/16" ? beatDur * 0.75 : beatDur;
+    this._globalDelayBus.delayTime.setTargetAtTime(
+      Math.min(1.99, delayTime), this.ctx.currentTime, 0.05
+    );
+  }
 
   /** Melodic getter: liefert PitchSteps für eine Part-ID aus dem useMelodicPartStore */
   setMelodicGetter(getter: (partId: string) => { active: boolean; note: number; velocity: number }[] | undefined) {
@@ -727,8 +805,20 @@ class AudioEngineClass {
     reverbConvolver.connect(reverbWet);
     reverbWet.connect(output);
 
+    // Global-Bus Sends (Reverb + Delay)
+    const globalReverbSend = ctx.createGain();
+    globalReverbSend.gain.value = 0;
+    const globalDelaySend = ctx.createGain();
+    globalDelaySend.gain.value = 0;
+
     output.connect(panner);
     panner.connect(master);
+
+    // Sends vom Output in globale Buses
+    if (this._globalReverbBus) output.connect(globalReverbSend);
+    if (this._globalReverbBus) globalReverbSend.connect(this._globalReverbBus);
+    if (this._globalDelayBus) output.connect(globalDelaySend);
+    if (this._globalDelayBus) globalDelaySend.connect(this._globalDelayBus);
 
     const nodes: ChannelNodes = {
       input, eq: { low: eqLow, mid: eqMid, high: eqHigh },
@@ -736,6 +826,7 @@ class AudioEngineClass {
       delayNode, delayFeedback, delayDry, delayWet,
       reverbConvolver, reverbDry, reverbWet,
       output, panner,
+      globalReverbSend, globalDelaySend,
     };
 
     this._applyFxToNodes(nodes, fx);

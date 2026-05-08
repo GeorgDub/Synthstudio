@@ -4,6 +4,8 @@ on:
   push:
     tags:
       - "v*.*.*"
+    branches:
+      - "copilot/compile-build-1-12"
   workflow_dispatch:
     inputs:
       version:
