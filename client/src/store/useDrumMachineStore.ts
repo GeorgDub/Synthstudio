@@ -34,6 +34,8 @@ export interface DrumMachineActions {
   duplicatePattern: (id: string) => void;
   setPatternBpm: (id: string, bpm: number | null) => void;
   setPatternStepResolution: (id: string, res: StepResolution) => void;
+  setPatternSwing: (id: string, swing: number | null) => void;
+  setPatternTranspose: (id: string, transpose: number) => void;
 
   addPart: (name?: string) => void;
   removePart: (id: string) => void;
@@ -112,6 +114,8 @@ function makePattern(name: string, stepCount: 16 | 32 = 16): PatternData {
     stepCount,
     stepResolution: "1/16",
     bpm: null,
+    swing: null,
+    transpose: 0,
     parts: DEFAULT_PART_NAMES.map(n => makePart(n, stepCount)),
   };
 }
@@ -216,6 +220,14 @@ export function useDrumMachineStore(): DrumMachineState & DrumMachineActions {
 
   const setPatternStepResolution = useCallback((id: string, res: StepResolution) => {
     updatePatterns(ps => ps.map(p => p.id === id ? { ...p, stepResolution: res } : p), false);
+  }, [updatePatterns]);
+
+  const setPatternSwing = useCallback((id: string, swing: number | null) => {
+    updatePatterns(ps => ps.map(p => p.id === id ? { ...p, swing } : p), false);
+  }, [updatePatterns]);
+
+  const setPatternTranspose = useCallback((id: string, transpose: number) => {
+    updatePatterns(ps => ps.map(p => p.id === id ? { ...p, transpose: Math.max(-24, Math.min(24, transpose)) } : p));
   }, [updatePatterns]);
 
   // ── Parts ─────────────────────────────────────────────────────────────────
@@ -533,7 +545,7 @@ export function useDrumMachineStore(): DrumMachineState & DrumMachineActions {
   return {
     ...state,
     addPattern, removePattern, renamePattern, setActivePattern, duplicatePattern,
-    setPatternBpm, setPatternStepResolution,
+    setPatternBpm, setPatternStepResolution, setPatternSwing, setPatternTranspose,
     addPart, removePart, renamePart, setPartSample,
     setPartMuted, setPartSoloed, setPartVolume, setPartPan,
     setPartStepResolution, setActivePart, movePart,

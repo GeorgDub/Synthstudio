@@ -118,6 +118,32 @@ function makePlaylistId(): string {
   return `pl_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
 }
 
+/** Erkennt die Sample-Kategorie anhand von Pfad und Dateiname im ZIP-Archiv */
+function detectCategoryFromZipPath(filePath: string): string {
+  const name = filePath.split("/").pop()?.toLowerCase() ?? "";
+  const dir = filePath.toLowerCase();
+  const combined = `${dir} ${name}`;
+
+  const patterns: Record<string, string[]> = {
+    kicks:      ["kick", "bd", "bass drum", "bassdrum", "kik", "808"],
+    snares:     ["snare", "sn", "snr", "rimshot", "rim"],
+    hihats:     ["hihat", "hi-hat", "hh", "hat", "cymbal", "open hat", "closed hat"],
+    claps:      ["clap", "clp", "handclap", "snap"],
+    toms:       ["tom", "floor tom", "rack tom"],
+    percussion: ["perc", "conga", "bongo", "shaker", "tambourine", "cowbell", "clave"],
+    fx:         ["fx", "effect", "noise", "sweep", "riser", "impact", "crash", "zap"],
+    loops:      ["loop", "break", "groove", "beat", "phrase"],
+    vocals:     ["vocal", "vox", "voice", "choir", "spoken"],
+  };
+
+  for (const [category, keywords] of Object.entries(patterns)) {
+    if (keywords.some((kw) => combined.includes(kw))) {
+      return category;
+    }
+  }
+  return "other";
+}
+
 // ─── Import-Fortschritts-Overlay ─────────────────────────────────────────────
 
 interface ImportProgressProps {
@@ -1061,11 +1087,13 @@ export function SampleBrowser({
           const url = URL.createObjectURL(blob);
           const name = entry.name.split("/").pop()?.replace(/\.[^.]+$/, "") ?? entry.name;
 
+          const category = detectCategoryFromZipPath(entry.name);
+
           importedSamples.push({
             id: `zip_${Date.now()}_${i}`,
             name,
             path: url,
-            category: "imported",
+            category,
           });
 
           setImportProgress((prev) => prev ? {

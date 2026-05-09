@@ -162,6 +162,10 @@ export interface PatternData {
   stepResolution: StepResolution;
   /** Eigenes BPM (null = globales BPM verwenden) */
   bpm: number | null;
+  /** Swing-Stärke pro Pattern: 0 = gerade, 0–1 (0.5 = klassischer Shuffle). null = globaler Swing */
+  swing: number | null;
+  /** Global Transpose in Halbtönen (alle Pitch-Steps werden verschoben) */
+  transpose: number;
   parts: PartData[];
 }
 
@@ -558,6 +562,18 @@ class AudioEngineClass {
     const effectiveBpm = pattern.bpm ?? this._bpm;
     const effectiveResolution = pattern.stepResolution ?? this._stepResolution;
 
+    // Swing: Ungerade Steps werden zeitlich verschoben
+    const swingAmount = pattern.swing ?? 0;
+    let swingOffset = 0;
+    if (swingAmount > 0 && stepIndex % 2 === 1) {
+      const stepDur = this._stepDuration();
+      swingOffset = stepDur * swingAmount * 0.7; // max ~70% des Step-Abstands
+    }
+    const swungTime = time + swingOffset;
+
+    // Global Transpose
+    const patternTranspose = pattern.transpose ?? 0;
+
     pattern.parts.forEach((part, partIndex) => {
       if (part.muted) return;
       // Solo-Check
@@ -571,10 +587,10 @@ class AudioEngineClass {
       const scheduled: ScheduledStep = {
         partIndex,
         stepIndex,
-        time,
+        time: swungTime,
         velocity: step.velocity ?? 100,
         pan: part.pan ?? 0,
-        pitch: step.pitch ?? 0,
+        pitch: (step.pitch ?? 0) + patternTranspose,
       };
 
       this.stepCallbacks.forEach(cb => cb(scheduled));

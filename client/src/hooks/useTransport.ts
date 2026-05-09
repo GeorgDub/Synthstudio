@@ -36,7 +36,7 @@ export function useTransport({
   useEffect(() => {
     AudioEngine.setPatternGetter(() => {
       const p = patternRef.current();
-      if (!p) return { id: "", name: "", stepCount: 16 as const, stepResolution: "1/16" as const, bpm: null, parts: [] };
+      if (!p) return { id: "", name: "", stepCount: 16 as const, stepResolution: "1/16" as const, bpm: null, swing: null, transpose: 0, parts: [] };
       return p;
     });
     // Melodic getter: liest direkt aus dem Modul-Singleton (kein React-State nötig)

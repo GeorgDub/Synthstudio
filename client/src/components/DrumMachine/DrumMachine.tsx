@@ -493,6 +493,9 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
   const [bpmInput, setBpmInput] = useState(String(bpm));
   const bpmInputRef = useRef<HTMLInputElement>(null);
   const [pianoRollPartId, setPianoRollPartId] = useState<string | null>(null);
+  const [noteRepeatActive, setNoteRepeatActive] = useState(false);
+  const [noteRepeatRate, setNoteRepeatRate] = useState<"1/8" | "1/16" | "1/32">("1/16");
+  const noteRepeatTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Keyboard-Shortcuts werden zentral durch useKeyboardShortcuts in App.tsx gehandhabt
 
@@ -535,6 +538,40 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
       AudioEngine.updateChannelFx(part.id, part.fx);
     });
   }, [pattern]);
+
+  // Note-Repeat: Bei gedrücktem Step wird das Sample wiederholt abgespielt
+  const noteRepeatStart = useCallback((partId: string) => {
+    if (!noteRepeatActive || !isPlaying || !pattern) return;
+    const part = pattern.parts.find(p => p.id === partId);
+    if (!part?.sampleUrl) return;
+
+    const rateMs = noteRepeatRate === "1/8" ? (60000 / bpm / 2)
+      : noteRepeatRate === "1/32" ? (60000 / bpm / 8)
+      : (60000 / bpm / 4); // 1/16 default
+
+    // Sofort auslösen
+    AudioEngine.previewSample(part.sampleUrl, part.volume);
+
+    // Wiederholung starten
+    if (noteRepeatTimerRef.current) clearInterval(noteRepeatTimerRef.current);
+    noteRepeatTimerRef.current = setInterval(() => {
+      if (part.sampleUrl) AudioEngine.previewSample(part.sampleUrl, part.volume);
+    }, rateMs);
+  }, [noteRepeatActive, isPlaying, pattern, bpm, noteRepeatRate]);
+
+  const noteRepeatStop = useCallback(() => {
+    if (noteRepeatTimerRef.current) {
+      clearInterval(noteRepeatTimerRef.current);
+      noteRepeatTimerRef.current = null;
+    }
+  }, []);
+
+  // Cleanup Note-Repeat timer
+  useEffect(() => {
+    return () => {
+      if (noteRepeatTimerRef.current) clearInterval(noteRepeatTimerRef.current);
+    };
+  }, []);
 
   if (!pattern) return null;
 
@@ -857,6 +894,58 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
             className="w-5 h-6 rounded text-xs bg-slate-800 text-slate-500 hover:bg-slate-700">+</button>
         </div>
 
+        {/* ── Swing per Pattern ──────────────────────────────────── */}
+        <div className="flex items-center gap-1" title="Pattern-Swing (0 = gerade, 50% = Shuffle)">
+          <span className="text-[10px] text-slate-500">Swing</span>
+          <input
+            type="range"
+            min={0} max={100} step={1}
+            value={Math.round((pattern.swing ?? 0) * 100)}
+            onChange={e => dm.setPatternSwing(pattern.id, parseInt(e.target.value) / 100)}
+            className="w-14 accent-amber-500 cursor-pointer"
+          />
+          <span className="text-[9px] text-slate-500 font-mono w-7 text-right">
+            {Math.round((pattern.swing ?? 0) * 100)}%
+          </span>
+        </div>
+
+        {/* ── Global Transpose ─────────────────────────────────── */}
+        <div className="flex items-center gap-0.5" title="Alle Pitch-Steps transponieren (±24 Halbtöne)">
+          <span className="text-[10px] text-slate-500">Transpose</span>
+          <button onClick={() => dm.setPatternTranspose(pattern.id, (pattern.transpose ?? 0) - 1)}
+            className="w-5 h-5 rounded text-xs bg-slate-800 text-slate-500 hover:bg-slate-700">−</button>
+          <span className="text-[10px] font-mono text-slate-300 w-6 text-center">
+            {(pattern.transpose ?? 0) > 0 ? "+" : ""}{pattern.transpose ?? 0}
+          </span>
+          <button onClick={() => dm.setPatternTranspose(pattern.id, (pattern.transpose ?? 0) + 1)}
+            className="w-5 h-5 rounded text-xs bg-slate-800 text-slate-500 hover:bg-slate-700">+</button>
+        </div>
+
+        {/* ── Note-Repeat ──────────────────────────────────────── */}
+        <div className="flex items-center gap-0.5">
+          <button
+            onClick={() => setNoteRepeatActive(!noteRepeatActive)}
+            className={[
+              "px-2 py-1 rounded text-[10px] font-medium transition-colors",
+              noteRepeatActive
+                ? "bg-green-700 text-green-100"
+                : "bg-slate-800 text-slate-500 hover:bg-slate-700",
+            ].join(" ")}
+            title="Note-Repeat: Hält man einen Step, wird er wiederholt"
+          >RPT</button>
+          {noteRepeatActive && (
+            <select
+              value={noteRepeatRate}
+              onChange={e => setNoteRepeatRate(e.target.value as "1/8" | "1/16" | "1/32")}
+              className="bg-slate-800 text-slate-300 text-[10px] rounded px-1 py-0.5 border border-slate-700"
+            >
+              <option value="1/8">1/8</option>
+              <option value="1/16">1/16</option>
+              <option value="1/32">1/32</option>
+            </select>
+          )}
+        </div>
+
         {/* Kanal hinzufügen */}
         <button
           onClick={() => dm.addPart()}
@@ -942,6 +1031,9 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
         <span>{effectiveBpm} BPM{pattern.bpm !== null ? " (eigenes)" : ""}</span>
         <span>·</span>
         <span>Step {dm.currentStep + 1}/{pattern.stepCount}</span>
+        {(pattern.swing ?? 0) > 0 && <><span>·</span><span className="text-amber-400">Swing {Math.round((pattern.swing ?? 0) * 100)}%</span></>}
+        {(pattern.transpose ?? 0) !== 0 && <><span>·</span><span className="text-blue-400">Transpose {(pattern.transpose ?? 0) > 0 ? "+" : ""}{pattern.transpose ?? 0}</span></>}
+        {noteRepeatActive && <><span>·</span><span className="text-green-400">NOTE-REPEAT {noteRepeatRate}</span></>}
         {dm.velocityMode && <><span>·</span><span className="text-amber-400">VELOCITY-MODUS</span></>}
         {dm.pitchMode && <><span>·</span><span className="text-purple-400">PITCH-MODUS</span></>}
       </div>

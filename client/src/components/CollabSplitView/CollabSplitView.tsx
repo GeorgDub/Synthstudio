@@ -127,6 +127,8 @@ function useRemoteDmAdapter(
       duplicatePattern: noop,
       setPatternBpm: noop,
       setPatternStepResolution: noop,
+      setPatternSwing: noop,
+      setPatternTranspose: noop,
       addPart: noop,
       removePart: noop,
       renamePart: noop,
