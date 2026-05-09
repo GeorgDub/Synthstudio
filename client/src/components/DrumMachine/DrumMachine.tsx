@@ -424,7 +424,7 @@ function ChannelStrip({
           return (
             <button
               key={i}
-              onMouseDown={e => { handleStepMouseDown(i, e); onNoteRepeatStart?.(); }}
+              onMouseDown={e => { handleStepMouseDown(i, e); if (e.button === 0 && !velocityMode) onNoteRepeatStart?.(); }}
               onMouseUp={() => onNoteRepeatStop?.()}
               onMouseLeave={() => onNoteRepeatStop?.()}
               onMouseMove={e => dragVelocityStep !== null && handleMouseMove(e, i)}
