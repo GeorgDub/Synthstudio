@@ -185,6 +185,7 @@ interface ChannelNodes {
   reverbDry: GainNode;
   reverbWet: GainNode;
   output: GainNode;
+  sidechainDuck: GainNode; // Dedicated gain for sidechain ducking (between output and panner)
   panner: StereoPannerNode;
   // Global-Bus Sends
   globalReverbSend: GainNode;
@@ -789,9 +790,11 @@ class AudioEngineClass {
     const reverbWet = ctx.createGain();
     reverbWet.gain.value = 0;
 
-    // Output + Panner
+    // Output + Sidechain Duck + Panner
     const output = ctx.createGain();
     output.gain.value = 1.0;
+    const sidechainDuck = ctx.createGain();
+    sidechainDuck.gain.value = 1.0;
     const panner = ctx.createStereoPanner();
     panner.pan.value = 0;
 
@@ -827,7 +830,8 @@ class AudioEngineClass {
     const globalDelaySend = ctx.createGain();
     globalDelaySend.gain.value = 0;
 
-    output.connect(panner);
+    output.connect(sidechainDuck);
+    sidechainDuck.connect(panner);
     panner.connect(master);
 
     // Sends vom Output in globale Buses
@@ -841,7 +845,7 @@ class AudioEngineClass {
       filter, distortion, compressor,
       delayNode, delayFeedback, delayDry, delayWet,
       reverbConvolver, reverbDry, reverbWet,
-      output, panner,
+      output, sidechainDuck, panner,
       globalReverbSend, globalDelaySend,
     };
 
@@ -1067,11 +1071,11 @@ class AudioEngineClass {
     analyser.fftSize = 256;
     sourceNodes.output.connect(analyser);
 
-    // GainNode on dest for ducking
+    // Use dedicated sidechain duck GainNode (not the output/fader gain)
     const destNodes = this.channelNodes.get(destPartId);
     if (!destNodes) return;
 
-    const gainNode = destNodes.output; // We'll modulate the existing output gain
+    const gainNode = destNodes.sidechainDuck;
 
     this.sidechainRoutes.set(destPartId, { source: sourcePartId, analyser, gainNode });
   }

@@ -529,7 +529,10 @@ export function MixerView({ dm, mixer, className = "" }: MixerViewProps) {
     });
 
     // Sidechain processing
-    AudioEngine.processSidechain();
+    const scReductions = AudioEngine.processSidechain();
+    scReductions.forEach((reduction, destPartId) => {
+      mixer.setChannelGainReduction(destPartId, reduction);
+    });
 
     rafRef.current = requestAnimationFrame(updateMeters);
   }, [mixer, parts]);
