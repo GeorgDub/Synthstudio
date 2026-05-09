@@ -241,6 +241,8 @@ interface ChannelStripProps {
   onResolutionChange: (res: StepResolution | undefined) => void;
   onClick: () => void;
   onPianoRollOpen: () => void;
+  onNoteRepeatStart?: () => void;
+  onNoteRepeatStop?: () => void;
 }
 
 function ChannelStrip({
@@ -249,6 +251,7 @@ function ChannelStrip({
   samples, onToggleStep, onSetVelocity, onSetPitch,
   onMute, onSolo, onVolumeChange, onPanChange,
   onSampleDrop, onFxChange, onFxToggle, onResolutionChange, onClick, onPianoRollOpen,
+  onNoteRepeatStart, onNoteRepeatStop,
 }: ChannelStripProps) {
   const [isDragOver, setIsDragOver] = useState(false);
   const [pitchPopover, setPitchPopover] = useState<number | null>(null);
@@ -421,7 +424,9 @@ function ChannelStrip({
           return (
             <button
               key={i}
-              onMouseDown={e => handleStepMouseDown(i, e)}
+              onMouseDown={e => { handleStepMouseDown(i, e); onNoteRepeatStart?.(); }}
+              onMouseUp={() => onNoteRepeatStop?.()}
+              onMouseLeave={() => onNoteRepeatStop?.()}
               onMouseMove={e => dragVelocityStep !== null && handleMouseMove(e, i)}
               onMouseEnter={e => dragVelocityStep !== null && handleMouseMove(e, i)}
               className={[
@@ -924,7 +929,7 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
         {/* ── Note-Repeat ──────────────────────────────────────── */}
         <div className="flex items-center gap-0.5">
           <button
-            onClick={() => setNoteRepeatActive(!noteRepeatActive)}
+            onClick={() => { const next = !noteRepeatActive; setNoteRepeatActive(next); if (!next) noteRepeatStop(); }}
             className={[
               "px-2 py-1 rounded text-[10px] font-medium transition-colors",
               noteRepeatActive
@@ -1016,6 +1021,8 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
             onResolutionChange={res => dm.setPartStepResolution(part.id, res)}
             onClick={() => dm.setActivePart(part.id)}
             onPianoRollOpen={() => setPianoRollPartId(part.id)}
+            onNoteRepeatStart={() => noteRepeatStart(part.id)}
+            onNoteRepeatStop={noteRepeatStop}
           />
         ))}
       </div>

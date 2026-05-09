@@ -618,7 +618,7 @@ class AudioEngineClass {
 
         const vol = (mStep.velocity / 127) * (part.volume ?? 1.0);
         const freq = 440 * Math.pow(2, (mStep.note - 69) / 12);
-        this._triggerMelodicNote(time, freq, vol, part.pan ?? 0);
+        this._triggerMelodicNote(swungTime, freq, vol, part.pan ?? 0);
       });
     }
   }
