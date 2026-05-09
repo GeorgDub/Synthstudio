@@ -3,7 +3,7 @@
 **Professioneller Sample-Manager, Synthesizer & Drum Machine** – als plattformübergreifende Desktop-App (Electron) und Web-App (React).
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-![Version](https://img.shields.io/badge/version-1.13.0-cyan)
+![Version](https://img.shields.io/badge/version-1.14.0-cyan)
 
 ---
 
@@ -21,9 +21,12 @@
 - **Global Transpose** – Alle Pitch-Steps gleichzeitig transponieren (±24 Halbtöne)
 
 ### Mixer & Effekte
-- **Mixer-View** – Channel-Strips mit Fader, Pan, Mute/Solo
+- **Mixer-View** – Channel-Strips mit Fader, Pan, Mute/Solo, VU-Meter
+- **Insert FX Chain** – Pro Kanal: EQ (3-Band), Filter (LP/HP/BP/Notch), Distortion, Compressor, Delay, Reverb
+- **Send/Return FX** – Globale Reverb- & Delay-Busse mit konfigurierbaren Return-Kanälen (Decay, Time, Feedback, Wet)
+- **Sidechain Compression** – Quell-Kanal wählbar, automatisches Ducking mit Compressor-Einstellungen
+- **Compressor mit GR-Meter** – Echtzeit Gain-Reduction Anzeige pro Kanal
 - **16 Effekttypen** – Reverb, Delay, Chorus, Distortion, Filter (LP/HP/BP/Notch), EQ, Compressor
-- **Separate Drum- & Synth-Effektketten**
 - **Echtzeit-Spektrum-Analyzer & Waveform-Visualisierung**
 
 ### Sample-Management

@@ -993,6 +993,147 @@ class AudioEngineClass {
     return decoded;
   }
 
+  // ─── Return Bus Controls ─────────────────────────────────────────────────
+
+  /** Set global reverb bus decay and regenerate IR */
+  setGlobalReverbDecay(decay: number) {
+    if (!this._globalReverbBus || !this.ctx) return;
+    this._getOrCreateReverbBuffer(Math.max(0.1, Math.min(10, decay))).then(buf => {
+      if (buf && this._globalReverbBus) this._globalReverbBus.buffer = buf;
+    });
+  }
+
+  /** Set global reverb bus wet level */
+  setGlobalReverbWet(level: number) {
+    if (!this._globalReverbWet) return;
+    this._globalReverbWet.gain.setTargetAtTime(
+      Math.max(0, Math.min(1, level)), this.ctx?.currentTime ?? 0, 0.01
+    );
+  }
+
+  /** Set global delay bus time */
+  setGlobalDelayTime(time: number) {
+    if (!this._globalDelayBus) return;
+    this._globalDelayBus.delayTime.setTargetAtTime(
+      Math.max(0.01, Math.min(1.99, time)), this.ctx?.currentTime ?? 0, 0.05
+    );
+  }
+
+  /** Set global delay bus feedback */
+  setGlobalDelayFeedback(feedback: number) {
+    if (!this._globalDelayFeedback) return;
+    this._globalDelayFeedback.gain.setTargetAtTime(
+      Math.max(0, Math.min(0.95, feedback)), this.ctx?.currentTime ?? 0, 0.01
+    );
+  }
+
+  /** Set global delay bus wet level */
+  setGlobalDelayWet(level: number) {
+    if (!this._globalDelayWet) return;
+    this._globalDelayWet.gain.setTargetAtTime(
+      Math.max(0, Math.min(1, level)), this.ctx?.currentTime ?? 0, 0.01
+    );
+  }
+
+  // ─── Compressor Gain Reduction ──────────────────────────────────────────
+
+  /** Read current gain reduction (in dB, negative) for a channel's compressor */
+  getCompressorReduction(partId: string): number {
+    const nodes = this.channelNodes.get(partId);
+    if (!nodes) return 0;
+    return nodes.compressor.reduction; // negative dB value
+  }
+
+  // ─── Sidechain Compression ─────────────────────────────────────────────
+
+  private sidechainRoutes = new Map<string, { source: string; analyser: AnalyserNode; gainNode: GainNode }>();
+
+  /** Set up sidechain compression: source channel ducks destination channel */
+  setSidechainSource(destPartId: string, sourcePartId: string | null) {
+    // Remove existing sidechain for this dest
+    const existing = this.sidechainRoutes.get(destPartId);
+    if (existing) {
+      try { existing.analyser.disconnect(); } catch {}
+      this.sidechainRoutes.delete(destPartId);
+    }
+
+    if (!sourcePartId || !this.ctx) return;
+
+    const sourceNodes = this.channelNodes.get(sourcePartId);
+    if (!sourceNodes) return;
+
+    // Create analyser on source to detect signal level
+    const analyser = this.ctx.createAnalyser();
+    analyser.fftSize = 256;
+    sourceNodes.output.connect(analyser);
+
+    // GainNode on dest for ducking
+    const destNodes = this.channelNodes.get(destPartId);
+    if (!destNodes) return;
+
+    const gainNode = destNodes.output; // We'll modulate the existing output gain
+
+    this.sidechainRoutes.set(destPartId, { source: sourcePartId, analyser, gainNode });
+  }
+
+  /** Get current sidechain source for a destination channel */
+  getSidechainSource(destPartId: string): string | null {
+    return this.sidechainRoutes.get(destPartId)?.source ?? null;
+  }
+
+  /** Process sidechain ducking (call this from rAF loop) */
+  processSidechain(): Map<string, number> {
+    const reductions = new Map<string, number>();
+    this.sidechainRoutes.forEach((route, destPartId) => {
+      const data = new Float32Array(route.analyser.fftSize);
+      route.analyser.getFloatTimeDomainData(data);
+
+      // Calculate RMS level of source
+      let sum = 0;
+      for (let i = 0; i < data.length; i++) sum += data[i] * data[i];
+      const rms = Math.sqrt(sum / data.length);
+
+      // Get compressor settings for dest
+      const destNodes = this.channelNodes.get(destPartId);
+      if (!destNodes) return;
+
+      const threshold = destNodes.compressor.threshold.value;
+      const ratio = destNodes.compressor.ratio.value;
+      const attack = destNodes.compressor.attack.value;
+      const release = destNodes.compressor.release.value;
+
+      // Calculate ducking amount based on source level
+      const sourceDb = 20 * Math.log10(Math.max(0.0001, rms));
+      const overThreshold = sourceDb - threshold;
+
+      if (overThreshold > 0) {
+        const reduction = overThreshold * (1 - 1 / ratio);
+        const duckFactor = Math.pow(10, -reduction / 20);
+        // Apply ducking to output gain (smooth transition)
+        route.gainNode.gain.setTargetAtTime(
+          Math.max(0.01, duckFactor),
+          this.ctx?.currentTime ?? 0,
+          attack
+        );
+        reductions.set(destPartId, -reduction);
+      } else {
+        // Release: restore gain
+        route.gainNode.gain.setTargetAtTime(
+          1.0,
+          this.ctx?.currentTime ?? 0,
+          release
+        );
+        reductions.set(destPartId, 0);
+      }
+    });
+    return reductions;
+  }
+
+  /** Get all available channel IDs (for sidechain source selection) */
+  getChannelIds(): string[] {
+    return Array.from(this.channelNodes.keys());
+  }
+
   private _playClick(time: number, volume: number, freq: number) {
     if (!this.ctx || !this.masterGain) return;
     const osc = this.ctx.createOscillator();
