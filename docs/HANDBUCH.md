@@ -1,6 +1,6 @@
 # Synthstudio – Funktionshandbuch
 
-**Version 1.19.0 | Vollständige Dokumentation aller Features**
+**Version 1.20.0 | Vollständige Dokumentation aller Features**
 
 ---
 
@@ -58,6 +58,9 @@
 
 ### v1.17.0
 44. [Persistente Scripts + Web-Worker-Sandbox](#44-persistente-scripts--web-worker-sandbox-v1170)
+
+### v1.20.0
+45. [Performance Mode — überarbeitet](#45-performance-mode-überarbeitet-v1200)
 
 ---
 
@@ -1623,6 +1626,59 @@ Die Sandbox basiert auf **10 Hardening-Layern** (siehe `docs/SECURITY-SCRIPT-SAN
 
 ---
 
+## 45. Performance Mode — überarbeitet (v1.20.0)
+
+**Toolbar → Performance Mode** (oder Shortcut)
+
+Der Performance Mode ist jetzt vollständig funktional — vorher (v1.4–v1.19) war er ein Skelett mit unbedienten Quantize-Buttons und nicht-editierbaren Pads.
+
+### Drei Action-Modi (Toggle oben)
+
+| Modus | Icon | Click auf Pad mit Pattern | Click auf leeres Pad |
+|---|---|---|---|
+| **▶ Play** *(default)* | Play | Pattern triggern (Quantize berücksichtigt) | nichts (disabled) |
+| **✎ Edit** | Pencil | Editor-Popover öffnen: Pattern wählen, Label, Color | Pattern-Picker zum Hinzufügen |
+| **⇆ Reorder** | ArrowLeftRight | Drag-Source (HTML5 native) | Drop-Target |
+
+Modus-Toggle ist eine ARIA-Radiogroup mit `aria-checked`.
+
+### Pad-Editor (Edit-Mode)
+
+```
+┌──────────────────────────────────────────┐
+│ Pad bearbeiten                       [✕] │
+├──────────────────────────────────────────┤
+│ Pattern:  [Verse Pattern        ▾]      │
+│ Label:    [Verse                 ]      │
+│ Farbe:    ◯ ◯ ◯ ◯ ◯ ◯ ◯ ◯              │
+│           ◯ ◯ ◯ ◯ ◯ ◯ ◯ ◯              │
+│           [Custom: #_____________]      │
+│                                          │
+│ [Speichern]  [Entfernen]  [Abbrechen]   │
+└──────────────────────────────────────────┘
+```
+
+16 vordefinierte Color-Swatches + Custom-Hex-Input. ESC schließt zuerst Editor, dann Overlay (kaskadierend).
+
+### Drag & Drop (Reorder-Mode)
+
+HTML5 native Drag-and-Drop. Drag-Source wird `opacity-50`, Drop-Target bekommt `outline-dashed`. Swap-Semantik: A→B vertauscht beide Pads.
+
+### Persistenz
+
+`pads` (16 Slots inkl. Color + Label) und `quantizeMode` werden in `localStorage` (`ss-performance:v1`) gespeichert. `queuedPatternId` ist runtime-only.
+
+### Bug-Fixes nebenbei
+
+- Quantize-Buttons (bar/beat/step) gaben **kein Hover-Feedback** (gleiches Pattern wie BUG-002 v1.18.2). Jetzt `hover:bg-bg-base` + `active:scale-95`
+- Hardcoded `bg-slate-950`, `hover:text-white`, `text-white` ersetzt durch semantische Tokens
+
+### Tests
+
+38 Store-Unit-Tests + 9 Playwright-Smoke-Tests (Mode-Toggle, Edit-Popover, Reorder-DnD).
+
+---
+
 ## v1.18.0: Hardening (CSP + Sandbox-Codegen + Refactor)
 
 Reines Sicherheits- und Aufräum-Release ohne User-facing Features. Drei parallele Streams:
@@ -1681,4 +1737,4 @@ Diese Releases enthalten keine neuen Features, sondern **kritische Bug-Fixes**:
 
 ---
 
-*Letzte Aktualisierung: Sprint 21 — v1.19.0 (FOLLOWUP-102: Pitch-preserving Stretch + Solo Cross-Store)*
+*Letzte Aktualisierung: Sprint 22 — v1.20.0 (Performance Mode Overhaul)*

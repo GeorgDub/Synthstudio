@@ -71,7 +71,11 @@ import { useGlobalKeyBindings, KB_ACTION_EVENT } from "@/hooks/useGlobalKeyBindi
 import { useScriptKeyBindings } from "@/hooks/useScriptKeyBindings";
 import { configureSandboxBridge } from "@/sandbox/scriptSandboxInstance";
 import { PatternLaunchPad } from "@/components/PerformanceMode/PatternLaunchPad";
-import { usePerformanceStore } from "@/store/usePerformanceStore";
+import {
+  usePerformanceStore,
+  queuePattern as queuePerformancePattern,
+  setQuantizeMode as setPerformanceQuantizeMode,
+} from "@/store/usePerformanceStore";
 import { useResizablePanel } from "@/hooks/useResizablePanel";
 import { ResizablePanelHandle } from "@/components/UI/ResizablePanelHandle";
 import { useAutomationStore } from "@/store/useAutomationStore";
@@ -159,6 +163,9 @@ export default function App() {
   const [showAudioTrackBrowserWarning, setShowAudioTrackBrowserWarning] = useState(false);
 
   // ── Performance Mode (Vollbild-Pattern-Launchpad) ─────────────────────────
+  // `performanceActive` ist Runtime-Toggle (kein Persist). pads/quantizeMode
+  // kommen aus dem persistierten Store via Hook.
+  const [performanceActive, setPerformanceActive] = useState(false);
   const performance = usePerformanceStore();
 
   // ── Humanizer ↔ AudioEngine Bridge ────────────────────────────────────────
@@ -1373,7 +1380,7 @@ export default function App() {
               ))}
               {/* Performance Mode (Vollbild-Launchpad, F12) */}
               <button
-                onClick={() => performance.setActive(true)}
+                onClick={() => setPerformanceActive(true)}
                 title="Performance Mode (F12) – Vollbild-Pattern-Launchpad"
                 className="ml-auto mr-3 px-3 py-1.5 rounded text-xs font-bold bg-accent-primary/20 border border-accent-primary/40 text-accent-primary hover:bg-accent-primary/30"
               >
@@ -1631,13 +1638,10 @@ export default function App() {
       )}
 
       {/* ── Performance Mode (Vollbild-Pattern-Launchpad) ───────────────── */}
-      {performance.active && (
+      {performanceActive && (
         <PatternLaunchPad
-          pads={dm.patterns.map((p, i) => ({
-            patternId: p.id,
-            label: p.name,
-            color: undefined, // wird im LaunchPad aus PAD_COLORS ausgewählt
-          }))}
+          pads={performance.pads}
+          patterns={dm.patterns.map((p) => ({ id: p.id, name: p.name }))}
           activePatternId={dm.activePatternId ?? ""}
           queuedPatternId={performance.queuedPatternId}
           quantizeMode={performance.quantizeMode}
@@ -1645,10 +1649,10 @@ export default function App() {
           currentStep={dm.currentStep}
           onPadClick={(patternId) => {
             dm.setActivePattern(patternId);
-            performance.queuePattern(patternId);
+            queuePerformancePattern(patternId);
           }}
-          onQuantizeModeChange={performance.setQuantizeMode}
-          onClose={() => performance.setActive(false)}
+          onQuantizeModeChange={setPerformanceQuantizeMode}
+          onClose={() => setPerformanceActive(false)}
         />
       )}
     </ElectronDropZone>

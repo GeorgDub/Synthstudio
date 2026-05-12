@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "1.19.0",
+    version: "1.20.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -226,6 +226,38 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "frontend",
+      timestamp: "2026-05-12T21:35:00.000Z",
+      done: [
+        "TASK-111 / Performance Mode UX-Überarbeitung (v1.20.0 Vorlauf). User-Report: 'Auswahlbuttons oben gehen nicht, Pads nicht bearbeitbar/bewegbar'. Drei Ursachen: (B1) Quantize-hover:bg gleich default-bg → kein Feedback (BUG-002-Pattern), (B2) Pads waren nur read-only-Trigger ohne CRUD, (B3) hardcoded bg-slate-950 / text-white.",
+        "TASK-111 / Store-Rewrite: client/src/store/usePerformanceStore.ts von Hook-State (useState pro Instance, NICHT persistiert) auf Module-Singleton Observer + localStorage (key 'ss-performance:v1') umgestellt. Persistiert: pads[16] + quantizeMode. Runtime-only: queuedPatternId. Neue Pure-API: getPads/setPads/setPadAt/setPadColor/setPadLabel/movePad/clearPad/queuePattern/clearQueue/setQuantizeMode/getQuantizeMode/getQueuedPatternId + __resetPerformanceStoreForTests + usePerformanceStore() React-Hook (useReducer-Pattern wie useMacroStore). Defensive: out-of-range Indizes no-op, setPadColor/Label auf leerem Slot no-op, movePad mit Identität no-op, invalide quantizeMode aus altem Storage → bar-Default. Tolerantes Loading: alte Daten ohne color/label/quantizeMode laden ohne Crash.",
+        "TASK-111 / UI-Rewrite: client/src/components/PerformanceMode/PatternLaunchPad.tsx komplett überarbeitet (von 141 LOC auf ~470 LOC). Neue Modus-Toggle (radiogroup role): ▶ Play | ✎ Edit | ⇆ Reorder. Play (default) = Pattern triggern. Edit = Klick öffnet Inline-Modal mit Pattern-Picker (Dropdown aus dm.patterns), Label-Input (live-patch via setPadLabel), Farb-Palette (16 Preset-Swatches + native <input type=color> für Custom), Aktualisieren/Hinzufügen-Button (setPadAt) + Entfernen (clearPad) + Abbrechen. Reorder = HTML5 native draggable+onDragStart/Over/Drop, dragOver-Slot zeigt outline-dash-Indikator. Beim Modus-Wechsel werden Editor + Drag-State zurückgesetzt. ESC schließt Editor wenn offen, sonst Performance Mode.",
+        "TASK-111 / B1 Fix (Quantize-Hover): non-active button-state hover:bg-bg-elevated→hover:bg-bg-base + hover:text-text-primary + active:scale-95 + title='Quantize auf Bar/Beat/Step' + aria-pressed + aria-label. Active-state bg-accent-primary/70 text-white → bg-accent-primary text-bg-base (sichtbare Token, kein Alpha-Bleed).",
+        "TASK-111 / B3 Theme-Tokens: bg-slate-950→bg-bg-base; hover:text-white→hover:text-text-primary; Step-Indikator-Off bg-bg-elevated→bg-border-color (sichtbarer Off-State); Pad-Label-Color für aktiven Pad → var(--ss-bg-base) (statt hardcoded 'white'). PAD_COLORS-Array bleibt als domain-palette (User-defined Pad-Farben sind keine Theme-Chrome).",
+        "TASK-111 / App.tsx Wiring: 'active' war im alten Store, ist jetzt local useState (performanceActive) in App.tsx — gehört nicht in persistierten Store. PatternLaunchPad-Props erweitert: pads kommen jetzt aus Store, patterns=PatternRef[] kommt extern aus dm.patterns (dünne Liste id+name). queuePattern/setQuantizeMode werden als top-level exports importiert (queuePerformancePattern, setPerformanceQuantizeMode).",
+        "TASK-111 / Tests Unit: tests/features/performance-store.test.ts (NEU, 38 Tests, alle grün). 8 Gruppen: Defaults / setPadAt / setPadColor+setPadLabel / movePad / clearPad / queuePattern+clearQueue / setQuantizeMode / setPads bulk / Persistierung (localStorage round-trip via vi.resetModules) / Migration & Toleranz (alte Daten, invalide modes, Müll-JSON, falscher pads-Typ, gefilterte Items) / Type-Surface. Decken alle Akzeptanz-Kriterien aus TASK-111-Briefing.",
+        "TASK-111 / Tests Playwright: tests/web/performance-mode.spec.ts (NEU, 9 Tests). Deckt: Öffnen via Toolbar-Button, ESC schließt, Quantize aria-pressed Wechsel, Hover-Background-Diff (BUG-002-analog), Mode-Toggle radiogroup, Edit-Mode öffnet Editor, Pattern-Select+Save füllt Pad, Reorder via dragTo() zwischen 2 Pads, Play-Mode leere Pads sind disabled. localStorage wird vor jedem Test geleert (sauberer Startzustand).",
+        "TASK-111 / Verification: pnpm check clean. pnpm test 1069/1084 grün (15 pre-existing skipped, +38 neue performance-store Tests, 0 Regressionen in 62 test files). Existing tests/electron/performance-mode.test.ts (8 Tests, isolated Logic-Copy) weiter grün — testet eigene Mini-Implementation und ist von der Store-Refaktorierung nicht betroffen."
+      ],
+      next: [
+        "v1.20.x (UX): MacroPanel + KeyboardBindings könnten Performance-Mode-Pads als Trigger-Target bekommen (z.B. Macro im Button-Modus triggert Pattern via patternId-Lookup statt scriptId). Aktuell nur über Pad-Click oder Shift+1-8 (Scene-Shortcut nutzt anderen Store).",
+        "v1.20.x (UX): Drag-and-Drop Visual-Cue verbessern — aktuell zeigt nur outline:dashed; ein Insert-Linien-Indikator (vertical-bar zwischen Pads) wäre intuitiver. Aktuell aber Swap-Semantik, nicht Insert — bei Insert-Semantik müsste movePad zu reorderPad mit splice() werden.",
+        "v1.20.x (UX): Edit-Modal könnte einen 'Duplicate Pad'-Button kriegen (kopiert in nächsten freien Slot). Aktuell nur Single-Slot-CRUD.",
+        "v1.20.x (UX): Multi-Select für Reorder (Shift+Click zwei Pads selecten, dann Move-Button) würde Bulk-Reorder beschleunigen.",
+        "v1.20.x (UX): Color-Swatches sind 16 Preset-Hex aus PAD_COLORS — könnten auf Theme-Accent-Tokens reduziert werden, sodass Pad-Farben theme-konsistent bleiben (z.B. nur 6 Token-Slots: accent-primary, secondary, success, danger + 2 derived). Aktuell sind User-Pad-Farben absichtlich Theme-unabhängig (domain palette).",
+        "v1.20.x (Tests): Playwright-Test für Drag&Drop ist defensiv (assertion auf data-pad-filled). Eine strengere Variante würde nach dragTo() den exakten patternId an Position 1 prüfen — erfordert aber UI-Inspektion oder window-side Store-Access. Aktuell ausreichend für Smoke-Test.",
+        "v1.20.x (a11y): Pad-Reorder via Tastatur (Arrow-Keys + Space=grab + Arrow=move + Space=release) wäre WAI-ARIA-konform — aktuell nur Maus-Drag."
+      ],
+      changed: [
+        "client/src/store/usePerformanceStore.ts",
+        "client/src/components/PerformanceMode/PatternLaunchPad.tsx",
+        "client/src/App.tsx",
+        "tests/features/performance-store.test.ts",
+        "tests/web/performance-mode.spec.ts",
+        "agents/INDEX.js"
+      ]
+    },
     {
       agent:     "backend",
       timestamp: "2026-05-12T21:15:00.000Z",
