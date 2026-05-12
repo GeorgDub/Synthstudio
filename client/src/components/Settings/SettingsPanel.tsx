@@ -15,6 +15,12 @@ import React, { useState, useCallback, useEffect } from "react";
 import { KeyboardBindingsPanel } from "./KeyboardBindingsPanel";
 import { useApiSettingsStore, setApiKey, setAiModel, setAutoSaveEnabled, setSnapshotsEnabled, setAutoSaveInterval } from "@/store/useApiSettingsStore";
 import {
+  useMetronomeStore,
+  updateMetronome,
+  uploadCustomMetronomeSound,
+  clearCustomMetronomeSound,
+} from "@/store/useMetronomeStore";
+import {
   useChordMemoryStore,
   setChordMemoryEnabled,
   setChordType,
@@ -232,37 +238,36 @@ function KiSection() {
 }
 
 function MetronomeSection() {
-  const { updateMetronome, setCustomMetronomeSound, useMetronomeStore } = React.useMemo(() => {
-    // Lazy-Import um Circular-Deps zu vermeiden
-    return {
-      updateMetronome: (c: Record<string, unknown>) => import("@/store/useMetronomeStore").then(m => m.updateMetronome(c as never)),
-      setCustomMetronomeSound: (type: "downbeat"|"beat", url: string|null) => import("@/store/useMetronomeStore").then(m => m.setCustomMetronomeSound(type, url)),
-      useMetronomeStore: null,
-    };
-  }, []);
-  const [volume, setVolume] = React.useState(0.5);
+  const state = useMetronomeStore();
   const clickRef = React.useRef<HTMLInputElement>(null);
   const beatRef  = React.useRef<HTMLInputElement>(null);
-  const [downbeatName, setDownbeatName] = React.useState<string | null>(null);
-  const [beatName, setBeatName]         = React.useState<string | null>(null);
+  const [error, setError] = React.useState<string | null>(null);
 
-  const handleFile = (type: "downbeat" | "beat", file: File) => {
-    const url = URL.createObjectURL(file);
-    setCustomMetronomeSound(type, url);
-    if (type === "downbeat") setDownbeatName(file.name);
-    else setBeatName(file.name);
+  const handleFile = async (type: "downbeat" | "beat", file: File) => {
+    setError(null);
+    try {
+      await uploadCustomMetronomeSound(type, file);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Upload fehlgeschlagen");
+    }
   };
 
   return (
     <div className="space-y-4">
       <h3 className="text-sm font-bold text-text-primary">Metronom</h3>
-      <p className="text-xs text-text-dim">Passe den Metronom-Klang an. Eigene WAV-Dateien als Click-Sound laden.</p>
+      <p className="text-xs text-text-dim">Passe den Metronom-Klang an. Eigene WAV-Dateien als Click-Sound laden – persistent gespeichert.</p>
+
+      {error && (
+        <div className="text-[10px] text-accent-danger bg-accent-danger/10 rounded px-2 py-1">
+          {error}
+        </div>
+      )}
 
       <div className="space-y-3">
         <div>
           <label className="text-xs text-text-muted block mb-1">Lautstärke</label>
-          <input type="range" min={0} max={1} step={0.01} value={volume}
-            onChange={e => { setVolume(Number(e.target.value)); updateMetronome({ volume: Number(e.target.value) }); }}
+          <input type="range" min={0} max={1} step={0.01} value={state.volume}
+            onChange={e => updateMetronome({ volume: Number(e.target.value) })}
             className="w-full accent-accent-primary" />
         </div>
 
@@ -273,10 +278,11 @@ function MetronomeSection() {
               className="px-3 py-1.5 text-xs rounded bg-bg-elevated border border-border-color text-text-muted hover:text-text-primary">
               WAV laden…
             </button>
-            {downbeatName && <span className="text-[10px] text-accent-secondary truncate">{downbeatName}</span>}
-            {downbeatName && <button onClick={() => { setCustomMetronomeSound("downbeat", null); setDownbeatName(null); }} className="text-text-dim hover:text-accent-danger text-xs">✕</button>}
+            {state.customDownbeatName && <span className="text-[10px] text-accent-secondary truncate">{state.customDownbeatName}</span>}
+            {state.customDownbeatUrl && <button onClick={() => clearCustomMetronomeSound("downbeat")} className="text-text-dim hover:text-accent-danger text-xs">✕</button>}
           </div>
-          <input ref={clickRef} type="file" accept=".wav,.mp3,.ogg" className="hidden" onChange={e => { if (e.target.files?.[0]) handleFile("downbeat", e.target.files[0]); }} />
+          <input ref={clickRef} type="file" accept=".wav,.mp3,.ogg" className="hidden"
+            onChange={e => { if (e.target.files?.[0]) void handleFile("downbeat", e.target.files[0]); e.target.value = ""; }} />
         </div>
 
         <div>
@@ -286,13 +292,14 @@ function MetronomeSection() {
               className="px-3 py-1.5 text-xs rounded bg-bg-elevated border border-border-color text-text-muted hover:text-text-primary">
               WAV laden…
             </button>
-            {beatName && <span className="text-[10px] text-accent-secondary truncate">{beatName}</span>}
-            {beatName && <button onClick={() => { setCustomMetronomeSound("beat", null); setBeatName(null); }} className="text-text-dim hover:text-accent-danger text-xs">✕</button>}
+            {state.customBeatName && <span className="text-[10px] text-accent-secondary truncate">{state.customBeatName}</span>}
+            {state.customBeatUrl && <button onClick={() => clearCustomMetronomeSound("beat")} className="text-text-dim hover:text-accent-danger text-xs">✕</button>}
           </div>
-          <input ref={beatRef} type="file" accept=".wav,.mp3,.ogg" className="hidden" onChange={e => { if (e.target.files?.[0]) handleFile("beat", e.target.files[0]); }} />
+          <input ref={beatRef} type="file" accept=".wav,.mp3,.ogg" className="hidden"
+            onChange={e => { if (e.target.files?.[0]) void handleFile("beat", e.target.files[0]); e.target.value = ""; }} />
         </div>
 
-        <p className="text-[10px] text-text-dim">Ohne Custom Sound: synthetischer Klick (Sinus-Ton mit Hüllkurve).</p>
+        <p className="text-[10px] text-text-dim">Ohne Custom Sound: synthetischer Klick. Max. 2 MB pro Datei.</p>
       </div>
     </div>
   );

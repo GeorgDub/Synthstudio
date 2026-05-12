@@ -166,8 +166,26 @@ function createWindow() {
     const savedBounds = appStore?.get("windowBounds");
     const windowWidth = savedBounds?.width ?? 1440;
     const windowHeight = savedBounds?.height ?? 900;
-    const windowX = savedBounds?.x;
-    const windowY = savedBounds?.y;
+    let windowX = savedBounds?.x;
+    let windowY = savedBounds?.y;
+    // ── Bounds-Validation: Fenster darf nicht off-screen liegen ────────────────
+    // Beim Wechsel des Monitor-Setups (z.B. externer Display abgesteckt) können
+    // gespeicherte x/y-Koordinaten außerhalb aller aktuellen Displays liegen.
+    // Wenn das passiert, ignorieren wir sie und lassen Electron das Fenster
+    // zentriert auf dem Primärbildschirm öffnen.
+    if (windowX !== undefined && windowY !== undefined) {
+        const displays = electron_1.screen.getAllDisplays();
+        const isVisibleOnAnyDisplay = displays.some(d => {
+            const { x, y, width, height } = d.workArea;
+            return windowX >= x - 50 && windowX < x + width - 100 &&
+                windowY >= y - 10 && windowY < y + height - 100;
+        });
+        if (!isVisibleOnAnyDisplay) {
+            console.warn(`[Window] Saved bounds (${windowX},${windowY}) off-screen – using default position.`);
+            windowX = undefined;
+            windowY = undefined;
+        }
+    }
     mainWindow = new electron_1.BrowserWindow({
         width: windowWidth,
         height: windowHeight,
@@ -176,6 +194,8 @@ function createWindow() {
         minHeight: 700,
         title: APP_NAME,
         backgroundColor: "#0a0a0a",
+        // Erst zeigen wenn der Renderer ready ist – verhindert weißes Flash + leere Fenster
+        show: false,
         webPreferences: {
             preload: path.join(__dirname, "preload.cjs"),
             contextIsolation: true,
@@ -184,10 +204,35 @@ function createWindow() {
             webSecurity: !isDev,
         },
     });
-    // Maximiert-Zustand wiederherstellen
-    if (savedBounds?.isMaximized) {
-        mainWindow.maximize();
-    }
+    // ── Anzeigen sobald der Renderer fertig ist ────────────────────────────────
+    // ready-to-show kann selten nicht feuern (z.B. wenn loadFile failed).
+    // Deshalb ein 5s-Fallback der das Fenster trotzdem zeigt um "unsichtbaren
+    // Prozess im Task-Manager"-Symptom zu verhindern.
+    let shown = false;
+    const showOnce = () => {
+        if (shown || !mainWindow)
+            return;
+        shown = true;
+        mainWindow.show();
+        if (savedBounds?.isMaximized)
+            mainWindow.maximize();
+        else
+            mainWindow.focus();
+    };
+    mainWindow.once("ready-to-show", showOnce);
+    setTimeout(() => {
+        if (!shown && mainWindow) {
+            console.warn("[Window] ready-to-show did not fire within 5s – forcing show().");
+            showOnce();
+        }
+    }, 5000);
+    // ── Renderer-Fehler-Diagnostik ─────────────────────────────────────────────
+    mainWindow.webContents.on("did-fail-load", (_event, errorCode, errorDescription, validatedURL) => {
+        console.error(`[Window] did-fail-load: ${errorCode} ${errorDescription} URL=${validatedURL}`);
+    });
+    mainWindow.webContents.on("render-process-gone", (_event, details) => {
+        console.error(`[Window] render-process-gone: reason=${details.reason}, exitCode=${details.exitCode}`);
+    });
     // ── Inhalt laden ────────────────────────────────────────────────────────────
     if (isDev) {
         mainWindow.loadURL(devServerUrl);
@@ -195,7 +240,9 @@ function createWindow() {
     }
     else {
         const indexPath = path.join(__dirname, "..", "dist", "public", "index.html");
-        mainWindow.loadFile(indexPath);
+        mainWindow.loadFile(indexPath).catch(err => {
+            console.error(`[Window] loadFile failed for ${indexPath}:`, err);
+        });
     }
     // ── Externe Links im Standard-Browser öffnen ────────────────────────────────
     mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -1003,6 +1050,12 @@ function registerGlobalShortcuts() {
 electron_1.app.whenReady().then(() => {
     // AppStore initialisieren (muss vor buildMenu() erfolgen)
     appStore = (0, store_1.initStore)(electron_1.app.getPath("userData"));
+    // Notfall-Flag: Synthstudio.exe --reset-window löscht gespeicherte Fenster-Bounds.
+    // Hilft User die nach Display-Wechsel das Fenster nicht mehr sehen können.
+    if (process.argv.includes("--reset-window")) {
+        appStore.saveWindowBounds({ x: undefined, y: undefined, width: 1440, height: 900, isMaximized: false });
+        console.log("[Window] --reset-window: window bounds cleared.");
+    }
     // Basis-IPC-Handler registrieren (kein mainWindow erforderlich)
     registerIpcHandlers();
     (0, waveform_1.registerWaveformHandlers)();

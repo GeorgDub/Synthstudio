@@ -158,32 +158,9 @@ export function useKeyboardShortcuts({
     const parts = pattern?.parts ?? [];
 
     // ── Transport ────────────────────────────────────────────────────────────
-
-    if (e.code === "Space" && !ctrl) {
-      e.preventDefault();
-      opts.onPlayStop();
-      return;
-    }
-
-    if (e.code === "KeyR" && ctrl && !shift) {
-      e.preventDefault();
-      opts.onRecord?.();
-      return;
-    }
-
-    if (e.code === "Period" && ctrl) {
-      e.preventDefault();
-      if (opts.isPlaying) opts.onPlayStop();
-      return;
-    }
-
-    // Tap-Tempo: T (ohne Modifier)
-    if (e.code === "KeyT" && !ctrl && !shift) {
-      e.preventDefault();
-      const newBpm = tapTempo.current.tap();
-      if (newBpm !== null) opts.onBpmChange(newBpm);
-      return;
-    }
+    // HINWEIS: Space (play-stop), Ctrl+R (record), Ctrl+. (stop) und T (tap-tempo)
+    // werden bereits in useGlobalKeyBindings → CustomEvent "kb:action" gehandelt.
+    // Doppelte Toggle-Handler hier würden den State neutralisieren (Bug v1.15.3).
 
     // BPM +/-
     if (e.code === "Equal" && !ctrl) {

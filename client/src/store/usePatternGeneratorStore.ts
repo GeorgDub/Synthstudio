@@ -1,5 +1,5 @@
 import { useEffect, useReducer } from "react";
-import { type Genre, type GeneratedPattern, generatePattern } from "../utils/patternGenerator";
+import { type Genre, type GeneratedPattern, generatePattern, GENRE_BPM } from "../utils/patternGenerator";
 
 export interface PatternPromptPreset {
   id: string;
@@ -439,43 +439,48 @@ export function generateAndStore(): void {
   _state = { ..._state, isGenerating: true };
   notify();
   setTimeout(() => {
-    const { GENRE_BPM } = require("../utils/patternGenerator");
-    const effectiveBpm = _state.templateBpm ?? (GENRE_BPM[_state.selectedGenre] as number) ?? 120;
-    const pattern = generatePattern({
-      genre: _state.selectedGenre,
-      complexity: _state.complexity,
-      description: _state.customPrompt,
-      seed: Math.floor(Math.random() * 0xffffffff),
-    });
-    // Template-Overrides anwenden
-    const finalPattern = {
-      ...pattern,
-      bpm: effectiveBpm,
-      parts: pattern.parts
-        .filter(p => _state.templateParts.length === 0 || _state.templateParts.some(tp =>
-          p.name.toLowerCase().includes(tp.toLowerCase().split(' ')[0])
-        ))
-        .map(p => ({
-          ...p,
-          steps: p.steps.map((step, _i) => ({
-            ...step,
-            active: step.active && Math.random() < (0.3 + _state.templateDensity * 0.7) ||
-              (!step.active && Math.random() < _state.templateDensity * 0.15),
-          })),
-        })),
-    };
-    // Swing-Effekt: Offbeat-Steps verschieben (approximiert durch Velocity-Änderung)
-    if (_state.templateSwing > 0) {
-      finalPattern.parts.forEach(p => {
-        p.steps.forEach((step, i) => {
-          if (i % 2 === 1 && step.active) {
-            step.velocity = Math.max(20, Math.min(127, (step.velocity ?? 100) - Math.round(_state.templateSwing * 0.5)));
-          }
-        });
+    try {
+      const effectiveBpm = _state.templateBpm ?? (GENRE_BPM[_state.selectedGenre] as number) ?? 120;
+      const pattern = generatePattern({
+        genre: _state.selectedGenre,
+        complexity: _state.complexity,
+        description: _state.customPrompt,
+        seed: Math.floor(Math.random() * 0xffffffff),
       });
+      // Template-Overrides anwenden
+      const finalPattern = {
+        ...pattern,
+        bpm: effectiveBpm,
+        parts: pattern.parts
+          .filter(p => _state.templateParts.length === 0 || _state.templateParts.some(tp =>
+            p.name.toLowerCase().includes(tp.toLowerCase().split(' ')[0])
+          ))
+          .map(p => ({
+            ...p,
+            steps: p.steps.map((step, _i) => ({
+              ...step,
+              active: step.active && Math.random() < (0.3 + _state.templateDensity * 0.7) ||
+                (!step.active && Math.random() < _state.templateDensity * 0.15),
+            })),
+          })),
+      };
+      // Swing-Effekt: Offbeat-Steps verschieben (approximiert durch Velocity-Änderung)
+      if (_state.templateSwing > 0) {
+        finalPattern.parts.forEach(p => {
+          p.steps.forEach((step, i) => {
+            if (i % 2 === 1 && step.active) {
+              step.velocity = Math.max(20, Math.min(127, (step.velocity ?? 100) - Math.round(_state.templateSwing * 0.5)));
+            }
+          });
+        });
+      }
+      _state = { ..._state, lastGenerated: finalPattern, isGenerating: false };
+    } catch (err) {
+      console.error("[generateAndStore]", err);
+      _state = { ..._state, isGenerating: false };
+    } finally {
+      notify();
     }
-    _state = { ..._state, lastGenerated: finalPattern, isGenerating: false };
-    notify();
   }, 200);
 }
 

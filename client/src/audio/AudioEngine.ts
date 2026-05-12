@@ -1091,7 +1091,7 @@ class AudioEngineClass {
             ? Math.max(0.05, 0.7 / Math.max(0.2, this._metronomAccent))
             : Math.max(0.02, 0.3 / Math.max(0.2, this._metronomAccent));
         const freq = isDownbeat ? this._metronomDownbeatFreq : this._metronomBeatFreq;
-        this._playClick(time, vol, freq);
+        this._playClick(time, vol, freq, isDownbeat);
       }
     }
 
@@ -1111,15 +1111,31 @@ class AudioEngineClass {
       const step = part.steps[effIdx];
       if (!step || !this.shouldTriggerStep(step, part.id, effIdx)) return;
 
-      // Micro-Timing: zeitlicher Offset in ms
+      // Micro-Timing: zeitlicher Offset in ms (statisch pro Part)
       const microOffsetSec = (part.microTiming ?? 0) / 1000;
-      const scheduledTime = time + microOffsetSec;
+
+      // Humanizer: Swing + Timing-Jitter (dynamisch)
+      let humanizerTimingOffset = 0;
+      let humanizerVelocityMult = 1.0;
+      try {
+        // Lazy require um Zirkular-Imports zu vermeiden
+        const hum = (globalThis as Record<string, unknown>)["__synthstudio_humanizer__"] as
+          | { timing: (i: number, d: number, p?: number) => number; velocity: (p?: number) => number }
+          | undefined;
+        if (hum) {
+          humanizerTimingOffset = hum.timing(effIdx, this._stepDuration(), partIndex);
+          humanizerVelocityMult = hum.velocity(partIndex);
+        }
+      } catch { /* ignore */ }
+
+      const scheduledTime = time + microOffsetSec + humanizerTimingOffset;
+      const humanizedVelocity = Math.max(1, Math.min(127, Math.round((step.velocity ?? 100) * humanizerVelocityMult)));
 
       const scheduled: ScheduledStep = {
         partIndex,
         stepIndex,
         time: scheduledTime,
-        velocity: step.velocity ?? 100,
+        velocity: humanizedVelocity,
         pan: part.pan ?? 0,
         pitch: step.pitch ?? 0,
         reverse: step.reverse ?? false,
@@ -1631,8 +1647,49 @@ class AudioEngineClass {
     return decoded;
   }
 
-  private _playClick(time: number, volume: number, freq: number) {
+  /** Cache für Metronome-Custom-Click-Buffers, Key = Data-URL */
+  private _customClickBuffers = new Map<string, AudioBuffer>();
+
+  /** Lädt und cached einen Custom-Click-Sound (Data-URL → AudioBuffer). */
+  async setCustomClickSound(role: "downbeat" | "beat", dataUrl: string | null): Promise<void> {
+    if (!this.ctx) return;
+    const cacheKey = `${role}::${dataUrl ?? "none"}`;
+    if (dataUrl === null) {
+      this._customClickBuffers.delete(role);
+      return;
+    }
+    if (this._customClickBuffers.has(cacheKey)) {
+      this._customClickBuffers.set(role, this._customClickBuffers.get(cacheKey)!);
+      return;
+    }
+    try {
+      const arr = Uint8Array.from(atob(dataUrl.split(",")[1]), c => c.charCodeAt(0));
+      const buf = await this.ctx.decodeAudioData(arr.buffer);
+      this._customClickBuffers.set(role, buf);
+      this._customClickBuffers.set(cacheKey, buf);
+    } catch (err) {
+      console.warn(`[AudioEngine] Metronome Custom-Sound (${role}) konnte nicht dekodiert werden:`, err);
+    }
+  }
+
+  private _playClick(time: number, volume: number, freq: number, isDownbeat = false) {
     if (!this.ctx || !this.masterGain) return;
+
+    // Custom-Click-Buffer wenn vorhanden
+    const role = isDownbeat ? "downbeat" : "beat";
+    const buf = this._customClickBuffers.get(role);
+    if (buf) {
+      const src = this.ctx.createBufferSource();
+      src.buffer = buf;
+      const gain = this.ctx.createGain();
+      gain.gain.value = volume * this._metronomGain;
+      src.connect(gain);
+      gain.connect(this.masterGain);
+      src.start(Math.max(time, this.ctx.currentTime));
+      return;
+    }
+
+    // Synthetischer Click als Fallback
     const osc = this.ctx.createOscillator();
     const gain = this.ctx.createGain();
     osc.frequency.value = freq;

@@ -174,9 +174,18 @@ export function PatternGeneratorPanel() {
                 </button>
                 <button onClick={() => setTemplateBpm((store.templateBpm ?? GENRE_BPM[store.selectedGenre]) - 1)}
                   style={{ width: 22, height: 26, background: "var(--ss-bg-elevated)", border: "1px solid var(--ss-border)", borderRadius: 4, color: "var(--ss-text-muted)", cursor: "pointer", fontWeight: 700, fontSize: 13 }}>−</button>
-                <input type="number" min={40} max={240}
+                <input type="number"
                   value={store.templateBpm ?? GENRE_BPM[store.selectedGenre]}
-                  onChange={(e) => setTemplateBpm(parseInt(e.target.value) || 120)}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val === "") { setTemplateBpm(null); return; } // Leer → Auto
+                    const num = parseInt(val);
+                    if (!isNaN(num)) setTemplateBpm(num);
+                  }}
+                  onBlur={(e) => {
+                    const num = parseInt(e.target.value);
+                    if (!isNaN(num)) setTemplateBpm(Math.max(40, Math.min(240, num)));
+                  }}
                   style={{ width: 52, background: "var(--ss-bg-elevated)", border: "1px solid " + (store.templateBpm !== null ? "var(--ss-accent-primary)" : "var(--ss-border)"), borderRadius: 4, padding: "3px 4px", color: "var(--ss-text-primary)", fontSize: 13, fontWeight: 700, fontFamily: "monospace", textAlign: "center" }} />
                 <button onClick={() => setTemplateBpm((store.templateBpm ?? GENRE_BPM[store.selectedGenre]) + 1)}
                   style={{ width: 22, height: 26, background: "var(--ss-bg-elevated)", border: "1px solid var(--ss-border)", borderRadius: 4, color: "var(--ss-text-muted)", cursor: "pointer", fontWeight: 700, fontSize: 13 }}>+</button>

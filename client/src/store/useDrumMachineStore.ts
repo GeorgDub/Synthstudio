@@ -90,6 +90,8 @@ export interface DrumMachineActions {
   quantizePartSteps: (partId: string, grid: import("../utils/quantizeGrid").QuantizeGrid, strength: number) => void;
   setPartEuclidean: (partId: string, hits: number, steps: number, rotation?: number) => void;
   clearPattern: () => void;
+  /** Vollständiger Reset auf den initialen Pattern-State (für 'Neues Projekt'). */
+  resetAll: () => void;
   fillPattern: (partId: string, density?: number) => void;
   randomizePattern: (partId: string) => void;
   shiftPattern: (partId: string, direction: "left" | "right") => void;
@@ -692,6 +694,33 @@ export function useDrumMachineStore(): DrumMachineState & DrumMachineActions {
     }));
   }, [updatePatterns, state.activePatternId]);
 
+  /** Setzt den kompletten DrumMachine-Store auf den initialen Zustand zurück. */
+  const resetAll = useCallback(() => {
+    // INITIAL_PATTERN-Clone mit frischer ID, damit Pattern-IDs nicht kollidieren
+    const fresh = JSON.parse(JSON.stringify(INITIAL_PATTERN)) as typeof INITIAL_PATTERN;
+    fresh.id = `pat-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`;
+    fresh.parts = fresh.parts.map(p => ({
+      ...p,
+      id: `part-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+    }));
+    setState({
+      patterns: [fresh],
+      activePatternId: fresh.id,
+      playbackPatternId: null,
+      liveEditSourcePatternId: null,
+      activePartId: fresh.parts[0]?.id ?? null,
+      currentStep: 0,
+      velocityMode: false,
+      pitchMode: false,
+      fxPanelPartId: null,
+      commitPending: false,
+      stackedPatternIds: [],
+    });
+    // Undo-History leeren damit User keinen Restore zum alten Projekt machen kann
+    undoStack.current = [];
+    redoStack.current = [];
+  }, []);
+
   const fillPattern = useCallback((partId: string, density = 0.5) => {
     updatePatterns(ps => ps.map(p => {
       if (p.id !== state.activePatternId) return p;
@@ -806,7 +835,7 @@ export function useDrumMachineStore(): DrumMachineState & DrumMachineActions {
     setPartStepResolution, setPartStepLength, setActivePart, movePart,
     setPartFx, setFxPanelPartId, setPartSourceType, setPartGranularParams, setPartStretchRatio, setPartMicroTiming,
     toggleStep, setPartSteps, setStepVelocity, setStepPitch, setStepProbability, setStepCondition, setStepReverse, setStepParamLock, setStepLength, setStepChainNext, quantizePartSteps, setPartEuclidean,
-    clearPattern, fillPattern, randomizePattern, shiftPattern,
+    clearPattern, resetAll, fillPattern, randomizePattern, shiftPattern,
     setStepCount, setCurrentStep,
     setVelocityMode, setPitchMode,
     undo, redo, canUndo, canRedo,

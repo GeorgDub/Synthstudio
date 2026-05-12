@@ -1,0 +1,1782 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Synthstudio – Benutzerhandbuch v1.15</title>
+<style>
+:root {
+  --bg: #0d0f14;
+  --bg-panel: #13161e;
+  --bg-elevated: #1a1e28;
+  --bg-card: #1e2230;
+  --accent: #00c8ff;
+  --accent2: #a855f7;
+  --accent-green: #22c55e;
+  --accent-red: #ef4444;
+  --accent-amber: #f59e0b;
+  --text: #e2e8f0;
+  --text-muted: #94a3b8;
+  --text-dim: #4a5568;
+  --border: #2a3040;
+  --border-subtle: #1e2535;
+  --sidebar-w: 280px;
+  --header-h: 64px;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; font-size: 15px; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  line-height: 1.65;
+  display: flex;
+  min-height: 100vh;
+}
+
+/* ── SIDEBAR ── */
+#sidebar {
+  width: var(--sidebar-w);
+  min-height: 100vh;
+  background: var(--bg-panel);
+  border-right: 1px solid var(--border);
+  position: fixed;
+  top: 0; left: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  z-index: 100;
+}
+#sidebar-logo {
+  padding: 20px 18px 14px;
+  border-bottom: 1px solid var(--border);
+}
+#sidebar-logo .brand {
+  font-size: 1.3rem;
+  font-weight: 700;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  letter-spacing: -0.5px;
+}
+#sidebar-logo .version {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  margin-top: 2px;
+}
+#sidebar nav { padding: 10px 0 30px; }
+#sidebar nav a {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 18px;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  text-decoration: none;
+  border-left: 2px solid transparent;
+  transition: all 0.15s;
+}
+#sidebar nav a:hover, #sidebar nav a.active {
+  color: var(--accent);
+  border-left-color: var(--accent);
+  background: rgba(0,200,255,0.05);
+}
+#sidebar nav .nav-section {
+  font-size: 0.67rem;
+  font-weight: 700;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  padding: 18px 18px 5px;
+}
+#sidebar nav .nav-icon { font-size: 0.9rem; width: 16px; text-align: center; }
+
+/* ── MAIN ── */
+#main {
+  margin-left: var(--sidebar-w);
+  flex: 1;
+  max-width: 960px;
+  padding: 48px 52px 100px;
+}
+
+/* ── TYPOGRAPHY ── */
+h1 { font-size: 2.2rem; font-weight: 700; line-height: 1.2; margin-bottom: 12px;
+     background: linear-gradient(135deg, var(--accent), var(--accent2));
+     -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+h2 { font-size: 1.55rem; font-weight: 700; color: var(--text); margin: 52px 0 16px;
+     padding-bottom: 10px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 10px; }
+h2 .section-num { font-size: 0.75rem; background: var(--accent); color: #000; border-radius: 4px; padding: 2px 7px; font-weight: 700; }
+h3 { font-size: 1.1rem; font-weight: 600; color: var(--accent); margin: 28px 0 10px; }
+h4 { font-size: 0.95rem; font-weight: 600; color: var(--text-muted); margin: 18px 0 8px; text-transform: uppercase; letter-spacing: 0.5px; }
+p { margin-bottom: 12px; color: var(--text-muted); }
+p strong { color: var(--text); }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+code { font-family: 'Cascadia Code', 'JetBrains Mono', 'Fira Code', monospace;
+       background: var(--bg-elevated); padding: 2px 6px; border-radius: 4px;
+       font-size: 0.82em; color: var(--accent); border: 1px solid var(--border); }
+kbd {
+  display: inline-block;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-bottom: 2px solid var(--text-dim);
+  border-radius: 5px;
+  padding: 2px 7px;
+  font-size: 0.78em;
+  font-family: inherit;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+/* ── TABLES ── */
+table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 0.88rem; }
+th { background: var(--bg-elevated); color: var(--text-muted); font-weight: 600;
+     text-align: left; padding: 9px 12px; border-bottom: 2px solid var(--border);
+     font-size: 0.78rem; letter-spacing: 0.3px; text-transform: uppercase; }
+td { padding: 8px 12px; border-bottom: 1px solid var(--border-subtle); color: var(--text-muted); vertical-align: top; }
+tr:last-child td { border-bottom: none; }
+tr:hover td { background: rgba(255,255,255,0.015); }
+td:first-child { color: var(--text); font-weight: 500; }
+
+/* ── CARDS / CALLOUTS ── */
+.card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; padding: 20px 22px; margin: 16px 0; }
+.callout { border-radius: 8px; padding: 14px 18px; margin: 16px 0; border-left: 3px solid; font-size: 0.88rem; }
+.callout.tip  { background: rgba(0,200,255,0.06); border-color: var(--accent); color: var(--text-muted); }
+.callout.warn { background: rgba(245,158,11,0.07); border-color: var(--accent-amber); color: var(--text-muted); }
+.callout.info { background: rgba(168,85,247,0.06); border-color: var(--accent2); color: var(--text-muted); }
+.callout strong { color: var(--text); }
+
+/* ── CODE BLOCKS ── */
+pre {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px 18px;
+  overflow-x: auto;
+  font-size: 0.82rem;
+  font-family: 'Cascadia Code', 'Fira Code', monospace;
+  line-height: 1.6;
+  color: #a0b4cc;
+  margin: 14px 0;
+}
+pre .c  { color: var(--text-dim); }
+pre .s  { color: var(--accent-green); }
+pre .k  { color: var(--accent2); }
+pre .n  { color: var(--accent); }
+
+/* ── FEATURE GRID ── */
+.feat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; margin: 16px 0; }
+.feat-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px 16px;
+  transition: border-color 0.2s;
+}
+.feat-card:hover { border-color: var(--accent); }
+.feat-card .icon { font-size: 1.4rem; margin-bottom: 8px; }
+.feat-card .title { font-size: 0.88rem; font-weight: 600; color: var(--text); margin-bottom: 4px; }
+.feat-card .desc { font-size: 0.78rem; color: var(--text-muted); }
+
+/* ── TAG BADGE ── */
+.badge {
+  display: inline-block;
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 20px;
+  margin-left: 6px;
+  letter-spacing: 0.3px;
+}
+.badge.new    { background: rgba(34,197,94,0.15); color: var(--accent-green); border: 1px solid rgba(34,197,94,0.3); }
+.badge.pro    { background: rgba(0,200,255,0.12); color: var(--accent); border: 1px solid rgba(0,200,255,0.25); }
+.badge.beta   { background: rgba(245,158,11,0.12); color: var(--accent-amber); border: 1px solid rgba(245,158,11,0.3); }
+
+/* ── SHORTCUT TABLE ── */
+.shortcuts-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin: 14px 0;
+}
+.sc-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 7px 12px;
+  font-size: 0.83rem;
+}
+.sc-row .sc-label { color: var(--text-muted); }
+.sc-keys { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
+
+/* ── DIVIDER ── */
+.section-divider { height: 1px; background: linear-gradient(90deg, var(--border), transparent); margin: 40px 0; }
+
+/* ── INTERFACE DIAGRAM ── */
+.diagram {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  margin: 20px 0;
+}
+.diagram-title {
+  background: var(--bg-card);
+  padding: 8px 16px;
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  border-bottom: 1px solid var(--border);
+  font-family: monospace;
+  letter-spacing: 0.3px;
+}
+
+/* ── STEP GRID DEMO ── */
+.step-demo {
+  display: flex;
+  gap: 3px;
+  padding: 14px;
+  background: var(--bg-elevated);
+  border-radius: 8px;
+  margin: 12px 0;
+  flex-wrap: wrap;
+}
+.step {
+  width: 34px; height: 34px;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 0.6rem; color: var(--text-dim);
+  transition: all 0.1s;
+  cursor: pointer;
+  position: relative;
+}
+.step.on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #000;
+  font-weight: 700;
+  box-shadow: 0 0 8px rgba(0,200,255,0.4);
+}
+.step.on.vel-low { background: #1a6070; border-color: #1a6070; color: var(--text-muted); }
+.step.on.vel-med { background: #0099bb; border-color: #0099bb; color: #fff; }
+.step.active-play { outline: 2px solid var(--accent-amber); outline-offset: 2px; }
+.channel-row { display: flex; align-items: center; gap: 10px; margin: 4px 0; }
+.ch-label { font-size: 0.75rem; color: var(--text-muted); width: 50px; text-align: right; flex-shrink: 0; }
+
+/* ── THEME SWATCHES ── */
+.theme-grid { display: flex; gap: 10px; flex-wrap: wrap; margin: 14px 0; }
+.theme-swatch {
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  width: 130px;
+  cursor: pointer;
+  transition: transform 0.15s;
+}
+.theme-swatch:hover { transform: scale(1.03); }
+.theme-swatch .preview { height: 60px; }
+.theme-swatch .name { font-size: 0.75rem; padding: 6px 8px; background: var(--bg-card); color: var(--text-muted); text-align: center; }
+
+/* ── SCROLLBAR ── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
+
+/* ── HERO ── */
+.hero {
+  background: linear-gradient(135deg, rgba(0,200,255,0.05) 0%, rgba(168,85,247,0.05) 100%);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 40px 40px 36px;
+  margin-bottom: 40px;
+  position: relative;
+  overflow: hidden;
+}
+.hero::before {
+  content: '';
+  position: absolute;
+  top: -60px; right: -60px;
+  width: 240px; height: 240px;
+  background: radial-gradient(circle, rgba(0,200,255,0.08), transparent 70%);
+  pointer-events: none;
+}
+.hero .subtitle { font-size: 1.05rem; color: var(--text-muted); margin-top: 8px; margin-bottom: 0; }
+.hero-badges { display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap; }
+.hero-badge {
+  font-size: 0.75rem;
+  padding: 4px 10px;
+  border-radius: 20px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+}
+
+/* ── EFFECT CHAIN ── */
+.fx-chain {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  margin: 14px 0;
+  flex-wrap: wrap;
+  font-size: 0.78rem;
+}
+.fx-node {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 7px 11px;
+  color: var(--text);
+  white-space: nowrap;
+}
+.fx-arrow {
+  color: var(--text-dim);
+  padding: 0 4px;
+  font-size: 1rem;
+}
+
+/* ── COLLAB VISUAL ── */
+.collab-box {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin: 16px 0;
+}
+.collab-panel {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 14px;
+}
+.collab-panel .cp-title {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+}
+.collab-panel .cp-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+.dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.dot.green { background: var(--accent-green); box-shadow: 0 0 6px var(--accent-green); }
+.dot.blue  { background: var(--accent); box-shadow: 0 0 6px var(--accent); }
+.dot.dim   { background: var(--text-dim); }
+
+/* ── RESPONSIVE ── */
+@media (max-width: 900px) {
+  #sidebar { display: none; }
+  #main { margin-left: 0; padding: 24px 20px 60px; }
+  .shortcuts-grid { grid-template-columns: 1fr; }
+  .collab-box { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+
+<!-- ══════════════ SIDEBAR ══════════════ -->
+<aside id="sidebar">
+  <div id="sidebar-logo">
+    <div class="brand">⬡ Synthstudio</div>
+    <div class="version">Benutzerhandbuch · v1.15.1</div>
+  </div>
+  <nav>
+    <div class="nav-section">Einführung</div>
+    <a href="#start"><span class="nav-icon">🚀</span> Erste Schritte</a>
+    <a href="#interface"><span class="nav-icon">🖥</span> Oberfläche</a>
+    <a href="#transport"><span class="nav-icon">▶</span> Transport &amp; BPM</a>
+    <a href="#samples"><span class="nav-icon">🎵</span> Sample Browser</a>
+
+    <div class="nav-section">Sequencer</div>
+    <a href="#drum"><span class="nav-icon">🥁</span> Drum Machine</a>
+    <a href="#stepinspector"><span class="nav-icon">🔍</span> Step Inspector</a>
+    <a href="#pianoroll"><span class="nav-icon">🎹</span> Piano Roll</a>
+    <a href="#liveedit"><span class="nav-icon">⚡</span> Live Edit</a>
+
+    <div class="nav-section">Performance</div>
+    <a href="#performance"><span class="nav-icon">🎭</span> Performance Mode</a>
+    <a href="#scenes"><span class="nav-icon">🎬</span> Scene Launch</a>
+    <a href="#morph"><span class="nav-icon">⟷</span> Pattern Morph</a>
+    <a href="#noterepeat"><span class="nav-icon">🔁</span> Note Repeat</a>
+
+    <div class="nav-section">Mixer &amp; FX</div>
+    <a href="#mixer"><span class="nav-icon">🎚</span> Mixer</a>
+    <a href="#effects"><span class="nav-icon">🎛</span> Effekt-Ketten</a>
+    <a href="#spectrum"><span class="nav-icon">📊</span> Spectrum Analyzer</a>
+
+    <div class="nav-section">Arrangement</div>
+    <a href="#song"><span class="nav-icon">📋</span> Song-Modus</a>
+    <a href="#automation"><span class="nav-icon">📈</span> Automation</a>
+
+    <div class="nav-section">Synthese</div>
+    <a href="#synth"><span class="nav-icon">🌊</span> Synthesizer</a>
+    <a href="#granular"><span class="nav-icon">✨</span> Granular</a>
+    <a href="#arpeggiator"><span class="nav-icon">🎼</span> Arpeggiator</a>
+    <a href="#humanizer"><span class="nav-icon">🎲</span> Humanizer</a>
+
+    <div class="nav-section">Tools &amp; KI</div>
+    <a href="#tools"><span class="nav-icon">🧰</span> Tools-Tab</a>
+    <a href="#generator"><span class="nav-icon">🤖</span> KI-Generator</a>
+    <a href="#chords"><span class="nav-icon">♫</span> Akkord-Generator</a>
+
+    <div class="nav-section">Kollaboration</div>
+    <a href="#collab"><span class="nav-icon">👥</span> LAN-Session</a>
+
+    <div class="nav-section">Einstellungen</div>
+    <a href="#projects"><span class="nav-icon">💾</span> Projekte</a>
+    <a href="#themes"><span class="nav-icon">🎨</span> Themes</a>
+    <a href="#midi"><span class="nav-icon">🎹</span> MIDI</a>
+    <a href="#export"><span class="nav-icon">⬇</span> Export</a>
+
+    <div class="nav-section">Referenz</div>
+    <a href="#shortcuts"><span class="nav-icon">⌨</span> Tastatur-Shortcuts</a>
+  </nav>
+</aside>
+
+<!-- ══════════════ MAIN ══════════════ -->
+<main id="main">
+
+<!-- HERO -->
+<div class="hero">
+  <h1>Synthstudio</h1>
+  <p class="subtitle">Professionelle Audio-Produktionsstation — Drum Machine, Synthesizer, Mixer &amp; mehr</p>
+  <div class="hero-badges">
+    <span class="hero-badge">Version 1.15.1</span>
+    <span class="hero-badge">Electron · Web</span>
+    <span class="hero-badge">Windows · macOS · Linux</span>
+    <span class="hero-badge">Zweisprachig DE / EN</span>
+  </div>
+</div>
+
+<!-- ══ 1. ERSTE SCHRITTE ══ -->
+<section id="start">
+  <h2><span class="section-num">01</span> Erste Schritte <em>(Getting Started)</em></h2>
+  <p>Synthstudio läuft als <strong>Electron Desktop-App</strong> (empfohlen) und als <strong>Web-App</strong> im Browser — beide aus derselben Codebasis.</p>
+
+  <h3>Installation</h3>
+  <table>
+    <tr><th>Plattform</th><th>Datei</th><th>Hinweis</th></tr>
+    <tr><td>Windows</td><td><code>Synthstudio-Setup-1.15.1.exe</code></td><td>NSIS Installer, automatisches Update</td></tr>
+    <tr><td>macOS Intel</td><td><code>Synthstudio-1.15.1-x64.dmg</code></td><td>Intel Mac (x64)</td></tr>
+    <tr><td>macOS Apple Silicon</td><td><code>Synthstudio-1.15.1-arm64.dmg</code></td><td>M1/M2/M3 Macs</td></tr>
+    <tr><td>Linux</td><td><code>.AppImage</code> oder <code>.deb</code></td><td>Chmod +x für AppImage nötig</td></tr>
+    <tr><td>Browser</td><td>URL öffnen</td><td>Eingeschränkter Datei-Zugriff, kein MIDI</td></tr>
+  </table>
+
+  <h3>Systemvoraussetzungen</h3>
+  <table>
+    <tr><th>Komponente</th><th>Minimum</th><th>Empfohlen</th></tr>
+    <tr><td>CPU</td><td>Dual-Core 2 GHz</td><td>Quad-Core 3+ GHz</td></tr>
+    <tr><td>RAM</td><td>4 GB</td><td>8–16 GB</td></tr>
+    <tr><td>Audio</td><td>Standard-Soundkarte</td><td>Low-Latency ASIO/CoreAudio</td></tr>
+    <tr><td>OS</td><td>Windows 10, macOS 12, Ubuntu 20</td><td>Aktuellste Version</td></tr>
+  </table>
+
+  <h3>Erster Start — Workflow</h3>
+  <div class="feat-grid">
+    <div class="feat-card"><div class="icon">1️⃣</div><div class="title">Projekt erstellen</div><div class="desc">Datei → Neu oder Template wählen (Techno, House, Hip-Hop…)</div></div>
+    <div class="feat-card"><div class="icon">2️⃣</div><div class="title">Samples laden</div><div class="desc">Drag &amp; Drop auf den Sample Browser, oder Ordner importieren</div></div>
+    <div class="feat-card"><div class="icon">3️⃣</div><div class="title">Pattern programmieren</div><div class="desc">Steps im Drum-Grid aktivieren, BPM einstellen</div></div>
+    <div class="feat-card"><div class="icon">4️⃣</div><div class="title">Abspielen</div><div class="desc">Leertaste oder ▶-Button — los geht's!</div></div>
+    <div class="feat-card"><div class="icon">5️⃣</div><div class="title">Mischen</div><div class="desc">Mixer-Tab: Fader, EQ, Effekte pro Kanal</div></div>
+    <div class="feat-card"><div class="icon">6️⃣</div><div class="title">Exportieren</div><div class="desc">WAV Mix oder Stems, MIDI Export</div></div>
+  </div>
+</section>
+
+<!-- ══ 2. OBERFLÄCHE ══ -->
+<section id="interface">
+  <h2><span class="section-num">02</span> Oberfläche <em>(Interface Overview)</em></h2>
+
+  <div class="diagram">
+    <div class="diagram-title">Synthstudio — Hauptoberfläche</div>
+    <svg viewBox="0 0 860 420" xmlns="http://www.w3.org/2000/svg" style="width:100%;display:block;background:#0d0f14;">
+      <!-- Title bar -->
+      <rect x="0" y="0" width="860" height="38" fill="#13161e" stroke="#2a3040" stroke-width="1"/>
+      <circle cx="14" cy="19" r="5" fill="#00c8ff" opacity="0.8"/>
+      <text x="24" y="23" fill="#00c8ff" font-size="11" font-weight="700" font-family="sans-serif">⬡ Synthstudio</text>
+      <text x="160" y="23" fill="#4a5568" font-size="10" font-family="sans-serif">projekt.synth</text>
+      <rect x="680" y="8" width="22" height="22" rx="4" fill="#1e2230"/>
+      <text x="691" y="22" fill="#00c8ff" font-size="10" font-family="sans-serif" text-anchor="middle">▶</text>
+      <rect x="706" y="8" width="22" height="22" rx="4" fill="#1e2230"/>
+      <text x="717" y="22" fill="#4a5568" font-size="10" font-family="sans-serif" text-anchor="middle">●</text>
+      <rect x="730" y="8" width="22" height="22" rx="4" fill="#1e2230"/>
+      <text x="741" y="22" fill="#4a5568" font-size="10" font-family="sans-serif" text-anchor="middle">↩</text>
+      <rect x="754" y="8" width="22" height="22" rx="4" fill="#1e2230"/>
+      <text x="765" y="22" fill="#4a5568" font-size="10" font-family="sans-serif" text-anchor="middle">↪</text>
+      <text x="790" y="23" fill="#4a5568" font-size="10" font-family="sans-serif">BPM 120</text>
+      <rect x="820" y="8" width="30" height="22" rx="4" fill="#1e2230" stroke="#2a3040" stroke-width="1"/>
+      <text x="835" y="22" fill="#94a3b8" font-size="9" font-family="sans-serif" text-anchor="middle">⚙</text>
+
+      <!-- Tabs -->
+      <rect x="0" y="38" width="860" height="34" fill="#13161e" stroke="#2a3040" stroke-width="1"/>
+      <rect x="158" y="38" width="90" height="34" fill="#1e2230" stroke="#00c8ff" stroke-width="1"/>
+      <text x="203" y="59" fill="#00c8ff" font-size="10" font-weight="700" font-family="sans-serif" text-anchor="middle">Sequencer</text>
+      <text x="300" y="59" fill="#4a5568" font-size="10" font-family="sans-serif" text-anchor="middle">Mixer</text>
+      <text x="390" y="59" fill="#4a5568" font-size="10" font-family="sans-serif" text-anchor="middle">Song</text>
+      <text x="470" y="59" fill="#4a5568" font-size="10" font-family="sans-serif" text-anchor="middle">Humanizer</text>
+      <text x="555" y="59" fill="#4a5568" font-size="10" font-family="sans-serif" text-anchor="middle">Tools</text>
+      <text x="650" y="59" fill="#4a5568" font-size="10" font-family="sans-serif" text-anchor="middle">Kollaboration</text>
+
+      <!-- Sidebar -->
+      <rect x="0" y="72" width="155" height="348" fill="#13161e" stroke="#2a3040" stroke-width="1"/>
+      <text x="10" y="92" fill="#4a5568" font-size="8" font-family="sans-serif" font-weight="700">SAMPLE BROWSER</text>
+      <rect x="8" y="98" width="140" height="20" rx="3" fill="#1e2230"/>
+      <text x="14" y="112" fill="#4a5568" font-size="8" font-family="sans-serif">🔍 Suchen...</text>
+      <text x="10" y="132" fill="#4a5568" font-size="8" font-family="sans-serif">[Alle][Kicks][Snares][Hats]</text>
+      <rect x="8" y="140" width="140" height="14" rx="2" fill="#1a1e28"/>
+      <text x="14" y="151" fill="#94a3b8" font-size="8" font-family="sans-serif">kick_deep_01.wav</text>
+      <rect x="8" y="157" width="140" height="14" rx="2" fill="#1a1e28"/>
+      <text x="14" y="168" fill="#94a3b8" font-size="8" font-family="sans-serif">snare_rimshot.wav</text>
+      <rect x="8" y="174" width="140" height="14" rx="2" fill="#1a1e28"/>
+      <text x="14" y="185" fill="#94a3b8" font-size="8" font-family="sans-serif">hihat_closed.wav</text>
+      <rect x="8" y="191" width="140" height="14" rx="2" fill="#1a1e28"/>
+      <text x="14" y="202" fill="#94a3b8" font-size="8" font-family="sans-serif">clap_tight.wav</text>
+      <rect x="8" y="208" width="140" height="14" rx="2" fill="#1a1e28"/>
+      <text x="14" y="219" fill="#94a3b8" font-size="8" font-family="sans-serif">perc_wood_01.wav</text>
+      <!-- Waveform preview -->
+      <rect x="8" y="240" width="140" height="40" rx="3" fill="#1e2230"/>
+      <polyline points="8,260 20,250 32,268 44,245 56,262 68,255 80,270 92,248 104,260 116,252 128,264 148,258" fill="none" stroke="#00c8ff" stroke-width="1.5" opacity="0.7"/>
+      <text x="10" y="293" fill="#4a5568" font-size="7" font-family="sans-serif">● Aufnahme</text>
+
+      <!-- Main area - drum grid -->
+      <rect x="158" y="72" width="702" height="348" fill="#0d0f14"/>
+      <!-- Toolbar row -->
+      <rect x="162" y="78" width="694" height="28" rx="3" fill="#13161e" stroke="#2a3040" stroke-width="1"/>
+      <text x="170" y="95" fill="#94a3b8" font-size="8" font-family="sans-serif">Pattern 1 ▾</text>
+      <text x="240" y="95" fill="#4a5568" font-size="8" font-family="sans-serif">1/16 ▾</text>
+      <text x="275" y="95" fill="#4a5568" font-size="8" font-family="sans-serif">[VEL][↑][↓][∩][∿][R]</text>
+      <text x="380" y="95" fill="#4a5568" font-size="8" font-family="sans-serif">[⟷Morph][🔁NR][A][B]</text>
+      <text x="490" y="95" fill="#4a5568" font-size="8" font-family="sans-serif">[+Kanal]</text>
+
+      <!-- Channels -->
+      <!-- Kick -->
+      <text x="170" y="123" fill="#e2e8f0" font-size="9" font-family="sans-serif" font-weight="600">Kick</text>
+      <text x="214" y="123" fill="#4a5568" font-size="8" font-family="sans-serif">[M][S]</text>
+      <!-- 16 steps for kick -->
+      <g transform="translate(260,110)">
+        <rect x="0"   y="0" width="24" height="18" rx="2" fill="#00c8ff"/>
+        <rect x="28"  y="0" width="24" height="18" rx="2" fill="#1a1e28"/>
+        <rect x="56"  y="0" width="24" height="18" rx="2" fill="#1a1e28"/>
+        <rect x="84"  y="0" width="24" height="18" rx="2" fill="#1a1e28"/>
+        <rect x="112" y="0" width="24" height="18" rx="2" fill="#00c8ff"/>
+        <rect x="140" y="0" width="24" height="18" rx="2" fill="#1a1e28"/>
+        <rect x="168" y="0" width="24" height="18" rx="2" fill="#1a1e28"/>
+        <rect x="196" y="0" width="24" height="18" rx="2" fill="#1a1e28"/>
+        <rect x="224" y="0" width="24" height="18" rx="2" fill="#00c8ff"/>
+        <rect x="252" y="0" width="24" height="18" rx="2" fill="#1a1e28"/>
+        <rect x="280" y="0" width="24" height="18" rx="2" fill="#1a1e28"/>
+        <rect x="308" y="0" width="24" height="18" rx="2" fill="#1a1e28"/>
+        <rect x="336" y="0" width="24" height="18" rx="2" fill="#00c8ff"/>
+        <rect x="364" y="0" width="24" height="18" rx="2" fill="#1a1e28"/>
+        <rect x="392" y="0" width="24" height="18" rx="2" fill="#1a1e28"/>
+        <rect x="420" y="0" width="24" height="18" rx="2" fill="#1a1e28"/>
+      </g>
+      <!-- Snare -->
+      <text x="170" y="151" fill="#e2e8f0" font-size="9" font-family="sans-serif" font-weight="600">Snare</text>
+      <text x="214" y="151" fill="#4a5568" font-size="8" font-family="sans-serif">[M][S]</text>
+      <g transform="translate(260,138)">
+        <rect x="0"   y="0" width="24" height="18" rx="2" fill="#1a1e28"/>
+        <rect x="28"  y="0" width="24" height="18" rx="2" fill="#1a1e28"/>
+        <rect x="56"  y="0" width="24" height="18" rx="2" fill="#1a1e28"/>
+        <rect x="84"  y="0" width="24" height="18" rx="2" fill="#1a1e28"/>
+        <rect x="112" y="0" width="24" height="18" rx="2" fill="#00c8ff"/>
+        <rect x="140" y="0" width="24" height="18" rx="2" fill="#1a1e28"/>
+        <rect x="168" y="0" width="24" height="18" rx="2" fill="#1a1e28"/>
+        <rect x="196" y="0" width="24" height="18" rx="2" fill="#1a1e28"/>
+        <rect x="224" y="0" width="24" height="18" rx="2" fill="#1a1e28"/>
+        <rect x="252" y="0" width="24" height="18" rx="2" fill="#1a1e28"/>
+        <rect x="280" y="0" width="24" height="18" rx="2" fill="#1a1e28"/>
+        <rect x="308" y="0" width="24" height="18" rx="2" fill="#1a1e28"/>
+        <rect x="336" y="0" width="24" height="18" rx="2" fill="#00c8ff"/>
+        <rect x="364" y="0" width="24" height="18" rx="2" fill="#1a1e28"/>
+        <rect x="392" y="0" width="24" height="18" rx="2" fill="#1a1e28"/>
+        <rect x="420" y="0" width="24" height="18" rx="2" fill="#1a1e28"/>
+      </g>
+      <!-- HiHat -->
+      <text x="170" y="179" fill="#e2e8f0" font-size="9" font-family="sans-serif" font-weight="600">HiHat</text>
+      <text x="214" y="179" fill="#4a5568" font-size="8" font-family="sans-serif">[M][S]</text>
+      <g transform="translate(260,166)">
+        <rect x="0"   y="0" width="24" height="18" rx="2" fill="#00c8ff" opacity="0.5"/>
+        <rect x="28"  y="0" width="24" height="18" rx="2" fill="#1a1e28"/>
+        <rect x="56"  y="0" width="24" height="18" rx="2" fill="#00c8ff" opacity="0.5"/>
+        <rect x="84"  y="0" width="24" height="18" rx="2" fill="#1a1e28"/>
+        <rect x="112" y="0" width="24" height="18" rx="2" fill="#00c8ff" opacity="0.5"/>
+        <rect x="140" y="0" width="24" height="18" rx="2" fill="#1a1e28"/>
+        <rect x="168" y="0" width="24" height="18" rx="2" fill="#00c8ff" opacity="0.5"/>
+        <rect x="196" y="0" width="24" height="18" rx="2" fill="#1a1e28"/>
+        <rect x="224" y="0" width="24" height="18" rx="2" fill="#00c8ff" opacity="0.5"/>
+        <rect x="252" y="0" width="24" height="18" rx="2" fill="#1a1e28"/>
+        <rect x="280" y="0" width="24" height="18" rx="2" fill="#00c8ff" opacity="0.5"/>
+        <rect x="308" y="0" width="24" height="18" rx="2" fill="#1a1e28"/>
+        <rect x="336" y="0" width="24" height="18" rx="2" fill="#00c8ff" opacity="0.5"/>
+        <rect x="364" y="0" width="24" height="18" rx="2" fill="#1a1e28"/>
+        <rect x="392" y="0" width="24" height="18" rx="2" fill="#00c8ff" opacity="0.5"/>
+        <rect x="420" y="0" width="24" height="18" rx="2" fill="#1a1e28"/>
+      </g>
+
+      <!-- Dots/labels -->
+      <text x="170" y="207" fill="#4a5568" font-size="8" font-family="sans-serif">Clap</text>
+      <text x="170" y="235" fill="#4a5568" font-size="8" font-family="sans-serif">TomH</text>
+      <text x="170" y="263" fill="#4a5568" font-size="8" font-family="sans-serif">TomL</text>
+      <text x="170" y="291" fill="#4a5568" font-size="8" font-family="sans-serif">Perc</text>
+
+      <!-- Step Inspector area -->
+      <rect x="162" y="305" width="694" height="80" rx="4" fill="#13161e" stroke="#2a3040" stroke-width="1"/>
+      <text x="170" y="320" fill="#4a5568" font-size="8" font-family="sans-serif" font-weight="700">STEP INSPECTOR</text>
+      <text x="170" y="336" fill="#94a3b8" font-size="8" font-family="sans-serif">Velocity: ████░░ 96   Pitch: C4 (+0)   Wahrsch.: 100%   Bedingung: Immer</text>
+      <text x="170" y="352" fill="#4a5568" font-size="8" font-family="sans-serif">Param-Locks:  Filter Hz ───●──  Volume ──────●</text>
+
+      <!-- Status bar -->
+      <rect x="162" y="393" width="694" height="22" rx="2" fill="#13161e"/>
+      <text x="170" y="407" fill="#4a5568" font-size="8" font-family="sans-serif">9 Kanäle · 16 Steps · 1/16 · 120 BPM · Stretch: 1×</text>
+
+      <!-- Labels with arrows -->
+      <line x1="78" y1="19" x2="78" y2="50" stroke="#f59e0b" stroke-width="1" stroke-dasharray="3,2"/>
+      <text x="40" y="50" fill="#f59e0b" font-size="7.5" font-family="sans-serif">Toolbar</text>
+      <line x1="203" y1="72" x2="203" y2="60" stroke="#f59e0b" stroke-width="1" stroke-dasharray="3,2"/>
+      <text x="165" y="58" fill="#f59e0b" font-size="7.5" font-family="sans-serif">Tabs (F1–F6)</text>
+      <line x1="78" y1="200" x2="155" y2="200" stroke="#f59e0b" stroke-width="1" stroke-dasharray="3,2"/>
+    </svg>
+  </div>
+
+  <h3>Bestandteile der Oberfläche</h3>
+  <table>
+    <tr><th>Element</th><th>Beschreibung</th><th>Shortcut</th></tr>
+    <tr><td>Beat-Indikator <code>⬡</code></td><td>Pulsiert auf jedem Beat, zeigt Wiedergabe-Status an</td><td>—</td></tr>
+    <tr><td>Toolbar</td><td>Play ▶, Rec ●, Undo ↩, Redo ↪, BPM-Anzeige, MIDI 🎹, Einstellungen ⚙</td><td>diverse</td></tr>
+    <tr><td>Tab-Leiste</td><td>Wechselt zwischen Sequencer, Mixer, Song, Humanizer, Tools, Kollaboration</td><td><kbd>F1</kbd>–<kbd>F6</kbd></td></tr>
+    <tr><td>Sample Browser (Sidebar)</td><td>Sample-Verwaltung, Suche, Aufnahme. Breite per Drag anpassbar (160–480 px)</td><td>—</td></tr>
+    <tr><td>Hauptbereich</td><td>Tab-abhängiger Inhalt: Drum-Grid, Mixer, Timeline usw.</td><td>—</td></tr>
+    <tr><td>Step Inspector</td><td>Unterhalb der Kanäle — Detailparameter für den ausgewählten Step</td><td>Klick auf Step</td></tr>
+    <tr><td>Statusleiste</td><td>Kanalanzahl, Step-Auflösung, BPM, Time-Stretch-Faktor</td><td>—</td></tr>
+  </table>
+</section>
+
+<!-- ══ 3. TRANSPORT ══ -->
+<section id="transport">
+  <h2><span class="section-num">03</span> Transport &amp; BPM</h2>
+  <p>Die Transport-Steuerung befindet sich in der Toolbar oben rechts. Alle Funktionen sind auch per Tastatur erreichbar.</p>
+
+  <div class="shortcuts-grid">
+    <div class="sc-row"><span class="sc-label">Play / Stop</span><div class="sc-keys"><kbd>Space</kbd></div></div>
+    <div class="sc-row"><span class="sc-label">Record aktivieren</span><div class="sc-keys"><kbd>Ctrl</kbd><kbd>R</kbd></div></div>
+    <div class="sc-row"><span class="sc-label">Tap Tempo</span><div class="sc-keys"><kbd>T</kbd></div></div>
+    <div class="sc-row"><span class="sc-label">BPM +1 / −1</span><div class="sc-keys"><kbd>+</kbd><kbd>−</kbd></div></div>
+    <div class="sc-row"><span class="sc-label">BPM +10 / −10</span><div class="sc-keys"><kbd>Shift</kbd><kbd>+</kbd></div></div>
+    <div class="sc-row"><span class="sc-label">Undo / Redo</span><div class="sc-keys"><kbd>Ctrl</kbd><kbd>Z</kbd></div></div>
+  </div>
+
+  <h3>Live MIDI-Aufnahme (Overdub)</h3>
+  <p>Bei aktiviertem <code>●</code>-Record werden eingehende MIDI-Noten als aktive Steps im aktuellen Pattern eingetragen. Die <strong>Velocity</strong> kommt direkt vom MIDI-Signal. Bestehende Steps werden nicht überschrieben (Overdub-Modus).</p>
+
+  <h3>Tap Tempo</h3>
+  <p>Mehrfach <kbd>T</kbd> drücken — der Durchschnitt der letzten Tippen-Abstände wird als BPM übernommen. Nützlich, um sich einem laufenden Track anzupassen.</p>
+
+  <h3>Metronom</h3>
+  <p>Das Metronom ist über die Einstellungen konfigurierbar: Ton (Pitch), Lautstärke und Subdivisions (Achtel, Sechzehntel). Es läuft über den Master-Audioausgang.</p>
+</section>
+
+<!-- ══ 4. SAMPLE BROWSER ══ -->
+<section id="samples">
+  <h2><span class="section-num">04</span> Sample Browser</h2>
+
+  <div class="diagram">
+    <div class="diagram-title">Sample Browser — Seitenleiste</div>
+    <svg viewBox="0 0 280 320" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:320px;display:block;background:#0d0f14;">
+      <rect x="0" y="0" width="280" height="320" fill="#13161e"/>
+      <!-- Aufnahme -->
+      <rect x="8" y="8" width="264" height="28" rx="4" fill="#1e2230" stroke="#2a3040" stroke-width="1"/>
+      <circle cx="20" cy="22" r="5" fill="#ef4444"/>
+      <text x="32" y="26" fill="#94a3b8" font-size="9" font-family="sans-serif">Aufnahme</text>
+      <!-- Filter -->
+      <rect x="8" y="44" width="264" height="24" rx="4" fill="#1e2230" stroke="#2a3040" stroke-width="1"/>
+      <text x="14" y="59" fill="#4a5568" font-size="8" font-family="sans-serif">🔍  Suchen...</text>
+      <!-- Category tabs -->
+      <rect x="8" y="74" width="264" height="22" rx="3" fill="#0d0f14"/>
+      <rect x="8" y="74" width="36" height="22" rx="3" fill="#00c8ff" opacity="0.15"/>
+      <text x="26" y="87" fill="#00c8ff" font-size="8" font-family="sans-serif" text-anchor="middle">Alle</text>
+      <text x="62" y="87" fill="#4a5568" font-size="8" font-family="sans-serif" text-anchor="middle">Kicks</text>
+      <text x="92" y="87" fill="#4a5568" font-size="8" font-family="sans-serif" text-anchor="middle">Snares</text>
+      <text x="122" y="87" fill="#4a5568" font-size="8" font-family="sans-serif" text-anchor="middle">Hats</text>
+      <text x="152" y="87" fill="#4a5568" font-size="8" font-family="sans-serif" text-anchor="middle">Percs</text>
+      <!-- Sample list -->
+      <rect x="8" y="102" width="264" height="18" rx="2" fill="#1e2230"/>
+      <text x="14" y="114" fill="#e2e8f0" font-size="8.5" font-family="sans-serif">kick_deep_01.wav</text>
+      <rect x="8" y="123" width="264" height="18" rx="2" fill="#0d0f14"/>
+      <text x="14" y="135" fill="#94a3b8" font-size="8.5" font-family="sans-serif">kick_hard_sub.wav</text>
+      <rect x="8" y="144" width="264" height="18" rx="2" fill="#0d0f14"/>
+      <text x="14" y="156" fill="#94a3b8" font-size="8.5" font-family="sans-serif">snare_rimshot.wav</text>
+      <rect x="8" y="165" width="264" height="18" rx="2" fill="#0d0f14"/>
+      <text x="14" y="177" fill="#94a3b8" font-size="8.5" font-family="sans-serif">snare_clap_mix.wav</text>
+      <rect x="8" y="186" width="264" height="18" rx="2" fill="#0d0f14"/>
+      <text x="14" y="198" fill="#94a3b8" font-size="8.5" font-family="sans-serif">hihat_closed.wav</text>
+      <!-- Waveform -->
+      <rect x="8" y="216" width="264" height="52" rx="4" fill="#1e2230" stroke="#2a3040" stroke-width="1"/>
+      <text x="14" y="228" fill="#4a5568" font-size="7" font-family="sans-serif">kick_deep_01.wav · 0.8s</text>
+      <polyline points="14,250 30,234 46,255 62,232 78,248 94,238 110,252 126,231 142,246 158,240 174,252 190,237 206,249 222,235 238,248 264,244" fill="none" stroke="#00c8ff" stroke-width="1.5" opacity="0.75"/>
+      <!-- Import buttons -->
+      <rect x="8" y="278" width="84" height="22" rx="4" fill="#1e2230" stroke="#2a3040" stroke-width="1"/>
+      <text x="50" y="292" fill="#94a3b8" font-size="8" font-family="sans-serif" text-anchor="middle">+ Dateien</text>
+      <rect x="96" y="278" width="84" height="22" rx="4" fill="#1e2230" stroke="#2a3040" stroke-width="1"/>
+      <text x="138" y="292" fill="#94a3b8" font-size="8" font-family="sans-serif" text-anchor="middle">+ Ordner</text>
+      <rect x="184" y="278" width="88" height="22" rx="4" fill="#1e2230" stroke="#2a3040" stroke-width="1"/>
+      <text x="228" y="292" fill="#94a3b8" font-size="8" font-family="sans-serif" text-anchor="middle">+ ZIP-Pack</text>
+    </svg>
+  </div>
+
+  <h3>Import-Methoden</h3>
+  <table>
+    <tr><th>Methode</th><th>Beschreibung</th></tr>
+    <tr><td>Drag &amp; Drop</td><td>Audio-Dateien direkt auf den Browser oder auf einen Kanal ziehen</td></tr>
+    <tr><td>Einzelne Dateien</td><td>Schaltfläche <code>+ Dateien</code> — öffnet Dateidialog (WAV, MP3, FLAC, OGG)</td></tr>
+    <tr><td>Ordner importieren</td><td>Rekursiver Import eines ganzen Ordners mit Fortschrittsanzeige</td></tr>
+    <tr><td>ZIP Sample-Pack</td><td>Direkt <code>.zip</code> laden — automatisch entpackt und kategorisiert</td></tr>
+    <tr><td>Mikrofon-Aufnahme</td><td>VU-Meter zeigt Eingangspegel, Aufnahme landet in Kategorie "Recording"</td></tr>
+  </table>
+
+  <div class="callout tip">
+    <strong>Auto-Kategorisierung:</strong> Dateinamen werden analysiert und automatisch einer Kategorie zugewiesen — <em>kick</em>, <em>snare</em>, <em>hat</em>, <em>clap</em>, <em>perc</em>, <em>bass</em>, <em>synth</em> usw.
+  </div>
+
+  <h3>Waveform-Vorschau</h3>
+  <p>Beim Auswählen eines Samples wird eine <strong>Canvas-basierte Waveform</strong> angezeigt. Das Rendering verwendet Min/Max-Werte pro Pixel für präzise Pegeldarstellung und folgt dem aktiven Theme.</p>
+</section>
+
+<!-- ══ 5. DRUM MACHINE ══ -->
+<section id="drum">
+  <h2><span class="section-num">05</span> Drum Machine / Sequencer</h2>
+  <p>Das Herzstück von Synthstudio. Ein 9-Kanal-Step-Sequencer mit 16 oder 32 Steps, vollständigen Effektketten und Echtzeit-Bearbeitung.</p>
+
+  <h3>Kanal-Controls (pro Part/Channel)</h3>
+  <table>
+    <tr><th>Control</th><th>Funktion</th><th>Bereich</th></tr>
+    <tr><td><code>M</code> (Mute)</td><td>Kanal stummschalten — Kanal läuft weiter, nur Lautsprecher aus</td><td>An/Aus</td></tr>
+    <tr><td><code>S</code> (Solo)</td><td>Nur diesen Kanal hören, alle anderen gedämpft</td><td>An/Aus</td></tr>
+    <tr><td>Volume-Slider</td><td>Kanallautstärke</td><td>0–100%</td></tr>
+    <tr><td>Pan-Slider</td><td>Panoramaposition links/rechts</td><td>L–R (100 Schritte)</td></tr>
+    <tr><td>Auflösung</td><td>Step-Raster pro Kanal: Auto / 1/8 / 1/16 / 1/32</td><td>Dropdown</td></tr>
+    <tr><td><code>FX</code></td><td>Kanal-Effekte öffnen (Filter, EQ, Comp, Delay, Reverb)</td><td>Panel</td></tr>
+    <tr><td><code>PR</code></td><td>Piano Roll für melodische Noten öffnen</td><td>Panel</td></tr>
+    <tr><td><code>GR</code></td><td>Granular Synthesizer für diesen Kanal</td><td>Panel</td></tr>
+  </table>
+
+  <h3>Step-Grid</h3>
+  <p>Jede Zeile entspricht einem Kanal. Klick auf einen Step togglet ihn an/aus. <strong>Helle Steps</strong> sind aktiv, <strong>dunkle</strong> sind inaktiv.</p>
+
+  <div style="background:var(--bg-elevated);border:1px solid var(--border);border-radius:8px;padding:16px;margin:14px 0;">
+    <div class="channel-row">
+      <span class="ch-label">Kick</span>
+      <div style="display:flex;gap:3px;flex-wrap:wrap;">
+        <div class="step on">1</div><div class="step">2</div><div class="step">3</div><div class="step">4</div>
+        <div class="step on">5</div><div class="step">6</div><div class="step">7</div><div class="step">8</div>
+        <div class="step on active-play">9</div><div class="step">10</div><div class="step">11</div><div class="step">12</div>
+        <div class="step on">13</div><div class="step">14</div><div class="step">15</div><div class="step">16</div>
+      </div>
+    </div>
+    <div class="channel-row" style="margin-top:8px;">
+      <span class="ch-label">Snare</span>
+      <div style="display:flex;gap:3px;flex-wrap:wrap;">
+        <div class="step">1</div><div class="step">2</div><div class="step">3</div><div class="step">4</div>
+        <div class="step on vel-med">5</div><div class="step">6</div><div class="step">7</div><div class="step">8</div>
+        <div class="step">9</div><div class="step">10</div><div class="step">11</div><div class="step">12</div>
+        <div class="step on vel-med">13</div><div class="step">14</div><div class="step">15</div><div class="step">16</div>
+      </div>
+    </div>
+    <div class="channel-row" style="margin-top:8px;">
+      <span class="ch-label">HiHat</span>
+      <div style="display:flex;gap:3px;flex-wrap:wrap;">
+        <div class="step on vel-low">1</div><div class="step">2</div><div class="step on vel-low">3</div><div class="step">4</div>
+        <div class="step on vel-low">5</div><div class="step">6</div><div class="step on vel-low">7</div><div class="step">8</div>
+        <div class="step on vel-low">9</div><div class="step">10</div><div class="step on vel-low">11</div><div class="step">12</div>
+        <div class="step on vel-low">13</div><div class="step">14</div><div class="step on vel-low">15</div><div class="step">16</div>
+      </div>
+    </div>
+    <p style="font-size:0.75rem;color:var(--text-dim);margin-top:10px;margin-bottom:0;">
+      Cyan = volle Velocity &nbsp;·&nbsp; Gedämpftes Cyan = niedrige Velocity &nbsp;·&nbsp; Goldener Rahmen = aktuell spielender Step
+    </p>
+  </div>
+
+  <h3>Velocity-Modus (VEL)</h3>
+  <p>Klick auf <code>VEL</code> in der Toolbar wechselt in den Velocity-Modus. Jeder aktive Step zeigt einen Balken proportional zur Lautstärke.</p>
+
+  <table>
+    <tr><th>Preset</th><th>Beschreibung</th><th>Verlauf</th></tr>
+    <tr><td><code>↑</code> Crescendo</td><td>Velocity von 40 auf 127 steigend</td><td>Linear ansteigend</td></tr>
+    <tr><td><code>↓</code> Decrescendo</td><td>Von 127 auf 40 abfallend</td><td>Linear abfallend</td></tr>
+    <tr><td><code>∩</code> Bogen</td><td>Sinus-Kurve, Mitte am lautesten</td><td>Parabelform</td></tr>
+    <tr><td><code>∿</code> Welle</td><td>Oszillierende Velocity</td><td>Sinuswelle</td></tr>
+    <tr><td><code>R</code> Random</td><td>Zufällige Velocities für alle Steps</td><td>Zufällig</td></tr>
+  </table>
+
+  <h3>Pattern-Operationen</h3>
+  <div class="shortcuts-grid">
+    <div class="sc-row"><span class="sc-label">Nächstes Pattern</span><div class="sc-keys"><kbd>Ctrl</kbd><kbd>→</kbd></div></div>
+    <div class="sc-row"><span class="sc-label">Vorheriges Pattern</span><div class="sc-keys"><kbd>Ctrl</kbd><kbd>←</kbd></div></div>
+    <div class="sc-row"><span class="sc-label">Pattern duplizieren</span><div class="sc-keys"><kbd>Ctrl</kbd><kbd>D</kbd></div></div>
+    <div class="sc-row"><span class="sc-label">Pattern löschen</span><div class="sc-keys"><kbd>Ctrl</kbd><kbd>Del</kbd></div></div>
+    <div class="sc-row"><span class="sc-label">Pattern füllen</span><div class="sc-keys"><kbd>Ctrl</kbd><kbd>F</kbd></div></div>
+    <div class="sc-row"><span class="sc-label">Randomisieren</span><div class="sc-keys"><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>R</kbd></div></div>
+  </div>
+
+  <h3>Time-Stretch</h3>
+  <p>In der Statusleiste unten: Slider für den aktiven Kanal im Bereich <strong>0,25× bis 4,0×</strong>. Bei 2× wird die Sample-Dauer verdoppelt ohne Pitch-Änderung. Klick auf den Wert setzt ihn auf 1× zurück.</p>
+
+  <h3>Euclidean Rhythm Generator</h3>
+  <p>Das <code>⬡ Poly</code>-Menü öffnet den Euclidean Generator. Gib die Anzahl der <strong>Impulse</strong> (E) und die <strong>Schrittlänge</strong> (N) ein — Synthstudio verteilt die Impulse gleichmäßig über das Raster. Klassisches Beispiel: E=3, N=8 = Tresillo-Rhythmus.</p>
+</section>
+
+<!-- ══ 6. STEP INSPECTOR ══ -->
+<section id="stepinspector">
+  <h2><span class="section-num">06</span> Step Inspector</h2>
+  <p>Klick oder Rechtsklick auf einen Step öffnet den Inspector unterhalb der Kanäle. Hier können alle Feinparameter eines einzelnen Steps gesetzt werden.</p>
+
+  <table>
+    <tr><th>Parameter</th><th>Bereich</th><th>Beschreibung</th></tr>
+    <tr><td>Velocity</td><td>1–127</td><td>Anschlagsstärke. Schnellwerte: 32, 64, 96, 127</td></tr>
+    <tr><td>Pitch</td><td>−24..+24 Halbtöne</td><td>Transposition in Halbtönen; Notenname wird angezeigt (z.B. F#4)</td></tr>
+    <tr><td>Wahrscheinlichkeit</td><td>0–100%</td><td>Wie oft der Step tatsächlich spielt. 75% = jeder 4. Step fällt aus</td></tr>
+    <tr><td>Bedingung</td><td>Immer / 1:2 / 2:2 / Fill / …</td><td>Elektron-Stil: Step nur unter bestimmten Umständen (z.B. nur auf 2. Durchlauf)</td></tr>
+    <tr><td>Reverse</td><td>An/Aus</td><td>Sample rückwärts abspielen</td></tr>
+    <tr><td>Param Lock</td><td>Filter Hz / Volume / Pan / Reverb / Delay</td><td>Per-Step FX-Override — gilt nur für diesen einen Step</td></tr>
+  </table>
+
+  <h3>Parameter Locks (Trig Locks)</h3>
+  <p>Mit <code>+</code> im Inspector kann ein beliebiger Effektparameter für genau diesen Step überschrieben werden. Nach dem Step werden alle Parameter automatisch restauriert. So klingt z.B. Step 3 mit einem Filter-Sweep während alle anderen normal bleiben — ohne die Kanal-FX zu verändern.</p>
+
+  <div class="callout info">
+    <strong>Inspiration:</strong> Parameter Locks sind von <em>Elektron</em>-Hardware (Machinedrum, Digitakt) inspiriert und ermöglichen dramatische Step-für-Step Variationen ohne separate Spuren.
+  </div>
+</section>
+
+<!-- ══ 7. PIANO ROLL ══ -->
+<section id="pianoroll">
+  <h2><span class="section-num">07</span> Piano Roll <badge class="badge new">NEU</badge></h2>
+  <p>Jeder Kanal hat eine eigene <strong>Piano Roll</strong> für melodische Noten-Programmierung. Öffnen per <code>PR</code>-Button am Kanal-Strip.</p>
+
+  <div class="diagram">
+    <div class="diagram-title">Piano Roll — 24 Noten × 16 Steps</div>
+    <svg viewBox="0 0 600 200" xmlns="http://www.w3.org/2000/svg" style="width:100%;display:block;background:#0d0f14;">
+      <!-- Piano keys column -->
+      <rect x="0" y="0" width="40" height="200" fill="#13161e"/>
+      <text x="5" y="18" fill="#4a5568" font-size="7" font-family="monospace">B4</text>
+      <text x="5" y="26" fill="#4a5568" font-size="7" font-family="monospace">A#4</text>
+      <rect x="0" y="22" width="40" height="8" fill="#1e2230"/>
+      <text x="5" y="34" fill="#4a5568" font-size="7" font-family="monospace">A4</text>
+      <text x="5" y="42" fill="#4a5568" font-size="7" font-family="monospace">G#4</text>
+      <rect x="0" y="38" width="40" height="8" fill="#1e2230"/>
+      <text x="5" y="50" fill="#4a5568" font-size="7" font-family="monospace">G4</text>
+      <text x="5" y="58" fill="#4a5568" font-size="7" font-family="monospace">F#4</text>
+      <rect x="0" y="54" width="40" height="8" fill="#1e2230"/>
+      <text x="5" y="66" fill="#4a5568" font-size="7" font-family="monospace">F4</text>
+      <text x="5" y="74" fill="#94a3b8" font-size="7" font-family="monospace" font-weight="600">E4</text>
+      <text x="5" y="82" fill="#4a5568" font-size="7" font-family="monospace">D#4</text>
+      <rect x="0" y="78" width="40" height="8" fill="#1e2230"/>
+      <text x="5" y="90" fill="#94a3b8" font-size="7" font-family="monospace" font-weight="600">D4</text>
+      <text x="5" y="98" fill="#4a5568" font-size="7" font-family="monospace">C#4</text>
+      <rect x="0" y="94" width="40" height="8" fill="#1e2230"/>
+      <text x="5" y="106" fill="#94a3b8" font-size="7" font-family="monospace" font-weight="600">C4</text>
+      <!-- Grid -->
+      <rect x="40" y="0" width="560" height="200" fill="#0d0f14"/>
+      <!-- Grid lines horizontal -->
+      <line x1="40" y1="8" x2="600" y2="8" stroke="#1e2535" stroke-width="0.5"/>
+      <line x1="40" y1="16" x2="600" y2="16" stroke="#1e2535" stroke-width="0.5"/>
+      <line x1="40" y1="24" x2="600" y2="24" stroke="#2a3040" stroke-width="1"/>
+      <line x1="40" y1="32" x2="600" y2="32" stroke="#1e2535" stroke-width="0.5"/>
+      <line x1="40" y1="40" x2="600" y2="40" stroke="#1e2535" stroke-width="0.5"/>
+      <line x1="40" y1="48" x2="600" y2="48" stroke="#2a3040" stroke-width="1"/>
+      <line x1="40" y1="56" x2="600" y2="56" stroke="#1e2535" stroke-width="0.5"/>
+      <line x1="40" y1="64" x2="600" y2="64" stroke="#1e2535" stroke-width="0.5"/>
+      <line x1="40" y1="72" x2="600" y2="72" stroke="#2a3040" stroke-width="1"/>
+      <line x1="40" y1="80" x2="600" y2="80" stroke="#1e2535" stroke-width="0.5"/>
+      <line x1="40" y1="88" x2="600" y2="88" stroke="#1e2535" stroke-width="0.5"/>
+      <line x1="40" y1="96" x2="600" y2="96" stroke="#2a3040" stroke-width="1"/>
+      <!-- Grid lines vertical (16 steps) -->
+      <line x1="75"  y1="0" x2="75"  y2="200" stroke="#1e2535" stroke-width="0.5"/>
+      <line x1="110" y1="0" x2="110" y2="200" stroke="#1e2535" stroke-width="0.5"/>
+      <line x1="145" y1="0" x2="145" y2="200" stroke="#1e2535" stroke-width="0.5"/>
+      <line x1="180" y1="0" x2="180" y2="200" stroke="#2a3040" stroke-width="1"/>
+      <line x1="215" y1="0" x2="215" y2="200" stroke="#1e2535" stroke-width="0.5"/>
+      <line x1="250" y1="0" x2="250" y2="200" stroke="#1e2535" stroke-width="0.5"/>
+      <line x1="285" y1="0" x2="285" y2="200" stroke="#1e2535" stroke-width="0.5"/>
+      <line x1="320" y1="0" x2="320" y2="200" stroke="#2a3040" stroke-width="1"/>
+      <line x1="355" y1="0" x2="355" y2="200" stroke="#1e2535" stroke-width="0.5"/>
+      <line x1="390" y1="0" x2="390" y2="200" stroke="#1e2535" stroke-width="0.5"/>
+      <line x1="425" y1="0" x2="425" y2="200" stroke="#1e2535" stroke-width="0.5"/>
+      <line x1="460" y1="0" x2="460" y2="200" stroke="#2a3040" stroke-width="1"/>
+      <line x1="495" y1="0" x2="495" y2="200" stroke="#1e2535" stroke-width="0.5"/>
+      <line x1="530" y1="0" x2="530" y2="200" stroke="#1e2535" stroke-width="0.5"/>
+      <line x1="565" y1="0" x2="565" y2="200" stroke="#1e2535" stroke-width="0.5"/>
+      <!-- Notes -->
+      <rect x="41" y="65" width="33" height="7" rx="2" fill="#00c8ff" opacity="0.9"/>
+      <rect x="76" y="73" width="33" height="7" rx="2" fill="#00c8ff" opacity="0.9"/>
+      <rect x="111" y="65" width="33" height="7" rx="2" fill="#00c8ff" opacity="0.9"/>
+      <rect x="146" y="57" width="68" height="7" rx="2" fill="#00c8ff"/>
+      <rect x="216" y="65" width="33" height="7" rx="2" fill="#00c8ff" opacity="0.9"/>
+      <rect x="251" y="73" width="33" height="7" rx="2" fill="#00c8ff" opacity="0.9"/>
+      <rect x="286" y="65" width="68" height="7" rx="2" fill="#a855f7"/>
+      <rect x="356" y="57" width="33" height="7" rx="2" fill="#00c8ff" opacity="0.9"/>
+      <rect x="391" y="65" width="33" height="7" rx="2" fill="#00c8ff" opacity="0.9"/>
+      <rect x="426" y="73" width="33" height="7" rx="2" fill="#00c8ff" opacity="0.9"/>
+      <rect x="461" y="65" width="68" height="7" rx="2" fill="#a855f7"/>
+      <!-- Playhead -->
+      <line x1="146" y1="0" x2="146" y2="200" stroke="#f59e0b" stroke-width="1.5"/>
+    </svg>
+  </div>
+
+  <table>
+    <tr><th>Funktion</th><th>Aktion</th></tr>
+    <tr><td>Note hinzufügen</td><td>Linksklick auf Gitterzelle</td></tr>
+    <tr><td>Note löschen</td><td>Rechtsklick auf Note</td></tr>
+    <tr><td>Notenlänge ändern</td><td>Rechten Rand der Note ziehen</td></tr>
+    <tr><td>Note verschieben</td><td>Note ziehen (drag)</td></tr>
+    <tr><td>Globaler Transpose</td><td>TransposeControl neben BPM (−1 Okt bis +1 Okt)</td></tr>
+  </table>
+
+  <div class="callout tip">
+    <strong>Melodischer Kanal:</strong> Aktiviere im Kanal den Synthesizer-Modus (Wavetable oder FM) statt eines Samples, um mit der Piano Roll vollständige Melodien zu erzeugen.
+  </div>
+</section>
+
+<!-- ══ 8. LIVE EDIT ══ -->
+<section id="liveedit">
+  <h2><span class="section-num">08</span> Live Pattern Editing</h2>
+  <p>Ändere Patterns während der Wiedergabe — ohne Rhythmus-Unterbrechung.</p>
+
+  <div style="background:var(--bg-card);border:1px solid var(--accent);border-radius:8px;padding:14px 18px;margin:16px 0;">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+      <div style="width:8px;height:8px;border-radius:50%;background:#ef4444;animation:pulse 1s infinite;"></div>
+      <span style="font-size:0.85rem;font-weight:600;color:var(--accent);">● LIVE EDIT</span>
+      <span style="font-size:0.8rem;color:var(--text-muted);">▶ spielt: Pattern 1 &nbsp;/&nbsp; ✏ bearbeite: Pattern 1 [DRAFT]</span>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      <code style="background:var(--accent-green);color:#000;border:none;padding:4px 10px;border-radius:4px;font-size:0.8rem;">✓ Commit</code>
+      <code style="background:var(--bg-elevated);color:var(--accent-amber);border-color:var(--accent-amber);">⏱ Nächste Bar</code>
+      <code style="background:var(--bg-elevated);color:var(--accent-red);border-color:var(--accent-red);">✕ Verwerfen</code>
+    </div>
+  </div>
+
+  <h3>Ablauf</h3>
+  <p><strong>1.</strong> Klick auf <code>● Live Edit</code> erstellt einen <code>[DRAFT]</code>-Klon des aktiven Patterns.<br>
+  <strong>2.</strong> Das Original spielt weiter unverändert. Der Draft wird zum Bearbeitungsziel.<br>
+  <strong>3.</strong> Steps im Grid bearbeiten — Änderungen betreffen nur den Draft.<br>
+  <strong>4.</strong> <code>✓ Commit</code> wechselt sofort zum Draft.<br>
+  <strong>5.</strong> <code>⏱ Nächste Bar</code> wartet auf den nächsten Bar-Anfang für nahtlosen Übergang.<br>
+  <strong>6.</strong> <code>✕ Verwerfen</code> löscht den Draft, Original bleibt.</p>
+</section>
+
+
+<!-- ══ 9. PERFORMANCE ══ -->
+<section id="performance">
+  <h2><span class="section-num">09</span> Performance Mode</h2>
+  <p>Der Performance Mode verwandelt Synthstudio in ein Live-Instrument. Ein 4×4 Pad-Grid, 16 Pattern-Slots, farbig kodiert und sofort spielbar.</p>
+
+  <div class="diagram">
+    <div class="diagram-title">Performance Mode — 4×4 Pad-Grid</div>
+    <svg viewBox="0 0 360 260" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:400px;display:block;background:#0d0f14;">
+      <!-- 4x4 grid -->
+      <g transform="translate(20,20)">
+        <!-- Row 1 -->
+        <rect x="0"   y="0" width="70" height="55" rx="6" fill="#00c8ff" opacity="0.85"/>
+        <text x="35" y="28" fill="#000" font-size="9" font-weight="700" font-family="sans-serif" text-anchor="middle">INTRO</text>
+        <text x="35" y="40" fill="#000" font-size="7" font-family="sans-serif" text-anchor="middle">Pattern 1</text>
+        <rect x="80"  y="0" width="70" height="55" rx="6" fill="#1e2230" stroke="#2a3040" stroke-width="1"/>
+        <text x="115" y="28" fill="#4a5568" font-size="9" font-family="sans-serif" text-anchor="middle">VERSE</text>
+        <text x="115" y="40" fill="#4a5568" font-size="7" font-family="sans-serif" text-anchor="middle">Pattern 2</text>
+        <rect x="160" y="0" width="70" height="55" rx="6" fill="#a855f7" opacity="0.8"/>
+        <text x="195" y="28" fill="#fff" font-size="9" font-weight="700" font-family="sans-serif" text-anchor="middle">CHORUS</text>
+        <text x="195" y="40" fill="#ddd" font-size="7" font-family="sans-serif" text-anchor="middle">Pattern 3</text>
+        <rect x="240" y="0" width="70" height="55" rx="6" fill="#1e2230" stroke="#2a3040" stroke-width="1"/>
+        <text x="275" y="28" fill="#4a5568" font-size="9" font-family="sans-serif" text-anchor="middle">BREAK</text>
+        <!-- Row 2 -->
+        <rect x="0"   y="65" width="70" height="55" rx="6" fill="#22c55e" opacity="0.75"/>
+        <text x="35" y="93" fill="#000" font-size="9" font-weight="700" font-family="sans-serif" text-anchor="middle">BUILD</text>
+        <rect x="80"  y="65" width="70" height="55" rx="6" fill="#f59e0b" opacity="0.75"/>
+        <text x="115" y="93" fill="#000" font-size="9" font-weight="700" font-family="sans-serif" text-anchor="middle">DROP</text>
+        <rect x="160" y="65" width="70" height="55" rx="6" fill="#1e2230" stroke="#2a3040" stroke-width="1"/>
+        <text x="195" y="93" fill="#4a5568" font-size="9" font-family="sans-serif" text-anchor="middle">Leer</text>
+        <rect x="240" y="65" width="70" height="55" rx="6" fill="#1e2230" stroke="#2a3040" stroke-width="1"/>
+        <text x="275" y="93" fill="#4a5568" font-size="9" font-family="sans-serif" text-anchor="middle">Leer</text>
+        <!-- Row 3 -->
+        <rect x="0"   y="130" width="70" height="55" rx="6" fill="#1e2230" stroke="#2a3040" stroke-width="1"/>
+        <text x="35"  y="158" fill="#4a5568" font-size="9" font-family="sans-serif" text-anchor="middle">Leer</text>
+        <rect x="80"  y="130" width="70" height="55" rx="6" fill="#1e2230" stroke="#2a3040" stroke-width="1"/>
+        <text x="115" y="158" fill="#4a5568" font-size="9" font-family="sans-serif" text-anchor="middle">Leer</text>
+        <rect x="160" y="130" width="70" height="55" rx="6" fill="#ef4444" opacity="0.75"/>
+        <text x="195" y="158" fill="#fff" font-size="9" font-weight="700" font-family="sans-serif" text-anchor="middle">OUTRO</text>
+        <rect x="240" y="130" width="70" height="55" rx="6" fill="#1e2230" stroke="#2a3040" stroke-width="1"/>
+        <text x="275" y="158" fill="#4a5568" font-size="9" font-family="sans-serif" text-anchor="middle">Leer</text>
+        <!-- Row 4 -->
+        <rect x="0"   y="195" width="70" height="55" rx="6" fill="#1e2230" stroke="#2a3040" stroke-width="1"/>
+        <rect x="80"  y="195" width="70" height="55" rx="6" fill="#1e2230" stroke="#2a3040" stroke-width="1"/>
+        <rect x="160" y="195" width="70" height="55" rx="6" fill="#1e2230" stroke="#2a3040" stroke-width="1"/>
+        <rect x="240" y="195" width="70" height="55" rx="6" fill="#1e2230" stroke="#2a3040" stroke-width="1"/>
+      </g>
+    </svg>
+  </div>
+
+  <table>
+    <tr><th>Aktion</th><th>Ergebnis</th></tr>
+    <tr><td>Pad anklicken</td><td>Sofortiger Pattern-Wechsel (auch während Wiedergabe)</td></tr>
+    <tr><td>Pad lang drücken (600ms)</td><td>Edit-Modal öffnet (Name, Pattern, Farbe)</td></tr>
+    <tr><td>Rechtsklick auf Pad</td><td>Pad-Kontextmenü (löschen, umbenennen)</td></tr>
+    <tr><td><kbd>Shift</kbd>+<kbd>1</kbd>–<kbd>8</kbd></td><td>Scene 1–8 per Tastatur auslösen</td></tr>
+  </table>
+</section>
+
+<!-- ══ 10. SCENES ══ -->
+<section id="scenes">
+  <h2><span class="section-num">10</span> Scene Launch</h2>
+  <p>Scenes sind gespeicherte Pattern-Sets, die auf Knopfdruck gestartet werden. Ideal für Arrangement-Abschnitte (Intro, Verse, Chorus…).</p>
+
+  <table>
+    <tr><th>Funktion</th><th>Tastatur / Aktion</th></tr>
+    <tr><td>Scene 1–8 auslösen</td><td><kbd>Shift</kbd>+<kbd>1</kbd> bis <kbd>Shift</kbd>+<kbd>8</kbd></td></tr>
+    <tr><td>Scene erstellen</td><td><code>+Scene</code>-Button</td></tr>
+    <tr><td>Scene bearbeiten</td><td>Pad 600ms halten → Modal</td></tr>
+    <tr><td>Scene löschen</td><td>Rechtsklick → Löschen</td></tr>
+  </table>
+
+  <p>Die aktive Scene wird <strong>goldfarben mit Glow-Effekt</strong> hervorgehoben. Beim Klick auf eine Scene wird das zugeordnete Pattern sofort gestartet — ohne Audiounterbruch.</p>
+</section>
+
+<!-- ══ 11. MORPH ══ -->
+<section id="morph">
+  <h2><span class="section-num">11</span> Pattern Morph</h2>
+  <p>Blende graduell zwischen zwei Patterns über. Der Morph-Slider interpoliert Step für Step zwischen Pattern A und Pattern B.</p>
+
+  <div class="card">
+    <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
+      <div>
+        <div style="font-size:0.75rem;color:var(--text-dim);margin-bottom:4px;">PATTERN A</div>
+        <select style="background:var(--bg-elevated);border:1px solid var(--border);color:var(--text);border-radius:5px;padding:5px 10px;font-size:0.83rem;">
+          <option>Pattern 1</option>
+        </select>
+      </div>
+      <div style="flex:1;min-width:160px;">
+        <div style="font-size:0.75rem;color:var(--text-dim);margin-bottom:4px;">MORPH AMOUNT</div>
+        <div style="background:var(--bg-elevated);border-radius:4px;height:6px;position:relative;">
+          <div style="background:linear-gradient(90deg,var(--accent),var(--accent2));width:65%;height:100%;border-radius:4px;"></div>
+          <div style="position:absolute;top:-4px;left:65%;width:14px;height:14px;background:var(--accent);border-radius:50%;transform:translateX(-50%);"></div>
+        </div>
+        <div style="font-size:0.75rem;color:var(--text-muted);text-align:center;margin-top:4px;">0.65</div>
+      </div>
+      <div>
+        <div style="font-size:0.75rem;color:var(--text-dim);margin-bottom:4px;">PATTERN B</div>
+        <select style="background:var(--bg-elevated);border:1px solid var(--border);color:var(--text);border-radius:5px;padding:5px 10px;font-size:0.83rem;">
+          <option>Pattern 2</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <p>Aktivieren per <code>⟷ Morph</code>-Button in der Toolbar oder <kbd>Alt</kbd>+<kbd>M</kbd>. Das Ergebnis kann mit <code>Apply Morph</code> als neues Pattern gespeichert werden.</p>
+</section>
+
+<!-- ══ 12. NOTE REPEAT ══ -->
+<section id="noterepeat">
+  <h2><span class="section-num">12</span> Note Repeat &amp; Beat Repeat</h2>
+
+  <h3>Note Repeat (MPC-Stil)</h3>
+  <p>Aktivieren: <code>🔁 NR</code>-Button oder <kbd>Alt</kbd>+<kbd>R</kbd>. Solange ein Pad gedrückt wird, feuert es mit der gewählten Rate.</p>
+
+  <table>
+    <tr><th>Rate</th><th>Schläge pro Takt</th></tr>
+    <tr><td><code>1/4</code></td><td>4 Schläge</td></tr>
+    <tr><td><code>1/8</code></td><td>8 Schläge</td></tr>
+    <tr><td><code>1/16</code></td><td>16 Schläge</td></tr>
+    <tr><td><code>1/32</code></td><td>32 Schläge (sehr schnell)</td></tr>
+    <tr><td><code>1/8T</code></td><td>8 Schläge als Triolen</td></tr>
+    <tr><td><code>1/16T</code></td><td>16 Schläge als Triolen</td></tr>
+  </table>
+
+  <h3>Beat Repeat (Stutter Effect)</h3>
+  <p>Der <code>⟳ Beat Repeat</code>-Bereich moduliert den Master-Gain rhythmisch mit der gewählten Rate für einen Stutter/Glitch-Effekt. <code>Wet</code>-Parameter bestimmt die Intensität.</p>
+</section>
+
+<!-- ══ 13. MIXER ══ -->
+<section id="mixer">
+  <h2><span class="section-num">13</span> Mixer <em>(F2)</em></h2>
+  <p>Vollständiger Mixer mit 9 Kanal-Strips, VU-Metern, Send-Levels, EQ und Bus-Kompressor. Öffnen per <kbd>F2</kbd> oder Tab-Klick.</p>
+
+  <div class="diagram">
+    <div class="diagram-title">Mixer — Kanal-Strips</div>
+    <svg viewBox="0 0 700 260" xmlns="http://www.w3.org/2000/svg" style="width:100%;display:block;background:#0d0f14;">
+      <!-- Background -->
+      <rect x="0" y="0" width="700" height="260" fill="#13161e"/>
+      <!-- Channel strips -->
+      <g id="ch-strip">
+        <!-- Kick channel -->
+        <rect x="10" y="10" width="58" height="240" rx="4" fill="#1e2230" stroke="#2a3040" stroke-width="1"/>
+        <text x="39" y="24" fill="#e2e8f0" font-size="8" font-family="sans-serif" text-anchor="middle">Kick</text>
+        <!-- VU meter -->
+        <rect x="20" y="30" width="14" height="100" rx="2" fill="#0d0f14"/>
+        <rect x="20" y="80" width="14" height="50" rx="2" fill="#22c55e" opacity="0.8"/>
+        <rect x="20" y="65" width="14" height="15" rx="2" fill="#f59e0b" opacity="0.8"/>
+        <rect x="38" y="30" width="14" height="100" rx="2" fill="#0d0f14"/>
+        <rect x="38" y="82" width="14" height="48" rx="2" fill="#22c55e" opacity="0.8"/>
+        <!-- Fader -->
+        <rect x="22" y="140" width="22" height="80" rx="2" fill="#0d0f14"/>
+        <rect x="20" y="185" width="26" height="10" rx="3" fill="#4a5568"/>
+        <!-- Pan knob -->
+        <circle cx="39" cy="238" r="8" fill="#1a1e28" stroke="#2a3040" stroke-width="1"/>
+        <line x1="39" y1="230" x2="39" y2="235" stroke="#94a3b8" stroke-width="1.5"/>
+        <!-- M/S buttons -->
+        <rect x="15" y="148" width="14" height="10" rx="2" fill="#1a1e28"/>
+        <text x="22" y="156" fill="#4a5568" font-size="6" font-family="sans-serif" text-anchor="middle">M</text>
+        <rect x="35" y="148" width="14" height="10" rx="2" fill="#1a1e28"/>
+        <text x="42" y="156" fill="#4a5568" font-size="6" font-family="sans-serif" text-anchor="middle">S</text>
+      </g>
+      <!-- Copy more channels with slight variations -->
+      <use href="#ch-strip" transform="translate(62,0)"/>
+      <use href="#ch-strip" transform="translate(124,0)"/>
+      <use href="#ch-strip" transform="translate(186,0)"/>
+      <use href="#ch-strip" transform="translate(248,0)"/>
+      <use href="#ch-strip" transform="translate(310,0)"/>
+      <use href="#ch-strip" transform="translate(372,0)"/>
+      <use href="#ch-strip" transform="translate(434,0)"/>
+      <!-- Master channel (wider) -->
+      <rect x="506" y="10" width="74" height="240" rx="4" fill="#1e2230" stroke="#00c8ff" stroke-width="1"/>
+      <text x="543" y="24" fill="#00c8ff" font-size="8" font-weight="700" font-family="sans-serif" text-anchor="middle">MASTER</text>
+      <rect x="516" y="30" width="14" height="100" rx="2" fill="#0d0f14"/>
+      <rect x="516" y="75" width="14" height="55" rx="2" fill="#22c55e" opacity="0.8"/>
+      <rect x="516" y="65" width="14" height="10" rx="2" fill="#f59e0b" opacity="0.8"/>
+      <rect x="540" y="30" width="14" height="100" rx="2" fill="#0d0f14"/>
+      <rect x="540" y="77" width="14" height="53" rx="2" fill="#22c55e" opacity="0.8"/>
+      <rect x="516" y="140" width="34" height="80" rx="2" fill="#0d0f14"/>
+      <rect x="514" y="185" width="38" height="12" rx="3" fill="#00c8ff" opacity="0.7"/>
+      <!-- Channel names below -->
+      <text x="39"  y="255" fill="#4a5568" font-size="7" font-family="sans-serif" text-anchor="middle">Kick</text>
+      <text x="101" y="255" fill="#4a5568" font-size="7" font-family="sans-serif" text-anchor="middle">Snare</text>
+      <text x="163" y="255" fill="#4a5568" font-size="7" font-family="sans-serif" text-anchor="middle">HiHat</text>
+      <text x="225" y="255" fill="#4a5568" font-size="7" font-family="sans-serif" text-anchor="middle">Clap</text>
+      <text x="287" y="255" fill="#4a5568" font-size="7" font-family="sans-serif" text-anchor="middle">TomH</text>
+      <text x="349" y="255" fill="#4a5568" font-size="7" font-family="sans-serif" text-anchor="middle">TomL</text>
+      <text x="411" y="255" fill="#4a5568" font-size="7" font-family="sans-serif" text-anchor="middle">Perc</text>
+      <text x="473" y="255" fill="#4a5568" font-size="7" font-family="sans-serif" text-anchor="middle">FX</text>
+      <!-- Bus comp button -->
+      <rect x="590" y="15" width="100" height="22" rx="4" fill="#1a1e28" stroke="#2a3040" stroke-width="1"/>
+      <text x="640" y="29" fill="#4a5568" font-size="8" font-family="sans-serif" text-anchor="middle">🗜 Bus Comp</text>
+      <!-- Spectrum button -->
+      <rect x="590" y="41" width="100" height="22" rx="4" fill="#1a1e28" stroke="#2a3040" stroke-width="1"/>
+      <text x="640" y="55" fill="#4a5568" font-size="8" font-family="sans-serif" text-anchor="middle">📊 Spectrum</text>
+    </svg>
+  </div>
+
+  <h3>Bus-Kompressor</h3>
+  <table>
+    <tr><th>Parameter</th><th>Bereich</th><th>Default</th></tr>
+    <tr><td>Threshold</td><td>−60 bis 0 dB</td><td>−18 dB</td></tr>
+    <tr><td>Ratio</td><td>1:1 bis 20:1</td><td>4:1</td></tr>
+    <tr><td>Attack</td><td>0,001–0,1 s</td><td>5 ms</td></tr>
+    <tr><td>Release</td><td>0,01–1 s</td><td>100 ms</td></tr>
+    <tr><td>Makeup Gain</td><td>−6..+12 dB</td><td>0 dB</td></tr>
+  </table>
+
+  <h3>WAV-Export</h3>
+  <table>
+    <tr><th>Modus</th><th>Ergebnis</th></tr>
+    <tr><td>Master Mix</td><td>Alle Kanäle gemischt → eine Stereo-WAV-Datei</td></tr>
+    <tr><td>Stems</td><td>Jeder Kanal einzeln → <code>Pattern_Kanalname.wav</code></td></tr>
+  </table>
+  <p>Rendering via <code>OfflineAudioContext</code> (schneller als Echtzeit). Samplerate wählbar: 44100 / 48000 Hz.</p>
+</section>
+
+<!-- ══ 14. EFFEKTE ══ -->
+<section id="effects">
+  <h2><span class="section-num">14</span> Effekt-Ketten <em>(FX Chains)</em></h2>
+  <p>Jeder Kanal hat eine vollständige Effektkette. Die Reihenfolge ist per Drag &amp; Drop veränderbar.</p>
+
+  <h3>Standard Effekt-Kette (Signal-Fluss)</h3>
+  <div class="fx-chain">
+    <div class="fx-node">🎙 Eingang</div><div class="fx-arrow">→</div>
+    <div class="fx-node">Filter</div><div class="fx-arrow">→</div>
+    <div class="fx-node">Distortion</div><div class="fx-arrow">→</div>
+    <div class="fx-node">Compressor</div><div class="fx-arrow">→</div>
+    <div class="fx-node">EQ (3-Band)</div><div class="fx-arrow">→</div>
+    <div class="fx-node">Delay</div><div class="fx-arrow">→</div>
+    <div class="fx-node">Reverb</div><div class="fx-arrow">→</div>
+    <div class="fx-node">Gain</div><div class="fx-arrow">→</div>
+    <div class="fx-node">🔊 Pan</div>
+  </div>
+
+  <h3>Verfügbare Insert-Effekte</h3>
+  <table>
+    <tr><th>Effekt</th><th>Parameter</th><th>Beschreibung</th></tr>
+    <tr><td>Filter</td><td>Typ (LP/HP/BP), Frequenz, Resonanz</td><td>Klassischer Resonanzfilter</td></tr>
+    <tr><td>EQ 3-Band</td><td>Bass / Mid / High Gain &amp; Freq</td><td>Basis-Klangregelung pro Kanal</td></tr>
+    <tr><td>Parametric EQ 16-Band</td><td>Frequenz, Gain, Q pro Band</td><td>Profi-EQ mit grafischer Kurve</td></tr>
+    <tr><td>Compressor</td><td>Threshold, Ratio, Attack, Release, Makeup</td><td>Mit Gain-Reduction-Meter</td></tr>
+    <tr><td>Sidechain</td><td>Source-Kanal, Amount, Attack, Release</td><td>Pumping-Effekt (Kick → Bass)</td></tr>
+    <tr><td>Transient Shaper</td><td>Attack, Sustain</td><td>Kontrolle über Einschwing-/Ausklingverhalten</td></tr>
+    <tr><td>Distortion</td><td>Drive, Typ</td><td>Sättigung und Verzerrung</td></tr>
+    <tr><td>Bitcrusher</td><td>Bit-Tiefe, Downsampling</td><td>Lo-Fi Aliasing-Effekte</td></tr>
+    <tr><td>Ring Modulator</td><td>Frequenz</td><td>Metallische/robotische Färbung</td></tr>
+    <tr><td>Chorus</td><td>Rate, Depth, Mix</td><td>Verdopplung, Verbreiterung</td></tr>
+    <tr><td>Flanger</td><td>Rate, Depth, Feedback</td><td>Klassischer Jet-Sound</td></tr>
+    <tr><td>Delay</td><td>Time, Feedback, Mix</td><td>Echo-Effekt, BPM-synchronisierbar</td></tr>
+    <tr><td>Reverb</td><td>Room Size, Decay, Mix</td><td>Raumklang</td></tr>
+  </table>
+
+  <div class="callout tip">
+    <strong>Sidechain-Tipp:</strong> Weise dem Bass-Kanal einen Sidechain-Kompressor mit der Kick als Source zu. Stelle Attack auf 5 ms und Release auf 100 ms für klassisches House-Pumping.
+  </div>
+</section>
+
+<!-- ══ 15. SPECTRUM ══ -->
+<section id="spectrum">
+  <h2><span class="section-num">15</span> Spectrum Analyzer <badge class="badge pro">ECHTZEIT</badge></h2>
+  <p>Echtzeit-FFT-Spektrum im Mixer. Ein-/ausblenden per <code>📊 Spectrum</code>-Button.</p>
+
+  <div class="diagram">
+    <div class="diagram-title">Spectrum Analyzer — FFT (512 Bins, 0–14 kHz)</div>
+    <svg viewBox="0 0 600 120" xmlns="http://www.w3.org/2000/svg" style="width:100%;display:block;background:#0d0f14;">
+      <rect x="0" y="0" width="600" height="120" fill="#0d0f14"/>
+      <!-- Frequency grid -->
+      <line x1="0" y1="100" x2="600" y2="100" stroke="#1e2535" stroke-width="1"/>
+      <text x="5"   y="115" fill="#2a3040" font-size="7" font-family="monospace">20Hz</text>
+      <text x="80"  y="115" fill="#2a3040" font-size="7" font-family="monospace">100Hz</text>
+      <text x="180" y="115" fill="#2a3040" font-size="7" font-family="monospace">500Hz</text>
+      <text x="300" y="115" fill="#2a3040" font-size="7" font-family="monospace">1kHz</text>
+      <text x="440" y="115" fill="#2a3040" font-size="7" font-family="monospace">5kHz</text>
+      <text x="540" y="115" fill="#2a3040" font-size="7" font-family="monospace">14kHz</text>
+      <!-- Spectrum bars (simulated) -->
+      <rect x="5"   y="20" width="8"  height="80" fill="#a855f7" opacity="0.8" rx="1"/>
+      <rect x="15"  y="35" width="8"  height="65" fill="#a855f7" opacity="0.7" rx="1"/>
+      <rect x="25"  y="45" width="8"  height="55" fill="#a855f7" opacity="0.6" rx="1"/>
+      <rect x="35"  y="55" width="8"  height="45" fill="#00c8ff" opacity="0.8" rx="1"/>
+      <rect x="45"  y="50" width="8"  height="50" fill="#00c8ff" opacity="0.7" rx="1"/>
+      <rect x="55"  y="60" width="8"  height="40" fill="#00c8ff" opacity="0.6" rx="1"/>
+      <rect x="65"  y="65" width="8"  height="35" fill="#00c8ff" opacity="0.6" rx="1"/>
+      <rect x="90"  y="40" width="12" height="60" fill="#a855f7" opacity="0.7" rx="1"/>
+      <rect x="105" y="50" width="12" height="50" fill="#a855f7" opacity="0.6" rx="1"/>
+      <rect x="120" y="30" width="10" height="70" fill="#00c8ff" opacity="0.8" rx="1"/>
+      <rect x="133" y="45" width="10" height="55" fill="#00c8ff" opacity="0.7" rx="1"/>
+      <rect x="146" y="55" width="10" height="45" fill="#00c8ff" opacity="0.6" rx="1"/>
+      <rect x="160" y="60" width="10" height="40" fill="#00c8ff" opacity="0.5" rx="1"/>
+      <rect x="200" y="50" width="8"  height="50" fill="#00c8ff" opacity="0.6" rx="1"/>
+      <rect x="210" y="55" width="8"  height="45" fill="#00c8ff" opacity="0.5" rx="1"/>
+      <rect x="250" y="40" width="10" height="60" fill="#00c8ff" opacity="0.7" rx="1"/>
+      <rect x="263" y="48" width="10" height="52" fill="#00c8ff" opacity="0.6" rx="1"/>
+      <rect x="300" y="60" width="8"  height="40" fill="#00c8ff" opacity="0.5" rx="1"/>
+      <rect x="350" y="65" width="8"  height="35" fill="#00c8ff" opacity="0.4" rx="1"/>
+      <rect x="400" y="70" width="8"  height="30" fill="#00c8ff" opacity="0.3" rx="1"/>
+      <rect x="450" y="75" width="6"  height="25" fill="#00c8ff" opacity="0.25" rx="1"/>
+      <rect x="500" y="80" width="5"  height="20" fill="#00c8ff" opacity="0.2" rx="1"/>
+      <rect x="540" y="85" width="4"  height="15" fill="#00c8ff" opacity="0.15" rx="1"/>
+      <!-- Clip indicators -->
+      <rect x="5" y="5" width="8" height="10" fill="#ef4444" opacity="0.4" rx="1"/>
+      <!-- Legend -->
+      <rect x="520" y="10" width="8" height="8" fill="#a855f7" rx="1"/>
+      <text x="532" y="18" fill="#4a5568" font-size="7" font-family="sans-serif">Bass</text>
+      <rect x="520" y="22" width="8" height="8" fill="#00c8ff" rx="1"/>
+      <text x="532" y="30" fill="#4a5568" font-size="7" font-family="sans-serif">Mids/Highs</text>
+      <rect x="520" y="34" width="8" height="8" fill="#ef4444" rx="1"/>
+      <text x="532" y="42" fill="#4a5568" font-size="7" font-family="sans-serif">Clip</text>
+    </svg>
+  </div>
+
+  <p>Farbkodierung: <strong style="color:var(--accent2);">Bass</strong> (Sub-Bass bis 200 Hz) in Violett, <strong style="color:var(--accent);">Mids &amp; Highs</strong> in Cyan, <strong style="color:var(--accent-red);">Clipping</strong> in Rot. Basiert auf 512-Bin-FFT über Canvas.</p>
+</section>
+
+<!-- ══ 16. SONG ══ -->
+<section id="song">
+  <h2><span class="section-num">16</span> Song-Modus &amp; Arrangement <em>(F3)</em></h2>
+  <p>Der Song-Modus (Tab: Song) hat zwei Sub-Tabs: <strong>Arrangement</strong> und <strong>Automation</strong>.</p>
+
+  <h3>Arrangement-Timeline</h3>
+  <table>
+    <tr><th>Slot-Parameter</th><th>Optionen</th><th>Beschreibung</th></tr>
+    <tr><td>Bank</td><td>A / B / C / D</td><td>Welche Pattern-Gruppe</td></tr>
+    <tr><td>Repeats</td><td>1–16</td><td>Wie oft der Slot wiederholt wird</td></tr>
+    <tr><td>Label</td><td>Frei editierbar</td><td>Max. 10 Zeichen (Intro, Verse, Chorus…)</td></tr>
+    <tr><td>Mute</td><td>An/Aus</td><td>Slot überspringen ohne Löschen</td></tr>
+  </table>
+
+  <h3>Follow Actions (Pattern-Automation)</h3>
+  <table>
+    <tr><th>Action</th><th>Verhalten</th></tr>
+    <tr><td>none</td><td>Kein automatischer Wechsel</td></tr>
+    <tr><td>next</td><td>Nach N Bars automatisch zum nächsten Pattern</td></tr>
+    <tr><td>prev</td><td>Zum vorherigen Pattern</td></tr>
+    <tr><td>random</td><td>Zufälliges Pattern auswählen</td></tr>
+  </table>
+
+  <h3>BPM-Sync pro Pattern</h3>
+  <p>Jedes Pattern kann das globale BPM skalieren: <code>½×</code> · <code>¾×</code> · <code>1×</code> · <code>1½×</code> · <code>2×</code>. Ein sanfter BPM-Übergang über N Bars ist konfigurierbar.</p>
+
+  <h3>Templates</h3>
+  <p>Unter <code>Templates</code> sind vorgefertigte Arrangement-Strukturen für: <strong>Techno, House, Hip-Hop, Trap, Minimal, Experimental</strong>. Laden als Ausgangspunkt für neue Tracks.</p>
+</section>
+
+<!-- ══ 17. AUTOMATION ══ -->
+<section id="automation">
+  <h2><span class="section-num">17</span> Automation</h2>
+  <p>Automation Lanes im Sub-Tab <strong>Automation</strong> ermöglichen BPM-Kurven, Lautstärkeautomation und Kanal-Parameter-Verläufe.</p>
+
+  <table>
+    <tr><th>Automations-Ziel</th><th>Kategorie</th></tr>
+    <tr><td>BPM</td><td>Global</td></tr>
+    <tr><td>Master Volume</td><td>Global</td></tr>
+    <tr><td>Volume (pro Kanal)</td><td>Kanal</td></tr>
+    <tr><td>Pan (pro Kanal)</td><td>Kanal</td></tr>
+    <tr><td>Reverb-Send (pro Kanal)</td><td>Kanal</td></tr>
+    <tr><td>Delay-Send (pro Kanal)</td><td>Kanal</td></tr>
+  </table>
+
+  <h3>Interaktion mit Automation-Lanes</h3>
+  <table>
+    <tr><th>Aktion</th><th>Ergebnis</th></tr>
+    <tr><td>Linksklick in Lane</td><td>Wert setzen / Automatisierungspunkt hinzufügen</td></tr>
+    <tr><td>Rechtsklick auf Punkt</td><td>Punkt löschen</td></tr>
+    <tr><td>Punkt ziehen</td><td>Wert und Position ändern</td></tr>
+    <tr><td><code>● REC</code> während Wiedergabe</td><td>Parameteränderungen live aufnehmen</td></tr>
+  </table>
+
+  <p>Zwischen gesetzten Punkten wird <strong>linear interpoliert</strong>. Der Verlauf wird als gestrichelte Linie angezeigt. Beim Abspielen liest <code>AudioEngine.onPosition()</code> die Werte bei jedem Step.</p>
+</section>
+
+<!-- ══ 18. SYNTHESIZER ══ -->
+<section id="synth">
+  <h2><span class="section-num">18</span> Synthesizer-Engine</h2>
+  <p>Jeder Drum-Kanal kann statt eines Samples einen <strong>Synthesizer</strong> als Klangerzeuger verwenden.</p>
+
+  <h3>Modi</h3>
+  <table>
+    <tr><th>Modus</th><th>Beschreibung</th></tr>
+    <tr><td>Wavetable</td><td>Klassische Wellenformen: Sine, Sawtooth, Square, Triangle, Custom</td></tr>
+    <tr><td>FM (2-Operator)</td><td>Frequenzmodulation: Carrier + Modulator. FM Ratio 0,1–10, FM Depth 0–1000 Hz</td></tr>
+  </table>
+
+  <h3>ADSR-Hüllkurve</h3>
+  <table>
+    <tr><th>Parameter</th><th>Bereich</th><th>Wirkung</th></tr>
+    <tr><td>Attack</td><td>0–2000 ms</td><td>Einschwingzeit vom Null bis zum Peak</td></tr>
+    <tr><td>Decay</td><td>0–2000 ms</td><td>Abfall vom Peak auf Sustain-Level</td></tr>
+    <tr><td>Sustain</td><td>0–100%</td><td>Haltepegel solange Note gehalten wird</td></tr>
+    <tr><td>Release</td><td>0–3000 ms</td><td>Ausklingen nach Note-Off</td></tr>
+  </table>
+
+  <h3>LFO (Low Frequency Oscillator)</h3>
+  <table>
+    <tr><th>Parameter</th><th>Optionen / Bereich</th></tr>
+    <tr><td>Wellenform</td><td>Sine · Square · Sawtooth · Triangle · Random · S&amp;H</td></tr>
+    <tr><td>Rate (frei)</td><td>0,01–50 Hz</td></tr>
+    <tr><td>Rate (BPM-Sync)</td><td>1/64 · 1/32 · 1/16 · 1/8 · 1/4 · 1/2 · 1/1</td></tr>
+    <tr><td>Depth</td><td>0–100 ¢ (Pitch), 0–100% (Volume/Filter)</td></tr>
+    <tr><td>Ziel (Target)</td><td>Pitch · Volume · Filter-Frequenz</td></tr>
+  </table>
+
+  <h3>Custom Wavetable Editor</h3>
+  <p>Klick auf <code>custom ✏</code> im Wellenform-Menü öffnet einen 256-Sample-Canvas-Editor. Zeichne eigene Wellenformen per Klick/Drag. Presets als Startpunkt: Sine, Square, Sawtooth, Triangle.</p>
+
+  <h3>Portamento (Glide)</h3>
+  <p>Übergang zwischen zwei Pitch-Werten über die konfigurierte Zeit (0–2 s). Ideal für Basslinien.</p>
+</section>
+
+<!-- ══ 19. GRANULAR ══ -->
+<section id="granular">
+  <h2><span class="section-num">19</span> Granular Synthesizer <badge class="badge pro">FORTGESCHRITTEN</badge></h2>
+  <p>Öffnen per <code>GR</code>-Button am Kanal-Strip. Sample auf den Granular-Bereich ziehen um es zu aktivieren.</p>
+
+  <table>
+    <tr><th>Parameter</th><th>Bereich</th><th>Beschreibung</th></tr>
+    <tr><td>Position</td><td>0–100%</td><td>Startposition im Sample</td></tr>
+    <tr><td>Streuung (Spread)</td><td>0–100%</td><td>Zufällige Position-Variation der Körner</td></tr>
+    <tr><td>Grain-Größe</td><td>10–500 ms</td><td>Länge jedes einzelnen Korns</td></tr>
+    <tr><td>Dichte</td><td>1–50 Körner/s</td><td>Wie viele Körner pro Sekunde erzeugt werden</td></tr>
+    <tr><td>Pitch</td><td>−24..+24 Halbtöne</td><td>Transposition aller Körner</td></tr>
+    <tr><td>Pitch-Spray</td><td>0–100 ¢</td><td>Zufällige Pitch-Variation pro Korn</td></tr>
+    <tr><td>Lautstärke</td><td>0–100%</td><td>Output-Pegel</td></tr>
+    <tr><td>Panorama</td><td>0–100%</td><td>Stereo-Spread der Körner</td></tr>
+  </table>
+
+  <h3>Presets</h3>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin:12px 0;">
+    <code>Cloud</code>
+    <code>Shimmer</code>
+    <code>Texture</code>
+    <code>Stutter</code>
+    <code>Freeze</code>
+  </div>
+
+  <div class="callout info">
+    <strong>Creative Use:</strong> Lade eine Snare und erhöhe die Grain-Größe auf 200ms, Dichte auf 20/s und Pitch-Spray auf 50¢ für ein atmosphärisches Rauschen-Pad.
+  </div>
+</section>
+
+<!-- ══ 20. ARPEGGIATOR ══ -->
+<section id="arpeggiator">
+  <h2><span class="section-num">20</span> Arpeggiator</h2>
+  <p>Verwandelt einen Akkord in eine Arpeggio-Melodie. Scale-Lock stellt sicher, dass alle Noten in der gewählten Tonart bleiben.</p>
+
+  <table>
+    <tr><th>Parameter</th><th>Optionen</th></tr>
+    <tr><td>Modus</td><td>Up · Down · Up-Down · Random · Chord · Walk</td></tr>
+    <tr><td>Skala</td><td>Major · Minor · Pentatonik · Blues · Dorisch · Phrygisch · Lydisch · Chromatisch · u.v.m.</td></tr>
+    <tr><td>Grundton</td><td>C – H (alle 12 Halbtöne)</td></tr>
+    <tr><td>Oktavbereich</td><td>1–4 Oktaven</td></tr>
+    <tr><td>Rate</td><td>1/4 · 1/8 · 1/16 · 1/32 (BPM-synchron)</td></tr>
+    <tr><td>Noten</td><td>Manuell eingebbare Akkord-Noten</td></tr>
+  </table>
+</section>
+
+<!-- ══ 21. HUMANIZER ══ -->
+<section id="humanizer">
+  <h2><span class="section-num">21</span> Humanizer <em>(F4)</em></h2>
+  <p>Verleiht maschinellen Patterns menschliche Unregelmäßigkeiten durch Timing-Variation und Swing.</p>
+
+  <table>
+    <tr><th>Parameter</th><th>Beschreibung</th></tr>
+    <tr><td>Globaler Swing</td><td>Verzögert jeden zweiten Step für klassisches Swing-Feeling (0–100%)</td></tr>
+    <tr><td>Timing-Variation</td><td>Zufällige Verschiebung jedes Steps in ms</td></tr>
+    <tr><td>Velocity-Variation</td><td>Zufällige Velocity-Abweichung (±0–50)</td></tr>
+    <tr><td>Groove Template</td><td>Vorgefertigte Groove-Vorlagen aus realen Drum-Aufnahmen</td></tr>
+  </table>
+
+  <div class="callout tip">
+    <strong>Tipp:</strong> Swing 15–25% + Velocity-Variation 10–20 klingt für die meisten Genres natürlich, ohne zu stark zu klingen.
+  </div>
+</section>
+
+<!-- ══ 22. TOOLS ══ -->
+<section id="tools">
+  <h2><span class="section-num">22</span> Tools-Tab <em>(F5)</em></h2>
+  <p>Enthält KI-Generator, Akkord-Generator, Keyboard Sampler, Pattern Library und Script Runner.</p>
+</section>
+
+<!-- ══ 23. KI-GENERATOR ══ -->
+<section id="generator">
+  <h2><span class="section-num">23</span> KI-Pattern-Generator <badge class="badge new">KI</badge></h2>
+
+  <table>
+    <tr><th>Einstellung</th><th>Optionen</th></tr>
+    <tr><td>Genre</td><td>Techno · House · Hip-Hop · Trap · DnB · Reggaeton</td></tr>
+    <tr><td>Complexity</td><td>Slider 0–100% (einfach bis hochkomplex)</td></tr>
+    <tr><td>Beschreibung</td><td>Freitext-Prompt: "Minimal Techno mit UK-Bassline, 140 BPM"</td></tr>
+    <tr><td>API-Modus</td><td>Mit Anthropic API Key: KI-generiert · Ohne: Prozedural</td></tr>
+  </table>
+
+  <p><strong>API Key konfigurieren:</strong> Einstellungen → KI &amp; API → Anthropic API Key eingeben. Generiertes Pattern in Mini-Vorschau prüfen, dann <code>→ Anwenden</code> in die DrumMachine übertragen.</p>
+</section>
+
+<!-- ══ 24. AKKORDE ══ -->
+<section id="chords">
+  <h2><span class="section-num">24</span> Akkord-Generator</h2>
+
+  <table>
+    <tr><th>Parameter</th><th>Optionen</th></tr>
+    <tr><td>Grundton</td><td>C · C# · D · D# · E · F · F# · G · G# · A · A# · H</td></tr>
+    <tr><td>Modus</td><td>Dur (Ionian) · Dorisch · Phrygisch · Lydisch · Mixolydisch · Moll · Lokrisch</td></tr>
+    <tr><td>Progression</td><td>I-IV-V-I · I-V-vi-IV · ii-V-I · I-vi-IV-V · vi-IV-I-V · Zufällig</td></tr>
+    <tr><td>Erweiterungen</td><td>Maj7 · Min7 · Dom7 (7th-Akkorde)</td></tr>
+    <tr><td>Oktave</td><td>1–7</td></tr>
+  </table>
+
+  <p>Klick auf einen Akkord-Block spielt eine Vorschau. <code>→ In Piano Roll übertragen</code> legt die Akkordnoten direkt in die Piano Roll.</p>
+</section>
+
+<!-- ══ 25. KOLLABORATION ══ -->
+<section id="collab">
+  <h2><span class="section-num">25</span> LAN-Kollaboration <em>(F6)</em></h2>
+  <p>Echtzeit-Kollaboration mit einem anderen Synthstudio-Nutzer im lokalen Netzwerk — oder via Relay-Server über das Internet.</p>
+
+  <div class="collab-box">
+    <div class="collab-panel">
+      <div class="cp-title">Du — Host</div>
+      <div class="cp-status"><div class="dot green"></div> Session aktiv · Port 3001</div>
+      <div class="cp-status" style="margin-top:6px;"><div class="dot blue"></div> Partner verbunden</div>
+      <div style="margin-top:10px;font-size:0.78rem;color:var(--text-dim);">Output: Beide · Mich hören · Partner hören</div>
+    </div>
+    <div class="collab-panel">
+      <div class="cp-title">Partner — Client</div>
+      <div class="cp-status"><div class="dot blue"></div> Verbunden mit 192.168.1.x</div>
+      <div class="cp-status" style="margin-top:6px;"><div class="dot green"></div> Sync aktiv</div>
+      <div style="margin-top:10px;font-size:0.78rem;color:var(--text-dim);">Snapshot beim Beitreten empfangen</div>
+    </div>
+  </div>
+
+  <h3>Setup: LAN-Session starten</h3>
+  <p><strong>Host:</strong> Kollaboration-Tab öffnen → <code>Session starten</code> klicken. Synthstudio startet einen WebSocket-Server. Die IP-Adresse wird angezeigt.<br>
+  <strong>Client:</strong> Tab öffnen → IP-Adresse des Hosts eingeben → <code>Verbinden</code>. Der aktuelle State wird als Snapshot übertragen.</p>
+
+  <h3>Was synchronisiert wird</h3>
+  <table>
+    <tr><th>Ereignis</th><th>Protokoll-Event</th></tr>
+    <tr><td>Step an/aus</td><td><code>step:toggle</code></td></tr>
+    <tr><td>BPM-Änderung</td><td><code>bpm:change</code></td></tr>
+    <tr><td>Pattern wechseln</td><td><code>pattern:switch</code></td></tr>
+    <tr><td>Play / Stop</td><td><code>transport:play</code> / <code>transport:stop</code></td></tr>
+    <tr><td>Beim Beitreten</td><td><code>snapshot:full</code> (vollständiger State)</td></tr>
+  </table>
+
+  <h3>Split-Screen Ansicht</h3>
+  <p>Der <strong>Split-Screen-Modus</strong> zeigt beide Drum-Machines nebeneinander. Klicks im Partner-Sequencer werden direkt als Events gesendet.</p>
+
+  <h3>Output-Modus</h3>
+  <table>
+    <tr><th>Modus</th><th>Was klingt lokal</th></tr>
+    <tr><td>Ich</td><td>Nur eigene DrumMachine</td></tr>
+    <tr><td>Partner</td><td>Nur Partner-DrumMachine</td></tr>
+    <tr><td>Beide</td><td>Beide DrumMachines gemischt</td></tr>
+  </table>
+
+  <h3>Relay-Server (WAN / Internet)</h3>
+  <p>Für Verbindungen außerhalb des LANs: Relay-Server-URL in den API-Einstellungen konfigurieren. Beide Nutzer verbinden sich zum Relay statt direkt.</p>
+
+  <h3>Session-Chat &amp; Aufnahme</h3>
+  <p>Im Kollaborations-Tab ist ein integrierter <strong>Chat</strong> verfügbar. Alle Events können als <strong>Session-Recording</strong> mitgeschrieben und später abgespielt werden.</p>
+</section>
+
+<!-- ══ 26. PROJEKTE ══ -->
+<section id="projects">
+  <h2><span class="section-num">26</span> Projekt-Management</h2>
+
+  <table>
+    <tr><th>Funktion</th><th>Tastatur / Menü</th><th>Beschreibung</th></tr>
+    <tr><td>Speichern</td><td><kbd>Ctrl</kbd>+<kbd>S</kbd></td><td>Aktives Projekt speichern (Format: <code>.synth</code> / <code>.json</code>)</td></tr>
+    <tr><td>Speichern unter</td><td>Datei → Speichern unter</td><td>Neuen Dateinamen wählen</td></tr>
+    <tr><td>Öffnen</td><td><kbd>Ctrl</kbd>+<kbd>O</kbd></td><td>Projekt öffnen</td></tr>
+    <tr><td>Neues Projekt</td><td>Datei → Neu</td><td>Leeres Projekt oder Template</td></tr>
+    <tr><td>Zuletzt geöffnet</td><td>Datei → Letzte Projekte</td><td>Schnellzugriff auf letzte Dateien</td></tr>
+    <tr><td>Undo</td><td><kbd>Ctrl</kbd>+<kbd>Z</kbd></td><td>Letzte Aktion rückgängig</td></tr>
+    <tr><td>Redo</td><td><kbd>Ctrl</kbd>+<kbd>Y</kbd></td><td>Rückgängig-Aktion wiederholen</td></tr>
+  </table>
+
+  <h3>Auto-Save</h3>
+  <p>Synthstudio speichert den Zustand automatisch alle <strong>3 Minuten</strong> im <code>localStorage</code>. Beim nächsten Start wird der letzte Stand geladen.</p>
+
+  <h3>Version-Snapshots</h3>
+  <p>Automatische Checkpoints werden während der Arbeit erstellt und sind über das Undo-History-Panel zugänglich. Springe zu jedem Snapshot zurück ohne Verlust.</p>
+
+  <h3>Templates</h3>
+  <div class="feat-grid">
+    <div class="feat-card"><div class="icon">🔋</div><div class="title">Techno</div><div class="desc">4-on-the-floor, minimaler Sound, 130–140 BPM</div></div>
+    <div class="feat-card"><div class="icon">🏠</div><div class="title">House</div><div class="desc">Klassische 4/4-Kick, Chord-Stabs, 120–128 BPM</div></div>
+    <div class="feat-card"><div class="icon">🎤</div><div class="title">Hip-Hop</div><div class="desc">Boom-Bap Drums, 80–100 BPM</div></div>
+    <div class="feat-card"><div class="icon">🪤</div><div class="title">Trap</div><div class="desc">Roland-808 Sub, Hi-Hat Rolls, 140 BPM</div></div>
+    <div class="feat-card"><div class="icon">⚪</div><div class="title">Minimal</div><div class="desc">Reduziert, viel Raum, 125 BPM</div></div>
+    <div class="feat-card"><div class="icon">🔬</div><div class="title">Experimental</div><div class="desc">Euclidean Rhythmen, unkonventionell</div></div>
+  </div>
+</section>
+
+<!-- ══ 27. THEMES ══ -->
+<section id="themes">
+  <h2><span class="section-num">27</span> Themes &amp; Anpassung</h2>
+  <p>Synthstudio hat <strong>6 eingebaute Themes</strong> und einen <strong>Custom Theme Creator</strong>.</p>
+
+  <div class="theme-grid">
+    <div class="theme-swatch">
+      <div class="preview" style="background:linear-gradient(135deg,#0d0f14,#1e2230);border-bottom:1px solid #2a3040;display:flex;align-items:center;justify-content:center;">
+        <div style="width:20px;height:3px;background:#00c8ff;border-radius:2px;"></div>
+      </div>
+      <div class="name">DarkStudio</div>
+    </div>
+    <div class="theme-swatch">
+      <div class="preview" style="background:linear-gradient(135deg,#050510,#0a0a1a);border-bottom:1px solid #1a1a3a;display:flex;align-items:center;justify-content:center;">
+        <div style="width:20px;height:3px;background:#00ffff;border-radius:2px;box-shadow:0 0 6px #00ffff;"></div>
+      </div>
+      <div class="name">NeonCircuit</div>
+    </div>
+    <div class="theme-swatch">
+      <div class="preview" style="background:linear-gradient(135deg,#1a1208,#2a2010);border-bottom:1px solid #3a3020;display:flex;align-items:center;justify-content:center;">
+        <div style="width:20px;height:3px;background:#f0a020;border-radius:2px;"></div>
+      </div>
+      <div class="name">AnalogHardware</div>
+    </div>
+    <div class="theme-swatch">
+      <div class="preview" style="background:linear-gradient(135deg,#080810,#10101e);border-bottom:1px solid #181828;display:flex;align-items:center;justify-content:center;">
+        <div style="width:20px;height:3px;background:#6060c0;border-radius:2px;"></div>
+      </div>
+      <div class="name">Nacht</div>
+    </div>
+    <div class="theme-swatch">
+      <div class="preview" style="background:linear-gradient(135deg,#1a0808,#1e1010);border-bottom:1px solid #3a2020;display:flex;align-items:center;justify-content:center;">
+        <div style="width:20px;height:3px;background:#ff6040;border-radius:2px;"></div>
+      </div>
+      <div class="name">Sonnenuntergang</div>
+    </div>
+    <div class="theme-swatch">
+      <div class="preview" style="background:#000;border-bottom:1px solid #111;display:flex;align-items:center;justify-content:center;">
+        <div style="width:20px;height:3px;background:#ffffff;border-radius:2px;"></div>
+      </div>
+      <div class="name">OLED-Schwarz</div>
+    </div>
+  </div>
+
+  <h3>Custom Theme erstellen</h3>
+  <p>Einstellungen → Design → <code>+ Custom Theme</code>. Jedes Theme definiert 12 CSS-Variablen:</p>
+  <table>
+    <tr><th>Variable</th><th>Zweck</th></tr>
+    <tr><td><code>--ss-bg-base</code></td><td>Haupt-Hintergrundfarbe</td></tr>
+    <tr><td><code>--ss-bg-panel</code></td><td>Panel-Hintergrund</td></tr>
+    <tr><td><code>--ss-bg-elevated</code></td><td>Erhöhte Flächen (Cards)</td></tr>
+    <tr><td><code>--ss-accent-primary</code></td><td>Primäre Akzentfarbe</td></tr>
+    <tr><td><code>--ss-accent-secondary</code></td><td>Sekundäre Akzentfarbe</td></tr>
+    <tr><td><code>--ss-accent-success</code></td><td>Erfolgs-Grün</td></tr>
+    <tr><td><code>--ss-accent-danger</code></td><td>Fehler-Rot</td></tr>
+    <tr><td><code>--ss-text-primary</code></td><td>Primärer Text</td></tr>
+    <tr><td><code>--ss-text-muted</code></td><td>Gedämpfter Text</td></tr>
+    <tr><td><code>--ss-text-dim</code></td><td>Dimmer/subtiler Text</td></tr>
+    <tr><td><code>--ss-border</code></td><td>Rahmenfarbe</td></tr>
+    <tr><td><code>--ss-border-subtle</code></td><td>Subtile Trennlinien</td></tr>
+  </table>
+</section>
+
+<!-- ══ 28. MIDI ══ -->
+<section id="midi">
+  <h2><span class="section-num">28</span> MIDI-Integration</h2>
+  <p>MIDI-Einstellungen öffnen: <kbd>Ctrl</kbd>+<kbd>M</kbd> oder 🎹-Button in der Toolbar.</p>
+
+  <h3>MIDI-Learn</h3>
+  <p>Rechtsklick auf nahezu jeden Parameter → <code>MIDI Learn</code>. Dann einen Regler/Pad am Controller bedienen. Die Zuordnung wird dauerhaft gespeichert.</p>
+
+  <h3>MIDI-Gerät-Konfiguration</h3>
+  <table>
+    <tr><th>Funktion</th><th>Beschreibung</th></tr>
+    <tr><td>MIDI-Input</td><td>Eingehende Noten werden als Steps oder Velocity-Werte genutzt</td></tr>
+    <tr><td>MIDI-Output</td><td>Synthstudio kann MIDI-Clock senden</td></tr>
+    <tr><td>MIDI-Clock Master</td><td>Sendet BPM-Sync an externe Geräte</td></tr>
+    <tr><td>MIDI-Clock Slave</td><td>Empfängt BPM von einem externen Master</td></tr>
+    <tr><td>Launchpad-Support</td><td>Novation Launchpad als 8×8 Grid für Pads</td></tr>
+    <tr><td>MPE</td><td>MIDI Polyphonic Expression (per-Note Pitch Bend + Pressure)</td></tr>
+  </table>
+
+  <h3>MIDI-Import</h3>
+  <p>MIDI-Dateien (<code>.mid</code>) importieren: DrumMachine-Toolbar → <code>♪ MIDI</code>. GM Drum Map wird automatisch auf die 9 Kanäle gemappt.</p>
+</section>
+
+<!-- ══ 29. EXPORT ══ -->
+<section id="export">
+  <h2><span class="section-num">29</span> Export-Optionen</h2>
+
+  <table>
+    <tr><th>Format</th><th>Zugang</th><th>Beschreibung</th></tr>
+    <tr><td>WAV Master Mix</td><td>Mixer-Tab → WAV Export</td><td>Alle Kanäle gemischt, eine Stereo-Datei</td></tr>
+    <tr><td>WAV Stems</td><td>Mixer-Tab → Stems</td><td>Jeder Kanal als separate WAV-Datei</td></tr>
+    <tr><td>MIDI Export</td><td>DrumMachine → ♪ MIDI</td><td>Pattern als Standard-MIDI-Datei</td></tr>
+    <tr><td>Projekt-Bundle</td><td>Datei → Exportieren</td><td>ZIP mit <code>.synth</code> + allen Samples</td></tr>
+    <tr><td>Pattern Library</td><td>Tools → Pattern Library → Export</td><td>Pattern-Sammlung als JSON</td></tr>
+  </table>
+
+  <div class="callout tip">
+    <strong>Stems-Export Workflow:</strong> Exportiere alle Kanäle als Stems → importiere in DAW (Ableton, FL Studio) → nutze die Steps als MIDI-Trigger mit eigenen VST-Plugins.
+  </div>
+</section>
+
+
+<!-- ══ 30. SHORTCUTS ══ -->
+<section id="shortcuts">
+  <h2><span class="section-num">30</span> Tastatur-Shortcuts (Vollreferenz)</h2>
+
+  <h3>Transport</h3>
+  <table>
+    <tr><th>Tastenkombination</th><th>Funktion</th></tr>
+    <tr><td><kbd>Space</kbd></td><td>Play / Stop</td></tr>
+    <tr><td><kbd>Ctrl</kbd>+<kbd>R</kbd></td><td>Record an/aus</td></tr>
+    <tr><td><kbd>T</kbd></td><td>Tap Tempo</td></tr>
+    <tr><td><kbd>+</kbd></td><td>BPM +1</td></tr>
+    <tr><td><kbd>−</kbd></td><td>BPM −1</td></tr>
+    <tr><td><kbd>Shift</kbd>+<kbd>+</kbd></td><td>BPM +10</td></tr>
+    <tr><td><kbd>Shift</kbd>+<kbd>−</kbd></td><td>BPM −10</td></tr>
+  </table>
+
+  <h3>Navigation (Tabs)</h3>
+  <table>
+    <tr><th>Taste</th><th>Tab</th></tr>
+    <tr><td><kbd>F1</kbd></td><td>Sequencer</td></tr>
+    <tr><td><kbd>F2</kbd></td><td>Mixer</td></tr>
+    <tr><td><kbd>F3</kbd></td><td>Song</td></tr>
+    <tr><td><kbd>F4</kbd></td><td>Humanizer</td></tr>
+    <tr><td><kbd>F5</kbd></td><td>Tools</td></tr>
+    <tr><td><kbd>F6</kbd></td><td>Kollaboration</td></tr>
+  </table>
+
+  <h3>Panels &amp; Dialoge</h3>
+  <table>
+    <tr><th>Tastenkombination</th><th>Funktion</th></tr>
+    <tr><td><kbd>Ctrl</kbd>+<kbd>M</kbd></td><td>MIDI-Einstellungen öffnen</td></tr>
+    <tr><td><kbd>Shift</kbd>+<kbd>?</kbd></td><td>Shortcuts-Hilfe anzeigen</td></tr>
+    <tr><td><kbd>Ctrl</kbd>+<kbd>,</kbd></td><td>Design-Einstellungen öffnen</td></tr>
+    <tr><td><kbd>Alt</kbd>+<kbd>R</kbd></td><td>Note Repeat an/aus</td></tr>
+    <tr><td><kbd>Alt</kbd>+<kbd>M</kbd></td><td>Pattern Morph an/aus</td></tr>
+    <tr><td><kbd>Alt</kbd>+<kbd>S</kbd></td><td>Spectrum Analyzer an/aus</td></tr>
+  </table>
+
+  <h3>Pattern-Operationen</h3>
+  <table>
+    <tr><th>Tastenkombination</th><th>Funktion</th></tr>
+    <tr><td><kbd>Ctrl</kbd>+<kbd>→</kbd></td><td>Nächstes Pattern</td></tr>
+    <tr><td><kbd>Ctrl</kbd>+<kbd>←</kbd></td><td>Vorheriges Pattern</td></tr>
+    <tr><td><kbd>Ctrl</kbd>+<kbd>D</kbd></td><td>Pattern duplizieren</td></tr>
+    <tr><td><kbd>Ctrl</kbd>+<kbd>Del</kbd></td><td>Pattern löschen</td></tr>
+    <tr><td><kbd>Ctrl</kbd>+<kbd>F</kbd></td><td>Pattern füllen</td></tr>
+    <tr><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>R</kbd></td><td>Pattern randomisieren</td></tr>
+  </table>
+
+  <h3>Bearbeitung &amp; Navigation</h3>
+  <table>
+    <tr><th>Tastenkombination</th><th>Funktion</th></tr>
+    <tr><td><kbd>↑</kbd> / <kbd>↓</kbd></td><td>Kanal (Part) hoch/runter wechseln</td></tr>
+    <tr><td><kbd>V</kbd></td><td>Velocity-Modus an/aus</td></tr>
+    <tr><td><kbd>P</kbd></td><td>Pitch-Modus an/aus</td></tr>
+    <tr><td><kbd>Ctrl</kbd>+<kbd>Z</kbd></td><td>Undo</td></tr>
+    <tr><td><kbd>Ctrl</kbd>+<kbd>Y</kbd></td><td>Redo</td></tr>
+    <tr><td><kbd>Ctrl</kbd>+<kbd>S</kbd></td><td>Projekt speichern</td></tr>
+  </table>
+
+  <h3>Scene Launch</h3>
+  <table>
+    <tr><th>Tastenkombination</th><th>Funktion</th></tr>
+    <tr><td><kbd>Shift</kbd>+<kbd>1</kbd></td><td>Scene 1 auslösen</td></tr>
+    <tr><td><kbd>Shift</kbd>+<kbd>2</kbd></td><td>Scene 2 auslösen</td></tr>
+    <tr><td>…</td><td>…</td></tr>
+    <tr><td><kbd>Shift</kbd>+<kbd>8</kbd></td><td>Scene 8 auslösen</td></tr>
+  </table>
+
+  <div class="callout info">
+    <strong>Alle Shortcuts anpassen:</strong> Einstellungen → Tastatur-Belegungen. Über 60 Aktionen sind frei belegbar.
+  </div>
+</section>
+
+<div class="section-divider"></div>
+
+<!-- FOOTER -->
+<div style="text-align:center;padding:30px 0;color:var(--text-dim);font-size:0.82rem;">
+  <div style="font-size:1.2rem;margin-bottom:8px;">⬡</div>
+  <div style="font-weight:600;color:var(--text-muted);">Synthstudio v1.15.1</div>
+  <div style="margin-top:4px;">Benutzerhandbuch · Deutsch / English</div>
+  <div style="margin-top:10px;color:var(--text-dim);">Electron · React 19 · Tone.js 15 · Web Audio API</div>
+</div>
+
+</main>
+
+<script>
+// Active nav highlighting on scroll
+const sections = document.querySelectorAll('section[id]');
+const navLinks = document.querySelectorAll('#sidebar nav a');
+
+const observer = new IntersectionObserver((entries) => {
+  entries.forEach(entry => {
+    if (entry.isIntersecting) {
+      navLinks.forEach(link => {
+        link.classList.toggle('active', link.getAttribute('href') === '#' + entry.target.id);
+      });
+    }
+  });
+}, { rootMargin: '-30% 0px -65% 0px' });
+
+sections.forEach(s => observer.observe(s));
+</script>
+
+</body>
+</html>

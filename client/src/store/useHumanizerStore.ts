@@ -12,7 +12,7 @@
  *
  * Isomorph: Funktioniert im Browser und in Electron.
  */
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 
 // ─── Typen ────────────────────────────────────────────────────────────────────
 
@@ -154,14 +154,67 @@ function gaussianRandom(mean: number, stdDev: number): number {
   return mean + z * stdDev;
 }
 
+// ─── Singleton-State (für nicht-React Konsumenten wie AudioEngine) ───────────
+// Wird vom Hook bei jedem Render synchronisiert.
+
+let _singletonState: HumanizerState = {
+  global: { ...DEFAULT_SETTINGS },
+  perPart: {},
+  presets: GROOVE_PRESETS,
+};
+
+/** Liefert den aktuellen Humanizer-State (außerhalb React aufrufbar). */
+export function getHumanizerState(): HumanizerState {
+  return _singletonState;
+}
+
+/** Berechnet den Timing-Offset für einen Step in Sekunden (deterministisch). */
+export function computeHumanizerTimingOffset(
+  stepIndex: number,
+  stepDurationSec: number,
+  partIndex?: number,
+): number {
+  const s = _singletonState;
+  const settings = partIndex !== undefined && s.perPart[partIndex]
+    ? { ...s.global, ...s.perPart[partIndex] } : s.global;
+  if (!settings.enabled) return 0;
+
+  let offset = 0;
+  if (settings.swing > 0 && settings.swingOnEvenSteps && stepIndex % 2 === 1) {
+    // Swing-Offset relativ zur tatsächlichen Step-Dauer (BPM-unabhängig).
+    offset += settings.swing * stepDurationSec * 0.5;
+  }
+  if (settings.timingJitter > 0) {
+    const u1 = Math.random();
+    const u2 = Math.random();
+    const z = Math.sqrt(-2 * Math.log(Math.max(1e-9, u1))) * Math.cos(2 * Math.PI * u2);
+    offset += z * settings.timingJitter * 0.5 * 0.001;
+  }
+  return offset;
+}
+
+/** Berechnet einen Velocity-Multiplikator (0.5..1.5) – nicht-deterministisch. */
+export function computeHumanizerVelocityMultiplier(partIndex?: number): number {
+  const s = _singletonState;
+  const settings = partIndex !== undefined && s.perPart[partIndex]
+    ? { ...s.global, ...s.perPart[partIndex] } : s.global;
+  if (!settings.enabled || settings.velocityJitter === 0) return 1.0;
+  const u1 = Math.random();
+  const u2 = Math.random();
+  const z = Math.sqrt(-2 * Math.log(Math.max(1e-9, u1))) * Math.cos(2 * Math.PI * u2);
+  const multiplier = 1.0 + z * settings.velocityJitter * 0.3;
+  return Math.max(0.1, Math.min(2.0, multiplier));
+}
+
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
 export function useHumanizerStore(): HumanizerState & HumanizerActions {
-  const [state, setState] = useState<HumanizerState>({
-    global: { ...DEFAULT_SETTINGS },
-    perPart: {},
-    presets: GROOVE_PRESETS,
-  });
+  const [state, setState] = useState<HumanizerState>(_singletonState);
+
+  // Singleton-State auf React-State syncen damit AudioEngine aktuelle Werte sieht
+  useEffect(() => {
+    _singletonState = state;
+  }, [state]);
 
   const updateGlobal = useCallback((changes: Partial<HumanizerSettings>) => {
     setState((prev) => ({

@@ -169,6 +169,7 @@ function useRemoteDmAdapter(
       setStepCondition: (_partId: string, _stepIndex: number, _condition: StepCondition) => { /* no-op */ },
       setPartEuclidean: noop,
       clearPattern: noop,
+      resetAll: noop,
       fillPattern: noop,
       randomizePattern: noop,
       shiftPattern: noop,

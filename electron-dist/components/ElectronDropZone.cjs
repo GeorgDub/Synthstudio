@@ -22,6 +22,7 @@ const react_1 = require("react");
 // ─── Hilfsfunktionen ─────────────────────────────────────────────────────────
 const AUDIO_EXTENSIONS = new Set([".wav", ".mp3", ".ogg", ".flac", ".aiff", ".aif", ".m4a"]);
 const PROJECT_EXTENSIONS = new Set([".synth", ".json"]);
+const ZIP_EXTENSIONS = new Set([".zip"]);
 function getFileExtension(name) {
     const dot = name.lastIndexOf(".");
     return dot >= 0 ? name.slice(dot).toLowerCase() : "";
@@ -35,6 +36,8 @@ function detectDropType(items) {
         if (entry?.isDirectory)
             return "folder";
         const ext = getFileExtension(entry?.name ?? "");
+        if (ZIP_EXTENSIONS.has(ext))
+            return "zip";
         if (AUDIO_EXTENSIONS.has(ext))
             return "audio";
         if (PROJECT_EXTENSIONS.has(ext))
@@ -65,6 +68,12 @@ const DROP_STYLES = {
         text: "text-amber-400",
         label: "Projekt öffnen",
     },
+    zip: {
+        border: "border-violet-500",
+        bg: "bg-violet-500/10",
+        text: "text-violet-400",
+        label: "ZIP-Archiv extrahieren",
+    },
     unknown: {
         border: "border-slate-500",
         bg: "bg-slate-500/10",
@@ -73,7 +82,7 @@ const DROP_STYLES = {
     },
 };
 // ─── Komponente ───────────────────────────────────────────────────────────────
-function ElectronDropZone({ onAudioFiles, onFolder, onProject, children, }) {
+function ElectronDropZone({ onAudioFiles, onFolder, onProject, onZipFile, children, }) {
     const [isDragging, setIsDragging] = (0, react_1.useState)(false);
     const [dropType, setDropType] = (0, react_1.useState)(null);
     const dragCounter = (0, react_1.useRef)(0);
@@ -133,7 +142,10 @@ function ElectronDropZone({ onAudioFiles, onFolder, onProject, children, }) {
         const audioFiles = [];
         for (const file of files) {
             const ext = getFileExtension(file.name);
-            if (AUDIO_EXTENSIONS.has(ext)) {
+            if (ZIP_EXTENSIONS.has(ext)) {
+                onZipFile?.(file);
+            }
+            else if (AUDIO_EXTENSIONS.has(ext)) {
                 // Im Browser: Dateiname (kein echter Pfad verfügbar)
                 audioFiles.push(file.name);
             }
@@ -143,7 +155,7 @@ function ElectronDropZone({ onAudioFiles, onFolder, onProject, children, }) {
         }
         if (audioFiles.length > 0)
             onAudioFiles?.(audioFiles);
-    }, [onAudioFiles, onProject]);
+    }, [onAudioFiles, onProject, onZipFile]);
     // ── Render ────────────────────────────────────────────────────────────────
     const style = dropType ? DROP_STYLES[dropType] : DROP_STYLES.unknown;
     return ((0, jsx_runtime_1.jsxs)("div", { className: "relative w-full h-full", onDragEnter: handleDragEnter, onDragLeave: handleDragLeave, onDragOver: handleDragOver, onDrop: handleDrop, children: [children, isDragging && ((0, jsx_runtime_1.jsxs)("div", { className: `
@@ -151,6 +163,6 @@ function ElectronDropZone({ onAudioFiles, onFolder, onProject, children, }) {
             flex flex-col items-center justify-center gap-4
             border-4 border-dashed transition-all duration-150
             ${style.border} ${style.bg}
-          `, children: [(0, jsx_runtime_1.jsx)("div", { className: `text-6xl ${style.text}`, children: dropType === "folder" ? "📁" : dropType === "project" ? "🎵" : "🎚️" }), (0, jsx_runtime_1.jsx)("p", { className: `text-2xl font-bold tracking-wide ${style.text}`, children: style.label }), (0, jsx_runtime_1.jsxs)("p", { className: "text-sm text-slate-400", children: [dropType === "audio" && "WAV, MP3, OGG, FLAC, AIFF werden unterstützt", dropType === "folder" && "Alle Audio-Dateien im Ordner werden importiert", dropType === "project" && ".synth Projektdatei wird geöffnet", dropType === "unknown" && "Datei wird analysiert..."] })] }))] }));
+          `, children: [(0, jsx_runtime_1.jsx)("div", { className: `text-6xl ${style.text}`, children: dropType === "folder" ? "📁" : dropType === "project" ? "🎵" : dropType === "zip" ? "🗜️" : "🎚️" }), (0, jsx_runtime_1.jsx)("p", { className: `text-2xl font-bold tracking-wide ${style.text}`, children: style.label }), (0, jsx_runtime_1.jsxs)("p", { className: "text-sm text-slate-400", children: [dropType === "audio" && "WAV, MP3, OGG, FLAC, AIFF werden unterstützt", dropType === "folder" && "Alle Audio-Dateien im Ordner werden importiert", dropType === "project" && ".synth Projektdatei wird geöffnet", dropType === "zip" && "Audio-Dateien aus dem Archiv werden extrahiert", dropType === "unknown" && "Datei wird analysiert..."] })] }))] }));
 }
 exports.default = ElectronDropZone;

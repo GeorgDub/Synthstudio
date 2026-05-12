@@ -43,8 +43,10 @@ export function morphStepDeterministic(
     active = seed < clampedAmount;
   }
 
-  const velocityA = stepA.velocity ?? 1;
-  const velocityB = stepB.velocity ?? 1;
+  // Velocity-Default: nutze 100 wenn aktiv (MIDI-Standard), sonst 0.
+  // Bug v1.15.3: Default 1 führte dazu dass gemorphte Steps unhörbar leise wurden.
+  const velocityA = stepA.velocity ?? (stepA.active ? 100 : 0);
+  const velocityB = stepB.velocity ?? (stepB.active ? 100 : 0);
   const velocity = velocityA + (velocityB - velocityA) * clampedAmount;
 
   const pitchA = stepA.pitch ?? 0;

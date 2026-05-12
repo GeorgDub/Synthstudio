@@ -471,10 +471,14 @@ export function WaveformDisplay({
 
   // ── Render ──────────────────────────────────────────────────────────────────
 
+  const peaksArr = Array.isArray(peaks[0]) ? (peaks[0] as number[]) : (peaks as number[]);
+  const hasPeaks = peaksArr.length > 0;
+  const showEmptyHint = !isLoading && !hasPeaks;
+
   return (
     <div
       className={`relative select-none ${className}`}
-      style={{ height }}
+      style={{ height, background: "var(--ss-bg-elevated)" }}
     >
       <canvas
         ref={canvasRef}
@@ -486,6 +490,20 @@ export function WaveformDisplay({
         onMouseLeave={handleMouseLeave}
         onWheel={handleWheel}
       />
+
+      {/* Empty-State / Loading Overlay */}
+      {(isLoading || showEmptyHint) && (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+          {isLoading ? (
+            <div className="flex items-center gap-2 text-[10px] text-text-muted">
+              <span className="inline-block w-3 h-3 border-2 border-text-muted border-t-transparent rounded-full animate-spin" />
+              Analysiere Waveform…
+            </div>
+          ) : (
+            <div className="text-[10px] text-text-dim">— keine Waveform-Daten —</div>
+          )}
+        </div>
+      )}
 
       {/* Hover-Tooltip */}
       {hoverTime !== null && (

@@ -676,12 +676,17 @@ export function SampleBrowser({
       try {
         let audioData: ArrayBuffer | undefined;
 
-        if (!electron.isElectron && selectedSample.path) {
+        // Audio-Daten via fetch holen in zwei Fällen:
+        //  - Browser (kein Electron-FS-Zugriff)
+        //  - Electron + Blob-/HTTP-URL (z.B. Mic-Aufnahme, Stem-Export, Download)
+        //    weil das Electron-Backend dann fs.statSync() nicht nutzen kann
+        const isBlobOrHttp = /^(blob:|https?:|data:)/.test(selectedSample.path ?? "");
+        if ((!electron.isElectron || isBlobOrHttp) && selectedSample.path) {
           try {
             const response = await fetch(selectedSample.path);
             audioData = await response.arrayBuffer();
-          } catch {
-            // Fetch fehlgeschlagen
+          } catch (err) {
+            console.warn("[SampleBrowser] fetch fehlgeschlagen:", err);
           }
         }
 

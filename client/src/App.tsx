@@ -51,7 +51,8 @@ import { getEnvelopeFollowerConfigs } from "@/store/useEnvelopeFollowerStore";
 
 // ── Stores für neue Features ──────────────────────────────────────────────────
 import { useSongStore } from "@/store/useSongStore";
-import { useHumanizerStore } from "@/store/useHumanizerStore";
+import { useHumanizerStore, computeHumanizerTimingOffset, computeHumanizerVelocityMultiplier } from "@/store/useHumanizerStore";
+import { useMetronomeStore } from "@/store/useMetronomeStore";
 import { useDrumMachineStore } from "@/store/useDrumMachineStore";
 import { useTransport } from "@/hooks/useTransport";
 import { useMidi } from "@/hooks/useMidi";
@@ -67,6 +68,8 @@ import { ThemeSettings, initTheme } from "@/components/Settings";
 import { MixerView } from "@/components/Mixer";
 import { useMixerStore } from "@/store/useMixerStore";
 import { useGlobalKeyBindings, KB_ACTION_EVENT } from "@/hooks/useGlobalKeyBindings";
+import { PatternLaunchPad } from "@/components/PerformanceMode/PatternLaunchPad";
+import { usePerformanceStore } from "@/store/usePerformanceStore";
 import { useResizablePanel } from "@/hooks/useResizablePanel";
 import { ResizablePanelHandle } from "@/components/UI/ResizablePanelHandle";
 import { useAutomationStore } from "@/store/useAutomationStore";
@@ -136,6 +139,31 @@ export default function App() {
   const inSession = session.status === "hosting" || session.status === "joined";
   // ── Dialog-State ────────────────────────────────────────────────────────────────
   const [showNewProjectDialog, setShowNewProjectDialog] = useState(false);
+
+  // ── Performance Mode (Vollbild-Pattern-Launchpad) ─────────────────────────
+  const performance = usePerformanceStore();
+
+  // ── Humanizer ↔ AudioEngine Bridge ────────────────────────────────────────
+  // Singleton-Slot, den AudioEngine._scheduleStep ausliest. Keine direkte
+  // Abhängigkeit, damit der AudioEngine-Code Store-Agnostic bleibt.
+  useEffect(() => {
+    (globalThis as Record<string, unknown>)["__synthstudio_humanizer__"] = {
+      timing: computeHumanizerTimingOffset,
+      velocity: computeHumanizerVelocityMultiplier,
+    };
+    return () => {
+      delete (globalThis as Record<string, unknown>)["__synthstudio_humanizer__"];
+    };
+  }, []);
+
+  // ── Metronome Custom-Sounds ↔ AudioEngine ─────────────────────────────────
+  const metronome = useMetronomeStore();
+  useEffect(() => {
+    void AudioEngine.setCustomClickSound("downbeat", metronome.customDownbeatUrl);
+  }, [metronome.customDownbeatUrl]);
+  useEffect(() => {
+    void AudioEngine.setCustomClickSound("beat", metronome.customBeatUrl);
+  }, [metronome.customBeatUrl]);
 
   // ── Zentraler Projekt-State ────────────────────────────────────────────────────
   const project = useProjectStore();
@@ -1084,7 +1112,7 @@ export default function App() {
               />
             </div>
 
-            <div className="flex gap-0 border-b border-border-color bg-bg-panel" role="tablist" aria-label="Hauptnavigation">
+            <div className="flex gap-0 border-b border-border-color bg-bg-panel items-center" role="tablist" aria-label="Hauptnavigation">
               {([
                 { id: "sequencer",    label: "Sequencer" },
                 { id: "mixer",        label: "Mixer" },
@@ -1110,6 +1138,14 @@ export default function App() {
                   )}
                 </button>
               ))}
+              {/* Performance Mode (Vollbild-Launchpad, F12) */}
+              <button
+                onClick={() => performance.setActive(true)}
+                title="Performance Mode (F12) – Vollbild-Pattern-Launchpad"
+                className="ml-auto mr-3 px-3 py-1.5 rounded text-xs font-bold bg-accent-primary/20 border border-accent-primary/40 text-accent-primary hover:bg-accent-primary/30"
+              >
+                ⚡ Performance Mode
+              </button>
             </div>
 
             <div className="flex-1 overflow-hidden">
@@ -1305,8 +1341,35 @@ export default function App() {
       <NewProjectDialog
         isOpen={showNewProjectDialog}
         onClose={() => setShowNewProjectDialog(false)}
-        onCreateProject={project.newProjectFromTemplate}
+        onCreateProject={(templateState) => {
+          // Reihenfolge wichtig: zuerst DrumMachine resetten (Patterns + Parts),
+          // dann ProjectStore mit Template-Daten überschreiben.
+          dm.resetAll();
+          project.newProjectFromTemplate(templateState);
+        }}
       />
+
+      {/* ── Performance Mode (Vollbild-Pattern-Launchpad) ───────────────── */}
+      {performance.active && (
+        <PatternLaunchPad
+          pads={dm.patterns.map((p, i) => ({
+            patternId: p.id,
+            label: p.name,
+            color: undefined, // wird im LaunchPad aus PAD_COLORS ausgewählt
+          }))}
+          activePatternId={dm.activePatternId ?? ""}
+          queuedPatternId={performance.queuedPatternId}
+          quantizeMode={performance.quantizeMode}
+          bpm={project.bpm}
+          currentStep={dm.currentStep}
+          onPadClick={(patternId) => {
+            dm.setActivePattern(patternId);
+            performance.queuePattern(patternId);
+          }}
+          onQuantizeModeChange={performance.setQuantizeMode}
+          onClose={() => performance.setActive(false)}
+        />
+      )}
     </ElectronDropZone>
   );
 }
