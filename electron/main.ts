@@ -199,6 +199,12 @@ function createWindow(): void {
     minHeight: 700,
     title: APP_NAME,
     backgroundColor: "#0a0a0a",
+    // Eigene Custom-Titlebar (ElectronTitleBar.tsx) → OS-Frame ausblenden,
+    // sonst sieht der User zwei Titlebars übereinander.
+    // - Win/Linux: kompletten OS-Frame ausblenden
+    // - macOS: traffic-light-Buttons über Inset-Position behalten, Title-Text aus
+    frame: process.platform === "darwin",
+    titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
     // Erst zeigen wenn der Renderer ready ist – verhindert weißes Flash + leere Fenster
     show: false,
     webPreferences: {
