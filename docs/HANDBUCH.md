@@ -1,6 +1,6 @@
 # Synthstudio – Funktionshandbuch
 
-**Version 1.18.3 | Vollständige Dokumentation aller Features**
+**Version 1.19.0 | Vollständige Dokumentation aller Features**
 
 ---
 
@@ -54,7 +54,7 @@
 42. [KI-Projekt-Analyse](#42-ki-projekt-analyse-v1150)
 
 ### v1.16.0
-43. [Audio Tracks (Vocals / Songs / Remix-Channel)](#43-audio-tracks-v1160)
+43. [Audio Tracks (Vocals / Songs / Remix-Channel)](#43-audio-tracks-v1160) — *erweitert v1.19.0*
 
 ### v1.17.0
 44. [Persistente Scripts + Web-Worker-Sandbox](#44-persistente-scripts--web-worker-sandbox-v1170)
@@ -1473,9 +1473,16 @@ Lädt externe Audio-Dateien (Vocals, fertige Songs zum Remixen, Loops) als vollw
 | Modus | Verhalten | Wann verwenden |
 |---|---|---|
 | **Free** *(default)* | Track läuft im Original-Tempo. BPM-Änderung im Projekt hat **keinen** Einfluss. | Vocals, gesprochenes Audio, alles wo natürliches Timing wichtig ist |
-| **Stretch (Pitch+Tempo)** | `playbackRate = currentBpm / originalBpm`. Track passt sich Master-BPM an, **ändert aber gekoppelt auch die Tonhöhe**. | Loops, Drumbreaks, wenn Original-BPM bekannt ist |
+| **Stretch (Pitch+Tempo)** | `playbackRate = currentBpm / originalBpm`. Track passt sich Master-BPM an, **ändert aber gekoppelt auch die Tonhöhe**. | Loops, Drumbreaks, klassischer DJ-Pitch-Effekt, wenn Original-BPM bekannt ist |
+| **Time-Stretch (Pitch erhalten)** *(v1.19.0)* | OLA-AudioWorklet `time-stretch-processor` setzt `stretchRatio = currentBpm / originalBpm`. Tempo folgt Master-BPM, **Pitch bleibt erhalten**. Stereo-fähig mit synchroner Phase. | Vocals, fertige Songs zum Remixen, melodisches Material |
 
-> **v1.17 Vorschau**: Pitch-erhaltendes Stretching via `TimeStretchProcessor.js`-Worklet ist in Vorbereitung. Bis dahin: für saubere Pitch-Anpassung Audio extern vor-bouncen.
+**Time-Stretch Limits (v1.19.0):**
+- Max **4 gleichzeitige Time-Stretch-Tracks** pro Projekt (CPU-Schutz — OLA ist ~3-5× teurer als `playbackRate`). Bei Limit: Dropdown-Option `disabled` mit Tooltip.
+- Quality-Badge `⚠ Extreme Ratio — Artefakte möglich` erscheint bei `|currentBpm/originalBpm − 1| > 0.5` (also <0.5× oder >1.5× Original-Tempo).
+- Browser-Compat: Feature-Detection auf `ctx.audioWorklet` — auf nicht-unterstützten Browsern (Safari < 14.5) wird die Option `disabled`.
+
+### Solo-Verhalten *(v1.19.0)*
+Solo wirkt jetzt **Mixer-übergreifend** — sobald min. ein Channel (Drum-Part **oder** Audio-Track) soloed ist, sind alle nicht-soloed Channels (beider Typen) stumm. Vorher (v1.16-v1.18): Drum-Solo mutete nur andere Drums, Audio-Solo nur andere Audios. Jetzt einheitlich. *Implementation: Cross-Subscription via `AudioEngine.setDrumSoloFlagGetter()` + `notifyDrumSoloChanged()` — kein neuer Store, keine `.synth`-Schema-Änderung.*
 
 ### Persistenz im `.synth`-Format
 Audio-Tracks werden als **Pfad-Referenzen** im Projekt gespeichert (kein Embed der Audio-Datei). Eine `.synth`-Datei bleibt klein, auch wenn ein 10-Minuten-Song als Audio-Track verwendet wird.
@@ -1674,4 +1681,4 @@ Diese Releases enthalten keine neuen Features, sondern **kritische Bug-Fixes**:
 
 ---
 
-*Letzte Aktualisierung: Sprint 20 — v1.18.3 (FOLLOWUP-110 Theme-Refactor + Daylight/Paper Token-Fix)*
+*Letzte Aktualisierung: Sprint 21 — v1.19.0 (FOLLOWUP-102: Pitch-preserving Stretch + Solo Cross-Store)*

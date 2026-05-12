@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "1.18.3",
+    version: "1.19.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -142,7 +142,7 @@ const INDEX = {
     "Keyboard Bindings": { store: "useKeyboardBindingsStore.ts", tab: "Settings",      status: "stable" },
     "Themes":            { count: 10,                        tab: "Settings",          status: "stable" },
     "KI-Generator":      { store: null,                      tab: "Tools",             status: "⚠️ requires API key" },
-    "Audio Tracks":      { store: "useAudioTrackStore.ts",   tab: "F2 (Mixer)",        status: "stable (v1.16.0+)", notes: "Path-ref persistence in .synth, max 8 tracks, BPM-sync via playbackRate (Pitch+Tempo)" }
+    "Audio Tracks":      { store: "useAudioTrackStore.ts",   tab: "F2 (Mixer)",        status: "stable (v1.19.0+)", notes: "Path-ref persistence in .synth, max 8 tracks, 3 sync-modes: free | stretch (pitch+tempo) | timestretch (pitch-preserving OLA, max 4 simultaneous). Cross-store solo with drum-parts." }
   },
 
   // ─── KNOWN BUGS ────────────────────────────────────────────
@@ -226,6 +226,38 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "backend",
+      timestamp: "2026-05-12T21:15:00.000Z",
+      done: [
+        "FOLLOWUP-102 / A: Pitch-preserving Time-Stretch via AudioWorklet (v1.19.0) implementiert. Neuer syncMode 'timestretch' nutzt OLA-Algorithmus für tempo-bound Wiedergabe bei konstantem Pitch — ideal für Vocals/Songs. Bestehender toter Code TimeStretchProcessor.js (registriert seit v1.x aber nie instanziiert) wird jetzt aktiv genutzt.",
+        "Bereich 1 / TimeStretchProcessor.js: Mono→Stereo erweitert. Neue Messages: setBuffer (channels: Float32Array[] mit 1 oder 2 Channels, Mono→Stereo Upmix), setLoop (boolean), seek (samplePos). Position-Report via port.postMessage({type:'position',samplePos}) alle ~2200 samples (≈50ms@44.1kHz). Pro-Channel _outAccums für unabhängige OLA pro Channel mit synchronem _readPos (Stereo-Imaging bleibt erhalten). Loop=false → silence am Ende (statt endlosem Wrap).",
+        "Bereich 2 / AudioEngine.ts: Neue private Maps audioTrackWorkletNodes + audioTrackWorkletPositions. Neue private Methode _playAudioTrackViaWorklet(id,opts): erzeugt AudioWorkletNode mit outputChannelCount=[2], schickt setBuffer/setLoop/seek/setValueAtTime(stretch=bpm/origBpm), connectet zu channelNodes.input (volle FX-Chain bleibt verfügbar — Sends, Inserts, Solo/Mute funktionieren). playAudioTrack(id) routed bei syncMode='timestretch' automatisch dorthin. stopAudioTrack/seekAudioTrack/disposeAudioTrack/_updateAudioTrackPlaybackRates erweitert. seekAudioTrack ist bei Worklet in-place (kein Re-Create) via postMessage({type:'seek'}). rAF-Tick liest aus audioTrackWorkletPositions wenn Worklet aktiv, sonst weiter aus ctxStart-Berechnung.",
+        "Bereich 2 / Graceful Fallback: Wenn AudioWorklet-Modul nicht ladbar oder AudioWorkletNode-Erzeugung scheitert → console.warn + Auto-Downgrade syncMode='stretch' für diesen Track (BufferSourceNode statt Worklet). Verhindert silent breakage in Edge-Cases.",
+        "Bereich 3 / AudioEngine.ts Schema: AudioTrackChannelData.syncMode erweitert von 'free'|'stretch' auf 'free'|'stretch'|'timestretch'.",
+        "Bereich 4 / useAudioTrackStore.ts: isValidTrack akzeptiert jetzt 'timestretch' (außerdem strikte Ablehnung sonstiger bogus-Strings statt silent-pass). Neue Konstante MAX_TIMESTRETCH_TRACKS=4 + countTimestretchTracks() Helper. KEIN Auto-Upgrade alter 'stretch'-Tracks — User-Entscheidung bleibt erhalten.",
+        "Bereich 4 / projectSerializer.ts: isValidAudioTrackEntry akzeptiert ebenfalls 'timestretch' + lehnt bogus-syncModes ab. Alte v1.16 .synth-Files (kein syncMode-Feld oder 'free'/'stretch') laden weiter unverändert.",
+        "Bereich 5 / AudioTrackStrip.tsx: Sync-Mode-Dropdown von 2 auf 3 Optionen erweitert. Quality-Badge ('⚠ Extreme Ratio — Artefakte möglich') wenn timestretch + |bpm/orig - 1| > 0.5 (OLA-Artefakt-Schwelle). Option 'timestretch' disabled wenn (a) AudioWorklet nicht supported (Feature-Detection via getAudioContext().audioWorklet OR window.AudioWorklet) — Tooltip 'Browser unterstützt AudioWorklet nicht'; ODER (b) countTimestretchTracks() >= MAX_TIMESTRETCH_TRACKS und dieser Track ist nicht bereits timestretch — Tooltip 'Max 4 Time-Stretch Tracks (CPU-Schutz)'. Dropdown-Label-Tooltip mit Quality-Info zu allen 3 Modi. originalBpm-Input erscheint jetzt sowohl bei 'stretch' als auch 'timestretch'. Nur semantische Tokens (text-accent-secondary, etc.).",
+        "Tests / tests/features/audio-track-timestretch.test.ts (NEU): 13 Tests, alle grün. MockAudioWorkletNode mit port.postMessage-Spy + port.__triggerMessage-Helper + parameters.get('stretch').setValueAtTime-Spy. Deckt alle 8 Pflicht-Coverage-Punkte: Routing 'timestretch'→Worklet, Stretch-Param-Init, setBpm-live-Update, seekAudioTrack→postMessage(seek), stopAudioTrack→disconnect+map-cleanup, disposeAudioTrack cold/hot, isValidTrack Akzeptanz, Regression 'stretch'/'free'→BufferSource. Bonus: Position-Tracking via port-message-trigger + rAF.",
+        "Verification: pnpm check clean. pnpm test 1031 passing (1046 incl. 15 pre-existing skipped), +13 NEW timestretch tests + 20 audio-track Regression alle grün, 0 Regressionen in 61 test files."
+      ],
+      next: [
+        "FOLLOWUP-102 / A (Welle 2): MAX_TIMESTRETCH_TRACKS Soft-Limit-Verhalten beim PROJECT-LOAD prüfen — wenn ein .synth-File >4 timestretch-Tracks hat, sollten die letzten als 'stretch' geladen werden (oder eine User-Warnung erscheinen). Aktuell: alle werden akzeptiert, AudioEngine erzeugt 5+ Worklets parallel (CPU-Spike möglich). projectSerializer.parseProject könnte ein Post-Validation-Step ergänzen.",
+        "FOLLOWUP-102 / A (Welle 2): OLA-Algorithmus zeigt bei sehr aggressiven Stretch-Ratios (>2x oder <0.5x) Phasing/Transient-Smearing. v1.19.x könnte einen WSOLA-Upgrade bekommen (Cross-Correlation-Search im Grain-Overlap statt naiver Hann-OLA) — deutlich bessere Quality bei ähnlichem CPU-Budget. Bestehender SoundTouch-WASM-Wrapper im Web-Ökosystem wäre Alternative.",
+        "FOLLOWUP-102 / A (Welle 2): Worklet sendet position alle ~50ms (Sample-Hop 2200@44.1kHz hardcoded). Bei höherem sampleRate (48k/96k) ist die Update-Rate proportional schneller — könnte UI-jank verursachen. Throttle sollte sich an currentTime orientieren statt an Samples.",
+        "FOLLOWUP-102 / A (Welle 2): Quality-Badge-Threshold 50% ist heuristisch — A/B-Tests mit realen Vocals/Drums könnten 30% als realistischere Untergrenze ergeben. UI sollte später ein Quality-Slider-Setting bekommen ('OLA' vs 'WSOLA' vs 'Phase-Vocoder').",
+        "FOLLOWUP-102 / A (Welle 2): rAF-Tick rate für Worklet-Position-Polling könnte auf requestVideoFrameCallback umgestellt werden wenn Performance-Mode aktiv — aktuelle Lösung ist konsistent mit bestehendem BufferSource-Pfad und reicht für Standard-Use-Cases.",
+        "FOLLOWUP-102 / A (UI-Polish, optional): MixerView.tsx könnte einen globalen Indikator 'X/4 Time-Stretch aktiv' zeigen — analog zum '8/8 Audio-Tracks' Anzeiger. Verlangt countTimestretchTracks-Subscription im MixerView."
+      ],
+      changed: [
+        "client/src/audio/worklets/TimeStretchProcessor.js",
+        "client/src/audio/AudioEngine.ts",
+        "client/src/store/useAudioTrackStore.ts",
+        "client/src/utils/projectSerializer.ts",
+        "client/src/components/Mixer/AudioTrackStrip.tsx",
+        "tests/features/audio-track-timestretch.test.ts"
+      ]
+    },
     {
       agent:     "refactor",
       timestamp: "2026-05-12T20:40:00.000Z",

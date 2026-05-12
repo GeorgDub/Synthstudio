@@ -201,6 +201,32 @@ export default function App() {
   const automationRef2 = useRef(automation); automationRef2.current = automation;
   const projectRef   = useRef(project);   projectRef.current   = project;
 
+  // ── Cross-Store Solo (FOLLOWUP-102/B) ──────────────────────────────────────
+  // Mixer-Level Solo wirkt cross-type: ein Drum-Part-Solo macht andere
+  // Audio-Tracks stumm und umgekehrt. AudioEngine fragt via Getter den
+  // aktuellen Drum-Solo-Status ab; eine useEffect-Bridge triggert ein
+  // Re-Apply der Mute-Logik wann immer sich die Drum-Solo-Flags aendern
+  // (NACH dem React-Commit, damit der Getter den neuen State sieht).
+  useEffect(() => {
+    AudioEngine.setDrumSoloFlagGetter(() => {
+      const d = dmRef.current;
+      if (!d) return false;
+      const activePattern = d.getActivePattern();
+      return activePattern?.parts.some(p => p.soloed) ?? false;
+    });
+    return () => AudioEngine.setDrumSoloFlagGetter(null);
+  }, []);
+  // Trigger Re-Apply wann immer sich Drum-Solo-Flags aendern.
+  // Dependency: serialisierter Solo-Snapshot des aktiven Patterns.
+  const drumSoloSnapshot = (() => {
+    const active = dm.patterns.find(p => p.id === dm.activePatternId);
+    if (!active) return "";
+    return active.parts.map(p => (p.soloed ? "1" : "0")).join("");
+  })();
+  useEffect(() => {
+    AudioEngine.notifyDrumSoloChanged();
+  }, [drumSoloSnapshot]);
+
   // ── Projekt-Serialisierung ────────────────────────────────────────────────
   const buildProjectSnapshot = useCallback(() => {
     const p  = projectRef.current;

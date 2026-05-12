@@ -187,8 +187,13 @@ export interface AudioTrackChannelData {
   /** Wo im Sample der Track beginnen soll (Sekunden ab Buffer-Anfang). */
   startOffsetSec?: number;
   loop?: boolean;
-  /** "free" = unabhängig vom Transport-BPM. "stretch" = playbackRate = bpm/originalBpm. */
-  syncMode?: "free" | "stretch";
+  /**
+   * "free"        = unabhängig vom Transport-BPM (playbackRate=1).
+   * "stretch"     = playbackRate = bpm/originalBpm (Pitch+Tempo gekoppelt, DJ-Pitch).
+   * "timestretch" = Pitch-erhaltender Time-Stretch via AudioWorklet (OLA),
+   *                 Tempo folgt BPM, Pitch bleibt konstant. Teurer auf der CPU.
+   */
+  syncMode?: "free" | "stretch" | "timestretch";
   originalBpm?: number | null;
 }
 
@@ -310,6 +315,23 @@ class AudioEngineClass {
   private audioTrackData = new Map<string, AudioTrackChannelData>();
   /** Externer Getter (Store) – primäre Quelle für playAllRegisteredAudioTracks. */
   private audioTracksGetter: (() => AudioTrackChannelData[]) | null = null;
+  /**
+   * Pitch-preserving Worklet-Nodes pro Track (syncMode="timestretch").
+   * Wenn ein Track Worklet-basiert läuft, gibt es KEINE AudioBufferSourceNode
+   * in audioTrackSources für diesen Track — Helpers prüfen beide Maps.
+   */
+  private audioTrackWorkletNodes = new Map<string, AudioWorkletNode>();
+  /** Letzte gemeldete Sample-Position pro Worklet-Track (für Playhead-rAF). */
+  private audioTrackWorkletPositions = new Map<string, number>();
+
+  // ─── Cross-Store Solo (FOLLOWUP-102 / B) ───────────────────────────────────
+  /**
+   * Externer Flag-Getter aus dem Drum-Store: liefert true wenn mindestens
+   * ein Drum-Part im aktiven Pattern soloed ist. Wird im Mixer-Solo-Pfad
+   * konsultiert damit Audio-Tracks bei Drum-Solo mit-stummgeschaltet werden.
+   * Default null = backward-kompatibel (nur audio-track-internes Solo wirkt).
+   */
+  private drumSoloFlagGetter: (() => boolean) | null = null;
 
   // Global Send Buses
   private _globalReverbBus: ConvolverNode | null = null;
@@ -1150,10 +1172,15 @@ class AudioEngineClass {
     if (!scheduledPattern && !this.patternGetter) return;
     const pattern = scheduledPattern ?? this.patternGetter!();
 
+    // Cross-Store Solo-Check (FOLLOWUP-102/B): Drum + Audio-Track Solo wirken zusammen.
+    // Wenn irgendein Audio-Track soloed ist, werden alle nicht-soloed Drum-Parts
+    // ebenfalls stumm — analog zum Mixer-Mute-Verhalten von _reapplyAudioTrackSoloMutes.
+    const anyDrumSolo = pattern.parts.some(p => p.soloed);
+    const anyAudioSolo = this.audioTracksGetter?.().some(t => t.soloed) ?? false;
+    const anySolo = anyDrumSolo || anyAudioSolo;
+
     pattern.parts.forEach((part, partIndex) => {
       if (part.muted) return;
-      // Solo-Check
-      const anySolo = pattern.parts.some(p => p.soloed);
       if (anySolo && !part.soloed) return;
 
       // Polymeter: bei eigener stepLength wrappt der Part modular
@@ -1252,10 +1279,10 @@ class AudioEngineClass {
     });
 
     // ─── Melodische Parts (Piano Roll) ────────────────────────────────────
+    // Nutzt denselben cross-store Solo-Check wie der Drum-Loop oben.
     if (this.melodicGetter) {
       pattern.parts.forEach((part) => {
         if (part.muted) return;
-        const anySolo = pattern.parts.some(p => p.soloed);
         if (anySolo && !part.soloed) return;
 
         const melodicSteps = this.melodicGetter!(part.id);
@@ -1844,6 +1871,10 @@ class AudioEngineClass {
   /**
    * Startet die Wiedergabe eines registrierten + geladenen Tracks.
    * Wenn der Track bereits laeuft, wird er zuerst gestoppt (replay).
+   *
+   * Routing-Auswahl:
+   *   - syncMode === "timestretch" → AudioWorkletNode (Pitch-erhaltend, OLA)
+   *   - sonst → klassischer AudioBufferSourceNode (Pitch+Tempo gekoppelt)
    */
   playAudioTrack(id: string, opts?: { startOffsetSec?: number; loop?: boolean }): void {
     if (!this.ctx) return;
@@ -1851,8 +1882,14 @@ class AudioEngineClass {
     if (!buf) return;
     const data = this.audioTrackData.get(id);
 
-    // Existierende Source stoppen (Replay)
+    if (data?.syncMode === "timestretch") {
+      void this._playAudioTrackViaWorklet(id, opts);
+      return;
+    }
+
+    // Existierende Source stoppen (Replay) – auch evtl. Worklet, falls zuvor aktiv.
     this._stopAudioTrackSource(id);
+    this._stopAudioTrackWorklet(id);
 
     const source = this.ctx.createBufferSource();
     source.buffer = buf;
@@ -1894,9 +1931,122 @@ class AudioEngineClass {
     }
   }
 
+  /**
+   * Interne Pitch-preserving-Variante via AudioWorklet (OLA).
+   * Wird aus `playAudioTrack` aufgerufen wenn `syncMode === "timestretch"`.
+   * Bei Worklet-Fehlern (z.B. Modul nicht geladen) → graceful Fallback
+   * auf `"stretch"`-Verhalten (BufferSourceNode) + console.warn.
+   */
+  private async _playAudioTrackViaWorklet(
+    id: string,
+    opts?: { startOffsetSec?: number; loop?: boolean },
+  ): Promise<void> {
+    if (!this.ctx) return;
+    const buf = this.audioTrackBuffers.get(id);
+    if (!buf) return;
+    const data = this.audioTrackData.get(id);
+
+    // Worklet-Modul sicherstellen.
+    await this._ensureWorklets();
+    if (!this._workletLoaded) {
+      console.warn(
+        "[AudioEngine] timestretch: AudioWorklet nicht verfügbar – Fallback auf 'stretch'.",
+      );
+      const fallback: AudioTrackChannelData = { ...(data ?? ({} as AudioTrackChannelData)), id, syncMode: "stretch" };
+      this.audioTrackData.set(id, fallback);
+      this.playAudioTrack(id, opts);
+      return;
+    }
+
+    // Existierende Source/Worklet stoppen (Replay).
+    this._stopAudioTrackSource(id);
+    this._stopAudioTrackWorklet(id);
+
+    let node: AudioWorkletNode;
+    try {
+      node = new AudioWorkletNode(this.ctx, "time-stretch-processor", {
+        numberOfInputs: 0,
+        numberOfOutputs: 1,
+        outputChannelCount: [2],
+      });
+    } catch (err) {
+      console.warn(
+        "[AudioEngine] timestretch: AudioWorkletNode-Erzeugung fehlgeschlagen – Fallback auf 'stretch'.",
+        err,
+      );
+      const fallback: AudioTrackChannelData = { ...(data ?? ({} as AudioTrackChannelData)), id, syncMode: "stretch" };
+      this.audioTrackData.set(id, fallback);
+      this.playAudioTrack(id, opts);
+      return;
+    }
+
+    // Channels aus Buffer extrahieren (Mono → upmix passiert im Worklet).
+    const channels: Float32Array[] = [];
+    const numCh = Math.min(2, buf.numberOfChannels || 1);
+    for (let c = 0; c < numCh; c++) {
+      channels.push(buf.getChannelData(c));
+    }
+
+    // Loop-Flag + Buffer initial setzen.
+    const wantLoop = opts?.loop ?? data?.loop ?? false;
+    try {
+      node.port.postMessage({ type: "setBuffer", channels });
+      node.port.postMessage({ type: "setLoop", loop: wantLoop });
+    } catch (err) {
+      console.warn("[AudioEngine] timestretch: postMessage(setBuffer) failed:", err);
+    }
+
+    // Initial-Seek?
+    const offsetSec = Math.max(0, opts?.startOffsetSec ?? data?.startOffsetSec ?? 0);
+    if (offsetSec > 0) {
+      const samplePos = Math.floor(offsetSec * (buf.sampleRate || this.ctx.sampleRate));
+      try {
+        node.port.postMessage({ type: "seek", samplePos });
+      } catch { /* ignore */ }
+    }
+
+    // Stretch-Param: bpm / originalBpm (default 1.0).
+    const orig = data?.originalBpm && data.originalBpm > 0 ? data.originalBpm : null;
+    const ratio = orig ? this._bpm / orig : 1.0;
+    try {
+      const p = node.parameters.get("stretch");
+      if (p) p.setValueAtTime(ratio, this.ctx.currentTime);
+    } catch { /* ignore */ }
+
+    // Position-Listener registrieren.
+    const initialSamplePos = offsetSec > 0
+      ? Math.floor(offsetSec * (buf.sampleRate || this.ctx.sampleRate))
+      : 0;
+    this.audioTrackWorkletPositions.set(id, initialSamplePos);
+    node.port.onmessage = (e: MessageEvent) => {
+      const m = e.data as { type?: string; samplePos?: number } | undefined;
+      if (!m || m.type !== "position" || typeof m.samplePos !== "number") return;
+      this.audioTrackWorkletPositions.set(id, m.samplePos);
+    };
+
+    // Routing: worklet → channelNodes.input → FX → master
+    const nodes = this._getOrCreateChannelNodes(id, DEFAULT_CHANNEL_FX);
+    try { node.connect(nodes.input); } catch (err) {
+      console.warn("[AudioEngine] timestretch: connect error:", err);
+    }
+
+    this.audioTrackWorkletNodes.set(id, node);
+    // ctxStart wird hier dennoch hinterlegt damit existing rAF-Position-Code
+    // einen Anker hat (Fallback). Sample-Position kommt aber via postMessage.
+    this.audioTrackStartTimes.set(id, {
+      ctxStart: this.ctx.currentTime,
+      offsetSec,
+    });
+
+    if ((this.audioTrackPositionListeners.get(id)?.size ?? 0) > 0) {
+      this._startAudioTrackPositionRaf(id);
+    }
+  }
+
   /** Stoppt einen Track. No-op wenn nicht aktiv. */
   stopAudioTrack(id: string): void {
     this._stopAudioTrackSource(id);
+    this._stopAudioTrackWorklet(id);
     this._cleanupAudioTrackSource(id);
   }
 
@@ -1942,11 +2092,36 @@ class AudioEngineClass {
    * spielt, wird die Source neu erzeugt und beim neuen Offset gestartet.
    */
   seekAudioTrack(id: string, sec: number): void {
-    const wasActive = this.audioTrackSources.has(id);
+    const wasSourceActive = this.audioTrackSources.has(id);
+    const wasWorkletActive = this.audioTrackWorkletNodes.has(id);
     const data = this.audioTrackData.get(id);
-    if (data) data.startOffsetSec = Math.max(0, sec);
-    if (wasActive) {
-      this.playAudioTrack(id, { startOffsetSec: Math.max(0, sec), loop: data?.loop });
+    const safeSec = Math.max(0, sec);
+    if (data) data.startOffsetSec = safeSec;
+
+    // Wenn Worklet aktiv → in-place seek via postMessage (kein Re-Create).
+    if (wasWorkletActive) {
+      const node = this.audioTrackWorkletNodes.get(id);
+      const buf = this.audioTrackBuffers.get(id);
+      const sr = buf?.sampleRate || this.ctx?.sampleRate || 44100;
+      const samplePos = Math.floor(safeSec * sr);
+      try {
+        node?.port.postMessage({ type: "seek", samplePos });
+      } catch (err) {
+        console.warn("[AudioEngine] seekAudioTrack worklet error:", err);
+      }
+      this.audioTrackWorkletPositions.set(id, samplePos);
+      // ctxStart anker neu setzen damit rAF-Fallback sinnvoll bleibt.
+      if (this.ctx) {
+        this.audioTrackStartTimes.set(id, {
+          ctxStart: this.ctx.currentTime,
+          offsetSec: safeSec,
+        });
+      }
+      return;
+    }
+
+    if (wasSourceActive) {
+      this.playAudioTrack(id, { startOffsetSec: safeSec, loop: data?.loop });
     }
   }
 
@@ -1961,7 +2136,8 @@ class AudioEngineClass {
       this.audioTrackPositionListeners.set(id, set);
     }
     set.add(cb);
-    if (this.audioTrackSources.has(id) && !this.audioTrackPositionRaf.has(id)) {
+    const sourceActive = this.audioTrackSources.has(id) || this.audioTrackWorkletNodes.has(id);
+    if (sourceActive && !this.audioTrackPositionRaf.has(id)) {
       this._startAudioTrackPositionRaf(id);
     }
     return () => {
@@ -1998,12 +2174,14 @@ class AudioEngineClass {
    */
   disposeAudioTrack(id: string): void {
     this._stopAudioTrackSource(id);
+    this._stopAudioTrackWorklet(id);
     this._stopAudioTrackPositionRaf(id);
     this.audioTrackBuffers.delete(id);
     this.audioTrackStartTimes.delete(id);
     this.audioTrackPositionListeners.delete(id);
     this.audioTrackEndedListeners.delete(id);
     this.audioTrackData.delete(id);
+    this.audioTrackWorkletPositions.delete(id);
   }
 
   /**
@@ -2027,10 +2205,15 @@ class AudioEngineClass {
   }
 
   stopAllAudioTracks(): void {
-    // Kopie der Keys (Map wird waehrend stop mutiert)
-    const ids = Array.from(this.audioTrackSources.keys());
-    for (const id of ids) {
+    // Kopie der Keys (Maps werden waehrend stop mutiert)
+    const sourceIds = Array.from(this.audioTrackSources.keys());
+    for (const id of sourceIds) {
       this._stopAudioTrackSource(id);
+      this._cleanupAudioTrackSource(id);
+    }
+    const workletIds = Array.from(this.audioTrackWorkletNodes.keys());
+    for (const id of workletIds) {
+      this._stopAudioTrackWorklet(id);
       this._cleanupAudioTrackSource(id);
     }
   }
@@ -2044,6 +2227,26 @@ class AudioEngineClass {
     this.audioTracksGetter = getter;
   }
 
+  /**
+   * Registriert einen Getter, der true liefert wenn mindestens ein Drum-Part
+   * im aktiven Pattern soloed ist. Wird vom Mixer-Solo-Pfad gelesen damit
+   * Audio-Tracks bei Drum-Solo mit-stummgeschaltet werden (FOLLOWUP-102/B).
+   * Setzen mit `null` entfernt die Cross-Subscription (Legacy-Verhalten).
+   */
+  setDrumSoloFlagGetter(fn: (() => boolean) | null): void {
+    this.drumSoloFlagGetter = fn;
+  }
+
+  /**
+   * Wird aus dem Drum-Store aufgerufen, wenn sich die Drum-Solo-Flags geaendert
+   * haben. Triggert ein Re-Apply der Audio-Track-Solo-Mutes, damit das
+   * cross-store Solo-Verhalten konsistent ist (Drum-Solo → andere Channels stumm).
+   * Idempotent — kann beliebig oft gerufen werden.
+   */
+  notifyDrumSoloChanged(): void {
+    this._reapplyAudioTrackSoloMutes();
+  }
+
   /** Dauer in Sekunden des geladenen Buffers, oder null wenn nicht geladen. */
   getAudioTrackDuration(id: string): number | null {
     const buf = this.audioTrackBuffers.get(id);
@@ -2052,9 +2255,14 @@ class AudioEngineClass {
 
   // ─── Private: Audio-Track Helpers ──────────────────────────────────────────
 
+  /**
+   * Berechnet die effektive Playback-Rate für BufferSource ("stretch") oder
+   * den Worklet-Stretch-Param ("timestretch"). Beide nutzen dasselbe Verhältnis
+   * `bpm/originalBpm` – der Unterschied liegt im Routing (Pitch-Kopplung).
+   */
   private _calcAudioTrackPlaybackRate(data: AudioTrackChannelData | undefined): number {
     if (!data) return 1;
-    if (data.syncMode !== "stretch") return 1;
+    if (data.syncMode !== "stretch" && data.syncMode !== "timestretch") return 1;
     const orig = data.originalBpm;
     if (!orig || orig <= 0) return 1;
     return this._bpm / orig;
@@ -2072,6 +2280,31 @@ class AudioEngineClass {
         try { source.playbackRate.value = rate; } catch { /* ignore */ }
       }
     });
+    // Aktive Worklet-Tracks: stretch-AudioParam aktualisieren.
+    this.audioTrackWorkletNodes.forEach((node, id) => {
+      const data = this.audioTrackData.get(id);
+      const rate = this._calcAudioTrackPlaybackRate(data);
+      try {
+        const p = node.parameters.get("stretch");
+        if (p) p.setValueAtTime(rate, this.ctx?.currentTime ?? 0);
+      } catch {
+        // Mock-Fallback: direkter value-Set wenn AudioParam-API nicht voll vorhanden.
+        try {
+          const p = node.parameters.get("stretch");
+          if (p) (p as unknown as { value: number }).value = rate;
+        } catch { /* ignore */ }
+      }
+    });
+  }
+
+  /** Disconnect+Cleanup für einen Worklet-basierten Audio-Track. */
+  private _stopAudioTrackWorklet(id: string): void {
+    const node = this.audioTrackWorkletNodes.get(id);
+    if (!node) return;
+    try { node.port.onmessage = null as unknown as (e: MessageEvent) => void; } catch { /* ignore */ }
+    try { node.disconnect(); } catch { /* ignore */ }
+    this.audioTrackWorkletNodes.delete(id);
+    this.audioTrackWorkletPositions.delete(id);
   }
 
   private _stopAudioTrackSource(id: string): void {
@@ -2097,14 +2330,25 @@ class AudioEngineClass {
     const tick = () => {
       const start = this.audioTrackStartTimes.get(id);
       const src = this.audioTrackSources.get(id);
-      if (!start || !src || !this.ctx) return;
+      const workletNode = this.audioTrackWorkletNodes.get(id);
+      if (!this.ctx) return;
+      if (!start || (!src && !workletNode)) return;
       const data = this.audioTrackData.get(id);
-      const rate = data?.syncMode === "stretch" && data.originalBpm
-        ? this._bpm / data.originalBpm
-        : 1;
-      const elapsedCtx = this.ctx.currentTime - start.ctxStart;
-      const sec = start.offsetSec + elapsedCtx * rate;
       const dur = buf.duration || 1;
+      let sec: number;
+      if (workletNode) {
+        // Worklet liefert samplePos via postMessage – wir lesen aus Map.
+        const samplePos = this.audioTrackWorkletPositions.get(id) ?? 0;
+        const sr = buf.sampleRate || this.ctx.sampleRate || 44100;
+        sec = samplePos / sr;
+      } else {
+        const rate = (data?.syncMode === "stretch" || data?.syncMode === "timestretch")
+          && data.originalBpm
+          ? this._bpm / data.originalBpm
+          : 1;
+        const elapsedCtx = this.ctx.currentTime - start.ctxStart;
+        sec = start.offsetSec + elapsedCtx * rate;
+      }
       let pos01 = sec / dur;
       if (data?.loop) {
         // Modulo im Loop, damit pos01 in [0, 1) bleibt.
@@ -2115,9 +2359,10 @@ class AudioEngineClass {
       this.audioTrackPositionListeners.get(id)?.forEach(cb => {
         try { cb(pos01, sec); } catch { /* ignore */ }
       });
-      // Naechsten Frame nur planen wenn noch listener da sind und source aktiv.
+      // Naechsten Frame nur planen wenn noch listener da sind und source ODER worklet aktiv.
+      const stillActive = this.audioTrackSources.has(id) || this.audioTrackWorkletNodes.has(id);
       if (
-        this.audioTrackSources.has(id)
+        stillActive
         && (this.audioTrackPositionListeners.get(id)?.size ?? 0) > 0
       ) {
         const rid = requestAnimationFrame(tick);
@@ -2141,13 +2386,18 @@ class AudioEngineClass {
   }
 
   /**
-   * Wendet die Audio-Track-Solo-Logik an: wenn irgendein Audio-Track soloed
-   * ist, sind alle anderen Audio-Tracks effektiv stumm. Drum-Parts bleiben
-   * unberuehrt.
+   * Wendet die Audio-Track-Solo-Logik an: wenn irgendein Audio-Track ODER
+   * irgendein Drum-Part soloed ist, sind alle nicht-soloed Audio-Tracks
+   * effektiv stumm (cross-store Solo-Verhalten, FOLLOWUP-102/B).
+   * Drum-Parts werden über den Scheduler-Loop separat gesteppskipped.
+   * Der drumSoloFlagGetter ist optional — wenn null, wirkt nur das
+   * audio-track-interne Solo (Legacy-Verhalten v1.16.x).
    */
   private _reapplyAudioTrackSoloMutes(): void {
     const list = Array.from(this.audioTrackData.values());
-    const anySolo = list.some(t => t.soloed);
+    const anyAudioSolo = list.some(t => t.soloed);
+    const anyDrumSolo = this.drumSoloFlagGetter?.() ?? false;
+    const anySolo = anyAudioSolo || anyDrumSolo;
     for (const t of list) {
       const effectiveMuted = t.muted || (anySolo && !t.soloed);
       this.setChannelVolume(t.id, effectiveMuted ? 0 : t.volume);

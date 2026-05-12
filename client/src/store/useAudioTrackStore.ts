@@ -49,6 +49,12 @@ export interface AudioTrackRuntimeState {
 // ─── Konstanten ──────────────────────────────────────────────────────────────
 
 export const MAX_AUDIO_TRACKS = 8;
+/**
+ * Maximale Anzahl gleichzeitiger Tracks mit `syncMode === "timestretch"`.
+ * Begründung: AudioWorklet-OLA ist deutlich teurer als `playbackRate` (CPU-Schutz).
+ * UI sollte die Option ab diesem Limit deaktivieren (mit Tooltip).
+ */
+export const MAX_TIMESTRETCH_TRACKS = 4;
 const STORAGE_KEY = "synthstudio:audiotracks:v1";
 const ID_PREFIX = "audiotrack:";
 
@@ -91,6 +97,18 @@ function persist(): void {
 function isValidTrack(t: unknown): t is AudioTrackChannelData {
   if (!t || typeof t !== "object") return false;
   const o = t as Record<string, unknown>;
+  // syncMode (optional) muss – wenn gesetzt – einer der erlaubten Strings sein.
+  // Alte v1.16-Files ohne Feld bleiben gültig (undefined). Migration: kein
+  // Auto-Upgrade von "stretch" → "timestretch" (User-Entscheidung).
+  if (o.syncMode !== undefined && o.syncMode !== null) {
+    if (
+      o.syncMode !== "free" &&
+      o.syncMode !== "stretch" &&
+      o.syncMode !== "timestretch"
+    ) {
+      return false;
+    }
+  }
   return (
     typeof o.id === "string" &&
     o.id.startsWith(ID_PREFIX) &&
@@ -163,6 +181,19 @@ export function getAudioTrack(id: string): AudioTrackChannelData | null {
 /** Snapshot aller Tracks (defensive Kopie). */
 export function getAllAudioTracks(): AudioTrackChannelData[] {
   return _tracks.slice();
+}
+
+/**
+ * Anzahl der Tracks mit `syncMode === "timestretch"`.
+ * UI nutzt das, um die Time-Stretch-Option in weiteren Tracks zu deaktivieren
+ * wenn `MAX_TIMESTRETCH_TRACKS` erreicht ist (CPU-Schutz).
+ */
+export function countTimestretchTracks(): number {
+  let n = 0;
+  for (const t of _tracks) {
+    if (t.syncMode === "timestretch") n++;
+  }
+  return n;
 }
 
 /**

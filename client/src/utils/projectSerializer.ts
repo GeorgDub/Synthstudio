@@ -86,6 +86,18 @@ function isValidAudioTrackEntry(t: unknown): t is AudioTrackChannelData {
     typeof o.sends === "object" &&
     typeof (o.sends as { reverb?: unknown }).reverb === "number" &&
     typeof (o.sends as { delay?: unknown }).delay === "number";
+  // syncMode (optional) muss – wenn gesetzt – einer der erlaubten Strings sein.
+  // v1.16-Dateien haben "free"/"stretch", v1.19+ zusätzlich "timestretch".
+  // Migration: kein Auto-Upgrade – alte syncModes bleiben erhalten.
+  if (o.syncMode !== undefined && o.syncMode !== null) {
+    if (
+      o.syncMode !== "free" &&
+      o.syncMode !== "stretch" &&
+      o.syncMode !== "timestretch"
+    ) {
+      return false;
+    }
+  }
   return (
     typeof o.id === "string" &&
     typeof o.name === "string" &&

@@ -436,6 +436,23 @@ export function useDrumMachineStore(): DrumMachineState & DrumMachineActions {
         soloed: pt.id === partId ? soloed : false,
       })),
     })), false);
+    // Cross-Store Solo (FOLLOWUP-102/B): Notify Mixer-Layer (Audio-Tracks)
+    // damit sie bei Drum-Solo mit-stummgeschaltet werden. Custom-Event statt
+    // direkter AudioEngine-Import um den Store engine-agnostisch zu halten —
+    // App.tsx hat zusätzlich eine useEffect-Bridge (zuverlaessiger Pfad nach
+    // React-Commit), das Event ist die discoverable/testbare Sekundär-Quelle.
+    if (typeof window !== "undefined" && typeof window.dispatchEvent === "function") {
+      try {
+        window.dispatchEvent(
+          new CustomEvent("synthstudio:drum-solo-changed", {
+            detail: { partId, soloed },
+          }),
+        );
+      } catch {
+        /* CustomEvent nicht verfuegbar (test environment) — kein Problem,
+           der useEffect-Pfad in App.tsx ist primaer. */
+      }
+    }
   }, [updatePatterns]);
 
   const setPartVolume = useCallback((partId: string, volume: number) => {

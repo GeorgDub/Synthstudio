@@ -27,6 +27,8 @@ import {
   markBroken,
   setRuntimeWaveform,
   getRuntimeState,
+  countTimestretchTracks,
+  MAX_TIMESTRETCH_TRACKS,
   type AudioTrackChannelData,
   type AudioTrackRuntimeState,
 } from "@/store/useAudioTrackStore";
@@ -231,14 +233,50 @@ export function AudioTrackStrip({
 
   // ── Sync-Mode ──────────────────────────────────────────────────────────────
   const handleSyncMode = useCallback(
-    (mode: "free" | "stretch") => {
+    (mode: "free" | "stretch" | "timestretch") => {
       updateAudioTrack(track.id, { syncMode: mode });
-      // Engine re-register damit playbackRate beim nächsten Start neu berechnet wird.
+      // Engine re-register damit playbackRate / stretch beim nächsten Start neu berechnet wird.
       const fresh = { ...track, syncMode: mode };
       AudioEngine.registerAudioTrack(fresh);
     },
     [track],
   );
+
+  // ── Feature-Detection + Limit-Check für "timestretch" ──────────────────────
+  // - Browser ohne AudioWorklet (z.B. sehr alte Browser) → Option deaktivieren.
+  // - Wenn MAX_TIMESTRETCH_TRACKS erreicht UND dieser Track ist nicht selbst
+  //   bereits timestretch → Option deaktivieren (CPU-Schutz).
+  const audioWorkletSupported = (() => {
+    try {
+      const ctx = AudioEngine.getAudioContext();
+      // Wenn kein ctx vorhanden → in Browser-Test ableiten von window.AudioWorklet.
+      if (ctx && (ctx as unknown as { audioWorklet?: unknown }).audioWorklet) return true;
+      if (typeof window !== "undefined" && "AudioWorklet" in window) return true;
+      return false;
+    } catch {
+      return false;
+    }
+  })();
+  const isAlreadyTimestretch = track.syncMode === "timestretch";
+  const tsLimitReached = !isAlreadyTimestretch
+    && countTimestretchTracks() >= MAX_TIMESTRETCH_TRACKS;
+  const timestretchDisabled = !audioWorkletSupported || tsLimitReached;
+  const timestretchTooltip = !audioWorkletSupported
+    ? "Browser unterstützt AudioWorklet nicht"
+    : tsLimitReached
+      ? `Max ${MAX_TIMESTRETCH_TRACKS} Time-Stretch Tracks (CPU-Schutz)`
+      : "Time-Stretch (Pitch erhalten)";
+
+  // ── Quality-Badge bei extremen Ratios ──────────────────────────────────────
+  // Trigger: timestretch aktiv + |bpm/orig - 1| > 0.5 (also >50% Abweichung).
+  // OLA-Artefakte (Phasing, transientes Smearing) werden hörbar ab dieser Schwelle.
+  const showQualityBadge = (() => {
+    if (track.syncMode !== "timestretch") return false;
+    const orig = track.originalBpm;
+    if (!orig || orig <= 0) return false;
+    const currentBpm = AudioEngine.bpm || 120;
+    return Math.abs(currentBpm / orig - 1) > 0.5;
+  })();
 
   const handleOriginalBpm = useCallback(
     (bpm: number) => {
@@ -498,7 +536,7 @@ export function AudioTrackStrip({
       <div className="flex flex-col gap-0.5 w-full mt-1">
         <label
           className="text-[8px] text-text-dim uppercase"
-          title="Stretch ändert Pitch+Tempo gekoppelt. Pitch-preserving kommt v1.17."
+          title="Free = Originaltempo. Stretch = schneller/langsamer + höher/tiefer (DJ-Pitch). Time-Stretch = nur Tempo, Pitch bleibt (OLA-Algorithmus, optimal ±50%)."
         >
           Sync
         </label>
@@ -507,17 +545,33 @@ export function AudioTrackStrip({
           value={track.syncMode ?? "free"}
           onChange={(e) => {
             e.stopPropagation();
-            handleSyncMode(e.target.value as "free" | "stretch");
+            handleSyncMode(e.target.value as "free" | "stretch" | "timestretch");
           }}
           onClick={(e) => e.stopPropagation()}
           disabled={broken}
-          title="Stretch ändert Pitch+Tempo gekoppelt. Pitch-preserving kommt v1.17."
+          title="Free = Originaltempo. Stretch = schneller/langsamer + höher/tiefer (DJ-Pitch). Time-Stretch = nur Tempo, Pitch bleibt (OLA-Algorithmus, optimal ±50%)."
           className="w-full px-1 py-0.5 text-[9px] bg-bg-elevated text-text-primary border border-border-color rounded disabled:opacity-40"
         >
           <option value="free">Free</option>
           <option value="stretch">Stretch (Pitch+Tempo)</option>
+          <option
+            value="timestretch"
+            disabled={timestretchDisabled}
+            title={timestretchTooltip}
+          >
+            Time-Stretch (Pitch erhalten)
+          </option>
         </select>
-        {track.syncMode === "stretch" && (
+        {showQualityBadge && (
+          <span
+            data-testid="timestretch-quality-warning"
+            className="text-[10px] text-accent-secondary"
+            title="Extreme Stretch-Ratio. OLA-Artefakte (Phasing, Smearing) hörbar."
+          >
+            ⚠ Extreme Ratio — Artefakte möglich
+          </span>
+        )}
+        {(track.syncMode === "stretch" || track.syncMode === "timestretch") && (
           <input
             aria-label="Original BPM"
             type="number"
