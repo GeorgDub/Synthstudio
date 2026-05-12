@@ -1,6 +1,6 @@
 # Synthstudio – Funktionshandbuch
 
-**Version 1.18.0 | Vollständige Dokumentation aller Features**
+**Version 1.18.1 | Vollständige Dokumentation aller Features**
 
 ---
 
@@ -1582,6 +1582,16 @@ Die Sandbox basiert auf **10 Hardening-Layern** (siehe `docs/SECURITY-SCRIPT-SAN
 
 ---
 
+## v1.18.1: TASK-101 Layout-Fix (BUG-008)
+
+**Doppelte Header + doppelte Close-Buttons auf DrumMachine Floating-Panels** (Pattern Morph, Note Repeat, Envelope Follower, Macros, Granular, Polyrhythm). Der `ResizableDrumPanel`-Wrapper renderte einen Header mit Close-Button, gleichzeitig hatten die inneren Panels (z.B. `NoteRepeatPanel`, `PatternMorphPanel`) ihren eigenen Header + Close-Button → zwei "PATTERN MORPH"-Texte und zwei `×`-Buttons übereinander.
+
+**Fix:** `title`-Prop wird auf `ResizableDrumPanel` nicht mehr gesetzt, `onClose` der inneren Panels wird entfernt. Der äußere Wrapper-Close übernimmt. Multi-Viewport-Sweep (1920×1080, 1366×768, 1280×720) bestätigt: 0 horizontale Overflows, alle Tabs/Panels sauber.
+
+7 neue Playwright-Regressions-Tests in `tests/web/layout-double-header.spec.ts` + 21 Multi-Viewport-Sweep-Tests in `tests/web/layout-sweep.spec.ts`.
+
+---
+
 ## v1.18.0: Hardening (CSP + Sandbox-Codegen + Refactor)
 
 Reines Sicherheits- und Aufräum-Release ohne User-facing Features. Drei parallele Streams:
@@ -1640,4 +1650,4 @@ Diese Releases enthalten keine neuen Features, sondern **kritische Bug-Fixes**:
 
 ---
 
-*Letzte Aktualisierung: Sprint 20 — v1.18.0 (Hardening: CSP + Sandbox-Codegen + Refactor)*
+*Letzte Aktualisierung: Sprint 20 — v1.18.1 (Layout-Fix BUG-008 Double-Header)*

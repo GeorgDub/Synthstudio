@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "1.18.0",
+    version: "1.18.1",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -208,6 +208,15 @@ const INDEX = {
       foundBy:  "user (neue_todos.md)",
       fixedBy:  "frontend",
       fixedIn:  "TASK-105 (v1.15.5)"
+    },
+    "BUG-008": {
+      title:   "Doppelter Header + doppelter Close-Button in DrumMachine-Floating-Panels (\"Layout verzogen\")",
+      severity: "medium (UX)",
+      details:  "Reproduktion: Sequencer-Tab öffnen → Pattern Morph / Note Repeat / Envelope Follower / Macros / Granular / Polyrhythm Panel öffnen. Sichtbar: ZWEI 'Pattern Morph'-Header (outer ResizableDrumPanel + inner Panel) und ZWEI X-Buttons übereinander. Ursache: TASK-105 hat ResizableDrumPanel.title + onClose ergänzt, ohne dass die Inner-Panels (PatternMorphPanel, NoteRepeatPanel, EnvelopeFollowerPanel, MacroPanel, GranularSynthPanel, PolyrhythmVisualizer) ihren eigenen Header entfernt haben. Fix: DrumMachine.tsx übergibt nicht mehr `title=` an ResizableDrumPanel + Inner-Panels bekommen kein onClose mehr (Outer-Wrapper X übernimmt). Inner-Headers bleiben erhalten, weil sie zusätzliche Status-Info (BPM, % Morph, Aktiv-Count) anzeigen.",
+      fixed:    true,
+      foundBy:  "testing (TASK-101 multi-viewport sweep + screenshot review)",
+      fixedBy:  "testing",
+      fixedIn:  "TASK-101 (v1.18.x)"
     }
   },
 
@@ -215,6 +224,33 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "testing",
+      timestamp: "2026-05-12T19:15:00.000Z",
+      done: [
+        "TASK-101: Multi-Viewport Layout-Sweep (Playwright) für 1920×1080, 1366×768, 1280×720 in allen 6 Haupt-Tabs (Sequencer/Mixer/Song/Humanizer/Tools/Kollaboration) + alle 7 Tools-Sub-Tabs + Floating-Panels (Pattern Morph, Note Repeat). 21 Tests/42 Screenshots → 0 horizontale Overflows. tests/web/layout-sweep.spec.ts.",
+        "TASK-101: Code-Grep nach Layout-Risikomustern: 0 overflow-x-hidden Workarounds, 0 hardcoded width >1000px, alle min-w-[Npx] in vernünftiger Range (52-340px). MixerView nutzt korrekt overflow-x-auto für scrollbare Channel-Strips. SongTimeline ebenfalls.",
+        "TASK-101 / BUG-008: Visuelle Inspektion der Screenshots → echter UX-Layout-Bug gefunden: DrumMachine-Floating-Panels (Pattern Morph, Note Repeat, Envelope Follower, Macros, Granular, Polyrhythm) zeigen DOPPELTEN Header (outer ResizableDrumPanel.title + inner Panel-Header) und DOPPELTEN X Close-Button. Ursache: TASK-105 hat ResizableDrumPanel.title+onClose ergänzt, ohne dass die alten Inner-Panel-Header entfernt wurden.",
+        "TASK-101 / BUG-008 / Fix: DrumMachine.tsx — `title=\"...\"` aus allen 6 ResizableDrumPanel-Calls entfernt (Macro/NoteRepeat/Morph/EnvFollower/Granular/Polyrhythm). Bei NoteRepeat + Morph zusätzlich das inner `onClose` Prop entfernt (Outer X übernimmt). Inner-Header bleiben erhalten weil sie Status-Info zeigen (BPM, % Morph, Aktiv-Count, Granular Play/Stop).",
+        "TASK-101 / BUG-008 / Regression: tests/web/layout-double-header.spec.ts — 7 Tests verifizieren: nur EIN 'Pattern Morph'/'Note Repeat'/'Envelope Follower' Header sichtbar, nur EIN Close-Button im DOM bei offenem Panel, Outer-Close schließt korrekt. Existierende tests/web/close-buttons.spec.ts (TASK-105) bleibt vollständig grün — 13/14 (1 pre-existing skip).",
+        "TASK-101: BUG-008 in INDEX.js dokumentiert, openTasks.TASK-101 von 'pending' auf 'partially fixed' aktualisiert.",
+        "Verification: pnpm check clean, pnpm test 1003/1018 grün (15 pre-existing skipped, 0 Regressionen). pnpm test:web tests/web/layout-sweep.spec.ts + layout-double-header.spec.ts + close-buttons.spec.ts alle grün.",
+        "Screenshots in test-results/layout-sweep/ (42 Files × 3 Viewports × 14 Tabs/Panels) — Before/After-Comparison Pattern Morph + Note Repeat zeigt klaren Fix."
+      ],
+      next: [
+        "TASK-101 (Follow-up): ResizableDrumPanel — wenn weder `title` noch `onClose` gesetzt sind, Header-Strip komplett ausblenden (aktuell zeigt sich noch eine py-1 leere Border-Line wenn nur onClose gesetzt). Klein, aber polish-würdig.",
+        "TASK-101 (Follow-up): Hardcoded Tailwind-Farben in MixerView.tsx MixerChannel (text-yellow-400, bg-orange-600, bg-yellow-500, text-slate-900, accent-purple-500, accent-blue-500, bg-cyan-950) und in ElectronTitleBar.tsx (bg-[#0d0d0d], border-slate-800, bg-cyan-500, text-slate-300/400/500, text-cyan-400, hover:bg-slate-700, hover:bg-red-600) verstoßen gegen Theme-Regel — separater Refactor-Task.",
+        "TASK-101 (Open): Falls User in einem neuen Report 'Layout verzogen' meldet → konkret um Screenshot + Viewport-Größe (window.innerWidth) + Tab/Panel bitten. Multi-Viewport-Sweep deckt keine x86 vs ARM, keine HiDPI-Render-Bugs, keine echte Electron-Fenster-Probleme ab.",
+        "TASK-101 (Follow-up): Playwright-Test im Electron-Modus (tests/electron/e2e/layout-sweep.spec.ts) — könnte Electron-spezifische Layout-Bugs (z.B. zoomFactor, Frame-Behavior) aufdecken. Aktuell nur Web-Browser-Sweep.",
+        "Tests/Design: tests/web/layout-sweep.spec.ts ist soft-assert (max 20 issues pro Tab erlaubt). Falls TS-Strict-Mode strenger werden soll: auf 0 reduzieren — aber dann müssen alle scroll-container-Ausnahmen explizit erlaubt werden."
+      ],
+      changed: [
+        "tests/web/layout-sweep.spec.ts",
+        "tests/web/layout-double-header.spec.ts",
+        "client/src/components/DrumMachine/DrumMachine.tsx",
+        "agents/INDEX.js"
+      ]
+    },
     {
       agent:     "builder",
       timestamp: "2026-05-12T18:20:00.000Z",
@@ -517,10 +553,10 @@ const INDEX = {
   openTasks: [
     {
       id:       "TASK-101",
-      title:    "Layout verzogen — reproducible cases pending",
-      severity: "high",
-      target:   "v1.15.5 or v1.15.6",
-      notes:    "User reported 'layout verzogen' but no concrete reproduction. Needs Playwright multi-viewport sweep."
+      title:    "Layout verzogen — partially fixed (BUG-008 double-header)",
+      severity: "medium",
+      target:   "v1.18.x",
+      notes:    "Multi-viewport sweep (tests/web/layout-sweep.spec.ts) detected NO horizontal overflows across 1920/1366/1280px. One concrete UX bug found via screenshot review: doppelte Header in DrumMachine-Floating-Panels — see BUG-008 (fixed). Falls weitere 'verzogen'-Reports kommen: User um Screenshot + Viewport-Größe + genauen Tab/Panel bitten."
     },
     {
       id:       "FOLLOWUP-102",
