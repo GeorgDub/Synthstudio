@@ -22,6 +22,8 @@ export default defineConfig({
       "tests/*.spec.ts",
       "tests/electron/**/*.test.ts",
       "tests/electron/**/*.spec.ts",
+      "tests/features/**/*.test.ts",
+      "tests/features/**/*.spec.ts",
     ],
     // E2E-Tests laufen ausschließlich über Playwright, nicht über Vitest
     exclude: [

@@ -1,24 +1,34 @@
-﻿import { useThemeStore, type ThemeId } from "../../store/useThemeStore";
-
-// ─── Farbvorschau-Definitionen ────────────────────────────────────────────────
+import { useState, useCallback } from "react";
+import { applyTheme, loadSavedTheme, type ThemeId } from "../Settings/ThemeSettings";
 
 const THEME_PREVIEWS: Record<ThemeId, { primary: string; secondary: string; bg: string }> = {
-  dark:   { primary: "#f59e0b", secondary: "#06b6d4", bg: "#1e1e2a" },
-  neon:   { primary: "#00fff5", secondary: "#ff00ff", bg: "#0d1117" },
-  analog: { primary: "#ff6b35", secondary: "#00f5d4", bg: "#2a2a3e" },
+  dark:         { primary: "#f59e0b", secondary: "#06b6d4", bg: "#1e1e2a" },
+  neon:         { primary: "#00fff5", secondary: "#ff00ff", bg: "#0d1117" },
+  analog:       { primary: "#ff6b35", secondary: "#00f5d4", bg: "#2a2a3e" },
+  purple:       { primary: "#a855f7", secondary: "#7c3aed", bg: "#110e18" },
+  warm:         { primary: "#f97316", secondary: "#fbbf24", bg: "#1a110a" },
+  oled:         { primary: "#06b6d4", secondary: "#0891b2", bg: "#080808" },
+  daylight:     { primary: "#2563eb", secondary: "#db2777", bg: "#ffffff" },
+  paper:        { primary: "#d97706", secondary: "#059669", bg: "#fdfdf8" },
+  deuteranopia: { primary: "#0072b2", secondary: "#56b4e9", bg: "#0a0a12" },
+  protanopia:   { primary: "#0072b2", secondary: "#009e73", bg: "#f5f5f5" },
 };
 
-// ─── Komponente ───────────────────────────────────────────────────────────────
+const THEME_NAMES: Record<ThemeId, string> = {
+  dark: "DarkStudio", neon: "NeonCircuit", analog: "AnalogHardware",
+  purple: "Nacht", warm: "Sonnenuntergang", oled: "OLED",
+  daylight: "Daylight", paper: "Paper",
+  deuteranopia: "Deuteranopia", protanopia: "Protanopia",
+};
 
-/**
- * ThemeSwitcher
- *
- * Kompaktes Button-Panel zur Theme-Auswahl.
- * Nutzt CSS Custom Properties (--ss-*) aus dem Token-System.
- * Kein Props nötig – liest und setzt Theme intern via useThemeStore.
- */
 export function ThemeSwitcher() {
-  const { currentTheme, themes, setTheme } = useThemeStore();
+  const [current, setCurrent] = useState<ThemeId>(loadSavedTheme);
+
+  const handleSelect = useCallback((id: ThemeId) => {
+    applyTheme(id);
+    localStorage.setItem("ss-theme", id);
+    setCurrent(id);
+  }, []);
 
   return (
     <div
@@ -31,82 +41,43 @@ export function ThemeSwitcher() {
         background: "var(--ss-bg-panel)",
         borderRadius: "8px",
         border: "1px solid var(--ss-border)",
+        flexWrap: "wrap",
       }}
     >
-      {themes.map((theme) => {
-        const isActive = theme.id === currentTheme;
-        const preview = THEME_PREVIEWS[theme.id];
-
+      {(Object.keys(THEME_NAMES) as ThemeId[]).map((id) => {
+        const isActive = id === current;
+        const preview = THEME_PREVIEWS[id];
         return (
           <button
-            key={theme.id}
+            key={id}
             type="button"
-            onClick={() => setTheme(theme.id)}
+            onClick={() => handleSelect(id)}
             aria-pressed={isActive}
-            aria-label={`${theme.name}: ${theme.description}`}
-            title={theme.description}
+            title={THEME_NAMES[id]}
             style={{
               display: "flex",
               alignItems: "center",
               gap: "6px",
               padding: "6px 10px",
               background: isActive ? "var(--ss-bg-elevated)" : "transparent",
-              border: isActive
-                ? "1px solid var(--ss-accent-primary)"
-                : "1px solid transparent",
+              border: isActive ? "1px solid var(--ss-accent-primary)" : "1px solid transparent",
               borderRadius: "5px",
               color: isActive ? "var(--ss-text-primary)" : "var(--ss-text-muted)",
               cursor: "pointer",
               fontSize: "12px",
               fontFamily: "inherit",
-              boxShadow: isActive ? "var(--ss-glow)" : "none",
               transition: "all 0.15s ease",
               whiteSpace: "nowrap",
             }}
           >
-            {/* Emoji */}
-            <span aria-hidden="true" style={{ fontSize: "14px" }}>
-              {theme.emoji}
+            <span style={{ display: "flex", gap: "2px" }}>
+              <span style={{ width: 8, height: 8, borderRadius: "50%", background: preview.primary, display: "inline-block" }} />
+              <span style={{ width: 8, height: 8, borderRadius: "50%", background: preview.secondary, display: "inline-block" }} />
             </span>
-
-            {/* Name */}
-            <span>{theme.name}</span>
-
-            {/* Farbvorschau-Kleckse */}
-            <span
-              aria-hidden="true"
-              style={{ display: "flex", gap: "2px", marginLeft: "2px" }}
-            >
-              <ColorDot color={preview.primary} />
-              <ColorDot color={preview.secondary} />
-              <ColorDot color={preview.bg} bordered />
-            </span>
+            <span>{THEME_NAMES[id]}</span>
           </button>
         );
       })}
     </div>
-  );
-}
-
-// ─── Hilfkomponente ───────────────────────────────────────────────────────────
-
-interface ColorDotProps {
-  color: string;
-  bordered?: boolean;
-}
-
-function ColorDot({ color, bordered = false }: ColorDotProps) {
-  return (
-    <span
-      style={{
-        width: "8px",
-        height: "8px",
-        borderRadius: "50%",
-        background: color,
-        border: bordered ? "1px solid var(--ss-border)" : undefined,
-        flexShrink: 0,
-        display: "inline-block",
-      }}
-    />
   );
 }

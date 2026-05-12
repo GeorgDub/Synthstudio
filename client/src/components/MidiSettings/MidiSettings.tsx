@@ -13,6 +13,7 @@
 import React, { useState } from "react";
 import type { MidiState, MidiActions, MidiLearnTarget, MidiNoteMapping } from "@/hooks/useMidi";
 import { GM_DRUM_DEFAULTS } from "@/hooks/useMidi";
+import { MIDI_TEMPLATES, templateToMappings } from "@/utils/midiTemplates";
 
 interface MidiSettingsProps {
   midi: MidiState & MidiActions;
@@ -43,7 +44,7 @@ function noteToName(note: number): string {
 // ─── Komponente ───────────────────────────────────────────────────────────────
 
 export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
-  const [activeTab, setActiveTab] = useState<"devices" | "cc" | "notes" | "clock">("devices");
+  const [activeTab, setActiveTab] = useState<"devices" | "templates" | "cc" | "notes" | "clock">("devices");
   const [noteLearnPartId, setNoteLearnPartId] = useState<string | null>(null);
   const [noteLearnChannel, setNoteLearnChannel] = useState(0);
   const [manualNote, setManualNote] = useState(36);
@@ -54,10 +55,10 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
   const renderDevicesTab = () => (
     <div className="space-y-4">
       {/* MIDI aktivieren */}
-      <div className="flex items-center justify-between p-3 bg-gray-800 rounded-lg">
+      <div className="flex items-center justify-between p-3 bg-bg-elevated rounded-lg">
         <div>
-          <div className="text-sm font-medium text-gray-200">Web MIDI API</div>
-          <div className="text-xs text-gray-400 mt-0.5">
+          <div className="text-sm font-medium text-text-primary">Web MIDI API</div>
+          <div className="text-xs text-text-muted mt-0.5">
             {midi.isAvailable
               ? "Verfügbar in diesem Browser"
               : "Nicht verfügbar – Chrome/Edge empfohlen"}
@@ -68,8 +69,8 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
           disabled={!midi.isAvailable}
           className={`px-4 py-1.5 rounded text-sm font-medium transition-colors ${
             midi.isEnabled
-              ? "bg-cyan-600 hover:bg-cyan-700 text-white"
-              : "bg-gray-600 hover:bg-gray-500 text-gray-200 disabled:opacity-40 disabled:cursor-not-allowed"
+              ? "bg-accent-primary hover:bg-accent-primary/70 text-white"
+              : "bg-bg-elevated hover:bg-bg-elevated/80 text-text-primary disabled:opacity-40 disabled:cursor-not-allowed"
           }`}
         >
           {midi.isEnabled ? "Deaktivieren" : "Aktivieren"}
@@ -79,11 +80,11 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
       {/* Gerät auswählen */}
       {midi.isEnabled && (
         <div>
-          <label className="block text-xs font-medium text-gray-400 mb-2 uppercase tracking-wider">
+          <label className="block text-xs font-medium text-text-muted mb-2 uppercase tracking-wider">
             MIDI-Eingabegerät
           </label>
           {midi.devices.length === 0 ? (
-            <div className="p-3 bg-gray-800 rounded text-sm text-gray-400 text-center">
+            <div className="p-3 bg-bg-elevated rounded text-sm text-text-muted text-center">
               Kein MIDI-Gerät gefunden. Gerät anschließen und Seite neu laden.
             </div>
           ) : (
@@ -96,18 +97,18 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
                   )}
                   className={`w-full flex items-center justify-between p-3 rounded-lg text-left transition-colors ${
                     midi.activeDeviceId === device.id
-                      ? "bg-cyan-900 border border-cyan-600"
-                      : "bg-gray-800 hover:bg-gray-700 border border-transparent"
+                      ? "bg-accent-primary/20 border border-accent-primary"
+                      : "bg-bg-elevated hover:bg-bg-elevated border border-transparent"
                   }`}
                 >
                   <div>
-                    <div className="text-sm text-gray-200">{device.name}</div>
+                    <div className="text-sm text-text-primary">{device.name}</div>
                     {device.manufacturer && (
-                      <div className="text-xs text-gray-500">{device.manufacturer}</div>
+                      <div className="text-xs text-text-dim">{device.manufacturer}</div>
                     )}
                   </div>
                   <div className={`w-2 h-2 rounded-full ${
-                    device.state === "connected" ? "bg-green-400" : "bg-gray-600"
+                    device.state === "connected" ? "bg-green-400" : "bg-bg-elevated"
                   }`} />
                 </button>
               ))}
@@ -138,7 +139,7 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
     <div className="space-y-4">
       {/* MIDI-Learn */}
       <div>
-        <div className="text-xs font-medium text-gray-400 mb-2 uppercase tracking-wider">
+        <div className="text-xs font-medium text-text-muted mb-2 uppercase tracking-wider">
           MIDI-Learn
         </div>
         {midi.isLearning ? (
@@ -152,7 +153,7 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
             </div>
             <button
               onClick={midi.cancelLearn}
-              className="px-3 py-1 bg-gray-700 hover:bg-gray-600 text-gray-200 text-xs rounded"
+              className="px-3 py-1 bg-bg-elevated hover:bg-bg-elevated text-text-primary text-xs rounded"
             >
               Abbrechen
             </button>
@@ -174,13 +175,13 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
                   disabled={!midi.isEnabled}
                   className={`flex items-center justify-between p-2 rounded text-left text-xs transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
                     existing
-                      ? "bg-cyan-900/40 border border-cyan-700/50 hover:bg-cyan-900/60"
-                      : "bg-gray-800 hover:bg-gray-700"
+                      ? "bg-accent-primary/40 border border-cyan-700/50 hover:bg-accent-primary/60"
+                      : "bg-bg-elevated hover:bg-bg-elevated"
                   }`}
                 >
-                  <span className="text-gray-300">{label}</span>
+                  <span className="text-text-primary">{label}</span>
                   {existing && (
-                    <span className="text-cyan-400 font-mono text-xs ml-1">
+                    <span className="text-accent-secondary font-mono text-xs ml-1">
                       CC{existing.cc}
                     </span>
                   )}
@@ -194,25 +195,25 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
       {/* Aktive Mappings */}
       {midi.mappings.length > 0 && (
         <div>
-          <div className="text-xs font-medium text-gray-400 mb-2 uppercase tracking-wider">
+          <div className="text-xs font-medium text-text-muted mb-2 uppercase tracking-wider">
             Aktive CC-Mappings ({midi.mappings.length})
           </div>
           <div className="space-y-1 max-h-48 overflow-y-auto">
             {midi.mappings.map((m, i) => (
               <div
                 key={i}
-                className="flex items-center justify-between p-2 bg-gray-800 rounded text-xs"
+                className="flex items-center justify-between p-2 bg-bg-elevated rounded text-xs"
               >
                 <div>
-                  <span className="font-mono text-cyan-400">CC{m.cc}</span>
+                  <span className="font-mono text-accent-secondary">CC{m.cc}</span>
                   {m.channel > 0 && (
-                    <span className="text-gray-500 ml-1">Ch{m.channel}</span>
+                    <span className="text-text-dim ml-1">Ch{m.channel}</span>
                   )}
-                  <span className="text-gray-300 ml-2">{m.label}</span>
+                  <span className="text-text-primary ml-2">{m.label}</span>
                 </div>
                 <button
                   onClick={() => midi.removeMapping(m.cc, m.channel)}
-                  className="text-gray-500 hover:text-red-400 ml-2"
+                  className="text-text-dim hover:text-red-400 ml-2"
                   title="Mapping entfernen"
                 >
                   ✕
@@ -238,7 +239,7 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
       {/* GM Drum Defaults */}
       <div>
         <div className="flex items-center justify-between mb-2">
-          <div className="text-xs font-medium text-gray-400 uppercase tracking-wider">
+          <div className="text-xs font-medium text-text-muted uppercase tracking-wider">
             Note → Part Zuweisungen
           </div>
           <button
@@ -251,45 +252,45 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
                 }
               });
             }}
-            className="text-xs text-cyan-400 hover:text-cyan-300"
+            className="text-xs text-accent-secondary hover:text-accent-secondary"
           >
             GM-Defaults laden
           </button>
         </div>
 
         {/* Manuelle Zuweisung */}
-        <div className="p-3 bg-gray-800 rounded-lg space-y-2 mb-3">
-          <div className="text-xs text-gray-400 font-medium">Manuelle Zuweisung</div>
+        <div className="p-3 bg-bg-elevated rounded-lg space-y-2 mb-3">
+          <div className="text-xs text-text-muted font-medium">Manuelle Zuweisung</div>
           <div className="grid grid-cols-3 gap-2">
             <div>
-              <label className="text-xs text-gray-500 block mb-1">MIDI-Note</label>
+              <label className="text-xs text-text-dim block mb-1">MIDI-Note</label>
               <input
                 type="number"
                 min={0}
                 max={127}
                 value={manualNote}
                 onChange={e => setManualNote(Number(e.target.value))}
-                className="w-full bg-gray-700 text-gray-200 text-xs px-2 py-1 rounded border border-gray-600"
+                className="w-full bg-bg-elevated text-text-primary text-xs px-2 py-1 rounded border border-border-color"
               />
-              <div className="text-xs text-gray-500 mt-0.5">{noteToName(manualNote)}</div>
+              <div className="text-xs text-text-dim mt-0.5">{noteToName(manualNote)}</div>
             </div>
             <div>
-              <label className="text-xs text-gray-500 block mb-1">Kanal (0=alle)</label>
+              <label className="text-xs text-text-dim block mb-1">Kanal (0=alle)</label>
               <input
                 type="number"
                 min={0}
                 max={16}
                 value={manualChannel}
                 onChange={e => setManualChannel(Number(e.target.value))}
-                className="w-full bg-gray-700 text-gray-200 text-xs px-2 py-1 rounded border border-gray-600"
+                className="w-full bg-bg-elevated text-text-primary text-xs px-2 py-1 rounded border border-border-color"
               />
             </div>
             <div>
-              <label className="text-xs text-gray-500 block mb-1">Part</label>
+              <label className="text-xs text-text-dim block mb-1">Part</label>
               <select
                 value={noteLearnPartId ?? (parts[0]?.id ?? "")}
                 onChange={e => setNoteLearnPartId(e.target.value)}
-                className="w-full bg-gray-700 text-gray-200 text-xs px-2 py-1 rounded border border-gray-600"
+                className="w-full bg-bg-elevated text-text-primary text-xs px-2 py-1 rounded border border-border-color"
               >
                 {parts.map(p => (
                   <option key={p.id} value={p.id}>{p.name}</option>
@@ -304,7 +305,7 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
               const partName = parts.find(p => p.id === partId)?.name ?? partId;
               midi.addNoteMapping(manualNote, manualChannel, partId, `${partName} (${noteToName(manualNote)})`);
             }}
-            className="w-full py-1.5 bg-cyan-700 hover:bg-cyan-600 text-white text-xs rounded"
+            className="w-full py-1.5 bg-accent-primary/70 hover:bg-accent-primary text-white text-xs rounded"
           >
             Zuweisung hinzufügen
           </button>
@@ -318,19 +319,19 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
               return (
                 <div
                   key={i}
-                  className="flex items-center justify-between p-2 bg-gray-800 rounded text-xs"
+                  className="flex items-center justify-between p-2 bg-bg-elevated rounded text-xs"
                 >
                   <div>
-                    <span className="font-mono text-cyan-400">{noteToName(m.note)}</span>
-                    <span className="text-gray-500 ml-1 font-mono">(#{m.note})</span>
+                    <span className="font-mono text-accent-secondary">{noteToName(m.note)}</span>
+                    <span className="text-text-dim ml-1 font-mono">(#{m.note})</span>
                     {m.channel > 0 && (
-                      <span className="text-gray-500 ml-1">Ch{m.channel}</span>
+                      <span className="text-text-dim ml-1">Ch{m.channel}</span>
                     )}
-                    <span className="text-gray-300 ml-2">→ {partName}</span>
+                    <span className="text-text-primary ml-2">→ {partName}</span>
                   </div>
                   <button
                     onClick={() => midi.removeNoteMapping(m.note, m.channel)}
-                    className="text-gray-500 hover:text-red-400 ml-2"
+                    className="text-text-dim hover:text-red-400 ml-2"
                   >
                     ✕
                   </button>
@@ -339,7 +340,7 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
             })}
           </div>
         ) : (
-          <div className="text-xs text-gray-500 text-center py-3">
+          <div className="text-xs text-text-dim text-center py-3">
             Keine Note-Mappings. GM-Defaults laden oder manuell hinzufügen.
           </div>
         )}
@@ -351,18 +352,18 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
 
   const renderClockTab = () => (
     <div className="space-y-4">
-      <div className="p-3 bg-gray-800 rounded-lg">
+      <div className="p-3 bg-bg-elevated rounded-lg">
         <div className="flex items-center justify-between mb-2">
           <div>
-            <div className="text-sm font-medium text-gray-200">MIDI-Clock Sync</div>
-            <div className="text-xs text-gray-400 mt-0.5">
+            <div className="text-sm font-medium text-text-primary">MIDI-Clock Sync</div>
+            <div className="text-xs text-text-muted mt-0.5">
               BPM von externem Gerät oder DAW übernehmen
             </div>
           </div>
           <button
             onClick={() => midi.setClockSync(!midi.clockSync)}
             className={`relative w-10 h-5 rounded-full transition-colors ${
-              midi.clockSync ? "bg-cyan-600" : "bg-gray-600"
+              midi.clockSync ? "bg-accent-primary" : "bg-bg-elevated"
             }`}
           >
             <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${
@@ -372,16 +373,16 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
         </div>
 
         {midi.clockSync && (
-          <div className="mt-3 p-2 bg-gray-700 rounded text-center">
+          <div className="mt-3 p-2 bg-bg-elevated rounded text-center">
             {midi.externalBpm !== null ? (
               <div>
-                <div className="text-2xl font-mono text-cyan-400 font-bold">
+                <div className="text-2xl font-mono text-accent-secondary font-bold">
                   {midi.externalBpm.toFixed(1)}
                 </div>
-                <div className="text-xs text-gray-400">BPM (extern)</div>
+                <div className="text-xs text-text-muted">BPM (extern)</div>
               </div>
             ) : (
-              <div className="text-xs text-gray-400">
+              <div className="text-xs text-text-muted">
                 Warte auf MIDI-Clock Signal...
               </div>
             )}
@@ -389,8 +390,8 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
         )}
       </div>
 
-      <div className="p-3 bg-gray-800/50 rounded text-xs text-gray-400 space-y-1">
-        <div className="font-medium text-gray-300 mb-1">Hinweise:</div>
+      <div className="p-3 bg-bg-elevated/50 rounded text-xs text-text-muted space-y-1">
+        <div className="font-medium text-text-primary mb-1">Hinweise:</div>
         <div>• MIDI-Clock sendet 24 Pulse pro Viertelnote (PPQN)</div>
         <div>• Kompatibel mit DAWs: Ableton, FL Studio, Logic, Cubase</div>
         <div>• Hardware: Roland, Korg, Akai, Arturia MIDI-Controller</div>
@@ -402,42 +403,93 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
   // ─── Render ───────────────────────────────────────────────────────────────
 
   const tabs = [
-    { id: "devices" as const, label: "Geräte" },
-    { id: "cc" as const, label: "CC-Mapping" },
-    { id: "notes" as const, label: "Note-Mapping" },
-    { id: "clock" as const, label: "Clock-Sync" },
+    { id: "devices"   as const, label: "Geräte" },
+    { id: "templates" as const, label: "Vorlagen" },
+    { id: "cc"        as const, label: "CC-Mapping" },
+    { id: "notes"     as const, label: "Note-Mapping" },
+    { id: "clock"     as const, label: "Clock-Sync" },
   ];
+
+  const renderTemplatesTab = () => (
+    <div className="space-y-3">
+      <div className="bg-bg-elevated rounded-lg p-3 text-xs text-text-muted">
+        Wähle eine Vorlage für deinen Hardware-Controller. <strong className="text-text-primary">Achtung:</strong> Alle aktuellen Mappings werden überschrieben.
+      </div>
+
+      <div className="space-y-2">
+        {MIDI_TEMPLATES.map(t => (
+          <div key={t.id} className="border border-border-color rounded-lg p-3 bg-bg-elevated/50">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-semibold text-text-primary">{t.name}</span>
+                  <span className="text-[10px] text-text-dim">{t.manufacturer}</span>
+                </div>
+                <p className="text-xs text-text-muted mt-1 leading-snug">{t.description}</p>
+                <div className="flex gap-3 mt-2 text-[10px] text-text-dim">
+                  <span>{t.ccMappings.length} CC-Mappings</span>
+                  <span>·</span>
+                  <span>{t.noteMappings.length} Note-Mappings</span>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  if (confirm(`Vorlage "${t.name}" laden?\n\nDas ersetzt alle aktuellen Mappings.`)) {
+                    const partResolver = (id: string) => {
+                      const partIndex = parseInt(id.replace("part-", ""), 10);
+                      return parts[partIndex]?.name ?? parts[partIndex]?.id;
+                    };
+                    const { cc, notes } = templateToMappings(t, partResolver);
+                    // Mappings auf reale Part-IDs übersetzen
+                    const resolvedNotes = notes.map(n => {
+                      const partIndex = parseInt(n.partId.replace("part-", ""), 10);
+                      const realPart = parts[partIndex];
+                      return { ...n, partId: realPart?.id ?? n.partId, label: realPart?.name ?? n.label };
+                    });
+                    midi.loadTemplate(cc, resolvedNotes);
+                  }
+                }}
+                className="px-3 py-1.5 rounded text-xs font-medium bg-accent-primary text-white hover:bg-accent-primary/80 flex-shrink-0"
+              >
+                Laden
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="w-full max-w-lg bg-gray-900 border border-gray-700 rounded-xl shadow-2xl">
+      <div className="w-full max-w-lg bg-bg-panel border border-border-color rounded-xl shadow-2xl">
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-700">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border-color">
           <div className="flex items-center gap-2">
             <span className="text-lg">🎹</span>
-            <h2 className="text-base font-semibold text-gray-100">MIDI-Einstellungen</h2>
+            <h2 className="text-base font-semibold text-text-primary">MIDI-Einstellungen</h2>
             {midi.isEnabled && (
               <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
             )}
           </div>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-200 text-xl leading-none"
+            className="text-text-muted hover:text-text-primary text-xl leading-none"
           >
             ✕
           </button>
         </div>
 
         {/* Tabs */}
-        <div className="flex border-b border-gray-700">
+        <div className="flex border-b border-border-color">
           {tabs.map(tab => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
               className={`flex-1 py-2.5 text-xs font-medium transition-colors ${
                 activeTab === tab.id
-                  ? "text-cyan-400 border-b-2 border-cyan-400"
-                  : "text-gray-400 hover:text-gray-200"
+                  ? "text-accent-secondary border-b-2 border-accent-secondary"
+                  : "text-text-muted hover:text-text-primary"
               }`}
             >
               {tab.label}
@@ -448,16 +500,17 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
         {/* Tab-Inhalt */}
         <div className="p-5 max-h-[60vh] overflow-y-auto">
           {activeTab === "devices" && renderDevicesTab()}
+          {activeTab === "templates" && renderTemplatesTab()}
           {activeTab === "cc" && renderCcTab()}
           {activeTab === "notes" && renderNotesTab()}
           {activeTab === "clock" && renderClockTab()}
         </div>
 
         {/* Footer */}
-        <div className="flex justify-end px-5 py-3 border-t border-gray-700">
+        <div className="flex justify-end px-5 py-3 border-t border-border-color">
           <button
             onClick={onClose}
-            className="px-4 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-200 text-sm rounded"
+            className="px-4 py-1.5 bg-bg-elevated hover:bg-bg-elevated text-text-primary text-sm rounded"
           >
             Schließen
           </button>

@@ -1,4 +1,4 @@
-import { ARP_MODE_LABELS, type ArpMode, type ArpOctaves } from "../../utils/arpeggiator";
+import { ARP_MODE_LABELS, ARP_VELOCITY_LABELS, type ArpMode, type ArpOctaves, type ArpVelocityPattern } from "../../utils/arpeggiator";
 import {
   useArpStore,
   setArpEnabled,
@@ -67,6 +67,19 @@ export function ArpeggiatorPanel() {
           {([1, 2, 3] as ArpOctaves[]).map((o) => (
             <button key={o} onClick={() => setArpOctaves(o)} style={{ background: octaves === o ? "var(--ss-accent-primary)" : "var(--ss-bg-elevated)", border: "1px solid " + (octaves === o ? "var(--ss-accent-primary)" : "var(--ss-border)"), borderRadius: 5, padding: "5px 16px", color: octaves === o ? "#fff" : "var(--ss-text-muted)", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>
               {o}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Velocity Pattern */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        <span style={{ fontSize: 11, color: "var(--ss-text-muted)" }}>Velocity-Muster</span>
+        <div style={{ display: "flex", gap: 3, flexWrap: "wrap" }}>
+          {(Object.keys(ARP_VELOCITY_LABELS) as ArpVelocityPattern[]).map(vp => (
+            <button key={vp} onClick={() => {}} title={ARP_VELOCITY_LABELS[vp]}
+              style={{ background: "var(--ss-bg-elevated)", border: "1px solid var(--ss-border)", borderRadius: 4, padding: "3px 8px", color: "var(--ss-text-muted)", cursor: "pointer", fontSize: 10 }}>
+              {ARP_VELOCITY_LABELS[vp]}
             </button>
           ))}
         </div>

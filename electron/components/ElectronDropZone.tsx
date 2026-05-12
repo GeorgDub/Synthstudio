@@ -25,16 +25,22 @@ export interface ElectronDropZoneProps {
   onFolder?: (folderPath: string) => void;
   /** Callback wenn eine Projekt-Datei (.synth) gedroppt wurde */
   onProject?: (filePath: string) => void;
+  /**
+   * Callback wenn ein ZIP-Archiv mit Audio-Samples gedroppt wurde.
+   * Im Browser werden File-Objekte übergeben, in Electron der Pfad.
+   */
+  onZipFile?: (file: File) => void;
   /** Kinder-Elemente (optional) */
   children?: React.ReactNode;
 }
 
-type DropType = "audio" | "folder" | "project" | "unknown" | null;
+type DropType = "audio" | "folder" | "project" | "zip" | "unknown" | null;
 
 // ─── Hilfsfunktionen ─────────────────────────────────────────────────────────
 
 const AUDIO_EXTENSIONS = new Set([".wav", ".mp3", ".ogg", ".flac", ".aiff", ".aif", ".m4a"]);
 const PROJECT_EXTENSIONS = new Set([".synth", ".json"]);
+const ZIP_EXTENSIONS = new Set([".zip"]);
 
 function getFileExtension(name: string): string {
   const dot = name.lastIndexOf(".");
@@ -48,6 +54,7 @@ function detectDropType(items: DataTransferItemList | null): DropType {
     const entry = item.webkitGetAsEntry?.();
     if (entry?.isDirectory) return "folder";
     const ext = getFileExtension(entry?.name ?? "");
+    if (ZIP_EXTENSIONS.has(ext)) return "zip";
     if (AUDIO_EXTENSIONS.has(ext)) return "audio";
     if (PROJECT_EXTENSIONS.has(ext)) return "project";
     // Mehrere Dateien → Audio-Import annehmen
@@ -77,6 +84,12 @@ const DROP_STYLES: Record<NonNullable<DropType>, { border: string; bg: string; t
     text: "text-amber-400",
     label: "Projekt öffnen",
   },
+  zip: {
+    border: "border-violet-500",
+    bg: "bg-violet-500/10",
+    text: "text-violet-400",
+    label: "ZIP-Archiv extrahieren",
+  },
   unknown: {
     border: "border-slate-500",
     bg: "bg-slate-500/10",
@@ -91,6 +104,7 @@ export function ElectronDropZone({
   onAudioFiles,
   onFolder,
   onProject,
+  onZipFile,
   children,
 }: ElectronDropZoneProps) {
   const [isDragging, setIsDragging] = useState(false);
@@ -160,7 +174,9 @@ export function ElectronDropZone({
       const audioFiles: string[] = [];
       for (const file of files) {
         const ext = getFileExtension(file.name);
-        if (AUDIO_EXTENSIONS.has(ext)) {
+        if (ZIP_EXTENSIONS.has(ext)) {
+          onZipFile?.(file);
+        } else if (AUDIO_EXTENSIONS.has(ext)) {
           // Im Browser: Dateiname (kein echter Pfad verfügbar)
           audioFiles.push(file.name);
         } else if (PROJECT_EXTENSIONS.has(ext)) {
@@ -169,7 +185,7 @@ export function ElectronDropZone({
       }
       if (audioFiles.length > 0) onAudioFiles?.(audioFiles);
     },
-    [onAudioFiles, onProject]
+    [onAudioFiles, onProject, onZipFile]
   );
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -197,7 +213,7 @@ export function ElectronDropZone({
         >
           {/* Icon */}
           <div className={`text-6xl ${style.text}`}>
-            {dropType === "folder" ? "📁" : dropType === "project" ? "🎵" : "🎚️"}
+            {dropType === "folder" ? "📁" : dropType === "project" ? "🎵" : dropType === "zip" ? "🗜️" : "🎚️"}
           </div>
 
           {/* Label */}
@@ -210,6 +226,7 @@ export function ElectronDropZone({
             {dropType === "audio" && "WAV, MP3, OGG, FLAC, AIFF werden unterstützt"}
             {dropType === "folder" && "Alle Audio-Dateien im Ordner werden importiert"}
             {dropType === "project" && ".synth Projektdatei wird geöffnet"}
+            {dropType === "zip" && "Audio-Dateien aus dem Archiv werden extrahiert"}
             {dropType === "unknown" && "Datei wird analysiert..."}
           </p>
         </div>

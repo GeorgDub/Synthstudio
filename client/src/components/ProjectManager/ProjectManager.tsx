@@ -9,9 +9,10 @@
  * Kein direktes window.electronAPI. Jede Electron-Logik hinter if (electron.isElectron).
  * ─────────────────────────────────────────────────────────────────────────────
  */
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useRef, useState } from "react";
 
 import { useElectron } from "../../../../electron/useElectron";
+import { importProjectFile, importResultToPatterns, ImportError } from "@/utils/imports";
 
 // ─── Typen ────────────────────────────────────────────────────────────────────
 
@@ -22,6 +23,8 @@ export interface ProjectManagerProps {
   onLoad: () => void;
   onNew: () => void;
   onExport: () => void;
+  /** Optional: nach erfolgreichem Import von FL Studio / Ableton / Electribe */
+  onImportPatterns?: (patterns: ReturnType<typeof importResultToPatterns>, sourceFormat: string) => void;
 }
 
 // ─── Komponente ───────────────────────────────────────────────────────────────
@@ -33,11 +36,35 @@ export function ProjectManager({
   onLoad,
   onNew,
   onExport,
+  onImportPatterns,
 }: ProjectManagerProps) {
   // ── Einziger Zugriffspunkt auf Electron-Features ──────────────────────────
   const electron = useElectron();
 
   const [isSaving, setIsSaving] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
+  const importInputRef = useRef<HTMLInputElement>(null);
+
+  // ── Import (FL Studio / Ableton / Electribe) ──────────────────────────────
+  const handleImportFile = useCallback(async (file: File) => {
+    setIsImporting(true);
+    try {
+      const result = await importProjectFile(file);
+      const patterns = importResultToPatterns(result);
+      const warnings = result.warnings.length > 0
+        ? `\n\nHinweise:\n• ${result.warnings.join("\n• ")}`
+        : "";
+      alert(`Import erfolgreich: ${result.fileName}\nFormat: ${result.sourceFormat.toUpperCase()}\nPatterns: ${patterns.length}\nBPM: ${result.bpm ?? "—"}${warnings}`);
+      onImportPatterns?.(patterns, result.sourceFormat);
+    } catch (err) {
+      const msg = err instanceof ImportError
+        ? `Import-Fehler (${err.format}): ${err.message}`
+        : err instanceof Error ? err.message : "Unbekannter Fehler";
+      alert(msg);
+    } finally {
+      setIsImporting(false);
+    }
+  }, [onImportPatterns]);
 
   // ── Speichern ─────────────────────────────────────────────────────────────
 
@@ -127,7 +154,7 @@ export function ProjectManager({
       <button
         onClick={handleNew}
         title="Neues Projekt (Ctrl+N)"
-        className="px-2 py-1 text-xs rounded bg-slate-800 text-slate-400 border border-slate-700 hover:bg-slate-700 hover:text-slate-200 transition-colors duration-100"
+        className="px-2 py-1 text-xs rounded bg-bg-elevated text-text-muted border border-border-color hover:bg-bg-elevated hover:text-text-primary transition-colors duration-100"
       >
         Neu
       </button>
@@ -136,9 +163,30 @@ export function ProjectManager({
       <button
         onClick={onLoad}
         title={electron.isElectron ? "Projekt öffnen – nativer Dialog (Ctrl+O)" : "Projekt öffnen (Ctrl+O)"}
-        className="px-2 py-1 text-xs rounded bg-slate-800 text-slate-400 border border-slate-700 hover:bg-slate-700 hover:text-slate-200 transition-colors duration-100"
+        className="px-2 py-1 text-xs rounded bg-bg-elevated text-text-muted border border-border-color hover:bg-bg-elevated hover:text-text-primary transition-colors duration-100"
       >
         Öffnen
+      </button>
+
+      {/* Import: FL Studio / Ableton / KORG Electribe */}
+      <input
+        ref={importInputRef}
+        type="file"
+        accept=".flp,.als,.esx,.elst,.e2spat,.e2sallpat"
+        className="hidden"
+        onChange={e => {
+          const file = e.target.files?.[0];
+          if (file) handleImportFile(file);
+          e.target.value = ""; // Reset für erneuten Import derselben Datei
+        }}
+      />
+      <button
+        onClick={() => importInputRef.current?.click()}
+        disabled={isImporting}
+        title="FL Studio (.flp) / Ableton (.als) / KORG Electribe (.esx/.elst) importieren"
+        className="px-2 py-1 text-xs rounded bg-bg-elevated text-text-muted border border-border-color hover:bg-bg-elevated hover:text-text-primary transition-colors duration-100 disabled:opacity-50"
+      >
+        {isImporting ? "Importiere…" : "Import…"}
       </button>
 
       {/* Speichern */}
@@ -149,8 +197,8 @@ export function ProjectManager({
         className={[
           "px-2 py-1 text-xs rounded border transition-colors duration-100",
           isDirty
-            ? "bg-cyan-900/40 text-cyan-400 border-cyan-800 hover:bg-cyan-800/60 hover:text-cyan-300"
-            : "bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700 hover:text-slate-200",
+            ? "bg-accent-primary/40 text-accent-secondary border-cyan-800 hover:bg-accent-primary/60 hover:text-accent-secondary"
+            : "bg-bg-elevated text-text-muted border-border-color hover:bg-bg-elevated hover:text-text-primary",
           isSaving ? "opacity-50 cursor-not-allowed" : "",
         ].join(" ")}
       >
@@ -161,7 +209,7 @@ export function ProjectManager({
       <button
         onClick={handleExport}
         title={electron.isElectron ? "Projekt exportieren – nativer Dialog (Ctrl+E)" : "Projekt exportieren (Ctrl+E)"}
-        className="px-2 py-1 text-xs rounded bg-slate-800 text-slate-400 border border-slate-700 hover:bg-slate-700 hover:text-slate-200 transition-colors duration-100"
+        className="px-2 py-1 text-xs rounded bg-bg-elevated text-text-muted border border-border-color hover:bg-bg-elevated hover:text-text-primary transition-colors duration-100"
       >
         Export
       </button>

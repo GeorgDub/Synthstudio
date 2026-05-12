@@ -34,7 +34,9 @@ const STANDARD_BANDS: Readonly<{ name: string; minHz: number; maxHz: number }[]>
 export class SpectrumAnalyzer {
   private readonly ctx: AudioContext;
   private readonly analyser: AnalyserNode;
-  private readonly buffer: Float32Array;
+  // Explizit auf ArrayBuffer typisiert, damit getFloatFrequencyData() den
+  // strikten DOM-Typ akzeptiert (TS 5.7+).
+  private readonly buffer: Float32Array<ArrayBuffer>;
   private connected = false;
 
   constructor(ctx: AudioContext, fftSize = 2048) {
@@ -42,7 +44,8 @@ export class SpectrumAnalyzer {
     this.analyser = ctx.createAnalyser();
     this.analyser.fftSize = fftSize;
     this.analyser.smoothingTimeConstant = 0.85;
-    this.buffer = new Float32Array(this.analyser.frequencyBinCount);
+    const bins = this.analyser.frequencyBinCount;
+    this.buffer = new Float32Array(new ArrayBuffer(bins * Float32Array.BYTES_PER_ELEMENT));
   }
 
   /** Connect an AudioNode as the analysis source. */

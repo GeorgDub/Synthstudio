@@ -12,10 +12,28 @@ on:
         default: ""
 
 permissions:
-  contents: read
+  contents: write  # für electron-builder GitHub Release-Upload
 
 jobs:
+  test:
+    name: Pre-Release Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: pnpm/action-setup@v4
+        with:
+          version: "10.4.1"
+      - run: pnpm install --no-frozen-lockfile
+      - name: TypeScript check
+        run: pnpm check
+      - name: Vitest Unit-Tests
+        run: pnpm test
+
   build:
+    needs: test
     strategy:
       fail-fast: false
       matrix:
@@ -25,7 +43,11 @@ jobs:
           - os: windows-latest
             platform: windows
           - os: macos-latest
-            platform: mac
+            platform: mac-intel
+            mac_arch: x64
+          - os: macos-14   # Apple Silicon
+            platform: mac-arm
+            mac_arch: arm64
 
     runs-on: ${{ matrix.os }}
     name: Build (${{ matrix.platform }})
@@ -83,12 +105,19 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
         run: npx --yes electron-builder --win nsis --publish always
 
-      - name: Electron-App bauen (macOS)
-        if: matrix.platform == 'mac'
+      - name: Electron-App bauen (macOS Intel x64)
+        if: matrix.platform == 'mac-intel'
         env:
           GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
-        run: npx --yes electron-builder --mac dmg zip --publish always
+        run: npx --yes electron-builder --mac dmg zip --x64 --publish always
+
+      - name: Electron-App bauen (macOS Apple Silicon arm64)
+        if: matrix.platform == 'mac-arm'
+        env:
+          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: npx --yes electron-builder --mac dmg zip --arm64 --publish always
 
       - name: Build-Artefakte sichern
         uses: actions/upload-artifact@v4

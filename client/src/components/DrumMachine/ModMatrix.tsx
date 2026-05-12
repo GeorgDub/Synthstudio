@@ -42,37 +42,37 @@ export function ModMatrix({ entries, partIds, onAddEntry, onRemoveEntry, onUpdat
   };
 
   return (
-    <div className="bg-slate-900 border border-slate-700 rounded-lg p-3 text-white min-w-[320px]">
+    <div className="bg-bg-panel border border-border-color rounded-lg p-3 text-white min-w-[320px]">
       <div className="flex items-center justify-between mb-2">
-        <span className="text-xs font-semibold text-cyan-400 uppercase tracking-wider">Mod Matrix</span>
+        <span className="text-xs font-semibold text-accent-secondary uppercase tracking-wider">Mod Matrix</span>
         <button
           onClick={handleAdd}
-          className="text-xs bg-slate-700 hover:bg-slate-600 px-2 py-0.5 rounded"
+          className="text-xs bg-bg-elevated hover:bg-bg-elevated px-2 py-0.5 rounded"
         >
           + Route
         </button>
       </div>
 
       {entries.length === 0 && (
-        <div className="text-slate-600 text-xs py-3 text-center">
+        <div className="text-text-dim text-xs py-3 text-center">
           Keine Routen. „+ Route" um eine hinzuzufügen.
         </div>
       )}
 
       <div className="space-y-1">
         {entries.map(entry => (
-          <div key={entry.id} className="flex items-center gap-2 bg-slate-800 rounded px-2 py-1.5 text-xs">
+          <div key={entry.id} className="flex items-center gap-2 bg-bg-elevated rounded px-2 py-1.5 text-xs">
             <input
               type="checkbox"
               checked={entry.enabled}
               onChange={e => onUpdateEntry(entry.id, { enabled: e.target.checked })}
-              className="accent-cyan-500"
+              className="accent-accent-primary"
             />
-            <span className="text-slate-300 w-28 truncate" title={sourceLabel(entry.source)}>
+            <span className="text-text-primary w-28 truncate" title={sourceLabel(entry.source)}>
               {sourceLabel(entry.source)}
             </span>
-            <span className="text-slate-500">→</span>
-            <span className="text-slate-300 flex-1 truncate" title={targetLabel(entry.target)}>
+            <span className="text-text-dim">→</span>
+            <span className="text-text-primary flex-1 truncate" title={targetLabel(entry.target)}>
               {targetLabel(entry.target)}
             </span>
             <input
@@ -82,14 +82,14 @@ export function ModMatrix({ entries, partIds, onAddEntry, onRemoveEntry, onUpdat
               step={0.01}
               value={entry.amount}
               onChange={e => onUpdateEntry(entry.id, { amount: Number(e.target.value) })}
-              className="w-20 accent-cyan-500"
+              className="w-20 accent-accent-primary"
             />
-            <span className="font-mono text-cyan-400 w-10 text-right">
+            <span className="font-mono text-accent-secondary w-10 text-right">
               {(entry.amount >= 0 ? "+" : "") + entry.amount.toFixed(2)}
             </span>
             <button
               onClick={() => onRemoveEntry(entry.id)}
-              className="text-slate-600 hover:text-red-400 text-base leading-none"
+              className="text-text-dim hover:text-red-400 text-base leading-none"
             >
               ×
             </button>

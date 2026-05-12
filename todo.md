@@ -14,7 +14,7 @@
 - [x] MIDI-Learn Funktion (Parameter anklicken → MIDI-Controller bewegen)
 - [x] MIDI-Mapping speichern/laden
 - [x] MIDI-Input für Transport, Steps, Knobs
-- [ ] MIDI-Clock-Sync (optional)
+- [x] MIDI-Clock-Sync (siehe Section 13)
 
 ## 3. Song-Modus / Pattern-Chaining
 - [x] Song-Datenstruktur (Array von Pattern-IDs)
@@ -235,13 +235,13 @@
 - [x] Alle 133 Tests bestanden
 
 ## 23. FEATURE: Bulk Sample Import (wie FL Studio)
-- [ ] Zip-Datei Import implementieren
-- [ ] Ordner-Struktur Parsing (Drums/Kicks/Samples/etc.)
-- [ ] Mehrere Dateien gleichzeitig hochladen
-- [ ] Sample-Kategorisierung und Verwaltung
-- [ ] Drag & Drop für Ordner/Zip-Dateien
-- [ ] Import-Progress-Anzeige
-- [ ] Sample-Browser mit Kategorien
+- [x] Zip-Datei Import implementieren (jszip im Browser, electron/zip-import.ts in Electron)
+- [x] Ordner-Struktur Parsing (Drums/Kicks/Samples/etc.) (siehe Section 30)
+- [x] Mehrere Dateien gleichzeitig hochladen (Bulk-Upload via SampleBrowser)
+- [x] Sample-Kategorisierung und Verwaltung (detectCategory in Section 30)
+- [x] Drag & Drop für Ordner/Zip-Dateien (ElectronDropZone + SampleBrowser ZIP-Drop)
+- [x] Import-Progress-Anzeige (siehe Section 31)
+- [x] Sample-Browser mit Kategorien (siehe Section 28)
 
 
 ## 24. Electron Desktop-Anwendung
@@ -359,7 +359,7 @@
 - [x] Integration in Electron Folder-Import
 - [x] Tag-Pills in Sample-Liste (max 3 sichtbar + Counter)
 - [x] Tag-basierte Filterung im Sample-Browser
-- [ ] Performance-Optimierung (Web Worker für Analyse)
+- [x] Performance-Optimierung (Web Worker für Analyse, siehe Section 38)
 
 
 ## 34. Browser Folder-Import (File System Access API)
@@ -603,3 +603,111 @@
 - [x] Responsive Layout für Mobile optimieren (CSS Media Query hinzugefügt)
 - [x] Touch-Event Handler (onTouchEnd) hinzugefügt
 - [x] CSS Touch-Optimierungen (-webkit-touch-callout, touch-action: manipulation)
+
+## 63. FEATURE: ZIP-Drag & Drop im gesamten App-Fenster
+- [x] Util `client/src/utils/zipSampleImport.ts` mit `extractSamplesFromZip()` und `isZipFile()`
+- [x] SampleBrowser auf Util umgestellt (Code-Dedup)
+- [x] ElectronDropZone erweitert: erkennt `.zip` als eigenen Drop-Typ (violetter Overlay)
+- [x] Neuer `onZipFile` Prop in ElectronDropZone
+- [x] App.tsx `handleDropZipFile` verkabelt → Samples landen im Project-Store
+- [x] 9 Tests in `tests/zip-sample-import.test.ts` (audioCount, Progress, Pfad-Stripping)
+- [x] Util akzeptiert auch ArrayBuffer/Blob (testbar in Node)
+
+## 69. PRE-PHASE-B: Code-Audit + technische Schulden behoben
+- [x] Pre-Phase-B Code-Audit durchgeführt (alle Phase-A-Implementierungen, AudioEngine, Stores, Build)
+- [x] **Fix 1**: `pnpm build` schlug fehl (verwies auf nicht existierendes `server/_core/index.ts`). Bereinigt: nur noch `vite build`.
+- [x] **Fix 2**: SpectrumAnalyzer.ts – `Float32Array<ArrayBufferLike>` vs `ArrayBuffer`-Inkompatibilität behoben durch explizite `Float32Array<ArrayBuffer>`-Typisierung im Constructor.
+- [x] **Fix 3**: `useNoteRepeat` – bei BPM/Rate-Change wurden laufende Intervals nicht abgeräumt → Drift. `useEffect(() => stopAll(), [rate, bpm])` ergänzt.
+- [x] **Fix 4**: AudioEngine – Pending Position-Callback-Timeouts wurden nach `stop()` nicht abgeräumt → akkumulierten bei häufigem Stop/Play. `_pendingTimeouts: Set` ergänzt + Cleanup in stop().
+- [x] **Fix 5**: `setPartStepLength` – Doppel-Cap gegen `pattern.stepCount` UND `part.steps.length` (verhindert out-of-bounds Lookups).
+- [x] **Fix 6**: tsconfig.json `target: "ES2020"` ergänzt → Map-Iteration in `electron/collab-server.ts` und `collab-discovery.ts` typecheckt jetzt.
+- [x] Verifikation: 624/624 Tests grün, **0 Typecheck-Errors**, Vite-Build erfolgreich (1.6s).
+- [x] **Identifiziert für nach Phase B**: `saveProject`/`loadProject` sind Stubs – `stepLength`, `scaleRoot/Id/LockEnabled`, FX-State werden nirgendwo serialisiert. Vor Mixer-FX-Persist muss ein Schema definiert werden.
+
+## 70. PHASE B: Mixer & FX-Chain Foundation
+- [x] Schritt-A-Stand erneut verifiziert: `pnpm check` grün, `pnpm test` grün (624/624 Tests)
+- [x] `client/src/utils/mixerFx.ts` ergänzt: Insert-FX-Typen, 16-Band-EQ Defaults/Sanitizing, Sidechain- und Transient-Shaper-Normalisierung
+- [x] `useMixerStore` erweitert: Insert-FX-Chains pro Kanal, Return-Tracks, EQ16-Bänder, Sidechain-Settings, Transient-Shaper-Settings, ausgewählter Mixer-Kanal
+- [x] Mixer-State-Persistenz via localStorage ergänzt; VU-Peaks werden bewusst nicht persistiert
+- [x] `MixerView` erweitert: Channel Inspector mit Insert-FX Chain, EQ16 Slidern, Sidechain Controls und Transient-Shaper Controls
+- [x] Return-Track-Controls für Reverb/Delay im Mixer-Footer ergänzt
+- [x] `AudioEngine` um Return-Track-Volume-Control erweitert
+- [x] Tests in `tests/mixer-fx.test.ts` ergänzt
+- [ ] Nächster Phase-B-Schritt: Insert-FX-Parameter direkt auf AudioEngine-FX-Mapping anwenden und echte Drag-and-Drop-Reorder-Interaktion hinzufügen
+
+## 68. FEATURE: Pattern-Morphing UI (Roadmap Phase A – ergänzt zur existierenden Logik)
+- [x] `addPatternData(pattern)` Action in `useDrumMachineStore` (Pattern-Objekt einfügen + aktivieren)
+- [x] CollabSplitView: `addPatternData` als noop ergänzt (Interface-Compliance)
+- [x] `PatternMorphPanel.tsx` Komponente mit:
+  - [x] Pattern-A und Pattern-B Selectors aus dm.patterns
+  - [x] Slider für `amount` (0-1) mit Live-Update
+  - [x] Quick-Amounts (0%, 25%, 50%, 75%, 100%) als Buttons
+  - [x] Dominanz-Anzeige (A/B Highlight + Pattern-Namen)
+  - [x] "Apply Morph" Button erzeugt neues Pattern via `morphPatterns()`
+  - [x] "Reset" Button (resetMorph)
+  - [x] Disabled-States wenn A/B nicht gewählt
+  - [x] ARIA-Labels für Slider und Selectors
+- [x] Integration in DrumMachine-Header: "MORPH"-Button (lila bei aktiv) + Floating-Panel
+- [x] Klick-außerhalb schließt Panel
+- [x] 2 zusätzliche Tests in `tests/pattern-morph.test.ts` (Output-Format + 0/1-Boundaries)
+- [x] Bestehende 9 Tests bleiben grün (insgesamt 11)
+
+## 67. FEATURE: Polymeter / Polyrhythmische Steps (Roadmap Phase A)
+- [x] `client/src/utils/polymeter.ts`: `clampStepLength`, `effectiveStepIndex`, `isStepWithinPart`, `nextWrapStep`
+- [x] `MIN_PART_STEP_LENGTH=1`, `MAX_PART_STEP_LENGTH=32` als Konstanten
+- [x] `PartData.stepLength?: number` in AudioEngine.ts ergänzt (additiv, rückwärtskompatibel)
+- [x] `AudioEngine._scheduleStep`: modulo-Wrap des stepIndex bei eigener Part-Länge
+- [x] Polymeter wirkt auf Drum-Parts UND melodische Parts (Piano Roll)
+- [x] `useDrumMachineStore.setPartStepLength(partId, length)` mit Clamp gegen `pattern.stepCount`
+- [x] CollabSplitView: setPartStepLength als noop ergänzt (Interface-Compliance)
+- [x] ChannelStrip UI: Step-Length-Selector (3,4,5,...,16,20,24,32 + Auto)
+- [x] Visueller Status: Polymeter-Werte gelb/amber hinterlegt
+- [x] Step-Cells außerhalb der Part-Länge: Opacity 0.25 + Tooltip
+- [x] Wrap-Boundary mit amber-Border markiert (zeigt den Loop-Punkt visuell)
+- [x] 15 Tests in `tests/polymeter.test.ts` (Clamping, Modulo-Wrap, Polymeter-Sequenzen)
+
+## 66. FEATURE: Note-Repeat (MPC-Style Live-Retrigger, Roadmap Phase A)
+- [x] `client/src/utils/noteRepeat.ts`: 8 Rates (1/4, 1/8, 1/16, 1/32 + Triplets 1/4T, 1/8T, 1/16T, 1/32T)
+- [x] `rateToIntervalMs(rate, bpm)` mit korrekter BPM-Skalierung (Triplets = 2/3 × Standard)
+- [x] `safeIntervalMs()` mit MIN_INTERVAL_MS-Schutz (verhindert <10ms-Timer)
+- [x] `useNoteRepeatStore`: enabled + rate, localStorage-Persistenz, Module-Singleton
+- [x] `useNoteRepeat` Hook: padDown/padUp/stopAll API mit setInterval-basiertem Retrigger
+- [x] Auto-Cleanup bei Unmount + bei globalem Disable
+- [x] `NoteRepeatPanel`: Toggle + 8 Rate-Buttons + optionale Live-Pad-Reihe (responsive Grid)
+- [x] Pad-Buttons unterstützen Maus (mouseDown/Up/Leave) + Touch (touchStart/End)
+- [x] ARIA-aria-pressed Labels für Toggle und Rate-Buttons
+- [x] Integration in DrumMachine-Header: "ROLL"-Button + Floating-Panel
+- [x] Klick-außerhalb schließt Panel
+- [x] Live-Trigger via AudioEngine.previewSample() für jeden Drum-Part
+- [x] 20 Tests in `tests/note-repeat.test.ts` (Util + Store, BPM-Skalierung, Triplet-Verhältnis, Persistenz)
+
+## 65. FEATURE: Global Transpose (Roadmap Phase A)
+- [x] `client/src/utils/transpose.ts` mit Konstanten + `clampSemitones`, `transposeNote`, `semitoneLabel`
+- [x] Range ±24 Halbtöne (±2 Oktaven), MIDI-Clamping auf 0-127
+- [x] Labels: "0", "+5", "-7", "+12 (8va)", "+24 (15ma)" etc.
+- [x] `useTransposeStore` (Modul-Singleton, localStorage-Persistenz)
+- [x] `AudioEngine`: `setGlobalTranspose()` + `_globalTranspose` Feld
+- [x] AudioEngine wendet Transpose beim melodischen Trigger an (mit MIDI-Clamping)
+- [x] `useTransport`: synct den Store-Wert an die Audio-Engine
+- [x] `TransposeControl` Komponente (kompakte Toolbar)
+- [x] UI-Buttons: -12, -1, [Display], +1, +12, Reset
+- [x] Visuelles Feedback: aktiver Zustand (Highlight) bei ≠0
+- [x] ARIA-aria-live-Region für Screen-Reader (transpose-Wert)
+- [x] In PianoRollModal-Header integriert
+- [x] 19 Tests in `tests/transpose.test.ts` (Util + Store, Clamping, Persistenz)
+
+## 64. FEATURE: Scale Lock für Piano Roll (Roadmap Phase D)
+- [x] `client/src/utils/scales.ts` mit 13 Skalen (Major, Minor, Modi, Pentatonic, Blues, Chromatic)
+- [x] `isInScale()`, `snapToScale()`, `scalePitchClasses()`, `pitchClassName()` Utilities
+- [x] `useMelodicPartStore` um `scaleRoot`, `scaleId`, `scaleLockEnabled` erweitert
+- [x] Migration: alte sessionStorage-Patterns ohne Scale-Felder werden defensiv ergänzt
+- [x] `setScale()` (mit Root-Normalisierung 0-11) und `setScaleLock()` Actions
+- [x] `setNote()` snapped automatisch wenn Scale-Lock aktiv
+- [x] PianoRollModal: Scale-Lock Toggle-Button (🔒) im Header
+- [x] PianoRollModal: Root- und Skalen-Type-Dropdown
+- [x] Visuelles Feedback: Out-of-Scale-Zeilen abgedunkelt bei aktivem Lock
+- [x] Visuelles Feedback: Root-Note mit verstärktem Border markiert
+- [x] Visuelles Feedback: Subtile Skalen-Andeutung im Hintergrund (Lock aus)
+- [x] Footer-Hinweis "🔒 Scale-Lock aktiv" wenn aktiv
+- [x] 19 Tests in `tests/scales.test.ts` (alle Modi, Snap-Verhalten, Pitch-Class)
+- [x] 8 neue Tests in `tests/melodic-part.test.ts` (Default, setScale, setScaleLock, Snap-Logic)

@@ -2,7 +2,9 @@
 import {
   useSessionStore,
   setMyUserName,
+  setParticipantRole,
   type SessionParticipant,
+  type SessionRole,
 } from "../../store/useSessionStore";
 import { useCollabSession } from "../../hooks/useCollabSession";
 
@@ -106,6 +108,24 @@ export function SessionPanel() {
   const [copied, setCopied] = useState(false);
   const [discovered, setDiscovered] = useState<DiscoveredSession[]>([]);
   const [discovering, setDiscovering] = useState(false);
+  const [recentSessions, setRecentSessions] = useState<Array<{ code: string; ip: string; port: number; name: string; lastUsed: number }>>([]);
+
+  // Zuletzt verwendete Sessions aus localStorage laden
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("ss-collab-recent");
+      if (saved) setRecentSessions(JSON.parse(saved).slice(0, 5));
+    } catch { /* ignore */ }
+  }, []);
+
+  const saveRecentSession = useCallback((code: string, ip: string, port: number, name: string) => {
+    const entry = { code, ip, port, name, lastUsed: Date.now() };
+    setRecentSessions(prev => {
+      const next = [entry, ...prev.filter(s => !(s.code === code && s.ip === ip))].slice(0, 5);
+      localStorage.setItem("ss-collab-recent", JSON.stringify(next));
+      return next;
+    });
+  }, []);
 
   const electron = (window as Window & { electronAPI?: Record<string, unknown> }).electronAPI as
     | {
@@ -136,7 +156,22 @@ export function SessionPanel() {
     if (!isElectron) return;
     await electron!.startCollabDiscovery();
     setDiscovering(true);
+    setDiscovered([]);
   }, [isElectron]);
+
+  // Auto-Start Discovery wenn Join-Tab geöffnet wird (Electron only)
+  useEffect(() => {
+    if (tab === "join" && isElectron && !discovering) {
+      void startDiscovery();
+    }
+    return () => {
+      if (tab !== "join" && discovering && isElectron) {
+        void electron!.stopCollabDiscovery();
+        setDiscovering(false);
+      }
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab]);
 
   const stopDiscovery = useCallback(async () => {
     if (!isElectron) return;
@@ -241,7 +276,24 @@ export function SessionPanel() {
             <span style={{ fontSize: 12, color: "var(--ss-text-dim)" }}>Wartet auf Beitreter&#8230;</span>
           )}
           {session.participants.map((p) => (
-            <ParticipantItem key={p.userId} p={p} isMe={p.userId === session.myUserId} />
+            <div key={p.userId} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <ParticipantItem p={p} isMe={p.userId === session.myUserId} />
+              {isHost && p.userId !== session.myUserId && (
+                <select
+                  value={session.participantRoles[p.userId] ?? "editor"}
+                  onChange={e => {
+                    const role = e.target.value as SessionRole;
+                    setParticipantRole(p.userId, role);
+                    collab.broadcast({ type: "role:change" as const, targetUserId: p.userId, role } as Parameters<typeof collab.broadcast>[0]);
+                  }}
+                  style={{ fontSize: 10, background: "var(--ss-bg-elevated)", border: "1px solid var(--ss-border)", borderRadius: 4, padding: "2px 4px", color: "var(--ss-text-muted)", cursor: "pointer" }}
+                  title="Berechtigung des Partners"
+                >
+                  <option value="editor">Editor</option>
+                  <option value="viewer">Viewer (nur lesen)</option>
+                </select>
+              )}
+            </div>
           ))}
         </div>
 
@@ -277,23 +329,59 @@ export function SessionPanel() {
 
       {tab === "join" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          {isElectron && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <span style={{ fontSize: 11, color: "var(--ss-text-muted)" }}>Sessions im Netzwerk</span>
-                <button onClick={discovering ? stopDiscovery : startDiscovery} style={{ background: discovering ? "#e67e22" : "var(--ss-bg-elevated)", border: "1px solid var(--ss-border)", borderRadius: 5, padding: "3px 10px", color: discovering ? "#fff" : "var(--ss-text-muted)", fontWeight: 600, cursor: "pointer", fontSize: 11 }}>
-                  {discovering ? "Suche laueft..." : "Suchen"}
+          {/* ── Netzwerk-Scan (Electron) / Zuletzt verwendet (Browser) ── */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, background: "var(--ss-bg-elevated)", border: "1px solid var(--ss-border)", borderRadius: 8, padding: "12px 14px" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <span style={{ fontSize: 12, fontWeight: 700, color: "var(--ss-text-primary)" }}>
+                {isElectron ? "🔍 Netzwerk-Scan" : "🕐 Zuletzt benutzt"}
+              </span>
+              {isElectron && (
+                <button onClick={discovering ? stopDiscovery : startDiscovery}
+                  style={{ background: discovering ? "var(--ss-accent-secondary)" : "var(--ss-bg-panel)", border: "1px solid var(--ss-border)", borderRadius: 5, padding: "3px 10px", color: discovering ? "#fff" : "var(--ss-text-muted)", fontWeight: 600, cursor: "pointer", fontSize: 11, display: "flex", alignItems: "center", gap: 4 }}>
+                  {discovering ? (
+                    <><span style={{ display: "inline-block", animation: "spin 1s linear infinite" }}>↻</span> Sucht…</>
+                  ) : "Neu scannen"}
                 </button>
-              </div>
-              {discovering && discovered.length === 0 && (
-                <div style={{ padding: "10px 0", textAlign: "center", fontSize: 12, color: "var(--ss-text-dim)" }}>Suche nach Sessions&#8230;</div>
               )}
-              {discovered.map((s) => (
-                <DiscoveredRow key={s.hostIp + s.roomCode} s={s} onJoin={handleJoinDiscovered} />
-              ))}
-              {discovered.length > 0 && <div style={{ height: 1, background: "var(--ss-border-subtle)" }} />}
             </div>
-          )}
+
+            {/* Electron: Discovered Sessions */}
+            {isElectron && discovering && discovered.length === 0 && (
+              <div style={{ textAlign: "center", padding: "12px 0", fontSize: 12, color: "var(--ss-text-dim)" }}>
+                Scanne lokales Netzwerk nach Synthstudio-Sessions…
+              </div>
+            )}
+            {isElectron && discovered.map((s) => (
+              <button key={s.hostIp + s.roomCode} onClick={() => handleJoinDiscovered(s)}
+                style={{ background: "var(--ss-bg-panel)", border: "1px solid var(--ss-accent-secondary)", borderRadius: 6, padding: "8px 12px", cursor: "pointer", textAlign: "left", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: "var(--ss-accent-primary)", fontFamily: "monospace", letterSpacing: "0.1em" }}>{s.roomCode}</div>
+                  <div style={{ fontSize: 10, color: "var(--ss-text-dim)", marginTop: 2 }}>{s.hostIp}:{s.port} · {s.hostName || "Unbekannter Host"}</div>
+                </div>
+                <span style={{ fontSize: 11, color: "var(--ss-accent-secondary)", fontWeight: 600 }}>Beitreten →</span>
+              </button>
+            ))}
+            {isElectron && !discovering && discovered.length === 0 && (
+              <div style={{ fontSize: 11, color: "var(--ss-text-dim)", textAlign: "center", padding: "4px 0" }}>
+                Keine aktiven Sessions gefunden. Session starten oder Code manuell eingeben.
+              </div>
+            )}
+
+            {/* Browser: Zuletzt verwendete Sessions */}
+            {!isElectron && recentSessions.length === 0 && (
+              <div style={{ fontSize: 11, color: "var(--ss-text-dim)" }}>Noch keine gespeicherten Sessions. Code manuell eingeben.</div>
+            )}
+            {!isElectron && recentSessions.map(s => (
+              <button key={s.code + s.ip} onClick={() => { setJoinCode(s.code); setJoinIp(s.ip); setJoinPort(String(s.port)); }}
+                style={{ background: "var(--ss-bg-panel)", border: "1px solid var(--ss-border)", borderRadius: 6, padding: "7px 10px", cursor: "pointer", textAlign: "left", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <div>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: "var(--ss-accent-primary)", fontFamily: "monospace" }}>{s.code}</div>
+                  <div style={{ fontSize: 10, color: "var(--ss-text-dim)" }}>{s.ip}:{s.port}</div>
+                </div>
+                <span style={{ fontSize: 10, color: "var(--ss-text-dim)" }}>{new Date(s.lastUsed).toLocaleDateString()}</span>
+              </button>
+            ))}
+          </div>
           <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
             <span style={{ fontSize: 11, color: "var(--ss-text-muted)" }}>Dein Name</span>
             <input value={session.myUserName} onChange={(e) => setMyUserName((e.target as HTMLInputElement).value)} maxLength={32} style={inputSt} />
@@ -312,7 +400,11 @@ export function SessionPanel() {
               <input value={joinPort} onChange={(e) => setJoinPort((e.target as HTMLInputElement).value)} placeholder="4242" style={inputSt} />
             </label>
           </div>
-          <button onClick={() => collab.joinSession(joinCode, joinIp, parseInt(joinPort, 10) || 4242, session.myUserName)} disabled={isConnecting || !joinCode || !joinIp} style={primaryBtn(isConnecting || !joinCode || !joinIp)}>
+          <button onClick={() => {
+            const port = parseInt(joinPort, 10) || 4242;
+            collab.joinSession(joinCode, joinIp, port, session.myUserName);
+            saveRecentSession(joinCode, joinIp, port, session.myUserName);
+          }} disabled={isConnecting || !joinCode || !joinIp} style={primaryBtn(isConnecting || !joinCode || !joinIp)}>
             {isConnecting ? "Verbinde&#8230;" : "Beitreten"}
           </button>
         </div>

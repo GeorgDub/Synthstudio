@@ -36,8 +36,8 @@ function TemplateCard({
       className={`
         w-full text-left p-3 rounded-lg border transition-all duration-150
         ${isSelected
-          ? "border-cyan-600 bg-cyan-900/20 ring-1 ring-cyan-600/50"
-          : "border-slate-700 bg-slate-800/40 hover:border-slate-600 hover:bg-slate-800/60"
+          ? "border-accent-primary bg-accent-primary/20 ring-1 ring-cyan-600/50"
+          : "border-border-color bg-bg-elevated/40 hover:border-border-color hover:bg-bg-elevated/60"
         }
       `}
     >
@@ -45,7 +45,7 @@ function TemplateCard({
         <span className="text-2xl flex-shrink-0">{template.icon}</span>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <p className="text-sm font-semibold text-slate-200 truncate">{template.name}</p>
+            <p className="text-sm font-semibold text-text-primary truncate">{template.name}</p>
             <span
               className="text-[10px] px-1.5 py-0.5 rounded-full flex-shrink-0"
               style={{ backgroundColor: `${template.accentColor}20`, color: template.accentColor, border: `1px solid ${template.accentColor}40` }}
@@ -53,17 +53,17 @@ function TemplateCard({
               {template.genre}
             </span>
           </div>
-          <p className="text-xs text-slate-500 mt-0.5 line-clamp-2">{template.description}</p>
+          <p className="text-xs text-text-dim mt-0.5 line-clamp-2">{template.description}</p>
           <div className="flex items-center gap-3 mt-1.5">
-            <span className="text-[10px] text-slate-600">{template.bpm} BPM</span>
-            <span className="text-[10px] text-slate-600">
+            <span className="text-[10px] text-text-dim">{template.bpm} BPM</span>
+            <span className="text-[10px] text-text-dim">
               {template.timeSignatureNumerator}/{template.timeSignatureDenominator}
             </span>
-            <span className="text-[10px] text-slate-600">
+            <span className="text-[10px] text-text-dim">
               {template.tracks.length} Tracks
             </span>
             {template.tracks.some((t) => t.steps.length > 0) && (
-              <span className="text-[10px] text-slate-600">
+              <span className="text-[10px] text-text-dim">
                 {template.tracks.reduce((sum, t) => sum + t.steps.length, 0)} Steps
               </span>
             )}
@@ -76,7 +76,7 @@ function TemplateCard({
         <div className="mt-2 flex flex-col gap-0.5">
           {template.tracks.slice(0, 4).map((track) => (
             <div key={track.id} className="flex items-center gap-1">
-              <span className="text-[9px] text-slate-600 w-12 truncate">{track.name}</span>
+              <span className="text-[9px] text-text-dim w-12 truncate">{track.name}</span>
               <div className="flex gap-px">
                 {Array.from({ length: template.stepsPerPattern }).map((_, i) => {
                   const step = track.steps.find((s) => s.step === i);
@@ -86,7 +86,7 @@ function TemplateCard({
                       className={`w-2 h-2 rounded-sm ${
                         step
                           ? "opacity-100"
-                          : "bg-slate-800 opacity-50"
+                          : "bg-bg-elevated opacity-50"
                       }`}
                       style={step ? { backgroundColor: template.accentColor, opacity: step.velocity / 127 } : {}}
                     />
@@ -96,7 +96,7 @@ function TemplateCard({
             </div>
           ))}
           {template.tracks.length > 4 && (
-            <p className="text-[9px] text-slate-700 pl-14">
+            <p className="text-[9px] text-text-dim pl-14">
               +{template.tracks.length - 4} weitere Tracks
             </p>
           )}
@@ -147,14 +147,14 @@ export function NewProjectDialog({ isOpen, onClose, onCreateProject }: NewProjec
       />
 
       {/* Dialog */}
-      <div className="relative z-10 w-full max-w-2xl max-h-[85vh] flex flex-col bg-[#111] border border-slate-700 rounded-xl shadow-2xl overflow-hidden">
+      <div className="relative z-10 w-full max-w-2xl max-h-[85vh] flex flex-col bg-bg-elevated border border-border-color rounded-xl shadow-2xl overflow-hidden">
 
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-800">
-          <h2 className="text-base font-semibold text-slate-200">Neues Projekt</h2>
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border-color">
+          <h2 className="text-base font-semibold text-text-primary">Neues Projekt</h2>
           <button
             onClick={onClose}
-            className="text-slate-600 hover:text-slate-400 transition-colors text-lg leading-none"
+            className="text-text-dim hover:text-text-muted transition-colors text-lg leading-none"
           >
             ✕
           </button>
@@ -165,7 +165,7 @@ export function NewProjectDialog({ isOpen, onClose, onCreateProject }: NewProjec
 
           {/* Projekt-Name */}
           <div className="mb-5">
-            <label className="block text-xs font-medium text-slate-400 mb-1.5">
+            <label className="block text-xs font-medium text-text-muted mb-1.5">
               Projekt-Name
             </label>
             <input
@@ -173,14 +173,14 @@ export function NewProjectDialog({ isOpen, onClose, onCreateProject }: NewProjec
               value={projectName}
               onChange={(e) => setProjectName(e.target.value)}
               placeholder={selectedTemplate.name}
-              className="w-full bg-[#0d0d0d] border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-cyan-700 transition-colors"
+              className="w-full bg-bg-panel border border-border-color rounded-lg px-3 py-2 text-sm text-text-primary placeholder-slate-600 focus:outline-none focus:border-cyan-700 transition-colors"
               onKeyDown={(e) => e.key === "Enter" && handleCreate()}
             />
           </div>
 
           {/* Template-Auswahl */}
           <div>
-            <label className="block text-xs font-medium text-slate-400 mb-2">
+            <label className="block text-xs font-medium text-text-muted mb-2">
               Template auswählen
             </label>
             <div className="grid grid-cols-1 gap-2">
@@ -197,16 +197,16 @@ export function NewProjectDialog({ isOpen, onClose, onCreateProject }: NewProjec
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-end gap-3 px-5 py-4 border-t border-slate-800 bg-[#0d0d0d]">
+        <div className="flex items-center justify-end gap-3 px-5 py-4 border-t border-border-color bg-bg-panel">
           <button
             onClick={onClose}
-            className="px-4 py-2 text-sm rounded-lg bg-slate-800 text-slate-400 border border-slate-700 hover:bg-slate-700 hover:text-slate-300 transition-colors"
+            className="px-4 py-2 text-sm rounded-lg bg-bg-elevated text-text-muted border border-border-color hover:bg-bg-elevated hover:text-text-primary transition-colors"
           >
             Abbrechen
           </button>
           <button
             onClick={handleCreate}
-            className="px-4 py-2 text-sm rounded-lg bg-cyan-700 text-white border border-cyan-600 hover:bg-cyan-600 transition-colors font-medium"
+            className="px-4 py-2 text-sm rounded-lg bg-accent-primary/70 text-white border border-accent-primary hover:bg-accent-primary transition-colors font-medium"
           >
             Projekt erstellen
           </button>

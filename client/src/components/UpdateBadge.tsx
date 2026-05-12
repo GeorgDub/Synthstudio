@@ -49,7 +49,7 @@ export function UpdateBadge() {
         <span title="Auf Updates prüfen">↻</span>,
         checkForUpdates,
         "Auf Updates prüfen",
-        "bg-slate-800 text-slate-500 hover:bg-slate-700 hover:text-slate-300"
+        "bg-bg-elevated text-text-dim hover:bg-bg-elevated hover:text-text-primary"
       );
 
     case "checking":
@@ -57,7 +57,7 @@ export function UpdateBadge() {
         <span className="animate-spin inline-block">↻</span>,
         undefined,
         "Suche nach Updates…",
-        "bg-slate-800 text-slate-400 cursor-default"
+        "bg-bg-elevated text-text-muted cursor-default"
       );
 
     case "up-to-date":
@@ -65,11 +65,11 @@ export function UpdateBadge() {
       return btn(
         <>
           <span className="text-green-400">✓</span>
-          <span className="text-slate-400">Aktuell</span>
+          <span className="text-text-muted">Aktuell</span>
         </>,
         undefined,
         "App ist auf dem neuesten Stand",
-        "bg-slate-800 text-slate-400 cursor-default"
+        "bg-bg-elevated text-text-muted cursor-default"
       );
 
     case "available":
@@ -88,12 +88,12 @@ export function UpdateBadge() {
     case "downloading":
       return (
         <div
-          className="h-8 px-2 rounded flex items-center gap-2 bg-slate-800 text-xs text-slate-400"
+          className="h-8 px-2 rounded flex items-center gap-2 bg-bg-elevated text-xs text-text-muted"
           title={`Herunterladen… ${state.percent ?? 0}%`}
         >
-          <div className="w-20 h-1.5 rounded-full bg-slate-700 overflow-hidden">
+          <div className="w-20 h-1.5 rounded-full bg-bg-elevated overflow-hidden">
             <div
-              className="h-full bg-cyan-500 transition-all duration-200"
+              className="h-full bg-accent-primary transition-all duration-200"
               style={{ width: `${state.percent ?? 0}%` }}
             />
           </div>
@@ -119,7 +119,7 @@ export function UpdateBadge() {
         <span className="w-1.5 h-1.5 rounded-full bg-red-500 flex-shrink-0" />,
         checkForUpdates,
         `Update-Fehler: ${state.errorMessage ?? "unbekannt"} – Klicken zum Wiederholen`,
-        "bg-slate-800 text-slate-500 hover:bg-slate-700"
+        "bg-bg-elevated text-text-dim hover:bg-bg-elevated"
       );
 
     default:

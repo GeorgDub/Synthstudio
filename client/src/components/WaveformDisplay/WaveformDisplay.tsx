@@ -499,7 +499,7 @@ export function WaveformDisplay({
 
       {/* Zoom-Indikator */}
       {zoomLevel > 1 && (
-        <div className="absolute bottom-5 right-1 pointer-events-none text-[9px] text-slate-500 font-mono">
+        <div className="absolute bottom-5 right-1 pointer-events-none text-[9px] text-text-dim font-mono">
           {zoomLevel.toFixed(1)}×
         </div>
       )}
@@ -507,7 +507,7 @@ export function WaveformDisplay({
       {/* Zoom zurücksetzen */}
       {zoomLevel > 1 && (
         <button
-          className="absolute top-1 right-1 text-[9px] text-slate-600 hover:text-slate-400 bg-black/60 px-1 rounded"
+          className="absolute top-1 right-1 text-[9px] text-text-dim hover:text-text-muted bg-black/60 px-1 rounded"
           onClick={() => { setZoomLevel(1); setPanOffset(0); zoomRef.current = 1; panRef.current = 0; }}
           title="Zoom zurücksetzen"
         >

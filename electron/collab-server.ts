@@ -51,7 +51,9 @@ export type CollabEventType =
   | "part:mute"
   | "part:solo"
   | "part:volume"
-  | "snapshot:full";
+  | "snapshot:full"
+  | "chat"
+  | "role:change";
 
 export interface CollabEvent {
   type: CollabEventType;

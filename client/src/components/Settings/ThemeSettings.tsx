@@ -1,24 +1,23 @@
 /**
- * Synthstudio – ThemeSettings.tsx (v1.11)
+ * Synthstudio – ThemeSettings.tsx (v1.12)
  *
  * Design-Theme-Auswahl für die Synthstudio-Oberfläche.
  * Setzt ein `data-theme`-Attribut auf dem <html>-Element und
  * persistiert die Auswahl in localStorage.
  *
- * Verfügbare Themes:
- *   dark   – DarkStudio (Standard, Bernstein + Cyan)
- *   neon   – NeonCircuit (Cyan + Magenta, technoide Atmosphäre)
- *   analog – AnalogHardware (Orange + Cyan, warm-analoger Charakter)
- *   purple – Nacht (Dunkles Lila, Studio-Feeling bei Nacht)
- *   warm   – Sonnenuntergang (Bernstein / Terracotta)
- *   oled   – OLED-Schwarz (Maximaler Kontrast, reines Schwarz)
+ * NEU:
+ * - Integration mit useThemeStore für benutzerdefinierte Themes.
+ * - CustomThemeCreator zum Erstellen eigener Designs.
  */
 
 import React, { useCallback, useEffect, useState } from "react";
+import { useThemeStore, applyCustomTheme, deleteCustomTheme, applyTheme as applyBaseThemeFromStore } from "@/store/useThemeStore";
+import { CustomThemeCreator } from "./CustomThemeCreator";
+import { useApiSettingsStore, setApiKey, setAiModel } from "@/store/useApiSettingsStore";
 
 // ─── Theme-Definition ─────────────────────────────────────────────────────────
 
-export type ThemeId = "dark" | "neon" | "analog" | "purple" | "warm" | "oled";
+export type ThemeId = "dark" | "neon" | "analog" | "purple" | "warm" | "oled" | "daylight" | "paper" | "deuteranopia" | "protanopia";
 
 interface ThemeDef {
   id: ThemeId;
@@ -28,7 +27,7 @@ interface ThemeDef {
   preview: [string, string, string];
 }
 
-const THEMES: ThemeDef[] = [
+export const THEMES: ThemeDef[] = [
   {
     id: "dark",
     name: "DarkStudio",
@@ -65,6 +64,30 @@ const THEMES: ThemeDef[] = [
     description: "Reines Schwarz, maximaler Kontrast",
     preview: ["#000000", "#06b6d4", "#0284c7"],
   },
+  {
+    id: "daylight",
+    name: "Daylight",
+    description: "Klares, neutrales Hell-Theme",
+    preview: ["#f8fafc", "#2563eb", "#db2777"],
+  },
+  {
+    id: "paper",
+    name: "Paper",
+    description: "Warmes, cremefarbenes Hell-Theme",
+    preview: ["#fdfdf8", "#d97706", "#059669"],
+  },
+  {
+    id: "deuteranopia",
+    name: "Deuteranopia",
+    description: "Farbenblind-gerecht: Okabe-Ito Palette (dunkel)",
+    preview: ["#0a0a12", "#0072b2", "#56b4e9"],
+  },
+  {
+    id: "protanopia",
+    name: "Protanopia",
+    description: "Farbenblind-gerecht: Hoher Kontrast (hell)",
+    preview: ["#f5f5f5", "#0072b2", "#009e73"],
+  },
 ];
 
 const STORAGE_KEY = "ss-theme";
@@ -86,7 +109,12 @@ export function loadSavedTheme(): ThemeId {
 }
 
 export function initTheme(): void {
-  applyTheme(loadSavedTheme());
+    const customThemeStore = JSON.parse(localStorage.getItem("synthstudio:custom-themes:v1") || "{}");
+    if (customThemeStore.activeCustomTheme) {
+        applyCustomTheme(customThemeStore.activeCustomTheme);
+    } else {
+        applyTheme(loadSavedTheme());
+    }
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -97,16 +125,24 @@ interface Props {
 }
 
 export function ThemeSettings({ isOpen, onClose }: Props) {
-  const [current, setCurrent] = useState<ThemeId>(loadSavedTheme);
+  const { customThemes, activeCustomTheme } = useThemeStore();
+  const [currentBaseTheme, setCurrentBaseTheme] = useState<ThemeId>(loadSavedTheme);
+  const [showCreator, setShowCreator] = useState(false);
+  const [activeSettingsTab, setActiveSettingsTab] = useState<"design" | "api">("design");
+  const apiSettings = useApiSettingsStore();
+  const [apiKeyInput, setApiKeyInput] = useState(apiSettings.anthropicApiKey);
 
-  // Theme anwenden + speichern
-  const selectTheme = useCallback((id: ThemeId) => {
-    setCurrent(id);
-    applyTheme(id);
+  const selectBaseTheme = useCallback((id: ThemeId) => {
+    setCurrentBaseTheme(id);
+    applyBaseThemeFromStore(id); // Use the store's apply function
     localStorage.setItem(STORAGE_KEY, id);
   }, []);
 
-  // Keyboard-Handler: Escape schließt Modal
+  const selectCustomTheme = useCallback((id: string) => {
+    setCurrentBaseTheme('dark'); // Reset base theme selection
+    applyCustomTheme(id);
+  }, []);
+
   useEffect(() => {
     if (!isOpen) return;
     const onKey = (e: KeyboardEvent) => {
@@ -119,100 +155,130 @@ export function ThemeSettings({ isOpen, onClose }: Props) {
   if (!isOpen) return null;
 
   return (
-    /* Backdrop */
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      {/* Modal */}
-      <div className="bg-[#0d0d0d] border border-slate-700 rounded-lg shadow-2xl w-[480px] max-w-[95vw]">
-
-        {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-800">
-          <h2 className="text-sm font-bold text-slate-200 tracking-wide">
-            Design-Einstellungen
-          </h2>
-          <button
-            onClick={onClose}
-            className="w-6 h-6 rounded text-slate-500 hover:text-slate-300 hover:bg-slate-800 transition-colors text-xs"
-          >
-            ✕
-          </button>
+      <div className="bg-bg-panel border border-border-color rounded-lg shadow-2xl w-[520px] max-w-[95vw] max-h-[90vh] flex flex-col">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border-color">
+          <div className="flex items-center gap-3">
+            <h2 className="text-sm font-bold text-text-primary tracking-wide">Einstellungen</h2>
+            <div className="flex gap-1">
+              {(["design", "api"] as const).map(t => (
+                <button key={t} onClick={() => setActiveSettingsTab(t)}
+                  className={`px-3 py-0.5 text-xs rounded transition-colors ${activeSettingsTab === t ? "bg-accent-primary/20 text-accent-primary" : "text-text-dim hover:text-text-primary"}`}>
+                  {t === "design" ? "Design" : "KI & API"}
+                </button>
+              ))}
+            </div>
+          </div>
+          <button onClick={onClose} className="w-6 h-6 rounded text-text-dim hover:text-text-primary hover:bg-bg-elevated transition-colors text-xs">✕</button>
         </div>
 
-        {/* Theme-Auswahl */}
-        <div className="p-5">
-          <p className="text-xs text-slate-500 mb-4">
-            Wähle ein Design-Theme für die gesamte Oberfläche.
-            Die Auswahl wird automatisch gespeichert.
+        <div className="p-5 overflow-y-auto">
+
+        {/* KI & API Tab */}
+        {activeSettingsTab === "api" && (
+          <div className="space-y-5">
+            <div>
+              <h3 className="text-sm font-bold text-text-primary mb-1">AI Beat Co-Pilot</h3>
+              <p className="text-xs text-text-dim mb-3">
+                Verbinde den Pattern Generator mit Claude AI für intelligente, stilgerechte Drum-Pattern. Dein API-Key wird nur lokal gespeichert.
+              </p>
+              <label className="text-xs text-text-muted block mb-1">Anthropic API Key</label>
+              <div className="flex gap-2">
+                <input
+                  type="password"
+                  value={apiKeyInput}
+                  onChange={e => setApiKeyInput(e.target.value)}
+                  placeholder="sk-ant-…"
+                  className="flex-1 bg-bg-elevated text-text-primary text-xs px-3 py-2 rounded border border-border-color placeholder:text-text-dim focus:border-accent-primary outline-none"
+                />
+                <button
+                  onClick={() => { setApiKey(apiKeyInput); }}
+                  className="px-3 py-1.5 text-xs rounded bg-accent-primary text-white hover:opacity-80 transition-opacity"
+                >Speichern</button>
+              </div>
+              {apiSettings.anthropicApiKey && (
+                <p className="text-[10px] text-accent-success mt-1.5">✓ API Key gesetzt – KI-Generierung aktiv</p>
+              )}
+            </div>
+            <div>
+              <label className="text-xs text-text-muted block mb-1">Claude Modell</label>
+              <select
+                value={apiSettings.aiModel}
+                onChange={e => setAiModel(e.target.value)}
+                className="w-full bg-bg-elevated text-text-primary text-xs px-3 py-2 rounded border border-border-color"
+              >
+                <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5 (schnell, günstig)</option>
+                <option value="claude-sonnet-4-6">Claude Sonnet 4.6 (kreativ, ausgewogen)</option>
+                <option value="claude-opus-4-7">Claude Opus 4.7 (maximal kreativ)</option>
+              </select>
+              <p className="text-[10px] text-text-dim mt-1">Haiku empfohlen für schnelle Pattern-Generierung.</p>
+            </div>
+            <div className="border-t border-border-color pt-3 text-[10px] text-text-dim">
+              API Key kostenlos testen: <span className="text-accent-secondary">console.anthropic.com</span>.
+              Ohne Key wird prozedurale Generierung verwendet.
+            </div>
+          </div>
+        )}
+
+        {/* Design Tab */}
+        {activeSettingsTab === "design" && (<>
+          <p className="text-xs text-text-dim mb-4">
+            Wähle ein Design-Theme oder erstelle dein eigenes.
           </p>
 
           <div className="grid grid-cols-2 gap-3">
             {THEMES.map((theme) => {
-              const isSelected = current === theme.id;
+              const isSelected = currentBaseTheme === theme.id && !activeCustomTheme;
               return (
-                <button
-                  key={theme.id}
-                  onClick={() => selectTheme(theme.id)}
-                  className={[
-                    "flex items-center gap-3 p-3 rounded border text-left transition-all duration-150",
-                    isSelected
-                      ? "border-cyan-600 bg-cyan-950/30"
-                      : "border-slate-700 hover:border-slate-600 bg-slate-900/30 hover:bg-slate-800/30",
-                  ].join(" ")}
-                >
-                  {/* Vorschau-Palette */}
+                <button key={theme.id} onClick={() => selectBaseTheme(theme.id)} className={`flex items-center gap-3 p-3 rounded border text-left transition-all duration-150 ${isSelected ? "border-accent-primary bg-cyan-950/30" : "border-border-color hover:border-border-color bg-bg-panel/30 hover:bg-bg-elevated/30"}`}>
                   <div className="flex gap-0.5 flex-shrink-0">
-                    {theme.preview.map((color, i) => (
-                      <div
-                        key={i}
-                        className="rounded-sm"
-                        style={{
-                          background: color,
-                          width: i === 0 ? 20 : 10,
-                          height: 28,
-                        }}
-                      />
-                    ))}
+                    {theme.preview.map((color, i) => <div key={i} className="rounded-sm" style={{ background: color, width: i === 0 ? 20 : 10, height: 28 }} />)}
                   </div>
-
-                  {/* Text */}
                   <div className="min-w-0">
-                    <div className={[
-                      "text-xs font-medium",
-                      isSelected ? "text-cyan-400" : "text-slate-300",
-                    ].join(" ")}>
-                      {theme.name}
-                    </div>
-                    <div className="text-[10px] text-slate-600 mt-0.5 truncate">
-                      {theme.description}
-                    </div>
+                    <div className={`text-xs font-medium ${isSelected ? "text-accent-secondary" : "text-text-primary"}`}>{theme.name}</div>
+                    <div className="text-[10px] text-text-dim mt-0.5 truncate">{theme.description}</div>
                   </div>
-
-                  {/* Aktiv-Indikator */}
-                  {isSelected && (
-                    <div className="ml-auto flex-shrink-0">
-                      <div className="w-2 h-2 rounded-full bg-cyan-500" />
-                    </div>
-                  )}
+                  {isSelected && <div className="ml-auto flex-shrink-0"><div className="w-2 h-2 rounded-full bg-accent-primary" /></div>}
                 </button>
               );
             })}
           </div>
 
-          {/* Info */}
-          <p className="text-[10px] text-slate-700 mt-4">
-            Die Akzentfarben der Sequencer-Schritte, Buttons und Tabs
-            passen sich dem gewählten Theme an.
-          </p>
+          {customThemes.length > 0 && <div className="mt-6 border-t border-border-color pt-6">
+            <h3 className="text-sm font-bold text-text-primary mb-4">Eigene Designs</h3>
+            <div className="grid grid-cols-2 gap-3">
+                {customThemes.map((theme) => {
+                    const isSelected = activeCustomTheme === theme.id;
+                    return (
+                        <div key={theme.id} className={`flex items-center gap-3 p-3 rounded border text-left transition-all duration-150 ${isSelected ? "border-green-600 bg-green-950/30" : "border-border-color hover:border-border-color bg-bg-panel/30 hover:bg-bg-elevated/30"}`}>
+                            <button onClick={() => selectCustomTheme(theme.id)} className="flex-1 flex items-center gap-3">
+                                <div className="flex gap-0.5 flex-shrink-0">
+                                    <div className="rounded-sm" style={{ background: theme.colors['--ss-bg-base'], width: 20, height: 28 }} />
+                                    <div className="rounded-sm" style={{ background: theme.colors['--ss-accent-primary'], width: 10, height: 28 }} />
+                                </div>
+                                <div className="min-w-0">
+                                    <div className={`text-xs font-medium ${isSelected ? "text-green-400" : "text-text-primary"}`}>{theme.name}</div>
+                                </div>
+                                {isSelected && <div className="ml-auto flex-shrink-0"><div className="w-2 h-2 rounded-full bg-green-500" /></div>}
+                            </button>
+                            <button onClick={() => deleteCustomTheme(theme.id)} className="text-text-dim hover:text-red-400 text-xs p-1">✕</button>
+                        </div>
+                    );
+                })}
+            </div>
+          </div>}
+
+          {showCreator ? <CustomThemeCreator onClose={() => setShowCreator(false)} /> : <button onClick={() => setShowCreator(true)} className="mt-6 w-full text-center text-xs text-text-dim hover:text-text-primary py-2 rounded border border-dashed border-border-color hover:border-border-color">
+            + Eigenes Design erstellen
+          </button>}
+        </>)}
         </div>
 
-        {/* Footer */}
-        <div className="px-5 py-3 border-t border-slate-800 flex justify-end">
-          <button
-            onClick={onClose}
-            className="px-4 py-1.5 text-xs rounded bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-slate-300 transition-colors"
-          >
+        <div className="px-5 py-3 border-t border-border-color flex justify-end mt-auto">
+          <button onClick={onClose} className="px-4 py-1.5 text-xs rounded bg-bg-elevated text-text-muted hover:bg-bg-elevated hover:text-text-primary transition-colors">
             Schließen
           </button>
         </div>

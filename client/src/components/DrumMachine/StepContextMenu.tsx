@@ -49,7 +49,7 @@ export function StepContextMenu({
       <Popover.Trigger asChild>{children}</Popover.Trigger>
       <Popover.Portal>
         <Popover.Content
-          className="z-50 w-52 rounded-lg bg-slate-900 border border-slate-700 p-3 shadow-xl text-white text-xs"
+          className="z-50 w-52 rounded-lg bg-bg-panel border border-border-color p-3 shadow-xl text-white text-xs"
           side="top"
           sideOffset={4}
           onContextMenu={e => e.preventDefault()}
@@ -59,8 +59,8 @@ export function StepContextMenu({
           {/* Probability */}
           <div className="mb-3">
             <div className="flex justify-between mb-1">
-              <span className="text-slate-400">Probability</span>
-              <span className="font-mono text-cyan-400">{probability}%</span>
+              <span className="text-text-muted">Probability</span>
+              <span className="font-mono text-accent-secondary">{probability}%</span>
             </div>
             <input
               type="range"
@@ -69,16 +69,16 @@ export function StepContextMenu({
               step={5}
               value={probability}
               onChange={e => onProbabilityChange(Number(e.target.value))}
-              className="w-full accent-cyan-500"
+              className="w-full accent-accent-primary"
             />
-            <div className="flex justify-between text-slate-600 text-[10px] mt-0.5">
+            <div className="flex justify-between text-text-dim text-[10px] mt-0.5">
               <span>0%</span><span>50%</span><span>100%</span>
             </div>
           </div>
 
           {/* Condition */}
           <div>
-            <div className="text-slate-400 mb-1">Condition</div>
+            <div className="text-text-muted mb-1">Condition</div>
             <div className="flex flex-col gap-1">
               {CONDITION_OPTIONS.map(opt => (
                 <button
@@ -86,8 +86,8 @@ export function StepContextMenu({
                   onClick={() => onConditionChange(opt.value)}
                   className={`text-left px-2 py-1 rounded text-xs transition-colors ${
                     condition.type === opt.value.type
-                      ? "bg-cyan-700 text-white"
-                      : "bg-slate-800 hover:bg-slate-700 text-slate-300"
+                      ? "bg-accent-primary/70 text-white"
+                      : "bg-bg-elevated hover:bg-bg-elevated text-text-primary"
                   }`}
                 >
                   {opt.label}
@@ -95,27 +95,27 @@ export function StepContextMenu({
               ))}
               {/* Custom Every N:M */}
               <div className="flex items-center gap-1 mt-1">
-                <span className="text-slate-500">Jed.</span>
+                <span className="text-text-dim">Jed.</span>
                 <input
                   type="number"
                   min={1}
                   max={16}
                   value={everyN}
                   onChange={e => setEveryN(Number(e.target.value))}
-                  className="w-10 bg-slate-800 rounded px-1 py-0.5 text-center font-mono text-xs"
+                  className="w-10 bg-bg-elevated rounded px-1 py-0.5 text-center font-mono text-xs"
                 />
-                <span className="text-slate-500">von</span>
+                <span className="text-text-dim">von</span>
                 <input
                   type="number"
                   min={1}
                   max={16}
                   value={everyOf}
                   onChange={e => setEveryOf(Number(e.target.value))}
-                  className="w-10 bg-slate-800 rounded px-1 py-0.5 text-center font-mono text-xs"
+                  className="w-10 bg-bg-elevated rounded px-1 py-0.5 text-center font-mono text-xs"
                 />
                 <button
                   onClick={() => onConditionChange({ type: "every", n: everyN, of: everyOf })}
-                  className="bg-slate-700 hover:bg-slate-600 px-1.5 py-0.5 rounded text-xs"
+                  className="bg-bg-elevated hover:bg-bg-elevated px-1.5 py-0.5 rounded text-xs"
                 >
                   OK
                 </button>

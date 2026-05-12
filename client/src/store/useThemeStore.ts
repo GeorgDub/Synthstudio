@@ -1,175 +1,188 @@
-﻿/**
- * Synthstudio – useThemeStore
- *
- * Globales Theme-System: DarkStudio (Standard), NeonCircuit, AnalogHardware.
- * Persistenz: localStorage (Browser) + optionale Electron-IPC-Bridge.
- * Pattern: Modul-Singleton + React useState/useCallback (analog zu den anderen Stores).
- *
- * Isomorph: Alle DOM/window-Zugriffe sind gegen Unavailability abgesichert.
- */
-import { useState, useCallback, useEffect } from "react";
+﻿import { useEffect, useReducer } from "react";
+import { applyTheme as applyBaseTheme } from "@/components/Settings/ThemeSettings";
 
-// ─── Typen ────────────────────────────────────────────────────────────────────
-
-export type ThemeId = "dark" | "neon" | "analog";
-
-export interface Theme {
-  id: ThemeId;
+export interface CustomTheme {
+  id: string;
   name: string;
-  description: string;
-  emoji: string;
-}
-
-export interface ThemeState {
-  currentTheme: ThemeId;
-  themes: Theme[];
-}
-
-export interface ThemeActions {
-  setTheme: (id: ThemeId) => void;
-}
-
-// ─── Statische Theme-Definitionen ────────────────────────────────────────────
-
-export const THEMES: Theme[] = [
-  {
-    id: "dark",
-    name: "Dark Studio",
-    description: "Klassisches dunkles Studio-Interface",
-    emoji: "🎛️",
-  },
-  {
-    id: "neon",
-    name: "Neon Circuit",
-    description: "Futuristisches Neon-Cyberpunk-Interface",
-    emoji: "⚡",
-  },
-  {
-    id: "analog",
-    name: "Analog Hardware",
-    description: "Vintage Analog-Hardware-Look",
-    emoji: "🎚️",
-  },
-];
-
-const STORAGE_KEY = "ss-theme";
-
-// ─── Modul-Singleton (cross-component shared state) ──────────────────────────
-
-/** Aktuell aktiver Theme-ID – globale Wahrheitsquelle zwischen Hook-Instanzen */
-let _currentTheme: ThemeId = "dark";
-
-/** React setState-Callbacks aller aktiven Hook-Instanzen */
-const _listeners = new Set<(id: ThemeId) => void>();
-
-// ─── Interne Hilfsfunktionen ─────────────────────────────────────────────────
-
-function _isValidThemeId(value: unknown): value is ThemeId {
-  return value === "dark" || value === "neon" || value === "analog";
-}
-
-function _readFromStorage(): ThemeId {
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (_isValidThemeId(stored)) return stored;
-  } catch {
-    // localStorage nicht verfügbar (Node.js / SSR)
-  }
-  return "dark";
-}
-
-function _applyToDOM(id: ThemeId): void {
-  try {
-    // Immer explizit setzen; CSS :root + [data-theme="dark"] decken beide Fälle ab
-    document.documentElement.dataset.theme = id;
-  } catch {
-    // document nicht verfügbar (Node.js / SSR)
-  }
-}
-
-function _persistToStorage(id: ThemeId): void {
-  try {
-    localStorage.setItem(STORAGE_KEY, id);
-  } catch {
-    // localStorage nicht verfügbar
-  }
-  try {
-    // Electron IPC – optionales Chaining, kein Fehler wenn nicht vorhanden
-    (
-      window as unknown as {
-        electronAPI?: { setStoreValue?: (key: string, value: string) => void };
-      }
-    ).electronAPI?.setStoreValue?.("theme", id);
-  } catch {
-    // window nicht verfügbar
-  }
-}
-
-// ─── Exportierte Logik-Funktionen (testbar ohne React) ───────────────────────
-
-/**
- * Liest gespeichertes Theme und wendet es auf den DOM an.
- * Wird beim Hook-Mount aufgerufen; auch direkt testbar.
- */
-export function initFromStorage(): ThemeId {
-  const id = _readFromStorage();
-  _currentTheme = id;
-  _applyToDOM(id);
-  return id;
-}
-
-/**
- * Wendet ein Theme an: DOM + localStorage + Electron-Store + Listener.
- * Entspricht der setTheme()-Aktion, aber ohne React-State-Overhead.
- */
-export function applyTheme(id: ThemeId): void {
-  _currentTheme = id;
-  _applyToDOM(id);
-  _persistToStorage(id);
-  _listeners.forEach((listener) => listener(id));
-}
-
-/** Gibt den aktuell aktiven Theme-ID zurück (ohne React). */
-export function getCurrentTheme(): ThemeId {
-  return _currentTheme;
-}
-
-/**
- * Setzt den Modul-Zustand zurück.
- * Nur für Unit-Tests – nicht in Produktion aufrufen!
- */
-export function __resetForTests(): void {
-  _currentTheme = "dark";
-  _listeners.clear();
-}
-
-// ─── React Hook ──────────────────────────────────────────────────────────────
-
-export function useThemeStore(): ThemeState & ThemeActions {
-  // Lazy-Init: Beim ersten Aufruf bereits den Singleton-Wert nutzen
-  const [currentTheme, setCurrentThemeState] = useState<ThemeId>(
-    () => _currentTheme
-  );
-
-  useEffect(() => {
-    // Beim ersten Mount aus Storage initialisieren und DOM setzen
-    const stored = initFromStorage();
-    setCurrentThemeState(stored);
-
-    // In globale Listener-Liste eintragen → Updates von anderen Instanzen empfangen
-    _listeners.add(setCurrentThemeState);
-    return () => {
-      _listeners.delete(setCurrentThemeState);
-    };
-  }, []);
-
-  const setTheme = useCallback((id: ThemeId): void => {
-    applyTheme(id);
-  }, []);
-
-  return {
-    currentTheme,
-    themes: THEMES,
-    setTheme,
+  colors: {
+    '--ss-bg-base': string;
+    '--ss-bg-panel': string;
+    '--ss-bg-elevated': string;
+    '--ss-text-primary': string;
+    '--ss-text-muted': string;
+    '--ss-text-dim': string;
+    '--ss-border': string;
+    '--ss-border-subtle': string;
+    '--ss-accent-primary': string;
+    '--ss-accent-secondary': string;
+    '--ss-accent-success': string;
+    '--ss-accent-danger': string;
   };
+  /** Erweiterte Einstellungen */
+  extras?: {
+    /** Globale Schriftgröße (px, 10–18) */
+    fontSize?: number;
+    /** Border-Radius der Buttons/Panels (px, 0–16) */
+    borderRadius?: number;
+    /** Allgemeine UI-Transparenz (0=undurchsichtig, 1=glasartig) */
+    glassEffect?: number;
+    /** Akzent-Glow-Intensität (0=kein, 1=stark) */
+    glowIntensity?: number;
+    /** Hintergrund-Bild-URL (z.B. Textur) */
+    backgroundImage?: string;
+    /** Custom CSS (wird direkt injiziert) */
+    customCss?: string;
+  };
+}
+
+interface ThemeStoreState {
+  customThemes: CustomTheme[];
+  activeCustomTheme: string | null;
+}
+
+type Listener = () => void;
+
+const STORAGE_KEY = "synthstudio:custom-themes:v1";
+const STYLE_ELEMENT_ID = "synthstudio-custom-theme";
+
+function makeId(): string {
+  return `custom-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function loadState(): ThemeStoreState {
+  const base: ThemeStoreState = { customThemes: [], activeCustomTheme: null };
+  if (typeof window === "undefined") return base;
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (!raw) return base;
+    return { ...base, ...(JSON.parse(raw) as Partial<ThemeStoreState>) };
+  } catch {
+    return base;
+  }
+}
+
+function persist(): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(_state));
+  } catch {}
+}
+
+let _state: ThemeStoreState = loadState();
+
+const _listeners = new Set<Listener>();
+function notify(): void { _listeners.forEach((l) => l()); }
+
+export function addCustomTheme(theme: Omit<CustomTheme, 'id'>): string {
+  const newTheme: CustomTheme = { ...theme, id: makeId() };
+  _state = { ..._state, customThemes: [..._state.customThemes, newTheme] };
+  persist();
+  notify();
+  return newTheme.id;
+}
+
+export function updateCustomTheme(id: string, theme: CustomTheme): void {
+  _state = {
+    ..._state,
+    customThemes: _state.customThemes.map(t => (t.id === id ? theme : t)),
+  };
+  persist();
+  notify();
+}
+
+export function deleteCustomTheme(id: string): void {
+  const wasActive = _state.activeCustomTheme === id;
+  _state = {
+    ..._state,
+    customThemes: _state.customThemes.filter(t => t.id !== id),
+    activeCustomTheme: wasActive ? null : _state.activeCustomTheme,
+  };
+  if (wasActive) {
+      applyCustomTheme(null);
+  }
+  persist();
+  notify();
+}
+
+function removeCustomThemeStyle() {
+    const styleEl = document.getElementById(STYLE_ELEMENT_ID);
+    if (styleEl) {
+        styleEl.remove();
+    }
+}
+
+export function applyCustomTheme(id: string | null): void {
+    removeCustomThemeStyle();
+    document.documentElement.removeAttribute("data-theme");
+
+    if (!id) {
+        _state = { ..._state, activeCustomTheme: null };
+        persist();
+        notify();
+        return;
+    }
+
+    const theme = _state.customThemes.find(t => t.id === id);
+    if (theme) {
+        const styleEl = document.createElement('style');
+        styleEl.id = STYLE_ELEMENT_ID;
+
+        const cssVars = Object.entries(theme.colors).map(([key, value]) => `${key}: ${value};`).join('\n    ');
+
+        // Extras: Font-Size, Border-Radius, Glow, Background, Custom CSS
+        const extras = theme.extras ?? {};
+        const extraVars: string[] = [];
+        if (extras.fontSize)     extraVars.push(`font-size: ${extras.fontSize}px;`);
+        if (extras.borderRadius !== undefined) extraVars.push(`--ss-radius: ${extras.borderRadius}px;`);
+        if (extras.glowIntensity !== undefined) {
+          const glow = extras.glowIntensity;
+          extraVars.push(`--ss-glow: 0 0 ${Math.round(8 * glow)}px var(--ss-accent-primary), 0 0 ${Math.round(20 * glow)}px var(--ss-accent-primary)60;`);
+        }
+
+        const bgImage = extras.backgroundImage
+          ? `background-image: url('${extras.backgroundImage}'); background-size: cover; background-attachment: fixed;`
+          : "";
+
+        const glassCss = extras.glassEffect
+          ? `backdrop-filter: blur(${Math.round(extras.glassEffect * 12)}px); -webkit-backdrop-filter: blur(${Math.round(extras.glassEffect * 12)}px);`
+          : "";
+
+        const radiusCss = extras.borderRadius !== undefined
+          ? `button, input, select, .rounded, .rounded-lg, .rounded-xl { border-radius: ${extras.borderRadius}px !important; }`
+          : "";
+
+        styleEl.innerHTML = `
+            :root {
+                ${cssVars}
+                ${extraVars.join('\n    ')}
+            }
+            ${bgImage ? `html, body, #root { ${bgImage} }` : ""}
+            ${glassCss ? `.bg-bg-panel, .bg-bg-elevated { ${glassCss} }` : ""}
+            ${radiusCss}
+            ${extras.customCss ?? ""}
+        `;
+
+        document.head.appendChild(styleEl);
+        _state = { ..._state, activeCustomTheme: id };
+        persist();
+        notify();
+    }
+}
+
+// When a base theme is applied, deactivate any custom theme
+export function applyTheme(themeId: any) {
+    applyCustomTheme(null);
+    applyBaseTheme(themeId);
+}
+
+export function useThemeStore(): ThemeStoreState {
+  const [, rerender] = useReducer((x: number) => x + 1, 0);
+  useEffect(() => {
+    _listeners.add(rerender);
+    if (_state.activeCustomTheme) {
+        applyCustomTheme(_state.activeCustomTheme);
+    }
+    return () => { _listeners.delete(rerender); };
+  }, []);
+  return _state;
 }

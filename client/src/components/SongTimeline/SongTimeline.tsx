@@ -27,14 +27,14 @@ interface SongTimelineProps {
 // ─── Konstanten ───────────────────────────────────────────────────────────────
 
 const BANK_COLORS: Record<PatternBank, string> = {
-  A: "bg-cyan-600 border-cyan-400 text-white",
+  A: "bg-accent-primary border-accent-secondary text-white",
   B: "bg-violet-600 border-violet-400 text-white",
   C: "bg-emerald-600 border-emerald-400 text-white",
   D: "bg-amber-600 border-amber-400 text-white",
 };
 
 const BANK_COLORS_MUTED: Record<PatternBank, string> = {
-  A: "bg-cyan-900/40 border-cyan-800 text-cyan-800",
+  A: "bg-accent-primary/40 border-cyan-800 text-cyan-800",
   B: "bg-violet-900/40 border-violet-800 text-violet-800",
   C: "bg-emerald-900/40 border-emerald-800 text-emerald-800",
   D: "bg-amber-900/40 border-amber-800 text-amber-800",
@@ -266,7 +266,7 @@ export function SongTimeline({ song, isPlaying, className = "" }: SongTimelinePr
     <div className={`flex flex-col gap-2 ${className}`}>
       {/* Header */}
       <div className="flex items-center gap-3 px-1">
-        <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">
+        <span className="text-xs font-bold text-text-muted uppercase tracking-widest">
           Song-Modus
         </span>
 
@@ -276,8 +276,8 @@ export function SongTimeline({ song, isPlaying, className = "" }: SongTimelinePr
           className={[
             "px-2 py-0.5 rounded text-[10px] font-bold transition-colors",
             song.songModeActive
-              ? "bg-cyan-600 text-white"
-              : "bg-slate-700 text-slate-400 hover:bg-slate-600",
+              ? "bg-accent-primary text-white"
+              : "bg-bg-elevated text-text-muted hover:bg-bg-elevated",
           ].join(" ")}
           title="Song-Modus ein/ausschalten"
         >
@@ -291,7 +291,7 @@ export function SongTimeline({ song, isPlaying, className = "" }: SongTimelinePr
             "px-2 py-0.5 rounded text-[10px] transition-colors",
             song.loopSong
               ? "bg-violet-600 text-white"
-              : "bg-slate-700 text-slate-400 hover:bg-slate-600",
+              : "bg-bg-elevated text-text-muted hover:bg-bg-elevated",
           ].join(" ")}
           title="Song-Loop ein/ausschalten"
         >
@@ -299,7 +299,7 @@ export function SongTimeline({ song, isPlaying, className = "" }: SongTimelinePr
         </button>
 
         {/* Statistiken */}
-        <span className="text-[10px] text-slate-600 ml-auto">
+        <span className="text-[10px] text-text-dim ml-auto">
           {song.slots.length} Slots · {totalBars} Takte
         </span>
 
@@ -309,7 +309,7 @@ export function SongTimeline({ song, isPlaying, className = "" }: SongTimelinePr
             <button
               key={arr.label}
               onClick={() => song.createArrangement(arr.pattern)}
-              className="px-2 py-0.5 rounded text-[10px] bg-slate-800 text-slate-500 hover:bg-slate-700 hover:text-slate-300 transition-colors"
+              className="px-2 py-0.5 rounded text-[10px] bg-bg-elevated text-text-dim hover:bg-bg-elevated hover:text-text-primary transition-colors"
               title={`${arr.label}-Arrangement laden`}
             >
               {arr.label}
@@ -320,7 +320,7 @@ export function SongTimeline({ song, isPlaying, className = "" }: SongTimelinePr
         {/* Clear */}
         <button
           onClick={song.clearSong}
-          className="px-2 py-0.5 rounded text-[10px] bg-slate-800 text-slate-600 hover:bg-red-900/40 hover:text-red-400 transition-colors"
+          className="px-2 py-0.5 rounded text-[10px] bg-bg-elevated text-text-dim hover:bg-red-900/40 hover:text-red-400 transition-colors"
           title="Song leeren"
         >
           Leeren
@@ -360,7 +360,7 @@ export function SongTimeline({ song, isPlaying, className = "" }: SongTimelinePr
           onClick={handleAddSlot}
           className={[
             "flex-shrink-0 w-20 h-[108px] rounded-lg border-2 border-dashed",
-            "border-slate-700 text-slate-600 hover:border-slate-500 hover:text-slate-400",
+            "border-border-color text-text-dim hover:border-slate-500 hover:text-text-muted",
             "flex flex-col items-center justify-center gap-1 transition-colors",
           ].join(" ")}
           title="Slot hinzufügen"
@@ -371,7 +371,7 @@ export function SongTimeline({ song, isPlaying, className = "" }: SongTimelinePr
 
         {/* Leerer Zustand */}
         {song.slots.length === 0 && (
-          <div className="flex-1 flex items-center justify-center text-slate-700 text-xs">
+          <div className="flex-1 flex items-center justify-center text-text-dim text-xs">
             Klicke auf + um Patterns zum Song hinzuzufügen
           </div>
         )}
@@ -379,9 +379,9 @@ export function SongTimeline({ song, isPlaying, className = "" }: SongTimelinePr
 
       {/* Fortschrittsbalken (während Wiedergabe) */}
       {isPlaying && song.songModeActive && song.slots.length > 0 && (
-        <div className="h-1 bg-slate-800 rounded-full overflow-hidden">
+        <div className="h-1 bg-bg-elevated rounded-full overflow-hidden">
           <div
-            className="h-full bg-cyan-500 transition-all duration-300"
+            className="h-full bg-accent-primary transition-all duration-300"
             style={{
               width: `${
                 song.currentSlotIndex >= 0

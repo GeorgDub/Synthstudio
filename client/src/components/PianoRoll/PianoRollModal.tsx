@@ -9,8 +9,17 @@
  *   - Piano-Tasten links mit Vorschau-Sound via WebAudio
  * Styling: Tailwind + CSS Custom Properties (--ss-*)
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useMidiStepInput } from "../../hooks/useMidiStepInput";
 import { useMelodicPartStore } from "../../store/useMelodicPartStore";
+import {
+  SCALES,
+  NOTE_NAMES,
+  scalePitchClasses,
+  pitchClass,
+  type ScaleId,
+} from "../../utils/scales";
+import { TransposeControl } from "./TransposeControl";
 
 // ─── Typen ────────────────────────────────────────────────────────────────────
 
@@ -37,7 +46,6 @@ interface DragState {
 
 // ─── Konstanten ───────────────────────────────────────────────────────────────
 
-const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"] as const;
 const MIDI_MIN = 48;  // C3
 const MIDI_MAX = 71;  // B4
 const STEP_COUNT = 16;
@@ -101,8 +109,16 @@ function playPreview(note: number): void {
 // ─── Komponente ───────────────────────────────────────────────────────────────
 
 export function PianoRollModal({ partId, partName, isOpen, onClose }: PianoRollModalProps) {
-  const { patterns, initPart, setNote, toggleStep, setVelocity, clearPart } =
-    useMelodicPartStore();
+  const {
+    patterns,
+    initPart,
+    setNote,
+    toggleStep,
+    setVelocity,
+    clearPart,
+    setScale,
+    setScaleLock,
+  } = useMelodicPartStore();
 
   const [velocityPopup, setVelocityPopup] = useState<VelocityPopup>({
     show:    false,
@@ -110,6 +126,25 @@ export function PianoRollModal({ partId, partName, isOpen, onClose }: PianoRollM
     x:       0,
     y:       0,
   });
+  const [stepInputEnabled, setStepInputEnabled] = useState(false);
+  const { cursor: stepInputCursor, resetCursor: resetStepCursor, moveCursor } = useMidiStepInput({
+    partId: stepInputEnabled ? partId : null,
+    stepCount: STEP_COUNT,
+    enabled: stepInputEnabled,
+  });
+
+  // MIDI Step Input: eingehende Noten in Piano Roll setzen
+  useEffect(() => {
+    if (!stepInputEnabled) return;
+    const handler = (e: Event) => {
+      const { partId: ePId, stepIndex, note, velocity } = (e as CustomEvent).detail;
+      if (ePId !== partId) return;
+      setNote(partId, stepIndex, note); // velocity über setVelocity separat setzen
+      setVelocity(partId, stepIndex, velocity);
+    };
+    window.addEventListener("stepinput:note", handler);
+    return () => window.removeEventListener("stepinput:note", handler);
+  }, [stepInputEnabled, partId, setNote]);
 
   // Ref-basiertes Drag-Tracking (kein Re-Render während Drag)
   const drag = useRef<DragState>({
@@ -206,11 +241,60 @@ export function PianoRollModal({ partId, partName, isOpen, onClose }: PianoRollM
     setVelocityPopup((p) => ({ ...p, show: false }));
   }, []);
 
+  // ── Scale-State (aus Pattern abgeleitet) ──────────────────────────────────
+  const pattern = patterns[partId];
+  const scaleRoot = pattern?.scaleRoot ?? 0;
+  const scaleId: ScaleId = pattern?.scaleId ?? "chromatic";
+  const scaleLockEnabled = pattern?.scaleLockEnabled ?? false;
+
+  const scalePcs = useMemo(
+    () => new Set(scalePitchClasses(scaleRoot, scaleId)),
+    [scaleRoot, scaleId],
+  );
+
+  const handleToggleScaleLock = useCallback(() => {
+    setScaleLock(partId, !scaleLockEnabled);
+  }, [partId, scaleLockEnabled, setScaleLock]);
+
+  /** Quantisiert alle aktiven Noten zur aktiven Tonleiter. */
+  const handleQuantizeToScale = useCallback(() => {
+    if (scaleId === "chromatic" || !scaleLockEnabled) return;
+    const pat = patterns[partId];
+    if (!pat) return;
+    const pcs = [...scalePcs].sort((a, b) => a - b);
+    pat.steps.forEach((step, idx) => {
+      if (!step.active) return;
+      const pitchClass = step.note % 12;
+      const octave = Math.floor(step.note / 12);
+      // Nächsten Skalengrad finden
+      let nearest = pcs[0];
+      let minDist = 12;
+      for (const pc of pcs) {
+        const d = Math.min(Math.abs(pc - pitchClass), 12 - Math.abs(pc - pitchClass));
+        if (d < minDist) { minDist = d; nearest = pc; }
+      }
+      const quantized = octave * 12 + nearest;
+      if (quantized !== step.note) setNote(partId, idx, quantized);
+    });
+  }, [partId, patterns, scalePcs, scaleId, scaleLockEnabled, setNote]);
+
+  const handleScaleRootChange = useCallback(
+    (e: React.ChangeEvent<HTMLSelectElement>) => {
+      setScale(partId, Number(e.target.value), scaleId);
+    },
+    [partId, scaleId, setScale],
+  );
+
+  const handleScaleIdChange = useCallback(
+    (e: React.ChangeEvent<HTMLSelectElement>) => {
+      setScale(partId, scaleRoot, e.target.value as ScaleId);
+    },
+    [partId, scaleRoot, setScale],
+  );
+
   // ── Render ────────────────────────────────────────────────────────────────
 
   if (!isOpen) return null;
-
-  const pattern = patterns[partId];
 
   return (
     <div
@@ -253,6 +337,89 @@ export function PianoRollModal({ partId, partName, isOpen, onClose }: PianoRollM
             </span>
           </div>
           <div className="flex items-center gap-2">
+            {/* Scale Quantize */}
+            {scaleLockEnabled && scaleId !== "chromatic" && (
+              <button
+                onClick={handleQuantizeToScale}
+                title="Alle Noten zur aktiven Tonleiter quantisieren"
+                className="px-2 py-1 text-xs rounded border transition-colors"
+                style={{ borderColor: "var(--ss-accent-success)", color: "var(--ss-accent-success)" }}
+              >
+                ⚡ Quantize
+              </button>
+            )}
+
+            {/* MIDI Step Input */}
+            <button
+              onClick={() => { setStepInputEnabled(p => !p); resetStepCursor(); }}
+              title="MIDI Step Input: Noten per MIDI-Keyboard step-weise eingeben"
+              className="px-2 py-1 text-xs rounded border transition-colors"
+              style={{
+                borderColor: stepInputEnabled ? "var(--ss-accent-secondary)" : "var(--ss-border)",
+                color: stepInputEnabled ? "var(--ss-accent-secondary)" : "var(--ss-text-dim)",
+                background: stepInputEnabled ? "var(--ss-accent-secondary)10" : "transparent",
+              }}
+            >
+              {stepInputEnabled ? `⌨ Step ${stepInputCursor + 1}` : "⌨ Step Input"}
+            </button>
+
+            {/* Global Transpose */}
+            <TransposeControl />
+
+            {/* Scale-Lock Toolbar */}
+            <button
+              onClick={handleToggleScaleLock}
+              title={scaleLockEnabled ? "Scale Lock deaktivieren" : "Scale Lock aktivieren"}
+              className="px-2 py-1 text-xs rounded border transition-opacity hover:opacity-80"
+              style={{
+                borderColor: scaleLockEnabled
+                  ? "var(--ss-accent-primary)"
+                  : "var(--ss-border)",
+                color: scaleLockEnabled
+                  ? "var(--ss-accent-primary)"
+                  : "var(--ss-text-muted)",
+                background: scaleLockEnabled
+                  ? "rgba(255,255,255,0.04)"
+                  : "transparent",
+                fontWeight: scaleLockEnabled ? 600 : 400,
+              }}
+            >
+              {scaleLockEnabled ? "🔒 Scale" : "Scale"}
+            </button>
+            <select
+              aria-label="Scale Root"
+              value={scaleRoot}
+              onChange={handleScaleRootChange}
+              className="px-1 py-1 text-xs rounded border outline-none"
+              style={{
+                borderColor: "var(--ss-border)",
+                color:       "var(--ss-text-primary)",
+                background:  "var(--ss-bg-elevated)",
+              }}
+            >
+              {NOTE_NAMES.map((name, idx) => (
+                <option key={idx} value={idx}>
+                  {name}
+                </option>
+              ))}
+            </select>
+            <select
+              aria-label="Scale Type"
+              value={scaleId}
+              onChange={handleScaleIdChange}
+              className="px-1 py-1 text-xs rounded border outline-none"
+              style={{
+                borderColor: "var(--ss-border)",
+                color:       "var(--ss-text-primary)",
+                background:  "var(--ss-bg-elevated)",
+              }}
+            >
+              {SCALES.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.label}
+                </option>
+              ))}
+            </select>
             <button
               onClick={() => clearPart(partId)}
               className="px-3 py-1 text-xs rounded border transition-opacity hover:opacity-75"
@@ -307,6 +474,12 @@ export function PianoRollModal({ partId, partName, isOpen, onClose }: PianoRollM
             const black  = isBlack(note);
             const isC    = note % 12 === 0;
             const label  = midiToLabel(note);
+            const inScale = scalePcs.has(pitchClass(note));
+            // Bei aktivem Scale-Lock werden Out-of-Scale-Zeilen sichtbar abgedunkelt
+            const dim = scaleLockEnabled && !inScale;
+            // Bei deaktiviertem Lock wird die Skala dezent als Hintergrund angedeutet
+            const subtleHighlight = !scaleLockEnabled && inScale;
+            const isRoot = pitchClass(note) === pitchClass(scaleRoot);
 
             return (
               <div
@@ -321,13 +494,16 @@ export function PianoRollModal({ partId, partName, isOpen, onClose }: PianoRollM
                     width:       KEY_WIDTH,
                     height:      ROW_HEIGHT,
                     background:  black ? "#18182a" : "#2a2a3e",
-                    borderRight: "2px solid var(--ss-accent-primary)",
+                    borderRight: isRoot
+                      ? "3px solid var(--ss-accent-primary)"
+                      : "2px solid var(--ss-accent-primary)",
                     borderBottom: isC
                       ? "1px solid var(--ss-accent-secondary)"
                       : "1px solid rgba(255,255,255,0.06)",
                     color:      black ? "var(--ss-text-dim)" : "var(--ss-text-muted)",
                     fontSize:   10,
                     userSelect: "none",
+                    opacity:    dim ? 0.45 : 1,
                   }}
                   onMouseEnter={() => playPreview(note)}
                 >
@@ -339,6 +515,21 @@ export function PianoRollModal({ partId, partName, isOpen, onClose }: PianoRollM
                   const step     = pattern?.steps[stepIdx];
                   const isActive = step?.active === true && step?.note === note;
 
+                  let cellBg: string;
+                  if (isActive) {
+                    cellBg = "var(--ss-accent-primary)";
+                  } else if (dim) {
+                    cellBg = "rgba(0,0,0,0.4)";
+                  } else if (subtleHighlight) {
+                    cellBg = isRoot
+                      ? "rgba(255,255,255,0.04)"
+                      : "rgba(255,255,255,0.02)";
+                  } else if (black) {
+                    cellBg = "rgba(0,0,0,0.22)";
+                  } else {
+                    cellBg = "transparent";
+                  }
+
                   return (
                     <div
                       key={stepIdx}
@@ -347,11 +538,7 @@ export function PianoRollModal({ partId, partName, isOpen, onClose }: PianoRollM
                         minWidth:    CELL_MIN_W,
                         height:      ROW_HEIGHT,
                         cursor:      "crosshair",
-                        background:  isActive
-                          ? "var(--ss-accent-primary)"
-                          : black
-                            ? "rgba(0,0,0,0.22)"
-                            : "transparent",
+                        background:  cellBg,
                         borderBottom: isC
                           ? "1px solid var(--ss-accent-secondary)"
                           : "1px solid rgba(255,255,255,0.04)",
@@ -359,7 +546,7 @@ export function PianoRollModal({ partId, partName, isOpen, onClose }: PianoRollM
                           ? "1px solid rgba(255,255,255,0.18)"
                           : "1px solid rgba(255,255,255,0.04)",
                         boxSizing:   "border-box",
-                        opacity:     isActive ? 1 : undefined,
+                        opacity:     isActive ? 1 : dim ? 0.55 : undefined,
                       }}
                       onMouseDown={(e) => handleCellMouseDown(note, stepIdx, e)}
                       onMouseEnter={() => handleCellMouseEnter(note, stepIdx)}
@@ -382,6 +569,7 @@ export function PianoRollModal({ partId, partName, isOpen, onClose }: PianoRollM
         >
           <span>
             Klick: Note setzen · Rechtsklick: Löschen · Shift+Klick: Velocity · Drag: Zeichnen
+            {scaleLockEnabled && " · 🔒 Scale-Lock aktiv (Snap auf Skala)"}
           </span>
           <button
             onClick={onClose}

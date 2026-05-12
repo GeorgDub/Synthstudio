@@ -7,6 +7,7 @@
  * Kein externer State-Manager.
  */
 import { useState, useCallback, useEffect } from "react";
+import { snapToScale, type ScaleId } from "../utils/scales";
 
 // ─── Typen ────────────────────────────────────────────────────────────────────
 
@@ -20,6 +21,12 @@ export interface MelodicPattern {
   partId: string;
   steps: PitchStep[];  // immer 16 Einträge
   baseNote: number;    // Grundton des Parts (Standard: 60 = C4)
+  /** Skalen-Root als Pitch-Class (0=C, 1=C#, … 11=B). */
+  scaleRoot: number;
+  /** Aktive Skala. "chromatic" entspricht effektiv kein Snap. */
+  scaleId: ScaleId;
+  /** Wenn true, werden Note-Inputs auf die Skala geschnappt. */
+  scaleLockEnabled: boolean;
 }
 
 export interface MelodicPartState {
@@ -31,6 +38,8 @@ export interface MelodicPartActions {
   toggleStep: (partId: string, stepIdx: number) => void;
   setVelocity: (partId: string, stepIdx: number, velocity: number) => void;
   setBaseNote: (partId: string, note: number) => void;
+  setScale: (partId: string, root: number, scaleId: ScaleId) => void;
+  setScaleLock: (partId: string, enabled: boolean) => void;
   clearPart: (partId: string) => void;
   getPattern: (partId: string) => MelodicPattern | undefined;
   initPart: (partId: string) => void;
@@ -58,6 +67,30 @@ function _makePattern(partId: string, baseNote: number = DEFAULT_BASE_NOTE): Mel
     partId,
     steps: Array.from({ length: STEP_COUNT }, () => _defaultStep(baseNote)),
     baseNote,
+    scaleRoot: 0,            // C
+    scaleId: "chromatic",
+    scaleLockEnabled: false,
+  };
+}
+
+/**
+ * Migriert ein aus sessionStorage geladenes Pattern: ergänzt fehlende Scale-Felder.
+ * Idempotent – wenn die Felder schon da sind, wird das Pattern unverändert zurückgegeben.
+ */
+function _migratePattern(p: MelodicPattern): MelodicPattern {
+  if (
+    typeof p.scaleRoot === "number" &&
+    typeof p.scaleId === "string" &&
+    typeof p.scaleLockEnabled === "boolean"
+  ) {
+    return p;
+  }
+  return {
+    ...p,
+    scaleRoot: typeof p.scaleRoot === "number" ? p.scaleRoot : 0,
+    scaleId: typeof p.scaleId === "string" ? p.scaleId : "chromatic",
+    scaleLockEnabled:
+      typeof p.scaleLockEnabled === "boolean" ? p.scaleLockEnabled : false,
   };
 }
 
@@ -65,7 +98,12 @@ function _readFromStorage(): Record<string, MelodicPattern> {
   try {
     const stored = sessionStorage.getItem(STORAGE_KEY);
     if (stored) {
-      return JSON.parse(stored) as Record<string, MelodicPattern>;
+      const parsed = JSON.parse(stored) as Record<string, MelodicPattern>;
+      const migrated: Record<string, MelodicPattern> = {};
+      for (const key of Object.keys(parsed)) {
+        migrated[key] = _migratePattern(parsed[key]);
+      }
+      return migrated;
     }
   } catch {
     // sessionStorage nicht verfügbar (Node.js / Test-Umgebung)
@@ -111,12 +149,19 @@ export function toggleStep(partId: string, stepIdx: number): void {
   _notify();
 }
 
-/** Setzt die MIDI-Note eines Steps und aktiviert ihn. Initialisiert den Part implizit. */
+/**
+ * Setzt die MIDI-Note eines Steps und aktiviert ihn. Initialisiert den Part implizit.
+ * Wenn `scaleLockEnabled` aktiv ist, wird die Note auf die nächste Note in der
+ * konfigurierten Skala geschnappt.
+ */
 export function setNote(partId: string, stepIdx: number, note: number): void {
   if (!_patterns[partId]) initPart(partId);
   const pattern = _patterns[partId];
+  const finalNote = pattern.scaleLockEnabled
+    ? snapToScale(note, pattern.scaleRoot, pattern.scaleId)
+    : note;
   const steps = pattern.steps.map((s, i) =>
-    i === stepIdx ? { ...s, note, active: true } : s,
+    i === stepIdx ? { ...s, note: finalNote, active: true } : s,
   );
   _patterns = { ..._patterns, [partId]: { ...pattern, steps } };
   _writeToStorage(_patterns);
@@ -141,6 +186,31 @@ export function setBaseNote(partId: string, note: number): void {
   if (!_patterns[partId]) initPart(partId);
   const pattern = _patterns[partId];
   _patterns = { ..._patterns, [partId]: { ...pattern, baseNote: note } };
+  _writeToStorage(_patterns);
+  _notify();
+}
+
+/** Setzt Skalen-Root (Pitch-Class 0-11) und Skalen-Typ. Initialisiert den Part implizit. */
+export function setScale(partId: string, root: number, scaleId: ScaleId): void {
+  if (!_patterns[partId]) initPart(partId);
+  const pattern = _patterns[partId];
+  const clampedRoot = ((root % 12) + 12) % 12;
+  _patterns = {
+    ..._patterns,
+    [partId]: { ...pattern, scaleRoot: clampedRoot, scaleId },
+  };
+  _writeToStorage(_patterns);
+  _notify();
+}
+
+/** Aktiviert/deaktiviert Scale-Lock. Initialisiert den Part implizit. */
+export function setScaleLock(partId: string, enabled: boolean): void {
+  if (!_patterns[partId]) initPart(partId);
+  const pattern = _patterns[partId];
+  _patterns = {
+    ..._patterns,
+    [partId]: { ...pattern, scaleLockEnabled: enabled },
+  };
   _writeToStorage(_patterns);
   _notify();
 }
@@ -212,6 +282,17 @@ export function useMelodicPartStore(): MelodicPartState & MelodicPartActions {
     setBaseNote(partId, note);
   }, []);
 
+  const handleSetScale = useCallback(
+    (partId: string, root: number, scaleId: ScaleId) => {
+      setScale(partId, root, scaleId);
+    },
+    [],
+  );
+
+  const handleSetScaleLock = useCallback((partId: string, enabled: boolean) => {
+    setScaleLock(partId, enabled);
+  }, []);
+
   const handleClearPart = useCallback((partId: string) => {
     clearPart(partId);
   }, []);
@@ -228,6 +309,8 @@ export function useMelodicPartStore(): MelodicPartState & MelodicPartActions {
     toggleStep: handleToggleStep,
     setVelocity: handleSetVelocity,
     setBaseNote: handleSetBaseNote,
+    setScale: handleSetScale,
+    setScaleLock: handleSetScaleLock,
     clearPart: handleClearPart,
     getPattern: handleGetPattern,
   };

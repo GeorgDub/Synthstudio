@@ -193,3 +193,56 @@ describe("useMorphStore (Singleton-Logik)", () => {
     expect(state.amount).toBeCloseTo(0.3);
   });
 });
+
+// ─── UI-Integration: Apply-Flow ───────────────────────────────────────────────
+
+describe("Morph Apply-Flow (PatternMorphPanel → addPatternData)", () => {
+  // Test 10: morphPatterns Resultat ist ein vollständiges PatternData (für addPatternData kompatibel)
+  it("morphPatterns liefert vollständiges PatternData-Objekt", () => {
+    const a: PatternData = {
+      id: "a", name: "A", stepCount: 16, stepResolution: "1/16", bpm: null,
+      parts: [{
+        id: "p1", name: "Kick", muted: false, soloed: false, volume: 1, pan: 0,
+        steps: Array.from({ length: 16 }, (_, i) =>
+          makeStep({ active: i % 4 === 0, velocity: 100 })),
+        fx: {
+          filterEnabled: false, filterType: "lowpass", filterFreq: 8000, filterQ: 1, filterGain: 0,
+          distortionEnabled: false, distortionAmount: 50,
+          compressorEnabled: false, compressorThreshold: -24, compressorRatio: 4, compressorAttack: 0.003, compressorRelease: 0.25,
+          delayEnabled: false, delayTime: 0.25, delayFeedback: 0.3, delayMix: 0.3,
+          reverbEnabled: false, reverbDecay: 2, reverbMix: 0.3,
+          eqEnabled: false, eqLow: 0, eqMid: 0, eqHigh: 0,
+        },
+      } as PartData],
+    };
+    const b: PatternData = {
+      ...a, id: "b", name: "B",
+      parts: [{
+        ...a.parts[0], id: "p1",
+        steps: Array.from({ length: 16 }, (_, i) =>
+          makeStep({ active: i % 3 === 0, velocity: 90 })),
+      }],
+    };
+
+    const morphed = morphPatterns(a, b, 0.5);
+
+    expect(morphed.id).toMatch(/^morph-/);
+    expect(morphed.name).toContain("Morph");
+    expect(morphed.parts).toHaveLength(1);
+    expect(morphed.parts[0].steps).toHaveLength(16);
+    expect(morphed.stepCount).toBe(16);
+    expect(typeof morphed.stepResolution).toBe("string");
+  });
+
+  // Test 11: amount=0 → Output identisch zu A (Steps), amount=1 → identisch zu B
+  it("amount=0 nutzt A-Steps, amount=1 nutzt B-Steps", () => {
+    const stepA: StepData = makeStep({ active: true, velocity: 100 });
+    const stepB: StepData = makeStep({ active: true, velocity: 50 });
+
+    const at0 = morphStepDeterministic(stepA, stepB, 0, 0.5);
+    expect(at0.velocity).toBe(100);
+
+    const at1 = morphStepDeterministic(stepA, stepB, 1, 0.5);
+    expect(at1.velocity).toBe(50);
+  });
+});

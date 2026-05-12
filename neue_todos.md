@@ -1,0 +1,17 @@
+- alle fenster sollen auch mit x zumachbar sein also granular und polyrhythm etc
+- bei quentize crasht die seite
+- git builder workflow erstellen fürs kompilen (Windows, Linux, macos, Android und iOS)
+- updater für den Desktop build einbauen
+- builder und Konzept für Anwendung als Android und iOS app entwickeln
+- eine Login Oberfläche einbauen damit ich die Anwendung zum testen weitergeben kann und man mit beta accounts sie benutzen kann und sie nicht von den testern für immer kostenlos weiterbenutzt werden kann
+- in das Handbuch eine Syntax Beschreibung für die scripts und Plugins integrieren damit die user wissen wie man eigene Plugins schreiben kann
+- einen cloudstore einbauen wo man Plugins oder scripte hochladen und teilen kann
+- eine Wiki integrieren wo man nachlesen kann wie man Hardtekk oder weitere Musikrichtungen produzieren kann und eine LLM integrieren die Fragen zu der Anwendung oder zu Themen rund um Musikerstellung stellen kann
+- Eine Möglichkeit Samples in die Cloud hochzuladen, also das man sich mit seinem Account in der Anwendung einloggen kann (nicht muss) und dann von überall aus zugriff auf die eigenen sampler und pattern und Projekte hat
+- Midi Vorlagen für die Gängigsten Midi Geräte und Controller die man in der Techno, Hardtekk und Hardcore etc Szene verwendet
+- die Möglichkeit FL Studio oder Ableton Projekte zu laden, also eine Konverterfunktion die die pattern und alles von dort importieren kann
+- eine Funktion um esx Dateien von einer Korg esx oder electribe 2 / 2s laden kann
+- die workbench Anwendung erweitern damit sie mehr Funktionen hat ähnlich wie Audacity selbst 
+- eine Ki analyse des Projekts einbauen die verbesserungsvorschläge oder so anbietet
+- eine Admin Version der Software wo alle Funktionen freigeschaltet sind für mich selbst und dann eine LAi free Version und eine Lite Version, also das man über den Account über den eingeloggt wird festgelegt wird welche Funktionen eingeblendet und sichtbar sind 
+

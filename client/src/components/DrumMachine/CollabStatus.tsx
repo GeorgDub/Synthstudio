@@ -36,10 +36,10 @@ export function CollabStatus({
         className={`flex items-center gap-1.5 px-2 py-1 rounded text-xs transition-colors ${
           isActive
             ? "bg-green-900 hover:bg-green-800 text-green-300"
-            : "bg-slate-800 hover:bg-slate-700 text-slate-400"
+            : "bg-bg-elevated hover:bg-bg-elevated text-text-muted"
         }`}
       >
-        <div className={`w-2 h-2 rounded-full ${isActive ? "bg-green-400 animate-pulse" : "bg-slate-600"}`} />
+        <div className={`w-2 h-2 rounded-full ${isActive ? "bg-green-400 animate-pulse" : "bg-bg-elevated"}`} />
         {isActive ? (
           <span className="font-mono">{sessionCode} ({participants.length})</span>
         ) : (
@@ -51,7 +51,7 @@ export function CollabStatus({
       {isActive && (
         <button
           onClick={onDisconnect}
-          className="ml-1 text-slate-500 hover:text-red-400 text-xs px-1"
+          className="ml-1 text-text-dim hover:text-red-400 text-xs px-1"
           title="Session beenden"
         >
           ×
@@ -60,30 +60,30 @@ export function CollabStatus({
 
       {/* Join/Create Popup */}
       {showJoin && !isActive && (
-        <div className="absolute bottom-8 left-0 bg-slate-900 border border-slate-700 rounded-lg p-3 shadow-xl w-56 z-40 text-xs text-white">
-          <div className="font-semibold text-cyan-400 mb-2">Collaborative Session</div>
+        <div className="absolute bottom-8 left-0 bg-bg-panel border border-border-color rounded-lg p-3 shadow-xl w-56 z-40 text-xs text-white">
+          <div className="font-semibold text-accent-secondary mb-2">Collaborative Session</div>
           <button
             onClick={() => { onCreateSession(); setShowJoin(false); }}
             disabled={isConnecting}
-            className="w-full bg-cyan-700 hover:bg-cyan-600 disabled:opacity-50 rounded py-1.5 mb-2 font-semibold"
+            className="w-full bg-accent-primary/70 hover:bg-accent-primary disabled:opacity-50 rounded py-1.5 mb-2 font-semibold"
           >
             Neue Session erstellen
           </button>
-          <div className="text-slate-500 text-center mb-2">oder</div>
+          <div className="text-text-dim text-center mb-2">oder</div>
           <input
             type="text"
             placeholder="Code (z.B. AB1234)"
             value={joinCode}
             onChange={e => setJoinCode(e.target.value.toUpperCase())}
             maxLength={6}
-            className="w-full bg-slate-800 rounded px-2 py-1 mb-1 font-mono uppercase text-center tracking-widest"
+            className="w-full bg-bg-elevated rounded px-2 py-1 mb-1 font-mono uppercase text-center tracking-widest"
           />
           <input
             type="text"
             placeholder="Dein Name"
             value={joinName}
             onChange={e => setJoinName(e.target.value)}
-            className="w-full bg-slate-800 rounded px-2 py-1 mb-2"
+            className="w-full bg-bg-elevated rounded px-2 py-1 mb-2"
           />
           <button
             onClick={() => {
@@ -93,7 +93,7 @@ export function CollabStatus({
               }
             }}
             disabled={isConnecting || joinCode.length !== 6 || !joinName.trim()}
-            className="w-full bg-slate-700 hover:bg-slate-600 disabled:opacity-40 rounded py-1.5"
+            className="w-full bg-bg-elevated hover:bg-bg-elevated disabled:opacity-40 rounded py-1.5"
           >
             Beitreten
           </button>

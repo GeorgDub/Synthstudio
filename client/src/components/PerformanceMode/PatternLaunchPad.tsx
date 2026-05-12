@@ -47,10 +47,10 @@ export function PatternLaunchPad({
   return (
     <div className="fixed inset-0 z-50 bg-slate-950 flex flex-col">
       {/* Header */}
-      <div className="flex items-center justify-between px-6 py-3 border-b border-slate-800">
+      <div className="flex items-center justify-between px-6 py-3 border-b border-border-color">
         <div className="flex items-center gap-4">
-          <span className="text-cyan-400 font-bold text-lg tracking-wider">PERFORMANCE MODE</span>
-          <span className="text-slate-400 font-mono text-sm">{bpm} BPM</span>
+          <span className="text-accent-secondary font-bold text-lg tracking-wider">PERFORMANCE MODE</span>
+          <span className="text-text-muted font-mono text-sm">{bpm} BPM</span>
           <div className="flex gap-1">
             {["bar", "beat", "step"].map(mode => (
               <button
@@ -58,8 +58,8 @@ export function PatternLaunchPad({
                 onClick={() => onQuantizeModeChange(mode as "bar" | "beat" | "step")}
                 className={`px-2 py-1 rounded text-xs font-mono uppercase transition-colors ${
                   quantizeMode === mode
-                    ? "bg-cyan-700 text-white"
-                    : "bg-slate-800 text-slate-400 hover:bg-slate-700"
+                    ? "bg-accent-primary/70 text-white"
+                    : "bg-bg-elevated text-text-muted hover:bg-bg-elevated"
                 }`}
               >
                 {mode}
@@ -69,7 +69,7 @@ export function PatternLaunchPad({
         </div>
         <button
           onClick={onClose}
-          className="text-slate-500 hover:text-white text-sm flex items-center gap-1"
+          className="text-text-dim hover:text-white text-sm flex items-center gap-1"
           title="ESC"
         >
           ESC ×
@@ -102,7 +102,7 @@ export function PatternLaunchPad({
                   border-2 flex items-center justify-center
                   ${pad
                     ? "cursor-pointer hover:brightness-125 active:scale-95"
-                    : "bg-slate-900 cursor-default opacity-30"
+                    : "bg-bg-panel cursor-default opacity-30"
                   }
                   ${isQueued ? "animate-pulse" : ""}
                 `}
@@ -122,14 +122,14 @@ export function PatternLaunchPad({
       </div>
 
       {/* Step-Indikator */}
-      <div className="px-6 py-3 border-t border-slate-800 flex items-center gap-2">
-        <span className="text-slate-600 text-xs">STEP</span>
+      <div className="px-6 py-3 border-t border-border-color flex items-center gap-2">
+        <span className="text-text-dim text-xs">STEP</span>
         <div className="flex gap-0.5">
           {Array.from({ length: 16 }, (_, i) => (
             <div
               key={i}
               className={`w-2 h-2 rounded-full transition-colors ${
-                i === currentStep % 16 ? "bg-cyan-400" : "bg-slate-800"
+                i === currentStep % 16 ? "bg-accent-secondary" : "bg-bg-elevated"
               }`}
             />
           ))}

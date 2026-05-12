@@ -15,6 +15,9 @@ import {
   __resetForTests,
   setGenre,
   setComplexity,
+  setCustomPrompt,
+  saveCurrentPreset,
+  clearPromptSuggestions,
   getPatternGeneratorState,
 } from "@/store/usePatternGeneratorStore";
 
@@ -120,5 +123,24 @@ describe("usePatternGeneratorStore", () => {
     expect(getPatternGeneratorState().complexity).toBe(1);
     setComplexity(-0.5);
     expect(getPatternGeneratorState().complexity).toBe(0);
+  });
+
+  it("speichert eigene Vorgaben mit Name und Prompt", () => {
+    setGenre("house");
+    setComplexity(0.35);
+    setCustomPrompt("laidback house groove mit clap");
+    saveCurrentPreset("Late House");
+
+    const preset = getPatternGeneratorState().savedPresets[0];
+    expect(preset.name).toBe("Late House");
+    expect(preset.prompt).toBe("laidback house groove mit clap");
+    expect(preset.genre).toBe("house");
+    expect(preset.complexity).toBe(0.35);
+  });
+
+  it("kann vorgegebene Vorschläge komplett löschen", () => {
+    expect(getPatternGeneratorState().promptSuggestions.length).toBeGreaterThan(0);
+    clearPromptSuggestions();
+    expect(getPatternGeneratorState().promptSuggestions).toEqual([]);
   });
 });

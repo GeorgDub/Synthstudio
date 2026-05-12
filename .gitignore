@@ -8,6 +8,13 @@ build/
 *.dist
 release/
 dist-electron/
+electron-dist/
+
+# Claude Code session data + working notes
+.claude/
+bilder/
+gemini-code-*.md
+custom_design_editor_changes.md
 
 # Environment variables
 .env

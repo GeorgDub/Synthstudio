@@ -2,9 +2,12 @@
  * SynthPanel.tsx – Synthesizer-Parameter-Panel (Wavetable / FM)
  * Phase 5: Wavetable / FM Synthesizer Engine
  */
-import React from "react";
-import type { SynthParams } from "@/audio/SynthEngine";
-import { DEFAULT_SYNTH_PARAMS } from "@/audio/SynthEngine";
+import React, { useState } from "react";
+import type { SynthParams, LfoWaveform, LfoBpmRate } from "@/audio/SynthEngine";
+import { DEFAULT_SYNTH_PARAMS, LFO_WAVEFORM_LABELS } from "@/audio/SynthEngine";
+import { WavetableEditor } from "./WavetableEditor";
+
+const LFO_BPM_RATES: LfoBpmRate[] = ["free", "1/1", "1/2", "1/4", "1/8", "1/16", "1/32", "1/64"];
 
 interface SynthPanelProps {
   partId: string;
@@ -15,7 +18,7 @@ interface SynthPanelProps {
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex items-center gap-2 py-0.5">
-      <span className="text-slate-400 text-xs w-16 shrink-0">{label}</span>
+      <span className="text-text-muted text-xs w-16 shrink-0">{label}</span>
       {children}
     </div>
   );
@@ -33,9 +36,9 @@ function KnobSlider({
         step={step}
         value={value}
         onChange={e => onChange(Number(e.target.value))}
-        className="flex-1 accent-cyan-500"
+        className="flex-1 accent-accent-primary"
       />
-      <span className="font-mono text-cyan-400 text-xs w-12 text-right">
+      <span className="font-mono text-accent-secondary text-xs w-12 text-right">
         {value.toFixed(step < 1 ? 2 : 0)}{unit}
       </span>
     </div>
@@ -44,10 +47,11 @@ function KnobSlider({
 
 export function SynthPanel({ partId, params, onChange }: SynthPanelProps) {
   const set = (update: Partial<SynthParams>) => onChange({ ...params, ...update });
+  const [showWavetableEditor, setShowWavetableEditor] = useState(false);
 
   return (
-    <div className="bg-slate-900 border border-slate-700 rounded-lg p-3 text-white min-w-[260px]">
-      <div className="text-xs font-semibold text-cyan-400 mb-2 uppercase tracking-wider">
+    <div className="bg-bg-panel border border-border-color rounded-lg p-3 text-white min-w-[260px]">
+      <div className="text-xs font-semibold text-accent-secondary mb-2 uppercase tracking-wider">
         Synthesizer
       </div>
 
@@ -60,8 +64,8 @@ export function SynthPanel({ partId, params, onChange }: SynthPanelProps) {
               onClick={() => set({ mode })}
               className={`flex-1 py-0.5 rounded text-xs font-mono uppercase transition-colors ${
                 params.mode === mode
-                  ? "bg-cyan-700 text-white"
-                  : "bg-slate-800 hover:bg-slate-700 text-slate-400"
+                  ? "bg-accent-primary/70 text-white"
+                  : "bg-bg-elevated hover:bg-bg-elevated text-text-muted"
               }`}
             >
               {mode}
@@ -77,13 +81,22 @@ export function SynthPanel({ partId, params, onChange }: SynthPanelProps) {
             <select
               value={params.oscType}
               onChange={e => set({ oscType: e.target.value as SynthParams["oscType"] })}
-              className="flex-1 bg-slate-800 rounded px-1.5 py-0.5 text-xs"
+              className="flex-1 bg-bg-elevated rounded px-1.5 py-0.5 text-xs"
             >
               {(["sine", "sawtooth", "square", "triangle"] as const).map(t => (
                 <option key={t} value={t}>{t}</option>
               ))}
+              <option value="custom">Custom ✏</option>
             </select>
           </Row>
+          {params.oscType === "custom" && (
+            <Row label="">
+              <button onClick={() => setShowWavetableEditor(true)}
+                className="text-xs text-accent-secondary hover:underline">
+                ✏ Wellenform bearbeiten
+              </button>
+            </Row>
+          )}
           <Row label="Detune">
             <KnobSlider value={params.detune} min={-100} max={100} step={1} unit="¢" onChange={v => set({ detune: v })} />
           </Row>
@@ -103,7 +116,7 @@ export function SynthPanel({ partId, params, onChange }: SynthPanelProps) {
       )}
 
       {/* ADSR */}
-      <div className="text-slate-500 text-[10px] uppercase tracking-wider mt-2 mb-1">ADSR</div>
+      <div className="text-text-dim text-[10px] uppercase tracking-wider mt-2 mb-1">ADSR</div>
       <Row label="Attack">
         <KnobSlider value={params.attack} min={0.001} max={2} step={0.001} unit="s" onChange={v => set({ attack: v })} />
       </Row>
@@ -117,33 +130,62 @@ export function SynthPanel({ partId, params, onChange }: SynthPanelProps) {
         <KnobSlider value={params.release} min={0.001} max={5} step={0.001} unit="s" onChange={v => set({ release: v })} />
       </Row>
 
+      {/* Glide */}
+      <div className="text-text-dim text-[10px] uppercase tracking-wider mt-2 mb-1">Glide</div>
+      <Row label="Portamento">
+        <KnobSlider value={params.glide ?? 0} min={0} max={2} step={0.01} unit="s"
+          onChange={v => set({ glide: v })} />
+      </Row>
+
       {/* LFO */}
-      <div className="text-slate-500 text-[10px] uppercase tracking-wider mt-2 mb-1">LFO</div>
+      <div className="text-text-dim text-[10px] uppercase tracking-wider mt-2 mb-1">LFO</div>
       <Row label="LFO">
         <label className="flex items-center gap-1 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={params.lfoEnabled}
+          <input type="checkbox" checked={params.lfoEnabled}
             onChange={e => set({ lfoEnabled: e.target.checked })}
-            className="accent-cyan-500"
-          />
-          <span className="text-xs text-slate-400">aktiv</span>
+            className="accent-accent-primary" />
+          <span className="text-xs text-text-muted">aktiv</span>
         </label>
       </Row>
       {params.lfoEnabled && (
         <>
-          <Row label="Rate">
-            <KnobSlider value={params.lfoRate} min={0.1} max={20} step={0.1} unit="Hz" onChange={v => set({ lfoRate: v })} />
+          <Row label="Waveform">
+            <div className="flex gap-0.5 flex-1 flex-wrap">
+              {(Object.keys(LFO_WAVEFORM_LABELS) as LfoWaveform[]).map(w => (
+                <button key={w} onClick={() => set({ lfoWaveform: w })}
+                  className={`px-1.5 py-0.5 rounded text-[10px] font-mono transition-colors ${
+                    (params.lfoWaveform ?? "sine") === w
+                      ? "bg-accent-secondary/60 text-white"
+                      : "bg-bg-elevated text-text-dim hover:text-text-muted"
+                  }`}>
+                  {LFO_WAVEFORM_LABELS[w]}
+                </button>
+              ))}
+            </div>
           </Row>
+          <Row label="BPM-Sync">
+            <select value={params.lfoBpmSync ?? "free"}
+              onChange={e => set({ lfoBpmSync: e.target.value as LfoBpmRate })}
+              className="flex-1 bg-bg-elevated rounded px-1.5 py-0.5 text-xs">
+              {LFO_BPM_RATES.map(r => <option key={r} value={r}>{r === "free" ? "Free (Hz)" : r}</option>)}
+            </select>
+          </Row>
+          {(params.lfoBpmSync ?? "free") === "free" ? (
+            <Row label="Rate">
+              <KnobSlider value={params.lfoRate} min={0.1} max={20} step={0.1} unit="Hz" onChange={v => set({ lfoRate: v })} />
+            </Row>
+          ) : (
+            <Row label="Rate">
+              <span className="text-xs text-accent-secondary font-mono">{params.lfoBpmSync} (BPM-sync)</span>
+            </Row>
+          )}
           <Row label="Depth">
             <KnobSlider value={params.lfoDepth} min={0} max={100} step={1} unit="¢" onChange={v => set({ lfoDepth: v })} />
           </Row>
           <Row label="Target">
-            <select
-              value={params.lfoTarget}
+            <select value={params.lfoTarget}
               onChange={e => set({ lfoTarget: e.target.value as SynthParams["lfoTarget"] })}
-              className="flex-1 bg-slate-800 rounded px-1.5 py-0.5 text-xs"
-            >
+              className="flex-1 bg-bg-elevated rounded px-1.5 py-0.5 text-xs">
               <option value="pitch">Pitch</option>
               <option value="volume">Volume</option>
               <option value="filter">Filter</option>
@@ -155,10 +197,22 @@ export function SynthPanel({ partId, params, onChange }: SynthPanelProps) {
       {/* Reset */}
       <button
         onClick={() => onChange({ ...DEFAULT_SYNTH_PARAMS })}
-        className="mt-2 w-full text-slate-500 hover:text-slate-300 text-xs py-0.5 rounded hover:bg-slate-800 transition-colors"
+        className="mt-2 w-full text-text-dim hover:text-text-primary text-xs py-0.5 rounded hover:bg-bg-elevated transition-colors"
       >
         Reset
       </button>
+
+      {/* Wavetable Editor Modal */}
+      {showWavetableEditor && (
+        <WavetableEditor
+          onSave={(_waveData) => {
+            // waveData als Float32Array gespeichert → PeriodicWave in AudioEngine anwenden
+            // Für jetzt: Custom-Typ bleibt, AudioEngine nutzt Sinus als Fallback
+            set({ oscType: "custom" });
+          }}
+          onClose={() => setShowWavetableEditor(false)}
+        />
+      )}
     </div>
   );
 }

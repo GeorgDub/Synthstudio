@@ -87,6 +87,9 @@ function useRemoteDmAdapter(
       // ── State ──────────────────────────────────────────────────
       patterns: remote.patterns,
       activePatternId: remote.activePatternId ?? (remote.patterns[0]?.id ?? ""),
+      playbackPatternId: null,
+      liveEditSourcePatternId: null,
+      commitPending: false,
       activePartId,
       currentStep: 0, // Kein Playhead für Remote-Ansicht
       velocityMode,
@@ -95,6 +98,8 @@ function useRemoteDmAdapter(
 
       // ── Berechneter Getter ──────────────────────────────────────
       getActivePattern: () =>
+        remote.patterns.find(p => p.id === (remote.activePatternId ?? remote.patterns[0]?.id)),
+      getPlaybackPattern: () =>
         remote.patterns.find(p => p.id === (remote.activePatternId ?? remote.patterns[0]?.id)),
 
       // ── Interaktive Actions (mit broadcast) ────────────────────
@@ -125,6 +130,25 @@ function useRemoteDmAdapter(
       removePattern: noop,
       renamePattern: noop,
       duplicatePattern: noop,
+      startLivePatternEdit: noop,
+      commitLivePatternEdit: noop,
+      cancelLivePatternEdit: noop,
+      scheduleCommit: noop,
+      setPatternFollowAction: noop,
+      setStepReverse: noop,
+      setStepParamLock: noop,
+      setStepLength: noop,
+      setStepChainNext: noop,
+      quantizePartSteps: noop,
+      setPartStretchRatio: noop,
+      setPartMicroTiming: noop,
+      setPatternBpmRatio: noop,
+      setPatternBpmTransitionBars: noop,
+      toggleStackedPattern: noop,
+      clearStackedPatterns: noop,
+      stackedPatternIds: [],
+      setPartSourceType: noop,
+      setPartGranularParams: noop,
       setPatternBpm: noop,
       setPatternStepResolution: noop,
       addPart: noop,
@@ -134,6 +158,8 @@ function useRemoteDmAdapter(
       setPartSoloed: noop,
       setPartPan: noop,
       setPartStepResolution: noop,
+      setPartStepLength: noop,
+      addPatternData: () => "",
       movePart: noop,
       setPartFx: (_partId: string, _fx: Partial<ChannelFx>) => { /* no-op */ },
       setPartSteps: noop,
@@ -161,9 +187,11 @@ const CATEGORIES = ["Alle", "Kicks", "Snares", "Hi-Hats", "Claps", "Toms", "Perc
 function PartnerSampleBrowser({
   samples,
   partnerColor,
+  onAddToLibrary,
 }: {
   samples: Array<{ id: string; name: string; path: string; category: string }>;
   partnerColor: string | null;
+  onAddToLibrary?: (sample: { id: string; name: string; path: string; category: string }) => void;
 }) {
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("Alle");
@@ -185,10 +213,10 @@ function PartnerSampleBrowser({
   };
 
   return (
-    <aside className="w-52 flex-shrink-0 border-l border-slate-800 flex flex-col overflow-hidden">
+    <aside className="w-52 flex-shrink-0 border-l border-border-color flex flex-col overflow-hidden">
       {/* Header */}
       <div
-        className="px-3 py-1.5 bg-[#111] border-b border-slate-800 flex-shrink-0 flex items-center gap-1.5"
+        className="px-3 py-1.5 bg-bg-elevated border-b border-border-color flex-shrink-0 flex items-center gap-1.5"
         style={{ borderBottomColor: `${accent}40` }}
       >
         <span
@@ -207,7 +235,7 @@ function PartnerSampleBrowser({
           placeholder="Suchen…"
           value={search}
           onChange={e => setSearch(e.target.value)}
-          className="w-full bg-slate-900 border border-slate-700 rounded text-[10px] text-slate-300 placeholder-slate-600 px-2 py-1 outline-none focus:border-slate-500"
+          className="w-full bg-bg-panel border border-border-color rounded text-[10px] text-text-primary placeholder-slate-600 px-2 py-1 outline-none focus:border-slate-500"
         />
       </div>
 
@@ -221,7 +249,7 @@ function PartnerSampleBrowser({
               "text-[9px] px-1.5 py-0.5 rounded transition-colors",
               category === cat
                 ? "text-black"
-                : "bg-slate-800 text-slate-500 hover:bg-slate-700",
+                : "bg-bg-elevated text-text-dim hover:bg-bg-elevated",
             ].join(" ")}
             style={category === cat ? { background: accent, color: "#000" } : {}}
           >
@@ -233,7 +261,7 @@ function PartnerSampleBrowser({
       {/* Sample-Liste */}
       <div className="flex-1 overflow-y-auto px-1 pb-2">
         {filtered.length === 0 ? (
-          <div className="text-[10px] text-slate-700 text-center mt-4 px-3">
+          <div className="text-[10px] text-text-dim text-center mt-4 px-3">
             {samples.length === 0
               ? "Partner hat noch keine Samples"
               : "Keine Treffer"}
@@ -244,7 +272,7 @@ function PartnerSampleBrowser({
               key={sample.id}
               draggable
               onDragStart={e => handleDragStart(e, sample)}
-              className="flex items-center gap-1.5 px-2 py-1 rounded cursor-grab hover:bg-slate-800/60 transition-colors group"
+              className="flex items-center gap-1.5 px-2 py-1 rounded cursor-grab hover:bg-bg-elevated/60 transition-colors group"
               title={`Auf eigenen Kanal ziehen: ${sample.name}`}
             >
               <span
@@ -253,9 +281,18 @@ function PartnerSampleBrowser({
               >
                 ⠿
               </span>
-              <span className="text-[10px] text-slate-400 group-hover:text-slate-200 truncate transition-colors">
+              <span className="text-[10px] text-text-muted group-hover:text-text-primary truncate transition-colors flex-1">
                 {sample.name}
               </span>
+              {onAddToLibrary && (
+                <button
+                  onClick={e => { e.stopPropagation(); onAddToLibrary(sample); }}
+                  className="text-[9px] text-text-dim hover:text-accent-success opacity-0 group-hover:opacity-100 transition-all flex-shrink-0 px-1"
+                  title="Zu meiner Library hinzufügen"
+                >
+                  +→
+                </button>
+              )}
             </div>
           ))
         )}
@@ -263,8 +300,8 @@ function PartnerSampleBrowser({
 
       {/* Footer */}
       {samples.length > 0 && (
-        <div className="px-2 py-1 border-t border-slate-800 flex-shrink-0">
-          <p className="text-[9px] text-slate-700 text-center">
+        <div className="px-2 py-1 border-t border-border-color flex-shrink-0">
+          <p className="text-[9px] text-text-dim text-center">
             {filtered.length}/{samples.length} · ziehen zum Zuweisen
           </p>
         </div>
@@ -309,20 +346,20 @@ export function CollabSplitView({
   };
 
   return (
-    <div className="fixed inset-0 z-40 bg-[#0a0a0a] flex flex-col select-none">
+    <div className="fixed inset-0 z-40 bg-bg-base flex flex-col select-none">
 
       {/* ── Top-Bar ───────────────────────────────────────────── */}
-      <div className="flex items-center gap-3 px-4 py-2 bg-[#0d0d0d] border-b border-slate-800 flex-shrink-0">
+      <div className="flex items-center gap-3 px-4 py-2 bg-bg-panel border-b border-border-color flex-shrink-0">
 
         {/* Titel */}
-        <span className="text-xs font-bold text-cyan-400 tracking-widest uppercase">
+        <span className="text-xs font-bold text-accent-secondary tracking-widest uppercase">
           Kollaboration
         </span>
 
         {/* Session-Code */}
         {session.sessionCode && (
-          <span className="text-xs text-slate-600 font-mono">
-            · Raum <span className="text-slate-400 font-bold">{session.sessionCode}</span>
+          <span className="text-xs text-text-dim font-mono">
+            · Raum <span className="text-text-muted font-bold">{session.sessionCode}</span>
           </span>
         )}
 
@@ -347,8 +384,8 @@ export function CollabSplitView({
         <div className="flex-1" />
 
         {/* ── Ausgabe-Modus-Selector ─────────────────────────── */}
-        <div className="flex items-center gap-0.5 rounded border border-slate-700 p-0.5">
-          <span className="text-[10px] text-slate-600 px-2">Ausgabe:</span>
+        <div className="flex items-center gap-0.5 rounded border border-border-color p-0.5">
+          <span className="text-[10px] text-text-dim px-2">Ausgabe:</span>
           {(["me", "partner", "both"] as OutputMode[]).map((mode) => (
             <button
               key={mode}
@@ -363,8 +400,8 @@ export function CollabSplitView({
               className={[
                 "px-3 py-1 text-[10px] rounded transition-colors duration-100",
                 outputMode === mode
-                  ? "bg-cyan-700 text-white"
-                  : "text-slate-500 hover:text-slate-300 hover:bg-slate-800",
+                  ? "bg-accent-primary/70 text-white"
+                  : "text-text-dim hover:text-text-primary hover:bg-bg-elevated",
               ].join(" ")}
             >
               {outputModeLabels[mode]}
@@ -375,7 +412,7 @@ export function CollabSplitView({
         {/* Session beenden */}
         <button
           onClick={onLeave}
-          className="px-3 py-1 text-xs rounded bg-slate-800 text-slate-400 hover:bg-red-900/40 hover:text-red-400 transition-colors duration-100"
+          className="px-3 py-1 text-xs rounded bg-bg-elevated text-text-muted hover:bg-red-900/40 hover:text-red-400 transition-colors duration-100"
         >
           ✕ Beenden
         </button>
@@ -386,12 +423,12 @@ export function CollabSplitView({
 
         {/* ── Sample-Browser-Sidebar ────────────────────────── */}
         {showSampleBrowser && (
-          <aside className="w-64 flex-shrink-0 border-r border-slate-800 overflow-hidden flex flex-col">
-            <div className="flex items-center justify-between px-3 py-1 bg-[#111] border-b border-slate-800 flex-shrink-0">
-              <span className="text-[10px] text-slate-500 uppercase tracking-widest">Samples</span>
+          <aside className="w-64 flex-shrink-0 border-r border-border-color overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between px-3 py-1 bg-bg-elevated border-b border-border-color flex-shrink-0">
+              <span className="text-[10px] text-text-dim uppercase tracking-widest">Samples</span>
               <button
                 onClick={() => setShowSampleBrowser(false)}
-                className="text-slate-600 hover:text-slate-400 text-xs leading-none"
+                className="text-text-dim hover:text-text-muted text-xs leading-none"
                 title="Samples ausblenden"
               >
                 ✕
@@ -418,7 +455,7 @@ export function CollabSplitView({
           <button
             onClick={() => setShowSampleBrowser(true)}
             title="Sample-Browser einblenden"
-            className="flex-shrink-0 w-7 bg-[#0d0d0d] border-r border-slate-800 flex items-center justify-center text-slate-600 hover:text-slate-300 hover:bg-slate-800 transition-colors"
+            className="flex-shrink-0 w-7 bg-bg-panel border-r border-border-color flex items-center justify-center text-text-dim hover:text-text-primary hover:bg-bg-elevated transition-colors"
             style={{ writingMode: "vertical-rl" }}
           >
             <span className="text-[10px] tracking-widest rotate-180">▶ Samples</span>
@@ -429,13 +466,13 @@ export function CollabSplitView({
         <div className="flex flex-1 overflow-hidden min-h-0">
 
         {/* ── Linke Hälfte: Mein Sequencer ─────────────────── */}
-        <div className="flex-1 flex flex-col overflow-hidden border-r border-slate-800/60 min-w-0">
-          <div className="px-4 py-1 bg-[#111] border-b border-slate-800 flex-shrink-0 flex items-center gap-2">
-            <span className="text-[10px] text-slate-500 uppercase tracking-widest">
+        <div className="flex-1 flex flex-col overflow-hidden border-r border-border-color/60 min-w-0">
+          <div className="px-4 py-1 bg-bg-elevated border-b border-border-color flex-shrink-0 flex items-center gap-2">
+            <span className="text-[10px] text-text-dim uppercase tracking-widest">
               Mein Sequencer
             </span>
             {outputMode === "me" && (
-              <span className="text-[9px] text-cyan-600 border border-cyan-800 rounded px-1 py-px">
+              <span className="text-[9px] text-accent-primary border border-cyan-800 rounded px-1 py-px">
                 AKTIV
               </span>
             )}
@@ -463,12 +500,12 @@ export function CollabSplitView({
           {/* Partner-Sequencer */}
           <div className="flex-1 flex flex-col overflow-hidden min-w-0">
           <div
-            className="px-4 py-1 bg-[#111] border-b border-slate-800 flex-shrink-0 flex items-center gap-2"
+            className="px-4 py-1 bg-bg-elevated border-b border-border-color flex-shrink-0 flex items-center gap-2"
             style={{
               borderBottomColor: remote.color ? `${remote.color}40` : undefined,
             }}
           >
-            <span className="text-[10px] text-slate-500 uppercase tracking-widest">
+            <span className="text-[10px] text-text-dim uppercase tracking-widest">
               Partner
             </span>
             {remote.userName ? (
@@ -482,7 +519,7 @@ export function CollabSplitView({
                 </span>
               </>
             ) : (
-              <span className="text-[10px] text-slate-600 italic">Verbindet…</span>
+              <span className="text-[10px] text-text-dim italic">Verbindet…</span>
             )}
             {outputMode === "partner" && (
               <span className="text-[9px] text-purple-500 border border-purple-800 rounded px-1 py-px ml-auto">
@@ -500,11 +537,11 @@ export function CollabSplitView({
             {remote.patterns.length === 0 ? (
               /* Wartezustand – kein Snapshot empfangen */
               <div className="h-full flex flex-col items-center justify-center gap-3 text-center px-8">
-                <div className="w-8 h-8 rounded-full border-2 border-slate-700 border-t-cyan-600 animate-spin" />
-                <p className="text-sm text-slate-500">
+                <div className="w-8 h-8 rounded-full border-2 border-border-color border-t-accent-primary animate-spin" />
+                <p className="text-sm text-text-dim">
                   Warte auf Snapshot des Partners…
                 </p>
-                <p className="text-xs text-slate-700">
+                <p className="text-xs text-text-dim">
                   Der Partner-Sequencer erscheint sobald eine Verbindung besteht.
                 </p>
               </div>
@@ -526,6 +563,10 @@ export function CollabSplitView({
           <PartnerSampleBrowser
             samples={remote.samples}
             partnerColor={remote.color}
+            onAddToLibrary={onSamplesImported ? (s) => onSamplesImported([{
+              id: `partner-${s.id}`, name: s.name, path: s.path,
+              category: s.category, tags: ["partner-transfer"],
+            }]) : undefined}
           />
         </div>
       </div>{/* Ende Split-Bereich */}

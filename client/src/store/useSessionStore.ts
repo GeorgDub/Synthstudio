@@ -20,6 +20,12 @@ export interface SessionParticipant {
 }
 
 export type SessionStatus = "idle" | "connecting" | "hosting" | "joined" | "error";
+export type SessionRole = "host" | "editor" | "viewer";
+
+export interface SessionParticipantRole {
+  userId: string;
+  role: SessionRole;
+}
 
 export interface SessionState {
   status: SessionStatus;
@@ -31,6 +37,10 @@ export interface SessionState {
   errorMessage: string | null;
   /** BPM wie vom Server kommuniziert (für Sync) */
   remoteBpm: number | null;
+  /** Eigene Rolle in der Session (host = alle Rechte, editor = Steps/BPM ändern, viewer = nur lesen) */
+  myRole: SessionRole;
+  /** Rollen aller Teilnehmer (userId → role) */
+  participantRoles: Record<string, SessionRole>;
 }
 
 // ─── Singleton-State ──────────────────────────────────────────────────────────
@@ -66,6 +76,8 @@ const _defaultState: SessionState = {
   myUserName: typeof window !== "undefined" ? getOrCreateUserName() : "TestUser",
   errorMessage: null,
   remoteBpm: null,
+  myRole: "editor" as SessionRole,
+  participantRoles: {},
 };
 
 let _state: SessionState = { ..._defaultState };
@@ -139,6 +151,26 @@ export function resetSession(): void {
 
 export function getSessionState(): SessionState {
   return _state;
+}
+
+/** Setzt die eigene Rolle (wird vom Server oder Host-Broadcast gesetzt). */
+export function setMyRole(role: SessionRole): void {
+  _state = { ..._state, myRole: role };
+  notify();
+}
+
+/** Setzt die Rolle eines anderen Teilnehmers (nur Host darf das). */
+export function setParticipantRole(userId: string, role: SessionRole): void {
+  _state = { ..._state, participantRoles: { ..._state.participantRoles, [userId]: role } };
+  notify();
+}
+
+/** Prüft ob der aktuelle Nutzer eine Aktion ausführen darf. */
+export function canPerformAction(action: "edit" | "bpm" | "play"): boolean {
+  const role = _state.myRole;
+  if (role === "host" || role === "editor") return true;
+  if (role === "viewer") return false;
+  return true;
 }
 
 /** Nur für Tests */

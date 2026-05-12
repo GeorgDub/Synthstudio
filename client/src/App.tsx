@@ -13,7 +13,7 @@
  * Die Web-App muss im Browser vollständig funktionsfähig bleiben.
  * ─────────────────────────────────────────────────────────────────────────────
  */
-import React, { useCallback, useEffect, useState, useMemo } from "react";
+import React, { useCallback, useEffect, useState, useMemo, useRef } from "react";
 
 // ── Electron-Komponenten (aus electron/components/) ──────────────────────────
 // Relative Imports notwendig da electron/ außerhalb von client/src liegt
@@ -30,6 +30,7 @@ import { useWindowTitleSync } from "@/store/useWindowTitleSync";
 
 // ── Seiten-Komponenten ────────────────────────────────────────────────────────
 import { SampleBrowser } from "@/components/SampleBrowser";
+import { AudioInputRecorder } from "@/components/SampleBrowser/AudioInputRecorder";
 import { ProjectManager } from "@/components/ProjectManager";
 import { NewProjectDialog } from "@/components/NewProjectDialog";
 import { SongTimeline } from "@/components/SongTimeline";
@@ -38,6 +39,15 @@ import { DrumMachine } from "@/components/DrumMachine";
 import { SessionPanel } from "@/components/CollabSession";
 import { PatternGeneratorPanel } from "@/components/PatternGenerator";
 import { ArpeggiatorPanel } from "@/components/Arpeggiator";
+import GeneratorView from "@/components/generator/GeneratorView.jsx"; // *** NEUER IMPORT ***
+import { PatternLibrary } from "@/components/PatternLibrary/PatternLibrary";
+import { savePatternToLibrary } from "@/store/usePatternLibraryStore";
+import { ScriptRunner } from "@/components/Tools/ScriptRunner";
+import { ChordProgressionPanel } from "@/components/Tools/ChordProgressionPanel";
+import { KeyboardSamplerPanel } from "@/components/Tools/KeyboardSamplerPanel";
+import { AudioWorkbench } from "@/components/AudioWorkbench/AudioWorkbench";
+import { getKeyboardSamplerState } from "@/store/useKeyboardSamplerStore";
+import { getEnvelopeFollowerConfigs } from "@/store/useEnvelopeFollowerStore";
 
 // ── Stores für neue Features ──────────────────────────────────────────────────
 import { useSongStore } from "@/store/useSongStore";
@@ -56,6 +66,64 @@ import { CollabSplitView } from "@/components/CollabSplitView";
 import { ThemeSettings, initTheme } from "@/components/Settings";
 import { MixerView } from "@/components/Mixer";
 import { useMixerStore } from "@/store/useMixerStore";
+import { useGlobalKeyBindings, KB_ACTION_EVENT } from "@/hooks/useGlobalKeyBindings";
+import { useResizablePanel } from "@/hooks/useResizablePanel";
+import { ResizablePanelHandle } from "@/components/UI/ResizablePanelHandle";
+import { useAutomationStore } from "@/store/useAutomationStore";
+import { AutomationView } from "@/components/Automation/AutomationView";
+import { SceneLaunchPad } from "@/components/Scene/SceneLaunchPad";
+import { AudioEngine } from "@/audio/AudioEngine";
+import { CollabChat } from "@/components/CollabSession/CollabChat";
+import { addChatMessage } from "@/store/useCollabChatStore";
+import { saveSnapshot } from "@/store/useVersionSnapshotStore";
+import { useApiSettingsStore } from "@/store/useApiSettingsStore";
+import { VersionSnapshotPanel } from "@/components/ProjectManager/VersionSnapshotPanel";
+import { SettingsPanel } from "@/components/Settings/SettingsPanel";
+import { SessionRecorder } from "@/components/CollabSession/SessionRecorder";
+import { RelayPanel } from "@/components/CollabSession/RelayPanel";
+import { recordEvent } from "@/store/useSessionRecordingStore";
+import { setMyRole, setParticipantRole } from "@/store/useSessionStore";
+import { useLaunchpad, isGridDevice } from "@/hooks/useLaunchpad";
+import { useBpmDetection, autoTagFromFilename } from "@/hooks/useBpmDetection";
+import { getMacros } from "@/store/useMacroStore";
+import {
+  serializeProject,
+  downloadProjectFile,
+  openProjectFilePicker,
+  cacheProjectLocally,
+  loadCachedProject,
+  parseProject,
+} from "@/utils/projectSerializer";
+
+// ─── Visual Metronome ──────────────────────────────────────────────────────────
+
+function VisualMetronome({ isPlaying, bpm }: { isPlaying: boolean; bpm: number }) {
+  const [beat, setBeat] = React.useState(false);
+  const timerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  React.useEffect(() => {
+    if (!isPlaying) { setBeat(false); if (timerRef.current) clearInterval(timerRef.current as unknown as number); return; }
+    const intervalMs = (60 / bpm) * 1000;
+    const id = setInterval(() => {
+      setBeat(true);
+      setTimeout(() => setBeat(false), Math.min(80, intervalMs * 0.3));
+    }, intervalMs);
+    timerRef.current = id as unknown as ReturnType<typeof setTimeout>;
+    return () => clearInterval(id);
+  }, [isPlaying, bpm]);
+
+  return (
+    <div
+      className="w-3 h-3 rounded-full flex-shrink-0 transition-all duration-75"
+      style={{
+        background: beat ? "var(--ss-accent-primary)" : "var(--ss-bg-elevated)",
+        boxShadow: beat ? "0 0 8px var(--ss-accent-primary)" : "none",
+      }}
+      aria-hidden="true"
+      title={`${bpm} BPM`}
+    />
+  );
+}
 
 // ─── App ──────────────────────────────────────────────────────────────────────
 
@@ -74,7 +142,140 @@ export default function App() {
   const song = useSongStore();
   const humanizer = useHumanizerStore();
   const dm = useDrumMachineStore();
+  const dmRef = useRef(dm);
+  dmRef.current = dm;
   const mixer = useMixerStore();
+  const automation = useAutomationStore();
+  const { tagSampleFromFilename, detectBpmForSample } = useBpmDetection();
+
+  // Refs damit Save-Handler immer aktuelle Werte lesen
+  const songRef      = useRef(song);      songRef.current      = song;
+  const humanizerRef = useRef(humanizer); humanizerRef.current = humanizer;
+  const mixerRef     = useRef(mixer);     mixerRef.current     = mixer;
+  const automationRef2 = useRef(automation); automationRef2.current = automation;
+  const projectRef   = useRef(project);   projectRef.current   = project;
+
+  // ── Projekt-Serialisierung ────────────────────────────────────────────────
+  const buildProjectSnapshot = useCallback(() => {
+    const p  = projectRef.current;
+    const d  = dmRef.current;
+    const s  = songRef.current;
+    const h  = humanizerRef.current;
+    const m  = mixerRef.current;
+    const a  = automationRef2.current;
+    return serializeProject({
+      projectName:     p.projectName,
+      bpm:             p.bpm,
+      samples:         p.samples,
+      patterns:        d.patterns,
+      activePatternId: d.activePatternId,
+      song: {
+        slots:          s.slots,
+        songModeActive: s.songModeActive,
+        loopSong:       s.loopSong,
+      },
+      mixer: {
+        masterVolume:    m.masterVolume,
+        channels:        m.channels,
+        returnTracks:    m.returnTracks,
+        insertChains:    m.insertChains,
+        eq16:            m.eq16,
+        sidechains:      m.sidechains,
+        transientShapers:m.transientShapers,
+      },
+      humanizer: { global: h.global },
+      automation: {
+        lanes:     a.lanes,
+        stepCount: a.stepCount,
+      },
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const doSaveProject = useCallback(async () => {
+    const snapshot = buildProjectSnapshot();
+    cacheProjectLocally(snapshot);
+
+    if (electron.isElectron) {
+      const result = await electron.saveFileDialog({
+        title: "Projekt speichern",
+        defaultPath: `${snapshot.projectName}.synth`,
+        filters: [{ name: "Synthstudio Projekt", extensions: ["synth", "json"] }],
+      });
+      if (!result.canceled && result.filePath) {
+        await electron.writeFile(result.filePath, JSON.stringify(snapshot, null, 2));
+      }
+    } else {
+      downloadProjectFile(snapshot);
+    }
+    project.setDirty(false);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [electron, buildProjectSnapshot]);
+
+  const restoreProject = useCallback((data: ReturnType<typeof parseProject>) => {
+    // Projekt-Metadaten
+    project.setProjectName(data.projectName);
+    project.setBpm(data.bpm);
+    // Samples
+    project.addSamples(data.samples ?? []);
+    // Patterns in die DM laden
+    if (data.patterns?.length) {
+      data.patterns.forEach(p => dm.addPatternData(p));
+      dm.setActivePattern(data.activePatternId ?? data.patterns[0]?.id);
+    }
+    // Song
+    if (data.song) {
+      song.createArrangement(data.song.slots?.map(s => ({ bank: s.bank, repeats: s.repeats })) ?? []);
+    }
+    project.setDirty(false);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project, dm, song]);
+
+  const doLoadProject = useCallback(async (filePath?: string) => {
+    try {
+      let data;
+      if (electron.isElectron && filePath) {
+        // Electron mit bekanntem Pfad
+        const result = await electron.openFileDialog({
+          title: "Projekt öffnen",
+          filters: [{ name: "Synthstudio Projekt", extensions: ["synth", "json"] }],
+          multiSelections: false,
+        });
+        if (result.canceled || !result.filePaths[0]) return;
+        // Lesen via IPC (falls vorhanden) – Fallback: openProjectFilePicker
+        data = await openProjectFilePicker();
+      } else {
+        data = await openProjectFilePicker();
+      }
+      if (data) restoreProject(data);
+    } catch (err) {
+      console.error("[Load Project]", err);
+      alert("Projekt konnte nicht geladen werden.");
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [electron, restoreProject]);
+
+  // Beim Start: letztes Projekt aus Cache laden
+  useEffect(() => {
+    const cached = loadCachedProject();
+    if (cached && project.projectName === "Neues Projekt" && project.samples.length === 0) {
+      restoreProject(cached);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Auto-Save (konfigurierbares Intervall, ein-/ausschaltbar)
+  const apiSettings2 = useApiSettingsStore();
+  useEffect(() => {
+    if (!apiSettings2.autoSaveEnabled) return;
+    const ms = apiSettings2.autoSaveIntervalMin * 60 * 1000;
+    const id = setInterval(() => {
+      const snapshot = buildProjectSnapshot();
+      cacheProjectLocally(snapshot);
+    }, ms);
+    return () => clearInterval(id);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [apiSettings2.autoSaveEnabled, apiSettings2.autoSaveIntervalMin]);
 
   // ── Transport (Audio-Engine ↔ React-State) ────────────────────────────────────
   useTransport({
@@ -84,35 +285,267 @@ export default function App() {
     onPlayStateChange: (playing) => {
       if (!playing && project.isPlaying) project.togglePlayStop();
     },
+    onFollowAction: (action, currentPatternId) => {
+      const d = dmRef.current;
+      const patterns = d.patterns;
+      const currentIdx = patterns.findIndex(p => p.id === currentPatternId);
+      let nextId: string | null = null;
+
+      switch (action.type) {
+        case "next":     nextId = patterns[(currentIdx + 1) % patterns.length]?.id ?? null; break;
+        case "prev":     nextId = patterns[(currentIdx - 1 + patterns.length) % patterns.length]?.id ?? null; break;
+        case "random":   nextId = patterns[Math.floor(Math.random() * patterns.length)]?.id ?? null; break;
+        case "specific": nextId = action.targetId ?? null; break;
+      }
+      if (!nextId || nextId === currentPatternId) return;
+      d.setActivePattern(nextId);
+
+      // BPM-Sync: neues Pattern hat eigenes BPM oder Ratio
+      const nextPattern = patterns.find(p => p.id === nextId);
+      if (nextPattern) {
+        const globalBpm = projectRef.current.bpm;
+        let targetBpm = globalBpm;
+        if (nextPattern.bpmRatio && nextPattern.bpmRatio !== 1) {
+          targetBpm = Math.round(globalBpm * nextPattern.bpmRatio);
+        } else if (nextPattern.bpm !== null && nextPattern.bpm !== undefined) {
+          targetBpm = nextPattern.bpm;
+        }
+        if (Math.abs(targetBpm - globalBpm) > 0.5) {
+          const transitionBars = nextPattern.bpmTransitionBars ?? 0;
+          if (transitionBars > 0) {
+            AudioEngine.smoothBpmTransition(targetBpm, transitionBars, nextPattern.stepCount);
+          } else {
+            AudioEngine.setBpm(targetBpm);
+          }
+          project.setBpm(targetBpm);
+        }
+      }
+    },
+    // MIDI Out wird nach midi-Hook Initialisierung via useEffect registriert
   });
 
   // ── Arbeitsbereich-Tabs ────────────────────────────────────────────────────
-  const [activeTab, setActiveTab] = useState<"sequencer" | "mixer" | "song" | "humanizer" | "tools" | "kollaboration">("sequencer");
+  // Tab-State mit localStorage-Persistenz
+  // Sidebar-Breite mit Persistenz
+  const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
+    const saved = parseInt(localStorage.getItem("ss-layout:sidebar-width") ?? "288", 10);
+    return Math.max(160, Math.min(480, isNaN(saved) ? 288 : saved));
+  });
+  const sidebarDragRef = useRef(false);
+  const sidebarStartXRef = useRef(0);
+  const sidebarStartWRef = useRef(0);
 
-  // ── Dialog-State für MIDI, Shortcuts und Einstellungen ──────────────────
+  const handleSidebarDragStart = useCallback((e: React.MouseEvent) => {
+    sidebarDragRef.current = true;
+    sidebarStartXRef.current = e.clientX;
+    sidebarStartWRef.current = sidebarWidth;
+    const onMove = (ev: MouseEvent) => {
+      if (!sidebarDragRef.current) return;
+      const delta = ev.clientX - sidebarStartXRef.current;
+      const next = Math.max(160, Math.min(480, sidebarStartWRef.current + delta));
+      setSidebarWidth(next);
+    };
+    const onUp = () => {
+      sidebarDragRef.current = false;
+      localStorage.setItem("ss-layout:sidebar-width", String(sidebarWidth));
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sidebarWidth]);
+
+  // Tab-State mit localStorage-Persistenz
+  const [activeTab, setActiveTab] = useState<"sequencer" | "mixer" | "song" | "humanizer" | "tools" | "kollaboration">(() => {
+    const saved = localStorage.getItem("ss-layout:active-tab");
+    const valid = ["sequencer", "mixer", "song", "humanizer", "tools", "kollaboration"];
+    return (saved && valid.includes(saved) ? saved : "sequencer") as "sequencer";
+  });
+  // Tab-Wechsel persistieren
+  const handleSetActiveTab = useCallback((tab: typeof activeTab) => {
+    setActiveTab(tab);
+    localStorage.setItem("ss-layout:active-tab", tab);
+  }, []);
+  const [activeTool, setActiveTool] = useState<'prompt' | 'algorithmic' | 'chords' | 'sampler' | 'workbench' | 'library' | 'script'>('prompt');
+
+  // ── Dialog-State ─────────────────────────────────────────────────────────
   const [showMidiSettings, setShowMidiSettings] = useState(false);
   const [showShortcutsHelp, setShowShortcutsHelp] = useState(false);
   const [showThemeSettings, setShowThemeSettings] = useState(false);
+  // Unified Settings Panel
+  const [showSettings, setShowSettings] = useState(false);
+  const [settingsInitialSection, setSettingsInitialSection] = useState<"design" | "ki" | "keyboard" | "midi-devices" | "midi-cc" | "midi-notes" | "about">("design");
 
   // ── Theme beim Start laden ─────────────────────────────────────────────────
   React.useEffect(() => { initTheme(); }, []);
+
+  // ── Globale Keyboard-Bindings (konfigurierbar) ────────────────────────────
+  useGlobalKeyBindings(true);
+
+  // ── Automation: Position-Callback registrieren ───────────────────────────
+  // Feuert bei jedem Step (auch bei Stille) → ideal für Parameter-Automation
+  const automationRef = useRef(automation);
+  automationRef.current = automation;
+  useEffect(() => {
+    const unsubscribe = AudioEngine.onPosition((stepIndex) => {
+      const auto = automationRef.current;
+      // BPM-Automation
+      const bpmVal = auto.getValueAt("bpm", stepIndex);
+      if (bpmVal !== null) {
+        const rounded = Math.round(bpmVal);
+        AudioEngine.setBpm(rounded);
+        project.setBpm(rounded);
+      }
+      // Master-Volume
+      const masterVol = auto.getValueAt("master-vol", stepIndex);
+      if (masterVol !== null) AudioEngine.setMasterVolume(masterVol);
+    });
+    return unsubscribe;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── Envelope Follower Modulation ─────────────────────────────────────────
+  // Liest per rAF die aktuellen Envelope-Level und wendet sie auf Ziel-Parameter an.
+  useEffect(() => {
+    let rafId: number;
+    const tick = () => {
+      const configs = getEnvelopeFollowerConfigs();
+      for (const cfg of configs) {
+        if (!cfg.enabled) continue;
+        const level = AudioEngine.getChannelEnvelopeLevel(cfg.sourcePartId);
+        const mod = level * cfg.amount;
+        switch (cfg.target) {
+          case "volume":    AudioEngine.setChannelVolume(cfg.targetPartId, Math.min(1, mod)); break;
+          case "pan":       AudioEngine.setChannelPan(cfg.targetPartId, (mod * 2) - 1); break;
+          case "filterFreq": AudioEngine.setChannelFilterFreq(cfg.targetPartId, 200 + mod * 15800); break;
+          case "reverbMix": AudioEngine.setChannelSend(cfg.targetPartId, "reverb", mod); break;
+          case "delayMix":  AudioEngine.setChannelSend(cfg.targetPartId, "delay", mod); break;
+        }
+      }
+      rafId = requestAnimationFrame(tick);
+    };
+    rafId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafId);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── kb:action Event-Handler ───────────────────────────────────────────────
+  // Lauscht auf alle konfigurierbaren Keyboard-Actions und routet sie.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const actionId = (e as CustomEvent<string>).detail;
+      const dm = dmRef.current;
+      if (!dm) return;
+      const pattern = dm.getActivePattern();
+      switch (actionId) {
+        case "play-stop":       project.togglePlayStop(); break;
+        case "record":          project.toggleRecord?.(); break;
+        case "bpm-up":          project.setBpm(Math.min(300, project.bpm + 1)); break;
+        case "bpm-down":        project.setBpm(Math.max(20, project.bpm - 1)); break;
+        case "bpm-up-10":       project.setBpm(Math.min(300, project.bpm + 10)); break;
+        case "bpm-down-10":     project.setBpm(Math.max(20, project.bpm - 10)); break;
+        case "tab-sequencer":   handleSetActiveTab("sequencer"); break;
+        case "tab-mixer":       handleSetActiveTab("mixer"); break;
+        case "tab-song":        handleSetActiveTab("song"); break;
+        case "tab-humanizer":   handleSetActiveTab("humanizer"); break;
+        case "tab-tools":       handleSetActiveTab("tools"); break;
+        case "tab-collab":      handleSetActiveTab("kollaboration"); break;
+        case "open-midi":       setSettingsInitialSection("midi-cc"); setShowSettings(p => !p); break;
+        case "open-shortcuts":  setSettingsInitialSection("keyboard"); setShowSettings(p => !p); break;
+        case "open-settings":   setSettingsInitialSection("design"); setShowSettings(p => !p); break;
+        case "pattern-next": {
+          const pats = dm.patterns;
+          const idx = pats.findIndex(p => p.id === dm.activePatternId);
+          if (idx < pats.length - 1) dm.setActivePattern(pats[idx + 1].id);
+          break;
+        }
+        case "pattern-prev": {
+          const pats = dm.patterns;
+          const idx = pats.findIndex(p => p.id === dm.activePatternId);
+          if (idx > 0) dm.setActivePattern(pats[idx - 1].id);
+          break;
+        }
+        case "pattern-duplicate": dm.duplicatePattern(dm.activePatternId); break;
+        case "pattern-clear":     dm.clearPattern(); break;
+        case "pattern-fill": {
+          const partId = dm.activePartId ?? pattern?.parts[0]?.id;
+          if (partId) dm.fillPattern(partId);
+          break;
+        }
+        case "pattern-randomize": {
+          const partId = dm.activePartId ?? pattern?.parts[0]?.id;
+          if (partId) dm.randomizePattern(partId);
+          break;
+        }
+        case "part-up": {
+          const parts = pattern?.parts ?? [];
+          const idx = parts.findIndex(p => p.id === dm.activePartId);
+          if (idx > 0) dm.setActivePart(parts[idx - 1].id);
+          break;
+        }
+        case "part-down": {
+          const parts = pattern?.parts ?? [];
+          const idx = parts.findIndex(p => p.id === dm.activePartId);
+          if (idx < parts.length - 1) dm.setActivePart(parts[idx + 1].id);
+          break;
+        }
+        case "undo": project.undo(); break;
+        case "redo": project.redo(); break;
+        case "save": doSaveProject(); break;
+      }
+    };
+    window.addEventListener(KB_ACTION_EVENT, handler);
+    return () => window.removeEventListener(KB_ACTION_EVENT, handler);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project, handleSetActiveTab]);
 
   // ── MIDI-Hook ─────────────────────────────────────────────────────────────
   const midi = useMidi({
     onBpmChange: project.setBpm,
     onPlayStop: project.togglePlayStop,
     onClockBpm: (bpm) => project.setBpm(Math.round(bpm)),
-    onPartTrigger: (partId, velocity) => {
-      // MIDI-Note → Step im aktiven Pattern triggern (Live-Recording)
-      const pattern = dm.getActivePattern();
-      if (!pattern) return;
-      const part = pattern.parts.find(p => p.id === partId);
-      if (part && project.isRecording) {
-        dm.toggleStep(partId, dm.currentStep);
+    onNoteOn: (note, velocity) => {
+      const ks = getKeyboardSamplerState();
+      if (ks.enabled && ks.zones.length > 0) {
+        AudioEngine.triggerKeyboardSamplerNote(note, velocity);
       }
+    },
+    onPartTrigger: (partId, velocity) => {
+      // Live Step Recording: MIDI-Note → Step im aktiven Pattern bei isRecording
+      const pattern = dmRef.current.getActivePattern();
+      if (!pattern || !projectRef.current.isRecording) return;
+      const step = dmRef.current.currentStep;
+      // Overdub: Step aktivieren + Velocity aus MIDI setzen (kein blindes Toggle)
+      const existingStep = pattern.parts.find(p => p.id === partId)?.steps[step];
+      if (!existingStep?.active) {
+        dmRef.current.toggleStep(partId, step);
+      }
+      dmRef.current.setStepVelocity(partId, step, velocity);
     },
     parts: dm.getActivePattern()?.parts ?? [],
   });
+
+  // ── Launchpad Grid Controller ─────────────────────────────────────────────
+  const launchpadEnabled = midi.outputDevices.some(d => isGridDevice(d.name));
+  const launchpadPattern = dm.getActivePattern();
+  const launchpadActivePart = launchpadPattern?.parts.find(p => p.id === dm.activePartId) ?? launchpadPattern?.parts[0];
+  useLaunchpad({
+    midi,
+    steps: (launchpadActivePart?.steps ?? []).map(s => ({ active: s.active, velocity: s.velocity ?? 100 })),
+    currentStep: dm.currentStep,
+    onStepToggle: (i) => { if (dm.activePartId) dm.toggleStep(dm.activePartId, i); },
+    enabled: launchpadEnabled,
+  });
+
+  // ── MIDI Out Callback nach midi-Hook-Initialisierung setzen ──────────────
+  useEffect(() => {
+    AudioEngine.setMidiOutCallback(
+      midi.midiOutEnabled
+        ? (note, velocity) => midi.sendNoteOn(note, velocity)
+        : null
+    );
+  }, [midi.midiOutEnabled, midi.sendNoteOn]);
 
   // ── Zentrale Tastatur-Shortcuts ───────────────────────────────────────────
   useKeyboardShortcuts({
@@ -143,8 +576,12 @@ export default function App() {
       };
       const pattern = dm.getActivePattern();
       if (!pattern) return;
-      // BPM übernehmen
-      project.setBpm(generated.bpm);
+      // Im Live-Edit darf der laufende Playback-Pattern sein Tempo behalten.
+      if (dm.liveEditSourcePatternId) {
+        dm.setPatternBpm(pattern.id, generated.bpm);
+      } else {
+        project.setBpm(generated.bpm);
+      }
       // Steps der ersten N Parts (nach Index) in die DM-Parts übertragen
       generated.parts.forEach((genPart, i) => {
         const dmPart = pattern.parts[i];
@@ -161,6 +598,13 @@ export default function App() {
   }, [dm, project]);
 
   // ── Kollaborations-Sync ──────────────────────────────────────────────────────
+  // Collab-Broadcast wird gewrappt um Session-Events aufzuzeichnen
+  const wrappedBroadcast = useCallback((event: Parameters<typeof collab.broadcast>[0]) => {
+    collab.broadcast(event);
+    recordEvent(event as Record<string, unknown>);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [collab.broadcast]);
+
   const {
     collabToggleStep,
     collabBpmChange,
@@ -170,7 +614,7 @@ export default function App() {
     outputMode,
     setOutputMode,
   } = useCollabSync({
-    broadcast: collab.broadcast,
+    broadcast: wrappedBroadcast,
     dm,
     setBpm: project.setBpm,
     isPlaying: project.isPlaying,
@@ -184,6 +628,63 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [dm, collabToggleStep]
   );
+  // ── Makro-Bindings: Parameter in Echtzeit setzen ─────────────────────────
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const { index, value } = (e as CustomEvent<{ index: number; value: number }>).detail;
+      const macro = getMacros()[index];
+      if (!macro) return;
+      macro.bindings.forEach(b => {
+        // value 0–1 → mapped auf minValue–maxValue
+        const mapped = b.minValue + value * (b.maxValue - b.minValue);
+        switch (b.target) {
+          case "master-vol":       AudioEngine.setMasterVolume(mapped); break;
+          case "bpm":              project.setBpm(Math.round(mapped)); break;
+          case "channel-vol":      if (b.partId) { dm.setPartVolume(b.partId, mapped); AudioEngine.setChannelVolume(b.partId, mapped); } break;
+          case "channel-pan":      if (b.partId) { dm.setPartPan(b.partId, mapped); AudioEngine.setChannelPan(b.partId, mapped); } break;
+          case "channel-send-rev": if (b.partId) AudioEngine.setChannelSend(b.partId, "reverb", mapped); break;
+          case "channel-send-dly": if (b.partId) AudioEngine.setChannelSend(b.partId, "delay",  mapped); break;
+          // lfo-rate / lfo-depth: zukünftig über SynthEngine-Update
+        }
+      });
+    };
+    window.addEventListener("macro:change", handler);
+    return () => window.removeEventListener("macro:change", handler);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── Eingehende Collab-Nachrichten (Chat) ─────────────────────────────────
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const raw = (e as CustomEvent).detail;
+      if (raw?.type === "chat" && raw.sender && raw.text) {
+        addChatMessage({ senderName: raw.sender, text: raw.text, timestamp: Date.now(), isOwn: false });
+      }
+      // Rollen-Zuweisung empfangen
+      if (raw?.type === "role:change" && raw.role) {
+        const myId = session.myUserId;
+        if (raw.targetUserId === myId) {
+          setMyRole(raw.role as "editor" | "viewer");
+        } else if (raw.targetUserId) {
+          setParticipantRole(raw.targetUserId as string, raw.role as "editor" | "viewer");
+        }
+      }
+    };
+    window.addEventListener("collab:message", handler);
+    return () => window.removeEventListener("collab:message", handler);
+  }, []);
+
+  // ── Version-Snapshots alle 5 Min. (ein-/ausschaltbar) ────────────────────
+  useEffect(() => {
+    if (!apiSettings2.snapshotsEnabled) return;
+    const id = setInterval(() => {
+      const pattern = dm.getActivePattern();
+      if (pattern) saveSnapshot(dm.patterns, project.projectName);
+    }, 5 * 60 * 1000);
+    return () => clearInterval(id);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [apiSettings2.snapshotsEnabled]);
+
   // ── Schließen-Bestätigung bei ungespeicherten Änderungen ─────────────────
   // Browser: beforeunload-Event | Electron: wird durch Main-Prozess gehandhabt
   useEffect(() => {
@@ -245,42 +746,12 @@ export default function App() {
   }, [electron, project]);
 
   const handleMenuImportProject = useCallback(async () => {
-    // Menü-Event: Projekt importieren (Ctrl+I aus Datei-Menü)
-    if (electron.isElectron) {
-      const result = await electron.openFileDialog({
-        title: "Projekt importieren",
-        filters: [
-          { name: "Synthstudio-Projekte", extensions: ["synth", "json"] },
-          { name: "Alle Dateien", extensions: ["*"] },
-        ],
-        multiSelections: false,
-      });
-      if (!result.canceled && result.filePaths[0]) {
-        project.loadProject(result.filePaths[0]);
-      }
-    }
-  }, [electron, project]);
+    await doLoadProject();
+  }, [doLoadProject]);
 
   const handleMenuOpen = useCallback(async () => {
-    // Menü-Event: Projekt öffnen
-    // In Electron: nativer Dialog über useElectron()-Hook
-    if (electron.isElectron) {
-      const result = await electron.openFileDialog({
-        title: "Projekt öffnen",
-        filters: [
-          { name: "Synthstudio-Projekte", extensions: ["synth", "json"] },
-          { name: "Alle Dateien", extensions: ["*"] },
-        ],
-        multiSelections: false,
-      });
-      if (!result.canceled && result.filePaths[0]) {
-        project.loadProject(result.filePaths[0]);
-      }
-    } else {
-      // Browser-Fallback: loadProject ohne Pfad (z.B. aus localStorage)
-      project.loadProject();
-    }
-  }, [electron, project]);
+    await doLoadProject();
+  }, [doLoadProject]);
 
   const handleNewProject = useCallback(() => {
     setShowNewProjectDialog(true);
@@ -289,7 +760,7 @@ export default function App() {
   useElectronMenuBindings({
     onNew: handleNewProject,
     onOpen: handleMenuOpen,
-    onSave: project.saveProject,
+    onSave: doSaveProject,
     onExport: project.exportProject,
     onUndo: project.undo,
     onRedo: project.redo,
@@ -334,9 +805,25 @@ export default function App() {
 
   const handleDropAudioFiles = useCallback(
     (paths: string[]) => {
-      project.importSamplesFromPaths(paths);
+      // Auto-Tag: Dateinamen analysieren + Samples hinzufügen
+      const samples = paths.map(p => {
+        const name = p.split(/[\\/]/).pop() ?? p;
+        const autoTags = autoTagFromFilename(p);
+        return {
+          id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          name,
+          path: p,
+          category: autoTags[0] ?? "imported",
+          tags: autoTags,
+        };
+      });
+      project.addSamples(samples);
+      // Asynchrone BPM-Erkennung für die ersten 5 Samples
+      samples.slice(0, 5).forEach(s => {
+        detectBpmForSample(s).catch(() => {/* ignore */});
+      });
     },
-    [project]
+    [project, detectBpmForSample]
   );
 
   const handleDropFolder = useCallback(
@@ -350,44 +837,115 @@ export default function App() {
 
   const handleDropProject = useCallback(
     (filePath: string) => {
-      project.loadProject(filePath);
+      doLoadProject(filePath);
+    },
+    [doLoadProject]
+  );
+
+  const handleDropZipFile = useCallback(
+    async (file: File) => {
+      try {
+        const { extractSamplesFromZip } = await import("@/utils/zipSampleImport");
+        const { samples, audioCount } = await extractSamplesFromZip(file);
+        if (audioCount === 0) {
+          alert("Keine Audio-Dateien im ZIP-Archiv gefunden.");
+          return;
+        }
+        project.addSamples(samples);
+      } catch (err) {
+        console.error("[App] ZIP-Drop Fehler:", err);
+        alert("ZIP-Archiv konnte nicht entpackt werden.");
+      }
     },
     [project]
   );
 
+  // ── Song-Tab-View (inline component zur Vermeidung von Prop-Drilling) ────────
+  const SongTabView = useMemo(() => {
+    // eslint-disable-next-line react/display-name
+    return ({ song, automation, dm, project, isPlaying }: any) => {
+      const [songSubTab, setSongSubTab] = useState<"timeline" | "automation" | "scenes">("timeline");
+      const parts = dm.getActivePattern()?.parts ?? [];
+
+      return (
+        <div className="h-full flex flex-col overflow-hidden">
+          {/* Sub-Tabs */}
+          <div className="flex gap-0 border-b border-border-color bg-bg-panel flex-shrink-0">
+            {(["timeline", "automation", "scenes"] as const).map(t => (
+              <button
+                key={t}
+                onClick={() => setSongSubTab(t)}
+                className={`px-4 py-2 text-xs font-medium border-b-2 transition-colors ${
+                  songSubTab === t
+                    ? "border-accent-secondary text-accent-secondary bg-bg-elevated"
+                    : "border-transparent text-text-dim hover:text-text-muted"
+                }`}
+              >
+                {t === "timeline" ? "Arrangement" : t === "automation" ? "Automation" : "Scene Launch"}
+              </button>
+            ))}
+          </div>
+
+          {/* Content */}
+          <div className="flex-1 overflow-hidden">
+            {songSubTab === "timeline" && (
+              <div className="h-full overflow-y-auto p-4">
+                <SongTimeline song={song} isPlaying={isPlaying} className="min-h-full" />
+              </div>
+            )}
+            {songSubTab === "automation" && (
+              <AutomationView
+                lanes={automation.lanes}
+                stepCount={automation.stepCount}
+                parts={parts}
+                recording={automation.recording}
+                onAddLane={(target, label) => automation.addLane(target, label)}
+                onRemoveLane={automation.removeLane}
+                onSetPoint={automation.setPoint}
+                onClearPoint={automation.clearPoint}
+                onClearLane={automation.clearLane}
+                onToggleLane={automation.setLaneEnabled}
+                onToggleRecording={() => automation.setRecording(!automation.recording)}
+              />
+            )}
+            {songSubTab === "scenes" && (
+              <div className="h-full overflow-y-auto p-4">
+                <SceneLaunchPad
+                  patterns={dm.patterns}
+                  activePatternId={dm.activePatternId}
+                  isPlaying={isPlaying}
+                  onLaunchScene={(patternId) => dm.setActivePattern(patternId)}
+                />
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    /*
-     * ElectronDropZone umhüllt die gesamte App.
-     * - In Electron: lauscht auf IPC-Events (onDragDropBulkImport etc.)
-     *   Intern nutzt ElectronDropZone window.electronAPI direkt (Komponente
-     *   aus electron/components/ – liegt im Verantwortungsbereich des IPC-Agents)
-     * - Im Browser: HTML5 Drag & Drop Fallback
-     * - Zeigt ein visuelles Overlay wenn Dateien gezogen werden
-     */
     <ElectronDropZone
       onAudioFiles={handleDropAudioFiles}
       onFolder={handleDropFolder}
       onProject={handleDropProject}
+      onZipFile={handleDropZipFile}
     >
-      <div className="flex flex-col h-screen bg-[#0a0a0a] text-slate-100 overflow-hidden">
+      <div className="flex flex-col h-screen bg-bg-base text-text-primary overflow-hidden">
 
-        {/*
-         * ElectronTitleBar – benutzerdefinierte Titelleiste.
-         * Gibt null zurück wenn nicht in Electron → kein Browser-Impact.
-         * Zeigt: App-Name, Projektname, isDirty-Indikator, Fenster-Buttons.
-         */}
         <ElectronTitleBar
           projectName={project.projectName}
           isDirty={project.isDirty}
         />
 
-        {/* ── Haupt-Layout ────────────────────────────────────────────────── */}
         <div className="flex flex-1 overflow-hidden">
 
-          {/* ── Linke Sidebar: Sample-Browser ─────────────────────────────── */}
-          <aside className="w-72 flex-shrink-0 border-r border-slate-800 overflow-hidden">
+          <aside className="flex-shrink-0 border-r border-border-color overflow-hidden flex flex-col relative"
+            style={{ width: sidebarWidth }}>
+            <AudioInputRecorder onSamplesAdded={project.addSamples} />
             <SampleBrowser
               samples={project.samples}
               onImportSamples={project.importSamplesFromPaths}
@@ -399,67 +957,63 @@ export default function App() {
               onUpdateSampleCategory={handleUpdateSampleCategory}
               onReorderSamples={project.reorderSamples}
             />
+            {/* Resize Handle */}
+            <div
+              onMouseDown={handleSidebarDragStart}
+              className="absolute top-0 right-0 w-1.5 h-full cursor-col-resize hover:bg-accent-primary/30 transition-colors z-10"
+              title="Sidebar-Breite anpassen"
+            />
           </aside>
 
-          {/* ── Hauptbereich: Synthesizer / Sequencer ─────────────────────── */}
-          <main className="flex-1 flex flex-col overflow-hidden">
+          <main className="flex-1 flex flex-col overflow-hidden" role="main">
 
-            {/* Transport-Leiste */}
-            <div className="flex items-center gap-4 px-6 py-3 bg-[#0d0d0d] border-b border-slate-800">
-              <h1 className="text-sm font-bold text-cyan-400 tracking-widest uppercase">
+            <div className="flex items-center gap-4 px-6 py-3 bg-bg-panel border-b border-border-color">
+              {/* Visual Metronome – blinkt auf jedem Beat */}
+              <VisualMetronome isPlaying={project.isPlaying} bpm={project.bpm} />
+
+              <h1 className="text-sm font-bold text-accent-secondary tracking-widest uppercase">
                 Synthstudio
               </h1>
 
               <div className="flex-1" />
 
-              {/* Projekt-Name mit isDirty-Indikator */}
-              <span className="text-xs text-slate-500">
+              <span className="text-xs text-text-dim">
                 {project.projectName}
                 {project.isDirty && (
-                  <span className="ml-1 text-cyan-500" title="Ungespeicherte Änderungen">
+                  <span className="ml-1 text-accent-secondary" title="Ungespeicherte Änderungen">
                     ●
                   </span>
                 )}
               </span>
 
-              {/* Transport-Buttons */}
               <div className="flex items-center gap-2">
                 <button
                   onClick={project.togglePlayStop}
                   title={project.isPlaying ? "Stop (Space)" : "Play (Space)"}
-                  className={[
-                    "w-8 h-8 rounded flex items-center justify-center text-sm",
-                    "transition-colors duration-100",
-                    project.isPlaying
-                      ? "bg-cyan-600 text-white hover:bg-cyan-500"
-                      : "bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white",
-                  ].join(" ")}
+                  aria-label={project.isPlaying ? "Stop" : "Play"}
+                  aria-pressed={project.isPlaying}
+                  className={`w-8 h-8 rounded flex items-center justify-center text-sm transition-colors duration-100 ${project.isPlaying ? "bg-accent-primary text-white hover:bg-opacity-80" : "bg-bg-elevated text-text-muted hover:bg-border-color hover:text-text-primary"}`}
                 >
-                  {project.isPlaying ? "■" : "▶"}
+                  <span aria-hidden="true">{project.isPlaying ? "■" : "▶"}</span>
                 </button>
 
                 <button
                   onClick={project.toggleRecord}
                   title={project.isRecording ? "Aufnahme stoppen (R)" : "Aufnahme starten (R)"}
-                  className={[
-                    "w-8 h-8 rounded flex items-center justify-center text-sm",
-                    "transition-colors duration-100",
-                    project.isRecording
-                      ? "bg-red-600 text-white hover:bg-red-500"
-                      : "bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white",
-                  ].join(" ")}
+                  aria-label={project.isRecording ? "Aufnahme stoppen" : "Aufnahme starten"}
+                  aria-pressed={project.isRecording}
+                  className={`w-8 h-8 rounded flex items-center justify-center text-sm transition-colors duration-100 ${project.isRecording ? "bg-accent-danger text-white hover:bg-opacity-80" : "bg-bg-elevated text-text-muted hover:bg-border-color hover:text-text-primary"}`}
                 >
-                  ●
+                  <span aria-hidden="true">●</span>
                 </button>
               </div>
 
-              {/* Undo/Redo */}
               <div className="flex items-center gap-1">
                 <button
                   onClick={project.undo}
                   disabled={!project.canUndo}
                   title="Rückgängig (Ctrl+Z)"
-                  className="w-7 h-7 rounded text-xs bg-slate-800 text-slate-500 hover:bg-slate-700 hover:text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed transition-colors duration-100"
+                  className="w-7 h-7 rounded text-xs bg-bg-elevated text-text-dim hover:bg-border-color hover:text-text-muted disabled:opacity-30 disabled:cursor-not-allowed transition-colors duration-100"
                 >
                   ↩
                 </button>
@@ -467,62 +1021,71 @@ export default function App() {
                   onClick={project.redo}
                   disabled={!project.canRedo}
                   title="Wiederholen (Ctrl+Y)"
-                  className="w-7 h-7 rounded text-xs bg-slate-800 text-slate-500 hover:bg-slate-700 hover:text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed transition-colors duration-100"
+                  className="w-7 h-7 rounded text-xs bg-bg-elevated text-text-dim hover:bg-border-color hover:text-text-muted disabled:opacity-30 disabled:cursor-not-allowed transition-colors duration-100"
                 >
                   ↪
                 </button>
               </div>
 
-              {/* MIDI-Status-Button */}
+              {/* Schnell-Buttons für häufige Settings */}
               <button
-                onClick={() => setShowMidiSettings(true)}
+                onClick={() => { setSettingsInitialSection("midi-cc"); setShowSettings(true); }}
                 title="MIDI-Einstellungen (Ctrl+M)"
-                className={[
-                  "w-8 h-8 rounded flex items-center justify-center text-xs",
-                  "transition-colors duration-100",
-                  midi.isEnabled
-                    ? "bg-cyan-900 text-cyan-400 hover:bg-cyan-800"
-                    : "bg-slate-800 text-slate-500 hover:bg-slate-700 hover:text-slate-300",
-                ].join(" ")}
+                className={`w-8 h-8 rounded flex items-center justify-center text-xs transition-colors duration-100 ${midi.isEnabled ? "bg-accent-secondary/20 text-accent-secondary hover:bg-accent-secondary/30" : "bg-bg-elevated text-text-dim hover:bg-border-color hover:text-text-muted"}`}
               >
                 🎹
               </button>
 
-              {/* Shortcuts-Hilfe-Button */}
               <button
-                onClick={() => setShowShortcutsHelp(true)}
-                title="Tastatur-Shortcuts (?)"
-                className="w-8 h-8 rounded flex items-center justify-center text-xs bg-slate-800 text-slate-500 hover:bg-slate-700 hover:text-slate-300 transition-colors duration-100"
+                onClick={() => { setSettingsInitialSection("keyboard"); setShowSettings(true); }}
+                title="Tastatur-Shortcuts"
+                className="w-8 h-8 rounded flex items-center justify-center text-xs bg-bg-elevated text-text-dim hover:bg-border-color hover:text-text-muted transition-colors duration-100"
               >
-                ?
+                ⌨
               </button>
 
-              {/* Theme-Einstellungen-Button */}
+              {/* Haupteinstellungen ⚙ */}
               <button
-                onClick={() => setShowThemeSettings(true)}
-                title="Design-Einstellungen"
-                className="w-8 h-8 rounded flex items-center justify-center text-xs bg-slate-800 text-slate-500 hover:bg-slate-700 hover:text-slate-300 transition-colors duration-100"
+                onClick={() => { setSettingsInitialSection("design"); setShowSettings(true); }}
+                title="Einstellungen (alle Settings)"
+                className="w-8 h-8 rounded flex items-center justify-center text-xs bg-bg-elevated text-text-dim hover:bg-accent-primary/20 hover:text-accent-primary transition-colors duration-100"
               >
-                🎨
+                ⚙
               </button>
 
-              {/* Auto-Updater-Status (nur in Electron sichtbar) */}
               {electron.isElectron && <UpdateBadge />}
 
-              {/* Projekt-Manager (Speichern/Laden) */}
+              {/* Collab Chat – nur wenn in einer Session */}
+              {inSession && (
+                <CollabChat
+                  broadcast={collab.broadcast}
+                  ownName="Ich"
+                  inSession={inSession}
+                />
+              )}
+
               <ProjectManager
                 projectName={project.projectName}
                 isDirty={project.isDirty}
-                onSave={project.saveProject}
+                onSave={doSaveProject}
                 onLoad={handleMenuOpen}
                 onNew={handleNewProject}
                 onExport={project.exportProject}
+                onImportPatterns={(patterns, sourceFormat) => {
+                  // Importierte Patterns als zusätzliche Patterns in DrumMachine hinzufügen
+                  patterns.forEach(p => {
+                    dm.addPatternData(p as Parameters<typeof dm.addPatternData>[0]);
+                  });
+                  if (patterns.length > 0 && patterns[0].bpm) {
+                    project.setBpm(patterns[0].bpm);
+                  }
+                  console.log(`[Import] ${patterns.length} Patterns aus ${sourceFormat.toUpperCase()} hinzugefügt`);
+                }}
               />
             </div>
 
-            {/* Arbeitsbereich-Tabs */}
-            <div className="flex gap-0 border-b border-slate-800 bg-[#0d0d0d]">
-              {([  
+            <div className="flex gap-0 border-b border-border-color bg-bg-panel" role="tablist" aria-label="Hauptnavigation">
+              {([
                 { id: "sequencer",    label: "Sequencer" },
                 { id: "mixer",        label: "Mixer" },
                 { id: "song",         label: "Song-Modus" },
@@ -532,29 +1095,25 @@ export default function App() {
               ] as const).map((tab) => (
                 <button
                   key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
-                  className={[
-                    "px-5 py-2 text-xs font-medium border-b-2 transition-colors duration-100",
-                    activeTab === tab.id
-                      ? "border-cyan-500 text-cyan-400 bg-[#111]"
-                      : "border-transparent text-slate-600 hover:text-slate-400 hover:bg-[#111]/50",
-                  ].join(" ")}
+                  onClick={() => handleSetActiveTab(tab.id)}
+                  role="tab"
+                  aria-selected={activeTab === tab.id}
+                  aria-controls={`panel-${tab.id}`}
+                  className={`px-5 py-2 text-xs font-medium border-b-2 transition-colors duration-100 ${activeTab === tab.id ? "border-accent-primary text-accent-primary bg-bg-elevated" : "border-transparent text-text-dim hover:text-text-muted hover:bg-bg-elevated/50"}`}
                 >
                   {tab.label}
                   {tab.id === "song" && song.songModeActive && (
-                    <span className="ml-1.5 w-1.5 h-1.5 rounded-full bg-cyan-500 inline-block" />
+                    <span className="ml-1.5 w-1.5 h-1.5 rounded-full bg-accent-primary inline-block" />
                   )}
                   {tab.id === "humanizer" && humanizer.global.enabled && (
-                    <span className="ml-1.5 w-1.5 h-1.5 rounded-full bg-green-500 inline-block" />
+                    <span className="ml-1.5 w-1.5 h-1.5 rounded-full bg-accent-success inline-block" />
                   )}
                 </button>
               ))}
             </div>
 
-            {/* Arbeitsbereich-Inhalt */}
             <div className="flex-1 overflow-hidden">
 
-              {/* Sequencer-Tab: Drum Machine */}
               {activeTab === "sequencer" && (
                 <DrumMachine
                   dm={dm}
@@ -567,27 +1126,30 @@ export default function App() {
                 />
               )}
 
-              {/* Mixer-Tab */}
               {activeTab === "mixer" && (
                 <MixerView
                   dm={dm}
                   mixer={mixer}
+                  samples={project.samples}
+                  bpm={project.bpm}
+                  projectName={project.projectName}
                   className="h-full"
                 />
               )}
 
-              {/* Song-Modus-Tab */}
               {activeTab === "song" && (
-                <div className="h-full overflow-y-auto p-4">
-                  <SongTimeline
+                <div className="h-full flex flex-col overflow-hidden">
+                  {/* Song-Tab Sub-Tabs */}
+                  <SongTabView
                     song={song}
+                    automation={automation}
+                    dm={dm}
+                    project={project}
                     isPlaying={project.isPlaying}
-                    className="h-full"
                   />
                 </div>
               )}
 
-              {/* Humanizer-Tab */}
               {activeTab === "humanizer" && (
                 <div className="h-full overflow-y-auto p-4">
                   <Humanizer
@@ -597,22 +1159,90 @@ export default function App() {
                 </div>
               )}
 
-              {/* Tools-Tab: Pattern Generator + Arpeggiator */}
               {activeTab === "tools" && (
-                <div className="h-full overflow-y-auto p-4">
-                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 max-w-4xl">
-                    <PatternGeneratorPanel />
-                    <ArpeggiatorPanel />
+                <div className="h-full flex flex-col overflow-hidden">
+                  <div className="flex gap-0 border-b border-border-color bg-bg-panel flex-shrink-0">
+                    {([
+                      { id: "prompt",      label: "KI-Generator" },
+                      { id: "algorithmic", label: "Algorithmisch" },
+                      { id: "chords",      label: "🎼 Akkorde" },
+                      { id: "sampler",     label: "🎹 Sampler" },
+                      { id: "workbench",   label: "🎚 Workbench" },
+                      { id: "library",     label: "📚 Library" },
+                      { id: "script",      label: "⚡ Script" },
+                    ] as const).map(t => (
+                      <button key={t.id} onClick={() => setActiveTool(t.id)}
+                        className={`px-4 py-2 text-xs font-medium border-b-2 transition-colors ${activeTool === t.id ? "border-accent-primary text-accent-primary bg-bg-elevated" : "border-transparent text-text-dim hover:text-text-muted"}`}>
+                        {t.label}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="flex-1 overflow-hidden">
+                    {activeTool === 'prompt' && (
+                      <div className="h-full overflow-y-auto p-4">
+                        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 max-w-4xl">
+                          <PatternGeneratorPanel />
+                          <ArpeggiatorPanel />
+                        </div>
+                      </div>
+                    )}
+                    {activeTool === 'algorithmic' && (
+                      <div className="h-full overflow-y-auto p-4">
+                        <GeneratorView />
+                      </div>
+                    )}
+                    {activeTool === 'chords' && (
+                      <div className="h-full overflow-y-auto p-4 max-w-2xl">
+                        <ChordProgressionPanel bpm={project.bpm} />
+                      </div>
+                    )}
+                    {activeTool === 'sampler' && (
+                      <div className="h-full overflow-y-auto p-4 max-w-2xl">
+                        <KeyboardSamplerPanel samples={project.samples} />
+                      </div>
+                    )}
+                    {activeTool === 'workbench' && (
+                      <div className="h-full overflow-y-auto">
+                        <AudioWorkbench onSamplesAdded={(s) => project.addSamples(s)} />
+                      </div>
+                    )}
+                    {activeTool === 'library' && (
+                      <PatternLibrary
+                        currentPattern={dm.getActivePattern()}
+                        globalBpm={project.bpm}
+                        onLoadPattern={(pattern) => dm.addPatternData(pattern)}
+                      />
+                    )}
+                    {activeTool === 'script' && (
+                      <div className="h-full overflow-y-auto p-4 max-w-2xl">
+                        <ScriptRunner
+                          bpm={project.bpm}
+                          isPlaying={project.isPlaying}
+                          onBpmChange={project.setBpm}
+                          onPlayStop={project.togglePlayStop}
+                        />
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
 
-              {/* Kollaboration-Tab: Session Panel */}
               {activeTab === "kollaboration" && (
-                <div className="h-full overflow-y-auto p-4">
-                  <div className="max-w-md">
-                    <SessionPanel />
-                  </div>
+                <div className="h-full overflow-y-auto p-4 space-y-6 max-w-2xl">
+                  <RelayPanel />
+                  <SessionPanel />
+                  <SessionRecorder
+                    broadcast={event => collab.broadcast(event as Parameters<typeof collab.broadcast>[0])}
+                    inSession={inSession}
+                  />
+                  <VersionSnapshotPanel
+                    onRestore={(json) => {
+                      try {
+                        const patterns = JSON.parse(json);
+                        if (Array.isArray(patterns)) patterns.forEach(p => dm.addPatternData(p));
+                      } catch { /* ignore */ }
+                    }}
+                  />
                 </div>
               )}
 
@@ -620,7 +1250,17 @@ export default function App() {
           </main>
         </div>
       </div>
-      {/* MIDI-Einstellungen-Dialog */}
+      
+      {/* ── Unified Settings Panel ──────────────────────────────────────── */}
+      <SettingsPanel
+        isOpen={showSettings}
+        onClose={() => setShowSettings(false)}
+        midi={midi}
+        parts={dm.getActivePattern()?.parts ?? []}
+        initialSection={settingsInitialSection}
+      />
+
+      {/* ── Legacy Dialoge (Keyboard-Shortcuts für rückwärtskompatiblen Zugriff) */}
       {showMidiSettings && (
         <MidiSettings
           midi={midi}
@@ -629,18 +1269,15 @@ export default function App() {
         />
       )}
 
-      {/* Tastatur-Shortcuts-Hilfe */}
       {showShortcutsHelp && (
         <ShortcutsHelp onClose={() => setShowShortcutsHelp(false)} />
       )}
 
-      {/* Design-Theme-Einstellungen */}
       <ThemeSettings
         isOpen={showThemeSettings}
         onClose={() => setShowThemeSettings(false)}
       />
 
-      {/* Kollaborations-Splitscreen (Vollbild-Overlay wenn Session aktiv) */}
       {inSession && (
         <CollabSplitView
           localDm={collabDm}
@@ -665,7 +1302,6 @@ export default function App() {
         />
       )}
 
-      {/* Neues-Projekt-Dialog mit Template-Auswahl */}
       <NewProjectDialog
         isOpen={showNewProjectDialog}
         onClose={() => setShowNewProjectDialog(false)}

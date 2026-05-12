@@ -29,6 +29,10 @@ export interface SongSlot {
   label?: string;
   /** Ob dieser Slot gemuted ist */
   muted: boolean;
+  /** Optionales eigenes BPM für diesen Slot (null = globales BPM verwenden) */
+  bpm?: number | null;
+  /** Optionaler Marker-Typ: "verse", "chorus", "bridge", "intro", "outro" */
+  marker?: string;
 }
 
 export interface SongState {
@@ -56,7 +60,7 @@ export interface SongActions {
   /** Slot verschieben (Drag & Drop Reordering) */
   moveSlot: (fromIndex: number, toIndex: number) => void;
   /** Slot-Eigenschaften aktualisieren */
-  updateSlot: (id: string, changes: Partial<Pick<SongSlot, "bank" | "repeats" | "label" | "muted">>) => void;
+  updateSlot: (id: string, changes: Partial<Pick<SongSlot, "bank" | "repeats" | "label" | "muted" | "bpm" | "marker">>) => void;
   /** Alle Slots löschen */
   clearSong: () => void;
   /** Song-Modus ein/ausschalten */
@@ -151,7 +155,7 @@ export function useSongStore(): SongState & SongActions {
   }, []);
 
   const updateSlot = useCallback(
-    (id: string, changes: Partial<Pick<SongSlot, "bank" | "repeats" | "label" | "muted">>) => {
+    (id: string, changes: Partial<Pick<SongSlot, "bank" | "repeats" | "label" | "muted" | "bpm" | "marker">>) => {
       setState((prev) => {
         const slots = prev.slots.map((s) =>
           s.id === id

@@ -60,18 +60,18 @@ const AUDIO_EXTENSIONS = [".wav", ".mp3", ".ogg", ".flac", ".aiff", ".aif", ".m4
 
 /** Alle verfügbaren Kategorien mit Labels und Farben */
 const CATEGORIES: Array<{ id: string; label: string; color: string; emoji: string }> = [
-  { id: "all",        label: "Alle",        color: "bg-slate-700 text-slate-200",         emoji: "◈" },
+  { id: "all",        label: "Alle",        color: "bg-bg-elevated text-text-primary",         emoji: "◈" },
   { id: "kicks",      label: "Kicks",       color: "bg-red-900/60 text-red-300",           emoji: "🥁" },
   { id: "snares",     label: "Snares",      color: "bg-orange-900/60 text-orange-300",     emoji: "🪘" },
   { id: "hihats",     label: "Hi-Hats",     color: "bg-yellow-900/60 text-yellow-300",     emoji: "🎩" },
   { id: "claps",      label: "Claps",       color: "bg-green-900/60 text-green-300",       emoji: "👏" },
   { id: "toms",       label: "Toms",        color: "bg-teal-900/60 text-teal-300",         emoji: "🔵" },
-  { id: "percussion", label: "Perc",        color: "bg-cyan-900/60 text-cyan-300",         emoji: "🎵" },
+  { id: "percussion", label: "Perc",        color: "bg-accent-primary/60 text-cyan-300",         emoji: "🎵" },
   { id: "fx",         label: "FX",          color: "bg-blue-900/60 text-blue-300",         emoji: "⚡" },
   { id: "loops",      label: "Loops",       color: "bg-indigo-900/60 text-indigo-300",     emoji: "🔁" },
   { id: "vocals",     label: "Vocals",      color: "bg-purple-900/60 text-purple-300",     emoji: "🎤" },
-  { id: "other",      label: "Sonstige",    color: "bg-slate-800/60 text-slate-400",       emoji: "📁" },
-  { id: "imported",   label: "Importiert",  color: "bg-slate-800/60 text-slate-400",       emoji: "📥" },
+  { id: "other",      label: "Sonstige",    color: "bg-bg-elevated/60 text-text-muted",       emoji: "📁" },
+  { id: "imported",   label: "Importiert",  color: "bg-bg-elevated/60 text-text-muted",       emoji: "📥" },
 ];
 
 const CATEGORY_WAVEFORM_COLORS: Record<string, string> = {
@@ -107,7 +107,7 @@ function formatDuration(seconds?: number): string {
 }
 
 function getCategoryColor(categoryId: string): string {
-  return CATEGORIES.find((c) => c.id === categoryId)?.color ?? "bg-slate-800/60 text-slate-400";
+  return CATEGORIES.find((c) => c.id === categoryId)?.color ?? "bg-bg-elevated/60 text-text-muted";
 }
 
 function getWaveformColor(categoryId: string): string {
@@ -136,23 +136,23 @@ function ImportProgress({ current, total, percentage, phase, currentFile, onCanc
     : "Importiere…";
 
   return (
-    <div className="absolute inset-0 bg-[#0d0d0d]/95 flex flex-col items-center justify-center gap-3 z-10 rounded-lg">
-      <p className="text-sm font-semibold text-cyan-400">{phaseLabel}</p>
+    <div className="absolute inset-0 bg-bg-panel/95 flex flex-col items-center justify-center gap-3 z-10 rounded-lg">
+      <p className="text-sm font-semibold text-accent-secondary">{phaseLabel}</p>
       {total > 0 && (
         <>
-          <div className="w-48 h-1.5 bg-slate-800 rounded-full overflow-hidden">
+          <div className="w-48 h-1.5 bg-bg-elevated rounded-full overflow-hidden">
             <div
-              className="h-full bg-cyan-500 rounded-full transition-all duration-200"
+              className="h-full bg-accent-primary rounded-full transition-all duration-200"
               style={{ width: `${percentage}%` }}
             />
           </div>
-          <p className="text-xs text-slate-500">
+          <p className="text-xs text-text-dim">
             {current} / {total} ({percentage}%)
           </p>
         </>
       )}
       {currentFile && (
-        <p className="text-xs text-slate-600 truncate max-w-[180px]" title={currentFile}>
+        <p className="text-xs text-text-dim truncate max-w-[180px]" title={currentFile}>
           {currentFile}
         </p>
       )}
@@ -196,9 +196,9 @@ function WaveformPanel({
   const waveformColor = getWaveformColor(sample.category);
 
   return (
-    <div className="border-t border-slate-800 bg-[#0a0a0a] flex flex-col">
+    <div className="border-t border-border-color bg-bg-base flex flex-col">
       {/* Sample-Name + Zuweisung */}
-      <div className="flex items-center justify-between px-3 py-1.5 border-b border-slate-800/50">
+      <div className="flex items-center justify-between px-3 py-1.5 border-b border-border-color/50">
         <span className="text-xs text-cyan-300 font-medium truncate flex-1" title={sample.name}>
           {sample.name}
         </span>
@@ -207,7 +207,7 @@ function WaveformPanel({
             <button
               onClick={onAssignToChannel}
               title={activeChannelName ? `Auf Kanal "${activeChannelName}" legen` : "Auf aktiven Kanal legen (Doppelklick)"}
-              className="px-2 py-0.5 rounded text-[10px] bg-cyan-700 text-white hover:bg-cyan-600 transition-colors font-medium"
+              className="px-2 py-0.5 rounded text-[10px] bg-accent-primary/70 text-white hover:bg-accent-primary transition-colors font-medium"
             >
               → {activeChannelName ? activeChannelName.slice(0, 8) : "Kanal"}
             </button>
@@ -218,7 +218,7 @@ function WaveformPanel({
               "w-7 h-7 rounded flex items-center justify-center text-xs transition-all duration-100 flex-shrink-0",
               isPlaying
                 ? "bg-orange-600 text-white"
-                : "bg-slate-700 text-slate-300 hover:bg-slate-600 hover:text-white",
+                : "bg-bg-elevated text-text-primary hover:bg-bg-elevated hover:text-white",
             ].join(" ")}
             title={isPlaying ? "Preview stoppen (Leertaste)" : "Preview abspielen (Leertaste)"}
           >
@@ -244,7 +244,7 @@ function WaveformPanel({
       </div>
 
       {/* Sample-Details */}
-      <div className="flex flex-wrap gap-x-3 gap-y-0.5 px-3 pb-2 text-[10px] text-slate-600">
+      <div className="flex flex-wrap gap-x-3 gap-y-0.5 px-3 pb-2 text-[10px] text-text-dim">
         {analysisResult?.duration != null && (
           <span title="Dauer">⏱ {formatDuration(analysisResult.duration)}</span>
         )}
@@ -296,10 +296,10 @@ function CategoryMenu({ x, y, currentCategory, onSelect, onClose }: CategoryMenu
   return (
     <div
       ref={menuRef}
-      className="fixed z-50 bg-[#111] border border-slate-700 rounded-lg shadow-2xl py-1 min-w-[160px]"
+      className="fixed z-50 bg-bg-elevated border border-border-color rounded-lg shadow-2xl py-1 min-w-[160px]"
       style={{ left: Math.min(x, window.innerWidth - 180), top: Math.min(y, window.innerHeight - 300) }}
     >
-      <div className="px-3 py-1 text-[10px] text-slate-500 border-b border-slate-800 mb-1">
+      <div className="px-3 py-1 text-[10px] text-text-dim border-b border-border-color mb-1">
         Kategorie ändern
       </div>
       {CATEGORIES.filter(c => c.id !== "all").map(cat => (
@@ -309,15 +309,15 @@ function CategoryMenu({ x, y, currentCategory, onSelect, onClose }: CategoryMenu
           className={[
             "w-full text-left px-3 py-1 text-xs transition-colors flex items-center gap-2",
             cat.id === currentCategory
-              ? "text-cyan-400 bg-cyan-900/20"
-              : "text-slate-300 hover:bg-slate-800",
+              ? "text-accent-secondary bg-accent-primary/20"
+              : "text-text-primary hover:bg-bg-elevated",
           ].join(" ")}
         >
           <span className={`text-[9px] px-1 py-0.5 rounded-full ${cat.color}`}>
             {cat.id.slice(0, 3).toUpperCase()}
           </span>
           {cat.label}
-          {cat.id === currentCategory && <span className="ml-auto text-cyan-500">✓</span>}
+          {cat.id === currentCategory && <span className="ml-auto text-accent-primary">✓</span>}
         </button>
       ))}
     </div>
@@ -365,18 +365,18 @@ function PlaylistPanel({
   return (
     <div className="flex flex-col h-full">
       {/* Neue Playlist erstellen */}
-      <div className="flex gap-1 px-3 py-2 border-b border-slate-800">
+      <div className="flex gap-1 px-3 py-2 border-b border-border-color">
         <input
           type="text"
           placeholder="Neue Playlist…"
           value={newName}
           onChange={e => setNewName(e.target.value)}
           onKeyDown={e => { if (e.key === "Enter") handleCreate(); }}
-          className="flex-1 bg-[#0d0d0d] border border-slate-800 rounded px-2 py-1 text-xs text-slate-300 placeholder-slate-600 focus:outline-none focus:border-cyan-800"
+          className="flex-1 bg-bg-panel border border-border-color rounded px-2 py-1 text-xs text-text-primary placeholder-slate-600 focus:outline-none focus:border-cyan-800"
         />
         <button
           onClick={handleCreate}
-          className="px-2 py-1 text-xs rounded bg-cyan-900/40 text-cyan-400 border border-cyan-800 hover:bg-cyan-800/60 transition-colors"
+          className="px-2 py-1 text-xs rounded bg-accent-primary/40 text-accent-secondary border border-cyan-800 hover:bg-accent-primary/60 transition-colors"
         >
           +
         </button>
@@ -386,21 +386,21 @@ function PlaylistPanel({
       <button
         onClick={() => onSelectPlaylist(null)}
         className={[
-          "flex items-center gap-2 px-3 py-1.5 text-xs transition-colors border-b border-slate-800/50",
+          "flex items-center gap-2 px-3 py-1.5 text-xs transition-colors border-b border-border-color/50",
           activePlaylistId === null
-            ? "text-cyan-400 bg-cyan-900/20"
-            : "text-slate-400 hover:bg-slate-800/30",
+            ? "text-accent-secondary bg-accent-primary/20"
+            : "text-text-muted hover:bg-bg-elevated/30",
         ].join(" ")}
       >
-        <span className="text-slate-600">◈</span>
+        <span className="text-text-dim">◈</span>
         <span className="flex-1 text-left">Alle Samples</span>
-        <span className="text-[10px] text-slate-600">{samples.length}</span>
+        <span className="text-[10px] text-text-dim">{samples.length}</span>
       </button>
 
       {/* Playlist-Liste */}
       <div className="flex-1 overflow-y-auto">
         {playlists.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-24 text-slate-700 text-xs gap-1">
+          <div className="flex flex-col items-center justify-center h-24 text-text-dim text-xs gap-1">
             <span>Keine Playlists</span>
             <span className="text-[10px]">Oben erstellen</span>
           </div>
@@ -414,8 +414,8 @@ function PlaylistPanel({
               <div
                 key={pl.id}
                 className={[
-                  "group flex items-center gap-1 px-3 py-1.5 border-b border-slate-800/30 transition-colors",
-                  isActive ? "bg-cyan-900/20" : "hover:bg-slate-800/20",
+                  "group flex items-center gap-1 px-3 py-1.5 border-b border-border-color/30 transition-colors",
+                  isActive ? "bg-accent-primary/20" : "hover:bg-bg-elevated/20",
                 ].join(" ")}
               >
                 {isEditing ? (
@@ -435,7 +435,7 @@ function PlaylistPanel({
                       }
                       if (e.key === "Escape") setEditingId(null);
                     }}
-                    className="flex-1 bg-slate-800 border border-cyan-700 rounded px-1.5 py-0.5 text-xs text-slate-200 focus:outline-none"
+                    className="flex-1 bg-bg-elevated border border-cyan-700 rounded px-1.5 py-0.5 text-xs text-text-primary focus:outline-none"
                   />
                 ) : (
                   <button
@@ -443,7 +443,7 @@ function PlaylistPanel({
                     onDoubleClick={() => { setEditingId(pl.id); setEditName(pl.name); }}
                     className={[
                       "flex-1 text-left text-xs truncate",
-                      isActive ? "text-cyan-300" : "text-slate-300",
+                      isActive ? "text-cyan-300" : "text-text-primary",
                     ].join(" ")}
                     title={`${pl.name} – Doppelklick zum Umbenennen`}
                   >
@@ -451,14 +451,14 @@ function PlaylistPanel({
                   </button>
                 )}
 
-                <span className="text-[10px] text-slate-600 flex-shrink-0">{count}</span>
+                <span className="text-[10px] text-text-dim flex-shrink-0">{count}</span>
 
                 {/* Sample zur Playlist hinzufügen */}
                 {selectedSampleId && !pl.sampleIds.includes(selectedSampleId) && (
                   <button
                     onClick={() => onAddToPlaylist(pl.id, selectedSampleId)}
                     title="Ausgewähltes Sample hinzufügen"
-                    className="opacity-0 group-hover:opacity-100 w-5 h-5 rounded text-[10px] bg-cyan-900/40 text-cyan-500 hover:bg-cyan-800/60 transition-all"
+                    className="opacity-0 group-hover:opacity-100 w-5 h-5 rounded text-[10px] bg-accent-primary/40 text-accent-primary hover:bg-accent-primary/60 transition-all"
                   >
                     +
                   </button>
@@ -477,7 +477,7 @@ function PlaylistPanel({
                 <button
                   onClick={() => onDeletePlaylist(pl.id)}
                   title="Playlist löschen"
-                  className="opacity-0 group-hover:opacity-100 w-5 h-5 rounded text-[10px] text-slate-600 hover:text-red-400 transition-all"
+                  className="opacity-0 group-hover:opacity-100 w-5 h-5 rounded text-[10px] text-text-dim hover:text-red-400 transition-all"
                 >
                   ✕
                 </button>
@@ -1093,7 +1093,7 @@ export function SampleBrowser({
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <div className="relative flex flex-col h-full bg-[#111] border border-slate-800 rounded-lg overflow-hidden">
+    <div className="relative flex flex-col h-full bg-bg-elevated border border-border-color rounded-lg overflow-hidden">
 
       {/* Import-Fortschritt-Overlay */}
       {importProgress?.active && (
@@ -1119,29 +1119,29 @@ export function SampleBrowser({
       )}
 
       {/* ── Header ──────────────────────────────────────────────────────────── */}
-      <div className="flex items-center justify-between px-3 py-2 bg-[#0d0d0d] border-b border-slate-800">
-        <h2 className="text-xs font-semibold text-slate-300 tracking-wide uppercase">
+      <div className="flex items-center justify-between px-3 py-2 bg-bg-panel border-b border-border-color">
+        <h2 className="text-xs font-semibold text-text-primary tracking-wide uppercase">
           Sample-Browser
         </h2>
         <div className="flex gap-1">
           <button
             onClick={handleImportFiles}
             title="Audio-Dateien importieren"
-            className="px-2 py-1 text-xs rounded bg-cyan-900/40 text-cyan-400 border border-cyan-800 hover:bg-cyan-800/60 hover:text-cyan-300 transition-colors"
+            className="px-2 py-1 text-xs rounded bg-accent-primary/40 text-accent-secondary border border-cyan-800 hover:bg-accent-primary/60 hover:text-accent-secondary transition-colors"
           >
             + Dateien
           </button>
           <button
             onClick={handleImportFolder}
             title="Ordner mit Samples importieren"
-            className="px-2 py-1 text-xs rounded bg-slate-800/60 text-slate-400 border border-slate-700 hover:bg-slate-700/60 hover:text-slate-300 transition-colors"
+            className="px-2 py-1 text-xs rounded bg-bg-elevated/60 text-text-muted border border-border-color hover:bg-bg-elevated/60 hover:text-text-primary transition-colors"
           >
             + Ordner
           </button>
           <button
             onClick={handleImportZip}
             title="ZIP-Archiv mit Samples importieren"
-            className="px-2 py-1 text-xs rounded bg-slate-800/60 text-slate-400 border border-slate-700 hover:bg-slate-700/60 hover:text-slate-300 transition-colors"
+            className="px-2 py-1 text-xs rounded bg-bg-elevated/60 text-text-muted border border-border-color hover:bg-bg-elevated/60 hover:text-text-primary transition-colors"
           >
             + ZIP
           </button>
@@ -1150,36 +1150,36 @@ export function SampleBrowser({
 
       {/* ── Aktiver Kanal Hinweis ────────────────────────────────────────────── */}
       {onAssignToChannel && activeChannelName && (
-        <div className="flex items-center gap-2 px-3 py-1 bg-cyan-900/10 border-b border-cyan-900/30">
+        <div className="flex items-center gap-2 px-3 py-1 bg-accent-primary/10 border-b border-cyan-900/30">
           <span className="text-[10px] text-cyan-700">Aktiver Kanal:</span>
-          <span className="text-[10px] text-cyan-400 font-medium">{activeChannelName}</span>
-          <span className="text-[10px] text-slate-700 ml-auto">Doppelklick oder Enter zum Zuweisen</span>
+          <span className="text-[10px] text-accent-secondary font-medium">{activeChannelName}</span>
+          <span className="text-[10px] text-text-dim ml-auto">Doppelklick oder Enter zum Zuweisen</span>
         </div>
       )}
 
       {/* ── Tabs: Samples / Playlists ────────────────────────────────────────── */}
-      <div className="flex border-b border-slate-800 bg-[#0d0d0d]">
+      <div className="flex border-b border-border-color bg-bg-panel">
         <button
           onClick={() => setActiveTab("samples")}
           className={[
             "flex-1 py-1.5 text-xs font-medium transition-colors border-b-2",
             activeTab === "samples"
-              ? "border-cyan-500 text-cyan-400"
-              : "border-transparent text-slate-600 hover:text-slate-400",
+              ? "border-accent-primary text-accent-secondary"
+              : "border-transparent text-text-dim hover:text-text-muted",
           ].join(" ")}
         >
-          Samples {samples.length > 0 && <span className="ml-1 text-slate-600">{samples.length}</span>}
+          Samples {samples.length > 0 && <span className="ml-1 text-text-dim">{samples.length}</span>}
         </button>
         <button
           onClick={() => setActiveTab("playlists")}
           className={[
             "flex-1 py-1.5 text-xs font-medium transition-colors border-b-2",
             activeTab === "playlists"
-              ? "border-cyan-500 text-cyan-400"
-              : "border-transparent text-slate-600 hover:text-slate-400",
+              ? "border-accent-primary text-accent-secondary"
+              : "border-transparent text-text-dim hover:text-text-muted",
           ].join(" ")}
         >
-          Playlists {playlists.length > 0 && <span className="ml-1 text-slate-600">{playlists.length}</span>}
+          Playlists {playlists.length > 0 && <span className="ml-1 text-text-dim">{playlists.length}</span>}
         </button>
       </div>
 
@@ -1212,7 +1212,7 @@ export function SampleBrowser({
               </span>
               <button
                 onClick={() => setActivePlaylistId(null)}
-                className="ml-auto text-[10px] text-slate-600 hover:text-slate-400 transition-colors"
+                className="ml-auto text-[10px] text-text-dim hover:text-text-muted transition-colors"
               >
                 × Alle anzeigen
               </button>
@@ -1220,19 +1220,19 @@ export function SampleBrowser({
           )}
 
           {/* Suche */}
-          <div className="px-3 py-2 border-b border-slate-800/50">
+          <div className="px-3 py-2 border-b border-border-color/50">
             <input
               type="text"
               placeholder="Samples suchen…"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-[#0d0d0d] border border-slate-800 rounded px-2 py-1 text-xs text-slate-300 placeholder-slate-600 focus:outline-none focus:border-cyan-800 transition-colors"
+              className="w-full bg-bg-panel border border-border-color rounded px-2 py-1 text-xs text-text-primary placeholder-slate-600 focus:outline-none focus:border-cyan-800 transition-colors"
             />
           </div>
 
           {/* Kategorie-Filter */}
           {samples.length > 0 && (
-            <div className="flex flex-wrap gap-1 px-3 py-2 border-b border-slate-800/50">
+            <div className="flex flex-wrap gap-1 px-3 py-2 border-b border-border-color/50">
               {CATEGORIES.filter((cat) => cat.id === "all" || (categoryCounts[cat.id] ?? 0) > 0).map((cat) => (
                 <button
                   key={cat.id}
@@ -1241,7 +1241,7 @@ export function SampleBrowser({
                     px-2 py-0.5 text-xs rounded-full border transition-all duration-100
                     ${activeCategory === cat.id
                       ? `${cat.color} border-current opacity-100`
-                      : "bg-transparent text-slate-600 border-slate-800 hover:text-slate-400 hover:border-slate-700"
+                      : "bg-transparent text-text-dim border-border-color hover:text-text-muted hover:border-border-color"
                     }
                   `}
                 >
@@ -1258,7 +1258,7 @@ export function SampleBrowser({
 
           {/* Tag-Filter */}
           {availableTags.length > 0 && (
-            <div className="flex flex-wrap gap-1 px-3 py-2 border-b border-slate-800/50">
+            <div className="flex flex-wrap gap-1 px-3 py-2 border-b border-border-color/50">
               {availableTags.map(tag => (
                 <button
                   key={tag}
@@ -1267,8 +1267,8 @@ export function SampleBrowser({
                   className={[
                     "px-2 py-0.5 text-[10px] rounded-full border transition-all duration-100",
                     activeTag === tag
-                      ? "bg-cyan-900/60 text-cyan-300 border-cyan-700"
-                      : "bg-transparent text-slate-600 border-slate-800 hover:text-slate-400 hover:border-slate-700",
+                      ? "bg-accent-primary/60 text-cyan-300 border-cyan-700"
+                      : "bg-transparent text-text-dim border-border-color hover:text-text-muted hover:border-border-color",
                   ].join(" ")}
                 >
                   #{tag}
@@ -1280,21 +1280,21 @@ export function SampleBrowser({
           {/* Sample-Liste */}
           <div className="flex-1 overflow-y-auto min-h-0">
             {samples.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-full gap-3 text-slate-600">
+              <div className="flex flex-col items-center justify-center h-full gap-3 text-text-dim">
                 <div className="text-4xl">🎚️</div>
                 <p className="text-sm">Keine Samples geladen</p>
-                <p className="text-xs text-slate-700 text-center px-4">
+                <p className="text-xs text-text-dim text-center px-4">
                   {electron.isElectron
                     ? "Dateien hierher ziehen oder über '+ Dateien', '+ Ordner' oder '+ ZIP' importieren"
                     : "Über '+ Dateien', '+ ZIP' importieren oder per Drag & Drop"}
                 </p>
               </div>
             ) : filteredSamples.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-full gap-2 text-slate-600">
+              <div className="flex flex-col items-center justify-center h-full gap-2 text-text-dim">
                 <p className="text-sm">Keine Treffer</p>
                 <button
                   onClick={() => { setActiveCategory("all"); setSearchQuery(""); setActivePlaylistId(null); setActiveTag(""); }}
-                  className="text-xs text-cyan-700 hover:text-cyan-500 transition-colors"
+                  className="text-xs text-cyan-700 hover:text-accent-primary transition-colors"
                 >
                   Filter zurücksetzen
                 </button>
@@ -1302,23 +1302,23 @@ export function SampleBrowser({
             ) : (
               <>
                 {/* Navigation-Leiste */}
-                <div className="flex items-center gap-2 px-3 py-1.5 border-b border-slate-800/50 bg-[#0d0d0d]/50">
+                <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border-color/50 bg-bg-panel/50">
                   <button
                     onClick={handleNavigatePrev}
                     title="Vorheriges Sample (Pfeil hoch)"
-                    className="w-6 h-6 rounded bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white transition-colors text-xs"
+                    className="w-6 h-6 rounded bg-bg-elevated text-text-muted hover:bg-bg-elevated hover:text-white transition-colors text-xs"
                   >▲</button>
                   <button
                     onClick={handleNavigateNext}
                     title="Nächstes Sample (Pfeil runter)"
-                    className="w-6 h-6 rounded bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white transition-colors text-xs"
+                    className="w-6 h-6 rounded bg-bg-elevated text-text-muted hover:bg-bg-elevated hover:text-white transition-colors text-xs"
                   >▼</button>
                   {selectedIndex >= 0 && (
-                    <span className="text-[10px] text-slate-600">
+                    <span className="text-[10px] text-text-dim">
                       {selectedIndex + 1} / {filteredSamples.length}
                     </span>
                   )}
-                  <span className="text-[10px] text-slate-700 ml-auto">
+                  <span className="text-[10px] text-text-dim ml-auto">
                     ↑↓ · Leertaste · Enter=Kanal
                   </span>
                 </div>
@@ -1357,10 +1357,10 @@ export function SampleBrowser({
                         }}
                         className={[
                           "flex items-center gap-2 px-3 py-1.5 group cursor-pointer",
-                          isDragTarget ? "border-t-2 border-cyan-400 bg-cyan-900/10" : "border-t border-slate-800/50",
+                          isDragTarget ? "border-t-2 border-accent-secondary bg-accent-primary/10" : "border-t border-border-color/50",
                           isSelected
-                            ? "bg-cyan-900/20 border-l-2 border-cyan-500"
-                            : "hover:bg-slate-800/30 border-l-2 border-transparent",
+                            ? "bg-accent-primary/20 border-l-2 border-accent-primary"
+                            : "hover:bg-bg-elevated/30 border-l-2 border-transparent",
                         ].join(" ")}
                         title={onAssignToChannel ? "Doppelklick: auf aktiven Kanal legen | Ziehen: auf Kanal-Zeile oder zum Umsortieren" : "Klick: auswählen | Ziehen: umsortieren oder auf Kanal"}
                       >
@@ -1384,21 +1384,21 @@ export function SampleBrowser({
 
                         {/* Name */}
                         <div className="flex-1 min-w-0">
-                          <p className={`text-xs truncate ${isSelected ? "text-cyan-300" : "text-slate-200"}`}>
+                          <p className={`text-xs truncate ${isSelected ? "text-cyan-300" : "text-text-primary"}`}>
                             {sample.name}
                           </p>
                         </div>
 
                         {/* Größe */}
                         {sample.size && (
-                          <span className="text-[10px] text-slate-600 flex-shrink-0">
+                          <span className="text-[10px] text-text-dim flex-shrink-0">
                             {formatBytes(sample.size)}
                           </span>
                         )}
 
                         {/* Waveform-Indikator */}
                         {analysisCache[sample.id] && !isSelected && (
-                          <span className="text-[8px] text-slate-700 flex-shrink-0">≋</span>
+                          <span className="text-[8px] text-text-dim flex-shrink-0">≋</span>
                         )}
 
                         {/* Auf Kanal legen (nur wenn Callback vorhanden) */}
@@ -1409,7 +1409,7 @@ export function SampleBrowser({
                               onAssignToChannel(sample.path, sample.name);
                             }}
                             title={`Auf Kanal "${activeChannelName ?? "aktiv"}" legen`}
-                            className="flex-shrink-0 px-1.5 py-0.5 rounded text-[9px] bg-cyan-700 text-white hover:bg-cyan-600 transition-colors font-medium"
+                            className="flex-shrink-0 px-1.5 py-0.5 rounded text-[9px] bg-accent-primary/70 text-white hover:bg-accent-primary transition-colors font-medium"
                           >
                             →
                           </button>
@@ -1422,8 +1422,8 @@ export function SampleBrowser({
                           className={[
                             "w-6 h-6 rounded flex items-center justify-center text-[10px] transition-all duration-100",
                             isThisPlaying
-                              ? "bg-cyan-600 text-white opacity-100"
-                              : "opacity-0 group-hover:opacity-100 bg-slate-700 text-slate-400 hover:bg-slate-600 hover:text-white",
+                              ? "bg-accent-primary text-white opacity-100"
+                              : "opacity-0 group-hover:opacity-100 bg-bg-elevated text-text-muted hover:bg-bg-elevated hover:text-white",
                           ].join(" ")}
                         >
                           {isThisPlaying ? "■" : "▶"}
@@ -1434,7 +1434,7 @@ export function SampleBrowser({
                           <button
                             onClick={(e) => { e.stopPropagation(); onRemoveSample(sample.id); }}
                             title="Sample entfernen"
-                            className="opacity-0 group-hover:opacity-100 text-slate-600 hover:text-red-400 transition-all duration-100 text-xs px-1"
+                            className="opacity-0 group-hover:opacity-100 text-text-dim hover:text-red-400 transition-all duration-100 text-xs px-1"
                           >
                             ✕
                           </button>
@@ -1465,8 +1465,8 @@ export function SampleBrowser({
       )}
 
       {/* ── Status-Leiste ─────────────────────────────────────────────────────── */}
-      <div className="px-3 py-1 bg-[#0d0d0d] border-t border-slate-800 flex items-center gap-2">
-        <p className="text-[10px] text-slate-600 flex-1">
+      <div className="px-3 py-1 bg-bg-panel border-t border-border-color flex items-center gap-2">
+        <p className="text-[10px] text-text-dim flex-1">
           {samples.length === 0
             ? "Keine Samples"
             : filteredSamples.length < samples.length
