@@ -39,8 +39,8 @@ function WindowButton({ onClick, title, hoverColor, children }: WindowButtonProp
       title={title}
       className={`
         w-12 h-full flex items-center justify-center
-        text-slate-400 transition-colors duration-100
-        hover:${hoverColor} hover:text-white
+        text-text-muted transition-colors duration-100
+        hover:${hoverColor} hover:text-text-primary
         focus:outline-none
       `}
       style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
@@ -89,7 +89,7 @@ export function ElectronTitleBar({
     <div
       className={`
         flex items-center justify-between
-        h-8 bg-[#0d0d0d] border-b border-slate-800
+        h-8 bg-bg-base border-b border-border-color
         select-none ${className}
       `}
       style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
@@ -97,17 +97,17 @@ export function ElectronTitleBar({
       {/* Linke Seite: App-Icon + Titel */}
       <div className="flex items-center gap-2 px-3 min-w-0">
         {/* Kleines App-Icon (Platzhalter) */}
-        <div className="w-4 h-4 rounded-full bg-cyan-500 flex-shrink-0 opacity-80" />
+        <div className="w-4 h-4 rounded-full bg-accent-primary flex-shrink-0 opacity-80" />
 
         {/* Titel */}
-        <span className="text-xs text-slate-300 truncate font-medium">
+        <span className="text-xs text-text-primary truncate font-medium">
           {title}
         </span>
 
         {/* isDirty-Indikator */}
         {isDirty && (
           <span
-            className="text-cyan-400 text-xs flex-shrink-0"
+            className="text-accent-primary text-xs flex-shrink-0"
             title="Ungespeicherte Änderungen"
           >
             ●
@@ -118,7 +118,7 @@ export function ElectronTitleBar({
       {/* Mitte: Projektname (zentriert) */}
       {projectName && (
         <div className="absolute left-1/2 -translate-x-1/2 pointer-events-none">
-          <span className="text-xs text-slate-500 truncate max-w-[200px] block text-center">
+          <span className="text-xs text-text-dim truncate max-w-[200px] block text-center">
             {projectName}
             {isDirty && " *"}
           </span>
@@ -134,7 +134,7 @@ export function ElectronTitleBar({
         <WindowButton
           onClick={handleMinimize}
           title="Minimieren"
-          hoverColor="bg-slate-700"
+          hoverColor="bg-bg-elevated"
         >
           <svg width="10" height="1" viewBox="0 0 10 1" fill="currentColor">
             <rect width="10" height="1" />
@@ -145,10 +145,16 @@ export function ElectronTitleBar({
         <WindowButton
           onClick={handleMaximize}
           title={isMaximized ? "Wiederherstellen" : "Maximieren"}
-          hoverColor="bg-slate-700"
+          hoverColor="bg-bg-elevated"
         >
           {isMaximized ? (
-            /* Wiederherstellen-Icon */
+            /* Wiederherstellen-Icon
+             * Note: SVG rect fill below uses raw hex "#0d0d0d" intentionally —
+             * it acts as the punch-through mask for the back rectangle of the
+             * "restore" icon and is rendered on the title-bar bg. We keep it
+             * theme-independent because <rect fill="..."> doesn't resolve
+             * CSS variables; matching the title-bar bg via currentColor would
+             * require a different SVG structure. Color-Refactor-Sonderfall. */
             <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1">
               <rect x="2" y="0" width="8" height="8" />
               <rect x="0" y="2" width="8" height="8" fill="#0d0d0d" />
@@ -166,7 +172,7 @@ export function ElectronTitleBar({
         <WindowButton
           onClick={handleClose}
           title="Schließen"
-          hoverColor="bg-red-600"
+          hoverColor="bg-accent-danger"
         >
           <svg width="10" height="10" viewBox="0 0 10 10" stroke="currentColor" strokeWidth="1.2">
             <line x1="0" y1="0" x2="10" y2="10" />

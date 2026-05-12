@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "1.18.2",
+    version: "1.18.3",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -226,6 +226,28 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "refactor",
+      timestamp: "2026-05-12T20:40:00.000Z",
+      done: [
+        "FOLLOWUP-110 / MixerView.tsx: Replaced 13 hardcoded Tailwind colour classes with semantic tokens. text-yellow-400/soloed→text-accent-success; bg-cyan-950/25+ring-cyan-500/60→bg-accent-secondary/15+ring-accent-secondary/60 (selected channel highlight); bg-orange-600 text-white (muted active)→bg-accent-secondary text-bg-base — aligned with existing ChannelStrip.tsx convention; bg-yellow-500 text-slate-900 (soloed active)→bg-accent-success text-bg-base; hover:text-orange-400/yellow-400→hover:text-accent-secondary/accent-success; text-purple-400 + accent-purple-500 (Reverb send/return)→text-accent-secondary + accent-accent-secondary; text-blue-400 + accent-blue-500 (Delay send/return)→text-accent-primary + accent-accent-primary; bg-slate-950 (disabled FX slot)→bg-bg-base; text-red-400 hover:text-red-300 (Remove-FX button)→text-accent-danger hover:text-accent-danger/80; return-track-muted label text-orange-400→text-text-dim.",
+        "FOLLOWUP-110 / ElectronTitleBar.tsx: Replaced 9 hardcoded Tailwind colour classes with semantic tokens. text-slate-400→text-text-muted and hover:text-white→hover:text-text-primary (WindowButton base); bg-[#0d0d0d]→bg-bg-base (title-bar root); border-slate-800→border-border-color; bg-cyan-500 (app icon dot)→bg-accent-primary; text-slate-300 (title)→text-text-primary; text-cyan-400 (dirty-indicator ●)→text-accent-primary; text-slate-500 (centered project subtitle)→text-text-dim; hover:bg-slate-700 (min+max buttons)→bg-bg-elevated; hover:bg-red-600 (close button)→bg-accent-danger.",
+        "FOLLOWUP-110 / Test: Added tests/features/theme-class-purity.test.ts with 7 regression tests. Uses fs.readFileSync (no jsdom — avoids AudioEngine + electron preload globals) and a strict regex over both refactored source files. Covers bg/text/border/ring/accent/fill/stroke/from/to/via/placeholder/caret/decoration/outline/divide/shadow-(slate|cyan|red|yellow|orange|purple|blue|green|pink|amber|gray|zinc|neutral|stone|lime|emerald|teal|sky|indigo|violet|fuchsia|rose)-NNN and bg-[#hex]/text-[#hex] arbitrary utilities, with optional prefixes hover:/focus:/active:/disabled:/group-hover:. Sanity-tests verify the regex catches known offenders (bg-slate-900, bg-[#0d0d0d]) and does NOT flag semantic tokens (bg-bg-base, text-accent-primary).",
+        "FOLLOWUP-110 / Verification: pnpm check clean. pnpm test 1010/1025 green (15 pre-existing skipped, +7 new theme-purity tests, 0 regressions across 59 test files)."
+      ],
+      next: [
+        "Theme-coverage gap (PRE-EXISTING, NOT introduced by this refactor): client/src/index.css themes 'daylight' (#7) and 'paper' (#8) do NOT define --ss-accent-success and --ss-accent-danger. Any component using bg-accent-success / text-accent-danger (incl. ChannelStrip solo/mute, MixerView Remove-FX button, MixerView soloed-label colour after this refactor, MixerView soloed-active button) will render with an UNSET CSS var in those two light themes — the resulting CSS color becomes an empty string and the property falls back to inherited/default. Frontend agent should add to daylight: --ss-accent-success: #16a34a; --ss-accent-danger: #dc2626; to paper: --ss-accent-success: #15803d; --ss-accent-danger: #b91c1c (matching their respective primary-accent saturations). Until then both light themes have a visual gap.",
+        "SampleBrowser.tsx still has ~20 hardcoded text-cyan-*, bg-cyan-*, border-cyan-*, bg-green-900, bg-blue-900 occurrences — separate FOLLOWUP-111 candidate (already flagged in refactor-log 2026-05-12T18:15).",
+        "ElectronTitleBar.tsx restore-icon SVG still has <rect fill='#0d0d0d'> as punch-through mask — kept intentionally (documented in code as 'Color-Refactor-Sonderfall') because SVG fill attribute does not resolve CSS variables and a generic fix needs a different icon structure. Visual impact is invisible in 7/10 themes whose bg-base is near-black; only daylight/paper/protanopia (light bg-base) might show the small 8×8 dark dot when the title-bar is maximised. Polish-only follow-up.",
+        "MixerView.tsx canvas/inline-style raw hex colours remain (vuColor() #ef4444+#f59e0b clip-warning thresholds; VuMeter inactive segment bg #1e293b; SpectrumDisplay fallback strings). These are JS-level not Tailwind-level — out of scope for FOLLOWUP-110. Spectrum already reads --ss-* via getCssColor(). VuMeter inactive bg could use var(--ss-bg-elevated) — polish-only follow-up.",
+        "Consider promoting the new theme-class-purity regex to a CI lint rule that scans ALL files under client/src/components/ + electron/components/ — would prevent regression at PR time rather than waiting for a multi-viewport sweep."
+      ],
+      changed: [
+        "client/src/components/Mixer/MixerView.tsx",
+        "electron/components/ElectronTitleBar.tsx",
+        "tests/features/theme-class-purity.test.ts"
+      ]
+    },
     {
       agent:     "testing",
       timestamp: "2026-05-12T19:15:00.000Z",

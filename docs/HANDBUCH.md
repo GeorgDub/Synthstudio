@@ -1,6 +1,6 @@
 # Synthstudio – Funktionshandbuch
 
-**Version 1.18.2 | Vollständige Dokumentation aller Features**
+**Version 1.18.3 | Vollständige Dokumentation aller Features**
 
 ---
 
@@ -1582,6 +1582,22 @@ Die Sandbox basiert auf **10 Hardening-Layern** (siehe `docs/SECURITY-SCRIPT-SAN
 
 ---
 
+## v1.18.3: Theme-Refactor (FOLLOWUP-110) + Daylight/Paper Token-Fix
+
+`MixerView.tsx` und `ElectronTitleBar.tsx` hatten **22 hardcoded Tailwind-Farben** (`bg-cyan-950`, `bg-yellow-500`, `bg-orange-600`, `text-slate-900`, `bg-[#0d0d0d]`, `hover:bg-slate-700`, `hover:bg-red-600` u.a.) die in den 10 Themes nicht auf `--ss-*`-Variablen reagierten — z.B. blieb der Mute-Button auch in Sonnenuntergang/OLED-Schwarz orange.
+
+**Fix:** alle 22 Klassen auf semantische Tokens ersetzt (`bg-accent-secondary`, `bg-accent-danger`, `text-text-muted` usw.). Mute/Solo-Konvention zwischen `MixerView` und `ChannelStrip` vereinheitlicht.
+
+**Bonus-Fix:** `daylight` und `paper` Themes hatten die Tokens `--ss-accent-success` und `--ss-accent-danger` **nicht definiert** (pre-existing Bug, wurde durch den Refactor sichtbar). Beide Themes ergänzt mit theme-passenden Grün- und Rot-Werten:
+- `daylight`: `--ss-accent-success: #16a34a; --ss-accent-danger: #dc2626;`
+- `paper`: `--ss-accent-success: #15803d; --ss-accent-danger: #b91c1c;`
+
+7 neue Tests in `tests/features/theme-class-purity.test.ts` verifizieren via Regex über Source-Files dass keine hardcoded Tailwind-Color-Klassen mehr in MixerView/ElectronTitleBar drin sind.
+
+**Sonderfall:** Ein `<rect fill="#0d0d0d">` in der `ElectronTitleBar` SVG-Restore-Icon-Maske bleibt erhalten — SVG `fill`-Attribute resolven keine CSS-Variablen. Im Code kommentiert.
+
+---
+
 ## v1.18.2: BUG-002 BPM-Button-Feedback
 
 **BPM +/- Buttons im DrumMachine-Header gaben kein sichtbares Klick-Feedback.** Die `onClick`-Handler funktionieren seit v1.6.0 — der Bug war subtiler: `hover:bg-bg-elevated` war die **gleiche Farbe** wie der default `bg-bg-elevated` Background. User klickten, sahen keinerlei visuelle Reaktion und nahmen an die Buttons seien nur dekorative Indikatoren für die `+`/`−`-Tastatur-Shortcuts.
@@ -1658,4 +1674,4 @@ Diese Releases enthalten keine neuen Features, sondern **kritische Bug-Fixes**:
 
 ---
 
-*Letzte Aktualisierung: Sprint 20 — v1.18.2 (BPM-Button Feedback BUG-002)*
+*Letzte Aktualisierung: Sprint 20 — v1.18.3 (FOLLOWUP-110 Theme-Refactor + Daylight/Paper Token-Fix)*

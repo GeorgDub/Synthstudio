@@ -196,7 +196,7 @@ function MixerChannel({
   selected, isMaster, onSelect,
   onVolumeChange, onPanChange, onMuteToggle, onSoloToggle, onSendChange,
 }: MixerChannelProps) {
-  const labelColor = muted ? "text-text-dim" : soloed ? "text-yellow-400" : "text-text-primary";
+  const labelColor = muted ? "text-text-dim" : soloed ? "text-accent-success" : "text-text-primary";
 
   return (
     <div
@@ -205,7 +205,7 @@ function MixerChannel({
         "flex flex-col items-center gap-1 px-2 py-2 select-none",
         "border-r border-border-color last:border-r-0 cursor-pointer",
         isMaster ? "bg-bg-panel/60 border-l border-border-color pl-3" : "",
-        selected ? "bg-cyan-950/25 ring-1 ring-cyan-500/60 ring-inset" : "",
+        selected ? "bg-accent-secondary/15 ring-1 ring-accent-secondary/60 ring-inset" : "",
         muted ? "opacity-50" : "",
       ].join(" ")}
       style={{ minWidth: isMaster ? "64px" : "52px" }}
@@ -262,8 +262,8 @@ function MixerChannel({
             className={[
               "w-6 h-5 rounded text-[8px] font-bold transition-colors duration-100",
               muted
-                ? "bg-orange-600 text-white"
-                : "bg-bg-elevated text-text-dim hover:bg-bg-elevated hover:text-orange-400",
+                ? "bg-accent-secondary text-bg-base"
+                : "bg-bg-elevated text-text-dim hover:bg-bg-elevated hover:text-accent-secondary",
             ].join(" ")}
           >
             M
@@ -274,8 +274,8 @@ function MixerChannel({
             className={[
               "w-6 h-5 rounded text-[8px] font-bold transition-colors duration-100",
               soloed
-                ? "bg-yellow-500 text-slate-900"
-                : "bg-bg-elevated text-text-dim hover:bg-bg-elevated hover:text-yellow-400",
+                ? "bg-accent-success text-bg-base"
+                : "bg-bg-elevated text-text-dim hover:bg-bg-elevated hover:text-accent-success",
             ].join(" ")}
           >
             S
@@ -287,23 +287,23 @@ function MixerChannel({
       {!isMaster && (
         <div className="flex flex-col gap-1 w-full mt-1">
           <div className="flex flex-col items-center gap-0.5">
-            <span className="text-[7px] text-purple-400 uppercase">Rev</span>
+            <span className="text-[7px] text-accent-secondary uppercase">Rev</span>
             <input
               type="range"
               min={0} max={1} step={0.01}
               value={sendReverb}
               onChange={e => onSendChange("reverb", parseFloat(e.target.value))}
-              className="w-full accent-purple-500 cursor-pointer"
+              className="w-full accent-accent-secondary cursor-pointer"
             />
           </div>
           <div className="flex flex-col items-center gap-0.5">
-            <span className="text-[7px] text-blue-400 uppercase">Dly</span>
+            <span className="text-[7px] text-accent-primary uppercase">Dly</span>
             <input
               type="range"
               min={0} max={1} step={0.01}
               value={sendDelay}
               onChange={e => onSendChange("delay", parseFloat(e.target.value))}
-              className="w-full accent-blue-500 cursor-pointer"
+              className="w-full accent-accent-primary cursor-pointer"
             />
           </div>
         </div>
@@ -373,7 +373,7 @@ function ChannelInspector({ part, parts, mixer }: ChannelInspectorProps) {
               key={slot.id}
               className={[
                 "flex items-center gap-1 rounded border px-2 py-1.5",
-                slot.enabled ? "border-border-color bg-bg-panel/70" : "border-border-color bg-slate-950 text-text-dim",
+                slot.enabled ? "border-border-color bg-bg-panel/70" : "border-border-color bg-bg-base text-text-dim",
               ].join(" ")}
             >
               <button
@@ -387,7 +387,7 @@ function ChannelInspector({ part, parts, mixer }: ChannelInspectorProps) {
               <span className="min-w-0 flex-1 truncate text-[11px] text-text-primary">{slot.name}</span>
               <button type="button" title="Nach oben" onClick={() => mixer.moveInsertFx(part.id, index, index - 1)} className="text-[10px] text-text-dim hover:text-text-primary">Up</button>
               <button type="button" title="Nach unten" onClick={() => mixer.moveInsertFx(part.id, index, index + 1)} className="text-[10px] text-text-dim hover:text-text-primary">Dn</button>
-              <button type="button" title="Entfernen" onClick={() => mixer.removeInsertFx(part.id, slot.id)} className="text-[10px] text-red-400 hover:text-red-300">X</button>
+              <button type="button" title="Entfernen" onClick={() => mixer.removeInsertFx(part.id, slot.id)} className="text-[10px] text-accent-danger hover:text-accent-danger/80">X</button>
             </div>
           ))}
         </div>
@@ -945,7 +945,7 @@ export function MixerView({ dm, mixer, samples = [], bpm = 120, projectName = "S
               <button
                 type="button"
                 onClick={() => handleReturnMuted(id, !track.muted)}
-                className={track.muted ? "text-orange-400" : id === "reverb" ? "text-purple-400" : "text-blue-400"}
+                className={track.muted ? "text-text-dim" : id === "reverb" ? "text-accent-secondary" : "text-accent-primary"}
               >
                 {track.muted ? "Muted" : track.name}
               </button>
@@ -957,7 +957,7 @@ export function MixerView({ dm, mixer, samples = [], bpm = 120, projectName = "S
                 step={0.01}
                 value={track.volume}
                 onChange={e => handleReturnVolume(id, parseFloat(e.target.value))}
-                className={id === "reverb" ? "w-24 accent-purple-500" : "w-24 accent-blue-500"}
+                className={id === "reverb" ? "w-24 accent-accent-secondary" : "w-24 accent-accent-primary"}
               />
             </div>
           );

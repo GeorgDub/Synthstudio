@@ -128,6 +128,8 @@
   --ss-bg-elevated: #f1f5f9;
   --ss-accent-primary:   #2563eb;
   --ss-accent-secondary: #db2777;
+  --ss-accent-success:   #16a34a;
+  --ss-accent-danger:    #dc2626;
   --ss-text-primary: #0f172a;
   --ss-text-muted:   #475569;
   --ss-text-dim:     #94a3b8;
@@ -142,6 +144,8 @@
   --ss-bg-elevated: #f9f9f0;
   --ss-accent-primary:   #d97706;
   --ss-accent-secondary: #059669;
+  --ss-accent-success:   #15803d;
+  --ss-accent-danger:    #b91c1c;
   --ss-text-primary: #1e1b18;
   --ss-text-muted:   #57534e;
   --ss-text-dim:     #a8a29e;
