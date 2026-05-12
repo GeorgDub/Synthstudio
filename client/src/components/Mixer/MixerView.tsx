@@ -18,6 +18,18 @@ import { AudioEngine } from "@/audio/AudioEngine";
 import type { PartData } from "@/audio/AudioEngine";
 import { MIXER_FX_TYPES, summarizeEqBands, type MixerFxType } from "@/utils/mixerFx";
 import { ExportPanel } from "./ExportPanel";
+import { AudioTrackStrip, computePeaksFromBuffer } from "./AudioTrackStrip";
+import {
+  useAudioTrackStore,
+  addAudioTrack,
+  getRuntimeState,
+  setRuntimeWaveform,
+  markBroken,
+  getAllAudioTracks,
+  MAX_AUDIO_TRACKS,
+  type AudioTrackChannelData,
+} from "@/store/useAudioTrackStore";
+import { useElectron } from "../../../../electron/useElectron";
 
 // ─── Hilfsfunktionen ─────────────────────────────────────────────────────────
 
@@ -510,6 +522,154 @@ export function MixerView({ dm, mixer, samples = [], bpm = 120, projectName = "S
   const parts = pattern?.parts ?? [];
   const selectedPart = parts.find(part => part.id === mixer.selectedChannelId) ?? parts[0];
 
+  // ── Audio-Tracks (externe Vocals/Songs) ────────────────────────────────────
+  // Hook-Aufruf abonniert den Store: bei add/remove/update + runtime-Änderungen
+  // (peaks/broken) wird MixerView neu gerendert und die Strips bekommen
+  // frische `runtime`-Snapshots via getRuntimeState().
+  const audioTrackStore = useAudioTrackStore();
+  const audioTracks = audioTrackStore.tracks;
+  const electron = useElectron();
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [addError, setAddError] = useState<string | null>(null);
+
+  // Engine-Getter einmalig setzen damit Transport-Play alle registrierten Tracks startet
+  useEffect(() => {
+    AudioEngine.setAudioTracksGetter(() => getAllAudioTracks());
+  }, []);
+
+  // Auto-fade Error-Toast
+  useEffect(() => {
+    if (!addError) return;
+    const id = setTimeout(() => setAddError(null), 3000);
+    return () => clearTimeout(id);
+  }, [addError]);
+
+  // Lädt eine einzelne Audio-Datei (Electron-Pfad oder Browser-File) als Track.
+  const ingestAudioFile = useCallback(
+    async (source: { kind: "path"; path: string; name: string; size?: number } | { kind: "file"; file: File }) => {
+      // Filename-Stem als Default-Name
+      const rawName = source.kind === "path" ? source.name : source.file.name;
+      const stemName = rawName.replace(/\.[^.]+$/, "").slice(0, 40) || "Audio Track";
+      const filePath = source.kind === "path" ? source.path : source.file.name;
+      const fileName = rawName;
+      const fileSize = source.kind === "path" ? source.size : source.file.size;
+
+      let trackId: string;
+      try {
+        trackId = addAudioTrack({
+          name: stemName,
+          filePath,
+          fileName,
+          fileSize,
+          volume: 1,
+          pan: 0,
+          muted: false,
+          soloed: false,
+          sends: { reverb: 0, delay: 0 },
+          syncMode: "free",
+        });
+      } catch (err) {
+        setAddError(
+          err instanceof Error && err.message.includes("Maximum")
+            ? `Max ${MAX_AUDIO_TRACKS} audio tracks reached`
+            : "Konnte Audio-Track nicht anlegen",
+        );
+        return;
+      }
+
+      // Buffer laden + Peaks + Engine registrieren
+      try {
+        const buf =
+          source.kind === "path"
+            ? await AudioEngine.loadAudioTrack(trackId, source.path)
+            : await AudioEngine.loadAudioTrack(trackId, source.file);
+
+        if (!buf) {
+          markBroken(trackId, true);
+          return;
+        }
+
+        const newTrack: AudioTrackChannelData = {
+          id: trackId,
+          name: stemName,
+          filePath,
+          fileName,
+          fileSize,
+          volume: 1,
+          pan: 0,
+          muted: false,
+          soloed: false,
+          sends: { reverb: 0, delay: 0 },
+          syncMode: "free",
+        };
+        AudioEngine.registerAudioTrack(newTrack);
+
+        // Peaks: bevorzugt via Electron, sonst client-side downsample
+        let peaks: Float32Array | undefined;
+        if (electron.isElectron && source.kind === "path") {
+          try {
+            const res = await electron.analyzeWaveform(source.path, 200);
+            const r = res as { success?: boolean; peaks?: number[] };
+            if (r.success && Array.isArray(r.peaks)) {
+              peaks = Float32Array.from(r.peaks);
+            }
+          } catch { /* ignore – fallback below */ }
+        }
+        if (!peaks) peaks = computePeaksFromBuffer(buf, 200);
+        setRuntimeWaveform(trackId, buf.duration, peaks);
+      } catch (err) {
+        console.warn("[MixerView] ingestAudioFile error:", err);
+        markBroken(trackId, true);
+      }
+    },
+    [electron],
+  );
+
+  const handleAddAudioTrack = useCallback(async () => {
+    if (audioTracks.length >= MAX_AUDIO_TRACKS) {
+      setAddError(`Max ${MAX_AUDIO_TRACKS} audio tracks reached`);
+      return;
+    }
+    if (electron.isElectron) {
+      const result = await electron.openFileDialog({
+        title: "Audio-Tracks importieren",
+        filters: [
+          {
+            name: "Audio",
+            extensions: ["wav", "mp3", "ogg", "flac", "aif", "aiff", "m4a"],
+          },
+        ],
+        multiSelections: true,
+      });
+      if (result.canceled || result.filePaths.length === 0) return;
+      for (const p of result.filePaths) {
+        if (getAllAudioTracks().length >= MAX_AUDIO_TRACKS) {
+          setAddError(`Max ${MAX_AUDIO_TRACKS} audio tracks reached`);
+          break;
+        }
+        const name = p.split(/[\\/]/).pop() ?? p;
+        await ingestAudioFile({ kind: "path", path: p, name });
+      }
+    } else {
+      fileInputRef.current?.click();
+    }
+  }, [audioTracks.length, electron, ingestAudioFile]);
+
+  const handleBrowserFileInput = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const files = Array.from(e.target.files ?? []);
+      e.target.value = ""; // Reset für erneute Selektion derselben Datei
+      for (const f of files) {
+        if (getAllAudioTracks().length >= MAX_AUDIO_TRACKS) {
+          setAddError(`Max ${MAX_AUDIO_TRACKS} audio tracks reached`);
+          break;
+        }
+        await ingestAudioFile({ kind: "file", file: f });
+      }
+    },
+    [ingestAudioFile],
+  );
+
   // VU-Meter Animation via requestAnimationFrame
   // (vereinfacht: setzt peakLevel via AnalyserNode wenn verfügbar)
   const analyserMap = useRef<Map<string, AnalyserNode>>(new Map());
@@ -601,11 +761,41 @@ export function MixerView({ dm, mixer, samples = [], bpm = 120, projectName = "S
   }, [mixer.insertChains]);
 
   return (
-    <div className={`flex flex-col h-full bg-bg-base overflow-hidden ${className}`}>
+    <div className={`relative flex flex-col h-full bg-bg-base overflow-hidden ${className}`}>
       {/* Header */}
       <div className="flex items-center gap-2 px-4 py-2 border-b border-border-color bg-bg-panel flex-wrap">
         <span className="text-xs font-bold text-text-dim uppercase tracking-widest">Mixer</span>
         <span className="text-[10px] text-text-dim">{parts.length} Kanäle</span>
+
+        {/* Add Audio Track (Vocals/Songs) */}
+        <button
+          type="button"
+          onClick={handleAddAudioTrack}
+          disabled={audioTracks.length >= MAX_AUDIO_TRACKS}
+          aria-label="Audio Track hinzufügen"
+          title={
+            audioTracks.length >= MAX_AUDIO_TRACKS
+              ? `Max ${MAX_AUDIO_TRACKS} audio tracks reached`
+              : "Audio-Datei (Vocals, Song) als Track laden"
+          }
+          className="px-2 py-0.5 text-[10px] rounded border border-accent-secondary/50 text-accent-secondary bg-accent-secondary/10 hover:bg-accent-secondary/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          + Audio Track
+          <span className="ml-1 text-text-dim">
+            ({audioTracks.length}/{MAX_AUDIO_TRACKS})
+          </span>
+        </button>
+
+        {/* Hidden file input (Browser-Fallback) */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="audio/*,.wav,.mp3,.ogg,.flac,.aif,.aiff,.m4a"
+          multiple
+          onChange={handleBrowserFileInput}
+          className="hidden"
+          aria-hidden="true"
+        />
 
         {/* Bus Compressor Toggle */}
         <button
@@ -659,7 +849,33 @@ export function MixerView({ dm, mixer, samples = [], bpm = 120, projectName = "S
 
       <div className="flex min-h-0 flex-1">
         {/* Channel Strips */}
-        <div className="flex-1 overflow-x-auto overflow-y-hidden">
+        <div
+          className="flex-1 overflow-x-auto overflow-y-hidden"
+          onDragOver={(e) => {
+            // Nur Audio-Dateien? Drop akzeptieren.
+            const hasFiles = e.dataTransfer.types.includes("Files");
+            if (hasFiles) {
+              e.preventDefault();
+              e.dataTransfer.dropEffect = "copy";
+            }
+          }}
+          onDrop={async (e) => {
+            const files = Array.from(e.dataTransfer.files ?? []);
+            if (files.length === 0) return;
+            // Nur Audio-Dateien filtern – andere ans existing-Sample-Browser-Verhalten weiterreichen
+            const audio = files.filter((f) => /\.(wav|mp3|ogg|flac|aiff?|m4a)$/i.test(f.name) || f.type.startsWith("audio/"));
+            if (audio.length === 0) return;
+            e.preventDefault();
+            e.stopPropagation();
+            for (const f of audio) {
+              if (getAllAudioTracks().length >= MAX_AUDIO_TRACKS) {
+                setAddError(`Max ${MAX_AUDIO_TRACKS} audio tracks reached`);
+                break;
+              }
+              await ingestAudioFile({ kind: "file", file: f });
+            }
+          }}
+        >
           <div className="flex h-full items-stretch">
             {parts.map(part => {
               const ch = mixer.channels[part.id];
@@ -685,6 +901,16 @@ export function MixerView({ dm, mixer, samples = [], bpm = 120, projectName = "S
                 />
               );
             })}
+
+            {/* Audio-Track Channel-Strips (Vocals/Songs) */}
+            {audioTracks.map(track => (
+              <AudioTrackStrip
+                key={track.id}
+                track={track}
+                runtime={getRuntimeState(track.id)}
+                isPlaying={AudioEngine.isPlaying}
+              />
+            ))}
 
             {/* Master-Kanal */}
             <MixerChannel
@@ -740,6 +966,17 @@ export function MixerView({ dm, mixer, samples = [], bpm = 120, projectName = "S
 
       {/* Export Panel */}
       <ExportPanel pattern={pattern} bpm={bpm} samples={samples} allPatterns={dm.patterns} projectName={projectName} />
+
+      {/* Audio-Track Error Toast (z.B. Max-Limit) */}
+      {addError && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="absolute bottom-4 right-4 px-3 py-2 rounded border border-accent-danger/50 bg-bg-elevated text-accent-danger text-xs shadow-lg pointer-events-none"
+        >
+          {addError}
+        </div>
+      )}
     </div>
   );
 }

@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "1.15.5",
+    version: "1.16.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -141,7 +141,8 @@ const INDEX = {
     "MIDI Import":       { store: null,                      tab: "Sequencer",         status: "stable" },
     "Keyboard Bindings": { store: "useKeyboardBindingsStore.ts", tab: "Settings",      status: "stable" },
     "Themes":            { count: 10,                        tab: "Settings",          status: "stable" },
-    "KI-Generator":      { store: null,                      tab: "Tools",             status: "⚠️ requires API key" }
+    "KI-Generator":      { store: null,                      tab: "Tools",             status: "⚠️ requires API key" },
+    "Audio Tracks":      { store: "useAudioTrackStore.ts",   tab: "F2 (Mixer)",        status: "stable (v1.16.0+)", notes: "Path-ref persistence in .synth, max 8 tracks, BPM-sync via playbackRate (Pitch+Tempo)" }
   },
 
   // ─── KNOWN BUGS ────────────────────────────────────────────
@@ -215,6 +216,54 @@ const INDEX = {
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
     {
+      agent:     "frontend",
+      timestamp: "2026-05-12T17:00:00.000Z",
+      done: [
+        "TASK-102 / F3: Created AudioTrackStrip.tsx (channel-strip-Variant für externe Audio-Tracks)",
+        "TASK-102 / F3: MixerView.tsx erweitert um [+ Audio Track]-Button im Header (mit Counter X/8)",
+        "TASK-102 / F3: MixerView.tsx rendert AudioTrackStrips zwischen drum-parts und master",
+        "TASK-102 / F3: Engine-Getter AudioEngine.setAudioTracksGetter() einmalig im Mount-useEffect gesetzt",
+        "TASK-102 / F3: DragDrop in MixerView channel-area – Audio-Dateien werden als Audio-Track ingestiert",
+        "TASK-102 / F3: App.tsx Relocate-Probe nach loadAudioTracks() (Electron: getAudioMetadata; Browser: alle als broken markiert)",
+        "TASK-102 / F3: App.tsx Browser-Warning-Toast bei Save mit Audio-Tracks + LocalStorage-Dismiss",
+        "TASK-102 / F3: Playwright-Smoke tests/web/audio-track.spec.ts (5 Tests: Add-Button, Strip-Erscheinen, Controls, Remove, Sync-Mode)",
+        "TASK-102 / F3: pnpm check + pnpm test grün (852/867, 15 pre-existing skipped)"
+      ],
+      next: [
+        "Verifizieren: Playwright web-test gegen lokalen Vite-Server laufen lassen (pnpm test:web tests/web/audio-track.spec.ts)",
+        "v1.17.0: Pitch-preserving stretch implementieren (aktuell nur playbackRate = Pitch+Tempo gekoppelt)",
+        "Optional UI: WaveformDisplay Hover-Tooltip nutzt hardcoded text-cyan-300 — auf text-accent-secondary umstellen",
+        "Audio-Track Solo-Logik: Drum-Parts werden NICHT von Audio-Track-Solo betroffen (gewollt — Audio-Track-Solo scope-isoliert in Engine)"
+      ],
+      changed: [
+        "client/src/components/Mixer/AudioTrackStrip.tsx",
+        "client/src/components/Mixer/MixerView.tsx",
+        "client/src/components/Mixer/index.ts",
+        "client/src/App.tsx",
+        "tests/web/audio-track.spec.ts"
+      ]
+    },
+    {
+      agent:     "frontend",
+      timestamp: "2026-05-12T16:37:00.000Z",
+      done: [
+        "TASK-102 / F2: Verified useAudioTrackStore module-singleton + Observer-Pattern implementation",
+        "TASK-102 / F2: Verified projectSerializer.ts bumped to SYNTH_FILE_VERSION='1.15' with audioTracks field",
+        "TASK-102 / F2: Verified App.tsx save/load wiring (buildProjectSnapshot calls getAllAudioTracks(), restoreProject calls loadAudioTracks())",
+        "TASK-102 / F2: Wrote tests/features/audio-track-store.test.ts (25 tests across store + serializer)",
+        "TASK-102 / F2: pnpm check clean, pnpm test 832/847 passing (15 pre-existing skipped)"
+      ],
+      next: [
+        "F1 (AudioEngine) and F3 (Mixer UI) parallel tracks — wire UI to store after F1 lands buffer-decode pipeline",
+        "Consider de-duping AudioTrackChannelData type: it lives in BOTH useAudioTrackStore.ts and AudioEngine.ts — once F1 stabilises, projectSerializer.ts + store should import from AudioEngine.ts as single source of truth",
+        "F3 must ensure no hardcoded Tailwind colors when MixerView gets the new audio-track channels"
+      ],
+      changed: [
+        "tests/features/audio-track-store.test.ts",
+        "agents/INDEX.js"
+      ]
+    },
+    {
       agent:     "coordinator",
       timestamp: "2026-05-12T00:00:00.000Z",
       done: [
@@ -278,11 +327,11 @@ const INDEX = {
       notes:    "User reported 'layout verzogen' but no concrete reproduction. Needs Playwright multi-viewport sweep."
     },
     {
-      id:       "TASK-102",
-      title:    "Audio-Track channel for vocals/songs (remix workflow)",
-      severity: "high",
-      target:   "v1.16.0",
-      notes:    "Decision needed: persist file-path-ref in .synth (with relocate-dialog on missing) vs session-only. Recommended: path-ref."
+      id:       "FOLLOWUP-102",
+      title:    "Audio-Track refinements (post-v1.16.0)",
+      severity: "low",
+      target:   "v1.16.1 / v1.17.0",
+      notes:    "(1) De-dup AudioTrackChannelData type (currently in both useAudioTrackStore.ts and AudioEngine.ts). (2) Pitch-preserving stretch via existing TimeStretchProcessor.js worklet. (3) Solo cross-store unification (drum+audio). (4) Full Playwright round-trip E2E (save → reopen → relocate)."
     },
     {
       id:       "TASK-103",

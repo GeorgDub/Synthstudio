@@ -162,6 +162,36 @@ export interface StepData {
   length?: number;
 }
 
+/**
+ * Externe Audio-Datei als Mixer-Channel (Vocals, Songs zum Remixen).
+ * Persistierung erfolgt als Pfad-Referenz im .synth-Projekt.
+ *
+ * Routing: Source → channelNodes[id].input → existierende FX-Chain → master
+ * BPM-Sync: nur über `AudioBufferSourceNode.playbackRate` (Pitch+Tempo gekoppelt).
+ */
+export interface AudioTrackChannelData {
+  /** Eindeutige ID. Konvention: "audiotrack:" Prefix. Engine erzwingt es nicht. */
+  id: string;
+  name: string;
+  /** Absoluter Pfad (Electron) oder Dateiname (Browser). */
+  filePath: string;
+  fileName: string;
+  fileSize?: number;
+  /** 0..2 */
+  volume: number;
+  /** -1..+1 */
+  pan: number;
+  muted: boolean;
+  soloed: boolean;
+  sends: { reverb: number; delay: number };
+  /** Wo im Sample der Track beginnen soll (Sekunden ab Buffer-Anfang). */
+  startOffsetSec?: number;
+  loop?: boolean;
+  /** "free" = unabhängig vom Transport-BPM. "stretch" = playbackRate = bpm/originalBpm. */
+  syncMode?: "free" | "stretch";
+  originalBpm?: number | null;
+}
+
 export interface PartData {
   id: string;
   name: string;
@@ -267,6 +297,20 @@ class AudioEngineClass {
   private _granularEngines = new Map<string, import("./GranularEngine").GranularEngine>();
   private reverbBuffers = new Map<string, AudioBuffer>(); // decay → buffer
 
+  // ─── Audio-Track Channels (externe Dateien: Vocals/Songs) ──────────────────
+  private audioTrackSources = new Map<string, AudioBufferSourceNode>();
+  private audioTrackBuffers = new Map<string, AudioBuffer>();
+  /** Zeitpunkt zu dem ein Track gestartet wurde + sein offset im Buffer. */
+  private audioTrackStartTimes = new Map<string, { ctxStart: number; offsetSec: number }>();
+  /** Aktive rAF-IDs für Position-Updates. */
+  private audioTrackPositionRaf = new Map<string, number>();
+  private audioTrackPositionListeners = new Map<string, Set<(pos01: number, sec: number) => void>>();
+  private audioTrackEndedListeners = new Map<string, Set<() => void>>();
+  /** Track-Metadaten (für playAllRegisteredAudioTracks + setBpm sync). */
+  private audioTrackData = new Map<string, AudioTrackChannelData>();
+  /** Externer Getter (Store) – primäre Quelle für playAllRegisteredAudioTracks. */
+  private audioTracksGetter: (() => AudioTrackChannelData[]) | null = null;
+
   // Global Send Buses
   private _globalReverbBus: ConvolverNode | null = null;
   private _globalReverbWet: GainNode | null = null;
@@ -357,7 +401,10 @@ class AudioEngineClass {
     if (this.ctx?.state === "suspended") await this.ctx.resume();
   }
 
-  setBpm(bpm: number) { this._bpm = Math.max(20, Math.min(300, bpm)); }
+  setBpm(bpm: number) {
+    this._bpm = Math.max(20, Math.min(300, bpm));
+    this._updateAudioTrackPlaybackRates();
+  }
   setSteps(steps: 16 | 32) { this._steps = steps; }
   setStepResolution(res: StepResolution) { this._stepResolution = res; }
 
@@ -888,9 +935,14 @@ class AudioEngineClass {
     this._nextStepTime = this.ctx!.currentTime + 0.05;
 
     this.schedulerTimer = setInterval(() => this._schedule(), this.SCHEDULE_INTERVAL);
+
+    // Externe Audio-Tracks (Vocals, Songs) parallel zum Step-Sequencer starten.
+    this.playAllRegisteredAudioTracks();
   }
 
   stop() {
+    // Audio-Tracks (Vocals/Songs) zuerst stoppen, solange ctx noch verfügbar ist.
+    this.stopAllAudioTracks();
     this._isPlaying = false;
     if (this.schedulerTimer !== null) {
       clearInterval(this.schedulerTimer);
@@ -1728,6 +1780,377 @@ class AudioEngineClass {
       gain.connect(panner);
       panner.connect(this.masterGain);
       source.start(this.ctx.currentTime);
+    }
+  }
+
+  // ─── Audio-Track Channels (externe Dateien) ───────────────────────────────
+  //
+  // Vocals, Songs zum Remixen – als Mixer-Channel persistiert (Pfad-Referenz in
+  // .synth). Routing geht über _getOrCreateChannelNodes(id, DEFAULT_CHANNEL_FX),
+  // wodurch die volle Insert-FX-Kette und Sends automatisch verfügbar sind.
+
+  /**
+   * Lädt einen Audio-Buffer für einen Audio-Track. Cached intern.
+   * - `string`-Eingabe: nutzt `_loadBuffer` (Electron `fs:read-file` oder fetch).
+   * - `File`-Eingabe: dekodiert direkt via `decodeAudioData(file.arrayBuffer())`.
+   * Bei Fehler null zurueck – kein Throw, damit UI dialog ohne crash zeigen kann.
+   */
+  async loadAudioTrack(id: string, fileOrPath: string | File): Promise<AudioBuffer | null> {
+    await this.init();
+    if (!this.ctx) return null;
+
+    // Wenn bereits geladen: cache treffen.
+    const cached = this.audioTrackBuffers.get(id);
+    if (cached) return cached;
+
+    let buf: AudioBuffer | null = null;
+    if (typeof fileOrPath === "string") {
+      buf = await this._loadBuffer(fileOrPath);
+    } else {
+      try {
+        const arr = await fileOrPath.arrayBuffer();
+        buf = await this.ctx.decodeAudioData(arr.slice(0));
+      } catch (err) {
+        console.warn("[AudioEngine] loadAudioTrack File decode error:", err);
+        return null;
+      }
+    }
+    if (!buf) return null;
+    this.audioTrackBuffers.set(id, buf);
+    return buf;
+  }
+
+  /**
+   * Registriert die Track-Metadaten und wendet Volume/Pan/Sends/Mute auf den
+   * Channel an. Der Buffer muss separat via `loadAudioTrack` geladen sein bzw.
+   * sein. Idempotent – aktualisiert vorhandene Einträge.
+   */
+  registerAudioTrack(data: AudioTrackChannelData): void {
+    this.audioTrackData.set(data.id, { ...data });
+    // Channel-Nodes anlegen damit Mixer-Routing direkt funktioniert.
+    if (this.ctx) {
+      const nodes = this._getOrCreateChannelNodes(data.id, DEFAULT_CHANNEL_FX);
+      // Volume / Pan / Sends initial setzen.
+      this.setChannelVolume(data.id, data.muted ? 0 : data.volume);
+      this.setChannelPan(data.id, data.pan);
+      this.setChannelSend(data.id, "reverb", data.sends?.reverb ?? 0);
+      this.setChannelSend(data.id, "delay", data.sends?.delay ?? 0);
+      // Solo-Logik delegiert an Engine-Helfer (audio-track-only scope).
+      void nodes;
+      this._reapplyAudioTrackSoloMutes();
+    }
+  }
+
+  /**
+   * Startet die Wiedergabe eines registrierten + geladenen Tracks.
+   * Wenn der Track bereits laeuft, wird er zuerst gestoppt (replay).
+   */
+  playAudioTrack(id: string, opts?: { startOffsetSec?: number; loop?: boolean }): void {
+    if (!this.ctx) return;
+    const buf = this.audioTrackBuffers.get(id);
+    if (!buf) return;
+    const data = this.audioTrackData.get(id);
+
+    // Existierende Source stoppen (Replay)
+    this._stopAudioTrackSource(id);
+
+    const source = this.ctx.createBufferSource();
+    source.buffer = buf;
+    source.loop = opts?.loop ?? data?.loop ?? false;
+
+    // PlaybackRate aus syncMode ableiten
+    const rate = this._calcAudioTrackPlaybackRate(data);
+    source.playbackRate.value = rate;
+
+    // Routing: source → channelNodes.input → FX → master
+    const nodes = this._getOrCreateChannelNodes(id, DEFAULT_CHANNEL_FX);
+    source.connect(nodes.input);
+
+    const offsetSec = Math.max(0, opts?.startOffsetSec ?? data?.startOffsetSec ?? 0);
+    const ctxStart = this.ctx.currentTime;
+    try {
+      source.start(ctxStart, offsetSec);
+    } catch (err) {
+      console.warn("[AudioEngine] playAudioTrack start error:", err);
+      return;
+    }
+
+    source.onended = () => {
+      // Nur cleanup wenn die Source noch unsere aktuelle ist.
+      if (this.audioTrackSources.get(id) === source) {
+        this.audioTrackEndedListeners.get(id)?.forEach(cb => {
+          try { cb(); } catch { /* ignore */ }
+        });
+        this._cleanupAudioTrackSource(id);
+      }
+    };
+
+    this.audioTrackSources.set(id, source);
+    this.audioTrackStartTimes.set(id, { ctxStart, offsetSec });
+
+    // Position-rAF starten, falls Listener registriert.
+    if ((this.audioTrackPositionListeners.get(id)?.size ?? 0) > 0) {
+      this._startAudioTrackPositionRaf(id);
+    }
+  }
+
+  /** Stoppt einen Track. No-op wenn nicht aktiv. */
+  stopAudioTrack(id: string): void {
+    this._stopAudioTrackSource(id);
+    this._cleanupAudioTrackSource(id);
+  }
+
+  /** Delegiert an setChannelVolume – Audio-Track nutzt die FX-Chain wie ein Drum-Part. */
+  setAudioTrackVolume(id: string, v: number): void {
+    const data = this.audioTrackData.get(id);
+    if (data) data.volume = v;
+    // Wenn muted, bleibt der Channel auf 0 bis unmute.
+    if (data?.muted) return;
+    this.setChannelVolume(id, v);
+  }
+
+  setAudioTrackPan(id: string, p: number): void {
+    const data = this.audioTrackData.get(id);
+    if (data) data.pan = p;
+    this.setChannelPan(id, p);
+  }
+
+  setAudioTrackMute(id: string, muted: boolean): void {
+    const data = this.audioTrackData.get(id);
+    if (data) data.muted = muted;
+    if (muted) {
+      this.setChannelVolume(id, 0);
+    } else {
+      this.setChannelVolume(id, data?.volume ?? 1);
+    }
+    this._reapplyAudioTrackSoloMutes();
+  }
+
+  /**
+   * Solo-Logik beschraenkt auf Audio-Tracks: wenn mindestens ein Audio-Track
+   * `soloed=true` hat, werden alle anderen Audio-Tracks stumm geschaltet.
+   * Drum-Parts werden NICHT beeinflusst (out of scope fuer v1.16.0).
+   */
+  setAudioTrackSolo(id: string, soloed: boolean): void {
+    const data = this.audioTrackData.get(id);
+    if (data) data.soloed = soloed;
+    this._reapplyAudioTrackSoloMutes();
+  }
+
+  /**
+   * Setzt die Wiedergabe-Position auf `sec` Sekunden. Wenn der Track gerade
+   * spielt, wird die Source neu erzeugt und beim neuen Offset gestartet.
+   */
+  seekAudioTrack(id: string, sec: number): void {
+    const wasActive = this.audioTrackSources.has(id);
+    const data = this.audioTrackData.get(id);
+    if (data) data.startOffsetSec = Math.max(0, sec);
+    if (wasActive) {
+      this.playAudioTrack(id, { startOffsetSec: Math.max(0, sec), loop: data?.loop });
+    }
+  }
+
+  /**
+   * Registriert einen Position-Callback. Liefert `(pos01, sec)` ca. 60 Hz
+   * waehrend Wiedergabe. Gibt eine Unsub-Funktion zurueck.
+   */
+  onAudioTrackPosition(id: string, cb: (pos01: number, sec: number) => void): () => void {
+    let set = this.audioTrackPositionListeners.get(id);
+    if (!set) {
+      set = new Set();
+      this.audioTrackPositionListeners.set(id, set);
+    }
+    set.add(cb);
+    if (this.audioTrackSources.has(id) && !this.audioTrackPositionRaf.has(id)) {
+      this._startAudioTrackPositionRaf(id);
+    }
+    return () => {
+      const s = this.audioTrackPositionListeners.get(id);
+      s?.delete(cb);
+      if (s && s.size === 0) {
+        this.audioTrackPositionListeners.delete(id);
+        this._stopAudioTrackPositionRaf(id);
+      }
+    };
+  }
+
+  onAudioTrackEnded(id: string, cb: () => void): () => void {
+    let set = this.audioTrackEndedListeners.get(id);
+    if (!set) {
+      set = new Set();
+      this.audioTrackEndedListeners.set(id, set);
+    }
+    set.add(cb);
+    return () => {
+      const s = this.audioTrackEndedListeners.get(id);
+      s?.delete(cb);
+      if (s && s.size === 0) this.audioTrackEndedListeners.delete(id);
+    };
+  }
+
+  /**
+   * Volles cleanup: stoppt Source, loescht Buffer-Cache, rAF, Listener und
+   * Channel-Metadaten. Der Channel-Knoten selbst bleibt bestehen (Re-Use bei
+   * Re-Add). Wenn der Channel komplett entfernt werden soll, muss die Store-
+   * Schicht zusaetzlich `channelNodes.delete(id)` anstoßen – das ist hier
+   * absichtlich nicht enthalten, weil andere Komponenten den Channel-Knoten
+   * fuer Visualisierungen referenzieren koennten.
+   */
+  disposeAudioTrack(id: string): void {
+    this._stopAudioTrackSource(id);
+    this._stopAudioTrackPositionRaf(id);
+    this.audioTrackBuffers.delete(id);
+    this.audioTrackStartTimes.delete(id);
+    this.audioTrackPositionListeners.delete(id);
+    this.audioTrackEndedListeners.delete(id);
+    this.audioTrackData.delete(id);
+  }
+
+  /**
+   * Startet alle Tracks die durch den Store-Getter geliefert werden. Wenn kein
+   * Getter gesetzt ist, iteriert ueber die intern registrierten Tracks. Tracks
+   * mit `muted=true` werden uebersprungen.
+   */
+  playAllRegisteredAudioTracks(): void {
+    const list = this.audioTracksGetter
+      ? this.audioTracksGetter()
+      : Array.from(this.audioTrackData.values());
+    for (const t of list) {
+      if (t.muted) continue;
+      // Sicherstellen dass Engine die Metadaten kennt (Getter ist Source of Truth).
+      this.audioTrackData.set(t.id, { ...t });
+      // Nur abspielen wenn Buffer geladen wurde. Wenn nicht: silently skip – die
+      // Store-Schicht ist fuer Preload-Orchestrierung verantwortlich.
+      if (!this.audioTrackBuffers.has(t.id)) continue;
+      this.playAudioTrack(t.id, { startOffsetSec: t.startOffsetSec, loop: t.loop });
+    }
+  }
+
+  stopAllAudioTracks(): void {
+    // Kopie der Keys (Map wird waehrend stop mutiert)
+    const ids = Array.from(this.audioTrackSources.keys());
+    for (const id of ids) {
+      this._stopAudioTrackSource(id);
+      this._cleanupAudioTrackSource(id);
+    }
+  }
+
+  /**
+   * Externe Quelle fuer alle aktiven Audio-Tracks (typischerweise vom Store).
+   * Wird in `playAllRegisteredAudioTracks` und `_updateAudioTrackPlaybackRates`
+   * konsultiert.
+   */
+  setAudioTracksGetter(getter: () => AudioTrackChannelData[]): void {
+    this.audioTracksGetter = getter;
+  }
+
+  /** Dauer in Sekunden des geladenen Buffers, oder null wenn nicht geladen. */
+  getAudioTrackDuration(id: string): number | null {
+    const buf = this.audioTrackBuffers.get(id);
+    return buf ? buf.duration : null;
+  }
+
+  // ─── Private: Audio-Track Helpers ──────────────────────────────────────────
+
+  private _calcAudioTrackPlaybackRate(data: AudioTrackChannelData | undefined): number {
+    if (!data) return 1;
+    if (data.syncMode !== "stretch") return 1;
+    const orig = data.originalBpm;
+    if (!orig || orig <= 0) return 1;
+    return this._bpm / orig;
+  }
+
+  private _updateAudioTrackPlaybackRates(): void {
+    // Beim BPM-Wechsel alle aktiven Sources auf neue Rate setzen.
+    this.audioTrackSources.forEach((source, id) => {
+      const data = this.audioTrackData.get(id);
+      const rate = this._calcAudioTrackPlaybackRate(data);
+      try {
+        source.playbackRate.setValueAtTime(rate, this.ctx?.currentTime ?? 0);
+      } catch {
+        // Fallback fuer Mocks: direkter value-Set
+        try { source.playbackRate.value = rate; } catch { /* ignore */ }
+      }
+    });
+  }
+
+  private _stopAudioTrackSource(id: string): void {
+    const src = this.audioTrackSources.get(id);
+    if (!src) return;
+    try { src.onended = null; } catch { /* ignore */ }
+    try { src.stop(); } catch { /* already stopped */ }
+    try { src.disconnect(); } catch { /* ignore */ }
+  }
+
+  private _cleanupAudioTrackSource(id: string): void {
+    this.audioTrackSources.delete(id);
+    this.audioTrackStartTimes.delete(id);
+    this._stopAudioTrackPositionRaf(id);
+  }
+
+  private _startAudioTrackPositionRaf(id: string): void {
+    if (this.audioTrackPositionRaf.has(id)) return;
+    if (typeof requestAnimationFrame !== "function") return;
+    const buf = this.audioTrackBuffers.get(id);
+    if (!buf || !this.ctx) return;
+
+    const tick = () => {
+      const start = this.audioTrackStartTimes.get(id);
+      const src = this.audioTrackSources.get(id);
+      if (!start || !src || !this.ctx) return;
+      const data = this.audioTrackData.get(id);
+      const rate = data?.syncMode === "stretch" && data.originalBpm
+        ? this._bpm / data.originalBpm
+        : 1;
+      const elapsedCtx = this.ctx.currentTime - start.ctxStart;
+      const sec = start.offsetSec + elapsedCtx * rate;
+      const dur = buf.duration || 1;
+      let pos01 = sec / dur;
+      if (data?.loop) {
+        // Modulo im Loop, damit pos01 in [0, 1) bleibt.
+        pos01 = ((pos01 % 1) + 1) % 1;
+      } else {
+        pos01 = Math.min(1, Math.max(0, pos01));
+      }
+      this.audioTrackPositionListeners.get(id)?.forEach(cb => {
+        try { cb(pos01, sec); } catch { /* ignore */ }
+      });
+      // Naechsten Frame nur planen wenn noch listener da sind und source aktiv.
+      if (
+        this.audioTrackSources.has(id)
+        && (this.audioTrackPositionListeners.get(id)?.size ?? 0) > 0
+      ) {
+        const rid = requestAnimationFrame(tick);
+        this.audioTrackPositionRaf.set(id, rid);
+      } else {
+        this.audioTrackPositionRaf.delete(id);
+      }
+    };
+    const rid = requestAnimationFrame(tick);
+    this.audioTrackPositionRaf.set(id, rid);
+  }
+
+  private _stopAudioTrackPositionRaf(id: string): void {
+    const rid = this.audioTrackPositionRaf.get(id);
+    if (rid !== undefined) {
+      try {
+        if (typeof cancelAnimationFrame === "function") cancelAnimationFrame(rid);
+      } catch { /* ignore */ }
+      this.audioTrackPositionRaf.delete(id);
+    }
+  }
+
+  /**
+   * Wendet die Audio-Track-Solo-Logik an: wenn irgendein Audio-Track soloed
+   * ist, sind alle anderen Audio-Tracks effektiv stumm. Drum-Parts bleiben
+   * unberuehrt.
+   */
+  private _reapplyAudioTrackSoloMutes(): void {
+    const list = Array.from(this.audioTrackData.values());
+    const anySolo = list.some(t => t.soloed);
+    for (const t of list) {
+      const effectiveMuted = t.muted || (anySolo && !t.soloed);
+      this.setChannelVolume(t.id, effectiveMuted ? 0 : t.volume);
     }
   }
 

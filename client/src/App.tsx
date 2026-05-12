@@ -90,6 +90,12 @@ import { useLaunchpad, isGridDevice } from "@/hooks/useLaunchpad";
 import { useBpmDetection, autoTagFromFilename } from "@/hooks/useBpmDetection";
 import { getMacros, applyMacroBindings } from "@/store/useMacroStore";
 import {
+  getAllAudioTracks,
+  loadAudioTracks,
+  markBroken as markAudioTrackBroken,
+  setRuntimeWaveform as setAudioTrackRuntimeWaveform,
+} from "@/store/useAudioTrackStore";
+import {
   serializeProject,
   downloadProjectFile,
   openProjectFilePicker,
@@ -139,6 +145,9 @@ export default function App() {
   const inSession = session.status === "hosting" || session.status === "joined";
   // ── Dialog-State ────────────────────────────────────────────────────────────────
   const [showNewProjectDialog, setShowNewProjectDialog] = useState(false);
+
+  // ── Browser-Warning Toast (Audio-Tracks beim Save im Web-Modus) ───────────
+  const [showAudioTrackBrowserWarning, setShowAudioTrackBrowserWarning] = useState(false);
 
   // ── Performance Mode (Vollbild-Pattern-Launchpad) ─────────────────────────
   const performance = usePerformanceStore();
@@ -216,6 +225,7 @@ export default function App() {
         lanes:     a.lanes,
         stepCount: a.stepCount,
       },
+      audioTracks: getAllAudioTracks(),
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -235,6 +245,18 @@ export default function App() {
       }
     } else {
       downloadProjectFile(snapshot);
+      // Browser-Modus: einmalige Warnung wenn Audio-Tracks im Projekt sind.
+      // Audio-Tracks werden nur als Dateipfad-Referenz gespeichert – beim
+      // erneuten Öffnen muss der User die Datei neu wählen.
+      try {
+        const hasAudioTracks = (snapshot.audioTracks?.length ?? 0) > 0;
+        const dismissed = localStorage.getItem(
+          "synthstudio:audiotrack-browser-warning-dismissed",
+        ) === "true";
+        if (hasAudioTracks && !dismissed) {
+          setShowAudioTrackBrowserWarning(true);
+        }
+      } catch { /* localStorage nicht verfügbar – ignorieren */ }
     }
     project.setDirty(false);
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -255,6 +277,71 @@ export default function App() {
     if (data.song) {
       song.createArrangement(data.song.slots?.map(s => ({ bank: s.bank, repeats: s.repeats })) ?? []);
     }
+    // Audio-Tracks (extern referenzierte Vocal/Song-Dateien)
+    const audioTracks = data.audioTracks ?? [];
+    loadAudioTracks(audioTracks);
+
+    // ── Relocate-Probe: Prüfe ob Datei-Pfad noch existiert ────────────────
+    // Electron: getAudioMetadata → bei Fehler markBroken(id, true)
+    // Browser: nicht möglich Pfade zu prüfen → alle als broken markieren,
+    // User muss [Relocate…] klicken um File-Picker zu öffnen.
+    // Bei NICHT-broken Tracks: loadAudioTrack + registerAudioTrack damit Engine sie kennt.
+    void (async () => {
+      for (const t of audioTracks) {
+        if (electron.isElectron) {
+          try {
+            const meta = await electron.getAudioMetadata(t.filePath);
+            const ok = (meta as { success?: boolean }).success === true;
+            if (!ok) {
+              markAudioTrackBroken(t.id, true);
+              continue;
+            }
+            // Datei existiert → in Engine laden
+            const buf = await AudioEngine.loadAudioTrack(t.id, t.filePath);
+            if (!buf) {
+              markAudioTrackBroken(t.id, true);
+              continue;
+            }
+            AudioEngine.registerAudioTrack(t);
+            // Peaks via Electron-Analyse oder Client-Decode
+            let peaks: Float32Array | undefined;
+            try {
+              const res = await electron.analyzeWaveform(t.filePath, 200);
+              const r = res as { success?: boolean; peaks?: number[] };
+              if (r.success && Array.isArray(r.peaks)) {
+                peaks = Float32Array.from(r.peaks);
+              }
+            } catch { /* fallback to client decode */ }
+            if (!peaks) {
+              // Client-Side downsample
+              const ch0 = buf.getChannelData(0);
+              const numPeaks = 200;
+              const peaksArr = new Float32Array(numPeaks);
+              const blockSize = Math.max(1, Math.floor(ch0.length / numPeaks));
+              for (let i = 0; i < numPeaks; i++) {
+                const start = i * blockSize;
+                const end = Math.min(ch0.length, start + blockSize);
+                let peak = 0;
+                for (let j = start; j < end; j++) {
+                  const v = Math.abs(ch0[j]);
+                  if (v > peak) peak = v;
+                }
+                peaksArr[i] = peak;
+              }
+              peaks = peaksArr;
+            }
+            setAudioTrackRuntimeWaveform(t.id, buf.duration, peaks);
+            markAudioTrackBroken(t.id, false);
+          } catch {
+            markAudioTrackBroken(t.id, true);
+          }
+        } else {
+          // Browser: kein Datei-Pfad-Zugriff → User muss neu wählen.
+          markAudioTrackBroken(t.id, true);
+        }
+      }
+    })();
+
     project.setDirty(false);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project, dm, song]);
@@ -1364,6 +1451,53 @@ export default function App() {
           project.newProjectFromTemplate(templateState);
         }}
       />
+
+      {/* ── Browser-Warning: Audio-Tracks beim Save (einmalig, dismissable) ── */}
+      {showAudioTrackBrowserWarning && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="audiotrack-warning-title"
+          className="fixed bottom-4 right-4 z-50 max-w-sm rounded border border-accent-secondary/50 bg-bg-panel shadow-xl"
+        >
+          <div className="p-3">
+            <div
+              id="audiotrack-warning-title"
+              className="text-xs font-semibold text-accent-secondary uppercase tracking-wide mb-1"
+            >
+              Audio-Tracks
+            </div>
+            <div className="text-[11px] text-text-muted leading-snug mb-2">
+              Audio-Tracks werden als Datei-Referenzen gespeichert. Beim erneuten
+              Öffnen musst du die Datei neu wählen.
+            </div>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setShowAudioTrackBrowserWarning(false)}
+                className="px-2 py-0.5 text-[10px] rounded bg-bg-elevated text-text-dim hover:text-text-primary border border-border-color"
+              >
+                OK
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  try {
+                    localStorage.setItem(
+                      "synthstudio:audiotrack-browser-warning-dismissed",
+                      "true",
+                    );
+                  } catch { /* ignore */ }
+                  setShowAudioTrackBrowserWarning(false);
+                }}
+                className="px-2 py-0.5 text-[10px] rounded bg-accent-secondary/20 text-accent-secondary border border-accent-secondary/50 hover:bg-accent-secondary/30"
+              >
+                OK, nicht mehr zeigen
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Performance Mode (Vollbild-Pattern-Launchpad) ───────────────── */}
       {performance.active && (

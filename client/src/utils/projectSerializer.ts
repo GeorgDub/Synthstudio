@@ -4,7 +4,7 @@
  * Serialisiert den vollständigen Projekt-State in ein JSON-Objekt (SynthProject)
  * und stellt Lade-Utilities bereit.
  *
- * Format-Version: "1.14"
+ * Format-Version: "1.15" (audioTracks hinzugefügt – v1.14-Dateien laden weiter)
  * Dateiendung: .synth
  */
 
@@ -14,8 +14,9 @@ import type { SongSlot } from "@/store/useSongStore";
 import type { MixerState } from "@/store/useMixerStore";
 import type { HumanizerState } from "@/store/useHumanizerStore";
 import type { AutomationLane } from "@/store/useAutomationStore";
+import type { AudioTrackChannelData } from "@/store/useAudioTrackStore";
 
-export const SYNTH_FILE_VERSION = "1.14";
+export const SYNTH_FILE_VERSION = "1.15";
 export const SYNTH_LATEST_KEY = "synthstudio:last-project";
 
 // ─── Typen ───────────────────────────────────────────────────────────────────
@@ -49,6 +50,36 @@ export interface SynthProject {
     lanes: AutomationLane[];
     stepCount: 16 | 32;
   };
+  /**
+   * Externe Audio-Track-Channels (Vocals, Songs zum Remixen).
+   * Pfad-Referenz – Datei wird beim Project-Load asynchron resolved/decoded.
+   * Seit v1.15. Bei älteren v1.14-Dateien fehlt das Feld → defaultet auf [].
+   */
+  audioTracks?: AudioTrackChannelData[];
+}
+
+// ─── Validation Helpers ──────────────────────────────────────────────────────
+
+function isValidAudioTrackEntry(t: unknown): t is AudioTrackChannelData {
+  if (!t || typeof t !== "object") return false;
+  const o = t as Record<string, unknown>;
+  const hasSends =
+    o.sends !== null &&
+    typeof o.sends === "object" &&
+    typeof (o.sends as { reverb?: unknown }).reverb === "number" &&
+    typeof (o.sends as { delay?: unknown }).delay === "number";
+  return (
+    typeof o.id === "string" &&
+    typeof o.name === "string" &&
+    typeof o.filePath === "string" &&
+    o.filePath.length > 0 &&
+    typeof o.fileName === "string" &&
+    typeof o.volume === "number" &&
+    typeof o.pan === "number" &&
+    typeof o.muted === "boolean" &&
+    typeof o.soloed === "boolean" &&
+    hasSends
+  );
 }
 
 // ─── Serialisierung ───────────────────────────────────────────────────────────
@@ -72,6 +103,30 @@ export function parseProject(json: string): SynthProject {
   if (!data.version || !data.patterns) {
     throw new Error("Ungültiges Synthstudio-Projektformat");
   }
+
+  // ─── audioTracks (seit v1.15) ────────────────────────────────────────────
+  // Alte v1.14-Dateien: Feld fehlt → defaulte auf [] (KEIN Throw).
+  // Invalid: Array filtern (silent + warn), Nicht-Array: hart auf [] mappen.
+  const rawTracks = (data as { audioTracks?: unknown }).audioTracks;
+  if (rawTracks === undefined || rawTracks === null) {
+    data.audioTracks = [];
+  } else if (!Array.isArray(rawTracks)) {
+    console.warn(
+      "[Serializer] audioTracks ist kein Array – defaulte auf leere Liste.",
+    );
+    data.audioTracks = [];
+  } else {
+    const filtered: AudioTrackChannelData[] = [];
+    for (const t of rawTracks) {
+      if (isValidAudioTrackEntry(t)) {
+        filtered.push(t);
+      } else {
+        console.warn("[Serializer] Audio-Track invalid – wird übersprungen.", t);
+      }
+    }
+    data.audioTracks = filtered;
+  }
+
   return data;
 }
 
