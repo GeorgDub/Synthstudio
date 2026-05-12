@@ -1,6 +1,6 @@
 # Synthstudio – Funktionshandbuch
 
-**Version 1.16.0 | Vollständige Dokumentation aller Features**
+**Version 1.17.0 | Vollständige Dokumentation aller Features**
 
 ---
 
@@ -55,6 +55,9 @@
 
 ### v1.16.0
 43. [Audio Tracks (Vocals / Songs / Remix-Channel)](#43-audio-tracks-v1160)
+
+### v1.17.0
+44. [Persistente Scripts + Web-Worker-Sandbox](#44-persistente-scripts--web-worker-sandbox-v1170)
 
 ---
 
@@ -1497,6 +1500,88 @@ Audio-Dateien können direkt auf die Mixer-Channel-Area gezogen werden — jede 
 
 ---
 
+## 44. Persistente Scripts + Web-Worker-Sandbox (v1.17.0)
+
+**Tools-Tab (F5) → Script Runner**
+
+Scripts werden jetzt **dauerhaft gespeichert**, lassen sich an Tastatur-Shortcuts oder Macro-Knöpfe binden und laufen in einer **isolierten Web-Worker-Sandbox** — fremder Skript-Code kann nicht mehr auf Dateisystem, Netzwerk oder Electron-APIs zugreifen.
+
+### Layout
+```
+┌──────────────┬──────────────────────────────────────────┐
+│ Scripts (5)  │ ▶ Ausführen   ⏹ Abbrechen               │
+│ ────────────│ Name: [Drop Hit Trigger    ] [Save]       │
+│ • BPM Ramp🔑│ ☑ Aktiviert   Scope: ◉ App  ○ Projekt   │
+│ • Drop Hit🔑│ Keyboard: [Ctrl+Shift+B] ✏ ✖              │
+│ • Random M3 │ Macro-Slot: [Slot 3 ▾]                   │
+│              │ ┌────────────────────────────────────┐   │
+│ Beispiele ▾  │ │ // Code (max 10 KB)                 │   │
+│              │ └────────────────────────────────────┘   │
+│              │ Konsole:                                  │
+│              │  → BPM: 100                               │
+│              │  ✓ erfolgreich (1.2s)                     │
+└──────────────┴──────────────────────────────────────────┘
+```
+
+### Persistierung — Scope-Wahl pro Script
+| Scope | Speicherort | Wann verwenden |
+|---|---|---|
+| **App** *(default)* | `localStorage` — gilt für alle Projekte | Dein Werkzeugkasten: BPM-Ramps, Pattern-Randomizer, Live-Tools |
+| **Projekt** | im `.synth`-File eingebettet | Live-Performance-Setups, Track-spezifische Drop-Hits |
+
+- **Maximal 64 Scripts** insgesamt, **maximal 10 KB Code** pro Script
+- Fremde `.synth`-Dateien laden alle Scripts **deaktiviert** — du musst sie pro Script explizit aktivieren (Schutz vor bösartigen Snippets aus dem Internet)
+
+### Eingebaute Beispiele (Beispiele-Dropdown)
+- **BPM Ramp Up** — fährt BPM von 100 auf 140 in 5er-Schritten hoch
+- **Random Pattern Fill** — triggert `pattern-randomize` Action
+- **Drop Hit** — stoppt Transport, wartet 500ms, startet wieder
+
+### Script-API (`ss.*`)
+**Breaking Change v1.17.0:** Die API ist jetzt **asynchron**. Jeder Call braucht `await`:
+
+| Methode | Wirkung |
+|---|---|
+| `await ss.bpm(value)` | BPM setzen (geclamped 20–300) |
+| `await ss.play()` / `await ss.stop()` | Transport-Steuerung |
+| `await ss.setStep(partId, stepIdx, on)` | Einzelnen Step toggeln |
+| `await ss.dispatch(action)` | Action triggern (Whitelist: nur Transport- und Pattern-Actions) |
+| `await ss.log(msg)` | In Script-Konsole loggen (max 500 Zeichen pro Eintrag) |
+| `await ss.wait(ms)` | Pause (0–60000ms) |
+| `await ss.getMacro(idx)` / `await ss.setMacro(idx, v)` | Macro-Werte lesen/setzen (idx 0–7, v 0–1) |
+| `ss.random()` / `ss.now()` | Worker-lokal, kein await nötig |
+
+**Erlaubte Dispatch-Actions:** `play-stop`, `record`, `tap-tempo`, `bpm-up/down/up-10/down-10`, `pattern-next/prev/duplicate/clear/fill/randomize`, `part-up/down`, `velocity-mode`, `pitch-mode`. Alles andere (insb. `save`, `load`, `open-*`) wird vom Sandbox-Bridge abgelehnt.
+
+### Bindings
+| Trigger | Konfiguration |
+|---|---|
+| **Tastatur-Shortcut** | Recording-Modal im Script-Editor. Konflikte mit System-Actions werden angezeigt; bei Doppel-Belegung gewinnt die System-Action |
+| **Macro-Button** | `MacroPanel → ⚙ → Mode: Button → Script-Dropdown`. Der Macro-Slot zeigt dann einen klickbaren Trigger-Button mit Script-Name + Macro-Farbe |
+
+Ein Script kann gleichzeitig an Tastatur *und* Macro-Slot gebunden sein. `enabled: false` deaktiviert beides ohne das Script zu löschen.
+
+### Sicherheits-Architektur
+Die Sandbox basiert auf **10 Hardening-Layern** (siehe `docs/SECURITY-SCRIPT-SANDBOX.md` für Details):
+
+1. **Web Worker via Blob-URL** — eigener Thread, kein DOM, kein `window`, kein `electronAPI`
+2. **16 gefährliche Globals neutralisiert** im Worker (`fetch`, `XMLHttpRequest`, `WebSocket`, `EventSource`, `indexedDB`, `caches`, `importScripts`, `Worker`, `SharedWorker`, `BroadcastChannel`, `Notification`, `RTCPeerConnection`, `RTCDataChannel`, `navigator`, `clients`, `postMessage`)
+3. **Allowlist-Bridge** (default deny) — nur die `ss.*`-Methoden sind erreichbar
+4. **Dispatch-Whitelist** — keine UI-Hijack-Actions, kein File-Save aus Script
+5. **Param-Clamping** — BPM 20–300, Macro 0–1, etc.
+6. **Wall-Clock-Timeout** — `while(true){}` wird nach `maxRuntimeMs` (default 5000ms) hart terminiert; UI bleibt responsive
+7. **Prototype-Chain-Hardening** — verhindert `WorkerGlobalScope.prototype.postMessage`-Bypass
+8. **`Object.freeze(ss)`** — Script kann Bridge-Methoden nicht ersetzen
+9. **Log-Rate-Limit** — max 100 logs / 200ms; Overflow wird gedroppt + summarisiert
+10. **Foreign-Project-Consent** — alle Scripts aus geladenen `.synth`-Files sind initial `enabled: false`
+
+**Caveat:** Electron-Production hat aktuell keinen expliziten CSP-Header. Für v1.18 dokumentiert.
+
+### Read-Only-Übersicht der Script-Bindings
+`Settings → Keyboard Bindings → Scripts-Sektion` listet alle Script-Tastaturbindings (egal welcher Scope). Klick → springt zum Tools-Tab und selektiert das Script.
+
+---
+
 ## v1.15.1 – v1.15.5: Stabilitäts-Fixes
 
 Diese Releases enthalten keine neuen Features, sondern **kritische Bug-Fixes**:
@@ -1531,4 +1616,4 @@ Diese Releases enthalten keine neuen Features, sondern **kritische Bug-Fixes**:
 
 ---
 
-*Letzte Aktualisierung: Sprint 18 — v1.16.0 (Audio Tracks)*
+*Letzte Aktualisierung: Sprint 19 — v1.17.0 (Persistent Scripts + Web-Worker-Sandbox)*
