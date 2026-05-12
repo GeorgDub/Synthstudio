@@ -1,6 +1,6 @@
 # Synthstudio – Funktionshandbuch
 
-**Version 1.18.1 | Vollständige Dokumentation aller Features**
+**Version 1.18.2 | Vollständige Dokumentation aller Features**
 
 ---
 
@@ -1582,6 +1582,14 @@ Die Sandbox basiert auf **10 Hardening-Layern** (siehe `docs/SECURITY-SCRIPT-SAN
 
 ---
 
+## v1.18.2: BUG-002 BPM-Button-Feedback
+
+**BPM +/- Buttons im DrumMachine-Header gaben kein sichtbares Klick-Feedback.** Die `onClick`-Handler funktionieren seit v1.6.0 — der Bug war subtiler: `hover:bg-bg-elevated` war die **gleiche Farbe** wie der default `bg-bg-elevated` Background. User klickten, sahen keinerlei visuelle Reaktion und nahmen an die Buttons seien nur dekorative Indikatoren für die `+`/`−`-Tastatur-Shortcuts.
+
+**Fix:** Hover wechselt jetzt zu `bg-base` (dunkler) + Text zu `text-primary` (heller). `active:scale-95` macht den Click spürbar. Zusätzlich `title="BPM ±1 (Taste: ±)"` + `aria-label` für Accessibility. 5 Playwright-Regressions-Tests in `tests/web/bpm-buttons.spec.ts` verifizieren Hover-BG-Change, onClick-Funktionalität und Tooltip-Text.
+
+---
+
 ## v1.18.1: TASK-101 Layout-Fix (BUG-008)
 
 **Doppelte Header + doppelte Close-Buttons auf DrumMachine Floating-Panels** (Pattern Morph, Note Repeat, Envelope Follower, Macros, Granular, Polyrhythm). Der `ResizableDrumPanel`-Wrapper renderte einen Header mit Close-Button, gleichzeitig hatten die inneren Panels (z.B. `NoteRepeatPanel`, `PatternMorphPanel`) ihren eigenen Header + Close-Button → zwei "PATTERN MORPH"-Texte und zwei `×`-Buttons übereinander.
@@ -1650,4 +1658,4 @@ Diese Releases enthalten keine neuen Features, sondern **kritische Bug-Fixes**:
 
 ---
 
-*Letzte Aktualisierung: Sprint 20 — v1.18.1 (Layout-Fix BUG-008 Double-Header)*
+*Letzte Aktualisierung: Sprint 20 — v1.18.2 (BPM-Button Feedback BUG-002)*

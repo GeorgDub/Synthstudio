@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "1.18.1",
+    version: "1.18.2",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -158,11 +158,13 @@ const INDEX = {
       fixedIn:  "fe62713"
     },
     "BUG-002": {
-      title:   "BPM +/- buttons appear clickable but are keyboard-only shortcuts",
+      title:   "BPM +/- buttons appear clickable but give no visible feedback",
       severity: "low / UX",
-      details:  "On-screen BPM display is misleading. Change BPM via double-click on value OR keyboard + and - keys.",
-      fixed:    false,
-      foundBy:  "testing"
+      details:  "onClick handlers existed since v1.6.0 (functional), but hover:bg-bg-elevated === default bg-bg-elevated → zero visible feedback on hover/click. User assumed buttons were decorative kbd-shortcut indicators. Fix: hover swaps bg-elevated→bg-base + text-muted→text-primary, added active:scale-95, title='BPM ±1 (Taste: ±)', aria-label.",
+      fixed:    true,
+      foundBy:  "user",
+      fixedBy:  "frontend",
+      fixedIn:  "TASK-110 (v1.18.2)"
     },
     "BUG-003": {
       title:   "Double title bar on Windows — native + custom Electron titlebar both visible",
@@ -573,11 +575,11 @@ const INDEX = {
       notes:    "useScriptStore does not exist. Requires security review for sandboxed eval/Function() — no globalThis/Node access."
     },
     {
-      id:       "BUG-002",
-      title:    "BPM +/- buttons UX clarification",
+      id:       "FOLLOWUP-110",
+      title:    "Hardcoded Tailwind colors in MixerView + ElectronTitleBar",
       severity: "low",
       target:   "any",
-      notes:    "Buttons look clickable but are kbd-only. Either wire onClick or remove visual affordance."
+      notes:    "TASK-101 sweep found ~10 hardcoded colors (bg-cyan-950, bg-yellow-500, text-slate-900, bg-cyan-500, hover:bg-red-600). Not a layout bug but violates theme rule. Refactor-pass needed."
     }
   ],
 

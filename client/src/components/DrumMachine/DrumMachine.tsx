@@ -675,8 +675,12 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
 
         {/* BPM */}
         <div className="flex items-center gap-1">
-          <button onClick={() => onBpmChange(Math.max(20, bpm - 1))}
-            className="w-5 h-6 rounded text-xs bg-bg-elevated text-text-dim hover:bg-bg-elevated">−</button>
+          <button
+            onClick={() => onBpmChange(Math.max(20, bpm - 1))}
+            title="BPM −1 (Taste: −)"
+            aria-label="BPM verringern"
+            className="w-5 h-6 rounded text-xs bg-bg-elevated text-text-muted hover:bg-bg-base hover:text-text-primary active:scale-95 transition-colors"
+          >−</button>
           <input
             ref={bpmInputRef}
             type="number" min={20} max={300}
@@ -690,10 +694,15 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
             onKeyDown={e => {
               if (e.key === "Enter") bpmInputRef.current?.blur();
             }}
+            title="BPM (Doppelklick zum Bearbeiten, Tasten + und − für ±1)"
             className="w-14 bg-bg-elevated text-text-primary text-xs rounded px-1.5 py-1 border border-border-color text-center"
           />
-          <button onClick={() => onBpmChange(Math.min(300, bpm + 1))}
-            className="w-5 h-6 rounded text-xs bg-bg-elevated text-text-dim hover:bg-bg-elevated">+</button>
+          <button
+            onClick={() => onBpmChange(Math.min(300, bpm + 1))}
+            title="BPM +1 (Taste: +)"
+            aria-label="BPM erhöhen"
+            className="w-5 h-6 rounded text-xs bg-bg-elevated text-text-muted hover:bg-bg-base hover:text-text-primary active:scale-95 transition-colors"
+          >+</button>
         </div>
 
         {/* MIDI-Import */}
