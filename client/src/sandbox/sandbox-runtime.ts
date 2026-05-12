@@ -17,10 +17,18 @@
  *  - Alle ss.* Aufrufe sind asynchrone Promises, die per `{ type: "ss-call" }`
  *    an den Main-Thread gehen und dort gegen eine Allowlist geprüft werden.
  *
- * WICHTIG: Diese Datei wird NICHT direkt importiert. Sie wird als Source-String
- * gebündelt und in `useScriptSandbox.ts` als `SANDBOX_WORKER_SOURCE` Konstante
- * gehalten. Änderungen hier MÜSSEN in `useScriptSandbox.ts` nachgezogen werden
- * (CI-Check: siehe `tests/features/script-sandbox.test.ts`).
+ * WICHTIG: Diese Datei wird NICHT direkt importiert. Sie ist die SINGLE SOURCE
+ * OF TRUTH und wird via `scripts/generate-sandbox-source.mjs` (esbuild-Trans-
+ * pilation, target=ES2020) zu `sandbox-runtime.generated.ts` kompiliert. Dort
+ * exportiert sie die Konstante `SANDBOX_WORKER_SOURCE`, die wiederum aus
+ * `useScriptSandbox.ts` importiert wird.
+ *
+ * Die Generierung läuft automatisch als pre-hook bei `pnpm dev`, `pnpm build`,
+ * `pnpm check`, `pnpm test` (siehe package.json scripts). Für manuelles Re-Gen:
+ *   pnpm gen:sandbox
+ *
+ * Drift-Detection: `tests/features/script-sandbox-pentest.test.ts` Tests 14-17
+ * verifizieren, dass alle Hardening-Patterns in der generierten Source landen.
  */
 
 // Damit TypeScript dies als Worker-Code akzeptiert (kein WebWorker-Lib in scope).

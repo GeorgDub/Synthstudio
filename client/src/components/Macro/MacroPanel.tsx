@@ -7,7 +7,7 @@
  * Integration: Wird in der DrumMachine-Toolbar als "▸ Makros"-Panel angezeigt.
  * MIDI-Zuweisung über das normale MIDI CC-System möglich.
  */
-import React, { useState } from "react";
+import { useState } from "react";
 import { X } from "lucide-react";
 import {
   useMacroStore,
@@ -21,7 +21,6 @@ import {
   type Macro,
   type MacroMode,
   type MacroTargetType,
-  MACRO_COLORS,
 } from "@/store/useMacroStore";
 import { useScriptStore } from "@/store/useScriptStore";
 import type { PartData } from "@/audio/AudioEngine";

@@ -168,7 +168,10 @@ describe("ScriptSandbox – Whitelists", () => {
       "Notification",
       "postMessage",
     ]) {
-      expect(src).toContain(`self.${g} = undefined`);
+      // Note: esbuild transpiles `undefined` to `void 0` — wir akzeptieren
+      // beide Formen, weil sie semantisch identisch sind.
+      const pattern = new RegExp(`self\\.${g}\\s*=\\s*(undefined|void 0)\\b`);
+      expect(src, `expected neutralization of self.${g}`).toMatch(pattern);
     }
   });
 });

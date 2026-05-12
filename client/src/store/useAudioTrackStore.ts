@@ -12,44 +12,27 @@
  * Er wird in einer separaten Map gehalten und bei reload/restore zurückgesetzt.
  *
  * ─── TYP-OWNERSHIP ────────────────────────────────────────────────────────────
- * `AudioTrackChannelData` ist hier definiert, weil F1 (AudioEngine-Erweiterung)
- * parallel zu F2 (dieses Modul) läuft. Sobald F1 den Typ in AudioEngine.ts
- * re-exportiert, kann dieses Modul (und der projectSerializer) auf den Import
- * aus AudioEngine umgestellt werden – das Shape ist verbindlich identisch.
+ * `AudioTrackChannelData` lebt als Single-Source-of-Truth in AudioEngine.ts
+ * (dort hängen die Engine-Methoden registerAudioTrack/setAudioTracksGetter
+ * direkt an dem Shape). Dieses Modul re-exportiert den Typ nur, damit
+ * bestehende Importpfade (`@/store/useAudioTrackStore`) unverändert bleiben.
+ *
+ * Bei Schema-Erweiterungen: NUR in AudioEngine.ts ändern, alle Consumer
+ * folgen automatisch (TASK-109 / v1.18-Cleanup).
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
 import { useEffect, useReducer } from "react";
 import { nanoid } from "nanoid";
+import type { AudioTrackChannelData } from "@/audio/AudioEngine";
 
 // ─── Typen ───────────────────────────────────────────────────────────────────
 
 /**
- * Persistenz-Shape eines Audio-Track-Channels.
- *
- * MUSS bitgleich identisch zu `AudioTrackChannelData` in AudioEngine.ts (F1) bleiben.
- * Änderungen hier brauchen Abstimmung mit dem AudioEngine-Agenten.
+ * Re-Export aus AudioEngine.ts. Die kanonische Definition lebt dort.
+ * Bei Schema-Änderungen: AudioEngine.ts editieren – nicht hier.
  */
-export interface AudioTrackChannelData {
-  /** ID-Format: `audiotrack:<nanoid>` (Prefix unterscheidet von Drum-Parts) */
-  id: string;
-  name: string;
-  /** Absoluter Pfad (Electron) oder dateiname (Browser-Fallback) */
-  filePath: string;
-  fileName: string;
-  fileSize?: number;
-  /** Lautstärke 0..2 (1.0 = unity, 2.0 = +6 dB ungefähr) */
-  volume: number;
-  /** Stereo-Pan -1..+1 */
-  pan: number;
-  muted: boolean;
-  soloed: boolean;
-  sends: { reverb: number; delay: number };
-  startOffsetSec?: number;
-  loop?: boolean;
-  syncMode?: "free" | "stretch";
-  originalBpm?: number | null;
-}
+export type { AudioTrackChannelData };
 
 /**
  * Runtime-only State pro Track. NICHT persistiert.

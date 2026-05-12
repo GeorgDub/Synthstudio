@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "1.17.0",
+    version: "1.18.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -215,6 +215,62 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "builder",
+      timestamp: "2026-05-12T18:20:00.000Z",
+      done: [
+        "TASK-108: Build-Time-Codegen for sandbox-worker source — eliminates the dual-maintenance problem between sandbox-runtime.ts (documentation copy) and the inline SANDBOX_WORKER_SOURCE string in useScriptSandbox.ts.",
+        "TASK-108: Chose Option (b) esbuild prebuild script — most robust, no Vite-magic, easy to debug, deterministic byte-identical output. Considered (a) ?raw import (rejected: .ts cannot run in Worker without transpile) and (c) Vite-plugin (rejected: needs to work for vitest+playwright too without Vite-pipeline).",
+        "TASK-108: New script scripts/generate-sandbox-source.mjs (esbuild API: bundle=false, format=esm, target=es2020, keepNames, no minify) reads client/src/sandbox/sandbox-runtime.ts, transpiles to ES2020 JS, embeds via String.raw template literal in client/src/sandbox/sandbox-runtime.generated.ts. Idempotent (only rewrites when output differs).",
+        "TASK-108: Generated file is committed (NOT gitignored) for fresh-checkout convenience — has AUTO-GENERATED header + embedded SHA256 of source for drift detection. Determinism verified by tests (8 codegen tests in tests/features/script-sandbox-codegen.test.ts).",
+        "TASK-108: New pnpm scripts: gen:sandbox + predev + prebuild + precheck + pretest as automatic pre-hooks. Verified: pnpm check, pnpm test, pnpm dev all run gen:sandbox automatically before their main task. Pretest works with vitest.",
+        "TASK-108: useScriptSandbox.ts now imports SANDBOX_WORKER_SOURCE from ./sandbox-runtime.generated instead of holding a 150-line String.raw inline copy. Replaced ~146 LOC with 1-line import.",
+        "TASK-108: Drift-tests in tests/features/script-sandbox-pentest.test.ts (Tests 14-17) adapted to esbuild-output: pattern `undefined` ↔ `void 0` accepted via regex (semantically identical); added defineProperty + LOG_RATE_MAX + ss-prototype-freeze assertions.",
+        "TASK-108: Same regex relaxation in tests/features/script-sandbox.test.ts (textual integrity check at line 155) — closes the issue refactor-agent flagged in its 18:15 entry.",
+        "TASK-108: New test file tests/features/script-sandbox-codegen.test.ts (8 tests): determinism, source-SHA-match, IIFE-shape, no top-level export, output-SHA-match, escape safety, idempotency on no-change, hash-change on source-change. All 8 pass in ~900ms.",
+        "TASK-108: pnpm check clean. pnpm test 1003/1018 grün (15 pre-existing skipped, 8 NEW codegen tests + 47 pre-existing sandbox tests = 55 sandbox-related tests all pass, 0 regressions across 58 test files)."
+      ],
+      next: [
+        "Welle 2 (potential): if commit-the-generated-file is undesired noise (pollutes git status during dev), switch to gitignore-based flow + CI-step that runs gen:sandbox before any pnpm command. Currently checked in for robustness — esbuild output IS deterministic so the file rarely changes.",
+        "Welle 2 (CI): add a CI-step `pnpm gen:sandbox && git diff --exit-code client/src/sandbox/sandbox-runtime.generated.ts` to enforce that PRs include the regenerated file (no stale .generated.ts).",
+        "Welle 2 (Tests): add a Playwright E2E test that loads the actual sandbox-runtime.generated.ts content into a real browser Web Worker (instead of node:worker_threads shim) and runs a malicious script — to catch any difference between the esbuild-transpiled output and what real browsers execute.",
+        "Welle 2 (DX): generate sourcemap for sandbox-runtime.generated.ts so Chrome DevTools can show user errors with line numbers from the .ts source instead of the bundled JS. Currently `sourcemap: false` in the script.",
+        "Edge case: esbuild's `keepNames: true` injects `/* @__PURE__ */ __name(fn, \"fn\")` wrappers. These are harmless (just set Function.name for stack traces) but add noise to the diff. Could be removed via `keepNames: false` if diff-noise becomes a problem.",
+        "Edge case: if esbuild major-version is bumped in pnpm-lock.yaml, the SHA256 of SANDBOX_WORKER_SOURCE will change → the generated file will be re-committed automatically on next gen. The determinism test 1 (identical across runs) still passes because both runs use the SAME esbuild version. Cross-version reproducibility is not guaranteed."
+      ],
+      changed: [
+        "scripts/generate-sandbox-source.mjs",
+        "client/src/sandbox/sandbox-runtime.generated.ts",
+        "client/src/sandbox/sandbox-runtime.ts",
+        "client/src/sandbox/useScriptSandbox.ts",
+        "package.json",
+        "tests/features/script-sandbox-codegen.test.ts",
+        "tests/features/script-sandbox-pentest.test.ts",
+        "tests/features/script-sandbox.test.ts"
+      ]
+    },
+    {
+      agent:     "refactor",
+      timestamp: "2026-05-12T18:15:00.000Z",
+      done: [
+        "TASK-109 / A: Replaced hardcoded text-cyan-300 + bg-black/80 hover-tooltip color in client/src/components/WaveformDisplay/WaveformDisplay.tsx with semantic tokens (text-accent-secondary, bg-bg-base/80). Also corrected bg-black/60 on zoom-reset button to bg-bg-base/60. AudioTrackStrip.tsx (only direct WaveformDisplay consumer outside SampleBrowser) was already clean — no extra changes there.",
+        "TASK-109 / B: De-duped AudioTrackChannelData. Single-source-of-truth is now client/src/audio/AudioEngine.ts (where engine methods registerAudioTrack/setAudioTracksGetter use it directly). useAudioTrackStore.ts deletes its own interface declaration and re-exports the type from AudioEngine.ts via `export type { AudioTrackChannelData }`. No circular import — AudioEngine.ts does not import from useAudioTrackStore. All existing consumer import paths (`@/store/useAudioTrackStore`) keep working unchanged: projectSerializer.ts, MixerView.tsx, AudioTrackStrip.tsx, audio-track-store.test.ts. audio-track.test.ts already imports directly from AudioEngine.ts.",
+        "TASK-109 / C: Removed unused `MACRO_COLORS` named import + unused `React` default import from MacroPanel.tsx (only `useState` was actually used — JSX runtime is automatic-mode via plugin-react in Vite 7, no React-in-scope needed).",
+        "Verification: pnpm check clean. pnpm test 964/981 green (15 pre-existing skipped). 2 failures remain in tests/features/script-sandbox*.test.ts — NOT caused by this refactor: those test files assert literal `self.<global> = undefined` strings in the codegen sandbox-runtime.generated.ts output, but esbuild transpiles `undefined` -> `void 0`. These are pre-existing pending issues in TASK-108 (sandbox hardening) — explicitly out of scope for this refactor (`client/src/sandbox/*` forbidden).",
+        "All test files touching my changed modules confirmed green: audio-track-store.test.ts (25/25), audio-track.test.ts (20/20), macros.test.ts (48/48) — 93/93 affected tests pass."
+      ],
+      next: [
+        "TASK-108 owner: fix tests/features/script-sandbox.test.ts:171 — `expect(src).toContain('self.${g} = undefined')` fails because esbuild emits `void 0` instead. The newer tests/features/script-sandbox-pentest.test.ts:263 already uses a regex `(undefined|void 0)` — port that pattern to the older assertion.",
+        "SampleBrowser.tsx has ~20 hardcoded text-cyan-*, bg-cyan-*, border-cyan-*, bg-green-900, bg-blue-900 occurrences — large but scoped refactor candidate for a follow-up TASK. Kept out of scope here per tight TASK-109 boundaries.",
+        "FOLLOWUP-102 (4): full Playwright round-trip E2E save→reopen→relocate still pending — type dedup did not require touching this.",
+        "Consider standing up a CI lint rule that errors on `bg-slate-*|bg-gray-*|text-cyan-*|bg-cyan-*|text-blue-*` patterns under `client/src/components/**` to prevent future regressions. Currently relies on review."
+      ],
+      changed: [
+        "client/src/components/WaveformDisplay/WaveformDisplay.tsx",
+        "client/src/store/useAudioTrackStore.ts",
+        "client/src/components/Macro/MacroPanel.tsx"
+      ]
+    },
     {
       agent:     "frontend",
       timestamp: "2026-05-12T18:30:00.000Z",

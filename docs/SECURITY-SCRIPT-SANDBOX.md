@@ -1,8 +1,15 @@
 # Script Sandbox – Security Audit & Checklist
 
-**Status:** v1.17.0 — Audit-Welle abgeschlossen (TASK-103 / D)
+**Status:** v1.18.0 — CSP-Hardening abgeschlossen (TASK-107)
 **Owner:** Security Agent
-**Scope:** `client/src/sandbox/*`, `client/src/utils/projectSerializer.ts`, App.tsx-Wiring
+**Scope:** `client/src/sandbox/*`, `client/src/utils/projectSerializer.ts`, App.tsx-Wiring, `electron/csp.ts`, `electron/main.ts`
+
+> **Update v1.18 (TASK-107):** Die in v1.17 dokumentierte CSP-Lücke ist
+> geschlossen. `electron/main.ts` installiert via `session.defaultSession.
+> webRequest.onHeadersReceived` einen strikten CSP-Header (`worker-src 'self'
+> blob:` + `script-src 'self'` + Allowlist für ws/wss/file/blob/data). Siehe
+> Abschnitt **Content Security Policy (v1.18)** unten und
+> `tests/electron/csp-header.test.ts` für die Pflicht-Directive-Coverage.
 
 ## Bedrohungsmodell
 
@@ -44,7 +51,7 @@ explizit gewhitelistete Bridge (`ss.*`), niemals auf:
 - [x] Prototype-Chain-Hardening für `postMessage`/`importScripts` (v1.17 Audit-Patch)
 - [x] Log-Rate-Limit (100/200ms, v1.17 Audit-Patch)
 - [x] Drift-Test runtime ↔ inlined source (`script-sandbox-pentest.test.ts` Tests 14-17)
-- [ ] **CSP `worker-src 'self' blob:` (Browser + Electron)** — siehe Caveat unten
+- [x] **CSP `worker-src 'self' blob:` (Electron)** — implementiert in v1.18 (TASK-107, `electron/csp.ts` + `tests/electron/csp-header.test.ts`)
 
 ## Pen-Test-Ergebnisse (17 / 17 grün)
 
@@ -71,35 +78,71 @@ einen konkreten Angriff; alle scheitern wie vorgesehen.
 | 16 | Drift: log-rate-limit in inlined source | PASS |
 | 17 | Drift: Object.freeze(ss) in inlined source | PASS |
 
-## Caveat: CSP fehlt in Electron Main
+## Content Security Policy (v1.18, resolved)
 
-`electron/main.ts` setzt aktuell KEINEN expliziten CSP-Header. Production-
-Builds (`webSecurity: true`) erlauben Blob-URL-Worker per default. Empfohlene
-Hardening-Stufe für v1.18:
+**Status:** implementiert in TASK-107. Der frühere v1.17-Caveat ist
+geschlossen.
 
-```ts
-// electron/main.ts — irgendwo nach app.whenReady()
-session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
-  callback({
-    responseHeaders: {
-      ...details.responseHeaders,
-      "Content-Security-Policy": [
-        "default-src 'self'; " +
-        "script-src 'self' 'wasm-unsafe-eval'; " +
-        "style-src 'self' 'unsafe-inline'; " +
-        "worker-src 'self' blob:; " +
-        "connect-src 'self' ws://localhost:* http://localhost:*; " +
-        "img-src 'self' data: blob:;"
-      ]
-    }
-  });
-});
+Die CSP-Builder-Logik liegt zentral in [`electron/csp.ts`](../electron/csp.ts)
+und wird beim App-Start (`app.whenReady` in `electron/main.ts`) via
+`session.defaultSession.webRequest.onHeadersReceived` an alle Renderer-
+Responses gehängt. Dev- und Prod-Build verwenden unterschiedliche Header
+(Dev erlaubt Vite-HMR + localhost-Origins, Prod ist strikt).
+
+**Production-Header (deterministisch):**
+
+```
+default-src 'self';
+script-src 'self';
+style-src 'self' 'unsafe-inline';
+img-src 'self' data: blob:;
+media-src 'self' blob: file:;
+font-src 'self' data:;
+worker-src 'self' blob:;
+connect-src 'self' ws: wss:;
+object-src 'none';
+base-uri 'self';
+form-action 'self';
+frame-ancestors 'none'
 ```
 
-Bis CSP gesetzt ist, ist die Sandbox-Sicherheit "ausreichend" für v1.17.0
-(User-Skripte sind opt-in, Default-Deny-Bridge, isolierter Worker). Mit
-CSP wäre zusätzlich abgesichert, dass die Web-Build keine fremden Scripts
-laden kann (XSS-Defense-in-Depth).
+**Begründung pro Directive:**
+
+| Directive | Wert | Warum |
+|---|---|---|
+| `default-src` | `'self'` | Basis-Whitelist |
+| `script-src` | `'self'` | Vite bundled alles, keine inline scripts. KEIN `unsafe-eval`. |
+| `style-src` | `'self' 'unsafe-inline'` | Tailwind v4 JIT injiziert Styles inline — ohne `unsafe-inline` brechen alle Komponenten. Alternative nur über Hash-CSP möglich, aber Tailwinds JIT-Output ändert sich pro Build → unwartbar. |
+| `img-src` | `'self' data: blob:` | data-URLs für Embedded-Icons, blob für Waveform-Bitmaps. |
+| `media-src` | `'self' blob: file:` | Electron lädt Audio über `file://`, Web nutzt blob-URLs für decoded Buffer. |
+| `font-src` | `'self' data:` | Inline-Fonts in Tailwind/Radix. |
+| `worker-src` | `'self' blob:` | **Pflicht für v1.17 Script-Sandbox** — der Worker wird per Blob-URL erzeugt. Ohne `blob:` bricht der Sandbox-Worker. |
+| `connect-src` | `'self' ws: wss:` | LAN-WebSocket für `electron/collab-server.ts` + mDNS-Discovery. Schema-only erlaubt, da der Port dynamisch ist (`startCollabServer(0)`). |
+| `object-src` | `'none'` | Keine `<object>`/`<embed>`-Plugins erlauben (Flash etc.). |
+| `base-uri` | `'self'` | Verhindert `<base href="…">` Hijack (Defense-in-Depth gegen XSS). |
+| `form-action` | `'self'` | Keine externen Form-Submits. |
+| `frame-ancestors` | `'none'` | Clickjacking-Schutz (in Electron eigentlich überflüssig, aber kostet nichts). |
+
+**Development-Header** (in `pnpm dev:electron`): zusätzlich
+`http://localhost:*`, `http://127.0.0.1:*` und `ws://localhost:*` für die
+Vite-HMR-Verbindung. Der Switch erfolgt anhand `process.env.NODE_ENV ===
+"development"` (genauer: `isDev` in `main.ts`).
+
+**Was die CSP NICHT macht:**
+
+- Die im preload exponierten IPC-Channels werden durch CSP NICHT
+  beschränkt — dafür gibt es weiterhin die Allowlist in `preload-additions.ts`
+  und das Validierungslayer in `main.ts` (siehe `agents/SECURITY.md`).
+- WebSocket-Verbindungen werden Schema-basiert erlaubt (`ws:`, `wss:`),
+  da `collab-server.ts` einen dynamischen Port nutzt. Wenn in v2 fixe
+  Ports kommen, kann das auf `ws://192.168.0.0/16:*` verschärft werden.
+- Die Sandbox-Worker-Härtung (`sandbox-runtime.ts`) ist unabhängig — die
+  CSP verhindert nur, dass ein XSS in der Renderer-App den Worker
+  überhaupt instanziieren könnte.
+
+**Tests:** `tests/electron/csp-header.test.ts` deckt 22 Cases ab — alle
+Pflicht-Directives, Production-vs-Dev-Trennung, Serialisierung,
+Snapshot-Drift-Schutz.
 
 ## Drift-Risiko: zwei Source-Kopien
 
@@ -122,9 +165,11 @@ auch `SANDBOX_WORKER_SOURCE` im selben Commit nachgezogen werden.
 
 ## Production-Ready?
 
-**JA — für v1.17.0**, unter folgenden Bedingungen:
+**JA — für v1.18.0**, unter folgenden Bedingungen:
 
-1. CSP-Caveat dokumentiert (oben)
+1. CSP-Header aktiv (verifiziert via `tests/electron/csp-header.test.ts`)
 2. Drift-Tests sind grün (CI-erzwungen)
 3. Code-Reviewer prüft bei jedem PR auf `sandbox-runtime.ts` ODER
    `useScriptSandbox.ts` ob beide Kopien identisch sind.
+4. Bei jeder Änderung an `electron/csp.ts`: Snapshot-Tests müssen aktualisiert
+   werden (`pnpm test -- -u` nur für `csp-header.test.ts`).

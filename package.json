@@ -1,10 +1,15 @@
 {
   "name": "synthstudio",
-  "version": "1.17.0",
+  "version": "1.18.0",
   "type": "module",
   "license": "MIT",
   "main": "electron-dist/main.cjs",
   "scripts": {
+    "gen:sandbox": "node scripts/generate-sandbox-source.mjs",
+    "predev": "pnpm gen:sandbox",
+    "prebuild": "pnpm gen:sandbox",
+    "precheck": "pnpm gen:sandbox",
+    "pretest": "pnpm gen:sandbox",
     "dev": "cross-env NODE_ENV=development vite",
     "dev:electron": "concurrently \"cross-env VITE_DEV_SERVER_URL=http://localhost:5173 pnpm dev\" \"wait-on http://localhost:5173 && electron .\"",
     "build": "vite build",

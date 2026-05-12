@@ -29,11 +29,13 @@ import {
   nativeImage,
   Notification,
   screen,
+  session,
 } from "electron";
 import * as path from "path";
 import * as fs from "fs";
 
 // ─── Electron-Module ─────────────────────────────────────────────────────────
+import { buildCspForMode } from "./csp";
 import { setupDragDrop } from "./dragdrop";
 import { registerWaveformHandlers } from "./waveform";
 import { WindowManager, registerWindowHandlers } from "./windows";
@@ -1141,6 +1143,30 @@ function registerIpcHandlers(): void {
   });
 }
 
+// ─── Content Security Policy ─────────────────────────────────────────────────
+
+/**
+ * Installiert die CSP-Header auf der Default-Session. Wird einmal pro
+ * App-Lifecycle aufgerufen (in app.whenReady).
+ *
+ * Die CSP-Definition steht in electron/csp.ts — Änderungen NICHT hier inline,
+ * damit das Test-Modul (tests/electron/csp-header.test.ts) die Quelle prüfen
+ * kann ohne Electron zu importieren.
+ */
+function installCspHeaders(): void {
+  const cspHeader = buildCspForMode(isDev);
+  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        "Content-Security-Policy": [cspHeader],
+        "X-Content-Type-Options": ["nosniff"],
+      },
+    });
+  });
+  console.log(`[CSP] Headers installed (mode=${isDev ? "dev" : "prod"})`);
+}
+
 // ─── Globale Keyboard-Shortcuts ──────────────────────────────────────────────
 
 function registerGlobalShortcuts(): void {
@@ -1167,6 +1193,11 @@ app.whenReady().then(() => {
     appStore.saveWindowBounds({ x: undefined as unknown as number, y: undefined as unknown as number, width: 1440, height: 900, isMaximized: false });
     console.log("[Window] --reset-window: window bounds cleared.");
   }
+
+  // CSP-Header installieren bevor das erste Fenster geladen wird (v1.18 hardening).
+  // Muss vor createWindow() laufen, damit auch der erste Renderer-Request
+  // den Header bekommt.
+  installCspHeaders();
 
   // Basis-IPC-Handler registrieren (kein mainWindow erforderlich)
   registerIpcHandlers();

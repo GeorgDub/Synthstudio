@@ -508,7 +508,7 @@ export function WaveformDisplay({
       {/* Hover-Tooltip */}
       {hoverTime !== null && (
         <div
-          className="absolute top-1 pointer-events-none z-10 bg-black/80 text-cyan-300 text-[10px] font-mono px-1.5 py-0.5 rounded"
+          className="absolute top-1 pointer-events-none z-10 bg-bg-base/80 text-accent-secondary text-[10px] font-mono px-1.5 py-0.5 rounded"
           style={{ left: Math.min(hoverX - (canvasRef.current?.getBoundingClientRect().left ?? 0) + 4, (canvasRef.current?.offsetWidth ?? 200) - 60) }}
         >
           {formatTime(hoverTime)}
@@ -525,7 +525,7 @@ export function WaveformDisplay({
       {/* Zoom zurücksetzen */}
       {zoomLevel > 1 && (
         <button
-          className="absolute top-1 right-1 text-[9px] text-text-dim hover:text-text-muted bg-black/60 px-1 rounded"
+          className="absolute top-1 right-1 text-[9px] text-text-dim hover:text-text-muted bg-bg-base/60 px-1 rounded"
           onClick={() => { setZoomLevel(1); setPanOffset(0); zoomRef.current = 1; panRef.current = 0; }}
           title="Zoom zurücksetzen"
         >

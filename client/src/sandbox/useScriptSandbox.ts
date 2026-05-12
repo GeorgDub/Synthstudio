@@ -89,165 +89,19 @@ const ALLOWED_BRIDGE_METHODS: ReadonlySet<string> = new Set([
 
 // ─── Worker-Source als String-Konstante ──────────────────────────────────────
 //
-// Diese Konstante ist die kompilierte Version von `sandbox-runtime.ts`.
-// Sie wird zur Runtime via Blob-URL in einen Worker geladen — dadurch ist
-// keine externe `.worker.js`-Datei und kein Vite-Worker-Plugin nötig.
+// Build-Time Codegen (TASK-108, v1.18): SANDBOX_WORKER_SOURCE wird aus
+// `sandbox-runtime.ts` via esbuild-Transpilation generiert und ist in
+// `sandbox-runtime.generated.ts` als String-Konstante exportiert.
 //
-// WICHTIG: Bei Änderungen in `sandbox-runtime.ts` MUSS auch diese Konstante
-// nachgezogen werden. Der Test `script-sandbox.test.ts` validiert die
-// Konsistenz nur partiell (Subset von Globals-Neutralisierung).
+// Single Source of Truth ist `sandbox-runtime.ts`. Das `.generated.ts`-File ist
+// committet (auto-erzeugt durch `scripts/generate-sandbox-source.mjs`, das via
+// predev/prebuild/precheck/pretest in package.json verdrahtet ist).
 //
-// Die Konstante ist absichtlich "as-is" geschrieben (kein Build-Step), damit
-// die Sandbox-Source bei jedem Code-Review menschenlesbar im Repo steht.
-
-const SANDBOX_WORKER_SOURCE = String.raw`
-"use strict";
-(function () {
-  // ─── HÄRTUNG ─────────────────────────────────────────────────────────────
-  var __bridgePost = self.postMessage.bind(self);
-
-  // PROTOTYPE-CHAIN HARDENING (Audit-Patch v1.17):
-  // Verhindert dass User-Code via WorkerGlobalScope.prototype.postMessage
-  // die Original-postMessage rekonstruiert.
-  try {
-    var proto = Object.getPrototypeOf(self);
-    while (proto) {
-      var descriptors = Object.getOwnPropertyDescriptors(proto);
-      var keys = Object.keys(descriptors);
-      for (var i = 0; i < keys.length; i++) {
-        var key = keys[i];
-        if (key === "postMessage" || key === "importScripts") {
-          try {
-            Object.defineProperty(proto, key, {
-              value: (function (k) { return function () { throw new Error(k + " is not available in sandbox"); }; })(key),
-              writable: false,
-              configurable: false,
-            });
-          } catch (e) { /* non-configurable already */ }
-        }
-      }
-      proto = Object.getPrototypeOf(proto);
-    }
-  } catch (e) { /* best-effort */ }
-
-  self.fetch = undefined;
-  self.XMLHttpRequest = undefined;
-  self.WebSocket = undefined;
-  self.EventSource = undefined;
-  self.indexedDB = undefined;
-  self.caches = undefined;
-  self.importScripts = undefined;
-  self.Worker = undefined;
-  self.SharedWorker = undefined;
-  self.BroadcastChannel = undefined;
-  self.Notification = undefined;
-  self.WebSocketStream = undefined;
-  self.RTCPeerConnection = undefined;
-  self.RTCDataChannel = undefined;
-  self.navigator = undefined;
-  self.clients = undefined;
-  self.postMessage = undefined;
-
-  // ─── Reply-Tracking ──────────────────────────────────────────────────────
-  var __nextMsgId = 1;
-  var __pendingReplies = new Map();
-
-  self.addEventListener("message", function (event) {
-    var msg = event.data;
-    if (msg && msg.type === "ss-reply" && typeof msg.id === "number") {
-      var pending = __pendingReplies.get(msg.id);
-      if (pending) {
-        __pendingReplies.delete(msg.id);
-        if (msg.error) pending.reject(new Error(msg.error));
-        else pending.resolve(msg.value);
-      }
-    }
-  });
-
-  function ssCall(method, args) {
-    return new Promise(function (resolve, reject) {
-      var id = __nextMsgId++;
-      __pendingReplies.set(id, { resolve: resolve, reject: reject });
-      __bridgePost({ type: "ss-call", id: id, method: method, args: args });
-    });
-  }
-
-  // ─── LOG-RATE-LIMIT (Audit-Patch v1.17) ──────────────────────────────────
-  // Cappt ss.log-Calls auf 100 pro 200ms-Fenster (= 500/s). Drops werden am
-  // Fenster-Ende mit einer Sammel-Meldung quittiert.
-  var __logWindowStart = 0;
-  var __logsInWindow = 0;
-  var __logsDropped = 0;
-  var __flushTimer = null;
-  function __flushDropped() {
-    if (__logsDropped > 0) {
-      __bridgePost({
-        type: "ss-call",
-        id: -1,
-        method: "log",
-        args: ["[sandbox] log rate-limit: dropped " + __logsDropped + " entries"],
-      });
-      __logsDropped = 0;
-    }
-  }
-
-  var ss = {
-    bpm:      function (v)            { return ssCall("bpm",      [v]); },
-    play:     function ()             { return ssCall("play",     []); },
-    stop:     function ()             { return ssCall("stop",     []); },
-    setStep:  function (p, i, on)     { return ssCall("setStep",  [p, i, on]); },
-    dispatch: function (action)       { return ssCall("dispatch", [action]); },
-    log:      function (msg) {
-      var now = Date.now();
-      if (now - __logWindowStart > 200) {
-        __logWindowStart = now;
-        __logsInWindow = 0;
-      }
-      if (__logsInWindow >= 100) {
-        __logsDropped++;
-        if (__flushTimer === null) {
-          __flushTimer = setTimeout(function () { __flushTimer = null; __flushDropped(); }, 200);
-        }
-        return Promise.resolve(undefined);
-      }
-      __logsInWindow++;
-      return ssCall("log", [msg]);
-    },
-    getMacro: function (idx)          { return ssCall("getMacro", [idx]); },
-    setMacro: function (idx, v)       { return ssCall("setMacro", [idx, v]); },
-    wait:     function (ms) {
-      var clamped = Math.max(0, Math.min(60000, ms));
-      return new Promise(function (r) { setTimeout(r, clamped); });
-    },
-    random:   function ()             { return Math.random(); },
-    now:      function ()             { return Date.now(); },
-  };
-
-  // PROTOTYPE-FREEZE (Audit-Patch v1.17): User-Code kann ss-Bridge nicht ersetzen.
-  try {
-    Object.freeze(ss);
-    Object.freeze(Object.getPrototypeOf(ss));
-  } catch (e) { /* best-effort */ }
-
-  // ─── Exec-Listener ───────────────────────────────────────────────────────
-  self.addEventListener("message", function (event) {
-    var msg = event.data;
-    if (!msg || msg.type !== "exec") return;
-    try {
-      var userFn = new Function("ss", '"use strict"; return (async () => { ' + (msg.code || "") + ' })();');
-      Promise.resolve(userFn(ss))
-        .then(function () { __bridgePost({ type: "done" }); })
-        .catch(function (e) {
-          var message = (e && e.message) ? String(e.message) : String(e);
-          __bridgePost({ type: "error", message: message });
-        });
-    } catch (e) {
-      var message = (e && e.message) ? String(e.message) : String(e);
-      __bridgePost({ type: "error", message: message });
-    }
-  });
-})();
-`;
+// Bei lokaler Entwicklung wird das File bei jedem dev/build/test/check-Lauf
+// regeneriert — manuelle Edits gehen verloren.
+//
+// Wenn dieser Import fehlschlägt: `pnpm gen:sandbox` ausführen.
+import { SANDBOX_WORKER_SOURCE } from "./sandbox-runtime.generated";
 
 // ─── Param-Validation Helpers ────────────────────────────────────────────────
 
