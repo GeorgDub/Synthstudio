@@ -9,6 +9,7 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 import React, { useState, useCallback } from "react";
+import { X } from "lucide-react";
 import { PROJECT_TEMPLATES, type ProjectTemplate, templateToProjectState } from "../../store/projectTemplates";
 
 // ─── Typen ────────────────────────────────────────────────────────────────────
@@ -154,9 +155,11 @@ export function NewProjectDialog({ isOpen, onClose, onCreateProject }: NewProjec
           <h2 className="text-base font-semibold text-text-primary">Neues Projekt</h2>
           <button
             onClick={onClose}
-            className="text-text-dim hover:text-text-muted transition-colors text-lg leading-none"
+            className="text-text-muted hover:text-text-primary transition-colors leading-none p-1 rounded flex items-center justify-center"
+            aria-label="Close"
+            title="Schließen"
           >
-            ✕
+            <X className="w-4 h-4" aria-hidden="true" />
           </button>
         </div>
 

@@ -64,4 +64,39 @@ describe("quantizeSteps (Regression: kein require()-Crash)", () => {
     const grids: QuantizeGrid[] = ["1/4", "1/8", "1/16", "1/32"];
     grids.forEach(g => expect(formatGrid(g)).toBe(g));
   });
+
+  // ── Regression: TASK-104 / BUG-005 ────────────────────────────────────────
+  // Crash trat auf, wenn pt.steps.length < pattern.stepCount war (z.B. nach
+  // MIDI-Import, Pattern-Morph oder Laden eines Projekts mit inkonsistenten
+  // Längen). quantizeSteps iterierte bis stepCount und griff dann auf
+  // result[finalIdx].active zu, was undefined.active warf → React-Page-Crash.
+
+  it("BUG-005 regression: kein Crash wenn pt.steps.length < stepCount", () => {
+    // 16 Steps, aber pattern sagt stepCount=32 → vorher: TypeError
+    const steps = makeSteps([15], 16); // letzter Step aktiv
+    expect(() =>
+      quantizeSteps(steps, { grid: "1/4", strength: 1, stepCount: 32 }),
+    ).not.toThrow();
+  });
+
+  it("BUG-005 regression: result-Länge bleibt = steps.length bei Mismatch", () => {
+    const steps = makeSteps([0, 7, 15], 16);
+    const result = quantizeSteps(steps, { grid: "1/8", strength: 1, stepCount: 32 });
+    expect(result).toHaveLength(16); // result darf nicht auf stepCount wachsen
+  });
+
+  it("BUG-005 regression: leeres Steps-Array crasht nicht", () => {
+    expect(() =>
+      quantizeSteps([], { grid: "1/16", strength: 1, stepCount: 16 }),
+    ).not.toThrow();
+  });
+
+  it("BUG-005 regression: stepCount > steps.length und alle aktiven Steps am Rand", () => {
+    // Edge case: Steps nahe am Array-Ende rasten potentiell außerhalb von result
+    const steps = makeSteps([13, 14, 15], 16);
+    const result = quantizeSteps(steps, { grid: "1/4", strength: 1, stepCount: 32 });
+    expect(result).toHaveLength(16);
+    // mindestens ein Step bleibt aktiv
+    expect(result.some(s => s.active)).toBe(true);
+  });
 });

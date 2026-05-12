@@ -6,6 +6,7 @@
  * "Anwenden"-Button delegiert Änderungen via Callback an den aufrufenden Store.
  */
 import React, { useState, useCallback } from "react";
+import { X } from "lucide-react";
 import { analyzeMix, MixAnalysisInput, MixRecommendation } from "../../utils/mixAnalysis";
 import { analyzeProjectWithAi, buildMixSnapshot, type AiAnalysisResult } from "@/utils/aiProjectAnalysis";
 import { getApiSettings } from "@/store/useApiSettingsStore";
@@ -144,10 +145,11 @@ export function MixAssistantPanel({ input, onApply, onClose }: MixAssistantPanel
         </div>
         <button
           onClick={onClose}
-          className="rounded hover:bg-bg-elevated p-1 transition-colors text-text-muted hover:text-text-primary"
-          aria-label="Schließen"
+          className="rounded hover:bg-bg-elevated p-1 transition-colors text-text-muted hover:text-text-primary flex items-center justify-center"
+          aria-label="Close"
+          title="Schließen"
         >
-          ✕
+          <X className="w-4 h-4" aria-hidden="true" />
         </button>
       </header>
 

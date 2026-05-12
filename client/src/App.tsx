@@ -88,7 +88,7 @@ import { recordEvent } from "@/store/useSessionRecordingStore";
 import { setMyRole, setParticipantRole } from "@/store/useSessionStore";
 import { useLaunchpad, isGridDevice } from "@/hooks/useLaunchpad";
 import { useBpmDetection, autoTagFromFilename } from "@/hooks/useBpmDetection";
-import { getMacros } from "@/store/useMacroStore";
+import { getMacros, applyMacroBindings } from "@/store/useMacroStore";
 import {
   serializeProject,
   downloadProjectFile,
@@ -657,23 +657,39 @@ export default function App() {
     [dm, collabToggleStep]
   );
   // ── Makro-Bindings: Parameter in Echtzeit setzen ─────────────────────────
+  // Refs werden bei jedem Render aktualisiert (dmRef.current = dm, projectRef.current = project),
+  // dadurch arbeitet der Handler immer mit den aktuellen Stores statt einem stale Snapshot
+  // vom Mount-Zeitpunkt. Das war die Ursache, warum Macro-Knobs nichts gemacht haben,
+  // sobald sich der Drum-Machine-State änderte (Pattern-Wechsel, Sample-Load etc.).
   useEffect(() => {
     const handler = (e: Event) => {
       const { index, value } = (e as CustomEvent<{ index: number; value: number }>).detail;
       const macro = getMacros()[index];
       if (!macro) return;
-      macro.bindings.forEach(b => {
-        // value 0–1 → mapped auf minValue–maxValue
-        const mapped = b.minValue + value * (b.maxValue - b.minValue);
-        switch (b.target) {
-          case "master-vol":       AudioEngine.setMasterVolume(mapped); break;
-          case "bpm":              project.setBpm(Math.round(mapped)); break;
-          case "channel-vol":      if (b.partId) { dm.setPartVolume(b.partId, mapped); AudioEngine.setChannelVolume(b.partId, mapped); } break;
-          case "channel-pan":      if (b.partId) { dm.setPartPan(b.partId, mapped); AudioEngine.setChannelPan(b.partId, mapped); } break;
-          case "channel-send-rev": if (b.partId) AudioEngine.setChannelSend(b.partId, "reverb", mapped); break;
-          case "channel-send-dly": if (b.partId) AudioEngine.setChannelSend(b.partId, "delay",  mapped); break;
-          // lfo-rate / lfo-depth: zukünftig über SynthEngine-Update
-        }
+      const d = dmRef.current;
+      const p = projectRef.current;
+      applyMacroBindings(macro, value, {
+        setMasterVolume: (v) => AudioEngine.setMasterVolume(v),
+        setBpm: (v) => p.setBpm(v),
+        setChannelVolume: (partId, v) => {
+          d.setPartVolume(partId, v);
+          AudioEngine.setChannelVolume(partId, v);
+        },
+        setChannelPan: (partId, v) => {
+          d.setPartPan(partId, v);
+          AudioEngine.setChannelPan(partId, v);
+        },
+        setChannelSend: (partId, bus, v) => {
+          AudioEngine.setChannelSend(partId, bus, v);
+        },
+        // lfo-rate / lfo-depth: noch nicht verdrahtet — SynthEngine hat keinen
+        // per-Part-Setter für LFO-Parameter zur Laufzeit. Bis dahin: warnen,
+        // damit Macro-Bindings nicht stillschweigend ignoriert werden.
+        onUnhandled: (b) => {
+          if (b.target === "lfo-rate" || b.target === "lfo-depth") {
+            console.warn(`[Macro] target "${b.target}" ist noch nicht implementiert (Part: ${b.partName ?? b.partId})`);
+          }
+        },
       });
     };
     window.addEventListener("macro:change", handler);

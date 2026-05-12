@@ -8,6 +8,7 @@
  * Keyboard-Shortcut: Shift+1 bis Shift+8 starten Scene 1-8.
  */
 import React, { useCallback, useEffect, useState } from "react";
+import { X } from "lucide-react";
 import {
   useSceneStore,
   addScene,
@@ -89,7 +90,15 @@ function EditModal({ scene, patterns, onSave, onClose }: {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="bg-bg-panel border border-border-color rounded-xl shadow-2xl p-5 w-80">
+      <div className="bg-bg-panel border border-border-color rounded-xl shadow-2xl p-5 w-80 relative">
+        <button
+          onClick={onClose}
+          className="absolute top-3 right-3 w-7 h-7 flex items-center justify-center rounded text-text-muted hover:text-text-primary hover:bg-bg-elevated transition-colors"
+          aria-label="Close"
+          title="Schließen"
+        >
+          <X className="w-3.5 h-3.5" aria-hidden="true" />
+        </button>
         <h3 className="text-sm font-bold text-text-primary mb-4">Scene bearbeiten</h3>
 
         <label className="block text-xs text-text-muted mb-1">Name</label>

@@ -10,6 +10,7 @@
  * Styling: Tailwind + CSS Custom Properties (--ss-*)
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { X } from "lucide-react";
 import { useMidiStepInput } from "../../hooks/useMidiStepInput";
 import { useMelodicPartStore } from "../../store/useMelodicPartStore";
 import {
@@ -433,14 +434,16 @@ export function PianoRollModal({ partId, partName, isOpen, onClose }: PianoRollM
             </button>
             <button
               onClick={onClose}
-              className="px-3 py-1 text-xs rounded border transition-opacity hover:opacity-75"
+              className="px-2 py-1 text-xs rounded border transition-opacity hover:opacity-75 flex items-center justify-center"
               style={{
                 borderColor: "var(--ss-border)",
                 color:       "var(--ss-text-muted)",
                 background:  "transparent",
               }}
+              aria-label="Close"
+              title="Schließen (ESC)"
             >
-              ✕
+              <X className="w-3.5 h-3.5" aria-hidden="true" />
             </button>
           </div>
         </div>
@@ -609,11 +612,13 @@ export function PianoRollModal({ partId, partName, isOpen, onClose }: PianoRollM
                 Velocity – Step {velocityPopup.stepIdx + 1}
               </span>
               <button
-                className="text-xs hover:opacity-70"
-                style={{ color: "var(--ss-text-dim)" }}
+                className="text-xs hover:opacity-70 p-0.5 rounded flex items-center justify-center"
+                style={{ color: "var(--ss-text-muted)" }}
                 onClick={closePopup}
+                aria-label="Close"
+                title="Schließen"
               >
-                ✕
+                <X className="w-3 h-3" aria-hidden="true" />
               </button>
             </div>
             <div className="flex items-center gap-2">

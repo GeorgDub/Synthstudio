@@ -15,6 +15,7 @@
  * Folgeschritt mit einer Position-Callback an die AudioEngine eingehängt werden.
  */
 import { useCallback, useMemo } from "react";
+import { X } from "lucide-react";
 import type { PatternData } from "@/audio/AudioEngine";
 import { useMorphStore } from "@/store/useMorphStore";
 import { morphPatterns } from "@/utils/patternMorph";
@@ -108,11 +109,11 @@ export function PatternMorphPanel({ patterns, onApplyMorph, onClose }: PatternMo
         {onClose && (
           <button
             onClick={onClose}
-            className="px-1.5 py-0.5 text-xs rounded hover:opacity-70"
-            style={{ color: "var(--ss-text-muted)" }}
-            aria-label="Schließen"
+            className="px-1.5 py-0.5 text-xs rounded text-text-muted hover:text-text-primary hover:opacity-70 flex items-center justify-center"
+            aria-label="Close"
+            title="Schließen (ESC)"
           >
-            ✕
+            <X className="w-3.5 h-3.5" aria-hidden="true" />
           </button>
         )}
       </div>

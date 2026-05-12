@@ -6,6 +6,7 @@
  *   { type: "chat", sender: "...", text: "..." }
  */
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import { X } from "lucide-react";
 import { useCollabChatStore, addChatMessage } from "@/store/useCollabChatStore";
 
 interface CollabChatProps {
@@ -88,7 +89,14 @@ export function CollabChat({ broadcast, ownName = "Ich", inSession }: CollabChat
           <div className="flex items-center justify-between px-3 py-2 border-b border-border-color bg-bg-elevated flex-shrink-0">
             <span className="text-xs font-bold text-text-primary">Chat</span>
             {!inSession && <span className="text-[10px] text-accent-danger">Keine aktive Session</span>}
-            <button onClick={() => setIsOpen(false)} className="text-text-dim hover:text-text-primary text-sm">✕</button>
+            <button
+              onClick={() => setIsOpen(false)}
+              className="text-text-muted hover:text-text-primary p-1 rounded flex items-center justify-center transition-colors"
+              aria-label="Close"
+              title="Schließen"
+            >
+              <X className="w-3.5 h-3.5" aria-hidden="true" />
+            </button>
           </div>
 
           {/* Nachrichten */}

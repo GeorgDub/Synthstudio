@@ -131,3 +131,95 @@ export function useMacroStore(): { macros: Macro[] } {
   }, []);
   return { macros: _macros };
 }
+
+// ─── Routing-Helfer ───────────────────────────────────────────────────────────
+// Diese Funktionen sind pur und ohne Browser-/Audio-Abhängigkeiten testbar.
+// App.tsx subscribed auf das "macro:change" Event und ruft applyMacroBindings
+// mit den passenden Settern auf.
+
+/**
+ * Mappt einen normalisierten Macro-Wert (0..1) auf den Wertebereich
+ * eines Bindings (binding.minValue..binding.maxValue).
+ *
+ * Beispiel: value=0.5, min=80, max=160 → 120
+ */
+export function mapMacroValue(binding: MacroBinding, normalizedValue: number): number {
+  const clamped = Math.max(0, Math.min(1, normalizedValue));
+  return binding.minValue + clamped * (binding.maxValue - binding.minValue);
+}
+
+/**
+ * Setter-Bag den `applyMacroBindings` für die Audio-Routings benötigt.
+ * Jeder Setter ist optional, damit Tests einzelne Pfade isoliert prüfen können
+ * und Aufrufer (App.tsx) den realen `AudioEngine` + `useDrumMachineStore` injizieren.
+ */
+export interface MacroRouteSetters {
+  setMasterVolume?: (value: number) => void;
+  setBpm?: (value: number) => void;
+  setChannelVolume?: (partId: string, value: number) => void;
+  setChannelPan?: (partId: string, value: number) => void;
+  setChannelSend?: (partId: string, bus: "reverb" | "delay", value: number) => void;
+  /** Optional: LFO-Routings sind aktuell nicht implementiert (siehe TODO). */
+  setLfoRate?: (partId: string, value: number) => void;
+  setLfoDepth?: (partId: string, value: number) => void;
+  /** Optional: zusätzlicher Hook für unbekannte Targets (z.B. Logging). */
+  onUnhandled?: (binding: MacroBinding) => void;
+}
+
+/**
+ * Wendet alle Bindings eines Macros auf die übergebenen Setter an.
+ * Reine Funktion ohne Seiteneffekte außer den Setter-Aufrufen.
+ *
+ * Aufruf-Beispiel (App.tsx):
+ *   applyMacroBindings(macro, value, {
+ *     setMasterVolume: AudioEngine.setMasterVolume.bind(AudioEngine),
+ *     setBpm: (v) => project.setBpm(Math.round(v)),
+ *     setChannelVolume: (id, v) => { dm.setPartVolume(id, v); AudioEngine.setChannelVolume(id, v); },
+ *     ...
+ *   });
+ */
+export function applyMacroBindings(
+  macro: Macro,
+  normalizedValue: number,
+  setters: MacroRouteSetters,
+): void {
+  if (!macro || !macro.bindings || macro.bindings.length === 0) return;
+  for (const binding of macro.bindings) {
+    const mapped = mapMacroValue(binding, normalizedValue);
+    switch (binding.target) {
+      case "master-vol":
+        setters.setMasterVolume?.(mapped);
+        break;
+      case "bpm":
+        setters.setBpm?.(Math.round(mapped));
+        break;
+      case "channel-vol":
+        if (binding.partId) setters.setChannelVolume?.(binding.partId, mapped);
+        break;
+      case "channel-pan":
+        if (binding.partId) setters.setChannelPan?.(binding.partId, mapped);
+        break;
+      case "channel-send-rev":
+        if (binding.partId) setters.setChannelSend?.(binding.partId, "reverb", mapped);
+        break;
+      case "channel-send-dly":
+        if (binding.partId) setters.setChannelSend?.(binding.partId, "delay", mapped);
+        break;
+      case "lfo-rate":
+        if (binding.partId) {
+          if (setters.setLfoRate) setters.setLfoRate(binding.partId, mapped);
+          else setters.onUnhandled?.(binding);
+        }
+        break;
+      case "lfo-depth":
+        if (binding.partId) {
+          if (setters.setLfoDepth) setters.setLfoDepth(binding.partId, mapped);
+          else setters.onUnhandled?.(binding);
+        }
+        break;
+      default:
+        setters.onUnhandled?.(binding);
+        break;
+    }
+  }
+}

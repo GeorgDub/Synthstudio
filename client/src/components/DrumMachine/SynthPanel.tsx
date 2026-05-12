@@ -3,6 +3,7 @@
  * Phase 5: Wavetable / FM Synthesizer Engine
  */
 import React, { useState } from "react";
+import { X } from "lucide-react";
 import type { SynthParams, LfoWaveform, LfoBpmRate } from "@/audio/SynthEngine";
 import { DEFAULT_SYNTH_PARAMS, LFO_WAVEFORM_LABELS } from "@/audio/SynthEngine";
 import { WavetableEditor } from "./WavetableEditor";
@@ -13,6 +14,7 @@ interface SynthPanelProps {
   partId: string;
   params: SynthParams;
   onChange: (params: SynthParams) => void;
+  onClose?: () => void;
 }
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
@@ -45,14 +47,26 @@ function KnobSlider({
   );
 }
 
-export function SynthPanel({ partId, params, onChange }: SynthPanelProps) {
+export function SynthPanel({ partId, params, onChange, onClose }: SynthPanelProps) {
   const set = (update: Partial<SynthParams>) => onChange({ ...params, ...update });
   const [showWavetableEditor, setShowWavetableEditor] = useState(false);
 
   return (
-    <div className="bg-bg-panel border border-border-color rounded-lg p-3 text-white min-w-[260px]">
-      <div className="text-xs font-semibold text-accent-secondary mb-2 uppercase tracking-wider">
-        Synthesizer
+    <div className="bg-bg-panel border border-border-color rounded-lg p-3 text-text-primary min-w-[260px]">
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-xs font-semibold text-accent-secondary uppercase tracking-wider">
+          Synthesizer
+        </span>
+        {onClose && (
+          <button
+            onClick={onClose}
+            className="text-text-muted hover:text-text-primary p-1 rounded flex items-center justify-center transition-colors"
+            aria-label="Close"
+            title="Schließen"
+          >
+            <X className="w-3.5 h-3.5" aria-hidden="true" />
+          </button>
+        )}
       </div>
 
       {/* Mode */}

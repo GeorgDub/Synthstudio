@@ -32,6 +32,12 @@ export interface QuantizeOptions {
 /**
  * Quantisiert eine Step-Array (verschiebt Steps auf das Raster).
  * Da DrumMachine-Steps diskrete Slots sind, werden Steps entfernt/kopiert.
+ *
+ * Robustheit (BUG-005 / TASK-104): Wenn `pt.steps.length` und `pattern.stepCount`
+ * auseinanderlaufen (kann durch MIDI-Import, Pattern-Morph oder geladene
+ * Projekte passieren), darf der Code nicht crashen. Wir clampen daher alle
+ * Index-Zugriffe an die tatsächliche Array-Länge und iterieren nur so weit
+ * wie das Steps-Array reicht.
  */
 export function quantizeSteps(
   steps: StepData[],
@@ -39,29 +45,43 @@ export function quantizeSteps(
 ): StepData[] {
   const { grid, strength, stepCount } = opts;
   if (strength <= 0) return steps;
+  if (!steps || steps.length === 0) return steps;
 
   const divisions = GRID_DIVISIONS[grid];
-  const stepsPerDiv = stepCount / divisions;
+  // Wenn stepCount unsinnig ist (0 / negativ / NaN), fallen wir auf die
+  // tatsächliche Step-Länge zurück, statt durch Null zu teilen.
+  const effectiveStepCount = stepCount > 0 ? stepCount : steps.length;
+  const stepsPerDiv = effectiveStepCount / divisions;
 
-  const result: StepData[] = steps.map((s, _i) => ({ ...s, active: false }));
+  const result: StepData[] = steps.map((s) => ({ ...s, active: false }));
+  // Maximal-Index ist durch BEIDE Grenzen begrenzt: das logische Raster
+  // (stepCount) UND das physische Steps-Array (steps.length).
+  const maxIdx = Math.min(result.length, effectiveStepCount) - 1;
+  if (maxIdx < 0) return result;
 
-  for (let i = 0; i < stepCount; i++) {
+  const limit = Math.min(steps.length, effectiveStepCount);
+  for (let i = 0; i < limit; i++) {
     if (!steps[i]?.active) continue;
 
     // Nächsten Raster-Punkt finden
-    const nearestGrid = Math.round(i / stepsPerDiv) * stepsPerDiv;
-    const clampedGrid = Math.max(0, Math.min(stepCount - 1, nearestGrid));
+    const nearestGrid = stepsPerDiv > 0
+      ? Math.round(i / stepsPerDiv) * stepsPerDiv
+      : i;
+    const clampedGrid = Math.max(0, Math.min(maxIdx, nearestGrid));
 
     // Interpolierter Ziel-Index (strength=1 → genau auf Raster)
     const targetIdx = Math.round(i + (clampedGrid - i) * strength);
-    const finalIdx  = Math.max(0, Math.min(stepCount - 1, targetIdx));
+    const finalIdx  = Math.max(0, Math.min(maxIdx, targetIdx));
+
+    const target = result[finalIdx];
+    if (!target) continue; // Defensiv – sollte durch maxIdx-Clamp unmöglich sein
 
     // Step am Ziel-Index aktivieren (Velocity aus Quell-Step)
-    if (!result[finalIdx].active) {
+    if (!target.active) {
       result[finalIdx] = { ...steps[i] };
     } else {
       // Kollision: höhere Velocity gewinnt
-      if ((steps[i].velocity ?? 100) > (result[finalIdx].velocity ?? 100)) {
+      if ((steps[i].velocity ?? 100) > (target.velocity ?? 100)) {
         result[finalIdx] = { ...steps[i] };
       }
     }

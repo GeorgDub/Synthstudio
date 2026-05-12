@@ -5,6 +5,7 @@
  * Aus DrumMachine.tsx ausgelagert.
  */
 import React, { useEffect } from "react";
+import { X } from "lucide-react";
 import { useResizablePanel } from "@/hooks/useResizablePanel";
 import { ResizablePanelHandle } from "@/components/UI/ResizablePanelHandle";
 
@@ -54,10 +55,10 @@ export function ResizableDrumPanel({
             <button
               onClick={onClose}
               title="Schließen (ESC)"
-              aria-label="Schließen"
-              className="ml-auto text-text-dim hover:text-accent-danger text-base leading-none px-1 transition-colors"
+              aria-label="Close"
+              className="ml-auto text-text-muted hover:text-text-primary leading-none px-1 flex items-center justify-center transition-colors"
             >
-              ✕
+              <X className="w-3.5 h-3.5" aria-hidden="true" />
             </button>
           )}
         </div>

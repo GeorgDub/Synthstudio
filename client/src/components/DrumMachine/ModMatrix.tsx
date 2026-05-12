@@ -3,6 +3,7 @@
  * Phase 6: Modulationsmatrix
  */
 import React from "react";
+import { X } from "lucide-react";
 import type { ModMatrixEntry, ModSource, ModTarget } from "@/audio/AudioEngine";
 
 interface ModMatrixProps {
@@ -11,6 +12,7 @@ interface ModMatrixProps {
   onAddEntry: (entry: Omit<ModMatrixEntry, "id">) => void;
   onRemoveEntry: (id: string) => void;
   onUpdateEntry: (id: string, update: Partial<ModMatrixEntry>) => void;
+  onClose?: () => void;
 }
 
 function sourceLabel(source: ModSource): string {
@@ -30,7 +32,7 @@ function targetLabel(target: ModTarget): string {
   return "?";
 }
 
-export function ModMatrix({ entries, partIds, onAddEntry, onRemoveEntry, onUpdateEntry }: ModMatrixProps) {
+export function ModMatrix({ entries, partIds, onAddEntry, onRemoveEntry, onUpdateEntry, onClose }: ModMatrixProps) {
   const handleAdd = () => {
     if (partIds.length === 0) return;
     onAddEntry({
@@ -42,15 +44,27 @@ export function ModMatrix({ entries, partIds, onAddEntry, onRemoveEntry, onUpdat
   };
 
   return (
-    <div className="bg-bg-panel border border-border-color rounded-lg p-3 text-white min-w-[320px]">
+    <div className="bg-bg-panel border border-border-color rounded-lg p-3 text-text-primary min-w-[320px]">
       <div className="flex items-center justify-between mb-2">
         <span className="text-xs font-semibold text-accent-secondary uppercase tracking-wider">Mod Matrix</span>
-        <button
-          onClick={handleAdd}
-          className="text-xs bg-bg-elevated hover:bg-bg-elevated px-2 py-0.5 rounded"
-        >
-          + Route
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={handleAdd}
+            className="text-xs bg-bg-elevated hover:bg-bg-elevated px-2 py-0.5 rounded"
+          >
+            + Route
+          </button>
+          {onClose && (
+            <button
+              onClick={onClose}
+              className="text-text-muted hover:text-text-primary p-1 rounded flex items-center justify-center transition-colors"
+              aria-label="Close"
+              title="Schließen"
+            >
+              <X className="w-3.5 h-3.5" aria-hidden="true" />
+            </button>
+          )}
+        </div>
       </div>
 
       {entries.length === 0 && (

@@ -3,6 +3,7 @@
  * Phase 7: Collaborative Live Session
  */
 import React, { useState } from "react";
+import { X } from "lucide-react";
 import type { Participant } from "@/hooks/useCollaborativeSession";
 
 interface CollabStatusProps {
@@ -60,8 +61,18 @@ export function CollabStatus({
 
       {/* Join/Create Popup */}
       {showJoin && !isActive && (
-        <div className="absolute bottom-8 left-0 bg-bg-panel border border-border-color rounded-lg p-3 shadow-xl w-56 z-40 text-xs text-white">
-          <div className="font-semibold text-accent-secondary mb-2">Collaborative Session</div>
+        <div className="absolute bottom-8 left-0 bg-bg-panel border border-border-color rounded-lg p-3 shadow-xl w-56 z-40 text-xs text-text-primary">
+          <div className="flex items-center justify-between mb-2">
+            <div className="font-semibold text-accent-secondary">Collaborative Session</div>
+            <button
+              onClick={() => setShowJoin(false)}
+              className="text-text-muted hover:text-text-primary p-0.5 rounded flex items-center justify-center transition-colors"
+              aria-label="Close"
+              title="Schließen"
+            >
+              <X className="w-3 h-3" aria-hidden="true" />
+            </button>
+          </div>
           <button
             onClick={() => { onCreateSession(); setShowJoin(false); }}
             disabled={isConnecting}

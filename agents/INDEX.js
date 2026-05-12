@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "1.15.1",
+    version: "1.15.5",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -151,8 +151,10 @@ const INDEX = {
       title:   "Space key stops playback only when focus is not on step grid",
       severity: "low",
       details:  "When a step cell or text field has focus, Space toggles that step instead of transport. Click neutral area first.",
-      fixed:    false,
-      foundBy:  "testing"
+      fixed:    true,
+      foundBy:  "testing",
+      fixedBy:  "frontend",
+      fixedIn:  "fe62713"
     },
     "BUG-002": {
       title:   "BPM +/- buttons appear clickable but are keyboard-only shortcuts",
@@ -165,26 +167,138 @@ const INDEX = {
       title:   "Double title bar on Windows — native + custom Electron titlebar both visible",
       severity: "medium",
       details:  "Windows native titlebar and custom Electron titlebar render simultaneously.",
-      fixed:    false,
-      foundBy:  "testing"
+      fixed:    true,
+      foundBy:  "testing",
+      fixedBy:  "backend",
+      fixedIn:  "0db2a54"
     },
     "BUG-004": {
       title:   "KI-Generator hangs indefinitely on 'Generiere...'",
       severity: "high",
-      details:  "KI-Generator stuck in loading state. Likely requires API key or network access that is not configured.",
-      fixed:    false,
-      foundBy:  "testing"
+      details:  "Runtime require() in generateAndStore caused ES module error -> isGenerating stuck true forever. Replaced with proper ES import.",
+      fixed:    true,
+      foundBy:  "testing",
+      fixedBy:  "frontend",
+      fixedIn:  "fe62713"
+    },
+    "BUG-005": {
+      title:   "Quantize crashes page (TypeError: undefined.active)",
+      severity: "critical",
+      details:  "Quantize buttons (1/8, 1/16, 1/32) threw TypeError when pt.steps.length < pattern.stepCount (after MIDI-Import, Morph, or project load). Unhandled in React setState -> white-screen page-crash. Fix: bounds-check in quantizeSteps via Math.min(steps.length, stepCount).",
+      fixed:    true,
+      foundBy:  "testing",
+      fixedBy:  "testing",
+      fixedIn:  "TASK-104 (v1.15.5)"
+    },
+    "BUG-006": {
+      title:   "Macro knobs do not affect audio (no routing to AudioEngine)",
+      severity: "high",
+      details:  "useMacroStore stored bindings but had no subscription routing macro value changes to AudioEngine setters. App.tsx had stale-closure bug (dm/project captured at mount, never refreshed). Fix: pure applyMacroBindings() helper + ref-based handler in App.tsx. Master-vol, BPM, channel-vol/pan/sends now functional. LFO-rate/depth still pending (require new SynthEngine runtime setters).",
+      fixed:    true,
+      foundBy:  "user (15_3.md #5)",
+      fixedBy:  "backend",
+      fixedIn:  "TASK-100 (v1.15.5)"
+    },
+    "BUG-007": {
+      title:   "Close buttons missing or inconsistent on ~12 floating/modal panels",
+      severity: "high (UX)",
+      details:  "Many panels (Granular, Polyrhythm via ResizableDrumPanel, FxPanel, StepInspector, WavetableEditor, ShortcutsHelp, NewProjectDialog, MidiSettings, CollabChat, SettingsPanel, ThemeSettings, CustomThemeCreator, MacroPanel BindingEditor, PianoRollModal, Scene EditModal, CollabStatus, MixAssistantPanel, PatternMorphPanel, NoteRepeatPanel, ModMatrix, SynthPanel) had ✕ text without aria-label or no close button at all. Standardized on lucide <X /> + aria-label='Close' + semantic tokens.",
+      fixed:    true,
+      foundBy:  "user (neue_todos.md)",
+      fixedBy:  "frontend",
+      fixedIn:  "TASK-105 (v1.15.5)"
     }
   },
 
   // ─── AGENT WORK LOG ────────────────────────────────────────
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
-  workLog: [],
+  workLog: [
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-12T00:00:00.000Z",
+      done: [
+        "v1.15.5 bugfix wave coordinated and merged",
+        "Synced INDEX.js version from 1.15.1 to 1.15.4 (match package.json)",
+        "Marked BUG-001 (Space key) as fixed in fe62713",
+        "Marked BUG-003 (double titlebar) as fixed in 0db2a54",
+        "Marked BUG-004 (KI-Generator hang) as fixed in fe62713 (runtime require -> ES import)",
+        "Added BUG-005 (Quantize-Crash) — fixed by TASK-104",
+        "Added BUG-006 (Macro routing missing) — fixed by TASK-100",
+        "Added BUG-007 (Close-Button inconsistency on ~20 panels) — fixed by TASK-105"
+      ],
+      next: [
+        "TASK-101 (Layout-Bug) still open — needs reproducible repro from user",
+        "BUG-002 (BPM +/- UX) still open — needs frontend fix or doc clarification",
+        "v1.16.0: TASK-102 (Audio-Track for vocals/songs) — needs persistence decision (.synth path-ref vs blob vs session-only)",
+        "v1.16.0: TASK-103 (Script persistence + key/macro binding) — useScriptStore does not exist yet, security review mandatory for eval sandbox",
+        "v1.16.0: Phase-P Auto-Updater + Multi-Platform CI — blocked on Apple Developer + Windows EV cert procurement"
+      ],
+      changed: [
+        "agents/INDEX.js",
+        "client/src/utils/quantizeGrid.ts",
+        "tests/features/quantize.test.ts",
+        "tests/web/quantize.spec.ts",
+        "client/src/store/useMacroStore.ts",
+        "client/src/App.tsx",
+        "tests/features/macros.test.ts",
+        "client/src/components/PerformanceMode/NoteRepeatPanel.tsx",
+        "client/src/components/PatternMorph/PatternMorphPanel.tsx",
+        "client/src/components/DrumMachine/MixAssistantPanel.tsx",
+        "client/src/components/DrumMachine/ResizableDrumPanel.tsx",
+        "client/src/components/DrumMachine/FxPanel.tsx",
+        "client/src/components/DrumMachine/StepInspector.tsx",
+        "client/src/components/DrumMachine/WavetableEditor.tsx",
+        "client/src/components/DrumMachine/CollabStatus.tsx",
+        "client/src/components/DrumMachine/ModMatrix.tsx",
+        "client/src/components/DrumMachine/SynthPanel.tsx",
+        "client/src/components/Macro/MacroPanel.tsx",
+        "client/src/components/PianoRoll/PianoRollModal.tsx",
+        "client/src/components/ShortcutsHelp/ShortcutsHelp.tsx",
+        "client/src/components/NewProjectDialog/NewProjectDialog.tsx",
+        "client/src/components/MidiSettings/MidiSettings.tsx",
+        "client/src/components/CollabSession/CollabChat.tsx",
+        "client/src/components/Settings/CustomThemeCreator.tsx",
+        "client/src/components/Settings/ThemeSettings.tsx",
+        "client/src/components/Settings/SettingsPanel.tsx",
+        "client/src/components/Scene/SceneLaunchPad.tsx",
+        "tests/web/close-buttons.spec.ts"
+      ]
+    }
+  ],
 
   // ─── CURRENT OPEN TASKS ────────────────────────────────────
   // High-level tasks visible to all agents. Coordinator manages this.
-  openTasks: [],
+  openTasks: [
+    {
+      id:       "TASK-101",
+      title:    "Layout verzogen — reproducible cases pending",
+      severity: "high",
+      target:   "v1.15.5 or v1.15.6",
+      notes:    "User reported 'layout verzogen' but no concrete reproduction. Needs Playwright multi-viewport sweep."
+    },
+    {
+      id:       "TASK-102",
+      title:    "Audio-Track channel for vocals/songs (remix workflow)",
+      severity: "high",
+      target:   "v1.16.0",
+      notes:    "Decision needed: persist file-path-ref in .synth (with relocate-dialog on missing) vs session-only. Recommended: path-ref."
+    },
+    {
+      id:       "TASK-103",
+      title:    "Script persistence + key/macro binding",
+      severity: "medium",
+      target:   "v1.16.0",
+      notes:    "useScriptStore does not exist. Requires security review for sandboxed eval/Function() — no globalThis/Node access."
+    },
+    {
+      id:       "BUG-002",
+      title:    "BPM +/- buttons UX clarification",
+      severity: "low",
+      target:   "any",
+      notes:    "Buttons look clickable but are kbd-only. Either wire onClick or remove visual affordance."
+    }
+  ],
 
   // ─── API / IPC REFERENCE ───────────────────────────────────
   ipc: {

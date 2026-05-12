@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { X } from 'lucide-react';
 import { addCustomTheme, applyCustomTheme, type CustomTheme } from '@/store/useThemeStore';
 
 const defaultColors: CustomTheme['colors'] = {
@@ -74,9 +75,11 @@ export function CustomThemeCreator({ onClose }: Props) {
                 <h3 className="text-sm font-bold text-text-primary">Eigenes Design erstellen</h3>
                 <button
                     onClick={onClose}
-                    className="w-6 h-6 rounded text-text-dim hover:text-text-primary hover:bg-bg-elevated transition-colors text-xs"
+                    className="w-6 h-6 rounded text-text-muted hover:text-text-primary hover:bg-bg-elevated transition-colors flex items-center justify-center"
+                    aria-label="Close"
+                    title="Schließen"
                 >
-                    ✕
+                    <X className="w-3.5 h-3.5" aria-hidden="true" />
                 </button>
             </div>
             <div className="grid grid-cols-2 gap-4">

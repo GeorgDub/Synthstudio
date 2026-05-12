@@ -6,6 +6,7 @@
  * Aus DrumMachine.tsx ausgelagert.
  */
 import React from "react";
+import { X } from "lucide-react";
 import type { StepData, StepCondition, StepParamLock } from "@/audio/AudioEngine";
 import { useResizablePanel } from "@/hooks/useResizablePanel";
 import { ResizablePanelHandle } from "@/components/UI/ResizablePanelHandle";
@@ -63,7 +64,14 @@ export function StepInspector({
         >
           {active ? "● AN" : "○ AUS"}
         </button>
-        <button onClick={onClose} className="text-text-dim hover:text-text-primary text-lg leading-none ml-2">✕</button>
+        <button
+          onClick={onClose}
+          className="text-text-muted hover:text-text-primary leading-none ml-2 p-1 rounded flex items-center justify-center transition-colors"
+          aria-label="Close"
+          title="Schließen"
+        >
+          <X className="w-4 h-4" aria-hidden="true" />
+        </button>
       </div>
 
       {/* Note Length */}

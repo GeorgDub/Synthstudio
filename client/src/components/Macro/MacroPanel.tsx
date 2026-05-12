@@ -8,6 +8,7 @@
  * MIDI-Zuweisung über das normale MIDI CC-System möglich.
  */
 import React, { useState } from "react";
+import { X } from "lucide-react";
 import {
   useMacroStore,
   setMacroValue,
@@ -102,7 +103,14 @@ function BindingEditor({ macro, parts, onClose }: { macro: Macro; parts: PartDat
         <span className="text-sm font-bold text-text-primary" style={{ color: macro.color }}>
           {macro.label}
         </span>
-        <button onClick={onClose} className="text-text-dim hover:text-text-primary text-lg">✕</button>
+        <button
+          onClick={onClose}
+          className="text-text-muted hover:text-text-primary p-1 rounded flex items-center justify-center transition-colors"
+          aria-label="Close"
+          title="Schließen"
+        >
+          <X className="w-4 h-4" aria-hidden="true" />
+        </button>
       </div>
 
       {/* Label bearbeiten */}

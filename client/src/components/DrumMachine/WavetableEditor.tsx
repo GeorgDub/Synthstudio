@@ -11,6 +11,7 @@
  *  - Presets: Sine, Square, Sawtooth, Triangle
  */
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import { X } from "lucide-react";
 
 export interface WavetableEditorProps {
   /** Wird aufgerufen wenn die Wellenform gespeichert wird */
@@ -137,7 +138,14 @@ export function WavetableEditor({ onSave, onClose, initialData }: WavetableEdito
         <div className="flex items-center px-5 py-4 border-b border-border-color">
           <h2 className="text-sm font-bold text-text-primary">Wavetable Editor</h2>
           <p className="ml-3 text-xs text-text-dim flex-1">Klick/Drag zum Zeichnen</p>
-          <button onClick={onClose} className="text-text-dim hover:text-text-primary text-lg">✕</button>
+          <button
+            onClick={onClose}
+            className="text-text-muted hover:text-text-primary p-1 rounded flex items-center justify-center transition-colors"
+            aria-label="Close"
+            title="Schließen"
+          >
+            <X className="w-4 h-4" aria-hidden="true" />
+          </button>
         </div>
 
         {/* Canvas */}

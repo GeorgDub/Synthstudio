@@ -66,7 +66,11 @@ import {
   removeMacroBinding,
   resetMacros,
   getMacros,
+  mapMacroValue,
+  applyMacroBindings,
   type MacroBinding,
+  type Macro,
+  type MacroRouteSetters,
 } from "../../client/src/store/useMacroStore";
 
 const STORAGE_KEY = "ss-macros:v1";
@@ -185,5 +189,305 @@ describe("useMacroStore – Setter", () => {
     expect(parsed[0].label).toBe("Persistent");
     expect(parsed[0].bindings).toHaveLength(1);
     expect(parsed[0].bindings[0].target).toBe("bpm");
+  });
+});
+
+// ─── Routing-Tests (TASK-100) ────────────────────────────────────────────────
+// Diese Tests verifizieren das Audio-Routing: Wenn ein Macro auf einen
+// Parameter gemappt ist und sein Wert geändert wird, müssen die passenden
+// Setter aufgerufen werden. Vorher war der Store eine UI-State-Insel.
+
+describe("mapMacroValue – lineare Interpolation", () => {
+  const b = (minValue: number, maxValue: number): MacroBinding => ({
+    id: "bx",
+    target: "bpm",
+    minValue,
+    maxValue,
+  });
+
+  it("liefert minValue bei 0", () => {
+    expect(mapMacroValue(b(80, 160), 0)).toBe(80);
+  });
+
+  it("liefert maxValue bei 1", () => {
+    expect(mapMacroValue(b(80, 160), 1)).toBe(160);
+  });
+
+  it("interpoliert linear in der Mitte", () => {
+    expect(mapMacroValue(b(80, 160), 0.5)).toBe(120);
+  });
+
+  it("klemmt input <0 auf 0", () => {
+    expect(mapMacroValue(b(80, 160), -0.5)).toBe(80);
+  });
+
+  it("klemmt input >1 auf 1", () => {
+    expect(mapMacroValue(b(80, 160), 1.5)).toBe(160);
+  });
+
+  it("funktioniert mit invertiertem Bereich (max < min)", () => {
+    // z.B. negativer Pan
+    expect(mapMacroValue(b(1, -1), 0)).toBe(1);
+    expect(mapMacroValue(b(1, -1), 1)).toBe(-1);
+    expect(mapMacroValue(b(1, -1), 0.5)).toBe(0);
+  });
+
+  it("funktioniert mit Floating-Point-Range (z.B. send 0..0.85)", () => {
+    expect(mapMacroValue(b(0, 0.85), 0.4)).toBeCloseTo(0.34);
+  });
+});
+
+describe("applyMacroBindings – Audio-Routing", () => {
+  function makeMacro(bindings: MacroBinding[]): Macro {
+    return {
+      index: 0,
+      label: "Test",
+      value: 0,
+      bindings,
+      color: "#fff",
+    };
+  }
+
+  function makeBinding(overrides: Partial<MacroBinding>): MacroBinding {
+    return {
+      id: "b1",
+      target: "master-vol",
+      minValue: 0,
+      maxValue: 1,
+      ...overrides,
+    };
+  }
+
+  it("ruft setMasterVolume mit gemapptem Wert auf", () => {
+    const calls: number[] = [];
+    const setters: MacroRouteSetters = {
+      setMasterVolume: (v) => calls.push(v),
+    };
+    const macro = makeMacro([makeBinding({ target: "master-vol", minValue: 0, maxValue: 1 })]);
+    applyMacroBindings(macro, 0.5, setters);
+    expect(calls).toEqual([0.5]);
+  });
+
+  it("ruft setBpm mit gerundetem Wert auf (Math.round)", () => {
+    const calls: number[] = [];
+    const setters: MacroRouteSetters = {
+      setBpm: (v) => calls.push(v),
+    };
+    const macro = makeMacro([makeBinding({ target: "bpm", minValue: 80, maxValue: 160 })]);
+    applyMacroBindings(macro, 0.5, setters);
+    expect(calls).toEqual([120]);
+    applyMacroBindings(macro, 0.123, setters);
+    // 80 + 0.123 * 80 = 89.84 → 90
+    expect(calls[1]).toBe(90);
+  });
+
+  it("ruft setChannelVolume mit partId auf, wenn target=channel-vol", () => {
+    const calls: Array<[string, number]> = [];
+    const setters: MacroRouteSetters = {
+      setChannelVolume: (id, v) => calls.push([id, v]),
+    };
+    const macro = makeMacro([
+      makeBinding({ target: "channel-vol", partId: "kick-1", minValue: 0, maxValue: 1 }),
+    ]);
+    applyMacroBindings(macro, 0.7, setters);
+    expect(calls).toEqual([["kick-1", 0.7]]);
+  });
+
+  it("ruft setChannelPan korrekt mit partId und mapped Wert auf (-1..1)", () => {
+    const calls: Array<[string, number]> = [];
+    const setters: MacroRouteSetters = {
+      setChannelPan: (id, v) => calls.push([id, v]),
+    };
+    const macro = makeMacro([
+      makeBinding({ target: "channel-pan", partId: "snare", minValue: -1, maxValue: 1 }),
+    ]);
+    applyMacroBindings(macro, 0, setters);
+    applyMacroBindings(macro, 0.5, setters);
+    applyMacroBindings(macro, 1, setters);
+    expect(calls).toEqual([
+      ["snare", -1],
+      ["snare", 0],
+      ["snare", 1],
+    ]);
+  });
+
+  it("ruft setChannelSend mit korrektem Bus auf (reverb)", () => {
+    const calls: Array<[string, string, number]> = [];
+    const setters: MacroRouteSetters = {
+      setChannelSend: (id, bus, v) => calls.push([id, bus, v]),
+    };
+    const macro = makeMacro([
+      makeBinding({ target: "channel-send-rev", partId: "hat", minValue: 0, maxValue: 0.5 }),
+    ]);
+    applyMacroBindings(macro, 1, setters);
+    expect(calls).toEqual([["hat", "reverb", 0.5]]);
+  });
+
+  it("ruft setChannelSend mit korrektem Bus auf (delay)", () => {
+    const calls: Array<[string, string, number]> = [];
+    const setters: MacroRouteSetters = {
+      setChannelSend: (id, bus, v) => calls.push([id, bus, v]),
+    };
+    const macro = makeMacro([
+      makeBinding({ target: "channel-send-dly", partId: "perc", minValue: 0, maxValue: 1 }),
+    ]);
+    applyMacroBindings(macro, 0.25, setters);
+    expect(calls).toEqual([["perc", "delay", 0.25]]);
+  });
+
+  it("propagiert ein Macro mit MEHREREN Bindings an alle Setter", () => {
+    const masterCalls: number[] = [];
+    const bpmCalls: number[] = [];
+    const volCalls: Array<[string, number]> = [];
+    const setters: MacroRouteSetters = {
+      setMasterVolume: (v) => masterCalls.push(v),
+      setBpm: (v) => bpmCalls.push(v),
+      setChannelVolume: (id, v) => volCalls.push([id, v]),
+    };
+    const macro = makeMacro([
+      makeBinding({ id: "b1", target: "master-vol", minValue: 0, maxValue: 1 }),
+      makeBinding({ id: "b2", target: "bpm", minValue: 100, maxValue: 200 }),
+      makeBinding({ id: "b3", target: "channel-vol", partId: "kick", minValue: 0, maxValue: 1 }),
+    ]);
+    applyMacroBindings(macro, 0.5, setters);
+    expect(masterCalls).toEqual([0.5]);
+    expect(bpmCalls).toEqual([150]);
+    expect(volCalls).toEqual([["kick", 0.5]]);
+  });
+
+  it("ignoriert channel-* Bindings ohne partId stillschweigend", () => {
+    const calls: Array<[string, number]> = [];
+    const setters: MacroRouteSetters = {
+      setChannelVolume: (id, v) => calls.push([id, v]),
+    };
+    const macro = makeMacro([
+      makeBinding({ target: "channel-vol", partId: undefined, minValue: 0, maxValue: 1 }),
+    ]);
+    applyMacroBindings(macro, 0.5, setters);
+    expect(calls).toEqual([]);
+  });
+
+  it("ist no-op wenn macro keine Bindings hat", () => {
+    let called = false;
+    const setters: MacroRouteSetters = {
+      setMasterVolume: () => { called = true; },
+    };
+    applyMacroBindings(makeMacro([]), 0.5, setters);
+    expect(called).toBe(false);
+  });
+
+  it("ist no-op wenn ein Setter fehlt (kein Crash, kein Aufruf)", () => {
+    const macro = makeMacro([
+      makeBinding({ target: "master-vol", minValue: 0, maxValue: 1 }),
+    ]);
+    // Empty setters — Funktion darf nicht werfen
+    expect(() => applyMacroBindings(macro, 0.5, {})).not.toThrow();
+  });
+
+  it("ruft onUnhandled für lfo-rate auf, solange setLfoRate fehlt", () => {
+    const unhandled: MacroBinding[] = [];
+    const setters: MacroRouteSetters = {
+      onUnhandled: (b) => unhandled.push(b),
+    };
+    const macro = makeMacro([
+      makeBinding({ target: "lfo-rate", partId: "lead", minValue: 0.1, maxValue: 20 }),
+    ]);
+    applyMacroBindings(macro, 0.5, setters);
+    expect(unhandled).toHaveLength(1);
+    expect(unhandled[0].target).toBe("lfo-rate");
+  });
+
+  it("ruft setLfoRate auf, wenn vorhanden (statt onUnhandled)", () => {
+    const unhandled: MacroBinding[] = [];
+    const lfoCalls: Array<[string, number]> = [];
+    const setters: MacroRouteSetters = {
+      setLfoRate: (id, v) => lfoCalls.push([id, v]),
+      onUnhandled: (b) => unhandled.push(b),
+    };
+    const macro = makeMacro([
+      makeBinding({ target: "lfo-rate", partId: "lead", minValue: 0, maxValue: 10 }),
+    ]);
+    applyMacroBindings(macro, 1, setters);
+    expect(lfoCalls).toEqual([["lead", 10]]);
+    expect(unhandled).toHaveLength(0);
+  });
+});
+
+// ─── Integrationstest: store + routing zusammen (TASK-100) ───────────────────
+// Verifiziert, dass setMacroValue() ein Event dispatcht, dessen Detail-Wert
+// von applyMacroBindings auf die richtigen Setter geroutet wird. Simuliert
+// damit was App.tsx tatsächlich tut, ohne React-Render zu brauchen.
+
+describe("Macro → Audio Routing (End-to-End ohne DOM)", () => {
+  beforeEach(() => {
+    localStorageMock.clear();
+    dispatched.length = 0;
+    resetMacros();
+  });
+
+  it("setMacroValue → CustomEvent → applyMacroBindings → AudioEngine-Mock", () => {
+    // 1. Setup: Macro 0 bekommt eine Binding auf Master-Volume (Range 0..1)
+    addMacroBinding(0, {
+      target: "master-vol",
+      minValue: 0,
+      maxValue: 1,
+    });
+
+    // 2. Mock AudioEngine + Setters
+    const masterCalls: number[] = [];
+    const setters: MacroRouteSetters = {
+      setMasterVolume: (v) => masterCalls.push(v),
+    };
+
+    // 3. Simuliere App.tsx Subscriber: lies Event-Detail, hole macro, route
+    const handler = (detail: { index: number; value: number }) => {
+      const macro = getMacros()[detail.index];
+      applyMacroBindings(macro, detail.value, setters);
+    };
+
+    // 4. setMacroValue dispatcht ein 'macro:change' Event
+    setMacroValue(0, 0.42);
+    const ev = dispatched[dispatched.length - 1];
+    expect(ev.type).toBe("macro:change");
+    handler(ev.detail as { index: number; value: number });
+
+    // 5. Routing-Verifikation: 0.42 erreicht den Setter
+    expect(masterCalls).toEqual([0.42]);
+  });
+
+  it("BPM-Binding routet gerundete BPM (80..160 @ 0.5 → 120)", () => {
+    addMacroBinding(1, {
+      target: "bpm",
+      minValue: 80,
+      maxValue: 160,
+    });
+    const bpmCalls: number[] = [];
+    const setters: MacroRouteSetters = { setBpm: (v) => bpmCalls.push(v) };
+
+    setMacroValue(1, 0.5);
+    const ev = dispatched[dispatched.length - 1];
+    const detail = ev.detail as { index: number; value: number };
+    applyMacroBindings(getMacros()[detail.index], detail.value, setters);
+    expect(bpmCalls).toEqual([120]);
+  });
+
+  it("channel-vol routet auf richtige partId mit korrektem Volume", () => {
+    addMacroBinding(2, {
+      target: "channel-vol",
+      partId: "kick-id-xyz",
+      partName: "Kick",
+      minValue: 0,
+      maxValue: 1,
+    });
+    const volCalls: Array<[string, number]> = [];
+    const setters: MacroRouteSetters = {
+      setChannelVolume: (id, v) => volCalls.push([id, v]),
+    };
+
+    setMacroValue(2, 0.8);
+    const ev = dispatched[dispatched.length - 1];
+    const detail = ev.detail as { index: number; value: number };
+    applyMacroBindings(getMacros()[detail.index], detail.value, setters);
+    expect(volCalls).toEqual([["kick-id-xyz", 0.8]]);
   });
 });

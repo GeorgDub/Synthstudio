@@ -10,6 +10,7 @@
  * wird `onPadTrigger` im konfigurierten Rate retriggert (via useNoteRepeat).
  */
 import { useCallback } from "react";
+import { X } from "lucide-react";
 import { useNoteRepeatStore } from "@/store/useNoteRepeatStore";
 import { useNoteRepeat } from "@/hooks/useNoteRepeat";
 import { NOTE_REPEAT_RATES, type NoteRepeatRate } from "@/utils/noteRepeat";
@@ -88,11 +89,11 @@ export function NoteRepeatPanel({
         {onClose && (
           <button
             onClick={onClose}
-            className="px-2 py-0.5 text-xs rounded hover:opacity-70"
-            style={{ color: "var(--ss-text-muted)" }}
-            aria-label="Schließen"
+            className="px-2 py-0.5 text-xs rounded text-text-muted hover:text-text-primary hover:opacity-70 flex items-center justify-center"
+            aria-label="Close"
+            title="Schließen (ESC)"
           >
-            ✕
+            <X className="w-3.5 h-3.5" aria-hidden="true" />
           </button>
         )}
       </div>

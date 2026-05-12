@@ -12,6 +12,7 @@
  *  - Über
  */
 import React, { useState, useCallback, useEffect } from "react";
+import { X } from "lucide-react";
 import { KeyboardBindingsPanel } from "./KeyboardBindingsPanel";
 import { useApiSettingsStore, setApiKey, setAiModel, setAutoSaveEnabled, setSnapshotsEnabled, setAutoSaveInterval } from "@/store/useApiSettingsStore";
 import {
@@ -899,8 +900,11 @@ export function SettingsPanel({ isOpen, onClose, midi, parts, initialSection = "
 
         {/* ── Close Button ───────────────────────────────────────────────── */}
         <button onClick={onClose}
-          className="absolute top-4 right-4 w-8 h-8 flex items-center justify-center rounded-full text-text-dim hover:text-text-primary hover:bg-bg-elevated transition-colors text-lg">
-          ✕
+          className="absolute top-4 right-4 w-8 h-8 flex items-center justify-center rounded-full text-text-muted hover:text-text-primary hover:bg-bg-elevated transition-colors"
+          aria-label="Close"
+          title="Schließen (ESC)"
+        >
+          <X className="w-4 h-4" aria-hidden="true" />
         </button>
       </div>
     </div>

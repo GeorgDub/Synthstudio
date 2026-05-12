@@ -11,6 +11,7 @@
  */
 
 import React, { useCallback, useEffect, useState } from "react";
+import { X } from "lucide-react";
 import { useThemeStore, applyCustomTheme, deleteCustomTheme, applyTheme as applyBaseThemeFromStore } from "@/store/useThemeStore";
 import { CustomThemeCreator } from "./CustomThemeCreator";
 import { useApiSettingsStore, setApiKey, setAiModel } from "@/store/useApiSettingsStore";
@@ -172,7 +173,14 @@ export function ThemeSettings({ isOpen, onClose }: Props) {
               ))}
             </div>
           </div>
-          <button onClick={onClose} className="w-6 h-6 rounded text-text-dim hover:text-text-primary hover:bg-bg-elevated transition-colors text-xs">✕</button>
+          <button
+            onClick={onClose}
+            className="w-6 h-6 rounded text-text-muted hover:text-text-primary hover:bg-bg-elevated transition-colors flex items-center justify-center"
+            aria-label="Close"
+            title="Schließen (ESC)"
+          >
+            <X className="w-3.5 h-3.5" aria-hidden="true" />
+          </button>
         </div>
 
         <div className="p-5 overflow-y-auto">

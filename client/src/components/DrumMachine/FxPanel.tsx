@@ -5,6 +5,7 @@
  * Aus DrumMachine.tsx ausgelagert.
  */
 import React, { useState } from "react";
+import { X } from "lucide-react";
 import type { PartData, ChannelFx } from "@/audio/AudioEngine";
 
 export interface FxPanelProps {
@@ -71,7 +72,14 @@ export function FxPanel({ part, onFxChange, onClose }: FxPanelProps) {
       {/* Header */}
       <div className="flex items-center justify-between mb-2">
         <span className="text-xs font-semibold text-text-primary">FX: {part.name}</span>
-        <button onClick={onClose} className="text-text-dim hover:text-white text-sm leading-none">✕</button>
+        <button
+          onClick={onClose}
+          className="text-text-muted hover:text-text-primary leading-none p-1 rounded flex items-center justify-center transition-colors"
+          aria-label="Close"
+          title="Schließen"
+        >
+          <X className="w-3.5 h-3.5" aria-hidden="true" />
+        </button>
       </div>
 
       {/* Tabs */}

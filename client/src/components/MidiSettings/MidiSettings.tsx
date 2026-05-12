@@ -11,6 +11,7 @@
  */
 
 import React, { useState } from "react";
+import { X } from "lucide-react";
 import type { MidiState, MidiActions, MidiLearnTarget, MidiNoteMapping } from "@/hooks/useMidi";
 import { GM_DRUM_DEFAULTS } from "@/hooks/useMidi";
 import { MIDI_TEMPLATES, templateToMappings } from "@/utils/midiTemplates";
@@ -474,9 +475,11 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
           </div>
           <button
             onClick={onClose}
-            className="text-text-muted hover:text-text-primary text-xl leading-none"
+            className="text-text-muted hover:text-text-primary leading-none p-1 rounded flex items-center justify-center transition-colors"
+            aria-label="Close"
+            title="Schließen"
           >
-            ✕
+            <X className="w-5 h-5" aria-hidden="true" />
           </button>
         </div>
 
