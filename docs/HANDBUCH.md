@@ -1,6 +1,6 @@
 # Synthstudio – Funktionshandbuch
 
-**Version 1.15.4 | Vollständige Dokumentation aller Features**
+**Version 1.16.0 | Vollständige Dokumentation aller Features**
 
 ---
 
@@ -52,6 +52,9 @@
 40. [MIDI-Hardware-Templates](#40-midi-hardware-templates-v1150)
 41. [Projekt-Import (FL Studio / Ableton / KORG Electribe)](#41-projekt-import-v1150)
 42. [KI-Projekt-Analyse](#42-ki-projekt-analyse-v1150)
+
+### v1.16.0
+43. [Audio Tracks (Vocals / Songs / Remix-Channel)](#43-audio-tracks-v1160)
 
 ---
 
@@ -1434,7 +1437,67 @@ Sendet einen strukturierten Snapshot des aktuellen Patterns (BPM, Parts, Volumes
 
 ---
 
-## v1.15.1 – v1.15.4: Stabilitäts-Fixes
+## 43. Audio Tracks (v1.16.0)
+
+**Mixer → Header → `[+ Audio Track]`** (alternativ: Drag&Drop einer Audio-Datei auf die Mixer-Channel-Area)
+
+Lädt externe Audio-Dateien (Vocals, fertige Songs zum Remixen, Loops) als vollwertige Mixer-Channels mit kompletter FX-Kette. Audio-Tracks laufen synchron zum Master-Transport (Play/Stop) und werden mit den gleichen FX-Slots wie Drum-Parts gerendert: EQ, Filter, EQ16, Inserts, Sends auf den globalen Reverb- und Delay-Bus.
+
+### Unterstützte Formate
+`.wav`, `.mp3`, `.ogg`, `.flac`, `.aif`, `.aiff`, `.m4a`
+
+### Channel-Strip Layout
+```
+┌─────────────────┐
+│  ✎ Vocal Take 3 │  ← editierbar (Doppelklick), [×] zum Entfernen
+├─────────────────┤
+│ ▁▃▅▂▄▆▃▁▄▅ ▶  │  ← Mini-Waveform mit Playhead (Klick = Seek)
+├─────────────────┤
+│ [⚠ Relocate…]  │  ← nur sichtbar wenn Datei nicht gefunden
+├─────────────────┤
+│ Fader │ Pan    │
+│  M │ S        │
+├─────────────────┤
+│ Sync: Free  ▾  │  ← Free | Stretch (Pitch+Tempo)
+│ Reverb ◯ Delay │
+└─────────────────┘
+```
+
+### Limits
+- **Maximal 8 Audio-Tracks pro Projekt** (Memory-Schutz: eine 5-Minuten-Stereo-WAV ≈ 50 MB im RAM dekodiert). Der `[+ Audio Track]`-Button wird grau, sobald das Limit erreicht ist.
+
+### BPM-Sync-Modus
+| Modus | Verhalten | Wann verwenden |
+|---|---|---|
+| **Free** *(default)* | Track läuft im Original-Tempo. BPM-Änderung im Projekt hat **keinen** Einfluss. | Vocals, gesprochenes Audio, alles wo natürliches Timing wichtig ist |
+| **Stretch (Pitch+Tempo)** | `playbackRate = currentBpm / originalBpm`. Track passt sich Master-BPM an, **ändert aber gekoppelt auch die Tonhöhe**. | Loops, Drumbreaks, wenn Original-BPM bekannt ist |
+
+> **v1.17 Vorschau**: Pitch-erhaltendes Stretching via `TimeStretchProcessor.js`-Worklet ist in Vorbereitung. Bis dahin: für saubere Pitch-Anpassung Audio extern vor-bouncen.
+
+### Persistenz im `.synth`-Format
+Audio-Tracks werden als **Pfad-Referenzen** im Projekt gespeichert (kein Embed der Audio-Datei). Eine `.synth`-Datei bleibt klein, auch wenn ein 10-Minuten-Song als Audio-Track verwendet wird.
+
+**Bei Projekt-Laden:**
+- **Desktop (Electron)**: Synthstudio prüft jeden Pfad. Fehlende Dateien markieren den Channel als *broken* mit rotem Banner und `[Relocate…]`-Button → File-Picker → Pfad wird aktualisiert.
+- **Browser**: Browser können gespeicherte Pfade nicht prüfen. Alle Audio-Tracks werden beim Öffnen als *broken* markiert; der User wählt sie pro Channel über `[Relocate…]` neu.
+
+Der Relocate-Flow ist **non-blocking**: das Projekt öffnet sofort, broken Channels bleiben stumm bis der User reagiert. Andere Teile des Projekts sind sofort spielbar.
+
+### Browser-Warnung beim Speichern
+Beim ersten Speichern eines Projekts mit Audio-Tracks im Web-Mode erscheint ein einmaliger Hinweis-Dialog:
+> *„Audio-Tracks werden als Datei-Referenzen gespeichert. Beim erneuten Öffnen im Browser musst du die Audiodatei neu wählen. In der Desktop-Version werden absolute Pfade gespeichert."*
+
+Mit *„OK, nicht mehr zeigen"* dauerhaft ausblendbar (`localStorage`).
+
+### Solo-Verhalten
+Audio-Track-Solo wirkt **nur innerhalb der Audio-Tracks** — Drum-Parts laufen weiter, wenn ein Audio-Track auf Solo geschaltet wird. Cross-Store-Solo (Drum + Audio gemeinsam mute/solo) ist als Follow-up für v1.16.x geplant.
+
+### Drag & Drop
+Audio-Dateien können direkt auf die Mixer-Channel-Area gezogen werden — jede Datei wird zu einem neuen Audio-Track (statt zum Sample-Slot wie beim Sample-Browser-Drop).
+
+---
+
+## v1.15.1 – v1.15.5: Stabilitäts-Fixes
 
 Diese Releases enthalten keine neuen Features, sondern **kritische Bug-Fixes**:
 
@@ -1459,9 +1522,13 @@ Diese Releases enthalten keine neuen Features, sondern **kritische Bug-Fixes**:
 - **Neues Projekt resetet**: `dm.resetAll()` Action löscht Patterns vor Template-Apply
 - **Pattern-Generator lädt nicht endlos**: `require()` in ES-Modul ersetzt durch statischen Import
 - **Sample-Visualisierung Empty-State**: "Analysiere Waveform…" Hint + fetch-Fallback für Blob/HTTP-URLs in Electron
-- **Quantize-Crash behoben**: gleicher `require()`-Bug
-- **Universal × Close-Buttons** + ESC auf allen modalen Panels
+
+### v1.15.5: 4 Critical Bugs aus v1.15.4 User-Feedback
+- **Quantize-Crash behoben**: `quantizeGrid.ts` warf `TypeError` (white-screen) wenn `pt.steps.length < pattern.stepCount` nach MIDI-Import, Pattern-Morph oder Projekt-Load — bounds-check via `Math.min(steps.length, stepCount)`
+- **Macro-Knobs wirken auf Audio**: `useMacroStore` hatte keine Subscription zur `AudioEngine`. Master-Vol, BPM, Channel-Vol/Pan/Sends sind jetzt live verbunden. *(LFO-rate/depth in Vorbereitung)*
+- **Universal × Close-Buttons**: ~20 Floating/Modal-Panels (Granular, Polyrhythm, FxPanel, StepInspector, WavetableEditor, ShortcutsHelp, NewProjectDialog, MidiSettings, CollabChat, Settings, ThemeSettings, CustomThemeCreator, PianoRollModal, MacroPanel, Scene-Editor, MixAssistantPanel, PatternMorphPanel, NoteRepeatPanel u.a.) bekommen einheitlichen `<X />`-Button mit `aria-label="Close"`
+- **Agent-Index synchronisiert**: `agents/INDEX.js` auf v1.15.5, BUG-001/003/004 als gefixt markiert, BUG-005/006/007 für die v1.15.5-Welle dokumentiert
 
 ---
 
-*Letzte Aktualisierung: Sprint 17+ — v1.15.4*
+*Letzte Aktualisierung: Sprint 18 — v1.16.0 (Audio Tracks)*
