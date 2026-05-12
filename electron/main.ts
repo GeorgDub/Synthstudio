@@ -65,6 +65,17 @@ const devServerUrl = process.env.VITE_DEV_SERVER_URL ?? "http://localhost:3000";
 const APP_NAME = "Synthstudio";
 const AUDIO_EXTENSIONS = new Set([".wav", ".mp3", ".ogg", ".flac", ".aiff", ".aif", ".m4a"]);
 
+// ─── Globale Error-Handler ────────────────────────────────────────────────────
+// Verhindern dass eine unhandled rejection die App-Initialisierung blockiert
+// und das Fenster nie erscheint. Fehler werden in die Console + nach Boot
+// in den Renderer geloggt.
+process.on("unhandledRejection", (reason) => {
+  console.error("[Main] Unhandled Rejection:", reason);
+});
+process.on("uncaughtException", (err) => {
+  console.error("[Main] Uncaught Exception:", err);
+});
+
 // ─── Zustand ─────────────────────────────────────────────────────────────────
 
 let mainWindow: BrowserWindow | null = null;

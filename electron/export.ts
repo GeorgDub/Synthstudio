@@ -591,7 +591,4 @@ export function registerExportHandlers(): void {
       }
     }
   );
-
-  // Registriere Stereo-Export-Handler
-  registerStereoExportHandlers();
 }
