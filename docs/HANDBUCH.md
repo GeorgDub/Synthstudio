@@ -1,6 +1,6 @@
 # Synthstudio – Funktionshandbuch
 
-**Version 1.17.0 | Vollständige Dokumentation aller Features**
+**Version 1.18.0 | Vollständige Dokumentation aller Features**
 
 ---
 
@@ -1582,6 +1582,30 @@ Die Sandbox basiert auf **10 Hardening-Layern** (siehe `docs/SECURITY-SCRIPT-SAN
 
 ---
 
+## v1.18.0: Hardening (CSP + Sandbox-Codegen + Refactor)
+
+Reines Sicherheits- und Aufräum-Release ohne User-facing Features. Drei parallele Streams:
+
+**TASK-107 — Electron Content-Security-Policy**
+- Production-Header per `session.defaultSession.webRequest.onHeadersReceived`: `default-src 'self'`, `script-src 'self'` (kein `unsafe-eval`, kein Inline-JS — Vite bundlet alles), `worker-src 'self' blob:` (Pflicht für v1.17 Sandbox), `object-src 'none'`, `frame-ancestors 'none'`
+- Dev-Mode lockert `script-src` + `connect-src` + `img-src` um `http://localhost:*` + `ws://localhost:*` für Vite-HMR
+- Zusätzlich: `X-Content-Type-Options: nosniff`
+- 29 Snapshot-geschützte Tests in `tests/electron/csp-header.test.ts`
+
+**TASK-108 — Build-time Codegen für Worker-Source**
+- `sandbox-runtime.ts` ist jetzt **Single Source of Truth**. Vorher gab es eine 146-LOC Duplikat-Konstante `SANDBOX_WORKER_SOURCE` in `useScriptSandbox.ts` — bei jeder Änderung musste beides synchron gehalten werden
+- Neues `scripts/generate-sandbox-source.mjs` bundelt via esbuild zu `sandbox-runtime.generated.ts`
+- pnpm Pre-Hooks (`predev`, `prebuild`, `precheck`, `pretest`) rufen automatisch `gen:sandbox` auf
+- 8 neue Codegen-Tests (Determinismus, SHA-256-Stability, Idempotenz)
+
+**TASK-109 — Refactor: Color-Tokens + Type-Dedup**
+- `WaveformDisplay` Hover-Tooltip: `text-cyan-300` → `text-accent-secondary`, `bg-black/X` → `bg-bg-base/X`
+- `AudioTrackChannelData` Type lebt jetzt nur noch in `AudioEngine.ts`; `useAudioTrackStore.ts` re-exportiert
+- `MacroPanel` ungenutzte Imports (`MACRO_COLORS`, `React`) entfernt
+- Keine Verhaltens-Änderung, alle 93 betroffenen Tests grün
+
+---
+
 ## v1.15.1 – v1.15.5: Stabilitäts-Fixes
 
 Diese Releases enthalten keine neuen Features, sondern **kritische Bug-Fixes**:
@@ -1616,4 +1640,4 @@ Diese Releases enthalten keine neuen Features, sondern **kritische Bug-Fixes**:
 
 ---
 
-*Letzte Aktualisierung: Sprint 19 — v1.17.0 (Persistent Scripts + Web-Worker-Sandbox)*
+*Letzte Aktualisierung: Sprint 20 — v1.18.0 (Hardening: CSP + Sandbox-Codegen + Refactor)*
