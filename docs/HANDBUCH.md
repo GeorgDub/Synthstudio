@@ -1,6 +1,6 @@
 # Synthstudio – Funktionshandbuch
 
-**Version 1.14 | Vollständige Dokumentation aller Features**
+**Version 1.15.4 | Vollständige Dokumentation aller Features**
 
 ---
 
@@ -26,6 +26,32 @@
 18. [MIDI Integration](#18-midi-integration)
 19. [Tastatur-Shortcuts](#19-tastatur-shortcuts)
 20. [Script Runner & Plugin API](#20-script-runner--plugin-api)
+
+### Sprint 13–16
+21. [Note Length per Step](#21-note-length-per-step-sprint-13)
+22. [Scale Quantizer](#22-scale-quantizer-sprint-13)
+23. [Groove Engine](#23-groove-engine-sprint-13)
+24. [MIDI Program Change](#24-midi-program-change-sprint-13)
+25. [Custom Metronome Sounds](#25-custom-metronome-sounds-sprint-13)
+26. [BPM-Erkennung bei Sample-Import](#26-bpm-erkennung-bei-sample-import-sprint-14)
+27. [Pattern Variations A/B/C/D](#27-pattern-variations-abcd-sprint-14)
+28. [Arpeggiator-Erweiterungen](#28-arpeggiator-erweiterungen-sprint-14)
+29. [Step Probability Chains](#29-step-probability-chains-sprint-14)
+30. [Groove Engine Templates](#30-groove-engine-templates-sprint-14--erweiterung)
+31. [Auto-Save Ein-/Ausschalten](#31-auto-save-ein-ausschalten-sprint-15)
+32. [Micro-Timing pro Kanal](#32-micro-timing-pro-kanal-sprint-15)
+33. [MIDI-Bundle-Export](#33-midi-bundle-export-sprint-15)
+
+### Sprint 17+ (v1.15.x)
+34. [Multi-Sample Mode (Keyboard Sampler)](#34-multi-sample-mode-keyboard-sampler-v1150)
+35. [Envelope Follower](#35-envelope-follower-v1150)
+36. [Time-Stretch (Pitch-erhaltend)](#36-time-stretch-pitch-erhaltend-v1150)
+37. [Public Relay Server (WAN-Kollaboration)](#37-public-relay-server-wan-kollaboration-v1150)
+38. [Audio Workbench (Audacity-like)](#38-audio-workbench-audacity-like-v1150)
+39. [Performance Mode Button](#39-performance-mode-button-v1154)
+40. [MIDI-Hardware-Templates](#40-midi-hardware-templates-v1150)
+41. [Projekt-Import (FL Studio / Ableton / KORG Electribe)](#41-projekt-import-v1150)
+42. [KI-Projekt-Analyse](#42-ki-projekt-analyse-v1150)
 
 ---
 
@@ -1191,4 +1217,251 @@ Mixer-Tab → Export: `[🎵 MIDI Export]`
 - GM-Note-Mapping: Kick=36, Snare=38, Hi-Hat=42, etc.
 - Kompatibel mit Ableton, FL Studio, Logic, Cubase
 
-*Letzte Aktualisierung: Sprint 15 — v1.14*
+---
+
+## 34. Multi-Sample Mode (Keyboard Sampler) (v1.15.0)
+
+**Tools-Tab → 🎹 Sampler**
+
+Erlaubt das Mappen mehrerer Samples auf MIDI-Noten mit Velocity-Zonen – ideal für Multi-Sample-Instrumente (Piano, Strings, Drum-Layers).
+
+**Workflow:**
+1. Sample aus dem Sample-Browser auf eine Klaviatur-Taste ziehen → erstellt automatisch eine Zone (loNote = Note − 6, hiNote = Note + 6, rootNote = gedrückte Note)
+2. Oder: Sample im Dropdown auswählen + Lo/Hi/Root manuell setzen + "+ Zone"-Button
+3. "Aktiv"-Checkbox einschalten → MIDI-Note-On-Events werden an die Sampler-Engine geroutet
+4. Maustaste auf Klaviatur-Tasten klicken → Sample-Preview
+
+**Zone-Parameter:**
+- **loNote / hiNote**: MIDI-Note-Bereich (0–127) in dem die Zone aktiv ist
+- **rootNote**: Originaltonhöhe → für andere Noten wird `playbackRate = 2^((note - root) / 12)` berechnet
+- **loVelocity / hiVelocity**: Velocity-Layer (z.B. soft 0–63 / hard 64–127 für Velocity-Layered Drums)
+- **volume / pan**: Mix-Parameter
+
+**Audio-Engine-API**:
+`AudioEngine.triggerKeyboardSamplerNote(note, velocity)` wird automatisch vom MIDI-Hook aufgerufen wenn der Sampler aktiv ist.
+
+---
+
+## 35. Envelope Follower (v1.15.0)
+
+**Sequencer-Tab → ∿ EF Button** (Toolbar)
+
+Verwendet den Audio-Level eines Kanals als Modulations-Quelle für andere Kanal-Parameter – klassischer Sidechain-Effekt + kreative Routing-Möglichkeiten.
+
+**Beispiel-Routings:**
+- Kick → Bass-Volume = klassisches Pumping ohne Sidechain-Kompressor
+- Snare → FX-Filter-Cutoff = "Schnaufen" auf Snare
+- Hi-Hat → Reverb-Send = mehr Hall auf jeden Hi-Hat-Hit
+
+**Konfiguration:**
+| Parameter | Beschreibung |
+|---|---|
+| **Quelle** | Part dessen Audio-Level analysiert wird |
+| **Ziel** | Part der moduliert wird |
+| **Parameter** | Volume / Pan / Filter-Freq / Reverb-Mix / Delay-Mix |
+| **Menge** | 0–1 (Stärke der Modulation) |
+| **Attack** | 1–500 ms (wie schnell Follower auf Level-Anstieg reagiert) |
+| **Release** | 10–2000 ms (wie schnell Follower abfällt) |
+
+**Live-Level-Meter** zeigt aktuellen RMS-Pegel der Quelle.
+
+---
+
+## 36. Time-Stretch (Pitch-erhaltend) (v1.15.0)
+
+**Sequencer → Part auswählen → Footer-Toolbar → Stretch-Slider**
+
+Echtes pitch-preserving Time-Stretch via OLA-Algorithmus (Overlap-Add). Sample-Länge wird gestreckt ohne die Tonhöhe zu ändern.
+
+- **Range**: 0.25× (4× schneller) bis 4.0× (4× langsamer)
+- **Default**: 1.0× (Original)
+- Klick auf den Slider-Wert → Reset auf 1.0
+- Stretch-Buffer werden gecached (kein Re-Computing bei jedem Step)
+
+**Implementierung**: Per-Buffer offline OLA mit 2048-Sample Grains + 512-Sample Hop + Hann-Window. AudioWorklet-Variante (`TimeStretchProcessor.js`) für Realtime-Streaming verfügbar.
+
+**Hinweis**: Sample muss zugewiesen sein – funktioniert nicht mit Synth-Sources.
+
+---
+
+## 37. Public Relay Server (WAN-Kollaboration) (v1.15.0)
+
+**Kollaboration-Tab → WAN Relay Panel**
+
+Ermöglicht Kollaboration über das Internet ohne LAN/VPN – nutzt einen WebSocket-Relay-Server zwischen den Clients.
+
+**Setup:**
+1. **Eigenen Relay-Server starten** (auf einem öffentlich erreichbaren Host):
+   ```bash
+   PORT=8080 npx ts-node server/relay.ts
+   ```
+2. **In der App**: Kollaboration-Tab → WAN Relay → Server-URL (z.B. `ws://relay.example.com:8080`) + Name → "Verbinden"
+3. Nach Verbindung: "+ Neuen Room erstellen" oder "Beitreten" mit Room-Code
+
+**Protokoll** (identisch mit LAN-Collab):
+- `create`, `join`, `event`, `ping`
+- Server broadcasted Events an alle Room-Teilnehmer außer Sender
+- Room expiriert nach 1 Stunde Inaktivität
+
+**Sicherheit**: Aktuell keine Auth – Room-Codes sind 6 Zeichen (32^6 ≈ 1 Mrd. Kombinationen). Für sensible Projekte selbst-gehostet betreiben.
+
+---
+
+## 38. Audio Workbench (Audacity-like) (v1.15.0)
+
+**Tools-Tab → 🎚 Workbench**
+
+Audio-Bearbeitungs-Werkzeug für Songs, Samples und Aufnahmen – ähnlich Audacity, inkl. **Frequenz-Band-Stem-Separator**.
+
+### 38.1 Import + Aufnahme
+- **Drag & Drop**: Audio-Datei (WAV/MP3/OGG/FLAC) auf den Drop-Zone ziehen
+- **Datei-Picker**: Klick auf die Drop-Zone öffnet den nativen Datei-Dialog
+- **Mikrofon-Aufnahme**: `● Aufnehmen` Button → Live-VU-Meter → `■ Stop`
+
+### 38.2 Edit-Tools (Audacity-Style)
+| Tool | Funktion |
+|---|---|
+| **✂ Trim** | Ausschnitt zwischen Start- und End-Sekunde behalten |
+| **↩ Reverse** | Audio rückwärts |
+| **📈 Normalize** | Auf Peak = 1.0 normalisieren |
+| **↗ Fade In** | 500ms Einblenden am Anfang |
+| **↘ Fade Out** | 500ms Ausblenden am Ende |
+| **−6 dB / +6 dB** | Halbe / doppelte Lautstärke |
+
+Peak + Dauer + Sample-Rate werden live unter der Waveform angezeigt.
+
+### 38.3 Frequenz-Stem-Separator
+"🎚 Frequenz-Stems trennen" teilt das Audio in 4 Bänder via OfflineAudioContext:
+
+| Band | Frequenzbereich | Typischer Inhalt |
+|---|---|---|
+| **Sub-Bass** | < 80 Hz | Kick-Fundament |
+| **Bass** | 80–250 Hz | Bass-Lines |
+| **Mid** | 250 Hz – 4 kHz | Vocals, Synths |
+| **High** | > 4 kHz | Hi-Hats, Luft, Cymbals |
+
+Jeder Stem hat einen Preview-Player + "+ Sample"-Button zum Hinzufügen ins Projekt.
+
+**Bearbeitetes Audio exportieren**: `💾 Als Sample exportieren` → konvertiert den aktuellen Buffer zu WAV und fügt ihn dem Sample-Browser hinzu.
+
+---
+
+## 39. Performance Mode Button (v1.15.4)
+
+**Tab-Bar oben rechts → ⚡ Performance Mode**
+
+Öffnet ein **Vollbild-Pattern-Launchpad** mit großen Pads für jedes Pattern – ideal für Live-Performance mit Touchscreen oder MIDI-Controller.
+
+**Features:**
+- 4×4 oder 8×8 Pad-Grid (abhängig von der Anzahl Patterns)
+- **Quantisierte Pattern-Wechsel**: Wechsel passiert erst auf Bar/Beat/Step-Grenze (umschaltbar)
+- **Queued Pattern Indikator**: Nächster Pattern wird optisch hervorgehoben bis der Wechsel triggert
+- **ESC** schließt den Performance Mode
+
+**Tastatur-Shortcut**: `F12` (über useKeyboardShortcuts-Mapping)
+
+---
+
+## 40. MIDI-Hardware-Templates (v1.15.0)
+
+**Settings → MIDI → Vorlagen**
+
+Vordefinierte CC- und Note-Mappings für **8 gängige Hardware-Controller**:
+
+| Controller | Layout |
+|---|---|
+| **Novation Launchpad MK2/MK3** | 8×8 Pad-Grid + Transport (CC 104–111) |
+| **Ableton Push 2** | 8 Encoder (Volume) + Top-Row Transport |
+| **Akai MPC One / Live** | 4×4 Pads + 4 Q-Link Knobs |
+| **NI Maschine Mikro MK3** | 16 Pads + Footer-Transport |
+| **Korg nanoKONTROL2** | 8 Slider/Knob/Mute/Solo (Mixer-Kontrolle) |
+| **Akai MPK Mini MK3** | 25-Key Keyboard + 8 Pads + 8 Knobs |
+| **Behringer X-Touch Mini** | 8 Encoder + Slider + 16 Buttons |
+| **Korg padKONTROL** | 16 Pads + 2 Encoder |
+
+**Workflow:**
+1. Settings → MIDI → "Vorlagen"-Tab
+2. Karte für das eigene Gerät auswählen → "Laden"
+3. Bestätigungs-Dialog → alle bestehenden Mappings werden **überschrieben**
+4. Part-IDs werden automatisch auf die ersten N Drum-Parts des aktuellen Patterns gemappt
+
+---
+
+## 41. Projekt-Import (v1.15.0)
+
+**Toolbar → Import…** (neben Speichern/Öffnen)
+
+Importiert Projekte aus anderen DAWs:
+
+| Format | Endung | Was wird extrahiert |
+|---|---|---|
+| **FL Studio** | `.flp` | BPM, Pattern-Namen, Master-Tempo |
+| **Ableton Live** | `.als` | BPM, MIDI-Clips, Drum-Notes (Velocity), Track-Namen |
+| **KORG Electribe** | `.esx`, `.elst`, `.e2spat`, `.e2sallpat` | BPM (heuristisch), Pattern-Namen, Drum-Slot-Templates |
+
+**Funktionsweise:**
+- Datei via Datei-Picker auswählen
+- Parser extrahiert verfügbare Daten (Format-spezifisch unterschiedlich)
+- Bestätigungs-Dialog zeigt Anzahl Patterns + Warnungen
+- Patterns werden zur aktiven Drum Machine hinzugefügt; BPM aus dem ersten Pattern übernommen
+
+**Einschränkungen:**
+- FL Studio: Step-Daten werden noch nicht extrahiert (nur Metadata)
+- Ableton: Audio-Clips, Plugins, Automation werden nicht importiert
+- Electribe: Step-Daten ohne offizielle Spec nur heuristisch – Pattern-Templates müssen manuell befüllt werden
+
+---
+
+## 42. KI-Projekt-Analyse (v1.15.0)
+
+**Sequencer → Mix-Assistant-Panel → 🤖 KI-Analyse**
+
+Sendet einen strukturierten Snapshot des aktuellen Patterns (BPM, Parts, Volumes, aktive Steps) an die **Anthropic API** und liefert natürlich-sprachliche Verbesserungs-Vorschläge zurück – auf Deutsch.
+
+**Voraussetzung**: Anthropic API-Key in Settings → KI & API hinterlegen.
+
+**Output-Format:**
+- **Summary**: 1–2 Sätze Gesamtbewertung
+- **Bis zu 5 Recommendations** mit:
+  - Severity (Critical / Warning / Info)
+  - Titel
+  - Konkreter Detail-Text
+  - Optional: Betroffener Part
+
+**System-Prompt fokussiert auf** Frequenz-Balance, Mix-Lautstärken, Pattern-Dichte, FX-Übernutzung, Genre-spezifische Tipps (BPM-basiert: 140+ = Hardtekk-Tendenz, etc.).
+
+**Kosten**: Ein Aufruf nutzt ~500–1000 Tokens (etwa 0.005–0.01 USD bei Claude Sonnet).
+
+---
+
+## v1.15.1 – v1.15.4: Stabilitäts-Fixes
+
+Diese Releases enthalten keine neuen Features, sondern **kritische Bug-Fixes**:
+
+### v1.15.1 – v1.15.2: Window-Bugs
+- **Fenster erscheint zuverlässig** (Windows): doppelte IPC-Handler-Registrierung blockierte Initialisierung silent
+- **Off-Screen Bounds Validation**: gespeicherte Fenster-Position wird gegen `screen.getAllDisplays()` geprüft
+- **`show: false` + `ready-to-show`**: Window erscheint erst wenn Renderer fertig + 5s-Fallback
+- **`--reset-window` CLI-Flag** als Notfall-Lösung
+- Globale `unhandledRejection` Handler für zukünftige Diagnose
+
+### v1.15.3: Double-Titlebar-Fix
+- Native OS-Titlebar auf Windows/Linux ausgeblendet (App rendert eigene `ElectronTitleBar`)
+- macOS: `titleBarStyle: "hiddenInset"` behält Traffic-Light-Buttons
+
+### v1.15.4: 8 User-Reported Bugs
+- **Space-Taste startet Playback**: Duplikat-Handler-Konflikt aufgelöst
+- **Performance-Mode-Button** erreichbar in Tab-Bar
+- **Humanizer hörbar**: AudioEngine wendet Swing + Velocity/Timing-Jitter beim Scheduling an
+- **Pattern-Morph hat Ton**: Velocity-Default 1 → 100 für aktive Steps
+- **Metronom Custom-Sounds persistent**: Base64 in localStorage statt Blob-URLs
+- **BPM-Input editierbar**: aggressives min/max-Clamp entfernt
+- **Neues Projekt resetet**: `dm.resetAll()` Action löscht Patterns vor Template-Apply
+- **Pattern-Generator lädt nicht endlos**: `require()` in ES-Modul ersetzt durch statischen Import
+- **Sample-Visualisierung Empty-State**: "Analysiere Waveform…" Hint + fetch-Fallback für Blob/HTTP-URLs in Electron
+- **Quantize-Crash behoben**: gleicher `require()`-Bug
+- **Universal × Close-Buttons** + ESC auf allen modalen Panels
+
+---
+
+*Letzte Aktualisierung: Sprint 17+ — v1.15.4*
