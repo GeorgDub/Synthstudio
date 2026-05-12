@@ -64,7 +64,7 @@ export function UpdateBadge() {
       if (!showUpToDate) return null;
       return btn(
         <>
-          <span className="text-green-400">✓</span>
+          <span className="text-accent-success">✓</span>
           <span className="text-text-muted">Aktuell</span>
         </>,
         undefined,
@@ -75,14 +75,14 @@ export function UpdateBadge() {
     case "available":
       return btn(
         <>
-          <span className="w-1.5 h-1.5 rounded-full bg-yellow-400 flex-shrink-0" />
-          <span className="text-yellow-400">
+          <span className="w-1.5 h-1.5 rounded-full bg-accent-secondary flex-shrink-0" />
+          <span className="text-accent-secondary">
             Update {state.version ? `v${state.version}` : "verfügbar"}
           </span>
         </>,
         undefined,
         "Update wird heruntergeladen…",
-        "bg-yellow-900/30 text-yellow-400 cursor-default"
+        "bg-accent-secondary/20 text-accent-secondary cursor-default"
       );
 
     case "downloading":
@@ -104,19 +104,19 @@ export function UpdateBadge() {
     case "ready":
       return btn(
         <>
-          <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse flex-shrink-0" />
-          <span className="text-green-400">
+          <span className="w-1.5 h-1.5 rounded-full bg-accent-success animate-pulse flex-shrink-0" />
+          <span className="text-accent-success">
             v{state.version} – Neu starten
           </span>
         </>,
         undefined,
         "Update heruntergeladen – App wird beim nächsten Start installiert",
-        "bg-green-900/30 text-green-400 cursor-default"
+        "bg-accent-success/20 text-accent-success cursor-default"
       );
 
     case "error":
       return btn(
-        <span className="w-1.5 h-1.5 rounded-full bg-red-500 flex-shrink-0" />,
+        <span className="w-1.5 h-1.5 rounded-full bg-accent-danger flex-shrink-0" />,
         checkForUpdates,
         `Update-Fehler: ${state.errorMessage ?? "unbekannt"} – Klicken zum Wiederholen`,
         "bg-bg-elevated text-text-dim hover:bg-bg-elevated"

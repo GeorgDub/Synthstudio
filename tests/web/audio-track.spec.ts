@@ -154,5 +154,109 @@ test.describe("Audio-Track Mixer-UI (TASK-102 / F3)", () => {
   });
 });
 
+// ─── TASK-121: Time-Stretch Counter + Banner ──────────────────────────────────
+
+test.describe("TimeStretch Counter + Banner (TASK-121)", () => {
+  test("Counter is hidden when no audio tracks exist", async ({ page }) => {
+    await gotoMixer(page);
+    await expect(page.locator('[data-testid="timestretch-counter"]')).toHaveCount(0);
+  });
+
+  test("Counter appears (neutral color) after adding one free track", async ({ page }) => {
+    await gotoMixer(page);
+
+    const fileInput = page.locator('input[type="file"][accept*="audio"]');
+    await fileInput.setInputFiles({
+      name: "track1.wav",
+      mimeType: "audio/wav",
+      buffer: tinyWavBuffer(),
+    });
+
+    const strip = page.locator('[data-testid="audio-track-strip"]').first();
+    await expect(strip).toBeVisible({ timeout: 10_000 });
+
+    const counter = page.locator('[data-testid="timestretch-counter"]');
+    await expect(counter).toBeVisible();
+    await expect(counter).toContainText("Time-Stretch: 0/4");
+    // Neutral color (text-text-dim) when count < MAX-1
+    await expect(counter).toHaveClass(/text-text-dim/);
+  });
+
+  test("Counter turns red (text-accent-danger) when 4/4 timestretch tracks active", async ({
+    page,
+  }) => {
+    await gotoMixer(page);
+
+    // Add 4 tracks
+    for (let i = 0; i < 4; i++) {
+      const fileInput = page.locator('input[type="file"][accept*="audio"]');
+      await fileInput.setInputFiles({
+        name: `ts-${i}.wav`,
+        mimeType: "audio/wav",
+        buffer: tinyWavBuffer(),
+      });
+      await expect(
+        page.locator('[data-testid="audio-track-strip"]').nth(i),
+      ).toBeVisible({ timeout: 10_000 });
+    }
+
+    // Switch each track's Sync Mode to "timestretch"
+    const strips = page.locator('[data-testid="audio-track-strip"]');
+    for (let i = 0; i < 4; i++) {
+      const select = strips.nth(i).getByLabel("Sync Mode");
+      // option "timestretch" may not be disabled before limit hit
+      await select.selectOption("timestretch");
+    }
+
+    const counter = page.locator('[data-testid="timestretch-counter"]');
+    await expect(counter).toContainText("Time-Stretch: 4/4");
+    await expect(counter).toHaveClass(/text-accent-danger/);
+  });
+
+  test("5th track shows banner + disabled timestretch option when limit reached", async ({
+    page,
+  }) => {
+    await gotoMixer(page);
+
+    // 4 tracks → switch all to timestretch
+    for (let i = 0; i < 4; i++) {
+      const fileInput = page.locator('input[type="file"][accept*="audio"]');
+      await fileInput.setInputFiles({
+        name: `lim-${i}.wav`,
+        mimeType: "audio/wav",
+        buffer: tinyWavBuffer(),
+      });
+      await expect(
+        page.locator('[data-testid="audio-track-strip"]').nth(i),
+      ).toBeVisible({ timeout: 10_000 });
+    }
+    const strips = page.locator('[data-testid="audio-track-strip"]');
+    for (let i = 0; i < 4; i++) {
+      await strips.nth(i).getByLabel("Sync Mode").selectOption("timestretch");
+    }
+
+    // Add 5th track (stays "free")
+    const fileInput = page.locator('input[type="file"][accept*="audio"]');
+    await fileInput.setInputFiles({
+      name: "fifth.wav",
+      mimeType: "audio/wav",
+      buffer: tinyWavBuffer(),
+    });
+    await expect(strips.nth(4)).toBeVisible({ timeout: 10_000 });
+
+    // Banner visible in 5th strip
+    const banner = strips.nth(4).locator('[data-testid="timestretch-limit-banner"]');
+    await expect(banner).toBeVisible();
+    await expect(banner).toContainText("Max 4 Time-Stretch-Tracks");
+
+    // Option "timestretch" inside the 5th dropdown is disabled
+    const optDisabled = await strips
+      .nth(4)
+      .locator('select[aria-label="Sync Mode"] option[value="timestretch"]')
+      .evaluate((el) => (el as HTMLOptionElement).disabled);
+    expect(optDisabled).toBe(true);
+  });
+});
+
 // FIXTURE_WAV used only if available — referenced to satisfy linter when not used
 void FIXTURE_WAV;

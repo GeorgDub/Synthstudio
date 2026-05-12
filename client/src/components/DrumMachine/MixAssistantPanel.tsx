@@ -44,10 +44,14 @@ const severityLabel: Record<MixRecommendation["severity"], string> = {
   info: "Info",
 };
 
+// Kategorische Palette für Severity (TASK-122):
+//   critical → accent-danger
+//   warning  → accent-secondary (warntypische Sekundärfarbe)
+//   info     → accent-primary
 const severityBg: Record<MixRecommendation["severity"], string> = {
-  critical: "bg-red-950/60 border-red-800",
-  warning: "bg-amber-950/60 border-amber-800",
-  info: "bg-blue-950/40 border-blue-900",
+  critical: "bg-accent-danger/30 border-accent-danger",
+  warning: "bg-accent-secondary/30 border-accent-secondary",
+  info: "bg-accent-primary/20 border-accent-primary",
 };
 
 // ─── Props ────────────────────────────────────────────────────────────────────
@@ -118,7 +122,7 @@ export function MixAssistantPanel({ input, onApply, onClose }: MixAssistantPanel
           <circle cx="20" cy="20" r="19" stroke="#22c55e" strokeWidth="2" />
           <path d="M12 21l6 6 10-13" stroke="#22c55e" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
-        <p className="font-semibold text-green-400">Mix klingt gut!</p>
+        <p className="font-semibold text-accent-success">Mix klingt gut!</p>
         <p className="text-sm text-center">Keine Empfehlungen – alle Regeln bestanden.</p>
         <button
           onClick={onClose}
@@ -138,7 +142,7 @@ export function MixAssistantPanel({ input, onApply, onClose }: MixAssistantPanel
           <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
             <path d="M9 2v5M9 11v5M2 9h5M11 9h5" stroke="#818cf8" strokeWidth="1.5" strokeLinecap="round" />
           </svg>
-          <span className="font-semibold text-indigo-300">Mix-Assistent</span>
+          <span className="font-semibold text-accent-secondary">Mix-Assistent</span>
           <span className="rounded-full bg-bg-elevated px-1.5 py-0.5 text-xs text-text-muted">
             {recommendations.length}
           </span>
@@ -216,13 +220,13 @@ export function MixAssistantPanel({ input, onApply, onClose }: MixAssistantPanel
                   {rec.suggestedValue !== undefined && !applied && (
                     <button
                       onClick={() => handleApply(rec)}
-                      className="mt-2 px-3 py-1 rounded bg-indigo-600 hover:bg-indigo-500 text-xs text-white transition-colors"
+                      className="mt-2 px-3 py-1 rounded bg-accent-secondary hover:bg-accent-secondary/80 text-xs text-bg-base transition-colors"
                     >
                       Anwenden ({rec.targetProperty}: {rec.suggestedValue})
                     </button>
                   )}
                   {applied && (
-                    <span className="mt-2 inline-block px-2 py-0.5 rounded bg-green-900 text-green-300 text-xs">
+                    <span className="mt-2 inline-block px-2 py-0.5 rounded bg-accent-success/30 text-accent-success text-xs">
                       Angewendet ✓
                     </span>
                   )}

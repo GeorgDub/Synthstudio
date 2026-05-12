@@ -1,10 +1,11 @@
 /**
- * PatternLaunchPad.tsx – Vollbild Performance Mode View (v1.20.0+ / v1.21.0 a11y)
+ * PatternLaunchPad.tsx – Vollbild Performance Mode View (v1.20.0+ / v1.21.0 a11y / v1.22.0 themed pads / v1.22.0 box-select)
  *
  * Drei Aktions-Modi (toggle oben):
  *   ▶ Play    (default) — Click triggert Pattern (queuePattern)
  *   ✎ Edit              — Click öffnet Inline-Editor (Rename, Color, Pattern, Remove)
  *   ⇆ Reorder           — Drag-and-Drop ODER Keyboard ODER Shift/Ctrl+Click Multi-Select
+ *                         ODER Mouse-Box-Rubber-Band-Selection (TASK-120)
  *
  * v1.21.0 (TASK-114) – a11y + Multi-Select:
  *   • WAI-ARIA Roving-Tabindex Grid (role=grid + role=gridcell)
@@ -17,13 +18,33 @@
  *     (runtime-only, NICHT persistiert). Drag eines selected-Pads zieht
  *     alle mit (moveMultiplePads → Insert-Semantik).
  *
- * Pads + quantizeMode kommen aus dem persistierten Store. `active` (open/close)
- * + Mode/Focus/Grab/Multi-Select-State leben lokal in dieser Komponente.
+ * v1.22.0 (TASK-119) – Theme-aware Pad-Default-Farben:
+ *   • Default-Pad-Color wird zur Laufzeit aus --ss-pad-1..8 gelesen
+ *     (mod-loop für 16 Slots: index → slot = (index % 8) + 1).
+ *   • User-definierte pad.color hat WEITER Vorrang (hardcoded hex bleibt erhalten).
+ *   • PAD_COLOR_FALLBACKS-Array bleibt als reiner SSR/getComputedStyle-Fallback-Safety-Net,
+ *     falls die CSS-Variablen nicht resolvieren (z.B. JSDOM-Tests, frühe Mounts).
  *
- * Theming: nur semantische --ss-* Tokens. PAD_COLORS-Array bleibt als
- * domain-palette (User-Pad-Farben, keine UI-Chrome-Farben).
+ * v1.22.0 (TASK-120) – Mouse-Box Rubber-Band-Selection (Reorder-Mode):
+ *   • mousedown auf Grid-Background (nicht auf Pad) startet Box-Drag
+ *   • mousemove zeichnet semi-transparente Box-Overlay
+ *   • mouseup wählt alle Pads, deren BoundingBox mit der Box-Selection überlappt
+ *   • Ohne Shift: replace selection. Mit Shift: additiv.
+ *   • Klick ohne Move bei aktiver Selection → clear selection (UX-Konvention).
+ *
+ * v1.22.0 (TASK-123) – Multi-Drag-Image mit Counter-Badge:
+ *   • Bei multiSelect.size > 1 und dragSrc ∈ multiSelect: programmatisch
+ *     Canvas (60×60px) mit Pad-Color + "+N"-Badge als setDragImage().
+ *   • Fallback (Single-Drag): Browser-Default-Image.
+ *   • data-multi-drag-count auf dragSrc-Pad exposed für E2E-Tests.
+ *
+ * Pads + quantizeMode kommen aus dem persistierten Store. `active` (open/close)
+ * + Mode/Focus/Grab/Multi-Select/Box-Selection-State leben lokal in dieser Komponente.
+ *
+ * Theming: nur semantische --ss-* Tokens — auch die Default-Pad-Palette folgt
+ * jetzt dem aktiven Theme.
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Play, Pencil, ArrowLeftRight, X, Plus, Trash2 } from "lucide-react";
 import {
   setPadAt,
@@ -33,6 +54,7 @@ import {
   moveMultiplePads,
   clearPad,
   PAD_COUNT,
+  PAD_COLOR_VAR_NAMES,
   type PerformancePad,
   type QuantizeMode,
 } from "@/store/usePerformanceStore";
@@ -62,12 +84,40 @@ interface PatternLaunchPadProps {
   onClose: () => void;
 }
 
-const PAD_COLORS = [
+/**
+ * Safety-Net-Fallback-Palette (8 Slots, mod-loop für 16 Pad-Positionen).
+ * Wird NUR verwendet wenn getComputedStyle() leer zurückkommt (z.B. SSR,
+ * früher Mount vor Theme-Apply, oder JSDOM-Test-Umgebung). Im echten Browser
+ * dominieren die --ss-pad-1..8 CSS-Variablen aus dem aktiven Theme.
+ *
+ * Spiegelt die `dark`-Theme-Werte aus index.css.
+ */
+const PAD_COLOR_FALLBACKS: readonly string[] = [
   "#22d3ee", "#a78bfa", "#34d399", "#f87171",
   "#fb923c", "#facc15", "#60a5fa", "#e879f9",
-  "#4ade80", "#f472b6", "#2dd4bf", "#fbbf24",
-  "#818cf8", "#f97316", "#86efac", "#c084fc",
 ];
+
+/**
+ * Liefert die theme-aware Default-Farbe für einen Pad-Slot (16 Slots, 8 Töne, mod-loop).
+ *
+ * Resolution-Reihenfolge:
+ *   1. CSS-Variable --ss-pad-{(index % 8) + 1} aus document.documentElement (live).
+ *   2. Statische Fallback-Palette (PAD_COLOR_FALLBACKS) wenn (1) leer/unverfügbar.
+ *
+ * Funktion ist seiteneffekt-frei und reentrant — kann pro Render-Zyklus aufgerufen werden.
+ */
+function getPadDefaultColor(index: number): string {
+  const slot = ((index % 8) + 8) % 8; // robust gegen negative Indizes
+  const fallback = PAD_COLOR_FALLBACKS[slot] ?? "#334155";
+  try {
+    if (typeof document === "undefined" || !document.documentElement) return fallback;
+    const varName = PAD_COLOR_VAR_NAMES[slot] ?? `--ss-pad-${slot + 1}`;
+    const resolved = getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
+    return resolved || fallback;
+  } catch {
+    return fallback;
+  }
+}
 
 const QUANTIZE_MODES: ReadonlyArray<{ mode: QuantizeMode; title: string }> = [
   { mode: "bar",  title: "Quantize auf Bar (4 Beats)" },
@@ -76,6 +126,107 @@ const QUANTIZE_MODES: ReadonlyArray<{ mode: QuantizeMode; title: string }> = [
 ];
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
+
+/**
+ * Axis-aligned bounding box (Selection-Box oder Pad-Rect).
+ * Koordinaten in Client-Space (analog DOMRect / clientX/Y).
+ */
+export interface AxisRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/**
+ * Normalisiert eine Selection-Box mit potenziell negativem dx/dy (Drag nach
+ * oben-links) auf eine AxisRect mit non-negativer Breite/Höhe.
+ */
+export function normalizeBox(
+  startX: number,
+  startY: number,
+  currentX: number,
+  currentY: number,
+): AxisRect {
+  const x = Math.min(startX, currentX);
+  const y = Math.min(startY, currentY);
+  const w = Math.abs(currentX - startX);
+  const h = Math.abs(currentY - startY);
+  return { x, y, w, h };
+}
+
+/**
+ * Test ob zwei AxisRect-Bereiche sich schneiden (auch nur an einer Kante).
+ * Pure function — kein DOM. Direkt unit-testbar.
+ *
+ * Verwendet halb-offenes Intervall [x, x+w): zwei Rects, deren rechte Kante
+ * exakt auf der linken Kante des anderen liegt, schneiden sich NICHT (passt
+ * zum DOMRect-Verhalten).
+ */
+export function boxIntersects(a: AxisRect, b: AxisRect): boolean {
+  if (a.w <= 0 || a.h <= 0 || b.w <= 0 || b.h <= 0) return false;
+  return (
+    a.x < b.x + b.w &&
+    a.x + a.w > b.x &&
+    a.y < b.y + b.h &&
+    a.y + a.h > b.y
+  );
+}
+
+/** Liefert die Indizes aller Pads, deren BoundingBox die Selection-Box schneidet. */
+export function collectPadsInBox(
+  box: AxisRect,
+  padRects: ReadonlyArray<AxisRect | null>,
+): number[] {
+  if (!box || box.w <= 0 || box.h <= 0) return [];
+  const result: number[] = [];
+  for (let i = 0; i < padRects.length; i++) {
+    const r = padRects[i];
+    if (!r) continue; // leere Pads (kein DOM oder leerer Slot) überspringen
+    if (boxIntersects(box, r)) result.push(i);
+  }
+  return result;
+}
+
+/**
+ * Erzeugt ein 60×60px Canvas mit der Pad-Color als Hintergrund + accent-secondary
+ * Border + "+N" Badge mittig. Wird als HTML5-Drag-Image bei Multi-Select-Drag
+ * (TASK-123) via dataTransfer.setDragImage() genutzt.
+ *
+ * @param padColor Hex-Color des dragSrc-Pads (z.B. "#22d3ee").
+ * @param totalCount Gesamtzahl der gleichzeitig gedragten Pads (>=2).
+ */
+function createMultiDragCanvas(padColor: string, totalCount: number): HTMLCanvasElement {
+  const canvas = document.createElement("canvas");
+  canvas.width = 60;
+  canvas.height = 60;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return canvas; // sehr defensiv — sollte nie passieren
+
+  // Pad-Color Background
+  ctx.fillStyle = padColor;
+  ctx.fillRect(0, 0, 60, 60);
+
+  // Accent-Secondary Border (resolved live aus aktivem Theme)
+  let accentSecondary = "";
+  try {
+    accentSecondary = getComputedStyle(document.documentElement)
+      .getPropertyValue("--ss-accent-secondary")
+      .trim();
+  } catch { /* JSDOM safety */ }
+  ctx.strokeStyle = accentSecondary || "#ff00ff";
+  ctx.lineWidth = 3;
+  ctx.strokeRect(1.5, 1.5, 57, 57);
+
+  // "+N" Badge zentral (N = Gesamtzahl minus 1 = Anzahl zusätzlicher Pads)
+  // "+2" liest sich intuitiver als "3 Pads" (1 wird gezeigt + 2 weitere).
+  ctx.fillStyle = "white";
+  ctx.font = "bold 20px sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(`+${totalCount - 1}`, 30, 32);
+  return canvas;
+}
 
 /** Clamp Index in das Grid + Wrap pro Richtung. */
 function moveFocus(current: number, key: string): number {
@@ -121,6 +272,21 @@ export function PatternLaunchPad({
   // Multi-Select (runtime-only, NICHT persistiert)
   const [multiSelect, setMultiSelect] = useState<Set<number>>(new Set());
 
+  // Box-Selection (TASK-120) – runtime-only, NICHT persistiert
+  interface SelectionBox {
+    startX: number;
+    startY: number;
+    currentX: number;
+    currentY: number;
+    /** Wurde additiv (mit Shift) gestartet? */
+    additive: boolean;
+    /** Auswahl-Snapshot beim Start (für additive-Mode: alte Auswahl beibehalten + neue dazu). */
+    initialSelection: ReadonlySet<number>;
+    /** Hat sich die Maus seit mousedown bewegt? */
+    moved: boolean;
+  }
+  const [selectionBox, setSelectionBox] = useState<SelectionBox | null>(null);
+
   const gridRef = useRef<HTMLDivElement | null>(null);
 
   // Wenn der focused-Pad in den DOM rendert, ihn fokussieren
@@ -144,6 +310,13 @@ export function PatternLaunchPad({
         e.stopPropagation();
         return;
       }
+      if (selectionBox !== null) {
+        // Abort active Box-Drag (TASK-120): clear box overlay, keep
+        // pre-existing multiSelect unchanged.
+        setSelectionBox(null);
+        e.stopPropagation();
+        return;
+      }
       if (grabbedIndex !== null) {
         // Restore Snapshot
         if (grabbedSnapshotRef.current) {
@@ -162,11 +335,17 @@ export function PatternLaunchPad({
         e.stopPropagation();
         return;
       }
+      if (mode === "reorder" && multiSelect.size > 0) {
+        // Escape clears Multi-Select (TASK-120 spec)
+        setMultiSelect(new Set());
+        e.stopPropagation();
+        return;
+      }
       onClose();
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [onClose, editingIndex, grabbedIndex]);
+  }, [onClose, editingIndex, grabbedIndex, selectionBox, mode, multiSelect.size]);
 
   // Beim Modus-Wechsel: Editor schließen, Drag-State leeren, Multi-Select leeren, Grab cancelen
   useEffect(() => {
@@ -174,6 +353,7 @@ export function PatternLaunchPad({
     setDragSrc(null);
     setDragOver(null);
     setMultiSelect(new Set());
+    setSelectionBox(null);
     if (grabbedIndex !== null) {
       // Drop-without-restore beim Mode-Wechsel — User-Intention unklar, sicherheitshalber NICHT restore
       // (Wenn der User abbrechen will, drückt er Escape vor dem Mode-Wechsel)
@@ -248,10 +428,25 @@ export function PatternLaunchPad({
 
   // ─── HTML5 Drag&Drop ───────────────────────────────────────────────────────
 
-  const handleDragStart = useCallback((index: number) => {
+  const handleDragStart = useCallback((index: number, e: React.DragEvent<HTMLButtonElement>) => {
     if (mode !== "reorder") return;
     setDragSrc(index);
-  }, [mode]);
+
+    // Multi-Drag-Image (TASK-123): wenn der gezogene Pad Teil eines
+    // Multi-Selects mit >1 Element ist, setze ein Custom-Canvas-Drag-Image
+    // mit Pad-Color + "+N"-Badge. Andernfalls Browser-Default.
+    if (multiSelect.has(index) && multiSelect.size > 1) {
+      const pad = pads[index];
+      const padColor = pad?.color ?? getPadDefaultColor(index);
+      try {
+        const canvas = createMultiDragCanvas(padColor, multiSelect.size);
+        // Cursor liegt in der Bild-Mitte (30/30 von 60×60px)
+        e.dataTransfer.setDragImage(canvas, 30, 30);
+      } catch {
+        // Falls Canvas-API fehlschlägt (sehr alte Browser / JSDOM): Default-Image.
+      }
+    }
+  }, [mode, multiSelect, pads]);
 
   const handleDragOver = useCallback((index: number, e: React.DragEvent) => {
     if (mode !== "reorder" || dragSrc === null) return;
@@ -281,6 +476,96 @@ export function PatternLaunchPad({
     setDragSrc(null);
     setDragOver(null);
   }, []);
+
+  // ─── Mouse-Box Rubber-Band-Selection (TASK-120) ───────────────────────────
+
+  /**
+   * Liest die Pad-Bounding-Rects aus dem DOM. Liefert null für Pads, die
+   * (a) keinen DOM-Knoten haben oder (b) leer sind (kein Pattern-Slot —
+   * leere Slots sollen NICHT box-selectable sein).
+   */
+  const collectCurrentPadRects = useCallback((): Array<AxisRect | null> => {
+    const result: Array<AxisRect | null> = [];
+    for (let i = 0; i < PAD_COUNT; i++) {
+      const pad = pads[i];
+      if (!pad) { result.push(null); continue; }
+      const el = padRefs.current[i] ?? document.querySelector(`[data-pad-index="${i}"]`) as HTMLElement | null;
+      if (!el) { result.push(null); continue; }
+      const r = el.getBoundingClientRect();
+      result.push({ x: r.left, y: r.top, w: r.width, h: r.height });
+    }
+    return result;
+  }, [pads]);
+
+  // mousedown auf Grid-Background: starte Box-Select (nur Reorder-Mode).
+  const handleGridMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    if (mode !== "reorder") return;
+    // Nur linke Maustaste
+    if (e.button !== 0) return;
+    // Nur wenn target NICHT ein Pad (oder ein Kind eines Pads) ist.
+    // Pad-Buttons haben role="gridcell" + data-testid="perf-pad-N".
+    const target = e.target as HTMLElement | null;
+    if (target && target.closest("[data-pad-index]")) return;
+    // Editor offen → kein Box-Drag
+    if (editingIndex !== null) return;
+    e.preventDefault();
+    setSelectionBox({
+      startX: e.clientX,
+      startY: e.clientY,
+      currentX: e.clientX,
+      currentY: e.clientY,
+      additive: e.shiftKey,
+      initialSelection: new Set(multiSelect),
+      moved: false,
+    });
+  }, [mode, editingIndex, multiSelect]);
+
+  // Window-mousemove: aktualisiere Selection-Box (nur wenn aktiv).
+  useEffect(() => {
+    if (!selectionBox) return;
+    const onMove = (ev: MouseEvent) => {
+      setSelectionBox(prev => {
+        if (!prev) return prev;
+        const dx = ev.clientX - prev.startX;
+        const dy = ev.clientY - prev.startY;
+        const moved = prev.moved || Math.abs(dx) > 3 || Math.abs(dy) > 3;
+        return { ...prev, currentX: ev.clientX, currentY: ev.clientY, moved };
+      });
+    };
+    const onUp = () => {
+      // Finalize via setState-Closure: lese aktuelle Box + Pad-Rects
+      setSelectionBox(prev => {
+        if (!prev) return null;
+        if (!prev.moved) {
+          // Klick ohne Move: bei aktiver Selection → clear (UX-Konvention),
+          // sonst no-op. Keine eigene Selection wenn Shift gedrückt (additiv
+          // ohne move = nichts tun).
+          if (!prev.additive) {
+            // Replace mode + kein move → Selection clearen (Click ins Leere).
+            if (multiSelect.size > 0) setMultiSelect(new Set());
+          }
+          return null;
+        }
+        const box = normalizeBox(prev.startX, prev.startY, prev.currentX, prev.currentY);
+        const padRects = collectCurrentPadRects();
+        const hits = collectPadsInBox(box, padRects);
+        if (prev.additive) {
+          const next = new Set(prev.initialSelection);
+          for (const i of hits) next.add(i);
+          setMultiSelect(next);
+        } else {
+          setMultiSelect(new Set(hits));
+        }
+        return null;
+      });
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+  }, [selectionBox, multiSelect.size, collectCurrentPadRects]);
 
   // ─── Keyboard-Grid-Handler (auf Container, NICHT pro Pad) ─────────────────
 
@@ -454,8 +739,12 @@ export function PatternLaunchPad({
         </button>
       </div>
 
-      {/* 4×4 Pad Grid */}
-      <div className="flex-1 flex items-center justify-center p-8 overflow-auto">
+      {/* 4×4 Pad Grid (Box-Mouse-Select via onMouseDown auf dem Container) */}
+      <div
+        className="flex-1 flex items-center justify-center p-8 overflow-auto select-none"
+        onMouseDown={handleGridMouseDown}
+        data-testid="perf-pad-grid-wrapper"
+      >
         <div
           ref={gridRef}
           role="grid"
@@ -468,9 +757,11 @@ export function PatternLaunchPad({
         >
           {Array.from({ length: PAD_COUNT }, (_, i) => {
             const pad = pads[i] ?? null;
-            const fallbackColor = PAD_COLORS[i % PAD_COLORS.length] ?? "#334155";
+            const fallbackColor = getPadDefaultColor(i);
             const row = Math.floor(i / GRID_COLS);
             const col = i % GRID_COLS;
+            const isMultiDragSrc =
+              dragSrc === i && multiSelect.has(i) && multiSelect.size > 1;
             return (
               <Pad
                 key={i}
@@ -491,16 +782,35 @@ export function PatternLaunchPad({
                 isSelected={multiSelect.has(i)}
                 onActivate={() => handlePadActivate(i)}
                 onReorderClick={(modifiers) => handleReorderClick(i, modifiers)}
-                onDragStart={() => handleDragStart(i)}
+                onDragStart={(e) => handleDragStart(i, e)}
                 onDragOver={(e) => handleDragOver(i, e)}
                 onDrop={() => handleDrop(i)}
                 onDragEnd={handleDragEnd}
                 onFocus={() => setFocusedIndex(i)}
+                multiDragCount={isMultiDragSrc ? multiSelect.size : 0}
               />
             );
           })}
         </div>
       </div>
+
+      {/* Box-Selection Overlay (TASK-120) — fixed positioning in viewport coords */}
+      {selectionBox && selectionBox.moved && (() => {
+        const box = normalizeBox(
+          selectionBox.startX,
+          selectionBox.startY,
+          selectionBox.currentX,
+          selectionBox.currentY,
+        );
+        return (
+          <div
+            aria-hidden="true"
+            data-testid="perf-selection-box"
+            className="fixed pointer-events-none z-40 border-2 border-dashed border-accent-secondary bg-accent-secondary/10"
+            style={{ left: box.x, top: box.y, width: box.w, height: box.h }}
+          />
+        );
+      })()}
 
       {/* Inline Editor (Edit-Mode) */}
       {mode === "edit" && editingIndex !== null && (
@@ -508,7 +818,7 @@ export function PatternLaunchPad({
           index={editingIndex}
           pad={pads[editingIndex] ?? null}
           patterns={patterns}
-          fallbackColor={PAD_COLORS[editingIndex % PAD_COLORS.length] ?? "#334155"}
+          fallbackColor={getPadDefaultColor(editingIndex)}
           onClose={() => setEditingIndex(null)}
         />
       )}
@@ -531,7 +841,7 @@ export function PatternLaunchPad({
           {mode === "edit"    && "✎ Edit-Modus — Click bearbeitet Pad"}
           {mode === "reorder" && (grabbedIndex !== null
             ? "⇆ Reorder-Modus — Pfeiltasten verschieben, Leertaste ablegt, Escape bricht ab"
-            : "⇆ Reorder-Modus — Drag, Pfeil+Space oder Shift+Click für Mehrfach-Auswahl")}
+            : "⇆ Reorder-Modus — Drag, Pfeil+Space, Shift+Click oder Maus-Box für Mehrfach-Auswahl")}
         </span>
       </div>
     </div>
@@ -587,11 +897,13 @@ interface PadProps {
   isSelected: boolean;
   onActivate: () => void;
   onReorderClick: (modifiers: { shiftKey: boolean; ctrlKey: boolean; metaKey: boolean }) => void;
-  onDragStart: () => void;
+  onDragStart: (e: React.DragEvent<HTMLButtonElement>) => void;
   onDragOver: (e: React.DragEvent) => void;
   onDrop: () => void;
   onDragEnd: () => void;
   onFocus: () => void;
+  /** Anzahl mit-gedragter Pads (Multi-Drag, TASK-123). 0 wenn kein Multi-Drag aktiv. */
+  multiDragCount: number;
 }
 
 // React 19: `ref` ist eine normale Prop auf Function Components — kein forwardRef nötig.
@@ -622,6 +934,7 @@ function Pad({
   onDrop,
   onDragEnd,
   onFocus,
+  multiDragCount,
 }: PadPropsWithRef) {
   const color = pad?.color ?? fallbackColor;
   const patternFromList = pad ? patterns.find(p => p.id === pad.patternId) : null;
@@ -707,12 +1020,14 @@ function Pad({
           : `Pad ${index + 1}, leer`
       }
       data-testid={`perf-pad-${index}`}
+      data-pad-index={index}
       data-pad-filled={showFilled ? "1" : "0"}
       data-pad-active={isActive ? "1" : "0"}
       data-pad-queued={isQueued ? "1" : "0"}
       data-pad-focused={isFocused ? "1" : "0"}
       data-pad-grabbed={isGrabbed ? "1" : "0"}
       data-pad-selected={isSelected ? "1" : "0"}
+      data-multi-drag-count={multiDragCount > 0 ? String(multiDragCount) : undefined}
       onClick={onClickHandler}
       onFocus={onFocus}
       disabled={mode === "play" && !pad}
@@ -773,6 +1088,15 @@ function PadEditor({ index, pad, patterns, fallbackColor, onClose }: PadEditorPr
   const [labelDraft, setLabelDraft] = useState(pad?.label ?? "");
   const [colorDraft, setColorDraft] = useState(pad?.color ?? fallbackColor);
   const [patternDraft, setPatternDraft] = useState(pad?.patternId ?? "");
+
+  // Theme-aware Default-Swatches: 8 Farben aus den aktuell aktiven --ss-pad-1..8 Tokens.
+  // Liest live aus document.documentElement bei Mount/index-Wechsel.
+  const themedSwatches = useMemo<readonly string[]>(() => {
+    return Array.from({ length: 8 }, (_, slot) => getPadDefaultColor(slot));
+    // Hängt nur von index ab, weil das Re-Open mit anderem Pad einen neuen
+    // Lookup erzwingt. Theme-Wechsel während offenem Editor ist Edge-Case
+    // (User würde Editor schließen+öffnen).
+  }, [index]);
 
   useEffect(() => {
     setLabelDraft(pad?.label ?? "");
@@ -858,17 +1182,18 @@ function PadEditor({ index, pad, patterns, fallbackColor, onClose }: PadEditorPr
           />
         </label>
 
-        {/* Farben-Palette */}
+        {/* Farben-Palette (theme-aware: 8 Tokens + Custom-Picker) */}
         <div className="mb-3">
           <span className="block text-xs uppercase text-text-dim mb-1">Farbe</span>
-          <div className="flex flex-wrap gap-2">
-            {PAD_COLORS.map((c) => (
+          <div className="flex flex-wrap gap-2" data-testid="perf-pad-color-swatches">
+            {themedSwatches.map((c, slotIdx) => (
               <button
-                key={c}
+                key={`slot-${slotIdx}-${c}`}
                 type="button"
                 onClick={() => handleApplyColor(c)}
-                aria-label={`Farbe ${c}`}
-                title={c}
+                aria-label={`Theme-Farbe Slot ${slotIdx + 1} (${c})`}
+                title={`Slot ${slotIdx + 1}: ${c}`}
+                data-pad-swatch={slotIdx + 1}
                 className={`w-7 h-7 rounded-full border-2 transition-transform active:scale-95 ${
                   colorDraft.toLowerCase() === c.toLowerCase()
                     ? "border-text-primary scale-110"
@@ -882,7 +1207,7 @@ function PadEditor({ index, pad, patterns, fallbackColor, onClose }: PadEditorPr
               value={colorDraft}
               onChange={(e) => handleApplyColor(e.target.value)}
               aria-label="Custom Farbe wählen"
-              title="Custom Farbe"
+              title="Custom Farbe (Hex)"
               className="w-7 h-7 rounded-full bg-transparent border border-border-color cursor-pointer"
             />
           </div>

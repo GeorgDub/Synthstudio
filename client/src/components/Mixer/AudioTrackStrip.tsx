@@ -562,6 +562,19 @@ export function AudioTrackStrip({
             Time-Stretch (Pitch erhalten)
           </option>
         </select>
+        {/* Limit-Banner (TASK-121): zeigt globalen Kontext warum die Option disabled ist.
+            Nur wenn current Track NICHT bereits timestretch ist, das Limit erreicht ist
+            UND AudioWorklet supported (sonst macht der "AudioWorklet nicht supported"-
+            Pfad das eh klar). */}
+        {!isAlreadyTimestretch && tsLimitReached && audioWorkletSupported && (
+          <div
+            role="status"
+            data-testid="timestretch-limit-banner"
+            className="mt-1 text-[9px] text-accent-secondary leading-tight"
+          >
+            ⚠ Max {MAX_TIMESTRETCH_TRACKS} Time-Stretch-Tracks (CPU). Frei für diesen Track: Free/Stretch.
+          </div>
+        )}
         {showQualityBadge && (
           <span
             data-testid="timestretch-quality-warning"

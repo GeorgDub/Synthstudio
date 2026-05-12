@@ -42,7 +42,7 @@ export function EuclideanControls({ partId, stepCount, onApply }: EuclideanContr
           side="bottom"
           sideOffset={4}
         >
-          <Popover.Arrow className="fill-slate-700" />
+          <Popover.Arrow className="fill-border-color" />
           <div className="font-semibold text-text-primary mb-2">Euclidean Generator</div>
 
           <div className="flex gap-2 mb-2">

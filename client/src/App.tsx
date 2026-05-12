@@ -110,6 +110,13 @@ import {
 } from "@/store/useScriptStore";
 import { scriptSandbox } from "@/sandbox/scriptSandboxInstance";
 import {
+  startHoldLoop,
+  stopHoldLoop,
+  stopAllHoldLoops,
+  SCRIPT_HOLD_INTERVAL_MS,
+  PAD_HOLD_INTERVAL_MS,
+} from "@/utils/macroHoldLoop";
+import {
   serializeProject,
   downloadProjectFile,
   openProjectFilePicker,
@@ -624,45 +631,96 @@ export default function App() {
 
   // ── macro:button:trigger Event-Handler ────────────────────────────────────
   // MacroPanel.tsx dispatched dieses Event wenn ein Macro im Button-Mode
-  // gedrückt wird. Detail enthält triggerKind ("script" | "pad").
+  // gedrückt wird. Detail enthält triggerKind ("script" | "pad") und
+  // triggerMode ("edge" | "hold").
   //  - "script": Script aus useScriptStore in Sandbox laufen lassen (v1.17)
   //  - "pad":    Performance-Pad triggern (v1.20.x) — analog zum Pad-Click in
   //              PatternLaunchPad: dm.setActivePattern + queuePerformancePattern,
   //              sodass quantisierter Wechsel UND Sofort-Switch wie beim
   //              Performance-Pad-Click identisch funktionieren.
-  // Defensiv: alte Events ohne triggerKind → default "script" (Backwards-Compat).
+  //
+  // Trigger-Modes (v1.22.0 TASK-118):
+  //  - "edge": single-shot bei mouseDown (klassisch)
+  //  - "hold": startet eine Loop via startHoldLoop() — re-fire alle
+  //            SCRIPT_HOLD_INTERVAL_MS (200ms) bzw. PAD_HOLD_INTERVAL_MS (100ms),
+  //            bis das `macro:button:release` Event eintrifft.
+  //            No-Stacking: jeder neue trigger ersetzt vorherige Loop für
+  //            denselben Macro-Index.
+  //
+  // Defensiv: alte Events ohne triggerKind/triggerMode → defaults ("script", "edge").
   useEffect(() => {
+    /**
+     * Pure single-shot Aktion: Script-Run mit Re-Entrancy-Schutz.
+     * Wird sowohl im edge-mode als auch in jeder Hold-Loop-Iteration verwendet.
+     */
+    const runScriptOnce = (scriptId: string) => {
+      const script = getScript(scriptId);
+      if (!script || !script.enabled) return;
+      if (scriptSandbox.isRunning()) return; // Re-Entrancy-Schutz
+      void scriptSandbox.run(script.code, { maxRuntimeMs: script.maxRuntimeMs });
+    };
+
+    /**
+     * Pure single-shot Aktion: Pad-Trigger (Active-Switch + Queue).
+     */
+    const runPadOnce = (padIndex: number) => {
+      const pads = getPerformancePads();
+      const pad = pads[padIndex];
+      if (!pad || !pad.patternId) return;
+      dmRef.current.setActivePattern(pad.patternId);
+      queuePerformancePattern(pad.patternId);
+    };
+
     const onTrigger = (e: Event) => {
       const detail = (e as CustomEvent<{
         macroIndex: number;
         triggerKind?: "script" | "pad";
+        triggerMode?: "edge" | "hold";
         scriptId?: string;
         padIndex?: number;
       }>).detail;
       if (!detail) return;
       const triggerKind = detail.triggerKind === "pad" ? "pad" : "script";
+      const triggerMode = detail.triggerMode === "hold" ? "hold" : "edge";
+      const macroIndex = detail.macroIndex;
 
       if (triggerKind === "pad") {
         if (typeof detail.padIndex !== "number") return;
-        const pads = getPerformancePads();
-        const pad = pads[detail.padIndex];
-        if (!pad || !pad.patternId) return;
-        // Identische Semantik zum Performance-Pad-Click (siehe PatternLaunchPad-Wiring unten):
-        // sofortiger Active-Wechsel + Queue (Performance-Mode rendert "queued"-State).
-        dmRef.current.setActivePattern(pad.patternId);
-        queuePerformancePattern(pad.patternId);
+        const padIndex = detail.padIndex;
+        if (triggerMode === "hold") {
+          // Hold-Loop: re-fire alle PAD_HOLD_INTERVAL_MS bis :release
+          startHoldLoop(macroIndex, () => runPadOnce(padIndex), PAD_HOLD_INTERVAL_MS);
+        } else {
+          runPadOnce(padIndex);
+        }
         return;
       }
 
       // triggerKind === "script"
       if (typeof detail.scriptId !== "string") return;
-      const script = getScript(detail.scriptId);
-      if (!script || !script.enabled) return;
-      if (scriptSandbox.isRunning()) return; // Schutz vor Re-Entrancy
-      void scriptSandbox.run(script.code, { maxRuntimeMs: script.maxRuntimeMs });
+      const scriptId = detail.scriptId;
+      if (triggerMode === "hold") {
+        // Hold-Loop: re-fire alle SCRIPT_HOLD_INTERVAL_MS bis :release
+        startHoldLoop(macroIndex, () => runScriptOnce(scriptId), SCRIPT_HOLD_INTERVAL_MS);
+      } else {
+        runScriptOnce(scriptId);
+      }
     };
+
+    const onRelease = (e: Event) => {
+      const detail = (e as CustomEvent<{ macroIndex: number }>).detail;
+      if (!detail || typeof detail.macroIndex !== "number") return;
+      stopHoldLoop(detail.macroIndex);
+    };
+
     window.addEventListener("macro:button:trigger", onTrigger);
-    return () => window.removeEventListener("macro:button:trigger", onTrigger);
+    window.addEventListener("macro:button:release", onRelease);
+    return () => {
+      window.removeEventListener("macro:button:trigger", onTrigger);
+      window.removeEventListener("macro:button:release", onRelease);
+      // Safety: alle Loops beim Unmount stoppen (sonst Memory-Leak bei HMR)
+      stopAllHoldLoops();
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -937,13 +995,13 @@ export default function App() {
         setChannelSend: (partId, bus, v) => {
           AudioEngine.setChannelSend(partId, bus, v);
         },
-        // lfo-rate / lfo-depth: noch nicht verdrahtet — SynthEngine hat keinen
-        // per-Part-Setter für LFO-Parameter zur Laufzeit. Bis dahin: warnen,
-        // damit Macro-Bindings nicht stillschweigend ignoriert werden.
+        // TASK-117: LFO-Rate/Depth Macro-Bindings sind jetzt verdrahtet.
+        // SynthEngine cached die Werte pro Part-ID und überschreibt
+        // synthParams.lfoRate/lfoDepth beim nächsten Step-Trigger.
+        setLfoRate: (partId, hz) => AudioEngine.setPartLfoRate(partId, hz),
+        setLfoDepth: (partId, depth) => AudioEngine.setPartLfoDepth(partId, depth),
         onUnhandled: (b) => {
-          if (b.target === "lfo-rate" || b.target === "lfo-depth") {
-            console.warn(`[Macro] target "${b.target}" ist noch nicht implementiert (Part: ${b.partName ?? b.partId})`);
-          }
+          console.warn(`[Macro] target "${b.target}" ist noch nicht implementiert (Part: ${b.partName ?? b.partId})`);
         },
       });
     };

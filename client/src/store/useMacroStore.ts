@@ -49,11 +49,13 @@ export interface MacroBinding {
 export type MacroMode = "knob" | "button";
 
 /**
- * Wie das Skript getriggert wird, wenn `mode === "button"`:
+ * Wie das Skript/Pad getriggert wird, wenn `mode === "button"`:
  *  - "edge" → einmaliger Run pro Press (mouseDown bzw. tastendruck-äquivalent)
- *  - "hold" (geplant für v1.17) → re-fire solange gehalten
+ *  - "hold" → re-fire solange gehalten (Script: 200ms-Loop, Pad: 100ms-Loop;
+ *            App.tsx hört auf `macro:button:trigger` zum Start und
+ *            `macro:button:release` zum Stop)
  */
-export type MacroTriggerMode = "edge";
+export type MacroTriggerMode = "edge" | "hold";
 
 /**
  * Was der Button im `mode === "button"` triggert (v1.20+ discriminated union):
@@ -78,7 +80,11 @@ export interface Macro {
   triggerKind?: MacroTriggerKind;
   /** Gesetzt wenn mode === "button" + triggerKind === "pad". Pad-Index 0..15 in usePerformanceStore. */
   padIndex?: number;
-  /** Default "edge" wenn fehlt. Aktuell nur "edge" implementiert. */
+  /**
+   * Default "edge" wenn fehlt. v1.22.0: "hold" implementiert (re-fire-Loop in App.tsx).
+   *  - "edge": single-shot bei mouseDown
+   *  - "hold": loop solange Button gedrückt (Stop via `macro:button:release`)
+   */
   triggerMode?: MacroTriggerMode;
 }
 
@@ -114,6 +120,7 @@ function defaultMacros(): Macro[] {
  * Migriert ein Macro-Objekt aus älteren localStorage-Versionen:
  *  - mode fehlt → "knob" (pre-v1.16)
  *  - triggerMode fehlt → "edge"
+ *  - triggerMode invalide → "edge" (defensiv)
  *  - triggerKind fehlt → "script" (pre-v1.20 Daten ohne discriminated union)
  *  - triggerKind invalide → "script"
  *  - padIndex außerhalb [0..PAD_COUNT) oder kein Integer → undefined
@@ -125,6 +132,7 @@ function migrateMacro(raw: unknown, fallback: Macro): Macro {
   const m = raw as Partial<Macro> & Record<string, unknown>;
   const mode: MacroMode = m.mode === "button" ? "button" : "knob";
   const triggerKind: MacroTriggerKind = m.triggerKind === "pad" ? "pad" : "script";
+  const triggerMode: MacroTriggerMode = m.triggerMode === "hold" ? "hold" : "edge";
   const padIndexRaw = m.padIndex;
   const padIndex =
     typeof padIndexRaw === "number" &&
@@ -143,7 +151,7 @@ function migrateMacro(raw: unknown, fallback: Macro): Macro {
     scriptId: typeof m.scriptId === "string" ? m.scriptId : undefined,
     triggerKind,
     padIndex,
-    triggerMode: m.triggerMode === "edge" ? "edge" : "edge",
+    triggerMode,
   };
 }
 
@@ -257,6 +265,22 @@ export function setMacroTriggerKind(macroIndex: number, kind: MacroTriggerKind):
 }
 
 /**
+ * Setzt den Trigger-Mode eines Macros (für mode === "button"):
+ *  - "edge" → einmaliger Run pro Press (default)
+ *  - "hold" → re-fire-Loop solange Button gedrückt
+ *
+ * Validierung defensiv: invalide Strings (z.B. "loop") → no-op.
+ * No-op bei out-of-range index.
+ */
+export function setMacroTriggerMode(macroIndex: number, mode: MacroTriggerMode): void {
+  if (macroIndex < 0 || macroIndex >= MACRO_COUNT) return;
+  if (mode !== "edge" && mode !== "hold") return;
+  _macros = _macros.map((m, i) => i === macroIndex ? { ...m, triggerMode: mode } : m);
+  persist(_macros);
+  notify();
+}
+
+/**
  * Setzt den Performance-Pad-Index eines Macros (für mode === "button" + triggerKind === "pad").
  * `null` löscht die Pad-Bindung.
  *
@@ -289,8 +313,11 @@ export function setMacroPadIndex(macroIndex: number, padIndex: number | null): v
  * Triggert einen Macro-Button: dispatched ein `macro:button:trigger` Event,
  * das in App.tsx von einem Subscriber abgefangen wird.
  *
- * Event-Detail (v1.20):
- *   { macroIndex, triggerKind, scriptId?, padIndex? }
+ * Event-Detail (v1.22):
+ *   { macroIndex, triggerKind, triggerMode, scriptId?, padIndex? }
+ *
+ * `triggerMode` gibt an, ob das Event single-shot (edge) oder Start einer
+ * Hold-Loop ist. Hold-Loop wird via `macro:button:release` gestoppt.
  *
  * Kein direkter Import von useScriptSandbox/usePerformanceStore um Cycle-Risk
  * zu vermeiden — App.tsx routet das Event an die richtige Implementation.
@@ -307,6 +334,7 @@ export function triggerMacroButton(macroIndex: number): string | null {
   if (!macro || macro.mode !== "button") return null;
 
   const triggerKind: MacroTriggerKind = macro.triggerKind === "pad" ? "pad" : "script";
+  const triggerMode: MacroTriggerMode = macro.triggerMode === "hold" ? "hold" : "edge";
 
   if (triggerKind === "script" && !macro.scriptId) return null;
   if (triggerKind === "pad" && (macro.padIndex === undefined || macro.padIndex === null)) return null;
@@ -317,6 +345,7 @@ export function triggerMacroButton(macroIndex: number): string | null {
         detail: {
           macroIndex,
           triggerKind,
+          triggerMode,
           scriptId: macro.scriptId,
           padIndex: macro.padIndex,
         },
@@ -325,6 +354,27 @@ export function triggerMacroButton(macroIndex: number): string | null {
   }
   if (triggerKind === "pad") return `pad:${macro.padIndex}`;
   return macro.scriptId ?? null;
+}
+
+/**
+ * Signalisiert, dass ein Macro-Button losgelassen wurde — stoppt eine
+ * laufende Hold-Loop in App.tsx. No-op bei Edge-Mode (App.tsx-seitig).
+ *
+ * Event-Detail (v1.22):
+ *   { macroIndex }
+ *
+ * Wird auch dann gefeuert, wenn der Macro nicht im Hold-Mode ist — App.tsx
+ * prüft selbst, ob eine Loop aktiv ist. So bleibt MacroPanel.tsx einfach.
+ */
+export function triggerMacroButtonRelease(macroIndex: number): void {
+  if (macroIndex < 0 || macroIndex >= MACRO_COUNT) return;
+  if (typeof window !== "undefined" && typeof CustomEvent !== "undefined") {
+    window.dispatchEvent(
+      new CustomEvent("macro:button:release", {
+        detail: { macroIndex },
+      }),
+    );
+  }
 }
 
 export function getMacros(): Macro[] { return _macros; }

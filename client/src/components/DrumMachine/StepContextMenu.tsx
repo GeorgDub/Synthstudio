@@ -54,7 +54,7 @@ export function StepContextMenu({
           sideOffset={4}
           onContextMenu={e => e.preventDefault()}
         >
-          <Popover.Arrow className="fill-slate-700" />
+          <Popover.Arrow className="fill-border-color" />
 
           {/* Probability */}
           <div className="mb-3">

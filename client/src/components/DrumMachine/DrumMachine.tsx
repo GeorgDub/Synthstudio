@@ -444,7 +444,7 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
             title={pattern.bpm === null ? "Eigenes BPM setzen" : "Globales BPM verwenden"}
             className={[
               "px-2 py-0.5 rounded text-[9px] transition-colors",
-              pattern.bpm !== null ? "bg-amber-700 text-white" : "bg-bg-elevated text-text-dim hover:bg-bg-elevated",
+              pattern.bpm !== null ? "bg-accent-secondary text-bg-base" : "bg-bg-elevated text-text-dim hover:bg-bg-elevated",
             ].join(" ")}
           >
             {pattern.bpm !== null ? "Eigenes" : "Global"}
@@ -464,7 +464,7 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
           onClick={() => dm.setVelocityMode(!dm.velocityMode)}
           className={[
             "px-2 py-1 rounded text-[10px] font-medium transition-colors",
-            dm.velocityMode ? "bg-amber-700 text-white" : "bg-bg-elevated text-text-dim hover:bg-bg-elevated",
+            dm.velocityMode ? "bg-accent-secondary text-bg-base" : "bg-bg-elevated text-text-dim hover:bg-bg-elevated",
           ].join(" ")}
           title="Velocity-Modus"
         >VEL</button>
@@ -488,7 +488,7 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
                     if (step.active) dm.setStepVelocity(dm.activePartId!, i, fn(i, n));
                   });
                 }}
-                className="px-1.5 py-0.5 rounded text-[10px] bg-amber-900/40 text-amber-400 hover:bg-amber-700/60 transition-colors font-mono"
+                className="px-1.5 py-0.5 rounded text-[10px] bg-accent-secondary/20 text-accent-secondary hover:bg-accent-secondary/40 transition-colors font-mono"
                 title={`Velocity-Ramp: ${label}`}
               >{label}</button>
             ))}
@@ -500,7 +500,7 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
           onClick={() => dm.setPitchMode(!dm.pitchMode)}
           className={[
             "px-2 py-1 rounded text-[10px] font-medium transition-colors",
-            dm.pitchMode ? "bg-purple-700 text-white" : "bg-bg-elevated text-text-dim hover:bg-bg-elevated",
+            dm.pitchMode ? "bg-accent-secondary text-bg-base" : "bg-bg-elevated text-text-dim hover:bg-bg-elevated",
           ].join(" ")}
           title="Pitch-Modus (Rechtsklick auf Step)"
         >PITCH</button>
@@ -617,7 +617,7 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
                       className={[
                         "flex-1 py-0.5 rounded text-[10px] transition-colors",
                         metronomOscType === type
-                          ? "bg-indigo-700 text-white"
+                          ? "bg-accent-secondary text-bg-base"
                           : "bg-bg-elevated text-text-dim hover:bg-bg-elevated",
                       ].join(" ")}>
                       {type === "sine" ? "Sinus" : type === "square" ? "Rechteck" : "Dreieck"}
@@ -647,7 +647,7 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
         {/* Clear */}
         <button
           onClick={dm.clearPattern}
-          className="px-2 py-1 rounded text-[10px] bg-bg-elevated text-text-dim hover:bg-red-900 hover:text-red-300 transition-colors"
+          className="px-2 py-1 rounded text-[10px] bg-bg-elevated text-text-dim hover:bg-accent-danger/30 hover:text-accent-danger transition-colors"
           title="Pattern leeren"
         >CLR</button>
 
@@ -666,8 +666,8 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
           className={[
             "w-8 h-8 rounded flex items-center justify-center text-sm font-bold transition-colors",
             isPlaying
-              ? "bg-red-600 hover:bg-red-500 text-white"
-              : "bg-accent-primary hover:bg-accent-primary text-white",
+              ? "bg-accent-danger hover:bg-accent-danger/80 text-bg-base"
+              : "bg-accent-primary hover:bg-accent-primary text-bg-base",
           ].join(" ")}
         >
           {isPlaying ? "■" : "▶"}
@@ -1029,8 +1029,8 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
         <span>{effectiveBpm} BPM{pattern.bpm !== null ? " (eigenes)" : ""}</span>
         <span>·</span>
         <span>Step {dm.currentStep + 1}/{pattern.stepCount}</span>
-        {dm.velocityMode && <><span>·</span><span className="text-amber-400">VELOCITY-MODUS</span></>}
-        {dm.pitchMode && <><span>·</span><span className="text-purple-400">PITCH-MODUS</span></>}
+        {dm.velocityMode && <><span>·</span><span className="text-accent-secondary">VELOCITY-MODUS</span></>}
+        {dm.pitchMode && <><span>·</span><span className="text-accent-secondary">PITCH-MODUS</span></>}
         {/* Time-Stretch für aktiven Kanal */}
         {dm.activePartId && (() => {
           const activePart = pattern.parts.find(p => p.id === dm.activePartId);

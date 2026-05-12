@@ -103,7 +103,7 @@ export function ModMatrix({ entries, partIds, onAddEntry, onRemoveEntry, onUpdat
             </span>
             <button
               onClick={() => onRemoveEntry(entry.id)}
-              className="text-text-dim hover:text-red-400 text-base leading-none"
+              className="text-text-dim hover:text-accent-danger text-base leading-none"
             >
               ×
             </button>

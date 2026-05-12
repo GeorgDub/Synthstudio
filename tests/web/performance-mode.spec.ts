@@ -345,3 +345,393 @@ test.describe("Performance Mode a11y + Multi-Select (TASK-114)", () => {
     await expect(page.getByTestId("perf-multiselect-count")).not.toBeAttached();
   });
 });
+
+// ─── TASK-119 / v1.22.0 — Theme-aware Pad-Default-Farben ────────────────────
+
+/**
+ * Helper: setzt document data-theme via Theme-Store-API über window.
+ *
+ * Synthstudio's Theme-Setter ist die `data-theme` Attribute auf <html>.
+ * Wir setzen direkt, statt die Settings-UI durchzuklicken — kürzer und stabiler.
+ */
+async function setDocumentTheme(page: Page, themeId: string) {
+  await page.evaluate((id) => {
+    document.documentElement.setAttribute("data-theme", id);
+  }, themeId);
+  // Eine Tick warten, damit Re-render greift
+  await page.waitForTimeout(50);
+}
+
+async function getCssVar(page: Page, varName: string): Promise<string> {
+  return await page.evaluate((name) => {
+    return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  }, varName);
+}
+
+test.describe("Performance Mode — Theme-aware Default-Pad-Farben (TASK-119)", () => {
+  test("--ss-pad-1 .. --ss-pad-8 sind im default-theme (dark) definiert", async ({ page }) => {
+    await page.goto("/");
+    await page.waitForSelector('[role="tablist"]', { timeout: 15_000 });
+    for (let i = 1; i <= 8; i++) {
+      const val = await getCssVar(page, `--ss-pad-${i}`);
+      // Erwartung: ein definierter Hex-Wert
+      expect(val.length).toBeGreaterThan(0);
+      expect(val).toMatch(/^#[0-9a-fA-F]{3,8}$/);
+    }
+  });
+
+  test("Theme-Wechsel ändert die --ss-pad-* CSS-Variablen", async ({ page }) => {
+    await page.goto("/");
+    await page.waitForSelector('[role="tablist"]', { timeout: 15_000 });
+
+    // Default (dark) lesen
+    await setDocumentTheme(page, "dark");
+    const darkPad1 = await getCssVar(page, "--ss-pad-1");
+    expect(darkPad1.length).toBeGreaterThan(0);
+
+    // Switch to daylight
+    await setDocumentTheme(page, "daylight");
+    const daylightPad1 = await getCssVar(page, "--ss-pad-1");
+    expect(daylightPad1.length).toBeGreaterThan(0);
+    expect(daylightPad1).not.toBe(darkPad1);
+
+    // Switch to paper
+    await setDocumentTheme(page, "paper");
+    const paperPad1 = await getCssVar(page, "--ss-pad-1");
+    expect(paperPad1).not.toBe(darkPad1);
+    expect(paperPad1).not.toBe(daylightPad1);
+  });
+
+  test("Default-Pad-Farbe folgt dem aktiven Theme (visuelle Verifikation via backgroundColor)", async ({ page }) => {
+    // Seed einen Pad OHNE explizite color → fällt auf Theme-Default zurück
+    await page.goto("/");
+    await page.waitForSelector('[role="tablist"]', { timeout: 15_000 });
+    await page.evaluate((key) => {
+      const data = {
+        pads: [
+          // Kein color-Feld → muss via --ss-pad-1 (Slot 1) resolvieren
+          { patternId: "fake-1", label: "Default-1" },
+          null, null, null,
+          null, null, null, null,
+          null, null, null, null,
+          null, null, null, null,
+        ],
+        quantizeMode: "bar",
+      };
+      localStorage.setItem(key, JSON.stringify(data));
+    }, PERF_KEY);
+    await page.reload();
+    await page.waitForSelector('[role="tablist"]', { timeout: 15_000 });
+    await page.getByRole("button", { name: /Performance Mode/i }).click();
+    await expect(page.getByTestId("performance-mode-overlay")).toBeVisible();
+
+    // Default-Theme (dark) — pad-0 sollte mit --ss-pad-1 (cyan) styled sein
+    await setDocumentTheme(page, "dark");
+    const bgDark = await page.getByTestId("perf-pad-0").evaluate(el => getComputedStyle(el).backgroundColor);
+
+    // Theme wechseln auf daylight
+    await setDocumentTheme(page, "daylight");
+    // Pad rendert neu mit aktualisierter Theme-Variable. Da der Helper getPadDefaultColor()
+    // synchron in der nächsten Render-Phase die CSS-Variable liest, brauchen wir nur
+    // einen Re-Render-Trigger. Wir scrollen kurz oder triggern eine harmlose State-Änderung:
+    // ein Click auf den Quantize-Bar-Button (No-op wenn bar bereits aktiv).
+    // Einfacher: nutze setTimeout(50) und hoffe auf next render.
+    // Robuster: trigger durch Toggle Edit-Mode (re-mount Pad-Komponenten)
+    await page.getByRole("radio", { name: /Edit-Modus/i }).click();
+    await page.getByRole("radio", { name: /Play-Modus/i }).click();
+    await page.waitForTimeout(100);
+    const bgDaylight = await page.getByTestId("perf-pad-0").evaluate(el => getComputedStyle(el).backgroundColor);
+
+    // Mindestens: beide Werte sind nicht-leer + beide sind nicht identisch
+    expect(bgDark.length).toBeGreaterThan(0);
+    expect(bgDaylight.length).toBeGreaterThan(0);
+    expect(bgDaylight).not.toBe(bgDark);
+  });
+
+  test("User-defined pad.color hat Vorrang vor Theme-Default (TASK-119 Invariant)", async ({ page }) => {
+    await page.goto("/");
+    await page.waitForSelector('[role="tablist"]', { timeout: 15_000 });
+    await page.evaluate((key) => {
+      const data = {
+        pads: [
+          // Hardcoded hex Color → bleibt unverändert egal welches Theme aktiv ist
+          { patternId: "fake-1", label: "Hardcoded", color: "#ff00ff" },
+          null, null, null,
+          null, null, null, null,
+          null, null, null, null,
+          null, null, null, null,
+        ],
+        quantizeMode: "bar",
+      };
+      localStorage.setItem(key, JSON.stringify(data));
+    }, PERF_KEY);
+    await page.reload();
+    await page.waitForSelector('[role="tablist"]', { timeout: 15_000 });
+    await page.getByRole("button", { name: /Performance Mode/i }).click();
+
+    // Egal welches Theme — der user-defined Wert #ff00ff muss als rgb(255,0,255) sichtbar werden.
+    // (Wir prüfen den active-State, da nur aktive Pads volle Farbe haben — inaktive haben color+"33" Alpha.)
+    // Einfacher: Color-Picker im Editor öffnen, dann ist der Wert direkt aus pad.color geladen.
+    await page.getByRole("radio", { name: /Edit-Modus/i }).click();
+    await page.getByTestId("perf-pad-0").click();
+    await expect(page.getByTestId("perf-pad-editor")).toBeVisible();
+
+    // Theme wechseln — colorDraft im Editor darf sich NICHT ändern
+    await setDocumentTheme(page, "daylight");
+    await setDocumentTheme(page, "paper");
+
+    // Custom-Color-Input des Editors sollte den ursprünglichen hex enthalten
+    const colorPicker = page.getByLabel(/Custom Farbe wählen/i);
+    await expect(colorPicker).toHaveValue("#ff00ff");
+  });
+
+  test("Color-Swatches im Editor zeigen 8 theme-aware Slots + Custom-Picker", async ({ page }) => {
+    await openPerformanceMode(page);
+    await page.getByRole("radio", { name: /Edit-Modus/i }).click();
+    await page.getByTestId("perf-pad-0").click();
+    await expect(page.getByTestId("perf-pad-editor")).toBeVisible();
+
+    const swatches = page.getByTestId("perf-pad-color-swatches").locator("[data-pad-swatch]");
+    await expect(swatches).toHaveCount(8);
+
+    // Slot 1..8 attributes vorhanden
+    for (let i = 1; i <= 8; i++) {
+      const sw = page.locator(`[data-pad-swatch="${i}"]`);
+      await expect(sw).toBeVisible();
+    }
+    // Custom-Picker existiert weiterhin
+    await expect(page.getByLabel(/Custom Farbe wählen/i)).toBeVisible();
+  });
+});
+
+// ─── TASK-120 / v1.22.0 — Mouse-Box Rubber-Band-Selection ───────────────────
+
+test.describe("Performance Mode — Mouse-Box Rubber-Band-Select (TASK-120)", () => {
+  /**
+   * Helper: führt einen Mouse-Down + Move + Up zwischen zwei Viewport-Punkten
+   * aus. Wir nutzen page.mouse.* statt dragTo, weil unser Box-Select keine
+   * HTML5-DnD-API verwendet sondern reine MouseEvents (mousedown/mousemove/mouseup).
+   */
+  async function doBoxDrag(
+    page: Page,
+    from: { x: number; y: number },
+    to: { x: number; y: number },
+    modifiers: Array<"Shift"> = [],
+  ) {
+    for (const mod of modifiers) await page.keyboard.down(mod);
+    await page.mouse.move(from.x, from.y);
+    await page.mouse.down();
+    // Inkrementeller Move für deutliche moved=true Detection (>3px Hysterese)
+    const steps = 8;
+    for (let i = 1; i <= steps; i++) {
+      const x = from.x + ((to.x - from.x) * i) / steps;
+      const y = from.y + ((to.y - from.y) * i) / steps;
+      await page.mouse.move(x, y);
+    }
+    await page.mouse.up();
+    for (const mod of modifiers) await page.keyboard.up(mod);
+  }
+
+  test("Box-Selection-Overlay wird beim Drag sichtbar (Reorder-Mode)", async ({ page }) => {
+    await seedPadsAndOpen(page);
+    await page.getByRole("radio", { name: /Reorder-Modus/i }).click();
+    // Box-Drag-Wrapper (umschließt das Grid) als Startpunkt — koordinaten daraus.
+    const wrapper = page.getByTestId("perf-pad-grid-wrapper");
+    const bbox = await wrapper.boundingBox();
+    if (!bbox) throw new Error("grid wrapper not measurable");
+
+    // Start in der Ecke (außerhalb der Pads): top-left + 10px
+    const startX = bbox.x + 10;
+    const startY = bbox.y + 10;
+
+    await page.mouse.move(startX, startY);
+    await page.mouse.down();
+    await page.mouse.move(startX + 100, startY + 100, { steps: 8 });
+    // Overlay sollte sichtbar sein
+    await expect(page.getByTestId("perf-selection-box")).toBeVisible();
+    await page.mouse.up();
+  });
+
+  test("Drag-Box über 2 gefüllte Pads selektiert beide", async ({ page }) => {
+    await seedPadsAndOpen(page);
+    await page.getByRole("radio", { name: /Reorder-Modus/i }).click();
+
+    const pad0 = await page.getByTestId("perf-pad-0").boundingBox();
+    const pad1 = await page.getByTestId("perf-pad-1").boundingBox();
+    if (!pad0 || !pad1) throw new Error("pad bounding boxes missing");
+
+    // Start vor Pad 0 (links davon), Ende rechts neben Pad 1, so dass Box beide schneidet.
+    const startX = pad0.x - 8;
+    const startY = pad0.y - 8;
+    const endX = pad1.x + pad1.width + 8;
+    const endY = pad1.y + pad1.height + 8;
+
+    await doBoxDrag(page, { x: startX, y: startY }, { x: endX, y: endY });
+
+    await expect(page.getByTestId("perf-pad-0")).toHaveAttribute("aria-selected", "true");
+    await expect(page.getByTestId("perf-pad-1")).toHaveAttribute("aria-selected", "true");
+    await expect(page.getByTestId("perf-multiselect-count")).toContainText(/2 ausgewählt/);
+  });
+
+  test("Shift+Box-Drag additiv zu existing selection", async ({ page }) => {
+    await seedPadsAndOpen(page);
+    await page.getByRole("radio", { name: /Reorder-Modus/i }).click();
+
+    // Erst Pad 2 via Shift+Click selektieren
+    await page.getByTestId("perf-pad-2").click({ modifiers: ["Shift"] });
+    await expect(page.getByTestId("perf-pad-2")).toHaveAttribute("aria-selected", "true");
+
+    // Dann Shift+Box-Drag über Pads 0+1 — alle drei sollten am Ende selected sein
+    const pad0 = await page.getByTestId("perf-pad-0").boundingBox();
+    const pad1 = await page.getByTestId("perf-pad-1").boundingBox();
+    if (!pad0 || !pad1) throw new Error("pad bbox missing");
+
+    await doBoxDrag(
+      page,
+      { x: pad0.x - 8, y: pad0.y - 8 },
+      { x: pad1.x + pad1.width + 8, y: pad1.y + pad1.height + 8 },
+      ["Shift"],
+    );
+
+    await expect(page.getByTestId("perf-pad-0")).toHaveAttribute("aria-selected", "true");
+    await expect(page.getByTestId("perf-pad-1")).toHaveAttribute("aria-selected", "true");
+    // Pad 2 muss erhalten bleiben (additiv)
+    await expect(page.getByTestId("perf-pad-2")).toHaveAttribute("aria-selected", "true");
+    await expect(page.getByTestId("perf-multiselect-count")).toContainText(/3 ausgewählt/);
+  });
+
+  test("Box-Drag ohne Modifier ersetzt vorherige Selection", async ({ page }) => {
+    await seedPadsAndOpen(page);
+    await page.getByRole("radio", { name: /Reorder-Modus/i }).click();
+
+    // Erst Pad 2 selektieren
+    await page.getByTestId("perf-pad-2").click({ modifiers: ["Shift"] });
+    await expect(page.getByTestId("perf-pad-2")).toHaveAttribute("aria-selected", "true");
+
+    // Dann Box-Drag OHNE Shift über Pad 0+1 — Pad 2 fällt raus
+    const pad0 = await page.getByTestId("perf-pad-0").boundingBox();
+    const pad1 = await page.getByTestId("perf-pad-1").boundingBox();
+    if (!pad0 || !pad1) throw new Error("pad bbox missing");
+
+    await doBoxDrag(
+      page,
+      { x: pad0.x - 8, y: pad0.y - 8 },
+      { x: pad1.x + pad1.width + 8, y: pad1.y + pad1.height + 8 },
+    );
+
+    await expect(page.getByTestId("perf-pad-0")).toHaveAttribute("aria-selected", "true");
+    await expect(page.getByTestId("perf-pad-1")).toHaveAttribute("aria-selected", "true");
+    // Pad 2 ist NICHT mehr selektiert
+    await expect(page.getByTestId("perf-pad-2")).toHaveAttribute("aria-selected", "false");
+  });
+
+  test("Escape clears Multi-Select (auch wenn via Box-Select aufgebaut)", async ({ page }) => {
+    await seedPadsAndOpen(page);
+    await page.getByRole("radio", { name: /Reorder-Modus/i }).click();
+    // Selektiere zwei Pads
+    await page.getByTestId("perf-pad-0").click({ modifiers: ["Shift"] });
+    await page.getByTestId("perf-pad-1").click({ modifiers: ["Shift"] });
+    await expect(page.getByTestId("perf-multiselect-count")).toContainText(/2 ausgewählt/);
+
+    // Escape clearen
+    await page.keyboard.press("Escape");
+    // Counter weg, Pads nicht mehr aria-selected, Performance-Mode bleibt offen
+    await expect(page.getByTestId("perf-multiselect-count")).not.toBeAttached();
+    await expect(page.getByTestId("perf-pad-0")).toHaveAttribute("aria-selected", "false");
+    await expect(page.getByTestId("performance-mode-overlay")).toBeVisible();
+  });
+
+  test("Box-Selection-Overlay verschwindet nach mouseup", async ({ page }) => {
+    await seedPadsAndOpen(page);
+    await page.getByRole("radio", { name: /Reorder-Modus/i }).click();
+    const wrapper = page.getByTestId("perf-pad-grid-wrapper");
+    const bbox = await wrapper.boundingBox();
+    if (!bbox) throw new Error("grid wrapper not measurable");
+
+    await page.mouse.move(bbox.x + 10, bbox.y + 10);
+    await page.mouse.down();
+    await page.mouse.move(bbox.x + 100, bbox.y + 100, { steps: 8 });
+    await expect(page.getByTestId("perf-selection-box")).toBeVisible();
+    await page.mouse.up();
+    // Overlay weg
+    await expect(page.getByTestId("perf-selection-box")).not.toBeAttached();
+  });
+
+  test("Box-Select außerhalb Reorder-Mode: kein Overlay", async ({ page }) => {
+    await seedPadsAndOpen(page);
+    // Default ist Play-Mode — Box-Drag darf KEIN Overlay rendern.
+    const wrapper = page.getByTestId("perf-pad-grid-wrapper");
+    const bbox = await wrapper.boundingBox();
+    if (!bbox) throw new Error("grid wrapper not measurable");
+
+    await page.mouse.move(bbox.x + 10, bbox.y + 10);
+    await page.mouse.down();
+    await page.mouse.move(bbox.x + 200, bbox.y + 200, { steps: 8 });
+    // Kein Overlay
+    await expect(page.getByTestId("perf-selection-box")).not.toBeAttached();
+    await page.mouse.up();
+  });
+});
+
+// ─── TASK-123 / v1.22.0 — Multi-Drag-Image mit Counter-Badge ────────────────
+
+test.describe("Performance Mode — Multi-Drag-Image (TASK-123)", () => {
+  test("Multi-Drag mit 3 selected: dragSrc-Pad hat data-multi-drag-count='3'", async ({ page }) => {
+    await seedPadsAndOpen(page);
+    await page.getByRole("radio", { name: /Reorder-Modus/i }).click();
+
+    // Selektiere 3 Pads via Shift+Click
+    await page.getByTestId("perf-pad-0").click({ modifiers: ["Shift"] });
+    await page.getByTestId("perf-pad-1").click({ modifiers: ["Shift"] });
+    await page.getByTestId("perf-pad-2").click({ modifiers: ["Shift"] });
+    await expect(page.getByTestId("perf-multiselect-count")).toContainText(/3 ausgewählt/);
+
+    // Start drag von Pad 0 zu Pad 5. Während drag aktiv: data-multi-drag-count="3".
+    // Playwright dragTo macht dragstart+drop in einem Atomic; wir prüfen das
+    // Attribut über einen Trick: einmal dragstart → assert → dann drop.
+    const src = page.getByTestId("perf-pad-0");
+    const srcBox = await src.boundingBox();
+    if (!srcBox) throw new Error("pad-0 not measurable");
+    const dst = page.getByTestId("perf-pad-5");
+    const dstBox = await dst.boundingBox();
+    if (!dstBox) throw new Error("pad-5 not measurable");
+
+    // Manueller Dispatch von dragstart über die echte Mouse-API ist in Playwright
+    // tricky. Wir nutzen den dispatch von Drag-Events direkt auf das Element.
+    await src.evaluate((el) => {
+      const dt = new DataTransfer();
+      const ev = new DragEvent("dragstart", { bubbles: true, cancelable: true, dataTransfer: dt });
+      el.dispatchEvent(ev);
+    });
+    // Während dragstart aktiv: data-multi-drag-count = "3"
+    await expect(src).toHaveAttribute("data-multi-drag-count", "3");
+
+    // Sauberes Aufräumen: dragend
+    await src.evaluate((el) => {
+      const dt = new DataTransfer();
+      const ev = new DragEvent("dragend", { bubbles: true, cancelable: true, dataTransfer: dt });
+      el.dispatchEvent(ev);
+    });
+  });
+
+  test("Single-Drag (kein Multi-Select): kein data-multi-drag-count", async ({ page }) => {
+    await seedPadsAndOpen(page);
+    await page.getByRole("radio", { name: /Reorder-Modus/i }).click();
+
+    const src = page.getByTestId("perf-pad-0");
+    // Trigger dragstart ohne vorherige Selection
+    await src.evaluate((el) => {
+      const dt = new DataTransfer();
+      const ev = new DragEvent("dragstart", { bubbles: true, cancelable: true, dataTransfer: dt });
+      el.dispatchEvent(ev);
+    });
+    // data-multi-drag-count darf NICHT gesetzt sein (oder = "0", aber wir setzen es bewusst undefined)
+    await expect(src).not.toHaveAttribute("data-multi-drag-count", /\d/);
+
+    await src.evaluate((el) => {
+      const dt = new DataTransfer();
+      const ev = new DragEvent("dragend", { bubbles: true, cancelable: true, dataTransfer: dt });
+      el.dispatchEvent(ev);
+    });
+  });
+});

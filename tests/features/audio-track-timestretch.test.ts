@@ -710,3 +710,83 @@ describe("TimeStretch: MAX_TIMESTRETCH_TRACKS Konstante", () => {
     expect(countTimestretchTracks()).toBe(2);
   });
 });
+
+describe("TimeStretch: isTimestretchLimitReached helper (TASK-121)", () => {
+  /** Adds N tracks with given syncMode, returns their IDs. */
+  async function addTracksWithMode(
+    count: number,
+    syncMode: "free" | "stretch" | "timestretch",
+  ): Promise<string[]> {
+    const mod = await import("../../client/src/store/useAudioTrackStore");
+    const { addAudioTrack } = mod;
+    const ids: string[] = [];
+    for (let i = 0; i < count; i++) {
+      ids.push(
+        addAudioTrack({
+          name: `T-${syncMode}-${i}`,
+          filePath: `/p/${syncMode}-${i}.wav`,
+          fileName: `${syncMode}-${i}.wav`,
+          volume: 1,
+          pan: 0,
+          muted: false,
+          soloed: false,
+          sends: { reverb: 0, delay: 0 },
+          syncMode,
+          originalBpm: syncMode === "free" ? null : 120,
+        }),
+      );
+    }
+    return ids;
+  }
+
+  it("returns false bei 0 timestretch-Tracks", async () => {
+    const mod = await import("../../client/src/store/useAudioTrackStore");
+    const { isTimestretchLimitReached, __resetForTests } = mod;
+    __resetForTests();
+    expect(isTimestretchLimitReached()).toBe(false);
+  });
+
+  it("returns false bei 3 timestretch-Tracks (Limit=4)", async () => {
+    const mod = await import("../../client/src/store/useAudioTrackStore");
+    const { isTimestretchLimitReached, __resetForTests, MAX_TIMESTRETCH_TRACKS } = mod;
+    __resetForTests();
+    await addTracksWithMode(3, "timestretch");
+    expect(MAX_TIMESTRETCH_TRACKS).toBe(4);
+    expect(isTimestretchLimitReached()).toBe(false);
+  });
+
+  it("returns true wenn 4 timestretch-Tracks aktiv sind (Limit erreicht)", async () => {
+    const mod = await import("../../client/src/store/useAudioTrackStore");
+    const { isTimestretchLimitReached, __resetForTests, countTimestretchTracks } = mod;
+    __resetForTests();
+    await addTracksWithMode(4, "timestretch");
+    expect(countTimestretchTracks()).toBe(4);
+    expect(isTimestretchLimitReached()).toBe(true);
+  });
+
+  it("ignoriert non-timestretch Tracks beim Limit-Check", async () => {
+    const mod = await import("../../client/src/store/useAudioTrackStore");
+    const { isTimestretchLimitReached, __resetForTests } = mod;
+    __resetForTests();
+    await addTracksWithMode(3, "timestretch");
+    await addTracksWithMode(2, "free");
+    // Insgesamt 5 Tracks, aber nur 3 timestretch → noch nicht am Limit.
+    expect(isTimestretchLimitReached()).toBe(false);
+  });
+
+  it("reagiert auf updateAudioTrack syncMode-Wechsel (3 ts → patch eines free auf ts ⇒ Limit)", async () => {
+    const mod = await import("../../client/src/store/useAudioTrackStore");
+    const {
+      isTimestretchLimitReached,
+      __resetForTests,
+      updateAudioTrack,
+    } = mod;
+    __resetForTests();
+    await addTracksWithMode(3, "timestretch");
+    const freeIds = await addTracksWithMode(1, "free");
+    expect(isTimestretchLimitReached()).toBe(false);
+
+    updateAudioTrack(freeIds[0], { syncMode: "timestretch" });
+    expect(isTimestretchLimitReached()).toBe(true);
+  });
+});

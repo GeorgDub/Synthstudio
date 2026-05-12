@@ -236,7 +236,7 @@ function PartnerSampleBrowser({
           placeholder="Suchen…"
           value={search}
           onChange={e => setSearch(e.target.value)}
-          className="w-full bg-bg-panel border border-border-color rounded text-[10px] text-text-primary placeholder-slate-600 px-2 py-1 outline-none focus:border-slate-500"
+          className="w-full bg-bg-panel border border-border-color rounded text-[10px] text-text-primary placeholder-text-dim px-2 py-1 outline-none focus:border-accent-primary"
         />
       </div>
 
@@ -401,7 +401,7 @@ export function CollabSplitView({
               className={[
                 "px-3 py-1 text-[10px] rounded transition-colors duration-100",
                 outputMode === mode
-                  ? "bg-accent-primary/70 text-white"
+                  ? "bg-accent-primary/70 text-bg-base"
                   : "text-text-dim hover:text-text-primary hover:bg-bg-elevated",
               ].join(" ")}
             >
@@ -413,7 +413,7 @@ export function CollabSplitView({
         {/* Session beenden */}
         <button
           onClick={onLeave}
-          className="px-3 py-1 text-xs rounded bg-bg-elevated text-text-muted hover:bg-red-900/40 hover:text-red-400 transition-colors duration-100"
+          className="px-3 py-1 text-xs rounded bg-bg-elevated text-text-muted hover:bg-accent-danger/20 hover:text-accent-danger transition-colors duration-100"
         >
           ✕ Beenden
         </button>
@@ -473,12 +473,12 @@ export function CollabSplitView({
               Mein Sequencer
             </span>
             {outputMode === "me" && (
-              <span className="text-[9px] text-accent-primary border border-cyan-800 rounded px-1 py-px">
+              <span className="text-[9px] text-accent-primary border border-accent-primary rounded px-1 py-px">
                 AKTIV
               </span>
             )}
             {outputMode === "both" && (
-              <span className="text-[9px] text-green-600 border border-green-800 rounded px-1 py-px">
+              <span className="text-[9px] text-accent-success border border-accent-success rounded px-1 py-px">
                 AKTIV
               </span>
             )}
@@ -523,12 +523,12 @@ export function CollabSplitView({
               <span className="text-[10px] text-text-dim italic">Verbindet…</span>
             )}
             {outputMode === "partner" && (
-              <span className="text-[9px] text-purple-500 border border-purple-800 rounded px-1 py-px ml-auto">
+              <span className="text-[9px] text-accent-secondary border border-accent-secondary rounded px-1 py-px ml-auto">
                 AKTIV
               </span>
             )}
             {outputMode === "both" && (
-              <span className="text-[9px] text-green-600 border border-green-800 rounded px-1 py-px ml-auto">
+              <span className="text-[9px] text-accent-success border border-accent-success rounded px-1 py-px ml-auto">
                 AKTIV
               </span>
             )}

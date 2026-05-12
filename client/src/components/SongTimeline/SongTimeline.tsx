@@ -25,26 +25,37 @@ interface SongTimelineProps {
 }
 
 // ─── Konstanten ───────────────────────────────────────────────────────────────
+//
+// Kategorische Palette für die vier Pattern-Bänke (TASK-122):
+// Wir bilden auf die vier semantischen Akzent-Tokens ab, damit die Bänke beim
+// Theme-Wechsel automatisch korrekt einfärben.
+//   A → accent-primary    (Haupt-Bank, am häufigsten verwendet)
+//   B → accent-secondary
+//   C → accent-success
+//   D → accent-danger
+// Themes mit weniger ausgeprägter Differenzierung zwischen success/danger
+// werden visuell ähnlich aussehen — als trade-off akzeptiert, weil der
+// Bank-Buchstabe (A/B/C/D) groß und dominant ist.
 
 const BANK_COLORS: Record<PatternBank, string> = {
-  A: "bg-accent-primary border-accent-secondary text-white",
-  B: "bg-violet-600 border-violet-400 text-white",
-  C: "bg-emerald-600 border-emerald-400 text-white",
-  D: "bg-amber-600 border-amber-400 text-white",
+  A: "bg-accent-primary border-accent-primary text-bg-base",
+  B: "bg-accent-secondary border-accent-secondary text-bg-base",
+  C: "bg-accent-success border-accent-success text-bg-base",
+  D: "bg-accent-danger border-accent-danger text-bg-base",
 };
 
 const BANK_COLORS_MUTED: Record<PatternBank, string> = {
-  A: "bg-accent-primary/40 border-cyan-800 text-cyan-800",
-  B: "bg-violet-900/40 border-violet-800 text-violet-800",
-  C: "bg-emerald-900/40 border-emerald-800 text-emerald-800",
-  D: "bg-amber-900/40 border-amber-800 text-amber-800",
+  A: "bg-accent-primary/40 border-accent-primary/60 text-accent-primary",
+  B: "bg-accent-secondary/40 border-accent-secondary/60 text-accent-secondary",
+  C: "bg-accent-success/40 border-accent-success/60 text-accent-success",
+  D: "bg-accent-danger/40 border-accent-danger/60 text-accent-danger",
 };
 
 const BANK_ACTIVE: Record<PatternBank, string> = {
-  A: "ring-2 ring-cyan-300 shadow-lg shadow-cyan-500/30",
-  B: "ring-2 ring-violet-300 shadow-lg shadow-violet-500/30",
-  C: "ring-2 ring-emerald-300 shadow-lg shadow-emerald-500/30",
-  D: "ring-2 ring-amber-300 shadow-lg shadow-amber-500/30",
+  A: "ring-2 ring-accent-primary shadow-lg shadow-accent-primary/30",
+  B: "ring-2 ring-accent-secondary shadow-lg shadow-accent-secondary/30",
+  C: "ring-2 ring-accent-success shadow-lg shadow-accent-success/30",
+  D: "ring-2 ring-accent-danger shadow-lg shadow-accent-danger/30",
 };
 
 const BANKS: PatternBank[] = ["A", "B", "C", "D"];
@@ -276,7 +287,7 @@ export function SongTimeline({ song, isPlaying, className = "" }: SongTimelinePr
           className={[
             "px-2 py-0.5 rounded text-[10px] font-bold transition-colors",
             song.songModeActive
-              ? "bg-accent-primary text-white"
+              ? "bg-accent-primary text-bg-base"
               : "bg-bg-elevated text-text-muted hover:bg-bg-elevated",
           ].join(" ")}
           title="Song-Modus ein/ausschalten"
@@ -290,7 +301,7 @@ export function SongTimeline({ song, isPlaying, className = "" }: SongTimelinePr
           className={[
             "px-2 py-0.5 rounded text-[10px] transition-colors",
             song.loopSong
-              ? "bg-violet-600 text-white"
+              ? "bg-accent-secondary text-bg-base"
               : "bg-bg-elevated text-text-muted hover:bg-bg-elevated",
           ].join(" ")}
           title="Song-Loop ein/ausschalten"
@@ -320,7 +331,7 @@ export function SongTimeline({ song, isPlaying, className = "" }: SongTimelinePr
         {/* Clear */}
         <button
           onClick={song.clearSong}
-          className="px-2 py-0.5 rounded text-[10px] bg-bg-elevated text-text-dim hover:bg-red-900/40 hover:text-red-400 transition-colors"
+          className="px-2 py-0.5 rounded text-[10px] bg-bg-elevated text-text-dim hover:bg-accent-danger/20 hover:text-accent-danger transition-colors"
           title="Song leeren"
         >
           Leeren
@@ -360,7 +371,7 @@ export function SongTimeline({ song, isPlaying, className = "" }: SongTimelinePr
           onClick={handleAddSlot}
           className={[
             "flex-shrink-0 w-20 h-[108px] rounded-lg border-2 border-dashed",
-            "border-border-color text-text-dim hover:border-slate-500 hover:text-text-muted",
+            "border-border-color text-text-dim hover:border-text-muted hover:text-text-muted",
             "flex flex-col items-center justify-center gap-1 transition-colors",
           ].join(" ")}
           title="Slot hinzufügen"

@@ -92,8 +92,41 @@ export function lfoRateFromBpm(bpm: number, syncRate: LfoBpmRate): number {
 
 // ─── SynthEngine-Klasse ────────────────────────────────────────────────────────
 
+/**
+ * Macro-LFO Range-Konstanten (siehe TASK-117).
+ *
+ * Diese definieren den gültigen Wertebereich, den die Macro-Layer
+ * (`setPartLfoRate` / `setPartLfoDepth`) durchsetzt:
+ *  - Rate: 0.01 .. 30 Hz  (typischer LFO-Bereich; SynthParams selbst
+ *    erlaubt nur 0.1..20 in der UI, aber Macros dürfen breiter)
+ *  - Depth: 0 .. 1        (normalisiert; Macros arbeiten in 0..1)
+ */
+export const PART_LFO_RATE_MIN = 0.01;
+export const PART_LFO_RATE_MAX = 30;
+export const PART_LFO_DEPTH_MIN = 0;
+export const PART_LFO_DEPTH_MAX = 1;
+
+/** Pro-Part LFO-Macro-Overrides (TASK-117). */
+interface PartLfoCacheEntry {
+  rate?: number;
+  depth?: number;
+}
+
 export class SynthEngine {
   private _bpm = 120;
+
+  /**
+   * Cache letzter via Macro gesetzter LFO-Werte pro Part-ID.
+   * Wird von `setPartLfoRate` / `setPartLfoDepth` befüllt und kann von
+   * Step-Trigger-Sites (AudioEngine, etc.) ausgelesen werden, um
+   * `SynthParams.lfoRate`/`lfoDepth` zur Laufzeit zu überschreiben.
+   *
+   * Cache-Variant statt persistenter Per-Part-Audio-Nodes — Per-Note-LFOs
+   * werden in `_attachLfo` weiterhin pro Step neu erzeugt, weil sie an die
+   * Note-Lebensdauer gekoppelt sind. Der Macro-Setter speichert nur den
+   * gewünschten Zielwert, der beim nächsten Step-Trigger sichtbar wird.
+   */
+  private _partLfoCache = new Map<string, PartLfoCacheEntry>();
 
   constructor(
     private readonly ctx: AudioContext,
@@ -102,18 +135,105 @@ export class SynthEngine {
 
   setBpm(bpm: number) { this._bpm = bpm; }
 
+  // ─── Macro-LFO-Setter (TASK-117) ──────────────────────────────────────────
+
+  /**
+   * Setzt die LFO-Rate (Hz) für einen Part. Wird zur Macro-Routing-Zeit
+   * aufgerufen. Geclampt auf [PART_LFO_RATE_MIN, PART_LFO_RATE_MAX].
+   *
+   * Non-finite Werte (NaN, Infinity) werden ignoriert (no-op) — damit
+   * misskonfigurierte Bindings nicht den Cache vergiften.
+   *
+   * Der Cache wird beim nächsten Step-Trigger gelesen und überschreibt
+   * `synthParams.lfoRate`. Bestehende laufende Noten ändern sich nicht
+   * (LFO-Nodes sind per-note erzeugt, an die Note-Lebensdauer gekoppelt).
+   */
+  setPartLfoRate(partId: string, hz: number): void {
+    if (!partId || typeof partId !== "string") return;
+    if (typeof hz !== "number" || !Number.isFinite(hz)) return;
+    const clamped = Math.max(PART_LFO_RATE_MIN, Math.min(PART_LFO_RATE_MAX, hz));
+    const existing = this._partLfoCache.get(partId) ?? {};
+    this._partLfoCache.set(partId, { ...existing, rate: clamped });
+  }
+
+  /**
+   * Setzt die LFO-Tiefe (0..1, normalisiert) für einen Part. Wird zur
+   * Macro-Routing-Zeit aufgerufen. Geclampt auf [0, 1].
+   *
+   * Non-finite Werte werden ignoriert (no-op).
+   *
+   * Hinweis: SynthParams.lfoDepth ist intern in Cents (0..100). Aufrufer
+   * können den 0..1-Wert hier setzen und beim Step-Trigger umrechnen
+   * (oder den normalisierten Wert direkt als Multiplikator verwenden).
+   */
+  setPartLfoDepth(partId: string, depth: number): void {
+    if (!partId || typeof partId !== "string") return;
+    if (typeof depth !== "number" || !Number.isFinite(depth)) return;
+    const clamped = Math.max(PART_LFO_DEPTH_MIN, Math.min(PART_LFO_DEPTH_MAX, depth));
+    const existing = this._partLfoCache.get(partId) ?? {};
+    this._partLfoCache.set(partId, { ...existing, depth: clamped });
+  }
+
+  /**
+   * Liefert die letzte via `setPartLfoRate` gesetzte Rate für einen Part
+   * (Hz), oder `null` wenn noch nie gesetzt.
+   */
+  getPartLfoRate(partId: string): number | null {
+    const entry = this._partLfoCache.get(partId);
+    return entry && typeof entry.rate === "number" ? entry.rate : null;
+  }
+
+  /**
+   * Liefert die letzte via `setPartLfoDepth` gesetzte Tiefe für einen Part
+   * (0..1), oder `null` wenn noch nie gesetzt.
+   */
+  getPartLfoDepth(partId: string): number | null {
+    const entry = this._partLfoCache.get(partId);
+    return entry && typeof entry.depth === "number" ? entry.depth : null;
+  }
+
+  /**
+   * Löscht den Macro-LFO-Cache für einen Part (oder gesamt, wenn partId
+   * weggelassen). Nützlich bei Part-Removal oder Project-Reset.
+   */
+  clearPartLfoCache(partId?: string): void {
+    if (partId === undefined) {
+      this._partLfoCache.clear();
+    } else {
+      this._partLfoCache.delete(partId);
+    }
+  }
+
   /**
    * Spielt eine Note ab.
    * @param frequency Frequenz in Hz (z.B. 440 für A4)
    * @param params    Synth-Parameter
    * @param time      AudioContext-Zeit (ctx.currentTime + Offset)
    * @param prevFreq  Vorherige Frequenz für Glide (optional)
+   * @param partId    Optional: wenn gesetzt, werden gecachte Macro-LFO-Werte
+   *                  aus `_partLfoCache` über `params.lfoRate`/`lfoDepth` gelegt.
    */
-  triggerNote(frequency: number, params: SynthParams, time: number, prevFreq?: number): GainNode {
+  triggerNote(frequency: number, params: SynthParams, time: number, prevFreq?: number, partId?: string): GainNode {
     const ctx = this.ctx;
     const now = Math.max(time, ctx.currentTime);
     const noteEnd = now + 1.0;
     const releaseEnd = noteEnd + Math.max(0.001, params.release) + 0.1;
+
+    // Macro-LFO-Overrides (TASK-117): wenn für diesen Part Macro-Werte
+    // gesetzt wurden, klonen wir params und überschreiben lfoRate/lfoDepth.
+    let effectiveParams = params;
+    if (partId) {
+      const cached = this._partLfoCache.get(partId);
+      if (cached && (cached.rate !== undefined || cached.depth !== undefined)) {
+        effectiveParams = { ...params };
+        if (cached.rate !== undefined) effectiveParams.lfoRate = cached.rate;
+        if (cached.depth !== undefined) {
+          // Cache hält 0..1 (normalisiert), SynthParams.lfoDepth ist in Cents (0..100).
+          effectiveParams.lfoDepth = cached.depth * 100;
+        }
+      }
+    }
+    params = effectiveParams;
 
     // ADSR-Hüllkurve
     const ampEnv = ctx.createGain();

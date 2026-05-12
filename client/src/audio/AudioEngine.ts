@@ -10,6 +10,8 @@
  * - BPM-Sync: Patterns können eigenes BPM oder globales BPM nutzen
  */
 
+import { SynthEngine } from "./SynthEngine";
+
 // ─── Typen ────────────────────────────────────────────────────────────────────
 
 export type StepResolution = "1/8" | "1/16" | "1/32";
@@ -301,6 +303,14 @@ class AudioEngineClass {
   /** Aktive Granular Engines pro Part */
   private _granularEngines = new Map<string, import("./GranularEngine").GranularEngine>();
   private reverbBuffers = new Map<string, AudioBuffer>(); // decay → buffer
+  /**
+   * Lazy SynthEngine-Instanz für Macro-LFO-Cache (TASK-117).
+   * Wird beim ersten Aufruf von setPartLfo* erzeugt, damit AudioEngine
+   * vor `init()` keine AudioContext-Pflicht hat. Persistenter Wertespeicher
+   * pro Part-ID — bestehende Step-Trigger-Sites können später
+   * `getPartLfoRate/Depth` lesen und auf `synthParams` mappen.
+   */
+  private _synthEngine: SynthEngine | null = null;
 
   // ─── Audio-Track Channels (externe Dateien: Vocals/Songs) ──────────────────
   private audioTrackSources = new Map<string, AudioBufferSourceNode>();
@@ -511,6 +521,54 @@ class AudioEngineClass {
     } else {
       nodes.globalDelaySend.gain.setTargetAtTime(clampedLevel, this.ctx?.currentTime ?? 0, 0.01);
     }
+  }
+
+  // ─── Macro-LFO-Delegates (TASK-117) ─────────────────────────────────────────
+  // Diese Setter werden vom Macro-Routing in App.tsx aufgerufen. Sie speichern
+  // den letzten gewünschten Wert in der SynthEngine-Cache-Map. Step-Trigger-
+  // Sites können später `getPartLfoRate`/`getPartLfoDepth` lesen, um
+  // `synthParams.lfoRate/lfoDepth` zur Laufzeit zu überschreiben.
+
+  /**
+   * Lazy-Getter für die SynthEngine-Instanz. Browser-fallback-safe:
+   * wenn kein AudioContext (z.B. SSR, Tests ohne init), wird `null`
+   * zurückgegeben und Aufrufer sind no-op.
+   */
+  private _getOrCreateSynthEngine(): SynthEngine | null {
+    if (this._synthEngine) return this._synthEngine;
+    if (!this.ctx || !this.masterGain) return null;
+    this._synthEngine = new SynthEngine(this.ctx, this.masterGain);
+    return this._synthEngine;
+  }
+
+  /**
+   * Setzt die LFO-Rate (Hz) für einen Part via Macro-Layer.
+   * Range-Clamping passiert in der SynthEngine ([0.01..30]).
+   */
+  setPartLfoRate(partId: string, hz: number): void {
+    const eng = this._getOrCreateSynthEngine();
+    if (!eng) return;
+    eng.setPartLfoRate(partId, hz);
+  }
+
+  /**
+   * Setzt die LFO-Tiefe (0..1) für einen Part via Macro-Layer.
+   * Range-Clamping passiert in der SynthEngine ([0..1]).
+   */
+  setPartLfoDepth(partId: string, depth: number): void {
+    const eng = this._getOrCreateSynthEngine();
+    if (!eng) return;
+    eng.setPartLfoDepth(partId, depth);
+  }
+
+  /** Liefert letzten gesetzten Macro-LFO-Rate-Wert für einen Part. */
+  getPartLfoRate(partId: string): number | null {
+    return this._synthEngine?.getPartLfoRate(partId) ?? null;
+  }
+
+  /** Liefert letzten gesetzten Macro-LFO-Depth-Wert für einen Part. */
+  getPartLfoDepth(partId: string): number | null {
+    return this._synthEngine?.getPartLfoDepth(partId) ?? null;
   }
 
   /**

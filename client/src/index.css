@@ -39,6 +39,15 @@
   --ss-text-dim:     #64748b;
   --ss-border:        #2a2a3a;
   --ss-border-subtle: #1e1e2e;
+  /* Performance-Pad-Slot-Palette (TASK-119 / v1.22.0) */
+  --ss-pad-1: #22d3ee;  /* cyan */
+  --ss-pad-2: #a78bfa;  /* violet */
+  --ss-pad-3: #34d399;  /* emerald */
+  --ss-pad-4: #f87171;  /* red */
+  --ss-pad-5: #fb923c;  /* orange */
+  --ss-pad-6: #facc15;  /* amber */
+  --ss-pad-7: #60a5fa;  /* blue */
+  --ss-pad-8: #e879f9;  /* fuchsia */
 }
 
 /* ── 2. NeonCircuit ───────────────────────────────────────────────────────── */
@@ -55,6 +64,15 @@
   --ss-text-dim:     #555588;
   --ss-border:        #1a1a2e;
   --ss-border-subtle: #0f0f1a;
+  /* Performance-Pad-Slot-Palette (TASK-119): hochgesättigte Neon-Töne */
+  --ss-pad-1: #00fff5;  /* electric cyan */
+  --ss-pad-2: #ff00ff;  /* magenta */
+  --ss-pad-3: #39ff14;  /* neon green */
+  --ss-pad-4: #ff2d55;  /* hot pink */
+  --ss-pad-5: #ffae00;  /* electric orange */
+  --ss-pad-6: #fff700;  /* neon yellow */
+  --ss-pad-7: #0099ff;  /* electric blue */
+  --ss-pad-8: #c800ff;  /* electric violet */
 }
 
 /* ── 3. AnalogHardware ────────────────────────────────────────────────────── */
@@ -71,6 +89,15 @@
   --ss-text-dim:     #666677;
   --ss-border:        #3a3a5a;
   --ss-border-subtle: #252540;
+  /* Performance-Pad-Slot-Palette (TASK-119): warme Hardware-Töne */
+  --ss-pad-1: #ff6b35;  /* burnt orange */
+  --ss-pad-2: #d4a574;  /* tan */
+  --ss-pad-3: #00f5d4;  /* teal */
+  --ss-pad-4: #ff3355;  /* deep red */
+  --ss-pad-5: #ffae42;  /* warm amber */
+  --ss-pad-6: #f4d35e;  /* mustard yellow */
+  --ss-pad-7: #c97b63;  /* terracotta */
+  --ss-pad-8: #8b6f47;  /* brown */
 }
 
 /* ── 4. Nacht (Dunkles Lila) ──────────────────────────────────────────────── */
@@ -87,6 +114,15 @@
   --ss-text-dim:     #665577;
   --ss-border:        #2a1a40;
   --ss-border-subtle: #180f2a;
+  /* Performance-Pad-Slot-Palette (TASK-119): Violet-Shades */
+  --ss-pad-1: #a855f7;  /* purple */
+  --ss-pad-2: #c084fc;  /* light violet */
+  --ss-pad-3: #7c3aed;  /* deep violet */
+  --ss-pad-4: #e879f9;  /* fuchsia */
+  --ss-pad-5: #d946ef;  /* magenta */
+  --ss-pad-6: #8b5cf6;  /* indigo-violet */
+  --ss-pad-7: #c026d3;  /* berry */
+  --ss-pad-8: #f0abfc;  /* light pink-violet */
 }
 
 /* ── 5. Sonnenuntergang (Warm / Terracotta) ────────────────────────────────── */
@@ -103,6 +139,15 @@
   --ss-text-dim:     #6b5040;
   --ss-border:        #3a2010;
   --ss-border-subtle: #251506;
+  /* Performance-Pad-Slot-Palette (TASK-119): warme Sonnenuntergangs-Töne */
+  --ss-pad-1: #f97316;  /* orange */
+  --ss-pad-2: #fbbf24;  /* amber */
+  --ss-pad-3: #ef4444;  /* red */
+  --ss-pad-4: #fb7185;  /* rose */
+  --ss-pad-5: #facc15;  /* yellow */
+  --ss-pad-6: #fdba74;  /* peach */
+  --ss-pad-7: #dc2626;  /* deep red */
+  --ss-pad-8: #c2410c;  /* terracotta-rust */
 }
 
 /* ── 6. OLED-Schwarz ─────────────────────────────────────────────────────────*/
@@ -119,6 +164,15 @@
   --ss-text-dim:     #374151;
   --ss-border:        #1a1a1a;
   --ss-border-subtle: #0d0d0d;
+  /* Performance-Pad-Slot-Palette (TASK-119): extreme Akzente auf Schwarz */
+  --ss-pad-1: #00e5ff;  /* electric cyan */
+  --ss-pad-2: #ff00aa;  /* hot magenta */
+  --ss-pad-3: #00ff66;  /* radioactive green */
+  --ss-pad-4: #ff3030;  /* pure red */
+  --ss-pad-5: #ff9500;  /* glow orange */
+  --ss-pad-6: #ffeb3b;  /* glow yellow */
+  --ss-pad-7: #2979ff;  /* deep blue */
+  --ss-pad-8: #d500f9;  /* electric purple */
 }
 
 /* ── 7. Daylight (Helles Theme) ──────────────────────────────────────────────*/
@@ -135,6 +189,15 @@
   --ss-text-dim:     #94a3b8;
   --ss-border:        #e2e8f0;
   --ss-border-subtle: #f1f5f9;
+  /* Performance-Pad-Slot-Palette (TASK-119): weiche Pastell-Töne für helles Theme */
+  --ss-pad-1: #60a5fa;  /* pastel blue */
+  --ss-pad-2: #f9a8d4;  /* pastel pink */
+  --ss-pad-3: #86efac;  /* pastel green */
+  --ss-pad-4: #fca5a5;  /* pastel red */
+  --ss-pad-5: #fdba74;  /* pastel orange */
+  --ss-pad-6: #fde68a;  /* pastel yellow */
+  --ss-pad-7: #a5b4fc;  /* pastel indigo */
+  --ss-pad-8: #d8b4fe;  /* pastel violet */
 }
 
 /* ── 8. Paper (Warmes Helles Theme) ──────────────────────────────────────────*/
@@ -151,6 +214,15 @@
   --ss-text-dim:     #a8a29e;
   --ss-border:        #e7e5e4;
   --ss-border-subtle: #f5f5f4;
+  /* Performance-Pad-Slot-Palette (TASK-119): gedämpfte Erdtöne (sepia/olive/burgundy) */
+  --ss-pad-1: #b45309;  /* sepia amber */
+  --ss-pad-2: #65a30d;  /* olive */
+  --ss-pad-3: #b91c1c;  /* burgundy */
+  --ss-pad-4: #92400e;  /* rust */
+  --ss-pad-5: #ca8a04;  /* mustard */
+  --ss-pad-6: #047857;  /* forest green */
+  --ss-pad-7: #7c2d12;  /* dark red-brown */
+  --ss-pad-8: #78350f;  /* dark amber */
 }
 
 /* ── 9. Deuteranopia (Rot-Grün-Schwäche, Okabe-Ito Palette) ────────────────*/
@@ -167,6 +239,16 @@
   --ss-text-dim:     #555566;
   --ss-border:        #2a2a40;
   --ss-border-subtle: #1a1a28;
+  /* Performance-Pad-Slot-Palette (TASK-119): vollständige Okabe-Ito Palette
+     für Rot-Grün-Schwäche — alle 8 Farben sind sicher unterscheidbar. */
+  --ss-pad-1: #0072b2;  /* blau */
+  --ss-pad-2: #e69f00;  /* orange */
+  --ss-pad-3: #009e73;  /* blaugrün */
+  --ss-pad-4: #f0e442;  /* gelb */
+  --ss-pad-5: #56b4e9;  /* himmelblau */
+  --ss-pad-6: #d55e00;  /* zinnoberrot */
+  --ss-pad-7: #cc79a7;  /* rosa */
+  --ss-pad-8: #999999;  /* grau */
 }
 
 /* ── 10. Protanopia (Rot-Schwäche, hoher Kontrast) ──────────────────────────*/
@@ -183,6 +265,16 @@
   --ss-text-dim:     #888888;
   --ss-border:        #cccccc;
   --ss-border-subtle: #e0e0e0;
+  /* Performance-Pad-Slot-Palette (TASK-119): Okabe-Ito Palette für hellen Hintergrund
+     angepasst — dunklere/sattere Töne für Kontrast auf weiß. */
+  --ss-pad-1: #0072b2;  /* blau */
+  --ss-pad-2: #d55e00;  /* zinnoberrot */
+  --ss-pad-3: #009e73;  /* blaugrün */
+  --ss-pad-4: #a47200;  /* dunkles gelb (statt #f0e442, zu hell auf weiß) */
+  --ss-pad-5: #1e6091;  /* tiefes himmelblau (statt #56b4e9) */
+  --ss-pad-6: #b54a00;  /* dunkleres orange */
+  --ss-pad-7: #b8497e;  /* dunkleres rosa */
+  --ss-pad-8: #595959;  /* dunkleres grau */
 }
 
 /* ── Globale Stile ────────────────────────────────────────────────────────── */

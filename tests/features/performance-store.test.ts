@@ -39,6 +39,7 @@ const STORAGE_KEY = "ss-performance:v1";
 
 import {
   PAD_COUNT,
+  PAD_COLOR_VAR_NAMES,
   getPads,
   getQuantizeMode,
   getQueuedPatternId,
@@ -543,5 +544,128 @@ describe("usePerformanceStore — Type-Surface", () => {
     const p3: PerformancePad = { patternId: "c", label: "X" };
     const p4: PerformancePad = { patternId: "d", color: "#abc", label: "Y" };
     expect([p1, p2, p3, p4].every(p => typeof p.patternId === "string")).toBe(true);
+  });
+});
+
+// ─── TASK-119 / v1.22.0 — Theme-aware Pad-Default-Palette ────────────────────
+
+describe("usePerformanceStore — PAD_COLOR_VAR_NAMES (TASK-119)", () => {
+  it("exportiert genau 8 CSS-Variable-Namen", () => {
+    expect(PAD_COLOR_VAR_NAMES.length).toBe(8);
+  });
+
+  it("folgt dem Schema --ss-pad-1 .. --ss-pad-8 in korrekter Reihenfolge", () => {
+    for (let i = 0; i < 8; i++) {
+      expect(PAD_COLOR_VAR_NAMES[i]).toBe(`--ss-pad-${i + 1}`);
+    }
+  });
+
+  it("ist readonly (TypeScript-Surface) — Mutationen schlagen nicht in Persistenz durch", () => {
+    // Runtime kann nicht prüfen ob ein readonly-Cast wirklich eingehalten wird,
+    // aber wir verifizieren dass die Konstante NICHT in localStorage landet
+    // wenn man am Store herumdreht.
+    setPadAt(0, { patternId: "x", color: "#abcdef" });
+    const persisted = JSON.parse(localStorageMock._peek()[STORAGE_KEY] ?? "{}");
+    expect(persisted.padColorVarNames).toBeUndefined();
+    expect(persisted.pads[0].color).toBe("#abcdef"); // User-color unverändert
+  });
+});
+
+describe("usePerformanceStore — User-Color Persistence (TASK-119 Migration)", () => {
+  it("Pad mit altem hardcoded hex bleibt unverändert beim Load (kein Auto-Theme-Migration)", async () => {
+    // Simuliere: v1.20.x User hatte einen Pad mit hardcoded #22d3ee (cyan aus PAD_COLORS) gespeichert.
+    // TASK-119 darf das NICHT auf "--ss-pad-1" oder ähnlich umstellen — User-Choice respektieren.
+    const oldData = {
+      pads: [
+        { patternId: "p1", color: "#22d3ee", label: "Cyan-Pad" },
+        { patternId: "p2", color: "#a78bfa", label: "Violet-Pad" },
+        null,
+      ],
+      quantizeMode: "bar",
+    };
+    localStorageMock.setItem(STORAGE_KEY, JSON.stringify(oldData));
+
+    vi.resetModules();
+    const reloaded = await import("../../client/src/store/usePerformanceStore");
+    const pads = reloaded.getPads();
+    expect(pads[0]?.color).toBe("#22d3ee");
+    expect(pads[1]?.color).toBe("#a78bfa");
+    // Es darf KEIN var(...) oder CSS-Variable-Reference reingerutscht sein
+    expect(pads[0]?.color?.startsWith("var(")).toBe(false);
+    expect(pads[0]?.color?.startsWith("--")).toBe(false);
+  });
+
+  it("setPadColor mit hardcoded hex überschreibt bisherigen Wert", () => {
+    setPadAt(0, { patternId: "p1", color: "#22d3ee" });
+    setPadColor(0, "#ff0000");
+    expect(getPads()[0]?.color).toBe("#ff0000");
+  });
+});
+
+describe("getPadDefaultColor — Resolution via CSS-Variablen (TASK-119)", () => {
+  // Mock document.documentElement + getComputedStyle für den Lookup-Helper.
+  // Der Helper lebt in PatternLaunchPad.tsx (UI-Component), nicht im Store.
+  // Wir testen ihn hier per Re-Implementation des Algorithmus mit dem
+  // Store-Export PAD_COLOR_VAR_NAMES, um die Vertrags-Korrektheit zu sichern.
+  function makeGetPadDefaultColor(
+    cssLookup: (varName: string) => string,
+    fallbacks: readonly string[],
+  ) {
+    return (index: number): string => {
+      const slot = ((index % 8) + 8) % 8;
+      const fb = fallbacks[slot] ?? "#334155";
+      try {
+        const varName = PAD_COLOR_VAR_NAMES[slot] ?? `--ss-pad-${slot + 1}`;
+        const resolved = cssLookup(varName).trim();
+        return resolved || fb;
+      } catch {
+        return fb;
+      }
+    };
+  }
+
+  const FALLBACKS = [
+    "#22d3ee", "#a78bfa", "#34d399", "#f87171",
+    "#fb923c", "#facc15", "#60a5fa", "#e879f9",
+  ];
+
+  it("Slot-Mapping: index 0..15 → slot (index % 8) + 1", () => {
+    const lookup = vi.fn((name: string) => {
+      const m = name.match(/--ss-pad-(\d+)/);
+      return m ? `#slot${m[1]}` : "";
+    });
+    const getColor = makeGetPadDefaultColor(lookup, FALLBACKS);
+
+    // Erste Reihe (0..7) maps auf slot 1..8
+    expect(getColor(0)).toBe("#slot1");
+    expect(getColor(7)).toBe("#slot8");
+    // Zweite Reihe (8..15) wrappt auf slot 1..8
+    expect(getColor(8)).toBe("#slot1");
+    expect(getColor(15)).toBe("#slot8");
+  });
+
+  it("Fallback wenn CSS-Variable nicht aufgelöst werden kann (leerer String)", () => {
+    const lookup = (_: string) => "";
+    const getColor = makeGetPadDefaultColor(lookup, FALLBACKS);
+    // Erwartet Fallback aus der Palette (Index 0 → Slot 0 → cyan)
+    expect(getColor(0)).toBe("#22d3ee");
+    expect(getColor(7)).toBe("#e879f9");
+  });
+
+  it("Fallback wenn Lookup wirft (Exception-Path)", () => {
+    const lookup = (_: string): string => { throw new Error("boom"); };
+    const getColor = makeGetPadDefaultColor(lookup, FALLBACKS);
+    expect(getColor(3)).toBe("#f87171");
+  });
+
+  it("Negative + große Indizes klemmen via mod ohne Crash", () => {
+    const lookup = (name: string) => {
+      const m = name.match(/--ss-pad-(\d+)/);
+      return m ? `#slot${m[1]}` : "";
+    };
+    const getColor = makeGetPadDefaultColor(lookup, FALLBACKS);
+    expect(getColor(-1)).toBe("#slot8"); // wrap zurück
+    expect(getColor(16)).toBe("#slot1"); // wrap nach vorn
+    expect(getColor(100)).toBe("#slot5"); // 100 % 8 = 4 → slot 5
   });
 });

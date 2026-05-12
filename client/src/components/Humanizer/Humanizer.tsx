@@ -15,6 +15,12 @@ interface HumanizerProps {
 
 // ─── Slider-Komponente ────────────────────────────────────────────────────────
 
+/**
+ * Slider-Akzent. Semantische Token statt hardcodierter Tailwind-Paletten,
+ * damit der Slider mit jedem aktiven Theme korrekt einfärbt.
+ */
+type SliderAccent = "primary" | "secondary" | "success";
+
 interface SliderProps {
   label: string;
   value: number;
@@ -23,9 +29,21 @@ interface SliderProps {
   step: number;
   onChange: (value: number) => void;
   formatValue?: (v: number) => string;
-  color?: string;
+  accent?: SliderAccent;
   disabled?: boolean;
 }
+
+// Statische Klassen-Tabellen, damit Tailwind JIT die Klassen findet.
+const ACCENT_TEXT: Record<SliderAccent, string> = {
+  primary:   "text-accent-primary",
+  secondary: "text-accent-secondary",
+  success:   "text-accent-success",
+};
+const ACCENT_BG: Record<SliderAccent, string> = {
+  primary:   "bg-accent-primary",
+  secondary: "bg-accent-secondary",
+  success:   "bg-accent-success",
+};
 
 function HumanizerSlider({
   label,
@@ -35,7 +53,7 @@ function HumanizerSlider({
   step,
   onChange,
   formatValue,
-  color = "cyan",
+  accent = "primary",
   disabled = false,
 }: SliderProps) {
   const percentage = ((value - min) / (max - min)) * 100;
@@ -44,13 +62,13 @@ function HumanizerSlider({
     <div className={`flex flex-col gap-1 ${disabled ? "opacity-40" : ""}`}>
       <div className="flex items-center justify-between">
         <span className="text-[10px] text-text-dim uppercase tracking-wide">{label}</span>
-        <span className={`text-[10px] font-mono text-${color}-400`}>
+        <span className={`text-[10px] font-mono ${ACCENT_TEXT[accent]}`}>
           {formatValue ? formatValue(value) : value.toFixed(2)}
         </span>
       </div>
       <div className="relative h-1.5 bg-bg-elevated rounded-full">
         <div
-          className={`absolute left-0 top-0 h-full bg-${color}-500 rounded-full transition-all`}
+          className={`absolute left-0 top-0 h-full ${ACCENT_BG[accent]} rounded-full transition-all`}
           style={{ width: `${percentage}%` }}
         />
         <input
@@ -86,11 +104,11 @@ export function Humanizer({ humanizer, className = "" }: HumanizerProps) {
             "w-5 h-5 rounded border-2 flex items-center justify-center transition-colors",
             settings.enabled
               ? "bg-accent-primary border-accent-secondary"
-              : "bg-transparent border-border-color hover:border-slate-400",
+              : "bg-transparent border-border-color hover:border-text-muted",
           ].join(" ")}
           title="Humanizer ein/ausschalten"
         >
-          {settings.enabled && <span className="text-[8px] text-white">✓</span>}
+          {settings.enabled && <span className="text-[8px] text-bg-base">✓</span>}
         </button>
 
         <span className="text-xs font-bold text-text-muted uppercase tracking-widest">
@@ -136,7 +154,7 @@ export function Humanizer({ humanizer, className = "" }: HumanizerProps) {
                   className={[
                     "px-2 py-0.5 rounded text-[10px] transition-colors",
                     settings.preset === preset.name
-                      ? "bg-accent-primary/70 text-white"
+                      ? "bg-accent-primary/70 text-bg-base"
                       : "bg-bg-elevated text-text-dim hover:bg-bg-elevated hover:text-text-primary",
                   ].join(" ")}
                 >
@@ -181,7 +199,7 @@ export function Humanizer({ humanizer, className = "" }: HumanizerProps) {
               step={0.01}
               onChange={(v) => humanizer.updateGlobal({ swing: v })}
               formatValue={(v) => `${Math.round(50 + v * 50)}%`}
-              color="cyan"
+              accent="primary"
               disabled={!settings.enabled}
             />
             <HumanizerSlider
@@ -192,7 +210,7 @@ export function Humanizer({ humanizer, className = "" }: HumanizerProps) {
               step={0.01}
               onChange={(v) => humanizer.updateGlobal({ velocityJitter: v })}
               formatValue={(v) => `${Math.round(v * 100)}%`}
-              color="violet"
+              accent="secondary"
               disabled={!settings.enabled}
             />
             <HumanizerSlider
@@ -203,7 +221,7 @@ export function Humanizer({ humanizer, className = "" }: HumanizerProps) {
               step={0.5}
               onChange={(v) => humanizer.updateGlobal({ timingJitter: v })}
               formatValue={(v) => `${v.toFixed(1)}ms`}
-              color="emerald"
+              accent="success"
               disabled={!settings.enabled}
             />
           </div>
@@ -224,7 +242,7 @@ export function Humanizer({ humanizer, className = "" }: HumanizerProps) {
               ].join(" ")}
             >
               {settings.swingOnEvenSteps && (
-                <span className="text-[8px] text-white">✓</span>
+                <span className="text-[8px] text-bg-base">✓</span>
               )}
             </button>
             <span className="text-[10px] text-text-dim">

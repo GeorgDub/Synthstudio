@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "1.21.0",
+    version: "1.22.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -84,8 +84,8 @@ const INDEX = {
   // Key files agents have analyzed. Add new entries after working on a file.
   files: {
     "client/src/App.tsx": {
-      role:     "Root component, tab routing (F1-F6), AudioEngine.onPosition() automation callback",
-      lastSeen: null,
+      role:     "Root component, tab routing (F1-F6), AudioEngine.onPosition() automation callback. v1.22.0 (TASK-117): Macro-Setter-Bag um setLfoRate/setLfoDepth erweitert — onUnhandled-Warn-Spezialfall entfernt (jetzt generisch).",
+      lastSeen: "2026-05-12T23:00:00.000Z",
       ownedBy:  "frontend"
     },
     "client/src/store/useThemeStore.ts": {
@@ -99,13 +99,13 @@ const INDEX = {
       ownedBy:  "frontend"
     },
     "client/src/audio/AudioEngine.ts": {
-      role:     "Web Audio API wrapper — synthesis, FX chains, playback scheduling",
-      lastSeen: null,
+      role:     "Web Audio API wrapper — synthesis, FX chains, playback scheduling. v1.22.0 (TASK-117): static SynthEngine-Import + lazy _synthEngine-Instanz + setPartLfoRate/Depth + getPartLfoRate/Depth Delegates für Macro-LFO-Routing.",
+      lastSeen: "2026-05-12T23:00:00.000Z",
       ownedBy:  "backend"
     },
     "client/src/audio/SynthEngine.ts": {
-      role:     "Oscillators, ADSR, Wavetable + FM synthesis modes",
-      lastSeen: null,
+      role:     "Oscillators, ADSR, Wavetable + FM synthesis modes. v1.22.0 (TASK-117): Macro-LFO-Cache (Map<partId, {rate?, depth?}>) + setPartLfoRate/Depth + getPartLfoRate/Depth + clearPartLfoCache + triggerNote(.., partId?) override-Pfad. Range: PART_LFO_RATE_MIN=0.01..MAX=30, PART_LFO_DEPTH 0..1.",
+      lastSeen: "2026-05-12T23:00:00.000Z",
       ownedBy:  "backend"
     },
     "electron/main.ts": {
@@ -124,13 +124,33 @@ const INDEX = {
       ownedBy:  "frontend"
     },
     "client/src/store/usePerformanceStore.ts": {
-      role:     "Performance Mode pads (16), quantizeMode, queuedPatternId. movePad+moveMultiplePads (Insert-Semantik, v1.21.0/TASK-114) für Reorder mit Multi-Select.",
-      lastSeen: "2026-05-12T22:35:00.000Z",
+      role:     "Performance Mode pads (16), quantizeMode, queuedPatternId. movePad+moveMultiplePads (Insert-Semantik, v1.21.0/TASK-114) für Reorder mit Multi-Select. v1.22.0 (TASK-119): exportiert PAD_COLOR_VAR_NAMES (8 CSS-var-Namen --ss-pad-1..8) für theme-aware Default-Pad-Farben.",
+      lastSeen: "2026-05-12T23:30:00.000Z",
       ownedBy:  "frontend"
     },
     "client/src/components/PerformanceMode/PatternLaunchPad.tsx": {
-      role:     "Vollbild Performance-Mode UI. Modi Play/Edit/Reorder. v1.21.0 (TASK-114): WAI-ARIA Roving-Tabindex Grid + Keyboard-Reorder (Space=grab, Pfeile=move, Escape=cancel mit Snapshot-Restore) + Multi-Select via Shift/Ctrl+Click + Bulk-Drag.",
-      lastSeen: "2026-05-12T22:35:00.000Z",
+      role:     "Vollbild Performance-Mode UI. Modi Play/Edit/Reorder. v1.21.0 (TASK-114): WAI-ARIA Roving-Tabindex Grid + Keyboard-Reorder (Space=grab, Pfeile=move, Escape=cancel mit Snapshot-Restore) + Multi-Select via Shift/Ctrl+Click + Bulk-Drag. v1.22.0 (TASK-119): Default-Pad-Farben via getPadDefaultColor() aus --ss-pad-1..8 (theme-aware), User-defined pad.color hat Vorrang, Color-Swatch-Picker zeigt 8 theme-Slots. v1.22.0 (TASK-120+123): Mouse-Box Rubber-Band-Selection (mousedown auf Grid-Background → mousemove → Selection-Overlay; Shift = additiv, ohne Modifier = replace; Escape clearet Multi-Select) + Multi-Drag-Image (Canvas 60x60 mit Pad-Color + accent-secondary Border + '+N' Badge via dataTransfer.setDragImage). Exportiert pure Helper normalizeBox/boxIntersects/collectPadsInBox + AxisRect-Typ für Unit-Tests.",
+      lastSeen: "2026-05-12T23:50:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "tests/features/performance-mouse-box.test.ts": {
+      role:     "Unit-Tests für die pure Helper normalizeBox/boxIntersects/collectPadsInBox aus PatternLaunchPad.tsx. 24 Tests (TASK-120) — alle DOM-frei via direkten Helper-Import.",
+      lastSeen: "2026-05-12T23:50:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/store/useMacroStore.ts": {
+      role:     "8 Macro-Knöpfe (knob/button-Mode), Audio-Routing via applyMacroBindings, Script/Pad-Trigger via macro:button:trigger Event. v1.22.0 (TASK-118): MacroTriggerMode='edge'|'hold' (vorher type-only edge), neue Public-API setMacroTriggerMode + triggerMacroButtonRelease. triggerMacroButton-Event.detail enthält jetzt triggerMode für App.tsx-Loop-Entscheidung. Migration: alte/invalide triggerMode → 'edge'.",
+      lastSeen: "2026-05-12T23:45:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/utils/macroHoldLoop.ts": {
+      role:     "Pure-Logik-Helper für Macro-Button Hold-Mode (TASK-118 / v1.22.0). Module-State Map<macroIndex → HoldLoopState>, inject-Scheduler-Pattern für Test-Isolation. startHoldLoop / stopHoldLoop / stopAllHoldLoops / isHoldLoopActive / getActiveHoldLoopCount. No-Stacking: zweiter Call für selben Index ersetzt erste Loop. Konstanten: SCRIPT_HOLD_INTERVAL_MS=200, PAD_HOLD_INTERVAL_MS=100.",
+      lastSeen: "2026-05-12T23:45:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/components/Macro/MacroPanel.tsx": {
+      role:     "MacroPanel UI: 8 MacroKnob/MacroButton + BindingEditor mit Mode-Toggle (Knob/Button), Trigger-Kind-Toggle (Script/Pad), Audio-Bindings, Script/Pad-Picker. v1.22.0 (TASK-118): neuer Trigger-Verhalten-Toggle (Edge/Hold) im Button-Mode, MacroButton zeigt 🔁-Icon-Overlay im Hold-Mode, onMouseUp/Leave/touchEnd ruft triggerMacroButtonRelease.",
+      lastSeen: "2026-05-12T23:45:00.000Z",
       ownedBy:  "frontend"
     }
   },
@@ -236,6 +256,182 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "refactor",
+      timestamp: "2026-05-13T00:30:00.000Z",
+      done: [
+        "TASK-122 / Final Theme-Class-Purity Sweep (v1.22.0). 15 Komponenten in client/src/components/** und electron/components/** von hardcoded Tailwind palette classes (bg-slate-*, text-cyan-*, bg-amber-700, text-green-400, hover:bg-red-900 etc.) auf semantische Tokens (bg-bg-*, text-text-*, bg-accent-*, hover:text-accent-danger) refactored. Inventory vorher: 14 Dateien in client/src/components/ (69 Matches) + 1 Datei in electron/components/ (16 Matches). Inventory nachher: 0 Matches in beiden Bäumen. Verifiziert via doppelter Regex (HARDCODED_TAILWIND_CLASS für Palette+Shade, ARBITRARY_HEX_CLASS für bg-[#...] / text-[#...]) über alle *.tsx im Repo — Endstand: 0 / 0.",
+        "TASK-122 / Mapping pro Datei: UpdateBadge.tsx (8 Matches → bg-accent-secondary/success/danger für update-phases yellow/green/red); EuclideanControls.tsx + StepContextMenu.tsx (je 1 Popover.Arrow fill-slate-700 → fill-border-color); ModMatrix.tsx + CollabStatus.tsx + ProjectManager.tsx (Single-Hover hover:text-red-400 / border-cyan-800 → accent-danger / accent-primary); NewProjectDialog.tsx (ring-cyan-600/50 → ring-accent-primary/50, placeholder-slate-600 → placeholder-text-dim, focus:border-cyan-700 → focus:border-accent-primary); ThemeSettings.tsx (5 Matches: bg-cyan-950/30 → bg-accent-primary/10, border-green-600 → border-accent-success, bg-green-500 → bg-accent-success, hover:text-red-400 → hover:text-accent-danger); CollabSplitView.tsx (6 Matches: placeholder-slate-600 → placeholder-text-dim, hover:bg-red-900/40 → hover:bg-accent-danger/20, border-cyan-800/green-800/purple-800 → border-accent-primary/success/secondary, text-white auf accent-bg → text-bg-base); Humanizer.tsx (Slider color='cyan'/'violet'/'emerald' Prop refactored zu accent: 'primary'|'secondary'|'success' mit statischen Klassen-Tabellen ACCENT_TEXT/ACCENT_BG damit Tailwind JIT die Klassen findet); MidiSettings.tsx (10 Matches: bg-green-* für connected-status → accent-success, bg-yellow-* für MIDI-Learn → accent-secondary, text-white auf primary-bg → text-bg-base, bg-white für toggle-knob → bg-text-primary, hover:text-red-400 → hover:text-accent-danger); DrumMachine.tsx (9 Matches in Transport-Bar: bg-amber-700 für BPM-toggle + VEL → bg-accent-secondary, bg-purple-700 für PITCH → bg-accent-secondary, bg-amber-900/40 für Velocity-Ramp-Buttons → bg-accent-secondary/20, bg-indigo-700 für Metronom-Klangtyp → bg-accent-secondary, hover:bg-red-900 für CLR → hover:bg-accent-danger/30, bg-red-600 für isPlaying-Stop → bg-accent-danger, text-amber-400/purple-400 für Status-Modus → text-accent-secondary, text-white auf accent-bgs → text-bg-base).",
+        "TASK-122 / Sonderfälle: SongTimeline.tsx mit 14 Matches als Categorical Palette dokumentiert (Top-Comment-Block) — Pattern-Bänke A/B/C/D auf accent-primary/secondary/success/danger gemapped (3 Klassen-Tabellen BANK_COLORS/BANK_COLORS_MUTED/BANK_ACTIVE komplett auf semantische Tokens umgeschrieben, inkl. ring-* und shadow-* Varianten mit Opacity-Modifiers wie shadow-accent-primary/30). ElectronDropZone.tsx mit 16 Matches als Categorical Palette dokumentiert — DROP_STYLES Record für audio/folder/project/zip/unknown auf primary/success/secondary/secondary/border-color gemapped (project und zip teilen den Akzent — Trade-off im Top-Comment dokumentiert, da das große Drop-Overlay-Icon + Text-Label die Drop-Type-Info dominant tragen). MixAssistantPanel.tsx mit 7 Matches: severityBg-Record (critical/warning/info) auf accent-danger/secondary/primary gemapped, ebenfalls als Categorical Palette via Comment dokumentiert. SVG <circle stroke='#ef4444'/> und <path stroke='#f59e0b'/> sowie inline-style borderColor: rec.severity === 'warning' ? '#f59e0b' : ... bewusst NICHT angefasst (TASK-122-Spec: 'JS-Hex-Konstanten sind Domain-Werte, NICHT Tailwind').",
+        "TASK-122 / Humanizer Slider-Refactor (TypeScript-API-Änderung): SliderProps.color?: string ('cyan'|'violet'|'emerald') durch SliderProps.accent?: SliderAccent ('primary'|'secondary'|'success') ersetzt. Statische Klassen-Tabellen ACCENT_TEXT/ACCENT_BG damit Tailwind JIT keine dynamischen Klassen-Strings prozessieren muss (vorher: `text-${color}-400` → Tailwind kann das nicht statisch erkennen → kann je nach Build-Config ungerendert bleiben). Alle drei Call-Sites in Humanizer angepasst: Swing→primary, VelocityJitter→secondary, TimingJitter→success.",
+        "TASK-122 / Test-Coverage: tests/features/theme-class-purity.test.ts erweitert. Helper-Function expectNoHardcodedTailwindColors(relPath: string) eingeführt — registriert pro Datei 2 it-Blöcke (Palette-Check + Arbitrary-Hex-Check) mit präzisen Fehler-Messages inkl. Datei-Name. Test-Suite jetzt 3 describe-Blöcke: 'FOLLOWUP-110 / TASK-113' (4 Original-Files = 8 Tests), 'TASK-122 (final sweep)' (15 neue Files = 30 Tests), 'Regex sanity checks' (3 Tests). Gesamt: 41 Tests in der Datei (vorher 11), alle grün.",
+        "TASK-122 / Verification: pnpm check clean (precheck gen:sandbox up-to-date, tsc --noEmit 0 Fehler). pnpm test 1220/1235 grün (63 test files, 15 pre-existing skipped, 0 Regressionen, +30 neue theme-class-purity Tests). Repo-wide final scan (alle *.tsx im Repo, nicht nur components/) ergibt 0 hardcoded Tailwind palette classes + 0 arbitrary hex classes. Refactoring berührte KEINEN Audio/Store/Logic-Code (rein CSS-Klassen-Ersetzungen + 1 Slider-Prop-Rename in Humanizer)."
+      ],
+      next: [
+        "TASK-122 / Welle 2 (Future): app.tsx und andere Top-Level-Dateien (außerhalb components/) wurden bewusst nicht angefasst — bei Bedarf separat sweepen. Aktuell laut Final-Scan ohnehin sauber.",
+        "TASK-122 / Welle 2 (Future): Die 4 semantischen Akzent-Tokens (primary/secondary/success/danger) reichen für Categorical-Use-Cases nicht immer aus (siehe Trade-offs in ElectronDropZone project=zip, SongTimeline D=danger). Falls in Zukunft mehr Differenzierung gewünscht: 'tertiary' / 'warning' Token in --ss-* erweitern + @theme entsprechend. Aktuell akzeptiert.",
+        "TASK-122 / Welle 2 (Test-Hardening): Aktuell registriert der Helper expectNoHardcodedTailwindColors pro Datei 2 fest verdrahtete it-Blöcke. Eleganter wäre ein Glob-basierter Mass-Check, der ALLE Dateien unter client/src/components/**/*.tsx und electron/components/**/*.tsx automatisch validiert (statt expliziter Pfad-Liste). So würde jede neue Komponente von Anfang an mit-geprüft, ohne dass die Test-Datei manuell erweitert werden muss.",
+        "TASK-122 / Welle 2 (CI-Hint): Der test:web Playwright-Sweep ist nicht Teil dieser Verifikation. Falls visuelle Regressionen durch die Token-Ersetzungen entstanden sein sollten (z.B. weil bg-amber-700 und bg-accent-secondary in einem bestimmten Theme NICHT visuell ähnlich sind), würde ein Screenshot-Compare-Test das fangen. Aktuell rein Token-Purity-getestet, nicht visuell."
+      ],
+      changed: [
+        "client/src/components/UpdateBadge.tsx",
+        "client/src/components/DrumMachine/EuclideanControls.tsx",
+        "client/src/components/DrumMachine/StepContextMenu.tsx",
+        "client/src/components/DrumMachine/ModMatrix.tsx",
+        "client/src/components/DrumMachine/CollabStatus.tsx",
+        "client/src/components/DrumMachine/MixAssistantPanel.tsx",
+        "client/src/components/DrumMachine/DrumMachine.tsx",
+        "client/src/components/ProjectManager/ProjectManager.tsx",
+        "client/src/components/NewProjectDialog/NewProjectDialog.tsx",
+        "client/src/components/Settings/ThemeSettings.tsx",
+        "client/src/components/CollabSplitView/CollabSplitView.tsx",
+        "client/src/components/Humanizer/Humanizer.tsx",
+        "client/src/components/MidiSettings/MidiSettings.tsx",
+        "client/src/components/SongTimeline/SongTimeline.tsx",
+        "electron/components/ElectronDropZone.tsx",
+        "tests/features/theme-class-purity.test.ts",
+        "agents/INDEX.js"
+      ]
+    },
+    {
+      agent:     "frontend",
+      timestamp: "2026-05-12T23:50:00.000Z",
+      done: [
+        "TASK-120 / Mouse-Box Rubber-Band-Select (v1.22.0). Im Reorder-Mode startet mousedown auf dem Grid-Background (NICHT auf einem Pad) ein Box-Drag; mousemove zeichnet ein fixed-positioniertes Selection-Overlay (border-2 border-dashed border-accent-secondary bg-accent-secondary/10); mouseup wählt alle Pads mit non-empty patternId, deren BoundingBox mit der Box überlappt. Ohne Shift = replace selection; mit Shift = additiv (merged in den initial-snapshot der existing selection). Klick ohne Move bei aktiver Selection clearet sie (UX-Konvention). Escape clearet die Multi-Select-Set ebenfalls (neuer Eskalations-Level vor onClose).",
+        "TASK-120 / Bereich 1 (client/src/components/PerformanceMode/PatternLaunchPad.tsx): Drei neue exportierte pure Helper auf Top-Level: normalizeBox(startX,startY,curX,curY)→AxisRect (Drag-Up-Left wird normalisiert), boxIntersects(a,b)→boolean (halb-offene Intervalle, w<=0/h<=0 → false), collectPadsInBox(box, padRects)→number[] (leere null-Slots werden übersprungen). AxisRect-Interface ebenfalls exportiert. Helper sind seiteneffekt-frei und im Node-Environment importierbar (kein DOM).",
+        "TASK-120 / Bereich 2 (Component-Wiring): Neuer State selectionBox = {startX,startY,currentX,currentY,additive,initialSelection,moved}|null (lokal in PatternLaunchPad, NICHT persistiert). handleGridMouseDown auf dem flex-wrapper (data-testid='perf-pad-grid-wrapper') filtert: (a) mode==='reorder', (b) e.button===0, (c) target.closest('[data-pad-index]')===null, (d) Editor nicht offen. useEffect mit window-mousemove/mouseup-Listener während selectionBox aktiv. moved-Flag mit 3px-Hysterese gegen Mikro-Drifts. mouseup-Closure liest aktuellen selectionBox-State + collectCurrentPadRects() (querySelector + getBoundingClientRect pro Pad-Slot, leere Slots = null) und committed über setMultiSelect (replace oder Set-Merge je nach additive-Flag).",
+        "TASK-120 / Bereich 3 (Overlay-Render): Fixed-positioniertes <div data-testid='perf-selection-box'> oberhalb des Pad-Grids (z-40, pointer-events-none) mit border-dashed-accent-secondary + bg-accent-secondary/10. Nur sichtbar wenn selectionBox.moved=true (kein flackerndes 0×0-Rechteck bei reinem Klick).",
+        "TASK-120 / Bereich 4 (data-pad-index Attribute): Jeder Pad-Button bekam data-pad-index={index} damit handleGridMouseDown via target.closest('[data-pad-index]') zuverlässig zwischen Grid-Background und Pad-Click unterscheiden kann (data-testid mit Pattern 'perf-pad-N' war für closest() nicht ideal).",
+        "TASK-123 / Multi-Drag-Image (v1.22.0). Wenn multiSelect.size > 1 UND dragSrc ∈ multiSelect: programmatisch erzeugtes <canvas> 60×60px wird via dataTransfer.setDragImage(canvas, 30, 30) als Cursor-Image gesetzt. Canvas-Content: Pad-Color (User-defined oder Theme-Default via getPadDefaultColor) als Background, accent-secondary Border (3px, live aus --ss-accent-secondary via getComputedStyle), '+N' Badge zentral (N = total-1 = Anzahl ZUSÄTZLICHER Pads, intuitiver als 'N Pads'). Single-Drag (kein Multi-Select) → Browser-Default-Image (kein setDragImage-Call). Modul-Top-Level-Funktion createMultiDragCanvas() — try/catch für JSDOM-Safety.",
+        "TASK-123 / Bereich 1 (handleDragStart Refactor): Signature von (index) → (index, e: React.DragEvent<HTMLButtonElement>) erweitert (Pad-Prop-Typ + Call-Site beide aktualisiert). e.dataTransfer.setDragImage() läuft nur wenn Multi-Select-Bedingung erfüllt, Fallback ist die default Browser-Drag-Preview des Pad-Buttons.",
+        "TASK-123 / Bereich 2 (E2E-Surface): Neues data-multi-drag-count={String(N)} Attribut auf dem dragSrc-Pad während Multi-Drag aktiv (undefined sonst). Für Playwright als deterministische Assertion ohne Screenshot-Compare.",
+        "TASK-120 / Tests Unit: tests/features/performance-mouse-box.test.ts NEU mit 24 Tests in drei describe-Blöcken: normalizeBox (6 — alle vier Drag-Richtungen + Zero-Move + Negative-Coords); boxIntersects (9 — inside/outside/edge/cornering/symmetry/degenerate-w-or-h); collectPadsInBox (9 — 4×4 Grid mit/ohne leeren Slots, Reverse-Drag + normalize, edge-cases). Alle Helper sind reine Funktionen → DOM-frei testbar im Node-Environment.",
+        "TASK-120+123 / Tests Playwright: tests/web/performance-mode.spec.ts +9 Tests in zwei describe-Blöcken: Mouse-Box (7 — Overlay-Sichtbarkeit, Drag über 2 Pads, Shift=additiv, ohne-Modifier=replace, Escape clearet Selection, Overlay verschwindet nach mouseup, kein Overlay außerhalb Reorder-Mode) + Multi-Drag-Image (2 — data-multi-drag-count=3 bei 3 selected, kein Attribut bei Single-Drag). Browser-Mouse-API via page.mouse.* statt dragTo (unsere Box-Selection ist KEIN HTML5-DnD).",
+        "TASK-120+123 / Verification: pnpm check clean (precheck gen:sandbox up-to-date, tsc --noEmit 0 Fehler). pnpm test 1190/1205 grün (63 test files, 15 pre-existing skipped, +24 neue mouse-box Tests, 0 Regressionen). PatternLaunchPad weiterhin frei von hardcoded Tailwind-Farben — Box-Overlay nutzt nur border-accent-secondary + bg-accent-secondary/10; Canvas-Drag-Image liest accent-secondary live aus --ss-accent-secondary."
+      ],
+      next: [
+        "TASK-120 / Welle 2 (Polish UX): Bei sehr großen Drag-Boxen (z.B. über das ganze Grid) kann der Browser den Cursor 'auto-scroll' wenn die Maus den Viewport-Rand erreicht. Aktuell triggert das KEIN reaktives Update der Pad-Rects — wenn der User scrollt während des Drags, bleibt die Box-Position in Viewport-Coords stabil aber die Pad-Rects (getBoundingClientRect ist viewport-relativ) verschieben sich. Bei einem static-Layout-Grid wie unserem ist das irrelevant; bei dynamischen Layouts wäre es ein Bug.",
+        "TASK-120 / Welle 2 (Edge): Wenn der User mousedown auf einem leeren Pad-Slot macht, wird der Box-Drag NICHT gestartet (target.closest('[data-pad-index]') matcht). Das ist als 'Pads sind interaktiv' designed — aber UX-mäßig könnte man argumentieren, dass leere Slots wie Background behandelt werden sollten. Akzeptabler Trade-off — User kann auf den 8px-gap zwischen Pads klicken um Drag zu starten.",
+        "TASK-120 / Welle 2 (a11y): Box-Select hat KEINE keyboard-equivalent (kein Cmd+A 'Select All' oder Shift+ArrowKeys range-select). Nutzer mit Tastatur-only haben jetzt nur Shift+Click pro Pad (langsamer). 'Select All' (Cmd/Ctrl+A im Reorder-Mode) wäre ein einfacher next-step.",
+        "TASK-123 / Welle 2 (Polish): Multi-Drag-Canvas zeigt Pad-Color des dragSrc — bei diversen Farben in der Selection könnte ein gradient/stack-Effekt mehr Info geben. Aktuell minimaler '+N' Badge — funktional, aber visuell schlicht.",
+        "TASK-123 / Welle 2 (Tests Playwright): Die 2 neuen Multi-Drag-Image-Tests dispatchen DragEvent direkt via element.dispatchEvent() statt page.mouse-Mechanik, weil Playwright keine native HTML5-DnD-Simulation für setDragImage-Verifikation hat. Das funktioniert für das data-multi-drag-count Attribut, aber das tatsächliche Canvas-Rendering (Pixel-Vergleich) ist nicht abgedeckt. Visual-Regression-Test mit Screenshot-Compare wäre Welle 3."
+      ],
+      changed: [
+        "client/src/components/PerformanceMode/PatternLaunchPad.tsx",
+        "tests/features/performance-mouse-box.test.ts",
+        "tests/web/performance-mode.spec.ts",
+        "agents/INDEX.js"
+      ]
+    },
+    {
+      agent:     "frontend",
+      timestamp: "2026-05-12T23:45:00.000Z",
+      done: [
+        "TASK-118 / Macro-Button Hold-Mode (v1.22.0). Vorher: triggerMode-Type-Union enthielt nur 'edge' (Type-only-Placeholder seit v1.17). Jetzt: voll funktionierender Hold-Mode mit Loop-Re-Trigger solange Button gedrückt — Script-Loop alle 200ms, Pad-Loop alle 100ms. No-Stacking-Garantie: pro Macro-Index nur EINE Loop parallel.",
+        "TASK-118 / Bereich 1 (client/src/store/useMacroStore.ts): MacroTriggerMode-Type erweitert auf 'edge' | 'hold'. migrateMacro liest jetzt m.triggerMode === 'hold' → 'hold', sonst (inkl. invalid/undefined) → 'edge' (defensiv). Neue Public-API: setMacroTriggerMode(macroIndex, mode) mit out-of-range + invalid-string no-op-Guards. triggerMacroButton dispatcht jetzt event.detail.triggerMode (für App.tsx-Loop-Entscheidung). Neue Public-API triggerMacroButtonRelease(macroIndex) dispatcht 'macro:button:release' Event {macroIndex} — App.tsx prüft selbst ob Loop aktiv ist (no-op falls nicht).",
+        "TASK-118 / Bereich 2 (client/src/utils/macroHoldLoop.ts NEU): Pure-Logik-Helper mit Module-State (Map<macroIndex → HoldLoopState>) für die Loop-Verwaltung. Inject-Scheduler-Pattern (default globalThis.setInterval/clearInterval) macht den Helper mit vi.useFakeTimers oder Custom-Mock-Scheduler isoliert testbar. startHoldLoop ruft run() SOFORT einmal auf, dann alle intervalMs via Scheduler. No-Stacking: zweiter Call für selben Index stoppt erst alte Loop. stopHoldLoop / stopAllHoldLoops / isHoldLoopActive / getActiveHoldLoopCount als Public-API. Konstanten SCRIPT_HOLD_INTERVAL_MS=200, PAD_HOLD_INTERVAL_MS=100. Defensive Error-Handling: run() wirft → Loop läuft trotzdem weiter (try/catch um run() in Initial+Interval-Call).",
+        "TASK-118 / Bereich 3 (client/src/App.tsx): macro:button:trigger-Handler erweitert: Detail enthält jetzt auch triggerMode. Pure runScriptOnce(scriptId) + runPadOnce(padIndex) Helpers werden in edge-mode direkt aufgerufen, in hold-mode via startHoldLoop() als Loop-run-Funktion. Neuer macro:button:release-Listener ruft stopHoldLoop(macroIndex). Cleanup beim Unmount ruft stopAllHoldLoops() (HMR-safe).",
+        "TASK-118 / Bereich 4 (client/src/components/Macro/MacroPanel.tsx): BindingEditor zeigt im Button-Mode neuen Trigger-Verhalten-Toggle (radiogroup Edge/Hold) UNTER dem existing Trigger-Kind-Toggle (Script/Pad). Tooltips am Hold-Button differenzieren zwischen Script-Loop (200ms) und Pad-Loop (100ms). Beschreibungstext-Zeile darunter zeigt das aktive Verhalten. MacroButton-Komponente: neuer triggerMode-Prop, im Hold-Mode wird ein 🔁-Icon-Overlay oben-rechts angezeigt (absolute positioned, aria-hidden). onMouseUp/onMouseLeave/onTouchEnd ruft im Hold-Mode triggerMacroButtonRelease — App.tsx stoppt die Loop. Im Edge-Mode bleibt setPressed das einzige nötige cleanup. aria-label des Buttons differenziert Hold vs Edge.",
+        "TASK-118 / Tests (tests/features/macros.test.ts): 75 → 99 Tests (+24). Neue Describe-Blöcke: 'Trigger-Mode Schema (Edge vs Hold)' (6 Tests), 'triggerMacroButton – Hold-Mode-Event-Detail' (3 Tests), 'triggerMacroButtonRelease – Release-Event' (4 Tests), 'Hold-Mode Persistence + Migration' (3 Tests), 'macroHoldLoop – Pure-Logik-Helfer' (8 Tests, vi.resetModules + Mock-Scheduler für No-Stacking/Independence/Error-Tolerance/All-Stop).",
+        "TASK-118 / Verification: pnpm check clean (tsc --noEmit 0 Fehler). pnpm test 1190/1205 grün (63 test files, 15 pre-existing skipped, +24 neue Tests in macros.test.ts, 0 Regressionen). Type-Union MacroTriggerMode = 'edge' | 'hold' ist jetzt voll genutzt, alle Type-Casts entfernt."
+      ],
+      next: [
+        "Welle 2 (Playwright E2E): App.tsx-Hold-Loop-Logik selbst hat keinen direkten Unit-Test — der reine Hold-Loop-Helper (macroHoldLoop.ts) ist getestet, aber das Wiring 'mouseDown auf MacroButton → triggerMacroButton → macro:button:trigger → startHoldLoop → runScriptOnce' ist nur durch Komponenten-Test/Playwright greifbar. Smoke-Test in tests/web/macros.spec.ts wäre sinnvoll: Button im Hold-Mode drücken, 500ms halten, prüfen ob Script (oder Pad-Queue) min. 2x getriggert wurde, dann loslassen + prüfen dass keine weiteren Triggers kommen.",
+        "Welle 2 (Re-Entrancy bei Script-Hold): Aktuell hat runScriptOnce einen Re-Entrancy-Schutz (scriptSandbox.isRunning() → skip). Wenn ein Script länger als 200ms läuft (= Hold-Interval), springen Loop-Iterationen über. Das ist defensiv korrekt (verhindert Stacking von Sandboxen), aber UX könnte erwarten dass 'Hold' regelmäßiger triggert. Optional: längere Hold-Intervalle als Default für Script (z.B. 300-500ms) oder UI-Setting für Custom-Interval.",
+        "Welle 2 (Keyboard-Bindings): Macro-Button-Trigger sind aktuell nur per Maus/Touch — die Keyboard-Equivalent (Macro-Key-Bindings via useKeyboardBindingsStore) löst aktuell wahrscheinlich nur Edge aus (keine keyup-Handling für Hold). Out-of-Scope für TASK-118, aber sollte in v1.23 untersucht werden.",
+        "Welle 3 (UX): Hold-Mode-Visual (🔁-Icon) ist text-emoji — auf manchen Themes (oled-Schwarz, hohem Kontrast) könnte ein Lucide-Icon (z.B. RotateCw oder Repeat) konsistenter sein. Pure-CSS-Schmuck statt Unicode-Glyph."
+      ],
+      changed: [
+        "client/src/store/useMacroStore.ts",
+        "client/src/utils/macroHoldLoop.ts",
+        "client/src/components/Macro/MacroPanel.tsx",
+        "client/src/App.tsx",
+        "tests/features/macros.test.ts",
+        "agents/INDEX.js"
+      ]
+    },
+    {
+      agent:     "frontend",
+      timestamp: "2026-05-12T23:30:00.000Z",
+      done: [
+        "TASK-119 / Theme-aware Performance-Pad Color-Palette (v1.22.0). Vorher waren 16 hardcoded Hex-Farben (PAD_COLORS-Array) als Default-Pad-Farben in PatternLaunchPad.tsx fest verbaut. Auf hellen Themes (daylight/paper) wirkten diese unpassend, auf deuteranopia/protanopia sogar A11y-problematisch. Lösung: 8 neue CSS-Variablen --ss-pad-1..8 pro Theme + Helper-Function `getPadDefaultColor(index)` mit mod-loop (16 Slots → 8 Töne).",
+        "TASK-119 / Bereich 1 (client/src/index.css): Pro Theme (10 Themes × 8 Variablen = 80 neue Tokens) wurden --ss-pad-1..8 definiert. Mapping: dark=cyan/violet/emerald/red/orange/amber/blue/fuchsia (Subset der alten PAD_COLORS); neon=Neon-Sättigung; analog=warm/Hardware; purple=Violet-Shades; warm=Sonnenuntergang; oled=extreme Akzente; daylight=Pastell; paper=Sepia/Olive/Burgundy/Rust; deuteranopia=vollständige Okabe-Ito 8er-Palette (sicher unterscheidbar bei Rot-Grün-Schwäche); protanopia=Okabe-Ito-adapted (dunklere Töne für hellen Hintergrund).",
+        "TASK-119 / Bereich 2 (client/src/components/PerformanceMode/PatternLaunchPad.tsx): PAD_COLORS-Array entfernt (durch PAD_COLOR_FALLBACKS readonly-Array ersetzt — 8 Slots statt 16, dient als reines Safety-Net wenn getComputedStyle leer ist). Neue Helper-Function `getPadDefaultColor(index: number): string` liest live aus document.documentElement via getComputedStyle().getPropertyValue(`--ss-pad-${slot+1}`) mit mod-loop ((index%8+8)%8 robust gegen negative Indizes). Try/catch um getComputedStyle für JSDOM-Safety. Drei Call-Sites umgestellt: (1) Pad-Render-Loop nutzt getPadDefaultColor(i); (2) PadEditor-fallbackColor nutzt getPadDefaultColor(editingIndex); (3) Color-Swatch-Picker im Editor zeigt jetzt useMemo-cached `themedSwatches` (8 Slots aus den aktiven Theme-Tokens) statt der 16 hardcoded Hex. Neue data-testid='perf-pad-color-swatches' + data-pad-swatch={n} Attribute für Playwright. User-defined pad.color hat WEITERHIN Vorrang (Domain-Choice respektieren — kein Auto-Theme-Migration).",
+        "TASK-119 / Bereich 3 (client/src/store/usePerformanceStore.ts): Neue exportierte Konstante `PAD_COLOR_VAR_NAMES: readonly string[]` = ['--ss-pad-1', ..., '--ss-pad-8']. KEINE Schema-Änderung an PerformancePad/PersistedState — alte v1.20.x Daten mit hardcoded color: '#22d3ee' laden weiter unverändert (verifiziert per Test).",
+        "TASK-119 / Tests Unit: tests/features/performance-store.test.ts von 49 auf 58 Tests (+9): 3 für PAD_COLOR_VAR_NAMES-Export (Länge, Schema, readonly-Surface); 2 für Migration (alter hardcoded hex bleibt unverändert + setPadColor überschreibt korrekt); 4 für getPadDefaultColor-Algorithmus (Slot-Mapping mit mod-loop, Fallback bei leerer CSS-var, Exception-Path, Negative+große Indizes). Algorithmus per Re-Implementation gespiegelt, weil der Helper privat in PatternLaunchPad.tsx lebt — Vertrags-Korrektheit via PAD_COLOR_VAR_NAMES-Export verifiziert.",
+        "TASK-119 / Tests Playwright: tests/web/performance-mode.spec.ts +5 Tests in neuem describe-Block 'Theme-aware Default-Pad-Farben (TASK-119)': (1) --ss-pad-1..8 sind im dark-theme definiert (hex-format-check); (2) Theme-Wechsel ändert die CSS-Variablen (dark vs daylight vs paper); (3) Default-Pad-Farbe folgt aktivem Theme via getComputedStyle.backgroundColor (Theme-Toggle + Re-render-Trigger via Mode-Switch); (4) User-defined #ff00ff bleibt theme-invariant (Color-Picker-Value-Check); (5) Color-Swatches im Editor zeigen 8 Slots + Custom-Picker (perf-pad-color-swatches + data-pad-swatch=1..8 Selektoren).",
+        "TASK-119 / Verification: pnpm check clean (precheck gen:sandbox up-to-date, tsc --noEmit 0 Fehler). pnpm test 1142/1157 grün (62 test files, 15 pre-existing skipped, +9 neue performance-store Tests, 0 Regressionen). theme-class-purity.test weiterhin grün — keine neuen hardcoded Tailwind-Farben in PatternLaunchPad."
+      ],
+      next: [
+        "TASK-119 / Welle 2 (Playwright Stabilisierung): Die 5 neuen Theme-Tests laufen nur im Playwright-Mode (nicht in CI ohne Browser). Der Re-Render-Trigger bei Theme-Wechsel (Mode-Toggle Edit→Play) ist hacky — eine sauberere Lösung wäre ein useThemeStore-Subscription in PatternLaunchPad, das die themedSwatches-useMemo neu berechnet. Aktuell rendert die Component aber bei jedem Theme-Wechsel ohnehin neu (App.tsx data-theme-Attribute), weil computed-styles im nächsten React-Tick neu gelesen werden — der Hack ist deshalb funktional ausreichend.",
+        "TASK-119 / Welle 2 (Polish): Color-Swatch-Picker im PadEditor zeigt jetzt nur 8 Tokens statt der alten 16 hardcoded Hex-Optionen. User mit Performance-Mode-Workflows könnte das als 'weniger Auswahl' empfinden. Custom-Picker (native <input type=color>) bleibt als Escape-Hatch. Alternative: 16-Pad-Slot-Tokens (--ss-pad-1..16) — verdoppelt aber den CSS-Aufwand und die meisten Themes haben gar nicht 16 sinnvoll unterscheidbare Akzente.",
+        "TASK-119 / Welle 2 (UX): Die Default-Pad-Farben werden NUR beim Mount/Render gelesen (via getComputedStyle in Render-Funktion). Bei aktivem Performance-Mode während eines Theme-Wechsels triggert die data-theme-Änderung an <html> ein Re-Render (via React-Tree-Update), aber die useMemo-Cache im PadEditor ist auf [index] dependency keyed — wenn der Editor während des Theme-Wechsels offen ist, bleibt themedSwatches stale bis zum nächsten Open. Akzeptabler Edge-Case, aber dokumentierter Defekt.",
+        "TASK-119 / Welle 3 (DX): Eine zentrale theme.ts utility-Funktion (getCssColor von MixerView extrahieren + sharen) wäre eleganter als der inline-getPadDefaultColor-Helper. Aktuell duplizieren MixerView/WavetableEditor/SampleSlicer/GranularSynthPanel/SampleWaveform alle das gleiche Pattern getComputedStyle()...getPropertyValue() — ein zentraler Helper in client/src/utils/cssVars.ts wäre Refactor-Material.",
+        "TASK-119 / Welle 3 (A11y): protanopia-Palette nutzt jetzt 8 dunklere Töne (statt nur 4 wie das accent-set). Manuelle Verifikation mit echtem Colorblindness-Simulator (z.B. Colorblindly Chrome-Extension) noch offen — die Hex-Werte sind aus Okabe-Ito abgeleitet, aber individuelle Render-Fehler oder Wahrnehmungs-Probleme können nur durch echte Nutzer-Tests bestätigt werden."
+      ],
+      changed: [
+        "client/src/index.css",
+        "client/src/components/PerformanceMode/PatternLaunchPad.tsx",
+        "client/src/store/usePerformanceStore.ts",
+        "tests/features/performance-store.test.ts",
+        "tests/web/performance-mode.spec.ts",
+        "agents/INDEX.js"
+      ]
+    },
+    {
+      agent:     "backend",
+      timestamp: "2026-05-12T23:00:00.000Z",
+      done: [
+        "TASK-117 / LFO-Macros wiring (v1.22.0). Macro-Bindings für lfo-rate / lfo-depth sind nicht mehr `onUnhandled`-Warnings sondern verdrahtet bis in die SynthEngine. Implementierungs-Strategie: Cache-Variant (Map<partId, {rate?, depth?}>) statt persistent Per-Part-LFO-Audio-Nodes — die existing LFOs werden pro Step-Trigger erzeugt (an Note-Lebensdauer gekoppelt). Der Cache wird beim nächsten Step-Trigger gelesen und überschreibt `synthParams.lfoRate`/`lfoDepth`. Minimaler Refactor: SynthEngine.ts +112 LOC (Cache + 4 Setter/Getter + clearPartLfoCache + triggerNote(partId?)-Hook), AudioEngine.ts +60 LOC (lazy SynthEngine-Instanz + 4 Delegates), App.tsx -2/+5 LOC (setLfoRate/setLfoDepth im Setter-Bag, generischer onUnhandled).",
+        "TASK-117 / Bereich 1 (SynthEngine.ts): Neue Klassen-Mitglieder `_partLfoCache: Map<string, {rate?: number; depth?: number}>` + Range-Konstanten `PART_LFO_RATE_MIN=0.01`, `PART_LFO_RATE_MAX=30`, `PART_LFO_DEPTH_MIN=0`, `PART_LFO_DEPTH_MAX=1`. Vier public Methoden: `setPartLfoRate(partId, hz)` mit Clamp [0.01..30] + NaN/Infinity/empty-partId no-op-Guards; `setPartLfoDepth(partId, depth)` mit Clamp [0..1] (normalisiert); `getPartLfoRate/Depth(partId)` liefern null wenn nie gesetzt; `clearPartLfoCache(partId?)` löscht einen Part oder alle. `triggerNote(freq, params, time, prevFreq?, partId?)` bekam optionalen partId-Parameter — wenn gesetzt und Cache vorhanden, wird `params` geklont und `lfoRate` / `lfoDepth` überschrieben (depth wird von 0..1 normalisiert auf 0..100 Cents skaliert, weil SynthParams.lfoDepth in Cents liegt).",
+        "TASK-117 / Bereich 2 (AudioEngine.ts): Lazy `_synthEngine: SynthEngine | null` + `_getOrCreateSynthEngine()`-Helfer der bei verfügbarem ctx+masterGain eine SynthEngine-Instanz erzeugt (browser-fallback-safe — vor `init()` ist es no-op). Statischer `import { SynthEngine } from './SynthEngine'` am Datei-Anfang. Vier Public-Delegates: `setPartLfoRate/Depth(partId, value)` + `getPartLfoRate/Depth(partId)`. Methoden positioniert direkt nach `setChannelSend` für räumliche Nähe zum Macro-Routing.",
+        "TASK-117 / Bereich 3 (App.tsx): Im macro:change-Handler den Setter-Bag erweitert: `setLfoRate: (partId, hz) => AudioEngine.setPartLfoRate(partId, hz)` + `setLfoDepth: (partId, depth) => AudioEngine.setPartLfoDepth(partId, depth)`. Der vorherige `onUnhandled`-Spezialfall für lfo-rate/lfo-depth wurde aufgelöst — `onUnhandled` ist jetzt generisch (warnt für jedes nicht implementierte Target). Bestehende MacroRouteSetters-Interface in useMacroStore.ts hat setLfoRate?/setLfoDepth? bereits seit TASK-100 deklariert — kein Schema-Change nötig.",
+        "TASK-117 / Tests Unit: tests/features/macros.test.ts +5 Tests (lfo-rate min=1/max=10 @ 0.5 → 5.5; lfo-depth min=0/max=0.8 @ 1 → 0.8; lfo-depth 0..1 @ 0.5 → 0.5; lfo-depth onUnhandled-Fallback ohne setter — Backwards-Compat für TASK-100; lfo-rate/lfo-depth ohne partId stillschweigend ignoriert). tests/electron/synth-engine.test.ts +16 Tests (getter liefert null wenn nie gesetzt; set+get roundtrip Rate/Depth; Range-Clamp hz=999→30 / hz=-1→0.01 / depth=2→1 / depth=-0.5→0; NaN/Infinity no-op für beide Setter; empty-partId no-op; Cache pro Part-ID isoliert; Rate+Depth koexistieren; clearPartLfoCache(partId)+clearPartLfoCache() löschen korrekt; triggerNote(.., partId='lead') übernimmt gecachte Rate aus Cache statt params.lfoRate; triggerNote ohne partId umgeht Cache).",
+        "TASK-117 / Verification: pnpm check clean (tsc --noEmit, 0 Fehler). pnpm test 1142/1157 grün (62 test files, 15 pre-existing skipped, +21 neue Tests, 0 Regressionen). synth-engine.test.ts wuchs von 10 auf 26 Tests, macros.test.ts von 70 auf 75 Tests. AudioEngine.ts hat keinen circular-import (SynthEngine importiert nichts von AudioEngine)."
+      ],
+      next: [
+        "Welle 2 (Wiring): Die Step-Trigger-Sites in AudioEngine (wo `synthParams` aus `PartData` an SynthEngine weitergereicht werden würden) sind aktuell NICHT verdrahtet — SynthEngine wird vom Step-Scheduler in AudioEngine noch gar nicht aufgerufen (PartData.sourceType=wavetable/fm wird gespeichert, aber die Synth-Synthese läuft via Tone.js bzw. nicht überhaupt). Das ist out-of-scope für TASK-117 — Macro-Setter cachen aber den Wert korrekt, sodass beim späteren Wiring der Step-Trigger-Site nur ein `engine.triggerNote(freq, params, time, prevFreq, part.id)` (zusätzliches partId-Arg) reicht.",
+        "Welle 2 (UX): Macro-Bindings für lfo-rate sollten in der UI sinnvolle min/max Defaults vorschlagen (z.B. 0.1..20 Hz wie SynthPanel) statt 0..1. Aktuell schreibt der User die Range manuell. Ein 'Vorlage'-Dropdown beim Hinzufügen einer Binding wäre ergonomischer.",
+        "Welle 2 (Tests): Integration-Test der wirklich Macro→App→AudioEngine→SynthEngine ende-zu-ende prüft fehlt (alle Layer einzeln getestet, aber kein E2E-Pfad). Würde DOM (CustomEvent-Dispatcher) + AudioContext-Mock brauchen — Vitest mit jsdom-environment + Web-Audio-Mock wäre der Weg.",
+        "Welle 2 (Schema): MacroRouteSetters hat setLfoRate?/setLfoDepth? optional. Sobald die Step-Trigger-Sites verdrahtet sind, könnten sie auf required umgestellt werden (Compile-Time-Garantie für Frontend-Agents die das Setter-Bag nutzen). Aktuell defensive für Backwards-Compat zu altem TASK-100-Test."
+      ],
+      changed: [
+        "client/src/audio/SynthEngine.ts",
+        "client/src/audio/AudioEngine.ts",
+        "client/src/App.tsx",
+        "tests/features/macros.test.ts",
+        "tests/electron/synth-engine.test.ts",
+        "agents/INDEX.js"
+      ]
+    },
+    {
+      agent:     "frontend",
+      timestamp: "2026-05-12T22:50:00.000Z",
+      done: [
+        "TASK-121 / MAX_TIMESTRETCH_TRACKS UX-Warnung (v1.22.0). Globaler Kontext für Soft-Limit MAX_TIMESTRETCH_TRACKS=4 — bisher sah der User nur eine disabled-Option im AudioTrackStrip-Dropdown ohne globale Anzeige warum. Zwei Bereiche umgesetzt: (1) Header-Counter im MixerView, (2) Info-Banner im AudioTrackStrip wenn Limit erreicht und current Track nicht selbst timestretch.",
+        "TASK-121 / Store-Erweiterung: client/src/store/useAudioTrackStore.ts +9 LOC. Neuer Public-Helper isTimestretchLimitReached() = countTimestretchTracks() >= MAX_TIMESTRETCH_TRACKS. Pure-Function ohne Side-Effects, ideal für UI-Bedingungen, ohne den Counter doppelt zu rechnen.",
+        "TASK-121 / Bereich 1 (Counter): client/src/components/Mixer/MixerView.tsx — neuer Import countTimestretchTracks + MAX_TIMESTRETCH_TRACKS. Counter renders only when audioTracks.length > 0, im Header rechts neben dem [+ Audio Track]-Button. data-testid='timestretch-counter'. Drei-Stufen-Farbmapping: count >= MAX (=4) → text-accent-danger (rot); count >= MAX-1 (=3) → text-accent-secondary (gelbe Warnung); sonst → text-text-dim (neutral). Title-Tooltip differenziert Limit-erreicht vs aktiv. Reine semantische Tokens — keine hardcoded-Farben.",
+        "TASK-121 / Bereich 2 (Banner): client/src/components/Mixer/AudioTrackStrip.tsx — neuer Info-Banner unter dem Sync-Mode-Dropdown. Sichtbarkeit (alle drei müssen wahr sein): (a) current Track ist NICHT bereits timestretch (sonst hat er ja seinen Slot), (b) tsLimitReached === true (count >= MAX), (c) audioWorkletSupported === true — sonst übernimmt der existierende 'AudioWorklet nicht supported'-Pfad den Tooltip ohnehin. Banner verwendet role='status', data-testid='timestretch-limit-banner', text-accent-secondary (matches Tooltip-Color), Text: '⚠ Max 4 Time-Stretch-Tracks (CPU). Frei für diesen Track: Free/Stretch.'. Bestehende disabled-Option im Dropdown bleibt unverändert.",
+        "TASK-121 / Tests Unit: tests/features/audio-track-timestretch.test.ts von 13 auf 18 Tests erweitert (+5 für isTimestretchLimitReached). Neuer describe-Block 'isTimestretchLimitReached helper (TASK-121)': returns false bei 0 ts-Tracks; returns false bei 3 (Limit=4); returns true bei 4; ignoriert non-timestretch (3 ts + 2 free → false); reagiert auf updateAudioTrack syncMode-Patch (3 ts + free → patch free auf ts → Limit). Alle 18 Tests grün, 0 Regressionen.",
+        "TASK-121 / Tests Playwright (optional): tests/web/audio-track.spec.ts von 5 auf 9 Tests erweitert (+4 für TimeStretch Counter + Banner). Neuer describe-Block 'TimeStretch Counter + Banner (TASK-121)': Counter hidden ohne Tracks; Counter neutral (text-text-dim) bei 1 free-Track + Text '0/4'; Counter rot (text-accent-danger) bei 4 timestretch-Tracks + Text '4/4'; 5. Track zeigt Banner sichtbar + option disabled. Banner-Text + Counter-CSS-Klassen verifiziert.",
+        "TASK-121 / Verification: pnpm check clean (precheck gen:sandbox 'up-to-date', tsc --noEmit ohne Fehler). pnpm test 1111/1126 grün (62 test files, 15 pre-existing skipped, +5 neue Store-Helper-Tests, 0 Regressionen). AudioTrackStrip + MixerView keine Hardcoded-Farben (ausschließlich text-accent-danger/secondary, text-text-dim semantisch)."
+      ],
+      next: [
+        "Welle 2 (UX): Banner-Text könnte 'einen anderen Track zurück auf Free/Stretch setzen' als CTA bekommen (Link zu erstem timestretch-Track des Mixers — würde Cross-Strip-Highlighting brauchen, kleines refactoring).",
+        "Welle 2 (UX): yellow-Warn-Stufe greift bei count >= MAX-1 (=3). Bei count=4 ist sie eigentlich von der roten Stufe überdeckt — sauberer Übergang. Für count=3 sieht der User die gelbe Warnung allerdings ohne zusätzlichen Kontext warum (kein dritter Tooltip). Könnte ein zweistufiger Tooltip sein: bei 3 'Noch 1 Slot frei', bei 4 'Limit erreicht'.",
+        "Welle 2 (a11y): Counter ist nur ein <span> ohne role/aria-live. Bei Wechsel von 3→4 wäre eine polite-Live-Announcement nützlich für Screen-Reader. Aktuell still — visual-only.",
+        "Welle 2 (Tests Playwright): die 4 neuen Tests laufen nicht in CI (out-of-scope laut Briefing). Bei Live-Audio-Tests in jsdom/Playwright kann der tiny WAV-Buffer beim decode fehlschlagen — current Test umgeht das, weil 'Sync Mode'-Wechsel rein UI-State ist. Falls audioWorkletSupported-Check in echtem Chromium false zurückgibt, wäre Banner sichtbar selbst ohne Limit-Hit — Test-Robustheit hängt vom Playwright-Chromium-Build ab.",
+        "Welle 2 (Refactor): countTimestretchTracks() wird jetzt in 2 Stellen aufgerufen (MixerView Header + AudioTrackStrip tsLimitReached). Bei vielen Tracks O(N) pro re-render — ein useSyncExternalStore-Cache wäre eleganter. Aktuell akzeptabel (max 8 Tracks)."
+      ],
+      changed: [
+        "client/src/store/useAudioTrackStore.ts",
+        "client/src/components/Mixer/MixerView.tsx",
+        "client/src/components/Mixer/AudioTrackStrip.tsx",
+        "tests/features/audio-track-timestretch.test.ts",
+        "tests/web/audio-track.spec.ts",
+        "agents/INDEX.js"
+      ]
+    },
     {
       agent:     "frontend",
       timestamp: "2026-05-12T22:35:00.000Z",

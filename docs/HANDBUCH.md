@@ -1,6 +1,6 @@
 # Synthstudio – Funktionshandbuch
 
-**Version 1.21.0 | Vollständige Dokumentation aller Features**
+**Version 1.22.0 | Vollständige Dokumentation aller Features**
 
 ---
 
@@ -1626,6 +1626,28 @@ Die Sandbox basiert auf **10 Hardening-Layern** (siehe `docs/SECURITY-SCRIPT-SAN
 
 ---
 
+## v1.22.0: LFO-Macros + Hold-Mode + Pad-Theme + Polish-Welle
+
+Sechs parallele Verbesserungen in drei Wellen:
+
+**TASK-117 — LFO-Macros wiring (backend).** `SynthEngine.setPartLfoRate(partId, hz)` und `setPartLfoDepth(partId, depth)` Setter mit Cache-Variant (`_partLfoCache` Map). Beim nächsten `triggerNote` werden cached values applied (Sub-Step-Latenz). Range-Clamping: Rate 0.01–30 Hz, Depth 0–1. App.tsx Macro-Setter-Bag erweitert um `setLfoRate` / `setLfoDepth`. Die `lfo-rate` / `lfo-depth` Macro-Bindings warnten seit v1.15.5 nur `console.warn` — jetzt voll funktional. 26 SynthEngine-Tests + 5 Macro-Tests.
+
+**TASK-118 — Macro-Button Hold-Mode (frontend).** Schema-Erweiterung `triggerMode: "edge" | "hold"`. Im Hold-Mode läuft das Script in einer 200ms-Loop solange Button gedrückt (100ms für Pad-Trigger). `client/src/utils/macroHoldLoop.ts` neue Pure-Logik mit Module-Scope-State + Stacking-Schutz (pro Macro nur eine Loop). `triggerMacroButtonRelease` Event stoppt die Loop. `🔁`-Icon-Overlay im Hold-Macro-Button. 24 neue Macro-Tests (99 total).
+
+**TASK-119 — Theme-aware Pad-Color-Palette (frontend).** 16 hardcoded Hex-Werte in `PAD_COLORS` ersetzt durch 8 CSS-Variablen `--ss-pad-1..8` definiert pro Theme. `getPadDefaultColor(index)` Helper liest live aus `getComputedStyle(document.documentElement).getPropertyValue("--ss-pad-N")`. Pad-Index mod-loop 0..15 → Slot 0..7. User-defined `pad.color` bleibt absoluter Vorrang. Pro Theme passende Farb-Identität: dark/neon hochgesättigt, daylight/paper pastel-soft, deuteranopia/protanopia Okabe-Ito a11y-Palette.
+
+**TASK-120 — Mouse-Box Rubber-Band-Select (frontend).** In Reorder-Mode startet `mousedown` auf Grid-Background eine Selection-Box. `mousemove` zeichnet semi-transparent Box. `mouseup` selektiert alle Pads mit non-empty `patternId` deren Bounding-Box intersected. Shift+Drag additiv zur existing selection. 3px-Hysterese gegen accidental clicks.
+
+**TASK-123 — Multi-Drag-Image Counter-Badge (frontend).** Bei `multiSelect.size > 1` während Drag: programmatisch erzeugtes 60×60 `<canvas>` mit Pad-Color + Border (live aus `--ss-accent-secondary`) + zentriertem `+N`-Text als Drag-Image via `dataTransfer.setDragImage(canvas, 30, 30)`. 24 Unit-Tests (DOM-frei) für `normalizeBox`/`boxIntersects`/`collectPadsInBox` Helpers.
+
+**TASK-121 — MAX_TIMESTRETCH_TRACKS UX-Warnung (frontend).** Counter im MixerView-Header `Time-Stretch: N/4` mit drei-Stufen-Farblogik: neutral / gelb (3 = bald limit) / rot (4 = limit). Info-Banner im AudioTrackStrip wenn Limit erreicht + current Track NICHT bereits timestretch + AudioWorklet supported: `⚠ Max 4 Time-Stretch-Tracks (CPU). Frei für diesen Track: Free/Stretch.` `isTimestretchLimitReached()` Helper exportiert. 5 Unit + 4 Playwright Tests.
+
+**TASK-122 — Final Theme-Class-Purity Sweep (refactor).** 85 hardcoded Tailwind palette-Klassen in 15 Komponenten ersetzt (`UpdateBadge`, `Humanizer`, `MidiSettings`, `SongTimeline`, `ElectronDropZone`, `MixAssistantPanel`, `CollabSplitView`, `ThemeSettings`, `DrumMachine`, `ProjectManager`, `NewProjectDialog`, `CollabStatus`, `ModMatrix`, `EuclideanControls`, `StepContextMenu`). Categorical Palettes (SongTimeline Bank A-D, ElectronDropZone Drop-Types, MixAssistantPanel Severities) auf die 4 verfügbaren Akzente gemappt mit Doku-Kommentar. `Humanizer.HumanizerSlider`-API refactored von dynamic `text-${color}-400` (Tailwind-JIT-incompatible) auf typed `accent` Prop mit static lookup table. Test-Helper `expectNoHardcodedTailwindColors(path)` registriert 2 Tests pro Datei (palette + arbitrary-hex). **Zero hardcoded Tailwind palette classes** in `client/src/components/**/*.tsx` + `electron/components/**/*.tsx` jetzt CI-enforced.
+
+**Test-Wachstum diese Welle:** 1106 → 1220 (+114 Vitest-Tests, dazu Playwright). Insgesamt 63 Test-Files.
+
+---
+
 ## v1.21.0: Macro→Pad + Performance a11y + Theme + CI-Drift-Check
 
 Vier parallele Verbesserungen:
@@ -1753,4 +1775,4 @@ Diese Releases enthalten keine neuen Features, sondern **kritische Bug-Fixes**:
 
 ---
 
-*Letzte Aktualisierung: Sprint 22 — v1.21.0 (Macro→Pad + Performance a11y + Theme + CI)*
+*Letzte Aktualisierung: Sprint 23 — v1.22.0 (LFO + Hold + Pad-Theme + Polish-Welle)*

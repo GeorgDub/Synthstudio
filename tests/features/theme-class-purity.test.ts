@@ -1,16 +1,33 @@
 /**
  * tests/features/theme-class-purity.test.ts
  *
- * Regression test for FOLLOWUP-110 and TASK-113.
+ * Regression test for FOLLOWUP-110, TASK-113 and TASK-122.
  *
- * Verifies that refactored files (MixerView.tsx, ElectronTitleBar.tsx,
- * SampleBrowser.tsx, AudioInputRecorder.tsx) contain NO hardcoded Tailwind
- * palette colour classes (bg-slate-*, text-cyan-*, hover:bg-red-*, bg-[#...]
- * etc.) — only semantic tokens (bg-bg-base, text-text-primary,
- * bg-accent-primary, etc.) are allowed.
+ * Verifies that refactored components contain NO hardcoded Tailwind palette
+ * colour classes (bg-slate-*, text-cyan-*, hover:bg-red-*, bg-[#...] etc.) —
+ * only semantic tokens (bg-bg-base, text-text-primary, bg-accent-primary,
+ * etc.) are allowed.
+ *
+ * TASK-122 (final sweep): all components under client/src/components/ and
+ * electron/components/ are individually guarded. New refactored files added:
+ *   - CollabSplitView.tsx
+ *   - DrumMachine.tsx
+ *   - CollabStatus.tsx
+ *   - EuclideanControls.tsx
+ *   - MixAssistantPanel.tsx
+ *   - ModMatrix.tsx
+ *   - StepContextMenu.tsx
+ *   - Humanizer.tsx
+ *   - MidiSettings.tsx
+ *   - NewProjectDialog.tsx
+ *   - ProjectManager.tsx
+ *   - Settings/ThemeSettings.tsx
+ *   - SongTimeline.tsx
+ *   - UpdateBadge.tsx
+ *   - electron/components/ElectronDropZone.tsx
  *
  * Approach: read each file as text via fs.readFileSync, run a strict regex
- * over its content. Rendering with jsdom is avoided because both files pull
+ * over its content. Rendering with jsdom is avoided because most files pull
  * in the AudioEngine / Electron preload globals.
  *
  * The regex is intentionally narrow:
@@ -22,8 +39,9 @@
  *
  * Arbitrary-value-classes  bg-[#...]  text-[#...]  are also disallowed.
  *
- * Exception: SVG <rect fill="#..."> attributes are NOT Tailwind classes and
- * are out of scope.
+ * Exception: SVG <rect fill="#..."> attributes, SVG <path stroke="#..."> and
+ * JS hex literals in inline style props are NOT Tailwind classes and are out
+ * of scope.
  */
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
@@ -53,64 +71,61 @@ function findOffenders(content: string, pattern: RegExp): string[] {
   return out;
 }
 
-describe("Theme-class purity — FOLLOWUP-110", () => {
-  it("MixerView.tsx contains no hardcoded Tailwind palette classes", () => {
-    const path = resolve(ROOT, "client/src/components/Mixer/MixerView.tsx");
-    const src = readFileSync(path, "utf-8");
+/**
+ * Helper to assert a single file is free of both hardcoded palette classes
+ * AND arbitrary hex classes. Registers TWO `it` blocks so failure messages
+ * are precise about which check failed.
+ */
+function expectNoHardcodedTailwindColors(relPath: string) {
+  const absPath = resolve(ROOT, relPath);
+
+  it(`${relPath} – no hardcoded Tailwind palette classes`, () => {
+    const src = readFileSync(absPath, "utf-8");
     const offenders = findOffenders(src, HARDCODED_TAILWIND_CLASS);
-    expect(offenders, `Hardcoded Tailwind classes found:\n${offenders.join("\n")}`).toEqual([]);
+    expect(
+      offenders,
+      `Hardcoded Tailwind classes found in ${relPath}:\n${offenders.join("\n")}`,
+    ).toEqual([]);
   });
 
-  it("MixerView.tsx contains no arbitrary-value hex classes (bg-[#...]/text-[#...])", () => {
-    const path = resolve(ROOT, "client/src/components/Mixer/MixerView.tsx");
-    const src = readFileSync(path, "utf-8");
+  it(`${relPath} – no arbitrary-value hex classes`, () => {
+    const src = readFileSync(absPath, "utf-8");
     const offenders = findOffenders(src, ARBITRARY_HEX_CLASS);
-    expect(offenders, `Arbitrary hex classes found:\n${offenders.join("\n")}`).toEqual([]);
+    expect(
+      offenders,
+      `Arbitrary hex classes found in ${relPath}:\n${offenders.join("\n")}`,
+    ).toEqual([]);
   });
+}
 
-  it("ElectronTitleBar.tsx contains no hardcoded Tailwind palette classes", () => {
-    const path = resolve(ROOT, "electron/components/ElectronTitleBar.tsx");
-    const src = readFileSync(path, "utf-8");
-    const offenders = findOffenders(src, HARDCODED_TAILWIND_CLASS);
-    expect(offenders, `Hardcoded Tailwind classes found:\n${offenders.join("\n")}`).toEqual([]);
-  });
+describe("Theme-class purity — FOLLOWUP-110 / TASK-113", () => {
+  // Original four files (FOLLOWUP-110 + TASK-113)
+  expectNoHardcodedTailwindColors("client/src/components/Mixer/MixerView.tsx");
+  expectNoHardcodedTailwindColors("electron/components/ElectronTitleBar.tsx");
+  expectNoHardcodedTailwindColors("client/src/components/SampleBrowser/SampleBrowser.tsx");
+  expectNoHardcodedTailwindColors("client/src/components/SampleBrowser/AudioInputRecorder.tsx");
+});
 
-  it("ElectronTitleBar.tsx contains no arbitrary-value hex classes (bg-[#...]/text-[#...])", () => {
-    const path = resolve(ROOT, "electron/components/ElectronTitleBar.tsx");
-    const src = readFileSync(path, "utf-8");
-    const offenders = findOffenders(src, ARBITRARY_HEX_CLASS);
-    expect(offenders, `Arbitrary hex classes found:\n${offenders.join("\n")}`).toEqual([]);
-  });
+describe("Theme-class purity — TASK-122 (final sweep)", () => {
+  // Final-sweep refactored files
+  expectNoHardcodedTailwindColors("client/src/components/CollabSplitView/CollabSplitView.tsx");
+  expectNoHardcodedTailwindColors("client/src/components/DrumMachine/DrumMachine.tsx");
+  expectNoHardcodedTailwindColors("client/src/components/DrumMachine/CollabStatus.tsx");
+  expectNoHardcodedTailwindColors("client/src/components/DrumMachine/EuclideanControls.tsx");
+  expectNoHardcodedTailwindColors("client/src/components/DrumMachine/MixAssistantPanel.tsx");
+  expectNoHardcodedTailwindColors("client/src/components/DrumMachine/ModMatrix.tsx");
+  expectNoHardcodedTailwindColors("client/src/components/DrumMachine/StepContextMenu.tsx");
+  expectNoHardcodedTailwindColors("client/src/components/Humanizer/Humanizer.tsx");
+  expectNoHardcodedTailwindColors("client/src/components/MidiSettings/MidiSettings.tsx");
+  expectNoHardcodedTailwindColors("client/src/components/NewProjectDialog/NewProjectDialog.tsx");
+  expectNoHardcodedTailwindColors("client/src/components/ProjectManager/ProjectManager.tsx");
+  expectNoHardcodedTailwindColors("client/src/components/Settings/ThemeSettings.tsx");
+  expectNoHardcodedTailwindColors("client/src/components/SongTimeline/SongTimeline.tsx");
+  expectNoHardcodedTailwindColors("client/src/components/UpdateBadge.tsx");
+  expectNoHardcodedTailwindColors("electron/components/ElectronDropZone.tsx");
+});
 
-  // ─── TASK-113: SampleBrowser sweep ─────────────────────────────────────
-  it("SampleBrowser.tsx contains no hardcoded Tailwind palette classes", () => {
-    const path = resolve(ROOT, "client/src/components/SampleBrowser/SampleBrowser.tsx");
-    const src = readFileSync(path, "utf-8");
-    const offenders = findOffenders(src, HARDCODED_TAILWIND_CLASS);
-    expect(offenders, `Hardcoded Tailwind classes found:\n${offenders.join("\n")}`).toEqual([]);
-  });
-
-  it("SampleBrowser.tsx contains no arbitrary-value hex classes (bg-[#...]/text-[#...])", () => {
-    const path = resolve(ROOT, "client/src/components/SampleBrowser/SampleBrowser.tsx");
-    const src = readFileSync(path, "utf-8");
-    const offenders = findOffenders(src, ARBITRARY_HEX_CLASS);
-    expect(offenders, `Arbitrary hex classes found:\n${offenders.join("\n")}`).toEqual([]);
-  });
-
-  it("AudioInputRecorder.tsx contains no hardcoded Tailwind palette classes", () => {
-    const path = resolve(ROOT, "client/src/components/SampleBrowser/AudioInputRecorder.tsx");
-    const src = readFileSync(path, "utf-8");
-    const offenders = findOffenders(src, HARDCODED_TAILWIND_CLASS);
-    expect(offenders, `Hardcoded Tailwind classes found:\n${offenders.join("\n")}`).toEqual([]);
-  });
-
-  it("AudioInputRecorder.tsx contains no arbitrary-value hex classes (bg-[#...]/text-[#...])", () => {
-    const path = resolve(ROOT, "client/src/components/SampleBrowser/AudioInputRecorder.tsx");
-    const src = readFileSync(path, "utf-8");
-    const offenders = findOffenders(src, ARBITRARY_HEX_CLASS);
-    expect(offenders, `Arbitrary hex classes found:\n${offenders.join("\n")}`).toEqual([]);
-  });
-
+describe("Theme-class purity — Regex sanity checks", () => {
   it("Regex actually catches a known offender (sanity check)", () => {
     const sample = `<div className="bg-slate-900 text-cyan-400 hover:bg-red-600">`;
     expect(sample).toMatch(HARDCODED_TAILWIND_CLASS);

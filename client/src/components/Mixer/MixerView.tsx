@@ -26,7 +26,9 @@ import {
   setRuntimeWaveform,
   markBroken,
   getAllAudioTracks,
+  countTimestretchTracks,
   MAX_AUDIO_TRACKS,
+  MAX_TIMESTRETCH_TRACKS,
   type AudioTrackChannelData,
 } from "@/store/useAudioTrackStore";
 import { useElectron } from "../../../../electron/useElectron";
@@ -785,6 +787,30 @@ export function MixerView({ dm, mixer, samples = [], bpm = 120, projectName = "S
             ({audioTracks.length}/{MAX_AUDIO_TRACKS})
           </span>
         </button>
+
+        {/* Time-Stretch Counter (TASK-121) – nur sichtbar, wenn Audio-Tracks existieren */}
+        {audioTracks.length > 0 && (() => {
+          const tsCount = countTimestretchTracks();
+          const tsColor =
+            tsCount >= MAX_TIMESTRETCH_TRACKS
+              ? "text-accent-danger"
+              : tsCount >= MAX_TIMESTRETCH_TRACKS - 1
+                ? "text-accent-secondary"
+                : "text-text-dim";
+          return (
+            <span
+              data-testid="timestretch-counter"
+              className={`text-[10px] font-mono ml-2 ${tsColor}`}
+              title={
+                tsCount >= MAX_TIMESTRETCH_TRACKS
+                  ? `Limit erreicht: ${tsCount}/${MAX_TIMESTRETCH_TRACKS} Time-Stretch-Tracks aktiv (CPU-Schutz).`
+                  : `Aktive Time-Stretch-Tracks: ${tsCount}/${MAX_TIMESTRETCH_TRACKS}`
+              }
+            >
+              Time-Stretch: {tsCount}/{MAX_TIMESTRETCH_TRACKS}
+            </span>
+          );
+        })()}
 
         {/* Hidden file input (Browser-Fallback) */}
         <input

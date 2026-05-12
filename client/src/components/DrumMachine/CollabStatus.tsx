@@ -36,11 +36,11 @@ export function CollabStatus({
         title={isActive ? `Session: ${sessionCode} – ${participants.length} Teilnehmer` : "Collaborative Session starten"}
         className={`flex items-center gap-1.5 px-2 py-1 rounded text-xs transition-colors ${
           isActive
-            ? "bg-green-900 hover:bg-green-800 text-green-300"
+            ? "bg-accent-success/30 hover:bg-accent-success/40 text-accent-success"
             : "bg-bg-elevated hover:bg-bg-elevated text-text-muted"
         }`}
       >
-        <div className={`w-2 h-2 rounded-full ${isActive ? "bg-green-400 animate-pulse" : "bg-bg-elevated"}`} />
+        <div className={`w-2 h-2 rounded-full ${isActive ? "bg-accent-success animate-pulse" : "bg-bg-elevated"}`} />
         {isActive ? (
           <span className="font-mono">{sessionCode} ({participants.length})</span>
         ) : (
@@ -52,7 +52,7 @@ export function CollabStatus({
       {isActive && (
         <button
           onClick={onDisconnect}
-          className="ml-1 text-text-dim hover:text-red-400 text-xs px-1"
+          className="ml-1 text-text-dim hover:text-accent-danger text-xs px-1"
           title="Session beenden"
         >
           ×

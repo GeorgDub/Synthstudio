@@ -71,8 +71,10 @@ import {
   setMacroMode,
   setMacroScriptId,
   setMacroTriggerKind,
+  setMacroTriggerMode,
   setMacroPadIndex,
   triggerMacroButton,
+  triggerMacroButtonRelease,
   type MacroBinding,
   type Macro,
   type MacroRouteSetters,
@@ -415,6 +417,73 @@ describe("applyMacroBindings – Audio-Routing", () => {
     applyMacroBindings(macro, 1, setters);
     expect(lfoCalls).toEqual([["lead", 10]]);
     expect(unhandled).toHaveLength(0);
+  });
+
+  // ─── LFO-Rate/Depth (TASK-117) ──────────────────────────────────────────────
+
+  it("setLfoRate erhält gemappten Wert (min=1, max=10 @ 0.5 → 5.5)", () => {
+    const lfoCalls: Array<[string, number]> = [];
+    const setters: MacroRouteSetters = {
+      setLfoRate: (id, v) => lfoCalls.push([id, v]),
+    };
+    const macro = makeMacro([
+      makeBinding({ target: "lfo-rate", partId: "k", minValue: 1, maxValue: 10 }),
+    ]);
+    applyMacroBindings(macro, 0.5, setters);
+    expect(lfoCalls).toEqual([["k", 5.5]]);
+  });
+
+  it("setLfoDepth erhält gemappten Wert (min=0, max=0.8 @ 1 → 0.8)", () => {
+    const lfoCalls: Array<[string, number]> = [];
+    const setters: MacroRouteSetters = {
+      setLfoDepth: (id, v) => lfoCalls.push([id, v]),
+    };
+    const macro = makeMacro([
+      makeBinding({ target: "lfo-depth", partId: "k", minValue: 0, maxValue: 0.8 }),
+    ]);
+    applyMacroBindings(macro, 1, setters);
+    expect(lfoCalls).toEqual([["k", 0.8]]);
+  });
+
+  it("setLfoDepth interpoliert in der Mitte (0..1 @ 0.5 → 0.5)", () => {
+    const lfoCalls: Array<[string, number]> = [];
+    const setters: MacroRouteSetters = {
+      setLfoDepth: (id, v) => lfoCalls.push([id, v]),
+    };
+    const macro = makeMacro([
+      makeBinding({ target: "lfo-depth", partId: "lead", minValue: 0, maxValue: 1 }),
+    ]);
+    applyMacroBindings(macro, 0.5, setters);
+    expect(lfoCalls).toEqual([["lead", 0.5]]);
+  });
+
+  it("lfo-depth fällt zurück auf onUnhandled, wenn setLfoDepth fehlt (Backwards-Compat)", () => {
+    const unhandled: MacroBinding[] = [];
+    const setters: MacroRouteSetters = {
+      onUnhandled: (b) => unhandled.push(b),
+    };
+    const macro = makeMacro([
+      makeBinding({ target: "lfo-depth", partId: "lead", minValue: 0, maxValue: 1 }),
+    ]);
+    applyMacroBindings(macro, 0.7, setters);
+    expect(unhandled).toHaveLength(1);
+    expect(unhandled[0].target).toBe("lfo-depth");
+  });
+
+  it("lfo-rate/lfo-depth ohne partId werden stillschweigend ignoriert", () => {
+    const lfoRateCalls: Array<[string, number]> = [];
+    const lfoDepthCalls: Array<[string, number]> = [];
+    const setters: MacroRouteSetters = {
+      setLfoRate: (id, v) => lfoRateCalls.push([id, v]),
+      setLfoDepth: (id, v) => lfoDepthCalls.push([id, v]),
+    };
+    const macro = makeMacro([
+      makeBinding({ target: "lfo-rate", partId: undefined, minValue: 0, maxValue: 10 }),
+      makeBinding({ target: "lfo-depth", partId: undefined, minValue: 0, maxValue: 1 }),
+    ]);
+    applyMacroBindings(macro, 0.5, setters);
+    expect(lfoRateCalls).toEqual([]);
+    expect(lfoDepthCalls).toEqual([]);
   });
 });
 
@@ -962,5 +1031,371 @@ describe("Macro – Pad-Mode Persistence + Migration", () => {
     const macros = reimported.getMacros();
     expect(macros[0].padIndex).toBeUndefined();
     expect(macros[1].padIndex).toBe(7);
+  });
+});
+
+// ─── Trigger-Mode: Edge vs Hold (TASK-118 / v1.22.0) ─────────────────────────
+// Erweitert das Schema um triggerMode="edge"|"hold" (Default "edge" für
+// Backwards-Compat zu pre-v1.22-Daten).
+//
+//   - Default-triggerMode aller Macros ist "edge".
+//   - setMacroTriggerMode(idx, "hold") setzt das Feld und persistiert.
+//   - setMacroTriggerMode out-of-range / invalid → no-op.
+//   - Persistence-Round-Trip mit hold überlebt Reload.
+//   - Migration: alte Daten ohne triggerMode → "edge".
+//   - Migration: invalides triggerMode (z.B. "loop") → "edge".
+//   - triggerMacroButton-Event-Detail enthält triggerMode.
+//   - triggerMacroButtonRelease dispatcht macro:button:release Event.
+
+describe("Macro – Trigger-Mode Schema (Edge vs Hold)", () => {
+  beforeEach(() => {
+    localStorageMock.clear();
+    dispatched.length = 0;
+    resetMacros();
+  });
+
+  it("Default-triggerMode aller Macros ist 'edge'", () => {
+    const all = getMacros();
+    all.forEach(m => expect(m.triggerMode).toBe("edge"));
+  });
+
+  it("setMacroTriggerMode wechselt auf 'hold' und persistiert", () => {
+    setMacroTriggerMode(0, "hold");
+    expect(getMacros()[0].triggerMode).toBe("hold");
+    const raw = localStorageMock.getItem(STORAGE_KEY);
+    expect(raw).not.toBeNull();
+    const parsed = JSON.parse(raw!) as Macro[];
+    expect(parsed[0].triggerMode).toBe("hold");
+  });
+
+  it("setMacroTriggerMode wechselt 'hold' → 'edge' zurück und persistiert", () => {
+    setMacroTriggerMode(1, "hold");
+    expect(getMacros()[1].triggerMode).toBe("hold");
+    setMacroTriggerMode(1, "edge");
+    expect(getMacros()[1].triggerMode).toBe("edge");
+  });
+
+  it("setMacroTriggerMode ist no-op bei out-of-range index", () => {
+    setMacroTriggerMode(-1, "hold");
+    setMacroTriggerMode(99, "hold");
+    getMacros().forEach(m => expect(m.triggerMode).toBe("edge"));
+  });
+
+  it("setMacroTriggerMode ist no-op bei invalid mode-string", () => {
+    setMacroTriggerMode(0, "edge");
+    setMacroTriggerMode(0, "invalid" as unknown as "hold");
+    expect(getMacros()[0].triggerMode).toBe("edge");
+    setMacroTriggerMode(0, "loop" as unknown as "hold");
+    expect(getMacros()[0].triggerMode).toBe("edge");
+  });
+
+  it("setMacroTriggerMode beeinflusst andere Felder nicht (Defensiv-Test)", () => {
+    setMacroMode(0, "button");
+    setMacroTriggerKind(0, "pad");
+    setMacroPadIndex(0, 4);
+    setMacroTriggerMode(0, "hold");
+    const m = getMacros()[0];
+    expect(m.mode).toBe("button");
+    expect(m.triggerKind).toBe("pad");
+    expect(m.padIndex).toBe(4);
+    expect(m.triggerMode).toBe("hold");
+  });
+});
+
+describe("triggerMacroButton – Hold-Mode-Event-Detail", () => {
+  beforeEach(() => {
+    localStorageMock.clear();
+    dispatched.length = 0;
+    resetMacros();
+  });
+
+  it("triggerMacroButton dispatcht Event mit triggerMode='hold' für Script", () => {
+    setMacroMode(0, "button");
+    setMacroScriptId(0, "sc-hold-script");
+    setMacroTriggerMode(0, "hold");
+    triggerMacroButton(0);
+    const ev = dispatched.find(d => d.type === "macro:button:trigger");
+    expect(ev).toBeDefined();
+    expect(ev!.detail).toMatchObject({
+      macroIndex: 0,
+      triggerKind: "script",
+      triggerMode: "hold",
+      scriptId: "sc-hold-script",
+    });
+  });
+
+  it("triggerMacroButton dispatcht Event mit triggerMode='hold' für Pad", () => {
+    setMacroMode(1, "button");
+    setMacroTriggerKind(1, "pad");
+    setMacroPadIndex(1, 9);
+    setMacroTriggerMode(1, "hold");
+    triggerMacroButton(1);
+    const ev = dispatched.find(d => d.type === "macro:button:trigger");
+    expect(ev).toBeDefined();
+    expect(ev!.detail).toMatchObject({
+      macroIndex: 1,
+      triggerKind: "pad",
+      triggerMode: "hold",
+      padIndex: 9,
+    });
+  });
+
+  it("triggerMacroButton dispatcht Event mit triggerMode='edge' als Default (Backwards-Compat)", () => {
+    setMacroMode(2, "button");
+    setMacroScriptId(2, "sc-edge-default");
+    // triggerMode NICHT gesetzt
+    triggerMacroButton(2);
+    const ev = dispatched.find(d => d.type === "macro:button:trigger");
+    expect(ev).toBeDefined();
+    expect(ev!.detail).toMatchObject({
+      macroIndex: 2,
+      triggerMode: "edge",
+    });
+  });
+});
+
+describe("triggerMacroButtonRelease – Release-Event", () => {
+  beforeEach(() => {
+    localStorageMock.clear();
+    dispatched.length = 0;
+    resetMacros();
+  });
+
+  it("dispatcht 'macro:button:release' Event mit korrektem macroIndex", () => {
+    triggerMacroButtonRelease(3);
+    const ev = dispatched.find(d => d.type === "macro:button:release");
+    expect(ev).toBeDefined();
+    expect(ev!.detail).toMatchObject({ macroIndex: 3 });
+  });
+
+  it("dispatcht Release-Event auch bei nicht-Hold-Mode (App.tsx prüft selbst)", () => {
+    // Hier ist macro nicht im Hold-Mode, aber Release wird trotzdem gefeuert.
+    // Die Logik in App.tsx macht ohne aktive Loop selbst no-op.
+    setMacroMode(0, "button");
+    setMacroScriptId(0, "sc-x");
+    triggerMacroButtonRelease(0);
+    const ev = dispatched.find(d => d.type === "macro:button:release");
+    expect(ev).toBeDefined();
+    expect(ev!.detail).toMatchObject({ macroIndex: 0 });
+  });
+
+  it("ist no-op bei out-of-range index (kein Event)", () => {
+    triggerMacroButtonRelease(-1);
+    triggerMacroButtonRelease(99);
+    expect(dispatched.find(d => d.type === "macro:button:release")).toBeUndefined();
+  });
+
+  it("fired Release dispatched genau ein Event pro Aufruf (nicht stacking)", () => {
+    triggerMacroButtonRelease(0);
+    triggerMacroButtonRelease(0);
+    triggerMacroButtonRelease(0);
+    const events = dispatched.filter(d => d.type === "macro:button:release");
+    expect(events).toHaveLength(3);
+    events.forEach(e => expect(e.detail).toMatchObject({ macroIndex: 0 }));
+  });
+});
+
+describe("Macro – Hold-Mode Persistence + Migration", () => {
+  beforeEach(() => {
+    localStorageMock.clear();
+    dispatched.length = 0;
+  });
+
+  it("triggerMode='hold' überlebt einen Reload-Roundtrip", async () => {
+    vi.resetModules();
+    const m1 = await import("../../client/src/store/useMacroStore");
+    m1.resetMacros();
+    m1.setMacroMode(3, "button");
+    m1.setMacroScriptId(3, "sc-hold-persist");
+    m1.setMacroTriggerMode(3, "hold");
+
+    vi.resetModules();
+    const m2 = await import("../../client/src/store/useMacroStore");
+    const reloaded = m2.getMacros();
+    expect(reloaded[3].mode).toBe("button");
+    expect(reloaded[3].triggerMode).toBe("hold");
+    expect(reloaded[3].scriptId).toBe("sc-hold-persist");
+  });
+
+  it("alte Daten OHNE triggerMode defaulten auf 'edge' (Backwards-Compat zu v1.21)", async () => {
+    // Schreibe v1.21 Button-Format: mode="button" + scriptId, KEIN triggerMode.
+    const v121Format = Array.from({ length: 8 }, (_, i) => ({
+      index: i,
+      label: `Macro ${i + 1}`,
+      value: 0,
+      bindings: [],
+      color: MACRO_COLORS[i],
+      mode: i === 0 ? "button" : "knob",
+      scriptId: i === 0 ? "sc-v121-legacy" : undefined,
+      triggerKind: "script",
+      // triggerMode FEHLT
+    }));
+    localStorageMock.setItem(STORAGE_KEY, JSON.stringify(v121Format));
+
+    vi.resetModules();
+    const reimported = await import("../../client/src/store/useMacroStore");
+    const macros = reimported.getMacros();
+    macros.forEach(m => {
+      expect(m.triggerMode).toBe("edge");
+    });
+    expect(macros[0].scriptId).toBe("sc-v121-legacy");
+  });
+
+  it("invalides triggerMode (z.B. 'loop') wird beim Load auf 'edge' korrigiert", async () => {
+    const corrupted = Array.from({ length: 8 }, (_, i) => ({
+      index: i,
+      label: `Macro ${i + 1}`,
+      value: 0,
+      bindings: [],
+      color: MACRO_COLORS[i],
+      mode: "button",
+      triggerMode: i === 0 ? "loop" : (i === 1 ? "hold" : "edge"),
+    }));
+    localStorageMock.setItem(STORAGE_KEY, JSON.stringify(corrupted));
+
+    vi.resetModules();
+    const reimported = await import("../../client/src/store/useMacroStore");
+    const macros = reimported.getMacros();
+    expect(macros[0].triggerMode).toBe("edge"); // "loop" → "edge"
+    expect(macros[1].triggerMode).toBe("hold"); // legit hold
+    expect(macros[2].triggerMode).toBe("edge"); // legit edge
+  });
+});
+
+// ─── Hold-Loop Utility Tests (TASK-118) ──────────────────────────────────────
+// Die Hold-Loop selbst lebt in client/src/utils/macroHoldLoop.ts. Wir testen
+// hier nur die Public API + No-Stacking-Garantie mit injiziertem Scheduler.
+
+describe("macroHoldLoop – Pure-Logik-Helfer", () => {
+  beforeEach(() => {
+    // Helfer hat Module-State (eine Map); zwischen Tests aufräumen
+  });
+
+  function createMockScheduler() {
+    let nextId = 1;
+    const tasks = new Map<number, { fn: () => void; ms: number }>();
+    return {
+      scheduler: {
+        setInterval: (fn: () => void, ms: number) => {
+          const id = nextId++;
+          tasks.set(id, { fn, ms });
+          return id;
+        },
+        clearInterval: (handle: unknown) => {
+          tasks.delete(handle as number);
+        },
+      },
+      /** Triggert ein "Tick" für alle aktiven Tasks. */
+      tick: () => {
+        for (const { fn } of Array.from(tasks.values())) {
+          fn();
+        }
+      },
+      activeTaskCount: () => tasks.size,
+    };
+  }
+
+  it("startHoldLoop ruft run() sofort einmal auf (erste Iteration)", async () => {
+    vi.resetModules();
+    const mod = await import("../../client/src/utils/macroHoldLoop");
+    mod.stopAllHoldLoops();
+    const { scheduler } = createMockScheduler();
+    const calls: number[] = [];
+    mod.startHoldLoop(0, () => calls.push(Date.now()), 200, scheduler);
+    expect(calls).toHaveLength(1);
+    mod.stopAllHoldLoops(scheduler);
+  });
+
+  it("Folge-Iterationen werden via Scheduler getriggert", async () => {
+    vi.resetModules();
+    const mod = await import("../../client/src/utils/macroHoldLoop");
+    mod.stopAllHoldLoops();
+    const { scheduler, tick } = createMockScheduler();
+    const calls: string[] = [];
+    mod.startHoldLoop(0, () => calls.push("run"), 200, scheduler);
+    // Nach Start: 1 sofortiger Call
+    expect(calls).toHaveLength(1);
+    tick();
+    expect(calls).toHaveLength(2);
+    tick();
+    tick();
+    expect(calls).toHaveLength(4);
+    mod.stopAllHoldLoops(scheduler);
+  });
+
+  it("No-Stacking: zweiter startHoldLoop für selben Index ersetzt den ersten", async () => {
+    vi.resetModules();
+    const mod = await import("../../client/src/utils/macroHoldLoop");
+    mod.stopAllHoldLoops();
+    const { scheduler, activeTaskCount } = createMockScheduler();
+    mod.startHoldLoop(0, () => {}, 200, scheduler);
+    expect(activeTaskCount()).toBe(1);
+    mod.startHoldLoop(0, () => {}, 200, scheduler);
+    expect(activeTaskCount()).toBe(1); // alte Loop wurde gestoppt
+    mod.stopAllHoldLoops(scheduler);
+  });
+
+  it("Mehrere Macro-Indizes haben unabhängige Loops", async () => {
+    vi.resetModules();
+    const mod = await import("../../client/src/utils/macroHoldLoop");
+    mod.stopAllHoldLoops();
+    const { scheduler, activeTaskCount } = createMockScheduler();
+    mod.startHoldLoop(0, () => {}, 200, scheduler);
+    mod.startHoldLoop(1, () => {}, 100, scheduler);
+    mod.startHoldLoop(2, () => {}, 200, scheduler);
+    expect(activeTaskCount()).toBe(3);
+    mod.stopHoldLoop(1, scheduler);
+    expect(activeTaskCount()).toBe(2);
+    expect(mod.isHoldLoopActive(0)).toBe(true);
+    expect(mod.isHoldLoopActive(1)).toBe(false);
+    expect(mod.isHoldLoopActive(2)).toBe(true);
+    mod.stopAllHoldLoops(scheduler);
+  });
+
+  it("stopHoldLoop ist no-op wenn keine Loop aktiv", async () => {
+    vi.resetModules();
+    const mod = await import("../../client/src/utils/macroHoldLoop");
+    mod.stopAllHoldLoops();
+    const { scheduler } = createMockScheduler();
+    expect(() => mod.stopHoldLoop(99, scheduler)).not.toThrow();
+    expect(mod.isHoldLoopActive(99)).toBe(false);
+  });
+
+  it("run-Funktion die wirft bricht die Loop NICHT (defensiv)", async () => {
+    vi.resetModules();
+    const mod = await import("../../client/src/utils/macroHoldLoop");
+    mod.stopAllHoldLoops();
+    const { scheduler, tick } = createMockScheduler();
+    let calls = 0;
+    mod.startHoldLoop(0, () => {
+      calls++;
+      throw new Error("test-error");
+    }, 200, scheduler);
+    expect(calls).toBe(1); // initialer Call
+    tick();
+    expect(calls).toBe(2); // Loop läuft trotz Error weiter
+    tick();
+    expect(calls).toBe(3);
+    mod.stopAllHoldLoops(scheduler);
+  });
+
+  it("stopAllHoldLoops löscht alle Loops gleichzeitig", async () => {
+    vi.resetModules();
+    const mod = await import("../../client/src/utils/macroHoldLoop");
+    mod.stopAllHoldLoops();
+    const { scheduler } = createMockScheduler();
+    mod.startHoldLoop(0, () => {}, 200, scheduler);
+    mod.startHoldLoop(1, () => {}, 200, scheduler);
+    mod.startHoldLoop(2, () => {}, 200, scheduler);
+    expect(mod.getActiveHoldLoopCount()).toBe(3);
+    mod.stopAllHoldLoops(scheduler);
+    expect(mod.getActiveHoldLoopCount()).toBe(0);
+  });
+
+  it("Default-Konstanten haben sinnvolle Werte (Script 200ms, Pad 100ms)", async () => {
+    vi.resetModules();
+    const mod = await import("../../client/src/utils/macroHoldLoop");
+    expect(mod.SCRIPT_HOLD_INTERVAL_MS).toBe(200);
+    expect(mod.PAD_HOLD_INTERVAL_MS).toBe(100);
   });
 });

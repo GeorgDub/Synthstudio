@@ -37,7 +37,7 @@ function TemplateCard({
       className={`
         w-full text-left p-3 rounded-lg border transition-all duration-150
         ${isSelected
-          ? "border-accent-primary bg-accent-primary/20 ring-1 ring-cyan-600/50"
+          ? "border-accent-primary bg-accent-primary/20 ring-1 ring-accent-primary/50"
           : "border-border-color bg-bg-elevated/40 hover:border-border-color hover:bg-bg-elevated/60"
         }
       `}
@@ -176,7 +176,7 @@ export function NewProjectDialog({ isOpen, onClose, onCreateProject }: NewProjec
               value={projectName}
               onChange={(e) => setProjectName(e.target.value)}
               placeholder={selectedTemplate.name}
-              className="w-full bg-bg-panel border border-border-color rounded-lg px-3 py-2 text-sm text-text-primary placeholder-slate-600 focus:outline-none focus:border-cyan-700 transition-colors"
+              className="w-full bg-bg-panel border border-border-color rounded-lg px-3 py-2 text-sm text-text-primary placeholder-text-dim focus:outline-none focus:border-accent-primary transition-colors"
               onKeyDown={(e) => e.key === "Enter" && handleCreate()}
             />
           </div>

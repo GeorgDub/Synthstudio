@@ -197,6 +197,15 @@ export function countTimestretchTracks(): number {
 }
 
 /**
+ * Convenience-Helper: `true` wenn das `MAX_TIMESTRETCH_TRACKS`-Limit erreicht
+ * (oder überschritten) ist. UI-Komponenten nutzen das für Banner-/Counter-
+ * Sichtbarkeit ohne den Counter erneut zu zählen.
+ */
+export function isTimestretchLimitReached(): boolean {
+  return countTimestretchTracks() >= MAX_TIMESTRETCH_TRACKS;
+}
+
+/**
  * Ersetzt den gesamten State (verwendet von projectSerializer beim Projekt-Load).
  * Filtert invalide Items + cappt auf MAX_AUDIO_TRACKS.
  * Setzt runtime-state komplett zurück.

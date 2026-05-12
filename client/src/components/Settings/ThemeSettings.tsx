@@ -241,7 +241,7 @@ export function ThemeSettings({ isOpen, onClose }: Props) {
             {THEMES.map((theme) => {
               const isSelected = currentBaseTheme === theme.id && !activeCustomTheme;
               return (
-                <button key={theme.id} onClick={() => selectBaseTheme(theme.id)} className={`flex items-center gap-3 p-3 rounded border text-left transition-all duration-150 ${isSelected ? "border-accent-primary bg-cyan-950/30" : "border-border-color hover:border-border-color bg-bg-panel/30 hover:bg-bg-elevated/30"}`}>
+                <button key={theme.id} onClick={() => selectBaseTheme(theme.id)} className={`flex items-center gap-3 p-3 rounded border text-left transition-all duration-150 ${isSelected ? "border-accent-primary bg-accent-primary/10" : "border-border-color hover:border-border-color bg-bg-panel/30 hover:bg-bg-elevated/30"}`}>
                   <div className="flex gap-0.5 flex-shrink-0">
                     {theme.preview.map((color, i) => <div key={i} className="rounded-sm" style={{ background: color, width: i === 0 ? 20 : 10, height: 28 }} />)}
                   </div>
@@ -261,18 +261,18 @@ export function ThemeSettings({ isOpen, onClose }: Props) {
                 {customThemes.map((theme) => {
                     const isSelected = activeCustomTheme === theme.id;
                     return (
-                        <div key={theme.id} className={`flex items-center gap-3 p-3 rounded border text-left transition-all duration-150 ${isSelected ? "border-green-600 bg-green-950/30" : "border-border-color hover:border-border-color bg-bg-panel/30 hover:bg-bg-elevated/30"}`}>
+                        <div key={theme.id} className={`flex items-center gap-3 p-3 rounded border text-left transition-all duration-150 ${isSelected ? "border-accent-success bg-accent-success/10" : "border-border-color hover:border-border-color bg-bg-panel/30 hover:bg-bg-elevated/30"}`}>
                             <button onClick={() => selectCustomTheme(theme.id)} className="flex-1 flex items-center gap-3">
                                 <div className="flex gap-0.5 flex-shrink-0">
                                     <div className="rounded-sm" style={{ background: theme.colors['--ss-bg-base'], width: 20, height: 28 }} />
                                     <div className="rounded-sm" style={{ background: theme.colors['--ss-accent-primary'], width: 10, height: 28 }} />
                                 </div>
                                 <div className="min-w-0">
-                                    <div className={`text-xs font-medium ${isSelected ? "text-green-400" : "text-text-primary"}`}>{theme.name}</div>
+                                    <div className={`text-xs font-medium ${isSelected ? "text-accent-success" : "text-text-primary"}`}>{theme.name}</div>
                                 </div>
-                                {isSelected && <div className="ml-auto flex-shrink-0"><div className="w-2 h-2 rounded-full bg-green-500" /></div>}
+                                {isSelected && <div className="ml-auto flex-shrink-0"><div className="w-2 h-2 rounded-full bg-accent-success" /></div>}
                             </button>
-                            <button onClick={() => deleteCustomTheme(theme.id)} className="text-text-dim hover:text-red-400 text-xs p-1">✕</button>
+                            <button onClick={() => deleteCustomTheme(theme.id)} className="text-text-dim hover:text-accent-danger text-xs p-1">✕</button>
                         </div>
                     );
                 })}

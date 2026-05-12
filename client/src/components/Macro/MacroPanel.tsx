@@ -18,12 +18,15 @@ import {
   setMacroMode,
   setMacroScriptId,
   setMacroTriggerKind,
+  setMacroTriggerMode,
   setMacroPadIndex,
   triggerMacroButton,
+  triggerMacroButtonRelease,
   type Macro,
   type MacroMode,
   type MacroTargetType,
   type MacroTriggerKind,
+  type MacroTriggerMode,
 } from "@/store/useMacroStore";
 import { useScriptStore } from "@/store/useScriptStore";
 import { usePerformanceStore, PAD_COUNT, type PerformancePad } from "@/store/usePerformanceStore";
@@ -89,6 +92,7 @@ function MacroKnob({ macro, onEdit }: { macro: Macro; onEdit: () => void }) {
 function MacroButton({
   macro,
   triggerKind,
+  triggerMode,
   scriptName,
   scriptMissing,
   padLabel,
@@ -98,6 +102,7 @@ function MacroButton({
 }: {
   macro: Macro;
   triggerKind: MacroTriggerKind;
+  triggerMode: MacroTriggerMode;
   scriptName: string | null;
   scriptMissing: boolean;
   padLabel: string | null;
@@ -105,13 +110,22 @@ function MacroButton({
   padMissing: boolean;
   onEdit: () => void;
 }) {
-  // Press-State für visuelles Feedback (Edge-Mode: triggert beim Drücken)
+  // Press-State für visuelles Feedback. In Hold-Mode triggert mouseDown den
+  // Start einer Loop in App.tsx, mouseUp/mouseLeave/touchEnd stoppt sie via
+  // triggerMacroButtonRelease (auch in Edge-Mode rufen wir das Release auf —
+  // App.tsx kennt selbst den State und macht es no-op falls keine Loop läuft).
   const [pressed, setPressed] = useState(false);
+  const isHoldMode = triggerMode === "hold";
   const handleDown = () => {
     setPressed(true);
     triggerMacroButton(macro.index);
   };
-  const handleUp = () => setPressed(false);
+  const handleUp = () => {
+    setPressed(false);
+    if (isHoldMode) {
+      triggerMacroButtonRelease(macro.index);
+    }
+  };
 
   // Label + Disabled + Farb-Logik abhängig vom triggerKind
   let label: string;
@@ -161,7 +175,7 @@ function MacroButton({
         onTouchStart={disabled ? undefined : handleDown}
         onTouchEnd={handleUp}
         disabled={disabled}
-        aria-label={`Trigger ${macro.label}`}
+        aria-label={`Trigger ${macro.label}${isHoldMode ? " (Hold-Mode)" : ""}`}
         className="relative h-20 w-14 rounded-md flex items-center justify-center text-[10px] font-bold border transition-all select-none disabled:opacity-50 disabled:cursor-not-allowed border-border-color"
         style={{
           // User-definierte Farbe (Pad oder Macro) darf inline gestyled werden (domain palette, kein Token-Mapping)
@@ -171,8 +185,19 @@ function MacroButton({
           boxShadow: pressed ? "inset 0 0 8px rgba(0,0,0,0.35)" : "none",
           cursor: disabled ? "not-allowed" : "pointer",
         }}
-        title={titleText}
+        title={isHoldMode ? `${titleText} — Hold-Mode (Loop solange gedrückt)` : titleText}
       >
+        {/* Hold-Mode-Indikator: Schleifen-Icon oben-rechts */}
+        {isHoldMode && !disabled && (
+          <span
+            aria-hidden="true"
+            className="absolute top-0.5 right-0.5 text-[10px] leading-none pointer-events-none"
+            style={{ textShadow: "0 0 2px rgba(0,0,0,0.6)" }}
+            title="Hold-Mode aktiv"
+          >
+            🔁
+          </span>
+        )}
         <span className="px-1 break-words text-center leading-tight" style={{ wordBreak: "break-word" }}>
           {label}
         </span>
@@ -210,6 +235,8 @@ function BindingEditor({ macro, parts, onClose }: { macro: Macro; parts: PartDat
 
   // Defensiver Default: bei fehlendem triggerKind → "script" (Backwards-Compat)
   const effectiveTriggerKind: MacroTriggerKind = macro.triggerKind === "pad" ? "pad" : "script";
+  // Defensiver Default: bei fehlendem triggerMode → "edge" (v1.22.0)
+  const effectiveTriggerMode: MacroTriggerMode = macro.triggerMode === "hold" ? "hold" : "edge";
 
   const handleAdd = () => {
     const part = parts.find(p => p.id === newPartId);
@@ -232,6 +259,10 @@ function BindingEditor({ macro, parts, onClose }: { macro: Macro; parts: PartDat
 
   const handleSwitchTriggerKind = (kind: MacroTriggerKind) => {
     setMacroTriggerKind(macro.index, kind);
+  };
+
+  const handleSwitchTriggerMode = (mode: MacroTriggerMode) => {
+    setMacroTriggerMode(macro.index, mode);
   };
 
   const handleSelectPad = (raw: string) => {
@@ -435,6 +466,52 @@ function BindingEditor({ macro, parts, onClose }: { macro: Macro; parts: PartDat
             </div>
           </div>
 
+          {/* Button-Mode: Trigger-Verhalten (Edge | Hold) — v1.22.0 TASK-118 */}
+          <div className="border-t border-border-color pt-3 space-y-2">
+            <div className="text-[10px] text-text-dim uppercase tracking-wide">Trigger-Verhalten</div>
+            <div role="radiogroup" aria-label="Macro trigger mode" className="flex gap-1 bg-bg-elevated rounded p-1 border border-border-color">
+              <button
+                type="button"
+                role="radio"
+                aria-checked={effectiveTriggerMode === "edge"}
+                onClick={() => handleSwitchTriggerMode("edge")}
+                title="Edge: Einmaliger Trigger pro Press (klassisch)"
+                className={
+                  "flex-1 px-2 py-1 text-xs font-semibold rounded transition-colors " +
+                  (effectiveTriggerMode === "edge"
+                    ? "bg-accent-primary text-white"
+                    : "text-text-muted hover:text-text-primary")
+                }
+              >
+                Edge
+              </button>
+              <button
+                type="button"
+                role="radio"
+                aria-checked={effectiveTriggerMode === "hold"}
+                onClick={() => handleSwitchTriggerMode("hold")}
+                title={effectiveTriggerKind === "script"
+                  ? "Hold: Skript läuft in Schleife solange Button gedrückt (alle 200 ms)"
+                  : "Hold: Pad wird alle 100 ms re-triggert solange Button gedrückt"}
+                className={
+                  "flex-1 px-2 py-1 text-xs font-semibold rounded transition-colors " +
+                  (effectiveTriggerMode === "hold"
+                    ? "bg-accent-primary text-white"
+                    : "text-text-muted hover:text-text-primary")
+                }
+              >
+                Hold 🔁
+              </button>
+            </div>
+            <div className="text-[10px] text-text-dim leading-snug">
+              {effectiveTriggerMode === "hold"
+                ? (effectiveTriggerKind === "script"
+                  ? "Skript läuft in Schleife (~200 ms Intervall) solange Button gedrückt."
+                  : "Pad wird alle ~100 ms re-triggert solange Button gedrückt.")
+                : "Single-shot bei mouseDown."}
+            </div>
+          </div>
+
           {effectiveTriggerKind === "script" ? (
             <div className="border-t border-border-color pt-3 space-y-2">
               <div className="text-[10px] text-text-dim uppercase tracking-wide">Skript</div>
@@ -466,10 +543,6 @@ function BindingEditor({ macro, parts, onClose }: { macro: Macro; parts: PartDat
               >
                 Edit in Script Runner →
               </button>
-
-              <div className="text-[10px] text-text-dim leading-snug pt-1">
-                Trigger-Modus: <span className="font-mono text-text-muted">edge</span> (einmaliger Run pro Press).
-              </div>
             </div>
           ) : (
             <div className="border-t border-border-color pt-3 space-y-2">
@@ -546,6 +619,7 @@ export function MacroPanel({ parts }: MacroPanelProps) {
         {macros.map(macro => {
           const isButton = macro.mode === "button";
           const triggerKind: MacroTriggerKind = macro.triggerKind === "pad" ? "pad" : "script";
+          const triggerMode: MacroTriggerMode = macro.triggerMode === "hold" ? "hold" : "edge";
           const linkedScript = isButton && triggerKind === "script" && macro.scriptId
             ? scripts.find(s => s.id === macro.scriptId)
             : undefined;
@@ -560,6 +634,7 @@ export function MacroPanel({ parts }: MacroPanelProps) {
                 <MacroButton
                   macro={macro}
                   triggerKind={triggerKind}
+                  triggerMode={triggerMode}
                   scriptName={linkedScript?.name ?? null}
                   scriptMissing={scriptMissing}
                   padLabel={linkedPad?.label ?? null}

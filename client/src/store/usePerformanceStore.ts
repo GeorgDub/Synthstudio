@@ -20,6 +20,30 @@ import { useEffect, useReducer } from "react";
 export const PAD_COUNT = 16;
 const STORAGE_KEY = "ss-performance:v1";
 
+/**
+ * CSS-Variablen-Namen der 8 theme-aware Pad-Default-Slot-Farben (TASK-119 / v1.22.0).
+ *
+ * Sind in client/src/index.css je Theme definiert (siehe `--ss-pad-1..8` in jedem
+ * `[data-theme="..."]` Block). UI-Konsumenten (PatternLaunchPad) lesen sie zur
+ * Laufzeit via `getComputedStyle(document.documentElement).getPropertyValue(name)`.
+ *
+ * Mapping für die 16 Pad-Positionen: Slot = (padIndex % 8) + 1 (mod-loop).
+ *
+ * Diese Konstante hat KEIN persistenz-Impact — sie ist nur ein Helper, damit UI
+ * + Tests denselben Lookup-Pfad benutzen. User-defined `pad.color` bleibt davon
+ * unberührt (hardcoded hex wird unverändert geladen + behalten).
+ */
+export const PAD_COLOR_VAR_NAMES: readonly string[] = [
+  "--ss-pad-1",
+  "--ss-pad-2",
+  "--ss-pad-3",
+  "--ss-pad-4",
+  "--ss-pad-5",
+  "--ss-pad-6",
+  "--ss-pad-7",
+  "--ss-pad-8",
+];
+
 export interface PerformancePad {
   patternId: string;
   /** CSS-Farbe (z.B. "#22d3ee"). User-defined oder Default-Palette-Fallback im UI. */

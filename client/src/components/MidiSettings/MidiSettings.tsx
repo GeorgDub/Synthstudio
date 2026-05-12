@@ -70,7 +70,7 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
           disabled={!midi.isAvailable}
           className={`px-4 py-1.5 rounded text-sm font-medium transition-colors ${
             midi.isEnabled
-              ? "bg-accent-primary hover:bg-accent-primary/70 text-white"
+              ? "bg-accent-primary hover:bg-accent-primary/70 text-bg-base"
               : "bg-bg-elevated hover:bg-bg-elevated/80 text-text-primary disabled:opacity-40 disabled:cursor-not-allowed"
           }`}
         >
@@ -109,7 +109,7 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
                     )}
                   </div>
                   <div className={`w-2 h-2 rounded-full ${
-                    device.state === "connected" ? "bg-green-400" : "bg-bg-elevated"
+                    device.state === "connected" ? "bg-accent-success" : "bg-bg-elevated"
                   }`} />
                 </button>
               ))}
@@ -120,7 +120,7 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
 
       {/* Status */}
       {midi.isEnabled && midi.activeDeviceId && (
-        <div className="p-2 bg-green-900/30 border border-green-700/50 rounded text-xs text-green-400 text-center">
+        <div className="p-2 bg-accent-success/20 border border-accent-success/50 rounded text-xs text-accent-success text-center">
           MIDI aktiv – Gerät verbunden
         </div>
       )}
@@ -144,11 +144,11 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
           MIDI-Learn
         </div>
         {midi.isLearning ? (
-          <div className="p-3 bg-yellow-900/40 border border-yellow-600/50 rounded-lg">
-            <div className="text-sm text-yellow-300 font-medium mb-1">
+          <div className="p-3 bg-accent-secondary/20 border border-accent-secondary/50 rounded-lg">
+            <div className="text-sm text-accent-secondary font-medium mb-1">
               Warte auf CC-Nachricht...
             </div>
-            <div className="text-xs text-yellow-400 mb-3">
+            <div className="text-xs text-accent-secondary mb-3">
               Bewege einen Regler oder Knopf an deinem MIDI-Controller.
               Ziel: <strong>{midi.learnTarget ? targetLabel(midi.learnTarget) : "–"}</strong>
             </div>
@@ -176,7 +176,7 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
                   disabled={!midi.isEnabled}
                   className={`flex items-center justify-between p-2 rounded text-left text-xs transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
                     existing
-                      ? "bg-accent-primary/40 border border-cyan-700/50 hover:bg-accent-primary/60"
+                      ? "bg-accent-primary/40 border border-accent-primary/50 hover:bg-accent-primary/60"
                       : "bg-bg-elevated hover:bg-bg-elevated"
                   }`}
                 >
@@ -214,7 +214,7 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
                 </div>
                 <button
                   onClick={() => midi.removeMapping(m.cc, m.channel)}
-                  className="text-text-dim hover:text-red-400 ml-2"
+                  className="text-text-dim hover:text-accent-danger ml-2"
                   title="Mapping entfernen"
                 >
                   ✕
@@ -224,7 +224,7 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
           </div>
           <button
             onClick={midi.clearAllMappings}
-            className="mt-2 text-xs text-red-400 hover:text-red-300"
+            className="mt-2 text-xs text-accent-danger hover:text-accent-danger/80"
           >
             Alle Mappings löschen
           </button>
@@ -306,7 +306,7 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
               const partName = parts.find(p => p.id === partId)?.name ?? partId;
               midi.addNoteMapping(manualNote, manualChannel, partId, `${partName} (${noteToName(manualNote)})`);
             }}
-            className="w-full py-1.5 bg-accent-primary/70 hover:bg-accent-primary text-white text-xs rounded"
+            className="w-full py-1.5 bg-accent-primary/70 hover:bg-accent-primary text-bg-base text-xs rounded"
           >
             Zuweisung hinzufügen
           </button>
@@ -332,7 +332,7 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
                   </div>
                   <button
                     onClick={() => midi.removeNoteMapping(m.note, m.channel)}
-                    className="text-text-dim hover:text-red-400 ml-2"
+                    className="text-text-dim hover:text-accent-danger ml-2"
                   >
                     ✕
                   </button>
@@ -367,7 +367,7 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
               midi.clockSync ? "bg-accent-primary" : "bg-bg-elevated"
             }`}
           >
-            <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${
+            <div className={`absolute top-0.5 w-4 h-4 bg-text-primary rounded-full shadow transition-transform ${
               midi.clockSync ? "translate-x-5" : "translate-x-0.5"
             }`} />
           </button>
@@ -450,7 +450,7 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
                     midi.loadTemplate(cc, resolvedNotes);
                   }
                 }}
-                className="px-3 py-1.5 rounded text-xs font-medium bg-accent-primary text-white hover:bg-accent-primary/80 flex-shrink-0"
+                className="px-3 py-1.5 rounded text-xs font-medium bg-accent-primary text-bg-base hover:bg-accent-primary/80 flex-shrink-0"
               >
                 Laden
               </button>
@@ -470,7 +470,7 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
             <span className="text-lg">🎹</span>
             <h2 className="text-base font-semibold text-text-primary">MIDI-Einstellungen</h2>
             {midi.isEnabled && (
-              <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+              <span className="w-2 h-2 rounded-full bg-accent-success animate-pulse" />
             )}
           </div>
           <button
