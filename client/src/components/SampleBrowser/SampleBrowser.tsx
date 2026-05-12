@@ -58,20 +58,30 @@ export interface SampleBrowserProps {
 
 const AUDIO_EXTENSIONS = [".wav", ".mp3", ".ogg", ".flac", ".aiff", ".aif", ".m4a"];
 
-/** Alle verfügbaren Kategorien mit Labels und Farben */
+/**
+ * Alle verfügbaren Kategorien mit Labels und Farben.
+ *
+ * Hinweis zur Theme-Kompatibilität (TASK-113):
+ * Die ursprüngliche Palette nutzte 9 unterschiedliche Tailwind-Farben (red,
+ * orange, yellow, green, teal, cyan, blue, indigo, purple) um Kategorien
+ * visuell zu unterscheiden. Da Synthstudio nur 4 semantische Akzente bietet
+ * (accent-primary, accent-secondary, accent-success, accent-danger), wurden
+ * die Kategorien auf diese Akzente abgebildet — die 3-Buchstaben-Labels
+ * ("KIC", "SNA", …) plus Emojis bleiben als primäres Unterscheidungsmerkmal.
+ */
 const CATEGORIES: Array<{ id: string; label: string; color: string; emoji: string }> = [
-  { id: "all",        label: "Alle",        color: "bg-bg-elevated text-text-primary",         emoji: "◈" },
-  { id: "kicks",      label: "Kicks",       color: "bg-red-900/60 text-red-300",           emoji: "🥁" },
-  { id: "snares",     label: "Snares",      color: "bg-orange-900/60 text-orange-300",     emoji: "🪘" },
-  { id: "hihats",     label: "Hi-Hats",     color: "bg-yellow-900/60 text-yellow-300",     emoji: "🎩" },
-  { id: "claps",      label: "Claps",       color: "bg-green-900/60 text-green-300",       emoji: "👏" },
-  { id: "toms",       label: "Toms",        color: "bg-teal-900/60 text-teal-300",         emoji: "🔵" },
-  { id: "percussion", label: "Perc",        color: "bg-accent-primary/60 text-cyan-300",         emoji: "🎵" },
-  { id: "fx",         label: "FX",          color: "bg-blue-900/60 text-blue-300",         emoji: "⚡" },
-  { id: "loops",      label: "Loops",       color: "bg-indigo-900/60 text-indigo-300",     emoji: "🔁" },
-  { id: "vocals",     label: "Vocals",      color: "bg-purple-900/60 text-purple-300",     emoji: "🎤" },
-  { id: "other",      label: "Sonstige",    color: "bg-bg-elevated/60 text-text-muted",       emoji: "📁" },
-  { id: "imported",   label: "Importiert",  color: "bg-bg-elevated/60 text-text-muted",       emoji: "📥" },
+  { id: "all",        label: "Alle",        color: "bg-bg-elevated text-text-primary",            emoji: "◈" },
+  { id: "kicks",      label: "Kicks",       color: "bg-accent-danger/60 text-accent-danger",      emoji: "🥁" },
+  { id: "snares",     label: "Snares",      color: "bg-accent-secondary/60 text-accent-secondary",emoji: "🪘" },
+  { id: "hihats",     label: "Hi-Hats",     color: "bg-accent-secondary/60 text-accent-secondary",emoji: "🎩" },
+  { id: "claps",      label: "Claps",       color: "bg-accent-success/60 text-accent-success",    emoji: "👏" },
+  { id: "toms",       label: "Toms",        color: "bg-accent-primary/60 text-accent-primary",    emoji: "🔵" },
+  { id: "percussion", label: "Perc",        color: "bg-accent-primary/60 text-accent-primary",    emoji: "🎵" },
+  { id: "fx",         label: "FX",          color: "bg-accent-primary/60 text-accent-primary",    emoji: "⚡" },
+  { id: "loops",      label: "Loops",       color: "bg-accent-secondary/60 text-accent-secondary",emoji: "🔁" },
+  { id: "vocals",     label: "Vocals",      color: "bg-accent-secondary/60 text-accent-secondary",emoji: "🎤" },
+  { id: "other",      label: "Sonstige",    color: "bg-bg-elevated/60 text-text-muted",           emoji: "📁" },
+  { id: "imported",   label: "Importiert",  color: "bg-bg-elevated/60 text-text-muted",           emoji: "📥" },
 ];
 
 const CATEGORY_WAVEFORM_COLORS: Record<string, string> = {
@@ -159,7 +169,7 @@ function ImportProgress({ current, total, percentage, phase, currentFile, onCanc
       {onCancel && (
         <button
           onClick={onCancel}
-          className="mt-1 px-3 py-1 text-xs rounded bg-red-900/40 text-red-400 border border-red-800 hover:bg-red-800/60 transition-colors"
+          className="mt-1 px-3 py-1 text-xs rounded bg-accent-danger/40 text-accent-danger border border-accent-danger hover:bg-accent-danger/60 transition-colors"
         >
           Abbrechen
         </button>
@@ -199,7 +209,7 @@ function WaveformPanel({
     <div className="border-t border-border-color bg-bg-base flex flex-col">
       {/* Sample-Name + Zuweisung */}
       <div className="flex items-center justify-between px-3 py-1.5 border-b border-border-color/50">
-        <span className="text-xs text-cyan-300 font-medium truncate flex-1" title={sample.name}>
+        <span className="text-xs text-accent-primary font-medium truncate flex-1" title={sample.name}>
           {sample.name}
         </span>
         <div className="flex items-center gap-1 ml-2 flex-shrink-0">
@@ -207,7 +217,7 @@ function WaveformPanel({
             <button
               onClick={onAssignToChannel}
               title={activeChannelName ? `Auf Kanal "${activeChannelName}" legen` : "Auf aktiven Kanal legen (Doppelklick)"}
-              className="px-2 py-0.5 rounded text-[10px] bg-accent-primary/70 text-white hover:bg-accent-primary transition-colors font-medium"
+              className="px-2 py-0.5 rounded text-[10px] bg-accent-primary/70 text-bg-base hover:bg-accent-primary transition-colors font-medium"
             >
               → {activeChannelName ? activeChannelName.slice(0, 8) : "Kanal"}
             </button>
@@ -217,8 +227,8 @@ function WaveformPanel({
             className={[
               "w-7 h-7 rounded flex items-center justify-center text-xs transition-all duration-100 flex-shrink-0",
               isPlaying
-                ? "bg-orange-600 text-white"
-                : "bg-bg-elevated text-text-primary hover:bg-bg-elevated hover:text-white",
+                ? "bg-accent-secondary text-bg-base"
+                : "bg-bg-elevated text-text-primary hover:bg-bg-elevated hover:text-text-primary",
             ].join(" ")}
             title={isPlaying ? "Preview stoppen (Leertaste)" : "Preview abspielen (Leertaste)"}
           >
@@ -255,7 +265,7 @@ function WaveformPanel({
           <span title="Kanäle">{analysisResult.channels === 1 ? "Mono" : "Stereo"}</span>
         )}
         {analysisResult?.estimatedBpm != null && (
-          <span title="Geschätztes BPM" className="text-cyan-900">
+          <span title="Geschätztes BPM" className="text-accent-primary">
             ♩ {analysisResult.estimatedBpm} BPM
           </span>
         )}
@@ -263,7 +273,7 @@ function WaveformPanel({
           <span title="Dateigröße">{formatBytes(sample.size)}</span>
         )}
         {isAnalyzing && (
-          <span className="text-cyan-900 animate-pulse">Analysiere…</span>
+          <span className="text-accent-primary animate-pulse">Analysiere…</span>
         )}
       </div>
     </div>
@@ -372,11 +382,11 @@ function PlaylistPanel({
           value={newName}
           onChange={e => setNewName(e.target.value)}
           onKeyDown={e => { if (e.key === "Enter") handleCreate(); }}
-          className="flex-1 bg-bg-panel border border-border-color rounded px-2 py-1 text-xs text-text-primary placeholder-slate-600 focus:outline-none focus:border-cyan-800"
+          className="flex-1 bg-bg-panel border border-border-color rounded px-2 py-1 text-xs text-text-primary placeholder:text-text-dim focus:outline-none focus:border-accent-primary"
         />
         <button
           onClick={handleCreate}
-          className="px-2 py-1 text-xs rounded bg-accent-primary/40 text-accent-secondary border border-cyan-800 hover:bg-accent-primary/60 transition-colors"
+          className="px-2 py-1 text-xs rounded bg-accent-primary/40 text-accent-secondary border border-accent-primary hover:bg-accent-primary/60 transition-colors"
         >
           +
         </button>
@@ -435,7 +445,7 @@ function PlaylistPanel({
                       }
                       if (e.key === "Escape") setEditingId(null);
                     }}
-                    className="flex-1 bg-bg-elevated border border-cyan-700 rounded px-1.5 py-0.5 text-xs text-text-primary focus:outline-none"
+                    className="flex-1 bg-bg-elevated border border-accent-primary rounded px-1.5 py-0.5 text-xs text-text-primary focus:outline-none"
                   />
                 ) : (
                   <button
@@ -443,7 +453,7 @@ function PlaylistPanel({
                     onDoubleClick={() => { setEditingId(pl.id); setEditName(pl.name); }}
                     className={[
                       "flex-1 text-left text-xs truncate",
-                      isActive ? "text-cyan-300" : "text-text-primary",
+                      isActive ? "text-accent-primary" : "text-text-primary",
                     ].join(" ")}
                     title={`${pl.name} – Doppelklick zum Umbenennen`}
                   >
@@ -467,7 +477,7 @@ function PlaylistPanel({
                   <button
                     onClick={() => onRemoveFromPlaylist(pl.id, selectedSampleId)}
                     title="Ausgewähltes Sample entfernen"
-                    className="opacity-0 group-hover:opacity-100 w-5 h-5 rounded text-[10px] bg-red-900/40 text-red-500 hover:bg-red-800/60 transition-all"
+                    className="opacity-0 group-hover:opacity-100 w-5 h-5 rounded text-[10px] bg-accent-danger/40 text-accent-danger hover:bg-accent-danger/60 transition-all"
                   >
                     −
                   </button>
@@ -477,7 +487,7 @@ function PlaylistPanel({
                 <button
                   onClick={() => onDeletePlaylist(pl.id)}
                   title="Playlist löschen"
-                  className="opacity-0 group-hover:opacity-100 w-5 h-5 rounded text-[10px] text-text-dim hover:text-red-400 transition-all"
+                  className="opacity-0 group-hover:opacity-100 w-5 h-5 rounded text-[10px] text-text-dim hover:text-accent-danger transition-all"
                 >
                   ✕
                 </button>
@@ -1132,7 +1142,7 @@ export function SampleBrowser({
           <button
             onClick={handleImportFiles}
             title="Audio-Dateien importieren"
-            className="px-2 py-1 text-xs rounded bg-accent-primary/40 text-accent-secondary border border-cyan-800 hover:bg-accent-primary/60 hover:text-accent-secondary transition-colors"
+            className="px-2 py-1 text-xs rounded bg-accent-primary/40 text-accent-secondary border border-accent-primary hover:bg-accent-primary/60 hover:text-accent-secondary transition-colors"
           >
             + Dateien
           </button>
@@ -1155,8 +1165,8 @@ export function SampleBrowser({
 
       {/* ── Aktiver Kanal Hinweis ────────────────────────────────────────────── */}
       {onAssignToChannel && activeChannelName && (
-        <div className="flex items-center gap-2 px-3 py-1 bg-accent-primary/10 border-b border-cyan-900/30">
-          <span className="text-[10px] text-cyan-700">Aktiver Kanal:</span>
+        <div className="flex items-center gap-2 px-3 py-1 bg-accent-primary/10 border-b border-accent-primary/30">
+          <span className="text-[10px] text-accent-primary">Aktiver Kanal:</span>
           <span className="text-[10px] text-accent-secondary font-medium">{activeChannelName}</span>
           <span className="text-[10px] text-text-dim ml-auto">Doppelklick oder Enter zum Zuweisen</span>
         </div>
@@ -1211,8 +1221,8 @@ export function SampleBrowser({
         <>
           {/* Aktive Playlist-Anzeige */}
           {activePlaylistId && (
-            <div className="flex items-center gap-2 px-3 py-1 bg-indigo-900/10 border-b border-indigo-900/30">
-              <span className="text-[10px] text-indigo-400">
+            <div className="flex items-center gap-2 px-3 py-1 bg-accent-secondary/10 border-b border-accent-secondary/30">
+              <span className="text-[10px] text-accent-secondary">
                 ♪ {playlists.find(p => p.id === activePlaylistId)?.name ?? "Playlist"}
               </span>
               <button
@@ -1231,7 +1241,7 @@ export function SampleBrowser({
               placeholder="Samples suchen…"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-bg-panel border border-border-color rounded px-2 py-1 text-xs text-text-primary placeholder-slate-600 focus:outline-none focus:border-cyan-800 transition-colors"
+              className="w-full bg-bg-panel border border-border-color rounded px-2 py-1 text-xs text-text-primary placeholder:text-text-dim focus:outline-none focus:border-accent-primary transition-colors"
             />
           </div>
 
@@ -1272,7 +1282,7 @@ export function SampleBrowser({
                   className={[
                     "px-2 py-0.5 text-[10px] rounded-full border transition-all duration-100",
                     activeTag === tag
-                      ? "bg-accent-primary/60 text-cyan-300 border-cyan-700"
+                      ? "bg-accent-primary/60 text-accent-primary border-accent-primary"
                       : "bg-transparent text-text-dim border-border-color hover:text-text-muted hover:border-border-color",
                   ].join(" ")}
                 >
@@ -1299,7 +1309,7 @@ export function SampleBrowser({
                 <p className="text-sm">Keine Treffer</p>
                 <button
                   onClick={() => { setActiveCategory("all"); setSearchQuery(""); setActivePlaylistId(null); setActiveTag(""); }}
-                  className="text-xs text-cyan-700 hover:text-accent-primary transition-colors"
+                  className="text-xs text-accent-secondary hover:text-accent-primary transition-colors"
                 >
                   Filter zurücksetzen
                 </button>
@@ -1311,12 +1321,12 @@ export function SampleBrowser({
                   <button
                     onClick={handleNavigatePrev}
                     title="Vorheriges Sample (Pfeil hoch)"
-                    className="w-6 h-6 rounded bg-bg-elevated text-text-muted hover:bg-bg-elevated hover:text-white transition-colors text-xs"
+                    className="w-6 h-6 rounded bg-bg-elevated text-text-muted hover:bg-bg-elevated hover:text-text-primary transition-colors text-xs"
                   >▲</button>
                   <button
                     onClick={handleNavigateNext}
                     title="Nächstes Sample (Pfeil runter)"
-                    className="w-6 h-6 rounded bg-bg-elevated text-text-muted hover:bg-bg-elevated hover:text-white transition-colors text-xs"
+                    className="w-6 h-6 rounded bg-bg-elevated text-text-muted hover:bg-bg-elevated hover:text-text-primary transition-colors text-xs"
                   >▼</button>
                   {selectedIndex >= 0 && (
                     <span className="text-[10px] text-text-dim">
@@ -1329,7 +1339,7 @@ export function SampleBrowser({
                 </div>
 
                 <ul
-                  className="divide-y divide-slate-800/50"
+                  className="divide-y divide-border-color/50"
                   onDragLeave={(e) => {
                     // Cursor hat die gesamte Liste verlassen
                     if (!e.currentTarget.contains(e.relatedTarget as Node)) {
@@ -1389,7 +1399,7 @@ export function SampleBrowser({
 
                         {/* Name */}
                         <div className="flex-1 min-w-0">
-                          <p className={`text-xs truncate ${isSelected ? "text-cyan-300" : "text-text-primary"}`}>
+                          <p className={`text-xs truncate ${isSelected ? "text-accent-primary" : "text-text-primary"}`}>
                             {sample.name}
                           </p>
                         </div>
@@ -1414,7 +1424,7 @@ export function SampleBrowser({
                               onAssignToChannel(sample.path, sample.name);
                             }}
                             title={`Auf Kanal "${activeChannelName ?? "aktiv"}" legen`}
-                            className="flex-shrink-0 px-1.5 py-0.5 rounded text-[9px] bg-accent-primary/70 text-white hover:bg-accent-primary transition-colors font-medium"
+                            className="flex-shrink-0 px-1.5 py-0.5 rounded text-[9px] bg-accent-primary/70 text-bg-base hover:bg-accent-primary transition-colors font-medium"
                           >
                             →
                           </button>
@@ -1427,8 +1437,8 @@ export function SampleBrowser({
                           className={[
                             "w-6 h-6 rounded flex items-center justify-center text-[10px] transition-all duration-100",
                             isThisPlaying
-                              ? "bg-accent-primary text-white opacity-100"
-                              : "opacity-0 group-hover:opacity-100 bg-bg-elevated text-text-muted hover:bg-bg-elevated hover:text-white",
+                              ? "bg-accent-primary text-bg-base opacity-100"
+                              : "opacity-0 group-hover:opacity-100 bg-bg-elevated text-text-muted hover:bg-bg-elevated hover:text-text-primary",
                           ].join(" ")}
                         >
                           {isThisPlaying ? "■" : "▶"}
@@ -1439,7 +1449,7 @@ export function SampleBrowser({
                           <button
                             onClick={(e) => { e.stopPropagation(); onRemoveSample(sample.id); }}
                             title="Sample entfernen"
-                            className="opacity-0 group-hover:opacity-100 text-text-dim hover:text-red-400 transition-all duration-100 text-xs px-1"
+                            className="opacity-0 group-hover:opacity-100 text-text-dim hover:text-accent-danger transition-all duration-100 text-xs px-1"
                           >
                             ✕
                           </button>
@@ -1478,13 +1488,13 @@ export function SampleBrowser({
             ? `${filteredSamples.length} von ${samples.length} Samples`
             : `${samples.length} Sample${samples.length !== 1 ? "s" : ""}`}
           {electron.isElectron && (
-            <span className="ml-2 text-cyan-900">• Electron</span>
+            <span className="ml-2 text-accent-primary">• Electron</span>
           )}
         </p>
         {playlists.length > 0 && (
           <button
             onClick={() => setActiveTab("playlists")}
-            className="text-[10px] text-indigo-700 hover:text-indigo-500 transition-colors"
+            className="text-[10px] text-accent-secondary hover:text-accent-primary transition-colors"
           >
             {playlists.length} Playlist{playlists.length !== 1 ? "s" : ""}
           </button>

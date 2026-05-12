@@ -70,6 +70,8 @@ import {
   applyMacroBindings,
   setMacroMode,
   setMacroScriptId,
+  setMacroTriggerKind,
+  setMacroPadIndex,
   triggerMacroButton,
   type MacroBinding,
   type Macro,
@@ -687,5 +689,278 @@ describe("Macro – Persistence Migration (Old-Format Compat)", () => {
     const reimported = await import("../../client/src/store/useMacroStore");
     const macros = reimported.getMacros();
     expect(macros[0].mode).toBe("knob");
+  });
+});
+
+// ─── Trigger-Kind: Script vs Pad (TASK-112 / v1.20.x) ────────────────────────
+// Erweitert die Button-Mode discriminated union um triggerKind="script"|"pad"
+// (Default "script" für Backwards-Compat) und padIndex (0..15).
+//
+//   - setMacroTriggerKind(idx, "pad") setzt das Feld und persistiert.
+//   - setMacroPadIndex(idx, 0..15) setzt einen Pad-Index.
+//   - setMacroPadIndex(idx, null) löscht den Pad-Index.
+//   - setMacroPadIndex out-of-range / non-integer → no-op.
+//   - triggerMacroButton (mode=button + triggerKind=pad + padIndex set) dispatcht
+//     macro:button:trigger mit { macroIndex, triggerKind, scriptId?, padIndex }.
+
+describe("Macro – Trigger-Kind Schema (Script vs Pad)", () => {
+  beforeEach(() => {
+    localStorageMock.clear();
+    dispatched.length = 0;
+    resetMacros();
+  });
+
+  it("Default-triggerKind aller Macros ist 'script'", () => {
+    const all = getMacros();
+    all.forEach(m => expect(m.triggerKind).toBe("script"));
+  });
+
+  it("setMacroTriggerKind wechselt auf 'pad' und persistiert", () => {
+    setMacroTriggerKind(0, "pad");
+    expect(getMacros()[0].triggerKind).toBe("pad");
+    const raw = localStorageMock.getItem(STORAGE_KEY);
+    expect(raw).not.toBeNull();
+    const parsed = JSON.parse(raw!) as Macro[];
+    expect(parsed[0].triggerKind).toBe("pad");
+  });
+
+  it("setMacroTriggerKind wechselt 'pad' → 'script' zurück, padIndex bleibt erhalten", () => {
+    setMacroTriggerKind(2, "pad");
+    setMacroPadIndex(2, 5);
+    expect(getMacros()[2].padIndex).toBe(5);
+    setMacroTriggerKind(2, "script");
+    expect(getMacros()[2].triggerKind).toBe("script");
+    // Defensiv preserviert (kein Datenverlust beim Hin- und Her-Wechsel)
+    expect(getMacros()[2].padIndex).toBe(5);
+  });
+
+  it("setMacroTriggerKind ist no-op bei out-of-range index", () => {
+    setMacroTriggerKind(-1, "pad");
+    setMacroTriggerKind(99, "pad");
+    getMacros().forEach(m => expect(m.triggerKind).toBe("script"));
+  });
+
+  it("setMacroTriggerKind ist no-op bei invalid kind-string", () => {
+    setMacroTriggerKind(0, "script");
+    setMacroTriggerKind(0, "invalid" as unknown as "pad");
+    expect(getMacros()[0].triggerKind).toBe("script");
+  });
+
+  it("setMacroPadIndex setzt padIndex und persistiert", () => {
+    setMacroPadIndex(3, 7);
+    expect(getMacros()[3].padIndex).toBe(7);
+    const raw = localStorageMock.getItem(STORAGE_KEY);
+    const parsed = JSON.parse(raw!) as Macro[];
+    expect(parsed[3].padIndex).toBe(7);
+  });
+
+  it("setMacroPadIndex(idx, null) entfernt padIndex (→ undefined)", () => {
+    setMacroPadIndex(3, 7);
+    expect(getMacros()[3].padIndex).toBe(7);
+    setMacroPadIndex(3, null);
+    expect(getMacros()[3].padIndex).toBeUndefined();
+  });
+
+  it("setMacroPadIndex ist no-op bei out-of-range padIndex (>=16)", () => {
+    setMacroPadIndex(0, 99);
+    expect(getMacros()[0].padIndex).toBeUndefined();
+    setMacroPadIndex(0, 16); // genau auf Grenze
+    expect(getMacros()[0].padIndex).toBeUndefined();
+  });
+
+  it("setMacroPadIndex ist no-op bei negativen padIndex", () => {
+    setMacroPadIndex(0, -1);
+    expect(getMacros()[0].padIndex).toBeUndefined();
+  });
+
+  it("setMacroPadIndex ist no-op bei non-integer padIndex", () => {
+    setMacroPadIndex(0, 2.5);
+    expect(getMacros()[0].padIndex).toBeUndefined();
+    setMacroPadIndex(0, NaN);
+    expect(getMacros()[0].padIndex).toBeUndefined();
+  });
+
+  it("setMacroPadIndex ist no-op bei out-of-range macroIndex", () => {
+    setMacroPadIndex(-1, 3);
+    setMacroPadIndex(99, 3);
+    getMacros().forEach(m => expect(m.padIndex).toBeUndefined());
+  });
+
+  it("setMacroPadIndex akzeptiert beide Grenzen 0 und 15", () => {
+    setMacroPadIndex(0, 0);
+    expect(getMacros()[0].padIndex).toBe(0);
+    setMacroPadIndex(0, 15);
+    expect(getMacros()[0].padIndex).toBe(15);
+  });
+});
+
+describe("triggerMacroButton – Pad-Mode", () => {
+  beforeEach(() => {
+    localStorageMock.clear();
+    dispatched.length = 0;
+    resetMacros();
+  });
+
+  it("dispatcht 'macro:button:trigger' mit triggerKind='pad' + padIndex", () => {
+    setMacroMode(2, "button");
+    setMacroTriggerKind(2, "pad");
+    setMacroPadIndex(2, 4);
+    const result = triggerMacroButton(2);
+    expect(result).toBe("pad:4");
+    const ev = dispatched.find(d => d.type === "macro:button:trigger");
+    expect(ev).toBeDefined();
+    expect(ev!.detail).toMatchObject({
+      macroIndex: 2,
+      triggerKind: "pad",
+      padIndex: 4,
+    });
+  });
+
+  it("ist no-op wenn triggerKind='pad' aber padIndex fehlt", () => {
+    setMacroMode(0, "button");
+    setMacroTriggerKind(0, "pad");
+    // padIndex bewusst NICHT gesetzt
+    const result = triggerMacroButton(0);
+    expect(result).toBeNull();
+    expect(dispatched.find(d => d.type === "macro:button:trigger")).toBeUndefined();
+  });
+
+  it("ist no-op wenn mode='knob' obwohl triggerKind='pad' gesetzt", () => {
+    setMacroTriggerKind(0, "pad");
+    setMacroPadIndex(0, 3);
+    // mode bleibt "knob" (default)
+    const result = triggerMacroButton(0);
+    expect(result).toBeNull();
+    expect(dispatched.find(d => d.type === "macro:button:trigger")).toBeUndefined();
+  });
+
+  it("Script-Mode Event enthält weiterhin scriptId + triggerKind='script'", () => {
+    setMacroMode(1, "button");
+    // triggerKind bleibt "script" (default)
+    setMacroScriptId(1, "sc-abc-999");
+    const result = triggerMacroButton(1);
+    expect(result).toBe("sc-abc-999");
+    const ev = dispatched.find(d => d.type === "macro:button:trigger");
+    expect(ev).toBeDefined();
+    expect(ev!.detail).toMatchObject({
+      macroIndex: 1,
+      triggerKind: "script",
+      scriptId: "sc-abc-999",
+    });
+  });
+
+  it("Pad-Mode-Event enthält weiterhin scriptId NICHT zwingend (kann undefined sein)", () => {
+    setMacroMode(0, "button");
+    setMacroTriggerKind(0, "pad");
+    setMacroPadIndex(0, 7);
+    triggerMacroButton(0);
+    const ev = dispatched.find(d => d.type === "macro:button:trigger");
+    expect(ev).toBeDefined();
+    const detail = ev!.detail as { scriptId?: string; padIndex: number };
+    expect(detail.padIndex).toBe(7);
+    expect(detail.scriptId).toBeUndefined();
+  });
+
+  it("Wechsel pad → script ohne scriptId macht trigger zu no-op", () => {
+    setMacroMode(0, "button");
+    setMacroTriggerKind(0, "pad");
+    setMacroPadIndex(0, 1);
+    dispatched.length = 0;
+    setMacroTriggerKind(0, "script");
+    // jetzt fehlt scriptId, trotz padIndex
+    const result = triggerMacroButton(0);
+    expect(result).toBeNull();
+    expect(dispatched.find(d => d.type === "macro:button:trigger")).toBeUndefined();
+  });
+});
+
+describe("Macro – Pad-Mode Persistence + Migration", () => {
+  beforeEach(() => {
+    localStorageMock.clear();
+    dispatched.length = 0;
+  });
+
+  it("triggerKind + padIndex überleben einen Reload-Roundtrip", async () => {
+    vi.resetModules();
+    const m1 = await import("../../client/src/store/useMacroStore");
+    m1.resetMacros();
+    m1.setMacroMode(5, "button");
+    m1.setMacroTriggerKind(5, "pad");
+    m1.setMacroPadIndex(5, 11);
+
+    vi.resetModules();
+    const m2 = await import("../../client/src/store/useMacroStore");
+    const reloaded = m2.getMacros();
+    expect(reloaded[5].mode).toBe("button");
+    expect(reloaded[5].triggerKind).toBe("pad");
+    expect(reloaded[5].padIndex).toBe(11);
+  });
+
+  it("alte v1.17-Daten OHNE triggerKind defaulten auf 'script'", async () => {
+    // Schreibe v1.17 Button-Format: mode="button" + scriptId, KEIN triggerKind/padIndex.
+    const v117Format = Array.from({ length: 8 }, (_, i) => ({
+      index: i,
+      label: `Macro ${i + 1}`,
+      value: 0,
+      bindings: [],
+      color: MACRO_COLORS[i],
+      mode: i === 0 ? "button" : "knob",
+      scriptId: i === 0 ? "sc-legacy-xyz" : undefined,
+      // triggerKind FEHLT
+      // padIndex FEHLT
+    }));
+    localStorageMock.setItem(STORAGE_KEY, JSON.stringify(v117Format));
+
+    vi.resetModules();
+    const reimported = await import("../../client/src/store/useMacroStore");
+    const macros = reimported.getMacros();
+    macros.forEach(m => {
+      expect(m.triggerKind).toBe("script");
+      expect(m.padIndex).toBeUndefined();
+    });
+    // ScriptId überlebt unverändert
+    expect(macros[0].scriptId).toBe("sc-legacy-xyz");
+  });
+
+  it("invalides triggerKind (z.B. 'foo') wird beim Load auf 'script' korrigiert", async () => {
+    const corrupted = Array.from({ length: 8 }, (_, i) => ({
+      index: i,
+      label: `Macro ${i + 1}`,
+      value: 0,
+      bindings: [],
+      color: MACRO_COLORS[i],
+      mode: "button",
+      triggerKind: i === 0 ? "foo" : "pad",
+      padIndex: i === 0 ? 99 : 3, // erstes padIndex out-of-range
+    }));
+    localStorageMock.setItem(STORAGE_KEY, JSON.stringify(corrupted));
+
+    vi.resetModules();
+    const reimported = await import("../../client/src/store/useMacroStore");
+    const macros = reimported.getMacros();
+    expect(macros[0].triggerKind).toBe("script");
+    expect(macros[0].padIndex).toBeUndefined(); // out-of-range gefiltert
+    expect(macros[1].triggerKind).toBe("pad");
+    expect(macros[1].padIndex).toBe(3);
+  });
+
+  it("non-integer padIndex (z.B. 2.5) wird beim Load auf undefined gesetzt", async () => {
+    const data = Array.from({ length: 8 }, (_, i) => ({
+      index: i,
+      label: `Macro ${i + 1}`,
+      value: 0,
+      bindings: [],
+      color: MACRO_COLORS[i],
+      mode: "button",
+      triggerKind: "pad",
+      padIndex: i === 0 ? 2.5 : 7,
+    }));
+    localStorageMock.setItem(STORAGE_KEY, JSON.stringify(data));
+
+    vi.resetModules();
+    const reimported = await import("../../client/src/store/useMacroStore");
+    const macros = reimported.getMacros();
+    expect(macros[0].padIndex).toBeUndefined();
+    expect(macros[1].padIndex).toBe(7);
   });
 });

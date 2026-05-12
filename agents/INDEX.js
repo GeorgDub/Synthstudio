@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "1.20.0",
+    version: "1.21.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -121,6 +121,16 @@ const INDEX = {
     "client/src/index.css": {
       role:     "All 6+ themes, CSS design tokens (--ss-*), @theme Tailwind mappings",
       lastSeen: null,
+      ownedBy:  "frontend"
+    },
+    "client/src/store/usePerformanceStore.ts": {
+      role:     "Performance Mode pads (16), quantizeMode, queuedPatternId. movePad+moveMultiplePads (Insert-Semantik, v1.21.0/TASK-114) für Reorder mit Multi-Select.",
+      lastSeen: "2026-05-12T22:35:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/components/PerformanceMode/PatternLaunchPad.tsx": {
+      role:     "Vollbild Performance-Mode UI. Modi Play/Edit/Reorder. v1.21.0 (TASK-114): WAI-ARIA Roving-Tabindex Grid + Keyboard-Reorder (Space=grab, Pfeile=move, Escape=cancel mit Snapshot-Restore) + Multi-Select via Shift/Ctrl+Click + Bulk-Drag.",
+      lastSeen: "2026-05-12T22:35:00.000Z",
       ownedBy:  "frontend"
     }
   },
@@ -226,6 +236,91 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "frontend",
+      timestamp: "2026-05-12T22:35:00.000Z",
+      done: [
+        "TASK-114 / Performance-Pad a11y Keyboard-Reorder + Multi-Select (v1.21.0). Zwei Verbesserungen aus dem TASK-111-Follow-up zusammen ausgeliefert: (A) WAI-ARIA-konformes Keyboard-Reorder, (B) Shift/Ctrl+Click Multi-Select mit Bulk-Drag.",
+        "TASK-114 / Store-Erweiterung: client/src/store/usePerformanceStore.ts +90 LOC. Neue API moveMultiplePads(fromIndices:number[], targetIndex:number) mit Insert-Semantik (NICHT Swap — sonst Chaos bei N>1). Algorithmus: (1) Sanitisieren fromIndices (dedup, in-range, integer); (2) Snapshot pickedPads in fromIndices-Reihenfolge; (3) Entfernen aus _pads → compacted Array (15-N Slots); (4) Insert-Punkt = targetIndex MINUS Anzahl der zuvor entfernten Indizes vor targetIndex; (5) splice pickedPads ein; (6) auf PAD_COUNT normalisieren. No-op-Conditions: leere Liste / targetIndex ∈ fromIndices / out-of-range / Identitäts-Resultat. Reverse-Order ([15,14]→0) bleibt erhalten weil pickedPads die fromIndices-Order übernimmt.",
+        "TASK-114 / Component-Rewrite: client/src/components/PerformanceMode/PatternLaunchPad.tsx von 602 auf 922 LOC. Bereiche A+B:",
+        "TASK-114 / (A) WAI-ARIA Grid: <div role='grid' aria-label='Performance Pads (4 mal 4)' aria-rowcount=4 aria-colcount=4 onKeyDown={handleGridKeyDown}>. Jeder Pad: role='gridcell', tabIndex={isFocused?0:-1} (Roving-Tabindex), aria-rowindex/colindex/selected, dynamisches aria-label das Status enthält ('aktiv'/'in Queue'/'gegriffen'/'ausgewählt'). aria-grabbed bewusst weggelassen (in WAI-ARIA 1.1 deprecated) — Status kommt über aria-label + Live-Region.",
+        "TASK-114 / (A) Live-Region: <div role='status' aria-live='polite' aria-atomic='true' className='sr-only' data-testid='perf-live-region'> mit setLiveMessage()-State. Announcements: 'Pad N gegriffen, Pfeiltasten zum Verschieben...' beim Grab, 'Pad an Position M abgelegt' beim Drop, 'Verschieben abgebrochen' bei Escape, 'Pad an Position N' bei Bewegung.",
+        "TASK-114 / (A) Keyboard-Handler auf Container (nicht pro Pad — Event-Bubbling reicht). handleGridKeyDown unterscheidet: Arrow/Home/End → moveFocus() innerhalb Grid (klemmt am Rand, kein Wrap); im grabbed-State werden Pfeiltasten zu moveMultiplePads([grabbed], target) UND focusedIndex/grabbedIndex folgen mit. Space/Enter → Play=trigger, Edit=open editor, Reorder=toggle grab/drop. Tab+grabbed → e.preventDefault (Focus-Trap, User muss Drop oder Cancel). Escape (eskalierend): Editor offen → schließe Editor; sonst grabbed → restore Snapshot + Live-Announce; sonst → schließe Performance Mode.",
+        "TASK-114 / (A) Snapshot/Restore: grabbedSnapshotRef speichert pads.slice() vor jedem Grab. Bei Escape iteriert ein restoreSnapshot()-Helper via setPadAt(i, snap[i]) durch alle 16 Slots — pragmatischer Ansatz statt einer dedizierten setPads(bulk) API (würde N notify-Events feuern, aber synchron + akzeptabel). Mode-Wechsel während grabbed cancelt OHNE Restore (User-Intent unklar — wer abbrechen will, drückt Escape vorher).",
+        "TASK-114 / (B) Multi-Select: State multiSelect:Set<number> (runtime-only — wie queuedPatternId NICHT persistiert). onClickHandler in Pad-Komponente liest e.shiftKey/ctrlKey/metaKey → handleReorderClick({modifiers}). Mit Modifier: toggle in Set; ohne Modifier: toggle Grab (Keyboard-Reorder via Click). Empty-Slots werden BLOCKIERT (pad?early-return) — kein sinnvoller Bulk-Op auf null. Mode-Wechsel Reorder→Play/Edit leert die Auswahl. Visueller Indikator: 'N ausgewählt' Counter im Header (data-testid='perf-multiselect-count'), Pads bekommen ring-2 ring-accent-secondary; gegriffene haben ring-accent-primary mit ring-offset; isFocused-Pad ohne Grab/Selected hat ring-accent-primary. Prioritäten-Reihenfolge: grabbed > focused > selected.",
+        "TASK-114 / (B) Bulk-Drag: handleDrop in der Pad-Komponente prüft (multiSelect.has(dragSrc) && multiSelect.size > 1) — wenn ja, fromIndices = sortierte Auswahl + moveMultiplePads(fromIndices, target); Auswahl wird nach erfolgreichem Move geleert. Target darf NICHT in fromIndices liegen (no-op). Wenn Drag-Source NICHT Teil des Multi-Selects (oder Auswahl-Größe 1), bleibt klassisches movePad() (Swap-Semantik aus v1.20.x). Backwards-Compat damit garantiert.",
+        "TASK-114 / Theme-Compliance: Nur semantische Tokens. ring-accent-primary (focused + grabbed), ring-accent-secondary (multi-select), ring-offset-bg-base. Grep auf bg-/text-/border-/ring-/outline-{slate,cyan,red,yellow,orange,...}-N → 0 Treffer in der Datei.",
+        "TASK-114 / Tests Unit: tests/features/performance-store.test.ts von 38 auf 49 Tests erweitert (+11 für moveMultiplePads — alle grün). Neuer describe-Block 'moveMultiplePads (Insert-Semantik, TASK-114)': Happy-Path [0,1]→5 mit korrekter Kompaktierung verifiziert; [3,5,7]→0 bringt drei Pads an den Anfang; [0]→0 + [3]→3 no-op (move-to-self); [] no-op (leere Liste); [15,14]→0 Reverse-Order; [99,-1,2.5]→0 filtert invalide via Number.isInteger + range-check; [0,0,0]→5 dedupliziert; target out-of-range/non-integer → no-op; Persistierung in localStorage verifiziert; [0,2,4]→1 mit Target zwischen Picks.",
+        "TASK-114 / Tests Playwright: tests/web/performance-mode.spec.ts von 9 auf 22 Tests erweitert (+13 für a11y/Multi-Select). Neuer describe-Block 'Performance Mode a11y + Multi-Select (TASK-114)': role=grid mit aria-label + 16 gridcells; Roving-Tabindex (Pad 0 hat tabindex 0, andere -1); Live-Region existiert + sr-only; Arrow-Right von 0→1; Arrow-Down von 0→4; Space greift Pad 0 + Live-Region 'gegriffen'; Space+ArrowRight+Space dropt + Live-Region 'abgelegt'; Escape während grabbed restored + Live-Region 'abgebrochen' + Performance-Mode bleibt offen; Shift+Click 2 Pads → beide aria-selected + Counter '2 ausgewählt'; Shift+Click toggelt de-select; Multi-Select-Drag bewegt alle (Auswahl-Reset danach); Mode-Wechsel Reorder→Play leert Auswahl; Empty-Slot kann NICHT Shift-selected werden.",
+        "TASK-114 / Verification: pnpm check clean (precheck gen:sandbox 'up-to-date', tsc --noEmit ohne Fehler). pnpm test 1106/1121 grün (62 test files, 15 pre-existing skipped, +11 neue Store-Tests, 0 Regressionen). PatternLaunchPad-Komponente keine Hardcoded-Farben."
+      ],
+      next: [
+        "Welle 2 (Playwright Stabilisierung): die 13 neuen Multi-Select / Keyboard-Tests laufen aktuell nur als Playwright-Smoke (kein CI-Run im Auftrag aus dem Task). Bei sehr lokalen Race-Bedingungen (z.B. Live-Region-Update vs assertion-Timeout) könnten in CI Flakes auftauchen — toContainText() hat Default-Timeout 5s, sollte reichen.",
+        "Welle 2 (UX): Drag-Visual-Cue bei Multi-Select-Drag könnte einen Counter-Badge am Cursor zeigen ('2 Pads moven'). HTML5 native DnD erlaubt das nur via setDragImage() mit einem Custom-Element. Aktuell zieht der Cursor das ursprüngliche Pad-Image (Browser-Default), die anderen selected-Pads bleiben sichtbar mit opacity-50 — funktional, aber nicht intuitiv genug.",
+        "Welle 2 (UX): Multi-Select beim Mouse-Box-Drag (Rubber-Band-Selection über mehrere Pads im Reorder-Mode) wäre der nächste Schritt. Aktuell muss man jeden Pad einzeln Shift+Clicken. Implementierung: mousedown auf leeren Bereich des Grids → Box-Drag mit Overlay → mouseup wählt alle Pads in der Box.",
+        "Welle 2 (UX): 'Select All' Shortcut (Cmd/Ctrl+A im Reorder-Mode) wäre nützlich für Bulk-Operations (z.B. alle Pads gleichzeitig clearen via Delete-Taste). Aktuell nicht implementiert.",
+        "Welle 2 (a11y): aria-live='polite' kann auf manchen Screenreadern (NVDA, JAWS) bei schneller Tastatur-Navigation Announcements droppen wenn neue Messages innerhalb <250ms eintreffen. Test-Coverage mit echtem Screenreader (axe-core läuft nur automated-checks, aber kein SR-Output) noch offen. Manuelle SR-Tests wären Welle-3 Akzeptanz.",
+        "Welle 2 (a11y): während grabbed wird Tab abgefangen (Focus-Trap), aber Shift+Tab nicht explizit getestet — sollte ebenfalls preventDefault haben (aktueller Code prüft nur key==='Tab', nicht shiftKey). Test/Fix für Shift+Tab als Welle-2-Polish.",
+        "Welle 2 (Refactor): restoreSnapshot() iteriert mit N setPadAt-Calls (N Notifications). Eine setPads(bulk)-API existiert bereits im Store — ein bulkRestore() via setPads(snap) wäre eleganter und feuert nur EIN notify. Aktuell unkritisch (synchron, max 16 Notifications), aber sauberer Code.",
+        "Welle 2 (Edge): moveMultiplePads({fromIndices: [0,1,2], targetIndex: 1}) wirft no-op weil targetIndex∈fromIndices. Aus User-Sicht könnte das verwirrend sein (User dachte: 'move 0,1,2 vor Position 1'). Eine bessere UX wäre eine visuelle Warnung im UI vor dem Drop ('Ziel-Slot ist Teil der Auswahl'). Aktuell silent-no-op."
+      ],
+      changed: [
+        "client/src/store/usePerformanceStore.ts",
+        "client/src/components/PerformanceMode/PatternLaunchPad.tsx",
+        "tests/features/performance-store.test.ts",
+        "tests/web/performance-mode.spec.ts",
+        "agents/INDEX.js"
+      ]
+    },
+    {
+      agent:     "builder",
+      timestamp: "2026-05-12T22:15:00.000Z",
+      done: [
+        "TASK-115 / CI-Enforcement von sandbox-runtime.generated.ts Drift (v1.21.x Vorlauf). Existing .github/workflows/ci.yml im 'test'-Job erweitert (Option A bevorzugt, da CI-Pipeline bereits vorhanden). Neuer Step 'Verify sandbox source codegen is up-to-date' positioniert NACH 'pnpm install --no-frozen-lockfile' aber VOR 'pnpm check' — kritisch weil precheck/pretest pre-hooks sonst gen:sandbox selbst aufrufen und den Drift maskieren würden. Step ruft 'pnpm gen:sandbox' und prüft danach 'git diff --exit-code client/src/sandbox/sandbox-runtime.generated.ts'; bei Drift Exit-Code 1 + GitHub-Actions-error-annotation mit klarer Fix-Anweisung ('Run pnpm gen:sandbox locally and commit the result').",
+        "TASK-115 / Lokaler Pre-Verify durchgeführt (Step 3 aus Briefing): sandbox-runtime.ts mit TASK-115-Marker-Kommentar modifiziert, node scripts/generate-sandbox-source.mjs ausgeführt, git diff --exit-code returned exit=1 mit klarem SHA256-Diff (src=40f93f5d → 522f8998). Drift-Detection funktioniert wie spezifiziert. Cleanup: source revertet, gen:sandbox erneut ausgeführt, sandbox-Verzeichnis ist clean.",
+        "TASK-115 / docs/SECURITY-SCRIPT-SANDBOX.md im Drift-Risiko-Abschnitt aktualisiert: 'Drei Schutzebenen' explizit dokumentiert (pnpm pre-hooks lokal, CI-Enforcement via ci.yml, funktionale Drift-Tests 14-17 in pentest-Test). Verweis auf TASK-115 + v1.21.0 Versionierung.",
+        "TASK-115 / Verification: pnpm check clean (precheck gen:sandbox 'up-to-date', tsc --noEmit ohne Fehler). pnpm test 1106/1121 grün (62 test files, 15 pre-existing skipped, 0 Regressionen). Codegen-Tests 8/8 (script-sandbox-codegen.test.ts) und Drift-Tests 14-17 (script-sandbox-pentest.test.ts) weiter grün — keine Logik geändert, nur CI-Workflow + Doku."
+      ],
+      next: [
+        "Optional / YAML-Validierungstest: ein simpler Vitest könnte .github/workflows/*.yml lesen und via yaml.parse() validieren — würde Syntax-Fehler in CI-Files vor dem Push catchen. Aktuell skipped (out-of-scope laut Briefing). Pkg yaml/js-yaml wäre erforderlich.",
+        "Optional / Strenger Drift-Check: aktuell prüft CI nur die generated.ts. Wenn jemand die generated.ts manuell editiert ohne sandbox-runtime.ts zu ändern, fällt das durch (gen:sandbox überschreibt die Manipulation ohne Diff zur HEAD-Version). Erkennung wäre durch zweiten 'git diff src + generated'-Check möglich, ist aber niedrige Priorität (Generator ist deterministisch + Manipulation der generated.ts ist offensichtlich verdächtig im Code-Review).",
+        "Optional / Frozen-lockfile: ci.yml nutzt --no-frozen-lockfile (vermutlich aus Migrationsgründen). Sobald pnpm-lock.yaml stabil ist, --frozen-lockfile umstellen für reproduzierbare Builds.",
+        "Optional / Reuse in electron-release.yml: TASK-115-Check könnte auch im Pre-Release-Job (electron-release.yml 'test') gespiegelt werden, falls Releases von ungetesteten Branches angestoßen werden können. Aktuell laufen Releases nur auf tag-Push, vermutlich sind die Tags ohnehin auf main → ci.yml hat bereits gelaufen."
+      ],
+      changed: [
+        ".github/workflows/ci.yml",
+        "docs/SECURITY-SCRIPT-SANDBOX.md",
+        "agents/INDEX.js"
+      ]
+    },
+    {
+      agent:     "frontend",
+      timestamp: "2026-05-12T22:05:00.000Z",
+      done: [
+        "TASK-112 / Macro → Performance-Pad Trigger-Integration (v1.20.x). Macro-Buttons können jetzt ALTERNATIV ein Performance-Pad triggern statt ein Skript — für Live-Performance ohne Tools-Tab zu öffnen. Discriminated union erweitert um `triggerKind: 'script' | 'pad'` (Default 'script' für Backwards-Compat zu v1.17-Daten) + `padIndex?: number` (0..15).",
+        "TASK-112 / useMacroStore.ts Schema: neue Felder triggerKind + padIndex auf Macro-Interface. migrateMacro() defaultet alte v1.17-Daten ohne triggerKind auf 'script' und filtert invalide padIndex (out-of-range, non-integer, NaN, negativ) auf undefined. Neue Public-API: setMacroTriggerKind(idx, 'script'|'pad') + setMacroPadIndex(idx, 0..15|null). triggerMacroButton liefert jetzt 'pad:<idx>' als Sentinel-String bei Pad-Mode (Convenience) und dispatcht CustomEvent mit erweitertem Detail { macroIndex, triggerKind, scriptId?, padIndex? }. PAD_COUNT=16 inline statt Import von usePerformanceStore (Cycle-Schutz).",
+        "TASK-112 / MacroPanel.tsx UI: BindingEditor bei mode='button' bekommt eine zweite radiogroup 'Trigger: [Script] [Pad]' (analog zur Mode-Toggle Knob/Knob). Bei 'Pad' erscheint Pad-Slot-Dropdown 'Pad 1..16' (zeigt label aus PerformancePad falls vorhanden, sonst 'Pad N (leer)'), Missing-Pad-Warnung wenn padIndex auf leeren Slot zeigt, 'Edit in Performance Mode →'-Link (dispatcht ss:navigate {tab:'performance'}). MacroButton-Rendering im Pad-Mode: label = pad.label ?? `Pad ${index+1}`, Background-Color = pad.color (Vorrang) ?? macro.color (Fallback), Status-Badge 'PAD' statt 'BTN', disabled-State wenn padIndex undefined ODER Pad leer (titleText differenziert).",
+        "TASK-112 / App.tsx Wiring: getPerformancePads-Import aus usePerformanceStore (top-level, kein Hook-Subscription für Event-Handler). macro:button:trigger Handler erweitert um triggerKind-Dispatch — bei 'pad': liest pads via getPerformancePads(), holt pad.patternId, ruft dmRef.current.setActivePattern(pattern) + queuePerformancePattern(pattern) — identische Semantik zum Performance-Pad-Click (siehe PatternLaunchPad-Wiring in App.tsx:1657). ss:navigate Handler erweitert um tab:'performance' → setPerformanceActive(true).",
+        "TASK-112 / Tests: tests/features/macros.test.ts von 48 auf 70 Tests erweitert (+22 NEU, alle grün). Drei neue describe-Blöcke: 'Macro – Trigger-Kind Schema' (11 Tests: Defaults + setMacroTriggerKind + setMacroPadIndex inkl. out-of-range / non-integer / NaN / negativ / Grenzwerte 0+15), 'triggerMacroButton – Pad-Mode' (6 Tests: happy-path 'pad:4'-Sentinel + EventDetail-Schape + no-op bei fehlendem padIndex / mode=knob + Wechsel pad→script-clean), 'Macro – Pad-Mode Persistence + Migration' (4 Tests: Reload-Roundtrip / v1.17 ohne triggerKind defaultet auf 'script' / invalides triggerKind 'foo' korrigiert / non-integer padIndex 2.5 gefiltert). Existing 48 Tests unverändert grün (toMatchObject ist Subset-Matcher, neue Felder breaken nichts).",
+        "TASK-112 / Verification: pnpm check clean. pnpm test 1091/1106 grün (62 test files, 15 pre-existing skipped, +22 neue Macro-Tests, 0 Regressionen). performance-store-Tests 38/38 grün (kein Cross-Impact)."
+      ],
+      next: [
+        "Welle 2 (Playwright): tests/web/macro-pad.spec.ts — User öffnet MacroPanel BindingEditor, switcht Mode auf 'Button' + Trigger auf 'Pad', wählt padIndex aus Dropdown, klickt MacroButton → Performance-Pad-Pattern wird aktiv. Aktuell nur Unit-Tests (Schema + Event-Dispatch verifiziert, aber kein E2E im Browser).",
+        "Welle 2 (UX): bei 'Edit in Performance Mode →' wird das Performance-Mode-Fullscreen geöffnet, aber NICHT zu dem konkret verlinkten padIndex gescrollt/highlighted. Könnte als zweites ss:navigate-Detail-Feld (`padIndex`) implementiert werden, PatternLaunchPad scrollt dann zum Pad + visual cue.",
+        "Welle 2 (UX): triggerKind-Toggle ist aktuell nur im BindingEditor sichtbar. Im Macro-Slot-Listing (MacroPanel) könnte ein kleiner Indikator (Icon 📜 vs 🎛 oder Text 'S'/'P') beim 'BTN'/'PAD'-Badge stehen, damit auf einen Blick klar ist welcher Trigger aktiv ist.",
+        "Welle 2 (UX): Pad-Mode-Button zeigt aktuell pad.label oder 'Pad N (leer)'. Bei Pad-Click ist die Visual-Pulse (z.B. flash bei Active-Wechsel) noch nicht implementiert — könnte über CSS-Animation + queuedPatternId-Subscription gemacht werden.",
+        "Welle 2 (Doku): CLAUDE.md könnte einen Abschnitt 'Macro Button Trigger Routing' bekommen, der die macro:button:trigger CustomEvent-Detail-API beschreibt (Felder: macroIndex, triggerKind, scriptId?, padIndex?) — für externe Skript-Autoren relevant.",
+        "Welle 3 (Edge): wenn ein Pad-Mode-Macro ein deleted Pattern referenziert (pad.patternId existiert nicht mehr in dm.patterns), passiert aktuell silent: setActivePattern wird mit unbekannter ID gerufen. dm könnte das defensiv ignorieren — aktuell ungeprüft. Im pad-Mode könnte zusätzlich gecheckt werden ob pattern in dm.patterns existiert.",
+        "Welle 3 (a11y): radiogroup für triggerKind hat role=radiogroup + aria-label='Macro trigger kind' aber keinen sichtbaren Label-Text (nur '— Trigger —'-Caption). Screenreader-Nutzer hören dadurch zweimal 'Trigger' — könnte mit aria-labelledby auf die Caption umgestellt werden."
+      ],
+      changed: [
+        "client/src/store/useMacroStore.ts",
+        "client/src/components/Macro/MacroPanel.tsx",
+        "client/src/App.tsx",
+        "tests/features/macros.test.ts",
+        "agents/INDEX.js"
+      ]
+    },
     {
       agent:     "frontend",
       timestamp: "2026-05-12T21:35:00.000Z",

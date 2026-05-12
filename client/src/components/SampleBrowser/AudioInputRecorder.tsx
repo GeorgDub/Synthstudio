@@ -54,7 +54,7 @@ export function AudioInputRecorder({ onSamplesAdded }: AudioInputRecorderProps) 
           className={[
             "flex items-center gap-1.5 px-2.5 py-1 text-[10px] rounded font-bold transition-colors flex-shrink-0",
             isRecording
-              ? "bg-accent-danger text-white animate-pulse"
+              ? "bg-accent-danger text-bg-base animate-pulse"
               : "bg-bg-elevated text-text-muted hover:text-accent-danger border border-border-color",
           ].join(" ")}
           title={isRecording ? "Aufnahme stoppen" : "Mikrofon aufnehmen"}

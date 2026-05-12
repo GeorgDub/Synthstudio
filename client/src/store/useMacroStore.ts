@@ -55,6 +55,15 @@ export type MacroMode = "knob" | "button";
  */
 export type MacroTriggerMode = "edge";
 
+/**
+ * Was der Button im `mode === "button"` triggert (v1.20+ discriminated union):
+ *  - "script" → führt das per `scriptId` referenzierte Skript aus (klassisch seit v1.17)
+ *  - "pad"    → queued/triggert den Performance-Pad an `padIndex` (v1.20.x)
+ *
+ * Default "script" (Backwards-Compat zu pre-v1.20 Daten ohne `triggerKind`-Feld).
+ */
+export type MacroTriggerKind = "script" | "pad";
+
 export interface Macro {
   index: number;   // 0–7
   label: string;
@@ -63,8 +72,12 @@ export interface Macro {
   color: string;
   /** Default "knob" wenn fehlt (Migration aus pre-v1.16 localStorage). */
   mode: MacroMode;
-  /** Gesetzt wenn mode === "button". Verweis auf Script aus useScriptStore. */
+  /** Gesetzt wenn mode === "button" + triggerKind === "script". Verweis auf Script aus useScriptStore. */
   scriptId?: string;
+  /** Was der Button triggert. Default "script" (Backwards-Compat zu v1.17-Daten). */
+  triggerKind?: MacroTriggerKind;
+  /** Gesetzt wenn mode === "button" + triggerKind === "pad". Pad-Index 0..15 in usePerformanceStore. */
+  padIndex?: number;
   /** Default "edge" wenn fehlt. Aktuell nur "edge" implementiert. */
   triggerMode?: MacroTriggerMode;
 }
@@ -73,6 +86,12 @@ export const MACRO_COLORS = [
   "#f59e0b", "#06b6d4", "#10b981", "#f43f5e",
   "#a855f7", "#ff6b35", "#0ea5e9", "#84cc16",
 ];
+
+/**
+ * Anzahl Performance-Pads (muss mit usePerformanceStore.PAD_COUNT übereinstimmen).
+ * Inline statt Import, um Cycle-Risk zu vermeiden — useMacroStore wird sehr früh geladen.
+ */
+const PAD_COUNT = 16;
 
 type Listener = () => void;
 
@@ -86,14 +105,18 @@ function defaultMacros(): Macro[] {
     bindings: [],
     color: MACRO_COLORS[i % MACRO_COLORS.length],
     mode: "knob" as MacroMode,
+    triggerKind: "script" as MacroTriggerKind,
     triggerMode: "edge" as MacroTriggerMode,
   }));
 }
 
 /**
- * Migriert ein Macro-Objekt aus pre-v1.16 localStorage:
- *  - mode fehlt → "knob"
+ * Migriert ein Macro-Objekt aus älteren localStorage-Versionen:
+ *  - mode fehlt → "knob" (pre-v1.16)
  *  - triggerMode fehlt → "edge"
+ *  - triggerKind fehlt → "script" (pre-v1.20 Daten ohne discriminated union)
+ *  - triggerKind invalide → "script"
+ *  - padIndex außerhalb [0..PAD_COUNT) oder kein Integer → undefined
  *  - bindings ist kein Array → []
  *  - scriptId nur durchreichen wenn String
  */
@@ -101,6 +124,15 @@ function migrateMacro(raw: unknown, fallback: Macro): Macro {
   if (!raw || typeof raw !== "object") return fallback;
   const m = raw as Partial<Macro> & Record<string, unknown>;
   const mode: MacroMode = m.mode === "button" ? "button" : "knob";
+  const triggerKind: MacroTriggerKind = m.triggerKind === "pad" ? "pad" : "script";
+  const padIndexRaw = m.padIndex;
+  const padIndex =
+    typeof padIndexRaw === "number" &&
+    Number.isInteger(padIndexRaw) &&
+    padIndexRaw >= 0 &&
+    padIndexRaw < PAD_COUNT
+      ? padIndexRaw
+      : undefined;
   return {
     index: typeof m.index === "number" ? m.index : fallback.index,
     label: typeof m.label === "string" ? m.label : fallback.label,
@@ -109,6 +141,8 @@ function migrateMacro(raw: unknown, fallback: Macro): Macro {
     color: typeof m.color === "string" ? m.color : fallback.color,
     mode,
     scriptId: typeof m.scriptId === "string" ? m.scriptId : undefined,
+    triggerKind,
+    padIndex,
     triggerMode: m.triggerMode === "edge" ? "edge" : "edge",
   };
 }
@@ -192,7 +226,7 @@ export function setMacroMode(macroIndex: number, mode: MacroMode): void {
 }
 
 /**
- * Setzt die Script-ID eines Macros (für mode === "button").
+ * Setzt die Script-ID eines Macros (für mode === "button" + triggerKind === "script").
  * `null` löscht die Bindung.
  *
  * No-op bei out-of-range index.
@@ -206,28 +240,91 @@ export function setMacroScriptId(macroIndex: number, scriptId: string | null): v
 }
 
 /**
- * Triggert einen Macro-Button: dispatched ein `macro:button:trigger` Event,
- * das in App.tsx von einem Subscriber abgefangen wird, der dann die geteilte
- * Sandbox-Instance benutzt.
+ * Setzt den Trigger-Kind eines Macros (für mode === "button"):
+ *  - "script" → Button triggert ein Skript (klassisches v1.17-Verhalten)
+ *  - "pad"    → Button triggert einen Performance-Pad
  *
- * Kein direkter Import von useScriptSandbox um Cycle-Risk zu vermeiden.
+ * Bestehende `scriptId`/`padIndex`-Werte bleiben erhalten beim Wechsel
+ * (kein Datenverlust, User kann zurück-wechseln). No-op bei out-of-range
+ * index oder invalidem kind-String.
+ */
+export function setMacroTriggerKind(macroIndex: number, kind: MacroTriggerKind): void {
+  if (macroIndex < 0 || macroIndex >= MACRO_COUNT) return;
+  if (kind !== "script" && kind !== "pad") return;
+  _macros = _macros.map((m, i) => i === macroIndex ? { ...m, triggerKind: kind } : m);
+  persist(_macros);
+  notify();
+}
+
+/**
+ * Setzt den Performance-Pad-Index eines Macros (für mode === "button" + triggerKind === "pad").
+ * `null` löscht die Pad-Bindung.
+ *
+ * Validierung:
+ *  - macroIndex außerhalb [0..MACRO_COUNT) → no-op
+ *  - padIndex außerhalb [0..PAD_COUNT) (außer null) → no-op
+ *  - padIndex muss ein Integer sein, sonst no-op
+ */
+export function setMacroPadIndex(macroIndex: number, padIndex: number | null): void {
+  if (macroIndex < 0 || macroIndex >= MACRO_COUNT) return;
+  let nextPadIndex: number | undefined;
+  if (padIndex === null) {
+    nextPadIndex = undefined;
+  } else if (
+    typeof padIndex !== "number" ||
+    !Number.isInteger(padIndex) ||
+    padIndex < 0 ||
+    padIndex >= PAD_COUNT
+  ) {
+    return;
+  } else {
+    nextPadIndex = padIndex;
+  }
+  _macros = _macros.map((m, i) => i === macroIndex ? { ...m, padIndex: nextPadIndex } : m);
+  persist(_macros);
+  notify();
+}
+
+/**
+ * Triggert einen Macro-Button: dispatched ein `macro:button:trigger` Event,
+ * das in App.tsx von einem Subscriber abgefangen wird.
+ *
+ * Event-Detail (v1.20):
+ *   { macroIndex, triggerKind, scriptId?, padIndex? }
+ *
+ * Kein direkter Import von useScriptSandbox/usePerformanceStore um Cycle-Risk
+ * zu vermeiden — App.tsx routet das Event an die richtige Implementation.
  *
  * Returns:
- *  - null, wenn das Macro nicht im Button-Mode ist oder keine scriptId hat
- *  - sonst die scriptId (Convenience für synchrone Aufrufer/Tests)
+ *  - null, wenn das Macro nicht im Button-Mode ist oder die jeweilige Ziel-
+ *    Referenz (scriptId bzw. padIndex) für den triggerKind fehlt
+ *  - bei triggerKind="script": die scriptId (Convenience)
+ *  - bei triggerKind="pad":    "pad:<padIndex>" als Sentinel-String
  */
 export function triggerMacroButton(macroIndex: number): string | null {
   if (macroIndex < 0 || macroIndex >= MACRO_COUNT) return null;
   const macro = _macros[macroIndex];
-  if (!macro || macro.mode !== "button" || !macro.scriptId) return null;
+  if (!macro || macro.mode !== "button") return null;
+
+  const triggerKind: MacroTriggerKind = macro.triggerKind === "pad" ? "pad" : "script";
+
+  if (triggerKind === "script" && !macro.scriptId) return null;
+  if (triggerKind === "pad" && (macro.padIndex === undefined || macro.padIndex === null)) return null;
+
   if (typeof window !== "undefined" && typeof CustomEvent !== "undefined") {
     window.dispatchEvent(
       new CustomEvent("macro:button:trigger", {
-        detail: { macroIndex, scriptId: macro.scriptId },
+        detail: {
+          macroIndex,
+          triggerKind,
+          scriptId: macro.scriptId,
+          padIndex: macro.padIndex,
+        },
       }),
     );
   }
-  return macro.scriptId;
+  if (triggerKind === "pad") return `pad:${macro.padIndex}`;
+  return macro.scriptId ?? null;
 }
 
 export function getMacros(): Macro[] { return _macros; }

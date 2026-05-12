@@ -22,6 +22,19 @@ jobs:
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
 
+      # TASK-115: Fail fast if sandbox-runtime.generated.ts is out-of-sync with
+      # its single-source-of-truth (client/src/sandbox/sandbox-runtime.ts).
+      # This step MUST run BEFORE `pnpm check` / `pnpm test` because their
+      # pre-hooks (precheck/pretest) would otherwise regenerate the file and
+      # mask the drift. See docs/SECURITY-SCRIPT-SANDBOX.md.
+      - name: Verify sandbox source codegen is up-to-date
+        run: |
+          pnpm gen:sandbox
+          if ! git diff --exit-code client/src/sandbox/sandbox-runtime.generated.ts; then
+            echo "::error::sandbox-runtime.generated.ts is stale. Run 'pnpm gen:sandbox' locally and commit the result."
+            exit 1
+          fi
+
       - name: TypeScript check
         run: pnpm check
 

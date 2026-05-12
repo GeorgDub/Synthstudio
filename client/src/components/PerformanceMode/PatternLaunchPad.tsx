@@ -1,24 +1,36 @@
 /**
- * PatternLaunchPad.tsx – Vollbild Performance Mode View (v1.20.0+)
+ * PatternLaunchPad.tsx – Vollbild Performance Mode View (v1.20.0+ / v1.21.0 a11y)
  *
  * Drei Aktions-Modi (toggle oben):
  *   ▶ Play    (default) — Click triggert Pattern (queuePattern)
  *   ✎ Edit              — Click öffnet Inline-Editor (Rename, Color, Pattern, Remove)
- *   ⇆ Reorder           — Drag-and-Drop zwischen Slots (HTML5 native DnD)
+ *   ⇆ Reorder           — Drag-and-Drop ODER Keyboard ODER Shift/Ctrl+Click Multi-Select
+ *
+ * v1.21.0 (TASK-114) – a11y + Multi-Select:
+ *   • WAI-ARIA Roving-Tabindex Grid (role=grid + role=gridcell)
+ *   • Pfeiltasten navigieren den Fokus innerhalb des 4×4 Grids
+ *   • Space/Enter im Reorder-Mode "greift" den fokussierten Pad
+ *     (ARIA-Live announce). Pfeiltasten verschieben dann das gegriffene
+ *     Pad in der jeweiligen Richtung (Insert-Semantik mit Wrap am Rand).
+ *     Space/Enter dropt, Escape bricht ab.
+ *   • Shift+Click und Ctrl/Cmd+Click im Reorder-Mode → Multi-Select
+ *     (runtime-only, NICHT persistiert). Drag eines selected-Pads zieht
+ *     alle mit (moveMultiplePads → Insert-Semantik).
  *
  * Pads + quantizeMode kommen aus dem persistierten Store. `active` (open/close)
- * + Mode-State (play/edit/reorder) lebt lokal in App.tsx bzw. dieser Komponente.
+ * + Mode/Focus/Grab/Multi-Select-State leben lokal in dieser Komponente.
  *
  * Theming: nur semantische --ss-* Tokens. PAD_COLORS-Array bleibt als
  * domain-palette (User-Pad-Farben, keine UI-Chrome-Farben).
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Play, Pencil, ArrowLeftRight, X, Plus, Trash2 } from "lucide-react";
 import {
   setPadAt,
   setPadColor,
   setPadLabel,
   movePad,
+  moveMultiplePads,
   clearPad,
   PAD_COUNT,
   type PerformancePad,
@@ -26,6 +38,9 @@ import {
 } from "@/store/usePerformanceStore";
 
 type Mode = "play" | "edit" | "reorder";
+
+const GRID_COLS = 4;
+const GRID_ROWS = PAD_COUNT / GRID_COLS;
 
 interface PatternRef {
   id: string;
@@ -60,6 +75,23 @@ const QUANTIZE_MODES: ReadonlyArray<{ mode: QuantizeMode; title: string }> = [
   { mode: "step", title: "Quantize auf Step (1/16)" },
 ];
 
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+/** Clamp Index in das Grid + Wrap pro Richtung. */
+function moveFocus(current: number, key: string): number {
+  const row = Math.floor(current / GRID_COLS);
+  const col = current % GRID_COLS;
+  switch (key) {
+    case "ArrowLeft":  return row * GRID_COLS + Math.max(0, col - 1);
+    case "ArrowRight": return row * GRID_COLS + Math.min(GRID_COLS - 1, col + 1);
+    case "ArrowUp":    return Math.max(0, row - 1) * GRID_COLS + col;
+    case "ArrowDown":  return Math.min(GRID_ROWS - 1, row + 1) * GRID_COLS + col;
+    case "Home":       return 0;
+    case "End":        return PAD_COUNT - 1;
+    default:           return current;
+  }
+}
+
 export function PatternLaunchPad({
   pads,
   patterns,
@@ -77,7 +109,33 @@ export function PatternLaunchPad({
   const [dragSrc, setDragSrc] = useState<number | null>(null);
   const [dragOver, setDragOver] = useState<number | null>(null);
 
-  // ESC schließt Performance Mode (oder Editor falls offen)
+  // a11y: Roving Tabindex – welcher Pad ist gerade tab-fokussierbar?
+  const [focusedIndex, setFocusedIndex] = useState<number>(0);
+  // a11y: Welcher Pad ist "gegriffen" (Keyboard-Reorder)?
+  const [grabbedIndex, setGrabbedIndex] = useState<number | null>(null);
+  // a11y: Snapshot vor dem Grab — für Escape-Restore
+  const grabbedSnapshotRef = useRef<Array<PerformancePad | null> | null>(null);
+  // a11y: Live-Region-Announcement-Text
+  const [liveMessage, setLiveMessage] = useState<string>("");
+
+  // Multi-Select (runtime-only, NICHT persistiert)
+  const [multiSelect, setMultiSelect] = useState<Set<number>>(new Set());
+
+  const gridRef = useRef<HTMLDivElement | null>(null);
+
+  // Wenn der focused-Pad in den DOM rendert, ihn fokussieren
+  const padRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  useEffect(() => {
+    const el = padRefs.current[focusedIndex];
+    if (el && document.activeElement !== el) {
+      // Nicht stehlen, wenn z.B. ein Input im Editor offen ist
+      const ae = document.activeElement;
+      const inEditor = ae && ae.closest && ae.closest("[data-testid='perf-pad-editor']");
+      if (!inEditor) el.focus({ preventScroll: true });
+    }
+  }, [focusedIndex]);
+
+  // ESC: schließt Editor → cancel Grab → schließt Performance Mode (Eskalation)
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
@@ -86,18 +144,57 @@ export function PatternLaunchPad({
         e.stopPropagation();
         return;
       }
+      if (grabbedIndex !== null) {
+        // Restore Snapshot
+        if (grabbedSnapshotRef.current) {
+          // setPads würde notify+persist auslösen; nur wenn sich tatsächlich was geändert hat
+          // Vergleich: hat sich pads-Array seit dem Grab geändert?
+          // Einfacher Ansatz: bulk-replace mit dem Snapshot.
+          // Wir importieren setPads NICHT separat hier — wir nutzen das via Side-Channel:
+          //   schicke das gesamte Snapshot-Array zurück durch setPadAt-Schleife.
+          // Aber setPadAt(_, null) clobbert + notify. Wir machen es via setPads:
+          // siehe Restore-Logik unten.
+          restoreSnapshot(grabbedSnapshotRef.current);
+        }
+        setGrabbedIndex(null);
+        grabbedSnapshotRef.current = null;
+        setLiveMessage("Verschieben abgebrochen.");
+        e.stopPropagation();
+        return;
+      }
       onClose();
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [onClose, editingIndex]);
+  }, [onClose, editingIndex, grabbedIndex]);
 
-  // Beim Modus-Wechsel: Editor schließen, Drag-State leeren
+  // Beim Modus-Wechsel: Editor schließen, Drag-State leeren, Multi-Select leeren, Grab cancelen
   useEffect(() => {
     setEditingIndex(null);
     setDragSrc(null);
     setDragOver(null);
+    setMultiSelect(new Set());
+    if (grabbedIndex !== null) {
+      // Drop-without-restore beim Mode-Wechsel — User-Intention unklar, sicherheitshalber NICHT restore
+      // (Wenn der User abbrechen will, drückt er Escape vor dem Mode-Wechsel)
+      setGrabbedIndex(null);
+      grabbedSnapshotRef.current = null;
+      setLiveMessage("");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode]);
+
+  // Snapshot-Restore-Helper: nutzt setPadAt im Loop (vermeidet setPads-Import-Cycle)
+  // Note: hier kein Multi-Patch in einem Update — `setPadAt` notify-t pro Slot. Das ist akzeptabel
+  //       beim Escape-Restore (max 16 Notifications, alles synchron).
+  const restoreSnapshot = useCallback((snap: Array<PerformancePad | null>) => {
+    for (let i = 0; i < PAD_COUNT; i++) {
+      const want = snap[i] ?? null;
+      // setPadAt mit null entfernt; mit pad-object setzt neu. Identitäts-Check macht setPadAt nicht,
+      // d.h. es wird auch ein notify gefeuert wenn der Wert gleich ist. Akzeptabel für Restore.
+      setPadAt(i, want);
+    }
+  }, []);
 
   const handlePadActivate = useCallback((index: number) => {
     const pad = pads[index];
@@ -110,8 +207,46 @@ export function PatternLaunchPad({
       setEditingIndex(index);
       return;
     }
-    // reorder: kein Click-Handler, nur Drag
+    // reorder: handled durch Click-Logik in der Pad-Komponente (Multi-Select / Grab via Click)
   }, [mode, pads, onPadClick]);
+
+  /** Reorder-Mode Click: ohne Modifier → toggle Grab; mit Shift/Ctrl/Meta → Multi-Select-Toggle. */
+  const handleReorderClick = useCallback((index: number, e: { shiftKey: boolean; ctrlKey: boolean; metaKey: boolean }) => {
+    if (mode !== "reorder") return;
+    const pad = pads[index];
+    if (!pad) return; // leere Slots nicht selektierbar
+
+    if (e.shiftKey || e.ctrlKey || e.metaKey) {
+      setMultiSelect(prev => {
+        const next = new Set(prev);
+        if (next.has(index)) next.delete(index);
+        else next.add(index);
+        return next;
+      });
+      return;
+    }
+
+    // Normaler Click → toggle Grab (Keyboard-Reorder ohne Maus-Drag)
+    if (grabbedIndex === index) {
+      // Drop on self → no-op (cancel Grab)
+      setGrabbedIndex(null);
+      grabbedSnapshotRef.current = null;
+      setLiveMessage(`Pad ${index + 1} losgelassen.`);
+    } else if (grabbedIndex !== null) {
+      // Drop grabbed → target index (Insert-Semantik via moveMultiplePads(single))
+      moveMultiplePads([grabbedIndex], index);
+      setLiveMessage(`Pad an Position ${index + 1} abgelegt.`);
+      setGrabbedIndex(null);
+      grabbedSnapshotRef.current = null;
+    } else {
+      // Grab
+      grabbedSnapshotRef.current = pads.slice();
+      setGrabbedIndex(index);
+      setLiveMessage(`Pad ${index + 1} gegriffen. Pfeiltasten zum Verschieben, Leertaste zum Ablegen, Escape zum Abbrechen.`);
+    }
+  }, [mode, pads, grabbedIndex]);
+
+  // ─── HTML5 Drag&Drop ───────────────────────────────────────────────────────
 
   const handleDragStart = useCallback((index: number) => {
     if (mode !== "reorder") return;
@@ -124,16 +259,100 @@ export function PatternLaunchPad({
     setDragOver(index);
   }, [mode, dragSrc]);
 
-  const handleDrop = useCallback((index: number) => {
+  const handleDrop = useCallback((targetIndex: number) => {
     if (mode !== "reorder" || dragSrc === null) return;
-    if (dragSrc !== index) movePad(dragSrc, index);
+    // Multi-Select-aware Drop:
+    //   - Wenn dragSrc Teil des Multi-Selects ist UND mehr als 1 Element → moveMultiplePads
+    //   - Sonst klassischer Single-Pad-Swap via movePad (rückwärtskompatibel)
+    if (multiSelect.has(dragSrc) && multiSelect.size > 1) {
+      const fromIndices = Array.from(multiSelect).sort((a, b) => a - b);
+      if (!multiSelect.has(targetIndex)) {
+        moveMultiplePads(fromIndices, targetIndex);
+        setMultiSelect(new Set()); // Auswahl leeren nach erfolgreichem Move
+      }
+    } else {
+      if (dragSrc !== targetIndex) movePad(dragSrc, targetIndex);
+    }
     setDragSrc(null);
     setDragOver(null);
-  }, [mode, dragSrc]);
+  }, [mode, dragSrc, multiSelect]);
 
   const handleDragEnd = useCallback(() => {
     setDragSrc(null);
     setDragOver(null);
+  }, []);
+
+  // ─── Keyboard-Grid-Handler (auf Container, NICHT pro Pad) ─────────────────
+
+  const handleGridKeyDown = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
+    // Editor offen? Dann sollen die Inputs ihre Eingaben behalten.
+    if (editingIndex !== null) return;
+
+    const key = e.key;
+
+    // Pfeiltasten: Navigation ODER (wenn grabbed) Verschiebung
+    if (key === "ArrowLeft" || key === "ArrowRight" || key === "ArrowUp" || key === "ArrowDown" || key === "Home" || key === "End") {
+      e.preventDefault();
+      if (grabbedIndex !== null) {
+        // Verschiebe das gegriffene Pad
+        const target = moveFocus(grabbedIndex, key);
+        if (target !== grabbedIndex) {
+          moveMultiplePads([grabbedIndex], target);
+          setGrabbedIndex(target);
+          setFocusedIndex(target);
+          setLiveMessage(`Pad an Position ${target + 1}.`);
+        }
+        return;
+      }
+      const next = moveFocus(focusedIndex, key);
+      if (next !== focusedIndex) setFocusedIndex(next);
+      return;
+    }
+
+    // Space / Enter: aktiviere je nach Modus (Play=trigger / Edit=open editor / Reorder=grab-or-drop)
+    if (key === " " || key === "Enter") {
+      e.preventDefault();
+      const pad = pads[focusedIndex];
+      if (mode === "play") {
+        if (pad) onPadClick(pad.patternId);
+        return;
+      }
+      if (mode === "edit") {
+        setEditingIndex(focusedIndex);
+        return;
+      }
+      // Reorder
+      if (grabbedIndex === null) {
+        // Grab
+        if (!pad) return; // leere Pads nicht greifbar
+        grabbedSnapshotRef.current = pads.slice();
+        setGrabbedIndex(focusedIndex);
+        setLiveMessage(`Pad ${focusedIndex + 1} gegriffen. Pfeiltasten zum Verschieben, Leertaste zum Ablegen, Escape zum Abbrechen.`);
+      } else {
+        // Drop
+        if (grabbedIndex !== focusedIndex) {
+          moveMultiplePads([grabbedIndex], focusedIndex);
+          setLiveMessage(`Pad an Position ${focusedIndex + 1} abgelegt.`);
+        } else {
+          setLiveMessage(`Pad ${focusedIndex + 1} losgelassen.`);
+        }
+        setGrabbedIndex(null);
+        grabbedSnapshotRef.current = null;
+      }
+      return;
+    }
+
+    // Tab während grabbed → Focus-Trap (Tab tut nichts, User muss Drop/Cancel)
+    if ((key === "Tab") && grabbedIndex !== null) {
+      e.preventDefault();
+      return;
+    }
+  }, [editingIndex, grabbedIndex, focusedIndex, mode, pads, onPadClick]);
+
+  // ─── Rendering ─────────────────────────────────────────────────────────────
+
+  const setPadRef = useCallback((index: number) => (el: HTMLButtonElement | null) => {
+    padRefs.current[index] = el;
   }, []);
 
   return (
@@ -141,6 +360,17 @@ export function PatternLaunchPad({
       className="fixed inset-0 z-50 bg-bg-base flex flex-col"
       data-testid="performance-mode-overlay"
     >
+      {/* ARIA Live Region für Screenreader-Announcements (visuell unsichtbar) */}
+      <div
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+        className="sr-only"
+        data-testid="perf-live-region"
+      >
+        {liveMessage}
+      </div>
+
       {/* Header */}
       <div className="flex items-center justify-between px-6 py-3 border-b border-border-color">
         <div className="flex items-center gap-4 flex-wrap">
@@ -174,7 +404,7 @@ export function PatternLaunchPad({
               onClick={() => setMode("reorder")}
               icon={<ArrowLeftRight size={14} />}
               label="Reorder"
-              title="Reorder-Modus: Pads per Drag&Drop tauschen"
+              title="Reorder-Modus: Pads per Drag&Drop, Keyboard oder Shift+Click verschieben"
             />
           </div>
 
@@ -201,6 +431,16 @@ export function PatternLaunchPad({
               );
             })}
           </div>
+
+          {/* Multi-Select-Indikator (nur Reorder-Mode wenn >0 selected) */}
+          {mode === "reorder" && multiSelect.size > 0 && (
+            <span
+              className="text-accent-secondary text-xs font-mono uppercase ml-2"
+              data-testid="perf-multiselect-count"
+            >
+              {multiSelect.size} ausgewählt
+            </span>
+          )}
         </div>
 
         <button
@@ -216,14 +456,28 @@ export function PatternLaunchPad({
 
       {/* 4×4 Pad Grid */}
       <div className="flex-1 flex items-center justify-center p-8 overflow-auto">
-        <div className="grid grid-cols-4 gap-4 w-full max-w-2xl">
+        <div
+          ref={gridRef}
+          role="grid"
+          aria-label="Performance Pads (4 mal 4)"
+          aria-rowcount={GRID_ROWS}
+          aria-colcount={GRID_COLS}
+          onKeyDown={handleGridKeyDown}
+          className="grid grid-cols-4 gap-4 w-full max-w-2xl outline-none"
+          data-testid="perf-pad-grid"
+        >
           {Array.from({ length: PAD_COUNT }, (_, i) => {
             const pad = pads[i] ?? null;
             const fallbackColor = PAD_COLORS[i % PAD_COLORS.length] ?? "#334155";
+            const row = Math.floor(i / GRID_COLS);
+            const col = i % GRID_COLS;
             return (
               <Pad
                 key={i}
+                ref={setPadRef(i)}
                 index={i}
+                row={row}
+                col={col}
                 pad={pad}
                 fallbackColor={fallbackColor}
                 patterns={patterns}
@@ -231,12 +485,17 @@ export function PatternLaunchPad({
                 isActive={!!pad && pad.patternId === activePatternId}
                 isQueued={!!pad && pad.patternId === queuedPatternId}
                 isDragOver={dragOver === i}
-                isDragging={dragSrc === i}
+                isDragging={dragSrc === i || (multiSelect.has(i) && dragSrc !== null && multiSelect.has(dragSrc))}
+                isFocused={focusedIndex === i}
+                isGrabbed={grabbedIndex === i}
+                isSelected={multiSelect.has(i)}
                 onActivate={() => handlePadActivate(i)}
+                onReorderClick={(modifiers) => handleReorderClick(i, modifiers)}
                 onDragStart={() => handleDragStart(i)}
                 onDragOver={(e) => handleDragOver(i, e)}
                 onDrop={() => handleDrop(i)}
                 onDragEnd={handleDragEnd}
+                onFocus={() => setFocusedIndex(i)}
               />
             );
           })}
@@ -268,9 +527,11 @@ export function PatternLaunchPad({
           ))}
         </div>
         <span className="ml-auto text-text-dim text-xs">
-          {mode === "play" && "▶ Play-Modus — Click triggert Pattern"}
-          {mode === "edit" && "✎ Edit-Modus — Click bearbeitet Pad"}
-          {mode === "reorder" && "⇆ Reorder-Modus — Drag&Drop zwischen Slots"}
+          {mode === "play"    && "▶ Play-Modus — Click triggert Pattern"}
+          {mode === "edit"    && "✎ Edit-Modus — Click bearbeitet Pad"}
+          {mode === "reorder" && (grabbedIndex !== null
+            ? "⇆ Reorder-Modus — Pfeiltasten verschieben, Leertaste ablegt, Escape bricht ab"
+            : "⇆ Reorder-Modus — Drag, Pfeil+Space oder Shift+Click für Mehrfach-Auswahl")}
         </span>
       </div>
     </div>
@@ -311,6 +572,8 @@ function ModeButton({ active, onClick, icon, label, title }: ModeButtonProps) {
 
 interface PadProps {
   index: number;
+  row: number;
+  col: number;
   pad: PerformancePad | null;
   fallbackColor: string;
   patterns: PatternRef[];
@@ -319,15 +582,28 @@ interface PadProps {
   isQueued: boolean;
   isDragOver: boolean;
   isDragging: boolean;
+  isFocused: boolean;
+  isGrabbed: boolean;
+  isSelected: boolean;
   onActivate: () => void;
+  onReorderClick: (modifiers: { shiftKey: boolean; ctrlKey: boolean; metaKey: boolean }) => void;
   onDragStart: () => void;
   onDragOver: (e: React.DragEvent) => void;
   onDrop: () => void;
   onDragEnd: () => void;
+  onFocus: () => void;
+}
+
+// React 19: `ref` ist eine normale Prop auf Function Components — kein forwardRef nötig.
+interface PadPropsWithRef extends PadProps {
+  ref?: (el: HTMLButtonElement | null) => void;
 }
 
 function Pad({
+  ref,
   index,
+  row,
+  col,
   pad,
   fallbackColor,
   patterns,
@@ -336,12 +612,17 @@ function Pad({
   isQueued,
   isDragOver,
   isDragging,
+  isFocused,
+  isGrabbed,
+  isSelected,
   onActivate,
+  onReorderClick,
   onDragStart,
   onDragOver,
   onDrop,
   onDragEnd,
-}: PadProps) {
+  onFocus,
+}: PadPropsWithRef) {
   const color = pad?.color ?? fallbackColor;
   const patternFromList = pad ? patterns.find(p => p.id === pad.patternId) : null;
   const displayLabel = pad?.label ?? patternFromList?.name ?? (pad ? `P${index + 1}` : "");
@@ -351,7 +632,8 @@ function Pad({
 
   const isPlayEnabled  = mode === "play" && !!pad;
   const isEditEnabled  = mode === "edit";
-  const clickable      = isPlayEnabled || isEditEnabled;
+  const isReorderClick = mode === "reorder";
+  const clickable      = isPlayEnabled || isEditEnabled || (isReorderClick && !!pad);
 
   // Visual state
   const showFilled = !!pad;
@@ -390,21 +672,58 @@ function Pad({
     extraClass += " opacity-30 border-dashed border-text-dim";
   }
 
+  // a11y ring classes
+  const ringClass = (() => {
+    if (isGrabbed) return "ring-2 ring-offset-2 ring-offset-bg-base ring-accent-primary";
+    if (isFocused) return "ring-2 ring-accent-primary";
+    if (isSelected) return "ring-2 ring-accent-secondary";
+    return "";
+  })();
+
+  // Click-Handler: differenziert nach Mode (Reorder hat eigenes Multi-Select-Verhalten)
+  const onClickHandler = (e: React.MouseEvent<HTMLButtonElement>) => {
+    if (mode === "reorder") {
+      if (!pad) return;
+      onReorderClick({ shiftKey: e.shiftKey, ctrlKey: e.ctrlKey, metaKey: e.metaKey });
+      return;
+    }
+    if (clickable) onActivate();
+  };
+
   return (
     <button
+      ref={ref}
       type="button"
+      role="gridcell"
+      tabIndex={isFocused ? 0 : -1}
+      aria-rowindex={row + 1}
+      aria-colindex={col + 1}
+      // aria-grabbed ist in WAI-ARIA 1.1 deprecated. Wir kommunizieren den
+      // Grab-Status über aria-label + die Live-Region.
+      aria-selected={mode === "reorder" && pad ? isSelected : undefined}
+      aria-label={
+        pad
+          ? `Pad ${index + 1}: ${displayLabel}${isActive ? ", aktiv" : ""}${isQueued ? ", in Queue" : ""}${isGrabbed ? ", gegriffen" : ""}${isSelected ? ", ausgewählt" : ""}`
+          : `Pad ${index + 1}, leer`
+      }
       data-testid={`perf-pad-${index}`}
       data-pad-filled={showFilled ? "1" : "0"}
       data-pad-active={isActive ? "1" : "0"}
       data-pad-queued={isQueued ? "1" : "0"}
-      onClick={clickable ? onActivate : undefined}
+      data-pad-focused={isFocused ? "1" : "0"}
+      data-pad-grabbed={isGrabbed ? "1" : "0"}
+      data-pad-selected={isSelected ? "1" : "0"}
+      onClick={onClickHandler}
+      onFocus={onFocus}
       disabled={mode === "play" && !pad}
       title={
         mode === "play"
           ? (pad ? `Pattern triggern: ${displayLabel}` : "Leer")
           : mode === "edit"
             ? (pad ? `Bearbeiten: ${displayLabel}` : "Pattern hinzufügen")
-            : (pad ? `${displayLabel} (verschieben)` : "Leerer Slot")
+            : (pad
+                ? `${displayLabel} — Click greift, Shift/Ctrl+Click selektiert, Pfeiltasten + Leertaste verschieben`
+                : "Leerer Slot")
       }
       draggable={draggable}
       onDragStart={draggable ? onDragStart : undefined}
@@ -417,6 +736,7 @@ function Pad({
         border-2 flex items-center justify-center
         ${showFilled ? "" : "bg-bg-panel"}
         ${isQueued ? "animate-pulse" : ""}
+        ${ringClass}
         ${extraClass}
       `}
     >

@@ -47,6 +47,7 @@ import {
   setPadColor,
   setPadLabel,
   movePad,
+  moveMultiplePads,
   clearPad,
   queuePattern,
   clearQueue,
@@ -188,6 +189,146 @@ describe("usePerformanceStore — movePad", () => {
     movePad(0, -1);
     movePad(99, 0);
     expect(getPads()[0]!.patternId).toBe("pZ");
+  });
+});
+
+describe("usePerformanceStore — moveMultiplePads (Insert-Semantik, TASK-114)", () => {
+  it("moveMultiplePads([0,1], 5) wandert Pads 0+1 vor Position 5 (kompaktiert)", () => {
+    // Setup: 0=A, 1=B, 4=E, 5=F, 7=H
+    setPadAt(0, { patternId: "A" });
+    setPadAt(1, { patternId: "B" });
+    setPadAt(4, { patternId: "E" });
+    setPadAt(5, { patternId: "F" });
+    setPadAt(7, { patternId: "H" });
+    moveMultiplePads([0, 1], 5);
+    // Nach Entfernung von 0+1: kompakt = [_,_,E,F,_,H,...] (Indizes 2,3 leer-am-Anfang)
+    // Wait: compacted = [null, null, E, F, null, H, null...] (Index 2-7 vom Original ohne 0,1)
+    // Korrektur: compacted entfernt INDIZES 0+1, kompaktiert NICHT. Lass mich nochmal denken:
+    //   Original: [A,B,_,_,E,F,_,H,_,_,_,_,_,_,_,_]
+    //   Remove 0+1: [_,_,E,F,_,H,_,_,_,_,_,_,_,_]  (14 slots, nicht kompaktiert über die Lücken)
+    //   removedBeforeTarget=2 (beide 0 und 1 sind <5)
+    //   insertAt = 5 - 2 = 3
+    //   compacted.splice(3, 0, A, B) → [_,_,E,A,B,F,_,H,_,_,_,_,_,_,_,_] (16 slots, exakt)
+    //   Pad auf PAD_COUNT (16) normalisieren
+    const pads = getPads();
+    expect(pads[0]).toBeNull();
+    expect(pads[1]).toBeNull();
+    expect(pads[2]!.patternId).toBe("E");
+    expect(pads[3]!.patternId).toBe("A");
+    expect(pads[4]!.patternId).toBe("B");
+    expect(pads[5]!.patternId).toBe("F");
+    expect(pads[6]).toBeNull();
+    expect(pads[7]!.patternId).toBe("H");
+  });
+
+  it("moveMultiplePads([3,5,7], 0) bringt drei Pads an den Anfang", () => {
+    setPadAt(3, { patternId: "X" });
+    setPadAt(5, { patternId: "Y" });
+    setPadAt(7, { patternId: "Z" });
+    setPadAt(10, { patternId: "K" });
+    moveMultiplePads([3, 5, 7], 0);
+    const pads = getPads();
+    expect(pads[0]!.patternId).toBe("X");
+    expect(pads[1]!.patternId).toBe("Y");
+    expect(pads[2]!.patternId).toBe("Z");
+    // 'K' war ursprünglich Index 10. Compacted ohne 3,5,7 = [_,_,_,_,_,_,_,K,_,_,_,_,_]
+    //   (Original: [_,_,_,_,_,_,_,_,_,_,K,_,_,_,_,_] → remove 3,5,7 → [_,_,_,_,_,_,_,K,_,_,_,_,_])
+    // insertAt = 0 - 0 = 0; splice in [X,Y,Z] → [X,Y,Z,_,_,_,_,_,_,_,K,_,_,_,_,_]
+    expect(pads[10]!.patternId).toBe("K");
+  });
+
+  it("moveMultiplePads([0], 0) ist no-op (move-to-self)", () => {
+    setPadAt(0, { patternId: "A" });
+    setPadAt(1, { patternId: "B" });
+    moveMultiplePads([0], 0);
+    const pads = getPads();
+    expect(pads[0]!.patternId).toBe("A");
+    expect(pads[1]!.patternId).toBe("B");
+  });
+
+  it("moveMultiplePads([3], 3) ist no-op (Target liegt in fromIndices)", () => {
+    setPadAt(3, { patternId: "Solo" });
+    moveMultiplePads([3], 3);
+    expect(getPads()[3]!.patternId).toBe("Solo");
+  });
+
+  it("moveMultiplePads([], 0) ist no-op (leere Liste)", () => {
+    setPadAt(0, { patternId: "A" });
+    moveMultiplePads([], 0);
+    expect(getPads()[0]!.patternId).toBe("A");
+  });
+
+  it("moveMultiplePads([15,14], 0) Reverse-Order wird beibehalten", () => {
+    setPadAt(14, { patternId: "Last1" });
+    setPadAt(15, { patternId: "Last2" });
+    moveMultiplePads([15, 14], 0);
+    const pads = getPads();
+    // pickedPads = [Last2, Last1] (in fromIndices-Reihenfolge!)
+    expect(pads[0]!.patternId).toBe("Last2");
+    expect(pads[1]!.patternId).toBe("Last1");
+    expect(pads[14]).toBeNull();
+    expect(pads[15]).toBeNull();
+  });
+
+  it("moveMultiplePads([99, -1, 2.5], 0) filtert invalide Indizes raus", () => {
+    setPadAt(2, { patternId: "Valid" });
+    // Nur invalide → no-op nach Sanitisierung
+    moveMultiplePads([99, -1, 2.5], 0);
+    expect(getPads()[2]!.patternId).toBe("Valid");
+    expect(getPads()[0]).toBeNull();
+  });
+
+  it("moveMultiplePads([0, 0, 0], 5) dedupliziert", () => {
+    setPadAt(0, { patternId: "A" });
+    setPadAt(3, { patternId: "B" });
+    moveMultiplePads([0, 0, 0], 5);
+    const pads = getPads();
+    // Nach Dedup: cleanFrom=[0]. Original [A,_,_,B,...]; compacted ohne idx 0 = [_,_,B,_,...] (15 slots).
+    //   removedBeforeTarget = 1 (idx 0 < 5); insertAt = 5 - 1 = 4
+    //   splice(4, 0, A) → [_,_,B,_,A,_,_,_,_,_,_,_,_,_,_,_]
+    expect(pads[0]).toBeNull();
+    expect(pads[2]!.patternId).toBe("B");
+    expect(pads[3]).toBeNull();
+    expect(pads[4]!.patternId).toBe("A");
+  });
+
+  it("moveMultiplePads([0,1], 16) target out-of-range → no-op", () => {
+    setPadAt(0, { patternId: "A" });
+    setPadAt(1, { patternId: "B" });
+    moveMultiplePads([0, 1], 16);
+    moveMultiplePads([0, 1], -1);
+    moveMultiplePads([0, 1], 2.5);
+    const pads = getPads();
+    expect(pads[0]!.patternId).toBe("A");
+    expect(pads[1]!.patternId).toBe("B");
+  });
+
+  it("moveMultiplePads persistiert das Resultat in localStorage", () => {
+    setPadAt(0, { patternId: "A", color: "#abc" });
+    setPadAt(1, { patternId: "B", label: "Bee" });
+    moveMultiplePads([0, 1], 5);
+    const raw = localStorageMock.getItem(STORAGE_KEY);
+    expect(raw).toBeTruthy();
+    const parsed = JSON.parse(raw!);
+    expect(parsed.pads[3]).toMatchObject({ patternId: "A", color: "#abc" });
+    expect(parsed.pads[4]).toMatchObject({ patternId: "B", label: "Bee" });
+  });
+
+  it("moveMultiplePads([0,2,4], 1) Target liegt zwischen Picks → wird zu insertAt=1", () => {
+    setPadAt(0, { patternId: "A" });
+    setPadAt(2, { patternId: "C" });
+    setPadAt(4, { patternId: "E" });
+    setPadAt(7, { patternId: "H" });
+    moveMultiplePads([0, 2, 4], 1);
+    const pads = getPads();
+    // Compacted ohne 0,2,4 (Original [A,_,C,_,E,_,_,H,...]):
+    //   → [_, _, _, _, H, _, _, _, _, _, _, _, _] (13 slots)
+    // removedBeforeTarget = 1 (nur idx 0 < 1); insertAt = 1 - 1 = 0
+    // splice(0, 0, A, C, E) → [A,C,E,_,_,_,_,H,...]
+    expect(pads[0]!.patternId).toBe("A");
+    expect(pads[1]!.patternId).toBe("C");
+    expect(pads[2]!.patternId).toBe("E");
+    expect(pads[7]!.patternId).toBe("H");
   });
 });
 

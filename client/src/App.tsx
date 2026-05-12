@@ -75,6 +75,7 @@ import {
   usePerformanceStore,
   queuePattern as queuePerformancePattern,
   setQuantizeMode as setPerformanceQuantizeMode,
+  getPads as getPerformancePads,
 } from "@/store/usePerformanceStore";
 import { useResizablePanel } from "@/hooks/useResizablePanel";
 import { ResizablePanelHandle } from "@/components/UI/ResizablePanelHandle";
@@ -590,7 +591,8 @@ export default function App() {
   // ── ss:navigate Event-Handler ─────────────────────────────────────────────
   // Wird vom KeyboardBindingsPanel ausgelöst, wenn der User auf einen
   // Skript-Eintrag klickt um ihn im ScriptRunner zu editieren.
-  // Auch von MacroPanel (Button-Mode "Edit in Script Runner →") genutzt.
+  // Auch von MacroPanel (Button-Mode "Edit in Script Runner →" /
+  // "Edit in Performance Mode →") genutzt.
   useEffect(() => {
     const onNavigate = (e: Event) => {
       const detail = (e as CustomEvent<{ tab?: string; tool?: string; scriptId?: string }>).detail;
@@ -609,6 +611,10 @@ export default function App() {
             new CustomEvent("ss:script-select", { detail: { scriptId: detail.scriptId } }),
           );
         }
+      } else if (detail.tab === "performance") {
+        // Performance Mode öffnen (MacroPanel "Edit in Performance Mode →")
+        setShowSettings(false);
+        setPerformanceActive(true);
       }
     };
     window.addEventListener("ss:navigate", onNavigate);
@@ -618,13 +624,38 @@ export default function App() {
 
   // ── macro:button:trigger Event-Handler ────────────────────────────────────
   // MacroPanel.tsx dispatched dieses Event wenn ein Macro im Button-Mode
-  // gedrückt wird. Wir holen das Script aus useScriptStore und übergeben
-  // den Code an die geteilte Sandbox-Instance. Falls das Script disabled
-  // oder gelöscht ist → kein Run.
+  // gedrückt wird. Detail enthält triggerKind ("script" | "pad").
+  //  - "script": Script aus useScriptStore in Sandbox laufen lassen (v1.17)
+  //  - "pad":    Performance-Pad triggern (v1.20.x) — analog zum Pad-Click in
+  //              PatternLaunchPad: dm.setActivePattern + queuePerformancePattern,
+  //              sodass quantisierter Wechsel UND Sofort-Switch wie beim
+  //              Performance-Pad-Click identisch funktionieren.
+  // Defensiv: alte Events ohne triggerKind → default "script" (Backwards-Compat).
   useEffect(() => {
     const onTrigger = (e: Event) => {
-      const detail = (e as CustomEvent<{ macroIndex: number; scriptId: string }>).detail;
-      if (!detail || typeof detail.scriptId !== "string") return;
+      const detail = (e as CustomEvent<{
+        macroIndex: number;
+        triggerKind?: "script" | "pad";
+        scriptId?: string;
+        padIndex?: number;
+      }>).detail;
+      if (!detail) return;
+      const triggerKind = detail.triggerKind === "pad" ? "pad" : "script";
+
+      if (triggerKind === "pad") {
+        if (typeof detail.padIndex !== "number") return;
+        const pads = getPerformancePads();
+        const pad = pads[detail.padIndex];
+        if (!pad || !pad.patternId) return;
+        // Identische Semantik zum Performance-Pad-Click (siehe PatternLaunchPad-Wiring unten):
+        // sofortiger Active-Wechsel + Queue (Performance-Mode rendert "queued"-State).
+        dmRef.current.setActivePattern(pad.patternId);
+        queuePerformancePattern(pad.patternId);
+        return;
+      }
+
+      // triggerKind === "script"
+      if (typeof detail.scriptId !== "string") return;
       const script = getScript(detail.scriptId);
       if (!script || !script.enabled) return;
       if (scriptSandbox.isRunning()) return; // Schutz vor Re-Entrancy

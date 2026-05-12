@@ -1,6 +1,6 @@
 # Synthstudio – Funktionshandbuch
 
-**Version 1.20.0 | Vollständige Dokumentation aller Features**
+**Version 1.21.0 | Vollständige Dokumentation aller Features**
 
 ---
 
@@ -1626,6 +1626,22 @@ Die Sandbox basiert auf **10 Hardening-Layern** (siehe `docs/SECURITY-SCRIPT-SAN
 
 ---
 
+## v1.21.0: Macro→Pad + Performance a11y + Theme + CI-Drift-Check
+
+Vier parallele Verbesserungen:
+
+**TASK-112 — Macro-Buttons können jetzt Performance-Pads triggern.** Im `MacroPanel` BindingEditor im Button-Mode gibt es einen Toggle "Trigger: [Script] [Pad]". Bei `Pad` wählst du einen der 16 Slots aus dem Performance-Mode. Klick auf den Macro-Button macht einen sofortigen `setActivePattern` + `queuePerformancePattern` (identisches Verhalten wie Performance-Pad-Click). Trigger-Schema-Migration für v1.17-Daten ist tolerant — alte `scriptId`-only Macros funktionieren weiter (default `triggerKind: "script"`). 70 Macro-Tests (+22 neu).
+
+**TASK-114 — Performance-Pads sind jetzt a11y-tauglich + multi-select-fähig.** WAI-ARIA Pattern: `role="grid"` + 16 `gridcell`-Pads mit Roving-Tabindex. Pfeiltasten navigieren. Im Reorder-Mode: `Space`/`Enter` "greift" das fokussierte Pad, Pfeile verschieben, `Space` dropt, `Escape` bricht ab. `aria-live="polite"` Region kommuniziert Aktionen an Screen-Reader. Multi-Select via `Shift`/`Ctrl`/`Cmd+Click` markiert Pads visuell (`ring-accent-secondary`); Drag eines selected-Pads zieht alle in der Auswahl mit (Insert-Semantik via `moveMultiplePads`). 49 Store-Tests (+11) + 22 Playwright-Tests (+13).
+
+**TASK-113 — SampleBrowser Theme-Refactor.** 37 hardcoded Tailwind-Farben in `SampleBrowser.tsx` + `AudioInputRecorder.tsx` ersetzt durch semantische `--ss-*` Tokens. Drum-Kategorien mappen 9 Original-Farben auf 4 verfügbare semantische Akzente — primäre Differenzierung bleibt via 3-Buchstaben-Labels + Emojis. `placeholder-slate-600` (Tailwind-v2-Syntax, war seit v4-Migration kaputt) auf `placeholder:text-text-dim` korrigiert.
+
+**TASK-115 — CI enforced sandbox-runtime drift.** `.github/workflows/ci.yml` bekommt einen Step vor `pnpm check`: `pnpm gen:sandbox && git diff --exit-code client/src/sandbox/sandbox-runtime.generated.ts`. Vergessenes `gen:sandbox` lokal wird jetzt im CI gefangen statt erst Audio-Sandbox-Verhalten zu brechen. Drei-Schichten-Schutz: pre-hooks (auto-regen) + CI (drift-fail) + 17 Runtime-Pen-Tests.
+
+**Test-Wachstum diese Welle:** 1069 → 1106 (+37 Tests). Insgesamt 62 Test-Files, 1106 passing.
+
+---
+
 ## 45. Performance Mode — überarbeitet (v1.20.0)
 
 **Toolbar → Performance Mode** (oder Shortcut)
@@ -1737,4 +1753,4 @@ Diese Releases enthalten keine neuen Features, sondern **kritische Bug-Fixes**:
 
 ---
 
-*Letzte Aktualisierung: Sprint 22 — v1.20.0 (Performance Mode Overhaul)*
+*Letzte Aktualisierung: Sprint 22 — v1.21.0 (Macro→Pad + Performance a11y + Theme + CI)*

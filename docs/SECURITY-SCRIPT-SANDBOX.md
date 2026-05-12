@@ -146,12 +146,28 @@ Snapshot-Drift-Schutz.
 
 ## Drift-Risiko: zwei Source-Kopien
 
-`sandbox-runtime.ts` (TypeScript-lesbar) und `SANDBOX_WORKER_SOURCE` (inlined
-String in `useScriptSandbox.ts`) müssen identisch sein. Build-Time-Codegen
-wäre die saubere Lösung — bis dahin garantieren die Drift-Tests 14-17 in
-`script-sandbox-pentest.test.ts`, dass die wichtigsten Patches in BEIDEN
-Versionen vorhanden sind. Bei jeder Änderung an `sandbox-runtime.ts` MUSS
-auch `SANDBOX_WORKER_SOURCE` im selben Commit nachgezogen werden.
+`sandbox-runtime.ts` ist die SINGLE SOURCE OF TRUTH. Daraus wird zur Build-Zeit
+via `scripts/generate-sandbox-source.mjs` (esbuild target=ES2020) die Datei
+`sandbox-runtime.generated.ts` erzeugt, die wiederum die Konstante
+`SANDBOX_WORKER_SOURCE` exportiert (genutzt in `useScriptSandbox.ts`).
+
+**Drei Schutzebenen gegen Drift:**
+
+1. **pnpm pre-hooks** (`predev`, `prebuild`, `precheck`, `pretest`) rufen
+   automatisch `gen:sandbox` auf — wer lokal `pnpm check` oder `pnpm test`
+   ausführt, sieht stale generated Files sofort.
+2. **CI-Enforcement** (TASK-115, ab v1.21.0) — der `test`-Job in
+   `.github/workflows/ci.yml` führt nach `pnpm install` einen
+   `git diff --exit-code`-Check gegen die regenerierte Datei aus. Wenn der
+   Commit `sandbox-runtime.ts` modifiziert hat ohne `gen:sandbox` zu
+   commiten, schlägt CI fehl mit klarer Fehlermeldung.
+3. **Drift-Tests 14-17** in `script-sandbox-pentest.test.ts` verifizieren
+   funktional, dass alle Hardening-Patterns in der generierten Source landen
+   (Globals neutralisiert, Prototype-Chain-Hardening, Log-Rate-Limit,
+   `Object.freeze(ss)`).
+
+Bei jeder Änderung an `sandbox-runtime.ts` MUSS `pnpm gen:sandbox` ausgeführt
+und das neue `sandbox-runtime.generated.ts` mit-commitet werden.
 
 ## Was die Sandbox NICHT schützt
 

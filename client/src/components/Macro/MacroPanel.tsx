@@ -17,12 +17,16 @@ import {
   removeMacroBinding,
   setMacroMode,
   setMacroScriptId,
+  setMacroTriggerKind,
+  setMacroPadIndex,
   triggerMacroButton,
   type Macro,
   type MacroMode,
   type MacroTargetType,
+  type MacroTriggerKind,
 } from "@/store/useMacroStore";
 import { useScriptStore } from "@/store/useScriptStore";
+import { usePerformanceStore, PAD_COUNT, type PerformancePad } from "@/store/usePerformanceStore";
 import type { PartData } from "@/audio/AudioEngine";
 
 // ─── Target-Labels ───────────────────────────────────────────────────────────
@@ -84,13 +88,21 @@ function MacroKnob({ macro, onEdit }: { macro: Macro; onEdit: () => void }) {
 
 function MacroButton({
   macro,
+  triggerKind,
   scriptName,
   scriptMissing,
+  padLabel,
+  padColor,
+  padMissing,
   onEdit,
 }: {
   macro: Macro;
+  triggerKind: MacroTriggerKind;
   scriptName: string | null;
   scriptMissing: boolean;
+  padLabel: string | null;
+  padColor: string | null;
+  padMissing: boolean;
   onEdit: () => void;
 }) {
   // Press-State für visuelles Feedback (Edge-Mode: triggert beim Drücken)
@@ -101,8 +113,38 @@ function MacroButton({
   };
   const handleUp = () => setPressed(false);
 
-  const label = scriptName ?? (scriptMissing ? "(Skript fehlt)" : "(kein Skript)");
-  const disabled = !macro.scriptId;
+  // Label + Disabled + Farb-Logik abhängig vom triggerKind
+  let label: string;
+  let disabled: boolean;
+  let effectiveColor: string;
+  let statusBadge: string;
+  let titleText: string;
+  if (triggerKind === "pad") {
+    disabled = macro.padIndex === undefined || macro.padIndex === null;
+    if (disabled) {
+      label = "(kein Pad)";
+      effectiveColor = macro.color;
+      titleText = "Kein Performance-Pad zugewiesen";
+    } else if (padMissing) {
+      label = `(Pad leer)`;
+      effectiveColor = macro.color;
+      titleText = `Pad ${(macro.padIndex ?? 0) + 1} ist leer — bitte in Performance Mode konfigurieren`;
+    } else {
+      label = padLabel ?? `Pad ${(macro.padIndex ?? 0) + 1}`;
+      // Pad-Mode: Pad-Color hat Vorrang über Macro-Color, mit Macro-Color als Fallback
+      effectiveColor = padColor ?? macro.color;
+      titleText = label;
+    }
+    statusBadge = "PAD";
+  } else {
+    disabled = !macro.scriptId;
+    label = scriptName ?? (scriptMissing ? "(Skript fehlt)" : "(kein Skript)");
+    effectiveColor = macro.color;
+    titleText = scriptMissing ? "Verknüpftes Skript wurde nicht gefunden" : label;
+    statusBadge = "BTN";
+  }
+
+  const showError = (triggerKind === "script" && scriptMissing) || (triggerKind === "pad" && !disabled && padMissing);
 
   return (
     <div className="flex flex-col items-center gap-1 min-w-[60px]">
@@ -122,14 +164,14 @@ function MacroButton({
         aria-label={`Trigger ${macro.label}`}
         className="relative h-20 w-14 rounded-md flex items-center justify-center text-[10px] font-bold border transition-all select-none disabled:opacity-50 disabled:cursor-not-allowed border-border-color"
         style={{
-          // User-definierte Farbe darf inline gestyled werden (kein Token-Mapping)
-          backgroundColor: disabled ? "transparent" : macro.color,
+          // User-definierte Farbe (Pad oder Macro) darf inline gestyled werden (domain palette, kein Token-Mapping)
+          backgroundColor: disabled ? "transparent" : effectiveColor,
           color: disabled ? "var(--ss-text-dim)" : "#fff",
           transform: pressed ? "scale(0.95)" : "scale(1)",
           boxShadow: pressed ? "inset 0 0 8px rgba(0,0,0,0.35)" : "none",
           cursor: disabled ? "not-allowed" : "pointer",
         }}
-        title={scriptMissing ? "Verknüpftes Skript wurde nicht gefunden" : label}
+        title={titleText}
       >
         <span className="px-1 break-words text-center leading-tight" style={{ wordBreak: "break-word" }}>
           {label}
@@ -139,9 +181,9 @@ function MacroButton({
       {/* Status-Zeile */}
       <span
         className="text-[10px] font-mono"
-        style={{ color: scriptMissing ? "var(--ss-accent-danger)" : macro.color }}
+        style={{ color: showError ? "var(--ss-accent-danger)" : effectiveColor }}
       >
-        BTN
+        {statusBadge}
       </span>
       <button
         onClick={onEdit}
@@ -162,8 +204,12 @@ function BindingEditor({ macro, parts, onClose }: { macro: Macro; parts: PartDat
   const [newMin, setNewMin] = useState(0);
   const [newMax, setNewMax] = useState(1);
   const { scripts } = useScriptStore();
+  const { pads } = usePerformanceStore();
 
   const opt = TARGET_OPTIONS.find(o => o.value === newTarget);
+
+  // Defensiver Default: bei fehlendem triggerKind → "script" (Backwards-Compat)
+  const effectiveTriggerKind: MacroTriggerKind = macro.triggerKind === "pad" ? "pad" : "script";
 
   const handleAdd = () => {
     const part = parts.find(p => p.id === newPartId);
@@ -184,6 +230,21 @@ function BindingEditor({ macro, parts, onClose }: { macro: Macro; parts: PartDat
     setMacroScriptId(macro.index, scriptId === "" ? null : scriptId);
   };
 
+  const handleSwitchTriggerKind = (kind: MacroTriggerKind) => {
+    setMacroTriggerKind(macro.index, kind);
+  };
+
+  const handleSelectPad = (raw: string) => {
+    if (raw === "") {
+      setMacroPadIndex(macro.index, null);
+      return;
+    }
+    const idx = Number(raw);
+    if (Number.isInteger(idx) && idx >= 0 && idx < PAD_COUNT) {
+      setMacroPadIndex(macro.index, idx);
+    }
+  };
+
   // Navigation zur Tools-Tab/Script-Sub-Section per CustomEvent (App.tsx hört zu)
   const handleOpenScriptRunner = () => {
     if (typeof window !== "undefined" && typeof CustomEvent !== "undefined") {
@@ -195,6 +256,33 @@ function BindingEditor({ macro, parts, onClose }: { macro: Macro; parts: PartDat
     }
     onClose();
   };
+
+  // Navigation zum Performance-Mode (App.tsx hört zu — siehe `ss:navigate` Listener).
+  const handleOpenPerformanceMode = () => {
+    if (typeof window !== "undefined" && typeof CustomEvent !== "undefined") {
+      window.dispatchEvent(
+        new CustomEvent("ss:navigate", {
+          detail: { tab: "performance" },
+        }),
+      );
+    }
+    onClose();
+  };
+
+  // Pad-Picker-Optionen: alle 16 Slots
+  const padOptions: Array<{ index: number; label: string; filled: boolean }> = pads.map((p: PerformancePad | null, i: number) => {
+    if (p) {
+      return {
+        index: i,
+        label: `Pad ${i + 1}${p.label ? ` – ${p.label}` : ""}`,
+        filled: true,
+      };
+    }
+    return { index: i, label: `Pad ${i + 1} (leer)`, filled: false };
+  });
+
+  const selectedPad = macro.padIndex !== undefined ? pads[macro.padIndex] : null;
+  const padIsMissing = macro.padIndex !== undefined && !selectedPad;
 
   return (
     <div className="absolute bottom-full mb-2 left-0 z-50 w-80 bg-bg-panel border border-border-color rounded-xl shadow-2xl p-4">
@@ -312,42 +400,113 @@ function BindingEditor({ macro, parts, onClose }: { macro: Macro; parts: PartDat
         </>
       ) : (
         <>
-          {/* Button-Mode: Script-Auswahl */}
+          {/* Button-Mode: Trigger-Kind-Toggle (Script | Pad) */}
           <div className="border-t border-border-color pt-3 space-y-2">
-            <div className="text-[10px] text-text-dim uppercase tracking-wide">Skript</div>
-            <select
-              value={macro.scriptId ?? ""}
-              onChange={e => handleSelectScript(e.target.value)}
-              aria-label="Skript auswählen"
-              className="w-full text-xs bg-bg-elevated rounded border border-border-color px-2 py-1 text-text-primary"
-            >
-              <option value="">— Kein Skript —</option>
-              {scripts.map(s => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
-                  {s.enabled ? "" : " (deaktiviert)"}
-                </option>
-              ))}
-            </select>
-
-            {macro.scriptId && !scripts.find(s => s.id === macro.scriptId) && (
-              <div className="text-[10px] text-accent-danger">
-                Verknüpftes Skript existiert nicht mehr.
-              </div>
-            )}
-
-            <button
-              type="button"
-              onClick={handleOpenScriptRunner}
-              className="w-full py-1 text-xs rounded bg-bg-elevated border border-border-color text-text-primary hover:bg-bg-base transition-colors"
-            >
-              Edit in Script Runner →
-            </button>
-
-            <div className="text-[10px] text-text-dim leading-snug pt-1">
-              Trigger-Modus: <span className="font-mono text-text-muted">edge</span> (einmaliger Run pro Press).
+            <div className="text-[10px] text-text-dim uppercase tracking-wide">Trigger</div>
+            <div role="radiogroup" aria-label="Macro trigger kind" className="flex gap-1 bg-bg-elevated rounded p-1 border border-border-color">
+              <button
+                type="button"
+                role="radio"
+                aria-checked={effectiveTriggerKind === "script"}
+                onClick={() => handleSwitchTriggerKind("script")}
+                className={
+                  "flex-1 px-2 py-1 text-xs font-semibold rounded transition-colors " +
+                  (effectiveTriggerKind === "script"
+                    ? "bg-accent-primary text-white"
+                    : "text-text-muted hover:text-text-primary")
+                }
+              >
+                Script
+              </button>
+              <button
+                type="button"
+                role="radio"
+                aria-checked={effectiveTriggerKind === "pad"}
+                onClick={() => handleSwitchTriggerKind("pad")}
+                className={
+                  "flex-1 px-2 py-1 text-xs font-semibold rounded transition-colors " +
+                  (effectiveTriggerKind === "pad"
+                    ? "bg-accent-primary text-white"
+                    : "text-text-muted hover:text-text-primary")
+                }
+              >
+                Pad
+              </button>
             </div>
           </div>
+
+          {effectiveTriggerKind === "script" ? (
+            <div className="border-t border-border-color pt-3 space-y-2">
+              <div className="text-[10px] text-text-dim uppercase tracking-wide">Skript</div>
+              <select
+                value={macro.scriptId ?? ""}
+                onChange={e => handleSelectScript(e.target.value)}
+                aria-label="Skript auswählen"
+                className="w-full text-xs bg-bg-elevated rounded border border-border-color px-2 py-1 text-text-primary"
+              >
+                <option value="">— Kein Skript —</option>
+                {scripts.map(s => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                    {s.enabled ? "" : " (deaktiviert)"}
+                  </option>
+                ))}
+              </select>
+
+              {macro.scriptId && !scripts.find(s => s.id === macro.scriptId) && (
+                <div className="text-[10px] text-accent-danger">
+                  Verknüpftes Skript existiert nicht mehr.
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={handleOpenScriptRunner}
+                className="w-full py-1 text-xs rounded bg-bg-elevated border border-border-color text-text-primary hover:bg-bg-base transition-colors"
+              >
+                Edit in Script Runner →
+              </button>
+
+              <div className="text-[10px] text-text-dim leading-snug pt-1">
+                Trigger-Modus: <span className="font-mono text-text-muted">edge</span> (einmaliger Run pro Press).
+              </div>
+            </div>
+          ) : (
+            <div className="border-t border-border-color pt-3 space-y-2">
+              <div className="text-[10px] text-text-dim uppercase tracking-wide">Performance Pad</div>
+              <select
+                value={macro.padIndex !== undefined ? String(macro.padIndex) : ""}
+                onChange={e => handleSelectPad(e.target.value)}
+                aria-label="Performance-Pad auswählen"
+                className="w-full text-xs bg-bg-elevated rounded border border-border-color px-2 py-1 text-text-primary"
+              >
+                <option value="">— Kein Pad —</option>
+                {padOptions.map(o => (
+                  <option key={o.index} value={o.index}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+
+              {padIsMissing && (
+                <div className="text-[10px] text-accent-danger">
+                  Pad {macro.padIndex !== undefined ? macro.padIndex + 1 : "?"} ist leer — bitte in Performance Mode konfigurieren.
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={handleOpenPerformanceMode}
+                className="w-full py-1 text-xs rounded bg-bg-elevated border border-border-color text-text-primary hover:bg-bg-base transition-colors"
+              >
+                Edit in Performance Mode →
+              </button>
+
+              <div className="text-[10px] text-text-dim leading-snug pt-1">
+                Triggert das Pattern aus dem ausgewählten Performance-Pad (quantisiert via Performance-Mode-Settings).
+              </div>
+            </div>
+          )}
         </>
       )}
     </div>
@@ -363,12 +522,18 @@ interface MacroPanelProps {
 export function MacroPanel({ parts }: MacroPanelProps) {
   const { macros } = useMacroStore();
   const { scripts } = useScriptStore();
+  const { pads } = usePerformanceStore();
   const [editIndex, setEditIndex] = useState<number | null>(null);
 
-  const activeCount = macros.filter(m =>
-    (m.mode === "knob" && m.bindings.length > 0) ||
-    (m.mode === "button" && !!m.scriptId)
-  ).length;
+  const activeCount = macros.filter(m => {
+    if (m.mode === "knob") return m.bindings.length > 0;
+    if (m.mode === "button") {
+      const kind: MacroTriggerKind = m.triggerKind === "pad" ? "pad" : "script";
+      if (kind === "pad") return m.padIndex !== undefined && m.padIndex !== null;
+      return !!m.scriptId;
+    }
+    return false;
+  }).length;
 
   return (
     <div className="flex flex-col gap-2 px-3 py-2 bg-bg-panel border-b border-border-color">
@@ -380,17 +545,26 @@ export function MacroPanel({ parts }: MacroPanelProps) {
       <div className="flex gap-3 relative">
         {macros.map(macro => {
           const isButton = macro.mode === "button";
-          const linkedScript = isButton && macro.scriptId
+          const triggerKind: MacroTriggerKind = macro.triggerKind === "pad" ? "pad" : "script";
+          const linkedScript = isButton && triggerKind === "script" && macro.scriptId
             ? scripts.find(s => s.id === macro.scriptId)
             : undefined;
-          const scriptMissing = isButton && !!macro.scriptId && !linkedScript;
+          const scriptMissing = isButton && triggerKind === "script" && !!macro.scriptId && !linkedScript;
+          const linkedPad = isButton && triggerKind === "pad" && macro.padIndex !== undefined
+            ? pads[macro.padIndex] ?? null
+            : null;
+          const padMissing = isButton && triggerKind === "pad" && macro.padIndex !== undefined && !linkedPad;
           return (
             <div key={macro.index} className="relative">
               {isButton ? (
                 <MacroButton
                   macro={macro}
+                  triggerKind={triggerKind}
                   scriptName={linkedScript?.name ?? null}
                   scriptMissing={scriptMissing}
+                  padLabel={linkedPad?.label ?? null}
+                  padColor={linkedPad?.color ?? null}
+                  padMissing={padMissing}
                   onEdit={() => setEditIndex(editIndex === macro.index ? null : macro.index)}
                 />
               ) : (

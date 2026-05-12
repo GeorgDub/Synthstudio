@@ -193,6 +193,82 @@ export function movePad(from: number, to: number): void {
 }
 
 /**
+ * Bulk-Reorder mehrerer Pads in einem Schritt (Insert-Semantik, NICHT Swap).
+ *
+ * Algorithmus:
+ *   1. Sanitisiere `fromIndices` (deduplizieren, in-range, ganzzahlig).
+ *   2. Snapshot `pickedPads` in der angegebenen `fromIndices`-Reihenfolge.
+ *   3. Entferne die picked-Slots aus dem Pads-Array (kompaktiere die Reste).
+ *   4. Berechne den Insert-Punkt im kompaktierten Array (#Picks vor `targetIndex` reduzieren ihn).
+ *   5. Splice `pickedPads` an diesem Punkt ein.
+ *   6. Fülle wieder auf PAD_COUNT auf (rechts mit null padden, links abschneiden falls overflow).
+ *
+ * No-op-Bedingungen:
+ *   - fromIndices leer
+ *   - targetIndex in fromIndices (kann nicht zu sich selbst movern)
+ *   - targetIndex out-of-range
+ *   - nach Sanitisierung sind keine gültigen Picks übrig
+ *
+ * Identitäts-No-op: wenn das Ergebnis gleich `_pads` ist (z.B. eine Auswahl
+ * auf ihre eigene Position zu movern), wird kein notify/persist gefeuert.
+ */
+export function moveMultiplePads(fromIndices: number[], targetIndex: number): void {
+  if (!Array.isArray(fromIndices) || fromIndices.length === 0) return;
+  if (!Number.isInteger(targetIndex) || targetIndex < 0 || targetIndex >= PAD_COUNT) return;
+
+  // Sanitisiere: nur in-range, ganzzahlig, dedupliziert (erstes Vorkommen gewinnt → behält Reihenfolge)
+  const seen = new Set<number>();
+  const cleanFrom: number[] = [];
+  for (const idx of fromIndices) {
+    if (!Number.isInteger(idx)) continue;
+    if (idx < 0 || idx >= PAD_COUNT) continue;
+    if (seen.has(idx)) continue;
+    seen.add(idx);
+    cleanFrom.push(idx);
+  }
+  if (cleanFrom.length === 0) return;
+  // Man kann nicht "auf sich selbst" movern
+  if (seen.has(targetIndex)) return;
+
+  // 2. Snapshot in fromIndices-Reihenfolge
+  const pickedPads: Array<PerformancePad | null> = cleanFrom.map(i => _pads[i] ?? null);
+
+  // 3. Entferne die picked-Slots → kompaktieren
+  const compacted: Array<PerformancePad | null> = [];
+  for (let i = 0; i < PAD_COUNT; i++) {
+    if (!seen.has(i)) compacted.push(_pads[i] ?? null);
+  }
+
+  // 4. Insert-Punkt im kompaktierten Array: Anzahl der vor `targetIndex`
+  //    entfernten Slots vom Original-Target abziehen.
+  let removedBeforeTarget = 0;
+  for (const i of seen) {
+    if (i < targetIndex) removedBeforeTarget++;
+  }
+  const insertAt = Math.max(0, Math.min(compacted.length, targetIndex - removedBeforeTarget));
+
+  // 5. Splice picked-Set ein
+  compacted.splice(insertAt, 0, ...pickedPads);
+
+  // 6. Auf PAD_COUNT normalisieren
+  const next: Array<PerformancePad | null> = defaultPads();
+  for (let i = 0; i < PAD_COUNT; i++) {
+    next[i] = compacted[i] ?? null;
+  }
+
+  // Identitäts-Check
+  let changed = false;
+  for (let i = 0; i < PAD_COUNT; i++) {
+    if (next[i] !== _pads[i]) { changed = true; break; }
+  }
+  if (!changed) return;
+
+  _pads = next;
+  persist();
+  notify();
+}
+
+/**
  * Convenience: setPadAt(index, null).
  */
 export function clearPad(index: number): void {

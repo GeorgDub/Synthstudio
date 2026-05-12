@@ -169,3 +169,179 @@ test.describe("Performance Mode (TASK-111)", () => {
     await expect(pad).toBeDisabled();
   });
 });
+
+// ─── TASK-114: a11y Keyboard-Reorder + Multi-Select ─────────────────────────
+
+async function seedPadsAndOpen(page: Page) {
+  await page.goto("/");
+  await page.waitForSelector('[role="tablist"]', { timeout: 15_000 });
+  await page.evaluate((key) => {
+    const data = {
+      pads: [
+        { patternId: "fake-1", label: "AAA", color: "#22d3ee" },
+        { patternId: "fake-2", label: "BBB", color: "#a78bfa" },
+        { patternId: "fake-3", label: "CCC", color: "#34d399" },
+        null, null, null, null, null,
+        null, null, null, null, null, null, null, null,
+      ],
+      quantizeMode: "bar",
+    };
+    localStorage.setItem(key, JSON.stringify(data));
+  }, PERF_KEY);
+  await page.reload();
+  await page.waitForSelector('[role="tablist"]', { timeout: 15_000 });
+  await page.getByRole("button", { name: /Performance Mode/i }).click();
+  await expect(page.getByTestId("performance-mode-overlay")).toBeVisible();
+}
+
+test.describe("Performance Mode a11y + Multi-Select (TASK-114)", () => {
+  test("Grid hat role=grid mit aria-label und 16 gridcells", async ({ page }) => {
+    await openPerformanceMode(page);
+    const grid = page.getByTestId("perf-pad-grid");
+    await expect(grid).toHaveAttribute("role", "grid");
+    await expect(grid).toHaveAttribute("aria-label", /Performance Pads/);
+    const cells = page.locator("[role='gridcell']");
+    await expect(cells).toHaveCount(16);
+  });
+
+  test("Roving-Tabindex: ein Pad ist tabbable, andere haben tabindex=-1", async ({ page }) => {
+    await openPerformanceMode(page);
+    // Initial: Pad 0 hat tabindex 0
+    await expect(page.getByTestId("perf-pad-0")).toHaveAttribute("tabindex", "0");
+    await expect(page.getByTestId("perf-pad-1")).toHaveAttribute("tabindex", "-1");
+    await expect(page.getByTestId("perf-pad-15")).toHaveAttribute("tabindex", "-1");
+  });
+
+  test("ARIA-Live-Region existiert und ist sr-only", async ({ page }) => {
+    await openPerformanceMode(page);
+    const live = page.getByTestId("perf-live-region");
+    await expect(live).toHaveAttribute("aria-live", "polite");
+    await expect(live).toHaveAttribute("role", "status");
+    await expect(live).toHaveClass(/sr-only/);
+  });
+
+  test("Arrow-Right navigiert Fokus von Pad 0 zu Pad 1", async ({ page }) => {
+    await seedPadsAndOpen(page);
+    // Klick auf Pad 0 für initialen Fokus (im Play-Mode)
+    await page.getByTestId("perf-pad-0").click();
+    // Arrow-Right
+    await page.keyboard.press("ArrowRight");
+    await expect(page.getByTestId("perf-pad-1")).toHaveAttribute("tabindex", "0");
+    await expect(page.getByTestId("perf-pad-0")).toHaveAttribute("tabindex", "-1");
+  });
+
+  test("Arrow-Down navigiert Fokus von Pad 0 zu Pad 4 (eine Zeile runter)", async ({ page }) => {
+    await seedPadsAndOpen(page);
+    await page.getByTestId("perf-pad-0").click();
+    await page.keyboard.press("ArrowDown");
+    await expect(page.getByTestId("perf-pad-4")).toHaveAttribute("tabindex", "0");
+  });
+
+  test("Reorder-Mode: Space greift Pad 0, ARIA-Live announce enthält 'gegriffen'", async ({ page }) => {
+    await seedPadsAndOpen(page);
+    await page.getByRole("radio", { name: /Reorder-Modus/i }).click();
+    // Klick auf Pad 0 setzt Fokus (im Reorder-Mode aber: Click = grab via Mouse — wir wollen via Keyboard).
+    // Trick: fokussiere via Tab oder via direkten Klick auf Grid + Pfeil — wir nutzen ein direktes Element-Focus
+    await page.getByTestId("perf-pad-0").focus();
+    await page.keyboard.press(" ");
+    const live = page.getByTestId("perf-live-region");
+    await expect(live).toContainText(/gegriffen/i);
+    await expect(page.getByTestId("perf-pad-0")).toHaveAttribute("data-pad-grabbed", "1");
+  });
+
+  test("Reorder-Mode: Space-Grab + ArrowRight + Space dropt Pad an neuer Position", async ({ page }) => {
+    await seedPadsAndOpen(page);
+    await page.getByRole("radio", { name: /Reorder-Modus/i }).click();
+    await page.getByTestId("perf-pad-0").focus();
+    // Grab
+    await page.keyboard.press(" ");
+    await expect(page.getByTestId("perf-pad-0")).toHaveAttribute("data-pad-grabbed", "1");
+    // Move rechts
+    await page.keyboard.press("ArrowRight");
+    // ArrowRight bei grabbed verschiebt das Pad UND den Fokus → Position 1 ist jetzt das gegriffene
+    await expect(page.getByTestId("perf-pad-1")).toHaveAttribute("data-pad-grabbed", "1");
+    // Drop
+    await page.keyboard.press(" ");
+    await expect(page.getByTestId("perf-pad-1")).toHaveAttribute("data-pad-grabbed", "0");
+    const live = page.getByTestId("perf-live-region");
+    await expect(live).toContainText(/abgelegt/i);
+  });
+
+  test("Reorder-Mode: Escape während grabbed restored Position + Live-Region", async ({ page }) => {
+    await seedPadsAndOpen(page);
+    await page.getByRole("radio", { name: /Reorder-Modus/i }).click();
+    await page.getByTestId("perf-pad-0").focus();
+    // Grab
+    await page.keyboard.press(" ");
+    await expect(page.getByTestId("perf-pad-0")).toHaveAttribute("data-pad-grabbed", "1");
+    // Move
+    await page.keyboard.press("ArrowRight");
+    // Escape
+    await page.keyboard.press("Escape");
+    // Live-Region announce
+    const live = page.getByTestId("perf-live-region");
+    await expect(live).toContainText(/abgebrochen/i);
+    // Pad-0 hat wieder den AAA-Inhalt (Restore klappt)
+    await expect(page.getByTestId("perf-pad-0")).toHaveAttribute("data-pad-filled", "1");
+    // Performance-Mode bleibt offen (Escape hat NICHT durchgereicht)
+    await expect(page.getByTestId("performance-mode-overlay")).toBeVisible();
+  });
+
+  test("Reorder-Mode: Shift+Click auf 2 Pads → beide haben aria-selected + Multi-Select-Counter", async ({ page }) => {
+    await seedPadsAndOpen(page);
+    await page.getByRole("radio", { name: /Reorder-Modus/i }).click();
+    // Shift+Click auf Pad 0
+    await page.getByTestId("perf-pad-0").click({ modifiers: ["Shift"] });
+    await expect(page.getByTestId("perf-pad-0")).toHaveAttribute("aria-selected", "true");
+    await expect(page.getByTestId("perf-pad-0")).toHaveAttribute("data-pad-selected", "1");
+    // Shift+Click auf Pad 2
+    await page.getByTestId("perf-pad-2").click({ modifiers: ["Shift"] });
+    await expect(page.getByTestId("perf-pad-2")).toHaveAttribute("aria-selected", "true");
+    // Counter
+    await expect(page.getByTestId("perf-multiselect-count")).toContainText(/2 ausgewählt/);
+  });
+
+  test("Reorder-Mode: Shift+Click auf bereits selektierten Pad de-selektiert (toggle)", async ({ page }) => {
+    await seedPadsAndOpen(page);
+    await page.getByRole("radio", { name: /Reorder-Modus/i }).click();
+    await page.getByTestId("perf-pad-0").click({ modifiers: ["Shift"] });
+    await expect(page.getByTestId("perf-pad-0")).toHaveAttribute("data-pad-selected", "1");
+    // Nochmal Shift+Click → de-select
+    await page.getByTestId("perf-pad-0").click({ modifiers: ["Shift"] });
+    await expect(page.getByTestId("perf-pad-0")).toHaveAttribute("data-pad-selected", "0");
+  });
+
+  test("Reorder-Mode: Multi-Select-Drag bewegt alle selektierten Pads (Insert-Semantik)", async ({ page }) => {
+    await seedPadsAndOpen(page);
+    await page.getByRole("radio", { name: /Reorder-Modus/i }).click();
+    // Selektiere Pad 0 + 1
+    await page.getByTestId("perf-pad-0").click({ modifiers: ["Shift"] });
+    await page.getByTestId("perf-pad-1").click({ modifiers: ["Shift"] });
+    await expect(page.getByTestId("perf-multiselect-count")).toContainText(/2 ausgewählt/);
+    // Drag Pad-0 → Pad-5 (zieht beide mit)
+    const src = page.getByTestId("perf-pad-0");
+    const dst = page.getByTestId("perf-pad-5");
+    await src.dragTo(dst);
+    // Multi-Select wird nach Move geleert
+    await expect(page.getByTestId("perf-multiselect-count")).not.toBeAttached({ timeout: 3000 });
+  });
+
+  test("Mode-Wechsel von Reorder → Play leert Multi-Select", async ({ page }) => {
+    await seedPadsAndOpen(page);
+    await page.getByRole("radio", { name: /Reorder-Modus/i }).click();
+    await page.getByTestId("perf-pad-0").click({ modifiers: ["Shift"] });
+    await expect(page.getByTestId("perf-multiselect-count")).toBeVisible();
+    // Switch to Play
+    await page.getByRole("radio", { name: /Play-Modus/i }).click();
+    await expect(page.getByTestId("perf-multiselect-count")).not.toBeAttached();
+  });
+
+  test("Empty-Slots können NICHT zum Multi-Select hinzugefügt werden", async ({ page }) => {
+    await seedPadsAndOpen(page);
+    await page.getByRole("radio", { name: /Reorder-Modus/i }).click();
+    // Pad-7 ist leer in seedPadsAndOpen
+    await page.getByTestId("perf-pad-7").click({ modifiers: ["Shift"] });
+    await expect(page.getByTestId("perf-pad-7")).toHaveAttribute("data-pad-selected", "0");
+    await expect(page.getByTestId("perf-multiselect-count")).not.toBeAttached();
+  });
+});

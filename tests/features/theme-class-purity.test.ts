@@ -1,12 +1,13 @@
 /**
  * tests/features/theme-class-purity.test.ts
  *
- * Regression test for FOLLOWUP-110.
+ * Regression test for FOLLOWUP-110 and TASK-113.
  *
- * Verifies that the two files refactored in TASK-110 (MixerView.tsx and
- * ElectronTitleBar.tsx) contain NO hardcoded Tailwind palette colour classes
- * (bg-slate-*, text-cyan-*, hover:bg-red-*, bg-[#...] etc.) — only semantic
- * tokens (bg-bg-base, text-text-primary, bg-accent-primary, etc.) are allowed.
+ * Verifies that refactored files (MixerView.tsx, ElectronTitleBar.tsx,
+ * SampleBrowser.tsx, AudioInputRecorder.tsx) contain NO hardcoded Tailwind
+ * palette colour classes (bg-slate-*, text-cyan-*, hover:bg-red-*, bg-[#...]
+ * etc.) — only semantic tokens (bg-bg-base, text-text-primary,
+ * bg-accent-primary, etc.) are allowed.
  *
  * Approach: read each file as text via fs.readFileSync, run a strict regex
  * over its content. Rendering with jsdom is avoided because both files pull
@@ -76,6 +77,35 @@ describe("Theme-class purity — FOLLOWUP-110", () => {
 
   it("ElectronTitleBar.tsx contains no arbitrary-value hex classes (bg-[#...]/text-[#...])", () => {
     const path = resolve(ROOT, "electron/components/ElectronTitleBar.tsx");
+    const src = readFileSync(path, "utf-8");
+    const offenders = findOffenders(src, ARBITRARY_HEX_CLASS);
+    expect(offenders, `Arbitrary hex classes found:\n${offenders.join("\n")}`).toEqual([]);
+  });
+
+  // ─── TASK-113: SampleBrowser sweep ─────────────────────────────────────
+  it("SampleBrowser.tsx contains no hardcoded Tailwind palette classes", () => {
+    const path = resolve(ROOT, "client/src/components/SampleBrowser/SampleBrowser.tsx");
+    const src = readFileSync(path, "utf-8");
+    const offenders = findOffenders(src, HARDCODED_TAILWIND_CLASS);
+    expect(offenders, `Hardcoded Tailwind classes found:\n${offenders.join("\n")}`).toEqual([]);
+  });
+
+  it("SampleBrowser.tsx contains no arbitrary-value hex classes (bg-[#...]/text-[#...])", () => {
+    const path = resolve(ROOT, "client/src/components/SampleBrowser/SampleBrowser.tsx");
+    const src = readFileSync(path, "utf-8");
+    const offenders = findOffenders(src, ARBITRARY_HEX_CLASS);
+    expect(offenders, `Arbitrary hex classes found:\n${offenders.join("\n")}`).toEqual([]);
+  });
+
+  it("AudioInputRecorder.tsx contains no hardcoded Tailwind palette classes", () => {
+    const path = resolve(ROOT, "client/src/components/SampleBrowser/AudioInputRecorder.tsx");
+    const src = readFileSync(path, "utf-8");
+    const offenders = findOffenders(src, HARDCODED_TAILWIND_CLASS);
+    expect(offenders, `Hardcoded Tailwind classes found:\n${offenders.join("\n")}`).toEqual([]);
+  });
+
+  it("AudioInputRecorder.tsx contains no arbitrary-value hex classes (bg-[#...]/text-[#...])", () => {
+    const path = resolve(ROOT, "client/src/components/SampleBrowser/AudioInputRecorder.tsx");
     const src = readFileSync(path, "utf-8");
     const offenders = findOffenders(src, ARBITRARY_HEX_CLASS);
     expect(offenders, `Arbitrary hex classes found:\n${offenders.join("\n")}`).toEqual([]);
