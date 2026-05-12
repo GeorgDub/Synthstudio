@@ -4,7 +4,7 @@
  * Unit-Tests fuer useMacroStore.
  * Stubt localStorage + window (fuer CustomEvent-Dispatch in setMacroValue).
  */
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 
 // ─── localStorage Mock ────────────────────────────────────────────────────────
 
@@ -68,6 +68,9 @@ import {
   getMacros,
   mapMacroValue,
   applyMacroBindings,
+  setMacroMode,
+  setMacroScriptId,
+  triggerMacroButton,
   type MacroBinding,
   type Macro,
   type MacroRouteSetters,
@@ -489,5 +492,200 @@ describe("Macro → Audio Routing (End-to-End ohne DOM)", () => {
     const detail = ev.detail as { index: number; value: number };
     applyMacroBindings(getMacros()[detail.index], detail.value, setters);
     expect(volCalls).toEqual([["kick-id-xyz", 0.8]]);
+  });
+});
+
+// ─── Button-Mode (TASK-103 / C3) ─────────────────────────────────────────────
+// Erweitert das Macro-Schema um discriminated union "knob" | "button":
+//   - Default-Modus aus alten localStorage-Daten ist "knob"
+//   - setMacroMode wechselt zwischen Modi, ohne bindings/scriptId zu löschen
+//   - setMacroScriptId hängt ein Script an (für Button-Mode)
+//   - triggerMacroButton dispatcht macro:button:trigger Event
+//   - Persistenz-Round-Trip mit mode + scriptId
+
+describe("Macro – Button-Mode Schema-Erweiterung", () => {
+  beforeEach(() => {
+    localStorageMock.clear();
+    dispatched.length = 0;
+    resetMacros();
+  });
+
+  it("Default-Modus aller Macros ist 'knob'", () => {
+    const all = getMacros();
+    all.forEach(m => expect(m.mode).toBe("knob"));
+  });
+
+  it("setMacroMode wechselt auf 'button' und persistiert", () => {
+    setMacroMode(0, "button");
+    expect(getMacros()[0].mode).toBe("button");
+    const raw = localStorageMock.getItem(STORAGE_KEY);
+    const parsed = JSON.parse(raw!) as Macro[];
+    expect(parsed[0].mode).toBe("button");
+  });
+
+  it("setMacroMode 'knob' → 'button' LÖSCHT NICHT die existing bindings", () => {
+    addMacroBinding(0, {
+      target: "master-vol",
+      minValue: 0,
+      maxValue: 1,
+    });
+    expect(getMacros()[0].bindings).toHaveLength(1);
+    setMacroMode(0, "button");
+    expect(getMacros()[0].mode).toBe("button");
+    expect(getMacros()[0].bindings).toHaveLength(1); // defensiv preserviert
+  });
+
+  it("setMacroMode 'button' → 'knob' LÖSCHT NICHT die scriptId", () => {
+    setMacroMode(0, "button");
+    setMacroScriptId(0, "sc-test-1");
+    expect(getMacros()[0].scriptId).toBe("sc-test-1");
+    setMacroMode(0, "knob");
+    expect(getMacros()[0].mode).toBe("knob");
+    expect(getMacros()[0].scriptId).toBe("sc-test-1");
+  });
+
+  it("setMacroMode ist no-op bei out-of-range index", () => {
+    setMacroMode(-1, "button");
+    setMacroMode(99, "button");
+    getMacros().forEach(m => expect(m.mode).toBe("knob"));
+  });
+
+  it("setMacroMode ist no-op bei invalid mode-string", () => {
+    setMacroMode(0, "knob");
+    // Mit Cast um TS zu umgehen — Laufzeit-Robustheit
+    setMacroMode(0, "invalid" as unknown as "button");
+    expect(getMacros()[0].mode).toBe("knob");
+  });
+
+  it("setMacroScriptId setzt die scriptId und persistiert", () => {
+    setMacroScriptId(2, "sc-abc-123");
+    expect(getMacros()[2].scriptId).toBe("sc-abc-123");
+    const raw = localStorageMock.getItem(STORAGE_KEY);
+    const parsed = JSON.parse(raw!) as Macro[];
+    expect(parsed[2].scriptId).toBe("sc-abc-123");
+  });
+
+  it("setMacroScriptId(null) entfernt die scriptId", () => {
+    setMacroScriptId(2, "sc-abc-123");
+    expect(getMacros()[2].scriptId).toBe("sc-abc-123");
+    setMacroScriptId(2, null);
+    expect(getMacros()[2].scriptId).toBeUndefined();
+  });
+
+  it("setMacroScriptId ist no-op bei out-of-range index", () => {
+    setMacroScriptId(-1, "sc-x");
+    setMacroScriptId(99, "sc-x");
+    getMacros().forEach(m => expect(m.scriptId).toBeUndefined());
+  });
+});
+
+describe("triggerMacroButton – Event-Dispatch", () => {
+  beforeEach(() => {
+    localStorageMock.clear();
+    dispatched.length = 0;
+    resetMacros();
+  });
+
+  it("dispatcht 'macro:button:trigger' wenn mode=button + scriptId gesetzt", () => {
+    setMacroMode(3, "button");
+    setMacroScriptId(3, "sc-button-1");
+    const result = triggerMacroButton(3);
+    expect(result).toBe("sc-button-1");
+    const ev = dispatched.find(d => d.type === "macro:button:trigger");
+    expect(ev).toBeDefined();
+    expect(ev!.detail).toMatchObject({ macroIndex: 3, scriptId: "sc-button-1" });
+  });
+
+  it("ist no-op wenn mode=knob (kein Event)", () => {
+    setMacroScriptId(0, "sc-1");
+    // mode bleibt knob (default)
+    const result = triggerMacroButton(0);
+    expect(result).toBeNull();
+    const ev = dispatched.find(d => d.type === "macro:button:trigger");
+    expect(ev).toBeUndefined();
+  });
+
+  it("ist no-op wenn mode=button aber keine scriptId", () => {
+    setMacroMode(1, "button");
+    const result = triggerMacroButton(1);
+    expect(result).toBeNull();
+    const ev = dispatched.find(d => d.type === "macro:button:trigger");
+    expect(ev).toBeUndefined();
+  });
+
+  it("ist no-op bei out-of-range index", () => {
+    expect(triggerMacroButton(-1)).toBeNull();
+    expect(triggerMacroButton(99)).toBeNull();
+    expect(dispatched.find(d => d.type === "macro:button:trigger")).toBeUndefined();
+  });
+});
+
+// ─── Migration: Old-Format Compat (TASK-103 / C3) ────────────────────────────
+// Dieser Test verifiziert, dass localStorage-Daten ohne `mode`-Feld (pre-v1.16)
+// beim Laden auf mode="knob" defaulten. Da der Store ein Module-Singleton ist
+// und Load nur einmal beim Modul-Import passiert, dynImporten wir das Modul
+// neu mit vi.resetModules.
+
+describe("Macro – Persistence Migration (Old-Format Compat)", () => {
+  beforeEach(() => {
+    localStorageMock.clear();
+    dispatched.length = 0;
+  });
+
+  it("alte Daten OHNE mode-Feld defaulten auf 'knob' beim Load", async () => {
+    // Schreibe pre-v1.16 Format: keine mode/triggerMode/scriptId Felder.
+    const oldFormat = Array.from({ length: 8 }, (_, i) => ({
+      index: i,
+      label: `Macro ${i + 1}`,
+      value: 0,
+      bindings: [],
+      color: MACRO_COLORS[i],
+      // mode FEHLT
+      // triggerMode FEHLT
+    }));
+    localStorageMock.setItem(STORAGE_KEY, JSON.stringify(oldFormat));
+
+    // Modul neu laden, damit load() den Storage neu liest.
+    vi.resetModules();
+    const reimported = await import("../../client/src/store/useMacroStore");
+    const macros = reimported.getMacros();
+    expect(macros).toHaveLength(8);
+    macros.forEach(m => {
+      expect(m.mode).toBe("knob");
+      expect(m.triggerMode).toBe("edge");
+      expect(m.scriptId).toBeUndefined();
+    });
+  });
+
+  it("addMacro mit mode='button' + scriptId überlebt einen Reload-Roundtrip", async () => {
+    // 1. Lade Modul + setze einen Button-Macro
+    vi.resetModules();
+    const m1 = await import("../../client/src/store/useMacroStore");
+    m1.resetMacros();
+    m1.setMacroMode(4, "button");
+    m1.setMacroScriptId(4, "sc-persist-xyz");
+
+    // 2. Simuliere Neuladen: Modul-Cache wegwerfen, Store re-import.
+    vi.resetModules();
+    const m2 = await import("../../client/src/store/useMacroStore");
+    const reloaded = m2.getMacros();
+    expect(reloaded[4].mode).toBe("button");
+    expect(reloaded[4].scriptId).toBe("sc-persist-xyz");
+  });
+
+  it("invalides mode-Feld (z.B. 'foo') wird auf 'knob' korrigiert", async () => {
+    const corrupted = Array.from({ length: 8 }, (_, i) => ({
+      index: i,
+      label: `Macro ${i + 1}`,
+      value: 0,
+      bindings: [],
+      color: MACRO_COLORS[i],
+      mode: i === 0 ? "foo" : "knob", // erstes mode kaputt
+    }));
+    localStorageMock.setItem(STORAGE_KEY, JSON.stringify(corrupted));
+    vi.resetModules();
+    const reimported = await import("../../client/src/store/useMacroStore");
+    const macros = reimported.getMacros();
+    expect(macros[0].mode).toBe("knob");
   });
 });

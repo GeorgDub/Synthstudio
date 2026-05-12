@@ -39,12 +39,34 @@ export interface MacroBinding {
   maxValue: number;
 }
 
+/**
+ * Makro-Modus:
+ *  - "knob"   → klassischer Slider/Knob (0..1), triggert Audio-Bindings
+ *  - "button" → großer Button, triggert ein Skript (scriptId) per Edge
+ *
+ * Default ist "knob" (Backwards-Compat zu pre-v1.16 Daten ohne `mode`-Feld).
+ */
+export type MacroMode = "knob" | "button";
+
+/**
+ * Wie das Skript getriggert wird, wenn `mode === "button"`:
+ *  - "edge" → einmaliger Run pro Press (mouseDown bzw. tastendruck-äquivalent)
+ *  - "hold" (geplant für v1.17) → re-fire solange gehalten
+ */
+export type MacroTriggerMode = "edge";
+
 export interface Macro {
   index: number;   // 0–7
   label: string;
   value: number;   // 0–1 (aktueller Makro-Wert)
   bindings: MacroBinding[];
   color: string;
+  /** Default "knob" wenn fehlt (Migration aus pre-v1.16 localStorage). */
+  mode: MacroMode;
+  /** Gesetzt wenn mode === "button". Verweis auf Script aus useScriptStore. */
+  scriptId?: string;
+  /** Default "edge" wenn fehlt. Aktuell nur "edge" implementiert. */
+  triggerMode?: MacroTriggerMode;
 }
 
 export const MACRO_COLORS = [
@@ -63,17 +85,47 @@ function defaultMacros(): Macro[] {
     value: 0,
     bindings: [],
     color: MACRO_COLORS[i % MACRO_COLORS.length],
+    mode: "knob" as MacroMode,
+    triggerMode: "edge" as MacroTriggerMode,
   }));
+}
+
+/**
+ * Migriert ein Macro-Objekt aus pre-v1.16 localStorage:
+ *  - mode fehlt → "knob"
+ *  - triggerMode fehlt → "edge"
+ *  - bindings ist kein Array → []
+ *  - scriptId nur durchreichen wenn String
+ */
+function migrateMacro(raw: unknown, fallback: Macro): Macro {
+  if (!raw || typeof raw !== "object") return fallback;
+  const m = raw as Partial<Macro> & Record<string, unknown>;
+  const mode: MacroMode = m.mode === "button" ? "button" : "knob";
+  return {
+    index: typeof m.index === "number" ? m.index : fallback.index,
+    label: typeof m.label === "string" ? m.label : fallback.label,
+    value: typeof m.value === "number" ? Math.max(0, Math.min(1, m.value)) : 0,
+    bindings: Array.isArray(m.bindings) ? (m.bindings as MacroBinding[]) : [],
+    color: typeof m.color === "string" ? m.color : fallback.color,
+    mode,
+    scriptId: typeof m.scriptId === "string" ? m.scriptId : undefined,
+    triggerMode: m.triggerMode === "edge" ? "edge" : "edge",
+  };
 }
 
 function load(): Macro[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
-      const parsed = JSON.parse(raw) as Macro[];
-      // Ensure correct length
-      while (parsed.length < MACRO_COUNT) parsed.push(defaultMacros()[parsed.length]);
-      return parsed.slice(0, MACRO_COUNT);
+      const parsed = JSON.parse(raw) as unknown;
+      if (Array.isArray(parsed)) {
+        const defaults = defaultMacros();
+        const migrated: Macro[] = [];
+        for (let i = 0; i < MACRO_COUNT; i++) {
+          migrated.push(migrateMacro(parsed[i], defaults[i]));
+        }
+        return migrated;
+      }
     }
   } catch { /* ignore */ }
   return defaultMacros();
@@ -119,6 +171,63 @@ export function resetMacros(): void {
   _macros = defaultMacros();
   persist(_macros);
   notify();
+}
+
+/**
+ * Setzt den Modus eines Macros ("knob" oder "button").
+ *
+ * Wichtig: Bindings werden NICHT gelöscht beim Wechsel — wenn der User
+ * zurück auf "knob" wechselt sind seine Audio-Routings noch da.
+ * Genauso bleibt `scriptId` erhalten beim Switch nach "knob" (verhindert
+ * versehentlichen Datenverlust).
+ *
+ * No-op bei out-of-range index.
+ */
+export function setMacroMode(macroIndex: number, mode: MacroMode): void {
+  if (macroIndex < 0 || macroIndex >= MACRO_COUNT) return;
+  if (mode !== "knob" && mode !== "button") return;
+  _macros = _macros.map((m, i) => i === macroIndex ? { ...m, mode } : m);
+  persist(_macros);
+  notify();
+}
+
+/**
+ * Setzt die Script-ID eines Macros (für mode === "button").
+ * `null` löscht die Bindung.
+ *
+ * No-op bei out-of-range index.
+ */
+export function setMacroScriptId(macroIndex: number, scriptId: string | null): void {
+  if (macroIndex < 0 || macroIndex >= MACRO_COUNT) return;
+  const nextId = scriptId == null ? undefined : scriptId;
+  _macros = _macros.map((m, i) => i === macroIndex ? { ...m, scriptId: nextId } : m);
+  persist(_macros);
+  notify();
+}
+
+/**
+ * Triggert einen Macro-Button: dispatched ein `macro:button:trigger` Event,
+ * das in App.tsx von einem Subscriber abgefangen wird, der dann die geteilte
+ * Sandbox-Instance benutzt.
+ *
+ * Kein direkter Import von useScriptSandbox um Cycle-Risk zu vermeiden.
+ *
+ * Returns:
+ *  - null, wenn das Macro nicht im Button-Mode ist oder keine scriptId hat
+ *  - sonst die scriptId (Convenience für synchrone Aufrufer/Tests)
+ */
+export function triggerMacroButton(macroIndex: number): string | null {
+  if (macroIndex < 0 || macroIndex >= MACRO_COUNT) return null;
+  const macro = _macros[macroIndex];
+  if (!macro || macro.mode !== "button" || !macro.scriptId) return null;
+  if (typeof window !== "undefined" && typeof CustomEvent !== "undefined") {
+    window.dispatchEvent(
+      new CustomEvent("macro:button:trigger", {
+        detail: { macroIndex, scriptId: macro.scriptId },
+      }),
+    );
+  }
+  return macro.scriptId;
 }
 
 export function getMacros(): Macro[] { return _macros; }

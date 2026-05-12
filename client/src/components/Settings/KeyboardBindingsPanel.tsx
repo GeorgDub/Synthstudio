@@ -7,12 +7,29 @@
 import { useState, useEffect, useCallback } from "react";
 import { ACTIONS, comboToLabel, eventToCombo, type ActionDef } from "@/hooks/keyboardActionDefs";
 import { setBinding, clearBinding, useKeyboardBindingsStore } from "@/store/useKeyboardBindingsStore";
+import { useScriptStore, type Script, type KeyCombo as ScriptKeyCombo } from "@/store/useScriptStore";
 
 // Gruppiert die Actions nach Kategorie
 const CATEGORIES = Array.from(new Set(ACTIONS.map(a => a.category)));
 
+/**
+ * Formatiert eine ScriptKeyCombo ({ key, ctrl, shift, alt, meta }) zu einem
+ * lesbaren Label (z.B. "Ctrl+Shift+B"). Eigene Implementierung weil
+ * comboToLabel aus keyboardActionDefs auf event.code basiert (anderes Format).
+ */
+function scriptComboToLabel(c: ScriptKeyCombo): string {
+  const parts: string[] = [];
+  if (c.ctrl)  parts.push("Ctrl");
+  if (c.alt)   parts.push("Alt");
+  if (c.shift) parts.push("Shift");
+  if (c.meta)  parts.push("Meta");
+  parts.push(c.key.length === 1 ? c.key.toUpperCase() : c.key);
+  return parts.join("+");
+}
+
 export function KeyboardBindingsPanel() {
   const { bindings } = useKeyboardBindingsStore();
+  const { scripts } = useScriptStore();
   const [recording, setRecording] = useState<string | null>(null); // actionId
 
   const startRecording = useCallback((actionId: string) => {
@@ -109,8 +126,85 @@ export function KeyboardBindingsPanel() {
         </div>
       ))}
 
+      {/* ── Scripts-Bindings (Read-Only) ──────────────────────────────────── */}
+      <ScriptBindingsSection scripts={scripts} />
+
       <div className="mt-2 pt-2 border-t border-border-color text-text-dim text-[10px]">
         Klicke auf eine Taste, dann drücke die neue Tastenkombination. ↺ stellt den Standard wieder her.
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Read-Only-Sektion am Ende des Panels: zeigt alle Scripts mit gebundenem
+ * keyBinding. Klick navigiert zum Tools-Tab und selektiert das Skript via
+ * `ss:navigate`-CustomEvent (App.tsx muss diesen handhaben).
+ */
+function ScriptBindingsSection({ scripts }: { scripts: Script[] }) {
+  const withBinding = scripts.filter((s) => s.keyBinding !== undefined);
+
+  const handleEdit = useCallback((scriptId: string) => {
+    window.dispatchEvent(
+      new CustomEvent("ss:navigate", {
+        detail: { tab: "tools", scriptId },
+      }),
+    );
+  }, []);
+
+  if (withBinding.length === 0) {
+    return (
+      <div className="mb-4">
+        <div className="text-[10px] text-text-dim uppercase tracking-widest mb-2 border-b border-border-color pb-1">
+          Scripts
+        </div>
+        <div className="text-text-dim text-[11px] px-2 py-1">
+          Keine Skripte mit Tastenkürzel vorhanden. Lege ein Tastenkürzel im Script Runner (Tab Tools) an.
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mb-4">
+      <div className="text-[10px] text-text-dim uppercase tracking-widest mb-2 border-b border-border-color pb-1">
+        Scripts
+      </div>
+      <div className="space-y-1">
+        {withBinding.map((s) => {
+          const combo = s.keyBinding!;
+          const label = scriptComboToLabel(combo);
+          const disabled = !s.enabled;
+          return (
+            <button
+              key={s.id}
+              onClick={() => handleEdit(s.id)}
+              title="Im Script Runner bearbeiten"
+              className="w-full flex items-center gap-3 px-2 py-1.5 rounded hover:bg-bg-elevated transition-colors text-left"
+            >
+              <span className={`flex-1 truncate ${disabled ? "text-text-dim italic" : "text-text-muted"}`}>
+                {s.name}
+                {disabled && <span className="ml-2 text-[9px]">(deaktiviert)</span>}
+              </span>
+              <span
+                className={[
+                  "min-w-[80px] px-2 py-0.5 rounded border font-mono text-[11px] text-center",
+                  disabled
+                    ? "border-border-color text-text-dim"
+                    : "border-accent-secondary text-accent-secondary",
+                ].join(" ")}
+              >
+                {label}
+              </span>
+              <span className="text-[10px] text-text-dim w-5 text-center" aria-hidden="true">
+                →
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      <div className="mt-1 text-[10px] text-text-dim px-2">
+        Konflikt-Regel: Wenn ein Skript-Kürzel dieselbe Tastenkombination wie eine Aktion oben verwendet, gewinnt die Aktion.
       </div>
     </div>
   );

@@ -4,7 +4,10 @@
  * Serialisiert den vollständigen Projekt-State in ein JSON-Objekt (SynthProject)
  * und stellt Lade-Utilities bereit.
  *
- * Format-Version: "1.15" (audioTracks hinzugefügt – v1.14-Dateien laden weiter)
+ * Format-Version: "1.16"
+ *   - "1.15": audioTracks hinzugefügt – v1.14-Dateien laden weiter
+ *   - "1.16": scripts hinzugefügt (project-scope, additiv-optional)
+ *     v1.15/v1.14-Dateien laden ohne scripts-Feld weiter → defaultet auf [].
  * Dateiendung: .synth
  */
 
@@ -15,8 +18,10 @@ import type { MixerState } from "@/store/useMixerStore";
 import type { HumanizerState } from "@/store/useHumanizerStore";
 import type { AutomationLane } from "@/store/useAutomationStore";
 import type { AudioTrackChannelData } from "@/store/useAudioTrackStore";
+import type { Script } from "@/store/useScriptStore";
+import { isValidScriptEntry } from "@/store/useScriptStore";
 
-export const SYNTH_FILE_VERSION = "1.15";
+export const SYNTH_FILE_VERSION = "1.16";
 export const SYNTH_LATEST_KEY = "synthstudio:last-project";
 
 // ─── Typen ───────────────────────────────────────────────────────────────────
@@ -56,6 +61,19 @@ export interface SynthProject {
    * Seit v1.15. Bei älteren v1.14-Dateien fehlt das Feld → defaultet auf [].
    */
   audioTracks?: AudioTrackChannelData[];
+  /**
+   * Projekt-lokale Scripts (Skripting + Key/Macro-Bindings).
+   * Nur Scripts mit `scope: "project"` werden hier persistiert; app-scope
+   * Scripts wohnen ausschließlich in localStorage und folgen NICHT der
+   * .synth-Datei zwischen Maschinen.
+   *
+   * Seit v1.16. Bei älteren v1.15-Dateien fehlt das Feld → defaultet auf [].
+   *
+   * Sicherheitsregel: Beim Load fremder Projekte werden ALLE geladenen
+   * Scripts auf `enabled: false` gesetzt (siehe parseProject). User-Consent
+   * ist erforderlich, bevor Code läuft.
+   */
+  scripts?: Script[];
 }
 
 // ─── Validation Helpers ──────────────────────────────────────────────────────
@@ -125,6 +143,32 @@ export function parseProject(json: string): SynthProject {
       }
     }
     data.audioTracks = filtered;
+  }
+
+  // ─── scripts (seit v1.16) ────────────────────────────────────────────────
+  // v1.15/v1.14-Dateien ohne Feld → []. Nicht-Array → []. Invalide Items
+  // werden silent + warn übersprungen. Wichtig: ALLE Scripts werden zwangs-
+  // weise auf `enabled: false` gesetzt (User-Consent erforderlich, bevor
+  // fremder Code läuft).
+  const rawScripts = (data as { scripts?: unknown }).scripts;
+  if (rawScripts === undefined || rawScripts === null) {
+    data.scripts = [];
+  } else if (!Array.isArray(rawScripts)) {
+    console.warn(
+      "[Serializer] scripts ist kein Array – defaulte auf leere Liste.",
+    );
+    data.scripts = [];
+  } else {
+    const filtered: Script[] = [];
+    for (const s of rawScripts) {
+      if (isValidScriptEntry(s)) {
+        // Hartes Disable beim Load (User-Consent-Flow).
+        filtered.push({ ...s, enabled: false });
+      } else {
+        console.warn("[Serializer] Script invalid – wird übersprungen.", s);
+      }
+    }
+    data.scripts = filtered;
   }
 
   return data;

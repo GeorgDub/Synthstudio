@@ -68,6 +68,8 @@ import { ThemeSettings, initTheme } from "@/components/Settings";
 import { MixerView } from "@/components/Mixer";
 import { useMixerStore } from "@/store/useMixerStore";
 import { useGlobalKeyBindings, KB_ACTION_EVENT } from "@/hooks/useGlobalKeyBindings";
+import { useScriptKeyBindings } from "@/hooks/useScriptKeyBindings";
+import { configureSandboxBridge } from "@/sandbox/scriptSandboxInstance";
 import { PatternLaunchPad } from "@/components/PerformanceMode/PatternLaunchPad";
 import { usePerformanceStore } from "@/store/usePerformanceStore";
 import { useResizablePanel } from "@/hooks/useResizablePanel";
@@ -88,13 +90,20 @@ import { recordEvent } from "@/store/useSessionRecordingStore";
 import { setMyRole, setParticipantRole } from "@/store/useSessionStore";
 import { useLaunchpad, isGridDevice } from "@/hooks/useLaunchpad";
 import { useBpmDetection, autoTagFromFilename } from "@/hooks/useBpmDetection";
-import { getMacros, applyMacroBindings } from "@/store/useMacroStore";
+import { getMacros, applyMacroBindings, setMacroValue } from "@/store/useMacroStore";
 import {
   getAllAudioTracks,
   loadAudioTracks,
   markBroken as markAudioTrackBroken,
   setRuntimeWaveform as setAudioTrackRuntimeWaveform,
 } from "@/store/useAudioTrackStore";
+import {
+  getProjectScripts,
+  loadProjectScripts,
+  disableAllForeignProject,
+  getScript,
+} from "@/store/useScriptStore";
+import { scriptSandbox } from "@/sandbox/scriptSandboxInstance";
 import {
   serializeProject,
   downloadProjectFile,
@@ -226,6 +235,7 @@ export default function App() {
         stepCount: a.stepCount,
       },
       audioTracks: getAllAudioTracks(),
+      scripts: getProjectScripts(),
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -280,6 +290,13 @@ export default function App() {
     // Audio-Tracks (extern referenzierte Vocal/Song-Dateien)
     const audioTracks = data.audioTracks ?? [];
     loadAudioTracks(audioTracks);
+
+    // Projekt-Scripts (seit v1.16): parseProject hat bereits enabled=false
+    // erzwungen. Defensiv hier nochmals disableAllForeignProject() aufrufen,
+    // damit auch andere Load-Pfade (z.B. cached project) safe sind.
+    const projectScripts = data.scripts ?? [];
+    loadProjectScripts(projectScripts);
+    disableAllForeignProject();
 
     // ── Relocate-Probe: Prüfe ob Datei-Pfad noch existiert ────────────────
     // Electron: getAudioMetadata → bei Fehler markBroken(id, true)
@@ -497,6 +514,93 @@ export default function App() {
 
   // ── Globale Keyboard-Bindings (konfigurierbar) ────────────────────────────
   useGlobalKeyBindings(true);
+  // ── Script-Tastenkürzel: triggern Sandbox-Runs aus useScriptStore ─────────
+  useScriptKeyBindings(true);
+
+  // ── Sandbox-Bridge konfigurieren ──────────────────────────────────────────
+  // Wir verdrahten die Default-Deny-Bridge der Sandbox einmalig mit den
+  // realen App-Settern. ScriptRunner UI + useScriptKeyBindings nutzen
+  // beide den gleichen Singleton aus scriptSandboxInstance.ts.
+  useEffect(() => {
+    configureSandboxBridge({
+      setBpm: (v: number) => {
+        AudioEngine.setBpm(v);
+        projectRef.current?.setBpm(v);
+      },
+      play: () => {
+        // Idempotent: nur starten wenn nicht schon spielend.
+        const p = projectRef.current;
+        if (p && !p.isPlaying) p.togglePlayStop();
+      },
+      stop: () => {
+        const p = projectRef.current;
+        if (p && p.isPlaying) p.togglePlayStop();
+      },
+      setStep: (partId: string, idx: number, on: boolean) => {
+        const d = dmRef.current;
+        if (!d) return;
+        const pattern = d.getActivePattern();
+        const part = pattern?.parts.find((pt) => pt.id === partId);
+        if (!part) return;
+        const current = !!part.steps[idx]?.active;
+        if (current !== on) d.toggleStep(partId, idx);
+      },
+      dispatchAction: (action: string) => {
+        window.dispatchEvent(new CustomEvent(KB_ACTION_EVENT, { detail: action }));
+      },
+      getMacroValue: (idx: number) => getMacros()[idx]?.value ?? 0,
+      setMacroValue: (idx: number, v: number) => setMacroValue(idx, v),
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── ss:navigate Event-Handler ─────────────────────────────────────────────
+  // Wird vom KeyboardBindingsPanel ausgelöst, wenn der User auf einen
+  // Skript-Eintrag klickt um ihn im ScriptRunner zu editieren.
+  // Auch von MacroPanel (Button-Mode "Edit in Script Runner →") genutzt.
+  useEffect(() => {
+    const onNavigate = (e: Event) => {
+      const detail = (e as CustomEvent<{ tab?: string; tool?: string; scriptId?: string }>).detail;
+      if (!detail) return;
+      if (detail.tab === "tools") {
+        handleSetActiveTab("tools");
+        // Settings schließen damit Tools sichtbar wird.
+        setShowSettings(false);
+        // Tools-Sub-Section "script" aktivieren falls angefordert.
+        if (detail.tool === "script") {
+          setActiveTool("script");
+        }
+        // Skript-Auswahl: über zusätzlichen Event, den der ScriptRunner abonniert.
+        if (detail.scriptId) {
+          window.dispatchEvent(
+            new CustomEvent("ss:script-select", { detail: { scriptId: detail.scriptId } }),
+          );
+        }
+      }
+    };
+    window.addEventListener("ss:navigate", onNavigate);
+    return () => window.removeEventListener("ss:navigate", onNavigate);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── macro:button:trigger Event-Handler ────────────────────────────────────
+  // MacroPanel.tsx dispatched dieses Event wenn ein Macro im Button-Mode
+  // gedrückt wird. Wir holen das Script aus useScriptStore und übergeben
+  // den Code an die geteilte Sandbox-Instance. Falls das Script disabled
+  // oder gelöscht ist → kein Run.
+  useEffect(() => {
+    const onTrigger = (e: Event) => {
+      const detail = (e as CustomEvent<{ macroIndex: number; scriptId: string }>).detail;
+      if (!detail || typeof detail.scriptId !== "string") return;
+      const script = getScript(detail.scriptId);
+      if (!script || !script.enabled) return;
+      if (scriptSandbox.isRunning()) return; // Schutz vor Re-Entrancy
+      void scriptSandbox.run(script.code, { maxRuntimeMs: script.maxRuntimeMs });
+    };
+    window.addEventListener("macro:button:trigger", onTrigger);
+    return () => window.removeEventListener("macro:button:trigger", onTrigger);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ── Automation: Position-Callback registrieren ───────────────────────────
   // Feuert bei jedem Step (auch bei Stille) → ideal für Parameter-Automation
@@ -1353,12 +1457,13 @@ export default function App() {
                       />
                     )}
                     {activeTool === 'script' && (
-                      <div className="h-full overflow-y-auto p-4 max-w-2xl">
+                      <div className="h-full overflow-y-auto p-4 max-w-5xl">
                         <ScriptRunner
                           bpm={project.bpm}
                           isPlaying={project.isPlaying}
                           onBpmChange={project.setBpm}
                           onPlayStop={project.togglePlayStop}
+                          dm={dm}
                         />
                       </div>
                     )}
