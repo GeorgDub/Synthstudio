@@ -198,8 +198,7 @@ export function parseFlp(buffer: ArrayBuffer): FlpParsed {
 
     if (eventId < 0x40) {
       // BYTE event
-      const _b = reader.readU8(); void _b;
-      // 0x18 (24) = ChannelSelectedPattern — currentPatternIndex sometimes
+      reader.readU8();
     } else if (eventId < 0x80) {
       // WORD event (2-byte LE)
       const w = reader.readU16LE();
@@ -212,10 +211,17 @@ export function parseFlp(buffer: ArrayBuffer): FlpParsed {
       }
     } else if (eventId < 0xC0) {
       // DWORD event (4-byte LE)
-      const _d = reader.readU32LE(); void _d;
+      reader.readU32LE();
     } else {
       // TEXT/DATA event — varlen size prefix
       const size = reader.readVarLen();
+      // Safety: wenn size jenseits des restlichen Buffers ist, abbrechen statt
+      // OOM-Allokation. Defekte oder unbekannte FLP-Varianten würden hier sonst
+      // riesige Allokationen versuchen → Parser-Crash. Wir brechen graceful ab.
+      const remaining = dataEnd - reader.pos;
+      if (size < 0 || size > remaining) {
+        break;
+      }
       const data = reader.readBytes(size);
       if (eventId === 0xE7) {
         // NotesEvent — array of 24-byte note records
