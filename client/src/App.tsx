@@ -855,6 +855,30 @@ export default function App() {
         case "bpm-down":        project.setBpm(Math.max(20, project.bpm - 1)); break;
         case "bpm-up-10":       project.setBpm(Math.min(300, project.bpm + 10)); break;
         case "bpm-down-10":     project.setBpm(Math.max(20, project.bpm - 10)); break;
+        case "tap-tempo": {
+          // post-v1.25.0 Menu-Wiring: einfacher Tap-Tempo via running window-Ref.
+          // Letzten Tap-Zeitstempel in window-Slot speichern, Diff → BPM. 3 Taps
+          // braucht's für Konvergenz — danach floating-average der letzten Intervalle.
+          const w = window as unknown as { __ssTapTempo?: { lastTs: number; intervals: number[] } };
+          if (!w.__ssTapTempo) w.__ssTapTempo = { lastTs: 0, intervals: [] };
+          const now = Date.now();
+          const prev = w.__ssTapTempo.lastTs;
+          if (prev > 0) {
+            const interval = now - prev;
+            if (interval > 200 && interval < 2000) { // 30..300 BPM
+              w.__ssTapTempo.intervals.push(interval);
+              if (w.__ssTapTempo.intervals.length > 8) w.__ssTapTempo.intervals.shift();
+              const avg = w.__ssTapTempo.intervals.reduce((a, b) => a + b, 0) / w.__ssTapTempo.intervals.length;
+              const bpm = Math.round(60000 / avg);
+              project.setBpm(Math.max(20, Math.min(300, bpm)));
+            } else {
+              // Zu lange Pause → Reset der Sequenz, mit diesem Tap neu starten
+              w.__ssTapTempo.intervals = [];
+            }
+          }
+          w.__ssTapTempo.lastTs = now;
+          break;
+        }
         case "tab-sequencer":   handleSetActiveTab("sequencer"); break;
         case "tab-mixer":       handleSetActiveTab("mixer"); break;
         case "tab-song":        handleSetActiveTab("song"); break;
@@ -1220,6 +1244,15 @@ export default function App() {
     dm.resetAll();
   }, [mixer, automation, humanizer, song, dm]);
 
+  /**
+   * Dispatch eines kb:action-Events. Wird von den neuen Menü-Bindings genutzt
+   * damit die Logik im zentralen kb:action-Handler (siehe unten) bleibt — kein
+   * Code-Duplikat. (post-v1.25.0 FEAT-MENU-Wiring)
+   */
+  const dispatchKbAction = useCallback((action: string) => {
+    window.dispatchEvent(new CustomEvent(KB_ACTION_EVENT, { detail: action }));
+  }, []);
+
   useElectronMenuBindings({
     onNew: handleNewProject,
     onOpen: handleMenuOpen,
@@ -1232,6 +1265,30 @@ export default function App() {
     onImportSamples: handleMenuImportSamples,
     onImportFolder: handleMenuImportFolder,
     onImportProject: handleMenuImportProject,
+
+    // post-v1.25.0 — Music-Production-Menü-Items routen via kb:action.
+    // Pattern-Aktionen werden im zentralen Handler oben dispatched
+    // (siehe useEffect mit KB_ACTION_EVENT-Listener).
+    onPatternClear:     () => dispatchKbAction("pattern-clear"),
+    onPatternRandomize: () => dispatchKbAction("pattern-randomize"),
+    onPatternFill:      () => dispatchKbAction("pattern-fill"),
+    onPatternDuplicate: () => dispatchKbAction("pattern-duplicate"),
+    onPatternNext:      () => dispatchKbAction("pattern-next"),
+    onPatternPrev:      () => dispatchKbAction("pattern-prev"),
+    onBpmUp:            () => dispatchKbAction("bpm-up"),
+    onBpmDown:          () => dispatchKbAction("bpm-down"),
+    onTapTempo:         () => dispatchKbAction("tap-tempo"),
+    onOpenPerformance:  () => setPerformanceActive(true),
+    onOpenAudioWorkbench: () => handleSetActiveTab("tools"),
+    onTabChange: (tabId) => {
+      // Whitelist-Check damit kein invaliderer Tab-Wert die App breakt
+      if (
+        tabId === "sequencer" || tabId === "mixer" || tabId === "song" ||
+        tabId === "humanizer" || tabId === "tools" || tabId === "kollaboration"
+      ) {
+        handleSetActiveTab(tabId);
+      }
+    },
   });
 
   // ── Sample auf aktiven Kanal legen ──────────────────────────────────────────
