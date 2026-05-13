@@ -31,6 +31,9 @@ import { FxPopupApp } from "@/components/DrumMachine/FxPopupApp";
 import { MixerPopupApp, type MixerPopupAction } from "@/components/Mixer/MixerPopupApp";
 import { SampleBrowserPopupApp } from "@/components/SampleBrowser/SampleBrowserPopupApp";
 import { PatternGeneratorPopupApp } from "@/components/PatternGenerator/PatternGeneratorPopupApp";
+import { KeyboardSamplerPopupApp } from "@/components/Tools/KeyboardSamplerPopupApp";
+import { ChordProgressionPopupApp } from "@/components/Tools/ChordProgressionPopupApp";
+import { PatternLibraryPopupApp } from "@/components/PatternLibrary/PatternLibraryPopupApp";
 
 // ── Eigene Stores & Hooks ─────────────────────────────────────────────────────
 import { useProjectStore } from "@/store/useProjectStore";
@@ -253,6 +256,57 @@ function isPatternGenPopupMode(): boolean {
   }
 }
 
+function hasPopupParam(name: string): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return new URLSearchParams(window.location.search).get(name) === "1";
+  } catch {
+    return false;
+  }
+}
+
+/** Pin-Button im Tool-Tab Header (öffnet das Popup). */
+function ToolPinButton({ onPin, testId }: { onPin: () => void; testId: string }) {
+  return (
+    <button
+      type="button"
+      onClick={onPin}
+      data-testid={testId}
+      title="In eigenes Fenster abkoppeln"
+      className="mb-2 px-2 py-0.5 text-[10px] rounded border border-border-color text-text-dim hover:text-accent-primary hover:border-accent-primary transition-colors"
+    >
+      📌 Pin
+    </button>
+  );
+}
+
+/** Stub wenn ein Tool als Popup-Window offen ist — bietet Reattach-Button. */
+function ToolPopupReattachStub({
+  label,
+  onReattach,
+  testId,
+}: {
+  label: string;
+  onReattach: () => void;
+  testId: string;
+}) {
+  return (
+    <div className="h-full flex items-center justify-center text-text-dim text-sm">
+      <div className="text-center">
+        <p className="mb-3">📌 {label} ist in einem eigenen Fenster geöffnet.</p>
+        <button
+          type="button"
+          onClick={onReattach}
+          data-testid={testId}
+          className="px-3 py-1.5 rounded border border-border-color text-text-muted hover:text-accent-primary hover:border-accent-primary transition-colors text-xs"
+        >
+          Hierher zurückholen
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   // ── Performance-Popup-Mode: nur PerformancePopupApp rendern, früh raus ──
   // Wenn URL ?perfPopup=1 → das ist der Popup-Renderer, NICHT die volle App.
@@ -279,6 +333,10 @@ export default function App() {
   if (isPatternGenPopupMode()) {
     return <PatternGeneratorPopupApp />;
   }
+  // ── Tools-Popup-Modes (post-v1.28.0) ──────────────────────────────────────
+  if (hasPopupParam("keyboardSamplerPopup")) return <KeyboardSamplerPopupApp />;
+  if (hasPopupParam("chordProgressionPopup")) return <ChordProgressionPopupApp />;
+  if (hasPopupParam("patternLibraryPopup")) return <PatternLibraryPopupApp />;
 
   // ── Electron-Hook (einziger Zugriffspunkt auf Electron-Features) ────────────
   const electron = useElectron();
@@ -352,6 +410,19 @@ export default function App() {
       setPatternGenPopupOpen(false);
     });
     return cleanup;
+  }, [electron]);
+
+  // ── Tools-Popups: KeyboardSampler / ChordProgression / PatternLibrary ─────
+  const [keyboardSamplerPopupOpen, setKeyboardSamplerPopupOpen] = useState(false);
+  const [chordProgressionPopupOpen, setChordProgressionPopupOpen] = useState(false);
+  const [patternLibraryPopupOpen, setPatternLibraryPopupOpen] = useState(false);
+
+  useEffect(() => {
+    if (!electron.isElectron) return;
+    const c1 = electron.onKeyboardSamplerPopupClosed?.(() => setKeyboardSamplerPopupOpen(false));
+    const c2 = electron.onChordProgressionPopupClosed?.(() => setChordProgressionPopupOpen(false));
+    const c3 = electron.onPatternLibraryPopupClosed?.(() => setPatternLibraryPopupOpen(false));
+    return () => { c1?.(); c2?.(); c3?.(); };
   }, [electron]);
 
   // ── Humanizer ↔ AudioEngine Bridge ────────────────────────────────────────
@@ -1928,6 +1999,67 @@ export default function App() {
     return cleanup;
   }, [electron]);
 
+  // ── Tools-Popups State-Broadcast (post-v1.28.0) ───────────────────────────
+
+  // KeyboardSampler: broadcast samples list
+  useEffect(() => {
+    if (!electron.isElectron || !keyboardSamplerPopupOpen) return;
+    electron.sendKeyboardSamplerPopupState?.({ samples: project.samples });
+  }, [electron, keyboardSamplerPopupOpen, project.samples]);
+
+  // ChordProgression: broadcast bpm
+  useEffect(() => {
+    if (!electron.isElectron || !chordProgressionPopupOpen) return;
+    electron.sendChordProgressionPopupState?.({ bpm: project.bpm });
+  }, [electron, chordProgressionPopupOpen, project.bpm]);
+
+  // PatternLibrary: broadcast currentPattern + globalBpm
+  useEffect(() => {
+    if (!electron.isElectron || !patternLibraryPopupOpen) return;
+    electron.sendPatternLibraryPopupState?.({
+      currentPattern: dm.getActivePattern(),
+      globalBpm: project.bpm,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [electron, patternLibraryPopupOpen, dm.patterns, dm.activePatternId, project.bpm]);
+
+  // Action listeners
+  useEffect(() => {
+    if (!electron.isElectron) return;
+    const c1 = electron.onKeyboardSamplerPopupAction?.((payload) => {
+      if (!payload || typeof payload !== "object") return;
+      const action = payload as Record<string, unknown>;
+      if (action.type === "popup-mounted") {
+        setKeyboardSamplerPopupOpen(true);
+        electron.sendKeyboardSamplerPopupState?.({ samples: projectRef.current.samples });
+      }
+    });
+    const c2 = electron.onChordProgressionPopupAction?.((payload) => {
+      if (!payload || typeof payload !== "object") return;
+      const action = payload as Record<string, unknown>;
+      if (action.type === "popup-mounted") {
+        setChordProgressionPopupOpen(true);
+        electron.sendChordProgressionPopupState?.({ bpm: projectRef.current.bpm });
+      }
+    });
+    const c3 = electron.onPatternLibraryPopupAction?.((payload) => {
+      if (!payload || typeof payload !== "object") return;
+      const action = payload as Record<string, unknown>;
+      if (action.type === "popup-mounted") {
+        setPatternLibraryPopupOpen(true);
+        const d = dmRef.current;
+        electron.sendPatternLibraryPopupState?.({
+          currentPattern: d.getActivePattern(),
+          globalBpm: projectRef.current.bpm,
+        });
+      } else if (action.type === "load-pattern") {
+        const pattern = action.pattern as import("@/audio/AudioEngine").PatternData | undefined;
+        if (pattern) dmRef.current.addPatternData(pattern);
+      }
+    });
+    return () => { c1?.(); c2?.(); c3?.(); };
+  }, [electron]);
+
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
@@ -2258,12 +2390,38 @@ export default function App() {
                     )}
                     {activeTool === 'chords' && (
                       <div className="h-full overflow-y-auto p-4 max-w-2xl">
-                        <ChordProgressionPanel bpm={project.bpm} />
+                        {chordProgressionPopupOpen ? (
+                          <ToolPopupReattachStub
+                            label="Chord Progressions"
+                            onReattach={() => electron.closeChordProgressionWindow?.()}
+                            testId="chord-progression-reattach"
+                          />
+                        ) : (
+                          <>
+                            {electron.isElectron && (
+                              <ToolPinButton onPin={() => electron.openChordProgressionWindow?.()} testId="chord-progression-pin" />
+                            )}
+                            <ChordProgressionPanel bpm={project.bpm} />
+                          </>
+                        )}
                       </div>
                     )}
                     {activeTool === 'sampler' && (
                       <div className="h-full overflow-y-auto p-4 max-w-2xl">
-                        <KeyboardSamplerPanel samples={project.samples} />
+                        {keyboardSamplerPopupOpen ? (
+                          <ToolPopupReattachStub
+                            label="Keyboard Sampler"
+                            onReattach={() => electron.closeKeyboardSamplerWindow?.()}
+                            testId="keyboard-sampler-reattach"
+                          />
+                        ) : (
+                          <>
+                            {electron.isElectron && (
+                              <ToolPinButton onPin={() => electron.openKeyboardSamplerWindow?.()} testId="keyboard-sampler-pin" />
+                            )}
+                            <KeyboardSamplerPanel samples={project.samples} />
+                          </>
+                        )}
                       </div>
                     )}
                     {activeTool === 'workbench' && (
@@ -2272,11 +2430,26 @@ export default function App() {
                       </div>
                     )}
                     {activeTool === 'library' && (
-                      <PatternLibrary
-                        currentPattern={dm.getActivePattern()}
-                        globalBpm={project.bpm}
-                        onLoadPattern={(pattern) => dm.addPatternData(pattern)}
-                      />
+                      patternLibraryPopupOpen ? (
+                        <ToolPopupReattachStub
+                          label="Pattern Library"
+                          onReattach={() => electron.closePatternLibraryWindow?.()}
+                          testId="pattern-library-reattach"
+                        />
+                      ) : (
+                        <>
+                          {electron.isElectron && (
+                            <div className="px-4 pt-3">
+                              <ToolPinButton onPin={() => electron.openPatternLibraryWindow?.()} testId="pattern-library-pin" />
+                            </div>
+                          )}
+                          <PatternLibrary
+                            currentPattern={dm.getActivePattern()}
+                            globalBpm={project.bpm}
+                            onLoadPattern={(pattern) => dm.addPatternData(pattern)}
+                          />
+                        </>
+                      )
                     )}
                     {activeTool === 'script' && (
                       <div className="h-full overflow-y-auto p-4 max-w-5xl">

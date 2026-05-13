@@ -46,6 +46,10 @@ export interface PopupWindowLayouts {
   mixer?: PopupWindowLayout;
   sampleBrowser?: PopupWindowLayout;
   patternGen?: PopupWindowLayout;
+  /** post-v1.28.0 (BUG-018 follow-up): drei neue tools-popup-keys */
+  keyboardSampler?: PopupWindowLayout;
+  chordProgression?: PopupWindowLayout;
+  patternLibrary?: PopupWindowLayout;
   /** FX-Windows: Map<channelId, Layout>. */
   fx?: Record<string, PopupWindowLayout>;
 }
@@ -161,13 +165,15 @@ export class AppStore {
   // ─── Popup-Window-Layouts (post-v1.28.0) ───────────────────────────────────
 
   /** Liefert das Layout eines named Popup (Singleton-Popups). */
-  getPopupLayout(key: "performance" | "mixer" | "sampleBrowser" | "patternGen"): PopupWindowLayout | undefined {
+  getPopupLayout(
+    key: "performance" | "mixer" | "sampleBrowser" | "patternGen" | "keyboardSampler" | "chordProgression" | "patternLibrary",
+  ): PopupWindowLayout | undefined {
     return this.data.popupWindowLayouts[key];
   }
 
   /** Setzt das Layout eines named Popup (Singleton-Popups). */
   setPopupLayout(
-    key: "performance" | "mixer" | "sampleBrowser" | "patternGen",
+    key: "performance" | "mixer" | "sampleBrowser" | "patternGen" | "keyboardSampler" | "chordProgression" | "patternLibrary",
     layout: PopupWindowLayout,
   ): void {
     this.data.popupWindowLayouts[key] = layout;

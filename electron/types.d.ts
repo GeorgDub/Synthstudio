@@ -346,6 +346,40 @@ interface ElectronAPI {
   onPatternGenPopupAction(callback: (action: unknown) => void): ElectronCleanup;
   onPatternGenPopupClosed(callback: () => void): ElectronCleanup;
 
+  // ── Tools-Popup-Windows (post-v1.28.0) ────────────────────────────────────
+  openKeyboardSamplerWindow(): Promise<{ success: boolean }>;
+  closeKeyboardSamplerWindow(): Promise<{ success: boolean }>;
+  isKeyboardSamplerWindowOpen(): Promise<boolean>;
+  setKeyboardSamplerWindowAlwaysOnTop(alwaysOnTop: boolean): Promise<{ success: boolean; alwaysOnTop: boolean }>;
+  isKeyboardSamplerWindowAlwaysOnTop(): Promise<boolean>;
+  sendKeyboardSamplerPopupState(state: unknown): void;
+  sendKeyboardSamplerPopupAction(action: unknown): void;
+  onKeyboardSamplerPopupState(callback: (state: unknown) => void): ElectronCleanup;
+  onKeyboardSamplerPopupAction(callback: (action: unknown) => void): ElectronCleanup;
+  onKeyboardSamplerPopupClosed(callback: () => void): ElectronCleanup;
+
+  openChordProgressionWindow(): Promise<{ success: boolean }>;
+  closeChordProgressionWindow(): Promise<{ success: boolean }>;
+  isChordProgressionWindowOpen(): Promise<boolean>;
+  setChordProgressionWindowAlwaysOnTop(alwaysOnTop: boolean): Promise<{ success: boolean; alwaysOnTop: boolean }>;
+  isChordProgressionWindowAlwaysOnTop(): Promise<boolean>;
+  sendChordProgressionPopupState(state: unknown): void;
+  sendChordProgressionPopupAction(action: unknown): void;
+  onChordProgressionPopupState(callback: (state: unknown) => void): ElectronCleanup;
+  onChordProgressionPopupAction(callback: (action: unknown) => void): ElectronCleanup;
+  onChordProgressionPopupClosed(callback: () => void): ElectronCleanup;
+
+  openPatternLibraryWindow(): Promise<{ success: boolean }>;
+  closePatternLibraryWindow(): Promise<{ success: boolean }>;
+  isPatternLibraryWindowOpen(): Promise<boolean>;
+  setPatternLibraryWindowAlwaysOnTop(alwaysOnTop: boolean): Promise<{ success: boolean; alwaysOnTop: boolean }>;
+  isPatternLibraryWindowAlwaysOnTop(): Promise<boolean>;
+  sendPatternLibraryPopupState(state: unknown): void;
+  sendPatternLibraryPopupAction(action: unknown): void;
+  onPatternLibraryPopupState(callback: (state: unknown) => void): ElectronCleanup;
+  onPatternLibraryPopupAction(callback: (action: unknown) => void): ElectronCleanup;
+  onPatternLibraryPopupClosed(callback: () => void): ElectronCleanup;
+
   // ── Benachrichtigungen ────────────────────────────────────────────────────
   showNotification(title: string, body: string): void;
 

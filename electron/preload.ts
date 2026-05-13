@@ -384,6 +384,70 @@ const electronAPI = {
   onPatternGenPopupAction: createEventListener<unknown>("pattern-gen-sync:action"),
   onPatternGenPopupClosed: createVoidListener("pattern-gen-window:closed"),
 
+  // ── Tools-Popup-Windows (post-v1.28.0) ───────────────────────────────────────
+  // Keyboard Sampler, Chord Progression, Pattern Library — drei singletons,
+  // selbes Muster wie Mixer-Window.
+
+  openKeyboardSamplerWindow: (): Promise<{ success: boolean }> =>
+    ipcRenderer.invoke("window:open-keyboard-sampler"),
+  closeKeyboardSamplerWindow: (): Promise<{ success: boolean }> =>
+    ipcRenderer.invoke("window:close-keyboard-sampler"),
+  isKeyboardSamplerWindowOpen: (): Promise<boolean> =>
+    ipcRenderer.invoke("window:is-keyboard-sampler-open"),
+  setKeyboardSamplerWindowAlwaysOnTop: (alwaysOnTop: boolean) =>
+    ipcRenderer.invoke("window:keyboard-sampler-set-always-on-top", alwaysOnTop),
+  isKeyboardSamplerWindowAlwaysOnTop: (): Promise<boolean> =>
+    ipcRenderer.invoke("window:keyboard-sampler-is-always-on-top"),
+  sendKeyboardSamplerPopupState: (state: unknown): void => {
+    ipcRenderer.send("keyboard-sampler-sync:state", state);
+  },
+  sendKeyboardSamplerPopupAction: (action: unknown): void => {
+    ipcRenderer.send("keyboard-sampler-sync:action", action);
+  },
+  onKeyboardSamplerPopupState: createEventListener<unknown>("keyboard-sampler-sync:state"),
+  onKeyboardSamplerPopupAction: createEventListener<unknown>("keyboard-sampler-sync:action"),
+  onKeyboardSamplerPopupClosed: createVoidListener("keyboardSamplerPopup-window:closed"),
+
+  openChordProgressionWindow: (): Promise<{ success: boolean }> =>
+    ipcRenderer.invoke("window:open-chord-progression"),
+  closeChordProgressionWindow: (): Promise<{ success: boolean }> =>
+    ipcRenderer.invoke("window:close-chord-progression"),
+  isChordProgressionWindowOpen: (): Promise<boolean> =>
+    ipcRenderer.invoke("window:is-chord-progression-open"),
+  setChordProgressionWindowAlwaysOnTop: (alwaysOnTop: boolean) =>
+    ipcRenderer.invoke("window:chord-progression-set-always-on-top", alwaysOnTop),
+  isChordProgressionWindowAlwaysOnTop: (): Promise<boolean> =>
+    ipcRenderer.invoke("window:chord-progression-is-always-on-top"),
+  sendChordProgressionPopupState: (state: unknown): void => {
+    ipcRenderer.send("chord-progression-sync:state", state);
+  },
+  sendChordProgressionPopupAction: (action: unknown): void => {
+    ipcRenderer.send("chord-progression-sync:action", action);
+  },
+  onChordProgressionPopupState: createEventListener<unknown>("chord-progression-sync:state"),
+  onChordProgressionPopupAction: createEventListener<unknown>("chord-progression-sync:action"),
+  onChordProgressionPopupClosed: createVoidListener("chordProgressionPopup-window:closed"),
+
+  openPatternLibraryWindow: (): Promise<{ success: boolean }> =>
+    ipcRenderer.invoke("window:open-pattern-library"),
+  closePatternLibraryWindow: (): Promise<{ success: boolean }> =>
+    ipcRenderer.invoke("window:close-pattern-library"),
+  isPatternLibraryWindowOpen: (): Promise<boolean> =>
+    ipcRenderer.invoke("window:is-pattern-library-open"),
+  setPatternLibraryWindowAlwaysOnTop: (alwaysOnTop: boolean) =>
+    ipcRenderer.invoke("window:pattern-library-set-always-on-top", alwaysOnTop),
+  isPatternLibraryWindowAlwaysOnTop: (): Promise<boolean> =>
+    ipcRenderer.invoke("window:pattern-library-is-always-on-top"),
+  sendPatternLibraryPopupState: (state: unknown): void => {
+    ipcRenderer.send("pattern-library-sync:state", state);
+  },
+  sendPatternLibraryPopupAction: (action: unknown): void => {
+    ipcRenderer.send("pattern-library-sync:action", action);
+  },
+  onPatternLibraryPopupState: createEventListener<unknown>("pattern-library-sync:state"),
+  onPatternLibraryPopupAction: createEventListener<unknown>("pattern-library-sync:action"),
+  onPatternLibraryPopupClosed: createVoidListener("patternLibraryPopup-window:closed"),
+
   // ── Benachrichtigungen ───────────────────────────────────────────────────────
 
   showNotification: (title: string, body: string): Promise<void> =>

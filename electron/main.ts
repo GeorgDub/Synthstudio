@@ -103,6 +103,12 @@ let sampleBrowserWindow: BrowserWindow | null = null;
  * Singleton.
  */
 let patternGenWindow: BrowserWindow | null = null;
+/** Keyboard-Sampler-Popup (post-v1.28.0). Singleton. */
+let keyboardSamplerWindow: BrowserWindow | null = null;
+/** Chord-Progression-Popup (post-v1.28.0). Singleton. */
+let chordProgressionWindow: BrowserWindow | null = null;
+/** Pattern-Library-Popup (post-v1.28.0). Singleton. */
+let patternLibraryWindow: BrowserWindow | null = null;
 
 /**
  * Window-Layout-Persistenz (post-v1.28.0).
@@ -129,9 +135,16 @@ let mainWindowDestroyed = false;
  * Liest das gespeicherte Layout für ein Singleton-Popup und liefert die Bounds-
  * Override für den BrowserWindow-Konstruktor zurück (oder undefined).
  */
-function getSavedLayoutFor(
-  key: "performance" | "mixer" | "sampleBrowser" | "patternGen",
-): PopupWindowLayout | undefined {
+type SingletonPopupKey =
+  | "performance"
+  | "mixer"
+  | "sampleBrowser"
+  | "patternGen"
+  | "keyboardSampler"
+  | "chordProgression"
+  | "patternLibrary";
+
+function getSavedLayoutFor(key: SingletonPopupKey): PopupWindowLayout | undefined {
   return appStore?.getPopupLayout(key);
 }
 
@@ -144,7 +157,7 @@ function getSavedLayoutFor(
  * Bei explizitem User-Close ist `isOpen=false`.
  */
 function persistPopupLayout(
-  key: "performance" | "mixer" | "sampleBrowser" | "patternGen",
+  key: SingletonPopupKey,
   win: BrowserWindow,
 ): void {
   if (!appStore || win.isDestroyed()) return;
@@ -187,6 +200,9 @@ function reopenPersistedPopups(): void {
     if (appStore.getPopupLayout("mixer")?.isOpen) createMixerWindow();
     if (appStore.getPopupLayout("sampleBrowser")?.isOpen) createSampleBrowserWindow();
     if (appStore.getPopupLayout("patternGen")?.isOpen) createPatternGenWindow();
+    if (appStore.getPopupLayout("keyboardSampler")?.isOpen) createKeyboardSamplerWindow();
+    if (appStore.getPopupLayout("chordProgression")?.isOpen) createChordProgressionWindow();
+    if (appStore.getPopupLayout("patternLibrary")?.isOpen) createPatternLibraryWindow();
 
     // FX-Windows: per channelId
     const fxLayouts = appStore.getAllFxLayouts();
@@ -414,6 +430,9 @@ function createWindow(): void {
     if (patternGenWindow && !patternGenWindow.isDestroyed()) {
       patternGenWindow.close();
     }
+    if (keyboardSamplerWindow && !keyboardSamplerWindow.isDestroyed()) keyboardSamplerWindow.close();
+    if (chordProgressionWindow && !chordProgressionWindow.isDestroyed()) chordProgressionWindow.close();
+    if (patternLibraryWindow && !patternLibraryWindow.isDestroyed()) patternLibraryWindow.close();
     // Performance-Popup mit-schließen wenn Haupt-Fenster geschlossen wird
     if (perfWindow && !perfWindow.isDestroyed()) {
       perfWindow.close();
@@ -865,6 +884,143 @@ function createPatternGenWindow(): void {
       mainWindow.webContents.send("pattern-gen-window:closed");
     }
   });
+}
+
+/**
+ * Generic factory für die simpleren Tools-Popups (post-v1.28.0).
+ * Reduziert Code-Duplikation: pro neuem Tools-Popup nur die config-Map +
+ * eine setter function. Setup für IPC-Handler etc. teilen sich.
+ *
+ * Wir factorisieren NICHT die 4 älteren Popups (perf, fx, mixer, sampleBrowser,
+ * patternGen) — die bleiben als geprüfte Templates. Nur die NEUEN Tools-Popups
+ * (keyboardSampler, chordProgression, patternLibrary) nutzen diesen Helper.
+ */
+interface SimpleSingletonConfig {
+  key: SingletonPopupKey;
+  urlParam: string;
+  width: number;
+  height: number;
+  minWidth: number;
+  minHeight: number;
+  title: string;
+}
+
+function createSimpleSingletonWindow(
+  config: SimpleSingletonConfig,
+  setter: (win: BrowserWindow | null) => void,
+  currentGetter: () => BrowserWindow | null,
+): void {
+  const existing = currentGetter();
+  if (existing && !existing.isDestroyed()) {
+    existing.focus();
+    return;
+  }
+
+  const saved = getSavedLayoutFor(config.key);
+
+  const win = new BrowserWindow({
+    width: saved?.bounds?.width ?? config.width,
+    height: saved?.bounds?.height ?? config.height,
+    x: saved?.bounds?.x,
+    y: saved?.bounds?.y,
+    minWidth: config.minWidth,
+    minHeight: config.minHeight,
+    title: `${APP_NAME} – ${config.title}`,
+    backgroundColor: "#0a0a0a",
+    frame: false,
+    titleBarStyle: "default",
+    parent: mainWindow ?? undefined,
+    show: false,
+    webPreferences: {
+      preload: path.join(__dirname, "preload.cjs"),
+      contextIsolation: true,
+      nodeIntegration: false,
+      autoplayPolicy: "no-user-gesture-required",
+      webSecurity: !isDev,
+    },
+  });
+
+  setter(win);
+  win.setMenu(null);
+
+  if (saved?.alwaysOnTop) win.setAlwaysOnTop(true);
+  appStore?.setPopupLayout(config.key, {
+    isOpen: true,
+    bounds: saved?.bounds,
+    alwaysOnTop: saved?.alwaysOnTop ?? false,
+  });
+  win.on("close", () => persistPopupLayout(config.key, win));
+
+  win.once("ready-to-show", () => win.show());
+
+  if (isDev) {
+    win.loadURL(`${devServerUrl}?${config.urlParam}=1`);
+  } else {
+    const indexPath = path.join(__dirname, "..", "dist", "public", "index.html");
+    win.loadFile(indexPath, { search: `${config.urlParam}=1` }).catch(err => {
+      console.error(`[${config.key}Window] loadFile failed:`, err);
+    });
+  }
+
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    shell.openExternal(url);
+    return { action: "deny" };
+  });
+
+  win.on("closed", () => {
+    setter(null);
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send(`${config.urlParam}-window:closed`);
+    }
+  });
+}
+
+function createKeyboardSamplerWindow(): void {
+  createSimpleSingletonWindow(
+    {
+      key: "keyboardSampler",
+      urlParam: "keyboardSamplerPopup",
+      width: 560,
+      height: 640,
+      minWidth: 380,
+      minHeight: 420,
+      title: "Keyboard Sampler",
+    },
+    (w) => { keyboardSamplerWindow = w; },
+    () => keyboardSamplerWindow,
+  );
+}
+
+function createChordProgressionWindow(): void {
+  createSimpleSingletonWindow(
+    {
+      key: "chordProgression",
+      urlParam: "chordProgressionPopup",
+      width: 620,
+      height: 580,
+      minWidth: 420,
+      minHeight: 400,
+      title: "Chord Progressions",
+    },
+    (w) => { chordProgressionWindow = w; },
+    () => chordProgressionWindow,
+  );
+}
+
+function createPatternLibraryWindow(): void {
+  createSimpleSingletonWindow(
+    {
+      key: "patternLibrary",
+      urlParam: "patternLibraryPopup",
+      width: 720,
+      height: 640,
+      minWidth: 480,
+      minHeight: 420,
+      title: "Pattern Library",
+    },
+    (w) => { patternLibraryWindow = w; },
+    () => patternLibraryWindow,
+  );
 }
 
 // ─── System-Tray ─────────────────────────────────────────────────────────────
@@ -1991,6 +2147,57 @@ function registerIpcHandlers(): void {
       mainWindow.webContents.send("pattern-gen-sync:action", actionPayload);
     }
   });
+
+  // ── Generische Simple-Tools-Popups (post-v1.28.0) ────────────────────────────
+  // Pattern: pro Popup 5 channels (open/close/is-open/set-aot/is-aot)
+  //   + state-broadcast main→popup + action-forwarding popup→main.
+  // Keyboard Sampler, Chord Progression, Pattern Library nutzen das Pattern.
+
+  function registerSimplePopupHandlers(
+    keyPrefix: string,
+    getWin: () => BrowserWindow | null,
+    createWin: () => void,
+  ): void {
+    ipcMain.handle(`window:open-${keyPrefix}`, () => {
+      createWin();
+      return { success: true };
+    });
+    ipcMain.handle(`window:close-${keyPrefix}`, () => {
+      const w = getWin();
+      if (w && !w.isDestroyed()) w.close();
+      return { success: true };
+    });
+    ipcMain.handle(`window:is-${keyPrefix}-open`, () => {
+      const w = getWin();
+      return w !== null && !w.isDestroyed();
+    });
+    ipcMain.handle(`window:${keyPrefix}-set-always-on-top`, (_e, alwaysOnTop: boolean) => {
+      const w = getWin();
+      if (w && !w.isDestroyed()) {
+        w.setAlwaysOnTop(!!alwaysOnTop);
+        return { success: true, alwaysOnTop: !!alwaysOnTop };
+      }
+      return { success: false, alwaysOnTop: false };
+    });
+    ipcMain.handle(`window:${keyPrefix}-is-always-on-top`, () => {
+      const w = getWin();
+      if (w && !w.isDestroyed()) return w.isAlwaysOnTop();
+      return false;
+    });
+    ipcMain.on(`${keyPrefix}-sync:state`, (_e, payload: unknown) => {
+      const w = getWin();
+      if (w && !w.isDestroyed()) w.webContents.send(`${keyPrefix}-sync:state`, payload);
+    });
+    ipcMain.on(`${keyPrefix}-sync:action`, (_e, payload: unknown) => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send(`${keyPrefix}-sync:action`, payload);
+      }
+    });
+  }
+
+  registerSimplePopupHandlers("keyboard-sampler", () => keyboardSamplerWindow, createKeyboardSamplerWindow);
+  registerSimplePopupHandlers("chord-progression", () => chordProgressionWindow, createChordProgressionWindow);
+  registerSimplePopupHandlers("pattern-library", () => patternLibraryWindow, createPatternLibraryWindow);
 
   // ── App-Info ─────────────────────────────────────────────────────────────────
 
