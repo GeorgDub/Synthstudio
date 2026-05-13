@@ -442,6 +442,7 @@ export default function App() {
     return () => { c1?.(); c2?.(); c3?.(); };
   }, [electron]);
 
+
   // ── Humanizer ↔ AudioEngine Bridge ────────────────────────────────────────
   // Singleton-Slot, den AudioEngine._scheduleStep ausliest. Keine direkte
   // Abhängigkeit, damit der AudioEngine-Code Store-Agnostic bleibt.
@@ -807,6 +808,44 @@ export default function App() {
     localStorage.setItem("ss-layout:active-tab", tab);
   }, []);
   const [activeTool, setActiveTool] = useState<'prompt' | 'algorithmic' | 'chords' | 'sampler' | 'workbench' | 'library' | 'script'>('prompt');
+
+  // ── Music-Production Menü-Listener (FEAT-MENU Phase 2) ────────────────────
+  // Die Electron-Menübar sendet menu:* IPC-Events; wir brücken auf das
+  // KB_ACTION_EVENT, sodass derselbe Action-Switch wiederverwendet wird.
+  // Tab + Workbench + Performance brauchen separate Pfade (nicht über kb:action).
+  useEffect(() => {
+    if (!electron.isElectron) return;
+    const dispatch = (action: string) =>
+      window.dispatchEvent(new CustomEvent(KB_ACTION_EVENT, { detail: action }));
+    const validTabs = ["sequencer", "mixer", "song", "humanizer", "tools", "kollaboration"] as const;
+    const cleanups: Array<(() => void) | undefined> = [
+      electron.onMenuPatternClear?.(() => dispatch("pattern-clear")),
+      electron.onMenuPatternRandomize?.(() => dispatch("pattern-randomize")),
+      electron.onMenuPatternFill?.(() => dispatch("pattern-fill")),
+      electron.onMenuPatternDuplicate?.(() => dispatch("pattern-duplicate")),
+      electron.onMenuPatternNext?.(() => dispatch("pattern-next")),
+      electron.onMenuPatternPrev?.(() => dispatch("pattern-prev")),
+      electron.onMenuBpmUp?.(() => dispatch("bpm-up")),
+      electron.onMenuBpmDown?.(() => dispatch("bpm-down")),
+      electron.onMenuTapTempo?.(() => dispatch("tap-tempo")),
+      electron.onMenuTab?.((tab?: string) => {
+        if (tab && (validTabs as readonly string[]).includes(tab)) {
+          handleSetActiveTab(tab as typeof validTabs[number]);
+        }
+      }),
+      electron.onMenuOpenPerformance?.(() => {
+        handleOpenPerformanceWindow();
+      }),
+      electron.onMenuOpenAudioWorkbench?.(() => {
+        handleSetActiveTab("tools");
+        setActiveTool("workbench");
+      }),
+    ];
+    return () => {
+      for (const c of cleanups) c?.();
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [electron, handleSetActiveTab, handleOpenPerformanceWindow]);
 
   // ── Dialog-State ─────────────────────────────────────────────────────────
   const [showMidiSettings, setShowMidiSettings] = useState(false);
