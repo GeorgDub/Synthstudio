@@ -26,8 +26,15 @@
  * zukünftige Erweiterung markiert.
  */
 
-import type { ImportResult, ImportedPattern } from "./types";
+import type { ImportResult, ImportedPattern, ImportedPart, ImportedStep } from "./types";
 import { ImportError } from "./types";
+import {
+  parseFlp as parseFlpFull,
+  calculateBarCount,
+  groupNotesByBar,
+  flpPositionToStep,
+  type FlpNote,
+} from "../flpImport";
 
 // ─── Event-IDs (Auszug aus der inoffiziellen FLP-Doku) ───────────────────────
 
@@ -119,106 +126,109 @@ class FlpReader {
 
 // ─── Hauptfunktion ────────────────────────────────────────────────────────────
 
+/** Default: 8 Drum-Parts, Channel mapped per modulo. */
+const DEFAULT_PART_COUNT = 8;
+const STEP_COUNT = 16;
+const MAX_BARS = 16;
+
+function emptyPart(name: string, stepCount: number): ImportedPart {
+  const steps: ImportedStep[] = [];
+  for (let i = 0; i < stepCount; i++) steps.push({ active: false, velocity: 100 });
+  return { name, steps };
+}
+
+function buildPartsForBar(barNotes: FlpNote[], ppq: number, partCount: number): ImportedPart[] {
+  const parts: ImportedPart[] = [];
+  for (let i = 0; i < partCount; i++) parts.push(emptyPart(`Part ${i + 1}`, STEP_COUNT));
+  for (const note of barNotes) {
+    const step = flpPositionToStep(note.position, ppq) % STEP_COUNT;
+    const partIdx = note.channel % partCount;
+    parts[partIdx].steps[step] = { active: true, velocity: note.velocity };
+  }
+  return parts;
+}
+
 export async function importFlp(file: File): Promise<ImportResult> {
   const arrayBuffer = await file.arrayBuffer();
-  const reader = new FlpReader(arrayBuffer);
 
-  // Header validieren
-  const magic = reader.readString(4);
-  if (magic !== "FLhd") {
-    throw new ImportError(`Kein gültiges FLP-Format. Magic: ${magic}`, "flp");
+  // FLP-IMPORT v1.62: nutzt den vollwertigen Parser aus utils/flpImport.ts
+  // (Headers + NotesEvents 0xE0/0xE7 + multi-bar grouping).
+  let parsed;
+  try {
+    parsed = parseFlpFull(arrayBuffer);
+  } catch (err) {
+    throw new ImportError((err as Error).message, "flp");
   }
-
-  const headerSize = reader.readU32();
-  if (headerSize < 6) {
-    throw new ImportError("FLP-Header zu klein", "flp");
-  }
-
-  const format     = reader.readU16(); // 0 = Pattern, 1 = Score
-  const nChannels  = reader.readU16();
-  const ppq        = reader.readU16();
-  if (headerSize > 6) reader.skip(headerSize - 6);
-
-  // Daten-Chunk
-  const dataMagic = reader.readString(4);
-  if (dataMagic !== "FLdt") {
-    throw new ImportError(`Erwarteter "FLdt" Chunk, gefunden: ${dataMagic}`, "flp");
-  }
-  reader.readU32(); // dataSize
 
   const warnings: string[] = [];
-  if (format !== 0 && format !== 1) {
-    warnings.push(`FLP-Format ${format} unbekannt – versuche dennoch zu lesen.`);
-  }
 
+  // BPM aus separatem Event-Pfad gewinnen (nicht im vollen Parser-Output enthalten,
+  // da der nur Notes extrahiert). Wir lesen via FlpReader explizit für TEMPO_FINE.
+  const reader = new FlpReader(arrayBuffer);
+  reader.readString(4); reader.readU32();
+  reader.readU16(); reader.readU16(); reader.readU16();
+  reader.readString(4); reader.readU32();
   let bpm: number | undefined;
-  let title = "";
-  const patternNames: string[] = [];
-  let currentPatternIdx = -1;
-
-  // Event-Loop
   while (reader.remaining > 0) {
     const eventId = reader.readU8();
-
-    if (eventId < 0x40) {
-      // 1-Byte Daten
-      const data = reader.readU8();
-      // PPQ-relevante Felder werden hier ignoriert (komplexes Mapping)
-      void data;
-    } else if (eventId < 0x80) {
-      // 2-Byte Daten
-      const data = reader.readU16();
-      if (eventId === FLP_EVENT.TEMPO) {
-        bpm = data; // BPM × 1000 in älteren FLPs, sonst direkt
-        if (bpm > 1000) bpm = bpm / 1000;
-      }
-      if (eventId === FLP_EVENT.PATTERN_NEW) {
-        currentPatternIdx = data;
-      }
+    if (eventId < 0x40) reader.readU8();
+    else if (eventId < 0x80) {
+      const d = reader.readU16();
+      if (eventId === FLP_EVENT.TEMPO) { bpm = d > 1000 ? d / 1000 : d; }
     } else if (eventId < 0xC0) {
-      // 4-Byte Daten
-      const data = reader.readU32();
+      const d = reader.readU32();
       if (eventId === FLP_EVENT.TEMPO_FINE) {
-        // Float in 16.16 fixed-point oder direkt BPM
-        bpm = data > 1_000_000 ? data / 1000 : data;
+        bpm = d > 1_000_000 ? d / 1000 : d;
         if (bpm > 999) bpm = bpm / 1000;
       }
-      void data;
+      void d;
     } else {
-      // Variable Länge (Text/Daten)
       const len = reader.readVarLen();
-      if (len > reader.remaining) {
-        warnings.push(`Datenchunk zu groß bei Event 0x${eventId.toString(16)} – Abbruch.`);
-        break;
-      }
-
-      if (eventId === FLP_EVENT.TEXT_PATTERN_NAME) {
-        const name = reader.readUtf16Le(len);
-        if (currentPatternIdx >= 0) {
-          patternNames[currentPatternIdx] = name;
-        }
-      } else if (eventId === FLP_EVENT.TEXT_TITLE) {
-        title = reader.readUtf16Le(len);
-      } else {
-        reader.skip(len);
-      }
+      if (len > reader.remaining) break;
+      reader.skip(len);
     }
   }
 
-  // Mindestens ein Pattern erzeugen, auch wenn keine Patterns expliziert benannt wurden
-  const patternsList: ImportedPattern[] = patternNames.length > 0
-    ? patternNames.filter(Boolean).map((name, i) => ({
-        name: name || `Pattern ${i + 1}`,
-        stepCount: 16,
+  // Notes auf Bars aufteilen
+  const firstPattern = parsed.patterns[0];
+  if (!firstPattern || !firstPattern.notes.length) {
+    warnings.push("Keine Notes im FLP gefunden — FL Studio Versionen vor 11 oder leere Projekte werden nicht unterstützt.");
+    return {
+      sourceFormat: "flp",
+      fileName: file.name,
+      bpm,
+      patterns: [{
+        name: file.name.replace(/\.flp$/i, ""),
+        stepCount: STEP_COUNT,
         bpm,
-        parts: [],
-      }))
-    : [{ name: title || file.name.replace(/\.flp$/i, ""), stepCount: 16, bpm, parts: [] }];
+        parts: Array.from({ length: DEFAULT_PART_COUNT }, (_, i) => emptyPart(`Part ${i + 1}`, STEP_COUNT)),
+      }],
+      warnings,
+    };
+  }
 
-  warnings.push(
-    "Nur Pattern-Metadata + BPM werden aus FL Studio extrahiert. " +
-    "Step-Daten, Channel-Settings und Mixer werden in einer späteren Version unterstützt.",
-  );
+  const ppq = parsed.header.ppq;
+  const totalBars = Math.min(MAX_BARS, calculateBarCount(firstPattern.notes, ppq, STEP_COUNT));
+  const byBar = groupNotesByBar(firstPattern.notes, ppq, STEP_COUNT);
+
+  const baseName = file.name.replace(/\.flp$/i, "");
+  const patternsList: ImportedPattern[] = [];
+  let imported = 0;
+  for (let bar = 0; bar < totalBars; bar++) {
+    const barNotes = byBar.get(bar) ?? [];
+    imported += barNotes.length;
+    patternsList.push({
+      name: totalBars === 1 ? baseName : `${baseName} bar ${bar + 1}`,
+      stepCount: STEP_COUNT,
+      bpm,
+      parts: buildPartsForBar(barNotes, ppq, DEFAULT_PART_COUNT),
+    });
+  }
+
+  const droppedNotes = firstPattern.notes.length - imported;
+  if (droppedNotes > 0) {
+    warnings.push(`${droppedNotes} Notes jenseits ${MAX_BARS} Bars wurden ignoriert (Multi-Bar-Limit).`);
+  }
 
   return {
     sourceFormat: "flp",
