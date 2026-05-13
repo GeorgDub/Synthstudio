@@ -134,16 +134,49 @@ export function validateGeneratedCode(code: string): string | null {
 }
 
 /**
+ * Optionen für `generateScriptFromPrompt`.
+ *
+ * - `existingCode`: bestehender Skript-Code. Wenn gesetzt → der Generator
+ *   läuft im **Iterate-Mode** und sendet den Code als Kontext mit, so dass
+ *   das LLM den existierenden Code verbessert/ändert statt neu zu generieren.
+ *   Welle 2 von Phase S (post-v1.25.0).
+ */
+export interface GenerateOptions {
+  existingCode?: string;
+}
+
+/**
+ * Baut die User-Message für den Anthropic-Call. Im Plain-Mode ist es der
+ * Prompt direkt; im Iterate-Mode wird der existierende Code als Kontext
+ * vor den Prompt gesetzt damit das LLM den richtigen Bezug hat.
+ * Public exportiert für Unit-Tests.
+ */
+export function buildUserMessage(prompt: string, existingCode?: string): string {
+  if (!existingCode || existingCode.trim().length === 0) return prompt;
+  return [
+    "Hier ist der existierende Script-Code, den du anpassen sollst:",
+    "```",
+    existingCode.trim(),
+    "```",
+    "",
+    "Verbesserung/Änderung gewünscht:",
+    prompt,
+  ].join("\n");
+}
+
+/**
  * Sendet den Prompt an die Anthropic-API und liefert validierten Code zurück.
  *
  * @param prompt User-Text, z.B. "Generiere ein Script das BPM von 100 auf 140 rampt"
  * @param apiKey Anthropic API-Key aus useApiSettingsStore
  * @param model Modell-ID, z.B. "claude-haiku-4-5-20251001"
+ * @param opts Optional: { existingCode } → Iterate-Mode
  */
 export async function generateScriptFromPrompt(
   prompt: string,
   apiKey: string,
   model: string,
+  opts: GenerateOptions = {},
 ): Promise<AiScriptGenerationResult> {
   if (!apiKey || apiKey.length === 0) {
     return { ok: false, error: "Kein API-Key gesetzt (Settings → KI & API)." };
@@ -151,6 +184,8 @@ export async function generateScriptFromPrompt(
   if (!prompt || prompt.trim().length === 0) {
     return { ok: false, error: "Prompt ist leer." };
   }
+
+  const userMessage = buildUserMessage(prompt, opts.existingCode);
 
   try {
     const response = await fetch(ANTHROPIC_API_URL, {
@@ -165,7 +200,7 @@ export async function generateScriptFromPrompt(
         model,
         max_tokens: 2048,
         system: buildSystemPrompt(),
-        messages: [{ role: "user", content: prompt }],
+        messages: [{ role: "user", content: userMessage }],
       }),
     });
 

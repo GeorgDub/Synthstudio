@@ -29,27 +29,53 @@ export interface AiScriptGeneratorDialogProps {
    * Script auswählen.
    */
   onAccept: (code: string, suggestedName: string) => void;
+  /**
+   * Optional: aktueller Script-Code des selektierten Scripts. Wenn vorhanden,
+   * bietet der Dialog zusätzlich einen "Iterieren"-Modus an, bei dem das LLM
+   * den bestehenden Code als Vorgabe bekommt und nur die gewünschte
+   * Änderung einbaut (Welle 2 von Phase S, post-v1.25.0).
+   */
+  currentCode?: string;
+  /** Optional: aktueller Script-Name (für sinnvollen Iterate-Suggested-Name). */
+  currentName?: string;
+  /**
+   * Wird mit dem iterierten Code aufgerufen — alternative Action zu onAccept
+   * wenn der User das bestehende Script aktualisieren statt neu anlegen will.
+   * Wenn undefined → nur "Als neues Script speichern" verfügbar.
+   */
+  onIterateAccept?: (code: string) => void;
 }
 
 export function AiScriptGeneratorDialog({
   isOpen,
   onClose,
   onAccept,
+  currentCode,
+  currentName,
+  onIterateAccept,
 }: AiScriptGeneratorDialogProps) {
   const api = useApiSettingsStore();
   const [prompt, setPrompt] = useState("");
   const [generating, setGenerating] = useState(false);
   const [result, setResult] = useState<AiScriptGenerationResult | null>(null);
+  /** Iterate-Mode aktiviert (nur möglich wenn currentCode + onIterateAccept verfügbar). */
+  const [iterateMode, setIterateMode] = useState(false);
 
   const hasApiKey = api.anthropicApiKey.length > 0;
+  const canIterate = Boolean(currentCode && currentCode.trim().length > 0 && onIterateAccept);
 
-  // Reset state when dialog closes
+  // Reset state when dialog closes; default iterateMode = canIterate beim Öffnen
   useEffect(() => {
     if (!isOpen) {
       setPrompt("");
       setResult(null);
       setGenerating(false);
+      setIterateMode(false);
+    } else {
+      // Beim Öffnen: wenn ein Script ausgewählt ist → Iterate-Mode default an
+      setIterateMode(canIterate);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
 
   // ESC zum Schließen
@@ -66,10 +92,11 @@ export function AiScriptGeneratorDialog({
     if (!hasApiKey || !prompt.trim()) return;
     setGenerating(true);
     setResult(null);
-    const res = await generateScriptFromPrompt(prompt, api.anthropicApiKey, api.aiModel);
+    const opts = iterateMode && currentCode ? { existingCode: currentCode } : {};
+    const res = await generateScriptFromPrompt(prompt, api.anthropicApiKey, api.aiModel, opts);
     setResult(res);
     setGenerating(false);
-  }, [prompt, api.anthropicApiKey, api.aiModel, hasApiKey]);
+  }, [prompt, api.anthropicApiKey, api.aiModel, hasApiKey, iterateMode, currentCode]);
 
   const handleAccept = useCallback(() => {
     if (!result?.ok || !result.code) return;
@@ -78,6 +105,13 @@ export function AiScriptGeneratorDialog({
     onAccept(result.code, suggestedName);
     onClose();
   }, [result, prompt, onAccept, onClose]);
+
+  /** Iterate-Update: ersetzt den bestehenden Code-Inhalt des selektierten Scripts. */
+  const handleIterateAccept = useCallback(() => {
+    if (!result?.ok || !result.code) return;
+    onIterateAccept?.(result.code);
+    onClose();
+  }, [result, onIterateAccept, onClose]);
 
   if (!isOpen) return null;
 
@@ -115,16 +149,41 @@ export function AiScriptGeneratorDialog({
             </div>
           )}
 
+          {/* Iterate-Mode-Toggle (nur sichtbar wenn currentCode + onIterateAccept gegeben) */}
+          {canIterate && (
+            <div className="flex items-center gap-2 px-2 py-1.5 rounded border border-border-color bg-bg-elevated">
+              <input
+                type="checkbox"
+                id="ai-iterate-mode"
+                data-testid="ai-script-iterate-toggle"
+                checked={iterateMode}
+                onChange={(e) => setIterateMode(e.target.checked)}
+                disabled={generating}
+                className="cursor-pointer accent-accent-primary"
+              />
+              <label htmlFor="ai-iterate-mode" className="text-xs text-text-primary cursor-pointer flex-1">
+                <span className="font-medium">Iterieren</span>
+                <span className="text-text-dim ml-2">
+                  → bestehenden Code von <span className="font-mono text-accent-secondary">{currentName ?? "ausgewähltem Script"}</span> als Vorgabe nutzen
+                </span>
+              </label>
+            </div>
+          )}
+
           {/* Prompt */}
           <div>
             <label className="block text-xs font-medium text-text-muted mb-1.5">
-              Was soll das Script tun?
+              {iterateMode ? "Was soll am Script geändert werden?" : "Was soll das Script tun?"}
             </label>
             <textarea
               data-testid="ai-script-prompt"
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
-              placeholder="z.B. Rampe BPM von 100 auf 140 in 4 Sekunden. Logge jeden Schritt."
+              placeholder={
+                iterateMode
+                  ? "z.B. Logge zusätzlich nach jedem BPM-Schritt einen Zeitstempel. Oder: mach die Rampe schneller (1 Sekunde)."
+                  : "z.B. Rampe BPM von 100 auf 140 in 4 Sekunden. Logge jeden Schritt."
+              }
               disabled={generating || !hasApiKey}
               rows={3}
               className="w-full px-3 py-2 text-xs rounded border border-border-color bg-bg-elevated text-text-primary placeholder-text-dim focus:outline-none focus:border-accent-primary disabled:opacity-50"
@@ -132,6 +191,9 @@ export function AiScriptGeneratorDialog({
             <p className="text-[10px] text-text-dim mt-1">
               Nutzt das aktuelle KI-Modell aus Settings (
               <span className="font-mono">{api.aiModel || "—"}</span>) — generiert ss.*-API-konformen Code.
+              {iterateMode && (
+                <> Im Iterate-Mode wird der existierende Code als Kontext mitgesendet.</>
+              )}
             </p>
           </div>
 
@@ -203,6 +265,20 @@ export function AiScriptGeneratorDialog({
           >
             Abbrechen
           </button>
+          {/* Im Iterate-Mode: Update-Button für bestehendes Script + zusätzlich "Als neues" als Alternative.
+              Im Plain-Mode: nur "Als neues Script speichern". */}
+          {iterateMode && onIterateAccept && (
+            <button
+              type="button"
+              data-testid="ai-script-iterate-save"
+              onClick={handleIterateAccept}
+              disabled={!result?.ok || !result.code}
+              className="px-3 py-1.5 text-xs font-medium rounded bg-accent-primary text-white hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
+              title="Aktuelles Script mit dem generierten Code überschreiben"
+            >
+              Script aktualisieren
+            </button>
+          )}
           <button
             type="button"
             data-testid="ai-script-save"

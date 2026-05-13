@@ -216,6 +216,17 @@ export function ScriptRunner({ bpm, isPlaying }: ScriptRunnerProps) {
     }
   }, [addScript]);
 
+  /** Iterate-Handler: aktuelles Script-Code mit dem generierten Code überschreiben. */
+  const handleAiIterate = useCallback((code: string) => {
+    if (!selectedScript) return;
+    updateScript(selectedScript.id, { code });
+    // Logs für den neuen Run-State leeren — der alte Run-Status passt nicht mehr zum geänderten Code
+    setLogs([]);
+    setRunStatus(null);
+    setRunMessage(undefined);
+    setRunDuration(null);
+  }, [selectedScript, updateScript]);
+
   return (
     <div
       className="flex flex-col h-full max-h-[80vh] min-h-[480px] rounded-lg border border-border-color bg-bg-panel overflow-hidden"
@@ -308,11 +319,18 @@ export function ScriptRunner({ bpm, isPlaying }: ScriptRunnerProps) {
         </div>
       </div>
 
-      {/* KI-Generator Dialog (ROADMAP Phase S — post-v1.24.0) */}
+      {/* KI-Generator Dialog (ROADMAP Phase S — post-v1.24.0).
+          Welle 2 (post-v1.25.0): wenn ein Script selektiert ist, kann der
+          User den Iterate-Mode nutzen — der LLM bekommt den existierenden
+          Code als Kontext und der "Script aktualisieren"-Button überschreibt
+          das selektierte Script statt ein neues anzulegen. */}
       <AiScriptGeneratorDialog
         isOpen={aiDialogOpen}
         onClose={() => setAiDialogOpen(false)}
         onAccept={handleAiAccept}
+        currentCode={selectedScript?.code}
+        currentName={selectedScript?.name}
+        onIterateAccept={selectedScript ? handleAiIterate : undefined}
       />
     </div>
   );

@@ -15,6 +15,7 @@ import {
   buildSystemPrompt,
   stripMarkdownFences,
   validateGeneratedCode,
+  buildUserMessage,
 } from "../../client/src/utils/aiScriptGenerator";
 import { MAX_SCRIPT_CODE_BYTES } from "../../client/src/store/useScriptStore";
 
@@ -174,5 +175,48 @@ for (let bpm = 100; bpm <= 140; bpm += 2) {
     expect(validateGeneratedCode("ss.log('x'); new WebSocket('ws://x');")).toMatch(/Network/);
     expect(validateGeneratedCode("ss.log('x'); new XMLHttpRequest();")).toMatch(/Network/);
     expect(validateGeneratedCode("ss.log('x'); new EventSource('/x');")).toMatch(/Network/);
+  });
+});
+
+// ─── buildUserMessage (Welle 2 — Iterate-Mode) ───────────────────────────────
+
+describe("buildUserMessage (Iterate-Mode, Welle 2)", () => {
+  it("plain mode: gibt den Prompt unverändert zurück", () => {
+    expect(buildUserMessage("rampe BPM von 100 auf 140")).toBe("rampe BPM von 100 auf 140");
+  });
+
+  it("plain mode: existingCode=undefined → kein Wrapping", () => {
+    expect(buildUserMessage("test", undefined)).toBe("test");
+  });
+
+  it("plain mode: existingCode='' → kein Wrapping (treat empty wie undefined)", () => {
+    expect(buildUserMessage("test", "")).toBe("test");
+  });
+
+  it("plain mode: existingCode='   ' → kein Wrapping (whitespace-only)", () => {
+    expect(buildUserMessage("test", "   \n  \t  ")).toBe("test");
+  });
+
+  it("iterate mode: existingCode wird vor den Prompt gesetzt mit Markdown-Block", () => {
+    const result = buildUserMessage("mach es schneller", "ss.bpm(120);\nawait ss.wait(500);");
+    expect(result).toContain("```");
+    expect(result).toContain("ss.bpm(120);");
+    expect(result).toContain("await ss.wait(500);");
+    expect(result).toContain("mach es schneller");
+    // Der existing-code-Block muss VOR dem User-Prompt stehen
+    const codeIdx = result.indexOf("ss.bpm(120);");
+    const promptIdx = result.indexOf("mach es schneller");
+    expect(codeIdx).toBeLessThan(promptIdx);
+  });
+
+  it("iterate mode: User-Prompt erscheint nach dem code-Block mit 'Verbesserung' Marker", () => {
+    const result = buildUserMessage("logge nach jedem Step", "ss.bpm(120);");
+    expect(result).toMatch(/Verbesserung/i);
+  });
+
+  it("iterate mode: existingCode wird getrimmt", () => {
+    const result = buildUserMessage("test", "  \n  ss.log('x');\n  ");
+    // Inner code soll getrimmt sein — die ``` Marker sollen direkt das ss.log() umschließen
+    expect(result).toMatch(/```\nss\.log\('x'\);\n```/);
   });
 });
