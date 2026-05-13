@@ -547,7 +547,11 @@ function createPerformanceWindow(): void {
     // pinnable Sub-Windows (Effects, Mixer-Strips etc.).
     frame: false,
     titleBarStyle: "default",
-    parent: mainWindow ?? undefined,
+    // BUG-019 (post-v1.33.0): parent:mainWindow ENTFERNT um Windows-WM_CLOSE-
+    // Cascade vom Child auf den Parent zu eliminieren. Popups sind jetzt
+    // truly independent windows. Schließen eines Popups kann mainWindow
+    // niemals direkt beeinflussen. Kaskade-Close MAIN→POPUPS bleibt erhalten
+    // (programmatisch in mainWindow.on('closed')).
     show: false,
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
@@ -648,7 +652,11 @@ function createFxWindow(channelId: string): void {
     backgroundColor: "#0a0a0a",
     frame: false,
     titleBarStyle: "default",
-    parent: mainWindow ?? undefined,
+    // BUG-019 (post-v1.33.0): parent:mainWindow ENTFERNT um Windows-WM_CLOSE-
+    // Cascade vom Child auf den Parent zu eliminieren. Popups sind jetzt
+    // truly independent windows. Schließen eines Popups kann mainWindow
+    // niemals direkt beeinflussen. Kaskade-Close MAIN→POPUPS bleibt erhalten
+    // (programmatisch in mainWindow.on('closed')).
     show: false,
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
@@ -732,7 +740,11 @@ function createMixerWindow(): void {
     backgroundColor: "#0a0a0a",
     frame: false,
     titleBarStyle: "default",
-    parent: mainWindow ?? undefined,
+    // BUG-019 (post-v1.33.0): parent:mainWindow ENTFERNT um Windows-WM_CLOSE-
+    // Cascade vom Child auf den Parent zu eliminieren. Popups sind jetzt
+    // truly independent windows. Schließen eines Popups kann mainWindow
+    // niemals direkt beeinflussen. Kaskade-Close MAIN→POPUPS bleibt erhalten
+    // (programmatisch in mainWindow.on('closed')).
     show: false,
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
@@ -812,7 +824,11 @@ function createSampleBrowserWindow(): void {
     backgroundColor: "#0a0a0a",
     frame: false,
     titleBarStyle: "default",
-    parent: mainWindow ?? undefined,
+    // BUG-019 (post-v1.33.0): parent:mainWindow ENTFERNT um Windows-WM_CLOSE-
+    // Cascade vom Child auf den Parent zu eliminieren. Popups sind jetzt
+    // truly independent windows. Schließen eines Popups kann mainWindow
+    // niemals direkt beeinflussen. Kaskade-Close MAIN→POPUPS bleibt erhalten
+    // (programmatisch in mainWindow.on('closed')).
     show: false,
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
@@ -886,7 +902,11 @@ function createPatternGenWindow(): void {
     backgroundColor: "#0a0a0a",
     frame: false,
     titleBarStyle: "default",
-    parent: mainWindow ?? undefined,
+    // BUG-019 (post-v1.33.0): parent:mainWindow ENTFERNT um Windows-WM_CLOSE-
+    // Cascade vom Child auf den Parent zu eliminieren. Popups sind jetzt
+    // truly independent windows. Schließen eines Popups kann mainWindow
+    // niemals direkt beeinflussen. Kaskade-Close MAIN→POPUPS bleibt erhalten
+    // (programmatisch in mainWindow.on('closed')).
     show: false,
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
@@ -979,7 +999,11 @@ function createSimpleSingletonWindow(
     backgroundColor: "#0a0a0a",
     frame: false,
     titleBarStyle: "default",
-    parent: mainWindow ?? undefined,
+    // BUG-019 (post-v1.33.0): parent:mainWindow ENTFERNT um Windows-WM_CLOSE-
+    // Cascade vom Child auf den Parent zu eliminieren. Popups sind jetzt
+    // truly independent windows. Schließen eines Popups kann mainWindow
+    // niemals direkt beeinflussen. Kaskade-Close MAIN→POPUPS bleibt erhalten
+    // (programmatisch in mainWindow.on('closed')).
     show: false,
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),

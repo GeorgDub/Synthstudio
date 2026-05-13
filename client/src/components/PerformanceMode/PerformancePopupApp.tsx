@@ -194,6 +194,10 @@ export function PerformancePopupApp() {
         storeActions={storeActions}
         onPadClick={(patternId) => dispatchAction({ type: "pad-click", patternId })}
         onQuantizeModeChange={(mode) => dispatchAction({ type: "quantize-mode-change", mode })}
+        // BUG-020 (post-v1.33.0): popupMode=true damit PatternLaunchPad relative
+        // statt fixed inset-0 rendert — DetachableWindowHeader oben drüber bleibt
+        // sichtbar.
+        popupMode
         // Close im Popup → schließt das Fenster (Main wird via perf-window:closed informiert)
         onClose={() => {
           electron.closePerformanceWindow?.();

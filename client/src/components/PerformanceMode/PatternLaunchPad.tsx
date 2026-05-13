@@ -113,6 +113,13 @@ interface PatternLaunchPadProps {
    * usePerformanceStore. Siehe PerformanceStoreActions-Interface.
    */
   storeActions?: PerformanceStoreActions;
+  /**
+   * Wenn true, rendert PatternLaunchPad mit relativer/flex-1 Höhe statt
+   * `position: fixed inset-0`. Wird vom PerformancePopupApp gesetzt damit der
+   * DetachableWindowHeader oben drüber sichtbar bleibt. Default false (inline-
+   * Vollbild-Verhalten unverändert).
+   */
+  popupMode?: boolean;
 }
 
 /** Default-Store-Actions: direkte Module-Funktionen aus usePerformanceStore. */
@@ -342,6 +349,7 @@ export function PatternLaunchPad({
   onClose,
   onOpenInWindow,
   storeActions,
+  popupMode = false,
 }: PatternLaunchPadProps) {
   // Effective store actions: caller-injected overrides ODER Module-Defaults.
   // useMemo damit Identität stabil bleibt (vermeidet unnötige re-renders in
@@ -776,7 +784,13 @@ export function PatternLaunchPad({
 
   return (
     <div
-      className="fixed inset-0 z-50 bg-bg-base flex flex-col"
+      className={[
+        "bg-bg-base flex flex-col",
+        // BUG-020 (post-v1.33.0): im Popup-Modus relative positionierung
+        // damit der DetachableWindowHeader oben drüber sichtbar bleibt.
+        // Inline-Modus (Default) behält fixed inset-0 für Fullscreen-Overlay.
+        popupMode ? "flex-1 min-h-0" : "fixed inset-0 z-50",
+      ].join(" ")}
       data-testid="performance-mode-overlay"
       // BUG-009 defensive: stelle sicher dass das Performance-Mode-Overlay
       // KEINE Electron-Drag-Region erbt. Falls die TitleBar aus irgendeinem
