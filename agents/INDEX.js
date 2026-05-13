@@ -271,6 +271,40 @@ const INDEX = {
   workLog: [
     {
       agent:     "frontend",
+      timestamp: "2026-05-13T20:30:00.000Z",
+      done: [
+        "Performance-Mode Popup-Window — Phase 1 (ROADMAP feature, post-v1.23.0). Architektur: separates Electron BrowserWindow lädt denselben Renderer-Entry mit URL-Param ?perfPopup=1. App.tsx erkennt den Param und rendert nur das PerformancePopupApp statt der vollen App. Cross-Window-State-Sync via IPC-Routing über den Main-Process zwischen mainWindow und perfWindow.",
+        "Phase 1 Scope (delivered): (a) Play-Mode funktioniert end-to-end — Pad-Click im Popup triggert Pattern-Switch via dm.setActivePattern + queuePerformancePattern im Haupt-Fenster. (b) Quantize-Mode-Toggle funktioniert. (c) Live-State-Sync für currentStep + bpm + activePattern → Popup zeigt aktiven Pattern + Playhead in Echtzeit. (d) 'In separatem Fenster öffnen'-Button im Inline-Performance-Mode-Header (nur Electron). (e) Popup-Close (X / Cmd+W / OS close) informiert Main via perf-window:closed-Event.",
+        "Bereich 1 (electron/main.ts): Neue perfWindow Variable (BrowserWindow | null). createPerformanceWindow() — idempotent (zweiter Open-Call fokussiert existierendes Popup), 800x600 default, native frame:true (kein Custom-Title-Chrome zur Vermeidung von BUG-009-style Drag-Region-Problemen), parent=mainWindow für Z-Order-Verbindung. Lädt URL mit ?perfPopup=1 (devServerUrl + Query oder loadFile mit search-Option). 'closed'-Event setzt perfWindow=null und sendet perf-window:closed an mainWindow. Main-Window 'closed'-Handler schließt Popup mit.",
+        "Bereich 2 (electron/main.ts IPC handlers): 6 neue IPC-Channels — window:open-performance + close + is-open (invoke), perf-sync:state + perf-sync:action (send-only Routing zwischen den webContents) + perf-window:closed (event). Alle Payloads sind narrow-data-only JSON (keine file paths, keine shell ops). Routing-Logik: perf-sync:state empfangen → an perfWindow weiterleiten; perf-sync:action empfangen → an mainWindow weiterleiten.",
+        "Bereich 3 (electron/preload.ts + types.d.ts + useElectron.ts): API-Surface erweitert um openPerformanceWindow, closePerformanceWindow, isPerformanceWindowOpen, sendPerfPopupState, sendPerfPopupAction, onPerfPopupState, onPerfPopupAction, onPerfPopupClosed. Browser-Fallback-Stubs liefern no-op (Feature ist Phase-1 Electron-only). Phase 2 könnte hier window.open() + BroadcastChannel implementieren.",
+        "Bereich 4 (client/src/App.tsx): isPerformancePopupMode()-Helper liest URL-Param. Early-return rendert PerformancePopupApp wenn ?perfPopup=1 — alle nachfolgenden App-Hooks (DrumMachine, Mixer, AudioEngine etc.) laufen NICHT im Popup-Renderer, schlanker initial-mount. State-Broadcast-useEffect mit deps [pads, patterns, activePatternId, queuedPatternId, quantizeMode, bpm, currentStep, electron, popupOpen] — sendet bei jeder Änderung ein vollständiges State-Snapshot. Action-Listener-useEffect dispatched pad-click / quantize-mode-change / request-state. handleOpenPerformanceWindow callback öffnet Popup + schließt Inline (User sieht nur EINE Performance-Mode-Instanz auf einmal).",
+        "Bereich 5 (client/src/components/PerformanceMode/PerformancePopupApp.tsx NEU): Mini-App-Root. Lokaler React-State PerfPopupState mit Initial-Defaults. onPerfPopupState-Listener füllt State (defensive Validation der Payload). request-state Action beim Mount → Main reagiert mit aktuellem Snapshot. Pre-Sync-Screen während noch nicht gesynced. PatternLaunchPad mit synced State + dispatch-Callbacks. Web-Fallback-Screen für Nicht-Electron.",
+        "Bereich 6 (client/src/components/PerformanceMode/PatternLaunchPad.tsx): Neuer optionaler Prop onOpenInWindow + Button im Header (data-testid='perf-open-in-window', Icon ⧉). Button nur sichtbar wenn Prop gesetzt — im Popup-Renderer selbst wird er weggelassen (kein Popup-im-Popup).",
+        "Security-Review: alle 6 neuen IPC-Channels in agents/INDEX.js.ipc.channels dokumentiert mit Hinweis 'narrow-data-only'. Keine file paths, keine shell ops, keine native-modul-Aufrufe in den Payloads. perf-sync:state und perf-sync:action sind unidirektionale Forwards zwischen webContents — der Main-Process serialisiert/deserialisiert nicht, gibt nur durch. Context-Isolation bleibt aktiv (preload exposed nur narrow API).",
+        "Verification: pnpm check 0 Fehler. pnpm test 1347/1362 grün (+2 Tests automatisch durch Glob-Walker für die neue PerformancePopupApp.tsx in tests/features/theme-class-purity.test.ts). Manuelle Verifikation nötig im Electron-Mode: pnpm dev:electron → Performance Mode öffnen → ⧉ Separates Fenster klicken → Pads im zweiten Fenster klicken → Pattern wechselt im Haupt-Fenster live."
+      ],
+      next: [
+        "Phase 2 (Edit + Reorder Sync): Aktuell ist im Popup nur Play-Mode funktional. Edit-Mode-Tab UND Reorder-Mode-Tab WERDEN angezeigt aber alle dortigen Operationen (setPadAt, setPadColor, setPadLabel, movePad, moveMultiplePads, clearPad) fließen nicht ins Main zurück. Phase 2 erweitert die perf-sync:action Aktionen um diese Operationen. Architektur-Frage: dispatcht das Popup direkt in den persisted store (localStorage shared zwischen Tabs!) ODER alles via IPC? Da localStorage NICHT zwischen Electron-Windows shared ist (separate Renderer-Processes), muss alles über IPC. Aufwand: 1 Tag.",
+        "Phase 2 (Web-Fallback): Aktuell ist die Feature Electron-only — useElectron browser-stubs sind no-ops. Web-Fallback würde window.open(?perfPopup=1) + BroadcastChannel oder localStorage-storage-Event für State-Sync nutzen. Popup-blockers sind ein Risiko. Aufwand: 0.5-1 Tag.",
+        "Phase 2 (Always-on-top toggle): User-Request häufig bei DAW-Popups. Im Electron via perfWindow.setAlwaysOnTop(true) — Toggle im Popup-Header. Aufwand: 1h.",
+        "Phase 2 (Sync-Performance): aktuell sendet jeder State-Change ein FULL Snapshot. Bei häufigen currentStep-Changes (alle 1/16-Note → bei 120bpm ~125ms) sind das ~8 IPC-Calls/Sekunde mit 16-Pad-Array dabei. Optimierung: separater perf-sync:current-step Channel der nur den number sendet, oder Diff-basierter Sync. Aktuell akzeptabel (Payload ~1KB, IPC overhead minimal).",
+        "Phase 2 (Tests): Keine automatisierten Tests für die Phase-1-Implementierung. Möglich: tests/electron/e2e/performance-popup.spec.ts mit Window-Open + Pad-Click via popup.window + Verifikation im Main-Window. Komplex weil Playwright zwei Electron-Fenster orchestrieren muss. Aufwand: 0.5 Tag.",
+        "User-Feedback offen (siehe ROADMAP-Erweiterung): 'alle Menüs und Tabs entkoppeln'. Das ist eine Generalisierung der hier gebauten Architektur — gleiche Pattern (perf-sync) auf alle Tabs/Panels ausgedehnt. Phase 3+ Aufgabe."
+      ],
+      changed: [
+        "electron/main.ts",
+        "electron/preload.ts",
+        "electron/types.d.ts",
+        "electron/useElectron.ts",
+        "client/src/App.tsx",
+        "client/src/components/PerformanceMode/PatternLaunchPad.tsx",
+        "client/src/components/PerformanceMode/PerformancePopupApp.tsx",
+        "agents/INDEX.js"
+      ]
+    },
+    {
+      agent:     "frontend",
       timestamp: "2026-05-13T19:00:00.000Z",
       done: [
         "BUG-009 / Performance Mode: Mode-Buttons im Fullscreen nicht klickbar (Fix, post-v1.23.0). User-Report nach Release: Im Electron-Fullscreen reagieren die Mode-Toggle-Buttons (Play / ✎ Edit / ⇆ Reorder) im Performance-Mode-Header nicht auf Klicks. Windowed-Mode → funktioniert sofort.",
@@ -1149,7 +1183,17 @@ const INDEX = {
       "file:save-project", "file:open-project", "file:export-wav",
       "collab:start-session", "collab:join-session", "collab:leave-session",
       "midi:export", "dialog:open", "dialog:save",
-      "transport:play", "transport:stop", "transport:bpm"
+      "transport:play", "transport:stop", "transport:bpm",
+      // Performance-Mode Popup-Window (ROADMAP feature, post-v1.23.0):
+      // alle Channels haben narrow-data-only Payloads — keine file paths,
+      // keine shell ops, kein eval. Routing via main process zwischen
+      // mainWindow und perfWindow webContents.
+      "window:open-performance",      // invoke, no payload
+      "window:close-performance",     // invoke, no payload
+      "window:is-performance-open",   // invoke, no payload → boolean
+      "perf-sync:state",              // send (main→popup) plain JSON state snapshot
+      "perf-sync:action",             // send (popup→main) plain JSON action object
+      "perf-window:closed"            // event (main→main-renderer) when popup closes
     ]
   },
 

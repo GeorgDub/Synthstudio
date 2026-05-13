@@ -81,6 +81,7 @@ process.on("uncaughtException", (err) => {
 // ─── Zustand ─────────────────────────────────────────────────────────────────
 
 let mainWindow: BrowserWindow | null = null;
+let perfWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let appStore: AppStore | null = null;
 
@@ -280,6 +281,10 @@ function createWindow(): void {
 
   mainWindow.on("closed", () => {
     mainWindow = null;
+    // Performance-Popup mit-schließen wenn Haupt-Fenster geschlossen wird
+    if (perfWindow && !perfWindow.isDestroyed()) {
+      perfWindow.close();
+    }
   });
 
   mainWindow.on("enter-full-screen", () => {
@@ -297,6 +302,83 @@ function createWindow(): void {
 
   mainWindow.on("restore", () => {
     updateTrayMenu();
+  });
+}
+
+// ─── Performance-Mode Popup-Window (Feature ROADMAP: parallel zur Main-UI) ───
+
+/**
+ * Erstellt das Performance-Mode Popup-Fenster. Lädt denselben Renderer-Entry
+ * wie das Haupt-Fenster, aber mit URL-Parameter `?perfPopup=1` — App.tsx
+ * erkennt den Parameter und rendert nur das PerformancePopupApp statt der
+ * vollen App.
+ *
+ * Cross-Window-State-Sync läuft über die IPC-Channels:
+ *   - perf-sync:state  (main → popup): Voller State-Snapshot
+ *   - perf-sync:action (popup → main): Action-Payload zum Dispatch
+ *
+ * Lebenszyklus:
+ *   - Wird erst geöffnet wenn der User explizit "Open in separate window"
+ *     klickt (IPC `window:open-performance`).
+ *   - Schließt sich automatisch beim Schließen des Haupt-Fensters.
+ *   - Idempotent: zweiter Open-Call fokussiert das existierende Popup
+ *     statt ein neues zu erstellen.
+ */
+function createPerformanceWindow(): void {
+  // Wenn Popup schon offen — nur fokussieren
+  if (perfWindow && !perfWindow.isDestroyed()) {
+    perfWindow.focus();
+    return;
+  }
+
+  perfWindow = new BrowserWindow({
+    width: 800,
+    height: 600,
+    minWidth: 480,
+    minHeight: 400,
+    title: `${APP_NAME} – Performance`,
+    backgroundColor: "#0a0a0a",
+    // Native Frame — Performance-Popup ist ein Tool-Window, der native
+    // Title-Bar gibt dem User Drag + Close ohne Custom-Chrome-Komplexität.
+    // Vermeidet auch die BUG-009 Drag-Region-Probleme.
+    frame: true,
+    parent: mainWindow ?? undefined,
+    show: false,
+    webPreferences: {
+      preload: path.join(__dirname, "preload.cjs"),
+      contextIsolation: true,
+      nodeIntegration: false,
+      autoplayPolicy: "no-user-gesture-required",
+      webSecurity: !isDev,
+    },
+  });
+
+  perfWindow.once("ready-to-show", () => {
+    perfWindow?.show();
+  });
+
+  // Inhalt laden — selbe URL/Datei wie Main, aber mit ?perfPopup=1
+  if (isDev) {
+    perfWindow.loadURL(`${devServerUrl}?perfPopup=1`);
+  } else {
+    const indexPath = path.join(__dirname, "..", "dist", "public", "index.html");
+    // loadFile mit query-string via search-Option
+    perfWindow.loadFile(indexPath, { search: "perfPopup=1" }).catch(err => {
+      console.error("[PerfWindow] loadFile failed:", err);
+    });
+  }
+
+  perfWindow.webContents.setWindowOpenHandler(({ url }) => {
+    shell.openExternal(url);
+    return { action: "deny" };
+  });
+
+  perfWindow.on("closed", () => {
+    perfWindow = null;
+    // Main-Fenster informieren dass das Popup zu ist (UI-State zurücksetzen)
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send("perf-window:closed");
+    }
   });
 }
 
@@ -1024,6 +1106,44 @@ function registerIpcHandlers(): void {
       mainWindow.unmaximize();
     } else {
       mainWindow?.maximize();
+    }
+  });
+
+  // ── Performance-Mode Popup-Window (ROADMAP feature) ──────────────────────────
+  // Channels sind alle narrow-data-only: keine file paths, keine shell ops,
+  // nur plain JSON-Objekte für State-Sync. Siehe SECURITY-Review im INDEX.js.
+
+  ipcMain.handle("window:open-performance", () => {
+    createPerformanceWindow();
+    return { success: true };
+  });
+
+  ipcMain.handle("window:close-performance", () => {
+    if (perfWindow && !perfWindow.isDestroyed()) {
+      perfWindow.close();
+    }
+    return { success: true };
+  });
+
+  ipcMain.handle("window:is-performance-open", () => {
+    return perfWindow !== null && !perfWindow.isDestroyed();
+  });
+
+  // State-Broadcast Main → Popup. Payload muss serialisierbar sein (kein File-
+  // System, keine Native-Objekte). Main-Renderer ruft das auf wenn sich
+  // performance-relevanter State ändert.
+  ipcMain.on("perf-sync:state", (_event, statePayload: unknown) => {
+    if (perfWindow && !perfWindow.isDestroyed()) {
+      perfWindow.webContents.send("perf-sync:state", statePayload);
+    }
+  });
+
+  // Action Popup → Main. Popup-Renderer ruft das wenn der User im Popup
+  // einen Pad klickt / Quantize-Mode ändert. Main-Renderer empfängt es und
+  // dispatcht in die Stores.
+  ipcMain.on("perf-sync:action", (_event, actionPayload: unknown) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send("perf-sync:action", actionPayload);
     }
   });
 

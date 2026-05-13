@@ -82,6 +82,13 @@ interface PatternLaunchPadProps {
   onPadClick: (patternId: string) => void;
   onQuantizeModeChange: (mode: QuantizeMode) => void;
   onClose: () => void;
+  /**
+   * Optional: wenn gesetzt, zeigt der Header einen "In separatem Fenster
+   * öffnen"-Button (nur Electron — siehe ROADMAP feature Performance-Mode-
+   * Window). Klick öffnet ein zweites BrowserWindow und schließt die Inline-
+   * Ansicht. Undefined → Button wird ausgeblendet (z.B. im Popup-Renderer selbst).
+   */
+  onOpenInWindow?: () => void;
 }
 
 /**
@@ -299,6 +306,7 @@ export function PatternLaunchPad({
   onPadClick,
   onQuantizeModeChange,
   onClose,
+  onOpenInWindow,
 }: PatternLaunchPadProps) {
   const [mode, setMode] = useState<Mode>("play");
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
@@ -818,15 +826,30 @@ export function PatternLaunchPad({
           )}
         </div>
 
-        <button
-          onClick={onClose}
-          aria-label="Performance Mode schließen"
-          className="text-text-dim hover:text-text-primary text-sm flex items-center gap-1 active:scale-95"
-          title="Performance Mode schließen (ESC)"
-        >
-          <span>ESC</span>
-          <X size={16} />
-        </button>
+        <div className="flex items-center gap-3">
+          {/* In separates Fenster öffnen — nur in Electron + nicht im Popup-Renderer selbst */}
+          {onOpenInWindow && (
+            <button
+              onClick={onOpenInWindow}
+              aria-label="Performance Mode in separatem Fenster öffnen"
+              data-testid="perf-open-in-window"
+              className="text-text-dim hover:text-text-primary text-xs flex items-center gap-1 active:scale-95 px-2 py-1 rounded border border-border-color hover:border-accent-secondary"
+              title="In separatem Fenster öffnen — Pads parallel zur Haupt-Oberfläche nutzbar"
+            >
+              ⧉ Separates Fenster
+            </button>
+          )}
+
+          <button
+            onClick={onClose}
+            aria-label="Performance Mode schließen"
+            className="text-text-dim hover:text-text-primary text-sm flex items-center gap-1 active:scale-95"
+            title="Performance Mode schließen (ESC)"
+          >
+            <span>ESC</span>
+            <X size={16} />
+          </button>
+        </div>
       </div>
 
       {/* 4×4 Pad Grid (Box-Mouse-Select via onMouseDown auf dem Container) */}

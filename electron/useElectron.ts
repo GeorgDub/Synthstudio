@@ -95,6 +95,18 @@ const browserAPI = {
   setWindowTitle: (_title: string) => {},
   onFullscreenChanged: noopDataListener<boolean>(),
 
+  // Performance-Mode Popup-Window (Web-Fallback: no-op stubs).
+  // Phase 2 könnte hier window.open() + BroadcastChannel implementieren —
+  // aktuell ist das Feature Electron-only.
+  openPerformanceWindow: async () => ({ success: false }),
+  closePerformanceWindow: async () => ({ success: false }),
+  isPerformanceWindowOpen: async () => false,
+  sendPerfPopupState: (_state: unknown) => {},
+  sendPerfPopupAction: (_action: unknown) => {},
+  onPerfPopupState: noopDataListener<unknown>(),
+  onPerfPopupAction: noopDataListener<unknown>(),
+  onPerfPopupClosed: noopVoidListener,
+
   showNotification: (_title: string, _body: string) => {},
   showConfirmDialog: async (_options: { title?: string; message: string }) => ({ response: 0 }),
   showErrorDialog: async (_title: string, _message: string) => {},
@@ -273,6 +285,16 @@ export function useElectron() {
     updateWindowState: api.updateWindowState,
     getRecentProjectsFromWindows: api.getRecentProjectsFromWindows,
     onWindowConfirmClose: api.onWindowConfirmClose,
+
+    // Performance-Mode Popup-Window
+    openPerformanceWindow: api.openPerformanceWindow,
+    closePerformanceWindow: api.closePerformanceWindow,
+    isPerformanceWindowOpen: api.isPerformanceWindowOpen,
+    sendPerfPopupState: api.sendPerfPopupState,
+    sendPerfPopupAction: api.sendPerfPopupAction,
+    onPerfPopupState: api.onPerfPopupState,
+    onPerfPopupAction: api.onPerfPopupAction,
+    onPerfPopupClosed: api.onPerfPopupClosed,
   };
 }
 

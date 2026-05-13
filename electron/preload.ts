@@ -226,6 +226,38 @@ const electronAPI = {
   // Fullscreen-Change-Event
   onFullscreenChanged: createEventListener<boolean>("window:fullscreen-changed"),
 
+  // ── Performance-Mode Popup-Window (ROADMAP feature) ──────────────────────────
+  // Bidirektionaler State-Sync zwischen Haupt-Fenster und Performance-Popup.
+  // Alle Payloads sind narrow-data-only (plain JSON, keine File-Paths).
+
+  openPerformanceWindow: (): Promise<{ success: boolean }> =>
+    ipcRenderer.invoke("window:open-performance"),
+
+  closePerformanceWindow: (): Promise<{ success: boolean }> =>
+    ipcRenderer.invoke("window:close-performance"),
+
+  isPerformanceWindowOpen: (): Promise<boolean> =>
+    ipcRenderer.invoke("window:is-performance-open"),
+
+  // State-Broadcast (Main-Renderer → Popup-Renderer via Main-Process-Routing).
+  // Main-Renderer ruft das wenn sich pads/activePattern/quantize/bpm/currentStep
+  // ändert. Popup-Renderer empfängt es als perf-sync:state Event.
+  sendPerfPopupState: (state: unknown): void => {
+    ipcRenderer.send("perf-sync:state", state);
+  },
+
+  // Action (Popup-Renderer → Main-Renderer via Main-Process-Routing).
+  // Popup-Renderer ruft das wenn der User einen Pad klickt / Quantize-Mode
+  // ändert. Main-Renderer empfängt es als perf-sync:action Event und dispatcht
+  // in seine Stores.
+  sendPerfPopupAction: (action: unknown): void => {
+    ipcRenderer.send("perf-sync:action", action);
+  },
+
+  onPerfPopupState: createEventListener<unknown>("perf-sync:state"),
+  onPerfPopupAction: createEventListener<unknown>("perf-sync:action"),
+  onPerfPopupClosed: createVoidListener("perf-window:closed"),
+
   // ── Benachrichtigungen ───────────────────────────────────────────────────────
 
   showNotification: (title: string, body: string): Promise<void> =>

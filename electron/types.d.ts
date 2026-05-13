@@ -276,6 +276,16 @@ interface ElectronAPI {
   setWindowTitle(title: string): void;
   onFullscreenChanged(callback: (isFullscreen: boolean) => void): ElectronCleanup;
 
+  // ── Performance-Mode Popup-Window ─────────────────────────────────────────
+  openPerformanceWindow(): Promise<{ success: boolean }>;
+  closePerformanceWindow(): Promise<{ success: boolean }>;
+  isPerformanceWindowOpen(): Promise<boolean>;
+  sendPerfPopupState(state: unknown): void;
+  sendPerfPopupAction(action: unknown): void;
+  onPerfPopupState(callback: (state: unknown) => void): ElectronCleanup;
+  onPerfPopupAction(callback: (action: unknown) => void): ElectronCleanup;
+  onPerfPopupClosed(callback: () => void): ElectronCleanup;
+
   // ── Benachrichtigungen ────────────────────────────────────────────────────
   showNotification(title: string, body: string): void;
 

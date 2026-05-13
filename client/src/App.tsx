@@ -24,6 +24,9 @@ import { ElectronDropZone } from "../../electron/components/ElectronDropZone";
 import { useElectron } from "../../electron/useElectron";
 import { useElectronMenuBindings } from "../../electron/hooks/useElectronMenuBindings";
 
+// ── Performance-Popup-Mode (ROADMAP feature) ─────────────────────────────────
+import { PerformancePopupApp } from "@/components/PerformanceMode/PerformancePopupApp";
+
 // ── Eigene Stores & Hooks ─────────────────────────────────────────────────────
 import { useProjectStore } from "@/store/useProjectStore";
 import { useWindowTitleSync } from "@/store/useWindowTitleSync";
@@ -157,7 +160,32 @@ function VisualMetronome({ isPlaying, bpm }: { isPlaying: boolean; bpm: number }
 
 // ─── App ──────────────────────────────────────────────────────────────────────
 
+/**
+ * Erkennt ob die App im Performance-Popup-Mode läuft.
+ * URL-Param `?perfPopup=1` wird von electron/main.ts beim Öffnen des
+ * separaten Performance-Fensters gesetzt (createPerformanceWindow).
+ *
+ * Pure check, no side effects — kann in render aufgerufen werden.
+ */
+function isPerformancePopupMode(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return new URLSearchParams(window.location.search).get("perfPopup") === "1";
+  } catch {
+    return false;
+  }
+}
+
 export default function App() {
+  // ── Performance-Popup-Mode: nur PerformancePopupApp rendern, früh raus ──
+  // Wenn URL ?perfPopup=1 → das ist der Popup-Renderer, NICHT die volle App.
+  // Vermeidet komplette App-Initialisierung (DrumMachine, Mixer, Stores etc.)
+  // im Popup-Renderer. Die nachfolgenden Hooks werden NICHT ausgeführt weil
+  // React den Tree hier abbricht.
+  if (isPerformancePopupMode()) {
+    return <PerformancePopupApp />;
+  }
+
   // ── Electron-Hook (einziger Zugriffspunkt auf Electron-Features) ────────────
   const electron = useElectron();
   // ── Kollaborations-Session (für Sync) ─────────────────────────────────────────
@@ -175,6 +203,29 @@ export default function App() {
   // kommen aus dem persistierten Store via Hook.
   const [performanceActive, setPerformanceActive] = useState(false);
   const performance = usePerformanceStore();
+
+  // ── Performance-Mode Popup-Window (ROADMAP feature) ───────────────────────
+  // Runtime-State: ist der separate Performance-Popup aktuell offen?
+  // Wird beim Open-Click gesetzt, beim Popup-Close-Event zurückgesetzt.
+  const [performancePopupOpen, setPerformancePopupOpen] = useState(false);
+
+  /** Öffnet das Performance-Popup-Fenster und schließt die Inline-Ansicht. */
+  const handleOpenPerformanceWindow = useCallback(() => {
+    if (!electron.isElectron) return;
+    void electron.openPerformanceWindow?.();
+    setPerformancePopupOpen(true);
+    // Inline schließen — User sieht nur eine Performance-Mode-Instanz auf einmal
+    setPerformanceActive(false);
+  }, [electron]);
+
+  // Listener: Popup wurde vom User geschlossen → State zurücksetzen
+  useEffect(() => {
+    if (!electron.isElectron) return;
+    const cleanup = electron.onPerfPopupClosed?.(() => {
+      setPerformancePopupOpen(false);
+    });
+    return cleanup;
+  }, [electron]);
 
   // ── Humanizer ↔ AudioEngine Bridge ────────────────────────────────────────
   // Singleton-Slot, den AudioEngine._scheduleStep ausliest. Keine direkte
@@ -1282,6 +1333,81 @@ export default function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // ── Performance-Mode Popup State-Sync (ROADMAP feature) ──────────────────
+  // Broadcastet den aktuellen Performance-relevanten State ins Popup-Fenster
+  // wann immer sich etwas ändert. Nur aktiv wenn das Popup offen ist.
+  useEffect(() => {
+    if (!electron.isElectron || !performancePopupOpen) return;
+    electron.sendPerfPopupState?.({
+      pads: performance.pads,
+      patterns: dm.patterns.map((p) => ({ id: p.id, name: p.name })),
+      activePatternId: dm.activePatternId ?? "",
+      queuedPatternId: performance.queuedPatternId,
+      quantizeMode: performance.quantizeMode,
+      bpm: project.bpm,
+      currentStep: dm.currentStep,
+    });
+  }, [
+    electron,
+    performancePopupOpen,
+    performance.pads,
+    performance.queuedPatternId,
+    performance.quantizeMode,
+    dm.patterns,
+    dm.activePatternId,
+    dm.currentStep,
+    project.bpm,
+  ]);
+
+  // Listener: Actions aus dem Popup empfangen und in die Stores dispatchen.
+  // Verwendet Refs für die Dispatcher damit der Listener Closure nicht mit
+  // jedem Pattern-Wechsel neu aufgesetzt wird (stale-closure bei dm).
+  useEffect(() => {
+    if (!electron.isElectron) return;
+    const cleanup = electron.onPerfPopupAction?.((payload) => {
+      if (!payload || typeof payload !== "object") return;
+      const action = payload as { type?: string; patternId?: string; mode?: string };
+
+      switch (action.type) {
+        case "pad-click":
+          if (typeof action.patternId === "string" && action.patternId.length > 0) {
+            dmRef.current.setActivePattern(action.patternId);
+            queuePerformancePattern(action.patternId);
+          }
+          break;
+        case "quantize-mode-change":
+          if (action.mode === "bar" || action.mode === "beat" || action.mode === "step") {
+            setPerformanceQuantizeMode(action.mode);
+          }
+          break;
+        case "request-state":
+          // Popup hat gerade gemountet und bittet um initialen State.
+          // Wir broadcasten unmittelbar — die Effect-deps oben würden erst
+          // beim nächsten State-Wechsel feuern.
+          electron.sendPerfPopupState?.({
+            pads: performance.pads,
+            patterns: dm.patterns.map((p) => ({ id: p.id, name: p.name })),
+            activePatternId: dm.activePatternId ?? "",
+            queuedPatternId: performance.queuedPatternId,
+            quantizeMode: performance.quantizeMode,
+            bpm: project.bpm,
+            currentStep: dm.currentStep,
+          });
+          break;
+      }
+    });
+    return cleanup;
+  }, [
+    electron,
+    performance.pads,
+    performance.queuedPatternId,
+    performance.quantizeMode,
+    dm.patterns,
+    dm.activePatternId,
+    dm.currentStep,
+    project.bpm,
+  ]);
+
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
@@ -1742,6 +1868,7 @@ export default function App() {
           }}
           onQuantizeModeChange={setPerformanceQuantizeMode}
           onClose={() => setPerformanceActive(false)}
+          onOpenInWindow={electron.isElectron ? handleOpenPerformanceWindow : undefined}
         />
       )}
     </ElectronDropZone>

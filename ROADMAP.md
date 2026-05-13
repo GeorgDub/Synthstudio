@@ -36,9 +36,11 @@ Siehe `docs/NEUE_SESSION_ANWEISUNG.md` für die vollständige Feature-Matrix. Ku
 
 ## 🟠 Architektur-Features (User-Wünsche, mittlerer Aufwand)
 
-| Feature | Beschreibung | Aufwand |
+| Feature | Beschreibung | Status / Aufwand |
 |---|---|---|
-| **Performance Mode in eigenem Fenster** | Performance Mode soll in einem separaten Electron `BrowserWindow` öffnen (statt Inline-Overlay), damit Pads parallel zur DrumMachine/Mixer-UI im Hauptfenster nutzbar sind. Voraussetzungen: (a) zweite BrowserWindow in `electron/main.ts` mit IPC-Sync für Pad-Trigger + activePattern; (b) shared State zwischen den beiden Fenstern via Store-Replication oder Broadcast-Channel; (c) Web-Fallback via `window.open()` mit postMessage-Bridge (oder Inline-Mode wenn Popup blockiert); (d) Workflow Zwei-Bildschirm-Setup als Use-Case. Lebt heute als Inline-Vollbild-Overlay in `PatternLaunchPad.tsx`. | 1–2 Wochen |
+| **Performance Mode in eigenem Fenster — Phase 1** | Separates Electron `BrowserWindow` lädt Renderer-Entry mit `?perfPopup=1` → App.tsx erkennt + rendert `PerformancePopupApp`. Bidirektionaler State-Sync via 6 IPC-Channels (window:open/close/is-open, perf-sync:state, perf-sync:action, perf-window:closed). Pad-Click im Popup triggert Pattern-Switch im Haupt-Fenster (live). Live-State-Sync für Pattern + Playhead. Inline-Performance-Mode bekommt "⧉ Separates Fenster" Button im Header. Electron-only (Web-Fallback = Phase 2). | ✅ erledigt (post-v1.23.0) |
+| **Performance Mode in eigenem Fenster — Phase 2** | (a) Edit-Mode + Reorder-Mode-Operationen ins Main syncen (setPadAt, setPadColor, setPadLabel, movePad, moveMultiplePads, clearPad). (b) Web-Fallback via `window.open()` + BroadcastChannel. (c) Always-on-top Toggle. (d) Sync-Performance-Optimierung (separater currentStep-Channel statt full-state). (e) Playwright E2E `tests/electron/e2e/performance-popup.spec.ts`. | 2–3 Tage |
+| **Multi-Window Dockable Workspace** | Generalisierung: ALLE Menüs und Tabs (Sequencer, Mixer, Sample Browser, Pattern Generator, Audio Workbench, Settings, Tools, etc.) können in separate Electron-`BrowserWindow`s entkoppelt werden, sodass der User sich die App auf mehreren Monitoren beliebig verteilen kann. Voraussetzungen: (a) generische Window-Registry mit shared State-Sync-Pattern (analog zum Performance-Popup, aber als wiederverwendbares System); (b) ein "Detach"-Button pro Tab/Panel; (c) Window-Layout-Persistenz (welcher Tab war wo, beim Restart wiederherstellen); (d) Web-Fallback via `window.open` (mit Hinweis dass weniger praktikabel); (e) Keyboard-Shortcuts zum Detach/Reattach. Inspiration: Ableton Live Multi-Window, Logic Pro Detached Editors, FL Studio Multi-Mixer. Sehr hoher User-Mehrwert für Multi-Monitor-Producer. | 2–3 Wochen |
 
 ---
 
