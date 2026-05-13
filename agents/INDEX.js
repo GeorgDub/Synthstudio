@@ -257,6 +257,23 @@ const INDEX = {
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
     {
+      agent:     "coordinator",
+      timestamp: "2026-05-13T12:00:00.000Z",
+      done: [
+        "Stand-Check + Roadmap-Refresh (Session-Start v1.23.0-Vorbereitung). Aktueller Stand erfasst: Version 1.22.0 (package.json ↔ INDEX.js synchron), letzte 5 Releases v1.18.3 → v1.22.0, Test-Status 1220 passed / 15 skipped (pre-existing) / 63 Files / 2.74s — grün. Einziger uncommitted change: docs/NEUE_SESSION_ANWEISUNG.md (stale auf v1.16.0).",
+        "openTasks aufgeräumt. Geschlossen + via Kommentar dokumentiert: TASK-101 (defacto closed durch BUG-008-Fix in v1.18.x), TASK-103 (erledigt v1.17.0 — useScriptStore + Worker-Sandbox), FOLLOWUP-110 (erledigt v1.22.0 / TASK-122 — Final Theme-Sweep, 0/0 Matches im *.tsx-Baum). FOLLOWUP-102 auf Restposten reduziert: nur noch (3) Solo cross-store unification + (4) Playwright round-trip E2E offen — (1) de-dup AudioTrackChannelData + (2) pitch-preserving stretch sind in v1.19.0 erledigt.",
+        "5 neue openTasks für v1.23.0-Roadmap eingetragen: TASK-124 (frontend, Docs-Sync NEUE_SESSION_ANWEISUNG.md auf v1.22.0 — billigster Aufwand, beseitigt einzige uncommitted-Drift), TASK-128 (backend + testing-Review, LFO-Macros Wave 2 Step-Trigger-Wiring — größter funktionaler Win, macht v1.22.0 Macro-Cache überhaupt erst hörbar), TASK-127 (frontend, Performance-Pad Cmd/Ctrl+A + Auto-Scroll aus TASK-114/120 next[]), TASK-125 (testing, theme-class-purity Glob-Hardening — aktuelle Test-Datei listet 19 Pfade hart auf), TASK-126 (testing, Macro-Hold-Mode Playwright-Smoke — App.tsx-Wiring fehlt im E2E-Layer).",
+        "Empfehlung an User: Start mit TASK-124 (frontend, < 30 min). Danach TASK-128 (functional impact). TASK-125 + TASK-126 parallel als Test-Hardening zwischen Releases. TASK-127 = nächste UX-Welle für v1.23.0."
+      ],
+      next: [
+        "TASK-124 ist als nächster aktiver Task vom User freigegeben — frontend-Agent kann starten. Vorgehen: Header von 'Version: 1.16.0' → '1.22.0' ziehen, Sektion 'Neue Features (v1.16)' umbenennen in 'Neue Features (v1.17–v1.22)' und um Persistent Scripts/Sandbox + Audio-Tracks + Performance-Mode-Overhaul + Macro→Pad + LFO-Macros + Hold-Mode + Pad-Theme + Final-Theme-Sweep ergänzen, Roadmap-Tabelle aus openTasks spiegeln. Akzeptanzkriterium: git status clean nach Commit.",
+        "Nach TASK-124 sollte der Coordinator den User fragen welcher der vier verbleibenden Tasks (125–128) als nächstes laufen soll — TASK-128 ist die Empfehlung (high severity, biggest functional impact)."
+      ],
+      changed: [
+        "agents/INDEX.js"
+      ]
+    },
+    {
       agent:     "refactor",
       timestamp: "2026-05-13T00:30:00.000Z",
       done: [
@@ -929,34 +946,63 @@ const INDEX = {
 
   // ─── CURRENT OPEN TASKS ────────────────────────────────────
   // High-level tasks visible to all agents. Coordinator manages this.
+  //
+  // CLOSED 2026-05-13 by coordinator (Cleanup-Sweep):
+  //   - TASK-101 (Layout verzogen): defacto closed durch BUG-008-Fix in v1.18.x — kein Repro mehr.
+  //   - TASK-103 (Script persistence + key/macro binding): erledigt in v1.17.0
+  //     (useScriptStore + Worker-Sandbox, Macro-Binding via useMacroStore).
+  //   - FOLLOWUP-110 (Hardcoded Tailwind colors): erledigt in v1.22.0 / TASK-122
+  //     (Final Theme-Class-Purity Sweep, 0/0 Matches im *.tsx-Baum).
+  //   - FOLLOWUP-102 Teile (1) und (2): de-dup AudioTrackChannelData + pitch-preserving
+  //     stretch erledigt in v1.19.0 — bleibt nur (3) und (4), siehe Eintrag unten.
   openTasks: [
     {
-      id:       "TASK-101",
-      title:    "Layout verzogen — partially fixed (BUG-008 double-header)",
-      severity: "medium",
-      target:   "v1.18.x",
-      notes:    "Multi-viewport sweep (tests/web/layout-sweep.spec.ts) detected NO horizontal overflows across 1920/1366/1280px. One concrete UX bug found via screenshot review: doppelte Header in DrumMachine-Floating-Panels — see BUG-008 (fixed). Falls weitere 'verzogen'-Reports kommen: User um Screenshot + Viewport-Größe + genauen Tab/Panel bitten."
-    },
-    {
       id:       "FOLLOWUP-102",
-      title:    "Audio-Track refinements (post-v1.16.0)",
+      title:    "Audio-Track refinements — Restposten",
       severity: "low",
-      target:   "v1.16.1 / v1.17.0",
-      notes:    "(1) De-dup AudioTrackChannelData type (currently in both useAudioTrackStore.ts and AudioEngine.ts). (2) Pitch-preserving stretch via existing TimeStretchProcessor.js worklet. (3) Solo cross-store unification (drum+audio). (4) Full Playwright round-trip E2E (save → reopen → relocate)."
+      target:   "v1.23.0+",
+      notes:    "Offen: (3) Solo cross-store unification (drum+audio) — drum-Solo und audio-Solo nutzen aktuell getrennte Stores; mute/solo-Verhalten bei gemischten Tracks ist inkonsistent. (4) Full Playwright round-trip E2E (save → reopen → relocate) für Audio-Track-Projekte mit fehlenden Sample-Pfaden."
     },
     {
-      id:       "TASK-103",
-      title:    "Script persistence + key/macro binding",
+      id:       "TASK-124",
+      title:    "Docs-Sync NEUE_SESSION_ANWEISUNG.md auf v1.22.0",
+      severity: "low",
+      target:   "v1.22.0 (cleanup)",
+      owner:    "frontend",
+      notes:    "Datei steht auf v1.16.0 (uncommitted, drift seit 6 Minor-Releases). Header auf 1.22.0 ziehen, Highlights v1.17–v1.22 ergänzen (Persistent Scripts + Sandbox, Audio-Tracks, Performance-Mode-Overhaul TASK-111/114/120/123, Macro→Pad TASK-115, LFO-Macros TASK-117, Hold-Mode TASK-118, Pad-Theme TASK-119, Final Theme-Sweep TASK-122). Roadmap aus diesem INDEX.js spiegeln. Akzeptanz: git status clean."
+    },
+    {
+      id:       "TASK-125",
+      title:    "theme-class-purity Glob-Hardening",
+      severity: "low",
+      target:   "v1.23.0",
+      owner:    "testing",
+      notes:    "tests/features/theme-class-purity.test.ts registriert aktuell 19 Pfade hart per expectNoHardcodedTailwindColors-Helper. Bei neuer Komponente fällt der Schutz auf 0. Glob-basierten Mass-Check (fast-glob über client/src/components/**/*.tsx + electron/components/**/*.tsx) implementieren, der jede neue *.tsx automatisch prüft. Akzeptanz: keine manuelle Pfad-Liste mehr; neue Komponente ohne Test-Änderung wird mit-validiert."
+    },
+    {
+      id:       "TASK-126",
+      title:    "Macro-Hold-Mode Playwright-Smoke",
+      severity: "low",
+      target:   "v1.23.0",
+      owner:    "testing",
+      notes:    "TASK-118 hat den Hold-Loop nur in Unit-Layer (macroHoldLoop.test) getestet — das App.tsx-Wiring (mouseDown → triggerMacroButton → macro:button:trigger → startHoldLoop → runScriptOnce/runPadOnce) ist nicht E2E-abgedeckt. Neue Datei tests/web/macros.spec.ts: Button im Hold-Mode 500ms halten → ≥ 2 Triggers, nach Release 0 weitere. Re-Entrancy-Hinweis (scriptSandbox.isRunning-Skip) in docs/HANDBUCH.md."
+    },
+    {
+      id:       "TASK-127",
+      title:    "Performance-Pad UX-Welle: Cmd/Ctrl+A + Auto-Scroll",
       severity: "medium",
-      target:   "v1.16.0",
-      notes:    "useScriptStore does not exist. Requires security review for sandboxed eval/Function() — no globalThis/Node access."
+      target:   "v1.23.0",
+      owner:    "frontend",
+      notes:    "Aus TASK-114/120 next[] (welle 2). (1) Cmd/Ctrl+A im Reorder-Mode = Select All (alle non-empty Pads in multiSelect). (2) Box-Drag Auto-Scroll wenn Maus < 40px vom Viewport-Rand. (3) Optional: Multi-Drag-Canvas mit Gradient der ersten 3 Pad-Farben statt nur dragSrc-Color (Welle 3 von TASK-123 next). Tests: tests/features/performance-store.test.ts + tests/web/performance-mode.spec.ts."
     },
     {
-      id:       "FOLLOWUP-110",
-      title:    "Hardcoded Tailwind colors in MixerView + ElectronTitleBar",
-      severity: "low",
-      target:   "any",
-      notes:    "TASK-101 sweep found ~10 hardcoded colors (bg-cyan-950, bg-yellow-500, text-slate-900, bg-cyan-500, hover:bg-red-600). Not a layout bug but violates theme rule. Refactor-pass needed."
+      id:       "TASK-128",
+      title:    "LFO-Macros Wave 2 — Step-Trigger-Site Wiring",
+      severity: "high",
+      target:   "v1.23.0",
+      owner:    "backend",
+      reviewBy: "testing",
+      notes:    "v1.22.0 / TASK-117 hat SynthEngine-Macro-LFO-Cache (Map<partId, {rate?, depth?}>) + setPartLfoRate/Depth + triggerNote(.., partId?) Override-Pfad gebaut, aber die AudioEngine Step-Trigger-Site ruft triggerNote noch NICHT mit partId auf — der Cache läuft ins Leere. (a) Step-Trigger in client/src/audio/AudioEngine.ts soll partId durchreichen. (b) MacroRouteSetters.setLfoRate/setLfoDepth von optional → required hochziehen. (c) Integration-Test mit jsdom + Web-Audio-Mock. Akzeptanz: Macro-Knob auf lfo-rate/lfo-depth ändert hörbar die Modulation."
     }
   ],
 

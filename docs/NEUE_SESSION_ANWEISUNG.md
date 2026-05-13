@@ -1,210 +1,354 @@
 # Synthstudio – Anweisungsdatei für neue Claude-Session
 
+**Version: 1.22.0** | Stand: 2026-05-13 (Sprints 1–22 abgeschlossen)
+
+---
+
 ## Projekt-Übersicht
 
 **Synthstudio** ist eine professionelle Drum Machine / Synthesizer / DAW als isomorphe App
 (React 19 + TypeScript + Electron 40 + Vite 7 + Tailwind v4 + pnpm).
 
-- **Dev-Server starten**: `pnpm dev` → http://localhost:5173
-- **TypeScript-Check**: `pnpm check`
-- **Package Manager**: NUR `pnpm` verwenden
-
-## Wichtigste Dateien
-
-| Datei | Zweck |
-|-------|-------|
-| `client/src/App.tsx` | Haupt-App, alle Stores, Transport, Tastatur-Events |
-| `client/src/audio/AudioEngine.ts` | Web Audio API Engine (Singleton) |
-| `client/src/index.css` | Tailwind v4 + CSS-Variablen-System (`--ss-*`) |
-| `docs/HANDBUCH.md` | Vollständiges Funktionshandbuch (30+ Kapitel) |
-
-## CSS Design-Token System
-
-**KRITISCH**: Alle Farben müssen semantic sein — KEINE hardcodierten Tailwind-Farben!
-
-```css
-/* @theme in index.css mappt --ss-* auf Tailwind-Utilities */
-bg-bg-base        → var(--ss-bg-base)
-bg-bg-panel       → var(--ss-bg-panel)
-bg-bg-elevated    → var(--ss-bg-elevated)
-text-text-primary → var(--ss-text-primary)
-text-text-muted   → var(--ss-text-muted)
-text-text-dim     → var(--ss-text-dim)
-border-border-color → var(--ss-border)
-bg-accent-primary   → var(--ss-accent-primary)
-bg-accent-secondary → var(--ss-accent-secondary)
-bg-accent-success   → var(--ss-accent-success)
-bg-accent-danger    → var(--ss-accent-danger)
+```bash
+pnpm dev              # Web App → http://localhost:5173
+pnpm dev:electron     # Electron App mit Hot Reload
+pnpm check            # TypeScript-Check (IMMER ausführen nach Änderungen!)
+pnpm test             # Alle Unit-Tests (Vitest)
+pnpm test:features    # Nur Feature-Tests in tests/features/
+pnpm test:web         # Playwright E2E im Browser
+pnpm build            # Web App Build
 ```
 
-**FALSCH**: `bg-gray-900`, `text-cyan-400`, `bg-slate-800`  
-**RICHTIG**: `bg-bg-panel`, `text-accent-secondary`, `bg-bg-elevated`
+**WICHTIG**: Package Manager = `pnpm`. Niemals `npm` oder `yarn`.
 
-## Goldenes Gesetz (Electron)
+---
 
+## Kritische Regeln
+
+### 1. CSS Design-Token (KEIN hardcoded Tailwind!)
+```
+FALSCH: bg-gray-900, text-cyan-400, bg-slate-800, bg-blue-500
+RICHTIG: bg-bg-panel, text-accent-secondary, bg-bg-elevated, bg-accent-primary
+```
+
+Alle Semantic-Classes (via `@theme` in `index.css`):
+```
+bg-bg-base / bg-bg-panel / bg-bg-elevated
+text-text-primary / text-text-muted / text-text-dim
+border-border-color / border-border-subtle
+bg-accent-primary / bg-accent-secondary / bg-accent-success / bg-accent-danger
+text-accent-primary / text-accent-secondary / ...
+```
+
+**Verifiziert via `tests/features/theme-class-purity.test.ts`** (TASK-122):
+0 hardcoded Tailwind palette classes + 0 arbitrary hex classes im gesamten *.tsx-Baum.
+
+### 2. Goldenes Gesetz (Electron)
 ```ts
-const electron = useElectron(); // IMMER diesen Hook verwenden
-if (electron.isElectron) { /* native path */ }
-// Kein direktes window.electronAPI in Komponenten!
+const electron = useElectron(); // IMMER dieser Hook!
+if (electron.isElectron) { /* native */ }
+// NIEMALS direktes window.electronAPI in Komponenten
 ```
 
-## State Management Pattern
+### 3. CollabSplitView Stubs
+Wenn neue `DrumMachineActions` hinzugefügt werden → IMMER `noop`-Stubs in:
+`client/src/components/CollabSplitView/CollabSplitView.tsx` ergänzen!
 
-**Modul-Singleton-Stores** (KEIN Zustand-npm-Paket):
-```ts
-let _state = loadState();
-const _listeners = new Set<Listener>();
-function notify() { _listeners.forEach(l => l()); }
-export function useMyStore(): MyState { /* useEffect + useReducer */ }
+---
+
+## Architektur
+
+### DrumMachine (refactored in v1.16)
+```
+client/src/components/DrumMachine/
+├── DrumMachine.tsx          # Haupt-Komponente
+├── ChannelStrip.tsx         # Einzelner Drum-Kanal
+├── StepInspector.tsx        # Step-Editor Panel
+├── FxPanel.tsx              # FX-Einstellungen
+├── ResizableDrumPanel.tsx   # Resize-Wrapper mit X-Button (BUG-008 fix v1.18.1)
+├── drumMachineHelpers.ts    # velocityColor, stepGroupBorder
+├── EnvelopeFollowerPanel.tsx
+├── MixAssistantPanel.tsx
+├── GranularSynthPanel.tsx
+├── SynthPanel.tsx           # Wavetable/FM Synthese
+├── WavetableEditor.tsx      # Canvas Wavetable-Editor
+├── PolyrhythmVisualizer.tsx
+├── EuclideanControls.tsx
+├── ModMatrix.tsx
+└── index.ts
 ```
 
-**React-local-Stores** (für komplexe State-Maschinen):
-```ts
-export function useDrumMachineStore() { const [state, setState] = useState<...>(...); ... }
-```
+### State Management
+**Modul-Singleton**: `let _state; const _listeners = new Set(); function notify()`
+**React-local**: `useState` für komplexe Stores
 
-## Wichtige Store-Dateien
+---
 
-| Store | Zweck |
-|-------|-------|
-| `useProjectStore.ts` | Projekt-Metadaten, BPM, Samples (jetzt mit echtem Save/Load!) |
-| `useDrumMachineStore.ts` | Pattern, Parts, Steps (⚠ viele neue Actions!) |
-| `useMixerStore.ts` | Mixer-Channels, Insert-Chains, Sidechain |
-| `useApiSettingsStore.ts` | API-Keys, Auto-Save-Toggle, Snapshot-Toggle |
-| `usePatternGeneratorStore.ts` | Template + Prompt-Generator (zwei Modi) |
-| `useThemeStore.ts` | Custom Themes inkl. Extras (Font, Radius, Glow, CSS) |
+## Vollständige Store-Action-Liste (useDrumMachineStore)
 
-## Implementierte Feature-Übersicht (Sprints 1–16)
-
-### DrumMachine Store Actions (alle verfügbar via `dm.*`):
-```
-toggleStep, setPartSteps, setStepVelocity, setStepPitch, setStepProbability,
-setStepCondition, setStepReverse, setStepParamLock, setStepLength, setStepChainNext,
-quantizePartSteps, setPartEuclidean, clearPattern, fillPattern, randomizePattern,
-shiftPattern, setStepCount, setCurrentStep, setVelocityMode, setPitchMode,
-setPartMuted, setPartSoloed, setPartVolume, setPartPan, setPartSampleUrl,
-setPartStepResolution, setPartStepLength, setActivePart, movePart, setPartFx,
-setFxPanelPartId, setPartSourceType, setPartGranularParams, setPartStretchRatio,
-setPartMicroTiming, setPatternBpm, setPatternBpmRatio, setPatternBpmTransitionBars,
-setPatternStepResolution, setPatternFollowAction, setPatternFollowAction,
+```typescript
+// Pattern
 addPattern, addPatternData, removePattern, renamePattern, setActivePattern,
 duplicatePattern, startLivePatternEdit, commitLivePatternEdit, cancelLivePatternEdit,
-scheduleCommit, toggleStackedPattern, clearStackedPatterns, undo, redo,
+scheduleCommit, toggleStackedPattern, clearStackedPatterns,
+setPatternBpm, setPatternBpmRatio, setPatternBpmTransitionBars,
+setPatternStepResolution, setPatternFollowAction,
+
+// Parts
+addPart, removePart, renamePart, setPartSample, setPartMuted, setPartSoloed,
+setPartVolume, setPartPan, setPartStepResolution, setPartStepLength, setActivePart,
+movePart, setPartFx, setFxPanelPartId, setPartSourceType, setPartGranularParams,
+setPartStretchRatio, setPartMicroTiming,
+
+// Steps
+toggleStep, setPartSteps, setStepVelocity, setStepPitch, setStepProbability,
+setStepCondition, setStepReverse, setStepParamLock, setStepLength, setStepChainNext,
+quantizePartSteps, setPartEuclidean,
+
+// Pattern-Operationen
+clearPattern, fillPattern, randomizePattern, shiftPattern,
+setStepCount, setCurrentStep, setVelocityMode, setPitchMode,
+
+// Undo/Redo
+undo, redo, canUndo, canRedo,
+
+// Getter
 getActivePattern, getPlaybackPattern
 ```
 
-### AudioEngine Public API:
-```ts
+---
+
+## AudioEngine Public API
+
+```typescript
+// Core
 AudioEngine.init()
 AudioEngine.play(fromStep?)
 AudioEngine.stop()
 AudioEngine.setBpm(bpm)
-AudioEngine.setSteps(count)
+AudioEngine.setSteps(count: 16|32)
 AudioEngine.setPatternGetter(fn)
 AudioEngine.setMelodicGetter(fn)
-AudioEngine.onStep(cb)          // returns unsubscribe fn
-AudioEngine.onPosition(cb)      // returns unsubscribe fn
-AudioEngine.setGlobalTranspose(semitones)
+
+// Callbacks (geben unsubscribe-Funktion zurück)
+AudioEngine.onStep(cb)         // bei jedem aktiven Step
+AudioEngine.onPosition(cb)     // bei jedem Step (auch Stille)
+
+// Channel
 AudioEngine.setChannelVolume(partId, vol)
 AudioEngine.setChannelPan(partId, pan)
-AudioEngine.setChannelSend(partId, bus, level)
+AudioEngine.setChannelSend(partId, "reverb"|"delay", level)
 AudioEngine.updateChannelFx(partId, fx)
 AudioEngine.setSidechainSettings(targetPartId, settings)
+AudioEngine.routeChannelToBus(partId, toBus)
+
+// Bus / FX
 AudioEngine.setBusCompressor(settings)
-AudioEngine.applyInsertChain(partId, chain)
-AudioEngine.startGranular(partId, sampleUrl, params)
-AudioEngine.stopGranular(partId)
-AudioEngine.setMidiOutCallback(cb)
-AudioEngine.setMidiClockCallback(cb)
-AudioEngine.setFollowActionCallback(cb)
-AudioEngine.smoothBpmTransition(targetBpm, bars, stepCount?)
-AudioEngine.applyParamLock(partId, lock, duration)
+AudioEngine.applyInsertChain(partId, chain[])
 AudioEngine.getOutputAnalyser()
 AudioEngine.getAudioContext()
+
+// Synthese
+AudioEngine.startGranular(partId, sampleUrl, params)
+AudioEngine.stopGranular(partId)
+AudioEngine.setGlobalTranspose(semitones)
+
+// Macro-LFO Delegates (v1.22.0 / TASK-117)
+AudioEngine.setPartLfoRate(partId, rate)      // 0.01..30 Hz
+AudioEngine.setPartLfoDepth(partId, depth)    // 0..1
+AudioEngine.getPartLfoRate(partId) / .getPartLfoDepth(partId)
+// → SynthEngine.triggerNote(.., partId?) wendet Cache-Werte an
+// (Hinweis TASK-128 offen: Step-Trigger-Site reicht partId noch NICHT durch)
+
+// Follow Action / Live Edit
+AudioEngine.setFollowActionCallback(cb)
+AudioEngine.smoothBpmTransition(targetBpm, bars)
+AudioEngine.resetBarCount()
+
+// MIDI Out
+AudioEngine.setMidiOutCallback(cb)
+AudioEngine.setMidiClockCallback(cb)
+AudioEngine.setMidiProgramChangeCallback(cb)
+AudioEngine.sendPatternProgramChange(index, channel?)
+
+// Granular
+AudioEngine.applyParamLock(partId, lock, duration)
+AudioEngine.applyInsertChain(partId, chain)
 ```
+
+---
 
 ## Resizable Panels System
 
-```ts
-// Hook
+```typescript
 import { useResizablePanel } from "@/hooks/useResizablePanel";
+import { ResizablePanelHandle } from "@/components/UI/ResizablePanelHandle";
+
 const { height, handleMouseDown } = useResizablePanel({
   defaultHeight: 220,
   minHeight: 140,
   maxHeight: 500,
-  storageKey: "ss-my-panel-height",
-  direction: "up", // Panel wächst nach oben
+  storageKey: "ss-my-panel",
+  direction: "up",
 });
+```
 
-// Komponente
-import { ResizablePanelHandle } from "@/components/UI/ResizablePanelHandle";
-<ResizablePanelHandle onMouseDown={handleMouseDown} direction="up" />
-
-// DrumMachine-spezifischer Wrapper
-<ResizableDrumPanel storageKey="ss-panel-xxx" defaultHeight={160} minHeight={100} maxHeight={300}>
-  <MeinPanel />
+**ResizableDrumPanel** (fertige Wrapper-Komponente):
+```tsx
+<ResizableDrumPanel
+  storageKey="ss-panel-xxx"
+  defaultHeight={160}
+  minHeight={100}
+  maxHeight={300}
+  onClose={() => setShowXxx(false)}
+  title="Panel Name"
+>
+  <MeinInhalt />
 </ResizableDrumPanel>
 ```
 
-## Offene Roadmap (nächste Phasen)
+---
 
-Siehe `docs/HANDBUCH.md` Kapitel 21–33 für implementierte Features.
+## Pattern Generator — Zwei Modi
 
-**Nächste Prioritäten (Sprint 17+):**
-1. **Multi-Sample Mode** — Keyboard-Mapping mit Velocity-Zonen (UI vorhanden: `KeyboardSamplerPanel`, Store: `useKeyboardSamplerStore`)
-2. **Envelope Follower** — Audio-Level als Modulations-Quelle
-3. **MIDI SysEx** — System-Exclusive Nachrichten
-4. **Cloud Pattern Library** — Backend-Sync (lokale Version vorhanden: `usePatternLibraryStore`)
-5. **Public Relay Server** — WAN-Kollaboration (LAN vorhanden, WAN fehlt)
-6. **Time-Stretch** (echte DSP-Qualität via AudioWorklet/WSOLA)
-7. **ReWire/Ableton Link** — Electron-native Bibliothek
-
-## Pattern Generator — Zwei Modi (wichtig!)
-
-**Modus A: Vorlagen** (`generateAndStore` / `generateAndStoreAI`):
-- Genre + BPM + Steps + Komplexität + Dichte + Swing + Instrumente + optionale Beschreibung
-- `templateBpm: null` = Genre-Standard, `templateBpm: 140` = Override
-
-**Modus B: KI-Prompt** (`generateFromPromptAI`):
-- Freier Text + BPM + Steps + Swing + Instrumente
-- Benötigt Anthropic API Key (Settings → KI & API)
-
-## Bekannte Besonderheiten
-
-1. **Zirkulärer Import**: `ThemeSettings.tsx ↔ useThemeStore.ts` — bewusst so, funktioniert mit ES-Module-live-bindings
-2. **CollabSplitView Stubs**: Wenn neue Store-Actions hinzugefügt werden, IMMER `noop`-Stubs in `CollabSplitView.tsx` ergänzen!
-3. **HMR bei ThemeSettings**: ThemeSettings hat einen zirkulären Export der manchmal Full-Page-Reload auslöst — normal
-4. **Vite root = client/**: Imports aus `src/generation/` und `src/utils/` brauchen `../../../../` prefix
-5. **pnpm check** muss IMMER fehlerfrei sein vor Commits
-
-## Kollaboration-System
-
-- **LAN**: WebSocket-Server in `electron/collab-server.ts`, mDNS-Discovery in `electron/collab-discovery.ts`
-- **Session-Events**: `step:toggle`, `bpm:change`, `pattern:switch`, `transport:play/stop`, `snapshot:full`, `chat`, `role:change`
-- **Rollen**: host (alle Rechte), editor (Steps/BPM), viewer (read-only)
-- **Session-Scan**: Browser → localStorage (zuletzt verwendet), Electron → mDNS + UDP-Scan
-
-## Wichtige Custom Hooks
-
+**Modus A: 🎛 Vorlagen** (algorithmisch + optional KI):
 ```
-useTransport       — Audio-Engine ↔ React (BPM, Play/Stop, Pattern-Getter)
-useMidi            — Web MIDI API (In + Out + Clock + MPE)
-useGlobalKeyBindings — Konfigurierbare Tastatur-Bindings
-useLaunchpad       — Novation Launchpad / Push Grid-Controller
-useBeatRepeat      — Stutter-Effekt via Timer
-useMidiStepInput   — MIDI-Keyboard → Piano-Roll Step-Eingabe
-useAudioInput      — Mikrofon/Line-In Recording
-useResizablePanel  — Drag-to-Resize für Panels
+Store-Actions: setGenre, setComplexity, setCustomPrompt,
+               setTemplateBpm, setTemplateStepCount, setTemplateSwing,
+               setTemplateDensity, toggleTemplatePart
+Generate: generateAndStore() | generateAndStoreAI()
 ```
 
-## Datei-Format
-
-- **Projekte**: `.synth` (JSON, serialisiert alle Stores via `projectSerializer.ts`)
-- **Samples**: `.wav/.mp3/.ogg/.flac` + `.zip` Sample-Packs
-- **MIDI Export**: `.mid` (Standard MIDI Format 1, via `midiExport.ts`)
-- **WAV Export**: Stereo + Stems via `OfflineAudioContext` (`wavExporter.ts`)
+**Modus B: ✨ KI-Prompt**:
+```
+Store-Actions: setPromptText, setPromptBpm, setPromptStepCount,
+               setPromptSwing, togglePromptPart
+Generate: generateFromPromptAI()
+Benötigt: Anthropic API Key (Settings → KI & API)
+```
 
 ---
 
-**Dev-Server sollte laufen auf http://localhost:5173**  
-**Immer `pnpm check` nach Änderungen ausführen!**
+## Custom Themes — Extras-System
+
+```typescript
+addCustomTheme({ name, colors, extras: {
+  fontSize?: number,        // 10–18px Schriftgröße
+  borderRadius?: number,    // 0–20px Abrundung
+  glowIntensity?: number,   // 0–1 Leucht-Effekt
+  glassEffect?: number,     // 0–1 Backdrop-Blur
+  customCss?: string,
+}})
+```
+
+---
+
+## Neue Features v1.17 – v1.22 (Releases im Detail)
+
+### v1.17.0 — Persistent Scripts + Web Worker Sandbox (TASK-103)
+- `useScriptStore` (App- + Project-Scripts, max 64, 10kB Code-Limit)
+- Web Worker-Sandbox: kein `globalThis`, kein Node-Access, 5s Default-Timeout
+- Macro- und Keyboard-Bindings via `findScriptByKeyCombo` / `findScriptByMacroIndex`
+- Codegen für Sandbox-Source: `scripts/generate-sandbox-source.mjs` (pre-dev/build hook)
+
+### v1.18.0 – v1.18.3 — Hardening + Theme-Refactor
+- **v1.18.0**: CSP-Headers, Sandbox-Codegen, Refactor-Pass
+- **v1.18.1**: BUG-008 — doppelte Header in DrumMachine-Floating-Panels behoben
+- **v1.18.2**: BUG-002 — BPM +/- Buttons mit visible click feedback
+- **v1.18.3**: FOLLOWUP-110 (Teil 1) — Theme-Refactor + Daylight/Paper-Token-Fix
+
+### v1.19.0 — Audio-Tracks (FOLLOWUP-102 Teil 1+2)
+- De-Duplikation von `AudioTrackChannelData` (vorher in Store + AudioEngine doppelt)
+- Pitch-preserving Stretch via existing `TimeStretchProcessor.js` AudioWorklet
+- **Offene Restposten**: Solo cross-store unification + Playwright round-trip E2E (siehe FOLLOWUP-102 in INDEX.js)
+
+### v1.20.0 — Performance Mode UX-Overhaul (TASK-111)
+- 16 Pads mit `quantizeMode` und `queuedPatternId`
+- Pattern-Switch quantisiert auf Beat/Bar/Pattern
+
+### v1.21.0 — Macro→Pad + Performance a11y + CI-Drift-Check
+- **TASK-115**: Macro-Button kann Pads triggern (`macro:button:trigger` Event mit `triggerKind: 'script' | 'pad'`)
+- **TASK-114**: Performance-Pad Multi-Select (Shift+Click, `movePad` + `moveMultiplePads` mit Insert-Semantik) + ARIA-Labels
+- CI-Drift-Check: GitHub Actions sweep prüft INDEX.js ↔ package.json Version-Sync
+
+### v1.22.0 — LFO-Macros + Hold-Mode + Pad-Theme + Final Polish (6 Tasks)
+- **TASK-117** (LFO-Macros): SynthEngine-Macro-LFO-Cache (`Map<partId, {rate?, depth?}>`), `setPartLfoRate/Depth`, `triggerNote(.., partId?)` Override-Pfad. App.tsx Macro-Setter-Bag mit `setLfoRate/setLfoDepth` erweitert.
+- **TASK-118** (Hold-Mode): `MacroTriggerMode = 'edge' | 'hold'` voll funktional. Loop-Re-Trigger solange Button gedrückt (Script: 200ms, Pad: 100ms). Pure-Logik-Helper `client/src/utils/macroHoldLoop.ts` mit Inject-Scheduler-Pattern (testbar mit `vi.useFakeTimers`). UI: 🔁-Icon-Overlay im Hold-Mode.
+- **TASK-119** (Pad-Theme): `PAD_COLOR_VAR_NAMES` (8 CSS-vars `--ss-pad-1..8`) für theme-aware Default-Pad-Farben.
+- **TASK-120** (Mouse-Box Rubber-Band): Im Reorder-Mode mousedown auf Grid-Background → Box-Drag mit fixed-positioniertem Overlay. Pure Helper `normalizeBox`/`boxIntersects`/`collectPadsInBox` exportiert. Shift=additiv, Escape clearet, 24 Unit-Tests + 9 Playwright-Tests.
+- **TASK-122** (Final Theme-Class-Purity Sweep): 15 Komponenten refactored, Endstand 0/0 hardcoded Tailwind palette classes + 0 arbitrary hex im *.tsx-Baum. Slider-Prop `color` → `accent` (statische Klassen-Tabellen damit Tailwind JIT die Klassen findet).
+- **TASK-123** (Multi-Drag-Canvas): Programmatisch erzeugtes Canvas mit Pad-Color + accent-secondary Border + '+N' Badge via `dataTransfer.setDragImage()` bei Multi-Select-Drag. `data-multi-drag-count` Attribut für deterministische Playwright-Assertion.
+
+---
+
+## Implementierte Features (Überblick)
+
+| Kategorie | Features |
+|-----------|---------|
+| **Sequencer** | 16/32-Step Grid, Velocity/Pitch/Probability/Condition/Reverse pro Step |
+| **Step Inspector** | Param Lock, Note Length, Probability Chain, Quantize-Grid |
+| **Performance** | Live Pattern Edit (Draft+Commit), Follow Actions, BPM-Sync zwischen Patterns |
+| **Pattern Tools** | A/B/C/D Variations, Pattern Stacking, Polyrhythm, Morph |
+| **Performance Mode** | 16 Pads, Quantized Pattern-Switch, Multi-Select Reorder, Box-Drag (v1.20–v1.22) |
+| **Synthese** | Wavetable/FM + ADSR, Granular, Custom Wavetable Editor |
+| **LFO** | 6 Wellenformen, BPM-Sync, S&H, Glide/Portamento, Macro-Routing (v1.22) |
+| **Mixer** | Insert FX Chain (12 Typen), 16-Band EQ, Sidechain, Bus Compressor, Spectrum |
+| **Effekte** | Bitcrusher, Ring Modulator, Chorus, Flanger, alle klassischen |
+| **Song** | Arrangement Timeline, Automation Lanes, Scene Launch |
+| **MIDI** | In (CC-Zuweisungen 30+, Note-Map, Chord Memory, MPE) + Out + Clock |
+| **Kollaboration** | LAN-Session, Chat, Roles, Session Recording, Cross-Sample Transfer |
+| **KI** | AI Beat Co-Pilot (Claude API), Pattern Generator (Template + Prompt) |
+| **Export** | WAV (Master/Stems), MIDI-Bundle (.mid Format 1) |
+| **Barrierefreiheit** | 10+ Themes (inkl. 2 Colorblind), ARIA-Labels, Touch-Optimierung |
+| **PWA** | Service Worker, Manifest, Offline-Fähigkeit |
+| **Plugins** | ESM Plugin API, Script Runner (Sandbox seit v1.17) |
+| **Macros** | 8 Knöpfe (Knob+Button-Mode), Edge+Hold-Trigger, Script+Pad-Routing (v1.21–v1.22) |
+| **Envelope Follower** | Audio-Level → Modulations-Quelle |
+| **Audio-Tracks** | Vocals/Songs als Kanäle (v1.16), pitch-preserving Stretch (v1.19) |
+
+---
+
+## Wichtige Konventionen
+
+### Neue DrumMachine Actions → CollabSplitView-Stub!
+```typescript
+// In CollabSplitView.tsx — immer ergänzen:
+meinNeueAction: noop,
+```
+
+### Inline-Styles vs Tailwind
+- Inline-Styles: OK für dynamische Werte (z.B. `style={{ background: color }}`)
+- Tailwind: für statische Klassen (semantic Colors verwenden!)
+- CSS-Variablen direkt: `style={{ color: "var(--ss-accent-primary)" }}`
+
+### Categorical Palettes (Sonderfall)
+Wenn mehrere kategorische Farben gleichzeitig nötig sind (z.B. Pattern-Banks A/B/C/D, Drop-Zone-Types), Top-Comment-Block in der Datei dokumentieren und auf `accent-primary/secondary/success/danger` mappen (Beispiele: `SongTimeline.tsx`, `ElectronDropZone.tsx`, `MixAssistantPanel.tsx`). Bei Bedarf später `--ss-accent-tertiary` / `--ss-accent-warning` Tokens einführen.
+
+### Import-Pfade
+```typescript
+// Aus client/src: @/ alias
+import { AudioEngine } from "@/audio/AudioEngine";
+
+// Aus src/ (außerhalb client/): relativer Pfad
+import { parseMidiFile } from "../../../../src/utils/midiParser.js";
+```
+
+---
+
+## Offene Roadmap (v1.23.0+)
+
+Quelle: `agents/INDEX.js` → `openTasks`
+
+| Priorität | Task | Owner | Beschreibung |
+|-----------|------|-------|--------------|
+| ❗ Hoch | **TASK-128** | backend + testing-Review | LFO-Macros Wave 2: AudioEngine Step-Trigger reicht `partId` noch nicht durch — Macro-LFO-Cache läuft ins Leere |
+| 🔶 Mittel | **TASK-127** | frontend | Performance-Pad UX: Cmd/Ctrl+A + Auto-Scroll bei Box-Drag (aus TASK-114/120 next[]) |
+| 🔷 Niedrig | **TASK-125** | testing | theme-class-purity Glob-Hardening (statt 19 harter Pfade glob-basierter Mass-Check) |
+| 🔷 Niedrig | **TASK-126** | testing | Macro-Hold-Mode Playwright-Smoke (App.tsx-Wiring fehlt im E2E) |
+| 🔷 Niedrig | **FOLLOWUP-102** | testing + audio | Solo cross-store unification (drum+audio) + Playwright round-trip E2E |
+
+---
+
+**Dev-Server**: http://localhost:5173  
+**Letzter Test-Run**: `pnpm test` → 1220 passed / 15 skipped (pre-existing) / 63 Files / ~2.7s  
+**Version**: 1.22.0
