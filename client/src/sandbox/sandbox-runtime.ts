@@ -189,24 +189,55 @@ declare const self: SandboxWorkerScope;
     Object.freeze(Object.getPrototypeOf(ss));
   } catch { /* best-effort */ }
 
-  // ─── Exec-Listener (separat vom Reply-Listener) ─────────────────────────────
-  self.addEventListener("message", async (event: { data: unknown }) => {
-    const msg = event.data as { type?: string; code?: string };
-    if (msg?.type !== "exec") return;
+  // ─── Inline User-Code Execution (BUG-010 fix, post-v1.23.0) ─────────────────
+  //
+  // Vorher: `new Function('ss', code)` im Exec-Listener — funktional sauber
+  //   isoliert, aber CSP-Block: `new Function` ist für Chromium äquivalent zu
+  //   `eval` und erfordert `'unsafe-eval'` in `script-src`. Da wir die strikte
+  //   CSP für die gesamte App bewahren wollen, vermeiden wir Function/eval
+  //   komplett.
+  //
+  // Jetzt: Der User-Code wird VOR dem Worker-Bau in den Worker-Source-String
+  //   eingebettet (siehe useScriptSandbox.ts → buildWorkerSource()). Hier
+  //   sehen wir nur den Insertion-Point-Marker. Zur Run-Time existiert kein
+  //   String-→-Function-Pfad mehr.
+  //
+  // Sicherheits-Modell-Auswirkung: der User-Code teilt sich nun das Closure
+  //   mit `__bridgePost`, `__pendingReplies` etc. — d.h. er kann diese per
+  //   Namen referenzieren. Das ist akzeptabel weil:
+  //     1. Die echte Trust-Boundary liegt auf dem Main-Thread (Allowlist-
+  //        Validation der `ss.*`-Methoden + Param-Clamping)
+  //     2. Der Worst-Case (fake postMessages senden) kann nicht über die
+  //        existierende `ss.*`-Allowlist eskalieren — höchstens das eigene
+  //        Script verwirren
+  //     3. Andere Hardening-Maßnahmen (fetch/XHR/WebSocket = undefined,
+  //        Prototype-postMessage gefreezed) bleiben aktiv
+  //
+  // Der Marker wird DURCH NUR DIESE Datei und useScriptSandbox.ts referenziert.
+  // Bitte beim Refactor synchron halten.
+  (async () => {
     try {
-      // new Function INSIDE Worker — kein electronAPI/window/document verfügbar
-      // Strict-mode unterbindet außerdem implicit globals & `arguments.caller`.
-      const userFn = new Function(
-        "ss",
-        '"use strict"; return (async () => { ' + (msg.code ?? "") + ' })();',
-      );
-      await userFn(ss);
+      // The user-supplied code is concatenated into the source HERE by
+      // useScriptSandbox.buildWorkerSource(). The marker is replaced with
+      // the user code as raw JavaScript. The wrapping async-IIFE provides
+      // top-level `await` + a single try-catch boundary.
+      const __userScriptResult = await (async () => {
+        "use strict";
+        // Marker als Variable-Declaration mit unique String — überlebt esbuild
+        // (im non-minify-Modus werden auch unused `const`-Bindings nicht weg-
+        // optimiert). Wird in useScriptSandbox.buildWorkerSource durch den
+        // User-Code-Block ersetzt.
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const __ssMarker: string = "__SYNTHSTUDIO_USER_CODE_INSERTION_POINT_v1__";
+        return __ssMarker;
+      })();
+      void __userScriptResult;
       __bridgePost({ type: "done" });
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);
       __bridgePost({ type: "error", message });
     }
-  });
+  })();
 })();
 
 export {};

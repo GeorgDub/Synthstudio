@@ -253,10 +253,16 @@ const INDEX = {
     "BUG-010": {
       title:   "Script-Runner: CSP-Error 'unsafe-eval' beim Ausführen — Scripts laufen gar nicht",
       severity: "critical",
-      details:  "Reproduktion: Tools-Tab → Script-Runner → '+ Neu' → Skript-Code eingeben → Run → Fehler 'Script error: Evaluating a string as JavaScript violates the following Content Security Policy directive because unsafe-eval is not an allowed source of script: script-src self'. Bedeutet die Sandbox-Implementierung (Web-Worker mit eval/Function-Konstruktor) wird vom CSP des Renderers blockiert. Ursache vermutlich: TASK-118 / v1.18.0 CSP-Hardening hat 'unsafe-eval' aus dem script-src entfernt, der Web-Worker erbt aber denselben CSP. Fix-Optionen: (a) CSP nur für den Worker-Context lockern via dedizierter worker-src + 'unsafe-eval' (riskant), (b) Sandbox-Architektur ändern auf vorgeneriertes-Code-Pattern statt eval (komplex), (c) <iframe sandbox> mit allow-scripts statt Worker (CSP-Vererbung anders). Affected: client/src/sandbox/scriptSandboxInstance.ts, electron/main.ts CSP-Header, scripts/generate-sandbox-source.mjs.",
-      fixed:    false,
+      details:  "Reproduktion: Tools-Tab → Script-Runner → '+ Neu' → Skript-Code → Run → 'Script error: Evaluating a string as JavaScript violates the following CSP directive: script-src self'. Ursache: sandbox-runtime.ts L199 nutzte `new Function('ss', code)` zum Ausführen — Chromium behandelt new Function als eval und braucht 'unsafe-eval' im script-src. Worker erben den parent-CSP für eval. Fix-Strategie (gewählt nach Trade-off-Analyse): **User-Code wird vor dem Worker-Bau in die Worker-Source eingebettet** statt zur Run-Time via Function/eval ausgeführt. Konkret: ein `const __ssMarker = '...';return __ssMarker;` Marker im sandbox-runtime.ts wird in useScriptSandbox.buildWorkerSource() durch den User-Code-String ersetzt, dann erst kommt der Blob+Worker zum Einsatz. Sicherheits-Modell unverändert: Bridge-Validation auf dem Main-Thread (Allowlist-Check + Param-Clamping) bleibt die echte Trust-Boundary. User-Code kann zwar via Closure jetzt `__bridgePost` referenzieren, aber Worst-Case (fake ss-replies an eigene Promises) kann nicht über die Allowlist eskalieren. CSP bleibt strikt (kein 'unsafe-eval' nötig). Marker als `const`-Declaration weil esbuild Kommentare/void-Expressions wegoptimiert, aber const-Bindings im non-minify-Modus erhält.",
+      fixed:    true,
       foundBy:  "user (post-v1.23.0 report)",
-      target:   "v1.23.1 hotfix"
+      fixedBy:  "frontend (with security-agent review note)",
+      fixedIn:  "BUG-010 fix (post-v1.23.0)",
+      relatedFiles: [
+        "client/src/sandbox/sandbox-runtime.ts",
+        "client/src/sandbox/sandbox-runtime.generated.ts",
+        "client/src/sandbox/useScriptSandbox.ts"
+      ]
     },
     "BUG-011": {
       title:   "Audio-Workbench: Tonspur wird nicht visualisiert + Selektion/Trennung nach Vocal/Kick/etc fehlt",

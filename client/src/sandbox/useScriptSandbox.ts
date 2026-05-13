@@ -103,6 +103,56 @@ const ALLOWED_BRIDGE_METHODS: ReadonlySet<string> = new Set([
 // Wenn dieser Import fehlschlägt: `pnpm gen:sandbox` ausführen.
 import { SANDBOX_WORKER_SOURCE } from "./sandbox-runtime.generated";
 
+/**
+ * Marker, der in der generierten Worker-Source steht und vor dem Worker-Bau
+ * mit dem User-Code ersetzt wird (BUG-010 Fix, post-v1.23.0).
+ *
+ * Implementiert als `const`-Declaration weil:
+ *   - esbuild strippt Kommentare aus der transpilierten Output-JS, ein
+ *     Comment-Marker würde nicht überleben.
+ *   - `void`-Expressions werden als side-effect-frei wegoptimiert.
+ *   - `const`-Declarations mit Initializer + Verwendung (return __ssMarker)
+ *     werden von esbuild im non-minify-Modus deterministisch erhalten.
+ *
+ * Die Replacement-Logik ersetzt die GANZE marker-Zeile (Declaration + return)
+ * durch den User-Code-Block, der ebenfalls einen `return undefined` am Ende
+ * gut handhabt (async IIFE muss keinen Return-Wert haben).
+ *
+ * MUSS exakt mit der Stelle in `sandbox-runtime.ts` übereinstimmen — Drift
+ * fängt der Pentest-Test in `tests/features/script-sandbox-pentest.test.ts` ab.
+ *
+ * Mehrzeilig — entspricht dem transpilierten Output von esbuild für
+ *   const __ssMarker: string = "...";
+ *   return __ssMarker;
+ */
+const USER_CODE_INSERTION_MARKER =
+  'const __ssMarker = "__SYNTHSTUDIO_USER_CODE_INSERTION_POINT_v1__";\n        return __ssMarker;';
+
+/**
+ * Baut eine Worker-Source für einen konkreten User-Code-String:
+ *  - Marker im generierten Template wird durch den User-Code (raw JS) ersetzt.
+ *  - Wenn der Marker nicht gefunden wird → Drift in der generierten Datei.
+ *    Fail-loud damit Tests/CI das fangen, nicht zur Run-Time stillschweigend
+ *    keinen User-Code injizieren.
+ *
+ * Public exportiert für Unit-Tests + Future-Composability. Keine sandbox-
+ * relevanten Validierungen hier — der User-Code wird als Roh-JS interpretiert,
+ * Bridge-Validation ist die echte Trust-Boundary auf dem Main-Thread.
+ */
+export function buildWorkerSource(userCode: string): string {
+  if (!SANDBOX_WORKER_SOURCE.includes(USER_CODE_INSERTION_MARKER)) {
+    throw new Error(
+      "Sandbox source is missing the user-code insertion marker — " +
+      "regenerate via `pnpm gen:sandbox`."
+    );
+  }
+  // Defensive: User-Code könnte den Marker selbst enthalten (extrem unwahr-
+  // scheinlich aber theoretisch möglich). String.prototype.replace ersetzt
+  // nur das ERSTE Vorkommen — genau was wir wollen. Sollte der User-Code
+  // weitere Vorkommen enthalten, bleiben sie als Kommentar erhalten.
+  return SANDBOX_WORKER_SOURCE.replace(USER_CODE_INSERTION_MARKER, userCode);
+}
+
 // ─── Param-Validation Helpers ────────────────────────────────────────────────
 
 function clampInt(n: unknown, min: number, max: number): number {
@@ -213,9 +263,14 @@ export class ScriptSandbox {
     return new Promise<SandboxRunResult>((resolve) => {
       this.currentResolve = resolve;
 
+      // BUG-010 Fix: User-Code wird VOR dem Worker-Bau in die Source einge-
+      // bettet (anstatt zur Run-Time via `new Function` ausgeführt, was CSP
+      // 'unsafe-eval' bräuchte). Die Worker-Source ist pro Run unterschiedlich,
+      // jeder Run kriegt einen frischen Blob.
       let worker: WorkerLike;
       try {
-        worker = _workerFactory(SANDBOX_WORKER_SOURCE);
+        const sourceWithCode = buildWorkerSource(code);
+        worker = _workerFactory(sourceWithCode);
       } catch (e: unknown) {
         const msg = e instanceof Error ? e.message : String(e);
         this.appendLog("system", "Worker construction failed: " + msg, onLog);
@@ -289,8 +344,9 @@ export class ScriptSandbox {
         cleanup("timeout", `Script exceeded ${maxRuntimeMs}ms`);
       }, maxRuntimeMs);
 
-      // Code anstoßen
-      worker.postMessage({ type: "exec", code });
+      // BUG-010 Fix: Kein separates exec-postMessage mehr — der User-Code ist
+      // bereits Teil der Worker-Source und läuft beim Worker-Start automatisch.
+      // Reply-Promises queueen sicher bis der main-Thread-Listener attached ist.
     });
   }
 

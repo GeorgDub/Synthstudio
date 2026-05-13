@@ -18,10 +18,10 @@
 /* eslint-disable */
 
 /** SHA-256 des Source-Files (sandbox-runtime.ts) zum Zeitpunkt der Generierung. */
-export const SANDBOX_RUNTIME_SOURCE_SHA256 = "40f93f5d2c1bc5d38873c918cfd5f01564e628fac648c38def212572a34e59c7";
+export const SANDBOX_RUNTIME_SOURCE_SHA256 = "fdd7fcee5c0d25fe18ecbd4f46261cc3779d2e14987f0037760d00347a51ce4f";
 
 /** SHA-256 des transpilierten Outputs (deterministisch bei gleicher esbuild-Version). */
-export const SANDBOX_WORKER_SOURCE_SHA256 = "bcec7abb7e3243af8205687ae609069af2734c4632192030bb12c9cbd84f7c7e";
+export const SANDBOX_WORKER_SOURCE_SHA256 = "6ca8a15d22f4a997d0699fb9ec74f71e1194ad6a8b1871168295b4afabc781ae";
 
 /**
  * Transpilierter Sandbox-Worker-Quelltext. Wird zur Runtime via Blob-URL in
@@ -146,20 +146,19 @@ var __name = (target, value) => __defProp(target, "name", { value, configurable:
     Object.freeze(Object.getPrototypeOf(ss));
   } catch {
   }
-  self.addEventListener("message", async (event) => {
-    const msg = event.data;
-    if (msg?.type !== "exec") return;
+  (async () => {
     try {
-      const userFn = new Function(
-        "ss",
-        '"use strict"; return (async () => { ' + (msg.code ?? "") + " })();"
-      );
-      await userFn(ss);
+      const __userScriptResult = await (async () => {
+        "use strict";
+        const __ssMarker = "__SYNTHSTUDIO_USER_CODE_INSERTION_POINT_v1__";
+        return __ssMarker;
+      })();
+      void __userScriptResult;
       __bridgePost({ type: "done" });
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       __bridgePost({ type: "error", message });
     }
-  });
+  })();
 })();
 `;
