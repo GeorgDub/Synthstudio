@@ -127,6 +127,30 @@ test.describe("MIG-3 – dockview popout in Electron", () => {
     console.log("Popout data-theme:", popoutTheme);
     expect(popoutTheme).toBe("neon");
 
+    // MIG-3E: Theme WÄHREND popout offen wechseln → popout sollte mit-syncen
+    await page.evaluate(() => {
+      // applyTheme aus ThemeSettings — wir nutzen die public API direkt
+      // via dispatching ein synthetisches ts-event ginge auch, aber direct
+      // setAttribute simuliert was applyTheme tut + notifyThemeChanged
+      document.documentElement.setAttribute("data-theme", "warm");
+      // Simuliert applyTheme's IPC-Trigger
+      const api = (window as Window & { electronAPI?: { notifyThemeChanged?: () => void } }).electronAPI;
+      api?.notifyThemeChanged?.();
+    });
+    await page.waitForTimeout(800);
+
+    const popoutThemeAfterChange = await app.evaluate(async ({ BrowserWindow }) => {
+      const popout = BrowserWindow.getAllWindows().find(w =>
+        /popout\.html/.test(w.webContents.getURL())
+      );
+      if (!popout) return null;
+      return await popout.webContents.executeJavaScript(
+        "document.documentElement.getAttribute('data-theme')"
+      ) as string | null;
+    });
+    console.log("Popout data-theme after change:", popoutThemeAfterChange);
+    expect(popoutThemeAfterChange).toBe("warm");
+
     // 6. Crash-Log auf Fehler prüfen
     const userData = await app.evaluate(({ app }) => app.getPath("userData"));
     const crashLog = path.join(userData, "crash.log");

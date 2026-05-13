@@ -226,6 +226,9 @@ interface ElectronAPI {
   logRendererCrash(source: string, message: string, stack?: string): void;
   logRendererEvent(label: string, payload?: Record<string, unknown>): void;
 
+  /** MIG-3E: Signalisiert main dass das Theme gewechselt hat → broadcast an alle popouts. */
+  notifyThemeChanged(): void;
+
   // ── App-Info ──────────────────────────────────────────────────────────────
   getVersion(): Promise<string>;
   getPlatform(): Promise<string>;

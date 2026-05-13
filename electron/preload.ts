@@ -56,6 +56,14 @@ const electronAPI = {
     ipcRenderer.send("renderer:event", { label, payload });
   },
 
+  /**
+   * MIG-3E: Signalisiert Theme-Wechsel an main → main re-syncht alle offenen
+   * dockview-popout BrowserWindows via webContents.executeJavaScript.
+   */
+  notifyThemeChanged: (): void => {
+    ipcRenderer.send("popout:theme-changed");
+  },
+
   // ── App-Info ─────────────────────────────────────────────────────────────────
   getVersion: (): Promise<string> =>
     ipcRenderer.invoke("app:get-version"),

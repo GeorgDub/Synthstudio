@@ -101,8 +101,13 @@ export function applyTheme(theme: ThemeId): void {
   } else {
     document.documentElement.setAttribute("data-theme", theme);
   }
-  // MIG-3C: alle dockview-popout Fenster bekommen das Theme mit
+  // MIG-3C: Browser-Mode cross-window DOM-Sync
   void import("@/utils/popoutThemeSync").then(m => m.broadcastThemeToPopouts());
+  // MIG-3E: Electron-Mode — main re-syncht alle offenen popout-BrowserWindows
+  try {
+    (window as Window & { electronAPI?: { notifyThemeChanged?: () => void } })
+      .electronAPI?.notifyThemeChanged?.();
+  } catch { /* not in Electron */ }
 }
 
 export function loadSavedTheme(): ThemeId {

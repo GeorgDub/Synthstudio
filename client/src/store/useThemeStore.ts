@@ -120,6 +120,10 @@ export function applyCustomTheme(id: string | null): void {
         persist();
         notify();
         void import("@/utils/popoutThemeSync").then(m => m.broadcastThemeToPopouts());
+    try {
+      (window as Window & { electronAPI?: { notifyThemeChanged?: () => void } })
+        .electronAPI?.notifyThemeChanged?.();
+    } catch { /* not in Electron */ }
         return;
     }
 
@@ -170,6 +174,10 @@ export function applyCustomTheme(id: string | null): void {
     }
     // MIG-3C: dockview-popout-Fenster bekommen Custom-Theme-Style mit
     void import("@/utils/popoutThemeSync").then(m => m.broadcastThemeToPopouts());
+    try {
+      (window as Window & { electronAPI?: { notifyThemeChanged?: () => void } })
+        .electronAPI?.notifyThemeChanged?.();
+    } catch { /* not in Electron */ }
 }
 
 // When a base theme is applied, deactivate any custom theme

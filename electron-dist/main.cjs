@@ -562,43 +562,65 @@ function createWindow() {
         electron_1.shell.openExternal(url);
         return { action: "deny" };
     });
-    // ── MIG-3C: dockview-popout-Theme-Sync via executeJavaScript ────────────────
+    // ── MIG-3C/D: dockview-popout-Theme-Sync via executeJavaScript ──────────────
     // Cross-window setAttribute() funktioniert in Electron nicht reliable, weil
     // jede BrowserWindow eigenen Renderer-Prozess hat. Wir injizieren das Theme
     // direkt via webContents.executeJavaScript nachdem die popout-Page geladen ist.
-    mainWindow.webContents.on("did-create-window", (childWindow) => {
-        const url = childWindow.webContents.getURL();
-        if (!/popout\.html/.test(url) && !/popout\.html/.test(childWindow.webContents.getURL())) {
-            // URL kann beim did-create-window noch leer sein → wir prüfen erneut nach did-finish-load
+    //
+    // MIG-3E (v1.57): Set<BrowserWindow> trackt offene Popouts, IPC-Channel
+    // 'popout:theme-changed' broadcastet auch BEI THEME-WECHSEL re-sync an alle.
+    /** Set aller offenen dockview-popout BrowserWindows (für Theme-Re-Sync). */
+    const _dockviewPopouts = new Set();
+    /** Wendet das aktuelle Theme aus mainWindow auf eine Popout-BrowserWindow an. */
+    async function applyThemeToPopout(popout) {
+        if (!mainWindow || mainWindow.isDestroyed() || popout.isDestroyed())
+            return;
+        try {
+            const dataTheme = await mainWindow.webContents.executeJavaScript("document.documentElement.getAttribute('data-theme')");
+            const customStyleText = await mainWindow.webContents.executeJavaScript("(document.getElementById('ss-custom-theme-style')?.textContent || null)");
+            const themeJson = JSON.stringify(dataTheme ?? null);
+            const styleJson = JSON.stringify(customStyleText ?? null);
+            const code = `(() => {
+        const t = ${themeJson};
+        if (t) document.documentElement.setAttribute('data-theme', t);
+        else document.documentElement.removeAttribute('data-theme');
+        const old = document.getElementById('ss-custom-theme-style');
+        if (old) old.remove();
+        const s = ${styleJson};
+        if (s) {
+          const el = document.createElement('style');
+          el.id = 'ss-custom-theme-style';
+          el.textContent = s;
+          document.head.appendChild(el);
         }
-        const applyTheme = async () => {
-            try {
-                const dataTheme = await mainWindow.webContents.executeJavaScript("document.documentElement.getAttribute('data-theme')");
-                const customStyleText = await mainWindow.webContents.executeJavaScript("(document.getElementById('ss-custom-theme-style')?.textContent || null)");
-                const themeJson = JSON.stringify(dataTheme ?? null);
-                const styleJson = JSON.stringify(customStyleText ?? null);
-                const code = `(() => {
-          const t = ${themeJson};
-          if (t) document.documentElement.setAttribute('data-theme', t);
-          else document.documentElement.removeAttribute('data-theme');
-          const old = document.getElementById('ss-custom-theme-style');
-          if (old) old.remove();
-          const s = ${styleJson};
-          if (s) {
-            const el = document.createElement('style');
-            el.id = 'ss-custom-theme-style';
-            el.textContent = s;
-            document.head.appendChild(el);
-          }
-        })();`;
-                await childWindow.webContents.executeJavaScript(code);
-                (0, crashLog_1.logEvent)("dockview:popout-theme-applied", { theme: dataTheme });
+      })();`;
+            await popout.webContents.executeJavaScript(code);
+            (0, crashLog_1.logEvent)("dockview:popout-theme-applied", { theme: dataTheme });
+        }
+        catch (err) {
+            (0, crashLog_1.logCrash)("dockview:popout-theme", err);
+        }
+    }
+    mainWindow.webContents.on("did-create-window", (childWindow) => {
+        _dockviewPopouts.add(childWindow);
+        childWindow.on("closed", () => {
+            _dockviewPopouts.delete(childWindow);
+        });
+        childWindow.webContents.once("did-finish-load", () => {
+            void applyThemeToPopout(childWindow);
+        });
+    });
+    // IPC-Channel — Renderer ruft das auf nachdem applyTheme / applyCustomTheme
+    // im Hauptfenster gelaufen ist. Wir re-syncen alle offenen popouts.
+    electron_1.ipcMain.on("popout:theme-changed", () => {
+        (0, crashLog_1.logEvent)("popout:theme-changed", { popoutCount: _dockviewPopouts.size });
+        for (const popout of _dockviewPopouts) {
+            if (popout.isDestroyed()) {
+                _dockviewPopouts.delete(popout);
+                continue;
             }
-            catch (err) {
-                (0, crashLog_1.logCrash)("dockview:popout-theme", err);
-            }
-        };
-        childWindow.webContents.once("did-finish-load", applyTheme);
+            void applyThemeToPopout(popout);
+        }
     });
     // ── Fenster-Events ──────────────────────────────────────────────────────────
     mainWindow.on("close", (event) => {
