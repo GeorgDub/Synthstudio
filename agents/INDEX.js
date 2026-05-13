@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "1.25.0",
+    version: "1.63.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -358,6 +358,100 @@ const INDEX = {
       relatedFiles: [
         "client/src/components/PerformanceMode/PatternLaunchPad.tsx"
       ]
+    },
+    "BUG-017": {
+      title:   "Popup-Fenster (Performance/FX) konnten via Datei→Beenden die ganze App schließen",
+      severity: "critical",
+      details:  "User-Report: in Performance-Mode-Popup auf 'Beenden' geklickt → komplette App quittet statt nur des Popups. Ursache: Popup-BrowserWindows erbten das Application-Menü inkl. role:quit auf Win/Linux. Fix in electron/main.ts: (1) Popup-Windows (perf-popup, fx-popup) rufen `win.setMenu(null)` → keine geerbten Accelerators. (2) Datei→Beenden ist jetzt context-aware: prüft BrowserWindow.getFocusedWindow() vor app.quit() — wenn ein Popup fokussiert ist, schließt nur das Popup. Mac role:close unverändert (bereits per-window-korrekt).",
+      fixed:    true,
+      foundBy:  "user (v1.27.0)",
+      fixedBy:  "backend",
+      fixedIn:  "8249a13 (v1.27.0)",
+      relatedFiles: [
+        "electron/main.ts"
+      ]
+    },
+    "BUG-018": {
+      title:   "Popup ✕-Button beendete weiterhin die gesamte App (Regression nach BUG-017)",
+      severity: "critical",
+      details:  "Mehrstufiger Folgebug zu BUG-017, in vier Anläufen (v1, v2, v3, v4) gefixt. Symptom: ✕ in Sample-Browser/Mixer/Pattern-Generator Popups schloss die ganze App. Ursachen-Kaskade: (1) window-all-closed-Handler feuerte fälschlich app.quit() auch wenn mainWindow noch lebte → Fix v1 (v1.29.0): `mainWindowDestroyed` Flag + defensive `show()+focus()` statt quit. (2) Pin-Label 'Pin' wurde mit 'Re-attach' verwechselt → v3 (v1.30.0): Rename auf '⬆ Top' + nuclear `before-quit` Guard via `userInitiatedQuit` Whitelist (alle legitimen Quit-Pfade setzen das Flag, alle anderen Quits werden präventDefault + mainWindow.show()). (3) v4 (v1.31.0): Cascade-Detection — `lastPopupCloseTime` markiert jedes Popup-Close; wenn mainWindow.on('close') <300ms danach feuert, ist es eine OS-WM_CLOSE-Kaskade durch parent-child-Beziehung und wird geblockt. (4) Final-Fix in BUG-019: parent-Property komplett von allen Popups entfernt → keine WM_CLOSE-Kaskade mehr möglich.",
+      fixed:    true,
+      foundBy:  "user (v1.28.0)",
+      fixedBy:  "backend",
+      fixedIn:  "4c8b644 (v1.29.0) → 53cb804 (v1.30.0) → cbf4907 (v1.31.0) → 9390b2d (v1.34.0)",
+      relatedFiles: [
+        "electron/main.ts",
+        "client/src/components/DetachableWindowHeader.tsx"
+      ]
+    },
+    "BUG-019": {
+      title:   "Popup-Re-Attach (Anpinnen) crasht App auf Windows trotz BUG-018-Stack",
+      severity: "critical",
+      details:  "Trotz cascade-detection in v1.31 blieb auf Windows der Crash beim Re-Attach. Root-Cause: alle Popup-BrowserWindows hatten `parent: mainWindow ?? undefined` gesetzt — auf Windows kann ein frameless child window bei bestimmten Close-Paths eine WM_CLOSE an den Parent senden. Fix: parent-Property aus ALLEN sechs createXWindow-Funktionen entfernt (Performance, FX per channel, Mixer, Sample-Browser, Pattern-Gen, generic-singleton factory). Popups sind jetzt echte standalone-Windows. Programmatic cascade-close MAIN → POPUPS bleibt in mainWindow.on('closed') erhalten. Architekturkonform mit User-Wunsch 'eigenständige Fenster wie im Browser'.",
+      fixed:    true,
+      foundBy:  "user (v1.33.0)",
+      fixedBy:  "backend",
+      fixedIn:  "9390b2d (v1.34.0)",
+      relatedFiles: [
+        "electron/main.ts"
+      ]
+    },
+    "BUG-020": {
+      title:   "Performance-Mode Popup zeigt keinen 📌-Anpinn-Button, nur internes ESC ✕",
+      severity: "medium (UX)",
+      details:  "PatternLaunchPad rendert mit `fixed inset-0 z-50` und versteckt damit den DetachableWindowHeader des Popup-Fensters. Folge: User kann die Performance-Mode-Popup nicht über die standardisierte 'Anpinnen'-Geste re-docken. Fix: neue `popupMode` Prop auf PatternLaunchPad (default false). Bei true wird `flex-1 min-h-0` relative statt fixed inset-0 absolute gerendert → DetachableWindowHeader bleibt sichtbar. Inline-Fullscreen-Verhalten in App.tsx unverändert. PerformancePopupApp übergibt jetzt popupMode=true.",
+      fixed:    true,
+      foundBy:  "user (v1.33.0)",
+      fixedBy:  "frontend",
+      fixedIn:  "9390b2d (v1.34.0)",
+      relatedFiles: [
+        "client/src/components/PerformanceMode/PatternLaunchPad.tsx",
+        "client/src/components/Popups/PerformancePopupApp.tsx"
+      ]
+    },
+    "BUG-021": {
+      title:   "Native main-process crash bei Chromium window.close() destruction",
+      severity: "critical",
+      details:  "v1.41 crash.log zeigt: nach popup:close-end stoppt der heartbeat sofort, kein render-process-gone, kein child-process-gone, kein SIGTERM → nativer Segfault in Chromiums BrowserWindow.close()-Path. Bekannter Electron-Quirk: win.close() aus einem IPC-Handler racet mit der close-event-chain. Fix: neuer `destroyPopupSafely(key, win, isFx?)`-Helper. Persistiert Layout manuell (umgeht close-event-Handler) und ruft `win.destroy()` statt `win.close()` — überspringt die close-event-chain komplett und geht direkt in sicherere Destruction. Alle 6 IPC close-handlers nutzen jetzt destroyPopupSafely. Plus: VALID_SINGLETON_KEYS + mapKeyPrefixToSingleton-Mapper. Folge-Bug-Risiko: closed-Event kommt nach destroy() trotzdem, aber close-Event nicht → erzeugt BUG-023.",
+      fixed:    true,
+      foundBy:  "user (v1.41 crash.log)",
+      fixedBy:  "backend",
+      fixedIn:  "67dda64 (v1.42.0)",
+      relatedFiles: [
+        "electron/main.ts"
+      ]
+    },
+    "BUG-022": {
+      title:   "Menü-Aktionen feuerten doppelt (Regression nach v1.46 FEAT-MENU-WIRING)",
+      severity: "high",
+      details:  "v1.46.0 (FEAT-MENU-WIRING) ergänzte einen useEffect in App.tsx der Music-Production Menü-IPCs an KB_ACTION_EVENT bridged. Übersehen: useElectronMenuBindings (Zeile 1505+) verdrahtete dieselben IPCs bereits. Folge: jeder Menü-Klick feuerte zwei Listener — pattern-next skippte 2 Patterns, bpm-up addierte 2 etc. Fix: useEffect aus FEAT-MENU-WIRING entfernt. Einziger zusätzlicher Nutzen aus v1.46 bleibt: onOpenAudioWorkbench ruft jetzt zusätzlich setActiveTool('workbench') auf, damit der Tools-Tab direkt im Workbench-Sub-Tab landet.",
+      fixed:    true,
+      foundBy:  "user (v1.46.0 regression report)",
+      fixedBy:  "frontend",
+      fixedIn:  "899dd9e (v1.47.0)",
+      relatedFiles: [
+        "client/src/App.tsx"
+      ]
+    },
+    "BUG-023": {
+      title:   "Anpinnen verschwindet ohne wiederzukehren — Folgebug von BUG-021 destroy()",
+      severity: "critical",
+      details:  "Zweiteiliger Bug. (a) v1.51.0 Fix: BUG-021's `win.destroy()` feuert keine 'closed'-Events am BrowserWindow → mixer/sample-browser/perf-window:closed IPC werden nie gesendet → Main-Renderer bleibt im 'Popup ist offen'-State, Inline-View kommt nicht zurück. User sieht NICHTS. Fix: neuer `getClosedEventChannel(key, isFx)`-Helper mapped Popup-Key auf IPC-Channel. destroyPopupSafely sendet die closed-IPC manuell an mainWindow BEVOR win.destroy(). FX-Variante mit channelId-Payload. (b) v1.53.0 Fix für Restproblem: zwei verkettete Bugs identifiziert via E2E-Test mit echter Electron-Instanz. (1) useElectron() lieferte auf jedem Render neue Objekt-Referenz → Popup-Apps mit `[electron]`-deps re-sendeten request-state bei jedem Render. (2) Mit destroy() überleben in-flight request-state messages die Destruction und werden nach closed-Event geliefert → setMixerPopupOpen(true) → UI bleibt im 'Hierher zurückholen'-Zustand. Fix: alle 5 Popup-Apps nutzen jetzt `useEffect(..., [])` statt `[electron]` für initial-sync (request-state genau einmal beim Mount). App.tsx hat `mixerJustClosedRef` Guard der late request-state für 1.5s nach Close ignoriert (defense-in-depth).",
+      fixed:    true,
+      foundBy:  "user (post-v1.42.0 BUG-021 follow-up)",
+      fixedBy:  "backend + frontend",
+      fixedIn:  "1928810 (v1.51.0) + 07e2adf (v1.53.0)",
+      relatedFiles: [
+        "electron/main.ts",
+        "electron/useElectron.ts",
+        "client/src/App.tsx",
+        "client/src/components/Popups/MixerPopupApp.tsx",
+        "client/src/components/Popups/PerformancePopupApp.tsx",
+        "client/src/components/Popups/SampleBrowserPopupApp.tsx",
+        "client/src/components/Popups/PatternGeneratorPopupApp.tsx",
+        "client/src/components/Popups/FxPopupApp.tsx",
+        "tests/electron/e2e/bug-023-anpinnen.spec.ts"
+      ]
     }
   },
 
@@ -365,6 +459,28 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-14T00:00:00.000Z",
+      done: [
+        "INDEX-CATCHUP: INDEX.js nach 38 Versionen Pflege-Rückstand aktualisiert. Version-Header 1.25.0 → 1.63.0. Bug-Index um BUG-017..BUG-023 ergänzt (Multi-Window-Popup-Crash-Serie + native Chromium destroy-Bug + Menü-Doppel-Listener). Dieser konsolidierte Eintrag fasst alle Releases v1.26.0 → v1.63.0 zusammen — Einzel-Commit-Details sind via `git log` weiterhin abrufbar.",
+        "PHASE MULTI-WINDOW (v1.26.0–v1.34.0): Aus dem FX-Window PoC (v1.26.0) wurde eine durchgehende Multi-Window-Architektur. Pinnable Windows: Mixer (v1.27.0), Sample-Browser + Pattern-Generator (v1.28.0), Keyboard-Sampler + Chord-Progressions + Pattern-Library (v1.29.0). Layout-Persistence (auto-reopen, bounds, alwaysOnTop) via AppStore.popupWindowLayouts. Inline-Panels werden im Hauptfenster ausgeblendet wenn Popup offen + 'Hierher zurückholen'-Button. Begleitende Bug-Welle BUG-017→BUG-018(v1-v4)→BUG-019→BUG-020 — siehe bugs-Sektion. Multi-Provider AI (Anthropic + OpenAI) ebenfalls in v1.26.0.",
+        "PHASE LIVE-RECORDING + AUDIO-INPUT (v1.31.0–v1.33.0): Live Step Recording Welle 1 — MPC-Overdub via useLiveStepRecorder (stepinput:noteon → aktiver Step der MIDI-Cat-gematchten Part). Welle 2 (v1.32.0) — Replace-Mode + Punch-In/Out mit Wrap-Around + RecordSettingsPopover. Audio-Input UX-Polish (v1.33.0) — Device-Picker, Live-Duration-Timer mm:ss, Rename-Before-Save-Dialog. 24+ neue Vitest-Tests in live-step-recorder + audio-input-recorder.",
+        "PHASE DOCKVIEW-WORKSPACE (v1.35.0–v1.37.0, v1.54.0–v1.57.0): Crash-Diagnostics-Foundation (DIAG-2..5) + dockview-react als Workspace-Foundation. MIG-2B (v1.36.0) Mixer + Inspector PoC behind feature flag. MIG-2C (v1.37.0) 5-Panel-Workspace (Sequencer + Song + Humanizer). MIG-3-Serie (v1.54.0–v1.57.0): Electron-Popout via dockview-react addPopoutGroup() → Theme-Propagation via Electron-IPC statt cross-window DOM → Theme-Wechsel propagiert auch zu offenen Popouts.",
+        "PHASE AUDIO-WORKBENCH (v1.43.0–v1.50.0): Inline Trim+Normalize-Panels statt prompt() (v1.43) → Drag-to-select Region auf Waveform-Canvas (v1.44) → Undo-Stack mit Ctrl+Z, max 10 Snapshots (v1.45) → Play/Stop Buffer-Vorschau (v1.48) → Cut-Button entfernt Selection (v1.49) → 7 Playwright Smoke-Tests in tests/web/audio-workbench.spec.ts (v1.50). Aus dem v1.23-Roadmap-Item 'Audio-Workbench Multi-Track-Editor' ist ein vollwertiger Audacity-Style Editor geworden.",
+        "PHASE MIDI/MENU/MISC (v1.38.0–v1.41.0, v1.46.0–v1.47.0): generic JSON MIDI controller layout import (v1.39), DIAG-Logging-Reihe (v1.38, v1.40) + heartbeat + child-process-gone, ai-welle4 (v1.41) — Templates-Dropdown + Cost-Tracking, FEAT-MENU-WIRING (v1.46) verdrahtete Music-Production Menübar-Events an KB_ACTION_EVENT → BUG-22 Doppel-Listener-Fix (v1.47).",
+        "PHASE FLP-IMPORT (v1.59.0–v1.63.0): FL-Studio .flp Pattern-Import in Drum-Machine. v1.59 initialer Parser. v1.60 realistischer Synthese-Test + OOM-Safety im Parser. v1.61 FL Studio 20+ Support (NotesEvent ID 0xE0). v1.62 Multi-Bar-Import → mehrere Patterns. v1.63 ProjectManager-Import-Flow nutzt vollen FLP-Parser. PERF-CSP (v1.58) als Vorbereitung: manus-runtime nur im Dev → 366kB pro HTML weniger Bundle."
+      ],
+      next: [
+        "Phase-Q-Roadmap aus BUG-011 weiter offen: Multi-Track-Editor + Vocal/Kick-Trennung im AudioWorkbench (über die v1.43-v1.50 Welle hinaus).",
+        "ARCH-MOD (vom v1.34.0-Commit erwähnt): browser-tab-style modular workspace mit detach/drag-to-combine/persist-layouts auf Basis der Multi-Window-Foundation.",
+        "FEAT-INSP (vom v1.34.0-Commit erwähnt): separate Channel Inspector von MixerView damit beide unabhängig pinnable werden — teilweise in v1.35.0 angegangen, vollständige Trennung weiterhin offen.",
+        "FLP-Import (v1.63.0+): Drum-Notes funktionieren, melodische Instrument-Pattern-Mapping ist offen. Nächster sinnvoller Schritt wenn User wieder einen FLP-Use-Case hat."
+      ],
+      changed: [
+        "agents/INDEX.js"
+      ]
+    },
     {
       agent:     "frontend",
       timestamp: "2026-05-13T11:45:00.000Z",
