@@ -264,6 +264,8 @@ interface AudioWorkbenchProps {
   onSamplesAdded: (samples: Sample[]) => void;
 }
 
+const MAX_UNDO_STEPS = 10;
+
 export function AudioWorkbench({ onSamplesAdded }: AudioWorkbenchProps) {
   const [buffer, setBuffer] = useState<AudioBuffer | null>(null);
   const [fileName, setFileName] = useState<string | null>(null);
@@ -271,6 +273,9 @@ export function AudioWorkbench({ onSamplesAdded }: AudioWorkbenchProps) {
   const [processing, setProcessing] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Undo-Stack — speichert die letzten N AudioBuffers vor jedem applyEdit
+  const [undoStack, setUndoStack] = useState<AudioBuffer[]>([]);
 
   type EditMode = "none" | "trim" | "normalize";
   const [editMode, setEditMode] = useState<EditMode>("none");
@@ -298,6 +303,7 @@ export function AudioWorkbench({ onSamplesAdded }: AudioWorkbenchProps) {
       setBuffer(decoded);
       setFileName(file.name);
       setStems([]);
+      setUndoStack([]); // Neuer Buffer → History zurücksetzen
     } catch (err) {
       console.error("Audio-Datei konnte nicht geladen werden:", err);
     }
@@ -328,11 +334,36 @@ export function AudioWorkbench({ onSamplesAdded }: AudioWorkbenchProps) {
 
   const applyEdit = useCallback((edit: (b: AudioBuffer) => AudioBuffer) => {
     if (!buffer) return;
-    const ctx = new AudioContext();
-    setBuffer(edit.length >= 2 ? edit(buffer) : edit(buffer));
+    setUndoStack(s => [...s, buffer].slice(-MAX_UNDO_STEPS));
+    setBuffer(edit(buffer));
     setStems([]); // Stems invalidieren
-    void ctx; // ungenutzte var-Warnung vermeiden
   }, [buffer]);
+
+  const handleUndo = useCallback(() => {
+    setUndoStack(s => {
+      if (s.length === 0) return s;
+      const prev = s[s.length - 1];
+      setBuffer(prev);
+      setStems([]);
+      setSelStart(null);
+      setSelEnd(null);
+      return s.slice(0, -1);
+    });
+  }, []);
+
+  // Keyboard-Shortcut: Ctrl+Z für Undo
+  React.useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z" && !e.shiftKey) {
+        if (undoStack.length > 0) {
+          e.preventDefault();
+          handleUndo();
+        }
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [undoStack.length, handleUndo]);
 
   const handleReverse    = useCallback(() => buffer && applyEdit(() => reverseBuffer(new AudioContext(), buffer)), [buffer, applyEdit]);
   const handleFadeIn     = useCallback(() => buffer && applyEdit(() => fadeIn(new AudioContext(), buffer, 0.5)), [buffer, applyEdit]);
@@ -517,6 +548,14 @@ export function AudioWorkbench({ onSamplesAdded }: AudioWorkbenchProps) {
           {/* ── Audacity-Style Edit-Toolbar ──────────────────────────────── */}
           <div className="flex flex-wrap gap-1.5 p-2 bg-bg-elevated rounded-lg">
             <span className="text-[10px] text-text-dim self-center mr-1 uppercase tracking-wider">Edit:</span>
+            <button
+              onClick={handleUndo}
+              disabled={undoStack.length === 0}
+              title="Letzte Aktion zurücknehmen (Ctrl+Z)"
+              className="px-2 py-1 text-[10px] rounded bg-bg-panel border border-border-color text-text-primary hover:border-accent-primary disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              ⟲ Undo{undoStack.length > 0 && <span className="ml-1 text-text-dim">({undoStack.length})</span>}
+            </button>
             <button onClick={openTrim}          className={`px-2 py-1 text-[10px] rounded bg-bg-panel border text-text-primary hover:border-accent-primary ${editMode==="trim" ? "border-accent-primary" : "border-border-color"}`}>✂ Trim</button>
             <button onClick={handleReverse}     className="px-2 py-1 text-[10px] rounded bg-bg-panel border border-border-color text-text-primary hover:border-accent-primary">↩ Reverse</button>
             <button onClick={openNormalize}     className={`px-2 py-1 text-[10px] rounded bg-bg-panel border text-text-primary hover:border-accent-primary ${editMode==="normalize" ? "border-accent-primary" : "border-border-color"}`}>📈 Normalize…</button>
