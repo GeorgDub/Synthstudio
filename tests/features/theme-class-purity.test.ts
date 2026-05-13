@@ -1,30 +1,19 @@
 /**
  * tests/features/theme-class-purity.test.ts
  *
- * Regression test for FOLLOWUP-110, TASK-113 and TASK-122.
+ * Regression test for FOLLOWUP-110, TASK-113, TASK-122 and TASK-125.
  *
- * Verifies that refactored components contain NO hardcoded Tailwind palette
- * colour classes (bg-slate-*, text-cyan-*, hover:bg-red-*, bg-[#...] etc.) —
- * only semantic tokens (bg-bg-base, text-text-primary, bg-accent-primary,
- * etc.) are allowed.
+ * Verifies that React components contain NO hardcoded Tailwind palette colour
+ * classes (bg-slate-*, text-cyan-*, hover:bg-red-*, bg-[#...] etc.) — only
+ * semantic tokens (bg-bg-base, text-text-primary, bg-accent-primary, etc.)
+ * are allowed.
  *
- * TASK-122 (final sweep): all components under client/src/components/ and
- * electron/components/ are individually guarded. New refactored files added:
- *   - CollabSplitView.tsx
- *   - DrumMachine.tsx
- *   - CollabStatus.tsx
- *   - EuclideanControls.tsx
- *   - MixAssistantPanel.tsx
- *   - ModMatrix.tsx
- *   - StepContextMenu.tsx
- *   - Humanizer.tsx
- *   - MidiSettings.tsx
- *   - NewProjectDialog.tsx
- *   - ProjectManager.tsx
- *   - Settings/ThemeSettings.tsx
- *   - SongTimeline.tsx
- *   - UpdateBadge.tsx
- *   - electron/components/ElectronDropZone.tsx
+ * TASK-125 (Glob-Hardening): The previous version hardcoded 19 file paths.
+ * New refactored components fell through the net until someone manually
+ * added them to the list. This version walks `client/src/components/**` and
+ * `electron/components/**` recursively via fs.readdirSync (no new runtime
+ * dependency) and registers an `it` block per *.tsx file found. New
+ * components are picked up automatically.
  *
  * Approach: read each file as text via fs.readFileSync, run a strict regex
  * over its content. Rendering with jsdom is avoided because most files pull
@@ -44,8 +33,8 @@
  * of scope.
  */
 import { describe, it, expect } from "vitest";
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { readFileSync, readdirSync, statSync, existsSync } from "node:fs";
+import { resolve, join, relative, sep } from "node:path";
 
 const ROOT = resolve(__dirname, "..", "..");
 
@@ -56,12 +45,7 @@ const HARDCODED_TAILWIND_CLASS =
 // Arbitrary value with hex literal inside a Tailwind utility.
 const ARBITRARY_HEX_CLASS = /\b(?:bg|text|border|ring|fill|stroke)-\[#[0-9a-fA-F]+\]/;
 
-// Subset of JSX/TSX content we want to scan — strip JS/TS string literals that
-// are NOT class attributes? Hard to do generically. We rely on the simple fact
-// that both regexes match Tailwind class shapes, which would not be present
-// in regular JS strings unless someone is genuinely writing a class.
 function findOffenders(content: string, pattern: RegExp): string[] {
-  // Split by newline to give exact line + occurrence for human debugging.
   const out: string[] = [];
   const lines = content.split(/\r?\n/);
   for (let i = 0; i < lines.length; i++) {
@@ -72,57 +56,112 @@ function findOffenders(content: string, pattern: RegExp): string[] {
 }
 
 /**
- * Helper to assert a single file is free of both hardcoded palette classes
- * AND arbitrary hex classes. Registers TWO `it` blocks so failure messages
- * are precise about which check failed.
+ * Recursively walks a directory and returns all matching files (relative
+ * paths, POSIX-style for stable test names regardless of OS).
+ *
+ * @param baseAbs Absolute path of the root being walked.
+ * @param matcher Predicate per absolute path. Receives the relative path
+ *                (from baseAbs) for filtering.
+ * @returns Sorted list of relative paths (POSIX-separated).
  */
-function expectNoHardcodedTailwindColors(relPath: string) {
-  const absPath = resolve(ROOT, relPath);
+function walkSync(baseAbs: string, matcher: (relPath: string) => boolean): string[] {
+  const collected: string[] = [];
 
-  it(`${relPath} – no hardcoded Tailwind palette classes`, () => {
-    const src = readFileSync(absPath, "utf-8");
-    const offenders = findOffenders(src, HARDCODED_TAILWIND_CLASS);
-    expect(
-      offenders,
-      `Hardcoded Tailwind classes found in ${relPath}:\n${offenders.join("\n")}`,
-    ).toEqual([]);
-  });
+  function recurse(currentAbs: string): void {
+    let entries: string[];
+    try {
+      entries = readdirSync(currentAbs);
+    } catch {
+      return; // unreadable dir → skip
+    }
+    for (const entry of entries) {
+      const abs = join(currentAbs, entry);
+      let st;
+      try {
+        st = statSync(abs);
+      } catch {
+        continue;
+      }
+      if (st.isDirectory()) {
+        // Skip standard dirs we never care about
+        if (entry === "node_modules" || entry === "dist" || entry === ".git") continue;
+        recurse(abs);
+      } else if (st.isFile()) {
+        const relPath = relative(baseAbs, abs).split(sep).join("/");
+        if (matcher(relPath)) collected.push(relPath);
+      }
+    }
+  }
 
-  it(`${relPath} – no arbitrary-value hex classes`, () => {
-    const src = readFileSync(absPath, "utf-8");
-    const offenders = findOffenders(src, ARBITRARY_HEX_CLASS);
-    expect(
-      offenders,
-      `Arbitrary hex classes found in ${relPath}:\n${offenders.join("\n")}`,
-    ).toEqual([]);
-  });
+  recurse(baseAbs);
+  return collected.sort();
 }
 
-describe("Theme-class purity — FOLLOWUP-110 / TASK-113", () => {
-  // Original four files (FOLLOWUP-110 + TASK-113)
-  expectNoHardcodedTailwindColors("client/src/components/Mixer/MixerView.tsx");
-  expectNoHardcodedTailwindColors("electron/components/ElectronTitleBar.tsx");
-  expectNoHardcodedTailwindColors("client/src/components/SampleBrowser/SampleBrowser.tsx");
-  expectNoHardcodedTailwindColors("client/src/components/SampleBrowser/AudioInputRecorder.tsx");
+/**
+ * Sammelt alle *.tsx-Dateien unter den angegebenen Roots — relativ zu ROOT,
+ * POSIX-Separator. Aufgerufen außerhalb von `it()` → Test-Bootstrap-Zeit,
+ * damit `it`-Blöcke statisch registriert werden (vitest erlaubt kein
+ * dynamisches `it` innerhalb von `it`).
+ */
+function collectComponentFiles(): string[] {
+  const roots = ["client/src/components", "electron/components"];
+  const all: string[] = [];
+  for (const root of roots) {
+    const baseAbs = resolve(ROOT, root);
+    if (!existsSync(baseAbs)) continue;
+    const found = walkSync(baseAbs, (rel) => rel.endsWith(".tsx"));
+    for (const rel of found) all.push(`${root}/${rel}`);
+  }
+  return all;
+}
+
+const COMPONENT_FILES = collectComponentFiles();
+
+// Defensive: wenn der Glob-Walker leer zurückkommt (z.B. Pfad-Annahme falsch),
+// soll der Test-Lauf NICHT silent pass — registriere einen Sentinel-Test.
+describe("Theme-class purity — component glob discovery (TASK-125)", () => {
+  it("finds at least 10 *.tsx components across both roots", () => {
+    expect(COMPONENT_FILES.length).toBeGreaterThanOrEqual(10);
+  });
+
+  it("includes well-known TASK-122 refactored components", () => {
+    // Sanity check: ensure the walker found components we know are refactored.
+    const wellKnown = [
+      "client/src/components/DrumMachine/DrumMachine.tsx",
+      "client/src/components/SongTimeline/SongTimeline.tsx",
+      "client/src/components/Settings/ThemeSettings.tsx",
+      "electron/components/ElectronDropZone.tsx",
+    ];
+    for (const file of wellKnown) {
+      expect(COMPONENT_FILES, `Missing well-known file: ${file}`).toContain(file);
+    }
+  });
 });
 
-describe("Theme-class purity — TASK-122 (final sweep)", () => {
-  // Final-sweep refactored files
-  expectNoHardcodedTailwindColors("client/src/components/CollabSplitView/CollabSplitView.tsx");
-  expectNoHardcodedTailwindColors("client/src/components/DrumMachine/DrumMachine.tsx");
-  expectNoHardcodedTailwindColors("client/src/components/DrumMachine/CollabStatus.tsx");
-  expectNoHardcodedTailwindColors("client/src/components/DrumMachine/EuclideanControls.tsx");
-  expectNoHardcodedTailwindColors("client/src/components/DrumMachine/MixAssistantPanel.tsx");
-  expectNoHardcodedTailwindColors("client/src/components/DrumMachine/ModMatrix.tsx");
-  expectNoHardcodedTailwindColors("client/src/components/DrumMachine/StepContextMenu.tsx");
-  expectNoHardcodedTailwindColors("client/src/components/Humanizer/Humanizer.tsx");
-  expectNoHardcodedTailwindColors("client/src/components/MidiSettings/MidiSettings.tsx");
-  expectNoHardcodedTailwindColors("client/src/components/NewProjectDialog/NewProjectDialog.tsx");
-  expectNoHardcodedTailwindColors("client/src/components/ProjectManager/ProjectManager.tsx");
-  expectNoHardcodedTailwindColors("client/src/components/Settings/ThemeSettings.tsx");
-  expectNoHardcodedTailwindColors("client/src/components/SongTimeline/SongTimeline.tsx");
-  expectNoHardcodedTailwindColors("client/src/components/UpdateBadge.tsx");
-  expectNoHardcodedTailwindColors("electron/components/ElectronDropZone.tsx");
+describe("Theme-class purity — no hardcoded Tailwind palette classes", () => {
+  for (const relPath of COMPONENT_FILES) {
+    it(`${relPath}`, () => {
+      const src = readFileSync(resolve(ROOT, relPath), "utf-8");
+      const offenders = findOffenders(src, HARDCODED_TAILWIND_CLASS);
+      expect(
+        offenders,
+        `Hardcoded Tailwind classes found in ${relPath}:\n${offenders.join("\n")}`,
+      ).toEqual([]);
+    });
+  }
+});
+
+describe("Theme-class purity — no arbitrary-value hex classes", () => {
+  for (const relPath of COMPONENT_FILES) {
+    it(`${relPath}`, () => {
+      const src = readFileSync(resolve(ROOT, relPath), "utf-8");
+      const offenders = findOffenders(src, ARBITRARY_HEX_CLASS);
+      expect(
+        offenders,
+        `Arbitrary hex classes found in ${relPath}:\n${offenders.join("\n")}`,
+      ).toEqual([]);
+    });
+  }
 });
 
 describe("Theme-class purity — Regex sanity checks", () => {

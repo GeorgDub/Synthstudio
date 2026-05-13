@@ -778,6 +778,7 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
 
         {/* Makro-Panel */}
         <button
+          data-testid="toggle-macro-panel"
           onClick={() => setShowMacros(prev => !prev)}
           title="Makro-Steuerung (8 Makros)"
           className={[

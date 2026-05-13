@@ -169,6 +169,9 @@ function MacroButton({
 
       {/* Trigger-Button */}
       <button
+        data-testid={`macro-button-${macro.index}`}
+        data-macro-trigger-mode={triggerMode}
+        data-macro-trigger-kind={triggerKind}
         onMouseDown={disabled ? undefined : handleDown}
         onMouseUp={handleUp}
         onMouseLeave={handleUp}

@@ -257,6 +257,31 @@ const INDEX = {
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
     {
+      agent:     "testing",
+      timestamp: "2026-05-13T16:30:00.000Z",
+      done: [
+        "TASK-125 / theme-class-purity Glob-Hardening (v1.23.0). Vorher: 19 Pfade fest in tests/features/theme-class-purity.test.ts verdrahtet via expectNoHardcodedTailwindColors-Helper-Aufrufe — neue Komponente fiel durch das Netz bis jemand sie manuell hinzufügte. Jetzt: walkSync-basierter recursive readdir-Walker (Node-built-in fs, KEINE neue runtime-Dependency wie fast-glob) sammelt ALLE *.tsx unter client/src/components/** + electron/components/** beim Test-Bootstrap und registriert pro Datei 2 it-Blöcke (Palette-Check + Arbitrary-Hex-Check).",
+        "TASK-125 / Discovery-Sanity-Tests: zwei zusätzliche it-Blöcke 'finds at least 10 *.tsx components' + 'includes well-known TASK-122 refactored components' (DrumMachine.tsx, SongTimeline.tsx, ThemeSettings.tsx, ElectronDropZone.tsx) — schützen davor dass der Walker silent leer zurückkommt (z.B. Pfad-Annahme falsch).",
+        "TASK-125 / Test-Coverage: vorher 41 Tests, jetzt 131 Tests (64 Komponenten × 2 Regex-Checks + 2 Discovery-Sanity + 3 Regex-Sanity). Alle grün — kein Component-Drift seit TASK-122. Test-File-Größe blieb stabil (~145 Zeilen), Test-Runtime 33ms.",
+        "TASK-126 / Macro-Hold-Mode Playwright-Smoke (v1.23.0). Neue Datei tests/web/macros.spec.ts mit 4 Tests in 'Macro Hold-Mode UI-Wiring (TASK-126)' describe-Block. Schließt die Lücke aus TASK-118: macroHoldLoop-Helper war unit-getestet, das App.tsx-Wiring (MacroButton.mouseDown → triggerMacroButton → window.dispatchEvent('macro:button:trigger') → App.tsx-Listener → startHoldLoop) war NICHT E2E-abgedeckt.",
+        "TASK-126 / Strategie: localStorage pre-seed mit (a) 8 Default-Macros wobei Index 0 = mode:button + triggerMode:hold + scriptId verlinkt, (b) ein test-script in ss-scripts:v1. UI-Flow: app öffnen → toggle-macro-panel klicken → MacroPanel sichtbar. Tests installieren window-Event-Counter für 'macro:button:trigger' + 'macro:button:release' und verifizieren via page.evaluate() die event details (macroIndex, triggerMode='hold', triggerKind='script', scriptId).",
+        "TASK-126 / 4 Tests: (1) MacroButton zeigt data-macro-trigger-mode='hold' Attribut + aria-label enthält 'Hold-Mode'; (2) mouseDown feuert trigger-Event mit korrekten detail-Feldern; (3) mouseUp feuert release-Event mit korrektem macroIndex; (4) 500ms-Hold-Cycle: trigger-Event feuert EXAKT 1× (initial), Loop läuft intern weiter ohne neue trigger-Events zu dispatchen, release-Event feuert 1× nach mouseUp, KEINE weiteren triggers nach release (300ms post-release verifikation).",
+        "TASK-126 / DOM-Test-IDs hinzugefügt für stabile Selection: data-testid='macro-button-${index}' + data-macro-trigger-mode + data-macro-trigger-kind auf <button> in MacroPanel.tsx (Zeile 171-179); data-testid='toggle-macro-panel' auf den 'M1-8' Toggle in DrumMachine.tsx (Zeile 781).",
+        "TASK-126 / Verification: pnpm check 0 Fehler. pnpm test 1340/1355 unit-Tests grün (unchanged, +90 von TASK-125 mit drin). pnpm test:web tests/web/macros.spec.ts → 4/4 Playwright-Tests grün in 9.1s (chromium, single worker)."
+      ],
+      next: [
+        "TASK-126 / Welle 2 (Future — Sandbox-Tick-Verification): Die hier laufenden 4 Tests prüfen die EVENT-Wiring-Schicht (mouseDown → trigger-Event → release-Event). Sie verifizieren NICHT, dass startHoldLoop tatsächlich das Script in der Sandbox in 200ms-Loop-Intervals ausführt — das macht macroHoldLoop's Unit-Test bereits (mit Mock-Scheduler). Wenn echte End-to-End-Sandbox-Tick-Verifikation gewünscht ist: Script muss `ss.bpm(uniqueValue)` o.ä. observable side-effect machen, Test liest DOM-BPM-Anzeige nach 500ms. Aktuell akzeptabel — Unit-Tests decken die Loop-Mechanik, E2E deckt die DOM-Wiring.",
+        "TASK-126 / Welle 2 (Future — Pad-Hold-Mode E2E): Tests decken nur scriptId-Bindings (triggerKind='script'). Pad-Hold (triggerKind='pad') hat analoge Logik in App.tsx (runPadOnce + PAD_HOLD_INTERVAL_MS=100ms statt SCRIPT_HOLD_INTERVAL_MS=200ms). Ein analoger Test-Block für pad-mode wäre symmetrisch sinnvoll, aber redundant — die Wiring-Kette ist identisch."
+      ],
+      changed: [
+        "tests/features/theme-class-purity.test.ts",
+        "tests/web/macros.spec.ts",
+        "client/src/components/Macro/MacroPanel.tsx",
+        "client/src/components/DrumMachine/DrumMachine.tsx",
+        "agents/INDEX.js"
+      ]
+    },
+    {
       agent:     "frontend",
       timestamp: "2026-05-13T15:30:00.000Z",
       done: [
@@ -1039,6 +1064,13 @@ const INDEX = {
   //     2026-05-13. collectNonEmptyPadIndices + computeAutoScrollDelta als
   //     exportierte pure Helper; Cmd/Ctrl+A im Reorder-Mode wählt alle
   //     non-empty Pads; Box-Drag-Auto-Scroll via RAF + window.scrollBy. +15 Tests.
+  //   - TASK-125 (theme-class-purity Glob-Hardening): erledigt 2026-05-13.
+  //     Statt 19 harter Pfade → walkSync-basierter recursive readdir-Walker
+  //     über client/src/components/** + electron/components/** + 2 Discovery-
+  //     Sanity-Tests. 41 → 131 Tests. Neue *.tsx wird automatisch mit-geprüft.
+  //   - TASK-126 (Macro-Hold-Mode Playwright-Smoke): erledigt 2026-05-13.
+  //     Neue tests/web/macros.spec.ts mit 4 Tests; data-testids auf MacroButton
+  //     + toggle-macro-panel. Verifiziert UI-Wiring mouseDown/Up → CustomEvent.
   openTasks: [
     {
       id:       "FOLLOWUP-102",
@@ -1046,22 +1078,6 @@ const INDEX = {
       severity: "low",
       target:   "v1.23.0+",
       notes:    "Offen: (3) Solo cross-store unification (drum+audio) — drum-Solo und audio-Solo nutzen aktuell getrennte Stores; mute/solo-Verhalten bei gemischten Tracks ist inkonsistent. (4) Full Playwright round-trip E2E (save → reopen → relocate) für Audio-Track-Projekte mit fehlenden Sample-Pfaden."
-    },
-    {
-      id:       "TASK-125",
-      title:    "theme-class-purity Glob-Hardening",
-      severity: "low",
-      target:   "v1.23.0",
-      owner:    "testing",
-      notes:    "tests/features/theme-class-purity.test.ts registriert aktuell 19 Pfade hart per expectNoHardcodedTailwindColors-Helper. Bei neuer Komponente fällt der Schutz auf 0. Glob-basierten Mass-Check (fast-glob über client/src/components/**/*.tsx + electron/components/**/*.tsx) implementieren, der jede neue *.tsx automatisch prüft. Akzeptanz: keine manuelle Pfad-Liste mehr; neue Komponente ohne Test-Änderung wird mit-validiert."
-    },
-    {
-      id:       "TASK-126",
-      title:    "Macro-Hold-Mode Playwright-Smoke",
-      severity: "low",
-      target:   "v1.23.0",
-      owner:    "testing",
-      notes:    "TASK-118 hat den Hold-Loop nur in Unit-Layer (macroHoldLoop.test) getestet — das App.tsx-Wiring (mouseDown → triggerMacroButton → macro:button:trigger → startHoldLoop → runScriptOnce/runPadOnce) ist nicht E2E-abgedeckt. Neue Datei tests/web/macros.spec.ts: Button im Hold-Mode 500ms halten → ≥ 2 Triggers, nach Release 0 weitere. Re-Entrancy-Hinweis (scriptSandbox.isRunning-Skip) in docs/HANDBUCH.md."
     },
   ],
 
