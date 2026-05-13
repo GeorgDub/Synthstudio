@@ -67,6 +67,7 @@ import { useMetronomeStore } from "@/store/useMetronomeStore";
 import { useDrumMachineStore } from "@/store/useDrumMachineStore";
 import { useTransport } from "@/hooks/useTransport";
 import { useMidi } from "@/hooks/useMidi";
+import { useLiveStepRecorder } from "@/hooks/useLiveStepRecorder";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { MidiSettings } from "@/components/MidiSettings";
 import { ShortcutsHelp } from "@/components/ShortcutsHelp";
@@ -1138,6 +1139,15 @@ export default function App() {
       dmRef.current.setStepVelocity(partId, step, velocity);
     },
     parts: dm.getActivePattern()?.parts ?? [],
+  });
+
+  // ── Live Step Recording (MPC-Overdub-Style, post-v1.30.0) ─────────────────
+  // Wenn isRecording + isPlaying aktiv sind, werden MIDI-Note-Hits direkt als
+  // Steps in der aktiven Pattern aufgezeichnet (am currently-playing-step).
+  useLiveStepRecorder({
+    dm,
+    isRecording: project.isRecording,
+    isPlaying: project.isPlaying,
   });
 
   // ── Launchpad Grid Controller ─────────────────────────────────────────────

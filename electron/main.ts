@@ -151,6 +151,15 @@ function requestUserQuit(): void {
 }
 
 /**
+ * BUG-018 v4: Cascade-Detection — Timestamp wann zuletzt ein Popup-Fenster
+ * geschlossen wurde. Wenn `mainWindow.on('close')` innerhalb ~300ms danach
+ * feuert, ist das mit hoher Wahrscheinlichkeit ein OS-Cascade (Windows-Verhalten
+ * bei parent-child-Fenstern), nicht ein User-Click auf das Hauptfenster.
+ */
+let lastPopupCloseTime = 0;
+function markPopupClosed(): void { lastPopupCloseTime = Date.now(); }
+
+/**
  * Liest das gespeicherte Layout für ein Singleton-Popup und liefert die Bounds-
  * Override für den BrowserWindow-Konstruktor zurück (oder undefined).
  */
@@ -417,10 +426,25 @@ function createWindow(): void {
   });
 
   // ── Fenster-Events ──────────────────────────────────────────────────────────
-  mainWindow.on("close", () => {
-    // BUG-018 v1.29.0 fix: wenn User mainWindow explizit schließt (Alt+F4 / X),
-    // ist das ein legitimer User-Quit. Whitelist.
-    userInitiatedQuit = true;
+  mainWindow.on("close", (event) => {
+    // BUG-018 v4: Cascade-Detection. Wenn unmittelbar vorher ein Popup-Fenster
+    // geschlossen wurde, ist das hier KEIN User-Initiated-Close sondern ein
+    // OS-Window-Manager-Cascade (Windows: schließen eines Child-Windows mit
+    // parent: mainWindow kann ein WM_CLOSE auf den Parent feuern). Wir
+    // preventDefault — sonst stirbt die ganze App mit.
+    if (!userInitiatedQuit) {
+      const sincePopupClose = Date.now() - lastPopupCloseTime;
+      if (sincePopupClose < 300) {
+        event.preventDefault();
+        console.warn(
+          `[mainWindow close] BLOCKED: detected popup-close cascade (Δ=${sincePopupClose}ms). ` +
+          "Tray-Beenden / Datei-Beenden are the legitimate quit paths.",
+        );
+        return;
+      }
+      // Echter User-Close (Alt+F4 / native X / Shutdown) → legitimate
+      userInitiatedQuit = true;
+    }
     // Fenstergröße und -position vor dem Schließen speichern
     if (mainWindow && appStore) {
       const bounds = mainWindow.getBounds();
@@ -553,6 +577,7 @@ function createPerformanceWindow(): void {
 
   // Save bounds + alwaysOnTop kurz vor dem Schließen
   perfWindow.on("close", () => {
+    markPopupClosed();
     if (perfWindow) persistPopupLayout("performance", perfWindow);
   });
 
@@ -648,7 +673,7 @@ function createFxWindow(channelId: string): void {
   });
 
   // Save bounds vor dem Schließen
-  win.on("close", () => persistFxLayout(channelId, win));
+  win.on("close", () => { markPopupClosed(); persistFxLayout(channelId, win); });
 
   win.once("ready-to-show", () => {
     win.show();
@@ -728,6 +753,7 @@ function createMixerWindow(): void {
     alwaysOnTop: saved?.alwaysOnTop ?? false,
   });
   mixerWindow.on("close", () => {
+    markPopupClosed();
     if (mixerWindow) persistPopupLayout("mixer", mixerWindow);
   });
 
@@ -806,6 +832,7 @@ function createSampleBrowserWindow(): void {
     alwaysOnTop: saved?.alwaysOnTop ?? false,
   });
   sampleBrowserWindow.on("close", () => {
+    markPopupClosed();
     if (sampleBrowserWindow) persistPopupLayout("sampleBrowser", sampleBrowserWindow);
   });
 
@@ -879,6 +906,7 @@ function createPatternGenWindow(): void {
     alwaysOnTop: saved?.alwaysOnTop ?? false,
   });
   patternGenWindow.on("close", () => {
+    markPopupClosed();
     if (patternGenWindow) persistPopupLayout("patternGen", patternGenWindow);
   });
 
@@ -971,7 +999,7 @@ function createSimpleSingletonWindow(
     bounds: saved?.bounds,
     alwaysOnTop: saved?.alwaysOnTop ?? false,
   });
-  win.on("close", () => persistPopupLayout(config.key, win));
+  win.on("close", () => { markPopupClosed(); persistPopupLayout(config.key, win); });
 
   win.once("ready-to-show", () => win.show());
 

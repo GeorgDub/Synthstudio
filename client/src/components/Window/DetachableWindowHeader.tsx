@@ -5,37 +5,49 @@
  * Wird genutzt von:
  *  - PerformancePopupApp
  *  - FxPopupApp
- *  - MixerPopupApp (neu)
+ *  - MixerPopupApp
+ *  - SampleBrowserPopupApp
+ *  - PatternGeneratorPopupApp
+ *  - KeyboardSamplerPopupApp / ChordProgressionPopupApp / PatternLibraryPopupApp
  *
- * Verhalten:
- *  - 28px hohe schmale Leiste, Drag-Region für Fenster-Move.
- *  - Rechts: 📌 Pin-Toggle (Always-on-top) + ✕ Close-Button, beide no-drag
- *    damit sie klickbar bleiben.
- *  - Pin-State wird über IPC-Callback geliefert; Container ist stateless.
+ * Layout (post-v1.30.0 UX-Redesign nach User-Feedback):
+ *   - 28px hohe schmale Leiste, Drag-Region für Fenster-Move.
+ *   - EIN Button rechts: 📌 "Anpinnen" → schließt das Popup-Fenster.
+ *     Da der Main-Renderer auf das Window-Closed-Event hört, wird das Panel
+ *     automatisch wieder im Hauptfenster gerendert (= "zurück anpinnen").
+ *   - Kein ✕ mehr (war im Wording mehrdeutig + im Verdacht den BUG-018-Quit
+ *     zu triggern; einheitlicher Single-Button-Flow ist robuster + klarer).
+ *   - Always-on-top-Toggle entfernt (bei Bedarf via OS-Window-Feature).
  *
- * Sicherheits-Hinweis (BUG-017): das Popup-Fenster hat per `win.setMenu(null)`
- * KEIN App-Menu. Der ✕ hier ruft die Window-spezifische Close-Funktion auf
- * (z.B. `electron.closePerformanceWindow`) — niemals `app.quit()`.
+ * Bei Bug-018: dieser Header tut nichts gefährliches mehr — wenn der einzige
+ * Button (Pin) den popup.close() triggert, MUSS die App weiterleben.
  */
 import React from "react";
 
 export interface DetachableWindowHeaderProps {
   /** Sichtbarer Titel-Text (Uppercase tracked). */
   title: string;
-  /** Aktueller Always-on-top Status. */
-  alwaysOnTop: boolean;
-  /** Toggle-Callback für den Pin-Button. */
-  onToggleAlwaysOnTop: () => void;
-  /** Close-Callback für das ✕. */
+  /**
+   * Wird ausgelöst wenn der User den 📌-Button klickt. Soll das Popup-Fenster
+   * schließen — der Main-Renderer hört auf das X-Window-Closed-Event und
+   * rendert das Panel wieder inline.
+   */
   onClose: () => void;
-  /** Optional: data-testid Präfix (z.B. "fx-popup" → "fx-popup-close"). Default: "popup". */
+  /** Optional: data-testid Präfix. Default: "popup". */
   testIdPrefix?: string;
+
+  /**
+   * @deprecated Always-on-top wurde post-v1.30.0 aus dem Header entfernt
+   * (User-Feedback: Single-Button-Flow ist robuster). Props bleiben optional
+   * für Backward-Compat mit existierenden Aufrufern; werden ignoriert.
+   */
+  alwaysOnTop?: boolean;
+  /** @deprecated siehe alwaysOnTop. */
+  onToggleAlwaysOnTop?: () => void;
 }
 
 export function DetachableWindowHeader({
   title,
-  alwaysOnTop,
-  onToggleAlwaysOnTop,
   onClose,
   testIdPrefix = "popup",
 }: DetachableWindowHeaderProps) {
@@ -52,31 +64,13 @@ export function DetachableWindowHeader({
         style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
       >
         <button
-          onClick={onToggleAlwaysOnTop}
-          aria-label={alwaysOnTop ? "Always-on-top deaktivieren" : "Always-on-top aktivieren"}
-          title={
-            alwaysOnTop
-              ? "Always-on-top aktiv — Fenster bleibt im Vordergrund. Klick zum Lösen."
-              : "Always-on-top aktivieren — Fenster bleibt vor anderen Apps. Zum Zurück-Einbetten ins Hauptfenster: ✕"
-          }
-          data-testid={`${testIdPrefix}-always-on-top`}
-          className={[
-            "px-2 py-0.5 text-[10px] rounded border transition-colors active:scale-95",
-            alwaysOnTop
-              ? "bg-accent-primary/20 text-accent-primary border-accent-primary"
-              : "bg-bg-base text-text-dim border-border-color hover:text-text-primary hover:border-accent-secondary",
-          ].join(" ")}
-        >
-          ⬆ {alwaysOnTop ? "Top ON" : "Top"}
-        </button>
-        <button
           onClick={onClose}
-          aria-label={`${title} schließen`}
-          data-testid={`${testIdPrefix}-close`}
-          title="Fenster schließen"
-          className="w-5 h-5 rounded text-[12px] text-text-dim hover:bg-accent-danger hover:text-bg-base transition-colors active:scale-95 flex items-center justify-center"
+          aria-label={`${title} zurück ins Hauptfenster anpinnen`}
+          title="Fenster zurück ins Hauptfenster anpinnen"
+          data-testid={`${testIdPrefix}-pin-back`}
+          className="px-2 py-0.5 text-[10px] rounded border border-border-color text-text-dim hover:text-accent-primary hover:border-accent-primary transition-colors active:scale-95"
         >
-          ✕
+          📌 Anpinnen
         </button>
       </div>
     </div>
