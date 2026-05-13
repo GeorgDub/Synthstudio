@@ -282,6 +282,14 @@ const INDEX = {
       foundBy:  "user (post-v1.23.0 report)",
       target:   "v1.23.1 / v1.24.0"
     },
+    "BUG-014": {
+      title:   "Pattern-Generator Vorlagen: BPM-Input lässt sich nicht clearen, springt auf 40",
+      severity: "medium (UX)",
+      details:  "User-Report: Im Pattern-Generator Vorlagen-Tab → BPM-Input. Wenn der User den vorgegebenen BPM-Wert komplett löscht (z.B. Markieren + Delete) springt der Wert auf 40 statt leer zu bleiben. Verhindert flüssiges Tippen von z.B. '128' weil zwischendurch Werte wie '1', '12' an einer Min-Clamp scheitern. Ursache vermutlich: onChange-Handler ruft Math.max(MIN_BPM, parseFloat(value)) auf wo MIN_BPM=40 und parseFloat('') = NaN → Math.max(40, NaN) = NaN → fallback auf 40, oder direkt clamping ohne Empty-String-Sonderbehandlung. Fix-Pattern: separater String-State für den Input (controlled) der erst beim Blur in einen Number-Wert mit Clamp konvertiert wird; währenddessen darf der Input '' / '12' / etc. enthalten. Affected: client/src/components/PatternGenerator/ (templateBpm-Input), useGeneratorStore.setTemplateBpm.",
+      fixed:    false,
+      foundBy:  "user (post-v1.23.0 report)",
+      target:   "v1.23.1 / v1.24.0"
+    },
     "BUG-009": {
       title:   "Performance Mode: Mode-Buttons (Play/Edit/Reorder) sind im Fullscreen nicht klickbar",
       severity: "high (UX)",
