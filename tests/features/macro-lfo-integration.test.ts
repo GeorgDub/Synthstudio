@@ -173,3 +173,119 @@ describe("TASK-128 — Macro→AudioEngine→SynthEngine LFO-Cache Integration",
     expect(AudioEngine.getPartLfoRate("y")).toBeNull();
   });
 });
+
+// ─── TASK-129: Synth-Part Channel-FX-Routing + DrumLoop Synth-Branch ──────────
+
+/** Minimal-Part-Builder für Synth-Part-Tests (TASK-129). */
+function makeSynthPart(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "synth-1",
+    name: "Synth",
+    muted: false,
+    soloed: false,
+    volume: 0.8,
+    pan: 0,
+    steps: [],
+    fx: {
+      eq: { low: 0, mid: 0, high: 0 },
+      filter: { type: "lowpass" as const, frequency: 1000, resonance: 1 },
+      distortion: 0,
+      compressor: { threshold: -24, ratio: 4, attack: 0.003, release: 0.25 },
+      delay: { enabled: false, time: 0.5, feedback: 0.35, mix: 0.5 },
+      reverb: { enabled: false, decay: 2.0, mix: 0.6 },
+      send: { reverb: 0, delay: 0 },
+      insertChain: [],
+    },
+    sourceType: "wavetable" as const,
+    synthParams: {
+      mode: "wavetable" as const,
+      oscType: "sine" as const,
+      detune: 0,
+      fmRatio: 2,
+      fmDepth: 0.5,
+      attack: 0.01,
+      decay: 0.1,
+      sustain: 0.7,
+      release: 0.2,
+      glide: 0,
+      lfoEnabled: false,
+      lfoRate: 1,
+      lfoDepth: 0,
+      lfoWaveform: "sine" as const,
+      lfoBpmSync: "free" as const,
+      customWavetable: null,
+    },
+    ...overrides,
+  };
+}
+
+describe("TASK-129 — Synth-Part Channel-FX-Routing", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    vi.stubGlobal("AudioContext", MockAudioContext as unknown as typeof AudioContext);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("_triggerSynthOnChannel returnt true für wavetable-Part mit synthParams", async () => {
+    const { AudioEngine } = await import("@/audio/AudioEngine");
+    await AudioEngine.init();
+    const eng = AudioEngine as unknown as { _triggerSynthOnChannel: (...a: unknown[]) => boolean };
+    const result = eng._triggerSynthOnChannel(0, 440, 0.8, 0, makeSynthPart());
+    expect(result).toBe(true);
+  });
+
+  it("_triggerSynthOnChannel returnt true für fm-Part mit synthParams", async () => {
+    const { AudioEngine } = await import("@/audio/AudioEngine");
+    await AudioEngine.init();
+    const eng = AudioEngine as unknown as { _triggerSynthOnChannel: (...a: unknown[]) => boolean };
+    const result = eng._triggerSynthOnChannel(0, 440, 0.8, 0, makeSynthPart({ sourceType: "fm" }));
+    expect(result).toBe(true);
+  });
+
+  it("_triggerSynthOnChannel returnt false für sample-Part (Fallback)", async () => {
+    const { AudioEngine } = await import("@/audio/AudioEngine");
+    await AudioEngine.init();
+    const eng = AudioEngine as unknown as { _triggerSynthOnChannel: (...a: unknown[]) => boolean };
+    const result = eng._triggerSynthOnChannel(0, 440, 0.8, 0, makeSynthPart({ sourceType: "sample" }));
+    expect(result).toBe(false);
+  });
+
+  it("_triggerSynthOnChannel returnt false ohne synthParams", async () => {
+    const { AudioEngine } = await import("@/audio/AudioEngine");
+    await AudioEngine.init();
+    const eng = AudioEngine as unknown as { _triggerSynthOnChannel: (...a: unknown[]) => boolean };
+    const result = eng._triggerSynthOnChannel(0, 440, 0.8, 0, makeSynthPart({ synthParams: undefined }));
+    expect(result).toBe(false);
+  });
+
+  it("_triggerSynthOnChannel returnt false ohne init() (kein AudioContext)", async () => {
+    const { AudioEngine } = await import("@/audio/AudioEngine");
+    // KEIN init()
+    const eng = AudioEngine as unknown as { _triggerSynthOnChannel: (...a: unknown[]) => boolean };
+    const result = eng._triggerSynthOnChannel(0, 440, 0.8, 0, makeSynthPart());
+    expect(result).toBe(false);
+  });
+
+  it("Wenn _triggerSynthOnChannel feuert, wird der Macro-LFO-Cache konsultiert (partId durchgereicht)", async () => {
+    const { AudioEngine } = await import("@/audio/AudioEngine");
+    await AudioEngine.init();
+
+    // Cache füllen
+    AudioEngine.setPartLfoRate("synth-1", 7.5);
+    expect(AudioEngine.getPartLfoRate("synth-1")).toBe(7.5);
+
+    // Synth-Trigger ruft SynthEngine.triggerNote(.., "synth-1") auf — der Cache
+    // wird konsultiert und die LFO-Werte aus dem Cache appliziert.
+    const eng = AudioEngine as unknown as { _triggerSynthOnChannel: (...a: unknown[]) => boolean };
+    const result = eng._triggerSynthOnChannel(0, 440, 0.8, 0, makeSynthPart({
+      synthParams: { ...makeSynthPart().synthParams, lfoEnabled: true, lfoRate: 2 },
+    }));
+    expect(result).toBe(true);
+
+    // Cache bleibt nach dem Trigger erhalten (wird nicht clear'd)
+    expect(AudioEngine.getPartLfoRate("synth-1")).toBe(7.5);
+  });
+});

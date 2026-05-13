@@ -258,6 +258,28 @@ const INDEX = {
   workLog: [
     {
       agent:     "backend",
+      timestamp: "2026-05-13T14:30:00.000Z",
+      done: [
+        "TASK-129 / Synth-Part Integration Wave 2 — DrumLoop + Channel-FX-Routing (v1.23.0). Folgt direkt auf TASK-128, schließt die in der TASK-128-next[]-Liste benannten Welle-2-Lücken: (a) Drum-Loop in AudioEngine._scheduleStep triggert jetzt Synth-Parts (sourceType=wavetable/fm + synthParams) — vor diesem Commit wurden Synth-Parts im Drum-Step KOMPLETT übersprungen (nur sample-Parts wurden geprüft). (b) SynthEngine-Output geht jetzt durch die Channel-FX-Chain (EQ, Filter, Distortion, Compressor, Sidechain, Send-FX) statt direkt zu masterGain — Insert-FX wirken jetzt auch auf Synth-Parts.",
+        "TASK-129 / Bereich 1 (client/src/audio/AudioEngine.ts, neuer Helper _triggerSynthOnChannel): Pure-Logik-Helper, der die SynthEngine-Trigger + Channel-FX-Routing-Logik bündelt. Returnt boolean — true wenn die SynthEngine genutzt wurde, false wenn Voraussetzungen fehlen (kein ctx, kein synthParams, sourceType nicht wavetable/fm). Aufrufer kann auf Fallback-Pfad ausweichen. Setzt `nodes.input.gain.value` (Volume) und `nodes.panner.pan.value` (Pan) analog zum Sample-Pfad in _triggerBufferWithFx. SynthEngine.triggerNote() schreibt in `nodes.input` (Channel-Input-GainNode) statt direkt zu masterGain — damit propagieren alle Channel-FX korrekt. partId wird durchgereicht → Macro-LFO-Cache aktiv.",
+        "TASK-129 / Bereich 2 (AudioEngine._triggerMelodicNote): Inline-Synth-Pfad aus TASK-128 (volGain+panner→masterGain) durch _triggerSynthOnChannel-Aufruf ersetzt. Damit nutzt der melodische Pfad (PianoRoll) jetzt ebenfalls die Channel-FX-Chain. Fallback-Pfad (Triangle-Oscillator) für Parts ohne synthParams bleibt unverändert.",
+        "TASK-129 / Bereich 3 (AudioEngine._scheduleStep DrumLoop, ~Zeile 1322): Neuer isSynthPart-Branch VOR dem sampleUrl-Branch. Synth-Parts mit sourceType=wavetable/fm + synthParams werden über _triggerSynthOnChannel getriggert (Basis-Frequenz A4=440Hz, step.pitch als Halbton-Transpose). Synth-Pfad hat Vorrang vor sampleUrl — damit Synth-Parts, die irrtümlich ein altes sampleUrl-Feld tragen (z.B. aus älteren Projekt-JSONs), trotzdem korrekt als Synth abgespielt werden. Sample-Pfad-Branch unverändert.",
+        "TASK-129 / Tests (+6 neue in tests/features/macro-lfo-integration.test.ts, neuer describe-Block 'TASK-129 — Synth-Part Channel-FX-Routing'). Tests: (1) _triggerSynthOnChannel returnt true für wavetable+synthParams, (2) returnt true für fm+synthParams, (3) returnt false für sourceType=sample (Fallback), (4) returnt false ohne synthParams, (5) returnt false ohne init() (kein AudioContext), (6) Wenn _triggerSynthOnChannel feuert, wird der Macro-LFO-Cache konsultiert (partId durchgereicht, Cache bleibt erhalten). Helper makeSynthPart() für Test-Setup mit Default ChannelFx und SynthParams. Tests greifen über `as unknown as` Type-Cast auf den privaten _triggerSynthOnChannel-Helper zu — sauberste Methode, um die Branching-Logik isoliert zu prüfen ohne den vollständigen Scheduler hochzufahren.",
+        "TASK-129 / Verification: pnpm check 0 Fehler. pnpm test 1235/1250 grün (64 test files, +6 neue TASK-129-Tests in macro-lfo-integration.test.ts, 15 pre-existing skipped, 0 Regressionen)."
+      ],
+      next: [
+        "TASK-129 / Welle 3 (Future — Drum-Synth UI-Discoverability): Aktuell muss ein User in der DrumMachine den sourceType eines Parts explizit auf 'wavetable' oder 'fm' setzen damit der Synth-Pfad greift. Falls keine UI-Discoverability dafür existiert (Part-Settings-Panel, ChannelStrip), wäre das ein Frontend-Polish-Task. Aktuell out-of-scope.",
+        "TASK-129 / Welle 3 (Future — Synth-Drum-Sequencer Polyphonie): SynthEngine.triggerNote() erzeugt pro Aufruf eine neue OSC-Kette mit unabhängiger ADSR. Bei schnellen Step-Folgen (z.B. 1/32 + langer Release) überlagern sich Noten via Channel-Input — nodes.input.gain.value wird allerdings beim Trigger neu gesetzt (überschreibt den Wert für ALLE laufenden Noten). Für Volumen-Konsistenz bei polyphonen Synth-Drum-Steps müsste pro-Note ein Volumen-Gain VOR nodes.input eingefügt werden. Aktuell akzeptabel — Drum-Use-Case ist meist mono-pro-Step.",
+        "TASK-129 / Welle 3 (Tests E2E): Playwright-Smoke der ein Synth-Drum-Pattern erzeugt, Insert-FX (z.B. Bitcrusher) auf den Channel setzt, und beim Step-Trigger via AnalyserNode verifiziert dass das Signal durch den FX gefiltert wird (Spektrum-Veränderung). Erfordert echte Web-Audio-Inspection."
+      ],
+      changed: [
+        "client/src/audio/AudioEngine.ts",
+        "tests/features/macro-lfo-integration.test.ts",
+        "agents/INDEX.js"
+      ]
+    },
+    {
+      agent:     "backend",
       timestamp: "2026-05-13T13:30:00.000Z",
       done: [
         "TASK-128 / LFO-Macros Wave 2 — Step-Trigger-Site Wiring (v1.23.0 Vorbereitung). Vor diesem Task lief der v1.22.0/TASK-117 Macro-LFO-Cache ins Leere: AudioEngine.setPartLfoRate/Depth speicherte Werte in der SynthEngine-Cache-Map, aber NIEMAND rief SynthEngine.triggerNote() — _scheduleStep behandelte nur part.sampleUrl (Samples), und _triggerMelodicNote (PianoRoll-Playback) nutzte einen eigenen Triangle-Oscillator statt SynthEngine. Discovery: Aus dem Plan-Task (a) 'Step-Trigger reicht partId durch' ergab sich, dass die SynthEngine-Integration in AudioEngine bisher gar nicht existierte — nicht nur ein partId-Passthrough fehlte.",
@@ -987,8 +1009,10 @@ const INDEX = {
   //     SynthEngine.triggerNote() um destination?-Parameter erweitert; AudioEngine
   //     ._triggerMelodicNote routet wavetable/fm-Parts mit synthParams jetzt durch
   //     SynthEngine + partId-Cache. +9 Tests (3 destination-override, 6 integration).
-  //     Welle 2 (sourceType=wavetable/fm im DrumLoop + Channel-FX-Routing) als
-  //     neuer TASK-129 erfasst (siehe unten).
+  //   - TASK-129 (Synth-Part Wave 2 — DrumLoop + Channel-FX-Routing): erledigt
+  //     2026-05-13. Neuer _triggerSynthOnChannel-Helper; DrumLoop branched für
+  //     wavetable/fm-Parts; Synth-Output geht durch Channel-FX-Chain (statt
+  //     direkt masterGain). +6 Tests.
   openTasks: [
     {
       id:       "FOLLOWUP-102",
@@ -1021,14 +1045,6 @@ const INDEX = {
       owner:    "frontend",
       notes:    "Aus TASK-114/120 next[] (welle 2). (1) Cmd/Ctrl+A im Reorder-Mode = Select All (alle non-empty Pads in multiSelect). (2) Box-Drag Auto-Scroll wenn Maus < 40px vom Viewport-Rand. (3) Optional: Multi-Drag-Canvas mit Gradient der ersten 3 Pad-Farben statt nur dragSrc-Color (Welle 3 von TASK-123 next). Tests: tests/features/performance-store.test.ts + tests/web/performance-mode.spec.ts."
     },
-    {
-      id:       "TASK-129",
-      title:    "Synth-Part Integration Wave 2 — DrumLoop + Channel-FX-Routing",
-      severity: "medium",
-      target:   "v1.23.0",
-      owner:    "backend",
-      notes:    "Folge-Task aus TASK-128. (1) _scheduleStep DrumLoop (AudioEngine.ts ~Zeile 1322) prüft aktuell nur part.sampleUrl — Parts mit sourceType=wavetable/fm und ohne sampleUrl werden im Drum-Step NICHT abgespielt. Synth-Branch ergänzen analog zum melodischen Pfad. (2) SynthEngine-Output geht aktuell direkt zu masterGain (über volGain+panner), NICHT durch die Channel-FX-Chain (EQ, Filter, Distortion, Compressor, Send-FX). Routing über _getOrCreateChannelNodes(part.id, part.fx).input statt masterGain. Akzeptanz: Synth-Part mit Insert-FX (z.B. Bitcrusher) hört man tatsächlich gefiltert."
-    }
   ],
 
   // ─── API / IPC REFERENCE ───────────────────────────────────

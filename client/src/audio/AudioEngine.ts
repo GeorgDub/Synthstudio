@@ -1319,7 +1319,18 @@ class AudioEngineClass {
         });
       }
 
-      if (part.sampleUrl) {
+      // Synth-Pfad (TASK-129): Parts mit sourceType=wavetable/fm + synthParams
+      // werden über SynthEngine getriggert. Hat Vorrang vor sampleUrl, damit
+      // Synth-Parts, die irrtümlich ein altes sampleUrl-Feld tragen, trotzdem
+      // korrekt als Synth abgespielt werden.
+      const isSynthPart = !!part.synthParams && (part.sourceType === "wavetable" || part.sourceType === "fm");
+      if (isSynthPart) {
+        const vol = (scheduled.velocity / 127) * (part.volume ?? 1.0);
+        // Drum-Step hat keine eigene Note — A4 (440 Hz) als Basis, step.pitch
+        // wird als Halbton-Transpose appliziert (analog zur melodischen Logik).
+        const freq = 440 * Math.pow(2, scheduled.pitch / 12);
+        this._triggerSynthOnChannel(scheduled.time, freq, vol, scheduled.pan, part);
+      } else if (part.sampleUrl) {
         const stepLength = step.length ?? 1;
         const partRef = part;
         (async () => {
@@ -1437,37 +1448,56 @@ class AudioEngineClass {
   }
 
   /**
+   * Synth-Part triggern und durch die Channel-FX-Chain routen (TASK-129).
+   *
+   * SynthEngine.triggerNote() schreibt in `nodes.input` (Channel-Input-GainNode)
+   * statt direkt zu masterGain — damit propagieren Channel-FX (EQ, Filter,
+   * Distortion, Compressor, Sidechain, Delay/Reverb-Sends, Insert-Chain)
+   * korrekt. Volume + Pan werden über `nodes.input.gain` / `nodes.panner.pan`
+   * gesetzt — analog zum Sample-Pfad (`_triggerBufferWithFx`).
+   *
+   * partId wird durchgereicht → Macro-LFO-Cache (TASK-117/128) wird konsultiert.
+   *
+   * @returns true wenn die SynthEngine genutzt wurde, false wenn Voraussetzungen
+   *          fehlen (kein ctx, kein synthParams, falscher sourceType) — Aufrufer
+   *          kann auf Fallback-Pfad ausweichen.
+   */
+  private _triggerSynthOnChannel(time: number, freq: number, volume: number, pan: number, part: PartData): boolean {
+    if (!this.ctx) return false;
+    if (!part.synthParams) return false;
+    if (part.sourceType !== "wavetable" && part.sourceType !== "fm") return false;
+
+    const eng = this._getOrCreateSynthEngine();
+    if (!eng) return false;
+
+    const nodes = this._getOrCreateChannelNodes(part.id, part.fx);
+    nodes.input.gain.value = Math.max(0, Math.min(2, volume));
+    nodes.panner.pan.value = Math.max(-1, Math.min(1, pan));
+
+    const now = Math.max(time, this.ctx.currentTime);
+    eng.triggerNote(freq, part.synthParams, now, undefined, part.id, nodes.input);
+    return true;
+  }
+
+  /**
    * Melodische Note abspielen (Piano Roll Playback).
    *
-   * TASK-128 (v1.23.0): Synth-Parts (sourceType `wavetable`/`fm`) routen jetzt
-   * über `SynthEngine.triggerNote()` mit partId — das aktiviert den Macro-LFO-
-   * Cache (siehe TASK-117). Parts ohne synthParams oder mit unbekanntem
-   * sourceType fallen auf den simplen Triangle-Oscillator-Pfad zurück.
-   *
-   * Die SynthEngine schreibt per-call in einen lokalen `volGain → panner →
-   * masterGain` Wrapper, damit pro-Note Volume + Pan applizierbar sind ohne
-   * die Constructor-Destination zu ändern.
+   * TASK-128 (v1.23.0): Synth-Parts (sourceType `wavetable`/`fm`) routen über
+   * `SynthEngine.triggerNote()` mit partId — das aktiviert den Macro-LFO-Cache
+   * (TASK-117).
+   * TASK-129 (v1.23.0): Synth-Output geht jetzt durch die Channel-FX-Chain
+   * (via `_triggerSynthOnChannel`) statt direkt zu masterGain. Parts ohne
+   * synthParams oder mit unbekanntem sourceType fallen auf den simplen
+   * Triangle-Oscillator-Pfad zurück (Backwards-Compat).
    */
   private _triggerMelodicNote(time: number, freq: number, volume: number, pan: number, part?: PartData): void {
     if (!this.ctx || !this.masterGain) return;
-    const now = Math.max(time, this.ctx.currentTime);
 
-    // Synth-Pfad: wavetable/fm + synthParams → SynthEngine mit Macro-LFO-Routing
-    if (part && part.synthParams && (part.sourceType === "wavetable" || part.sourceType === "fm")) {
-      const eng = this._getOrCreateSynthEngine();
-      if (eng) {
-        const volGain = this.ctx.createGain();
-        volGain.gain.value = Math.max(0, Math.min(1, volume));
-        const panner = this.ctx.createStereoPanner();
-        panner.pan.value = Math.max(-1, Math.min(1, pan));
-        volGain.connect(panner);
-        panner.connect(this.masterGain);
-        eng.triggerNote(freq, part.synthParams, now, undefined, part.id, volGain);
-        return;
-      }
-    }
+    // Synth-Pfad mit Channel-FX-Routing (TASK-128 + TASK-129)
+    if (part && this._triggerSynthOnChannel(time, freq, volume, pan, part)) return;
 
     // Fallback-Pfad: simpler Triangle-Oscillator (Default für Parts ohne synthParams)
+    const now = Math.max(time, this.ctx.currentTime);
     const duration = Math.max(0.05, 60 / this._bpm / 4); // 1/16-Note
 
     const osc = this.ctx.createOscillator();
