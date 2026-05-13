@@ -894,9 +894,12 @@ export function PatternLaunchPad({
         </div>
       </div>
 
-      {/* 4×4 Pad Grid (Box-Mouse-Select via onMouseDown auf dem Container) */}
+      {/* 4×4 Pad Grid (Box-Mouse-Select via onMouseDown auf dem Container)
+          BUG-016 Fix: Grid wächst jetzt mit dem Fenster — bleibt quadratisch
+          (aspect-square am Inner-Container) und füllt min(width, height) des
+          verfügbaren Raums. Kein overflow-auto-Scrollbar mehr. */}
       <div
-        className="flex-1 flex items-center justify-center p-8 overflow-auto select-none"
+        className="flex-1 flex items-center justify-center p-4 overflow-hidden select-none min-h-0"
         onMouseDown={handleGridMouseDown}
         data-testid="perf-pad-grid-wrapper"
       >
@@ -907,7 +910,7 @@ export function PatternLaunchPad({
           aria-rowcount={GRID_ROWS}
           aria-colcount={GRID_COLS}
           onKeyDown={handleGridKeyDown}
-          className="grid grid-cols-4 gap-4 w-full max-w-2xl outline-none"
+          className="aspect-square h-full max-h-full max-w-full grid grid-cols-4 grid-rows-4 gap-3 outline-none"
           data-testid="perf-pad-grid"
         >
           {Array.from({ length: PAD_COUNT }, (_, i) => {

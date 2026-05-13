@@ -202,11 +202,13 @@ function createWindow(): void {
     minHeight: 700,
     title: APP_NAME,
     backgroundColor: "#0a0a0a",
-    // Eigene Custom-Titlebar (ElectronTitleBar.tsx) → OS-Frame ausblenden,
-    // sonst sieht der User zwei Titlebars übereinander.
-    // - Win/Linux: kompletten OS-Frame ausblenden
-    // - macOS: traffic-light-Buttons über Inset-Position behalten, Title-Text aus
-    frame: process.platform === "darwin",
+    // Native Frame + Menübar (post-v1.25.0 User-Request — analog zum
+    // Performance-Mode-Popup-Fenster). Vorher: frame:false auf Win/Linux mit
+    // Custom ElectronTitleBar. User-Feedback: nativer Frame ist konsistent
+    // und zeigt das Datei/Bearbeiten/Ansicht/Audio/Fenster/Help-Menü.
+    // BUG-009 (Fullscreen-Drag-Region) ist damit obsolet — keine Custom-
+    // Drag-Region mehr, die im Fullscreen Klicks abfängt.
+    frame: true,
     titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
     // Erst zeigen wenn der Renderer ready ist – verhindert weißes Flash + leere Fenster
     show: false,
@@ -338,10 +340,12 @@ function createPerformanceWindow(): void {
     minHeight: 400,
     title: `${APP_NAME} – Performance`,
     backgroundColor: "#0a0a0a",
-    // Native Frame — Performance-Popup ist ein Tool-Window, der native
-    // Title-Bar gibt dem User Drag + Close ohne Custom-Chrome-Komplexität.
-    // Vermeidet auch die BUG-009 Drag-Region-Probleme.
-    frame: true,
+    // Frameless (post-v1.25.0 User-Request): das Popup hat KEINEN OS-Frame,
+    // stattdessen rendert PerformancePopupApp einen eigenen schmalen Header
+    // mit Drag-Region + Pin-Toggle + Close-Button. Pattern für zukünftige
+    // pinnable Sub-Windows (Effects, Mixer-Strips etc.).
+    frame: false,
+    titleBarStyle: "default",
     parent: mainWindow ?? undefined,
     show: false,
     webPreferences: {
@@ -621,6 +625,9 @@ function buildMenu(): void {
     },
 
     // ── Bearbeiten ───────────────────────────────────────────────────────────
+    // Music-Production-fokussiert (kein Cut/Copy/Paste — das macht für eine
+    // DAW keinen Sinn, in Text-Inputs funktioniert Ctrl+C/V eh nativ).
+    // Stattdessen: Undo/Redo + Pattern-Aktionen.
     {
       label: "Bearbeiten",
       submenu: [
@@ -635,10 +642,67 @@ function buildMenu(): void {
           click: () => mainWindow?.webContents.send("menu:redo"),
         },
         { type: "separator" },
-        { role: "cut" as const },
-        { role: "copy" as const },
-        { role: "paste" as const },
-        { role: "selectAll" as const },
+        {
+          label: "Pattern leeren",
+          click: () => mainWindow?.webContents.send("menu:pattern-clear"),
+        },
+        {
+          label: "Pattern zufällig füllen",
+          click: () => mainWindow?.webContents.send("menu:pattern-randomize"),
+        },
+        {
+          label: "Pattern füllen",
+          click: () => mainWindow?.webContents.send("menu:pattern-fill"),
+        },
+        {
+          label: "Pattern duplizieren",
+          click: () => mainWindow?.webContents.send("menu:pattern-duplicate"),
+        },
+      ],
+    },
+
+    // ── Transport ────────────────────────────────────────────────────────────
+    // NEU (post-v1.25.0): eigenes Top-Level-Menü statt verschachtelt unter Audio.
+    {
+      label: "Transport",
+      submenu: [
+        {
+          label: "Play / Stop",
+          accelerator: "Space",
+          click: () => mainWindow?.webContents.send("menu:transport-toggle"),
+        },
+        {
+          label: "Aufnahme",
+          accelerator: "CmdOrCtrl+R",
+          click: () => mainWindow?.webContents.send("menu:transport-record"),
+        },
+        { type: "separator" },
+        {
+          label: "BPM erhöhen",
+          accelerator: "CmdOrCtrl+Up",
+          click: () => mainWindow?.webContents.send("menu:bpm-up"),
+        },
+        {
+          label: "BPM verringern",
+          accelerator: "CmdOrCtrl+Down",
+          click: () => mainWindow?.webContents.send("menu:bpm-down"),
+        },
+        {
+          label: "Tap Tempo",
+          accelerator: "CmdOrCtrl+T",
+          click: () => mainWindow?.webContents.send("menu:tap-tempo"),
+        },
+        { type: "separator" },
+        {
+          label: "Nächstes Pattern",
+          accelerator: "CmdOrCtrl+Right",
+          click: () => mainWindow?.webContents.send("menu:pattern-next"),
+        },
+        {
+          label: "Vorheriges Pattern",
+          accelerator: "CmdOrCtrl+Left",
+          click: () => mainWindow?.webContents.send("menu:pattern-prev"),
+        },
       ],
     },
 
@@ -646,6 +710,38 @@ function buildMenu(): void {
     {
       label: "Ansicht",
       submenu: [
+        // Tab-Navigation — Music-Production-spezifisch (post-v1.25.0)
+        {
+          label: "Sequencer",
+          accelerator: "F1",
+          click: () => mainWindow?.webContents.send("menu:tab", "sequencer"),
+        },
+        {
+          label: "Mixer",
+          accelerator: "F2",
+          click: () => mainWindow?.webContents.send("menu:tab", "mixer"),
+        },
+        {
+          label: "Song",
+          accelerator: "F3",
+          click: () => mainWindow?.webContents.send("menu:tab", "song"),
+        },
+        {
+          label: "Humanizer",
+          accelerator: "F4",
+          click: () => mainWindow?.webContents.send("menu:tab", "humanizer"),
+        },
+        {
+          label: "Tools",
+          accelerator: "F5",
+          click: () => mainWindow?.webContents.send("menu:tab", "tools"),
+        },
+        {
+          label: "Kollaboration",
+          accelerator: "F6",
+          click: () => mainWindow?.webContents.send("menu:tab", "kollaboration"),
+        },
+        { type: "separator" as const },
         { role: "reload" as const },
         { role: "forceReload" as const },
         ...(isDev ? [{ role: "toggleDevTools" as const }] : []),
@@ -668,9 +764,12 @@ function buildMenu(): void {
       ],
     },
 
-    // ── Audio ────────────────────────────────────────────────────────────────
+    // ── Sample ───────────────────────────────────────────────────────────────
+    // Umbenannt von "Audio" (post-v1.25.0) — fokussiert auf Sample-Workflow.
+    // Transport ist jetzt eigenes Top-Level-Menü, MIDI-Import bleibt hier
+    // weil es einen Sample-/Pattern-Kontext-Effekt hat.
     {
-      label: "Audio",
+      label: "Sample",
       submenu: [
         {
           label: "Sample-Bibliothek öffnen",
@@ -745,14 +844,8 @@ function buildMenu(): void {
         },
         { type: "separator" },
         {
-          label: "Transport: Play/Stop",
-          accelerator: "Space",
-          click: () => mainWindow?.webContents.send("menu:transport-toggle"),
-        },
-        {
-          label: "Transport: Record",
-          accelerator: "CmdOrCtrl+R",
-          click: () => mainWindow?.webContents.send("menu:transport-record"),
+          label: "Audio-Workbench öffnen",
+          click: () => mainWindow?.webContents.send("menu:open-audio-workbench"),
         },
       ],
     },
@@ -761,6 +854,19 @@ function buildMenu(): void {
     {
       label: "Fenster",
       submenu: [
+        {
+          label: "Performance Mode",
+          accelerator: "F12",
+          click: () => mainWindow?.webContents.send("menu:open-performance"),
+        },
+        {
+          label: "Performance Mode in separatem Fenster",
+          click: () => {
+            // Direkt im Main aufrufen — kein Renderer-Trip nötig
+            createPerformanceWindow();
+          },
+        },
+        { type: "separator" as const },
         { role: "minimize" as const },
         {
           label: "Vollbild umschalten",

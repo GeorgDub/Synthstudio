@@ -17,7 +17,8 @@ import React, { useCallback, useEffect, useState, useMemo, useRef } from "react"
 
 // ── Electron-Komponenten (aus electron/components/) ──────────────────────────
 // Relative Imports notwendig da electron/ außerhalb von client/src liegt
-import { ElectronTitleBar } from "../../electron/components/ElectronTitleBar";
+// ElectronTitleBar wurde post-v1.25.0 zugunsten der nativen Frame-Bar entfernt
+// — Datei bleibt als Komponente bestehen für möglichen Re-Use in frameless Sub-Windows.
 import { ElectronDropZone } from "../../electron/components/ElectronDropZone";
 
 // ── Electron-Hooks ────────────────────────────────────────────────────────────
@@ -1510,10 +1511,13 @@ export default function App() {
     >
       <div className="flex flex-col h-screen bg-bg-base text-text-primary overflow-hidden">
 
-        <ElectronTitleBar
-          projectName={project.projectName}
-          isDirty={project.isDirty}
-        />
+        {/*
+          ElectronTitleBar wurde post-v1.25.0 entfernt — main window nutzt
+          jetzt den nativen OS-Frame + Menübar (Datei/Bearbeiten/Ansicht/etc).
+          Custom-Titlebar produzierte zwei TitleBars übereinander mit dem
+          nativen Frame. ElectronTitleBar.tsx bleibt als Komponente erhalten
+          für mögliche zukünftige frameless-Modi.
+        */}
 
         <div className="flex flex-1 overflow-hidden">
 

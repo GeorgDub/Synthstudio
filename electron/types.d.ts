@@ -314,6 +314,19 @@ interface ElectronAPI {
   onMenuBounce(callback: () => void): ElectronCleanup;
   onMenuTransportToggle(callback: () => void): ElectronCleanup;
   onMenuTransportRecord(callback: () => void): ElectronCleanup;
+  // post-v1.25.0 — Music-Production-fokussierte Menü-Items
+  onMenuPatternClear(callback: () => void): ElectronCleanup;
+  onMenuPatternRandomize(callback: () => void): ElectronCleanup;
+  onMenuPatternFill(callback: () => void): ElectronCleanup;
+  onMenuPatternDuplicate(callback: () => void): ElectronCleanup;
+  onMenuPatternNext(callback: () => void): ElectronCleanup;
+  onMenuPatternPrev(callback: () => void): ElectronCleanup;
+  onMenuBpmUp(callback: () => void): ElectronCleanup;
+  onMenuBpmDown(callback: () => void): ElectronCleanup;
+  onMenuTapTempo(callback: () => void): ElectronCleanup;
+  onMenuOpenPerformance(callback: () => void): ElectronCleanup;
+  onMenuOpenAudioWorkbench(callback: () => void): ElectronCleanup;
+  onMenuTab(callback: (tabId?: string) => void): ElectronCleanup;
 
   // ── Keyboard-Shortcuts ────────────────────────────────────────────────────
   onShortcutPlayStop(callback: () => void): ElectronCleanup;

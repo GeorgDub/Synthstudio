@@ -299,6 +299,19 @@ const electronAPI = {
   onMenuToggleFullscreen: createVoidListener("menu:toggle-fullscreen"),
   onMenuBounce: createVoidListener("menu:bounce"),
   onMenuOpenSampleLibrary: createVoidListener("menu:open-sample-library"),
+  // post-v1.25.0 — neue Menü-Items für Music-Production-fokussierte Menübar
+  onMenuPatternClear: createVoidListener("menu:pattern-clear"),
+  onMenuPatternRandomize: createVoidListener("menu:pattern-randomize"),
+  onMenuPatternFill: createVoidListener("menu:pattern-fill"),
+  onMenuPatternDuplicate: createVoidListener("menu:pattern-duplicate"),
+  onMenuPatternNext: createVoidListener("menu:pattern-next"),
+  onMenuPatternPrev: createVoidListener("menu:pattern-prev"),
+  onMenuBpmUp: createVoidListener("menu:bpm-up"),
+  onMenuBpmDown: createVoidListener("menu:bpm-down"),
+  onMenuTapTempo: createVoidListener("menu:tap-tempo"),
+  onMenuOpenPerformance: createVoidListener("menu:open-performance"),
+  onMenuOpenAudioWorkbench: createVoidListener("menu:open-audio-workbench"),
+  onMenuTab: createEventListener<string>("menu:tab"),
 
   // ── Keyboard-Shortcuts (globale Media-Keys) ──────────────────────────────────
 

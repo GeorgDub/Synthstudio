@@ -173,24 +173,47 @@ export function PerformancePopupApp() {
   }
 
   return (
-    <>
-      {/* Always-on-top Toggle (Floating Overlay-Button oben rechts).
-          Separat vom PatternLaunchPad-Header weil das Header-Layout vom Main
-          und Popup geteilt wird — Popup-spezifische Controls als Overlay. */}
-      <button
-        onClick={toggleAlwaysOnTop}
-        aria-label={alwaysOnTop ? "Always-on-top deaktivieren" : "Always-on-top aktivieren"}
-        title={alwaysOnTop ? "Fenster bleibt im Vordergrund (Klick zum Lösen)" : "Fenster im Vordergrund halten"}
-        data-testid="perf-popup-always-on-top"
-        className={[
-          "fixed top-2 right-16 z-[60] px-2 py-1 text-[10px] rounded border transition-colors active:scale-95",
-          alwaysOnTop
-            ? "bg-accent-primary/20 text-accent-primary border-accent-primary"
-            : "bg-bg-elevated text-text-dim border-border-color hover:text-text-primary hover:border-accent-secondary",
-        ].join(" ")}
+    <div className="flex flex-col h-screen bg-bg-base">
+      {/* Frameless Window-Header (post-v1.25.0):
+          - Drag-Region links für Window-Move
+          - Pin-Toggle + Close-Button rechts (no-drag damit klickbar)
+          - Pattern für alle zukünftigen pinnable Sub-Windows */}
+      <div
+        className="flex items-center h-7 px-3 bg-bg-elevated border-b border-border-color select-none flex-shrink-0"
+        style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
       >
-        📌 {alwaysOnTop ? "Pinned" : "Pin"}
-      </button>
+        <span className="text-[10px] text-text-dim uppercase tracking-wider flex-1">
+          Performance Mode
+        </span>
+        <div
+          className="flex items-center gap-1"
+          style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
+        >
+          <button
+            onClick={toggleAlwaysOnTop}
+            aria-label={alwaysOnTop ? "Always-on-top deaktivieren" : "Always-on-top aktivieren"}
+            title={alwaysOnTop ? "Fenster bleibt im Vordergrund (Klick zum Lösen)" : "Fenster im Vordergrund halten"}
+            data-testid="perf-popup-always-on-top"
+            className={[
+              "px-2 py-0.5 text-[10px] rounded border transition-colors active:scale-95",
+              alwaysOnTop
+                ? "bg-accent-primary/20 text-accent-primary border-accent-primary"
+                : "bg-bg-base text-text-dim border-border-color hover:text-text-primary hover:border-accent-secondary",
+            ].join(" ")}
+          >
+            📌 {alwaysOnTop ? "Pinned" : "Pin"}
+          </button>
+          <button
+            onClick={() => electron.closePerformanceWindow?.()}
+            aria-label="Performance Mode schließen"
+            data-testid="perf-popup-close"
+            title="Fenster schließen"
+            className="w-5 h-5 rounded text-[12px] text-text-dim hover:bg-accent-danger hover:text-bg-base transition-colors active:scale-95 flex items-center justify-center"
+          >
+            ✕
+          </button>
+        </div>
+      </div>
 
       <PatternLaunchPad
         pads={state.pads}
@@ -208,6 +231,6 @@ export function PerformancePopupApp() {
           electron.closePerformanceWindow?.();
         }}
       />
-    </>
+    </div>
   );
 }

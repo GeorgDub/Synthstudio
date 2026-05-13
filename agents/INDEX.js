@@ -346,6 +346,18 @@ const INDEX = {
         "client/src/components/PerformanceMode/PatternLaunchPad.tsx",
         "electron/components/ElectronTitleBar.tsx"
       ]
+    },
+    "BUG-016": {
+      title:   "Performance Mode: Pads passen sich NICHT an die Fenstergröße im freien Fenster-Modus an",
+      severity: "medium (UX)",
+      details:  "User-Report mit Screenshot bilder/2.png: im Performance-Mode-Popup-Fenster wachsen die 16 Pads nicht mit der Fenstergröße. Bei größerem Fenster bleiben Pads klein + es erscheint eine vertikale Scrollbar. Ursache (verifiziert): das Inner-Grid-Div in PatternLaunchPad.tsx hatte `grid grid-cols-4 gap-4 w-full max-w-2xl` — max-w-2xl=42rem kappt bei 672px Breite. Container hatte `overflow-auto` → Scrollbar statt Resize. Fix: max-w entfernt, `aspect-square h-full max-h-full max-w-full grid grid-cols-4 grid-rows-4 gap-3` → Grid bleibt quadratisch und füllt min(width,height) des verfügbaren Raums. Container `overflow-hidden` statt -auto. Pads sind jetzt skalieren mit dem Fenster.",
+      fixed:    true,
+      foundBy:  "user (post-v1.25.0 report mit bilder/2.png)",
+      fixedBy:  "frontend",
+      fixedIn:  "BUG-016 fix (post-v1.25.0)",
+      relatedFiles: [
+        "client/src/components/PerformanceMode/PatternLaunchPad.tsx"
+      ]
     }
   },
 
@@ -353,6 +365,57 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "frontend",
+      timestamp: "2026-05-13T11:45:00.000Z",
+      done: [
+        "PERF-WIN-FRAMELESS + FEAT-MENU — zwei User-Requests post-v1.25.0 ergänzend zum vorigen Native-Frame-Switch.",
+        "PERF-WIN-FRAMELESS (Performance-Mode Popup ohne OS-Frame, Custom-Header mit Pin+Close): electron/main.ts perfWindow `frame: true` → `frame: false`. PerformancePopupApp.tsx render-Hierarchie umgebaut: `<>` Fragment → `<div className='flex flex-col h-screen bg-bg-base'>` als Root, schmaler Custom-Header (h-7) oben mit `WebkitAppRegion: drag` für Window-Move + no-drag Container für Pin-Toggle (📌) + Close-Button (✕). Pin-Button war vorher als floating Overlay rechts — jetzt im Header. Close-Button neu (data-testid 'perf-popup-close'). Pattern dient als Vorlage für zukünftige pinnable Sub-Windows (Effects, Mixer-Strips).",
+        "FEAT-MENU (Music-Production-Menübar): electron/main.ts buildMenu() umstrukturiert weil generisches Cut/Copy/Paste für DAW keinen Sinn macht.",
+        "FEAT-MENU / Bearbeiten: Cut/Copy/Paste/SelectAll ENTFERNT (in Text-Inputs funktioniert Ctrl+C/V eh nativ). Stattdessen Pattern-Aktionen: Pattern leeren, Pattern zufällig füllen, Pattern füllen, Pattern duplizieren. Undo/Redo bleibt.",
+        "FEAT-MENU / Transport (NEU als Top-Level): Play/Stop (Space), Aufnahme (Ctrl+R), BPM erhöhen/verringern (Ctrl+Up/Down), Tap Tempo (Ctrl+T), Nächstes/Vorheriges Pattern (Ctrl+Right/Left). Vorher unter 'Audio' verschachtelt.",
+        "FEAT-MENU / Audio → Sample: umbenannt, Transport-Einträge raus, Audio-Workbench-Eintrag rein. Fokus auf Sample-Workflow.",
+        "FEAT-MENU / Ansicht: Tab-Navigation hinzu (F1-F6: Sequencer/Mixer/Song/Humanizer/Tools/Kollaboration). Bestehende Reload/Zoom/Vollbild-Items bleiben.",
+        "FEAT-MENU / Fenster: Performance Mode (F12) als Inline-Mode + 'Performance Mode in separatem Fenster' als direkter createPerformanceWindow()-Trigger ohne Renderer-Trip.",
+        "FEAT-MENU / IPC: 12 neue Channels in electron/preload.ts (onMenuPatternClear/Randomize/Fill/Duplicate/Next/Prev, onMenuBpmUp/Down, onMenuTapTempo, onMenuOpenPerformance/AudioWorkbench, onMenuTab). Types + Browser-Fallback-Stubs in useElectron.ts ergänzt. App.tsx-Listener für die neuen Events sind TODO (Phase 2) — Menü-Klicks dispatchen die Events bereits korrekt, App.tsx muss sie nur noch konsumieren.",
+        "Verification: pnpm check 0 Fehler. pnpm test 1376/1391 grün (unchanged — keine Unit-Test-Implikationen für Menü-Definition + frameless-Popup-CSS). Manuelle Verifikation nötig: pnpm dev:electron → Menübar zeigt Datei/Bearbeiten/Transport/Sample/Ansicht/Fenster/Hilfe; Performance Mode in separatem Fenster zeigt schmalen Custom-Header mit 📌 + ✕ ohne OS-Frame."
+      ],
+      next: [
+        "App.tsx-Wiring für neue Menü-Channels: onMenuPatternClear → dm.clearPattern, onMenuPatternRandomize → dm.randomizePattern, onMenuBpmUp/Down → project.setBpm(±1), onMenuTab → setActiveTab, onMenuOpenAudioWorkbench → setActiveTab + scroll-to. Aufwand: ~1h.",
+        "Pinnable Effect-Windows als nächstes großes Feature (siehe ROADMAP konkretisiert). Pattern (frameless + Custom-Header + perf-sync-style IPC) ist jetzt etabliert.",
+        "BUG-009 (alter Drag-Region-Fullscreen-Bug) ist architektonisch obsolet: Main hat nativen Frame, Performance-Popup hat keine alten Drag-Region-Konflikte mehr weil der Custom-Header sauber no-drag-Subzonen hat. ElectronTitleBar-Code-File könnte in einer Welle 2 entfernt werden, oder als Recycle-Vorlage für andere frameless Sub-Windows behalten."
+      ],
+      changed: [
+        "electron/main.ts",
+        "electron/preload.ts",
+        "electron/types.d.ts",
+        "electron/useElectron.ts",
+        "client/src/components/PerformanceMode/PerformancePopupApp.tsx",
+        "agents/INDEX.js"
+      ]
+    },
+    {
+      agent:     "frontend",
+      timestamp: "2026-05-13T11:00:00.000Z",
+      done: [
+        "BUG-016 Fix + FEAT-NATIVE-FRAME + ROADMAP-Konkretisierung — drei User-Requests post-v1.25.0 (Screenshot bilder/2.png).",
+        "BUG-016 (Performance-Mode Pads adaptieren nicht an Fenstergröße): client/src/components/PerformanceMode/PatternLaunchPad.tsx — Inner-Grid `max-w-2xl` entfernt, Container `overflow-auto` → `overflow-hidden`, Grid bekommt `aspect-square h-full max-h-full max-w-full grid grid-cols-4 grid-rows-4 gap-3`. Resultat: 4×4-Pad-Grid bleibt quadratisch und füllt automatisch min(verfügbare Breite, verfügbare Höhe). Keine Scrollbar mehr. Funktioniert sowohl im Inline-Performance-Mode als auch im separaten Popup-Fenster.",
+        "FEAT-NATIVE-FRAME (main window mit nativem OS-Frame + Menübar, analog zum Performance-Mode-Popup): electron/main.ts — `frame: process.platform === 'darwin'` → `frame: true` für alle Plattformen. ElectronTitleBar-Render aus client/src/App.tsx entfernt (würde sonst zweite TitleBar produzieren). Komponente bleibt als File erhalten für möglichen Re-Use bei frameless Sub-Windows (z.B. zukünftige Pinnable-Effect-Popups). BUG-009 (Drag-Region-Konflikt im Fullscreen) ist damit ARCHITEKTONISCH OBSOLET — keine Custom-Drag-Region mehr. Datei/Bearbeiten/Ansicht/Audio/Fenster/Help-Menübar ist jetzt am Main-Window sichtbar.",
+        "ROADMAP — Pinnable Per-Channel Effect Windows konkretisiert: existierender Multi-Window-Dockable-Workspace-Eintrag erweitert mit der spezifischen User-Anforderung (Effekt-Windows abpinbar damit Effekte pro Kanal frei positionierbar sind). Begründung: User will Mixer-FX-Inserts in eigene Fenster ziehen können — typischer DAW-Workflow (Ableton/Logic/FL Studio). Nutzt die Performance-Window-Architektur als Pattern (BrowserWindow + perf-sync-IPC) verallgemeinert.",
+        "Verification: pnpm check 0 Fehler. pnpm test 1376/1391 grün (unverändert — Layout-CSS-Änderungen haben keine Unit-Test-Implikationen). Manuelle Verifikation: pnpm dev:electron → Performance Mode öffnen → ⧉ Separates Fenster → Fenster grös­ser/kleiner ziehen → Pads füllen den verfügbaren Raum proportional. Main-Window: Datei/Bearbeiten/Ansicht/Audio/Fenster/Help-Menübar oben sichtbar."
+      ],
+      next: [
+        "Pinnable Effect-Windows als nächstes Feature-Item (siehe ROADMAP). Architektur: pro `<Effect>`-Renderer ein optionales 'Pin in separates Fenster'-Symbol; Click öffnet neues BrowserWindow mit URL-Param `?fxPopup=<channelId>&fxIdx=<n>`; App.tsx-Routing erkennt den Param und rendert nur den jeweiligen FxPanel. State-Sync via Pattern wie perf-sync. Aufwand: ~3-5 Tage.",
+        "BUG-009-Tests können entfernt werden (Test-Datei electron-titlebar.test.tsx wurde nie geschrieben — siehe Skipping-Notes). Wenn jemand die Komponente wieder aktiviert, sollten dann auch Tests rein.",
+        "ROADMAP-Cleanup empfohlen: 'Multi-Window Dockable Workspace' Eintrag mit der konkreten Phase-1-Aufgabe (Effect-Windows abpinbar) verschmelzen statt als getrenntes Item zu lassen."
+      ],
+      changed: [
+        "client/src/App.tsx",
+        "client/src/components/PerformanceMode/PatternLaunchPad.tsx",
+        "electron/main.ts",
+        "agents/INDEX.js"
+      ]
+    },
     {
       agent:     "frontend",
       timestamp: "2026-05-13T10:10:00.000Z",
