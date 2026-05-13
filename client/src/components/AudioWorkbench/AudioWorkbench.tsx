@@ -408,6 +408,16 @@ export function AudioWorkbench({ onSamplesAdded }: AudioWorkbenchProps) {
   const handleHalfGain   = useCallback(() => buffer && applyEdit(() => applyGain(new AudioContext(), buffer, 0.5)), [buffer, applyEdit]);
   const handleDoubleGain = useCallback(() => buffer && applyEdit(() => applyGain(new AudioContext(), buffer, 2.0)), [buffer, applyEdit]);
 
+  // Cut: entfernt die ausgewählte Region (selStart..selEnd) aus dem Buffer.
+  // Anders als Trim, das die Auswahl BEHÄLT — Cut entfernt sie.
+  const handleCut = useCallback(() => {
+    if (!buffer) return;
+    if (selStart === null || selEnd === null || selEnd <= selStart) return;
+    applyEdit(() => cutSelection(new AudioContext(), buffer, selStart, selEnd).remainder);
+    setSelStart(null);
+    setSelEnd(null);
+  }, [buffer, applyEdit, selStart, selEnd]);
+
   const openTrim = useCallback(() => {
     if (!buffer) return;
     // Pre-fill aus Waveform-Selection, falls vorhanden
@@ -610,6 +620,14 @@ export function AudioWorkbench({ onSamplesAdded }: AudioWorkbenchProps) {
               ⟲ Undo{undoStack.length > 0 && <span className="ml-1 text-text-dim">({undoStack.length})</span>}
             </button>
             <button onClick={openTrim}          className={`px-2 py-1 text-[10px] rounded bg-bg-panel border text-text-primary hover:border-accent-primary ${editMode==="trim" ? "border-accent-primary" : "border-border-color"}`}>✂ Trim</button>
+            <button
+              onClick={handleCut}
+              disabled={selStart === null || selEnd === null || (selEnd ?? 0) <= (selStart ?? 0)}
+              title="Markierte Region aus Buffer entfernen"
+              className="px-2 py-1 text-[10px] rounded bg-bg-panel border border-border-color text-text-primary hover:border-accent-primary disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              ✕ Cut
+            </button>
             <button onClick={handleReverse}     className="px-2 py-1 text-[10px] rounded bg-bg-panel border border-border-color text-text-primary hover:border-accent-primary">↩ Reverse</button>
             <button onClick={openNormalize}     className={`px-2 py-1 text-[10px] rounded bg-bg-panel border text-text-primary hover:border-accent-primary ${editMode==="normalize" ? "border-accent-primary" : "border-border-color"}`}>📈 Normalize…</button>
             <button onClick={handleFadeIn}      className="px-2 py-1 text-[10px] rounded bg-bg-panel border border-border-color text-text-primary hover:border-accent-primary">↗ Fade In</button>
