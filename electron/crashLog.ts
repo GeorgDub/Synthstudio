@@ -92,6 +92,8 @@ export function getCrashLogPath(): string | null {
   return logPath;
 }
 
+let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+
 /** Setzt globale Handler in main process. */
 export function installMainProcessCrashHandlers(): void {
   process.on("uncaughtException", (err) => {
@@ -102,6 +104,35 @@ export function installMainProcessCrashHandlers(): void {
     logCrash("main:unhandledRejection", reason);
     console.error("[CRASH:main:unhandledRejection]", reason);
   });
+
+  // DIAG-4: SIGTERM/SIGINT — wenn der OS oder Task-Manager den Process killt,
+  // sehen wir das (sofern wir noch zum Logging kommen).
+  process.on("SIGTERM", () => { logEvent("process:SIGTERM"); });
+  process.on("SIGINT", () => { logEvent("process:SIGINT"); });
+
+  process.on("exit", (code) => {
+    logEvent("process:exit", { code });
+  });
+}
+
+/**
+ * DIAG-4: Heartbeat — loggt alle 10 Sekunden ein "tick"-Event.
+ * Zweck: wenn die Logs abrupt stoppen, sehen wir an dem letzten tick + dem
+ * nächsten verpassten tick OB die App hing (kein neuer tick ab Zeitpunkt X)
+ * oder ob es einen externen Kill gab.
+ */
+export function startHeartbeat(): void {
+  if (heartbeatTimer) return;
+  heartbeatTimer = setInterval(() => {
+    logEvent("heartbeat", { uptime: process.uptime() });
+  }, 10_000);
+}
+
+export function stopHeartbeat(): void {
+  if (heartbeatTimer) {
+    clearInterval(heartbeatTimer);
+    heartbeatTimer = null;
+  }
 }
 
 /**

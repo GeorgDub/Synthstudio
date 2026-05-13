@@ -49,6 +49,8 @@ import {
   logEvent,
   logCrash,
   shutdownCrashLog,
+  startHeartbeat,
+  stopHeartbeat,
   getCrashLogPath,
 } from "./crashLog";
 import { registerZipImportHandlers } from "./zip-import";
@@ -601,6 +603,7 @@ function createPerformanceWindow(): void {
   perfWindow.on("close", () => {
     markPopupClosed();
     if (perfWindow) persistPopupLayout("performance", perfWindow);
+    logEvent("popup:close-end", { key: "performance" });
   });
 
   perfWindow.once("ready-to-show", () => {
@@ -701,7 +704,11 @@ function createFxWindow(channelId: string): void {
   });
 
   // Save bounds vor dem Schließen
-  win.on("close", () => { markPopupClosed(); persistFxLayout(channelId, win); });
+  win.on("close", () => {
+    markPopupClosed();
+    persistFxLayout(channelId, win);
+    logEvent("popup:close-end", { key: `fx:${channelId}` });
+  });
 
   win.once("ready-to-show", () => {
     win.show();
@@ -789,6 +796,7 @@ function createMixerWindow(): void {
   mixerWindow.on("close", () => {
     markPopupClosed();
     if (mixerWindow) persistPopupLayout("mixer", mixerWindow);
+    logEvent("popup:close-end", { key: "mixer" });
   });
 
   mixerWindow.once("ready-to-show", () => {
@@ -874,6 +882,7 @@ function createSampleBrowserWindow(): void {
   sampleBrowserWindow.on("close", () => {
     markPopupClosed();
     if (sampleBrowserWindow) persistPopupLayout("sampleBrowser", sampleBrowserWindow);
+    logEvent("popup:close-end", { key: "sampleBrowser" });
   });
 
   sampleBrowserWindow.once("ready-to-show", () => {
@@ -954,6 +963,7 @@ function createPatternGenWindow(): void {
   patternGenWindow.on("close", () => {
     markPopupClosed();
     if (patternGenWindow) persistPopupLayout("patternGen", patternGenWindow);
+    logEvent("popup:close-end", { key: "patternGen" });
   });
 
   patternGenWindow.once("ready-to-show", () => {
@@ -1051,7 +1061,11 @@ function createSimpleSingletonWindow(
     bounds: saved?.bounds,
     alwaysOnTop: saved?.alwaysOnTop ?? false,
   });
-  win.on("close", () => { markPopupClosed(); persistPopupLayout(config.key, win); });
+  win.on("close", () => {
+    markPopupClosed();
+    persistPopupLayout(config.key, win);
+    logEvent("popup:close-end", { key: config.key });
+  });
 
   win.once("ready-to-show", () => win.show());
 
@@ -2494,6 +2508,19 @@ app.whenReady().then(() => {
   // Crash-Log direkt nach AppStore init aufsetzen
   initCrashLog(app);
   logEvent("app:whenReady");
+  startHeartbeat();
+
+  // DIAG-4: child-process-gone fängt non-renderer child crashes (GPU, utility,
+  // network). Renderer crashes haben separate webContents.on('render-process-gone').
+  app.on("child-process-gone", (_event, details) => {
+    logCrash("app:child-process-gone", {
+      type: details.type,
+      reason: details.reason,
+      exitCode: details.exitCode,
+      serviceName: details.serviceName,
+      name: details.name,
+    });
+  });
 
   // Notfall-Flag: Synthstudio.exe --reset-window löscht gespeicherte Fenster-Bounds.
   // Hilft User die nach Display-Wechsel das Fenster nicht mehr sehen können.
@@ -2594,6 +2621,7 @@ app.on("before-quit", (event) => {
 
 app.on("quit", () => {
   logEvent("app:quit");
+  stopHeartbeat();
   shutdownCrashLog();
 });
 
