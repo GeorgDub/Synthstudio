@@ -22,6 +22,7 @@ import { PatternMorphPanel } from "@/components/PatternMorph";
 import { MacroPanel } from "@/components/Macro/MacroPanel";
 import { EnvelopeFollowerPanel } from "./EnvelopeFollowerPanel";
 import { parseMidiFile } from "../../../../src/utils/midiParser.js";
+import { parseFlp, flpPositionToStep } from "@/utils/flpImport";
 import { GranularSynthPanel } from "./GranularSynthPanel";
 import { DEFAULT_GRANULAR_PARAMS } from "@/audio/GranularEngine";
 import { PolyrhythmVisualizer } from "./PolyrhythmVisualizer";
@@ -75,6 +76,7 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
   const [showMacros, setShowMacros] = useState(false);
   const [showPolyrhythm, setShowPolyrhythm] = useState(false);
   const midiImportRef = useRef<HTMLInputElement>(null);
+  const flpImportRef = useRef<HTMLInputElement>(null);
   const [selectedStep, setSelectedStep] = useState<{ partId: string; stepIndex: number } | null>(null);
   const [granularPartId, setGranularPartId] = useState<string | null>(null);
 
@@ -122,6 +124,55 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
         pattern.parts.forEach((part, i) => dm.setPartSteps(part.id, newSteps[i], newVels[i]));
       } catch (err) {
         console.error("[MIDI Import]", err);
+      }
+    };
+    reader.readAsArrayBuffer(file);
+    e.target.value = "";
+  }, [pattern, dm]);
+
+  /**
+   * FLP-Import: extrahiert das ERSTE Pattern aus einer FL-Studio .flp Datei
+   * und mapped es ins aktive Synthstudio-Pattern.
+   *
+   * Channel-Mapping: FL-Channel-Index → Part-Index (modulo). Bei mehreren FL-
+   * Patterns nehmen wir das erste — multi-pattern-import wäre V2.
+   */
+  const handleFlpImport = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !pattern) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const buffer = ev.target?.result as ArrayBuffer;
+        const parsed = parseFlp(buffer);
+        if (!parsed.patterns.length) {
+          console.warn("[FLP Import] Keine Patterns im FLP gefunden");
+          return;
+        }
+        const firstPattern = parsed.patterns[0];
+        if (!firstPattern.notes.length) {
+          console.warn("[FLP Import] Erstes Pattern ist leer");
+          return;
+        }
+
+        const ppq = parsed.header.ppq;
+        const stepCount = pattern.stepCount;
+        const partCount = pattern.parts.length;
+
+        const newSteps: boolean[][] = pattern.parts.map(() => Array(stepCount).fill(false));
+        const newVels: number[][] = pattern.parts.map(() => Array(stepCount).fill(100));
+
+        for (const note of firstPattern.notes) {
+          const step = flpPositionToStep(note.position, ppq) % stepCount;
+          const partIdx = note.channel % partCount;
+          newSteps[partIdx][step] = true;
+          newVels[partIdx][step] = note.velocity;
+        }
+        pattern.parts.forEach((part, i) => dm.setPartSteps(part.id, newSteps[i], newVels[i]));
+        console.log(`[FLP Import] Pattern ${firstPattern.index}: ${firstPattern.notes.length} Notes auf ${parsed.patterns.length > 1 ? `(von ${parsed.patterns.length} Patterns)` : ""}`);
+      } catch (err) {
+        console.error("[FLP Import]", err);
+        alert("FLP-Import fehlgeschlagen. Vermutlich ungültige oder neuere FLP-Version.\n\n" + (err as Error).message);
       }
     };
     reader.readAsArrayBuffer(file);
@@ -719,6 +770,23 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
           accept=".mid,.midi"
           className="hidden"
           onChange={handleMidiImport}
+        />
+
+        {/* FLP-Import (FL-Studio Pattern-Extraktion) */}
+        <button
+          onClick={() => flpImportRef.current?.click()}
+          title="FL-Studio Projekt importieren (erstes Pattern)"
+          className="px-2 py-1 rounded text-[10px] bg-bg-elevated text-text-dim hover:bg-bg-elevated hover:text-text-primary transition-colors"
+          data-testid="flp-import"
+        >
+          🎛 FLP
+        </button>
+        <input
+          ref={flpImportRef}
+          type="file"
+          accept=".flp"
+          className="hidden"
+          onChange={handleFlpImport}
         />
 
         {/* Pattern Morph */}
