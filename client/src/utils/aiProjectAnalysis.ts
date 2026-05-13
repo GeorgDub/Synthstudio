@@ -1,12 +1,16 @@
 /**
  * Synthstudio – aiProjectAnalysis.ts
  *
- * LLM-basierte Projekt-Analyse mittels Anthropic API.
+ * LLM-basierte Projekt-Analyse via Anthropic ODER OpenAI.
  * Sendet eine strukturierte Mix-Snapshot (BPM, Parts, FX, Steps) an Claude
- * und liefert natürlich-sprachliche Empfehlungen zurück.
+ * oder GPT und liefert natürlich-sprachliche Empfehlungen zurück.
  *
- * Benötigt: API-Key aus useApiSettingsStore.
+ * Multi-Provider-Support (post-v1.25.0): dispatcht anhand `opts.provider`
+ * auf den passenden Provider-Endpoint. Default: anthropic (für Backward-Compat).
+ *
+ * Benötigt: API-Key + Modell + Provider aus useApiSettingsStore.
  */
+import type { AiProvider } from "@/store/useApiSettingsStore";
 
 export interface ProjectSnapshot {
   bpm: number;
@@ -44,7 +48,10 @@ export interface AiAnalysisResult {
 }
 
 const ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages";
-const MODEL = "claude-sonnet-4-5-20250929";
+const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
+/** Fallback-Modelle wenn der Caller keins angibt. */
+const DEFAULT_ANTHROPIC_MODEL = "claude-sonnet-4-5-20250929";
+const DEFAULT_OPENAI_MODEL = "gpt-4o-mini";
 
 const SYSTEM_PROMPT = `Du bist ein professioneller Musik-Produktions-Coach mit Expertise in elektronischer Musik (Techno, House, Hardtekk, Hardcore, Drum & Bass).
 
@@ -74,16 +81,69 @@ Fokussiere auf:
 
 Maximal 5 Recommendations. Antworte auf Deutsch.`;
 
-/** Ruft die Anthropic API mit dem Projekt-Snapshot auf und liefert Recommendations zurück. */
+/**
+ * Optionen für `analyzeProjectWithAi`.
+ *
+ * - `provider`: AI-Provider — "anthropic" (default) oder "openai".
+ * - `model`: Modell-ID. Default je nach Provider.
+ * - `signal`: AbortSignal (z.B. zum Cancellen des Calls beim Tab-Switch).
+ */
+export interface AnalyzeOptions {
+  provider?: AiProvider;
+  model?: string;
+  signal?: AbortSignal;
+}
+
+/**
+ * Ruft die KI mit dem Projekt-Snapshot auf und liefert Recommendations zurück.
+ *
+ * Backward-compat: Wird ohne 4. Parameter mit nur einem AbortSignal aufgerufen,
+ * läuft die alte Anthropic-Default-Variante.
+ */
 export async function analyzeProjectWithAi(
   snapshot: ProjectSnapshot,
   apiKey: string,
-  signal?: AbortSignal,
+  optsOrSignal?: AnalyzeOptions | AbortSignal,
 ): Promise<AiAnalysisResult> {
   if (!apiKey) throw new Error("Kein API-Key gesetzt. Bitte unter Settings → KI & API hinterlegen.");
 
+  // Backward-compat: 3. Param kann ein AbortSignal sein (alte API).
+  const opts: AnalyzeOptions =
+    optsOrSignal && typeof (optsOrSignal as AbortSignal).aborted === "boolean"
+      ? { signal: optsOrSignal as AbortSignal }
+      : (optsOrSignal as AnalyzeOptions) ?? {};
+
+  const provider: AiProvider = opts.provider ?? "anthropic";
+  const model = opts.model ?? (provider === "openai" ? DEFAULT_OPENAI_MODEL : DEFAULT_ANTHROPIC_MODEL);
   const userMessage = `Hier ist mein aktuelles Drum-Pattern:\n\n${JSON.stringify(snapshot, null, 2)}\n\nGib mir bitte konkrete Verbesserungs-Vorschläge.`;
 
+  const rawText = provider === "openai"
+    ? await callAnalysisOpenAi(apiKey, model, userMessage, opts.signal)
+    : await callAnalysisAnthropic(apiKey, model, userMessage, opts.signal);
+
+  if (!rawText) throw new Error("Keine Antwort von der KI erhalten.");
+
+  // JSON aus Markdown-Code-Block extrahieren (falls vorhanden)
+  const jsonMatch = rawText.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+  const jsonStr = jsonMatch ? jsonMatch[1] : rawText;
+
+  try {
+    const parsed = JSON.parse(jsonStr) as AiAnalysisResult;
+    if (!parsed.summary || !Array.isArray(parsed.recommendations)) {
+      throw new Error("Ungültiges Antwort-Format");
+    }
+    return parsed;
+  } catch (err) {
+    throw new Error(`KI-Antwort konnte nicht geparst werden: ${err instanceof Error ? err.message : "Unbekannt"}\n\nRoh-Antwort:\n${rawText.slice(0, 300)}`);
+  }
+}
+
+async function callAnalysisAnthropic(
+  apiKey: string,
+  model: string,
+  userMessage: string,
+  signal?: AbortSignal,
+): Promise<string> {
   const response = await fetch(ANTHROPIC_API_URL, {
     method: "POST",
     headers: {
@@ -93,36 +153,50 @@ export async function analyzeProjectWithAi(
       "anthropic-dangerous-direct-browser-access": "true",
     },
     body: JSON.stringify({
-      model: MODEL,
+      model,
       max_tokens: 1024,
       system: SYSTEM_PROMPT,
       messages: [{ role: "user", content: userMessage }],
     }),
     signal,
   });
-
   if (!response.ok) {
     const errText = await response.text().catch(() => "Unbekannter Fehler");
     throw new Error(`API-Fehler ${response.status}: ${errText.slice(0, 200)}`);
   }
-
   const data = await response.json() as { content: Array<{ type: string; text: string }> };
   const textBlock = data.content.find(c => c.type === "text");
-  if (!textBlock?.text) throw new Error("Keine Antwort von der KI erhalten.");
+  return textBlock?.text ?? "";
+}
 
-  // JSON aus Markdown-Code-Block extrahieren (falls vorhanden)
-  const jsonMatch = textBlock.text.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-  const jsonStr = jsonMatch ? jsonMatch[1] : textBlock.text;
-
-  try {
-    const parsed = JSON.parse(jsonStr) as AiAnalysisResult;
-    if (!parsed.summary || !Array.isArray(parsed.recommendations)) {
-      throw new Error("Ungültiges Antwort-Format");
-    }
-    return parsed;
-  } catch (err) {
-    throw new Error(`KI-Antwort konnte nicht geparst werden: ${err instanceof Error ? err.message : "Unbekannt"}\n\nRoh-Antwort:\n${textBlock.text.slice(0, 300)}`);
+async function callAnalysisOpenAi(
+  apiKey: string,
+  model: string,
+  userMessage: string,
+  signal?: AbortSignal,
+): Promise<string> {
+  const response = await fetch(OPENAI_API_URL, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model,
+      max_tokens: 1024,
+      messages: [
+        { role: "system", content: SYSTEM_PROMPT },
+        { role: "user", content: userMessage },
+      ],
+    }),
+    signal,
+  });
+  if (!response.ok) {
+    const errText = await response.text().catch(() => "Unbekannter Fehler");
+    throw new Error(`API-Fehler ${response.status}: ${errText.slice(0, 200)}`);
   }
+  const data = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
+  return data?.choices?.[0]?.message?.content ?? "";
 }
 
 /** Vereinfachte Snapshot-Variante für den MixAssistant (nur Mix-Metadaten). */

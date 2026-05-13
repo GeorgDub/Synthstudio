@@ -98,7 +98,9 @@ function GeneratedPreview({ pattern, onApply, onClear }: { pattern: GeneratedPat
 export function PatternGeneratorPanel() {
   const store = usePatternGeneratorStore();
   const apiSettings = useApiSettingsStore();
-  const hasApiKey = apiSettings.anthropicApiKey.length > 0;
+  // Multi-Provider-Support (post-v1.25.0): aiEnabled reflektiert ob der AKTIVE
+  // Provider einen Key hat. Backward-compat: hasApiKey bleibt der Boolean.
+  const hasApiKey = apiSettings.aiEnabled;
   const [mode, setMode] = useState<"template" | "prompt">("template");
   const [presetName, setPresetName] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);

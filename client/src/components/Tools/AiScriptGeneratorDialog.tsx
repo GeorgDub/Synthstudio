@@ -61,7 +61,11 @@ export function AiScriptGeneratorDialog({
   /** Iterate-Mode aktiviert (nur möglich wenn currentCode + onIterateAccept verfügbar). */
   const [iterateMode, setIterateMode] = useState(false);
 
-  const hasApiKey = api.anthropicApiKey.length > 0;
+  // Multi-Provider-Support (post-v1.25.0): liest Key + Modell des AKTIVEN
+  // Providers aus dem Store. `aiEnabled` reflektiert ob dieser Provider einen
+  // Key hat. `aiModel` ist das Modell des aktiven Providers.
+  const activeProviderKey = api.providers[api.activeProvider].apiKey;
+  const hasApiKey = activeProviderKey.length > 0;
   const canIterate = Boolean(currentCode && currentCode.trim().length > 0 && onIterateAccept);
 
   // Reset state when dialog closes; default iterateMode = canIterate beim Öffnen
@@ -92,11 +96,14 @@ export function AiScriptGeneratorDialog({
     if (!hasApiKey || !prompt.trim()) return;
     setGenerating(true);
     setResult(null);
-    const opts = iterateMode && currentCode ? { existingCode: currentCode } : {};
-    const res = await generateScriptFromPrompt(prompt, api.anthropicApiKey, api.aiModel, opts);
+    const opts = {
+      ...(iterateMode && currentCode ? { existingCode: currentCode } : {}),
+      provider: api.activeProvider,
+    };
+    const res = await generateScriptFromPrompt(prompt, activeProviderKey, api.aiModel, opts);
     setResult(res);
     setGenerating(false);
-  }, [prompt, api.anthropicApiKey, api.aiModel, hasApiKey, iterateMode, currentCode]);
+  }, [prompt, activeProviderKey, api.aiModel, api.activeProvider, hasApiKey, iterateMode, currentCode]);
 
   const handleAccept = useCallback(() => {
     if (!result?.ok || !result.code) return;

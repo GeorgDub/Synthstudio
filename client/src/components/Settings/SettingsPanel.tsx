@@ -14,7 +14,20 @@
 import React, { useState, useCallback, useEffect } from "react";
 import { X } from "lucide-react";
 import { KeyboardBindingsPanel } from "./KeyboardBindingsPanel";
-import { useApiSettingsStore, setApiKey, setAiModel, setAutoSaveEnabled, setSnapshotsEnabled, setAutoSaveInterval } from "@/store/useApiSettingsStore";
+import {
+  useApiSettingsStore,
+  setApiKey,
+  setAiModel,
+  setAutoSaveEnabled,
+  setSnapshotsEnabled,
+  setAutoSaveInterval,
+  setActiveProvider,
+  setProviderKey,
+  setProviderModel,
+  AI_PROVIDERS,
+  AVAILABLE_MODELS,
+  type AiProvider,
+} from "@/store/useApiSettingsStore";
 import {
   useMetronomeStore,
   updateMetronome,
@@ -200,45 +213,130 @@ function DesignSection() {
   );
 }
 
+/** Sichtbarer Label + Provider-spezifischer Hinweis. */
+const PROVIDER_META: Record<AiProvider, { label: string; placeholder: string; helpUrl: string; helpLabel: string }> = {
+  anthropic: {
+    label: "Anthropic (Claude)",
+    placeholder: "sk-ant-…",
+    helpUrl: "console.anthropic.com",
+    helpLabel: "console.anthropic.com",
+  },
+  openai: {
+    label: "OpenAI (ChatGPT / GPT)",
+    placeholder: "sk-…",
+    helpUrl: "platform.openai.com/api-keys",
+    helpLabel: "platform.openai.com/api-keys",
+  },
+};
+
 function KiSection() {
   const api = useApiSettingsStore();
-  const [key, setKey] = useState(api.anthropicApiKey);
+  const provider: AiProvider = api.activeProvider;
+  const providerCfg = api.providers[provider];
+  // Lokales Draft-State pro provider damit der Save-Button auch beim Wechsel
+  // sinnvoll funktioniert. useState-Init wird beim Provider-Wechsel via key gerefresht.
+  const [keyDraft, setKeyDraft] = useState(providerCfg.apiKey);
+  const meta = PROVIDER_META[provider];
+
+  // Wenn der User den aktiven Provider wechselt, das Draft auf den Key des
+  // neuen Providers setzen.
+  useEffect(() => {
+    setKeyDraft(providerCfg.apiKey);
+  }, [provider, providerCfg.apiKey]);
+
+  const handleSave = () => {
+    setProviderKey(provider, keyDraft);
+  };
+
   return (
     <div className="space-y-5">
       <div>
         <h3 className="text-sm font-bold text-text-primary mb-1">AI Beat Co-Pilot</h3>
         <p className="text-xs text-text-dim mb-3">
-          Verbinde den Pattern Generator mit Claude AI. Der API Key wird lokal gespeichert.
+          Wähle deinen AI-Provider, füge deinen API-Key hinzu und wähle ein Modell.
+          Keys werden lokal gespeichert — nicht synchronisiert, nicht geloggt.
         </p>
-        <label className="text-xs text-text-muted block mb-1">Anthropic API Key</label>
+
+        {/* Provider-Picker */}
+        <label className="text-xs text-text-muted block mb-1">Provider</label>
+        <div className="flex gap-2 mb-3" data-testid="ki-provider-picker">
+          {AI_PROVIDERS.map((p) => (
+            <button
+              key={p}
+              type="button"
+              data-testid={`ki-provider-btn-${p}`}
+              onClick={() => setActiveProvider(p)}
+              className={[
+                "flex-1 px-3 py-1.5 text-xs rounded border transition-colors",
+                provider === p
+                  ? "bg-accent-primary/20 border-accent-primary text-accent-primary"
+                  : "bg-bg-elevated border-border-color text-text-muted hover:text-text-primary hover:border-accent-secondary",
+              ].join(" ")}
+            >
+              {PROVIDER_META[p].label}
+            </button>
+          ))}
+        </div>
+
+        {/* API-Key Eingabe */}
+        <label className="text-xs text-text-muted block mb-1">{meta.label} API Key</label>
         <div className="flex gap-2">
-          <input type="password" value={key} onChange={e => setKey(e.target.value)}
-            placeholder="sk-ant-…"
-            className="flex-1 bg-bg-elevated text-text-primary text-xs px-3 py-2 rounded border border-border-color placeholder:text-text-dim focus:border-accent-primary outline-none" />
-          <button onClick={() => setApiKey(key)}
-            className="px-3 py-1.5 text-xs rounded bg-accent-primary text-white hover:opacity-80 transition-opacity">
+          <input
+            type="password"
+            value={keyDraft}
+            onChange={e => setKeyDraft(e.target.value)}
+            placeholder={meta.placeholder}
+            data-testid={`ki-api-key-${provider}`}
+            className="flex-1 bg-bg-elevated text-text-primary text-xs px-3 py-2 rounded border border-border-color placeholder:text-text-dim focus:border-accent-primary outline-none"
+          />
+          <button
+            onClick={handleSave}
+            data-testid={`ki-api-key-save-${provider}`}
+            className="px-3 py-1.5 text-xs rounded bg-accent-primary text-white hover:opacity-80 transition-opacity"
+          >
             Speichern
           </button>
         </div>
-        {api.anthropicApiKey && <p className="text-[10px] text-accent-success mt-1.5">✓ API Key aktiv – KI-Generierung verfügbar</p>}
+        {providerCfg.apiKey && (
+          <p className="text-[10px] text-accent-success mt-1.5">✓ API Key aktiv – KI-Generierung verfügbar</p>
+        )}
       </div>
+
+      {/* Modell-Picker für den aktiven Provider */}
       <div>
-        <label className="text-xs text-text-muted block mb-1">Claude Modell</label>
-        <select value={api.aiModel} onChange={e => setAiModel(e.target.value)}
-          className="w-full bg-bg-elevated text-text-primary text-xs px-3 py-2 rounded border border-border-color">
-          <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5 – schnell &amp; günstig</option>
-          <option value="claude-sonnet-4-6">Claude Sonnet 4.6 – kreativ &amp; ausgewogen</option>
-          <option value="claude-opus-4-7">Claude Opus 4.7 – maximal kreativ</option>
+        <label className="text-xs text-text-muted block mb-1">Modell ({meta.label})</label>
+        <select
+          value={providerCfg.model}
+          onChange={e => setProviderModel(provider, e.target.value)}
+          data-testid={`ki-model-${provider}`}
+          className="w-full bg-bg-elevated text-text-primary text-xs px-3 py-2 rounded border border-border-color"
+        >
+          {AVAILABLE_MODELS[provider].map(m => (
+            <option key={m.id} value={m.id}>{m.label}</option>
+          ))}
         </select>
-        <p className="text-[10px] text-text-dim mt-1">Haiku empfohlen für Pattern-Generierung (niedrige Latenz).</p>
+        <p className="text-[10px] text-text-dim mt-1">
+          Kleinere Modelle = niedrigere Latenz + günstiger. Größere = kreativer.
+        </p>
       </div>
-      <div className="border-t border-border-color pt-3 text-[10px] text-text-dim">
-        API Key kostenlos testen: <span className="text-accent-secondary">console.anthropic.com</span>.
-        Ohne Key wird prozedurale Generierung verwendet.
+
+      <div className="border-t border-border-color pt-3 text-[10px] text-text-dim space-y-1">
+        <div>
+          API Key holen: <span className="text-accent-secondary">{meta.helpLabel}</span>
+        </div>
+        <div>
+          Ohne Key wird prozedurale Generierung verwendet. Free-Tier-Plan via Synthstudio-Proxy
+          ist auf der Roadmap (Phase B), aktuell nicht verfügbar.
+        </div>
       </div>
     </div>
   );
 }
+
+// Silence "setApiKey is unused" warning — bleibt für Backward-compat re-exportiert
+// von useApiSettingsStore und in Tests verwendet.
+void setApiKey;
+void setAiModel;
 
 function MetronomeSection() {
   const state = useMetronomeStore();

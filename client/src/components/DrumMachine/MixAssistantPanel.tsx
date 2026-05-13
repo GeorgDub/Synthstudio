@@ -79,8 +79,9 @@ export function MixAssistantPanel({ input, onApply, onClose }: MixAssistantPanel
 
   const handleAiAnalyze = useCallback(async () => {
     const settings = getApiSettings();
-    if (!settings.anthropicApiKey) {
-      setAiError("Kein Anthropic-API-Key. Bitte unter Settings → KI & API setzen.");
+    const activeKey = settings.providers[settings.activeProvider].apiKey;
+    if (!activeKey) {
+      setAiError("Kein API-Key. Bitte unter Settings → KI & API einen Provider mit Key auswählen.");
       return;
     }
     setAiLoading(true);
@@ -88,7 +89,10 @@ export function MixAssistantPanel({ input, onApply, onClose }: MixAssistantPanel
     setAiResult(null);
     try {
       const snapshot = buildMixSnapshot(input);
-      const result = await analyzeProjectWithAi(snapshot, settings.anthropicApiKey);
+      const result = await analyzeProjectWithAi(snapshot, activeKey, {
+        provider: settings.activeProvider,
+        model: settings.aiModel,
+      });
       setAiResult(result);
     } catch (err) {
       setAiError(err instanceof Error ? err.message : "Unbekannter Fehler");

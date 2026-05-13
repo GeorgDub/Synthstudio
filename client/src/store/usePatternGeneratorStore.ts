@@ -175,12 +175,63 @@ export function togglePromptPart(part: string): void {
   notify();
 }
 
+/**
+ * Helper: ruft das LLM des AKTIVEN Providers auf und liefert den Antwort-Text.
+ * Multi-Provider-Support (post-v1.25.0).
+ */
+async function callActiveLlm(userPrompt: string, maxTokens: number): Promise<string> {
+  const { getApiSettings } = await import("./useApiSettingsStore");
+  const settings = getApiSettings();
+  const provider = settings.activeProvider;
+  const apiKey = settings.providers[provider].apiKey;
+  const model = settings.providers[provider].model;
+  if (!apiKey) throw new Error("Kein API-Key für aktiven Provider gesetzt.");
+
+  if (provider === "openai") {
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model,
+        max_tokens: maxTokens,
+        messages: [{ role: "user", content: userPrompt }],
+      }),
+    });
+    if (!response.ok) throw new Error(`API ${response.status}`);
+    const data = await response.json();
+    return data?.choices?.[0]?.message?.content ?? "";
+  }
+
+  // Anthropic (default)
+  const response = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+      "content-type": "application/json",
+      "anthropic-dangerous-direct-browser-access": "true",
+    },
+    body: JSON.stringify({
+      model,
+      max_tokens: maxTokens,
+      messages: [{ role: "user", content: userPrompt }],
+    }),
+  });
+  if (!response.ok) throw new Error(`API ${response.status}`);
+  const data = await response.json();
+  return data?.content?.[0]?.text ?? "";
+}
+
 /** Erstellt einen freien Prompt für den KI-Generator ohne Genre-Vorgaben. */
 export async function generateFromPromptAI(): Promise<void> {
   const { getApiSettings } = await import("./useApiSettingsStore");
-  const { anthropicApiKey, aiModel } = getApiSettings();
-  if (!anthropicApiKey) {
-    alert("Für den KI-Prompt-Modus wird ein Anthropic API Key benötigt.\nEinstellungen → KI & API → API Key eingeben.");
+  const settings = getApiSettings();
+  const activeKey = settings.providers[settings.activeProvider].apiKey;
+  if (!activeKey) {
+    alert("Für den KI-Prompt-Modus wird ein API Key benötigt.\nEinstellungen → KI & API → Provider auswählen + Key eingeben.");
     return;
   }
 
@@ -216,23 +267,7 @@ Erstelle Parts für diese Instrumente (genau diese Namen): ${promptParts.join(",
 Kein Markdown, nur reines JSON.`;
 
   try {
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "x-api-key": anthropicApiKey,
-        "anthropic-version": "2023-06-01",
-        "content-type": "application/json",
-        "anthropic-dangerous-direct-browser-access": "true",
-      },
-      body: JSON.stringify({
-        model: aiModel,
-        max_tokens: 2048,
-        messages: [{ role: "user", content: prompt }],
-      }),
-    });
-    if (!response.ok) throw new Error(`API ${response.status}`);
-    const data = await response.json();
-    const text = data.content?.[0]?.text ?? "";
+    const text = await callActiveLlm(prompt, 2048);
     const parsed = JSON.parse(text.trim().replace(/^```json\n?|\n?```$/g, ""));
     const pattern: GeneratedPattern = {
       bpm: parsed.bpm ?? promptBpm,
@@ -386,8 +421,9 @@ function parseClaudeResponse(json: string, genre: Genre): GeneratedPattern {
 
 export async function generateAndStoreAI(): Promise<void> {
   const { getApiSettings } = await import("./useApiSettingsStore");
-  const { anthropicApiKey, aiModel } = getApiSettings();
-  if (!anthropicApiKey) { generateAndStore(); return; }
+  const settings = getApiSettings();
+  const activeKey = settings.providers[settings.activeProvider].apiKey;
+  if (!activeKey) { generateAndStore(); return; }
 
   _state = { ..._state, isGenerating: true };
   notify();
@@ -401,24 +437,7 @@ export async function generateAndStoreAI(): Promise<void> {
     const bpmOverride = `BPM: exakt ${effectiveBpm}!`;
     const enhancedDescription = [_state.customPrompt, bpmOverride, stepsHint, partsHint, swingHint].filter(Boolean).join(" ");
     const prompt = buildPrompt(_state.selectedGenre, _state.complexity, enhancedDescription);
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "x-api-key": anthropicApiKey,
-        "anthropic-version": "2023-06-01",
-        "content-type": "application/json",
-        "anthropic-dangerous-direct-browser-access": "true",
-      },
-      body: JSON.stringify({
-        model: aiModel,
-        max_tokens: 1024,
-        messages: [{ role: "user", content: prompt }],
-      }),
-    });
-
-    if (!response.ok) throw new Error(`API Error: ${response.status}`);
-    const data = await response.json();
-    const text = data.content?.[0]?.text ?? "";
+    const text = await callActiveLlm(prompt, 1024);
     const pattern = parseClaudeResponse(text, _state.selectedGenre);
     _state = { ..._state, lastGenerated: pattern, isGenerating: false };
   } catch (err) {

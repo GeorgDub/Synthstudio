@@ -1,25 +1,28 @@
 /**
  * Synthstudio – AI Script Generator (post-v1.24.0 feature, ROADMAP Phase S)
  *
- * Prompt-driven generation of `ss.*`-API-conformant Scripts via Anthropic API.
- * Hängt NICHT vom BUG-010-Fix ab — auch wenn die Sandbox-Ausführung kaputt
- * wäre, kann der Generator als reines Code-Generation-Werkzeug genutzt werden.
+ * Prompt-driven generation of `ss.*`-API-conformant Scripts.
+ *
+ * Multi-Provider-Support (post-v1.25.0): dispatcht auf Anthropic (Claude) ODER
+ * OpenAI (ChatGPT/GPT-4) basierend auf dem aktiven Provider in den Settings.
  *
  * Architektur:
  *   - Pure-Funktion `buildSystemPrompt()` baut den System-Prompt mit voller
- *     ss.*-API-Doku → in Tests verifizierbar
- *   - `generateScriptFromPrompt(prompt, apiKey, model)` ruft die Anthropic
- *     Messages-API, parsed die Code-Response (mit/ohne Markdown-Fences)
+ *     ss.*-API-Doku → in Tests verifizierbar (Provider-unabhängig).
+ *   - `generateScriptFromPrompt(prompt, apiKey, model, opts)` dispatcht intern
+ *     auf den passenden Provider-Endpoint anhand `opts.provider`.
  *   - Validierung: 10kB-Limit (MAX_SCRIPT_CODE_BYTES) + Plausibility-Check
- *     (mind. eine ss.*-Aufruf-Stelle)
+ *     (mind. eine ss.*-Aufruf-Stelle) — gilt für beide Provider.
  *
  * Sicherheit: API-Key wird NIE serialisiert/geloggt. Der generierte Code wird
  * als normaler User-Code behandelt — durchläuft beim Run die übliche
  * Sandbox-Validation auf dem Main-Thread.
  */
 import { MAX_SCRIPT_CODE_BYTES } from "@/store/useScriptStore";
+import type { AiProvider } from "@/store/useApiSettingsStore";
 
 const ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages";
+const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
 
 /** Liste der erlaubten ss.dispatch()-Actions (muss mit useScriptSandbox synchron sein). */
 const ALLOWED_DISPATCH_ACTIONS = [
@@ -140,9 +143,12 @@ export function validateGeneratedCode(code: string): string | null {
  *   läuft im **Iterate-Mode** und sendet den Code als Kontext mit, so dass
  *   das LLM den existierenden Code verbessert/ändert statt neu zu generieren.
  *   Welle 2 von Phase S (post-v1.25.0).
+ * - `provider`: AI-Provider — entweder "anthropic" (default, Claude API) oder
+ *   "openai" (GPT/ChatGPT API). Post-v1.25.0 Multi-Provider-Support.
  */
 export interface GenerateOptions {
   existingCode?: string;
+  provider?: AiProvider;
 }
 
 /**
@@ -165,12 +171,12 @@ export function buildUserMessage(prompt: string, existingCode?: string): string 
 }
 
 /**
- * Sendet den Prompt an die Anthropic-API und liefert validierten Code zurück.
+ * Sendet den Prompt an den passenden Provider und liefert validierten Code zurück.
  *
  * @param prompt User-Text, z.B. "Generiere ein Script das BPM von 100 auf 140 rampt"
- * @param apiKey Anthropic API-Key aus useApiSettingsStore
- * @param model Modell-ID, z.B. "claude-haiku-4-5-20251001"
- * @param opts Optional: { existingCode } → Iterate-Mode
+ * @param apiKey API-Key des aktiven Providers (aus useApiSettingsStore)
+ * @param model Modell-ID, z.B. "claude-haiku-4-5-20251001" oder "gpt-4o-mini"
+ * @param opts Optional: { existingCode, provider } — provider default "anthropic"
  */
 export async function generateScriptFromPrompt(
   prompt: string,
@@ -186,34 +192,13 @@ export async function generateScriptFromPrompt(
   }
 
   const userMessage = buildUserMessage(prompt, opts.existingCode);
+  const provider: AiProvider = opts.provider ?? "anthropic";
 
   try {
-    const response = await fetch(ANTHROPIC_API_URL, {
-      method: "POST",
-      headers: {
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
-        "content-type": "application/json",
-        "anthropic-dangerous-direct-browser-access": "true",
-      },
-      body: JSON.stringify({
-        model,
-        max_tokens: 2048,
-        system: buildSystemPrompt(),
-        messages: [{ role: "user", content: userMessage }],
-      }),
-    });
+    const rawCode = provider === "openai"
+      ? await callOpenAi(apiKey, model, userMessage)
+      : await callAnthropic(apiKey, model, userMessage);
 
-    if (!response.ok) {
-      const errText = await response.text().catch(() => "");
-      return {
-        ok: false,
-        error: `Anthropic-API ${response.status}: ${errText.slice(0, 200)}`,
-      };
-    }
-
-    const data = await response.json();
-    const rawCode = data?.content?.[0]?.text ?? "";
     const code = stripMarkdownFences(rawCode);
     const byteSize = encodeURIComponent(code).replace(/%[0-9A-F]{2}/g, "_").length;
 
@@ -225,6 +210,58 @@ export async function generateScriptFromPrompt(
     return { ok: true, code, byteSize };
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
-    return { ok: false, error: `Netzwerk-/Parse-Fehler: ${msg}` };
+    return { ok: false, error: msg };
   }
+}
+
+// ─── Provider-spezifische API-Aufrufe ────────────────────────────────────────
+
+async function callAnthropic(apiKey: string, model: string, userMessage: string): Promise<string> {
+  const response = await fetch(ANTHROPIC_API_URL, {
+    method: "POST",
+    headers: {
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+      "content-type": "application/json",
+      "anthropic-dangerous-direct-browser-access": "true",
+    },
+    body: JSON.stringify({
+      model,
+      max_tokens: 2048,
+      system: buildSystemPrompt(),
+      messages: [{ role: "user", content: userMessage }],
+    }),
+  });
+
+  if (!response.ok) {
+    const errText = await response.text().catch(() => "");
+    throw new Error(`Anthropic-API ${response.status}: ${errText.slice(0, 200)}`);
+  }
+  const data = await response.json();
+  return data?.content?.[0]?.text ?? "";
+}
+
+async function callOpenAi(apiKey: string, model: string, userMessage: string): Promise<string> {
+  const response = await fetch(OPENAI_API_URL, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model,
+      max_tokens: 2048,
+      messages: [
+        { role: "system", content: buildSystemPrompt() },
+        { role: "user", content: userMessage },
+      ],
+    }),
+  });
+
+  if (!response.ok) {
+    const errText = await response.text().catch(() => "");
+    throw new Error(`OpenAI-API ${response.status}: ${errText.slice(0, 200)}`);
+  }
+  const data = await response.json();
+  return data?.choices?.[0]?.message?.content ?? "";
 }
