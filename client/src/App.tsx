@@ -79,6 +79,7 @@ import { useSessionStore } from "@/store/useSessionStore";
 import { CollabSplitView } from "@/components/CollabSplitView";
 import { ThemeSettings, initTheme } from "@/components/Settings";
 import { MixerView } from "@/components/Mixer";
+import { ChannelInspector } from "@/components/Mixer/ChannelInspector";
 import { useMixerStore } from "@/store/useMixerStore";
 import { useGlobalKeyBindings, KB_ACTION_EVENT } from "@/hooks/useGlobalKeyBindings";
 import { useScriptKeyBindings } from "@/hooks/useScriptKeyBindings";
@@ -2318,30 +2319,45 @@ export default function App() {
               )}
 
               {activeTab === "mixer" && (
-                mixerPopupOpen ? (
-                  <div className="h-full flex items-center justify-center text-text-dim text-sm">
-                    <div className="text-center">
-                      <p className="mb-3">📌 Mixer ist in einem eigenen Fenster geöffnet.</p>
-                      <button
-                        type="button"
-                        onClick={() => electron.closeMixerWindow?.()}
-                        data-testid="mixer-reattach"
-                        className="px-3 py-1.5 rounded border border-border-color text-text-muted hover:text-accent-primary hover:border-accent-primary transition-colors text-xs"
-                      >
-                        Hierher zurückholen
-                      </button>
-                    </div>
+                <div className="h-full flex overflow-hidden">
+                  {/* MixerView (channel strips). Wird durch Reattach-Stub
+                      ersetzt wenn als Popup-Fenster geöffnet (FEAT-INSP:
+                      ChannelInspector daneben bleibt unabhängig sichtbar). */}
+                  <div className="flex-1 flex overflow-hidden">
+                    {mixerPopupOpen ? (
+                      <div className="flex-1 flex items-center justify-center text-text-dim text-sm">
+                        <div className="text-center">
+                          <p className="mb-3">📌 Mixer ist in einem eigenen Fenster geöffnet.</p>
+                          <button
+                            type="button"
+                            onClick={() => electron.closeMixerWindow?.()}
+                            data-testid="mixer-reattach"
+                            className="px-3 py-1.5 rounded border border-border-color text-text-muted hover:text-accent-primary hover:border-accent-primary transition-colors text-xs"
+                          >
+                            Hierher zurückholen
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <MixerView
+                        dm={dm}
+                        mixer={mixer}
+                        samples={project.samples}
+                        bpm={project.bpm}
+                        projectName={project.projectName}
+                        className="flex-1"
+                      />
+                    )}
                   </div>
-                ) : (
-                  <MixerView
-                    dm={dm}
+
+                  {/* Channel Inspector als unabhängiger Sibling — bleibt sichtbar
+                      auch wenn der Mixer abgepinnt ist (FEAT-INSP). */}
+                  <ChannelInspector
+                    part={dm.getActivePattern()?.parts.find(p => p.id === mixer.selectedChannelId) ?? dm.getActivePattern()?.parts[0]}
+                    parts={dm.getActivePattern()?.parts ?? []}
                     mixer={mixer}
-                    samples={project.samples}
-                    bpm={project.bpm}
-                    projectName={project.projectName}
-                    className="h-full"
                   />
-                )
+                </div>
               )}
 
               {activeTab === "song" && (

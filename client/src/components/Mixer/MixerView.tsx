@@ -16,7 +16,8 @@ import type { DrumMachineState, DrumMachineActions } from "@/store/useDrumMachin
 import type { MixerState, MixerActions } from "@/store/useMixerStore";
 import { AudioEngine } from "@/audio/AudioEngine";
 import type { PartData } from "@/audio/AudioEngine";
-import { MIXER_FX_TYPES, summarizeEqBands, type MixerFxType } from "@/utils/mixerFx";
+// MIXER_FX_TYPES / summarizeEqBands / MixerFxType wurden mit dem extrahierten
+// ChannelInspector verschoben (siehe components/Mixer/ChannelInspector.tsx).
 import { ExportPanel } from "./ExportPanel";
 import { AudioTrackStrip, computePeaksFromBuffer } from "./AudioTrackStrip";
 import {
@@ -315,199 +316,10 @@ function MixerChannel({
   );
 }
 
-// ─── Phase-B Channel Inspector ───────────────────────────────────────────────
-
-interface ChannelInspectorProps {
-  part: PartData | undefined;
-  parts: PartData[];
-  mixer: MixerState & MixerActions;
-}
-
-function ChannelInspector({ part, parts, mixer }: ChannelInspectorProps) {
-  if (!part) {
-    return (
-      <aside className="w-80 shrink-0 border-l border-border-color bg-bg-panel p-4 text-xs text-text-dim">
-        Kanal im Mixer auswählen
-      </aside>
-    );
-  }
-
-  const chain = mixer.insertChains[part.id] ?? [];
-  const eqBands = mixer.eq16[part.id] ?? [];
-  const eqSummary = summarizeEqBands(eqBands);
-  const sidechain = mixer.sidechains[part.id];
-  const transient = mixer.transientShapers[part.id];
-
-  return (
-    <aside className="w-80 shrink-0 border-l border-border-color bg-bg-panel overflow-y-auto">
-      <div className="sticky top-0 z-10 border-b border-border-color bg-bg-panel px-3 py-2">
-        <div className="text-[10px] uppercase tracking-widest text-text-dim">Channel Inspector</div>
-        <div className="truncate text-sm font-semibold text-text-primary">{part.name}</div>
-      </div>
-
-      <section className="border-b border-border-color p-3">
-        <div className="mb-2 flex items-center justify-between">
-          <span className="text-[10px] font-semibold uppercase tracking-wide text-text-dim">Insert FX Chain</span>
-          <select
-            aria-label="Insert FX hinzufügen"
-            value=""
-            onChange={e => {
-              if (!e.target.value) return;
-              mixer.addInsertFx(part.id, e.target.value as MixerFxType);
-              e.target.value = "";
-            }}
-            className="rounded bg-bg-panel px-2 py-1 text-[10px] text-text-primary border border-border-color"
-          >
-            <option value="">Add FX</option>
-            {MIXER_FX_TYPES.map(type => (
-              <option key={type} value={type}>{type}</option>
-            ))}
-          </select>
-        </div>
-
-        <div className="space-y-1.5">
-          {chain.length === 0 && (
-            <div className="rounded border border-dashed border-border-color px-2 py-3 text-center text-[10px] text-text-dim">
-              Keine Inserts
-            </div>
-          )}
-          {chain.map((slot, index) => (
-            <div
-              key={slot.id}
-              className={[
-                "flex items-center gap-1 rounded border px-2 py-1.5",
-                slot.enabled ? "border-border-color bg-bg-panel/70" : "border-border-color bg-bg-base text-text-dim",
-              ].join(" ")}
-            >
-              <button
-                type="button"
-                title="Bypass"
-                onClick={() => mixer.toggleInsertFx(part.id, slot.id)}
-                className={slot.enabled ? "text-[10px] text-accent-secondary" : "text-[10px] text-text-dim"}
-              >
-                ON
-              </button>
-              <span className="min-w-0 flex-1 truncate text-[11px] text-text-primary">{slot.name}</span>
-              <button type="button" title="Nach oben" onClick={() => mixer.moveInsertFx(part.id, index, index - 1)} className="text-[10px] text-text-dim hover:text-text-primary">Up</button>
-              <button type="button" title="Nach unten" onClick={() => mixer.moveInsertFx(part.id, index, index + 1)} className="text-[10px] text-text-dim hover:text-text-primary">Dn</button>
-              <button type="button" title="Entfernen" onClick={() => mixer.removeInsertFx(part.id, slot.id)} className="text-[10px] text-accent-danger hover:text-accent-danger/80">X</button>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section className="border-b border-border-color p-3">
-        <div className="mb-2 flex items-center justify-between">
-          <span className="text-[10px] font-semibold uppercase tracking-wide text-text-dim">Parametric EQ 16</span>
-          <button
-            type="button"
-            onClick={() => mixer.resetEqBands(part.id)}
-            className="rounded bg-bg-elevated px-2 py-1 text-[10px] text-text-muted hover:text-text-primary"
-          >
-            Reset
-          </button>
-        </div>
-        <div className="flex h-24 items-end gap-1">
-          {eqBands.map((band, index) => (
-            <div key={band.frequency} className="flex flex-1 flex-col items-center gap-1">
-              <input
-                aria-label={`EQ Band ${band.frequency} Hz`}
-                type="range"
-                min={-24}
-                max={24}
-                step={0.5}
-                value={band.gain}
-                onChange={e => mixer.setEqBandGain(part.id, index, parseFloat(e.target.value))}
-                className="h-16 w-2 accent-accent-primary"
-                style={{ writingMode: "vertical-lr", direction: "rtl", appearance: "slider-vertical" as React.CSSProperties["appearance"] }}
-                title={`${band.frequency} Hz: ${band.gain.toFixed(1)} dB`}
-              />
-              <span className="text-[7px] text-text-dim">{index + 1}</span>
-            </div>
-          ))}
-        </div>
-        <div className="mt-2 grid grid-cols-3 gap-1 text-center text-[9px] text-text-dim">
-          <span>Low {eqSummary.low.toFixed(1)} dB</span>
-          <span>Mid {eqSummary.mid.toFixed(1)} dB</span>
-          <span>High {eqSummary.high.toFixed(1)} dB</span>
-        </div>
-      </section>
-
-      <section className="border-b border-border-color p-3">
-        <label className="mb-2 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wide text-text-dim">
-          <input
-            type="checkbox"
-            checked={sidechain?.enabled ?? false}
-            onChange={e => mixer.setSidechain(part.id, { enabled: e.target.checked })}
-            className="accent-accent-primary"
-          />
-          Sidechain Compressor
-        </label>
-        <select
-          aria-label="Sidechain Quelle"
-          value={sidechain?.sourcePartId ?? ""}
-          onChange={e => mixer.setSidechain(part.id, { sourcePartId: e.target.value || null })}
-          className="mb-2 w-full rounded border border-border-color bg-bg-panel px-2 py-1 text-xs text-text-primary"
-        >
-          <option value="">Quelle wählen</option>
-          {parts.filter(p => p.id !== part.id).map(p => (
-            <option key={p.id} value={p.id}>{p.name}</option>
-          ))}
-        </select>
-        <ControlRow label="Amount" value={sidechain?.amount ?? 0.5} min={0} max={1} step={0.01} onChange={v => mixer.setSidechain(part.id, { amount: v })} />
-        <ControlRow label="Attack" value={sidechain?.attack ?? 0.01} min={0.001} max={1} step={0.001} onChange={v => mixer.setSidechain(part.id, { attack: v })} />
-        <ControlRow label="Release" value={sidechain?.release ?? 0.18} min={0.01} max={2} step={0.01} onChange={v => mixer.setSidechain(part.id, { release: v })} />
-      </section>
-
-      <section className="p-3">
-        <label className="mb-2 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wide text-text-dim">
-          <input
-            type="checkbox"
-            checked={transient?.enabled ?? false}
-            onChange={e => mixer.setTransientShaper(part.id, { enabled: e.target.checked })}
-            className="accent-accent-primary"
-          />
-          Transient Shaper
-        </label>
-        <ControlRow label="Attack" value={transient?.attack ?? 0} min={-1} max={1} step={0.01} onChange={v => mixer.setTransientShaper(part.id, { attack: v })} />
-        <ControlRow label="Sustain" value={transient?.sustain ?? 0} min={-1} max={1} step={0.01} onChange={v => mixer.setTransientShaper(part.id, { sustain: v })} />
-        <ControlRow label="Mix" value={transient?.mix ?? 1} min={0} max={1} step={0.01} onChange={v => mixer.setTransientShaper(part.id, { mix: v })} />
-      </section>
-    </aside>
-  );
-}
-
-function ControlRow({
-  label,
-  value,
-  min,
-  max,
-  step,
-  onChange,
-}: {
-  label: string;
-  value: number;
-  min: number;
-  max: number;
-  step: number;
-  onChange: (value: number) => void;
-}) {
-  return (
-    <label className="mb-1.5 grid grid-cols-[56px_1fr_42px] items-center gap-2 text-[10px] text-text-dim">
-      <span>{label}</span>
-      <input
-        type="range"
-        min={min}
-        max={max}
-        step={step}
-        value={value}
-        onChange={e => onChange(parseFloat(e.target.value))}
-        className="accent-accent-primary"
-      />
-      <span className="text-right font-mono">{value.toFixed(2)}</span>
-    </label>
-  );
-}
+// ─── Channel Inspector ───────────────────────────────────────────────────────
+// Extracted to client/src/components/Mixer/ChannelInspector.tsx post-v1.34.0.
+// App.tsx rendert den Inspector jetzt als Geschwister-Komponente neben
+// MixerView, damit er unabhängig vom Mixer-Popup-Status sichtbar bleibt.
 
 // ─── MixerView ───────────────────────────────────────────────────────────────
 
@@ -974,7 +786,6 @@ export function MixerView({ dm, mixer, samples = [], bpm = 120, projectName = "S
           </div>
         </div>
 
-        <ChannelInspector part={selectedPart} parts={parts} mixer={mixer} />
       </div>
 
       {/* Bus-Labels */}
