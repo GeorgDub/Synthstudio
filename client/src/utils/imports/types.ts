@@ -30,6 +30,36 @@ export interface ImportedPattern {
   parts: ImportedPart[];
 }
 
+/**
+ * Eine Note in einem melodischen Part.
+ * Im Gegensatz zu `ImportedStep` (Drum-Grid) trägt sie volle Pitch- + Duration-
+ * Information und ist nicht an ein festes Step-Raster gebunden.
+ */
+export interface ImportedMelodicNote {
+  /** Position in Steps (1/16) ab Pattern-Start. Float erlaubt für off-grid Notes. */
+  startStep: number;
+  /** Länge in Steps (1/16). */
+  durationSteps: number;
+  /** MIDI-Key (0-127). */
+  pitch: number;
+  /** MIDI-Velocity (0-127). */
+  velocity: number;
+}
+
+/**
+ * Ein melodischer Part — entspricht einem FL-Channel mit mehreren Tonhöhen
+ * (Synth, Sampler mit Notes). Wird vom FLP-Importer ab v1.65 extrahiert,
+ * konsumiert (Phase 2): MelodicPart-Routing im ProjectManager.
+ */
+export interface ImportedMelodicPart {
+  /** Quell-Channel-Index aus dem FLP. */
+  sourceChannel: number;
+  /** Anzeigename (i.d.R. aus Channel-Name oder generisch). */
+  name: string;
+  /** Notes mit voller Pitch+Duration-Info. */
+  notes: ImportedMelodicNote[];
+}
+
 export interface ImportResult {
   /** Quell-Format (für UI-Anzeige) */
   sourceFormat: "flp" | "als" | "esx" | "elst";
@@ -39,6 +69,11 @@ export interface ImportResult {
   bpm?: number;
   /** Gefundene Patterns */
   patterns: ImportedPattern[];
+  /**
+   * Melodische Parts (Channels mit ≥2 verschiedenen Pitches). Ab v1.65
+   * extrahiert; aktuell kein Konsument im UI — vorbereitet für Phase 2.
+   */
+  melodicParts?: ImportedMelodicPart[];
   /** Warnungen die der User sehen sollte (z.B. „Wavetable-Synth nicht unterstützt") */
   warnings: string[];
 }

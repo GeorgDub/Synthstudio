@@ -5,7 +5,7 @@
  * Verwendet konstruierte Mock-Buffer (echte FLP/ALS/ESX-Dateien wären zu groß für Test-Fixtures).
  */
 import { describe, it, expect } from "vitest";
-import { importFlp, detectChannelPitches } from "../../client/src/utils/imports/flpImport";
+import { importFlp, detectChannelPitches, buildMelodicParts } from "../../client/src/utils/imports/flpImport";
 import { importElectribe } from "../../client/src/utils/imports/electribeImport";
 import { importProjectFile, importResultToPatterns, ImportError } from "../../client/src/utils/imports/index";
 import type { ImportResult } from "../../client/src/utils/imports/types";
@@ -173,6 +173,115 @@ describe("FLP Import — Melodic-Channel-Warnung (post-v1.63.0)", () => {
     // Mindestens eine Note hat pitch=60 (C4 vom melodischen Channel)
     expect(activeStepsWithPitch.some(s => s.pitch === 60)).toBe(true);
     expect(activeStepsWithPitch.some(s => s.pitch === 36)).toBe(true);
+  });
+
+  it("ImportResult enthält melodicParts mit voller Note-Info (v1.65)", async () => {
+    const result = await importFlp(makeFile("mixed.flp", buildFlpWithMixedChannels()));
+    expect(result.melodicParts).toBeDefined();
+    expect(result.melodicParts).toHaveLength(1); // nur Channel 1 ist melodisch
+    const part = result.melodicParts![0];
+    expect(part.sourceChannel).toBe(1);
+    expect(part.notes).toHaveLength(2);
+    // Notes sind nach startStep sortiert
+    expect(part.notes[0].startStep).toBeLessThan(part.notes[1].startStep);
+    // Erste Note: C4 (60) bei position=24 (1 step bei PPQ=96)
+    expect(part.notes[0].pitch).toBe(60);
+    expect(part.notes[0].startStep).toBe(1);
+    expect(part.notes[0].velocity).toBe(100);
+    // Zweite Note: E4 (64) bei position=48 (2 steps)
+    expect(part.notes[1].pitch).toBe(64);
+    expect(part.notes[1].startStep).toBe(2);
+  });
+
+  it("ImportResult.melodicParts ist undefined wenn keine melodischen Channels", async () => {
+    // FLP mit NUR drum-Channel
+    const drumHeader = new Uint8Array(14);
+    const hv = new DataView(drumHeader.buffer);
+    drumHeader.set([0x46, 0x4c, 0x68, 0x64], 0);
+    hv.setUint32(4, 6, true);
+    hv.setUint16(8, 0, true);
+    hv.setUint16(10, 1, true);
+    hv.setUint16(12, 96, true);
+    const noteBuf = (pos: number) => {
+      const buf = new Uint8Array(24);
+      const v = new DataView(buf.buffer);
+      v.setUint32(0, pos, true);
+      v.setUint16(6, 0, true);
+      v.setUint32(8, 24, true);
+      v.setUint8(12, 36); // alle gleiche Pitch
+      v.setUint8(18, 100);
+      return buf;
+    };
+    const payload = new Uint8Array(48);
+    payload.set(noteBuf(0), 0);
+    payload.set(noteBuf(96), 24);
+    const newPattern = new Uint8Array([0x4f, 0x01, 0x00]);
+    const eventHdr = new Uint8Array([0xe7, 48]);
+    const chunk = new Uint8Array(newPattern.length + eventHdr.length + payload.length);
+    chunk.set(newPattern, 0);
+    chunk.set(eventHdr, newPattern.length);
+    chunk.set(payload, newPattern.length + eventHdr.length);
+    const dataHdr = new Uint8Array(8);
+    dataHdr.set([0x46, 0x4c, 0x64, 0x74], 0);
+    new DataView(dataHdr.buffer).setUint32(4, chunk.length, true);
+    const total = new Uint8Array(drumHeader.length + dataHdr.length + chunk.length);
+    total.set(drumHeader, 0);
+    total.set(dataHdr, drumHeader.length);
+    total.set(chunk, drumHeader.length + dataHdr.length);
+
+    const result = await importFlp(makeFile("drumonly.flp", total.buffer));
+    expect(result.melodicParts).toBeUndefined();
+  });
+});
+
+describe("buildMelodicParts (v1.65)", () => {
+  it("leerer Notes-Array → leeres Result", () => {
+    expect(buildMelodicParts([], 96)).toEqual([]);
+  });
+
+  it("drum-only-Channel (1 Pitch) wird nicht in melodicParts aufgenommen", () => {
+    const notes = [
+      { position: 0,  channel: 0, duration: 24, key: 36, velocity: 100 },
+      { position: 24, channel: 0, duration: 24, key: 36, velocity: 100 },
+    ];
+    expect(buildMelodicParts(notes, 96)).toEqual([]);
+  });
+
+  it("melodischer Channel wird mit Note-Daten extrahiert", () => {
+    const notes = [
+      { position: 0,  channel: 2, duration: 48, key: 60, velocity: 100 },
+      { position: 48, channel: 2, duration: 48, key: 64, velocity: 80 },
+    ];
+    const parts = buildMelodicParts(notes, 96);
+    expect(parts).toHaveLength(1);
+    expect(parts[0].sourceChannel).toBe(2);
+    expect(parts[0].notes).toHaveLength(2);
+    expect(parts[0].notes[0]).toEqual({ startStep: 0, durationSteps: 2, pitch: 60, velocity: 100 });
+    expect(parts[0].notes[1]).toEqual({ startStep: 2, durationSteps: 2, pitch: 64, velocity: 80 });
+  });
+
+  it("Notes sind nach startStep sortiert auch wenn Quell-Reihenfolge anders", () => {
+    const notes = [
+      { position: 96, channel: 0, duration: 24, key: 64, velocity: 100 },
+      { position: 0,  channel: 0, duration: 24, key: 60, velocity: 100 },
+      { position: 48, channel: 0, duration: 24, key: 62, velocity: 100 },
+    ];
+    const parts = buildMelodicParts(notes, 96);
+    expect(parts[0].notes.map(n => n.startStep)).toEqual([0, 2, 4]);
+    expect(parts[0].notes.map(n => n.pitch)).toEqual([60, 62, 64]);
+  });
+
+  it("trennt mehrere melodische Channels in eigene Parts", () => {
+    const notes = [
+      { position: 0, channel: 0, duration: 24, key: 36, velocity: 100 }, // drum
+      { position: 0, channel: 1, duration: 24, key: 60, velocity: 100 }, // mel 1
+      { position: 0, channel: 1, duration: 24, key: 62, velocity: 100 },
+      { position: 0, channel: 2, duration: 24, key: 80, velocity: 100 }, // mel 2
+      { position: 0, channel: 2, duration: 24, key: 84, velocity: 100 },
+    ];
+    const parts = buildMelodicParts(notes, 96);
+    expect(parts).toHaveLength(2);
+    expect(parts.map(p => p.sourceChannel).sort()).toEqual([1, 2]);
   });
 });
 

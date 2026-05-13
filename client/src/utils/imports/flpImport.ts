@@ -26,7 +26,7 @@
  * zukünftige Erweiterung markiert.
  */
 
-import type { ImportResult, ImportedPattern, ImportedPart, ImportedStep } from "./types";
+import type { ImportResult, ImportedPattern, ImportedPart, ImportedStep, ImportedMelodicPart, ImportedMelodicNote } from "./types";
 import { ImportError } from "./types";
 import {
   parseFlp as parseFlpFull,
@@ -174,6 +174,39 @@ function keyToNoteName(key: number): string {
   return `${names[key % 12]}${octave}`;
 }
 
+/**
+ * Konvertiert melodische FL-Channels in strukturierte `ImportedMelodicPart`s.
+ * Phase 1 (v1.65): nur Extraktion — keinem Konsumenten zugewiesen.
+ * Phase 2: MelodicPart-Routing im ProjectManager → echte Pattern-Erzeugung.
+ *
+ * Position-Umrechnung: PPQ-Ticks → Steps (1/16, Float erlaubt für off-grid).
+ */
+export function buildMelodicParts(notes: FlpNote[], ppq: number): ImportedMelodicPart[] {
+  const pitchesByChannel = detectChannelPitches(notes);
+  const ticksPerStep = ppq / 4;
+  if (ticksPerStep <= 0) return [];
+
+  const parts: ImportedMelodicPart[] = [];
+  for (const [channel, pitches] of pitchesByChannel) {
+    if (pitches.size < 2) continue; // drum-like — skip
+    const channelNotes = notes.filter(n => n.channel === channel);
+    const melodicNotes: ImportedMelodicNote[] = channelNotes
+      .map<ImportedMelodicNote>(n => ({
+        startStep: n.position / ticksPerStep,
+        durationSteps: n.duration / ticksPerStep,
+        pitch: n.key,
+        velocity: n.velocity,
+      }))
+      .sort((a, b) => a.startStep - b.startStep);
+    parts.push({
+      sourceChannel: channel,
+      name: `Channel ${channel}`,
+      notes: melodicNotes,
+    });
+  }
+  return parts;
+}
+
 export async function importFlp(file: File): Promise<ImportResult> {
   const arrayBuffer = await file.arrayBuffer();
 
@@ -269,11 +302,15 @@ export async function importFlp(file: File): Promise<ImportResult> {
     warnings.push(`${droppedNotes} Notes jenseits ${MAX_BARS} Bars wurden ignoriert (Multi-Bar-Limit).`);
   }
 
+  // Phase 1 (v1.65): melodische Parts extrahieren — noch kein Konsument.
+  const melodicParts = buildMelodicParts(firstPattern.notes, ppq);
+
   return {
     sourceFormat: "flp",
     fileName: file.name,
     bpm,
     patterns: patternsList,
+    melodicParts: melodicParts.length > 0 ? melodicParts : undefined,
     warnings,
   };
 }
