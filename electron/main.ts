@@ -42,6 +42,14 @@ import { WindowManager, registerWindowHandlers } from "./windows";
 import { registerExportHandlers } from "./export";
 import { setupAutoUpdater, checkForUpdatesManually } from "./updater";
 import { initStore, registerStoreHandlers, type AppStore, type PopupWindowLayout } from "./store";
+import {
+  initCrashLog,
+  installMainProcessCrashHandlers,
+  logEvent,
+  logCrash,
+  shutdownCrashLog,
+  getCrashLogPath,
+} from "./crashLog";
 import { registerZipImportHandlers } from "./zip-import";
 import {
   startCollabServer,
@@ -188,6 +196,7 @@ function persistPopupLayout(
   key: SingletonPopupKey,
   win: BrowserWindow,
 ): void {
+  logEvent("popup:close", { key, isAppQuitting });
   if (!appStore || win.isDestroyed()) return;
   try {
     const bounds = win.getBounds();
@@ -197,6 +206,7 @@ function persistPopupLayout(
       alwaysOnTop: win.isAlwaysOnTop(),
     });
   } catch (err) {
+    logCrash(`persistPopupLayout:${key}`, err);
     console.error(`[WindowLayout] persistPopupLayout(${key}) failed:`, err);
   }
 }
@@ -2278,6 +2288,7 @@ function registerIpcHandlers(): void {
   // ── App-Info ─────────────────────────────────────────────────────────────────
 
   ipcMain.handle("app:get-version", () => app.getVersion());
+  ipcMain.handle("app:get-crash-log-path", () => getCrashLogPath() ?? "");
   ipcMain.handle("app:get-platform", () => process.platform);
   ipcMain.handle("app:get-path", (_event, name: string) => {
     const allowed = ["home", "documents", "downloads", "music", "desktop"];
@@ -2431,9 +2442,17 @@ function registerGlobalShortcuts(): void {
 
 // ─── App-Lifecycle ───────────────────────────────────────────────────────────
 
+// MIG-1A: Globale Crash-Handler ZUERST registrieren, damit auch Fehler im
+// initStore / whenReady-Path geloggt werden.
+installMainProcessCrashHandlers();
+
 app.whenReady().then(() => {
   // AppStore initialisieren (muss vor buildMenu() erfolgen)
   appStore = initStore(app.getPath("userData"));
+
+  // Crash-Log direkt nach AppStore init aufsetzen
+  initCrashLog(app);
+  logEvent("app:whenReady");
 
   // Notfall-Flag: Synthstudio.exe --reset-window löscht gespeicherte Fenster-Bounds.
   // Hilft User die nach Display-Wechsel das Fenster nicht mehr sehen können.
@@ -2514,12 +2533,12 @@ app.on("window-all-closed", () => {
 });
 
 app.on("before-quit", (event) => {
-  // BUG-018 v1.29.0 follow-up: nukleare Quit-Sperre. Wenn der Quit nicht
-  // explizit vom User initiiert wurde (Tray "Beenden" / Datei → Beenden mit
-  // mainWindow-Fokus / mainWindow's native close), blocken wir das Quit.
-  // Reaktiviere mainWindow falls es nur hidden ist.
+  logEvent("app:before-quit", { userInitiatedQuit, mainWindowAlive: mainWindow !== null && !mainWindow.isDestroyed() });
+
+  // BUG-018 v1.29.0 follow-up: nukleare Quit-Sperre.
   if (!userInitiatedQuit && mainWindow && !mainWindow.isDestroyed()) {
     event.preventDefault();
+    logEvent("app:before-quit:BLOCKED");
     console.warn(
       "[before-quit] BLOCKED: nicht user-initiated und mainWindow lebt. " +
       "Quit wird verweigert — vermutlich Popup-Close-Cascade.",
@@ -2529,10 +2548,12 @@ app.on("before-quit", (event) => {
     return;
   }
 
-  // Window-Layout-Persistenz: markieren dass die App gerade quittet, damit
-  // close-Handler der Popup-Fenster `isOpen=true` speichern (Auto-Reopen)
-  // statt `isOpen=false` (User-explicit-close).
   isAppQuitting = true;
+});
+
+app.on("quit", () => {
+  logEvent("app:quit");
+  shutdownCrashLog();
 });
 
 app.on("will-quit", () => {

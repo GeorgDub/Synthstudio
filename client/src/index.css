@@ -292,3 +292,28 @@ body,
 * {
   box-sizing: border-box;
 }
+
+/* ─── Dockview Workspace Theme (post-v1.34.0 MIG-2A) ──────────────────────── */
+/* Override Dockview's --dv-* tokens mit unseren --ss-* tokens damit der       */
+/* Workspace mit Theme-Switch kompatibel ist.                                  */
+.dockview-theme-dark {
+  --dv-paneview-active-outline-color: var(--ss-accent-primary);
+  --dv-tabs-and-actions-container-background-color: var(--ss-bg-elevated);
+  --dv-group-view-background-color: var(--ss-bg-panel);
+  --dv-tabs-container-scrollbar-color: var(--ss-bg-elevated);
+  --dv-icon-hover-background-color: var(--ss-bg-elevated);
+  --dv-active-sash-color: var(--ss-accent-primary);
+  --dv-separator-border: var(--ss-border);
+  --dv-tab-divider-color: var(--ss-border);
+  --dv-activegroup-visiblepanel-tab-background-color: var(--ss-bg-panel);
+  --dv-activegroup-visiblepanel-tab-color: var(--ss-text-primary);
+  --dv-activegroup-hiddenpanel-tab-background-color: var(--ss-bg-elevated);
+  --dv-activegroup-hiddenpanel-tab-color: var(--ss-text-muted);
+  --dv-inactivegroup-visiblepanel-tab-background-color: var(--ss-bg-elevated);
+  --dv-inactivegroup-visiblepanel-tab-color: var(--ss-text-muted);
+  --dv-inactivegroup-hiddenpanel-tab-background-color: var(--ss-bg-elevated);
+  --dv-inactivegroup-hiddenpanel-tab-color: var(--ss-text-dim);
+  --dv-tab-close-icon: var(--ss-text-dim);
+  --dv-drag-over-background-color: rgba(0, 0, 0, 0);
+  --dv-drag-over-border-color: var(--ss-accent-primary);
+}

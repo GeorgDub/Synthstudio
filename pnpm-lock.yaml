@@ -136,6 +136,9 @@ importers:
       date-fns:
         specifier: ^4.1.0
         version: 4.1.0
+      dockview-react:
+        specifier: ^6.2.2
+        version: 6.2.2(react@19.2.1)
       dotenv:
         specifier: ^17.2.2
         version: 17.3.1
@@ -3241,6 +3244,17 @@ packages:
     engines: {node: '>=8'}
     os: [darwin]
     hasBin: true
+
+  dockview-core@6.2.2:
+    resolution: {integrity: sha512-n/ZfgbLB0k9u8dyWlHg1G/GAfWkFowd+0PtfVyo6O/SCkAbBZgQA+VxA3gZc1BuBmZNIHWocbbX43WsGjDUJrA==}
+
+  dockview-react@6.2.2:
+    resolution: {integrity: sha512-PFhk+CfXj3lBR+M4wRrYXfHV+wvk4nXJlWSCP8pZF0hw8VX18ZyK9M1/MzAiF5gMOcediwGWA8uqV0NYMw5RtA==}
+
+  dockview@6.2.2:
+    resolution: {integrity: sha512-Ydc1/gINOsnkumzkKOHqlViS6Z4nbq6zuozOYz7mRWOLr1nw49MGul8SHUD2fxXfwk2oABd8zGNdA2J+x+sKpQ==}
+    peerDependencies:
+      react: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
 
   dom-helpers@5.2.1:
     resolution: {integrity: sha512-nRCa7CK3VTrM2NmGkIy4cbK7IZlgBE/PYMn55rrXefr5xXDP0LdtfPnblFDoVdcAfslJ7or6iqAUnx0CCGIWQA==}
@@ -9041,6 +9055,19 @@ snapshots:
       smart-buffer: 4.2.0
       verror: 1.10.1
     optional: true
+
+  dockview-core@6.2.2: {}
+
+  dockview-react@6.2.2(react@19.2.1):
+    dependencies:
+      dockview: 6.2.2(react@19.2.1)
+    transitivePeerDependencies:
+      - react
+
+  dockview@6.2.2(react@19.2.1):
+    dependencies:
+      dockview-core: 6.2.2
+      react: 19.2.1
 
   dom-helpers@5.2.1:
     dependencies:
