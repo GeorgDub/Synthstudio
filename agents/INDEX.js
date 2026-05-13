@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "1.64.0",
+    version: "1.65.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -459,6 +459,26 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-14T01:55:00.000Z",
+      done: [
+        "FLP-MELODIC-PARTS (v1.65.0): Phase 1 von MELODIC-ROUTE. Extrahiert melodische FL-Channels als strukturierte `ImportedMelodicPart`-Daten mit voller Pitch+StartStep+Duration+Velocity-Info pro Note. Neue Types ImportedMelodicNote + ImportedMelodicPart in imports/types.ts. ImportResult.melodicParts (optional, undefined wenn keine melodischen Channels gefunden). buildMelodicParts(notes, ppq) Helper: gruppiert pro melodischem Channel, konvertiert PPQ→Steps (Float), sortiert nach startStep. Aktuell KEIN UI-Konsument — reine Daten-Vorbereitung. Drum-Import unverändert. 7 neue Tests, 25/25 grün, alle 78 FLP-Tests grün, pnpm check 0 Fehler."
+      ],
+      next: [
+        "FLP-MELODIC-ROUTE Phase 2: ProjectManager konsumiert melodicParts → Melodic-Pattern-Erzeugung in useMelodicPartStore",
+        "FLP-CHANNEL-NAMES Phase 3: TEXT_CHANNEL_NAME (0xC3) aus FLP-Events extrahieren → echte Sample-/Instrument-Namen statt 'Channel N'",
+        "FLP-MIDI-EXPORT Phase 4: SMF-Export von Melodic-Parts mit Pitch + Duration",
+        "FEAT-INSP: bleibt offen (Explore-Report verfügbar, 4-5h, 8+ Files)"
+      ],
+      changed: [
+        "package.json",
+        "client/src/utils/imports/types.ts",
+        "client/src/utils/imports/flpImport.ts",
+        "tests/features/project-imports.test.ts",
+        "agents/INDEX.js"
+      ]
+    },
     {
       agent:     "coordinator",
       timestamp: "2026-05-14T01:40:00.000Z",
