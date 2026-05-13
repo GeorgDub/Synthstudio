@@ -280,3 +280,48 @@ export function groupNotesByChannel(notes: FlpNote[]): Map<number, FlpNote[]> {
   }
   return map;
 }
+
+/**
+ * Gruppiert Notes nach Bar (1 bar = stepCount × ticksPerStep ticks).
+ * Bei PPQ=96 + stepCount=16 + stepsPerBeat=4: bar = 384 ticks.
+ *
+ * Output-Map ist absolute Bar-Indizes → Notes mit *bar-relativen* Positions.
+ * Z.B. Note bei position=400 mit PPQ=96 + 16-step bars → bar 1, position=16
+ * (relativ zum Bar-Start).
+ */
+export function groupNotesByBar(
+  notes: FlpNote[],
+  ppq: number,
+  stepCount: number = 16,
+  stepsPerBeat: number = 4,
+): Map<number, FlpNote[]> {
+  const ticksPerStep = ppq / stepsPerBeat;
+  const ticksPerBar = ticksPerStep * stepCount;
+  if (ticksPerBar <= 0) return new Map();
+  const map = new Map<number, FlpNote[]>();
+  for (const n of notes) {
+    const barIndex = Math.floor(n.position / ticksPerBar);
+    const relPos = n.position - barIndex * ticksPerBar;
+    const relNote: FlpNote = { ...n, position: relPos };
+    if (!map.has(barIndex)) map.set(barIndex, []);
+    map.get(barIndex)!.push(relNote);
+  }
+  return map;
+}
+
+/**
+ * Berechnet wie viele Bars notwendig sind um alle Notes abzudecken.
+ * Returns mindestens 1.
+ */
+export function calculateBarCount(
+  notes: FlpNote[],
+  ppq: number,
+  stepCount: number = 16,
+  stepsPerBeat: number = 4,
+): number {
+  if (!notes.length) return 1;
+  const ticksPerBar = (ppq / stepsPerBeat) * stepCount;
+  if (ticksPerBar <= 0) return 1;
+  const maxPos = notes.reduce((m, n) => Math.max(m, n.position), 0);
+  return Math.max(1, Math.floor(maxPos / ticksPerBar) + 1);
+}

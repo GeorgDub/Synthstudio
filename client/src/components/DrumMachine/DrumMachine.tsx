@@ -22,7 +22,7 @@ import { PatternMorphPanel } from "@/components/PatternMorph";
 import { MacroPanel } from "@/components/Macro/MacroPanel";
 import { EnvelopeFollowerPanel } from "./EnvelopeFollowerPanel";
 import { parseMidiFile } from "../../../../src/utils/midiParser.js";
-import { parseFlp, flpPositionToStep } from "@/utils/flpImport";
+import { parseFlp, flpPositionToStep, groupNotesByBar, calculateBarCount } from "@/utils/flpImport";
 import { GranularSynthPanel } from "./GranularSynthPanel";
 import { DEFAULT_GRANULAR_PARAMS } from "@/audio/GranularEngine";
 import { PolyrhythmVisualizer } from "./PolyrhythmVisualizer";
@@ -131,11 +131,14 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
   }, [pattern, dm]);
 
   /**
-   * FLP-Import: extrahiert das ERSTE Pattern aus einer FL-Studio .flp Datei
-   * und mapped es ins aktive Synthstudio-Pattern.
+   * FLP-Import: extrahiert ALLE Notes aus dem ersten FL-Pattern und verteilt
+   * sie auf mehrere Synthstudio-Patterns falls die Notes über mehrere Bars
+   * gehen.
    *
-   * Channel-Mapping: FL-Channel-Index → Part-Index (modulo). Bei mehreren FL-
-   * Patterns nehmen wir das erste — multi-pattern-import wäre V2.
+   * Workflow:
+   *   - Bar 0 → aktives Pattern überschreiben
+   *   - Bar 1..N → neue Patterns via addPatternData()
+   *   - Bei mehr als MAX Bars: clamping mit Console-Warn
    */
   const handleFlpImport = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -158,18 +161,62 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
         const ppq = parsed.header.ppq;
         const stepCount = pattern.stepCount;
         const partCount = pattern.parts.length;
+        const fileName = file.name.replace(/\.flp$/i, "");
 
-        const newSteps: boolean[][] = pattern.parts.map(() => Array(stepCount).fill(false));
-        const newVels: number[][] = pattern.parts.map(() => Array(stepCount).fill(100));
+        // Pro Bar gruppieren (bar-relative positions). Max 16 Bars um nicht
+        // versehentlich aus einem riesigen Projekt 100 Patterns zu erzeugen.
+        const MAX_BARS = 16;
+        const totalBars = Math.min(MAX_BARS, calculateBarCount(firstPattern.notes, ppq, stepCount));
+        const byBar = groupNotesByBar(firstPattern.notes, ppq, stepCount);
 
-        for (const note of firstPattern.notes) {
-          const step = flpPositionToStep(note.position, ppq) % stepCount;
-          const partIdx = note.channel % partCount;
-          newSteps[partIdx][step] = true;
-          newVels[partIdx][step] = note.velocity;
+        const buildPattern = (barNotes: import("@/utils/flpImport").FlpNote[]) => {
+          const steps: boolean[][] = pattern.parts.map(() => Array(stepCount).fill(false));
+          const vels: number[][] = pattern.parts.map(() => Array(stepCount).fill(100));
+          for (const note of barNotes) {
+            const step = flpPositionToStep(note.position, ppq) % stepCount;
+            const partIdx = note.channel % partCount;
+            steps[partIdx][step] = true;
+            vels[partIdx][step] = note.velocity;
+          }
+          return { steps, vels };
+        };
+
+        // Bar 0 → aktives Pattern überschreiben
+        const bar0 = byBar.get(0) ?? [];
+        const bar0Built = buildPattern(bar0);
+        pattern.parts.forEach((part, i) => dm.setPartSteps(part.id, bar0Built.steps[i], bar0Built.vels[i]));
+
+        // Bar 1..N → neue Patterns
+        const createdPatternIds: string[] = [];
+        for (let bar = 1; bar < totalBars; bar++) {
+          const barNotes = byBar.get(bar) ?? [];
+          const { steps, vels } = buildPattern(barNotes);
+          const newParts = pattern.parts.map((p, i) => ({
+            ...p,
+            steps: p.steps.map((s, idx) => ({
+              ...s,
+              active: steps[i][idx] ?? false,
+              velocity: vels[i][idx] ?? 100,
+            })),
+          }));
+          const newPatternData = {
+            ...pattern,
+            id: `flp-${Date.now()}-${bar}`,
+            name: `${fileName} bar ${bar + 1}`,
+            parts: newParts,
+          };
+          const id = dm.addPatternData(newPatternData);
+          createdPatternIds.push(id);
         }
-        pattern.parts.forEach((part, i) => dm.setPartSteps(part.id, newSteps[i], newVels[i]));
-        console.log(`[FLP Import] Pattern ${firstPattern.index}: ${firstPattern.notes.length} Notes auf ${parsed.patterns.length > 1 ? `(von ${parsed.patterns.length} Patterns)` : ""}`);
+
+        const totalNotesInRange = Array.from(byBar.entries())
+          .filter(([bar]) => bar < totalBars)
+          .reduce((sum, [, ns]) => sum + ns.length, 0);
+        const fullTotal = firstPattern.notes.length;
+        console.log(`[FLP Import] ${fullTotal} notes → ${totalBars} bar(s), ${totalNotesInRange} importiert${fullTotal > totalNotesInRange ? ` (${fullTotal - totalNotesInRange} jenseits MAX_BARS=${MAX_BARS} getruncated)` : ""}`);
+        if (createdPatternIds.length > 0) {
+          alert(`FLP importiert: ${totalBars} Bars als ${totalBars} Patterns.\nAktuelles Pattern = Bar 1, neue Patterns hinzugefügt: ${createdPatternIds.length}.`);
+        }
       } catch (err) {
         console.error("[FLP Import]", err);
         alert("FLP-Import fehlgeschlagen. Vermutlich ungültige oder neuere FLP-Version.\n\n" + (err as Error).message);

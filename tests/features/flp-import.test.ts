@@ -15,6 +15,8 @@ import {
   flpPositionToStep,
   flpVelocityToUnit,
   groupNotesByChannel,
+  groupNotesByBar,
+  calculateBarCount,
 } from "../../client/src/utils/flpImport";
 
 // ─── Helper: Mini-FLP builder ─────────────────────────────────────────────────
@@ -286,6 +288,86 @@ describe("groupNotesByChannel", () => {
     expect(grouped.size).toBe(2);
     expect(grouped.get(0)).toHaveLength(2);
     expect(grouped.get(1)).toHaveLength(1);
+  });
+});
+
+describe("groupNotesByBar", () => {
+  // PPQ=96, stepCount=16 → ticksPerBar = 24 * 16 = 384
+  it("Bar 0: Notes mit position 0..383", () => {
+    const notes = [
+      { position: 0,   channel: 0, duration: 24, key: 60, velocity: 100 },
+      { position: 96,  channel: 0, duration: 24, key: 60, velocity: 100 },
+      { position: 383, channel: 0, duration: 24, key: 60, velocity: 100 },
+    ];
+    const grouped = groupNotesByBar(notes, 96, 16);
+    expect(grouped.size).toBe(1);
+    expect(grouped.get(0)).toHaveLength(3);
+    // Positions sollen unverändert (bar-relativ = absolute bei bar 0)
+    expect(grouped.get(0)![0].position).toBe(0);
+    expect(grouped.get(0)![1].position).toBe(96);
+    expect(grouped.get(0)![2].position).toBe(383);
+  });
+
+  it("Bar 1: Notes mit position 384..767 — relativ neu nummeriert", () => {
+    const notes = [
+      { position: 384, channel: 0, duration: 24, key: 60, velocity: 100 },
+      { position: 480, channel: 0, duration: 24, key: 60, velocity: 100 },
+      { position: 700, channel: 0, duration: 24, key: 60, velocity: 100 },
+    ];
+    const grouped = groupNotesByBar(notes, 96, 16);
+    expect(grouped.size).toBe(1);
+    const bar1 = grouped.get(1)!;
+    expect(bar1[0].position).toBe(0);    // 384 - 384
+    expect(bar1[1].position).toBe(96);   // 480 - 384
+    expect(bar1[2].position).toBe(316);  // 700 - 384
+  });
+
+  it("Mehrere Bars verteilt sich korrekt", () => {
+    const notes = [
+      { position: 0,    channel: 0, duration: 24, key: 60, velocity: 100 }, // bar 0
+      { position: 384,  channel: 0, duration: 24, key: 60, velocity: 100 }, // bar 1
+      { position: 768,  channel: 0, duration: 24, key: 60, velocity: 100 }, // bar 2
+      { position: 1152, channel: 0, duration: 24, key: 60, velocity: 100 }, // bar 3
+    ];
+    const grouped = groupNotesByBar(notes, 96, 16);
+    expect(grouped.size).toBe(4);
+    expect(grouped.get(0)![0].position).toBe(0);
+    expect(grouped.get(1)![0].position).toBe(0);
+    expect(grouped.get(2)![0].position).toBe(0);
+    expect(grouped.get(3)![0].position).toBe(0);
+  });
+
+  it("32-step pattern: ticksPerBar = 768", () => {
+    const notes = [
+      { position: 0,   channel: 0, duration: 24, key: 60, velocity: 100 }, // bar 0
+      { position: 767, channel: 0, duration: 24, key: 60, velocity: 100 }, // bar 0
+      { position: 768, channel: 0, duration: 24, key: 60, velocity: 100 }, // bar 1
+    ];
+    const grouped = groupNotesByBar(notes, 96, 32);
+    expect(grouped.get(0)).toHaveLength(2);
+    expect(grouped.get(1)).toHaveLength(1);
+  });
+});
+
+describe("calculateBarCount", () => {
+  it("leerer Array → 1", () => {
+    expect(calculateBarCount([], 96, 16)).toBe(1);
+  });
+
+  it("Single Note bei position=0 → 1 bar", () => {
+    expect(calculateBarCount([{ position: 0, channel: 0, duration: 24, key: 60, velocity: 100 }], 96, 16)).toBe(1);
+  });
+
+  it("Note bei position=383 → 1 bar (immer noch in bar 0)", () => {
+    expect(calculateBarCount([{ position: 383, channel: 0, duration: 24, key: 60, velocity: 100 }], 96, 16)).toBe(1);
+  });
+
+  it("Note bei position=384 → 2 bars", () => {
+    expect(calculateBarCount([{ position: 384, channel: 0, duration: 24, key: 60, velocity: 100 }], 96, 16)).toBe(2);
+  });
+
+  it("Drop-TesT-Beispiel: pos=2976 → 8 bars", () => {
+    expect(calculateBarCount([{ position: 2976, channel: 0, duration: 24, key: 60, velocity: 100 }], 96, 16)).toBe(8);
   });
 });
 
