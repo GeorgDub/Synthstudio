@@ -40,6 +40,8 @@ async function analyzeWaveform(
   duration: number;
   sampleRate: number;
   channels: number;
+  estimatedBpm?: number;
+  bpmConfidence?: number;
 }> {
   // OfflineAudioContext für Dekodierung ohne Playback
   const audioContext = new OfflineAudioContext(1, 1, 44100);
@@ -64,29 +66,43 @@ async function analyzeWaveform(
     peaks[i] = max;
   }
 
+  // BUG-012 Fix: BPM am bereits-dekodierten Buffer mitberechnen (vermeidet
+  // teures Re-Decode + zweiten Worker-Message-Trip). Wird via getChannelData
+  // an die existierende detectBpmFromChannelData-Logik weitergereicht.
+  let estimatedBpm: number | undefined;
+  let bpmConfidence: number | undefined;
+  try {
+    const bpmResult = detectBpmFromChannelData(channelData, audioBuffer.sampleRate);
+    if (bpmResult.confidence > 0.3) {
+      estimatedBpm = bpmResult.bpm;
+      bpmConfidence = bpmResult.confidence;
+    }
+  } catch { /* BPM-Detection ist best-effort; bei Fehler einfach undefined lassen */ }
+
   return {
     peaks,
     duration: audioBuffer.duration,
     sampleRate: audioBuffer.sampleRate,
     channels: audioBuffer.numberOfChannels,
+    estimatedBpm,
+    bpmConfidence,
   };
 }
 
 // ─── BPM-Detection ────────────────────────────────────────────────────────────
 
 /**
- * BPM-Detection via Onset-Erkennung und Auto-Korrelation.
+ * BPM-Detection-Kernlogik auf bereits-dekodierten Channel-Data.
+ * Wird sowohl von `detectBpm` (separater Worker-Aufruf via analyzeBpm-Type)
+ * als auch von `analyzeWaveform` (in-band BPM-Berechnung am gleichen Buffer)
+ * genutzt — vermeidet teures Re-Decode der ArrayBuffer.
+ *
  * Algorithmus: Energy-basierte Onset-Erkennung → Intervall-Histogramm → BPM
  */
-async function detectBpm(
-  audioData: ArrayBuffer
-): Promise<{ bpm: number; confidence: number }> {
-  const audioContext = new OfflineAudioContext(1, 1, 44100);
-  const audioBuffer = await audioContext.decodeAudioData(audioData.slice(0));
-
-  const channelData = audioBuffer.getChannelData(0);
-  const sampleRate = audioBuffer.sampleRate;
-
+function detectBpmFromChannelData(
+  channelData: Float32Array,
+  sampleRate: number,
+): { bpm: number; confidence: number } {
   // Energie in 10ms-Fenstern berechnen
   const windowSize = Math.floor(sampleRate * 0.01); // 10ms
   const energies: number[] = [];
@@ -150,6 +166,15 @@ async function detectBpm(
   const confidence = Math.max(0, Math.min(1, 1 - stdDev / mean));
 
   return { bpm: Math.round(bpm), confidence };
+}
+
+/** Dekodiert audioData + ruft detectBpmFromChannelData auf. Für analyzeBpm-Message. */
+async function detectBpm(
+  audioData: ArrayBuffer
+): Promise<{ bpm: number; confidence: number }> {
+  const audioContext = new OfflineAudioContext(1, 1, 44100);
+  const audioBuffer = await audioContext.decodeAudioData(audioData.slice(0));
+  return detectBpmFromChannelData(audioBuffer.getChannelData(0), audioBuffer.sampleRate);
 }
 
 // ─── Message-Handler ──────────────────────────────────────────────────────────

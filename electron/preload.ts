@@ -381,6 +381,8 @@ const electronAPI = {
     channels?: number;
     bitDepth?: number;
     fileSize?: number;
+    estimatedBpm?: number;
+    bpmConfidence?: number;
     error?: string;
   }> => ipcRenderer.invoke("waveform:get-peaks", filePath, numPeaks ?? 200),
 

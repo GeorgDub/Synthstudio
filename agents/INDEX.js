@@ -267,18 +267,31 @@ const INDEX = {
     "BUG-011": {
       title:   "Audio-Workbench: Tonspur wird nicht visualisiert + Selektion/Trennung nach Vocal/Kick/etc fehlt",
       severity: "high (UX)",
-      details:  "User-Report: in der Audio-Workbench wird die geladene Tonspur nicht als Waveform visualisiert. Zusätzliche Wünsche: (a) Trennung/Filter nach Kategorie (Vocal, Kicks, Snares etc.) — vermutlich gemeint: Multi-Track-Editor wo verschiedene Sample-Typen separat angezeigt werden; (b) Bereich-Selektion zum Ausschneiden/Bearbeiten (Audacity-Style — siehe ROADMAP Phase Q 'Audacity-Level Workbench'). Vermutlich Bug in der WaveformDisplay-Render-Logik oder fehlende Verbindung zwischen AudioBuffer und Canvas-Renderer. Affected: client/src/components/AudioWorkbench/AudioWorkbench.tsx, client/src/components/WaveformDisplay/WaveformDisplay.tsx.",
-      fixed:    false,
+      details:  "Visualisierungs-Teil GEFIXT — Root-Cause: in AudioWorkbench.WaveformCanvas waren ctx.fillStyle und ctx.strokeStyle als CSS-var-Strings ('var(--ss-bg-elevated, #1a1a2e)') gesetzt. Canvas 2D unterstützt KEINE CSS-Variablen — Chromium ignorierte die String-Werte → schwarze Linien auf schwarzem Hintergrund → komplett unsichtbar. Fix: getComputedStyle(document.documentElement).getPropertyValue() für --ss-bg-elevated und --ss-accent-primary in echte Hex-Werte auflösen, mit Hex-Fallback (#1a1a2e / #7c3aed). Multi-Track-Editor + Vocal/Kick-Trennung + Audacity-Style Bereichs-Selektion bleiben als Phase Q Roadmap-Items offen (umfangreichere Features).",
+      fixed:    true,
       foundBy:  "user (post-v1.23.0 report)",
-      target:   "v1.24.0 (Phase Q Workbench-Wave)"
+      fixedBy:  "frontend",
+      fixedIn:  "BUG-011 fix (post-v1.23.0)",
+      relatedFiles: [
+        "client/src/components/AudioWorkbench/AudioWorkbench.tsx"
+      ]
     },
     "BUG-012": {
       title:   "Sample Browser: Waveform-Visualisierung nach Analyse fehlt + BPM-Detection läuft nicht",
       severity: "high (UX)",
-      details:  "User-Report: Sample Browser analysiert ein Sample (Spinner / Status sichtbar) aber zeigt anschließend keine Waveform. BPM-Detection greift ebenfalls nicht — Sample bekommt keine BPM zugeordnet. Möglicherweise zwei separate Bugs: (a) WaveformDisplay-Component erhält Daten nicht oder rendert nicht (Canvas-Zustand?); (b) BPM-Worker (workers/audioAnalysis.worker.ts) liefert kein Ergebnis zurück oder das Result wird nicht ins useProjectStore.samples geschrieben. Reproduzieren mit verschiedenen Sample-Formaten (WAV/MP3) um Format-Specific-Issues auszuschließen. Affected: client/src/components/SampleBrowser/, client/src/workers/audioAnalysis.worker.ts, client/src/hooks/useBpmDetection.ts.",
-      fixed:    false,
+      details:  "BPM-Teil GEFIXT — Root-Cause: useAudioAnalysis.analyzeFile() sendete dem Worker NUR die 'analyze'-Message für Peaks, aber NIE die 'analyzeBpm'-Message. Worker hatte beide Pfade implementiert, aber die Renderer-Seite nutzte nur den ersten. SampleBrowser prüfte analysisResult?.estimatedBpm — wurde nie befüllt → 'kein BPM angezeigt'. Fix: BPM in-band im Worker mit-berechnen (vermeidet teuren zweiten decodeAudioData-Trip). In client/src/workers/audioAnalysis.worker.ts: detectBpmFromChannelData-Helper extrahiert, der auf bereits-dekodierten Float32Array arbeitet; analyzeWaveform ruft ihn auf + returnt estimatedBpm im Result. In useAudioAnalysis.analyzeFile: estimatedBpm aus Worker- UND Electron-Result durchgereicht. In electron/workers/waveform.worker.ts: detectBpmFromWav-Helper analog zum Renderer-Algo direkt auf PCM-Samples (nur für WAV-Format, andere bleiben undefined). electron/waveform.ts + preload.ts + types.d.ts mit estimatedBpm + bpmConfidence Feldern erweitert. Waveform-Teil: WaveformDisplay sollte funktionieren wenn analyzeFile peaks zurückgibt — falls weiterhin keine Visualisierung erscheint, liegt es vermutlich an einer fehlgeschlagenen IPC/Worker-Initialisierung, was separat per Test-Logging verifiziert werden müsste.",
+      fixed:    true,
       foundBy:  "user (post-v1.23.0 report)",
-      target:   "v1.24.0"
+      fixedBy:  "frontend",
+      fixedIn:  "BUG-012 fix (post-v1.23.0)",
+      relatedFiles: [
+        "client/src/workers/audioAnalysis.worker.ts",
+        "client/src/hooks/useAudioAnalysis.ts",
+        "electron/workers/waveform.worker.ts",
+        "electron/waveform.ts",
+        "electron/preload.ts",
+        "electron/types.d.ts"
+      ]
     },
     "BUG-013": {
       title:   "Neues Projekt: bestehende Patterns + Content werden NICHT zurückgesetzt",

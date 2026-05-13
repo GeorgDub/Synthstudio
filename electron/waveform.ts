@@ -39,6 +39,8 @@ export interface WaveformResult {
   channels?: number;      // Anzahl Kanäle
   bitDepth?: number;      // Bit-Tiefe (8, 16, 24, 32)
   fileSize?: number;      // Dateigröße in Bytes
+  estimatedBpm?: number;  // BUG-012 Fix: geschätzte BPM (nur WAV)
+  bpmConfidence?: number; // Konfidenz der BPM-Schätzung (0-1)
   error?: string;
 }
 
@@ -130,6 +132,9 @@ function analyzeWithWorker(filePath: string, numPeaks: number): Promise<Waveform
           channels: msg.channels,
           bitDepth: msg.bitDepth,
           fileSize: msg.fileSize,
+          // BUG-012 Fix: BPM-Felder durchreichen (worker liefert sie für WAV)
+          estimatedBpm: msg.estimatedBpm,
+          bpmConfidence: msg.bpmConfidence,
         });
       } else if (msg.type === "error") {
         resolve({ success: false, error: msg.message });

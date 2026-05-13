@@ -132,6 +132,10 @@ interface WaveformResult {
   channels?: number;
   bitDepth?: number;
   fileSize?: number;
+  /** Geschätzte BPM (BUG-012 Fix, nur für WAV-Files gefüllt). */
+  estimatedBpm?: number;
+  /** Konfidenz der BPM-Schätzung (0-1). */
+  bpmConfidence?: number;
   error?: string;
 }
 

@@ -107,12 +107,16 @@ export function useAudioAnalysis(): UseAudioAnalysisReturn {
           if (!pending) return;
 
           if (type === "result") {
+            // BUG-012 Fix: BPM mit aus dem Worker-Result durchreichen.
+            // Worker berechnet jetzt BPM in-band zusammen mit den Peaks
+            // (vermeidet zweiten Decode-Trip).
             pending.resolve({
               filePath: id,
               peaks: data.peaks,
               duration: data.duration,
               sampleRate: data.sampleRate,
               channels: data.channels,
+              estimatedBpm: data.estimatedBpm,
               cachedAt: Date.now(),
             });
             pendingRef.current.delete(id);
@@ -160,6 +164,9 @@ export function useAudioAnalysis(): UseAudioAnalysisReturn {
               channels: waveformResult.channels ?? 1,
               bitDepth: waveformResult.bitDepth,
               fileSize: waveformResult.fileSize,
+              // BUG-012 Fix: BPM aus dem Electron-Worker durchreichen
+              // (gefüllt für WAV-Files, undefined für MP3/OGG/FLAC).
+              estimatedBpm: waveformResult.estimatedBpm,
               tags,
               cachedAt: Date.now(),
             };

@@ -53,10 +53,19 @@ function WaveformCanvas({ buffer }: WaveformCanvasProps) {
     const step = Math.ceil(data.length / W);
     const amp = H / 2;
 
-    ctx.fillStyle = "var(--ss-bg-elevated, #1a1a2e)";
+    // BUG-011 Fix: Canvas 2D unterstützt KEINE CSS-Variablen — wir müssen
+    // die Tokens via getComputedStyle aus document.documentElement auflösen.
+    // Frühere Version `ctx.fillStyle = "var(--ss-bg-elevated, #1a1a2e)"`
+    // wurde von Chromium als ungültige Farbe ignoriert → schwarze Linie
+    // auf schwarzem Hintergrund → komplett unsichtbar.
+    const rootStyle = getComputedStyle(document.documentElement);
+    const bgColor = rootStyle.getPropertyValue("--ss-bg-elevated").trim() || "#1a1a2e";
+    const accentColor = rootStyle.getPropertyValue("--ss-accent-primary").trim() || "#7c3aed";
+
+    ctx.fillStyle = bgColor;
     ctx.fillRect(0, 0, W, H);
 
-    ctx.strokeStyle = "var(--ss-accent-primary, #7c3aed)";
+    ctx.strokeStyle = accentColor;
     ctx.lineWidth = 1;
     ctx.beginPath();
 
