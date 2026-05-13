@@ -363,6 +363,11 @@ function createPerformanceWindow(): void {
     },
   });
 
+  // BUG-017 fix: popup windows must NOT inherit the application menu.
+  // Without this, the user could accidentally trigger "Datei → Beenden"
+  // (role:quit) from a focused popup and quit the entire app.
+  perfWindow.setMenu(null);
+
   perfWindow.once("ready-to-show", () => {
     perfWindow?.show();
   });
@@ -436,6 +441,10 @@ function createFxWindow(channelId: string): void {
     },
   });
   fxWindows.set(channelId, win);
+
+  // BUG-017 fix: popup windows must NOT inherit the application menu —
+  // otherwise menu accelerators from this window could quit the entire app.
+  win.setMenu(null);
 
   win.once("ready-to-show", () => {
     win.show();
@@ -698,7 +707,28 @@ function buildMenu(): void {
           click: () => mainWindow?.webContents.send("menu:import-project"),
         },
         { type: "separator" },
-        isMac ? { role: "close" as const } : { role: "quit" as const },
+        // BUG-017 fix: "Beenden" / "Schließen" is context-aware. If a popup
+        // window (perf-popup, fx-popup) is focused, just close that window —
+        // never quit the entire app from a tool-window context. On Mac the
+        // standard role:close already does the right thing per-window.
+        isMac
+          ? { role: "close" as const }
+          : {
+              label: "Beenden",
+              click: () => {
+                const focused = BrowserWindow.getFocusedWindow();
+                // If the focused window is the main window (or no window is
+                // focused, which shouldn't normally happen), quit the app.
+                if (!focused || focused === mainWindow) {
+                  app.quit();
+                  return;
+                }
+                // Otherwise (a popup like perf-popup or fx-popup is focused),
+                // only close that popup. Leaves the main app + audio engine
+                // alive — a safer default for tool windows.
+                focused.close();
+              },
+            },
       ],
     },
 
