@@ -372,3 +372,139 @@ describe("AppStore – Fehlerbehandlung", () => {
     removeTempDir(tempDir);
   });
 });
+
+// ─── Popup-Window-Layouts (post-v1.28.0) ─────────────────────────────────────
+
+describe("AppStore – Popup-Window-Layouts", () => {
+  let tempDir: string;
+  let store: AppStore;
+
+  beforeEach(() => {
+    tempDir = createTempDir();
+    store = new AppStore(tempDir);
+  });
+
+  afterEach(() => {
+    removeTempDir(tempDir);
+  });
+
+  it("getPopupLayout liefert undefined wenn nichts gespeichert", () => {
+    expect(store.getPopupLayout("performance")).toBeUndefined();
+    expect(store.getPopupLayout("mixer")).toBeUndefined();
+    expect(store.getPopupLayout("sampleBrowser")).toBeUndefined();
+    expect(store.getPopupLayout("patternGen")).toBeUndefined();
+  });
+
+  it("setPopupLayout / getPopupLayout round-trip", () => {
+    const layout = {
+      isOpen: true,
+      bounds: { x: 100, y: 200, width: 800, height: 600 },
+      alwaysOnTop: true,
+    };
+    store.setPopupLayout("mixer", layout);
+    expect(store.getPopupLayout("mixer")).toEqual(layout);
+  });
+
+  it("setPopupLayout persistiert separat pro key", () => {
+    store.setPopupLayout("performance", {
+      isOpen: true,
+      bounds: { x: 0, y: 0, width: 400, height: 300 },
+      alwaysOnTop: false,
+    });
+    store.setPopupLayout("mixer", {
+      isOpen: false,
+      bounds: { x: 500, y: 0, width: 700, height: 500 },
+      alwaysOnTop: true,
+    });
+    expect(store.getPopupLayout("performance")?.alwaysOnTop).toBe(false);
+    expect(store.getPopupLayout("mixer")?.alwaysOnTop).toBe(true);
+  });
+
+  it("Layouts überleben einen Reload des Stores (Persistenz)", () => {
+    store.setPopupLayout("sampleBrowser", {
+      isOpen: true,
+      bounds: { x: 50, y: 50, width: 480, height: 640 },
+      alwaysOnTop: false,
+    });
+    // Neuen Store aus derselben Datei laden
+    const reloaded = new AppStore(tempDir);
+    const layout = reloaded.getPopupLayout("sampleBrowser");
+    expect(layout?.isOpen).toBe(true);
+    expect(layout?.bounds).toEqual({ x: 50, y: 50, width: 480, height: 640 });
+  });
+
+  it("setFxLayout / getFxLayout für Per-Channel FX-Windows", () => {
+    store.setFxLayout("kick-1", {
+      isOpen: true,
+      bounds: { x: 10, y: 20, width: 420, height: 560 },
+      alwaysOnTop: false,
+    });
+    store.setFxLayout("snare-2", {
+      isOpen: false,
+      bounds: { x: 500, y: 100, width: 420, height: 560 },
+      alwaysOnTop: true,
+    });
+    expect(store.getFxLayout("kick-1")?.isOpen).toBe(true);
+    expect(store.getFxLayout("snare-2")?.alwaysOnTop).toBe(true);
+    expect(store.getFxLayout("unknown-channel")).toBeUndefined();
+  });
+
+  it("getAllFxLayouts liefert alle gespeicherten FX-Layouts", () => {
+    store.setFxLayout("kick-1", { isOpen: true, alwaysOnTop: false });
+    store.setFxLayout("snare-2", { isOpen: true, alwaysOnTop: true });
+    store.setFxLayout("hat-3", { isOpen: false, alwaysOnTop: false });
+    const all = store.getAllFxLayouts();
+    expect(Object.keys(all)).toHaveLength(3);
+    expect(all["kick-1"]?.isOpen).toBe(true);
+    expect(all["snare-2"]?.alwaysOnTop).toBe(true);
+    expect(all["hat-3"]?.isOpen).toBe(false);
+  });
+
+  it("deleteFxLayout entfernt einen Eintrag", () => {
+    store.setFxLayout("kick-1", { isOpen: true, alwaysOnTop: false });
+    store.setFxLayout("snare-2", { isOpen: true, alwaysOnTop: false });
+    store.deleteFxLayout("kick-1");
+    expect(store.getFxLayout("kick-1")).toBeUndefined();
+    expect(store.getFxLayout("snare-2")).toBeDefined();
+  });
+
+  it("deleteFxLayout auf unbekanntem channelId ist no-op (kein Fehler)", () => {
+    expect(() => store.deleteFxLayout("nonexistent")).not.toThrow();
+  });
+
+  it("FX-Layouts überleben Store-Reload", () => {
+    store.setFxLayout("kick-1", {
+      isOpen: true,
+      bounds: { x: 100, y: 100, width: 420, height: 560 },
+      alwaysOnTop: true,
+    });
+    const reloaded = new AppStore(tempDir);
+    expect(reloaded.getFxLayout("kick-1")?.alwaysOnTop).toBe(true);
+  });
+
+  it("Migration: alte Store-Datei OHNE popupWindowLayouts wird tolerant geladen", () => {
+    // Manuell eine alte Schema-Datei schreiben (ohne popupWindowLayouts)
+    const storePath = path.join(tempDir, "synthstudio-store.json");
+    fs.writeFileSync(storePath, JSON.stringify({
+      recentProjects: [],
+      windowBounds: { width: 1440, height: 900, isMaximized: false },
+      theme: "dark",
+      lastImportPath: "",
+      version: 1,
+    }));
+    const reloaded = new AppStore(tempDir);
+    // Sollte ohne Crash laden und leere popup-Layouts zurückgeben
+    expect(reloaded.getPopupLayout("mixer")).toBeUndefined();
+    expect(reloaded.getAllFxLayouts()).toEqual({});
+  });
+
+  it("alwaysOnTop=true wird korrekt persistiert + reloaded", () => {
+    store.setPopupLayout("patternGen", {
+      isOpen: false,
+      bounds: { x: 200, y: 300, width: 560, height: 720 },
+      alwaysOnTop: true,
+    });
+    const reloaded = new AppStore(tempDir);
+    expect(reloaded.getPopupLayout("patternGen")?.alwaysOnTop).toBe(true);
+  });
+});

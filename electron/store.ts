@@ -24,9 +24,36 @@ export interface WindowBounds {
   isMaximized: boolean;
 }
 
+/**
+ * Popup-Fenster-Layout pro detachable Panel (post-v1.28.0).
+ * Wird bei Schließen aktualisiert + beim App-Start zum Wiederherstellen genutzt.
+ */
+export interface PopupWindowLayout {
+  /** War das Fenster offen als die App das letzte Mal beendet wurde? → auto-reopen. */
+  isOpen: boolean;
+  /** Letzte Position + Größe. */
+  bounds?: { x: number; y: number; width: number; height: number };
+  /** Always-on-top Status. */
+  alwaysOnTop: boolean;
+}
+
+/**
+ * Speichert pro Popup-Typ ein Layout. FX-Windows sind per-channelId verschachtelt,
+ * weil mehrere FX-Fenster parallel offen sein können.
+ */
+export interface PopupWindowLayouts {
+  performance?: PopupWindowLayout;
+  mixer?: PopupWindowLayout;
+  sampleBrowser?: PopupWindowLayout;
+  patternGen?: PopupWindowLayout;
+  /** FX-Windows: Map<channelId, Layout>. */
+  fx?: Record<string, PopupWindowLayout>;
+}
+
 export interface AppStoreData {
   recentProjects: RecentProject[];
   windowBounds: WindowBounds;
+  popupWindowLayouts: PopupWindowLayouts;
   theme: "dark" | "light";
   lastImportPath: string;
   version: number;
@@ -38,6 +65,7 @@ const MAX_RECENT = 10;
 const DEFAULT: AppStoreData = {
   recentProjects: [],
   windowBounds: { width: 1440, height: 900, isMaximized: false },
+  popupWindowLayouts: {},
   theme: "dark",
   lastImportPath: "",
   version: 1,
@@ -63,6 +91,8 @@ export class AppStore {
         ...DEFAULT,
         ...parsed,
         windowBounds: { ...DEFAULT.windowBounds, ...(parsed.windowBounds ?? {}) },
+        // popupWindowLayouts wurde post-v1.28.0 hinzugefügt — Migration-tolerant.
+        popupWindowLayouts: parsed.popupWindowLayouts ?? {},
       };
     } catch {
       return { ...DEFAULT };
@@ -126,6 +156,47 @@ export class AppStore {
   saveWindowBounds(bounds: WindowBounds): void {
     this.data.windowBounds = bounds;
     this.save();
+  }
+
+  // ─── Popup-Window-Layouts (post-v1.28.0) ───────────────────────────────────
+
+  /** Liefert das Layout eines named Popup (Singleton-Popups). */
+  getPopupLayout(key: "performance" | "mixer" | "sampleBrowser" | "patternGen"): PopupWindowLayout | undefined {
+    return this.data.popupWindowLayouts[key];
+  }
+
+  /** Setzt das Layout eines named Popup (Singleton-Popups). */
+  setPopupLayout(
+    key: "performance" | "mixer" | "sampleBrowser" | "patternGen",
+    layout: PopupWindowLayout,
+  ): void {
+    this.data.popupWindowLayouts[key] = layout;
+    this.save();
+  }
+
+  /** Liefert das Layout eines FX-Popup für eine channelId. */
+  getFxLayout(channelId: string): PopupWindowLayout | undefined {
+    return this.data.popupWindowLayouts.fx?.[channelId];
+  }
+
+  /** Setzt das Layout eines FX-Popup für eine channelId. */
+  setFxLayout(channelId: string, layout: PopupWindowLayout): void {
+    if (!this.data.popupWindowLayouts.fx) this.data.popupWindowLayouts.fx = {};
+    this.data.popupWindowLayouts.fx[channelId] = layout;
+    this.save();
+  }
+
+  /** Liefert alle FX-Layouts (für Auto-Reopen beim App-Start). */
+  getAllFxLayouts(): Record<string, PopupWindowLayout> {
+    return this.data.popupWindowLayouts.fx ?? {};
+  }
+
+  /** Entfernt das Layout eines FX-Popup (z.B. wenn der Channel gelöscht wurde). */
+  deleteFxLayout(channelId: string): void {
+    if (this.data.popupWindowLayouts.fx) {
+      delete this.data.popupWindowLayouts.fx[channelId];
+      this.save();
+    }
   }
 
   getStorePath(): string {

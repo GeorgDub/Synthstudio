@@ -41,7 +41,7 @@ import { registerWaveformHandlers } from "./waveform";
 import { WindowManager, registerWindowHandlers } from "./windows";
 import { registerExportHandlers } from "./export";
 import { setupAutoUpdater, checkForUpdatesManually } from "./updater";
-import { initStore, registerStoreHandlers, type AppStore } from "./store";
+import { initStore, registerStoreHandlers, type AppStore, type PopupWindowLayout } from "./store";
 import { registerZipImportHandlers } from "./zip-import";
 import {
   startCollabServer,
@@ -103,6 +103,89 @@ let sampleBrowserWindow: BrowserWindow | null = null;
  * Singleton.
  */
 let patternGenWindow: BrowserWindow | null = null;
+
+/**
+ * Window-Layout-Persistenz (post-v1.28.0).
+ *
+ * Flag um in den `close`-Handlern der Popup-Fenster zu unterscheiden, ob der
+ * User das Fenster explizit schließt (→ isOpen=false, keine Auto-Reopen) oder
+ * ob die App gerade beendet wird (→ isOpen=true bleibt erhalten, Auto-Reopen
+ * beim nächsten Start).
+ */
+let isAppQuitting = false;
+
+/**
+ * Liest das gespeicherte Layout für ein Singleton-Popup und liefert die Bounds-
+ * Override für den BrowserWindow-Konstruktor zurück (oder undefined).
+ */
+function getSavedLayoutFor(
+  key: "performance" | "mixer" | "sampleBrowser" | "patternGen",
+): PopupWindowLayout | undefined {
+  return appStore?.getPopupLayout(key);
+}
+
+/**
+ * Speichert die aktuellen Bounds + AlwaysOnTop eines Popup-Fensters in den
+ * persistenten Store. Wird im `close`-Handler vor der Destruktion aufgerufen.
+ *
+ * Wenn `isAppQuitting=true` (App-Beenden cascade-closed das Popup), bleibt
+ * `isOpen=true` damit das Popup beim nächsten Start wieder geöffnet wird.
+ * Bei explizitem User-Close ist `isOpen=false`.
+ */
+function persistPopupLayout(
+  key: "performance" | "mixer" | "sampleBrowser" | "patternGen",
+  win: BrowserWindow,
+): void {
+  if (!appStore || win.isDestroyed()) return;
+  try {
+    const bounds = win.getBounds();
+    appStore.setPopupLayout(key, {
+      isOpen: isAppQuitting,
+      bounds: { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height },
+      alwaysOnTop: win.isAlwaysOnTop(),
+    });
+  } catch (err) {
+    console.error(`[WindowLayout] persistPopupLayout(${key}) failed:`, err);
+  }
+}
+
+/** Variante für FX-Windows (per channelId). */
+function persistFxLayout(channelId: string, win: BrowserWindow): void {
+  if (!appStore || win.isDestroyed()) return;
+  try {
+    const bounds = win.getBounds();
+    appStore.setFxLayout(channelId, {
+      isOpen: isAppQuitting,
+      bounds: { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height },
+      alwaysOnTop: win.isAlwaysOnTop(),
+    });
+  } catch (err) {
+    console.error(`[WindowLayout] persistFxLayout(${channelId}) failed:`, err);
+  }
+}
+
+/**
+ * Window-Layout-Persistenz: Auto-Reopen aller Popups die beim letzten App-Beenden
+ * offen waren. Wird einmalig kurz nach `did-finish-load` des Hauptfensters
+ * aufgerufen, damit die Main-Renderer-Action-Listener bereit sind.
+ */
+function reopenPersistedPopups(): void {
+  if (!appStore) return;
+  try {
+    if (appStore.getPopupLayout("performance")?.isOpen) createPerformanceWindow();
+    if (appStore.getPopupLayout("mixer")?.isOpen) createMixerWindow();
+    if (appStore.getPopupLayout("sampleBrowser")?.isOpen) createSampleBrowserWindow();
+    if (appStore.getPopupLayout("patternGen")?.isOpen) createPatternGenWindow();
+
+    // FX-Windows: per channelId
+    const fxLayouts = appStore.getAllFxLayouts();
+    for (const [channelId, layout] of Object.entries(fxLayouts)) {
+      if (layout.isOpen) createFxWindow(channelId);
+    }
+  } catch (err) {
+    console.error("[WindowLayout] reopenPersistedPopups failed:", err);
+  }
+}
 let tray: Tray | null = null;
 let appStore: AppStore | null = null;
 
@@ -366,9 +449,14 @@ function createPerformanceWindow(): void {
     return;
   }
 
+  // Window-Layout-Persistenz: restore saved bounds + alwaysOnTop
+  const saved = getSavedLayoutFor("performance");
+
   perfWindow = new BrowserWindow({
-    width: 800,
-    height: 600,
+    width: saved?.bounds?.width ?? 800,
+    height: saved?.bounds?.height ?? 600,
+    x: saved?.bounds?.x,
+    y: saved?.bounds?.y,
     minWidth: 480,
     minHeight: 400,
     title: `${APP_NAME} – Performance`,
@@ -394,6 +482,23 @@ function createPerformanceWindow(): void {
   // Without this, the user could accidentally trigger "Datei → Beenden"
   // (role:quit) from a focused popup and quit the entire app.
   perfWindow.setMenu(null);
+
+  // Window-Layout-Persistenz: restore alwaysOnTop wenn gespeichert
+  if (saved?.alwaysOnTop) {
+    perfWindow.setAlwaysOnTop(true);
+  }
+
+  // Window-Layout-Persistenz: markieren als offen (für Auto-Reopen)
+  appStore?.setPopupLayout("performance", {
+    isOpen: true,
+    bounds: saved?.bounds,
+    alwaysOnTop: saved?.alwaysOnTop ?? false,
+  });
+
+  // Save bounds + alwaysOnTop kurz vor dem Schließen
+  perfWindow.on("close", () => {
+    if (perfWindow) persistPopupLayout("performance", perfWindow);
+  });
 
   perfWindow.once("ready-to-show", () => {
     perfWindow?.show();
@@ -448,9 +553,14 @@ function createFxWindow(channelId: string): void {
     return;
   }
 
+  // Window-Layout-Persistenz: restore saved bounds für diesen Kanal
+  const saved = appStore?.getFxLayout(channelId);
+
   const win = new BrowserWindow({
-    width: 420,
-    height: 560,
+    width: saved?.bounds?.width ?? 420,
+    height: saved?.bounds?.height ?? 560,
+    x: saved?.bounds?.x,
+    y: saved?.bounds?.y,
     minWidth: 320,
     minHeight: 380,
     title: `${APP_NAME} – FX (${channelId})`,
@@ -472,6 +582,17 @@ function createFxWindow(channelId: string): void {
   // BUG-017 fix: popup windows must NOT inherit the application menu —
   // otherwise menu accelerators from this window could quit the entire app.
   win.setMenu(null);
+
+  // Window-Layout-Persistenz
+  if (saved?.alwaysOnTop) win.setAlwaysOnTop(true);
+  appStore?.setFxLayout(channelId, {
+    isOpen: true,
+    bounds: saved?.bounds,
+    alwaysOnTop: saved?.alwaysOnTop ?? false,
+  });
+
+  // Save bounds vor dem Schließen
+  win.on("close", () => persistFxLayout(channelId, win));
 
   win.once("ready-to-show", () => {
     win.show();
@@ -517,9 +638,13 @@ function createMixerWindow(): void {
     return;
   }
 
+  const saved = getSavedLayoutFor("mixer");
+
   mixerWindow = new BrowserWindow({
-    width: 720,
-    height: 520,
+    width: saved?.bounds?.width ?? 720,
+    height: saved?.bounds?.height ?? 520,
+    x: saved?.bounds?.x,
+    y: saved?.bounds?.y,
     minWidth: 480,
     minHeight: 360,
     title: `${APP_NAME} – Mixer`,
@@ -539,6 +664,16 @@ function createMixerWindow(): void {
 
   // BUG-017 fix: popup windows must NOT inherit the application menu.
   mixerWindow.setMenu(null);
+
+  if (saved?.alwaysOnTop) mixerWindow.setAlwaysOnTop(true);
+  appStore?.setPopupLayout("mixer", {
+    isOpen: true,
+    bounds: saved?.bounds,
+    alwaysOnTop: saved?.alwaysOnTop ?? false,
+  });
+  mixerWindow.on("close", () => {
+    if (mixerWindow) persistPopupLayout("mixer", mixerWindow);
+  });
 
   mixerWindow.once("ready-to-show", () => {
     mixerWindow?.show();
@@ -582,9 +717,13 @@ function createSampleBrowserWindow(): void {
     return;
   }
 
+  const saved = getSavedLayoutFor("sampleBrowser");
+
   sampleBrowserWindow = new BrowserWindow({
-    width: 480,
-    height: 640,
+    width: saved?.bounds?.width ?? 480,
+    height: saved?.bounds?.height ?? 640,
+    x: saved?.bounds?.x,
+    y: saved?.bounds?.y,
     minWidth: 340,
     minHeight: 400,
     title: `${APP_NAME} – Sample Browser`,
@@ -603,6 +742,16 @@ function createSampleBrowserWindow(): void {
   });
 
   sampleBrowserWindow.setMenu(null);
+
+  if (saved?.alwaysOnTop) sampleBrowserWindow.setAlwaysOnTop(true);
+  appStore?.setPopupLayout("sampleBrowser", {
+    isOpen: true,
+    bounds: saved?.bounds,
+    alwaysOnTop: saved?.alwaysOnTop ?? false,
+  });
+  sampleBrowserWindow.on("close", () => {
+    if (sampleBrowserWindow) persistPopupLayout("sampleBrowser", sampleBrowserWindow);
+  });
 
   sampleBrowserWindow.once("ready-to-show", () => {
     sampleBrowserWindow?.show();
@@ -641,9 +790,13 @@ function createPatternGenWindow(): void {
     return;
   }
 
+  const saved = getSavedLayoutFor("patternGen");
+
   patternGenWindow = new BrowserWindow({
-    width: 560,
-    height: 720,
+    width: saved?.bounds?.width ?? 560,
+    height: saved?.bounds?.height ?? 720,
+    x: saved?.bounds?.x,
+    y: saved?.bounds?.y,
     minWidth: 380,
     minHeight: 480,
     title: `${APP_NAME} – Pattern Generator`,
@@ -662,6 +815,16 @@ function createPatternGenWindow(): void {
   });
 
   patternGenWindow.setMenu(null);
+
+  if (saved?.alwaysOnTop) patternGenWindow.setAlwaysOnTop(true);
+  appStore?.setPopupLayout("patternGen", {
+    isOpen: true,
+    bounds: saved?.bounds,
+    alwaysOnTop: saved?.alwaysOnTop ?? false,
+  });
+  patternGenWindow.on("close", () => {
+    if (patternGenWindow) persistPopupLayout("patternGen", patternGenWindow);
+  });
 
   patternGenWindow.once("ready-to-show", () => {
     patternGenWindow?.show();
@@ -2010,6 +2173,14 @@ app.whenReady().then(() => {
     registerZipImportHandlers(mainWindow);
     // Auto-Updater (nur in Produktion aktiv)
     setupAutoUpdater(mainWindow);
+
+    // Window-Layout-Persistenz: nach dem ersten Render des Hauptfensters die
+    // beim letzten Beenden offenen Popup-Fenster wieder öffnen.
+    // Kleine Verzögerung (800ms) damit der Main-Renderer seine useEffects
+    // gemountet hat (Action-Listener) bevor die Popups request-state schicken.
+    mainWindow.webContents.once("did-finish-load", () => {
+      setTimeout(() => reopenPersistedPopups(), 800);
+    });
   }
 
   // macOS: Fenster neu erstellen wenn Dock-Icon geklickt
@@ -2027,6 +2198,13 @@ app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {
     app.quit();
   }
+});
+
+app.on("before-quit", () => {
+  // Window-Layout-Persistenz: markieren dass die App gerade quittet, damit
+  // close-Handler der Popup-Fenster `isOpen=true` speichern (Auto-Reopen)
+  // statt `isOpen=false` (User-explicit-close).
+  isAppQuitting = true;
 });
 
 app.on("will-quit", () => {
