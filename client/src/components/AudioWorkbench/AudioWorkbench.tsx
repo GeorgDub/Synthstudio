@@ -32,12 +32,23 @@ interface StemResult {
 
 interface WaveformCanvasProps {
   buffer: AudioBuffer | null;
+  selectionStart?: number | null; // in seconds
+  selectionEnd?: number | null;   // in seconds
+  onSelect?: (startSec: number, endSec: number) => void;
+  onClearSelection?: () => void;
 }
 
 // ─── Waveform Canvas ─────────────────────────────────────────────────────────
 
-function WaveformCanvas({ buffer }: WaveformCanvasProps) {
+function WaveformCanvas({
+  buffer,
+  selectionStart = null,
+  selectionEnd = null,
+  onSelect,
+  onClearSelection,
+}: WaveformCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const dragRef = useRef<{ startX: number; startSec: number } | null>(null);
 
   React.useEffect(() => {
     const canvas = canvasRef.current;
@@ -61,9 +72,27 @@ function WaveformCanvas({ buffer }: WaveformCanvasProps) {
     const rootStyle = getComputedStyle(document.documentElement);
     const bgColor = rootStyle.getPropertyValue("--ss-bg-elevated").trim() || "#1a1a2e";
     const accentColor = rootStyle.getPropertyValue("--ss-accent-primary").trim() || "#7c3aed";
+    const accentSecondary = rootStyle.getPropertyValue("--ss-accent-secondary").trim() || "#06b6d4";
 
     ctx.fillStyle = bgColor;
     ctx.fillRect(0, 0, W, H);
+
+    // Selection overlay (hinter waveform)
+    if (
+      selectionStart !== null && selectionEnd !== null &&
+      selectionEnd > selectionStart && buffer.duration > 0
+    ) {
+      const x0 = Math.max(0, (selectionStart / buffer.duration) * W);
+      const x1 = Math.min(W, (selectionEnd   / buffer.duration) * W);
+      ctx.fillStyle = `${accentSecondary}33`;
+      ctx.fillRect(x0, 0, x1 - x0, H);
+      ctx.strokeStyle = accentSecondary;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(x0 + 0.5, 0); ctx.lineTo(x0 + 0.5, H);
+      ctx.moveTo(x1 - 0.5, 0); ctx.lineTo(x1 - 0.5, H);
+      ctx.stroke();
+    }
 
     ctx.strokeStyle = accentColor;
     ctx.lineWidth = 1;
@@ -80,15 +109,50 @@ function WaveformCanvas({ buffer }: WaveformCanvasProps) {
       ctx.lineTo(x, amp + max * amp);
     }
     ctx.stroke();
+  }, [buffer, selectionStart, selectionEnd]);
+
+  const xToSeconds = useCallback((clientX: number): number => {
+    const canvas = canvasRef.current;
+    if (!canvas || !buffer) return 0;
+    const rect = canvas.getBoundingClientRect();
+    const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+    return ratio * buffer.duration;
   }, [buffer]);
+
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    if (!buffer || !onSelect) return;
+    const sec = xToSeconds(e.clientX);
+    dragRef.current = { startX: e.clientX, startSec: sec };
+    onSelect(sec, sec);
+    e.preventDefault();
+  }, [buffer, onSelect, xToSeconds]);
+
+  const handleMouseMove = useCallback((e: React.MouseEvent) => {
+    if (!dragRef.current || !onSelect) return;
+    const sec = xToSeconds(e.clientX);
+    const { startSec } = dragRef.current;
+    const lo = Math.min(startSec, sec);
+    const hi = Math.max(startSec, sec);
+    onSelect(lo, hi);
+  }, [onSelect, xToSeconds]);
+
+  const handleMouseUp = useCallback(() => {
+    dragRef.current = null;
+  }, []);
 
   return (
     <canvas
       ref={canvasRef}
       width={600}
       height={80}
-      className="w-full rounded border border-border-color"
+      className="w-full rounded border border-border-color cursor-crosshair"
       style={{ background: "var(--ss-bg-elevated)" }}
+      onMouseDown={handleMouseDown}
+      onMouseMove={handleMouseMove}
+      onMouseUp={handleMouseUp}
+      onMouseLeave={handleMouseUp}
+      onDoubleClick={() => onClearSelection?.()}
+      title="Drag = Bereich auswählen · Doppelklick = Auswahl löschen"
     />
   );
 }
@@ -214,6 +278,18 @@ export function AudioWorkbench({ onSamplesAdded }: AudioWorkbenchProps) {
   const [trimEnd, setTrimEnd] = useState(0);
   const [normalizeDb, setNormalizeDb] = useState(0); // 0 dB = -0 dB FS Peak
 
+  // Waveform-Bereichsauswahl (drag-to-select)
+  const [selStart, setSelStart] = useState<number | null>(null);
+  const [selEnd, setSelEnd] = useState<number | null>(null);
+  const handleCanvasSelect = useCallback((s: number, e: number) => {
+    setSelStart(s);
+    setSelEnd(e);
+  }, []);
+  const handleCanvasClear = useCallback(() => {
+    setSelStart(null);
+    setSelEnd(null);
+  }, []);
+
   const loadFile = useCallback(async (file: File) => {
     try {
       const arrayBuffer = await file.arrayBuffer();
@@ -266,10 +342,16 @@ export function AudioWorkbench({ onSamplesAdded }: AudioWorkbenchProps) {
 
   const openTrim = useCallback(() => {
     if (!buffer) return;
-    setTrimStart(0);
-    setTrimEnd(buffer.duration);
+    // Pre-fill aus Waveform-Selection, falls vorhanden
+    if (selStart !== null && selEnd !== null && selEnd > selStart) {
+      setTrimStart(selStart);
+      setTrimEnd(selEnd);
+    } else {
+      setTrimStart(0);
+      setTrimEnd(buffer.duration);
+    }
     setEditMode("trim");
-  }, [buffer]);
+  }, [buffer, selStart, selEnd]);
 
   const openNormalize = useCallback(() => {
     if (!buffer) return;
@@ -282,6 +364,9 @@ export function AudioWorkbench({ onSamplesAdded }: AudioWorkbenchProps) {
     if (trimEnd <= trimStart) return;
     applyEdit(() => trimBuffer(new AudioContext(), buffer, trimStart, trimEnd));
     setEditMode("none");
+    // Auswahl zurücksetzen, weil die Buffer-Dauer sich verändert hat
+    setSelStart(null);
+    setSelEnd(null);
   }, [buffer, applyEdit, trimStart, trimEnd]);
 
   const applyNormalize = useCallback(() => {
@@ -407,7 +492,27 @@ export function AudioWorkbench({ onSamplesAdded }: AudioWorkbenchProps) {
       {/* Waveform */}
       {buffer && (
         <>
-          <WaveformCanvas buffer={buffer} />
+          <WaveformCanvas
+            buffer={buffer}
+            selectionStart={selStart}
+            selectionEnd={selEnd}
+            onSelect={handleCanvasSelect}
+            onClearSelection={handleCanvasClear}
+          />
+          {selStart !== null && selEnd !== null && selEnd > selStart && (
+            <div className="flex items-center justify-between text-[10px] text-text-dim font-mono px-1 -mt-2">
+              <span>
+                Auswahl: <span className="text-accent-secondary">{selStart.toFixed(2)}s – {selEnd.toFixed(2)}s</span>
+                <span className="text-text-muted"> ({(selEnd - selStart).toFixed(2)}s)</span>
+              </span>
+              <button
+                onClick={handleCanvasClear}
+                className="text-text-muted hover:text-text-primary underline"
+              >
+                Auswahl löschen
+              </button>
+            </div>
+          )}
 
           {/* ── Audacity-Style Edit-Toolbar ──────────────────────────────── */}
           <div className="flex flex-wrap gap-1.5 p-2 bg-bg-elevated rounded-lg">
