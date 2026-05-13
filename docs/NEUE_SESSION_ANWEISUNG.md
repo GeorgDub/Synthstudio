@@ -1,6 +1,6 @@
 # Synthstudio – Anweisungsdatei für neue Claude-Session
 
-**Version: 1.23.0** | Stand: 2026-05-13 (Sprints 1–23 abgeschlossen)
+**Version: 1.24.0** | Stand: 2026-05-13 (Sprints 1–24 abgeschlossen)
 
 ---
 
@@ -289,6 +289,17 @@ addCustomTheme({ name, colors, extras: {
 - **FOLLOWUP-102-4** (Round-Trip E2E): Neue `tests/web/audio-track-round-trip.spec.ts` mit 4 Tests (Phase 1 save → Phase 2 reopen → Phase 3 relocate + ID-Stabilität).
 - Test-Count: 1345 unit + 8 neue Playwright. INDEX.js openTasks: LEER.
 
+### v1.24.0 — Multi-Window-Architektur + 7 kritische Bug-Fixes (post-v1.23.0 Stabilisierung)
+- **Performance Mode in eigenem Fenster — Phase 1 + 2**: Separates Electron `BrowserWindow` mit `?perfPopup=1` URL-Param. Bidirektionaler State-Sync via 8 IPC-Channels (`window:open/close/is-performance-open`, `window:perf-set/is-always-on-top`, `perf-sync:state`, `perf-sync:action`, `perf-window:closed`). PatternLaunchPad mit injectable `PerformanceStoreActions` — Edit + Reorder + Pad-CRUD vollständig synced über beide Fenster. Always-on-Top Toggle 📌.
+- **Settings → Über**: neuer Update-Check-Button mit Live-Status-Anzeige (idle/checking/up-to-date/available/downloading/ready/error), Progress-Bar. Nutzt existierende `useUpdater`-Infra.
+- **BUG-009** (high): Performance Mode Mode-Buttons im Fullscreen unklickbar. Fix: `ElectronTitleBar` versteckt sich in Fullscreen + Performance-Mode-Wrapper bekommt defensiv `WebkitAppRegion: no-drag`.
+- **BUG-010** (critical): Script-Runner CSP-Error "unsafe-eval". Fix: User-Code wird vor Worker-Bau in die Source eingebettet (statt `new Function`). CSP bleibt strikt.
+- **BUG-011** (high): Audio-Workbench Waveform unsichtbar. Fix: Canvas 2D unterstützt keine CSS-Variablen → `getComputedStyle().getPropertyValue()` für Token-Auflösung.
+- **BUG-012** (high): Sample-Browser BPM-Detection. Fix: BPM in-band im Worker beim `analyze`-Call mit-berechnet (Renderer + Electron), vermeidet zweiten decodeAudioData-Trip.
+- **BUG-013** (high): "Neues Projekt" resettet nicht. Fix: neuer `doFullProjectReset`-Helper, 5 neue Public-Reset-APIs (`resetMixer`, `resetAutomation`, `resetPerformance`, `resetMelodicParts`, `resetNoteRepeat`), koordinierter Reset über 13 Stores.
+- **BUG-014** (medium): Pattern-Generator BPM-Input springt auf 40 beim Clearen. Fix: lokaler String-Draft-State während des Tippens, Commit + Clamp erst on-Blur/Enter (sowohl Vorlagen- als auch Prompt-Tab).
+- **BUG-015** (medium): ElectronTitleBar-Titel überlappt. Fix: linke Seite zeigt nur "Synthstudio" (App-Name), Projektname bleibt zentriert in der Mitte.
+
 ---
 
 ## Implementierte Features (Überblick)
@@ -360,5 +371,5 @@ Quelle: `agents/INDEX.js` → `openTasks`
 ---
 
 **Dev-Server**: http://localhost:5173  
-**Letzter Test-Run**: `pnpm test` → 1345 passed / 15 skipped (pre-existing) / 64 Files / ~2.8s + `pnpm test:web` 8 Playwright-Tests grün  
-**Version**: 1.23.0
+**Letzter Test-Run**: `pnpm test` → 1347 passed / 15 skipped (pre-existing) / 64 Files / ~3.0s + `pnpm test:web` 8 Playwright-Tests grün  
+**Version**: 1.24.0
