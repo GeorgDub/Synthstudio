@@ -19,6 +19,8 @@ import {
   generateScriptFromPrompt,
   type AiScriptGenerationResult,
 } from "@/utils/aiScriptGenerator";
+import { AI_SCRIPT_TEMPLATES, groupTemplatesByCategory } from "@/utils/aiScriptTemplates";
+import { useAiCostStore, getProviderUsage, setMonthlyCap } from "@/store/useAiCostStore";
 
 export interface AiScriptGeneratorDialogProps {
   isOpen: boolean;
@@ -55,11 +57,20 @@ export function AiScriptGeneratorDialog({
   onIterateAccept,
 }: AiScriptGeneratorDialogProps) {
   const api = useApiSettingsStore();
+  useAiCostStore(); // re-render on cost-changes
   const [prompt, setPrompt] = useState("");
   const [generating, setGenerating] = useState(false);
   const [result, setResult] = useState<AiScriptGenerationResult | null>(null);
   /** Iterate-Mode aktiviert (nur möglich wenn currentCode + onIterateAccept verfügbar). */
   const [iterateMode, setIterateMode] = useState(false);
+  /** Template-Dropdown geöffnet. */
+  const [templatesOpen, setTemplatesOpen] = useState(false);
+  /** Cap-Editor geöffnet. */
+  const [capEditorOpen, setCapEditorOpen] = useState(false);
+  const [capDraft, setCapDraft] = useState("");
+
+  // AI4-B: Aktueller Verbrauch des aktiven Providers
+  const usage = getProviderUsage(api.activeProvider);
 
   // Multi-Provider-Support (post-v1.25.0): liest Key + Modell des AKTIVEN
   // Providers aus dem Store. `aiEnabled` reflektiert ob dieser Provider einen
@@ -177,6 +188,44 @@ export function AiScriptGeneratorDialog({
             </div>
           )}
 
+          {/* Templates Dropdown — schneller Onboarding für neue User */}
+          <div>
+            <button
+              type="button"
+              onClick={() => setTemplatesOpen((o) => !o)}
+              data-testid="ai-script-templates-toggle"
+              className="flex items-center gap-1 text-[10px] text-text-dim hover:text-accent-secondary"
+            >
+              📋 Beispiel-Templates ({AI_SCRIPT_TEMPLATES.length})
+              <span className="ml-1">{templatesOpen ? "▾" : "▸"}</span>
+            </button>
+            {templatesOpen && (
+              <div className="mt-2 max-h-44 overflow-y-auto rounded border border-border-color bg-bg-elevated p-2 space-y-2">
+                {Object.entries(groupTemplatesByCategory()).map(([category, templates]) => (
+                  <div key={category}>
+                    <div className="text-[9px] uppercase tracking-wider text-text-dim mb-1">{category}</div>
+                    {templates.map((t) => (
+                      <button
+                        key={t.id}
+                        type="button"
+                        onClick={() => {
+                          setPrompt(t.prompt);
+                          setTemplatesOpen(false);
+                        }}
+                        data-testid={`ai-script-template-${t.id}`}
+                        className="w-full text-left px-2 py-1 rounded text-[10px] hover:bg-bg-base"
+                        title={t.description}
+                      >
+                        <div className="text-text-primary">{t.label}</div>
+                        <div className="text-[9px] text-text-dim">{t.description}</div>
+                      </button>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
           {/* Prompt */}
           <div>
             <label className="block text-xs font-medium text-text-muted mb-1.5">
@@ -210,7 +259,7 @@ export function AiScriptGeneratorDialog({
               type="button"
               data-testid="ai-script-generate"
               onClick={handleGenerate}
-              disabled={generating || !hasApiKey || !prompt.trim()}
+              disabled={generating || !hasApiKey || !prompt.trim() || usage.capExceeded}
               className="px-4 py-2 text-xs font-medium rounded bg-accent-primary text-white hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity flex items-center gap-2"
             >
               {generating ? (
@@ -226,6 +275,82 @@ export function AiScriptGeneratorDialog({
               <span className="text-[10px] text-text-dim font-mono">
                 {result.byteSize} Bytes
               </span>
+            )}
+          </div>
+
+          {/* AI4-B: Cost-Tracking Display */}
+          <div
+            data-testid="ai-script-cost"
+            className={[
+              "px-3 py-2 rounded border text-[10px]",
+              usage.capExceeded
+                ? "bg-accent-danger/10 border-accent-danger/40 text-accent-danger"
+                : "bg-bg-elevated border-border-color text-text-dim",
+            ].join(" ")}
+          >
+            <div className="flex items-center justify-between">
+              <span>
+                Verbrauch <span className="font-mono">{api.activeProvider}</span> diesen Monat:{" "}
+                <span className="font-mono text-text-primary">{usage.total.toLocaleString()}</span> Tokens
+                {usage.cap !== null && (
+                  <>
+                    {" / "}
+                    <span className="font-mono">{usage.cap.toLocaleString()}</span>
+                  </>
+                )}
+                <span className="text-text-dim ml-2">({usage.callCount} Calls)</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setCapDraft(usage.cap !== null ? String(usage.cap) : "");
+                  setCapEditorOpen((o) => !o);
+                }}
+                data-testid="ai-script-cost-cap-toggle"
+                className="text-[10px] hover:text-accent-primary"
+              >
+                {usage.cap === null ? "Cap setzen" : "Cap anpassen"}
+              </button>
+            </div>
+            {capEditorOpen && (
+              <div className="flex items-center gap-2 mt-2 pt-2 border-t border-border-color">
+                <input
+                  type="number"
+                  value={capDraft}
+                  onChange={(e) => setCapDraft(e.target.value)}
+                  placeholder="z.B. 100000"
+                  className="flex-1 px-2 py-0.5 text-[10px] rounded border border-border-color bg-bg-base text-text-primary"
+                  data-testid="ai-script-cost-cap-input"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    const n = parseInt(capDraft, 10);
+                    setMonthlyCap(api.activeProvider, Number.isFinite(n) && n > 0 ? n : null);
+                    setCapEditorOpen(false);
+                  }}
+                  className="px-2 py-0.5 text-[10px] rounded bg-accent-primary text-white"
+                >
+                  OK
+                </button>
+                {usage.cap !== null && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMonthlyCap(api.activeProvider, null);
+                      setCapEditorOpen(false);
+                    }}
+                    className="px-2 py-0.5 text-[10px] rounded border border-border-color"
+                  >
+                    Entfernen
+                  </button>
+                )}
+              </div>
+            )}
+            {usage.capExceeded && (
+              <div className="mt-1 text-accent-danger">
+                ⚠ Monats-Cap erreicht. Generierung deaktiviert bis Cap angepasst wird oder neuer Monat anfängt.
+              </div>
             )}
           </div>
 

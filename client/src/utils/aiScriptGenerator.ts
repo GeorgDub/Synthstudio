@@ -20,6 +20,7 @@
  */
 import { MAX_SCRIPT_CODE_BYTES } from "@/store/useScriptStore";
 import type { AiProvider } from "@/store/useApiSettingsStore";
+import { recordAiCall } from "@/store/useAiCostStore";
 
 const ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages";
 const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
@@ -238,6 +239,11 @@ async function callAnthropic(apiKey: string, model: string, userMessage: string)
     throw new Error(`Anthropic-API ${response.status}: ${errText.slice(0, 200)}`);
   }
   const data = await response.json();
+  // AI4-B: Cost-Tracking. Anthropic usage-shape: { input_tokens, output_tokens }
+  const usage = data?.usage as { input_tokens?: number; output_tokens?: number } | undefined;
+  if (usage) {
+    recordAiCall("anthropic", usage.input_tokens ?? 0, usage.output_tokens ?? 0);
+  }
   return data?.content?.[0]?.text ?? "";
 }
 
@@ -263,5 +269,10 @@ async function callOpenAi(apiKey: string, model: string, userMessage: string): P
     throw new Error(`OpenAI-API ${response.status}: ${errText.slice(0, 200)}`);
   }
   const data = await response.json();
+  // AI4-B: Cost-Tracking. OpenAI usage-shape: { prompt_tokens, completion_tokens, total_tokens }
+  const usage = data?.usage as { prompt_tokens?: number; completion_tokens?: number } | undefined;
+  if (usage) {
+    recordAiCall("openai", usage.prompt_tokens ?? 0, usage.completion_tokens ?? 0);
+  }
   return data?.choices?.[0]?.message?.content ?? "";
 }
