@@ -388,9 +388,11 @@ export default function App() {
   }, [electron]);
 
   // Listener: Popup wurde vom User geschlossen → State zurücksetzen
+  // DIAG-5 (BUG-023): renderer-side logging dass IPC tatsächlich ankommt
   useEffect(() => {
     if (!electron.isElectron) return;
     const cleanup = electron.onPerfPopupClosed?.(() => {
+      electron.logRendererEvent?.("popup-closed-received", { key: "perf" });
       setPerformancePopupOpen(false);
     });
     return cleanup;
@@ -402,6 +404,7 @@ export default function App() {
   useEffect(() => {
     if (!electron.isElectron) return;
     const cleanup = electron.onMixerPopupClosed?.(() => {
+      electron.logRendererEvent?.("popup-closed-received", { key: "mixer" });
       setMixerPopupOpen(false);
     });
     return cleanup;
@@ -413,6 +416,7 @@ export default function App() {
   useEffect(() => {
     if (!electron.isElectron) return;
     const cleanup = electron.onSampleBrowserPopupClosed?.(() => {
+      electron.logRendererEvent?.("popup-closed-received", { key: "sampleBrowser" });
       setSampleBrowserPopupOpen(false);
     });
     return cleanup;
@@ -424,6 +428,7 @@ export default function App() {
   useEffect(() => {
     if (!electron.isElectron) return;
     const cleanup = electron.onPatternGenPopupClosed?.(() => {
+      electron.logRendererEvent?.("popup-closed-received", { key: "patternGen" });
       setPatternGenPopupOpen(false);
     });
     return cleanup;
