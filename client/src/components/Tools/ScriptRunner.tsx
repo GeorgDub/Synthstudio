@@ -32,6 +32,7 @@ import { scriptSandbox } from "@/sandbox/scriptSandboxInstance";
 import type { SandboxLogEntry, SandboxRunResult } from "@/sandbox/useScriptSandbox";
 import { ScriptList } from "./ScriptList";
 import { ScriptEditor, SCRIPT_EXAMPLES } from "./ScriptEditor";
+import { AiScriptGeneratorDialog } from "./AiScriptGeneratorDialog";
 
 interface ScriptRunnerProps {
   /** Aktueller BPM-Wert (für Anzeige; Sandbox liest via setBpm-Setter). */
@@ -58,6 +59,8 @@ export function ScriptRunner({ bpm, isPlaying }: ScriptRunnerProps) {
   const [runStatus, setRunStatus] = useState<SandboxRunResult["status"] | null>(null);
   const [runMessage, setRunMessage] = useState<string | undefined>(undefined);
   const [runDuration, setRunDuration] = useState<number | null>(null);
+  // KI-Generator (post-v1.24.0 ROADMAP feature)
+  const [aiDialogOpen, setAiDialogOpen] = useState(false);
 
   // ─── Selected Script & Derivates ──────────────────────────────────────────
   const selectedScript = useMemo<Script | null>(
@@ -189,6 +192,30 @@ export function ScriptRunner({ bpm, isPlaying }: ScriptRunnerProps) {
     [scripts, selectedScript],
   );
 
+  /** Handler vom KI-Dialog: legt das generierte Skript als neuen Script-Eintrag an + selektiert. */
+  const handleAiAccept = useCallback((code: string, suggestedName: string) => {
+    try {
+      const id = addScript({
+        name: suggestedName,
+        code,
+        scope: "app",
+        enabled: true,
+        maxRuntimeMs: DEFAULT_MAX_RUNTIME_MS,
+      });
+      setSelectedId(id);
+      setLogs([]);
+      setRunStatus(null);
+      setRunMessage(undefined);
+      setRunDuration(null);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setLogs((prev) => [
+        ...prev,
+        { type: "error", message: `KI-Script konnte nicht gespeichert werden: ${msg}`, timestamp: Date.now() },
+      ]);
+    }
+  }, [addScript]);
+
   return (
     <div
       className="flex flex-col h-full max-h-[80vh] min-h-[480px] rounded-lg border border-border-color bg-bg-panel overflow-hidden"
@@ -211,6 +238,15 @@ export function ScriptRunner({ bpm, isPlaying }: ScriptRunnerProps) {
           </span>
         </div>
         <div className="flex-1" />
+        <button
+          type="button"
+          onClick={() => setAiDialogOpen(true)}
+          className="px-3 py-1 text-xs rounded bg-bg-elevated border border-accent-secondary/40 text-accent-secondary hover:bg-accent-secondary/10 font-medium mr-2"
+          data-testid="script-ai-generate"
+          title="Skript mit KI generieren (Anthropic API)"
+        >
+          ✨ KI
+        </button>
         <button
           type="button"
           onClick={handleNew}
@@ -271,6 +307,13 @@ export function ScriptRunner({ bpm, isPlaying }: ScriptRunnerProps) {
           )}
         </div>
       </div>
+
+      {/* KI-Generator Dialog (ROADMAP Phase S — post-v1.24.0) */}
+      <AiScriptGeneratorDialog
+        isOpen={aiDialogOpen}
+        onClose={() => setAiDialogOpen(false)}
+        onAccept={handleAiAccept}
+      />
     </div>
   );
 }

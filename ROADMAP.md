@@ -91,7 +91,7 @@ Für Beta-Test und kommerzielle Distribution erforderlich.
 
 | Feature | Beschreibung | Aufwand |
 |---|---|---|
-| **AI Script Generator** | Im Script-Runner: Prompt-Feld "Generiere ein Script das..." → Anthropic-API liefert vollständigen `ss.*`-API-konformen Code. Validierung gegen ScriptStore-Limits (10kB), Preview vor Speichern. Voraussetzung: API-Key in Settings vorhanden. Hängt nicht von BUG-010-Fix ab — auch ohne ausführbare Sandbox sinnvoll als Code-Generation-Hilfe. | 3–5 Tage |
+| **AI Script Generator** | ✅ **erledigt** (post-v1.24.0). `client/src/utils/aiScriptGenerator.ts` + `AiScriptGeneratorDialog.tsx` + `✨ KI`-Button im ScriptRunner-Header. Anthropic-API mit ss.*-System-Prompt, Markdown-Fence-Stripping, 10kB-Validation, banned-pattern-Check (eval/fetch/window etc.). 27 Unit-Tests. Welle 2 offen: Iterieren-/Verbessern-Button, SSE-Streaming, Beispiel-Templates, Cost-Tracking. |
 | **Plugin-Syntax im Handbuch** | Eigenes Kapitel: ScriptRunner-API, Plugin-Module-Schema (`pluginApi.ts`), Beispiele für eigene Effekte/Generatoren. | 3–5 Tage |
 | **Plugin/Script Cloud-Store** | Backend (Postgres + S3) + Frontend-Marketplace: Hochladen, Bewerten, Installieren. Hängt von Auth (Phase P) ab. | 4–6 Wochen |
 | **In-App LLM-Assistent** | Chat-Sidebar mit Anthropic/OpenAI-API — Fragen zur App **und** zu Musikproduktion. Token-Cap pro Account. | 1–2 Wochen + API-Kosten |

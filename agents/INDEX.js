@@ -355,6 +355,33 @@ const INDEX = {
   workLog: [
     {
       agent:     "frontend",
+      timestamp: "2026-05-13T10:10:00.000Z",
+      done: [
+        "AI Script Generator (ROADMAP Phase S, post-v1.24.0). Prompt-driven Code-Generation für die Script-Runner-Sandbox via Anthropic API.",
+        "Architektur: pure-Funktionen in client/src/utils/aiScriptGenerator.ts (testbar) + UI-Component AiScriptGeneratorDialog.tsx + Integration im ScriptRunner-Header. Anthropic-API-Call analog zum existierenden Pattern (usePatternGeneratorStore.generateFromPromptAI) mit anthropic-dangerous-direct-browser-access Header.",
+        "Pure-Funktionen: buildSystemPrompt() listet alle 10 ss.*-Methoden + die 17 erlaubten ALLOWED_DISPATCH_ACTIONS + Sandbox-Constraints (kein window/fetch/eval/import). stripMarkdownFences() entfernt ```js/```javascript/```/```ts/```typescript Wrapper falls das LLM Markdown mitschickt. validateGeneratedCode() prüft: Empty-Check, 10kB-Limit (MAX_SCRIPT_CODE_BYTES), mind. ein ss.*-Aufruf, banned-Patterns (eval, new Function, window/document/globalThis/self, fetch, XHR/WebSocket/EventSource, electronAPI, import, require).",
+        "UI-Flow: '✨ KI'-Button im ScriptRunner-Header (data-testid script-ai-generate) öffnet AiScriptGeneratorDialog. Dialog hat Prompt-Textarea, 'Generieren'-Button, Preview-Pane (read-only Code + Byte-Count), 'Als neues Script speichern'-Button. Bei Fehler: roter Error-Panel + fehlerhafter Code zur Inspektion sichtbar. ESC schließt Dialog. Schließen reset't State.",
+        "API-Key + Modell: nutzt useApiSettingsStore (anthropicApiKey + aiModel) — gleiche Quelle wie Pattern-Generator + KI-Co-Pilot. Dialog blockt Generate-Button + zeigt Warnung wenn API-Key fehlt.",
+        "Save-Handler in ScriptRunner: ruft addScript() mit suggested-name 'KI: <erste 40 Zeichen vom Prompt>', scope:'app', enabled:true, default maxRuntimeMs. Selektiert neues Script + clearet Logs für Clean-Start.",
+        "Tests (tests/features/ai-script-generator.test.ts, 27 Tests): buildSystemPrompt-Snapshot (10 Methoden + ALLOWED_DISPATCH_ACTIONS + Constraints), stripMarkdownFences alle 7 Wrapper-Varianten + Trim, validateGeneratedCode 14 Cases (happy path, empty, no ss.*, all banned patterns, byte-limit). generateScriptFromPrompt() selbst NICHT getestet (echter API-Call, nicht deterministisch).",
+        "Verification: pnpm check 0 Fehler. pnpm test 1376/1391 grün (+27 ai-script-generator + 2 via theme-class-purity glob walker auf AiScriptGeneratorDialog.tsx). Manuelle Verifikation: pnpm dev:electron → Tools → Script-Runner → '✨ KI'-Button → Prompt 'Rampe BPM von 100 auf 140 in 4s' → Generieren → Code-Preview → Speichern → Skript erscheint in Liste + ist selektiert."
+      ],
+      next: [
+        "AI-Script Welle 2 (Future): 'Iterieren' / 'Verbessern' Button — bei vorhandenem Skript: User klickt KI-Button im Editor selbst, gibt feedback 'mach es schneller' / 'füge log-Statements hinzu', LLM bekommt aktuellen Code + neuen Prompt als Context. Aufwand: ~0.5 Tag.",
+        "AI-Script Welle 2 (Future): Streaming-Response (Anthropic SSE) statt Wait-Until-Done für besseres UX bei längeren Generationen. Aufwand: ~0.5 Tag.",
+        "AI-Script Welle 2 (Future): Beispiel-Prompts/Templates Dropdown ('BPM-Automation', 'Macro-Mapping', 'Pattern-Choreographie') damit User schneller starten. Aufwand: ~0.5 Tag.",
+        "AI-Script Welle 2 (Future): Cost-Tracking — Token-Count + geschätzte Kosten anzeigen + Settings → KI & API → Monthly-Budget-Cap. Aufwand: ~1 Tag."
+      ],
+      changed: [
+        "client/src/utils/aiScriptGenerator.ts",
+        "client/src/components/Tools/AiScriptGeneratorDialog.tsx",
+        "client/src/components/Tools/ScriptRunner.tsx",
+        "tests/features/ai-script-generator.test.ts",
+        "agents/INDEX.js"
+      ]
+    },
+    {
+      agent:     "frontend",
       timestamp: "2026-05-13T21:30:00.000Z",
       done: [
         "Performance-Mode Popup-Window — Phase 2 (post-Phase 1 follow-up). Erweitert die Phase-1-Architektur um vollständigen Edit/Reorder-Operation-Sync (alle Pad-CRUD-Operationen propagieren bidirektional zwischen Main und Popup) sowie einen Always-on-top Toggle. Aufwand: ~1.5h.",
