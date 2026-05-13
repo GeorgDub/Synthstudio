@@ -189,6 +189,51 @@ export function collectPadsInBox(
 }
 
 /**
+ * Liefert die Indizes aller non-empty Pads (für Cmd/Ctrl+A — TASK-127).
+ * Pure Funktion: keine DOM-Abhängigkeit, im Node-Environment testbar.
+ */
+export function collectNonEmptyPadIndices(
+  pads: ReadonlyArray<PerformancePad | null>,
+): number[] {
+  const result: number[] = [];
+  for (let i = 0; i < pads.length; i++) {
+    if (pads[i] !== null) result.push(i);
+  }
+  return result;
+}
+
+/**
+ * Auto-Scroll-Geschwindigkeit (px/Frame) basierend auf Maus-Abstand zum Viewport-Rand.
+ * Linear: 0 px wenn Abstand >= threshold, max 12 px wenn Abstand = 0.
+ * Returnt {dx, dy} — beide können negativ (scroll up/left) oder positiv (scroll down/right) sein.
+ *
+ * Pure Funktion: in Node testbar (kein window-Zugriff).
+ *
+ * @param mouseX     Aktuelle Maus-X-Position (clientX).
+ * @param mouseY     Aktuelle Maus-Y-Position (clientY).
+ * @param viewportW  window.innerWidth.
+ * @param viewportH  window.innerHeight.
+ * @param threshold  Edge-Threshold in Pixeln (Default 40).
+ * @param maxSpeed   Maximale Scroll-Geschwindigkeit in Pixeln/Frame (Default 12).
+ */
+export function computeAutoScrollDelta(
+  mouseX: number,
+  mouseY: number,
+  viewportW: number,
+  viewportH: number,
+  threshold = 40,
+  maxSpeed = 12,
+): { dx: number; dy: number } {
+  let dx = 0;
+  let dy = 0;
+  if (mouseX < threshold) dx = -Math.round(((threshold - mouseX) / threshold) * maxSpeed);
+  else if (mouseX > viewportW - threshold) dx = Math.round(((mouseX - (viewportW - threshold)) / threshold) * maxSpeed);
+  if (mouseY < threshold) dy = -Math.round(((threshold - mouseY) / threshold) * maxSpeed);
+  else if (mouseY > viewportH - threshold) dy = Math.round(((mouseY - (viewportH - threshold)) / threshold) * maxSpeed);
+  return { dx, dy };
+}
+
+/**
  * Erzeugt ein 60×60px Canvas mit der Pad-Color als Hintergrund + accent-secondary
  * Border + "+N" Badge mittig. Wird als HTML5-Drag-Image bei Multi-Select-Drag
  * (TASK-123) via dataTransfer.setDragImage() genutzt.
@@ -346,6 +391,25 @@ export function PatternLaunchPad({
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, [onClose, editingIndex, grabbedIndex, selectionBox, mode, multiSelect.size]);
+
+  // Cmd/Ctrl+A im Reorder-Mode: selektiert alle non-empty Pads (TASK-127a).
+  // Editor offen → kein Hijack (Inputs sollen ihre native Select-All-Behavior behalten).
+  useEffect(() => {
+    if (mode !== "reorder") return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key !== "a" && e.key !== "A") return;
+      if (!(e.metaKey || e.ctrlKey)) return;
+      if (editingIndex !== null) return; // Editor offen → Input behält native Cmd+A
+      e.preventDefault();
+      e.stopPropagation();
+      const indices = collectNonEmptyPadIndices(pads);
+      if (indices.length === 0) return; // nichts zu selektieren
+      setMultiSelect(new Set(indices));
+      setLiveMessage(`${indices.length} Pads ausgewählt.`);
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [mode, editingIndex, pads]);
 
   // Beim Modus-Wechsel: Editor schließen, Drag-State leeren, Multi-Select leeren, Grab cancelen
   useEffect(() => {
@@ -521,9 +585,28 @@ export function PatternLaunchPad({
   }, [mode, editingIndex, multiSelect]);
 
   // Window-mousemove: aktualisiere Selection-Box (nur wenn aktiv).
+  // TASK-127b: zusätzlich Auto-Scroll via requestAnimationFrame, wenn die Maus
+  // nahe am Viewport-Rand ist (< 40px). Pad-Rects (getBoundingClientRect) sind
+  // viewport-relativ, scrollen ändert sie automatisch beim nächsten mousemove.
   useEffect(() => {
     if (!selectionBox) return;
+    // RAF-Loop-State: letzte bekannte Maus-Pos + rafId
+    let mouseX = selectionBox.currentX;
+    let mouseY = selectionBox.currentY;
+    let rafId: number | null = null;
+
+    const tick = () => {
+      const { dx, dy } = computeAutoScrollDelta(mouseX, mouseY, window.innerWidth, window.innerHeight);
+      if (dx !== 0 || dy !== 0) {
+        window.scrollBy(dx, dy);
+      }
+      rafId = window.requestAnimationFrame(tick);
+    };
+    rafId = window.requestAnimationFrame(tick);
+
     const onMove = (ev: MouseEvent) => {
+      mouseX = ev.clientX;
+      mouseY = ev.clientY;
       setSelectionBox(prev => {
         if (!prev) return prev;
         const dx = ev.clientX - prev.startX;
@@ -564,6 +647,7 @@ export function PatternLaunchPad({
     return () => {
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
+      if (rafId !== null) window.cancelAnimationFrame(rafId);
     };
   }, [selectionBox, multiSelect.size, collectCurrentPadRects]);
 

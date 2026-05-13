@@ -257,6 +257,28 @@ const INDEX = {
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
     {
+      agent:     "frontend",
+      timestamp: "2026-05-13T15:30:00.000Z",
+      done: [
+        "TASK-127 / Performance-Pad UX-Welle: Cmd/Ctrl+A + Auto-Scroll (v1.23.0). Schließt zwei UX-Lücken aus TASK-114/120 next[]: (a) Keyboard-Equivalent für Box-Select fehlte (Tastatur-User mussten Shift+Click pro Pad), (b) Box-Drag stoppte abrupt am Viewport-Rand, statt zu scrollen.",
+        "TASK-127a (client/src/components/PerformanceMode/PatternLaunchPad.tsx): Cmd/Ctrl+A im Reorder-Mode selektiert alle non-empty Pads. Neuer separater useEffect mit window-keydown-Handler (separat vom Escape-Handler, damit Logik isoliert bleibt). Constraints: nur aktiv wenn mode==='reorder', no-op wenn editingIndex !== null (Inputs behalten ihre native Cmd+A-Behavior), preventDefault + stopPropagation. ARIA-Live-Announce '${N} Pads ausgewählt.' nach Select-All. Neuer Top-Level-Export collectNonEmptyPadIndices(pads) als pure Helper (DOM-frei, Node-testbar).",
+        "TASK-127b (selectionBox useEffect): Auto-Scroll-RAF-Loop ergänzt. Während Box-Drag aktiv: requestAnimationFrame-Loop liest letzte Maus-Position (mouseX/mouseY-refs aus mousemove-Handler), berechnet via computeAutoScrollDelta(mouseX, mouseY, innerWidth, innerHeight) den Scroll-Delta, ruft window.scrollBy(dx, dy). Edge-Threshold 40px, max Speed 12 px/Frame, linear ramp basierend auf Abstand zum Rand. RAF wird in der Effect-Cleanup-Funktion via cancelAnimationFrame gestoppt. Pad-Rects (getBoundingClientRect) sind viewport-relativ und passen sich automatisch beim nächsten mousemove an die neue Scroll-Position an — Selection bleibt konsistent.",
+        "TASK-127 / Neuer Top-Level-Export computeAutoScrollDelta(mouseX, mouseY, viewportW, viewportH, threshold=40, maxSpeed=12) — pure Funktion, Returnt {dx, dy} (beide negative=scroll left/up, positive=scroll down/right). DOM-frei und unit-testbar.",
+        "TASK-127 / Tests (+15 in tests/features/performance-mouse-box.test.ts): 'collectNonEmptyPadIndices (TASK-127a)' (5 Tests — empty, all-filled, mixed, empty-input, stable-order); 'computeAutoScrollDelta (TASK-127b)' (10 Tests — center=no-scroll, all 4 viewport edges return max-speed in correct direction, threshold-grenze=no-scroll, half-edge=50% speed, two-corner cases dx&dy negative/positive, custom threshold/maxSpeed). Datei jetzt 39 Tests total (vorher 24).",
+        "TASK-127 / Verification: pnpm check 0 Fehler. pnpm test 1250/1265 grün (64 test files, +15 neue, 15 pre-existing skipped, 0 Regressionen). Keine hardcoded Tailwind-Farben hinzugefügt (Reine Logik-Änderung)."
+      ],
+      next: [
+        "TASK-127 / Welle 3 (Playwright E2E): Aktuell sind die neuen Features nur unit-getestet — Cmd/Ctrl+A-Wiring + auto-scroll-Verhalten in der Komponente selbst sind nicht E2E-abgedeckt. Sinnvolle Playwright-Tests: (a) Performance-Mode öffnen, reorder-Mode aktivieren, Pads mit Pattern füllen, Cmd+A drücken, prüfen dass alle non-empty Pads `aria-selected` oder data-multi-select-Attribut tragen; (b) Page mit fixed-height-Container kleiner als Grid setzen, Box-Drag in Richtung Viewport-Rand starten, prüfen dass scrollY/scrollX sich ändert.",
+        "TASK-127 / Welle 3 (UX-Polish): Cmd+A bei leeren Pads (collectNonEmptyPadIndices liefert []) zeigt aktuell keine UI-Reaktion (no-op + leere Live-Region). Wäre denkbar: toast/snackbar 'Keine Pads zum Auswählen'. Aktuell akzeptiert — User merkt dass nichts passiert.",
+        "TASK-127 / Welle 3 (Future — Edge-Scrolling-Polish): Die RAF-Loop ruft window.scrollBy auf — bei Performance-Mode-Overlays die das ganze Viewport füllen, ist die Page-Scroll-Position möglicherweise gelocked (overflow:hidden auf body). In dem Fall ist Auto-Scroll ein No-Op. Wäre eine Alternative: einen explicit scrollable Container im Performance-Mode-Layout suchen und stattdessen dessen scrollTop/Left manipulieren. Aktuell akzeptabel — bei Default-Theme ist body scrollable."
+      ],
+      changed: [
+        "client/src/components/PerformanceMode/PatternLaunchPad.tsx",
+        "tests/features/performance-mouse-box.test.ts",
+        "agents/INDEX.js"
+      ]
+    },
+    {
       agent:     "backend",
       timestamp: "2026-05-13T14:30:00.000Z",
       done: [
@@ -1013,6 +1035,10 @@ const INDEX = {
   //     2026-05-13. Neuer _triggerSynthOnChannel-Helper; DrumLoop branched für
   //     wavetable/fm-Parts; Synth-Output geht durch Channel-FX-Chain (statt
   //     direkt masterGain). +6 Tests.
+  //   - TASK-127 (Performance-Pad UX — Cmd/Ctrl+A + Auto-Scroll): erledigt
+  //     2026-05-13. collectNonEmptyPadIndices + computeAutoScrollDelta als
+  //     exportierte pure Helper; Cmd/Ctrl+A im Reorder-Mode wählt alle
+  //     non-empty Pads; Box-Drag-Auto-Scroll via RAF + window.scrollBy. +15 Tests.
   openTasks: [
     {
       id:       "FOLLOWUP-102",
@@ -1036,14 +1062,6 @@ const INDEX = {
       target:   "v1.23.0",
       owner:    "testing",
       notes:    "TASK-118 hat den Hold-Loop nur in Unit-Layer (macroHoldLoop.test) getestet — das App.tsx-Wiring (mouseDown → triggerMacroButton → macro:button:trigger → startHoldLoop → runScriptOnce/runPadOnce) ist nicht E2E-abgedeckt. Neue Datei tests/web/macros.spec.ts: Button im Hold-Mode 500ms halten → ≥ 2 Triggers, nach Release 0 weitere. Re-Entrancy-Hinweis (scriptSandbox.isRunning-Skip) in docs/HANDBUCH.md."
-    },
-    {
-      id:       "TASK-127",
-      title:    "Performance-Pad UX-Welle: Cmd/Ctrl+A + Auto-Scroll",
-      severity: "medium",
-      target:   "v1.23.0",
-      owner:    "frontend",
-      notes:    "Aus TASK-114/120 next[] (welle 2). (1) Cmd/Ctrl+A im Reorder-Mode = Select All (alle non-empty Pads in multiSelect). (2) Box-Drag Auto-Scroll wenn Maus < 40px vom Viewport-Rand. (3) Optional: Multi-Drag-Canvas mit Gradient der ersten 3 Pad-Farben statt nur dragSrc-Color (Welle 3 von TASK-123 next). Tests: tests/features/performance-store.test.ts + tests/web/performance-mode.spec.ts."
     },
   ],
 

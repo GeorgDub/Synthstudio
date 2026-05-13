@@ -18,8 +18,11 @@ import {
   normalizeBox,
   boxIntersects,
   collectPadsInBox,
+  collectNonEmptyPadIndices,
+  computeAutoScrollDelta,
   type AxisRect,
 } from "../../client/src/components/PerformanceMode/PatternLaunchPad";
+import type { PerformancePad } from "../../client/src/store/usePerformanceStore";
 
 // ─── normalizeBox ────────────────────────────────────────────────────────────
 
@@ -173,5 +176,98 @@ describe("collectPadsInBox (TASK-120)", () => {
     // Normalize first
     const box = normalizeBox(200, 80, 0, 0);
     expect(collectPadsInBox(box, rects)).toEqual([0, 1]);
+  });
+});
+
+// ─── collectNonEmptyPadIndices (TASK-127a) ───────────────────────────────────
+
+function makePad(patternId: string): PerformancePad {
+  return { patternId, label: null, color: null };
+}
+
+describe("collectNonEmptyPadIndices (TASK-127a)", () => {
+  it("Komplett leeres Array (alle null) → []", () => {
+    expect(collectNonEmptyPadIndices([null, null, null, null])).toEqual([]);
+  });
+
+  it("Komplett gefüllt → alle Indizes in Reihenfolge", () => {
+    const pads = [makePad("p1"), makePad("p2"), makePad("p3")];
+    expect(collectNonEmptyPadIndices(pads)).toEqual([0, 1, 2]);
+  });
+
+  it("Gemischt: nur non-empty Indizes", () => {
+    const pads = [null, makePad("p2"), null, makePad("p4"), null];
+    expect(collectNonEmptyPadIndices(pads)).toEqual([1, 3]);
+  });
+
+  it("Leeres Eingabe-Array → []", () => {
+    expect(collectNonEmptyPadIndices([])).toEqual([]);
+  });
+
+  it("Reihenfolge ist stabil (kleinster Index zuerst)", () => {
+    const pads = [makePad("p1"), null, makePad("p3"), null, makePad("p5")];
+    expect(collectNonEmptyPadIndices(pads)).toEqual([0, 2, 4]);
+  });
+});
+
+// ─── computeAutoScrollDelta (TASK-127b) ──────────────────────────────────────
+
+describe("computeAutoScrollDelta (TASK-127b)", () => {
+  it("Mitte des Viewports → {0, 0} (kein Scroll)", () => {
+    expect(computeAutoScrollDelta(960, 540, 1920, 1080)).toEqual({ dx: 0, dy: 0 });
+  });
+
+  it("Maus AM linken Rand (x=0) → maximale Scroll nach links (dx negativ)", () => {
+    const { dx, dy } = computeAutoScrollDelta(0, 500, 1920, 1080);
+    expect(dx).toBe(-12); // maxSpeed default
+    expect(dy).toBe(0);
+  });
+
+  it("Maus AM oberen Rand (y=0) → maximale Scroll nach oben (dy negativ)", () => {
+    const { dx, dy } = computeAutoScrollDelta(960, 0, 1920, 1080);
+    expect(dx).toBe(0);
+    expect(dy).toBe(-12);
+  });
+
+  it("Maus AM rechten Rand (x=viewportW) → maximale Scroll nach rechts (dx positiv)", () => {
+    const { dx, dy } = computeAutoScrollDelta(1920, 500, 1920, 1080);
+    expect(dx).toBe(12);
+    expect(dy).toBe(0);
+  });
+
+  it("Maus AM unteren Rand (y=viewportH) → maximale Scroll nach unten (dy positiv)", () => {
+    const { dx, dy } = computeAutoScrollDelta(960, 1080, 1920, 1080);
+    expect(dx).toBe(0);
+    expect(dy).toBe(12);
+  });
+
+  it("Maus mittendrin (Abstand = threshold) → kein Scroll mehr", () => {
+    // threshold = 40 default. Maus bei x=40 → genau an der Threshold-Grenze
+    const { dx } = computeAutoScrollDelta(40, 500, 1920, 1080);
+    expect(dx).toBe(0);
+  });
+
+  it("Maus halb in der Edge-Zone → ca. 50% Scroll-Geschwindigkeit", () => {
+    // Maus bei x=20 (halbiert von threshold=40) → dx ≈ -6 (50% von max=12)
+    const { dx } = computeAutoScrollDelta(20, 500, 1920, 1080);
+    expect(dx).toBe(-6);
+  });
+
+  it("Ecke oben-links: dx UND dy beide negativ", () => {
+    const { dx, dy } = computeAutoScrollDelta(10, 5, 1920, 1080);
+    expect(dx).toBeLessThan(0);
+    expect(dy).toBeLessThan(0);
+  });
+
+  it("Ecke unten-rechts: dx UND dy beide positiv", () => {
+    const { dx, dy } = computeAutoScrollDelta(1915, 1075, 1920, 1080);
+    expect(dx).toBeGreaterThan(0);
+    expect(dy).toBeGreaterThan(0);
+  });
+
+  it("Custom threshold/maxSpeed werden respektiert", () => {
+    // threshold=100, maxSpeed=20
+    const { dx } = computeAutoScrollDelta(0, 500, 1920, 1080, 100, 20);
+    expect(dx).toBe(-20);
   });
 });
