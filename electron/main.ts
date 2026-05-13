@@ -132,6 +132,25 @@ let isAppQuitting = false;
 let mainWindowDestroyed = false;
 
 /**
+ * BUG-018 (v1.29.0 Regression-Fix): explicit user-initiated-quit gate.
+ *
+ * User-Report: auch nach v1.29.0 fix closet ✕ auf Popups die komplette App.
+ * Vermutung: irgendein Quit-Pfad triggert `before-quit` ohne dass mainWindow
+ * destroyed wurde. Wir installieren einen Whitelist-Mechanismus: ALL quit
+ * attempts werden in `before-quit` geblockt, AUSSER explicit-user-initiated.
+ *
+ * User-initiated heißt: Tray "Beenden", Datei → Beenden mit mainWindow focus,
+ * mainWindow's eigener native close (X / Alt+F4), Updater-Quit-For-Install.
+ */
+let userInitiatedQuit = false;
+
+/** Hilfs-Funktion um explicit quit-Pfade zu markieren. */
+function requestUserQuit(): void {
+  userInitiatedQuit = true;
+  app.quit();
+}
+
+/**
  * Liest das gespeicherte Layout für ein Singleton-Popup und liefert die Bounds-
  * Override für den BrowserWindow-Konstruktor zurück (oder undefined).
  */
@@ -399,6 +418,9 @@ function createWindow(): void {
 
   // ── Fenster-Events ──────────────────────────────────────────────────────────
   mainWindow.on("close", () => {
+    // BUG-018 v1.29.0 fix: wenn User mainWindow explizit schließt (Alt+F4 / X),
+    // ist das ein legitimer User-Quit. Whitelist.
+    userInitiatedQuit = true;
     // Fenstergröße und -position vor dem Schließen speichern
     if (mainWindow && appStore) {
       const bounds = mainWindow.getBounds();
@@ -1062,7 +1084,8 @@ function updateTrayMenu(): void {
     {
       label: "Beenden",
       click: () => {
-        app.quit();
+        // BUG-018: legitimer User-Quit via Tray. Whitelist.
+        requestUserQuit();
       },
     },
   ]);
@@ -1270,7 +1293,8 @@ function buildMenu(): void {
                 // If the focused window is the main window (or no window is
                 // focused, which shouldn't normally happen), quit the app.
                 if (!focused || focused === mainWindow) {
-                  app.quit();
+                  // BUG-018: legitimer User-Quit via Datei-Menü. Whitelist.
+                  requestUserQuit();
                   return;
                 }
                 // Otherwise (a popup like perf-popup or fx-popup is focused),
@@ -2394,7 +2418,7 @@ app.whenReady().then(() => {
     setupDragDrop(mainWindow);
     registerZipImportHandlers(mainWindow);
     // Auto-Updater (nur in Produktion aktiv)
-    setupAutoUpdater(mainWindow);
+    setupAutoUpdater(mainWindow, () => { userInitiatedQuit = true; });
 
     // Window-Layout-Persistenz: nach dem ersten Render des Hauptfensters die
     // beim letzten Beenden offenen Popup-Fenster wieder öffnen.
@@ -2437,7 +2461,22 @@ app.on("window-all-closed", () => {
   app.quit();
 });
 
-app.on("before-quit", () => {
+app.on("before-quit", (event) => {
+  // BUG-018 v1.29.0 follow-up: nukleare Quit-Sperre. Wenn der Quit nicht
+  // explizit vom User initiiert wurde (Tray "Beenden" / Datei → Beenden mit
+  // mainWindow-Fokus / mainWindow's native close), blocken wir das Quit.
+  // Reaktiviere mainWindow falls es nur hidden ist.
+  if (!userInitiatedQuit && mainWindow && !mainWindow.isDestroyed()) {
+    event.preventDefault();
+    console.warn(
+      "[before-quit] BLOCKED: nicht user-initiated und mainWindow lebt. " +
+      "Quit wird verweigert — vermutlich Popup-Close-Cascade.",
+    );
+    mainWindow.show();
+    mainWindow.focus();
+    return;
+  }
+
   // Window-Layout-Persistenz: markieren dass die App gerade quittet, damit
   // close-Handler der Popup-Fenster `isOpen=true` speichern (Auto-Reopen)
   // statt `isOpen=false` (User-explicit-close).
@@ -2467,6 +2506,8 @@ app.on("web-contents-created", (_event, contents) => {
 // Single-Instance-Lock (verhindert mehrere App-Instanzen)
 const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {
+  // Single-instance: legitimer Quit-Pfad (zweite Instanz wird verworfen).
+  userInitiatedQuit = true;
   app.quit();
 } else {
   app.on("second-instance", () => {

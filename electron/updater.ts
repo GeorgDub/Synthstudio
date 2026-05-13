@@ -70,7 +70,10 @@ function showUpdateError(mainWindow: BrowserWindow, message: string): void {
     });
 }
 
-export async function setupAutoUpdater(mainWindow: BrowserWindow): Promise<void> {
+export async function setupAutoUpdater(
+  mainWindow: BrowserWindow,
+  onLegitimateQuit?: () => void,
+): Promise<void> {
   // Nur in Produktion aktiv
   if (process.env.NODE_ENV === "development") {
     console.log("[Updater] Dev-Modus – Auto-Updater deaktiviert");
@@ -151,6 +154,8 @@ export async function setupAutoUpdater(mainWindow: BrowserWindow): Promise<void>
       })
       .then(({ response }) => {
         if (response === 0) {
+          // BUG-018: legitimer Quit (Update-Install). Whitelist.
+          onLegitimateQuit?.();
           autoUpdater.quitAndInstall();
         }
       });

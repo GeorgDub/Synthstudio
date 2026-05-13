@@ -54,7 +54,11 @@ export function DetachableWindowHeader({
         <button
           onClick={onToggleAlwaysOnTop}
           aria-label={alwaysOnTop ? "Always-on-top deaktivieren" : "Always-on-top aktivieren"}
-          title={alwaysOnTop ? "Fenster bleibt im Vordergrund (Klick zum Lösen)" : "Fenster im Vordergrund halten"}
+          title={
+            alwaysOnTop
+              ? "Always-on-top aktiv — Fenster bleibt im Vordergrund. Klick zum Lösen."
+              : "Always-on-top aktivieren — Fenster bleibt vor anderen Apps. Zum Zurück-Einbetten ins Hauptfenster: ✕"
+          }
           data-testid={`${testIdPrefix}-always-on-top`}
           className={[
             "px-2 py-0.5 text-[10px] rounded border transition-colors active:scale-95",
@@ -63,7 +67,7 @@ export function DetachableWindowHeader({
               : "bg-bg-base text-text-dim border-border-color hover:text-text-primary hover:border-accent-secondary",
           ].join(" ")}
         >
-          📌 {alwaysOnTop ? "Pinned" : "Pin"}
+          ⬆ {alwaysOnTop ? "Top ON" : "Top"}
         </button>
         <button
           onClick={onClose}
