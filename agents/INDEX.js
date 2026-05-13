@@ -283,10 +283,19 @@ const INDEX = {
     "BUG-013": {
       title:   "Neues Projekt: bestehende Patterns + Content werden NICHT zurückgesetzt",
       severity: "high (data-integrity)",
-      details:  "User-Report: Klick auf 'Neues Projekt' (Menü oder Toolbar) öffnet zwar einen neuen leeren Projekt-Zustand auf der UI-Ebene, aber die DrumMachine zeigt weiterhin die Patterns/Steps/Parts aus der vorherigen Session. Vermutung: useProjectStore.newProject() oder NewProjectDialog ruft nicht vollständig die Reset-Funktionen aller Sub-Stores auf (useDrumMachineStore, useSongStore, useMixerStore, useAutomationStore, useMacroStore, usePerformanceStore, useScriptStore, useAudioTrackStore). Müssten alle ein __resetForTests-ähnliches public reset bekommen das beim Neu-Erstellen aufgerufen wird. Affected: client/src/store/useProjectStore.ts (newProject-Logik), client/src/components/NewProjectDialog/NewProjectDialog.tsx.",
-      fixed:    false,
+      details:  "Ursache: NewProjectDialog.onCreateProject rief nur dm.resetAll() + project.newProjectFromTemplate auf — der ganze Restzustand aus useMixerStore, useAutomationStore, usePerformanceStore, useMacroStore, useScriptStore, useAudioTrackStore, useMelodicPartStore, useNoteRepeatStore, useTransposeStore, useMorphStore, useHumanizerStore, useSongStore blieb bestehen. Fix: neue Public-Reset-API in den 5 Stores die bisher nur __resetForTests hatten (resetMixer, resetAutomation, resetPerformance, resetMelodicParts, resetNoteRepeat). Plus zentraler `doFullProjectReset` Callback in App.tsx der alle 13 relevanten Stores in koordinierter Reihenfolge resettet — wird vom NewProjectDialog.onCreate aufgerufen. Bewusst NICHT zurückgesetzt: Theme, ApiSettings, Metronome, KeyboardBindings, Script App-Scope, Chord-Memory, MIDI-Settings (User-Vorlieben bleiben über Projekt-Wechsel).",
+      fixed:    true,
       foundBy:  "user (post-v1.23.0 report)",
-      target:   "v1.23.1 / v1.24.0"
+      fixedBy:  "frontend",
+      fixedIn:  "BUG-013 fix (post-v1.23.0)",
+      relatedFiles: [
+        "client/src/App.tsx",
+        "client/src/store/useMixerStore.ts",
+        "client/src/store/useAutomationStore.ts",
+        "client/src/store/usePerformanceStore.ts",
+        "client/src/store/useMelodicPartStore.ts",
+        "client/src/store/useNoteRepeatStore.ts"
+      ]
     },
     "BUG-015": {
       title:   "ElectronTitleBar: Titel-Text überlappt (links '\"App-Name + Projekt'\" + Mitte 'Projektname' kollidieren)",
@@ -303,10 +312,14 @@ const INDEX = {
     "BUG-014": {
       title:   "Pattern-Generator Vorlagen: BPM-Input lässt sich nicht clearen, springt auf 40",
       severity: "medium (UX)",
-      details:  "User-Report: Im Pattern-Generator Vorlagen-Tab → BPM-Input. Wenn der User den vorgegebenen BPM-Wert komplett löscht (z.B. Markieren + Delete) springt der Wert auf 40 statt leer zu bleiben. Verhindert flüssiges Tippen von z.B. '128' weil zwischendurch Werte wie '1', '12' an einer Min-Clamp scheitern. Ursache vermutlich: onChange-Handler ruft Math.max(MIN_BPM, parseFloat(value)) auf wo MIN_BPM=40 und parseFloat('') = NaN → Math.max(40, NaN) = NaN → fallback auf 40, oder direkt clamping ohne Empty-String-Sonderbehandlung. Fix-Pattern: separater String-State für den Input (controlled) der erst beim Blur in einen Number-Wert mit Clamp konvertiert wird; währenddessen darf der Input '' / '12' / etc. enthalten. Affected: client/src/components/PatternGenerator/ (templateBpm-Input), useGeneratorStore.setTemplateBpm.",
-      fixed:    false,
+      details:  "Ursache verifiziert: usePatternGeneratorStore.setTemplateBpm clampt jeden non-null-Wert sofort auf Math.max(40, Math.min(240, bpm)). Der Vorlagen-Input war eine controlled-number-Input die bei jedem keystroke direkt setTemplateBpm aufruft. Tippen einer 1 (auf dem Weg zu 120) → 1 < 40 → store clampt zu 40 → input zeigt 40 → User kann nicht mehr eingeben. Fix: Lokaler String-Draft-State `templateBpmDraft` (+ `promptBpmDraft` für das gleiche Problem im Prompt-Tab) während des Tippens, Commit + Clamp erst on-Blur (oder Enter). Input-Type von 'number' auf 'text' inputMode='numeric' geändert damit Empty-String + Leading-Zeros nicht durch Browser-Validation gefressen werden. Affected: client/src/components/PatternGenerator/PatternGeneratorPanel.tsx (templateBpm + promptBpm).",
+      fixed:    true,
       foundBy:  "user (post-v1.23.0 report)",
-      target:   "v1.23.1 / v1.24.0"
+      fixedBy:  "frontend",
+      fixedIn:  "BUG-014 fix (post-v1.23.0)",
+      relatedFiles: [
+        "client/src/components/PatternGenerator/PatternGeneratorPanel.tsx"
+      ]
     },
     "BUG-009": {
       title:   "Performance Mode: Mode-Buttons (Play/Edit/Reorder) sind im Fullscreen nicht klickbar",

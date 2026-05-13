@@ -324,14 +324,24 @@ export function setQuantizeMode(mode: QuantizeMode): void {
 }
 
 /**
- * Test-Helper: Reset auf Default + leere localStorage. Nur in Tests benutzen.
+ * Resettet alle Performance-Pads + Queue + Quantize-Mode auf Defaults
+ * und entfernt die localStorage-Persistenz. Wird von "Neues Projekt" und
+ * Project-Load aufgerufen (BUG-013 fix).
  */
-export function __resetPerformanceStoreForTests(): void {
+export function resetPerformance(): void {
   _pads = defaultPads();
   _quantizeMode = "bar";
   _queuedPatternId = null;
   try { localStorage?.removeItem?.(STORAGE_KEY); } catch { /* ignore */ }
   notify();
+}
+
+/**
+ * Test-Helper: Reset auf Default + leere localStorage. Nur in Tests benutzen.
+ * Alias für resetPerformance() zur Backwards-Kompatibilität.
+ */
+export function __resetPerformanceStoreForTests(): void {
+  resetPerformance();
 }
 
 // ─── React-Hook ──────────────────────────────────────────────────────────────

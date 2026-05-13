@@ -73,6 +73,8 @@ export interface MixerActions {
   resetEqBands: (partId: string) => void;
   setSidechain: (partId: string, update: Partial<SidechainSettings>) => void;
   setTransientShaper: (partId: string, update: Partial<TransientShaperSettings>) => void;
+  /** Resettet alle Mixer-Daten (Channels, Sends, EQ, FX-Chains) + entfernt localStorage-Persistenz (BUG-013 fix). */
+  resetMixer: () => void;
 }
 
 const MIXER_STORAGE_KEY = "synthstudio:mixer:v1";
@@ -337,6 +339,16 @@ export function useMixerStore(): MixerState & MixerActions {
     commit(prev => ({ ...prev, eq16: { ...prev.eq16, [partId]: createDefaultEqBands() } }));
   }, [commit]);
 
+  /** Resettet alle Mixer-Daten + entfernt localStorage-Persistenz (BUG-013). */
+  const resetMixer = useCallback(() => {
+    try {
+      if (typeof window !== "undefined" && window.localStorage) {
+        window.localStorage.removeItem(MIXER_STORAGE_KEY);
+      }
+    } catch { /* ignore */ }
+    setState(defaultMixerState());
+  }, []);
+
   const setSidechain = useCallback((partId: string, update: Partial<SidechainSettings>) => {
     commit(prev => ({
       ...prev,
@@ -378,5 +390,6 @@ export function useMixerStore(): MixerState & MixerActions {
     resetEqBands,
     setSidechain,
     setTransientShaper,
+    resetMixer,
   };
 }

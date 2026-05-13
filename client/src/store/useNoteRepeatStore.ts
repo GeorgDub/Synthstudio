@@ -82,7 +82,12 @@ export function setNoteRepeatRate(rate: NoteRepeatRate): void {
   _notify();
 }
 
-export function __resetForTests(): void {
+/**
+ * Resettet Note-Repeat State (enabled=false, rate=DEFAULT) und entfernt
+ * die localStorage-Persistenz. Wird von "Neues Projekt" + Project-Load
+ * aufgerufen (BUG-013 fix).
+ */
+export function resetNoteRepeat(): void {
   _enabled = false;
   _rate = DEFAULT_RATE;
   try {
@@ -92,6 +97,10 @@ export function __resetForTests(): void {
     // ignore
   }
   _notify();
+}
+
+export function __resetForTests(): void {
+  resetNoteRepeat();
 }
 
 // ─── React Hook ───────────────────────────────────────────────────────────────

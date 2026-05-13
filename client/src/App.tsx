@@ -86,6 +86,8 @@ import {
   clearPad as clearPerformancePad,
   movePad as movePerformancePad,
   moveMultiplePads as moveMultiplePerformancePads,
+  // BUG-013 fix: full reset
+  resetPerformance,
   type PerformancePad,
 } from "@/store/usePerformanceStore";
 import { useResizablePanel } from "@/hooks/useResizablePanel";
@@ -106,19 +108,26 @@ import { recordEvent } from "@/store/useSessionRecordingStore";
 import { setMyRole, setParticipantRole } from "@/store/useSessionStore";
 import { useLaunchpad, isGridDevice } from "@/hooks/useLaunchpad";
 import { useBpmDetection, autoTagFromFilename } from "@/hooks/useBpmDetection";
-import { getMacros, applyMacroBindings, setMacroValue } from "@/store/useMacroStore";
+import { getMacros, applyMacroBindings, setMacroValue, resetMacros } from "@/store/useMacroStore";
 import {
   getAllAudioTracks,
   loadAudioTracks,
   markBroken as markAudioTrackBroken,
   setRuntimeWaveform as setAudioTrackRuntimeWaveform,
+  clear as clearAudioTracks,
 } from "@/store/useAudioTrackStore";
 import {
   getProjectScripts,
   loadProjectScripts,
   disableAllForeignProject,
   getScript,
+  clearProjectScripts,
 } from "@/store/useScriptStore";
+// BUG-013 fix: vollständiges Project-Reset über alle Stores
+import { resetMelodicParts } from "@/store/useMelodicPartStore";
+import { resetNoteRepeat } from "@/store/useNoteRepeatStore";
+import { resetTranspose } from "@/store/useTransposeStore";
+import { resetMorph } from "@/store/useMorphStore";
 import { scriptSandbox } from "@/sandbox/scriptSandboxInstance";
 import {
   startHoldLoop,
@@ -1173,6 +1182,43 @@ export default function App() {
     setShowNewProjectDialog(true);
   }, []);
 
+  /**
+   * BUG-013 Fix: vollständiger Reset aller Project-relevanten Stores. Wird
+   * von "Neues Projekt" (NewProjectDialog) aufgerufen damit kein State aus
+   * der vorherigen Session in das neue Projekt durchsickert.
+   *
+   * Reihenfolge: rein-runtime-State zuerst (Performance/Macros/Audio/Scripts),
+   * dann persistierte Sub-Stores (Mixer/Automation/Melodic/Note-Repeat/
+   * Transpose/Morph/Humanizer), zuletzt DrumMachine + Project (so dass die
+   * Default-Patterns sauber landen).
+   *
+   * App.tsx-Sub-Stores die NICHT zurückgesetzt werden (Absicht):
+   *  - useThemeStore (User-Vorliebe persistiert über Projekte)
+   *  - useApiSettingsStore (API-Keys, AI-Modell)
+   *  - useMetronomeStore (Custom-Sounds bleiben)
+   *  - useKeyboardBindingsStore (User-Shortcuts)
+   *  - useScriptStore App-Scripts (clearProjectScripts() entfernt nur projekt-scope'd)
+   *  - useChordMemoryStore / useMidiStore (Geräte-Settings)
+   */
+  const doFullProjectReset = useCallback(() => {
+    // Reine Runtime-Singletons
+    resetPerformance();
+    resetMacros();
+    clearAudioTracks();
+    clearProjectScripts();
+    resetMelodicParts();
+    resetNoteRepeat();
+    resetTranspose();
+    resetMorph();
+    // React-Hook-State Sub-Stores
+    mixer.resetMixer();
+    automation.resetAutomation();
+    humanizer.reset();
+    song.resetSong();
+    // DrumMachine zuletzt (erstellt das frische Default-Pattern)
+    dm.resetAll();
+  }, [mixer, automation, humanizer, song, dm]);
+
   useElectronMenuBindings({
     onNew: handleNewProject,
     onOpen: handleMenuOpen,
@@ -1843,9 +1889,11 @@ export default function App() {
         isOpen={showNewProjectDialog}
         onClose={() => setShowNewProjectDialog(false)}
         onCreateProject={(templateState) => {
-          // Reihenfolge wichtig: zuerst DrumMachine resetten (Patterns + Parts),
-          // dann ProjectStore mit Template-Daten überschreiben.
-          dm.resetAll();
+          // BUG-013 Fix: vollständiger Reset über ALLE Project-Stores statt
+          // nur DrumMachine. Vorher blieben Performance-Pads, Macros, Audio-
+          // Tracks, Mixer-Settings etc. aus der vorherigen Session bestehen.
+          doFullProjectReset();
+          // Project-Store mit Template-Daten überschreiben (BPM, Name, Samples)
           project.newProjectFromTemplate(templateState);
         }}
       />

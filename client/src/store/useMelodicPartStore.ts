@@ -230,8 +230,11 @@ export function getPattern(partId: string): MelodicPattern | undefined {
   return _patterns[partId];
 }
 
-/** Setzt den globalen State zurück – ausschließlich für Tests. */
-export function __resetForTests(): void {
+/**
+ * Resettet alle Melodic-Pattern-Daten + entfernt die sessionStorage-Persistenz.
+ * Wird von "Neues Projekt" + Project-Load aufgerufen (BUG-013 fix).
+ */
+export function resetMelodicParts(): void {
   _patterns = {};
   try {
     sessionStorage.removeItem(STORAGE_KEY);
@@ -239,6 +242,11 @@ export function __resetForTests(): void {
     // ignore
   }
   _notify();
+}
+
+/** Setzt den globalen State zurück – ausschließlich für Tests. Alias für resetMelodicParts. */
+export function __resetForTests(): void {
+  resetMelodicParts();
 }
 
 // ─── React Hook ───────────────────────────────────────────────────────────────

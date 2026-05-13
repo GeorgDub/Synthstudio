@@ -103,6 +103,13 @@ export function PatternGeneratorPanel() {
   const [presetName, setPresetName] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // BUG-014 Fix: lokaler String-Draft-State für BPM-Inputs damit der Store-
+  // Clamp (Math.max(40, ...)) nicht bei jedem Zwischenwert während des Tippens
+  // greift. Während der Draft != null ist, zeigt der Input den Draft; bei
+  // null fällt er zurück auf den Store-Wert. Commit + Clamp passiert on-Blur.
+  const [templateBpmDraft, setTemplateBpmDraft] = useState<string | null>(null);
+  const [promptBpmDraft, setPromptBpmDraft] = useState<string | null>(null);
+
   const handleApply = () => {
     if (!store.lastGenerated) return;
     window.dispatchEvent(new CustomEvent("pattern-generator:apply", { detail: store.lastGenerated }));
@@ -174,17 +181,25 @@ export function PatternGeneratorPanel() {
                 </button>
                 <button onClick={() => setTemplateBpm((store.templateBpm ?? GENRE_BPM[store.selectedGenre]) - 1)}
                   style={{ width: 22, height: 26, background: "var(--ss-bg-elevated)", border: "1px solid var(--ss-border)", borderRadius: 4, color: "var(--ss-text-muted)", cursor: "pointer", fontWeight: 700, fontSize: 13 }}>−</button>
-                <input type="number"
-                  value={store.templateBpm ?? GENRE_BPM[store.selectedGenre]}
+                <input type="text" inputMode="numeric"
+                  value={templateBpmDraft ?? String(store.templateBpm ?? GENRE_BPM[store.selectedGenre])}
                   onChange={(e) => {
-                    const val = e.target.value;
-                    if (val === "") { setTemplateBpm(null); return; } // Leer → Auto
-                    const num = parseInt(val);
-                    if (!isNaN(num)) setTemplateBpm(num);
+                    // BUG-014 Fix: nur den lokalen Draft updaten; KEIN Store-
+                    // Commit/Clamp während des Tippens. Erlaubt Zwischenwerte
+                    // wie "1" auf dem Weg zu "120".
+                    setTemplateBpmDraft(e.target.value);
                   }}
-                  onBlur={(e) => {
-                    const num = parseInt(e.target.value);
+                  onBlur={() => {
+                    const draft = templateBpmDraft;
+                    setTemplateBpmDraft(null);
+                    if (draft === null) return;
+                    if (draft === "") { setTemplateBpm(null); return; } // Leer → Auto
+                    const num = parseInt(draft, 10);
                     if (!isNaN(num)) setTemplateBpm(Math.max(40, Math.min(240, num)));
+                  }}
+                  onKeyDown={(e) => {
+                    // Enter committed sofort (Browser blur'd automatisch danach)
+                    if (e.key === "Enter") (e.target as HTMLInputElement).blur();
                   }}
                   style={{ width: 52, background: "var(--ss-bg-elevated)", border: "1px solid " + (store.templateBpm !== null ? "var(--ss-accent-primary)" : "var(--ss-border)"), borderRadius: 4, padding: "3px 4px", color: "var(--ss-text-primary)", fontSize: 13, fontWeight: 700, fontFamily: "monospace", textAlign: "center" }} />
                 <button onClick={() => setTemplateBpm((store.templateBpm ?? GENRE_BPM[store.selectedGenre]) + 1)}
@@ -369,8 +384,20 @@ export function PatternGeneratorPanel() {
               <span style={{ fontSize: 11, color: "var(--ss-text-muted)" }}>BPM</span>
               <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
                 <button onClick={() => setPromptBpm(store.promptBpm - 1)} style={{ width: 24, height: 28, background: "var(--ss-bg-elevated)", border: "1px solid var(--ss-border)", borderRadius: 4, color: "var(--ss-text-muted)", cursor: "pointer", fontSize: 14, fontWeight: 700 }}>−</button>
-                <input type="number" min={40} max={240} value={store.promptBpm}
-                  onChange={(e) => setPromptBpm(parseInt(e.target.value) || 120)}
+                <input type="text" inputMode="numeric"
+                  // BUG-014 Fix: lokaler Draft während des Tippens, Clamp on-Blur.
+                  value={promptBpmDraft ?? String(store.promptBpm)}
+                  onChange={(e) => setPromptBpmDraft(e.target.value)}
+                  onBlur={() => {
+                    const draft = promptBpmDraft;
+                    setPromptBpmDraft(null);
+                    if (draft === null || draft === "") return;
+                    const num = parseInt(draft, 10);
+                    if (!isNaN(num)) setPromptBpm(Math.max(40, Math.min(240, num)));
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                  }}
                   style={{ flex: 1, background: "var(--ss-bg-elevated)", border: "1px solid var(--ss-border)", borderRadius: 4, padding: "4px 6px", color: "var(--ss-text-primary)", fontSize: 14, fontWeight: 700, fontFamily: "monospace", textAlign: "center" }} />
                 <button onClick={() => setPromptBpm(store.promptBpm + 1)} style={{ width: 24, height: 28, background: "var(--ss-bg-elevated)", border: "1px solid var(--ss-border)", borderRadius: 4, color: "var(--ss-text-muted)", cursor: "pointer", fontSize: 14, fontWeight: 700 }}>+</button>
               </div>

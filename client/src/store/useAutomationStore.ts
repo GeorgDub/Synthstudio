@@ -51,6 +51,8 @@ export interface AutomationActions {
   setLaneEnabled: (laneId: string, enabled: boolean) => void;
   setStepCount: (count: 16 | 32) => void;
   setRecording: (recording: boolean) => void;
+  /** Resettet alle Automation-Lanes + StepCount auf Defaults (BUG-013 fix). */
+  resetAutomation: () => void;
   /** Liefert den interpolierten Wert eines Targets bei einem bestimmten Step (null = kein Override) */
   getValueAt: (target: AutomationTarget, step: number) => number | null;
 }
@@ -169,6 +171,10 @@ export function useAutomationStore(): AutomationState & AutomationActions {
     return interpolate(lane.points, step, state.stepCount);
   }, [state.lanes, state.stepCount]);
 
+  const resetAutomation = useCallback(() => {
+    setState(DEFAULT_STATE);
+  }, []);
+
   return {
     ...state,
     addLane,
@@ -180,5 +186,6 @@ export function useAutomationStore(): AutomationState & AutomationActions {
     setStepCount,
     setRecording,
     getValueAt,
+    resetAutomation,
   };
 }
