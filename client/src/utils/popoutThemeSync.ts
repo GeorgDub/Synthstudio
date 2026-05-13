@@ -23,13 +23,35 @@ const STYLE_ELEMENT_ID = "ss-custom-theme-style";
 
 const _popouts = new Set<Window>();
 
-/** Registriert ein popout-Fenster für Theme-Sync. Returns cleanup. */
+/**
+ * Registriert ein popout-Fenster für Theme-Sync. Returns cleanup.
+ *
+ * Wichtig: dockview ruft `onDidOpen` SOFORT nach `window.open()` auf — zu dem
+ * Zeitpunkt ist das popout-document noch about:blank. Wir müssen daher das
+ * `load` event abwarten BEVOR wir das theme syncen. Nach dem Load wird auch
+ * ein zusätzlicher Sync getriggert, falls dockview's eigener load-Handler
+ * (der appendChild + addStyles macht) später läuft.
+ */
 export function registerPopoutWindow(win: Window | null | undefined): () => void {
   if (!win) return () => {};
   _popouts.add(win);
-  // Initialer Sync — aktuelles Theme aus Hauptfenster übernehmen
-  syncThemeToWindow(win);
-  // Auto-Unregister bei Schließen
+
+  // Initialer Sync — wenn das popout-document direkt erreichbar ist (Browser-
+  // Modus). In Electron-Production geht das nicht (separate Renderer-Prozesse),
+  // dort übernimmt electron/main.ts via webContents.executeJavaScript.
+  try {
+    syncThemeToWindow(win);
+  } catch { /* cross-process */ }
+
+  // Auch nach popout-page-load nochmal syncen falls das DOM zwischendurch
+  // ersetzt wurde.
+  const onLoad = () => {
+    try { syncThemeToWindow(win); } catch { /* ignore */ }
+  };
+  try {
+    win.addEventListener("load", onLoad);
+  } catch { /* ignore */ }
+
   const onUnload = () => {
     _popouts.delete(win);
   };
@@ -37,6 +59,7 @@ export function registerPopoutWindow(win: Window | null | undefined): () => void
     win.addEventListener("unload", onUnload, { once: true });
   } catch { /* ignore */ }
   return () => {
+    try { win.removeEventListener("load", onLoad); } catch { /* ignore */ }
     try { win.removeEventListener("unload", onUnload); } catch { /* ignore */ }
     _popouts.delete(win);
   };

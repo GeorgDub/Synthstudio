@@ -581,6 +581,48 @@ function createWindow(): void {
     return { action: "deny" };
   });
 
+  // ── MIG-3C: dockview-popout-Theme-Sync via executeJavaScript ────────────────
+  // Cross-window setAttribute() funktioniert in Electron nicht reliable, weil
+  // jede BrowserWindow eigenen Renderer-Prozess hat. Wir injizieren das Theme
+  // direkt via webContents.executeJavaScript nachdem die popout-Page geladen ist.
+  mainWindow.webContents.on("did-create-window", (childWindow) => {
+    const url = childWindow.webContents.getURL();
+    if (!/popout\.html/.test(url) && !/popout\.html/.test(childWindow.webContents.getURL())) {
+      // URL kann beim did-create-window noch leer sein → wir prüfen erneut nach did-finish-load
+    }
+    const applyTheme = async () => {
+      try {
+        const dataTheme = await mainWindow!.webContents.executeJavaScript(
+          "document.documentElement.getAttribute('data-theme')"
+        );
+        const customStyleText = await mainWindow!.webContents.executeJavaScript(
+          "(document.getElementById('ss-custom-theme-style')?.textContent || null)"
+        );
+        const themeJson = JSON.stringify(dataTheme ?? null);
+        const styleJson = JSON.stringify(customStyleText ?? null);
+        const code = `(() => {
+          const t = ${themeJson};
+          if (t) document.documentElement.setAttribute('data-theme', t);
+          else document.documentElement.removeAttribute('data-theme');
+          const old = document.getElementById('ss-custom-theme-style');
+          if (old) old.remove();
+          const s = ${styleJson};
+          if (s) {
+            const el = document.createElement('style');
+            el.id = 'ss-custom-theme-style';
+            el.textContent = s;
+            document.head.appendChild(el);
+          }
+        })();`;
+        await childWindow.webContents.executeJavaScript(code);
+        logEvent("dockview:popout-theme-applied", { theme: dataTheme });
+      } catch (err) {
+        logCrash("dockview:popout-theme", err);
+      }
+    };
+    childWindow.webContents.once("did-finish-load", applyTheme);
+  });
+
   // ── Fenster-Events ──────────────────────────────────────────────────────────
   mainWindow.on("close", (event) => {
     const sincePopupClose = Date.now() - lastPopupCloseTime;

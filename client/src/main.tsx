@@ -42,7 +42,25 @@ window.addEventListener("unhandledrejection", (event) => {
 const isDockviewPopout =
   window.opener !== null && /popout\.html/i.test(window.location.pathname);
 
-if (!isDockviewPopout) {
+if (isDockviewPopout) {
+  // MIG-3C: Theme vom opener selbst übernehmen — robuster als cross-window
+  // setAttribute aus dem Hauptfenster (das race't mit popout.html-Load).
+  try {
+    const opener = window.opener as Window;
+    const openerTheme = opener.document.documentElement.getAttribute("data-theme");
+    if (openerTheme) {
+      document.documentElement.setAttribute("data-theme", openerTheme);
+    }
+    // Custom-Theme <style> klonen
+    const customStyle = opener.document.getElementById("ss-custom-theme-style");
+    if (customStyle) {
+      const clone = document.createElement("style");
+      clone.id = "ss-custom-theme-style";
+      clone.textContent = customStyle.textContent ?? "";
+      document.head.appendChild(clone);
+    }
+  } catch { /* cross-origin / opener gone */ }
+} else {
   ReactDOM.createRoot(document.getElementById("root")!).render(
     <React.StrictMode>
       <App />

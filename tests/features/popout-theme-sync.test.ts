@@ -20,6 +20,7 @@ function createMockDocument() {
   };
   return {
     documentElement: html,
+    readyState: "complete" as DocumentReadyState,
     head: {
       appendChild: (el: { id: string; textContent: string; remove(): void }) => { headChildren.push(el); },
     },

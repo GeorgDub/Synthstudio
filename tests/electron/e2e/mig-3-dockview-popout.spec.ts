@@ -60,14 +60,24 @@ test.describe("MIG-3 – dockview popout in Electron", () => {
   });
 
   test("Workspace-Mode → ⤢-Button → addPopoutGroup öffnet neues Fenster", async () => {
-    // 1. WorkspaceMode aktivieren via localStorage + reload
+    // 1. WorkspaceMode + Theme aktivieren via localStorage + reload
     await page.evaluate(() => {
       localStorage.setItem("ss-workspace-mode:v1", "1");
       localStorage.setItem("ss-layout:active-tab", "mixer");
+      // MIG-3C: Theme-Sync-Test — Theme-ID "neon" matched THEMES-Liste in
+      // ThemeSettings.tsx. Wird beim Reload aus ss-theme localStorage geladen.
+      localStorage.setItem("ss-theme", "neon");
     });
     await page.reload();
     await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(2_000);
+
+    // Verify theme wurde im main angewandt
+    const mainTheme = await page.evaluate(() =>
+      document.documentElement.getAttribute("data-theme")
+    );
+    console.log("Main data-theme:", mainTheme);
+    expect(mainTheme).toBe("neon");
 
     // 2. Mixer-Tab aktivieren (sollte schon via localStorage gesetzt sein)
     // 3. ⤢-Button finden (rightHeaderActionsComponent)
@@ -103,6 +113,19 @@ test.describe("MIG-3 – dockview popout in Electron", () => {
     const popoutWindow = allWindows.find(w => /popout/.test(w.url) || /popout/.test(w.title));
     expect(popoutWindow, "expected a window with popout.html URL").toBeDefined();
     expect(popoutWindow!.url).toContain("popout.html");
+
+    // MIG-3C: Verifizieren dass das popout das data-theme vom main erbt
+    const popoutTheme = await app.evaluate(async ({ BrowserWindow }) => {
+      const popout = BrowserWindow.getAllWindows().find(w =>
+        /popout\.html/.test(w.webContents.getURL())
+      );
+      if (!popout) return null;
+      return await popout.webContents.executeJavaScript(
+        "document.documentElement.getAttribute('data-theme')"
+      ) as string | null;
+    });
+    console.log("Popout data-theme:", popoutTheme);
+    expect(popoutTheme).toBe("neon");
 
     // 6. Crash-Log auf Fehler prüfen
     const userData = await app.evaluate(({ app }) => app.getPath("userData"));

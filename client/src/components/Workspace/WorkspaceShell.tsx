@@ -54,6 +54,9 @@ function PopOutHeaderAction({ containerApi, group, activePanel }: IDockviewHeade
       // MIG-3C: Theme-Sync — neues Fenster bekommt aktuelles data-theme +
       // Custom-Theme-Style geklont; Auto-Unregister beim Schließen.
       onDidOpen: ({ window: popoutWindow }) => {
+        // Browser-Mode: cross-window-DOM-Sync.
+        // Electron-Mode: electron/main.ts macht es via executeJavaScript
+        // (cross-process). Beide Pfade sind idempotent.
         registerPopoutWindow(popoutWindow);
       },
     });
