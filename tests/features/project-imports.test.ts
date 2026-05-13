@@ -5,7 +5,7 @@
  * Verwendet konstruierte Mock-Buffer (echte FLP/ALS/ESX-Dateien wären zu groß für Test-Fixtures).
  */
 import { describe, it, expect } from "vitest";
-import { importFlp } from "../../client/src/utils/imports/flpImport";
+import { importFlp, detectChannelPitches } from "../../client/src/utils/imports/flpImport";
 import { importElectribe } from "../../client/src/utils/imports/electribeImport";
 import { importProjectFile, importResultToPatterns, ImportError } from "../../client/src/utils/imports/index";
 import type { ImportResult } from "../../client/src/utils/imports/types";
@@ -55,6 +55,124 @@ describe("FL Studio (.flp) Import", () => {
     expect(result.fileName).toBe("min.flp");
     expect(result.patterns.length).toBeGreaterThan(0);
     expect(result.warnings.length).toBeGreaterThan(0);
+  });
+});
+
+// ─── FLP Melodic-Detection (post-v1.63.0) ─────────────────────────────────────
+
+describe("detectChannelPitches", () => {
+  it("liefert leeren Map bei leerem Notes-Array", () => {
+    expect(detectChannelPitches([]).size).toBe(0);
+  });
+
+  it("Channel mit nur einer Pitch → Set-Größe 1 (drum-like)", () => {
+    const map = detectChannelPitches([
+      { position: 0,  channel: 0, duration: 24, key: 36, velocity: 100 },
+      { position: 24, channel: 0, duration: 24, key: 36, velocity: 100 },
+      { position: 48, channel: 0, duration: 24, key: 36, velocity: 100 },
+    ]);
+    expect(map.get(0)?.size).toBe(1);
+  });
+
+  it("Channel mit mehreren Pitches → Set-Größe ≥2 (melodisch)", () => {
+    const map = detectChannelPitches([
+      { position: 0,  channel: 1, duration: 24, key: 60, velocity: 100 },
+      { position: 24, channel: 1, duration: 24, key: 62, velocity: 100 },
+      { position: 48, channel: 1, duration: 24, key: 64, velocity: 100 },
+      { position: 72, channel: 1, duration: 24, key: 60, velocity: 100 }, // duplicate
+    ]);
+    expect(map.get(1)?.size).toBe(3);
+    expect([...map.get(1)!]).toEqual(expect.arrayContaining([60, 62, 64]));
+  });
+
+  it("trennt verschiedene Channels", () => {
+    const map = detectChannelPitches([
+      { position: 0,  channel: 0, duration: 24, key: 36, velocity: 100 }, // kick
+      { position: 24, channel: 1, duration: 24, key: 60, velocity: 100 }, // synth
+      { position: 48, channel: 1, duration: 24, key: 64, velocity: 100 }, // synth
+    ]);
+    expect(map.size).toBe(2);
+    expect(map.get(0)?.size).toBe(1); // drum
+    expect(map.get(1)?.size).toBe(2); // melodic
+  });
+});
+
+describe("FLP Import — Melodic-Channel-Warnung (post-v1.63.0)", () => {
+  // FLP mit Notes auf ch0 (alle key=36, drum-like) und ch1 (key=60/62/64, melodic)
+  function buildFlpWithMixedChannels(): ArrayBuffer {
+    // Header (14 bytes)
+    const header = new Uint8Array(14);
+    const hv = new DataView(header.buffer);
+    header.set([0x46, 0x4c, 0x68, 0x64], 0); // FLhd
+    hv.setUint32(4, 6, true);
+    hv.setUint16(8, 0, true);    // format
+    hv.setUint16(10, 2, true);   // nChannels
+    hv.setUint16(12, 96, true);  // ppq
+
+    // Build 4 notes
+    const noteBuf = (pos: number, ch: number, key: number) => {
+      const buf = new Uint8Array(24);
+      const v = new DataView(buf.buffer);
+      v.setUint32(0, pos, true);
+      v.setUint16(6, ch, true);
+      v.setUint32(8, 24, true);
+      v.setUint8(12, key);
+      v.setUint8(18, 100);
+      return buf;
+    };
+    const drumNote1 = noteBuf(0, 0, 36);
+    const drumNote2 = noteBuf(96, 0, 36); // same pitch → drum-like
+    const melNote1 = noteBuf(24, 1, 60);
+    const melNote2 = noteBuf(48, 1, 64); // different pitch → melodic
+
+    // Notes payload (4 × 24 = 96 bytes)
+    const payload = new Uint8Array(96);
+    payload.set(drumNote1, 0);
+    payload.set(drumNote2, 24);
+    payload.set(melNote1, 48);
+    payload.set(melNote2, 72);
+
+    // NewPattern + NotesEvent
+    const newPattern = new Uint8Array([0x4f, 0x01, 0x00]); // WORD: pattern 1
+    // DATA event 0xe7 with varlen size 96 (= 0x60, single byte)
+    const eventHeader = new Uint8Array([0xe7, 96]);
+    const dataChunk = new Uint8Array(newPattern.length + eventHeader.length + payload.length);
+    dataChunk.set(newPattern, 0);
+    dataChunk.set(eventHeader, newPattern.length);
+    dataChunk.set(payload, newPattern.length + eventHeader.length);
+
+    // FLdt + dataSize
+    const dataHdr = new Uint8Array(8);
+    dataHdr.set([0x46, 0x4c, 0x64, 0x74], 0); // FLdt
+    new DataView(dataHdr.buffer).setUint32(4, dataChunk.length, true);
+
+    const total = new Uint8Array(header.length + dataHdr.length + dataChunk.length);
+    total.set(header, 0);
+    total.set(dataHdr, header.length);
+    total.set(dataChunk, header.length + dataHdr.length);
+    return total.buffer;
+  }
+
+  it("emittet Warning für melodischen Channel, KEINE Warning für drum-Channel", async () => {
+    const result = await importFlp(makeFile("mixed.flp", buildFlpWithMixedChannels()));
+    const melodicWarnings = result.warnings.filter(w => w.includes("melodisch"));
+    expect(melodicWarnings).toHaveLength(1);
+    expect(melodicWarnings[0]).toContain("Channel 1");
+    expect(melodicWarnings[0]).toContain("2 Tonhöhen"); // 60 + 64
+    expect(melodicWarnings[0]).toContain("C4"); // 60
+    expect(melodicWarnings[0]).toContain("E4"); // 64
+    // Channel 0 ist drum-like (alle key=36) → keine Warning
+    expect(melodicWarnings.some(w => w.includes("Channel 0"))).toBe(false);
+  });
+
+  it("Pitch wird auf ImportedStep mitgeführt", async () => {
+    const result = await importFlp(makeFile("mixed.flp", buildFlpWithMixedChannels()));
+    const allSteps = result.patterns.flatMap(p => p.parts.flatMap(part => part.steps));
+    const activeStepsWithPitch = allSteps.filter(s => s.active && s.pitch !== undefined);
+    expect(activeStepsWithPitch.length).toBeGreaterThan(0);
+    // Mindestens eine Note hat pitch=60 (C4 vom melodischen Channel)
+    expect(activeStepsWithPitch.some(s => s.pitch === 60)).toBe(true);
+    expect(activeStepsWithPitch.some(s => s.pitch === 36)).toBe(true);
   });
 });
 

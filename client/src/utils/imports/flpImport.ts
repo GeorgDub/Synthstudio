@@ -143,9 +143,35 @@ function buildPartsForBar(barNotes: FlpNote[], ppq: number, partCount: number): 
   for (const note of barNotes) {
     const step = flpPositionToStep(note.position, ppq) % STEP_COUNT;
     const partIdx = note.channel % partCount;
-    parts[partIdx].steps[step] = { active: true, velocity: note.velocity };
+    // pitch wird mitgeführt — Drum-Machine ignoriert es, aber zukünftige
+    // Konsumenten (MelodicPart-Routing, MIDI-Export) können es nutzen.
+    parts[partIdx].steps[step] = { active: true, velocity: note.velocity, pitch: note.key };
   }
   return parts;
+}
+
+/**
+ * Liefert pro FL-Channel die Menge der gespielten Pitches (MIDI-Keys).
+ * Ein Channel mit nur einer Pitch ist drum-artig (gleicher Sample-Trigger),
+ * ein Channel mit ≥2 Pitches ist melodisch (Synth/Sampler mit Notes).
+ */
+export function detectChannelPitches(notes: FlpNote[]): Map<number, Set<number>> {
+  const map = new Map<number, Set<number>>();
+  for (const n of notes) {
+    let set = map.get(n.channel);
+    if (!set) {
+      set = new Set();
+      map.set(n.channel, set);
+    }
+    set.add(n.key);
+  }
+  return map;
+}
+
+function keyToNoteName(key: number): string {
+  const names = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+  const octave = Math.floor(key / 12) - 1;
+  return `${names[key % 12]}${octave}`;
 }
 
 export async function importFlp(file: File): Promise<ImportResult> {
@@ -210,6 +236,19 @@ export async function importFlp(file: File): Promise<ImportResult> {
   const ppq = parsed.header.ppq;
   const totalBars = Math.min(MAX_BARS, calculateBarCount(firstPattern.notes, ppq, STEP_COUNT));
   const byBar = groupNotesByBar(firstPattern.notes, ppq, STEP_COUNT);
+
+  // Melodische Channels erkennen: Pitch-Varianz ≥2 → der Channel triggert echte
+  // Notes, kein Drum-Sample. Die Drum-Machine ignoriert Pitch, daher warnen wir.
+  const pitchesByChannel = detectChannelPitches(firstPattern.notes);
+  for (const [channel, pitches] of pitchesByChannel) {
+    if (pitches.size < 2) continue;
+    const sorted = [...pitches].sort((a, b) => a - b);
+    const lo = keyToNoteName(sorted[0]);
+    const hi = keyToNoteName(sorted[sorted.length - 1]);
+    warnings.push(
+      `Channel ${channel}: melodischer Inhalt (${pitches.size} Tonhöhen, ${lo}..${hi}) — nur Step-Positionen importiert, Pitch-Info verworfen.`,
+    );
+  }
 
   const baseName = file.name.replace(/\.flp$/i, "");
   const patternsList: ImportedPattern[] = [];
