@@ -36,6 +36,23 @@ export interface ProjectState {
   isRecording: boolean;
   /** BPM (Beats per Minute) */
   bpm: number;
+  /**
+   * Live-Step-Recording-Mode (post-v1.31.0 Welle 2).
+   * - "overdub": MIDI-Hits fügen Steps hinzu, bestehende bleiben (Default).
+   * - "replace": beim Playback-Vorrücken werden Steps geclearet, bevor neue
+   *   eingehen können — re-record-Workflow.
+   */
+  recordingMode: "overdub" | "replace";
+  /**
+   * Punch-In Step (0-basiert, inkl.). null = keine Punch-In-Grenze.
+   * Wenn gesetzt, wird nur ab diesem Step aufgezeichnet.
+   */
+  punchInStep: number | null;
+  /**
+   * Punch-Out Step (0-basiert, inkl.). null = keine Punch-Out-Grenze.
+   * Wenn gesetzt, wird nur bis zu diesem Step aufgezeichnet.
+   */
+  punchOutStep: number | null;
 }
 
 export interface ProjectActions {
@@ -51,6 +68,10 @@ export interface ProjectActions {
   redo: () => void;
   togglePlayStop: () => void;
   toggleRecord: () => void;
+  setRecordingMode: (mode: "overdub" | "replace") => void;
+  setPunchInStep: (step: number | null) => void;
+  setPunchOutStep: (step: number | null) => void;
+  clearPunchRange: () => void;
   addSamples: (samples: Sample[]) => void;
   removeSample: (id: string) => void;
   importSamplesFromPaths: (paths: string[]) => void;
@@ -67,6 +88,9 @@ const DEFAULT_STATE: ProjectState = {
   isPlaying: false,
   isRecording: false,
   bpm: 120,
+  recordingMode: "overdub",
+  punchInStep: null,
+  punchOutStep: null,
 };
 
 /**
@@ -153,6 +177,28 @@ export function useProjectStore(): ProjectState & ProjectActions {
     }));
   }, []);
 
+  const setRecordingMode = useCallback((mode: "overdub" | "replace") => {
+    setState((prev) => ({ ...prev, recordingMode: mode }));
+  }, []);
+
+  const setPunchInStep = useCallback((step: number | null) => {
+    setState((prev) => ({
+      ...prev,
+      punchInStep: step === null || step < 0 ? null : Math.floor(step),
+    }));
+  }, []);
+
+  const setPunchOutStep = useCallback((step: number | null) => {
+    setState((prev) => ({
+      ...prev,
+      punchOutStep: step === null || step < 0 ? null : Math.floor(step),
+    }));
+  }, []);
+
+  const clearPunchRange = useCallback(() => {
+    setState((prev) => ({ ...prev, punchInStep: null, punchOutStep: null }));
+  }, []);
+
   const addSamples = useCallback((newSamples: Sample[]) => {
     setState((prev) => ({
       ...prev,
@@ -215,6 +261,10 @@ export function useProjectStore(): ProjectState & ProjectActions {
     redo,
     togglePlayStop,
     toggleRecord,
+    setRecordingMode,
+    setPunchInStep,
+    setPunchOutStep,
+    clearPunchRange,
     addSamples,
     removeSample,
     importSamplesFromPaths,

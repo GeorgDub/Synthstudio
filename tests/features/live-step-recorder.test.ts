@@ -16,6 +16,7 @@ import { describe, it, expect } from "vitest";
 import {
   findPartIdByCategory,
   mapMidiNoteToPart,
+  isStepInPunchRange,
 } from "../../client/src/hooks/useLiveStepRecorder";
 
 describe("findPartIdByCategory", () => {
@@ -114,5 +115,57 @@ describe("mapMidiNoteToPart", () => {
   it("returnt null wenn aktive Pattern keinen matchenden Part hat", () => {
     const onlyKick = [{ id: "kick", name: "Kick" }];
     expect(mapMidiNoteToPart(38, onlyKick)).toBeNull(); // 38 = Snare, kein Snare-Part
+  });
+});
+
+// ─── Punch-Range (Welle 2, post-v1.31.0) ─────────────────────────────────────
+
+describe("isStepInPunchRange", () => {
+  it("returnt true wenn beide Grenzen null (kein Punch)", () => {
+    expect(isStepInPunchRange(0, null, null)).toBe(true);
+    expect(isStepInPunchRange(15, null, null)).toBe(true);
+    expect(isStepInPunchRange(63, null, null)).toBe(true);
+  });
+
+  it("nur punchIn gesetzt: step >= punchIn", () => {
+    expect(isStepInPunchRange(0, 4, null)).toBe(false);
+    expect(isStepInPunchRange(3, 4, null)).toBe(false);
+    expect(isStepInPunchRange(4, 4, null)).toBe(true);
+    expect(isStepInPunchRange(15, 4, null)).toBe(true);
+  });
+
+  it("nur punchOut gesetzt: step <= punchOut", () => {
+    expect(isStepInPunchRange(0, null, 10)).toBe(true);
+    expect(isStepInPunchRange(10, null, 10)).toBe(true);
+    expect(isStepInPunchRange(11, null, 10)).toBe(false);
+    expect(isStepInPunchRange(15, null, 10)).toBe(false);
+  });
+
+  it("normale Range punchIn <= punchOut", () => {
+    expect(isStepInPunchRange(3, 4, 10)).toBe(false);
+    expect(isStepInPunchRange(4, 4, 10)).toBe(true);
+    expect(isStepInPunchRange(7, 4, 10)).toBe(true);
+    expect(isStepInPunchRange(10, 4, 10)).toBe(true);
+    expect(isStepInPunchRange(11, 4, 10)).toBe(false);
+  });
+
+  it("punchIn == punchOut: nur dieser eine Step", () => {
+    expect(isStepInPunchRange(5, 5, 5)).toBe(true);
+    expect(isStepInPunchRange(4, 5, 5)).toBe(false);
+    expect(isStepInPunchRange(6, 5, 5)).toBe(false);
+  });
+
+  it("wrap-around: punchIn > punchOut (z.B. Loop-Ende-Anfang)", () => {
+    // Range 14-15 + 0-2 → Steps 14, 15, 0, 1, 2
+    expect(isStepInPunchRange(13, 14, 2)).toBe(false);
+    expect(isStepInPunchRange(14, 14, 2)).toBe(true);
+    expect(isStepInPunchRange(15, 14, 2)).toBe(true);
+    expect(isStepInPunchRange(0, 14, 2)).toBe(true);
+    expect(isStepInPunchRange(2, 14, 2)).toBe(true);
+    expect(isStepInPunchRange(3, 14, 2)).toBe(false);
+  });
+
+  it("Punch-In Step 0 ist gültig", () => {
+    expect(isStepInPunchRange(0, 0, 4)).toBe(true);
   });
 });

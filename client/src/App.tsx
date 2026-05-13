@@ -66,6 +66,7 @@ import { useHumanizerStore, computeHumanizerTimingOffset, computeHumanizerVeloci
 import { useMetronomeStore } from "@/store/useMetronomeStore";
 import { useDrumMachineStore } from "@/store/useDrumMachineStore";
 import { useTransport } from "@/hooks/useTransport";
+import { RecordSettingsPopover } from "@/components/Transport/RecordSettingsPopover";
 import { useMidi } from "@/hooks/useMidi";
 import { useLiveStepRecorder } from "@/hooks/useLiveStepRecorder";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
@@ -1141,13 +1142,17 @@ export default function App() {
     parts: dm.getActivePattern()?.parts ?? [],
   });
 
-  // ── Live Step Recording (MPC-Overdub-Style, post-v1.30.0) ─────────────────
+  // ── Live Step Recording (MPC-Overdub-Style, post-v1.30.0; Welle 2 v1.31+) ─
   // Wenn isRecording + isPlaying aktiv sind, werden MIDI-Note-Hits direkt als
-  // Steps in der aktiven Pattern aufgezeichnet (am currently-playing-step).
+  // Steps in der aktiven Pattern aufgezeichnet. Welle 2: recordingMode
+  // (overdub/replace) + punch-in/out range.
   useLiveStepRecorder({
     dm,
     isRecording: project.isRecording,
     isPlaying: project.isPlaying,
+    recordingMode: project.recordingMode,
+    punchInStep: project.punchInStep,
+    punchOutStep: project.punchOutStep,
   });
 
   // ── Launchpad Grid Controller ─────────────────────────────────────────────
@@ -2173,6 +2178,17 @@ export default function App() {
                 >
                   <span aria-hidden="true">●</span>
                 </button>
+
+                <RecordSettingsPopover
+                  recordingMode={project.recordingMode}
+                  onRecordingModeChange={project.setRecordingMode}
+                  punchInStep={project.punchInStep}
+                  punchOutStep={project.punchOutStep}
+                  onPunchInChange={project.setPunchInStep}
+                  onPunchOutChange={project.setPunchOutStep}
+                  onClearPunchRange={project.clearPunchRange}
+                  maxStep={(dm.getActivePattern()?.stepCount ?? 16) - 1}
+                />
               </div>
 
               <div className="flex items-center gap-1">
