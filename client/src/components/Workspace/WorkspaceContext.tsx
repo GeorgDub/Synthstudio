@@ -23,6 +23,23 @@ export interface WorkspaceContextValue {
   dm: DrumMachineState & DrumMachineActions;
   mixer: MixerState & MixerActions;
   project: ProjectState & ProjectActions;
+  /** Optional collab-bridged callbacks (Sequencer braucht sie). */
+  onPlayStop?: () => void;
+  onBpmChange?: (bpm: number) => void;
+  /**
+   * MIG-2C: Render-Funktionen für komplexere Tab-Inhalte die zu eng an App.tsx
+   * gekoppelt sind um sie sauber zu extrahieren (inline-useMemo-Components,
+   * Sub-Tab-State etc.). Panel-Wrapper rufen einfach diese Funktionen auf.
+   *
+   * Verwendet wenn der Tab-Inhalt:
+   *  - inline in App.tsx definiert ist (z.B. SongTabView via useMemo)
+   *  - viele closures aus App-Scope braucht
+   *  - intern useState mit komplexem Sub-Tab-Workflow hat (Tools-Tab)
+   */
+  renderSongPanel?: () => ReactNode;
+  renderHumanizerPanel?: () => ReactNode;
+  renderToolsPanel?: () => ReactNode;
+  renderCollabPanel?: () => ReactNode;
 }
 
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);

@@ -84,6 +84,13 @@ import { WorkspaceShell } from "@/components/Workspace/WorkspaceShell";
 import { WorkspaceProvider } from "@/components/Workspace/WorkspaceContext";
 import { MixerPanel } from "@/components/Workspace/panels/MixerPanel";
 import { InspectorPanel } from "@/components/Workspace/panels/InspectorPanel";
+import { SequencerPanel } from "@/components/Workspace/panels/SequencerPanel";
+import {
+  SongPanel as WsSongPanel,
+  HumanizerPanel as WsHumanizerPanel,
+  ToolsPanel as WsToolsPanel,
+  CollabPanel as WsCollabPanel,
+} from "@/components/Workspace/panels/RenderFunctionPanels";
 import { useWorkspaceMode } from "@/store/useWorkspaceMode";
 import { useMixerStore } from "@/store/useMixerStore";
 import { useGlobalKeyBindings, KB_ACTION_EVENT } from "@/hooks/useGlobalKeyBindings";
@@ -2327,15 +2334,42 @@ export default function App() {
 
               {activeTab === "mixer" && (
                 workspaceMode ? (
-                  /* MIG-2B Dockview-Workspace (PoC): Mixer + Inspector als
-                     dockable Views. User kann sie als Tabs nebeneinander,
-                     split, oder floating anordnen. WorkspaceProvider liefert
-                     dm/mixer/project an die Panel-Komponenten. */
-                  <WorkspaceProvider value={{ dm, mixer, project }}>
+                  /* MIG-2C Workspace: 5 Panels (Sequencer/Mixer/Inspector +
+                     Song/Humanizer via render-functions). Tools/Collab werden
+                     in zukünftiger Welle migriert.
+                     WorkspaceProvider liefert Stores + Render-Closures. */
+                  <WorkspaceProvider
+                    value={{
+                      dm,
+                      mixer,
+                      project,
+                      onPlayStop: collabPlayStop,
+                      onBpmChange: collabBpmChange,
+                      renderSongPanel: () => (
+                        <div className="h-full flex flex-col overflow-hidden">
+                          <SongTabView
+                            song={song}
+                            automation={automation}
+                            dm={dm}
+                            project={project}
+                            isPlaying={project.isPlaying}
+                          />
+                        </div>
+                      ),
+                      renderHumanizerPanel: () => (
+                        <div className="h-full overflow-y-auto p-4">
+                          <Humanizer humanizer={humanizer} className="max-w-lg" />
+                        </div>
+                      ),
+                    }}
+                  >
                     <WorkspaceShell
                       panels={[
+                        { id: "sequencer", title: "Sequencer", component: SequencerPanel },
                         { id: "mixer", title: "Mixer", component: MixerPanel },
-                        { id: "inspector", title: "Channel Inspector", component: InspectorPanel },
+                        { id: "inspector", title: "Inspector", component: InspectorPanel },
+                        { id: "song", title: "Song", component: WsSongPanel },
+                        { id: "humanizer", title: "Humanizer", component: WsHumanizerPanel },
                       ]}
                     />
                   </WorkspaceProvider>
