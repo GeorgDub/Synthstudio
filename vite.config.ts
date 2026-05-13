@@ -182,7 +182,20 @@ function vitePluginDockviewFileProtocol(): Plugin {
   };
 }
 
-const plugins = [react(), tailwindcss(), jsxLocPlugin(), vitePluginManusRuntime(), vitePluginManusDebugCollector(), vitePluginDockviewFileProtocol()];
+// Manus-Runtime injiziert ein inline <script> in jede HTML-Page. In Production
+// (Electron-Build) wird das von der strikten CSP geblockt → konsolen-spam ohne
+// Funktion. Wir nehmen es daher nur im Dev-Server. Gleiches gilt für den
+// Debug-Collector der nur in Dev sinnvoll ist.
+const isProdBuild = process.env.NODE_ENV === "production";
+const plugins: Plugin[] = [
+  react(),
+  tailwindcss(),
+  jsxLocPlugin(),
+  vitePluginDockviewFileProtocol(),
+];
+if (!isProdBuild) {
+  plugins.push(vitePluginManusRuntime(), vitePluginManusDebugCollector());
+}
 
 export default defineConfig({
   plugins,
