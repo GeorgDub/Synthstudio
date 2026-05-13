@@ -728,6 +728,12 @@ export function PatternLaunchPad({
     <div
       className="fixed inset-0 z-50 bg-bg-base flex flex-col"
       data-testid="performance-mode-overlay"
+      // BUG-009 defensive: stelle sicher dass das Performance-Mode-Overlay
+      // KEINE Electron-Drag-Region erbt. Falls die TitleBar aus irgendeinem
+      // Grund noch sichtbar bleibt (Race-Condition beim Fullscreen-Toggle,
+      // alternative Overlays), garantiert no-drag hier dass alle Klicks
+      // (insbesondere die Mode-Toggle-Buttons im Header) durchkommen.
+      style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
     >
       {/* ARIA Live Region für Screenreader-Announcements (visuell unsichtbar) */}
       <div

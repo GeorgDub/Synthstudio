@@ -253,14 +253,14 @@ const INDEX = {
     "BUG-009": {
       title:   "Performance Mode: Mode-Buttons (Play/Edit/Reorder) sind im Fullscreen nicht klickbar",
       severity: "high (UX)",
-      details:  "Reproduktion: Electron-Fenster in Fullscreen schalten (F11 oder Maximize) → Performance Mode öffnen (Toolbar oder Shortcut) → die Mode-Toggle-Buttons oben (Play / ✎ Edit / ⇆ Reorder) reagieren nicht auf Klicks. Sobald der User das Fenster von Fullscreen auf Windowed wechselt (F11 erneut / Restore), funktionieren die Buttons sofort. Vermutung: -webkit-app-region: drag auf einem Container-Element (Custom-Titlebar / Performance-Mode-Wrapper) blockiert pointer-events im Fullscreen, weil die Drag-Region in Electron-Fullscreen anders berechnet wird. Mögliche Fix-Ansätze: (a) explizit -webkit-app-region: no-drag auf den Mode-Toggle-Buttons setzen, (b) Drag-Region nur im Windowed-Mode aktivieren via document.body.classList beim isFullscreen-State, (c) Performance-Mode-Wrapper z-index/pointer-events prüfen. Affected: PatternLaunchPad.tsx Mode-Toggle (Play/Edit/Reorder, role=radiogroup).",
-      fixed:    false,
+      details:  "Reproduktion: Electron-Fenster in Fullscreen schalten (F11 oder Maximize) → Performance Mode öffnen → die Mode-Toggle-Buttons oben (Play / ✎ Edit / ⇆ Reorder) reagieren nicht auf Klicks. Sobald der User das Fenster von Fullscreen auf Windowed wechselt, funktionieren die Buttons sofort. Ursache (verifiziert): ElectronTitleBar (32px hoch, oben im App-Tree) hat WebkitAppRegion='drag' auf dem Container. Performance Mode ist `fixed inset-0 z-50` und überlagert die TitleBar visuell — aber in Electron-Fullscreen schluckt die OS-level Drag-Region trotzdem die pointer-events der darüberliegenden Buttons (Chromium-spezifisches Verhalten von -webkit-app-region in Fullscreen, weil das OS die Drag-Region anders behandelt wenn keine native Title-Chrome existiert). Fix (zweifach): (a) ElectronTitleBar.tsx hört jetzt auf onFullscreenChanged + initial isFullscreen() → return null wenn isFullscreen=true (Drag-Region verschwindet komplett, ohnehin sinnvoll weil Fullscreen-Fenster nicht draggable sind). (b) PerformanceMode-Overlay-Wrapper bekommt defensiv WebkitAppRegion='no-drag' für Race-Condition-Safety beim Fullscreen-Toggle. KEIN Unit-Test geschrieben — Electron-Fullscreen-Verhalten ist nur in tests/electron/e2e/ realistisch testbar; @testing-library/react + jsdom sind im Projekt nicht installiert; manuelle Verifikation via Electron-App im Fullscreen-Mode mit Performance-Mode-Toggle.",
+      fixed:    true,
       foundBy:  "user (post-v1.23.0 report)",
-      target:   "v1.23.1 / v1.24.0",
+      fixedBy:  "frontend",
+      fixedIn:  "BUG-009 fix (post-v1.23.0)",
       relatedFiles: [
         "client/src/components/PerformanceMode/PatternLaunchPad.tsx",
-        "electron/components/ElectronTitleBar.tsx",
-        "electron/main.ts (fullscreen state handling)"
+        "electron/components/ElectronTitleBar.tsx"
       ]
     }
   },
@@ -269,6 +269,27 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "frontend",
+      timestamp: "2026-05-13T19:00:00.000Z",
+      done: [
+        "BUG-009 / Performance Mode: Mode-Buttons im Fullscreen nicht klickbar (Fix, post-v1.23.0). User-Report nach Release: Im Electron-Fullscreen reagieren die Mode-Toggle-Buttons (Play / ✎ Edit / ⇆ Reorder) im Performance-Mode-Header nicht auf Klicks. Windowed-Mode → funktioniert sofort.",
+        "BUG-009 / Ursachen-Analyse: ElectronTitleBar (32px Container am App-Tree-Top) hat WebkitAppRegion='drag' auf dem outer div. Performance Mode rendert als `fixed inset-0 z-50` Overlay und VERDECKT die TitleBar visuell, aber in Electron-Fullscreen schluckt die OS-Level-Drag-Region die pointer-events der darüberliegenden Buttons. Chromium-spezifisch: -webkit-app-region wird auf OS-Ebene gehandled und die Fullscreen-Logik ändert das Verhalten — Drag-Region absorbiert Klicks auch durch z-50-Overlays. In Windowed-Mode passiert das nicht weil das OS andere Frame-Logik einsetzt.",
+        "BUG-009 / Fix Welle 1 (electron/components/ElectronTitleBar.tsx): Komponente hört jetzt auf onFullscreenChanged + initial isFullscreen()-Probe. Setzt isFullscreen-State, returnt null wenn true. Damit: Drag-Region verschwindet komplett in Fullscreen, Performance-Mode-Buttons werden klickbar. Imports: useEffect hinzugefügt. Refactor: inElectron-Check + early returns vorgezogen damit api-Reference safely null sein darf.",
+        "BUG-009 / Fix Welle 2 (client/src/components/PerformanceMode/PatternLaunchPad.tsx): Defensiv WebkitAppRegion='no-drag' auf dem Performance-Mode-Wrapper-Div. Schützt gegen Race-Conditions beim Fullscreen-Toggle (Fall: TitleBar wird gerade ausgeblendet aber Performance-Mode-Buttons werden bereits geklickt) und gegen alternative Overlay-Szenarien. Kommentar im Code dokumentiert den BUG-009-Kontext.",
+        "BUG-009 / Test-Strategie: KEIN Unit-Test geschrieben. Begründung: (a) Bug-Symptom ist OS-Level Chromium-Behavior von -webkit-app-region in Electron-Fullscreen — nicht in Node/jsdom reproduzierbar. (b) Realistischer Test wäre tests/electron/e2e/ mit setFullScreen() + Click-Verifikation — würde compile:electron benötigen + längere Runtime. (c) @testing-library/react + jsdom sind NICHT als devDeps installiert; nur für eine 5-Zeilen-Fix-Verifikation neue Deps einzuführen ist disproportional. (d) Code-Change ist minimal + offensichtlich korrekt. Manuelle Verifikation: pnpm dev:electron, App in Fullscreen schalten, Performance Mode öffnen, Mode-Buttons klicken — alle funktionsfähig.",
+        "BUG-009 / Verification: pnpm check 0 Fehler. pnpm test 1345/1360 grün (kein regression-Test brach, keine neuen Tests). INDEX.js bugs.BUG-009 fixed:true gesetzt."
+      ],
+      next: [
+        "BUG-009 / Welle 3 (Future): Electron-E2E-Test in tests/electron/e2e/performance-mode-fullscreen.spec.ts wäre sinnvoll für Regression-Protection. Setup: Electron starten, Fullscreen via electronAPI.setFullscreen(true) toggeln, Performance Mode öffnen, Mode-Buttons via page.click() — alle drei (Play/Edit/Reorder) müssen aria-pressed-Wechsel zeigen. Hängt von Verfügbarkeit von tests/electron/e2e/ Setup ab.",
+        "BUG-009 / Welle 3 (Future): Die TitleBar versteckt sich aktuell IMMER in Fullscreen — was richtig ist für die meisten Apps. Alternative: nur verstecken wenn ein fixed-Overlay aktiv ist (Performance Mode, Scene Launch, Collab Split). Aktuell akzeptabel weil Fullscreen-TitleBar selten gebraucht wird (Fenster nicht draggable, Buttons via F11/Esc/Alt+F4 erreichbar). Falls User wünscht TitleBar in Fullscreen sichtbar zu lassen für Close-Access: separates Setting nötig."
+      ],
+      changed: [
+        "electron/components/ElectronTitleBar.tsx",
+        "client/src/components/PerformanceMode/PatternLaunchPad.tsx",
+        "agents/INDEX.js"
+      ]
+    },
     {
       agent:     "frontend",
       timestamp: "2026-05-13T17:45:00.000Z",

@@ -10,7 +10,7 @@
  * <ElectronTitleBar projectName="Mein Projekt" isDirty={true} />
  * ```
  */
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 
 // ─── Typen ────────────────────────────────────────────────────────────────────
 
@@ -58,13 +58,31 @@ export function ElectronTitleBar({
   className = "",
 }: ElectronTitleBarProps) {
   const [isMaximized, setIsMaximized] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   // Nur in Electron rendern
-  if (typeof window === "undefined" || !window.electronAPI) {
-    return null;
-  }
+  const inElectron = typeof window !== "undefined" && !!window.electronAPI;
+  const api = inElectron ? window.electronAPI : null;
 
-  const api = window.electronAPI;
+  // BUG-009 Fix: Im Fullscreen versteckt sich die Custom-TitleBar komplett.
+  // Hintergrund: `WebkitAppRegion: drag` auf dem TitleBar-Container wird im
+  // Fullscreen-Mode von Chromium anders gehandled — die Drag-Region schluckt
+  // pointer-events von darüberliegenden `fixed inset-0` Overlays (z.B. das
+  // Performance-Mode Mode-Toggle), was deren Buttons unklickbar macht. In
+  // Fullscreen ist die Drag-Region ohnehin sinnlos (Fenster lässt sich nicht
+  // bewegen), also rendern wir die TitleBar gar nicht erst.
+  useEffect(() => {
+    if (!api) return;
+    // Initial-State abfragen — User könnte via OS-Shortcut (F11/CMD+CTRL+F) in
+    // Fullscreen sein bevor der Renderer mountet.
+    api.isFullscreen?.().then((fs) => setIsFullscreen(!!fs)).catch(() => {});
+    // Subscription für Fullscreen-Wechsel
+    const cleanup = api.onFullscreenChanged?.(setIsFullscreen);
+    return cleanup;
+  }, [api]);
+
+  if (!inElectron || !api) return null;
+  if (isFullscreen) return null;
 
   const handleMinimize = useCallback(() => {
     api.minimizeWindow?.();
