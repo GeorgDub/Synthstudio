@@ -208,6 +208,12 @@ export function AudioWorkbench({ onSamplesAdded }: AudioWorkbenchProps) {
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  type EditMode = "none" | "trim" | "normalize";
+  const [editMode, setEditMode] = useState<EditMode>("none");
+  const [trimStart, setTrimStart] = useState(0);
+  const [trimEnd, setTrimEnd] = useState(0);
+  const [normalizeDb, setNormalizeDb] = useState(0); // 0 dB = -0 dB FS Peak
+
   const loadFile = useCallback(async (file: File) => {
     try {
       const arrayBuffer = await file.arrayBuffer();
@@ -253,26 +259,37 @@ export function AudioWorkbench({ onSamplesAdded }: AudioWorkbenchProps) {
   }, [buffer]);
 
   const handleReverse    = useCallback(() => buffer && applyEdit(() => reverseBuffer(new AudioContext(), buffer)), [buffer, applyEdit]);
-  const handleNormalize  = useCallback(() => buffer && applyEdit(() => normalizeBuffer(new AudioContext(), buffer)), [buffer, applyEdit]);
   const handleFadeIn     = useCallback(() => buffer && applyEdit(() => fadeIn(new AudioContext(), buffer, 0.5)), [buffer, applyEdit]);
   const handleFadeOut    = useCallback(() => buffer && applyEdit(() => fadeOut(new AudioContext(), buffer, 0.5)), [buffer, applyEdit]);
   const handleHalfGain   = useCallback(() => buffer && applyEdit(() => applyGain(new AudioContext(), buffer, 0.5)), [buffer, applyEdit]);
   const handleDoubleGain = useCallback(() => buffer && applyEdit(() => applyGain(new AudioContext(), buffer, 2.0)), [buffer, applyEdit]);
 
-  const handleTrim = useCallback(() => {
+  const openTrim = useCallback(() => {
     if (!buffer) return;
-    const startStr = prompt("Trim Start (Sekunden):", "0");
-    if (startStr === null) return;
-    const endStr = prompt("Trim Ende (Sekunden):", buffer.duration.toFixed(2));
-    if (endStr === null) return;
-    const start = parseFloat(startStr);
-    const end   = parseFloat(endStr);
-    if (isNaN(start) || isNaN(end) || end <= start) {
-      alert("Ungültige Zeitwerte.");
-      return;
-    }
-    applyEdit(() => trimBuffer(new AudioContext(), buffer, start, end));
-  }, [buffer, applyEdit]);
+    setTrimStart(0);
+    setTrimEnd(buffer.duration);
+    setEditMode("trim");
+  }, [buffer]);
+
+  const openNormalize = useCallback(() => {
+    if (!buffer) return;
+    setNormalizeDb(0);
+    setEditMode("normalize");
+  }, [buffer]);
+
+  const applyTrim = useCallback(() => {
+    if (!buffer) return;
+    if (trimEnd <= trimStart) return;
+    applyEdit(() => trimBuffer(new AudioContext(), buffer, trimStart, trimEnd));
+    setEditMode("none");
+  }, [buffer, applyEdit, trimStart, trimEnd]);
+
+  const applyNormalize = useCallback(() => {
+    if (!buffer) return;
+    const targetPeak = Math.pow(10, normalizeDb / 20);
+    applyEdit(() => normalizeBuffer(new AudioContext(), buffer, targetPeak));
+    setEditMode("none");
+  }, [buffer, applyEdit, normalizeDb]);
 
   const handleSeparate = useCallback(async () => {
     if (!buffer) return;
@@ -395,9 +412,9 @@ export function AudioWorkbench({ onSamplesAdded }: AudioWorkbenchProps) {
           {/* ── Audacity-Style Edit-Toolbar ──────────────────────────────── */}
           <div className="flex flex-wrap gap-1.5 p-2 bg-bg-elevated rounded-lg">
             <span className="text-[10px] text-text-dim self-center mr-1 uppercase tracking-wider">Edit:</span>
-            <button onClick={handleTrim}        className="px-2 py-1 text-[10px] rounded bg-bg-panel border border-border-color text-text-primary hover:border-accent-primary">✂ Trim</button>
+            <button onClick={openTrim}          className={`px-2 py-1 text-[10px] rounded bg-bg-panel border text-text-primary hover:border-accent-primary ${editMode==="trim" ? "border-accent-primary" : "border-border-color"}`}>✂ Trim</button>
             <button onClick={handleReverse}     className="px-2 py-1 text-[10px] rounded bg-bg-panel border border-border-color text-text-primary hover:border-accent-primary">↩ Reverse</button>
-            <button onClick={handleNormalize}   className="px-2 py-1 text-[10px] rounded bg-bg-panel border border-border-color text-text-primary hover:border-accent-primary">📈 Normalize</button>
+            <button onClick={openNormalize}     className={`px-2 py-1 text-[10px] rounded bg-bg-panel border text-text-primary hover:border-accent-primary ${editMode==="normalize" ? "border-accent-primary" : "border-border-color"}`}>📈 Normalize…</button>
             <button onClick={handleFadeIn}      className="px-2 py-1 text-[10px] rounded bg-bg-panel border border-border-color text-text-primary hover:border-accent-primary">↗ Fade In</button>
             <button onClick={handleFadeOut}     className="px-2 py-1 text-[10px] rounded bg-bg-panel border border-border-color text-text-primary hover:border-accent-primary">↘ Fade Out</button>
             <button onClick={handleHalfGain}    className="px-2 py-1 text-[10px] rounded bg-bg-panel border border-border-color text-text-primary hover:border-accent-primary">−6 dB</button>
@@ -421,6 +438,159 @@ export function AudioWorkbench({ onSamplesAdded }: AudioWorkbenchProps) {
               💾 Als Sample exportieren
             </button>
           </div>
+
+          {/* ── Trim-Panel ──────────────────────────────────────────────── */}
+          {editMode === "trim" && (
+            <div className="p-3 bg-bg-elevated rounded-lg border border-accent-primary/40 flex flex-col gap-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-accent-primary">✂ Trim</span>
+                <span className="text-[10px] text-text-dim font-mono">
+                  Auswahl: {(trimEnd - trimStart).toFixed(2)}s
+                </span>
+              </div>
+
+              {/* Visual range bar */}
+              <div className="relative h-2 bg-bg-panel rounded">
+                <div
+                  className="absolute h-full bg-accent-primary/30 rounded"
+                  style={{
+                    left:  `${(trimStart / buffer.duration) * 100}%`,
+                    right: `${100 - (trimEnd / buffer.duration) * 100}%`,
+                  }}
+                />
+              </div>
+
+              <div className="flex items-center gap-3">
+                <label className="text-[10px] text-text-muted flex-1">
+                  Start (s)
+                  <input
+                    type="number"
+                    min={0}
+                    max={buffer.duration}
+                    step={0.01}
+                    value={trimStart.toFixed(3)}
+                    onChange={e => {
+                      const v = parseFloat(e.target.value);
+                      if (!isNaN(v)) setTrimStart(Math.max(0, Math.min(trimEnd - 0.001, v)));
+                    }}
+                    className="w-full mt-0.5 px-2 py-1 text-xs rounded bg-bg-base border border-border-color text-text-primary font-mono"
+                  />
+                  <input
+                    type="range"
+                    min={0}
+                    max={buffer.duration}
+                    step={0.001}
+                    value={trimStart}
+                    onChange={e => {
+                      const v = parseFloat(e.target.value);
+                      setTrimStart(Math.max(0, Math.min(trimEnd - 0.001, v)));
+                    }}
+                    className="w-full mt-1"
+                  />
+                </label>
+                <label className="text-[10px] text-text-muted flex-1">
+                  Ende (s)
+                  <input
+                    type="number"
+                    min={0}
+                    max={buffer.duration}
+                    step={0.01}
+                    value={trimEnd.toFixed(3)}
+                    onChange={e => {
+                      const v = parseFloat(e.target.value);
+                      if (!isNaN(v)) setTrimEnd(Math.max(trimStart + 0.001, Math.min(buffer.duration, v)));
+                    }}
+                    className="w-full mt-0.5 px-2 py-1 text-xs rounded bg-bg-base border border-border-color text-text-primary font-mono"
+                  />
+                  <input
+                    type="range"
+                    min={0}
+                    max={buffer.duration}
+                    step={0.001}
+                    value={trimEnd}
+                    onChange={e => {
+                      const v = parseFloat(e.target.value);
+                      setTrimEnd(Math.max(trimStart + 0.001, Math.min(buffer.duration, v)));
+                    }}
+                    className="w-full mt-1"
+                  />
+                </label>
+              </div>
+
+              <div className="flex gap-2 justify-end">
+                <button
+                  onClick={() => setEditMode("none")}
+                  className="px-3 py-1 text-[10px] rounded bg-bg-panel border border-border-color text-text-muted hover:text-text-primary"
+                >
+                  Abbrechen
+                </button>
+                <button
+                  onClick={applyTrim}
+                  disabled={trimEnd <= trimStart}
+                  className="px-3 py-1 text-[10px] rounded bg-accent-primary text-white font-bold disabled:opacity-50"
+                >
+                  Trim anwenden
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* ── Normalize-Panel ────────────────────────────────────────── */}
+          {editMode === "normalize" && (
+            <div className="p-3 bg-bg-elevated rounded-lg border border-accent-primary/40 flex flex-col gap-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-accent-primary">📈 Normalize</span>
+                <span className="text-[10px] text-text-dim font-mono">
+                  Aktuell Peak: {(20 * Math.log10(Math.max(getPeak(buffer), 1e-6))).toFixed(1)} dB
+                </span>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <label className="text-[10px] text-text-muted flex-1">
+                  Ziel-Peak: <span className="text-text-primary font-mono">{normalizeDb.toFixed(1)} dB</span>
+                  <input
+                    type="range"
+                    min={-24}
+                    max={0}
+                    step={0.5}
+                    value={normalizeDb}
+                    onChange={e => setNormalizeDb(parseFloat(e.target.value))}
+                    className="w-full mt-1"
+                  />
+                </label>
+                <div className="flex gap-1">
+                  {[0, -1, -3, -6].map(db => (
+                    <button
+                      key={db}
+                      onClick={() => setNormalizeDb(db)}
+                      className={`px-2 py-1 text-[10px] rounded border font-mono ${
+                        normalizeDb === db
+                          ? "bg-accent-primary border-accent-primary text-white"
+                          : "bg-bg-panel border-border-color text-text-muted hover:text-text-primary"
+                      }`}
+                    >
+                      {db === 0 ? "0" : db} dB
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex gap-2 justify-end">
+                <button
+                  onClick={() => setEditMode("none")}
+                  className="px-3 py-1 text-[10px] rounded bg-bg-panel border border-border-color text-text-muted hover:text-text-primary"
+                >
+                  Abbrechen
+                </button>
+                <button
+                  onClick={applyNormalize}
+                  className="px-3 py-1 text-[10px] rounded bg-accent-primary text-white font-bold"
+                >
+                  Normalize anwenden
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* ── Peak/RMS Info ──────────────────────────────────────────── */}
           <div className="text-[10px] text-text-dim font-mono px-1">
