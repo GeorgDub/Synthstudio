@@ -293,6 +293,25 @@ interface ElectronAPI {
   setPerfPopupAlwaysOnTop(alwaysOnTop: boolean): Promise<{ success: boolean; alwaysOnTop: boolean }>;
   isPerfPopupAlwaysOnTop(): Promise<boolean>;
 
+  // ── FX-Window Popups (Multi-Window-Workspace Phase 1, post-v1.25.0) ───────
+  openFxWindow(channelId: string): Promise<{ success: boolean; error?: string }>;
+  closeFxWindow(channelId: string): Promise<{ success: boolean; error?: string }>;
+  isFxWindowOpen(channelId: string): Promise<boolean>;
+  setFxWindowAlwaysOnTop(
+    channelId: string,
+    alwaysOnTop: boolean,
+  ): Promise<{ success: boolean; alwaysOnTop: boolean }>;
+  isFxWindowAlwaysOnTop(channelId: string): Promise<boolean>;
+  sendFxPopupState(channelId: string, state: unknown): void;
+  sendFxPopupAction(channelId: string, action: unknown): void;
+  onFxPopupState(
+    callback: (payload: { channelId: string; state: unknown }) => void,
+  ): ElectronCleanup;
+  onFxPopupAction(
+    callback: (payload: { channelId: string; action: unknown }) => void,
+  ): ElectronCleanup;
+  onFxPopupClosed(callback: (channelId: string) => void): ElectronCleanup;
+
   // ── Benachrichtigungen ────────────────────────────────────────────────────
   showNotification(title: string, body: string): void;
 

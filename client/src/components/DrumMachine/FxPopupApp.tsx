@@ -1,0 +1,159 @@
+/**
+ * FxPopupApp.tsx — separates pinnable FX-Window pro Kanal
+ * (Multi-Window-Workspace Phase 1, post-v1.25.0).
+ *
+ * Wird gerendert wenn die App mit URL-Param `?fxPopup=<channelId>` gestartet
+ * wird. Im Electron-Mode öffnet der Main-Process via `createFxWindow()` ein
+ * eigenes BrowserWindow pro Kanal — der User kann mehrere FX-Panels gleichzeitig
+ * neben dem Haupt-Fenster offen halten.
+ *
+ * State-Sync-Architektur (identisch zu PerformancePopupApp):
+ *   - Main-Renderer schickt `fx-sync:state` Events mit { channelId, state }.
+ *     `state` enthält `{ name, fx }` für den Kanal.
+ *   - Parameter-Änderungen im Popup → `fx-sync:action` (channelId + Partial<ChannelFx>)
+ *     ins Main-Renderer dispatched, der den Store via setPartFx aktualisiert.
+ *
+ * Im Web-Fallback nicht verfügbar — analog Performance-Popup.
+ */
+import { useEffect, useState } from "react";
+import { useElectron } from "../../../../electron/useElectron";
+import { FxPanelBody } from "./FxPanel";
+import type { ChannelFx } from "@/audio/AudioEngine";
+
+/** Vollständiger State-Snapshot pro Kanal, vom Main-Renderer geschickt. */
+export interface FxPopupState {
+  partId: string;
+  partName: string;
+  fx: ChannelFx;
+}
+
+/** Action-Payload, das vom Popup zum Main-Renderer geht. */
+export type FxPopupAction =
+  | { type: "request-state" }
+  | { type: "fx-change"; partial: Partial<ChannelFx> };
+
+export interface FxPopupAppProps {
+  channelId: string;
+}
+
+export function FxPopupApp({ channelId }: FxPopupAppProps) {
+  const electron = useElectron();
+  const [state, setState] = useState<FxPopupState | null>(null);
+  const [alwaysOnTop, setAlwaysOnTop] = useState(false);
+
+  // State-Sync vom Main-Renderer empfangen (gefiltert auf eigene channelId)
+  useEffect(() => {
+    if (!electron.isElectron) return;
+    const cleanup = electron.onFxPopupState?.((payload) => {
+      if (!payload || typeof payload !== "object") return;
+      if (payload.channelId !== channelId) return;
+      const incoming = payload.state as Partial<FxPopupState> | undefined;
+      if (!incoming || typeof incoming !== "object" || !incoming.fx) return;
+      setState({
+        partId: incoming.partId ?? channelId,
+        partName: incoming.partName ?? channelId,
+        fx: incoming.fx,
+      });
+    });
+    return cleanup;
+  }, [electron, channelId]);
+
+  // Initial-Request an Main
+  useEffect(() => {
+    if (!electron.isElectron) return;
+    electron.sendFxPopupAction?.(channelId, { type: "request-state" });
+  }, [electron, channelId]);
+
+  // Always-on-top initial laden
+  useEffect(() => {
+    if (!electron.isElectron) return;
+    electron.isFxWindowAlwaysOnTop?.(channelId).then(setAlwaysOnTop).catch(() => {});
+  }, [electron, channelId]);
+
+  const toggleAlwaysOnTop = () => {
+    if (!electron.isElectron) return;
+    const next = !alwaysOnTop;
+    void electron.setFxWindowAlwaysOnTop?.(channelId, next).then((res) => {
+      if (res?.success) setAlwaysOnTop(res.alwaysOnTop);
+    });
+  };
+
+  const handleFxChange = (partial: Partial<ChannelFx>) => {
+    electron.sendFxPopupAction?.(channelId, { type: "fx-change", partial });
+    // Optimistic UI: lokal sofort updaten damit der Popup responsive ist
+    setState((prev) => (prev ? { ...prev, fx: { ...prev.fx, ...partial } } : prev));
+  };
+
+  if (!electron.isElectron) {
+    return (
+      <div className="fixed inset-0 bg-bg-base flex items-center justify-center text-center p-8">
+        <div>
+          <h1 className="text-accent-secondary text-2xl font-bold mb-2">FX</h1>
+          <p className="text-text-muted">
+            Das separate FX-Fenster ist aktuell nur in der Electron-Desktop-App verfügbar.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!state) {
+    return (
+      <div className="fixed inset-0 bg-bg-base flex items-center justify-center text-center p-8">
+        <div>
+          <h1 className="text-accent-secondary text-2xl font-bold mb-2">FX</h1>
+          <p className="text-text-muted">Verbinde mit Haupt-Fenster...</p>
+          <p className="text-text-dim text-xs mt-4">
+            Falls der Sync nicht startet: prüfe ob das Haupt-Fenster offen ist.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col h-screen bg-bg-base">
+      {/* Frameless Header — identisches Pattern wie Performance-Popup */}
+      <div
+        className="flex items-center h-7 px-3 bg-bg-elevated border-b border-border-color select-none flex-shrink-0"
+        style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
+      >
+        <span className="text-[10px] text-text-dim uppercase tracking-wider flex-1">
+          FX — {state.partName}
+        </span>
+        <div
+          className="flex items-center gap-1"
+          style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
+        >
+          <button
+            onClick={toggleAlwaysOnTop}
+            aria-label={alwaysOnTop ? "Always-on-top deaktivieren" : "Always-on-top aktivieren"}
+            title={alwaysOnTop ? "Fenster bleibt im Vordergrund (Klick zum Lösen)" : "Fenster im Vordergrund halten"}
+            data-testid="fx-popup-always-on-top"
+            className={[
+              "px-2 py-0.5 text-[10px] rounded border transition-colors active:scale-95",
+              alwaysOnTop
+                ? "bg-accent-primary/20 text-accent-primary border-accent-primary"
+                : "bg-bg-base text-text-dim border-border-color hover:text-text-primary hover:border-accent-secondary",
+            ].join(" ")}
+          >
+            📌 {alwaysOnTop ? "Pinned" : "Pin"}
+          </button>
+          <button
+            onClick={() => electron.closeFxWindow?.(channelId)}
+            aria-label="FX-Fenster schließen"
+            data-testid="fx-popup-close"
+            title="Fenster schließen"
+            className="w-5 h-5 rounded text-[12px] text-text-dim hover:bg-accent-danger hover:text-bg-base transition-colors active:scale-95 flex items-center justify-center"
+          >
+            ✕
+          </button>
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-auto p-3">
+        <FxPanelBody fx={state.fx} onFxChange={handleFxChange} />
+      </div>
+    </div>
+  );
+}

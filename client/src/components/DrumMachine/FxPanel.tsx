@@ -3,10 +3,18 @@
  *
  * Per-Kanal Effekt-Panel mit Tabs für Filter, EQ, Compressor, Delay, Reverb.
  * Aus DrumMachine.tsx ausgelagert.
+ *
+ * Aufgespalten in:
+ *  - `FxPanelBody` — die reinen Tabs + Knobs (ohne Wrapper-Positionierung,
+ *    ohne Header). Wird auch vom FxPopupApp (Multi-Window-Workspace Phase 1)
+ *    direkt genutzt.
+ *  - `FxPanel` — bisherige absolute-positionierte Dropdown-Variante mit
+ *    Header inklusive Close-Button.
  */
 import React, { useState } from "react";
 import { X } from "lucide-react";
 import type { PartData, ChannelFx } from "@/audio/AudioEngine";
+import { useElectron } from "../../../../electron/useElectron";
 
 export interface FxPanelProps {
   part: PartData;
@@ -63,25 +71,19 @@ function Toggle({ label, value, onChange }: ToggleProps) {
   );
 }
 
-export function FxPanel({ part, onFxChange, onClose }: FxPanelProps) {
-  const fx = part.fx;
+export interface FxPanelBodyProps {
+  fx: ChannelFx;
+  onFxChange: (fx: Partial<ChannelFx>) => void;
+}
+
+/**
+ * Reine FX-Tabs + Knobs ohne Wrapper-Positionierung und ohne Header.
+ * Wird sowohl im Dropdown-FxPanel als auch im pinnable FxPopupApp eingesetzt.
+ */
+export function FxPanelBody({ fx, onFxChange }: FxPanelBodyProps) {
   const [tab, setTab] = useState<"filter" | "eq" | "dynamics" | "delay" | "reverb">("filter");
-
   return (
-    <div className="absolute z-50 left-0 top-full mt-1 bg-bg-elevated border border-border-color rounded-lg shadow-2xl p-3 w-[340px]">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-2">
-        <span className="text-xs font-semibold text-text-primary">FX: {part.name}</span>
-        <button
-          onClick={onClose}
-          className="text-text-muted hover:text-text-primary leading-none p-1 rounded flex items-center justify-center transition-colors"
-          aria-label="Close"
-          title="Schließen"
-        >
-          <X className="w-3.5 h-3.5" aria-hidden="true" />
-        </button>
-      </div>
-
+    <>
       {/* Tabs */}
       <div className="flex gap-1 mb-3 border-b border-border-color pb-2">
         {(["filter", "eq", "dynamics", "delay", "reverb"] as const).map(t => (
@@ -189,6 +191,50 @@ export function FxPanel({ part, onFxChange, onClose }: FxPanelProps) {
           </div>
         </div>
       )}
+    </>
+  );
+}
+
+export function FxPanel({ part, onFxChange, onClose }: FxPanelProps) {
+  const electron = useElectron();
+  // Pin-Button nur in Electron sichtbar — Multi-Window-Workspace Phase 1.
+  // Pop-Out: schließt das Dropdown-Panel und öffnet ein eigenes BrowserWindow
+  // mit dem FX-Inhalt für diesen Kanal.
+  const handlePin = () => {
+    if (!electron.isElectron) return;
+    void electron.openFxWindow?.(part.id);
+    onClose();
+  };
+
+  return (
+    <div className="absolute z-50 left-0 top-full mt-1 bg-bg-elevated border border-border-color rounded-lg shadow-2xl p-3 w-[340px]">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-xs font-semibold text-text-primary">FX: {part.name}</span>
+        <div className="flex items-center gap-1">
+          {electron.isElectron && (
+            <button
+              onClick={handlePin}
+              className="text-text-muted hover:text-accent-primary leading-none p-1 rounded flex items-center justify-center transition-colors text-[12px]"
+              aria-label="In eigenes Fenster abkoppeln"
+              title="In eigenes Fenster abkoppeln"
+              data-testid={`fx-panel-pin-${part.id}`}
+            >
+              📌
+            </button>
+          )}
+          <button
+            onClick={onClose}
+            className="text-text-muted hover:text-text-primary leading-none p-1 rounded flex items-center justify-center transition-colors"
+            aria-label="Close"
+            title="Schließen"
+          >
+            <X className="w-3.5 h-3.5" aria-hidden="true" />
+          </button>
+        </div>
+      </div>
+
+      <FxPanelBody fx={part.fx} onFxChange={onFxChange} />
     </div>
   );
 }

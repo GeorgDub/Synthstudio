@@ -109,6 +109,21 @@ const browserAPI = {
   setPerfPopupAlwaysOnTop: async (_alwaysOnTop: boolean) => ({ success: false, alwaysOnTop: false }),
   isPerfPopupAlwaysOnTop: async () => false,
 
+  // FX-Window Popups (Web-Fallback: no-op stubs).
+  openFxWindow: async (_channelId: string) => ({ success: false as boolean }),
+  closeFxWindow: async (_channelId: string) => ({ success: false as boolean }),
+  isFxWindowOpen: async (_channelId: string) => false,
+  setFxWindowAlwaysOnTop: async (_channelId: string, _alwaysOnTop: boolean) => ({
+    success: false,
+    alwaysOnTop: false,
+  }),
+  isFxWindowAlwaysOnTop: async (_channelId: string) => false,
+  sendFxPopupState: (_channelId: string, _state: unknown) => {},
+  sendFxPopupAction: (_channelId: string, _action: unknown) => {},
+  onFxPopupState: noopDataListener<{ channelId: string; state: unknown }>(),
+  onFxPopupAction: noopDataListener<{ channelId: string; action: unknown }>(),
+  onFxPopupClosed: noopDataListener<string>(),
+
   showNotification: (_title: string, _body: string) => {},
   showConfirmDialog: async (_options: { title?: string; message: string }) => ({ response: 0 }),
   showErrorDialog: async (_title: string, _message: string) => {},
@@ -325,6 +340,18 @@ export function useElectron() {
     onPerfPopupClosed: api.onPerfPopupClosed,
     setPerfPopupAlwaysOnTop: api.setPerfPopupAlwaysOnTop,
     isPerfPopupAlwaysOnTop: api.isPerfPopupAlwaysOnTop,
+
+    // FX-Window Popups (Multi-Window-Workspace Phase 1)
+    openFxWindow: api.openFxWindow,
+    closeFxWindow: api.closeFxWindow,
+    isFxWindowOpen: api.isFxWindowOpen,
+    setFxWindowAlwaysOnTop: api.setFxWindowAlwaysOnTop,
+    isFxWindowAlwaysOnTop: api.isFxWindowAlwaysOnTop,
+    sendFxPopupState: api.sendFxPopupState,
+    sendFxPopupAction: api.sendFxPopupAction,
+    onFxPopupState: api.onFxPopupState,
+    onFxPopupAction: api.onFxPopupAction,
+    onFxPopupClosed: api.onFxPopupClosed,
   };
 }
 

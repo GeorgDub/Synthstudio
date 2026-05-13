@@ -264,6 +264,44 @@ const electronAPI = {
   isPerfPopupAlwaysOnTop: (): Promise<boolean> =>
     ipcRenderer.invoke("window:perf-is-always-on-top"),
 
+  // ── FX-Window Popup (Multi-Window-Workspace Phase 1, post-v1.25.0) ───────────
+  // Pro Kanal ein eigenes pinnable FX-Window. Identisches Pattern wie das
+  // Performance-Popup: schmale Channels, narrow-data-only Payloads.
+  openFxWindow: (channelId: string): Promise<{ success: boolean; error?: string }> =>
+    ipcRenderer.invoke("window:open-fx", channelId),
+
+  closeFxWindow: (channelId: string): Promise<{ success: boolean; error?: string }> =>
+    ipcRenderer.invoke("window:close-fx", channelId),
+
+  isFxWindowOpen: (channelId: string): Promise<boolean> =>
+    ipcRenderer.invoke("window:is-fx-open", channelId),
+
+  setFxWindowAlwaysOnTop: (
+    channelId: string,
+    alwaysOnTop: boolean,
+  ): Promise<{ success: boolean; alwaysOnTop: boolean }> =>
+    ipcRenderer.invoke("window:fx-set-always-on-top", { channelId, alwaysOnTop }),
+
+  isFxWindowAlwaysOnTop: (channelId: string): Promise<boolean> =>
+    ipcRenderer.invoke("window:fx-is-always-on-top", channelId),
+
+  // State-Broadcast: Main-Renderer → FX-Popup-Renderer (via Main-Process-Routing).
+  // Wird im Main-Renderer bei Änderungen des Kanal-FX-State gefeuert.
+  sendFxPopupState: (channelId: string, state: unknown): void => {
+    ipcRenderer.send("fx-sync:state", { channelId, state });
+  },
+
+  // Action: FX-Popup-Renderer → Main-Renderer. Popup ruft das wenn der User
+  // einen FX-Parameter ändert. Main-Renderer empfängt es und dispatcht in den
+  // useDrumMachineStore.
+  sendFxPopupAction: (channelId: string, action: unknown): void => {
+    ipcRenderer.send("fx-sync:action", { channelId, action });
+  },
+
+  onFxPopupState: createEventListener<{ channelId: string; state: unknown }>("fx-sync:state"),
+  onFxPopupAction: createEventListener<{ channelId: string; action: unknown }>("fx-sync:action"),
+  onFxPopupClosed: createEventListener<string>("fx-window:closed"),
+
   // ── Benachrichtigungen ───────────────────────────────────────────────────────
 
   showNotification: (title: string, body: string): Promise<void> =>

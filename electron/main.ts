@@ -82,6 +82,12 @@ process.on("uncaughtException", (err) => {
 
 let mainWindow: BrowserWindow | null = null;
 let perfWindow: BrowserWindow | null = null;
+/**
+ * FX-Popup-Windows pro Kanal-ID (post-v1.25.0 Multi-Window-Workspace Phase 1).
+ * Map<channelId, BrowserWindow> — User kann mehrere FX-Panels in eigenen
+ * Fenstern parallel offen haben.
+ */
+const fxWindows = new Map<string, BrowserWindow>();
 let tray: Tray | null = null;
 let appStore: AppStore | null = null;
 
@@ -382,6 +388,78 @@ function createPerformanceWindow(): void {
     // Main-Fenster informieren dass das Popup zu ist (UI-State zurücksetzen)
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send("perf-window:closed");
+    }
+  });
+}
+
+/**
+ * FX-Popup-Fenster für einen Kanal/Part. Pinnable FX-Window — Proof of Concept
+ * für die Multi-Window-Workspace-Roadmap (Phase 1, post-v1.25.0).
+ *
+ * Architektur identisch zu createPerformanceWindow:
+ *   - Frameless: Renderer (FxPopupApp) rendert eigenen schmalen Header mit
+ *     Drag-Region + Pin + Close.
+ *   - URL-Param `?fxPopup=<channelId>` signalisiert dem Renderer welcher
+ *     Kanal-Inhalt zu rendern ist.
+ *   - Ein BrowserWindow pro channelId — Map<channelId, BrowserWindow> verwaltet
+ *     parallele FX-Fenster.
+ *   - Schließt sich automatisch mit dem Haupt-Fenster (parent-Beziehung).
+ *   - Idempotent: zweiter Open-Call fokussiert das existierende Popup.
+ */
+function createFxWindow(channelId: string): void {
+  if (!channelId || channelId.length === 0) return;
+
+  // Idempotenz — bestehendes Fenster fokussieren
+  const existing = fxWindows.get(channelId);
+  if (existing && !existing.isDestroyed()) {
+    existing.focus();
+    return;
+  }
+
+  const win = new BrowserWindow({
+    width: 420,
+    height: 560,
+    minWidth: 320,
+    minHeight: 380,
+    title: `${APP_NAME} – FX (${channelId})`,
+    backgroundColor: "#0a0a0a",
+    frame: false,
+    titleBarStyle: "default",
+    parent: mainWindow ?? undefined,
+    show: false,
+    webPreferences: {
+      preload: path.join(__dirname, "preload.cjs"),
+      contextIsolation: true,
+      nodeIntegration: false,
+      autoplayPolicy: "no-user-gesture-required",
+      webSecurity: !isDev,
+    },
+  });
+  fxWindows.set(channelId, win);
+
+  win.once("ready-to-show", () => {
+    win.show();
+  });
+
+  const query = `fxPopup=${encodeURIComponent(channelId)}`;
+  if (isDev) {
+    win.loadURL(`${devServerUrl}?${query}`);
+  } else {
+    const indexPath = path.join(__dirname, "..", "dist", "public", "index.html");
+    win.loadFile(indexPath, { search: query }).catch(err => {
+      console.error("[FxWindow] loadFile failed:", err);
+    });
+  }
+
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    shell.openExternal(url);
+    return { action: "deny" };
+  });
+
+  win.on("closed", () => {
+    fxWindows.delete(channelId);
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send("fx-window:closed", channelId);
     }
   });
 }
@@ -1270,6 +1348,86 @@ function registerIpcHandlers(): void {
       mainWindow.webContents.send("perf-sync:action", actionPayload);
     }
   });
+
+  // ── FX-Window Popups (Multi-Window-Workspace Phase 1) ────────────────────────
+  // Pro Kanal ein eigenes FX-Fenster. Pattern wie perf-Popup: schmale Channels,
+  // narrow-data-only Payloads, IPC-Bridge zwischen Main-Renderer und FX-Popup.
+
+  ipcMain.handle("window:open-fx", (_event, channelId: string) => {
+    if (!channelId || typeof channelId !== "string") {
+      return { success: false, error: "channelId fehlt" };
+    }
+    createFxWindow(channelId);
+    return { success: true };
+  });
+
+  ipcMain.handle("window:close-fx", (_event, channelId: string) => {
+    if (!channelId || typeof channelId !== "string") {
+      return { success: false, error: "channelId fehlt" };
+    }
+    const win = fxWindows.get(channelId);
+    if (win && !win.isDestroyed()) {
+      win.close();
+    }
+    return { success: true };
+  });
+
+  ipcMain.handle("window:is-fx-open", (_event, channelId: string) => {
+    if (!channelId || typeof channelId !== "string") return false;
+    const win = fxWindows.get(channelId);
+    return !!(win && !win.isDestroyed());
+  });
+
+  // Always-on-top Toggle pro FX-Window.
+  ipcMain.handle(
+    "window:fx-set-always-on-top",
+    (_event, payload: { channelId: string; alwaysOnTop: boolean }) => {
+      const { channelId, alwaysOnTop } = payload ?? {};
+      if (!channelId || typeof channelId !== "string") {
+        return { success: false, alwaysOnTop: false };
+      }
+      const win = fxWindows.get(channelId);
+      if (win && !win.isDestroyed()) {
+        win.setAlwaysOnTop(!!alwaysOnTop);
+        return { success: true, alwaysOnTop: !!alwaysOnTop };
+      }
+      return { success: false, alwaysOnTop: false };
+    },
+  );
+
+  ipcMain.handle("window:fx-is-always-on-top", (_event, channelId: string) => {
+    if (!channelId || typeof channelId !== "string") return false;
+    const win = fxWindows.get(channelId);
+    if (win && !win.isDestroyed()) return win.isAlwaysOnTop();
+    return false;
+  });
+
+  // State-Broadcast Main → FX-Popup. Payload-Form:
+  // { channelId: string, state: <serializable> }
+  ipcMain.on(
+    "fx-sync:state",
+    (_event, payload: { channelId: string; state: unknown }) => {
+      const { channelId, state } = payload ?? {};
+      if (!channelId || typeof channelId !== "string") return;
+      const win = fxWindows.get(channelId);
+      if (win && !win.isDestroyed()) {
+        win.webContents.send("fx-sync:state", { channelId, state });
+      }
+    },
+  );
+
+  // Action FX-Popup → Main. Payload-Form:
+  // { channelId: string, action: <serializable> }
+  ipcMain.on(
+    "fx-sync:action",
+    (_event, payload: { channelId: string; action: unknown }) => {
+      const { channelId, action } = payload ?? {};
+      if (!channelId || typeof channelId !== "string") return;
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send("fx-sync:action", { channelId, action });
+      }
+    },
+  );
 
   // ── App-Info ─────────────────────────────────────────────────────────────────
 

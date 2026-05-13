@@ -27,6 +27,7 @@ import { useElectronMenuBindings } from "../../electron/hooks/useElectronMenuBin
 
 // ── Performance-Popup-Mode (ROADMAP feature) ─────────────────────────────────
 import { PerformancePopupApp } from "@/components/PerformanceMode/PerformancePopupApp";
+import { FxPopupApp } from "@/components/DrumMachine/FxPopupApp";
 
 // ── Eigene Stores & Hooks ─────────────────────────────────────────────────────
 import { useProjectStore } from "@/store/useProjectStore";
@@ -194,6 +195,21 @@ function isPerformancePopupMode(): boolean {
   }
 }
 
+/**
+ * Erkennt ob die App im FX-Popup-Mode läuft.
+ * URL-Param `?fxPopup=<channelId>` wird von electron/main.ts beim Öffnen eines
+ * pinnable FX-Fensters gesetzt (createFxWindow). Multi-Window-Workspace Phase 1.
+ */
+function getFxPopupChannelId(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const v = new URLSearchParams(window.location.search).get("fxPopup");
+    return v && v.length > 0 ? v : null;
+  } catch {
+    return null;
+  }
+}
+
 export default function App() {
   // ── Performance-Popup-Mode: nur PerformancePopupApp rendern, früh raus ──
   // Wenn URL ?perfPopup=1 → das ist der Popup-Renderer, NICHT die volle App.
@@ -202,6 +218,11 @@ export default function App() {
   // React den Tree hier abbricht.
   if (isPerformancePopupMode()) {
     return <PerformancePopupApp />;
+  }
+  // ── FX-Popup-Mode: nur FxPopupApp für den gegebenen Kanal rendern ──
+  const fxChannelId = getFxPopupChannelId();
+  if (fxChannelId) {
+    return <FxPopupApp channelId={fxChannelId} />;
   }
 
   // ── Electron-Hook (einziger Zugriffspunkt auf Electron-Features) ────────────
@@ -1556,6 +1577,88 @@ export default function App() {
     dm.currentStep,
     project.bpm,
   ]);
+
+  // ── FX-Popup-Windows State-Sync (Multi-Window-Workspace Phase 1) ─────────
+  // Pro geöffnetem FX-Popup-Fenster broadcasten wir den aktuellen Part-FX-State.
+  // Tracking welche channelIds offen sind passiert via onFxPopupClosed-Event +
+  // initial via "request-state"-Action (s.u.).
+  const [openFxChannelIds, setOpenFxChannelIds] = useState<Set<string>>(() => new Set());
+
+  // Cleanup-Listener: wenn ein FX-Popup geschlossen wird (entweder vom User
+  // oder beim Schließen der App), entfernen wir die channelId aus der Tracking-Map.
+  useEffect(() => {
+    if (!electron.isElectron) return;
+    const cleanup = electron.onFxPopupClosed?.((channelId) => {
+      if (!channelId || typeof channelId !== "string") return;
+      setOpenFxChannelIds((prev) => {
+        if (!prev.has(channelId)) return prev;
+        const next = new Set(prev);
+        next.delete(channelId);
+        return next;
+      });
+    });
+    return cleanup;
+  }, [electron]);
+
+  // State-Broadcast: für jeden offenen FX-Popup den aktuellen Part-FX-State pushen.
+  // Findet die aktive Pattern → sucht den Part per channelId (= part.id) → schickt.
+  useEffect(() => {
+    if (!electron.isElectron || openFxChannelIds.size === 0) return;
+    const activePattern = dm.patterns.find((p) => p.id === dm.activePatternId);
+    if (!activePattern) return;
+    openFxChannelIds.forEach((channelId) => {
+      const part = activePattern.parts.find((p) => p.id === channelId);
+      if (!part) return;
+      electron.sendFxPopupState?.(channelId, {
+        partId: part.id,
+        partName: part.name,
+        fx: part.fx,
+      });
+    });
+  }, [electron, openFxChannelIds, dm.patterns, dm.activePatternId]);
+
+  // Action-Listener: Popup → Main. Setzt FX-Params oder antwortet auf request-state.
+  useEffect(() => {
+    if (!electron.isElectron) return;
+    const cleanup = electron.onFxPopupAction?.((payload) => {
+      if (!payload || typeof payload !== "object") return;
+      const { channelId, action } = payload as { channelId?: string; action?: Record<string, unknown> };
+      if (!channelId || typeof channelId !== "string") return;
+      if (!action || typeof action !== "object") return;
+
+      switch (action.type) {
+        case "request-state": {
+          // Popup hat gerade gemountet — channelId tracken und sofort den State broadcasten.
+          setOpenFxChannelIds((prev) => {
+            if (prev.has(channelId)) return prev;
+            const next = new Set(prev);
+            next.add(channelId);
+            return next;
+          });
+          const activePattern = dmRef.current.patterns.find(
+            (p) => p.id === dmRef.current.activePatternId,
+          );
+          const part = activePattern?.parts.find((p) => p.id === channelId);
+          if (part) {
+            electron.sendFxPopupState?.(channelId, {
+              partId: part.id,
+              partName: part.name,
+              fx: part.fx,
+            });
+          }
+          break;
+        }
+        case "fx-change": {
+          const partial = action.partial;
+          if (partial && typeof partial === "object") {
+            dmRef.current.setPartFx(channelId, partial as Partial<import("@/audio/AudioEngine").ChannelFx>);
+          }
+          break;
+        }
+      }
+    });
+    return cleanup;
+  }, [electron]);
 
   // ── Render ────────────────────────────────────────────────────────────────
 
