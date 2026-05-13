@@ -223,12 +223,14 @@ export function parseFlp(buffer: ArrayBuffer): FlpParsed {
         break;
       }
       const data = reader.readBytes(size);
-      if (eventId === 0xE7) {
-        // NotesEvent — array of 24-byte note records
+      // NotesEvent kann unterschiedliche IDs haben je nach FL-Version:
+      //   0xE7 (231) — FL 11–19 legacy
+      //   0xE0 (224) — FL 20+ (per-channel notes innerhalb des aktuellen Patterns)
+      // Beide kommen als 24-byte Note-Record-Arrays. Wir akzeptieren beide.
+      if ((eventId === 0xE7 || eventId === 0xE0) && data.length >= 24 && data.length % 24 === 0) {
         const notes = parseNotesEvent(data);
         let pattern = patternsByIndex.get(currentPatternIndex);
         if (!pattern) {
-          // Falls noch kein NewPattern-Event kam, lege eines an (Pattern 1)
           const idx = currentPatternIndex || 1;
           pattern = { index: idx, notes: [] };
           patternsByIndex.set(idx, pattern);
