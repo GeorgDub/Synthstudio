@@ -65,6 +65,7 @@ import {
   markBroken,
   getRuntimeState,
   setRuntimeWaveform,
+  setAudioTrackSoloed,
   useAudioTrackStore,
   MAX_AUDIO_TRACKS,
   __resetForTests,
@@ -521,5 +522,67 @@ describe("projectSerializer × audioTracks", () => {
     expect(after).toHaveLength(2);
     expect(after.map((t) => t.id)).toEqual([id1, id2]);
     expect(after.map((t) => t.name)).toEqual(["E2E-A", "E2E-B"]);
+  });
+});
+
+// ─── FOLLOWUP-102-3: setAudioTrackSoloed (additive vs exclusive) ──────────────
+
+describe("setAudioTrackSoloed (FOLLOWUP-102-3)", () => {
+  beforeEach(() => {
+    __resetForTests();
+    localStorageMock.clear();
+  });
+
+  it("Default (exclusive=false): toggle setzt nur Ziel-Track, andere bleiben unverändert", () => {
+    const a = addAudioTrack(makeTrackInput({ name: "A" }));
+    const b = addAudioTrack(makeTrackInput({ name: "B" }));
+    const c = addAudioTrack(makeTrackInput({ name: "C", soloed: true }));
+
+    setAudioTrackSoloed(a, true);
+
+    expect(getAudioTrack(a)?.soloed).toBe(true);
+    // B unverändert (war false, bleibt false)
+    expect(getAudioTrack(b)?.soloed).toBe(false);
+    // C unverändert (war true, bleibt true — ADDITIV)
+    expect(getAudioTrack(c)?.soloed).toBe(true);
+  });
+
+  it("exclusive=true: setzt Ziel-Track UND un-solo't alle anderen Tracks", () => {
+    const a = addAudioTrack(makeTrackInput({ name: "A", soloed: true }));
+    const b = addAudioTrack(makeTrackInput({ name: "B", soloed: true }));
+    const c = addAudioTrack(makeTrackInput({ name: "C", soloed: false }));
+
+    setAudioTrackSoloed(c, true, true);
+
+    expect(getAudioTrack(c)?.soloed).toBe(true);
+    // A + B wurden un-soloed
+    expect(getAudioTrack(a)?.soloed).toBe(false);
+    expect(getAudioTrack(b)?.soloed).toBe(false);
+  });
+
+  it("setAudioTrackSoloed(false, exclusive=true) un-solo't ALLE Tracks (auch Ziel)", () => {
+    const a = addAudioTrack(makeTrackInput({ name: "A", soloed: true }));
+    const b = addAudioTrack(makeTrackInput({ name: "B", soloed: true }));
+
+    setAudioTrackSoloed(a, false, true);
+
+    expect(getAudioTrack(a)?.soloed).toBe(false);
+    expect(getAudioTrack(b)?.soloed).toBe(false);
+  });
+
+  it("Unbekannte ID ist no-op (kein Throw, keine Änderung)", () => {
+    const a = addAudioTrack(makeTrackInput({ name: "A", soloed: false }));
+    expect(() => setAudioTrackSoloed("audiotrack:unknown", true)).not.toThrow();
+    expect(getAudioTrack(a)?.soloed).toBe(false);
+  });
+
+  it("Persistiert via localStorage (round-trip)", () => {
+    const a = addAudioTrack(makeTrackInput({ name: "A" }));
+    setAudioTrackSoloed(a, true);
+    const raw = localStorageMock.getItem(STORAGE_KEY);
+    expect(raw).toBeTruthy();
+    const parsed = JSON.parse(raw!) as AudioTrackChannelData[];
+    const aData = parsed.find((t) => t.id === a);
+    expect(aData?.soloed).toBe(true);
   });
 });

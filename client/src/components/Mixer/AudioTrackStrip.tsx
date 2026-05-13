@@ -28,6 +28,7 @@ import {
   setRuntimeWaveform,
   getRuntimeState,
   countTimestretchTracks,
+  setAudioTrackSoloed,
   MAX_TIMESTRETCH_TRACKS,
   type AudioTrackChannelData,
   type AudioTrackRuntimeState,
@@ -225,9 +226,13 @@ export function AudioTrackStrip({
     AudioEngine.setAudioTrackMute(track.id, next);
   }, [track.id, track.muted]);
 
-  const handleSolo = useCallback(() => {
+  /**
+   * Solo-Toggle. Default: additive (toggle nur diesen Track). Shift+Click:
+   * exclusive (un-solo't alle anderen Audio-Tracks — FOLLOWUP-102-3 inverse-default).
+   */
+  const handleSolo = useCallback((opts: { shiftKey: boolean }) => {
     const next = !track.soloed;
-    updateAudioTrack(track.id, { soloed: next });
+    setAudioTrackSoloed(track.id, next, opts.shiftKey);
     AudioEngine.setAudioTrackSolo(track.id, next);
   }, [track.id, track.soloed]);
 
@@ -482,12 +487,12 @@ export function AudioTrackStrip({
             type="button"
             onClick={(e) => {
               e.stopPropagation();
-              handleSolo();
+              handleSolo({ shiftKey: e.shiftKey });
             }}
             disabled={broken}
             aria-label="Solo"
             aria-pressed={track.soloed}
-            title="Solo"
+            title="Solo — Shift+Click = exclusive (un-solo't andere Tracks)"
             className={[
               "w-6 h-5 rounded text-[9px] font-bold transition-colors",
               "disabled:opacity-40 disabled:cursor-not-allowed",

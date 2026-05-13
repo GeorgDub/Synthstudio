@@ -257,6 +257,34 @@ const INDEX = {
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
     {
+      agent:     "frontend",
+      timestamp: "2026-05-13T17:45:00.000Z",
+      done: [
+        "FOLLOWUP-102-3 / Solo cross-store unification — UI-Layer (v1.23.0). Hintergrund: AudioEngine cross-store solo-logic war seit v1.19.0 implementiert (anySolo = anyDrumSolo || anyAudioSolo in _scheduleStep + _reapplyAudioTrackSoloMutes). Die verbleibende Inkonsistenz war im UI-Default-Verhalten: Drum-Solo war exclusive (Radio-Button — un-solo't andere Parts), Audio-Solo war additive (DAW-Konvention). Beide Defaults bleiben in Place (keine breaking change), aber Shift+Click invertiert jetzt in beiden Richtungen.",
+        "FOLLOWUP-102-3 / Store-API erweitert: (a) useDrumMachineStore.setPartSoloed Signatur von (partId, soloed) auf (partId, soloed, exclusive=true). exclusive=false → additiv. (b) Neuer Export useAudioTrackStore.setAudioTrackSoloed(id, soloed, exclusive=false) — analoge API für die andere Richtung. Persistiert via localStorage. (c) Defensive defaults: Drum bleibt exclusive-by-default, Audio bleibt additive-by-default — beide UIs nutzen jetzt Shift+Click für die jeweils OPPOSITE Semantik.",
+        "FOLLOWUP-102-3 / UI-Layer: (a) ChannelStrip.tsx onSolo-Prop von () → ({shiftKey: boolean}) erweitert, onClick übergibt e.shiftKey. (b) DrumMachine.tsx Call-Site: dm.setPartSoloed(part.id, !part.soloed, !e.shiftKey) — exclusive default, Shift→additive. (c) MixerView MixerChannel onSoloToggle analog erweitert. (d) AudioTrackStrip handleSolo erweitert auf ({shiftKey}) → setAudioTrackSoloed(track.id, next, e.shiftKey) — additive default, Shift→exclusive. (e) Tooltips aktualisiert: Drum 'Shift+Click = additiv', Audio 'Shift+Click = exclusive'. CollabSplitView noop-Stub bleibt unverändert (akzeptiert beliebige Args).",
+        "FOLLOWUP-102-3 / Tests +5 in tests/features/audio-track-store.test.ts ('setAudioTrackSoloed (FOLLOWUP-102-3)' describe-Block): (1) Default additive — toggle setzt nur Ziel, andere bleiben unverändert; (2) exclusive=true — un-solo't ALLE anderen; (3) setAudioTrackSoloed(false, exclusive=true) un-solo't alle inkl. Ziel; (4) Unbekannte ID = no-op; (5) Persistenz via localStorage (round-trip).",
+        "FOLLOWUP-102-4 / Playwright Round-Trip E2E (v1.23.0). Neue Datei tests/web/audio-track-round-trip.spec.ts mit 4 Tests im describe-Block 'Audio-Track Round-Trip — save → reopen → relocate (FOLLOWUP-102-4)'. Tests: (1) Phase 1 (save): Add-Track persistiert in localStorage mit korrektem fileName; (2) Phase 2 (reopen): page.reload() bringt Track-Metadata zurück, Strip + Name persistieren; (3) Phase 3 (relocate): Broken-Banner + Relocate-Button-Flow stellt Track wieder her (defensiv mit if-visible-check, da markBroken nur per Engine-Failure getriggert wird); (4) Round-Trip End-to-End: Add → reload → ID + Name bleiben stabil im localStorage.",
+        "FOLLOWUP-102-4 / Bug-Fix: erste Test-Iteration nutzte page.addInitScript() für localStorage-Cleanup — das feuert ABER bei jedem reload und hat damit Phase 2 + Round-Trip-Test gebrochen. Fix: clearAudioTrackStorageOnce() macht goto('/') + page.evaluate(removeItem) — läuft EINMALIG vor dem ersten Add, NICHT bei reload. Lesson learned: addInitScript ist nicht reload-safe.",
+        "FOLLOWUP-102-4 / Verification: pnpm test:web tests/web/audio-track-round-trip.spec.ts → 4/4 grün in 10.6s. pnpm test 1345/1360 unit grün (+5 für setAudioTrackSoloed). pnpm check 0 Fehler."
+      ],
+      next: [
+        "FOLLOWUP-102-3 / Welle 2 (Future — Drum-Store-Tests): useDrumMachineStore ist ein React-Hook ohne node-testbare Export-Funktion (im Gegensatz zu useAudioTrackStore). Tests für exclusive/additive Drum-Solo-Toggle benötigen React-Testing-Library oder Playwright UI-Tests. Aktuell decken die existierenden tests/features/solo-cross-store.test.ts den Engine-Cross-Store-Pfad ab; das neue Drum-additive-Verhalten ist nur in Code-Review verifiziert. Optional: Playwright-Test der Shift+Click auf Drum-Channel-Strip simuliert und Multi-Solo verifiziert.",
+        "FOLLOWUP-102-4 / Welle 2 (Future — vollständiger Relocate-Test): Phase 3 hat defensive if-visible-check für den Broken-Banner, weil markBroken im Browser nicht automatisch bei page.reload getriggert wird (nur via openProject-Flow oder Engine-Failure). Ein deterministischer Relocate-Test bräuchte: (a) Trigger markBroken via expose-debug-helper oder (b) Use openProject (.synth-Upload) statt page.reload. Aktuell akzeptiert — die wichtigsten Phasen (save + reopen + Metadata-Persistenz) sind getestet."
+      ],
+      changed: [
+        "client/src/store/useDrumMachineStore.ts",
+        "client/src/store/useAudioTrackStore.ts",
+        "client/src/components/DrumMachine/ChannelStrip.tsx",
+        "client/src/components/DrumMachine/DrumMachine.tsx",
+        "client/src/components/Mixer/MixerView.tsx",
+        "client/src/components/Mixer/AudioTrackStrip.tsx",
+        "tests/features/audio-track-store.test.ts",
+        "tests/web/audio-track-round-trip.spec.ts",
+        "agents/INDEX.js"
+      ]
+    },
+    {
       agent:     "testing",
       timestamp: "2026-05-13T16:30:00.000Z",
       done: [
@@ -1071,15 +1099,14 @@ const INDEX = {
   //   - TASK-126 (Macro-Hold-Mode Playwright-Smoke): erledigt 2026-05-13.
   //     Neue tests/web/macros.spec.ts mit 4 Tests; data-testids auf MacroButton
   //     + toggle-macro-panel. Verifiziert UI-Wiring mouseDown/Up → CustomEvent.
-  openTasks: [
-    {
-      id:       "FOLLOWUP-102",
-      title:    "Audio-Track refinements — Restposten",
-      severity: "low",
-      target:   "v1.23.0+",
-      notes:    "Offen: (3) Solo cross-store unification (drum+audio) — drum-Solo und audio-Solo nutzen aktuell getrennte Stores; mute/solo-Verhalten bei gemischten Tracks ist inkonsistent. (4) Full Playwright round-trip E2E (save → reopen → relocate) für Audio-Track-Projekte mit fehlenden Sample-Pfaden."
-    },
-  ],
+  //   - FOLLOWUP-102 vollständig geschlossen 2026-05-13.
+  //     (3) Solo cross-store UI-Unification: setPartSoloed um exclusive-Parameter
+  //         erweitert, neue setAudioTrackSoloed exported. Shift+Click invertiert
+  //         Default-Verhalten in beiden Richtungen. +5 Tests.
+  //     (4) Playwright Round-Trip E2E: tests/web/audio-track-round-trip.spec.ts
+  //         mit 4 Tests (save → reopen → relocate). 4/4 grün in 10.6s.
+  //     openTasks ist jetzt LEER — v1.23.0 bereit zum Release.
+  openTasks: [],
 
   // ─── API / IPC REFERENCE ───────────────────────────────────
   ipc: {

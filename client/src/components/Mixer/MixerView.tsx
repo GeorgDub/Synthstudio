@@ -188,7 +188,8 @@ interface MixerChannelProps {
   onVolumeChange: (v: number) => void;
   onPanChange: (v: number) => void;
   onMuteToggle: () => void;
-  onSoloToggle: () => void;
+  /** Solo-Toggle. event.shiftKey wechselt zwischen Default und additive Verhalten (FOLLOWUP-102-3). */
+  onSoloToggle: (e: { shiftKey: boolean }) => void;
   onSendChange: (bus: "reverb" | "delay", v: number) => void;
 }
 
@@ -271,8 +272,8 @@ function MixerChannel({
             M
           </button>
           <button
-            onClick={onSoloToggle}
-            title="Solo (S)"
+            onClick={(e) => onSoloToggle({ shiftKey: e.shiftKey })}
+            title="Solo (S) — Shift+Click = additiv/exclusive umschalten"
             className={[
               "w-6 h-5 rounded text-[8px] font-bold transition-colors duration-100",
               soloed
@@ -922,7 +923,7 @@ export function MixerView({ dm, mixer, samples = [], bpm = 120, projectName = "S
                   onVolumeChange={vol => handleVolumeChange(part.id, vol)}
                   onPanChange={pan => handlePanChange(part.id, pan)}
                   onMuteToggle={() => dm.setPartMuted(part.id, !part.muted)}
-                  onSoloToggle={() => dm.setPartSoloed(part.id, !part.soloed)}
+                  onSoloToggle={(e) => dm.setPartSoloed(part.id, !part.soloed, !e.shiftKey)}
                   onSendChange={(bus, level) => handleSendChange(part.id, bus, level)}
                 />
               );

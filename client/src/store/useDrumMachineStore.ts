@@ -61,7 +61,14 @@ export interface DrumMachineActions {
   renamePart: (id: string, name: string) => void;
   setPartSample: (partId: string, sampleUrl: string, sampleName?: string) => void;
   setPartMuted: (partId: string, muted: boolean) => void;
-  setPartSoloed: (partId: string, soloed: boolean) => void;
+  /**
+   * Setzt den Solo-Status eines Drum-Parts.
+   * @param exclusive Default `true` (Radio-Button-Verhalten — un-solo't alle
+   *                  anderen Parts). `false` = additiv (toggle nur diesen Part,
+   *                  andere bleiben unverändert; DAW-Konvention).
+   *                  UI: Click = exclusive, Shift+Click = additive (FOLLOWUP-102-3).
+   */
+  setPartSoloed: (partId: string, soloed: boolean, exclusive?: boolean) => void;
   setPartVolume: (partId: string, volume: number) => void;
   setPartPan: (partId: string, pan: number) => void;
   setPartStepResolution: (partId: string, res: StepResolution | undefined) => void;
@@ -428,13 +435,15 @@ export function useDrumMachineStore(): DrumMachineState & DrumMachineActions {
     })), false);
   }, [updatePatterns]);
 
-  const setPartSoloed = useCallback((partId: string, soloed: boolean) => {
+  const setPartSoloed = useCallback((partId: string, soloed: boolean, exclusive = true) => {
     updatePatterns(ps => ps.map(p => ({
       ...p,
-      parts: p.parts.map(pt => ({
-        ...pt,
-        soloed: pt.id === partId ? soloed : false,
-      })),
+      parts: p.parts.map(pt => {
+        if (pt.id === partId) return { ...pt, soloed };
+        // exclusive=true (default, Radio-Button): un-solo alle anderen.
+        // exclusive=false (additive, DAW-Konvention): andere Parts bleiben unverändert.
+        return exclusive ? { ...pt, soloed: false } : pt;
+      }),
     })), false);
     // Cross-Store Solo (FOLLOWUP-102/B): Notify Mixer-Layer (Audio-Tracks)
     // damit sie bei Drum-Solo mit-stummgeschaltet werden. Custom-Event statt

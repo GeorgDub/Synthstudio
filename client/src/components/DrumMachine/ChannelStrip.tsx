@@ -25,7 +25,11 @@ export interface ChannelStripProps {
   onSetVelocity: (stepIndex: number, v: number) => void;
   onSetPitch: (stepIndex: number, p: number) => void;
   onMute: () => void;
-  onSolo: () => void;
+  /**
+   * Solo-Toggle. event.shiftKey wechselt zwischen Default (exclusive) und
+   * additive Verhalten (FOLLOWUP-102-3).
+   */
+  onSolo: (e: { shiftKey: boolean }) => void;
   onVolumeChange: (v: number) => void;
   onPanChange: (v: number) => void;
   onSampleDrop: (url: string, name: string) => void;
@@ -134,8 +138,8 @@ export function ChannelStrip({
         ].join(" ")}
       >M</button>
       <button
-        onClick={e => { e.stopPropagation(); onSolo(); }}
-        title="Solo"
+        onClick={e => { e.stopPropagation(); onSolo({ shiftKey: e.shiftKey }); }}
+        title="Solo (Shift+Click = additiv)"
         className={[
           "w-5 h-5 rounded text-[9px] font-bold flex-shrink-0 transition-colors",
           part.soloed ? "bg-accent-success text-bg-base" : "bg-bg-elevated text-text-dim hover:bg-bg-elevated",

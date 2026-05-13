@@ -949,7 +949,7 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
             onSetVelocity={(stepIndex, v) => dm.setStepVelocity(part.id, stepIndex, v)}
             onSetPitch={(stepIndex, p) => dm.setStepPitch(part.id, stepIndex, p)}
             onMute={() => dm.setPartMuted(part.id, !part.muted)}
-            onSolo={() => dm.setPartSoloed(part.id, !part.soloed)}
+            onSolo={(e) => dm.setPartSoloed(part.id, !part.soloed, !e.shiftKey)}
             onVolumeChange={v => dm.setPartVolume(part.id, v)}
             onPanChange={v => dm.setPartPan(part.id, v)}
             onSampleDrop={(url, name) => dm.setPartSample(part.id, url, name)}

@@ -173,6 +173,33 @@ export function updateAudioTrack(
   notify();
 }
 
+/**
+ * Setzt den Solo-Status eines Audio-Tracks (FOLLOWUP-102-3).
+ * @param exclusive Default `false` (additiv — toggle nur diesen Track,
+ *                  andere bleiben unverändert; DAW-Konvention).
+ *                  `true` = exclusive (Radio-Button — un-solo't alle anderen).
+ *                  UI: Click = additive (current), Shift+Click = exclusive.
+ *
+ * Hinweis: setzt nur das `soloed`-Flag auf den Track-Daten. Das tatsächliche
+ * Stummschalten passiert in AudioEngine._reapplyAudioTrackSoloMutes (via
+ * setAudioTrackSolo, das nach diesem Store-Update via App.tsx synced wird).
+ */
+export function setAudioTrackSoloed(
+  id: string,
+  soloed: boolean,
+  exclusive = false,
+): void {
+  const idx = _tracks.findIndex((t) => t.id === id);
+  if (idx < 0) return;
+  _tracks = _tracks.map((t, i) => {
+    if (i === idx) return { ...t, soloed };
+    // exclusive=true: un-solo alle anderen. exclusive=false (default): bleiben.
+    return exclusive ? { ...t, soloed: false } : t;
+  });
+  persist();
+  notify();
+}
+
 /** Gibt einen Track per ID zurück oder null wenn unbekannt. */
 export function getAudioTrack(id: string): AudioTrackChannelData | null {
   return _tracks.find((t) => t.id === id) ?? null;
