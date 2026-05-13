@@ -249,6 +249,19 @@ const INDEX = {
       foundBy:  "testing (TASK-101 multi-viewport sweep + screenshot review)",
       fixedBy:  "testing",
       fixedIn:  "TASK-101 (v1.18.x)"
+    },
+    "BUG-009": {
+      title:   "Performance Mode: Mode-Buttons (Play/Edit/Reorder) sind im Fullscreen nicht klickbar",
+      severity: "high (UX)",
+      details:  "Reproduktion: Electron-Fenster in Fullscreen schalten (F11 oder Maximize) → Performance Mode öffnen (Toolbar oder Shortcut) → die Mode-Toggle-Buttons oben (Play / ✎ Edit / ⇆ Reorder) reagieren nicht auf Klicks. Sobald der User das Fenster von Fullscreen auf Windowed wechselt (F11 erneut / Restore), funktionieren die Buttons sofort. Vermutung: -webkit-app-region: drag auf einem Container-Element (Custom-Titlebar / Performance-Mode-Wrapper) blockiert pointer-events im Fullscreen, weil die Drag-Region in Electron-Fullscreen anders berechnet wird. Mögliche Fix-Ansätze: (a) explizit -webkit-app-region: no-drag auf den Mode-Toggle-Buttons setzen, (b) Drag-Region nur im Windowed-Mode aktivieren via document.body.classList beim isFullscreen-State, (c) Performance-Mode-Wrapper z-index/pointer-events prüfen. Affected: PatternLaunchPad.tsx Mode-Toggle (Play/Edit/Reorder, role=radiogroup).",
+      fixed:    false,
+      foundBy:  "user (post-v1.23.0 report)",
+      target:   "v1.23.1 / v1.24.0",
+      relatedFiles: [
+        "client/src/components/PerformanceMode/PatternLaunchPad.tsx",
+        "electron/components/ElectronTitleBar.tsx",
+        "electron/main.ts (fullscreen state handling)"
+      ]
     }
   },
 
