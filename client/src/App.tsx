@@ -80,6 +80,11 @@ import { CollabSplitView } from "@/components/CollabSplitView";
 import { ThemeSettings, initTheme } from "@/components/Settings";
 import { MixerView } from "@/components/Mixer";
 import { ChannelInspector } from "@/components/Mixer/ChannelInspector";
+import { WorkspaceShell } from "@/components/Workspace/WorkspaceShell";
+import { WorkspaceProvider } from "@/components/Workspace/WorkspaceContext";
+import { MixerPanel } from "@/components/Workspace/panels/MixerPanel";
+import { InspectorPanel } from "@/components/Workspace/panels/InspectorPanel";
+import { useWorkspaceMode } from "@/store/useWorkspaceMode";
 import { useMixerStore } from "@/store/useMixerStore";
 import { useGlobalKeyBindings, KB_ACTION_EVENT } from "@/hooks/useGlobalKeyBindings";
 import { useScriptKeyBindings } from "@/hooks/useScriptKeyBindings";
@@ -343,6 +348,8 @@ export default function App() {
 
   // ── Electron-Hook (einziger Zugriffspunkt auf Electron-Features) ────────────
   const electron = useElectron();
+  // MIG-2B Feature-Flag: aktiviert den Dockview-Workspace für die migrierten Tabs.
+  const workspaceMode = useWorkspaceMode();
   // ── Kollaborations-Session (für Sync) ─────────────────────────────────────────
   const collab = useCollabSession();
   const session = useSessionStore();
@@ -2319,45 +2326,55 @@ export default function App() {
               )}
 
               {activeTab === "mixer" && (
-                <div className="h-full flex overflow-hidden">
-                  {/* MixerView (channel strips). Wird durch Reattach-Stub
-                      ersetzt wenn als Popup-Fenster geöffnet (FEAT-INSP:
-                      ChannelInspector daneben bleibt unabhängig sichtbar). */}
-                  <div className="flex-1 flex overflow-hidden">
-                    {mixerPopupOpen ? (
-                      <div className="flex-1 flex items-center justify-center text-text-dim text-sm">
-                        <div className="text-center">
-                          <p className="mb-3">📌 Mixer ist in einem eigenen Fenster geöffnet.</p>
-                          <button
-                            type="button"
-                            onClick={() => electron.closeMixerWindow?.()}
-                            data-testid="mixer-reattach"
-                            className="px-3 py-1.5 rounded border border-border-color text-text-muted hover:text-accent-primary hover:border-accent-primary transition-colors text-xs"
-                          >
-                            Hierher zurückholen
-                          </button>
+                workspaceMode ? (
+                  /* MIG-2B Dockview-Workspace (PoC): Mixer + Inspector als
+                     dockable Views. User kann sie als Tabs nebeneinander,
+                     split, oder floating anordnen. WorkspaceProvider liefert
+                     dm/mixer/project an die Panel-Komponenten. */
+                  <WorkspaceProvider value={{ dm, mixer, project }}>
+                    <WorkspaceShell
+                      panels={[
+                        { id: "mixer", title: "Mixer", component: MixerPanel },
+                        { id: "inspector", title: "Channel Inspector", component: InspectorPanel },
+                      ]}
+                    />
+                  </WorkspaceProvider>
+                ) : (
+                  <div className="h-full flex overflow-hidden">
+                    <div className="flex-1 flex overflow-hidden">
+                      {mixerPopupOpen ? (
+                        <div className="flex-1 flex items-center justify-center text-text-dim text-sm">
+                          <div className="text-center">
+                            <p className="mb-3">📌 Mixer ist in einem eigenen Fenster geöffnet.</p>
+                            <button
+                              type="button"
+                              onClick={() => electron.closeMixerWindow?.()}
+                              data-testid="mixer-reattach"
+                              className="px-3 py-1.5 rounded border border-border-color text-text-muted hover:text-accent-primary hover:border-accent-primary transition-colors text-xs"
+                            >
+                              Hierher zurückholen
+                            </button>
+                          </div>
                         </div>
-                      </div>
-                    ) : (
-                      <MixerView
-                        dm={dm}
-                        mixer={mixer}
-                        samples={project.samples}
-                        bpm={project.bpm}
-                        projectName={project.projectName}
-                        className="flex-1"
-                      />
-                    )}
-                  </div>
+                      ) : (
+                        <MixerView
+                          dm={dm}
+                          mixer={mixer}
+                          samples={project.samples}
+                          bpm={project.bpm}
+                          projectName={project.projectName}
+                          className="flex-1"
+                        />
+                      )}
+                    </div>
 
-                  {/* Channel Inspector als unabhängiger Sibling — bleibt sichtbar
-                      auch wenn der Mixer abgepinnt ist (FEAT-INSP). */}
-                  <ChannelInspector
-                    part={dm.getActivePattern()?.parts.find(p => p.id === mixer.selectedChannelId) ?? dm.getActivePattern()?.parts[0]}
-                    parts={dm.getActivePattern()?.parts ?? []}
-                    mixer={mixer}
-                  />
-                </div>
+                    <ChannelInspector
+                      part={dm.getActivePattern()?.parts.find(p => p.id === mixer.selectedChannelId) ?? dm.getActivePattern()?.parts[0]}
+                      parts={dm.getActivePattern()?.parts ?? []}
+                      mixer={mixer}
+                    />
+                  </div>
+                )
               )}
 
               {activeTab === "song" && (

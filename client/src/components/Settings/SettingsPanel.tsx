@@ -28,6 +28,7 @@ import {
   AVAILABLE_MODELS,
   type AiProvider,
 } from "@/store/useApiSettingsStore";
+import { useWorkspaceMode, setWorkspaceMode } from "@/store/useWorkspaceMode";
 import {
   useMetronomeStore,
   updateMetronome,
@@ -61,6 +62,7 @@ import { useUpdater } from "@/hooks/useUpdater";
 type Section =
   | "design"
   | "ki"
+  | "workspace"
   | "keyboard"
   | "metronome"
   | "midi-devices"
@@ -75,6 +77,7 @@ type Section =
 
 const SECTIONS: Array<{ id: Section; icon: string; label: string; group?: string }> = [
   { id: "design",       icon: "🎨", label: "Design",             group: "Erscheinungsbild" },
+  { id: "workspace",    icon: "🧱", label: "Workspace",          group: "Erscheinungsbild" },
   { id: "ki",           icon: "✨", label: "KI & API",            group: "Erscheinungsbild" },
   { id: "keyboard",     icon: "⌨️", label: "Tastatur",            group: "Steuerung" },
   { id: "metronome",    icon: "🥁", label: "Metronom",            group: "Audio" },
@@ -337,6 +340,42 @@ function KiSection() {
 // von useApiSettingsStore und in Tests verwendet.
 void setApiKey;
 void setAiModel;
+
+/**
+ * Workspace Mode Toggle (MIG-2B feature-flag).
+ * Aktiviert den neuen Dockview-Workspace anstelle der Legacy-Tab-Bar.
+ * Während der MIG-2 Migration läuft beides parallel — User kann selbst wählen.
+ */
+function WorkspaceSection() {
+  const enabled = useWorkspaceMode();
+  return (
+    <div className="space-y-5">
+      <div>
+        <h3 className="text-sm font-bold text-text-primary mb-1">Workspace-Modus (Beta)</h3>
+        <p className="text-xs text-text-dim mb-3">
+          Aktiviert den neuen Dockview-basierten Workspace mit drag-bar Tabs, Splits und Floating-Panels.
+          Während der Beta-Phase läuft Workspace parallel zur alten Tab-Bar — du kannst jederzeit zurück.
+          Migrierte Tabs aktuell: <span className="font-mono">Mixer</span>, <span className="font-mono">Channel Inspector</span>.
+        </p>
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={enabled}
+            onChange={(e) => setWorkspaceMode(e.target.checked)}
+            data-testid="workspace-mode-toggle"
+            className="cursor-pointer accent-accent-primary"
+          />
+          <span className="text-xs text-text-primary">
+            Dockview Workspace aktivieren
+          </span>
+        </label>
+      </div>
+      <div className="border-t border-border-color pt-3 text-[10px] text-text-dim space-y-1">
+        <div>Im nächsten Welle der Migration: alle restlichen Tabs + echtes Multi-Window-Drag-Out (Browser-Tab-Stil).</div>
+      </div>
+    </div>
+  );
+}
 
 function MetronomeSection() {
   const state = useMetronomeStore();
@@ -1057,6 +1096,7 @@ export function SettingsPanel({ isOpen, onClose, midi, parts, initialSection = "
         {/* ── Content ────────────────────────────────────────────────────── */}
         <div className="flex-1 overflow-y-auto p-6">
           {active === "design"       && <DesignSection />}
+          {active === "workspace"    && <WorkspaceSection />}
           {active === "ki"           && <KiSection />}
           {active === "keyboard"     && <KeyboardBindingsPanel />}
           {active === "metronome"    && <MetronomeSection />}
