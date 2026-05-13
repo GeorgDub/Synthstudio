@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "1.63.0",
+    version: "1.64.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -459,6 +459,23 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-14T01:40:00.000Z",
+      done: [
+        "FLP-MELODIC-WARN (v1.64.0): Importer warnt bei melodischen FLP-Channels statt Pitch-Info still zu verwerfen. Neuer `detectChannelPitches`-Helper zählt distinct gespielte MIDI-Keys pro FL-Channel — ≥2 = melodisch, 1 = drum-like. Warnung enthält Channel-ID + Pitch-Anzahl + Range (z.B. 'Channel 1: melodischer Inhalt (4 Tonhöhen, E2..B2)'). Bonus: `ImportedStep.pitch` wird jetzt befüllt (vorher always undefined), damit zukünftige Konsumenten (MelodicPart-Routing, MIDI-Export) ohne zweiten Parser-Pass auf die Pitch-Info zugreifen können. 5 neue Vitest-Cases in project-imports.test.ts, alle 78 FLP-Tests grün, pnpm check 0 Fehler."
+      ],
+      next: [
+        "FLP-MELODIC-ROUTE: melodische Channels in MelodicParts statt Drum-Parts routen — eigentliches Use-Case-Pendant zur Warning aus v1.64.0. Erfordert ImportResult-Erweiterung um melodicParts und Wiring im ProjectManager.",
+        "FEAT-INSP (aus vorherigem next:): bleibt offen — Explore-Report vorhanden, Aufwand 4-5h, 8+ Files (siehe coordinator-Notiz im INDEX-CATCHUP-Eintrag)."
+      ],
+      changed: [
+        "package.json",
+        "client/src/utils/imports/flpImport.ts",
+        "tests/features/project-imports.test.ts",
+        "agents/INDEX.js"
+      ]
+    },
     {
       agent:     "coordinator",
       timestamp: "2026-05-14T00:00:00.000Z",
