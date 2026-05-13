@@ -230,6 +230,73 @@ function persistFxLayout(channelId: string, win: BrowserWindow): void {
 }
 
 /**
+ * BUG-021 workaround: explizit-destroy statt win.close().
+ *
+ * User-Diagnose v1.41 zeigte: nach unserem close-end Event stirbt der Main-Process
+ * NATIV in Chromium's BrowserWindow.close()-Destruktionspfad. Vermutete Ursache:
+ * race-condition zwischen close-event-handler-Callback und Chromium's internal
+ * window destruction.
+ *
+ * Workaround: layout MANUELL synchron persistieren + dann win.destroy() statt
+ * win.close(). `destroy()` überspringt das `close`-Event ganz (keine
+ * preventDefault-Möglichkeit) und geht direkt zur safer destruction.
+ *
+ * Wir loggen weiterhin popup:close-Manual damit die Diagnose-Kette komplett
+ * bleibt; closed-Event sollte trotzdem feuern.
+ */
+const VALID_SINGLETON_KEYS: ReadonlySet<string> = new Set([
+  "performance", "mixer", "sampleBrowser", "patternGen",
+  "keyboardSampler", "chordProgression", "patternLibrary",
+]);
+
+/** Mapper: generic-factory keyPrefix → SingletonPopupKey für AppStore. */
+function mapKeyPrefixToSingleton(keyPrefix: string): SingletonPopupKey | null {
+  const mapping: Record<string, SingletonPopupKey> = {
+    "keyboard-sampler": "keyboardSampler",
+    "chord-progression": "chordProgression",
+    "pattern-library": "patternLibrary",
+  };
+  if (mapping[keyPrefix]) return mapping[keyPrefix];
+  if (VALID_SINGLETON_KEYS.has(keyPrefix)) return keyPrefix as SingletonPopupKey;
+  return null;
+}
+
+function destroyPopupSafely(
+  key: SingletonPopupKey | string,
+  win: BrowserWindow | null,
+  isFx: boolean = false,
+): void {
+  if (!win || win.isDestroyed()) return;
+  logEvent("popup:destroy-manual", { key });
+  try {
+    // Manuelles persist (bypassing close-event)
+    if (appStore) {
+      const bounds = win.getBounds();
+      const layout = {
+        isOpen: isAppQuitting,
+        bounds: { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height },
+        alwaysOnTop: win.isAlwaysOnTop(),
+      };
+      if (isFx) {
+        appStore.setFxLayout(String(key), layout);
+      } else {
+        const mapped = mapKeyPrefixToSingleton(String(key));
+        if (mapped) appStore.setPopupLayout(mapped, layout);
+      }
+    }
+    markPopupClosed();
+  } catch (err) {
+    logCrash(`destroyPopupSafely:${key}`, err);
+  }
+  // win.destroy() statt win.close() — bypass des fragilen close-event-Pfads
+  try {
+    win.destroy();
+  } catch (err) {
+    logCrash(`destroyPopupSafely:destroy:${key}`, err);
+  }
+}
+
+/**
  * Window-Layout-Persistenz: Auto-Reopen aller Popups die beim letzten App-Beenden
  * offen waren. Wird einmalig kurz nach `did-finish-load` des Hauptfensters
  * aufgerufen, damit die Main-Renderer-Action-Listener bereit sind.
@@ -2003,9 +2070,7 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle("window:close-performance", () => {
     logEvent("ipc:close-popup", { key: "performance", alive: !!perfWindow && !perfWindow.isDestroyed() });
-    if (perfWindow && !perfWindow.isDestroyed()) {
-      perfWindow.close();
-    }
+    destroyPopupSafely("performance", perfWindow);
     return { success: true };
   });
 
@@ -2067,9 +2132,7 @@ function registerIpcHandlers(): void {
       return { success: false, error: "channelId fehlt" };
     }
     const win = fxWindows.get(channelId);
-    if (win && !win.isDestroyed()) {
-      win.close();
-    }
+    destroyPopupSafely(channelId, win ?? null, true);
     return { success: true };
   });
 
@@ -2140,9 +2203,7 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle("window:close-mixer", () => {
     logEvent("ipc:close-popup", { key: "mixer", alive: !!mixerWindow && !mixerWindow.isDestroyed() });
-    if (mixerWindow && !mixerWindow.isDestroyed()) {
-      mixerWindow.close();
-    }
+    destroyPopupSafely("mixer", mixerWindow);
     return { success: true };
   });
 
@@ -2191,9 +2252,7 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle("window:close-sample-browser", () => {
     logEvent("ipc:close-popup", { key: "sampleBrowser", alive: !!sampleBrowserWindow && !sampleBrowserWindow.isDestroyed() });
-    if (sampleBrowserWindow && !sampleBrowserWindow.isDestroyed()) {
-      sampleBrowserWindow.close();
-    }
+    destroyPopupSafely("sampleBrowser", sampleBrowserWindow);
     return { success: true };
   });
 
@@ -2239,9 +2298,7 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle("window:close-pattern-gen", () => {
     logEvent("ipc:close-popup", { key: "patternGen", alive: !!patternGenWindow && !patternGenWindow.isDestroyed() });
-    if (patternGenWindow && !patternGenWindow.isDestroyed()) {
-      patternGenWindow.close();
-    }
+    destroyPopupSafely("patternGen", patternGenWindow);
     return { success: true };
   });
 
@@ -2289,7 +2346,8 @@ function registerIpcHandlers(): void {
     ipcMain.handle(`window:close-${keyPrefix}`, () => {
       const w = getWin();
       logEvent("ipc:close-popup", { key: keyPrefix, alive: !!w && !w.isDestroyed() });
-      if (w && !w.isDestroyed()) w.close();
+      // BUG-021: destroy() statt close() — bypass nativen Chromium-Race
+      destroyPopupSafely(keyPrefix, w);
       return { success: true };
     });
     ipcMain.handle(`window:is-${keyPrefix}-open`, () => {

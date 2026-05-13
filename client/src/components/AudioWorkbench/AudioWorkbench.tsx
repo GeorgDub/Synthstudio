@@ -17,7 +17,7 @@ import { useAudioInput } from "@/hooks/useAudioInput";
 import type { Sample } from "@/store/useProjectStore";
 import {
   trimBuffer, reverseBuffer, normalizeBuffer,
-  fadeIn, fadeOut, applyGain, getPeak,
+  fadeIn, fadeOut, applyGain, getPeak, getRms, cutSelection,
 } from "@/utils/audioEdit";
 
 // ─── Typen ────────────────────────────────────────────────────────────────────
