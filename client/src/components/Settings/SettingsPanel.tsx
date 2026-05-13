@@ -51,6 +51,7 @@ import {
 import {
   THEMES, applyTheme, loadSavedTheme, type ThemeId,
 } from "./ThemeSettings";
+import { parseMidiLayoutJson, checkPartIdsExist } from "@/utils/midiLayoutImport";
 import { CustomThemeCreator } from "./CustomThemeCreator";
 import type { MidiState, MidiActions, MidiLearnTarget } from "@/hooks/useMidi";
 import type { PartData } from "@/audio/AudioEngine";
@@ -622,6 +623,107 @@ function MpeSectionSimple() {
   );
 }
 
+/**
+ * MidiLayoutImportButton — File-Picker für Synthstudio-JSON Layouts
+ * (MIDI-Controller-Mapping-Import, post-v1.38.0).
+ *
+ * Akzeptiert eine `.json`-Datei im Format aus `utils/midiLayoutImport.ts`.
+ * Bei Erfolg ruft `midi.loadTemplate(cc, notes)` auf — bestehende Mappings
+ * werden komplett ersetzt (genau wie bei den vordefinierten Hardware-Templates).
+ */
+function MidiLayoutImportButton({
+  midi,
+  parts,
+}: {
+  midi: MidiState & MidiActions;
+  parts: PartData[];
+}) {
+  const inputRef = React.useRef<HTMLInputElement | null>(null);
+  const [feedback, setFeedback] = React.useState<{ kind: "ok" | "error"; msg: string } | null>(null);
+
+  // Auto-clear feedback nach 5s
+  React.useEffect(() => {
+    if (!feedback) return;
+    const id = setTimeout(() => setFeedback(null), 5000);
+    return () => clearTimeout(id);
+  }, [feedback]);
+
+  const handleFile = async (file: File) => {
+    setFeedback(null);
+    if (!file.name.toLowerCase().endsWith(".json")) {
+      setFeedback({ kind: "error", msg: "Bitte eine .json-Datei wählen." });
+      return;
+    }
+    try {
+      const text = await file.text();
+      const result = parseMidiLayoutJson(text);
+      if (!result.ok || !result.layout) {
+        setFeedback({ kind: "error", msg: result.error ?? "Parse fehlgeschlagen." });
+        return;
+      }
+      // Cross-Check: gibt es Note-Mappings die unbekannte partIds referenzieren?
+      const knownIds = parts.map((p) => p.id);
+      const partWarnings = checkPartIdsExist(result.layout.noteMappings, knownIds);
+      const totalWarnings = (result.warnings?.length ?? 0) + partWarnings.length;
+
+      midi.loadTemplate(result.layout.ccMappings, result.layout.noteMappings);
+
+      const cc = result.layout.ccMappings.length;
+      const notes = result.layout.noteMappings.length;
+      const name = result.layout.name ? ` "${result.layout.name}"` : "";
+      const warnSuffix = totalWarnings > 0 ? ` (${totalWarnings} Warnungen — siehe Konsole)` : "";
+      setFeedback({
+        kind: "ok",
+        msg: `Layout${name} importiert: ${cc} CC + ${notes} Note Mappings.${warnSuffix}`,
+      });
+      if (result.warnings?.length) {
+        console.warn("[MidiLayoutImport] Parser-Warnungen:", result.warnings);
+      }
+      if (partWarnings.length) {
+        console.warn("[MidiLayoutImport] Part-Warnungen:", partWarnings);
+      }
+    } catch (e) {
+      setFeedback({ kind: "error", msg: e instanceof Error ? e.message : String(e) });
+    }
+  };
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => inputRef.current?.click()}
+        title="MIDI-Layout aus JSON-Datei importieren"
+        data-testid="midi-layout-import-btn"
+        className="px-2 py-1 text-xs rounded border border-accent-secondary/50 text-accent-secondary hover:bg-accent-secondary/10"
+      >
+        📥 Layout importieren
+      </button>
+      <input
+        ref={inputRef}
+        type="file"
+        accept="application/json,.json"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) void handleFile(f);
+          e.target.value = "";
+        }}
+      />
+      {feedback && (
+        <span
+          data-testid="midi-layout-import-feedback"
+          className={[
+            "text-[10px] ml-2",
+            feedback.kind === "ok" ? "text-accent-success" : "text-accent-danger",
+          ].join(" ")}
+        >
+          {feedback.msg}
+        </span>
+      )}
+    </>
+  );
+}
+
 function MidiCcSection({ midi, parts }: { midi: MidiState & MidiActions; parts: PartData[] }) {
   const targets = buildCcTargets(parts);
   const categories = [...new Set(targets.map(t => t.category))];
@@ -636,6 +738,7 @@ function MidiCcSection({ midi, parts }: { midi: MidiState & MidiActions; parts: 
     <div>
       <div className="flex items-center gap-3 mb-4">
         <h3 className="text-sm font-bold text-text-primary">MIDI CC-Zuweisungen</h3>
+        <MidiLayoutImportButton midi={midi} parts={parts} />
         {midi.mappings.length > 0 && (
           <button onClick={midi.clearAllMappings} className="ml-auto text-xs text-accent-danger hover:opacity-80">
             Alle löschen
