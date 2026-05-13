@@ -302,6 +302,35 @@ const electronAPI = {
   onFxPopupAction: createEventListener<{ channelId: string; action: unknown }>("fx-sync:action"),
   onFxPopupClosed: createEventListener<string>("fx-window:closed"),
 
+  // ── Mixer-Window Popup (Multi-Window-Workspace, post-v1.26.0) ────────────────
+  // Singleton-Popup wie Performance-Mode. Channels narrow-data-only.
+  openMixerWindow: (): Promise<{ success: boolean }> =>
+    ipcRenderer.invoke("window:open-mixer"),
+
+  closeMixerWindow: (): Promise<{ success: boolean }> =>
+    ipcRenderer.invoke("window:close-mixer"),
+
+  isMixerWindowOpen: (): Promise<boolean> =>
+    ipcRenderer.invoke("window:is-mixer-open"),
+
+  setMixerWindowAlwaysOnTop: (alwaysOnTop: boolean): Promise<{ success: boolean; alwaysOnTop: boolean }> =>
+    ipcRenderer.invoke("window:mixer-set-always-on-top", alwaysOnTop),
+
+  isMixerWindowAlwaysOnTop: (): Promise<boolean> =>
+    ipcRenderer.invoke("window:mixer-is-always-on-top"),
+
+  sendMixerPopupState: (state: unknown): void => {
+    ipcRenderer.send("mixer-sync:state", state);
+  },
+
+  sendMixerPopupAction: (action: unknown): void => {
+    ipcRenderer.send("mixer-sync:action", action);
+  },
+
+  onMixerPopupState: createEventListener<unknown>("mixer-sync:state"),
+  onMixerPopupAction: createEventListener<unknown>("mixer-sync:action"),
+  onMixerPopupClosed: createVoidListener("mixer-window:closed"),
+
   // ── Benachrichtigungen ───────────────────────────────────────────────────────
 
   showNotification: (title: string, body: string): Promise<void> =>

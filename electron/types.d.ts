@@ -312,6 +312,18 @@ interface ElectronAPI {
   ): ElectronCleanup;
   onFxPopupClosed(callback: (channelId: string) => void): ElectronCleanup;
 
+  // ── Mixer-Window Popup (Multi-Window-Workspace, post-v1.26.0) ─────────────
+  openMixerWindow(): Promise<{ success: boolean }>;
+  closeMixerWindow(): Promise<{ success: boolean }>;
+  isMixerWindowOpen(): Promise<boolean>;
+  setMixerWindowAlwaysOnTop(alwaysOnTop: boolean): Promise<{ success: boolean; alwaysOnTop: boolean }>;
+  isMixerWindowAlwaysOnTop(): Promise<boolean>;
+  sendMixerPopupState(state: unknown): void;
+  sendMixerPopupAction(action: unknown): void;
+  onMixerPopupState(callback: (state: unknown) => void): ElectronCleanup;
+  onMixerPopupAction(callback: (action: unknown) => void): ElectronCleanup;
+  onMixerPopupClosed(callback: () => void): ElectronCleanup;
+
   // ── Benachrichtigungen ────────────────────────────────────────────────────
   showNotification(title: string, body: string): void;
 

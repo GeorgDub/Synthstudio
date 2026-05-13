@@ -124,6 +124,18 @@ const browserAPI = {
   onFxPopupAction: noopDataListener<{ channelId: string; action: unknown }>(),
   onFxPopupClosed: noopDataListener<string>(),
 
+  // Mixer-Window Popup (Web-Fallback: no-op stubs).
+  openMixerWindow: async () => ({ success: false }),
+  closeMixerWindow: async () => ({ success: false }),
+  isMixerWindowOpen: async () => false,
+  setMixerWindowAlwaysOnTop: async (_alwaysOnTop: boolean) => ({ success: false, alwaysOnTop: false }),
+  isMixerWindowAlwaysOnTop: async () => false,
+  sendMixerPopupState: (_state: unknown) => {},
+  sendMixerPopupAction: (_action: unknown) => {},
+  onMixerPopupState: noopDataListener<unknown>(),
+  onMixerPopupAction: noopDataListener<unknown>(),
+  onMixerPopupClosed: noopVoidListener,
+
   showNotification: (_title: string, _body: string) => {},
   showConfirmDialog: async (_options: { title?: string; message: string }) => ({ response: 0 }),
   showErrorDialog: async (_title: string, _message: string) => {},
@@ -352,6 +364,18 @@ export function useElectron() {
     onFxPopupState: api.onFxPopupState,
     onFxPopupAction: api.onFxPopupAction,
     onFxPopupClosed: api.onFxPopupClosed,
+
+    // Mixer-Window Popup
+    openMixerWindow: api.openMixerWindow,
+    closeMixerWindow: api.closeMixerWindow,
+    isMixerWindowOpen: api.isMixerWindowOpen,
+    setMixerWindowAlwaysOnTop: api.setMixerWindowAlwaysOnTop,
+    isMixerWindowAlwaysOnTop: api.isMixerWindowAlwaysOnTop,
+    sendMixerPopupState: api.sendMixerPopupState,
+    sendMixerPopupAction: api.sendMixerPopupAction,
+    onMixerPopupState: api.onMixerPopupState,
+    onMixerPopupAction: api.onMixerPopupAction,
+    onMixerPopupClosed: api.onMixerPopupClosed,
   };
 }
 

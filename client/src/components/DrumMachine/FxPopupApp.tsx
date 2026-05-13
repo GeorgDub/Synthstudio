@@ -18,6 +18,7 @@
 import { useEffect, useState } from "react";
 import { useElectron } from "../../../../electron/useElectron";
 import { FxPanelBody } from "./FxPanel";
+import { DetachableWindowHeader } from "@/components/Window/DetachableWindowHeader";
 import type { ChannelFx } from "@/audio/AudioEngine";
 
 /** Vollständiger State-Snapshot pro Kanal, vom Main-Renderer geschickt. */
@@ -113,43 +114,13 @@ export function FxPopupApp({ channelId }: FxPopupAppProps) {
 
   return (
     <div className="flex flex-col h-screen bg-bg-base">
-      {/* Frameless Header — identisches Pattern wie Performance-Popup */}
-      <div
-        className="flex items-center h-7 px-3 bg-bg-elevated border-b border-border-color select-none flex-shrink-0"
-        style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
-      >
-        <span className="text-[10px] text-text-dim uppercase tracking-wider flex-1">
-          FX — {state.partName}
-        </span>
-        <div
-          className="flex items-center gap-1"
-          style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
-        >
-          <button
-            onClick={toggleAlwaysOnTop}
-            aria-label={alwaysOnTop ? "Always-on-top deaktivieren" : "Always-on-top aktivieren"}
-            title={alwaysOnTop ? "Fenster bleibt im Vordergrund (Klick zum Lösen)" : "Fenster im Vordergrund halten"}
-            data-testid="fx-popup-always-on-top"
-            className={[
-              "px-2 py-0.5 text-[10px] rounded border transition-colors active:scale-95",
-              alwaysOnTop
-                ? "bg-accent-primary/20 text-accent-primary border-accent-primary"
-                : "bg-bg-base text-text-dim border-border-color hover:text-text-primary hover:border-accent-secondary",
-            ].join(" ")}
-          >
-            📌 {alwaysOnTop ? "Pinned" : "Pin"}
-          </button>
-          <button
-            onClick={() => electron.closeFxWindow?.(channelId)}
-            aria-label="FX-Fenster schließen"
-            data-testid="fx-popup-close"
-            title="Fenster schließen"
-            className="w-5 h-5 rounded text-[12px] text-text-dim hover:bg-accent-danger hover:text-bg-base transition-colors active:scale-95 flex items-center justify-center"
-          >
-            ✕
-          </button>
-        </div>
-      </div>
+      <DetachableWindowHeader
+        title={`FX — ${state.partName}`}
+        alwaysOnTop={alwaysOnTop}
+        onToggleAlwaysOnTop={toggleAlwaysOnTop}
+        onClose={() => electron.closeFxWindow?.(channelId)}
+        testIdPrefix="fx-popup"
+      />
 
       <div className="flex-1 overflow-auto p-3">
         <FxPanelBody fx={state.fx} onFxChange={handleFxChange} />

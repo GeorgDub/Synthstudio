@@ -840,6 +840,20 @@ export function MixerView({ dm, mixer, samples = [], bpm = 120, projectName = "S
         >
           ▶▶ Spectrum
         </button>
+
+        {/* Pin / Detach (Multi-Window-Workspace, post-v1.26.0). Nur Electron.
+            Öffnet den Mixer in einem eigenen Fenster für Multi-Monitor-Workflow. */}
+        {electron.isElectron && (
+          <button
+            type="button"
+            onClick={() => electron.openMixerWindow?.()}
+            data-testid="mixer-open-in-window"
+            className="px-2 py-0.5 text-[10px] rounded border border-border-color text-text-dim hover:text-accent-primary hover:border-accent-primary transition-colors"
+            title="Mixer in eigenes Fenster abkoppeln"
+          >
+            📌 Pin
+          </button>
+        )}
       </div>
 
       {/* Bus Compressor Settings */}

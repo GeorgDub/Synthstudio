@@ -88,6 +88,11 @@ let perfWindow: BrowserWindow | null = null;
  * Fenstern parallel offen haben.
  */
 const fxWindows = new Map<string, BrowserWindow>();
+/**
+ * Mixer-Popup-Window (post-v1.26.0 Multi-Window-Workspace).
+ * Singleton — anders als fxWindows; es gibt nur einen Mixer pro Session.
+ */
+let mixerWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let appStore: AppStore | null = null;
 
@@ -289,6 +294,10 @@ function createWindow(): void {
 
   mainWindow.on("closed", () => {
     mainWindow = null;
+    // Mixer-Popup mit-schließen wenn Haupt-Fenster geschlossen wird
+    if (mixerWindow && !mixerWindow.isDestroyed()) {
+      mixerWindow.close();
+    }
     // Performance-Popup mit-schließen wenn Haupt-Fenster geschlossen wird
     if (perfWindow && !perfWindow.isDestroyed()) {
       perfWindow.close();
@@ -469,6 +478,72 @@ function createFxWindow(channelId: string): void {
     fxWindows.delete(channelId);
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send("fx-window:closed", channelId);
+    }
+  });
+}
+
+/**
+ * Mixer-Popup-Fenster (Multi-Window-Workspace, post-v1.26.0).
+ *
+ * Identisches Pattern wie createPerformanceWindow:
+ *   - Singleton (es gibt nur einen Mixer pro Session — anders als FX-Panels).
+ *   - Frameless: Renderer (MixerPopupApp) rendert eigenen Header via
+ *     DetachableWindowHeader.
+ *   - URL-Param `?mixerPopup=1` signalisiert dem Renderer den Mode.
+ *   - BUG-017: `setMenu(null)` — Popups dürfen keine Menu-Accelerators
+ *     erben (würden sonst app.quit() triggern können).
+ */
+function createMixerWindow(): void {
+  if (mixerWindow && !mixerWindow.isDestroyed()) {
+    mixerWindow.focus();
+    return;
+  }
+
+  mixerWindow = new BrowserWindow({
+    width: 720,
+    height: 520,
+    minWidth: 480,
+    minHeight: 360,
+    title: `${APP_NAME} – Mixer`,
+    backgroundColor: "#0a0a0a",
+    frame: false,
+    titleBarStyle: "default",
+    parent: mainWindow ?? undefined,
+    show: false,
+    webPreferences: {
+      preload: path.join(__dirname, "preload.cjs"),
+      contextIsolation: true,
+      nodeIntegration: false,
+      autoplayPolicy: "no-user-gesture-required",
+      webSecurity: !isDev,
+    },
+  });
+
+  // BUG-017 fix: popup windows must NOT inherit the application menu.
+  mixerWindow.setMenu(null);
+
+  mixerWindow.once("ready-to-show", () => {
+    mixerWindow?.show();
+  });
+
+  if (isDev) {
+    mixerWindow.loadURL(`${devServerUrl}?mixerPopup=1`);
+  } else {
+    const indexPath = path.join(__dirname, "..", "dist", "public", "index.html");
+    mixerWindow.loadFile(indexPath, { search: "mixerPopup=1" }).catch(err => {
+      console.error("[MixerWindow] loadFile failed:", err);
+    });
+  }
+
+  mixerWindow.webContents.setWindowOpenHandler(({ url }) => {
+    shell.openExternal(url);
+    return { action: "deny" };
+  });
+
+  mixerWindow.on("closed", () => {
+    mixerWindow = null;
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send("mixer-window:closed");
     }
   });
 }
@@ -1458,6 +1533,54 @@ function registerIpcHandlers(): void {
       }
     },
   );
+
+  // ── Mixer-Window Popup (Multi-Window-Workspace, post-v1.26.0) ────────────────
+  // Singleton-Pattern wie perf-popup. Channels narrow-data-only.
+
+  ipcMain.handle("window:open-mixer", () => {
+    createMixerWindow();
+    return { success: true };
+  });
+
+  ipcMain.handle("window:close-mixer", () => {
+    if (mixerWindow && !mixerWindow.isDestroyed()) {
+      mixerWindow.close();
+    }
+    return { success: true };
+  });
+
+  ipcMain.handle("window:is-mixer-open", () => {
+    return mixerWindow !== null && !mixerWindow.isDestroyed();
+  });
+
+  ipcMain.handle("window:mixer-set-always-on-top", (_event, alwaysOnTop: boolean) => {
+    if (mixerWindow && !mixerWindow.isDestroyed()) {
+      mixerWindow.setAlwaysOnTop(!!alwaysOnTop);
+      return { success: true, alwaysOnTop: !!alwaysOnTop };
+    }
+    return { success: false, alwaysOnTop: false };
+  });
+
+  ipcMain.handle("window:mixer-is-always-on-top", () => {
+    if (mixerWindow && !mixerWindow.isDestroyed()) {
+      return mixerWindow.isAlwaysOnTop();
+    }
+    return false;
+  });
+
+  // State-Broadcast Main → Mixer-Popup.
+  ipcMain.on("mixer-sync:state", (_event, statePayload: unknown) => {
+    if (mixerWindow && !mixerWindow.isDestroyed()) {
+      mixerWindow.webContents.send("mixer-sync:state", statePayload);
+    }
+  });
+
+  // Action-Forwarding Mixer-Popup → Main.
+  ipcMain.on("mixer-sync:action", (_event, actionPayload: unknown) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send("mixer-sync:action", actionPayload);
+    }
+  });
 
   // ── App-Info ─────────────────────────────────────────────────────────────────
 

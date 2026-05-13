@@ -28,6 +28,7 @@ import { useElectronMenuBindings } from "../../electron/hooks/useElectronMenuBin
 // ── Performance-Popup-Mode (ROADMAP feature) ─────────────────────────────────
 import { PerformancePopupApp } from "@/components/PerformanceMode/PerformancePopupApp";
 import { FxPopupApp } from "@/components/DrumMachine/FxPopupApp";
+import { MixerPopupApp, type MixerPopupAction } from "@/components/Mixer/MixerPopupApp";
 
 // ── Eigene Stores & Hooks ─────────────────────────────────────────────────────
 import { useProjectStore } from "@/store/useProjectStore";
@@ -210,6 +211,20 @@ function getFxPopupChannelId(): string | null {
   }
 }
 
+/**
+ * Erkennt ob die App im Mixer-Popup-Mode läuft.
+ * URL-Param `?mixerPopup=1` wird von electron/main.ts createMixerWindow gesetzt.
+ * Multi-Window-Workspace (post-v1.26.0).
+ */
+function isMixerPopupMode(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return new URLSearchParams(window.location.search).get("mixerPopup") === "1";
+  } catch {
+    return false;
+  }
+}
+
 export default function App() {
   // ── Performance-Popup-Mode: nur PerformancePopupApp rendern, früh raus ──
   // Wenn URL ?perfPopup=1 → das ist der Popup-Renderer, NICHT die volle App.
@@ -223,6 +238,10 @@ export default function App() {
   const fxChannelId = getFxPopupChannelId();
   if (fxChannelId) {
     return <FxPopupApp channelId={fxChannelId} />;
+  }
+  // ── Mixer-Popup-Mode: nur MixerPopupApp rendern ──
+  if (isMixerPopupMode()) {
+    return <MixerPopupApp />;
   }
 
   // ── Electron-Hook (einziger Zugriffspunkt auf Electron-Features) ────────────
@@ -262,6 +281,17 @@ export default function App() {
     if (!electron.isElectron) return;
     const cleanup = electron.onPerfPopupClosed?.(() => {
       setPerformancePopupOpen(false);
+    });
+    return cleanup;
+  }, [electron]);
+
+  // ── Mixer-Popup-Window (Multi-Window-Workspace, post-v1.26.0) ─────────────
+  const [mixerPopupOpen, setMixerPopupOpen] = useState(false);
+
+  useEffect(() => {
+    if (!electron.isElectron) return;
+    const cleanup = electron.onMixerPopupClosed?.(() => {
+      setMixerPopupOpen(false);
     });
     return cleanup;
   }, [electron]);
@@ -1659,6 +1689,104 @@ export default function App() {
     });
     return cleanup;
   }, [electron]);
+
+  // ── Mixer-Popup State-Broadcast (Multi-Window-Workspace, post-v1.26.0) ────
+  // Tracking: setMixerPopupOpen wurde im Open-Click + onMixerPopupClosed-Event
+  // verwaltet (siehe oben). Hier nur der Broadcast bei State-Änderungen.
+
+  useEffect(() => {
+    if (!electron.isElectron || !mixerPopupOpen) return;
+    const activePattern = dm.patterns.find((p) => p.id === dm.activePatternId);
+    if (!activePattern) return;
+    electron.sendMixerPopupState?.({
+      channels: activePattern.parts.map((part) => ({
+        partId: part.id,
+        name: part.name,
+        volume: part.volume,
+        pan: part.pan,
+        muted: part.muted,
+        soloed: part.soloed,
+      })),
+      masterVolume: mixer.masterVolume,
+      bpm: project.bpm,
+      selectedPartId: mixer.selectedChannelId,
+    });
+  }, [
+    electron,
+    mixerPopupOpen,
+    dm.patterns,
+    dm.activePatternId,
+    mixer.masterVolume,
+    mixer.selectedChannelId,
+    project.bpm,
+  ]);
+
+  // Action-Listener: Mixer-Popup → Main.
+  useEffect(() => {
+    if (!electron.isElectron) return;
+    const cleanup = electron.onMixerPopupAction?.((payload) => {
+      if (!payload || typeof payload !== "object") return;
+      const action = payload as Record<string, unknown>;
+      const d = dmRef.current;
+      switch (action.type) {
+        case "request-state": {
+          // Popup hat gemountet — markiere als offen + broadcast sofort
+          setMixerPopupOpen(true);
+          const activePattern = d.patterns.find((p) => p.id === d.activePatternId);
+          if (!activePattern) break;
+          electron.sendMixerPopupState?.({
+            channels: activePattern.parts.map((part) => ({
+              partId: part.id,
+              name: part.name,
+              volume: part.volume,
+              pan: part.pan,
+              muted: part.muted,
+              soloed: part.soloed,
+            })),
+            masterVolume: mixer.masterVolume,
+            bpm: project.bpm,
+            selectedPartId: mixer.selectedChannelId,
+          });
+          break;
+        }
+        case "set-part-volume":
+          if (typeof action.partId === "string" && typeof action.volume === "number") {
+            d.setPartVolume(action.partId, action.volume);
+          }
+          break;
+        case "set-part-pan":
+          if (typeof action.partId === "string" && typeof action.pan === "number") {
+            d.setPartPan(action.partId, action.pan);
+          }
+          break;
+        case "set-part-mute":
+          if (typeof action.partId === "string" && typeof action.muted === "boolean") {
+            d.setPartMuted(action.partId, action.muted);
+          }
+          break;
+        case "set-part-solo":
+          if (typeof action.partId === "string" && typeof action.soloed === "boolean") {
+            // FOLLOWUP-102-3: shiftKey toggelt zwischen exclusive (default) und additive Verhalten.
+            const exclusive = !action.shiftKey;
+            d.setPartSoloed(action.partId, action.soloed, exclusive);
+          }
+          break;
+        case "select-part":
+          if (typeof action.partId === "string") {
+            mixer.setSelectedChannel(action.partId);
+          }
+          break;
+        case "set-master-volume":
+          if (typeof action.volume === "number") {
+            mixer.setMasterVolume(action.volume);
+            AudioEngine.setMasterVolume(action.volume);
+          }
+          break;
+      }
+    });
+    return cleanup;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [electron, mixer.masterVolume, mixer.selectedChannelId, project.bpm]);
 
   // ── Render ────────────────────────────────────────────────────────────────
 
