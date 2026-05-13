@@ -134,6 +134,9 @@ function analyzeWithWorker(filePath, numPeaks) {
                     channels: msg.channels,
                     bitDepth: msg.bitDepth,
                     fileSize: msg.fileSize,
+                    // BUG-012 Fix: BPM-Felder durchreichen (worker liefert sie für WAV)
+                    estimatedBpm: msg.estimatedBpm,
+                    bpmConfidence: msg.bpmConfidence,
                 });
             }
             else if (msg.type === "error") {

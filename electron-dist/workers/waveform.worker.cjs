@@ -129,6 +129,86 @@ function extractPeaks(buffer, header, numPeaks) {
     }
     return peaks;
 }
+// ─── BPM-Detection auf PCM-Samples (BUG-012 Fix) ─────────────────────────────
+/**
+ * Onset-basierte BPM-Schätzung auf rohen PCM-Samples eines WAV-Files.
+ * Liest die Samples des ersten Kanals und nutzt das gleiche Energy-Onset-
+ * Algorithmus wie der Renderer-Worker (client/src/workers/audioAnalysis.worker.ts).
+ * Begrenzt sich auf die ersten 30 Sekunden um Worker-Latenz zu deckeln.
+ */
+function detectBpmFromWav(buffer, header) {
+    try {
+        const { sampleRate, channels, bitDepth, dataOffset, dataSize } = header;
+        const bytesPerSample = Math.ceil(bitDepth / 8);
+        const totalFrames = Math.floor(dataSize / (bytesPerSample * channels));
+        const maxFrames = Math.min(totalFrames, sampleRate * 30); // max 30s
+        const windowSize = Math.floor(sampleRate * 0.01); // 10ms
+        const energies = [];
+        for (let i = 0; i < maxFrames - windowSize; i += windowSize) {
+            let energy = 0;
+            for (let j = i; j < i + windowSize; j++) {
+                const byteOffset = dataOffset + j * bytesPerSample * channels;
+                if (byteOffset + bytesPerSample > buffer.length)
+                    break;
+                let sample = 0;
+                if (bitDepth === 8)
+                    sample = (buffer.readUInt8(byteOffset) - 128) / 128;
+                else if (bitDepth === 16)
+                    sample = buffer.readInt16LE(byteOffset) / 32768;
+                else if (bitDepth === 24) {
+                    const b0 = buffer.readUInt8(byteOffset);
+                    const b1 = buffer.readUInt8(byteOffset + 1);
+                    const b2 = buffer.readUInt8(byteOffset + 2);
+                    let val = (b2 << 16) | (b1 << 8) | b0;
+                    if (val & 0x800000)
+                        val = val - 0x1000000;
+                    sample = val / 8388608;
+                }
+                else if (bitDepth === 32)
+                    sample = buffer.readFloatLE(byteOffset);
+                energy += sample * sample;
+            }
+            energies.push(energy / windowSize);
+        }
+        if (energies.length < 100)
+            return null;
+        const onsets = [];
+        const threshold = 1.5;
+        for (let i = 1; i < energies.length - 1; i++) {
+            const localMean = energies.slice(Math.max(0, i - 20), i).reduce((a, b) => a + b, 0) /
+                Math.min(20, i);
+            if (energies[i] > localMean * threshold && energies[i] > energies[i - 1]) {
+                onsets.push((i * windowSize * 1000) / sampleRate);
+                i += 5;
+            }
+        }
+        if (onsets.length < 4)
+            return null;
+        const intervals = [];
+        for (let i = 1; i < onsets.length; i++) {
+            const interval = onsets[i] - onsets[i - 1];
+            if (interval > 200 && interval < 2000)
+                intervals.push(interval);
+        }
+        if (intervals.length === 0)
+            return null;
+        intervals.sort((a, b) => a - b);
+        const median = intervals[Math.floor(intervals.length / 2)];
+        let bpm = 60000 / median;
+        while (bpm < 60)
+            bpm *= 2;
+        while (bpm > 200)
+            bpm /= 2;
+        const mean = intervals.reduce((a, b) => a + b, 0) / intervals.length;
+        const variance = intervals.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / intervals.length;
+        const stdDev = Math.sqrt(variance);
+        const confidence = Math.max(0, Math.min(1, 1 - stdDev / mean));
+        return { bpm: Math.round(bpm), confidence };
+    }
+    catch {
+        return null;
+    }
+}
 // ─── Schätzung für komprimierte Formate ──────────────────────────────────────
 function estimatePeaks(fileSize, numPeaks) {
     // Pseudo-Zufallswerte basierend auf Dateigröße (konsistent, aber nicht real)
@@ -165,6 +245,8 @@ function analyzeFile(filePath, numPeaks) {
         }
         const peaks = extractPeaks(buffer, header, numPeaks);
         const duration = header.dataSize / (header.sampleRate * header.channels * Math.ceil(header.bitDepth / 8));
+        // BUG-012 Fix: BPM für WAV-Files mit-berechnen (best-effort).
+        const bpmResult = detectBpmFromWav(buffer, header);
         return {
             type: "result",
             peaks,
@@ -173,6 +255,8 @@ function analyzeFile(filePath, numPeaks) {
             channels: header.channels,
             bitDepth: header.bitDepth,
             fileSize,
+            estimatedBpm: bpmResult && bpmResult.confidence > 0.3 ? bpmResult.bpm : undefined,
+            bpmConfidence: bpmResult?.confidence,
         };
     }
     else {

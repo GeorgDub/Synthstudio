@@ -66,10 +66,12 @@ export function PatternGeneratorPopupApp() {
   }, [electron]);
 
   // Notify main that popup is mounted (so main can hide the inline panel).
+  // BUG-023: nur auf Mount — useElectron gibt neue Ref pro Render zurück.
   useEffect(() => {
     if (!electron.isElectron) return;
     electron.sendPatternGenPopupAction?.({ type: "popup-mounted" });
-  }, [electron]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const toggleAlwaysOnTop = () => {
     if (!electron.isElectron) return;

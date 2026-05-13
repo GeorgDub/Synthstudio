@@ -105,7 +105,9 @@ export function PerformancePopupApp() {
   useEffect(() => {
     if (!electron.isElectron) return;
     electron.sendPerfPopupAction?.({ type: "request-state" });
-  }, [electron]);
+  // BUG-023: nur auf Mount — sonst re-sendet jeder Render wegen useElectron-Ref
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Initial-State für Always-on-top abfragen
   useEffect(() => {

@@ -107,11 +107,12 @@ export function SampleBrowserPopupApp() {
     return cleanup;
   }, [electron]);
 
-  // Initial-Request
+  // Initial-Request — nur auf Mount (BUG-023: useElectron-Ref ist nicht stabil)
   useEffect(() => {
     if (!electron.isElectron) return;
     electron.sendSampleBrowserPopupAction?.({ type: "request-state" });
-  }, [electron]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Always-on-top initial
   useEffect(() => {

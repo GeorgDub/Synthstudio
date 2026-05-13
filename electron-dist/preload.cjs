@@ -39,6 +39,15 @@ const electronAPI = {
     isElectron: true,
     /** Plattform */
     platform: process.platform,
+    // ── Crash-Log Bridge (DIAG-2) ────────────────────────────────────────────────
+    /** Sendet einen Renderer-Crash an main's crash.log. Fire-and-forget. */
+    logRendererCrash: (source, message, stack) => {
+        electron_1.ipcRenderer.send("renderer:crash", { source, message, stack });
+    },
+    /** Loggt ein Event aus dem Renderer (für detailliertere Tracing). */
+    logRendererEvent: (label, payload) => {
+        electron_1.ipcRenderer.send("renderer:event", { label, payload });
+    },
     // ── App-Info ─────────────────────────────────────────────────────────────────
     getVersion: () => electron_1.ipcRenderer.invoke("app:get-version"),
     getPlatform: () => electron_1.ipcRenderer.invoke("app:get-platform"),
@@ -121,6 +130,142 @@ const electronAPI = {
     },
     // Fullscreen-Change-Event
     onFullscreenChanged: createEventListener("window:fullscreen-changed"),
+    // ── Performance-Mode Popup-Window (ROADMAP feature) ──────────────────────────
+    // Bidirektionaler State-Sync zwischen Haupt-Fenster und Performance-Popup.
+    // Alle Payloads sind narrow-data-only (plain JSON, keine File-Paths).
+    openPerformanceWindow: () => electron_1.ipcRenderer.invoke("window:open-performance"),
+    closePerformanceWindow: () => electron_1.ipcRenderer.invoke("window:close-performance"),
+    isPerformanceWindowOpen: () => electron_1.ipcRenderer.invoke("window:is-performance-open"),
+    // State-Broadcast (Main-Renderer → Popup-Renderer via Main-Process-Routing).
+    // Main-Renderer ruft das wenn sich pads/activePattern/quantize/bpm/currentStep
+    // ändert. Popup-Renderer empfängt es als perf-sync:state Event.
+    sendPerfPopupState: (state) => {
+        electron_1.ipcRenderer.send("perf-sync:state", state);
+    },
+    // Action (Popup-Renderer → Main-Renderer via Main-Process-Routing).
+    // Popup-Renderer ruft das wenn der User einen Pad klickt / Quantize-Mode
+    // ändert. Main-Renderer empfängt es als perf-sync:action Event und dispatcht
+    // in seine Stores.
+    sendPerfPopupAction: (action) => {
+        electron_1.ipcRenderer.send("perf-sync:action", action);
+    },
+    onPerfPopupState: createEventListener("perf-sync:state"),
+    onPerfPopupAction: createEventListener("perf-sync:action"),
+    onPerfPopupClosed: createVoidListener("perf-window:closed"),
+    // Phase 2: Always-on-top für das Performance-Popup
+    setPerfPopupAlwaysOnTop: (alwaysOnTop) => electron_1.ipcRenderer.invoke("window:perf-set-always-on-top", alwaysOnTop),
+    isPerfPopupAlwaysOnTop: () => electron_1.ipcRenderer.invoke("window:perf-is-always-on-top"),
+    // ── FX-Window Popup (Multi-Window-Workspace Phase 1, post-v1.25.0) ───────────
+    // Pro Kanal ein eigenes pinnable FX-Window. Identisches Pattern wie das
+    // Performance-Popup: schmale Channels, narrow-data-only Payloads.
+    openFxWindow: (channelId) => electron_1.ipcRenderer.invoke("window:open-fx", channelId),
+    closeFxWindow: (channelId) => electron_1.ipcRenderer.invoke("window:close-fx", channelId),
+    isFxWindowOpen: (channelId) => electron_1.ipcRenderer.invoke("window:is-fx-open", channelId),
+    setFxWindowAlwaysOnTop: (channelId, alwaysOnTop) => electron_1.ipcRenderer.invoke("window:fx-set-always-on-top", { channelId, alwaysOnTop }),
+    isFxWindowAlwaysOnTop: (channelId) => electron_1.ipcRenderer.invoke("window:fx-is-always-on-top", channelId),
+    // State-Broadcast: Main-Renderer → FX-Popup-Renderer (via Main-Process-Routing).
+    // Wird im Main-Renderer bei Änderungen des Kanal-FX-State gefeuert.
+    sendFxPopupState: (channelId, state) => {
+        electron_1.ipcRenderer.send("fx-sync:state", { channelId, state });
+    },
+    // Action: FX-Popup-Renderer → Main-Renderer. Popup ruft das wenn der User
+    // einen FX-Parameter ändert. Main-Renderer empfängt es und dispatcht in den
+    // useDrumMachineStore.
+    sendFxPopupAction: (channelId, action) => {
+        electron_1.ipcRenderer.send("fx-sync:action", { channelId, action });
+    },
+    onFxPopupState: createEventListener("fx-sync:state"),
+    onFxPopupAction: createEventListener("fx-sync:action"),
+    onFxPopupClosed: createEventListener("fx-window:closed"),
+    // ── Mixer-Window Popup (Multi-Window-Workspace, post-v1.26.0) ────────────────
+    // Singleton-Popup wie Performance-Mode. Channels narrow-data-only.
+    openMixerWindow: () => electron_1.ipcRenderer.invoke("window:open-mixer"),
+    closeMixerWindow: () => electron_1.ipcRenderer.invoke("window:close-mixer"),
+    isMixerWindowOpen: () => electron_1.ipcRenderer.invoke("window:is-mixer-open"),
+    setMixerWindowAlwaysOnTop: (alwaysOnTop) => electron_1.ipcRenderer.invoke("window:mixer-set-always-on-top", alwaysOnTop),
+    isMixerWindowAlwaysOnTop: () => electron_1.ipcRenderer.invoke("window:mixer-is-always-on-top"),
+    sendMixerPopupState: (state) => {
+        electron_1.ipcRenderer.send("mixer-sync:state", state);
+    },
+    sendMixerPopupAction: (action) => {
+        electron_1.ipcRenderer.send("mixer-sync:action", action);
+    },
+    onMixerPopupState: createEventListener("mixer-sync:state"),
+    onMixerPopupAction: createEventListener("mixer-sync:action"),
+    onMixerPopupClosed: createVoidListener("mixer-window:closed"),
+    // ── Sample-Browser-Window Popup (Multi-Window-Workspace, post-v1.27.0) ───────
+    // Singleton-Popup. Browse-only View — Pin-Pattern mit click-to-assign.
+    openSampleBrowserWindow: () => electron_1.ipcRenderer.invoke("window:open-sample-browser"),
+    closeSampleBrowserWindow: () => electron_1.ipcRenderer.invoke("window:close-sample-browser"),
+    isSampleBrowserWindowOpen: () => electron_1.ipcRenderer.invoke("window:is-sample-browser-open"),
+    setSampleBrowserWindowAlwaysOnTop: (alwaysOnTop) => electron_1.ipcRenderer.invoke("window:sample-browser-set-always-on-top", alwaysOnTop),
+    isSampleBrowserWindowAlwaysOnTop: () => electron_1.ipcRenderer.invoke("window:sample-browser-is-always-on-top"),
+    sendSampleBrowserPopupState: (state) => {
+        electron_1.ipcRenderer.send("sample-browser-sync:state", state);
+    },
+    sendSampleBrowserPopupAction: (action) => {
+        electron_1.ipcRenderer.send("sample-browser-sync:action", action);
+    },
+    onSampleBrowserPopupState: createEventListener("sample-browser-sync:state"),
+    onSampleBrowserPopupAction: createEventListener("sample-browser-sync:action"),
+    onSampleBrowserPopupClosed: createVoidListener("sample-browser-window:closed"),
+    // ── Pattern-Generator-Window Popup (Multi-Window-Workspace, post-v1.27.0) ────
+    // Singleton-Popup. Apply-Pattern flow via Action-Channel.
+    openPatternGenWindow: () => electron_1.ipcRenderer.invoke("window:open-pattern-gen"),
+    closePatternGenWindow: () => electron_1.ipcRenderer.invoke("window:close-pattern-gen"),
+    isPatternGenWindowOpen: () => electron_1.ipcRenderer.invoke("window:is-pattern-gen-open"),
+    setPatternGenWindowAlwaysOnTop: (alwaysOnTop) => electron_1.ipcRenderer.invoke("window:pattern-gen-set-always-on-top", alwaysOnTop),
+    isPatternGenWindowAlwaysOnTop: () => electron_1.ipcRenderer.invoke("window:pattern-gen-is-always-on-top"),
+    sendPatternGenPopupAction: (action) => {
+        electron_1.ipcRenderer.send("pattern-gen-sync:action", action);
+    },
+    onPatternGenPopupAction: createEventListener("pattern-gen-sync:action"),
+    onPatternGenPopupClosed: createVoidListener("pattern-gen-window:closed"),
+    // ── Tools-Popup-Windows (post-v1.28.0) ───────────────────────────────────────
+    // Keyboard Sampler, Chord Progression, Pattern Library — drei singletons,
+    // selbes Muster wie Mixer-Window.
+    openKeyboardSamplerWindow: () => electron_1.ipcRenderer.invoke("window:open-keyboard-sampler"),
+    closeKeyboardSamplerWindow: () => electron_1.ipcRenderer.invoke("window:close-keyboard-sampler"),
+    isKeyboardSamplerWindowOpen: () => electron_1.ipcRenderer.invoke("window:is-keyboard-sampler-open"),
+    setKeyboardSamplerWindowAlwaysOnTop: (alwaysOnTop) => electron_1.ipcRenderer.invoke("window:keyboard-sampler-set-always-on-top", alwaysOnTop),
+    isKeyboardSamplerWindowAlwaysOnTop: () => electron_1.ipcRenderer.invoke("window:keyboard-sampler-is-always-on-top"),
+    sendKeyboardSamplerPopupState: (state) => {
+        electron_1.ipcRenderer.send("keyboard-sampler-sync:state", state);
+    },
+    sendKeyboardSamplerPopupAction: (action) => {
+        electron_1.ipcRenderer.send("keyboard-sampler-sync:action", action);
+    },
+    onKeyboardSamplerPopupState: createEventListener("keyboard-sampler-sync:state"),
+    onKeyboardSamplerPopupAction: createEventListener("keyboard-sampler-sync:action"),
+    onKeyboardSamplerPopupClosed: createVoidListener("keyboardSamplerPopup-window:closed"),
+    openChordProgressionWindow: () => electron_1.ipcRenderer.invoke("window:open-chord-progression"),
+    closeChordProgressionWindow: () => electron_1.ipcRenderer.invoke("window:close-chord-progression"),
+    isChordProgressionWindowOpen: () => electron_1.ipcRenderer.invoke("window:is-chord-progression-open"),
+    setChordProgressionWindowAlwaysOnTop: (alwaysOnTop) => electron_1.ipcRenderer.invoke("window:chord-progression-set-always-on-top", alwaysOnTop),
+    isChordProgressionWindowAlwaysOnTop: () => electron_1.ipcRenderer.invoke("window:chord-progression-is-always-on-top"),
+    sendChordProgressionPopupState: (state) => {
+        electron_1.ipcRenderer.send("chord-progression-sync:state", state);
+    },
+    sendChordProgressionPopupAction: (action) => {
+        electron_1.ipcRenderer.send("chord-progression-sync:action", action);
+    },
+    onChordProgressionPopupState: createEventListener("chord-progression-sync:state"),
+    onChordProgressionPopupAction: createEventListener("chord-progression-sync:action"),
+    onChordProgressionPopupClosed: createVoidListener("chordProgressionPopup-window:closed"),
+    openPatternLibraryWindow: () => electron_1.ipcRenderer.invoke("window:open-pattern-library"),
+    closePatternLibraryWindow: () => electron_1.ipcRenderer.invoke("window:close-pattern-library"),
+    isPatternLibraryWindowOpen: () => electron_1.ipcRenderer.invoke("window:is-pattern-library-open"),
+    setPatternLibraryWindowAlwaysOnTop: (alwaysOnTop) => electron_1.ipcRenderer.invoke("window:pattern-library-set-always-on-top", alwaysOnTop),
+    isPatternLibraryWindowAlwaysOnTop: () => electron_1.ipcRenderer.invoke("window:pattern-library-is-always-on-top"),
+    sendPatternLibraryPopupState: (state) => {
+        electron_1.ipcRenderer.send("pattern-library-sync:state", state);
+    },
+    sendPatternLibraryPopupAction: (action) => {
+        electron_1.ipcRenderer.send("pattern-library-sync:action", action);
+    },
+    onPatternLibraryPopupState: createEventListener("pattern-library-sync:state"),
+    onPatternLibraryPopupAction: createEventListener("pattern-library-sync:action"),
+    onPatternLibraryPopupClosed: createVoidListener("patternLibraryPopup-window:closed"),
     // ── Benachrichtigungen ───────────────────────────────────────────────────────
     showNotification: (title, body) => electron_1.ipcRenderer.invoke("notification:show", title, body),
     openExternal: async (url) => {
@@ -150,6 +295,19 @@ const electronAPI = {
     onMenuToggleFullscreen: createVoidListener("menu:toggle-fullscreen"),
     onMenuBounce: createVoidListener("menu:bounce"),
     onMenuOpenSampleLibrary: createVoidListener("menu:open-sample-library"),
+    // post-v1.25.0 — neue Menü-Items für Music-Production-fokussierte Menübar
+    onMenuPatternClear: createVoidListener("menu:pattern-clear"),
+    onMenuPatternRandomize: createVoidListener("menu:pattern-randomize"),
+    onMenuPatternFill: createVoidListener("menu:pattern-fill"),
+    onMenuPatternDuplicate: createVoidListener("menu:pattern-duplicate"),
+    onMenuPatternNext: createVoidListener("menu:pattern-next"),
+    onMenuPatternPrev: createVoidListener("menu:pattern-prev"),
+    onMenuBpmUp: createVoidListener("menu:bpm-up"),
+    onMenuBpmDown: createVoidListener("menu:bpm-down"),
+    onMenuTapTempo: createVoidListener("menu:tap-tempo"),
+    onMenuOpenPerformance: createVoidListener("menu:open-performance"),
+    onMenuOpenAudioWorkbench: createVoidListener("menu:open-audio-workbench"),
+    onMenuTab: createEventListener("menu:tab"),
     // ── Keyboard-Shortcuts (globale Media-Keys) ──────────────────────────────────
     onShortcutTransportToggle: createVoidListener("shortcut:transport-toggle"),
     onShortcutTransportStop: createVoidListener("shortcut:transport-stop"),

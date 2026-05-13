@@ -59,11 +59,12 @@ export function FxPopupApp({ channelId }: FxPopupAppProps) {
     return cleanup;
   }, [electron, channelId]);
 
-  // Initial-Request an Main
+  // Initial-Request an Main — nur einmal pro channelId (BUG-023)
   useEffect(() => {
     if (!electron.isElectron) return;
     electron.sendFxPopupAction?.(channelId, { type: "request-state" });
-  }, [electron, channelId]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [channelId]);
 
   // Always-on-top initial laden
   useEffect(() => {

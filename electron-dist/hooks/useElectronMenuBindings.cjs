@@ -98,6 +98,46 @@ function useElectronMenuBindings(bindings) {
         if (bindings.onBounce) {
             cleanups.push(electron.onMenuBounce?.(bindings.onBounce));
         }
+        // ── post-v1.25.0 — Music-Production-Menü-Items ──────────────────────────
+        if (bindings.onPatternClear) {
+            cleanups.push(electron.onMenuPatternClear?.(bindings.onPatternClear));
+        }
+        if (bindings.onPatternRandomize) {
+            cleanups.push(electron.onMenuPatternRandomize?.(bindings.onPatternRandomize));
+        }
+        if (bindings.onPatternFill) {
+            cleanups.push(electron.onMenuPatternFill?.(bindings.onPatternFill));
+        }
+        if (bindings.onPatternDuplicate) {
+            cleanups.push(electron.onMenuPatternDuplicate?.(bindings.onPatternDuplicate));
+        }
+        if (bindings.onPatternNext) {
+            cleanups.push(electron.onMenuPatternNext?.(bindings.onPatternNext));
+        }
+        if (bindings.onPatternPrev) {
+            cleanups.push(electron.onMenuPatternPrev?.(bindings.onPatternPrev));
+        }
+        if (bindings.onBpmUp) {
+            cleanups.push(electron.onMenuBpmUp?.(bindings.onBpmUp));
+        }
+        if (bindings.onBpmDown) {
+            cleanups.push(electron.onMenuBpmDown?.(bindings.onBpmDown));
+        }
+        if (bindings.onTapTempo) {
+            cleanups.push(electron.onMenuTapTempo?.(bindings.onTapTempo));
+        }
+        if (bindings.onOpenPerformance) {
+            cleanups.push(electron.onMenuOpenPerformance?.(bindings.onOpenPerformance));
+        }
+        if (bindings.onOpenAudioWorkbench) {
+            cleanups.push(electron.onMenuOpenAudioWorkbench?.(bindings.onOpenAudioWorkbench));
+        }
+        if (bindings.onTabChange) {
+            cleanups.push(electron.onMenuTab?.((tabId) => {
+                if (typeof tabId === "string")
+                    bindings.onTabChange(tabId);
+            }));
+        }
         // ── Cleanup ─────────────────────────────────────────────────────────────
         return () => {
             cleanups.forEach((cleanup) => cleanup?.());
@@ -119,6 +159,18 @@ function useElectronMenuBindings(bindings) {
         bindings.onRecord,
         bindings.onToggleFullscreen,
         bindings.onBounce,
+        bindings.onPatternClear,
+        bindings.onPatternRandomize,
+        bindings.onPatternFill,
+        bindings.onPatternDuplicate,
+        bindings.onPatternNext,
+        bindings.onPatternPrev,
+        bindings.onBpmUp,
+        bindings.onBpmDown,
+        bindings.onTapTempo,
+        bindings.onOpenPerformance,
+        bindings.onOpenAudioWorkbench,
+        bindings.onTabChange,
     ]);
 }
 // ─── Convenience-Hook für häufige Bindings ────────────────────────────────────

@@ -401,11 +401,19 @@ export default function App() {
   // ── Mixer-Popup-Window (Multi-Window-Workspace, post-v1.26.0) ─────────────
   const [mixerPopupOpen, setMixerPopupOpen] = useState(false);
 
+  // BUG-023: Guard gegen late request-state Messages nach destroy()
+  // Popup wird via win.destroy() mid-flight gekillt → in-flight IPC-Messages
+  // (z.B. request-state) können NACH dem closed-Event ankommen und würden
+  // mixerPopupOpen zurück auf true setzen. Wir ignorieren request-state für
+  // 1 Sekunde nach Close.
+  const mixerJustClosedRef = useRef(false);
   useEffect(() => {
     if (!electron.isElectron) return;
     const cleanup = electron.onMixerPopupClosed?.(() => {
       electron.logRendererEvent?.("popup-closed-received", { key: "mixer" });
+      mixerJustClosedRef.current = true;
       setMixerPopupOpen(false);
+      setTimeout(() => { mixerJustClosedRef.current = false; }, 1500);
     });
     return cleanup;
   }, [electron]);
@@ -1896,6 +1904,12 @@ export default function App() {
       switch (action.type) {
         case "request-state": {
           // Popup hat gemountet — markiere als offen + broadcast sofort
+          electron.logRendererEvent?.("mixer-request-state-received", {});
+          // BUG-023: ignoriere late messages nach destroy()
+          if (mixerJustClosedRef.current) {
+            electron.logRendererEvent?.("mixer-request-state-IGNORED-late", {});
+            break;
+          }
           setMixerPopupOpen(true);
           const activePattern = d.patterns.find((p) => p.id === d.activePatternId);
           if (!activePattern) break;

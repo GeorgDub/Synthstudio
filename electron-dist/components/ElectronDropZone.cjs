@@ -49,35 +49,49 @@ function detectDropType(items) {
     return "unknown";
 }
 // ─── Farben pro Drop-Typ ──────────────────────────────────────────────────────
+//
+// Kategorische Palette: jeder Drop-Typ benötigt eine visuell unterscheidbare
+// Farbe. Wir mappen auf die vier semantischen Akzent-Tokens (TASK-122):
+//   audio   → accent-primary   (Hauptaktion, kommt am häufigsten vor)
+//   folder  → accent-success   (Bulk-Import = positiv)
+//   project → accent-secondary (Projektdatei, abgehoben)
+//   zip     → accent-secondary (verwandt mit Projektimport)
+//   unknown → text-muted       (neutral, keine Aktion bestimmt)
+//
+// Wegen der Überschneidung project/zip wird zip im Border-Stil über die
+// Border-Farbe zusätzlich gedimmt. Themes mit nur drei Akzenten verlieren
+// die Differenzierung zwischen project und zip – akzeptiert als trade-off,
+// da die ohnehin große Drop-Overlay-Icons + Texte die Drop-Type-Information
+// dominant tragen.
 const DROP_STYLES = {
     audio: {
-        border: "border-cyan-500",
-        bg: "bg-cyan-500/10",
-        text: "text-cyan-400",
+        border: "border-accent-primary",
+        bg: "bg-accent-primary/10",
+        text: "text-accent-primary",
         label: "Audio-Dateien ablegen",
     },
     folder: {
-        border: "border-emerald-500",
-        bg: "bg-emerald-500/10",
-        text: "text-emerald-400",
+        border: "border-accent-success",
+        bg: "bg-accent-success/10",
+        text: "text-accent-success",
         label: "Ordner importieren",
     },
     project: {
-        border: "border-amber-500",
-        bg: "bg-amber-500/10",
-        text: "text-amber-400",
+        border: "border-accent-secondary",
+        bg: "bg-accent-secondary/10",
+        text: "text-accent-secondary",
         label: "Projekt öffnen",
     },
     zip: {
-        border: "border-violet-500",
-        bg: "bg-violet-500/10",
-        text: "text-violet-400",
+        border: "border-accent-secondary",
+        bg: "bg-accent-secondary/10",
+        text: "text-accent-secondary",
         label: "ZIP-Archiv extrahieren",
     },
     unknown: {
-        border: "border-slate-500",
-        bg: "bg-slate-500/10",
-        text: "text-slate-400",
+        border: "border-border-color",
+        bg: "bg-bg-elevated/10",
+        text: "text-text-muted",
         label: "Dateien ablegen",
     },
 };
@@ -163,6 +177,6 @@ function ElectronDropZone({ onAudioFiles, onFolder, onProject, onZipFile, childr
             flex flex-col items-center justify-center gap-4
             border-4 border-dashed transition-all duration-150
             ${style.border} ${style.bg}
-          `, children: [(0, jsx_runtime_1.jsx)("div", { className: `text-6xl ${style.text}`, children: dropType === "folder" ? "📁" : dropType === "project" ? "🎵" : dropType === "zip" ? "🗜️" : "🎚️" }), (0, jsx_runtime_1.jsx)("p", { className: `text-2xl font-bold tracking-wide ${style.text}`, children: style.label }), (0, jsx_runtime_1.jsxs)("p", { className: "text-sm text-slate-400", children: [dropType === "audio" && "WAV, MP3, OGG, FLAC, AIFF werden unterstützt", dropType === "folder" && "Alle Audio-Dateien im Ordner werden importiert", dropType === "project" && ".synth Projektdatei wird geöffnet", dropType === "zip" && "Audio-Dateien aus dem Archiv werden extrahiert", dropType === "unknown" && "Datei wird analysiert..."] })] }))] }));
+          `, children: [(0, jsx_runtime_1.jsx)("div", { className: `text-6xl ${style.text}`, children: dropType === "folder" ? "📁" : dropType === "project" ? "🎵" : dropType === "zip" ? "🗜️" : "🎚️" }), (0, jsx_runtime_1.jsx)("p", { className: `text-2xl font-bold tracking-wide ${style.text}`, children: style.label }), (0, jsx_runtime_1.jsxs)("p", { className: "text-sm text-text-muted", children: [dropType === "audio" && "WAV, MP3, OGG, FLAC, AIFF werden unterstützt", dropType === "folder" && "Alle Audio-Dateien im Ordner werden importiert", dropType === "project" && ".synth Projektdatei wird geöffnet", dropType === "zip" && "Audio-Dateien aus dem Archiv werden extrahiert", dropType === "unknown" && "Datei wird analysiert..."] })] }))] }));
 }
 exports.default = ElectronDropZone;

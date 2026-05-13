@@ -88,11 +88,14 @@ export function MixerPopupApp() {
     return cleanup;
   }, [electron]);
 
-  // Initial-Sync anfragen
+  // Initial-Sync anfragen (NUR auf Mount — BUG-023: vorher [electron]-dep
+  // führte zu Re-Send auf jedem Render weil useElectron() neue Refs zurückgibt,
+  // was nach Popup-Close den mixerPopupOpen-State zurück auf true gestellt hat)
   useEffect(() => {
     if (!electron.isElectron) return;
     electron.sendMixerPopupAction?.({ type: "request-state" });
-  }, [electron]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Always-on-top initial laden
   useEffect(() => {

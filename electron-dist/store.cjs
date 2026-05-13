@@ -51,6 +51,7 @@ const MAX_RECENT = 10;
 const DEFAULT = {
     recentProjects: [],
     windowBounds: { width: 1440, height: 900, isMaximized: false },
+    popupWindowLayouts: {},
     theme: "dark",
     lastImportPath: "",
     version: 1,
@@ -71,6 +72,8 @@ class AppStore {
                 ...DEFAULT,
                 ...parsed,
                 windowBounds: { ...DEFAULT.windowBounds, ...(parsed.windowBounds ?? {}) },
+                // popupWindowLayouts wurde post-v1.28.0 hinzugefügt — Migration-tolerant.
+                popupWindowLayouts: parsed.popupWindowLayouts ?? {},
             };
         }
         catch {
@@ -125,6 +128,38 @@ class AppStore {
     saveWindowBounds(bounds) {
         this.data.windowBounds = bounds;
         this.save();
+    }
+    // ─── Popup-Window-Layouts (post-v1.28.0) ───────────────────────────────────
+    /** Liefert das Layout eines named Popup (Singleton-Popups). */
+    getPopupLayout(key) {
+        return this.data.popupWindowLayouts[key];
+    }
+    /** Setzt das Layout eines named Popup (Singleton-Popups). */
+    setPopupLayout(key, layout) {
+        this.data.popupWindowLayouts[key] = layout;
+        this.save();
+    }
+    /** Liefert das Layout eines FX-Popup für eine channelId. */
+    getFxLayout(channelId) {
+        return this.data.popupWindowLayouts.fx?.[channelId];
+    }
+    /** Setzt das Layout eines FX-Popup für eine channelId. */
+    setFxLayout(channelId, layout) {
+        if (!this.data.popupWindowLayouts.fx)
+            this.data.popupWindowLayouts.fx = {};
+        this.data.popupWindowLayouts.fx[channelId] = layout;
+        this.save();
+    }
+    /** Liefert alle FX-Layouts (für Auto-Reopen beim App-Start). */
+    getAllFxLayouts() {
+        return this.data.popupWindowLayouts.fx ?? {};
+    }
+    /** Entfernt das Layout eines FX-Popup (z.B. wenn der Channel gelöscht wurde). */
+    deleteFxLayout(channelId) {
+        if (this.data.popupWindowLayouts.fx) {
+            delete this.data.popupWindowLayouts.fx[channelId];
+            this.save();
+        }
     }
     getStorePath() {
         return this.storePath;
