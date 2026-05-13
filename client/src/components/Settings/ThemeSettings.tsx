@@ -101,6 +101,8 @@ export function applyTheme(theme: ThemeId): void {
   } else {
     document.documentElement.setAttribute("data-theme", theme);
   }
+  // MIG-3C: alle dockview-popout Fenster bekommen das Theme mit
+  void import("@/utils/popoutThemeSync").then(m => m.broadcastThemeToPopouts());
 }
 
 export function loadSavedTheme(): ThemeId {

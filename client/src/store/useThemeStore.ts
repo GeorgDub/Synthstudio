@@ -119,6 +119,7 @@ export function applyCustomTheme(id: string | null): void {
         _state = { ..._state, activeCustomTheme: null };
         persist();
         notify();
+        void import("@/utils/popoutThemeSync").then(m => m.broadcastThemeToPopouts());
         return;
     }
 
@@ -167,6 +168,8 @@ export function applyCustomTheme(id: string | null): void {
         persist();
         notify();
     }
+    // MIG-3C: dockview-popout-Fenster bekommen Custom-Theme-Style mit
+    void import("@/utils/popoutThemeSync").then(m => m.broadcastThemeToPopouts());
 }
 
 // When a base theme is applied, deactivate any custom theme

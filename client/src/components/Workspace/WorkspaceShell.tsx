@@ -33,6 +33,7 @@ import {
   type DockviewApi,
 } from "dockview-react";
 import "dockview-react/dist/styles/dockview.css";
+import { registerPopoutWindow } from "@/utils/popoutThemeSync";
 
 /** Generic Dockview-Panel-Komponente Typ (props-agnostic). */
 export type WorkspacePanelComponent = React.FunctionComponent<IDockviewPanelProps>;
@@ -50,6 +51,11 @@ function PopOutHeaderAction({ containerApi, group, activePanel }: IDockviewHeade
       // Default-Größe; Electron's setWindowOpenHandler nutzt diese als
       // overrideBrowserWindowOptions.
       position: { width: 800, height: 600, left: 100, top: 100 },
+      // MIG-3C: Theme-Sync — neues Fenster bekommt aktuelles data-theme +
+      // Custom-Theme-Style geklont; Auto-Unregister beim Schließen.
+      onDidOpen: ({ window: popoutWindow }) => {
+        registerPopoutWindow(popoutWindow);
+      },
     });
   }, [containerApi, group, activePanel]);
   return (
