@@ -45,6 +45,17 @@ const electronAPI = {
   /** Plattform */
   platform: process.platform as "win32" | "darwin" | "linux",
 
+  // ── Crash-Log Bridge (DIAG-2) ────────────────────────────────────────────────
+  /** Sendet einen Renderer-Crash an main's crash.log. Fire-and-forget. */
+  logRendererCrash: (source: string, message: string, stack?: string): void => {
+    ipcRenderer.send("renderer:crash", { source, message, stack });
+  },
+
+  /** Loggt ein Event aus dem Renderer (für detailliertere Tracing). */
+  logRendererEvent: (label: string, payload?: Record<string, unknown>): void => {
+    ipcRenderer.send("renderer:event", { label, payload });
+  },
+
   // ── App-Info ─────────────────────────────────────────────────────────────────
   getVersion: (): Promise<string> =>
     ipcRenderer.invoke("app:get-version"),

@@ -437,15 +437,15 @@ function createWindow(): void {
 
   // ── Fenster-Events ──────────────────────────────────────────────────────────
   mainWindow.on("close", (event) => {
+    const sincePopupClose = Date.now() - lastPopupCloseTime;
+    logEvent("mainWindow:close", { userInitiatedQuit, sincePopupClose });
     // BUG-018 v4: Cascade-Detection. Wenn unmittelbar vorher ein Popup-Fenster
     // geschlossen wurde, ist das hier KEIN User-Initiated-Close sondern ein
-    // OS-Window-Manager-Cascade (Windows: schließen eines Child-Windows mit
-    // parent: mainWindow kann ein WM_CLOSE auf den Parent feuern). Wir
-    // preventDefault — sonst stirbt die ganze App mit.
+    // OS-Window-Manager-Cascade. Wir preventDefault — sonst stirbt die ganze App mit.
     if (!userInitiatedQuit) {
-      const sincePopupClose = Date.now() - lastPopupCloseTime;
       if (sincePopupClose < 300) {
         event.preventDefault();
+        logEvent("mainWindow:close:BLOCKED", { sincePopupClose });
         console.warn(
           `[mainWindow close] BLOCKED: detected popup-close cascade (Δ=${sincePopupClose}ms). ` +
           "Tray-Beenden / Datei-Beenden are the legitimate quit paths.",
@@ -469,6 +469,7 @@ function createWindow(): void {
   });
 
   mainWindow.on("closed", () => {
+    logEvent("mainWindow:closed", { userInitiatedQuit, isAppQuitting });
     // BUG-018: track explicit mainWindow destruction so window-all-closed
     // can distinguish "user actually closed main" from "Electron edge case
     // where all popup windows were closed but mainWindow is somehow gone".
@@ -616,6 +617,7 @@ function createPerformanceWindow(): void {
   });
 
   perfWindow.on("closed", () => {
+    logEvent("popup:closed", { key: "performance" });
     perfWindow = null;
     // Main-Fenster informieren dass das Popup zu ist (UI-State zurücksetzen)
     if (mainWindow && !mainWindow.isDestroyed()) {
@@ -713,6 +715,7 @@ function createFxWindow(channelId: string): void {
   });
 
   win.on("closed", () => {
+    logEvent("popup:closed", { key: "fx", channelId });
     fxWindows.delete(channelId);
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send("fx-window:closed", channelId);
@@ -798,6 +801,7 @@ function createMixerWindow(): void {
   });
 
   mixerWindow.on("closed", () => {
+    logEvent("popup:closed", { key: "mixer" });
     mixerWindow = null;
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send("mixer-window:closed");
@@ -881,6 +885,7 @@ function createSampleBrowserWindow(): void {
   });
 
   sampleBrowserWindow.on("closed", () => {
+    logEvent("popup:closed", { key: "sampleBrowser" });
     sampleBrowserWindow = null;
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send("sample-browser-window:closed");
@@ -959,6 +964,7 @@ function createPatternGenWindow(): void {
   });
 
   patternGenWindow.on("closed", () => {
+    logEvent("popup:closed", { key: "patternGen" });
     patternGenWindow = null;
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send("pattern-gen-window:closed");
@@ -1052,6 +1058,7 @@ function createSimpleSingletonWindow(
   });
 
   win.on("closed", () => {
+    logEvent("popup:closed", { key: config.key });
     setter(null);
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send(`${config.urlParam}-window:closed`);
@@ -2289,6 +2296,22 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle("app:get-version", () => app.getVersion());
   ipcMain.handle("app:get-crash-log-path", () => getCrashLogPath() ?? "");
+
+  // ── Crash-Log Bridge (DIAG-2) ────────────────────────────────────────────────
+  // Renderer schickt window.onerror / unhandledrejection / explizite Events
+  // hierher. Wir loggen sie in crash.log mit main-side timestamp, so dass
+  // alle Crashes über alle Renderer in EINEM Log landen.
+  ipcMain.on("renderer:crash", (event, payload: { source: string; message: string; stack?: string }) => {
+    const winId = event.sender.id;
+    logCrash(`renderer[winId=${winId}]:${payload.source}`, {
+      message: payload.message,
+      stack: payload.stack ?? "<no stack>",
+    });
+  });
+  ipcMain.on("renderer:event", (event, payload: { label: string; payload?: Record<string, unknown> }) => {
+    const winId = event.sender.id;
+    logEvent(`renderer[winId=${winId}]:${payload.label}`, payload.payload);
+  });
   ipcMain.handle("app:get-platform", () => process.platform);
   ipcMain.handle("app:get-path", (_event, name: string) => {
     const allowed = ["home", "documents", "downloads", "music", "desktop"];

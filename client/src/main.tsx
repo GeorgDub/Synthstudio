@@ -3,23 +3,36 @@ import ReactDOM from "react-dom/client";
 import App from "./App";
 import "./index.css";
 
-// MIG-1A: globale Renderer-Crash-Handler.
-// Wichtig: läuft in JEDEM Renderer-Prozess (Main + alle Popup-Apps).
-// Logs landen in der Devtools-Konsole + werden via console.error gespiegelt;
-// für persistente Datei-Logs bräuchten wir IPC zum Main-Prozess (Phase 2).
+// MIG-1A + DIAG-2: globale Renderer-Crash-Handler.
+// Läuft in JEDEM Renderer (Main + Popup-Apps). Crashes werden:
+//   1. in die Devtools-Konsole geloggt
+//   2. via IPC ans Main weitergereicht damit sie in userData/crash.log persistiert werden
+function reportRendererCrash(source: string, err: unknown): void {
+  let message: string;
+  let stack: string | undefined;
+  if (err instanceof Error) {
+    message = `${err.name}: ${err.message}`;
+    stack = err.stack;
+  } else {
+    try { message = JSON.stringify(err); } catch { message = String(err); }
+  }
+  console.error(`[CRASH:renderer:${source}]`, err);
+  if (stack) console.error("[CRASH:renderer:stack]", stack);
+  // Best-effort IPC: window.electronAPI ist nur in Electron-Renderer verfügbar.
+  try {
+    type CrashBridge = { logRendererCrash?: (source: string, message: string, stack?: string) => void };
+    const api = (window as unknown as { electronAPI?: CrashBridge }).electronAPI;
+    api?.logRendererCrash?.(source, message, stack);
+  } catch {
+    // Wenn IPC nicht verfügbar (z.B. Web-Modus oder vor preload-load), nur Konsole.
+  }
+}
+
 window.addEventListener("error", (event) => {
-  const err = event.error ?? new Error(String(event.message));
-  console.error("[CRASH:renderer:error]", err);
-  // Mehr Detail in eine separate Konsole-Zeile damit die Stack-Trace
-  // beim Copy-Paste vollständig kopiert wird.
-  console.error("[CRASH:renderer:stack]", err instanceof Error ? err.stack : "<no stack>");
+  reportRendererCrash("error", event.error ?? new Error(String(event.message)));
 });
 window.addEventListener("unhandledrejection", (event) => {
-  const reason = event.reason;
-  console.error("[CRASH:renderer:unhandledRejection]", reason);
-  if (reason instanceof Error) {
-    console.error("[CRASH:renderer:stack]", reason.stack ?? "<no stack>");
-  }
+  reportRendererCrash("unhandledRejection", event.reason);
 });
 
 ReactDOM.createRoot(document.getElementById("root")!).render(

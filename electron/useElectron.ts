@@ -56,6 +56,10 @@ const browserAPI = {
   isElectron: false as const,
   platform: "web" as const,
 
+  // Crash-Log Bridge: no-op im Web-Fallback (Renderer-Errors gehen nur in die Konsole).
+  logRendererCrash: (_source: string, _message: string, _stack?: string) => {},
+  logRendererEvent: (_label: string, _payload?: Record<string, unknown>) => {},
+
   getVersion: async () => "web",
   getPlatform: async () => "web",
   getPath: async (_name: string) => null,
@@ -294,6 +298,8 @@ export function useElectron() {
   return {
     isElectron: true as const,
     platform: api.platform,
+    logRendererCrash: api.logRendererCrash,
+    logRendererEvent: api.logRendererEvent,
     getVersion: api.getVersion,
     getPlatform: api.getPlatform,
     getPath: api.getPath,

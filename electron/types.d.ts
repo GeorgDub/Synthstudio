@@ -222,6 +222,10 @@ interface ElectronAPI {
   readonly isElectron: true;
   readonly platform: "win32" | "darwin" | "linux";
 
+  // ── Crash-Log Bridge (DIAG-2) ─────────────────────────────────────────────
+  logRendererCrash(source: string, message: string, stack?: string): void;
+  logRendererEvent(label: string, payload?: Record<string, unknown>): void;
+
   // ── App-Info ──────────────────────────────────────────────────────────────
   getVersion(): Promise<string>;
   getPlatform(): Promise<string>;
