@@ -206,14 +206,27 @@ export class SynthEngine {
 
   /**
    * Spielt eine Note ab.
-   * @param frequency Frequenz in Hz (z.B. 440 für A4)
-   * @param params    Synth-Parameter
-   * @param time      AudioContext-Zeit (ctx.currentTime + Offset)
-   * @param prevFreq  Vorherige Frequenz für Glide (optional)
-   * @param partId    Optional: wenn gesetzt, werden gecachte Macro-LFO-Werte
-   *                  aus `_partLfoCache` über `params.lfoRate`/`lfoDepth` gelegt.
+   * @param frequency   Frequenz in Hz (z.B. 440 für A4)
+   * @param params      Synth-Parameter
+   * @param time        AudioContext-Zeit (ctx.currentTime + Offset)
+   * @param prevFreq    Vorherige Frequenz für Glide (optional)
+   * @param partId      Optional: wenn gesetzt, werden gecachte Macro-LFO-Werte
+   *                    aus `_partLfoCache` über `params.lfoRate`/`lfoDepth` gelegt.
+   * @param destination Optional: Per-Call Ziel-Node (z.B. Volume/Pan-Wrapper).
+   *                    Default: die im Constructor übergebene Destination
+   *                    (typischerweise masterGain). TASK-128 nutzt diesen Pfad,
+   *                    damit AudioEngine pro Note eine eigene Gain+Pan-Kette
+   *                    vorschalten kann ohne SynthEngine-Constructor-Destination
+   *                    zu ändern.
    */
-  triggerNote(frequency: number, params: SynthParams, time: number, prevFreq?: number, partId?: string): GainNode {
+  triggerNote(
+    frequency: number,
+    params: SynthParams,
+    time: number,
+    prevFreq?: number,
+    partId?: string,
+    destination?: AudioNode,
+  ): GainNode {
     const ctx = this.ctx;
     const now = Math.max(time, ctx.currentTime);
     const noteEnd = now + 1.0;
@@ -257,7 +270,7 @@ export class SynthEngine {
     }
 
     oscOut.node.connect(ampEnv);
-    ampEnv.connect(this.destination);
+    ampEnv.connect(destination ?? this.destination);
     return ampEnv;
   }
 

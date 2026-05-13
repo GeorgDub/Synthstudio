@@ -257,6 +257,32 @@ const INDEX = {
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
     {
+      agent:     "backend",
+      timestamp: "2026-05-13T13:30:00.000Z",
+      done: [
+        "TASK-128 / LFO-Macros Wave 2 — Step-Trigger-Site Wiring (v1.23.0 Vorbereitung). Vor diesem Task lief der v1.22.0/TASK-117 Macro-LFO-Cache ins Leere: AudioEngine.setPartLfoRate/Depth speicherte Werte in der SynthEngine-Cache-Map, aber NIEMAND rief SynthEngine.triggerNote() — _scheduleStep behandelte nur part.sampleUrl (Samples), und _triggerMelodicNote (PianoRoll-Playback) nutzte einen eigenen Triangle-Oscillator statt SynthEngine. Discovery: Aus dem Plan-Task (a) 'Step-Trigger reicht partId durch' ergab sich, dass die SynthEngine-Integration in AudioEngine bisher gar nicht existierte — nicht nur ein partId-Passthrough fehlte.",
+        "TASK-128 / Bereich 1 (client/src/audio/SynthEngine.ts): triggerNote-Signatur um optionalen 6. Parameter `destination?: AudioNode` erweitert. Default: this.destination (Constructor-Destination, typischerweise masterGain). Bei explizitem destination-Argument verbindet ampEnv mit dem Per-Call-Ziel statt der Constructor-Destination. Begründung: AudioEngine kann pro Note eine eigene volGain→panner→masterGain-Kette vorschalten ohne die SynthEngine-Constructor-Destination zu rotieren. Kein Breaking-Change — alle existierenden Aufrufer (Tests) funktionieren weiter.",
+        "TASK-128 / Bereich 2 (client/src/audio/AudioEngine.ts, _triggerMelodicNote): Signatur um optionalen 5. Parameter `part?: PartData` erweitert. Wenn `part.synthParams` gesetzt UND `part.sourceType ∈ {wavetable, fm}`, wird SynthEngine.triggerNote() mit partId aufgerufen — mit einer Per-Call-Destination-Kette aus createGain (volume) → createStereoPanner → masterGain. Damit propagieren Volume/Pan korrekt UND der Macro-LFO-Cache wird konsultiert. Parts ohne synthParams oder mit sourceType=sample/granular fallen auf den bestehenden Triangle-Oscillator-Pfad zurück (Backwards-Compat).",
+        "TASK-128 / Bereich 3 (AudioEngine call-site, melodic loop in _scheduleStep): `this._triggerMelodicNote(time, freq, vol, part.pan ?? 0)` → `this._triggerMelodicNote(time, freq, vol, part.pan ?? 0, part)` — übergibt jetzt den Part damit der Synth-Pfad funktioniert.",
+        "TASK-128 / Plan-Task (b) [MacroRouteSetters.setLfoRate/setLfoDepth required hochziehen] ABGELEHNT nach Analyse. Begründung: die optional-Markierung ist intentional — applyMacroBindings fällt für unbekannte Targets auf `onUnhandled` zurück (siehe useMacroStore L466-475). tests/features/macros.test.ts L394 'ruft onUnhandled für lfo-rate auf, solange setLfoRate fehlt' testet genau dieses Fallback. Required-Hochzug würde 12+ legitime Test-Setter-Bags brechen. Bessere Lösung: Setter ist im Produktiv-Wiring (App.tsx) bereits vorhanden — keine Schema-Änderung nötig.",
+        "TASK-128 / Tests Welle 1 (tests/electron/synth-engine.test.ts, +3 Tests): Neue describe-Suite 'SynthEngine.triggerNote() – destination override (TASK-128)' mit drei Cases — (a) ohne destination-Argument: ampEnv→Constructor-Destination, (b) mit destination-Argument: ampEnv→Per-Call-Destination, NICHT zur Constructor-Destination, (c) destination + partId zusammen: LFO-Oszillator nutzt gecachten Wert (9 Hz) UND Per-Call-Destination wurde verwendet.",
+        "TASK-128 / Tests Welle 2 (tests/features/macro-lfo-integration.test.ts NEU, 6 Tests): End-to-End-Integration applyMacroBindings → AudioEngine.setPartLfo* → SynthEngine-Cache. Tests: (1) lfo-rate-Binding mit min=0.1/max=10 @ 0.5 → 5.05 cached; (2) lfo-depth-Binding 0..1 @ 0.8 → 0.8 cached; (3) Mehrere Parts werden getrennt gehalten (kick/snare/lead); (4+5) Range-Clamping (999→30, -0.5→0); (6) Ohne init(): Setter sind no-op, Getter liefern null (defensive). Mock-AudioContext-Klasse mit allen relevanten Web-Audio-Factory-Methoden (createOscillator, createGain, createStereoPanner, createConvolver, createDelay, createBiquadFilter, createDynamicsCompressor, createWaveShaper, createAnalyser, createBuffer, createBufferSource). vi.stubGlobal('AudioContext', MockAudioContext) + vi.resetModules() in beforeEach für Test-Isolation.",
+        "TASK-128 / Verification: pnpm check 0 Fehler. pnpm test 1229/1244 grün (64 test files, +1 macro-lfo-integration, +3 destination-override in synth-engine, 15 pre-existing skipped, 0 Regressionen)."
+      ],
+      next: [
+        "TASK-128 / Welle 2 (Future — sourceType=wavetable/fm in DrumLoop): Aktuell ist die SynthEngine-Integration nur im melodischen Pfad (PianoRoll). Falls jemand eine Drum-Step mit sourceType=wavetable/fm konfiguriert (statt Sample), wird sie aktuell NICHT abgespielt — der Drum-Loop (Zeile ~1322) prüft nur part.sampleUrl. Für vollständige Synth-Drum-Pad-Unterstützung müsste der Drum-Loop einen Synth-Branch bekommen. Aktuell out-of-scope — UI macht Synth-Parts primär melodisch.",
+        "TASK-128 / Welle 2 (Future — Channel-FX): SynthEngine-Output geht aktuell über volGain→panner DIREKT zu masterGain, NICHT durch die Channel-FX-Chain (EQ, Filter, Distortion, Compressor, Delay, Reverb, Insert-FX). Sample-basierte Parts gehen über _triggerBufferWithFx und damit durch die volle FX-Kette. Synth-Parts haben damit keine Insert-FX. Welle 2 würde den Synth-Pfad ebenfalls über `_getOrCreateChannelNodes(part.id, part.fx).input` routen.",
+        "TASK-128 / Welle 2 (Tests Welle 3 — E2E-Verifikation hörbar): pnpm test:e2e Playwright-Smoke der einen Synth-Part erzeugt, ein Macro auf lfo-rate bindet, das Macro auf 0.5 setzt und beim nächsten Step-Trigger verifiziert dass der LFO-Oscillator-Frequenzwert ≈ 5 Hz ist. Erfordert Web-Audio-Inspection im Electron-Test (z.B. via getOutputAnalyser oder Tone.Transport-Hook)."
+      ],
+      changed: [
+        "client/src/audio/SynthEngine.ts",
+        "client/src/audio/AudioEngine.ts",
+        "tests/electron/synth-engine.test.ts",
+        "tests/features/macro-lfo-integration.test.ts",
+        "agents/INDEX.js"
+      ]
+    },
+    {
       agent:     "coordinator",
       timestamp: "2026-05-13T12:00:00.000Z",
       done: [
@@ -955,6 +981,14 @@ const INDEX = {
   //     (Final Theme-Class-Purity Sweep, 0/0 Matches im *.tsx-Baum).
   //   - FOLLOWUP-102 Teile (1) und (2): de-dup AudioTrackChannelData + pitch-preserving
   //     stretch erledigt in v1.19.0 — bleibt nur (3) und (4), siehe Eintrag unten.
+  //   - TASK-124 (Docs-Sync NEUE_SESSION_ANWEISUNG.md): erledigt 2026-05-13 in commit
+  //     36dcb9a ("chore(v1.22.0): docs-sync + INDEX.js cleanup").
+  //   - TASK-128 (LFO-Macros Wave 2 — Step-Trigger-Site Wiring): erledigt 2026-05-13.
+  //     SynthEngine.triggerNote() um destination?-Parameter erweitert; AudioEngine
+  //     ._triggerMelodicNote routet wavetable/fm-Parts mit synthParams jetzt durch
+  //     SynthEngine + partId-Cache. +9 Tests (3 destination-override, 6 integration).
+  //     Welle 2 (sourceType=wavetable/fm im DrumLoop + Channel-FX-Routing) als
+  //     neuer TASK-129 erfasst (siehe unten).
   openTasks: [
     {
       id:       "FOLLOWUP-102",
@@ -962,14 +996,6 @@ const INDEX = {
       severity: "low",
       target:   "v1.23.0+",
       notes:    "Offen: (3) Solo cross-store unification (drum+audio) — drum-Solo und audio-Solo nutzen aktuell getrennte Stores; mute/solo-Verhalten bei gemischten Tracks ist inkonsistent. (4) Full Playwright round-trip E2E (save → reopen → relocate) für Audio-Track-Projekte mit fehlenden Sample-Pfaden."
-    },
-    {
-      id:       "TASK-124",
-      title:    "Docs-Sync NEUE_SESSION_ANWEISUNG.md auf v1.22.0",
-      severity: "low",
-      target:   "v1.22.0 (cleanup)",
-      owner:    "frontend",
-      notes:    "Datei steht auf v1.16.0 (uncommitted, drift seit 6 Minor-Releases). Header auf 1.22.0 ziehen, Highlights v1.17–v1.22 ergänzen (Persistent Scripts + Sandbox, Audio-Tracks, Performance-Mode-Overhaul TASK-111/114/120/123, Macro→Pad TASK-115, LFO-Macros TASK-117, Hold-Mode TASK-118, Pad-Theme TASK-119, Final Theme-Sweep TASK-122). Roadmap aus diesem INDEX.js spiegeln. Akzeptanz: git status clean."
     },
     {
       id:       "TASK-125",
@@ -996,13 +1022,12 @@ const INDEX = {
       notes:    "Aus TASK-114/120 next[] (welle 2). (1) Cmd/Ctrl+A im Reorder-Mode = Select All (alle non-empty Pads in multiSelect). (2) Box-Drag Auto-Scroll wenn Maus < 40px vom Viewport-Rand. (3) Optional: Multi-Drag-Canvas mit Gradient der ersten 3 Pad-Farben statt nur dragSrc-Color (Welle 3 von TASK-123 next). Tests: tests/features/performance-store.test.ts + tests/web/performance-mode.spec.ts."
     },
     {
-      id:       "TASK-128",
-      title:    "LFO-Macros Wave 2 — Step-Trigger-Site Wiring",
-      severity: "high",
+      id:       "TASK-129",
+      title:    "Synth-Part Integration Wave 2 — DrumLoop + Channel-FX-Routing",
+      severity: "medium",
       target:   "v1.23.0",
       owner:    "backend",
-      reviewBy: "testing",
-      notes:    "v1.22.0 / TASK-117 hat SynthEngine-Macro-LFO-Cache (Map<partId, {rate?, depth?}>) + setPartLfoRate/Depth + triggerNote(.., partId?) Override-Pfad gebaut, aber die AudioEngine Step-Trigger-Site ruft triggerNote noch NICHT mit partId auf — der Cache läuft ins Leere. (a) Step-Trigger in client/src/audio/AudioEngine.ts soll partId durchreichen. (b) MacroRouteSetters.setLfoRate/setLfoDepth von optional → required hochziehen. (c) Integration-Test mit jsdom + Web-Audio-Mock. Akzeptanz: Macro-Knob auf lfo-rate/lfo-depth ändert hörbar die Modulation."
+      notes:    "Folge-Task aus TASK-128. (1) _scheduleStep DrumLoop (AudioEngine.ts ~Zeile 1322) prüft aktuell nur part.sampleUrl — Parts mit sourceType=wavetable/fm und ohne sampleUrl werden im Drum-Step NICHT abgespielt. Synth-Branch ergänzen analog zum melodischen Pfad. (2) SynthEngine-Output geht aktuell direkt zu masterGain (über volGain+panner), NICHT durch die Channel-FX-Chain (EQ, Filter, Distortion, Compressor, Send-FX). Routing über _getOrCreateChannelNodes(part.id, part.fx).input statt masterGain. Akzeptanz: Synth-Part mit Insert-FX (z.B. Bitcrusher) hört man tatsächlich gefiltert."
     }
   ],
 

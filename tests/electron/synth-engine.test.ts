@@ -304,3 +304,88 @@ describe("SynthEngine – Macro-LFO-Cache (TASK-117)", () => {
     expect(cachedOsc).toBeUndefined();
   });
 });
+
+// ─── TASK-128: Per-Call destination override ──────────────────────────────────
+describe("SynthEngine.triggerNote() – destination override (TASK-128)", () => {
+  let ctx: ReturnType<typeof makeAudioContextMock>;
+  let constructorDest: ReturnType<typeof makeGainMock>;
+  let perCallDest: ReturnType<typeof makeGainMock>;
+
+  beforeEach(() => {
+    ctx = makeAudioContextMock();
+    constructorDest = makeGainMock();
+    perCallDest = makeGainMock();
+  });
+
+  it("ohne destination-Argument verbindet ampEnv mit der Constructor-Destination", async () => {
+    const { SynthEngine } = await import("../../client/src/audio/SynthEngine");
+    const engine = new SynthEngine(
+      ctx as unknown as AudioContext,
+      constructorDest as unknown as AudioNode,
+    );
+    engine.triggerNote(440, DEFAULT_SYNTH_PARAMS, 0);
+
+    // Der ampEnv (letzter createGain-Call der NICHT für LFO ist) sollte mit constructorDest verbunden sein.
+    // Wir prüfen, dass irgendein Gain-Mock connect(constructorDest) aufgerufen hat.
+    const gainMocks = (ctx.createGain as ReturnType<typeof vi.fn>).mock.results;
+    const connectedToCtor = gainMocks.some(g =>
+      (g.value.connect as ReturnType<typeof vi.fn>).mock.calls.some(c => c[0] === constructorDest)
+    );
+    expect(connectedToCtor).toBe(true);
+  });
+
+  it("mit destination-Argument verbindet ampEnv mit dem Per-Call-Ziel statt Constructor-Destination", async () => {
+    const { SynthEngine } = await import("../../client/src/audio/SynthEngine");
+    const engine = new SynthEngine(
+      ctx as unknown as AudioContext,
+      constructorDest as unknown as AudioNode,
+    );
+    engine.triggerNote(
+      440,
+      DEFAULT_SYNTH_PARAMS,
+      0,
+      undefined,
+      undefined,
+      perCallDest as unknown as AudioNode,
+    );
+
+    const gainMocks = (ctx.createGain as ReturnType<typeof vi.fn>).mock.results;
+    const connectedToPerCall = gainMocks.some(g =>
+      (g.value.connect as ReturnType<typeof vi.fn>).mock.calls.some(c => c[0] === perCallDest)
+    );
+    const connectedToCtor = gainMocks.some(g =>
+      (g.value.connect as ReturnType<typeof vi.fn>).mock.calls.some(c => c[0] === constructorDest)
+    );
+    expect(connectedToPerCall).toBe(true);
+    expect(connectedToCtor).toBe(false);
+  });
+
+  it("destination + partId zusammen: Cache wird gelesen UND Per-Call-Ziel verwendet", async () => {
+    const { SynthEngine } = await import("../../client/src/audio/SynthEngine");
+    const engine = new SynthEngine(
+      ctx as unknown as AudioContext,
+      constructorDest as unknown as AudioNode,
+    );
+    engine.setPartLfoRate("lead", 9);
+    const params: SynthParams = {
+      ...DEFAULT_SYNTH_PARAMS,
+      lfoEnabled: true,
+      lfoWaveform: "sine",
+      lfoBpmSync: "free",
+      lfoRate: 2,
+    };
+    engine.triggerNote(440, params, 0, undefined, "lead", perCallDest as unknown as AudioNode);
+
+    // LFO-Oszillator nutzt den gecachten Wert (9 Hz), nicht params.lfoRate (2)
+    const oscMocks = (ctx.createOscillator as ReturnType<typeof vi.fn>).mock.results;
+    const lfoOsc = oscMocks.find(r => r.value.frequency.value === 9);
+    expect(lfoOsc).toBeDefined();
+
+    // Und Per-Call-Destination wurde verwendet
+    const gainMocks = (ctx.createGain as ReturnType<typeof vi.fn>).mock.results;
+    const connectedToPerCall = gainMocks.some(g =>
+      (g.value.connect as ReturnType<typeof vi.fn>).mock.calls.some(c => c[0] === perCallDest)
+    );
+    expect(connectedToPerCall).toBe(true);
+  });
+});

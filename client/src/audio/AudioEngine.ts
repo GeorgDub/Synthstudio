@@ -1354,7 +1354,7 @@ class AudioEngineClass {
         const vol = (mStep.velocity / 127) * (part.volume ?? 1.0);
         const transposedNote = Math.max(0, Math.min(127, mStep.note + this._globalTranspose));
         const freq = 440 * Math.pow(2, (transposedNote - 69) / 12);
-        this._triggerMelodicNote(time, freq, vol, part.pan ?? 0);
+        this._triggerMelodicNote(time, freq, vol, part.pan ?? 0, part);
       });
     }
 
@@ -1436,10 +1436,38 @@ class AudioEngineClass {
     }
   }
 
-  /** Melodische Note als kurzen Sinus-Ton abspielen (Piano Roll Playback) */
-  private _triggerMelodicNote(time: number, freq: number, volume: number, pan: number): void {
+  /**
+   * Melodische Note abspielen (Piano Roll Playback).
+   *
+   * TASK-128 (v1.23.0): Synth-Parts (sourceType `wavetable`/`fm`) routen jetzt
+   * über `SynthEngine.triggerNote()` mit partId — das aktiviert den Macro-LFO-
+   * Cache (siehe TASK-117). Parts ohne synthParams oder mit unbekanntem
+   * sourceType fallen auf den simplen Triangle-Oscillator-Pfad zurück.
+   *
+   * Die SynthEngine schreibt per-call in einen lokalen `volGain → panner →
+   * masterGain` Wrapper, damit pro-Note Volume + Pan applizierbar sind ohne
+   * die Constructor-Destination zu ändern.
+   */
+  private _triggerMelodicNote(time: number, freq: number, volume: number, pan: number, part?: PartData): void {
     if (!this.ctx || !this.masterGain) return;
     const now = Math.max(time, this.ctx.currentTime);
+
+    // Synth-Pfad: wavetable/fm + synthParams → SynthEngine mit Macro-LFO-Routing
+    if (part && part.synthParams && (part.sourceType === "wavetable" || part.sourceType === "fm")) {
+      const eng = this._getOrCreateSynthEngine();
+      if (eng) {
+        const volGain = this.ctx.createGain();
+        volGain.gain.value = Math.max(0, Math.min(1, volume));
+        const panner = this.ctx.createStereoPanner();
+        panner.pan.value = Math.max(-1, Math.min(1, pan));
+        volGain.connect(panner);
+        panner.connect(this.masterGain);
+        eng.triggerNote(freq, part.synthParams, now, undefined, part.id, volGain);
+        return;
+      }
+    }
+
+    // Fallback-Pfad: simpler Triangle-Oscillator (Default für Parts ohne synthParams)
     const duration = Math.max(0.05, 60 / this._bpm / 4); // 1/16-Note
 
     const osc = this.ctx.createOscillator();
