@@ -30,7 +30,11 @@ Siehe `docs/NEUE_SESSION_ANWEISUNG.md` für die vollständige Feature-Matrix. Ku
 
 | ID | Titel | Severity | Beschreibung |
 |---|---|---|---|
-| **BUG-009** | Performance Mode: Mode-Buttons im Fullscreen nicht klickbar | high (UX) | Mode-Toggle (Play/Edit/Reorder) reagiert nicht auf Klicks während Electron-Fullscreen. Nach Wechsel auf Windowed-Mode sofort funktionsfähig. Vermutung: `-webkit-app-region: drag` Konflikt in Fullscreen-Mode. Details in `agents/INDEX.js` → `bugs.BUG-009`. |
+| **BUG-009** | ✅ Performance Mode: Mode-Buttons im Fullscreen nicht klickbar | high (UX) | Fixed post-v1.23.0 — ElectronTitleBar hides in fullscreen + Performance-Mode no-drag. |
+| **BUG-010** | Script-Runner: CSP-Error 'unsafe-eval' — Scripts laufen gar nicht | **critical** | Tools → Script-Runner → Run schlägt mit `Evaluating a string as JavaScript violates...script-src 'self'` fehl. v1.18.0 CSP-Hardening blockiert die Web-Worker-Sandbox. Fix-Optionen: dedicated worker-src CSP, iframe-sandbox, oder Architektur-Wechsel auf vorgenerierten Code. Details in `agents/INDEX.js` → `bugs.BUG-010`. |
+| **BUG-011** | Audio-Workbench: Tonspur wird nicht visualisiert | high (UX) | Geladene Tonspur wird nicht als Waveform gerendert. User-Wünsche: Vocal/Kick/Snare-Trennung + Bereich-Selektion zum Ausschneiden (Audacity-Style — siehe Phase Q). |
+| **BUG-012** | Sample-Browser: Waveform + BPM-Detection greifen nicht | high (UX) | Sample wird analysiert (Status sichtbar) aber Waveform-UI bleibt leer. BPM-Detection liefert kein Ergebnis. Möglicherweise zwei Bugs (Renderer + Worker). |
+| **BUG-013** | "Neues Projekt" resettet bestehenden Content nicht | high (data) | Klick auf "Neues Projekt" lässt Patterns/Steps/Parts aus vorheriger Session bestehen. Ursache vermutlich: useProjectStore.newProject() ruft nicht alle Sub-Store-Resets auf (DrumMachine, Song, Mixer, Automation, Macros, Performance, Scripts, Audio-Tracks). |
 
 ---
 
@@ -69,11 +73,13 @@ Für Beta-Test und kommerzielle Distribution erforderlich.
 
 ## 🟢 Import-Konverter (Phase R — Wochen)
 
+**Geteilte Anforderung für alle Importer:** beim Import-Start muss ein Dialog gefragt werden — "Bestehendes Projekt erweitern" (Content wird zum aktuellen Projekt hinzugefügt) oder "Neues leeres Projekt erstellen + Import" (alle Stores reset + dann importieren). Default: "Neues leeres Projekt" um Versehentliches-Mischen zu vermeiden. Hängt teilweise von BUG-013-Fix ab (Reset-Logik muss erst sauber funktionieren).
+
 | Feature | Beschreibung | Aufwand |
 |---|---|---|
-| **FL Studio Projekt-Import** | `.flp`-Parser via `flp.js` Lib → Patterns + Channel-Settings extrahieren. Format dokumentiert. | 1–2 Wochen Reverse-Engineering |
-| **Ableton Live Set Import** | `.als` ist gezipptes XML — Tracks + Clips + Devices parsen, soweit möglich. | 1–2 Wochen |
-| **Korg Electribe Import** | `.esx` / `.elst` (Electribe 2 / 2s / ESX-1) Pattern-Bank-Format → Drum-Steps + BPM + Swing. | 1–2 Wochen |
+| **FL Studio Projekt-Import** | `.flp`-Parser via `flp.js` Lib → Patterns + Channel-Settings extrahieren. Format dokumentiert. Mit "Empty oder Merge"-Dialog (siehe oben). | 1–2 Wochen Reverse-Engineering |
+| **Ableton Live Set Import** | `.als` ist gezipptes XML — Tracks + Clips + Devices parsen, soweit möglich. Mit "Empty oder Merge"-Dialog. | 1–2 Wochen |
+| **Korg Electribe Import** | `.esx` / `.elst` (Electribe 2 / 2s / ESX-1) Pattern-Bank-Format → Drum-Steps + BPM + Swing. Mit "Empty oder Merge"-Dialog. | 1–2 Wochen |
 
 ---
 
@@ -81,6 +87,7 @@ Für Beta-Test und kommerzielle Distribution erforderlich.
 
 | Feature | Beschreibung | Aufwand |
 |---|---|---|
+| **AI Script Generator** | Im Script-Runner: Prompt-Feld "Generiere ein Script das..." → Anthropic-API liefert vollständigen `ss.*`-API-konformen Code. Validierung gegen ScriptStore-Limits (10kB), Preview vor Speichern. Voraussetzung: API-Key in Settings vorhanden. Hängt nicht von BUG-010-Fix ab — auch ohne ausführbare Sandbox sinnvoll als Code-Generation-Hilfe. | 3–5 Tage |
 | **Plugin-Syntax im Handbuch** | Eigenes Kapitel: ScriptRunner-API, Plugin-Module-Schema (`pluginApi.ts`), Beispiele für eigene Effekte/Generatoren. | 3–5 Tage |
 | **Plugin/Script Cloud-Store** | Backend (Postgres + S3) + Frontend-Marketplace: Hochladen, Bewerten, Installieren. Hängt von Auth (Phase P) ab. | 4–6 Wochen |
 | **In-App LLM-Assistent** | Chat-Sidebar mit Anthropic/OpenAI-API — Fragen zur App **und** zu Musikproduktion. Token-Cap pro Account. | 1–2 Wochen + API-Kosten |

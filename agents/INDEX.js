@@ -250,6 +250,38 @@ const INDEX = {
       fixedBy:  "testing",
       fixedIn:  "TASK-101 (v1.18.x)"
     },
+    "BUG-010": {
+      title:   "Script-Runner: CSP-Error 'unsafe-eval' beim Ausführen — Scripts laufen gar nicht",
+      severity: "critical",
+      details:  "Reproduktion: Tools-Tab → Script-Runner → '+ Neu' → Skript-Code eingeben → Run → Fehler 'Script error: Evaluating a string as JavaScript violates the following Content Security Policy directive because unsafe-eval is not an allowed source of script: script-src self'. Bedeutet die Sandbox-Implementierung (Web-Worker mit eval/Function-Konstruktor) wird vom CSP des Renderers blockiert. Ursache vermutlich: TASK-118 / v1.18.0 CSP-Hardening hat 'unsafe-eval' aus dem script-src entfernt, der Web-Worker erbt aber denselben CSP. Fix-Optionen: (a) CSP nur für den Worker-Context lockern via dedizierter worker-src + 'unsafe-eval' (riskant), (b) Sandbox-Architektur ändern auf vorgeneriertes-Code-Pattern statt eval (komplex), (c) <iframe sandbox> mit allow-scripts statt Worker (CSP-Vererbung anders). Affected: client/src/sandbox/scriptSandboxInstance.ts, electron/main.ts CSP-Header, scripts/generate-sandbox-source.mjs.",
+      fixed:    false,
+      foundBy:  "user (post-v1.23.0 report)",
+      target:   "v1.23.1 hotfix"
+    },
+    "BUG-011": {
+      title:   "Audio-Workbench: Tonspur wird nicht visualisiert + Selektion/Trennung nach Vocal/Kick/etc fehlt",
+      severity: "high (UX)",
+      details:  "User-Report: in der Audio-Workbench wird die geladene Tonspur nicht als Waveform visualisiert. Zusätzliche Wünsche: (a) Trennung/Filter nach Kategorie (Vocal, Kicks, Snares etc.) — vermutlich gemeint: Multi-Track-Editor wo verschiedene Sample-Typen separat angezeigt werden; (b) Bereich-Selektion zum Ausschneiden/Bearbeiten (Audacity-Style — siehe ROADMAP Phase Q 'Audacity-Level Workbench'). Vermutlich Bug in der WaveformDisplay-Render-Logik oder fehlende Verbindung zwischen AudioBuffer und Canvas-Renderer. Affected: client/src/components/AudioWorkbench/AudioWorkbench.tsx, client/src/components/WaveformDisplay/WaveformDisplay.tsx.",
+      fixed:    false,
+      foundBy:  "user (post-v1.23.0 report)",
+      target:   "v1.24.0 (Phase Q Workbench-Wave)"
+    },
+    "BUG-012": {
+      title:   "Sample Browser: Waveform-Visualisierung nach Analyse fehlt + BPM-Detection läuft nicht",
+      severity: "high (UX)",
+      details:  "User-Report: Sample Browser analysiert ein Sample (Spinner / Status sichtbar) aber zeigt anschließend keine Waveform. BPM-Detection greift ebenfalls nicht — Sample bekommt keine BPM zugeordnet. Möglicherweise zwei separate Bugs: (a) WaveformDisplay-Component erhält Daten nicht oder rendert nicht (Canvas-Zustand?); (b) BPM-Worker (workers/audioAnalysis.worker.ts) liefert kein Ergebnis zurück oder das Result wird nicht ins useProjectStore.samples geschrieben. Reproduzieren mit verschiedenen Sample-Formaten (WAV/MP3) um Format-Specific-Issues auszuschließen. Affected: client/src/components/SampleBrowser/, client/src/workers/audioAnalysis.worker.ts, client/src/hooks/useBpmDetection.ts.",
+      fixed:    false,
+      foundBy:  "user (post-v1.23.0 report)",
+      target:   "v1.24.0"
+    },
+    "BUG-013": {
+      title:   "Neues Projekt: bestehende Patterns + Content werden NICHT zurückgesetzt",
+      severity: "high (data-integrity)",
+      details:  "User-Report: Klick auf 'Neues Projekt' (Menü oder Toolbar) öffnet zwar einen neuen leeren Projekt-Zustand auf der UI-Ebene, aber die DrumMachine zeigt weiterhin die Patterns/Steps/Parts aus der vorherigen Session. Vermutung: useProjectStore.newProject() oder NewProjectDialog ruft nicht vollständig die Reset-Funktionen aller Sub-Stores auf (useDrumMachineStore, useSongStore, useMixerStore, useAutomationStore, useMacroStore, usePerformanceStore, useScriptStore, useAudioTrackStore). Müssten alle ein __resetForTests-ähnliches public reset bekommen das beim Neu-Erstellen aufgerufen wird. Affected: client/src/store/useProjectStore.ts (newProject-Logik), client/src/components/NewProjectDialog/NewProjectDialog.tsx.",
+      fixed:    false,
+      foundBy:  "user (post-v1.23.0 report)",
+      target:   "v1.23.1 / v1.24.0"
+    },
     "BUG-009": {
       title:   "Performance Mode: Mode-Buttons (Play/Edit/Reorder) sind im Fullscreen nicht klickbar",
       severity: "high (UX)",
