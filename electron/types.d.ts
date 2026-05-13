@@ -336,6 +336,16 @@ interface ElectronAPI {
   onSampleBrowserPopupAction(callback: (action: unknown) => void): ElectronCleanup;
   onSampleBrowserPopupClosed(callback: () => void): ElectronCleanup;
 
+  // ── Pattern-Generator-Window Popup (Multi-Window-Workspace, post-v1.27.0) ─
+  openPatternGenWindow(): Promise<{ success: boolean }>;
+  closePatternGenWindow(): Promise<{ success: boolean }>;
+  isPatternGenWindowOpen(): Promise<boolean>;
+  setPatternGenWindowAlwaysOnTop(alwaysOnTop: boolean): Promise<{ success: boolean; alwaysOnTop: boolean }>;
+  isPatternGenWindowAlwaysOnTop(): Promise<boolean>;
+  sendPatternGenPopupAction(action: unknown): void;
+  onPatternGenPopupAction(callback: (action: unknown) => void): ElectronCleanup;
+  onPatternGenPopupClosed(callback: () => void): ElectronCleanup;
+
   // ── Benachrichtigungen ────────────────────────────────────────────────────
   showNotification(title: string, body: string): void;
 

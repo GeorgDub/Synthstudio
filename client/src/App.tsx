@@ -30,6 +30,7 @@ import { PerformancePopupApp } from "@/components/PerformanceMode/PerformancePop
 import { FxPopupApp } from "@/components/DrumMachine/FxPopupApp";
 import { MixerPopupApp, type MixerPopupAction } from "@/components/Mixer/MixerPopupApp";
 import { SampleBrowserPopupApp } from "@/components/SampleBrowser/SampleBrowserPopupApp";
+import { PatternGeneratorPopupApp } from "@/components/PatternGenerator/PatternGeneratorPopupApp";
 
 // ── Eigene Stores & Hooks ─────────────────────────────────────────────────────
 import { useProjectStore } from "@/store/useProjectStore";
@@ -239,6 +240,19 @@ function isSampleBrowserPopupMode(): boolean {
   }
 }
 
+/**
+ * Erkennt ob die App im Pattern-Generator-Popup-Mode läuft.
+ * URL-Param `?patternGenPopup=1` (post-v1.27.0).
+ */
+function isPatternGenPopupMode(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return new URLSearchParams(window.location.search).get("patternGenPopup") === "1";
+  } catch {
+    return false;
+  }
+}
+
 export default function App() {
   // ── Performance-Popup-Mode: nur PerformancePopupApp rendern, früh raus ──
   // Wenn URL ?perfPopup=1 → das ist der Popup-Renderer, NICHT die volle App.
@@ -260,6 +274,10 @@ export default function App() {
   // ── Sample-Browser-Popup-Mode: nur SampleBrowserPopupApp rendern ──
   if (isSampleBrowserPopupMode()) {
     return <SampleBrowserPopupApp />;
+  }
+  // ── Pattern-Generator-Popup-Mode: nur PatternGeneratorPopupApp rendern ──
+  if (isPatternGenPopupMode()) {
+    return <PatternGeneratorPopupApp />;
   }
 
   // ── Electron-Hook (einziger Zugriffspunkt auf Electron-Features) ────────────
@@ -1816,6 +1834,24 @@ export default function App() {
     return cleanup;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [electron, mixer.masterVolume, mixer.selectedChannelId, project.bpm]);
+
+  // ── Pattern-Generator-Popup Action-Listener (post-v1.27.0) ────────────────
+  // Popup dispatcht `pattern-generator:apply` als CustomEvent in seinem Window.
+  // Wir empfangen das hier via IPC und re-dispatchen es im Main-Window, damit
+  // der bestehende handleApply-Handler (oben in dieser Datei) ohne Änderung
+  // läuft.
+  useEffect(() => {
+    if (!electron.isElectron) return;
+    const cleanup = electron.onPatternGenPopupAction?.((payload) => {
+      if (!payload || typeof payload !== "object") return;
+      const action = payload as Record<string, unknown>;
+      if (action.type !== "apply-pattern") return;
+      const pattern = action.pattern as { bpm?: number; parts?: unknown } | undefined;
+      if (!pattern || typeof pattern.bpm !== "number" || !Array.isArray(pattern.parts)) return;
+      window.dispatchEvent(new CustomEvent("pattern-generator:apply", { detail: pattern }));
+    });
+    return cleanup;
+  }, [electron]);
 
   // ── Sample-Browser-Popup State-Broadcast (post-v1.27.0) ────────────────────
   useEffect(() => {

@@ -98,6 +98,11 @@ let mixerWindow: BrowserWindow | null = null;
  * Singleton — der Sample-Browser ist eine einzelne Bibliotheks-Ansicht.
  */
 let sampleBrowserWindow: BrowserWindow | null = null;
+/**
+ * Pattern-Generator-Popup-Window (post-v1.27.0 Multi-Window-Workspace).
+ * Singleton.
+ */
+let patternGenWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let appStore: AppStore | null = null;
 
@@ -306,6 +311,10 @@ function createWindow(): void {
     // Sample-Browser-Popup mit-schließen wenn Haupt-Fenster geschlossen wird
     if (sampleBrowserWindow && !sampleBrowserWindow.isDestroyed()) {
       sampleBrowserWindow.close();
+    }
+    // Pattern-Generator-Popup mit-schließen
+    if (patternGenWindow && !patternGenWindow.isDestroyed()) {
+      patternGenWindow.close();
     }
     // Performance-Popup mit-schließen wenn Haupt-Fenster geschlossen wird
     if (perfWindow && !perfWindow.isDestroyed()) {
@@ -617,6 +626,65 @@ function createSampleBrowserWindow(): void {
     sampleBrowserWindow = null;
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send("sample-browser-window:closed");
+    }
+  });
+}
+
+/**
+ * Pattern-Generator-Popup (Multi-Window-Workspace, post-v1.27.0).
+ *
+ * Singleton. URL-Param `?patternGenPopup=1`. setMenu(null) per BUG-017.
+ */
+function createPatternGenWindow(): void {
+  if (patternGenWindow && !patternGenWindow.isDestroyed()) {
+    patternGenWindow.focus();
+    return;
+  }
+
+  patternGenWindow = new BrowserWindow({
+    width: 560,
+    height: 720,
+    minWidth: 380,
+    minHeight: 480,
+    title: `${APP_NAME} – Pattern Generator`,
+    backgroundColor: "#0a0a0a",
+    frame: false,
+    titleBarStyle: "default",
+    parent: mainWindow ?? undefined,
+    show: false,
+    webPreferences: {
+      preload: path.join(__dirname, "preload.cjs"),
+      contextIsolation: true,
+      nodeIntegration: false,
+      autoplayPolicy: "no-user-gesture-required",
+      webSecurity: !isDev,
+    },
+  });
+
+  patternGenWindow.setMenu(null);
+
+  patternGenWindow.once("ready-to-show", () => {
+    patternGenWindow?.show();
+  });
+
+  if (isDev) {
+    patternGenWindow.loadURL(`${devServerUrl}?patternGenPopup=1`);
+  } else {
+    const indexPath = path.join(__dirname, "..", "dist", "public", "index.html");
+    patternGenWindow.loadFile(indexPath, { search: "patternGenPopup=1" }).catch(err => {
+      console.error("[PatternGenWindow] loadFile failed:", err);
+    });
+  }
+
+  patternGenWindow.webContents.setWindowOpenHandler(({ url }) => {
+    shell.openExternal(url);
+    return { action: "deny" };
+  });
+
+  patternGenWindow.on("closed", () => {
+    patternGenWindow = null;
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send("pattern-gen-window:closed");
     }
   });
 }
@@ -1702,6 +1770,47 @@ function registerIpcHandlers(): void {
   ipcMain.on("sample-browser-sync:action", (_event, actionPayload: unknown) => {
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send("sample-browser-sync:action", actionPayload);
+    }
+  });
+
+  // ── Pattern-Generator-Popup (Multi-Window-Workspace, post-v1.27.0) ───────────
+
+  ipcMain.handle("window:open-pattern-gen", () => {
+    createPatternGenWindow();
+    return { success: true };
+  });
+
+  ipcMain.handle("window:close-pattern-gen", () => {
+    if (patternGenWindow && !patternGenWindow.isDestroyed()) {
+      patternGenWindow.close();
+    }
+    return { success: true };
+  });
+
+  ipcMain.handle("window:is-pattern-gen-open", () => {
+    return patternGenWindow !== null && !patternGenWindow.isDestroyed();
+  });
+
+  ipcMain.handle("window:pattern-gen-set-always-on-top", (_event, alwaysOnTop: boolean) => {
+    if (patternGenWindow && !patternGenWindow.isDestroyed()) {
+      patternGenWindow.setAlwaysOnTop(!!alwaysOnTop);
+      return { success: true, alwaysOnTop: !!alwaysOnTop };
+    }
+    return { success: false, alwaysOnTop: false };
+  });
+
+  ipcMain.handle("window:pattern-gen-is-always-on-top", () => {
+    if (patternGenWindow && !patternGenWindow.isDestroyed()) {
+      return patternGenWindow.isAlwaysOnTop();
+    }
+    return false;
+  });
+
+  // Action-Forwarding Pattern-Gen-Popup → Main. Payload meist:
+  // { type: "apply-pattern", pattern: <GeneratedPattern> }
+  ipcMain.on("pattern-gen-sync:action", (_event, actionPayload: unknown) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send("pattern-gen-sync:action", actionPayload);
     }
   });
 

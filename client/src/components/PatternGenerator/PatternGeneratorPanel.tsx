@@ -36,6 +36,7 @@ import {
 } from "../../store/usePatternGeneratorStore";
 const GENRE_BPM = GENRE_BPM_MAP;
 import { useApiSettingsStore } from "../../store/useApiSettingsStore";
+import { useElectron } from "../../../../electron/useElectron";
 
 const GENRES = Object.keys(GENRE_LABELS) as Genre[];
 
@@ -98,6 +99,11 @@ function GeneratedPreview({ pattern, onApply, onClear }: { pattern: GeneratedPat
 export function PatternGeneratorPanel() {
   const store = usePatternGeneratorStore();
   const apiSettings = useApiSettingsStore();
+  const electron = useElectron();
+  // True wenn dieser Render im Pattern-Generator-Popup-Window läuft.
+  // Verhindert dass der Pin-Button im Popup angezeigt wird (dort wäre er sinnlos).
+  const isInPopup = typeof window !== "undefined"
+    && new URLSearchParams(window.location.search).get("patternGenPopup") === "1";
   // Multi-Provider-Support (post-v1.25.0): aiEnabled reflektiert ob der AKTIVE
   // Provider einen Key hat. Backward-compat: hasApiKey bleibt der Boolean.
   const hasApiKey = apiSettings.aiEnabled;
@@ -137,14 +143,35 @@ export function PatternGeneratorPanel() {
 
   return (
     <div style={containerSt}>
-      {/* ── Modus-Auswahl ──────────────────────────────────────────── */}
-      <div style={{ display: "flex", gap: 6 }}>
+      {/* ── Modus-Auswahl + Pin-Button (Multi-Window, post-v1.27.0) ─── */}
+      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
         <button style={tabBtnSt(mode === "template")} onClick={() => setMode("template")}>
           🎛 Vorlagen
         </button>
         <button style={tabBtnSt(mode === "prompt")} onClick={() => setMode("prompt")}>
           ✨ KI-Prompt
         </button>
+        {electron.isElectron && !isInPopup && (
+          <button
+            type="button"
+            onClick={() => electron.openPatternGenWindow?.()}
+            data-testid="pattern-gen-open-in-window"
+            title="Pattern Generator in eigenes Fenster abkoppeln"
+            style={{
+              padding: "7px 10px",
+              borderRadius: 6,
+              border: "1px solid var(--ss-border)",
+              background: "var(--ss-bg-elevated)",
+              color: "var(--ss-text-muted)",
+              fontWeight: 700,
+              fontSize: 12,
+              cursor: "pointer",
+              flexShrink: 0,
+            }}
+          >
+            📌
+          </button>
+        )}
       </div>
 
       {/* ══════════════════════════════════════════════════════════════

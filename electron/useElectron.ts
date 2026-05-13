@@ -148,6 +148,16 @@ const browserAPI = {
   onSampleBrowserPopupAction: noopDataListener<unknown>(),
   onSampleBrowserPopupClosed: noopVoidListener,
 
+  // Pattern-Generator-Window Popup (Web-Fallback: no-op stubs).
+  openPatternGenWindow: async () => ({ success: false }),
+  closePatternGenWindow: async () => ({ success: false }),
+  isPatternGenWindowOpen: async () => false,
+  setPatternGenWindowAlwaysOnTop: async (_alwaysOnTop: boolean) => ({ success: false, alwaysOnTop: false }),
+  isPatternGenWindowAlwaysOnTop: async () => false,
+  sendPatternGenPopupAction: (_action: unknown) => {},
+  onPatternGenPopupAction: noopDataListener<unknown>(),
+  onPatternGenPopupClosed: noopVoidListener,
+
   showNotification: (_title: string, _body: string) => {},
   showConfirmDialog: async (_options: { title?: string; message: string }) => ({ response: 0 }),
   showErrorDialog: async (_title: string, _message: string) => {},
@@ -400,6 +410,16 @@ export function useElectron() {
     onSampleBrowserPopupState: api.onSampleBrowserPopupState,
     onSampleBrowserPopupAction: api.onSampleBrowserPopupAction,
     onSampleBrowserPopupClosed: api.onSampleBrowserPopupClosed,
+
+    // Pattern-Generator-Window Popup
+    openPatternGenWindow: api.openPatternGenWindow,
+    closePatternGenWindow: api.closePatternGenWindow,
+    isPatternGenWindowOpen: api.isPatternGenWindowOpen,
+    setPatternGenWindowAlwaysOnTop: api.setPatternGenWindowAlwaysOnTop,
+    isPatternGenWindowAlwaysOnTop: api.isPatternGenWindowAlwaysOnTop,
+    sendPatternGenPopupAction: api.sendPatternGenPopupAction,
+    onPatternGenPopupAction: api.onPatternGenPopupAction,
+    onPatternGenPopupClosed: api.onPatternGenPopupClosed,
   };
 }
 

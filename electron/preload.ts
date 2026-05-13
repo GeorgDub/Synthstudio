@@ -360,6 +360,30 @@ const electronAPI = {
   onSampleBrowserPopupAction: createEventListener<unknown>("sample-browser-sync:action"),
   onSampleBrowserPopupClosed: createVoidListener("sample-browser-window:closed"),
 
+  // ── Pattern-Generator-Window Popup (Multi-Window-Workspace, post-v1.27.0) ────
+  // Singleton-Popup. Apply-Pattern flow via Action-Channel.
+  openPatternGenWindow: (): Promise<{ success: boolean }> =>
+    ipcRenderer.invoke("window:open-pattern-gen"),
+
+  closePatternGenWindow: (): Promise<{ success: boolean }> =>
+    ipcRenderer.invoke("window:close-pattern-gen"),
+
+  isPatternGenWindowOpen: (): Promise<boolean> =>
+    ipcRenderer.invoke("window:is-pattern-gen-open"),
+
+  setPatternGenWindowAlwaysOnTop: (alwaysOnTop: boolean): Promise<{ success: boolean; alwaysOnTop: boolean }> =>
+    ipcRenderer.invoke("window:pattern-gen-set-always-on-top", alwaysOnTop),
+
+  isPatternGenWindowAlwaysOnTop: (): Promise<boolean> =>
+    ipcRenderer.invoke("window:pattern-gen-is-always-on-top"),
+
+  sendPatternGenPopupAction: (action: unknown): void => {
+    ipcRenderer.send("pattern-gen-sync:action", action);
+  },
+
+  onPatternGenPopupAction: createEventListener<unknown>("pattern-gen-sync:action"),
+  onPatternGenPopupClosed: createVoidListener("pattern-gen-window:closed"),
+
   // ── Benachrichtigungen ───────────────────────────────────────────────────────
 
   showNotification: (title: string, body: string): Promise<void> =>
