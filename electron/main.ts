@@ -115,6 +115,17 @@ let patternGenWindow: BrowserWindow | null = null;
 let isAppQuitting = false;
 
 /**
+ * BUG-018 fix: explicit tracking of mainWindow destruction.
+ *
+ * User-Report: das Klicken auf ✕ in einem Popup-Window schloss die komplette
+ * App. Vermutete Ursache: in einem Electron-Edge-Case (frameless child windows
+ * mit parent: mainWindow) feuert `window-all-closed` obwohl mainWindow noch
+ * lebt — und app.quit() killt dann alles. Mit diesem Flag refusen wir den
+ * Quit wenn mainWindow nicht aktiv zerstört wurde.
+ */
+let mainWindowDestroyed = false;
+
+/**
  * Liest das gespeicherte Layout für ein Singleton-Popup und liefert die Bounds-
  * Override für den BrowserWindow-Konstruktor zurück (oder undefined).
  */
@@ -386,6 +397,10 @@ function createWindow(): void {
   });
 
   mainWindow.on("closed", () => {
+    // BUG-018: track explicit mainWindow destruction so window-all-closed
+    // can distinguish "user actually closed main" from "Electron edge case
+    // where all popup windows were closed but mainWindow is somehow gone".
+    mainWindowDestroyed = true;
     mainWindow = null;
     // Mixer-Popup mit-schließen wenn Haupt-Fenster geschlossen wird
     if (mixerWindow && !mixerWindow.isDestroyed()) {
@@ -2195,9 +2210,24 @@ app.whenReady().then(() => {
 });
 
 app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") {
-    app.quit();
+  if (process.platform === "darwin") return;
+
+  // BUG-018: Refuse to quit if mainWindow wasn't explicitly destroyed.
+  // Defense against Electron edge case where closing a popup somehow
+  // makes window-all-closed fire even though mainWindow should be alive.
+  if (!mainWindowDestroyed) {
+    console.warn(
+      "[window-all-closed] mainWindow not destroyed but event fired — refusing to quit. " +
+      "If mainWindow is genuinely gone, use the tray icon or restart.",
+    );
+    // Versuche mainWindow wieder zu zeigen falls es nur hidden ist
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.show();
+      mainWindow.focus();
+    }
+    return;
   }
+  app.quit();
 });
 
 app.on("before-quit", () => {

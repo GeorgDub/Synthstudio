@@ -29,7 +29,8 @@ import { PatternGeneratorPanel } from "./PatternGeneratorPanel";
 
 /** Action vom Popup → Main. */
 export type PatternGenPopupAction =
-  | { type: "apply-pattern"; pattern: GeneratedPatternPayload };
+  | { type: "apply-pattern"; pattern: GeneratedPatternPayload }
+  | { type: "popup-mounted" };
 
 /** Generierte-Pattern-Daten (sync mit App.tsx handleApply-Schema). */
 export interface GeneratedPatternPayload {
@@ -62,6 +63,12 @@ export function PatternGeneratorPopupApp() {
   useEffect(() => {
     if (!electron.isElectron) return;
     electron.isPatternGenWindowAlwaysOnTop?.().then(setAlwaysOnTop).catch(() => {});
+  }, [electron]);
+
+  // Notify main that popup is mounted (so main can hide the inline panel).
+  useEffect(() => {
+    if (!electron.isElectron) return;
+    electron.sendPatternGenPopupAction?.({ type: "popup-mounted" });
   }, [electron]);
 
   const toggleAlwaysOnTop = () => {

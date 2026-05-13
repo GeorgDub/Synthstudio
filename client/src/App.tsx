@@ -343,6 +343,17 @@ export default function App() {
     return cleanup;
   }, [electron]);
 
+  // ── Pattern-Generator-Popup (Multi-Window-Workspace, post-v1.27.0) ────────
+  const [patternGenPopupOpen, setPatternGenPopupOpen] = useState(false);
+
+  useEffect(() => {
+    if (!electron.isElectron) return;
+    const cleanup = electron.onPatternGenPopupClosed?.(() => {
+      setPatternGenPopupOpen(false);
+    });
+    return cleanup;
+  }, [electron]);
+
   // ── Humanizer ↔ AudioEngine Bridge ────────────────────────────────────────
   // Singleton-Slot, den AudioEngine._scheduleStep ausliest. Keine direkte
   // Abhängigkeit, damit der AudioEngine-Code Store-Agnostic bleibt.
@@ -1845,6 +1856,10 @@ export default function App() {
     const cleanup = electron.onPatternGenPopupAction?.((payload) => {
       if (!payload || typeof payload !== "object") return;
       const action = payload as Record<string, unknown>;
+      if (action.type === "popup-mounted") {
+        setPatternGenPopupOpen(true);
+        return;
+      }
       if (action.type !== "apply-pattern") return;
       const pattern = action.pattern as { bpm?: number; parts?: unknown } | undefined;
       if (!pattern || typeof pattern.bpm !== "number" || !Array.isArray(pattern.parts)) return;
@@ -1937,17 +1952,36 @@ export default function App() {
           <aside className="flex-shrink-0 border-r border-border-color overflow-hidden flex flex-col relative"
             style={{ width: sidebarWidth }}>
             <AudioInputRecorder onSamplesAdded={project.addSamples} />
-            <SampleBrowser
-              samples={project.samples}
-              onImportSamples={project.importSamplesFromPaths}
-              onImportFolder={handleDropFolder}
-              onRemoveSample={project.removeSample}
-              onSamplesImported={project.addSamples}
-              onAssignToChannel={handleAssignToChannel}
-              activeChannelName={activeChannelName}
-              onUpdateSampleCategory={handleUpdateSampleCategory}
-              onReorderSamples={project.reorderSamples}
-            />
+            {/* Sample Browser: ausgeblendet wenn er als Popup-Fenster läuft.
+                Doppelte UI vermeiden — der Popup ist die "primäre" Ansicht solange
+                er offen ist. User kann zurückholen via Button. */}
+            {sampleBrowserPopupOpen ? (
+              <div className="flex-1 flex items-center justify-center p-4 text-xs text-text-dim text-center border-t border-border-color">
+                <div>
+                  <p className="mb-2">📌 Sample Browser ist in einem eigenen Fenster geöffnet.</p>
+                  <button
+                    type="button"
+                    onClick={() => electron.closeSampleBrowserWindow?.()}
+                    data-testid="sample-browser-reattach"
+                    className="px-3 py-1.5 rounded border border-border-color text-text-muted hover:text-accent-primary hover:border-accent-primary transition-colors"
+                  >
+                    Hierher zurückholen
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <SampleBrowser
+                samples={project.samples}
+                onImportSamples={project.importSamplesFromPaths}
+                onImportFolder={handleDropFolder}
+                onRemoveSample={project.removeSample}
+                onSamplesImported={project.addSamples}
+                onAssignToChannel={handleAssignToChannel}
+                activeChannelName={activeChannelName}
+                onUpdateSampleCategory={handleUpdateSampleCategory}
+                onReorderSamples={project.reorderSamples}
+              />
+            )}
             {/* Resize Handle */}
             <div
               onMouseDown={handleSidebarDragStart}
@@ -2126,14 +2160,30 @@ export default function App() {
               )}
 
               {activeTab === "mixer" && (
-                <MixerView
-                  dm={dm}
-                  mixer={mixer}
-                  samples={project.samples}
-                  bpm={project.bpm}
-                  projectName={project.projectName}
-                  className="h-full"
-                />
+                mixerPopupOpen ? (
+                  <div className="h-full flex items-center justify-center text-text-dim text-sm">
+                    <div className="text-center">
+                      <p className="mb-3">📌 Mixer ist in einem eigenen Fenster geöffnet.</p>
+                      <button
+                        type="button"
+                        onClick={() => electron.closeMixerWindow?.()}
+                        data-testid="mixer-reattach"
+                        className="px-3 py-1.5 rounded border border-border-color text-text-muted hover:text-accent-primary hover:border-accent-primary transition-colors text-xs"
+                      >
+                        Hierher zurückholen
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <MixerView
+                    dm={dm}
+                    mixer={mixer}
+                    samples={project.samples}
+                    bpm={project.bpm}
+                    projectName={project.projectName}
+                    className="h-full"
+                  />
+                )
               )}
 
               {activeTab === "song" && (
@@ -2179,10 +2229,26 @@ export default function App() {
                   <div className="flex-1 overflow-hidden">
                     {activeTool === 'prompt' && (
                       <div className="h-full overflow-y-auto p-4">
-                        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 max-w-4xl">
-                          <PatternGeneratorPanel />
-                          <ArpeggiatorPanel />
-                        </div>
+                        {patternGenPopupOpen ? (
+                          <div className="h-full flex items-center justify-center text-text-dim text-sm">
+                            <div className="text-center">
+                              <p className="mb-3">📌 Pattern Generator ist in einem eigenen Fenster geöffnet.</p>
+                              <button
+                                type="button"
+                                onClick={() => electron.closePatternGenWindow?.()}
+                                data-testid="pattern-gen-reattach"
+                                className="px-3 py-1.5 rounded border border-border-color text-text-muted hover:text-accent-primary hover:border-accent-primary transition-colors text-xs"
+                              >
+                                Hierher zurückholen
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 max-w-4xl">
+                            <PatternGeneratorPanel />
+                            <ArpeggiatorPanel />
+                          </div>
+                        )}
                       </div>
                     )}
                     {activeTool === 'algorithmic' && (
