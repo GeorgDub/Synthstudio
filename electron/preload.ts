@@ -258,6 +258,12 @@ const electronAPI = {
   onPerfPopupAction: createEventListener<unknown>("perf-sync:action"),
   onPerfPopupClosed: createVoidListener("perf-window:closed"),
 
+  // Phase 2: Always-on-top für das Performance-Popup
+  setPerfPopupAlwaysOnTop: (alwaysOnTop: boolean): Promise<{ success: boolean; alwaysOnTop: boolean }> =>
+    ipcRenderer.invoke("window:perf-set-always-on-top", alwaysOnTop),
+  isPerfPopupAlwaysOnTop: (): Promise<boolean> =>
+    ipcRenderer.invoke("window:perf-is-always-on-top"),
+
   // ── Benachrichtigungen ───────────────────────────────────────────────────────
 
   showNotification: (title: string, body: string): Promise<void> =>

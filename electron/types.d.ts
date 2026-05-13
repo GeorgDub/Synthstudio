@@ -285,6 +285,9 @@ interface ElectronAPI {
   onPerfPopupState(callback: (state: unknown) => void): ElectronCleanup;
   onPerfPopupAction(callback: (action: unknown) => void): ElectronCleanup;
   onPerfPopupClosed(callback: () => void): ElectronCleanup;
+  // Phase 2: Always-on-top
+  setPerfPopupAlwaysOnTop(alwaysOnTop: boolean): Promise<{ success: boolean; alwaysOnTop: boolean }>;
+  isPerfPopupAlwaysOnTop(): Promise<boolean>;
 
   // ── Benachrichtigungen ────────────────────────────────────────────────────
   showNotification(title: string, body: string): void;

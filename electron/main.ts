@@ -1129,6 +1129,24 @@ function registerIpcHandlers(): void {
     return perfWindow !== null && !perfWindow.isDestroyed();
   });
 
+  // Always-on-top Toggle für das Performance-Popup (Phase 2). Wird vom Popup-
+  // Renderer aufgerufen damit User es als Floating-Window über andere Apps
+  // legen kann (typischer DAW-Multi-Monitor-Workflow).
+  ipcMain.handle("window:perf-set-always-on-top", (_event, alwaysOnTop: boolean) => {
+    if (perfWindow && !perfWindow.isDestroyed()) {
+      perfWindow.setAlwaysOnTop(!!alwaysOnTop);
+      return { success: true, alwaysOnTop: !!alwaysOnTop };
+    }
+    return { success: false, alwaysOnTop: false };
+  });
+
+  ipcMain.handle("window:perf-is-always-on-top", () => {
+    if (perfWindow && !perfWindow.isDestroyed()) {
+      return perfWindow.isAlwaysOnTop();
+    }
+    return false;
+  });
+
   // State-Broadcast Main → Popup. Payload muss serialisierbar sein (kein File-
   // System, keine Native-Objekte). Main-Renderer ruft das auf wenn sich
   // performance-relevanter State ändert.

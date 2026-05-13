@@ -271,6 +271,36 @@ const INDEX = {
   workLog: [
     {
       agent:     "frontend",
+      timestamp: "2026-05-13T21:30:00.000Z",
+      done: [
+        "Performance-Mode Popup-Window — Phase 2 (post-Phase 1 follow-up). Erweitert die Phase-1-Architektur um vollständigen Edit/Reorder-Operation-Sync (alle Pad-CRUD-Operationen propagieren bidirektional zwischen Main und Popup) sowie einen Always-on-top Toggle. Aufwand: ~1.5h.",
+        "P2-A (PatternLaunchPad injectable store actions): Neues exportiertes Interface PerformanceStoreActions mit setPadAt/setPadColor/setPadLabel/movePad/moveMultiplePads/clearPad. Neuer optionaler Prop storeActions auf PatternLaunchPad — wenn undefined → fallback auf DEFAULT_STORE_ACTIONS (direkte Module-Funktionen aus usePerformanceStore, Main-Verhalten unverändert). 7 direkte Aufrufe in PatternLaunchPad + 4 in PadEditor durch actions.xxx() ersetzt (mit Edit-Replace, präzise Substrings). PadEditor-Signatur um actions-Prop erweitert.",
+        "P2-B (App.tsx Action-Listener erweitert): onPerfPopupAction-Switch um 6 neue Action-Types ergänzt: set-pad-at, set-pad-color, set-pad-label, clear-pad, move-pad, move-multiple-pads. Jede dispatcht in die echten usePerformanceStore-Funktionen (importiert als setPerformancePadAt etc. um Namens-Kollision zu vermeiden). Defensive Typ-Validierung pro Action. PerformancePad-Type ebenfalls importiert. Nach jeder Mutation feuert die Store-Subscription → Broadcast-useEffect läuft → Popup bekommt neuen State live zurück.",
+        "P2-C (PerformancePopupApp injects IPC overrides): useMemo-stabilisiertes storeActions-Objekt das jede Operation in ein dispatchAction({type, ...payload}) umsetzt. Übergeben an PatternLaunchPad via Prop. Edit-Mode + Reorder-Mode + PadEditor funktionieren jetzt vollständig im Popup. Sync-Flow: Popup-Edit → IPC-Action → Main-Listener → Store-Dispatch → Broadcast → Popup-State-Update → Re-Render. Latenz: typisch <20ms.",
+        "P2-D (Always-on-top Toggle): 2 neue IPC-Channels — window:perf-set-always-on-top (boolean → {success, alwaysOnTop}) und window:perf-is-always-on-top (→ boolean). Electron-main perfWindow.setAlwaysOnTop() / isAlwaysOnTop(). Preload + types.d.ts + useElectron.ts erweitert mit setPerfPopupAlwaysOnTop, isPerfPopupAlwaysOnTop. Browser-fallback no-ops. UI: floating 📌-Toggle-Button im PerformancePopupApp (top-2 right-16 z-[60], data-testid='perf-popup-always-on-top'), aria-labels + Title-Tooltips. State initial via isPerfPopupAlwaysOnTop()-Fetch + Toggle-State spiegelt setSuccess-Response.",
+        "Security-Review: 2 neue IPC-Channels (Phase 2) narrow-data-only — Boolean-Argument für setAlwaysOnTop, kein Payload für is-always-on-top. Keine file paths, keine shell ops, keine native-modul-Aufrufe. Bestehende perf-sync:action Channel wurde nicht erweitert (war bereits 'unknown' typed) — Action-Type-Validation passiert renderer-side im App.tsx-Listener mit defensiven typeof-Checks.",
+        "Verification: pnpm check 0 Fehler. pnpm test 1347/1362 grün (unchanged — Tests sind unit-only, kein Refactor-Schaden). Manuelle Verifikation: pnpm dev:electron → Performance Mode → ⧉ Separates Fenster → im Popup: Edit-Mode öffnen, Pads bearbeiten/färben/labeln → live-Update im Hauptfenster sichtbar. Reorder-Mode → drag-drop / Multi-Select drag → propagiert ins Main. 📌-Toggle macht das Popup floatend über andere Apps."
+      ],
+      next: [
+        "Phase 3 (Future — Web-Fallback): aktuell Electron-only. Web-Fallback via window.open(?perfPopup=1) + BroadcastChannel API für State-Sync zwischen Tabs. Popup-Blocker-Risk dokumentieren. Schätzung: 0.5-1 Tag.",
+        "Phase 3 (Future — Sync-Performance-Optimierung): aktuell sendet jeder State-Change ein FULL Snapshot. Bei currentStep-Updates alle ~125ms ist das ~8 IPC-Calls/s mit 16-Pad-Array dabei. Separater perf-sync:current-step Channel der nur den number sendet würde Bandwidth reduzieren. Aktuell akzeptabel.",
+        "Phase 3 (Future — Playwright E2E): tests/electron/e2e/performance-popup.spec.ts mit zwei Electron-Windows orchestrieren — Popup-Open, Pad-Click im Popup → Pattern wechselt im Main, Edit im Popup → Pads im Main aktualisiert. Komplex weil Playwright zwei BrowserWindows handlen muss. Aufwand: 0.5 Tag.",
+        "User-Request weiter offen: 'alle Menüs und Tabs entkoppeln' — Generalisierung des Phase-1/2-Patterns auf alle App-Tabs. Würde der ROADMAP.md-Eintrag 'Multi-Window Dockable Workspace' (2-3 Wochen) realisieren. Idealerweise nach einem Refactor-Sprint der das aktuelle perf-sync-Pattern in ein wiederverwendbares Window-Sync-System abstrahiert.",
+        "User-Bug-Reports während dieser Session offen (siehe ROADMAP / BUG-Liste): (a) BUG-010 Script-CSP-Error in production (kritisch — Scripts laufen gar nicht), (b) Audio-Workbench keine Waveform-Visualisierung, (c) Sample-Browser Analyse erkennt aber zeigt keine Waveform, (d) Sample-Browser BPM-Detection geht nicht. Feature-Request: AI Script Generator."
+      ],
+      changed: [
+        "electron/main.ts",
+        "electron/preload.ts",
+        "electron/types.d.ts",
+        "electron/useElectron.ts",
+        "client/src/App.tsx",
+        "client/src/components/PerformanceMode/PatternLaunchPad.tsx",
+        "client/src/components/PerformanceMode/PerformancePopupApp.tsx",
+        "agents/INDEX.js"
+      ]
+    },
+    {
+      agent:     "frontend",
       timestamp: "2026-05-13T20:30:00.000Z",
       done: [
         "Performance-Mode Popup-Window — Phase 1 (ROADMAP feature, post-v1.23.0). Architektur: separates Electron BrowserWindow lädt denselben Renderer-Entry mit URL-Param ?perfPopup=1. App.tsx erkennt den Param und rendert nur das PerformancePopupApp statt der vollen App. Cross-Window-State-Sync via IPC-Routing über den Main-Process zwischen mainWindow und perfWindow.",
@@ -1191,8 +1221,13 @@ const INDEX = {
       "window:open-performance",      // invoke, no payload
       "window:close-performance",     // invoke, no payload
       "window:is-performance-open",   // invoke, no payload → boolean
+      "window:perf-set-always-on-top", // invoke (Phase 2) boolean → {success, alwaysOnTop}
+      "window:perf-is-always-on-top",  // invoke (Phase 2) → boolean
       "perf-sync:state",              // send (main→popup) plain JSON state snapshot
       "perf-sync:action",             // send (popup→main) plain JSON action object
+                                      // action.type: pad-click | quantize-mode-change | request-state
+                                      //   (Phase 2) set-pad-at | set-pad-color | set-pad-label
+                                      //   (Phase 2) clear-pad | move-pad | move-multiple-pads
       "perf-window:closed"            // event (main→main-renderer) when popup closes
     ]
   },

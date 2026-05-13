@@ -79,6 +79,14 @@ import {
   queuePattern as queuePerformancePattern,
   setQuantizeMode as setPerformanceQuantizeMode,
   getPads as getPerformancePads,
+  // Phase 2 popup-window-sync: edit + reorder actions
+  setPadAt as setPerformancePadAt,
+  setPadColor as setPerformancePadColor,
+  setPadLabel as setPerformancePadLabel,
+  clearPad as clearPerformancePad,
+  movePad as movePerformancePad,
+  moveMultiplePads as moveMultiplePerformancePads,
+  type PerformancePad,
 } from "@/store/usePerformanceStore";
 import { useResizablePanel } from "@/hooks/useResizablePanel";
 import { ResizablePanelHandle } from "@/components/UI/ResizablePanelHandle";
@@ -1366,7 +1374,7 @@ export default function App() {
     if (!electron.isElectron) return;
     const cleanup = electron.onPerfPopupAction?.((payload) => {
       if (!payload || typeof payload !== "object") return;
-      const action = payload as { type?: string; patternId?: string; mode?: string };
+      const action = payload as Record<string, unknown>;
 
       switch (action.type) {
         case "pad-click":
@@ -1378,6 +1386,43 @@ export default function App() {
         case "quantize-mode-change":
           if (action.mode === "bar" || action.mode === "beat" || action.mode === "step") {
             setPerformanceQuantizeMode(action.mode);
+          }
+          break;
+        // Phase 2: Edit-Mode-Actions — direkt in usePerformanceStore dispatchen.
+        // Nach jeder Mutation feuert die Store-Subscription unsere Broadcast-
+        // useEffect oben → Popup bekommt den neuen State live zurück.
+        case "set-pad-at":
+          if (typeof action.index === "number") {
+            setPerformancePadAt(action.index, action.pad as PerformancePad | null);
+          }
+          break;
+        case "set-pad-color":
+          if (typeof action.index === "number" && typeof action.color === "string") {
+            setPerformancePadColor(action.index, action.color);
+          }
+          break;
+        case "set-pad-label":
+          if (typeof action.index === "number" && typeof action.label === "string") {
+            setPerformancePadLabel(action.index, action.label);
+          }
+          break;
+        case "clear-pad":
+          if (typeof action.index === "number") {
+            clearPerformancePad(action.index);
+          }
+          break;
+        // Phase 2: Reorder-Mode-Actions
+        case "move-pad":
+          if (typeof action.fromIndex === "number" && typeof action.toIndex === "number") {
+            movePerformancePad(action.fromIndex, action.toIndex);
+          }
+          break;
+        case "move-multiple-pads":
+          if (Array.isArray(action.fromIndices) && typeof action.toIndex === "number") {
+            moveMultiplePerformancePads(
+              (action.fromIndices as unknown[]).filter((n): n is number => typeof n === "number"),
+              action.toIndex,
+            );
           }
           break;
         case "request-state":

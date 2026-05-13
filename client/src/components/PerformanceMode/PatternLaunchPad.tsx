@@ -69,6 +69,23 @@ interface PatternRef {
   name: string;
 }
 
+/**
+ * Performance-Store-Actions die PatternLaunchPad zum Verändern der Pads
+ * aufruft. Optional injectable — Default ist die direkte Verwendung der
+ * Module-Funktionen aus usePerformanceStore (Main-App-Pfad). Im
+ * Performance-Popup-Renderer werden diese durch IPC-dispatchende Varianten
+ * ersetzt, damit Edit/Reorder-Operationen über den Main-Process zurück in
+ * den persistierten Store fließen (ROADMAP Phase 2).
+ */
+export interface PerformanceStoreActions {
+  setPadAt: (index: number, pad: PerformancePad | null) => void;
+  setPadColor: (index: number, color: string) => void;
+  setPadLabel: (index: number, label: string) => void;
+  movePad: (fromIndex: number, toIndex: number) => void;
+  moveMultiplePads: (fromIndices: number[], targetIndex: number) => void;
+  clearPad: (index: number) => void;
+}
+
 interface PatternLaunchPadProps {
   /** Persistierte Slot-Liste (Länge PAD_COUNT, null = leer). */
   pads: Array<PerformancePad | null>;
@@ -89,7 +106,24 @@ interface PatternLaunchPadProps {
    * Ansicht. Undefined → Button wird ausgeblendet (z.B. im Popup-Renderer selbst).
    */
   onOpenInWindow?: () => void;
+  /**
+   * Optional: Store-Action-Overrides für Edit/Reorder-Operationen. Wird im
+   * Popup-Renderer mit IPC-dispatchenden Varianten gefüllt; im Main-Renderer
+   * undefined gelassen → fallback auf die direkten Modul-Funktionen aus
+   * usePerformanceStore. Siehe PerformanceStoreActions-Interface.
+   */
+  storeActions?: PerformanceStoreActions;
 }
+
+/** Default-Store-Actions: direkte Module-Funktionen aus usePerformanceStore. */
+const DEFAULT_STORE_ACTIONS: PerformanceStoreActions = {
+  setPadAt,
+  setPadColor,
+  setPadLabel,
+  movePad,
+  moveMultiplePads,
+  clearPad,
+};
 
 /**
  * Safety-Net-Fallback-Palette (8 Slots, mod-loop für 16 Pad-Positionen).
@@ -307,7 +341,15 @@ export function PatternLaunchPad({
   onQuantizeModeChange,
   onClose,
   onOpenInWindow,
+  storeActions,
 }: PatternLaunchPadProps) {
+  // Effective store actions: caller-injected overrides ODER Module-Defaults.
+  // useMemo damit Identität stabil bleibt (vermeidet unnötige re-renders in
+  // dependents wie restoreSnapshot useCallback).
+  const actions = useMemo<PerformanceStoreActions>(
+    () => storeActions ?? DEFAULT_STORE_ACTIONS,
+    [storeActions],
+  );
   const [mode, setMode] = useState<Mode>("play");
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [dragSrc, setDragSrc] = useState<number | null>(null);
@@ -444,7 +486,7 @@ export function PatternLaunchPad({
       const want = snap[i] ?? null;
       // setPadAt mit null entfernt; mit pad-object setzt neu. Identitäts-Check macht setPadAt nicht,
       // d.h. es wird auch ein notify gefeuert wenn der Wert gleich ist. Akzeptabel für Restore.
-      setPadAt(i, want);
+      actions.setPadAt(i, want);
     }
   }, []);
 
@@ -486,7 +528,7 @@ export function PatternLaunchPad({
       setLiveMessage(`Pad ${index + 1} losgelassen.`);
     } else if (grabbedIndex !== null) {
       // Drop grabbed → target index (Insert-Semantik via moveMultiplePads(single))
-      moveMultiplePads([grabbedIndex], index);
+      actions.moveMultiplePads([grabbedIndex], index);
       setLiveMessage(`Pad an Position ${index + 1} abgelegt.`);
       setGrabbedIndex(null);
       grabbedSnapshotRef.current = null;
@@ -534,11 +576,11 @@ export function PatternLaunchPad({
     if (multiSelect.has(dragSrc) && multiSelect.size > 1) {
       const fromIndices = Array.from(multiSelect).sort((a, b) => a - b);
       if (!multiSelect.has(targetIndex)) {
-        moveMultiplePads(fromIndices, targetIndex);
+        actions.moveMultiplePads(fromIndices, targetIndex);
         setMultiSelect(new Set()); // Auswahl leeren nach erfolgreichem Move
       }
     } else {
-      if (dragSrc !== targetIndex) movePad(dragSrc, targetIndex);
+      if (dragSrc !== targetIndex) actions.movePad(dragSrc, targetIndex);
     }
     setDragSrc(null);
     setDragOver(null);
@@ -674,7 +716,7 @@ export function PatternLaunchPad({
         // Verschiebe das gegriffene Pad
         const target = moveFocus(grabbedIndex, key);
         if (target !== grabbedIndex) {
-          moveMultiplePads([grabbedIndex], target);
+          actions.moveMultiplePads([grabbedIndex], target);
           setGrabbedIndex(target);
           setFocusedIndex(target);
           setLiveMessage(`Pad an Position ${target + 1}.`);
@@ -708,7 +750,7 @@ export function PatternLaunchPad({
       } else {
         // Drop
         if (grabbedIndex !== focusedIndex) {
-          moveMultiplePads([grabbedIndex], focusedIndex);
+          actions.moveMultiplePads([grabbedIndex], focusedIndex);
           setLiveMessage(`Pad an Position ${focusedIndex + 1} abgelegt.`);
         } else {
           setLiveMessage(`Pad ${focusedIndex + 1} losgelassen.`);
@@ -932,6 +974,7 @@ export function PatternLaunchPad({
           pad={pads[editingIndex] ?? null}
           patterns={patterns}
           fallbackColor={getPadDefaultColor(editingIndex)}
+          actions={actions}
           onClose={() => setEditingIndex(null)}
         />
       )}
@@ -1194,10 +1237,12 @@ interface PadEditorProps {
   pad: PerformancePad | null;
   patterns: PatternRef[];
   fallbackColor: string;
+  /** Store-Actions vom Parent (injizierbar — siehe ROADMAP Phase 2). */
+  actions: PerformanceStoreActions;
   onClose: () => void;
 }
 
-function PadEditor({ index, pad, patterns, fallbackColor, onClose }: PadEditorProps) {
+function PadEditor({ index, pad, patterns, fallbackColor, actions, onClose }: PadEditorProps) {
   const [labelDraft, setLabelDraft] = useState(pad?.label ?? "");
   const [colorDraft, setColorDraft] = useState(pad?.color ?? fallbackColor);
   const [patternDraft, setPatternDraft] = useState(pad?.patternId ?? "");
@@ -1219,7 +1264,7 @@ function PadEditor({ index, pad, patterns, fallbackColor, onClose }: PadEditorPr
 
   const handleSave = () => {
     if (!patternDraft) return;
-    setPadAt(index, {
+    actions.setPadAt(index, {
       patternId: patternDraft,
       color: colorDraft,
       label: labelDraft.trim() || undefined,
@@ -1229,16 +1274,16 @@ function PadEditor({ index, pad, patterns, fallbackColor, onClose }: PadEditorPr
 
   const handleApplyColor = (c: string) => {
     setColorDraft(c);
-    if (pad) setPadColor(index, c);
+    if (pad) actions.setPadColor(index, c);
   };
 
   const handleApplyLabel = (l: string) => {
     setLabelDraft(l);
-    if (pad) setPadLabel(index, l);
+    if (pad) actions.setPadLabel(index, l);
   };
 
   const handleRemove = () => {
-    clearPad(index);
+    actions.clearPad(index);
     onClose();
   };
 

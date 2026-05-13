@@ -26,9 +26,9 @@
  *   - "Always on top" Toggle
  *   - Multiple Popup-Windows (z.B. ein Popup pro Pattern-Bank)
  */
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useElectron } from "../../../../electron/useElectron";
-import { PatternLaunchPad } from "./PatternLaunchPad";
+import { PatternLaunchPad, type PerformanceStoreActions } from "./PatternLaunchPad";
 import type { PerformancePad, QuantizeMode } from "@/store/usePerformanceStore";
 
 // ─── State-Sync-Schema ────────────────────────────────────────────────────────
@@ -48,7 +48,15 @@ export interface PerfPopupState {
 export type PerfPopupAction =
   | { type: "pad-click"; patternId: string }
   | { type: "quantize-mode-change"; mode: QuantizeMode }
-  | { type: "close" };
+  | { type: "request-state" }
+  // Phase 2: Edit-Mode-Actions
+  | { type: "set-pad-at"; index: number; pad: PerformancePad | null }
+  | { type: "set-pad-color"; index: number; color: string }
+  | { type: "set-pad-label"; index: number; label: string }
+  | { type: "clear-pad"; index: number }
+  // Phase 2: Reorder-Mode-Actions
+  | { type: "move-pad"; fromIndex: number; toIndex: number }
+  | { type: "move-multiple-pads"; fromIndices: number[]; toIndex: number };
 
 // ─── Default-State (vor erstem Sync) ──────────────────────────────────────────
 
@@ -68,6 +76,7 @@ export function PerformancePopupApp() {
   const electron = useElectron();
   const [state, setState] = useState<PerfPopupState>(INITIAL_STATE);
   const [synced, setSynced] = useState(false);
+  const [alwaysOnTop, setAlwaysOnTop] = useState(false);
 
   // State-Sync vom Main-Renderer empfangen
   useEffect(() => {
@@ -97,9 +106,40 @@ export function PerformancePopupApp() {
     electron.sendPerfPopupAction?.({ type: "request-state" });
   }, [electron]);
 
+  // Initial-State für Always-on-top abfragen
+  useEffect(() => {
+    if (!electron.isElectron) return;
+    electron.isPerfPopupAlwaysOnTop?.().then(setAlwaysOnTop).catch(() => {});
+  }, [electron]);
+
+  const toggleAlwaysOnTop = () => {
+    if (!electron.isElectron) return;
+    const next = !alwaysOnTop;
+    void electron.setPerfPopupAlwaysOnTop?.(next).then((res) => {
+      if (res?.success) setAlwaysOnTop(res.alwaysOnTop);
+    });
+  };
+
   const dispatchAction = (action: PerfPopupAction) => {
     electron.sendPerfPopupAction?.(action);
   };
+
+  // Phase 2: Store-Action-Overrides für PatternLaunchPad.
+  // Jede Operation wird statt direkt in den lokalen Store via IPC-Action
+  // ins Main-Fenster geschickt. Main dispatcht in den echten Store und
+  // broadcasted den neuen State zurück — der Popup re-rendert dann.
+  //
+  // useMemo damit das Objekt stable bleibt (sonst triggert PatternLaunchPad
+  // einen useMemo-Rebuild bei jedem Render).
+  const storeActions: PerformanceStoreActions = useMemo(() => ({
+    setPadAt: (index, pad) => dispatchAction({ type: "set-pad-at", index, pad }),
+    setPadColor: (index, color) => dispatchAction({ type: "set-pad-color", index, color }),
+    setPadLabel: (index, label) => dispatchAction({ type: "set-pad-label", index, label }),
+    movePad: (fromIndex, toIndex) => dispatchAction({ type: "move-pad", fromIndex, toIndex }),
+    moveMultiplePads: (fromIndices, toIndex) => dispatchAction({ type: "move-multiple-pads", fromIndices, toIndex }),
+    clearPad: (index) => dispatchAction({ type: "clear-pad", index }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [electron]);
 
   // Im Web-Modus ist das Feature aktuell nicht verfügbar
   if (!electron.isElectron) {
@@ -133,20 +173,41 @@ export function PerformancePopupApp() {
   }
 
   return (
-    <PatternLaunchPad
-      pads={state.pads}
-      patterns={state.patterns}
-      activePatternId={state.activePatternId}
-      queuedPatternId={state.queuedPatternId}
-      quantizeMode={state.quantizeMode}
-      bpm={state.bpm}
-      currentStep={state.currentStep}
-      onPadClick={(patternId) => dispatchAction({ type: "pad-click", patternId })}
-      onQuantizeModeChange={(mode) => dispatchAction({ type: "quantize-mode-change", mode })}
-      // Close im Popup → schließt das Fenster (Main wird via perf-window:closed informiert)
-      onClose={() => {
-        electron.closePerformanceWindow?.();
-      }}
-    />
+    <>
+      {/* Always-on-top Toggle (Floating Overlay-Button oben rechts).
+          Separat vom PatternLaunchPad-Header weil das Header-Layout vom Main
+          und Popup geteilt wird — Popup-spezifische Controls als Overlay. */}
+      <button
+        onClick={toggleAlwaysOnTop}
+        aria-label={alwaysOnTop ? "Always-on-top deaktivieren" : "Always-on-top aktivieren"}
+        title={alwaysOnTop ? "Fenster bleibt im Vordergrund (Klick zum Lösen)" : "Fenster im Vordergrund halten"}
+        data-testid="perf-popup-always-on-top"
+        className={[
+          "fixed top-2 right-16 z-[60] px-2 py-1 text-[10px] rounded border transition-colors active:scale-95",
+          alwaysOnTop
+            ? "bg-accent-primary/20 text-accent-primary border-accent-primary"
+            : "bg-bg-elevated text-text-dim border-border-color hover:text-text-primary hover:border-accent-secondary",
+        ].join(" ")}
+      >
+        📌 {alwaysOnTop ? "Pinned" : "Pin"}
+      </button>
+
+      <PatternLaunchPad
+        pads={state.pads}
+        patterns={state.patterns}
+        activePatternId={state.activePatternId}
+        queuedPatternId={state.queuedPatternId}
+        quantizeMode={state.quantizeMode}
+        bpm={state.bpm}
+        currentStep={state.currentStep}
+        storeActions={storeActions}
+        onPadClick={(patternId) => dispatchAction({ type: "pad-click", patternId })}
+        onQuantizeModeChange={(mode) => dispatchAction({ type: "quantize-mode-change", mode })}
+        // Close im Popup → schließt das Fenster (Main wird via perf-window:closed informiert)
+        onClose={() => {
+          electron.closePerformanceWindow?.();
+        }}
+      />
+    </>
   );
 }

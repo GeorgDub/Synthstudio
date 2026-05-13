@@ -106,6 +106,8 @@ const browserAPI = {
   onPerfPopupState: noopDataListener<unknown>(),
   onPerfPopupAction: noopDataListener<unknown>(),
   onPerfPopupClosed: noopVoidListener,
+  setPerfPopupAlwaysOnTop: async (_alwaysOnTop: boolean) => ({ success: false, alwaysOnTop: false }),
+  isPerfPopupAlwaysOnTop: async () => false,
 
   showNotification: (_title: string, _body: string) => {},
   showConfirmDialog: async (_options: { title?: string; message: string }) => ({ response: 0 }),
@@ -295,6 +297,8 @@ export function useElectron() {
     onPerfPopupState: api.onPerfPopupState,
     onPerfPopupAction: api.onPerfPopupAction,
     onPerfPopupClosed: api.onPerfPopupClosed,
+    setPerfPopupAlwaysOnTop: api.setPerfPopupAlwaysOnTop,
+    isPerfPopupAlwaysOnTop: api.isPerfPopupAlwaysOnTop,
   };
 }
 
