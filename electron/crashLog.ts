@@ -104,6 +104,32 @@ export function installMainProcessCrashHandlers(): void {
   });
 }
 
+/**
+ * Registriert Chromium-native-crash-Detection auf einem BrowserWindow.
+ * Diese Events feuern wenn das Renderer-Process nativ stirbt — z.B. bei einem
+ * Segfault während window destruction, OOM, oder Chromium-internem Crash.
+ *
+ * Wichtig: passt zu der "popup:close → silence" Pattern aus User-Logs, wo die
+ * App nach win.on('close') stirbt OHNE win.on('closed') zu erreichen.
+ */
+export function installWebContentsCrashHandlers(
+  webContents: Electron.WebContents,
+  label: string,
+): void {
+  webContents.on("render-process-gone", (_event, details) => {
+    logCrash(`render-process-gone:${label}`, {
+      reason: details.reason,
+      exitCode: details.exitCode,
+    });
+  });
+  webContents.on("unresponsive", () => {
+    logEvent(`webContents:unresponsive`, { window: label });
+  });
+  webContents.on("responsive", () => {
+    logEvent(`webContents:responsive`, { window: label });
+  });
+}
+
 /** Sauberes Schließen beim App-Beenden. */
 export function shutdownCrashLog(): void {
   try {

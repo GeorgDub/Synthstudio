@@ -45,6 +45,7 @@ import { initStore, registerStoreHandlers, type AppStore, type PopupWindowLayout
 import {
   initCrashLog,
   installMainProcessCrashHandlers,
+  installWebContentsCrashHandlers,
   logEvent,
   logCrash,
   shutdownCrashLog,
@@ -390,6 +391,11 @@ function createWindow(): void {
     },
   });
 
+  // DIAG-3: native renderer crash detection (render-process-gone /
+  // unresponsive). Fängt Chromium-interne Crashes ein, die nicht über
+  // process.on('uncaughtException') sichtbar werden.
+  installWebContentsCrashHandlers(mainWindow.webContents, "main");
+
   // ── Anzeigen sobald der Renderer fertig ist ────────────────────────────────
   // ready-to-show kann selten nicht feuern (z.B. wenn loadFile failed).
   // Deshalb ein 5s-Fallback der das Fenster trotzdem zeigt um "unsichtbaren
@@ -577,6 +583,7 @@ function createPerformanceWindow(): void {
   // Without this, the user could accidentally trigger "Datei → Beenden"
   // (role:quit) from a focused popup and quit the entire app.
   perfWindow.setMenu(null);
+  installWebContentsCrashHandlers(perfWindow.webContents, "performance");
 
   // Window-Layout-Persistenz: restore alwaysOnTop wenn gespeichert
   if (saved?.alwaysOnTop) {
@@ -683,6 +690,7 @@ function createFxWindow(channelId: string): void {
   // BUG-017 fix: popup windows must NOT inherit the application menu —
   // otherwise menu accelerators from this window could quit the entire app.
   win.setMenu(null);
+  installWebContentsCrashHandlers(win.webContents, `fx:${channelId}`);
 
   // Window-Layout-Persistenz
   if (saved?.alwaysOnTop) win.setAlwaysOnTop(true);
@@ -770,6 +778,7 @@ function createMixerWindow(): void {
 
   // BUG-017 fix: popup windows must NOT inherit the application menu.
   mixerWindow.setMenu(null);
+  installWebContentsCrashHandlers(mixerWindow.webContents, "mixer");
 
   if (saved?.alwaysOnTop) mixerWindow.setAlwaysOnTop(true);
   appStore?.setPopupLayout("mixer", {
@@ -854,6 +863,7 @@ function createSampleBrowserWindow(): void {
   });
 
   sampleBrowserWindow.setMenu(null);
+  installWebContentsCrashHandlers(sampleBrowserWindow.webContents, "sampleBrowser");
 
   if (saved?.alwaysOnTop) sampleBrowserWindow.setAlwaysOnTop(true);
   appStore?.setPopupLayout("sampleBrowser", {
@@ -933,6 +943,7 @@ function createPatternGenWindow(): void {
   });
 
   patternGenWindow.setMenu(null);
+  installWebContentsCrashHandlers(patternGenWindow.webContents, "patternGen");
 
   if (saved?.alwaysOnTop) patternGenWindow.setAlwaysOnTop(true);
   appStore?.setPopupLayout("patternGen", {
@@ -1032,6 +1043,7 @@ function createSimpleSingletonWindow(
 
   setter(win);
   win.setMenu(null);
+  installWebContentsCrashHandlers(win.webContents, config.key);
 
   if (saved?.alwaysOnTop) win.setAlwaysOnTop(true);
   appStore?.setPopupLayout(config.key, {
@@ -1976,6 +1988,7 @@ function registerIpcHandlers(): void {
   });
 
   ipcMain.handle("window:close-performance", () => {
+    logEvent("ipc:close-popup", { key: "performance", alive: !!perfWindow && !perfWindow.isDestroyed() });
     if (perfWindow && !perfWindow.isDestroyed()) {
       perfWindow.close();
     }
@@ -2035,6 +2048,7 @@ function registerIpcHandlers(): void {
   });
 
   ipcMain.handle("window:close-fx", (_event, channelId: string) => {
+    logEvent("ipc:close-popup", { key: `fx:${channelId}`, alive: fxWindows.has(channelId) });
     if (!channelId || typeof channelId !== "string") {
       return { success: false, error: "channelId fehlt" };
     }
@@ -2111,6 +2125,7 @@ function registerIpcHandlers(): void {
   });
 
   ipcMain.handle("window:close-mixer", () => {
+    logEvent("ipc:close-popup", { key: "mixer", alive: !!mixerWindow && !mixerWindow.isDestroyed() });
     if (mixerWindow && !mixerWindow.isDestroyed()) {
       mixerWindow.close();
     }
@@ -2161,6 +2176,7 @@ function registerIpcHandlers(): void {
   });
 
   ipcMain.handle("window:close-sample-browser", () => {
+    logEvent("ipc:close-popup", { key: "sampleBrowser", alive: !!sampleBrowserWindow && !sampleBrowserWindow.isDestroyed() });
     if (sampleBrowserWindow && !sampleBrowserWindow.isDestroyed()) {
       sampleBrowserWindow.close();
     }
@@ -2208,6 +2224,7 @@ function registerIpcHandlers(): void {
   });
 
   ipcMain.handle("window:close-pattern-gen", () => {
+    logEvent("ipc:close-popup", { key: "patternGen", alive: !!patternGenWindow && !patternGenWindow.isDestroyed() });
     if (patternGenWindow && !patternGenWindow.isDestroyed()) {
       patternGenWindow.close();
     }
@@ -2257,6 +2274,7 @@ function registerIpcHandlers(): void {
     });
     ipcMain.handle(`window:close-${keyPrefix}`, () => {
       const w = getWin();
+      logEvent("ipc:close-popup", { key: keyPrefix, alive: !!w && !w.isDestroyed() });
       if (w && !w.isDestroyed()) w.close();
       return { success: true };
     });
