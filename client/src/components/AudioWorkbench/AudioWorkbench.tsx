@@ -283,6 +283,43 @@ export function AudioWorkbench({ onSamplesAdded }: AudioWorkbenchProps) {
   const [trimEnd, setTrimEnd] = useState(0);
   const [normalizeDb, setNormalizeDb] = useState(0); // 0 dB = -0 dB FS Peak
 
+  // Playback-State (Buffer-Vorschau)
+  const [isPlaying, setIsPlaying] = useState(false);
+  const playbackRef = useRef<{ ctx: AudioContext; src: AudioBufferSourceNode } | null>(null);
+
+  const stopPlayback = useCallback(() => {
+    if (playbackRef.current) {
+      try { playbackRef.current.src.stop(); } catch { /* already stopped */ }
+      try { void playbackRef.current.ctx.close(); } catch { /* ignore */ }
+      playbackRef.current = null;
+    }
+    setIsPlaying(false);
+  }, []);
+
+  const startPlayback = useCallback(() => {
+    if (!buffer) return;
+    stopPlayback();
+    const ctx = new AudioContext();
+    const src = ctx.createBufferSource();
+    src.buffer = buffer;
+    src.connect(ctx.destination);
+    src.onended = () => {
+      // Race-safe: nur stoppen wenn DIESE source noch aktiv ist
+      if (playbackRef.current?.src === src) stopPlayback();
+    };
+    src.start(0);
+    playbackRef.current = { ctx, src };
+    setIsPlaying(true);
+  }, [buffer, stopPlayback]);
+
+  // Cleanup beim Unmount + bei Buffer-Wechsel
+  React.useEffect(() => {
+    return () => stopPlayback();
+  }, [stopPlayback]);
+  React.useEffect(() => {
+    stopPlayback();
+  }, [buffer, stopPlayback]);
+
   // Waveform-Bereichsauswahl (drag-to-select)
   const [selStart, setSelStart] = useState<number | null>(null);
   const [selEnd, setSelEnd] = useState<number | null>(null);
@@ -544,6 +581,22 @@ export function AudioWorkbench({ onSamplesAdded }: AudioWorkbenchProps) {
               </button>
             </div>
           )}
+
+          {/* ── Playback-Toolbar ──────────────────────────────────────────── */}
+          <div className="flex items-center gap-1.5 p-2 bg-bg-elevated rounded-lg">
+            <span className="text-[10px] text-text-dim self-center mr-1 uppercase tracking-wider">Vorschau:</span>
+            <button
+              onClick={isPlaying ? stopPlayback : startPlayback}
+              title={isPlaying ? "Wiedergabe stoppen" : "Buffer abspielen"}
+              className={`px-3 py-1 text-[10px] rounded font-bold transition-colors ${
+                isPlaying
+                  ? "bg-accent-danger text-white animate-pulse"
+                  : "bg-accent-primary text-white hover:opacity-90"
+              }`}
+            >
+              {isPlaying ? "■ Stop" : "▶ Play"}
+            </button>
+          </div>
 
           {/* ── Audacity-Style Edit-Toolbar ──────────────────────────────── */}
           <div className="flex flex-wrap gap-1.5 p-2 bg-bg-elevated rounded-lg">
