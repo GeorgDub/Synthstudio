@@ -1,6 +1,6 @@
 # Synthstudio – Anweisungsdatei für neue Claude-Session
 
-**Version: 1.24.0** | Stand: 2026-05-13 (Sprints 1–24 abgeschlossen)
+**Version: 1.25.0** | Stand: 2026-05-13 (Sprints 1–25 abgeschlossen)
 
 ---
 
@@ -300,6 +300,12 @@ addCustomTheme({ name, colors, extras: {
 - **BUG-014** (medium): Pattern-Generator BPM-Input springt auf 40 beim Clearen. Fix: lokaler String-Draft-State während des Tippens, Commit + Clamp erst on-Blur/Enter (sowohl Vorlagen- als auch Prompt-Tab).
 - **BUG-015** (medium): ElectronTitleBar-Titel überlappt. Fix: linke Seite zeigt nur "Synthstudio" (App-Name), Projektname bleibt zentriert in der Mitte.
 
+### v1.25.0 — AI Script Generator (ROADMAP Phase S)
+- **AI Script Generator** (`utils/aiScriptGenerator.ts` + `components/Tools/AiScriptGeneratorDialog.tsx`): Prompt-driven Code-Generation für die Script-Runner-Sandbox via Anthropic-API. `✨ KI`-Button im ScriptRunner-Header öffnet ein Modal mit Prompt-Textarea, Generate-Button, Code-Preview (read-only + Byte-Count) und "Als neues Script speichern". System-Prompt dokumentiert alle 10 `ss.*`-Methoden + 17 erlaubte dispatch-Actions + Sandbox-Constraints.
+- Pure Helper-Funktionen: `buildSystemPrompt()`, `stripMarkdownFences()` (entfernt ```js/```javascript/```/```ts/```typescript), `validateGeneratedCode()` (10kB-Limit, ss.*-Plausibility-Check, 8 banned-Patterns wie eval/fetch/window/import). Nutzt `useApiSettingsStore` für API-Key + Modell — gleiche Quelle wie Pattern-Generator + KI-Co-Pilot.
+- **Tests**: 27 neue Unit-Tests in `tests/features/ai-script-generator.test.ts`. Test-Stand: 1376/1391 grün.
+- **Welle 2 offen** (in ROADMAP Phase S): Iterieren/Verbessern-Button für existing Scripts, SSE-Streaming, Beispiel-Prompts-Dropdown, Cost-Tracking + Budget-Cap.
+
 ---
 
 ## Implementierte Features (Überblick)
@@ -371,5 +377,5 @@ Quelle: `agents/INDEX.js` → `openTasks`
 ---
 
 **Dev-Server**: http://localhost:5173  
-**Letzter Test-Run**: `pnpm test` → 1347 passed / 15 skipped (pre-existing) / 64 Files / ~3.0s + `pnpm test:web` 8 Playwright-Tests grün  
-**Version**: 1.24.0
+**Letzter Test-Run**: `pnpm test` → 1376 passed / 15 skipped (pre-existing) / 65 Files / ~3.4s + `pnpm test:web` 8 Playwright-Tests grün  
+**Version**: 1.25.0
