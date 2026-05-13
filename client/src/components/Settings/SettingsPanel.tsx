@@ -40,6 +40,8 @@ import {
 import { CustomThemeCreator } from "./CustomThemeCreator";
 import type { MidiState, MidiActions, MidiLearnTarget } from "@/hooks/useMidi";
 import type { PartData } from "@/audio/AudioEngine";
+import { useElectron } from "../../../../electron/useElectron";
+import { useUpdater } from "@/hooks/useUpdater";
 
 // ─── Sidebar-Abschnitte ───────────────────────────────────────────────────────
 
@@ -801,16 +803,89 @@ function PluginsSection() {
 }
 
 function AboutSection() {
+  const electron = useElectron();
+  const { state: updaterState, checkForUpdates } = useUpdater();
+  const [appVersion, setAppVersion] = useState<string>("1.23.0");
+
+  // Live-Version vom Electron-Main holen (oder package.json-Fallback)
+  useEffect(() => {
+    if (!electron.isElectron) return;
+    electron.getVersion?.().then((v) => {
+      if (typeof v === "string" && v.length > 0) setAppVersion(v);
+    }).catch(() => {});
+  }, [electron]);
+
+  // Update-Status als lesbarer Text
+  const updaterLabel = (() => {
+    switch (updaterState.phase) {
+      case "idle":        return "Bereit zur Update-Prüfung";
+      case "checking":    return "Suche nach Updates…";
+      case "up-to-date":  return "Du bist auf dem neuesten Stand";
+      case "available":   return `Update ${updaterState.version ? `v${updaterState.version}` : ""} verfügbar — wird heruntergeladen…`;
+      case "downloading": return `Lade Update… ${updaterState.percent ?? 0}%`;
+      case "ready":       return `Update v${updaterState.version} bereit — beim nächsten Start installiert`;
+      case "error":       return `Fehler: ${updaterState.errorMessage ?? "unbekannt"}`;
+      default:            return "";
+    }
+  })();
+
+  const updaterLabelColor = (() => {
+    switch (updaterState.phase) {
+      case "up-to-date":  return "text-accent-success";
+      case "available":   return "text-accent-secondary";
+      case "downloading": return "text-accent-primary";
+      case "ready":       return "text-accent-success";
+      case "error":       return "text-accent-danger";
+      default:            return "text-text-muted";
+    }
+  })();
+
+  const canCheck = electron.isElectron && (updaterState.phase === "idle" || updaterState.phase === "up-to-date" || updaterState.phase === "error");
+
   return (
     <div className="space-y-4">
       <h3 className="text-sm font-bold text-text-primary">Über Synthstudio</h3>
       <div className="text-xs text-text-muted space-y-1">
-        <div>Version 1.14</div>
+        <div>Version <span className="font-mono text-text-primary">{appVersion}</span></div>
         <div>Professionelle Drum Machine & Sample Synthesizer</div>
         <div className="text-text-dim pt-2">
           Gebaut mit React 19, Electron 40, Tone.js, Web Audio API.
         </div>
       </div>
+
+      {/* Updates-Sektion (nur Electron — Web hat keinen Auto-Updater) */}
+      {electron.isElectron && (
+        <div className="border-t border-border-color pt-3 space-y-2">
+          <h4 className="text-xs font-bold text-text-primary">Updates</h4>
+          <div className={["text-[11px]", updaterLabelColor].join(" ")}>
+            {updaterLabel}
+          </div>
+          {/* Download-Progress nur sichtbar während downloading */}
+          {updaterState.phase === "downloading" && (
+            <div className="w-full h-1.5 rounded-full bg-bg-elevated overflow-hidden">
+              <div
+                className="h-full bg-accent-primary transition-all duration-200"
+                style={{ width: `${updaterState.percent ?? 0}%` }}
+              />
+            </div>
+          )}
+          <button
+            data-testid="settings-check-updates"
+            onClick={checkForUpdates}
+            disabled={!canCheck}
+            className={[
+              "mt-1 px-3 py-1.5 rounded text-[11px] font-medium transition-colors",
+              canCheck
+                ? "bg-accent-primary/20 text-accent-primary hover:bg-accent-primary/30 border border-accent-primary/40"
+                : "bg-bg-elevated text-text-dim border border-border-color cursor-not-allowed",
+            ].join(" ")}
+            title={canCheck ? "Manuell nach Updates suchen" : "Läuft bereits …"}
+          >
+            ↻ Jetzt nach Updates suchen
+          </button>
+        </div>
+      )}
+
       <div className="border-t border-border-color pt-3 text-[10px] text-text-dim space-y-1">
         <div>Speicher-Nutzung: localStorage für Settings & Presets</div>
         <div>Projekte: <code>.synth</code> JSON Format</div>

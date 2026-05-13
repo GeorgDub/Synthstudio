@@ -36,6 +36,7 @@ Siehe `docs/NEUE_SESSION_ANWEISUNG.md` für die vollständige Feature-Matrix. Ku
 | **BUG-012** | Sample-Browser: Waveform + BPM-Detection greifen nicht | high (UX) | Sample wird analysiert (Status sichtbar) aber Waveform-UI bleibt leer. BPM-Detection liefert kein Ergebnis. Möglicherweise zwei Bugs (Renderer + Worker). |
 | **BUG-013** | "Neues Projekt" resettet bestehenden Content nicht | high (data) | Klick auf "Neues Projekt" lässt Patterns/Steps/Parts aus vorheriger Session bestehen. Ursache vermutlich: useProjectStore.newProject() ruft nicht alle Sub-Store-Resets auf (DrumMachine, Song, Mixer, Automation, Macros, Performance, Scripts, Audio-Tracks). |
 | **BUG-014** | Pattern-Generator BPM-Input springt auf 40 beim Clearen | medium (UX) | Vorlage-Tab BPM-Input. Komplettes Löschen springt sofort auf 40, verhindert flüssiges Tippen (Zwischenwerte 1, 12 etc. werden geclamped). Fix: separater String-State für controlled Input, Clamp erst beim Blur. |
+| **BUG-015** | ✅ ElectronTitleBar: Titel-Text-Überlappung | medium (UX) | Fixed: linke Seite zeigt nur "Synthstudio", Projektname bleibt zentriert in der Mitte. Verhindert Kollision bei schmalen Fenstern. |
 
 ---
 

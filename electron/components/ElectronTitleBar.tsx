@@ -98,42 +98,44 @@ export function ElectronTitleBar({
   }, [api]);
 
   // ── Titel zusammensetzen ──────────────────────────────────────────────────
+  // BUG-015 Fix: linke Seite zeigt nur "Synthstudio" wenn die Mitte einen
+  // Projektnamen anzeigt — sonst überlappen sich beide Texte bei schmalen
+  // Fenstern oder kurzen Projektnamen.
   const appName = "Synthstudio";
-  const titleParts: string[] = [appName];
-  if (projectName) titleParts.push(projectName);
-  const title = titleParts.join(" – ");
+  const leftTitle = appName; // ohne ProjectName um Doppelung mit der Mitte zu vermeiden
 
   return (
     <div
       className={`
-        flex items-center justify-between
+        flex items-center justify-between relative
         h-8 bg-bg-base border-b border-border-color
         select-none ${className}
       `}
       style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
     >
-      {/* Linke Seite: App-Icon + Titel */}
+      {/* Linke Seite: App-Icon + App-Name (Projektname nur in der Mitte) */}
       <div className="flex items-center gap-2 px-3 min-w-0">
         {/* Kleines App-Icon (Platzhalter) */}
         <div className="w-4 h-4 rounded-full bg-accent-primary flex-shrink-0 opacity-80" />
 
-        {/* Titel */}
+        {/* App-Name */}
         <span className="text-xs text-text-primary truncate font-medium">
-          {title}
+          {leftTitle}
         </span>
 
-        {/* isDirty-Indikator */}
+        {/* isDirty-Indikator (kompakt — der Stern in der Mitte zeigt das auch) */}
         {isDirty && (
           <span
             className="text-accent-primary text-xs flex-shrink-0"
             title="Ungespeicherte Änderungen"
+            aria-label="Ungespeicherte Änderungen"
           >
             ●
           </span>
         )}
       </div>
 
-      {/* Mitte: Projektname (zentriert) */}
+      {/* Mitte: Projektname (zentriert) — nur wenn vorhanden */}
       {projectName && (
         <div className="absolute left-1/2 -translate-x-1/2 pointer-events-none">
           <span className="text-xs text-text-dim truncate max-w-[200px] block text-center">

@@ -282,6 +282,18 @@ const INDEX = {
       foundBy:  "user (post-v1.23.0 report)",
       target:   "v1.23.1 / v1.24.0"
     },
+    "BUG-015": {
+      title:   "ElectronTitleBar: Titel-Text überlappt (links '\"App-Name + Projekt'\" + Mitte 'Projektname' kollidieren)",
+      severity: "medium (UX)",
+      details:  "User-Report mit Screenshot bilder/1.jpg: oben links zeigt der Titel-Bar zwei sich überlappende Texte — 'Synthstudio – Leeres Projekt' und 'Leeres Projekt' überschreiben sich. Ursache (verifiziert via Code-Review ElectronTitleBar.tsx L100-144): die linke Seite rendert den vollständigen titleParts.join('–') der den Projektnamen ENTHÄLT, während gleichzeitig die Mitte (absolute left-1/2 -translate-x-1/2) den Projektnamen NOCHMALS zentriert anzeigt. Bei schmalen Fenstern oder kurzen Projektnamen kollidieren beide. Fix: linke Seite zeigt jetzt nur 'Synthstudio' (App-Name ohne Projekt) — Projektname bleibt nur in der zentrierten Mitte. Position relative ergänzt am Wrapper damit absolute Positioning eindeutig im TitleBar-Container ist.",
+      fixed:    true,
+      foundBy:  "user (Screenshot bilder/1.jpg, post-v1.23.0)",
+      fixedBy:  "frontend",
+      fixedIn:  "BUG-015 fix (post-v1.23.0)",
+      relatedFiles: [
+        "electron/components/ElectronTitleBar.tsx"
+      ]
+    },
     "BUG-014": {
       title:   "Pattern-Generator Vorlagen: BPM-Input lässt sich nicht clearen, springt auf 40",
       severity: "medium (UX)",
