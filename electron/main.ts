@@ -261,6 +261,29 @@ function mapKeyPrefixToSingleton(keyPrefix: string): SingletonPopupKey | null {
   return null;
 }
 
+/**
+ * Mappt einen Popup-Key auf den IPC-Channel-Namen den der Renderer abonniert.
+ * Nötig weil win.destroy() KEIN "closed"-Event feuert — wir senden die
+ * Benachrichtigung manuell BEVOR wir destroyen.
+ *
+ * BUG-023 Fix (post-v1.42): ohne diese manuelle Notification erfährt das
+ * Main-Fenster nie dass das Popup zu ist und kann den Inline-View nicht
+ * zurückbringen ("Anpinnen geht weg ohne wiederzukehren").
+ */
+function getClosedEventChannel(key: SingletonPopupKey | string, isFx: boolean): string | null {
+  if (isFx) return "fx-window:closed";
+  switch (String(key)) {
+    case "performance":          return "perf-window:closed";
+    case "mixer":                return "mixer-window:closed";
+    case "sampleBrowser":        return "sample-browser-window:closed";
+    case "patternGen":           return "pattern-gen-window:closed";
+    case "keyboard-sampler":     return "keyboardSamplerPopup-window:closed";
+    case "chord-progression":    return "chordProgressionPopup-window:closed";
+    case "pattern-library":      return "patternLibraryPopup-window:closed";
+    default: return null;
+  }
+}
+
 function destroyPopupSafely(
   key: SingletonPopupKey | string,
   win: BrowserWindow | null,
@@ -285,6 +308,21 @@ function destroyPopupSafely(
       }
     }
     markPopupClosed();
+
+    // BUG-023: closed-IPC manuell senden — win.destroy() feuert KEINE
+    // "closed"-Events, also würde der Main-Renderer nie erfahren dass das
+    // Popup zu ist → Inline-View kommt nie zurück nach "Anpinnen"/"Zurückholen".
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      const channel = getClosedEventChannel(key, isFx);
+      if (channel) {
+        if (isFx) {
+          mainWindow.webContents.send(channel, String(key));
+        } else {
+          mainWindow.webContents.send(channel);
+        }
+        logEvent("popup:closed-notify", { key, channel });
+      }
+    }
   } catch (err) {
     logCrash(`destroyPopupSafely:${key}`, err);
   }
