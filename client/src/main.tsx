@@ -35,11 +35,20 @@ window.addEventListener("unhandledrejection", (event) => {
   reportRendererCrash("unhandledRejection", event.reason);
 });
 
-ReactDOM.createRoot(document.getElementById("root")!).render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>
-);
+// MIG-3: Dockview-Popout-Page. window.open(popout.html) öffnet eine same-origin
+// Seite, in die dockview die Panel-DOM-Nodes via externalDocument.body.appendChild
+// schreibt. Wir wollen hier KEINE React-App mounten — die Panel-DOM kommt aus
+// dem Hauptfenster, kein #root erforderlich.
+const isDockviewPopout =
+  window.opener !== null && /popout\.html/i.test(window.location.pathname);
+
+if (!isDockviewPopout) {
+  ReactDOM.createRoot(document.getElementById("root")!).render(
+    <React.StrictMode>
+      <App />
+    </React.StrictMode>
+  );
+}
 
 // PWA Service Worker registrieren (nur in Production + Browser, nicht in Electron)
 if ("serviceWorker" in navigator && !window.location.protocol.startsWith("file")) {

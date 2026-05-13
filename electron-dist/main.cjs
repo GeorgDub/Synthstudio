@@ -524,7 +524,41 @@ function createWindow() {
         });
     }
     // ── Externe Links im Standard-Browser öffnen ────────────────────────────────
-    mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    // Sonderfall MIG-3: dockview's addPopoutGroup() ruft window.open(popout.html)
+    // auf. Diese Same-Origin Popups erlauben wir als echte Electron-BrowserWindows
+    // mit eigenen Bounds — alles andere (externe http/https Links) öffnet weiter
+    // den System-Browser.
+    mainWindow.webContents.setWindowOpenHandler(({ url, features }) => {
+        const isDockviewPopout = /popout\.html(\?|$|#)/.test(url) || url.endsWith("popout.html");
+        if (isDockviewPopout) {
+            (0, crashLog_1.logEvent)("dockview:popout-open", { url });
+            // Parse features (z.B. "top=100,left=200,width=800,height=600")
+            const featureMap = {};
+            for (const part of (features ?? "").split(",")) {
+                const [k, v] = part.split("=").map(s => s.trim());
+                const n = parseInt(v ?? "", 10);
+                if (k && !isNaN(n))
+                    featureMap[k] = n;
+            }
+            return {
+                action: "allow",
+                overrideBrowserWindowOptions: {
+                    width: featureMap.width || 800,
+                    height: featureMap.height || 600,
+                    x: featureMap.left,
+                    y: featureMap.top,
+                    minWidth: 320,
+                    minHeight: 240,
+                    autoHideMenuBar: true,
+                    backgroundColor: "#1a1a2e",
+                    webPreferences: {
+                        preload: path.join(__dirname, "preload.cjs"),
+                        contextIsolation: true,
+                        nodeIntegration: false,
+                    },
+                },
+            };
+        }
         electron_1.shell.openExternal(url);
         return { action: "deny" };
     });

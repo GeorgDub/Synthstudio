@@ -29,12 +29,48 @@ import {
   DockviewReact,
   type DockviewReadyEvent,
   type IDockviewPanelProps,
+  type IDockviewHeaderActionsProps,
   type DockviewApi,
 } from "dockview-react";
 import "dockview-react/dist/styles/dockview.css";
 
 /** Generic Dockview-Panel-Komponente Typ (props-agnostic). */
 export type WorkspacePanelComponent = React.FunctionComponent<IDockviewPanelProps>;
+
+/**
+ * MIG-3: "Pop out" Action im Group-Header. Klick öffnet die aktive Gruppe in
+ * einem eigenen Fenster (Electron BrowserWindow oder Browser-Popup).
+ * Dockview's addPopoutGroup() ruft window.open(popoutUrl) auf → in Electron
+ * fängt setWindowOpenHandler das ab und erzeugt eine echte BrowserWindow.
+ */
+function PopOutHeaderAction({ containerApi, group, activePanel }: IDockviewHeaderActionsProps) {
+  const handleClick = useCallback(() => {
+    const target = activePanel ?? group;
+    void containerApi.addPopoutGroup(target, {
+      // Default-Größe; Electron's setWindowOpenHandler nutzt diese als
+      // overrideBrowserWindowOptions.
+      position: { width: 800, height: 600, left: 100, top: 100 },
+    });
+  }, [containerApi, group, activePanel]);
+  return (
+    <button
+      type="button"
+      onClick={handleClick}
+      title="Tab in eigenes Fenster ausklappen"
+      data-testid="dockview-popout"
+      style={{
+        background: "transparent",
+        border: "none",
+        color: "var(--ss-text-muted)",
+        cursor: "pointer",
+        padding: "0 8px",
+        fontSize: 14,
+      }}
+    >
+      ⤢
+    </button>
+  );
+}
 
 export interface WorkspacePanelConfig {
   /** Eindeutige Panel-ID. */
@@ -122,6 +158,10 @@ export function WorkspaceShell({ panels, initialLayout, onLayoutChange, classNam
         components={components}
         onReady={onReady}
         className="dockview-theme-dark"
+        // MIG-3: popoutUrl muss same-origin sein. Relativer Pfad funktioniert
+        // sowohl im Browser (./popout.html) als auch in Electron (file://).
+        popoutUrl="./popout.html"
+        rightHeaderActionsComponent={PopOutHeaderAction}
       />
     </div>
   );

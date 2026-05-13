@@ -36,11 +36,16 @@ test.describe("BUG-023 – Anpinnen Mixer-Popup Log-Trace", () => {
     if (!fs.existsSync(ELECTRON_MAIN)) {
       throw new Error("Electron not compiled. Run: pnpm compile:electron");
     }
+    // Eigener userData-Dir damit der Test nicht mit laufenden Synthstudio-
+    // Instanzen kollidiert (cache-lock-Konflikte)
+    const tmpUserData = path.join(REPO_ROOT, "test-results", `electron-userdata-${Date.now()}`);
+    fs.mkdirSync(tmpUserData, { recursive: true });
     app = await electron.launch({
       executablePath: require("electron"),
-      args: [ELECTRON_MAIN],
+      args: [ELECTRON_MAIN, `--user-data-dir=${tmpUserData}`],
       env: { ...process.env, NODE_ENV: "test", ELECTRON_IS_DEV: "0" },
     });
+    (globalThis as { __testUserData?: string }).__testUserData = tmpUserData;
     page = await app.firstWindow();
     await page.waitForLoadState("domcontentloaded");
     // Warten bis Renderer voll gemountet ist

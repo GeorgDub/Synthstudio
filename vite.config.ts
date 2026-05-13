@@ -150,7 +150,39 @@ function vitePluginManusDebugCollector(): Plugin {
   };
 }
 
-const plugins = [react(), tailwindcss(), jsxLocPlugin(), vitePluginManusRuntime(), vitePluginManusDebugCollector()];
+/**
+ * MIG-3: dockview-core's same-origin check rejects file:// URLs für popouts.
+ * Electron lädt aber via file:// in production. Wir patchen die Validierung
+ * inline so dass auch file:// erlaubt ist — sicher weil wir in Electron
+ * sowohl opener als auch popout kontrollieren.
+ */
+function vitePluginDockviewFileProtocol(): Plugin {
+  return {
+    name: "dockview-popout-allow-file-protocol",
+    enforce: "pre",
+    transform(code: string, id: string) {
+      // Vite kann dockview-core sowohl als ESM aus dist/esm als auch vorgebundelt
+      // aus deps/dockview-core.js servieren. Bei BEIDEN Pfaden patchen wir den
+      // Same-Origin-Check für popouts, sodass file:// in Electron erlaubt ist.
+      if (!id.includes("dockview")) return null;
+      if (!code.includes("must be same-origin")) return null;
+      const patched = code.replace(
+        /(protocol\s*===\s*['"]https?:['"]\s*\|\|\s*[a-zA-Z.]+\.protocol\s*===\s*['"]https?:['"])/,
+        "$1 || resolved.protocol === 'file:'"
+      );
+      if (patched === code) {
+        // Fallback: einfacher String-Replace
+        return code.replace(
+          /protocol === 'https:'/,
+          "protocol === 'https:' || resolved.protocol === 'file:'"
+        );
+      }
+      return patched;
+    },
+  };
+}
+
+const plugins = [react(), tailwindcss(), jsxLocPlugin(), vitePluginManusRuntime(), vitePluginManusDebugCollector(), vitePluginDockviewFileProtocol()];
 
 export default defineConfig({
   plugins,
@@ -168,6 +200,14 @@ export default defineConfig({
   build: {
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
+    rollupOptions: {
+      // MIG-3: Multi-entry build — popout.html ist die Ziel-URL für
+      // dockview's addPopoutGroup() popouts.
+      input: {
+        main:   path.resolve(import.meta.dirname, "client/index.html"),
+        popout: path.resolve(import.meta.dirname, "client/popout.html"),
+      },
+    },
   },
   server: {
     port: 5173,

@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Synthstudio Panel</title>
+    <!--
+      Popout-Page für dockview-react Multi-Monitor-Workflow (MIG-3).
+      Dockview greift via window.opener.document auf alle Stylesheets des
+      Hauptfensters zu und kopiert sie hierher (siehe addStyles in
+      dockview-core/popoutWindow.js). Wir brauchen also KEIN eigenes JS
+      und kein eigenes CSS-Bundle — dockview macht das.
+
+      Der container `#dv-popout-window` wird zur Laufzeit von dockview
+      via externalDocument.body.appendChild() angehängt.
+    -->
+    <style>
+      html, body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        background: #1a1a2e;
+        color: #e2e8f0;
+        font-family: system-ui, -apple-system, sans-serif;
+      }
+    </style>
+  </head>
+  <body></body>
+</html>
