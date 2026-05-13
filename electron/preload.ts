@@ -331,6 +331,35 @@ const electronAPI = {
   onMixerPopupAction: createEventListener<unknown>("mixer-sync:action"),
   onMixerPopupClosed: createVoidListener("mixer-window:closed"),
 
+  // ── Sample-Browser-Window Popup (Multi-Window-Workspace, post-v1.27.0) ───────
+  // Singleton-Popup. Browse-only View — Pin-Pattern mit click-to-assign.
+  openSampleBrowserWindow: (): Promise<{ success: boolean }> =>
+    ipcRenderer.invoke("window:open-sample-browser"),
+
+  closeSampleBrowserWindow: (): Promise<{ success: boolean }> =>
+    ipcRenderer.invoke("window:close-sample-browser"),
+
+  isSampleBrowserWindowOpen: (): Promise<boolean> =>
+    ipcRenderer.invoke("window:is-sample-browser-open"),
+
+  setSampleBrowserWindowAlwaysOnTop: (alwaysOnTop: boolean): Promise<{ success: boolean; alwaysOnTop: boolean }> =>
+    ipcRenderer.invoke("window:sample-browser-set-always-on-top", alwaysOnTop),
+
+  isSampleBrowserWindowAlwaysOnTop: (): Promise<boolean> =>
+    ipcRenderer.invoke("window:sample-browser-is-always-on-top"),
+
+  sendSampleBrowserPopupState: (state: unknown): void => {
+    ipcRenderer.send("sample-browser-sync:state", state);
+  },
+
+  sendSampleBrowserPopupAction: (action: unknown): void => {
+    ipcRenderer.send("sample-browser-sync:action", action);
+  },
+
+  onSampleBrowserPopupState: createEventListener<unknown>("sample-browser-sync:state"),
+  onSampleBrowserPopupAction: createEventListener<unknown>("sample-browser-sync:action"),
+  onSampleBrowserPopupClosed: createVoidListener("sample-browser-window:closed"),
+
   // ── Benachrichtigungen ───────────────────────────────────────────────────────
 
   showNotification: (title: string, body: string): Promise<void> =>

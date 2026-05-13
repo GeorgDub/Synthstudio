@@ -136,6 +136,18 @@ const browserAPI = {
   onMixerPopupAction: noopDataListener<unknown>(),
   onMixerPopupClosed: noopVoidListener,
 
+  // Sample-Browser-Window Popup (Web-Fallback: no-op stubs).
+  openSampleBrowserWindow: async () => ({ success: false }),
+  closeSampleBrowserWindow: async () => ({ success: false }),
+  isSampleBrowserWindowOpen: async () => false,
+  setSampleBrowserWindowAlwaysOnTop: async (_alwaysOnTop: boolean) => ({ success: false, alwaysOnTop: false }),
+  isSampleBrowserWindowAlwaysOnTop: async () => false,
+  sendSampleBrowserPopupState: (_state: unknown) => {},
+  sendSampleBrowserPopupAction: (_action: unknown) => {},
+  onSampleBrowserPopupState: noopDataListener<unknown>(),
+  onSampleBrowserPopupAction: noopDataListener<unknown>(),
+  onSampleBrowserPopupClosed: noopVoidListener,
+
   showNotification: (_title: string, _body: string) => {},
   showConfirmDialog: async (_options: { title?: string; message: string }) => ({ response: 0 }),
   showErrorDialog: async (_title: string, _message: string) => {},
@@ -376,6 +388,18 @@ export function useElectron() {
     onMixerPopupState: api.onMixerPopupState,
     onMixerPopupAction: api.onMixerPopupAction,
     onMixerPopupClosed: api.onMixerPopupClosed,
+
+    // Sample-Browser-Window Popup
+    openSampleBrowserWindow: api.openSampleBrowserWindow,
+    closeSampleBrowserWindow: api.closeSampleBrowserWindow,
+    isSampleBrowserWindowOpen: api.isSampleBrowserWindowOpen,
+    setSampleBrowserWindowAlwaysOnTop: api.setSampleBrowserWindowAlwaysOnTop,
+    isSampleBrowserWindowAlwaysOnTop: api.isSampleBrowserWindowAlwaysOnTop,
+    sendSampleBrowserPopupState: api.sendSampleBrowserPopupState,
+    sendSampleBrowserPopupAction: api.sendSampleBrowserPopupAction,
+    onSampleBrowserPopupState: api.onSampleBrowserPopupState,
+    onSampleBrowserPopupAction: api.onSampleBrowserPopupAction,
+    onSampleBrowserPopupClosed: api.onSampleBrowserPopupClosed,
   };
 }
 

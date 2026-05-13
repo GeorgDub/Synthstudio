@@ -29,6 +29,7 @@ import { useElectronMenuBindings } from "../../electron/hooks/useElectronMenuBin
 import { PerformancePopupApp } from "@/components/PerformanceMode/PerformancePopupApp";
 import { FxPopupApp } from "@/components/DrumMachine/FxPopupApp";
 import { MixerPopupApp, type MixerPopupAction } from "@/components/Mixer/MixerPopupApp";
+import { SampleBrowserPopupApp } from "@/components/SampleBrowser/SampleBrowserPopupApp";
 
 // ── Eigene Stores & Hooks ─────────────────────────────────────────────────────
 import { useProjectStore } from "@/store/useProjectStore";
@@ -225,6 +226,19 @@ function isMixerPopupMode(): boolean {
   }
 }
 
+/**
+ * Erkennt ob die App im Sample-Browser-Popup-Mode läuft.
+ * URL-Param `?sampleBrowserPopup=1` (post-v1.27.0).
+ */
+function isSampleBrowserPopupMode(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return new URLSearchParams(window.location.search).get("sampleBrowserPopup") === "1";
+  } catch {
+    return false;
+  }
+}
+
 export default function App() {
   // ── Performance-Popup-Mode: nur PerformancePopupApp rendern, früh raus ──
   // Wenn URL ?perfPopup=1 → das ist der Popup-Renderer, NICHT die volle App.
@@ -242,6 +256,10 @@ export default function App() {
   // ── Mixer-Popup-Mode: nur MixerPopupApp rendern ──
   if (isMixerPopupMode()) {
     return <MixerPopupApp />;
+  }
+  // ── Sample-Browser-Popup-Mode: nur SampleBrowserPopupApp rendern ──
+  if (isSampleBrowserPopupMode()) {
+    return <SampleBrowserPopupApp />;
   }
 
   // ── Electron-Hook (einziger Zugriffspunkt auf Electron-Features) ────────────
@@ -292,6 +310,17 @@ export default function App() {
     if (!electron.isElectron) return;
     const cleanup = electron.onMixerPopupClosed?.(() => {
       setMixerPopupOpen(false);
+    });
+    return cleanup;
+  }, [electron]);
+
+  // ── Sample-Browser-Popup (Multi-Window-Workspace, post-v1.27.0) ───────────
+  const [sampleBrowserPopupOpen, setSampleBrowserPopupOpen] = useState(false);
+
+  useEffect(() => {
+    if (!electron.isElectron) return;
+    const cleanup = electron.onSampleBrowserPopupClosed?.(() => {
+      setSampleBrowserPopupOpen(false);
     });
     return cleanup;
   }, [electron]);
@@ -1787,6 +1816,66 @@ export default function App() {
     return cleanup;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [electron, mixer.masterVolume, mixer.selectedChannelId, project.bpm]);
+
+  // ── Sample-Browser-Popup State-Broadcast (post-v1.27.0) ────────────────────
+  useEffect(() => {
+    if (!electron.isElectron || !sampleBrowserPopupOpen) return;
+    electron.sendSampleBrowserPopupState?.({
+      samples: project.samples.map((s) => ({
+        id: s.id,
+        name: s.name,
+        category: s.category,
+        size: s.size,
+      })),
+      activeChannelName: activeChannelName ?? null,
+    });
+  }, [electron, sampleBrowserPopupOpen, project.samples, activeChannelName]);
+
+  // Action-Listener: Sample-Browser-Popup → Main.
+  useEffect(() => {
+    if (!electron.isElectron) return;
+    const cleanup = electron.onSampleBrowserPopupAction?.((payload) => {
+      if (!payload || typeof payload !== "object") return;
+      const action = payload as Record<string, unknown>;
+      switch (action.type) {
+        case "request-state": {
+          setSampleBrowserPopupOpen(true);
+          // Sofort broadcasten — der useEffect oben würde erst beim nächsten
+          // Sample-/Channel-Change feuern.
+          const p = projectRef.current;
+          const d = dmRef.current;
+          const pattern = d.getActivePattern();
+          const partId = d.activePartId ?? pattern?.parts[0]?.id;
+          const chName = pattern?.parts.find(part => part.id === partId)?.name ?? null;
+          electron.sendSampleBrowserPopupState?.({
+            samples: p.samples.map((s) => ({
+              id: s.id,
+              name: s.name,
+              category: s.category,
+              size: s.size,
+            })),
+            activeChannelName: chName,
+          });
+          break;
+        }
+        case "assign-sample-to-active-channel": {
+          if (typeof action.sampleId !== "string") break;
+          const p = projectRef.current;
+          const sample = p.samples.find((s) => s.id === action.sampleId);
+          if (!sample) break;
+          // handleAssignToChannel-Logik inline (vermeidet ref-Dependency).
+          const d = dmRef.current;
+          const pattern = d.getActivePattern();
+          if (!pattern) break;
+          const partId = d.activePartId ?? pattern.parts[0]?.id;
+          if (!partId) break;
+          d.setPartSample(partId, sample.path, sample.name);
+          break;
+        }
+      }
+    });
+    return cleanup;
+  }, [electron]);
 
   // ── Render ────────────────────────────────────────────────────────────────
 

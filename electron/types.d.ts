@@ -324,6 +324,18 @@ interface ElectronAPI {
   onMixerPopupAction(callback: (action: unknown) => void): ElectronCleanup;
   onMixerPopupClosed(callback: () => void): ElectronCleanup;
 
+  // ── Sample-Browser-Window Popup (Multi-Window-Workspace, post-v1.27.0) ────
+  openSampleBrowserWindow(): Promise<{ success: boolean }>;
+  closeSampleBrowserWindow(): Promise<{ success: boolean }>;
+  isSampleBrowserWindowOpen(): Promise<boolean>;
+  setSampleBrowserWindowAlwaysOnTop(alwaysOnTop: boolean): Promise<{ success: boolean; alwaysOnTop: boolean }>;
+  isSampleBrowserWindowAlwaysOnTop(): Promise<boolean>;
+  sendSampleBrowserPopupState(state: unknown): void;
+  sendSampleBrowserPopupAction(action: unknown): void;
+  onSampleBrowserPopupState(callback: (state: unknown) => void): ElectronCleanup;
+  onSampleBrowserPopupAction(callback: (action: unknown) => void): ElectronCleanup;
+  onSampleBrowserPopupClosed(callback: () => void): ElectronCleanup;
+
   // ── Benachrichtigungen ────────────────────────────────────────────────────
   showNotification(title: string, body: string): void;
 

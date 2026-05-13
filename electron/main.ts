@@ -93,6 +93,11 @@ const fxWindows = new Map<string, BrowserWindow>();
  * Singleton — anders als fxWindows; es gibt nur einen Mixer pro Session.
  */
 let mixerWindow: BrowserWindow | null = null;
+/**
+ * Sample-Browser-Popup-Window (post-v1.27.0 Multi-Window-Workspace).
+ * Singleton — der Sample-Browser ist eine einzelne Bibliotheks-Ansicht.
+ */
+let sampleBrowserWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let appStore: AppStore | null = null;
 
@@ -297,6 +302,10 @@ function createWindow(): void {
     // Mixer-Popup mit-schließen wenn Haupt-Fenster geschlossen wird
     if (mixerWindow && !mixerWindow.isDestroyed()) {
       mixerWindow.close();
+    }
+    // Sample-Browser-Popup mit-schließen wenn Haupt-Fenster geschlossen wird
+    if (sampleBrowserWindow && !sampleBrowserWindow.isDestroyed()) {
+      sampleBrowserWindow.close();
     }
     // Performance-Popup mit-schließen wenn Haupt-Fenster geschlossen wird
     if (perfWindow && !perfWindow.isDestroyed()) {
@@ -544,6 +553,70 @@ function createMixerWindow(): void {
     mixerWindow = null;
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send("mixer-window:closed");
+    }
+  });
+}
+
+/**
+ * Sample-Browser-Popup-Fenster (Multi-Window-Workspace, post-v1.27.0).
+ *
+ * Singleton — eine Sample-Library-Ansicht pro Session. Identisches Pattern
+ * wie createMixerWindow. URL-Param `?sampleBrowserPopup=1` → Renderer
+ * rendert SampleBrowserPopupApp.
+ *
+ * BUG-017: `setMenu(null)` damit das Popup keinen Menu-Accelerator-Quit
+ * triggern kann.
+ */
+function createSampleBrowserWindow(): void {
+  if (sampleBrowserWindow && !sampleBrowserWindow.isDestroyed()) {
+    sampleBrowserWindow.focus();
+    return;
+  }
+
+  sampleBrowserWindow = new BrowserWindow({
+    width: 480,
+    height: 640,
+    minWidth: 340,
+    minHeight: 400,
+    title: `${APP_NAME} – Sample Browser`,
+    backgroundColor: "#0a0a0a",
+    frame: false,
+    titleBarStyle: "default",
+    parent: mainWindow ?? undefined,
+    show: false,
+    webPreferences: {
+      preload: path.join(__dirname, "preload.cjs"),
+      contextIsolation: true,
+      nodeIntegration: false,
+      autoplayPolicy: "no-user-gesture-required",
+      webSecurity: !isDev,
+    },
+  });
+
+  sampleBrowserWindow.setMenu(null);
+
+  sampleBrowserWindow.once("ready-to-show", () => {
+    sampleBrowserWindow?.show();
+  });
+
+  if (isDev) {
+    sampleBrowserWindow.loadURL(`${devServerUrl}?sampleBrowserPopup=1`);
+  } else {
+    const indexPath = path.join(__dirname, "..", "dist", "public", "index.html");
+    sampleBrowserWindow.loadFile(indexPath, { search: "sampleBrowserPopup=1" }).catch(err => {
+      console.error("[SampleBrowserWindow] loadFile failed:", err);
+    });
+  }
+
+  sampleBrowserWindow.webContents.setWindowOpenHandler(({ url }) => {
+    shell.openExternal(url);
+    return { action: "deny" };
+  });
+
+  sampleBrowserWindow.on("closed", () => {
+    sampleBrowserWindow = null;
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send("sample-browser-window:closed");
     }
   });
 }
@@ -1579,6 +1652,56 @@ function registerIpcHandlers(): void {
   ipcMain.on("mixer-sync:action", (_event, actionPayload: unknown) => {
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send("mixer-sync:action", actionPayload);
+    }
+  });
+
+  // ── Sample-Browser-Popup (Multi-Window-Workspace, post-v1.27.0) ──────────────
+  // Singleton-Popup wie Mixer. Channels narrow-data-only — Payload enthält die
+  // Sample-Metadaten (id, name, category, size) und Sample-Paths sind bereits
+  // im Renderer-State; das Popup ist nur ein zweiter View darauf.
+
+  ipcMain.handle("window:open-sample-browser", () => {
+    createSampleBrowserWindow();
+    return { success: true };
+  });
+
+  ipcMain.handle("window:close-sample-browser", () => {
+    if (sampleBrowserWindow && !sampleBrowserWindow.isDestroyed()) {
+      sampleBrowserWindow.close();
+    }
+    return { success: true };
+  });
+
+  ipcMain.handle("window:is-sample-browser-open", () => {
+    return sampleBrowserWindow !== null && !sampleBrowserWindow.isDestroyed();
+  });
+
+  ipcMain.handle("window:sample-browser-set-always-on-top", (_event, alwaysOnTop: boolean) => {
+    if (sampleBrowserWindow && !sampleBrowserWindow.isDestroyed()) {
+      sampleBrowserWindow.setAlwaysOnTop(!!alwaysOnTop);
+      return { success: true, alwaysOnTop: !!alwaysOnTop };
+    }
+    return { success: false, alwaysOnTop: false };
+  });
+
+  ipcMain.handle("window:sample-browser-is-always-on-top", () => {
+    if (sampleBrowserWindow && !sampleBrowserWindow.isDestroyed()) {
+      return sampleBrowserWindow.isAlwaysOnTop();
+    }
+    return false;
+  });
+
+  // State-Broadcast Main → Sample-Browser-Popup.
+  ipcMain.on("sample-browser-sync:state", (_event, statePayload: unknown) => {
+    if (sampleBrowserWindow && !sampleBrowserWindow.isDestroyed()) {
+      sampleBrowserWindow.webContents.send("sample-browser-sync:state", statePayload);
+    }
+  });
+
+  // Action-Forwarding Sample-Browser-Popup → Main.
+  ipcMain.on("sample-browser-sync:action", (_event, actionPayload: unknown) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send("sample-browser-sync:action", actionPayload);
     }
   });
 

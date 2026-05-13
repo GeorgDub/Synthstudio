@@ -1160,6 +1160,19 @@ export function SampleBrowser({
           >
             + ZIP
           </button>
+          {/* Pin/Detach (Multi-Window-Workspace, post-v1.27.0). Nur Electron.
+              Öffnet den Sample-Browser in eigenem Fenster für Multi-Monitor. */}
+          {electron.isElectron && (
+            <button
+              type="button"
+              onClick={() => electron.openSampleBrowserWindow?.()}
+              data-testid="sample-browser-open-in-window"
+              title="Sample Browser in eigenes Fenster abkoppeln"
+              className="px-2 py-1 text-xs rounded bg-bg-elevated/60 text-text-muted border border-border-color hover:text-accent-primary hover:border-accent-primary transition-colors"
+            >
+              📌 Pin
+            </button>
+          )}
         </div>
       </div>
 
