@@ -1,6 +1,6 @@
 # Synthstudio – Anweisungsdatei für neue Claude-Session
 
-**Version: 1.22.0** | Stand: 2026-05-13 (Sprints 1–22 abgeschlossen)
+**Version: 1.23.0** | Stand: 2026-05-13 (Sprints 1–23 abgeschlossen)
 
 ---
 
@@ -279,6 +279,16 @@ addCustomTheme({ name, colors, extras: {
 - **TASK-122** (Final Theme-Class-Purity Sweep): 15 Komponenten refactored, Endstand 0/0 hardcoded Tailwind palette classes + 0 arbitrary hex im *.tsx-Baum. Slider-Prop `color` → `accent` (statische Klassen-Tabellen damit Tailwind JIT die Klassen findet).
 - **TASK-123** (Multi-Drag-Canvas): Programmatisch erzeugtes Canvas mit Pad-Color + accent-secondary Border + '+N' Badge via `dataTransfer.setDragImage()` bei Multi-Select-Drag. `data-multi-drag-count` Attribut für deterministische Playwright-Assertion.
 
+### v1.23.0 — Synth-Integration + Performance UX + Test-Hardening + Solo-Unification
+- **TASK-128** (LFO-Macros Wave 2): `SynthEngine.triggerNote()` um optionalen `destination?: AudioNode` erweitert; AudioEngine `_triggerMelodicNote` routet `wavetable`/`fm`-Parts jetzt durch SynthEngine mit partId — der v1.22.0 Macro-LFO-Cache wird endlich konsultiert.
+- **TASK-129** (Synth-Part Wave 2): Neuer `_triggerSynthOnChannel`-Helper bündelt Trigger + Channel-FX-Routing. DrumLoop-Branch für `sourceType=wavetable|fm` ergänzt (vorher: skip). SynthEngine-Output geht jetzt durch die Channel-FX-Chain (EQ, Filter, Distortion, Compressor, Sidechain, Sends) statt direkt zu masterGain. Insert-FX wirken auch auf Synth-Parts.
+- **TASK-127** (Performance-Pad UX): Cmd/Ctrl+A im Reorder-Mode = Select All non-empty Pads. Box-Drag Auto-Scroll via RAF wenn Maus < 40px vom Viewport-Rand. Neue Pure Helper `collectNonEmptyPadIndices` + `computeAutoScrollDelta`.
+- **TASK-125** (Theme-Purity Glob-Hardening): `tests/features/theme-class-purity.test.ts` von 19 harten Pfaden auf `walkSync` (node:fs builtin) umgestellt. Test-Count 41 → 131. Neue *.tsx wird automatisch geprüft.
+- **TASK-126** (Macro-Hold-Mode E2E): Neue `tests/web/macros.spec.ts` mit 4 Tests für UI-Wiring `mouseDown → CustomEvent → App.tsx`. data-testids auf `MacroButton` + `toggle-macro-panel`.
+- **FOLLOWUP-102-3** (Solo Cross-Store UI-Unification): `setPartSoloed` um `exclusive`-Parameter erweitert (default true = Radio, false = additive). Neue `setAudioTrackSoloed(id, soloed, exclusive=false)`. Shift+Click invertiert Default in beiden UIs (Drum: shift=additive, Audio: shift=exclusive).
+- **FOLLOWUP-102-4** (Round-Trip E2E): Neue `tests/web/audio-track-round-trip.spec.ts` mit 4 Tests (Phase 1 save → Phase 2 reopen → Phase 3 relocate + ID-Stabilität).
+- Test-Count: 1345 unit + 8 neue Playwright. INDEX.js openTasks: LEER.
+
 ---
 
 ## Implementierte Features (Überblick)
@@ -350,5 +360,5 @@ Quelle: `agents/INDEX.js` → `openTasks`
 ---
 
 **Dev-Server**: http://localhost:5173  
-**Letzter Test-Run**: `pnpm test` → 1220 passed / 15 skipped (pre-existing) / 63 Files / ~2.7s  
-**Version**: 1.22.0
+**Letzter Test-Run**: `pnpm test` → 1345 passed / 15 skipped (pre-existing) / 64 Files / ~2.8s + `pnpm test:web` 8 Playwright-Tests grün  
+**Version**: 1.23.0
