@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "2.6.0",
+    version: "2.7.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -491,6 +491,22 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-14T23:00:00.000Z",
+      done: [
+        "MIDI-DEVICE-TOAST (v2.7.0): MIDI-Geräte-Connect/Disconnect-Toasts. refreshDevices() in useMidi diffed jetzt die Geräteliste gegen die vorige (per Map<id, name>): neue Geräte → 'MIDI verbunden: <Name> (<Hersteller>)' (success für Inputs, info für Outputs), fehlende Geräte → 'MIDI getrennt: <Name>' (warning). Initial-Skip via devicesInitializedRef damit der User beim Aktivieren nicht für jedes bereits angeschlossene Gerät einen Toast bekommt — erster Refresh nach enable() ist still, ab da werden Diffs gemeldet. enable() zeigt 'MIDI aktiviert' (success) bei Erfolg bzw. error-Toasts bei Web-MIDI-API-fehlt oder Permission-denied. disable() zeigt 'MIDI deaktiviert' + reset der Tracking-Refs. Direkter toast()-Import statt CustomEvent — Toast-Store ist Modul-Singleton, kein React-Overhead. 1844 Tests grün, pnpm check 0 Fehler."
+      ],
+      next: [
+        "Beat-Repeat-Macro.",
+        "Pattern-Drag-Drop-Reorder."
+      ],
+      changed: [
+        "package.json",
+        "client/src/hooks/useMidi.ts",
+        "agents/INDEX.js"
+      ]
+    },
     {
       agent:     "coordinator",
       timestamp: "2026-05-14T22:30:00.000Z",

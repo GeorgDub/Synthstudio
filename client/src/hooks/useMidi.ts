@@ -16,6 +16,7 @@
 import { useEffect, useRef, useCallback, useState } from "react";
 import { getChordMemoryState, buildChordNotes } from "@/store/useChordMemoryStore";
 import { findFxParamRange, midiValueToFxParam, type FxParamKey } from "@/audio/AudioEngine";
+import { toast } from "@/store/useToastStore";
 
 // ─── Typen ────────────────────────────────────────────────────────────────────
 
@@ -599,6 +600,15 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
     target: null,
   });
   const autoLearnRef = useRef<AutoLearnEntry[]>([]);
+  // v2.7: device-change-Tracking für Toast-Notifications.
+  // initializedRef = false bis nach dem ersten refreshDevices, dann true.
+  // Vorherige Listen werden per Map<id, name+manufacturer> verglichen, damit
+  // wir bei Connect/Disconnect Toasts emittieren — aber NICHT beim ersten
+  // Laden (sonst flooded der User mit "X verbunden" für alle bereits
+  // existierenden Geräte).
+  const prevDevicesRef = useRef<Map<string, string>>(new Map());
+  const prevOutputDevicesRef = useRef<Map<string, string>>(new Map());
+  const devicesInitializedRef = useRef(false);
 
   // Refs für aktuelle Mappings (kein Re-Render-Overhead in MIDI-Handler)
   const mappingsRef = useRef(mappings);
@@ -916,6 +926,41 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
     });
     setOutputDevices(outList);
 
+    // v2.7: Diff-Toast für Connect/Disconnect — überspringt den ersten Refresh
+    // damit der User beim Aktivieren nicht mit "X verbunden" pro existierendem
+    // Gerät überflutet wird.
+    if (devicesInitializedRef.current) {
+      const currentInIds = new Set(list.map(d => d.id));
+      const currentOutIds = new Set(outList.map(d => d.id));
+      // Inputs: new (added) vs removed
+      list.forEach(d => {
+        if (!prevDevicesRef.current.has(d.id)) {
+          toast(`MIDI verbunden: ${d.name}${d.manufacturer ? ` (${d.manufacturer})` : ""}`, { kind: "success" });
+        }
+      });
+      prevDevicesRef.current.forEach((name, id) => {
+        if (!currentInIds.has(id)) {
+          toast(`MIDI getrennt: ${name}`, { kind: "warning" });
+        }
+      });
+      // Outputs gleich
+      outList.forEach(d => {
+        if (!prevOutputDevicesRef.current.has(d.id)) {
+          toast(`MIDI-Out verbunden: ${d.name}`, { kind: "info" });
+        }
+      });
+      prevOutputDevicesRef.current.forEach((name, id) => {
+        if (!currentOutIds.has(id)) {
+          toast(`MIDI-Out getrennt: ${name}`, { kind: "warning" });
+        }
+      });
+    } else {
+      devicesInitializedRef.current = true;
+    }
+    // Update refs für nächstes Diff
+    prevDevicesRef.current = new Map(list.map(d => [d.id, d.name]));
+    prevOutputDevicesRef.current = new Map(outList.map(d => [d.id, d.name]));
+
     // v1.84: Auto-Reconnect zum zuletzt benutzten Gerät — anhand des Namens
     // (id wechselt zwischen Sessions). Wenn keiner gespeichert, fallback aufs
     // erste verfügbare Gerät.
@@ -969,6 +1014,7 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
   const enable = useCallback(async () => {
     if (!navigator.requestMIDIAccess) {
       console.warn("[MIDI] Web MIDI API nicht verfügbar");
+      toast("Web MIDI API nicht verfügbar — Chrome/Edge empfohlen", { kind: "error", duration: 5000 });
       return;
     }
     try {
@@ -977,9 +1023,13 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
       access.onstatechange = () => refreshDevices();
       setIsEnabled(true);
       setIsAvailable(true);
+      // v2.7: ersten Refresh OHNE Toast-Spam (devicesInitializedRef sorgt dafür)
       refreshDevices();
+      toast("MIDI aktiviert", { kind: "success" });
     } catch (err) {
       console.error("[MIDI] Zugriff verweigert:", err);
+      const msg = err instanceof Error ? err.message : String(err);
+      toast(`MIDI-Zugriff verweigert: ${msg}`, { kind: "error", duration: 5000 });
     }
   }, [refreshDevices]);
 
@@ -995,6 +1045,11 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
     setDevices([]);
     setActiveDeviceId(null);
     clockAnalyzer.current.reset();
+    // v2.7: Tracking-Refs reseten — beim nächsten enable() wieder bei Null starten
+    devicesInitializedRef.current = false;
+    prevDevicesRef.current.clear();
+    prevOutputDevicesRef.current.clear();
+    toast("MIDI deaktiviert", { kind: "info" });
   }, []);
 
   // ─── Verfügbarkeit prüfen ────────────────────────────────────────────────
