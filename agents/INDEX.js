@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "1.72.0",
+    version: "1.73.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -491,6 +491,27 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-14T06:00:00.000Z",
+      done: [
+        "MIDI-LAYOUT-EXPORT (v1.73.0): Komplementär zu midiLayoutImport.ts (v1.38+) — nach Auto-Learn kann der User seine Hardware-Konfiguration jetzt als JSON-Template speichern + teilen. Neues Modul `client/src/utils/midiLayoutExport.ts` mit `buildMidiLayoutJson(input): string` (Pretty-Print, synthstudioLayout v1) und `sanitizeLayoutFileName(name): string` (Unicode-safe, erlaubt Umlaute via \\p{L}\\p{N}, escapt Path-Separator). Round-Trip-Garantie: `parseMidiLayoutJson(buildMidiLayoutJson(x))` reproduziert x.ccMappings + x.noteMappings 1:1. UI in MidiSettings CC-Tab unter den aktiven Mappings: Input-Feld für Layout-Name + '💾 Als JSON speichern'-Button → Browser-Download via Blob+anchor. Sichtbar nur wenn mind. ein Mapping existiert. Bonus-Fix: `VALID_TARGET_TYPES` in midiLayoutImport.ts war unvollständig — `scenelaunch`, `commitLiveEdit`, `openSettings` existieren in der MidiLearnTarget-Union, wurden aber beim Layout-Import als ungültig verworfen → ergänzt. 13 neue Vitest-Cases (7 buildMidiLayoutJson inkl. 3 Round-Trip-Tests, 6 sanitizeLayoutFileName inkl. Unicode/Umlaute). Test deckt direkt den Electribe-2-Use-Case ab (gemischte CC+Note). 1718 Tests grün, pnpm check 0 Fehler."
+      ],
+      next: [
+        "FLP-MIDI-EXPORT Phase 4: SMF-Export von Melodic-Parts mit Pitch + Duration (umgekehrte Richtung — Synthstudio → DAW Re-Import).",
+        "MIDI-LAYOUT-EXPORT-V2: Default-Filename-Generation aus aktivem Device-Namen (`midi.activeDeviceId` → Hersteller+Modell-String). Aktuell muss der User immer manuell tippen.",
+        "FEAT-INSP: bleibt offen (Explore-Report verfügbar, 4-5h, 8+ Files).",
+        "neue_todos.md Backlog: GitHub-Builder-Workflow, Updater, Mobile-Build, Login/Beta-System, Plugin-Wiki/LLM, Sample-Cloud, MIDI-Templates für Hardtekk-Gear, .als/.elst-Konverter, Workbench-Audacity-Niveau, AI-Projekt-Analyse, Admin/Lite-Tier-Lizenz."
+      ],
+      changed: [
+        "package.json",
+        "client/src/utils/midiLayoutExport.ts",
+        "client/src/utils/midiLayoutImport.ts",
+        "client/src/components/MidiSettings/MidiSettings.tsx",
+        "tests/features/midi-layout-export.test.ts",
+        "agents/INDEX.js"
+      ]
+    },
     {
       agent:     "coordinator",
       timestamp: "2026-05-14T05:30:00.000Z",

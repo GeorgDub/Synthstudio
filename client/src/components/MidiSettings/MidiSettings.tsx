@@ -15,6 +15,7 @@ import { X } from "lucide-react";
 import type { MidiState, MidiActions, MidiLearnTarget, MidiNoteMapping, AutoLearnEntry } from "@/hooks/useMidi";
 import { GM_DRUM_DEFAULTS } from "@/hooks/useMidi";
 import { MIDI_TEMPLATES, templateToMappings } from "@/utils/midiTemplates";
+import { buildMidiLayoutJson, sanitizeLayoutFileName } from "@/utils/midiLayoutExport";
 
 interface MidiSettingsProps {
   midi: MidiState & MidiActions;
@@ -71,6 +72,34 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
   const [noteLearnChannel, setNoteLearnChannel] = useState(0);
   const [manualNote, setManualNote] = useState(36);
   const [manualChannel, setManualChannel] = useState(0);
+  // v1.73: Export der aktuellen Mappings als JSON-Template
+  const [exportName, setExportName] = useState("Mein MIDI-Setup");
+  const [exportFeedback, setExportFeedback] = useState<string | null>(null);
+
+  const handleExportLayout = () => {
+    const json = buildMidiLayoutJson({
+      name: exportName.trim() || "Mein MIDI-Setup",
+      ccMappings: midi.mappings,
+      noteMappings: midi.noteMappings,
+    });
+    try {
+      const blob = new Blob([json], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${sanitizeLayoutFileName(exportName)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      // URL nach 1s revoken — der Browser hat den Download dann sicher gestartet
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setExportFeedback(`Gespeichert: ${a.download}`);
+      setTimeout(() => setExportFeedback(null), 3000);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setExportFeedback(`Fehler: ${msg}`);
+    }
+  };
 
   // ─── Tab: Geräte ──────────────────────────────────────────────────────────
 
@@ -379,6 +408,42 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
           >
             Alle Mappings löschen
           </button>
+        </div>
+      )}
+
+      {/* Export als JSON-Template (v1.73) ───────────────────────────────── */}
+      {(midi.mappings.length > 0 || midi.noteMappings.length > 0) && (
+        <div>
+          <div className="text-xs font-medium text-text-muted mb-2 uppercase tracking-wider">
+            Template speichern
+          </div>
+          <div className="text-xs text-text-dim mb-2">
+            Exportiert die aktuellen CC- und Note-Mappings als JSON-Datei
+            (synthstudioLayout v1). Wieder importierbar über die Einstellungen
+            → „MIDI-Layout importieren". Kann zum Teilen weitergegeben werden.
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              value={exportName}
+              onChange={(e) => setExportName(e.target.value)}
+              placeholder="Layout-Name"
+              className="flex-1 px-2 py-1.5 bg-bg-elevated border border-border-color rounded text-xs text-text-primary placeholder:text-text-dim focus:outline-none focus:border-accent-secondary"
+            />
+            <button
+              onClick={handleExportLayout}
+              className="px-3 py-1.5 bg-accent-secondary/30 hover:bg-accent-secondary/50 text-accent-secondary text-xs rounded font-medium transition-colors"
+            >
+              💾 Als JSON speichern
+            </button>
+          </div>
+          {exportFeedback && (
+            <div className="mt-2 text-xs text-accent-success">{exportFeedback}</div>
+          )}
+          <div className="mt-2 text-[10px] text-text-dim">
+            {midi.mappings.length} CC-Mapping(s) + {midi.noteMappings.length} Note-Mapping(s)
+            werden exportiert.
+          </div>
         </div>
       )}
     </div>
