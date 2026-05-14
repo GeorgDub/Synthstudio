@@ -446,9 +446,51 @@ function MetronomeSection() {
   );
 }
 
-function MidiDevicesSection({ midi }: { midi: MidiState & MidiActions }) {
+/**
+ * Banner, der oberhalb jeder MIDI-Section angezeigt wird und auf den
+ * vollständigen MIDI-Modal (MidiSettings.tsx, Ctrl+M) verweist. Dort sind
+ * Auto-Learn, Hardware-Templates (Korg Electribe 2 etc.), MIDI-Monitor und
+ * der Live-Activity-Indicator zuhause — die SettingsPanel-Sections decken
+ * historisch nur einen Subset ab.
+ */
+function AdvancedMidiBanner({ onOpenAdvancedMidi }: { onOpenAdvancedMidi?: () => void }) {
+  if (!onOpenAdvancedMidi) return null;
+  return (
+    <div
+      data-testid="advanced-midi-banner"
+      className="mb-4 rounded-lg border border-accent-secondary/60 bg-accent-secondary/10 p-3"
+    >
+      <div className="flex items-start gap-3">
+        <span className="text-xl leading-none" aria-hidden="true">🎛</span>
+        <div className="flex-1 min-w-0">
+          <div className="text-xs font-semibold text-accent-secondary mb-1">
+            Erweiterte MIDI-Einstellungen
+          </div>
+          <div className="text-[11px] text-text-muted leading-relaxed">
+            Auto-Learn (Mixer / Pads / Komplett-Presets), 12 Hardware-Templates
+            (Korg Electribe 2, MPK Mini, X-Touch Mini, Volca Beats, TR-8 …),
+            MIDI-Monitor mit Live-Aktivitäts-Anzeige sowie Layout-Import /
+            -Export findest du im vollständigen MIDI-Dialog.
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={onOpenAdvancedMidi}
+          className="px-3 py-1.5 rounded text-xs font-medium bg-accent-secondary text-bg-base hover:bg-accent-secondary/80 flex-shrink-0"
+          title="Vollen MIDI-Dialog öffnen (Tastatur: Strg+M)"
+          data-testid="advanced-midi-open"
+        >
+          Öffnen
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function MidiDevicesSection({ midi, onOpenAdvancedMidi }: { midi: MidiState & MidiActions; onOpenAdvancedMidi?: () => void }) {
   return (
     <div className="space-y-4">
+      <AdvancedMidiBanner onOpenAdvancedMidi={onOpenAdvancedMidi} />
       <h3 className="text-sm font-bold text-text-primary">MIDI Geräte & Clock</h3>
       {!midi.isAvailable ? (
         <div className="text-xs text-accent-danger">Web MIDI API nicht verfügbar (Chrome/Edge empfohlen).</div>
@@ -774,7 +816,7 @@ function MidiLayoutImportButton({
   );
 }
 
-function MidiCcSection({ midi, parts }: { midi: MidiState & MidiActions; parts: PartData[] }) {
+function MidiCcSection({ midi, parts, onOpenAdvancedMidi }: { midi: MidiState & MidiActions; parts: PartData[]; onOpenAdvancedMidi?: () => void }) {
   const targets = buildCcTargets(parts);
   const categories = [...new Set(targets.map(t => t.category))];
 
@@ -786,6 +828,7 @@ function MidiCcSection({ midi, parts }: { midi: MidiState & MidiActions; parts: 
 
   return (
     <div>
+      <AdvancedMidiBanner onOpenAdvancedMidi={onOpenAdvancedMidi} />
       <div className="flex items-center gap-3 mb-4">
         <h3 className="text-sm font-bold text-text-primary">MIDI CC-Zuweisungen</h3>
         <MidiLayoutImportButton midi={midi} parts={parts} />
@@ -834,13 +877,14 @@ function MidiCcSection({ midi, parts }: { midi: MidiState & MidiActions; parts: 
   );
 }
 
-function MidiNotesSection({ midi, parts }: { midi: MidiState & MidiActions; parts: PartData[] }) {
+function MidiNotesSection({ midi, parts, onOpenAdvancedMidi }: { midi: MidiState & MidiActions; parts: PartData[]; onOpenAdvancedMidi?: () => void }) {
   const [manualNote, setManualNote] = useState(36);
   const NOTE_NAMES = ["C","C#","D","D#","E","F","F#","G","A","A#","H"];
   const noteToName = (n: number) => `${NOTE_NAMES[n % 12]}${Math.floor(n / 12) - 1}`;
 
   return (
     <div>
+      <AdvancedMidiBanner onOpenAdvancedMidi={onOpenAdvancedMidi} />
       <h3 className="text-sm font-bold text-text-primary mb-4">MIDI Note-Zuweisungen</h3>
       <div className="space-y-2 mb-4">
         {parts.map(part => {
@@ -1196,9 +1240,16 @@ interface SettingsPanelProps {
   midi: MidiState & MidiActions;
   parts: PartData[];
   initialSection?: Section;
+  /**
+   * Optional: öffnet den vollständigen MIDI-Modal (MidiSettings.tsx, Ctrl+M).
+   * Wird vom AdvancedMidiBanner in allen MIDI-Sections benutzt, damit User
+   * von hier aus auf Auto-Learn, Hardware-Templates und Live-Activity-Indicator
+   * springen können (sonst nur per Tastatur-Shortcut erreichbar).
+   */
+  onOpenAdvancedMidi?: () => void;
 }
 
-export function SettingsPanel({ isOpen, onClose, midi, parts, initialSection = "design" }: SettingsPanelProps) {
+export function SettingsPanel({ isOpen, onClose, midi, parts, initialSection = "design", onOpenAdvancedMidi }: SettingsPanelProps) {
   const [active, setActive] = useState<Section>(initialSection);
 
   // Esc zum Schließen
@@ -1253,9 +1304,9 @@ export function SettingsPanel({ isOpen, onClose, midi, parts, initialSection = "
           {active === "ki"           && <KiSection />}
           {active === "keyboard"     && <KeyboardBindingsPanel />}
           {active === "metronome"    && <MetronomeSection />}
-          {active === "midi-devices" && <MidiDevicesSection midi={midi} />}
-          {active === "midi-cc"      && <MidiCcSection midi={midi} parts={parts} />}
-          {active === "midi-notes"   && <MidiNotesSection midi={midi} parts={parts} />}
+          {active === "midi-devices" && <MidiDevicesSection midi={midi} onOpenAdvancedMidi={onOpenAdvancedMidi} />}
+          {active === "midi-cc"      && <MidiCcSection midi={midi} parts={parts} onOpenAdvancedMidi={onOpenAdvancedMidi} />}
+          {active === "midi-notes"   && <MidiNotesSection midi={midi} parts={parts} onOpenAdvancedMidi={onOpenAdvancedMidi} />}
           {active === "midi-chord"   && <ChordMemorySection />}
           {active === "midi-mpe"     && <MpeSectionSimple />}
           {active === "saving"        && <SavingSection />}

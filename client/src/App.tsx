@@ -2919,6 +2919,7 @@ export default function App() {
         midi={midi}
         parts={dm.getActivePattern()?.parts ?? []}
         initialSection={settingsInitialSection}
+        onOpenAdvancedMidi={() => { setShowSettings(false); setShowMidiSettings(true); }}
       />
 
       {/* ── Legacy Dialoge (Keyboard-Shortcuts für rückwärtskompatiblen Zugriff) */}
