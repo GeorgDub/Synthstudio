@@ -17,6 +17,7 @@ import {
   stopPlayback,
   clearRecording,
   exportRecording,
+  importRecording,
   type PerfEvent,
 } from "@/store/usePerformanceRecorder";
 import { toast } from "@/store/useToastStore";
@@ -89,6 +90,18 @@ export function PerformanceRecorderBadge() {
     toast("Aufnahme als JSON exportiert", { kind: "success" });
   };
 
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const handleImport = async (file: File) => {
+    const text = await file.text();
+    const ok = importRecording(text);
+    if (ok) {
+      toast(`Aufnahme „${file.name}" importiert`, { kind: "success" });
+      setOpen(true);
+    } else {
+      toast("Konnte JSON nicht als Performance-Aufnahme parsen", { kind: "error" });
+    }
+  };
+
   const handleClear = () => {
     if (!state.last && !state.isRecording) return;
     if (confirm("Aktuelle Aufnahme löschen?")) {
@@ -136,6 +149,27 @@ export function PerformanceRecorderBadge() {
               ⇩ Export
             </button>
           )}
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            className="px-2 py-1 rounded bg-bg-elevated text-text-muted hover:text-text-primary"
+            title="JSON-Aufnahme aus Datei importieren"
+            data-testid="perf-rec-import"
+          >
+            ⇧ Import
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="application/json,.json"
+            onChange={e => {
+              const f = e.target.files?.[0];
+              if (f) void handleImport(f);
+              e.target.value = "";
+            }}
+            className="hidden"
+            data-testid="perf-rec-import-input"
+          />
           {(state.last || state.isRecording) && (
             <button
               type="button"
