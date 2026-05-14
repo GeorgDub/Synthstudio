@@ -69,6 +69,8 @@ import { useTransport } from "@/hooks/useTransport";
 import { RecordSettingsPopover } from "@/components/Transport/RecordSettingsPopover";
 import { useMidi } from "@/hooks/useMidi";
 import { MidiProvider } from "@/context/MidiContext";
+import { toast } from "@/store/useToastStore";
+import { ToastContainer } from "@/components/UI/ToastContainer";
 import { useLiveStepRecorder } from "@/hooks/useLiveStepRecorder";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { MidiSettings } from "@/components/MidiSettings";
@@ -1123,10 +1125,14 @@ export default function App() {
           // v2.4: nimmt Samples + FX + Volume/Pan vom vorherigen Pattern in
           // der Liste und kopiert sie in das aktuelle Pattern. Wenn nicht
           // verfügbar (erstes Pattern oder nur eins), no-op.
+          // v2.5: User-Feedback via Toast.
           const pats = dm.patterns;
           const idx = pats.findIndex(p => p.id === dm.activePatternId);
           if (idx > 0) {
             dm.copySamplesFromPattern(pats[idx - 1].id, dm.activePatternId);
+            toast(`Sampler übernommen aus „${pats[idx - 1].name}"`, { kind: "success" });
+          } else {
+            toast("Kein vorheriges Pattern in der Liste", { kind: "warning" });
           }
           break;
         }
@@ -2909,6 +2915,8 @@ export default function App() {
           onOpenInWindow={electron.isElectron ? handleOpenPerformanceWindow : undefined}
         />
       )}
+      {/* v2.5: Toast-Notifications (oben rechts) */}
+      <ToastContainer />
       </MidiProvider>
     </ElectronDropZone>
   );

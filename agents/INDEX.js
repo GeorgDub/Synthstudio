@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "2.4.0",
+    version: "2.5.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -491,6 +491,27 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-14T22:00:00.000Z",
+      done: [
+        "TOAST + PATTERN-PICKER (v2.5.0): Zwei Verbesserungen für die v2.4 Sample-Carryover-Funktion. (1) Toast-System: neuer Modul-Singleton `useToastStore` mit `toast(message, {kind, duration})` API, Modus 'success'/'info'/'warning'/'error', Auto-Dismiss-Timer, Max 5 Toasts (älteste droppen). ToastContainer-Komponente rendert oben rechts mit Backdrop-Blur + Icon + Close-Button. Mount in App.tsx unter MidiProvider. App.tsx + DrumMachine zeigen jetzt Toast bei jeder Sample-Übernahme ('Sampler aus „<Name>\" in „<Target>\" übernommen' success) bzw. Warnung wenn kein vorheriges Pattern existiert. (2) Pattern-Picker-Submenu: das einfache 📥-Quick-Button hat jetzt ein ▾-Begleiter dropdown das ALLE anderen Patterns als Source-Optionen listet — User kann nicht nur 'vorheriges' sondern jedes Pattern als Source wählen. Auto-Close on mouseLeave. 11 neue Vitest-Cases für useToastStore (default-values, custom kind/duration, auto-dismiss-timer, sticky duration=0, dismiss-by-id, clear-all, max-5-cap, unique-ids, id-rückgabe). 1844 Tests grün, pnpm check 0 Fehler."
+      ],
+      next: [
+        "Beat-Repeat-Macro.",
+        "Pattern-Drag-Drop-Reorder.",
+        "Toast für andere Operations (Project save/load, Mapping cleared, etc.)."
+      ],
+      changed: [
+        "package.json",
+        "client/src/store/useToastStore.ts",
+        "client/src/components/UI/ToastContainer.tsx",
+        "client/src/App.tsx",
+        "client/src/components/DrumMachine/DrumMachine.tsx",
+        "tests/features/toast-store.test.ts",
+        "agents/INDEX.js"
+      ]
+    },
     {
       agent:     "coordinator",
       timestamp: "2026-05-14T21:30:00.000Z",

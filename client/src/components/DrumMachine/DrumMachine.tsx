@@ -22,6 +22,7 @@ import { PatternMorphPanel } from "@/components/PatternMorph";
 import { MacroPanel } from "@/components/Macro/MacroPanel";
 import { EnvelopeFollowerPanel } from "./EnvelopeFollowerPanel";
 import { useMidiLearn } from "@/hooks/useMidiLearn";
+import { toast } from "@/store/useToastStore";
 import { MixAssistantPanel } from "./MixAssistantPanel";
 import type { MixAnalysisInput, MixRecommendation } from "@/utils/mixAnalysis";
 import { parseMidiFile } from "../../../../src/utils/midiParser.js";
@@ -64,20 +65,24 @@ interface PatternRowProps {
   onDuplicate: () => void;
   onRemove: () => void;
   /** v2.4: Sampler vom angegebenen Source-Pattern in dieses übernehmen. */
-  onCopySamplesFrom: (sourcePatternId: string) => void;
+  onCopySamplesFrom: (sourcePatternId: string, sourceName: string) => void;
   /** v2.4: ID des vorherigen Patterns (für die Quick-Action). */
   prevPatternId: string | null;
+  /** v2.5: Alle Patterns für den Picker-Submenu. */
+  allPatterns: ReadonlyArray<{ id: string; name: string }>;
 }
 
 function PatternRow({
   pattern, patternIndex, isActive, isPlaying, isLiveEditing, showDelete,
-  hasPrevPattern, prevPatternId,
+  hasPrevPattern, prevPatternId, allPatterns,
   onSelect, onDuplicate, onRemove, onCopySamplesFrom,
 }: PatternRowProps) {
   const isDraft  = isLiveEditing && isActive;
   const isLocked = isLiveEditing && isPlaying;
   // v1.92: jede Pattern-Zeile ist via Rechtsklick MIDI-bindbar
   const learn = useMidiLearn({ type: "pattern", patternIndex });
+  // v2.5: Submenu zum Auswählen welcher Pattern als Source dient
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   return (
     <div className="flex items-center group relative">
@@ -105,12 +110,48 @@ function PatternRow({
         )}
         {isLocked && <span className="ml-1.5 text-[9px] text-text-dim">[gesperrt]</span>}
       </button>
-      {!isLocked && hasPrevPattern && prevPatternId && (
-        <button
-          onClick={() => onCopySamplesFrom(prevPatternId)}
-          className="px-1.5 py-1.5 text-text-dim hover:text-accent-secondary text-xs opacity-0 group-hover:opacity-100"
-          title="v2.4: Sampler+FX vom vorherigen Pattern übernehmen (Steps bleiben)"
-        >📥</button>
+      {/* v2.4 + v2.5: Sampler-Übernahme — Split-Button + Picker-Submenu */}
+      {!isLocked && allPatterns.length > 1 && (
+        <div className="relative inline-flex opacity-0 group-hover:opacity-100">
+          {hasPrevPattern && prevPatternId && (() => {
+            const prevPat = allPatterns.find(p => p.id === prevPatternId);
+            return (
+              <button
+                onClick={() => onCopySamplesFrom(prevPatternId, prevPat?.name ?? "")}
+                className="px-1.5 py-1.5 text-text-dim hover:text-accent-secondary text-xs"
+                title={`Sampler+FX vom vorherigen Pattern „${prevPat?.name ?? "..."}" übernehmen (Steps bleiben). Tastenkombination: Ctrl+Shift+S`}
+              >📥</button>
+            );
+          })()}
+          <button
+            onClick={() => setPickerOpen(o => !o)}
+            className="px-1 py-1.5 text-text-dim hover:text-accent-secondary text-[10px]"
+            title="Sampler aus einem beliebigen Pattern übernehmen"
+            aria-label="Sampler-Quelle wählen"
+          >▾</button>
+          {pickerOpen && (
+            <div
+              className="absolute left-0 top-full mt-0.5 bg-bg-elevated border border-border-color rounded shadow-xl z-50 min-w-[180px] py-1"
+              onMouseLeave={() => setPickerOpen(false)}
+            >
+              <div className="px-3 py-1 text-[10px] text-text-dim uppercase tracking-wider border-b border-border-color">
+                Sampler übernehmen aus
+              </div>
+              {allPatterns
+                .filter(p => p.id !== pattern.id)
+                .map(src => (
+                  <button
+                    key={src.id}
+                    onClick={() => { onCopySamplesFrom(src.id, src.name); setPickerOpen(false); }}
+                    className="w-full text-left px-3 py-1.5 text-xs text-text-primary hover:bg-accent-secondary/20 truncate"
+                    title={`Sampler+FX von „${src.name}" in „${pattern.name}" übernehmen`}
+                  >
+                    📥 {src.name}
+                  </button>
+                ))}
+            </div>
+          )}
+        </div>
       )}
       {!isLocked && (
         <button
@@ -447,10 +488,14 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
                   showDelete={dm.patterns.length > 1}
                   hasPrevPattern={idx > 0}
                   prevPatternId={idx > 0 ? dm.patterns[idx - 1].id : null}
+                  allPatterns={dm.patterns.map(pp => ({ id: pp.id, name: pp.name }))}
                   onSelect={() => { dm.setActivePattern(p.id); setShowPatternMenu(false); }}
                   onDuplicate={() => dm.duplicatePattern(p.id)}
                   onRemove={() => dm.removePattern(p.id)}
-                  onCopySamplesFrom={(srcId) => dm.copySamplesFromPattern(srcId, p.id)}
+                  onCopySamplesFrom={(srcId, srcName) => {
+                    dm.copySamplesFromPattern(srcId, p.id);
+                    toast(`Sampler aus „${srcName}" in „${p.name}" übernommen`, { kind: "success" });
+                  }}
                 />
               ))}
               {/* Follow Action für aktives Pattern */}
