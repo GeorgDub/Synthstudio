@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "1.84.0",
+    version: "1.85.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -491,6 +491,24 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-14T12:00:00.000Z",
+      done: [
+        "SESSION-SUMMARY + neue_todos.md UPDATE (v1.85.0): Abschluss der 4-Stunden-Autonomy-Mission. neue_todos.md komplett überarbeitet: Erledigte Items markiert (Quantize-Crash via v1.71 BUG-025, Techno/Hardtekk-Templates via v1.74+v1.82, FLP-Importer via v1.59-v1.70, ESX-Importer bereits vorhanden), neue Bonus-Features dieser Session aufgelistet (Auto-Learn-Wizard, Layout-Export/Import, FX-Param-Bindings, Function-Chains, Custom-Chain-Builder, Run-Script-Target, Built-In-Scripts, Monitor-Tab, Activity-Indicator, Channel-Filter, Device-Persistenz, CSP-Fix), offen-bleibende Wishlist-Items klar markiert, Vorschläge für nächste Session (Right-Click MIDI-Learn, MIDI-Output-Test-Button, Drag-and-Drop Pattern-Duplicate, Macro-Bank-Labels, Beat-Repeat). Session-Total: 12 Releases v1.74→v1.85, 1787 Tests grün (von 1667 zu Beginn, +120 neue Tests), 5 explizite User-Requests erfüllt (Korg-Connect, Usability, Pattern-Duplicate-Script, Every-Function-bindable, Function-Chains), zwei zusätzliche Bug-Fixes (BUG-024 CSP, BUG-025 Quantize), keine Regressions."
+      ],
+      next: [
+        "Right-Click MIDI-Learn als Context-Menu auf jedem FX-Knopf/Volume-Slider — größter UX-Boost noch offen.",
+        "MIDI Output Test Button — sendet Test-CC zur Verifizierung.",
+        "Backlog aus neue_todos.md: GitHub-Builder, Updater, Mobile-Build, Account-System, Cloud-Sync, Wiki/LLM-Integration, Admin/Lite-Tiers — alle größere Sprints.",
+        "Ableton .als vollständig parsen (aktuell nur Skeleton in alsImport.ts)."
+      ],
+      changed: [
+        "package.json",
+        "neue_todos.md",
+        "agents/INDEX.js"
+      ]
+    },
     {
       agent:     "coordinator",
       timestamp: "2026-05-14T11:30:00.000Z",
