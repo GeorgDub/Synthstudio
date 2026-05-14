@@ -19,6 +19,10 @@ export interface OscOutConfig {
   syncStep: boolean;
   /** Rate-Limit: nur jeden N-ten Step senden. 1 = jeden Step, 4 = jeden Viertel. */
   stepRate: number;
+  /** v2.28: sendet `/synth/mute/<partId> T|F` bei jeder Mute-Änderung. */
+  syncMutes: boolean;
+  /** v2.28: sendet `/synth/macro/<n> <float>` bei jeder Macro-Wert-Änderung. */
+  syncMacros: boolean;
 }
 
 const STORAGE_KEY = "ss-osc-out:v1";
@@ -30,6 +34,8 @@ const DEFAULT: OscOutConfig = {
   syncTransport: false,
   syncStep: false,
   stepRate: 4,
+  syncMutes: false,
+  syncMacros: false,
 };
 
 let _config: OscOutConfig = load();
@@ -49,6 +55,8 @@ function load(): OscOutConfig {
       syncTransport: typeof parsed.syncTransport === "boolean" ? parsed.syncTransport : DEFAULT.syncTransport,
       syncStep:      typeof parsed.syncStep === "boolean" ? parsed.syncStep : DEFAULT.syncStep,
       stepRate:      typeof parsed.stepRate === "number" ? Math.max(1, Math.min(16, parsed.stepRate)) : DEFAULT.stepRate,
+      syncMutes:     typeof parsed.syncMutes === "boolean" ? parsed.syncMutes : DEFAULT.syncMutes,
+      syncMacros:    typeof parsed.syncMacros === "boolean" ? parsed.syncMacros : DEFAULT.syncMacros,
     };
   } catch {
     return { ...DEFAULT };

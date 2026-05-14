@@ -141,7 +141,7 @@ import {
 import { setMyRole, setParticipantRole } from "@/store/useSessionStore";
 import { useLaunchpad, isGridDevice } from "@/hooks/useLaunchpad";
 import { useBpmDetection, autoTagFromFilename } from "@/hooks/useBpmDetection";
-import { getMacros, applyMacroBindings, setMacroValue, resetMacros } from "@/store/useMacroStore";
+import { getMacros, applyMacroBindings, setMacroValue, resetMacros, useMacroStore } from "@/store/useMacroStore";
 import {
   getAllAudioTracks,
   loadAudioTracks,
@@ -374,6 +374,8 @@ export default function App() {
   const electron = useElectron();
   // v2.26: OSC-Out-Config (BPM-Sync etc.) — Custom-Observer-Hook
   const oscOutConfig = useOscOutConfig();
+  // v2.28: Reactive macro values für OSC-Out (separate vom getMacros()-Pull-Pfad)
+  const { macros: macroSnapshot } = useMacroStore();
   // MIG-2B Feature-Flag: aktiviert den Dockview-Workspace für die migrierten Tabs.
   const workspaceMode = useWorkspaceMode();
   // ── Kollaborations-Session (für Sync) ─────────────────────────────────────────
@@ -1391,6 +1393,62 @@ export default function App() {
     return unsubscribe;
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [electron]);
+
+  // v2.28: OSC-Out Phase 3 — Mute-State pro Part. Diff gegen prev-Snapshot,
+  // sende /synth/mute/<partId> als String "1"/"0" weil unser OSC-Encoder
+  // Booleans nicht unterstützt (würde T/F-Tags erfordern; "1"/"0" reicht für
+  // die Standard-Receiver-Implementierung in oscBindings.ts).
+  const prevMutedRef = useRef<Map<string, boolean>>(new Map());
+  useEffect(() => {
+    if (!electron.isElectron) return;
+    const cfg = oscOutConfigRef.current;
+    if (!cfg.enabled || !cfg.syncMutes) return;
+    const pattern = dm.getActivePattern();
+    if (!pattern) return;
+    const next = new Map<string, boolean>();
+    for (const p of pattern.parts) {
+      next.set(p.id, !!p.muted);
+      const prev = prevMutedRef.current.get(p.id);
+      if (prev !== undefined && prev !== !!p.muted) {
+        void electron.sendOscMessage({
+          host: cfg.host,
+          port: cfg.port,
+          address: `/synth/mute/${encodeURIComponent(p.id)}`,
+          args: [!!p.muted ? "1" : "0"],
+        });
+      }
+    }
+    prevMutedRef.current = next;
+  // Re-Run wenn parts oder Mute-Flags sich ändern. JSON-stringify deckt
+  // beide Fälle ab in einem dep-vector.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    JSON.stringify(dm.getActivePattern()?.parts.map(p => ({ id: p.id, muted: p.muted })) ?? []),
+    oscOutConfig.enabled,
+    oscOutConfig.syncMutes,
+  ]);
+
+  // v2.28: OSC-Out Phase 3 — Macro-Werte (8 Slots). Diff gegen prev-Snapshot.
+  const prevMacrosRef = useRef<number[]>([]);
+  useEffect(() => {
+    if (!electron.isElectron) return;
+    const cfg = oscOutConfigRef.current;
+    if (!cfg.enabled || !cfg.syncMacros) return;
+    const values = macroSnapshot.map(m => m.value);
+    for (let i = 0; i < values.length; i++) {
+      const prev = prevMacrosRef.current[i];
+      if (prev !== undefined && prev !== values[i]) {
+        void electron.sendOscMessage({
+          host: cfg.host,
+          port: cfg.port,
+          address: `/synth/macro/${i}`,
+          args: [values[i]],
+        });
+      }
+    }
+    prevMacrosRef.current = values;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [macroSnapshot, oscOutConfig.enabled, oscOutConfig.syncMacros]);
 
   // v1.92: midi:pattern (Pattern-Index → Pattern-Switch). Vor v1.92 dispatchte
   // useMidi.applyMapping zwar das Event, aber niemand hörte → das

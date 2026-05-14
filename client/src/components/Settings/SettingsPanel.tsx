@@ -1248,6 +1248,28 @@ function OscSection() {
               />
               Step-Position
             </label>
+            <label className="flex items-center gap-1 text-[10px] text-text-muted cursor-pointer">
+              <input
+                type="checkbox"
+                checked={oscOut.syncMutes}
+                onChange={e => setOscOutConfig({ syncMutes: e.target.checked })}
+                disabled={!oscOut.enabled}
+                className="accent-accent-primary"
+                data-testid="osc-out-sync-mutes"
+              />
+              Mutes
+            </label>
+            <label className="flex items-center gap-1 text-[10px] text-text-muted cursor-pointer">
+              <input
+                type="checkbox"
+                checked={oscOut.syncMacros}
+                onChange={e => setOscOutConfig({ syncMacros: e.target.checked })}
+                disabled={!oscOut.enabled}
+                className="accent-accent-primary"
+                data-testid="osc-out-sync-macros"
+              />
+              Macros
+            </label>
             {oscOut.syncStep && (
               <span className="flex items-center gap-1 text-[10px] text-text-muted">
                 jeden
