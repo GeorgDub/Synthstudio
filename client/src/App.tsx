@@ -159,7 +159,8 @@ import {
 import { routeMelodicPartsToPatterns } from "@/utils/imports";
 import { resetNoteRepeat, toggleNoteRepeat, isNoteRepeatEnabled } from "@/store/useNoteRepeatStore";
 import { resetTranspose } from "@/store/useTransposeStore";
-import { resetMorph } from "@/store/useMorphStore";
+import { resetMorph, getMorphState, setActive as setMorphActive } from "@/store/useMorphStore";
+import { getSceneState, setActiveScene as sceneStoreSetActiveScene } from "@/store/useSceneStore";
 import { scriptSandbox } from "@/sandbox/scriptSandboxInstance";
 import {
   startHoldLoop,
@@ -1184,6 +1185,15 @@ export default function App() {
           });
           break;
         }
+        // v2.10: Hidden-Bug-Fix — toggle-morph hatte keinen Handler
+        case "toggle-morph": {
+          const cur = getMorphState();
+          setMorphActive(!cur.isActive);
+          toast(`Pattern-Morph: ${!cur.isActive ? "AN" : "AUS"}`, {
+            kind: "info", duration: 1500,
+          });
+          break;
+        }
       }
     };
     window.addEventListener(KB_ACTION_EVENT, handler);
@@ -1311,6 +1321,38 @@ export default function App() {
     };
     window.addEventListener("midi:pattern", handlePattern);
     return () => window.removeEventListener("midi:pattern", handlePattern);
+  }, []);
+
+  // v2.10: midi:commitLiveEdit — Hidden-Bug-Fix. War dispatched aber kein
+  // Listener. Bindet jetzt direkt an dm.commitLivePatternEdit.
+  useEffect(() => {
+    const handleCommit = () => {
+      dmRef.current.commitLivePatternEdit();
+      toast("Live-Edit committed", { kind: "success", duration: 1500 });
+    };
+    window.addEventListener("midi:commitLiveEdit", handleCommit);
+    return () => window.removeEventListener("midi:commitLiveEdit", handleCommit);
+  }, []);
+
+  // v2.10: midi:scene — scenelaunch-Target dispatched eine sceneIndex,
+  // kein Listener vorhanden. Wir aktivieren die Scene + setzen das
+  // entsprechende Pattern aktiv via setActiveScene + setActivePattern.
+  useEffect(() => {
+    const handleScene = (e: Event) => {
+      const sceneIndex = (e as CustomEvent<number>).detail;
+      if (typeof sceneIndex !== "number") return;
+      // Direkt aus dem Singleton-Store lesen (kein React-state-Lock-In)
+      const scenes = getSceneState().scenes;
+      const scene = scenes[sceneIndex];
+      if (!scene) return;
+      sceneStoreSetActiveScene(scene.id);
+      if (scene.patternId) {
+        dmRef.current.setActivePattern(scene.patternId);
+      }
+      toast(`Scene ${sceneIndex + 1}: ${scene.name}`, { kind: "info", duration: 1500 });
+    };
+    window.addEventListener("midi:scene", handleScene);
+    return () => window.removeEventListener("midi:scene", handleScene);
   }, []);
 
   // v2.1: midi:partSend — Reverb/Delay-Send-Level via MIDI-CC steuern

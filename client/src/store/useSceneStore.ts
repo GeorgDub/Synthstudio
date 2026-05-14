@@ -47,6 +47,11 @@ let _state: SceneState = load();
 const _listeners = new Set<Listener>();
 function notify() { _listeners.forEach(l => l()); }
 
+/** v2.10: synchroner Getter für Event-Handler die nicht im React-Render-Cycle laufen. */
+export function getSceneState(): SceneState {
+  return _state;
+}
+
 export function addScene(name: string, patternId: string): string {
   const id = makeId();
   const color = SCENE_COLORS[_state.scenes.length % SCENE_COLORS.length];

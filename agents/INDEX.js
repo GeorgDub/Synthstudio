@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "2.9.0",
+    version: "2.10.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -491,6 +491,26 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-15T00:30:00.000Z",
+      done: [
+        "HIDDEN-NO-OP-FIXES (v2.10.0): Audit der kb:action-Handlers nach v2.9 BUG (toggle-note-repeat war NO-OP) zeigte 3 weitere Hidden-NO-OPs. Alle gefixt: (1) `toggle-morph` kb:action wurde von MidiLearnTarget.toggleMorph dispatched, hatte aber keinen Handler in App.tsx → MIDI-Bind toggleMorph war NO-OP. Handler ergänzt: ruft setActive() aus useMorphStore + Toast 'Pattern-Morph: AN/AUS'. (2) `midi:commitLiveEdit` CustomEvent wurde dispatched, kein Listener → commitLiveEdit per MIDI war NO-OP. Listener ergänzt: ruft `dmRef.current.commitLivePatternEdit()` + Toast 'Live-Edit committed'. (3) `midi:scene` CustomEvent dispatched mit sceneIndex, kein Listener → Scene-Launch per MIDI war NO-OP. Listener ergänzt: liest `getSceneState().scenes[sceneIndex]`, setzt setActiveScene + dm.setActivePattern(scene.patternId) + Toast 'Scene N: <Name>'. Neuer Pure-Getter `getSceneState()` in useSceneStore (Event-Handler-Pattern, kein React-Render-Lock-In). `toggle-morph` zur Sandbox-Allowlist + AI-Generator-Allowlist hinzugefügt — Scripts können jetzt Morph-Toggle steuern. 1853 Tests grün, pnpm check 0 Fehler. Insgesamt 7 Hidden-NO-OPs in dieser Session gefixt (v1.71 BUG-025 quantize, v1.76 volume/pan/solo, v1.92 pattern-index, v1.99 step-target, v2.9 toggle-note-repeat, v2.10 toggle-morph+commitLiveEdit+scene)."
+      ],
+      next: [
+        "Custom-Chains Beat-Repeat-Trigger als Macro-System.",
+        "AI-Prompt-Helper für Scripts via Chat-UI."
+      ],
+      changed: [
+        "package.json",
+        "client/src/App.tsx",
+        "client/src/store/useSceneStore.ts",
+        "client/src/sandbox/useScriptSandbox.ts",
+        "client/src/utils/aiScriptGenerator.ts",
+        "tests/features/built-in-scripts.test.ts",
+        "agents/INDEX.js"
+      ]
+    },
     {
       agent:     "coordinator",
       timestamp: "2026-05-15T00:00:00.000Z",

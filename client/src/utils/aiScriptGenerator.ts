@@ -34,6 +34,7 @@ const ALLOWED_DISPATCH_ACTIONS = [
   "pattern-copy-samples-from-prev",
   "part-up", "part-down", "velocity-mode", "pitch-mode",
   "toggle-note-repeat",
+  "toggle-morph",
 ];
 
 /**
