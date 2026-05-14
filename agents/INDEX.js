@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "1.78.0",
+    version: "1.79.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -491,6 +491,24 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-14T09:00:00.000Z",
+      done: [
+        "MIDI-ACTIVITY-INDICATOR + DEFAULT-FILENAME (v1.79.0): Zwei UX-Wins für den MIDI-Workflow. (1) Live-Activity-Indicator im MidiSettings-Header zeigt die letzte eingehende MIDI-Message (Note On/Off, CC, Aftertouch, PB) und pulst grün für 150ms bei jedem Event — der User sieht direkt ob seine Hardware tatsächlich sendet (häufige Frage: 'kommt überhaupt was an?'). Hört auf das bereits existierende `midi:rawmessage` CustomEvent. Pretty-Print: 'CC 7 = 64 (Ch1)'. (2) Neuer Pure-Helper `defaultLayoutNameForDevice(deviceName?)` in midiLayoutExport.ts: leerer Input → 'Mein MIDI-Setup' Fallback, sonst '<DeviceName>-Setup'. MidiSettings useEffect-Hook aktualisiert exportName beim Device-Wechsel — nur falls der User ihn nicht manuell überschrieben hat (exportNameTouched-Flag). User klickt jetzt MIDI-Settings, das Setup ist sofort sinnvoll vorbelegt mit z.B. 'Korg Electribe 2-Setup'. 4 neue Vitest-Cases für defaultLayoutNameForDevice (null/undefined/empty/whitespace → Fallback, normal/whitespace-getrimmt → Suffix). 1767 Tests grün, pnpm check 0 Fehler."
+      ],
+      next: [
+        "v1.80 CUSTOM-CHAIN-BUILDER: UI-Form mit 'Add Step' damit der User eigene Chains ohne JSON-Editor bauen kann.",
+        "v1.81 FINAL-AUDIT: Welche Features sind noch UI-versteckt? Welche Settings noch nicht zugänglich? Doku-Update."
+      ],
+      changed: [
+        "package.json",
+        "client/src/utils/midiLayoutExport.ts",
+        "client/src/components/MidiSettings/MidiSettings.tsx",
+        "tests/features/midi-layout-export.test.ts",
+        "agents/INDEX.js"
+      ]
+    },
     {
       agent:     "coordinator",
       timestamp: "2026-05-14T08:30:00.000Z",

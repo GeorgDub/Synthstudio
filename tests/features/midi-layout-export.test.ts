@@ -8,7 +8,7 @@
  * und die geparsten Mappings müssen den Original-Mappings entsprechen.
  */
 import { describe, it, expect } from "vitest";
-import { buildMidiLayoutJson, sanitizeLayoutFileName, LAYOUT_VERSION } from "../../client/src/utils/midiLayoutExport";
+import { buildMidiLayoutJson, sanitizeLayoutFileName, LAYOUT_VERSION, defaultLayoutNameForDevice } from "../../client/src/utils/midiLayoutExport";
 import { parseMidiLayoutJson } from "../../client/src/utils/midiLayoutImport";
 import type { MidiMapping, MidiNoteMapping } from "../../client/src/hooks/useMidi";
 
@@ -118,5 +118,29 @@ describe("sanitizeLayoutFileName (v1.73)", () => {
   it("behält Unicode-Buchstaben + Zahlen (deutsche Umlaute, etc.)", () => {
     expect(sanitizeLayoutFileName("Mörder-Setup")).toBe("Mörder-Setup");
     expect(sanitizeLayoutFileName("Setup 2026")).toBe("Setup-2026");
+  });
+});
+
+// ─── defaultLayoutNameForDevice (v1.79) ────────────────────────────────────────
+
+describe("defaultLayoutNameForDevice (v1.79)", () => {
+  it("undefined / null → 'Mein MIDI-Setup' Fallback", () => {
+    expect(defaultLayoutNameForDevice()).toBe("Mein MIDI-Setup");
+    expect(defaultLayoutNameForDevice(null)).toBe("Mein MIDI-Setup");
+    expect(defaultLayoutNameForDevice(undefined)).toBe("Mein MIDI-Setup");
+  });
+
+  it("leerer / whitespace-only String → Fallback", () => {
+    expect(defaultLayoutNameForDevice("")).toBe("Mein MIDI-Setup");
+    expect(defaultLayoutNameForDevice("   ")).toBe("Mein MIDI-Setup");
+  });
+
+  it("Device-Name wird mit '-Setup' Suffix angehängt", () => {
+    expect(defaultLayoutNameForDevice("Korg Electribe 2")).toBe("Korg Electribe 2-Setup");
+    expect(defaultLayoutNameForDevice("Launchpad MK2")).toBe("Launchpad MK2-Setup");
+  });
+
+  it("Whitespace am Anfang/Ende wird getrimmt", () => {
+    expect(defaultLayoutNameForDevice("  MPK Mini  ")).toBe("MPK Mini-Setup");
   });
 });

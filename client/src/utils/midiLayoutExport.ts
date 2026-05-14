@@ -58,6 +58,23 @@ export function buildMidiLayoutJson(input: MidiLayoutExportInput): string {
  *
  * Beispiel: "Mein Electribe 2 / Slim" → "Mein-Electribe-2-Slim"
  */
+/**
+ * Generiert einen sinnvollen Default-Layout-Namen aus dem aktuell aktiven
+ * MIDI-Device. Wird vom Export-Form als Vorbelegung verwendet damit der User
+ * nicht jedes Mal manuell "Mein Setup" tippen muss.
+ *
+ *   "Korg Electribe 2"  → "Korg Electribe 2-Setup"
+ *   undefined / leer    → "Mein MIDI-Setup"
+ *
+ * Pure Funktion — public exportiert für Tests + Verwendung in MidiSettings.
+ * v1.79.
+ */
+export function defaultLayoutNameForDevice(deviceName?: string | null): string {
+  const trimmed = (deviceName ?? "").trim();
+  if (trimmed.length === 0) return "Mein MIDI-Setup";
+  return `${trimmed}-Setup`;
+}
+
 export function sanitizeLayoutFileName(name: string): string {
   // Keine NFKD-Normalization — die würde Umlaute (ö → o+◌̈) zerlegen und der
   // Strip-Schritt würde die Combining-Marks entfernen → "ö" → "o". Stattdessen

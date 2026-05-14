@@ -10,12 +10,12 @@
  * - MIDI-Clock-Sync
  */
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { X } from "lucide-react";
 import type { MidiState, MidiActions, MidiLearnTarget, MidiNoteMapping, AutoLearnEntry } from "@/hooks/useMidi";
 import { GM_DRUM_DEFAULTS } from "@/hooks/useMidi";
 import { MIDI_TEMPLATES, templateToMappings } from "@/utils/midiTemplates";
-import { buildMidiLayoutJson, sanitizeLayoutFileName } from "@/utils/midiLayoutExport";
+import { buildMidiLayoutJson, sanitizeLayoutFileName, defaultLayoutNameForDevice } from "@/utils/midiLayoutExport";
 import { FX_PARAM_RANGES } from "@/audio/AudioEngine";
 import { useScriptStore } from "@/store/useScriptStore";
 
@@ -71,6 +71,51 @@ function noteToName(note: number): string {
 export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
   // v1.78: für Script-Run-Targets brauchen wir die Liste aller Scripts
   const { scripts } = useScriptStore();
+
+  // v1.79: Live-MIDI-Activity-Indicator — User sieht ob seine Hardware
+  // tatsächlich Events sendet. Hört auf "midi:rawmessage" das in
+  // useMidi.handleMidiMessage für JEDE Note/CC/Aftertouch-Message gedispatcht
+  // wird (auch Clock-Pulses sind drin via separater Logik im Handler).
+  const [lastActivity, setLastActivity] = useState<{
+    type: number;
+    channel: number;
+    byte1: number;
+    byte2: number;
+    at: number;
+  } | null>(null);
+  const [activityPulse, setActivityPulse] = useState(false);
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<{ type: number; channel: number; byte1: number; byte2: number }>).detail;
+      if (!detail) return;
+      setLastActivity({ ...detail, at: Date.now() });
+      setActivityPulse(true);
+      setTimeout(() => setActivityPulse(false), 150);
+    };
+    window.addEventListener("midi:rawmessage", handler);
+    return () => window.removeEventListener("midi:rawmessage", handler);
+  }, []);
+
+  /** Pretty-print für die letzte empfangene MIDI-Message. */
+  function formatActivity(a: NonNullable<typeof lastActivity>): string {
+    const ageMs = Date.now() - a.at;
+    const ageStr = ageMs < 1000 ? `${ageMs}ms` : `${Math.floor(ageMs / 1000)}s`;
+    let typeName: string;
+    if (a.type === 0x90) typeName = `Note On ${a.byte1} vel=${a.byte2}`;
+    else if (a.type === 0x80) typeName = `Note Off ${a.byte1}`;
+    else if (a.type === 0xb0) typeName = `CC ${a.byte1} = ${a.byte2}`;
+    else if (a.type === 0xa0) typeName = `Poly AT ${a.byte1} = ${a.byte2}`;
+    else if (a.type === 0xd0) typeName = `Ch AT ${a.byte1}`;
+    else if (a.type === 0xe0) typeName = `Pitch Bend ${(a.byte1 | (a.byte2 << 7))}`;
+    else typeName = `Type 0x${a.type.toString(16)}`;
+    return `${typeName} (Ch${a.channel}, vor ${ageStr})`;
+  }
+
+  /** v1.79: pure-helper aus midiLayoutExport mit Device-Name aus midi-State. */
+  function defaultExportNameFromDevice(): string {
+    const dev = midi.devices.find((d) => d.id === midi.activeDeviceId);
+    return defaultLayoutNameForDevice(dev?.name);
+  }
   const [activeTab, setActiveTab] = useState<"devices" | "templates" | "cc" | "notes" | "clock">("devices");
   const [noteLearnPartId, setNoteLearnPartId] = useState<string | null>(null);
   const [noteLearnChannel, setNoteLearnChannel] = useState(0);
@@ -78,9 +123,20 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
   const [manualChannel, setManualChannel] = useState(0);
   // v1.76: aufklappbare FX-Param-Section pro Part
   const [fxParamPartId, setFxParamPartId] = useState<string | null>(null);
-  // v1.73: Export der aktuellen Mappings als JSON-Template
-  const [exportName, setExportName] = useState("Mein MIDI-Setup");
+  // v1.73: Export der aktuellen Mappings als JSON-Template.
+  // v1.79: Default-Filename basiert auf dem aktiven MIDI-Device-Namen.
+  const [exportName, setExportName] = useState<string>(() => "Mein MIDI-Setup");
   const [exportFeedback, setExportFeedback] = useState<string | null>(null);
+  // exportName beim Device-Wechsel automatisch aktualisieren (nur wenn der
+  // User ihn nicht manuell überschrieben hat — wir merken uns das mit
+  // einem flag).
+  const [exportNameTouched, setExportNameTouched] = useState(false);
+  useEffect(() => {
+    if (!exportNameTouched) {
+      setExportName(defaultExportNameFromDevice());
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [midi.activeDeviceId, midi.devices]);
 
   const handleExportLayout = () => {
     const json = buildMidiLayoutJson({
@@ -648,7 +704,7 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
             <input
               type="text"
               value={exportName}
-              onChange={(e) => setExportName(e.target.value)}
+              onChange={(e) => { setExportName(e.target.value); setExportNameTouched(true); }}
               placeholder="Layout-Name"
               className="flex-1 px-2 py-1.5 bg-bg-elevated border border-border-color rounded text-xs text-text-primary placeholder:text-text-dim focus:outline-none focus:border-accent-secondary"
             />
@@ -909,6 +965,20 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
             <h2 className="text-base font-semibold text-text-primary">MIDI-Einstellungen</h2>
             {midi.isEnabled && (
               <span className="w-2 h-2 rounded-full bg-accent-success animate-pulse" />
+            )}
+            {/* v1.79: Live-Activity-Indicator — flasht grün bei eingehender MIDI-Message */}
+            {midi.isEnabled && lastActivity && (
+              <span
+                title={`Letzte MIDI-Message: ${formatActivity(lastActivity)}`}
+                className={`px-2 py-0.5 rounded text-[10px] font-mono transition-all duration-150 ${
+                  activityPulse
+                    ? "bg-accent-secondary text-bg-base"
+                    : "bg-bg-elevated text-text-dim"
+                }`}
+                data-testid="midi-activity-indicator"
+              >
+                ● {formatActivity(lastActivity).split(" (")[0]}
+              </span>
             )}
           </div>
           <button
