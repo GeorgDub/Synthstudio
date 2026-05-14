@@ -13,8 +13,9 @@
  */
 import React, { useState } from "react";
 import { X } from "lucide-react";
-import type { PartData, ChannelFx } from "@/audio/AudioEngine";
+import type { PartData, ChannelFx, FxParamKey } from "@/audio/AudioEngine";
 import { useElectron } from "../../../../electron/useElectron";
+import { useMidiLearn } from "@/hooks/useMidiLearn";
 
 export interface FxPanelProps {
   part: PartData;
@@ -30,23 +31,44 @@ interface KnobProps {
   step?: number;
   onChange: (v: number) => void;
   unit?: string;
+  /** v1.90: Optional — wenn beide gesetzt sind, bekommt der Knob einen
+   *  Right-Click-MIDI-Learn-Handler für das passende fxParam-Target. */
+  fxParam?: FxParamKey;
+  partId?: string;
+  partName?: string;
 }
 
-function Knob({ label, value, min, max, step = 0.01, onChange, unit = "" }: KnobProps) {
+function Knob({ label, value, min, max, step = 0.01, onChange, unit = "", fxParam, partId, partName }: KnobProps) {
+  // v1.90: useMidiLearn ist immer aufgerufen (no-op wenn fxParam/partId fehlen,
+  // damit der Hook-Order konsistent bleibt). Wir bauen das Target conditional.
+  const target = fxParam && partId
+    ? { type: "fxParam" as const, partId, param: fxParam, partName }
+    : null;
+  const learn = useMidiLearn(target ?? { type: "openSettings" }); // dummy wenn null
+  const learnable = !!target;
+
   return (
-    <div className="flex flex-col items-center gap-0.5 min-w-[52px]">
-      <span className="text-[9px] text-text-dim uppercase tracking-wide">{label}</span>
+    <div className="flex flex-col items-center gap-0.5 min-w-[52px] relative">
+      <span className="text-[9px] text-text-dim uppercase tracking-wide">
+        {label}
+        {learnable && learn.isMapped && (
+          <span className="ml-1 text-accent-secondary font-mono">·CC{learn.mappedCC}</span>
+        )}
+      </span>
       <input
         type="range"
         min={min} max={max} step={step}
         value={value}
         onChange={e => onChange(parseFloat(e.target.value))}
+        onContextMenu={learnable ? learn.onContextMenu : undefined}
         className="w-12 accent-accent-primary cursor-pointer"
         style={{ writingMode: "horizontal-tb" }}
+        title={learnable ? `${label} · Rechtsklick: MIDI-Learn${learn.isMapped ? ` · CC${learn.mappedCC}` : ""}` : label}
       />
       <span className="text-[9px] text-text-muted font-mono">
         {value.toFixed(unit === "Hz" ? 0 : unit === "dB" ? 1 : 2)}{unit}
       </span>
+      {learnable && learn.menu}
     </div>
   );
 }
@@ -74,13 +96,17 @@ function Toggle({ label, value, onChange }: ToggleProps) {
 export interface FxPanelBodyProps {
   fx: ChannelFx;
   onFxChange: (fx: Partial<ChannelFx>) => void;
+  /** v1.90: Optional — wenn gesetzt, sind alle FX-Knöpfe per Rechtsklick
+   *  MIDI-bindbar (Right-Click-MIDI-Learn für fxParam-Targets). */
+  partId?: string;
+  partName?: string;
 }
 
 /**
  * Reine FX-Tabs + Knobs ohne Wrapper-Positionierung und ohne Header.
  * Wird sowohl im Dropdown-FxPanel als auch im pinnable FxPopupApp eingesetzt.
  */
-export function FxPanelBody({ fx, onFxChange }: FxPanelBodyProps) {
+export function FxPanelBody({ fx, onFxChange, partId, partName }: FxPanelBodyProps) {
   const [tab, setTab] = useState<"filter" | "eq" | "dynamics" | "delay" | "reverb">("filter");
   return (
     <>
@@ -118,16 +144,19 @@ export function FxPanelBody({ fx, onFxChange }: FxPanelBodyProps) {
           </div>
           <div className="flex gap-3 flex-wrap">
             <Knob label="Freq" value={fx.filterFreq} min={20} max={20000} step={10}
-              onChange={v => onFxChange({ filterFreq: v })} unit="Hz" />
+              onChange={v => onFxChange({ filterFreq: v })} unit="Hz"
+              fxParam="filterFreq" partId={partId} partName={partName} />
             <Knob label="Resonanz" value={fx.filterQ} min={0.1} max={20} step={0.1}
-              onChange={v => onFxChange({ filterQ: v })} />
+              onChange={v => onFxChange({ filterQ: v })}
+              fxParam="filterQ" partId={partId} partName={partName} />
           </div>
           <div className="border-t border-border-color pt-2">
             <div className="flex items-center gap-2 mb-2">
               <Toggle label="Distortion" value={fx.distortionEnabled} onChange={v => onFxChange({ distortionEnabled: v })} />
             </div>
             <Knob label="Drive" value={fx.distortionAmount} min={0} max={400} step={1}
-              onChange={v => onFxChange({ distortionAmount: v })} />
+              onChange={v => onFxChange({ distortionAmount: v })}
+              fxParam="distortionAmount" partId={partId} partName={partName} />
           </div>
         </div>
       )}
@@ -138,11 +167,14 @@ export function FxPanelBody({ fx, onFxChange }: FxPanelBodyProps) {
           <Toggle label="3-Band EQ" value={fx.eqEnabled} onChange={v => onFxChange({ eqEnabled: v })} />
           <div className="flex gap-3">
             <Knob label="Low" value={fx.eqLow} min={-15} max={15} step={0.5}
-              onChange={v => onFxChange({ eqLow: v })} unit="dB" />
+              onChange={v => onFxChange({ eqLow: v })} unit="dB"
+              fxParam="eqLow" partId={partId} partName={partName} />
             <Knob label="Mid" value={fx.eqMid} min={-15} max={15} step={0.5}
-              onChange={v => onFxChange({ eqMid: v })} unit="dB" />
+              onChange={v => onFxChange({ eqMid: v })} unit="dB"
+              fxParam="eqMid" partId={partId} partName={partName} />
             <Knob label="High" value={fx.eqHigh} min={-15} max={15} step={0.5}
-              onChange={v => onFxChange({ eqHigh: v })} unit="dB" />
+              onChange={v => onFxChange({ eqHigh: v })} unit="dB"
+              fxParam="eqHigh" partId={partId} partName={partName} />
           </div>
         </div>
       )}
@@ -153,13 +185,17 @@ export function FxPanelBody({ fx, onFxChange }: FxPanelBodyProps) {
           <Toggle label="Compressor" value={fx.compressorEnabled} onChange={v => onFxChange({ compressorEnabled: v })} />
           <div className="flex gap-3 flex-wrap">
             <Knob label="Threshold" value={fx.compressorThreshold} min={-60} max={0} step={0.5}
-              onChange={v => onFxChange({ compressorThreshold: v })} unit="dB" />
+              onChange={v => onFxChange({ compressorThreshold: v })} unit="dB"
+              fxParam="compressorThreshold" partId={partId} partName={partName} />
             <Knob label="Ratio" value={fx.compressorRatio} min={1} max={20} step={0.5}
-              onChange={v => onFxChange({ compressorRatio: v })} />
+              onChange={v => onFxChange({ compressorRatio: v })}
+              fxParam="compressorRatio" partId={partId} partName={partName} />
             <Knob label="Attack" value={fx.compressorAttack} min={0} max={1} step={0.001}
-              onChange={v => onFxChange({ compressorAttack: v })} />
+              onChange={v => onFxChange({ compressorAttack: v })}
+              fxParam="compressorAttack" partId={partId} partName={partName} />
             <Knob label="Release" value={fx.compressorRelease} min={0} max={1} step={0.01}
-              onChange={v => onFxChange({ compressorRelease: v })} />
+              onChange={v => onFxChange({ compressorRelease: v })}
+              fxParam="compressorRelease" partId={partId} partName={partName} />
           </div>
         </div>
       )}
@@ -170,11 +206,14 @@ export function FxPanelBody({ fx, onFxChange }: FxPanelBodyProps) {
           <Toggle label="Delay" value={fx.delayEnabled} onChange={v => onFxChange({ delayEnabled: v })} />
           <div className="flex gap-3 flex-wrap">
             <Knob label="Zeit" value={fx.delayTime} min={0.01} max={2} step={0.01}
-              onChange={v => onFxChange({ delayTime: v })} />
+              onChange={v => onFxChange({ delayTime: v })}
+              fxParam="delayTime" partId={partId} partName={partName} />
             <Knob label="Feedback" value={fx.delayFeedback} min={0} max={0.95} step={0.01}
-              onChange={v => onFxChange({ delayFeedback: v })} />
+              onChange={v => onFxChange({ delayFeedback: v })}
+              fxParam="delayFeedback" partId={partId} partName={partName} />
             <Knob label="Mix" value={fx.delayMix} min={0} max={1} step={0.01}
-              onChange={v => onFxChange({ delayMix: v })} />
+              onChange={v => onFxChange({ delayMix: v })}
+              fxParam="delayMix" partId={partId} partName={partName} />
           </div>
         </div>
       )}
@@ -185,9 +224,11 @@ export function FxPanelBody({ fx, onFxChange }: FxPanelBodyProps) {
           <Toggle label="Reverb" value={fx.reverbEnabled} onChange={v => onFxChange({ reverbEnabled: v })} />
           <div className="flex gap-3">
             <Knob label="Decay" value={fx.reverbDecay} min={0.1} max={10} step={0.1}
-              onChange={v => onFxChange({ reverbDecay: v })} />
+              onChange={v => onFxChange({ reverbDecay: v })}
+              fxParam="reverbDecay" partId={partId} partName={partName} />
             <Knob label="Mix" value={fx.reverbMix} min={0} max={1} step={0.01}
-              onChange={v => onFxChange({ reverbMix: v })} />
+              onChange={v => onFxChange({ reverbMix: v })}
+              fxParam="reverbMix" partId={partId} partName={partName} />
           </div>
         </div>
       )}
@@ -234,7 +275,7 @@ export function FxPanel({ part, onFxChange, onClose }: FxPanelProps) {
         </div>
       </div>
 
-      <FxPanelBody fx={part.fx} onFxChange={onFxChange} />
+      <FxPanelBody fx={part.fx} onFxChange={onFxChange} partId={part.id} partName={part.name} />
     </div>
   );
 }

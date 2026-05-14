@@ -124,7 +124,7 @@ export function FxPopupApp({ channelId }: FxPopupAppProps) {
       />
 
       <div className="flex-1 overflow-auto p-3">
-        <FxPanelBody fx={state.fx} onFxChange={handleFxChange} />
+        <FxPanelBody fx={state.fx} onFxChange={handleFxChange} partId={state.partId} partName={state.partName} />
       </div>
     </div>
   );

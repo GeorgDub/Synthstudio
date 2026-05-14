@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "1.89.0",
+    version: "1.90.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -491,6 +491,23 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-14T14:30:00.000Z",
+      done: [
+        "RCL-FX-KNOBS (v1.90.0): Alle 15 FX-Knöpfe im FxPanel + FxPopupApp sind jetzt per Rechtsklick MIDI-bindbar. KnobProps bekommt optionale fxParam+partId+partName-Felder; wenn alle gesetzt sind, registriert der Knob einen useMidiLearn-Hook für {type:'fxParam', partId, param}. Mapped-Badge `·CC<n>` im Label. FxPanelBodyProps bekommt entsprechend partId+partName, durchgeschleift zu jedem Knob. FxPanel (dropdown) übergibt part.id+part.name; FxPopupApp übergibt state.partId+state.partName (waren schon im sync-state). Damit ist die komplette FX-Kette (Filter Freq/Q, Distortion Drive, EQ Low/Mid/High, Comp Threshold/Ratio/Attack/Release, Delay Time/Feedback/Mix, Reverb Decay/Mix) per Rechtsklick lernbar — 15 Params × bis zu 8 Parts = 120 zusätzliche bindbare Slots zu den schon zugänglichen Volume/Pan/Mute/Solo. 1806 Tests grün, pnpm check 0 Fehler."
+      ],
+      next: [
+        "Backlog aus neue_todos.md.",
+        "Eventuell: Scripts in ScriptList → Right-Click-MIDI-Learn direkt (wenn der Hook via Context überall funktioniert)."
+      ],
+      changed: [
+        "package.json",
+        "client/src/components/DrumMachine/FxPanel.tsx",
+        "client/src/components/DrumMachine/FxPopupApp.tsx",
+        "agents/INDEX.js"
+      ]
+    },
     {
       agent:     "coordinator",
       timestamp: "2026-05-14T14:00:00.000Z",
