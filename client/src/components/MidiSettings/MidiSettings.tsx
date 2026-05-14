@@ -84,6 +84,14 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
     at: number;
   } | null>(null);
   const [activityPulse, setActivityPulse] = useState(false);
+  // v1.81: Monitor-Tab — bewahrt einen ringbuffer der letzten 200 MIDI-Events
+  // damit der User das genaue Verhalten seiner Hardware debuggen kann.
+  const [monitorLog, setMonitorLog] = useState<Array<{
+    type: number; channel: number; byte1: number; byte2: number; at: number;
+  }>>([]);
+  const [monitorPaused, setMonitorPaused] = useState(false);
+  const monitorPausedRef = React.useRef(false);
+  React.useEffect(() => { monitorPausedRef.current = monitorPaused; }, [monitorPaused]);
   useEffect(() => {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent<{ type: number; channel: number; byte1: number; byte2: number }>).detail;
@@ -91,6 +99,13 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
       setLastActivity({ ...detail, at: Date.now() });
       setActivityPulse(true);
       setTimeout(() => setActivityPulse(false), 150);
+      if (!monitorPausedRef.current) {
+        setMonitorLog((prev) => {
+          const next = [...prev, { ...detail, at: Date.now() }];
+          // Ringbuffer-Cap: max 200 Events damit die UI nicht erstickt
+          return next.length > 200 ? next.slice(-200) : next;
+        });
+      }
     };
     window.addEventListener("midi:rawmessage", handler);
     return () => window.removeEventListener("midi:rawmessage", handler);
@@ -116,7 +131,7 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
     const dev = midi.devices.find((d) => d.id === midi.activeDeviceId);
     return defaultLayoutNameForDevice(dev?.name);
   }
-  const [activeTab, setActiveTab] = useState<"devices" | "templates" | "cc" | "notes" | "clock">("devices");
+  const [activeTab, setActiveTab] = useState<"devices" | "templates" | "cc" | "notes" | "monitor" | "clock">("devices");
   const [noteLearnPartId, setNoteLearnPartId] = useState<string | null>(null);
   const [noteLearnChannel, setNoteLearnChannel] = useState(0);
   const [manualNote, setManualNote] = useState(36);
@@ -1039,6 +1054,84 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
 
   // ─── Tab: MIDI-Clock ──────────────────────────────────────────────────────
 
+  // ─── Tab: Monitor (v1.81) ──────────────────────────────────────────────
+  /** Pretty-print für eine Monitor-Zeile. */
+  const formatMonitorEntry = (m: { type: number; channel: number; byte1: number; byte2: number; at: number }) => {
+    const time = new Date(m.at).toISOString().slice(11, 23); // HH:MM:SS.mmm
+    let what: string;
+    if (m.type === 0x90) what = `Note On  ${m.byte1.toString().padStart(3)} vel=${m.byte2}`;
+    else if (m.type === 0x80) what = `Note Off ${m.byte1.toString().padStart(3)}`;
+    else if (m.type === 0xb0) what = `CC       ${m.byte1.toString().padStart(3)} = ${m.byte2}`;
+    else if (m.type === 0xa0) what = `Poly AT  ${m.byte1.toString().padStart(3)} = ${m.byte2}`;
+    else if (m.type === 0xd0) what = `Ch AT    val=${m.byte1}`;
+    else if (m.type === 0xe0) what = `PB       ${(m.byte1 | (m.byte2 << 7)).toString().padStart(5)}`;
+    else what = `0x${m.type.toString(16)}    b1=${m.byte1} b2=${m.byte2}`;
+    return `${time}  Ch${m.channel.toString().padStart(2)}  ${what}`;
+  };
+
+  const renderMonitorTab = () => (
+    <div className="space-y-3">
+      <div className="text-xs text-text-dim">
+        Live-Log aller eingehender MIDI-Messages. Hilft beim Debuggen:
+        Welche CCs sendet dein Controller? Auf welchen Channels? Sind
+        Knobs/Slider 7-bit oder 14-bit?
+      </div>
+      <div className="flex items-center gap-2">
+        <button
+          onClick={() => setMonitorPaused(!monitorPaused)}
+          className={`px-3 py-1 text-xs rounded font-medium transition-colors ${
+            monitorPaused
+              ? "bg-accent-secondary/30 text-accent-secondary hover:bg-accent-secondary/50"
+              : "bg-bg-elevated text-text-primary hover:bg-bg-elevated"
+          }`}
+          data-testid="midi-monitor-pause"
+        >
+          {monitorPaused ? "▶ Fortsetzen" : "⏸ Pause"}
+        </button>
+        <button
+          onClick={() => setMonitorLog([])}
+          className="px-3 py-1 text-xs bg-bg-elevated hover:bg-accent-danger/20 text-text-primary rounded transition-colors"
+          data-testid="midi-monitor-clear"
+        >
+          🗑 Leeren
+        </button>
+        <div className="text-[10px] text-text-dim ml-auto">
+          {monitorLog.length}/200 Events
+        </div>
+      </div>
+      <div
+        className="bg-bg-elevated rounded p-2 h-72 overflow-y-auto font-mono text-[11px] leading-tight"
+        data-testid="midi-monitor-log"
+      >
+        {monitorLog.length === 0 ? (
+          <div className="text-text-dim italic text-center py-8">
+            {midi.isEnabled
+              ? "Warte auf MIDI-Events … bewege einen Slider oder drücke einen Pad."
+              : "MIDI ist nicht aktiviert. Geh zum Tab 'Geräte' und aktiviere Web MIDI."}
+          </div>
+        ) : (
+          monitorLog.slice().reverse().map((m, idx) => {
+            const fresh = Date.now() - m.at < 500;
+            return (
+              <div
+                key={idx}
+                className={`whitespace-pre transition-colors ${
+                  fresh ? "text-accent-secondary" : "text-text-muted"
+                }`}
+              >
+                {formatMonitorEntry(m)}
+              </div>
+            );
+          })
+        )}
+      </div>
+      <div className="text-[10px] text-text-dim">
+        Format: <code>HH:MM:SS.mmm  Ch{"<n>"}  &lt;Type&gt;  &lt;Data&gt;</code> · Neueste oben ·
+        Max. 200 Events (Ringbuffer)
+      </div>
+    </div>
+  );
+
   const renderClockTab = () => (
     <div className="space-y-4">
       <div className="p-3 bg-bg-elevated rounded-lg">
@@ -1096,6 +1189,7 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
     { id: "templates" as const, label: "Vorlagen" },
     { id: "cc"        as const, label: "CC-Mapping" },
     { id: "notes"     as const, label: "Note-Mapping" },
+    { id: "monitor"   as const, label: "Monitor" },
     { id: "clock"     as const, label: "Clock-Sync" },
   ];
 
@@ -1208,6 +1302,7 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
           {activeTab === "templates" && renderTemplatesTab()}
           {activeTab === "cc" && renderCcTab()}
           {activeTab === "notes" && renderNotesTab()}
+          {activeTab === "monitor" && renderMonitorTab()}
           {activeTab === "clock" && renderClockTab()}
         </div>
 

@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "1.80.0",
+    version: "1.81.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -491,6 +491,21 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-14T10:00:00.000Z",
+      done: [
+        "MIDI-MONITOR-TAB (v1.81.0): Live-Log aller eingehender MIDI-Messages als neuer Tab in MidiSettings. Hilft beim Hardware-Debugging — User sieht exakt welche CCs/Notes auf welchen Channels ankommen. Ringbuffer max 200 Events damit UI nicht erstickt. Pretty-Print: `HH:MM:SS.mmm Ch10 Note On 36 vel=100`. Frische Events (jünger als 500ms) sind accent-secondary-farbig, ältere muted. Pause-Toggle (mit Ref damit der Event-Handler die aktuelle Pause-State sieht ohne re-mount), Leeren-Button, Counter '<n>/200 Events'. Empty-State-Hinweise je nach midi.isEnabled. Reuse von 'midi:rawmessage' CustomEvent. 1767 Tests grün (UI-State, keine neuen Unit-Tests). pnpm check 0 Fehler."
+      ],
+      next: [
+        "v1.82 MORE-HARDWARE-TEMPLATES + DOCS: weitere Techno/Hardtekk-Controller-Templates ergänzen, CLAUDE.md update."
+      ],
+      changed: [
+        "package.json",
+        "client/src/components/MidiSettings/MidiSettings.tsx",
+        "agents/INDEX.js"
+      ]
+    },
     {
       agent:     "coordinator",
       timestamp: "2026-05-14T09:30:00.000Z",
