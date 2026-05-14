@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "1.92.0",
+    version: "1.93.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -491,6 +491,23 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-14T16:00:00.000Z",
+      done: [
+        "MACRO-INLINE-RENAME (v1.93.0): Doppelklick auf das Macro-Label öffnet ein Inline-Input — User kann seinen Macro 'Filter Sweep' oder 'Drop Builder' direkt benennen ohne das Settings-Modal zu öffnen. Enter speichert, Escape verwirft. Leerer Name wird ignoriert (behält alten Wert). 1806 Tests grün, pnpm check 0 Fehler."
+      ],
+      next: [
+        "v1.94 CLOSE-BUTTONS-AUDIT: 'alle fenster sollen auch mit x zumachbar sein' aus neue_todos.md (granular, polyrhythm, etc).",
+        "Beat-Repeat-Macro-Target.",
+        "Drag-Drop Pattern-Duplicate."
+      ],
+      changed: [
+        "package.json",
+        "client/src/components/Macro/MacroPanel.tsx",
+        "agents/INDEX.js"
+      ]
+    },
     {
       agent:     "coordinator",
       timestamp: "2026-05-14T15:30:00.000Z",

@@ -52,15 +52,46 @@ function MacroKnob({ macro, onEdit }: { macro: Macro; onEdit: () => void }) {
   // v1.88: rechtsklick auf den Slider → MIDI-Learn für diesen Macro-Index
   const learn = useMidiLearn({ type: "macro", index: macro.index, label: macro.label });
 
+  // v1.93: Inline-Rename via Doppelklick auf Label
+  const [renaming, setRenaming] = useState(false);
+  const [draftName, setDraftName] = useState(macro.label);
+
   return (
     <div className="flex flex-col items-center gap-1 min-w-[60px] relative">
-      {/* Label */}
-      <span className="text-[9px] text-text-dim truncate w-full text-center" title={macro.label}>
-        {macro.label}
-        {learn.isMapped && (
-          <span className="ml-1 text-accent-secondary font-mono">·CC{learn.mappedCC}</span>
-        )}
-      </span>
+      {/* Label — v1.93: Doppelklick → Inline-Edit */}
+      {renaming ? (
+        <input
+          autoFocus
+          type="text"
+          value={draftName}
+          onChange={(e) => setDraftName(e.target.value)}
+          onBlur={() => {
+            const trimmed = draftName.trim();
+            if (trimmed.length > 0 && trimmed !== macro.label) {
+              setMacroLabel(macro.index, trimmed);
+            } else {
+              setDraftName(macro.label);
+            }
+            setRenaming(false);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") e.currentTarget.blur();
+            if (e.key === "Escape") { setDraftName(macro.label); setRenaming(false); }
+          }}
+          className="w-full text-[9px] text-text-primary bg-bg-elevated border border-accent-secondary rounded px-1 text-center"
+        />
+      ) : (
+        <span
+          onDoubleClick={() => { setDraftName(macro.label); setRenaming(true); }}
+          className="text-[9px] text-text-dim truncate w-full text-center cursor-text hover:text-text-primary"
+          title={`${macro.label} — Doppelklick zum Umbenennen`}
+        >
+          {macro.label}
+          {learn.isMapped && (
+            <span className="ml-1 text-accent-secondary font-mono">·CC{learn.mappedCC}</span>
+          )}
+        </span>
+      )}
 
       {/* Slider (vertikal via rotate) */}
       <div className="relative h-20 flex items-center justify-center">
