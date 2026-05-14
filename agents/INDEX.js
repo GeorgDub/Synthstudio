@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "2.11.0",
+    version: "2.25.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -491,6 +491,39 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-14T11:30:00.000Z",
+      done: [
+        "DEAD-CODE-DISCOVERABILITY-WAVE (v2.18.0 → v2.25.0): autonome Session shipped 8 Releases, alle nach demselben Thema 'in v2.14-v2.17 implementiertes dead code endlich in der UI sichtbar machen'. (1) v2.18 MIDI-DISCOVER: SettingsPanel.tsx hatte historischen Subset der MIDI-Features — Hardware-Templates inkl. Korg Electribe 2, Auto-Learn und Live-Activity-Indicator nur per Ctrl+M (MidiSettings.tsx-Modal) erreichbar. Neuer AdvancedMidiBanner in allen 3 MIDI-Sections verlinkt jetzt auf den Modal. (2) v2.19 PATCH-LIBRARY-UI: v2.16 usePatchStore hatte 17 Vitest-Cases aber NULL UI-Konsumenten. Neue PatchesSection in Settings → App → 🎚 Patch-Library mit Liste / Inline-Rename / Delete / Library-Export-JSON / Import / Clear-All. (3) v2.20 SAVE-PATCH: Save-Affordance fehlte komplett — neuer 💾 Save Patch-Button im ChannelInspector mit Inline-Form (Name + FX-Toggle). (4) v2.21 APPLY-PATCH: Apply-Loop fehlte — neue applyPatchToPart-Action im useDrumMachineStore + 📂 Apply (N)-Button im Inspector mit kollapsibler Library-Liste. (5) v2.22 PERF-RECORDER-UI: v2.15 usePerformanceRecorder hatte 12 Vitest-Cases aber war nur per window.dispatchEvent('perf:event') fütterbar. Neuer PerformanceRecorderBadge als fixed bottom-right Overlay mit Rec-Toggle + Live-Timer mm:ss + Event-Counter + Playback / Export-JSON / Clear. (6) v2.23 OSC-UDP: v2.17 OSC-Encoder/Decoder/Bindings hatten 18 Vitest-Cases aber keine Network-Schicht (nur WebSocket-Bridge). Neuer electron/osc-server.ts mit dgram-UDP-Socket, default-bind 127.0.0.1 + opt-in 0.0.0.0, IPC-Bridge osc:incoming → mapOscToAction → dispatchOscAction. TouchOSC/Lemur/oscchief können jetzt direkt senden. (7) v2.24 SLIDE-UI: v2.14 StepData.slide + SynthEngine.glide + 10 Vitest-Cases waren 10 Releases lang dead code. Neue setStepSlide-Action + ↝ SLIDE-Pill-Toggle im StepInspector. (8) v2.25 SLIDE-VIZ: Polish — ↝ Glyphe links unten in Step-Cells mit slide=true plus aria-label + Tooltip-Update. Test-Status nach allen Wellen: pnpm check 0 Fehler, alle relevanten Unit-Tests grün (slide-glide 10/10, osc 18/18, performance-recorder 12/12, patches 17/17)."
+      ],
+      next: [
+        "FEAT-INSP: ChannelInspector als pinnable Popup-Window (Explore-Report aus erster Session noch gültig, Aufwand 4-5h, 8+ Files).",
+        "FLP-CHANNEL-NAMES: TEXT_CHANNEL_NAME (0xC3) aus FLP-Events extrahieren — riskanter wegen FL-Format-Channel-Context-Tracking.",
+        "FLP-MELODIC-ROUTE Phase 3: ProjectManager-Konsumtion von melodicParts (v1.65). MelodicPart-Store-Modell (1 Note pro Step) muss erweitert werden für FLP-Polyphonie.",
+        "CI-Playwright-Drift: 4 stale Tests aus PR #15 (layout-double-header Note-Repeat + Envelope-Follower, performance-mode Toolbar-Button + 'abgelegt' → 'losgelassen' Wording).",
+        "Slide-Glyph: in Wellen-Notes erwähnter 'Bulk-Slide-Mode' falls User-Feedback es priorisiert."
+      ],
+      changed: [
+        "package.json",
+        "client/src/components/Settings/SettingsPanel.tsx (v2.18 banner + v2.19 PatchesSection + v2.23 UDP listener UI)",
+        "client/src/components/Mixer/ChannelInspector.tsx (v2.20 save + v2.21 apply)",
+        "client/src/store/useDrumMachineStore.ts (v2.21 applyPatchToPart + v2.24 setStepSlide)",
+        "client/src/components/PerformanceRecorder/PerformanceRecorderBadge.tsx (v2.22 neu)",
+        "electron/osc-server.ts (v2.23 neu, dgram UDP)",
+        "electron/main.ts (v2.23 IPC-Handler + Quit-Cleanup)",
+        "electron/preload.ts + electron/useElectron.ts + electron/types.d.ts (v2.23 OSC-Bridge)",
+        "client/src/components/DrumMachine/StepInspector.tsx (v2.24 slide-toggle)",
+        "client/src/components/DrumMachine/ChannelStrip.tsx (v2.25 slide-glyph)",
+        "client/src/components/DrumMachine/DrumMachine.tsx (v2.24 onSetSlide-wiring)",
+        "client/src/components/Workspace/panels/InspectorPanel.tsx (v2.21 onApplyPatch)",
+        "client/src/components/CollabSplitView/CollabSplitView.tsx (v2.21/v2.24 noop-stubs)",
+        "client/src/App.tsx (v2.18 settings-bridge + v2.22 badge + v2.23 osc-bridge)",
+        "client/src/utils/imports/types.ts + flpImport.ts (v1.65 melodic-parts war's bei alter Welle)",
+        "tests/features/project-imports.test.ts (v1.64-v1.65 detection + melodic-parts tests)",
+        "agents/INDEX.js"
+      ]
+    },
     {
       agent:     "coordinator",
       timestamp: "2026-05-15T01:00:00.000Z",
