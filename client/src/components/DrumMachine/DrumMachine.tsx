@@ -70,12 +70,14 @@ interface PatternRowProps {
   prevPatternId: string | null;
   /** v2.5: Alle Patterns für den Picker-Submenu. */
   allPatterns: ReadonlyArray<{ id: string; name: string }>;
+  /** v2.8: Drag-Drop Reorder callback (fromIndex, toIndex). */
+  onReorder: (fromIndex: number, toIndex: number) => void;
 }
 
 function PatternRow({
   pattern, patternIndex, isActive, isPlaying, isLiveEditing, showDelete,
   hasPrevPattern, prevPatternId, allPatterns,
-  onSelect, onDuplicate, onRemove, onCopySamplesFrom,
+  onSelect, onDuplicate, onRemove, onCopySamplesFrom, onReorder,
 }: PatternRowProps) {
   const isDraft  = isLiveEditing && isActive;
   const isLocked = isLiveEditing && isPlaying;
@@ -83,9 +85,58 @@ function PatternRow({
   const learn = useMidiLearn({ type: "pattern", patternIndex });
   // v2.5: Submenu zum Auswählen welcher Pattern als Source dient
   const [pickerOpen, setPickerOpen] = useState(false);
+  // v2.8: Drag-Drop-Reorder State (drop-indicator: above|below|null)
+  const [dropIndicator, setDropIndicator] = useState<"above" | "below" | null>(null);
 
   return (
-    <div className="flex items-center group relative">
+    <div
+      className="flex items-center group relative"
+      // v2.8: Drag-Drop-Reorder. Visual: blauer Strich oberhalb/unterhalb der Zeile
+      // beim Drag-Over zeigt wo das Pattern eingefügt wird.
+      onDragOver={(e) => {
+        if (e.dataTransfer.types.includes("application/x-synthstudio-pattern-row")) {
+          e.preventDefault();
+          const rect = e.currentTarget.getBoundingClientRect();
+          const midY = rect.top + rect.height / 2;
+          setDropIndicator(e.clientY < midY ? "above" : "below");
+        }
+      }}
+      onDragLeave={() => setDropIndicator(null)}
+      onDrop={(e) => {
+        const raw = e.dataTransfer.getData("application/x-synthstudio-pattern-row");
+        if (!raw) return;
+        e.preventDefault();
+        const fromIndex = parseInt(raw, 10);
+        if (isNaN(fromIndex) || fromIndex === patternIndex) {
+          setDropIndicator(null);
+          return;
+        }
+        // Drop above N: insert at N (if from>N) or N-1 (if from<N)
+        // Drop below N: insert at N+1 (if from>N) or N (if from<N)
+        const targetIdx = dropIndicator === "below" ? patternIndex + 1 : patternIndex;
+        const adjustedTarget = fromIndex < targetIdx ? targetIdx - 1 : targetIdx;
+        onReorder(fromIndex, adjustedTarget);
+        setDropIndicator(null);
+      }}
+    >
+      {dropIndicator === "above" && (
+        <div className="absolute left-0 right-0 -top-px h-0.5 bg-accent-secondary z-10 pointer-events-none" />
+      )}
+      {dropIndicator === "below" && (
+        <div className="absolute left-0 right-0 -bottom-px h-0.5 bg-accent-secondary z-10 pointer-events-none" />
+      )}
+      {/* v2.8: Drag-Handle für Pattern-Reorder */}
+      {!isLocked && (
+        <span
+          draggable
+          onDragStart={(e) => {
+            e.dataTransfer.effectAllowed = "move";
+            e.dataTransfer.setData("application/x-synthstudio-pattern-row", String(patternIndex));
+          }}
+          className="cursor-grab active:cursor-grabbing px-1 text-text-dim hover:text-text-primary text-[10px] opacity-0 group-hover:opacity-100"
+          title="Drag&Drop zum Sortieren"
+        >☰</span>
+      )}
       <button
         onClick={() => { if (!isLocked) onSelect(); }}
         onContextMenu={learn.onContextMenu}
@@ -495,6 +546,10 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
                   onCopySamplesFrom={(srcId, srcName) => {
                     dm.copySamplesFromPattern(srcId, p.id);
                     toast(`Sampler aus „${srcName}" in „${p.name}" übernommen`, { kind: "success" });
+                  }}
+                  onReorder={(from, to) => {
+                    dm.reorderPatterns(from, to);
+                    toast(`Pattern „${dm.patterns[from]?.name ?? "?"}" verschoben`, { kind: "info", duration: 2000 });
                   }}
                 />
               ))}

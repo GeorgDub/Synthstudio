@@ -49,6 +49,12 @@ export interface DrumMachineActions {
    * No-op wenn Source/Target nicht existieren.
    */
   copySamplesFromPattern: (sourcePatternId: string, targetPatternId: string) => void;
+  /**
+   * v2.8: Sortiert Patterns im Array neu — verschiebt das Pattern an
+   * fromIndex an die Position toIndex. Pattern-IDs bleiben stabil,
+   * activePatternId folgt dem Pattern (nicht dem Index).
+   */
+  reorderPatterns: (fromIndex: number, toIndex: number) => void;
   startLivePatternEdit: () => void;
   commitLivePatternEdit: () => void;
   cancelLivePatternEdit: () => void;
@@ -303,6 +309,25 @@ export function useDrumMachineStore(): DrumMachineState & DrumMachineActions {
    * und will jetzt nur die Patterns 2-8 weiter-arrangieren ohne jedes Mal
    * 8 Samples + 8 FX-Settings neu zu setzen.
    */
+  /**
+   * v2.8: Pattern-Reorder. fromIndex/toIndex sind 0-basierte Array-Positionen.
+   * No-op wenn beide gleich oder einer out-of-range.
+   * activePatternId/playbackPatternId bleiben erhalten — die zeigen auf die
+   * Pattern-ID, nicht den Index.
+   */
+  const reorderPatterns = useCallback((fromIndex: number, toIndex: number) => {
+    setState(prev => {
+      const len = prev.patterns.length;
+      if (fromIndex === toIndex) return prev;
+      if (fromIndex < 0 || fromIndex >= len) return prev;
+      if (toIndex < 0 || toIndex >= len) return prev;
+      const next = [...prev.patterns];
+      const [moved] = next.splice(fromIndex, 1);
+      next.splice(toIndex, 0, moved);
+      return { ...prev, patterns: next };
+    });
+  }, []);
+
   const copySamplesFromPattern = useCallback((sourcePatternId: string, targetPatternId: string) => {
     if (sourcePatternId === targetPatternId) return;
     updatePatterns(ps => {
@@ -906,6 +931,7 @@ export function useDrumMachineStore(): DrumMachineState & DrumMachineActions {
     ...state,
     addPattern, addPatternData, removePattern, renamePattern, setActivePattern, duplicatePattern,
     copySamplesFromPattern,
+    reorderPatterns,
     startLivePatternEdit, commitLivePatternEdit, cancelLivePatternEdit, scheduleCommit,
     setPatternBpm, setPatternBpmRatio, setPatternBpmTransitionBars, setPatternStepResolution, setPatternFollowAction,
     toggleStackedPattern, clearStackedPatterns,

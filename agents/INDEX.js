@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "2.7.0",
+    version: "2.8.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -491,6 +491,25 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-14T23:30:00.000Z",
+      done: [
+        "PATTERN-DRAG-REORDER (v2.8.0): User kann Patterns im Dropdown-Menü via Drag & Drop neu sortieren. Neue Store-Action `reorderPatterns(fromIndex, toIndex)` in useDrumMachineStore — pure splice-based reorder, no-op bei out-of-range oder identischen Indices, Pattern-IDs bleiben stabil. PatternRow bekommt: (1) Drag-Handle ☰ links neben dem Pattern-Button (sichtbar bei hover, draggable=true, setData mit Custom-MIME 'application/x-synthstudio-pattern-row' + fromIndex), (2) onDragOver/Leave/Drop-Handler auf dem Wrapper-Div: berechnet anhand der Y-Position des Cursors ob 'above' oder 'below' der Row gedroppt wird, zeigt blauen 0.5px-Strich als Drop-Indikator, calculiert correcten Target-Index (adjustier wenn fromIndex < targetIdx wegen splice-Index-Shift). Toast 'Pattern „X\" verschoben' (info, 2s). 9 neue Vitest-Cases für reorder-Reducer (forward / backward / same-index / out-of-range from / out-of-range to / IDs stable / empty / single). 1853 Tests grün, pnpm check 0 Fehler."
+      ],
+      next: [
+        "v2.9 Beat-Repeat-Built-In-Script.",
+        "Weitere Pattern-UX-Features."
+      ],
+      changed: [
+        "package.json",
+        "client/src/store/useDrumMachineStore.ts",
+        "client/src/components/DrumMachine/DrumMachine.tsx",
+        "client/src/components/CollabSplitView/CollabSplitView.tsx",
+        "tests/features/reorder-patterns.test.ts",
+        "agents/INDEX.js"
+      ]
+    },
     {
       agent:     "coordinator",
       timestamp: "2026-05-14T23:00:00.000Z",
