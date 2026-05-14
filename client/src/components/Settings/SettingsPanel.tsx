@@ -52,6 +52,15 @@ import {
   THEMES, applyTheme, loadSavedTheme, type ThemeId,
 } from "./ThemeSettings";
 import { parseMidiLayoutJson, checkPartIdsExist } from "@/utils/midiLayoutImport";
+import {
+  usePatchStore,
+  deletePatch,
+  renamePatch,
+  clearAllPatches,
+  exportLibrary as exportPatchLibrary,
+  importLibrary as importPatchLibrary,
+} from "@/store/usePatchStore";
+import { toast } from "@/store/useToastStore";
 import { CustomThemeCreator } from "./CustomThemeCreator";
 import type { MidiState, MidiActions, MidiLearnTarget } from "@/hooks/useMidi";
 import type { PartData } from "@/audio/AudioEngine";
@@ -73,6 +82,7 @@ type Section =
   | "midi-mpe"
   | "osc"
   | "plugins"
+  | "patches"
   | "saving"
   | "about";
 
@@ -88,6 +98,7 @@ const SECTIONS: Array<{ id: Section; icon: string; label: string; group?: string
   { id: "midi-chord",   icon: "🎼", label: "Chord Memory",        group: "MIDI" },
   { id: "midi-mpe",     icon: "🖐", label: "MPE",                 group: "MIDI" },
   { id: "saving",       icon: "💾", label: "Speichern",           group: "App" },
+  { id: "patches",      icon: "🎚", label: "Patch-Library",       group: "App" },
   { id: "osc",          icon: "📡", label: "OSC",                 group: "App" },
   { id: "plugins",      icon: "🧩", label: "Plugins",             group: "App" },
   { id: "about",        icon: "ℹ",  label: "Über",                group: "App" },
@@ -1068,6 +1079,188 @@ function OscSection() {
   );
 }
 
+/**
+ * PatchesSection — UI für die in v2.16 eingeführte Hot-Swap-Patch-Library.
+ * Vor v2.19 war der Store `usePatchStore` zwar implementiert, aber nirgends
+ * im UI angebunden — die Patches waren reines dead code. Diese Section
+ * exponiert: Liste, Inline-Rename, Delete, Library-Export/Import, Clear-All.
+ * Das eigentliche "Save Patch from Part"-Affordance lebt in den
+ * Part-Editor-Panels (Synth/Granular/Sampler) und kommt in einer Folge-Welle.
+ */
+function PatchesSection() {
+  const { patches } = usePatchStore();
+  const [editingId, setEditingId] = React.useState<string | null>(null);
+  const [draft, setDraft] = React.useState("");
+  const fileInputRef = React.useRef<HTMLInputElement | null>(null);
+
+  const startRename = (id: string, current: string) => {
+    setEditingId(id);
+    setDraft(current);
+  };
+  const commitRename = () => {
+    if (editingId && draft.trim()) renamePatch(editingId, draft);
+    setEditingId(null);
+  };
+  const handleExport = () => {
+    const blob = new Blob([exportPatchLibrary()], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `synthstudio-patches-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast(`${patches.length} Patches exportiert`, { kind: "success" });
+  };
+  const handleImport = async (file: File) => {
+    const text = await file.text();
+    const count = importPatchLibrary(text, "merge");
+    if (count > 0) {
+      toast(`${count} Patches importiert (Merge)`, { kind: "success" });
+    } else {
+      toast("Keine Patches in der Datei gefunden", { kind: "error" });
+    }
+  };
+  const handleClear = () => {
+    if (!patches.length) return;
+    if (confirm(`Alle ${patches.length} Patches löschen? Das kann nicht rückgängig gemacht werden.`)) {
+      clearAllPatches();
+      toast("Patch-Library geleert", { kind: "info" });
+    }
+  };
+
+  const sourceTypeLabel = (t?: string): string => {
+    switch (t) {
+      case "wavetable": return "Wavetable";
+      case "fm":        return "FM";
+      case "granular":  return "Granular";
+      case "sample":    return "Sample";
+      default:          return "—";
+    }
+  };
+
+  return (
+    <div data-testid="patches-section">
+      <div className="flex items-center gap-3 mb-4">
+        <h3 className="text-sm font-bold text-text-primary">Patch-Library</h3>
+        <span className="text-xs text-text-dim">{patches.length} / 200</span>
+        <div className="ml-auto flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handleExport}
+            disabled={patches.length === 0}
+            className="px-2 py-1 text-[11px] rounded border border-border-color text-text-muted hover:text-text-primary hover:border-accent-secondary disabled:opacity-40 disabled:cursor-not-allowed"
+            title="Library als JSON-Datei herunterladen"
+          >
+            Exportieren
+          </button>
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            className="px-2 py-1 text-[11px] rounded border border-border-color text-text-muted hover:text-text-primary hover:border-accent-secondary"
+            title="JSON-Library importieren (Merge mit bestehenden Patches)"
+          >
+            Importieren
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="application/json,.json"
+            onChange={e => {
+              const f = e.target.files?.[0];
+              if (f) void handleImport(f);
+              e.target.value = "";
+            }}
+            className="hidden"
+            data-testid="patches-import-input"
+          />
+          {patches.length > 0 && (
+            <button
+              type="button"
+              onClick={handleClear}
+              className="px-2 py-1 text-[11px] rounded text-accent-danger hover:bg-accent-danger/10"
+              title="Alle Patches löschen"
+            >
+              Alle löschen
+            </button>
+          )}
+        </div>
+      </div>
+
+      <p className="text-xs text-text-muted mb-4 leading-relaxed">
+        Patches sind portable Sound-Konfigurationen (Sample / Synth-Parameter /
+        FX-Chain) eines Parts. Speichere Klänge die du wiederverwenden willst
+        und ziehe sie später auf andere Parts. Library wird im localStorage
+        gespeichert (max. 200) — JSON-Export für Backup / Sharing.
+      </p>
+
+      {patches.length === 0 ? (
+        <div className="rounded-lg border border-dashed border-border-color p-8 text-center text-xs text-text-dim">
+          Noch keine Patches gespeichert. Aus einem Part-Editor heraus
+          (Synth- / Sample- / Granular-Panel) lassen sich Sound-Konfigurationen
+          hier ablegen.
+        </div>
+      ) : (
+        <div className="space-y-1.5">
+          {patches.map(p => (
+            <div
+              key={p.id}
+              data-testid={`patch-item-${p.id}`}
+              className="flex items-center gap-2 px-3 py-2 rounded border border-border-color hover:border-border-subtle bg-bg-elevated/30"
+            >
+              <div className="flex-1 min-w-0">
+                {editingId === p.id ? (
+                  <input
+                    autoFocus
+                    type="text"
+                    value={draft}
+                    onChange={e => setDraft(e.target.value)}
+                    onBlur={commitRename}
+                    onKeyDown={e => {
+                      if (e.key === "Enter") commitRename();
+                      if (e.key === "Escape") setEditingId(null);
+                    }}
+                    className="w-full bg-bg-base text-text-primary text-xs px-2 py-0.5 rounded border border-accent-primary"
+                  />
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => startRename(p.id, p.name)}
+                    className="text-xs text-text-primary font-medium truncate text-left hover:text-accent-secondary"
+                    title="Klick zum Umbenennen"
+                  >
+                    {p.name}
+                  </button>
+                )}
+                <div className="flex items-center gap-2 text-[10px] text-text-dim mt-0.5">
+                  <span className="px-1.5 py-0.5 rounded bg-bg-base">
+                    {sourceTypeLabel(p.sourceType)}
+                  </span>
+                  {p.fx && <span>+FX</span>}
+                  {p.tags && p.tags.length > 0 && <span>· {p.tags.join(", ")}</span>}
+                  <span className="ml-auto">{new Date(p.createdAt).toLocaleString()}</span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  if (confirm(`Patch "${p.name}" löschen?`)) {
+                    deletePatch(p.id);
+                  }
+                }}
+                className="text-text-dim hover:text-accent-danger text-xs flex-shrink-0 px-2"
+                title="Patch löschen"
+                aria-label={`Patch ${p.name} löschen`}
+              >
+                ✕
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function PluginsSection() {
   const [url, setUrl] = React.useState("");
   const [plugins, setPlugins] = React.useState<Array<{ id: string; meta: { name: string; version: string; author?: string }; url: string }>>([]);
@@ -1310,6 +1503,7 @@ export function SettingsPanel({ isOpen, onClose, midi, parts, initialSection = "
           {active === "midi-chord"   && <ChordMemorySection />}
           {active === "midi-mpe"     && <MpeSectionSimple />}
           {active === "saving"        && <SavingSection />}
+          {active === "patches"      && <PatchesSection />}
           {active === "osc"          && <OscSection />}
           {active === "plugins"      && <PluginsSection />}
           {active === "about"        && <AboutSection />}
