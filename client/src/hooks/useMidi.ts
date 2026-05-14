@@ -344,6 +344,10 @@ const GM_DRUM_DEFAULTS: Array<{ note: number; name: string }> = [
 // ─── Persistenz (localStorage) ───────────────────────────────────────────────
 
 const STORAGE_KEY = "synthstudio:midi-mappings";
+// v1.84: separater Storage-Key für active-Device-Persistenz — Mappings sind
+// device-agnostisch, aber wir wollen nach Reload das zuletzt gewählte Gerät
+// auto-reconnect ohne dass der User es erneut anklicken muss.
+const ACTIVE_DEVICE_STORAGE_KEY = "synthstudio:midi-active-device";
 
 function loadMappings(): { cc: MidiMapping[]; notes: MidiNoteMapping[] } {
   try {
@@ -361,6 +365,30 @@ function saveMappings(cc: MidiMapping[], notes: MidiNoteMapping[]) {
   } catch {
     // ignore
   }
+}
+
+/**
+ * Speichert die zuletzt aktive Geräte-Konfiguration für Auto-Reconnect (v1.84).
+ * Wir persistieren `name + manufacturer` (nicht die id, die wechselt zwischen
+ * Sessions); beim Reload suchen wir das Gerät anhand des Names — robuster.
+ */
+interface ActiveDevicePersist {
+  input?: { name: string; manufacturer: string };
+  output?: { name: string; manufacturer: string };
+}
+
+function loadActiveDevice(): ActiveDevicePersist {
+  try {
+    const raw = localStorage.getItem(ACTIVE_DEVICE_STORAGE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch { /* ignore */ }
+  return {};
+}
+
+function saveActiveDevice(d: ActiveDevicePersist) {
+  try {
+    localStorage.setItem(ACTIVE_DEVICE_STORAGE_KEY, JSON.stringify(d));
+  } catch { /* ignore */ }
 }
 
 // ─── MIDI-Clock-Analyse ───────────────────────────────────────────────────────
@@ -740,16 +768,49 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
     });
     setOutputDevices(outList);
 
-    // Aktives Gerät neu verbinden falls noch vorhanden
+    // v1.84: Auto-Reconnect zum zuletzt benutzten Gerät — anhand des Namens
+    // (id wechselt zwischen Sessions). Wenn keiner gespeichert, fallback aufs
+    // erste verfügbare Gerät.
+    const persisted = loadActiveDevice();
     setActiveDeviceId(prev => {
       if (prev && list.find(d => d.id === prev)) {
         connectDevice(prev);
         return prev;
       }
+      if (persisted.input && list.length > 0) {
+        const match = list.find(d =>
+          d.name === persisted.input!.name &&
+          d.manufacturer === persisted.input!.manufacturer
+        );
+        if (match) {
+          connectDevice(match.id);
+          return match.id;
+        }
+      }
       if (list.length > 0 && !prev) {
         const firstId = list[0].id;
         connectDevice(firstId);
         return firstId;
+      }
+      return prev;
+    });
+    // Auch Output-Device auto-reconnect
+    setActiveOutputDeviceId(prev => {
+      if (prev && outList.find(d => d.id === prev)) {
+        const output = midiAccessRef.current?.outputs.get(prev);
+        activeOutputRef.current = output ?? null;
+        return prev;
+      }
+      if (persisted.output && outList.length > 0) {
+        const match = outList.find(d =>
+          d.name === persisted.output!.name &&
+          d.manufacturer === persisted.output!.manufacturer
+        );
+        if (match) {
+          const output = midiAccessRef.current?.outputs.get(match.id);
+          activeOutputRef.current = output ?? null;
+          return match.id;
+        }
       }
       return prev;
     });
@@ -809,7 +870,17 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
   const setActiveDevice = useCallback((id: string | null) => {
     setActiveDeviceId(id);
     connectDevice(id);
-  }, [connectDevice]);
+    // v1.84: Persistenz für Auto-Reconnect nach Reload
+    const persisted = loadActiveDevice();
+    if (id === null) {
+      saveActiveDevice({ ...persisted, input: undefined });
+    } else {
+      const dev = devices.find(d => d.id === id);
+      if (dev) {
+        saveActiveDevice({ ...persisted, input: { name: dev.name, manufacturer: dev.manufacturer } });
+      }
+    }
+  }, [connectDevice, devices]);
 
   // ─── MIDI Out Actions ────────────────────────────────────────────────────
 
@@ -818,7 +889,17 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
     if (!id || !midiAccessRef.current) { activeOutputRef.current = null; return; }
     const output = midiAccessRef.current.outputs.get(id);
     activeOutputRef.current = output ?? null;
-  }, []);
+    // v1.84: Persistenz auch für Output-Device
+    const persisted = loadActiveDevice();
+    if (id === null) {
+      saveActiveDevice({ ...persisted, output: undefined });
+    } else {
+      const dev = outputDevices.find(d => d.id === id);
+      if (dev) {
+        saveActiveDevice({ ...persisted, output: { name: dev.name, manufacturer: dev.manufacturer } });
+      }
+    }
+  }, [outputDevices]);
 
   const setMidiOutEnabled = useCallback((enabled: boolean) => {
     setMidiOutEnabledState(enabled);

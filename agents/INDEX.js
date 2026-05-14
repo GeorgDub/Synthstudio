@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "1.83.0",
+    version: "1.84.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -491,6 +491,21 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-14T11:30:00.000Z",
+      done: [
+        "DEVICE-PERSISTENCE (v1.84.0): MIDI-Geräte-Auswahl persistiert jetzt über App-Reloads hinweg. Vor v1.84 musste der User nach jedem Neustart sein Eingangs- + Ausgangsgerät erneut auswählen — auch wenn die Hardware angeschlossen blieb. Fix: Persistenz von `{name, manufacturer}` für In + Out in localStorage (`synthstudio:midi-active-device`). Wir verwenden Name+Hersteller statt der MIDI-id, weil die id zwischen Browser-Sessions wechseln kann. Auto-Reconnect-Logik in `refreshDevices`: wenn der aktuelle Wert existiert → connectDevice; wenn ein persistierter Name in der Geräte-Liste matched → connectDevice mit der gemappten id; sonst Fallback auf erstes verfügbares Gerät (existing behavior). Selbiges für outputDevice. Side-Effect: User schließt seine Electribe 2 an, wählt sie in MidiSettings, schließt das Modal → nach Browser-Reload + MIDI-Activation ist die Electribe sofort wieder aktiv. 1787 Tests grün, pnpm check 0 Fehler."
+      ],
+      next: [
+        "v1.85 FINAL-AUDIT: neue_todos.md update für die erledigten Items, Session-Summary in INDEX.js, eventuelle CLAUDE.md ergänzungen."
+      ],
+      changed: [
+        "package.json",
+        "client/src/hooks/useMidi.ts",
+        "agents/INDEX.js"
+      ]
+    },
     {
       agent:     "coordinator",
       timestamp: "2026-05-14T11:00:00.000Z",
