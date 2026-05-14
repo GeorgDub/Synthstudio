@@ -1043,6 +1043,73 @@ export default function App() {
     return () => window.removeEventListener("perf:event", handler);
   }, []);
 
+  // v2.29: Perf-Event-Dispatchers. v2.22 hat den Recorder-Badge gebaut, aber
+  // niemand dispatched jemals "perf:event" — Aufnahmen blieben immer leer.
+  // Diese Effects fütteren den Recorder mit dem gleichen State der bereits
+  // OSC-Out triggert. Recorder gated intern via isRecording; dispatch ist
+  // immer aktiv (kein gate hier).
+  const prevBpmRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (prevBpmRef.current !== null && prevBpmRef.current !== project.bpm) {
+      window.dispatchEvent(new CustomEvent("perf:event", {
+        detail: { type: "custom", data: { kind: "bpm", value: project.bpm } },
+      }));
+    }
+    prevBpmRef.current = project.bpm;
+  }, [project.bpm]);
+
+  const prevIsPlayingRef = useRef<boolean | null>(null);
+  useEffect(() => {
+    if (prevIsPlayingRef.current !== null && prevIsPlayingRef.current !== project.isPlaying) {
+      window.dispatchEvent(new CustomEvent("perf:event", {
+        detail: { type: project.isPlaying ? "play" : "stop", data: {} },
+      }));
+    }
+    prevIsPlayingRef.current = project.isPlaying;
+  }, [project.isPlaying]);
+
+  const prevActivePatternRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (prevActivePatternRef.current !== null && prevActivePatternRef.current !== dm.activePatternId) {
+      window.dispatchEvent(new CustomEvent("perf:event", {
+        detail: { type: "pattern", data: { id: dm.activePatternId } },
+      }));
+    }
+    prevActivePatternRef.current = dm.activePatternId;
+  }, [dm.activePatternId]);
+
+  const prevMutedPerfRef = useRef<Map<string, boolean>>(new Map());
+  useEffect(() => {
+    const pattern = dm.getActivePattern();
+    if (!pattern) return;
+    const next = new Map<string, boolean>();
+    for (const p of pattern.parts) {
+      next.set(p.id, !!p.muted);
+      const prev = prevMutedPerfRef.current.get(p.id);
+      if (prev !== undefined && prev !== !!p.muted) {
+        window.dispatchEvent(new CustomEvent("perf:event", {
+          detail: { type: "mute", data: { partId: p.id, value: !!p.muted } },
+        }));
+      }
+    }
+    prevMutedPerfRef.current = next;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [JSON.stringify(dm.getActivePattern()?.parts.map(p => ({ id: p.id, muted: p.muted })) ?? [])]);
+
+  const prevMacroPerfRef = useRef<number[]>([]);
+  useEffect(() => {
+    const values = macroSnapshot.map(m => m.value);
+    for (let i = 0; i < values.length; i++) {
+      const prev = prevMacroPerfRef.current[i];
+      if (prev !== undefined && prev !== values[i]) {
+        window.dispatchEvent(new CustomEvent("perf:event", {
+          detail: { type: "macro", data: { index: i, value: values[i] } },
+        }));
+      }
+    }
+    prevMacroPerfRef.current = values;
+  }, [macroSnapshot]);
+
   // ── v2.23: OSC-UDP-Listener-Bridge ────────────────────────────────────────
   // Wenn der Electron-OSC-Server eine Message empfängt, mappen wir sie via
   // mapOscToAction auf das v2.17-Standard-Schema und feuern die zugehörige
