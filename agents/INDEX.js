@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "1.74.0",
+    version: "1.75.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -491,6 +491,26 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-14T07:00:00.000Z",
+      done: [
+        "BUILT-IN-SCRIPTS (v1.75.0): 7 vorgefertigte ss.*-Scripts — der User kann sie ohne KI-API-Key direkt im ScriptRunner laden. Neues Modul `client/src/utils/builtInScripts.ts` mit `BUILT_IN_SCRIPTS`-Registry, `groupBuiltInsByCategory()` + `findBuiltIn(id)`. Erste Built-Ins decken User-Request 'Pattern duplizieren' ab (3 Varianten: solo, +Randomize, +Fill) plus Transport-Pipeline (Tap→Play), Performance (Drop-Reset) und Macro-Reset (alle auf 0 bzw. 0.5). UI im ScriptRunner: neuer '📚 Built-In'-Button öffnet ein Modal mit kategorisierter Liste; Klick lädt das Script via addScript({scope:'app', enabled:true}) und selektiert es direkt. Sandbox-Audit: pattern-duplicate-Action war bereits voll wired (sandbox-Allowlist, App.tsx-case, kbd-shortcut Ctrl+D, MIDI-target, MidiLayoutImport.ts). 11 neue Vitest-Cases: Registry-Vollständigkeit, ID-Eindeutigkeit, sandbox-Konformität via validateGeneratedCode (catches eval/fetch/etc), Allowlist-Audit für ss.dispatch-Action-Strings, Category-Grouping. 1736 Tests grün, pnpm check 0 Fehler."
+      ],
+      next: [
+        "v1.76 FX-PARAM-TARGETS: jeder FX-Parameter (filterFreq, filterQ, reverbDecay, reverbMix, delayTime, delayFeedback, delayMix, eqLow/Mid/High, distortionAmount, compressor-params) als MidiLearnTarget bindbar.",
+        "v1.77 FUNCTION-CHAINS: mehrere Actions hintereinander auf einer Taste/Macro.",
+        "v1.78 SCRIPT-RUN-TARGET: MIDI-Pad bindbar an User-Script.",
+        "v1.79-80 USABILITY-POLISH: Default-Filename-Generation aus Device-Name, Audit ungebundener Features."
+      ],
+      changed: [
+        "package.json",
+        "client/src/utils/builtInScripts.ts",
+        "client/src/components/Tools/ScriptRunner.tsx",
+        "tests/features/built-in-scripts.test.ts",
+        "agents/INDEX.js"
+      ]
+    },
     {
       agent:     "coordinator",
       timestamp: "2026-05-14T06:30:00.000Z",

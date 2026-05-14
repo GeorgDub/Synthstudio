@@ -33,6 +33,7 @@ import type { SandboxLogEntry, SandboxRunResult } from "@/sandbox/useScriptSandb
 import { ScriptList } from "./ScriptList";
 import { ScriptEditor, SCRIPT_EXAMPLES } from "./ScriptEditor";
 import { AiScriptGeneratorDialog } from "./AiScriptGeneratorDialog";
+import { BUILT_IN_SCRIPTS, groupBuiltInsByCategory, type BuiltInScript } from "@/utils/builtInScripts";
 
 interface ScriptRunnerProps {
   /** Aktueller BPM-Wert (für Anzeige; Sandbox liest via setBpm-Setter). */
@@ -61,6 +62,28 @@ export function ScriptRunner({ bpm, isPlaying }: ScriptRunnerProps) {
   const [runDuration, setRunDuration] = useState<number | null>(null);
   // KI-Generator (post-v1.24.0 ROADMAP feature)
   const [aiDialogOpen, setAiDialogOpen] = useState(false);
+  // Built-In-Picker (v1.75): vorgefertigte Scripts ohne KI-API-Key
+  const [builtInPickerOpen, setBuiltInPickerOpen] = useState(false);
+
+  const handleLoadBuiltIn = useCallback((script: BuiltInScript) => {
+    try {
+      const id = addScript({
+        name: script.name,
+        code: script.code,
+        scope: "app",
+        enabled: true,
+        maxRuntimeMs: DEFAULT_MAX_RUNTIME_MS,
+      });
+      setSelectedId(id);
+      setBuiltInPickerOpen(false);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setLogs((prev) => [
+        ...prev,
+        { type: "error", message: msg, timestamp: Date.now() },
+      ]);
+    }
+  }, [addScript]);
 
   // ─── Selected Script & Derivates ──────────────────────────────────────────
   const selectedScript = useMemo<Script | null>(
@@ -260,6 +283,15 @@ export function ScriptRunner({ bpm, isPlaying }: ScriptRunnerProps) {
         </button>
         <button
           type="button"
+          onClick={() => setBuiltInPickerOpen(true)}
+          className="px-3 py-1 text-xs rounded bg-bg-elevated border border-accent-primary/40 text-accent-primary hover:bg-accent-primary/10 font-medium mr-2"
+          data-testid="script-builtin-picker"
+          title="Vorgefertigte Scripts laden (ohne KI-API)"
+        >
+          📚 Built-In
+        </button>
+        <button
+          type="button"
           onClick={handleNew}
           className="px-3 py-1 text-xs rounded bg-accent-primary text-white hover:opacity-80 font-medium"
           data-testid="script-add-new"
@@ -267,6 +299,65 @@ export function ScriptRunner({ bpm, isPlaying }: ScriptRunnerProps) {
           + Neu
         </button>
       </div>
+
+      {/* Built-In Picker (v1.75) ───────────────────────────────────────── */}
+      {builtInPickerOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-bg-base/80 backdrop-blur-sm"
+          onClick={() => setBuiltInPickerOpen(false)}
+          data-testid="builtin-picker-overlay"
+        >
+          <div
+            className="bg-bg-panel border border-border-color rounded-lg shadow-2xl w-full max-w-2xl mx-4 max-h-[80vh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-4 py-3 border-b border-border-color">
+              <h3 className="text-sm font-bold text-text-primary">
+                📚 Built-In Scripts
+              </h3>
+              <button
+                type="button"
+                onClick={() => setBuiltInPickerOpen(false)}
+                aria-label="Schließen"
+                className="text-text-dim hover:text-text-primary text-lg leading-none"
+              >
+                ×
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+              <div className="text-xs text-text-dim mb-2">
+                Vorgefertigte ss.*-Scripts — kein KI-API-Key nötig. Klicke ein
+                Script an, um es deiner Liste hinzuzufügen.
+                Du kannst es dann umbenennen, an eine Taste/Macro binden oder
+                anpassen.
+              </div>
+              {Object.entries(groupBuiltInsByCategory()).map(([category, scripts]) => (
+                <div key={category}>
+                  <div className="text-xs font-medium text-text-muted mb-2 uppercase tracking-wider">
+                    {category}
+                  </div>
+                  <div className="space-y-1.5">
+                    {scripts.map((s) => (
+                      <button
+                        key={s.id}
+                        onClick={() => handleLoadBuiltIn(s)}
+                        className="w-full text-left p-2 rounded bg-bg-elevated hover:bg-accent-primary/20 transition-colors"
+                        data-testid={`builtin-${s.id}`}
+                      >
+                        <div className="text-sm text-text-primary font-medium">{s.name}</div>
+                        <div className="text-[10px] text-text-dim mt-0.5">{s.description}</div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="px-4 py-2 border-t border-border-color text-[10px] text-text-dim">
+              {BUILT_IN_SCRIPTS.length} Scripts verfügbar — alle Sandbox-validiert
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Body: List + Editor */}
       <div className="flex flex-1 overflow-hidden">
