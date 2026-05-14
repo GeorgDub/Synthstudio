@@ -1190,6 +1190,65 @@ export default function App() {
     punchOutStep: project.punchOutStep,
   });
 
+  // ── MIDI-CC → DrumMachine-Setter (v1.76) ─────────────────────────────────
+  // Vor v1.76 dispatchten useMidi.applyMapping CustomEvents (midi:partVolume,
+  // midi:partPan, midi:partSolo, midi:fxParam, midi:masterVolume) ohne dass
+  // jemand sie konsumiert hat → CC-Mappings für Volume/Pan/Solo/FX waren
+  // im Ergebnis No-Ops. Hier wiren wir die Events ans dmRef-Store.
+  useEffect(() => {
+    const handleVolume = (e: Event) => {
+      const detail = (e as CustomEvent<{ partId: string; value: number }>).detail;
+      if (detail && typeof detail.partId === "string" && typeof detail.value === "number") {
+        dmRef.current.setPartVolume(detail.partId, Math.max(0, Math.min(1, detail.value)));
+      }
+    };
+    const handlePan = (e: Event) => {
+      const detail = (e as CustomEvent<{ partId: string; value: number }>).detail;
+      if (detail && typeof detail.partId === "string" && typeof detail.value === "number") {
+        dmRef.current.setPartPan(detail.partId, Math.max(-1, Math.min(1, detail.value)));
+      }
+    };
+    const handleSolo = (e: Event) => {
+      const partId = (e as CustomEvent<string>).detail;
+      if (typeof partId !== "string") return;
+      const pattern = dmRef.current.getActivePattern();
+      const part = pattern?.parts.find(p => p.id === partId);
+      dmRef.current.setPartSoloed(partId, !(part?.soloed ?? false));
+    };
+    const handleFxParam = (e: Event) => {
+      const detail = (e as CustomEvent<{ partId: string; param: string; value: number }>).detail;
+      if (!detail || typeof detail.partId !== "string" || typeof detail.param !== "string") return;
+      dmRef.current.setPartFx(detail.partId, {
+        [detail.param]: detail.value,
+      } as Partial<import("@/audio/AudioEngine").ChannelFx>);
+    };
+    window.addEventListener("midi:partVolume", handleVolume);
+    window.addEventListener("midi:partPan",    handlePan);
+    window.addEventListener("midi:partSolo",   handleSolo);
+    window.addEventListener("midi:fxParam",    handleFxParam);
+    return () => {
+      window.removeEventListener("midi:partVolume", handleVolume);
+      window.removeEventListener("midi:partPan",    handlePan);
+      window.removeEventListener("midi:partSolo",   handleSolo);
+      window.removeEventListener("midi:fxParam",    handleFxParam);
+    };
+  }, []);
+
+  // v1.76: midi:partMute (Toggle pro CC>63). useMidi dispatcht zusätzlich
+  // zum bestehenden onMute-Callback ein CustomEvent damit Konsumenten ohne
+  // den Callback hören können.
+  useEffect(() => {
+    const handleMute = (e: Event) => {
+      const partId = (e as CustomEvent<string>).detail;
+      if (typeof partId !== "string") return;
+      const pattern = dmRef.current.getActivePattern();
+      const part = pattern?.parts.find(p => p.id === partId);
+      dmRef.current.setPartMuted(partId, !(part?.muted ?? false));
+    };
+    window.addEventListener("midi:partMute", handleMute);
+    return () => window.removeEventListener("midi:partMute", handleMute);
+  }, []);
+
   // ── Launchpad Grid Controller ─────────────────────────────────────────────
   const launchpadEnabled = midi.outputDevices.some(d => isGridDevice(d.name));
   const launchpadPattern = dm.getActivePattern();

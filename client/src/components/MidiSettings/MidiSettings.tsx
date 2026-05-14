@@ -16,6 +16,7 @@ import type { MidiState, MidiActions, MidiLearnTarget, MidiNoteMapping, AutoLear
 import { GM_DRUM_DEFAULTS } from "@/hooks/useMidi";
 import { MIDI_TEMPLATES, templateToMappings } from "@/utils/midiTemplates";
 import { buildMidiLayoutJson, sanitizeLayoutFileName } from "@/utils/midiLayoutExport";
+import { FX_PARAM_RANGES } from "@/audio/AudioEngine";
 
 interface MidiSettingsProps {
   midi: MidiState & MidiActions;
@@ -72,6 +73,8 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
   const [noteLearnChannel, setNoteLearnChannel] = useState(0);
   const [manualNote, setManualNote] = useState(36);
   const [manualChannel, setManualChannel] = useState(0);
+  // v1.76: aufklappbare FX-Param-Section pro Part
+  const [fxParamPartId, setFxParamPartId] = useState<string | null>(null);
   // v1.73: Export der aktuellen Mappings als JSON-Template
   const [exportName, setExportName] = useState("Mein MIDI-Setup");
   const [exportFeedback, setExportFeedback] = useState<string | null>(null);
@@ -372,6 +375,71 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
           </div>
         )}
       </div>
+
+      {/* FX-Parameter binden (v1.76) ─────────────────────────────────────── */}
+      {!midi.isLearning && (
+        <div>
+          <div className="text-xs font-medium text-text-muted mb-2 uppercase tracking-wider">
+            FX-Parameter binden (v1.76)
+          </div>
+          <div className="text-xs text-text-dim mb-2">
+            Wähle einen Part, dann einen FX-Parameter — anschließend bewege
+            den Controller. Jeder Filter/EQ/Reverb/Delay/Distortion-Wert ist
+            an einen Slider/Knopf bindbar (MIDI 0-127 wird auf den jeweiligen
+            Param-Range gemappt).
+          </div>
+          <div className="flex items-center gap-2 mb-2">
+            <label className="text-xs text-text-muted">Part:</label>
+            <select
+              value={fxParamPartId ?? ""}
+              onChange={(e) => setFxParamPartId(e.target.value || null)}
+              className="flex-1 px-2 py-1 bg-bg-elevated border border-border-color rounded text-xs text-text-primary focus:outline-none focus:border-accent-secondary"
+            >
+              <option value="">— Part wählen —</option>
+              {parts.map((p) => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
+          </div>
+          {fxParamPartId && (
+            <div className="grid grid-cols-2 gap-1 max-h-48 overflow-y-auto">
+              {FX_PARAM_RANGES.map((r) => {
+                const targetPart = parts.find(p => p.id === fxParamPartId);
+                const target = {
+                  type: "fxParam" as const,
+                  partId: fxParamPartId,
+                  partName: targetPart?.name,
+                  param: r.param as Extract<typeof r.param, import("@/audio/AudioEngine").FxParamKey>,
+                };
+                const existing = midi.mappings.find(m =>
+                  m.target.type === "fxParam" &&
+                  m.target.partId === fxParamPartId &&
+                  m.target.param === r.param,
+                );
+                return (
+                  <button
+                    key={r.param}
+                    onClick={() => midi.isEnabled && midi.startLearn(target as MidiLearnTarget)}
+                    disabled={!midi.isEnabled}
+                    className={`flex items-center justify-between p-2 rounded text-left text-xs transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+                      existing
+                        ? "bg-accent-primary/40 border border-accent-primary/50 hover:bg-accent-primary/60"
+                        : "bg-bg-elevated hover:bg-bg-elevated"
+                    }`}
+                  >
+                    <span className="text-text-primary">{r.label}</span>
+                    {existing && (
+                      <span className="text-accent-secondary font-mono text-xs ml-1">
+                        CC{existing.cc}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Aktive Mappings */}
       {midi.mappings.length > 0 && (

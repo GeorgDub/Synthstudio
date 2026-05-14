@@ -98,6 +98,78 @@ export interface ChannelFx {
   eqHigh: number;
 }
 
+/**
+ * Liste aller numerisch-mappbaren FX-Parameter pro Channel mit ihrer
+ * MIDI-Skala (min/max). MIDI 0-127 wird linear auf [min, max] gemappt.
+ * Toggle-Params (enabled, filterType) sind hier nicht aufgeführt — die
+ * werden über Button-style-Targets gebunden (>63 = an, <=63 = aus).
+ *
+ * v1.76 (FX-PARAM-TARGETS): MidiLearnTarget { type: "fxParam", param }
+ * nutzt diesen Range-Mapping um eingehende CC-Werte korrekt zu skalieren.
+ */
+export interface FxParamRange {
+  param: keyof ChannelFx;
+  label: string;
+  min: number;
+  max: number;
+  /** Wenn true wird der MIDI-Wert exponentiell statt linear gemappt
+   *  (sinnvoll für Frequency-Param der über mehrere Oktaven läuft). */
+  exponential?: boolean;
+}
+
+export const FX_PARAM_RANGES: ReadonlyArray<FxParamRange> = [
+  // Filter (kein filterType — das ist enum, nicht skalierbar)
+  { param: "filterFreq",          label: "Filter Cutoff",    min: 20,    max: 20000, exponential: true },
+  { param: "filterQ",             label: "Filter Resonance", min: 0.1,   max: 20 },
+  { param: "filterGain",          label: "Filter Gain",      min: -15,   max: 15 },
+  // Distortion
+  { param: "distortionAmount",    label: "Distortion Drive", min: 0,     max: 400 },
+  // Compressor
+  { param: "compressorThreshold", label: "Comp Threshold",   min: -60,   max: 0 },
+  { param: "compressorRatio",     label: "Comp Ratio",       min: 1,     max: 20 },
+  { param: "compressorAttack",    label: "Comp Attack",      min: 0,     max: 1 },
+  { param: "compressorRelease",   label: "Comp Release",     min: 0,     max: 1 },
+  // Delay
+  { param: "delayTime",           label: "Delay Time",       min: 0,     max: 2 },
+  { param: "delayFeedback",       label: "Delay Feedback",   min: 0,     max: 0.95 },
+  { param: "delayMix",            label: "Delay Wet",        min: 0,     max: 1 },
+  // Reverb
+  { param: "reverbDecay",         label: "Reverb Decay",     min: 0.1,   max: 10 },
+  { param: "reverbMix",           label: "Reverb Wet",       min: 0,     max: 1 },
+  // EQ (3-Band)
+  { param: "eqLow",               label: "EQ Low",           min: -15,   max: 15 },
+  { param: "eqMid",               label: "EQ Mid",           min: -15,   max: 15 },
+  { param: "eqHigh",              label: "EQ High",          min: -15,   max: 15 },
+] as const;
+
+export type FxParamKey =
+  | "filterFreq" | "filterQ" | "filterGain"
+  | "distortionAmount"
+  | "compressorThreshold" | "compressorRatio" | "compressorAttack" | "compressorRelease"
+  | "delayTime" | "delayFeedback" | "delayMix"
+  | "reverbDecay" | "reverbMix"
+  | "eqLow" | "eqMid" | "eqHigh";
+
+/**
+ * Wandelt einen MIDI-Wert (0-127) in den param-spezifischen Range um.
+ * Falls `exponential` aktiv → log-scale (für filterFreq u.ä.).
+ * Pure Funktion, in Tests nutzbar.
+ */
+export function midiValueToFxParam(midiValue: number, range: FxParamRange): number {
+  const v = Math.max(0, Math.min(127, midiValue)) / 127; // 0..1
+  if (range.exponential) {
+    // exp-Mapping: t=0 → min, t=1 → max
+    const ratio = range.max / Math.max(1e-9, range.min);
+    return range.min * Math.pow(ratio, v);
+  }
+  return range.min + v * (range.max - range.min);
+}
+
+/** Lookup für FxParamRange by param-key. */
+export function findFxParamRange(param: FxParamKey): FxParamRange | undefined {
+  return FX_PARAM_RANGES.find((r) => r.param === param);
+}
+
 export const DEFAULT_CHANNEL_FX: ChannelFx = {
   filterEnabled: false,
   filterType: "lowpass",

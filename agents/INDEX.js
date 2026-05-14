@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "1.75.0",
+    version: "1.76.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -491,6 +491,28 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-14T07:30:00.000Z",
+      done: [
+        "FX-PARAM-TARGETS (v1.76.0): Jeder numerische FX-Parameter pro Channel ist jetzt als MidiLearnTarget bindbar — Filter (Freq mit exp-Mapping über 20Hz-20kHz, Q, Gain), Distortion (Drive 0-400), Compressor (Threshold/Ratio/Attack/Release), Delay (Time/Feedback/Mix), Reverb (Decay/Mix), 3-Band EQ (Low/Mid/High). 16 Params × 8 Parts = 128 bindbare Slots. Neue Pure-Helpers `FX_PARAM_RANGES`, `midiValueToFxParam(midi, range)`, `findFxParamRange(key)` in `client/src/audio/AudioEngine.ts` (linear oder exponential per Range-Config). MidiLearnTarget bekommt `{type:'fxParam', partId, partName?, param}` Variante. useMidi.applyMapping dispatcht `midi:fxParam`-CustomEvent mit `{partId, param, value}` (im param-Range bereits skaliert). UI in MidiSettings: neue Dropdown+Grid-Section unter dem normalen Learn-Bereich, User wählt Part → bekommt 16 Buttons für die Params, jeder Learn-bar. BONUS-FIX: Vor v1.76 dispatchten useMidi die Events `midi:partVolume`, `midi:partPan`, `midi:partSolo`, `midi:masterVolume` ohne dass irgendwo Listeners liefen → CC-Mappings für Volume/Pan/Solo waren faktisch NO-OPs. App.tsx bekommt jetzt einen useEffect mit Listenern, die in `dmRef.current.setPartVolume/setPartPan/setPartSoloed/setPartFx` schreiben. Zusätzlich Mute auf CustomEvent-Pattern umgestellt (statt onMute-Callback der nie übergeben wurde). VALID_TARGET_TYPES in midiLayoutImport.ts um 'fxParam' erweitert damit Layouts mit FX-Bindings importierbar bleiben. 12 neue Vitest-Cases für FX_PARAM_RANGES/findFxParamRange/midiValueToFxParam (linear + exp + clamping + monotonie). 1748 Tests grün, pnpm check 0 Fehler."
+      ],
+      next: [
+        "v1.77 FUNCTION-CHAINS: mehrere Actions hintereinander auf einer Taste/Macro (User-Request).",
+        "v1.78 SCRIPT-RUN-TARGET: MIDI-Pad bindbar an User-Script.",
+        "v1.79-80 USABILITY-POLISH: Default-Filename-Generation aus Device-Name, Audit ungebundener Features."
+      ],
+      changed: [
+        "package.json",
+        "client/src/audio/AudioEngine.ts",
+        "client/src/hooks/useMidi.ts",
+        "client/src/App.tsx",
+        "client/src/components/MidiSettings/MidiSettings.tsx",
+        "client/src/utils/midiLayoutImport.ts",
+        "tests/features/fx-param-bindings.test.ts",
+        "agents/INDEX.js"
+      ]
+    },
     {
       agent:     "coordinator",
       timestamp: "2026-05-14T07:00:00.000Z",

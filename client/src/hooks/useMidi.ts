@@ -15,6 +15,7 @@
 
 import { useEffect, useRef, useCallback, useState } from "react";
 import { getChordMemoryState, buildChordNotes } from "@/store/useChordMemoryStore";
+import { findFxParamRange, midiValueToFxParam, type FxParamKey } from "@/audio/AudioEngine";
 
 // ─── Typen ────────────────────────────────────────────────────────────────────
 
@@ -39,6 +40,9 @@ export type MidiLearnTarget =
   | { type: "mute";    partId: string; partName?: string }
   | { type: "solo";    partId: string; partName?: string }
   | { type: "pan";     partId: string; partName?: string }
+  /** v1.76: jeder numerische FX-Parameter eines Channels (filterFreq,
+   *  reverbDecay, delayMix, eqLow, …). Siehe FX_PARAM_RANGES für die Liste. */
+  | { type: "fxParam"; partId: string; partName?: string; param: FxParamKey }
   | { type: "step";    partId: string; stepIndex: number }
   | { type: "partUp" }
   | { type: "partDown" }
@@ -161,6 +165,7 @@ export function labelForTarget(target: MidiLearnTarget): string {
     case "pan":             return `Pan: ${target.partName ?? target.partId.slice(0, 8)}`;
     case "mute":            return `Mute: ${target.partName ?? target.partId.slice(0, 8)}`;
     case "solo":            return `Solo: ${target.partName ?? target.partId.slice(0, 8)}`;
+    case "fxParam":         return `${findFxParamRange(target.param)?.label ?? target.param}: ${target.partName ?? target.partId.slice(0, 8)}`;
     case "partUp":          return "Part ↑";
     case "partDown":        return "Part ↓";
     case "step":            return `Step ${target.stepIndex + 1}`;
@@ -529,8 +534,24 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
         window.dispatchEvent(new CustomEvent("midi:partPan", { detail: { partId: t.partId, value: (value / 127) * 2 - 1 } }));
         break;
       }
-      case "mute":   if (on) opts.onMute?.(t.partId); break;
+      case "mute":   if (on) {
+        // v1.76: zusätzlich CustomEvent damit App.tsx ohne `onMute`-Prop hört
+        window.dispatchEvent(new CustomEvent("midi:partMute", { detail: t.partId }));
+        opts.onMute?.(t.partId);
+      } break;
       case "solo":   if (on) window.dispatchEvent(new CustomEvent("midi:partSolo", { detail: t.partId })); break;
+      case "fxParam": {
+        // v1.76: jeder numerische FX-Parameter (Filter/EQ/Reverb/Delay/…)
+        // MIDI 0-127 → param-spezifischer Range über midiValueToFxParam.
+        const range = findFxParamRange(t.param);
+        if (range) {
+          const scaled = midiValueToFxParam(value, range);
+          window.dispatchEvent(new CustomEvent("midi:fxParam", {
+            detail: { partId: t.partId, param: t.param, value: scaled },
+          }));
+        }
+        break;
+      }
       case "partUp":   if (on) dispatchAction("part-up"); break;
       case "partDown": if (on) dispatchAction("part-down"); break;
       case "step": break; // Step-Toggle via Note-Mapping, nicht CC

@@ -53,6 +53,8 @@ export const VALID_TARGET_TYPES = new Set<string>([
   "tab",
   "toggleNoteRepeat", "toggleMorph",
   "commitLiveEdit", "scenelaunch", "openSettings",
+  // v1.76: jeder numerische FX-Parameter pro Channel
+  "fxParam",
 ]);
 
 export interface ParsedMidiLayout {
