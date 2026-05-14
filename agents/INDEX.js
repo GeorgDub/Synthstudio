@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "1.95.0",
+    version: "1.96.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -491,6 +491,25 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-14T17:30:00.000Z",
+      done: [
+        "USER-MIDI-TEMPLATES (v1.96.0): User kann seine aktuellen MIDI-Mappings als benannten Preset persistieren — kein JSON-Datei-Hin-und-her mehr nötig. Neuer Store `useUserMidiTemplatesStore` (localStorage 'synthstudio:user-midi-templates:v1', max 50 Einträge, Modul-Singleton + React-Hook). API: getUserMidiTemplates, getUserMidiTemplate(id), saveUserMidiTemplate({id?, name, deviceName?, cc, notes}) — updated wenn ID übergeben, sonst neu — deleteUserMidiTemplate, renameUserMidiTemplate, __resetUserMidiTemplatesForTests. UI in MidiSettings Templates-Tab: neuer 'Aktuelles Setup speichern'-Block oberhalb der eingebauten Templates (sichtbar wenn mind. ein Mapping existiert), Input für Layout-Name (Default aus defaultExportNameFromDevice), Save-Button. Darunter Liste 'Meine Templates' mit Laden/Umbenennen/Löschen pro Eintrag — Datums-Hinweis + Device-Name + CC/Note-Count pro Template. 12 neue Vitest-Cases (initial-empty/save/persistiert deviceName/find/rename/delete/sort-by-updatedAt/update-by-id/empty-name-fallback). 1818 Tests grün, pnpm check 0 Fehler."
+      ],
+      next: [
+        "Beat-Repeat-Macro-Target.",
+        "Drag-Drop Pattern-Duplicate.",
+        "AI-Projekt-Analyse aus neue_todos.md."
+      ],
+      changed: [
+        "package.json",
+        "client/src/store/useUserMidiTemplatesStore.ts",
+        "client/src/components/MidiSettings/MidiSettings.tsx",
+        "tests/features/user-midi-templates.test.ts",
+        "agents/INDEX.js"
+      ]
+    },
     {
       agent:     "coordinator",
       timestamp: "2026-05-14T17:00:00.000Z",

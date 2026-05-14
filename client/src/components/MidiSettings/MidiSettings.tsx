@@ -18,6 +18,12 @@ import { MIDI_TEMPLATES, templateToMappings } from "@/utils/midiTemplates";
 import { buildMidiLayoutJson, sanitizeLayoutFileName, defaultLayoutNameForDevice } from "@/utils/midiLayoutExport";
 import { FX_PARAM_RANGES } from "@/audio/AudioEngine";
 import { useScriptStore } from "@/store/useScriptStore";
+import {
+  useUserMidiTemplates,
+  saveUserMidiTemplate,
+  deleteUserMidiTemplate,
+  renameUserMidiTemplate,
+} from "@/store/useUserMidiTemplatesStore";
 
 interface MidiSettingsProps {
   midi: MidiState & MidiActions;
@@ -71,6 +77,9 @@ function noteToName(note: number): string {
 export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
   // v1.78: für Script-Run-Targets brauchen wir die Liste aller Scripts
   const { scripts } = useScriptStore();
+  // v1.96: User-Templates (gespeicherte Mappings)
+  const userTemplates = useUserMidiTemplates();
+  const [userTplName, setUserTplName] = useState("");
 
   // v1.79: Live-MIDI-Activity-Indicator — User sieht ob seine Hardware
   // tatsächlich Events sendet. Hört auf "midi:rawmessage" das in
@@ -1232,6 +1241,111 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
         Wähle eine Vorlage für deinen Hardware-Controller. <strong className="text-text-primary">Achtung:</strong> Alle aktuellen Mappings werden überschrieben.
       </div>
 
+      {/* v1.96: Aktuelle Mappings als User-Template speichern */}
+      {(midi.mappings.length > 0 || midi.noteMappings.length > 0) && (
+        <div className="border border-accent-secondary/30 rounded-lg p-3 bg-accent-secondary/10">
+          <div className="text-xs font-medium text-accent-secondary mb-2 uppercase tracking-wider">
+            Aktuelles Setup speichern
+          </div>
+          <div className="text-xs text-text-dim mb-2">
+            {midi.mappings.length} CC + {midi.noteMappings.length} Note Mappings als wiederverwendbares Template ablegen.
+          </div>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={userTplName}
+              onChange={(e) => setUserTplName(e.target.value)}
+              placeholder={defaultExportNameFromDevice()}
+              className="flex-1 px-2 py-1.5 bg-bg-elevated border border-border-color rounded text-xs text-text-primary focus:outline-none focus:border-accent-secondary"
+            />
+            <button
+              onClick={() => {
+                const name = userTplName.trim() || defaultExportNameFromDevice();
+                const dev = midi.devices.find(d => d.id === midi.activeDeviceId);
+                saveUserMidiTemplate({
+                  name,
+                  deviceName: dev?.name,
+                  ccMappings: midi.mappings,
+                  noteMappings: midi.noteMappings,
+                });
+                setUserTplName("");
+              }}
+              className="px-3 py-1.5 bg-accent-secondary text-bg-base hover:bg-accent-secondary/80 text-xs rounded font-medium"
+            >
+              💾 Speichern
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* v1.96: Gespeicherte User-Templates */}
+      {userTemplates.length > 0 && (
+        <div>
+          <div className="text-xs font-medium text-text-muted mb-2 uppercase tracking-wider">
+            Meine Templates ({userTemplates.length})
+          </div>
+          <div className="space-y-1.5">
+            {userTemplates.map((t) => (
+              <div key={t.id} className="border border-accent-primary/40 rounded p-2 bg-accent-primary/5">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-semibold text-text-primary truncate">{t.name}</span>
+                      <span className="text-[10px] text-text-dim flex-shrink-0">
+                        {new Date(t.updatedAt).toLocaleString("de-DE", { dateStyle: "short", timeStyle: "short" })}
+                      </span>
+                    </div>
+                    {t.deviceName && (
+                      <div className="text-[10px] text-text-dim mt-0.5">📡 {t.deviceName}</div>
+                    )}
+                    <div className="flex gap-3 text-[10px] text-text-dim mt-1">
+                      <span>{t.ccMappings.length} CC</span>
+                      <span>·</span>
+                      <span>{t.noteMappings.length} Notes</span>
+                    </div>
+                  </div>
+                  <div className="flex gap-1 flex-shrink-0">
+                    <button
+                      onClick={() => {
+                        if (confirm(`Template "${t.name}" laden?\n\nDas ersetzt alle aktuellen Mappings.`)) {
+                          midi.loadTemplate(t.ccMappings, t.noteMappings);
+                        }
+                      }}
+                      className="px-2 py-1 text-xs rounded bg-accent-primary text-bg-base hover:bg-accent-primary/80"
+                    >
+                      Laden
+                    </button>
+                    <button
+                      onClick={() => {
+                        const newName = window.prompt("Neuer Name:", t.name);
+                        if (newName && newName.trim().length > 0) renameUserMidiTemplate(t.id, newName);
+                      }}
+                      className="px-1.5 py-1 text-[10px] text-text-dim hover:text-text-primary"
+                      title="Umbenennen"
+                    >
+                      ✎
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (confirm(`Template "${t.name}" löschen?`)) deleteUserMidiTemplate(t.id);
+                      }}
+                      className="px-1.5 py-1 text-[10px] text-text-dim hover:text-accent-danger"
+                      title="Löschen"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Eingebaute Hardware-Templates */}
+      <div className="text-xs font-medium text-text-muted mb-2 uppercase tracking-wider">
+        Eingebaute Hardware-Templates
+      </div>
       <div className="space-y-2">
         {MIDI_TEMPLATES.map(t => (
           <div key={t.id} className="border border-border-color rounded-lg p-3 bg-bg-elevated/50">
