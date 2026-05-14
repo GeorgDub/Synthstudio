@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "1.86.0",
+    version: "1.87.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -491,6 +491,23 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-14T13:00:00.000Z",
+      done: [
+        "RIGHT-CLICK-MIDI-LEARN MIXERVIEW (v1.87.0): Erweitert die v1.86-Foundation um die wichtigsten Mixer-Controls. MixerChannel-Component bekommt useMidiLearn-Hooks für Volume (Master = type:'masterVolume', sonst type:'volume'+partId), Pan, Mute, Solo. Volume-Fader hat onContextMenu + Mapped-Badge `·CC<n>` in der dB-Anzeige unterm Slider. Pan-Slider analog (nur für non-Master). Mute + Solo Buttons bekommen rechte-obere-Ecke-Dot-Badge wenn gebunden. Tooltip zeigt CC# wenn vorhanden. Mit dieser Iteration sind die häufigsten Live-Performance-Controls (Volume + Mute + Solo + Pan pro Channel) per Rechtsklick MIDI-bindbar — typischer Electribe-Workflow: Rechtsklick auf Vol-Fader → MIDI-Learn → Slider am Electribe bewegen → fertig, kein Modal mehr nötig. pnpm check 0 Fehler. pnpm test 1805 passed (keine neuen Unit-Tests da nur UI-Wiring, Hook-Logic ist in v1.86 abgedeckt)."
+      ],
+      next: [
+        "v1.88 RCL-FX-PANEL: Right-Click auf FX-Knöpfe (Filter/EQ/Reverb/Delay/Distortion) im MixerView-Inspector und FxPanel.",
+        "v1.89 MIDI Output Test Button.",
+        "Backlog aus neue_todos.md."
+      ],
+      changed: [
+        "package.json",
+        "client/src/components/Mixer/MixerView.tsx",
+        "agents/INDEX.js"
+      ]
+    },
     {
       agent:     "coordinator",
       timestamp: "2026-05-14T12:30:00.000Z",

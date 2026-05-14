@@ -33,6 +33,7 @@ import {
   type AudioTrackChannelData,
 } from "@/store/useAudioTrackStore";
 import { useElectron } from "../../../../electron/useElectron";
+import { useMidiLearn } from "@/hooks/useMidiLearn";
 
 // ─── Hilfsfunktionen ─────────────────────────────────────────────────────────
 
@@ -195,12 +196,24 @@ interface MixerChannelProps {
 }
 
 function MixerChannel({
-  name, volume, pan, muted, soloed,
+  partId, name, volume, pan, muted, soloed,
   sendReverb, sendDelay, peakLevel,
   selected, isMaster, onSelect,
   onVolumeChange, onPanChange, onMuteToggle, onSoloToggle, onSendChange,
 }: MixerChannelProps) {
   const labelColor = muted ? "text-text-dim" : soloed ? "text-accent-success" : "text-text-primary";
+
+  // v1.87: Right-click MIDI-Learn auf Volume / Pan / Mute / Solo pro Channel.
+  // Für Master-Channel nutzen wir 'masterVolume' statt 'volume', da der
+  // Master keinen partId hat (oder einen speziellen).
+  const volumeLearn = useMidiLearn(
+    isMaster
+      ? { type: "masterVolume" }
+      : { type: "volume", partId, partName: name },
+  );
+  const panLearn = useMidiLearn({ type: "pan", partId, partName: name });
+  const muteLearn = useMidiLearn({ type: "mute", partId, partName: name });
+  const soloLearn = useMidiLearn({ type: "solo", partId, partName: name });
 
   return (
     <div
@@ -226,22 +239,29 @@ function MixerChannel({
       <div className="flex items-end gap-1 h-32">
         <VuMeter level={peakLevel} />
 
-        {/* Vertikaler Fader */}
+        {/* Vertikaler Fader — v1.87: right-click MIDI-Learn */}
         <input
           type="range"
           min={0} max={1} step={0.01}
           value={volume}
           onChange={e => onVolumeChange(parseFloat(e.target.value))}
+          onContextMenu={volumeLearn.onContextMenu}
           className="h-32 w-3 accent-accent-primary cursor-pointer"
           style={{ writingMode: "vertical-lr", direction: "rtl", appearance: "slider-vertical" as React.CSSProperties["appearance"] }}
-          title={volToDb(volume)}
+          title={`${volToDb(volume)} · Rechtsklick: MIDI-Learn${volumeLearn.isMapped ? ` · CC${volumeLearn.mappedCC}` : ""}`}
         />
+        {volumeLearn.menu}
       </div>
 
-      {/* dB-Anzeige */}
-      <span className="text-[8px] text-text-dim font-mono">{volToDb(volume)}</span>
+      {/* dB-Anzeige + Mapped-Badge */}
+      <span className="text-[8px] text-text-dim font-mono">
+        {volToDb(volume)}
+        {volumeLearn.isMapped && (
+          <span className="ml-1 text-accent-secondary">·CC{volumeLearn.mappedCC}</span>
+        )}
+      </span>
 
-      {/* Pan-Regler */}
+      {/* Pan-Regler — v1.87: right-click MIDI-Learn */}
       <div className="flex flex-col items-center gap-0.5 w-full">
         <span className="text-[8px] text-text-dim uppercase">Pan</span>
         <input
@@ -249,41 +269,56 @@ function MixerChannel({
           min={-1} max={1} step={0.01}
           value={pan}
           onChange={e => onPanChange(parseFloat(e.target.value))}
+          onContextMenu={isMaster ? undefined : panLearn.onContextMenu}
           className="w-full accent-accent-primary cursor-pointer"
-          title={pan === 0 ? "C" : pan > 0 ? `R ${Math.round(pan * 100)}` : `L ${Math.round(-pan * 100)}`}
+          title={`${pan === 0 ? "C" : pan > 0 ? `R ${Math.round(pan * 100)}` : `L ${Math.round(-pan * 100)}`}${!isMaster && panLearn.isMapped ? ` · CC${panLearn.mappedCC}` : ""}`}
         />
         <span className="text-[8px] text-text-dim font-mono">
           {pan === 0 ? "C" : pan > 0 ? `R${Math.round(pan * 100)}` : `L${Math.round(-pan * 100)}`}
+          {!isMaster && panLearn.isMapped && (
+            <span className="ml-1 text-accent-secondary">·CC{panLearn.mappedCC}</span>
+          )}
         </span>
+        {!isMaster && panLearn.menu}
       </div>
 
       {/* Mute / Solo */}
       {!isMaster && (
-        <div className="flex gap-1">
+        <div className="flex gap-1 relative">
           <button
             onClick={onMuteToggle}
-            title="Mute (M)"
+            onContextMenu={muteLearn.onContextMenu}
+            title={`Mute (M)${muteLearn.isMapped ? ` · CC${muteLearn.mappedCC}` : ""} · Rechtsklick: MIDI-Learn`}
             className={[
-              "w-6 h-5 rounded text-[8px] font-bold transition-colors duration-100",
+              "relative w-6 h-5 rounded text-[8px] font-bold transition-colors duration-100",
               muted
                 ? "bg-accent-secondary text-bg-base"
                 : "bg-bg-elevated text-text-dim hover:bg-bg-elevated hover:text-accent-secondary",
             ].join(" ")}
           >
             M
+            {muteLearn.isMapped && (
+              <span className="absolute -top-1 -right-1 text-[7px] font-mono bg-accent-secondary text-bg-base px-0.5 rounded leading-tight">·</span>
+            )}
           </button>
           <button
             onClick={(e) => onSoloToggle({ shiftKey: e.shiftKey })}
-            title="Solo (S) — Shift+Click = additiv/exclusive umschalten"
+            onContextMenu={soloLearn.onContextMenu}
+            title={`Solo (S)${soloLearn.isMapped ? ` · CC${soloLearn.mappedCC}` : ""} · Rechtsklick: MIDI-Learn — Shift+Click = additiv`}
             className={[
-              "w-6 h-5 rounded text-[8px] font-bold transition-colors duration-100",
+              "relative w-6 h-5 rounded text-[8px] font-bold transition-colors duration-100",
               soloed
                 ? "bg-accent-success text-bg-base"
                 : "bg-bg-elevated text-text-dim hover:bg-bg-elevated hover:text-accent-success",
             ].join(" ")}
           >
             S
+            {soloLearn.isMapped && (
+              <span className="absolute -top-1 -right-1 text-[7px] font-mono bg-accent-secondary text-bg-base px-0.5 rounded leading-tight">·</span>
+            )}
           </button>
+          {muteLearn.menu}
+          {soloLearn.menu}
         </div>
       )}
 
