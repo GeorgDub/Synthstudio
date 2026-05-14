@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "2.0.0",
+    version: "2.1.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -491,6 +491,26 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-14T20:00:00.000Z",
+      done: [
+        "SEND-TARGET + RCL (v2.1.0): Neue MidiLearnTarget-Variante `{type:'send', partId, partName?, bus:'reverb'|'delay'}`. Bindet Reverb-Send oder Delay-Send-Level eines Channels an einen MIDI-CC. applyMapping dispatcht 'midi:partSend' mit `{partId, bus, value 0..1}`, App.tsx listener ruft mixer.setChannelSend. UI in MixerView Channel-Strip: Send-Slider (Rev + Dly) bekommen onContextMenu + Mapped-Badge `CC<n>` im Label oben. labelForTarget rendert 'Reverb Send: <PartName>' / 'Delay Send: <PartName>'. targetsMatch unterscheidet anhand partId + bus. VALID_TARGET_TYPES um 'send' erweitert. 3 neue Vitest-Cases für send-targetsMatch (same/different-bus/different-partId). 1821 Tests grün, pnpm check 0 Fehler."
+      ],
+      next: [
+        "Beat-Repeat-Macro.",
+        "Pattern-Drag-Drop-Reorder."
+      ],
+      changed: [
+        "package.json",
+        "client/src/hooks/useMidi.ts",
+        "client/src/App.tsx",
+        "client/src/components/Mixer/MixerView.tsx",
+        "client/src/utils/midiLayoutImport.ts",
+        "tests/features/midi-target-match.test.ts",
+        "agents/INDEX.js"
+      ]
+    },
     {
       agent:     "coordinator",
       timestamp: "2026-05-14T19:30:00.000Z",

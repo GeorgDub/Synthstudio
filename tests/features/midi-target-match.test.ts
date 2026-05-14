@@ -119,6 +119,28 @@ describe("targetsMatch (v1.86)", () => {
       { type: "macro", index: 5 },
     )).toBe(false);
   });
+
+  // v2.1
+  it("send: gleicher partId + bus → match", () => {
+    expect(targetsMatch(
+      { type: "send", partId: "p1", bus: "reverb" },
+      { type: "send", partId: "p1", bus: "reverb", partName: "Kick" },
+    )).toBe(true);
+  });
+
+  it("send: unterschiedlicher bus → no match", () => {
+    expect(targetsMatch(
+      { type: "send", partId: "p1", bus: "reverb" },
+      { type: "send", partId: "p1", bus: "delay" },
+    )).toBe(false);
+  });
+
+  it("send: unterschiedlicher partId → no match", () => {
+    expect(targetsMatch(
+      { type: "send", partId: "p1", bus: "reverb" },
+      { type: "send", partId: "p2", bus: "reverb" },
+    )).toBe(false);
+  });
 });
 
 describe("findMappingForTarget (v1.86)", () => {

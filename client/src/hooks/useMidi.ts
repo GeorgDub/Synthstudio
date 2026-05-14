@@ -43,6 +43,8 @@ export type MidiLearnTarget =
   /** v1.76: jeder numerische FX-Parameter eines Channels (filterFreq,
    *  reverbDecay, delayMix, eqLow, …). Siehe FX_PARAM_RANGES für die Liste. */
   | { type: "fxParam"; partId: string; partName?: string; param: FxParamKey }
+  /** v2.1: Send-Bus-Level pro Channel (Reverb / Delay). */
+  | { type: "send"; partId: string; partName?: string; bus: "reverb" | "delay" }
   | { type: "step";    partId: string; stepIndex: number }
   | { type: "partUp" }
   | { type: "partDown" }
@@ -221,6 +223,7 @@ export function labelForTarget(target: MidiLearnTarget): string {
     case "mute":            return `Mute: ${target.partName ?? target.partId.slice(0, 8)}`;
     case "solo":            return `Solo: ${target.partName ?? target.partId.slice(0, 8)}`;
     case "fxParam":         return `${findFxParamRange(target.param)?.label ?? target.param}: ${target.partName ?? target.partId.slice(0, 8)}`;
+    case "send":            return `${target.bus === "reverb" ? "Reverb Send" : "Delay Send"}: ${target.partName ?? target.partId.slice(0, 8)}`;
     case "partUp":          return "Part ↑";
     case "partDown":        return "Part ↓";
     case "step":            return `Step ${target.stepIndex + 1}`;
@@ -262,6 +265,9 @@ export function targetsMatch(a: MidiLearnTarget, b: MidiLearnTarget): boolean {
     case "fxParam":
       return a.partId === (b as { partId: string; param: string }).partId &&
              a.param === (b as { partId: string; param: string }).param;
+    case "send":
+      return a.partId === (b as { partId: string; bus: string }).partId &&
+             a.bus === (b as { partId: string; bus: string }).bus;
     case "pattern":
       return a.patternIndex === (b as { patternIndex: number }).patternIndex;
     case "step":
@@ -794,6 +800,13 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
             detail: { partId: t.partId, param: t.param, value: scaled },
           }));
         }
+        break;
+      }
+      case "send": {
+        // v2.1: Send-Bus-Level (Reverb/Delay) pro Channel
+        window.dispatchEvent(new CustomEvent("midi:partSend", {
+          detail: { partId: t.partId, bus: t.bus, value: value / 127 },
+        }));
         break;
       }
       case "partUp":   if (on) dispatchAction("part-up"); break;

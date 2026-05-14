@@ -61,6 +61,8 @@ export const VALID_TARGET_TYPES = new Set<string>([
   "runScript",
   // v1.88: Macro-Wert direkt steuern
   "macro",
+  // v2.1: Send-Bus-Level
+  "send",
 ]);
 
 export interface ParsedMidiLayout {

@@ -1274,6 +1274,19 @@ export default function App() {
     return () => window.removeEventListener("midi:pattern", handlePattern);
   }, []);
 
+  // v2.1: midi:partSend — Reverb/Delay-Send-Level via MIDI-CC steuern
+  useEffect(() => {
+    const handleSend = (e: Event) => {
+      const detail = (e as CustomEvent<{ partId: string; bus: "reverb" | "delay"; value: number }>).detail;
+      if (!detail || typeof detail.partId !== "string") return;
+      const v = Math.max(0, Math.min(1, detail.value));
+      mixer.setChannelSend(detail.partId, detail.bus, v);
+    };
+    window.addEventListener("midi:partSend", handleSend);
+    return () => window.removeEventListener("midi:partSend", handleSend);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // v1.99: midi:toggleStep — pad triggert ein spezifisches Step-Toggle.
   // Ermöglicht Live-Finger-Drumming via Right-Click-Bound-Pads.
   useEffect(() => {

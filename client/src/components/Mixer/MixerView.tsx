@@ -214,6 +214,9 @@ function MixerChannel({
   const panLearn = useMidiLearn({ type: "pan", partId, partName: name });
   const muteLearn = useMidiLearn({ type: "mute", partId, partName: name });
   const soloLearn = useMidiLearn({ type: "solo", partId, partName: name });
+  // v2.1: Reverb/Delay-Sends bindbar via Rechtsklick
+  const sendRevLearn = useMidiLearn({ type: "send", partId, partName: name, bus: "reverb" });
+  const sendDlyLearn = useMidiLearn({ type: "send", partId, partName: name, bus: "delay" });
 
   return (
     <div
@@ -322,28 +325,38 @@ function MixerChannel({
         </div>
       )}
 
-      {/* Send-Regler (nur für normale Kanäle) */}
+      {/* Send-Regler (nur für normale Kanäle) — v2.1 mit Rechtsklick MIDI-Learn */}
       {!isMaster && (
         <div className="flex flex-col gap-1 w-full mt-1">
           <div className="flex flex-col items-center gap-0.5">
-            <span className="text-[7px] text-accent-secondary uppercase">Rev</span>
+            <span className="text-[7px] text-accent-secondary uppercase">
+              Rev{sendRevLearn.isMapped && <span className="ml-0.5 font-mono">·CC{sendRevLearn.mappedCC}</span>}
+            </span>
             <input
               type="range"
               min={0} max={1} step={0.01}
               value={sendReverb}
               onChange={e => onSendChange("reverb", parseFloat(e.target.value))}
+              onContextMenu={sendRevLearn.onContextMenu}
               className="w-full accent-accent-secondary cursor-pointer"
+              title={`Reverb Send${sendRevLearn.isMapped ? ` · CC${sendRevLearn.mappedCC}` : ""} · Rechtsklick: MIDI-Learn`}
             />
+            {sendRevLearn.menu}
           </div>
           <div className="flex flex-col items-center gap-0.5">
-            <span className="text-[7px] text-accent-primary uppercase">Dly</span>
+            <span className="text-[7px] text-accent-primary uppercase">
+              Dly{sendDlyLearn.isMapped && <span className="ml-0.5 font-mono">·CC{sendDlyLearn.mappedCC}</span>}
+            </span>
             <input
               type="range"
               min={0} max={1} step={0.01}
               value={sendDelay}
               onChange={e => onSendChange("delay", parseFloat(e.target.value))}
+              onContextMenu={sendDlyLearn.onContextMenu}
               className="w-full accent-accent-primary cursor-pointer"
+              title={`Delay Send${sendDlyLearn.isMapped ? ` · CC${sendDlyLearn.mappedCC}` : ""} · Rechtsklick: MIDI-Learn`}
             />
+            {sendDlyLearn.menu}
           </div>
         </div>
       )}
