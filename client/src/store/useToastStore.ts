@@ -16,6 +16,13 @@ import { useEffect, useReducer } from "react";
 
 export type ToastKind = "success" | "info" | "warning" | "error";
 
+export interface ToastAction {
+  /** Beschriftung des Action-Buttons (z.B. "Übernehmen"). */
+  label: string;
+  /** Wird ausgeführt wenn der User auf den Button klickt. */
+  onClick: () => void;
+}
+
 export interface Toast {
   id: string;
   message: string;
@@ -24,6 +31,8 @@ export interface Toast {
   duration: number;
   /** Wann wurde der Toast erstellt? (für Animations). */
   createdAt: number;
+  /** Optionaler Inline-Action-Button. v2.13. */
+  action?: ToastAction;
 }
 
 const MAX_TOASTS = 5;
@@ -43,13 +52,17 @@ function nextId(): string {
  * Erstellt einen neuen Toast und gibt seine ID zurück.
  * Auto-Dismiss läuft via setTimeout — bei duration=0 bleibt der Toast.
  */
-export function toast(message: string, opts: { kind?: ToastKind; duration?: number } = {}): string {
+export function toast(
+  message: string,
+  opts: { kind?: ToastKind; duration?: number; action?: ToastAction } = {},
+): string {
   const t: Toast = {
     id: nextId(),
     message,
     kind: opts.kind ?? "info",
     duration: opts.duration ?? 3000,
     createdAt: Date.now(),
+    action: opts.action,
   };
   _toasts = [..._toasts, t];
   if (_toasts.length > MAX_TOASTS) {

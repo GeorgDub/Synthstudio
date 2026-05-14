@@ -35,6 +35,12 @@ export interface ElectronDropZoneProps {
    * Empfänger ist typischerweise DrumMachine via window-event.
    */
   onMidiFile?: (file: File) => void;
+  /**
+   * v2.13: Callback mit den rohen File-Objekten der Audio-Drops (Browser).
+   * Dient z.B. der BPM-Erkennung, da `onAudioFiles` nur den Dateinamen
+   * weiterreicht, nicht das ArrayBuffer.
+   */
+  onAudioFilesRaw?: (files: File[]) => void;
   /** Kinder-Elemente (optional) */
   children?: React.ReactNode;
 }
@@ -133,6 +139,7 @@ export function ElectronDropZone({
   onProject,
   onZipFile,
   onMidiFile,
+  onAudioFilesRaw,
   children,
 }: ElectronDropZoneProps) {
   const [isDragging, setIsDragging] = useState(false);
@@ -200,6 +207,7 @@ export function ElectronDropZone({
       if (files.length === 0) return;
 
       const audioFiles: string[] = [];
+      const audioFileObjects: File[] = [];
       for (const file of files) {
         const ext = getFileExtension(file.name);
         if (ZIP_EXTENSIONS.has(ext)) {
@@ -209,13 +217,15 @@ export function ElectronDropZone({
         } else if (AUDIO_EXTENSIONS.has(ext)) {
           // Im Browser: Dateiname (kein echter Pfad verfügbar)
           audioFiles.push(file.name);
+          audioFileObjects.push(file);
         } else if (PROJECT_EXTENSIONS.has(ext)) {
           onProject?.(file.name);
         }
       }
       if (audioFiles.length > 0) onAudioFiles?.(audioFiles);
+      if (audioFileObjects.length > 0) onAudioFilesRaw?.(audioFileObjects);
     },
-    [onAudioFiles, onProject, onZipFile, onMidiFile]
+    [onAudioFiles, onProject, onZipFile, onMidiFile, onAudioFilesRaw]
   );
 
   // ── Render ────────────────────────────────────────────────────────────────

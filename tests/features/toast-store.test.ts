@@ -96,4 +96,18 @@ describe("useToastStore (v2.5)", () => {
     const id = toast("Hi");
     expect(getToasts()[0].id).toBe(id);
   });
+
+  it("v2.13: toast unterstützt action-Property", () => {
+    const fn = vi.fn();
+    toast("Apply BPM?", { action: { label: "Übernehmen", onClick: fn } });
+    const t = getToasts()[0];
+    expect(t.action).toBeDefined();
+    expect(t.action?.label).toBe("Übernehmen");
+    expect(t.action?.onClick).toBe(fn);
+  });
+
+  it("v2.13: action ist optional und default undefined", () => {
+    toast("Plain");
+    expect(getToasts()[0].action).toBeUndefined();
+  });
 });

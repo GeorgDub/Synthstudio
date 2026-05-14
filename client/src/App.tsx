@@ -1811,6 +1811,48 @@ export default function App() {
     [doLoadProject]
   );
 
+  // v2.13: Browser-Drop von Audio-Files → BPM-Detection per Web Audio API
+  // Wir analysieren nur die ERSTE Datei (eines Drops) um den Toast nicht zu
+  // spammen. Bei hoher Konfidenz bekommt der User einen "Übernehmen"-Button.
+  const handleDropAudioFilesRaw = useCallback(
+    async (files: File[]) => {
+      if (files.length === 0 || typeof AudioContext === "undefined") return;
+      const file = files[0];
+      let audioContext: AudioContext | null = null;
+      try {
+        const arrayBuffer = await file.arrayBuffer();
+        audioContext = new AudioContext();
+        const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+        const { detectBpm } = await import("@/utils/bpmAndOnsetDetection");
+        const result = detectBpm(audioBuffer.getChannelData(0), audioBuffer.sampleRate, {
+          maxSeconds: 30,
+        });
+        if (result.confidence >= 0.3) {
+          toast(
+            `BPM erkannt: ${result.bpm} (${Math.round(result.confidence * 100)}% Konfidenz) – „${file.name}"`,
+            {
+              kind: "info",
+              duration: 8000,
+              action: {
+                label: `→ ${result.bpm} BPM`,
+                onClick: () => {
+                  project.setBpm(result.bpm);
+                  toast(`Projekt-Tempo gesetzt: ${result.bpm} BPM`, { kind: "success" });
+                },
+              },
+            },
+          );
+        }
+      } catch (err) {
+        // BPM-Detection ist best-effort – Stille statt Toast-Spam
+        console.warn("[App] BPM-Detection fehlgeschlagen:", err);
+      } finally {
+        try { await audioContext?.close(); } catch { /* ignore */ }
+      }
+    },
+    [project]
+  );
+
   const handleDropZipFile = useCallback(
     async (file: File) => {
       try {
@@ -2340,6 +2382,7 @@ export default function App() {
   return (
     <ElectronDropZone
       onAudioFiles={handleDropAudioFiles}
+      onAudioFilesRaw={handleDropAudioFilesRaw}
       onFolder={handleDropFolder}
       onProject={handleDropProject}
       onZipFile={handleDropZipFile}

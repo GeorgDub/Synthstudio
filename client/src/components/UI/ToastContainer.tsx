@@ -32,6 +32,18 @@ export function ToastContainer() {
           >
             <span className={`font-bold text-sm leading-tight ${s.text}`}>{s.icon}</span>
             <div className={`flex-1 text-xs leading-tight ${s.text}`}>{t.message}</div>
+            {t.action && (
+              <button
+                onClick={() => {
+                  t.action?.onClick();
+                  dismissToast(t.id);
+                }}
+                className={`text-xs leading-none px-2 py-1 rounded border ${s.text} border-current hover:bg-current/10 -mt-0.5`}
+                data-testid="toast-action"
+              >
+                {t.action.label}
+              </button>
+            )}
             <button
               onClick={() => dismissToast(t.id)}
               className={`text-xs leading-none ${s.text} hover:opacity-70 -mt-0.5`}
