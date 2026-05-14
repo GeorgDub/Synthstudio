@@ -12,10 +12,13 @@
  *  - `mixer`: MixerStore + Actions
  *  - `className`: optional override (default `w-80 shrink-0`)
  */
-import React from "react";
+import React, { useState } from "react";
 import type { PartData } from "@/audio/AudioEngine";
 import type { MixerState, MixerActions } from "@/store/useMixerStore";
 import { MIXER_FX_TYPES, summarizeEqBands, type MixerFxType } from "@/utils/mixerFx";
+import { extractPatch } from "@/utils/patchSerialize";
+import { savePatch } from "@/store/usePatchStore";
+import { toast } from "@/store/useToastStore";
 
 export interface ChannelInspectorProps {
   part: PartData | undefined;
@@ -26,6 +29,11 @@ export interface ChannelInspectorProps {
 
 export function ChannelInspector({ part, parts, mixer, className }: ChannelInspectorProps) {
   const baseClass = className ?? "w-80 shrink-0";
+  // Save-Patch-Affordance (v2.20): Inline-Form damit der Name in einem
+  // schmalen Inspector-Strip ohne Modal eingegeben werden kann.
+  const [savePatchOpen, setSavePatchOpen] = useState(false);
+  const [patchName, setPatchName] = useState("");
+  const [patchIncludeFx, setPatchIncludeFx] = useState(true);
 
   if (!part) {
     return (
@@ -41,11 +49,80 @@ export function ChannelInspector({ part, parts, mixer, className }: ChannelInspe
   const sidechain = mixer.sidechains[part.id];
   const transient = mixer.transientShapers[part.id];
 
+  const openSavePatch = () => {
+    setPatchName(part.name);
+    setPatchIncludeFx(true);
+    setSavePatchOpen(true);
+  };
+  const commitSavePatch = () => {
+    const name = patchName.trim() || part.name;
+    const patch = extractPatch(part, name, { includeFx: patchIncludeFx });
+    savePatch(patch);
+    toast(`Patch „${patch.name}" gespeichert`, { kind: "success" });
+    setSavePatchOpen(false);
+  };
+
   return (
     <aside className={`${baseClass} border-l border-border-color bg-bg-panel overflow-y-auto`}>
       <div className="sticky top-0 z-10 border-b border-border-color bg-bg-panel px-3 py-2">
-        <div className="text-[10px] uppercase tracking-widest text-text-dim">Channel Inspector</div>
-        <div className="truncate text-sm font-semibold text-text-primary">{part.name}</div>
+        <div className="flex items-center justify-between gap-2">
+          <div className="min-w-0">
+            <div className="text-[10px] uppercase tracking-widest text-text-dim">Channel Inspector</div>
+            <div className="truncate text-sm font-semibold text-text-primary">{part.name}</div>
+          </div>
+          <button
+            type="button"
+            onClick={openSavePatch}
+            className="flex-shrink-0 px-2 py-1 text-[10px] rounded border border-border-color text-text-muted hover:text-accent-secondary hover:border-accent-secondary"
+            title="Aktuellen Sound als Patch in die Library speichern"
+            data-testid="channel-save-patch"
+          >
+            💾 Save Patch
+          </button>
+        </div>
+        {savePatchOpen && (
+          <div className="mt-2 p-2 rounded border border-accent-secondary/60 bg-accent-secondary/10 space-y-2" data-testid="channel-save-patch-form">
+            <input
+              type="text"
+              autoFocus
+              value={patchName}
+              onChange={e => setPatchName(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === "Enter") commitSavePatch();
+                if (e.key === "Escape") setSavePatchOpen(false);
+              }}
+              placeholder="Patch-Name"
+              className="w-full bg-bg-base text-text-primary text-xs px-2 py-1 rounded border border-border-color"
+              data-testid="channel-save-patch-name"
+            />
+            <label className="flex items-center gap-2 text-[10px] text-text-muted cursor-pointer">
+              <input
+                type="checkbox"
+                checked={patchIncludeFx}
+                onChange={e => setPatchIncludeFx(e.target.checked)}
+                className="accent-accent-secondary"
+              />
+              FX-Chain mit speichern
+            </label>
+            <div className="flex justify-end gap-1">
+              <button
+                type="button"
+                onClick={() => setSavePatchOpen(false)}
+                className="px-2 py-1 text-[10px] rounded text-text-muted hover:text-text-primary"
+              >
+                Abbrechen
+              </button>
+              <button
+                type="button"
+                onClick={commitSavePatch}
+                className="px-2 py-1 text-[10px] rounded bg-accent-secondary text-bg-base hover:bg-accent-secondary/80"
+                data-testid="channel-save-patch-commit"
+              >
+                Speichern
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       <section className="border-b border-border-color p-3">
