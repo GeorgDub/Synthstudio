@@ -147,6 +147,33 @@ Custom themes stored via `useThemeStore` must also contain all 12 variables. Aft
 - `client/src/components/Settings/CustomThemeCreator.tsx` — custom theme form
 - `client/src/store/useThemeStore.ts` — state + persistence (note: circular import risk if refactoring — `useThemeStore.ts` currently imports from `ThemeSettings.tsx`)
 
+### Right-Click MIDI-Learn (v1.86–v1.90)
+
+Jedes UI-Element kann via Rechtsklick MIDI-gelernt werden — **kein
+Modal-Öffnen mehr nötig** für die häufigsten Bindings.
+
+**Foundation**:
+- `findMappingForTarget(mappings, target)` + `targetsMatch(a, b)` —
+  Pure-Helpers in `useMidi.ts`
+- `useMidiLearn(target, midiOverride?)` Hook in `hooks/useMidiLearn.tsx`
+  liefert onContextMenu-Handler, isMapped-Flag, mappedCC, learn/unbind +
+  vorgerendertes Context-Menu
+- `MidiContext` + `MidiProvider` in `context/MidiContext.tsx` —
+  App.tsx wrappt den Body, tief verschachtelte Komponenten lesen
+  midi-State per Hook ohne Prop-Drilling
+
+**Bereits gelernt-bar via Rechtsklick** (Stand v1.90):
+- BPM-Display + Play/Stop (DrumMachine-Toolbar)
+- Volume / Pan / Mute / Solo pro Mixer-Channel (MixerView)
+- Macro 1-8 Slider (MacroPanel)
+- Alle 15 FX-Knöpfe pro Channel (FxPanel/FxPopupApp):
+  Filter Freq+Q, Distortion Drive, 3-Band-EQ, Comp Threshold/Ratio/Attack/Release,
+  Delay Time/Feedback/Mix, Reverb Decay/Mix
+
+Visuelle Indikatoren: Mapped-Element zeigt `·CC<n>` Badge oder einen
+kleinen Dot in der Ecke. Tooltip enthält "Rechtsklick: MIDI-Learn"
++ aktuell gebundene CC#.
+
 ### MIDI Bindings (v1.71–v1.82)
 
 Vollständige bindbare-Action-Liste mit Auto-Learn-Workflow:

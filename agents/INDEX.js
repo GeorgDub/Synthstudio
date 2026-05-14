@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "1.90.0",
+    version: "1.91.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -491,6 +491,24 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-14T15:00:00.000Z",
+      done: [
+        "DOCS-UPDATE (v1.91.0): CLAUDE.md bekommt neue Section 'Right-Click MIDI-Learn (v1.86-v1.90)' mit Übersicht der Foundation (findMappingForTarget, targetsMatch, useMidiLearn, MidiContext) und der bereits gewireten UI-Elemente. neue_todos.md markiert die seit v1.85 fertig geworden Items (Right-Click-Foundation, Output-Test-Button, Macro-Target) und passt 'Vorschläge für nächste Session' an die neue Realität an (Pattern-Drag-Drop, Macro-Rename-UI, Beat-Repeat, Pattern-Buttons-RCL). 1806 Tests grün, pnpm check 0 Fehler."
+      ],
+      next: [
+        "Session-Ende — 18 Versionen seit v1.66 gepusht. Right-Click-MIDI-Learn-Coverage komplett für Transport, Mixer, Macros, FX. User kann jetzt mit der Electribe + Auto-Learn-Presets ODER Right-Click pro Element seine Hardware-Konfiguration in Minuten aufsetzen.",
+        "Offen: Pattern-Buttons RCL, Macro-Label-Rename-UI, Beat-Repeat-Macro, Drag-Drop Pattern-Duplicate.",
+        "Größere Roadmap-Items aus neue_todos.md: GitHub-Builder, Auto-Updater, Mobile-Builds, Account/Beta-System, Cloud-Store, Wiki+LLM, ALS vollständig, Workbench Audacity-Level, AI-Projekt-Analyse, Admin/Lite-Tier."
+      ],
+      changed: [
+        "package.json",
+        "CLAUDE.md",
+        "neue_todos.md",
+        "agents/INDEX.js"
+      ]
+    },
     {
       agent:     "coordinator",
       timestamp: "2026-05-14T14:30:00.000Z",

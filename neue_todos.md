@@ -1,6 +1,6 @@
 # Neue Todos / User-Wishlist
 
-Stand: 2026-05-14 nach v1.85 (Session-Update).
+Stand: 2026-05-14 nach v1.90 (Session-Update).
 
 ## ✅ Erledigt in dieser Session (v1.66 – v1.85)
 
@@ -46,10 +46,20 @@ Diese Features sind **nicht** explizit in der ursprünglichen `neue_todos.md` ge
 - KI-Projekt-Analyse (Verbesserungsvorschläge automatisch)
 - Admin/Lite/Free-Account-Tier mit Feature-Gating
 
+## ✅ Erledigt nach v1.85 (v1.86–v1.90)
+
+- ✅ **Right-Click MIDI-Learn** Foundation + auf alle wichtigen Controls angewandt:
+  BPM, Play/Stop, Mixer Volume/Pan/Mute/Solo pro Channel, alle 8 Macros, alle
+  15 FX-Knöpfe pro Channel (Filter, EQ, Comp, Delay, Reverb, Distortion).
+  Insgesamt 120+ bindbare Slots per Rechtsklick.
+- ✅ **MIDI Output Test Button** — Note-Test + CC-Test im SettingsPanel
+- ✅ **Macro als MIDI-Target** — direkt steuern via CC (v1.88)
+
 ## 🔮 Vorschläge für nächste Session
 
-- **Right-Click MIDI-Learn** auf jedem FX-Knopf und jedem Volume-Slider (statt nur via MidiSettings-Modal) — größter UX-Boost, aber touched viele Komponenten
-- **MIDI Output Test Button** — sendet einen Test-CC ans Device zur Verifizierung der Verbindung
 - **Pattern-Duplicate via Drag-and-Drop** — Pattern-Tab nach links/rechts ziehen → kopiert
-- **Macro-Bank-Persistenz** mit Name-Labels pro Macro (statt nur 0-7)
+- **Macro-Bank-Persistenz** mit Name-Labels pro Macro (statt nur 0-7) — aktuell sind Labels schon persistiert, aber UI für Rename direkt am Knob fehlt
 - **Beat-Repeat-Effekt** als Macro-Target (kurzes Sample-Loop bei Macro-Druck)
+- **Right-Click MIDI-Learn auf Pattern-Buttons** (Pattern N → MIDI-bindbar)
+- **Script-Run-Target Selector** — wenn man rechtsklick auf einen Pad-Slot macht, könnte ein Submenu "Run Script: X" zeigen statt nur "MIDI-Learn"
+- **PianoRoll-Notes per MIDI-Step-Input** — bereits implementiert (siehe v1.78), aber besser sichtbar machen
