@@ -131,6 +131,10 @@ import { SettingsPanel } from "@/components/Settings/SettingsPanel";
 import { SessionRecorder } from "@/components/CollabSession/SessionRecorder";
 import { RelayPanel } from "@/components/CollabSession/RelayPanel";
 import { recordEvent } from "@/store/useSessionRecordingStore";
+import {
+  recordEvent as recordPerfEvent,
+  type PerfEventType,
+} from "@/store/usePerformanceRecorder";
 import { setMyRole, setParticipantRole } from "@/store/useSessionStore";
 import { useLaunchpad, isGridDevice } from "@/hooks/useLaunchpad";
 import { useBpmDetection, autoTagFromFilename } from "@/hooks/useBpmDetection";
@@ -1017,6 +1021,19 @@ export default function App() {
       stopAllHoldLoops();
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── v2.15: Performance-Recorder Bridge ────────────────────────────────────
+  // Loose-coupling: jede Komponente kann window.dispatchEvent("perf:event",
+  // { detail: { type, data } }) feuern. Der Recorder zeichnet auf, wenn aktiv.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<{ type: PerfEventType; data?: Record<string, unknown> }>).detail;
+      if (!detail || typeof detail.type !== "string") return;
+      recordPerfEvent(detail.type, detail.data);
+    };
+    window.addEventListener("perf:event", handler);
+    return () => window.removeEventListener("perf:event", handler);
   }, []);
 
   // ── Automation: Position-Callback registrieren ───────────────────────────
