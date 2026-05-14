@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "1.79.0",
+    version: "1.80.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -491,6 +491,21 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-14T09:30:00.000Z",
+      done: [
+        "CUSTOM-CHAIN-BUILDER (v1.80.0): Komplement zu v1.77 — statt nur den 4 Preset-Chains kann der User jetzt eigene Function-Chains zusammenklicken. Inline-Form in MidiSettings CC-Tab unter den Chain-Presets (aufklappbar via Toggle-Button). Curated Liste von 17 atomic Actions (Play/Stop, Record, Tap, BPM ±, Pattern Next/Prev/Clear/Fill/Random/Duplicate, Part Up/Down, Toggle Note Repeat, Toggle Morph, Live Edit Commit, Open Settings). User-Workflow: + Schritt → Action-Dropdown wählen → delayMs setzen → reorder via ▲/▼ → 'Speichern & Lernen' Button → Learn-Mode mit dem zusammengebauten Chain. Implementation: lokaler State `chainBuilderSteps: Array<{targetKey, delayMs}>` + `chainBuilderName`. handleChainBuilderLearn serialisiert das in MidiLearnTarget {type:'chain', label, steps} und ruft midi.startLearn(). 1767 Tests grün (keine neuen Unit-Tests da pure UI-State; planChainExecution-Tests aus v1.77 decken die Chain-Runtime-Validierung). pnpm check 0 Fehler."
+      ],
+      next: [
+        "v1.81 FINAL-AUDIT: Review aller v1.74-v1.80 Features, Doku-Update in CLAUDE.md, INDEX.bugs check."
+      ],
+      changed: [
+        "package.json",
+        "client/src/components/MidiSettings/MidiSettings.tsx",
+        "agents/INDEX.js"
+      ]
+    },
     {
       agent:     "coordinator",
       timestamp: "2026-05-14T09:00:00.000Z",

@@ -123,6 +123,13 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
   const [manualChannel, setManualChannel] = useState(0);
   // v1.76: aufklappbare FX-Param-Section pro Part
   const [fxParamPartId, setFxParamPartId] = useState<string | null>(null);
+  // v1.80: Custom Chain Builder
+  const [chainBuilderOpen, setChainBuilderOpen] = useState(false);
+  const [chainBuilderName, setChainBuilderName] = useState("Mein Chain");
+  const [chainBuilderSteps, setChainBuilderSteps] = useState<Array<{
+    targetKey: string;
+    delayMs: number;
+  }>>([]);
   // v1.73: Export der aktuellen Mappings als JSON-Template.
   // v1.79: Default-Filename basiert auf dem aktiven MIDI-Device-Namen.
   const [exportName, setExportName] = useState<string>(() => "Mein MIDI-Setup");
@@ -247,6 +254,60 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
     ...parts.map(p => ({ label: `Lautstärke: ${p.name}`, target: { type: "volume" as const, partId: p.id } })),
     ...parts.map(p => ({ label: `Mute: ${p.name}`, target: { type: "mute" as const, partId: p.id } })),
   ];
+
+  /**
+   * v1.80: Atomare Actions die im Custom-Chain-Builder verfügbar sind.
+   * Pro key gibt es ein vorgefertigtes MidiLearnTarget — der Builder serialisiert
+   * sie in ChainStep-Form. Wir whitelist nur die häufigsten Actions damit das
+   * Dropdown übersichtlich bleibt.
+   */
+  const CHAIN_BUILDER_ACTIONS: Array<{ key: string; label: string; target: Exclude<MidiLearnTarget, { type: "chain" }> }> = [
+    { key: "playStop",         label: "Play / Stop",          target: { type: "playStop" } },
+    { key: "record",           label: "Record toggle",        target: { type: "record" } },
+    { key: "tapTempo",         label: "Tap Tempo",            target: { type: "tapTempo" } },
+    { key: "bpmUp",            label: "BPM +1",               target: { type: "bpmUp" } },
+    { key: "bpmDown",          label: "BPM −1",               target: { type: "bpmDown" } },
+    { key: "patternNext",      label: "Pattern →",            target: { type: "patternNext" } },
+    { key: "patternPrev",      label: "Pattern ←",            target: { type: "patternPrev" } },
+    { key: "patternClear",     label: "Pattern leeren",       target: { type: "patternClear" } },
+    { key: "patternFill",      label: "Pattern füllen",       target: { type: "patternFill" } },
+    { key: "patternRandomize", label: "Pattern zufällig",     target: { type: "patternRandomize" } },
+    { key: "patternDuplicate", label: "Pattern duplizieren",  target: { type: "patternDuplicate" } },
+    { key: "partUp",           label: "Part ↑",               target: { type: "partUp" } },
+    { key: "partDown",         label: "Part ↓",               target: { type: "partDown" } },
+    { key: "toggleNoteRepeat", label: "Note Repeat Toggle",   target: { type: "toggleNoteRepeat" } },
+    { key: "toggleMorph",      label: "Morph Toggle",         target: { type: "toggleMorph" } },
+    { key: "commitLiveEdit",   label: "Live Edit Commit",     target: { type: "commitLiveEdit" } },
+    { key: "openSettings",     label: "Einstellungen öffnen", target: { type: "openSettings" } },
+  ];
+
+  /**
+   * Findet einen Action-Eintrag per Key. v1.80.
+   */
+  const findChainAction = (key: string) =>
+    CHAIN_BUILDER_ACTIONS.find((a) => a.key === key);
+
+  /**
+   * Speichert den aktuellen Custom-Chain als MidiLearnTarget und startet
+   * Learn-Mode. Reset des Forms passiert nicht — User kann nach Capture
+   * den Chain weiter editieren / erneut binden.
+   */
+  const handleChainBuilderLearn = () => {
+    if (chainBuilderSteps.length === 0 || !midi.isEnabled) return;
+    const steps = chainBuilderSteps
+      .map((s) => {
+        const action = findChainAction(s.targetKey);
+        if (!action) return null;
+        return { target: action.target, delayMs: Math.max(0, Math.min(60000, s.delayMs)) };
+      })
+      .filter((s): s is { target: Exclude<MidiLearnTarget, { type: "chain" }>; delayMs: number } => s !== null);
+    if (steps.length === 0) return;
+    midi.startLearn({
+      type: "chain",
+      label: chainBuilderName.trim() || "Custom Chain",
+      steps,
+    });
+  };
 
   // v1.77: Function-Chain-Presets — fertige Multi-Step-Actions die der User
   // auf eine Taste/Pad binden kann. Diese Liste ist absichtlich kurz und
@@ -599,6 +660,139 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
               );
             })}
           </div>
+        </div>
+      )}
+
+      {/* Custom Chain Builder (v1.80) ──────────────────────────────────── */}
+      {!midi.isLearning && (
+        <div>
+          <button
+            onClick={() => setChainBuilderOpen(!chainBuilderOpen)}
+            className="text-xs text-text-muted uppercase tracking-wider hover:text-text-primary mb-2 flex items-center gap-1"
+          >
+            <span>{chainBuilderOpen ? "▼" : "▶"}</span>
+            Custom-Chain bauen (v1.80)
+          </button>
+          {chainBuilderOpen && (
+            <div className="space-y-2 p-3 bg-bg-elevated/50 rounded border border-border-color">
+              <div className="text-xs text-text-dim">
+                Klicke "+ Schritt" um eine Action hinzuzufügen. Setze die
+                Verzögerung zum vorherigen Schritt in ms. Beim "Lernen"
+                bewege deinen Controller — die ganze Sequenz wird auf das CC
+                gebunden.
+              </div>
+
+              <div className="flex items-center gap-2">
+                <label className="text-xs text-text-muted">Name:</label>
+                <input
+                  type="text"
+                  value={chainBuilderName}
+                  onChange={(e) => setChainBuilderName(e.target.value)}
+                  className="flex-1 px-2 py-1 bg-bg-elevated border border-border-color rounded text-xs text-text-primary"
+                />
+              </div>
+
+              {chainBuilderSteps.length === 0 ? (
+                <div className="text-[10px] text-text-dim italic py-2 text-center">
+                  Noch keine Schritte — klick "+ Schritt" um anzufangen.
+                </div>
+              ) : (
+                <div className="space-y-1">
+                  {chainBuilderSteps.map((step, idx) => (
+                    <div key={idx} className="flex items-center gap-1 p-1.5 bg-bg-panel rounded">
+                      <span className="text-[10px] text-text-dim font-mono w-6">#{idx + 1}</span>
+                      <select
+                        value={step.targetKey}
+                        onChange={(e) => {
+                          const next = [...chainBuilderSteps];
+                          next[idx] = { ...next[idx], targetKey: e.target.value };
+                          setChainBuilderSteps(next);
+                        }}
+                        className="flex-1 px-1 py-0.5 bg-bg-elevated border border-border-color rounded text-xs text-text-primary"
+                      >
+                        {CHAIN_BUILDER_ACTIONS.map((a) => (
+                          <option key={a.key} value={a.key}>{a.label}</option>
+                        ))}
+                      </select>
+                      <input
+                        type="number"
+                        min={0}
+                        max={60000}
+                        step={50}
+                        value={step.delayMs}
+                        onChange={(e) => {
+                          const next = [...chainBuilderSteps];
+                          next[idx] = { ...next[idx], delayMs: Math.max(0, parseInt(e.target.value) || 0) };
+                          setChainBuilderSteps(next);
+                        }}
+                        className="w-16 px-1 py-0.5 bg-bg-elevated border border-border-color rounded text-xs text-text-primary"
+                        title="Delay (ms) vor diesem Schritt"
+                      />
+                      <span className="text-[10px] text-text-dim">ms</span>
+                      {idx > 0 && (
+                        <button
+                          onClick={() => {
+                            const next = [...chainBuilderSteps];
+                            [next[idx - 1], next[idx]] = [next[idx], next[idx - 1]];
+                            setChainBuilderSteps(next);
+                          }}
+                          title="Hoch"
+                          className="text-xs text-text-dim hover:text-text-primary px-1"
+                        >▲</button>
+                      )}
+                      {idx < chainBuilderSteps.length - 1 && (
+                        <button
+                          onClick={() => {
+                            const next = [...chainBuilderSteps];
+                            [next[idx], next[idx + 1]] = [next[idx + 1], next[idx]];
+                            setChainBuilderSteps(next);
+                          }}
+                          title="Runter"
+                          className="text-xs text-text-dim hover:text-text-primary px-1"
+                        >▼</button>
+                      )}
+                      <button
+                        onClick={() => {
+                          setChainBuilderSteps(chainBuilderSteps.filter((_, i) => i !== idx));
+                        }}
+                        title="Entfernen"
+                        className="text-xs text-accent-danger hover:opacity-70 px-1"
+                      >×</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="flex items-center gap-2 pt-2">
+                <button
+                  onClick={() => {
+                    setChainBuilderSteps([
+                      ...chainBuilderSteps,
+                      { targetKey: "playStop", delayMs: 100 },
+                    ]);
+                  }}
+                  className="px-3 py-1 text-xs bg-bg-elevated hover:bg-accent-primary/20 text-text-primary rounded transition-colors"
+                >
+                  + Schritt
+                </button>
+                <button
+                  onClick={handleChainBuilderLearn}
+                  disabled={!midi.isEnabled || chainBuilderSteps.length === 0}
+                  className="px-3 py-1 text-xs bg-accent-secondary/30 hover:bg-accent-secondary/50 text-accent-secondary rounded font-medium disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                >
+                  💾 Speichern & Lernen
+                </button>
+                {chainBuilderSteps.length > 0 && (
+                  <button
+                    onClick={() => setChainBuilderSteps([])}
+                    className="px-3 py-1 text-xs text-accent-danger hover:opacity-70 ml-auto"
+                  >
+                    Reset
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
