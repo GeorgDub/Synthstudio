@@ -207,6 +207,44 @@ export const MIDI_TEMPLATES: MidiTemplate[] = [
       note, channel: 0, partId: `part-${partIndex}`,
     })),
   },
+  {
+    // v1.74: Direkt motiviert durch User-Workflow mit Korg Electribe 2 Sampler.
+    // Electribe 2 (E2 / E2S) sendet per Default auf MIDI-Channel 10 (Drum-Channel)
+    // 16 Pad-Note-On-Events (Notes 36-51, C2-D#3). Synthstudio hat nur 8 Default-Parts,
+    // also mappen wir die ersten 8 Pads auf part-0..part-7 und die zweite Reihe (8 Pads)
+    // erneut auf dieselben Parts — beide Pad-Reihen triggern dieselben Drums.
+    // User kann via Auto-Learn jedes Mapping individuell überschreiben wenn er
+    // mehr Parts angelegt hat oder eine andere Pad-Belegung präferiert.
+    // Transport ist auf der Electribe MIDI Start/Stop (status 0xFA/0xFC) — wird
+    // separat im handleMidiMessage gehandhabt, kein CC-Mapping nötig.
+    id: "korg-electribe-2",
+    name: "Korg Electribe 2 / 2S",
+    manufacturer: "Korg",
+    description: "16 Pads (Ch10) + Filter/EG-Knobs + Slider. Hardware-Sampler-Workhorse für Techno/Hardtekk/IDM.",
+    ccMappings: [
+      // Master-Slider
+      { cc: 7,  channel: 0, target: { type: "masterVolume" } },
+      // Mod-Wheel → BPM (oft am Electribe als Joystick-X mappable)
+      { cc: 1,  channel: 0, target: { type: "bpm" } },
+      // Filter-Sektion (Cutoff/Resonance via Standard-CCs) auf Master-Volume bzw.
+      // Volume Part 0/1 als Fallback bis FX-Parameter-Targets (v1.76) verfügbar sind.
+      { cc: 74, channel: 0, target: { type: "volume", partId: "part-0", partName: "Kick" } },
+      { cc: 71, channel: 0, target: { type: "volume", partId: "part-1", partName: "Snare" } },
+      { cc: 73, channel: 0, target: { type: "volume", partId: "part-2", partName: "Hi-Hat cl." } },
+      { cc: 72, channel: 0, target: { type: "volume", partId: "part-3", partName: "Hi-Hat op." } },
+    ],
+    noteMappings: [
+      // Erste Pad-Reihe (untere 8 Pads) auf Ch10
+      ...Array.from({ length: 8 }, (_, i) => ({
+        note: 36 + i, channel: 10, partId: `part-${i}`,
+      })),
+      // Zweite Pad-Reihe (obere 8 Pads) — repliziert die Belegung damit beide
+      // Reihen denselben Drum-Sound triggern (User-Erwartung bei 8-Part-Setup)
+      ...Array.from({ length: 8 }, (_, i) => ({
+        note: 44 + i, channel: 10, partId: `part-${i}`,
+      })),
+    ],
+  },
 ];
 
 /** Findet eine Vorlage anhand der ID. */

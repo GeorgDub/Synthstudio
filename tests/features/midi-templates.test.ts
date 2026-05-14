@@ -86,4 +86,64 @@ describe("MIDI-Templates", () => {
     expect(kickMapping).toBeDefined();
     expect(kickMapping?.partId).toBe("part-0");
   });
+
+  // ─── Korg Electribe 2 / 2S (v1.74) ───────────────────────────────────────
+  describe("Korg Electribe 2 Template (v1.74)", () => {
+    it("ist registriert und auffindbar", () => {
+      const t = getMidiTemplate("korg-electribe-2");
+      expect(t).toBeDefined();
+      expect(t!.manufacturer).toBe("Korg");
+    });
+
+    it("hat 16 Pad-Mappings (beide Pad-Reihen)", () => {
+      const t = getMidiTemplate("korg-electribe-2")!;
+      expect(t.noteMappings).toHaveLength(16);
+    });
+
+    it("Pads liegen auf Ch10 (GM-Drum-Channel) - Electribe-Default", () => {
+      const t = getMidiTemplate("korg-electribe-2")!;
+      t.noteMappings.forEach(n => {
+        expect(n.channel).toBe(10);
+      });
+    });
+
+    it("Pad-Notes liegen kontinuierlich im Bereich 36-51", () => {
+      const t = getMidiTemplate("korg-electribe-2")!;
+      const notes = t.noteMappings.map(n => n.note).sort((a, b) => a - b);
+      expect(notes[0]).toBe(36);
+      expect(notes[notes.length - 1]).toBe(51);
+      expect(notes).toEqual([36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51]);
+    });
+
+    it("Pads sind als 2x8-Grid auf part-0..part-7 zweifach gemappt", () => {
+      const t = getMidiTemplate("korg-electribe-2")!;
+      // Note 36 + Note 44 → beide auf part-0
+      const firstRow = t.noteMappings.filter(n => n.note >= 36 && n.note <= 43);
+      const secondRow = t.noteMappings.filter(n => n.note >= 44 && n.note <= 51);
+      expect(firstRow).toHaveLength(8);
+      expect(secondRow).toHaveLength(8);
+      // Beide Reihen mappen auf identische partIds
+      firstRow.forEach((n, i) => {
+        expect(n.partId).toBe(`part-${i}`);
+        expect(secondRow[i].partId).toBe(`part-${i}`);
+      });
+    });
+
+    it("hat CC-Mappings für masterVolume + BPM + 4 Part-Volumes", () => {
+      const t = getMidiTemplate("korg-electribe-2")!;
+      const types = t.ccMappings.map(m => m.target.type);
+      expect(types).toContain("masterVolume");
+      expect(types).toContain("bpm");
+      expect(types.filter(t => t === "volume")).toHaveLength(4);
+    });
+
+    it("ist Round-Trip-kompatibel mit templateToMappings (Labels generiert)", () => {
+      const t = getMidiTemplate("korg-electribe-2")!;
+      const { cc, notes } = templateToMappings(t);
+      expect(cc).toHaveLength(t.ccMappings.length);
+      expect(notes).toHaveLength(t.noteMappings.length);
+      cc.forEach(m => expect(m.label).toBeTruthy());
+      notes.forEach(m => expect(m.label).toBeTruthy());
+    });
+  });
 });

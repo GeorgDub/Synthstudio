@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "1.73.0",
+    version: "1.74.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -491,6 +491,26 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-14T06:30:00.000Z",
+      done: [
+        "ELECTRIBE-2-TEMPLATE (v1.74.0): Korg Electribe 2 / 2S als 9. eingebautes Hardware-Template in `MIDI_TEMPLATES`. 16 Pad-Mappings auf Channel 10 (GM-Drum-Default des Electribe), Notes 36-51 → erste Reihe (36-43) auf part-0..part-7, zweite Reihe (44-51) repliziert dieselbe Belegung damit beide Pad-Reihen denselben Drum-Sound triggern. CC-Mappings: masterVolume (CC7), BPM (CC1 = Mod-Wheel), 4 Part-Volumes auf CC74/71/73/72 (Standard-Korg-Knob-Layout). Transport per MIDI Start/Stop (0xFA/0xFC) wird bereits separat im handleMidiMessage gehandhabt — keine CC-Mappings nötig. 7 neue Vitest-Cases (Existenz/Pad-Count/Ch10/Note-Range 36-51/Double-Row-Mapping/CC-Inhalt/Round-Trip-Labels). 1725 Tests grün, pnpm check 0 Fehler. Erster Schritt der 4-Stunden-Autonomy-Mission: User-Fokus auf Electribe-2-Integration."
+      ],
+      next: [
+        "v1.75 PATTERN-DUPLICATE-SCRIPT: Built-in Script-Template aus aiScriptTemplates.ts der das aktuelle Pattern via `ss.dispatch('pattern-duplicate')` dupliziert. Audit ob die Action wirklich existiert.",
+        "v1.76 FX-PARAM-TARGETS: jeder FX-Parameter (filterFreq, reverbWet, etc.) als MidiLearnTarget bindbar — aktuell nur volume/mute/solo/pan.",
+        "v1.77 FUNCTION-CHAINS: mehrere Actions hintereinander auf einer Taste/Macro.",
+        "v1.78 SCRIPT-RUN-TARGET: MIDI-Pad bindbar an User-Script.",
+        "v1.79-80 USABILITY-POLISH: Default-Filename-Generation aus Device-Name, Audit ungebundener Features."
+      ],
+      changed: [
+        "package.json",
+        "client/src/utils/midiTemplates.ts",
+        "tests/features/midi-templates.test.ts",
+        "agents/INDEX.js"
+      ]
+    },
     {
       agent:     "coordinator",
       timestamp: "2026-05-14T06:00:00.000Z",
