@@ -278,10 +278,10 @@ export function ChannelStrip({
                 userSelect: "none",
                 boxShadow: isCurrentStep ? "inset 0 0 0 2px var(--ss-accent-secondary)" : undefined,
               }}
-              aria-label={`Step ${i + 1}: ${isActiveStep ? "aktiv" : "inaktiv"}, Velocity ${velocity}`}
+              aria-label={`Step ${i + 1}: ${isActiveStep ? "aktiv" : "inaktiv"}, Velocity ${velocity}${step?.slide ? ", slide" : ""}`}
               aria-pressed={isActiveStep}
               role="button"
-              title={`Step ${i + 1} | Vel: ${velocity} | Pitch: ${part.steps[i]?.pitch ?? 0} | P: ${part.steps[i]?.probability ?? 100}%${stepMapping ? ` · CC${stepMapping.cc}` : " · Rechtsklick: MIDI-Learn"}`}
+              title={`Step ${i + 1} | Vel: ${velocity} | Pitch: ${part.steps[i]?.pitch ?? 0} | P: ${part.steps[i]?.probability ?? 100}%${step?.slide ? " | ↝ Slide" : ""}${stepMapping ? ` · CC${stepMapping.cc}` : " · Rechtsklick: MIDI-Learn"}`}
             >
               {stepMapping && (
                 <span className="absolute top-0 right-0 w-1 h-1 bg-accent-secondary rounded-full pointer-events-none" />
@@ -303,6 +303,15 @@ export function ChannelStrip({
               {/* Condition-Indikator: Raute wenn nicht "always" */}
               {part.steps[i]?.condition && part.steps[i]?.condition?.type !== "always" && (
                 <div className="absolute bottom-0.5 right-0.5 w-1.5 h-1.5 rounded-sm bg-accent-primary/80 pointer-events-none" />
+              )}
+              {/* v2.25: Slide-Indikator: ↝ Glyphe links unten wenn slide=true */}
+              {step?.slide && (
+                <span
+                  className="absolute bottom-0 left-0.5 text-[8px] leading-none text-accent-primary font-bold pointer-events-none"
+                  aria-hidden="true"
+                >
+                  ↝
+                </span>
               )}
             </button>
           );
