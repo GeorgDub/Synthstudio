@@ -1226,13 +1226,14 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
 
   // ─── Render ───────────────────────────────────────────────────────────────
 
+  // v2.2: Tab-Labels enthalten Mapping-Counts für quick-Discoverability
   const tabs = [
-    { id: "devices"   as const, label: "Geräte" },
-    { id: "templates" as const, label: "Vorlagen" },
-    { id: "cc"        as const, label: "CC-Mapping" },
-    { id: "notes"     as const, label: "Note-Mapping" },
-    { id: "monitor"   as const, label: "Monitor" },
-    { id: "clock"     as const, label: "Clock-Sync" },
+    { id: "devices"   as const, label: "Geräte", badge: midi.devices.length > 0 ? String(midi.devices.length) : "" },
+    { id: "templates" as const, label: "Vorlagen", badge: userTemplates.length > 0 ? String(userTemplates.length) : "" },
+    { id: "cc"        as const, label: "CC-Mapping", badge: midi.mappings.length > 0 ? String(midi.mappings.length) : "" },
+    { id: "notes"     as const, label: "Note-Mapping", badge: midi.noteMappings.length > 0 ? String(midi.noteMappings.length) : "" },
+    { id: "monitor"   as const, label: "Monitor", badge: monitorLog.length > 0 ? String(monitorLog.length) : "" },
+    { id: "clock"     as const, label: "Clock-Sync", badge: midi.clockSync ? "in" : midi.clockOutEnabled ? "out" : "" },
   ];
 
   const renderTemplatesTab = () => (
@@ -1439,6 +1440,15 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
               }`}
             >
               {tab.label}
+              {tab.badge && (
+                <span className={`ml-1 px-1 rounded text-[9px] font-mono ${
+                  activeTab === tab.id
+                    ? "bg-accent-secondary text-bg-base"
+                    : "bg-bg-elevated text-text-dim"
+                }`}>
+                  {tab.badge}
+                </span>
+              )}
             </button>
           ))}
         </div>

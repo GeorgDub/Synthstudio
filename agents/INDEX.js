@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "2.1.0",
+    version: "2.2.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -491,6 +491,23 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-14T20:30:00.000Z",
+      done: [
+        "MIDI-TAB-BADGES (v2.2.0): MidiSettings-Tabs zeigen jetzt Counts/Status als Badge im Label. Geräte→Anzahl-Devices, Vorlagen→Anzahl-User-Templates, CC-Mapping→Anzahl-Mappings, Note-Mapping→Anzahl-Notes, Monitor→Event-Count, Clock-Sync→'in'/'out'-Indikator. Quick-Discoverability: User sieht direkt was im jeweiligen Tab konfiguriert ist ohne ihn zu öffnen. 1821 Tests grün, pnpm check 0 Fehler."
+      ],
+      next: [
+        "Beat-Repeat-Macro.",
+        "Pattern-Drag-Drop-Reorder.",
+        "Cloud-Sync (große Aufgabe)."
+      ],
+      changed: [
+        "package.json",
+        "client/src/components/MidiSettings/MidiSettings.tsx",
+        "agents/INDEX.js"
+      ]
+    },
     {
       agent:     "coordinator",
       timestamp: "2026-05-14T20:00:00.000Z",
