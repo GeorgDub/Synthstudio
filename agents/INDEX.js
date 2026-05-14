@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "1.76.0",
+    version: "1.77.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -491,6 +491,26 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-14T08:00:00.000Z",
+      done: [
+        "FUNCTION-CHAINS (v1.77.0): User-Request 'Funktionsabläufe oder mehrere Effekte auf eine Taste oder makro legen' — neue MidiLearnTarget-Variante `{type:'chain', label, steps: ChainStep[]}`. Jeder ChainStep enthält ein Sub-Target plus optionalen `value` (0-127, default 127) und `delayMs` (clamped 0-60s). Pure-Helper `planChainExecution(steps): ChainPlan` berechnet kumulative atMs-Werte für jeden Step und filtert nested chains (1-Level only — Defense-in-Depth gegen infinite-Rekursion). applyMapping branched für 'chain' → schedulet jeden Trigger via setTimeout, ruft applyMapping rekursiv für Sub-Targets. UI in MidiSettings CC-Tab: neue Chain-Presets-Section mit 4 ready-made Multi-Step-Actions (Drop-Combo / Duplicate+Randomize / Tap×4+Play / Fill+Next). User klickt einen Preset → Learn-Mode → bewegt Controller → ganze Sequenz auf einer Taste. VALID_TARGET_TYPES um 'chain' erweitert damit Layouts mit Chains importierbar bleiben. 10 neue Vitest-Cases für planChainExecution (empty/single/multi+delay/value-clamp/delay-clamp 60s/chain-of-chain-block/no-target/drop-combo/step-index). 1758 Tests grün, pnpm check 0 Fehler."
+      ],
+      next: [
+        "v1.78 SCRIPT-RUN-TARGET: MIDI-Pad bindbar an User-Script (out of useScriptStore).",
+        "v1.79 CUSTOM-CHAIN-BUILDER: UI-Form damit der User eigene Chains (nicht nur Presets) zusammenklicken kann.",
+        "v1.80 DEFAULT-FILENAME-AUS-DEVICE: midi.activeDeviceId → Hersteller+Modell → exportName-default."
+      ],
+      changed: [
+        "package.json",
+        "client/src/hooks/useMidi.ts",
+        "client/src/components/MidiSettings/MidiSettings.tsx",
+        "client/src/utils/midiLayoutImport.ts",
+        "tests/features/function-chains.test.ts",
+        "agents/INDEX.js"
+      ]
+    },
     {
       agent:     "coordinator",
       timestamp: "2026-05-14T07:30:00.000Z",

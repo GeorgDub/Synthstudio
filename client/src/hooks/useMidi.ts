@@ -62,7 +62,31 @@ export type MidiLearnTarget =
   | { type: "commitLiveEdit" }
   | { type: "scenelaunch"; sceneIndex: number }
   // ── Einstellungen ─────────────────────────────────────────────────────────────
-  | { type: "openSettings" };
+  | { type: "openSettings" }
+  // ── Function-Chain (v1.77) ────────────────────────────────────────────────────
+  /**
+   * Eine Folge von Sub-Targets, die bei einem einzigen MIDI-Event
+   * (CC > 63 oder Note-On) der Reihe nach ausgeführt werden — optional mit
+   * `delayMs` zwischen den Schritten. Damit lassen sich z.B. komplette Macros
+   * wie "BPM 140 + Pattern-Clear + Play" oder Performance-Combos auf einer
+   * einzigen Taste/einem Pad ablegen. Sub-Targets dürfen keine weiteren chains
+   * sein (1-Level-Nesting only) damit endlose Rekursion ausgeschlossen ist.
+   */
+  | { type: "chain"; label: string; steps: ChainStep[] };
+
+/** Ein Schritt in einer Function-Chain (v1.77). */
+export interface ChainStep {
+  /** Das Sub-Target, das beim Step-Index ausgeführt wird. */
+  target: Exclude<MidiLearnTarget, { type: "chain" }>;
+  /**
+   * Optional: feste Value (0-127) die als CC-Value dem applyMapping übergeben
+   * wird. Default: 127 (=max, on). Sinnvoll z.B. für `volume`-Subtargets die
+   * einen bestimmten Pegel setzen sollen — nicht den eingehenden MIDI-Value.
+   */
+  value?: number;
+  /** Optional: Verzögerung in ms NACH diesem Schritt (vor dem nächsten). */
+  delayMs?: number;
+}
 
 export interface MidiMapping {
   cc: number;
@@ -182,8 +206,50 @@ export function labelForTarget(target: MidiLearnTarget): string {
     case "commitLiveEdit":  return "Live Edit Commit";
     case "scenelaunch":     return `Scene ${target.sceneIndex + 1}`;
     case "openSettings":    return "Einstellungen öffnen";
+    case "chain":           return `Chain: ${target.label} (${target.steps.length} Schritte)`;
     default:                return "Unbekannt";
   }
+}
+
+/**
+ * Plant eine Chain-Ausführung als geordnete Folge von (Step, Verzögerung)
+ * Paaren. Liefert für Testbarkeit eine Beschreibung der geplanten Triggers.
+ * Side-effect-frei, Caller dispatcht die einzelnen Targets selbst.
+ *
+ * v1.77: 1-Level Nesting — Sub-Targets dürfen keine `chain` sein.
+ * Falls trotzdem eine chain als Step übergeben wird (über TypeScript
+ * umgangen via Cast), wird sie übersprungen, und `dropped` zählt mit.
+ */
+export interface ChainPlan {
+  /** Geplant: ausgeführte Steps mit kumulativem Delay (in ms vom Chain-Start). */
+  triggers: Array<{ step: number; target: MidiLearnTarget; value: number; atMs: number }>;
+  /** Anzahl der wegen Nesting/Ungültigkeit übersprungenen Steps. */
+  dropped: number;
+}
+
+export function planChainExecution(
+  steps: ChainStep[],
+): ChainPlan {
+  const triggers: ChainPlan["triggers"] = [];
+  let dropped = 0;
+  let cumDelay = 0;
+  for (let i = 0; i < steps.length; i++) {
+    const step = steps[i];
+    if (!step || !step.target) { dropped++; continue; }
+    // Defensive: chain-of-chain blocken (TS verhindert es, aber JS-Caller könnte casten)
+    // @ts-expect-error - prüfen ob jemand via Cast ein chain als Step durchgereicht hat
+    if (step.target.type === "chain") { dropped++; continue; }
+    triggers.push({
+      step: i,
+      target: step.target,
+      value: typeof step.value === "number"
+        ? Math.max(0, Math.min(127, step.value))
+        : 127,
+      atMs: cumDelay,
+    });
+    cumDelay += Math.max(0, Math.min(60_000, step.delayMs ?? 0));
+  }
+  return { triggers, dropped };
 }
 
 /**
@@ -571,6 +637,21 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
       case "commitLiveEdit":   if (on) window.dispatchEvent(new CustomEvent("midi:commitLiveEdit")); break;
       case "scenelaunch":      if (on) window.dispatchEvent(new CustomEvent("midi:scene", { detail: t.sceneIndex })); break;
       case "openSettings":     if (on) window.dispatchEvent(new CustomEvent("kb:action", { detail: "open-settings" })); break;
+      case "chain": {
+        // v1.77: Function-Chains — auf 'on' (CC>63 oder Note) eine Folge von
+        // Sub-Targets der Reihe nach feuern, optional mit delayMs zwischen
+        // den Schritten. Wir bauen aus planChainExecution eine Trigger-Liste
+        // und scheduken sie via setTimeout. Side-effects via applyMapping
+        // rekursiv (Sub-Target → applyMapping → korrekte Action).
+        if (!on) break;
+        const plan = planChainExecution(t.steps);
+        for (const tr of plan.triggers) {
+          const fire = () => applyMapping({ cc: 0, channel: 0, target: tr.target, label: "" }, tr.value);
+          if (tr.atMs <= 0) fire();
+          else setTimeout(fire, tr.atMs);
+        }
+        break;
+      }
     }
   }
 

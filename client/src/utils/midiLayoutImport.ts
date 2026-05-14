@@ -55,6 +55,8 @@ export const VALID_TARGET_TYPES = new Set<string>([
   "commitLiveEdit", "scenelaunch", "openSettings",
   // v1.76: jeder numerische FX-Parameter pro Channel
   "fxParam",
+  // v1.77: Function-Chain (mehrere Sub-Targets auf einer Taste)
+  "chain",
 ]);
 
 export interface ParsedMidiLayout {

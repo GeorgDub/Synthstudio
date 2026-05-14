@@ -189,6 +189,64 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
     ...parts.map(p => ({ label: `Mute: ${p.name}`, target: { type: "mute" as const, partId: p.id } })),
   ];
 
+  // v1.77: Function-Chain-Presets — fertige Multi-Step-Actions die der User
+  // auf eine Taste/Pad binden kann. Diese Liste ist absichtlich kurz und
+  // hardcoded — komplette Custom-Chain-Builder kommt in einem späteren Release.
+  const chainPresets: Array<{ label: string; description: string; target: MidiLearnTarget }> = [
+    {
+      label: "Drop-Combo",
+      description: "Play/Stop → 200ms → Clear → 100ms → Play",
+      target: {
+        type: "chain",
+        label: "Drop-Combo",
+        steps: [
+          { target: { type: "playStop" }, delayMs: 200 },
+          { target: { type: "patternClear" }, delayMs: 100 },
+          { target: { type: "playStop" } },
+        ],
+      },
+    },
+    {
+      label: "Duplicate + Randomize",
+      description: "Aktuelles Pattern duplizieren → 50ms → Randomize",
+      target: {
+        type: "chain",
+        label: "Dup+Random",
+        steps: [
+          { target: { type: "patternDuplicate" }, delayMs: 50 },
+          { target: { type: "patternRandomize" } },
+        ],
+      },
+    },
+    {
+      label: "Tap × 4 + Play",
+      description: "4× Tap-Tempo mit 500ms → BPM-Lock → Play",
+      target: {
+        type: "chain",
+        label: "Tap+Play",
+        steps: [
+          { target: { type: "tapTempo" }, delayMs: 500 },
+          { target: { type: "tapTempo" }, delayMs: 500 },
+          { target: { type: "tapTempo" }, delayMs: 500 },
+          { target: { type: "tapTempo" }, delayMs: 250 },
+          { target: { type: "playStop" } },
+        ],
+      },
+    },
+    {
+      label: "Fill + Next-Pattern",
+      description: "Fill aktuelles Pattern → 100ms → nächstes Pattern",
+      target: {
+        type: "chain",
+        label: "Fill+Next",
+        steps: [
+          { target: { type: "patternFill" }, delayMs: 100 },
+          { target: { type: "patternNext" } },
+        ],
+      },
+    },
+  ];
+
   // Auto-Learn-Presets (v1.71 CC, v1.72 + Note): vordefinierte Sequenzen
   // für gängige Hardware-Setups. User klickt einen Preset-Button, dreht/
   // drückt dann jeden Controller/Pad seines Geräts einmal — Synthstudio
@@ -438,6 +496,50 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
               })}
             </div>
           )}
+        </div>
+      )}
+
+      {/* Function-Chain-Presets (v1.77) ─────────────────────────────────── */}
+      {!midi.isLearning && (
+        <div>
+          <div className="text-xs font-medium text-text-muted mb-2 uppercase tracking-wider">
+            Function-Chains (v1.77)
+          </div>
+          <div className="text-xs text-text-dim mb-2">
+            Mehrere Actions auf einer Taste/einem Pad — klick einen Preset
+            an und bewege dann den Controller. Die ganze Sequenz wird bei
+            jedem Trigger ausgeführt.
+          </div>
+          <div className="space-y-1.5">
+            {chainPresets.map((preset) => {
+              const presetLabel = preset.target.type === "chain" ? preset.target.label : "";
+              const existing = midi.mappings.find(m =>
+                m.target.type === "chain" && m.target.label === presetLabel,
+              );
+              return (
+                <button
+                  key={preset.label}
+                  onClick={() => midi.isEnabled && midi.startLearn(preset.target)}
+                  disabled={!midi.isEnabled}
+                  className={`w-full flex items-center justify-between p-2 rounded text-left text-xs transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+                    existing
+                      ? "bg-accent-primary/40 border border-accent-primary/50 hover:bg-accent-primary/60"
+                      : "bg-bg-elevated hover:bg-bg-elevated"
+                  }`}
+                >
+                  <div>
+                    <div className="text-text-primary font-medium">{preset.label}</div>
+                    <div className="text-[10px] text-text-dim mt-0.5">{preset.description}</div>
+                  </div>
+                  {existing && (
+                    <span className="text-accent-secondary font-mono text-xs ml-1">
+                      CC{existing.cc}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
         </div>
       )}
 
