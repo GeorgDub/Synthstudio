@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "1.88.0",
+    version: "1.89.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -491,6 +491,23 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-14T14:00:00.000Z",
+      done: [
+        "MIDI-OUTPUT-TEST (v1.89.0): Zwei kleine Test-Buttons im SettingsPanel → KI & MIDI → MIDI Out Section. 'Note testen' sendet Note On 60 (C4) mit vel=100 für 250ms ans aktive Ausgangsgerät, danach Note Off. 'CC testen' sendet CC 74 = 100 (Filter Cutoff). Hilft beim Verifizieren ob das Ausgangsgerät überhaupt MIDI empfängt — typischer Pain-Point bei externen Synths/Drum-Machines. Sichtbar nur wenn midiOutEnabled UND activeOutputDeviceId gesetzt sind. 1806 Tests grün, pnpm check 0 Fehler."
+      ],
+      next: [
+        "v1.90 SCRIPT-EDITOR-EXTENSIONS: Right-Click MIDI-Learn auf User-Scripts in der ScriptList, damit beim Erstellen direkt ein Pad-Binding möglich ist.",
+        "FX-Knöpfe Right-Click in FxPanel.",
+        "Backlog aus neue_todos.md."
+      ],
+      changed: [
+        "package.json",
+        "client/src/components/Settings/SettingsPanel.tsx",
+        "agents/INDEX.js"
+      ]
+    },
     {
       agent:     "coordinator",
       timestamp: "2026-05-14T13:30:00.000Z",
