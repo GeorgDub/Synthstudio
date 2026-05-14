@@ -239,6 +239,112 @@ describe("FLP Import — Melodic-Channel-Warnung (post-v1.63.0)", () => {
   });
 });
 
+// ─── importFlp + Pattern-Name (v1.70 FLP-PATTERN-NAMES) ───────────────────────
+
+describe("FLP Import — Pattern-Name aus 0xC1 (v1.70)", () => {
+  /**
+   * Baut ein minimal valides FLP mit: NewPattern → PatternName → NotesEvent.
+   * Helper, weil die anderen Fixtures in dieser Datei keinen PatternName setzen.
+   */
+  function buildFlpWithPatternName(patternName: string): ArrayBuffer {
+    // ── FLhd header ──
+    const header = new Uint8Array(14);
+    const hv = new DataView(header.buffer);
+    header.set([0x46, 0x4c, 0x68, 0x64], 0); // "FLhd"
+    hv.setUint32(4, 6, true);
+    hv.setUint16(8, 0, true);   // format
+    hv.setUint16(10, 1, true);  // nChannels
+    hv.setUint16(12, 96, true); // ppq
+
+    // ── Events ──
+    // NewPattern (WORD 0x4F = pattern 1)
+    const newPattern = new Uint8Array([0x4f, 0x01, 0x00]);
+
+    // PatternName (TEXT 0xC1, ASCII null-terminated)
+    const nameBytes = new Uint8Array(patternName.length + 1);
+    for (let i = 0; i < patternName.length; i++) nameBytes[i] = patternName.charCodeAt(i);
+    // varlen len = patternName.length + 1 (single byte if < 128)
+    const nameLen = nameBytes.length;
+    const nameEvent = new Uint8Array(2 + nameLen);
+    nameEvent[0] = 0xC1;
+    nameEvent[1] = nameLen;
+    nameEvent.set(nameBytes, 2);
+
+    // 1 Note (24 bytes)
+    const noteBuf = new Uint8Array(24);
+    const nv = new DataView(noteBuf.buffer);
+    nv.setUint32(0, 0, true);    // position
+    nv.setUint16(6, 0, true);    // channel 0
+    nv.setUint32(8, 24, true);   // duration
+    nv.setUint8(12, 36);         // key
+    nv.setUint8(18, 100);        // velocity
+
+    // NotesEvent (0xE7, varlen 24)
+    const notesEventHdr = new Uint8Array([0xe7, 24]);
+    const notesEvent = new Uint8Array(notesEventHdr.length + noteBuf.length);
+    notesEvent.set(notesEventHdr, 0);
+    notesEvent.set(noteBuf, notesEventHdr.length);
+
+    // Concat all events
+    const events = new Uint8Array(newPattern.length + nameEvent.length + notesEvent.length);
+    events.set(newPattern, 0);
+    events.set(nameEvent, newPattern.length);
+    events.set(notesEvent, newPattern.length + nameEvent.length);
+
+    // ── FLdt ──
+    const dataHdr = new Uint8Array(8);
+    dataHdr.set([0x46, 0x4c, 0x64, 0x74], 0);
+    new DataView(dataHdr.buffer).setUint32(4, events.length, true);
+
+    const total = new Uint8Array(header.length + dataHdr.length + events.length);
+    total.set(header, 0);
+    total.set(dataHdr, header.length);
+    total.set(events, header.length + dataHdr.length);
+    return total.buffer;
+  }
+
+  it("nutzt 0xC1 Pattern-Name statt Dateiname als baseName", async () => {
+    const buf = buildFlpWithPatternName("Verse");
+    const result = await importFlp(makeFile("MyTrack.flp", buf));
+    expect(result.patterns.length).toBeGreaterThan(0);
+    // Bei 1 Bar: Pattern-Name pur, kein "bar 1" Suffix
+    expect(result.patterns[0].name).toBe("Verse");
+  });
+
+  it("Fallback auf Dateiname wenn kein Pattern-Name im FLP", async () => {
+    // Hier nutzen wir den Fixture aus dem ersten describe (ohne 0xC1).
+    // Header (14 bytes)
+    const header = new Uint8Array(14);
+    const hv = new DataView(header.buffer);
+    header.set([0x46, 0x4c, 0x68, 0x64], 0);
+    hv.setUint32(4, 6, true);
+    hv.setUint16(8, 0, true);
+    hv.setUint16(10, 1, true);
+    hv.setUint16(12, 96, true);
+    const newPattern = new Uint8Array([0x4f, 0x01, 0x00]);
+    const noteBuf = new Uint8Array(24);
+    const nv = new DataView(noteBuf.buffer);
+    nv.setUint32(0, 0, true);
+    nv.setUint32(8, 24, true);
+    nv.setUint8(12, 36);
+    nv.setUint8(18, 100);
+    const notesEvent = new Uint8Array([0xe7, 24, ...noteBuf]);
+    const events = new Uint8Array(newPattern.length + notesEvent.length);
+    events.set(newPattern, 0);
+    events.set(notesEvent, newPattern.length);
+    const dataHdr = new Uint8Array(8);
+    dataHdr.set([0x46, 0x4c, 0x64, 0x74], 0);
+    new DataView(dataHdr.buffer).setUint32(4, events.length, true);
+    const total = new Uint8Array(header.length + dataHdr.length + events.length);
+    total.set(header, 0);
+    total.set(dataHdr, header.length);
+    total.set(events, header.length + dataHdr.length);
+
+    const result = await importFlp(makeFile("OnlyFilename.flp", total.buffer));
+    expect(result.patterns[0].name).toBe("OnlyFilename");
+  });
+});
+
 describe("buildMelodicParts (v1.65)", () => {
   it("leerer Notes-Array → leeres Result", () => {
     expect(buildMelodicParts([], 96)).toEqual([]);

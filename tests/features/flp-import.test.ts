@@ -505,3 +505,71 @@ describe("parseFlp — channelNames (FLP-CHANNEL-NAMES v1.68)", () => {
     expect(parsed.channelNames.get(7)).toBe("FLEX");
   });
 });
+
+// ─── parseFlp + patternNames (v1.70 FLP-PATTERN-NAMES) ────────────────────────
+
+describe("parseFlp — patternNames (FLP-PATTERN-NAMES v1.70)", () => {
+  function asciiBytes(s: string): Uint8Array {
+    const out = new Uint8Array(s.length + 1);
+    for (let i = 0; i < s.length; i++) out[i] = s.charCodeAt(i);
+    return out;
+  }
+
+  it("patternNames ist immer eine Map (auch ohne 0xC1-Events)", () => {
+    const flp = buildFlp({ events: [] });
+    const parsed = parseFlp(flp);
+    expect(parsed.patternNames).toBeInstanceOf(Map);
+    expect(parsed.patternNames.size).toBe(0);
+  });
+
+  it("0xC1 nach 0x4F NewPattern → patternNames-Eintrag", () => {
+    const flp = buildFlp({
+      events: [
+        wordEvent(0x4F, 1),
+        dataEvent(0xC1, asciiBytes("Verse")),
+      ],
+    });
+    const parsed = parseFlp(flp);
+    expect(parsed.patternNames.get(1)).toBe("Verse");
+  });
+
+  it("0xC1 ohne vorheriges NewPattern wird ignoriert", () => {
+    const flp = buildFlp({
+      events: [
+        dataEvent(0xC1, asciiBytes("Orphan")),
+      ],
+    });
+    const parsed = parseFlp(flp);
+    expect(parsed.patternNames.size).toBe(0);
+  });
+
+  it("mehrere Patterns mit Namen werden korrekt zugeordnet", () => {
+    const flp = buildFlp({
+      events: [
+        wordEvent(0x4F, 1),
+        dataEvent(0xC1, asciiBytes("Intro")),
+        wordEvent(0x4F, 2),
+        dataEvent(0xC1, asciiBytes("Verse")),
+        wordEvent(0x4F, 3),
+        dataEvent(0xC1, asciiBytes("Chorus")),
+      ],
+    });
+    const parsed = parseFlp(flp);
+    expect(parsed.patternNames.get(1)).toBe("Intro");
+    expect(parsed.patternNames.get(2)).toBe("Verse");
+    expect(parsed.patternNames.get(3)).toBe("Chorus");
+  });
+
+  it("Channel-Name 0xC3 wird NICHT in patternNames aufgenommen (Cross-Contamination-Check)", () => {
+    const flp = buildFlp({
+      events: [
+        wordEvent(0x4F, 1),
+        wordEvent(0x40, 0),
+        dataEvent(0xC3, asciiBytes("Kick")),
+      ],
+    });
+    const parsed = parseFlp(flp);
+    expect(parsed.patternNames.size).toBe(0);
+    expect(parsed.channelNames.get(0)).toBe("Kick");
+  });
+});

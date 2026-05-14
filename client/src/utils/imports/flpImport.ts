@@ -335,7 +335,13 @@ export async function importFlp(file: File): Promise<ImportResult> {
     }
   }
 
-  const baseName = file.name.replace(/\.flp$/i, "");
+  // FLP-PATTERN-NAMES v1.70: bevorzugt den 0xC1 TEXT_PATTERN_NAME-Wert
+  // aus dem FLP, sonst Dateiname (ohne .flp-Endung) als Fallback.
+  const filenameStem = file.name.replace(/\.flp$/i, "");
+  const parsedPatternName = parsed.patternNames.get(firstPattern.index);
+  const baseName = parsedPatternName && parsedPatternName.length > 0
+    ? parsedPatternName
+    : filenameStem;
   const patternsList: ImportedPattern[] = [];
   let imported = 0;
   for (let bar = 0; bar < totalBars; bar++) {

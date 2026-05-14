@@ -85,6 +85,13 @@ export interface FlpParsed {
    * (FLP-CHANNEL-NAMES Phase 3, v1.68).
    */
   channelNames: Map<number, string>;
+  /**
+   * Pro FL-Pattern-Index der Anzeigename aus dem 0xC1 TEXT_PATTERN_NAME-Event
+   * (FLP-PATTERN-NAMES v1.70). Ein Pattern ohne Namen-Event taucht hier nicht
+   * auf. Der Konsument nutzt diesen Namen als Synthstudio-Pattern-Namen statt
+   * generischer "filename bar N"-Labels.
+   */
+  patternNames: Map<number, string>;
 }
 
 // ─── Reader-Helper ────────────────────────────────────────────────────────────
@@ -248,6 +255,7 @@ export function parseFlp(buffer: ArrayBuffer): FlpParsed {
   // ── Event-Loop ────────────────────────────────────────────────────────────
   const patternsByIndex = new Map<number, FlpPattern>();
   const channelNames = new Map<number, string>();
+  const patternNames = new Map<number, string>();
   let currentPatternIndex = 0; // FL state — "currently selected" pattern
   let currentChannel = -1;     // FL state — "currently selected" channel (gesetzt durch 0x40 NewChannel)
 
@@ -304,12 +312,19 @@ export function parseFlp(buffer: ArrayBuffer): FlpParsed {
         if (name.length > 0) {
           channelNames.set(currentChannel, name);
         }
+      } else if (eventId === 0xC1 && currentPatternIndex > 0) {
+        // TEXT_PATTERN_NAME — Anzeigename des aktuell selektierten Patterns
+        // (FLP-PATTERN-NAMES v1.70).
+        const name = decodeFlpText(data);
+        if (name.length > 0) {
+          patternNames.set(currentPatternIndex, name);
+        }
       }
     }
   }
 
   const patterns = Array.from(patternsByIndex.values()).sort((a, b) => a.index - b.index);
-  return { header, patterns, channelNames };
+  return { header, patterns, channelNames, patternNames };
 }
 
 // ─── Synthstudio-Pattern-Konvertierung ───────────────────────────────────────

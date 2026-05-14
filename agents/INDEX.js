@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "1.69.0",
+    version: "1.70.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -476,6 +476,26 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-14T04:30:00.000Z",
+      done: [
+        "FLP-PATTERN-NAMES (v1.70.0): Analog zu Phase 3 (Channel-Names) jetzt auch Pattern-Namen aus dem FLP übernehmen. `0xC1 TEXT_PATTERN_NAME`-Events werden im Event-Loop dem aktuellen Pattern-Index (gesetzt durch 0x4F NewPattern) zugeordnet und in `FlpParsed.patternNames: Map<number, string>` gespeichert. Cross-Contamination-Check: 0xC1 wird NUR in patternNames, 0xC3 NUR in channelNames geschrieben. `importFlp()` nutzt jetzt `parsed.patternNames.get(firstPattern.index)` als baseName, mit Fallback auf Dateiname-Stem ohne `.flp`. Multi-Bar: 'Verse' + 3 Bars → 'Verse bar 1/2/3'. 7 neue Vitest-Cases: 5 parseFlp.patternNames (empty/single/no-NewPattern/multi/cross-contamination), 2 importFlp.baseName (pattern-name-preferred / filename-fallback). 1681 Tests grün, pnpm check 0 Fehler."
+      ],
+      next: [
+        "FLP-MIDI-EXPORT Phase 4: SMF-Export von Melodic-Parts mit Pitch + Duration (umgekehrte Richtung — Synthstudio → FL Studio Re-Import). Größerer Schritt, eigenständiger Code-Pfad in electron/export.ts oder utils/midiExport.ts.",
+        "FEAT-INSP: bleibt offen (Explore-Report verfügbar, 4-5h, 8+ Files).",
+        "neue_todos.md Backlog: Quantize-Crash-Fix (oberste Priorität — User-blocker), GitHub-Builder-Workflow, Updater, Mobile-Build, Login/Beta-System, Plugin-Wiki/LLM, Sample-Cloud, MIDI-Templates für Hardtekk-Gear, .als/.elst-Konverter, Workbench-Audacity-Niveau, AI-Projekt-Analyse, Admin/Lite-Tier-Lizenz."
+      ],
+      changed: [
+        "package.json",
+        "client/src/utils/flpImport.ts",
+        "client/src/utils/imports/flpImport.ts",
+        "tests/features/flp-import.test.ts",
+        "tests/features/project-imports.test.ts",
+        "agents/INDEX.js"
+      ]
+    },
     {
       agent:     "coordinator",
       timestamp: "2026-05-14T04:00:00.000Z",
