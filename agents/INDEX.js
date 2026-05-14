@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "1.85.0",
+    version: "1.86.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -491,6 +491,29 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-14T12:30:00.000Z",
+      done: [
+        "RIGHT-CLICK-MIDI-LEARN (v1.86.0): Foundation für Right-Click-MIDI-Learn auf beliebigen UI-Elementen — der Top-Vorschlag aus der neue_todos.md-Wishlist. Neue Pure-Helper `targetsMatch(a, b)` + `findMappingForTarget(mappings, target)` in useMidi.ts (deckt alle MidiLearnTarget-Varianten ab, inkl. partId-Spezifika für volume/mute/solo/pan/fxParam und scriptId/sceneIndex/label/etc für die compound Targets). Neuer Hook `useMidiLearn(target, midiOverride?)` in hooks/useMidiLearn.tsx: liefert onContextMenu-Handler, isMapped-Flag, mappedCC, learn/unbind-Actions und einen vorgerenderten Context-Menu-ReactNode den der Caller einfach inline rendert. Click-outside + Escape schließen das Menü. Neuer Context `MidiContext` in context/MidiContext.tsx mit `MidiProvider` + `useMidiContext()`-Hook damit tief verschachtelte Komponenten den midi-State ohne Prop-Drilling bekommen. App.tsx wrappt jetzt seinen Body mit <MidiProvider value={midi}>. Anwendung in DrumMachine: BPM-Display + Play/Stop-Button bekommen rechtsklick-bare MIDI-Learn-Context-Menüs mit CC#-Badge wenn bereits gebunden — User-Workflow 'rechtsklick auf BPM → MIDI-Learn → Encoder drehen → fertig'. 18 neue Vitest-Cases für targetsMatch (single-targets / volume / fxParam / pattern / step / runScript / chain / scenelaunch / tab) + findMappingForTarget (Hit / partId-spezifisch / fxParam-mit-Param / No-Match / leere Liste). 1805 Tests grün, pnpm check 0 Fehler. Erste Anwendung an 2 Elementen (BPM, Play/Stop) — weitere können in folgenden Releases ergänzt werden (FX-Knöpfe, Volume-Slider, Pattern-Buttons)."
+      ],
+      next: [
+        "v1.87 RCL-MIDI-LEARN-EXPANSION: weitere UI-Elemente anbinden — FX-Knöpfe im FxPanel, Volume-Slider im MixerView, Macro-Buttons.",
+        "MIDI Output Test Button (sendet Test-CC zur Verifizierung)",
+        "Pattern-Duplicate via Drag-and-Drop",
+        "Backlog aus neue_todos.md."
+      ],
+      changed: [
+        "package.json",
+        "client/src/hooks/useMidi.ts",
+        "client/src/hooks/useMidiLearn.tsx",
+        "client/src/context/MidiContext.tsx",
+        "client/src/App.tsx",
+        "client/src/components/DrumMachine/DrumMachine.tsx",
+        "tests/features/midi-target-match.test.ts",
+        "agents/INDEX.js"
+      ]
+    },
     {
       agent:     "coordinator",
       timestamp: "2026-05-14T12:00:00.000Z",

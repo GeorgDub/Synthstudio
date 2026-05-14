@@ -227,6 +227,58 @@ export function labelForTarget(target: MidiLearnTarget): string {
 }
 
 /**
+ * Vergleicht zwei MidiLearnTargets auf logische Gleichheit. Wird für die
+ * Right-Click-MIDI-Learn-Feature (v1.86) verwendet um zu erkennen ob ein
+ * bestimmtes UI-Element schon mit einem CC verbunden ist.
+ *
+ * Pure Funktion: keine Side-Effects, public exportiert für Tests.
+ */
+export function targetsMatch(a: MidiLearnTarget, b: MidiLearnTarget): boolean {
+  if (a.type !== b.type) return false;
+  switch (a.type) {
+    case "volume":
+    case "mute":
+    case "solo":
+    case "pan":
+      return a.partId === (b as { partId: string }).partId;
+    case "fxParam":
+      return a.partId === (b as { partId: string; param: string }).partId &&
+             a.param === (b as { partId: string; param: string }).param;
+    case "pattern":
+      return a.patternIndex === (b as { patternIndex: number }).patternIndex;
+    case "step":
+      return a.partId === (b as { partId: string; stepIndex: number }).partId &&
+             a.stepIndex === (b as { partId: string; stepIndex: number }).stepIndex;
+    case "tab":
+      return a.tabId === (b as { tabId: string }).tabId;
+    case "scenelaunch":
+      return a.sceneIndex === (b as { sceneIndex: number }).sceneIndex;
+    case "runScript":
+      return a.scriptId === (b as { scriptId: string }).scriptId;
+    case "chain":
+      return a.label === (b as { label: string }).label;
+    default:
+      // Single-target types ohne Param: bpm, playStop, record, tapTempo,
+      // bpmUp, bpmDown, masterVolume, partUp, partDown, patternNext,
+      // patternPrev, patternClear, patternFill, patternRandomize,
+      // patternDuplicate, toggleNoteRepeat, toggleMorph, commitLiveEdit,
+      // openSettings → wenn type gleich, sind sie gleich.
+      return true;
+  }
+}
+
+/**
+ * Sucht in der Mapping-Liste das CC-Mapping das auf das gegebene Target
+ * verweist (oder undefined). Pure Funktion. v1.86.
+ */
+export function findMappingForTarget(
+  mappings: MidiMapping[],
+  target: MidiLearnTarget,
+): MidiMapping | undefined {
+  return mappings.find((m) => targetsMatch(m.target, target));
+}
+
+/**
  * Plant eine Chain-Ausführung als geordnete Folge von (Step, Verzögerung)
  * Paaren. Liefert für Testbarkeit eine Beschreibung der geplanten Triggers.
  * Side-effect-frei, Caller dispatcht die einzelnen Targets selbst.

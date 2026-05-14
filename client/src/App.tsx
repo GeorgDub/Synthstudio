@@ -68,6 +68,7 @@ import { useDrumMachineStore } from "@/store/useDrumMachineStore";
 import { useTransport } from "@/hooks/useTransport";
 import { RecordSettingsPopover } from "@/components/Transport/RecordSettingsPopover";
 import { useMidi } from "@/hooks/useMidi";
+import { MidiProvider } from "@/context/MidiContext";
 import { useLiveStepRecorder } from "@/hooks/useLiveStepRecorder";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { MidiSettings } from "@/components/MidiSettings";
@@ -2200,6 +2201,7 @@ export default function App() {
       onProject={handleDropProject}
       onZipFile={handleDropZipFile}
     >
+      <MidiProvider value={midi}>
       <div className="flex flex-col h-screen bg-bg-base text-text-primary overflow-hidden">
 
         {/*
@@ -2834,6 +2836,7 @@ export default function App() {
           onOpenInWindow={electron.isElectron ? handleOpenPerformanceWindow : undefined}
         />
       )}
+      </MidiProvider>
     </ElectronDropZone>
   );
 }

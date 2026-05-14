@@ -21,6 +21,7 @@ import { TransposeControl } from "@/components/PianoRoll/TransposeControl";
 import { PatternMorphPanel } from "@/components/PatternMorph";
 import { MacroPanel } from "@/components/Macro/MacroPanel";
 import { EnvelopeFollowerPanel } from "./EnvelopeFollowerPanel";
+import { useMidiLearn } from "@/hooks/useMidiLearn";
 import { parseMidiFile } from "../../../../src/utils/midiParser.js";
 import { parseFlp, flpPositionToStep, groupNotesByBar, calculateBarCount } from "@/utils/flpImport";
 import { GranularSynthPanel } from "./GranularSynthPanel";
@@ -62,6 +63,9 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
   const metronomPanelRef = useRef<HTMLDivElement>(null);
   const [masterVolume, setMasterVolume] = useState(0.85);
   const [bpmInput, setBpmInput] = useState(String(bpm));
+  // v1.86: Right-Click-MIDI-Learn auf BPM + Play/Stop
+  const bpmLearn = useMidiLearn({ type: "bpm" });
+  const playStopLearn = useMidiLearn({ type: "playStop" });
   const bpmInputRef = useRef<HTMLInputElement>(null);
   const [pianoRollPartId, setPianoRollPartId] = useState<string | null>(null);
   const [abSlotA, setAbSlotA] = useState<string | null>(null);
@@ -757,22 +761,30 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
           className="w-6 h-6 rounded text-xs bg-bg-elevated text-text-dim hover:bg-bg-elevated disabled:opacity-30 transition-colors"
           title="Wiederholen (Ctrl+Y)">↪</button>
 
-        {/* Play/Stop */}
+        {/* Play/Stop — v1.86: right-click für MIDI-Learn */}
         <button
           onClick={onPlayStop}
-          title={isPlaying ? "Stop (Space)" : "Play (Space)"}
+          onContextMenu={playStopLearn.onContextMenu}
+          title={`${isPlaying ? "Stop" : "Play"} (Space) · Rechtsklick: MIDI-Learn${playStopLearn.isMapped ? ` · CC${playStopLearn.mappedCC}` : ""}`}
           className={[
-            "w-8 h-8 rounded flex items-center justify-center text-sm font-bold transition-colors",
+            "relative w-8 h-8 rounded flex items-center justify-center text-sm font-bold transition-colors",
             isPlaying
               ? "bg-accent-danger hover:bg-accent-danger/80 text-bg-base"
               : "bg-accent-primary hover:bg-accent-primary text-bg-base",
           ].join(" ")}
         >
           {isPlaying ? "■" : "▶"}
+          {playStopLearn.isMapped && (
+            <span className="absolute -top-1 -right-1 text-[8px] font-mono bg-accent-secondary text-bg-base px-0.5 rounded leading-tight">CC{playStopLearn.mappedCC}</span>
+          )}
         </button>
+        {playStopLearn.menu}
 
-        {/* BPM */}
-        <div className="flex items-center gap-1">
+        {/* BPM — v1.86: right-click für MIDI-Learn */}
+        <div
+          className="flex items-center gap-1 relative"
+          onContextMenu={bpmLearn.onContextMenu}
+        >
           <button
             onClick={() => onBpmChange(Math.max(20, bpm - 1))}
             title="BPM −1 (Taste: −)"
@@ -801,7 +813,11 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
             aria-label="BPM erhöhen"
             className="w-5 h-6 rounded text-xs bg-bg-elevated text-text-muted hover:bg-bg-base hover:text-text-primary active:scale-95 transition-colors"
           >+</button>
+          {bpmLearn.isMapped && (
+            <span className="text-[8px] font-mono bg-accent-secondary text-bg-base px-1 rounded leading-tight">CC{bpmLearn.mappedCC}</span>
+          )}
         </div>
+        {bpmLearn.menu}
 
         {/* MIDI-Import */}
         <button
