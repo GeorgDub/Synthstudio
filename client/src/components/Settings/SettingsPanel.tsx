@@ -1270,6 +1270,28 @@ function OscSection() {
               />
               Macros
             </label>
+            <label className="flex items-center gap-1 text-[10px] text-text-muted cursor-pointer">
+              <input
+                type="checkbox"
+                checked={oscOut.syncVolumes}
+                onChange={e => setOscOutConfig({ syncVolumes: e.target.checked })}
+                disabled={!oscOut.enabled}
+                className="accent-accent-primary"
+                data-testid="osc-out-sync-volumes"
+              />
+              Volumes
+            </label>
+            <label className="flex items-center gap-1 text-[10px] text-text-muted cursor-pointer">
+              <input
+                type="checkbox"
+                checked={oscOut.syncPatternSwitch}
+                onChange={e => setOscOutConfig({ syncPatternSwitch: e.target.checked })}
+                disabled={!oscOut.enabled}
+                className="accent-accent-primary"
+                data-testid="osc-out-sync-pattern"
+              />
+              Pattern
+            </label>
             {oscOut.syncStep && (
               <span className="flex items-center gap-1 text-[10px] text-text-muted">
                 jeden

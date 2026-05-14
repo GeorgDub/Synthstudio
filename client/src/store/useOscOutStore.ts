@@ -23,6 +23,10 @@ export interface OscOutConfig {
   syncMutes: boolean;
   /** v2.28: sendet `/synth/macro/<n> <float>` bei jeder Macro-Wert-Änderung. */
   syncMacros: boolean;
+  /** v2.31: sendet `/synth/volume/<partId> <float>` (0..1) bei Volume-Änderung. */
+  syncVolumes: boolean;
+  /** v2.31: sendet `/synth/pattern <string>` bei Pattern-Switch. */
+  syncPatternSwitch: boolean;
 }
 
 const STORAGE_KEY = "ss-osc-out:v1";
@@ -36,6 +40,8 @@ const DEFAULT: OscOutConfig = {
   stepRate: 4,
   syncMutes: false,
   syncMacros: false,
+  syncVolumes: false,
+  syncPatternSwitch: false,
 };
 
 let _config: OscOutConfig = load();
@@ -57,6 +63,8 @@ function load(): OscOutConfig {
       stepRate:      typeof parsed.stepRate === "number" ? Math.max(1, Math.min(16, parsed.stepRate)) : DEFAULT.stepRate,
       syncMutes:     typeof parsed.syncMutes === "boolean" ? parsed.syncMutes : DEFAULT.syncMutes,
       syncMacros:    typeof parsed.syncMacros === "boolean" ? parsed.syncMacros : DEFAULT.syncMacros,
+      syncVolumes:   typeof parsed.syncVolumes === "boolean" ? parsed.syncVolumes : DEFAULT.syncVolumes,
+      syncPatternSwitch: typeof parsed.syncPatternSwitch === "boolean" ? parsed.syncPatternSwitch : DEFAULT.syncPatternSwitch,
     };
   } catch {
     return { ...DEFAULT };

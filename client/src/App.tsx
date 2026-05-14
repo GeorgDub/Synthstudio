@@ -1565,6 +1565,54 @@ export default function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [macroSnapshot, oscOutConfig.enabled, oscOutConfig.syncMacros]);
 
+  // v2.31: OSC-Out Phase 4 — Volume pro Part (0..1). Diff gegen prev-Snapshot.
+  const prevVolumesRef = useRef<Map<string, number>>(new Map());
+  useEffect(() => {
+    if (!electron.isElectron) return;
+    const cfg = oscOutConfigRef.current;
+    if (!cfg.enabled || !cfg.syncVolumes) return;
+    const pattern = dm.getActivePattern();
+    if (!pattern) return;
+    const next = new Map<string, number>();
+    for (const p of pattern.parts) {
+      const vol = p.volume ?? 1;
+      next.set(p.id, vol);
+      const prev = prevVolumesRef.current.get(p.id);
+      if (prev !== undefined && prev !== vol) {
+        void electron.sendOscMessage({
+          host: cfg.host,
+          port: cfg.port,
+          address: `/synth/volume/${encodeURIComponent(p.id)}`,
+          args: [vol],
+        });
+      }
+    }
+    prevVolumesRef.current = next;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    JSON.stringify(dm.getActivePattern()?.parts.map(p => ({ id: p.id, volume: p.volume })) ?? []),
+    oscOutConfig.enabled,
+    oscOutConfig.syncVolumes,
+  ]);
+
+  // v2.31: OSC-Out Phase 4 — Pattern-Switch.
+  const prevPatternSwitchRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!electron.isElectron) return;
+    const cfg = oscOutConfigRef.current;
+    if (!cfg.enabled || !cfg.syncPatternSwitch) return;
+    if (prevPatternSwitchRef.current !== null && prevPatternSwitchRef.current !== dm.activePatternId) {
+      void electron.sendOscMessage({
+        host: cfg.host,
+        port: cfg.port,
+        address: "/synth/pattern",
+        args: [dm.activePatternId],
+      });
+    }
+    prevPatternSwitchRef.current = dm.activePatternId;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dm.activePatternId, oscOutConfig.enabled, oscOutConfig.syncPatternSwitch]);
+
   // v1.92: midi:pattern (Pattern-Index → Pattern-Switch). Vor v1.92 dispatchte
   // useMidi.applyMapping zwar das Event, aber niemand hörte → das
   // `pattern`-MidiLearnTarget war ein No-Op. Listener konvertiert Index zu
