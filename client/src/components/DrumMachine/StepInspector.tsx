@@ -24,6 +24,8 @@ export interface StepInspectorProps {
   onSetParamLock: (lock: StepParamLock | undefined) => void;
   onSetLength: (length: number) => void;
   onSetChainNext: (chain: "up" | "down" | "none" | undefined) => void;
+  /** v2.24: Per-Step Slide-Toggle (TB-303-Style). */
+  onSetSlide?: (slide: boolean) => void;
   onToggle: () => void;
   onClose: () => void;
 }
@@ -31,7 +33,7 @@ export interface StepInspectorProps {
 export function StepInspector({
   partName, stepIndex, step,
   onSetVelocity, onSetPitch, onSetProbability, onSetCondition, onSetReverse,
-  onSetParamLock, onSetLength, onSetChainNext, onToggle, onClose,
+  onSetParamLock, onSetLength, onSetChainNext, onSetSlide, onToggle, onClose,
 }: StepInspectorProps) {
   const velocity    = step?.velocity    ?? 100;
   const pitch       = step?.pitch       ?? 0;
@@ -40,6 +42,7 @@ export function StepInspector({
   const active      = step?.active      ?? false;
   const noteLength  = step?.length      ?? 1;
   const reverse     = step?.reverse     ?? false;
+  const slide       = step?.slide       ?? false;
 
   const PROB_PRESETS = [100, 75, 50, 25];
   const { height: inspectorHeight, handleMouseDown: inspectorDragStart } =
@@ -74,8 +77,8 @@ export function StepInspector({
         </button>
       </div>
 
-      {/* Note Length */}
-      <div className="flex items-center gap-3 mb-3 pb-2 border-b border-border-color/50">
+      {/* Note Length + Slide (v2.24) */}
+      <div className="flex items-center gap-3 mb-3 pb-2 border-b border-border-color/50 flex-wrap">
         <span className="text-[10px] text-text-dim uppercase tracking-wide flex-shrink-0">Note Länge</span>
         <div className="flex gap-1">
           {NOTE_LENGTH_PRESETS.map(p => (
@@ -90,6 +93,25 @@ export function StepInspector({
           ))}
         </div>
         <span className="text-[10px] font-mono text-accent-secondary">{noteLength}× Step</span>
+
+        {onSetSlide && (
+          <>
+            <div className="h-4 w-px bg-border-color mx-1" aria-hidden="true" />
+            <button
+              type="button"
+              onClick={() => onSetSlide(!slide)}
+              className={`px-2 py-0.5 text-[10px] font-mono rounded border transition-colors ${
+                slide
+                  ? "border-accent-primary bg-accent-primary/20 text-accent-primary"
+                  : "border-border-color text-text-dim hover:text-text-primary"
+              }`}
+              title="Slide / Glide zum nächsten Step (TB-303-Style — Tonhöhe gleitet zum nächsten aktiven Step)"
+              data-testid="step-inspector-slide"
+            >
+              {slide ? "↝ SLIDE" : "↝ slide"}
+            </button>
+          </>
+        )}
       </div>
 
       <div className="grid grid-cols-4 gap-4">

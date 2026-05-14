@@ -108,6 +108,8 @@ export interface DrumMachineActions {
   setStepVelocity: (partId: string, stepIndex: number, velocity: number) => void;
   setStepPitch: (partId: string, stepIndex: number, pitch: number) => void;
   setStepProbability: (partId: string, stepIndex: number, probability: number) => void;
+  /** v2.24: Per-Step Slide/Glide-Toggle (TB-303-Style). Wirkt auf den NÄCHSTEN Step. */
+  setStepSlide: (partId: string, stepIndex: number, slide: boolean) => void;
   setStepCondition: (partId: string, stepIndex: number, condition: StepCondition) => void;
   setStepReverse: (partId: string, stepIndex: number, reverse: boolean) => void;
   setStepParamLock: (partId: string, stepIndex: number, lock: import("../audio/AudioEngine").StepParamLock | undefined) => void;
@@ -729,6 +731,18 @@ export function useDrumMachineStore(): DrumMachineState & DrumMachineActions {
     })), false);
   }, [updatePatterns]);
 
+  const setStepSlide = useCallback((partId: string, stepIndex: number, slide: boolean) => {
+    updatePatterns(ps => ps.map(p => ({
+      ...p,
+      parts: p.parts.map(pt => {
+        if (pt.id !== partId) return pt;
+        const steps = [...pt.steps];
+        steps[stepIndex] = { ...steps[stepIndex], slide };
+        return { ...pt, steps };
+      }),
+    })), false);
+  }, [updatePatterns]);
+
   const setStepCondition = useCallback((partId: string, stepIndex: number, condition: StepCondition) => {
     updatePatterns(ps => ps.map(p => ({
       ...p,
@@ -968,7 +982,7 @@ export function useDrumMachineStore(): DrumMachineState & DrumMachineActions {
     setPartMuted, setPartSoloed, setPartVolume, setPartPan,
     setPartStepResolution, setPartStepLength, setActivePart, movePart,
     setPartFx, setFxPanelPartId, setPartSourceType, setPartGranularParams, setPartStretchRatio, setPartMicroTiming, applyPatchToPart,
-    toggleStep, setPartSteps, setStepVelocity, setStepPitch, setStepProbability, setStepCondition, setStepReverse, setStepParamLock, setStepLength, setStepChainNext, quantizePartSteps, setPartEuclidean,
+    toggleStep, setPartSteps, setStepVelocity, setStepPitch, setStepProbability, setStepSlide, setStepCondition, setStepReverse, setStepParamLock, setStepLength, setStepChainNext, quantizePartSteps, setPartEuclidean,
     clearPattern, resetAll, fillPattern, randomizePattern, shiftPattern,
     setStepCount, setCurrentStep,
     setVelocityMode, setPitchMode,

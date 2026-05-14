@@ -1306,6 +1306,7 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
             onSetVelocity={v  => dm.setStepVelocity(insPart.id, selectedStep.stepIndex, v)}
             onSetPitch={p     => dm.setStepPitch(insPart.id, selectedStep.stepIndex, p)}
             onSetProbability={p => dm.setStepProbability(insPart.id, selectedStep.stepIndex, p)}
+            onSetSlide={s     => dm.setStepSlide(insPart.id, selectedStep.stepIndex, s)}
             onSetCondition={c   => dm.setStepCondition(insPart.id, selectedStep.stepIndex, c)}
             onSetReverse={r     => dm.setStepReverse(insPart.id, selectedStep.stepIndex, r)}
             onSetParamLock={lock => dm.setStepParamLock(insPart.id, selectedStep.stepIndex, lock)}
