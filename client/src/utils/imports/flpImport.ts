@@ -137,9 +137,25 @@ function emptyPart(name: string, stepCount: number): ImportedPart {
   return { name, steps };
 }
 
-function buildPartsForBar(barNotes: FlpNote[], ppq: number, partCount: number): ImportedPart[] {
+function buildPartsForBar(
+  barNotes: FlpNote[],
+  ppq: number,
+  partCount: number,
+  drumChannelNames: Map<number, string> = new Map(),
+): ImportedPart[] {
+  // Pre-compute partIdx → ChannelName (first-wins bei Kollision, deterministisch
+  // wegen Map-Iteration in Insertion-Order). Nur drum-like Channels werden
+  // berücksichtigt; melodische Channels gehen in melodicParts und sollen nicht
+  // den Drum-Part-Namen überschreiben (FLP-CHANNEL-NAMES v1.68).
+  const partNames = new Map<number, string>();
+  for (const [channel, name] of drumChannelNames) {
+    const partIdx = ((channel % partCount) + partCount) % partCount;
+    if (!partNames.has(partIdx)) partNames.set(partIdx, name);
+  }
   const parts: ImportedPart[] = [];
-  for (let i = 0; i < partCount; i++) parts.push(emptyPart(`Part ${i + 1}`, STEP_COUNT));
+  for (let i = 0; i < partCount; i++) {
+    parts.push(emptyPart(partNames.get(i) ?? `Part ${i + 1}`, STEP_COUNT));
+  }
   for (const note of barNotes) {
     const step = flpPositionToStep(note.position, ppq) % STEP_COUNT;
     const partIdx = note.channel % partCount;
@@ -175,13 +191,35 @@ function keyToNoteName(key: number): string {
 }
 
 /**
+ * Median einer Zahlenliste — bei gerader Länge gerundeter Mittelwert der
+ * zwei mittleren Werte, bei ungerader Länge der mittlere Wert. Leerer Input
+ * liefert C4 (60) als sicheren Default. Pure Funktion, public für Tests.
+ *
+ * Verwendung: Pitch-Median pro ImportedMelodicPart als baseNote, damit der
+ * Piano-Roll-View nach dem Import auf den tatsächlichen Notenbereich
+ * zentriert (FLP-MELODIC-POLISH v1.69).
+ */
+export function pitchMedian(pitches: number[]): number {
+  if (pitches.length === 0) return 60;
+  const sorted = [...pitches].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 1
+    ? sorted[mid]
+    : Math.round((sorted[mid - 1] + sorted[mid]) / 2);
+}
+
+/**
  * Konvertiert melodische FL-Channels in strukturierte `ImportedMelodicPart`s.
  * Phase 1 (v1.65): nur Extraktion — keinem Konsumenten zugewiesen.
  * Phase 2: MelodicPart-Routing im ProjectManager → echte Pattern-Erzeugung.
  *
  * Position-Umrechnung: PPQ-Ticks → Steps (1/16, Float erlaubt für off-grid).
  */
-export function buildMelodicParts(notes: FlpNote[], ppq: number): ImportedMelodicPart[] {
+export function buildMelodicParts(
+  notes: FlpNote[],
+  ppq: number,
+  channelNames: Map<number, string> = new Map(),
+): ImportedMelodicPart[] {
   const pitchesByChannel = detectChannelPitches(notes);
   const ticksPerStep = ppq / 4;
   if (ticksPerStep <= 0) return [];
@@ -200,8 +238,10 @@ export function buildMelodicParts(notes: FlpNote[], ppq: number): ImportedMelodi
       .sort((a, b) => a.startStep - b.startStep);
     parts.push({
       sourceChannel: channel,
-      name: `Channel ${channel}`,
+      name: channelNames.get(channel) ?? `Channel ${channel}`,
       notes: melodicNotes,
+      // FLP-MELODIC-POLISH v1.69: Piano-Roll-View zentriert auf diesen Pitch
+      baseNote: pitchMedian(melodicNotes.map(n => n.pitch)),
     });
   }
   return parts;
@@ -279,11 +319,29 @@ export async function importFlp(file: File): Promise<ImportResult> {
     const lo = keyToNoteName(sorted[0]);
     const hi = keyToNoteName(sorted[sorted.length - 1]);
     warnings.push(
-      `Channel ${channel}: melodischer Inhalt (${pitches.size} Tonhöhen, ${lo}..${hi}) — nur Step-Positionen importiert, Pitch-Info verworfen.`,
+      `Channel ${channel}: melodischer Inhalt (${pitches.size} Tonhöhen, ${lo}..${hi}) — als Melodic-Part in den Piano Roll geroutet (16-Step-Grid-quantisiert).`,
     );
   }
 
-  const baseName = file.name.replace(/\.flp$/i, "");
+  // FLP-CHANNEL-NAMES v1.68: Channel-Namen aus 0xC3-Events nutzen, getrennt nach
+  // drum-like vs melodisch, damit melodische Namen nicht die Drum-Part-Namen
+  // überschreiben (und umgekehrt).
+  const channelNames = parsed.channelNames;
+  const drumChannelNames = new Map<number, string>();
+  for (const [channel, name] of channelNames) {
+    const pitches = pitchesByChannel.get(channel);
+    if (!pitches || pitches.size < 2) {
+      drumChannelNames.set(channel, name);
+    }
+  }
+
+  // FLP-PATTERN-NAMES v1.70: bevorzugt den 0xC1 TEXT_PATTERN_NAME-Wert
+  // aus dem FLP, sonst Dateiname (ohne .flp-Endung) als Fallback.
+  const filenameStem = file.name.replace(/\.flp$/i, "");
+  const parsedPatternName = parsed.patternNames.get(firstPattern.index);
+  const baseName = parsedPatternName && parsedPatternName.length > 0
+    ? parsedPatternName
+    : filenameStem;
   const patternsList: ImportedPattern[] = [];
   let imported = 0;
   for (let bar = 0; bar < totalBars; bar++) {
@@ -293,7 +351,7 @@ export async function importFlp(file: File): Promise<ImportResult> {
       name: totalBars === 1 ? baseName : `${baseName} bar ${bar + 1}`,
       stepCount: STEP_COUNT,
       bpm,
-      parts: buildPartsForBar(barNotes, ppq, DEFAULT_PART_COUNT),
+      parts: buildPartsForBar(barNotes, ppq, DEFAULT_PART_COUNT, drumChannelNames),
     });
   }
 
@@ -302,8 +360,9 @@ export async function importFlp(file: File): Promise<ImportResult> {
     warnings.push(`${droppedNotes} Notes jenseits ${MAX_BARS} Bars wurden ignoriert (Multi-Bar-Limit).`);
   }
 
-  // Phase 1 (v1.65): melodische Parts extrahieren — noch kein Konsument.
-  const melodicParts = buildMelodicParts(firstPattern.notes, ppq);
+  // Phase 1 (v1.65): melodische Parts extrahieren. v1.68 nutzt jetzt
+  // Channel-Namen aus dem FLP statt generischer "Channel N"-Labels.
+  const melodicParts = buildMelodicParts(firstPattern.notes, ppq, channelNames);
 
   return {
     sourceFormat: "flp",

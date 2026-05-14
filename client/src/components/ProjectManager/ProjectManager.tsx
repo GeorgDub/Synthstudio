@@ -12,7 +12,7 @@
 import React, { useCallback, useRef, useState } from "react";
 
 import { useElectron } from "../../../../electron/useElectron";
-import { importProjectFile, importResultToPatterns, ImportError } from "@/utils/imports";
+import { importProjectFile, importResultToPatterns, ImportError, type ImportedMelodicPart } from "@/utils/imports";
 
 // ─── Typen ────────────────────────────────────────────────────────────────────
 
@@ -23,8 +23,17 @@ export interface ProjectManagerProps {
   onLoad: () => void;
   onNew: () => void;
   onExport: () => void;
-  /** Optional: nach erfolgreichem Import von FL Studio / Ableton / Electribe */
-  onImportPatterns?: (patterns: ReturnType<typeof importResultToPatterns>, sourceFormat: string) => void;
+  /**
+   * Optional: nach erfolgreichem Import von FL Studio / Ableton / Electribe.
+   * `melodicParts` ab v1.66 mitgegeben für FLP-MELODIC-ROUTE Phase 2 — der
+   * Konsument routet sie via `routeMelodicPartsToPatterns` in den
+   * `useMelodicPartStore`.
+   */
+  onImportPatterns?: (
+    patterns: ReturnType<typeof importResultToPatterns>,
+    sourceFormat: string,
+    melodicParts?: ImportedMelodicPart[],
+  ) => void;
 }
 
 // ─── Komponente ───────────────────────────────────────────────────────────────
@@ -55,7 +64,7 @@ export function ProjectManager({
         ? `\n\nHinweise:\n• ${result.warnings.join("\n• ")}`
         : "";
       alert(`Import erfolgreich: ${result.fileName}\nFormat: ${result.sourceFormat.toUpperCase()}\nPatterns: ${patterns.length}\nBPM: ${result.bpm ?? "—"}${warnings}`);
-      onImportPatterns?.(patterns, result.sourceFormat);
+      onImportPatterns?.(patterns, result.sourceFormat, result.melodicParts);
     } catch (err) {
       const msg = err instanceof ImportError
         ? `Import-Fehler (${err.format}): ${err.message}`

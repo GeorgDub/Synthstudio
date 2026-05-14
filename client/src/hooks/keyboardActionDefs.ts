@@ -56,6 +56,7 @@ export const ACTIONS: ActionDef[] = [
   { id: "pattern-clear",    label: "Pattern leeren",     category: "Pattern",   defaultKey: "Ctrl+Del",   defaultCombo: { code: "Delete", ctrl: true } },
   { id: "pattern-fill",     label: "Pattern füllen",     category: "Pattern",   defaultKey: "Ctrl+F",     defaultCombo: { code: "KeyF", ctrl: true } },
   { id: "pattern-randomize",label: "Pattern randomisieren",category:"Pattern",  defaultKey: "Ctrl+Shift+R",defaultCombo:{ code:"KeyR",ctrl:true,shift:true }},
+  { id: "pattern-copy-samples-from-prev", label: "Sampler vom vorherigen Pattern übernehmen", category: "Pattern", defaultKey: "Ctrl+Shift+S", defaultCombo: { code: "KeyS", ctrl: true, shift: true } },
 
   // ── Part & Modus ──────────────────────────────────────────────────────────
   { id: "part-up",          label: "Part hoch",          category: "Part",      defaultKey: "↑",          defaultCombo: { code: "ArrowUp" } },

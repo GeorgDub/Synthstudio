@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "1.65.0",
+    version: "2.11.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -433,6 +433,38 @@ const INDEX = {
         "client/src/App.tsx"
       ]
     },
+    "BUG-025": {
+      title:   "PianoRoll-Quantize-Crash bei korrupter scaleId in localStorage",
+      severity: "high",
+      details:  "User-Report ('bei quantize crasht die seite'). Root-Cause: `useMelodicPartStore._migratePattern` checkte nur `typeof p.scaleId === 'string'` — eine korrupte/veraltete scaleId (z.B. nach Schema-Rename oder Storage-Drift) wurde unverändert weitergereicht. PianoRollModal ruft am Component-Top unconditional `scalePitchClasses(scaleRoot, scaleId)` → `getScale(scaleId)` → wirft `Error: Unknown scale id: <junk>` → React unmountet die Komponente, der User sieht eine leere Seite. Fix (v1.71): neue `KNOWN_SCALE_IDS: Set<ScaleId>` und `isKnownScaleId(s): s is ScaleId` aus utils/scales.ts. `_migratePattern` validiert scaleId gegen die Set, fallback `chromatic` bei unbekanntem Wert. `setScale` validiert ebenfalls zur Laufzeit, sodass Caller-Type-Casts keine korrupte ID einsmuggeln können. 6 neue Tests (3 isKnownScaleId + 3 setScale-validation).",
+      fixed:    true,
+      foundBy:  "user (post-v1.70.0)",
+      fixedBy:  "claude",
+      fixedIn:  "v1.71.0",
+      relatedFiles: [
+        "client/src/utils/scales.ts",
+        "client/src/store/useMelodicPartStore.ts",
+        "tests/scales.test.ts",
+        "tests/melodic-part.test.ts"
+      ]
+    },
+    "BUG-024": {
+      title:   "KI Script-Generator (+ Project-Analysis + Pattern-Generator) geht nicht trotz API-Key im Electron-Build",
+      severity: "high",
+      details:  "User-Report: 'Die KI Script-Erstellung geht nicht trotz ChatGPT API Key'. Root-Cause: `electron/csp.ts` setzt `connect-src 'self' ws: wss:` als Production-CSP-Header. Alle drei AI-Features (`aiScriptGenerator.ts`, `aiProjectAnalysis.ts`, `usePatternGeneratorStore.ts`) rufen direkt aus dem Renderer `fetch('https://api.openai.com/...')` bzw `fetch('https://api.anthropic.com/...')` auf. Chromium blockt diese Calls mit 'Refused to connect ... violates Content Security Policy'. Im Web-Build (Vite-Dev/Browser) wird keine CSP via meta-tag injiziert — daher fällt das Problem nur in Electron auf. Anthropics 'anthropic-dangerous-direct-browser-access' Header hilft nicht, weil er nur die SERVER-CORS-Antwort beeinflusst, nicht die BROWSER-CSP-Enforcement. Fix (v1.67.0): `https://api.openai.com` + `https://api.anthropic.com` in connect-src für Prod- UND Dev-CSP aufnehmen. Snapshot + neuer Positiv-Test in tests/electron/csp-header.test.ts.",
+      fixed:    true,
+      foundBy:  "user (post-v1.66.0)",
+      fixedBy:  "claude",
+      fixedIn:  "v1.67.0",
+      relatedFiles: [
+        "electron/csp.ts",
+        "tests/electron/csp-header.test.ts",
+        "tests/electron/__snapshots__/csp-header.test.ts.snap",
+        "client/src/utils/aiScriptGenerator.ts",
+        "client/src/utils/aiProjectAnalysis.ts",
+        "client/src/store/usePatternGeneratorStore.ts"
+      ]
+    },
     "BUG-023": {
       title:   "Anpinnen verschwindet ohne wiederzukehren — Folgebug von BUG-021 destroy()",
       severity: "critical",
@@ -459,6 +491,874 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-15T01:00:00.000Z",
+      done: [
+        "HELP-OVERLAY-EXPANSION (v2.11.0): User-Wishlist 'Handbuch script-syntax + Plugins'. Bisherige ShortcutsHelp (zwei Tabs Übersicht + Belegung) um zwei weitere Tabs erweitert: (1) '🧩 Script-API' — komplette ss.*-Referenz mit Sektionen Transport (bpm/play/stop/wait), Macros (getMacro/setMacro), Steps (setStep), Dispatch (20+ Actions als Chip-Wolke), Utility (log/random/now), plus 2 Code-Beispiele (BPM-Rampe + Drop-Reset). Sandbox-Constraints klar dokumentiert (Web-Worker, max 5s, kein window/document/fetch). (2) '🎹 MIDI-Guide' — Setup in 4 Schritten (Hardware → Template → Right-Click-Learn → Auto-Learn), bindbare-Liste (alle 120+ MIDI-Slots: Transport, Mixer, FX-Params, Macros, Pattern, Steps, Chains, Scripts), bidirektionale Features (Clock-In/Out, Note-Out, Test-Buttons, Panic), Tipps (Monitor, Activity-Indicator, Channel-Filter, Bulk-Bind, JSON-Export). Header von 'Tastatur' → 'Hilfe & Referenz' umbenannt, max-w-2xl → max-w-3xl. Footer-Hinweise pro Tab angepasst. 1853 Tests grün, pnpm check 0 Fehler. Erfüllt das neue_todos.md-Item 'Syntax-Beschreibung für Scripts und Plugins ins Handbuch'."
+      ],
+      next: [
+        "Per-Part MIDI-Out-Channel-Routing.",
+        "MIDI-Note-Off-Scheduling bei externen Synths."
+      ],
+      changed: [
+        "package.json",
+        "client/src/components/ShortcutsHelp/ShortcutsHelp.tsx",
+        "agents/INDEX.js"
+      ]
+    },
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-15T00:30:00.000Z",
+      done: [
+        "HIDDEN-NO-OP-FIXES (v2.10.0): Audit der kb:action-Handlers nach v2.9 BUG (toggle-note-repeat war NO-OP) zeigte 3 weitere Hidden-NO-OPs. Alle gefixt: (1) `toggle-morph` kb:action wurde von MidiLearnTarget.toggleMorph dispatched, hatte aber keinen Handler in App.tsx → MIDI-Bind toggleMorph war NO-OP. Handler ergänzt: ruft setActive() aus useMorphStore + Toast 'Pattern-Morph: AN/AUS'. (2) `midi:commitLiveEdit` CustomEvent wurde dispatched, kein Listener → commitLiveEdit per MIDI war NO-OP. Listener ergänzt: ruft `dmRef.current.commitLivePatternEdit()` + Toast 'Live-Edit committed'. (3) `midi:scene` CustomEvent dispatched mit sceneIndex, kein Listener → Scene-Launch per MIDI war NO-OP. Listener ergänzt: liest `getSceneState().scenes[sceneIndex]`, setzt setActiveScene + dm.setActivePattern(scene.patternId) + Toast 'Scene N: <Name>'. Neuer Pure-Getter `getSceneState()` in useSceneStore (Event-Handler-Pattern, kein React-Render-Lock-In). `toggle-morph` zur Sandbox-Allowlist + AI-Generator-Allowlist hinzugefügt — Scripts können jetzt Morph-Toggle steuern. 1853 Tests grün, pnpm check 0 Fehler. Insgesamt 7 Hidden-NO-OPs in dieser Session gefixt (v1.71 BUG-025 quantize, v1.76 volume/pan/solo, v1.92 pattern-index, v1.99 step-target, v2.9 toggle-note-repeat, v2.10 toggle-morph+commitLiveEdit+scene)."
+      ],
+      next: [
+        "Custom-Chains Beat-Repeat-Trigger als Macro-System.",
+        "AI-Prompt-Helper für Scripts via Chat-UI."
+      ],
+      changed: [
+        "package.json",
+        "client/src/App.tsx",
+        "client/src/store/useSceneStore.ts",
+        "client/src/sandbox/useScriptSandbox.ts",
+        "client/src/utils/aiScriptGenerator.ts",
+        "tests/features/built-in-scripts.test.ts",
+        "agents/INDEX.js"
+      ]
+    },
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-15T00:00:00.000Z",
+      done: [
+        "BEAT-REPEAT + NOTE-REPEAT-FIX (v2.9.0): Hidden-Bug-Fix + neue Performance-Scripts. (1) Hidden-Bug: 'toggle-note-repeat' kb:action wurde von useMidi via MidiLearnTarget toggleNoteRepeat dispatched, hatte aber KEINEN Handler in App.tsx — Note-Repeat-Toggle per MIDI war NO-OP. Handler ergänzt: ruft `toggleNoteRepeat()` aus useNoteRepeatStore + Toast 'Note Repeat: AN/AUS'. (2) `toggle-note-repeat` zur Sandbox-Allowlist + AI-Generator-Allowlist hinzugefügt damit Scripts dispatchen können. (3) Zwei neue Built-In Scripts in Category 'Performance': 'Beat-Repeat-Burst' (2s Note-Repeat → AUS, klassischer Hardtekk-Move) und 'Quick Roll' (500ms, für Drum-Fills). Beide bindbar auf Pads via Run-Script-Target → momentary Stutter-Performance. Built-In-Allowlist-Test ergänzt. 1853 Tests grün, pnpm check 0 Fehler."
+      ],
+      next: [
+        "Weitere Hidden-Bugs in kb:action-Handlern auditieren (toggleMorph, commitLiveEdit, openSettings, etc.).",
+        "MIDI-Send-Pad-Trigger an externe Synths während Synthstudio spielt."
+      ],
+      changed: [
+        "package.json",
+        "client/src/App.tsx",
+        "client/src/sandbox/useScriptSandbox.ts",
+        "client/src/utils/aiScriptGenerator.ts",
+        "client/src/utils/builtInScripts.ts",
+        "tests/features/built-in-scripts.test.ts",
+        "agents/INDEX.js"
+      ]
+    },
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-14T23:30:00.000Z",
+      done: [
+        "PATTERN-DRAG-REORDER (v2.8.0): User kann Patterns im Dropdown-Menü via Drag & Drop neu sortieren. Neue Store-Action `reorderPatterns(fromIndex, toIndex)` in useDrumMachineStore — pure splice-based reorder, no-op bei out-of-range oder identischen Indices, Pattern-IDs bleiben stabil. PatternRow bekommt: (1) Drag-Handle ☰ links neben dem Pattern-Button (sichtbar bei hover, draggable=true, setData mit Custom-MIME 'application/x-synthstudio-pattern-row' + fromIndex), (2) onDragOver/Leave/Drop-Handler auf dem Wrapper-Div: berechnet anhand der Y-Position des Cursors ob 'above' oder 'below' der Row gedroppt wird, zeigt blauen 0.5px-Strich als Drop-Indikator, calculiert correcten Target-Index (adjustier wenn fromIndex < targetIdx wegen splice-Index-Shift). Toast 'Pattern „X\" verschoben' (info, 2s). 9 neue Vitest-Cases für reorder-Reducer (forward / backward / same-index / out-of-range from / out-of-range to / IDs stable / empty / single). 1853 Tests grün, pnpm check 0 Fehler."
+      ],
+      next: [
+        "v2.9 Beat-Repeat-Built-In-Script.",
+        "Weitere Pattern-UX-Features."
+      ],
+      changed: [
+        "package.json",
+        "client/src/store/useDrumMachineStore.ts",
+        "client/src/components/DrumMachine/DrumMachine.tsx",
+        "client/src/components/CollabSplitView/CollabSplitView.tsx",
+        "tests/features/reorder-patterns.test.ts",
+        "agents/INDEX.js"
+      ]
+    },
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-14T23:00:00.000Z",
+      done: [
+        "MIDI-DEVICE-TOAST (v2.7.0): MIDI-Geräte-Connect/Disconnect-Toasts. refreshDevices() in useMidi diffed jetzt die Geräteliste gegen die vorige (per Map<id, name>): neue Geräte → 'MIDI verbunden: <Name> (<Hersteller>)' (success für Inputs, info für Outputs), fehlende Geräte → 'MIDI getrennt: <Name>' (warning). Initial-Skip via devicesInitializedRef damit der User beim Aktivieren nicht für jedes bereits angeschlossene Gerät einen Toast bekommt — erster Refresh nach enable() ist still, ab da werden Diffs gemeldet. enable() zeigt 'MIDI aktiviert' (success) bei Erfolg bzw. error-Toasts bei Web-MIDI-API-fehlt oder Permission-denied. disable() zeigt 'MIDI deaktiviert' + reset der Tracking-Refs. Direkter toast()-Import statt CustomEvent — Toast-Store ist Modul-Singleton, kein React-Overhead. 1844 Tests grün, pnpm check 0 Fehler."
+      ],
+      next: [
+        "Beat-Repeat-Macro.",
+        "Pattern-Drag-Drop-Reorder."
+      ],
+      changed: [
+        "package.json",
+        "client/src/hooks/useMidi.ts",
+        "agents/INDEX.js"
+      ]
+    },
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-14T22:30:00.000Z",
+      done: [
+        "TOAST-EXPANSION (v2.6.0): Toast-Feedback auf alle wichtigen Operations ausgeweitet — User bekommt für jede destruktive/persistierende Action sofortiges visuelles Feedback. (1) App.tsx Project-Save: Toast 'Gespeichert: <Name>' bei Electron-Save (nur wenn nicht canceled) und 'Download gestartet: <Name>.synth' im Browser-Modus. (2) App.tsx Project-Load: 'Projekt geladen: <Name>' success bzw. 'Projekt konnte nicht geladen werden' error (5s). (3) App.tsx pattern-duplicate: 'Pattern „X\" dupliziert (N → N+1)' (statt nur Ctrl+D-Action). (4) MidiSettings clearAllMappings: nun mit confirm()-Dialog + Toast 'N Mapping(s) gelöscht' (warning). (5) Layout-Export: 'Layout exportiert: <File> (N CC + N Notes)' + Error-Toast bei Fehler. (6) User-Template save: 'Template gespeichert: „X\"'. (7) User-Template load: 'Template „X\" geladen (N CC + N Notes)'. (8) User-Template delete: 'Template „X\" gelöscht' (warning). (9) Hardware-Template load: 'Hardware-Template „X\" geladen (N CC + N Notes)'. (10) Bulk-Bind: 'N Mappings gesetzt: <Preset> ab CC X'. (11) ScriptRunner Built-In-Load: 'Built-In Script geladen: „X\"' + Error-Variante bei Failure. 1844 Tests grün, pnpm check 0 Fehler."
+      ],
+      next: [
+        "Beat-Repeat-Macro.",
+        "Pattern-Drag-Drop-Reorder.",
+        "Toast bei MIDI-Device-Connect/Disconnect."
+      ],
+      changed: [
+        "package.json",
+        "client/src/App.tsx",
+        "client/src/components/MidiSettings/MidiSettings.tsx",
+        "client/src/components/Tools/ScriptRunner.tsx",
+        "agents/INDEX.js"
+      ]
+    },
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-14T22:00:00.000Z",
+      done: [
+        "TOAST + PATTERN-PICKER (v2.5.0): Zwei Verbesserungen für die v2.4 Sample-Carryover-Funktion. (1) Toast-System: neuer Modul-Singleton `useToastStore` mit `toast(message, {kind, duration})` API, Modus 'success'/'info'/'warning'/'error', Auto-Dismiss-Timer, Max 5 Toasts (älteste droppen). ToastContainer-Komponente rendert oben rechts mit Backdrop-Blur + Icon + Close-Button. Mount in App.tsx unter MidiProvider. App.tsx + DrumMachine zeigen jetzt Toast bei jeder Sample-Übernahme ('Sampler aus „<Name>\" in „<Target>\" übernommen' success) bzw. Warnung wenn kein vorheriges Pattern existiert. (2) Pattern-Picker-Submenu: das einfache 📥-Quick-Button hat jetzt ein ▾-Begleiter dropdown das ALLE anderen Patterns als Source-Optionen listet — User kann nicht nur 'vorheriges' sondern jedes Pattern als Source wählen. Auto-Close on mouseLeave. 11 neue Vitest-Cases für useToastStore (default-values, custom kind/duration, auto-dismiss-timer, sticky duration=0, dismiss-by-id, clear-all, max-5-cap, unique-ids, id-rückgabe). 1844 Tests grün, pnpm check 0 Fehler."
+      ],
+      next: [
+        "Beat-Repeat-Macro.",
+        "Pattern-Drag-Drop-Reorder.",
+        "Toast für andere Operations (Project save/load, Mapping cleared, etc.)."
+      ],
+      changed: [
+        "package.json",
+        "client/src/store/useToastStore.ts",
+        "client/src/components/UI/ToastContainer.tsx",
+        "client/src/App.tsx",
+        "client/src/components/DrumMachine/DrumMachine.tsx",
+        "tests/features/toast-store.test.ts",
+        "agents/INDEX.js"
+      ]
+    },
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-14T21:30:00.000Z",
+      done: [
+        "PATTERN-SAMPLE-CARRYOVER (v2.4.0): User-Request — 'Sampler Übernahme Funktion bei pattern, das man die komplett aus einem pattern ins nächste kopieren kann per Script oder Tastenkombination damit man nicht alle einzeln machen muss'. Neue Action `dm.copySamplesFromPattern(sourceId, targetId)` in useDrumMachineStore: kopiert Sample-Belegung (sampleUrl/sampleName) + sourceType (sample/wavetable/fm/granular) + synthParams + granularParams + stretchRatio + microTiming + Volume + Pan + komplette FX-Chain pro Part-Index. Steps + Mute/Solo + ID bleiben beim Target. Vollständig zugänglich: (1) **Tastenkombination Ctrl+Shift+S** → 'Sampler vom vorherigen Pattern übernehmen' (neuer keyboardActionDef + App.tsx case 'pattern-copy-samples-from-prev'). (2) **ss.dispatch('pattern-copy-samples-from-prev')** in der Sandbox-Allowlist + AI-Generator-Allowlist. (3) **Built-In Script** 'Sampler vom vorherigen Pattern übernehmen' + 'Variation mit gleichem Sound (duplizieren+clear)'. (4) **UI-Button '📥' im Pattern-Menü** pro Pattern-Zeile (sichtbar bei hover, nur wenn vorheriges Pattern existiert). 10 neue Vitest-Cases (Sample-Copy, Steps-bleiben, ID-Erhalt, FX-Copy, Volume/Pan-Copy, Mute/Solo-NICHT-übernommen, identische IDs no-op, unbekannte Source no-op, Target-mehr-Parts, Synth/Granular/Stretch). 1831 Tests grün, pnpm check 0 Fehler."
+      ],
+      next: [
+        "Beat-Repeat-Macro.",
+        "Pattern-Drag-Drop-Reorder."
+      ],
+      changed: [
+        "package.json",
+        "client/src/store/useDrumMachineStore.ts",
+        "client/src/hooks/keyboardActionDefs.ts",
+        "client/src/sandbox/useScriptSandbox.ts",
+        "client/src/utils/aiScriptGenerator.ts",
+        "client/src/utils/builtInScripts.ts",
+        "client/src/components/DrumMachine/DrumMachine.tsx",
+        "client/src/components/CollabSplitView/CollabSplitView.tsx",
+        "client/src/App.tsx",
+        "tests/features/copy-samples-from-pattern.test.ts",
+        "tests/features/built-in-scripts.test.ts",
+        "agents/INDEX.js"
+      ]
+    },
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-14T21:00:00.000Z",
+      done: [
+        "BULK-BIND-WIZARD (v2.3.0): Komplement zu Auto-Learn — statt N×Controller-Bewegen kann User jetzt N Mappings auf einmal anlegen ohne Hardware-Interaktion. Neue Action `addMappings(mappings)` in useMidi (Bulk-Add, Duplikate werden überschrieben). UI in MidiSettings CC-Tab: aufklappbares 'Bulk-Bind (v2.3)' mit Preset-Dropdown (Channel Volumes / Mutes / Pans / 8 Macros / Reverb-Sends / Delay-Sends), Start-CC-Input (0-127), Channel-Selector (0=alle, 1-16). Klick auf 'Bind' generiert die Mapping-Liste (konsekutive CCs ab Start) und ruft addMappings. Live-Preview-Text 'Wird N Mapping(s) anlegen: CC X bis CC Y'. Use-Case: User weiß seine Electribe sendet auf CC 16-23 für 8 Volumes — Bulk-Bind in einem Klick statt 8× Auto-Learn-Slider-Bewegen. 1821 Tests grün, pnpm check 0 Fehler."
+      ],
+      next: [
+        "Beat-Repeat-Macro.",
+        "Pattern-Drag-Drop-Reorder.",
+        "Cloud-Sync."
+      ],
+      changed: [
+        "package.json",
+        "client/src/hooks/useMidi.ts",
+        "client/src/components/MidiSettings/MidiSettings.tsx",
+        "agents/INDEX.js"
+      ]
+    },
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-14T20:30:00.000Z",
+      done: [
+        "MIDI-TAB-BADGES (v2.2.0): MidiSettings-Tabs zeigen jetzt Counts/Status als Badge im Label. Geräte→Anzahl-Devices, Vorlagen→Anzahl-User-Templates, CC-Mapping→Anzahl-Mappings, Note-Mapping→Anzahl-Notes, Monitor→Event-Count, Clock-Sync→'in'/'out'-Indikator. Quick-Discoverability: User sieht direkt was im jeweiligen Tab konfiguriert ist ohne ihn zu öffnen. 1821 Tests grün, pnpm check 0 Fehler."
+      ],
+      next: [
+        "Beat-Repeat-Macro.",
+        "Pattern-Drag-Drop-Reorder.",
+        "Cloud-Sync (große Aufgabe)."
+      ],
+      changed: [
+        "package.json",
+        "client/src/components/MidiSettings/MidiSettings.tsx",
+        "agents/INDEX.js"
+      ]
+    },
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-14T20:00:00.000Z",
+      done: [
+        "SEND-TARGET + RCL (v2.1.0): Neue MidiLearnTarget-Variante `{type:'send', partId, partName?, bus:'reverb'|'delay'}`. Bindet Reverb-Send oder Delay-Send-Level eines Channels an einen MIDI-CC. applyMapping dispatcht 'midi:partSend' mit `{partId, bus, value 0..1}`, App.tsx listener ruft mixer.setChannelSend. UI in MixerView Channel-Strip: Send-Slider (Rev + Dly) bekommen onContextMenu + Mapped-Badge `CC<n>` im Label oben. labelForTarget rendert 'Reverb Send: <PartName>' / 'Delay Send: <PartName>'. targetsMatch unterscheidet anhand partId + bus. VALID_TARGET_TYPES um 'send' erweitert. 3 neue Vitest-Cases für send-targetsMatch (same/different-bus/different-partId). 1821 Tests grün, pnpm check 0 Fehler."
+      ],
+      next: [
+        "Beat-Repeat-Macro.",
+        "Pattern-Drag-Drop-Reorder."
+      ],
+      changed: [
+        "package.json",
+        "client/src/hooks/useMidi.ts",
+        "client/src/App.tsx",
+        "client/src/components/Mixer/MixerView.tsx",
+        "client/src/utils/midiLayoutImport.ts",
+        "tests/features/midi-target-match.test.ts",
+        "agents/INDEX.js"
+      ]
+    },
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-14T19:30:00.000Z",
+      done: [
+        "MIX-ASSISTANT-EXPOSURE (v2.0.0): Milestone-Release! Bisher existierte MixAssistantPanel als komplette Komponente in client/src/components/DrumMachine/MixAssistantPanel.tsx + Backend in utils/mixAnalysis.ts + utils/aiProjectAnalysis.ts — aber NIRGENDS gerendert. Toter Code. Mit v2.0 jetzt aktiv: '🧠 Mix'-Button in der DrumMachine-Toolbar neben 'Macros' und 'Poly'. Klick öffnet ResizableDrumPanel mit MixAssistantPanel. Auto-Build von MixAnalysisInput aus aktuellem Pattern: BPM, alle Parts mit Volume (0-127), Pan (-100..+100), activeSteps/totalSteps, filterCutoff (wenn Filter aktiv), trackType (aus Name). onApply parsed die rec.targetProperty: 'volume' → dm.setPartVolume, 'pan' → dm.setPartPan, 'filterCutoff' → dm.setPartFx({filterEnabled:true, filterFreq}). Erfüllt User-Wishlist-Item 'eine Ki analyse des Projekts einbauen die verbesserungsvorschläge oder so anbietet'. 1818 Tests grün, pnpm check 0 Fehler. Major-Bump auf 2.0.0 markiert das Ende einer langen Feature-Sprint-Serie."
+      ],
+      next: [
+        "Backlog: Beat-Repeat-Macro, Pattern-Drag-Drop, Cloud-Sync, Mobile-Build, Updater.",
+        "Eventuell: weitere MidiLearnTarget-Properties im Mix-Assistant onApply (z.B. reverbSend, delayMix, eqLow)."
+      ],
+      changed: [
+        "package.json",
+        "client/src/components/DrumMachine/DrumMachine.tsx",
+        "agents/INDEX.js"
+      ]
+    },
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-14T19:00:00.000Z",
+      done: [
+        "RCL-STEP-BUTTONS (v1.99.0): Right-Click MIDI-Learn jetzt auch auf einzelne Steps im Pattern-Grid. Damit ist Live-Finger-Drumming auf physischen Pads möglich: jeder Step im Grid kann individuell auf ein Pad gemappt werden, Pad-Druck togglet diesen Step im aktiven Pattern. Implementation: useMidiContext direkt im ChannelStrip statt useMidiLearn (vermeidet Hook-Order-Probleme bei dynamischen Step-Counts 16/32). onContextMenu auf jedem Step-Button → midi.startLearn({type:'step', partId, stepIndex}). Visual-Indikator: 1×1px Dot in der rechten oberen Ecke des Steps wenn gebunden. Tooltip zeigt CC# oder 'Rechtsklick: MIDI-Learn'. Hidden-Bug-Fix nebenbei: applyMapping für 'step'-Target war zuvor `break;` (NO-OP, mit Kommentar 'via Note-Mapping'). Jetzt dispatcht es 'midi:toggleStep'-CustomEvent, App.tsx listener ruft dm.toggleStep auf. 1818 Tests grün, pnpm check 0 Fehler."
+      ],
+      next: [
+        "Beat-Repeat-Macro-Target.",
+        "AI-Projekt-Analyse UI-Exposure.",
+        "Pattern-Tag-System."
+      ],
+      changed: [
+        "package.json",
+        "client/src/hooks/useMidi.ts",
+        "client/src/App.tsx",
+        "client/src/components/DrumMachine/ChannelStrip.tsx",
+        "agents/INDEX.js"
+      ]
+    },
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-14T18:30:00.000Z",
+      done: [
+        "MIDI-PANIC (v1.98.0): Klassisches DAW-Feature — Panic-Button sendet 'All Notes Off' (CC 123) + 'All Sound Off' (CC 120) + Sustain-Reset (CC 64) + Note-Off für alle 128 Notes auf allen 16 Channels ans aktive Output-Device. Defense-in-Depth gegen hängende Noten bei externen Synths (häufiges Problem bei MIDI-Setup mit Drum-Machines/Synths). Neue Action `sendPanic()` im useMidi-Hook. UI: '🚨 Panic'-Button im SettingsPanel → KI & MIDI → MIDI Out neben den Test-Buttons. 1818 Tests grün, pnpm check 0 Fehler."
+      ],
+      next: [
+        "v1.99 Velocity-Color-Coding im Step-Grid.",
+        "Beat-Repeat-Macro-Target.",
+        "AI-Projekt-Analyse UI exposure."
+      ],
+      changed: [
+        "package.json",
+        "client/src/hooks/useMidi.ts",
+        "client/src/components/Settings/SettingsPanel.tsx",
+        "agents/INDEX.js"
+      ]
+    },
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-14T18:00:00.000Z",
+      done: [
+        "MIDI-CLOCK-OUT (v1.97.0): Synthstudio sendet jetzt MIDI Clock (24 PPQ Pulses + Start/Stop) ans aktive Output-Device, sodass externe Synths/Drum-Machines (Volca, TR-8, Electribe, Digitakt) zu Synthstudio's BPM synct werden können. Bisher konnte Synthstudio nur EMPFANGEN. Neue State `clockOutEnabled: boolean` + `clockOutBpm: number` in MidiState; Actions `setClockOutEnabled` + `setClockOutBpm`. setInterval-basierter Ticker im useMidi-Effekt: bei aktivem clockOut + verbundenem Output sendet 60_000/(bpm*24)ms-Intervall `[0xF8]`. setClockOutEnabled(true) sendet zusätzlich `[0xFA]` (Start), setClockOutEnabled(false) sendet `[0xFC]` (Stop) damit externes Gerät die Sync auch wirklich startet/stoppt. App.tsx synct clockOutBpm via useEffect mit project.bpm — BPM-Änderungen propagieren automatisch. UI im SettingsPanel → KI & MIDI → MIDI Out: neuer Toggle 'MIDI-Clock senden (XXX BPM, 24 PPQ)' (sichtbar wenn Output-Device aktiv). 1818 Tests grün, pnpm check 0 Fehler. Damit ist die DAW-Sync-Pipeline endlich bidirektional."
+      ],
+      next: [
+        "Backlog aus neue_todos.md."
+      ],
+      changed: [
+        "package.json",
+        "client/src/hooks/useMidi.ts",
+        "client/src/App.tsx",
+        "client/src/components/Settings/SettingsPanel.tsx",
+        "agents/INDEX.js"
+      ]
+    },
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-14T17:30:00.000Z",
+      done: [
+        "USER-MIDI-TEMPLATES (v1.96.0): User kann seine aktuellen MIDI-Mappings als benannten Preset persistieren — kein JSON-Datei-Hin-und-her mehr nötig. Neuer Store `useUserMidiTemplatesStore` (localStorage 'synthstudio:user-midi-templates:v1', max 50 Einträge, Modul-Singleton + React-Hook). API: getUserMidiTemplates, getUserMidiTemplate(id), saveUserMidiTemplate({id?, name, deviceName?, cc, notes}) — updated wenn ID übergeben, sonst neu — deleteUserMidiTemplate, renameUserMidiTemplate, __resetUserMidiTemplatesForTests. UI in MidiSettings Templates-Tab: neuer 'Aktuelles Setup speichern'-Block oberhalb der eingebauten Templates (sichtbar wenn mind. ein Mapping existiert), Input für Layout-Name (Default aus defaultExportNameFromDevice), Save-Button. Darunter Liste 'Meine Templates' mit Laden/Umbenennen/Löschen pro Eintrag — Datums-Hinweis + Device-Name + CC/Note-Count pro Template. 12 neue Vitest-Cases (initial-empty/save/persistiert deviceName/find/rename/delete/sort-by-updatedAt/update-by-id/empty-name-fallback). 1818 Tests grün, pnpm check 0 Fehler."
+      ],
+      next: [
+        "Beat-Repeat-Macro-Target.",
+        "Drag-Drop Pattern-Duplicate.",
+        "AI-Projekt-Analyse aus neue_todos.md."
+      ],
+      changed: [
+        "package.json",
+        "client/src/store/useUserMidiTemplatesStore.ts",
+        "client/src/components/MidiSettings/MidiSettings.tsx",
+        "tests/features/user-midi-templates.test.ts",
+        "agents/INDEX.js"
+      ]
+    },
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-14T17:00:00.000Z",
+      done: [
+        "MONITOR-BINDING-HINT (v1.95.0): Der Live-MIDI-Monitor (Tab in MidiSettings) annotiert jetzt jede eingehende Message mit dem gebundenen Target. Beispiele: 'CC 7 = 100 → Master Volume', 'Note On 36 vel=120 → Pad Kick'. Massiver Debug-Boost — User sieht direkt ob seine Mappings auch wirklich greifen. Lookup geht über midi.noteMappings (für 0x90 Note On) und midi.mappings (für 0xb0 CC), Channel 0 = wildcard. 1806 Tests grün, pnpm check 0 Fehler."
+      ],
+      next: [
+        "Beat-Repeat-Macro-Target.",
+        "Pattern-Drag-Drop.",
+        "AI-Projekt-Analyse."
+      ],
+      changed: [
+        "package.json",
+        "client/src/components/MidiSettings/MidiSettings.tsx",
+        "agents/INDEX.js"
+      ]
+    },
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-14T16:30:00.000Z",
+      done: [
+        "PANEL-HEADERS (v1.94.0): User-Feedback aus neue_todos.md ('alle fenster sollen auch mit X zumachbar sein, granular und polyrhythm etc'). Die ResizableDrumPanel-Wrapper hatten zwar bereits einen Close-Button via `onClose`-Prop, aber bei title=undefined war der Header zu unauffällig (nur X rechts oben, kein Label). Alle 6 Panel-Sites in DrumMachine.tsx haben jetzt einen prominenten `title`: Granular ('Granular: <Part-Name>'), Polyrhythm-Visualizer, Makros (8 × bindbar), Note Repeat, Pattern-Morph, Envelope Follower. Discoverability deutlich besser — User sieht direkt was offen ist und wo der Close-Button ist. 1806 Tests grün, pnpm check 0 Fehler."
+      ],
+      next: [
+        "Beat-Repeat als Macro-Target (Live-Performance-Tool).",
+        "Drag-Drop Pattern-Duplicate.",
+        "AI-Projekt-Analyse (aus neue_todos.md)."
+      ],
+      changed: [
+        "package.json",
+        "client/src/components/DrumMachine/DrumMachine.tsx",
+        "agents/INDEX.js"
+      ]
+    },
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-14T16:00:00.000Z",
+      done: [
+        "MACRO-INLINE-RENAME (v1.93.0): Doppelklick auf das Macro-Label öffnet ein Inline-Input — User kann seinen Macro 'Filter Sweep' oder 'Drop Builder' direkt benennen ohne das Settings-Modal zu öffnen. Enter speichert, Escape verwirft. Leerer Name wird ignoriert (behält alten Wert). 1806 Tests grün, pnpm check 0 Fehler."
+      ],
+      next: [
+        "v1.94 CLOSE-BUTTONS-AUDIT: 'alle fenster sollen auch mit x zumachbar sein' aus neue_todos.md (granular, polyrhythm, etc).",
+        "Beat-Repeat-Macro-Target.",
+        "Drag-Drop Pattern-Duplicate."
+      ],
+      changed: [
+        "package.json",
+        "client/src/components/Macro/MacroPanel.tsx",
+        "agents/INDEX.js"
+      ]
+    },
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-14T15:30:00.000Z",
+      done: [
+        "RCL-PATTERN-BUTTONS + Hidden-Bug-Fix (v1.92.0): Pattern-Buttons im Pattern-Menü sind jetzt per Rechtsklick MIDI-bindbar (`{type:'pattern', patternIndex: <idx>}`). Neue PatternRow-Component (extrahiert aus der DrumMachine inline-map damit Hook-Order konsistent bleibt) ruft useMidiLearn auf, zeigt `CC<n>`-Badge wenn gebunden, Tooltip mit 'Rechtsklick: MIDI-Learn'. Hidden-Bug-Fix nebenbei: vor v1.92 dispatchte useMidi.applyMapping zwar das 'midi:pattern' CustomEvent, aber niemand in App.tsx hörte → das pattern-MidiLearnTarget war faktisch ein NO-OP. Listener in App.tsx ergänzt: konvertiert patternIndex → patternId via dmRef.current.patterns[idx] → setActivePattern. Damit funktioniert Pattern-Wechsel per MIDI-Pad endlich tatsächlich. 1806 Tests grün, pnpm check 0 Fehler."
+      ],
+      next: [
+        "v1.93 MACRO-RENAME-INLINE: Doppelklick auf Macro-Label öffnet Inline-Edit. Aktuell muss man über das Settings-Menü gehen.",
+        "v1.94 AUDIT-CLOSE-BUTTONS: 'alle fenster sollen auch mit x zumachbar sein' aus neue_todos.md — prüfen welche Panels keinen Close-Button haben."
+      ],
+      changed: [
+        "package.json",
+        "client/src/App.tsx",
+        "client/src/components/DrumMachine/DrumMachine.tsx",
+        "agents/INDEX.js"
+      ]
+    },
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-14T15:00:00.000Z",
+      done: [
+        "DOCS-UPDATE (v1.91.0): CLAUDE.md bekommt neue Section 'Right-Click MIDI-Learn (v1.86-v1.90)' mit Übersicht der Foundation (findMappingForTarget, targetsMatch, useMidiLearn, MidiContext) und der bereits gewireten UI-Elemente. neue_todos.md markiert die seit v1.85 fertig geworden Items (Right-Click-Foundation, Output-Test-Button, Macro-Target) und passt 'Vorschläge für nächste Session' an die neue Realität an (Pattern-Drag-Drop, Macro-Rename-UI, Beat-Repeat, Pattern-Buttons-RCL). 1806 Tests grün, pnpm check 0 Fehler."
+      ],
+      next: [
+        "Session-Ende — 18 Versionen seit v1.66 gepusht. Right-Click-MIDI-Learn-Coverage komplett für Transport, Mixer, Macros, FX. User kann jetzt mit der Electribe + Auto-Learn-Presets ODER Right-Click pro Element seine Hardware-Konfiguration in Minuten aufsetzen.",
+        "Offen: Pattern-Buttons RCL, Macro-Label-Rename-UI, Beat-Repeat-Macro, Drag-Drop Pattern-Duplicate.",
+        "Größere Roadmap-Items aus neue_todos.md: GitHub-Builder, Auto-Updater, Mobile-Builds, Account/Beta-System, Cloud-Store, Wiki+LLM, ALS vollständig, Workbench Audacity-Level, AI-Projekt-Analyse, Admin/Lite-Tier."
+      ],
+      changed: [
+        "package.json",
+        "CLAUDE.md",
+        "neue_todos.md",
+        "agents/INDEX.js"
+      ]
+    },
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-14T14:30:00.000Z",
+      done: [
+        "RCL-FX-KNOBS (v1.90.0): Alle 15 FX-Knöpfe im FxPanel + FxPopupApp sind jetzt per Rechtsklick MIDI-bindbar. KnobProps bekommt optionale fxParam+partId+partName-Felder; wenn alle gesetzt sind, registriert der Knob einen useMidiLearn-Hook für {type:'fxParam', partId, param}. Mapped-Badge `·CC<n>` im Label. FxPanelBodyProps bekommt entsprechend partId+partName, durchgeschleift zu jedem Knob. FxPanel (dropdown) übergibt part.id+part.name; FxPopupApp übergibt state.partId+state.partName (waren schon im sync-state). Damit ist die komplette FX-Kette (Filter Freq/Q, Distortion Drive, EQ Low/Mid/High, Comp Threshold/Ratio/Attack/Release, Delay Time/Feedback/Mix, Reverb Decay/Mix) per Rechtsklick lernbar — 15 Params × bis zu 8 Parts = 120 zusätzliche bindbare Slots zu den schon zugänglichen Volume/Pan/Mute/Solo. 1806 Tests grün, pnpm check 0 Fehler."
+      ],
+      next: [
+        "Backlog aus neue_todos.md.",
+        "Eventuell: Scripts in ScriptList → Right-Click-MIDI-Learn direkt (wenn der Hook via Context überall funktioniert)."
+      ],
+      changed: [
+        "package.json",
+        "client/src/components/DrumMachine/FxPanel.tsx",
+        "client/src/components/DrumMachine/FxPopupApp.tsx",
+        "agents/INDEX.js"
+      ]
+    },
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-14T14:00:00.000Z",
+      done: [
+        "MIDI-OUTPUT-TEST (v1.89.0): Zwei kleine Test-Buttons im SettingsPanel → KI & MIDI → MIDI Out Section. 'Note testen' sendet Note On 60 (C4) mit vel=100 für 250ms ans aktive Ausgangsgerät, danach Note Off. 'CC testen' sendet CC 74 = 100 (Filter Cutoff). Hilft beim Verifizieren ob das Ausgangsgerät überhaupt MIDI empfängt — typischer Pain-Point bei externen Synths/Drum-Machines. Sichtbar nur wenn midiOutEnabled UND activeOutputDeviceId gesetzt sind. 1806 Tests grün, pnpm check 0 Fehler."
+      ],
+      next: [
+        "v1.90 SCRIPT-EDITOR-EXTENSIONS: Right-Click MIDI-Learn auf User-Scripts in der ScriptList, damit beim Erstellen direkt ein Pad-Binding möglich ist.",
+        "FX-Knöpfe Right-Click in FxPanel.",
+        "Backlog aus neue_todos.md."
+      ],
+      changed: [
+        "package.json",
+        "client/src/components/Settings/SettingsPanel.tsx",
+        "agents/INDEX.js"
+      ]
+    },
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-14T13:30:00.000Z",
+      done: [
+        "RCL-MACROS + MACRO-TARGET (v1.88.0): Neue MidiLearnTarget-Variante `{type:'macro', index, label?}` damit jeder der 8 Makros direkt per CC steuerbar wird (Makro-Slider folgt dem CC-Wert 0..1). useMidi.applyMapping dispatcht 'midi:macroValue'-CustomEvent mit `{index, value: midi/127}`, App.tsx listener ruft `setMacroValue(index, v)`. labelForTarget rendert 'Macro N' bzw. 'Macro N: <Label>'. targetsMatch unterscheidet anhand des index. VALID_TARGET_TYPES um 'macro' erweitert für Layout-Import. UI in MacroPanel MacroKnob: useMidiLearn-Hook am Slider, onContextMenu → Learn-Menu, CC#-Badge im Macro-Label oben. Workflow: rechtsklick auf einen Macro-Slider → 'MIDI-Learn' → Encoder am Electribe drehen → Macro folgt dem CC. 1 neuer Vitest-Case (targetsMatch macro). 1806 Tests grün, pnpm check 0 Fehler."
+      ],
+      next: [
+        "v1.89 MIDI-Output-Test-Button: einfacher 'Test'-Button der einen CC ans Device sendet zur Verbindungsverifikation.",
+        "Backlog aus neue_todos.md."
+      ],
+      changed: [
+        "package.json",
+        "client/src/hooks/useMidi.ts",
+        "client/src/App.tsx",
+        "client/src/components/Macro/MacroPanel.tsx",
+        "client/src/utils/midiLayoutImport.ts",
+        "tests/features/midi-target-match.test.ts",
+        "agents/INDEX.js"
+      ]
+    },
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-14T13:00:00.000Z",
+      done: [
+        "RIGHT-CLICK-MIDI-LEARN MIXERVIEW (v1.87.0): Erweitert die v1.86-Foundation um die wichtigsten Mixer-Controls. MixerChannel-Component bekommt useMidiLearn-Hooks für Volume (Master = type:'masterVolume', sonst type:'volume'+partId), Pan, Mute, Solo. Volume-Fader hat onContextMenu + Mapped-Badge `·CC<n>` in der dB-Anzeige unterm Slider. Pan-Slider analog (nur für non-Master). Mute + Solo Buttons bekommen rechte-obere-Ecke-Dot-Badge wenn gebunden. Tooltip zeigt CC# wenn vorhanden. Mit dieser Iteration sind die häufigsten Live-Performance-Controls (Volume + Mute + Solo + Pan pro Channel) per Rechtsklick MIDI-bindbar — typischer Electribe-Workflow: Rechtsklick auf Vol-Fader → MIDI-Learn → Slider am Electribe bewegen → fertig, kein Modal mehr nötig. pnpm check 0 Fehler. pnpm test 1805 passed (keine neuen Unit-Tests da nur UI-Wiring, Hook-Logic ist in v1.86 abgedeckt)."
+      ],
+      next: [
+        "v1.88 RCL-FX-PANEL: Right-Click auf FX-Knöpfe (Filter/EQ/Reverb/Delay/Distortion) im MixerView-Inspector und FxPanel.",
+        "v1.89 MIDI Output Test Button.",
+        "Backlog aus neue_todos.md."
+      ],
+      changed: [
+        "package.json",
+        "client/src/components/Mixer/MixerView.tsx",
+        "agents/INDEX.js"
+      ]
+    },
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-14T12:30:00.000Z",
+      done: [
+        "RIGHT-CLICK-MIDI-LEARN (v1.86.0): Foundation für Right-Click-MIDI-Learn auf beliebigen UI-Elementen — der Top-Vorschlag aus der neue_todos.md-Wishlist. Neue Pure-Helper `targetsMatch(a, b)` + `findMappingForTarget(mappings, target)` in useMidi.ts (deckt alle MidiLearnTarget-Varianten ab, inkl. partId-Spezifika für volume/mute/solo/pan/fxParam und scriptId/sceneIndex/label/etc für die compound Targets). Neuer Hook `useMidiLearn(target, midiOverride?)` in hooks/useMidiLearn.tsx: liefert onContextMenu-Handler, isMapped-Flag, mappedCC, learn/unbind-Actions und einen vorgerenderten Context-Menu-ReactNode den der Caller einfach inline rendert. Click-outside + Escape schließen das Menü. Neuer Context `MidiContext` in context/MidiContext.tsx mit `MidiProvider` + `useMidiContext()`-Hook damit tief verschachtelte Komponenten den midi-State ohne Prop-Drilling bekommen. App.tsx wrappt jetzt seinen Body mit <MidiProvider value={midi}>. Anwendung in DrumMachine: BPM-Display + Play/Stop-Button bekommen rechtsklick-bare MIDI-Learn-Context-Menüs mit CC#-Badge wenn bereits gebunden — User-Workflow 'rechtsklick auf BPM → MIDI-Learn → Encoder drehen → fertig'. 18 neue Vitest-Cases für targetsMatch (single-targets / volume / fxParam / pattern / step / runScript / chain / scenelaunch / tab) + findMappingForTarget (Hit / partId-spezifisch / fxParam-mit-Param / No-Match / leere Liste). 1805 Tests grün, pnpm check 0 Fehler. Erste Anwendung an 2 Elementen (BPM, Play/Stop) — weitere können in folgenden Releases ergänzt werden (FX-Knöpfe, Volume-Slider, Pattern-Buttons)."
+      ],
+      next: [
+        "v1.87 RCL-MIDI-LEARN-EXPANSION: weitere UI-Elemente anbinden — FX-Knöpfe im FxPanel, Volume-Slider im MixerView, Macro-Buttons.",
+        "MIDI Output Test Button (sendet Test-CC zur Verifizierung)",
+        "Pattern-Duplicate via Drag-and-Drop",
+        "Backlog aus neue_todos.md."
+      ],
+      changed: [
+        "package.json",
+        "client/src/hooks/useMidi.ts",
+        "client/src/hooks/useMidiLearn.tsx",
+        "client/src/context/MidiContext.tsx",
+        "client/src/App.tsx",
+        "client/src/components/DrumMachine/DrumMachine.tsx",
+        "tests/features/midi-target-match.test.ts",
+        "agents/INDEX.js"
+      ]
+    },
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-14T12:00:00.000Z",
+      done: [
+        "SESSION-SUMMARY + neue_todos.md UPDATE (v1.85.0): Abschluss der 4-Stunden-Autonomy-Mission. neue_todos.md komplett überarbeitet: Erledigte Items markiert (Quantize-Crash via v1.71 BUG-025, Techno/Hardtekk-Templates via v1.74+v1.82, FLP-Importer via v1.59-v1.70, ESX-Importer bereits vorhanden), neue Bonus-Features dieser Session aufgelistet (Auto-Learn-Wizard, Layout-Export/Import, FX-Param-Bindings, Function-Chains, Custom-Chain-Builder, Run-Script-Target, Built-In-Scripts, Monitor-Tab, Activity-Indicator, Channel-Filter, Device-Persistenz, CSP-Fix), offen-bleibende Wishlist-Items klar markiert, Vorschläge für nächste Session (Right-Click MIDI-Learn, MIDI-Output-Test-Button, Drag-and-Drop Pattern-Duplicate, Macro-Bank-Labels, Beat-Repeat). Session-Total: 12 Releases v1.74→v1.85, 1787 Tests grün (von 1667 zu Beginn, +120 neue Tests), 5 explizite User-Requests erfüllt (Korg-Connect, Usability, Pattern-Duplicate-Script, Every-Function-bindable, Function-Chains), zwei zusätzliche Bug-Fixes (BUG-024 CSP, BUG-025 Quantize), keine Regressions."
+      ],
+      next: [
+        "Right-Click MIDI-Learn als Context-Menu auf jedem FX-Knopf/Volume-Slider — größter UX-Boost noch offen.",
+        "MIDI Output Test Button — sendet Test-CC zur Verifizierung.",
+        "Backlog aus neue_todos.md: GitHub-Builder, Updater, Mobile-Build, Account-System, Cloud-Sync, Wiki/LLM-Integration, Admin/Lite-Tiers — alle größere Sprints.",
+        "Ableton .als vollständig parsen (aktuell nur Skeleton in alsImport.ts)."
+      ],
+      changed: [
+        "package.json",
+        "neue_todos.md",
+        "agents/INDEX.js"
+      ]
+    },
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-14T11:30:00.000Z",
+      done: [
+        "DEVICE-PERSISTENCE (v1.84.0): MIDI-Geräte-Auswahl persistiert jetzt über App-Reloads hinweg. Vor v1.84 musste der User nach jedem Neustart sein Eingangs- + Ausgangsgerät erneut auswählen — auch wenn die Hardware angeschlossen blieb. Fix: Persistenz von `{name, manufacturer}` für In + Out in localStorage (`synthstudio:midi-active-device`). Wir verwenden Name+Hersteller statt der MIDI-id, weil die id zwischen Browser-Sessions wechseln kann. Auto-Reconnect-Logik in `refreshDevices`: wenn der aktuelle Wert existiert → connectDevice; wenn ein persistierter Name in der Geräte-Liste matched → connectDevice mit der gemappten id; sonst Fallback auf erstes verfügbares Gerät (existing behavior). Selbiges für outputDevice. Side-Effect: User schließt seine Electribe 2 an, wählt sie in MidiSettings, schließt das Modal → nach Browser-Reload + MIDI-Activation ist die Electribe sofort wieder aktiv. 1787 Tests grün, pnpm check 0 Fehler."
+      ],
+      next: [
+        "v1.85 FINAL-AUDIT: neue_todos.md update für die erledigten Items, Session-Summary in INDEX.js, eventuelle CLAUDE.md ergänzungen."
+      ],
+      changed: [
+        "package.json",
+        "client/src/hooks/useMidi.ts",
+        "agents/INDEX.js"
+      ]
+    },
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-14T11:00:00.000Z",
+      done: [
+        "AUTO-LEARN-CHANNEL-FILTER + MORE-BUILT-INS (v1.83.0): Zwei Erweiterungen in einem Release. (1) Auto-Learn Channel-Filter: Wenn der User mehrere MIDI-Geräte gleichzeitig angeschlossen hat (Electribe auf Ch10 + Keystep auf Ch1 + iRig auf Ch2), kann er jetzt einen Channel-Filter in der Auto-Learn-Settings setzen — nur Events auf diesem Channel werden ge-capt-uret, der Rest läuft normal durch den Handler. Neue State `autoLearnFilterChannel: number` + Action `setAutoLearnFilterChannel(ch)` (clamped 0-16, 0=alle). Pure-Helper nextAutoLearnEntry bekommt optionalen 3. Param `filterChannel`. UI in MidiSettings CC-Tab Auto-Learn-Block: Dropdown 'Nur Channel:' (Alle / Ch1-Ch16). (2) 5 weitere Built-In Scripts: 'Build-Up 10s' (BPM-Ramp + Filter-Sweep parallel), 'Stutter (4× Macro-Snap)' (Glitch-Übergänge), 'Macro-Random-Burst' (alle 8 Macros zu Zufallswerten), 'Pattern-Walker (alle 8s nächstes)' (Live-Auto-Pilot), 'Macro 0 Sinus-LFO 15s' (smooth Filter-Bewegung). 3 neue Vitest-Cases für Channel-Filter (default-pass-all / specific-Channel-blocks-others / wirkt auch auf Note-Entries). 1787 Tests grün, pnpm check 0 Fehler."
+      ],
+      next: [
+        "v1.84 USABILITY-CLEANUPS: Audit ungebundener Features, Doku-Lücken.",
+        "v1.85 FINAL-AUDIT: neue_todos.md auf erledigte Items prüfen, Session-Summary."
+      ],
+      changed: [
+        "package.json",
+        "client/src/hooks/useMidi.ts",
+        "client/src/components/MidiSettings/MidiSettings.tsx",
+        "client/src/utils/builtInScripts.ts",
+        "tests/features/midi-auto-learn.test.ts",
+        "agents/INDEX.js"
+      ]
+    },
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-14T10:30:00.000Z",
+      done: [
+        "MORE-HARDWARE-TEMPLATES + DOCS (v1.82.0): 4 weitere eingebaute MIDI-Templates für die Techno/Hardtekk-Szene + CLAUDE.md-Update. Neue Templates: Korg Volca Beats (Ch10, 7 Drum-Notes + 7 CC-Sound-Edit), Roland TR-8/RD-8 (Ch10, 8 Drum-Notes + 8 CC-Volumes + masterVolume CC105), Arturia BeatStep Pro (16 Pad-Notes 2-Reihen, 8 Encoder Volume + 8 Encoder Mute), Elektron Digitakt (8 Channels Ch1-8, je Note 60 für die 8 Sample-Tracks + Encoder CCs). MIDI_TEMPLATES insgesamt jetzt 13 Hardware-Vorlagen. CLAUDE.md bekommt neue 'MIDI Bindings (v1.71-v1.82)'-Section mit kompletter Target-Liste, Auto-Learn-Flow, Layout-Import/Export, Hardware-Templates, Monitor-Tab und FX-Param-Bindings. Plus neue 'Built-In Scripts (v1.75)'-Section. 17 neue Vitest-Cases (4× Template-Existenz, 4× CC-Range-Validierung, 4× Note-Range-Validierung, plus Special-Cases: Ch10-Default für Korg/Roland, Multi-Channel für Digitakt, 16-Pad-Count für BeatStep, ≥13 Templates total). 1784 Tests grün, pnpm check 0 Fehler."
+      ],
+      next: [
+        "v1.83 FINAL-AUDIT: Summary aller v1.74-v1.82 Features, neue_todos.md auf erledigte Items ausmisten, README-Update falls vorhanden."
+      ],
+      changed: [
+        "package.json",
+        "client/src/utils/midiTemplates.ts",
+        "tests/features/midi-templates.test.ts",
+        "CLAUDE.md",
+        "agents/INDEX.js"
+      ]
+    },
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-14T10:00:00.000Z",
+      done: [
+        "MIDI-MONITOR-TAB (v1.81.0): Live-Log aller eingehender MIDI-Messages als neuer Tab in MidiSettings. Hilft beim Hardware-Debugging — User sieht exakt welche CCs/Notes auf welchen Channels ankommen. Ringbuffer max 200 Events damit UI nicht erstickt. Pretty-Print: `HH:MM:SS.mmm Ch10 Note On 36 vel=100`. Frische Events (jünger als 500ms) sind accent-secondary-farbig, ältere muted. Pause-Toggle (mit Ref damit der Event-Handler die aktuelle Pause-State sieht ohne re-mount), Leeren-Button, Counter '<n>/200 Events'. Empty-State-Hinweise je nach midi.isEnabled. Reuse von 'midi:rawmessage' CustomEvent. 1767 Tests grün (UI-State, keine neuen Unit-Tests). pnpm check 0 Fehler."
+      ],
+      next: [
+        "v1.82 MORE-HARDWARE-TEMPLATES + DOCS: weitere Techno/Hardtekk-Controller-Templates ergänzen, CLAUDE.md update."
+      ],
+      changed: [
+        "package.json",
+        "client/src/components/MidiSettings/MidiSettings.tsx",
+        "agents/INDEX.js"
+      ]
+    },
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-14T09:30:00.000Z",
+      done: [
+        "CUSTOM-CHAIN-BUILDER (v1.80.0): Komplement zu v1.77 — statt nur den 4 Preset-Chains kann der User jetzt eigene Function-Chains zusammenklicken. Inline-Form in MidiSettings CC-Tab unter den Chain-Presets (aufklappbar via Toggle-Button). Curated Liste von 17 atomic Actions (Play/Stop, Record, Tap, BPM ±, Pattern Next/Prev/Clear/Fill/Random/Duplicate, Part Up/Down, Toggle Note Repeat, Toggle Morph, Live Edit Commit, Open Settings). User-Workflow: + Schritt → Action-Dropdown wählen → delayMs setzen → reorder via ▲/▼ → 'Speichern & Lernen' Button → Learn-Mode mit dem zusammengebauten Chain. Implementation: lokaler State `chainBuilderSteps: Array<{targetKey, delayMs}>` + `chainBuilderName`. handleChainBuilderLearn serialisiert das in MidiLearnTarget {type:'chain', label, steps} und ruft midi.startLearn(). 1767 Tests grün (keine neuen Unit-Tests da pure UI-State; planChainExecution-Tests aus v1.77 decken die Chain-Runtime-Validierung). pnpm check 0 Fehler."
+      ],
+      next: [
+        "v1.81 FINAL-AUDIT: Review aller v1.74-v1.80 Features, Doku-Update in CLAUDE.md, INDEX.bugs check."
+      ],
+      changed: [
+        "package.json",
+        "client/src/components/MidiSettings/MidiSettings.tsx",
+        "agents/INDEX.js"
+      ]
+    },
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-14T09:00:00.000Z",
+      done: [
+        "MIDI-ACTIVITY-INDICATOR + DEFAULT-FILENAME (v1.79.0): Zwei UX-Wins für den MIDI-Workflow. (1) Live-Activity-Indicator im MidiSettings-Header zeigt die letzte eingehende MIDI-Message (Note On/Off, CC, Aftertouch, PB) und pulst grün für 150ms bei jedem Event — der User sieht direkt ob seine Hardware tatsächlich sendet (häufige Frage: 'kommt überhaupt was an?'). Hört auf das bereits existierende `midi:rawmessage` CustomEvent. Pretty-Print: 'CC 7 = 64 (Ch1)'. (2) Neuer Pure-Helper `defaultLayoutNameForDevice(deviceName?)` in midiLayoutExport.ts: leerer Input → 'Mein MIDI-Setup' Fallback, sonst '<DeviceName>-Setup'. MidiSettings useEffect-Hook aktualisiert exportName beim Device-Wechsel — nur falls der User ihn nicht manuell überschrieben hat (exportNameTouched-Flag). User klickt jetzt MIDI-Settings, das Setup ist sofort sinnvoll vorbelegt mit z.B. 'Korg Electribe 2-Setup'. 4 neue Vitest-Cases für defaultLayoutNameForDevice (null/undefined/empty/whitespace → Fallback, normal/whitespace-getrimmt → Suffix). 1767 Tests grün, pnpm check 0 Fehler."
+      ],
+      next: [
+        "v1.80 CUSTOM-CHAIN-BUILDER: UI-Form mit 'Add Step' damit der User eigene Chains ohne JSON-Editor bauen kann.",
+        "v1.81 FINAL-AUDIT: Welche Features sind noch UI-versteckt? Welche Settings noch nicht zugänglich? Doku-Update."
+      ],
+      changed: [
+        "package.json",
+        "client/src/utils/midiLayoutExport.ts",
+        "client/src/components/MidiSettings/MidiSettings.tsx",
+        "tests/features/midi-layout-export.test.ts",
+        "agents/INDEX.js"
+      ]
+    },
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-14T08:30:00.000Z",
+      done: [
+        "RUN-SCRIPT-TARGET (v1.78.0): User-Scripts (aus useScriptStore) sind jetzt als MidiLearnTarget bindbar. Neue Variante `{type:'runScript', scriptId, scriptName?}`. applyMapping dispatcht 'midi:runScript' CustomEvent mit der scriptId; App.tsx listener ruft scriptSandbox.run() mit Re-Entrancy-Schutz auf (gleicher Pattern wie der existierende macro:button:trigger Pfad). UI in MidiSettings CC-Tab: neue 'User-Scripts auf MIDI binden'-Section listet alle Scripts aus useScriptStore, jeder mit Learn-Button. Zeigt enabled/disabled + Byte-Count. labelForTarget rendert 'Script: <name>' bzw. gekürzte ID. VALID_TARGET_TYPES um 'runScript' erweitert → Layouts importierbar. Kombination mit v1.77 chain: runScript kann als Sub-Target in einer chain stehen (1-Level-Nesting). 5 neue Vitest-Cases (label-name+fallback, VALID_TARGET-Check, Round-Trip Export→Import, chain-runScript-Kombination). 1763 Tests grün, pnpm check 0 Fehler. User-Request 'Jeden Effekt und jede Funktion belegbar auf makro oder taste' jetzt vollständig — komplette ss.*-API kann via Script gebunden werden."
+      ],
+      next: [
+        "v1.79 DEFAULT-FILENAME-AUS-DEVICE: midi.activeDeviceId-Lookup im Layout-Export-Field, damit der User nicht jedes Mal manuell 'Mein Setup' tippen muss.",
+        "v1.80 USABILITY-AUDIT: Welche Features sind UI-mäßig versteckt, welche Settings noch nicht zugänglich?"
+      ],
+      changed: [
+        "package.json",
+        "client/src/hooks/useMidi.ts",
+        "client/src/App.tsx",
+        "client/src/components/MidiSettings/MidiSettings.tsx",
+        "client/src/utils/midiLayoutImport.ts",
+        "tests/features/midi-runscript-target.test.ts",
+        "agents/INDEX.js"
+      ]
+    },
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-14T08:00:00.000Z",
+      done: [
+        "FUNCTION-CHAINS (v1.77.0): User-Request 'Funktionsabläufe oder mehrere Effekte auf eine Taste oder makro legen' — neue MidiLearnTarget-Variante `{type:'chain', label, steps: ChainStep[]}`. Jeder ChainStep enthält ein Sub-Target plus optionalen `value` (0-127, default 127) und `delayMs` (clamped 0-60s). Pure-Helper `planChainExecution(steps): ChainPlan` berechnet kumulative atMs-Werte für jeden Step und filtert nested chains (1-Level only — Defense-in-Depth gegen infinite-Rekursion). applyMapping branched für 'chain' → schedulet jeden Trigger via setTimeout, ruft applyMapping rekursiv für Sub-Targets. UI in MidiSettings CC-Tab: neue Chain-Presets-Section mit 4 ready-made Multi-Step-Actions (Drop-Combo / Duplicate+Randomize / Tap×4+Play / Fill+Next). User klickt einen Preset → Learn-Mode → bewegt Controller → ganze Sequenz auf einer Taste. VALID_TARGET_TYPES um 'chain' erweitert damit Layouts mit Chains importierbar bleiben. 10 neue Vitest-Cases für planChainExecution (empty/single/multi+delay/value-clamp/delay-clamp 60s/chain-of-chain-block/no-target/drop-combo/step-index). 1758 Tests grün, pnpm check 0 Fehler."
+      ],
+      next: [
+        "v1.78 SCRIPT-RUN-TARGET: MIDI-Pad bindbar an User-Script (out of useScriptStore).",
+        "v1.79 CUSTOM-CHAIN-BUILDER: UI-Form damit der User eigene Chains (nicht nur Presets) zusammenklicken kann.",
+        "v1.80 DEFAULT-FILENAME-AUS-DEVICE: midi.activeDeviceId → Hersteller+Modell → exportName-default."
+      ],
+      changed: [
+        "package.json",
+        "client/src/hooks/useMidi.ts",
+        "client/src/components/MidiSettings/MidiSettings.tsx",
+        "client/src/utils/midiLayoutImport.ts",
+        "tests/features/function-chains.test.ts",
+        "agents/INDEX.js"
+      ]
+    },
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-14T07:30:00.000Z",
+      done: [
+        "FX-PARAM-TARGETS (v1.76.0): Jeder numerische FX-Parameter pro Channel ist jetzt als MidiLearnTarget bindbar — Filter (Freq mit exp-Mapping über 20Hz-20kHz, Q, Gain), Distortion (Drive 0-400), Compressor (Threshold/Ratio/Attack/Release), Delay (Time/Feedback/Mix), Reverb (Decay/Mix), 3-Band EQ (Low/Mid/High). 16 Params × 8 Parts = 128 bindbare Slots. Neue Pure-Helpers `FX_PARAM_RANGES`, `midiValueToFxParam(midi, range)`, `findFxParamRange(key)` in `client/src/audio/AudioEngine.ts` (linear oder exponential per Range-Config). MidiLearnTarget bekommt `{type:'fxParam', partId, partName?, param}` Variante. useMidi.applyMapping dispatcht `midi:fxParam`-CustomEvent mit `{partId, param, value}` (im param-Range bereits skaliert). UI in MidiSettings: neue Dropdown+Grid-Section unter dem normalen Learn-Bereich, User wählt Part → bekommt 16 Buttons für die Params, jeder Learn-bar. BONUS-FIX: Vor v1.76 dispatchten useMidi die Events `midi:partVolume`, `midi:partPan`, `midi:partSolo`, `midi:masterVolume` ohne dass irgendwo Listeners liefen → CC-Mappings für Volume/Pan/Solo waren faktisch NO-OPs. App.tsx bekommt jetzt einen useEffect mit Listenern, die in `dmRef.current.setPartVolume/setPartPan/setPartSoloed/setPartFx` schreiben. Zusätzlich Mute auf CustomEvent-Pattern umgestellt (statt onMute-Callback der nie übergeben wurde). VALID_TARGET_TYPES in midiLayoutImport.ts um 'fxParam' erweitert damit Layouts mit FX-Bindings importierbar bleiben. 12 neue Vitest-Cases für FX_PARAM_RANGES/findFxParamRange/midiValueToFxParam (linear + exp + clamping + monotonie). 1748 Tests grün, pnpm check 0 Fehler."
+      ],
+      next: [
+        "v1.77 FUNCTION-CHAINS: mehrere Actions hintereinander auf einer Taste/Macro (User-Request).",
+        "v1.78 SCRIPT-RUN-TARGET: MIDI-Pad bindbar an User-Script.",
+        "v1.79-80 USABILITY-POLISH: Default-Filename-Generation aus Device-Name, Audit ungebundener Features."
+      ],
+      changed: [
+        "package.json",
+        "client/src/audio/AudioEngine.ts",
+        "client/src/hooks/useMidi.ts",
+        "client/src/App.tsx",
+        "client/src/components/MidiSettings/MidiSettings.tsx",
+        "client/src/utils/midiLayoutImport.ts",
+        "tests/features/fx-param-bindings.test.ts",
+        "agents/INDEX.js"
+      ]
+    },
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-14T07:00:00.000Z",
+      done: [
+        "BUILT-IN-SCRIPTS (v1.75.0): 7 vorgefertigte ss.*-Scripts — der User kann sie ohne KI-API-Key direkt im ScriptRunner laden. Neues Modul `client/src/utils/builtInScripts.ts` mit `BUILT_IN_SCRIPTS`-Registry, `groupBuiltInsByCategory()` + `findBuiltIn(id)`. Erste Built-Ins decken User-Request 'Pattern duplizieren' ab (3 Varianten: solo, +Randomize, +Fill) plus Transport-Pipeline (Tap→Play), Performance (Drop-Reset) und Macro-Reset (alle auf 0 bzw. 0.5). UI im ScriptRunner: neuer '📚 Built-In'-Button öffnet ein Modal mit kategorisierter Liste; Klick lädt das Script via addScript({scope:'app', enabled:true}) und selektiert es direkt. Sandbox-Audit: pattern-duplicate-Action war bereits voll wired (sandbox-Allowlist, App.tsx-case, kbd-shortcut Ctrl+D, MIDI-target, MidiLayoutImport.ts). 11 neue Vitest-Cases: Registry-Vollständigkeit, ID-Eindeutigkeit, sandbox-Konformität via validateGeneratedCode (catches eval/fetch/etc), Allowlist-Audit für ss.dispatch-Action-Strings, Category-Grouping. 1736 Tests grün, pnpm check 0 Fehler."
+      ],
+      next: [
+        "v1.76 FX-PARAM-TARGETS: jeder FX-Parameter (filterFreq, filterQ, reverbDecay, reverbMix, delayTime, delayFeedback, delayMix, eqLow/Mid/High, distortionAmount, compressor-params) als MidiLearnTarget bindbar.",
+        "v1.77 FUNCTION-CHAINS: mehrere Actions hintereinander auf einer Taste/Macro.",
+        "v1.78 SCRIPT-RUN-TARGET: MIDI-Pad bindbar an User-Script.",
+        "v1.79-80 USABILITY-POLISH: Default-Filename-Generation aus Device-Name, Audit ungebundener Features."
+      ],
+      changed: [
+        "package.json",
+        "client/src/utils/builtInScripts.ts",
+        "client/src/components/Tools/ScriptRunner.tsx",
+        "tests/features/built-in-scripts.test.ts",
+        "agents/INDEX.js"
+      ]
+    },
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-14T06:30:00.000Z",
+      done: [
+        "ELECTRIBE-2-TEMPLATE (v1.74.0): Korg Electribe 2 / 2S als 9. eingebautes Hardware-Template in `MIDI_TEMPLATES`. 16 Pad-Mappings auf Channel 10 (GM-Drum-Default des Electribe), Notes 36-51 → erste Reihe (36-43) auf part-0..part-7, zweite Reihe (44-51) repliziert dieselbe Belegung damit beide Pad-Reihen denselben Drum-Sound triggern. CC-Mappings: masterVolume (CC7), BPM (CC1 = Mod-Wheel), 4 Part-Volumes auf CC74/71/73/72 (Standard-Korg-Knob-Layout). Transport per MIDI Start/Stop (0xFA/0xFC) wird bereits separat im handleMidiMessage gehandhabt — keine CC-Mappings nötig. 7 neue Vitest-Cases (Existenz/Pad-Count/Ch10/Note-Range 36-51/Double-Row-Mapping/CC-Inhalt/Round-Trip-Labels). 1725 Tests grün, pnpm check 0 Fehler. Erster Schritt der 4-Stunden-Autonomy-Mission: User-Fokus auf Electribe-2-Integration."
+      ],
+      next: [
+        "v1.75 PATTERN-DUPLICATE-SCRIPT: Built-in Script-Template aus aiScriptTemplates.ts der das aktuelle Pattern via `ss.dispatch('pattern-duplicate')` dupliziert. Audit ob die Action wirklich existiert.",
+        "v1.76 FX-PARAM-TARGETS: jeder FX-Parameter (filterFreq, reverbWet, etc.) als MidiLearnTarget bindbar — aktuell nur volume/mute/solo/pan.",
+        "v1.77 FUNCTION-CHAINS: mehrere Actions hintereinander auf einer Taste/Macro.",
+        "v1.78 SCRIPT-RUN-TARGET: MIDI-Pad bindbar an User-Script.",
+        "v1.79-80 USABILITY-POLISH: Default-Filename-Generation aus Device-Name, Audit ungebundener Features."
+      ],
+      changed: [
+        "package.json",
+        "client/src/utils/midiTemplates.ts",
+        "tests/features/midi-templates.test.ts",
+        "agents/INDEX.js"
+      ]
+    },
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-14T06:00:00.000Z",
+      done: [
+        "MIDI-LAYOUT-EXPORT (v1.73.0): Komplementär zu midiLayoutImport.ts (v1.38+) — nach Auto-Learn kann der User seine Hardware-Konfiguration jetzt als JSON-Template speichern + teilen. Neues Modul `client/src/utils/midiLayoutExport.ts` mit `buildMidiLayoutJson(input): string` (Pretty-Print, synthstudioLayout v1) und `sanitizeLayoutFileName(name): string` (Unicode-safe, erlaubt Umlaute via \\p{L}\\p{N}, escapt Path-Separator). Round-Trip-Garantie: `parseMidiLayoutJson(buildMidiLayoutJson(x))` reproduziert x.ccMappings + x.noteMappings 1:1. UI in MidiSettings CC-Tab unter den aktiven Mappings: Input-Feld für Layout-Name + '💾 Als JSON speichern'-Button → Browser-Download via Blob+anchor. Sichtbar nur wenn mind. ein Mapping existiert. Bonus-Fix: `VALID_TARGET_TYPES` in midiLayoutImport.ts war unvollständig — `scenelaunch`, `commitLiveEdit`, `openSettings` existieren in der MidiLearnTarget-Union, wurden aber beim Layout-Import als ungültig verworfen → ergänzt. 13 neue Vitest-Cases (7 buildMidiLayoutJson inkl. 3 Round-Trip-Tests, 6 sanitizeLayoutFileName inkl. Unicode/Umlaute). Test deckt direkt den Electribe-2-Use-Case ab (gemischte CC+Note). 1718 Tests grün, pnpm check 0 Fehler."
+      ],
+      next: [
+        "FLP-MIDI-EXPORT Phase 4: SMF-Export von Melodic-Parts mit Pitch + Duration (umgekehrte Richtung — Synthstudio → DAW Re-Import).",
+        "MIDI-LAYOUT-EXPORT-V2: Default-Filename-Generation aus aktivem Device-Namen (`midi.activeDeviceId` → Hersteller+Modell-String). Aktuell muss der User immer manuell tippen.",
+        "FEAT-INSP: bleibt offen (Explore-Report verfügbar, 4-5h, 8+ Files).",
+        "neue_todos.md Backlog: GitHub-Builder-Workflow, Updater, Mobile-Build, Login/Beta-System, Plugin-Wiki/LLM, Sample-Cloud, MIDI-Templates für Hardtekk-Gear, .als/.elst-Konverter, Workbench-Audacity-Niveau, AI-Projekt-Analyse, Admin/Lite-Tier-Lizenz."
+      ],
+      changed: [
+        "package.json",
+        "client/src/utils/midiLayoutExport.ts",
+        "client/src/utils/midiLayoutImport.ts",
+        "client/src/components/MidiSettings/MidiSettings.tsx",
+        "tests/features/midi-layout-export.test.ts",
+        "agents/INDEX.js"
+      ]
+    },
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-14T05:30:00.000Z",
+      done: [
+        "MIDI-AUTO-LEARN-V2 (v1.72.0): Phase 2 von MIDI-AUTO-LEARN — Note-Mode für Pads. Neue discriminated-union `AutoLearnEntry = {kind:'cc', target} | {kind:'note', partId, partName}` ersetzt das vorige `MidiLearnTarget[]`-Schema. `handleMidiMessage` matched eingehende Messages gegen den `kind` des Queue-Heads: CC-Entries akzeptieren CC-Messages mit Value>0, Note-Entries akzeptieren Note-On mit Velocity>0. Mismatches lassen die Queue unverändert + die Message läuft normal weiter durch den Handler. Refactor: `labelForTarget` und neuer Pure-Helper `nextAutoLearnEntry(queue, msg)` aus dem Hook-Body ausgelagert → Modul-Scope → testbar. handleMidiMessage delegiert die Queue-Transition jetzt an die pure Funktion. UI in MidiSettings: 2 neue Presets — `Pads → Parts` (n Note-Entries, einer pro Part) und `Komplett (Pads + Mixer)` (Pads zuerst, dann Volumes+Mutes). Auto-Learn-Card zeigt `Pad: <Name>` bzw. `CC: <Target>` für jedes Queue-Item. 18 neue Vitest-Cases in tests/features/midi-auto-learn.test.ts (7 labelForTarget + 11 nextAutoLearnEntry, inkl. CC/Note Mismatch + Value=0 + Mixed-Queue + Channel-Persist + Aftertouch-Filter). 1705 Tests grün, pnpm check 0 Fehler. Direkt motiviert durch User-Workflow mit Electribe 2 Sampler (16 Pads + 8 Slider)."
+      ],
+      next: [
+        "FLP-MIDI-EXPORT Phase 4: SMF-Export von Melodic-Parts mit Pitch + Duration (umgekehrte Richtung — Synthstudio → FL Studio / DAW Re-Import).",
+        "MIDI-CONTROLLER-TEMPLATE-CAPTURE: nach Auto-Learn → 'Speichere als Template' Button, damit der User seine Hardware-Konfiguration als JSON exportieren + teilen kann (Anschluss an midiLayoutImport.ts).",
+        "FEAT-INSP: bleibt offen (Explore-Report verfügbar, 4-5h, 8+ Files).",
+        "neue_todos.md Backlog: GitHub-Builder-Workflow, Updater, Mobile-Build, Login/Beta-System, Plugin-Wiki/LLM, Sample-Cloud, MIDI-Templates für Hardtekk-Gear, .als/.elst-Konverter, Workbench-Audacity-Niveau, AI-Projekt-Analyse, Admin/Lite-Tier-Lizenz."
+      ],
+      changed: [
+        "package.json",
+        "client/src/hooks/useMidi.ts",
+        "client/src/components/MidiSettings/MidiSettings.tsx",
+        "tests/features/midi-auto-learn.test.ts",
+        "agents/INDEX.js"
+      ]
+    },
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-14T05:00:00.000Z",
+      done: [
+        "BUG-025 + MIDI-AUTO-LEARN (v1.71.0): Doppel-Drop. (1) BUG-025-Fix: `_migratePattern` in useMelodicPartStore.ts validiert scaleId jetzt gegen neue `KNOWN_SCALE_IDS` Set aus scales.ts statt nur `typeof === 'string'`. Korrupte/veraltete Werte (Schema-Drift, alte Storage-Snapshots) werden auf `chromatic` migriert. setScale validiert zusätzlich runtime damit TS-Casts keine ungültige ID einsmuggeln. Verhindert PianoRoll-React-Crash via `getScale: Unknown scale id`. (2) MIDI-AUTO-LEARN: neue Auto-Learn-Queue in useMidi.ts — `autoLearnQueue: MidiLearnTarget[]` + `autoLearnTotal` State, `startAutoLearn(targets)` / `skipAutoLearnTarget()` / `cancelAutoLearn()` Actions. `handleMidiMessage` shiftet queue bei jedem CC-Capture, schreibt Mapping ins existierende mappings-Array, advanciert automatisch. UI in MidiSettings CC-Tab: drei Preset-Buttons (Mixer Vol+Mute / Transport / Pattern-Navigation), Live-Progress-Karte mit aktuell zu lernendem Target-Label + 'Skip'/'Abbrechen', Vorschau der nächsten 3 Targets. `targetLabel()` erweitert für alle ~20 MidiLearnTarget-Typen inkl. Part-Namen für Volume/Mute/Solo/Pan. Test-Beweggrund vom User: Electribe 2 Sampler-Verknüpfung. 6 neue Vitest-Cases (3 isKnownScaleId + 3 setScale-runtime-validation). 1687 Tests grün, pnpm check 0 Fehler."
+      ],
+      next: [
+        "MIDI-AUTO-LEARN-V2: Sub-Phase mit Note-Mode (Pads → Note-Mappings) — aktuell nur CC-Lernen. Für Electribe-2-Style-Pads + GM-Drum-Pads würde das einen 'Auto-Learn Pads'-Preset ergänzen.",
+        "FLP-MIDI-EXPORT Phase 4: SMF-Export von Melodic-Parts mit Pitch + Duration (umgekehrte Richtung — Synthstudio → FL Studio Re-Import).",
+        "FEAT-INSP: bleibt offen (Explore-Report verfügbar, 4-5h, 8+ Files).",
+        "neue_todos.md Backlog: GitHub-Builder-Workflow, Updater, Mobile-Build, Login/Beta-System, Plugin-Wiki/LLM, Sample-Cloud, MIDI-Templates für Hardtekk-Gear, .als/.elst-Konverter, Workbench-Audacity-Niveau, AI-Projekt-Analyse, Admin/Lite-Tier-Lizenz."
+      ],
+      changed: [
+        "package.json",
+        "client/src/utils/scales.ts",
+        "client/src/store/useMelodicPartStore.ts",
+        "client/src/hooks/useMidi.ts",
+        "client/src/components/MidiSettings/MidiSettings.tsx",
+        "tests/scales.test.ts",
+        "tests/melodic-part.test.ts",
+        "agents/INDEX.js"
+      ]
+    },
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-14T04:30:00.000Z",
+      done: [
+        "FLP-PATTERN-NAMES (v1.70.0): Analog zu Phase 3 (Channel-Names) jetzt auch Pattern-Namen aus dem FLP übernehmen. `0xC1 TEXT_PATTERN_NAME`-Events werden im Event-Loop dem aktuellen Pattern-Index (gesetzt durch 0x4F NewPattern) zugeordnet und in `FlpParsed.patternNames: Map<number, string>` gespeichert. Cross-Contamination-Check: 0xC1 wird NUR in patternNames, 0xC3 NUR in channelNames geschrieben. `importFlp()` nutzt jetzt `parsed.patternNames.get(firstPattern.index)` als baseName, mit Fallback auf Dateiname-Stem ohne `.flp`. Multi-Bar: 'Verse' + 3 Bars → 'Verse bar 1/2/3'. 7 neue Vitest-Cases: 5 parseFlp.patternNames (empty/single/no-NewPattern/multi/cross-contamination), 2 importFlp.baseName (pattern-name-preferred / filename-fallback). 1681 Tests grün, pnpm check 0 Fehler."
+      ],
+      next: [
+        "FLP-MIDI-EXPORT Phase 4: SMF-Export von Melodic-Parts mit Pitch + Duration (umgekehrte Richtung — Synthstudio → FL Studio Re-Import). Größerer Schritt, eigenständiger Code-Pfad in electron/export.ts oder utils/midiExport.ts.",
+        "FEAT-INSP: bleibt offen (Explore-Report verfügbar, 4-5h, 8+ Files).",
+        "neue_todos.md Backlog: Quantize-Crash-Fix (oberste Priorität — User-blocker), GitHub-Builder-Workflow, Updater, Mobile-Build, Login/Beta-System, Plugin-Wiki/LLM, Sample-Cloud, MIDI-Templates für Hardtekk-Gear, .als/.elst-Konverter, Workbench-Audacity-Niveau, AI-Projekt-Analyse, Admin/Lite-Tier-Lizenz."
+      ],
+      changed: [
+        "package.json",
+        "client/src/utils/flpImport.ts",
+        "client/src/utils/imports/flpImport.ts",
+        "tests/features/flp-import.test.ts",
+        "tests/features/project-imports.test.ts",
+        "agents/INDEX.js"
+      ]
+    },
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-14T04:00:00.000Z",
+      done: [
+        "FLP-MELODIC-POLISH (v1.69.0): UX-Polish für FLP-MELODIC-ROUTE — Piano-Roll-View zentriert nach Import auf den tatsächlichen Notenbereich statt Default C4. Neue pure Funktion `pitchMedian(pitches)` in `client/src/utils/imports/flpImport.ts` (gerade Anzahl → gerundeter Mittelwert, ungerade → exakter Median, leer → 60). `ImportedMelodicPart` bekommt optionales `baseNote: number`-Feld in `imports/types.ts`. `buildMelodicParts` setzt baseNote = pitchMedian der Notes des Channels. `routeMelodicPartsToPatterns` emittiert neuen `baseNotes: MelodicBaseNoteMapping[]` neben den existierenden mappings (first-wins pro partId via Map-Insertion-Order; Multi-Bar liefert pro Bar einen Eintrag, weil pro Bar eigene partIds). App.tsx ruft `setBaseNote` aus useMelodicPartStore vor `setNote` auf. 11 neue Vitest-Cases (5 pitchMedian + 2 buildMelodicParts.baseNote + 4 routeMelodicPartsToPatterns.baseNotes). 1674 Tests grün, pnpm check 0 Fehler."
+      ],
+      next: [
+        "FLP-PATTERN-NAMES: 0xC1 TEXT_PATTERN_NAME parsen für echte Pattern-Namen statt 'filename bar N' (analog zu Phase 3 v1.68).",
+        "FLP-MIDI-EXPORT Phase 4: SMF-Export von Melodic-Parts mit Pitch + Duration (umgekehrte Richtung — Synthstudio → FL Studio Re-Import).",
+        "FEAT-INSP: bleibt offen (Explore-Report verfügbar, 4-5h, 8+ Files).",
+        "neue_todos.md Backlog: Quantize-Crash, GitHub-Builder, Updater, Mobile-Build, Login/Beta, Plugin-Wiki, Sample-Cloud, MIDI-Templates, .als/.elst-Konverter, Workbench-Ausbau, AI-Projekt-Analyse, Admin/Lite-Tiers — User-Wishlist aus neue_todos.md."
+      ],
+      changed: [
+        "package.json",
+        "client/src/utils/imports/types.ts",
+        "client/src/utils/imports/flpImport.ts",
+        "client/src/utils/imports/index.ts",
+        "client/src/App.tsx",
+        "tests/features/project-imports.test.ts",
+        "agents/INDEX.js"
+      ]
+    },
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-14T03:30:00.000Z",
+      done: [
+        "FLP-CHANNEL-NAMES (v1.68.0): Phase 3 von MELODIC-ROUTE. Statt generischer 'Part N'/'Channel N' Labels nutzt der FLP-Importer jetzt die echten Sample-/Instrument-Namen aus dem FLP. Parser-Erweiterung in `client/src/utils/flpImport.ts`: FlpParsed bekommt `channelNames: Map<number, string>`. Event-Loop trackt jetzt zusätzlich zu currentPatternIndex einen `currentChannel` (gesetzt durch 0x40 NewChannel WORD-Event). 0xC3 TEXT_CHANNEL_NAME (alias TEXT_DEFPLUGNAME) wird dem currentChannel zugeordnet. Neuer pure `decodeFlpText(bytes)`-Helper: heuristik UTF-16LE-vs-Latin-1 anhand `bytes[1]===0 && bytes[3]===0`, robust gegen sowohl 'Kick' ASCII als auch 'Kick' UTF-16LE-encoded mit trailing nulls. Wiring (`client/src/utils/imports/flpImport.ts`): channelNames werden in drum-like (für `buildPartsForBar` → ImportedPart.name) und melodic (für `buildMelodicParts` → ImportedMelodicPart.name) gesplittet, damit melodische Namen nicht die Drum-Parts überschreiben und umgekehrt. partIdx-Kollision: first-wins (deterministisch via Map-Insertion-Order). 11 neue Vitest-Cases (5 decodeFlpText + 6 parseFlp.channelNames) + 2 neue für buildMelodicParts.name-Mapping. Alle 1663 Tests grün, pnpm check 0 Fehler."
+      ],
+      next: [
+        "FLP-MELODIC-POLISH: baseNote pro MelodicPart aus Pitch-Statistik (median/mean) setzen, damit Piano-Roll-View beim Öffnen direkt auf die importierten Notes zentriert; aktuell bleibt Default C4.",
+        "FLP-MIDI-EXPORT Phase 4: SMF-Export von Melodic-Parts mit Pitch + Duration (umgekehrte Richtung — Synthstudio → FL Studio Re-Import).",
+        "FLP-PATTERN-NAMES: 0xC1 TEXT_PATTERN_NAME für echte Pattern-Namen statt 'filename bar N' nutzen (analog zu Phase 3).",
+        "FEAT-INSP: bleibt offen (Explore-Report verfügbar, 4-5h, 8+ Files)."
+      ],
+      changed: [
+        "package.json",
+        "client/src/utils/flpImport.ts",
+        "client/src/utils/imports/flpImport.ts",
+        "tests/features/flp-import.test.ts",
+        "tests/features/project-imports.test.ts",
+        "agents/INDEX.js"
+      ]
+    },
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-14T03:00:00.000Z",
+      done: [
+        "BUG-024-CSP-AI (v1.67.0): User-Report 'KI Script-Erstellung geht nicht trotz ChatGPT API Key'. Root-Cause: Electron-Production-CSP (`electron/csp.ts`) hatte `connect-src 'self' ws: wss:` ohne AI-Provider-Hosts → Chromium blockte alle `fetch('https://api.openai.com/...')`-Calls aus dem Renderer mit 'Refused to connect... violates CSP'. Im Web-Build keine CSP-meta-tag → dort lief es, daher User-Symptom nur in Electron-App. Anthropic-Aufrufe waren technisch genauso betroffen — User hat es nur über OpenAI bemerkt. Fix: `https://api.openai.com` + `https://api.anthropic.com` in connect-src für Prod- UND Dev-CSP-Directives aufgenommen. CSP-Header-Snapshot aktualisiert (Prod + Dev). Neuer Positiv-Test 'connect-src erlaubt api.openai.com + api.anthropic.com (BUG-024, v1.67)' in tests/electron/csp-header.test.ts. Doku-Block oben in csp.ts aktualisiert. BUG-024 als 'fixed: true' im INDEX.bugs eingetragen."
+      ],
+      next: [
+        "FLP-CHANNEL-NAMES Phase 3: TEXT_CHANNEL_NAME (0xC3) aus FLP-Events extrahieren → echte Sample-/Instrument-Namen statt 'Channel N' (auch für ImportedMelodicPart.name)",
+        "FLP-MELODIC-POLISH: baseNote pro MelodicPart aus Pitch-Statistik (median/mean) setzen, damit Piano-Roll-View beim Öffnen direkt auf die importierten Notes zentriert; aktuell bleibt Default C4.",
+        "FLP-MIDI-EXPORT Phase 4: SMF-Export von Melodic-Parts mit Pitch + Duration (umgekehrte Richtung — Synthstudio → FL Studio Re-Import)",
+        "FEAT-INSP: bleibt offen (Explore-Report verfügbar, 4-5h, 8+ Files)"
+      ],
+      changed: [
+        "package.json",
+        "electron/csp.ts",
+        "tests/electron/csp-header.test.ts",
+        "tests/electron/__snapshots__/csp-header.test.ts.snap",
+        "agents/INDEX.js"
+      ]
+    },
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-14T02:30:00.000Z",
+      done: [
+        "FLP-MELODIC-ROUTE (v1.66.0): Phase 2 von MELODIC-ROUTE. Die in v1.65 extrahierten `ImportedMelodicPart`-Daten werden jetzt aktiv in den `useMelodicPartStore` geroutet — beim Import einer .flp mit melodischen FL-Channels erscheinen die Notes automatisch im Piano Roll der entsprechenden Drum-Parts. Neue Pure-Function `routeMelodicPartsToPatterns(melodicParts, patterns, stepsPerBar=16, partCount=8)` in `client/src/utils/imports/index.ts`: mappt sourceChannel%partCount auf Part-IDs, quantisiert startStep-Float auf 16-Step-Grid via Math.round, splittet Multi-Bar-Notes auf die importierten Bar-Patterns, last-note-wins bei Konflikten + Warnungs-Sammlung (Konflikte und out-of-range-Notes). ProjectManager-Callback `onImportPatterns` um `melodicParts?: ImportedMelodicPart[]` erweitert. App.tsx ruft `setMelodicNote` + `setMelodicVelocity` aus dem Store direkt auf die Mappings auf. Warning-Text in flpImport.ts gewechselt von 'Pitch-Info verworfen' → 'als Melodic-Part in den Piano Roll geroutet'. 9 neue Vitest-Cases für routeMelodicPartsToPatterns (empty/no-target/partIdx-modulo/multi-bar/rounding/conflict/out-of-range/multi-channel/velocity-passthrough), alle FLP-Tests grün, pnpm check 0 Fehler."
+      ],
+      next: [
+        "FLP-CHANNEL-NAMES Phase 3: TEXT_CHANNEL_NAME (0xC3) aus FLP-Events extrahieren → echte Sample-/Instrument-Namen statt 'Channel N' (auch für ImportedMelodicPart.name)",
+        "FLP-MELODIC-POLISH: baseNote pro MelodicPart aus Pitch-Statistik (median/mean) setzen, damit Piano-Roll-View beim Öffnen direkt auf die importierten Notes zentriert; aktuell bleibt Default C4.",
+        "FLP-MIDI-EXPORT Phase 4: SMF-Export von Melodic-Parts mit Pitch + Duration (umgekehrte Richtung — Synthstudio → FL Studio Re-Import)",
+        "FEAT-INSP: bleibt offen (Explore-Report verfügbar, 4-5h, 8+ Files)"
+      ],
+      changed: [
+        "package.json",
+        "client/src/utils/imports/index.ts",
+        "client/src/utils/imports/flpImport.ts",
+        "client/src/components/ProjectManager/ProjectManager.tsx",
+        "client/src/App.tsx",
+        "tests/features/project-imports.test.ts",
+        "agents/INDEX.js"
+      ]
+    },
     {
       agent:     "coordinator",
       timestamp: "2026-05-14T01:55:00.000Z",

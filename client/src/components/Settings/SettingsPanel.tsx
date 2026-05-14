@@ -485,13 +485,63 @@ function MidiDevicesSection({ midi }: { midi: MidiState & MidiActions }) {
                   <option value="">Ausgangsgerät wählen</option>
                   {midi.outputDevices.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
                 </select>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 mb-2">
                   <label className="text-xs text-text-muted">MIDI-Kanal:</label>
                   <input type="number" min={1} max={16} value={midi.midiOutChannel}
                     onChange={e => midi.setMidiOutChannel(Number(e.target.value))}
                     className="w-16 bg-bg-elevated text-text-primary text-xs px-2 py-1 rounded border border-border-color" />
                   <span className="text-[10px] text-text-dim">(10 = GM Drums)</span>
                 </div>
+                {/* v1.89: MIDI-Output-Test-Button */}
+                {midi.activeOutputDeviceId && (
+                  <div className="flex items-center gap-2 pt-1 border-t border-border-color/50">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        // Note On 60 (C4) + 250ms später Note Off → kurzer Test-Ton
+                        midi.sendNoteOn(60, 100);
+                        setTimeout(() => midi.sendNoteOff(60), 250);
+                      }}
+                      className="px-2 py-1 text-[10px] rounded bg-accent-primary/30 hover:bg-accent-primary/50 text-accent-primary"
+                      title="Note On 60 (C4) für 250ms — testet ob das Ausgangsgerät reagiert"
+                    >
+                      🔊 Note testen
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => midi.sendCC(74, 100)}
+                      className="px-2 py-1 text-[10px] rounded bg-accent-secondary/30 hover:bg-accent-secondary/50 text-accent-secondary"
+                      title="CC 74 (Filter) auf Wert 100 — testet ob CCs ankommen"
+                    >
+                      🎛 CC testen
+                    </button>
+                    {/* v1.98: MIDI Panic */}
+                    <button
+                      type="button"
+                      onClick={midi.sendPanic}
+                      className="px-2 py-1 text-[10px] rounded bg-accent-danger/30 hover:bg-accent-danger/50 text-accent-danger font-semibold"
+                      title="MIDI Panic — sendet All Notes Off + All Sound Off auf allen 16 Channels. Löst hängende Noten."
+                    >
+                      🚨 Panic
+                    </button>
+                    <span className="text-[10px] text-text-dim ml-auto">
+                      Test / Reset ans aktive Ausgangsgerät
+                    </span>
+                  </div>
+                )}
+                {/* v1.97: MIDI-Clock-Out — sendet 24 PPQ an aktives Output-Device */}
+                {midi.activeOutputDeviceId && (
+                  <label className="flex items-center gap-2 cursor-pointer pt-2 border-t border-border-color/50">
+                    <input type="checkbox" checked={midi.clockOutEnabled}
+                      onChange={e => midi.setClockOutEnabled(e.target.checked)} className="accent-accent-primary" />
+                    <span className="text-xs text-text-primary">
+                      MIDI-Clock senden ({midi.clockOutBpm} BPM, 24 PPQ)
+                    </span>
+                    <span className="text-[10px] text-text-dim ml-auto">
+                      v1.97: Externe Synths synct zu Synthstudio
+                    </span>
+                  </label>
+                )}
               </>
             )}
           </div>

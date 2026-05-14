@@ -21,6 +21,10 @@ import { TransposeControl } from "@/components/PianoRoll/TransposeControl";
 import { PatternMorphPanel } from "@/components/PatternMorph";
 import { MacroPanel } from "@/components/Macro/MacroPanel";
 import { EnvelopeFollowerPanel } from "./EnvelopeFollowerPanel";
+import { useMidiLearn } from "@/hooks/useMidiLearn";
+import { toast } from "@/store/useToastStore";
+import { MixAssistantPanel } from "./MixAssistantPanel";
+import type { MixAnalysisInput, MixRecommendation } from "@/utils/mixAnalysis";
 import { parseMidiFile } from "../../../../src/utils/midiParser.js";
 import { parseFlp, flpPositionToStep, groupNotesByBar, calculateBarCount } from "@/utils/flpImport";
 import { GranularSynthPanel } from "./GranularSynthPanel";
@@ -46,6 +50,179 @@ interface Props {
 }
 
 
+// ─── Pattern-Row mit Right-Click MIDI-Learn (v1.92) ───────────────────────────
+
+interface PatternRowProps {
+  pattern: { id: string; name: string; bpm: number | null };
+  patternIndex: number;
+  isActive: boolean;
+  isPlaying: boolean;
+  isLiveEditing: boolean;
+  showDelete: boolean;
+  /** v2.4: ob ein vorheriges Pattern existiert (für Sample-Übernahme-Button). */
+  hasPrevPattern: boolean;
+  onSelect: () => void;
+  onDuplicate: () => void;
+  onRemove: () => void;
+  /** v2.4: Sampler vom angegebenen Source-Pattern in dieses übernehmen. */
+  onCopySamplesFrom: (sourcePatternId: string, sourceName: string) => void;
+  /** v2.4: ID des vorherigen Patterns (für die Quick-Action). */
+  prevPatternId: string | null;
+  /** v2.5: Alle Patterns für den Picker-Submenu. */
+  allPatterns: ReadonlyArray<{ id: string; name: string }>;
+  /** v2.8: Drag-Drop Reorder callback (fromIndex, toIndex). */
+  onReorder: (fromIndex: number, toIndex: number) => void;
+}
+
+function PatternRow({
+  pattern, patternIndex, isActive, isPlaying, isLiveEditing, showDelete,
+  hasPrevPattern, prevPatternId, allPatterns,
+  onSelect, onDuplicate, onRemove, onCopySamplesFrom, onReorder,
+}: PatternRowProps) {
+  const isDraft  = isLiveEditing && isActive;
+  const isLocked = isLiveEditing && isPlaying;
+  // v1.92: jede Pattern-Zeile ist via Rechtsklick MIDI-bindbar
+  const learn = useMidiLearn({ type: "pattern", patternIndex });
+  // v2.5: Submenu zum Auswählen welcher Pattern als Source dient
+  const [pickerOpen, setPickerOpen] = useState(false);
+  // v2.8: Drag-Drop-Reorder State (drop-indicator: above|below|null)
+  const [dropIndicator, setDropIndicator] = useState<"above" | "below" | null>(null);
+
+  return (
+    <div
+      className="flex items-center group relative"
+      // v2.8: Drag-Drop-Reorder. Visual: blauer Strich oberhalb/unterhalb der Zeile
+      // beim Drag-Over zeigt wo das Pattern eingefügt wird.
+      onDragOver={(e) => {
+        if (e.dataTransfer.types.includes("application/x-synthstudio-pattern-row")) {
+          e.preventDefault();
+          const rect = e.currentTarget.getBoundingClientRect();
+          const midY = rect.top + rect.height / 2;
+          setDropIndicator(e.clientY < midY ? "above" : "below");
+        }
+      }}
+      onDragLeave={() => setDropIndicator(null)}
+      onDrop={(e) => {
+        const raw = e.dataTransfer.getData("application/x-synthstudio-pattern-row");
+        if (!raw) return;
+        e.preventDefault();
+        const fromIndex = parseInt(raw, 10);
+        if (isNaN(fromIndex) || fromIndex === patternIndex) {
+          setDropIndicator(null);
+          return;
+        }
+        // Drop above N: insert at N (if from>N) or N-1 (if from<N)
+        // Drop below N: insert at N+1 (if from>N) or N (if from<N)
+        const targetIdx = dropIndicator === "below" ? patternIndex + 1 : patternIndex;
+        const adjustedTarget = fromIndex < targetIdx ? targetIdx - 1 : targetIdx;
+        onReorder(fromIndex, adjustedTarget);
+        setDropIndicator(null);
+      }}
+    >
+      {dropIndicator === "above" && (
+        <div className="absolute left-0 right-0 -top-px h-0.5 bg-accent-secondary z-10 pointer-events-none" />
+      )}
+      {dropIndicator === "below" && (
+        <div className="absolute left-0 right-0 -bottom-px h-0.5 bg-accent-secondary z-10 pointer-events-none" />
+      )}
+      {/* v2.8: Drag-Handle für Pattern-Reorder */}
+      {!isLocked && (
+        <span
+          draggable
+          onDragStart={(e) => {
+            e.dataTransfer.effectAllowed = "move";
+            e.dataTransfer.setData("application/x-synthstudio-pattern-row", String(patternIndex));
+          }}
+          className="cursor-grab active:cursor-grabbing px-1 text-text-dim hover:text-text-primary text-[10px] opacity-0 group-hover:opacity-100"
+          title="Drag&Drop zum Sortieren"
+        >☰</span>
+      )}
+      <button
+        onClick={() => { if (!isLocked) onSelect(); }}
+        onContextMenu={learn.onContextMenu}
+        disabled={isLocked}
+        title={`${isLocked ? "Wird abgespielt – während Live-Edit nicht bearbeitbar" : pattern.name}${learn.isMapped ? ` · CC${learn.mappedCC}` : ""} · Rechtsklick: MIDI-Learn`}
+        className={[
+          "flex-1 text-left px-3 py-1.5 text-xs transition-colors",
+          isDraft    ? "text-accent-primary bg-accent-primary/20 font-semibold"   :
+          isActive   ? "text-accent-secondary bg-accent-secondary/20"              :
+          isLocked   ? "text-text-dim cursor-not-allowed opacity-50"              :
+                       "text-text-primary hover:bg-bg-panel",
+        ].join(" ")}
+      >
+        {isPlaying && <span className="mr-1.5 text-accent-danger" title="Wird gerade abgespielt">▶</span>}
+        {isDraft   && <span className="mr-1.5 text-accent-primary" title="Draft – wird bearbeitet">✏</span>}
+        {pattern.name}
+        {pattern.bpm !== null && (
+          <span className="ml-1 text-[9px] text-text-dim">{pattern.bpm} BPM</span>
+        )}
+        {learn.isMapped && (
+          <span className="ml-1.5 text-[9px] font-mono text-accent-secondary">CC{learn.mappedCC}</span>
+        )}
+        {isLocked && <span className="ml-1.5 text-[9px] text-text-dim">[gesperrt]</span>}
+      </button>
+      {/* v2.4 + v2.5: Sampler-Übernahme — Split-Button + Picker-Submenu */}
+      {!isLocked && allPatterns.length > 1 && (
+        <div className="relative inline-flex opacity-0 group-hover:opacity-100">
+          {hasPrevPattern && prevPatternId && (() => {
+            const prevPat = allPatterns.find(p => p.id === prevPatternId);
+            return (
+              <button
+                onClick={() => onCopySamplesFrom(prevPatternId, prevPat?.name ?? "")}
+                className="px-1.5 py-1.5 text-text-dim hover:text-accent-secondary text-xs"
+                title={`Sampler+FX vom vorherigen Pattern „${prevPat?.name ?? "..."}" übernehmen (Steps bleiben). Tastenkombination: Ctrl+Shift+S`}
+              >📥</button>
+            );
+          })()}
+          <button
+            onClick={() => setPickerOpen(o => !o)}
+            className="px-1 py-1.5 text-text-dim hover:text-accent-secondary text-[10px]"
+            title="Sampler aus einem beliebigen Pattern übernehmen"
+            aria-label="Sampler-Quelle wählen"
+          >▾</button>
+          {pickerOpen && (
+            <div
+              className="absolute left-0 top-full mt-0.5 bg-bg-elevated border border-border-color rounded shadow-xl z-50 min-w-[180px] py-1"
+              onMouseLeave={() => setPickerOpen(false)}
+            >
+              <div className="px-3 py-1 text-[10px] text-text-dim uppercase tracking-wider border-b border-border-color">
+                Sampler übernehmen aus
+              </div>
+              {allPatterns
+                .filter(p => p.id !== pattern.id)
+                .map(src => (
+                  <button
+                    key={src.id}
+                    onClick={() => { onCopySamplesFrom(src.id, src.name); setPickerOpen(false); }}
+                    className="w-full text-left px-3 py-1.5 text-xs text-text-primary hover:bg-accent-secondary/20 truncate"
+                    title={`Sampler+FX von „${src.name}" in „${pattern.name}" übernehmen`}
+                  >
+                    📥 {src.name}
+                  </button>
+                ))}
+            </div>
+          )}
+        </div>
+      )}
+      {!isLocked && (
+        <button
+          onClick={onDuplicate}
+          className="px-1.5 py-1.5 text-text-dim hover:text-text-primary text-xs opacity-0 group-hover:opacity-100"
+          title="Duplizieren"
+        >⧉</button>
+      )}
+      {showDelete && !isLocked && !isDraft && (
+        <button
+          onClick={onRemove}
+          className="px-1.5 py-1.5 text-text-dim hover:text-accent-danger text-xs opacity-0 group-hover:opacity-100"
+          title="Löschen"
+        >✕</button>
+      )}
+      {learn.menu}
+    </div>
+  );
+}
+
 // ─── Haupt-Komponente ─────────────────────────────────────────────────────────
 
 export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChange, className = "" }: Props) {
@@ -62,6 +239,9 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
   const metronomPanelRef = useRef<HTMLDivElement>(null);
   const [masterVolume, setMasterVolume] = useState(0.85);
   const [bpmInput, setBpmInput] = useState(String(bpm));
+  // v1.86: Right-Click-MIDI-Learn auf BPM + Play/Stop
+  const bpmLearn = useMidiLearn({ type: "bpm" });
+  const playStopLearn = useMidiLearn({ type: "playStop" });
   const bpmInputRef = useRef<HTMLInputElement>(null);
   const [pianoRollPartId, setPianoRollPartId] = useState<string | null>(null);
   const [abSlotA, setAbSlotA] = useState<string | null>(null);
@@ -72,6 +252,7 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
   const [activeVar, setActiveVar] = useState<string>("A");
   const [showNoteRepeat, setShowNoteRepeat] = useState(false);
   const [showMorph, setShowMorph] = useState(false);
+  const [showMixAssistant, setShowMixAssistant] = useState(false);
   const [showEnvFollower, setShowEnvFollower] = useState(false);
   const [showMacros, setShowMacros] = useState(false);
   const [showPolyrhythm, setShowPolyrhythm] = useState(false);
@@ -81,15 +262,21 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
   const [granularPartId, setGranularPartId] = useState<string | null>(null);
 
   // MIDI-Import: MIDI-Datei in aktives Pattern übertragen
-  const handleMidiImport = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+  /**
+   * v2.12: Pure-File-Variante für Drag-Drop und File-Picker.
+   * handleMidiImport (file-input ChangeEvent) delegiert an diese Funktion.
+   */
+  const handleMidiFile = useCallback((file: File) => {
     if (!file || !pattern) return;
     const reader = new FileReader();
     reader.onload = (ev) => {
       try {
         const buffer = ev.target?.result as ArrayBuffer;
         const parsed = parseMidiFile(buffer);
-        if (!parsed?.tracks?.length) return;
+        if (!parsed?.tracks?.length) {
+          toast(`Keine Tracks im MIDI-File: ${file.name}`, { kind: "warning" });
+          return;
+        }
         const tpqn: number = parsed.ticksPerQuarterNote ?? 480;
         const stepCount = pattern.stepCount;
         // GM Drum Map: MIDI-Note → Part-Index
@@ -106,7 +293,10 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
             }
           }
         }
-        if (!noteOns.length) return;
+        if (!noteOns.length) {
+          toast(`Keine Notes im MIDI-File: ${file.name}`, { kind: "warning" });
+          return;
+        }
 
         // Normalisierung: Quantize auf 1/16 Steps (tpqn/4 ticks per step)
         const ticksPerStep = tpqn / 4;
@@ -122,13 +312,31 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
           }
         }
         pattern.parts.forEach((part, i) => dm.setPartSteps(part.id, newSteps[i], newVels[i]));
+        toast(`MIDI importiert: ${file.name} (${noteOns.length} Notes)`, { kind: "success" });
       } catch (err) {
         console.error("[MIDI Import]", err);
+        const msg = err instanceof Error ? err.message : String(err);
+        toast(`MIDI-Import fehlgeschlagen: ${msg}`, { kind: "error", duration: 5000 });
       }
     };
     reader.readAsArrayBuffer(file);
-    e.target.value = "";
   }, [pattern, dm]);
+
+  const handleMidiImport = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) handleMidiFile(file);
+    e.target.value = "";
+  }, [handleMidiFile]);
+
+  // v2.12: Drag-Drop für .mid-Files via globales Event (von ElectronDropZone dispatched).
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const file = (e as CustomEvent<File>).detail;
+      if (file instanceof File) handleMidiFile(file);
+    };
+    window.addEventListener("midi:fileImport", handler);
+    return () => window.removeEventListener("midi:fileImport", handler);
+  }, [handleMidiFile]);
 
   /**
    * FLP-Import: extrahiert ALLE Notes aus dem ersten FL-Pattern und verteilt
@@ -347,56 +555,31 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
                   Live-Edit aktiv: nur der Draft ist bearbeitbar
                 </div>
               )}
-              {dm.patterns.map(p => {
-                const isActive   = p.id === dm.activePatternId;
-                const isPlaying  = p.id === dm.playbackPatternId;
-                const isDraft    = isLiveEditing && isActive;
-                const isLocked   = isLiveEditing && isPlaying; // original – gesperrt während Edit
-
-                return (
-                  <div key={p.id} className="flex items-center group">
-                    <button
-                      onClick={() => {
-                        if (isLocked) return; // Original während Live-Edit nicht anwählbar
-                        dm.setActivePattern(p.id);
-                        setShowPatternMenu(false);
-                      }}
-                      disabled={isLocked}
-                      title={isLocked ? "Wird abgespielt – während Live-Edit nicht bearbeitbar" : p.name}
-                      className={[
-                        "flex-1 text-left px-3 py-1.5 text-xs transition-colors",
-                        isDraft    ? "text-accent-primary bg-accent-primary/20 font-semibold"   :
-                        isActive   ? "text-accent-secondary bg-accent-secondary/20"              :
-                        isLocked   ? "text-text-dim cursor-not-allowed opacity-50"              :
-                                     "text-text-primary hover:bg-bg-panel",
-                      ].join(" ")}
-                    >
-                      {/* Status-Icons */}
-                      {isPlaying && <span className="mr-1.5 text-accent-danger" title="Wird gerade abgespielt">▶</span>}
-                      {isDraft   && <span className="mr-1.5 text-accent-primary" title="Draft – wird bearbeitet">✏</span>}
-                      {p.name}
-                      {p.bpm !== null && (
-                        <span className="ml-1 text-[9px] text-text-dim">{p.bpm} BPM</span>
-                      )}
-                      {isLocked && <span className="ml-1.5 text-[9px] text-text-dim">[gesperrt]</span>}
-                    </button>
-                    {!isLocked && (
-                      <button
-                        onClick={() => dm.duplicatePattern(p.id)}
-                        className="px-1.5 py-1.5 text-text-dim hover:text-text-primary text-xs opacity-0 group-hover:opacity-100"
-                        title="Duplizieren"
-                      >⧉</button>
-                    )}
-                    {dm.patterns.length > 1 && !isLocked && !isDraft && (
-                      <button
-                        onClick={() => dm.removePattern(p.id)}
-                        className="px-1.5 py-1.5 text-text-dim hover:text-accent-danger text-xs opacity-0 group-hover:opacity-100"
-                        title="Löschen"
-                      >✕</button>
-                    )}
-                  </div>
-                );
-              })}
+              {dm.patterns.map((p, idx) => (
+                <PatternRow
+                  key={p.id}
+                  pattern={p}
+                  patternIndex={idx}
+                  isActive={p.id === dm.activePatternId}
+                  isPlaying={p.id === dm.playbackPatternId}
+                  isLiveEditing={isLiveEditing}
+                  showDelete={dm.patterns.length > 1}
+                  hasPrevPattern={idx > 0}
+                  prevPatternId={idx > 0 ? dm.patterns[idx - 1].id : null}
+                  allPatterns={dm.patterns.map(pp => ({ id: pp.id, name: pp.name }))}
+                  onSelect={() => { dm.setActivePattern(p.id); setShowPatternMenu(false); }}
+                  onDuplicate={() => dm.duplicatePattern(p.id)}
+                  onRemove={() => dm.removePattern(p.id)}
+                  onCopySamplesFrom={(srcId, srcName) => {
+                    dm.copySamplesFromPattern(srcId, p.id);
+                    toast(`Sampler aus „${srcName}" in „${p.name}" übernommen`, { kind: "success" });
+                  }}
+                  onReorder={(from, to) => {
+                    dm.reorderPatterns(from, to);
+                    toast(`Pattern „${dm.patterns[from]?.name ?? "?"}" verschoben`, { kind: "info", duration: 2000 });
+                  }}
+                />
+              ))}
               {/* Follow Action für aktives Pattern */}
               <div className="border-t border-border-color px-2 py-2">
                 <div className="text-[10px] text-text-dim mb-1.5 uppercase tracking-wide">Follow Action</div>
@@ -757,22 +940,30 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
           className="w-6 h-6 rounded text-xs bg-bg-elevated text-text-dim hover:bg-bg-elevated disabled:opacity-30 transition-colors"
           title="Wiederholen (Ctrl+Y)">↪</button>
 
-        {/* Play/Stop */}
+        {/* Play/Stop — v1.86: right-click für MIDI-Learn */}
         <button
           onClick={onPlayStop}
-          title={isPlaying ? "Stop (Space)" : "Play (Space)"}
+          onContextMenu={playStopLearn.onContextMenu}
+          title={`${isPlaying ? "Stop" : "Play"} (Space) · Rechtsklick: MIDI-Learn${playStopLearn.isMapped ? ` · CC${playStopLearn.mappedCC}` : ""}`}
           className={[
-            "w-8 h-8 rounded flex items-center justify-center text-sm font-bold transition-colors",
+            "relative w-8 h-8 rounded flex items-center justify-center text-sm font-bold transition-colors",
             isPlaying
               ? "bg-accent-danger hover:bg-accent-danger/80 text-bg-base"
               : "bg-accent-primary hover:bg-accent-primary text-bg-base",
           ].join(" ")}
         >
           {isPlaying ? "■" : "▶"}
+          {playStopLearn.isMapped && (
+            <span className="absolute -top-1 -right-1 text-[8px] font-mono bg-accent-secondary text-bg-base px-0.5 rounded leading-tight">CC{playStopLearn.mappedCC}</span>
+          )}
         </button>
+        {playStopLearn.menu}
 
-        {/* BPM */}
-        <div className="flex items-center gap-1">
+        {/* BPM — v1.86: right-click für MIDI-Learn */}
+        <div
+          className="flex items-center gap-1 relative"
+          onContextMenu={bpmLearn.onContextMenu}
+        >
           <button
             onClick={() => onBpmChange(Math.max(20, bpm - 1))}
             title="BPM −1 (Taste: −)"
@@ -801,7 +992,11 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
             aria-label="BPM erhöhen"
             className="w-5 h-6 rounded text-xs bg-bg-elevated text-text-muted hover:bg-bg-base hover:text-text-primary active:scale-95 transition-colors"
           >+</button>
+          {bpmLearn.isMapped && (
+            <span className="text-[8px] font-mono bg-accent-secondary text-bg-base px-1 rounded leading-tight">CC{bpmLearn.mappedCC}</span>
+          )}
         </div>
+        {bpmLearn.menu}
 
         {/* MIDI-Import */}
         <button
@@ -920,6 +1115,20 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
           ⬡ Poly
         </button>
 
+        {/* v2.0.0: Mix-Assistent — analysiert das Pattern und gibt Mix-Tipps */}
+        <button
+          onClick={() => setShowMixAssistant(prev => !prev)}
+          title="Mix-Assistent (regelbasiert + optional KI-Analyse)"
+          className={[
+            "px-2 py-1 rounded text-[10px] font-bold transition-colors",
+            showMixAssistant
+              ? "bg-accent-success/20 text-accent-success border border-accent-success/40"
+              : "bg-bg-elevated text-text-dim hover:bg-bg-elevated hover:text-text-primary",
+          ].join(" ")}
+        >
+          🧠 Mix
+        </button>
+
         {/* Pattern Variations A/B/C/D */}
         <div className="flex items-center gap-0 bg-bg-base rounded border border-border-color" title="Pattern Variations — Variationen speichern & wechseln">
           {(["A","B","C","D"] as const).map((v, i) => {
@@ -966,18 +1175,19 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
       </div>
 
       {/* ── Makro-Panel ──────────────────────────────────────────────────── */}
-      {/* TASK-101 / BUG-008: title weglassen — innerer MacroPanel hat eigenen Header */}
+      {/* v1.94: Title gesetzt für prominente Close-Button-Discoverability */}
       {showMacros && (
         <ResizableDrumPanel storageKey="ss-panel-macros" defaultHeight={160} minHeight={100} maxHeight={280}
+          title="Makros (8 × bindbar)"
           onClose={() => setShowMacros(false)}>
           <MacroPanel parts={pattern.parts} />
         </ResizableDrumPanel>
       )}
 
       {/* ── Note Repeat Panel ────────────────────────────────────────────── */}
-      {/* TASK-101 / BUG-008: title weglassen + kein inner onClose (Outer X reicht) */}
       {showNoteRepeat && (
         <ResizableDrumPanel storageKey="ss-panel-notrepeat" defaultHeight={110} minHeight={80} maxHeight={240}
+          title="Note Repeat"
           onClose={() => setShowNoteRepeat(false)}>
           <NoteRepeatPanel
             bpm={effectiveBpm}
@@ -987,9 +1197,9 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
       )}
 
       {/* ── Pattern Morph Panel ──────────────────────────────────────────── */}
-      {/* TASK-101 / BUG-008: title weglassen + kein inner onClose (Outer X reicht) */}
       {showMorph && (
         <ResizableDrumPanel storageKey="ss-panel-morph" defaultHeight={160} minHeight={100} maxHeight={320}
+          title="Pattern-Morph"
           onClose={() => setShowMorph(false)}>
           <PatternMorphPanel
             patterns={dm.patterns}
@@ -1003,9 +1213,9 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
       )}
 
       {/* ── Envelope Follower Panel ──────────────────────────────────────── */}
-      {/* TASK-101 / BUG-008: title weglassen — innerer EnvelopeFollowerPanel hat eigenen Header */}
       {showEnvFollower && (
         <ResizableDrumPanel storageKey="ss-panel-envfollower" defaultHeight={180} minHeight={120} maxHeight={400}
+          title="Envelope Follower"
           onClose={() => setShowEnvFollower(false)}>
           <EnvelopeFollowerPanel parts={pattern.parts} />
         </ResizableDrumPanel>
@@ -1107,13 +1317,56 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
         );
       })()}
 
+      {/* ── Mix-Assistent (v2.0.0) ──────────────────────────────────────── */}
+      {showMixAssistant && (() => {
+        const mixInput: MixAnalysisInput = {
+          bpm,
+          parts: pattern.parts.map(p => ({
+            id: p.id,
+            name: p.name,
+            volume: Math.round((p.volume ?? 0.8) * 127),
+            pan: Math.round((p.pan ?? 0) * 100),
+            activeSteps: p.steps.filter(s => s.active).length,
+            totalSteps: p.steps.length,
+            filterCutoff: p.fx.filterEnabled ? p.fx.filterFreq : undefined,
+            trackType: p.name.toLowerCase(),
+          })),
+          masterVolume: 100,
+        };
+        const handleApply = (rec: MixRecommendation) => {
+          if (!rec.partId || rec.suggestedValue === undefined) return;
+          if (rec.targetProperty === "volume") {
+            dm.setPartVolume(rec.partId, Math.max(0, Math.min(1, rec.suggestedValue / 127)));
+          } else if (rec.targetProperty === "pan") {
+            dm.setPartPan(rec.partId, Math.max(-1, Math.min(1, rec.suggestedValue / 100)));
+          } else if (rec.targetProperty === "filterCutoff") {
+            dm.setPartFx(rec.partId, { filterEnabled: true, filterFreq: rec.suggestedValue });
+          }
+        };
+        return (
+          <ResizableDrumPanel storageKey="ss-panel-mix-assistant" defaultHeight={360} minHeight={200} maxHeight={620}
+            title="🧠 Mix-Assistent"
+            onClose={() => setShowMixAssistant(false)}>
+            <MixAssistantPanel
+              input={mixInput}
+              onApply={handleApply}
+              onClose={() => setShowMixAssistant(false)}
+            />
+          </ResizableDrumPanel>
+        );
+      })()}
+
       {/* ── Granular Synth Panel ─────────────────────────────────────────── */}
       {granularPartId && (() => {
         const grPart = pattern.parts.find(p => p.id === granularPartId);
         if (!grPart) return null;
         return (
-          /* TASK-101 / BUG-008: title weglassen — innerer GranularSynthPanel hat eigenen "Granular"-Header */
+          // v1.94: title gesetzt damit der Header (mit Close-Button) prominent ist.
+          // User-Feedback aus neue_todos.md: 'alle fenster sollen mit X zumachbar
+          // sein, granular und polyrhythm' — der X war zwar da, aber bei title=undefined
+          // ohne Beschriftung schwer auffindbar.
           <ResizableDrumPanel storageKey="ss-panel-granular" defaultHeight={320} minHeight={200} maxHeight={520}
+            title={`Granular: ${grPart.name}`}
             onClose={() => setGranularPartId(null)}>
             <GranularSynthPanel
               partId={grPart.id}
@@ -1126,9 +1379,9 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
       })()}
 
       {/* ── Polyrhythm Visualizer ────────────────────────────────────────── */}
-      {/* TASK-101 / BUG-008: title weglassen — innerer PolyrhythmVisualizer hat eigenen Header */}
       {showPolyrhythm && (
         <ResizableDrumPanel storageKey="ss-panel-polyrhythm" defaultHeight={180} minHeight={100} maxHeight={380}
+          title="Polyrhythm-Visualizer"
           onClose={() => setShowPolyrhythm(false)}>
           <PolyrhythmVisualizer pattern={pattern} currentStep={dm.currentStep} />
         </ResizableDrumPanel>

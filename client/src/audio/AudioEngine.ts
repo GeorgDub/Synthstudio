@@ -98,6 +98,78 @@ export interface ChannelFx {
   eqHigh: number;
 }
 
+/**
+ * Liste aller numerisch-mappbaren FX-Parameter pro Channel mit ihrer
+ * MIDI-Skala (min/max). MIDI 0-127 wird linear auf [min, max] gemappt.
+ * Toggle-Params (enabled, filterType) sind hier nicht aufgeführt — die
+ * werden über Button-style-Targets gebunden (>63 = an, <=63 = aus).
+ *
+ * v1.76 (FX-PARAM-TARGETS): MidiLearnTarget { type: "fxParam", param }
+ * nutzt diesen Range-Mapping um eingehende CC-Werte korrekt zu skalieren.
+ */
+export interface FxParamRange {
+  param: keyof ChannelFx;
+  label: string;
+  min: number;
+  max: number;
+  /** Wenn true wird der MIDI-Wert exponentiell statt linear gemappt
+   *  (sinnvoll für Frequency-Param der über mehrere Oktaven läuft). */
+  exponential?: boolean;
+}
+
+export const FX_PARAM_RANGES: ReadonlyArray<FxParamRange> = [
+  // Filter (kein filterType — das ist enum, nicht skalierbar)
+  { param: "filterFreq",          label: "Filter Cutoff",    min: 20,    max: 20000, exponential: true },
+  { param: "filterQ",             label: "Filter Resonance", min: 0.1,   max: 20 },
+  { param: "filterGain",          label: "Filter Gain",      min: -15,   max: 15 },
+  // Distortion
+  { param: "distortionAmount",    label: "Distortion Drive", min: 0,     max: 400 },
+  // Compressor
+  { param: "compressorThreshold", label: "Comp Threshold",   min: -60,   max: 0 },
+  { param: "compressorRatio",     label: "Comp Ratio",       min: 1,     max: 20 },
+  { param: "compressorAttack",    label: "Comp Attack",      min: 0,     max: 1 },
+  { param: "compressorRelease",   label: "Comp Release",     min: 0,     max: 1 },
+  // Delay
+  { param: "delayTime",           label: "Delay Time",       min: 0,     max: 2 },
+  { param: "delayFeedback",       label: "Delay Feedback",   min: 0,     max: 0.95 },
+  { param: "delayMix",            label: "Delay Wet",        min: 0,     max: 1 },
+  // Reverb
+  { param: "reverbDecay",         label: "Reverb Decay",     min: 0.1,   max: 10 },
+  { param: "reverbMix",           label: "Reverb Wet",       min: 0,     max: 1 },
+  // EQ (3-Band)
+  { param: "eqLow",               label: "EQ Low",           min: -15,   max: 15 },
+  { param: "eqMid",               label: "EQ Mid",           min: -15,   max: 15 },
+  { param: "eqHigh",              label: "EQ High",          min: -15,   max: 15 },
+] as const;
+
+export type FxParamKey =
+  | "filterFreq" | "filterQ" | "filterGain"
+  | "distortionAmount"
+  | "compressorThreshold" | "compressorRatio" | "compressorAttack" | "compressorRelease"
+  | "delayTime" | "delayFeedback" | "delayMix"
+  | "reverbDecay" | "reverbMix"
+  | "eqLow" | "eqMid" | "eqHigh";
+
+/**
+ * Wandelt einen MIDI-Wert (0-127) in den param-spezifischen Range um.
+ * Falls `exponential` aktiv → log-scale (für filterFreq u.ä.).
+ * Pure Funktion, in Tests nutzbar.
+ */
+export function midiValueToFxParam(midiValue: number, range: FxParamRange): number {
+  const v = Math.max(0, Math.min(127, midiValue)) / 127; // 0..1
+  if (range.exponential) {
+    // exp-Mapping: t=0 → min, t=1 → max
+    const ratio = range.max / Math.max(1e-9, range.min);
+    return range.min * Math.pow(ratio, v);
+  }
+  return range.min + v * (range.max - range.min);
+}
+
+/** Lookup für FxParamRange by param-key. */
+export function findFxParamRange(param: FxParamKey): FxParamRange | undefined {
+  return FX_PARAM_RANGES.find((r) => r.param === param);
+}
+
 export const DEFAULT_CHANNEL_FX: ChannelFx = {
   filterEnabled: false,
   filterType: "lowpass",
@@ -162,6 +234,13 @@ export interface StepData {
    * Note-Länge als Vielfaches eines Steps (0.25=1/4, 0.5=1/2, 1=ein Step, 2=zwei Steps).
    */
   length?: number;
+  /**
+   * v2.14: TB-303-Slide. Wenn true, gleitet die aktuelle Synth-Note tonal vom
+   * zuletzt getriggerten Step desselben Parts auf die aktuelle Pitch-Frequenz
+   * (Portamento). Wirkt nur für Synth-Parts (sourceType wavetable/fm) –
+   * Sample-Parts ignorieren das Flag.
+   */
+  slide?: boolean;
 }
 
 /**
@@ -311,6 +390,13 @@ class AudioEngineClass {
    * `getPartLfoRate/Depth` lesen und auf `synthParams` mappen.
    */
   private _synthEngine: SynthEngine | null = null;
+
+  /**
+   * v2.14 (TB-303-Slide): Pro Part die zuletzt getriggerte Frequenz + ob der
+   * vorherige Step `slide=true` hatte. Wird im Synth-Trigger ausgewertet damit
+   * der nächste Note-On bei aktivem Slide vom alten Pitch herangleitet.
+   */
+  private _partSlideState = new Map<string, { lastFreq: number; lastHadSlide: boolean }>();
 
   // ─── Audio-Track Channels (externe Dateien: Vocals/Songs) ──────────────────
   private audioTrackSources = new Map<string, AudioBufferSourceNode>();
@@ -1032,6 +1118,9 @@ class AudioEngineClass {
     this._pendingTimeouts.forEach((id) => clearTimeout(id));
     this._pendingTimeouts.clear();
     this._currentStep = 0;
+    // v2.14: Slide-State zurücksetzen damit beim nächsten Play die erste Note
+    // nicht versehentlich vom letzten Run her gleitet.
+    this._partSlideState.clear();
     this.positionCallbacks.forEach(cb => cb(0));
   }
 
@@ -1329,7 +1418,7 @@ class AudioEngineClass {
         // Drum-Step hat keine eigene Note — A4 (440 Hz) als Basis, step.pitch
         // wird als Halbton-Transpose appliziert (analog zur melodischen Logik).
         const freq = 440 * Math.pow(2, scheduled.pitch / 12);
-        this._triggerSynthOnChannel(scheduled.time, freq, vol, scheduled.pan, part);
+        this._triggerSynthOnChannel(scheduled.time, freq, vol, scheduled.pan, part, !!step.slide);
       } else if (part.sampleUrl) {
         const stepLength = step.length ?? 1;
         const partRef = part;
@@ -1462,7 +1551,7 @@ class AudioEngineClass {
    *          fehlen (kein ctx, kein synthParams, falscher sourceType) — Aufrufer
    *          kann auf Fallback-Pfad ausweichen.
    */
-  private _triggerSynthOnChannel(time: number, freq: number, volume: number, pan: number, part: PartData): boolean {
+  private _triggerSynthOnChannel(time: number, freq: number, volume: number, pan: number, part: PartData, slide = false): boolean {
     if (!this.ctx) return false;
     if (!part.synthParams) return false;
     if (part.sourceType !== "wavetable" && part.sourceType !== "fm") return false;
@@ -1475,7 +1564,22 @@ class AudioEngineClass {
     nodes.panner.pan.value = Math.max(-1, Math.min(1, pan));
 
     const now = Math.max(time, this.ctx.currentTime);
-    eng.triggerNote(freq, part.synthParams, now, undefined, part.id, nodes.input);
+
+    // v2.14: Per-Step-Slide. Wenn der vorherige Step `slide=true` hatte,
+    // ramp der neue Note von der alten Frequenz auf die aktuelle.
+    const prevState = this._partSlideState.get(part.id);
+    const stepDur = this._stepDuration();
+    let synthParams = part.synthParams;
+    let prevFreq: number | undefined = undefined;
+    if (prevState?.lastHadSlide && prevState.lastFreq && prevState.lastFreq !== freq) {
+      // Glide-Override für diese Note (ohne Mutation des persistierten Params).
+      synthParams = { ...part.synthParams, glide: Math.max(0.005, stepDur * 0.8) };
+      prevFreq = prevState.lastFreq;
+    }
+    eng.triggerNote(freq, synthParams, now, prevFreq, part.id, nodes.input);
+
+    // State für die nächste Note merken
+    this._partSlideState.set(part.id, { lastFreq: freq, lastHadSlide: slide });
     return true;
   }
 

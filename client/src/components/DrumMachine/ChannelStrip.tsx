@@ -9,6 +9,8 @@ import React, { useState, useRef } from "react";
 import type { PartData, ChannelFx, StepResolution } from "@/audio/AudioEngine";
 import { FxPanel } from "./FxPanel";
 import { velocityColor, stepGroupBorder } from "./drumMachineHelpers";
+import { useMidiContext } from "@/context/MidiContext";
+import { findMappingForTarget } from "@/hooks/useMidi";
 
 export interface ChannelStripProps {
   part: PartData;
@@ -57,6 +59,14 @@ export function ChannelStrip({
   const [isDragOver, setIsDragOver] = useState(false);
   const [dragVelocityStep, setDragVelocityStep] = useState<number | null>(null);
   const stripRef = useRef<HTMLDivElement>(null);
+  // v1.99: MIDI-Learn auf einzelne Steps via Right-Click.
+  // useMidiContext liefert direkt midi-State + Actions (kein Prop-Drilling).
+  const midi = useMidiContext();
+  const handleStepContextMenu = (e: React.MouseEvent, stepIndex: number) => {
+    if (!midi || !midi.isEnabled) return;
+    e.preventDefault();
+    midi.startLearn({ type: "step", partId: part.id, stepIndex });
+  };
 
   const hasActiveFx = part.fx.filterEnabled || part.fx.reverbEnabled ||
     part.fx.delayEnabled || part.fx.distortionEnabled ||
@@ -236,12 +246,18 @@ export function ChannelStrip({
 
           let touchTimer: ReturnType<typeof setTimeout> | null = null;
 
+          // v1.99: zeige kleinen Dot wenn dieser Step MIDI-gebunden ist
+          const stepMapping = midi
+            ? findMappingForTarget(midi.mappings, { type: "step", partId: part.id, stepIndex: i })
+            : undefined;
+
           return (
             <button
               key={i}
               onMouseDown={e => handleStepMouseDown(i, e)}
               onMouseMove={e => dragVelocityStep !== null && handleMouseMove(e, i)}
               onMouseEnter={e => dragVelocityStep !== null && handleMouseMove(e, i)}
+              onContextMenu={e => handleStepContextMenu(e, i)}
               onTouchStart={e => {
                 e.preventDefault();
                 touchTimer = setTimeout(() => { onStepSelect(i); touchTimer = null; }, 500);
@@ -265,8 +281,11 @@ export function ChannelStrip({
               aria-label={`Step ${i + 1}: ${isActiveStep ? "aktiv" : "inaktiv"}, Velocity ${velocity}`}
               aria-pressed={isActiveStep}
               role="button"
-              title={`Step ${i + 1} | Vel: ${velocity} | Pitch: ${part.steps[i]?.pitch ?? 0} | P: ${part.steps[i]?.probability ?? 100}%`}
+              title={`Step ${i + 1} | Vel: ${velocity} | Pitch: ${part.steps[i]?.pitch ?? 0} | P: ${part.steps[i]?.probability ?? 100}%${stepMapping ? ` · CC${stepMapping.cc}` : " · Rechtsklick: MIDI-Learn"}`}
             >
+              {stepMapping && (
+                <span className="absolute top-0 right-0 w-1 h-1 bg-accent-secondary rounded-full pointer-events-none" />
+              )}
               {isCurrentStep && (
                 <div className="absolute inset-0 rounded-sm pointer-events-none"
                   style={{ background: "var(--ss-accent-secondary)", opacity: 0.18 }} />

@@ -5,10 +5,15 @@
  * Verwendet konstruierte Mock-Buffer (echte FLP/ALS/ESX-Dateien wären zu groß für Test-Fixtures).
  */
 import { describe, it, expect } from "vitest";
-import { importFlp, detectChannelPitches, buildMelodicParts } from "../../client/src/utils/imports/flpImport";
+import { importFlp, detectChannelPitches, buildMelodicParts, pitchMedian } from "../../client/src/utils/imports/flpImport";
 import { importElectribe } from "../../client/src/utils/imports/electribeImport";
-import { importProjectFile, importResultToPatterns, ImportError } from "../../client/src/utils/imports/index";
-import type { ImportResult } from "../../client/src/utils/imports/types";
+import {
+  importProjectFile,
+  importResultToPatterns,
+  ImportError,
+  routeMelodicPartsToPatterns,
+} from "../../client/src/utils/imports/index";
+import type { ImportResult, ImportedMelodicPart } from "../../client/src/utils/imports/types";
 
 // ─── Helper: Mock-File mit ArrayBuffer ───────────────────────────────────────
 
@@ -234,6 +239,112 @@ describe("FLP Import — Melodic-Channel-Warnung (post-v1.63.0)", () => {
   });
 });
 
+// ─── importFlp + Pattern-Name (v1.70 FLP-PATTERN-NAMES) ───────────────────────
+
+describe("FLP Import — Pattern-Name aus 0xC1 (v1.70)", () => {
+  /**
+   * Baut ein minimal valides FLP mit: NewPattern → PatternName → NotesEvent.
+   * Helper, weil die anderen Fixtures in dieser Datei keinen PatternName setzen.
+   */
+  function buildFlpWithPatternName(patternName: string): ArrayBuffer {
+    // ── FLhd header ──
+    const header = new Uint8Array(14);
+    const hv = new DataView(header.buffer);
+    header.set([0x46, 0x4c, 0x68, 0x64], 0); // "FLhd"
+    hv.setUint32(4, 6, true);
+    hv.setUint16(8, 0, true);   // format
+    hv.setUint16(10, 1, true);  // nChannels
+    hv.setUint16(12, 96, true); // ppq
+
+    // ── Events ──
+    // NewPattern (WORD 0x4F = pattern 1)
+    const newPattern = new Uint8Array([0x4f, 0x01, 0x00]);
+
+    // PatternName (TEXT 0xC1, ASCII null-terminated)
+    const nameBytes = new Uint8Array(patternName.length + 1);
+    for (let i = 0; i < patternName.length; i++) nameBytes[i] = patternName.charCodeAt(i);
+    // varlen len = patternName.length + 1 (single byte if < 128)
+    const nameLen = nameBytes.length;
+    const nameEvent = new Uint8Array(2 + nameLen);
+    nameEvent[0] = 0xC1;
+    nameEvent[1] = nameLen;
+    nameEvent.set(nameBytes, 2);
+
+    // 1 Note (24 bytes)
+    const noteBuf = new Uint8Array(24);
+    const nv = new DataView(noteBuf.buffer);
+    nv.setUint32(0, 0, true);    // position
+    nv.setUint16(6, 0, true);    // channel 0
+    nv.setUint32(8, 24, true);   // duration
+    nv.setUint8(12, 36);         // key
+    nv.setUint8(18, 100);        // velocity
+
+    // NotesEvent (0xE7, varlen 24)
+    const notesEventHdr = new Uint8Array([0xe7, 24]);
+    const notesEvent = new Uint8Array(notesEventHdr.length + noteBuf.length);
+    notesEvent.set(notesEventHdr, 0);
+    notesEvent.set(noteBuf, notesEventHdr.length);
+
+    // Concat all events
+    const events = new Uint8Array(newPattern.length + nameEvent.length + notesEvent.length);
+    events.set(newPattern, 0);
+    events.set(nameEvent, newPattern.length);
+    events.set(notesEvent, newPattern.length + nameEvent.length);
+
+    // ── FLdt ──
+    const dataHdr = new Uint8Array(8);
+    dataHdr.set([0x46, 0x4c, 0x64, 0x74], 0);
+    new DataView(dataHdr.buffer).setUint32(4, events.length, true);
+
+    const total = new Uint8Array(header.length + dataHdr.length + events.length);
+    total.set(header, 0);
+    total.set(dataHdr, header.length);
+    total.set(events, header.length + dataHdr.length);
+    return total.buffer;
+  }
+
+  it("nutzt 0xC1 Pattern-Name statt Dateiname als baseName", async () => {
+    const buf = buildFlpWithPatternName("Verse");
+    const result = await importFlp(makeFile("MyTrack.flp", buf));
+    expect(result.patterns.length).toBeGreaterThan(0);
+    // Bei 1 Bar: Pattern-Name pur, kein "bar 1" Suffix
+    expect(result.patterns[0].name).toBe("Verse");
+  });
+
+  it("Fallback auf Dateiname wenn kein Pattern-Name im FLP", async () => {
+    // Hier nutzen wir den Fixture aus dem ersten describe (ohne 0xC1).
+    // Header (14 bytes)
+    const header = new Uint8Array(14);
+    const hv = new DataView(header.buffer);
+    header.set([0x46, 0x4c, 0x68, 0x64], 0);
+    hv.setUint32(4, 6, true);
+    hv.setUint16(8, 0, true);
+    hv.setUint16(10, 1, true);
+    hv.setUint16(12, 96, true);
+    const newPattern = new Uint8Array([0x4f, 0x01, 0x00]);
+    const noteBuf = new Uint8Array(24);
+    const nv = new DataView(noteBuf.buffer);
+    nv.setUint32(0, 0, true);
+    nv.setUint32(8, 24, true);
+    nv.setUint8(12, 36);
+    nv.setUint8(18, 100);
+    const notesEvent = new Uint8Array([0xe7, 24, ...noteBuf]);
+    const events = new Uint8Array(newPattern.length + notesEvent.length);
+    events.set(newPattern, 0);
+    events.set(notesEvent, newPattern.length);
+    const dataHdr = new Uint8Array(8);
+    dataHdr.set([0x46, 0x4c, 0x64, 0x74], 0);
+    new DataView(dataHdr.buffer).setUint32(4, events.length, true);
+    const total = new Uint8Array(header.length + dataHdr.length + events.length);
+    total.set(header, 0);
+    total.set(dataHdr, header.length);
+    total.set(events, header.length + dataHdr.length);
+
+    const result = await importFlp(makeFile("OnlyFilename.flp", total.buffer));
+    expect(result.patterns[0].name).toBe("OnlyFilename");
+  });
+});
+
 describe("buildMelodicParts (v1.65)", () => {
   it("leerer Notes-Array → leeres Result", () => {
     expect(buildMelodicParts([], 96)).toEqual([]);
@@ -282,6 +393,265 @@ describe("buildMelodicParts (v1.65)", () => {
     const parts = buildMelodicParts(notes, 96);
     expect(parts).toHaveLength(2);
     expect(parts.map(p => p.sourceChannel).sort()).toEqual([1, 2]);
+  });
+
+  it("nutzt channelNames-Map für name statt 'Channel N' (v1.68 FLP-CHANNEL-NAMES)", () => {
+    const notes = [
+      { position: 0,  channel: 1, duration: 24, key: 60, velocity: 100 },
+      { position: 24, channel: 1, duration: 24, key: 62, velocity: 100 },
+    ];
+    const names = new Map<number, string>([[1, "Bass"]]);
+    const parts = buildMelodicParts(notes, 96, names);
+    expect(parts).toHaveLength(1);
+    expect(parts[0].name).toBe("Bass");
+  });
+
+  it("fällt auf 'Channel N' zurück wenn kein Name in der Map", () => {
+    const notes = [
+      { position: 0,  channel: 5, duration: 24, key: 60, velocity: 100 },
+      { position: 24, channel: 5, duration: 24, key: 62, velocity: 100 },
+    ];
+    const parts = buildMelodicParts(notes, 96, new Map());
+    expect(parts[0].name).toBe("Channel 5");
+  });
+
+  it("baseNote ist Pitch-Median pro Part (v1.69 FLP-MELODIC-POLISH)", () => {
+    // Pitches 60, 62, 64 → Median = 62
+    const notes = [
+      { position: 0,  channel: 1, duration: 24, key: 60, velocity: 100 },
+      { position: 24, channel: 1, duration: 24, key: 62, velocity: 100 },
+      { position: 48, channel: 1, duration: 24, key: 64, velocity: 100 },
+    ];
+    const parts = buildMelodicParts(notes, 96);
+    expect(parts[0].baseNote).toBe(62);
+  });
+
+  it("baseNote-Median: gerade Anzahl Pitches → gerundeter Mittelwert", () => {
+    // Pitches 60, 64 → Median = round((60+64)/2) = 62
+    const notes = [
+      { position: 0,  channel: 1, duration: 24, key: 60, velocity: 100 },
+      { position: 24, channel: 1, duration: 24, key: 64, velocity: 100 },
+    ];
+    const parts = buildMelodicParts(notes, 96);
+    expect(parts[0].baseNote).toBe(62);
+  });
+});
+
+// ─── pitchMedian (v1.69 FLP-MELODIC-POLISH) ───────────────────────────────────
+
+describe("pitchMedian (v1.69)", () => {
+  it("leerer Input → 60 (C4 default)", () => {
+    expect(pitchMedian([])).toBe(60);
+  });
+
+  it("einzelne Pitch → genau diese Pitch", () => {
+    expect(pitchMedian([72])).toBe(72);
+  });
+
+  it("ungerade Anzahl → exakter Median", () => {
+    expect(pitchMedian([60, 62, 64])).toBe(62);
+    expect(pitchMedian([100, 50, 75])).toBe(75); // wird sortiert intern
+  });
+
+  it("gerade Anzahl → gerundeter Mittelwert der zwei mittleren Werte", () => {
+    expect(pitchMedian([60, 64])).toBe(62);
+    expect(pitchMedian([60, 63])).toBe(62); // 61.5 → 62 (Math.round zu even rundet zu 62)
+    expect(pitchMedian([60, 65])).toBe(63); // 62.5 → 63 (Math.round rundet zu 63)
+  });
+
+  it("ist robust gegen Duplikate", () => {
+    expect(pitchMedian([60, 60, 60, 60])).toBe(60);
+    expect(pitchMedian([60, 60, 72])).toBe(60);
+  });
+});
+
+// ─── routeMelodicPartsToPatterns (v1.66, FLP-MELODIC-ROUTE Phase 2) ───────────
+
+describe("routeMelodicPartsToPatterns (v1.66)", () => {
+  function makePatterns(barCount: number, partCount = 8) {
+    return Array.from({ length: barCount }, (_, b) => ({
+      parts: Array.from({ length: partCount }, (_, p) => ({ id: `pat${b}-part${p}` })),
+    }));
+  }
+
+  it("leeres / undefined melodicParts → keine Mappings, keine Warnungen", () => {
+    const patterns = makePatterns(1);
+    expect(routeMelodicPartsToPatterns(undefined, patterns)).toEqual({
+      mappings: [],
+      baseNotes: [],
+      warnings: [],
+    });
+    expect(routeMelodicPartsToPatterns([], patterns)).toEqual({
+      mappings: [],
+      baseNotes: [],
+      warnings: [],
+    });
+  });
+
+  it("warnt wenn melodicParts vorhanden aber keine Drum-Patterns als Ziel", () => {
+    const melodic: ImportedMelodicPart[] = [
+      { sourceChannel: 0, name: "ch0", notes: [{ startStep: 0, durationSteps: 1, pitch: 60, velocity: 100 }] },
+    ];
+    const result = routeMelodicPartsToPatterns(melodic, []);
+    expect(result.mappings).toEqual([]);
+    expect(result.warnings.some(w => w.includes("Routing-Ziel"))).toBe(true);
+  });
+
+  it("mappt Note auf korrekten partId via sourceChannel % partCount", () => {
+    const melodic: ImportedMelodicPart[] = [
+      // channel 9 → mit partCount=8 → partIdx = 1
+      { sourceChannel: 9, name: "ch9", notes: [{ startStep: 3, durationSteps: 1, pitch: 64, velocity: 90 }] },
+    ];
+    const patterns = makePatterns(1);
+    const { mappings, warnings } = routeMelodicPartsToPatterns(melodic, patterns);
+    expect(warnings).toEqual([]);
+    expect(mappings).toHaveLength(1);
+    expect(mappings[0]).toEqual({ partId: "pat0-part1", stepIdx: 3, pitch: 64, velocity: 90 });
+  });
+
+  it("Multi-Bar: Note bei startStep=18 → bar=1, stepIdx=2 (mit 16-Step-Bars)", () => {
+    const melodic: ImportedMelodicPart[] = [
+      { sourceChannel: 0, name: "x", notes: [
+        { startStep: 0,  durationSteps: 1, pitch: 60, velocity: 100 },
+        { startStep: 18, durationSteps: 1, pitch: 62, velocity: 100 },
+      ] },
+    ];
+    const patterns = makePatterns(2);
+    const { mappings, warnings } = routeMelodicPartsToPatterns(melodic, patterns);
+    expect(warnings).toEqual([]);
+    expect(mappings).toHaveLength(2);
+    const sorted = [...mappings].sort((a, b) => a.partId.localeCompare(b.partId));
+    expect(sorted[0]).toEqual({ partId: "pat0-part0", stepIdx: 0,  pitch: 60, velocity: 100 });
+    expect(sorted[1]).toEqual({ partId: "pat1-part0", stepIdx: 2,  pitch: 62, velocity: 100 });
+  });
+
+  it("rundet float startStep auf 16-Step-Grid", () => {
+    const melodic: ImportedMelodicPart[] = [
+      { sourceChannel: 0, name: "x", notes: [
+        { startStep: 3.4, durationSteps: 1, pitch: 60, velocity: 100 }, // → 3
+        { startStep: 3.6, durationSteps: 1, pitch: 62, velocity: 100 }, // → 4
+      ] },
+    ];
+    const patterns = makePatterns(1);
+    const { mappings } = routeMelodicPartsToPatterns(melodic, patterns);
+    expect(mappings.map(m => m.stepIdx).sort()).toEqual([3, 4]);
+  });
+
+  it("Konflikt zwei Notes auf gleichem (partId,stepIdx) → letzte gewinnt + Warning", () => {
+    const melodic: ImportedMelodicPart[] = [
+      { sourceChannel: 0, name: "x", notes: [
+        { startStep: 5, durationSteps: 1, pitch: 60, velocity: 100 },
+        { startStep: 5, durationSteps: 1, pitch: 72, velocity: 80 }, // overwrites
+      ] },
+    ];
+    const patterns = makePatterns(1);
+    const { mappings, warnings } = routeMelodicPartsToPatterns(melodic, patterns);
+    expect(mappings).toHaveLength(1);
+    expect(mappings[0].pitch).toBe(72);
+    expect(mappings[0].velocity).toBe(80);
+    expect(warnings.some(w => w.includes("bereits belegt") && w.includes("16-Step-Grid"))).toBe(true);
+  });
+
+  it("Notes jenseits der importierten Bars werden verworfen + Warning", () => {
+    const melodic: ImportedMelodicPart[] = [
+      { sourceChannel: 0, name: "x", notes: [
+        { startStep: 0,  durationSteps: 1, pitch: 60, velocity: 100 },
+        { startStep: 99, durationSteps: 1, pitch: 70, velocity: 100 }, // out of range
+      ] },
+    ];
+    const patterns = makePatterns(1); // nur 1 Bar = 16 Steps
+    const { mappings, warnings } = routeMelodicPartsToPatterns(melodic, patterns);
+    expect(mappings).toHaveLength(1);
+    expect(mappings[0].pitch).toBe(60);
+    expect(warnings.some(w => w.includes("außerhalb"))).toBe(true);
+  });
+
+  it("Mehrere Channels routen unabhängig — partIdx via modulo", () => {
+    const melodic: ImportedMelodicPart[] = [
+      { sourceChannel: 1, name: "ch1", notes: [{ startStep: 0, durationSteps: 1, pitch: 60, velocity: 100 }] },
+      { sourceChannel: 3, name: "ch3", notes: [{ startStep: 4, durationSteps: 1, pitch: 64, velocity: 100 }] },
+    ];
+    const patterns = makePatterns(1);
+    const { mappings } = routeMelodicPartsToPatterns(melodic, patterns);
+    expect(mappings).toHaveLength(2);
+    const byPart = Object.fromEntries(mappings.map(m => [m.partId, m]));
+    expect(byPart["pat0-part1"].pitch).toBe(60);
+    expect(byPart["pat0-part3"].pitch).toBe(64);
+  });
+
+  it("velocity wird 1:1 weitergereicht (kein Clamp bei route, nur beim Store)", () => {
+    const melodic: ImportedMelodicPart[] = [
+      { sourceChannel: 0, name: "x", notes: [{ startStep: 0, durationSteps: 1, pitch: 60, velocity: 200 }] },
+    ];
+    const patterns = makePatterns(1);
+    const { mappings } = routeMelodicPartsToPatterns(melodic, patterns);
+    expect(mappings[0].velocity).toBe(200);
+  });
+
+  it("emittet baseNotes pro partId der mind. eine Note bekommt (v1.69)", () => {
+    const melodic: ImportedMelodicPart[] = [
+      {
+        sourceChannel: 1,
+        name: "ch1",
+        baseNote: 64,
+        notes: [{ startStep: 0, durationSteps: 1, pitch: 64, velocity: 100 }],
+      },
+    ];
+    const patterns = makePatterns(1);
+    const { baseNotes } = routeMelodicPartsToPatterns(melodic, patterns);
+    expect(baseNotes).toHaveLength(1);
+    expect(baseNotes[0]).toEqual({ partId: "pat0-part1", baseNote: 64 });
+  });
+
+  it("baseNote-Eintrag ist deterministisch first-wins bei Mehrfach-Notes auf gleichem partId", () => {
+    const melodic: ImportedMelodicPart[] = [
+      {
+        sourceChannel: 0,
+        name: "x",
+        baseNote: 72,
+        notes: [
+          { startStep: 0, durationSteps: 1, pitch: 72, velocity: 100 },
+          { startStep: 4, durationSteps: 1, pitch: 76, velocity: 100 },
+        ],
+      },
+    ];
+    const patterns = makePatterns(1);
+    const { baseNotes } = routeMelodicPartsToPatterns(melodic, patterns);
+    expect(baseNotes).toHaveLength(1);
+    expect(baseNotes[0].baseNote).toBe(72);
+  });
+
+  it("kein baseNote-Eintrag wenn Part keinen baseNote gesetzt hat (undefined)", () => {
+    const melodic: ImportedMelodicPart[] = [
+      {
+        sourceChannel: 0,
+        name: "x",
+        notes: [{ startStep: 0, durationSteps: 1, pitch: 60, velocity: 100 }],
+        // kein baseNote
+      },
+    ];
+    const patterns = makePatterns(1);
+    const { baseNotes } = routeMelodicPartsToPatterns(melodic, patterns);
+    expect(baseNotes).toEqual([]);
+  });
+
+  it("Multi-Bar mit zwei Bars → ein baseNote-Eintrag pro Bar-Part (gleicher channel, unterschiedliche partIds)", () => {
+    const melodic: ImportedMelodicPart[] = [
+      {
+        sourceChannel: 0,
+        name: "x",
+        baseNote: 68,
+        notes: [
+          { startStep: 2,  durationSteps: 1, pitch: 68, velocity: 100 },
+          { startStep: 20, durationSteps: 1, pitch: 70, velocity: 100 },
+        ],
+      },
+    ];
+    const patterns = makePatterns(2);
+    const { baseNotes } = routeMelodicPartsToPatterns(melodic, patterns);
+    expect(baseNotes).toHaveLength(2);
+    expect(baseNotes.every(b => b.baseNote === 68)).toBe(true);
+    expect(baseNotes.map(b => b.partId).sort()).toEqual(["pat0-part0", "pat1-part0"]);
   });
 });
 

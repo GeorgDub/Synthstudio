@@ -130,6 +130,8 @@ function useRemoteDmAdapter(
       removePattern: noop,
       renamePattern: noop,
       duplicatePattern: noop,
+      copySamplesFromPattern: noop,
+      reorderPatterns: noop,
       startLivePatternEdit: noop,
       commitLivePatternEdit: noop,
       cancelLivePatternEdit: noop,

@@ -30,17 +30,29 @@ export interface ElectronDropZoneProps {
    * Im Browser werden File-Objekte übergeben, in Electron der Pfad.
    */
   onZipFile?: (file: File) => void;
+  /**
+   * v2.12: Callback wenn ein .mid/.midi-File gedroppt wurde.
+   * Empfänger ist typischerweise DrumMachine via window-event.
+   */
+  onMidiFile?: (file: File) => void;
+  /**
+   * v2.13: Callback mit den rohen File-Objekten der Audio-Drops (Browser).
+   * Dient z.B. der BPM-Erkennung, da `onAudioFiles` nur den Dateinamen
+   * weiterreicht, nicht das ArrayBuffer.
+   */
+  onAudioFilesRaw?: (files: File[]) => void;
   /** Kinder-Elemente (optional) */
   children?: React.ReactNode;
 }
 
-type DropType = "audio" | "folder" | "project" | "zip" | "unknown" | null;
+type DropType = "audio" | "folder" | "project" | "zip" | "midi" | "unknown" | null;
 
 // ─── Hilfsfunktionen ─────────────────────────────────────────────────────────
 
 const AUDIO_EXTENSIONS = new Set([".wav", ".mp3", ".ogg", ".flac", ".aiff", ".aif", ".m4a"]);
 const PROJECT_EXTENSIONS = new Set([".synth", ".json"]);
 const ZIP_EXTENSIONS = new Set([".zip"]);
+const MIDI_EXTENSIONS = new Set([".mid", ".midi"]);
 
 function getFileExtension(name: string): string {
   const dot = name.lastIndexOf(".");
@@ -57,6 +69,7 @@ function detectDropType(items: DataTransferItemList | null): DropType {
     if (ZIP_EXTENSIONS.has(ext)) return "zip";
     if (AUDIO_EXTENSIONS.has(ext)) return "audio";
     if (PROJECT_EXTENSIONS.has(ext)) return "project";
+    if (MIDI_EXTENSIONS.has(ext)) return "midi";
     // Mehrere Dateien → Audio-Import annehmen
     if (items.length > 1) return "audio";
   }
@@ -104,6 +117,12 @@ const DROP_STYLES: Record<NonNullable<DropType>, { border: string; bg: string; t
     text: "text-accent-secondary",
     label: "ZIP-Archiv extrahieren",
   },
+  midi: {
+    border: "border-accent-success",
+    bg: "bg-accent-success/10",
+    text: "text-accent-success",
+    label: "MIDI-File importieren",
+  },
   unknown: {
     border: "border-border-color",
     bg: "bg-bg-elevated/10",
@@ -119,6 +138,8 @@ export function ElectronDropZone({
   onFolder,
   onProject,
   onZipFile,
+  onMidiFile,
+  onAudioFilesRaw,
   children,
 }: ElectronDropZoneProps) {
   const [isDragging, setIsDragging] = useState(false);
@@ -186,20 +207,25 @@ export function ElectronDropZone({
       if (files.length === 0) return;
 
       const audioFiles: string[] = [];
+      const audioFileObjects: File[] = [];
       for (const file of files) {
         const ext = getFileExtension(file.name);
         if (ZIP_EXTENSIONS.has(ext)) {
           onZipFile?.(file);
+        } else if (MIDI_EXTENSIONS.has(ext)) {
+          onMidiFile?.(file);
         } else if (AUDIO_EXTENSIONS.has(ext)) {
           // Im Browser: Dateiname (kein echter Pfad verfügbar)
           audioFiles.push(file.name);
+          audioFileObjects.push(file);
         } else if (PROJECT_EXTENSIONS.has(ext)) {
           onProject?.(file.name);
         }
       }
       if (audioFiles.length > 0) onAudioFiles?.(audioFiles);
+      if (audioFileObjects.length > 0) onAudioFilesRaw?.(audioFileObjects);
     },
-    [onAudioFiles, onProject, onZipFile]
+    [onAudioFiles, onProject, onZipFile, onMidiFile, onAudioFilesRaw]
   );
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -227,7 +253,15 @@ export function ElectronDropZone({
         >
           {/* Icon */}
           <div className={`text-6xl ${style.text}`}>
-            {dropType === "folder" ? "📁" : dropType === "project" ? "🎵" : dropType === "zip" ? "🗜️" : "🎚️"}
+            {dropType === "folder"
+              ? "📁"
+              : dropType === "project"
+              ? "🎵"
+              : dropType === "zip"
+              ? "🗜️"
+              : dropType === "midi"
+              ? "🎹"
+              : "🎚️"}
           </div>
 
           {/* Label */}
@@ -241,6 +275,7 @@ export function ElectronDropZone({
             {dropType === "folder" && "Alle Audio-Dateien im Ordner werden importiert"}
             {dropType === "project" && ".synth Projektdatei wird geöffnet"}
             {dropType === "zip" && "Audio-Dateien aus dem Archiv werden extrahiert"}
+            {dropType === "midi" && "Notes werden in das aktuelle Pattern importiert"}
             {dropType === "unknown" && "Datei wird analysiert..."}
           </p>
         </div>

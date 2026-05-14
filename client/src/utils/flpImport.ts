@@ -77,6 +77,21 @@ export interface FlpPattern {
 export interface FlpParsed {
   header: FlpHeader;
   patterns: FlpPattern[];
+  /**
+   * Pro FL-Channel-Index der extrahierte Anzeigename aus dem 0xC3
+   * TEXT_CHANNEL_NAME (alias TEXT_DEFPLUGNAME)-Event. Ein Channel ohne
+   * Name-Event taucht hier nicht auf. Hilft beim Mapping
+   * FL-Channel → Synthstudio-Drum-Part / Melodic-Part-Anzeigename
+   * (FLP-CHANNEL-NAMES Phase 3, v1.68).
+   */
+  channelNames: Map<number, string>;
+  /**
+   * Pro FL-Pattern-Index der Anzeigename aus dem 0xC1 TEXT_PATTERN_NAME-Event
+   * (FLP-PATTERN-NAMES v1.70). Ein Pattern ohne Namen-Event taucht hier nicht
+   * auf. Der Konsument nutzt diesen Namen als Synthstudio-Pattern-Namen statt
+   * generischer "filename bar N"-Labels.
+   */
+  patternNames: Map<number, string>;
 }
 
 // ─── Reader-Helper ────────────────────────────────────────────────────────────
@@ -155,6 +170,54 @@ export function parseNotesEvent(data: Uint8Array): FlpNote[] {
   return notes;
 }
 
+// ─── TEXT-Decoder (UTF-16LE vs Latin-1) ──────────────────────────────────────
+
+/**
+ * Dekodiert ein TEXT-Event-Payload aus einem FLP-File. FL Studio nutzt je nach
+ * Version + Event-Typ unterschiedliche Encodings:
+ *   - FL 11+: UTF-16LE für die meisten User-strings (Channel-Namen, Pattern-Namen)
+ *   - Ältere Versionen / interne Strings: ASCII / Latin-1
+ * Beide sind null-terminated.
+ *
+ * Heuristik: ist die Payload-Länge gerade UND mindestens 25% der odd-indexed
+ * Bytes sind 0 → wir interpretieren als UTF-16LE. Sonst Latin-1.
+ *
+ * Pure Funktion — public exportiert für Unit-Tests.
+ */
+export function decodeFlpText(bytes: Uint8Array): string {
+  if (bytes.length === 0) return "";
+
+  // Erkenne UTF-16LE auf den ROHEN bytes (vor Null-Trimming):
+  // ASCII-Chars in UTF-16LE haben ein 0-Byte hinter dem ASCII-Byte. Wenn
+  // bytes[1] === 0 UND (length<4 ODER bytes[3] === 0) → UTF-16LE.
+  // Diese Heuristik unterscheidet zuverlässig zwischen:
+  //   "Kick" ASCII = [4b 69 63 6b]                → bytes[1]=0x69 → Latin-1
+  //   "Kick" UTF-16LE = [4b 00 69 00 63 00 6b 00] → bytes[1]=0,bytes[3]=0 → UTF-16LE
+  //   "Snare\0\0\0" ASCII = [53 6e 61 72 65 00 00 00] → bytes[1]=0x6e → Latin-1
+  const isUtf16Le =
+    bytes.length % 2 === 0 &&
+    bytes.length >= 2 &&
+    bytes[1] === 0 &&
+    (bytes.length < 4 || bytes[3] === 0);
+
+  if (isUtf16Le) {
+    let s = "";
+    for (let i = 0; i + 1 < bytes.length; i += 2) {
+      const code = bytes[i] | (bytes[i + 1] << 8);
+      if (code === 0) break;
+      s += String.fromCharCode(code);
+    }
+    return s;
+  }
+
+  let s = "";
+  for (const b of bytes) {
+    if (b === 0) break;
+    s += String.fromCharCode(b);
+  }
+  return s;
+}
+
 // ─── Haupt-Parser ─────────────────────────────────────────────────────────────
 
 /**
@@ -191,7 +254,10 @@ export function parseFlp(buffer: ArrayBuffer): FlpParsed {
 
   // ── Event-Loop ────────────────────────────────────────────────────────────
   const patternsByIndex = new Map<number, FlpPattern>();
+  const channelNames = new Map<number, string>();
+  const patternNames = new Map<number, string>();
   let currentPatternIndex = 0; // FL state — "currently selected" pattern
+  let currentChannel = -1;     // FL state — "currently selected" channel (gesetzt durch 0x40 NewChannel)
 
   while (reader.pos < dataEnd && !reader.eof()) {
     const eventId = reader.readU8();
@@ -208,6 +274,9 @@ export function parseFlp(buffer: ArrayBuffer): FlpParsed {
         if (!patternsByIndex.has(w)) {
           patternsByIndex.set(w, { index: w, notes: [] });
         }
+      } else if (eventId === 0x40) {
+        // NewChannel — set current channel index (FLP-CHANNEL-NAMES v1.68)
+        currentChannel = w;
       }
     } else if (eventId < 0xC0) {
       // DWORD event (4-byte LE)
@@ -236,12 +305,26 @@ export function parseFlp(buffer: ArrayBuffer): FlpParsed {
           patternsByIndex.set(idx, pattern);
         }
         pattern.notes.push(...notes);
+      } else if (eventId === 0xC3 && currentChannel >= 0) {
+        // TEXT_CHANNEL_NAME (alias TEXT_DEFPLUGNAME) — Anzeigename des aktuell
+        // selektierten FL-Channels (FLP-CHANNEL-NAMES v1.68).
+        const name = decodeFlpText(data);
+        if (name.length > 0) {
+          channelNames.set(currentChannel, name);
+        }
+      } else if (eventId === 0xC1 && currentPatternIndex > 0) {
+        // TEXT_PATTERN_NAME — Anzeigename des aktuell selektierten Patterns
+        // (FLP-PATTERN-NAMES v1.70).
+        const name = decodeFlpText(data);
+        if (name.length > 0) {
+          patternNames.set(currentPatternIndex, name);
+        }
       }
     }
   }
 
   const patterns = Array.from(patternsByIndex.values()).sort((a, b) => a.index - b.index);
-  return { header, patterns };
+  return { header, patterns, channelNames, patternNames };
 }
 
 // ─── Synthstudio-Pattern-Konvertierung ───────────────────────────────────────

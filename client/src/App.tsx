@@ -68,6 +68,9 @@ import { useDrumMachineStore } from "@/store/useDrumMachineStore";
 import { useTransport } from "@/hooks/useTransport";
 import { RecordSettingsPopover } from "@/components/Transport/RecordSettingsPopover";
 import { useMidi } from "@/hooks/useMidi";
+import { MidiProvider } from "@/context/MidiContext";
+import { toast } from "@/store/useToastStore";
+import { ToastContainer } from "@/components/UI/ToastContainer";
 import { useLiveStepRecorder } from "@/hooks/useLiveStepRecorder";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { MidiSettings } from "@/components/MidiSettings";
@@ -128,6 +131,10 @@ import { SettingsPanel } from "@/components/Settings/SettingsPanel";
 import { SessionRecorder } from "@/components/CollabSession/SessionRecorder";
 import { RelayPanel } from "@/components/CollabSession/RelayPanel";
 import { recordEvent } from "@/store/useSessionRecordingStore";
+import {
+  recordEvent as recordPerfEvent,
+  type PerfEventType,
+} from "@/store/usePerformanceRecorder";
 import { setMyRole, setParticipantRole } from "@/store/useSessionStore";
 import { useLaunchpad, isGridDevice } from "@/hooks/useLaunchpad";
 import { useBpmDetection, autoTagFromFilename } from "@/hooks/useBpmDetection";
@@ -147,10 +154,17 @@ import {
   clearProjectScripts,
 } from "@/store/useScriptStore";
 // BUG-013 fix: vollständiges Project-Reset über alle Stores
-import { resetMelodicParts } from "@/store/useMelodicPartStore";
-import { resetNoteRepeat } from "@/store/useNoteRepeatStore";
+import {
+  resetMelodicParts,
+  setNote as setMelodicNote,
+  setVelocity as setMelodicVelocity,
+  setBaseNote as setMelodicBaseNote,
+} from "@/store/useMelodicPartStore";
+import { routeMelodicPartsToPatterns } from "@/utils/imports";
+import { resetNoteRepeat, toggleNoteRepeat, isNoteRepeatEnabled } from "@/store/useNoteRepeatStore";
 import { resetTranspose } from "@/store/useTransposeStore";
-import { resetMorph } from "@/store/useMorphStore";
+import { resetMorph, getMorphState, setActive as setMorphActive } from "@/store/useMorphStore";
+import { getSceneState, setActiveScene as sceneStoreSetActiveScene } from "@/store/useSceneStore";
 import { scriptSandbox } from "@/sandbox/scriptSandboxInstance";
 import {
   startHoldLoop,
@@ -573,9 +587,11 @@ export default function App() {
       });
       if (!result.canceled && result.filePath) {
         await electron.writeFile(result.filePath, JSON.stringify(snapshot, null, 2));
+        toast(`Gespeichert: ${snapshot.projectName}`, { kind: "success" });
       }
     } else {
       downloadProjectFile(snapshot);
+      toast(`Download gestartet: ${snapshot.projectName}.synth`, { kind: "success" });
       // Browser-Modus: einmalige Warnung wenn Audio-Tracks im Projekt sind.
       // Audio-Tracks werden nur als Dateipfad-Referenz gespeichert – beim
       // erneuten Öffnen muss der User die Datei neu wählen.
@@ -700,10 +716,13 @@ export default function App() {
       } else {
         data = await openProjectFilePicker();
       }
-      if (data) restoreProject(data);
+      if (data) {
+        restoreProject(data);
+        toast(`Projekt geladen: ${data.projectName}`, { kind: "success" });
+      }
     } catch (err) {
       console.error("[Load Project]", err);
-      alert("Projekt konnte nicht geladen werden.");
+      toast("Projekt konnte nicht geladen werden", { kind: "error", duration: 5000 });
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [electron, restoreProject]);
@@ -1004,6 +1023,19 @@ export default function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // ── v2.15: Performance-Recorder Bridge ────────────────────────────────────
+  // Loose-coupling: jede Komponente kann window.dispatchEvent("perf:event",
+  // { detail: { type, data } }) feuern. Der Recorder zeichnet auf, wenn aktiv.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<{ type: PerfEventType; data?: Record<string, unknown> }>).detail;
+      if (!detail || typeof detail.type !== "string") return;
+      recordPerfEvent(detail.type, detail.data);
+    };
+    window.addEventListener("perf:event", handler);
+    return () => window.removeEventListener("perf:event", handler);
+  }, []);
+
   // ── Automation: Position-Callback registrieren ───────────────────────────
   // Feuert bei jedem Step (auch bei Stille) → ideal für Parameter-Automation
   const automationRef = useRef(automation);
@@ -1111,7 +1143,30 @@ export default function App() {
           if (idx > 0) dm.setActivePattern(pats[idx - 1].id);
           break;
         }
-        case "pattern-duplicate": dm.duplicatePattern(dm.activePatternId); break;
+        case "pattern-duplicate": {
+          const before = dm.patterns.length;
+          dm.duplicatePattern(dm.activePatternId);
+          // Toast nach kurzem Frame, damit dm.patterns aktualisiert ist —
+          // wir wissen den Namen aber jetzt schon (Source) und melden ihn direkt.
+          const src = dm.patterns.find(p => p.id === dm.activePatternId);
+          if (src) toast(`Pattern „${src.name}" dupliziert (${before} → ${before + 1})`, { kind: "success" });
+          break;
+        }
+        case "pattern-copy-samples-from-prev": {
+          // v2.4: nimmt Samples + FX + Volume/Pan vom vorherigen Pattern in
+          // der Liste und kopiert sie in das aktuelle Pattern. Wenn nicht
+          // verfügbar (erstes Pattern oder nur eins), no-op.
+          // v2.5: User-Feedback via Toast.
+          const pats = dm.patterns;
+          const idx = pats.findIndex(p => p.id === dm.activePatternId);
+          if (idx > 0) {
+            dm.copySamplesFromPattern(pats[idx - 1].id, dm.activePatternId);
+            toast(`Sampler übernommen aus „${pats[idx - 1].name}"`, { kind: "success" });
+          } else {
+            toast("Kein vorheriges Pattern in der Liste", { kind: "warning" });
+          }
+          break;
+        }
         case "pattern-clear":     dm.clearPattern(); break;
         case "pattern-fill": {
           const partId = dm.activePartId ?? pattern?.parts[0]?.id;
@@ -1138,6 +1193,24 @@ export default function App() {
         case "undo": project.undo(); break;
         case "redo": project.redo(); break;
         case "save": doSaveProject(); break;
+        // v2.9: bisher NO-OP — Hidden-Bug. Toggle wird jetzt im Store
+        // gesetzt; UI/Audio-Engine reagieren auf den Listener.
+        case "toggle-note-repeat": {
+          toggleNoteRepeat();
+          toast(`Note Repeat: ${isNoteRepeatEnabled() ? "AN" : "AUS"}`, {
+            kind: "info", duration: 1500,
+          });
+          break;
+        }
+        // v2.10: Hidden-Bug-Fix — toggle-morph hatte keinen Handler
+        case "toggle-morph": {
+          const cur = getMorphState();
+          setMorphActive(!cur.isActive);
+          toast(`Pattern-Morph: ${!cur.isActive ? "AN" : "AUS"}`, {
+            kind: "info", duration: 1500,
+          });
+          break;
+        }
       }
     };
     window.addEventListener(KB_ACTION_EVENT, handler);
@@ -1183,6 +1256,175 @@ export default function App() {
     punchInStep: project.punchInStep,
     punchOutStep: project.punchOutStep,
   });
+
+  // ── MIDI-CC → DrumMachine-Setter (v1.76) ─────────────────────────────────
+  // Vor v1.76 dispatchten useMidi.applyMapping CustomEvents (midi:partVolume,
+  // midi:partPan, midi:partSolo, midi:fxParam, midi:masterVolume) ohne dass
+  // jemand sie konsumiert hat → CC-Mappings für Volume/Pan/Solo/FX waren
+  // im Ergebnis No-Ops. Hier wiren wir die Events ans dmRef-Store.
+  useEffect(() => {
+    const handleVolume = (e: Event) => {
+      const detail = (e as CustomEvent<{ partId: string; value: number }>).detail;
+      if (detail && typeof detail.partId === "string" && typeof detail.value === "number") {
+        dmRef.current.setPartVolume(detail.partId, Math.max(0, Math.min(1, detail.value)));
+      }
+    };
+    const handlePan = (e: Event) => {
+      const detail = (e as CustomEvent<{ partId: string; value: number }>).detail;
+      if (detail && typeof detail.partId === "string" && typeof detail.value === "number") {
+        dmRef.current.setPartPan(detail.partId, Math.max(-1, Math.min(1, detail.value)));
+      }
+    };
+    const handleSolo = (e: Event) => {
+      const partId = (e as CustomEvent<string>).detail;
+      if (typeof partId !== "string") return;
+      const pattern = dmRef.current.getActivePattern();
+      const part = pattern?.parts.find(p => p.id === partId);
+      dmRef.current.setPartSoloed(partId, !(part?.soloed ?? false));
+    };
+    const handleFxParam = (e: Event) => {
+      const detail = (e as CustomEvent<{ partId: string; param: string; value: number }>).detail;
+      if (!detail || typeof detail.partId !== "string" || typeof detail.param !== "string") return;
+      dmRef.current.setPartFx(detail.partId, {
+        [detail.param]: detail.value,
+      } as Partial<import("@/audio/AudioEngine").ChannelFx>);
+    };
+    window.addEventListener("midi:partVolume", handleVolume);
+    window.addEventListener("midi:partPan",    handlePan);
+    window.addEventListener("midi:partSolo",   handleSolo);
+    window.addEventListener("midi:fxParam",    handleFxParam);
+    return () => {
+      window.removeEventListener("midi:partVolume", handleVolume);
+      window.removeEventListener("midi:partPan",    handlePan);
+      window.removeEventListener("midi:partSolo",   handleSolo);
+      window.removeEventListener("midi:fxParam",    handleFxParam);
+    };
+  }, []);
+
+  // v1.76: midi:partMute (Toggle pro CC>63). useMidi dispatcht zusätzlich
+  // zum bestehenden onMute-Callback ein CustomEvent damit Konsumenten ohne
+  // den Callback hören können.
+  useEffect(() => {
+    const handleMute = (e: Event) => {
+      const partId = (e as CustomEvent<string>).detail;
+      if (typeof partId !== "string") return;
+      const pattern = dmRef.current.getActivePattern();
+      const part = pattern?.parts.find(p => p.id === partId);
+      dmRef.current.setPartMuted(partId, !(part?.muted ?? false));
+    };
+    window.addEventListener("midi:partMute", handleMute);
+    return () => window.removeEventListener("midi:partMute", handleMute);
+  }, []);
+
+  // v1.97: synchronisiert das BPM des Clock-Output mit dem Projekt-BPM.
+  // Damit folgt der externe Synth automatisch BPM-Änderungen in Synthstudio.
+  useEffect(() => {
+    midi.setClockOutBpm(project.bpm);
+  }, [project.bpm, midi.setClockOutBpm]);
+
+  // v1.92: midi:pattern (Pattern-Index → Pattern-Switch). Vor v1.92 dispatchte
+  // useMidi.applyMapping zwar das Event, aber niemand hörte → das
+  // `pattern`-MidiLearnTarget war ein No-Op. Listener konvertiert Index zu
+  // Pattern-ID via dmRef.current.patterns[index].
+  useEffect(() => {
+    const handlePattern = (e: Event) => {
+      const patternIndex = (e as CustomEvent<number>).detail;
+      if (typeof patternIndex !== "number") return;
+      const idx = Math.max(0, Math.floor(patternIndex));
+      const patterns = dmRef.current.patterns;
+      if (idx >= 0 && idx < patterns.length) {
+        dmRef.current.setActivePattern(patterns[idx].id);
+      }
+    };
+    window.addEventListener("midi:pattern", handlePattern);
+    return () => window.removeEventListener("midi:pattern", handlePattern);
+  }, []);
+
+  // v2.10: midi:commitLiveEdit — Hidden-Bug-Fix. War dispatched aber kein
+  // Listener. Bindet jetzt direkt an dm.commitLivePatternEdit.
+  useEffect(() => {
+    const handleCommit = () => {
+      dmRef.current.commitLivePatternEdit();
+      toast("Live-Edit committed", { kind: "success", duration: 1500 });
+    };
+    window.addEventListener("midi:commitLiveEdit", handleCommit);
+    return () => window.removeEventListener("midi:commitLiveEdit", handleCommit);
+  }, []);
+
+  // v2.10: midi:scene — scenelaunch-Target dispatched eine sceneIndex,
+  // kein Listener vorhanden. Wir aktivieren die Scene + setzen das
+  // entsprechende Pattern aktiv via setActiveScene + setActivePattern.
+  useEffect(() => {
+    const handleScene = (e: Event) => {
+      const sceneIndex = (e as CustomEvent<number>).detail;
+      if (typeof sceneIndex !== "number") return;
+      // Direkt aus dem Singleton-Store lesen (kein React-state-Lock-In)
+      const scenes = getSceneState().scenes;
+      const scene = scenes[sceneIndex];
+      if (!scene) return;
+      sceneStoreSetActiveScene(scene.id);
+      if (scene.patternId) {
+        dmRef.current.setActivePattern(scene.patternId);
+      }
+      toast(`Scene ${sceneIndex + 1}: ${scene.name}`, { kind: "info", duration: 1500 });
+    };
+    window.addEventListener("midi:scene", handleScene);
+    return () => window.removeEventListener("midi:scene", handleScene);
+  }, []);
+
+  // v2.1: midi:partSend — Reverb/Delay-Send-Level via MIDI-CC steuern
+  useEffect(() => {
+    const handleSend = (e: Event) => {
+      const detail = (e as CustomEvent<{ partId: string; bus: "reverb" | "delay"; value: number }>).detail;
+      if (!detail || typeof detail.partId !== "string") return;
+      const v = Math.max(0, Math.min(1, detail.value));
+      mixer.setChannelSend(detail.partId, detail.bus, v);
+    };
+    window.addEventListener("midi:partSend", handleSend);
+    return () => window.removeEventListener("midi:partSend", handleSend);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // v1.99: midi:toggleStep — pad triggert ein spezifisches Step-Toggle.
+  // Ermöglicht Live-Finger-Drumming via Right-Click-Bound-Pads.
+  useEffect(() => {
+    const handleToggleStep = (e: Event) => {
+      const detail = (e as CustomEvent<{ partId: string; stepIndex: number }>).detail;
+      if (!detail || typeof detail.partId !== "string") return;
+      dmRef.current.toggleStep(detail.partId, detail.stepIndex);
+    };
+    window.addEventListener("midi:toggleStep", handleToggleStep);
+    return () => window.removeEventListener("midi:toggleStep", handleToggleStep);
+  }, []);
+
+  // v1.88: midi:macroValue — direkt einen Macro-Wert per CC steuern.
+  useEffect(() => {
+    const handleMacroValue = (e: Event) => {
+      const detail = (e as CustomEvent<{ index: number; value: number }>).detail;
+      if (!detail) return;
+      const idx = Math.max(0, Math.min(7, Math.floor(detail.index)));
+      const v = Math.max(0, Math.min(1, detail.value));
+      setMacroValue(idx, v);
+    };
+    window.addEventListener("midi:macroValue", handleMacroValue);
+    return () => window.removeEventListener("midi:macroValue", handleMacroValue);
+  }, []);
+
+  // v1.78: midi:runScript — User hat ein Script als MidiLearnTarget gebunden,
+  // beim Trigger soll es laufen. Wir nutzen scriptSandbox.run mit Re-Entrancy-
+  // Schutz (gleicher Pattern wie runScriptOnce oben im macro:button:trigger).
+  useEffect(() => {
+    const handleRunScript = (e: Event) => {
+      const scriptId = (e as CustomEvent<string>).detail;
+      if (typeof scriptId !== "string") return;
+      const script = getScript(scriptId);
+      if (!script || !script.enabled) return;
+      if (scriptSandbox.isRunning()) return;
+      void scriptSandbox.run(script.code, { maxRuntimeMs: script.maxRuntimeMs });
+    };
+    window.addEventListener("midi:runScript", handleRunScript);
+    return () => window.removeEventListener("midi:runScript", handleRunScript);
+  }, []);
 
   // ── Launchpad Grid Controller ─────────────────────────────────────────────
   const launchpadEnabled = midi.outputDevices.some(d => isGridDevice(d.name));
@@ -1584,6 +1826,48 @@ export default function App() {
       doLoadProject(filePath);
     },
     [doLoadProject]
+  );
+
+  // v2.13: Browser-Drop von Audio-Files → BPM-Detection per Web Audio API
+  // Wir analysieren nur die ERSTE Datei (eines Drops) um den Toast nicht zu
+  // spammen. Bei hoher Konfidenz bekommt der User einen "Übernehmen"-Button.
+  const handleDropAudioFilesRaw = useCallback(
+    async (files: File[]) => {
+      if (files.length === 0 || typeof AudioContext === "undefined") return;
+      const file = files[0];
+      let audioContext: AudioContext | null = null;
+      try {
+        const arrayBuffer = await file.arrayBuffer();
+        audioContext = new AudioContext();
+        const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+        const { detectBpm } = await import("@/utils/bpmAndOnsetDetection");
+        const result = detectBpm(audioBuffer.getChannelData(0), audioBuffer.sampleRate, {
+          maxSeconds: 30,
+        });
+        if (result.confidence >= 0.3) {
+          toast(
+            `BPM erkannt: ${result.bpm} (${Math.round(result.confidence * 100)}% Konfidenz) – „${file.name}"`,
+            {
+              kind: "info",
+              duration: 8000,
+              action: {
+                label: `→ ${result.bpm} BPM`,
+                onClick: () => {
+                  project.setBpm(result.bpm);
+                  toast(`Projekt-Tempo gesetzt: ${result.bpm} BPM`, { kind: "success" });
+                },
+              },
+            },
+          );
+        }
+      } catch (err) {
+        // BPM-Detection ist best-effort – Stille statt Toast-Spam
+        console.warn("[App] BPM-Detection fehlgeschlagen:", err);
+      } finally {
+        try { await audioContext?.close(); } catch { /* ignore */ }
+      }
+    },
+    [project]
   );
 
   const handleDropZipFile = useCallback(
@@ -2115,10 +2399,15 @@ export default function App() {
   return (
     <ElectronDropZone
       onAudioFiles={handleDropAudioFiles}
+      onAudioFilesRaw={handleDropAudioFilesRaw}
       onFolder={handleDropFolder}
       onProject={handleDropProject}
       onZipFile={handleDropZipFile}
+      onMidiFile={(file) =>
+        window.dispatchEvent(new CustomEvent<File>("midi:fileImport", { detail: file }))
+      }
     >
+      <MidiProvider value={midi}>
       <div className="flex flex-col h-screen bg-bg-base text-text-primary overflow-hidden">
 
         {/*
@@ -2289,7 +2578,7 @@ export default function App() {
                 onLoad={handleMenuOpen}
                 onNew={handleNewProject}
                 onExport={project.exportProject}
-                onImportPatterns={(patterns, sourceFormat) => {
+                onImportPatterns={(patterns, sourceFormat, melodicParts) => {
                   // Importierte Patterns als zusätzliche Patterns in DrumMachine hinzufügen
                   patterns.forEach(p => {
                     dm.addPatternData(p as Parameters<typeof dm.addPatternData>[0]);
@@ -2297,7 +2586,27 @@ export default function App() {
                   if (patterns.length > 0 && patterns[0].bpm) {
                     project.setBpm(patterns[0].bpm);
                   }
+                  // FLP-MELODIC-ROUTE Phase 2 (v1.66): melodische Channels in den
+                  // useMelodicPartStore einspeisen. v1.69: zusätzlich baseNote
+                  // pro Part setzen, damit Piano Roll auf importierten Bereich zentriert.
+                  const { mappings, baseNotes, warnings } = routeMelodicPartsToPatterns(
+                    melodicParts,
+                    patterns,
+                  );
+                  for (const b of baseNotes) {
+                    setMelodicBaseNote(b.partId, b.baseNote);
+                  }
+                  for (const m of mappings) {
+                    setMelodicNote(m.partId, m.stepIdx, m.pitch);
+                    setMelodicVelocity(m.partId, m.stepIdx, m.velocity);
+                  }
                   console.log(`[Import] ${patterns.length} Patterns aus ${sourceFormat.toUpperCase()} hinzugefügt`);
+                  if (mappings.length > 0) {
+                    console.log(`[Import] ${mappings.length} melodische Notes in MelodicParts geroutet (${baseNotes.length} baseNotes gesetzt)`);
+                  }
+                  if (warnings.length > 0) {
+                    console.warn(`[Import] Melodic-Routing-Warnungen:\n• ${warnings.join("\n• ")}`);
+                  }
                 }}
               />
             </div>
@@ -2733,6 +3042,9 @@ export default function App() {
           onOpenInWindow={electron.isElectron ? handleOpenPerformanceWindow : undefined}
         />
       )}
+      {/* v2.5: Toast-Notifications (oben rechts) */}
+      <ToastContainer />
+      </MidiProvider>
     </ElectronDropZone>
   );
 }

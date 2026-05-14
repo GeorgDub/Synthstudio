@@ -39,7 +39,12 @@ import type { MidiMapping, MidiNoteMapping, MidiLearnTarget } from "@/hooks/useM
 
 export const MAX_LAYOUT_FILE_BYTES = 10 * 1024; // 10kB
 
-/** Liste der erlaubten Target-Typ-Strings. Sync mit MidiLearnTarget-Union. */
+/**
+ * Liste der erlaubten Target-Typ-Strings. Sync mit MidiLearnTarget-Union
+ * in `useMidi.ts`. v1.73: scenelaunch + commitLiveEdit + openSettings
+ * ergänzt — die fehlten zuvor und wurden vom Importer als "ungültig"
+ * verworfen, obwohl sie in der Type-Union existieren.
+ */
 export const VALID_TARGET_TYPES = new Set<string>([
   "bpm", "playStop", "record", "tapTempo", "bpmUp", "bpmDown", "masterVolume",
   "volume", "mute", "solo", "pan", "step", "partUp", "partDown",
@@ -47,6 +52,17 @@ export const VALID_TARGET_TYPES = new Set<string>([
   "patternRandomize", "patternDuplicate",
   "tab",
   "toggleNoteRepeat", "toggleMorph",
+  "commitLiveEdit", "scenelaunch", "openSettings",
+  // v1.76: jeder numerische FX-Parameter pro Channel
+  "fxParam",
+  // v1.77: Function-Chain (mehrere Sub-Targets auf einer Taste)
+  "chain",
+  // v1.78: User-Script ausführen
+  "runScript",
+  // v1.88: Macro-Wert direkt steuern
+  "macro",
+  // v2.1: Send-Bus-Level
+  "send",
 ]);
 
 export interface ParsedMidiLayout {

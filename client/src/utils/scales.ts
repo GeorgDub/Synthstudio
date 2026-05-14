@@ -49,6 +49,23 @@ const SCALE_INDEX: ReadonlyMap<ScaleId, ScaleDefinition> = new Map(
   SCALES.map((s) => [s.id, s])
 );
 
+/**
+ * Set aller bekannten ScaleIds — verwendet von Persistenz-Migrationen
+ * (z.B. `useMelodicPartStore._migratePattern`) um korrupte/veraltete
+ * scaleId-Werte aus localStorage/Project-Files zu erkennen und auf
+ * "chromatic" zu falsifizieren, statt später bei `getScale` zu crashen.
+ * BUG-025 (v1.71): Quantize-Crash bei unbekannter scaleId-Persistenz.
+ */
+export const KNOWN_SCALE_IDS: ReadonlySet<ScaleId> = new Set(SCALES.map((s) => s.id));
+
+/**
+ * Type-Guard: prüft ob ein unbekannter String eine valide ScaleId ist.
+ * Verwendung an Persistenz-Boundaries (Storage-Load, Project-Import).
+ */
+export function isKnownScaleId(s: unknown): s is ScaleId {
+  return typeof s === "string" && KNOWN_SCALE_IDS.has(s as ScaleId);
+}
+
 export const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"] as const;
 
 export function getScale(id: ScaleId): ScaleDefinition {

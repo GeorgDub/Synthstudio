@@ -92,6 +92,20 @@ describe("CSP — Pflicht-Directives (TASK-107)", () => {
     expect(prod).toContain("wss:");
   });
 
+  it("connect-src erlaubt api.openai.com + api.anthropic.com (BUG-024, v1.67)", () => {
+    // AI-Script-Generator + Project-Analysis + Pattern-Generator rufen direkt
+    // fetch() auf diese Hosts auf. Ohne diese Einträge blockt CSP den Call
+    // im gepackten Electron-Build → User-Symptom: 'KI Script-Generator geht
+    // nicht trotz API-Key'.
+    const prod = getDirective(CSP_DIRECTIVES_PROD, "connect-src");
+    expect(prod).toContain("https://api.openai.com");
+    expect(prod).toContain("https://api.anthropic.com");
+
+    const dev = getDirective(CSP_DIRECTIVES_DEV, "connect-src");
+    expect(dev).toContain("https://api.openai.com");
+    expect(dev).toContain("https://api.anthropic.com");
+  });
+
   it("object-src 'none' (keine Plugins/Flash)", () => {
     expect(getDirective(CSP_DIRECTIVES_PROD, "object-src")).toEqual(["'none'"]);
     expect(getDirective(CSP_DIRECTIVES_DEV, "object-src")).toEqual(["'none'"]);
