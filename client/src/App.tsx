@@ -2343,6 +2343,9 @@ export default function App() {
       onFolder={handleDropFolder}
       onProject={handleDropProject}
       onZipFile={handleDropZipFile}
+      onMidiFile={(file) =>
+        window.dispatchEvent(new CustomEvent<File>("midi:fileImport", { detail: file }))
+      }
     >
       <MidiProvider value={midi}>
       <div className="flex flex-col h-screen bg-bg-base text-text-primary overflow-hidden">

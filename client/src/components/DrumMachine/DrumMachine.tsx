@@ -262,15 +262,21 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
   const [granularPartId, setGranularPartId] = useState<string | null>(null);
 
   // MIDI-Import: MIDI-Datei in aktives Pattern übertragen
-  const handleMidiImport = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+  /**
+   * v2.12: Pure-File-Variante für Drag-Drop und File-Picker.
+   * handleMidiImport (file-input ChangeEvent) delegiert an diese Funktion.
+   */
+  const handleMidiFile = useCallback((file: File) => {
     if (!file || !pattern) return;
     const reader = new FileReader();
     reader.onload = (ev) => {
       try {
         const buffer = ev.target?.result as ArrayBuffer;
         const parsed = parseMidiFile(buffer);
-        if (!parsed?.tracks?.length) return;
+        if (!parsed?.tracks?.length) {
+          toast(`Keine Tracks im MIDI-File: ${file.name}`, { kind: "warning" });
+          return;
+        }
         const tpqn: number = parsed.ticksPerQuarterNote ?? 480;
         const stepCount = pattern.stepCount;
         // GM Drum Map: MIDI-Note → Part-Index
@@ -287,7 +293,10 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
             }
           }
         }
-        if (!noteOns.length) return;
+        if (!noteOns.length) {
+          toast(`Keine Notes im MIDI-File: ${file.name}`, { kind: "warning" });
+          return;
+        }
 
         // Normalisierung: Quantize auf 1/16 Steps (tpqn/4 ticks per step)
         const ticksPerStep = tpqn / 4;
@@ -303,13 +312,31 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
           }
         }
         pattern.parts.forEach((part, i) => dm.setPartSteps(part.id, newSteps[i], newVels[i]));
+        toast(`MIDI importiert: ${file.name} (${noteOns.length} Notes)`, { kind: "success" });
       } catch (err) {
         console.error("[MIDI Import]", err);
+        const msg = err instanceof Error ? err.message : String(err);
+        toast(`MIDI-Import fehlgeschlagen: ${msg}`, { kind: "error", duration: 5000 });
       }
     };
     reader.readAsArrayBuffer(file);
-    e.target.value = "";
   }, [pattern, dm]);
+
+  const handleMidiImport = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) handleMidiFile(file);
+    e.target.value = "";
+  }, [handleMidiFile]);
+
+  // v2.12: Drag-Drop für .mid-Files via globales Event (von ElectronDropZone dispatched).
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const file = (e as CustomEvent<File>).detail;
+      if (file instanceof File) handleMidiFile(file);
+    };
+    window.addEventListener("midi:fileImport", handler);
+    return () => window.removeEventListener("midi:fileImport", handler);
+  }, [handleMidiFile]);
 
   /**
    * FLP-Import: extrahiert ALLE Notes aus dem ersten FL-Pattern und verteilt
