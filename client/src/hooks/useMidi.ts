@@ -139,6 +139,11 @@ export interface MidiState {
    */
   autoLearnQueue: AutoLearnEntry[];
   autoLearnTotal: number;
+  /**
+   * v1.83: optionaler Channel-Filter für Auto-Learn. 0 = alle Channels
+   * akzeptieren, 1-16 = nur Messages auf diesem Channel.
+   */
+  autoLearnFilterChannel: number;
   clockSync: boolean;
   externalBpm: number | null;
   /** MIDI Out aktiv */
@@ -170,6 +175,8 @@ export interface MidiActions {
   skipAutoLearnTarget: () => void;
   /** Bricht Auto-Learn ab — bisher gebundene Mappings bleiben erhalten. */
   cancelAutoLearn: () => void;
+  /** v1.83: Setter für den Auto-Learn Channel-Filter (0 = alle, 1-16). */
+  setAutoLearnFilterChannel: (ch: number) => void;
   removeMapping: (cc: number, channel: number) => void;
   addNoteMapping: (note: number, channel: number, partId: string, label: string) => void;
   removeNoteMapping: (note: number, channel: number) => void;
@@ -277,12 +284,24 @@ export function planChainExecution(
 export function nextAutoLearnEntry(
   queue: AutoLearnEntry[],
   msg: { type: number; byte1: number; byte2: number; channel: number },
+  /**
+   * v1.83: Optionaler Channel-Filter. Wenn gesetzt (1-16), werden nur
+   * Messages auf diesem Channel als Capture akzeptiert — alle anderen
+   * lassen die Queue unverändert. 0 = "alle Channels" (default).
+   * Nützlich wenn der User mehrere Controller gleichzeitig angeschlossen
+   * hat und der Auto-Learn deshalb 'falsche' Events von einem anderen
+   * Gerät einfängt.
+   */
+  filterChannel: number = 0,
 ): {
   newQueue: AutoLearnEntry[];
   ccMapping?: MidiMapping;
   noteMapping?: MidiNoteMapping;
 } {
   if (queue.length === 0) return { newQueue: queue };
+  if (filterChannel > 0 && filterChannel !== msg.channel) {
+    return { newQueue: queue };
+  }
   const entry = queue[0];
   if (entry.kind === "cc" && msg.type === 0xb0 && msg.byte2 > 0) {
     return {
@@ -407,6 +426,9 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
   // Auto-Learn-Queue (v1.71)
   const [autoLearnQueue, setAutoLearnQueue] = useState<AutoLearnEntry[]>([]);
   const [autoLearnTotal, setAutoLearnTotal] = useState(0);
+  const [autoLearnFilterChannel, setAutoLearnFilterChannelState] = useState(0);
+  const autoLearnFilterChannelRef = useRef(0);
+  useEffect(() => { autoLearnFilterChannelRef.current = autoLearnFilterChannel; }, [autoLearnFilterChannel]);
 
   const savedMappings = loadMappings();
   const [mappings, setMappings] = useState<MidiMapping[]>(savedMappings.cc);
@@ -499,7 +521,11 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
     // Queue-Transition + ggf. das Mapping. Hier schreiben wir nur in den
     // State und persistieren.
     if (autoLearnRef.current.length > 0) {
-      const result = nextAutoLearnEntry(autoLearnRef.current, { type, byte1, byte2, channel });
+      const result = nextAutoLearnEntry(
+        autoLearnRef.current,
+        { type, byte1, byte2, channel },
+        autoLearnFilterChannelRef.current,
+      );
       if (result.ccMapping) {
         const m = result.ccMapping;
         setMappings(prev => {
@@ -861,6 +887,11 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
     setAutoLearnTotal(0);
   }, []);
 
+  const setAutoLearnFilterChannel = useCallback((ch: number) => {
+    const clamped = Math.max(0, Math.min(16, Math.floor(ch)));
+    setAutoLearnFilterChannelState(clamped);
+  }, []);
+
   const removeMapping = useCallback((cc: number, channel: number) => {
     setMappings(prev => {
       const next = prev.filter(m => !(m.cc === cc && m.channel === channel));
@@ -922,6 +953,7 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
     learnTarget,
     autoLearnQueue,
     autoLearnTotal,
+    autoLearnFilterChannel,
     clockSync,
     externalBpm,
     // Input Actions
@@ -933,6 +965,7 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
     startAutoLearn,
     skipAutoLearnTarget,
     cancelAutoLearn,
+    setAutoLearnFilterChannel,
     removeMapping,
     addNoteMapping,
     removeNoteMapping,

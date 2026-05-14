@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "1.82.0",
+    version: "1.83.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -491,6 +491,25 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-14T11:00:00.000Z",
+      done: [
+        "AUTO-LEARN-CHANNEL-FILTER + MORE-BUILT-INS (v1.83.0): Zwei Erweiterungen in einem Release. (1) Auto-Learn Channel-Filter: Wenn der User mehrere MIDI-Geräte gleichzeitig angeschlossen hat (Electribe auf Ch10 + Keystep auf Ch1 + iRig auf Ch2), kann er jetzt einen Channel-Filter in der Auto-Learn-Settings setzen — nur Events auf diesem Channel werden ge-capt-uret, der Rest läuft normal durch den Handler. Neue State `autoLearnFilterChannel: number` + Action `setAutoLearnFilterChannel(ch)` (clamped 0-16, 0=alle). Pure-Helper nextAutoLearnEntry bekommt optionalen 3. Param `filterChannel`. UI in MidiSettings CC-Tab Auto-Learn-Block: Dropdown 'Nur Channel:' (Alle / Ch1-Ch16). (2) 5 weitere Built-In Scripts: 'Build-Up 10s' (BPM-Ramp + Filter-Sweep parallel), 'Stutter (4× Macro-Snap)' (Glitch-Übergänge), 'Macro-Random-Burst' (alle 8 Macros zu Zufallswerten), 'Pattern-Walker (alle 8s nächstes)' (Live-Auto-Pilot), 'Macro 0 Sinus-LFO 15s' (smooth Filter-Bewegung). 3 neue Vitest-Cases für Channel-Filter (default-pass-all / specific-Channel-blocks-others / wirkt auch auf Note-Entries). 1787 Tests grün, pnpm check 0 Fehler."
+      ],
+      next: [
+        "v1.84 USABILITY-CLEANUPS: Audit ungebundener Features, Doku-Lücken.",
+        "v1.85 FINAL-AUDIT: neue_todos.md auf erledigte Items prüfen, Session-Summary."
+      ],
+      changed: [
+        "package.json",
+        "client/src/hooks/useMidi.ts",
+        "client/src/components/MidiSettings/MidiSettings.tsx",
+        "client/src/utils/builtInScripts.ts",
+        "tests/features/midi-auto-learn.test.ts",
+        "agents/INDEX.js"
+      ]
+    },
     {
       agent:     "coordinator",
       timestamp: "2026-05-14T10:30:00.000Z",

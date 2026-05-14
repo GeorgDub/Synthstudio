@@ -161,4 +161,35 @@ describe("nextAutoLearnEntry (v1.72)", () => {
     expect(result.ccMapping).toBeUndefined();
     expect(result.noteMapping).toBeUndefined();
   });
+
+  // ─── v1.83: Channel-Filter ─────────────────────────────────────────────
+  it("Channel-Filter 0 (default) akzeptiert alle Channels", () => {
+    const queue: AutoLearnEntry[] = [ccTarget];
+    const result = nextAutoLearnEntry(
+      queue,
+      { type: 0xb0, byte1: 7, byte2: 100, channel: 5 },
+      0,
+    );
+    expect(result.ccMapping).toBeDefined();
+  });
+
+  it("Channel-Filter 10 akzeptiert nur Channel 10, ignoriert Ch1", () => {
+    const queue: AutoLearnEntry[] = [ccTarget];
+    // Ch1 → blockiert
+    const r1 = nextAutoLearnEntry(queue, { type: 0xb0, byte1: 7, byte2: 100, channel: 1 }, 10);
+    expect(r1.ccMapping).toBeUndefined();
+    expect(r1.newQueue).toEqual(queue);
+    // Ch10 → akzeptiert
+    const r2 = nextAutoLearnEntry(queue, { type: 0xb0, byte1: 7, byte2: 100, channel: 10 }, 10);
+    expect(r2.ccMapping).toBeDefined();
+    expect(r2.ccMapping?.channel).toBe(10);
+  });
+
+  it("Channel-Filter wirkt auch auf Note-Entries", () => {
+    const queue: AutoLearnEntry[] = [noteTarget];
+    const r1 = nextAutoLearnEntry(queue, { type: 0x90, byte1: 36, byte2: 100, channel: 1 }, 10);
+    expect(r1.noteMapping).toBeUndefined();
+    const r2 = nextAutoLearnEntry(queue, { type: 0x90, byte1: 36, byte2: 100, channel: 10 }, 10);
+    expect(r2.noteMapping).toBeDefined();
+  });
 });

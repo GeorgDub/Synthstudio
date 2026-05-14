@@ -137,6 +137,96 @@ export const BUILT_IN_SCRIPTS: BuiltInScript[] = [
       "ss.log('Alle 8 Macros = 0.5.');",
     ].join("\n"),
   },
+  // ─── v1.83: weitere Performance-Helper ────────────────────────────────
+  {
+    id: "build-up-10s",
+    name: "Build-Up 10s (BPM + Macro 0)",
+    category: "Performance",
+    description:
+      "Klassischer Build-Up: BPM von aktuellem Wert auf +20 in 10 Sekunden, " +
+      "parallel Macro 0 von 0 → 1 als Filter-Sweep. Live-Tension-Booster.",
+    code: [
+      "// Build-Up 10s — BPM-Ramp + Filter-Sweep parallel",
+      "const startBpm = 120;",
+      "const targetBpm = 140;",
+      "const steps = 50;",
+      "for (let i = 0; i <= steps; i++) {",
+      "  const t = i / steps;",
+      "  await ss.bpm(Math.round(startBpm + (targetBpm - startBpm) * t));",
+      "  await ss.setMacro(0, t);",
+      "  await ss.wait(200);",
+      "}",
+      "ss.log('Build-Up komplett — Drop einleiten.');",
+    ].join("\n"),
+  },
+  {
+    id: "stutter-4-steps",
+    name: "Stutter (4× Macro-Snap)",
+    category: "Performance",
+    description:
+      "Live-Stutter-Effekt: Macro 0 4× hintereinander zwischen 0 und 1 " +
+      "togglen mit 125ms Abstand — Glitch-Vibe für Übergänge.",
+    code: [
+      "for (let i = 0; i < 4; i++) {",
+      "  await ss.setMacro(0, i % 2 === 0 ? 1 : 0);",
+      "  await ss.wait(125);",
+      "}",
+      "await ss.setMacro(0, 0);",
+      "ss.log('Stutter complete.');",
+    ].join("\n"),
+  },
+  {
+    id: "macro-random-burst",
+    name: "Macro-Random-Burst",
+    category: "Macro",
+    description:
+      "Setzt alle 8 Macros sofort auf Zufallswerte (ss.random()) — " +
+      "praktisch für 'shake everything up' Live-Performance.",
+    code: [
+      "for (let i = 0; i < 8; i++) {",
+      "  await ss.setMacro(i, ss.random());",
+      "}",
+      "ss.log('8 Macros randomisiert.');",
+    ].join("\n"),
+  },
+  {
+    id: "pattern-walk-8s",
+    name: "Pattern-Walker (alle 8s nächstes)",
+    category: "Pattern",
+    description:
+      "Springt alle 8 Sekunden zum nächsten Pattern, 8 Sprünge total. " +
+      "Auto-Pilot für Live-Sets ohne manuelle Pattern-Wechsel.",
+    code: [
+      "for (let i = 0; i < 8; i++) {",
+      "  ss.log(`Sprung ${i + 1}/8`);",
+      "  await ss.dispatch('pattern-next');",
+      "  await ss.wait(8000);",
+      "}",
+      "ss.log('Pattern-Walk fertig.');",
+    ].join("\n"),
+  },
+  {
+    id: "macro-sine-lfo-15s",
+    name: "Macro 0 Sinus-LFO (15s)",
+    category: "Macro",
+    description:
+      "Macro 0 oszilliert sinusförmig zwischen 0 und 1 für 15 Sekunden " +
+      "(Periode 4s). Perfekt für sanfte Filter-Bewegungen während eines Drops.",
+    code: [
+      "const duration = 15000;",
+      "const period = 4000;",
+      "const tick = 30;",
+      "const start = ss.now();",
+      "while (ss.now() - start < duration) {",
+      "  const t = (ss.now() - start) / period;",
+      "  const v = (Math.sin(t * Math.PI * 2) + 1) / 2;",
+      "  await ss.setMacro(0, v);",
+      "  await ss.wait(tick);",
+      "}",
+      "await ss.setMacro(0, 0.5);",
+      "ss.log('LFO fertig — Macro 0 zentriert.');",
+    ].join("\n"),
+  },
 ];
 
 /** Gruppiert die Built-Ins nach Kategorie für UI-Dropdown. */

@@ -496,6 +496,25 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
               nächsten Target. CC-Einträge erwarten einen Slider/Knopf, Pad-Einträge
               eine Note (z.B. ein Drum-Pad).
             </div>
+            {/* v1.83: Channel-Filter — nur Events auf diesem Channel akzeptieren */}
+            <div className="flex items-center gap-2 mb-2 text-xs">
+              <label className="text-text-muted">Nur Channel:</label>
+              <select
+                value={midi.autoLearnFilterChannel}
+                onChange={(e) => midi.setAutoLearnFilterChannel(Number(e.target.value))}
+                className="px-2 py-1 bg-bg-elevated border border-border-color rounded text-text-primary"
+              >
+                <option value={0}>Alle Channels</option>
+                {Array.from({ length: 16 }, (_, i) => i + 1).map((ch) => (
+                  <option key={ch} value={ch}>Ch {ch}</option>
+                ))}
+              </select>
+              {midi.autoLearnFilterChannel > 0 && (
+                <span className="text-[10px] text-text-dim">
+                  → Auto-Learn ignoriert Events von anderen Channels
+                </span>
+              )}
+            </div>
             {autoLearnPresets.map(({ label, description, build }) => (
               <button
                 key={label}
