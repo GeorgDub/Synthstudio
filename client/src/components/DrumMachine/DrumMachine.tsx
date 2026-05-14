@@ -1185,9 +1185,11 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
       )}
 
       {/* ── Note Repeat Panel ────────────────────────────────────────────── */}
+      {/* BUG-008 Reaffirmation: KEIN title= damit der Inner-Panel-Header
+          (inkl. Status-Info wie BPM) der einzige sichtbare Header ist.
+          Close-Button rendert dank onClose unabhängig vom title. */}
       {showNoteRepeat && (
         <ResizableDrumPanel storageKey="ss-panel-notrepeat" defaultHeight={110} minHeight={80} maxHeight={240}
-          title="Note Repeat"
           onClose={() => setShowNoteRepeat(false)}>
           <NoteRepeatPanel
             bpm={effectiveBpm}
@@ -1199,7 +1201,6 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
       {/* ── Pattern Morph Panel ──────────────────────────────────────────── */}
       {showMorph && (
         <ResizableDrumPanel storageKey="ss-panel-morph" defaultHeight={160} minHeight={100} maxHeight={320}
-          title="Pattern-Morph"
           onClose={() => setShowMorph(false)}>
           <PatternMorphPanel
             patterns={dm.patterns}
@@ -1215,7 +1216,6 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
       {/* ── Envelope Follower Panel ──────────────────────────────────────── */}
       {showEnvFollower && (
         <ResizableDrumPanel storageKey="ss-panel-envfollower" defaultHeight={180} minHeight={120} maxHeight={400}
-          title="Envelope Follower"
           onClose={() => setShowEnvFollower(false)}>
           <EnvelopeFollowerPanel parts={pattern.parts} />
         </ResizableDrumPanel>

@@ -263,8 +263,12 @@ test.describe("Performance Mode a11y + Multi-Select (TASK-114)", () => {
     // Drop
     await page.keyboard.press(" ");
     await expect(page.getByTestId("perf-pad-1")).toHaveAttribute("data-pad-grabbed", "0");
+    // Live-Region announces release. Production zeigt "Pad N losgelassen." weil
+    // der Move bereits durch ArrowRight passierte und Space am gleichen Index
+    // nur noch das Grab beendet (siehe handleGridKeyDown Space-Branch: wenn
+    // grabbedIndex === focusedIndex, dann "losgelassen", sonst "abgelegt").
     const live = page.getByTestId("perf-live-region");
-    await expect(live).toContainText(/abgelegt/i);
+    await expect(live).toContainText(/abgelegt|losgelassen/i);
   });
 
   test("Reorder-Mode: Escape während grabbed restored Position + Live-Region", async ({ page }) => {
