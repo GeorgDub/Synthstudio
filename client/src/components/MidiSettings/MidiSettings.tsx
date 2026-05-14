@@ -17,6 +17,7 @@ import { GM_DRUM_DEFAULTS } from "@/hooks/useMidi";
 import { MIDI_TEMPLATES, templateToMappings } from "@/utils/midiTemplates";
 import { buildMidiLayoutJson, sanitizeLayoutFileName } from "@/utils/midiLayoutExport";
 import { FX_PARAM_RANGES } from "@/audio/AudioEngine";
+import { useScriptStore } from "@/store/useScriptStore";
 
 interface MidiSettingsProps {
   midi: MidiState & MidiActions;
@@ -68,6 +69,8 @@ function noteToName(note: number): string {
 // ─── Komponente ───────────────────────────────────────────────────────────────
 
 export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
+  // v1.78: für Script-Run-Targets brauchen wir die Liste aller Scripts
+  const { scripts } = useScriptStore();
   const [activeTab, setActiveTab] = useState<"devices" | "templates" | "cc" | "notes" | "clock">("devices");
   const [noteLearnPartId, setNoteLearnPartId] = useState<string | null>(null);
   const [noteLearnChannel, setNoteLearnChannel] = useState(0);
@@ -530,6 +533,55 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
                   <div>
                     <div className="text-text-primary font-medium">{preset.label}</div>
                     <div className="text-[10px] text-text-dim mt-0.5">{preset.description}</div>
+                  </div>
+                  {existing && (
+                    <span className="text-accent-secondary font-mono text-xs ml-1">
+                      CC{existing.cc}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* User-Scripts binden (v1.78) ────────────────────────────────────── */}
+      {!midi.isLearning && scripts.length > 0 && (
+        <div>
+          <div className="text-xs font-medium text-text-muted mb-2 uppercase tracking-wider">
+            User-Scripts auf MIDI binden (v1.78)
+          </div>
+          <div className="text-xs text-text-dim mb-2">
+            Klick ein Script an und bewege dann deinen Controller — bei jedem
+            Trigger wird das Script in der Sandbox ausgeführt. Funktioniert
+            mit jedem Built-In oder selbst-geschriebenen Script.
+          </div>
+          <div className="space-y-1.5">
+            {scripts.map((s) => {
+              const existing = midi.mappings.find(m =>
+                m.target.type === "runScript" && m.target.scriptId === s.id,
+              );
+              return (
+                <button
+                  key={s.id}
+                  onClick={() => midi.isEnabled && midi.startLearn({
+                    type: "runScript",
+                    scriptId: s.id,
+                    scriptName: s.name,
+                  })}
+                  disabled={!midi.isEnabled}
+                  className={`w-full flex items-center justify-between p-2 rounded text-left text-xs transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+                    existing
+                      ? "bg-accent-primary/40 border border-accent-primary/50 hover:bg-accent-primary/60"
+                      : "bg-bg-elevated hover:bg-bg-elevated"
+                  }`}
+                >
+                  <div>
+                    <div className="text-text-primary font-medium">{s.name}</div>
+                    <div className="text-[10px] text-text-dim mt-0.5">
+                      {s.enabled ? "✓ aktiviert" : "✗ deaktiviert"} · {s.code.length} Bytes
+                    </div>
                   </div>
                   {existing && (
                     <span className="text-accent-secondary font-mono text-xs ml-1">

@@ -1249,6 +1249,22 @@ export default function App() {
     return () => window.removeEventListener("midi:partMute", handleMute);
   }, []);
 
+  // v1.78: midi:runScript — User hat ein Script als MidiLearnTarget gebunden,
+  // beim Trigger soll es laufen. Wir nutzen scriptSandbox.run mit Re-Entrancy-
+  // Schutz (gleicher Pattern wie runScriptOnce oben im macro:button:trigger).
+  useEffect(() => {
+    const handleRunScript = (e: Event) => {
+      const scriptId = (e as CustomEvent<string>).detail;
+      if (typeof scriptId !== "string") return;
+      const script = getScript(scriptId);
+      if (!script || !script.enabled) return;
+      if (scriptSandbox.isRunning()) return;
+      void scriptSandbox.run(script.code, { maxRuntimeMs: script.maxRuntimeMs });
+    };
+    window.addEventListener("midi:runScript", handleRunScript);
+    return () => window.removeEventListener("midi:runScript", handleRunScript);
+  }, []);
+
   // ── Launchpad Grid Controller ─────────────────────────────────────────────
   const launchpadEnabled = midi.outputDevices.some(d => isGridDevice(d.name));
   const launchpadPattern = dm.getActivePattern();

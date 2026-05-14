@@ -57,6 +57,8 @@ export const VALID_TARGET_TYPES = new Set<string>([
   "fxParam",
   // v1.77: Function-Chain (mehrere Sub-Targets auf einer Taste)
   "chain",
+  // v1.78: User-Script ausführen
+  "runScript",
 ]);
 
 export interface ParsedMidiLayout {

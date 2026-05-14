@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "1.77.0",
+    version: "1.78.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -491,6 +491,26 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-14T08:30:00.000Z",
+      done: [
+        "RUN-SCRIPT-TARGET (v1.78.0): User-Scripts (aus useScriptStore) sind jetzt als MidiLearnTarget bindbar. Neue Variante `{type:'runScript', scriptId, scriptName?}`. applyMapping dispatcht 'midi:runScript' CustomEvent mit der scriptId; App.tsx listener ruft scriptSandbox.run() mit Re-Entrancy-Schutz auf (gleicher Pattern wie der existierende macro:button:trigger Pfad). UI in MidiSettings CC-Tab: neue 'User-Scripts auf MIDI binden'-Section listet alle Scripts aus useScriptStore, jeder mit Learn-Button. Zeigt enabled/disabled + Byte-Count. labelForTarget rendert 'Script: <name>' bzw. gekürzte ID. VALID_TARGET_TYPES um 'runScript' erweitert → Layouts importierbar. Kombination mit v1.77 chain: runScript kann als Sub-Target in einer chain stehen (1-Level-Nesting). 5 neue Vitest-Cases (label-name+fallback, VALID_TARGET-Check, Round-Trip Export→Import, chain-runScript-Kombination). 1763 Tests grün, pnpm check 0 Fehler. User-Request 'Jeden Effekt und jede Funktion belegbar auf makro oder taste' jetzt vollständig — komplette ss.*-API kann via Script gebunden werden."
+      ],
+      next: [
+        "v1.79 DEFAULT-FILENAME-AUS-DEVICE: midi.activeDeviceId-Lookup im Layout-Export-Field, damit der User nicht jedes Mal manuell 'Mein Setup' tippen muss.",
+        "v1.80 USABILITY-AUDIT: Welche Features sind UI-mäßig versteckt, welche Settings noch nicht zugänglich?"
+      ],
+      changed: [
+        "package.json",
+        "client/src/hooks/useMidi.ts",
+        "client/src/App.tsx",
+        "client/src/components/MidiSettings/MidiSettings.tsx",
+        "client/src/utils/midiLayoutImport.ts",
+        "tests/features/midi-runscript-target.test.ts",
+        "agents/INDEX.js"
+      ]
+    },
     {
       agent:     "coordinator",
       timestamp: "2026-05-14T08:00:00.000Z",

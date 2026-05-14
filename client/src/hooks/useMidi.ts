@@ -63,6 +63,13 @@ export type MidiLearnTarget =
   | { type: "scenelaunch"; sceneIndex: number }
   // ── Einstellungen ─────────────────────────────────────────────────────────────
   | { type: "openSettings" }
+  // ── Run-Script (v1.78) ─────────────────────────────────────────────────────
+  /**
+   * Triggert ein User-Script aus dem useScriptStore. Bei CC>63 oder Note-On
+   * wird ein CustomEvent "midi:runScript" mit der scriptId gefeuert; App.tsx
+   * konsumiert es und ruft `scriptSandbox.run(code)` auf.
+   */
+  | { type: "runScript"; scriptId: string; scriptName?: string }
   // ── Function-Chain (v1.77) ────────────────────────────────────────────────────
   /**
    * Eine Folge von Sub-Targets, die bei einem einzigen MIDI-Event
@@ -206,6 +213,7 @@ export function labelForTarget(target: MidiLearnTarget): string {
     case "commitLiveEdit":  return "Live Edit Commit";
     case "scenelaunch":     return `Scene ${target.sceneIndex + 1}`;
     case "openSettings":    return "Einstellungen öffnen";
+    case "runScript":       return `Script: ${target.scriptName ?? target.scriptId.slice(0, 8)}`;
     case "chain":           return `Chain: ${target.label} (${target.steps.length} Schritte)`;
     default:                return "Unbekannt";
   }
@@ -637,6 +645,11 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
       case "commitLiveEdit":   if (on) window.dispatchEvent(new CustomEvent("midi:commitLiveEdit")); break;
       case "scenelaunch":      if (on) window.dispatchEvent(new CustomEvent("midi:scene", { detail: t.sceneIndex })); break;
       case "openSettings":     if (on) window.dispatchEvent(new CustomEvent("kb:action", { detail: "open-settings" })); break;
+      case "runScript": if (on) {
+        // v1.78: User-Script auf MIDI-Trigger ausführen. App.tsx hört und
+        // ruft scriptSandbox.run() auf. ScriptId wird im detail mitgegeben.
+        window.dispatchEvent(new CustomEvent("midi:runScript", { detail: t.scriptId }));
+      } break;
       case "chain": {
         // v1.77: Function-Chains — auf 'on' (CC>63 oder Note) eine Folge von
         // Sub-Targets der Reihe nach feuern, optional mit delayMs zwischen
