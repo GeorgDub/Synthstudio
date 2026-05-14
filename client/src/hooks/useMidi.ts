@@ -798,7 +798,13 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
       }
       case "partUp":   if (on) dispatchAction("part-up"); break;
       case "partDown": if (on) dispatchAction("part-down"); break;
-      case "step": break; // Step-Toggle via Note-Mapping, nicht CC
+      case "step": if (on) {
+        // v1.99: pad-press → toggle a specific step in the active pattern.
+        // Super-mächtig für Live-Finger-Drumming auf physischen Pads.
+        window.dispatchEvent(new CustomEvent("midi:toggleStep", {
+          detail: { partId: t.partId, stepIndex: t.stepIndex },
+        }));
+      } break;
       // ── Pattern ─────────────────────────────────────────────────────────────
       case "pattern":          if (on) window.dispatchEvent(new CustomEvent("midi:pattern", { detail: t.patternIndex })); break;
       case "patternNext":      if (on) dispatchAction("pattern-next"); break;

@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "1.98.0",
+    version: "1.99.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -491,6 +491,25 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-14T19:00:00.000Z",
+      done: [
+        "RCL-STEP-BUTTONS (v1.99.0): Right-Click MIDI-Learn jetzt auch auf einzelne Steps im Pattern-Grid. Damit ist Live-Finger-Drumming auf physischen Pads möglich: jeder Step im Grid kann individuell auf ein Pad gemappt werden, Pad-Druck togglet diesen Step im aktiven Pattern. Implementation: useMidiContext direkt im ChannelStrip statt useMidiLearn (vermeidet Hook-Order-Probleme bei dynamischen Step-Counts 16/32). onContextMenu auf jedem Step-Button → midi.startLearn({type:'step', partId, stepIndex}). Visual-Indikator: 1×1px Dot in der rechten oberen Ecke des Steps wenn gebunden. Tooltip zeigt CC# oder 'Rechtsklick: MIDI-Learn'. Hidden-Bug-Fix nebenbei: applyMapping für 'step'-Target war zuvor `break;` (NO-OP, mit Kommentar 'via Note-Mapping'). Jetzt dispatcht es 'midi:toggleStep'-CustomEvent, App.tsx listener ruft dm.toggleStep auf. 1818 Tests grün, pnpm check 0 Fehler."
+      ],
+      next: [
+        "Beat-Repeat-Macro-Target.",
+        "AI-Projekt-Analyse UI-Exposure.",
+        "Pattern-Tag-System."
+      ],
+      changed: [
+        "package.json",
+        "client/src/hooks/useMidi.ts",
+        "client/src/App.tsx",
+        "client/src/components/DrumMachine/ChannelStrip.tsx",
+        "agents/INDEX.js"
+      ]
+    },
     {
       agent:     "coordinator",
       timestamp: "2026-05-14T18:30:00.000Z",

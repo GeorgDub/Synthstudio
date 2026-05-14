@@ -1274,6 +1274,18 @@ export default function App() {
     return () => window.removeEventListener("midi:pattern", handlePattern);
   }, []);
 
+  // v1.99: midi:toggleStep — pad triggert ein spezifisches Step-Toggle.
+  // Ermöglicht Live-Finger-Drumming via Right-Click-Bound-Pads.
+  useEffect(() => {
+    const handleToggleStep = (e: Event) => {
+      const detail = (e as CustomEvent<{ partId: string; stepIndex: number }>).detail;
+      if (!detail || typeof detail.partId !== "string") return;
+      dmRef.current.toggleStep(detail.partId, detail.stepIndex);
+    };
+    window.addEventListener("midi:toggleStep", handleToggleStep);
+    return () => window.removeEventListener("midi:toggleStep", handleToggleStep);
+  }, []);
+
   // v1.88: midi:macroValue — direkt einen Macro-Wert per CC steuern.
   useEffect(() => {
     const handleMacroValue = (e: Event) => {
