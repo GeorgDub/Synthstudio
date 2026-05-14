@@ -1110,6 +1110,54 @@ export default function App() {
     prevMacroPerfRef.current = values;
   }, [macroSnapshot]);
 
+  // v2.30: Perf-Replay-Consumers — verarbeitet die "perf:replay"-Events die
+  // PerformanceRecorderBadge.handlePlay() für jeden aufgezeichneten Event
+  // dispatched. Während Replay ist isRecording=false → Producer feuern zwar
+  // weiter, aber der Recorder ignoriert sie (kein Endlos-Loop).
+  // Ref-Pattern damit Listener stabil bleibt während Store-Hooks rerendern.
+  const replayDmRef = useRef(dm);
+  replayDmRef.current = dm;
+  const replayProjectRef = useRef(project);
+  replayProjectRef.current = project;
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const ev = (e as CustomEvent<{ type: string; data?: Record<string, unknown>; t: number }>).detail;
+      if (!ev || typeof ev.type !== "string") return;
+      try {
+        const data = ev.data ?? {};
+        if (ev.type === "play") {
+          if (!replayProjectRef.current.isPlaying) replayProjectRef.current.togglePlayStop();
+          return;
+        }
+        if (ev.type === "stop") {
+          if (replayProjectRef.current.isPlaying) replayProjectRef.current.togglePlayStop();
+          return;
+        }
+        if (ev.type === "pattern" && typeof data.id === "string") {
+          replayDmRef.current.setActivePattern(data.id);
+          return;
+        }
+        if (ev.type === "mute" && typeof data.partId === "string" && typeof data.value === "boolean") {
+          replayDmRef.current.setPartMuted(data.partId, data.value);
+          return;
+        }
+        if (ev.type === "macro" && typeof data.index === "number" && typeof data.value === "number") {
+          setMacroValue(data.index, data.value);
+          return;
+        }
+        if (ev.type === "custom" && data.kind === "bpm" && typeof data.value === "number") {
+          replayProjectRef.current.setBpm(data.value);
+          return;
+        }
+      } catch {
+        // Defensiv: replay ignoriert Errors (Pattern/Part wurden ggf. gelöscht
+        // seit der Aufnahme — Skip statt Crash).
+      }
+    };
+    window.addEventListener("perf:replay", handler);
+    return () => window.removeEventListener("perf:replay", handler);
+  }, []);
+
   // ── v2.23: OSC-UDP-Listener-Bridge ────────────────────────────────────────
   // Wenn der Electron-OSC-Server eine Message empfängt, mappen wir sie via
   // mapOscToAction auf das v2.17-Standard-Schema und feuern die zugehörige
