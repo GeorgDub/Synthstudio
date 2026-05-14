@@ -16,6 +16,7 @@ import type { MidiState, MidiActions, MidiLearnTarget, MidiNoteMapping, AutoLear
 import { GM_DRUM_DEFAULTS } from "@/hooks/useMidi";
 import { MIDI_TEMPLATES, templateToMappings } from "@/utils/midiTemplates";
 import { buildMidiLayoutJson, sanitizeLayoutFileName, defaultLayoutNameForDevice } from "@/utils/midiLayoutExport";
+import { toast } from "@/store/useToastStore";
 import { FX_PARAM_RANGES } from "@/audio/AudioEngine";
 import { useScriptStore } from "@/store/useScriptStore";
 import {
@@ -191,11 +192,14 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
       document.body.removeChild(a);
       // URL nach 1s revoken — der Browser hat den Download dann sicher gestartet
       setTimeout(() => URL.revokeObjectURL(url), 1000);
+      const summary = `${midi.mappings.length} CC + ${midi.noteMappings.length} Notes`;
       setExportFeedback(`Gespeichert: ${a.download}`);
       setTimeout(() => setExportFeedback(null), 3000);
+      toast(`Layout exportiert: ${a.download} (${summary})`, { kind: "success" });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setExportFeedback(`Fehler: ${msg}`);
+      toast(`Export-Fehler: ${msg}`, { kind: "error", duration: 5000 });
     }
   };
 
@@ -484,6 +488,7 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
       label: targetLabel(t),
     }));
     midi.addMappings(mappings);
+    toast(`${mappings.length} Mappings gesetzt: ${preset.label} ab CC ${bulkBindStartCC}`, { kind: "success" });
   }
 
   const renderCcTab = () => (
@@ -1014,7 +1019,13 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
             ))}
           </div>
           <button
-            onClick={midi.clearAllMappings}
+            onClick={() => {
+              const count = midi.mappings.length + midi.noteMappings.length;
+              if (count > 0 && confirm(`Wirklich ${count} Mapping(s) löschen?`)) {
+                midi.clearAllMappings();
+                toast(`${count} Mapping(s) gelöscht`, { kind: "warning" });
+              }
+            }}
             className="mt-2 text-xs text-accent-danger hover:text-accent-danger/80"
           >
             Alle Mappings löschen
@@ -1366,6 +1377,7 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
                   noteMappings: midi.noteMappings,
                 });
                 setUserTplName("");
+                toast(`Template gespeichert: „${name}"`, { kind: "success" });
               }}
               className="px-3 py-1.5 bg-accent-secondary text-bg-base hover:bg-accent-secondary/80 text-xs rounded font-medium"
             >
@@ -1406,6 +1418,7 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
                       onClick={() => {
                         if (confirm(`Template "${t.name}" laden?\n\nDas ersetzt alle aktuellen Mappings.`)) {
                           midi.loadTemplate(t.ccMappings, t.noteMappings);
+                          toast(`Template „${t.name}" geladen (${t.ccMappings.length} CC + ${t.noteMappings.length} Notes)`, { kind: "success" });
                         }
                       }}
                       className="px-2 py-1 text-xs rounded bg-accent-primary text-bg-base hover:bg-accent-primary/80"
@@ -1424,7 +1437,10 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
                     </button>
                     <button
                       onClick={() => {
-                        if (confirm(`Template "${t.name}" löschen?`)) deleteUserMidiTemplate(t.id);
+                        if (confirm(`Template "${t.name}" löschen?`)) {
+                          deleteUserMidiTemplate(t.id);
+                          toast(`Template „${t.name}" gelöscht`, { kind: "warning" });
+                        }
                       }}
                       className="px-1.5 py-1 text-[10px] text-text-dim hover:text-accent-danger"
                       title="Löschen"
@@ -1474,6 +1490,7 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
                       return { ...n, partId: realPart?.id ?? n.partId, label: realPart?.name ?? n.label };
                     });
                     midi.loadTemplate(cc, resolvedNotes);
+                    toast(`Hardware-Template „${t.name}" geladen (${cc.length} CC + ${resolvedNotes.length} Notes)`, { kind: "success" });
                   }
                 }}
                 className="px-3 py-1.5 rounded text-xs font-medium bg-accent-primary text-bg-base hover:bg-accent-primary/80 flex-shrink-0"

@@ -582,9 +582,11 @@ export default function App() {
       });
       if (!result.canceled && result.filePath) {
         await electron.writeFile(result.filePath, JSON.stringify(snapshot, null, 2));
+        toast(`Gespeichert: ${snapshot.projectName}`, { kind: "success" });
       }
     } else {
       downloadProjectFile(snapshot);
+      toast(`Download gestartet: ${snapshot.projectName}.synth`, { kind: "success" });
       // Browser-Modus: einmalige Warnung wenn Audio-Tracks im Projekt sind.
       // Audio-Tracks werden nur als Dateipfad-Referenz gespeichert – beim
       // erneuten Öffnen muss der User die Datei neu wählen.
@@ -709,10 +711,13 @@ export default function App() {
       } else {
         data = await openProjectFilePicker();
       }
-      if (data) restoreProject(data);
+      if (data) {
+        restoreProject(data);
+        toast(`Projekt geladen: ${data.projectName}`, { kind: "success" });
+      }
     } catch (err) {
       console.error("[Load Project]", err);
-      alert("Projekt konnte nicht geladen werden.");
+      toast("Projekt konnte nicht geladen werden", { kind: "error", duration: 5000 });
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [electron, restoreProject]);
@@ -1120,7 +1125,15 @@ export default function App() {
           if (idx > 0) dm.setActivePattern(pats[idx - 1].id);
           break;
         }
-        case "pattern-duplicate": dm.duplicatePattern(dm.activePatternId); break;
+        case "pattern-duplicate": {
+          const before = dm.patterns.length;
+          dm.duplicatePattern(dm.activePatternId);
+          // Toast nach kurzem Frame, damit dm.patterns aktualisiert ist —
+          // wir wissen den Namen aber jetzt schon (Source) und melden ihn direkt.
+          const src = dm.patterns.find(p => p.id === dm.activePatternId);
+          if (src) toast(`Pattern „${src.name}" dupliziert (${before} → ${before + 1})`, { kind: "success" });
+          break;
+        }
         case "pattern-copy-samples-from-prev": {
           // v2.4: nimmt Samples + FX + Volume/Pan vom vorherigen Pattern in
           // der Liste und kopiert sie in das aktuelle Pattern. Wenn nicht

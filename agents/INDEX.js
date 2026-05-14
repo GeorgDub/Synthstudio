@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "2.5.0",
+    version: "2.6.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -491,6 +491,25 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-14T22:30:00.000Z",
+      done: [
+        "TOAST-EXPANSION (v2.6.0): Toast-Feedback auf alle wichtigen Operations ausgeweitet — User bekommt für jede destruktive/persistierende Action sofortiges visuelles Feedback. (1) App.tsx Project-Save: Toast 'Gespeichert: <Name>' bei Electron-Save (nur wenn nicht canceled) und 'Download gestartet: <Name>.synth' im Browser-Modus. (2) App.tsx Project-Load: 'Projekt geladen: <Name>' success bzw. 'Projekt konnte nicht geladen werden' error (5s). (3) App.tsx pattern-duplicate: 'Pattern „X\" dupliziert (N → N+1)' (statt nur Ctrl+D-Action). (4) MidiSettings clearAllMappings: nun mit confirm()-Dialog + Toast 'N Mapping(s) gelöscht' (warning). (5) Layout-Export: 'Layout exportiert: <File> (N CC + N Notes)' + Error-Toast bei Fehler. (6) User-Template save: 'Template gespeichert: „X\"'. (7) User-Template load: 'Template „X\" geladen (N CC + N Notes)'. (8) User-Template delete: 'Template „X\" gelöscht' (warning). (9) Hardware-Template load: 'Hardware-Template „X\" geladen (N CC + N Notes)'. (10) Bulk-Bind: 'N Mappings gesetzt: <Preset> ab CC X'. (11) ScriptRunner Built-In-Load: 'Built-In Script geladen: „X\"' + Error-Variante bei Failure. 1844 Tests grün, pnpm check 0 Fehler."
+      ],
+      next: [
+        "Beat-Repeat-Macro.",
+        "Pattern-Drag-Drop-Reorder.",
+        "Toast bei MIDI-Device-Connect/Disconnect."
+      ],
+      changed: [
+        "package.json",
+        "client/src/App.tsx",
+        "client/src/components/MidiSettings/MidiSettings.tsx",
+        "client/src/components/Tools/ScriptRunner.tsx",
+        "agents/INDEX.js"
+      ]
+    },
     {
       agent:     "coordinator",
       timestamp: "2026-05-14T22:00:00.000Z",

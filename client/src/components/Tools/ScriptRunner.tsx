@@ -34,6 +34,7 @@ import { ScriptList } from "./ScriptList";
 import { ScriptEditor, SCRIPT_EXAMPLES } from "./ScriptEditor";
 import { AiScriptGeneratorDialog } from "./AiScriptGeneratorDialog";
 import { BUILT_IN_SCRIPTS, groupBuiltInsByCategory, type BuiltInScript } from "@/utils/builtInScripts";
+import { toast } from "@/store/useToastStore";
 
 interface ScriptRunnerProps {
   /** Aktueller BPM-Wert (für Anzeige; Sandbox liest via setBpm-Setter). */
@@ -76,12 +77,14 @@ export function ScriptRunner({ bpm, isPlaying }: ScriptRunnerProps) {
       });
       setSelectedId(id);
       setBuiltInPickerOpen(false);
+      toast(`Built-In Script geladen: „${script.name}"`, { kind: "success" });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       setLogs((prev) => [
         ...prev,
         { type: "error", message: msg, timestamp: Date.now() },
       ]);
+      toast(`Konnte Built-In nicht laden: ${msg}`, { kind: "error", duration: 5000 });
     }
   }, [addScript]);
 
