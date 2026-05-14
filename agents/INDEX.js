@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "1.97.0",
+    version: "1.98.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -491,6 +491,24 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-14T18:30:00.000Z",
+      done: [
+        "MIDI-PANIC (v1.98.0): Klassisches DAW-Feature — Panic-Button sendet 'All Notes Off' (CC 123) + 'All Sound Off' (CC 120) + Sustain-Reset (CC 64) + Note-Off für alle 128 Notes auf allen 16 Channels ans aktive Output-Device. Defense-in-Depth gegen hängende Noten bei externen Synths (häufiges Problem bei MIDI-Setup mit Drum-Machines/Synths). Neue Action `sendPanic()` im useMidi-Hook. UI: '🚨 Panic'-Button im SettingsPanel → KI & MIDI → MIDI Out neben den Test-Buttons. 1818 Tests grün, pnpm check 0 Fehler."
+      ],
+      next: [
+        "v1.99 Velocity-Color-Coding im Step-Grid.",
+        "Beat-Repeat-Macro-Target.",
+        "AI-Projekt-Analyse UI exposure."
+      ],
+      changed: [
+        "package.json",
+        "client/src/hooks/useMidi.ts",
+        "client/src/components/Settings/SettingsPanel.tsx",
+        "agents/INDEX.js"
+      ]
+    },
     {
       agent:     "coordinator",
       timestamp: "2026-05-14T18:00:00.000Z",

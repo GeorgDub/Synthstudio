@@ -194,6 +194,13 @@ export interface MidiActions {
   setClockOutEnabled: (enabled: boolean) => void;
   /** v1.97: Setzt die BPM die als Clock gesendet wird (vom Caller bei BPM-Änderung). */
   setClockOutBpm: (bpm: number) => void;
+  /**
+   * v1.98: MIDI Panic — sendet `[0x80|ch, note, 0]` (Note Off) für alle 128
+   * Notes auf allen 16 Channels ans aktive Output-Device. Plus `[0xB0|ch, 123, 0]`
+   * (All Notes Off) und `[0xB0|ch, 120, 0]` (All Sound Off) als Sicherheits-CC.
+   * Löst hängende Notes bei externen Synths.
+   */
+  sendPanic: () => void;
 }
 
 // ─── Pure Helpers (Modul-Scope, testbar ohne React) ──────────────────────────
@@ -1146,6 +1153,30 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
     setClockOutBpmState(clamped);
   }, []);
 
+  /**
+   * v1.98: MIDI Panic — sendet Note Off + All Notes Off + All Sound Off
+   * an alle 16 Channels des aktiven Output-Devices. Cleared hängende Notes
+   * bei externen Synths (klassisches DAW-Feature).
+   */
+  const sendPanic = useCallback(() => {
+    const out = activeOutputRef.current;
+    if (!out) return;
+    for (let ch = 0; ch < 16; ch++) {
+      try {
+        // All Notes Off (CC 123)
+        out.send([0xb0 | ch, 123, 0]);
+        // All Sound Off (CC 120) — auch Sustain-Pedal-Hold
+        out.send([0xb0 | ch, 120, 0]);
+        // Sustain Pedal (CC 64) auf 0 für gute Messer
+        out.send([0xb0 | ch, 64, 0]);
+        // Note Off für alle 128 Notes (defense in depth)
+        for (let note = 0; note < 128; note++) {
+          out.send([0x80 | ch, note, 0]);
+        }
+      } catch { /* ignore single-channel-failures */ }
+    }
+  }, []);
+
   const loadTemplate = useCallback((cc: MidiMapping[], notes: MidiNoteMapping[]) => {
     setMappings(cc);
     setNoteMappings(notes);
@@ -1191,6 +1222,7 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
     setClockOutBpm,
     clockOutEnabled,
     clockOutBpm,
+    sendPanic,
     // Output Actions
     setActiveOutputDevice,
     setMidiOutEnabled,

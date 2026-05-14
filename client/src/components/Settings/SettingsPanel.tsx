@@ -515,8 +515,17 @@ function MidiDevicesSection({ midi }: { midi: MidiState & MidiActions }) {
                     >
                       🎛 CC testen
                     </button>
+                    {/* v1.98: MIDI Panic */}
+                    <button
+                      type="button"
+                      onClick={midi.sendPanic}
+                      className="px-2 py-1 text-[10px] rounded bg-accent-danger/30 hover:bg-accent-danger/50 text-accent-danger font-semibold"
+                      title="MIDI Panic — sendet All Notes Off + All Sound Off auf allen 16 Channels. Löst hängende Noten."
+                    >
+                      🚨 Panic
+                    </button>
                     <span className="text-[10px] text-text-dim ml-auto">
-                      v1.89: Test ans aktive Ausgangsgerät
+                      Test / Reset ans aktive Ausgangsgerät
                     </span>
                   </div>
                 )}
