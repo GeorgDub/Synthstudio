@@ -130,6 +130,7 @@ import { VersionSnapshotPanel } from "@/components/ProjectManager/VersionSnapsho
 import { SettingsPanel } from "@/components/Settings/SettingsPanel";
 import { SessionRecorder } from "@/components/CollabSession/SessionRecorder";
 import { RelayPanel } from "@/components/CollabSession/RelayPanel";
+import { PerformanceRecorderBadge } from "@/components/PerformanceRecorder/PerformanceRecorderBadge";
 import { recordEvent } from "@/store/useSessionRecordingStore";
 import {
   recordEvent as recordPerfEvent,
@@ -2935,6 +2936,10 @@ export default function App() {
       {showShortcutsHelp && (
         <ShortcutsHelp onClose={() => setShowShortcutsHelp(false)} />
       )}
+
+      {/* v2.22: Performance-Recorder-Badge — fixed bottom-right overlay,
+          immer sichtbar damit User v2.15 Recording-Feature überhaupt finden. */}
+      <PerformanceRecorderBadge />
 
       <ThemeSettings
         isOpen={showThemeSettings}
