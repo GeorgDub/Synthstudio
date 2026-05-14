@@ -107,6 +107,18 @@ describe("targetsMatch (v1.86)", () => {
       { type: "tab", tabId: "mixer" },
     )).toBe(true);
   });
+
+  // v1.88
+  it("macro: gleicher index → match", () => {
+    expect(targetsMatch(
+      { type: "macro", index: 3 },
+      { type: "macro", index: 3, label: "Filter Sweep" },
+    )).toBe(true);
+    expect(targetsMatch(
+      { type: "macro", index: 3 },
+      { type: "macro", index: 5 },
+    )).toBe(false);
+  });
 });
 
 describe("findMappingForTarget (v1.86)", () => {

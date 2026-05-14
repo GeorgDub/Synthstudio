@@ -9,6 +9,7 @@
  */
 import { useState } from "react";
 import { X } from "lucide-react";
+import { useMidiLearn } from "@/hooks/useMidiLearn";
 import {
   useMacroStore,
   setMacroValue,
@@ -48,11 +49,17 @@ const TARGET_OPTIONS: Array<{ value: MacroTargetType; label: string; needsPart: 
 // ─── Knob-Darstellung ────────────────────────────────────────────────────────
 
 function MacroKnob({ macro, onEdit }: { macro: Macro; onEdit: () => void }) {
+  // v1.88: rechtsklick auf den Slider → MIDI-Learn für diesen Macro-Index
+  const learn = useMidiLearn({ type: "macro", index: macro.index, label: macro.label });
+
   return (
-    <div className="flex flex-col items-center gap-1 min-w-[60px]">
+    <div className="flex flex-col items-center gap-1 min-w-[60px] relative">
       {/* Label */}
       <span className="text-[9px] text-text-dim truncate w-full text-center" title={macro.label}>
         {macro.label}
+        {learn.isMapped && (
+          <span className="ml-1 text-accent-secondary font-mono">·CC{learn.mappedCC}</span>
+        )}
       </span>
 
       {/* Slider (vertikal via rotate) */}
@@ -62,6 +69,7 @@ function MacroKnob({ macro, onEdit }: { macro: Macro; onEdit: () => void }) {
           min={0} max={1} step={0.01}
           value={macro.value}
           onChange={e => setMacroValue(macro.index, Number(e.target.value))}
+          onContextMenu={learn.onContextMenu}
           className="h-16"
           style={{
             writingMode: "vertical-lr",
@@ -69,6 +77,7 @@ function MacroKnob({ macro, onEdit }: { macro: Macro; onEdit: () => void }) {
             accentColor: macro.color,
             cursor: "pointer",
           }}
+          title={`Macro ${macro.index + 1} · Rechtsklick: MIDI-Learn${learn.isMapped ? ` · CC${learn.mappedCC}` : ""}`}
         />
       </div>
 
@@ -83,6 +92,7 @@ function MacroKnob({ macro, onEdit }: { macro: Macro; onEdit: () => void }) {
       >
         ⚙
       </button>
+      {learn.menu}
     </div>
   );
 }

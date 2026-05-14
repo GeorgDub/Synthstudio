@@ -63,6 +63,8 @@ export type MidiLearnTarget =
   | { type: "scenelaunch"; sceneIndex: number }
   // ── Einstellungen ─────────────────────────────────────────────────────────────
   | { type: "openSettings" }
+  // ── Macro (v1.88) — direkt einen Makro-Wert per CC steuern ───────────────
+  | { type: "macro"; index: number; label?: string }
   // ── Run-Script (v1.78) ─────────────────────────────────────────────────────
   /**
    * Triggert ein User-Script aus dem useScriptStore. Bei CC>63 oder Note-On
@@ -220,6 +222,7 @@ export function labelForTarget(target: MidiLearnTarget): string {
     case "commitLiveEdit":  return "Live Edit Commit";
     case "scenelaunch":     return `Scene ${target.sceneIndex + 1}`;
     case "openSettings":    return "Einstellungen öffnen";
+    case "macro":           return `Macro ${target.index + 1}${target.label ? `: ${target.label}` : ""}`;
     case "runScript":       return `Script: ${target.scriptName ?? target.scriptId.slice(0, 8)}`;
     case "chain":           return `Chain: ${target.label} (${target.steps.length} Schritte)`;
     default:                return "Unbekannt";
@@ -255,6 +258,8 @@ export function targetsMatch(a: MidiLearnTarget, b: MidiLearnTarget): boolean {
       return a.sceneIndex === (b as { sceneIndex: number }).sceneIndex;
     case "runScript":
       return a.scriptId === (b as { scriptId: string }).scriptId;
+    case "macro":
+      return a.index === (b as { index: number }).index;
     case "chain":
       return a.label === (b as { label: string }).label;
     default:
@@ -751,6 +756,13 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
       case "commitLiveEdit":   if (on) window.dispatchEvent(new CustomEvent("midi:commitLiveEdit")); break;
       case "scenelaunch":      if (on) window.dispatchEvent(new CustomEvent("midi:scene", { detail: t.sceneIndex })); break;
       case "openSettings":     if (on) window.dispatchEvent(new CustomEvent("kb:action", { detail: "open-settings" })); break;
+      case "macro": {
+        // v1.88: direktes Steuern eines Makro-Wertes 0..1 via CC
+        window.dispatchEvent(new CustomEvent("midi:macroValue", {
+          detail: { index: t.index, value: value / 127 },
+        }));
+        break;
+      }
       case "runScript": if (on) {
         // v1.78: User-Script auf MIDI-Trigger ausführen. App.tsx hört und
         // ruft scriptSandbox.run() auf. ScriptId wird im detail mitgegeben.

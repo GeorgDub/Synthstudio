@@ -1250,6 +1250,19 @@ export default function App() {
     return () => window.removeEventListener("midi:partMute", handleMute);
   }, []);
 
+  // v1.88: midi:macroValue — direkt einen Macro-Wert per CC steuern.
+  useEffect(() => {
+    const handleMacroValue = (e: Event) => {
+      const detail = (e as CustomEvent<{ index: number; value: number }>).detail;
+      if (!detail) return;
+      const idx = Math.max(0, Math.min(7, Math.floor(detail.index)));
+      const v = Math.max(0, Math.min(1, detail.value));
+      setMacroValue(idx, v);
+    };
+    window.addEventListener("midi:macroValue", handleMacroValue);
+    return () => window.removeEventListener("midi:macroValue", handleMacroValue);
+  }, []);
+
   // v1.78: midi:runScript — User hat ein Script als MidiLearnTarget gebunden,
   // beim Trigger soll es laufen. Wir nutzen scriptSandbox.run mit Re-Entrancy-
   // Schutz (gleicher Pattern wie runScriptOnce oben im macro:button:trigger).

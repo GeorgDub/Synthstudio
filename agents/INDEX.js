@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "1.87.0",
+    version: "1.88.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -491,6 +491,26 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-14T13:30:00.000Z",
+      done: [
+        "RCL-MACROS + MACRO-TARGET (v1.88.0): Neue MidiLearnTarget-Variante `{type:'macro', index, label?}` damit jeder der 8 Makros direkt per CC steuerbar wird (Makro-Slider folgt dem CC-Wert 0..1). useMidi.applyMapping dispatcht 'midi:macroValue'-CustomEvent mit `{index, value: midi/127}`, App.tsx listener ruft `setMacroValue(index, v)`. labelForTarget rendert 'Macro N' bzw. 'Macro N: <Label>'. targetsMatch unterscheidet anhand des index. VALID_TARGET_TYPES um 'macro' erweitert für Layout-Import. UI in MacroPanel MacroKnob: useMidiLearn-Hook am Slider, onContextMenu → Learn-Menu, CC#-Badge im Macro-Label oben. Workflow: rechtsklick auf einen Macro-Slider → 'MIDI-Learn' → Encoder am Electribe drehen → Macro folgt dem CC. 1 neuer Vitest-Case (targetsMatch macro). 1806 Tests grün, pnpm check 0 Fehler."
+      ],
+      next: [
+        "v1.89 MIDI-Output-Test-Button: einfacher 'Test'-Button der einen CC ans Device sendet zur Verbindungsverifikation.",
+        "Backlog aus neue_todos.md."
+      ],
+      changed: [
+        "package.json",
+        "client/src/hooks/useMidi.ts",
+        "client/src/App.tsx",
+        "client/src/components/Macro/MacroPanel.tsx",
+        "client/src/utils/midiLayoutImport.ts",
+        "tests/features/midi-target-match.test.ts",
+        "agents/INDEX.js"
+      ]
+    },
     {
       agent:     "coordinator",
       timestamp: "2026-05-14T13:00:00.000Z",

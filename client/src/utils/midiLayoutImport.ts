@@ -59,6 +59,8 @@ export const VALID_TARGET_TYPES = new Set<string>([
   "chain",
   // v1.78: User-Script ausführen
   "runScript",
+  // v1.88: Macro-Wert direkt steuern
+  "macro",
 ]);
 
 export interface ParsedMidiLayout {
