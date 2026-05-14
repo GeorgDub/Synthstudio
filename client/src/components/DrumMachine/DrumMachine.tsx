@@ -47,6 +47,74 @@ interface Props {
 }
 
 
+// ─── Pattern-Row mit Right-Click MIDI-Learn (v1.92) ───────────────────────────
+
+interface PatternRowProps {
+  pattern: { id: string; name: string; bpm: number | null };
+  patternIndex: number;
+  isActive: boolean;
+  isPlaying: boolean;
+  isLiveEditing: boolean;
+  showDelete: boolean;
+  onSelect: () => void;
+  onDuplicate: () => void;
+  onRemove: () => void;
+}
+
+function PatternRow({
+  pattern, patternIndex, isActive, isPlaying, isLiveEditing, showDelete,
+  onSelect, onDuplicate, onRemove,
+}: PatternRowProps) {
+  const isDraft  = isLiveEditing && isActive;
+  const isLocked = isLiveEditing && isPlaying;
+  // v1.92: jede Pattern-Zeile ist via Rechtsklick MIDI-bindbar
+  const learn = useMidiLearn({ type: "pattern", patternIndex });
+
+  return (
+    <div className="flex items-center group relative">
+      <button
+        onClick={() => { if (!isLocked) onSelect(); }}
+        onContextMenu={learn.onContextMenu}
+        disabled={isLocked}
+        title={`${isLocked ? "Wird abgespielt – während Live-Edit nicht bearbeitbar" : pattern.name}${learn.isMapped ? ` · CC${learn.mappedCC}` : ""} · Rechtsklick: MIDI-Learn`}
+        className={[
+          "flex-1 text-left px-3 py-1.5 text-xs transition-colors",
+          isDraft    ? "text-accent-primary bg-accent-primary/20 font-semibold"   :
+          isActive   ? "text-accent-secondary bg-accent-secondary/20"              :
+          isLocked   ? "text-text-dim cursor-not-allowed opacity-50"              :
+                       "text-text-primary hover:bg-bg-panel",
+        ].join(" ")}
+      >
+        {isPlaying && <span className="mr-1.5 text-accent-danger" title="Wird gerade abgespielt">▶</span>}
+        {isDraft   && <span className="mr-1.5 text-accent-primary" title="Draft – wird bearbeitet">✏</span>}
+        {pattern.name}
+        {pattern.bpm !== null && (
+          <span className="ml-1 text-[9px] text-text-dim">{pattern.bpm} BPM</span>
+        )}
+        {learn.isMapped && (
+          <span className="ml-1.5 text-[9px] font-mono text-accent-secondary">CC{learn.mappedCC}</span>
+        )}
+        {isLocked && <span className="ml-1.5 text-[9px] text-text-dim">[gesperrt]</span>}
+      </button>
+      {!isLocked && (
+        <button
+          onClick={onDuplicate}
+          className="px-1.5 py-1.5 text-text-dim hover:text-text-primary text-xs opacity-0 group-hover:opacity-100"
+          title="Duplizieren"
+        >⧉</button>
+      )}
+      {showDelete && !isLocked && !isDraft && (
+        <button
+          onClick={onRemove}
+          className="px-1.5 py-1.5 text-text-dim hover:text-accent-danger text-xs opacity-0 group-hover:opacity-100"
+          title="Löschen"
+        >✕</button>
+      )}
+      {learn.menu}
+    </div>
+  );
+}
+
 // ─── Haupt-Komponente ─────────────────────────────────────────────────────────
 
 export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChange, className = "" }: Props) {
@@ -351,56 +419,20 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
                   Live-Edit aktiv: nur der Draft ist bearbeitbar
                 </div>
               )}
-              {dm.patterns.map(p => {
-                const isActive   = p.id === dm.activePatternId;
-                const isPlaying  = p.id === dm.playbackPatternId;
-                const isDraft    = isLiveEditing && isActive;
-                const isLocked   = isLiveEditing && isPlaying; // original – gesperrt während Edit
-
-                return (
-                  <div key={p.id} className="flex items-center group">
-                    <button
-                      onClick={() => {
-                        if (isLocked) return; // Original während Live-Edit nicht anwählbar
-                        dm.setActivePattern(p.id);
-                        setShowPatternMenu(false);
-                      }}
-                      disabled={isLocked}
-                      title={isLocked ? "Wird abgespielt – während Live-Edit nicht bearbeitbar" : p.name}
-                      className={[
-                        "flex-1 text-left px-3 py-1.5 text-xs transition-colors",
-                        isDraft    ? "text-accent-primary bg-accent-primary/20 font-semibold"   :
-                        isActive   ? "text-accent-secondary bg-accent-secondary/20"              :
-                        isLocked   ? "text-text-dim cursor-not-allowed opacity-50"              :
-                                     "text-text-primary hover:bg-bg-panel",
-                      ].join(" ")}
-                    >
-                      {/* Status-Icons */}
-                      {isPlaying && <span className="mr-1.5 text-accent-danger" title="Wird gerade abgespielt">▶</span>}
-                      {isDraft   && <span className="mr-1.5 text-accent-primary" title="Draft – wird bearbeitet">✏</span>}
-                      {p.name}
-                      {p.bpm !== null && (
-                        <span className="ml-1 text-[9px] text-text-dim">{p.bpm} BPM</span>
-                      )}
-                      {isLocked && <span className="ml-1.5 text-[9px] text-text-dim">[gesperrt]</span>}
-                    </button>
-                    {!isLocked && (
-                      <button
-                        onClick={() => dm.duplicatePattern(p.id)}
-                        className="px-1.5 py-1.5 text-text-dim hover:text-text-primary text-xs opacity-0 group-hover:opacity-100"
-                        title="Duplizieren"
-                      >⧉</button>
-                    )}
-                    {dm.patterns.length > 1 && !isLocked && !isDraft && (
-                      <button
-                        onClick={() => dm.removePattern(p.id)}
-                        className="px-1.5 py-1.5 text-text-dim hover:text-accent-danger text-xs opacity-0 group-hover:opacity-100"
-                        title="Löschen"
-                      >✕</button>
-                    )}
-                  </div>
-                );
-              })}
+              {dm.patterns.map((p, idx) => (
+                <PatternRow
+                  key={p.id}
+                  pattern={p}
+                  patternIndex={idx}
+                  isActive={p.id === dm.activePatternId}
+                  isPlaying={p.id === dm.playbackPatternId}
+                  isLiveEditing={isLiveEditing}
+                  showDelete={dm.patterns.length > 1}
+                  onSelect={() => { dm.setActivePattern(p.id); setShowPatternMenu(false); }}
+                  onDuplicate={() => dm.duplicatePattern(p.id)}
+                  onRemove={() => dm.removePattern(p.id)}
+                />
+              ))}
               {/* Follow Action für aktives Pattern */}
               <div className="border-t border-border-color px-2 py-2">
                 <div className="text-[10px] text-text-dim mb-1.5 uppercase tracking-wide">Follow Action</div>

@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "1.91.0",
+    version: "1.92.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -491,6 +491,23 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-14T15:30:00.000Z",
+      done: [
+        "RCL-PATTERN-BUTTONS + Hidden-Bug-Fix (v1.92.0): Pattern-Buttons im Pattern-Menü sind jetzt per Rechtsklick MIDI-bindbar (`{type:'pattern', patternIndex: <idx>}`). Neue PatternRow-Component (extrahiert aus der DrumMachine inline-map damit Hook-Order konsistent bleibt) ruft useMidiLearn auf, zeigt `CC<n>`-Badge wenn gebunden, Tooltip mit 'Rechtsklick: MIDI-Learn'. Hidden-Bug-Fix nebenbei: vor v1.92 dispatchte useMidi.applyMapping zwar das 'midi:pattern' CustomEvent, aber niemand in App.tsx hörte → das pattern-MidiLearnTarget war faktisch ein NO-OP. Listener in App.tsx ergänzt: konvertiert patternIndex → patternId via dmRef.current.patterns[idx] → setActivePattern. Damit funktioniert Pattern-Wechsel per MIDI-Pad endlich tatsächlich. 1806 Tests grün, pnpm check 0 Fehler."
+      ],
+      next: [
+        "v1.93 MACRO-RENAME-INLINE: Doppelklick auf Macro-Label öffnet Inline-Edit. Aktuell muss man über das Settings-Menü gehen.",
+        "v1.94 AUDIT-CLOSE-BUTTONS: 'alle fenster sollen auch mit x zumachbar sein' aus neue_todos.md — prüfen welche Panels keinen Close-Button haben."
+      ],
+      changed: [
+        "package.json",
+        "client/src/App.tsx",
+        "client/src/components/DrumMachine/DrumMachine.tsx",
+        "agents/INDEX.js"
+      ]
+    },
     {
       agent:     "coordinator",
       timestamp: "2026-05-14T15:00:00.000Z",

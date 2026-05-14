@@ -1250,6 +1250,24 @@ export default function App() {
     return () => window.removeEventListener("midi:partMute", handleMute);
   }, []);
 
+  // v1.92: midi:pattern (Pattern-Index → Pattern-Switch). Vor v1.92 dispatchte
+  // useMidi.applyMapping zwar das Event, aber niemand hörte → das
+  // `pattern`-MidiLearnTarget war ein No-Op. Listener konvertiert Index zu
+  // Pattern-ID via dmRef.current.patterns[index].
+  useEffect(() => {
+    const handlePattern = (e: Event) => {
+      const patternIndex = (e as CustomEvent<number>).detail;
+      if (typeof patternIndex !== "number") return;
+      const idx = Math.max(0, Math.floor(patternIndex));
+      const patterns = dmRef.current.patterns;
+      if (idx >= 0 && idx < patterns.length) {
+        dmRef.current.setActivePattern(patterns[idx].id);
+      }
+    };
+    window.addEventListener("midi:pattern", handlePattern);
+    return () => window.removeEventListener("midi:pattern", handlePattern);
+  }, []);
+
   // v1.88: midi:macroValue — direkt einen Macro-Wert per CC steuern.
   useEffect(() => {
     const handleMacroValue = (e: Event) => {
