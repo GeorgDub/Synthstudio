@@ -137,9 +137,25 @@ function emptyPart(name: string, stepCount: number): ImportedPart {
   return { name, steps };
 }
 
-function buildPartsForBar(barNotes: FlpNote[], ppq: number, partCount: number): ImportedPart[] {
+function buildPartsForBar(
+  barNotes: FlpNote[],
+  ppq: number,
+  partCount: number,
+  drumChannelNames: Map<number, string> = new Map(),
+): ImportedPart[] {
+  // Pre-compute partIdx → ChannelName (first-wins bei Kollision, deterministisch
+  // wegen Map-Iteration in Insertion-Order). Nur drum-like Channels werden
+  // berücksichtigt; melodische Channels gehen in melodicParts und sollen nicht
+  // den Drum-Part-Namen überschreiben (FLP-CHANNEL-NAMES v1.68).
+  const partNames = new Map<number, string>();
+  for (const [channel, name] of drumChannelNames) {
+    const partIdx = ((channel % partCount) + partCount) % partCount;
+    if (!partNames.has(partIdx)) partNames.set(partIdx, name);
+  }
   const parts: ImportedPart[] = [];
-  for (let i = 0; i < partCount; i++) parts.push(emptyPart(`Part ${i + 1}`, STEP_COUNT));
+  for (let i = 0; i < partCount; i++) {
+    parts.push(emptyPart(partNames.get(i) ?? `Part ${i + 1}`, STEP_COUNT));
+  }
   for (const note of barNotes) {
     const step = flpPositionToStep(note.position, ppq) % STEP_COUNT;
     const partIdx = note.channel % partCount;
@@ -181,7 +197,11 @@ function keyToNoteName(key: number): string {
  *
  * Position-Umrechnung: PPQ-Ticks → Steps (1/16, Float erlaubt für off-grid).
  */
-export function buildMelodicParts(notes: FlpNote[], ppq: number): ImportedMelodicPart[] {
+export function buildMelodicParts(
+  notes: FlpNote[],
+  ppq: number,
+  channelNames: Map<number, string> = new Map(),
+): ImportedMelodicPart[] {
   const pitchesByChannel = detectChannelPitches(notes);
   const ticksPerStep = ppq / 4;
   if (ticksPerStep <= 0) return [];
@@ -200,7 +220,7 @@ export function buildMelodicParts(notes: FlpNote[], ppq: number): ImportedMelodi
       .sort((a, b) => a.startStep - b.startStep);
     parts.push({
       sourceChannel: channel,
-      name: `Channel ${channel}`,
+      name: channelNames.get(channel) ?? `Channel ${channel}`,
       notes: melodicNotes,
     });
   }
@@ -283,6 +303,18 @@ export async function importFlp(file: File): Promise<ImportResult> {
     );
   }
 
+  // FLP-CHANNEL-NAMES v1.68: Channel-Namen aus 0xC3-Events nutzen, getrennt nach
+  // drum-like vs melodisch, damit melodische Namen nicht die Drum-Part-Namen
+  // überschreiben (und umgekehrt).
+  const channelNames = parsed.channelNames;
+  const drumChannelNames = new Map<number, string>();
+  for (const [channel, name] of channelNames) {
+    const pitches = pitchesByChannel.get(channel);
+    if (!pitches || pitches.size < 2) {
+      drumChannelNames.set(channel, name);
+    }
+  }
+
   const baseName = file.name.replace(/\.flp$/i, "");
   const patternsList: ImportedPattern[] = [];
   let imported = 0;
@@ -293,7 +325,7 @@ export async function importFlp(file: File): Promise<ImportResult> {
       name: totalBars === 1 ? baseName : `${baseName} bar ${bar + 1}`,
       stepCount: STEP_COUNT,
       bpm,
-      parts: buildPartsForBar(barNotes, ppq, DEFAULT_PART_COUNT),
+      parts: buildPartsForBar(barNotes, ppq, DEFAULT_PART_COUNT, drumChannelNames),
     });
   }
 
@@ -302,8 +334,9 @@ export async function importFlp(file: File): Promise<ImportResult> {
     warnings.push(`${droppedNotes} Notes jenseits ${MAX_BARS} Bars wurden ignoriert (Multi-Bar-Limit).`);
   }
 
-  // Phase 1 (v1.65): melodische Parts extrahieren — noch kein Konsument.
-  const melodicParts = buildMelodicParts(firstPattern.notes, ppq);
+  // Phase 1 (v1.65): melodische Parts extrahieren. v1.68 nutzt jetzt
+  // Channel-Namen aus dem FLP statt generischer "Channel N"-Labels.
+  const melodicParts = buildMelodicParts(firstPattern.notes, ppq, channelNames);
 
   return {
     sourceFormat: "flp",

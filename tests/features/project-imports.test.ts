@@ -288,6 +288,26 @@ describe("buildMelodicParts (v1.65)", () => {
     expect(parts).toHaveLength(2);
     expect(parts.map(p => p.sourceChannel).sort()).toEqual([1, 2]);
   });
+
+  it("nutzt channelNames-Map für name statt 'Channel N' (v1.68 FLP-CHANNEL-NAMES)", () => {
+    const notes = [
+      { position: 0,  channel: 1, duration: 24, key: 60, velocity: 100 },
+      { position: 24, channel: 1, duration: 24, key: 62, velocity: 100 },
+    ];
+    const names = new Map<number, string>([[1, "Bass"]]);
+    const parts = buildMelodicParts(notes, 96, names);
+    expect(parts).toHaveLength(1);
+    expect(parts[0].name).toBe("Bass");
+  });
+
+  it("fällt auf 'Channel N' zurück wenn kein Name in der Map", () => {
+    const notes = [
+      { position: 0,  channel: 5, duration: 24, key: 60, velocity: 100 },
+      { position: 24, channel: 5, duration: 24, key: 62, velocity: 100 },
+    ];
+    const parts = buildMelodicParts(notes, 96, new Map());
+    expect(parts[0].name).toBe("Channel 5");
+  });
 });
 
 // ─── routeMelodicPartsToPatterns (v1.66, FLP-MELODIC-ROUTE Phase 2) ───────────

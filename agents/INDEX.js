@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "1.67.0",
+    version: "1.68.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -476,6 +476,27 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-14T03:30:00.000Z",
+      done: [
+        "FLP-CHANNEL-NAMES (v1.68.0): Phase 3 von MELODIC-ROUTE. Statt generischer 'Part N'/'Channel N' Labels nutzt der FLP-Importer jetzt die echten Sample-/Instrument-Namen aus dem FLP. Parser-Erweiterung in `client/src/utils/flpImport.ts`: FlpParsed bekommt `channelNames: Map<number, string>`. Event-Loop trackt jetzt zusätzlich zu currentPatternIndex einen `currentChannel` (gesetzt durch 0x40 NewChannel WORD-Event). 0xC3 TEXT_CHANNEL_NAME (alias TEXT_DEFPLUGNAME) wird dem currentChannel zugeordnet. Neuer pure `decodeFlpText(bytes)`-Helper: heuristik UTF-16LE-vs-Latin-1 anhand `bytes[1]===0 && bytes[3]===0`, robust gegen sowohl 'Kick' ASCII als auch 'Kick' UTF-16LE-encoded mit trailing nulls. Wiring (`client/src/utils/imports/flpImport.ts`): channelNames werden in drum-like (für `buildPartsForBar` → ImportedPart.name) und melodic (für `buildMelodicParts` → ImportedMelodicPart.name) gesplittet, damit melodische Namen nicht die Drum-Parts überschreiben und umgekehrt. partIdx-Kollision: first-wins (deterministisch via Map-Insertion-Order). 11 neue Vitest-Cases (5 decodeFlpText + 6 parseFlp.channelNames) + 2 neue für buildMelodicParts.name-Mapping. Alle 1663 Tests grün, pnpm check 0 Fehler."
+      ],
+      next: [
+        "FLP-MELODIC-POLISH: baseNote pro MelodicPart aus Pitch-Statistik (median/mean) setzen, damit Piano-Roll-View beim Öffnen direkt auf die importierten Notes zentriert; aktuell bleibt Default C4.",
+        "FLP-MIDI-EXPORT Phase 4: SMF-Export von Melodic-Parts mit Pitch + Duration (umgekehrte Richtung — Synthstudio → FL Studio Re-Import).",
+        "FLP-PATTERN-NAMES: 0xC1 TEXT_PATTERN_NAME für echte Pattern-Namen statt 'filename bar N' nutzen (analog zu Phase 3).",
+        "FEAT-INSP: bleibt offen (Explore-Report verfügbar, 4-5h, 8+ Files)."
+      ],
+      changed: [
+        "package.json",
+        "client/src/utils/flpImport.ts",
+        "client/src/utils/imports/flpImport.ts",
+        "tests/features/flp-import.test.ts",
+        "tests/features/project-imports.test.ts",
+        "agents/INDEX.js"
+      ]
+    },
     {
       agent:     "coordinator",
       timestamp: "2026-05-14T03:00:00.000Z",

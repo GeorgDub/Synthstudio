@@ -17,6 +17,7 @@ import {
   groupNotesByChannel,
   groupNotesByBar,
   calculateBarCount,
+  decodeFlpText,
 } from "../../client/src/utils/flpImport";
 
 // ─── Helper: Mini-FLP builder ─────────────────────────────────────────────────
@@ -395,5 +396,112 @@ describe("Integration: end-to-end mini-FLP", () => {
     // Steps: 0, 1, 2, 3
     const steps = parsed.patterns[0].notes.map(n => flpPositionToStep(n.position, parsed.header.ppq));
     expect(steps).toEqual([0, 1, 2, 3]);
+  });
+});
+
+// ─── decodeFlpText (v1.68 FLP-CHANNEL-NAMES) ──────────────────────────────────
+
+describe("decodeFlpText (v1.68)", () => {
+  it("leerer Input → leerer String", () => {
+    expect(decodeFlpText(new Uint8Array(0))).toBe("");
+    expect(decodeFlpText(new Uint8Array([0, 0, 0]))).toBe("");
+  });
+
+  it("ASCII / Latin-1 ohne Null-Termination", () => {
+    const bytes = new Uint8Array([0x4b, 0x69, 0x63, 0x6b]); // "Kick"
+    expect(decodeFlpText(bytes)).toBe("Kick");
+  });
+
+  it("ASCII mit Null-Termination wird abgeschnitten", () => {
+    const bytes = new Uint8Array([0x53, 0x6e, 0x61, 0x72, 0x65, 0, 0, 0]); // "Snare\0\0\0"
+    expect(decodeFlpText(bytes)).toBe("Snare");
+  });
+
+  it("UTF-16LE: 'Kick' (Bytes mit Null nach jedem Char) → 'Kick'", () => {
+    // K=0x4b, i=0x69, c=0x63, k=0x6b — UTF-16LE: jeweils 0 hinter dem Byte
+    const bytes = new Uint8Array([0x4b, 0, 0x69, 0, 0x63, 0, 0x6b, 0]);
+    expect(decodeFlpText(bytes)).toBe("Kick");
+  });
+
+  it("UTF-16LE mit terminierendem Doppel-Null", () => {
+    const bytes = new Uint8Array([0x53, 0, 0x6e, 0, 0x61, 0, 0x72, 0, 0x65, 0, 0, 0]);
+    expect(decodeFlpText(bytes)).toBe("Snare");
+  });
+});
+
+// ─── parseFlp + channelNames (v1.68 FLP-CHANNEL-NAMES Phase 3) ────────────────
+
+describe("parseFlp — channelNames (FLP-CHANNEL-NAMES v1.68)", () => {
+  function asciiBytes(s: string): Uint8Array {
+    const out = new Uint8Array(s.length + 1);
+    for (let i = 0; i < s.length; i++) out[i] = s.charCodeAt(i);
+    return out; // null-terminated
+  }
+
+  it("channelNames ist immer eine Map (auch wenn keine 0xC3-Events vorhanden)", () => {
+    const flp = buildFlp({ events: [] });
+    const parsed = parseFlp(flp);
+    expect(parsed.channelNames).toBeInstanceOf(Map);
+    expect(parsed.channelNames.size).toBe(0);
+  });
+
+  it("0xC3-Event nach 0x40 NewChannel → channelNames bekommt Eintrag", () => {
+    const flp = buildFlp({
+      events: [
+        wordEvent(0x40, 5),                 // current channel = 5
+        dataEvent(0xC3, asciiBytes("Kick")),
+      ],
+    });
+    const parsed = parseFlp(flp);
+    expect(parsed.channelNames.get(5)).toBe("Kick");
+  });
+
+  it("0xC3 ohne vorheriges NewChannel wird ignoriert (kein currentChannel)", () => {
+    const flp = buildFlp({
+      events: [
+        dataEvent(0xC3, asciiBytes("Orphan")), // kein 0x40 davor
+      ],
+    });
+    const parsed = parseFlp(flp);
+    expect(parsed.channelNames.size).toBe(0);
+  });
+
+  it("mehrere Channel-Namen werden korrekt zugeordnet", () => {
+    const flp = buildFlp({
+      events: [
+        wordEvent(0x40, 0),
+        dataEvent(0xC3, asciiBytes("Kick")),
+        wordEvent(0x40, 1),
+        dataEvent(0xC3, asciiBytes("Snare")),
+        wordEvent(0x40, 2),
+        dataEvent(0xC3, asciiBytes("HiHat")),
+      ],
+    });
+    const parsed = parseFlp(flp);
+    expect(parsed.channelNames.get(0)).toBe("Kick");
+    expect(parsed.channelNames.get(1)).toBe("Snare");
+    expect(parsed.channelNames.get(2)).toBe("HiHat");
+  });
+
+  it("leerer Name (alle Bytes Null) → kein Eintrag", () => {
+    const flp = buildFlp({
+      events: [
+        wordEvent(0x40, 3),
+        dataEvent(0xC3, new Uint8Array([0, 0, 0, 0])),
+      ],
+    });
+    const parsed = parseFlp(flp);
+    expect(parsed.channelNames.has(3)).toBe(false);
+  });
+
+  it("UTF-16LE-Name (Bytes mit Null nach jedem Char) wird korrekt dekodiert", () => {
+    const flp = buildFlp({
+      events: [
+        wordEvent(0x40, 7),
+        dataEvent(0xC3, new Uint8Array([0x46, 0, 0x4c, 0, 0x45, 0, 0x58, 0, 0, 0])), // "FLEX\0\0"
+      ],
+    });
+    const parsed = parseFlp(flp);
+    expect(parsed.channelNames.get(7)).toBe("FLEX");
   });
 });
