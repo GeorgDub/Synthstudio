@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "1.99.0",
+    version: "2.0.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -491,6 +491,22 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-14T19:30:00.000Z",
+      done: [
+        "MIX-ASSISTANT-EXPOSURE (v2.0.0): Milestone-Release! Bisher existierte MixAssistantPanel als komplette Komponente in client/src/components/DrumMachine/MixAssistantPanel.tsx + Backend in utils/mixAnalysis.ts + utils/aiProjectAnalysis.ts — aber NIRGENDS gerendert. Toter Code. Mit v2.0 jetzt aktiv: '🧠 Mix'-Button in der DrumMachine-Toolbar neben 'Macros' und 'Poly'. Klick öffnet ResizableDrumPanel mit MixAssistantPanel. Auto-Build von MixAnalysisInput aus aktuellem Pattern: BPM, alle Parts mit Volume (0-127), Pan (-100..+100), activeSteps/totalSteps, filterCutoff (wenn Filter aktiv), trackType (aus Name). onApply parsed die rec.targetProperty: 'volume' → dm.setPartVolume, 'pan' → dm.setPartPan, 'filterCutoff' → dm.setPartFx({filterEnabled:true, filterFreq}). Erfüllt User-Wishlist-Item 'eine Ki analyse des Projekts einbauen die verbesserungsvorschläge oder so anbietet'. 1818 Tests grün, pnpm check 0 Fehler. Major-Bump auf 2.0.0 markiert das Ende einer langen Feature-Sprint-Serie."
+      ],
+      next: [
+        "Backlog: Beat-Repeat-Macro, Pattern-Drag-Drop, Cloud-Sync, Mobile-Build, Updater.",
+        "Eventuell: weitere MidiLearnTarget-Properties im Mix-Assistant onApply (z.B. reverbSend, delayMix, eqLow)."
+      ],
+      changed: [
+        "package.json",
+        "client/src/components/DrumMachine/DrumMachine.tsx",
+        "agents/INDEX.js"
+      ]
+    },
     {
       agent:     "coordinator",
       timestamp: "2026-05-14T19:00:00.000Z",

@@ -22,6 +22,8 @@ import { PatternMorphPanel } from "@/components/PatternMorph";
 import { MacroPanel } from "@/components/Macro/MacroPanel";
 import { EnvelopeFollowerPanel } from "./EnvelopeFollowerPanel";
 import { useMidiLearn } from "@/hooks/useMidiLearn";
+import { MixAssistantPanel } from "./MixAssistantPanel";
+import type { MixAnalysisInput, MixRecommendation } from "@/utils/mixAnalysis";
 import { parseMidiFile } from "../../../../src/utils/midiParser.js";
 import { parseFlp, flpPositionToStep, groupNotesByBar, calculateBarCount } from "@/utils/flpImport";
 import { GranularSynthPanel } from "./GranularSynthPanel";
@@ -144,6 +146,7 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
   const [activeVar, setActiveVar] = useState<string>("A");
   const [showNoteRepeat, setShowNoteRepeat] = useState(false);
   const [showMorph, setShowMorph] = useState(false);
+  const [showMixAssistant, setShowMixAssistant] = useState(false);
   const [showEnvFollower, setShowEnvFollower] = useState(false);
   const [showMacros, setShowMacros] = useState(false);
   const [showPolyrhythm, setShowPolyrhythm] = useState(false);
@@ -968,6 +971,20 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
           ⬡ Poly
         </button>
 
+        {/* v2.0.0: Mix-Assistent — analysiert das Pattern und gibt Mix-Tipps */}
+        <button
+          onClick={() => setShowMixAssistant(prev => !prev)}
+          title="Mix-Assistent (regelbasiert + optional KI-Analyse)"
+          className={[
+            "px-2 py-1 rounded text-[10px] font-bold transition-colors",
+            showMixAssistant
+              ? "bg-accent-success/20 text-accent-success border border-accent-success/40"
+              : "bg-bg-elevated text-text-dim hover:bg-bg-elevated hover:text-text-primary",
+          ].join(" ")}
+        >
+          🧠 Mix
+        </button>
+
         {/* Pattern Variations A/B/C/D */}
         <div className="flex items-center gap-0 bg-bg-base rounded border border-border-color" title="Pattern Variations — Variationen speichern & wechseln">
           {(["A","B","C","D"] as const).map((v, i) => {
@@ -1153,6 +1170,45 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
             onToggle={() => dm.toggleStep(insPart.id, selectedStep.stepIndex)}
             onClose={() => setSelectedStep(null)}
           />
+        );
+      })()}
+
+      {/* ── Mix-Assistent (v2.0.0) ──────────────────────────────────────── */}
+      {showMixAssistant && (() => {
+        const mixInput: MixAnalysisInput = {
+          bpm,
+          parts: pattern.parts.map(p => ({
+            id: p.id,
+            name: p.name,
+            volume: Math.round((p.volume ?? 0.8) * 127),
+            pan: Math.round((p.pan ?? 0) * 100),
+            activeSteps: p.steps.filter(s => s.active).length,
+            totalSteps: p.steps.length,
+            filterCutoff: p.fx.filterEnabled ? p.fx.filterFreq : undefined,
+            trackType: p.name.toLowerCase(),
+          })),
+          masterVolume: 100,
+        };
+        const handleApply = (rec: MixRecommendation) => {
+          if (!rec.partId || rec.suggestedValue === undefined) return;
+          if (rec.targetProperty === "volume") {
+            dm.setPartVolume(rec.partId, Math.max(0, Math.min(1, rec.suggestedValue / 127)));
+          } else if (rec.targetProperty === "pan") {
+            dm.setPartPan(rec.partId, Math.max(-1, Math.min(1, rec.suggestedValue / 100)));
+          } else if (rec.targetProperty === "filterCutoff") {
+            dm.setPartFx(rec.partId, { filterEnabled: true, filterFreq: rec.suggestedValue });
+          }
+        };
+        return (
+          <ResizableDrumPanel storageKey="ss-panel-mix-assistant" defaultHeight={360} minHeight={200} maxHeight={620}
+            title="🧠 Mix-Assistent"
+            onClose={() => setShowMixAssistant(false)}>
+            <MixAssistantPanel
+              input={mixInput}
+              onApply={handleApply}
+              onClose={() => setShowMixAssistant(false)}
+            />
+          </ResizableDrumPanel>
         );
       })()}
 
