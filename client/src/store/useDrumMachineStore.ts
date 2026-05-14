@@ -42,6 +42,13 @@ export interface DrumMachineActions {
   renamePattern: (id: string, name: string) => void;
   setActivePattern: (id: string) => void;
   duplicatePattern: (id: string) => void;
+  /**
+   * v2.4: Kopiert Sample-Belegung + FX + Volume/Pan eines Source-Patterns
+   * in ein Target-Pattern. Steps bleiben unverändert. Matches Parts per
+   * Index — d.h. Part 1 von Source → Part 1 von Target, etc.
+   * No-op wenn Source/Target nicht existieren.
+   */
+  copySamplesFromPattern: (sourcePatternId: string, targetPatternId: string) => void;
   startLivePatternEdit: () => void;
   commitLivePatternEdit: () => void;
   cancelLivePatternEdit: () => void;
@@ -285,6 +292,51 @@ export function useDrumMachineStore(): DrumMachineState & DrumMachineActions {
       };
     });
   }, []);
+
+  /**
+   * v2.4: Übernimmt Sample-Belegung + FX + Volume/Pan von einem Source-Pattern
+   * in ein Target-Pattern. Steps bleiben unverändert. Wird per Index gematched
+   * (Part 0 → Part 0 etc.). Keine Änderung wenn Source oder Target unbekannt
+   * oder identisch.
+   *
+   * Sinn: User hat in Pattern 1 sein perfektes Drum-Kit + FX-Setup aufgebaut
+   * und will jetzt nur die Patterns 2-8 weiter-arrangieren ohne jedes Mal
+   * 8 Samples + 8 FX-Settings neu zu setzen.
+   */
+  const copySamplesFromPattern = useCallback((sourcePatternId: string, targetPatternId: string) => {
+    if (sourcePatternId === targetPatternId) return;
+    updatePatterns(ps => {
+      const source = ps.find(p => p.id === sourcePatternId);
+      if (!source) return ps;
+      return ps.map(p => {
+        if (p.id !== targetPatternId) return p;
+        return {
+          ...p,
+          parts: p.parts.map((targetPart, idx) => {
+            const sourcePart = source.parts[idx];
+            if (!sourcePart) return targetPart; // mehr Parts im Target als in Source
+            return {
+              ...targetPart,
+              // Sample-Belegung + Synth/Granular-Setup
+              sampleUrl: sourcePart.sampleUrl,
+              sampleName: sourcePart.sampleName,
+              sourceType: sourcePart.sourceType,
+              synthParams: sourcePart.synthParams,
+              granularParams: sourcePart.granularParams,
+              stretchRatio: sourcePart.stretchRatio,
+              microTiming: sourcePart.microTiming,
+              // Mixer-Settings
+              volume: sourcePart.volume,
+              pan: sourcePart.pan,
+              // FX-Chain (komplett übernehmen)
+              fx: { ...sourcePart.fx },
+              // Steps + ID + Mute/Solo NICHT übernehmen — User will nur die Sounds
+            };
+          }),
+        };
+      });
+    }, true);
+  }, [updatePatterns]);
 
   const startLivePatternEdit = useCallback(() => {
     setState(prev => {
@@ -853,6 +905,7 @@ export function useDrumMachineStore(): DrumMachineState & DrumMachineActions {
   return {
     ...state,
     addPattern, addPatternData, removePattern, renamePattern, setActivePattern, duplicatePattern,
+    copySamplesFromPattern,
     startLivePatternEdit, commitLivePatternEdit, cancelLivePatternEdit, scheduleCommit,
     setPatternBpm, setPatternBpmRatio, setPatternBpmTransitionBars, setPatternStepResolution, setPatternFollowAction,
     toggleStackedPattern, clearStackedPatterns,

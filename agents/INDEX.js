@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "2.3.0",
+    version: "2.4.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -491,6 +491,31 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-14T21:30:00.000Z",
+      done: [
+        "PATTERN-SAMPLE-CARRYOVER (v2.4.0): User-Request — 'Sampler Übernahme Funktion bei pattern, das man die komplett aus einem pattern ins nächste kopieren kann per Script oder Tastenkombination damit man nicht alle einzeln machen muss'. Neue Action `dm.copySamplesFromPattern(sourceId, targetId)` in useDrumMachineStore: kopiert Sample-Belegung (sampleUrl/sampleName) + sourceType (sample/wavetable/fm/granular) + synthParams + granularParams + stretchRatio + microTiming + Volume + Pan + komplette FX-Chain pro Part-Index. Steps + Mute/Solo + ID bleiben beim Target. Vollständig zugänglich: (1) **Tastenkombination Ctrl+Shift+S** → 'Sampler vom vorherigen Pattern übernehmen' (neuer keyboardActionDef + App.tsx case 'pattern-copy-samples-from-prev'). (2) **ss.dispatch('pattern-copy-samples-from-prev')** in der Sandbox-Allowlist + AI-Generator-Allowlist. (3) **Built-In Script** 'Sampler vom vorherigen Pattern übernehmen' + 'Variation mit gleichem Sound (duplizieren+clear)'. (4) **UI-Button '📥' im Pattern-Menü** pro Pattern-Zeile (sichtbar bei hover, nur wenn vorheriges Pattern existiert). 10 neue Vitest-Cases (Sample-Copy, Steps-bleiben, ID-Erhalt, FX-Copy, Volume/Pan-Copy, Mute/Solo-NICHT-übernommen, identische IDs no-op, unbekannte Source no-op, Target-mehr-Parts, Synth/Granular/Stretch). 1831 Tests grün, pnpm check 0 Fehler."
+      ],
+      next: [
+        "Beat-Repeat-Macro.",
+        "Pattern-Drag-Drop-Reorder."
+      ],
+      changed: [
+        "package.json",
+        "client/src/store/useDrumMachineStore.ts",
+        "client/src/hooks/keyboardActionDefs.ts",
+        "client/src/sandbox/useScriptSandbox.ts",
+        "client/src/utils/aiScriptGenerator.ts",
+        "client/src/utils/builtInScripts.ts",
+        "client/src/components/DrumMachine/DrumMachine.tsx",
+        "client/src/components/CollabSplitView/CollabSplitView.tsx",
+        "client/src/App.tsx",
+        "tests/features/copy-samples-from-pattern.test.ts",
+        "tests/features/built-in-scripts.test.ts",
+        "agents/INDEX.js"
+      ]
+    },
     {
       agent:     "coordinator",
       timestamp: "2026-05-14T21:00:00.000Z",

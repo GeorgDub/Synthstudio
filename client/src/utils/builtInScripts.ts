@@ -137,6 +137,37 @@ export const BUILT_IN_SCRIPTS: BuiltInScript[] = [
       "ss.log('Alle 8 Macros = 0.5.');",
     ].join("\n"),
   },
+  {
+    id: "carry-samples-from-prev",
+    name: "Sampler vom vorherigen Pattern übernehmen",
+    category: "Pattern",
+    description:
+      "Nimmt die Sample-Belegung + FX + Volume/Pan vom vorherigen Pattern " +
+      "und kopiert sie ins aktuelle. Steps bleiben unverändert. Spart das " +
+      "manuelle 8×Sample-Drag wenn du Variationen vom selben Drum-Kit baust.",
+    code: [
+      "ss.log('Übernehme Sampler vom vorherigen Pattern …');",
+      "await ss.dispatch('pattern-copy-samples-from-prev');",
+      "ss.log('Fertig — Sounds + FX vom vorherigen Pattern übernommen.');",
+    ].join("\n"),
+  },
+  {
+    id: "duplicate-with-samples-fresh-pattern",
+    name: "Variation mit gleichem Sound (duplizieren + clear)",
+    category: "Pattern",
+    description:
+      "Dupliziert das aktuelle Pattern (incl. aller Samples + FX) und " +
+      "leert dann die Steps der Kopie. Ideal um eine neue Pattern-Variation " +
+      "auf demselben Sound-Kit zu starten.",
+    code: [
+      "ss.log('Dupliziere Pattern mit allen Sounds …');",
+      "await ss.dispatch('pattern-duplicate');",
+      "await ss.wait(50);",
+      "ss.log('Leere die Steps für eine fresh Variation …');",
+      "await ss.dispatch('pattern-clear');",
+      "ss.log('Fertig — neues Pattern bereit, Sound-Kit identisch.');",
+    ].join("\n"),
+  },
   // ─── v1.83: weitere Performance-Helper ────────────────────────────────
   {
     id: "build-up-10s",

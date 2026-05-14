@@ -79,6 +79,7 @@ const ALLOWED_DISPATCH_ACTIONS: ReadonlySet<string> = new Set([
   "bpm-up", "bpm-down", "bpm-up-10", "bpm-down-10",
   "pattern-next", "pattern-prev", "pattern-duplicate",
   "pattern-clear", "pattern-fill", "pattern-randomize",
+  "pattern-copy-samples-from-prev", // v2.4
   "part-up", "part-down", "velocity-mode", "pitch-mode",
 ]);
 

@@ -58,14 +58,21 @@ interface PatternRowProps {
   isPlaying: boolean;
   isLiveEditing: boolean;
   showDelete: boolean;
+  /** v2.4: ob ein vorheriges Pattern existiert (für Sample-Übernahme-Button). */
+  hasPrevPattern: boolean;
   onSelect: () => void;
   onDuplicate: () => void;
   onRemove: () => void;
+  /** v2.4: Sampler vom angegebenen Source-Pattern in dieses übernehmen. */
+  onCopySamplesFrom: (sourcePatternId: string) => void;
+  /** v2.4: ID des vorherigen Patterns (für die Quick-Action). */
+  prevPatternId: string | null;
 }
 
 function PatternRow({
   pattern, patternIndex, isActive, isPlaying, isLiveEditing, showDelete,
-  onSelect, onDuplicate, onRemove,
+  hasPrevPattern, prevPatternId,
+  onSelect, onDuplicate, onRemove, onCopySamplesFrom,
 }: PatternRowProps) {
   const isDraft  = isLiveEditing && isActive;
   const isLocked = isLiveEditing && isPlaying;
@@ -98,6 +105,13 @@ function PatternRow({
         )}
         {isLocked && <span className="ml-1.5 text-[9px] text-text-dim">[gesperrt]</span>}
       </button>
+      {!isLocked && hasPrevPattern && prevPatternId && (
+        <button
+          onClick={() => onCopySamplesFrom(prevPatternId)}
+          className="px-1.5 py-1.5 text-text-dim hover:text-accent-secondary text-xs opacity-0 group-hover:opacity-100"
+          title="v2.4: Sampler+FX vom vorherigen Pattern übernehmen (Steps bleiben)"
+        >📥</button>
+      )}
       {!isLocked && (
         <button
           onClick={onDuplicate}
@@ -431,9 +445,12 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
                   isPlaying={p.id === dm.playbackPatternId}
                   isLiveEditing={isLiveEditing}
                   showDelete={dm.patterns.length > 1}
+                  hasPrevPattern={idx > 0}
+                  prevPatternId={idx > 0 ? dm.patterns[idx - 1].id : null}
                   onSelect={() => { dm.setActivePattern(p.id); setShowPatternMenu(false); }}
                   onDuplicate={() => dm.duplicatePattern(p.id)}
                   onRemove={() => dm.removePattern(p.id)}
+                  onCopySamplesFrom={(srcId) => dm.copySamplesFromPattern(srcId, p.id)}
                 />
               ))}
               {/* Follow Action für aktives Pattern */}

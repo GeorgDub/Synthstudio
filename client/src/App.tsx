@@ -1119,6 +1119,17 @@ export default function App() {
           break;
         }
         case "pattern-duplicate": dm.duplicatePattern(dm.activePatternId); break;
+        case "pattern-copy-samples-from-prev": {
+          // v2.4: nimmt Samples + FX + Volume/Pan vom vorherigen Pattern in
+          // der Liste und kopiert sie in das aktuelle Pattern. Wenn nicht
+          // verfügbar (erstes Pattern oder nur eins), no-op.
+          const pats = dm.patterns;
+          const idx = pats.findIndex(p => p.id === dm.activePatternId);
+          if (idx > 0) {
+            dm.copySamplesFromPattern(pats[idx - 1].id, dm.activePatternId);
+          }
+          break;
+        }
         case "pattern-clear":     dm.clearPattern(); break;
         case "pattern-fill": {
           const partId = dm.activePartId ?? pattern?.parts[0]?.id;
