@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "1.93.0",
+    version: "1.94.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -491,6 +491,23 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-14T16:30:00.000Z",
+      done: [
+        "PANEL-HEADERS (v1.94.0): User-Feedback aus neue_todos.md ('alle fenster sollen auch mit X zumachbar sein, granular und polyrhythm etc'). Die ResizableDrumPanel-Wrapper hatten zwar bereits einen Close-Button via `onClose`-Prop, aber bei title=undefined war der Header zu unauffällig (nur X rechts oben, kein Label). Alle 6 Panel-Sites in DrumMachine.tsx haben jetzt einen prominenten `title`: Granular ('Granular: <Part-Name>'), Polyrhythm-Visualizer, Makros (8 × bindbar), Note Repeat, Pattern-Morph, Envelope Follower. Discoverability deutlich besser — User sieht direkt was offen ist und wo der Close-Button ist. 1806 Tests grün, pnpm check 0 Fehler."
+      ],
+      next: [
+        "Beat-Repeat als Macro-Target (Live-Performance-Tool).",
+        "Drag-Drop Pattern-Duplicate.",
+        "AI-Projekt-Analyse (aus neue_todos.md)."
+      ],
+      changed: [
+        "package.json",
+        "client/src/components/DrumMachine/DrumMachine.tsx",
+        "agents/INDEX.js"
+      ]
+    },
     {
       agent:     "coordinator",
       timestamp: "2026-05-14T16:00:00.000Z",

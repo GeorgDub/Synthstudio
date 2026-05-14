@@ -1014,18 +1014,19 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
       </div>
 
       {/* ── Makro-Panel ──────────────────────────────────────────────────── */}
-      {/* TASK-101 / BUG-008: title weglassen — innerer MacroPanel hat eigenen Header */}
+      {/* v1.94: Title gesetzt für prominente Close-Button-Discoverability */}
       {showMacros && (
         <ResizableDrumPanel storageKey="ss-panel-macros" defaultHeight={160} minHeight={100} maxHeight={280}
+          title="Makros (8 × bindbar)"
           onClose={() => setShowMacros(false)}>
           <MacroPanel parts={pattern.parts} />
         </ResizableDrumPanel>
       )}
 
       {/* ── Note Repeat Panel ────────────────────────────────────────────── */}
-      {/* TASK-101 / BUG-008: title weglassen + kein inner onClose (Outer X reicht) */}
       {showNoteRepeat && (
         <ResizableDrumPanel storageKey="ss-panel-notrepeat" defaultHeight={110} minHeight={80} maxHeight={240}
+          title="Note Repeat"
           onClose={() => setShowNoteRepeat(false)}>
           <NoteRepeatPanel
             bpm={effectiveBpm}
@@ -1035,9 +1036,9 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
       )}
 
       {/* ── Pattern Morph Panel ──────────────────────────────────────────── */}
-      {/* TASK-101 / BUG-008: title weglassen + kein inner onClose (Outer X reicht) */}
       {showMorph && (
         <ResizableDrumPanel storageKey="ss-panel-morph" defaultHeight={160} minHeight={100} maxHeight={320}
+          title="Pattern-Morph"
           onClose={() => setShowMorph(false)}>
           <PatternMorphPanel
             patterns={dm.patterns}
@@ -1051,9 +1052,9 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
       )}
 
       {/* ── Envelope Follower Panel ──────────────────────────────────────── */}
-      {/* TASK-101 / BUG-008: title weglassen — innerer EnvelopeFollowerPanel hat eigenen Header */}
       {showEnvFollower && (
         <ResizableDrumPanel storageKey="ss-panel-envfollower" defaultHeight={180} minHeight={120} maxHeight={400}
+          title="Envelope Follower"
           onClose={() => setShowEnvFollower(false)}>
           <EnvelopeFollowerPanel parts={pattern.parts} />
         </ResizableDrumPanel>
@@ -1160,8 +1161,12 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
         const grPart = pattern.parts.find(p => p.id === granularPartId);
         if (!grPart) return null;
         return (
-          /* TASK-101 / BUG-008: title weglassen — innerer GranularSynthPanel hat eigenen "Granular"-Header */
+          // v1.94: title gesetzt damit der Header (mit Close-Button) prominent ist.
+          // User-Feedback aus neue_todos.md: 'alle fenster sollen mit X zumachbar
+          // sein, granular und polyrhythm' — der X war zwar da, aber bei title=undefined
+          // ohne Beschriftung schwer auffindbar.
           <ResizableDrumPanel storageKey="ss-panel-granular" defaultHeight={320} minHeight={200} maxHeight={520}
+            title={`Granular: ${grPart.name}`}
             onClose={() => setGranularPartId(null)}>
             <GranularSynthPanel
               partId={grPart.id}
@@ -1174,9 +1179,9 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
       })()}
 
       {/* ── Polyrhythm Visualizer ────────────────────────────────────────── */}
-      {/* TASK-101 / BUG-008: title weglassen — innerer PolyrhythmVisualizer hat eigenen Header */}
       {showPolyrhythm && (
         <ResizableDrumPanel storageKey="ss-panel-polyrhythm" defaultHeight={180} minHeight={100} maxHeight={380}
+          title="Polyrhythm-Visualizer"
           onClose={() => setShowPolyrhythm(false)}>
           <PolyrhythmVisualizer pattern={pattern} currentStep={dm.currentStep} />
         </ResizableDrumPanel>
