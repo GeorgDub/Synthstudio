@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "1.66.0",
+    version: "1.67.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -433,6 +433,23 @@ const INDEX = {
         "client/src/App.tsx"
       ]
     },
+    "BUG-024": {
+      title:   "KI Script-Generator (+ Project-Analysis + Pattern-Generator) geht nicht trotz API-Key im Electron-Build",
+      severity: "high",
+      details:  "User-Report: 'Die KI Script-Erstellung geht nicht trotz ChatGPT API Key'. Root-Cause: `electron/csp.ts` setzt `connect-src 'self' ws: wss:` als Production-CSP-Header. Alle drei AI-Features (`aiScriptGenerator.ts`, `aiProjectAnalysis.ts`, `usePatternGeneratorStore.ts`) rufen direkt aus dem Renderer `fetch('https://api.openai.com/...')` bzw `fetch('https://api.anthropic.com/...')` auf. Chromium blockt diese Calls mit 'Refused to connect ... violates Content Security Policy'. Im Web-Build (Vite-Dev/Browser) wird keine CSP via meta-tag injiziert — daher fällt das Problem nur in Electron auf. Anthropics 'anthropic-dangerous-direct-browser-access' Header hilft nicht, weil er nur die SERVER-CORS-Antwort beeinflusst, nicht die BROWSER-CSP-Enforcement. Fix (v1.67.0): `https://api.openai.com` + `https://api.anthropic.com` in connect-src für Prod- UND Dev-CSP aufnehmen. Snapshot + neuer Positiv-Test in tests/electron/csp-header.test.ts.",
+      fixed:    true,
+      foundBy:  "user (post-v1.66.0)",
+      fixedBy:  "claude",
+      fixedIn:  "v1.67.0",
+      relatedFiles: [
+        "electron/csp.ts",
+        "tests/electron/csp-header.test.ts",
+        "tests/electron/__snapshots__/csp-header.test.ts.snap",
+        "client/src/utils/aiScriptGenerator.ts",
+        "client/src/utils/aiProjectAnalysis.ts",
+        "client/src/store/usePatternGeneratorStore.ts"
+      ]
+    },
     "BUG-023": {
       title:   "Anpinnen verschwindet ohne wiederzukehren — Folgebug von BUG-021 destroy()",
       severity: "critical",
@@ -459,6 +476,26 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-14T03:00:00.000Z",
+      done: [
+        "BUG-024-CSP-AI (v1.67.0): User-Report 'KI Script-Erstellung geht nicht trotz ChatGPT API Key'. Root-Cause: Electron-Production-CSP (`electron/csp.ts`) hatte `connect-src 'self' ws: wss:` ohne AI-Provider-Hosts → Chromium blockte alle `fetch('https://api.openai.com/...')`-Calls aus dem Renderer mit 'Refused to connect... violates CSP'. Im Web-Build keine CSP-meta-tag → dort lief es, daher User-Symptom nur in Electron-App. Anthropic-Aufrufe waren technisch genauso betroffen — User hat es nur über OpenAI bemerkt. Fix: `https://api.openai.com` + `https://api.anthropic.com` in connect-src für Prod- UND Dev-CSP-Directives aufgenommen. CSP-Header-Snapshot aktualisiert (Prod + Dev). Neuer Positiv-Test 'connect-src erlaubt api.openai.com + api.anthropic.com (BUG-024, v1.67)' in tests/electron/csp-header.test.ts. Doku-Block oben in csp.ts aktualisiert. BUG-024 als 'fixed: true' im INDEX.bugs eingetragen."
+      ],
+      next: [
+        "FLP-CHANNEL-NAMES Phase 3: TEXT_CHANNEL_NAME (0xC3) aus FLP-Events extrahieren → echte Sample-/Instrument-Namen statt 'Channel N' (auch für ImportedMelodicPart.name)",
+        "FLP-MELODIC-POLISH: baseNote pro MelodicPart aus Pitch-Statistik (median/mean) setzen, damit Piano-Roll-View beim Öffnen direkt auf die importierten Notes zentriert; aktuell bleibt Default C4.",
+        "FLP-MIDI-EXPORT Phase 4: SMF-Export von Melodic-Parts mit Pitch + Duration (umgekehrte Richtung — Synthstudio → FL Studio Re-Import)",
+        "FEAT-INSP: bleibt offen (Explore-Report verfügbar, 4-5h, 8+ Files)"
+      ],
+      changed: [
+        "package.json",
+        "electron/csp.ts",
+        "tests/electron/csp-header.test.ts",
+        "tests/electron/__snapshots__/csp-header.test.ts.snap",
+        "agents/INDEX.js"
+      ]
+    },
     {
       agent:     "coordinator",
       timestamp: "2026-05-14T02:30:00.000Z",

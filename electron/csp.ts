@@ -19,7 +19,9 @@
  *   - img-src 'self' data: blob:      data-URLs für Embedded-Bilder, blob für Waveforms
  *   - media-src 'self' blob: file:    Electron file:// + Web blobs
  *   - worker-src 'self' blob:         v1.17 Script-Sandbox via Blob-URL Worker
- *   - connect-src 'self' ws: wss: ... LAN-WebSocket für Kollaboration + Dev-HMR
+ *   - connect-src 'self' ws: wss: api.openai.com api.anthropic.com
+ *                                     LAN-WebSocket für Kollaboration + Dev-HMR
+ *                                     + AI-Provider-Endpoints (post-v1.67.0 BUG-024)
  *   - object-src 'none'               keine Flash/PDF/Plugins
  *   - base-uri 'self'                 verhindert <base href="…"> Hijack
  *   - form-action 'self'              verhindert Form-Submit auf externe URL
@@ -43,7 +45,20 @@ export const CSP_DIRECTIVES_PROD: readonly CspDirective[] = [
   ["media-src", ["'self'", "blob:", "file:"]],
   ["font-src", ["'self'", "data:"]],
   ["worker-src", ["'self'", "blob:"]],
-  ["connect-src", ["'self'", "ws:", "wss:"]],
+  [
+    "connect-src",
+    [
+      "'self'",
+      "ws:",
+      "wss:",
+      // AI-Provider-Endpoints (BUG-024 / v1.67.0): vor v1.67 hat die strikte
+      // connect-src den AI-Script-Generator + Project-Analysis + Pattern-Gen
+      // im gepackten Electron-Build geblockt — alle drei Features rufen
+      // direkt aus dem Renderer fetch() auf diese Hosts auf.
+      "https://api.openai.com",
+      "https://api.anthropic.com",
+    ],
+  ],
   ["object-src", ["'none'"]],
   ["base-uri", ["'self'"]],
   ["form-action", ["'self'"]],
@@ -82,6 +97,9 @@ export const CSP_DIRECTIVES_DEV: readonly CspDirective[] = [
       "http://127.0.0.1:*",
       "ws://localhost:*",
       "ws://127.0.0.1:*",
+      // Wie Prod: AI-Provider auch im Dev-Mode erlauben (BUG-024 / v1.67.0)
+      "https://api.openai.com",
+      "https://api.anthropic.com",
     ],
   ],
   ["object-src", ["'none'"]],
