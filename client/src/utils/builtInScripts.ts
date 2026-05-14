@@ -237,6 +237,35 @@ export const BUILT_IN_SCRIPTS: BuiltInScript[] = [
     ].join("\n"),
   },
   {
+    id: "beat-repeat-burst",
+    name: "Beat-Repeat-Burst (2s Note-Repeat AN, dann AUS)",
+    category: "Performance",
+    description:
+      "Klassischer Hardtekk/Techno-Move: Note-Repeat 2 Sekunden lang einschalten " +
+      "(triggert den aktuellen Step rasend), dann automatisch wieder aus. " +
+      "Bind das Script auf ein Pad für Live-Stutter-Action.",
+    code: [
+      "ss.log('Beat-Repeat ON — 2 Sekunden Stutter');",
+      "await ss.dispatch('toggle-note-repeat');",
+      "await ss.wait(2000);",
+      "await ss.dispatch('toggle-note-repeat');",
+      "ss.log('Beat-Repeat OFF');",
+    ].join("\n"),
+  },
+  {
+    id: "beat-repeat-quick-roll",
+    name: "Quick Roll (500ms Note-Repeat)",
+    category: "Performance",
+    description:
+      "Schnellere Variante: 500ms Note-Repeat-Burst. Perfekt für kurze Drum-Rolls " +
+      "und Fill-Ins zwischen den Bars.",
+    code: [
+      "await ss.dispatch('toggle-note-repeat');",
+      "await ss.wait(500);",
+      "await ss.dispatch('toggle-note-repeat');",
+    ].join("\n"),
+  },
+  {
     id: "macro-sine-lfo-15s",
     name: "Macro 0 Sinus-LFO (15s)",
     category: "Macro",

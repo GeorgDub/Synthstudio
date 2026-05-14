@@ -103,6 +103,7 @@ describe("Built-In Scripts (v1.75)", () => {
       "pattern-next", "pattern-prev", "pattern-duplicate",
       "pattern-clear", "pattern-fill", "pattern-randomize",
       "pattern-copy-samples-from-prev",
+      "toggle-note-repeat",
       "part-up", "part-down", "velocity-mode", "pitch-mode",
     ]);
     BUILT_IN_SCRIPTS.forEach((s) => {

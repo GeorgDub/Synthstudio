@@ -33,6 +33,7 @@ const ALLOWED_DISPATCH_ACTIONS = [
   "pattern-clear", "pattern-fill", "pattern-randomize",
   "pattern-copy-samples-from-prev",
   "part-up", "part-down", "velocity-mode", "pitch-mode",
+  "toggle-note-repeat",
 ];
 
 /**

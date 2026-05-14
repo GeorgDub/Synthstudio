@@ -81,6 +81,7 @@ const ALLOWED_DISPATCH_ACTIONS: ReadonlySet<string> = new Set([
   "pattern-clear", "pattern-fill", "pattern-randomize",
   "pattern-copy-samples-from-prev", // v2.4
   "part-up", "part-down", "velocity-mode", "pitch-mode",
+  "toggle-note-repeat", // v2.9
 ]);
 
 /** Erlaubte Bridge-Methoden. Alles außerhalb dieser Liste → Error. */

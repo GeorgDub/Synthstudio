@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "2.8.0",
+    version: "2.9.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -491,6 +491,26 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-15T00:00:00.000Z",
+      done: [
+        "BEAT-REPEAT + NOTE-REPEAT-FIX (v2.9.0): Hidden-Bug-Fix + neue Performance-Scripts. (1) Hidden-Bug: 'toggle-note-repeat' kb:action wurde von useMidi via MidiLearnTarget toggleNoteRepeat dispatched, hatte aber KEINEN Handler in App.tsx — Note-Repeat-Toggle per MIDI war NO-OP. Handler ergänzt: ruft `toggleNoteRepeat()` aus useNoteRepeatStore + Toast 'Note Repeat: AN/AUS'. (2) `toggle-note-repeat` zur Sandbox-Allowlist + AI-Generator-Allowlist hinzugefügt damit Scripts dispatchen können. (3) Zwei neue Built-In Scripts in Category 'Performance': 'Beat-Repeat-Burst' (2s Note-Repeat → AUS, klassischer Hardtekk-Move) und 'Quick Roll' (500ms, für Drum-Fills). Beide bindbar auf Pads via Run-Script-Target → momentary Stutter-Performance. Built-In-Allowlist-Test ergänzt. 1853 Tests grün, pnpm check 0 Fehler."
+      ],
+      next: [
+        "Weitere Hidden-Bugs in kb:action-Handlern auditieren (toggleMorph, commitLiveEdit, openSettings, etc.).",
+        "MIDI-Send-Pad-Trigger an externe Synths während Synthstudio spielt."
+      ],
+      changed: [
+        "package.json",
+        "client/src/App.tsx",
+        "client/src/sandbox/useScriptSandbox.ts",
+        "client/src/utils/aiScriptGenerator.ts",
+        "client/src/utils/builtInScripts.ts",
+        "tests/features/built-in-scripts.test.ts",
+        "agents/INDEX.js"
+      ]
+    },
     {
       agent:     "coordinator",
       timestamp: "2026-05-14T23:30:00.000Z",

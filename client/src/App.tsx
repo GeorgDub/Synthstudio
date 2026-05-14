@@ -157,7 +157,7 @@ import {
   setBaseNote as setMelodicBaseNote,
 } from "@/store/useMelodicPartStore";
 import { routeMelodicPartsToPatterns } from "@/utils/imports";
-import { resetNoteRepeat } from "@/store/useNoteRepeatStore";
+import { resetNoteRepeat, toggleNoteRepeat, isNoteRepeatEnabled } from "@/store/useNoteRepeatStore";
 import { resetTranspose } from "@/store/useTransposeStore";
 import { resetMorph } from "@/store/useMorphStore";
 import { scriptSandbox } from "@/sandbox/scriptSandboxInstance";
@@ -1175,6 +1175,15 @@ export default function App() {
         case "undo": project.undo(); break;
         case "redo": project.redo(); break;
         case "save": doSaveProject(); break;
+        // v2.9: bisher NO-OP — Hidden-Bug. Toggle wird jetzt im Store
+        // gesetzt; UI/Audio-Engine reagieren auf den Listener.
+        case "toggle-note-repeat": {
+          toggleNoteRepeat();
+          toast(`Note Repeat: ${isNoteRepeatEnabled() ? "AN" : "AUS"}`, {
+            kind: "info", duration: 1500,
+          });
+          break;
+        }
       }
     };
     window.addEventListener(KB_ACTION_EVENT, handler);
