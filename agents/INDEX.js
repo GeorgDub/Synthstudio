@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "1.94.0",
+    version: "1.95.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -491,6 +491,23 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-14T17:00:00.000Z",
+      done: [
+        "MONITOR-BINDING-HINT (v1.95.0): Der Live-MIDI-Monitor (Tab in MidiSettings) annotiert jetzt jede eingehende Message mit dem gebundenen Target. Beispiele: 'CC 7 = 100 → Master Volume', 'Note On 36 vel=120 → Pad Kick'. Massiver Debug-Boost — User sieht direkt ob seine Mappings auch wirklich greifen. Lookup geht über midi.noteMappings (für 0x90 Note On) und midi.mappings (für 0xb0 CC), Channel 0 = wildcard. 1806 Tests grün, pnpm check 0 Fehler."
+      ],
+      next: [
+        "Beat-Repeat-Macro-Target.",
+        "Pattern-Drag-Drop.",
+        "AI-Projekt-Analyse."
+      ],
+      changed: [
+        "package.json",
+        "client/src/components/MidiSettings/MidiSettings.tsx",
+        "agents/INDEX.js"
+      ]
+    },
     {
       agent:     "coordinator",
       timestamp: "2026-05-14T16:30:00.000Z",

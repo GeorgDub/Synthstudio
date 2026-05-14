@@ -1074,18 +1074,32 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
   // ─── Tab: MIDI-Clock ──────────────────────────────────────────────────────
 
   // ─── Tab: Monitor (v1.81) ──────────────────────────────────────────────
-  /** Pretty-print für eine Monitor-Zeile. */
+  /** Pretty-print für eine Monitor-Zeile. v1.95: zeigt zusätzlich das
+   *  gebundene Target falls vorhanden (CC → "→ Volume: Kick" o.ä.). */
   const formatMonitorEntry = (m: { type: number; channel: number; byte1: number; byte2: number; at: number }) => {
     const time = new Date(m.at).toISOString().slice(11, 23); // HH:MM:SS.mmm
     let what: string;
-    if (m.type === 0x90) what = `Note On  ${m.byte1.toString().padStart(3)} vel=${m.byte2}`;
-    else if (m.type === 0x80) what = `Note Off ${m.byte1.toString().padStart(3)}`;
-    else if (m.type === 0xb0) what = `CC       ${m.byte1.toString().padStart(3)} = ${m.byte2}`;
-    else if (m.type === 0xa0) what = `Poly AT  ${m.byte1.toString().padStart(3)} = ${m.byte2}`;
-    else if (m.type === 0xd0) what = `Ch AT    val=${m.byte1}`;
-    else if (m.type === 0xe0) what = `PB       ${(m.byte1 | (m.byte2 << 7)).toString().padStart(5)}`;
-    else what = `0x${m.type.toString(16)}    b1=${m.byte1} b2=${m.byte2}`;
-    return `${time}  Ch${m.channel.toString().padStart(2)}  ${what}`;
+    let bindingHint = "";
+    if (m.type === 0x90) {
+      what = `Note On  ${m.byte1.toString().padStart(3)} vel=${m.byte2}`;
+      const nm = midi.noteMappings.find(n => n.note === m.byte1 && (n.channel === 0 || n.channel === m.channel));
+      if (nm) bindingHint = `  → Pad ${nm.label}`;
+    } else if (m.type === 0x80) {
+      what = `Note Off ${m.byte1.toString().padStart(3)}`;
+    } else if (m.type === 0xb0) {
+      what = `CC       ${m.byte1.toString().padStart(3)} = ${m.byte2}`;
+      const cm = midi.mappings.find(c => c.cc === m.byte1 && (c.channel === 0 || c.channel === m.channel));
+      if (cm) bindingHint = `  → ${cm.label}`;
+    } else if (m.type === 0xa0) {
+      what = `Poly AT  ${m.byte1.toString().padStart(3)} = ${m.byte2}`;
+    } else if (m.type === 0xd0) {
+      what = `Ch AT    val=${m.byte1}`;
+    } else if (m.type === 0xe0) {
+      what = `PB       ${(m.byte1 | (m.byte2 << 7)).toString().padStart(5)}`;
+    } else {
+      what = `0x${m.type.toString(16)}    b1=${m.byte1} b2=${m.byte2}`;
+    }
+    return `${time}  Ch${m.channel.toString().padStart(2)}  ${what}${bindingHint}`;
   };
 
   const renderMonitorTab = () => (
