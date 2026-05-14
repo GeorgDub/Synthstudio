@@ -74,6 +74,15 @@ export interface MidiNoteMapping {
   label: string;
 }
 
+/**
+ * Ein Eintrag in der Auto-Learn-Queue (v1.72): entweder ein CC-Target oder
+ * ein Note-Target (Pad → Part-Trigger). Erlaubt gemischte Sequenzen,
+ * z.B. "8 CCs für Volumes, dann 8 Notes für Pads".
+ */
+export type AutoLearnEntry =
+  | { kind: "cc"; target: MidiLearnTarget }
+  | { kind: "note"; partId: string; partName: string };
+
 export interface MidiState {
   isAvailable: boolean;
   isEnabled: boolean;
@@ -87,11 +96,13 @@ export interface MidiState {
   isLearning: boolean;
   learnTarget: MidiLearnTarget | null;
   /**
-   * Auto-Learn-Queue (v1.71): nicht-leer = sequenzielles Lernen läuft.
-   * `[0]` = aktuell zu lernender Target, der Rest folgt nach Capture/Skip.
-   * `autoLearnTotal` = ursprüngliche Länge für Progress-Anzeige.
+   * Auto-Learn-Queue (v1.71 CC, v1.72 + Note): nicht-leer = sequenzielles
+   * Lernen läuft. `[0]` = aktuell zu lernender Eintrag, der Rest folgt nach
+   * Capture/Skip. `autoLearnTotal` = ursprüngliche Länge für Progress-Anzeige.
+   * Jeder Eintrag ist entweder ein CC-Target oder ein Note-Target — der
+   * Handler matched die eingehende MIDI-Message gegen den `kind`.
    */
-  autoLearnQueue: MidiLearnTarget[];
+  autoLearnQueue: AutoLearnEntry[];
   autoLearnTotal: number;
   clockSync: boolean;
   externalBpm: number | null;
@@ -114,8 +125,12 @@ export interface MidiActions {
   sendCC: (cc: number, value: number, channel?: number) => void;
   startLearn: (target: MidiLearnTarget) => void;
   cancelLearn: () => void;
-  /** Auto-Learn (v1.71): startet sequenzielles Lernen über eine Target-Liste. */
-  startAutoLearn: (targets: MidiLearnTarget[]) => void;
+  /**
+   * Auto-Learn (v1.71 CC, v1.72 + Note): startet sequenzielles Lernen über
+   * eine Liste gemischter Einträge (CC + Note). Bei jedem passenden
+   * MIDI-Event wird das Mapping geschrieben und der nächste Eintrag aktiv.
+   */
+  startAutoLearn: (entries: AutoLearnEntry[]) => void;
   /** Skipt den aktuell zu lernenden Target und geht zum nächsten. */
   skipAutoLearnTarget: () => void;
   /** Bricht Auto-Learn ab — bisher gebundene Mappings bleiben erhalten. */
@@ -127,6 +142,92 @@ export interface MidiActions {
   clearAllMappings: () => void;
   /** Lädt eine vordefinierte Hardware-Template-Konfiguration (ersetzt alle Mappings). */
   loadTemplate: (cc: MidiMapping[], notes: MidiNoteMapping[]) => void;
+}
+
+// ─── Pure Helpers (Modul-Scope, testbar ohne React) ──────────────────────────
+
+/** Human-readable Label für ein MidiLearnTarget. Wird in der Settings-UI + im
+ *  Auto-Learn-Progress angezeigt. Pure Funktion — keine Side-Effects. */
+export function labelForTarget(target: MidiLearnTarget): string {
+  switch (target.type) {
+    case "bpm":             return "BPM (absolut)";
+    case "masterVolume":    return "Master Volume";
+    case "playStop":        return "Play / Stop";
+    case "record":          return "Record";
+    case "tapTempo":        return "Tap Tempo";
+    case "bpmUp":           return "BPM +1";
+    case "bpmDown":         return "BPM -1";
+    case "volume":          return `Volume: ${target.partName ?? target.partId.slice(0, 8)}`;
+    case "pan":             return `Pan: ${target.partName ?? target.partId.slice(0, 8)}`;
+    case "mute":            return `Mute: ${target.partName ?? target.partId.slice(0, 8)}`;
+    case "solo":            return `Solo: ${target.partName ?? target.partId.slice(0, 8)}`;
+    case "partUp":          return "Part ↑";
+    case "partDown":        return "Part ↓";
+    case "step":            return `Step ${target.stepIndex + 1}`;
+    case "pattern":         return `Pattern ${target.patternIndex + 1}`;
+    case "patternNext":     return "Pattern →";
+    case "patternPrev":     return "Pattern ←";
+    case "patternClear":    return "Pattern leeren";
+    case "patternFill":     return "Pattern füllen";
+    case "patternRandomize":return "Pattern zufällig";
+    case "patternDuplicate":return "Pattern duplizieren";
+    case "tab":             return `Tab: ${target.tabId}`;
+    case "toggleNoteRepeat":return "Note Repeat";
+    case "toggleMorph":     return "Pattern Morph";
+    case "commitLiveEdit":  return "Live Edit Commit";
+    case "scenelaunch":     return `Scene ${target.sceneIndex + 1}`;
+    case "openSettings":    return "Einstellungen öffnen";
+    default:                return "Unbekannt";
+  }
+}
+
+/**
+ * Berechnet den nächsten Auto-Learn-Queue-Zustand für eine eingehende
+ * MIDI-Message. Pure Funktion: keine React-State-Mutation, keine Side-Effects.
+ *
+ *   - CC-Entry akzeptiert CC-Messages (status 0xb0) mit Value>0
+ *   - Note-Entry akzeptiert Note-On (status 0x90) mit Velocity>0
+ *
+ * Bei Nicht-Match (z.B. CC-Message bei Note-Entry) bleibt die Queue unverändert.
+ * Bei Match wird die Queue um den ersten Eintrag gekürzt UND das passende
+ * Mapping zurückgegeben — Caller schreibt es ins mappings/noteMappings-Array.
+ *
+ * Vor v1.72 war diese Logik direkt in handleMidiMessage; jetzt extrahiert um
+ * testbar zu sein (siehe tests/features/midi-auto-learn.test.ts).
+ */
+export function nextAutoLearnEntry(
+  queue: AutoLearnEntry[],
+  msg: { type: number; byte1: number; byte2: number; channel: number },
+): {
+  newQueue: AutoLearnEntry[];
+  ccMapping?: MidiMapping;
+  noteMapping?: MidiNoteMapping;
+} {
+  if (queue.length === 0) return { newQueue: queue };
+  const entry = queue[0];
+  if (entry.kind === "cc" && msg.type === 0xb0 && msg.byte2 > 0) {
+    return {
+      newQueue: queue.slice(1),
+      ccMapping: {
+        cc: msg.byte1,
+        channel: msg.channel,
+        target: entry.target,
+        label: labelForTarget(entry.target),
+      },
+    };
+  }
+  if (entry.kind === "note" && msg.type === 0x90 && msg.byte2 > 0) {
+    return {
+      newQueue: queue.slice(1),
+      noteMapping: {
+        note: msg.byte1,
+        channel: msg.channel,
+        partId: entry.partId,
+        label: entry.partName,
+      },
+    };
+  }
+  return { newQueue: queue };
 }
 
 // ─── Standard-Note-Mappings (GM Drum Map) ────────────────────────────────────
@@ -225,7 +326,7 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
   const [clockSync, setClockSyncState] = useState(false);
   const [externalBpm, setExternalBpm] = useState<number | null>(null);
   // Auto-Learn-Queue (v1.71)
-  const [autoLearnQueue, setAutoLearnQueue] = useState<MidiLearnTarget[]>([]);
+  const [autoLearnQueue, setAutoLearnQueue] = useState<AutoLearnEntry[]>([]);
   const [autoLearnTotal, setAutoLearnTotal] = useState(0);
 
   const savedMappings = loadMappings();
@@ -240,7 +341,7 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
     isLearning: false,
     target: null,
   });
-  const autoLearnRef = useRef<MidiLearnTarget[]>([]);
+  const autoLearnRef = useRef<AutoLearnEntry[]>([]);
 
   // Refs für aktuelle Mappings (kein Re-Render-Overhead in MIDI-Handler)
   const mappingsRef = useRef(mappings);
@@ -315,29 +416,35 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
       }
     }
 
-    // Auto-Learn (v1.71): sequenziell den nächsten Target aus der Queue lernen.
-    // Akzeptiert NUR CC-Messages mit Value>0 (gleiche Logik wie single-Learn).
-    // Bei jedem Capture: Mapping schreiben + Queue shiften, bis leer.
-    if (autoLearnRef.current.length > 0 && type === 0xb0 && byte2 > 0) {
-      const target = autoLearnRef.current[0];
-      const label = labelForTarget(target);
-      const newMapping: MidiMapping = {
-        cc: byte1,
-        channel,
-        target,
-        label,
-      };
-      setMappings(prev => {
-        const filtered = prev.filter(m => !(m.cc === byte1 && m.channel === channel));
-        const next = [...filtered, newMapping];
-        saveMappings(next, noteMappingsRef.current);
-        return next;
-      });
-      const rest = autoLearnRef.current.slice(1);
-      autoLearnRef.current = rest;
-      setAutoLearnQueue(rest);
-      if (rest.length === 0) setAutoLearnTotal(0);
-      return;
+    // Auto-Learn (v1.71 CC, v1.72 + Note): pure helper berechnet die
+    // Queue-Transition + ggf. das Mapping. Hier schreiben wir nur in den
+    // State und persistieren.
+    if (autoLearnRef.current.length > 0) {
+      const result = nextAutoLearnEntry(autoLearnRef.current, { type, byte1, byte2, channel });
+      if (result.ccMapping) {
+        const m = result.ccMapping;
+        setMappings(prev => {
+          const filtered = prev.filter(x => !(x.cc === m.cc && x.channel === m.channel));
+          const next = [...filtered, m];
+          saveMappings(next, noteMappingsRef.current);
+          return next;
+        });
+      }
+      if (result.noteMapping) {
+        const m = result.noteMapping;
+        setNoteMappings(prev => {
+          const filtered = prev.filter(x => !(x.note === m.note && x.channel === m.channel));
+          const next = [...filtered, m];
+          saveMappings(mappingsRef.current, next);
+          return next;
+        });
+      }
+      if (result.ccMapping || result.noteMapping) {
+        autoLearnRef.current = result.newQueue;
+        setAutoLearnQueue(result.newQueue);
+        if (result.newQueue.length === 0) setAutoLearnTotal(0);
+        return;
+      }
     }
 
     // Note-On
@@ -446,38 +553,6 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
     }
   }
 
-  function labelForTarget(target: MidiLearnTarget): string {
-    switch (target.type) {
-      case "bpm":             return "BPM (absolut)";
-      case "masterVolume":    return "Master Volume";
-      case "playStop":        return "Play / Stop";
-      case "record":          return "Record";
-      case "tapTempo":        return "Tap Tempo";
-      case "bpmUp":           return "BPM +1";
-      case "bpmDown":         return "BPM -1";
-      case "volume":          return `Volume: ${target.partName ?? target.partId.slice(0, 8)}`;
-      case "pan":             return `Pan: ${target.partName ?? target.partId.slice(0, 8)}`;
-      case "mute":            return `Mute: ${target.partName ?? target.partId.slice(0, 8)}`;
-      case "solo":            return `Solo: ${target.partName ?? target.partId.slice(0, 8)}`;
-      case "partUp":          return "Part ↑";
-      case "partDown":        return "Part ↓";
-      case "step":            return `Step ${target.stepIndex + 1}`;
-      case "pattern":         return `Pattern ${target.patternIndex + 1}`;
-      case "patternNext":     return "Pattern →";
-      case "patternPrev":     return "Pattern ←";
-      case "patternClear":    return "Pattern leeren";
-      case "patternFill":     return "Pattern füllen";
-      case "patternRandomize":return "Pattern zufällig";
-      case "patternDuplicate":return "Pattern duplizieren";
-      case "tab":             return `Tab: ${target.tabId}`;
-      case "toggleNoteRepeat":return "Note Repeat";
-      case "toggleMorph":     return "Pattern Morph";
-      case "commitLiveEdit":  return "Live Edit Commit";
-      case "scenelaunch":     return `Scene ${target.sceneIndex + 1}`;
-      case "openSettings":    return "Einstellungen öffnen";
-      default:                return "Unbekannt";
-    }
-  }
 
   // ─── Gerät verbinden ──────────────────────────────────────────────────────
 
@@ -645,12 +720,12 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
     setLearnTarget(null);
   }, []);
 
-  // ─── Auto-Learn (v1.71) ──────────────────────────────────────────────────
-  const startAutoLearn = useCallback((targets: MidiLearnTarget[]) => {
-    if (!targets || targets.length === 0) return;
-    autoLearnRef.current = [...targets];
-    setAutoLearnQueue([...targets]);
-    setAutoLearnTotal(targets.length);
+  // ─── Auto-Learn (v1.71 CC, v1.72 + Note) ────────────────────────────────
+  const startAutoLearn = useCallback((entries: AutoLearnEntry[]) => {
+    if (!entries || entries.length === 0) return;
+    autoLearnRef.current = [...entries];
+    setAutoLearnQueue([...entries]);
+    setAutoLearnTotal(entries.length);
     // Single-Learn-Modus ausräumen damit beide nicht kollidieren
     learnRef.current = { isLearning: false, target: null };
     setIsLearning(false);

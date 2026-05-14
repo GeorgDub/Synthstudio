@@ -12,7 +12,7 @@
 
 import React, { useState } from "react";
 import { X } from "lucide-react";
-import type { MidiState, MidiActions, MidiLearnTarget, MidiNoteMapping } from "@/hooks/useMidi";
+import type { MidiState, MidiActions, MidiLearnTarget, MidiNoteMapping, AutoLearnEntry } from "@/hooks/useMidi";
 import { GM_DRUM_DEFAULTS } from "@/hooks/useMidi";
 import { MIDI_TEMPLATES, templateToMappings } from "@/utils/midiTemplates";
 
@@ -157,41 +157,69 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
     ...parts.map(p => ({ label: `Mute: ${p.name}`, target: { type: "mute" as const, partId: p.id } })),
   ];
 
-  // Auto-Learn-Presets (v1.71): vordefinierte Target-Sequenzen für gängige
-  // Hardware-Setups. User klickt einen Preset-Button, dreht/drückt dann
-  // jeden Controller seines Geräts einmal — Synthstudio mappt automatisch.
-  const autoLearnPresets: Array<{ label: string; description: string; build: () => MidiLearnTarget[] }> = [
+  // Auto-Learn-Presets (v1.71 CC, v1.72 + Note): vordefinierte Sequenzen
+  // für gängige Hardware-Setups. User klickt einen Preset-Button, dreht/
+  // drückt dann jeden Controller/Pad seines Geräts einmal — Synthstudio
+  // mappt automatisch (CC für Slider/Knöpfe, Note für Pads).
+  const ccEntries = (targets: MidiLearnTarget[]): AutoLearnEntry[] =>
+    targets.map(t => ({ kind: "cc" as const, target: t }));
+  const noteEntries = (ps: Array<{ id: string; name: string }>): AutoLearnEntry[] =>
+    ps.map(p => ({ kind: "note" as const, partId: p.id, partName: p.name }));
+
+  const autoLearnPresets: Array<{ label: string; description: string; build: () => AutoLearnEntry[] }> = [
     {
       label: "Mixer (Volumes + Mutes)",
-      description: `${parts.length} Lautstärken + ${parts.length} Mutes`,
-      build: () => [
+      description: `${parts.length} CC-Lautstärken + ${parts.length} CC-Mutes`,
+      build: () => ccEntries([
         ...parts.map(p => ({ type: "volume" as const, partId: p.id, partName: p.name })),
         ...parts.map(p => ({ type: "mute" as const, partId: p.id, partName: p.name })),
+      ]),
+    },
+    {
+      label: "Pads → Parts",
+      description: `${parts.length} Note-On-Pads zum Trigger der Parts (v1.72)`,
+      build: () => noteEntries(parts),
+    },
+    {
+      label: "Komplett (Pads + Mixer)",
+      description: `${parts.length} Pads zuerst, dann ${parts.length} Volumes + ${parts.length} Mutes`,
+      build: () => [
+        ...noteEntries(parts),
+        ...ccEntries([
+          ...parts.map(p => ({ type: "volume" as const, partId: p.id, partName: p.name })),
+          ...parts.map(p => ({ type: "mute" as const, partId: p.id, partName: p.name })),
+        ]),
       ],
     },
     {
       label: "Transport",
-      description: "Play/Stop, Record, Tap-Tempo, BPM Up/Down",
-      build: () => [
+      description: "Play/Stop, Record, Tap-Tempo, BPM Up/Down (CC)",
+      build: () => ccEntries([
         { type: "playStop" },
         { type: "record" },
         { type: "tapTempo" },
         { type: "bpmUp" },
         { type: "bpmDown" },
-      ],
+      ]),
     },
     {
       label: "Pattern-Navigation",
-      description: "Next, Prev, Clear, Fill, Randomize",
-      build: () => [
+      description: "Next, Prev, Clear, Fill, Randomize (CC)",
+      build: () => ccEntries([
         { type: "patternNext" },
         { type: "patternPrev" },
         { type: "patternClear" },
         { type: "patternFill" },
         { type: "patternRandomize" },
-      ],
+      ]),
     },
   ];
+
+  /** Renderet ein Auto-Learn-Entry als kurzes Label für die Progress-Karte. */
+  function autoLearnEntryLabel(entry: AutoLearnEntry): string {
+    if (entry.kind === "cc") return `CC: ${targetLabel(entry.target)}`;
+    return `Pad: ${entry.partName}`;
+  }
 
   const renderCcTab = () => (
     <div className="space-y-4">
@@ -211,7 +239,7 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
               </div>
             </div>
             <div className="text-sm text-text-primary font-mono mb-3">
-              → {targetLabel(midi.autoLearnQueue[0])}
+              → {autoLearnEntryLabel(midi.autoLearnQueue[0])}
             </div>
             <div className="flex gap-2">
               <button
@@ -230,7 +258,7 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
             {/* Vorschau der verbleibenden Targets */}
             {midi.autoLearnQueue.length > 1 && (
               <div className="mt-3 pt-2 border-t border-accent-secondary/30 text-[10px] text-text-dim">
-                Nächste: {midi.autoLearnQueue.slice(1, 4).map(targetLabel).join(" → ")}
+                Nächste: {midi.autoLearnQueue.slice(1, 4).map(autoLearnEntryLabel).join(" → ")}
                 {midi.autoLearnQueue.length > 4 && " …"}
               </div>
             )}
@@ -238,8 +266,10 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
         ) : (
           <div className="space-y-1.5">
             <div className="text-xs text-text-dim mb-2">
-              Wähle ein Preset und bewege dann nacheinander die Controller deines Geräts —
-              Synthstudio verknüpft sie automatisch in der vorgegebenen Reihenfolge.
+              Wähle ein Preset und bewege/drücke dann nacheinander die Slider, Knöpfe
+              und Pads deines Geräts — Synthstudio verknüpft jedes Event mit dem
+              nächsten Target. CC-Einträge erwarten einen Slider/Knopf, Pad-Einträge
+              eine Note (z.B. ein Drum-Pad).
             </div>
             {autoLearnPresets.map(({ label, description, build }) => (
               <button

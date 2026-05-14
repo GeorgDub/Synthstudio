@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "1.71.0",
+    version: "1.72.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -491,6 +491,26 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-14T05:30:00.000Z",
+      done: [
+        "MIDI-AUTO-LEARN-V2 (v1.72.0): Phase 2 von MIDI-AUTO-LEARN — Note-Mode für Pads. Neue discriminated-union `AutoLearnEntry = {kind:'cc', target} | {kind:'note', partId, partName}` ersetzt das vorige `MidiLearnTarget[]`-Schema. `handleMidiMessage` matched eingehende Messages gegen den `kind` des Queue-Heads: CC-Entries akzeptieren CC-Messages mit Value>0, Note-Entries akzeptieren Note-On mit Velocity>0. Mismatches lassen die Queue unverändert + die Message läuft normal weiter durch den Handler. Refactor: `labelForTarget` und neuer Pure-Helper `nextAutoLearnEntry(queue, msg)` aus dem Hook-Body ausgelagert → Modul-Scope → testbar. handleMidiMessage delegiert die Queue-Transition jetzt an die pure Funktion. UI in MidiSettings: 2 neue Presets — `Pads → Parts` (n Note-Entries, einer pro Part) und `Komplett (Pads + Mixer)` (Pads zuerst, dann Volumes+Mutes). Auto-Learn-Card zeigt `Pad: <Name>` bzw. `CC: <Target>` für jedes Queue-Item. 18 neue Vitest-Cases in tests/features/midi-auto-learn.test.ts (7 labelForTarget + 11 nextAutoLearnEntry, inkl. CC/Note Mismatch + Value=0 + Mixed-Queue + Channel-Persist + Aftertouch-Filter). 1705 Tests grün, pnpm check 0 Fehler. Direkt motiviert durch User-Workflow mit Electribe 2 Sampler (16 Pads + 8 Slider)."
+      ],
+      next: [
+        "FLP-MIDI-EXPORT Phase 4: SMF-Export von Melodic-Parts mit Pitch + Duration (umgekehrte Richtung — Synthstudio → FL Studio / DAW Re-Import).",
+        "MIDI-CONTROLLER-TEMPLATE-CAPTURE: nach Auto-Learn → 'Speichere als Template' Button, damit der User seine Hardware-Konfiguration als JSON exportieren + teilen kann (Anschluss an midiLayoutImport.ts).",
+        "FEAT-INSP: bleibt offen (Explore-Report verfügbar, 4-5h, 8+ Files).",
+        "neue_todos.md Backlog: GitHub-Builder-Workflow, Updater, Mobile-Build, Login/Beta-System, Plugin-Wiki/LLM, Sample-Cloud, MIDI-Templates für Hardtekk-Gear, .als/.elst-Konverter, Workbench-Audacity-Niveau, AI-Projekt-Analyse, Admin/Lite-Tier-Lizenz."
+      ],
+      changed: [
+        "package.json",
+        "client/src/hooks/useMidi.ts",
+        "client/src/components/MidiSettings/MidiSettings.tsx",
+        "tests/features/midi-auto-learn.test.ts",
+        "agents/INDEX.js"
+      ]
+    },
     {
       agent:     "coordinator",
       timestamp: "2026-05-14T05:00:00.000Z",
