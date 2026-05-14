@@ -234,6 +234,13 @@ export interface StepData {
    * Note-Länge als Vielfaches eines Steps (0.25=1/4, 0.5=1/2, 1=ein Step, 2=zwei Steps).
    */
   length?: number;
+  /**
+   * v2.14: TB-303-Slide. Wenn true, gleitet die aktuelle Synth-Note tonal vom
+   * zuletzt getriggerten Step desselben Parts auf die aktuelle Pitch-Frequenz
+   * (Portamento). Wirkt nur für Synth-Parts (sourceType wavetable/fm) –
+   * Sample-Parts ignorieren das Flag.
+   */
+  slide?: boolean;
 }
 
 /**
@@ -383,6 +390,13 @@ class AudioEngineClass {
    * `getPartLfoRate/Depth` lesen und auf `synthParams` mappen.
    */
   private _synthEngine: SynthEngine | null = null;
+
+  /**
+   * v2.14 (TB-303-Slide): Pro Part die zuletzt getriggerte Frequenz + ob der
+   * vorherige Step `slide=true` hatte. Wird im Synth-Trigger ausgewertet damit
+   * der nächste Note-On bei aktivem Slide vom alten Pitch herangleitet.
+   */
+  private _partSlideState = new Map<string, { lastFreq: number; lastHadSlide: boolean }>();
 
   // ─── Audio-Track Channels (externe Dateien: Vocals/Songs) ──────────────────
   private audioTrackSources = new Map<string, AudioBufferSourceNode>();
@@ -1104,6 +1118,9 @@ class AudioEngineClass {
     this._pendingTimeouts.forEach((id) => clearTimeout(id));
     this._pendingTimeouts.clear();
     this._currentStep = 0;
+    // v2.14: Slide-State zurücksetzen damit beim nächsten Play die erste Note
+    // nicht versehentlich vom letzten Run her gleitet.
+    this._partSlideState.clear();
     this.positionCallbacks.forEach(cb => cb(0));
   }
 
@@ -1401,7 +1418,7 @@ class AudioEngineClass {
         // Drum-Step hat keine eigene Note — A4 (440 Hz) als Basis, step.pitch
         // wird als Halbton-Transpose appliziert (analog zur melodischen Logik).
         const freq = 440 * Math.pow(2, scheduled.pitch / 12);
-        this._triggerSynthOnChannel(scheduled.time, freq, vol, scheduled.pan, part);
+        this._triggerSynthOnChannel(scheduled.time, freq, vol, scheduled.pan, part, !!step.slide);
       } else if (part.sampleUrl) {
         const stepLength = step.length ?? 1;
         const partRef = part;
@@ -1534,7 +1551,7 @@ class AudioEngineClass {
    *          fehlen (kein ctx, kein synthParams, falscher sourceType) — Aufrufer
    *          kann auf Fallback-Pfad ausweichen.
    */
-  private _triggerSynthOnChannel(time: number, freq: number, volume: number, pan: number, part: PartData): boolean {
+  private _triggerSynthOnChannel(time: number, freq: number, volume: number, pan: number, part: PartData, slide = false): boolean {
     if (!this.ctx) return false;
     if (!part.synthParams) return false;
     if (part.sourceType !== "wavetable" && part.sourceType !== "fm") return false;
@@ -1547,7 +1564,22 @@ class AudioEngineClass {
     nodes.panner.pan.value = Math.max(-1, Math.min(1, pan));
 
     const now = Math.max(time, this.ctx.currentTime);
-    eng.triggerNote(freq, part.synthParams, now, undefined, part.id, nodes.input);
+
+    // v2.14: Per-Step-Slide. Wenn der vorherige Step `slide=true` hatte,
+    // ramp der neue Note von der alten Frequenz auf die aktuelle.
+    const prevState = this._partSlideState.get(part.id);
+    const stepDur = this._stepDuration();
+    let synthParams = part.synthParams;
+    let prevFreq: number | undefined = undefined;
+    if (prevState?.lastHadSlide && prevState.lastFreq && prevState.lastFreq !== freq) {
+      // Glide-Override für diese Note (ohne Mutation des persistierten Params).
+      synthParams = { ...part.synthParams, glide: Math.max(0.005, stepDur * 0.8) };
+      prevFreq = prevState.lastFreq;
+    }
+    eng.triggerNote(freq, synthParams, now, prevFreq, part.id, nodes.input);
+
+    // State für die nächste Note merken
+    this._partSlideState.set(part.id, { lastFreq: freq, lastHadSlide: slide });
     return true;
   }
 
