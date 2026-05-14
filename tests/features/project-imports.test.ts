@@ -7,8 +7,13 @@
 import { describe, it, expect } from "vitest";
 import { importFlp, detectChannelPitches, buildMelodicParts } from "../../client/src/utils/imports/flpImport";
 import { importElectribe } from "../../client/src/utils/imports/electribeImport";
-import { importProjectFile, importResultToPatterns, ImportError } from "../../client/src/utils/imports/index";
-import type { ImportResult } from "../../client/src/utils/imports/types";
+import {
+  importProjectFile,
+  importResultToPatterns,
+  ImportError,
+  routeMelodicPartsToPatterns,
+} from "../../client/src/utils/imports/index";
+import type { ImportResult, ImportedMelodicPart } from "../../client/src/utils/imports/types";
 
 // ─── Helper: Mock-File mit ArrayBuffer ───────────────────────────────────────
 
@@ -282,6 +287,128 @@ describe("buildMelodicParts (v1.65)", () => {
     const parts = buildMelodicParts(notes, 96);
     expect(parts).toHaveLength(2);
     expect(parts.map(p => p.sourceChannel).sort()).toEqual([1, 2]);
+  });
+});
+
+// ─── routeMelodicPartsToPatterns (v1.66, FLP-MELODIC-ROUTE Phase 2) ───────────
+
+describe("routeMelodicPartsToPatterns (v1.66)", () => {
+  function makePatterns(barCount: number, partCount = 8) {
+    return Array.from({ length: barCount }, (_, b) => ({
+      parts: Array.from({ length: partCount }, (_, p) => ({ id: `pat${b}-part${p}` })),
+    }));
+  }
+
+  it("leeres / undefined melodicParts → keine Mappings, keine Warnungen", () => {
+    const patterns = makePatterns(1);
+    expect(routeMelodicPartsToPatterns(undefined, patterns)).toEqual({
+      mappings: [],
+      warnings: [],
+    });
+    expect(routeMelodicPartsToPatterns([], patterns)).toEqual({
+      mappings: [],
+      warnings: [],
+    });
+  });
+
+  it("warnt wenn melodicParts vorhanden aber keine Drum-Patterns als Ziel", () => {
+    const melodic: ImportedMelodicPart[] = [
+      { sourceChannel: 0, name: "ch0", notes: [{ startStep: 0, durationSteps: 1, pitch: 60, velocity: 100 }] },
+    ];
+    const result = routeMelodicPartsToPatterns(melodic, []);
+    expect(result.mappings).toEqual([]);
+    expect(result.warnings.some(w => w.includes("Routing-Ziel"))).toBe(true);
+  });
+
+  it("mappt Note auf korrekten partId via sourceChannel % partCount", () => {
+    const melodic: ImportedMelodicPart[] = [
+      // channel 9 → mit partCount=8 → partIdx = 1
+      { sourceChannel: 9, name: "ch9", notes: [{ startStep: 3, durationSteps: 1, pitch: 64, velocity: 90 }] },
+    ];
+    const patterns = makePatterns(1);
+    const { mappings, warnings } = routeMelodicPartsToPatterns(melodic, patterns);
+    expect(warnings).toEqual([]);
+    expect(mappings).toHaveLength(1);
+    expect(mappings[0]).toEqual({ partId: "pat0-part1", stepIdx: 3, pitch: 64, velocity: 90 });
+  });
+
+  it("Multi-Bar: Note bei startStep=18 → bar=1, stepIdx=2 (mit 16-Step-Bars)", () => {
+    const melodic: ImportedMelodicPart[] = [
+      { sourceChannel: 0, name: "x", notes: [
+        { startStep: 0,  durationSteps: 1, pitch: 60, velocity: 100 },
+        { startStep: 18, durationSteps: 1, pitch: 62, velocity: 100 },
+      ] },
+    ];
+    const patterns = makePatterns(2);
+    const { mappings, warnings } = routeMelodicPartsToPatterns(melodic, patterns);
+    expect(warnings).toEqual([]);
+    expect(mappings).toHaveLength(2);
+    const sorted = [...mappings].sort((a, b) => a.partId.localeCompare(b.partId));
+    expect(sorted[0]).toEqual({ partId: "pat0-part0", stepIdx: 0,  pitch: 60, velocity: 100 });
+    expect(sorted[1]).toEqual({ partId: "pat1-part0", stepIdx: 2,  pitch: 62, velocity: 100 });
+  });
+
+  it("rundet float startStep auf 16-Step-Grid", () => {
+    const melodic: ImportedMelodicPart[] = [
+      { sourceChannel: 0, name: "x", notes: [
+        { startStep: 3.4, durationSteps: 1, pitch: 60, velocity: 100 }, // → 3
+        { startStep: 3.6, durationSteps: 1, pitch: 62, velocity: 100 }, // → 4
+      ] },
+    ];
+    const patterns = makePatterns(1);
+    const { mappings } = routeMelodicPartsToPatterns(melodic, patterns);
+    expect(mappings.map(m => m.stepIdx).sort()).toEqual([3, 4]);
+  });
+
+  it("Konflikt zwei Notes auf gleichem (partId,stepIdx) → letzte gewinnt + Warning", () => {
+    const melodic: ImportedMelodicPart[] = [
+      { sourceChannel: 0, name: "x", notes: [
+        { startStep: 5, durationSteps: 1, pitch: 60, velocity: 100 },
+        { startStep: 5, durationSteps: 1, pitch: 72, velocity: 80 }, // overwrites
+      ] },
+    ];
+    const patterns = makePatterns(1);
+    const { mappings, warnings } = routeMelodicPartsToPatterns(melodic, patterns);
+    expect(mappings).toHaveLength(1);
+    expect(mappings[0].pitch).toBe(72);
+    expect(mappings[0].velocity).toBe(80);
+    expect(warnings.some(w => w.includes("bereits belegt") && w.includes("16-Step-Grid"))).toBe(true);
+  });
+
+  it("Notes jenseits der importierten Bars werden verworfen + Warning", () => {
+    const melodic: ImportedMelodicPart[] = [
+      { sourceChannel: 0, name: "x", notes: [
+        { startStep: 0,  durationSteps: 1, pitch: 60, velocity: 100 },
+        { startStep: 99, durationSteps: 1, pitch: 70, velocity: 100 }, // out of range
+      ] },
+    ];
+    const patterns = makePatterns(1); // nur 1 Bar = 16 Steps
+    const { mappings, warnings } = routeMelodicPartsToPatterns(melodic, patterns);
+    expect(mappings).toHaveLength(1);
+    expect(mappings[0].pitch).toBe(60);
+    expect(warnings.some(w => w.includes("außerhalb"))).toBe(true);
+  });
+
+  it("Mehrere Channels routen unabhängig — partIdx via modulo", () => {
+    const melodic: ImportedMelodicPart[] = [
+      { sourceChannel: 1, name: "ch1", notes: [{ startStep: 0, durationSteps: 1, pitch: 60, velocity: 100 }] },
+      { sourceChannel: 3, name: "ch3", notes: [{ startStep: 4, durationSteps: 1, pitch: 64, velocity: 100 }] },
+    ];
+    const patterns = makePatterns(1);
+    const { mappings } = routeMelodicPartsToPatterns(melodic, patterns);
+    expect(mappings).toHaveLength(2);
+    const byPart = Object.fromEntries(mappings.map(m => [m.partId, m]));
+    expect(byPart["pat0-part1"].pitch).toBe(60);
+    expect(byPart["pat0-part3"].pitch).toBe(64);
+  });
+
+  it("velocity wird 1:1 weitergereicht (kein Clamp bei route, nur beim Store)", () => {
+    const melodic: ImportedMelodicPart[] = [
+      { sourceChannel: 0, name: "x", notes: [{ startStep: 0, durationSteps: 1, pitch: 60, velocity: 200 }] },
+    ];
+    const patterns = makePatterns(1);
+    const { mappings } = routeMelodicPartsToPatterns(melodic, patterns);
+    expect(mappings[0].velocity).toBe(200);
   });
 });
 

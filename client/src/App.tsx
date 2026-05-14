@@ -147,7 +147,12 @@ import {
   clearProjectScripts,
 } from "@/store/useScriptStore";
 // BUG-013 fix: vollständiges Project-Reset über alle Stores
-import { resetMelodicParts } from "@/store/useMelodicPartStore";
+import {
+  resetMelodicParts,
+  setNote as setMelodicNote,
+  setVelocity as setMelodicVelocity,
+} from "@/store/useMelodicPartStore";
+import { routeMelodicPartsToPatterns } from "@/utils/imports";
 import { resetNoteRepeat } from "@/store/useNoteRepeatStore";
 import { resetTranspose } from "@/store/useTransposeStore";
 import { resetMorph } from "@/store/useMorphStore";
@@ -2289,7 +2294,7 @@ export default function App() {
                 onLoad={handleMenuOpen}
                 onNew={handleNewProject}
                 onExport={project.exportProject}
-                onImportPatterns={(patterns, sourceFormat) => {
+                onImportPatterns={(patterns, sourceFormat, melodicParts) => {
                   // Importierte Patterns als zusätzliche Patterns in DrumMachine hinzufügen
                   patterns.forEach(p => {
                     dm.addPatternData(p as Parameters<typeof dm.addPatternData>[0]);
@@ -2297,7 +2302,23 @@ export default function App() {
                   if (patterns.length > 0 && patterns[0].bpm) {
                     project.setBpm(patterns[0].bpm);
                   }
+                  // FLP-MELODIC-ROUTE Phase 2 (v1.66): melodische Channels in den
+                  // useMelodicPartStore einspeisen.
+                  const { mappings, warnings } = routeMelodicPartsToPatterns(
+                    melodicParts,
+                    patterns,
+                  );
+                  for (const m of mappings) {
+                    setMelodicNote(m.partId, m.stepIdx, m.pitch);
+                    setMelodicVelocity(m.partId, m.stepIdx, m.velocity);
+                  }
                   console.log(`[Import] ${patterns.length} Patterns aus ${sourceFormat.toUpperCase()} hinzugefügt`);
+                  if (mappings.length > 0) {
+                    console.log(`[Import] ${mappings.length} melodische Notes in MelodicParts geroutet`);
+                  }
+                  if (warnings.length > 0) {
+                    console.warn(`[Import] Melodic-Routing-Warnungen:\n• ${warnings.join("\n• ")}`);
+                  }
                 }}
               />
             </div>

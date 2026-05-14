@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "1.65.0",
+    version: "1.66.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -459,6 +459,28 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-14T02:30:00.000Z",
+      done: [
+        "FLP-MELODIC-ROUTE (v1.66.0): Phase 2 von MELODIC-ROUTE. Die in v1.65 extrahierten `ImportedMelodicPart`-Daten werden jetzt aktiv in den `useMelodicPartStore` geroutet — beim Import einer .flp mit melodischen FL-Channels erscheinen die Notes automatisch im Piano Roll der entsprechenden Drum-Parts. Neue Pure-Function `routeMelodicPartsToPatterns(melodicParts, patterns, stepsPerBar=16, partCount=8)` in `client/src/utils/imports/index.ts`: mappt sourceChannel%partCount auf Part-IDs, quantisiert startStep-Float auf 16-Step-Grid via Math.round, splittet Multi-Bar-Notes auf die importierten Bar-Patterns, last-note-wins bei Konflikten + Warnungs-Sammlung (Konflikte und out-of-range-Notes). ProjectManager-Callback `onImportPatterns` um `melodicParts?: ImportedMelodicPart[]` erweitert. App.tsx ruft `setMelodicNote` + `setMelodicVelocity` aus dem Store direkt auf die Mappings auf. Warning-Text in flpImport.ts gewechselt von 'Pitch-Info verworfen' → 'als Melodic-Part in den Piano Roll geroutet'. 9 neue Vitest-Cases für routeMelodicPartsToPatterns (empty/no-target/partIdx-modulo/multi-bar/rounding/conflict/out-of-range/multi-channel/velocity-passthrough), alle FLP-Tests grün, pnpm check 0 Fehler."
+      ],
+      next: [
+        "FLP-CHANNEL-NAMES Phase 3: TEXT_CHANNEL_NAME (0xC3) aus FLP-Events extrahieren → echte Sample-/Instrument-Namen statt 'Channel N' (auch für ImportedMelodicPart.name)",
+        "FLP-MELODIC-POLISH: baseNote pro MelodicPart aus Pitch-Statistik (median/mean) setzen, damit Piano-Roll-View beim Öffnen direkt auf die importierten Notes zentriert; aktuell bleibt Default C4.",
+        "FLP-MIDI-EXPORT Phase 4: SMF-Export von Melodic-Parts mit Pitch + Duration (umgekehrte Richtung — Synthstudio → FL Studio Re-Import)",
+        "FEAT-INSP: bleibt offen (Explore-Report verfügbar, 4-5h, 8+ Files)"
+      ],
+      changed: [
+        "package.json",
+        "client/src/utils/imports/index.ts",
+        "client/src/utils/imports/flpImport.ts",
+        "client/src/components/ProjectManager/ProjectManager.tsx",
+        "client/src/App.tsx",
+        "tests/features/project-imports.test.ts",
+        "agents/INDEX.js"
+      ]
+    },
     {
       agent:     "coordinator",
       timestamp: "2026-05-14T01:55:00.000Z",

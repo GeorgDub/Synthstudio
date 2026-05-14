@@ -279,7 +279,7 @@ export async function importFlp(file: File): Promise<ImportResult> {
     const lo = keyToNoteName(sorted[0]);
     const hi = keyToNoteName(sorted[sorted.length - 1]);
     warnings.push(
-      `Channel ${channel}: melodischer Inhalt (${pitches.size} Tonhöhen, ${lo}..${hi}) — nur Step-Positionen importiert, Pitch-Info verworfen.`,
+      `Channel ${channel}: melodischer Inhalt (${pitches.size} Tonhöhen, ${lo}..${hi}) — als Melodic-Part in den Piano Roll geroutet (16-Step-Grid-quantisiert).`,
     );
   }
 
