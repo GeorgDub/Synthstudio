@@ -1364,6 +1364,18 @@ function PatchesSection() {
   const [editingId, setEditingId] = React.useState<string | null>(null);
   const [draft, setDraft] = React.useState("");
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
+  // v2.33: Suche/Filter — bis zu 200 Patches sind ohne Suche unbedienbar.
+  const [query, setQuery] = React.useState("");
+  const filteredPatches = React.useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return patches;
+    return patches.filter(p => {
+      if (p.name.toLowerCase().includes(q)) return true;
+      if ((p.sourceType ?? "").toLowerCase().includes(q)) return true;
+      if (p.tags?.some(t => t.toLowerCase().includes(q))) return true;
+      return false;
+    });
+  }, [patches, query]);
 
   const startRename = (id: string, current: string) => {
     setEditingId(id);
@@ -1465,15 +1477,46 @@ function PatchesSection() {
         gespeichert (max. 200) — JSON-Export für Backup / Sharing.
       </p>
 
+      {patches.length > 0 && (
+        <div className="mb-3 flex items-center gap-2">
+          <input
+            type="text"
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            placeholder="Filter nach Name, Type (FM/Wavetable/...) oder Tag"
+            className="flex-1 text-xs bg-bg-elevated border border-border-color rounded px-2 py-1 text-text-primary placeholder:text-text-dim"
+            data-testid="patches-search"
+          />
+          {query && (
+            <button
+              type="button"
+              onClick={() => setQuery("")}
+              className="text-text-dim hover:text-text-primary text-xs"
+              title="Filter zurücksetzen"
+              aria-label="Filter zurücksetzen"
+            >
+              ✕
+            </button>
+          )}
+          <span className="text-[10px] text-text-dim font-mono">
+            {filteredPatches.length}/{patches.length}
+          </span>
+        </div>
+      )}
+
       {patches.length === 0 ? (
         <div className="rounded-lg border border-dashed border-border-color p-8 text-center text-xs text-text-dim">
           Noch keine Patches gespeichert. Aus einem Part-Editor heraus
           (Synth- / Sample- / Granular-Panel) lassen sich Sound-Konfigurationen
           hier ablegen.
         </div>
+      ) : filteredPatches.length === 0 ? (
+        <div className="rounded-lg border border-dashed border-border-color p-6 text-center text-xs text-text-dim">
+          Kein Patch matcht „{query}".
+        </div>
       ) : (
         <div className="space-y-1.5">
-          {patches.map(p => (
+          {filteredPatches.map(p => (
             <div
               key={p.id}
               data-testid={`patch-item-${p.id}`}

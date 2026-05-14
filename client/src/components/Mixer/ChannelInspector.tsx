@@ -43,6 +43,18 @@ export function ChannelInspector({ part, parts, mixer, className, onApplyPatch }
   const [applyPatchOpen, setApplyPatchOpen] = useState(false);
   const [applyReplaceFx, setApplyReplaceFx] = useState(true);
   const { patches } = usePatchStore();
+  // v2.33: Suche/Filter im Apply-Dropdown (gleiche Library, ≤200 Patches).
+  const [applyQuery, setApplyQuery] = useState("");
+  const filteredApplyPatches = React.useMemo(() => {
+    const q = applyQuery.trim().toLowerCase();
+    if (!q) return patches;
+    return patches.filter(p => {
+      if (p.name.toLowerCase().includes(q)) return true;
+      if ((p.sourceType ?? "").toLowerCase().includes(q)) return true;
+      if (p.tags?.some(t => t.toLowerCase().includes(q))) return true;
+      return false;
+    });
+  }, [patches, applyQuery]);
 
   if (!part) {
     return (
@@ -134,8 +146,21 @@ export function ChannelInspector({ part, parts, mixer, className, onApplyPatch }
               />
               FX-Chain ersetzen (sonst nur Sound)
             </label>
+            <input
+              type="text"
+              value={applyQuery}
+              onChange={e => setApplyQuery(e.target.value)}
+              placeholder="Filter…"
+              className="w-full mb-2 text-[10px] bg-bg-base border border-border-color rounded px-2 py-1 text-text-primary placeholder:text-text-dim"
+              data-testid="channel-apply-patch-search"
+            />
             <div className="max-h-48 overflow-y-auto space-y-1">
-              {patches.map(p => (
+              {filteredApplyPatches.length === 0 && (
+                <div className="text-center text-[10px] text-text-dim py-2">
+                  Kein Patch matcht „{applyQuery}".
+                </div>
+              )}
+              {filteredApplyPatches.map(p => (
                 <button
                   key={p.id}
                   type="button"
