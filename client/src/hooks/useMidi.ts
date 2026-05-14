@@ -86,6 +86,13 @@ export interface MidiState {
   noteMappings: MidiNoteMapping[];
   isLearning: boolean;
   learnTarget: MidiLearnTarget | null;
+  /**
+   * Auto-Learn-Queue (v1.71): nicht-leer = sequenzielles Lernen läuft.
+   * `[0]` = aktuell zu lernender Target, der Rest folgt nach Capture/Skip.
+   * `autoLearnTotal` = ursprüngliche Länge für Progress-Anzeige.
+   */
+  autoLearnQueue: MidiLearnTarget[];
+  autoLearnTotal: number;
   clockSync: boolean;
   externalBpm: number | null;
   /** MIDI Out aktiv */
@@ -107,6 +114,12 @@ export interface MidiActions {
   sendCC: (cc: number, value: number, channel?: number) => void;
   startLearn: (target: MidiLearnTarget) => void;
   cancelLearn: () => void;
+  /** Auto-Learn (v1.71): startet sequenzielles Lernen über eine Target-Liste. */
+  startAutoLearn: (targets: MidiLearnTarget[]) => void;
+  /** Skipt den aktuell zu lernenden Target und geht zum nächsten. */
+  skipAutoLearnTarget: () => void;
+  /** Bricht Auto-Learn ab — bisher gebundene Mappings bleiben erhalten. */
+  cancelAutoLearn: () => void;
   removeMapping: (cc: number, channel: number) => void;
   addNoteMapping: (note: number, channel: number, partId: string, label: string) => void;
   removeNoteMapping: (note: number, channel: number) => void;
@@ -211,6 +224,9 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
   const [learnTarget, setLearnTarget] = useState<MidiLearnTarget | null>(null);
   const [clockSync, setClockSyncState] = useState(false);
   const [externalBpm, setExternalBpm] = useState<number | null>(null);
+  // Auto-Learn-Queue (v1.71)
+  const [autoLearnQueue, setAutoLearnQueue] = useState<MidiLearnTarget[]>([]);
+  const [autoLearnTotal, setAutoLearnTotal] = useState(0);
 
   const savedMappings = loadMappings();
   const [mappings, setMappings] = useState<MidiMapping[]>(savedMappings.cc);
@@ -224,6 +240,7 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
     isLearning: false,
     target: null,
   });
+  const autoLearnRef = useRef<MidiLearnTarget[]>([]);
 
   // Refs für aktuelle Mappings (kein Re-Render-Overhead in MIDI-Handler)
   const mappingsRef = useRef(mappings);
@@ -296,6 +313,31 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
         setLearnTarget(null);
         return;
       }
+    }
+
+    // Auto-Learn (v1.71): sequenziell den nächsten Target aus der Queue lernen.
+    // Akzeptiert NUR CC-Messages mit Value>0 (gleiche Logik wie single-Learn).
+    // Bei jedem Capture: Mapping schreiben + Queue shiften, bis leer.
+    if (autoLearnRef.current.length > 0 && type === 0xb0 && byte2 > 0) {
+      const target = autoLearnRef.current[0];
+      const label = labelForTarget(target);
+      const newMapping: MidiMapping = {
+        cc: byte1,
+        channel,
+        target,
+        label,
+      };
+      setMappings(prev => {
+        const filtered = prev.filter(m => !(m.cc === byte1 && m.channel === channel));
+        const next = [...filtered, newMapping];
+        saveMappings(next, noteMappingsRef.current);
+        return next;
+      });
+      const rest = autoLearnRef.current.slice(1);
+      autoLearnRef.current = rest;
+      setAutoLearnQueue(rest);
+      if (rest.length === 0) setAutoLearnTotal(0);
+      return;
     }
 
     // Note-On
@@ -603,6 +645,32 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
     setLearnTarget(null);
   }, []);
 
+  // ─── Auto-Learn (v1.71) ──────────────────────────────────────────────────
+  const startAutoLearn = useCallback((targets: MidiLearnTarget[]) => {
+    if (!targets || targets.length === 0) return;
+    autoLearnRef.current = [...targets];
+    setAutoLearnQueue([...targets]);
+    setAutoLearnTotal(targets.length);
+    // Single-Learn-Modus ausräumen damit beide nicht kollidieren
+    learnRef.current = { isLearning: false, target: null };
+    setIsLearning(false);
+    setLearnTarget(null);
+  }, []);
+
+  const skipAutoLearnTarget = useCallback(() => {
+    if (autoLearnRef.current.length === 0) return;
+    const rest = autoLearnRef.current.slice(1);
+    autoLearnRef.current = rest;
+    setAutoLearnQueue(rest);
+    if (rest.length === 0) setAutoLearnTotal(0);
+  }, []);
+
+  const cancelAutoLearn = useCallback(() => {
+    autoLearnRef.current = [];
+    setAutoLearnQueue([]);
+    setAutoLearnTotal(0);
+  }, []);
+
   const removeMapping = useCallback((cc: number, channel: number) => {
     setMappings(prev => {
       const next = prev.filter(m => !(m.cc === cc && m.channel === channel));
@@ -662,6 +730,8 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
     noteMappings,
     isLearning,
     learnTarget,
+    autoLearnQueue,
+    autoLearnTotal,
     clockSync,
     externalBpm,
     // Input Actions
@@ -670,6 +740,9 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
     setActiveDevice,
     startLearn,
     cancelLearn,
+    startAutoLearn,
+    skipAutoLearnTarget,
+    cancelAutoLearn,
     removeMapping,
     addNoteMapping,
     removeNoteMapping,

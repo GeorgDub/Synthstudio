@@ -13,6 +13,8 @@ import {
   pitchClass,
   pitchClassName,
   getScale,
+  KNOWN_SCALE_IDS,
+  isKnownScaleId,
   type ScaleId,
 } from "../client/src/utils/scales";
 
@@ -25,6 +27,30 @@ describe("getScale", () => {
 
   it("wirft bei unbekannter Skalen-ID", () => {
     expect(() => getScale("does-not-exist" as ScaleId)).toThrow();
+  });
+});
+
+describe("isKnownScaleId / KNOWN_SCALE_IDS (BUG-025 v1.71)", () => {
+  it("erkennt alle SCALES-IDs als known", () => {
+    for (const s of SCALES) {
+      expect(isKnownScaleId(s.id)).toBe(true);
+      expect(KNOWN_SCALE_IDS.has(s.id)).toBe(true);
+    }
+  });
+
+  it("erkennt unbekannte / korrupte Strings als not-known", () => {
+    expect(isKnownScaleId("does-not-exist")).toBe(false);
+    expect(isKnownScaleId("")).toBe(false);
+    expect(isKnownScaleId("CHROMATIC")).toBe(false); // case-sensitive
+    expect(isKnownScaleId("major ")).toBe(false);   // trailing space
+  });
+
+  it("erkennt non-strings als not-known", () => {
+    expect(isKnownScaleId(null)).toBe(false);
+    expect(isKnownScaleId(undefined)).toBe(false);
+    expect(isKnownScaleId(42)).toBe(false);
+    expect(isKnownScaleId({})).toBe(false);
+    expect(isKnownScaleId([])).toBe(false);
   });
 });
 

@@ -208,4 +208,32 @@ describe("useMelodicPartStore – Logik-Funktionen", () => {
     const note = getPattern("part-18")!.steps[0].note;
     expect([64, 66]).toContain(note);
   });
+
+  // ─── BUG-025 (v1.71): Quantize-Crash bei korrupter scaleId ────────────────
+  // Vor v1.71: _migratePattern checkte nur `typeof === "string"` für scaleId
+  // → korrupte/veraltete IDs blieben gespeichert → PianoRollModal rief
+  // scalePitchClasses(scaleRoot, scaleId) → getScale wirft → React crash.
+  // Runtime-Schutz testen wir hier via setScale; die Storage-Migration via
+  // tests/scales.test.ts isKnownScaleId-Tests + Modul-Import-Pfad.
+
+  it("19. BUG-025: setScale mit unbekannter scaleId fällt auf chromatic zurück", () => {
+    initPart("part-19");
+    // Caller umgeht TS-Typ via Cast — Runtime-Validation muss greifen
+    setScale("part-19", 0, "totaler-blödsinn" as unknown as "chromatic");
+    expect(getPattern("part-19")!.scaleId).toBe("chromatic");
+  });
+
+  it("20. BUG-025: setScale mit bekannter scaleId persistiert sie korrekt", () => {
+    initPart("part-20");
+    setScale("part-20", 0, "minor");
+    expect(getPattern("part-20")!.scaleId).toBe("minor");
+  });
+
+  it("21. BUG-025: setScale validiert auch leeren String und null/undefined", () => {
+    initPart("part-21");
+    setScale("part-21", 0, "" as unknown as "chromatic");
+    expect(getPattern("part-21")!.scaleId).toBe("chromatic");
+    setScale("part-21", 0, null as unknown as "chromatic");
+    expect(getPattern("part-21")!.scaleId).toBe("chromatic");
+  });
 });

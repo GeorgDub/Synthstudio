@@ -27,10 +27,31 @@ interface MidiSettingsProps {
 function targetLabel(target: MidiLearnTarget): string {
   switch (target.type) {
     case "bpm": return "BPM";
-    case "volume": return `Lautstärke`;
-    case "mute": return `Mute`;
+    case "bpmUp": return "BPM +";
+    case "bpmDown": return "BPM −";
+    case "masterVolume": return "Master-Lautstärke";
+    case "volume": return `Lautstärke${target.partName ? ` (${target.partName})` : ""}`;
+    case "mute": return `Mute${target.partName ? ` (${target.partName})` : ""}`;
+    case "solo": return `Solo${target.partName ? ` (${target.partName})` : ""}`;
+    case "pan": return `Pan${target.partName ? ` (${target.partName})` : ""}`;
+    case "partUp": return "Part Up";
+    case "partDown": return "Part Down";
     case "playStop": return "Play/Stop";
+    case "record": return "Record";
+    case "tapTempo": return "Tap Tempo";
     case "pattern": return `Pattern ${target.patternIndex + 1}`;
+    case "patternNext": return "Pattern Next";
+    case "patternPrev": return "Pattern Prev";
+    case "patternClear": return "Pattern Clear";
+    case "patternFill": return "Pattern Fill";
+    case "patternRandomize": return "Pattern Randomize";
+    case "patternDuplicate": return "Pattern Duplicate";
+    case "tab": return `Tab: ${target.tabId}`;
+    case "toggleNoteRepeat": return "Note Repeat Toggle";
+    case "toggleMorph": return "Morph Toggle";
+    case "commitLiveEdit": return "Commit Live Edit";
+    case "scenelaunch": return `Scene ${target.sceneIndex + 1}`;
+    case "openSettings": return "Settings";
     case "step": return `Step ${target.stepIndex + 1}`;
     default: return "Unbekannt";
   }
@@ -136,8 +157,108 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
     ...parts.map(p => ({ label: `Mute: ${p.name}`, target: { type: "mute" as const, partId: p.id } })),
   ];
 
+  // Auto-Learn-Presets (v1.71): vordefinierte Target-Sequenzen für gängige
+  // Hardware-Setups. User klickt einen Preset-Button, dreht/drückt dann
+  // jeden Controller seines Geräts einmal — Synthstudio mappt automatisch.
+  const autoLearnPresets: Array<{ label: string; description: string; build: () => MidiLearnTarget[] }> = [
+    {
+      label: "Mixer (Volumes + Mutes)",
+      description: `${parts.length} Lautstärken + ${parts.length} Mutes`,
+      build: () => [
+        ...parts.map(p => ({ type: "volume" as const, partId: p.id, partName: p.name })),
+        ...parts.map(p => ({ type: "mute" as const, partId: p.id, partName: p.name })),
+      ],
+    },
+    {
+      label: "Transport",
+      description: "Play/Stop, Record, Tap-Tempo, BPM Up/Down",
+      build: () => [
+        { type: "playStop" },
+        { type: "record" },
+        { type: "tapTempo" },
+        { type: "bpmUp" },
+        { type: "bpmDown" },
+      ],
+    },
+    {
+      label: "Pattern-Navigation",
+      description: "Next, Prev, Clear, Fill, Randomize",
+      build: () => [
+        { type: "patternNext" },
+        { type: "patternPrev" },
+        { type: "patternClear" },
+        { type: "patternFill" },
+        { type: "patternRandomize" },
+      ],
+    },
+  ];
+
   const renderCcTab = () => (
     <div className="space-y-4">
+      {/* Auto-Learn (v1.71) ─────────────────────────────────────────── */}
+      <div>
+        <div className="text-xs font-medium text-text-muted mb-2 uppercase tracking-wider">
+          Auto-Learn
+        </div>
+        {midi.autoLearnQueue.length > 0 ? (
+          <div className="p-3 bg-accent-secondary/20 border border-accent-secondary/50 rounded-lg">
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-sm text-accent-secondary font-medium">
+                Bewege/drücke jetzt den Controller für:
+              </div>
+              <div className="text-xs text-text-muted">
+                {midi.autoLearnTotal - midi.autoLearnQueue.length + 1} / {midi.autoLearnTotal}
+              </div>
+            </div>
+            <div className="text-sm text-text-primary font-mono mb-3">
+              → {targetLabel(midi.autoLearnQueue[0])}
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={midi.skipAutoLearnTarget}
+                className="px-3 py-1 bg-bg-elevated hover:bg-bg-elevated text-text-primary text-xs rounded"
+              >
+                Skip
+              </button>
+              <button
+                onClick={midi.cancelAutoLearn}
+                className="px-3 py-1 bg-accent-danger/30 hover:bg-accent-danger/50 text-accent-danger text-xs rounded"
+              >
+                Abbrechen
+              </button>
+            </div>
+            {/* Vorschau der verbleibenden Targets */}
+            {midi.autoLearnQueue.length > 1 && (
+              <div className="mt-3 pt-2 border-t border-accent-secondary/30 text-[10px] text-text-dim">
+                Nächste: {midi.autoLearnQueue.slice(1, 4).map(targetLabel).join(" → ")}
+                {midi.autoLearnQueue.length > 4 && " …"}
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="space-y-1.5">
+            <div className="text-xs text-text-dim mb-2">
+              Wähle ein Preset und bewege dann nacheinander die Controller deines Geräts —
+              Synthstudio verknüpft sie automatisch in der vorgegebenen Reihenfolge.
+            </div>
+            {autoLearnPresets.map(({ label, description, build }) => (
+              <button
+                key={label}
+                onClick={() => midi.isEnabled && midi.startAutoLearn(build())}
+                disabled={!midi.isEnabled}
+                className="w-full flex items-center justify-between p-2 rounded text-left text-xs bg-bg-elevated hover:bg-accent-primary/20 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              >
+                <div>
+                  <div className="text-text-primary font-medium">{label}</div>
+                  <div className="text-text-dim text-[10px] mt-0.5">{description}</div>
+                </div>
+                <span className="text-accent-secondary text-[10px]">▶ Start</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
       {/* MIDI-Learn */}
       <div>
         <div className="text-xs font-medium text-text-muted mb-2 uppercase tracking-wider">

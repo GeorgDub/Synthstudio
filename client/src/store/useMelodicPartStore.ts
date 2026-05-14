@@ -7,7 +7,7 @@
  * Kein externer State-Manager.
  */
 import { useState, useCallback, useEffect } from "react";
-import { snapToScale, type ScaleId } from "../utils/scales";
+import { snapToScale, isKnownScaleId, type ScaleId } from "../utils/scales";
 
 // ─── Typen ────────────────────────────────────────────────────────────────────
 
@@ -78,9 +78,16 @@ function _makePattern(partId: string, baseNote: number = DEFAULT_BASE_NOTE): Mel
  * Idempotent – wenn die Felder schon da sind, wird das Pattern unverändert zurückgegeben.
  */
 function _migratePattern(p: MelodicPattern): MelodicPattern {
+  // BUG-025 (v1.71): nicht nur typeof-check sondern auch isKnownScaleId —
+  // sonst kann eine korrupte/veraltete scaleId aus dem Storage die Piano-Roll
+  // crashen weil `getScale` für unbekannte IDs wirft.
+  const validScaleId =
+    typeof p.scaleId === "string" && isKnownScaleId(p.scaleId)
+      ? p.scaleId
+      : "chromatic";
   if (
     typeof p.scaleRoot === "number" &&
-    typeof p.scaleId === "string" &&
+    p.scaleId === validScaleId &&
     typeof p.scaleLockEnabled === "boolean"
   ) {
     return p;
@@ -88,7 +95,7 @@ function _migratePattern(p: MelodicPattern): MelodicPattern {
   return {
     ...p,
     scaleRoot: typeof p.scaleRoot === "number" ? p.scaleRoot : 0,
-    scaleId: typeof p.scaleId === "string" ? p.scaleId : "chromatic",
+    scaleId: validScaleId,
     scaleLockEnabled:
       typeof p.scaleLockEnabled === "boolean" ? p.scaleLockEnabled : false,
   };
@@ -193,11 +200,15 @@ export function setBaseNote(partId: string, note: number): void {
 /** Setzt Skalen-Root (Pitch-Class 0-11) und Skalen-Typ. Initialisiert den Part implizit. */
 export function setScale(partId: string, root: number, scaleId: ScaleId): void {
   if (!_patterns[partId]) initPart(partId);
+  // BUG-025 (v1.71): defensive Runtime-Validation — falls ein Caller den
+  // TS-Typ umgeht und einen Junk-String reingibt, fallen wir auf chromatic
+  // zurück statt eine korrupte scaleId zu persistieren.
+  const validScaleId: ScaleId = isKnownScaleId(scaleId) ? scaleId : "chromatic";
   const pattern = _patterns[partId];
   const clampedRoot = ((root % 12) + 12) % 12;
   _patterns = {
     ..._patterns,
-    [partId]: { ...pattern, scaleRoot: clampedRoot, scaleId },
+    [partId]: { ...pattern, scaleRoot: clampedRoot, scaleId: validScaleId },
   };
   _writeToStorage(_patterns);
   _notify();

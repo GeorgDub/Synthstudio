@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "1.70.0",
+    version: "1.71.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -433,6 +433,21 @@ const INDEX = {
         "client/src/App.tsx"
       ]
     },
+    "BUG-025": {
+      title:   "PianoRoll-Quantize-Crash bei korrupter scaleId in localStorage",
+      severity: "high",
+      details:  "User-Report ('bei quantize crasht die seite'). Root-Cause: `useMelodicPartStore._migratePattern` checkte nur `typeof p.scaleId === 'string'` — eine korrupte/veraltete scaleId (z.B. nach Schema-Rename oder Storage-Drift) wurde unverändert weitergereicht. PianoRollModal ruft am Component-Top unconditional `scalePitchClasses(scaleRoot, scaleId)` → `getScale(scaleId)` → wirft `Error: Unknown scale id: <junk>` → React unmountet die Komponente, der User sieht eine leere Seite. Fix (v1.71): neue `KNOWN_SCALE_IDS: Set<ScaleId>` und `isKnownScaleId(s): s is ScaleId` aus utils/scales.ts. `_migratePattern` validiert scaleId gegen die Set, fallback `chromatic` bei unbekanntem Wert. `setScale` validiert ebenfalls zur Laufzeit, sodass Caller-Type-Casts keine korrupte ID einsmuggeln können. 6 neue Tests (3 isKnownScaleId + 3 setScale-validation).",
+      fixed:    true,
+      foundBy:  "user (post-v1.70.0)",
+      fixedBy:  "claude",
+      fixedIn:  "v1.71.0",
+      relatedFiles: [
+        "client/src/utils/scales.ts",
+        "client/src/store/useMelodicPartStore.ts",
+        "tests/scales.test.ts",
+        "tests/melodic-part.test.ts"
+      ]
+    },
     "BUG-024": {
       title:   "KI Script-Generator (+ Project-Analysis + Pattern-Generator) geht nicht trotz API-Key im Electron-Build",
       severity: "high",
@@ -476,6 +491,29 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-14T05:00:00.000Z",
+      done: [
+        "BUG-025 + MIDI-AUTO-LEARN (v1.71.0): Doppel-Drop. (1) BUG-025-Fix: `_migratePattern` in useMelodicPartStore.ts validiert scaleId jetzt gegen neue `KNOWN_SCALE_IDS` Set aus scales.ts statt nur `typeof === 'string'`. Korrupte/veraltete Werte (Schema-Drift, alte Storage-Snapshots) werden auf `chromatic` migriert. setScale validiert zusätzlich runtime damit TS-Casts keine ungültige ID einsmuggeln. Verhindert PianoRoll-React-Crash via `getScale: Unknown scale id`. (2) MIDI-AUTO-LEARN: neue Auto-Learn-Queue in useMidi.ts — `autoLearnQueue: MidiLearnTarget[]` + `autoLearnTotal` State, `startAutoLearn(targets)` / `skipAutoLearnTarget()` / `cancelAutoLearn()` Actions. `handleMidiMessage` shiftet queue bei jedem CC-Capture, schreibt Mapping ins existierende mappings-Array, advanciert automatisch. UI in MidiSettings CC-Tab: drei Preset-Buttons (Mixer Vol+Mute / Transport / Pattern-Navigation), Live-Progress-Karte mit aktuell zu lernendem Target-Label + 'Skip'/'Abbrechen', Vorschau der nächsten 3 Targets. `targetLabel()` erweitert für alle ~20 MidiLearnTarget-Typen inkl. Part-Namen für Volume/Mute/Solo/Pan. Test-Beweggrund vom User: Electribe 2 Sampler-Verknüpfung. 6 neue Vitest-Cases (3 isKnownScaleId + 3 setScale-runtime-validation). 1687 Tests grün, pnpm check 0 Fehler."
+      ],
+      next: [
+        "MIDI-AUTO-LEARN-V2: Sub-Phase mit Note-Mode (Pads → Note-Mappings) — aktuell nur CC-Lernen. Für Electribe-2-Style-Pads + GM-Drum-Pads würde das einen 'Auto-Learn Pads'-Preset ergänzen.",
+        "FLP-MIDI-EXPORT Phase 4: SMF-Export von Melodic-Parts mit Pitch + Duration (umgekehrte Richtung — Synthstudio → FL Studio Re-Import).",
+        "FEAT-INSP: bleibt offen (Explore-Report verfügbar, 4-5h, 8+ Files).",
+        "neue_todos.md Backlog: GitHub-Builder-Workflow, Updater, Mobile-Build, Login/Beta-System, Plugin-Wiki/LLM, Sample-Cloud, MIDI-Templates für Hardtekk-Gear, .als/.elst-Konverter, Workbench-Audacity-Niveau, AI-Projekt-Analyse, Admin/Lite-Tier-Lizenz."
+      ],
+      changed: [
+        "package.json",
+        "client/src/utils/scales.ts",
+        "client/src/store/useMelodicPartStore.ts",
+        "client/src/hooks/useMidi.ts",
+        "client/src/components/MidiSettings/MidiSettings.tsx",
+        "tests/scales.test.ts",
+        "tests/melodic-part.test.ts",
+        "agents/INDEX.js"
+      ]
+    },
     {
       agent:     "coordinator",
       timestamp: "2026-05-14T04:30:00.000Z",
