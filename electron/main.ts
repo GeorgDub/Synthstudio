@@ -42,7 +42,7 @@ import { WindowManager, registerWindowHandlers } from "./windows";
 import { registerExportHandlers } from "./export";
 import { setupAutoUpdater, checkForUpdatesManually } from "./updater";
 import { initStore, registerStoreHandlers, type AppStore, type PopupWindowLayout } from "./store";
-import { startOscServer, stopOscServer, getOscStatus, type OscStartOptions } from "./osc-server";
+import { startOscServer, stopOscServer, getOscStatus, sendOscMessage, closeOscOutSocket, type OscStartOptions, type OscSendOptions } from "./osc-server";
 import {
   initCrashLog,
   installMainProcessCrashHandlers,
@@ -2752,6 +2752,8 @@ app.whenReady().then(() => {
   });
   ipcMain.handle("osc:stop", () => stopOscServer());
   ipcMain.handle("osc:status", () => getOscStatus());
+  // v2.26: OSC-Out
+  ipcMain.handle("osc:send", (_e, options: OscSendOptions) => sendOscMessage(options));
 
   createTray();
   registerGlobalShortcuts();
@@ -2809,6 +2811,7 @@ app.on("before-quit", (event) => {
 
   // v2.23: OSC-Listener sauber schließen (kein Socket-Leak bei nächstem Start)
   stopOscServer();
+  closeOscOutSocket();
 
   // BUG-018 v1.29.0 follow-up: nukleare Quit-Sperre.
   if (!userInitiatedQuit && mainWindow && !mainWindow.isDestroyed()) {

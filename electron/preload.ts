@@ -818,6 +818,10 @@ const electronAPI = {
     return () => ipcRenderer.removeListener("osc:incoming", handler);
   },
 
+  // v2.26: OSC-Send-Out
+  sendOscMessage: (options: { host: string; port: number; address: string; args: Array<number | string> }): Promise<{ success: boolean; error?: string }> =>
+    ipcRenderer.invoke("osc:send", options),
+
 };
 
 contextBridge.exposeInMainWorld("electronAPI", electronAPI);

@@ -179,3 +179,80 @@ export function getOscStatus(): OscStatus {
     lastMessage: _state.lastMessage,
   };
 }
+
+// ─── OSC-Out (v2.26) ─────────────────────────────────────────────────────────
+
+/**
+ * Encodet eine OSC-Message als Buffer. Mirror der client/src/utils/oscEncoder
+ * encodeOscMessage-Logik — bewusst dupliziert weil tsconfig.electron.json den
+ * client-Pfad nicht sieht und wir die Dependency-Surface klein halten.
+ * Unterstützt: i (int32), f (float32), s (string). Keine Booleans / Nil / Blobs.
+ */
+function encodeOscBuffer(address: string, args: Array<number | string>): Buffer {
+  function padToFour(buf: Buffer): Buffer {
+    const padded = Math.ceil(buf.length / 4) * 4;
+    if (padded === buf.length) return buf;
+    return Buffer.concat([buf, Buffer.alloc(padded - buf.length)]);
+  }
+  function strBuf(s: string): Buffer {
+    return padToFour(Buffer.concat([Buffer.from(s, "utf8"), Buffer.from([0])]));
+  }
+  let tags = ",";
+  const argBufs: Buffer[] = [];
+  for (const a of args) {
+    if (typeof a === "string") {
+      tags += "s";
+      argBufs.push(strBuf(a));
+    } else if (Number.isInteger(a)) {
+      tags += "i";
+      const buf = Buffer.alloc(4);
+      buf.writeInt32BE(a, 0);
+      argBufs.push(buf);
+    } else {
+      tags += "f";
+      const buf = Buffer.alloc(4);
+      buf.writeFloatBE(a, 0);
+      argBufs.push(buf);
+    }
+  }
+  return Buffer.concat([strBuf(address), strBuf(tags), ...argBufs]);
+}
+
+let _outSocket: dgram.Socket | null = null;
+
+export interface OscSendOptions {
+  host: string;
+  port: number;
+  address: string;
+  args: Array<number | string>;
+}
+
+export function sendOscMessage(options: OscSendOptions): { success: boolean; error?: string } {
+  if (!options.address.startsWith("/")) {
+    return { success: false, error: "OSC address must start with '/'" };
+  }
+  try {
+    if (!_outSocket) {
+      _outSocket = dgram.createSocket("udp4");
+      _outSocket.on("error", (err) => {
+        console.error("[osc-out] socket error:", err);
+        try { _outSocket?.close(); } catch { /* ignore */ }
+        _outSocket = null;
+      });
+    }
+    const buf = encodeOscBuffer(options.address, options.args);
+    _outSocket.send(buf, options.port, options.host, (err) => {
+      if (err) console.warn("[osc-out] send failed:", err);
+    });
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: String(err) };
+  }
+}
+
+export function closeOscOutSocket(): void {
+  if (_outSocket) {
+    try { _outSocket.close(); } catch { /* ignore */ }
+    _outSocket = null;
+  }
+}

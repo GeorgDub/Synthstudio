@@ -516,6 +516,9 @@ interface ElectronAPI {
     lastMessage: { address: string; args: Array<number | string | boolean | null>; source: string; at: number } | null;
   }>;
   onOscIncoming(callback: (msg: { address: string; args: Array<number | string | boolean | null>; source: string; at: number }) => void): ElectronCleanup;
+
+  // v2.26: OSC-Send-Out
+  sendOscMessage(options: { host: string; port: number; address: string; args: Array<number | string> }): Promise<{ success: boolean; error?: string }>;
 }
 
 // ─── Window-Erweiterung ──────────────────────────────────────────────────────

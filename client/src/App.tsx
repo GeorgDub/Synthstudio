@@ -132,6 +132,7 @@ import { SessionRecorder } from "@/components/CollabSession/SessionRecorder";
 import { RelayPanel } from "@/components/CollabSession/RelayPanel";
 import { PerformanceRecorderBadge } from "@/components/PerformanceRecorder/PerformanceRecorderBadge";
 import { mapOscToAction, dispatchOscAction } from "@/utils/oscBindings";
+import { useOscOutConfig } from "@/store/useOscOutStore";
 import { recordEvent } from "@/store/useSessionRecordingStore";
 import {
   recordEvent as recordPerfEvent,
@@ -371,6 +372,8 @@ export default function App() {
 
   // ── Electron-Hook (einziger Zugriffspunkt auf Electron-Features) ────────────
   const electron = useElectron();
+  // v2.26: OSC-Out-Config (BPM-Sync etc.) — Custom-Observer-Hook
+  const oscOutConfig = useOscOutConfig();
   // MIG-2B Feature-Flag: aktiviert den Dockview-Workspace für die migrierten Tabs.
   const workspaceMode = useWorkspaceMode();
   // ── Kollaborations-Session (für Sync) ─────────────────────────────────────────
@@ -1337,6 +1340,21 @@ export default function App() {
   useEffect(() => {
     midi.setClockOutBpm(project.bpm);
   }, [project.bpm, midi.setClockOutBpm]);
+
+  // v2.26: OSC-Out — sendet `/synth/bpm/current <float>` bei jeder BPM-Änderung
+  // an den konfigurierten externen Empfänger. Best-Effort fire-and-forget.
+  useEffect(() => {
+    if (!electron.isElectron) return;
+    const cfg = oscOutConfig;
+    if (!cfg.enabled || !cfg.syncBpm) return;
+    void electron.sendOscMessage({
+      host: cfg.host,
+      port: cfg.port,
+      address: "/synth/bpm/current",
+      args: [project.bpm],
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project.bpm, oscOutConfig.enabled, oscOutConfig.syncBpm, oscOutConfig.host, oscOutConfig.port]);
 
   // v1.92: midi:pattern (Pattern-Index → Pattern-Switch). Vor v1.92 dispatchte
   // useMidi.applyMapping zwar das Event, aber niemand hörte → das

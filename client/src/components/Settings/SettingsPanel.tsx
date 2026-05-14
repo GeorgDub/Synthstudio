@@ -61,6 +61,7 @@ import {
   importLibrary as importPatchLibrary,
 } from "@/store/usePatchStore";
 import { toast } from "@/store/useToastStore";
+import { useOscOutConfig, setOscOutConfig } from "@/store/useOscOutStore";
 import { CustomThemeCreator } from "./CustomThemeCreator";
 import type { MidiState, MidiActions, MidiLearnTarget } from "@/hooks/useMidi";
 import type { PartData } from "@/audio/AudioEngine";
@@ -1029,6 +1030,22 @@ function OscSection() {
   const wsRef = React.useRef<WebSocket | null>(null);
   // v2.23: Direkter UDP-Listener (Electron-only)
   const electron = useElectron();
+  // v2.26: OSC-Out (BPM-Sync etc.)
+  const oscOut = useOscOutConfig();
+  const testSendOscOut = async () => {
+    if (!electron.isElectron) return;
+    const res = await electron.sendOscMessage({
+      host: oscOut.host,
+      port: oscOut.port,
+      address: "/synth/test",
+      args: [123.45],
+    });
+    if (res.success) {
+      toast(`Test-OSC an ${oscOut.host}:${oscOut.port} gesendet`, { kind: "success" });
+    } else {
+      toast(`OSC-Send fehlgeschlagen: ${res.error}`, { kind: "error" });
+    }
+  };
   const [udpPort, setUdpPort] = React.useState(7400);
   const [udpAcceptNetwork, setUdpAcceptNetwork] = React.useState(false);
   const [udpStatus, setUdpStatus] = React.useState<{
@@ -1153,6 +1170,72 @@ function OscSection() {
               <span className="text-text-dim ml-2">← {udpStatus.lastMessage.source}</span>
             </div>
           )}
+        </div>
+      )}
+
+      {/* v2.26: OSC-Out (Electron-only) */}
+      {electron.isElectron && (
+        <div className="rounded-lg border border-accent-primary/40 bg-accent-primary/5 p-3 space-y-2" data-testid="osc-udp-sender">
+          <div className="flex items-center justify-between">
+            <div className="text-xs font-semibold text-accent-primary">📤 OSC-Out (BPM-Sync)</div>
+            <label className="flex items-center gap-1 text-[10px] text-text-muted cursor-pointer">
+              <input
+                type="checkbox"
+                checked={oscOut.enabled}
+                onChange={e => setOscOutConfig({ enabled: e.target.checked })}
+                className="accent-accent-primary"
+                data-testid="osc-out-enabled"
+              />
+              aktiv
+            </label>
+          </div>
+          <p className="text-[10px] text-text-muted leading-relaxed">
+            Sendet bei jeder BPM-Änderung <code>/synth/bpm/current &lt;float&gt;</code> per
+            UDP. Nutze einen externen OSC-Receiver (TouchOSC, Lemur, Reaktor,
+            MaxMSP, PD) am angegebenen Host/Port.
+          </p>
+          <div className="flex items-center gap-2">
+            <label className="text-[10px] text-text-muted">Host:</label>
+            <input
+              type="text"
+              value={oscOut.host}
+              onChange={e => setOscOutConfig({ host: e.target.value })}
+              placeholder="127.0.0.1"
+              className="flex-1 text-xs bg-bg-elevated border border-border-color rounded px-2 py-1 text-text-primary"
+              data-testid="osc-out-host"
+            />
+            <label className="text-[10px] text-text-muted">Port:</label>
+            <input
+              type="number"
+              min={1}
+              max={65535}
+              value={oscOut.port}
+              onChange={e => setOscOutConfig({ port: Number(e.target.value) })}
+              className="w-20 text-xs bg-bg-elevated border border-border-color rounded px-2 py-1 text-text-primary"
+              data-testid="osc-out-port"
+            />
+          </div>
+          <div className="flex items-center gap-3">
+            <label className="flex items-center gap-1 text-[10px] text-text-muted cursor-pointer">
+              <input
+                type="checkbox"
+                checked={oscOut.syncBpm}
+                onChange={e => setOscOutConfig({ syncBpm: e.target.checked })}
+                disabled={!oscOut.enabled}
+                className="accent-accent-primary"
+              />
+              BPM-Änderungen senden
+            </label>
+            <button
+              type="button"
+              onClick={testSendOscOut}
+              disabled={!oscOut.enabled}
+              className="ml-auto px-2 py-1 text-[11px] rounded bg-accent-primary text-bg-base disabled:opacity-40 disabled:cursor-not-allowed"
+              data-testid="osc-out-test"
+            >
+              Test senden
+            </button>
+          </div>
         </div>
       )}
 

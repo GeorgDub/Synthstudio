@@ -299,6 +299,8 @@ const browserAPI = {
     lastMessage: null,
   }),
   onOscIncoming: noopDataListener<{ address: string; args: Array<number | string | boolean | null>; source: string; at: number }>(),
+  sendOscMessage: async (_options: { host: string; port: number; address: string; args: Array<number | string> }) =>
+    ({ success: false, error: "OSC-Send benötigt die Electron-Desktop-App" }),
 };
 
 // ─── Haupt-Hook ───────────────────────────────────────────────────────────────
@@ -516,6 +518,8 @@ export function useElectron() {
     stopOscServer: api.stopOscServer,
     getOscServerStatus: api.getOscServerStatus,
     onOscIncoming: api.onOscIncoming,
+    // v2.26: OSC-Send-Out
+    sendOscMessage: api.sendOscMessage,
   };
 }
 
