@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "2.10.0",
+    version: "2.11.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -491,6 +491,22 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-15T01:00:00.000Z",
+      done: [
+        "HELP-OVERLAY-EXPANSION (v2.11.0): User-Wishlist 'Handbuch script-syntax + Plugins'. Bisherige ShortcutsHelp (zwei Tabs Übersicht + Belegung) um zwei weitere Tabs erweitert: (1) '🧩 Script-API' — komplette ss.*-Referenz mit Sektionen Transport (bpm/play/stop/wait), Macros (getMacro/setMacro), Steps (setStep), Dispatch (20+ Actions als Chip-Wolke), Utility (log/random/now), plus 2 Code-Beispiele (BPM-Rampe + Drop-Reset). Sandbox-Constraints klar dokumentiert (Web-Worker, max 5s, kein window/document/fetch). (2) '🎹 MIDI-Guide' — Setup in 4 Schritten (Hardware → Template → Right-Click-Learn → Auto-Learn), bindbare-Liste (alle 120+ MIDI-Slots: Transport, Mixer, FX-Params, Macros, Pattern, Steps, Chains, Scripts), bidirektionale Features (Clock-In/Out, Note-Out, Test-Buttons, Panic), Tipps (Monitor, Activity-Indicator, Channel-Filter, Bulk-Bind, JSON-Export). Header von 'Tastatur' → 'Hilfe & Referenz' umbenannt, max-w-2xl → max-w-3xl. Footer-Hinweise pro Tab angepasst. 1853 Tests grün, pnpm check 0 Fehler. Erfüllt das neue_todos.md-Item 'Syntax-Beschreibung für Scripts und Plugins ins Handbuch'."
+      ],
+      next: [
+        "Per-Part MIDI-Out-Channel-Routing.",
+        "MIDI-Note-Off-Scheduling bei externen Synths."
+      ],
+      changed: [
+        "package.json",
+        "client/src/components/ShortcutsHelp/ShortcutsHelp.tsx",
+        "agents/INDEX.js"
+      ]
+    },
     {
       agent:     "coordinator",
       timestamp: "2026-05-15T00:30:00.000Z",
