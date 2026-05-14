@@ -147,6 +147,11 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
   const [manualChannel, setManualChannel] = useState(0);
   // v1.76: aufklappbare FX-Param-Section pro Part
   const [fxParamPartId, setFxParamPartId] = useState<string | null>(null);
+  // v2.3: Bulk-Bind State
+  const [bulkBindOpen, setBulkBindOpen] = useState(false);
+  const [bulkBindStartCC, setBulkBindStartCC] = useState(20);
+  const [bulkBindChannel, setBulkBindChannel] = useState(0);
+  const [bulkBindPreset, setBulkBindPreset] = useState<string>("volumes");
   // v1.80: Custom Chain Builder
   const [chainBuilderOpen, setChainBuilderOpen] = useState(false);
   const [chainBuilderName, setChainBuilderName] = useState("Mein Chain");
@@ -455,6 +460,32 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
     return `Pad: ${entry.partName}`;
   }
 
+  /**
+   * v2.3: Bulk-Bind-Presets — generieren eine Liste von MidiLearnTargets
+   * die dann mit konsekutiven CCs ab `startCC` bound werden.
+   */
+  const bulkBindPresets: Record<string, { label: string; build: () => MidiLearnTarget[] }> = {
+    volumes:     { label: "Channel Volumes", build: () => parts.map(p => ({ type: "volume" as const, partId: p.id, partName: p.name })) },
+    mutes:       { label: "Channel Mutes",   build: () => parts.map(p => ({ type: "mute"   as const, partId: p.id, partName: p.name })) },
+    pans:        { label: "Channel Pans",    build: () => parts.map(p => ({ type: "pan"    as const, partId: p.id, partName: p.name })) },
+    macros:      { label: "8 Macros",        build: () => Array.from({ length: 8 }, (_, i) => ({ type: "macro" as const, index: i })) },
+    sendsReverb: { label: "Channel Reverb-Sends", build: () => parts.map(p => ({ type: "send" as const, partId: p.id, partName: p.name, bus: "reverb" as const })) },
+    sendsDelay:  { label: "Channel Delay-Sends",  build: () => parts.map(p => ({ type: "send" as const, partId: p.id, partName: p.name, bus: "delay"  as const })) },
+  };
+
+  function handleBulkBind() {
+    const preset = bulkBindPresets[bulkBindPreset];
+    if (!preset) return;
+    const targets = preset.build();
+    const mappings = targets.map((t, i) => ({
+      cc: Math.min(127, bulkBindStartCC + i),
+      channel: bulkBindChannel,
+      target: t,
+      label: targetLabel(t),
+    }));
+    midi.addMappings(mappings);
+  }
+
   const renderCcTab = () => (
     <div className="space-y-4">
       {/* Auto-Learn (v1.71) ─────────────────────────────────────────── */}
@@ -703,6 +734,71 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
               );
             })}
           </div>
+        </div>
+      )}
+
+      {/* Bulk-Bind Wizard (v2.3) ──────────────────────────────────────── */}
+      {!midi.isLearning && (
+        <div>
+          <button
+            onClick={() => setBulkBindOpen(!bulkBindOpen)}
+            className="text-xs text-text-muted uppercase tracking-wider hover:text-text-primary mb-2 flex items-center gap-1"
+          >
+            <span>{bulkBindOpen ? "▼" : "▶"}</span>
+            Bulk-Bind (v2.3) — N Mappings auf einmal anlegen
+          </button>
+          {bulkBindOpen && (
+            <div className="space-y-2 p-3 bg-bg-elevated/50 rounded border border-border-color">
+              <div className="text-xs text-text-dim">
+                Wähle einen Target-Preset und eine Start-CC. Synthstudio
+                bindet die Targets an konsekutive CCs (start, start+1, …)
+                ohne dass du den Controller bewegen musst.
+              </div>
+              <div className="flex items-center gap-2">
+                <label className="text-xs text-text-muted">Preset:</label>
+                <select
+                  value={bulkBindPreset}
+                  onChange={(e) => setBulkBindPreset(e.target.value)}
+                  className="flex-1 px-2 py-1 bg-bg-elevated border border-border-color rounded text-xs text-text-primary"
+                >
+                  {Object.entries(bulkBindPresets).map(([k, v]) => (
+                    <option key={k} value={k}>{v.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex items-center gap-2">
+                <label className="text-xs text-text-muted">Start-CC:</label>
+                <input
+                  type="number" min={0} max={127}
+                  value={bulkBindStartCC}
+                  onChange={(e) => setBulkBindStartCC(Math.max(0, Math.min(127, parseInt(e.target.value) || 0)))}
+                  className="w-16 px-2 py-1 bg-bg-elevated border border-border-color rounded text-xs text-text-primary"
+                />
+                <label className="text-xs text-text-muted ml-2">Channel:</label>
+                <select
+                  value={bulkBindChannel}
+                  onChange={(e) => setBulkBindChannel(Number(e.target.value))}
+                  className="px-2 py-1 bg-bg-elevated border border-border-color rounded text-xs text-text-primary"
+                >
+                  <option value={0}>Alle</option>
+                  {Array.from({ length: 16 }, (_, i) => i + 1).map(ch => (
+                    <option key={ch} value={ch}>Ch {ch}</option>
+                  ))}
+                </select>
+                <button
+                  onClick={handleBulkBind}
+                  className="ml-auto px-3 py-1 bg-accent-primary text-bg-base hover:bg-accent-primary/80 text-xs rounded font-medium"
+                >
+                  ⚡ Bind
+                </button>
+              </div>
+              <div className="text-[10px] text-text-dim">
+                Wird {bulkBindPresets[bulkBindPreset]?.build().length ?? 0} Mapping(s) anlegen:
+                CC {bulkBindStartCC} bis CC {Math.min(127, bulkBindStartCC + (bulkBindPresets[bulkBindPreset]?.build().length ?? 1) - 1)}
+                {bulkBindChannel > 0 ? ` auf Ch ${bulkBindChannel}` : " (alle Channels)"}
+              </div>
+            </div>
+          )}
         </div>
       )}
 

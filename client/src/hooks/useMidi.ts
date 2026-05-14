@@ -192,6 +192,12 @@ export interface MidiActions {
   clearAllMappings: () => void;
   /** Lädt eine vordefinierte Hardware-Template-Konfiguration (ersetzt alle Mappings). */
   loadTemplate: (cc: MidiMapping[], notes: MidiNoteMapping[]) => void;
+  /**
+   * v2.3: Bulk-Add — fügt mehrere CC-Mappings auf einmal hinzu, ohne die
+   * bestehenden zu ersetzen. Duplikate (gleicher cc+channel) werden vom
+   * neuen Mapping überschrieben.
+   */
+  addMappings: (mappings: MidiMapping[]) => void;
   /** v1.97: Aktiviert/deaktiviert MIDI-Clock-Output. */
   setClockOutEnabled: (enabled: boolean) => void;
   /** v1.97: Setzt die BPM die als Clock gesendet wird (vom Caller bei BPM-Änderung). */
@@ -1196,6 +1202,20 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
     }
   }, []);
 
+  // v2.3: Bulk-Add — bestehende Mappings + neue, Duplikate werden ersetzt
+  const addMappings = useCallback((newMappings: MidiMapping[]) => {
+    setMappings(prev => {
+      const next = [...prev];
+      for (const m of newMappings) {
+        const idx = next.findIndex(x => x.cc === m.cc && x.channel === m.channel);
+        if (idx >= 0) next[idx] = m;
+        else next.push(m);
+      }
+      saveMappings(next, noteMappingsRef.current);
+      return next;
+    });
+  }, []);
+
   const loadTemplate = useCallback((cc: MidiMapping[], notes: MidiNoteMapping[]) => {
     setMappings(cc);
     setNoteMappings(notes);
@@ -1237,6 +1257,7 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
     setClockSync,
     clearAllMappings,
     loadTemplate,
+    addMappings,
     setClockOutEnabled,
     setClockOutBpm,
     clockOutEnabled,

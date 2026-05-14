@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "2.2.0",
+    version: "2.3.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -491,6 +491,24 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-14T21:00:00.000Z",
+      done: [
+        "BULK-BIND-WIZARD (v2.3.0): Komplement zu Auto-Learn — statt N×Controller-Bewegen kann User jetzt N Mappings auf einmal anlegen ohne Hardware-Interaktion. Neue Action `addMappings(mappings)` in useMidi (Bulk-Add, Duplikate werden überschrieben). UI in MidiSettings CC-Tab: aufklappbares 'Bulk-Bind (v2.3)' mit Preset-Dropdown (Channel Volumes / Mutes / Pans / 8 Macros / Reverb-Sends / Delay-Sends), Start-CC-Input (0-127), Channel-Selector (0=alle, 1-16). Klick auf 'Bind' generiert die Mapping-Liste (konsekutive CCs ab Start) und ruft addMappings. Live-Preview-Text 'Wird N Mapping(s) anlegen: CC X bis CC Y'. Use-Case: User weiß seine Electribe sendet auf CC 16-23 für 8 Volumes — Bulk-Bind in einem Klick statt 8× Auto-Learn-Slider-Bewegen. 1821 Tests grün, pnpm check 0 Fehler."
+      ],
+      next: [
+        "Beat-Repeat-Macro.",
+        "Pattern-Drag-Drop-Reorder.",
+        "Cloud-Sync."
+      ],
+      changed: [
+        "package.json",
+        "client/src/hooks/useMidi.ts",
+        "client/src/components/MidiSettings/MidiSettings.tsx",
+        "agents/INDEX.js"
+      ]
+    },
     {
       agent:     "coordinator",
       timestamp: "2026-05-14T20:30:00.000Z",
