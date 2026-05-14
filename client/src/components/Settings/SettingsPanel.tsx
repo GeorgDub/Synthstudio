@@ -1215,7 +1215,7 @@ function OscSection() {
               data-testid="osc-out-port"
             />
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
             <label className="flex items-center gap-1 text-[10px] text-text-muted cursor-pointer">
               <input
                 type="checkbox"
@@ -1224,8 +1224,47 @@ function OscSection() {
                 disabled={!oscOut.enabled}
                 className="accent-accent-primary"
               />
-              BPM-Änderungen senden
+              BPM
             </label>
+            <label className="flex items-center gap-1 text-[10px] text-text-muted cursor-pointer">
+              <input
+                type="checkbox"
+                checked={oscOut.syncTransport}
+                onChange={e => setOscOutConfig({ syncTransport: e.target.checked })}
+                disabled={!oscOut.enabled}
+                className="accent-accent-primary"
+                data-testid="osc-out-sync-transport"
+              />
+              Transport
+            </label>
+            <label className="flex items-center gap-1 text-[10px] text-text-muted cursor-pointer">
+              <input
+                type="checkbox"
+                checked={oscOut.syncStep}
+                onChange={e => setOscOutConfig({ syncStep: e.target.checked })}
+                disabled={!oscOut.enabled}
+                className="accent-accent-primary"
+                data-testid="osc-out-sync-step"
+              />
+              Step-Position
+            </label>
+            {oscOut.syncStep && (
+              <span className="flex items-center gap-1 text-[10px] text-text-muted">
+                jeden
+                <input
+                  type="number"
+                  min={1}
+                  max={16}
+                  value={oscOut.stepRate}
+                  onChange={e => setOscOutConfig({ stepRate: Number(e.target.value) })}
+                  disabled={!oscOut.enabled}
+                  className="w-12 bg-bg-elevated border border-border-color rounded px-1 py-0.5 text-text-primary"
+                  title="1 = jeden Step, 4 = jeden Viertel, 16 = einmal pro Bar"
+                  data-testid="osc-out-step-rate"
+                />
+                Step
+              </span>
+            )}
             <button
               type="button"
               onClick={testSendOscOut}

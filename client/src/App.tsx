@@ -1356,6 +1356,42 @@ export default function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project.bpm, oscOutConfig.enabled, oscOutConfig.syncBpm, oscOutConfig.host, oscOutConfig.port]);
 
+  // v2.27: OSC-Out Phase 2 — Transport (play/stop) bei isPlaying-Änderung.
+  useEffect(() => {
+    if (!electron.isElectron) return;
+    const cfg = oscOutConfig;
+    if (!cfg.enabled || !cfg.syncTransport) return;
+    void electron.sendOscMessage({
+      host: cfg.host,
+      port: cfg.port,
+      address: project.isPlaying ? "/synth/transport/play" : "/synth/transport/stop",
+      args: [],
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project.isPlaying, oscOutConfig.enabled, oscOutConfig.syncTransport, oscOutConfig.host, oscOutConfig.port]);
+
+  // v2.27: OSC-Out Phase 2 — Step-Position rate-limited.
+  // Ref-Pattern damit der Position-Listener nicht bei jedem Step-Tick neu
+  // registriert werden muss (würde sonst Latency-Spikes geben).
+  const oscOutConfigRef = useRef(oscOutConfig);
+  oscOutConfigRef.current = oscOutConfig;
+  useEffect(() => {
+    if (!electron.isElectron) return;
+    const unsubscribe = AudioEngine.onPosition((stepIndex) => {
+      const cfg = oscOutConfigRef.current;
+      if (!cfg.enabled || !cfg.syncStep) return;
+      if (stepIndex % Math.max(1, cfg.stepRate) !== 0) return;
+      void electron.sendOscMessage({
+        host: cfg.host,
+        port: cfg.port,
+        address: "/synth/step",
+        args: [stepIndex],
+      });
+    });
+    return unsubscribe;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [electron]);
+
   // v1.92: midi:pattern (Pattern-Index → Pattern-Switch). Vor v1.92 dispatchte
   // useMidi.applyMapping zwar das Event, aber niemand hörte → das
   // `pattern`-MidiLearnTarget war ein No-Op. Listener konvertiert Index zu

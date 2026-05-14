@@ -13,6 +13,12 @@ export interface OscOutConfig {
   port: number;
   /** Sendet `/synth/bpm/current <float>` bei jeder BPM-Änderung. */
   syncBpm: boolean;
+  /** Sendet `/synth/transport/play` und `/synth/transport/stop` bei Play/Stop. */
+  syncTransport: boolean;
+  /** Sendet `/synth/step <int>` bei jedem N-ten Step. Default: alle 4 Steps. */
+  syncStep: boolean;
+  /** Rate-Limit: nur jeden N-ten Step senden. 1 = jeden Step, 4 = jeden Viertel. */
+  stepRate: number;
 }
 
 const STORAGE_KEY = "ss-osc-out:v1";
@@ -21,6 +27,9 @@ const DEFAULT: OscOutConfig = {
   host: "127.0.0.1",
   port: 7401,
   syncBpm: true,
+  syncTransport: false,
+  syncStep: false,
+  stepRate: 4,
 };
 
 let _config: OscOutConfig = load();
@@ -33,10 +42,13 @@ function load(): OscOutConfig {
     if (!raw) return { ...DEFAULT };
     const parsed = JSON.parse(raw) as Partial<OscOutConfig>;
     return {
-      enabled: typeof parsed.enabled === "boolean" ? parsed.enabled : DEFAULT.enabled,
-      host:    typeof parsed.host === "string" ? parsed.host : DEFAULT.host,
-      port:    typeof parsed.port === "number" ? parsed.port : DEFAULT.port,
-      syncBpm: typeof parsed.syncBpm === "boolean" ? parsed.syncBpm : DEFAULT.syncBpm,
+      enabled:       typeof parsed.enabled === "boolean" ? parsed.enabled : DEFAULT.enabled,
+      host:          typeof parsed.host === "string" ? parsed.host : DEFAULT.host,
+      port:          typeof parsed.port === "number" ? parsed.port : DEFAULT.port,
+      syncBpm:       typeof parsed.syncBpm === "boolean" ? parsed.syncBpm : DEFAULT.syncBpm,
+      syncTransport: typeof parsed.syncTransport === "boolean" ? parsed.syncTransport : DEFAULT.syncTransport,
+      syncStep:      typeof parsed.syncStep === "boolean" ? parsed.syncStep : DEFAULT.syncStep,
+      stepRate:      typeof parsed.stepRate === "number" ? Math.max(1, Math.min(16, parsed.stepRate)) : DEFAULT.stepRate,
     };
   } catch {
     return { ...DEFAULT };
@@ -62,6 +74,7 @@ export function setOscOutConfig(update: Partial<OscOutConfig>): void {
   _config = { ..._config, ...update };
   // Port-Range clampen damit der UDP-Socket nicht EACCES wirft.
   _config.port = Math.max(1, Math.min(65535, Math.floor(_config.port)));
+  _config.stepRate = Math.max(1, Math.min(16, Math.floor(_config.stepRate)));
   persist();
   notify();
 }
