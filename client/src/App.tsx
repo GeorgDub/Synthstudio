@@ -151,6 +151,7 @@ import {
   resetMelodicParts,
   setNote as setMelodicNote,
   setVelocity as setMelodicVelocity,
+  setBaseNote as setMelodicBaseNote,
 } from "@/store/useMelodicPartStore";
 import { routeMelodicPartsToPatterns } from "@/utils/imports";
 import { resetNoteRepeat } from "@/store/useNoteRepeatStore";
@@ -2303,18 +2304,22 @@ export default function App() {
                     project.setBpm(patterns[0].bpm);
                   }
                   // FLP-MELODIC-ROUTE Phase 2 (v1.66): melodische Channels in den
-                  // useMelodicPartStore einspeisen.
-                  const { mappings, warnings } = routeMelodicPartsToPatterns(
+                  // useMelodicPartStore einspeisen. v1.69: zusätzlich baseNote
+                  // pro Part setzen, damit Piano Roll auf importierten Bereich zentriert.
+                  const { mappings, baseNotes, warnings } = routeMelodicPartsToPatterns(
                     melodicParts,
                     patterns,
                   );
+                  for (const b of baseNotes) {
+                    setMelodicBaseNote(b.partId, b.baseNote);
+                  }
                   for (const m of mappings) {
                     setMelodicNote(m.partId, m.stepIdx, m.pitch);
                     setMelodicVelocity(m.partId, m.stepIdx, m.velocity);
                   }
                   console.log(`[Import] ${patterns.length} Patterns aus ${sourceFormat.toUpperCase()} hinzugefügt`);
                   if (mappings.length > 0) {
-                    console.log(`[Import] ${mappings.length} melodische Notes in MelodicParts geroutet`);
+                    console.log(`[Import] ${mappings.length} melodische Notes in MelodicParts geroutet (${baseNotes.length} baseNotes gesetzt)`);
                   }
                   if (warnings.length > 0) {
                     console.warn(`[Import] Melodic-Routing-Warnungen:\n• ${warnings.join("\n• ")}`);

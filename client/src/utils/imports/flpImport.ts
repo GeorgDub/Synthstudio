@@ -191,6 +191,24 @@ function keyToNoteName(key: number): string {
 }
 
 /**
+ * Median einer Zahlenliste — bei gerader Länge gerundeter Mittelwert der
+ * zwei mittleren Werte, bei ungerader Länge der mittlere Wert. Leerer Input
+ * liefert C4 (60) als sicheren Default. Pure Funktion, public für Tests.
+ *
+ * Verwendung: Pitch-Median pro ImportedMelodicPart als baseNote, damit der
+ * Piano-Roll-View nach dem Import auf den tatsächlichen Notenbereich
+ * zentriert (FLP-MELODIC-POLISH v1.69).
+ */
+export function pitchMedian(pitches: number[]): number {
+  if (pitches.length === 0) return 60;
+  const sorted = [...pitches].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 1
+    ? sorted[mid]
+    : Math.round((sorted[mid - 1] + sorted[mid]) / 2);
+}
+
+/**
  * Konvertiert melodische FL-Channels in strukturierte `ImportedMelodicPart`s.
  * Phase 1 (v1.65): nur Extraktion — keinem Konsumenten zugewiesen.
  * Phase 2: MelodicPart-Routing im ProjectManager → echte Pattern-Erzeugung.
@@ -222,6 +240,8 @@ export function buildMelodicParts(
       sourceChannel: channel,
       name: channelNames.get(channel) ?? `Channel ${channel}`,
       notes: melodicNotes,
+      // FLP-MELODIC-POLISH v1.69: Piano-Roll-View zentriert auf diesen Pitch
+      baseNote: pitchMedian(melodicNotes.map(n => n.pitch)),
     });
   }
   return parts;

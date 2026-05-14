@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "1.68.0",
+    version: "1.69.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -476,6 +476,28 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-14T04:00:00.000Z",
+      done: [
+        "FLP-MELODIC-POLISH (v1.69.0): UX-Polish für FLP-MELODIC-ROUTE — Piano-Roll-View zentriert nach Import auf den tatsächlichen Notenbereich statt Default C4. Neue pure Funktion `pitchMedian(pitches)` in `client/src/utils/imports/flpImport.ts` (gerade Anzahl → gerundeter Mittelwert, ungerade → exakter Median, leer → 60). `ImportedMelodicPart` bekommt optionales `baseNote: number`-Feld in `imports/types.ts`. `buildMelodicParts` setzt baseNote = pitchMedian der Notes des Channels. `routeMelodicPartsToPatterns` emittiert neuen `baseNotes: MelodicBaseNoteMapping[]` neben den existierenden mappings (first-wins pro partId via Map-Insertion-Order; Multi-Bar liefert pro Bar einen Eintrag, weil pro Bar eigene partIds). App.tsx ruft `setBaseNote` aus useMelodicPartStore vor `setNote` auf. 11 neue Vitest-Cases (5 pitchMedian + 2 buildMelodicParts.baseNote + 4 routeMelodicPartsToPatterns.baseNotes). 1674 Tests grün, pnpm check 0 Fehler."
+      ],
+      next: [
+        "FLP-PATTERN-NAMES: 0xC1 TEXT_PATTERN_NAME parsen für echte Pattern-Namen statt 'filename bar N' (analog zu Phase 3 v1.68).",
+        "FLP-MIDI-EXPORT Phase 4: SMF-Export von Melodic-Parts mit Pitch + Duration (umgekehrte Richtung — Synthstudio → FL Studio Re-Import).",
+        "FEAT-INSP: bleibt offen (Explore-Report verfügbar, 4-5h, 8+ Files).",
+        "neue_todos.md Backlog: Quantize-Crash, GitHub-Builder, Updater, Mobile-Build, Login/Beta, Plugin-Wiki, Sample-Cloud, MIDI-Templates, .als/.elst-Konverter, Workbench-Ausbau, AI-Projekt-Analyse, Admin/Lite-Tiers — User-Wishlist aus neue_todos.md."
+      ],
+      changed: [
+        "package.json",
+        "client/src/utils/imports/types.ts",
+        "client/src/utils/imports/flpImport.ts",
+        "client/src/utils/imports/index.ts",
+        "client/src/App.tsx",
+        "tests/features/project-imports.test.ts",
+        "agents/INDEX.js"
+      ]
+    },
     {
       agent:     "coordinator",
       timestamp: "2026-05-14T03:30:00.000Z",

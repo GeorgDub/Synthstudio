@@ -5,7 +5,7 @@
  * Verwendet konstruierte Mock-Buffer (echte FLP/ALS/ESX-Dateien wären zu groß für Test-Fixtures).
  */
 import { describe, it, expect } from "vitest";
-import { importFlp, detectChannelPitches, buildMelodicParts } from "../../client/src/utils/imports/flpImport";
+import { importFlp, detectChannelPitches, buildMelodicParts, pitchMedian } from "../../client/src/utils/imports/flpImport";
 import { importElectribe } from "../../client/src/utils/imports/electribeImport";
 import {
   importProjectFile,
@@ -308,6 +308,55 @@ describe("buildMelodicParts (v1.65)", () => {
     const parts = buildMelodicParts(notes, 96, new Map());
     expect(parts[0].name).toBe("Channel 5");
   });
+
+  it("baseNote ist Pitch-Median pro Part (v1.69 FLP-MELODIC-POLISH)", () => {
+    // Pitches 60, 62, 64 → Median = 62
+    const notes = [
+      { position: 0,  channel: 1, duration: 24, key: 60, velocity: 100 },
+      { position: 24, channel: 1, duration: 24, key: 62, velocity: 100 },
+      { position: 48, channel: 1, duration: 24, key: 64, velocity: 100 },
+    ];
+    const parts = buildMelodicParts(notes, 96);
+    expect(parts[0].baseNote).toBe(62);
+  });
+
+  it("baseNote-Median: gerade Anzahl Pitches → gerundeter Mittelwert", () => {
+    // Pitches 60, 64 → Median = round((60+64)/2) = 62
+    const notes = [
+      { position: 0,  channel: 1, duration: 24, key: 60, velocity: 100 },
+      { position: 24, channel: 1, duration: 24, key: 64, velocity: 100 },
+    ];
+    const parts = buildMelodicParts(notes, 96);
+    expect(parts[0].baseNote).toBe(62);
+  });
+});
+
+// ─── pitchMedian (v1.69 FLP-MELODIC-POLISH) ───────────────────────────────────
+
+describe("pitchMedian (v1.69)", () => {
+  it("leerer Input → 60 (C4 default)", () => {
+    expect(pitchMedian([])).toBe(60);
+  });
+
+  it("einzelne Pitch → genau diese Pitch", () => {
+    expect(pitchMedian([72])).toBe(72);
+  });
+
+  it("ungerade Anzahl → exakter Median", () => {
+    expect(pitchMedian([60, 62, 64])).toBe(62);
+    expect(pitchMedian([100, 50, 75])).toBe(75); // wird sortiert intern
+  });
+
+  it("gerade Anzahl → gerundeter Mittelwert der zwei mittleren Werte", () => {
+    expect(pitchMedian([60, 64])).toBe(62);
+    expect(pitchMedian([60, 63])).toBe(62); // 61.5 → 62 (Math.round zu even rundet zu 62)
+    expect(pitchMedian([60, 65])).toBe(63); // 62.5 → 63 (Math.round rundet zu 63)
+  });
+
+  it("ist robust gegen Duplikate", () => {
+    expect(pitchMedian([60, 60, 60, 60])).toBe(60);
+    expect(pitchMedian([60, 60, 72])).toBe(60);
+  });
 });
 
 // ─── routeMelodicPartsToPatterns (v1.66, FLP-MELODIC-ROUTE Phase 2) ───────────
@@ -323,10 +372,12 @@ describe("routeMelodicPartsToPatterns (v1.66)", () => {
     const patterns = makePatterns(1);
     expect(routeMelodicPartsToPatterns(undefined, patterns)).toEqual({
       mappings: [],
+      baseNotes: [],
       warnings: [],
     });
     expect(routeMelodicPartsToPatterns([], patterns)).toEqual({
       mappings: [],
+      baseNotes: [],
       warnings: [],
     });
   });
@@ -429,6 +480,72 @@ describe("routeMelodicPartsToPatterns (v1.66)", () => {
     const patterns = makePatterns(1);
     const { mappings } = routeMelodicPartsToPatterns(melodic, patterns);
     expect(mappings[0].velocity).toBe(200);
+  });
+
+  it("emittet baseNotes pro partId der mind. eine Note bekommt (v1.69)", () => {
+    const melodic: ImportedMelodicPart[] = [
+      {
+        sourceChannel: 1,
+        name: "ch1",
+        baseNote: 64,
+        notes: [{ startStep: 0, durationSteps: 1, pitch: 64, velocity: 100 }],
+      },
+    ];
+    const patterns = makePatterns(1);
+    const { baseNotes } = routeMelodicPartsToPatterns(melodic, patterns);
+    expect(baseNotes).toHaveLength(1);
+    expect(baseNotes[0]).toEqual({ partId: "pat0-part1", baseNote: 64 });
+  });
+
+  it("baseNote-Eintrag ist deterministisch first-wins bei Mehrfach-Notes auf gleichem partId", () => {
+    const melodic: ImportedMelodicPart[] = [
+      {
+        sourceChannel: 0,
+        name: "x",
+        baseNote: 72,
+        notes: [
+          { startStep: 0, durationSteps: 1, pitch: 72, velocity: 100 },
+          { startStep: 4, durationSteps: 1, pitch: 76, velocity: 100 },
+        ],
+      },
+    ];
+    const patterns = makePatterns(1);
+    const { baseNotes } = routeMelodicPartsToPatterns(melodic, patterns);
+    expect(baseNotes).toHaveLength(1);
+    expect(baseNotes[0].baseNote).toBe(72);
+  });
+
+  it("kein baseNote-Eintrag wenn Part keinen baseNote gesetzt hat (undefined)", () => {
+    const melodic: ImportedMelodicPart[] = [
+      {
+        sourceChannel: 0,
+        name: "x",
+        notes: [{ startStep: 0, durationSteps: 1, pitch: 60, velocity: 100 }],
+        // kein baseNote
+      },
+    ];
+    const patterns = makePatterns(1);
+    const { baseNotes } = routeMelodicPartsToPatterns(melodic, patterns);
+    expect(baseNotes).toEqual([]);
+  });
+
+  it("Multi-Bar mit zwei Bars → ein baseNote-Eintrag pro Bar-Part (gleicher channel, unterschiedliche partIds)", () => {
+    const melodic: ImportedMelodicPart[] = [
+      {
+        sourceChannel: 0,
+        name: "x",
+        baseNote: 68,
+        notes: [
+          { startStep: 2,  durationSteps: 1, pitch: 68, velocity: 100 },
+          { startStep: 20, durationSteps: 1, pitch: 70, velocity: 100 },
+        ],
+      },
+    ];
+    const patterns = makePatterns(2);
+    const { baseNotes } = routeMelodicPartsToPatterns(melodic, patterns);
+    expect(baseNotes).toHaveLength(2);
+    expect(baseNotes.every(b => b.baseNote === 68)).toBe(true);
+    expect(baseNotes.map(b => b.partId).sort()).toEqual(["pat0-part0", "pat1-part0"]);
   });
 });
 

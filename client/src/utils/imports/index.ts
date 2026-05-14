@@ -107,6 +107,17 @@ export interface MelodicPartMapping {
   velocity: number;
 }
 
+/**
+ * BaseNote-Empfehlung pro partId (FLP-MELODIC-POLISH v1.69). Konsument
+ * ruft `useMelodicPartStore.setBaseNote(partId, baseNote)` auf, damit der
+ * Piano-Roll-View nach dem Import auf den tatsächlichen Notenbereich
+ * zentriert öffnet (sonst Default C4=60).
+ */
+export interface MelodicBaseNoteMapping {
+  partId: string;
+  baseNote: number;
+}
+
 interface RouteablePart { id: string }
 interface RouteablePattern { parts: RouteablePart[] }
 
@@ -132,17 +143,26 @@ export function routeMelodicPartsToPatterns(
   patterns: RouteablePattern[],
   stepsPerBar = 16,
   partCount = 8,
-): { mappings: MelodicPartMapping[]; warnings: string[] } {
+): {
+  mappings: MelodicPartMapping[];
+  baseNotes: MelodicBaseNoteMapping[];
+  warnings: string[];
+} {
   const mappings: MelodicPartMapping[] = [];
+  const baseNotes: MelodicBaseNoteMapping[] = [];
   const warnings: string[] = [];
 
-  if (!melodicParts || melodicParts.length === 0) return { mappings, warnings };
+  if (!melodicParts || melodicParts.length === 0) return { mappings, baseNotes, warnings };
   if (patterns.length === 0) {
     warnings.push("Melodic-Routing übersprungen: keine Drum-Patterns als Routing-Ziel vorhanden.");
-    return { mappings, warnings };
+    return { mappings, baseNotes, warnings };
   }
 
   const occupied = new Map<string, MelodicPartMapping>(); // key = `${partId}#${stepIdx}`
+  // FLP-MELODIC-POLISH v1.69: pro partId der einmalige baseNote-Eintrag.
+  // Wir nehmen den baseNote des ImportedMelodicPart der die erste Note auf
+  // diesen partId schreibt — deterministisch via Insertion-Order.
+  const baseNoteByPartId = new Map<string, number>();
   let droppedOutOfRange = 0;
   let conflicts = 0;
 
@@ -165,10 +185,17 @@ export function routeMelodicPartsToPatterns(
       };
       if (occupied.has(key)) conflicts++;
       occupied.set(key, mapping);
+
+      if (part.baseNote !== undefined && !baseNoteByPartId.has(targetPart.id)) {
+        baseNoteByPartId.set(targetPart.id, part.baseNote);
+      }
     }
   }
 
   for (const m of occupied.values()) mappings.push(m);
+  for (const [partId, baseNote] of baseNoteByPartId) {
+    baseNotes.push({ partId, baseNote });
+  }
 
   if (droppedOutOfRange > 0) {
     warnings.push(
@@ -181,5 +208,5 @@ export function routeMelodicPartsToPatterns(
     );
   }
 
-  return { mappings, warnings };
+  return { mappings, baseNotes, warnings };
 }

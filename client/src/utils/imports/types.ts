@@ -58,6 +58,13 @@ export interface ImportedMelodicPart {
   name: string;
   /** Notes mit voller Pitch+Duration-Info. */
   notes: ImportedMelodicNote[];
+  /**
+   * Empfohlener Grundton (MIDI-Pitch). Ab v1.69 vom Importer gesetzt als
+   * Median der Note-Pitches, damit der Piano-Roll-View beim Öffnen direkt
+   * auf den importierten Tonbereich zentriert. Undefined → Konsument
+   * verwendet seinen eigenen Default (C4=60).
+   */
+  baseNote?: number;
 }
 
 export interface ImportResult {
