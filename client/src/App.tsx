@@ -2735,6 +2735,7 @@ export default function App() {
                       part={dm.getActivePattern()?.parts.find(p => p.id === mixer.selectedChannelId) ?? dm.getActivePattern()?.parts[0]}
                       parts={dm.getActivePattern()?.parts ?? []}
                       mixer={mixer}
+                      onApplyPatch={dm.applyPatchToPart}
                     />
                   </div>
                 )

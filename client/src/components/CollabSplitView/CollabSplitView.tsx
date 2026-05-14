@@ -151,6 +151,7 @@ function useRemoteDmAdapter(
       stackedPatternIds: [],
       setPartSourceType: noop,
       setPartGranularParams: noop,
+      applyPatchToPart: noop,
       setPatternBpm: noop,
       setPatternStepResolution: noop,
       addPart: noop,

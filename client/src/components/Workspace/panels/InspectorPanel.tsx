@@ -18,6 +18,7 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
       parts={pattern?.parts ?? []}
       mixer={mixer}
       className="h-full w-full"
+      onApplyPatch={dm.applyPatchToPart}
     />
   );
 }

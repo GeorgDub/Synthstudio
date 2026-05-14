@@ -96,6 +96,12 @@ export interface DrumMachineActions {
   setPartMicroTiming: (partId: string, offsetMs: number) => void;
   setPartGranularParams: (partId: string, params: Partial<import("../audio/GranularEngine").GranularParams>) => void;
   setPartStretchRatio: (partId: string, ratio: number) => void;
+  /**
+   * Wendet einen kompletten Patch (v2.16 Sound-Library) auf einen Part an —
+   * `applyPatch()` aus utils/patchSerialize in einem Store-Update gebündelt.
+   * `replaceFx=false` bewahrt die existierende FX-Chain.
+   */
+  applyPatchToPart: (partId: string, patch: import("@/utils/patchSerialize").Patch, options?: { replaceFx?: boolean }) => void;
 
   toggleStep: (partId: string, stepIndex: number) => void;
   setPartSteps: (partId: string, steps: boolean[], velocities?: number[]) => void;
@@ -635,6 +641,29 @@ export function useDrumMachineStore(): DrumMachineState & DrumMachineActions {
     })), false);
   }, [updatePatterns]);
 
+  const applyPatchToPart = useCallback((
+    partId: string,
+    patch: import("@/utils/patchSerialize").Patch,
+    options: { replaceFx?: boolean } = {},
+  ) => {
+    const replaceFx = options.replaceFx ?? true;
+    updatePatterns(ps => ps.map(p => ({
+      ...p,
+      parts: p.parts.map(pt => {
+        if (pt.id !== partId) return pt;
+        return {
+          ...pt,
+          sourceType: patch.sourceType ?? pt.sourceType,
+          sampleUrl: patch.sampleUrl ?? pt.sampleUrl,
+          sampleName: patch.sampleName ?? pt.sampleName,
+          synthParams: patch.synthParams ? { ...patch.synthParams } : pt.synthParams,
+          granularParams: patch.granularParams ? { ...patch.granularParams } : pt.granularParams,
+          fx: replaceFx && patch.fx ? { ...patch.fx } : pt.fx,
+        };
+      }),
+    })), false);
+  }, [updatePatterns]);
+
   // ── Steps ─────────────────────────────────────────────────────────────────
 
   const toggleStep = useCallback((partId: string, stepIndex: number) => {
@@ -938,7 +967,7 @@ export function useDrumMachineStore(): DrumMachineState & DrumMachineActions {
     addPart, removePart, renamePart, setPartSample,
     setPartMuted, setPartSoloed, setPartVolume, setPartPan,
     setPartStepResolution, setPartStepLength, setActivePart, movePart,
-    setPartFx, setFxPanelPartId, setPartSourceType, setPartGranularParams, setPartStretchRatio, setPartMicroTiming,
+    setPartFx, setFxPanelPartId, setPartSourceType, setPartGranularParams, setPartStretchRatio, setPartMicroTiming, applyPatchToPart,
     toggleStep, setPartSteps, setStepVelocity, setStepPitch, setStepProbability, setStepCondition, setStepReverse, setStepParamLock, setStepLength, setStepChainNext, quantizePartSteps, setPartEuclidean,
     clearPattern, resetAll, fillPattern, randomizePattern, shiftPattern,
     setStepCount, setCurrentStep,

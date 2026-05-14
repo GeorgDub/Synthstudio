@@ -16,8 +16,8 @@ import React, { useState } from "react";
 import type { PartData } from "@/audio/AudioEngine";
 import type { MixerState, MixerActions } from "@/store/useMixerStore";
 import { MIXER_FX_TYPES, summarizeEqBands, type MixerFxType } from "@/utils/mixerFx";
-import { extractPatch } from "@/utils/patchSerialize";
-import { savePatch } from "@/store/usePatchStore";
+import { extractPatch, type Patch } from "@/utils/patchSerialize";
+import { savePatch, usePatchStore } from "@/store/usePatchStore";
 import { toast } from "@/store/useToastStore";
 
 export interface ChannelInspectorProps {
@@ -25,15 +25,24 @@ export interface ChannelInspectorProps {
   parts: PartData[];
   mixer: MixerState & MixerActions;
   className?: string;
+  /**
+   * Optional: aktiviert "Apply Patch"-UI im Inspector (v2.21). Wenn nicht
+   * gesetzt, bleibt nur Save-Patch ohne Apply-Loop (back-compat zu v2.20).
+   */
+  onApplyPatch?: (partId: string, patch: Patch, options?: { replaceFx?: boolean }) => void;
 }
 
-export function ChannelInspector({ part, parts, mixer, className }: ChannelInspectorProps) {
+export function ChannelInspector({ part, parts, mixer, className, onApplyPatch }: ChannelInspectorProps) {
   const baseClass = className ?? "w-80 shrink-0";
   // Save-Patch-Affordance (v2.20): Inline-Form damit der Name in einem
   // schmalen Inspector-Strip ohne Modal eingegeben werden kann.
   const [savePatchOpen, setSavePatchOpen] = useState(false);
   const [patchName, setPatchName] = useState("");
   const [patchIncludeFx, setPatchIncludeFx] = useState(true);
+  // Apply-Patch (v2.21): kollapsible Library-Liste mit Apply-Buttons.
+  const [applyPatchOpen, setApplyPatchOpen] = useState(false);
+  const [applyReplaceFx, setApplyReplaceFx] = useState(true);
+  const { patches } = usePatchStore();
 
   if (!part) {
     return (
@@ -53,6 +62,7 @@ export function ChannelInspector({ part, parts, mixer, className }: ChannelInspe
     setPatchName(part.name);
     setPatchIncludeFx(true);
     setSavePatchOpen(true);
+    setApplyPatchOpen(false);
   };
   const commitSavePatch = () => {
     const name = patchName.trim() || part.name;
@@ -60,6 +70,22 @@ export function ChannelInspector({ part, parts, mixer, className }: ChannelInspe
     savePatch(patch);
     toast(`Patch „${patch.name}" gespeichert`, { kind: "success" });
     setSavePatchOpen(false);
+  };
+  const handleApplyPatch = (patch: Patch) => {
+    if (!onApplyPatch) return;
+    onApplyPatch(part.id, patch, { replaceFx: applyReplaceFx });
+    toast(`Patch „${patch.name}" auf ${part.name} angewendet`, { kind: "success" });
+    setApplyPatchOpen(false);
+  };
+
+  const sourceTypeLabel = (t?: string): string => {
+    switch (t) {
+      case "wavetable": return "Wavetable";
+      case "fm":        return "FM";
+      case "granular":  return "Granular";
+      case "sample":    return "Sample";
+      default:          return "—";
+    }
   };
 
   return (
@@ -70,16 +96,63 @@ export function ChannelInspector({ part, parts, mixer, className }: ChannelInspe
             <div className="text-[10px] uppercase tracking-widest text-text-dim">Channel Inspector</div>
             <div className="truncate text-sm font-semibold text-text-primary">{part.name}</div>
           </div>
-          <button
-            type="button"
-            onClick={openSavePatch}
-            className="flex-shrink-0 px-2 py-1 text-[10px] rounded border border-border-color text-text-muted hover:text-accent-secondary hover:border-accent-secondary"
-            title="Aktuellen Sound als Patch in die Library speichern"
-            data-testid="channel-save-patch"
-          >
-            💾 Save Patch
-          </button>
+          <div className="flex items-center gap-1 flex-shrink-0">
+            {onApplyPatch && patches.length > 0 && (
+              <button
+                type="button"
+                onClick={() => { setApplyPatchOpen(o => !o); setSavePatchOpen(false); }}
+                className={`px-2 py-1 text-[10px] rounded border ${
+                  applyPatchOpen
+                    ? "border-accent-primary text-accent-primary"
+                    : "border-border-color text-text-muted hover:text-accent-primary hover:border-accent-primary"
+                }`}
+                title={`Patch aus Library (${patches.length}) auf diesen Kanal anwenden`}
+                data-testid="channel-apply-patch"
+              >
+                📂 Apply ({patches.length})
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={openSavePatch}
+              className="px-2 py-1 text-[10px] rounded border border-border-color text-text-muted hover:text-accent-secondary hover:border-accent-secondary"
+              title="Aktuellen Sound als Patch in die Library speichern"
+              data-testid="channel-save-patch"
+            >
+              💾 Save Patch
+            </button>
+          </div>
         </div>
+        {applyPatchOpen && onApplyPatch && (
+          <div className="mt-2 p-2 rounded border border-accent-primary/60 bg-accent-primary/10" data-testid="channel-apply-patch-list">
+            <label className="flex items-center gap-2 text-[10px] text-text-muted cursor-pointer mb-2">
+              <input
+                type="checkbox"
+                checked={applyReplaceFx}
+                onChange={e => setApplyReplaceFx(e.target.checked)}
+                className="accent-accent-primary"
+              />
+              FX-Chain ersetzen (sonst nur Sound)
+            </label>
+            <div className="max-h-48 overflow-y-auto space-y-1">
+              {patches.map(p => (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => handleApplyPatch(p)}
+                  className="w-full text-left px-2 py-1 rounded bg-bg-base/50 hover:bg-accent-primary/20 border border-transparent hover:border-accent-primary/50"
+                  data-testid={`channel-apply-patch-${p.id}`}
+                  title={`${sourceTypeLabel(p.sourceType)}${p.fx ? " +FX" : ""} — ${new Date(p.createdAt).toLocaleString()}`}
+                >
+                  <div className="text-xs text-text-primary truncate">{p.name}</div>
+                  <div className="text-[9px] text-text-dim">
+                    {sourceTypeLabel(p.sourceType)}{p.fx ? " · +FX" : ""}
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         {savePatchOpen && (
           <div className="mt-2 p-2 rounded border border-accent-secondary/60 bg-accent-secondary/10 space-y-2" data-testid="channel-save-patch-form">
             <input
