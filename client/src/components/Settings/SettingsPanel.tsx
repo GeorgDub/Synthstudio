@@ -1027,6 +1027,43 @@ function OscSection() {
   const [url, setUrl] = React.useState("ws://localhost:8080");
   const [connected, setConnected] = React.useState(false);
   const wsRef = React.useRef<WebSocket | null>(null);
+  // v2.23: Direkter UDP-Listener (Electron-only)
+  const electron = useElectron();
+  const [udpPort, setUdpPort] = React.useState(7400);
+  const [udpAcceptNetwork, setUdpAcceptNetwork] = React.useState(false);
+  const [udpStatus, setUdpStatus] = React.useState<{
+    listening: boolean;
+    port: number | null;
+    bindHost: string | null;
+    receivedCount: number;
+    errorCount: number;
+    lastMessage: { address: string; args: Array<number | string | boolean | null>; source: string; at: number } | null;
+  } | null>(null);
+  React.useEffect(() => {
+    if (!electron.isElectron) return;
+    let stop = false;
+    const tick = async () => {
+      const s = await electron.getOscServerStatus();
+      if (!stop) setUdpStatus(s);
+    };
+    void tick();
+    const id = window.setInterval(tick, 1000);
+    return () => { stop = true; window.clearInterval(id); };
+  }, [electron]);
+  const startUdp = async () => {
+    if (!electron.isElectron) return;
+    const res = await electron.startOscServer({ port: udpPort, acceptFromNetwork: udpAcceptNetwork });
+    if (!res.success) {
+      toast(`UDP-Listener konnte nicht gestartet werden: ${res.error ?? "Unbekannter Fehler"}`, { kind: "error" });
+    } else {
+      toast(`OSC-UDP-Listener läuft auf ${udpAcceptNetwork ? "0.0.0.0" : "127.0.0.1"}:${res.port}`, { kind: "success" });
+    }
+  };
+  const stopUdp = async () => {
+    if (!electron.isElectron) return;
+    await electron.stopOscServer();
+    toast("OSC-UDP-Listener gestoppt", { kind: "info" });
+  };
 
   const connect = () => {
     if (wsRef.current) { wsRef.current.close(); wsRef.current = null; }
@@ -1050,8 +1087,77 @@ function OscSection() {
   return (
     <div className="space-y-4">
       <h3 className="text-sm font-bold text-text-primary">OSC (Open Sound Control)</h3>
+
+      {/* v2.23: Direkter UDP-Listener (Electron-only) */}
+      {electron.isElectron && (
+        <div className="rounded-lg border border-accent-secondary/50 bg-accent-secondary/5 p-3 space-y-2" data-testid="osc-udp-listener">
+          <div className="flex items-center justify-between">
+            <div className="text-xs font-semibold text-accent-secondary">📡 Direkter UDP-Listener</div>
+            {udpStatus?.listening && (
+              <span className="text-[10px] text-accent-success font-mono">
+                ● {udpStatus.bindHost}:{udpStatus.port} · {udpStatus.receivedCount} msgs
+              </span>
+            )}
+          </div>
+          <p className="text-[10px] text-text-muted leading-relaxed">
+            Empfange OSC direkt per UDP — keine Bridge nötig. TouchOSC, Lemur,
+            Reaktor und CLI-Tools wie <code>oscchief</code> können direkt senden.
+            Default-Bind ist <code>127.0.0.1</code> (localhost-only).
+          </p>
+          <div className="flex items-center gap-2">
+            <label className="text-[10px] text-text-muted">Port:</label>
+            <input
+              type="number"
+              min={1024}
+              max={65535}
+              value={udpPort}
+              onChange={e => setUdpPort(Number(e.target.value))}
+              disabled={udpStatus?.listening}
+              className="w-20 text-xs bg-bg-elevated border border-border-color rounded px-2 py-1 text-text-primary disabled:opacity-50"
+              data-testid="osc-udp-port"
+            />
+            <label className="flex items-center gap-1 text-[10px] text-text-muted cursor-pointer">
+              <input
+                type="checkbox"
+                checked={udpAcceptNetwork}
+                onChange={e => setUdpAcceptNetwork(e.target.checked)}
+                disabled={udpStatus?.listening}
+                className="accent-accent-secondary"
+              />
+              auch aus dem Netzwerk
+            </label>
+            {udpStatus?.listening ? (
+              <button
+                onClick={stopUdp}
+                className="ml-auto px-2 py-1 text-[11px] rounded bg-accent-danger text-white"
+                data-testid="osc-udp-stop"
+              >
+                Stoppen
+              </button>
+            ) : (
+              <button
+                onClick={startUdp}
+                className="ml-auto px-2 py-1 text-[11px] rounded bg-accent-secondary text-bg-base"
+                data-testid="osc-udp-start"
+              >
+                Starten
+              </button>
+            )}
+          </div>
+          {udpStatus?.lastMessage && (
+            <div className="text-[10px] text-text-dim font-mono border-t border-border-color pt-2">
+              <span className="text-text-muted">letzte:</span> {udpStatus.lastMessage.address}
+              {udpStatus.lastMessage.args.length > 0 && (
+                <span className="text-accent-secondary"> {JSON.stringify(udpStatus.lastMessage.args)}</span>
+              )}
+              <span className="text-text-dim ml-2">← {udpStatus.lastMessage.source}</span>
+            </div>
+          )}
+        </div>
+      )}
+
       <p className="text-xs text-text-dim">
-        Verbinde Synthstudio mit TouchOSC, Protokol oder einem anderen OSC-fähigen Gerät
+        Alternativ: verbinde Synthstudio mit TouchOSC, Protokol oder einem anderen OSC-fähigen Gerät
         über eine WebSocket-Bridge (z.B. <code className="text-accent-secondary">osc-websocket-bridge</code>).
       </p>
 

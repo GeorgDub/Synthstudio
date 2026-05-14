@@ -503,6 +503,19 @@ interface ElectronAPI {
   onUpdaterDownloadProgress(callback: (progress: ElectronDownloadProgress) => void): ElectronCleanup;
   onUpdaterUpdateDownloaded(callback: (data: { version: string }) => void): ElectronCleanup;
   onUpdaterError(callback: (data: { message: string }) => void): ElectronCleanup;
+
+  // ── v2.23: Direkter OSC-UDP-Listener ──────────────────────────────────────
+  startOscServer(options: { port: number; acceptFromNetwork?: boolean }): Promise<{ success: boolean; error?: string; port?: number }>;
+  stopOscServer(): Promise<{ success: boolean }>;
+  getOscServerStatus(): Promise<{
+    listening: boolean;
+    port: number | null;
+    bindHost: string | null;
+    receivedCount: number;
+    errorCount: number;
+    lastMessage: { address: string; args: Array<number | string | boolean | null>; source: string; at: number } | null;
+  }>;
+  onOscIncoming(callback: (msg: { address: string; args: Array<number | string | boolean | null>; source: string; at: number }) => void): ElectronCleanup;
 }
 
 // ─── Window-Erweiterung ──────────────────────────────────────────────────────

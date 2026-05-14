@@ -42,6 +42,7 @@ import { WindowManager, registerWindowHandlers } from "./windows";
 import { registerExportHandlers } from "./export";
 import { setupAutoUpdater, checkForUpdatesManually } from "./updater";
 import { initStore, registerStoreHandlers, type AppStore, type PopupWindowLayout } from "./store";
+import { startOscServer, stopOscServer, getOscStatus, type OscStartOptions } from "./osc-server";
 import {
   initCrashLog,
   installMainProcessCrashHandlers,
@@ -2745,6 +2746,13 @@ app.whenReady().then(() => {
   // Store-IPC-Handler registrieren (nach createWindow, damit mainWindow gesetzt ist)
   registerStoreHandlers(ipcMain, mainWindow);
 
+  // v2.23: OSC-UDP-Listener IPC-Handler
+  ipcMain.handle("osc:start", (_e, options: OscStartOptions) => {
+    return startOscServer(options, mainWindow);
+  });
+  ipcMain.handle("osc:stop", () => stopOscServer());
+  ipcMain.handle("osc:status", () => getOscStatus());
+
   createTray();
   registerGlobalShortcuts();
 
@@ -2798,6 +2806,9 @@ app.on("window-all-closed", () => {
 
 app.on("before-quit", (event) => {
   logEvent("app:before-quit", { userInitiatedQuit, mainWindowAlive: mainWindow !== null && !mainWindow.isDestroyed() });
+
+  // v2.23: OSC-Listener sauber schließen (kein Socket-Leak bei nächstem Start)
+  stopOscServer();
 
   // BUG-018 v1.29.0 follow-up: nukleare Quit-Sperre.
   if (!userInitiatedQuit && mainWindow && !mainWindow.isDestroyed()) {

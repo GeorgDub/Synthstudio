@@ -131,6 +131,7 @@ import { SettingsPanel } from "@/components/Settings/SettingsPanel";
 import { SessionRecorder } from "@/components/CollabSession/SessionRecorder";
 import { RelayPanel } from "@/components/CollabSession/RelayPanel";
 import { PerformanceRecorderBadge } from "@/components/PerformanceRecorder/PerformanceRecorderBadge";
+import { mapOscToAction, dispatchOscAction } from "@/utils/oscBindings";
 import { recordEvent } from "@/store/useSessionRecordingStore";
 import {
   recordEvent as recordPerfEvent,
@@ -1036,6 +1037,20 @@ export default function App() {
     window.addEventListener("perf:event", handler);
     return () => window.removeEventListener("perf:event", handler);
   }, []);
+
+  // ── v2.23: OSC-UDP-Listener-Bridge ────────────────────────────────────────
+  // Wenn der Electron-OSC-Server eine Message empfängt, mappen wir sie via
+  // mapOscToAction auf das v2.17-Standard-Schema und feuern die zugehörige
+  // window-CustomEvent — gleicher Pfad wie der WebSocket-Bridge und die
+  // MIDI-Bindings.
+  useEffect(() => {
+    if (!electron.isElectron) return;
+    const cleanup = electron.onOscIncoming?.((payload) => {
+      const action = mapOscToAction({ address: payload.address, args: payload.args });
+      if (action) dispatchOscAction(action);
+    });
+    return cleanup;
+  }, [electron]);
 
   // ── Automation: Position-Callback registrieren ───────────────────────────
   // Feuert bei jedem Step (auch bei Stille) → ideal für Parameter-Automation

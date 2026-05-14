@@ -285,6 +285,20 @@ const browserAPI = {
   storeRemoveRecent: async (_filePath: string) => ({ success: false, error: "Nicht in Electron" }),
   storeClearRecent: async () => ({ success: false, error: "Nicht in Electron" }),
   onRecentProjectsChanged: noopDataListener<import("./store").RecentProject[]>(),
+
+  // v2.23: OSC-UDP-Listener (Browser kann keinen UDP-Socket öffnen)
+  startOscServer: async (_options: { port: number; acceptFromNetwork?: boolean }) =>
+    ({ success: false, error: "OSC-UDP-Listener benötigt die Electron-Desktop-App" }),
+  stopOscServer: async () => ({ success: true }),
+  getOscServerStatus: async () => ({
+    listening: false,
+    port: null,
+    bindHost: null,
+    receivedCount: 0,
+    errorCount: 0,
+    lastMessage: null,
+  }),
+  onOscIncoming: noopDataListener<{ address: string; args: Array<number | string | boolean | null>; source: string; at: number }>(),
 };
 
 // ─── Haupt-Hook ───────────────────────────────────────────────────────────────
@@ -496,6 +510,12 @@ export function useElectron() {
     onPatternLibraryPopupState: api.onPatternLibraryPopupState,
     onPatternLibraryPopupAction: api.onPatternLibraryPopupAction,
     onPatternLibraryPopupClosed: api.onPatternLibraryPopupClosed,
+
+    // v2.23: Direkter OSC-UDP-Listener
+    startOscServer: api.startOscServer,
+    stopOscServer: api.stopOscServer,
+    getOscServerStatus: api.getOscServerStatus,
+    onOscIncoming: api.onOscIncoming,
   };
 }
 

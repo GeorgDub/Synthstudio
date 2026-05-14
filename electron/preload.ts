@@ -795,6 +795,29 @@ const electronAPI = {
   }>> =>
     ipcRenderer.invoke("collab:get-discovered"),
 
+  // ─── v2.23: Direkter OSC-UDP-Listener ─────────────────────────────────────
+
+  startOscServer: (options: { port: number; acceptFromNetwork?: boolean }): Promise<{ success: boolean; error?: string; port?: number }> =>
+    ipcRenderer.invoke("osc:start", options),
+
+  stopOscServer: (): Promise<{ success: boolean }> =>
+    ipcRenderer.invoke("osc:stop"),
+
+  getOscServerStatus: (): Promise<{
+    listening: boolean;
+    port: number | null;
+    bindHost: string | null;
+    receivedCount: number;
+    errorCount: number;
+    lastMessage: { address: string; args: Array<number | string | boolean | null>; source: string; at: number } | null;
+  }> => ipcRenderer.invoke("osc:status"),
+
+  onOscIncoming: (cb: (msg: { address: string; args: Array<number | string | boolean | null>; source: string; at: number }) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, payload: { address: string; args: Array<number | string | boolean | null>; source: string; at: number }) => cb(payload);
+    ipcRenderer.on("osc:incoming", handler);
+    return () => ipcRenderer.removeListener("osc:incoming", handler);
+  },
+
 };
 
 contextBridge.exposeInMainWorld("electronAPI", electronAPI);
