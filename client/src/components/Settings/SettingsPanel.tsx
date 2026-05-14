@@ -520,6 +520,19 @@ function MidiDevicesSection({ midi }: { midi: MidiState & MidiActions }) {
                     </span>
                   </div>
                 )}
+                {/* v1.97: MIDI-Clock-Out — sendet 24 PPQ an aktives Output-Device */}
+                {midi.activeOutputDeviceId && (
+                  <label className="flex items-center gap-2 cursor-pointer pt-2 border-t border-border-color/50">
+                    <input type="checkbox" checked={midi.clockOutEnabled}
+                      onChange={e => midi.setClockOutEnabled(e.target.checked)} className="accent-accent-primary" />
+                    <span className="text-xs text-text-primary">
+                      MIDI-Clock senden ({midi.clockOutBpm} BPM, 24 PPQ)
+                    </span>
+                    <span className="text-[10px] text-text-dim ml-auto">
+                      v1.97: Externe Synths synct zu Synthstudio
+                    </span>
+                  </label>
+                )}
               </>
             )}
           </div>

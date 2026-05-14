@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "1.96.0",
+    version: "1.97.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -491,6 +491,23 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-14T18:00:00.000Z",
+      done: [
+        "MIDI-CLOCK-OUT (v1.97.0): Synthstudio sendet jetzt MIDI Clock (24 PPQ Pulses + Start/Stop) ans aktive Output-Device, sodass externe Synths/Drum-Machines (Volca, TR-8, Electribe, Digitakt) zu Synthstudio's BPM synct werden können. Bisher konnte Synthstudio nur EMPFANGEN. Neue State `clockOutEnabled: boolean` + `clockOutBpm: number` in MidiState; Actions `setClockOutEnabled` + `setClockOutBpm`. setInterval-basierter Ticker im useMidi-Effekt: bei aktivem clockOut + verbundenem Output sendet 60_000/(bpm*24)ms-Intervall `[0xF8]`. setClockOutEnabled(true) sendet zusätzlich `[0xFA]` (Start), setClockOutEnabled(false) sendet `[0xFC]` (Stop) damit externes Gerät die Sync auch wirklich startet/stoppt. App.tsx synct clockOutBpm via useEffect mit project.bpm — BPM-Änderungen propagieren automatisch. UI im SettingsPanel → KI & MIDI → MIDI Out: neuer Toggle 'MIDI-Clock senden (XXX BPM, 24 PPQ)' (sichtbar wenn Output-Device aktiv). 1818 Tests grün, pnpm check 0 Fehler. Damit ist die DAW-Sync-Pipeline endlich bidirektional."
+      ],
+      next: [
+        "Backlog aus neue_todos.md."
+      ],
+      changed: [
+        "package.json",
+        "client/src/hooks/useMidi.ts",
+        "client/src/App.tsx",
+        "client/src/components/Settings/SettingsPanel.tsx",
+        "agents/INDEX.js"
+      ]
+    },
     {
       agent:     "coordinator",
       timestamp: "2026-05-14T17:30:00.000Z",

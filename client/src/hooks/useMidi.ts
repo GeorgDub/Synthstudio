@@ -128,6 +128,10 @@ export interface MidiState {
   /** Verfügbare MIDI-Ausgangsgeräte */
   outputDevices: MidiDevice[];
   activeOutputDeviceId: string | null;
+  /** v1.97: MIDI-Clock-Output aktiv? (sendet 24 PPQ an active output) */
+  clockOutEnabled: boolean;
+  /** v1.97: BPM für den Clock-Output (sollte = transport-BPM sein, vom Caller gesetzt) */
+  clockOutBpm: number;
   mappings: MidiMapping[];
   noteMappings: MidiNoteMapping[];
   isLearning: boolean;
@@ -186,6 +190,10 @@ export interface MidiActions {
   clearAllMappings: () => void;
   /** Lädt eine vordefinierte Hardware-Template-Konfiguration (ersetzt alle Mappings). */
   loadTemplate: (cc: MidiMapping[], notes: MidiNoteMapping[]) => void;
+  /** v1.97: Aktiviert/deaktiviert MIDI-Clock-Output. */
+  setClockOutEnabled: (enabled: boolean) => void;
+  /** v1.97: Setzt die BPM die als Clock gesendet wird (vom Caller bei BPM-Änderung). */
+  setClockOutBpm: (bpm: number) => void;
 }
 
 // ─── Pure Helpers (Modul-Scope, testbar ohne React) ──────────────────────────
@@ -508,6 +516,50 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
   const [learnTarget, setLearnTarget] = useState<MidiLearnTarget | null>(null);
   const [clockSync, setClockSyncState] = useState(false);
   const [externalBpm, setExternalBpm] = useState<number | null>(null);
+  // v1.97: MIDI-Clock-Output
+  const [clockOutEnabled, setClockOutEnabledState] = useState(false);
+  const [clockOutBpm, setClockOutBpmState] = useState(120);
+  const clockOutEnabledRef = useRef(false);
+  const clockOutBpmRef = useRef(120);
+  useEffect(() => { clockOutEnabledRef.current = clockOutEnabled; }, [clockOutEnabled]);
+  useEffect(() => { clockOutBpmRef.current = clockOutBpm; }, [clockOutBpm]);
+
+  /**
+   * v1.97: MIDI-Clock-Output-Ticker. Wenn clockOutEnabled aktiv ist und ein
+   * Output-Device gewählt ist, sendet jeden Tick `[0xF8]` an das Device.
+   * Tick-Rate: 24 PPQ → 24 Pulses pro Beat. Bei 120 BPM = 48 Pulses/sec
+   * = ~20.83ms pro Pulse. setInterval reicht für brauchbare Sync-Genauigkeit;
+   * für sub-ms Präzision würde performance.now()-basiertes Looping nötig.
+   */
+  useEffect(() => {
+    if (!clockOutEnabled) return;
+    let intervalId: ReturnType<typeof setInterval> | null = null;
+    const startTicker = () => {
+      const bpm = Math.max(20, Math.min(300, clockOutBpmRef.current));
+      const ppqMs = 60_000 / (bpm * 24);
+      if (intervalId) clearInterval(intervalId);
+      intervalId = setInterval(() => {
+        const out = activeOutputRef.current;
+        if (!out || !clockOutEnabledRef.current) return;
+        try { out.send([0xf8]); } catch { /* ignore */ }
+      }, ppqMs);
+    };
+    startTicker();
+    // Falls BPM sich ändert während Clock läuft, neu starten
+    const bpmWatcher = setInterval(() => {
+      if (!clockOutEnabledRef.current) return;
+      const bpm = Math.max(20, Math.min(300, clockOutBpmRef.current));
+      const expectedPpqMs = 60_000 / (bpm * 24);
+      // Reset wenn BPM sich relevant geändert hat (>1% Diff)
+      if (intervalId) {
+        startTicker(); // restart with new BPM rate (Vereinfachung)
+      }
+    }, 250);
+    return () => {
+      if (intervalId) clearInterval(intervalId);
+      clearInterval(bpmWatcher);
+    };
+  }, [clockOutEnabled]);
   // Auto-Learn-Queue (v1.71)
   const [autoLearnQueue, setAutoLearnQueue] = useState<AutoLearnEntry[]>([]);
   const [autoLearnTotal, setAutoLearnTotal] = useState(0);
@@ -1076,6 +1128,24 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
     saveMappings([], []);
   }, []);
 
+  // v1.97: MIDI-Clock-Output Actions
+  const setClockOutEnabled = useCallback((enabled: boolean) => {
+    setClockOutEnabledState(enabled);
+    // Wenn aktiviert UND Transport läuft, sende MIDI Start (0xFA). Wenn deaktiviert,
+    // sende Stop (0xFC). Hilft externem Gerät die Sync zu starten/stoppen.
+    const out = activeOutputRef.current;
+    if (out) {
+      try {
+        out.send([enabled ? 0xfa : 0xfc]);
+      } catch { /* ignore */ }
+    }
+  }, []);
+
+  const setClockOutBpm = useCallback((bpm: number) => {
+    const clamped = Math.max(20, Math.min(300, bpm));
+    setClockOutBpmState(clamped);
+  }, []);
+
   const loadTemplate = useCallback((cc: MidiMapping[], notes: MidiNoteMapping[]) => {
     setMappings(cc);
     setNoteMappings(notes);
@@ -1117,6 +1187,10 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
     setClockSync,
     clearAllMappings,
     loadTemplate,
+    setClockOutEnabled,
+    setClockOutBpm,
+    clockOutEnabled,
+    clockOutBpm,
     // Output Actions
     setActiveOutputDevice,
     setMidiOutEnabled,

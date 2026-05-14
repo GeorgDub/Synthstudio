@@ -1250,6 +1250,12 @@ export default function App() {
     return () => window.removeEventListener("midi:partMute", handleMute);
   }, []);
 
+  // v1.97: synchronisiert das BPM des Clock-Output mit dem Projekt-BPM.
+  // Damit folgt der externe Synth automatisch BPM-Änderungen in Synthstudio.
+  useEffect(() => {
+    midi.setClockOutBpm(project.bpm);
+  }, [project.bpm, midi.setClockOutBpm]);
+
   // v1.92: midi:pattern (Pattern-Index → Pattern-Switch). Vor v1.92 dispatchte
   // useMidi.applyMapping zwar das Event, aber niemand hörte → das
   // `pattern`-MidiLearnTarget war ein No-Op. Listener konvertiert Index zu
