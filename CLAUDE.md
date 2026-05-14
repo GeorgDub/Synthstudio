@@ -147,6 +147,47 @@ Custom themes stored via `useThemeStore` must also contain all 12 variables. Aft
 - `client/src/components/Settings/CustomThemeCreator.tsx` — custom theme form
 - `client/src/store/useThemeStore.ts` — state + persistence (note: circular import risk if refactoring — `useThemeStore.ts` currently imports from `ThemeSettings.tsx`)
 
+### MIDI Bindings (v1.71–v1.82)
+
+Vollständige bindbare-Action-Liste mit Auto-Learn-Workflow:
+
+**Atomic-Targets** in `useMidi.ts` MidiLearnTarget union:
+- Transport: `bpm`, `bpmUp`, `bpmDown`, `playStop`, `record`, `tapTempo`, `masterVolume`
+- Parts: `volume`, `pan`, `mute`, `solo`, `fxParam` (v1.76 — alle 16 Channel-FX-Params),  `partUp`, `partDown`
+- Pattern: `pattern`, `patternNext`, `patternPrev`, `patternClear`, `patternFill`, `patternRandomize`, `patternDuplicate`
+- Performance: `toggleNoteRepeat`, `toggleMorph`, `commitLiveEdit`, `scenelaunch`, `tab`, `openSettings`
+- Compound: `chain` (v1.77 — mehrere Sub-Targets mit Delays), `runScript` (v1.78 — User-Script aus useScriptStore)
+
+**Auto-Learn-Flow** (v1.71/v1.72):
+- `startAutoLearn(entries: AutoLearnEntry[])` mit discriminated-union `{kind:"cc"|"note", …}`
+- `nextAutoLearnEntry(queue, msg)` Pure-Helper (siehe tests/features/midi-auto-learn.test.ts)
+- 5 Presets in `MidiSettings`: Mixer/Pads/Komplett/Transport/Pattern-Navigation
+- Custom Chain Builder (v1.80) — inline-Form für eigene Chains
+
+**Layout Import/Export** (v1.38, v1.73):
+- `parseMidiLayoutJson(text)` / `buildMidiLayoutJson(input)` — Round-Trip-getestet
+- `defaultLayoutNameForDevice(deviceName)` — Filename-Default
+- `VALID_TARGET_TYPES` Set für Validierung beim Import
+
+**Hardware-Templates** (13 eingebaut): Launchpad MK2/3, Push 2, MPC One, Maschine Mikro, nanoKONTROL2, MPK Mini MK3, X-Touch Mini, padKONTROL, Volca Beats (v1.82), TR-8/RD-8 (v1.82), BeatStep Pro (v1.82), Digitakt (v1.82), Electribe 2 (v1.74).
+
+**Monitor-Tab** (v1.81): scrollender Ringbuffer max 200 Events, formatiert `HH:MM:SS.mmm Ch<n> <Type> <Data>`, Pause/Clear/Filter. Hilft beim Hardware-Debugging.
+
+**FX-Param-Bindings** (v1.76):
+- `FX_PARAM_RANGES` in `audio/AudioEngine.ts` listet 16 numerische Params
+- `midiValueToFxParam(midi, range)` linear oder exponential mapping
+- `findFxParamRange(key)` Lookup
+- `midi:fxParam` CustomEvent dispatcht in applyMapping → App.tsx-Listener ruft `dm.setPartFx(partId, {[param]: scaled})`
+
+### Built-In Scripts (v1.75)
+
+`client/src/utils/builtInScripts.ts` — vorgefertigte ss.*-Scripts ohne KI-API-Key:
+- 3× Pattern duplizieren (solo / +Randomize / +Fill)
+- Tap × 4 → Play
+- Drop-Reset
+- Macros auf 0 / 0.5
+Im ScriptRunner via "📚 Built-In"-Button ladbar.
+
 ### Collaboration (LAN)
 
 WebSocket server runs in Electron main process. Protocol events: `step:toggle`, `bpm:change`, `pattern:switch`, `transport:play/stop`, `snapshot:full`. `CollabSplitView` shows a split-screen for two simultaneous users. mDNS auto-discovers sessions on the local network.

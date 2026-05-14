@@ -208,7 +208,120 @@ export const MIDI_TEMPLATES: MidiTemplate[] = [
     })),
   },
   {
-    // v1.74: Direkt motiviert durch User-Workflow mit Korg Electribe 2 Sampler.
+    // v1.82: Korg Volca Beats — kompakte Drum-Box, beliebt in Techno/Hardtekk.
+    // Sendet Drums per Default auf Ch10 mit Standard-GM-Drum-Notes. CCs für
+    // die 8 Drum-Sound-Edit-Knöpfe (Decay/Pitch/Level).
+    id: "korg-volca-beats",
+    name: "Korg Volca Beats",
+    manufacturer: "Korg",
+    description: "Kompakte analoge Drum-Maschine. 10 Drum-Parts, Step-Sequenzer + Live-Performance.",
+    ccMappings: [
+      // Standard Volca-Beats CC-Map (Auswahl der wichtigsten)
+      { cc: 40, channel: 0, target: { type: "volume", partId: "part-0", partName: "Kick" } },
+      { cc: 41, channel: 0, target: { type: "volume", partId: "part-1", partName: "Snare" } },
+      { cc: 42, channel: 0, target: { type: "volume", partId: "part-2", partName: "Lo Tom" } },
+      { cc: 43, channel: 0, target: { type: "volume", partId: "part-3", partName: "Hi Tom" } },
+      { cc: 44, channel: 0, target: { type: "volume", partId: "part-4", partName: "CH" } },
+      { cc: 45, channel: 0, target: { type: "volume", partId: "part-5", partName: "OH" } },
+      { cc: 46, channel: 0, target: { type: "volume", partId: "part-6", partName: "Clap" } },
+    ],
+    noteMappings: [
+      // GM Drum Map auf Ch10 — Volca-Standard
+      { note: 36, channel: 10, partId: "part-0" }, // Kick
+      { note: 38, channel: 10, partId: "part-1" }, // Snare
+      { note: 43, channel: 10, partId: "part-2" }, // Lo Tom
+      { note: 50, channel: 10, partId: "part-3" }, // Hi Tom
+      { note: 42, channel: 10, partId: "part-4" }, // Closed HH
+      { note: 46, channel: 10, partId: "part-5" }, // Open HH
+      { note: 39, channel: 10, partId: "part-6" }, // Clap
+      { note: 75, channel: 10, partId: "part-7" }, // Claves
+    ],
+  },
+  {
+    // v1.82: Roland TR-8 / TR-8S / TR-6S — moderne x0x-Style Drum-Maschinen.
+    // Auch der Behringer RD-8 (1:1 Clone) kommt mit diesem Template klar.
+    // Default-Channel 10 mit Roland-eigenen Note-Assignments.
+    id: "roland-tr-8",
+    name: "Roland TR-8 / TR-8S / RD-8",
+    manufacturer: "Roland",
+    description: "TR-style Drum-Maschine mit 11–12 Drum-Tracks. Live-Performance + Fill-In + Mute-Buttons.",
+    ccMappings: [
+      // TR-8 standard CC layout: 84-95 per part level, 105 master volume
+      ...Array.from({ length: 8 }, (_, i) => ({
+        cc: 84 + i, channel: 0,
+        target: { type: "volume" as const, partId: `part-${i}`, partName: `Track ${i + 1}` },
+      })),
+      { cc: 105, channel: 0, target: { type: "masterVolume" } },
+    ],
+    noteMappings: [
+      // TR-8 Pad-Notes (typische Roland-Belegung auf Ch10)
+      { note: 36, channel: 10, partId: "part-0" }, // BD
+      { note: 38, channel: 10, partId: "part-1" }, // SD
+      { note: 39, channel: 10, partId: "part-2" }, // Clap
+      { note: 37, channel: 10, partId: "part-3" }, // Rim
+      { note: 41, channel: 10, partId: "part-4" }, // Low Tom
+      { note: 42, channel: 10, partId: "part-5" }, // CH
+      { note: 46, channel: 10, partId: "part-6" }, // OH
+      { note: 49, channel: 10, partId: "part-7" }, // Crash
+    ],
+  },
+  {
+    // v1.82: Arturia BeatStep Pro — sehr beliebter günstiger Sequencer-Controller.
+    // 16 RGB-Pads (Drum-Mode auf Ch10), Sequencer + 8 Encoder.
+    id: "arturia-beatstep-pro",
+    name: "Arturia BeatStep Pro",
+    manufacturer: "Arturia",
+    description: "16 Pads + Sequencer + 16 Encoder. Standard für Synth-Performances und Step-Sequencing.",
+    ccMappings: [
+      // 16 Encoder als Volumes für Parts 0-7 + Mute für 0-7
+      ...Array.from({ length: 8 }, (_, i) => ({
+        cc: 10 + i, channel: 0,
+        target: { type: "volume" as const, partId: `part-${i}`, partName: `Part ${i + 1}` },
+      })),
+      ...Array.from({ length: 8 }, (_, i) => ({
+        cc: 74 + i, channel: 0,
+        target: { type: "mute" as const, partId: `part-${i}`, partName: `Part ${i + 1}` },
+      })),
+    ],
+    noteMappings: [
+      // 16 Pads (untere Reihe) mit Standard-Drum-Map auf Ch10
+      ...Array.from({ length: 8 }, (_, i) => ({
+        note: 36 + i, channel: 10, partId: `part-${i}`,
+      })),
+      // Zweite Pad-Reihe (Notes 44-51) auf dieselben Parts
+      ...Array.from({ length: 8 }, (_, i) => ({
+        note: 44 + i, channel: 10, partId: `part-${i}`,
+      })),
+    ],
+  },
+  {
+    // v1.82: Elektron Digitakt — beliebt in Techno/Hardtekk-Studios.
+    // 8 Sample-Tracks + 8 MIDI-Tracks. Default-MIDI-Out auf Ch1-8 mit Notes
+    // pro Track. Encoder senden CCs 16-23 (Volume) und 24-31 (Pan).
+    id: "elektron-digitakt",
+    name: "Elektron Digitakt",
+    manufacturer: "Elektron",
+    description: "8-Spur Sampler + 8 MIDI-Spuren. Live-Sequencing-Workhorse für Techno-Studios.",
+    ccMappings: [
+      // Elektron-Encoder: typische Param-CC-Map
+      ...Array.from({ length: 8 }, (_, i) => ({
+        cc: 16 + i, channel: 0,
+        target: { type: "volume" as const, partId: `part-${i}`, partName: `Track ${i + 1}` },
+      })),
+      ...Array.from({ length: 8 }, (_, i) => ({
+        cc: 24 + i, channel: 0,
+        target: { type: "pan" as const, partId: `part-${i}`, partName: `Track ${i + 1}` },
+      })),
+    ],
+    noteMappings: [
+      // Digitakt-Trigger-Notes per Track (Ch1-8)
+      ...Array.from({ length: 8 }, (_, i) => ({
+        note: 60, channel: i + 1, partId: `part-${i}`,
+      })),
+    ],
+  },
+  {
+    // v1.82: Direkt motiviert durch User-Workflow mit Korg Electribe 2 Sampler.
     // Electribe 2 (E2 / E2S) sendet per Default auf MIDI-Channel 10 (Drum-Channel)
     // 16 Pad-Note-On-Events (Notes 36-51, C2-D#3). Synthstudio hat nur 8 Default-Parts,
     // also mappen wir die ersten 8 Pads auf part-0..part-7 und die zweite Reihe (8 Pads)

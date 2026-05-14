@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "1.81.0",
+    version: "1.82.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -491,6 +491,23 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-14T10:30:00.000Z",
+      done: [
+        "MORE-HARDWARE-TEMPLATES + DOCS (v1.82.0): 4 weitere eingebaute MIDI-Templates für die Techno/Hardtekk-Szene + CLAUDE.md-Update. Neue Templates: Korg Volca Beats (Ch10, 7 Drum-Notes + 7 CC-Sound-Edit), Roland TR-8/RD-8 (Ch10, 8 Drum-Notes + 8 CC-Volumes + masterVolume CC105), Arturia BeatStep Pro (16 Pad-Notes 2-Reihen, 8 Encoder Volume + 8 Encoder Mute), Elektron Digitakt (8 Channels Ch1-8, je Note 60 für die 8 Sample-Tracks + Encoder CCs). MIDI_TEMPLATES insgesamt jetzt 13 Hardware-Vorlagen. CLAUDE.md bekommt neue 'MIDI Bindings (v1.71-v1.82)'-Section mit kompletter Target-Liste, Auto-Learn-Flow, Layout-Import/Export, Hardware-Templates, Monitor-Tab und FX-Param-Bindings. Plus neue 'Built-In Scripts (v1.75)'-Section. 17 neue Vitest-Cases (4× Template-Existenz, 4× CC-Range-Validierung, 4× Note-Range-Validierung, plus Special-Cases: Ch10-Default für Korg/Roland, Multi-Channel für Digitakt, 16-Pad-Count für BeatStep, ≥13 Templates total). 1784 Tests grün, pnpm check 0 Fehler."
+      ],
+      next: [
+        "v1.83 FINAL-AUDIT: Summary aller v1.74-v1.82 Features, neue_todos.md auf erledigte Items ausmisten, README-Update falls vorhanden."
+      ],
+      changed: [
+        "package.json",
+        "client/src/utils/midiTemplates.ts",
+        "tests/features/midi-templates.test.ts",
+        "CLAUDE.md",
+        "agents/INDEX.js"
+      ]
+    },
     {
       agent:     "coordinator",
       timestamp: "2026-05-14T10:00:00.000Z",

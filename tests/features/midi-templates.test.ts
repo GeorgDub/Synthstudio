@@ -146,4 +146,60 @@ describe("MIDI-Templates", () => {
       notes.forEach(m => expect(m.label).toBeTruthy());
     });
   });
+
+  // ─── Weitere Hardware-Templates (v1.82) ──────────────────────────────────
+  describe("Weitere Hardware-Templates (v1.82)", () => {
+    const newIds = ["korg-volca-beats", "roland-tr-8", "arturia-beatstep-pro", "elektron-digitakt"];
+
+    it.each(newIds)("Template '%s' ist registriert", (id) => {
+      expect(getMidiTemplate(id)).toBeDefined();
+    });
+
+    it.each(newIds)("Template '%s' hat valide ccMappings (cc 0-127, channel 0-16)", (id) => {
+      const t = getMidiTemplate(id)!;
+      t.ccMappings.forEach(m => {
+        expect(m.cc).toBeGreaterThanOrEqual(0);
+        expect(m.cc).toBeLessThanOrEqual(127);
+        expect(m.channel).toBeGreaterThanOrEqual(0);
+        expect(m.channel).toBeLessThanOrEqual(16);
+      });
+    });
+
+    it.each(newIds)("Template '%s' hat valide noteMappings (note 0-127, channel 0-16)", (id) => {
+      const t = getMidiTemplate(id)!;
+      t.noteMappings.forEach(m => {
+        expect(m.note).toBeGreaterThanOrEqual(0);
+        expect(m.note).toBeLessThanOrEqual(127);
+        expect(m.channel).toBeGreaterThanOrEqual(0);
+        expect(m.channel).toBeLessThanOrEqual(16);
+      });
+    });
+
+    it("Volca Beats hat Drum-Pads auf Ch10 (Korg-Default)", () => {
+      const t = getMidiTemplate("korg-volca-beats")!;
+      t.noteMappings.forEach(m => expect(m.channel).toBe(10));
+    });
+
+    it("Roland TR-8 hat Drum-Pads auf Ch10 + masterVolume CC", () => {
+      const t = getMidiTemplate("roland-tr-8")!;
+      t.noteMappings.forEach(m => expect(m.channel).toBe(10));
+      expect(t.ccMappings.some(m => m.target.type === "masterVolume")).toBe(true);
+    });
+
+    it("BeatStep Pro hat 16 Pad-Mappings (2 Reihen)", () => {
+      const t = getMidiTemplate("arturia-beatstep-pro")!;
+      expect(t.noteMappings).toHaveLength(16);
+    });
+
+    it("Digitakt nutzt 8 Channels (Ch1-8) für seine Multi-Track-Outputs", () => {
+      const t = getMidiTemplate("elektron-digitakt")!;
+      const channels = new Set(t.noteMappings.map(m => m.channel));
+      expect(channels.size).toBe(8);
+      [1, 2, 3, 4, 5, 6, 7, 8].forEach(ch => expect(channels.has(ch)).toBe(true));
+    });
+
+    it("MIDI_TEMPLATES enthält jetzt mindestens 13 Vorlagen", () => {
+      expect(MIDI_TEMPLATES.length).toBeGreaterThanOrEqual(13);
+    });
+  });
 });
