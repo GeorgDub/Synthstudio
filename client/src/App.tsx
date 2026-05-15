@@ -68,6 +68,7 @@ import { useDrumMachineStore } from "@/store/useDrumMachineStore";
 import { useTransport } from "@/hooks/useTransport";
 import { RecordSettingsPopover } from "@/components/Transport/RecordSettingsPopover";
 import { useMidi } from "@/hooks/useMidi";
+import { useMidiEventBridge } from "@/hooks/useMidiEventBridge";
 import { MidiProvider } from "@/context/MidiContext";
 import { toast } from "@/store/useToastStore";
 import { ToastContainer } from "@/components/UI/ToastContainer";
@@ -1393,113 +1394,12 @@ export default function App() {
     punchOutStep: project.punchOutStep,
   });
 
-  // ── MIDI-CC → DrumMachine-Setter (v1.76) ─────────────────────────────────
-  // Vor v1.76 dispatchten useMidi.applyMapping CustomEvents (midi:partVolume,
-  // midi:partPan, midi:partSolo, midi:fxParam, midi:masterVolume) ohne dass
-  // jemand sie konsumiert hat → CC-Mappings für Volume/Pan/Solo/FX waren
-  // im Ergebnis No-Ops. Hier wiren wir die Events ans dmRef-Store.
-  useEffect(() => {
-    const handleVolume = (e: Event) => {
-      const detail = (e as CustomEvent<{ partId: string; value: number }>).detail;
-      if (detail && typeof detail.partId === "string" && typeof detail.value === "number") {
-        dmRef.current.setPartVolume(detail.partId, Math.max(0, Math.min(1, detail.value)));
-      }
-    };
-    const handlePan = (e: Event) => {
-      const detail = (e as CustomEvent<{ partId: string; value: number }>).detail;
-      if (detail && typeof detail.partId === "string" && typeof detail.value === "number") {
-        dmRef.current.setPartPan(detail.partId, Math.max(-1, Math.min(1, detail.value)));
-      }
-    };
-    const handleSolo = (e: Event) => {
-      const partId = (e as CustomEvent<string>).detail;
-      if (typeof partId !== "string") return;
-      const pattern = dmRef.current.getActivePattern();
-      const part = pattern?.parts.find(p => p.id === partId);
-      dmRef.current.setPartSoloed(partId, !(part?.soloed ?? false));
-    };
-    const handleFxParam = (e: Event) => {
-      const detail = (e as CustomEvent<{ partId: string; param: string; value: number }>).detail;
-      if (!detail || typeof detail.partId !== "string" || typeof detail.param !== "string") return;
-      dmRef.current.setPartFx(detail.partId, {
-        [detail.param]: detail.value,
-      } as Partial<import("@/audio/AudioEngine").ChannelFx>);
-    };
-    window.addEventListener("midi:partVolume", handleVolume);
-    window.addEventListener("midi:partPan",    handlePan);
-    window.addEventListener("midi:partSolo",   handleSolo);
-    window.addEventListener("midi:fxParam",    handleFxParam);
-    return () => {
-      window.removeEventListener("midi:partVolume", handleVolume);
-      window.removeEventListener("midi:partPan",    handlePan);
-      window.removeEventListener("midi:partSolo",   handleSolo);
-      window.removeEventListener("midi:fxParam",    handleFxParam);
-    };
-  }, []);
-
-  // v1.76: midi:partMute (Toggle pro CC>63). useMidi dispatcht zusätzlich
-  // zum bestehenden onMute-Callback ein CustomEvent damit Konsumenten ohne
-  // den Callback hören können.
-  useEffect(() => {
-    const handleMute = (e: Event) => {
-      const partId = (e as CustomEvent<string>).detail;
-      if (typeof partId !== "string") return;
-      const pattern = dmRef.current.getActivePattern();
-      const part = pattern?.parts.find(p => p.id === partId);
-      dmRef.current.setPartMuted(partId, !(part?.muted ?? false));
-    };
-    // v2.34: midi:partMuteSet ist die explizite Variante — kein Toggle,
-    // sondern set-to-value. Wird von OSC-In gefeuert wenn "0"/false explizit
-    // gesendet wird (Loop-Closing für externe Controller die nicht toggeln).
-    const handleMuteSet = (e: Event) => {
-      const detail = (e as CustomEvent<{ partId: string; value: boolean }>).detail;
-      if (!detail || typeof detail.partId !== "string" || typeof detail.value !== "boolean") return;
-      dmRef.current.setPartMuted(detail.partId, detail.value);
-    };
-    window.addEventListener("midi:partMute", handleMute);
-    window.addEventListener("midi:partMuteSet", handleMuteSet);
-    return () => {
-      window.removeEventListener("midi:partMute", handleMute);
-      window.removeEventListener("midi:partMuteSet", handleMuteSet);
-    };
-  }, []);
-
-  // v2.34: OSC-In Loop-Closing. Vier weitere Hidden-No-Ops gefixt — die Events
-  // wurden in den OSC-Bindings dispatched aber niemand hörte zu (analog zum
-  // v1.76-Fix). Jetzt enden sie tatsächlich beim Project-Store / AudioEngine.
-  useEffect(() => {
-    const handleBpm = (e: Event) => {
-      const detail = (e as CustomEvent<{ value: number } | number>).detail;
-      const value = typeof detail === "number" ? detail : detail?.value;
-      if (typeof value !== "number" || !Number.isFinite(value)) return;
-      projectRef.current.setBpm(Math.max(20, Math.min(300, Math.round(value))));
-    };
-    const handlePlayStop = (e: Event) => {
-      const detail = (e as CustomEvent<{ toggle?: boolean }>).detail;
-      // toggle=true → toggelt (Default für /synth/play das auch als Stop wirken kann)
-      if (detail?.toggle === false) return;
-      projectRef.current.togglePlayStop();
-    };
-    const handleStop = () => {
-      if (projectRef.current.isPlaying) projectRef.current.togglePlayStop();
-    };
-    const handleMasterVolume = (e: Event) => {
-      const detail = (e as CustomEvent<{ value: number } | number>).detail;
-      const value = typeof detail === "number" ? detail : detail?.value;
-      if (typeof value !== "number" || !Number.isFinite(value)) return;
-      AudioEngine.setMasterVolume(Math.max(0, Math.min(1, value)));
-    };
-    window.addEventListener("midi:bpm", handleBpm);
-    window.addEventListener("midi:playStop", handlePlayStop);
-    window.addEventListener("midi:stop", handleStop);
-    window.addEventListener("midi:masterVolume", handleMasterVolume);
-    return () => {
-      window.removeEventListener("midi:bpm", handleBpm);
-      window.removeEventListener("midi:playStop", handlePlayStop);
-      window.removeEventListener("midi:stop", handleStop);
-      window.removeEventListener("midi:masterVolume", handleMasterVolume);
-    };
-  }, []);
+  // ── v2.40: MIDI-Event-Bridge ausgelagert in hooks/useMidiEventBridge.ts ─
+  // Hängt alle midi:* Window-Listener an (v1.76 partVolume/Pan/Solo/Fx,
+  // v1.76 partMute, v2.34 BPM/PlayStop/Stop/MasterVolume/MuteSet, v1.92+v2.34
+  // pattern). Refs werden übergeben damit Store-Re-Renders den Effekt
+  // nicht neu mounten.
+  useMidiEventBridge({ dmRef, projectRef });
 
   // v1.97: synchronisiert das BPM des Clock-Output mit dem Projekt-BPM.
   // Damit folgt der externe Synth automatisch BPM-Änderungen in Synthstudio.
@@ -1662,48 +1562,8 @@ export default function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dm.activePatternId, oscOutConfig.enabled, oscOutConfig.syncPatternSwitch]);
 
-  // v1.92: midi:pattern (Pattern-Index → Pattern-Switch). Vor v1.92 dispatchte
-  // useMidi.applyMapping zwar das Event, aber niemand hörte → das
-  // `pattern`-MidiLearnTarget war ein No-Op. Listener konvertiert Index zu
-  // Pattern-ID via dmRef.current.patterns[index].
-  //
-  // v2.34: erweitert auf 3 detail-Formate:
-  //   - number                  (useMidi-Legacy: Pattern-Index direkt)
-  //   - { index: number }       (OSC-In bei Integer-Arg)
-  //   - { patternId: string }   (OSC-In bei String-Arg → direkte ID-Lookup)
-  useEffect(() => {
-    const handlePattern = (e: Event) => {
-      const detail = (e as CustomEvent<unknown>).detail;
-      const patterns = dmRef.current.patterns;
-
-      // Format 1: detail ist ein direkter Zahl-Index (Legacy)
-      if (typeof detail === "number") {
-        const idx = Math.max(0, Math.floor(detail));
-        if (idx >= 0 && idx < patterns.length) {
-          dmRef.current.setActivePattern(patterns[idx].id);
-        }
-        return;
-      }
-
-      // Format 2/3: Objekt mit index ODER patternId
-      if (detail && typeof detail === "object") {
-        const obj = detail as { index?: number; patternId?: string };
-        if (typeof obj.index === "number") {
-          const idx = Math.max(0, Math.floor(obj.index));
-          if (idx >= 0 && idx < patterns.length) {
-            dmRef.current.setActivePattern(patterns[idx].id);
-          }
-          return;
-        }
-        if (typeof obj.patternId === "string" && patterns.some(p => p.id === obj.patternId)) {
-          dmRef.current.setActivePattern(obj.patternId);
-          return;
-        }
-      }
-    };
-    window.addEventListener("midi:pattern", handlePattern);
-    return () => window.removeEventListener("midi:pattern", handlePattern);
-  }, []);
+  // v1.92 + v2.34: midi:pattern wird jetzt im useMidiEventBridge-Hook
+  // (siehe weiter oben) verarbeitet. Accepts number | {index} | {patternId}.
 
   // v2.10: midi:commitLiveEdit — Hidden-Bug-Fix. War dispatched aber kein
   // Listener. Bindet jetzt direkt an dm.commitLivePatternEdit.

@@ -1,0 +1,214 @@
+/**
+ * Synthstudio – useMidiEventBridge (v2.40)
+ *
+ * Hängt alle "midi:*" Window-CustomEvent-Listener auf einmal an und routet
+ * sie an die übergebenen Refs auf die Stores/Engines. Wurde aus App.tsx
+ * herausgezogen weil die Bridge-Logik dort ~120 Zeilen pure Event-Wiring
+ * war und mit jeder OSC-/MIDI-Erweiterung weiter gewachsen ist.
+ *
+ * Architektur: die Handler sind als Pure Functions (makeMidiBridgeHandlers)
+ * implementiert damit sie ohne React-Renderer testbar bleiben. Der Hook
+ * selbst ist nur noch das useEffect-Wiring.
+ *
+ * Empfangene Events (Auslöser → Wirkung):
+ *
+ *   midi:partVolume     {partId, value:0..1}         → dm.setPartVolume
+ *   midi:partPan        {partId, value:-1..1}        → dm.setPartPan
+ *   midi:partSolo       partId:string (toggle)       → dm.setPartSoloed
+ *   midi:fxParam        {partId, param, value}        → dm.setPartFx
+ *   midi:partMute       partId:string (toggle)       → dm.setPartMuted
+ *   midi:partMuteSet    {partId, value:boolean}      → dm.setPartMuted (explicit)
+ *   midi:bpm            {value:number} | number      → project.setBpm
+ *   midi:playStop       {toggle?:boolean}            → project.togglePlayStop
+ *   midi:stop           ∅                            → project.togglePlayStop wenn isPlaying
+ *   midi:masterVolume   {value:number} | number      → AudioEngine.setMasterVolume
+ *   midi:pattern        number | {index|patternId}    → dm.setActivePattern
+ *
+ * Quellen: v1.76 (Volume/Pan/Solo/Fx), v1.92 (Pattern), v2.34 (BPM/PlayStop/
+ * Stop/MasterVolume/MuteSet/Pattern-as-String).
+ */
+import { useEffect } from "react";
+import type { MutableRefObject } from "react";
+import { AudioEngine } from "@/audio/AudioEngine";
+import type { ChannelFx } from "@/audio/AudioEngine";
+
+/**
+ * Minimal-Interface der DrumMachine-Store-Methoden die diese Bridge braucht.
+ * Vermeidet eine harte Abhängigkeit zum vollen useDrumMachineStore-Typ —
+ * macht den Hook in Tests trivial mit Mocks aufrufbar.
+ */
+export interface MidiBridgeDmActions {
+  setPartVolume: (partId: string, value: number) => void;
+  setPartPan: (partId: string, value: number) => void;
+  setPartSoloed: (partId: string, soloed: boolean, exclusive?: boolean) => void;
+  setPartMuted: (partId: string, muted: boolean) => void;
+  setPartFx: (partId: string, fx: Partial<ChannelFx>) => void;
+  setActivePattern: (id: string) => void;
+  getActivePattern: () => { parts: Array<{ id: string; muted: boolean; soloed: boolean }> } | undefined;
+  patterns: Array<{ id: string }>;
+}
+
+export interface MidiBridgeProjectActions {
+  setBpm: (bpm: number) => void;
+  togglePlayStop: () => void;
+  isPlaying: boolean;
+}
+
+export interface MidiBridgeRefs {
+  dmRef: MutableRefObject<MidiBridgeDmActions>;
+  projectRef: MutableRefObject<MidiBridgeProjectActions>;
+  /** Optional override für Tests; produktiv ist es immer AudioEngine. */
+  audioEngine?: { setMasterVolume: (v: number) => void };
+}
+
+export interface MidiBridgeHandlers {
+  handleVolume: (e: Event) => void;
+  handlePan: (e: Event) => void;
+  handleSolo: (e: Event) => void;
+  handleFxParam: (e: Event) => void;
+  handleMute: (e: Event) => void;
+  handleMuteSet: (e: Event) => void;
+  handleBpm: (e: Event) => void;
+  handlePlayStop: (e: Event) => void;
+  handleStop: (e: Event) => void;
+  handleMasterVolume: (e: Event) => void;
+  handlePattern: (e: Event) => void;
+}
+
+/**
+ * Pure Factory: erzeugt alle Event-Handler ohne sie zu attachen.
+ * Wird vom Hook für das tatsächliche window-Wiring genutzt — und von
+ * Tests direkt aufgerufen.
+ */
+export function makeMidiBridgeHandlers(refs: MidiBridgeRefs): MidiBridgeHandlers {
+  const { dmRef, projectRef } = refs;
+  const audio = refs.audioEngine ?? AudioEngine;
+
+  const handleVolume = (e: Event) => {
+    const detail = (e as CustomEvent<{ partId: string; value: number }>).detail;
+    if (detail && typeof detail.partId === "string" && typeof detail.value === "number") {
+      dmRef.current.setPartVolume(detail.partId, Math.max(0, Math.min(1, detail.value)));
+    }
+  };
+  const handlePan = (e: Event) => {
+    const detail = (e as CustomEvent<{ partId: string; value: number }>).detail;
+    if (detail && typeof detail.partId === "string" && typeof detail.value === "number") {
+      dmRef.current.setPartPan(detail.partId, Math.max(-1, Math.min(1, detail.value)));
+    }
+  };
+  const handleSolo = (e: Event) => {
+    const partId = (e as CustomEvent<string>).detail;
+    if (typeof partId !== "string") return;
+    const pattern = dmRef.current.getActivePattern();
+    const part = pattern?.parts.find((p) => p.id === partId);
+    dmRef.current.setPartSoloed(partId, !(part?.soloed ?? false));
+  };
+  const handleFxParam = (e: Event) => {
+    const detail = (e as CustomEvent<{ partId: string; param: string; value: number }>).detail;
+    if (!detail || typeof detail.partId !== "string" || typeof detail.param !== "string") return;
+    dmRef.current.setPartFx(detail.partId, {
+      [detail.param]: detail.value,
+    } as Partial<ChannelFx>);
+  };
+  const handleMute = (e: Event) => {
+    const partId = (e as CustomEvent<string>).detail;
+    if (typeof partId !== "string") return;
+    const pattern = dmRef.current.getActivePattern();
+    const part = pattern?.parts.find((p) => p.id === partId);
+    dmRef.current.setPartMuted(partId, !(part?.muted ?? false));
+  };
+  const handleMuteSet = (e: Event) => {
+    const detail = (e as CustomEvent<{ partId: string; value: boolean }>).detail;
+    if (!detail || typeof detail.partId !== "string" || typeof detail.value !== "boolean") return;
+    dmRef.current.setPartMuted(detail.partId, detail.value);
+  };
+  const handleBpm = (e: Event) => {
+    const detail = (e as CustomEvent<{ value: number } | number>).detail;
+    const value = typeof detail === "number" ? detail : detail?.value;
+    if (typeof value !== "number" || !Number.isFinite(value)) return;
+    projectRef.current.setBpm(Math.max(20, Math.min(300, Math.round(value))));
+  };
+  const handlePlayStop = (e: Event) => {
+    const detail = (e as CustomEvent<{ toggle?: boolean }>).detail;
+    if (detail?.toggle === false) return;
+    projectRef.current.togglePlayStop();
+  };
+  const handleStop = () => {
+    if (projectRef.current.isPlaying) projectRef.current.togglePlayStop();
+  };
+  const handleMasterVolume = (e: Event) => {
+    const detail = (e as CustomEvent<{ value: number } | number>).detail;
+    const value = typeof detail === "number" ? detail : detail?.value;
+    if (typeof value !== "number" || !Number.isFinite(value)) return;
+    audio.setMasterVolume(Math.max(0, Math.min(1, value)));
+  };
+  const handlePattern = (e: Event) => {
+    const detail = (e as CustomEvent<unknown>).detail;
+    const patterns = dmRef.current.patterns;
+
+    if (typeof detail === "number") {
+      const idx = Math.max(0, Math.floor(detail));
+      if (idx >= 0 && idx < patterns.length) {
+        dmRef.current.setActivePattern(patterns[idx].id);
+      }
+      return;
+    }
+    if (detail && typeof detail === "object") {
+      const obj = detail as { index?: number; patternId?: string };
+      if (typeof obj.index === "number") {
+        const idx = Math.max(0, Math.floor(obj.index));
+        if (idx >= 0 && idx < patterns.length) {
+          dmRef.current.setActivePattern(patterns[idx].id);
+        }
+        return;
+      }
+      if (typeof obj.patternId === "string" && patterns.some((p) => p.id === obj.patternId)) {
+        dmRef.current.setActivePattern(obj.patternId);
+        return;
+      }
+    }
+  };
+
+  return {
+    handleVolume, handlePan, handleSolo, handleFxParam,
+    handleMute, handleMuteSet,
+    handleBpm, handlePlayStop, handleStop, handleMasterVolume,
+    handlePattern,
+  };
+}
+
+/**
+ * Hängt alle MIDI-Event-Listener auf window an. Cleanup beim Unmount.
+ * Refs werden absichtlich übergeben damit Re-Renders der Store-Werte
+ * den Effect NICHT neu mounten (Effekt-deps leer).
+ */
+export function useMidiEventBridge(refs: MidiBridgeRefs): void {
+  useEffect(() => {
+    const h = makeMidiBridgeHandlers(refs);
+    window.addEventListener("midi:partVolume", h.handleVolume);
+    window.addEventListener("midi:partPan", h.handlePan);
+    window.addEventListener("midi:partSolo", h.handleSolo);
+    window.addEventListener("midi:fxParam", h.handleFxParam);
+    window.addEventListener("midi:partMute", h.handleMute);
+    window.addEventListener("midi:partMuteSet", h.handleMuteSet);
+    window.addEventListener("midi:bpm", h.handleBpm);
+    window.addEventListener("midi:playStop", h.handlePlayStop);
+    window.addEventListener("midi:stop", h.handleStop);
+    window.addEventListener("midi:masterVolume", h.handleMasterVolume);
+    window.addEventListener("midi:pattern", h.handlePattern);
+    return () => {
+      window.removeEventListener("midi:partVolume", h.handleVolume);
+      window.removeEventListener("midi:partPan", h.handlePan);
+      window.removeEventListener("midi:partSolo", h.handleSolo);
+      window.removeEventListener("midi:fxParam", h.handleFxParam);
+      window.removeEventListener("midi:partMute", h.handleMute);
+      window.removeEventListener("midi:partMuteSet", h.handleMuteSet);
+      window.removeEventListener("midi:bpm", h.handleBpm);
+      window.removeEventListener("midi:playStop", h.handlePlayStop);
+      window.removeEventListener("midi:stop", h.handleStop);
+      window.removeEventListener("midi:masterVolume", h.handleMasterVolume);
+      window.removeEventListener("midi:pattern", h.handlePattern);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+}
