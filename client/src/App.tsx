@@ -1448,8 +1448,57 @@ export default function App() {
       const part = pattern?.parts.find(p => p.id === partId);
       dmRef.current.setPartMuted(partId, !(part?.muted ?? false));
     };
+    // v2.34: midi:partMuteSet ist die explizite Variante — kein Toggle,
+    // sondern set-to-value. Wird von OSC-In gefeuert wenn "0"/false explizit
+    // gesendet wird (Loop-Closing für externe Controller die nicht toggeln).
+    const handleMuteSet = (e: Event) => {
+      const detail = (e as CustomEvent<{ partId: string; value: boolean }>).detail;
+      if (!detail || typeof detail.partId !== "string" || typeof detail.value !== "boolean") return;
+      dmRef.current.setPartMuted(detail.partId, detail.value);
+    };
     window.addEventListener("midi:partMute", handleMute);
-    return () => window.removeEventListener("midi:partMute", handleMute);
+    window.addEventListener("midi:partMuteSet", handleMuteSet);
+    return () => {
+      window.removeEventListener("midi:partMute", handleMute);
+      window.removeEventListener("midi:partMuteSet", handleMuteSet);
+    };
+  }, []);
+
+  // v2.34: OSC-In Loop-Closing. Vier weitere Hidden-No-Ops gefixt — die Events
+  // wurden in den OSC-Bindings dispatched aber niemand hörte zu (analog zum
+  // v1.76-Fix). Jetzt enden sie tatsächlich beim Project-Store / AudioEngine.
+  useEffect(() => {
+    const handleBpm = (e: Event) => {
+      const detail = (e as CustomEvent<{ value: number } | number>).detail;
+      const value = typeof detail === "number" ? detail : detail?.value;
+      if (typeof value !== "number" || !Number.isFinite(value)) return;
+      projectRef.current.setBpm(Math.max(20, Math.min(300, Math.round(value))));
+    };
+    const handlePlayStop = (e: Event) => {
+      const detail = (e as CustomEvent<{ toggle?: boolean }>).detail;
+      // toggle=true → toggelt (Default für /synth/play das auch als Stop wirken kann)
+      if (detail?.toggle === false) return;
+      projectRef.current.togglePlayStop();
+    };
+    const handleStop = () => {
+      if (projectRef.current.isPlaying) projectRef.current.togglePlayStop();
+    };
+    const handleMasterVolume = (e: Event) => {
+      const detail = (e as CustomEvent<{ value: number } | number>).detail;
+      const value = typeof detail === "number" ? detail : detail?.value;
+      if (typeof value !== "number" || !Number.isFinite(value)) return;
+      AudioEngine.setMasterVolume(Math.max(0, Math.min(1, value)));
+    };
+    window.addEventListener("midi:bpm", handleBpm);
+    window.addEventListener("midi:playStop", handlePlayStop);
+    window.addEventListener("midi:stop", handleStop);
+    window.addEventListener("midi:masterVolume", handleMasterVolume);
+    return () => {
+      window.removeEventListener("midi:bpm", handleBpm);
+      window.removeEventListener("midi:playStop", handlePlayStop);
+      window.removeEventListener("midi:stop", handleStop);
+      window.removeEventListener("midi:masterVolume", handleMasterVolume);
+    };
   }, []);
 
   // v1.97: synchronisiert das BPM des Clock-Output mit dem Projekt-BPM.
@@ -1617,14 +1666,39 @@ export default function App() {
   // useMidi.applyMapping zwar das Event, aber niemand hörte → das
   // `pattern`-MidiLearnTarget war ein No-Op. Listener konvertiert Index zu
   // Pattern-ID via dmRef.current.patterns[index].
+  //
+  // v2.34: erweitert auf 3 detail-Formate:
+  //   - number                  (useMidi-Legacy: Pattern-Index direkt)
+  //   - { index: number }       (OSC-In bei Integer-Arg)
+  //   - { patternId: string }   (OSC-In bei String-Arg → direkte ID-Lookup)
   useEffect(() => {
     const handlePattern = (e: Event) => {
-      const patternIndex = (e as CustomEvent<number>).detail;
-      if (typeof patternIndex !== "number") return;
-      const idx = Math.max(0, Math.floor(patternIndex));
+      const detail = (e as CustomEvent<unknown>).detail;
       const patterns = dmRef.current.patterns;
-      if (idx >= 0 && idx < patterns.length) {
-        dmRef.current.setActivePattern(patterns[idx].id);
+
+      // Format 1: detail ist ein direkter Zahl-Index (Legacy)
+      if (typeof detail === "number") {
+        const idx = Math.max(0, Math.floor(detail));
+        if (idx >= 0 && idx < patterns.length) {
+          dmRef.current.setActivePattern(patterns[idx].id);
+        }
+        return;
+      }
+
+      // Format 2/3: Objekt mit index ODER patternId
+      if (detail && typeof detail === "object") {
+        const obj = detail as { index?: number; patternId?: string };
+        if (typeof obj.index === "number") {
+          const idx = Math.max(0, Math.floor(obj.index));
+          if (idx >= 0 && idx < patterns.length) {
+            dmRef.current.setActivePattern(patterns[idx].id);
+          }
+          return;
+        }
+        if (typeof obj.patternId === "string" && patterns.some(p => p.id === obj.patternId)) {
+          dmRef.current.setActivePattern(obj.patternId);
+          return;
+        }
       }
     };
     window.addEventListener("midi:pattern", handlePattern);

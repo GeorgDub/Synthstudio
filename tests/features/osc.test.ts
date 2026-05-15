@@ -96,10 +96,12 @@ describe("mapOscToAction (v2.17)", () => {
     expect((action?.detail as { value: number }).value).toBeCloseTo(0.42, 5);
   });
 
-  it("/synth/mute/<partId> <T|F> → midi:partMute", () => {
+  it("/synth/mute/<partId> <T> → midi:partMute (Toggle-Event, detail=partId)", () => {
+    // v2.34: Loop-Closing — detail ist die partId als String (passt zu
+    // App.tsx-Listener aus v1.76 der mit detail-as-string toggelt).
     const action = mapOscToAction({ address: "/synth/mute/kick-1", args: [true] });
     expect(action?.event).toBe("midi:partMute");
-    expect(action?.detail).toEqual({ partId: "kick-1", value: true });
+    expect(action?.detail).toBe("kick-1");
   });
 
   it("Unbekannte Adresse → null", () => {
@@ -115,5 +117,107 @@ describe("mapOscToAction (v2.17)", () => {
     const action = mapOscToAction({ address: "/synth/pattern", args: [2.7] });
     expect(action?.event).toBe("midi:pattern");
     expect((action?.detail as { index: number }).index).toBe(3);
+  });
+});
+
+// ─── v2.34: OSC-In/Out-Symmetrie ─────────────────────────────────────────────
+
+describe("v2.34: OSC-Loop-Closing (OSC-In erkennt OSC-Out-Adressen)", () => {
+  it("/synth/bpm/current <f> → midi:bpm (BPM-Out-Alias)", () => {
+    const a = mapOscToAction({ address: "/synth/bpm/current", args: [128.5] });
+    expect(a?.event).toBe("midi:bpm");
+    expect((a?.detail as { value: number }).value).toBeCloseTo(128.5, 5);
+  });
+
+  it("/synth/transport/play und /synth/transport/stop sind Aliase", () => {
+    expect(mapOscToAction({ address: "/synth/transport/play", args: [] })?.event).toBe("midi:playStop");
+    expect(mapOscToAction({ address: "/synth/transport/stop", args: [] })?.event).toBe("midi:stop");
+  });
+
+  it("/synth/pattern <s> akzeptiert Pattern-ID-String", () => {
+    const a = mapOscToAction({ address: "/synth/pattern", args: ["pattern_abc123"] });
+    expect(a?.event).toBe("midi:pattern");
+    expect((a?.detail as { patternId: string }).patternId).toBe("pattern_abc123");
+  });
+
+  it("/synth/pattern lehnt leeren String ab", () => {
+    expect(mapOscToAction({ address: "/synth/pattern", args: [""] })).toBeNull();
+  });
+
+  it("/synth/volume/<partId> <f> → midi:partVolume", () => {
+    const a = mapOscToAction({ address: "/synth/volume/kick", args: [0.8] });
+    expect(a?.event).toBe("midi:partVolume");
+    expect(a?.detail).toEqual({ partId: "kick", value: 0.8 });
+  });
+
+  it("/synth/pan/<partId> <f> → midi:partPan", () => {
+    const a = mapOscToAction({ address: "/synth/pan/snare", args: [-0.5] });
+    expect(a?.event).toBe("midi:partPan");
+    expect(a?.detail).toEqual({ partId: "snare", value: -0.5 });
+  });
+
+  it("/synth/solo/<partId> → midi:partSolo", () => {
+    const a = mapOscToAction({ address: "/synth/solo/lead", args: [] });
+    expect(a?.event).toBe("midi:partSolo");
+    expect(a?.detail).toBe("lead");
+  });
+
+  it("/synth/mute akzeptiert String \"1\"/\"0\" (OSC-Out-Format)", () => {
+    const truthy = mapOscToAction({ address: "/synth/mute/kick", args: ["1"] });
+    expect(truthy?.event).toBe("midi:partMute");
+    expect(truthy?.detail).toBe("kick");
+
+    const falsy = mapOscToAction({ address: "/synth/mute/kick", args: ["0"] });
+    expect(falsy?.event).toBe("midi:partMuteSet");
+    expect(falsy?.detail).toEqual({ partId: "kick", value: false });
+  });
+
+  it("/synth/mute akzeptiert Integer 1/0", () => {
+    expect(mapOscToAction({ address: "/synth/mute/k", args: [1] })?.event).toBe("midi:partMute");
+    expect(mapOscToAction({ address: "/synth/mute/k", args: [0] })?.event).toBe("midi:partMuteSet");
+  });
+
+  it("/synth/mute akzeptiert Boolean true/false", () => {
+    expect(mapOscToAction({ address: "/synth/mute/k", args: [true] })?.event).toBe("midi:partMute");
+    expect(mapOscToAction({ address: "/synth/mute/k", args: [false] })?.event).toBe("midi:partMuteSet");
+  });
+
+  it("partId mit URL-encodierten Sonderzeichen wird decodiert", () => {
+    const a = mapOscToAction({ address: "/synth/volume/Hi%2DHat%20cl%2E", args: [0.5] });
+    expect(a?.event).toBe("midi:partVolume");
+    expect((a?.detail as { partId: string }).partId).toBe("Hi-Hat cl.");
+  });
+});
+
+describe("v2.34: oscIsTruthy", () => {
+  it("Boolean true/false", async () => {
+    const { oscIsTruthy } = await import("../../client/src/utils/oscBindings");
+    expect(oscIsTruthy(true)).toBe(true);
+    expect(oscIsTruthy(false)).toBe(false);
+  });
+
+  it("Integer 1, 0, -1", async () => {
+    const { oscIsTruthy } = await import("../../client/src/utils/oscBindings");
+    expect(oscIsTruthy(1)).toBe(true);
+    expect(oscIsTruthy(-1)).toBe(true);
+    expect(oscIsTruthy(0)).toBe(false);
+  });
+
+  it("String \"1\"/\"0\"/\"true\"/\"on\"/\"yes\"", async () => {
+    const { oscIsTruthy } = await import("../../client/src/utils/oscBindings");
+    for (const t of ["1", "true", "T", "on", "yes", " TRUE ", "Yes"]) {
+      expect(oscIsTruthy(t)).toBe(true);
+    }
+    for (const f of ["0", "false", "off", "no", "", "foo"]) {
+      expect(oscIsTruthy(f)).toBe(false);
+    }
+  });
+
+  it("Sonstige Typen → false", async () => {
+    const { oscIsTruthy } = await import("../../client/src/utils/oscBindings");
+    expect(oscIsTruthy(null)).toBe(false);
+    expect(oscIsTruthy(undefined)).toBe(false);
+    expect(oscIsTruthy({})).toBe(false);
+    expect(oscIsTruthy([])).toBe(false);
   });
 });
