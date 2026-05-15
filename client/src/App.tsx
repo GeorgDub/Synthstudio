@@ -132,6 +132,12 @@ import { SettingsPanel } from "@/components/Settings/SettingsPanel";
 import { SessionRecorder } from "@/components/CollabSession/SessionRecorder";
 import { RelayPanel } from "@/components/CollabSession/RelayPanel";
 import { PerformanceRecorderBadge } from "@/components/PerformanceRecorder/PerformanceRecorderBadge";
+import { FloatingPanel } from "@/components/UI/FloatingPanel";
+import {
+  useInspectorFloatStore,
+  closeInspectorFloat,
+  toggleInspectorFloat,
+} from "@/store/useInspectorFloatStore";
 import { mapOscToAction, dispatchOscAction } from "@/utils/oscBindings";
 import { useOscOutConfig } from "@/store/useOscOutStore";
 import { recordEvent } from "@/store/useSessionRecordingStore";
@@ -508,6 +514,8 @@ export default function App() {
   const dmRef = useRef(dm);
   dmRef.current = dm;
   const mixer = useMixerStore();
+  // v2.46: Inspector als pinnable Floating-Panel zusätzlich zur Dock-Slot-Position
+  const inspectorFloat = useInspectorFloatStore();
   const automation = useAutomationStore();
   const { tagSampleFromFilename, detectBpmForSample } = useBpmDetection();
 
@@ -2862,11 +2870,26 @@ export default function App() {
                   )}
                 </button>
               ))}
+              {/* v2.46: Floating-Inspector-Toggle */}
+              <button
+                onClick={toggleInspectorFloat}
+                aria-pressed={inspectorFloat.open}
+                title={inspectorFloat.open ? "Floating Inspector schließen" : "Floating Inspector öffnen (zusätzlich zum Dock-Slot)"}
+                data-testid="inspector-float-toggle"
+                className={[
+                  "ml-auto px-3 py-1.5 rounded text-xs font-bold border",
+                  inspectorFloat.open
+                    ? "bg-accent-secondary/30 border-accent-secondary text-accent-secondary"
+                    : "bg-bg-panel border-border-color text-text-dim hover:text-accent-secondary hover:border-accent-secondary",
+                ].join(" ")}
+              >
+                🎚️ Inspector
+              </button>
               {/* Performance Mode (Vollbild-Launchpad, F12) */}
               <button
                 onClick={() => setPerformanceActive(true)}
                 title="Performance Mode (F12) – Vollbild-Pattern-Launchpad"
-                className="ml-auto mr-3 px-3 py-1.5 rounded text-xs font-bold bg-accent-primary/20 border border-accent-primary/40 text-accent-primary hover:bg-accent-primary/30"
+                className="ml-2 mr-3 px-3 py-1.5 rounded text-xs font-bold bg-accent-primary/20 border border-accent-primary/40 text-accent-primary hover:bg-accent-primary/30"
               >
                 ⚡ Performance Mode
               </button>
@@ -3164,6 +3187,28 @@ export default function App() {
       {/* v2.22: Performance-Recorder-Badge — fixed bottom-right overlay,
           immer sichtbar damit User v2.15 Recording-Feature überhaupt finden. */}
       <PerformanceRecorderBadge />
+
+      {/* v2.46: ChannelInspector als freischwebendes Panel. Nutzt den
+          gleichen Component wie im Dock-Slot — keine Code-Duplikation. */}
+      {inspectorFloat.open && (
+        <FloatingPanel
+          storageKey="ss-floating:inspector"
+          title="🎚️ Channel Inspector"
+          defaultPosition={{ x: 160, y: 120, w: 360, h: 540 }}
+          minWidth={300}
+          minHeight={320}
+          onClose={closeInspectorFloat}
+          testId="floating-inspector"
+        >
+          <ChannelInspector
+            part={dm.getActivePattern()?.parts.find(p => p.id === mixer.selectedChannelId) ?? dm.getActivePattern()?.parts[0]}
+            parts={dm.getActivePattern()?.parts ?? []}
+            mixer={mixer}
+            onApplyPatch={dm.applyPatchToPart}
+            className="w-full h-full"
+          />
+        </FloatingPanel>
+      )}
 
       <ThemeSettings
         isOpen={showThemeSettings}
