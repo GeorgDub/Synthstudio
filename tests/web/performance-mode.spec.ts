@@ -24,7 +24,10 @@ async function openPerformanceMode(page: Page) {
 test.describe("Performance Mode (TASK-111)", () => {
   test("kann via Toolbar-Button geöffnet werden", async ({ page }) => {
     await openPerformanceMode(page);
-    await expect(page.getByText("PERFORMANCE MODE")).toBeVisible();
+    // v2.35: Overlay-Header strikt im Overlay-Scope prüfen — globaler
+    // getByText matched sonst auch den ⚡-Toolbar-Button (strict-mode-Violation).
+    const overlay = page.getByTestId("performance-mode-overlay");
+    await expect(overlay.getByText("PERFORMANCE MODE")).toBeVisible();
   });
 
   test("ESC schließt Performance Mode", async ({ page }) => {
