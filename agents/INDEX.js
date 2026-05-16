@@ -493,6 +493,24 @@ const INDEX = {
   workLog: [
     {
       agent:     "testing",
+      timestamp: "2026-05-16T18:15:00.000Z",
+      done: [
+        "POLISH-WELLE-v2.60 Pure-Coverage-Bundle: 3 untestete Util-Files mit ausschließlich pure-Function-Coverage abgedeckt (Pattern wie v2.56-v2.58). (1) tests/features/arpeggiator.test.ts (NEW, 29 Cases): 8 ArpModes (up/down/upDown/random/chord/converge/diverge/order) × Octave-Stacking 1/2/3 + 6 Velocity-Patterns + stepSkip + gateLength + Seed-Determinismus + leere-Noten-Edge-Case. Eintsentliche assertions sind Note-Pool-Reihenfolge (z.B. converge [60,72,64,67], diverge [67,64,72,60]) und Velocity-Range-Guards. (2) tests/features/scales.test.ts (NEW, 41 Cases): 13 SCALES Schema-Integrität (Aufsteig-Sortierung, [0,11]-Range, Root=0 in jeder), isKnownScaleId Type-Guard für 4 non-string-Inputs (null/undefined/42/object) + Persistenz-Boundary, getScale wirft bei unbekannter ID, pitchClass für MIDI 0/60/127/-1/-12, isInScale gegen 6 Skalen × Roots, snapToScale für chromatic-bypass + in-scale-Identity + Konventions-Tie-Breaker (höhere bevorzugen), scalePitchClasses-Rotation bei nicht-C Root, pitchClassName auch für Out-of-Range. (3) tests/features/transpose.test.ts (NEW, 36 Cases): clampSemitones ±24 Range + NaN/Infinity-Defensiv + fraktionale Rundung; transposeNote MIDI [0,127] Clamp an beiden Enden + fraktionale Inputs; semitoneLabel mit allen 4 Oktav-Markern (8va/8vb/15ma/15mb) + over-range-via-clamp + NaN-Edge. Validation: pnpm test 2269 passed/15 skipped vs vorher 2163 (+106 = arpeggiator 29 + scales 41 + transpose 36). pnpm check clean. Package.json gebumped 2.59.0 → 2.60.0."
+      ],
+      next: [
+        "Tag v2.60.0 + push → validiert die GitHub-Actions-Upgrades aus 7e6c287 (checkout@v6, setup-node@v6, pnpm-action-setup@v6, upload-artifact@v7) end-to-end in einem echten Release-Build.",
+        "Weitere Pure-Coverage-Kandidaten falls Wave weitergeht: mixerFx.ts (214 LOC, FX-Param-Mappings), patternDensity.ts (139 LOC, Pattern-Analyzer), polymeter.ts (74 LOC), midiExport.ts (184 LOC), noteRepeat.ts (75 LOC)."
+      ],
+      changed: [
+        "tests/features/arpeggiator.test.ts (NEW, 29 Cases)",
+        "tests/features/scales.test.ts (NEW, 41 Cases)",
+        "tests/features/transpose.test.ts (NEW, 36 Cases)",
+        "package.json (version 2.59.0 → 2.60.0)",
+        "agents/INDEX.js (workLog-Entry)"
+      ]
+    },
+    {
+      agent:     "testing",
       timestamp: "2026-05-16T13:20:00.000Z",
       done: [
         "POLISH-WELLE-v2.59 (TASK-126 W2 + TASK-122 W2 + TASK-127 W4): drei offene Polish-Items aus ROADMAP abgeräumt. (1) TASK-126 W2 Pad-Hold-Mode E2E: 3 Playwright-Cases in tests/web/macros.spec.ts gegen die App.tsx-Wire (Z.975-984, pad-Branch im onTrigger-Handler). Tests verifizieren data-macro-trigger-kind='pad' Attribut, macro:button:trigger CustomEvent mit padIndex, und 500ms-Hold ohne extra trigger-Events. Mirror von den 4 existierenden script-hold Cases. Performance-Pad mit patternId='seeded-pattern' wird in localStorage als ss-performance:v1 mit-seeded, damit runPadOnce kein Early-Return macht. (2) TASK-122 W2 Theme-Token Visual-Regression: neue tests/web/theme-tokens.spec.ts mit 4 Cases. Nutzt CSS-Token-Comparison statt Pixel-Screenshots (kein Baseline-Wartungsaufwand). Verifiziert: 14 Pflicht-Tokens × 10 Themes = 140 Definitionen vorhanden; v2.48-Tokens accent-tertiary + accent-warning in allen 10 Themes; Accent-Tokens cross-theme distinct (mind. 5 von 10 unique pro Token = Copy-Paste-Drift-Guard); Theme-Switch ist live via data-theme-Attribute + Round-Trip. (3) TASK-127 W4 Auto-Scroll-Container-Fallback: N/A — PatternLaunchPad-Grid ist seit BUG-016 'aspect-square h-full grid-cols-4 grid-rows-4', es gibt keinen scrollbaren Container mehr in dem ein Fallback wirken könnte. ROADMAP-Entry entsprechend updated mit Begründung. (4) Validation: pnpm check clean, pnpm test 2163 passed/15 skipped (vorher 2132 = +31 — chord-progressions Welle hat 28 Cases noch reingespielt, plus diese E2E sind nicht im Vitest-Pool sondern Playwright). pnpm test:web für die 2 modifizierten Files: 11/11 grün in 17s (4 alte script-hold + 3 neue pad-hold + 4 neue theme-tokens). Package.json gebumped 2.58.0 → 2.59.0."
