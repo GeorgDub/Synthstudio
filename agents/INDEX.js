@@ -493,6 +493,23 @@ const INDEX = {
   workLog: [
     {
       agent:     "testing",
+      timestamp: "2026-05-16T22:55:00.000Z",
+      done: [
+        "HOOKS-WAVE-v2.69 useNoteRepeat: Live-Pad-Player mit MPC-Style Note-Repeat. 14 Cases. Neues Test-Pattern für die Hook-Wave: vi.useFakeTimers + vi.advanceTimersByTime — damit werden setInterval-Ticks deterministisch und synchron getriggert ohne echte Wall-Clock-Wait. Mock-Strategie: useNoteRepeatStore bleibt echt (Pure-Store, schon getestet in note-repeat-store.test.ts), safeIntervalMs ist pure-util. Test-Buckets: (1) enabled=false Default — padDown triggert genau 1x sync (immediate), kein Interval, 500ms-Advance produziert keine weiteren Trigger; padUp ohne Interval ist no-op. (2) enabled=true mit Default rate=1/16 @ 120 BPM = 125ms — padDown triggert immediate + 4 Ticks bei 500ms (Total 5 Trigger), padUp stoppt Interval, doppelter padDown ersetzt Interval ohne Stacking. (3) Multi-Pad — 2 Pads gleichzeitig haben unabhängige Intervals (beide ticken pro 125ms-Wechsel), padUp eines Pads stoppt nur dessen Interval, stopAll cleared alle. (4) Store-getriebene Resets — Globales setNoteRepeatEnabled(true→false) stoppt alle Repeats, setNoteRepeatRate-Wechsel cleared laufende Intervals (kein Mismatch zur neuen Rate), BPM-Wechsel cleared ebenfalls, neue Rate 1/8 wird beim NÄCHSTEN padDown korrekt auf 250ms angewendet. (5) trigger-Ref — Trigger-Funktion über useRef aktuell gehalten, kein Stale-Closure: nach rerender mit neuer trigger-prop ruft das laufende Interval die neue Funktion. (6) Unmount cleared alle aktiven Intervals. Validation: pnpm check clean, pnpm test 2804/15 skipped vs vorher 2790 (+14). Package.json gebumped 2.68.0 → 2.69.0."
+      ],
+      next: [
+        "Tag v2.69.0 + push.",
+        "Fake-Timers-Pattern (vi.useFakeTimers + advanceTimersByTime + cleanup in afterEach) jetzt etabliert für alle zeitabhängigen Hooks/Stores. Andocken: useLiveStepRecorder (Punch-In/Out via Step-Pointer + Timer), useTransport-Recorder, scheduler-Hooks.",
+        "Weitere Hook-Kandidaten: useUpdater (electron-IPC mock — schwieriger weil window.electron Bridge gemockt werden muss), useResizablePanel (ResizeObserver-API mock), usePopupCloseBridges (BroadcastChannel), useAudioInput (getUserMedia mock)."
+      ],
+      changed: [
+        "tests/features/use-note-repeat-hook.test.ts (NEW, 14 Cases)",
+        "package.json (version 2.68.0 → 2.69.0)",
+        "agents/INDEX.js (workLog-Entry)"
+      ]
+    },
+    {
+      agent:     "testing",
       timestamp: "2026-05-16T22:20:00.000Z",
       done: [
         "HOOKS-WAVE-v2.68 useGlobalKeyBindings: globaler keydown-Listener der konfigurierbare Actions als CustomEvent('kb:action') dispatcht. 24 Cases. Mock-Strategy: nur useKeyboardBindingsStore.getAllBindings gemockt (mutable bindingsRef für User-Overrides), keyboardActionDefs bleibt echt (pure-helpers). Tests dispatchen synthetische KeyboardEvent auf window. Bug-Discovery beim Schreiben: (a) renderHook-Roots werden ohne explicit cleanup() nicht zwischen Tests entsorgt → Listener akkumulieren, F2 würde 16x tab-mixer dispatchen statt 1x. Fix: import { cleanup } from '@testing-library/react' + afterEach(cleanup). Wichtige Erkenntnis fürs gesamte Hooks-Wave-Pattern. (b) jsdom unterstützt isContentEditable-Property nicht via setAttribute('contenteditable','true') — der HTMLElement.isContentEditable-Getter bleibt false. Fix: Object.defineProperty(div, 'isContentEditable', {value:true}) für den Test. Test-Buckets: enabled-Flag (false/true/false→true), 8 Default-Combo-Cases (alle ACTION-Kategorien: Transport/Tabs/Navigation/Pattern mit Modifier-Differenzierung Ctrl+R vs Alt+R vs Ctrl+Shift+R), User-Override (override-beats-default + Default wird ignoriert wenn Override greift + Modifier-Combo-Override), Input-Bypass (HTMLInputElement/HTMLTextAreaElement/contentEditable-Element bypassed, normales <button> nicht), preventDefault + Single-Action (preventDefault NUR bei Match, return-early stoppt nach erstem Match), Unmount (Listener wird entfernt), CustomEvent-Detail (event.detail = action.id, Event-Name = 'kb:action'). Validation: pnpm check clean, pnpm test 2790/15 skipped vs vorher 2766 (+24). Package.json gebumped 2.67.0 → 2.68.0."
