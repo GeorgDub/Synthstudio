@@ -173,6 +173,33 @@ function clonePatternForInsert(pattern: PatternData, name: string, id = makeId()
   };
 }
 
+/**
+ * v2.50 (FOLLOWUP-102-3): Pure transform für setPartSoloed-Logik.
+ * Extrahiert damit das exclusive-vs-additive-Verhalten ohne React-Renderer
+ * direkt testbar ist.
+ *
+ * @param patterns  Aktueller Patterns-Stack (z.B. von updatePatterns).
+ * @param partId    Part der getoggelt wird.
+ * @param soloed    Neuer soloed-Status für diesen Part.
+ * @param exclusive true (Default, Radio-Button): un-solo alle anderen Parts in
+ *                  jedem Pattern. false (additive, DAW-Konvention): andere
+ *                  Parts bleiben unverändert; nur der Ziel-Part wird gesetzt.
+ */
+export function applySoloUpdate(
+  patterns: PatternData[],
+  partId: string,
+  soloed: boolean,
+  exclusive: boolean,
+): PatternData[] {
+  return patterns.map(p => ({
+    ...p,
+    parts: p.parts.map(pt => {
+      if (pt.id === partId) return { ...pt, soloed };
+      return exclusive ? { ...pt, soloed: false } : pt;
+    }),
+  }));
+}
+
 const DEFAULT_PART_NAMES = [
   "Kick", "Snare", "Hi-Hat cl.", "Hi-Hat op.",
   "Clap", "Tom Hi", "Tom Lo", "Perc", "FX",
@@ -521,15 +548,8 @@ export function useDrumMachineStore(): DrumMachineState & DrumMachineActions {
   }, [updatePatterns]);
 
   const setPartSoloed = useCallback((partId: string, soloed: boolean, exclusive = true) => {
-    updatePatterns(ps => ps.map(p => ({
-      ...p,
-      parts: p.parts.map(pt => {
-        if (pt.id === partId) return { ...pt, soloed };
-        // exclusive=true (default, Radio-Button): un-solo alle anderen.
-        // exclusive=false (additive, DAW-Konvention): andere Parts bleiben unverändert.
-        return exclusive ? { ...pt, soloed: false } : pt;
-      }),
-    })), false);
+    // v2.50: pure transform applySoloUpdate (testbar ohne React-Renderer).
+    updatePatterns(ps => applySoloUpdate(ps, partId, soloed, exclusive), false);
     // Cross-Store Solo (FOLLOWUP-102/B): Notify Mixer-Layer (Audio-Tracks)
     // damit sie bei Drum-Solo mit-stummgeschaltet werden. Custom-Event statt
     // direkter AudioEngine-Import um den Store engine-agnostisch zu halten —
