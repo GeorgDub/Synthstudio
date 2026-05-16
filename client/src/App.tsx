@@ -70,6 +70,7 @@ import { RecordSettingsPopover } from "@/components/Transport/RecordSettingsPopo
 import { useMidi } from "@/hooks/useMidi";
 import { useMidiEventBridge } from "@/hooks/useMidiEventBridge";
 import { useOscOutBridge } from "@/hooks/useOscOutBridge";
+import { usePopupCloseBridges } from "@/hooks/usePopupCloseBridges";
 import { MidiProvider } from "@/context/MidiContext";
 import { toast } from "@/store/useToastStore";
 import { ToastContainer } from "@/components/UI/ToastContainer";
@@ -416,25 +417,10 @@ export default function App() {
     setPerformanceActive(false);
   }, [electron]);
 
-  // Listener: Popup wurde vom User geschlossen → State zurücksetzen
-  // DIAG-5 (BUG-023): renderer-side logging dass IPC tatsächlich ankommt
-  useEffect(() => {
-    if (!electron.isElectron) return;
-    const cleanup = electron.onPerfPopupClosed?.(() => {
-      electron.logRendererEvent?.("popup-closed-received", { key: "perf" });
-      setPerformancePopupOpen(false);
-    });
-    return cleanup;
-  }, [electron]);
-
   // ── Mixer-Popup-Window (Multi-Window-Workspace, post-v1.26.0) ─────────────
+  // Mixer behält seinen eigenen Effect weil er die BUG-023 Guard-Ref-Logik
+  // braucht (late request-state Messages nach destroy() ignorieren).
   const [mixerPopupOpen, setMixerPopupOpen] = useState(false);
-
-  // BUG-023: Guard gegen late request-state Messages nach destroy()
-  // Popup wird via win.destroy() mid-flight gekillt → in-flight IPC-Messages
-  // (z.B. request-state) können NACH dem closed-Event ankommen und würden
-  // mixerPopupOpen zurück auf true setzen. Wir ignorieren request-state für
-  // 1 Sekunde nach Close.
   const mixerJustClosedRef = useRef(false);
   useEffect(() => {
     if (!electron.isElectron) return;
@@ -447,42 +433,28 @@ export default function App() {
     return cleanup;
   }, [electron]);
 
-  // ── Sample-Browser-Popup (Multi-Window-Workspace, post-v1.27.0) ───────────
+  // Sample-Browser / Pattern-Gen / Tools-Popups: Open-State-Variablen
   const [sampleBrowserPopupOpen, setSampleBrowserPopupOpen] = useState(false);
-
-  useEffect(() => {
-    if (!electron.isElectron) return;
-    const cleanup = electron.onSampleBrowserPopupClosed?.(() => {
-      electron.logRendererEvent?.("popup-closed-received", { key: "sampleBrowser" });
-      setSampleBrowserPopupOpen(false);
-    });
-    return cleanup;
-  }, [electron]);
-
-  // ── Pattern-Generator-Popup (Multi-Window-Workspace, post-v1.27.0) ────────
   const [patternGenPopupOpen, setPatternGenPopupOpen] = useState(false);
-
-  useEffect(() => {
-    if (!electron.isElectron) return;
-    const cleanup = electron.onPatternGenPopupClosed?.(() => {
-      electron.logRendererEvent?.("popup-closed-received", { key: "patternGen" });
-      setPatternGenPopupOpen(false);
-    });
-    return cleanup;
-  }, [electron]);
-
-  // ── Tools-Popups: KeyboardSampler / ChordProgression / PatternLibrary ─────
   const [keyboardSamplerPopupOpen, setKeyboardSamplerPopupOpen] = useState(false);
   const [chordProgressionPopupOpen, setChordProgressionPopupOpen] = useState(false);
   const [patternLibraryPopupOpen, setPatternLibraryPopupOpen] = useState(false);
 
-  useEffect(() => {
-    if (!electron.isElectron) return;
-    const c1 = electron.onKeyboardSamplerPopupClosed?.(() => setKeyboardSamplerPopupOpen(false));
-    const c2 = electron.onChordProgressionPopupClosed?.(() => setChordProgressionPopupOpen(false));
-    const c3 = electron.onPatternLibraryPopupClosed?.(() => setPatternLibraryPopupOpen(false));
-    return () => { c1?.(); c2?.(); c3?.(); };
-  }, [electron]);
+  // v2.49: alle 6 simplen on*PopupClosed-Listener (Performance + die 4
+  // Tools + Sample-Browser + Pattern-Gen) sind im usePopupCloseBridges-Hook
+  // gebündelt. Ersetzt 6 verteilte useEffects mit identischer Pattern.
+  usePopupCloseBridges({
+    isElectron: electron.isElectron,
+    log: electron.logRendererEvent,
+    bridges: [
+      { subscribe: electron.onPerfPopupClosed,            setter: setPerformancePopupOpen,      logKey: "perf" },
+      { subscribe: electron.onSampleBrowserPopupClosed,   setter: setSampleBrowserPopupOpen,    logKey: "sampleBrowser" },
+      { subscribe: electron.onPatternGenPopupClosed,      setter: setPatternGenPopupOpen,       logKey: "patternGen" },
+      { subscribe: electron.onKeyboardSamplerPopupClosed, setter: setKeyboardSamplerPopupOpen,  logKey: "keyboardSampler" },
+      { subscribe: electron.onChordProgressionPopupClosed,setter: setChordProgressionPopupOpen, logKey: "chordProgression" },
+      { subscribe: electron.onPatternLibraryPopupClosed,  setter: setPatternLibraryPopupOpen,   logKey: "patternLibrary" },
+    ],
+  });
 
 
   // ── Humanizer ↔ AudioEngine Bridge ────────────────────────────────────────
