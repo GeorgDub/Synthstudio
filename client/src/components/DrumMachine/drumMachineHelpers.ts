@@ -24,6 +24,27 @@ export function stepGroupBorder(index: number, total: number): string {
 
 export const NOTE_NAMES = ["C","C#","D","D#","E","F","F#","G","A","A#","B"];
 
+/**
+ * v2.51 (TASK-129 Welle 3): liefert das Badge-Label + Tooltip für den
+ * aktuellen sourceType eines Parts. Wird in ChannelStrip neben dem
+ * Part-Namen gerendert damit User auf einen Blick sieht, ob ein Kanal
+ * sample/wavetable/fm/granular ist.
+ *
+ * Read-only Indicator — direktes UI-Switching braucht zusätzlich
+ * Default-synthParams (für wavetable/fm) bzw. Granular-Setup, weshalb
+ * der Switch über Patches/Granular-Panel bleibt.
+ */
+export type SourceTypeBadge = { label: string; long: string; isSample: boolean };
+
+export function getSourceTypeBadge(sourceType?: string): SourceTypeBadge {
+  switch (sourceType) {
+    case "wavetable": return { label: "WT", long: "Wavetable-Synth", isSample: false };
+    case "fm":        return { label: "FM", long: "FM-Synth", isSample: false };
+    case "granular":  return { label: "GR", long: "Granular-Synth", isSample: false };
+    default:          return { label: "SMP", long: "Sample-Player", isSample: true };
+  }
+}
+
 export function pitchToLabel(semitones: number): string {
   const base = 60 + semitones; // C4 = 60
   return `${NOTE_NAMES[base % 12]}${Math.floor(base / 12) - 1} (${semitones >= 0 ? "+" : ""}${semitones})`;

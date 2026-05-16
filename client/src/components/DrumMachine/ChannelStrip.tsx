@@ -8,7 +8,7 @@
 import React, { useState, useRef } from "react";
 import type { PartData, ChannelFx, StepResolution } from "@/audio/AudioEngine";
 import { FxPanel } from "./FxPanel";
-import { velocityColor, stepGroupBorder } from "./drumMachineHelpers";
+import { velocityColor, stepGroupBorder, getSourceTypeBadge } from "./drumMachineHelpers";
 import { useMidiContext } from "@/context/MidiContext";
 import { findMappingForTarget } from "@/hooks/useMidi";
 
@@ -120,10 +120,30 @@ export function ChannelStrip({
         <div className="absolute inset-0 border-2 border-accent-primary rounded pointer-events-none z-10 bg-accent-primary/10" />
       )}
 
-      {/* Kanal-Name + Sample-Anzeige */}
+      {/* Kanal-Name + Sample-Anzeige + Source-Type-Badge (v2.51) */}
       <div className="w-[88px] flex-shrink-0">
-        <div className="text-[10px] font-medium text-text-primary truncate leading-tight">
-          {part.name}
+        <div className="flex items-center gap-1 leading-tight">
+          <span className="text-[10px] font-medium text-text-primary truncate flex-1 min-w-0">
+            {part.name}
+          </span>
+          {(() => {
+            const badge = getSourceTypeBadge(part.sourceType);
+            return (
+              <span
+                title={badge.long}
+                data-testid={`channel-source-type-${part.id}`}
+                data-source-type={part.sourceType ?? "sample"}
+                className={[
+                  "text-[8px] font-mono font-bold px-1 rounded flex-shrink-0",
+                  badge.isSample
+                    ? "bg-bg-elevated text-text-dim"
+                    : "bg-accent-tertiary/30 text-accent-tertiary border border-accent-tertiary/50",
+                ].join(" ")}
+              >
+                {badge.label}
+              </span>
+            );
+          })()}
         </div>
         <div
           className={[
