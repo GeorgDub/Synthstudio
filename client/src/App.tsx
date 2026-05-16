@@ -69,6 +69,7 @@ import { useTransport } from "@/hooks/useTransport";
 import { RecordSettingsPopover } from "@/components/Transport/RecordSettingsPopover";
 import { useMidi } from "@/hooks/useMidi";
 import { useMidiEventBridge } from "@/hooks/useMidiEventBridge";
+import { useOscOutBridge } from "@/hooks/useOscOutBridge";
 import { MidiProvider } from "@/context/MidiContext";
 import { toast } from "@/store/useToastStore";
 import { ToastContainer } from "@/components/UI/ToastContainer";
@@ -1415,160 +1416,24 @@ export default function App() {
     midi.setClockOutBpm(project.bpm);
   }, [project.bpm, midi.setClockOutBpm]);
 
-  // v2.26: OSC-Out — sendet `/synth/bpm/current <float>` bei jeder BPM-Änderung
-  // an den konfigurierten externen Empfänger. Best-Effort fire-and-forget.
-  useEffect(() => {
-    if (!electron.isElectron) return;
-    const cfg = oscOutConfig;
-    if (!cfg.enabled || !cfg.syncBpm) return;
-    void electron.sendOscMessage({
-      host: cfg.host,
-      port: cfg.port,
-      address: "/synth/bpm/current",
-      args: [project.bpm],
-    });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [project.bpm, oscOutConfig.enabled, oscOutConfig.syncBpm, oscOutConfig.host, oscOutConfig.port]);
-
-  // v2.27: OSC-Out Phase 2 — Transport (play/stop) bei isPlaying-Änderung.
-  useEffect(() => {
-    if (!electron.isElectron) return;
-    const cfg = oscOutConfig;
-    if (!cfg.enabled || !cfg.syncTransport) return;
-    void electron.sendOscMessage({
-      host: cfg.host,
-      port: cfg.port,
-      address: project.isPlaying ? "/synth/transport/play" : "/synth/transport/stop",
-      args: [],
-    });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [project.isPlaying, oscOutConfig.enabled, oscOutConfig.syncTransport, oscOutConfig.host, oscOutConfig.port]);
-
-  // v2.27: OSC-Out Phase 2 — Step-Position rate-limited.
-  // Ref-Pattern damit der Position-Listener nicht bei jedem Step-Tick neu
-  // registriert werden muss (würde sonst Latency-Spikes geben).
-  const oscOutConfigRef = useRef(oscOutConfig);
-  oscOutConfigRef.current = oscOutConfig;
-  useEffect(() => {
-    if (!electron.isElectron) return;
-    const unsubscribe = AudioEngine.onPosition((stepIndex) => {
-      const cfg = oscOutConfigRef.current;
-      if (!cfg.enabled || !cfg.syncStep) return;
-      if (stepIndex % Math.max(1, cfg.stepRate) !== 0) return;
-      void electron.sendOscMessage({
-        host: cfg.host,
-        port: cfg.port,
-        address: "/synth/step",
-        args: [stepIndex],
-      });
-    });
-    return unsubscribe;
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [electron]);
-
-  // v2.28: OSC-Out Phase 3 — Mute-State pro Part. Diff gegen prev-Snapshot,
-  // sende /synth/mute/<partId> als String "1"/"0" weil unser OSC-Encoder
-  // Booleans nicht unterstützt (würde T/F-Tags erfordern; "1"/"0" reicht für
-  // die Standard-Receiver-Implementierung in oscBindings.ts).
-  const prevMutedRef = useRef<Map<string, boolean>>(new Map());
-  useEffect(() => {
-    if (!electron.isElectron) return;
-    const cfg = oscOutConfigRef.current;
-    if (!cfg.enabled || !cfg.syncMutes) return;
-    const pattern = dm.getActivePattern();
-    if (!pattern) return;
-    const next = new Map<string, boolean>();
-    for (const p of pattern.parts) {
-      next.set(p.id, !!p.muted);
-      const prev = prevMutedRef.current.get(p.id);
-      if (prev !== undefined && prev !== !!p.muted) {
-        void electron.sendOscMessage({
-          host: cfg.host,
-          port: cfg.port,
-          address: `/synth/mute/${encodeURIComponent(p.id)}`,
-          args: [!!p.muted ? "1" : "0"],
-        });
-      }
-    }
-    prevMutedRef.current = next;
-  // Re-Run wenn parts oder Mute-Flags sich ändern. JSON-stringify deckt
-  // beide Fälle ab in einem dep-vector.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    JSON.stringify(dm.getActivePattern()?.parts.map(p => ({ id: p.id, muted: p.muted })) ?? []),
-    oscOutConfig.enabled,
-    oscOutConfig.syncMutes,
-  ]);
-
-  // v2.28: OSC-Out Phase 3 — Macro-Werte (8 Slots). Diff gegen prev-Snapshot.
-  const prevMacrosRef = useRef<number[]>([]);
-  useEffect(() => {
-    if (!electron.isElectron) return;
-    const cfg = oscOutConfigRef.current;
-    if (!cfg.enabled || !cfg.syncMacros) return;
-    const values = macroSnapshot.map(m => m.value);
-    for (let i = 0; i < values.length; i++) {
-      const prev = prevMacrosRef.current[i];
-      if (prev !== undefined && prev !== values[i]) {
-        void electron.sendOscMessage({
-          host: cfg.host,
-          port: cfg.port,
-          address: `/synth/macro/${i}`,
-          args: [values[i]],
-        });
-      }
-    }
-    prevMacrosRef.current = values;
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [macroSnapshot, oscOutConfig.enabled, oscOutConfig.syncMacros]);
-
-  // v2.31: OSC-Out Phase 4 — Volume pro Part (0..1). Diff gegen prev-Snapshot.
-  const prevVolumesRef = useRef<Map<string, number>>(new Map());
-  useEffect(() => {
-    if (!electron.isElectron) return;
-    const cfg = oscOutConfigRef.current;
-    if (!cfg.enabled || !cfg.syncVolumes) return;
-    const pattern = dm.getActivePattern();
-    if (!pattern) return;
-    const next = new Map<string, number>();
-    for (const p of pattern.parts) {
-      const vol = p.volume ?? 1;
-      next.set(p.id, vol);
-      const prev = prevVolumesRef.current.get(p.id);
-      if (prev !== undefined && prev !== vol) {
-        void electron.sendOscMessage({
-          host: cfg.host,
-          port: cfg.port,
-          address: `/synth/volume/${encodeURIComponent(p.id)}`,
-          args: [vol],
-        });
-      }
-    }
-    prevVolumesRef.current = next;
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    JSON.stringify(dm.getActivePattern()?.parts.map(p => ({ id: p.id, volume: p.volume })) ?? []),
-    oscOutConfig.enabled,
-    oscOutConfig.syncVolumes,
-  ]);
-
-  // v2.31: OSC-Out Phase 4 — Pattern-Switch.
-  const prevPatternSwitchRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (!electron.isElectron) return;
-    const cfg = oscOutConfigRef.current;
-    if (!cfg.enabled || !cfg.syncPatternSwitch) return;
-    if (prevPatternSwitchRef.current !== null && prevPatternSwitchRef.current !== dm.activePatternId) {
-      void electron.sendOscMessage({
-        host: cfg.host,
-        port: cfg.port,
-        address: "/synth/pattern",
-        args: [dm.activePatternId],
-      });
-    }
-    prevPatternSwitchRef.current = dm.activePatternId;
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dm.activePatternId, oscOutConfig.enabled, oscOutConfig.syncPatternSwitch]);
+  // v2.47: OSC-Out-Bridge ausgelagert in hooks/useOscOutBridge.ts.
+  // Enthält BPM (v2.26), Transport (v2.27), Step rate-limited (v2.27),
+  // Mute-Diff (v2.28), Macro-Diff (v2.28), Volume-Diff (v2.31),
+  // Pattern-Switch (v2.31).
+  useOscOutBridge({
+    isElectron: electron.isElectron,
+    oscOutConfig,
+    sendOscMessage: electron.sendOscMessage,
+    bpm: project.bpm,
+    isPlaying: project.isPlaying,
+    activeParts: dm.getActivePattern()?.parts.map(p => ({
+      id: p.id,
+      muted: !!p.muted,
+      volume: p.volume ?? 1,
+    })) ?? null,
+    activePatternId: dm.activePatternId,
+    macroValues: macroSnapshot.map(m => m.value),
+  });
 
   // v1.92 + v2.34: midi:pattern wird jetzt im useMidiEventBridge-Hook
   // (siehe weiter oben) verarbeitet. Accepts number | {index} | {patternId}.
