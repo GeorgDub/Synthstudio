@@ -493,6 +493,23 @@ const INDEX = {
   workLog: [
     {
       agent:     "testing",
+      timestamp: "2026-05-16T13:20:00.000Z",
+      done: [
+        "POLISH-WELLE-v2.59 (TASK-126 W2 + TASK-122 W2 + TASK-127 W4): drei offene Polish-Items aus ROADMAP abgeräumt. (1) TASK-126 W2 Pad-Hold-Mode E2E: 3 Playwright-Cases in tests/web/macros.spec.ts gegen die App.tsx-Wire (Z.975-984, pad-Branch im onTrigger-Handler). Tests verifizieren data-macro-trigger-kind='pad' Attribut, macro:button:trigger CustomEvent mit padIndex, und 500ms-Hold ohne extra trigger-Events. Mirror von den 4 existierenden script-hold Cases. Performance-Pad mit patternId='seeded-pattern' wird in localStorage als ss-performance:v1 mit-seeded, damit runPadOnce kein Early-Return macht. (2) TASK-122 W2 Theme-Token Visual-Regression: neue tests/web/theme-tokens.spec.ts mit 4 Cases. Nutzt CSS-Token-Comparison statt Pixel-Screenshots (kein Baseline-Wartungsaufwand). Verifiziert: 14 Pflicht-Tokens × 10 Themes = 140 Definitionen vorhanden; v2.48-Tokens accent-tertiary + accent-warning in allen 10 Themes; Accent-Tokens cross-theme distinct (mind. 5 von 10 unique pro Token = Copy-Paste-Drift-Guard); Theme-Switch ist live via data-theme-Attribute + Round-Trip. (3) TASK-127 W4 Auto-Scroll-Container-Fallback: N/A — PatternLaunchPad-Grid ist seit BUG-016 'aspect-square h-full grid-cols-4 grid-rows-4', es gibt keinen scrollbaren Container mehr in dem ein Fallback wirken könnte. ROADMAP-Entry entsprechend updated mit Begründung. (4) Validation: pnpm check clean, pnpm test 2163 passed/15 skipped (vorher 2132 = +31 — chord-progressions Welle hat 28 Cases noch reingespielt, plus diese E2E sind nicht im Vitest-Pool sondern Playwright). pnpm test:web für die 2 modifizierten Files: 11/11 grün in 17s (4 alte script-hold + 3 neue pad-hold + 4 neue theme-tokens). Package.json gebumped 2.58.0 → 2.59.0."
+      ],
+      next: [
+        "Tag v2.59.0 und push → triggert electron-release.yml Run, validiert den Mac-Job-Collapse aus dem vorherigen Commit (301c834): jetzt 3 Build-Jobs statt 4 (linux/windows/mac-collapsed), latest-mac.yml sollte beide archs listen."
+      ],
+      changed: [
+        "tests/web/macros.spec.ts (+TASK-126 W2 describe block, +109 lines)",
+        "tests/web/theme-tokens.spec.ts (NEW, +156 lines)",
+        "ROADMAP.md (TASK-126 W2 → ✅, TASK-122 W2 → ✅, TASK-127 W4 → N/A mit Begründung)",
+        "package.json (version 2.58.0 → 2.59.0)",
+        "agents/INDEX.js (workLog-Entry)"
+      ]
+    },
+    {
+      agent:     "testing",
       timestamp: "2026-05-16T07:59:00.000Z",
       done: [
         "SNAPSHOT-DRIFT-VERIFY (tests/electron/__snapshots__/csp-header.test.ts.snap): Untersuchung der seit Session-Start als 'M' gemeldeten Modifikation. (1) git diff lieferte LEER-Output → erste git-Invocation hat die Modifikation bereits resolved (klassisches Windows-LF↔CRLF Whitespace-Normalisation via core.autocrlf, ohne dass eine Bash-Action gelaufen wäre). (2) git status danach: 'working tree clean' für die Snapshot-Datei. (3) Letzte echte Source-Änderung an der Datei: 52989d7 'fix(BUG-024, v1.67.0): KI-Features (OpenAI + Anthropic) gehen nicht im Electron-Build' — also seit v1.67 inhaltlich unverändert, durch v2.33→v2.58 keinerlei legitimer Drift. (4) pnpm vitest run tests/electron/csp-header.test.ts: 30/30 grün in 8ms gegen aktuelle Snapshot-Datei. Empfehlung an User: weder commit noch checkout nötig — die Datei ist sauber, der frühere 'M'-Status war stale (Windows-LF-Phantom)."

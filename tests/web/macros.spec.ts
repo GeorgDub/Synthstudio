@@ -204,3 +204,127 @@ test.describe("Macro Hold-Mode UI-Wiring (TASK-126)", () => {
     expect(releases).toBe(1);
   });
 });
+
+// ─── TASK-126 Welle 2 (v2.59) — Pad-Hold-Mode E2E ────────────────────────────
+//
+// Spiegelt das Script-Hold-Setup oben, aber mit triggerKind="pad" + einer
+// Performance-Pad-Seed. Verifiziert die App.tsx-Wiring-Kette:
+//
+//   MacroButton.mouseDown (triggerKind=pad)
+//                          →  triggerMacroButton(macro.index)
+//                             → window.dispatchEvent('macro:button:trigger',
+//                                   { macroIndex, triggerKind:'pad', padIndex, triggerMode:'hold' })
+//                             → App.tsx onTrigger
+//                             → startHoldLoop(macroIndex, () => runPadOnce(padIndex), 100ms)
+//
+// Der pad-hold-Pfad (App.tsx Z.975–984) ist Unit-getestet (macros.test.ts
+// Pad-Schema-Tests + macroHoldLoop.test.ts Loop-Mechanik), aber die End-to-End
+// Wire-Coverage über DOM + CustomEvent + Listener war bisher nur für script-hold da.
+
+const PAD_MACRO_INDEX = 1;
+const PAD_INDEX = 0;
+
+async function seedPadHoldStorage(page: Page) {
+  await page.addInitScript(
+    ({ macroIndex, padIndex }) => {
+      try {
+        const macros = Array.from({ length: 8 }, (_, i) => ({
+          index: i,
+          label: `Macro ${i + 1}`,
+          value: 0,
+          bindings: [],
+          color: "#a78bfa",
+          mode: i === macroIndex ? "button" : "knob",
+          triggerKind: i === macroIndex ? "pad" : "script",
+          triggerMode: i === macroIndex ? "hold" : "edge",
+          padIndex: i === macroIndex ? padIndex : undefined,
+        }));
+        window.localStorage.setItem("ss-macros:v1", JSON.stringify(macros));
+        // Mindestens ein Performance-Pad mit patternId, damit runPadOnce kein
+        // Early-Return macht (pad.patternId-Check in App.tsx Z.957).
+        const perf = {
+          pads: [
+            { patternId: "seeded-pattern", label: "PAD0", color: "#22d3ee" },
+            null, null, null, null, null, null, null,
+            null, null, null, null, null, null, null, null,
+          ],
+          quantizeMode: "bar",
+        };
+        window.localStorage.setItem("ss-performance:v1", JSON.stringify(perf));
+      } catch {
+        /* ignore */
+      }
+    },
+    { macroIndex: PAD_MACRO_INDEX, padIndex: PAD_INDEX },
+  );
+}
+
+test.describe("Macro Pad-Hold-Mode UI-Wiring (TASK-126 Welle 2)", () => {
+  test.beforeEach(async ({ page }) => {
+    await seedPadHoldStorage(page);
+  });
+
+  test("MacroButton zeigt data-macro-trigger-kind='pad' + 'hold'", async ({ page }) => {
+    await openMacroPanel(page);
+    const macroBtn = page.getByTestId(`macro-button-${PAD_MACRO_INDEX}`);
+    await expect(macroBtn).toBeVisible();
+    await expect(macroBtn).toHaveAttribute("data-macro-trigger-kind", "pad");
+    await expect(macroBtn).toHaveAttribute("data-macro-trigger-mode", "hold");
+  });
+
+  test("mouseDown auf Pad-Hold-Button feuert trigger-Event mit padIndex", async ({ page }) => {
+    await openMacroPanel(page);
+    await installEventCounters(page);
+    const macroBtn = page.getByTestId(`macro-button-${PAD_MACRO_INDEX}`);
+
+    const box = await macroBtn.boundingBox();
+    if (!box) throw new Error("Macro button has no bounding box");
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.waitForTimeout(50);
+
+    const triggers = await page.evaluate(() => (window as unknown as {
+      __macroTriggerEvents: Array<{ macroIndex: number; triggerMode?: string; triggerKind?: string; padIndex?: number }>;
+    }).__macroTriggerEvents);
+
+    expect(triggers.length).toBeGreaterThanOrEqual(1);
+    expect(triggers[0].macroIndex).toBe(PAD_MACRO_INDEX);
+    expect(triggers[0].triggerKind).toBe("pad");
+    expect(triggers[0].triggerMode).toBe("hold");
+    expect(triggers[0].padIndex).toBe(PAD_INDEX);
+
+    await page.mouse.up();
+  });
+
+  test("Pad-Hold 500ms: trigger fires once, release fires once, keine extra triggers", async ({ page }) => {
+    await openMacroPanel(page);
+    await installEventCounters(page);
+    const macroBtn = page.getByTestId(`macro-button-${PAD_MACRO_INDEX}`);
+
+    const box = await macroBtn.boundingBox();
+    if (!box) throw new Error("Macro button has no bounding box");
+
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    // 500ms gedrückt — die 100ms-Hold-Loop läuft App.tsx-intern, dispatcht
+    // aber KEINE neuen trigger-Events (genau wie beim script-hold).
+    await page.waitForTimeout(500);
+    await page.mouse.up();
+
+    const triggersAtRelease = await page.evaluate(() => (window as unknown as {
+      __macroTriggerEvents: Array<unknown>;
+    }).__macroTriggerEvents.length);
+    await page.waitForTimeout(200);
+    const triggersAfter = await page.evaluate(() => (window as unknown as {
+      __macroTriggerEvents: Array<unknown>;
+    }).__macroTriggerEvents.length);
+
+    expect(triggersAtRelease).toBe(1);
+    expect(triggersAfter).toBe(1);
+
+    const releases = await page.evaluate(() => (window as unknown as {
+      __macroReleaseEvents: Array<unknown>;
+    }).__macroReleaseEvents.length);
+    expect(releases).toBe(1);
+  });
+});
