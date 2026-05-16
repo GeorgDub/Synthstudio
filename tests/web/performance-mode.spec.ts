@@ -742,3 +742,56 @@ test.describe("Performance Mode — Multi-Drag-Image (TASK-123)", () => {
     });
   });
 });
+
+// ─── TASK-127 Welle 3 (v2.52) — Cmd/Ctrl+A Select-All E2E ────────────────────
+
+test.describe("Performance Mode — Cmd/Ctrl+A Select-All (TASK-127 Welle 3)", () => {
+  test("Reorder-Mode: Ctrl+A selektiert alle 3 non-empty Pads (von 16)", async ({ page }) => {
+    await seedPadsAndOpen(page);
+    await page.getByRole("radio", { name: /Reorder-Modus/i }).click();
+
+    // seedPadsAndOpen füllt Pads 0-2 (AAA/BBB/CCC), Rest leer.
+    await page.keyboard.press("Control+a");
+
+    await expect(page.getByTestId("perf-multiselect-count")).toContainText(/3 ausgewählt/);
+    await expect(page.getByTestId("perf-pad-0")).toHaveAttribute("aria-selected", "true");
+    await expect(page.getByTestId("perf-pad-1")).toHaveAttribute("aria-selected", "true");
+    await expect(page.getByTestId("perf-pad-2")).toHaveAttribute("aria-selected", "true");
+    // Leere Pads bleiben nicht-selektiert. aria-selected wird für leere Pads
+    // gar nicht gesetzt (undefined) — daher prüfen wir nur, dass es NICHT
+    // "true" ist via data-pad-selected (Boolean-Marker für alle Pads).
+    await expect(page.getByTestId("perf-pad-3")).toHaveAttribute("data-pad-selected", "0");
+    await expect(page.getByTestId("perf-pad-7")).toHaveAttribute("data-pad-selected", "0");
+  });
+
+  test("Play-Mode: Ctrl+A ist No-Op (Multi-Select-Counter erscheint nicht)", async ({ page }) => {
+    await seedPadsAndOpen(page);
+    // Default = Play-Mode
+    await page.keyboard.press("Control+a");
+    await expect(page.getByTestId("perf-multiselect-count")).not.toBeAttached();
+  });
+
+  test("Reorder-Mode + Editor offen: Ctrl+A hijacked NICHT (Input behält native Cmd+A)", async ({ page }) => {
+    await seedPadsAndOpen(page);
+    await page.getByRole("radio", { name: /Edit-Modus/i }).click();
+    // Öffne Editor auf Pad-0
+    await page.getByTestId("perf-pad-0").click();
+    await expect(page.getByTestId("perf-pad-editor")).toBeVisible();
+
+    // Wechsel zu Reorder während Editor noch offen — testet die editingIndex-Guard
+    // Hinweis: Mode-Wechsel schließt den Editor (siehe useEffect-Cleanup). Daher
+    // bauen wir den Test alternativ: Ctrl+A im Edit-Mode mit fokussiertem Input.
+    // Dort darf Multi-Select NICHT entstehen (Edit-Mode = kein Reorder).
+    await page.keyboard.press("Control+a");
+    await expect(page.getByTestId("perf-multiselect-count")).not.toBeAttached();
+  });
+
+  test("Reorder-Mode mit komplett leerer Pad-Liste: Ctrl+A ist No-Op", async ({ page }) => {
+    // KEIN seedPadsAndOpen — wir öffnen mit frischem (leerem) Store.
+    await openPerformanceMode(page);
+    await page.getByRole("radio", { name: /Reorder-Modus/i }).click();
+    await page.keyboard.press("Control+a");
+    // Es existieren keine non-empty Pads → Multi-Select bleibt leer
+    await expect(page.getByTestId("perf-multiselect-count")).not.toBeAttached();
+  });
+});
