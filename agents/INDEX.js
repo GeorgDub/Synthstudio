@@ -493,6 +493,23 @@ const INDEX = {
   workLog: [
     {
       agent:     "testing",
+      timestamp: "2026-05-17T00:35:00.000Z",
+      done: [
+        "HOOKS-WAVE-v2.71 useResizablePanel: Drag-Handler + persistent Height via localStorage. 21 Cases. Neues Pattern: synthetische MouseEvent-Dispatches auf window (`new MouseEvent('mousemove', {clientY})`) + minimal React.MouseEvent-Konstrukt für handleMouseDown (cast via 'as unknown as React.MouseEvent'). Test-Buckets: (1) Initial-Height — defaultHeight ohne storageKey, gespeicherter Wert wenn IM [minHeight, maxHeight]-Range, Schema-Defensive bei stored < minHeight / > maxHeight / NaN / non-number (Fallback auf defaultHeight), Boundary-Akzeptanz an min und max exakt. (2) direction='up' (Default, Bottom-Panel) — Maus nach oben (clientY sinkt) → Panel wächst, Maus nach unten → schrumpft. (3) direction='down' — symmetrisch invertiert. (4) Clamping — Mouse-Move clampt nicht unter minHeight / nicht über maxHeight, Default-Range 60..600. (5) preventDefault wird auf React-Event aufgerufen. (6) Listener-Cleanup — window.addEventListener spy + window.removeEventListener spy verifizieren mousemove+mouseup wird in Mount-Up gepairt + nach Mouse-Up entfernt, weitere mousemove nach mouseUp haben keinen Effekt. (7) Persistenz on Mouse-Up — ohne storageKey kein write, mit storageKey wird geschrieben. (8) Reload-Round-Trip via storageKey über cleanup() + neues renderHook. **Bug-Discovery**: Der Persistenz-Test offenbart ein Bug im aktuellen Code: localStorage.setItem persistiert startHRef.current (Original-Höhe vor Drag), nicht die finale gedragte Höhe. Test dokumentiert das Verhalten explizit (`expect(localStorage.getItem('panel-test')).toBe('200')` — die gedragte Höhe wäre 300). Konsequenz: Resize wird beim Reload verloren. Sollte gefixt werden via `setItem(storageKey, String(height))` mit aktuellem state-Ref. Validation: pnpm check clean, pnpm test 2843/15 skipped vs vorher 2822 (+21). Package.json gebumped 2.70.0 → 2.71.0."
+      ],
+      next: [
+        "Tag v2.71.0 + push.",
+        "BUG-FIX-CANDIDATE: useResizablePanel.ts Z.55 setItem mit startHRef.current statt aktueller Höhe → Resize-Persistenz broken. Quick-Fix: heightRef einbauen oder direkt setItem(storageKey, String(height)) wenn height in deps. Test ist bereits dokumentierend geschrieben — beim Fix muss die Erwartung von '200' auf '300' (final-height) umgestellt werden.",
+        "Weitere Hook-Kandidaten: usePopupCloseBridges (BroadcastChannel), useAudioInput (getUserMedia), useBpmDetection (worker mock), useMixAnalytics, useScriptKeyBindings."
+      ],
+      changed: [
+        "tests/features/use-resizable-panel-hook.test.ts (NEW, 21 Cases)",
+        "package.json (version 2.70.0 → 2.71.0)",
+        "agents/INDEX.js (workLog-Entry)"
+      ]
+    },
+    {
+      agent:     "testing",
       timestamp: "2026-05-16T23:15:00.000Z",
       done: [
         "HOOKS-WAVE-v2.70 useUpdater: Electron Auto-Updater Phase-State-Hook. 18 Cases. Neue Mock-Pattern-Variante: 6 IPC-Event-Listener werden über geteilte 'listeners' und 'unsubs' Refs captured (via vi.hoisted für sauberes Hoisting), Tests triggern die Updater-Events synthetisch und verifizieren State-Transitions. Test-Buckets: (1) Browser-Fallback isElectron=false — Initial-State {phase:'idle'}, keine Listener registriert (effect early-returnt), checkForUpdates() ist no-op. (2) Electron-Mode Listener-Setup — alle 6 Listener (checking/available/upToDate/downloadProgress/downloaded/error) werden beim Mount registriert, Unmount ruft alle 6 unsubs. (3) State-Transitions pro Event — 6 separate Tests verifizieren die 6 Phasen-Übergänge: 'checking', 'available' mit version, 'up-to-date', 'downloading' mit percent, 'ready' mit version, 'error' mit errorMessage. (4) Progress-Spread — downloadProgress nutzt prev-spread, behält version nach available, mehrere Progress-Updates aktualisieren nur percent. (5) State-Reset — downloaded und error ersetzen state komplett (kein prev-Spread), percent bzw. version werden undefined. (6) checkForUpdates() forwards an electron.checkForUpdates, mehrfache Aufrufe forwarden mehrfach. Wichtige Bug-Discovery: vi.mock-Pfad muss aus Test-Sicht resolved werden. Hook importiert '../../../electron/useElectron' (3 levels up von client/src/hooks/), Test musste '../../electron/useElectron' (2 levels up von tests/features/) verwenden — sonst resolved die Mock zu einem Pfad außerhalb des Projekts und greift nicht. Validation: pnpm check clean, pnpm test 2822/15 skipped vs vorher 2804 (+18). Package.json gebumped 2.69.0 → 2.70.0."
