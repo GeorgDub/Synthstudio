@@ -493,6 +493,24 @@ const INDEX = {
   workLog: [
     {
       agent:     "testing",
+      timestamp: "2026-05-17T01:50:00.000Z",
+      done: [
+        "HOOKS-WAVE-v2.76 useBpmDetection: 41 Cases. Test-Buckets: (1) autoTagFromFilename pure (22 Cases) — Drum-Kategorien (kick/BD/Bass Drum/snare/clap/open-hat/closed-hat/hi-hat/tom/cymbal/percussion), Melodische (bass/synth/chord/vocal/fx + Kick-Guard verhindert bass-Tag), Qualitäts-Tags (dry/wet/long), Pfad-Strip (Windows-Slash + Unix-Slash), Unbekannte → [], Duplikat-Set-Filter (Set entfernt mehrfach-fx). (2) Hook-Initial-State (isDetecting=false, progress=0). (3) tagSampleFromFilename (Bekannt: confidence=0.8, Unbekannt: 0.1, Sample-Felder bleiben erhalten via Spread). (4) tagSamplesFromFilenames Batch + Empty-List. (5) detectBpmForSample Edge-Cases mit fetch+AudioContext-Mock — fetch-fail (not-ok-Response), fetch-throw, decode-throw, Silence-Buffer → alle null; Click-Buffer @ 120 BPM mit synthetischen 5ms-Peaks alle 500ms im 4-Sekunden-Buffer → BPM ∈ [115,125] + confidence > 0.5; URL-Mapping (absolute path '/abs' → 'file:///abs', relative URL unverändert). (6) detectBpmBatch — isDetecting wieder false nach completion, Filter ignoriert non-rhythmic Samples (synth lead via Tag-Check übersprungen), Unbekannte Filenames werden trotzdem analysiert (tags.length===0 escape-hatch), onProgress mit (done,total) pro Sample, Result-Map enthält nur erfolgreiche Detections. **Wichtige Erkenntnis: JS-Regex `\\b` Word-Boundary funktioniert NICHT bei Underscore-Separator** weil `_` als Word-Char zählt. `\\bsnare\\b` matched in 'snare.wav' (Punkt ist non-word) aber NICHT in 'snare_acoustic.wav'. Tests verwenden jetzt Punkt-/Space-/Hyphen-Separator wo Word-Boundary nötig ist. Validation: pnpm check clean, pnpm test 2977/15 skipped vs vorher 2936 (+41). Package.json gebumped 2.75.0 → 2.76.0."
+      ],
+      next: [
+        "Tag v2.76.0 + push.",
+        "Mock-Pattern fetch + AudioContext jetzt vollständig — wiederverwendbar für useAudioAnalysis (Worker + analysis), Sample-Slicer-Hook, andere Web-Audio-Hooks.",
+        "BUG-LOW-PRIO: autoTagFromFilename regex-Patterns mit `\\b` greifen nicht bei Underscore-Pfaden — die häufigste Sample-Naming-Convention. Z.B. 'snare_kick_01.wav' → keine Tags. Fix-Kandidat: `\\b` durch `(?:^|[^a-z0-9])` ersetzen oder Pfad vor Match mit underscores → spaces ersetzen.",
+        "Weitere Hook-Kandidaten: useAudioAnalysis (Worker+AudioContext, ähnlich aber komplexer), useMixAnalytics (Pattern-State Memo), useScriptKeyBindings, useLaunchpad (MIDI-Out), useBeatRepeat (Timer)."
+      ],
+      changed: [
+        "tests/features/use-bpm-detection-hook.test.ts (NEW, 41 Cases)",
+        "package.json (version 2.75.0 → 2.76.0)",
+        "agents/INDEX.js (workLog-Entry)"
+      ]
+    },
+    {
+      agent:     "testing",
       timestamp: "2026-05-17T01:25:00.000Z",
       done: [
         "HOOKS-WAVE-v2.75 useMidiStepInput (13 Cases) + useMpe (32 Cases) gebundelt: 2 MIDI-orientierte Hooks ins File-Pool aufgenommen. (1) useMidiStepInput — Step-Eingabe via MIDI-Keyboard. Test-Buckets: Initial-State (cursor=0), enabled-Guard (disabled+null partId blockt, false→true Listener-Nachrüstung), Note-On Dispatch ('stepinput:note' CustomEvent mit korrektem detail, Cursor-Vorrücken pro Trigger, Wrap-Around bei stepCount), Cursor-API (resetCursor, moveCursor +/-/wrap >stepCount), Unmount-Listener-Removal. (2) useMpe — MIDI Polyphonic Expression: Kanal 2-15 sind Voice-Channels, Kanal 1 ist Master und wird ignoriert. Test-Buckets: **processMpeMessage** pure-function (5 MIDI-Message-Types × Edge-Cases = 22 Cases): NoteOn (ch>=2 mit velocity>0 → Voice added, ch=1 ignored, velocity=0 = NoteOff, dispatchMpeVoice fires, Map-Immutability), NoteOff (0x80 + 0x90/vel=0 = active=false, voice bleibt im Map, no-op auf nicht-existentem Kanal), Pitch Bend (14-bit Decode mit Center 8192, Max ≈ +range, Min = -range exakt, custom pitchBendRange, ch=1 ignored, no-op auf inactive ch), Aftertouch 0xd0 (byte1/127 normalisiert), CC74 Timbre (byte2/127, andere CC ignored, no-op auf inactive ch). dispatchMpeVoice direct (CustomEvent dispatch + Event-Name 'mpe:voice'). useMpe Hook (6 Cases): enabled=false blockt, enabled=true akkumuliert voices, activeVoices filtert, enabled true→false leert voices, pitchBendRange via Ref aktuell (kein Stale-Closure beim rerender), Unmount entfernt Listener. Validation: pnpm check clean, pnpm test 2936/15 skipped vs vorher 2891 (+45 = 13 + 32). Package.json gebumped 2.74.0 → 2.75.0."
