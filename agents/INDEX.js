@@ -493,6 +493,22 @@ const INDEX = {
   workLog: [
     {
       agent:     "testing",
+      timestamp: "2026-05-16T23:15:00.000Z",
+      done: [
+        "HOOKS-WAVE-v2.70 useUpdater: Electron Auto-Updater Phase-State-Hook. 18 Cases. Neue Mock-Pattern-Variante: 6 IPC-Event-Listener werden über geteilte 'listeners' und 'unsubs' Refs captured (via vi.hoisted für sauberes Hoisting), Tests triggern die Updater-Events synthetisch und verifizieren State-Transitions. Test-Buckets: (1) Browser-Fallback isElectron=false — Initial-State {phase:'idle'}, keine Listener registriert (effect early-returnt), checkForUpdates() ist no-op. (2) Electron-Mode Listener-Setup — alle 6 Listener (checking/available/upToDate/downloadProgress/downloaded/error) werden beim Mount registriert, Unmount ruft alle 6 unsubs. (3) State-Transitions pro Event — 6 separate Tests verifizieren die 6 Phasen-Übergänge: 'checking', 'available' mit version, 'up-to-date', 'downloading' mit percent, 'ready' mit version, 'error' mit errorMessage. (4) Progress-Spread — downloadProgress nutzt prev-spread, behält version nach available, mehrere Progress-Updates aktualisieren nur percent. (5) State-Reset — downloaded und error ersetzen state komplett (kein prev-Spread), percent bzw. version werden undefined. (6) checkForUpdates() forwards an electron.checkForUpdates, mehrfache Aufrufe forwarden mehrfach. Wichtige Bug-Discovery: vi.mock-Pfad muss aus Test-Sicht resolved werden. Hook importiert '../../../electron/useElectron' (3 levels up von client/src/hooks/), Test musste '../../electron/useElectron' (2 levels up von tests/features/) verwenden — sonst resolved die Mock zu einem Pfad außerhalb des Projekts und greift nicht. Validation: pnpm check clean, pnpm test 2822/15 skipped vs vorher 2804 (+18). Package.json gebumped 2.69.0 → 2.70.0."
+      ],
+      next: [
+        "Tag v2.70.0 + push.",
+        "vi.hoisted + Listener-Capture-Pattern jetzt etabliert für IPC-/Event-basierte Hooks. Wiederverwendbar für: usePopupCloseBridges (BroadcastChannel), useMidiEventBridge (window MIDI events), useCollabSession (WebSocket), useAudioInput (getUserMedia)."
+      ],
+      changed: [
+        "tests/features/use-updater-hook.test.ts (NEW, 18 Cases)",
+        "package.json (version 2.69.0 → 2.70.0)",
+        "agents/INDEX.js (workLog-Entry)"
+      ]
+    },
+    {
+      agent:     "testing",
       timestamp: "2026-05-16T22:55:00.000Z",
       done: [
         "HOOKS-WAVE-v2.69 useNoteRepeat: Live-Pad-Player mit MPC-Style Note-Repeat. 14 Cases. Neues Test-Pattern für die Hook-Wave: vi.useFakeTimers + vi.advanceTimersByTime — damit werden setInterval-Ticks deterministisch und synchron getriggert ohne echte Wall-Clock-Wait. Mock-Strategie: useNoteRepeatStore bleibt echt (Pure-Store, schon getestet in note-repeat-store.test.ts), safeIntervalMs ist pure-util. Test-Buckets: (1) enabled=false Default — padDown triggert genau 1x sync (immediate), kein Interval, 500ms-Advance produziert keine weiteren Trigger; padUp ohne Interval ist no-op. (2) enabled=true mit Default rate=1/16 @ 120 BPM = 125ms — padDown triggert immediate + 4 Ticks bei 500ms (Total 5 Trigger), padUp stoppt Interval, doppelter padDown ersetzt Interval ohne Stacking. (3) Multi-Pad — 2 Pads gleichzeitig haben unabhängige Intervals (beide ticken pro 125ms-Wechsel), padUp eines Pads stoppt nur dessen Interval, stopAll cleared alle. (4) Store-getriebene Resets — Globales setNoteRepeatEnabled(true→false) stoppt alle Repeats, setNoteRepeatRate-Wechsel cleared laufende Intervals (kein Mismatch zur neuen Rate), BPM-Wechsel cleared ebenfalls, neue Rate 1/8 wird beim NÄCHSTEN padDown korrekt auf 250ms angewendet. (5) trigger-Ref — Trigger-Funktion über useRef aktuell gehalten, kein Stale-Closure: nach rerender mit neuer trigger-prop ruft das laufende Interval die neue Funktion. (6) Unmount cleared alle aktiven Intervals. Validation: pnpm check clean, pnpm test 2804/15 skipped vs vorher 2790 (+14). Package.json gebumped 2.68.0 → 2.69.0."
