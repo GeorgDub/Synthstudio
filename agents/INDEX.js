@@ -493,6 +493,23 @@ const INDEX = {
   workLog: [
     {
       agent:     "testing",
+      timestamp: "2026-05-16T22:20:00.000Z",
+      done: [
+        "HOOKS-WAVE-v2.68 useGlobalKeyBindings: globaler keydown-Listener der konfigurierbare Actions als CustomEvent('kb:action') dispatcht. 24 Cases. Mock-Strategy: nur useKeyboardBindingsStore.getAllBindings gemockt (mutable bindingsRef für User-Overrides), keyboardActionDefs bleibt echt (pure-helpers). Tests dispatchen synthetische KeyboardEvent auf window. Bug-Discovery beim Schreiben: (a) renderHook-Roots werden ohne explicit cleanup() nicht zwischen Tests entsorgt → Listener akkumulieren, F2 würde 16x tab-mixer dispatchen statt 1x. Fix: import { cleanup } from '@testing-library/react' + afterEach(cleanup). Wichtige Erkenntnis fürs gesamte Hooks-Wave-Pattern. (b) jsdom unterstützt isContentEditable-Property nicht via setAttribute('contenteditable','true') — der HTMLElement.isContentEditable-Getter bleibt false. Fix: Object.defineProperty(div, 'isContentEditable', {value:true}) für den Test. Test-Buckets: enabled-Flag (false/true/false→true), 8 Default-Combo-Cases (alle ACTION-Kategorien: Transport/Tabs/Navigation/Pattern mit Modifier-Differenzierung Ctrl+R vs Alt+R vs Ctrl+Shift+R), User-Override (override-beats-default + Default wird ignoriert wenn Override greift + Modifier-Combo-Override), Input-Bypass (HTMLInputElement/HTMLTextAreaElement/contentEditable-Element bypassed, normales <button> nicht), preventDefault + Single-Action (preventDefault NUR bei Match, return-early stoppt nach erstem Match), Unmount (Listener wird entfernt), CustomEvent-Detail (event.detail = action.id, Event-Name = 'kb:action'). Validation: pnpm check clean, pnpm test 2790/15 skipped vs vorher 2766 (+24). Package.json gebumped 2.67.0 → 2.68.0."
+      ],
+      next: [
+        "Tag v2.68.0 + push.",
+        "cleanup() Pattern auch in zukünftige Hook-Tests einbauen — speziell wenn renderHook in beforeEach passiert oder mehrere Hooks im selben File getestet werden.",
+        "Weitere Hook-Kandidaten: useNoteRepeat (Timer mit vi.useFakeTimers + Store-Integration), useUpdater (electron IPC), usePopupCloseBridges (BroadcastChannel), useResizablePanel (ResizeObserver mock)."
+      ],
+      changed: [
+        "tests/features/use-global-key-bindings-hook.test.ts (NEW, 24 Cases)",
+        "package.json (version 2.67.0 → 2.68.0)",
+        "agents/INDEX.js (workLog-Entry)"
+      ]
+    },
+    {
+      agent:     "testing",
       timestamp: "2026-05-16T21:30:00.000Z",
       done: [
         "HOOKS-WAVE-v2.67 erster echter Hook-Test (nach v2.66 Setup): useTransport ist die Glue-Schicht zwischen React-State (isPlaying/bpm/transpose/dm) und der AudioEngine-Singleton. Strategie: vi.mock auf @/audio/AudioEngine + @/store/useMelodicPartStore, useTransposeStore bleibt echt (jsdom-localStorage reicht). 27 Cases gegen die 8 useEffect-Hooks im useTransport: (1) Mount-Verhalten — setMidiOutCallback null/Function je nach onMidiOut-prop, setMidiClockCallback null/Function je nach (onMidiOut+midiOutputDeviceId), setFollowActionCallback, setPatternGetter, setMelodicGetter, onPosition werden je 1x registriert; (2) Play/Stop-Flow — false→true ruft setBpm+setSteps+play(0), true→false ruft stop()+dm.setCurrentStep(0), stepCount=32 propagiert korrekt; (3) BPM-Sync mit Pattern-Vorrang — Globaler BPM wenn pattern.bpm=null, pattern.bpm gewinnt wenn gesetzt, bpmRatio=2 ergibt bpm*2, bpmRatio=0.5 ergibt bpm/2, Identity-Guard verhindert duplicate calls bei gleichem Wert; (4) Position-Callback — onPosition-Argument wird captured via mockImplementationOnce, dm.setCurrentStep wird pro Step aufgerufen, Step 0 + commitPending=true triggert commitLivePatternEdit, Step 0 + commitPending=false NICHT, Step != 0 NICHT auch mit commitPending; (5) Transpose-Propagation — Initial 0, setSemitones(5) triggert setGlobalTranspose(5) via Observer; (6) Unmount-Cleanup — MidiOut/FollowAction werden mit null genullt, Position-Unsubscribe wird aufgerufen; (7) previewSample-Return-API mit Default-Volume + explicit Volume. Validation: pnpm check clean, pnpm test 2766/15 skipped vs vorher 2739 (+27). Package.json gebumped 2.66.0 → 2.67.0."
