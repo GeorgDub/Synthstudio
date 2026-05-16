@@ -493,6 +493,24 @@ const INDEX = {
   workLog: [
     {
       agent:     "testing",
+      timestamp: "2026-05-16T21:20:00.000Z",
+      done: [
+        "HOOKS-SETUP-v2.66 jsdom-Coverage-Infrastruktur: Übergang von Stores- zu Hooks-Wave vorbereitet. Bisherige Tests laufen mit vitest test.environment='node' (Default) — Hook-Tests brauchen DOM-APIs (document, window, requestAnimationFrame) plus renderHook + act aus @testing-library/react. (1) Dependencies: pnpm add -D jsdom@29.1.1 + @testing-library/react@16.3.2. Beide devDeps (kein Production-Bundle-Impact, kein Security-Audit erforderlich). React-Testing-Library v16+ exportiert renderHook nativ — kein separates @testing-library/react-hooks Paket nötig. (2) Per-File Opt-In-Pattern statt globale Config-Änderung: vitest erkennt die erste Zeile `// @vitest-environment jsdom` als Override; alle anderen Test-Files bleiben in node-env (schneller). Setup-Cost ~1.2s pro jsdom-File für jsdom-Initialisierung. (3) tests/features/use-transpose-store-hook.test.ts (NEW, 8 Cases): Proof-of-Concept gegen useTransposeStore. Tests decken: initial state via Hook, externe Mutation → Re-Render, Hook-Return-Setter, incSemitones mit Clamping, reset(), Multi-Instance-Observer-Pattern (shared module-state), Unmount-Cleanup (frozen result.current nach unmount), useCallback-Stable-Refs über Re-Renders. (4) tests/features/use-arp-store-hook.test.ts (NEW, 6 Cases): Zweiter Proof-of-Concept zeigt dass das Setup für arbiträre Singleton-Observer-Stores wiederverwendbar ist. useArpStore nutzt useReducer statt useState (anderes Re-Render-Pattern) — Tests verifizieren externe Mutation → Re-Render, Multi-Instance-Shared-State, Unmount-Listener-Cleanup. Validation: pnpm check clean, pnpm test 2739/15 skipped vs vorher 2725 (+14, beide neue Files grün). Package.json gebumped 2.65.0 → 2.66.0."
+      ],
+      next: [
+        "Tag v2.66.0 + push.",
+        "Mit dem jsdom-Setup steht: nächste Hooks-Wave-Bundles können Hooks-mit-DOM-Logik testen — useResizablePanel (DOM ResizeObserver), useGlobalKeyBindings (window keydown), useUpdater (electron-IPC-Mock), useTransport (timing-Logik mit fake timers), usePopupCloseBridges (BroadcastChannel)."
+      ],
+      changed: [
+        "package.json (+jsdom@29 + @testing-library/react@16 devDeps, version 2.65.0 → 2.66.0)",
+        "pnpm-lock.yaml (durch pnpm add aktualisiert)",
+        "tests/features/use-transpose-store-hook.test.ts (NEW, 8 Cases)",
+        "tests/features/use-arp-store-hook.test.ts (NEW, 6 Cases)",
+        "agents/INDEX.js (workLog-Entry)"
+      ]
+    },
+    {
+      agent:     "testing",
       timestamp: "2026-05-16T21:10:00.000Z",
       done: [
         "STORES-WAVE-v2.65 Bundle 2: 4 weitere untestete Singleton-Observer-Stores. Plan war OSC + Pattern-Variations + Pattern-Library + SongStore, aber useSongStore ist ein React-Hook ohne Standalone-Setter — alles via useState innerhalb useSongStore(). Tests bräuchten renderHook + jsdom-env, kollidiert mit der bestehenden test-env=node Config. Ersatz: useNoteRepeatStore (130 LOC, hat __resetForTests). (1) tests/features/osc-out-store.test.ts (NEW, 14 Cases): Partial-Update-Merge, Port-Clamping [1,65535] mit Math.floor (8080.7 → 8080), stepRate-Clamping [1,16], localStorage-Persistenz aller 11 Felder inkl. v2.28+ Sync-Flags. (2) tests/features/pattern-variations-store.test.ts (NEW, 14 Cases): A/B/C/D Variation-Slots, create/update/setActive/remove, no-op-Garantien bei unbekannter baseId, multi-set Isolation (Update auf p1 touched p2 nicht), Full-Slot-Cycle A→D. (3) tests/features/pattern-library-store.test.ts (NEW, 20 Cases): savePatternToLibrary mit id-Format 'lib-<ts>-<rand>', neue Entries vorne eingefügt (jüngste zuerst), updateLibraryEntry partial preserves, searchLibrary case-insensitive Name+Tags+Genre + optional Genre-Exact-Filter, exportLibrary liefert {version:'1.0', entries}, importLibrary merge=true bewahrt existing IDs (duplicate skip), merge=false ersetzt komplett. (4) tests/features/note-repeat-store.test.ts (NEW, 15 Cases): isNoteRepeatEnabled/getNoteRepeatRate Getter, Identity-Check (gleicher Wert → kein extra localStorage-write), Invalid-Rate-Guard (setNoteRepeatRate('nonsense') ist no-op nicht throw), resetNoteRepeat löscht beide localStorage-Keys (BUG-013), __resetForTests Alias. Validation: pnpm check clean, pnpm test 2725/15 skipped vs vorher 2662 (+63). Package.json gebumped 2.64.0 → 2.65.0."
