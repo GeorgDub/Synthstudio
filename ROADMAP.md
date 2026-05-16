@@ -149,8 +149,8 @@ Aus den `next:[]` Einträgen der letzten workLogs in `agents/INDEX.js` — alles
 - **TASK-129 Welle 3** — Drum-Synth `sourceType`-Switch in ChannelStrip/Pad-Settings sichtbar machen. Per-Note Polyphonie-Volumen-Konsistenz (eigener Gain vor `nodes.input` statt shared `input.gain.value`).
 - **TASK-127 Welle 3** — Playwright E2E für Cmd+A + Auto-Scroll (aktuell nur Helper-Unit-Tests). Scrollable-Container-Fallback für Performance-Mode-Overlays mit `overflow:hidden`.
 - **TASK-126 Welle 2** — Pad-Hold-Mode E2E (analog zu Script-Hold mit 100ms-Interval). Echte Sandbox-Tick-Verifikation mit `ss.bpm()` als observable side-effect.
-- **TASK-122 Welle 2** — `--ss-accent-tertiary` + `--ss-accent-warning` Tokens für Categorical Palettes (SongTimeline D-Bank, ElectronDropZone project/zip kollidieren aktuell auf accent-secondary). Playwright Screenshot-Compare für visuelle Theme-Regressionen.
-- **FOLLOWUP-102-3 next** — React-Testing-Library Tests für `useDrumMachineStore.setPartSoloed` exclusive/additive Verhalten.
+- **TASK-122 Welle 2** — ✅ Tokens erledigt (v2.48.0): `--ss-accent-tertiary` + `--ss-accent-warning` in @theme + allen 10 built-in Themes + back-compat in CustomTheme.colors. Playwright Screenshot-Compare für visuelle Theme-Regressionen bleibt offen als nächstes Welle-Item.
+- **FOLLOWUP-102-3 next** — ✅ Pure-Transform `applySoloUpdate` erledigt (v2.50.0): exclusive=true (Radio) vs exclusive=false (additive) als 11 Unit-Tests gegen Pure-Function — RTL nicht nötig weil setPartSoloed jetzt eine pure-transform-Schicht hat die ohne Renderer testbar ist.
 - **FOLLOWUP-102-4 next** — Deterministischer Relocate-E2E via `openProject(.synth-Upload)`-Pfad statt `page.reload`.
 
 ---
