@@ -492,6 +492,35 @@ const INDEX = {
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
     {
+      agent:     "testing",
+      timestamp: "2026-05-16T07:59:00.000Z",
+      done: [
+        "SNAPSHOT-DRIFT-VERIFY (tests/electron/__snapshots__/csp-header.test.ts.snap): Untersuchung der seit Session-Start als 'M' gemeldeten Modifikation. (1) git diff lieferte LEER-Output → erste git-Invocation hat die Modifikation bereits resolved (klassisches Windows-LF↔CRLF Whitespace-Normalisation via core.autocrlf, ohne dass eine Bash-Action gelaufen wäre). (2) git status danach: 'working tree clean' für die Snapshot-Datei. (3) Letzte echte Source-Änderung an der Datei: 52989d7 'fix(BUG-024, v1.67.0): KI-Features (OpenAI + Anthropic) gehen nicht im Electron-Build' — also seit v1.67 inhaltlich unverändert, durch v2.33→v2.58 keinerlei legitimer Drift. (4) pnpm vitest run tests/electron/csp-header.test.ts: 30/30 grün in 8ms gegen aktuelle Snapshot-Datei. Empfehlung an User: weder commit noch checkout nötig — die Datei ist sauber, der frühere 'M'-Status war stale (Windows-LF-Phantom)."
+      ],
+      next: [
+        "Pre-Release-Tests des Run 25954273445 abwarten — falls dort CSP-Snapshot auf Ubuntu rot wird, .gitattributes 'tests/electron/__snapshots__/*.snap text eol=lf' setzen um den Phantom-Drift dauerhaft zu eliminieren."
+      ],
+      changed: [
+        "agents/INDEX.js (workLog-Entry)"
+      ]
+    },
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-16T05:50:44.232Z",
+      done: [
+        "RELEASE-v2.58.0: Branch claude/post-v2.33-loops getaggt + gepusht. Sanity-Checks grün (Branch up-to-date mit origin, package.json=2.58.0, HEAD=dd465c7 'test(CHORD-PROGRESSIONS, v2.58.0)'). Annotated Tag v2.58.0 mit kompakter 15-Wellen-Release-Note (v2.34 OSC-In Loop-Closing, v2.40 MIDI-Bridge-Hook -66 LOC, v2.46 Floating Inspector, v2.47 OSC-Out-Bridge-Hook -90 LOC, v2.48 Theme-Tokens, v2.49 Popup-Close-Bridges -28 LOC, v2.50 applySoloUpdate, v2.51 Source-Type-Badge, v2.52 Cmd+A E2E, v2.53 FloatingPanel-Helpers, v2.54 Source-Type-Switch via Badge-Menu, v2.55 Relocate-E2E, v2.56 timeStretch, v2.57 grooveEngine, v2.58 chordProgressions; 2132 Vitest + 129 Playwright grün, App.tsx -184 LOC). 'git push origin v2.58.0' erfolgreich. GitHub-Actions Run 25954273445 'Electron Release' triggert: Pre-Release-Tests-Job (ubuntu-latest) läuft zuerst, danach 4-fache Build-Matrix (linux ubuntu-latest, windows windows-latest, mac-intel macos-latest x64, mac-arm macos-14 arm64) mit --publish always zu GitHub Releases. Run-URL: https://github.com/GeorgDub/Synthstudio/actions/runs/25954273445. Coordinator hat NICHT auf main getaggt (main steht weiter auf v2.33-Commit 5e16999 — der Release läuft ausschließlich aus claude/post-v2.33-loops)."
+      ],
+      next: [
+        "Run 25954273445 monitoren — Pre-Release-Tests + 4 Plattform-Builds müssen alle grün sein, sonst Release wird nicht published.",
+        "Nach erfolgreichem Release: claude/post-v2.33-loops via PR oder Fast-Forward in main mergen, damit main auf v2.58.0 kommt (aktuell weiter auf v2.33).",
+        "Snapshot-Drift (tests/electron/__snapshots__/csp-header.test.ts.snap) auf main ist nur LF->CRLF Whitespace-Drift — kann ignoriert oder mit .gitattributes 'binary' geclamped werden."
+      ],
+      changed: [
+        "agents/INDEX.js (workLog-Entry)",
+        "git: tag v2.58.0 -> dd465c7 (annotated, pushed to origin)"
+      ]
+    },
+    {
       agent:     "coordinator",
       timestamp: "2026-05-14T11:30:00.000Z",
       done: [
