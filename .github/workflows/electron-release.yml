@@ -19,11 +19,11 @@ jobs:
     name: Pre-Release Tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: "22"
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
       - run: pnpm install --no-frozen-lockfile
       - name: TypeScript check
         run: pnpm check
@@ -48,15 +48,15 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Node.js einrichten
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: "22"
 
       - name: pnpm einrichten
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         # Version kommt aus dem "packageManager"-Feld in package.json
 
       - name: Version übernehmen (optional)
@@ -106,7 +106,7 @@ jobs:
         run: npx --yes electron-builder --mac dmg zip --x64 --arm64 --publish always
 
       - name: Build-Artefakte sichern
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: electron-${{ matrix.platform }}
           path: |
