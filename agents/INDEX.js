@@ -492,6 +492,22 @@ const INDEX = {
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
     {
+      agent:     "testing",
+      timestamp: "2026-05-17T01:05:00.000Z",
+      done: [
+        "HOOKS-WAVE-v2.73 usePopupCloseBridges: bündelt das wiederkehrende popup-onClose Wire-Pattern aus App.tsx (BUG-023-Welle). 16 Cases. Komplementär zu tests/features/popup-close-bridges.test.ts der eine Reimplementierung des Effect-Body 1:1 testet (der echte Hook-Code wurde dort nie importiert — diese neue Suite fährt jetzt den **echten** Hook via renderHook durch). Test-Buckets: (1) Browser-Modus (isElectron=false) — subscribe wird NIE aufgerufen. (2) Electron-Modus — einzelne Bridge mit subscribe genau 1x, Multi-Bridge mit allen subscribes parallel, Bridge ohne subscribe (undefined) wird übersprungen ohne anderen zu beeinträchtigen. (3) Callback-Verhalten — Trigger des captured subscribe-callbacks ruft log + setter(false); setter wird mit literalem false aufgerufen (nicht 0/null); log ist optional (Hook crasht nicht ohne); logKey wird pro Bridge separat geforwarded (nicht gemixt); independent setters — Bridge-A trigger berührt setter-B nicht. (4) Cleanup beim Unmount — Cleanup-Function aus subscribe wird aufgerufen, Multi-Bridge Cleanups alle, subscribe ohne return-Function crasht nicht beim Unmount, Cleanup einer Bridge die wirft → andere Cleanups laufen trotzdem (try/catch im Hook). (5) useEffect-Dep [isElectron] — false→true triggert subscribe (effect-mount), true→false triggert cleanup (effect-teardown), **bridges-Mutation OHNE isElectron-Wechsel führt NICHT zu re-subscribe** (intentional 'wire-once'-Semantik, dep ist nur [isElectron]). Validation: pnpm check clean, pnpm test 2860/15 skipped vs vorher 2844 (+16). Package.json gebumped 2.72.0 → 2.73.0."
+      ],
+      next: [
+        "Tag v2.73.0 + push.",
+        "Weiter mit der Hooks-Wave: useAudioInput (getUserMedia + MediaRecorder Mock — DOM-API-Mocking-Übung), useBpmDetection (Web-Worker Mock), useMixAnalytics, useScriptKeyBindings, useMidiStepInput."
+      ],
+      changed: [
+        "tests/features/use-popup-close-bridges-hook.test.ts (NEW, 16 Cases)",
+        "package.json (version 2.72.0 → 2.73.0)",
+        "agents/INDEX.js (workLog-Entry)"
+      ]
+    },
+    {
       agent:     "frontend",
       timestamp: "2026-05-17T00:55:00.000Z",
       done: [
