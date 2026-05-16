@@ -493,6 +493,22 @@ const INDEX = {
   workLog: [
     {
       agent:     "testing",
+      timestamp: "2026-05-16T21:30:00.000Z",
+      done: [
+        "HOOKS-WAVE-v2.67 erster echter Hook-Test (nach v2.66 Setup): useTransport ist die Glue-Schicht zwischen React-State (isPlaying/bpm/transpose/dm) und der AudioEngine-Singleton. Strategie: vi.mock auf @/audio/AudioEngine + @/store/useMelodicPartStore, useTransposeStore bleibt echt (jsdom-localStorage reicht). 27 Cases gegen die 8 useEffect-Hooks im useTransport: (1) Mount-Verhalten — setMidiOutCallback null/Function je nach onMidiOut-prop, setMidiClockCallback null/Function je nach (onMidiOut+midiOutputDeviceId), setFollowActionCallback, setPatternGetter, setMelodicGetter, onPosition werden je 1x registriert; (2) Play/Stop-Flow — false→true ruft setBpm+setSteps+play(0), true→false ruft stop()+dm.setCurrentStep(0), stepCount=32 propagiert korrekt; (3) BPM-Sync mit Pattern-Vorrang — Globaler BPM wenn pattern.bpm=null, pattern.bpm gewinnt wenn gesetzt, bpmRatio=2 ergibt bpm*2, bpmRatio=0.5 ergibt bpm/2, Identity-Guard verhindert duplicate calls bei gleichem Wert; (4) Position-Callback — onPosition-Argument wird captured via mockImplementationOnce, dm.setCurrentStep wird pro Step aufgerufen, Step 0 + commitPending=true triggert commitLivePatternEdit, Step 0 + commitPending=false NICHT, Step != 0 NICHT auch mit commitPending; (5) Transpose-Propagation — Initial 0, setSemitones(5) triggert setGlobalTranspose(5) via Observer; (6) Unmount-Cleanup — MidiOut/FollowAction werden mit null genullt, Position-Unsubscribe wird aufgerufen; (7) previewSample-Return-API mit Default-Volume + explicit Volume. Validation: pnpm check clean, pnpm test 2766/15 skipped vs vorher 2739 (+27). Package.json gebumped 2.66.0 → 2.67.0."
+      ],
+      next: [
+        "Tag v2.67.0 + push.",
+        "Weitere Hook-Kandidaten mit gleichem Pattern (Mock externer Dependencies, renderHook + act, Effect-Verifikation): useGlobalKeyBindings (window keydown), useNoteRepeat (Timer + Store-Integration), useUpdater (electron-IPC), usePopupCloseBridges (BroadcastChannel), useMixAnalytics (Pattern-State-Lookup)."
+      ],
+      changed: [
+        "tests/features/use-transport-hook.test.ts (NEW, 27 Cases)",
+        "package.json (version 2.66.0 → 2.67.0)",
+        "agents/INDEX.js (workLog-Entry)"
+      ]
+    },
+    {
+      agent:     "testing",
       timestamp: "2026-05-16T21:20:00.000Z",
       done: [
         "HOOKS-SETUP-v2.66 jsdom-Coverage-Infrastruktur: Übergang von Stores- zu Hooks-Wave vorbereitet. Bisherige Tests laufen mit vitest test.environment='node' (Default) — Hook-Tests brauchen DOM-APIs (document, window, requestAnimationFrame) plus renderHook + act aus @testing-library/react. (1) Dependencies: pnpm add -D jsdom@29.1.1 + @testing-library/react@16.3.2. Beide devDeps (kein Production-Bundle-Impact, kein Security-Audit erforderlich). React-Testing-Library v16+ exportiert renderHook nativ — kein separates @testing-library/react-hooks Paket nötig. (2) Per-File Opt-In-Pattern statt globale Config-Änderung: vitest erkennt die erste Zeile `// @vitest-environment jsdom` als Override; alle anderen Test-Files bleiben in node-env (schneller). Setup-Cost ~1.2s pro jsdom-File für jsdom-Initialisierung. (3) tests/features/use-transpose-store-hook.test.ts (NEW, 8 Cases): Proof-of-Concept gegen useTransposeStore. Tests decken: initial state via Hook, externe Mutation → Re-Render, Hook-Return-Setter, incSemitones mit Clamping, reset(), Multi-Instance-Observer-Pattern (shared module-state), Unmount-Cleanup (frozen result.current nach unmount), useCallback-Stable-Refs über Re-Renders. (4) tests/features/use-arp-store-hook.test.ts (NEW, 6 Cases): Zweiter Proof-of-Concept zeigt dass das Setup für arbiträre Singleton-Observer-Stores wiederverwendbar ist. useArpStore nutzt useReducer statt useState (anderes Re-Render-Pattern) — Tests verifizieren externe Mutation → Re-Render, Multi-Instance-Shared-State, Unmount-Listener-Cleanup. Validation: pnpm check clean, pnpm test 2739/15 skipped vs vorher 2725 (+14, beide neue Files grün). Package.json gebumped 2.65.0 → 2.66.0."
