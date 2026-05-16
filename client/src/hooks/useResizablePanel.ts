@@ -39,6 +39,7 @@ export function useResizablePanel({
     isDragging.current  = true;
     startYRef.current   = e.clientY;
     startHRef.current   = height;
+    let currentHeight   = height;
 
     const onMove = (ev: MouseEvent) => {
       if (!isDragging.current) return;
@@ -46,13 +47,14 @@ export function useResizablePanel({
         ? startYRef.current - ev.clientY   // Panel wächst wenn Maus nach oben
         : ev.clientY - startYRef.current;  // Panel wächst wenn Maus nach unten
       const next = Math.max(minHeight, Math.min(maxHeight, startHRef.current + delta));
+      currentHeight = next;
       setHeight(next);
     };
 
     const onUp = () => {
       isDragging.current = false;
       if (storageKey) {
-        localStorage.setItem(storageKey, String(startHRef.current));
+        localStorage.setItem(storageKey, String(currentHeight));
       }
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);

@@ -237,16 +237,33 @@ describe("useResizablePanel – Persistenz on Mouse-Up", () => {
     expect(localStorage.length).toBe(0);
   });
 
-  it("Mit storageKey: localStorage wird auf MouseUp beschrieben", () => {
+  it("Mit storageKey: localStorage wird auf MouseUp mit finaler Drag-Höhe beschrieben", () => {
     const { result } = renderHook(() => useResizablePanel({
       defaultHeight: 200, storageKey: "panel-test",
     }));
     act(() => result.current.handleMouseDown(makeReactMouseEvent(500) as unknown as React.MouseEvent));
     act(() => dispatchMouseMove(400));
     act(() => dispatchMouseUp());
-    // Achtung: aktueller Code persistiert startHRef.current (Original-Höhe vor Drag),
-    // NICHT die finale Höhe. Das ist suboptimal aber dokumentiert das aktuelle Verhalten.
-    expect(localStorage.getItem("panel-test")).toBe("200");
+    // Fix (v2.71+): onMove pflegt currentHeight closure-lokal, onUp persistiert die
+    // tatsächlich gedragte Höhe statt startHRef.current (Pre-Drag-Wert).
+    expect(localStorage.getItem("panel-test")).toBe("300");
+  });
+
+  it("Reload nach Drag: gespeicherte Drag-Höhe wird beim nächsten Mount übernommen", () => {
+    const { result: r1 } = renderHook(() => useResizablePanel({
+      defaultHeight: 200, storageKey: "panel-reload",
+    }));
+    act(() => r1.current.handleMouseDown(makeReactMouseEvent(500) as unknown as React.MouseEvent));
+    act(() => dispatchMouseMove(400));
+    act(() => dispatchMouseUp());
+    expect(r1.current.height).toBe(300);
+
+    cleanup();
+
+    const { result: r2 } = renderHook(() => useResizablePanel({
+      defaultHeight: 200, storageKey: "panel-reload",
+    }));
+    expect(r2.current.height).toBe(300);
   });
 });
 

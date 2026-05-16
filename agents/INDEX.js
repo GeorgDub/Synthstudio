@@ -492,6 +492,23 @@ const INDEX = {
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
     {
+      agent:     "frontend",
+      timestamp: "2026-05-17T00:55:00.000Z",
+      done: [
+        "BUGFIX-v2.72 useResizablePanel Persistenz-Bug: client/src/hooks/useResizablePanel.ts onUp() persistierte fälschlich startHRef.current (Pre-Drag-Wert) in localStorage statt der finalen gedragten Höhe — User-Resize ging beim nächsten Mount verloren. Fix: closure-lokales `let currentHeight = height` in handleMouseDown, onMove updated currentHeight bei jedem Move-Schritt, onUp persistiert currentHeight statt startHRef.current. Test in tests/features/use-resizable-panel-hook.test.ts wurde vom User entsprechend angepasst — Persistenz-Test erwartet jetzt '300' statt '200', plus neuer Reload-after-Drag-Test der den vollen Round-Trip prüft (Drag → MouseUp → cleanup → Neu-Mount → Hook liest persistierten Wert). Validation: 22/22 grün im Hook-File (vorher 21, +1 für Reload-Test), pnpm check clean, pnpm test 2844/15 skipped vs vorher 2843. Package.json gebumped 2.71.0 → 2.72.0."
+      ],
+      next: [
+        "Tag v2.72.0 + push.",
+        "Weiter mit der Hooks-Wave: usePopupCloseBridges (BroadcastChannel), useAudioInput (getUserMedia + MediaRecorder Mock), useBpmDetection (Web-Worker mock), useMixAnalytics, useScriptKeyBindings."
+      ],
+      changed: [
+        "client/src/hooks/useResizablePanel.ts (let currentHeight Tracker, onUp persistiert currentHeight)",
+        "tests/features/use-resizable-panel-hook.test.ts (Persistenz-Test '200'→'300', neuer Reload-after-Drag Case)",
+        "package.json (version 2.71.0 → 2.72.0)",
+        "agents/INDEX.js (workLog-Entry)"
+      ]
+    },
+    {
       agent:     "testing",
       timestamp: "2026-05-17T00:35:00.000Z",
       done: [
