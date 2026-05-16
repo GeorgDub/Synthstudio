@@ -12,6 +12,7 @@
 import { useState, useCallback, useRef } from "react";
 import type { PatternData, PartData, StepData, StepResolution, ChannelFx, StepCondition } from "../audio/AudioEngine";
 import { DEFAULT_CHANNEL_FX } from "../audio/AudioEngine";
+import { DEFAULT_SYNTH_PARAMS } from "../audio/SynthEngine";
 import { euclidean } from "../utils/euclidean";
 import { clampStepLength } from "../utils/polymeter";
 import { quantizeSteps } from "../utils/quantizeGrid";
@@ -171,6 +172,40 @@ function clonePatternForInsert(pattern: PatternData, name: string, id = makeId()
     name,
     parts: clone.parts.map(part => ({ ...part, id: makeId() })),
   };
+}
+
+/**
+ * v2.54 (TASK-129 Welle 4): Pure transform für setPartSourceType.
+ * Beim Wechsel auf "wavetable" oder "fm" werden Default-synthParams gesetzt
+ * falls der Part noch keine hat — sonst würde der AudioEngine-Synth-Pfad
+ * (siehe AudioEngine.ts Zeile 1415) den Part nicht spielen weil der
+ * `isSynthPart`-Check explizit `!!part.synthParams` braucht.
+ *
+ * Bestehende synthParams werden nur im `mode`-Feld angepasst — alle anderen
+ * Werte (oscType, fmRatio, ADSR, LFO etc.) bleiben erhalten damit der User
+ * seine Konfiguration beim Hin-und-Her-Switchen nicht verliert.
+ */
+export function applySourceTypeChange(
+  patterns: PatternData[],
+  partId: string,
+  type: "sample" | "wavetable" | "fm" | "granular",
+): PatternData[] {
+  return patterns.map(p => ({
+    ...p,
+    parts: p.parts.map(pt => {
+      if (pt.id !== partId) return pt;
+      if (type === "wavetable" || type === "fm") {
+        // Synth-Modus: synthParams sicherstellen
+        const existing = pt.synthParams;
+        const synthParams = existing
+          ? { ...existing, mode: type }
+          : { ...DEFAULT_SYNTH_PARAMS, mode: type };
+        return { ...pt, sourceType: type, synthParams };
+      }
+      // sample / granular: sourceType-only, synthParams bleiben unangetastet
+      return { ...pt, sourceType: type };
+    }),
+  }));
 }
 
 /**
@@ -640,10 +675,11 @@ export function useDrumMachineStore(): DrumMachineState & DrumMachineActions {
   }, [updatePatterns]);
 
   const setPartSourceType = useCallback((partId: string, type: "sample" | "wavetable" | "fm" | "granular") => {
-    updatePatterns(ps => ps.map(p => ({
-      ...p,
-      parts: p.parts.map(pt => pt.id === partId ? { ...pt, sourceType: type } : pt),
-    })), false);
+    // v2.54: pure transform applySourceTypeChange — bei wavetable/fm
+    // werden Default-synthParams sichergestellt damit AudioEngine den
+    // Part wirklich als Synth abspielt (isSynthPart-Check braucht
+    // !!synthParams + sourceType).
+    updatePatterns(ps => applySourceTypeChange(ps, partId, type), false);
   }, [updatePatterns]);
 
   const setPartStretchRatio = useCallback((partId: string, ratio: number) => {

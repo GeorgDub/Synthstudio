@@ -46,6 +46,13 @@ export interface ChannelStripProps {
   selectedStepIndex: number | null;
   /** Öffnet den Granular Synth für diesen Kanal */
   onGranularOpen: () => void;
+  /**
+   * v2.54: Direct-Mode-Switch (sample/wavetable/fm/granular). Optional —
+   * wenn nicht gesetzt, ist die Badge read-only. Bei Wechsel auf
+   * wavetable/fm setzt der Store automatisch DEFAULT_SYNTH_PARAMS falls
+   * noch keine existieren (applySourceTypeChange in useDrumMachineStore).
+   */
+  onSourceTypeChange?: (type: "sample" | "wavetable" | "fm" | "granular") => void;
 }
 
 export function ChannelStrip({
@@ -55,6 +62,7 @@ export function ChannelStrip({
   onMute, onSolo, onVolumeChange, onPanChange,
   onSampleDrop, onFxChange, onFxToggle, onResolutionChange,
   onClick, onPianoRollOpen, onStepSelect, selectedStepIndex, onGranularOpen,
+  onSourceTypeChange,
 }: ChannelStripProps) {
   const [isDragOver, setIsDragOver] = useState(false);
   const [dragVelocityStep, setDragVelocityStep] = useState<number | null>(null);
@@ -120,7 +128,7 @@ export function ChannelStrip({
         <div className="absolute inset-0 border-2 border-accent-primary rounded pointer-events-none z-10 bg-accent-primary/10" />
       )}
 
-      {/* Kanal-Name + Sample-Anzeige + Source-Type-Badge (v2.51) */}
+      {/* Kanal-Name + Sample-Anzeige + Source-Type-Badge (v2.51 + v2.54-Switch) */}
       <div className="w-[88px] flex-shrink-0">
         <div className="flex items-center gap-1 leading-tight">
           <span className="text-[10px] font-medium text-text-primary truncate flex-1 min-w-0">
@@ -129,19 +137,14 @@ export function ChannelStrip({
           {(() => {
             const badge = getSourceTypeBadge(part.sourceType);
             return (
-              <span
-                title={badge.long}
-                data-testid={`channel-source-type-${part.id}`}
-                data-source-type={part.sourceType ?? "sample"}
-                className={[
-                  "text-[8px] font-mono font-bold px-1 rounded flex-shrink-0",
-                  badge.isSample
-                    ? "bg-bg-elevated text-text-dim"
-                    : "bg-accent-tertiary/30 text-accent-tertiary border border-accent-tertiary/50",
-                ].join(" ")}
-              >
-                {badge.label}
-              </span>
+              <SourceTypeBadgeSwitch
+                partId={part.id}
+                currentType={part.sourceType ?? "sample"}
+                label={badge.label}
+                longLabel={badge.long}
+                isSample={badge.isSample}
+                onChange={(type) => onSourceTypeChange?.(type)}
+              />
             );
           })()}
         </div>
@@ -337,6 +340,114 @@ export function ChannelStrip({
           );
         })}
       </div>
+    </div>
+  );
+}
+
+// ─── v2.54: SourceTypeBadgeSwitch ─────────────────────────────────────────────
+
+type SourceType = "sample" | "wavetable" | "fm" | "granular";
+
+const SOURCE_TYPE_OPTIONS: Array<{ value: SourceType; label: string; long: string }> = [
+  { value: "sample",    label: "SMP", long: "Sample-Player" },
+  { value: "wavetable", label: "WT",  long: "Wavetable-Synth" },
+  { value: "fm",        label: "FM",  long: "FM-Synth" },
+  { value: "granular",  label: "GR",  long: "Granular-Synth" },
+];
+
+interface SourceTypeBadgeSwitchProps {
+  partId: string;
+  currentType: SourceType;
+  label: string;
+  longLabel: string;
+  isSample: boolean;
+  /** Wenn undefined: Badge ist read-only (kein Dropdown). */
+  onChange?: (type: SourceType) => void;
+}
+
+/**
+ * Mini-Badge mit Dropdown — Click öffnet ein natives Popover-Menu. Wenn
+ * onChange nicht gegeben ist, fallen wir auf einen reinen span zurück
+ * (back-compat zu v2.51 read-only).
+ */
+function SourceTypeBadgeSwitch({
+  partId, currentType, label, longLabel, isSample, onChange,
+}: SourceTypeBadgeSwitchProps) {
+  const [open, setOpen] = useState(false);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+
+  // Close on outside click
+  React.useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => {
+      if (buttonRef.current && !buttonRef.current.parentElement?.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+
+  const baseClass = [
+    "text-[8px] font-mono font-bold px-1 rounded flex-shrink-0",
+    isSample
+      ? "bg-bg-elevated text-text-dim"
+      : "bg-accent-tertiary/30 text-accent-tertiary border border-accent-tertiary/50",
+  ].join(" ");
+
+  if (!onChange) {
+    return (
+      <span
+        title={longLabel}
+        data-testid={`channel-source-type-${partId}`}
+        data-source-type={currentType}
+        className={baseClass}
+      >
+        {label}
+      </span>
+    );
+  }
+
+  return (
+    <div className="relative flex-shrink-0">
+      <button
+        ref={buttonRef}
+        type="button"
+        title={`${longLabel} — Klick zum Wechseln`}
+        data-testid={`channel-source-type-${partId}`}
+        data-source-type={currentType}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={e => { e.stopPropagation(); setOpen(o => !o); }}
+        className={`${baseClass} hover:ring-1 hover:ring-accent-tertiary cursor-pointer`}
+      >
+        {label}
+      </button>
+      {open && (
+        <div
+          role="menu"
+          data-testid={`channel-source-type-menu-${partId}`}
+          className="absolute top-full left-0 mt-0.5 z-30 bg-bg-panel border border-border-color rounded shadow-lg py-0.5 min-w-[110px]"
+          onClick={e => e.stopPropagation()}
+        >
+          {SOURCE_TYPE_OPTIONS.map(opt => (
+            <button
+              key={opt.value}
+              type="button"
+              role="menuitem"
+              data-testid={`channel-source-type-option-${partId}-${opt.value}`}
+              onClick={() => { onChange(opt.value); setOpen(false); }}
+              className={[
+                "w-full text-left px-2 py-1 text-[10px] font-mono flex items-center gap-1.5 hover:bg-bg-elevated",
+                opt.value === currentType ? "text-accent-tertiary font-bold" : "text-text-muted",
+              ].join(" ")}
+            >
+              <span className="w-7 inline-block font-bold">{opt.label}</span>
+              <span className="text-[9px] text-text-dim">{opt.long}</span>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

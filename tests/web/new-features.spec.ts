@@ -89,3 +89,42 @@ test.describe("Time-Stretch (Sequencer-Tab Footer-Toolbar)", () => {
     await expect(page.getByText("Stretch:").first()).toBeVisible({ timeout: 5000 });
   });
 });
+
+// ─── v2.54: TASK-129 Welle 4 — Direct-Mode-Switch via Badge ───────────────────
+
+test.describe("Source-Type-Badge Switch (TASK-129 Welle 4)", () => {
+  test("Default-Pattern hat Source-Type-Badges mit data-source-type='sample'", async ({ page }) => {
+    await page.getByRole("tab", { name: "Sequencer" }).click();
+    // Default-Pattern hat 9 Parts; jeder ChannelStrip rendert das Badge.
+    const badges = page.locator("[data-testid^='channel-source-type-']");
+    const first = badges.first();
+    await expect(first).toBeVisible({ timeout: 5000 });
+    await expect(first).toHaveAttribute("data-source-type", "sample");
+  });
+
+  test("Klick auf Badge öffnet das Mode-Switch-Menu mit 4 Optionen", async ({ page }) => {
+    await page.getByRole("tab", { name: "Sequencer" }).click();
+    const firstBadge = page.locator("[data-testid^='channel-source-type-']").first();
+    await firstBadge.click();
+    // Menu sollte sichtbar sein und 4 Mode-Optionen anbieten
+    const menu = page.locator("[data-testid^='channel-source-type-menu-']").first();
+    await expect(menu).toBeVisible();
+    // Alle vier Modi sind als menuitem da
+    await expect(menu.getByText("Sample-Player")).toBeVisible();
+    await expect(menu.getByText("Wavetable-Synth")).toBeVisible();
+    await expect(menu.getByText("FM-Synth")).toBeVisible();
+    await expect(menu.getByText("Granular-Synth")).toBeVisible();
+  });
+
+  test("Wechsel auf 'fm' aktualisiert das Badge auf 'FM' + data-source-type='fm'", async ({ page }) => {
+    await page.getByRole("tab", { name: "Sequencer" }).click();
+    const firstBadge = page.locator("[data-testid^='channel-source-type-']").first();
+    await firstBadge.click();
+    // FM-Option auswählen (via genauer testid)
+    const menu = page.locator("[data-testid^='channel-source-type-menu-']").first();
+    await menu.locator("[data-testid$='-fm']").click();
+    // Badge sollte jetzt FM zeigen
+    await expect(firstBadge).toHaveAttribute("data-source-type", "fm");
+    await expect(firstBadge).toContainText("FM");
+  });
+});

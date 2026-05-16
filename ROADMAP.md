@@ -146,7 +146,7 @@ Für Beta-Test und kommerzielle Distribution erforderlich.
 
 Aus den `next:[]` Einträgen der letzten workLogs in `agents/INDEX.js` — alles non-blocking:
 
-- **TASK-129 Welle 3** — ✅ Read-only Badge erledigt (v2.51.0): SMP/WT/FM/GR-Indicator neben dem Part-Namen in ChannelStrip, nutzt --ss-accent-tertiary aus v2.48. Direkter Modus-Switch in der UI (statt nur über Patches/Granular-Panel) bleibt für Welle 4 offen — wavetable/fm brauchen Default-synthParams. Per-Note Polyphonie-Volumen-Konsistenz bleibt unverändert offen.
+- **TASK-129 Welle 3 + 4** — ✅ Vollständig erledigt: v2.51.0 Read-only Badge (SMP/WT/FM/GR neben Part-Name in ChannelStrip), v2.54.0 Direct-Mode-Switch (Klick auf Badge öffnet 4-Optionen-Menu; bei Wechsel auf wavetable/fm setzt applySourceTypeChange automatisch DEFAULT_SYNTH_PARAMS — bestehende synthParams werden behalten, nur mode wechselt). Tests: 10 Pure-Transform-Cases + 3 Playwright-E2E. Per-Note Polyphonie-Volumen-Konsistenz bleibt offen.
 - **TASK-127 Welle 3** — ✅ Cmd+A E2E erledigt (v2.52.0): 4 Playwright-Cases decken Reorder-Mode-Select-All, Play-Mode-NoOp, Editor-offen-NoOp, Empty-Pads-NoOp ab. Auto-Scroll-Scrollable-Container-Fallback bleibt offen.
 - **TASK-126 Welle 2** — Pad-Hold-Mode E2E (analog zu Script-Hold mit 100ms-Interval). Echte Sandbox-Tick-Verifikation mit `ss.bpm()` als observable side-effect.
 - **TASK-122 Welle 2** — ✅ Tokens erledigt (v2.48.0): `--ss-accent-tertiary` + `--ss-accent-warning` in @theme + allen 10 built-in Themes + back-compat in CustomTheme.colors. Playwright Screenshot-Compare für visuelle Theme-Regressionen bleibt offen als nächstes Welle-Item.
