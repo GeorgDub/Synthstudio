@@ -40,12 +40,8 @@ jobs:
             platform: linux
           - os: windows-latest
             platform: windows
-          - os: macos-latest
-            platform: mac-intel
-            mac_arch: x64
-          - os: macos-14   # Apple Silicon
-            platform: mac-arm
-            mac_arch: arm64
+          - os: macos-14   # Apple Silicon — cross-builds beide archs in einem Lauf
+            platform: mac
 
     runs-on: ${{ matrix.os }}
     name: Build (${{ matrix.platform }})
@@ -102,19 +98,12 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
         run: npx --yes electron-builder --win nsis --publish always
 
-      - name: Electron-App bauen (macOS Intel x64)
-        if: matrix.platform == 'mac-intel'
+      - name: Electron-App bauen (macOS Intel + Apple Silicon)
+        if: matrix.platform == 'mac'
         env:
           GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
-        run: npx --yes electron-builder --mac dmg zip --x64 --publish always
-
-      - name: Electron-App bauen (macOS Apple Silicon arm64)
-        if: matrix.platform == 'mac-arm'
-        env:
-          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
-          CSC_IDENTITY_AUTO_DISCOVERY: "false"
-        run: npx --yes electron-builder --mac dmg zip --arm64 --publish always
+        run: npx --yes electron-builder --mac dmg zip --x64 --arm64 --publish always
 
       - name: Build-Artefakte sichern
         uses: actions/upload-artifact@v4
