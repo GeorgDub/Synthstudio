@@ -1,0 +1,3 @@
+# Vitest snapshots are written with LF by the test runner; force LF on checkout
+# to prevent Windows core.autocrlf=true from showing them as phantom-modified.
+tests/**/__snapshots__/*.snap text eol=lf
