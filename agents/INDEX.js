@@ -493,6 +493,22 @@ const INDEX = {
   workLog: [
     {
       agent:     "testing",
+      timestamp: "2026-05-17T01:15:00.000Z",
+      done: [
+        "HOOKS-WAVE-v2.74 useAudioInput: Mikrofon/Line-in Aufnahme via getUserMedia+MediaRecorder→Blob→Pending-Sample. 31 Cases. Anspruchsvollster Hook-Test bisher — 4 globale Web-Audio/Media-APIs gemockt: (1) navigator.mediaDevices.getUserMedia + enumerateDevices via Object.defineProperty(navigator,'mediaDevices',...). State-Bag mediaState steuert Constraints-Capture, Stream-Output und Failure-Modi pro Test. (2) globaler MediaRecorder durch FakeRecorder-Klasse mit static isTypeSupported + Instance-Tracking via recorderState.lastInstance. stop() ruft onstop() synchron — analog zur echten API beim manuellen Stop. (3) globaler AudioContext durch FakeAudioContext mit createMediaStreamSource + createAnalyser + close. (4) URL.createObjectURL + revokeObjectURL via Object-Assignment auf globalThis.URL. Test-Buckets: formatRecordingDuration pure (7 Cases: 0/sub-second/1s/1min/1h/1h2m5s/2-stellige h), isAvailable Detection, Initial-State (6 Felder + setDeviceId), refreshDevices (filter audioinput + empty-label-Fallback + silent-catch bei enumerate-throw), start() Permission-Flow (Default-Constraints, deviceId-exact, isRecording=true, Permission-Denied → error, non-Error-throw → Default-Message 'Mikrofon-Zugriff verweigert', Idempotenz bei doppeltem start, recorder.start(100) für 100ms-Chunks), Duration-Timer (recordingDurationMs > 0 nach 550ms via fake timers), stop() + onstop → pendingSample (recorder.stop wird gerufen, pendingSample mit URL+defaultName-Pattern 'Recording N (Xs)'+durationSec, Stream-Tracks werden gestoppt, stop ohne Recording no-op), confirmPendingSample/discardPendingSample (Name-Trim, defaultName-Fallback bei empty, no-op ohne pendingSample, discard revoked URL), Cleanup beim Unmount (Stream-Tracks gestoppt, kein crash ohne aktive Aufnahme). Validation: pnpm check clean, pnpm test 2891/15 skipped vs vorher 2860 (+31). Package.json gebumped 2.73.0 → 2.74.0."
+      ],
+      next: [
+        "Tag v2.74.0 + push.",
+        "Mit dem DOM-API-Mock-Pattern jetzt etabliert (navigator + global classes + URL): weitere DOM-heavy Hook-Kandidaten gut testbar: useBpmDetection (Web-Worker mock), useMidiStepInput (MIDI Access API), useAudioAnalysis (Worker + AudioContext), useMpe (MIDI Pitch-Bend)."
+      ],
+      changed: [
+        "tests/features/use-audio-input-hook.test.ts (NEW, 31 Cases)",
+        "package.json (version 2.73.0 → 2.74.0)",
+        "agents/INDEX.js (workLog-Entry)"
+      ]
+    },
+    {
+      agent:     "testing",
       timestamp: "2026-05-17T01:05:00.000Z",
       done: [
         "HOOKS-WAVE-v2.73 usePopupCloseBridges: bündelt das wiederkehrende popup-onClose Wire-Pattern aus App.tsx (BUG-023-Welle). 16 Cases. Komplementär zu tests/features/popup-close-bridges.test.ts der eine Reimplementierung des Effect-Body 1:1 testet (der echte Hook-Code wurde dort nie importiert — diese neue Suite fährt jetzt den **echten** Hook via renderHook durch). Test-Buckets: (1) Browser-Modus (isElectron=false) — subscribe wird NIE aufgerufen. (2) Electron-Modus — einzelne Bridge mit subscribe genau 1x, Multi-Bridge mit allen subscribes parallel, Bridge ohne subscribe (undefined) wird übersprungen ohne anderen zu beeinträchtigen. (3) Callback-Verhalten — Trigger des captured subscribe-callbacks ruft log + setter(false); setter wird mit literalem false aufgerufen (nicht 0/null); log ist optional (Hook crasht nicht ohne); logKey wird pro Bridge separat geforwarded (nicht gemixt); independent setters — Bridge-A trigger berührt setter-B nicht. (4) Cleanup beim Unmount — Cleanup-Function aus subscribe wird aufgerufen, Multi-Bridge Cleanups alle, subscribe ohne return-Function crasht nicht beim Unmount, Cleanup einer Bridge die wirft → andere Cleanups laufen trotzdem (try/catch im Hook). (5) useEffect-Dep [isElectron] — false→true triggert subscribe (effect-mount), true→false triggert cleanup (effect-teardown), **bridges-Mutation OHNE isElectron-Wechsel führt NICHT zu re-subscribe** (intentional 'wire-once'-Semantik, dep ist nur [isElectron]). Validation: pnpm check clean, pnpm test 2860/15 skipped vs vorher 2844 (+16). Package.json gebumped 2.72.0 → 2.73.0."
