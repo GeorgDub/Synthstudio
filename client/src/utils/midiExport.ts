@@ -35,14 +35,20 @@ function writeUint8(view: DataView, offset: number, value: number): number {
   return offset + 1;
 }
 
-function writeVarLen(arr: number[], value: number): void {
+/**
+ * v2.59: exportiert für Unit-Tests. MIDI Variable-Length-Quantity-Encoding
+ * (1–4 Bytes, MSB=1 markiert Continuation, letztes Byte hat MSB=0).
+ * Werte bis 0x0FFFFFFF (268,435,455) sind valide.
+ */
+export function writeVarLen(arr: number[], value: number): void {
   if (value < 0x80) { arr.push(value); return; }
   if (value < 0x4000) { arr.push((value >> 7) | 0x80, value & 0x7f); return; }
   if (value < 0x200000) { arr.push((value >> 14) | 0x80, ((value >> 7) & 0x7f) | 0x80, value & 0x7f); return; }
   arr.push((value >> 21) | 0x80, ((value >> 14) & 0x7f) | 0x80, ((value >> 7) & 0x7f) | 0x80, value & 0x7f);
 }
 
-const GM_DRUM_NOTES: Record<string, number> = {
+/** v2.59: exportiert für Test-Validation. Lookup-Map drum-name → GM-MIDI. */
+export const GM_DRUM_NOTES: Record<string, number> = {
   kick: 36, bass: 36, bd: 36,
   snare: 38, sn: 38, clap: 39,
   "hi-hat": 42, hihat: 42, hat: 42, hh: 42,
@@ -52,10 +58,33 @@ const GM_DRUM_NOTES: Record<string, number> = {
   perc: 75, fx: 56,
 };
 
-function guessNote(partName: string, partIndex: number): number {
-  const lower = partName.toLowerCase();
-  for (const [key, note] of Object.entries(GM_DRUM_NOTES)) {
-    if (lower.includes(key)) return note;
+/**
+ * v2.59: Match-Reihenfolge specific→generic. Ohne explizite Reihenfolge
+ * würde „Open Hat" als „hat" (closed) gematched bevor „open-hat" geprüft
+ * wird — Bug aus Pre-v2.59. Längere Keys haben semantisch mehr Information
+ * und müssen zuerst probiert werden.
+ */
+const GM_DRUM_KEYS_BY_SPECIFICITY: string[] = Object.keys(GM_DRUM_NOTES)
+  .sort((a, b) => b.length - a.length);
+
+/**
+ * v2.59: exportiert für Tests. Heuristik die einen Part-Namen auf eine
+ * GM-Drum-Map-Note mappt; Fallback ist Index-basierter Offset ab MIDI 36.
+ *
+ * Match-Order: specific→generic (siehe GM_DRUM_KEYS_BY_SPECIFICITY).
+ * Bsp.: „Open Hat" matched zuerst „open-hat"-äquivalent („openhat" via
+ * Leerzeichen-Strip), nicht „hat".
+ */
+export function guessNote(partName: string, partIndex: number): number {
+  // v2.59 Bug-Fix: Leerzeichen/Bindestriche zu kanonischer Form normalisieren
+  // damit „Open Hat" und „open-hat" und „openhat" alle gleich matchen.
+  const normalized = partName.toLowerCase();
+  const stripped = normalized.replace(/[\s_-]+/g, "");
+  for (const key of GM_DRUM_KEYS_BY_SPECIFICITY) {
+    if (normalized.includes(key)) return GM_DRUM_NOTES[key];
+    // Stripped-Variante: matcht Mehrfach-Form ohne Trennzeichen (z.B. „Open Hat" → „openhat")
+    const strippedKey = key.replace(/[\s_-]+/g, "");
+    if (strippedKey !== key && stripped.includes(strippedKey)) return GM_DRUM_NOTES[key];
   }
   // Fallback: GM Drum Map Offset
   return 36 + (partIndex % 32);
