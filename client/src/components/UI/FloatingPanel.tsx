@@ -48,7 +48,11 @@ const FALLBACK_DEFAULT: FloatingPanelPosition = {
   pinned: false,
 };
 
-function loadPosition(key: string, fallback: FloatingPanelPosition): FloatingPanelPosition {
+/**
+ * v2.53: helpers exportiert für Direct-Unit-Tests (waren bis dahin nur
+ * intern via Component-Mount erreichbar).
+ */
+export function loadPosition(key: string, fallback: FloatingPanelPosition): FloatingPanelPosition {
   try {
     if (typeof localStorage === "undefined") return fallback;
     const raw = localStorage.getItem(key);
@@ -67,18 +71,24 @@ function loadPosition(key: string, fallback: FloatingPanelPosition): FloatingPan
   }
 }
 
-function persistPosition(key: string, pos: FloatingPanelPosition): void {
+export function persistPosition(key: string, pos: FloatingPanelPosition): void {
   try {
     if (typeof localStorage === "undefined") return;
     localStorage.setItem(key, JSON.stringify(pos));
   } catch { /* ignore quota */ }
 }
 
-/** Hält die Position im sichtbaren Viewport (mindestens Header sichtbar). */
-function clampToViewport(pos: FloatingPanelPosition): FloatingPanelPosition {
-  if (typeof window === "undefined") return pos;
-  const vw = window.innerWidth;
-  const vh = window.innerHeight;
+/**
+ * Hält die Position im sichtbaren Viewport (mindestens Header sichtbar).
+ * v2.53: optional viewport-Args (vw/vh) damit Tests ohne window auskommen.
+ */
+export function clampToViewport(
+  pos: FloatingPanelPosition,
+  viewport?: { vw: number; vh: number },
+): FloatingPanelPosition {
+  const vw = viewport?.vw ?? (typeof window !== "undefined" ? window.innerWidth  : 0);
+  const vh = viewport?.vh ?? (typeof window !== "undefined" ? window.innerHeight : 0);
+  if (vw === 0 || vh === 0) return pos;
   return {
     ...pos,
     x: Math.max(-pos.w + 80, Math.min(vw - 80, pos.x)),
