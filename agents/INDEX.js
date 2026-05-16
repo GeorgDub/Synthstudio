@@ -493,6 +493,23 @@ const INDEX = {
   workLog: [
     {
       agent:     "testing",
+      timestamp: "2026-05-17T01:25:00.000Z",
+      done: [
+        "HOOKS-WAVE-v2.75 useMidiStepInput (13 Cases) + useMpe (32 Cases) gebundelt: 2 MIDI-orientierte Hooks ins File-Pool aufgenommen. (1) useMidiStepInput — Step-Eingabe via MIDI-Keyboard. Test-Buckets: Initial-State (cursor=0), enabled-Guard (disabled+null partId blockt, false→true Listener-Nachrüstung), Note-On Dispatch ('stepinput:note' CustomEvent mit korrektem detail, Cursor-Vorrücken pro Trigger, Wrap-Around bei stepCount), Cursor-API (resetCursor, moveCursor +/-/wrap >stepCount), Unmount-Listener-Removal. (2) useMpe — MIDI Polyphonic Expression: Kanal 2-15 sind Voice-Channels, Kanal 1 ist Master und wird ignoriert. Test-Buckets: **processMpeMessage** pure-function (5 MIDI-Message-Types × Edge-Cases = 22 Cases): NoteOn (ch>=2 mit velocity>0 → Voice added, ch=1 ignored, velocity=0 = NoteOff, dispatchMpeVoice fires, Map-Immutability), NoteOff (0x80 + 0x90/vel=0 = active=false, voice bleibt im Map, no-op auf nicht-existentem Kanal), Pitch Bend (14-bit Decode mit Center 8192, Max ≈ +range, Min = -range exakt, custom pitchBendRange, ch=1 ignored, no-op auf inactive ch), Aftertouch 0xd0 (byte1/127 normalisiert), CC74 Timbre (byte2/127, andere CC ignored, no-op auf inactive ch). dispatchMpeVoice direct (CustomEvent dispatch + Event-Name 'mpe:voice'). useMpe Hook (6 Cases): enabled=false blockt, enabled=true akkumuliert voices, activeVoices filtert, enabled true→false leert voices, pitchBendRange via Ref aktuell (kein Stale-Closure beim rerender), Unmount entfernt Listener. Validation: pnpm check clean, pnpm test 2936/15 skipped vs vorher 2891 (+45 = 13 + 32). Package.json gebumped 2.74.0 → 2.75.0."
+      ],
+      next: [
+        "Tag v2.75.0 + push.",
+        "MIDI-Hook-Pattern jetzt etabliert (raw MIDI messages via window CustomEvent + pure processor + Hook). Weitere Kandidaten: useBpmDetection (Web-Worker), useAudioAnalysis (Worker+AudioContext), useMixAnalytics (Pattern-Memo), useScriptKeyBindings, useLaunchpad, useBeatRepeat, useCollabSession."
+      ],
+      changed: [
+        "tests/features/use-midi-step-input-hook.test.ts (NEW, 13 Cases)",
+        "tests/features/use-mpe-hook.test.ts (NEW, 32 Cases)",
+        "package.json (version 2.74.0 → 2.75.0)",
+        "agents/INDEX.js (workLog-Entry)"
+      ]
+    },
+    {
+      agent:     "testing",
       timestamp: "2026-05-17T01:15:00.000Z",
       done: [
         "HOOKS-WAVE-v2.74 useAudioInput: Mikrofon/Line-in Aufnahme via getUserMedia+MediaRecorder→Blob→Pending-Sample. 31 Cases. Anspruchsvollster Hook-Test bisher — 4 globale Web-Audio/Media-APIs gemockt: (1) navigator.mediaDevices.getUserMedia + enumerateDevices via Object.defineProperty(navigator,'mediaDevices',...). State-Bag mediaState steuert Constraints-Capture, Stream-Output und Failure-Modi pro Test. (2) globaler MediaRecorder durch FakeRecorder-Klasse mit static isTypeSupported + Instance-Tracking via recorderState.lastInstance. stop() ruft onstop() synchron — analog zur echten API beim manuellen Stop. (3) globaler AudioContext durch FakeAudioContext mit createMediaStreamSource + createAnalyser + close. (4) URL.createObjectURL + revokeObjectURL via Object-Assignment auf globalThis.URL. Test-Buckets: formatRecordingDuration pure (7 Cases: 0/sub-second/1s/1min/1h/1h2m5s/2-stellige h), isAvailable Detection, Initial-State (6 Felder + setDeviceId), refreshDevices (filter audioinput + empty-label-Fallback + silent-catch bei enumerate-throw), start() Permission-Flow (Default-Constraints, deviceId-exact, isRecording=true, Permission-Denied → error, non-Error-throw → Default-Message 'Mikrofon-Zugriff verweigert', Idempotenz bei doppeltem start, recorder.start(100) für 100ms-Chunks), Duration-Timer (recordingDurationMs > 0 nach 550ms via fake timers), stop() + onstop → pendingSample (recorder.stop wird gerufen, pendingSample mit URL+defaultName-Pattern 'Recording N (Xs)'+durationSec, Stream-Tracks werden gestoppt, stop ohne Recording no-op), confirmPendingSample/discardPendingSample (Name-Trim, defaultName-Fallback bei empty, no-op ohne pendingSample, discard revoked URL), Cleanup beim Unmount (Stream-Tracks gestoppt, kein crash ohne aktive Aufnahme). Validation: pnpm check clean, pnpm test 2891/15 skipped vs vorher 2860 (+31). Package.json gebumped 2.73.0 → 2.74.0."
