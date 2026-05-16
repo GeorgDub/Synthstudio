@@ -493,6 +493,25 @@ const INDEX = {
   workLog: [
     {
       agent:     "testing",
+      timestamp: "2026-05-16T20:50:00.000Z",
+      done: [
+        "STORES-WAVE-v2.64 Store-Coverage Wave-Start: 4 untestete Stores als kompletten Bundle abgedeckt. Übergang von Pure-Utils zu Stores (Modul-Singleton-Observer-Pattern mit localStorage/sessionStorage-Persistenz). Setup-Boilerplate: pro Test-File ein eigener localStorage- bzw. sessionStorage-Mock VOR dem Store-Import, weil die Top-Level-_state = load() Read sonst auf undefined läuft. (1) tests/features/transpose-store.test.ts (NEW, 17 Cases): getSemitones/setSemitones/incSemitones/resetTranspose mit clampSemitones-Integration, Persistenz in localStorage, NaN-Defensive, Identity-Check (gleicher Wert → kein extra write), __resetForTests löscht localStorage-Eintrag. (2) tests/features/arp-store.test.ts (NEW, 19 Cases): 5 Setter (Enabled/Mode/Octaves/Notes/StepCount), getArpSteps Integration mit applyArp aus tests/features/arpeggiator.test.ts gegen-getestete pure-Function, Default-State C-Major-Triad [60,64,67], State-Immutability (alte getArpState-Snapshots werden nicht mutiert). (3) tests/features/morph-store.test.ts (NEW, 19 Cases): 7 Actions (Amount mit [0,1]-Clamping, PatternA/B, Active, toggleAutoMorph, AutoMorphBars, resetMorph), initMorphFromStorage rekonstruiert + clampt amounts beim Read + Silent-Fallback bei invalid-JSON, sessionStorage-Persistenz pro Setter, getMorphState ist Copy nicht Reference. (4) tests/features/envelope-follower-store.test.ts (NEW, 17 Cases): add/remove/update mit id-Tracking, Cleanup-Workaround via clearAll() weil kein __resetForTests-Helper existiert, id-Format 'ef-<timestamp>-<rand>', target-Switch (volume → filterFreq), partielle Updates behalten ungeänderte Felder, no-op bei unbekannter id, alle 3 Mutations persistieren nach localStorage. Validation: pnpm check clean, pnpm test 2662 passed/15 skipped vs vorher 2590 (+72). Package.json gebumped 2.63.0 → 2.64.0."
+      ],
+      next: [
+        "Tag v2.64.0 + push → Start der Stores-Wave (analog Pure-Coverage-Wave v2.60-v2.63).",
+        "Weitere Store-Kandidaten ohne Test: useMixerStore (395 LOC, biggest), useMetronomeStore (121 LOC, hat async uploadCustomMetronomeSound), useSongStore (231 LOC), useNoteRepeatStore, useThemeStore (204 LOC), useOscOutStore (105 LOC), useCollabChatStore, usePatternLibraryStore (118), usePatternVariationsStore (93)."
+      ],
+      changed: [
+        "tests/features/transpose-store.test.ts (NEW, 17 Cases)",
+        "tests/features/arp-store.test.ts (NEW, 19 Cases)",
+        "tests/features/morph-store.test.ts (NEW, 19 Cases)",
+        "tests/features/envelope-follower-store.test.ts (NEW, 17 Cases)",
+        "package.json (version 2.63.0 → 2.64.0)",
+        "agents/INDEX.js (workLog-Entry)"
+      ]
+    },
+    {
+      agent:     "testing",
       timestamp: "2026-05-16T19:05:00.000Z",
       done: [
         "POLISH-WELLE-v2.63 Pure-Coverage Wave-Closer (Bundle 3): 3 finale Util-Files. Plan war gmDrumMap + wavExporter + projectSerializer, aber wavExporter ist quasi nur OfflineAudioContext + Blob + document.createElement — die internen floatTo16BitPCM/createWavHeader/audioBufferToWav Helpers sind nicht exportiert und damit nicht Vitest-testbar (OfflineAudioContext gibt's nicht in Node). Stattdessen mixAnalysis.ts gewählt — 249 LOC, 1 Public-Export analyzeMix, 6 Regel-Checks. (1) tests/features/gm-drum-map.test.ts (NEW, 24 Cases): getGmDrumInfo für alle 47 GM-Drum-Mappings (Noten 35-81), Fallback-Logik für unbekannte Noten (Kategorie 'other'), Kategorie-Coverage-Garantie (jede Hauptkategorie hat min. 1 Mapping), midiNotesToParts-Categorization (Same-Cat-Merge, First-Note-Name-Wins, Insertion-Order der Parts). (2) tests/features/mix-analysis.test.ts (NEW, 30 Cases): analyzeMix orchestriert 6 Regeln — Master-Volume (critical bei >115), BPM (warning bei >200, info bei <60), Kick-Volume (warning bei >110, info bei <60), Low-End-Balance (info wenn Kick+Bass diff<5), Panning (warning bei Kick/Snare |pan|>20, all-left/all-right wenn 60%+ einseitig), Density (info bei HiHat >0.85, info bei silent-part), divide-by-zero-Guard bei totalSteps=0; Sort-Order-Garantie critical>warning>info dann alphabetisch nach ID. (3) tests/features/project-serializer.test.ts (NEW, 22 Cases): Konstanten SYNTH_FILE_VERSION='1.16' + SYNTH_LATEST_KEY, serializeProject setzt version+savedAt-ISO, toJson+parseProject Round-Trip (pretty-print indent=2), parseProject Defensive (missing version/patterns wirft, invalid-JSON wirft), audioTracks-Migration v1.14→v1.15 (undefined/null/non-array → [], invalide Items via isValidAudioTrackEntry gefiltert + warn, ungültiger syncMode gefiltert), scripts-Migration v1.15→v1.16 (analoge Default-[]-Logik, isValidScriptEntry Filter), **Sicherheits-Invariant: ALLE geladenen Scripts enabled wird ZWINGEND auf false gesetzt** auch wenn ursprünglich true (User-Consent-Flow). Validation: pnpm check clean, pnpm test 2590 passed/15 skipped vs vorher 2514 (+76). Package.json gebumped 2.62.0 → 2.63.0."
