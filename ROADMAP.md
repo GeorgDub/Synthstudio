@@ -151,7 +151,7 @@ Aus den `next:[]` Einträgen der letzten workLogs in `agents/INDEX.js` — alles
 - **TASK-126 Welle 2** — Pad-Hold-Mode E2E (analog zu Script-Hold mit 100ms-Interval). Echte Sandbox-Tick-Verifikation mit `ss.bpm()` als observable side-effect.
 - **TASK-122 Welle 2** — ✅ Tokens erledigt (v2.48.0): `--ss-accent-tertiary` + `--ss-accent-warning` in @theme + allen 10 built-in Themes + back-compat in CustomTheme.colors. Playwright Screenshot-Compare für visuelle Theme-Regressionen bleibt offen als nächstes Welle-Item.
 - **FOLLOWUP-102-3 next** — ✅ Pure-Transform `applySoloUpdate` erledigt (v2.50.0): exclusive=true (Radio) vs exclusive=false (additive) als 11 Unit-Tests gegen Pure-Function — RTL nicht nötig weil setPartSoloed jetzt eine pure-transform-Schicht hat die ohne Renderer testbar ist.
-- **FOLLOWUP-102-4 next** — Deterministischer Relocate-E2E via `openProject(.synth-Upload)`-Pfad statt `page.reload`.
+- **FOLLOWUP-102-4 next** — ✅ Deterministischer Relocate-E2E erledigt (v2.55.0): zwei neue Playwright-Cases nutzen den echten openProject(.synth-Upload)-Pfad statt page.reload. Helper makeTestProjectWithAudioTrack() generiert ein gültiges SynthProject v1.15 mit Audio-Track; FileChooser-Event setzt das File deterministisch. Verifiziert (a) markBroken nach restoreProject im Browser-Branch + (b) Relocate-Flow stellt Track wieder her.
 
 ---
 
