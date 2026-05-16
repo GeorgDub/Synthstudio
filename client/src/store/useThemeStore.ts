@@ -15,7 +15,12 @@ export interface CustomTheme {
     '--ss-border-subtle': string;
     '--ss-accent-primary': string;
     '--ss-accent-secondary': string;
+    /** v2.48: dritte Akzentfarbe (categorical palettes). Optional —
+     *  alte Themes ohne diesen Wert erben den Default-Theme-Token. */
+    '--ss-accent-tertiary'?: string;
     '--ss-accent-success': string;
+    /** v2.48: warning-Token (unsaved-changes, rate-limits, etc.). Optional. */
+    '--ss-accent-warning'?: string;
     '--ss-accent-danger': string;
   };
   /** Erweiterte Einstellungen */

@@ -20,7 +20,9 @@
   --color-border-subtle:    var(--ss-border-subtle);
   --color-accent-primary:   var(--ss-accent-primary);
   --color-accent-secondary: var(--ss-accent-secondary);
+  --color-accent-tertiary:  var(--ss-accent-tertiary);
   --color-accent-success:   var(--ss-accent-success);
+  --color-accent-warning:   var(--ss-accent-warning);
   --color-accent-danger:    var(--ss-accent-danger);
 }
 
@@ -32,7 +34,9 @@
   --ss-bg-elevated: #252535;
   --ss-accent-primary:   #f59e0b;
   --ss-accent-secondary: #06b6d4;
+  --ss-accent-tertiary:  #a78bfa;  /* violet */
   --ss-accent-success:   #10b981;
+  --ss-accent-warning:   #fbbf24;  /* amber */
   --ss-accent-danger:    #f43f5e;
   --ss-text-primary: #f8fafc;
   --ss-text-muted:   #94a3b8;
@@ -57,7 +61,9 @@
   --ss-bg-elevated: #111827;
   --ss-accent-primary:   #00fff5;
   --ss-accent-secondary: #ff00ff;
+  --ss-accent-tertiary:  #c800ff;  /* electric violet */
   --ss-accent-success:   #39ff14;
+  --ss-accent-warning:   #fff700;  /* neon yellow */
   --ss-accent-danger:    #ff2d55;
   --ss-text-primary: #e0e0ff;
   --ss-text-muted:   #8888cc;
@@ -82,7 +88,9 @@
   --ss-bg-elevated: #33334a;
   --ss-accent-primary:   #ff6b35;
   --ss-accent-secondary: #00f5d4;
+  --ss-accent-tertiary:  #d4a574;  /* tan */
   --ss-accent-success:   #00ff88;
+  --ss-accent-warning:   #ffae42;  /* warm amber */
   --ss-accent-danger:    #ff3355;
   --ss-text-primary: #e8e8d8;
   --ss-text-muted:   #9999aa;
@@ -107,7 +115,9 @@
   --ss-bg-elevated: #1a1526;
   --ss-accent-primary:   #a855f7;
   --ss-accent-secondary: #7c3aed;
+  --ss-accent-tertiary:  #8b5cf6;  /* indigo-violet */
   --ss-accent-success:   #10b981;
+  --ss-accent-warning:   #fcd34d;  /* amber-kontrast zu violett */
   --ss-accent-danger:    #f43f5e;
   --ss-text-primary: #f0e8ff;
   --ss-text-muted:   #9a88bb;
@@ -132,7 +142,9 @@
   --ss-bg-elevated: #261810;
   --ss-accent-primary:   #f97316;
   --ss-accent-secondary: #fbbf24;
+  --ss-accent-tertiary:  #fdba74;  /* peach */
   --ss-accent-success:   #10b981;
+  --ss-accent-warning:   #facc15;  /* yellow */
   --ss-accent-danger:    #ef4444;
   --ss-text-primary: #fef3c7;
   --ss-text-muted:   #a88b6a;
@@ -157,7 +169,9 @@
   --ss-bg-elevated: #111111;
   --ss-accent-primary:   #06b6d4;
   --ss-accent-secondary: #0891b2;
+  --ss-accent-tertiary:  #d500f9;  /* electric purple */
   --ss-accent-success:   #10b981;
+  --ss-accent-warning:   #ffeb3b;  /* glow yellow */
   --ss-accent-danger:    #ef4444;
   --ss-text-primary: #f8fafc;
   --ss-text-muted:   #64748b;
@@ -182,7 +196,9 @@
   --ss-bg-elevated: #f1f5f9;
   --ss-accent-primary:   #2563eb;
   --ss-accent-secondary: #db2777;
+  --ss-accent-tertiary:  #6366f1;  /* indigo */
   --ss-accent-success:   #16a34a;
+  --ss-accent-warning:   #f59e0b;  /* amber */
   --ss-accent-danger:    #dc2626;
   --ss-text-primary: #0f172a;
   --ss-text-muted:   #475569;
@@ -207,7 +223,9 @@
   --ss-bg-elevated: #f9f9f0;
   --ss-accent-primary:   #d97706;
   --ss-accent-secondary: #059669;
+  --ss-accent-tertiary:  #65a30d;  /* olive */
   --ss-accent-success:   #15803d;
+  --ss-accent-warning:   #ca8a04;  /* mustard */
   --ss-accent-danger:    #b91c1c;
   --ss-text-primary: #1e1b18;
   --ss-text-muted:   #57534e;
@@ -232,7 +250,9 @@
   --ss-bg-elevated: #1c1c2e;
   --ss-accent-primary:   #0072b2;  /* Blau (sicher) */
   --ss-accent-secondary: #56b4e9;  /* Himmelblau */
+  --ss-accent-tertiary:  #cc79a7;  /* Rosa (Okabe-Ito sicher) */
   --ss-accent-success:   #009e73;  /* Blaugrün */
+  --ss-accent-warning:   #f0e442;  /* Gelb (Okabe-Ito sicher) */
   --ss-accent-danger:    #e69f00;  /* Orange (statt Rot) */
   --ss-text-primary: #f0f0f8;
   --ss-text-muted:   #8888aa;
@@ -258,7 +278,9 @@
   --ss-bg-elevated: #e8e8e8;
   --ss-accent-primary:   #0072b2;  /* Blau */
   --ss-accent-secondary: #56b4e9;  /* Himmelblau */
+  --ss-accent-tertiary:  #b8497e;  /* Dunkleres Rosa (auf hell) */
   --ss-accent-success:   #009e73;  /* Blaugrün */
+  --ss-accent-warning:   #a47200;  /* Dunkleres Gelb (auf hell) */
   --ss-accent-danger:    #e69f00;  /* Orange */
   --ss-text-primary: #0a0a0a;
   --ss-text-muted:   #444444;

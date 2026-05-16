@@ -2574,7 +2574,7 @@ export default function App() {
               <span className="text-xs text-text-dim">
                 {project.projectName}
                 {project.isDirty && (
-                  <span className="ml-1 text-accent-secondary" title="Ungespeicherte Änderungen">
+                  <span className="ml-1 text-accent-warning" title="Ungespeicherte Änderungen">
                     ●
                   </span>
                 )}

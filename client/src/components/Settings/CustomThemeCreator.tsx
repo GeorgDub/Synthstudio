@@ -13,7 +13,9 @@ const defaultColors: CustomTheme['colors'] = {
     '--ss-border-subtle': '#f1f5f9',
     '--ss-accent-primary': '#2563eb',
     '--ss-accent-secondary': '#db2777',
+    '--ss-accent-tertiary': '#6366f1',
     '--ss-accent-success': '#059669',
+    '--ss-accent-warning': '#f59e0b',
     '--ss-accent-danger': '#dc2626',
 };
 
@@ -28,8 +30,10 @@ const colorLabels: Record<keyof CustomTheme['colors'], string> = {
     '--ss-border-subtle': 'Dezenter Rahmen',
     '--ss-accent-primary': 'Akzentfarbe (primär)',
     '--ss-accent-secondary': 'Akzentfarbe (sekundär)',
+    '--ss-accent-tertiary': 'Akzentfarbe (tertiär)',
     '--ss-accent-success': 'Erfolgsfarbe',
-    '--ss-accent-danger': 'Warnfarbe',
+    '--ss-accent-warning': 'Warnung',
+    '--ss-accent-danger': 'Gefahr/Fehler',
 };
 
 interface Props {
@@ -95,7 +99,7 @@ export function CustomThemeCreator({ onClose }: Props) {
                         <label className="text-xs text-text-muted">{label}</label>
                         <input
                             type="color"
-                            value={colors[key as keyof CustomTheme['colors']]}
+                            value={colors[key as keyof CustomTheme['colors']] ?? '#000000'}
                             onChange={(e) => handleColorChange(key as keyof CustomTheme['colors'], e.target.value)}
                             className="bg-transparent border-none rounded"
                         />
