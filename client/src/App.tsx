@@ -1442,6 +1442,24 @@ export default function App() {
     return () => window.removeEventListener("midi:scene", handleScene);
   }, []);
 
+  // v2.78: midi:perfpad — Note-Mapping mit performancePadIndex triggert
+  // ein Performance-Mode-Pad. Re-Uses die runPadOnce-Logik (Active-Switch +
+  // queuePerformancePattern). Velocity wird aktuell nicht weiterverarbeitet,
+  // bleibt aber im event-detail für künftige Velocity-sensitive Triggers.
+  useEffect(() => {
+    const handlePerfPad = (e: Event) => {
+      const detail = (e as CustomEvent<{ padIndex: number; velocity: number }>).detail;
+      if (!detail || typeof detail.padIndex !== "number") return;
+      const pads = getPerformancePads();
+      const pad = pads[detail.padIndex];
+      if (!pad || !pad.patternId) return;
+      dmRef.current.setActivePattern(pad.patternId);
+      queuePerformancePattern(pad.patternId);
+    };
+    window.addEventListener("midi:perfpad", handlePerfPad);
+    return () => window.removeEventListener("midi:perfpad", handlePerfPad);
+  }, []);
+
   // v2.1: midi:partSend — Reverb/Delay-Send-Level via MIDI-CC steuern
   useEffect(() => {
     const handleSend = (e: Event) => {

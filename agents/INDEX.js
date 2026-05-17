@@ -493,6 +493,26 @@ const INDEX = {
   workLog: [
     {
       agent:     "frontend",
+      timestamp: "2026-05-17T16:25:00.000Z",
+      done: [
+        "FEATURE-v2.78 KORG-PERF-PAD-MAPPING: User-Request war 'Korg Drum-Pads sollen sämtliche Funktionen und Chains aufnehmen können'. Klärung mit AskUserQuestion: Korg Electribe 2 (16 Trigger-Pads) → Per-Pad Performance-Pad-Trigger via Auto-Learn-Preset. Bestehende MIDI-Infrastruktur weitestgehend wiederverwendet — minimal-invasive Erweiterung. Implementierung: (1) client/src/hooks/useMidi.ts: MidiNoteMapping bekommt optionales `performancePadIndex?: number`-Feld (Backwards-Compat — Pre-v2.78-Files haben es nicht und triggern weiterhin Parts). AutoLearnEntry Note-Variante analog erweitert. nextAutoLearnEntry propagiert performancePadIndex in das resultierende noteMapping. Note-On-Handler: wenn nm.performancePadIndex gesetzt → dispatch 'midi:perfpad' CustomEvent mit {padIndex, velocity} statt onPartTrigger zu rufen. (2) client/src/App.tsx: neuer useEffect-Listener für 'midi:perfpad' — liest aus getPerformancePads(), validiert pad.patternId, ruft dm.setActivePattern + queuePerformancePattern (identisch zu runPadOnce in macro:button:trigger). Velocity bleibt im event-detail für künftige Velocity-sensitive Triggers, wird aktuell nicht durchgereicht. (3) client/src/components/MidiSettings/MidiSettings.tsx: neuer perfPadNoteEntries-Helper generiert 16 AutoLearnEntry-Note-Einträge mit performancePadIndex 0..15 (partId='perf-pad-N', partName='Perf-Pad N+1' fürs UI-Display). Neues Preset 'Korg Electribe 2 → Performance-Pads (16)' am Ende der autoLearnPresets-Liste. autoLearnEntryLabel zeigt 'Perf-Pad N+1' statt 'Pad: partName' wenn performancePadIndex gesetzt. (4) tests/features/midi-auto-learn.test.ts: neuer describe-Block 'v2.78 — Note-Entry mit performancePadIndex' mit 4 Cases: Note-Capture propagiert padIndex, ohne padIndex bleibt noteMapping schlank, 16-Pad-Sequence (3-fold step-through liefert [0,1,2]), padIndex=15 oberer Rand. Validation: pnpm check clean, pnpm test 2990/15 skipped vs vorher 2986 (+4). Package.json gebumped 2.77.0 → 2.78.0. User-Workflow ab v2.78: in Settings → MIDI das Preset wählen, dann nacheinander die 16 Pads des Electribe 2 (oder anderen Korg/16-Pad-Controller) anklicken — jeder Pad bekommt seinen Performance-Pad-Slot."
+      ],
+      next: [
+        "Tag v2.78.0 + push.",
+        "Möglicher v3-Folge: Chain-Targets pro Pad zulassen (User-Anfrage 'sämtliche funktionen und chains' — aktuell nur perf-pad-trigger). Erweiterung: noteMapping bekommt optional `target: MidiLearnTarget` Feld; wenn gesetzt, ruft Note-On den vollen applyMapping(target, value) statt onPartTrigger. Damit beliebige Chain/runScript/scenelaunch/etc. an Hardware-Pads bindbar. Auto-Learn-UI bräuchte Target-Picker pro Slot — sichtbar größere UX-Erweiterung.",
+        "Bei Bedarf: Velocity-Mapping (Pad-Druck-Stärke → Performance-Pad-Parameter wie BPM-Offset, Volume-Mod, etc.) — aktuell wird velocity im perfpad-Event mitgeschickt aber nicht verarbeitet."
+      ],
+      changed: [
+        "client/src/hooks/useMidi.ts (MidiNoteMapping + AutoLearnEntry um performancePadIndex erweitert, Note-On-Handler dispatched midi:perfpad)",
+        "client/src/App.tsx (neuer midi:perfpad-Listener, ruft setActivePattern + queuePerformancePattern)",
+        "client/src/components/MidiSettings/MidiSettings.tsx (perfPadNoteEntries-Helper, neues Preset, Label-Update)",
+        "tests/features/midi-auto-learn.test.ts (+4 Cases im v2.78-describe-block)",
+        "package.json (version 2.77.0 → 2.78.0)",
+        "agents/INDEX.js (workLog-Entry)"
+      ]
+    },
+    {
+      agent:     "frontend",
       timestamp: "2026-05-17T02:18:00.000Z",
       done: [
         "BUGFIX-v2.77 autoTagFromFilename Underscore-Regex-Bug: Vor v2.77 ignorierte autoTagFromFilename die häufigste Sample-Naming-Convention ('snare_kick_01.wav', 'BD_808_dry.wav' etc.) komplett, weil JS-Regex `\\b` Word-Boundary nicht greift wenn Underscore neben Wort steht (Underscore zählt als Word-Char in JS). Fix in client/src/hooks/useBpmDetection.ts Z.51: vor dem Match werden alle Underscores zu Spaces normalisiert via `.replace(/_/g, ' ')`. Kompatibilität mit `^bd[_\\-\\s]` und ähnlichen Char-Set-Patterns bleibt erhalten weil Space dort im Set ist. 9 neue Test-Cases in tests/features/use-bpm-detection-hook.test.ts (describe 'Underscore-Separator v2.77 Fix') verifizieren: snare_acoustic / floor_tom_01 / crash_cymbal / shaker_loop_01 / synth_lead / sub_bass / vocal_ah_long / kick_bass (Kick-Guard intact) / BD_01 (^bd[_\\-\\s]-Pattern weiter funktional). Bestehende Tests bleiben grün (verwenden Punkt/Space/Hyphen sowieso). Validation: pnpm check clean, pnpm test 2986/15 skipped vs vorher 2977 (+9). Package.json gebumped 2.76.0 → 2.77.0."

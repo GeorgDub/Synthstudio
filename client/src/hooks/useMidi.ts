@@ -112,6 +112,14 @@ export interface MidiNoteMapping {
   channel: number;
   partId: string;
   label: string;
+  /**
+   * v2.78: Optional — wenn gesetzt (0..PERF_PAD_COUNT-1), triggert die Note
+   * NICHT die Part-Spur sondern das Performance-Mode-Pad mit diesem Index.
+   * Beispiel: Korg Electribe 2 schickt 16 Note-On für ihre Pads (Channel 10),
+   * jeder davon mappt auf perf-pad 0..15. partId/label bleiben fürs UI-Display
+   * + Backwards-Compat (Pre-v2.78-Files haben dieses Feld nicht).
+   */
+  performancePadIndex?: number;
 }
 
 /**
@@ -121,7 +129,17 @@ export interface MidiNoteMapping {
  */
 export type AutoLearnEntry =
   | { kind: "cc"; target: MidiLearnTarget }
-  | { kind: "note"; partId: string; partName: string };
+  | {
+      kind: "note";
+      partId: string;
+      partName: string;
+      /**
+       * v2.78: Optional — wenn gesetzt, wird die captured Note nicht als
+       * Part-Trigger gebunden sondern als Performance-Pad-Trigger. partId +
+       * partName bleiben fürs UI-Label (z.B. "Perf-Pad 1") und Schema-Compat.
+       */
+      performancePadIndex?: number;
+    };
 
 export interface MidiState {
   isAvailable: boolean;
@@ -407,6 +425,10 @@ export function nextAutoLearnEntry(
         channel: msg.channel,
         partId: entry.partId,
         label: entry.partName,
+        // v2.78: optionalen Performance-Pad-Index mit-übernehmen
+        ...(entry.performancePadIndex !== undefined
+          ? { performancePadIndex: entry.performancePadIndex }
+          : {}),
       },
     };
   }
@@ -738,12 +760,19 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
         // MIDI Step Input Event (nur wenn Step Input Modus aktiv)
         window.dispatchEvent(new CustomEvent("stepinput:noteon", { detail: { note: byte1, velocity: byte2 } }));
       }
-      // Note-Mapping → Part triggern
+      // Note-Mapping → Part triggern (oder Performance-Pad, v2.78)
       const nm = noteMappingsRef.current.find(
         m => m.note === byte1 && (m.channel === 0 || m.channel === channel)
       );
       if (nm) {
-        optionsRef.current.onPartTrigger?.(nm.partId, byte2);
+        if (nm.performancePadIndex !== undefined) {
+          // v2.78: Perf-Pad-Trigger via CustomEvent (analog zu midi:scene)
+          window.dispatchEvent(new CustomEvent("midi:perfpad", {
+            detail: { padIndex: nm.performancePadIndex, velocity: byte2 },
+          }));
+        } else {
+          optionsRef.current.onPartTrigger?.(nm.partId, byte2);
+        }
       }
     }
 

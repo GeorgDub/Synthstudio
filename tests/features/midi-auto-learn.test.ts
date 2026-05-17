@@ -192,4 +192,63 @@ describe("nextAutoLearnEntry (v1.72)", () => {
     const r2 = nextAutoLearnEntry(queue, { type: 0x90, byte1: 36, byte2: 100, channel: 10 }, 10);
     expect(r2.noteMapping).toBeDefined();
   });
+
+  // ─── v2.78: performancePadIndex auf Note-Entry ─────────────────────────
+  describe("v2.78 — Note-Entry mit performancePadIndex (Korg Pad → Perf-Pad)", () => {
+    it("Note-Capture propagiert performancePadIndex in das noteMapping", () => {
+      const entry: AutoLearnEntry = {
+        kind: "note",
+        partId: "perf-pad-0",
+        partName: "Perf-Pad 1",
+        performancePadIndex: 0,
+      };
+      const result = nextAutoLearnEntry(
+        [entry],
+        { type: 0x90, byte1: 60, byte2: 100, channel: 10 },
+      );
+      expect(result.noteMapping).toBeDefined();
+      expect(result.noteMapping!.performancePadIndex).toBe(0);
+      expect(result.noteMapping!.note).toBe(60);
+      expect(result.noteMapping!.channel).toBe(10);
+    });
+
+    it("Ohne performancePadIndex bleibt noteMapping schlank (kein Feld gesetzt)", () => {
+      const result = nextAutoLearnEntry(
+        [noteTarget],
+        { type: 0x90, byte1: 36, byte2: 100, channel: 1 },
+      );
+      expect(result.noteMapping).toBeDefined();
+      expect(result.noteMapping!.performancePadIndex).toBeUndefined();
+    });
+
+    it("16-Pad-Korg-Sequence: jedes Pad bekommt seinen eigenen padIndex", () => {
+      const queue: AutoLearnEntry[] = Array.from({ length: 16 }, (_, i) => ({
+        kind: "note",
+        partId: `perf-pad-${i}`,
+        partName: `Perf-Pad ${i + 1}`,
+        performancePadIndex: i,
+      }));
+      // User drückt 3 Pads in Reihenfolge
+      let q = queue;
+      const captured: number[] = [];
+      for (let i = 0; i < 3; i++) {
+        const r = nextAutoLearnEntry(q, { type: 0x90, byte1: 60 + i, byte2: 100, channel: 10 });
+        q = r.newQueue;
+        captured.push(r.noteMapping!.performancePadIndex!);
+      }
+      expect(captured).toEqual([0, 1, 2]);
+      expect(q).toHaveLength(13);
+    });
+
+    it("padIndex=15 wird übernommen (oberer Rand 4×4-Grid)", () => {
+      const entry: AutoLearnEntry = {
+        kind: "note", partId: "p15", partName: "Perf-Pad 16", performancePadIndex: 15,
+      };
+      const result = nextAutoLearnEntry(
+        [entry],
+        { type: 0x90, byte1: 75, byte2: 100, channel: 10 },
+      );
+      expect(result.noteMapping!.performancePadIndex).toBe(15);
+    });
+  });
 });

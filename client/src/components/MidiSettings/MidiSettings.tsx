@@ -409,6 +409,20 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
   const noteEntries = (ps: Array<{ id: string; name: string }>): AutoLearnEntry[] =>
     ps.map(p => ({ kind: "note" as const, partId: p.id, partName: p.name }));
 
+  /**
+   * v2.78: Generiert 16 AutoLearn-Note-Einträge, jeder mit
+   * performancePadIndex 0..15. User drückt nacheinander seine 16
+   * Hardware-Pads — Synthstudio bindet jede Note an das entsprechende
+   * Performance-Mode-Pad. partId/partName sind nur fürs UI-Display.
+   */
+  const perfPadNoteEntries = (count = 16): AutoLearnEntry[] =>
+    Array.from({ length: count }, (_, i) => ({
+      kind: "note" as const,
+      partId: `perf-pad-${i}`,
+      partName: `Perf-Pad ${i + 1}`,
+      performancePadIndex: i,
+    }));
+
   const autoLearnPresets: Array<{ label: string; description: string; build: () => AutoLearnEntry[] }> = [
     {
       label: "Mixer (Volumes + Mutes)",
@@ -456,11 +470,19 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
         { type: "patternRandomize" },
       ]),
     },
+    {
+      label: "Korg Electribe 2 → Performance-Pads (16)",
+      description: "16 Pads des Electribe 2 (oder anderer 16-Pad-Controller) auf das 4×4 Performance-Mode-Grid mappen (v2.78)",
+      build: () => perfPadNoteEntries(16),
+    },
   ];
 
   /** Renderet ein Auto-Learn-Entry als kurzes Label für die Progress-Karte. */
   function autoLearnEntryLabel(entry: AutoLearnEntry): string {
     if (entry.kind === "cc") return `CC: ${targetLabel(entry.target)}`;
+    if (entry.performancePadIndex !== undefined) {
+      return `Perf-Pad ${entry.performancePadIndex + 1}`;
+    }
     return `Pad: ${entry.partName}`;
   }
 
