@@ -241,6 +241,9 @@ interface ElectronAPI {
   fileExists(filePath: string): Promise<{ exists: boolean }>;
   getFileStats(filePath: string): Promise<{ success: boolean; stats?: { size: number; mtime: number }; error?: string }>;
 
+  // ── Audio-Recording-Save (TASK-234 / v2.86) ─────────────────────────────────
+  saveRecording(filename: string, data: ArrayBuffer): Promise<{ success: boolean; filePath?: string; error?: string }>;
+
   // ── Folder-Import ─────────────────────────────────────────────────────────────────────────────
   importFolder(folderPath: string): Promise<{ importId: string }>;
   importSamples(filePaths: string[]): Promise<{ success: boolean; importedCount: number; errors: string[] }>;

@@ -12,6 +12,7 @@
 
 import { SynthEngine } from "./SynthEngine";
 import { MidiClockOut } from "./MidiClockOut";
+import { AudioRecorder, type RecordingResult, MAX_SIMULTANEOUS_RECORDINGS } from "./AudioRecorder";
 
 // ─── Typen ────────────────────────────────────────────────────────────────────
 
@@ -521,6 +522,10 @@ class AudioEngineClass {
     this._globalDelayFeedback.connect(this._globalDelayBus);
     this._globalDelayBus.connect(this._globalDelayWet);
     this._globalDelayWet.connect(this.masterGain);
+
+    // Record-Pipeline (TASK-234) — Recorder bekommt den AudioContext, hängt
+    // sich aber erst auf explizites startRecording() in die Signal-Pfade.
+    this._audioRecorder.setContext(this.ctx);
   }
 
   async resume(): Promise<void> {
@@ -1183,6 +1188,9 @@ class AudioEngineClass {
     this.loadingPromises.clear();
     this.channelNodes.clear();
     this.reverbBuffers.clear();
+    // Aktive Aufnahmen abräumen (TASK-234) — verhindert Zombie-Recorder
+    // wenn der Cache während einer aufnahme geleert wird.
+    this._audioRecorder.dispose();
   }
 
   /** Kanal-Effekte live aktualisieren (ohne Neustart) */
@@ -2866,6 +2874,101 @@ class AudioEngineClass {
   /** Liste der aktuell angeschlossenen Live-Input-Channels (für Cleanup-Loops). */
   getAttachedLiveInputChannelIds(): string[] {
     return Array.from(this._liveInputs.keys());
+  }
+
+  // ─── Audio-Recording (TASK-234 / v2.86) ─────────────────────────────────────
+  //
+  // Pro-Channel-Recorder. Tappt den Channel-Output (NACH FX-Chain, NACH Panner)
+  // ab und sammelt Float32-Samples. Bei `stopRecording` wird ein WAV produziert.
+  //
+  // Pipeline (siehe AudioRecorder.ts für Detail):
+  //   channelNodes[id].panner → ScriptProcessor → (silent sink → destination)
+  //                                  ↓
+  //                          Float32-Frames in RAM-Buffer
+  //                                  ↓
+  //                          encodeWavStereo / encodeWavMono
+  //
+  // Limit: MAX_SIMULTANEOUS_RECORDINGS (8) gleichzeitige Aufnahmen.
+  // Wir tappen MONO (Channel-Output-GainNode ist 1-Kanal bis zum Panner).
+  //
+  // App.tsx wired:
+  //   - transport:play → AudioEngine.startRecordingForArmedChannels(armedIds)
+  //   - transport:stop → AudioEngine.finalizeAllRecordings()
+  //
+  // KEINE persistente State-Bridge — der Recorder weiß nur was gerade läuft;
+  // armed-Flag lebt im Store (useLiveInputStore / useAudioTrackStore).
+
+  private _audioRecorder = new AudioRecorder();
+
+  /**
+   * Startet eine Aufnahme für genau einen Channel. Source-Node: der `panner`
+   * des Channels (post-FX, pre-master). Mono, weil der Channel-Strip bis dahin
+   * 1-kanalig läuft.
+   *
+   * @returns `true` wenn gestartet; `false` wenn bereits läuft oder Channel
+   *          unbekannt oder Limit erreicht.
+   */
+  startRecording(channelId: string): boolean {
+    if (!this.ctx) return false;
+    const nodes = this.channelNodes.get(channelId);
+    if (!nodes) return false;
+    if (this._audioRecorder.activeCount() >= MAX_SIMULTANEOUS_RECORDINGS) {
+      return false;
+    }
+    // Tap am Panner: nach Insert-FX, vor Sidechain + Master.
+    // Mono — Web-Audio StereoPanner mischt aber zu 2 Kanälen; wir nehmen
+    // den Output trotzdem mono auf (ScriptProcessor mit 1-Channel),
+    // Browser downmixed automatisch.
+    return this._audioRecorder.start(channelId, nodes.panner, 1);
+  }
+
+  /**
+   * Stoppt eine einzelne Aufnahme + liefert das WAV-Result.
+   * Returnt null wenn der Channel nicht aufnimmt.
+   */
+  stopRecording(channelId: string): RecordingResult | null {
+    return this._audioRecorder.stop(channelId);
+  }
+
+  /**
+   * Startet Aufnahmen für alle Channels in der Liste (typisch: alle armed
+   * Channels beim Transport-Play). Returnt die Liste der tatsächlich
+   * gestarteten Channels (gefiltert um unbekannte + Limit-Overflows).
+   */
+  startRecordingForChannels(channelIds: string[]): string[] {
+    const started: string[] = [];
+    for (const id of channelIds) {
+      if (this.startRecording(id)) started.push(id);
+    }
+    return started;
+  }
+
+  /**
+   * Stoppt ALLE aktiven Aufnahmen und liefert die Ergebnisse. Wird vom
+   * Transport-Stop-Hook aufgerufen.
+   */
+  finalizeAllRecordings(): RecordingResult[] {
+    return this._audioRecorder.stopAll();
+  }
+
+  /** True wenn der gegebene Channel gerade aufgenommen wird. */
+  isRecordingChannel(channelId: string): boolean {
+    return this._audioRecorder.isRecording(channelId);
+  }
+
+  /** Liste der aktiv aufnehmenden Channel-IDs (für UI-Indikatoren). */
+  getActiveRecordingChannelIds(): string[] {
+    return this._audioRecorder.activeChannelIds();
+  }
+
+  /** Aktuelle Aufnahmedauer in Millisekunden (für Timer-Overlay). */
+  getRecordingDurationMs(channelId: string): number {
+    return this._audioRecorder.currentDurationMs(channelId);
+  }
+
+  /** Bricht eine Aufnahme ab OHNE Encode (Cleanup-Pfad bei removeChannel). */
+  cancelRecording(channelId: string): void {
+    this._audioRecorder.cancel(channelId);
   }
 }
 

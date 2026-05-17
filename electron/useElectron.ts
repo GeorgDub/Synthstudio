@@ -78,6 +78,13 @@ const browserAPI = {
     error: "Nicht in Electron – nutze File System Access API",
   }),
 
+  // Recording-Save: Browser-Fallback gibt success:false zurück → der Renderer-Code
+  // (recordingStorage.ts) erkennt das und legt stattdessen in IndexedDB ab.
+  saveRecording: async (_filename: string, _data: ArrayBuffer) => ({
+    success: false as boolean,
+    error: "Nicht in Electron – nutze IndexedDB",
+  }),
+
   importFolder: async (_folderPath: string) => ({ importId: "" }),
   cancelImport: async (_importId: string) => ({ success: false, error: "Nicht in Electron" }),
   importZip: async (_zipPath: string) => ({ importId: "" }),
@@ -324,6 +331,7 @@ export function useElectron() {
     readFile: api.readFile,
     listDirectory: api.listDirectory,
     writeFile: api.writeFile,
+    saveRecording: api.saveRecording ?? browserAPI.saveRecording,
     importFolder: api.importFolder,
     cancelImport: api.cancelImport,
     importZip: api.importZip,

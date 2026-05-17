@@ -94,6 +94,17 @@ const electronAPI = {
   ): Promise<{ success: boolean; error?: string }> =>
     ipcRenderer.invoke("fs:write-file", filePath, data),
 
+  // ── Audio-Recording-Save (TASK-234 / v2.86) ────────────────────────────────
+  /**
+   * Schreibt einen WAV-Buffer in userData/recordings/<filename>.
+   * Main-Side validiert strikt (Filename, WAV-Header, Path-Traversal).
+   */
+  saveRecording: (
+    filename: string,
+    data: ArrayBuffer,
+  ): Promise<{ success: boolean; filePath?: string; error?: string }> =>
+    ipcRenderer.invoke("audio:save-recording", filename, data),
+
   // ── Folder-Import ────────────────────────────────────────────────────────────
 
   /** Startet einen Folder-Import und gibt die importId zurück */

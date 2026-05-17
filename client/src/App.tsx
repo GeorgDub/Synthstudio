@@ -157,7 +157,16 @@ import {
   markBroken as markAudioTrackBroken,
   setRuntimeWaveform as setAudioTrackRuntimeWaveform,
   clear as clearAudioTracks,
+  addAudioTrack,
 } from "@/store/useAudioTrackStore";
+// TASK-234 (v2.86): Record-Arm im Mixer
+import {
+  getArmedLiveInputChannelIds,
+  getLiveInputChannel,
+} from "@/store/useLiveInputStore";
+import {
+  saveRecording as persistRecording,
+} from "@/utils/recordingStorage";
 import {
   getProjectScripts,
   loadProjectScripts,
@@ -798,6 +807,65 @@ export default function App() {
     },
     // MIDI Out wird nach midi-Hook Initialisierung via useEffect registriert
   });
+
+  // ── Audio-Recording (TASK-234 / v2.86) ──────────────────────────────────────
+  // Bei transport:play → AudioEngine.startRecordingForChannels(armed[])
+  // Bei transport:stop → AudioEngine.finalizeAllRecordings() → für jeden:
+  //   1) WAV via persistRecording (Electron-IPC oder IndexedDB) speichern
+  //   2) addAudioTrack({filePath, name, ...}) → erscheint im Mixer als
+  //      regulärer Audio-Track (abspielbar nach Stop)
+  const prevRecArmPlayRef = useRef(project.isPlaying);
+  useEffect(() => {
+    const wasPlaying = prevRecArmPlayRef.current;
+    prevRecArmPlayRef.current = project.isPlaying;
+    if (wasPlaying === project.isPlaying) return;
+
+    if (project.isPlaying) {
+      // PLAY: alle armed Live-Inputs starten
+      const armedIds = getArmedLiveInputChannelIds();
+      if (armedIds.length > 0) {
+        AudioEngine.startRecordingForChannels(armedIds);
+      }
+      return;
+    }
+
+    // STOP: alle aktiven Aufnahmen finalisieren + persistieren
+    const results = AudioEngine.finalizeAllRecordings();
+    if (results.length === 0) return;
+
+    void (async () => {
+      for (const rec of results) {
+        const ch = getLiveInputChannel(rec.channelId);
+        const channelName = ch?.name ?? "Channel";
+        try {
+          const saved = await persistRecording(
+            rec.channelId,
+            channelName,
+            rec.wavBuffer,
+            electron.isElectron ? electron : null,
+          );
+          try {
+            addAudioTrack({
+              name: saved.fileName.replace(/\.wav$/i, ""),
+              filePath: saved.filePath,
+              fileName: saved.fileName,
+              fileSize: saved.fileSize,
+              volume: 0.8,
+              pan: 0,
+              muted: false,
+              soloed: false,
+              sends: { reverb: 0, delay: 0 },
+              syncMode: "free",
+            });
+          } catch (e) {
+            console.warn("[Recording] addAudioTrack fehlgeschlagen (Limit erreicht?)", e);
+          }
+        } catch (e) {
+          console.error("[Recording] Persist fehlgeschlagen:", e);
+        }
+      }
+    })();
+  }, [project.isPlaying, electron]);
 
   // ── Arbeitsbereich-Tabs ────────────────────────────────────────────────────
   // Tab-State mit localStorage-Persistenz

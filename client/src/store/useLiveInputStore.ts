@@ -48,6 +48,12 @@ export interface LiveInputChannelData {
    * Default 0 — Advanced-User-Setting.
    */
   latencyCompensationMs: number;
+  /**
+   * Record-Arm (TASK-234 / v2.86). Bei `transport:play` startet eine Aufnahme
+   * auf diesem Channel, bei `transport:stop` wird sie als Audio-Track persistiert.
+   * Default `false` — alle Channels sind anfangs disarmed.
+   */
+  recordArmed?: boolean;
 }
 
 // ─── Konstanten ──────────────────────────────────────────────────────────────
@@ -108,6 +114,8 @@ export function isValidChannel(x: unknown): x is LiveInputChannelData {
   if (typeof o.muted !== "boolean") return false;
   if (typeof o.soloed !== "boolean") return false;
   if (typeof o.latencyCompensationMs !== "number") return false;
+  // recordArmed ist optional (älter Schema-Migration friendly).
+  if (o.recordArmed !== undefined && typeof o.recordArmed !== "boolean") return false;
   const sends = o.sends as { reverb?: unknown; delay?: unknown } | undefined;
   if (!sends || typeof sends !== "object") return false;
   if (typeof sends.reverb !== "number") return false;
@@ -145,11 +153,35 @@ export function addLiveInputChannel(
       delay:  clamp(overrides.sends?.delay  ?? 0, 0, 1),
     },
     latencyCompensationMs: clamp(overrides.latencyCompensationMs ?? 0, 0, 1000),
+    recordArmed: overrides.recordArmed ?? false,
   };
   _channels = [..._channels, channel];
   persist();
   notify();
   return id;
+}
+
+/**
+ * Setzt das `recordArmed`-Flag eines Channels (TASK-234).
+ * Idempotent — no-op wenn Channel unbekannt oder Flag bereits identisch.
+ */
+export function setLiveInputRecordArm(id: string, armed: boolean): void {
+  const idx = _channels.findIndex((c) => c.id === id);
+  if (idx < 0) return;
+  const existing = _channels[idx];
+  if ((existing.recordArmed ?? false) === armed) return;
+  _channels = [
+    ..._channels.slice(0, idx),
+    { ...existing, recordArmed: armed },
+    ..._channels.slice(idx + 1),
+  ];
+  persist();
+  notify();
+}
+
+/** Liefert alle Channel-IDs die armed=true sind (für Transport-Play). */
+export function getArmedLiveInputChannelIds(): string[] {
+  return _channels.filter((c) => c.recordArmed).map((c) => c.id);
 }
 
 /** Entfernt einen Live-Input-Channel. Caller MUSS vorher den Stream detachen. */
@@ -254,6 +286,7 @@ export interface LiveInputStoreApi {
   remove: (id: string) => void;
   update: (id: string, patch: Partial<LiveInputChannelData>) => void;
   setSoloed: (id: string, soloed: boolean, exclusive?: boolean) => void;
+  setRecordArm: (id: string, armed: boolean) => void;
   get: (id: string) => LiveInputChannelData | null;
 }
 
@@ -274,6 +307,7 @@ export function useLiveInputStore(): LiveInputStoreApi {
     remove: removeLiveInputChannel,
     update: updateLiveInputChannel,
     setSoloed: setLiveInputSoloed,
+    setRecordArm: setLiveInputRecordArm,
     get: getLiveInputChannel,
   };
 }

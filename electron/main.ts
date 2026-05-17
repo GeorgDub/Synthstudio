@@ -2121,6 +2121,75 @@ function registerIpcHandlers(): void {
     }
   });
 
+  // ── Audio-Recording-Save (TASK-234 / v2.86) ─────────────────────────────────
+  //
+  // Empfängt einen WAV-ArrayBuffer vom Renderer und speichert ihn in
+  // `userData/recordings/<filename>`. STRENGE Validierung:
+  //  - filename MUSS reine ASCII-Filename-Chars enthalten (kein /, \, ..)
+  //  - filename MUSS auf .wav enden
+  //  - filename MUSS <=120 Zeichen sein
+  //  - data MUSS ArrayBuffer mit gültigem WAV-Header sein
+  //  - Output-Pfad MUSS innerhalb von userData/recordings/ liegen (Path-Traversal-Guard)
+  //
+  // Security-Begründung: User-supplied filename → wenn ungeprüft an
+  // path.join(userData, name) gefüttert würde, könnte ein bösartiger Renderer
+  // (z.B. via XSS) "../../Windows/System32/foo.wav" schreiben. Der
+  // Realpath-Check nach path.resolve() bindet uns auf das recordings/-Subdir.
+  ipcMain.handle("audio:save-recording", async (
+    _event,
+    filename: string,
+    data: ArrayBuffer | Uint8Array,
+  ) => {
+    try {
+      // ── Input-Validation ─────────────────────────────────────────────────
+      if (typeof filename !== "string" || filename.length === 0 || filename.length > 120) {
+        return { success: false, error: "Ungültiger Dateiname" };
+      }
+      if (filename.includes("\0") || filename.includes("/") || filename.includes("\\") || filename.includes("..")) {
+        return { success: false, error: "Dateiname enthält unzulässige Zeichen" };
+      }
+      if (!/^[A-Za-z0-9._-]+\.wav$/.test(filename)) {
+        return { success: false, error: "Nur alphanumerische .wav-Dateinamen erlaubt" };
+      }
+      if (!data) {
+        return { success: false, error: "Keine Daten erhalten" };
+      }
+      // ArrayBuffer oder Uint8Array vom Renderer akzeptieren
+      const buf = data instanceof Uint8Array
+        ? Buffer.from(data.buffer, data.byteOffset, data.byteLength)
+        : Buffer.from(data as ArrayBuffer);
+      // Min-Header-Größe + WAV-Magic-Check
+      if (buf.byteLength < 44) {
+        return { success: false, error: "Buffer zu klein für WAV-Header" };
+      }
+      const riff = buf.subarray(0, 4).toString("ascii");
+      const wave = buf.subarray(8, 12).toString("ascii");
+      if (riff !== "RIFF" || wave !== "WAVE") {
+        return { success: false, error: "Ungültiger WAV-Header" };
+      }
+      // Größen-Limit: max 500 MB pro Aufnahme (Schutz vor Disk-Fill).
+      const MAX_RECORDING_BYTES = 500 * 1024 * 1024;
+      if (buf.byteLength > MAX_RECORDING_BYTES) {
+        return { success: false, error: "Aufnahme zu groß (>500 MB)" };
+      }
+
+      // ── Path-Resolution + Traversal-Guard ────────────────────────────────
+      const recordingsDir = path.resolve(path.join(app.getPath("userData"), "recordings"));
+      await fs.promises.mkdir(recordingsDir, { recursive: true });
+      const targetPath = path.resolve(path.join(recordingsDir, filename));
+      // Realpath muss mit recordingsDir + sep beginnen, sonst Traversal.
+      const expectedPrefix = recordingsDir + path.sep;
+      if (targetPath !== path.join(recordingsDir, filename) || !targetPath.startsWith(expectedPrefix)) {
+        return { success: false, error: "Ungültiger Zielpfad" };
+      }
+
+      await fs.promises.writeFile(targetPath, buf);
+      return { success: true, filePath: targetPath };
+    } catch (err) {
+      return { success: false, error: String(err) };
+    }
+  });
+
   // ── Folder-Import ────────────────────────────────────────────────────────────
 
   ipcMain.handle("samples:import-folder", async (_event, folderPath: string) => {

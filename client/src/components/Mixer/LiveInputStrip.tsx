@@ -23,6 +23,7 @@ import {
   updateLiveInputChannel,
   removeLiveInputChannel,
   setLiveInputSoloed,
+  setLiveInputRecordArm,
   type LiveInputChannelData,
 } from "@/store/useLiveInputStore";
 
@@ -124,6 +125,8 @@ export function LiveInputStrip({ channel }: LiveInputStripProps) {
   }, [channel.id]);
 
   const handleRemove = useCallback(() => {
+    // TASK-234: aktive Aufnahme abräumen (kein Encode — Channel verschwindet).
+    AudioEngine.cancelRecording(channel.id);
     AudioEngine.detachLiveInput(channel.id);
     removeLiveInputChannel(channel.id);
   }, [channel.id]);
@@ -149,6 +152,23 @@ export function LiveInputStrip({ channel }: LiveInputStripProps) {
   const handleSoloToggle = useCallback((shiftKey: boolean) => {
     setLiveInputSoloed(channel.id, !channel.soloed, !shiftKey);
   }, [channel.id, channel.soloed]);
+
+  const handleRecArmToggle = useCallback(() => {
+    setLiveInputRecordArm(channel.id, !channel.recordArmed);
+  }, [channel.id, channel.recordArmed]);
+
+  // Recording-Status: vom AudioEngine pollen während transport läuft.
+  const [isRec, setIsRec] = useState(false);
+  useEffect(() => {
+    if (!channel.recordArmed) {
+      setIsRec(false);
+      return;
+    }
+    const tick = () => setIsRec(AudioEngine.isRecordingChannel(channel.id));
+    tick();
+    const handle = window.setInterval(tick, 250);
+    return () => window.clearInterval(handle);
+  }, [channel.id, channel.recordArmed]);
 
   const handleLatencyChange = useCallback((ms: number) => {
     updateLiveInputChannel(channel.id, { latencyCompensationMs: ms });
@@ -259,7 +279,7 @@ export function LiveInputStrip({ channel }: LiveInputStripProps) {
         />
       </div>
 
-      {/* Mute / Solo */}
+      {/* Mute / Solo / Record-Arm */}
       <div className="flex gap-1">
         <button
           type="button"
@@ -282,6 +302,29 @@ export function LiveInputStrip({ channel }: LiveInputStripProps) {
           title="Solo (Shift+Klick = exclusive)"
         >
           S
+        </button>
+        {/* Record-Arm (TASK-234) — rot leuchtend wenn armed, blinkend wenn live aufnimmt */}
+        <button
+          type="button"
+          onClick={handleRecArmToggle}
+          data-testid={`liveinput-rec-arm-${channel.id}`}
+          aria-pressed={!!channel.recordArmed}
+          aria-label={`Record-Arm ${channel.name}`}
+          className={[
+            "w-6 h-5 rounded text-[8px] font-bold transition-colors duration-100",
+            channel.recordArmed
+              ? `bg-accent-danger text-bg-base ${isRec ? "animate-pulse" : ""}`
+              : "bg-bg-elevated text-text-dim hover:text-accent-danger",
+          ].join(" ")}
+          title={
+            channel.recordArmed
+              ? isRec
+                ? "Aufnahme läuft — bei Stop wird Audio-Track erzeugt"
+                : "Record-armed (rec startet bei Play)"
+              : "Record-Arm"
+          }
+        >
+          ●
         </button>
       </div>
 

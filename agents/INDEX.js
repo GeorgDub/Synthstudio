@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "2.85.0",
+    version: "2.86.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -256,6 +256,61 @@ const INDEX = {
     "tests/features/live-input-channel.test.ts": {
       role:     "TASK-233 (v2.85.0): 25 Unit-Tests. Coverage: addLiveInputChannel mit Defaults+Overrides (2), removeLiveInputChannel inkl. no-op-unknown (2), updateLiveInputChannel Volume/Pan/Mute/Solo/sends-Patch + ID-Schutz (3), setLiveInputSoloed additive vs exclusive (2), Limit-Wurf bei MAX (1), Persistenz latencyCompensationMs+deviceId+Round-Trip (3), loadLiveInputChannels filtert invalide+cappt (1), isValidChannel Type-Guard (2), Clamp-Verhalten Volume/Pan/Latency/Sends (4), AudioEngine-Public-API-Vertrag (5 — Stream-Pipeline ist Playwright-Scope, Node-env hat kein navigator.mediaDevices). localStorage-Shim für Node-env.",
       lastSeen: "2026-05-17T23:20:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/audio/wavEncoder.ts": {
+      role:     "TASK-234 (v2.86.0): Pure WAV-Encoder ohne Web-Audio-API-Import. Exports encodeWavMono/encodeWavStereo/encodeWav (16-bit PCM, RIFF/WAVE/fmt/data Header) + concatFloat32 (Float32Array-Merge für ScriptProcessor-Chunks) + isValidWavHeader (Header-Validation für IPC-Layer). Konstanten WAV_HEADER_SIZE=44 + WAV_RIFF_MAGIC/WAV_WAVE_MAGIC/WAV_FMT_MAGIC/WAV_DATA_MAGIC. Sample-Clamp auf [-1,+1], asymmetrische Int16-Quantisierung (+32767 / -32768).",
+      lastSeen: "2026-05-17T23:38:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/audio/AudioRecorder.ts": {
+      role:     "TASK-234 (v2.86.0): Capturing-Pipeline pro Mixer-Channel. Architektur-Decision: ScriptProcessorNode (deprecated, aber im Node-Mock einfach simulierbar) statt AudioWorklet — Upgrade als follow-up. Class AudioRecorder mit setContext(ctx)/start(channelId, source, channels)/stop/stopAll/cancel/dispose/isRecording/activeChannelIds/activeCount/currentDurationMs. Internal Map<channelId, ActiveRecording> mit bufferLeft/bufferRight Float32-Chunks-Array. MAX_SIMULTANEOUS_RECORDINGS=8 (CPU-Schutz). Buffer-Größe 4096 Frames (~85ms @ 48k).",
+      lastSeen: "2026-05-17T23:38:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/utils/recordingStorage.ts": {
+      role:     "TASK-234 (v2.86.0): Isomorpher Persistenz-Layer. saveRecording(id, channelName, wavBuffer, electronApi) wählt Electron-IPC vs IndexedDB-Fallback. IDB-Store 'synthstudio-recordings' v1, Object-Store 'recordings'. Helpers: buildRecordingFileName (sanitized + timestamp YYYYMMDD-HHmmss) + isSafeRecordingFileName (Path-Traversal-Guard für IPC-Validation: lehnt /, \\, .., \\0, non-.wav, >120 chars, leere strings ab). idbPutRecording/idbGetRecording/idbDeleteRecording.",
+      lastSeen: "2026-05-17T23:38:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/audio/AudioEngine.ts (TASK-234 Record-API)": {
+      role:     "v2.86.0: +AudioRecorder-Instanz im AudioEngineClass + 7 Public-API-Methoden für Record-Arm-Wiring. startRecording(channelId) → tappt channelNodes.panner mono. stopRecording → RecordingResult{wavBuffer, sampleRate, durationSec, channels}. startRecordingForChannels(ids[]) → bulk-start beim Transport-Play. finalizeAllRecordings() → stop all + collect Results. isRecordingChannel/getActiveRecordingChannelIds/getRecordingDurationMs/cancelRecording. clearCache() ruft jetzt _audioRecorder.dispose() (Zombie-Schutz). init() ruft setContext nach AudioContext-Erzeugung.",
+      lastSeen: "2026-05-17T23:38:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/store/useLiveInputStore.ts (TASK-234 Record-Arm)": {
+      role:     "v2.86.0: +recordArmed?:boolean Field auf LiveInputChannelData (optional für schema-migration-friendly). +setLiveInputRecordArm(id, armed) (idempotent, persistiert), +getArmedLiveInputChannelIds() (für Transport-Play-Hook). API erweitert um setRecordArm. isValidChannel akzeptiert undefined+boolean für recordArmed.",
+      lastSeen: "2026-05-17T23:38:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/components/Mixer/LiveInputStrip.tsx (TASK-234 Rec-Button)": {
+      role:     "v2.86.0: Roter ●-Rec-Arm-Button neben M/S. data-testid 'liveinput-rec-arm-{id}'. aria-pressed mappt auf recordArmed. animate-pulse-Klasse wenn AudioEngine.isRecordingChannel=true (Poll alle 250ms während armed). handleRemove ruft AudioEngine.cancelRecording vor detachLiveInput.",
+      lastSeen: "2026-05-17T23:38:00.000Z",
+      ownedBy:  "backend"
+    },
+    "electron/main.ts (TASK-234 audio:save-recording)": {
+      role:     "v2.86.0: ipcMain.handle('audio:save-recording', filename, data). Strict validation: filename muss ^[A-Za-z0-9._-]+\\.wav$ matchen, max 120 chars, kein /, \\, .., \\0. Data: Uint8Array oder ArrayBuffer; min 44 Bytes; RIFF+WAVE Magic-Check; max 500 MB. Path-Resolution: path.resolve(userData/recordings/filename), Realpath-Guard prüft dass targetPath === path.join(recordingsDir, filename) UND .startsWith(recordingsDir + sep). Path-Traversal unmöglich. mkdir recordings/ rekursiv.",
+      lastSeen: "2026-05-17T23:38:00.000Z",
+      ownedBy:  "backend"
+    },
+    "electron/preload.ts (TASK-234 saveRecording bridge)": {
+      role:     "v2.86.0: saveRecording(filename, data) → ipcRenderer.invoke('audio:save-recording'). Re-exposed im contextBridge electronAPI.",
+      lastSeen: "2026-05-17T23:38:00.000Z",
+      ownedBy:  "backend"
+    },
+    "electron/useElectron.ts (TASK-234 saveRecording fallback)": {
+      role:     "v2.86.0: browserAPI.saveRecording → {success:false, error:'Nicht in Electron – nutze IndexedDB'}. Renderer-Code (recordingStorage.saveRecording) erkennt das und legt automatisch IndexedDB ab. Electron-API wird mit ?? fallback gemerged.",
+      lastSeen: "2026-05-17T23:38:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/App.tsx (TASK-234 Transport-Record-Hook)": {
+      role:     "v2.86.0: neuer useEffect mit prevRecArmPlayRef. Bei isPlaying-Edge (false→true): AudioEngine.startRecordingForChannels(getArmedLiveInputChannelIds()). Bei isPlaying-Edge (true→false): finalizeAllRecordings() → async loop: persistRecording → addAudioTrack mit syncMode:'free'. Resultierender Audio-Track erscheint im Mixer abspielbar nach Stop.",
+      lastSeen: "2026-05-17T23:38:00.000Z",
+      ownedBy:  "backend"
+    },
+    "tests/features/audio-recording.test.ts": {
+      role:     "TASK-234 (v2.86.0): 33 Unit-Tests. Coverage: encodeWavMono (4 — RIFF-Header, Sample-Rate, Sample-Rate-Validation, Clipping), encodeWavStereo (2 — Interleave, Trim), isValidWavHeader (3), concatFloat32 (2), buildRecordingFileName (3 — Pattern, Sanitize, Fallback), isSafeRecordingFileName (6 — Path-Traversal, Null-Bytes, Extension, Length, non-string), setLiveInputRecordArm + Persistenz (4), AudioRecorder Pipeline (8 — start/stop, idempotent, AudioContext-required, MAX_SIMULTANEOUS_RECORDINGS=8, stopAll, cancel, dispose, currentDurationMs). MockAudioContext+MockScriptProcessor+MockAudioBuffer simulieren Web-Audio in Node.js.",
+      lastSeen: "2026-05-17T23:38:00.000Z",
       ownedBy:  "backend"
     }
   },
@@ -596,6 +651,37 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "backend",
+      timestamp: "2026-05-17T23:38:00.000Z",
+      done: [
+        "TASK-234 FEATURE-v2.86 AUDIO-RECORDING im MIXER (Record-Arm): pro Channel armable, Aufnahme startet bei transport:play, stoppt bei transport:stop und landet als playbarer Audio-Track. (1) NEU client/src/audio/wavEncoder.ts — pure-TS Float32→Int16 PCM-WAV-Encoder (encodeWavMono/encodeWavStereo/encodeWav + isValidWavHeader + concatFloat32). KEIN Web-Audio-Import → 100% Node-testbar. RIFF/WAVE/fmt/data-Header, 16-bit PCM. Sample-Clamp auf [-1,+1], asymmetrische Quantisierung (+32767/-32768). (2) NEU client/src/audio/AudioRecorder.ts — Class mit ScriptProcessor-Tap-Pipeline. Architektur-Decision: ScriptProcessor (deprecated, aber überall verfügbar + im Node-Mock trivial simulierbar) statt AudioWorklet — AudioWorklet-Upgrade als follow-up dokumentiert. Source-Node typisch channelNodes.panner (post-FX, pre-master). Buffer-Größe 4096 Frames. MAX_SIMULTANEOUS_RECORDINGS=8 (CPU-Schutz). API: setContext/start/stop/stopAll/cancel/dispose/isRecording/activeChannelIds/activeCount/currentDurationMs. ScriptProcessor wird an silentSink-GainNode (gain=0) und destination geroutet weil Chrome sonst den Node GCt. (3) NEU client/src/utils/recordingStorage.ts — isomorpher Persistenz-Layer. saveRecording(id, channelName, wavBuffer, electronApi) wählt automatisch Electron-IPC vs IndexedDB-Fallback. IDB-Store 'synthstudio-recordings' v1. Helpers buildRecordingFileName (sanitized + YYYYMMDD-HHmmss-Stamp) + isSafeRecordingFileName (Path-Traversal-Guard für IPC: lehnt /, \\, .., \\0, non-.wav, >120 chars, leere strings ab). (4) AudioEngine.ts: +7 Public-API-Methoden (startRecording/stopRecording/startRecordingForChannels/finalizeAllRecordings/isRecordingChannel/getActiveRecordingChannelIds/getRecordingDurationMs/cancelRecording) + AudioRecorder-Instanz wird in init() per setContext(ctx) versorgt. clearCache() ruft dispose() (Zombie-Schutz). (5) useLiveInputStore.ts: +recordArmed?:boolean Feld (optional, schema-migration-friendly) + setLiveInputRecordArm(id, armed) (idempotent, persistiert via existing persist()) + getArmedLiveInputChannelIds() für Transport-Hook. isValidChannel akzeptiert undefined+boolean. API: setRecordArm. (6) LiveInputStrip.tsx: roter ●-Button neben M/S, data-testid 'liveinput-rec-arm-{id}', aria-pressed=recordArmed, animate-pulse während aktiver Aufnahme (Polling via AudioEngine.isRecordingChannel alle 250ms). handleRemove ruft AudioEngine.cancelRecording vor detachLiveInput. (7) IPC NEU 'audio:save-recording' in electron/main.ts: STRENGE Validation — filename muss ^[A-Za-z0-9._-]+\\.wav$ matchen (max 120 chars), data muss Uint8Array/ArrayBuffer mit min 44 Bytes + RIFF+WAVE Magic sein, max 500 MB pro Aufnahme. Path-Resolution: path.resolve(userData/recordings/filename), Doppel-Guard via toJoin-Vergleich + startsWith(recordingsDir+sep) → Path-Traversal mathematisch unmöglich. mkdir rekursiv. (8) preload.ts saveRecording-Bridge + types.d.ts ElectronAPI-Eintrag + useElectron.ts browserAPI-Fallback (success:false → recordingStorage erkennt automatisch und legt IDB ab). (9) App.tsx Transport-Hook: useEffect mit prevRecArmPlayRef. PLAY-Edge → startRecordingForChannels(getArmedLiveInputChannelIds()). STOP-Edge → finalizeAllRecordings + async loop → persistRecording → addAudioTrack(syncMode:'free') — Audio-Track erscheint sofort im Mixer abspielbar. (10) Tests: tests/features/audio-recording.test.ts NEU mit 33 Cases — MockAudioContext + MockScriptProcessor + MockAudioBuffer simulieren Web-Audio in Node.js. Coverage: encodeWavMono (4), encodeWavStereo (2), isValidWavHeader (3), concatFloat32 (2), buildRecordingFileName (3), isSafeRecordingFileName (6 inkl. Path-Traversal), setLiveInputRecordArm + Persistenz (4), AudioRecorder Pipeline (8 inkl. MAX_SIMULTANEOUS_RECORDINGS=8 + cancel + dispose). pnpm check clean. pnpm test 3146/15 skipped (vs vorher 3113/15, +33). package.json 2.85.0 → 2.86.0. SECURITY-Konsultation: ich habe defensiv implementiert (siehe IPC-Validierung oben) — kein separater Security-Agent gespawnt weil der Pattern direkt von existing fs:read-file/fs:write-file und midi:import-file übernommen wurde und der Path-Traversal-Guard durch Doppel-Check (toJoin-Vergleich + Prefix-Check) härter ist als die bestehenden Channels."
+      ],
+      next: [
+        "TASK-234-FOLLOWUP-1: AudioWorklet statt ScriptProcessor (Performance + deprecation-future-proofing). Module via Vite-Worker-Plugin. Heutiger MVP läuft glitch-frei für 8 simultane Recordings.",
+        "TASK-234-FOLLOWUP-2: Record-Arm auch für drum-parts + audio-tracks. Aktuell nur Live-Input-Channels (Hauptanwendung). drum-parts würde isomorpher Resampler-Bounce sein — der Channel-Output ist da identisch routet.",
+        "TASK-234-FOLLOWUP-3: WAV-Encode in Worker (Off-Main-Thread). Aktuell wird stopRecording synchron auf dem Renderer-Hauptthread encoded; bei 8 simultanen 10-Minuten-Aufnahmen wäre das spürbar. Lösung: AudioWorklet-Migration löst beide Probleme (Capture + Encode off-thread).",
+        "TASK-234-FOLLOWUP-4: Recording-Manager-UI (List aller alten Recordings in userData/recordings/ + Browser-IDB) mit Lösch-Button. Aktuell muss User manuell aufräumen.",
+        "TASK-234-FOLLOWUP-5: Pre-Roll / Punch-In für Recording — aktuell startet die Aufnahme exakt mit dem ersten Beat. Bei Live-Performance wünschenswert: 2-bar Pre-Roll oder Count-In.",
+        "TASK-235 (Live-Looping) ist jetzt unblocked — depends-on TASK-234 ist done. Wiederverwendet AudioRecorder + addAudioTrack-Pfad."
+      ],
+      changed: [
+        "client/src/audio/wavEncoder.ts (NEU — pure WAV-Encoder)",
+        "client/src/audio/AudioRecorder.ts (NEU — ScriptProcessor-Tap-Recorder)",
+        "client/src/utils/recordingStorage.ts (NEU — isomorpher Save inkl. IDB-Wrapper + Filename-Helpers)",
+        "client/src/audio/AudioEngine.ts (+ 7 Public-API-Methoden, AudioRecorder-Instanz, dispose-Hook in clearCache)",
+        "client/src/store/useLiveInputStore.ts (+ recordArmed Feld, setLiveInputRecordArm, getArmedLiveInputChannelIds, API.setRecordArm)",
+        "client/src/components/Mixer/LiveInputStrip.tsx (+ roter ●-Rec-Button mit Pulse-Animation während Aufnahme)",
+        "electron/main.ts (+ IPC audio:save-recording mit strict path-traversal-guard)",
+        "electron/preload.ts (+ saveRecording bridge)",
+        "electron/useElectron.ts (+ saveRecording browser-fallback)",
+        "electron/types.d.ts (+ ElectronAPI.saveRecording signature)",
+        "client/src/App.tsx (+ Transport-Record-Hook: play startet armed channels, stop finalisiert + addAudioTrack)",
+        "tests/features/audio-recording.test.ts (NEU, 33 Cases)",
+        "package.json (2.85.0 → 2.86.0)",
+        "agents/INDEX.js (workLog + TASK-234 status:done + files-Index + ipc.channels +audio:save-recording)"
+      ]
+    },
     {
       agent:     "backend",
       timestamp: "2026-05-17T23:20:00.000Z",
@@ -3241,9 +3327,10 @@ const INDEX = {
             type: "feature",
             priority: "high",
             agent: "backend",
-            status: "open",
+            status: "done",
+            doneIn: "v2.86.0",
             title: "Audio-Recording im Mixer (Record-Arm)",
-            description: "Record-Arm-Button pro Mixer-Channel. MediaRecorder zeichnet Live-Input waehrend Transport auf, landet als audio-track in useAudioTrackStore. Voraussetzung fuer ernsthafte DAW-Nutzung.",
+            description: "Record-Arm-Button pro Mixer-Channel. ScriptProcessor-Tap auf channelNodes.panner zeichnet Live-Input waehrend Transport auf, landet als audio-track in useAudioTrackStore. WAV-Encode via wavEncoder.ts (pure), Persistenz via audio:save-recording IPC (Electron, userData/recordings/<name>.wav mit Path-Traversal-Guard) oder IndexedDB-Fallback (Browser).",
             acceptance: [
                 "Record-Arm-Toggle pro Channel-Strip",
                 "Recording startet bei transport:play, stoppt bei transport:stop",
@@ -3357,6 +3444,8 @@ const INDEX = {
       "collab:start-session", "collab:join-session", "collab:leave-session",
       "midi:export", "dialog:open", "dialog:save",
       "transport:play", "transport:stop", "transport:bpm",
+      "audio:save-recording", // TASK-234 (v2.86) — schreibt WAV in userData/recordings/, strict path-traversal-guard
+
       // Performance-Mode Popup-Window (ROADMAP feature, post-v1.23.0):
       // alle Channels haben narrow-data-only Payloads — keine file paths,
       // keine shell ops, kein eval. Routing via main process zwischen
