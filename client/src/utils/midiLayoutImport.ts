@@ -1,5 +1,14 @@
 /**
- * Synthstudio – MIDI Layout Import (post-v1.38.0)
+ * Synthstudio – MIDI Layout Import (post-v1.38.0, erweitert v2.82)
+ *
+ * v2.82: noteMappings dürfen optional `performancePadIndex` (0..15) und
+ * `target` (MidiLearnTarget) tragen. Damit kann ein User seine Custom
+ * Pad-Bank (v2.79+) zwischen Maschinen via Layout-JSON teilen. Ältere
+ * Layout-JSONs (pre-v2.82) bleiben kompatibel — die neuen Felder sind
+ * additiv. Bei ungültigen Werten (z.B. performancePadIndex=42 oder
+ * unbekanntem target.type) wird das Mapping trotzdem akzeptiert, aber
+ * das jeweilige Feld weggelassen + Warning emittiert. So gehen
+ * Basis-Note→Part-Bindings nicht verloren wenn nur die Erweiterung kaputt ist.
  *
  * Pure-logic Parser für externe MIDI-Controller-Mapping-Dateien.
  *
@@ -38,6 +47,13 @@
 import type { MidiMapping, MidiNoteMapping, MidiLearnTarget } from "@/hooks/useMidi";
 
 export const MAX_LAYOUT_FILE_BYTES = 10 * 1024; // 10kB
+
+/**
+ * Anzahl Performance-Mode-Pads (entspricht PERF_PAD_COUNT im Performance-Mode).
+ * `performancePadIndex` in einem noteMapping muss in [0, PERF_PAD_COUNT-1] liegen.
+ * v2.82.
+ */
+export const PERF_PAD_COUNT = 16;
 
 /**
  * Liste der erlaubten Target-Typ-Strings. Sync mit MidiLearnTarget-Union
@@ -101,6 +117,20 @@ function isTargetValid(v: unknown): v is MidiLearnTarget {
   if (!isObject(v)) return false;
   if (typeof v.type !== "string") return false;
   return VALID_TARGET_TYPES.has(v.type);
+}
+
+/**
+ * v2.82: Validierung für `performancePadIndex` — muss Integer in
+ * [0, PERF_PAD_COUNT-1] sein. Public-exportiert für Tests + ggf. andere
+ * Callsites die das Schema-Recheck brauchen.
+ */
+export function isPerformancePadIndexValid(v: unknown): v is number {
+  return (
+    typeof v === "number" &&
+    Number.isInteger(v) &&
+    v >= 0 &&
+    v < PERF_PAD_COUNT
+  );
 }
 
 /**
@@ -188,12 +218,37 @@ export function parseMidiLayoutJson(text: string): MidiLayoutParseResult {
         return;
       }
       const label = typeof entry.label === "string" ? entry.label : `Note ${entry.note}`;
-      noteMappings.push({
+      const mapping: MidiNoteMapping = {
         note: entry.note,
         channel: entry.channel,
         partId: entry.partId,
         label,
-      });
+      };
+
+      // v2.82: optional performancePadIndex (0..15). Bei ungültigem Wert ⇒
+      // Warning + Feld weglassen, Basis-Mapping bleibt erhalten.
+      if (entry.performancePadIndex !== undefined) {
+        if (isPerformancePadIndexValid(entry.performancePadIndex)) {
+          mapping.performancePadIndex = entry.performancePadIndex;
+        } else {
+          warnings.push(
+            `noteMappings[${idx}] ungültiger performancePadIndex (${entry.performancePadIndex}) — Feld ignoriert.`,
+          );
+        }
+      }
+
+      // v2.82: optional target (MidiLearnTarget) für Custom-Pad-Bank-Mappings.
+      if (entry.target !== undefined) {
+        if (isTargetValid(entry.target)) {
+          mapping.target = entry.target;
+        } else {
+          warnings.push(
+            `noteMappings[${idx}] ungültiges target — Feld ignoriert.`,
+          );
+        }
+      }
+
+      noteMappings.push(mapping);
     });
   }
 

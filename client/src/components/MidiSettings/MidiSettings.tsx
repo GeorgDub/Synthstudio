@@ -1076,13 +1076,14 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
         <div>
           <button
             onClick={() => setPadBankBuilderOpen(!padBankBuilderOpen)}
+            data-testid="pad-bank-toggle"
             className="text-xs text-text-muted uppercase tracking-wider hover:text-text-primary mb-2 flex items-center gap-1"
           >
             <span>{padBankBuilderOpen ? "▼" : "▶"}</span>
             Custom Pad-Bank (v2.79) — Pads auf Chains / Scripts / Macros / Perf-Pads mappen
           </button>
           {padBankBuilderOpen && (
-            <div className="space-y-2 p-3 bg-bg-elevated/50 rounded border border-border-color">
+            <div data-testid="pad-bank-builder" className="space-y-2 p-3 bg-bg-elevated/50 rounded border border-border-color">
               <div className="text-xs text-text-dim">
                 Pro Hardware-Pad einen Target-Typ wählen (Perf-Pad/Macro/Script/
                 Action), dann "Start Auto-Learn" klicken und die Pads in
@@ -1090,13 +1091,20 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
                 lösche/füge Slots nach Bedarf hinzu.
               </div>
 
-              <div className="space-y-1 max-h-72 overflow-y-auto">
+              <div className="space-y-1 max-h-72 overflow-y-auto" data-testid="pad-bank-slots">
                 {padBankSlots.map((slot, idx) => (
-                  <div key={idx} className="flex items-center gap-1 p-1.5 bg-bg-panel rounded">
+                  <div
+                    key={idx}
+                    data-testid={`pad-bank-slot-row-${idx}`}
+                    data-pad-bank-slot-kind={slot.kind}
+                    data-pad-bank-slot-param={slot.param}
+                    className="flex items-center gap-1 p-1.5 bg-bg-panel rounded"
+                  >
                     <span className="text-[10px] text-text-dim font-mono w-6">#{idx + 1}</span>
                     <select
                       value={slot.kind}
                       onChange={(e) => updatePadBankSlot(idx, { kind: e.target.value as "perf-pad" | "macro" | "script" | "action" })}
+                      data-testid={`pad-bank-slot-kind-${idx}`}
                       className="px-1.5 py-1 bg-bg-elevated border border-border-color rounded text-[11px] text-text-primary"
                     >
                       <option value="perf-pad">Perf-Pad</option>
@@ -1108,6 +1116,7 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
                       <select
                         value={slot.param}
                         onChange={(e) => updatePadBankSlot(idx, { param: e.target.value })}
+                        data-testid={`pad-bank-slot-param-${idx}`}
                         className="flex-1 px-1.5 py-1 bg-bg-elevated border border-border-color rounded text-[11px] text-text-primary"
                       >
                         {Array.from({ length: 16 }, (_, i) => (
@@ -1119,6 +1128,7 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
                       <select
                         value={slot.param}
                         onChange={(e) => updatePadBankSlot(idx, { param: e.target.value })}
+                        data-testid={`pad-bank-slot-param-${idx}`}
                         className="flex-1 px-1.5 py-1 bg-bg-elevated border border-border-color rounded text-[11px] text-text-primary"
                       >
                         {Array.from({ length: 8 }, (_, i) => (
@@ -1135,6 +1145,7 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
                         <select
                           value={slot.param}
                           onChange={(e) => updatePadBankSlot(idx, { param: e.target.value })}
+                          data-testid={`pad-bank-slot-param-${idx}`}
                           className="flex-1 px-1.5 py-1 bg-bg-elevated border border-border-color rounded text-[11px] text-text-primary"
                         >
                           {scripts.map((s) => (
@@ -1147,6 +1158,7 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
                       <select
                         value={slot.param}
                         onChange={(e) => updatePadBankSlot(idx, { param: e.target.value })}
+                        data-testid={`pad-bank-slot-param-${idx}`}
                         className="flex-1 px-1.5 py-1 bg-bg-elevated border border-border-color rounded text-[11px] text-text-primary"
                       >
                         {CHAIN_BUILDER_ACTIONS.map((a) => (
@@ -1156,6 +1168,7 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
                     )}
                     <button
                       onClick={() => removePadBankSlot(idx)}
+                      data-testid={`pad-bank-slot-remove-${idx}`}
                       className="px-2 py-0.5 text-[10px] text-accent-danger hover:opacity-70"
                       title="Slot entfernen"
                     >×</button>
@@ -1166,6 +1179,7 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
               <div className="flex items-center gap-2 pt-2">
                 <button
                   onClick={addPadBankSlot}
+                  data-testid="pad-bank-add-slot"
                   className="px-3 py-1 text-xs bg-bg-elevated hover:bg-accent-primary/20 text-text-primary rounded transition-colors"
                 >
                   + Slot
@@ -1176,12 +1190,14 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
                     if (entries.length > 0 && midi.isEnabled) midi.startAutoLearn(entries);
                   }}
                   disabled={!midi.isEnabled || padBankSlots.length === 0}
+                  data-testid="pad-bank-start-auto-learn"
                   className="px-3 py-1 text-xs bg-accent-secondary/30 hover:bg-accent-secondary/50 text-accent-secondary rounded font-medium disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                 >
                   ▶ Start Auto-Learn ({padBankSlots.length})
                 </button>
                 <button
                   onClick={resetPadBankSlots}
+                  data-testid="pad-bank-reset"
                   className="px-3 py-1 text-xs text-text-muted hover:text-text-primary ml-auto"
                   title="Auf 16 Perf-Pad-Slots zurücksetzen"
                 >

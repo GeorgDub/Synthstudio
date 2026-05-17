@@ -1,5 +1,5 @@
 /**
- * Synthstudio – MIDI Layout Export (v1.73)
+ * Synthstudio – MIDI Layout Export (v1.73, erweitert v2.82)
  *
  * Komplementär zu `midiLayoutImport.ts`: serialisiert die aktuelle
  * MidiMapping[]+MidiNoteMapping[]-Konfiguration als JSON-Datei im selben
@@ -8,6 +8,13 @@
  *
  * Pure Funktionen — kein DOM/Storage-Zugriff. UI-Komponenten nutzen das
  * Output über einen Blob+Anchor-Download.
+ *
+ * v2.82: noteMappings können jetzt zusätzlich die v2.78/v2.79-Felder
+ *   - `performancePadIndex` (0..15)  — triggert ein Performance-Mode-Pad
+ *   - `target` (MidiLearnTarget)     — beliebige Chain/Script/Macro/Action
+ * tragen. Schema-Version bleibt `"v1"` weil die Felder additiv sind
+ * (pre-v2.82-Reader ignorieren unbekannte Properties stumm). Damit ist
+ * der Custom-Pad-Bank-Setup zwischen Maschinen/Profilen teilbar.
  */
 import type { MidiMapping, MidiNoteMapping } from "@/hooks/useMidi";
 
@@ -45,6 +52,12 @@ export function buildMidiLayoutJson(input: MidiLayoutExportInput): string {
         channel: m.channel,
         partId: m.partId,
         label: m.label,
+        // v2.82: Custom-Pad-Bank-Felder round-trip-fähig. Nur emittieren wenn
+        // gesetzt, damit pre-v2.82 generierte Layouts byte-identisch bleiben.
+        ...(m.performancePadIndex !== undefined
+          ? { performancePadIndex: m.performancePadIndex }
+          : {}),
+        ...(m.target !== undefined ? { target: m.target } : {}),
       })),
     },
     null,

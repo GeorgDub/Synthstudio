@@ -88,6 +88,82 @@ describe("buildMidiLayoutJson (v1.73)", () => {
   });
 });
 
+// ─── v2.82: Custom Pad-Bank — performancePadIndex + target Round-Trip ─────────
+
+describe("buildMidiLayoutJson — v2.82 Custom Pad-Bank Round-Trip", () => {
+  it("serialisiert performancePadIndex auf Note-Mapping (Happy Path)", () => {
+    const noteMappings: MidiNoteMapping[] = [
+      { note: 36, channel: 9, partId: "perf-0", label: "Perf-Pad 1", performancePadIndex: 0 },
+      { note: 51, channel: 9, partId: "perf-15", label: "Perf-Pad 16", performancePadIndex: 15 },
+    ];
+    const json = buildMidiLayoutJson({ name: "KORG-Bank", ccMappings: [], noteMappings });
+    const parsed = JSON.parse(json);
+    expect(parsed.noteMappings[0].performancePadIndex).toBe(0);
+    expect(parsed.noteMappings[1].performancePadIndex).toBe(15);
+
+    // Round-Trip via Import
+    const result = parseMidiLayoutJson(json);
+    expect(result.ok).toBe(true);
+    expect(result.layout!.noteMappings).toEqual(noteMappings);
+  });
+
+  it("serialisiert target auf Note-Mapping (Chain / runScript / macro)", () => {
+    const noteMappings: MidiNoteMapping[] = [
+      {
+        note: 36, channel: 9, partId: "slot-0", label: "Chain Pad",
+        target: { type: "chain", label: "Drop Reset", steps: [
+          { target: { type: "patternClear" } },
+          { target: { type: "bpm" }, value: 120, delayMs: 50 },
+        ] },
+      },
+      {
+        note: 37, channel: 9, partId: "slot-1", label: "Script Pad",
+        target: { type: "runScript", scriptId: "user-1", scriptName: "Fill Random" },
+      },
+      {
+        note: 38, channel: 9, partId: "slot-2", label: "Macro Pad",
+        target: { type: "macro", index: 3, label: "Filter Sweep" },
+      },
+    ];
+    const json = buildMidiLayoutJson({ name: "Pad-Bank", ccMappings: [], noteMappings });
+    const result = parseMidiLayoutJson(json);
+    expect(result.ok).toBe(true);
+    expect(result.layout!.noteMappings).toEqual(noteMappings);
+  });
+
+  it("kombiniert performancePadIndex + target auf demselben Mapping (Edge: beide Felder)", () => {
+    // target hat Precedence im Runtime, aber Schema erlaubt beide gleichzeitig
+    // — Layout muss sie round-trippen wie gegeben.
+    const noteMappings: MidiNoteMapping[] = [
+      {
+        note: 40, channel: 9, partId: "hybrid", label: "Hybrid",
+        performancePadIndex: 7,
+        target: { type: "tapTempo" },
+      },
+    ];
+    const json = buildMidiLayoutJson({ name: "Hybrid", ccMappings: [], noteMappings });
+    const parsed = JSON.parse(json);
+    expect(parsed.noteMappings[0].performancePadIndex).toBe(7);
+    expect(parsed.noteMappings[0].target).toEqual({ type: "tapTempo" });
+
+    const result = parseMidiLayoutJson(json);
+    expect(result.ok).toBe(true);
+    expect(result.layout!.noteMappings[0]).toEqual(noteMappings[0]);
+  });
+
+  it("Note-Mapping OHNE neue Felder bleibt byte-stabil (pre-v2.82-Layouts)", () => {
+    // Wichtig für Migration: Layouts ohne Custom-Pad-Bank dürfen keine
+    // performancePadIndex/target-Keys plötzlich im JSON haben.
+    const noteMappings: MidiNoteMapping[] = [
+      { note: 36, channel: 9, partId: "kick", label: "Kick" },
+    ];
+    const json = buildMidiLayoutJson({ name: "Legacy", ccMappings: [], noteMappings });
+    const parsed = JSON.parse(json);
+    expect(parsed.noteMappings[0]).not.toHaveProperty("performancePadIndex");
+    expect(parsed.noteMappings[0]).not.toHaveProperty("target");
+  });
+});
+
 describe("sanitizeLayoutFileName (v1.73)", () => {
   it("leerer Input → 'midi-layout'", () => {
     expect(sanitizeLayoutFileName("")).toBe("midi-layout");

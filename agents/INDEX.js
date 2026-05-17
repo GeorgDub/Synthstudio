@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "2.25.0",
+    version: "2.82.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -152,6 +152,16 @@ const INDEX = {
       role:     "MacroPanel UI: 8 MacroKnob/MacroButton + BindingEditor mit Mode-Toggle (Knob/Button), Trigger-Kind-Toggle (Script/Pad), Audio-Bindings, Script/Pad-Picker. v1.22.0 (TASK-118): neuer Trigger-Verhalten-Toggle (Edge/Hold) im Button-Mode, MacroButton zeigt 🔁-Icon-Overlay im Hold-Mode, onMouseUp/Leave/touchEnd ruft triggerMacroButtonRelease.",
       lastSeen: "2026-05-12T23:45:00.000Z",
       ownedBy:  "frontend"
+    },
+    "tests/web/pad-bank.spec.ts": {
+      role:     "Playwright E2E-Smoke für Custom Pad-Bank-Feature (v2.78–v2.82). 7 Cases — Default-Slots, Slot-Kind-Wechsel (perf-pad→macro/action), Add/Remove/Reset, page.reload()-Persistenz (v2.80 localStorage). UI-Flow: 🎹-Topbar → SettingsPanel CC-Zuweisungen-Sidebar → Advanced-MIDI-Banner → MidiSettings → CC-Mapping-Tab → Pad-Bank-Toggle. (TASK-201)",
+      lastSeen: "2026-05-17T19:30:00.000Z",
+      ownedBy:  "testing"
+    },
+    "client/src/components/MidiSettings/MidiSettings.tsx (Pad-Bank-Builder testids)": {
+      role:     "TASK-201: data-testids für Playwright E2E in Pad-Bank-Builder-Section: pad-bank-toggle, pad-bank-builder, pad-bank-slots, pad-bank-slot-row-{idx} (+ data-pad-bank-slot-kind/-param Attribute), pad-bank-slot-kind-{idx}, pad-bank-slot-param-{idx}, pad-bank-slot-remove-{idx}, pad-bank-add-slot, pad-bank-start-auto-learn, pad-bank-reset. Rein additiv — kein Verhaltenseffekt.",
+      lastSeen: "2026-05-17T19:30:00.000Z",
+      ownedBy:  "testing"
     }
   },
 
@@ -491,6 +501,44 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "testing",
+      timestamp: "2026-05-17T19:30:00.000Z",
+      done: [
+        "TASK-201 PLAYWRIGHT-SMOKE PAD-BANK (Web E2E): Erster E2E-Test für das Custom Pad-Bank-Feature (v2.78–v2.82). Neue Datei tests/web/pad-bank.spec.ts (7 Test-Cases) deckt happy-path UI-Flow ab: (1) 16 Default Perf-Pad-Slots werden gerendert nach Builder-Aufklappen, (2) Slot-Kind ändern perf-pad → macro setzt data-Attribut + param-Default korrekt, (3) Slot-Kind → action setzt valide Action-Key als Param, (4) Remove-Slot reduziert Anzahl, (5) Add-Slot erhöht Anzahl + neuer Slot ist perf-pad, (6) Reset stellt 16 perf-pad-Defaults wieder her, (7) Persistenz: geänderter Slot überlebt page.reload() (v2.80 localStorage-Check). UI-Flow: SettingsPanel via 🎹-Topbar-Button öffnen → Sidebar-Klick auf 'CC-Zuweisungen' (initialSection-Prop allein reichte nicht, active-State wurde nicht refreshed) → 'Erweiterte MIDI-Einstellungen Öffnen'-Banner → MidiSettings-Modal → CC-Mapping-Tab → Pad-Bank-Toggle aufklappen. NICHT abgedeckt (out-of-scope, dokumentiert in Test-Header): Auto-Learn-Flow (Hardware-gebunden), MIDI-Pad-Mapping (Hardware-gebunden), .synth-File-Round-Trip (zu invasiv für Smoke, in tests/features/project-serializer.test.ts gecovered). Sparsam data-testids hinzugefügt in MidiSettings.tsx Pad-Bank-Builder (9 Stück): pad-bank-toggle, pad-bank-builder, pad-bank-slots, pad-bank-slot-row-{idx} mit data-pad-bank-slot-kind/-param-Attributen für Assertion, pad-bank-slot-kind-{idx} + pad-bank-slot-param-{idx} (auf den jeweils sichtbaren <select>) + pad-bank-slot-remove-{idx} + pad-bank-add-slot + pad-bank-start-auto-learn + pad-bank-reset. Lessons learned: (a) Ctrl+M öffnet in dieser App-Konfig SettingsPanel UND MidiSettings parallel (useGlobalKeyBindings + useKeyboardShortcuts überlappen) — beide Modale stapeln sich und SettingsPanel-z60 fängt Clicks ab; Workaround = direkt den 🎹-Quick-Button klicken. (b) SettingsPanel.active-State wird per useState(initialSection) nur beim ersten Mount gesetzt; sicherer ist immer-explizit-die-Sidebar-anzuklicken statt sich auf initialSection-Prop zu verlassen. Validation: pnpm check clean, pnpm test:web pad-bank.spec.ts → 7 passed (12.9s)."
+      ],
+      next: [
+        "TASK-202 Vorschlag: tests/web/pad-bank-script.spec.ts — Slot-Kind 'script' braucht ein vor-gefilltes Skript via localStorage-Seed (siehe macros.spec.ts SEEDED_SCRIPT-Pattern), aktuell zeigt die UI bei kind='script' und scripts.length=0 nur 'Keine Scripts vorhanden'. Würde scripts-store + Pad-Bank-Builder cross-store-coverage geben.",
+        "TASK-203 Vorschlag: Electron-E2E-Variante in tests/electron/e2e/ für den Save-.synth + Load-.synth Round-Trip mit padBank-Feld (v2.81). Im Web nicht testbar weil File-IPC fehlt — Unit-Coverage in project-serializer.test.ts ist gut, aber kein End-to-End-Pfad existiert.",
+        "TASK-204 Vorschlag: MIDI-Pad → Performance-Pad-Mapping (v2.78 KORG) braucht ein Mock-WebMIDI-Adapter um den Note-In → padBank-Lookup-Pfad ohne echte Hardware zu testen."
+      ],
+      changed: [
+        "tests/web/pad-bank.spec.ts (NEU, 7 Playwright-Cases)",
+        "client/src/components/MidiSettings/MidiSettings.tsx (+9 data-testid + 2 data-pad-bank-slot-{kind,param} Attribute, nur additiv, keine Verhaltensänderung)",
+        "agents/INDEX.js (workLog-Entry + files-Index)"
+      ]
+    },
+    {
+      agent:     "backend",
+      timestamp: "2026-05-17T18:15:00.000Z",
+      done: [
+        "TASK-200 FEATURE-v2.82 MIDI-LAYOUT-EXPORT-PADBANK: User-Follow-up zu v2.79/v2.80/v2.81 — die offene Lücke 'Custom Pad-Bank kann nicht zwischen Maschinen/Profilen via MIDI-Layout-JSON geteilt werden' geschlossen. (1) client/src/utils/midiLayoutExport.ts: buildMidiLayoutJson serialisiert noteMappings jetzt zusätzlich mit performancePadIndex und target — beide rein additiv und nur emittiert wenn defined (...spread-Pattern), damit pre-v2.82 Note-Mapping-JSONs byte-identisch bleiben. Schema-Version bleibt 'v1' weil die Felder additiv sind (pre-v2.82 Reader ignorieren unbekannte Properties stumm — kein Schema-Bruch nötig). (2) client/src/utils/midiLayoutImport.ts: neuer PERF_PAD_COUNT=16-Konstant + isPerformancePadIndexValid Type-Guard (public-exportiert). parseMidiLayoutJson note-Branch validiert performancePadIndex via [0,15]-Integer-Check + target via existierender isTargetValid (VALID_TARGET_TYPES hatte schon alle relevanten Types inkl. chain/runScript/macro/scenelaunch/tapTempo). Migration-Sicherheit: bei ungültigem Sub-Feld wird das jeweilige Feld silent gestripped + Warning emittiert, das Basis-Mapping (note/channel/partId/label) bleibt erhalten — damit User mit einem teilweise-kaputten v2.82-Layout-File nicht ihre kompletten Note-Bindings verlieren. (3) Tests: midi-layout-export.test.ts +4 Cases neue describe 'v2.82 Custom Pad-Bank Round-Trip' (performancePadIndex 0+15, target chain/runScript/macro, hybrid mit beiden Feldern, pre-v2.82 byte-stable). midi-layout-import.test.ts +6 Cases neue describes 'v2.82 Custom Pad-Bank Felder' (5 Cases) + 'isPerformancePadIndexValid' (2 Sub-Cases) — Happy-Path, Out-of-Range-Warnings, ungültige target.type-Warnings, Migration-Sicherheit (kaputtes Sub-Feld droppt nicht das Basis-Mapping). Gesamt +11 neue Test-Cases. (4) Validation: pnpm check clean. pnpm test 3033/15 skipped vs vorher 3022 (+11). (5) Migration-Notes für ältere Layout-JSONs: pre-v2.82 Layouts (ohne performancePadIndex/target auf noteMappings) parsen weiterhin ohne Warning. Layouts mit ungültigem v2.82-Sub-Feld geben Warnings aber importieren das Basis-Mapping erfolgreich. Schema-Version 'v1' wird NICHT inkrementiert — keine breaking-Change-Notwendigkeit weil rein additiv. Package.json gebumped 2.81.0 → 2.82.0. User-Workflow: Custom-Pad-Bank konfigurieren (v2.79 Builder) + Auto-Learn auf KORG-Hardware → Settings → MIDI → 'Layout exportieren' → JSON enthält jetzt vollständige Pad-Bank-Config → JSON auf zweiter Maschine importieren → Pad-Bank ist wieder aktiv."
+      ],
+      next: [
+        "Tag v2.82.0 + push.",
+        "Mögliche Folgewelle: ZIP-Bundle 'Project + Layout + Pad-Bank' für komplettes Teilen eines Hardware-Setups inkl. Project.synth-Datei. Aktuell sind die drei Persistence-Layers (project=.synth, layout=.json, padBank=localStorage) noch getrennt — User muss 2 Dateien teilen. (siehe v2.81-next: ZIP-Bundle-Plan.)",
+        "Schema-Migration v1 → v2 falls breaking-Change nötig wird (z.B. wenn target-Field Required-Werte ändert). Aktuell unnötig — additive Erweiterung war ausreichend.",
+        "BUG-004 KI-Generator Error-Handling — offen seit Pre-v2.80."
+      ],
+      changed: [
+        "client/src/utils/midiLayoutExport.ts (buildMidiLayoutJson serialisiert noteMapping.performancePadIndex + target wenn defined)",
+        "client/src/utils/midiLayoutImport.ts (PERF_PAD_COUNT=16, isPerformancePadIndexValid Public-Helper, parseMidiLayoutJson validiert+übernimmt neue Felder oder strippt+warnt)",
+        "tests/features/midi-layout-export.test.ts (+4 Cases neue describe 'v2.82 Custom Pad-Bank Round-Trip')",
+        "tests/features/midi-layout-import.test.ts (+6 Cases neue describes 'v2.82 Custom Pad-Bank Felder' + 'isPerformancePadIndexValid')",
+        "package.json (version 2.81.0 → 2.82.0)",
+        "agents/INDEX.js (workLog-Entry)"
+      ]
+    },
     {
       agent:     "frontend",
       timestamp: "2026-05-17T17:55:00.000Z",
