@@ -200,6 +200,56 @@ describe("autoTagFromFilename – Qualitäts-Tags + Pfad-Strip", () => {
   });
 });
 
+describe("autoTagFromFilename – Underscore-Separator (v2.77 Fix)", () => {
+  // v2.77: Underscores werden vor dem Regex-Match zu Spaces normalisiert,
+  // damit `\b`-Word-Boundaries greifen. Vor v2.77 wurden Filenames wie
+  // 'snare_kick_01.wav' (häufigste Sample-Naming-Convention) komplett
+  // ignoriert. Diese Suite garantiert das gefixte Verhalten.
+
+  it("'snare_acoustic.wav' → ['snare'] (vor v2.77: [])", () => {
+    expect(autoTagFromFilename("snare_acoustic.wav")).toContain("snare");
+  });
+
+  it("'floor_tom_01.wav' → ['tom']", () => {
+    expect(autoTagFromFilename("floor_tom_01.wav")).toContain("tom");
+  });
+
+  it("'crash_cymbal.wav' → ['cymbal']", () => {
+    expect(autoTagFromFilename("crash_cymbal.wav")).toContain("cymbal");
+  });
+
+  it("'shaker_loop_01.wav' → ['percussion', 'loop']", () => {
+    const tags = autoTagFromFilename("shaker_loop_01.wav");
+    expect(tags).toContain("percussion");
+    expect(tags).toContain("loop");
+  });
+
+  it("'synth_lead.wav' → ['synth']", () => {
+    expect(autoTagFromFilename("synth_lead.wav")).toContain("synth");
+  });
+
+  it("'sub_bass.wav' → ['bass']", () => {
+    expect(autoTagFromFilename("sub_bass.wav")).toContain("bass");
+  });
+
+  it("'vocal_ah_long.wav' → ['vocal', 'long']", () => {
+    const tags = autoTagFromFilename("vocal_ah_long.wav");
+    expect(tags).toContain("vocal");
+    expect(tags).toContain("long");
+  });
+
+  it("'kick_bass.wav' → ['kick'] (Kick-Guard greift auch mit Underscore)", () => {
+    const tags = autoTagFromFilename("kick_bass.wav");
+    expect(tags).toContain("kick");
+    expect(tags).not.toContain("bass");
+  });
+
+  it("'^bd[_\\-\\s]'-Pattern bleibt funktional: 'BD_01.wav' → ['kick']", () => {
+    // BD_01 → "bd 01" nach Normalisierung. ^bd[_\-\s] matched "bd " (Space).
+    expect(autoTagFromFilename("BD_01.wav")).toContain("kick");
+  });
+});
+
 // ─── Hook: Initial-State ─────────────────────────────────────────────────────
 
 describe("useBpmDetection – Initial-State", () => {

@@ -48,7 +48,11 @@ function bpmToGenreTags(bpm: number): string[] {
 // ─── Dateiname-basiertes Auto-Tagging ─────────────────────────────────────────
 
 export function autoTagFromFilename(filePath: string): string[] {
-  const name = filePath.toLowerCase().split(/[\\/]/).pop() ?? "";
+  // Underscores → Spaces normalisieren, damit `\b`-Word-Boundaries greifen.
+  // JS-Regex zählt `_` als Word-Char, daher matched `\bkick\b` ohne Normalisierung
+  // NICHT in der häufigsten Sample-Naming-Convention `kick_01.wav`. Spaces sind
+  // mit der `^...[_\-\s]`-Variante kompatibel weil Space dort im Char-Set steht.
+  const name = (filePath.toLowerCase().split(/[\\/]/).pop() ?? "").replace(/_/g, " ");
   const tags: string[] = [];
 
   // Drum-Kategorien

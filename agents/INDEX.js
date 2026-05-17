@@ -492,6 +492,23 @@ const INDEX = {
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
     {
+      agent:     "frontend",
+      timestamp: "2026-05-17T02:18:00.000Z",
+      done: [
+        "BUGFIX-v2.77 autoTagFromFilename Underscore-Regex-Bug: Vor v2.77 ignorierte autoTagFromFilename die häufigste Sample-Naming-Convention ('snare_kick_01.wav', 'BD_808_dry.wav' etc.) komplett, weil JS-Regex `\\b` Word-Boundary nicht greift wenn Underscore neben Wort steht (Underscore zählt als Word-Char in JS). Fix in client/src/hooks/useBpmDetection.ts Z.51: vor dem Match werden alle Underscores zu Spaces normalisiert via `.replace(/_/g, ' ')`. Kompatibilität mit `^bd[_\\-\\s]` und ähnlichen Char-Set-Patterns bleibt erhalten weil Space dort im Set ist. 9 neue Test-Cases in tests/features/use-bpm-detection-hook.test.ts (describe 'Underscore-Separator v2.77 Fix') verifizieren: snare_acoustic / floor_tom_01 / crash_cymbal / shaker_loop_01 / synth_lead / sub_bass / vocal_ah_long / kick_bass (Kick-Guard intact) / BD_01 (^bd[_\\-\\s]-Pattern weiter funktional). Bestehende Tests bleiben grün (verwenden Punkt/Space/Hyphen sowieso). Validation: pnpm check clean, pnpm test 2986/15 skipped vs vorher 2977 (+9). Package.json gebumped 2.76.0 → 2.77.0."
+      ],
+      next: [
+        "Tag v2.77.0 + push.",
+        "USER-FEATURE-REQUEST (offen): 'bau auch funktionen ein das ich zum beispiel auf die drum pads von der korg sämtliche funktionen und chains legen kann'. Vermutlich: MIDI-Note-Note-On von Korg Volca/padKONTROL/Electribe-Drum-Pad → Script-Function ODER Chain-Action. v1.77 hat bereits chain als MidiLearnTarget — Korg-spezifisch wäre eine erweiterte Hardware-Template + UI-Beispiele. Klären: welcher Korg konkret, welche Pads, welche Funktionen (Pattern-Switch, Macro-Trigger, Script-Run, Beat-Repeat, etc.). User-Question stellen bevor Implementierung."
+      ],
+      changed: [
+        "client/src/hooks/useBpmDetection.ts (autoTagFromFilename normalisiert _ → space vor Regex-Match)",
+        "tests/features/use-bpm-detection-hook.test.ts (+9 Cases im 'Underscore-Separator v2.77 Fix' describe-block)",
+        "package.json (version 2.76.0 → 2.77.0)",
+        "agents/INDEX.js (workLog-Entry)"
+      ]
+    },
+    {
       agent:     "testing",
       timestamp: "2026-05-17T01:50:00.000Z",
       done: [
