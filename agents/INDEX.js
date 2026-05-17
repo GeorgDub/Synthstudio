@@ -192,6 +192,41 @@ const INDEX = {
       role:     "TASK-230 (v2.83.0): 30 Unit-Tests für MidiClockOut + midiOutput-Helpers. Coverage: tickDurationSec (3), planTicks (4), Transport-Messages 0xFA/0xFC/0xFB+SPP (5), Tick-Generation (4) + 24 PPQN-Validation, buildSongPositionPointer (5) inkl. 14-bit-Clamp, enumerateMidiOutputs (3), getOutputById (2), sendMessage (3) inkl. Exception-Swallow, Integration-Flow (1). Alle deterministisch via captureSender + makeMockAccess (Map<id, MidiOutputLike>).",
       lastSeen: "2026-05-17T22:48:00.000Z",
       ownedBy:  "backend"
+    },
+    "client/src/audio/NanoKontrolFeedback.ts": {
+      role:     "TASK-231 (v2.84.0): Stateful Diff-Sync-Wrapper für nanoKONTROL2 (oder anderes LED-Feedback-Gerät). Hält lastMute[8] + lastSolo[8] Cache pro Channel, schickt nur geänderte LEDs (Hardware-Hammering-Schutz). Public-API: setSender/setEnabled/syncMixer/forceFullSync/allLedsOff. setEnabled(false) → automatisch allLedsOff(). Sender-Wechsel invalidiert Cache. Defensive: alle Send-Exceptions geswallowed (try/catch um sender-call).",
+      lastSeen: "2026-05-17T23:05:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/utils/midiOutput.ts (TASK-231 LED-Feedback)": {
+      role:     "v2.84.0: erweitert um Feedback-Output-Persistenz (loadFeedbackOutputId/saveFeedbackOutputId/loadFeedbackEnabled/saveFeedbackEnabled/loadFeedbackSceneMode/saveFeedbackSceneMode separate localStorage-Keys) + nanoKONTROL2-CC-Constants NANO_KONTROL2.{SOLO_CC_BASE:32,MUTE_CC_BASE:48,REC_CC_BASE:64,PLAY:41,STOP:42,CYCLE:46,REWIND:43,FF:44,REC:45,TRACK_PREV:58,TRACK_NEXT:59,MARKER_PREV:61,MARKER_NEXT:62,CHANNEL:1,CHANNEL_COUNT:8} + Helpers buildNanoKontrolLed/sendNanoKontrolFullSync/sendNanoKontrolAllLedsOff/sendNanoKontrolLed.",
+      lastSeen: "2026-05-17T23:05:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/store/useSceneStore.ts (TASK-231 cycleScene)": {
+      role:     "v2.84.0: +cycleScene(direction: 1|-1) — Wrap-Around-Navigation durch Scenes. Setzt activeSceneId via persist+notify wie setActiveScene. No-op wenn scenes leer. Wird vom useMidi Marker-CC-Handler aufgerufen.",
+      lastSeen: "2026-05-17T23:05:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/hooks/useMidi.ts (TASK-231 LED-Feedback Wiring)": {
+      role:     "v2.84.0: feedbackOutputDeviceId/feedbackEnabled/feedbackSceneMode State + Refs + Persistenz. useEffect koppelt NanoKontrolFeedback-Sender an midiSendMessage. handleMidiMessage interceptet CC 61/62 (Marker-PREV/NEXT) → cycleScene(±1) wenn feedbackSceneMode aktiv, returnt früh damit kein Doppelfeuer. Public-API +setFeedbackOutputDeviceId, +setFeedbackEnabled, +setFeedbackSceneMode, +syncFeedbackLeds.",
+      lastSeen: "2026-05-17T23:05:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/components/MidiSettings/MidiSettings.tsx (TASK-231 LED-Feedback UI)": {
+      role:     "v2.84.0: neue Section 'LED-Feedback (Mixer-Sync)' nach Clock-Out — data-testid=feedback-out-section/toggle/device-select + feedback-scene-mode-toggle. Hinweis-Box dass nanoKONTROL2 'External LED Mode' braucht.",
+      lastSeen: "2026-05-17T23:05:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/utils/midiTemplates.ts (nanoKONTROL2 v2.84)": {
+      role:     "v2.84.0: nanoKONTROL2-Template-Korrektur — Solo-Buttons CC 32-39 (PC-Mode-Default-Layout), Mute-Buttons CC 48-55. Marker-PREV/NEXT (CC 61/62) als patternPrev/patternNext-Fallback wenn Scene-Mode aus.",
+      lastSeen: "2026-05-17T23:05:00.000Z",
+      ownedBy:  "backend"
+    },
+    "tests/features/nano-kontrol-led.test.ts": {
+      role:     "TASK-231 (v2.84.0): 23 Unit-Tests. Coverage: buildNanoKontrolLed (2), NanoKontrolFeedback.syncMixer (8 — Mute-LED-Toggle, Solo-LED-Toggle, Full-Sync, no-op-disabled, allLedsOff bei setEnabled(false), Exception-Swallow, no-Sender, Diff-Sync), sendNanoKontrolFullSync (3), sendNanoKontrolAllLedsOff (1), sendNanoKontrolLed (2), cycleScene (3 — vorwärts/rückwärts/leer), Persistenz (3 mit localStorage-Shim für Node-env).",
+      lastSeen: "2026-05-17T23:05:00.000Z",
+      ownedBy:  "backend"
     }
   },
 
@@ -531,6 +566,31 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "backend",
+      timestamp: "2026-05-17T23:05:00.000Z",
+      done: [
+        "TASK-231 FEATURE-v2.84 NANOKONTROL2-LED-FEEDBACK+SCENE-MODE: User hat einen KORG nanoKONTROL2 zu Testzwecken. (1) midiOutput.ts erweitert um separate Feedback-Output-Persistenz (loadFeedbackOutputId/saveFeedbackOutputId/loadFeedbackEnabled/saveFeedbackEnabled/loadFeedbackSceneMode/saveFeedbackSceneMode) zusätzlich zur existierenden Clock-Out-Persistenz — User kann Clock an Electribe + LED-Feedback an nanoKONTROL2 routen. (2) nanoKONTROL2 CC-Konstanten + Helpers: NANO_KONTROL2 {SOLO_CC_BASE:32, MUTE_CC_BASE:48, REC_CC_BASE:64, PLAY:41, STOP:42, CYCLE:46, REWIND:43, FF:44, REC:45, TRACK_PREV:58, TRACK_NEXT:59, MARKER_PREV:61, MARKER_NEXT:62, CHANNEL:1, CHANNEL_COUNT:8}. buildNanoKontrolLed(cc, on) + sendNanoKontrolFullSync + sendNanoKontrolAllLedsOff + sendNanoKontrolLed — alle defensiv (silent failure bei missing output). (3) NEU: client/src/audio/NanoKontrolFeedback.ts — stateful Wrapper mit Diff-Sync (lastMute/lastSolo Cache pro Channel) damit identische React-Renders nicht erneut bytes pushen. setSender/setEnabled/syncMixer/forceFullSync/allLedsOff. setEnabled(false) ruft automatisch allLedsOff(). (4) useSceneStore.ts +cycleScene(direction: 1|-1): zyklisch durch Scenes mit Wrap-Around — minimal-invasive Hilfsfunktion für Hardware-Buttons. (5) useMidi.ts wiring: new State feedbackOutputDeviceId/feedbackEnabled/feedbackSceneMode + refs. useEffect verbindet NanoKontrolFeedback-Sender mit midiSendMessage; bei Disable wird automatisch allLedsOff geschickt. handleMidiMessage prüft Marker-PREV/NEXT (CC 61/62) und ruft cycleScene wenn feedbackSceneMode aktiv — vor der normalen Mapping-Verarbeitung damit kein doppeltes Feuern. Public-API +setFeedbackOutputDeviceId, +setFeedbackEnabled, +setFeedbackSceneMode, +syncFeedbackLeds. (6) App.tsx: neuer useEffect mit drumMuteSoloSnapshot (stringifiziertes Mute+Solo der ersten 8 Parts) als Dependency, ruft midi.syncFeedbackLeds mit aktuellem Channel-State. (7) MidiSettings.tsx: neue Section 'LED-Feedback (Mixer-Sync)' mit Toggle + Output-Device-Picker + Scene-Mode-Toggle (data-testid: feedback-out-section/toggle/device-select, feedback-scene-mode-toggle). Inkl. Hinweis-Box dass KORG-Kontrol-Editor 'External LED Mode' setzen muss. (8) midiTemplates.ts nanoKONTROL2-Template: Solo + Mute CC-Reihenfolge korrigiert (Solo 32-39 / Mute 48-55 entspricht PC-Mode-Default), zusätzlich Marker-PREV/NEXT als patternPrev/patternNext Fallback wenn Scene-Mode aus. (9) Tests: tests/features/nano-kontrol-led.test.ts NEU mit 23 Cases: buildNanoKontrolLed (2), NanoKontrolFeedback.syncMixer (8 — synchronisiert Mute-LED, Solo-LED, Full-Sync bei Activate, no-op bei disabled, allLedsOff bei setEnabled(false), Exception-Swallow, no-Sender no-op, Diff-Sync), sendNanoKontrolFullSync (3), sendNanoKontrolAllLedsOff (1), sendNanoKontrolLed (2), cycleScene (3 — wrap-vorwärts/rückwärts/leer), Persistenz (3 — IDs/Enabled/SceneMode mit localStorage-Shim für Node-env). pnpm check clean, pnpm test 3086/15-skipped passed (+23 zu vorher 3063). package.json 2.83.0 → 2.84.0."
+      ],
+      next: [
+        "TASK-231-FOLLOWUP-1: Track-PREV/NEXT (CC 58/59) → Part-Up/Down wäre intuitiver für den User als ein zweiter Pattern-Cycle. Aktuell ist Track-PREV/NEXT noch nicht-belegt im Template — User kann es per Auto-Learn auf partUp/partDown legen. Optional: Default-Template-Mapping ergänzen.",
+        "TASK-231-FOLLOWUP-2: Rec-Button-Reihe (CC 64-71) als Pattern-Slot-Selector mappbar machen (1-8 = Pattern 1-8 wechseln). Würde live-Performance auf 'Drücke Rec-Button = aktiviere Pattern X' erlauben. Aktuell sind die Rec-CCs nicht im Template belegt, LED-Slots sind reserviert.",
+        "TASK-232 (Lizenz-Layer) wartet auf den separat angefragten Backend-Slot.",
+        "DOCS-CLAUDE-MD: Erwähnung 'nanoKONTROL2 LED-Feedback (v2.84)' im MIDI-Bindings-Abschnitt der CLAUDE.md — habe ich bewusst nicht editiert weil CLAUDE.md projekt-globale Doku ist; Coordinator kann es bei nächster Gelegenheit ergänzen."
+      ],
+      changed: [
+        "client/src/utils/midiOutput.ts (+ Feedback-Output-Persistenz + nanoKONTROL2-Helpers + Constants)",
+        "client/src/audio/NanoKontrolFeedback.ts (NEU, Diff-Sync-Wrapper)",
+        "client/src/store/useSceneStore.ts (+ cycleScene mit Wrap-Around)",
+        "client/src/hooks/useMidi.ts (+ Feedback-State + Sender-Wiring + Marker-Scene-Cycle)",
+        "client/src/App.tsx (+ syncFeedbackLeds useEffect)",
+        "client/src/components/MidiSettings/MidiSettings.tsx (+ LED-Feedback-Section)",
+        "client/src/utils/midiTemplates.ts (nanoKONTROL2: Solo/Mute-CC korrigiert + Marker-Buttons)",
+        "tests/features/nano-kontrol-led.test.ts (NEU, 23 Cases)",
+        "package.json (2.83.0 → 2.84.0)",
+        "agents/INDEX.js (workLog + TASK-231 status + files-Index)"
+      ]
+    },
     {
       agent:     "testing",
       timestamp: "2026-05-17T19:30:00.000Z",
@@ -3055,7 +3115,9 @@ const INDEX = {
             type: "feature",
             priority: "high",
             agent: "backend",
-            status: "open",
+            status: "done",
+            completedAt: "2026-05-17T23:05:00.000Z",
+            completedVersion: "v2.84.0",
             title: "nanoKONTROL2 LED-Feedback + Scene-Mode",
             description: "User hat das Geraet. Out-MIDI an nanoKONTROL2 fuer Solo/Mute-Button-LEDs (note-on/off, Channels 1-8). Marker-Buttons + Track-Buttons werden zu Scene-Launch (useSceneStore) gemappt. LED-Sync bei Pattern-/Scene-Wechsel.",
             acceptance: [
@@ -3064,7 +3126,20 @@ const INDEX = {
                 "Erweitertes Template in client/src/utils/midiTemplates.ts",
                 "Settings-Toggle LED-Feedback an/aus"
             ],
-            estimateHours: 8
+            actualHours: 1.5,
+            estimateHours: 8,
+            implementation: [
+                "client/src/utils/midiOutput.ts: NANO_KONTROL2-Constants + buildNanoKontrolLed + sendNanoKontrolFullSync/AllLedsOff/Led + load/saveFeedbackOutputId/Enabled/SceneMode",
+                "client/src/audio/NanoKontrolFeedback.ts: stateful Diff-Sync-Wrapper (lastMute/lastSolo Cache pro Channel)",
+                "client/src/store/useSceneStore.ts: cycleScene(direction) mit Wrap-Around",
+                "client/src/hooks/useMidi.ts: feedback-State + Sender-Wiring + Marker-CC-Interceptor",
+                "client/src/App.tsx: useEffect mit drumMuteSoloSnapshot ruft syncFeedbackLeds",
+                "client/src/components/MidiSettings/MidiSettings.tsx: 'LED-Feedback (Mixer-Sync)' Section",
+                "tests/features/nano-kontrol-led.test.ts: 23 Cases (Diff-Sync, Full-Sync, AllLedsOff, Scene-Cycle, Persistenz)"
+            ],
+            uxCaveats: [
+                "User muss im KORG-Kontrol-Editor 'External LED Mode' setzen sonst werden Sends ignoriert (kein Crash). Hinweis-Box ist in der UI sichtbar."
+            ]
         },
         {
             id: "TASK-232",

@@ -1657,6 +1657,86 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
         )}
       </div>
 
+      {/* ── TASK-231 (v2.84): LED-Feedback (nanoKONTROL2 & co) ──────────────── */}
+      <div className="p-3 bg-bg-elevated rounded-lg" data-testid="feedback-out-section">
+        <div className="flex items-center justify-between mb-2">
+          <div>
+            <div className="text-sm font-medium text-text-primary">LED-Feedback (Mixer-Sync)</div>
+            <div className="text-xs text-text-muted mt-0.5">
+              Mute/Solo-LEDs auf Hardware spiegeln (KORG nanoKONTROL2, Behringer X-Touch …)
+            </div>
+          </div>
+          <button
+            data-testid="feedback-out-toggle"
+            onClick={() => midi.setFeedbackEnabled(!midi.feedbackEnabled)}
+            className={`relative w-10 h-5 rounded-full transition-colors ${
+              midi.feedbackEnabled ? "bg-accent-primary" : "bg-bg-elevated"
+            }`}
+            aria-label="LED-Feedback an/aus"
+          >
+            <div className={`absolute top-0.5 w-4 h-4 bg-text-primary rounded-full shadow transition-transform ${
+              midi.feedbackEnabled ? "translate-x-5" : "translate-x-0.5"
+            }`} />
+          </button>
+        </div>
+
+        <div className="mt-3">
+          <label
+            htmlFor="feedback-out-device-select"
+            className="text-xs text-text-muted block mb-1"
+          >
+            LED-Feedback-Gerät
+          </label>
+          <select
+            id="feedback-out-device-select"
+            data-testid="feedback-out-device-select"
+            value={midi.feedbackOutputDeviceId ?? ""}
+            onChange={(e) => midi.setFeedbackOutputDeviceId(e.target.value || null)}
+            className="w-full px-2 py-1.5 bg-bg-elevated border border-border-color rounded text-xs text-text-primary focus:outline-none focus:border-accent-primary"
+          >
+            <option value="">(kein LED-Out gewählt)</option>
+            {midi.outputDevices.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.name}{d.manufacturer ? ` — ${d.manufacturer}` : ""}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Scene-Mode für Marker-Buttons */}
+        <div className="mt-3 flex items-center justify-between">
+          <div>
+            <div className="text-xs text-text-primary">Scene-Mode (Marker-Buttons)</div>
+            <div className="text-xs text-text-muted mt-0.5">
+              Marker ◄ / ► cyclen durch Scenes (CC 61/62, nanoKONTROL2-Default)
+            </div>
+          </div>
+          <button
+            data-testid="feedback-scene-mode-toggle"
+            onClick={() => midi.setFeedbackSceneMode(!midi.feedbackSceneMode)}
+            className={`relative w-10 h-5 rounded-full transition-colors ${
+              midi.feedbackSceneMode ? "bg-accent-primary" : "bg-bg-elevated"
+            }`}
+            aria-label="Scene-Mode an/aus"
+          >
+            <div className={`absolute top-0.5 w-4 h-4 bg-text-primary rounded-full shadow transition-transform ${
+              midi.feedbackSceneMode ? "translate-x-5" : "translate-x-0.5"
+            }`} />
+          </button>
+        </div>
+
+        {midi.feedbackEnabled && midi.feedbackOutputDeviceId && (
+          <div className="mt-3 p-2 bg-bg-elevated rounded text-xs text-text-muted">
+            <span className="text-accent-success">●</span> LED-Feedback aktiv —
+            Mute/Solo der ersten 8 Parts werden auf die Hardware-LEDs gespiegelt.
+            <br />
+            <span className="text-accent-secondary">Hinweis:</span> nanoKONTROL2
+            braucht „External LED Mode" (KORG-Kontrol-Editor) damit die LEDs
+            auf MIDI-In reagieren.
+          </div>
+        )}
+      </div>
+
       <div className="p-3 bg-bg-elevated/50 rounded text-xs text-text-muted space-y-1">
         <div className="font-medium text-text-primary mb-1">Hinweise:</div>
         <div>• MIDI-Clock sendet 24 Pulse pro Viertelnote (PPQN)</div>

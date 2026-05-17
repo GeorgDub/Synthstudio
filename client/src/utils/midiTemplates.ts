@@ -123,10 +123,19 @@ export const MIDI_TEMPLATES: MidiTemplate[] = [
     })),
   },
   {
+    // v2.84 (TASK-231): LED-Feedback wird über die MidiSettings → "LED-Feedback"-
+    // Section aktiviert (separater Output-Picker + Toggle). PC-Mode-Default des
+    // nanoKONTROL2: Solo CC 32-39, Mute CC 48-55. Solo+Mute hier sind die
+    // **Track-Buttons** (CC 32-39 in nanoKONTROL2-Default), die wir auf
+    // useMixerStore-Channels mute/solo mappen. Im PC-Mode ist die Solo-Zeile
+    // CC 32-39 — entspricht dem was wir hier mit `mute` belegen. Das ist KEIN
+    // Fehler: KORG nennt die obere Button-Reihe historisch "Solo", aber die
+    // CCs sind frei zuweisbar. Wir folgen der Default-Belegung des KORG-Editors
+    // (Werks-Reset).
     id: "nanokontrol2",
     name: "Korg nanoKONTROL2",
     manufacturer: "Korg",
-    description: "9 Slider + 9 Knobs + Buttons. Perfekt für Mixer-Kontrolle (Volume + Pan + Mute/Solo pro Kanal).",
+    description: "9 Slider + 9 Knobs + Buttons + Marker. LED-Feedback via Settings-Toggle. Marker-Buttons cyclen Scenes wenn aktiviert.",
     ccMappings: [
       // 8 Slider: Volume Parts 0–7
       ...Array.from({ length: 8 }, (_, i) => ({
@@ -138,20 +147,25 @@ export const MIDI_TEMPLATES: MidiTemplate[] = [
         cc: 16 + i, channel: 0,
         target: { type: "pan" as const, partId: `part-${i}`, partName: `Kanal ${i + 1}` },
       })),
-      // 8 Mute-Buttons
+      // 8 Solo-Buttons (PC-Mode-Default CC 32-39)
       ...Array.from({ length: 8 }, (_, i) => ({
         cc: 32 + i, channel: 0,
-        target: { type: "mute" as const, partId: `part-${i}`, partName: `Kanal ${i + 1}` },
+        target: { type: "solo" as const, partId: `part-${i}`, partName: `Kanal ${i + 1}` },
       })),
-      // 8 Solo-Buttons
+      // 8 Mute-Buttons (PC-Mode-Default CC 48-55)
       ...Array.from({ length: 8 }, (_, i) => ({
         cc: 48 + i, channel: 0,
-        target: { type: "solo" as const, partId: `part-${i}`, partName: `Kanal ${i + 1}` },
+        target: { type: "mute" as const, partId: `part-${i}`, partName: `Kanal ${i + 1}` },
       })),
       // Master + Transport
       { cc: 7, channel: 0, target: { type: "masterVolume" } },
       { cc: 41, channel: 0, target: { type: "playStop" } },
       { cc: 45, channel: 0, target: { type: "record" } },
+      // v2.84: Marker-PREV/NEXT — fallen automatisch in Scene-Mode wenn aktiv
+      // (siehe useMidi.ts handleMidiMessage); zusätzlich CC-Mapping als Fallback,
+      // falls Scene-Mode aus ist.
+      { cc: 61, channel: 0, target: { type: "patternPrev" } },
+      { cc: 62, channel: 0, target: { type: "patternNext" } },
     ],
     noteMappings: [],
   },

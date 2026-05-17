@@ -22,9 +22,18 @@ import {
   saveClockOutputId,
   loadClockOutEnabled,
   saveClockOutEnabled,
+  loadFeedbackOutputId,
+  saveFeedbackOutputId,
+  loadFeedbackEnabled,
+  saveFeedbackEnabled,
+  loadFeedbackSceneMode,
+  saveFeedbackSceneMode,
   sendMessage as midiSendMessage,
+  NANO_KONTROL2,
   type MidiAccessLike,
 } from "@/utils/midiOutput";
+import { NanoKontrolFeedback, type NanoKontrolChannelState } from "@/audio/NanoKontrolFeedback";
+import { cycleScene } from "@/store/useSceneStore";
 
 // ─── Typen ────────────────────────────────────────────────────────────────────
 
@@ -175,6 +184,21 @@ export interface MidiState {
    * an Volca Sample). null = nutze `activeOutputDeviceId` als Fallback.
    */
   clockOutputDeviceId: string | null;
+  /**
+   * v2.84 (TASK-231): LED-Feedback-Output (z.B. nanoKONTROL2). Schickt
+   * Mute/Solo-Status der ersten 8 Mixer-Channels per CC an die Hardware.
+   * Kann unabhängig vom Clock-Out gewählt werden — User kann Clock an
+   * Electribe + LED-Feedback an nanoKONTROL2 routen. null = kein LED-Out.
+   */
+  feedbackOutputDeviceId: string | null;
+  /** v2.84: LED-Feedback aktiv (Mute/Solo-LEDs auf Hardware spiegeln). */
+  feedbackEnabled: boolean;
+  /**
+   * v2.84: Marker-PREV/NEXT (CC 61/62) cyclen Scenes via useSceneStore.
+   * Wenn off → Marker-CCs werden ignoriert (oder vom User-CC-Mapping
+   * gehandelt). Default false.
+   */
+  feedbackSceneMode: boolean;
   mappings: MidiMapping[];
   noteMappings: MidiNoteMapping[];
   isLearning: boolean;
@@ -248,6 +272,21 @@ export interface MidiActions {
    * `activeOutputDeviceId` (Backwards-Compat zu v2.82).
    */
   setClockOutputDeviceId: (id: string | null) => void;
+  /**
+   * v2.84 (TASK-231): Setzt das LED-Feedback-Output-Device. null = LED-
+   * Feedback aus (egal was feedbackEnabled sagt — der Sender hat kein Ziel).
+   */
+  setFeedbackOutputDeviceId: (id: string | null) => void;
+  /** v2.84: Aktiviert/deaktiviert LED-Feedback an die Hardware. */
+  setFeedbackEnabled: (enabled: boolean) => void;
+  /** v2.84: Toggle für Marker-PREV/NEXT → Scene-Cycle. */
+  setFeedbackSceneMode: (enabled: boolean) => void;
+  /**
+   * v2.84: Synchronisiert den LED-State mit dem aktuellen Mixer-Snapshot.
+   * Wird typischerweise im useEffect aufgerufen wenn sich Mute/Solo ändert.
+   * Diff-Sync: nur geänderte LEDs werden gesendet.
+   */
+  syncFeedbackLeds: (channels: NanoKontrolChannelState[]) => void;
   /**
    * v1.98: MIDI Panic — sendet `[0x80|ch, note, 0]` (Note Off) für alle 128
    * Notes auf allen 16 Channels ans aktive Output-Device. Plus `[0xB0|ch, 123, 0]`
@@ -600,6 +639,18 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
   useEffect(() => { clockOutEnabledRef.current = clockOutEnabled; }, [clockOutEnabled]);
   useEffect(() => { clockOutBpmRef.current = clockOutBpm; }, [clockOutBpm]);
   useEffect(() => { clockOutputDeviceIdRef.current = clockOutputDeviceId; }, [clockOutputDeviceId]);
+
+  // v2.84 (TASK-231): LED-Feedback-State + Scene-Mode.
+  const [feedbackOutputDeviceId, setFeedbackOutputDeviceIdState] = useState<string | null>(() => loadFeedbackOutputId());
+  const [feedbackEnabled, setFeedbackEnabledState] = useState<boolean>(() => loadFeedbackEnabled());
+  const [feedbackSceneMode, setFeedbackSceneModeState] = useState<boolean>(() => loadFeedbackSceneMode());
+  const feedbackOutputDeviceIdRef = useRef<string | null>(null);
+  const feedbackEnabledRef = useRef(false);
+  const feedbackSceneModeRef = useRef(false);
+  const nanoFeedbackRef = useRef<NanoKontrolFeedback>(new NanoKontrolFeedback());
+  useEffect(() => { feedbackOutputDeviceIdRef.current = feedbackOutputDeviceId; }, [feedbackOutputDeviceId]);
+  useEffect(() => { feedbackEnabledRef.current = feedbackEnabled; }, [feedbackEnabled]);
+  useEffect(() => { feedbackSceneModeRef.current = feedbackSceneMode; }, [feedbackSceneMode]);
   // Auto-Learn-Queue (v1.71)
   const [autoLearnQueue, setAutoLearnQueue] = useState<AutoLearnEntry[]>([]);
   const [autoLearnTotal, setAutoLearnTotal] = useState(0);
@@ -678,6 +729,23 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
 
     // Raw MIDI message für MPE-Verarbeitung weiterleiten
     window.dispatchEvent(new CustomEvent("midi:rawmessage", { detail: { type, channel, byte1, byte2 } }));
+
+    // ── TASK-231 (v2.84): nanoKONTROL2 Marker → Scene-Cycle ──────────────
+    // Vor jeglicher Mapping-Verarbeitung: wenn Scene-Mode aktiv und das
+    // eingehende CC ist Marker-PREV/NEXT (CC 61/62, value>0), dann zur
+    // vorigen/nächsten Scene wechseln. Nach erfolgreicher Behandlung
+    // konsumieren wir das Event (return) — sonst würde ein eventuell
+    // gelerntes Mapping auf derselben CC doppelt feuern.
+    if (
+      feedbackSceneModeRef.current &&
+      type === 0xb0 &&
+      byte2 > 0 &&
+      (byte1 === NANO_KONTROL2.MARKER_PREV || byte1 === NANO_KONTROL2.MARKER_NEXT)
+    ) {
+      const dir: 1 | -1 = byte1 === NANO_KONTROL2.MARKER_NEXT ? 1 : -1;
+      cycleScene(dir);
+      return;
+    }
 
     // MIDI-Learn-Modus: CC lernen
     if (learnRef.current.isLearning && learnRef.current.target) {
@@ -1122,6 +1190,28 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
     // Reagiert auf: enabled-Wechsel, Output-Device-Wechsel, Clock-Routing-Wechsel.
   }, [clockOutEnabled, clockOutputDeviceId, activeOutputDeviceId]);
 
+  // ─── TASK-231 (v2.84): LED-Feedback Sender-Wiring ────────────────────────
+  // Bei Device/Enable-Wechsel den Sender im NanoKontrolFeedback aktualisieren.
+  // Wenn enabled=true und Output verfügbar → sender = midiSendMessage-Lambda.
+  // Wenn enabled=false → sender = null (allLedsOff wird intern getriggert).
+  useEffect(() => {
+    const fb = nanoFeedbackRef.current;
+    if (feedbackEnabled && feedbackOutputDeviceId) {
+      fb.setSender((bytes) => {
+        midiSendMessage(
+          midiAccessRef.current as MidiAccessLike | null,
+          feedbackOutputDeviceIdRef.current,
+          bytes,
+        );
+      });
+      fb.setEnabled(true);
+    } else {
+      // Vor dem Disable: alle LEDs explizit ausschalten (sofern Sender steht).
+      fb.setEnabled(false);
+      fb.setSender(null);
+    }
+  }, [feedbackEnabled, feedbackOutputDeviceId]);
+
   // ─── Cleanup ─────────────────────────────────────────────────────────────
 
   useEffect(() => {
@@ -1302,6 +1392,34 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
     saveClockOutputId(id);
   }, []);
 
+  // ── TASK-231 (v2.84): LED-Feedback-Actions ─────────────────────────────
+  const setFeedbackOutputDeviceId = useCallback((id: string | null) => {
+    setFeedbackOutputDeviceIdState(id);
+    saveFeedbackOutputId(id);
+  }, []);
+
+  const setFeedbackEnabled = useCallback((enabled: boolean) => {
+    setFeedbackEnabledState(enabled);
+    saveFeedbackEnabled(enabled);
+  }, []);
+
+  const setFeedbackSceneMode = useCallback((enabled: boolean) => {
+    setFeedbackSceneModeState(enabled);
+    saveFeedbackSceneMode(enabled);
+  }, []);
+
+  /**
+   * v2.84: Sync der LED-States mit dem aktuellen Mute/Solo-Snapshot.
+   * App.tsx ruft dies in einem useEffect auf, das den aktiven Pattern-State
+   * der ersten 8 Parts beobachtet. Diff-Sync intern.
+   * Erster Call nach Enable → forceFullSync damit alle 16 LEDs initial gesetzt
+   * sind (Cache ist beim Enable noch leer = alle undefined → automatisch
+   * Full-Sync).
+   */
+  const syncFeedbackLeds = useCallback((channels: NanoKontrolChannelState[]) => {
+    nanoFeedbackRef.current.syncMixer(channels);
+  }, []);
+
   /**
    * v1.98: MIDI Panic — sendet Note Off + All Notes Off + All Sound Off
    * an alle 16 Channels des aktiven Output-Devices. Cleared hängende Notes
@@ -1388,6 +1506,14 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
     clockOutEnabled,
     clockOutBpm,
     clockOutputDeviceId,
+    // v2.84 (TASK-231): LED-Feedback
+    feedbackOutputDeviceId,
+    feedbackEnabled,
+    feedbackSceneMode,
+    setFeedbackOutputDeviceId,
+    setFeedbackEnabled,
+    setFeedbackSceneMode,
+    syncFeedbackLeds,
     sendPanic,
     // Output Actions
     setActiveOutputDevice,

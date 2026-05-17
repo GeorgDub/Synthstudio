@@ -79,6 +79,31 @@ export function setActiveScene(id: string | null): void {
   persist(_state); notify();
 }
 
+/**
+ * TASK-231: Wechselt zur nächsten/vorigen Scene mit Wrap-Around. Hilfsfunktion
+ * für Hardware-Buttons (nanoKONTROL2 Marker-PREV/NEXT).
+ * No-op wenn keine Scenes existieren. Liefert die neue active Scene-ID
+ * zurück (oder null).
+ *
+ * @param direction +1 = vorwärts, -1 = rückwärts
+ */
+export function cycleScene(direction: 1 | -1): string | null {
+  const scenes = _state.scenes;
+  if (scenes.length === 0) return null;
+  const currentIdx = scenes.findIndex(s => s.id === _state.activeSceneId);
+  let nextIdx: number;
+  if (currentIdx < 0) {
+    // Keine aktive Scene → starte bei 0 (vor) oder letzter (zurück)
+    nextIdx = direction > 0 ? 0 : scenes.length - 1;
+  } else {
+    nextIdx = (currentIdx + direction + scenes.length) % scenes.length;
+  }
+  const nextId = scenes[nextIdx].id;
+  _state = { ..._state, activeSceneId: nextId };
+  persist(_state); notify();
+  return nextId;
+}
+
 export function reorderScene(fromIdx: number, toIdx: number): void {
   const scenes = [..._state.scenes];
   const [moved] = scenes.splice(fromIdx, 1);

@@ -1376,6 +1376,32 @@ export default function App() {
     parts: dm.getActivePattern()?.parts ?? [],
   });
 
+  // ── TASK-231 (v2.84): nanoKONTROL2 LED-Feedback Sync ──────────────────────
+  // Snapshot von Mute+Solo der ersten 8 Parts → LED-Feedback. Diff-Sync im
+  // NanoKontrolFeedback-Wrapper sorgt dafür, dass nur geänderte LEDs gesendet
+  // werden (verhindert MIDI-Spam bei jedem Render).
+  const drumMuteSoloSnapshot = (() => {
+    const active = dm.patterns.find(p => p.id === dm.activePatternId);
+    if (!active) return "";
+    return active.parts
+      .slice(0, 8)
+      .map(p => `${p.muted ? "1" : "0"}${p.soloed ? "1" : "0"}`)
+      .join("");
+  })();
+  useEffect(() => {
+    const active = dm.patterns.find(p => p.id === dm.activePatternId);
+    if (!active) return;
+    const channels = active.parts.slice(0, 8).map(p => ({
+      muted: p.muted,
+      soloed: p.soloed,
+    }));
+    midi.syncFeedbackLeds?.(channels);
+    // drumMuteSoloSnapshot ist eine stringifizierte Form derselben Daten —
+    // wir nehmen ihn als Dependency damit die effect-Identität via primitiver
+    // String-Equality bestimmt wird, statt via Array-Reference (immer neu).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [drumMuteSoloSnapshot, midi.feedbackEnabled, midi.feedbackOutputDeviceId]);
+
   // ── Live Step Recording (MPC-Overdub-Style, post-v1.30.0; Welle 2 v1.31+) ─
   // Wenn isRecording + isPlaying aktiv sind, werden MIDI-Note-Hits direkt als
   // Steps in der aktiven Pattern aufgezeichnet. Welle 2: recordingMode
