@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "2.82.0",
+    version: "2.83.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -162,6 +162,36 @@ const INDEX = {
       role:     "TASK-201: data-testids für Playwright E2E in Pad-Bank-Builder-Section: pad-bank-toggle, pad-bank-builder, pad-bank-slots, pad-bank-slot-row-{idx} (+ data-pad-bank-slot-kind/-param Attribute), pad-bank-slot-kind-{idx}, pad-bank-slot-param-{idx}, pad-bank-slot-remove-{idx}, pad-bank-add-slot, pad-bank-start-auto-learn, pad-bank-reset. Rein additiv — kein Verhaltenseffekt.",
       lastSeen: "2026-05-17T19:30:00.000Z",
       ownedBy:  "testing"
+    },
+    "client/src/utils/midiOutput.ts": {
+      role:     "TASK-230 (v2.83.0): Reusable Public-API für Web-MIDI-Output-Discovery + Send. Exports: enumerateMidiOutputs/getOutputById/sendMessage (alle mit injizierbarem MidiAccessLike-Mock-Interface) + loadClockOutputId/saveClockOutputId/loadClockOutEnabled/saveClockOutEnabled (localStorage-Persistenz) + Realtime-Konstanten MIDI_CLOCK_TICK/START/CONTINUE/STOP/SPP_STATUS/PPQN + buildSongPositionPointer(midiBeat) → 14-bit LSB/MSB-Encoding. Wird wiederverwendet von TASK-231 (nanoKONTROL2-LED).",
+      lastSeen: "2026-05-17T22:48:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/audio/MidiClockOut.ts": {
+      role:     "TASK-230 (v2.83.0): MIDI-Clock-Master-Generator. AudioContext-basiertes Drift-freies 24 PPQN-Ticking via planTicks(nextTickTime, lookAheadUntil, bpm) → tickTimes[]+newNextTickTime. Public API: setSender (DI-Pattern für Tests), setEnabled (Auto-Stop bei Disable während Play), start(now)/stop()/resume(now, sendSpp)/sendSongPosition(midiBeat) + scheduleTicks(lookAhead, bpm) für AudioEngine._schedule()-Aufrufer. ticksSinceStart-Counter überlebt Stop für korrektes SPP nach Resume.",
+      lastSeen: "2026-05-17T22:48:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/audio/AudioEngine.ts (TASK-230 Clock-Out)": {
+      role:     "v2.83.0: MidiClockOut-Instanz integriert. play() → _midiClockOut.start(nextStepTime), stop() → _midiClockOut.stop(), _schedule() → scheduleTicks(lookAheadUntil, bpm) jede 16ms. Public API: setMidiClockOutSender(cb), setMidiClockOutEnabled(bool), getMidiClockOut().",
+      lastSeen: "2026-05-17T22:48:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/hooks/useMidi.ts (TASK-230 Clock-Out Wiring)": {
+      role:     "v2.83.0: alter setInterval-Tick-Pfad GELÖSCHT. Stattdessen: useEffect injiziert (bytes)=>midiSendMessage(midiAccessRef, resolvedOutputId, bytes) als AudioEngine.setMidiClockOutSender + AudioEngine.setMidiClockOutEnabled(clockOutEnabled). Neue State: clockOutputDeviceId (separat von activeOutputDeviceId, persist via loadClockOutputId/saveClockOutputId). Neue Action: setClockOutputDeviceId(id|null). Enable-Persistenz via loadClockOutEnabled/saveClockOutEnabled.",
+      lastSeen: "2026-05-17T22:48:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/components/MidiSettings/MidiSettings.tsx (TASK-230 Clock-Out UI)": {
+      role:     "v2.83.0: renderClockTab() erweitert um Clock-Out-Section: data-testid=clock-out-section, clock-out-toggle, clock-out-device-select. Picker zeigt alle midi.outputDevices, value=clockOutputDeviceId (Fallback-Hint auf activeOutputDeviceId-Name). Empty-State-Warnung wenn outputDevices.length===0.",
+      lastSeen: "2026-05-17T22:48:00.000Z",
+      ownedBy:  "backend"
+    },
+    "tests/features/midi-clock-out.test.ts": {
+      role:     "TASK-230 (v2.83.0): 30 Unit-Tests für MidiClockOut + midiOutput-Helpers. Coverage: tickDurationSec (3), planTicks (4), Transport-Messages 0xFA/0xFC/0xFB+SPP (5), Tick-Generation (4) + 24 PPQN-Validation, buildSongPositionPointer (5) inkl. 14-bit-Clamp, enumerateMidiOutputs (3), getOutputById (2), sendMessage (3) inkl. Exception-Swallow, Integration-Flow (1). Alle deterministisch via captureSender + makeMockAccess (Map<id, MidiOutputLike>).",
+      lastSeen: "2026-05-17T22:48:00.000Z",
+      ownedBy:  "backend"
     }
   },
 
@@ -2911,6 +2941,50 @@ const INDEX = {
         "tests/web/close-buttons.spec.ts"
       ]
     }
+  ,
+    {
+        agent: "coordinator",
+        timestamp: "2026-05-17T20:00:00.000Z",
+        done: [
+            "STRATEGIE-ANALYSE v2.83+ (KORG-zentrierte Live+Studio-DAW): Vollstaendige 5-Teilige Analyse abgeschlossen. TEIL A Konkurrenz-Analyse (9 DAWs: Ableton, FL, Bitwig, Maschine, MPC, KORG Gadget, Renoise, REAPER, LMMS/Cakewalk) — groesste Luecken sind VST/CLAP-Host, Audio-Recording/Slicing, Hardware-LED-Feedback. TEIL B KORG-Tiefe (Electribe 2 + nanoKONTROL2): 5 Bidir-Workflows definiert (Pattern-Roundtrip, USB-Audio-In als FX-Channel, Motion-Sequenzer-Capture, Sync-Master-Modus, Sample-Slot-Push) + nanoKONTROL2-Luecken (LED-Feedback, Marker-Buttons zu Scene-Mode). TEIL C Live-Performance-Defizite: WASAPI Exclusive, Live-Looping, MIDI-Clock-Out, Hot-Swap mit Crossfade. TEIL D Monetarisierung: Empfehlung Einmal-Lizenz 29 EUR via Gumroad zuerst, dann Freemium-Pro mit VST-Host. TEIL E Top-10-Aktionsplan in openTasks als TASK-230 bis TASK-239 priorisiert (Reihenfolge: 230->231->232->233->234->235->236->237->238->239). Quick-Wins (<=2 Tage): TASK-230 MIDI-Clock-Out, TASK-231 nanoKONTROL2-LED, TASK-232 Lizenz-Layer."
+        ],
+        next: [
+            "Starte autonomen Loop mit TASK-230 (MIDI-Clock-Out) — primaerer Agent: backend.",
+            "Parallel-Track moeglich: TASK-231 (nanoKONTROL2-LED) ist unabhaengig von TASK-230, kann parallel von backend laufen sobald Clock-Out-Out-Port-Helper extrahiert ist.",
+            "TASK-232 (Lizenz-Layer) sollte vor allen Pro-Features kommen, sonst entsteht spaeter Refactor-Schuld bei Feature-Gating.",
+            "TASK-239 (VST/CLAP-Host) ist nicht fuer v2.83 — eigener Sprint v3.0.0+."
+        ],
+        changed: [
+            "agents/INDEX.js"
+        ]
+    }
+  ,
+    {
+        agent: "backend",
+        timestamp: "2026-05-17T22:48:00.000Z",
+        done: [
+            "TASK-230 (MIDI-Clock-Out + Send-to-Electribe, v2.83.0) abgeschlossen. Synthstudio ist jetzt MIDI-Clock-Master mit driftarmem 24-PPQN-Ticker.",
+            "Drei neue Module: (1) client/src/utils/midiOutput.ts — Pure-Helpers enumerateMidiOutputs/getOutputById/sendMessage + localStorage-Persistenz fuer Clock-Out-Device-ID/Enable-Flag + MIDI-Realtime-Konstanten + buildSongPositionPointer(14-bit-Encoding). (2) client/src/audio/MidiClockOut.ts — Stateful Clock-Master-Generator: start(now) sendet 0xFA, stop() sendet 0xFC, resume(now) sendet SPP+0xFB, scheduleTicks(lookAhead,bpm) plant Ticks anhand AudioContext.currentTime statt setInterval. DI-Sender-Pattern fuer Tests. (3) tests/features/midi-clock-out.test.ts — 30 deterministische Tests via captureSender+Mock-Access (Map<id, MidiOutputLike>).",
+            "AudioEngine-Integration: play() ruft _midiClockOut.start(nextStepTime), stop() ruft .stop(), _schedule() ruft .scheduleTicks(lookAheadUntil, effectiveBpm). Public-API setMidiClockOutSender/setMidiClockOutEnabled/getMidiClockOut.",
+            "useMidi-Refactor: alten setInterval-Tick-Pfad geloescht. Neue State clockOutputDeviceId (separates Routing zu activeOutputDeviceId) + Persist. useEffect injiziert sender callback in AudioEngine; bei device/enable-Wechsel re-injiziert. setClockOutEnabled/setClockOutputDeviceId persistieren via localStorage.",
+            "MidiSettings-UI: renderClockTab() um Clock-Out-Section erweitert mit Toggle + Device-Picker. data-testids: clock-out-section, clock-out-toggle, clock-out-device-select. Empty-State-Warnung bei keinen Output-Devices.",
+            "Version bump 2.82.0 -> 2.83.0. 30 neue Tests gruen. Vollsuite 3063/3063 Tests gruen. pnpm check ohne Fehler."
+        ],
+        next: [
+            "TASK-231 (nanoKONTROL2 LED-Feedback) kann jetzt starten — die wiederverwendbaren Helpers sind in client/src/utils/midiOutput.ts: enumerateMidiOutputs, getOutputById, sendMessage. Note-On/Off-Pakete koennen via sendMessage(midiAccess, deviceId, [0x90|ch, note, vel]) gesendet werden.",
+            "Manuell verifizieren mit echtem Geraet: Electribe 2 in MIDI-Settings -> Sync-In-Modus, Synthstudio Clock-Out aktivieren, Synthstudio Play -> Electribe sollte starten + im Sync laufen. nanoKONTROL2 (Korg Kontrol Editor) kann den Stream als Sync-Source nutzen."
+        ],
+        changed: [
+            "client/src/utils/midiOutput.ts (NEU)",
+            "client/src/audio/MidiClockOut.ts (NEU)",
+            "tests/features/midi-clock-out.test.ts (NEU)",
+            "client/src/audio/AudioEngine.ts (MidiClockOut-Integration)",
+            "client/src/hooks/useMidi.ts (AudioEngine-Wiring + clockOutputDeviceId)",
+            "client/src/components/MidiSettings/MidiSettings.tsx (Clock-Out-UI)",
+            "package.json (2.83.0)",
+            "agents/INDEX.js"
+        ]
+    }
   ],
 
   // ─── CURRENT OPEN TASKS ────────────────────────────────────
@@ -2952,7 +3026,194 @@ const INDEX = {
   //     (4) Playwright Round-Trip E2E: tests/web/audio-track-round-trip.spec.ts
   //         mit 4 Tests (save → reopen → relocate). 4/4 grün in 10.6s.
   //     openTasks ist jetzt LEER — v1.23.0 bereit zum Release.
-  openTasks: [],
+  openTasks: [
+    // STRATEGIE-ROADMAP v2.83+ (KORG-zentrierte Live+Studio-DAW) — coordinator 2026-05-17
+        {
+            id: "TASK-230",
+            type: "feature",
+            priority: "high",
+            agent: "backend",
+            status: "done",
+            closedAt: "2026-05-17T22:48:00.000Z",
+            closedIn: "v2.83.0",
+            closedBy: "backend",
+            title: "MIDI-Clock-Out + Send-to-Electribe",
+            description: "Synthstudio wird MIDI-Clock-Master. AudioEngine.onTick sendet 24 PPQN Clock-Pulse via Web MIDI Output + Start/Stop/Continue. UI-Toggle in Settings fuer Clock-Out-Device. Foundation fuer alle KORG-Bidir-Workflows.",
+            acceptance: [
+                "Web MIDI Output-Device-Picker in MIDI-Settings ✓ (Clock-Sync-Tab)",
+                "AudioEngine sendet 24 PPQN Clock auf Play, 0xFA Start, 0xFC Stop, 0xFB Continue ✓ (driftarm via AudioContext.currentTime+planTicks)",
+                "Electribe 2 / nanoKONTROL2 syncen sich extern auf den Stream — Code korrekt, manuelle Hardware-Verifikation steht aus",
+                "Unit-Tests fuer Clock-Tick-Generator (deterministisches mock-Output-Array) ✓ 30/30 in tests/features/midi-clock-out.test.ts"
+            ],
+            estimateHours: 12,
+            extractedHelpers: [
+                "client/src/utils/midiOutput.ts: enumerateMidiOutputs, getOutputById, sendMessage, load/saveClockOutputId, load/saveClockOutEnabled, MIDI_CLOCK_*, MIDI_PPQN, buildSongPositionPointer — alle wiederverwendbar fuer TASK-231"
+            ]
+        },
+        {
+            id: "TASK-231",
+            type: "feature",
+            priority: "high",
+            agent: "backend",
+            status: "open",
+            title: "nanoKONTROL2 LED-Feedback + Scene-Mode",
+            description: "User hat das Geraet. Out-MIDI an nanoKONTROL2 fuer Solo/Mute-Button-LEDs (note-on/off, Channels 1-8). Marker-Buttons + Track-Buttons werden zu Scene-Launch (useSceneStore) gemappt. LED-Sync bei Pattern-/Scene-Wechsel.",
+            acceptance: [
+                "MIDI-Out an nanoKONTROL2 spiegelt mute/solo-State aller 8 Mixer-Channels",
+                "Marker-PREV/NEXT-Buttons cyclen durch Scenes",
+                "Erweitertes Template in client/src/utils/midiTemplates.ts",
+                "Settings-Toggle LED-Feedback an/aus"
+            ],
+            estimateHours: 8
+        },
+        {
+            id: "TASK-232",
+            type: "feature",
+            priority: "high",
+            agent: "backend",
+            status: "open",
+            title: "Lizenz-Layer + Gumroad-Build (Monetarisierung)",
+            description: "Einmal-Lizenz Win-Build ueber Gumroad/Stripe fuer 29 EUR. Lizenz-Schluessel-Check beim ersten Start, gespeichert in Electron app.getPath(userData). Online-Aktivierung (ED25519-Signatur, kein Phone-Home nach Aktivierung).",
+            acceptance: [
+                "Activation-Modal beim ersten Start in Electron-Build",
+                "ED25519-Signature-Validation lokal (oeffentlicher Key embedded)",
+                "Trial-Mode 30 Tage (timestamp in localStorage + userData)",
+                "Pro-Build-Variante via electron-builder Config (Free vs Pro Toggle)"
+            ],
+            estimateHours: 16,
+            reviewedBy: [
+                "security",
+                "builder"
+            ]
+        },
+        {
+            id: "TASK-233",
+            type: "feature",
+            priority: "high",
+            agent: "backend",
+            status: "open",
+            title: "USB-Audio-Input als Mixer-Channel (Outboard-FX-Modus)",
+            description: "Macht Synthstudio zur Outboard-FX-Box fuer KORG-Hardware. getUserMedia({audio:{deviceId}}) als zusaetzlicher Mixer-Track mit voller FX-Chain (EQ/Comp/Reverb/Delay). PDC fuer Latenz-Alignment.",
+            acceptance: [
+                "Mixer-Channel-Type Live-Input neben drum-part und audio-track",
+                "Device-Picker zeigt alle Audio-In-Devices",
+                "FX-Chain laeuft auf Live-Input (FxPanel funktioniert)",
+                "Plugin-Delay-Compensation gegen drum-part Output kompensiert"
+            ],
+            estimateHours: 20
+        },
+        {
+            id: "TASK-234",
+            type: "feature",
+            priority: "high",
+            agent: "backend",
+            status: "open",
+            title: "Audio-Recording im Mixer (Record-Arm)",
+            description: "Record-Arm-Button pro Mixer-Channel. MediaRecorder zeichnet Live-Input waehrend Transport auf, landet als audio-track in useAudioTrackStore. Voraussetzung fuer ernsthafte DAW-Nutzung.",
+            acceptance: [
+                "Record-Arm-Toggle pro Channel-Strip",
+                "Recording startet bei transport:play, stoppt bei transport:stop",
+                "Resultierender Audio-Track erscheint in useAudioTrackStore, abspielbar nach Stop",
+                "WAV-Datei wird in Electron-userData oder Browser-IndexedDB persistiert"
+            ],
+            estimateHours: 16,
+            dependsOn: [
+                "TASK-233"
+            ]
+        },
+        {
+            id: "TASK-235",
+            type: "feature",
+            priority: "high",
+            agent: "backend",
+            status: "open",
+            title: "Live-Looping (Record/Loop/Overdub)",
+            description: "Live-Looping-Pedal-Funktionalitaet: MIDI-Footswitch/Pad triggert Record-Loop-Overdub-Cycle. Loops landen als auto-quantized audio-tracks. Erfuellt Live-Performance-Versprechen.",
+            acceptance: [
+                "Loop-Buttons in Performance-Mode (max 4 simultane Loops)",
+                "Record quantisiert auf naechste Beat-Boundary",
+                "Overdub mischt neue Aufnahme in vorhandenen Loop (linear sum)",
+                "Loop-Erase via Long-Press oder eigener Action-Target"
+            ],
+            estimateHours: 24,
+            dependsOn: [
+                "TASK-233",
+                "TASK-234"
+            ]
+        },
+        {
+            id: "TASK-236",
+            type: "feature",
+            priority: "medium",
+            agent: "backend",
+            status: "open",
+            title: "WASAPI Exclusive Mode (Windows Low-Latency)",
+            description: "Latenz-Optimierung von ~30-50ms auf unter 10ms. Native Node-Bridge via naudiodon oder eigene N-API-Erweiterung. Web Audio Output umgeleitet via virtuelles MME-Device.",
+            acceptance: [
+                "Settings-Toggle WASAPI Exclusive (nur Windows-Build)",
+                "Round-Trip-Latenz unter 10ms gemessen via loopback",
+                "Fallback auf Shared-Mode bei Device-Konflikten",
+                "Web-Build bleibt unveraendert (kein Code-Pfad-Impact)"
+            ],
+            estimateHours: 28,
+            reviewedBy: [
+                "builder"
+            ]
+        },
+        {
+            id: "TASK-237",
+            type: "feature",
+            priority: "medium",
+            agent: "backend",
+            status: "open",
+            title: "Electribe-Pattern-Importer (.e2sallpat / .e2pattern)",
+            description: "Direkter KORG-Wow-Effekt: Electribe-User koennen ihre Pattern in Synthstudio importieren und mit fortgeschrittenen Tools (Morph/Humanize) bearbeiten. Reverse-engineerte Format-Spezifikation existiert.",
+            acceptance: [
+                "electron/electribe-import.ts parser fuer .e2sallpat-Binary-Format",
+                "Konvertierung in Synthstudio-Pattern-Struktur (16 Parts zu drum-parts)",
+                "Motion-Sequenzer-Daten landen in useAutomationStore",
+                "Browser-Fallback via File-Drop"
+            ],
+            estimateHours: 24
+        },
+        {
+            id: "TASK-238",
+            type: "feature",
+            priority: "medium",
+            agent: "frontend",
+            status: "open",
+            title: "Sample-Slicing/Chop (Waveform zu Pads)",
+            description: "MPC/Maschine-Paritaet: User waehlt Sample, Waveform-Editor zeigt automatisch erkannte Slice-Points (Onset-Detection), jeder Slice landet auf einem Performance-Pad.",
+            acceptance: [
+                "Waveform-Editor-Modal mit Slice-Marker-Drag",
+                "Onset-Detection via existierender audioAnalysis.worker.ts",
+                "Auto-Map auf 16 Performance-Pads",
+                "Manuelle Slice-Justierung mit Snap-to-Zero-Crossing"
+            ],
+            estimateHours: 24
+        },
+        {
+            id: "TASK-239",
+            type: "feature",
+            priority: "low",
+            agent: "backend",
+            status: "open",
+            title: "VST3/CLAP-Host (Phase-2 Pro-Feature)",
+            description: "Groesste Wettbewerbsluecke vs Ableton/FL/Bitwig. Vermutlich nur via nativer Node-Addon-Bridge (JUCE-basiert). Monetarisierbar als Pro-Tier.",
+            acceptance: [
+                "Plugin-Scan beim Start (Win VST3-Folder)",
+                "Plugin-Slot in Mixer-FX-Chain",
+                "Parameter-Automation via useAutomationStore",
+                "GUI-Hosting via native Window oder Generic-Parameter-UI"
+            ],
+            estimateHours: 160,
+            reviewedBy: [
+                "builder",
+                "security"
+            ],
+            note: "Groesster Brocken, eigener Sprint, nicht vor v3.0.0"
+        }
+    ],
 
   // ─── API / IPC REFERENCE ───────────────────────────────────
   ipc: {

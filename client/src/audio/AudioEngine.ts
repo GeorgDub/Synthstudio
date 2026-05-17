@@ -11,6 +11,7 @@
  */
 
 import { SynthEngine } from "./SynthEngine";
+import { MidiClockOut } from "./MidiClockOut";
 
 // ─── Typen ────────────────────────────────────────────────────────────────────
 
@@ -442,6 +443,13 @@ class AudioEngineClass {
   private _pendingTimeouts = new Set<ReturnType<typeof setTimeout>>();
   private readonly LOOK_AHEAD = 0.1;
   private readonly SCHEDULE_INTERVAL = 16;
+
+  /**
+   * MIDI-Clock-Out (TASK-230 / v2.83.0). 24 PPQN Tick-Generator + Transport-
+   * Realtime-Messages. Sender wird per `setMidiClockOutSender()` injiziert
+   * (typisch vom useMidi-Hook). Default: kein Sender = no-op.
+   */
+  private _midiClockOut = new MidiClockOut(null);
 
   // Transport
   private _isPlaying = false;
@@ -1086,6 +1094,33 @@ class AudioEngineClass {
     return () => { this.stepCallbacks = this.stepCallbacks.filter(c => c !== cb); };
   }
 
+  // ─── MIDI-Clock-Out (TASK-230 / v2.83.0) ─────────────────────────────────
+
+  /**
+   * Setzt den Sender-Callback für MIDI-Clock-Out. Der Sender bekommt die
+   * Realtime-Bytes (z.B. [0xF8] für Tick) und muss sie an einen aktiven
+   * Web-MIDI-Output weiterleiten. Wird typischerweise vom useMidi-Hook
+   * aufgerufen mit `(bytes) => sendMessage(midiAccess, outputId, bytes)`.
+   * Setze auf null um die Clock-Out komplett zu deaktivieren.
+   */
+  setMidiClockOutSender(sender: ((bytes: number[]) => void) | null) {
+    this._midiClockOut.setSender(sender);
+  }
+
+  /**
+   * Aktiviert/deaktiviert MIDI-Clock-Out. Wenn während laufendem Transport
+   * deaktiviert wird, sendet MidiClockOut automatisch ein 0xFC (Stop) an den
+   * externen Empfänger, damit dieser nicht hängenbleibt.
+   */
+  setMidiClockOutEnabled(enabled: boolean) {
+    this._midiClockOut.setEnabled(enabled);
+  }
+
+  /** Liefert die laufende MidiClockOut-Instanz (read-only access für UI/Tests). */
+  getMidiClockOut(): MidiClockOut {
+    return this._midiClockOut;
+  }
+
   onPosition(cb: PositionCallback) {
     this.positionCallbacks.push(cb);
     return () => { this.positionCallbacks = this.positionCallbacks.filter(c => c !== cb); };
@@ -1102,6 +1137,10 @@ class AudioEngineClass {
 
     this.schedulerTimer = setInterval(() => this._schedule(), this.SCHEDULE_INTERVAL);
 
+    // MIDI-Clock-Out: sendet 0xFA (Start) und initialisiert den 24-PPQN-Ticker.
+    // (TASK-230) — der eigentliche Tick-Send läuft im _schedule()-Loop.
+    this._midiClockOut.start(this._nextStepTime);
+
     // Externe Audio-Tracks (Vocals, Songs) parallel zum Step-Sequencer starten.
     this.playAllRegisteredAudioTracks();
   }
@@ -1114,6 +1153,8 @@ class AudioEngineClass {
       clearInterval(this.schedulerTimer);
       this.schedulerTimer = null;
     }
+    // MIDI-Clock-Out: sendet 0xFC (Stop). (TASK-230)
+    this._midiClockOut.stop();
     // Pending Position-Callbacks abräumen — sonst feuern sie nach Stop
     this._pendingTimeouts.forEach((id) => clearTimeout(id));
     this._pendingTimeouts.clear();
@@ -1188,6 +1229,12 @@ class AudioEngineClass {
     if (!this.ctx || !this._isPlaying) return;
     const now = this.ctx.currentTime;
     const lookAheadUntil = now + this.LOOK_AHEAD;
+
+    // MIDI-Clock-Out: 24 PPQN-Ticks im Look-Ahead-Fenster senden.
+    // Nutzt die effektive BPM (pattern.bpm overrides this._bpm). (TASK-230)
+    const clockPattern = this.patternGetter?.();
+    const clockBpm = clockPattern?.bpm ?? this._bpm;
+    this._midiClockOut.scheduleTicks(lookAheadUntil, clockBpm);
 
     while (this._nextStepTime < lookAheadUntil) {
       const pattern = this.patternGetter?.();

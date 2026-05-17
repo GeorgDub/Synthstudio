@@ -1552,10 +1552,11 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
 
   const renderClockTab = () => (
     <div className="space-y-4">
+      {/* ── Clock-In: BPM von extern übernehmen ───────────────────────────── */}
       <div className="p-3 bg-bg-elevated rounded-lg">
         <div className="flex items-center justify-between mb-2">
           <div>
-            <div className="text-sm font-medium text-text-primary">MIDI-Clock Sync</div>
+            <div className="text-sm font-medium text-text-primary">MIDI-Clock Sync (In)</div>
             <div className="text-xs text-text-muted mt-0.5">
               BPM von externem Gerät oder DAW übernehmen
             </div>
@@ -1590,12 +1591,79 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
         )}
       </div>
 
+      {/* ── Clock-Out: Synthstudio als Master ─────────────────────────────── */}
+      {/* TASK-230 (v2.83): 24 PPQN + Start/Stop/Continue an externes Gerät. */}
+      <div className="p-3 bg-bg-elevated rounded-lg" data-testid="clock-out-section">
+        <div className="flex items-center justify-between mb-2">
+          <div>
+            <div className="text-sm font-medium text-text-primary">MIDI-Clock-Out (Master)</div>
+            <div className="text-xs text-text-muted mt-0.5">
+              Synthstudio sendet 24 PPQN + Start/Stop an Hardware (Electribe, nanoKONTROL2 …)
+            </div>
+          </div>
+          <button
+            data-testid="clock-out-toggle"
+            onClick={() => midi.setClockOutEnabled(!midi.clockOutEnabled)}
+            className={`relative w-10 h-5 rounded-full transition-colors ${
+              midi.clockOutEnabled ? "bg-accent-primary" : "bg-bg-elevated"
+            }`}
+            aria-label="MIDI-Clock-Out an/aus"
+          >
+            <div className={`absolute top-0.5 w-4 h-4 bg-text-primary rounded-full shadow transition-transform ${
+              midi.clockOutEnabled ? "translate-x-5" : "translate-x-0.5"
+            }`} />
+          </button>
+        </div>
+
+        {/* Output-Device-Picker — wirkt auch bei deaktivierter Clock, damit
+            User vorab ein Device wählen können. */}
+        <div className="mt-3">
+          <label
+            htmlFor="clock-out-device-select"
+            className="text-xs text-text-muted block mb-1"
+          >
+            Clock-Out-Gerät
+          </label>
+          <select
+            id="clock-out-device-select"
+            data-testid="clock-out-device-select"
+            value={midi.clockOutputDeviceId ?? ""}
+            onChange={(e) => midi.setClockOutputDeviceId(e.target.value || null)}
+            className="w-full px-2 py-1.5 bg-bg-elevated border border-border-color rounded text-xs text-text-primary focus:outline-none focus:border-accent-primary"
+          >
+            <option value="">
+              {midi.activeOutputDeviceId
+                ? `(Standard: ${midi.outputDevices.find(d => d.id === midi.activeOutputDeviceId)?.name ?? "active output"})`
+                : "(kein Output gewählt)"}
+            </option>
+            {midi.outputDevices.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.name}{d.manufacturer ? ` — ${d.manufacturer}` : ""}
+              </option>
+            ))}
+          </select>
+          {midi.outputDevices.length === 0 && (
+            <div className="mt-1 text-xs text-accent-danger">
+              Kein MIDI-Output erkannt. Aktiviere MIDI im „Geräte"-Tab.
+            </div>
+          )}
+        </div>
+
+        {midi.clockOutEnabled && (
+          <div className="mt-3 p-2 bg-bg-elevated rounded text-xs text-text-muted">
+            <span className="text-accent-success">●</span> Clock-Out aktiv —
+            sendet bei Play/Stop automatisch 0xFA/0xFC + 24 Ticks/Beat.
+          </div>
+        )}
+      </div>
+
       <div className="p-3 bg-bg-elevated/50 rounded text-xs text-text-muted space-y-1">
         <div className="font-medium text-text-primary mb-1">Hinweise:</div>
         <div>• MIDI-Clock sendet 24 Pulse pro Viertelnote (PPQN)</div>
         <div>• Kompatibel mit DAWs: Ableton, FL Studio, Logic, Cubase</div>
         <div>• Hardware: Roland, Korg, Akai, Arturia MIDI-Controller</div>
         <div>• MIDI-Start (0xFA) und Stop (0xFC) werden als Play/Stop interpretiert</div>
+        <div>• Clock-Out drift-frei via AudioContext-Timing (TASK-230 / v2.83)</div>
       </div>
     </div>
   );

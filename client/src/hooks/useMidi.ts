@@ -15,8 +15,16 @@
 
 import { useEffect, useRef, useCallback, useState } from "react";
 import { getChordMemoryState, buildChordNotes } from "@/store/useChordMemoryStore";
-import { findFxParamRange, midiValueToFxParam, type FxParamKey } from "@/audio/AudioEngine";
+import { AudioEngine, findFxParamRange, midiValueToFxParam, type FxParamKey } from "@/audio/AudioEngine";
 import { toast } from "@/store/useToastStore";
+import {
+  loadClockOutputId,
+  saveClockOutputId,
+  loadClockOutEnabled,
+  saveClockOutEnabled,
+  sendMessage as midiSendMessage,
+  type MidiAccessLike,
+} from "@/utils/midiOutput";
 
 // ─── Typen ────────────────────────────────────────────────────────────────────
 
@@ -160,6 +168,13 @@ export interface MidiState {
   clockOutEnabled: boolean;
   /** v1.97: BPM für den Clock-Output (sollte = transport-BPM sein, vom Caller gesetzt) */
   clockOutBpm: number;
+  /**
+   * v2.83 (TASK-230): explizite Device-ID für Clock-Out. Kann von
+   * `activeOutputDeviceId` abweichen, damit der User Clock und Note-Out an
+   * unterschiedliche Geräte routen kann (z.B. Clock an Electribe 2, Notes
+   * an Volca Sample). null = nutze `activeOutputDeviceId` als Fallback.
+   */
+  clockOutputDeviceId: string | null;
   mappings: MidiMapping[];
   noteMappings: MidiNoteMapping[];
   isLearning: boolean;
@@ -228,6 +243,11 @@ export interface MidiActions {
   setClockOutEnabled: (enabled: boolean) => void;
   /** v1.97: Setzt die BPM die als Clock gesendet wird (vom Caller bei BPM-Änderung). */
   setClockOutBpm: (bpm: number) => void;
+  /**
+   * v2.83 (TASK-230): Setzt das dedizierte Clock-Out-Device. null = nutze
+   * `activeOutputDeviceId` (Backwards-Compat zu v2.82).
+   */
+  setClockOutputDeviceId: (id: string | null) => void;
   /**
    * v1.98: MIDI Panic — sendet `[0x80|ch, note, 0]` (Note Off) für alle 128
    * Notes auf allen 16 Channels ans aktive Output-Device. Plus `[0xB0|ch, 123, 0]`
@@ -567,50 +587,19 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
   const [learnTarget, setLearnTarget] = useState<MidiLearnTarget | null>(null);
   const [clockSync, setClockSyncState] = useState(false);
   const [externalBpm, setExternalBpm] = useState<number | null>(null);
-  // v1.97: MIDI-Clock-Output
-  const [clockOutEnabled, setClockOutEnabledState] = useState(false);
+  // v1.97 / v2.83 (TASK-230): MIDI-Clock-Output.
+  // v2.83-Refactor: Tick-Generierung läuft jetzt drift-frei in der AudioEngine
+  // (AudioContext.currentTime-basiert) — useMidi wirkt nur noch als Sender-
+  // Provider + UI-State. Der alte setInterval-Pfad wurde entfernt.
+  const [clockOutEnabled, setClockOutEnabledState] = useState(() => loadClockOutEnabled());
   const [clockOutBpm, setClockOutBpmState] = useState(120);
+  const [clockOutputDeviceId, setClockOutputDeviceIdState] = useState<string | null>(() => loadClockOutputId());
   const clockOutEnabledRef = useRef(false);
   const clockOutBpmRef = useRef(120);
+  const clockOutputDeviceIdRef = useRef<string | null>(null);
   useEffect(() => { clockOutEnabledRef.current = clockOutEnabled; }, [clockOutEnabled]);
   useEffect(() => { clockOutBpmRef.current = clockOutBpm; }, [clockOutBpm]);
-
-  /**
-   * v1.97: MIDI-Clock-Output-Ticker. Wenn clockOutEnabled aktiv ist und ein
-   * Output-Device gewählt ist, sendet jeden Tick `[0xF8]` an das Device.
-   * Tick-Rate: 24 PPQ → 24 Pulses pro Beat. Bei 120 BPM = 48 Pulses/sec
-   * = ~20.83ms pro Pulse. setInterval reicht für brauchbare Sync-Genauigkeit;
-   * für sub-ms Präzision würde performance.now()-basiertes Looping nötig.
-   */
-  useEffect(() => {
-    if (!clockOutEnabled) return;
-    let intervalId: ReturnType<typeof setInterval> | null = null;
-    const startTicker = () => {
-      const bpm = Math.max(20, Math.min(300, clockOutBpmRef.current));
-      const ppqMs = 60_000 / (bpm * 24);
-      if (intervalId) clearInterval(intervalId);
-      intervalId = setInterval(() => {
-        const out = activeOutputRef.current;
-        if (!out || !clockOutEnabledRef.current) return;
-        try { out.send([0xf8]); } catch { /* ignore */ }
-      }, ppqMs);
-    };
-    startTicker();
-    // Falls BPM sich ändert während Clock läuft, neu starten
-    const bpmWatcher = setInterval(() => {
-      if (!clockOutEnabledRef.current) return;
-      const bpm = Math.max(20, Math.min(300, clockOutBpmRef.current));
-      const expectedPpqMs = 60_000 / (bpm * 24);
-      // Reset wenn BPM sich relevant geändert hat (>1% Diff)
-      if (intervalId) {
-        startTicker(); // restart with new BPM rate (Vereinfachung)
-      }
-    }, 250);
-    return () => {
-      if (intervalId) clearInterval(intervalId);
-      clearInterval(bpmWatcher);
-    };
-  }, [clockOutEnabled]);
+  useEffect(() => { clockOutputDeviceIdRef.current = clockOutputDeviceId; }, [clockOutputDeviceId]);
   // Auto-Learn-Queue (v1.71)
   const [autoLearnQueue, setAutoLearnQueue] = useState<AutoLearnEntry[]>([]);
   const [autoLearnTotal, setAutoLearnTotal] = useState(0);
@@ -1106,6 +1095,33 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
     setIsAvailable(!!navigator.requestMIDIAccess);
   }, []);
 
+  // ─── MIDI-Clock-Out → AudioEngine wiring (TASK-230 / v2.83) ─────────────
+  // Wir injizieren in AudioEngine einen Sender-Callback, der bei jedem Tick
+  // bzw. Start/Stop/Continue die Bytes ans gewählte Output-Device (oder
+  // Fallback: activeOutputDeviceId) sendet. Wenn das Device nicht existiert
+  // (oder access null), no-op. Damit gibt es nur EINEN Code-Pfad — Web MIDI,
+  // sowohl im Browser als auch in Electron-Chromium.
+  useEffect(() => {
+    const sender = (bytes: number[]) => {
+      const targetId =
+        clockOutputDeviceIdRef.current ?? activeOutputDeviceId ?? null;
+      if (!targetId) return;
+      midiSendMessage(
+        midiAccessRef.current as MidiAccessLike | null,
+        targetId,
+        bytes,
+      );
+    };
+    AudioEngine.setMidiClockOutSender(sender);
+    AudioEngine.setMidiClockOutEnabled(clockOutEnabled);
+    return () => {
+      // Cleanup: Sender entkoppeln. Behält 'enabled'-State, aber ohne Sender
+      // gehen Messages ins Nichts — kein Crash bei Hot-Reload.
+      AudioEngine.setMidiClockOutSender(null);
+    };
+    // Reagiert auf: enabled-Wechsel, Output-Device-Wechsel, Clock-Routing-Wechsel.
+  }, [clockOutEnabled, clockOutputDeviceId, activeOutputDeviceId]);
+
   // ─── Cleanup ─────────────────────────────────────────────────────────────
 
   useEffect(() => {
@@ -1263,22 +1279,27 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
     saveMappings([], []);
   }, []);
 
-  // v1.97: MIDI-Clock-Output Actions
+  // v1.97 / v2.83 (TASK-230): MIDI-Clock-Output Actions.
+  // Start/Stop/Continue-Bytes werden jetzt von AudioEngine.start/stop selbst
+  // gesendet — wir setzen hier nur den Enable-Flag + persistieren.
   const setClockOutEnabled = useCallback((enabled: boolean) => {
     setClockOutEnabledState(enabled);
-    // Wenn aktiviert UND Transport läuft, sende MIDI Start (0xFA). Wenn deaktiviert,
-    // sende Stop (0xFC). Hilft externem Gerät die Sync zu starten/stoppen.
-    const out = activeOutputRef.current;
-    if (out) {
-      try {
-        out.send([enabled ? 0xfa : 0xfc]);
-      } catch { /* ignore */ }
-    }
+    saveClockOutEnabled(enabled);
+    AudioEngine.setMidiClockOutEnabled(enabled);
   }, []);
 
   const setClockOutBpm = useCallback((bpm: number) => {
     const clamped = Math.max(20, Math.min(300, bpm));
     setClockOutBpmState(clamped);
+  }, []);
+
+  /**
+   * v2.83 (TASK-230): explizite Clock-Out-Device-Wahl. null = fallback auf
+   * activeOutputDeviceId (Backwards-Compat zu v2.82).
+   */
+  const setClockOutputDeviceId = useCallback((id: string | null) => {
+    setClockOutputDeviceIdState(id);
+    saveClockOutputId(id);
   }, []);
 
   /**
@@ -1363,8 +1384,10 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
     addMappings,
     setClockOutEnabled,
     setClockOutBpm,
+    setClockOutputDeviceId,
     clockOutEnabled,
     clockOutBpm,
+    clockOutputDeviceId,
     sendPanic,
     // Output Actions
     setActiveOutputDevice,
