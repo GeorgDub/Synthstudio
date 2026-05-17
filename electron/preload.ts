@@ -139,6 +139,21 @@ const electronAPI = {
   ): Promise<{ success: boolean; data?: number[]; fileName?: string; error?: string }> =>
     ipcRenderer.invoke("midi:import-file", filePath),
 
+  // ── KORG Electribe Pattern-Import (TASK-237 / v2.88) ────────────────────────
+
+  /** Öffnet den nativen Datei-Dialog für .e2pattern/.e2sallpat. */
+  openElectribeDialog: (): Promise<{ canceled: boolean; filePaths: string[] }> =>
+    ipcRenderer.invoke("electribe:open-dialog"),
+
+  /**
+   * Liest eine .e2pattern/.e2sallpat-Datei und gibt die Bytes als number[]
+   * zurück. Main-Side validiert Endung, Größe (max 5 MB) und Lesbarkeit.
+   */
+  importElectribeFile: (
+    filePath: string
+  ): Promise<{ success: boolean; data?: number[]; fileName?: string; error?: string }> =>
+    ipcRenderer.invoke("electribe:import-file", filePath),
+
   // Import-Events
   onImportStarted: createEventListener<{ importId: string }>("samples:import-started"),
   onImportProgress: createEventListener<{

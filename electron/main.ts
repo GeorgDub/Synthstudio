@@ -2660,6 +2660,57 @@ function registerIpcHandlers(): void {
     return result;
   });
 
+  // ── KORG Electribe Pattern-Import (TASK-237 / v2.88) ─────────────────────────
+  //
+  // Liest .e2pattern oder .e2sallpat von der Disk und liefert die Bytes als
+  // Uint8Array (transferiert als number[]). Strikte Validation:
+  //   - Nur die zwei Endungen erlaubt.
+  //   - Datei muss lesbar sein.
+  //   - Datei darf max ELECTRIBE_MAX_BYTES gross sein (5 MB analog Parser-Limit).
+  //   - Path wird via path.resolve normalisiert (kein Trick mit relativem ..).
+  //
+  // Der Renderer fuehrt anschliessend parseElectribeBank() aus.
+  const ELECTRIBE_MAX_BYTES = 5 * 1024 * 1024;
+  ipcMain.handle("electribe:import-file", async (_event, filePath: string) => {
+    try {
+      if (typeof filePath !== "string" || filePath.length === 0) {
+        return { success: false as const, error: "Kein Dateipfad" };
+      }
+      const ext = path.extname(filePath).toLowerCase();
+      if (ext !== ".e2pattern" && ext !== ".e2sallpat") {
+        return { success: false as const, error: "Nur .e2pattern/.e2sallpat erlaubt" };
+      }
+      const resolvedPath = path.resolve(filePath);
+      try {
+        await fs.promises.access(resolvedPath, fs.constants.R_OK);
+      } catch {
+        return { success: false as const, error: "Datei nicht lesbar" };
+      }
+      const stat = await fs.promises.stat(resolvedPath);
+      if (stat.size > ELECTRIBE_MAX_BYTES) {
+        return { success: false as const, error: `Datei zu gross (>${ELECTRIBE_MAX_BYTES} Bytes)` };
+      }
+      const buffer = await fs.promises.readFile(resolvedPath);
+      const data   = Uint8Array.from(buffer);
+      return {
+        success: true as const,
+        data: Array.from(data),
+        fileName: path.basename(resolvedPath),
+      };
+    } catch (err) {
+      return { success: false as const, error: String(err) };
+    }
+  });
+
+  ipcMain.handle("electribe:open-dialog", async () => {
+    const result = await dialog.showOpenDialog(mainWindow!, {
+      title: "KORG Electribe Pattern importieren",
+      filters: [{ name: "Electribe-Dateien", extensions: ["e2pattern", "e2sallpat"] }],
+      properties: ["openFile"],
+    });
+    return result;
+  });
+
   // ── Kollaborations-Server ─────────────────────────────────────────────────────
 
   ipcMain.handle("collab:start", async () => {

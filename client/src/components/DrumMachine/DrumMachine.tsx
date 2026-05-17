@@ -28,6 +28,12 @@ import { MixAssistantPanel } from "./MixAssistantPanel";
 import type { MixAnalysisInput, MixRecommendation } from "@/utils/mixAnalysis";
 import { parseMidiFile } from "../../../../src/utils/midiParser.js";
 import { parseFlp, flpPositionToStep, groupNotesByBar, calculateBarCount } from "@/utils/flpImport";
+import {
+  parseElectribeBank,
+  convertParsedPatternToSynthstudio,
+  type ParsedPattern,
+  type SynthstudioPatternImport,
+} from "@/utils/electribeImport";
 import { GranularSynthPanel } from "./GranularSynthPanel";
 import { DEFAULT_GRANULAR_PARAMS } from "@/audio/GranularEngine";
 import { PolyrhythmVisualizer } from "./PolyrhythmVisualizer";
@@ -260,8 +266,14 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
   const [showPolyrhythm, setShowPolyrhythm] = useState(false);
   const midiImportRef = useRef<HTMLInputElement>(null);
   const flpImportRef = useRef<HTMLInputElement>(null);
+  const electribeImportRef = useRef<HTMLInputElement>(null);
   const [selectedStep, setSelectedStep] = useState<{ partId: string; stepIndex: number } | null>(null);
   const [granularPartId, setGranularPartId] = useState<string | null>(null);
+  // TASK-237: nach Bank-Parse haelt der Dialog die Pattern-Liste fuer User-Auswahl.
+  const [electribePicker, setElectribePicker] = useState<{
+    fileName: string;
+    patterns: ParsedPattern[];
+  } | null>(null);
 
   // MIDI-Import: MIDI-Datei in aktives Pattern übertragen
   /**
@@ -435,6 +447,111 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
     reader.readAsArrayBuffer(file);
     e.target.value = "";
   }, [pattern, dm]);
+
+  // ── KORG Electribe Pattern-Import (TASK-237 / v2.88) ───────────────────────
+  //
+  // .e2pattern   → single pattern, sofort importieren
+  // .e2sallpat   → bank, zeigt Picker-Dialog mit allen Patterns drin
+  //
+  // Konvertierung via convertParsedPatternToSynthstudio:
+  //   - 16 Electribe-Parts → maximal pattern.parts.length Synthstudio-Drum-Parts
+  //   - Steps + Velocities → setPartSteps
+  //   - Volume/Pan → setPartVolume/setPartPan
+  //   - BPM → setPatternBpm
+  //   - Motion-Slots werden derzeit verworfen mit Console-Info — Mapping auf
+  //     useAutomationStore braucht App-Level-Wiring (Drum-Part-IDs unbekannt
+  //     auf Util-Ebene). Follow-up via App.tsx-Bridge.
+  const importElectribePatternIntoActive = useCallback((parsed: ParsedPattern, fileName: string) => {
+    if (!pattern) return;
+    const conv: SynthstudioPatternImport = convertParsedPatternToSynthstudio(parsed);
+
+    // Pattern-Name + BPM uebernehmen.
+    dm.renamePattern(pattern.id, conv.name || pattern.name);
+    dm.setPatternBpm(pattern.id, conv.bpm);
+
+    // Per-Part Steps + Volume + Pan (so viele Parts wie im aktiven Pattern existieren).
+    const partLimit = Math.min(conv.drumParts.length, pattern.parts.length);
+    for (let i = 0; i < partLimit; i++) {
+      const part = pattern.parts[i];
+      const src  = conv.drumParts[i];
+      // Steps duerfen kuerzer/laenger als das aktive Pattern sein — clampen.
+      const targetSteps = pattern.stepCount;
+      const steps = new Array<boolean>(targetSteps).fill(false);
+      const vels  = new Array<number>(targetSteps).fill(100);
+      const cap   = Math.min(targetSteps, src.steps.length);
+      for (let s = 0; s < cap; s++) {
+        steps[s] = src.steps[s];
+        vels[s]  = src.velocities[s];
+      }
+      dm.setPartSteps(part.id, steps, vels);
+      dm.setPartVolume(part.id, src.volume);
+      dm.setPartPan(part.id, src.pan);
+    }
+
+    const motionInfo = conv.automationLanes.length > 0
+      ? ` + ${conv.automationLanes.length} Motion-Lane(s)`
+      : "";
+    toast(
+      `Electribe importiert: ${fileName} → ${conv.name} (${partLimit}/16 Parts${motionInfo})`,
+      { kind: "success" }
+    );
+
+    // Motion-Sequencer-Daten als CustomEvent rausreichen — App.tsx bridge
+    // entscheidet, ob er sie in useAutomationStore einspeist (braucht Store-Ref).
+    if (conv.automationLanes.length > 0) {
+      try {
+        window.dispatchEvent(new CustomEvent("electribe:motion-lanes", {
+          detail: { patternId: pattern.id, lanes: conv.automationLanes },
+        }));
+      } catch (err) {
+        console.warn("[Electribe Import] CustomEvent dispatch failed", err);
+      }
+    }
+  }, [pattern, dm]);
+
+  // Pure-File-Variante (fuer Drag-Drop + File-Picker).
+  const handleElectribeFile = useCallback((file: File) => {
+    if (!pattern) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const buffer = ev.target?.result as ArrayBuffer;
+        const bank = parseElectribeBank(buffer);
+        if (!bank.patterns.length) {
+          toast(`Keine Patterns in: ${file.name}`, { kind: "warning" });
+          return;
+        }
+        if (bank.patterns.length === 1) {
+          // Single-Pattern → direkt importieren.
+          importElectribePatternIntoActive(bank.patterns[0], file.name);
+        } else {
+          // Bank → Picker-Dialog oeffnen.
+          setElectribePicker({ fileName: file.name, patterns: bank.patterns });
+        }
+      } catch (err) {
+        console.error("[Electribe Import]", err);
+        const msg = err instanceof Error ? err.message : String(err);
+        toast(`Electribe-Import fehlgeschlagen: ${msg}`, { kind: "error", duration: 5000 });
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  }, [pattern, importElectribePatternIntoActive]);
+
+  const handleElectribeImport = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) handleElectribeFile(file);
+    e.target.value = "";
+  }, [handleElectribeFile]);
+
+  // Drag-Drop fuer .e2pattern/.e2sallpat (Browser-Fallback).
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const file = (e as CustomEvent<File>).detail;
+      if (file instanceof File) handleElectribeFile(file);
+    };
+    window.addEventListener("electribe:fileImport", handler);
+    return () => window.removeEventListener("electribe:fileImport", handler);
+  }, [handleElectribeFile]);
 
   // Keyboard-Shortcuts werden zentral durch useKeyboardShortcuts in App.tsx gehandhabt
 
@@ -1033,6 +1150,24 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
           onChange={handleFlpImport}
         />
 
+        {/* KORG Electribe Pattern-Import (TASK-237) */}
+        <button
+          onClick={() => electribeImportRef.current?.click()}
+          title="KORG Electribe Pattern importieren (.e2pattern oder .e2sallpat)"
+          className="px-2 py-1 rounded text-[10px] bg-bg-elevated text-text-dim hover:bg-bg-elevated hover:text-text-primary transition-colors"
+          data-testid="electribe-import"
+        >
+          🎚 Electribe
+        </button>
+        <input
+          ref={electribeImportRef}
+          type="file"
+          accept=".e2pattern,.e2sallpat"
+          className="hidden"
+          onChange={handleElectribeImport}
+          data-testid="electribe-import-input"
+        />
+
         {/* Pattern Morph */}
         <button
           onClick={() => setShowMorph(prev => !prev)}
@@ -1477,6 +1612,55 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
           />
         );
       })()}
+
+      {/* ── Electribe-Bank-Pattern-Picker (TASK-237) ─────────────────────── */}
+      {electribePicker && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+          onClick={() => setElectribePicker(null)}
+          data-testid="electribe-picker-overlay"
+        >
+          <div
+            className="bg-bg-panel border border-border-color rounded-lg shadow-xl w-full max-w-md max-h-[80vh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-label="Electribe-Pattern auswählen"
+          >
+            <div className="px-4 py-3 border-b border-border-color">
+              <div className="text-sm font-bold text-text-primary">Electribe Bank importieren</div>
+              <div className="text-xs text-text-muted truncate">
+                {electribePicker.fileName} · {electribePicker.patterns.length} Pattern(s)
+              </div>
+            </div>
+            <div className="flex-1 overflow-y-auto p-2 space-y-1">
+              {electribePicker.patterns.map((p, idx) => (
+                <button
+                  key={idx}
+                  data-testid={`electribe-picker-pattern-${idx}`}
+                  onClick={() => {
+                    importElectribePatternIntoActive(p, electribePicker.fileName);
+                    setElectribePicker(null);
+                  }}
+                  className="w-full text-left px-3 py-2 rounded bg-bg-elevated hover:bg-bg-base text-text-primary text-xs flex items-center justify-between gap-2 transition-colors"
+                >
+                  <span className="font-mono text-text-dim w-8">#{idx + 1}</span>
+                  <span className="flex-1 truncate">{p.name}</span>
+                  <span className="text-text-muted text-[10px]">{p.bpm.toFixed(1)} BPM · {p.stepLength}st</span>
+                </button>
+              ))}
+            </div>
+            <div className="px-4 py-2 border-t border-border-color flex justify-end">
+              <button
+                onClick={() => setElectribePicker(null)}
+                className="px-3 py-1 rounded text-xs bg-bg-elevated text-text-muted hover:text-text-primary transition-colors"
+                data-testid="electribe-picker-cancel"
+              >
+                Abbrechen
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

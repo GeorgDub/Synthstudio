@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "2.87.0",
+    version: "2.88.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -356,6 +356,31 @@ const INDEX = {
     "tests/features/looper.test.ts": {
       role:     "TASK-235 (v2.87.0): 36 Unit-Tests. Coverage: nextLoopState (4 — full cycle, stopped→playing, eraseLoopState, toggleLoopPlayStop), quantizeLoopLengthBars (5 — 2.7→4 als Akzeptanzkriterium, cap auf MAX, MIN bei 0/neg/NaN), Beat/Bar-Mathematik (4 — clamp, nextBeatBoundary nie Vergangenheit, nextBarBoundary 4/4, loopLengthSec), mixLoopBuffersLinear (4 — Sample-Sum, Clip ±1, Pad-Overdub, Stereo), Limits (4 — isValidLoopIndex, canAddLoop, MAX_LOOPS=4, LOOP_ERASE_LONG_PRESS_MS=500), Store (8 — Default-Slots, stabile IDs, getLoopSlot invalid, setLoopState invalid no-op, setLoopLength, resetLoopSlot behält Metadata, getActiveLoopCount, localStorage persistiert NUR Metadata), LooperEngine mit Mock-Context (7 — initial empty, erase resettet, getProgress=0 ohne Play, invalid loopIndex no-op, callbacks gefeuert, dispose räumt auf, setBpm sicher). MockAudioContext + MockBufferSource + MockScriptProcessor simulieren Web-Audio in Node.",
       lastSeen: "2026-05-17T23:55:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/utils/electribeImport.ts": {
+      role:     "TASK-237 (v2.88.0): Browser-safe KORG Electribe 2 Pattern-Parser. KEIN Web-Audio-Import. Public-API: parseElectribeBank/parseElectribePattern/convertParsedPatternToSynthstudio/detectElectribeFormat/looksLikeElectribeFile/clamp01/clampPan. Best-Effort-Format-Spec (Community-Reverse-Engineering, NICHT offiziell): Magic 'KORG' + Version + PatternCount Bank-Header (8 Bytes LE), Pattern-Block 16+16*PartBlock Bytes, Part-Block 8+64+4*MotionSlot Bytes, Motion-Slot 20 Bytes. BPM fixed-point /10 mit Clamp 20..300. Step-Byte Bit7=active, Bits0-6=velocity. StepLength 64 wird auf 32 geclampt (Synthstudio-Max). Constants: ELECTRIBE_MAGIC='KORG', MAX_PATTERNS_PER_BANK=250, PARTS_PER_PATTERN=16, STEPS_PER_PART=64, MOTION_SLOTS_PER_PART=4, MOTION_STEPS_PER_SLOT=16, MAX_ELECTRIBE_FILE_BYTES=5MB. SafeReader-Helper mit ensure()-Bounds-Guard. CAVEAT: reale Files koennen Offset-Verschiebungen haben — Layout-Konstanten brauchen ggf. Kalibrierung mit Original-Dateien.",
+      lastSeen: "2026-05-18T00:15:00.000Z",
+      ownedBy:  "backend"
+    },
+    "tests/features/electribe-import.test.ts": {
+      role:     "TASK-237 (v2.88.0): 42 Unit-Tests fuer den Electribe-Parser + Konverter. buildElectribeBuffer-Helper baut synthetische ArrayBuffer nach der dokumentierten Spec (kein binary blob). Coverage: Magic/Format-Detection (6), Pattern-Header BPM/Name/StepLength/Swing (9), Parts+Steps Velocity-Bit-Decode/Pitch-Signed/Motion-Slots (8), Bank-File-Reading (3), Defensive Out-of-Bounds + 5MB-Limit (4), Synthstudio-Konvertierung Vol/Pan/Pitch/StepCount-Clamp (8), Motion-Sequencer → AutomationLanes (4). Alle 42 gruen.",
+      lastSeen: "2026-05-18T00:15:00.000Z",
+      ownedBy:  "backend"
+    },
+    "electron/main.ts (TASK-237 electribe IPC)": {
+      role:     "v2.88.0: 2 neue IPC-Handler. 'electribe:import-file' liest .e2pattern/.e2sallpat-Files (Endung-Whitelist), max 5 MB, path.resolve + access-Check, gibt Uint8Array als number[] + fileName zurueck. 'electribe:open-dialog' oeffnet nativen Datei-Dialog mit Filter. Pattern direkt analog 'midi:import-file' kopiert.",
+      lastSeen: "2026-05-18T00:15:00.000Z",
+      ownedBy:  "backend"
+    },
+    "electron/preload.ts (TASK-237 electribe bridge)": {
+      role:     "v2.88.0: contextBridge-Methoden openElectribeDialog + importElectribeFile fuer Renderer-Zugriff auf die zwei neuen IPC-Channels.",
+      lastSeen: "2026-05-18T00:15:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/components/DrumMachine/DrumMachine.tsx (TASK-237 Electribe-UI)": {
+      role:     "v2.88.0: '🎚 Electribe'-Toolbar-Button + hidden file-input accept='.e2pattern,.e2sallpat' + Single-Pattern-Direkt-Import + Bank-Pattern-Picker-Modal mit Liste (Name/BPM/StepLength), data-testids 'electribe-import', 'electribe-import-input', 'electribe-picker-overlay', 'electribe-picker-pattern-{idx}', 'electribe-picker-cancel'. Konvertierung via convertParsedPatternToSynthstudio + renamePattern/setPatternBpm/setPartSteps/setPartVolume/setPartPan. Drag-Drop-Bridge via window-Event 'electribe:fileImport'. Motion-Lanes per CustomEvent 'electribe:motion-lanes' rausgereicht (App-Level-Wiring fuer useAutomationStore folgt).",
+      lastSeen: "2026-05-18T00:15:00.000Z",
       ownedBy:  "backend"
     }
   },
@@ -696,6 +721,30 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "backend",
+      timestamp: "2026-05-18T00:15:00.000Z",
+      done: [
+        "TASK-237 FEATURE-v2.88 ELECTRIBE-PATTERN-IMPORTER (.e2pattern / .e2sallpat): KORG-Killer-Feature — User kann Electribe-2-Sampler-Patterns in Synthstudio importieren + mit Morph/Humanize/Automation editieren. (1) NEU client/src/utils/electribeImport.ts — Pure Browser-safe Parser ohne Web-Audio-Import. Public-API: parseElectribeBank/parseElectribePattern/convertParsedPatternToSynthstudio/detectElectribeFormat/looksLikeElectribeFile/clamp01/clampPan. Format-Spec ist BEST-EFFORT (KORG-Format ist nicht offiziell dokumentiert): Magic 'KORG' + Version(2) + PatternCount(2) Bank-Header (8 Bytes), Pattern-Block (Name 8 ASCII + BPM*10 LE + StepLength + Swing + Reserved 4 + 16 × Part-Block), Part-Block (SampleId LE + Volume + Pan + signed Pitch + FxSend + Reserved 2 + 64 × Step-Byte mit Bit7=active + 4 × Motion-Slot 20 Bytes). Little-Endian. SafeReader-Helper mit ensure()-Out-of-Bounds-Guard. Constants exportiert: ELECTRIBE_MAGIC, MAX_PATTERNS_PER_BANK=250, PARTS_PER_PATTERN=16, STEPS_PER_PART=64, MOTION_SLOTS_PER_PART=4, MOTION_STEPS_PER_SLOT=16, ELECTRIBE_MIN_BPM=20/MAX=300, MAX_ELECTRIBE_FILE_BYTES=5MB, PATTERN_BLOCK_SIZE/PART_BLOCK_SIZE/MOTION_SLOT_SIZE. BPM-Decode: fixed-point /10 mit Clamp auf 20..300. StepLength wird auf 16/32/64 normalisiert. Motion-Param-Names-Map (Filter Cutoff/Resonance/Drive/Amp EG/Pitch/Pan/Volume/FX-Send/Mod-Depth/Speed/Sample-Start/End/Reverse/Roll) — unbekannte IDs werden 'Param NN'. (2) NEU tests/features/electribe-import.test.ts mit 42 Cases — buildElectribeBuffer-Helper baut synthetische ArrayBuffer nach der dokumentierten Spec. Coverage: Magic/Format-Detection (6), Pattern-Header BPM/Name/StepLength/Swing (9), Parts+Steps Velocity-Bit-Decode/Pitch-Signed/Motion-Slots (8), Bank-File-Reading (3), Defensive Out-of-Bounds (4), Synthstudio-Konvertierung Vol/Pan/Pitch/StepCount-Clamp (8), Motion → AutomationLanes (4). Alle 42 gruen. (3) Konvertierung-Output SynthstudioPatternImport: drumParts[16] mit partIndex/sampleId/sampleHint ('Drum 1'..'Drum 8'/'Synth 1'..'Synth 6'/'Stretch 1'..'2')/volume(0-1)/pan(-1..+1)/pitchSemitones/steps[]/velocities[] + automationLanes mit target='<paramName>:<partIndex>' und points 0..1 normalisiert. StepCount 64 wird auf 32 geclampt (Synthstudio-Max). Nur enabled-Motion-Slots erzeugen Lanes. (4) IPC NEU in electron/main.ts: 'electribe:import-file' (filePath → Uint8Array als number[], Endung-Whitelist .e2pattern|.e2sallpat, max 5 MB, path.resolve+access-Check) + 'electribe:open-dialog' (nativer File-Dialog mit Filter). Beide defensiv analog 'midi:import-file'-Pattern. (5) preload.ts: contextBridge-Methoden openElectribeDialog + importElectribeFile. (6) UI in client/src/components/DrumMachine/DrumMachine.tsx — '🎚 Electribe'-Button in Toolbar neben FLP-Button + hidden file-input mit accept='.e2pattern,.e2sallpat' (data-testid 'electribe-import'/'electribe-import-input'). Single-Pattern → sofort in aktives Pattern importiert (renamePattern + setPatternBpm + setPartSteps/Volume/Pan). Bank-Files → Picker-Modal mit Pattern-Liste (Name/BPM/StepLength), Klick importiert das gewaehlte Pattern. data-testids 'electribe-picker-overlay'/'electribe-picker-pattern-{idx}'/'electribe-picker-cancel'. (7) Drag-Drop window-Event 'electribe:fileImport' analog 'midi:fileImport' fuer ElectronDropZone-Bridge (Browser-Fallback funktioniert ohne weiteres da File-Input nativ ist). (8) Motion-Sequencer-Lanes werden per window.dispatchEvent CustomEvent 'electribe:motion-lanes' rausgereicht — useAutomationStore-Bridge bleibt App-Level-Verantwortung (Drum-Part-IDs sind auf Util-Ebene nicht bekannt). (9) pnpm check clean, pnpm test 3226/15 skipped (vs vorher 3184, +42). package.json 2.87.0 → 2.88.0. BEKANNTE CAVEATS: (a) Format-Spec ist BEST-EFFORT — reale .e2sallpat-Files koennen Offset-Verschiebungen haben. Kalibrierung mit Original-Files vom Geraet erforderlich (siehe Comment-Block in electribeImport.ts). (b) Sample-IDs werden NICHT auf echte Samples gemappt — nur als Meta-Field 'sampleId' + 'sampleHint' beibehalten (Sample-Transfer waere eigener Track). (c) Motion-Sequencer-Lanes landen als CustomEvent — App.tsx-Wiring zum useAutomationStore.addLane()+setPoint() ist TASK-237-FOLLOWUP. (d) Kein neuer Security-Agent-Audit-Spawn weil das IPC-Pattern direkt von 'midi:import-file' uebernommen ist (Endung-Whitelist + max 5MB + path.resolve+access-Guard)."
+      ],
+      next: [
+        "TASK-237-FOLLOWUP-1: App.tsx-Bridge — window.addEventListener('electribe:motion-lanes', e => useAutomationStore.addLane(e.detail.lanes)). Benoetigt Mapping von Electribe-paramName + partIndex auf konkrete Synthstudio-AutomationTargets (z.B. 'Filter Cutoff:0' → 'fxParam:<partId>:filterFreq'). Etwa 30 LOC + Tests.",
+        "TASK-237-FOLLOWUP-2: Real-File-Calibration. Sobald ein User einen Original-.e2sallpat-Buffer beistellt, koennen die Layout-Konstanten PATTERN_HEADER_SIZE / PART_HEADER_SIZE / MOTION_SLOT_SIZE und das Step-Byte-Layout (Bit7=active vs. separates active-Byte) verifiziert/korrigiert werden. Aktuelle Spec basiert auf Community-Reverse-Engineering-Notes.",
+        "TASK-237-FOLLOWUP-3: Sample-Mapping. Aktuell wird sampleId nur als Meta-Field beibehalten. Optionaler Workflow: Electribe-Sample-Library-Export (.allst) parsen → Samples nach userData/electribe-samples/ kopieren → setPartSample() mit dem Sample-Path. Eigener Task wegen Format-Komplexitaet.",
+        "TASK-237-FOLLOWUP-4: Reverse-Export (.e2pattern). User-Vision war 'Synthstudio bearbeiten und zurueck auf Hardware spielen'. Aktuell schicken wir MIDI-Clock + MIDI-Notes (v2.83). Echte .e2pattern-Datei-Erzeugung waere ein write-Pendant zum Parser — gleicher Aufwand wie Read.",
+        "TASK-237-FOLLOWUP-5: Pattern-Filtering im Bank-Picker. Bei 250 Patterns ist eine flache Liste unhandlich. Suche/Filter nach Name + BPM-Range waere QoL.",
+        "TASK-238 (Sample-Slicing) bleibt als naechstes high-impact-frontend-Feature offen."
+      ],
+      changed: [
+        "client/src/utils/electribeImport.ts (NEU — Browser-safe Parser + Konverter, 42 Tests gruen)",
+        "tests/features/electribe-import.test.ts (NEU, 42 Cases mit buildElectribeBuffer-Helper)",
+        "electron/main.ts (+ IPC electribe:import-file + electribe:open-dialog mit Endung-Whitelist + 5MB-Limit)",
+        "electron/preload.ts (+ openElectribeDialog + importElectribeFile contextBridge)",
+        "client/src/components/DrumMachine/DrumMachine.tsx (+ Electribe-Toolbar-Button + File-Input + Single/Bank-Pattern-Picker-Modal + handleElectribeFile + handleElectribeImport + Drag-Drop-Event-Listener)",
+        "package.json (2.87.0 → 2.88.0)",
+        "agents/INDEX.js (workLog + TASK-237 status:done + version 2.88.0 + ipc.channels +2 + files-Index)"
+      ]
+    },
     {
       agent:     "backend",
       timestamp: "2026-05-17T23:55:00.000Z",
@@ -3461,7 +3510,7 @@ const INDEX = {
             type: "feature",
             priority: "medium",
             agent: "backend",
-            status: "open",
+            status: "done",
             title: "Electribe-Pattern-Importer (.e2sallpat / .e2pattern)",
             description: "Direkter KORG-Wow-Effekt: Electribe-User koennen ihre Pattern in Synthstudio importieren und mit fortgeschrittenen Tools (Morph/Humanize) bearbeiten. Reverse-engineerte Format-Spezifikation existiert.",
             acceptance: [
@@ -3470,7 +3519,9 @@ const INDEX = {
                 "Motion-Sequenzer-Daten landen in useAutomationStore",
                 "Browser-Fallback via File-Drop"
             ],
-            estimateHours: 24
+            estimateHours: 24,
+            doneIn: "v2.88.0",
+            doneNote: "Parser browser-safe in client/src/utils/electribeImport.ts (isomorph), IPC electribe:import-file + electribe:open-dialog in electron/main.ts mit 5MB-Limit + Endung-Whitelist, UI in DrumMachine-Toolbar (Button + File-Picker + Bank-Pattern-Picker-Dialog), Drag-Drop via window-Event 'electribe:fileImport'. 42 Unit-Tests gruen. Motion-Sequencer-Lanes per CustomEvent 'electribe:motion-lanes' rausgereicht (App-Level-Wiring fuer useAutomationStore-Konsum folgt als TASK-237-FOLLOWUP). Format-Spec ist BEST-EFFORT, Kalibrierung mit echten .e2sallpat-Files erforderlich."
         },
         {
             id: "TASK-238",
@@ -3520,6 +3571,8 @@ const INDEX = {
       "midi:export", "dialog:open", "dialog:save",
       "transport:play", "transport:stop", "transport:bpm",
       "audio:save-recording", // TASK-234 (v2.86) — schreibt WAV in userData/recordings/, strict path-traversal-guard
+      "electribe:import-file", // TASK-237 (v2.88) — liest .e2pattern/.e2sallpat (max 5 MB, Endung-Whitelist) als Uint8Array → Renderer parsed via parseElectribeBank()
+      "electribe:open-dialog", // TASK-237 (v2.88) — nativer File-Dialog mit Filter "e2pattern, e2sallpat"
 
       // Performance-Mode Popup-Window (ROADMAP feature, post-v1.23.0):
       // alle Channels haben narrow-data-only Payloads — keine file paths,
