@@ -20,6 +20,13 @@ import { toast } from "@/store/useToastStore";
 import { FX_PARAM_RANGES } from "@/audio/AudioEngine";
 import { useScriptStore } from "@/store/useScriptStore";
 import {
+  loadPadBankSlots,
+  savePadBankSlots,
+  defaultPadBankSlots,
+  type PadBankSlot,
+  type PadBankSlotKind,
+} from "@/utils/padBankPersistence";
+import {
   useUserMidiTemplates,
   saveUserMidiTemplate,
   deleteUserMidiTemplate,
@@ -164,16 +171,13 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
   // v2.79: Pad-Bank Builder — pro Pad einen beliebigen Target (perf-pad,
   // macro, script, atomic action) zuweisen, dann Auto-Learn fährt sie in
   // Reihe ab. Default: 16 perf-pad-Slots (Pad N → Performance-Pad N).
-  type PadBankSlotKind = "perf-pad" | "macro" | "script" | "action";
-  interface PadBankSlot {
-    kind: PadBankSlotKind;
-    /** Perf-Pad: 0..15, Macro: 0..7, Script: scriptId, Action: action-key. */
-    param: string;
-  }
+  // v2.80: localStorage-Persistenz via loadPadBankSlots/savePadBankSlots
+  //        (Schema + Helpers in utils/padBankPersistence.ts).
   const [padBankBuilderOpen, setPadBankBuilderOpen] = useState(false);
-  const [padBankSlots, setPadBankSlots] = useState<PadBankSlot[]>(() =>
-    Array.from({ length: 16 }, (_, i) => ({ kind: "perf-pad" as const, param: String(i) }))
-  );
+  const [padBankSlots, setPadBankSlots] = useState<PadBankSlot[]>(() => loadPadBankSlots());
+  useEffect(() => {
+    savePadBankSlots(padBankSlots);
+  }, [padBankSlots]);
   // v1.73: Export der aktuellen Mappings als JSON-Template.
   // v1.79: Default-Filename basiert auf dem aktiven MIDI-Device-Namen.
   const [exportName, setExportName] = useState<string>(() => "Mein MIDI-Setup");
@@ -514,7 +518,7 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
     );
   }
   function resetPadBankSlots() {
-    setPadBankSlots(Array.from({ length: 16 }, (_, i) => ({ kind: "perf-pad" as const, param: String(i) })));
+    setPadBankSlots(defaultPadBankSlots());
   }
 
   const autoLearnPresets: Array<{ label: string; description: string; build: () => AutoLearnEntry[] }> = [
