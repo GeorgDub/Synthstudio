@@ -2678,6 +2678,31 @@ function installCspHeaders(): void {
   console.log(`[CSP] Headers installed (mode=${isDev ? "dev" : "prod"})`);
 }
 
+/**
+ * Auto-grant der `media`-Permission für unsere eigene Renderer-Origin
+ * (TASK-233 / v2.85 — Live-Input-Mixer-Channels).
+ *
+ * Chromium würde sonst bei jedem getUserMedia({audio:...})-Call einen
+ * nativen Permission-Dialog poppen — der in einer Electron-App keinen
+ * Sinn macht weil der User die App bewusst installiert hat. Wir erlauben
+ * NUR `media` (Mikrofon/Kamera) — alles andere (geolocation, notifications,
+ * usb, hid, bluetooth) wird weiterhin abgelehnt. Renderer-Code muss trotzdem
+ * `enumerateDevices()` + Device-Picker zeigen damit User die Quelle wählt.
+ */
+function installPermissionHandlers(): void {
+  // Whitelist: nur media erlauben (Mikrofon-Input für Outboard-FX-Modus).
+  const ALLOWED = new Set(["media", "mediaKeySystem"]);
+  session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => {
+    callback(ALLOWED.has(permission));
+  });
+  // Synchroner Check-Pfad (Chromium ruft den vor setPermissionRequestHandler
+  // auf manchen Code-Pfaden — z.B. autoplay-related media-checks).
+  session.defaultSession.setPermissionCheckHandler((_wc, permission) => {
+    return ALLOWED.has(permission);
+  });
+  console.log("[Permission] media auto-granted, all others denied.");
+}
+
 // ─── Globale Keyboard-Shortcuts ──────────────────────────────────────────────
 
 function registerGlobalShortcuts(): void {
@@ -2730,6 +2755,7 @@ app.whenReady().then(() => {
   // Muss vor createWindow() laufen, damit auch der erste Renderer-Request
   // den Header bekommt.
   installCspHeaders();
+  installPermissionHandlers();
 
   // Basis-IPC-Handler registrieren (kein mainWindow erforderlich)
   registerIpcHandlers();

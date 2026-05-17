@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "2.83.0",
+    version: "2.85.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -226,6 +226,36 @@ const INDEX = {
     "tests/features/nano-kontrol-led.test.ts": {
       role:     "TASK-231 (v2.84.0): 23 Unit-Tests. Coverage: buildNanoKontrolLed (2), NanoKontrolFeedback.syncMixer (8 — Mute-LED-Toggle, Solo-LED-Toggle, Full-Sync, no-op-disabled, allLedsOff bei setEnabled(false), Exception-Swallow, no-Sender, Diff-Sync), sendNanoKontrolFullSync (3), sendNanoKontrolAllLedsOff (1), sendNanoKontrolLed (2), cycleScene (3 — vorwärts/rückwärts/leer), Persistenz (3 mit localStorage-Shim für Node-env).",
       lastSeen: "2026-05-17T23:05:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/audio/AudioEngine.ts (TASK-233 Live-Input)": {
+      role:     "v2.85.0: +6 Public-API-Methoden für Live-Input-Channels (Outboard-FX-Box). attachLiveInput(channelId, deviceId) → getUserMedia({audio:{deviceId,echoCancellation:false,...}}) → MediaStreamAudioSourceNode → DelayNode(manualLatencyMs) → _getOrCreateChannelNodes(channelId, DEFAULT_CHANNEL_FX).input → existing FX-Chain. detachLiveInput stoppt Stream-Tracks (no Zombie). setLiveInputLatencyMs/getLiveInputLatencyMs persistieren auch ohne aktiven Stream. getEstimatedSystemLatencyMs liefert baseLatency+outputLatency in ms als Vorschlag. Maps: _liveInputs (id → {stream, source, latencyDelay, deviceId}), _liveInputLatencyMs (id → ms).",
+      lastSeen: "2026-05-17T23:20:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/store/useLiveInputStore.ts": {
+      role:     "TASK-233 (v2.85.0): Custom Observer Store für Live-Input-Mixer-Channels. MAX_LIVE_INPUT_CHANNELS=4, DEFAULT_LIVE_INPUT_VOLUME=0.5, ID-Prefix 'liveinput:', localStorage-Key 'synthstudio:liveinputs:v1'. Schema: {id, name, deviceId|null, deviceLabel?, volume, pan, muted, soloed, sends:{reverb,delay}, latencyCompensationMs}. API: addLiveInputChannel(overrides?)+throw bei MAX, removeLiveInputChannel, updateLiveInputChannel (Patch-Semantik, ID-Schutz, alle Werte werden auf valid-Range geklemmt), setLiveInputSoloed (additive vs exclusive DAW-Convention), loadLiveInputChannels (Project-Restore filtert invalide + cappt), clearLiveInputChannels, isValidChannel Type-Guard, useLiveInputStore React-Hook.",
+      lastSeen: "2026-05-17T23:20:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/components/Mixer/LiveInputStrip.tsx": {
+      role:     "TASK-233 (v2.85.0): Mixer-Channel-Strip für Live-Inputs. Device-Picker via navigator.mediaDevices.enumerateDevices()+devicechange-Listener (Hot-Plug). Status-LED grün/rot je nach AudioEngine.isLiveInputAttached. Fader/Pan/Mute/Solo/Sends + Latency-Slider 0..200ms + Rename + Remove. data-testids: liveinput-strip-{id}, liveinput-device-select-{id}, liveinput-latency-{id}. 'IN'-Badge accent-secondary unterscheidet visuell von drum-parts/audio-tracks. Permission-Denied erscheint inline.",
+      lastSeen: "2026-05-17T23:20:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/components/Mixer/MixerView.tsx (TASK-233 Live-Input)": {
+      role:     "v2.85.0: '+ Live Input'-Button im Header (data-testid mixer-add-live-input) + Render-Loop für LiveInputStrips vor Master. liveInputStore = useLiveInputStore() abonniert den Store-Singleton. Counter ({n}/{MAX}) zeigt aktuelle Belegung.",
+      lastSeen: "2026-05-17T23:20:00.000Z",
+      ownedBy:  "backend"
+    },
+    "electron/main.ts (TASK-233 Permission-Handler)": {
+      role:     "v2.85.0: installPermissionHandlers() registriert session.defaultSession.setPermissionRequestHandler + setPermissionCheckHandler mit Whitelist {media, mediaKeySystem}. Damit auto-grants Electron die Mikrofon-Berechtigung beim ersten getUserMedia ohne nativen Dialog — der User hat die App ja bewusst installiert. Alle anderen Permissions (geolocation, notifications, usb, hid, bluetooth) werden weiterhin abgelehnt. Aufruf in app.whenReady direkt nach installCspHeaders.",
+      lastSeen: "2026-05-17T23:20:00.000Z",
+      ownedBy:  "backend"
+    },
+    "tests/features/live-input-channel.test.ts": {
+      role:     "TASK-233 (v2.85.0): 25 Unit-Tests. Coverage: addLiveInputChannel mit Defaults+Overrides (2), removeLiveInputChannel inkl. no-op-unknown (2), updateLiveInputChannel Volume/Pan/Mute/Solo/sends-Patch + ID-Schutz (3), setLiveInputSoloed additive vs exclusive (2), Limit-Wurf bei MAX (1), Persistenz latencyCompensationMs+deviceId+Round-Trip (3), loadLiveInputChannels filtert invalide+cappt (1), isValidChannel Type-Guard (2), Clamp-Verhalten Volume/Pan/Latency/Sends (4), AudioEngine-Public-API-Vertrag (5 — Stream-Pipeline ist Playwright-Scope, Node-env hat kein navigator.mediaDevices). localStorage-Shim für Node-env.",
+      lastSeen: "2026-05-17T23:20:00.000Z",
       ownedBy:  "backend"
     }
   },
@@ -566,6 +596,29 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "backend",
+      timestamp: "2026-05-17T23:20:00.000Z",
+      done: [
+        "TASK-233 FEATURE-v2.85 LIVE-INPUT-CHANNEL (Outboard-FX-Box-Modus): User-Vision war Synthstudio als externe FX-Box für KORG-Hardware (Electribe 2 / ESX) via USB-Audio nutzen. Architektur identisch zu drum-parts/audio-tracks: jeder Live-Input-Channel bekommt _getOrCreateChannelNodes() mit der vollen Insert-/Send-FX-Chain (EQ/Filter/Distortion/Comp/Delay/Reverb + globale Buses + Sidechain). Damit funktioniert FxPanel out-of-the-box ohne Umstrukturierung. (1) AudioEngine.ts +6 Public-API-Methoden (attachLiveInput/detachLiveInput/setLiveInputLatencyMs/getLiveInputLatencyMs/isLiveInputAttached/getEstimatedSystemLatencyMs/getAttachedLiveInputChannelIds) + interne Maps _liveInputs (stream/source/latencyDelay/deviceId) und _liveInputLatencyMs (persistiert auch ohne Stream). Routing: getUserMedia → MediaStreamAudioSourceNode → DelayNode (manual PDC 0-1s) → channelNodes.input → existing FX-Chain → master. Defensiv: alte Streams werden bei Re-Attach getrennt, alle Tracks via stream.getTracks().forEach(stop()) cleanup. Constraints sind echoCancellation/noiseSuppression/autoGainControl=false damit Chrome unsere Outboard-Audio nicht zerstört. (2) NEU: client/src/store/useLiveInputStore.ts — Custom Observer Store (analog useAudioTrackStore-Pattern, KEIN Zustand-npm) mit MAX_LIVE_INPUT_CHANNELS=4, DEFAULT_LIVE_INPUT_VOLUME=0.5 (~-6dB Headroom), localStorage-Persistenz key 'synthstudio:liveinputs:v1'. Schema enthält id (Prefix 'liveinput:'), deviceId|null, deviceLabel, volume, pan, muted, soloed, sends.{reverb,delay}, latencyCompensationMs. Volume/Pan/Latency/Send-Clamps in update(). Public-API: addLiveInputChannel, removeLiveInputChannel, updateLiveInputChannel, setLiveInputSoloed (additive vs exclusive), loadLiveInputChannels (Project-Restore), clearLiveInputChannels, isValidChannel Type-Guard, __resetForTests. (3) NEU: client/src/components/Mixer/LiveInputStrip.tsx — eigener Channel-Strip mit Device-Picker (navigator.mediaDevices.enumerateDevices+devicechange-Listener für Hot-Plug), Status-LED (grün=attached / rot=off), Fader, Pan, Mute/Solo, Reverb/Delay-Sends, Latency-Slider 0-200ms, Rename-Input, Remove-Button (ruft auch AudioEngine.detachLiveInput). 'IN'-Badge in accent-secondary unterscheidet visuell von drum-parts/audio-tracks. Permission-denied wird im Strip selbst angezeigt. data-testid 'liveinput-strip-{id}', 'liveinput-device-select-{id}', 'liveinput-latency-{id}'. (4) MixerView.tsx: '+ Live Input'-Button im Header (neben '+ Audio Track', auch mit MAX-Counter), data-testid 'mixer-add-live-input'. Rendert LiveInputStrip vor dem Master-Channel — gleiche Position wie AudioTrackStrips. (5) electron/main.ts: installPermissionHandlers() registriert session.setPermissionRequestHandler + setPermissionCheckHandler mit Whitelist {media, mediaKeySystem} — der Rest (geolocation/notifications/usb/hid/bluetooth) wird weiterhin abgelehnt. Damit muss der User in Electron NICHT einen nativen Permission-Dialog beklicken (UX-Polish). (6) Tests: tests/features/live-input-channel.test.ts NEU mit 25 Cases: add/remove (5), update inkl. ID-Schutz (3), Solo additive/exclusive (2), Limit-Wurf (1), Persistenz inkl. latencyCompensationMs + deviceId Round-Trip (4), isValidChannel Type-Guard (2), Clamp-Verhalten Volume/Pan/Latency/Sends (4), AudioEngine-Public-API-Vertrag (4 — Node-env-Limit: Stream-Pipeline ist Playwright-E2E). pnpm check clean. pnpm test 3113/15 skipped (vs vorher 3088/15, +25). package.json 2.84.0 → 2.85.0."
+      ],
+      next: [
+        "TASK-233-FOLLOWUP-1: vollautomatische PDC: alle drum-parts + audio-tracks bekommen einen Pre-Master-DelayNode gleich der Live-Input-Latenz. Aktueller MVP delayt nur den Live-Input selbst (positive Verzögerung), kann aber nicht für 'Live-Input führt vor Drums' kompensieren. Vorschlag: Master-Bus-Delay statt Live-Input-Delay wenn negative Werte gewünscht.",
+        "TASK-233-FOLLOWUP-2: .synth-File-Persistenz für Live-Input-Channels (analog padBank in v1.17). SYNTH_FILE_VERSION bump 1.17→1.18 + parseProject Migration + restoreProject loadLiveInputChannels-Wiring. Aktuell nur localStorage — Channel überlebt Projekt-Wechsel nicht.",
+        "TASK-233-FOLLOWUP-3: Right-Click MIDI-Learn für Live-Input Volume/Pan/Mute/Solo + Latency-Slider. Foundation in useMidiLearn ist da, müsste nur in LiveInputStrip wie in MixerChannel verdrahtet werden.",
+        "TASK-234 (Audio-Recording im Mixer / Record-Arm) ist jetzt unblocked — depends-on TASK-233 ist done. Reuse Streams aus _liveInputs für MediaRecorder."
+      ],
+      changed: [
+        "client/src/audio/AudioEngine.ts (+ Live-Input-API: attach/detach/setLatencyMs + 2 interne Maps)",
+        "client/src/store/useLiveInputStore.ts (NEU, Custom Observer Store mit Persistenz + Clamps + Type-Guard)",
+        "client/src/components/Mixer/LiveInputStrip.tsx (NEU, Channel-Strip mit Device-Picker + Status-LED + Latency-Slider)",
+        "client/src/components/Mixer/MixerView.tsx (+ '+ Live Input'-Button + Render-Loop für LiveInputStrips)",
+        "electron/main.ts (+ installPermissionHandlers — Whitelist {media, mediaKeySystem})",
+        "tests/features/live-input-channel.test.ts (NEU, 25 Cases)",
+        "package.json (2.84.0 → 2.85.0)",
+        "agents/INDEX.js (workLog + TASK-233 status:done + files-Index)"
+      ]
+    },
     {
       agent:     "backend",
       timestamp: "2026-05-17T23:05:00.000Z",
@@ -3166,7 +3219,9 @@ const INDEX = {
             type: "feature",
             priority: "high",
             agent: "backend",
-            status: "open",
+            status: "done",
+            doneIn: "v2.85.0",
+            doneAt: "2026-05-17T23:20:00.000Z",
             title: "USB-Audio-Input als Mixer-Channel (Outboard-FX-Modus)",
             description: "Macht Synthstudio zur Outboard-FX-Box fuer KORG-Hardware. getUserMedia({audio:{deviceId}}) als zusaetzlicher Mixer-Track mit voller FX-Chain (EQ/Comp/Reverb/Delay). PDC fuer Latenz-Alignment.",
             acceptance: [
@@ -3175,7 +3230,11 @@ const INDEX = {
                 "FX-Chain laeuft auf Live-Input (FxPanel funktioniert)",
                 "Plugin-Delay-Compensation gegen drum-part Output kompensiert"
             ],
-            estimateHours: 20
+            estimateHours: 20,
+            uxCaveats: [
+                "PDC ist MANUELL (Slider 0..200ms pro Channel) statt automatisch — voller PDC-Pfad muesste alle anderen Busse delayen (komplexer, post-MVP).",
+                "User muss in den Browser/Electron-Permission-Dialog 'Allow' fuer Mikrofon einmal klicken. In Electron auto-granted via setPermissionRequestHandler (whitelist: media)."
+            ]
         },
         {
             id: "TASK-234",

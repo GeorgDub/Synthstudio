@@ -2715,6 +2715,158 @@ class AudioEngineClass {
       this._envelopeLevels.delete(partId);
     }
   }
+
+  // ─── Live-Input Channels (TASK-233 / v2.85) ─────────────────────────────────
+  //
+  // Outboard-FX-Box-Modus: User schickt KORG-Hardware (Electribe / ESX) per
+  // USB-Audio nach Synthstudio. Audio durchläuft die volle Insert-/Send-FX-Chain
+  // wie ein drum-part und geht wieder raus. Routing:
+  //
+  //   getUserMedia(deviceId) → MediaStream
+  //     → MediaStreamSource
+  //     → DelayNode (latencyCompensationMs / 1000)  // manual PDC
+  //     → channelNodes.input  (full FX-chain reused)
+  //     → master
+  //
+  // PDC (Plugin-Delay-Compensation) ist *manuell* — der User justiert die
+  // Latenz pro Channel via UI-Slider. Volle automatische PDC würde alle
+  // anderen Bus-Pfade kompensieren müssen (komplex, später). MVP: hier wird
+  // nur dieser Live-Input verzögert; für negative Kompensation (Live-Input
+  // führt vor Drums) müsste man stattdessen die Drum-Busse delayen — aktuell
+  // nicht implementiert (Default-Latenz vom Audio-Interface ist immer positiv,
+  // sodass die meisten User mit 0–200 ms Delay auskommen).
+
+  /** Per-Channel Live-Input-Streams + Nodes (TASK-233). */
+  private _liveInputs = new Map<
+    string,
+    {
+      stream: MediaStream;
+      source: MediaStreamAudioSourceNode;
+      latencyDelay: DelayNode;
+      deviceId: string;
+    }
+  >();
+
+  /** Persist last latency-Wert pro Channel auch wenn Stream gerade nicht hängt. */
+  private _liveInputLatencyMs = new Map<string, number>();
+
+  /**
+   * Verbindet ein Audio-Input-Device als Mixer-Channel mit voller FX-Chain.
+   * Idempotent: zweiter Aufruf für denselben channelId stoppt erst den
+   * vorhandenen Stream + erzeugt einen neuen (Device-Switch).
+   *
+   * @throws Error wenn getUserMedia nicht verfügbar (kein https / kein Mic-API)
+   * @throws DOMException wenn der User die Permission verweigert
+   *                       — caller muss in try/catch.
+   */
+  async attachLiveInput(channelId: string, deviceId: string): Promise<void> {
+    await this.init();
+    if (!this.ctx) throw new Error("AudioContext not initialised");
+
+    if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
+      throw new Error("MediaDevices.getUserMedia() is not available in this environment");
+    }
+
+    // Bei Re-Attach (Device-Switch) erst altes cleanup
+    if (this._liveInputs.has(channelId)) {
+      this.detachLiveInput(channelId);
+    }
+
+    // Standard-Constraints: deaktivierte Browser-Processing für Outboard-FX
+    // (User will Raw-Audio durch unsere FX-Chain — kein Echo-Cancellation,
+    // sonst zerstört Chrome unser Audio).
+    const constraints: MediaStreamConstraints = {
+      audio: {
+        deviceId: { exact: deviceId },
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: false,
+      } as MediaTrackConstraints,
+    };
+
+    const stream = await navigator.mediaDevices.getUserMedia(constraints);
+
+    // Channel-Nodes anlegen (FX-Chain wie drum-part) + Default-Volume/Pan setzen
+    this._getOrCreateChannelNodes(channelId, DEFAULT_CHANNEL_FX);
+
+    const source = this.ctx.createMediaStreamSource(stream);
+    const latencyDelay = this.ctx.createDelay(1.0); // max 1s manuelle Kompensation
+    const ms = this._liveInputLatencyMs.get(channelId) ?? 0;
+    latencyDelay.delayTime.value = Math.max(0, Math.min(1, ms / 1000));
+
+    // Routing: source → latency → channel input → existing FX-Chain → master
+    const nodes = this.channelNodes.get(channelId);
+    if (!nodes) {
+      // sollte nicht passieren weil _getOrCreateChannelNodes oben angelegt hat
+      stream.getTracks().forEach(t => t.stop());
+      throw new Error(`channelNodes missing for ${channelId}`);
+    }
+    source.connect(latencyDelay);
+    latencyDelay.connect(nodes.input);
+
+    this._liveInputs.set(channelId, { stream, source, latencyDelay, deviceId });
+  }
+
+  /**
+   * Trennt einen Live-Input + stoppt alle Stream-Tracks (verhindert Zombie-
+   * Streams mit aktiver Hardware-Indikator-LED am Audio-Interface).
+   * Idempotent: no-op wenn channelId unbekannt.
+   */
+  detachLiveInput(channelId: string): void {
+    const entry = this._liveInputs.get(channelId);
+    if (!entry) return;
+    try { entry.source.disconnect(); } catch { /* ignore */ }
+    try { entry.latencyDelay.disconnect(); } catch { /* ignore */ }
+    try { entry.stream.getTracks().forEach(t => t.stop()); } catch { /* ignore */ }
+    this._liveInputs.delete(channelId);
+  }
+
+  /**
+   * Setzt die manuelle Latenz-Kompensation in ms (0..1000) für einen
+   * Live-Input-Channel. Wert wird auch persistiert wenn aktuell kein
+   * Stream attached ist (User-Setting überlebt Detach/Re-Attach).
+   */
+  setLiveInputLatencyMs(channelId: string, ms: number): void {
+    const clamped = Math.max(0, Math.min(1000, ms));
+    this._liveInputLatencyMs.set(channelId, clamped);
+    const entry = this._liveInputs.get(channelId);
+    if (entry && this.ctx) {
+      entry.latencyDelay.delayTime.setTargetAtTime(
+        clamped / 1000,
+        this.ctx.currentTime,
+        0.01,
+      );
+    }
+  }
+
+  /** Liefert die aktuell gesetzte Latenz-Kompensation (0 wenn unbekannt). */
+  getLiveInputLatencyMs(channelId: string): number {
+    return this._liveInputLatencyMs.get(channelId) ?? 0;
+  }
+
+  /** True wenn ein aktiver MediaStream für diesen Channel hängt. */
+  isLiveInputAttached(channelId: string): boolean {
+    return this._liveInputs.has(channelId);
+  }
+
+  /**
+   * Liefert eine geschätzte Audio-System-Latenz in ms (Base + Output Latency).
+   * Default-Vorschlag für den User wenn er noch nicht manuell kalibriert hat.
+   * Liefert 0 wenn AudioContext fehlt oder Browser die Felder nicht hat.
+   */
+  getEstimatedSystemLatencyMs(): number {
+    const ctx = this.ctx;
+    if (!ctx) return 0;
+    // baseLatency: hardware buffer (~2–10 ms); outputLatency: full path
+    const base = (ctx as AudioContext & { baseLatency?: number }).baseLatency ?? 0;
+    const out  = (ctx as AudioContext & { outputLatency?: number }).outputLatency ?? 0;
+    return Math.round((base + out) * 1000);
+  }
+
+  /** Liste der aktuell angeschlossenen Live-Input-Channels (für Cleanup-Loops). */
+  getAttachedLiveInputChannelIds(): string[] {
+    return Array.from(this._liveInputs.keys());
+  }
 }
 
 export const AudioEngine = new AudioEngineClass();

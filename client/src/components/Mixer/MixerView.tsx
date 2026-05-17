@@ -20,6 +20,12 @@ import type { PartData } from "@/audio/AudioEngine";
 // ChannelInspector verschoben (siehe components/Mixer/ChannelInspector.tsx).
 import { ExportPanel } from "./ExportPanel";
 import { AudioTrackStrip, computePeaksFromBuffer } from "./AudioTrackStrip";
+import { LiveInputStrip } from "./LiveInputStrip";
+import {
+  useLiveInputStore,
+  addLiveInputChannel,
+  MAX_LIVE_INPUT_CHANNELS,
+} from "@/store/useLiveInputStore";
 import {
   useAudioTrackStore,
   addAudioTrack,
@@ -391,6 +397,8 @@ export function MixerView({ dm, mixer, samples = [], bpm = 120, projectName = "S
   // frische `runtime`-Snapshots via getRuntimeState().
   const audioTrackStore = useAudioTrackStore();
   const audioTracks = audioTrackStore.tracks;
+  const liveInputStore = useLiveInputStore();
+  const liveInputChannels = liveInputStore.channels;
   const electron = useElectron();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [addError, setAddError] = useState<string | null>(null);
@@ -649,6 +657,36 @@ export function MixerView({ dm, mixer, samples = [], bpm = 120, projectName = "S
           </span>
         </button>
 
+        {/* Add Live-Input (USB-Audio von KORG-Hardware etc., TASK-233 / v2.85) */}
+        <button
+          type="button"
+          onClick={() => {
+            if (liveInputChannels.length >= MAX_LIVE_INPUT_CHANNELS) {
+              setAddError(`Max ${MAX_LIVE_INPUT_CHANNELS} Live-Input-Kanäle erreicht`);
+              return;
+            }
+            try {
+              addLiveInputChannel();
+            } catch (err) {
+              setAddError(err instanceof Error ? err.message : "Konnte Live-Input nicht anlegen");
+            }
+          }}
+          disabled={liveInputChannels.length >= MAX_LIVE_INPUT_CHANNELS}
+          data-testid="mixer-add-live-input"
+          aria-label="Live-Input hinzufügen"
+          title={
+            liveInputChannels.length >= MAX_LIVE_INPUT_CHANNELS
+              ? `Max ${MAX_LIVE_INPUT_CHANNELS} Live-Input-Kanäle erreicht`
+              : "USB-Audio-Eingang als Mixer-Channel (Outboard-FX-Modus)"
+          }
+          className="px-2 py-0.5 text-[10px] rounded border border-accent-primary/50 text-accent-primary bg-accent-primary/10 hover:bg-accent-primary/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          + Live Input
+          <span className="ml-1 text-text-dim">
+            ({liveInputChannels.length}/{MAX_LIVE_INPUT_CHANNELS})
+          </span>
+        </button>
+
         {/* Time-Stretch Counter (TASK-121) – nur sichtbar, wenn Audio-Tracks existieren */}
         {audioTracks.length > 0 && (() => {
           const tsCount = countTimestretchTracks();
@@ -811,6 +849,11 @@ export function MixerView({ dm, mixer, samples = [], bpm = 120, projectName = "S
                 runtime={getRuntimeState(track.id)}
                 isPlaying={AudioEngine.isPlaying}
               />
+            ))}
+
+            {/* Live-Input-Channel-Strips (USB-Audio von KORG etc., TASK-233) */}
+            {liveInputChannels.map(ch => (
+              <LiveInputStrip key={ch.id} channel={ch} />
             ))}
 
             {/* Master-Kanal */}
