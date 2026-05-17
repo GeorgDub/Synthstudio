@@ -114,12 +114,17 @@ export interface MidiNoteMapping {
   label: string;
   /**
    * v2.78: Optional — wenn gesetzt (0..PERF_PAD_COUNT-1), triggert die Note
-   * NICHT die Part-Spur sondern das Performance-Mode-Pad mit diesem Index.
-   * Beispiel: Korg Electribe 2 schickt 16 Note-On für ihre Pads (Channel 10),
-   * jeder davon mappt auf perf-pad 0..15. partId/label bleiben fürs UI-Display
-   * + Backwards-Compat (Pre-v2.78-Files haben dieses Feld nicht).
+   * das Performance-Mode-Pad mit diesem Index statt einer Part-Spur.
    */
   performancePadIndex?: number;
+  /**
+   * v2.79: Optional — wenn gesetzt, wird die Note durch den vollen
+   * applyMapping-Pfad geleitet (analog zu CC-Mappings). Damit lassen sich
+   * Chains, Scripts, Macros, scenelaunch, patternNext etc. auf einzelne
+   * Hardware-Pads legen. Precedence: target > performancePadIndex > partId
+   * (Backwards-Compat). partId/label bleiben fürs UI-Display gefüllt.
+   */
+  target?: MidiLearnTarget;
 }
 
 /**
@@ -133,12 +138,14 @@ export type AutoLearnEntry =
       kind: "note";
       partId: string;
       partName: string;
-      /**
-       * v2.78: Optional — wenn gesetzt, wird die captured Note nicht als
-       * Part-Trigger gebunden sondern als Performance-Pad-Trigger. partId +
-       * partName bleiben fürs UI-Label (z.B. "Perf-Pad 1") und Schema-Compat.
-       */
+      /** v2.78: captured Note → Performance-Pad-Trigger statt Part-Trigger. */
       performancePadIndex?: number;
+      /**
+       * v2.79: captured Note → beliebiges MidiLearnTarget (Chain/Script/Macro/
+       * scenelaunch/etc.) via applyMapping. Precedence im resultierenden
+       * MidiNoteMapping: target > performancePadIndex > partId.
+       */
+      target?: MidiLearnTarget;
     };
 
 export interface MidiState {
@@ -429,6 +436,8 @@ export function nextAutoLearnEntry(
         ...(entry.performancePadIndex !== undefined
           ? { performancePadIndex: entry.performancePadIndex }
           : {}),
+        // v2.79: optionalen generischen Target mit-übernehmen
+        ...(entry.target !== undefined ? { target: entry.target } : {}),
       },
     };
   }
@@ -760,12 +769,22 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
         // MIDI Step Input Event (nur wenn Step Input Modus aktiv)
         window.dispatchEvent(new CustomEvent("stepinput:noteon", { detail: { note: byte1, velocity: byte2 } }));
       }
-      // Note-Mapping → Part triggern (oder Performance-Pad, v2.78)
+      // Note-Mapping → applyMapping(target) | Perf-Pad | Part-Trigger
+      // Precedence (v2.79): target > performancePadIndex > partId
       const nm = noteMappingsRef.current.find(
         m => m.note === byte1 && (m.channel === 0 || m.channel === channel)
       );
       if (nm) {
-        if (nm.performancePadIndex !== undefined) {
+        if (nm.target !== undefined) {
+          // v2.79: voller applyMapping-Pfad — Chain/Script/Macro/etc.
+          // Note-On wird wie ein CC-Wert > 63 behandelt (on=true), velocity
+          // wird als value durchgereicht damit z.B. macro-Targets sie als
+          // Modulations-Amount verwenden können.
+          applyMapping(
+            { cc: -1, channel: nm.channel, target: nm.target, label: nm.label },
+            byte2,
+          );
+        } else if (nm.performancePadIndex !== undefined) {
           // v2.78: Perf-Pad-Trigger via CustomEvent (analog zu midi:scene)
           window.dispatchEvent(new CustomEvent("midi:perfpad", {
             detail: { padIndex: nm.performancePadIndex, velocity: byte2 },

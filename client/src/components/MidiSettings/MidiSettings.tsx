@@ -160,6 +160,20 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
     targetKey: string;
     delayMs: number;
   }>>([]);
+
+  // v2.79: Pad-Bank Builder — pro Pad einen beliebigen Target (perf-pad,
+  // macro, script, atomic action) zuweisen, dann Auto-Learn fährt sie in
+  // Reihe ab. Default: 16 perf-pad-Slots (Pad N → Performance-Pad N).
+  type PadBankSlotKind = "perf-pad" | "macro" | "script" | "action";
+  interface PadBankSlot {
+    kind: PadBankSlotKind;
+    /** Perf-Pad: 0..15, Macro: 0..7, Script: scriptId, Action: action-key. */
+    param: string;
+  }
+  const [padBankBuilderOpen, setPadBankBuilderOpen] = useState(false);
+  const [padBankSlots, setPadBankSlots] = useState<PadBankSlot[]>(() =>
+    Array.from({ length: 16 }, (_, i) => ({ kind: "perf-pad" as const, param: String(i) }))
+  );
   // v1.73: Export der aktuellen Mappings als JSON-Template.
   // v1.79: Default-Filename basiert auf dem aktiven MIDI-Device-Namen.
   const [exportName, setExportName] = useState<string>(() => "Mein MIDI-Setup");
@@ -422,6 +436,86 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
       partName: `Perf-Pad ${i + 1}`,
       performancePadIndex: i,
     }));
+
+  /**
+   * v2.79: Pad-Bank-Slot → konkretes UI-Label für die Auto-Learn-Progress-
+   * Karte und den Builder selbst.
+   */
+  function padBankSlotLabel(slot: { kind: "perf-pad" | "macro" | "script" | "action"; param: string }): string {
+    if (slot.kind === "perf-pad")  return `Perf-Pad ${Number(slot.param) + 1}`;
+    if (slot.kind === "macro")     return `Macro ${Number(slot.param) + 1}`;
+    if (slot.kind === "script") {
+      const s = scripts.find((x) => x.id === slot.param);
+      return s ? `Script: ${s.name}` : "Script: (unbekannt)";
+    }
+    // action
+    const a = findChainAction(slot.param);
+    return a ? `Action: ${a.label}` : "Action: (unbekannt)";
+  }
+
+  /**
+   * v2.79: konvertiert einen Slot in eine AutoLearnEntry-Note mit target.
+   * Bei perf-pad: legacy-Path über performancePadIndex (kein target nötig).
+   * Bei anderen Kinds: target wird gesetzt, applyMapping greift im Note-Handler.
+   */
+  function padBankSlotToEntry(slot: { kind: "perf-pad" | "macro" | "script" | "action"; param: string }, index: number): AutoLearnEntry | null {
+    const partId = `pad-bank-${index}`;
+    const partName = padBankSlotLabel(slot);
+    if (slot.kind === "perf-pad") {
+      const padIndex = Number(slot.param);
+      if (!Number.isFinite(padIndex) || padIndex < 0) return null;
+      return { kind: "note", partId, partName, performancePadIndex: padIndex };
+    }
+    if (slot.kind === "macro") {
+      const idx = Number(slot.param);
+      if (!Number.isFinite(idx) || idx < 0 || idx > 7) return null;
+      return { kind: "note", partId, partName, target: { type: "macro", index: idx } };
+    }
+    if (slot.kind === "script") {
+      if (!slot.param) return null;
+      const s = scripts.find((x) => x.id === slot.param);
+      return { kind: "note", partId, partName, target: { type: "runScript", scriptId: slot.param, scriptName: s?.name } };
+    }
+    // action
+    const action = findChainAction(slot.param);
+    if (!action) return null;
+    return { kind: "note", partId, partName, target: action.target };
+  }
+
+  function buildPadBankEntries(): AutoLearnEntry[] {
+    return padBankSlots
+      .map((s, i) => padBankSlotToEntry(s, i))
+      .filter((e): e is AutoLearnEntry => e !== null);
+  }
+
+  function addPadBankSlot() {
+    setPadBankSlots((prev) => [
+      ...prev,
+      { kind: "perf-pad", param: String(Math.min(15, prev.length)) },
+    ]);
+  }
+  function removePadBankSlot(index: number) {
+    setPadBankSlots((prev) => prev.filter((_, i) => i !== index));
+  }
+  function updatePadBankSlot(index: number, changes: Partial<{ kind: "perf-pad" | "macro" | "script" | "action"; param: string }>) {
+    setPadBankSlots((prev) =>
+      prev.map((s, i) => {
+        if (i !== index) return s;
+        const next = { ...s, ...changes };
+        // Kind-Wechsel: param auf sinnvollen Default zurücksetzen
+        if (changes.kind && changes.kind !== s.kind) {
+          if (changes.kind === "perf-pad")  next.param = String(Math.min(15, i));
+          else if (changes.kind === "macro") next.param = String(Math.min(7, i));
+          else if (changes.kind === "script") next.param = scripts[0]?.id ?? "";
+          else if (changes.kind === "action") next.param = CHAIN_BUILDER_ACTIONS[0].key;
+        }
+        return next;
+      })
+    );
+  }
+  function resetPadBankSlots() {
+    setPadBankSlots(Array.from({ length: 16 }, (_, i) => ({ kind: "perf-pad" as const, param: String(i) })));
+  }
 
   const autoLearnPresets: Array<{ label: string; description: string; build: () => AutoLearnEntry[] }> = [
     {
@@ -956,6 +1050,132 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
                     Reset
                   </button>
                 )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Pad-Bank Builder (v2.79) ─────────────────────────────────────────
+          Per-Pad-Target-Picker. Jeder Slot kann auf Performance-Pad, Macro,
+          Script oder beliebige Atomic-Action gemappt werden. "Start Auto-
+          Learn" fährt die Sequenz ab → User drückt die Hardware-Pads in
+          Reihe. Default: 16 Slots als Performance-Pad 1..16. */}
+      {!midi.isLearning && (
+        <div>
+          <button
+            onClick={() => setPadBankBuilderOpen(!padBankBuilderOpen)}
+            className="text-xs text-text-muted uppercase tracking-wider hover:text-text-primary mb-2 flex items-center gap-1"
+          >
+            <span>{padBankBuilderOpen ? "▼" : "▶"}</span>
+            Custom Pad-Bank (v2.79) — Pads auf Chains / Scripts / Macros / Perf-Pads mappen
+          </button>
+          {padBankBuilderOpen && (
+            <div className="space-y-2 p-3 bg-bg-elevated/50 rounded border border-border-color">
+              <div className="text-xs text-text-dim">
+                Pro Hardware-Pad einen Target-Typ wählen (Perf-Pad/Macro/Script/
+                Action), dann "Start Auto-Learn" klicken und die Pads in
+                Reihenfolge drücken. Default sind 16 Perf-Pad-Slots — ändere/
+                lösche/füge Slots nach Bedarf hinzu.
+              </div>
+
+              <div className="space-y-1 max-h-72 overflow-y-auto">
+                {padBankSlots.map((slot, idx) => (
+                  <div key={idx} className="flex items-center gap-1 p-1.5 bg-bg-panel rounded">
+                    <span className="text-[10px] text-text-dim font-mono w-6">#{idx + 1}</span>
+                    <select
+                      value={slot.kind}
+                      onChange={(e) => updatePadBankSlot(idx, { kind: e.target.value as "perf-pad" | "macro" | "script" | "action" })}
+                      className="px-1.5 py-1 bg-bg-elevated border border-border-color rounded text-[11px] text-text-primary"
+                    >
+                      <option value="perf-pad">Perf-Pad</option>
+                      <option value="macro">Macro</option>
+                      <option value="script">Script</option>
+                      <option value="action">Action</option>
+                    </select>
+                    {slot.kind === "perf-pad" && (
+                      <select
+                        value={slot.param}
+                        onChange={(e) => updatePadBankSlot(idx, { param: e.target.value })}
+                        className="flex-1 px-1.5 py-1 bg-bg-elevated border border-border-color rounded text-[11px] text-text-primary"
+                      >
+                        {Array.from({ length: 16 }, (_, i) => (
+                          <option key={i} value={String(i)}>Perf-Pad {i + 1}</option>
+                        ))}
+                      </select>
+                    )}
+                    {slot.kind === "macro" && (
+                      <select
+                        value={slot.param}
+                        onChange={(e) => updatePadBankSlot(idx, { param: e.target.value })}
+                        className="flex-1 px-1.5 py-1 bg-bg-elevated border border-border-color rounded text-[11px] text-text-primary"
+                      >
+                        {Array.from({ length: 8 }, (_, i) => (
+                          <option key={i} value={String(i)}>Macro {i + 1}</option>
+                        ))}
+                      </select>
+                    )}
+                    {slot.kind === "script" && (
+                      scripts.length === 0 ? (
+                        <span className="flex-1 text-[10px] text-accent-danger italic">
+                          Keine Scripts vorhanden — erst eines im Script-Runner anlegen.
+                        </span>
+                      ) : (
+                        <select
+                          value={slot.param}
+                          onChange={(e) => updatePadBankSlot(idx, { param: e.target.value })}
+                          className="flex-1 px-1.5 py-1 bg-bg-elevated border border-border-color rounded text-[11px] text-text-primary"
+                        >
+                          {scripts.map((s) => (
+                            <option key={s.id} value={s.id}>{s.name}</option>
+                          ))}
+                        </select>
+                      )
+                    )}
+                    {slot.kind === "action" && (
+                      <select
+                        value={slot.param}
+                        onChange={(e) => updatePadBankSlot(idx, { param: e.target.value })}
+                        className="flex-1 px-1.5 py-1 bg-bg-elevated border border-border-color rounded text-[11px] text-text-primary"
+                      >
+                        {CHAIN_BUILDER_ACTIONS.map((a) => (
+                          <option key={a.key} value={a.key}>{a.label}</option>
+                        ))}
+                      </select>
+                    )}
+                    <button
+                      onClick={() => removePadBankSlot(idx)}
+                      className="px-2 py-0.5 text-[10px] text-accent-danger hover:opacity-70"
+                      title="Slot entfernen"
+                    >×</button>
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex items-center gap-2 pt-2">
+                <button
+                  onClick={addPadBankSlot}
+                  className="px-3 py-1 text-xs bg-bg-elevated hover:bg-accent-primary/20 text-text-primary rounded transition-colors"
+                >
+                  + Slot
+                </button>
+                <button
+                  onClick={() => {
+                    const entries = buildPadBankEntries();
+                    if (entries.length > 0 && midi.isEnabled) midi.startAutoLearn(entries);
+                  }}
+                  disabled={!midi.isEnabled || padBankSlots.length === 0}
+                  className="px-3 py-1 text-xs bg-accent-secondary/30 hover:bg-accent-secondary/50 text-accent-secondary rounded font-medium disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                >
+                  ▶ Start Auto-Learn ({padBankSlots.length})
+                </button>
+                <button
+                  onClick={resetPadBankSlots}
+                  className="px-3 py-1 text-xs text-text-muted hover:text-text-primary ml-auto"
+                  title="Auf 16 Perf-Pad-Slots zurücksetzen"
+                >
+                  Reset (16 Perf-Pads)
+                </button>
               </div>
             </div>
           )}

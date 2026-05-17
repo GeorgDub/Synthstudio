@@ -251,4 +251,104 @@ describe("nextAutoLearnEntry (v1.72)", () => {
       expect(result.noteMapping!.performancePadIndex).toBe(15);
     });
   });
+
+  // ─── v2.79: target auf Note-Entry (Chain / Script / Macro / Action) ───
+  describe("v2.79 — Note-Entry mit generischem target (Chain/Script/Macro)", () => {
+    it("Macro-Target wird ins noteMapping propagiert", () => {
+      const entry: AutoLearnEntry = {
+        kind: "note",
+        partId: "pad-bank-0",
+        partName: "Macro 1",
+        target: { type: "macro", index: 0 },
+      };
+      const result = nextAutoLearnEntry(
+        [entry],
+        { type: 0x90, byte1: 60, byte2: 100, channel: 10 },
+      );
+      expect(result.noteMapping).toBeDefined();
+      expect(result.noteMapping!.target).toEqual({ type: "macro", index: 0 });
+    });
+
+    it("Script-Target (runScript) wird propagiert", () => {
+      const entry: AutoLearnEntry = {
+        kind: "note",
+        partId: "pad-bank-1",
+        partName: "Script: My Beat",
+        target: { type: "runScript", scriptId: "scr-1", scriptName: "My Beat" },
+      };
+      const result = nextAutoLearnEntry(
+        [entry],
+        { type: 0x90, byte1: 61, byte2: 100, channel: 10 },
+      );
+      expect(result.noteMapping!.target).toMatchObject({
+        type: "runScript", scriptId: "scr-1", scriptName: "My Beat",
+      });
+    });
+
+    it("Chain-Target wird propagiert (inkl. steps + delays)", () => {
+      const entry: AutoLearnEntry = {
+        kind: "note",
+        partId: "pad-bank-2",
+        partName: "Drop-Combo",
+        target: {
+          type: "chain",
+          label: "Drop-Combo",
+          steps: [
+            { target: { type: "playStop" }, delayMs: 200 },
+            { target: { type: "patternClear" } },
+          ],
+        },
+      };
+      const result = nextAutoLearnEntry(
+        [entry],
+        { type: 0x90, byte1: 62, byte2: 100, channel: 10 },
+      );
+      expect(result.noteMapping!.target).toBeDefined();
+      const t = result.noteMapping!.target!;
+      if (t.type === "chain") {
+        expect(t.steps).toHaveLength(2);
+        expect(t.steps[0].delayMs).toBe(200);
+      } else {
+        throw new Error("expected chain target");
+      }
+    });
+
+    it("Atomic-Action (z.B. tapTempo) als target wird propagiert", () => {
+      const entry: AutoLearnEntry = {
+        kind: "note",
+        partId: "pad-bank-3",
+        partName: "Tap Tempo",
+        target: { type: "tapTempo" },
+      };
+      const result = nextAutoLearnEntry(
+        [entry],
+        { type: 0x90, byte1: 63, byte2: 100, channel: 10 },
+      );
+      expect(result.noteMapping!.target).toEqual({ type: "tapTempo" });
+    });
+
+    it("Mixed Sequence: Perf-Pad → Macro → Script wird Slot für Slot abgearbeitet", () => {
+      const queue: AutoLearnEntry[] = [
+        { kind: "note", partId: "0", partName: "Pad 1", performancePadIndex: 0 },
+        { kind: "note", partId: "1", partName: "Macro 1", target: { type: "macro", index: 0 } },
+        { kind: "note", partId: "2", partName: "Script", target: { type: "runScript", scriptId: "s" } },
+      ];
+
+      let q = queue;
+      const r1 = nextAutoLearnEntry(q, { type: 0x90, byte1: 60, byte2: 100, channel: 10 });
+      expect(r1.noteMapping!.performancePadIndex).toBe(0);
+      expect(r1.noteMapping!.target).toBeUndefined();
+      q = r1.newQueue;
+
+      const r2 = nextAutoLearnEntry(q, { type: 0x90, byte1: 61, byte2: 100, channel: 10 });
+      expect(r2.noteMapping!.target).toEqual({ type: "macro", index: 0 });
+      q = r2.newQueue;
+
+      const r3 = nextAutoLearnEntry(q, { type: 0x90, byte1: 62, byte2: 100, channel: 10 });
+      expect(r3.noteMapping!.target).toMatchObject({ type: "runScript", scriptId: "s" });
+      q = r3.newQueue;
+
+      expect(q).toHaveLength(0);
+    });
+  });
 });
