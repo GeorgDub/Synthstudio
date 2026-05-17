@@ -20,8 +20,10 @@ import type { AutomationLane } from "@/store/useAutomationStore";
 import type { AudioTrackChannelData } from "@/store/useAudioTrackStore";
 import type { Script } from "@/store/useScriptStore";
 import { isValidScriptEntry } from "@/store/useScriptStore";
+import type { PadBankSlot } from "@/utils/padBankPersistence";
+import { isValidPadBankSlot } from "@/utils/padBankPersistence";
 
-export const SYNTH_FILE_VERSION = "1.16";
+export const SYNTH_FILE_VERSION = "1.17";
 export const SYNTH_LATEST_KEY = "synthstudio:last-project";
 
 // ─── Typen ───────────────────────────────────────────────────────────────────
@@ -74,6 +76,15 @@ export interface SynthProject {
    * ist erforderlich, bevor Code läuft.
    */
   scripts?: Script[];
+  /**
+   * MIDI Pad-Bank-Setup (Custom-Pad-Bank-Builder, v2.79).
+   *
+   * Seit v1.17 (Synthstudio v2.81). Bei v1.16 und älter fehlt das Feld
+   * → undefined wird als 'don't touch' interpretiert: parseProject ändert
+   * dann den User-localStorage NICHT. Explizites [] wird respektiert
+   * (User hat alle Slots gelöscht und gespeichert).
+   */
+  padBank?: PadBankSlot[];
 }
 
 // ─── Validation Helpers ──────────────────────────────────────────────────────
@@ -155,6 +166,21 @@ export function parseProject(json: string): SynthProject {
       }
     }
     data.audioTracks = filtered;
+  }
+
+  // ─── padBank (seit v1.17) ────────────────────────────────────────────────
+  // Pre-v1.17-Files haben das Feld nicht → undefined bleibt undefined
+  // (Signal an restoreProject: "User-localStorage nicht überschreiben").
+  // Explizites Array → invalid Items silent filtern, leeres Array bleibt.
+  // null oder non-array → undefined (kein Vertrauen in das Schema).
+  const rawPadBank = (data as { padBank?: unknown }).padBank;
+  if (rawPadBank === undefined) {
+    // nothing — data.padBank bleibt undefined
+  } else if (rawPadBank === null || !Array.isArray(rawPadBank)) {
+    delete (data as { padBank?: unknown }).padBank;
+  } else {
+    const filtered = rawPadBank.filter(isValidPadBankSlot);
+    data.padBank = filtered as PadBankSlot[];
   }
 
   // ─── scripts (seit v1.16) ────────────────────────────────────────────────

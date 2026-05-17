@@ -193,6 +193,7 @@ import {
   loadCachedProject,
   parseProject,
 } from "@/utils/projectSerializer";
+import { loadPadBankSlots, savePadBankSlots } from "@/utils/padBankPersistence";
 
 // ─── Visual Metronome ──────────────────────────────────────────────────────────
 
@@ -560,6 +561,8 @@ export default function App() {
       },
       audioTracks: getAllAudioTracks(),
       scripts: getProjectScripts(),
+      // v2.81: Pad-Bank-Setup als Pro-Project-Settings persistieren
+      padBank: loadPadBankSlots(),
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -623,6 +626,17 @@ export default function App() {
     const projectScripts = data.scripts ?? [];
     loadProjectScripts(projectScripts);
     disableAllForeignProject();
+
+    // v2.81: Pad-Bank-Setup (seit v1.17). Wenn der Project-File die Bank
+    // mitliefert (auch leeres Array ist explicit), überschreiben wir den
+    // User-localStorage. Pre-v1.17-Files haben padBank=undefined → wir
+    // lassen den User-localStorage in Ruhe. Custom-Event triggert UI-Reload
+    // wenn MidiSettings gerade offen ist (sonst wird beim nächsten Mount
+    // automatisch der neue Stand aus localStorage gelesen).
+    if (data.padBank !== undefined) {
+      savePadBankSlots(data.padBank);
+      window.dispatchEvent(new CustomEvent("padBank:loaded"));
+    }
 
     // ── Relocate-Probe: Prüfe ob Datei-Pfad noch existiert ────────────────
     // Electron: getAudioMetadata → bei Fehler markBroken(id, true)

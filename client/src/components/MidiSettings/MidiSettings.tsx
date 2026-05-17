@@ -178,6 +178,13 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
   useEffect(() => {
     savePadBankSlots(padBankSlots);
   }, [padBankSlots]);
+  // v2.81: Reload aus localStorage wenn ein Project geladen wurde
+  // (restoreProject in App.tsx dispatcht 'padBank:loaded' nach dem Save).
+  useEffect(() => {
+    const handler = () => setPadBankSlots(loadPadBankSlots());
+    window.addEventListener("padBank:loaded", handler);
+    return () => window.removeEventListener("padBank:loaded", handler);
+  }, []);
   // v1.73: Export der aktuellen Mappings als JSON-Template.
   // v1.79: Default-Filename basiert auf dem aktiven MIDI-Device-Namen.
   const [exportName, setExportName] = useState<string>(() => "Mein MIDI-Setup");

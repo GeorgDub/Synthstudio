@@ -48,8 +48,8 @@ function baseProject(overrides: Partial<SynthProject> = {}): SynthProject {
 }
 
 describe("ProjectSerializer – Konstanten", () => {
-  it("SYNTH_FILE_VERSION ist '1.16' (aktuelle Format-Version)", () => {
-    expect(SYNTH_FILE_VERSION).toBe("1.16");
+  it("SYNTH_FILE_VERSION ist '1.17' (seit v2.81: + padBank-Feld)", () => {
+    expect(SYNTH_FILE_VERSION).toBe("1.17");
   });
 
   it("SYNTH_LATEST_KEY ist 'synthstudio:last-project' (localStorage-Key)", () => {
@@ -290,5 +290,71 @@ describe("ProjectSerializer – Mixed v1.14 (oldest) File", () => {
     expect(parsed.audioTracks).toEqual([]);
     expect(parsed.scripts).toEqual([]);
     expect(parsed.version).toBe("1.14"); // Version-String wird NICHT auto-upgraded
+  });
+});
+
+// ─── padBank Migration (seit v1.17) ──────────────────────────────────────────
+
+describe("ProjectSerializer – padBank Migration (v1.16 → v1.17)", () => {
+  it("SYNTH_FILE_VERSION ist '1.17'", () => {
+    expect(SYNTH_FILE_VERSION).toBe("1.17");
+  });
+
+  it("Fehlendes padBank-Feld (v1.16-File) → padBank bleibt undefined (Signal: localStorage nicht überschreiben)", () => {
+    const file = JSON.stringify({
+      version: "1.16", patterns: [],
+    });
+    expect(parseProject(file).padBank).toBeUndefined();
+  });
+
+  it("padBank=null → undefined (kein Vertrauen in Schema)", () => {
+    const file = JSON.stringify({
+      version: "1.17", patterns: [], padBank: null,
+    });
+    expect(parseProject(file).padBank).toBeUndefined();
+  });
+
+  it("padBank kein Array (String) → undefined", () => {
+    const file = JSON.stringify({
+      version: "1.17", patterns: [], padBank: "broken",
+    });
+    expect(parseProject(file).padBank).toBeUndefined();
+  });
+
+  it("padBank leeres Array bleibt leer (User-Reset wird respektiert)", () => {
+    const file = JSON.stringify({
+      version: "1.17", patterns: [], padBank: [],
+    });
+    expect(parseProject(file).padBank).toEqual([]);
+  });
+
+  it("padBank valides Array wird übernommen", () => {
+    const slots = [
+      { kind: "perf-pad", param: "0" },
+      { kind: "macro", param: "3" },
+      { kind: "script", param: "scr-1" },
+      { kind: "action", param: "playStop" },
+    ];
+    const file = JSON.stringify({
+      version: "1.17", patterns: [], padBank: slots,
+    });
+    expect(parseProject(file).padBank).toEqual(slots);
+  });
+
+  it("padBank mit invaliden Items → werden silent gefiltert", () => {
+    const slots = [
+      { kind: "perf-pad", param: "0" },       // valid
+      { kind: "unknown", param: "x" },         // invalid kind
+      null,                                     // not object
+      { kind: "macro", param: 5 },              // non-string param
+      { kind: "action", param: "tapTempo" },  // valid
+    ];
+    const file = JSON.stringify({
+      version: "1.17", patterns: [], padBank: slots,
+    });
+    const result = parseProject(file).padBank;
+    expect(result).toHaveLength(2);
+    expect(result![0]).toEqual({ kind: "perf-pad", param: "0" });
+    expect(result![1]).toEqual({ kind: "action", param: "tapTempo" });
   });
 });

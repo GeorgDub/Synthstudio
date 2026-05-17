@@ -493,6 +493,28 @@ const INDEX = {
   workLog: [
     {
       agent:     "frontend",
+      timestamp: "2026-05-17T17:55:00.000Z",
+      done: [
+        "FEATURE-v2.81 PAD-BANK-IN-PROJECT-FILE: User-Follow-up zu v2.80 — Pad-Bank ist jetzt PRO-PROJECT (in .synth-Datei) statt nur PRO-USER (localStorage). Schema-Version v1.16 → v1.17. (1) projectSerializer.ts: SYNTH_FILE_VERSION bumped, SynthProject Interface bekommt optional padBank?: PadBankSlot[] (Doku: 'Seit v1.17, bei v1.16 und älter fehlt das Feld → undefined wird als don't-touch interpretiert'). parseProject hat neuen Migration-Block: padBank=undefined bleibt undefined (kritisch — Signal an restoreProject 'localStorage nicht überschreiben'), padBank=null oder non-array wird via delete-Property zu undefined (kein Vertrauen in kaputtes Schema), valides Array wird mit isValidPadBankSlot gefiltert, leeres Array wird RESPEKTIERT (User-Reset 'alle Slots gelöscht' ist legitim). (2) App.tsx buildProjectSnapshot ruft loadPadBankSlots() und packt die aktuelle Bank ins Snapshot. (3) App.tsx restoreProject: wenn data.padBank !== undefined → savePadBankSlots(data.padBank) + dispatch CustomEvent('padBank:loaded'). Pre-v1.17-Files (padBank=undefined) lassen die User-localStorage in Ruhe — keine Daten gehen verloren. (4) MidiSettings.tsx: zusätzlicher useEffect mit window-Listener auf 'padBank:loaded' → re-load via loadPadBankSlots() in den component-State. Damit reagiert die offene UI sofort auf Project-Load. (5) Tests +7 Cases im project-serializer.test.ts neuer describe-Block 'padBank Migration (v1.16 → v1.17)' — VERSION='1.17', fehlendes Feld→undefined, null→undefined, non-array→undefined, leeres Array bleibt leer, valides Array übernommen, invalide Items werden gefiltert. Plus 3 alte Tests in audio-track-store + script-store auf neue VERSION-Erwartung umgestellt. Validation: pnpm check clean, pnpm test 3022/15 skipped vs vorher 3015 (+7). Package.json gebumped 2.80.0 → 2.81.0. Workflow: Pad-Bank konfigurieren → Projekt speichern → später Projekt laden → Pad-Bank ist wieder der Project-Specific-Zustand."
+      ],
+      next: [
+        "Tag v2.81.0 + push.",
+        "Mögliche v3-Erweiterung: midiLayoutExport (.json) sollte target+performancePadIndex serialisieren + parseMidiLayoutJson sollte sie restore'en, sonst kann User-Layout-Export keine Pad-Bank-Configs zwischen Maschinen teilen. Aktuell prüfen ob das bereits implizit funktioniert (noteMappings haben das Feld).",
+        "v2.81 Auto-Migration v1.16 → v1.17: aktuell unverändert (version-String wird nicht autoupgraded). Falls User v1.16-File lädt + speichert wird beim nächsten Save automatisch v1.17 geschrieben (weil serializeProject SYNTH_FILE_VERSION schreibt). Das ist gewolltes Verhalten."
+      ],
+      changed: [
+        "client/src/utils/projectSerializer.ts (SYNTH_FILE_VERSION 1.16→1.17, SynthProject.padBank?, parseProject Migration-Block)",
+        "client/src/App.tsx (Import savePadBankSlots/loadPadBankSlots, buildProjectSnapshot füllt padBank, restoreProject schreibt padBank+dispatcht padBank:loaded)",
+        "client/src/components/MidiSettings/MidiSettings.tsx (useEffect-Listener auf padBank:loaded für Live-Reload)",
+        "tests/features/project-serializer.test.ts (+7 Cases v1.17-Migration, alter VERSION-Test auf 1.17)",
+        "tests/features/audio-track-store.test.ts (2 VERSION-Assertions auf 1.17)",
+        "tests/features/script-store.test.ts (1 VERSION-Assertion auf 1.17)",
+        "package.json (version 2.80.0 → 2.81.0)",
+        "agents/INDEX.js (workLog-Entry)"
+      ]
+    },
+    {
+      agent:     "frontend",
       timestamp: "2026-05-17T17:35:00.000Z",
       done: [
         "FEATURE-v2.80 PAD-BANK-PERSISTENZ: User-Follow-up zu v2.79 — Pad-Bank-Slots überleben jetzt Page-Reload und Tab-Wechsel. (1) Neues Util-Modul client/src/utils/padBankPersistence.ts (95 LOC) extrahiert PadBankSlot + PadBankSlotKind aus MidiSettings als exportierte Types, plus 4 Pure-Helpers: defaultPadBankSlots (16 perf-pad slots), isValidPadBankSlot (Schema-Defensive Type-Guard), loadPadBankSlots (localStorage-Read mit Fallback bei missing/invalid/non-array/non-object, Invalid-Items im Array werden silent gefiltert, leeres Array nach Filterung bleibt als 'User-Reset' valider Zustand), savePadBankSlots (best-effort write, Quota-Errors silent). Plus __resetPadBankForTests-Helper. STORAGE_KEY='ss-pad-bank:v1'. (2) MidiSettings.tsx: inline-Type-Definitionen entfernt (jetzt aus utils importiert), useState-Initializer nutzt loadPadBankSlots(), neuer useEffect schreibt jeden Slot-Change via savePadBankSlots in localStorage. resetPadBankSlots() ruft defaultPadBankSlots(). (3) Tests: tests/features/pad-bank-persistence.test.ts (NEU, 20 Cases) — defaultPadBankSlots (16 Perf-Pad-Slots mit Param '0'..'15'), isValidPadBankSlot Type-Guard (alle 4 valid kinds, unknown-kind/non-string-param/missing-fields/non-object → false), loadPadBankSlots (empty → defaults, invalid-JSON → defaults, non-Array → defaults, valid mixed kinds, invalid Items werden gefiltert valide bleiben, leeres Array nach Filterung bleibt leer), savePadBankSlots (schreibt, leeres Array auch, Overwrite-Verhalten), Round-Trip (beliebige + Default-Slots überleben), __resetPadBankForTests. Validation: pnpm check clean, pnpm test 3015/15 skipped vs vorher 2995 (+20). Package.json gebumped 2.79.0 → 2.80.0. User-Workflow: Pad-Bank konfigurieren → schließen → App-Reload → Pad-Bank ist exakt so wie vorher."

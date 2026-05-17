@@ -399,9 +399,9 @@ describe("projectSerializer × audioTracks", () => {
     localStorageMock.clear();
   });
 
-  it("SYNTH_FILE_VERSION ist '1.16' (audioTracks bleiben kompatibel)", () => {
-    // v1.16 bumpt für scripts-Feld; audioTracks (seit v1.15) ist additiv-kompatibel.
-    expect(SYNTH_FILE_VERSION).toBe("1.16");
+  it("SYNTH_FILE_VERSION ist '1.17' (audioTracks bleiben kompatibel)", () => {
+    // v1.17 bumpt für padBank-Feld; audioTracks (seit v1.15) bleiben additiv-kompatibel.
+    expect(SYNTH_FILE_VERSION).toBe("1.17");
   });
 
   it("Serializer Round-trip: serialize → JSON → parse erhält audioTracks", () => {
@@ -430,7 +430,7 @@ describe("projectSerializer × audioTracks", () => {
     expect(restored.audioTracks).toBeDefined();
     expect(restored.audioTracks).toHaveLength(1);
     expect(restored.audioTracks![0]).toEqual(tracks[0]);
-    expect(restored.version).toBe("1.16");
+    expect(restored.version).toBe("1.17");
   });
 
   it("Migration: v1.14-File ohne audioTracks-Feld → audioTracks ist []", () => {
