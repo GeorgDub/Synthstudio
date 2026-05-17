@@ -101,7 +101,20 @@ export type MidiLearnTarget =
    * einzigen Taste/einem Pad ablegen. Sub-Targets dürfen keine weiteren chains
    * sein (1-Level-Nesting only) damit endlose Rekursion ausgeschlossen ist.
    */
-  | { type: "chain"; label: string; steps: ChainStep[] };
+  | { type: "chain"; label: string; steps: ChainStep[] }
+  // ── Live-Looper (v2.87 / TASK-235) ────────────────────────────────────────
+  /**
+   * Triggert den State-Machine-Step eines Loops (Pad-Click / Footswitch):
+   *   empty→arming→recording→playing⇄overdubbing
+   * Auf CC>63 oder Note-On wird ein "midi:loopTrigger" CustomEvent gefeuert
+   * mit { loopIndex } im detail. App.tsx ruft AudioEngine.triggerLoop().
+   */
+  | { type: "loopTrigger"; loopIndex: number }
+  /**
+   * Erase: setzt einen Loop unconditional zurück auf empty.
+   * Long-Press im UI mappt darauf, oder ein eigener MIDI-Trigger.
+   */
+  | { type: "loopErase"; loopIndex: number };
 
 /** Ein Schritt in einer Function-Chain (v1.77). */
 export interface ChainStep {
@@ -334,6 +347,8 @@ export function labelForTarget(target: MidiLearnTarget): string {
     case "macro":           return `Macro ${target.index + 1}${target.label ? `: ${target.label}` : ""}`;
     case "runScript":       return `Script: ${target.scriptName ?? target.scriptId.slice(0, 8)}`;
     case "chain":           return `Chain: ${target.label} (${target.steps.length} Schritte)`;
+    case "loopTrigger":     return `Loop ${target.loopIndex + 1} Trigger`;
+    case "loopErase":       return `Loop ${target.loopIndex + 1} Erase`;
     default:                return "Unbekannt";
   }
 }
@@ -374,6 +389,9 @@ export function targetsMatch(a: MidiLearnTarget, b: MidiLearnTarget): boolean {
       return a.index === (b as { index: number }).index;
     case "chain":
       return a.label === (b as { label: string }).label;
+    case "loopTrigger":
+    case "loopErase":
+      return a.loopIndex === (b as { loopIndex: number }).loopIndex;
     default:
       // Single-target types ohne Param: bpm, playStop, record, tapTempo,
       // bpmUp, bpmDown, masterVolume, partUp, partDown, patternNext,
@@ -982,6 +1000,14 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
         }
         break;
       }
+      case "loopTrigger": if (on) {
+        // v2.87 (TASK-235): Live-Looper Trigger via Pad/Footswitch.
+        window.dispatchEvent(new CustomEvent("midi:loopTrigger", { detail: t.loopIndex }));
+      } break;
+      case "loopErase": if (on) {
+        // v2.87 (TASK-235): Loop-Erase via dedizierter MIDI-Action.
+        window.dispatchEvent(new CustomEvent("midi:loopErase", { detail: t.loopIndex }));
+      } break;
     }
   }
 

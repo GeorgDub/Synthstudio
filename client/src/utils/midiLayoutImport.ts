@@ -79,6 +79,8 @@ export const VALID_TARGET_TYPES = new Set<string>([
   "macro",
   // v2.1: Send-Bus-Level
   "send",
+  // v2.87 (TASK-235): Live-Looper Pad/Footswitch-Targets
+  "loopTrigger", "loopErase",
 ]);
 
 export interface ParsedMidiLayout {

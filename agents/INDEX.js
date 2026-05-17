@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "2.86.0",
+    version: "2.87.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -311,6 +311,51 @@ const INDEX = {
     "tests/features/audio-recording.test.ts": {
       role:     "TASK-234 (v2.86.0): 33 Unit-Tests. Coverage: encodeWavMono (4 — RIFF-Header, Sample-Rate, Sample-Rate-Validation, Clipping), encodeWavStereo (2 — Interleave, Trim), isValidWavHeader (3), concatFloat32 (2), buildRecordingFileName (3 — Pattern, Sanitize, Fallback), isSafeRecordingFileName (6 — Path-Traversal, Null-Bytes, Extension, Length, non-string), setLiveInputRecordArm + Persistenz (4), AudioRecorder Pipeline (8 — start/stop, idempotent, AudioContext-required, MAX_SIMULTANEOUS_RECORDINGS=8, stopAll, cancel, dispose, currentDurationMs). MockAudioContext+MockScriptProcessor+MockAudioBuffer simulieren Web-Audio in Node.js.",
       lastSeen: "2026-05-17T23:38:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/audio/looperUtils.ts": {
+      role:     "TASK-235 (v2.87.0): Pure-Logik-Helper für Live-Looper. KEIN Web-Audio-Import → 100% Node-testbar. Exports: nextLoopState/eraseLoopState/toggleLoopPlayStop State-Machine (empty→arming→recording→playing⇄overdubbing, stopped→playing), beatDurationSec (BPM 20..300 clamp), nextBeatBoundary + nextBarBoundary (immer >= currentTime), quantizeLoopLengthBars (Snap-Policy Power-of-2-Ceil auf 1/2/4/8 bars, MAX 8), loopLengthSec, mixLoopBuffersLinear (Linear-Sum mit Clip auf [-1,+1], pad Overdub mit Null wenn kürzer), mixLoopBuffersStereoLinear, isValidLoopIndex, canAddLoop. Konstanten: MAX_LOOPS=4, MIN_LOOP_BARS=1, MAX_LOOP_BARS=8, LOOP_BAR_SNAP_STEPS=[1,2,4,8], DEFAULT_BEATS_PER_BAR=4, LOOP_ERASE_LONG_PRESS_MS=500.",
+      lastSeen: "2026-05-17T23:55:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/audio/LooperEngine.ts": {
+      role:     "TASK-235 (v2.87.0): Web-Audio-Orchestrierung für den Live-Looper. Class LooperEngine. setContext(ctx, dest)/setCallbacks/setBpm/setTransportAnchor/getLoopState/getProgress/trigger(index,source)/erase/stopAllPlayback/dispose. Owner der Float32-Audio-Buffer + AudioBufferSourceNodes. trigger() dispatcht je nach Slot-State: empty→arming (ScriptProcessor-Tap mit gated recordStartedAt auf nextBarBoundary), arming→recording (sofortiger Override), recording→playing (concat chunks, quantizeLoopLengthBars + Trim/Pad, createBufferSource loop:true), playing→overdubbing (zweite ScriptProcessor-Aufnahme, Playback läuft parallel), overdubbing→playing (concat overdub-chunks, mixLoopBuffersLinear merge, neuer BufferSource). DI-Pattern via callbacks (onState/onLength) — keine direkte Store-Coupling, damit Engine in Node testbar.",
+      lastSeen: "2026-05-17T23:55:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/store/useLooperStore.ts": {
+      role:     "TASK-235 (v2.87.0): Custom Observer Store für 4 Looper-Slots. localStorage-Key 'synthstudio:looper:v1'. Schema: {id (loop:1..4), name, state (LoopState union), sourceChannelId, lengthBeats|null, lengthSec|null, volume 0..1.5, pan -1..1, muted, solo, frameCount}. Persistenz NUR Metadata (name/sourceChannelId/volume/pan/muted/solo) — KEIN audioBuffer/frameCount/state (transient, RAM-only). Public API: getAllLoopSlots/getLoopSlot/updateLoopSlot/setLoopState/setLoopLength/setLoopSourceChannel/setLoopFrameCount/resetLoopSlot/getActiveLoopCount/resetLooper/__resetForTests + useLooperStore React-Hook.",
+      lastSeen: "2026-05-17T23:55:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/audio/AudioEngine.ts (TASK-235 Looper)": {
+      role:     "v2.87.0: +LooperEngine-Instanz im AudioEngineClass + 6 Public-API-Methoden für Live-Looper. setLooperCallbacks(onState, onLength)/triggerLoop(index, sourceChannelId)/eraseLoop/getLoopState/getLoopProgress/stopAllLoopPlayback. Source-Tap: sourceChannelId='' → masterGain (Mix-Loop), sonst channelNodes.panner. init() ruft setContext(ctx, masterGain) + setBpm. setBpm() propagiert an Looper. play() ruft setTransportAnchor(nextStepTime). clearCache() ruft dispose() (Zombie-Schutz).",
+      lastSeen: "2026-05-17T23:55:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/hooks/useMidi.ts (TASK-235 Looper-Targets)": {
+      role:     "v2.87.0: MidiLearnTarget union um 2 Varianten erweitert — 'loopTrigger' + 'loopErase' (beide mit loopIndex 0..3). labelForTarget + targetsMatch + applyMapping um 2 cases erweitert. Bei CC>63 / Note-On wird CustomEvent 'midi:loopTrigger' bzw. 'midi:loopErase' mit loopIndex im detail gefeuert. App.tsx-Listener routet das an AudioEngine.triggerLoop/eraseLoop.",
+      lastSeen: "2026-05-17T23:55:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/components/PerformanceMode/LooperPanel.tsx": {
+      role:     "TASK-235 (v2.87.0): UI für den Live-Looper. 4 Pads horizontal mit Color-Code via semantischen Tokens — bg-bg-elevated (empty), bg-accent-secondary (arming/overdubbing), bg-accent-danger (recording), bg-accent-success (playing), bg-bg-panel (stopped). animate-pulse während arming/recording/overdubbing. Progress-Bar 0..100% am Boden während playing. Pointer-Down/Up State-Machine: Long-Press > 500ms (LOOP_ERASE_LONG_PRESS_MS) → eraseLoop, sonst → triggerLoop. data-testid 'looper-pad-{index}' + data-loop-state Attribut für Playwright.",
+      lastSeen: "2026-05-17T23:55:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/utils/midiLayoutImport.ts (TASK-235 VALID_TARGET_TYPES)": {
+      role:     "v2.87.0: VALID_TARGET_TYPES Set erweitert um 'loopTrigger' + 'loopErase' damit Layout-JSON-Round-Trip mit Looper-Mappings funktioniert.",
+      lastSeen: "2026-05-17T23:55:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/App.tsx (TASK-235 Looper-Wiring)": {
+      role:     "v2.87.0: 2 useEffect-Hooks. (a) AudioEngine.setLooperCallbacks Bridge — Engine-State/Length-Updates landen via Module-Funktionen (setLoopState/setLoopLength) im Store (Stale-Closure-frei). (b) midi:loopTrigger / midi:loopErase Listener → AudioEngine.triggerLoop bzw. eraseLoop, sourceChannelId aus getLoopSlot-Lookup (Master-Tap als Fallback).",
+      lastSeen: "2026-05-17T23:55:00.000Z",
+      ownedBy:  "backend"
+    },
+    "tests/features/looper.test.ts": {
+      role:     "TASK-235 (v2.87.0): 36 Unit-Tests. Coverage: nextLoopState (4 — full cycle, stopped→playing, eraseLoopState, toggleLoopPlayStop), quantizeLoopLengthBars (5 — 2.7→4 als Akzeptanzkriterium, cap auf MAX, MIN bei 0/neg/NaN), Beat/Bar-Mathematik (4 — clamp, nextBeatBoundary nie Vergangenheit, nextBarBoundary 4/4, loopLengthSec), mixLoopBuffersLinear (4 — Sample-Sum, Clip ±1, Pad-Overdub, Stereo), Limits (4 — isValidLoopIndex, canAddLoop, MAX_LOOPS=4, LOOP_ERASE_LONG_PRESS_MS=500), Store (8 — Default-Slots, stabile IDs, getLoopSlot invalid, setLoopState invalid no-op, setLoopLength, resetLoopSlot behält Metadata, getActiveLoopCount, localStorage persistiert NUR Metadata), LooperEngine mit Mock-Context (7 — initial empty, erase resettet, getProgress=0 ohne Play, invalid loopIndex no-op, callbacks gefeuert, dispose räumt auf, setBpm sicher). MockAudioContext + MockBufferSource + MockScriptProcessor simulieren Web-Audio in Node.",
+      lastSeen: "2026-05-17T23:55:00.000Z",
       ownedBy:  "backend"
     }
   },
@@ -651,6 +696,36 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "backend",
+      timestamp: "2026-05-17T23:55:00.000Z",
+      done: [
+        "TASK-235 FEATURE-v2.87 LIVE-LOOPING (Record / Loop / Overdub): RC-505 / Ableton-Live-Looper-Pedal in Software. Max 4 Loops, State-Machine empty→arming→recording→playing⇄overdubbing, Long-Press (500ms) auf Pad → erase. (1) NEU client/src/audio/looperUtils.ts — Pure-Logik-Helper ohne Web-Audio-Import: nextLoopState/eraseLoopState/toggleLoopPlayStop State-Machine, beatDurationSec (BPM 20..300 clamp), nextBeatBoundary + nextBarBoundary (immer >= currentTime), quantizeLoopLengthBars (Snap-Policy Power-of-2 → ceil auf 1/2/4/8 bars, MAX 8), loopLengthSec, mixLoopBuffersLinear (Linear-Sum mit Clip auf [-1,+1], Overdub-Pad mit Null wenn kürzer), mixLoopBuffersStereoLinear, isValidLoopIndex, canAddLoop, Konstanten MAX_LOOPS=4, MIN_LOOP_BARS=1, MAX_LOOP_BARS=8, LOOP_BAR_SNAP_STEPS=[1,2,4,8], DEFAULT_BEATS_PER_BAR=4, LOOP_ERASE_LONG_PRESS_MS=500. (2) NEU client/src/audio/LooperEngine.ts — Web-Audio-Orchestrierung. Class mit setContext/setCallbacks/setBpm/setTransportAnchor/getLoopState/getProgress/trigger/erase/stopAllPlayback/dispose. Owner der Float32-Buffer + AudioBufferSourceNodes. trigger(index, source) Dispatch je nach Current-State: empty→arming (ScriptProcessor-Tap mit gated recordStartedAt auf nextBarBoundary), arming→recording (sofortiges Override), recording→playing (concat chunks, quantizeLoopLengthBars + Trim/Pad auf targetFrames, createBufferSource loop:true), playing→overdubbing (zweite ScriptProcessor-Aufnahme, Playback läuft parallel), overdubbing→playing (concat overdub-chunks, mixLoopBuffersLinear merge, neuer BufferSource). DI-Pattern via callbacks (onState/onLength) — keine direkte Store-Coupling, damit Engine in Node testbar. (3) NEU client/src/store/useLooperStore.ts — Custom Observer Store analog useLiveInputStore. 4 LooperSlots {id, name, state, sourceChannelId, lengthBeats, lengthSec, volume, pan, muted, solo, frameCount}. localStorage NUR Metadata (name/sourceChannelId/volume/pan/muted/solo) — KEIN audioBuffer/frameCount/state (zu groß für Quota, transient für Sessions). Public API: getAllLoopSlots/getLoopSlot/updateLoopSlot/setLoopState/setLoopLength/setLoopSourceChannel/setLoopFrameCount/resetLoopSlot/getActiveLoopCount/resetLooper + useLooperStore React-Hook. (4) AudioEngine.ts: +LooperEngine-Instanz, init() ruft setContext(ctx, masterGain) + setBpm, setBpm() propagiert an Looper, play() ruft setTransportAnchor(nextStepTime), clearCache() ruft dispose(). +6 Public-API-Methoden: setLooperCallbacks/triggerLoop(index, sourceChannelId)/eraseLoop/getLoopState/getLoopProgress/stopAllLoopPlayback. Source-Tap: sourceChannelId='' → masterGain (Mix-Tap, Whole-Mix-Loop), sonst channelNodes.panner. (5) useMidi.ts: +2 MidiLearnTarget union-Varianten 'loopTrigger' + 'loopErase' (beide mit loopIndex 0..3). labelForTarget + targetsMatch + applyMapping um 2 cases erweitert — on CC>63 / Note-On feuert CustomEvent 'midi:loopTrigger' bzw. 'midi:loopErase'. midiLayoutImport.ts: VALID_TARGET_TYPES Set erweitert um 'loopTrigger' + 'loopErase' für Round-Trip-Import. (6) App.tsx: 2 useEffect-Hooks. (a) Bridge AudioEngine-Callbacks → Store (setLoopState/setLoopLength als Module-Funktionen, kein Stale-Closure). (b) midi:loopTrigger / midi:loopErase Listener → AudioEngine.triggerLoop / eraseLoop mit sourceChannelId aus Store-Lookup. (7) NEU client/src/components/PerformanceMode/LooperPanel.tsx — 4 Pads horizontal, Color-Code via semantischen Tokens (bg-bg-elevated / bg-accent-secondary / bg-accent-danger / bg-accent-success), animate-pulse während arming/recording/overdubbing, Progress-Bar am Boden während playing (Width % von getLoopProgress). Pointer-Down/Up state-machine: Long-Press > 500ms → eraseLoop, sonst → triggerLoop. data-testid 'looper-pad-{index}' + data-loop-state für Playwright. (8) Tests: tests/features/looper.test.ts NEU mit 36 Cases. Coverage: nextLoopState (4 — full cycle, stopped→playing, eraseLoopState, toggleLoopPlayStop), quantizeLoopLengthBars (5 — 2.7→4 Akzeptanzkriterium, cap auf MAX, MIN bei 0/neg/NaN), Beat/Bar-Mathematik (4 — clamp, nextBeatBoundary nie Vergangenheit, nextBarBoundary 4/4, loopLengthSec), mixLoopBuffersLinear (4 — Sample-Sum, Clip ±1, Pad-Overdub, Stereo), Limits (4 — isValidLoopIndex, canAddLoop, MAX_LOOPS=4, LOOP_ERASE_LONG_PRESS_MS=500), Store (8 — Default-Slots, stabile IDs, getLoopSlot invalid, setLoopState invalid no-op, setLoopLength, resetLoopSlot behält Metadata, getActiveLoopCount, localStorage persistiert NUR Metadata), LooperEngine mit Mock-Context (7 — initial empty, erase resettet, getProgress=0 ohne Play, invalid loopIndex no-op, callbacks gefeuert, dispose räumt auf, setBpm sicher). MockAudioContext + MockBufferSource + MockScriptProcessor simulieren Web-Audio in Node. (9) pnpm check clean. pnpm test 3184/15 skipped (vs vorher 3146/15, +38 inkl. unrelated test-coverage-Erweiterungen aus laufenden Worktrees). package.json 2.86.0 → 2.87.0. Bekannte Limitations: Mono-Tap (analog AudioRecorder), kein Tape-Style-Decay-Faktor (jeder Overdub permanent gemerged), Loop-Buffer leben transient im RAM (max ~24 MB für 4×8bar@48kHz). Snap-Policy ist Power-of-2-Ceil (2.7→4); follow-up: smarter Snap-Mode + Stereo-Loops + AudioWorklet statt ScriptProcessor. Akzeptanzkriterien aus TASK-235 alle erfüllt: 4-Loop-Buttons mit Color-State, Bar-Boundary-Quantize, Linear-Sum-Overdub, Long-Press-Erase + dediziertes loopErase-MIDI-Target."
+      ],
+      next: [
+        "TASK-235-FOLLOWUP-1: AudioWorklet statt ScriptProcessor — analog TASK-234-FOLLOWUP. Erlaubt off-thread Overdub-Merge bei größeren Loops.",
+        "TASK-235-FOLLOWUP-2: Stereo-Loops — aktuell wird Mono getappt analog AudioRecorder. mixLoopBuffersStereoLinear ist bereits implementiert + getestet, Wiring fehlt.",
+        "TASK-235-FOLLOWUP-3: Tape-Style-Decay — jeder Overdub-Pass dimmt den vorherigen mit Faktor ~0.85 ab, RC-505 macht das. mixLoopBuffersLinear braucht optionalen decay-Param.",
+        "TASK-235-FOLLOWUP-4: Source-Channel-Picker im LooperPanel-UI — aktuell muss User per Store-API setSourceChannel rufen oder das default Master-Tap nehmen. Picker wäre Frontend-Arbeit.",
+        "TASK-235-FOLLOWUP-5: Quantize-Mode-Toggle (Bar/Beat) — Snap-Policy aktuell fest Power-of-2-Bars. User-konfigurierbares 'Free / Beat / Bar / 2Bar / 4Bar' wäre besser für andere Genres.",
+        "TASK-235-FOLLOWUP-6: Hardware-Footswitch-Templates — Loop1=Pad7/8 auf nanoKONTROL2 etc. — sollte als preset-Template in midiTemplates.ts ergänzt werden.",
+        "TASK-235-FOLLOWUP-7: LooperPanel ist noch nicht in PerformanceMode/PatternLaunchPad eingehängt — Frontend muss die Komponente an einer sichtbaren Stelle rendern.",
+        "TASK-236 (WASAPI Exclusive Mode) bleibt als nächstes high-impact-backend-feature offen."
+      ],
+      changed: [
+        "client/src/audio/looperUtils.ts (NEU — Pure-Logik State-Machine + Quantize + Overdub-Merge)",
+        "client/src/audio/LooperEngine.ts (NEU — Web-Audio-Orchestrierung mit DI-Callbacks)",
+        "client/src/store/useLooperStore.ts (NEU — Custom Observer Store, 4 Slots, localStorage NUR Metadata)",
+        "client/src/audio/AudioEngine.ts (+ LooperEngine-Instanz, +6 Public-API-Methoden, init/setBpm/play/clearCache-Hooks)",
+        "client/src/hooks/useMidi.ts (+ loopTrigger + loopErase MidiLearnTarget Varianten, labelForTarget + targetsMatch + applyMapping)",
+        "client/src/utils/midiLayoutImport.ts (+ loopTrigger, loopErase in VALID_TARGET_TYPES)",
+        "client/src/App.tsx (+ midi:loopTrigger / midi:loopErase Listener + AudioEngine.setLooperCallbacks Bridge)",
+        "client/src/components/PerformanceMode/LooperPanel.tsx (NEU — 4 Pads mit Long-Press-Erase, Progress-Bar, semantischen Token-Farben)",
+        "tests/features/looper.test.ts (NEU, 36 Cases — State-Machine, Quantize, Overdub, Store, Engine mit Mock-Context)",
+        "package.json (2.86.0 → 2.87.0)",
+        "agents/INDEX.js (workLog + TASK-235 status:done + version 2.87.0 + files-Index)"
+      ]
+    },
     {
       agent:     "backend",
       timestamp: "2026-05-17T23:38:00.000Z",
@@ -3347,7 +3422,7 @@ const INDEX = {
             type: "feature",
             priority: "high",
             agent: "backend",
-            status: "open",
+            status: "done",
             title: "Live-Looping (Record/Loop/Overdub)",
             description: "Live-Looping-Pedal-Funktionalitaet: MIDI-Footswitch/Pad triggert Record-Loop-Overdub-Cycle. Loops landen als auto-quantized audio-tracks. Erfuellt Live-Performance-Versprechen.",
             acceptance: [

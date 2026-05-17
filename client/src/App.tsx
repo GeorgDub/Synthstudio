@@ -186,6 +186,8 @@ import { resetNoteRepeat, toggleNoteRepeat, isNoteRepeatEnabled } from "@/store/
 import { resetTranspose } from "@/store/useTransposeStore";
 import { resetMorph, getMorphState, setActive as setMorphActive } from "@/store/useMorphStore";
 import { getSceneState, setActiveScene as sceneStoreSetActiveScene } from "@/store/useSceneStore";
+// v2.87 (TASK-235): Live-Looper Store-Bridge — Module-Funktionen, kein Hook.
+import { getLoopSlot, setLoopState, setLoopLength } from "@/store/useLooperStore";
 import { scriptSandbox } from "@/sandbox/scriptSandboxInstance";
 import {
   startHoldLoop,
@@ -1548,6 +1550,43 @@ export default function App() {
     };
     window.addEventListener("midi:scene", handleScene);
     return () => window.removeEventListener("midi:scene", handleScene);
+  }, []);
+
+  // v2.87 (TASK-235): midi:loopTrigger / midi:loopErase — Live-Looper-Pads.
+  // useMidi dispatcht beim CC>63 / Note-On den jeweiligen Event mit loopIndex
+  // im detail. AudioEngine kennt den Source-Channel nicht direkt — wir nehmen
+  // die im Store hinterlegte sourceChannelId (per LooperPanel-Picker setzbar)
+  // bzw. fallback auf den Master-Tap (sourceChannelId="").
+  useEffect(() => {
+    const handleTrigger = (e: Event) => {
+      const loopIndex = (e as CustomEvent<number>).detail;
+      if (typeof loopIndex !== "number") return;
+      const slot = getLoopSlot(loopIndex);
+      AudioEngine.triggerLoop(loopIndex, slot?.sourceChannelId ?? "");
+    };
+    const handleErase = (e: Event) => {
+      const loopIndex = (e as CustomEvent<number>).detail;
+      if (typeof loopIndex !== "number") return;
+      AudioEngine.eraseLoop(loopIndex);
+    };
+    window.addEventListener("midi:loopTrigger", handleTrigger);
+    window.addEventListener("midi:loopErase", handleErase);
+    return () => {
+      window.removeEventListener("midi:loopTrigger", handleTrigger);
+      window.removeEventListener("midi:loopErase", handleErase);
+    };
+  }, []);
+
+  // v2.87 (TASK-235): Looper-Engine → Store Bridge. Beim ersten Render einmal
+  // Callbacks setzen — der Store wird informiert sobald die Engine State /
+  // Length aktualisiert. KEIN Stale-Closure-Issue weil setLoopState/-Length
+  // Module-Functions sind (Singleton-Store-Pattern).
+  useEffect(() => {
+    AudioEngine.setLooperCallbacks(
+      (index, state) => setLoopState(index, state),
+      (index, lengthBeats, lengthSec, frameCount) =>
+        setLoopLength(index, lengthBeats, lengthSec, frameCount),
+    );
   }, []);
 
   // v2.78: midi:perfpad — Note-Mapping mit performancePadIndex triggert

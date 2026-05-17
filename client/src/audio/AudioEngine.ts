@@ -13,6 +13,8 @@
 import { SynthEngine } from "./SynthEngine";
 import { MidiClockOut } from "./MidiClockOut";
 import { AudioRecorder, type RecordingResult, MAX_SIMULTANEOUS_RECORDINGS } from "./AudioRecorder";
+import { LooperEngine } from "./LooperEngine";
+import type { LoopState } from "./looperUtils";
 
 // ─── Typen ────────────────────────────────────────────────────────────────────
 
@@ -526,6 +528,11 @@ class AudioEngineClass {
     // Record-Pipeline (TASK-234) — Recorder bekommt den AudioContext, hängt
     // sich aber erst auf explizites startRecording() in die Signal-Pfade.
     this._audioRecorder.setContext(this.ctx);
+
+    // Live-Looper (TASK-235) — Loops mischen direkt in masterGain (post-FX,
+    // sodass Loop-Playback nicht durch die per-Channel-FX-Chain läuft).
+    this._looperEngine.setContext(this.ctx, this.masterGain);
+    this._looperEngine.setBpm(this._bpm);
   }
 
   async resume(): Promise<void> {
@@ -535,6 +542,8 @@ class AudioEngineClass {
   setBpm(bpm: number) {
     this._bpm = Math.max(20, Math.min(300, bpm));
     this._updateAudioTrackPlaybackRates();
+    // Looper (TASK-235) braucht aktuelle BPM für Bar-Boundary-Mathematik.
+    this._looperEngine.setBpm(this._bpm);
   }
   setSteps(steps: 16 | 32) { this._steps = steps; }
   setStepResolution(res: StepResolution) { this._stepResolution = res; }
@@ -1140,6 +1149,9 @@ class AudioEngineClass {
     this._currentStep = fromStep;
     this._nextStepTime = this.ctx!.currentTime + 0.05;
 
+    // Looper (TASK-235): Transport-Anchor für Bar-Boundary-Quantisierung.
+    this._looperEngine.setTransportAnchor(this._nextStepTime);
+
     this.schedulerTimer = setInterval(() => this._schedule(), this.SCHEDULE_INTERVAL);
 
     // MIDI-Clock-Out: sendet 0xFA (Start) und initialisiert den 24-PPQN-Ticker.
@@ -1191,6 +1203,8 @@ class AudioEngineClass {
     // Aktive Aufnahmen abräumen (TASK-234) — verhindert Zombie-Recorder
     // wenn der Cache während einer aufnahme geleert wird.
     this._audioRecorder.dispose();
+    // Looper (TASK-235): Buffer + Nodes freigeben
+    this._looperEngine.dispose();
   }
 
   /** Kanal-Effekte live aktualisieren (ohne Neustart) */
@@ -2899,6 +2913,7 @@ class AudioEngineClass {
   // armed-Flag lebt im Store (useLiveInputStore / useAudioTrackStore).
 
   private _audioRecorder = new AudioRecorder();
+  private _looperEngine = new LooperEngine();
 
   /**
    * Startet eine Aufnahme für genau einen Channel. Source-Node: der `panner`
@@ -2969,6 +2984,66 @@ class AudioEngineClass {
   /** Bricht eine Aufnahme ab OHNE Encode (Cleanup-Pfad bei removeChannel). */
   cancelRecording(channelId: string): void {
     this._audioRecorder.cancel(channelId);
+  }
+
+  // ─── Live-Looper (TASK-235 / v2.87) ──────────────────────────────────────
+  //
+  // RC-505 / Ableton Live Looper. Max 4 Loops. State-Machine in looperUtils.ts.
+  // Audio-Buffer leben in LooperEngine; AudioEngine stellt nur Tap-Source +
+  // Mix-Bus zur Verfügung. Loops werden NACH der Channel-FX-Chain abgegriffen
+  // (panner) und VOR dem Master gemischt — gleicher Pfad wie Recording.
+
+  /**
+   * Verdrahtet Store-Callbacks. Wird einmalig in App.tsx-Bootstrap aufgerufen,
+   * damit der Store über State-/Length-Änderungen informiert wird.
+   */
+  setLooperCallbacks(
+    onState: (index: number, state: LoopState) => void,
+    onLength: (index: number, lengthBeats: number, lengthSec: number, frameCount: number) => void,
+  ): void {
+    this._looperEngine.setCallbacks({ onState, onLength });
+  }
+
+  /**
+   * Triggert den Loop-State-Machine-Step (Pad-Klick / Footswitch).
+   *
+   * @param index           Loop-Index (0..MAX_LOOPS-1)
+   * @param sourceChannelId Channel-ID dessen panner-Node als Tap-Source dient.
+   *                        Leer-String → versuche masterGain als Source (Mix-Loop).
+   */
+  triggerLoop(index: number, sourceChannelId: string): void {
+    if (!this.ctx) return;
+    let source: AudioNode | null = null;
+    if (sourceChannelId) {
+      const nodes = this.channelNodes.get(sourceChannelId);
+      source = nodes?.panner ?? null;
+    } else {
+      // Mix-Tap: alles was am Master ankommt. Funktionsfähig auch ohne
+      // Channel-Auswahl — sinnvoll für "Whole-Mix-Looping".
+      source = this.masterGain;
+    }
+    this._looperEngine.trigger(index, source);
+  }
+
+  /** Long-Press / explizite Erase-Action. */
+  eraseLoop(index: number): void {
+    this._looperEngine.erase(index);
+  }
+
+  /** Aktueller State des Loops (für UI-Polling / Color-Code). */
+  getLoopState(index: number): LoopState {
+    return this._looperEngine.getLoopState(index);
+  }
+
+  /** Progress 0..1 für den Progress-Ring im UI. */
+  getLoopProgress(index: number): number {
+    const now = this.ctx?.currentTime ?? 0;
+    return this._looperEngine.getProgress(index, now);
+  }
+
+  /** Transport-Stop hat alle Loop-Playbacks pausiert. */
+  stopAllLoopPlayback(): void {
+    this._looperEngine.stopAllPlayback();
   }
 }
 

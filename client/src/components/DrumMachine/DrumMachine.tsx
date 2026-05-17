@@ -17,6 +17,7 @@ import type { PartData, ChannelFx, StepResolution } from "@/audio/AudioEngine";
 import { AudioEngine } from "@/audio/AudioEngine";
 import { PianoRollModal } from "@/components/PianoRoll/PianoRollModal";
 import { NoteRepeatPanel } from "@/components/PerformanceMode/NoteRepeatPanel";
+import { LooperPanel } from "@/components/PerformanceMode/LooperPanel";
 import { TransposeControl } from "@/components/PianoRoll/TransposeControl";
 import { PatternMorphPanel } from "@/components/PatternMorph";
 import { MacroPanel } from "@/components/Macro/MacroPanel";
@@ -251,6 +252,7 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
   const [varSlots, setVarSlots] = useState<Record<string, string | null>>({ A: null, B: null, C: null, D: null });
   const [activeVar, setActiveVar] = useState<string>("A");
   const [showNoteRepeat, setShowNoteRepeat] = useState(false);
+  const [showLooper, setShowLooper] = useState(false);
   const [showMorph, setShowMorph] = useState(false);
   const [showMixAssistant, setShowMixAssistant] = useState(false);
   const [showEnvFollower, setShowEnvFollower] = useState(false);
@@ -1079,6 +1081,21 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
           🔁 NR
         </button>
 
+        {/* Live-Looper Toggle (TASK-235 / v2.87) */}
+        <button
+          data-testid="toggle-looper-panel"
+          onClick={() => setShowLooper(prev => !prev)}
+          title="Live-Looper (RC-505 Style, 4 Loops)"
+          className={[
+            "px-2 py-1 rounded text-[10px] font-bold transition-colors",
+            showLooper
+              ? "bg-accent-success/20 text-accent-success border border-accent-success/50"
+              : "bg-bg-elevated text-text-dim hover:bg-bg-elevated hover:text-text-primary",
+          ].join(" ")}
+        >
+          ⟲ Loop
+        </button>
+
         {/* Kanal hinzufügen */}
         <button
           onClick={() => dm.addPart()}
@@ -1195,6 +1212,14 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
             bpm={effectiveBpm}
             compact={true}
           />
+        </ResizableDrumPanel>
+      )}
+
+      {/* ── Live-Looper Panel (TASK-235 / v2.87) ─────────────────────────── */}
+      {showLooper && (
+        <ResizableDrumPanel storageKey="ss-panel-looper" defaultHeight={180} minHeight={140} maxHeight={320}
+          onClose={() => setShowLooper(false)}>
+          <LooperPanel onClose={() => setShowLooper(false)} />
         </ResizableDrumPanel>
       )}
 
