@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.46.0",
+    version: "3.47.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -99,15 +99,15 @@ const INDEX = {
       lastSeen: "2026-05-18T20:36:00.000Z",
       ownedBy:  "backend"
     },
-    "client/src/store/usePluginChainPresetStore.ts (v3.46.0)": {
-      role:     "v3.46.0 NEU: Plugin-Chain-Preset Library. PluginChainPreset {id, name, createdAt, builtIn?, slots: MixerPluginSlot[]}. Custom-Observer-Pattern (Module-Singleton + Reducer-Hook) konsistent mit usePatchStore. Public-API: getPluginChainPresets, getPluginChainPresetById, addPluginChainPreset(name, slots)→id|null (trim auf MAX_PLUGIN_SLOTS_PER_CHANNEL, sanitization, null bei leerem Namen/Slots), removePluginChainPreset(id)→boolean (NO-OP+false bei Built-In oder unknown ID), renamePluginChainPreset(id, name)→boolean (Built-In immutable), cloneSlotsFromPreset(id)→MixerPluginSlot[]|null (deep-clone der params/bypassed-Flag damit Apply nicht Library-Zustand mutiert), __resetPluginChainPresetStoreForTests test-helper. NEU 3 Built-In Konstanten exportiert: BUILT_IN_TAPE_WARMTH (TapeSat drive=0.65/mix=0.9 + Notch 6kHz/q=1.5/mix=0.4), BUILT_IN_STEREO_WIDE (Width plugin mit width=1.6), BUILT_IN_BASS_CUT (Notch 80Hz/q=4.0 + TapeSat drive=0.2/mix=0.5). IDs prefix 'builtin.' (Kollisionsschutz). builtIn:true Flag macht sie immutable. localStorage 'ss-plugin-chain-presets:v1' persistiert NUR User-Presets (Built-Ins regeneriert aus Code bei jedem Boot — kein silent-data-loss). MAX_PRESETS=50.",
-      lastSeen: "2026-05-18T20:36:00.000Z",
-      ownedBy:  "backend"
+    "client/src/store/usePluginChainPresetStore.ts (v3.47.0)": {
+      role:     "v3.47.0 ERWEITERT: v3.46 Plugin-Chain-Preset Library bleibt + NEU JSON-Sharing API (+~180 LOC). Schema-Konstanten PRESET_EXPORT_SCHEMA='synthstudio-plugin-preset-v1' + PRESET_BUNDLE_SCHEMA='synthstudio-plugin-preset-bundle-v1'. PluginPresetExportEnvelope {schema, preset, appVersion?}. PluginPresetBundleEnvelope {schema, presets[], appVersion?}. PluginPresetImportResult {success, importedIds, errors, warnings, duplicatesSkipped}. Public-API: exportPresetAsJson(presetId):string (envelope-wrapped JSON, '' bei unknown ID), exportAllPresetsAsJson():string (Bundle mit Built-Ins + User), importPresetFromJson(jsonString):PluginPresetImportResult (akzeptiert Single + Bundle, Missing-Plugin → warnings (kein Skip), Built-In-Import → '(imported)'-Suffix damit Code-Defaults nicht überschrieben werden, Dedup via name + hashPresetSlots), hashPresetSlots(slots):string Pure-fn deterministischer Hash (pluginId + sorted-param-pairs + bypassed-Flag). Bestehende v3.46-API (getPluginChainPresets, addPluginChainPreset, removePluginChainPreset, renamePluginChainPreset, cloneSlotsFromPreset) unverändert + 3 Built-In Konstanten (BUILT_IN_TAPE_WARMTH/STEREO_WIDE/BASS_CUT) bleiben. localStorage 'ss-plugin-chain-presets:v1' unverändert.",
+      lastSeen: "2026-05-18T20:48:00.000Z",
+      ownedBy:  "frontend"
     },
-    "client/src/components/Mixer/ChannelInspector.tsx (v3.46.0 plugin-chain-preset)": {
-      role:     "v3.46.0 ERWEITERT: bestehende v3.45 PluginChainSection (Multi-Slot max 4) bleibt + NEU Save/Load-Preset-UI inline (~120 LOC). PluginChainSection +3 Props onApplyPreset/onSavePreset/onRemovePreset. Header: 'Plugin-Chain (N/4)'-Label + 3 Action-Buttons '📂 Load' (toggled Liste), '💾 Save' (toggled Name-Form, disabled bei leerer Chain), '+ Add Plugin'. NEU 2 collapsible Inline-Forms (kein Modal): (a) Save-Form mit autoFocus Name-Input, Enter-commit, Escape-cancel, Submit-disabled bei trimmed-empty. (b) Load-List mit Built-In zuerst ('(Built-In)'-Badge), User-Presets darunter mit per-Preset X-Button. Klick auf Preset → onApplyPreset replaced aktuelle Chain (removePluginSlot N-down-loop + addPluginSlot pro Slot). Apply nutzt cloneSlotsFromPreset damit Library unmutiert. Toast-Feedback. data-testids: channel-plugin-load-preset-{partId}, channel-plugin-save-preset-{partId}, channel-plugin-save-preset-form-{partId}, channel-plugin-save-preset-name-{partId}, channel-plugin-save-preset-commit-{partId}, channel-plugin-load-preset-list-{partId}, channel-plugin-load-preset-{partId}-{presetId}, channel-plugin-remove-preset-{partId}-{presetId}. Bestehende v3.45 Multi-Slot Add/Remove/Move/Bypass + PluginSlotItem unverändert.",
-      lastSeen: "2026-05-18T20:36:00.000Z",
-      ownedBy:  "backend"
+    "client/src/components/Mixer/ChannelInspector.tsx (v3.47.0 plugin-preset-share)": {
+      role:     "v3.47.0 ERWEITERT: v3.46 PluginChainSection (Save/Load Preset + Multi-Slot) bleibt + NEU JSON Export/Import-UI (+~80 LOC). PluginChainSection +3 Props onExportPreset/onExportAllPresets/onImportPresets. Load-List bekommt Header-Toolbar mit '📋 Export All'-Button (disabled bei keine Presets) + '⬆ Import'-Button (triggert hidden <input type=file accept='.json,.synthpreset.json'>). Pro Preset-Listenelement NEU '⬇'-Export-Button (Single-Preset-Download) — links neben dem X-Button. Helper-Functions außerhalb der Komponente: downloadPluginPresetJson(json, filename) (Blob + URL.createObjectURL + anchor.click + 1s-delayed revoke für Safari) + sanitizePresetFilename(presetId, json) (extrahiert preset.name aus Envelope, cleant zu /[^a-z0-9-_]/i, fallback auf ID). Import-Pfad: file.text() → importPresetFromJson → toast für success/error + bis-zu-3 warnings als info-toast. NEU data-testids: channel-plugin-export-all-{partId}, channel-plugin-import-{partId}, channel-plugin-import-input-{partId}, channel-plugin-export-preset-{partId}-{presetId}. Bestehende v3.46 Save/Load + v3.45 Multi-Slot unverändert.",
+      lastSeen: "2026-05-18T20:48:00.000Z",
+      ownedBy:  "frontend"
     },
     "tests/features/plugin-chain-preset.test.ts (v3.46.0)": {
       role:     "v3.46.0 NEU: 18 Tests in 4 describes (env:jsdom). (1) Built-In-Presets × 6 — 3 Built-Ins nach Reset (filter builtIn===true), BUILT_IN_PLUGIN_CHAIN_PRESETS-Array hat 3 Einträge mit den expected IDs, Tape-Warmth slots check (TapeSat drive ≥ 0.5 + Notch), Stereo-Wide check (Width-Plugin mit width > 1), Bass-Cut check (Notch ≤ 100Hz + TapeSat drive < 0.5), Built-In removePluginChainPreset → false + Built-Ins bleiben. (2) add/remove/rename × 7 — addPluginChainPreset 2× consecutive liefert unique-IDs, oversized slot-array (6 Einträge) trim auf MAX_PLUGIN_SLOTS_PER_CHANNEL, null bei leerem Name/leeren Slots, removePluginChainPreset User-Preset → true + weg, unknown ID → false, renamePluginChainPreset happy + Built-In rename → false. (3) cloneSlotsFromPreset × 3 — deep-clone (mutation an Clone affects nicht Original), null bei unknown ID, Built-In Tape-Warmth liefert Clone. (4) LocalStorage round-trip × 2 — User-Preset überlebt in 'ss-plugin-chain-presets:v1' (Built-Ins NICHT in LS), __resetPluginChainPresetStoreForTests killt User-Presets aber behält 3 Built-Ins.",
@@ -724,10 +724,20 @@ const INDEX = {
       lastSeen: "2026-05-18T08:30:00.000Z",
       ownedBy:  "frontend"
     },
-    "client/src/utils/dragDropDispatch.ts (v3.3.0)": {
-      role:     "v3.3.0: Pure-Helpers fuer globalen Drag-Drop-Dispatch (~180 LOC). FileType-Union erweitert um 'korg-bank'. KORG_BANK_EXTENSIONS = {'.esx','.ess','.all'} als separates Set, ELECTRIBE_EXTENSIONS reduziert auf {'.e2spat','.e2sallpat','.e2pattern','.elst'} (`.esx` wurde aus dem Electribe-Bucket entfernt). detectFileType priorisiert KORG_BANK_EXTENSIONS vor ELECTRIBE_EXTENSIONS. eventNameMap routet 'korg-bank' → CustomEvent 'korg:bank:open' (dispatched an window, App.tsx listener oeffnet KorgBankModal). Bestehende Funktionen unveraendert.",
-      lastSeen: "2026-05-18T08:30:00.000Z",
-      ownedBy:  "backend"
+    "client/src/utils/dragDropDispatch.ts (v3.47.0)": {
+      role:     "v3.47.0 ERWEITERT: v3.3 KORG-Bank-Routing bleibt + NEU 'plugin-preset' FileType. PLUGIN_PRESET_SUFFIX='.synthpreset.json' compound-suffix const (kein Set-Lookup weil getFileExtension das letzte '.json' greift). detectFileType prüft endsWith() ZUERST damit .synthpreset.json korrekt als 'plugin-preset' detected wird (normales .json bleibt 'unknown' — kein false-positive). FileType-Union additive +'plugin-preset'. eventNameMap +'plugin-preset' → 'plugin-preset:import' CustomEvent. v3.3 KORG_BANK_EXTENSIONS + ELECTRIBE_EXTENSIONS + AUDIO/PROJECT/ZIP/MIDI Sets unverändert.",
+      lastSeen: "2026-05-18T20:48:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "tests/features/plugin-preset-share.test.ts (v3.47.0)": {
+      role:     "v3.47.0 NEU: 17 Tests in 7 describes (env:jsdom). Vor jedem Test: __resetPluginChainPresetStoreForTests() + _resetPluginRegistry() + registerBuiltInPlugins() für isolated state. (1) exportPresetAsJson × 3 — Single-Envelope mit PRESET_EXPORT_SCHEMA, '' bei unknown ID, Bundle-Export mit allen 3 Built-Ins + 2 User-Presets. (2) importPresetFromJson + Dedup × 3 — Single-Envelope erzeugt User-Preset, re-Import → duplicatesSkipped=1 + importedIds.length=0, Bundle importiert beide. (3) Missing-Plugin × 1 — Plugin-ID 'thirdparty.unknown-plugin-v99' nicht in Registry → warnings.length>0 + success=true + Slot bleibt erhalten (2 Slots im preset). (4) Schema-Validation × 3 — unbekanntes Schema 'some-other-app-v3' → errors mit /schema/i Match, malformed-JSON → /Parse-Fehler/, Envelope ohne preset/presets-Feld → success=false. (5) Round-Trip × 2 — Single export→reset→import preserves drive/mix/bypassed/frequency exact (hashPresetSlots match), Bundle Round-Trip → User-Presets neu + Built-Ins als '(imported)'-Variante. (6) Drag-Drop × 2 — detectFileType('my-chain.synthpreset.json')==='plugin-preset', dispatchFileDrop feuert 'plugin-preset:import' CustomEvent mit detail=file. (7) hashPresetSlots × 3 — identische Slots → identischer Hash (param-key-order-agnostisch), unterschiedliche Param-Werte → unterschiedliche Hashes, Slot-Reihenfolge ist signifikant.",
+      lastSeen: "2026-05-18T20:48:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/components/DragDropOverlay/DragDropOverlay.tsx (v3.47.0)": {
+      role:     "v3.47.0 ERWEITERT: bestehende OVERLAY_STYLES + SUBTEXT_BY_TYPE bleiben + NEU Eintrag 'plugin-preset' mit accent-secondary border/bg/text + 🔌-Icon + Label 'Plugin-Chain-Preset importieren' + Subtext '.synthpreset.json — Plugin-Chain-Preset (Save/Load über Channel-Inspector)'. TypeScript-strict Record<FileType, ...> required-properties-Constraint zwingt zur Aufnahme — Build wäre sonst gefailt.",
+      lastSeen: "2026-05-18T20:48:00.000Z",
+      ownedBy:  "frontend"
     },
     "electron/ipcValidators.ts (v3.3.0)": {
       role:     "v3.3.0: +KORG_BANK_ALLOWED_EXTENSIONS Set {'.esx','.ess','.all'}, +KORG_BANK_MAX_BYTES=100MB, +validateKorgBankPath(input)→{ok,ext|error} (mit NUL-Byte+Pfadlaenge-Check), +validateKorgBankFileSize(byteSize)→{ok|error}. Pattern analog validateElectribePath/Size aus v2.99. Bestehende Validators (Recording/WAV/License/Electribe) unveraendert.",
@@ -1697,6 +1707,39 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "frontend",
+      timestamp: "2026-05-18T20:48:00.000Z",
+      done: [
+        "v3.47.0: Plugin-Chain-Preset JSON-Sharing — closes v3.46-Caveat (1) Export/Import zwischen Geräten. pnpm check clean, 196 Test-Files / 4557 tests grün (16 skipped, +17 NEU). Bestehende v3.46 + v3.45 + v3.44 Tests unverändert grün (backward-compat).",
+        "Export/Import-API (usePluginChainPresetStore.ts, +~180 LOC). Schema-Tags PRESET_EXPORT_SCHEMA='synthstudio-plugin-preset-v1' + PRESET_BUNDLE_SCHEMA='synthstudio-plugin-preset-bundle-v1' für Round-Trip-stable Envelope-Discrimination. Public-API: exportPresetAsJson(presetId):string (envelope-wrapped Single-Preset, '' bei unknown ID — defensive), exportAllPresetsAsJson():string (envelope-wrapped Bundle mit Built-Ins + User-Presets), importPresetFromJson(jsonString):PluginPresetImportResult mit {success, importedIds, errors, warnings, duplicatesSkipped} — clean error für Parse-Fail/Schema-Mismatch/missing preset-Field. Dedup via hashPresetSlots(slots) — deterministischer Hash (pluginId + sorted-param-pairs + bypassed-Flag) per Slot, dann ';' joined; identische Chains mit gleichem Namen werden ÜBERSPRUNGEN (duplicatesSkipped++).",
+        "Missing-Plugin-Handling: Slots referenzieren pluginId-Strings. Beim Import wird via getPlugin() in der lokalen Registry geprüft; fehlende Plugin-IDs erzeugen WARNINGS aber KEINE Skips — der Slot bleibt im Preset (für späteren Re-Install des Plugins). UI-Toast zeigt 'Plugin X nicht gefunden — Slot wird beim Anwenden übersprungen'. Built-In-Marker beim Import wird zu '(imported)'-Suffix umgewandelt damit Code-controlled Built-Ins nicht überschrieben werden können — defensive gegen versehentlichen Tamper.",
+        "UI Export/Import (ChannelInspector.tsx PluginChainSection, +~80 LOC). 3 neue Props onExportPreset/onExportAllPresets/onImportPresets. NEU pro Preset-Listenelement '⬇' Export-Button. NEU im Load-List-Header '📋 Export All' (disabled bei keine Presets) + '⬆ Import'-Button + hidden <input type=file accept='.json,.synthpreset.json,application/json'>. Helper-Functions downloadPluginPresetJson(json, filename) (Blob+URL.createObjectURL+anchor.click+revoke nach 1s für Safari) + sanitizePresetFilename(presetId, json) (extrahiert preset.name aus Envelope, cleant zu /[^a-z0-9-_]/i_/g, fallback auf ID) — beide außerhalb der React-Komponente damit pure-fn-testbar. Toast-Feedback für Export/Import (success/error/warnings). data-testids: channel-plugin-export-all-{partId}, channel-plugin-import-{partId}, channel-plugin-import-input-{partId}, channel-plugin-export-preset-{partId}-{presetId}.",
+        "Drag-Drop-Route (dragDropDispatch.ts). NEU PLUGIN_PRESET_SUFFIX='.synthpreset.json' (compound-suffix, kein Set-Lookup weil getFileExtension das letzte .json greift). detectFileType() prüft endsWith() ZUERST damit .synthpreset.json korrekt als 'plugin-preset' detected wird (normales .json bleibt 'unknown' → kein false-positive). FileType-Union +'plugin-preset'. eventNameMap-Erweiterung 'plugin-preset' → 'plugin-preset:import'. DragDropOverlay.tsx OVERLAY_STYLES + SUBTEXT_BY_TYPE für 'plugin-preset' (accent-secondary + 🔌-Icon + 'Plugin-Chain-Preset importieren'-Label).",
+        "App.tsx (+~45 LOC): useEffect mit window.addEventListener('plugin-preset:import', handler). Handler async: file.text() → dynamic-import importPresetFromJson + toast → Success-Toast mit count + duplicates-skipped suffix + bis-zu-3 warnings als info-toast. Dynamic-Import damit der Listener-Code lazy lädt (kein bundle-bloat im Initial-Render).",
+        "NEU tests/features/plugin-preset-share.test.ts (17 Tests in 7 describes, env:jsdom). (1) exportPresetAsJson × 3 — valid Schema-Tag, '' bei unknown ID, Bundle-Export enthält Built-Ins + User. (2) importPresetFromJson + Dedup × 3 — Single-Envelope erzeugt neuen Eintrag, identische Chains werden via hash-Dedup übersprungen, Bundle importiert alle. (3) Missing-Plugin × 1 — Import succeed mit warning, Slot bleibt erhalten. (4) Schema-Validation × 3 — unknown schema reject, JSON-Parse-Fehler reject, Envelope ohne preset/presets-Feld reject. (5) Round-Trip × 2 — Single export→reset→import preserves exact params+bypassed-Flag, Bundle Round-Trip importiert User-Presets neu + Built-Ins als '(imported)'-Variante. (6) Drag-Drop Routing × 2 — .synthpreset.json → 'plugin-preset' FileType, dispatchFileDrop feuert 'plugin-preset:import' CustomEvent mit detail=file. (7) hashPresetSlots × 3 — identische Slots = identischer Hash (param-order-independent), unterschiedliche Param-Werte = unterschiedliche Hashes, Slot-Reihenfolge ist signifikant.",
+        "BACKWARD-COMPAT VERIFIZIERT: (a) Alle 4540 v3.46-Tests grün ohne Anpassung. (b) Bestehende localStorage-Presets bleiben unverändert (kein Schema-Update am internen Format — Export ist NUR Read-Side). (c) PluginChainSection neue Props onExportPreset/onExportAllPresets/onImportPresets REQUIRED — werden vom Inspector selbst eingehängt mit toast + Blob-Download/File-Picker, externe Caller müssen nichts ändern. (d) Drag-Drop FileType-Union additive — bestehende switch-statements brauchen kein Default-Case-Update weil DragDropOverlay TypeScript-strict ist und 'plugin-preset' eingefügt wurde. (e) Built-In Plugin-Registry-Reset im Test war nötig weil isomorphic-Test importiert PluginRegistry — registerBuiltInPlugins() im beforeEach() restored die 3 Built-Ins.",
+        "CAVEATS (verbleibend nach v3.47): (1) Drag-Drop von .json (ohne .synthpreset-Suffix) wird NICHT als Preset erkannt — User muss korrekte Endung benutzen. (2) Preset-Reorder per Drag&Drop in Load-Liste bleibt offen (v3.48). (3) Bundle-Export schreibt auch Built-Ins (Migration zwischen Installationen) — beim Re-Import landen sie als '(imported)' User-Variante; Built-Ins selbst bleiben code-controlled. (4) User-Plugin-Drop (.js Worklet + Manifest) noch nicht implementiert. (5) Echtes VST3/CLAP-Loading = v4.0+ (eigener Sprint).",
+        "package.json + agents/INDEX.js version 3.46.0 → 3.47.0. v3.46-Caveat (1) JSON Export/Import als CLOSED markiert."
+      ],
+      next: [
+        "v3.48 Preset-Reorder per Drag&Drop in Load-Liste — User kann Lieblings-Presets nach oben sortieren (lokales sort-Index im Store).",
+        "v3.48 User-Plugin-Drop in ChannelInspector — User droppt .js (AudioWorkletProcessor) + JSON-Manifest auf Plugin-Slot.",
+        "v3.48 Preset-Categories/Tags — User kann Presets gruppieren (Bass/Lead/Drum/FX). Such-Bar in Load-Liste.",
+        "v4.0+ Phase-2 NATIVE VST3/CLAP via JUCE-Node-Addon (siehe TASK-239).",
+        "Vorhandene v3.43-Items unverändert (OmniTribe Per-Slot Download-Button, Reply-Timeout-Handling, Pitch-Names im ChordPanel)."
+      ],
+      changed: [
+        "client/src/store/usePluginChainPresetStore.ts (+~180 LOC — NEU exportPresetAsJson/exportAllPresetsAsJson/importPresetFromJson/hashPresetSlots + PRESET_EXPORT_SCHEMA + PRESET_BUNDLE_SCHEMA const + PluginPresetExportEnvelope/PluginPresetBundleEnvelope/PluginPresetImportResult Interfaces + Missing-Plugin-Lookup via PluginRegistry.getPlugin())",
+        "client/src/components/Mixer/ChannelInspector.tsx (+~80 LOC — PluginChainSection +3 Props onExportPreset/onExportAllPresets/onImportPresets, NEU hidden file-input + Export-Buttons per Preset + Export-All + Import-Header, downloadPluginPresetJson + sanitizePresetFilename Pure-Helpers außerhalb der Komponente)",
+        "client/src/utils/dragDropDispatch.ts (FileType +'plugin-preset', PLUGIN_PRESET_SUFFIX const, detectFileType endsWith-Check für compound-suffix, eventNameMap +'plugin-preset' → 'plugin-preset:import')",
+        "client/src/components/DragDropOverlay/DragDropOverlay.tsx (OVERLAY_STYLES + SUBTEXT_BY_TYPE für 'plugin-preset' mit 🔌-Icon + accent-secondary)",
+        "client/src/App.tsx (+~45 LOC — useEffect für 'plugin-preset:import' Listener mit async file.text() + dynamic-import importPresetFromJson + toast für success/error/warnings)",
+        "tests/features/plugin-preset-share.test.ts (NEU, 17 Tests in 7 describes — Export/Import/Dedup/Missing-Plugin/Schema-Validation/Round-Trip/Drag-Drop/hashPresetSlots)",
+        "package.json (3.46.0 → 3.47.0)",
+        "agents/INDEX.js (version + workLog v3.47.0)"
+      ]
+    },
     {
       agent:     "backend",
       timestamp: "2026-05-18T20:36:00.000Z",

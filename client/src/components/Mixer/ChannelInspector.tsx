@@ -25,11 +25,15 @@ import {
 } from "@/audio/PluginRegistry";
 import { MAX_PLUGIN_SLOTS_PER_CHANNEL, type MixerPluginSlot } from "@/store/useMixerStore";
 // v3.46: Plugin-Chain Preset Save/Load (schließt v3.45 Caveat 4)
+// v3.47: + JSON-Sharing Export/Import (closes v3.46-Caveat)
 import {
   usePluginChainPresetStore,
   addPluginChainPreset,
   removePluginChainPreset,
   cloneSlotsFromPreset,
+  exportPresetAsJson,
+  exportAllPresetsAsJson,
+  importPresetFromJson,
 } from "@/store/usePluginChainPresetStore";
 import { extractPatch, type Patch } from "@/utils/patchSerialize";
 import { savePatch, usePatchStore } from "@/store/usePatchStore";
@@ -76,6 +80,48 @@ export interface ChannelInspectorProps {
   pattern?: PatternData;
   bpm?: number;
   projectName?: string;
+}
+
+// v3.47.0: Hilfsfunktionen für JSON-Preset-Download (Plugin-Chain).
+// Liegen außerhalb der React-Komponente damit sie auch in Tests testbar sind
+// (siehe tests/features/plugin-preset-share.test.ts — UI-Code wird dort nicht
+// importiert, nur die Pure-Helpers).
+function downloadPluginPresetJson(json: string, filename: string): void {
+  if (typeof window === "undefined" || typeof document === "undefined") return;
+  try {
+    const blob = new Blob([json], { type: "application/json;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.style.display = "none";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    // Revoke etwas später damit Safari den Download starten kann.
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  } catch (err) {
+    console.error("[ChannelInspector] Preset-Download-Fehler:", err);
+  }
+}
+
+function sanitizePresetFilename(presetId: string, json: string): string {
+  // Versuche den Namen aus dem Envelope zu extrahieren — fallback auf ID.
+  try {
+    const parsed = JSON.parse(json) as { preset?: { name?: string } };
+    const name = parsed?.preset?.name;
+    if (typeof name === "string" && name.trim().length > 0) {
+      const cleaned = name
+        .trim()
+        .replace(/[^a-z0-9-_]+/gi, "_")
+        .slice(0, 60);
+      return `${cleaned}.synthpreset.json`;
+    }
+  } catch {
+    /* ignore — fallback below */
+  }
+  const safe = presetId.replace(/[^a-z0-9-_.]/gi, "_");
+  return `${safe}.synthpreset.json`;
 }
 
 export function ChannelInspector({ part, parts, mixer, className, onApplyPatch, pattern, bpm, projectName }: ChannelInspectorProps) {
@@ -387,6 +433,50 @@ export function ChannelInspector({ part, parts, mixer, className, onApplyPatch, 
           if (removePluginChainPreset(id)) {
             toast("Preset entfernt", { kind: "success" });
           }
+        }}
+        onExportPreset={(id) => {
+          // v3.47: Single-Preset JSON-Download
+          const json = exportPresetAsJson(id);
+          if (!json) {
+            toast("Preset nicht gefunden", { kind: "error" });
+            return;
+          }
+          downloadPluginPresetJson(json, sanitizePresetFilename(id, json));
+          toast("Preset exportiert", { kind: "success" });
+        }}
+        onExportAllPresets={() => {
+          // v3.47: Bulk-Export aller Presets
+          const json = exportAllPresetsAsJson();
+          downloadPluginPresetJson(
+            json,
+            `synthstudio-plugin-presets-${new Date().toISOString().slice(0, 10)}.synthpreset.json`,
+          );
+          toast("Alle Presets exportiert", { kind: "success" });
+        }}
+        onImportPresets={(file) => {
+          // v3.47: JSON-Import via File-Picker
+          void file.text().then((text) => {
+            const result = importPresetFromJson(text);
+            if (result.success) {
+              const count = result.importedIds.length;
+              const skipped = result.duplicatesSkipped > 0
+                ? ` (${result.duplicatesSkipped} Duplikat${result.duplicatesSkipped === 1 ? "" : "e"} übersprungen)`
+                : "";
+              toast(`${count} Preset${count === 1 ? "" : "s"} importiert${skipped}`, {
+                kind: "success",
+              });
+              // Warnings (z.B. Missing Plugin) als info-toast nachreichen
+              for (const w of result.warnings.slice(0, 3)) {
+                toast(w, { kind: "info" });
+              }
+            } else {
+              const firstError = result.errors[0] ?? "Import fehlgeschlagen";
+              toast(firstError, { kind: "error" });
+            }
+          }).catch((err) => {
+            console.error("[ChannelInspector] Preset-Import-Fehler:", err);
+            toast("Datei konnte nicht gelesen werden", { kind: "error" });
+          });
         }}
       />
 
@@ -933,6 +1023,12 @@ interface PluginChainSectionProps {
   onSavePreset: (name: string) => boolean;
   /** v3.46: Entfernt ein User-Preset. */
   onRemovePreset: (presetId: string) => void;
+  /** v3.47: Exportiert ein einzelnes Preset als JSON-Download. */
+  onExportPreset: (presetId: string) => void;
+  /** v3.47: Bulk-Export aller Presets als JSON-Bundle. */
+  onExportAllPresets: () => void;
+  /** v3.47: Triggert File-Picker für JSON-Import. */
+  onImportPresets: (file: File) => void;
 }
 
 function PluginChainSection({
@@ -947,6 +1043,9 @@ function PluginChainSection({
   onApplyPreset,
   onSavePreset,
   onRemovePreset,
+  onExportPreset,
+  onExportAllPresets,
+  onImportPresets,
 }: PluginChainSectionProps) {
   const plugins = React.useMemo(() => getRegisteredPlugins(), []);
   const canAddMore = slots.length < MAX_PLUGIN_SLOTS_PER_CHANNEL;
@@ -956,6 +1055,8 @@ function PluginChainSection({
   const [presetSaveOpen, setPresetSaveOpen] = useState(false);
   const [presetLoadOpen, setPresetLoadOpen] = useState(false);
   const [presetName, setPresetName] = useState("");
+  // v3.47: hidden <input type=file> für Import
+  const importInputRef = React.useRef<HTMLInputElement | null>(null);
   const handleSavePreset = useCallback(() => {
     const ok = onSavePreset(presetName);
     if (ok) {
@@ -963,6 +1064,18 @@ function PluginChainSection({
       setPresetName("");
     }
   }, [onSavePreset, presetName]);
+  const handleImportClick = useCallback(() => {
+    importInputRef.current?.click();
+  }, []);
+  const handleImportFileChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const f = e.target.files?.[0];
+      if (f) onImportPresets(f);
+      // input value zurücksetzen damit derselbe Dateiname erneut wählbar bleibt
+      e.target.value = "";
+    },
+    [onImportPresets],
+  );
 
   return (
     <section className="border-b border-border-color p-3" data-testid={`channel-plugin-chain-${partId}`}>
@@ -1069,6 +1182,42 @@ function PluginChainSection({
           className="mb-2 p-2 rounded border border-accent-primary/60 bg-accent-primary/10"
           data-testid={`channel-plugin-load-preset-list-${partId}`}
         >
+          {/* v3.47: Bulk-Import/Export Toolbar */}
+          <div className="mb-2 flex items-center justify-between gap-1">
+            <span className="text-[10px] text-text-dim">
+              {presets.length} Preset{presets.length === 1 ? "" : "s"}
+            </span>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={onExportAllPresets}
+                disabled={presets.length === 0}
+                title="Alle Presets als JSON-Bundle exportieren"
+                className="rounded border border-border-color px-2 py-1 text-[10px] text-text-dim hover:text-text-primary disabled:opacity-40 disabled:cursor-not-allowed"
+                data-testid={`channel-plugin-export-all-${partId}`}
+              >
+                📋 Export All
+              </button>
+              <button
+                type="button"
+                onClick={handleImportClick}
+                title="Preset(s) aus JSON-Datei importieren"
+                className="rounded border border-border-color px-2 py-1 text-[10px] text-text-dim hover:text-text-primary"
+                data-testid={`channel-plugin-import-${partId}`}
+              >
+                ⬆ Import
+              </button>
+              <input
+                ref={importInputRef}
+                type="file"
+                accept=".json,.synthpreset.json,application/json"
+                onChange={handleImportFileChange}
+                className="hidden"
+                data-testid={`channel-plugin-import-input-${partId}`}
+              />
+            </div>
+          </div>
+
           {presets.length === 0 && (
             <div className="text-center text-[10px] text-text-dim py-2">
               Keine Presets gespeichert.
@@ -1101,6 +1250,16 @@ function PluginChainSection({
                   <div className="text-[9px] text-text-dim">
                     {p.slots.length} Slot{p.slots.length === 1 ? "" : "s"}
                   </div>
+                </button>
+                {/* v3.47: Per-Preset Export */}
+                <button
+                  type="button"
+                  onClick={() => onExportPreset(p.id)}
+                  title="Preset als JSON-Datei exportieren"
+                  className="px-2 py-1 text-[10px] text-text-dim hover:text-accent-primary"
+                  data-testid={`channel-plugin-export-preset-${partId}-${p.id}`}
+                >
+                  ⬇
                 </button>
                 {!p.builtIn && (
                   <button

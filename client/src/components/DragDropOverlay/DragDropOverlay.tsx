@@ -86,6 +86,13 @@ const OVERLAY_STYLES: Record<FileType, { border: string; bg: string; text: strin
     label: "KORG Sample-Bank importieren",
     icon: "📦",
   },
+  "plugin-preset": {
+    border: "border-accent-secondary",
+    bg: "bg-accent-secondary/10",
+    text: "text-accent-secondary",
+    label: "Plugin-Chain-Preset importieren",
+    icon: "🔌",
+  },
   unknown: {
     border: "border-border-color",
     bg: "bg-bg-elevated/40",
@@ -102,6 +109,7 @@ const SUBTEXT_BY_TYPE: Record<FileType, string> = {
   midi: "Notes werden in das aktuelle Pattern importiert",
   electribe: ".e2spat / .e2sallpat / .elst — KORG Hardware-Pattern",
   "korg-bank": ".esx / .all — ESX-1 oder E2S Sample-Bank (Read-Only v3.3)",
+  "plugin-preset": ".synthpreset.json — Plugin-Chain-Preset (Save/Load über Channel-Inspector)",
   unknown: "Datei-Typ unbekannt — wird ignoriert",
 };
 

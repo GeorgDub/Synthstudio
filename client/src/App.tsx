@@ -2559,6 +2559,46 @@ export default function App() {
     return () => window.removeEventListener("korg:bank:export-open", handler);
   }, []);
 
+  // v3.47.0: Plugin-Chain-Preset JSON-Import via Drag-Drop.
+  // dragDropDispatch routet .synthpreset.json → "plugin-preset:import".
+  // Wir lesen die Datei, parsen via importPresetFromJson und feedback'n via Toast.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const file = (e as CustomEvent<File>).detail;
+      if (!(file instanceof File)) return;
+      void (async () => {
+        try {
+          const text = await file.text();
+          const { importPresetFromJson } = await import(
+            "@/store/usePluginChainPresetStore"
+          );
+          const { toast } = await import("@/store/useToastStore");
+          const result = importPresetFromJson(text);
+          if (result.success) {
+            const count = result.importedIds.length;
+            const skipped = result.duplicatesSkipped > 0
+              ? ` (${result.duplicatesSkipped} Duplikat${result.duplicatesSkipped === 1 ? "" : "e"} übersprungen)`
+              : "";
+            toast(
+              `Plugin-Preset: ${count} importiert${skipped}`,
+              { kind: "success" },
+            );
+            for (const w of result.warnings.slice(0, 3)) {
+              toast(w, { kind: "info" });
+            }
+          } else {
+            const firstError = result.errors[0] ?? "Import fehlgeschlagen";
+            toast(firstError, { kind: "error" });
+          }
+        } catch (err) {
+          console.error("[App] plugin-preset:import Fehler:", err);
+        }
+      })();
+    };
+    window.addEventListener("plugin-preset:import", handler);
+    return () => window.removeEventListener("plugin-preset:import", handler);
+  }, []);
+
   const handleDropZipFile = useCallback(
     async (file: File) => {
       try {

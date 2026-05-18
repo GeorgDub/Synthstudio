@@ -67,9 +67,29 @@ export const KORG_BANK_EXTENSIONS: ReadonlySet<string> = new Set([
   ".all",
 ]);
 
+/**
+ * Plugin-Chain-Preset Endung (v3.47.0).
+ *   .synthpreset.json → einzelnes Preset ODER Preset-Bundle (Schema-discriminated)
+ *
+ * Drop → CustomEvent "plugin-preset:import" mit detail=File. Listener in App.tsx
+ * liest die Datei und ruft `importPresetFromJson()`.
+ *
+ * Hinweis: `getFileExtension()` matched die letzte Endung (.json), darum
+ * matchen wir den compound-suffix in detectFileType() via endsWith.
+ */
+export const PLUGIN_PRESET_SUFFIX = ".synthpreset.json" as const;
+
 // ─── Typen ────────────────────────────────────────────────────────────────────
 
-export type FileType = "audio" | "project" | "zip" | "midi" | "electribe" | "korg-bank" | "unknown";
+export type FileType =
+  | "audio"
+  | "project"
+  | "zip"
+  | "midi"
+  | "electribe"
+  | "korg-bank"
+  | "plugin-preset"
+  | "unknown";
 
 /**
  * Ergebnis eines Dispatch-Aufrufs.
@@ -109,6 +129,10 @@ export function getFileExtension(name: string): string {
  *   detectFileType("unbekannt.xyz")    // "unknown"
  */
 export function detectFileType(name: string): FileType {
+  if (typeof name !== "string" || name.length === 0) return "unknown";
+  // Compound-suffix check zuerst — `.synthpreset.json` würde sonst als
+  // `.json` interpretiert und unten als `unknown` durchfallen.
+  if (name.toLowerCase().endsWith(PLUGIN_PRESET_SUFFIX)) return "plugin-preset";
   const ext = getFileExtension(name);
   if (ext === "") return "unknown";
   if (AUDIO_EXTENSIONS.has(ext)) return "audio";
@@ -164,6 +188,7 @@ export function dispatchFileDrop(file: { name: string }): DispatchResult {
     midi: "midi:fileImport",
     electribe: "electribe:fileImport",
     "korg-bank": "korg:bank:open",
+    "plugin-preset": "plugin-preset:import",
   };
 
   const eventName = eventNameMap[type];
