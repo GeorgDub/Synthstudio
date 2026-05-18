@@ -76,6 +76,10 @@ import { toast } from "@/store/useToastStore";
 import { ToastContainer } from "@/components/UI/ToastContainer";
 import { ActivationModal } from "@/components/License/ActivationModal";
 import { initializeLicenseStore } from "@/store/useLicenseStore";
+// TASK-232-FOLLOWUP / v2.98: Pro-Feature-Gate für MIDI-Note-Out (Bridge-Effect).
+import { isFeatureUnlocked, PRO_FEATURE_MIDI_NOTE_OUT } from "@/utils/proFeatures";
+import { toast as showToast } from "@/store/useToastStore";
+import { GUMROAD_PRODUCT_URL } from "@/utils/licenseConfig";
 import { useLiveStepRecorder } from "@/hooks/useLiveStepRecorder";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { MidiSettings } from "@/components/MidiSettings";
@@ -1682,8 +1686,37 @@ export default function App() {
   // setPartConfig / clearPartConfig entsprechend rein. Setzen außerdem den
   // globalen Enable-Flag durch.
   const midiNoteOutState = useMidiNoteOutStore();
+  const midiNoteOutLockToastShownRef = useRef(false);
   useEffect(() => {
-    AudioEngine.setMidiNoteOutEnabled(midiNoteOutState.enabled);
+    // v2.98 Pro-Gate: wenn der User MIDI-Note-Out im Store aktiviert hat aber
+    // weder Trial noch Pro-Lizenz hält, halten wir die Engine aus (silent skip
+    // im Audio-Scheduling) und zeigen den Toast genau einmal. Toggle im
+    // ChannelInspector bleibt aber bedienbar (Discovery), damit der User die
+    // Konfiguration sehen + nach Aktivierung sofort nutzen kann.
+    const requested = midiNoteOutState.enabled;
+    const unlocked = isFeatureUnlocked(PRO_FEATURE_MIDI_NOTE_OUT);
+    const effectiveEnabled = requested && unlocked;
+
+    AudioEngine.setMidiNoteOutEnabled(effectiveEnabled);
+
+    if (requested && !unlocked && !midiNoteOutLockToastShownRef.current) {
+      midiNoteOutLockToastShownRef.current = true;
+      showToast("MIDI-Note-Out ist ein Pro-Feature — Notes werden NICHT extern gesendet.", {
+        kind: "warning",
+        duration: 6000,
+        action: {
+          label: "Lizenz kaufen",
+          onClick: () => {
+            try { if (typeof window !== "undefined") window.open(GUMROAD_PRODUCT_URL, "_blank"); } catch { /* */ }
+          },
+        },
+      });
+    }
+    if (!requested) {
+      // Reset toast latch sobald User MIDI-Note-Out wieder ausschaltet.
+      midiNoteOutLockToastShownRef.current = false;
+    }
+
     const engineConfigured = new Set(AudioEngine.getMidiNoteOut().getAllConfiguredPartIds());
     const storeConfigured = new Set(Object.keys(midiNoteOutState.configs));
     // Entfernen: was in Engine ist aber nicht im Store
@@ -1692,7 +1725,8 @@ export default function App() {
         AudioEngine.clearMidiNoteOutPartConfig(partId);
       }
     }
-    // Setzen / Aktualisieren: aktuelle Store-Configs
+    // Setzen / Aktualisieren: aktuelle Store-Configs (Configs darf der User
+    // auch ohne Pro pflegen — sie sind ein No-Op solange engine.enabled=false).
     for (const [partId, cfg] of Object.entries(midiNoteOutState.configs)) {
       AudioEngine.setMidiNoteOutPartConfig(partId, cfg);
     }

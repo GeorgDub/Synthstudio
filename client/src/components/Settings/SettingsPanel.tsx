@@ -67,6 +67,15 @@ import type { MidiState, MidiActions, MidiLearnTarget } from "@/hooks/useMidi";
 import type { PartData } from "@/audio/AudioEngine";
 import { useElectron } from "../../../../electron/useElectron";
 import { useUpdater } from "@/hooks/useUpdater";
+// TASK-232-FOLLOWUP-2 / v2.98: License-Section + ActivationModal-Re-Mount aus Settings.
+import {
+  useLicenseStore,
+  clear as clearLicense,
+  daysRemainingInTrial,
+  isPro,
+} from "@/store/useLicenseStore";
+import { ActivationModal } from "@/components/License/ActivationModal";
+import { GUMROAD_PRODUCT_URL, TRIAL_DURATION_DAYS } from "@/utils/licenseConfig";
 
 // ─── Sidebar-Abschnitte ───────────────────────────────────────────────────────
 
@@ -85,6 +94,7 @@ type Section =
   | "plugins"
   | "patches"
   | "saving"
+  | "license"
   | "about";
 
 const SECTIONS: Array<{ id: Section; icon: string; label: string; group?: string }> = [
@@ -102,6 +112,7 @@ const SECTIONS: Array<{ id: Section; icon: string; label: string; group?: string
   { id: "patches",      icon: "🎚", label: "Patch-Library",       group: "App" },
   { id: "osc",          icon: "📡", label: "OSC",                 group: "App" },
   { id: "plugins",      icon: "🧩", label: "Plugins",             group: "App" },
+  { id: "license",      icon: "🔑", label: "Lizenz",              group: "App" },
   { id: "about",        icon: "ℹ",  label: "Über",                group: "App" },
 ];
 
@@ -1644,6 +1655,110 @@ function PluginsSection() {
   );
 }
 
+// ─── License Section (TASK-232-FOLLOWUP-2 / v2.98) ───────────────────────────
+
+function LicenseSection() {
+  const state = useLicenseStore();
+  const [showActivation, setShowActivation] = useState(false);
+
+  const pro = isPro();
+  const days = daysRemainingInTrial();
+
+  // Status-Label + Farbe je Status für leichtes Scannen.
+  const statusInfo = (() => {
+    if (pro && state.status === "pro") {
+      return { label: "Pro — aktiviert", color: "text-accent-success", desc: "Alle Pro-Features freigeschaltet." };
+    }
+    if (state.status === "trial") {
+      return {
+        label: `Trial — Tag ${TRIAL_DURATION_DAYS - days + 1} von ${TRIAL_DURATION_DAYS}`,
+        color: days <= 3 ? "text-accent-secondary" : "text-accent-primary",
+        desc: `Noch ${days} Tag${days === 1 ? "" : "e"} Pro-Features kostenlos.`,
+      };
+    }
+    if (state.status === "expired") {
+      return { label: "Trial abgelaufen", color: "text-accent-danger", desc: "Pro-Features sind gesperrt." };
+    }
+    if (state.status === "invalid") {
+      return { label: "Ungültige Lizenz", color: "text-accent-danger", desc: "Die zuletzt eingegebene Lizenz wurde nicht akzeptiert." };
+    }
+    return { label: "Free", color: "text-text-muted", desc: "Du nutzt die kostenlose Variante." };
+  })();
+
+  const handleDeactivate = () => {
+    if (!window.confirm("Pro-Lizenz wirklich entfernen? Pro-Features werden gesperrt.")) return;
+    clearLicense();
+    toast("Lizenz entfernt — Pro-Features gesperrt.", { kind: "info", duration: 4000 });
+  };
+
+  return (
+    <div className="space-y-4">
+      <h3 className="text-sm font-bold text-text-primary">Lizenz</h3>
+
+      <div className="rounded border border-border-color bg-bg-elevated p-3 space-y-2" data-testid="settings-license-status">
+        <div className="flex items-center justify-between">
+          <span className="text-xs text-text-muted">Status</span>
+          <span className={["text-xs font-semibold", statusInfo.color].join(" ")}>
+            {statusInfo.label}
+          </span>
+        </div>
+        <div className="text-[11px] text-text-dim">{statusInfo.desc}</div>
+        {state.activatedEmail && (
+          <div className="text-[11px] text-text-dim">
+            Aktiviert für <span className="font-mono text-text-muted">{state.activatedEmail}</span>
+          </div>
+        )}
+      </div>
+
+      <div className="space-y-2">
+        <button
+          type="button"
+          onClick={() => setShowActivation(true)}
+          data-testid="settings-license-activate"
+          className="w-full rounded bg-accent-primary px-4 py-2 text-sm font-medium text-bg-base hover:opacity-90"
+        >
+          🔑 Lizenz aktivieren
+        </button>
+
+        <a
+          href={GUMROAD_PRODUCT_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          data-testid="settings-license-buy"
+          className="block w-full rounded border border-accent-secondary/40 text-accent-secondary bg-accent-secondary/10 px-4 py-2 text-sm font-medium text-center hover:bg-accent-secondary/20"
+        >
+          🛒 Pro-Lizenz kaufen
+        </a>
+
+        {state.status === "pro" && (
+          <button
+            type="button"
+            onClick={handleDeactivate}
+            data-testid="settings-license-deactivate"
+            className="w-full rounded border border-accent-danger/40 text-accent-danger bg-accent-danger/10 px-4 py-2 text-sm font-medium hover:bg-accent-danger/20"
+          >
+            Lizenz deaktivieren
+          </button>
+        )}
+      </div>
+
+      <div className="border-t border-border-subtle pt-3 text-[10px] text-text-dim space-y-1">
+        <div>Pro-Features: Live-Looping, USB-Audio-Eingang, Stem-Bounce, Electribe-Import, MIDI-Note-Out.</div>
+        <div>Die Aktivierung läuft offline — kein Konto, kein Tracking.</div>
+      </div>
+
+      {/* Re-Mount des ActivationModals mit forceOpen aus dem Settings-Kontext.
+          Funktioniert auch wenn das App-Level-ActivationModal bereits gemountet
+          ist — beides sind unabhängige Instanzen mit eigenem lokalen Mode-State,
+          aber sie teilen sich den Singleton-License-Store. Toggle via lokalem
+          showActivation-State. */}
+      {showActivation && (
+        <ActivationModal forceOpen onClose={() => setShowActivation(false)} />
+      )}
+    </div>
+  );
+}
+
 function AboutSection() {
   const electron = useElectron();
   const { state: updaterState, checkForUpdates } = useUpdater();
@@ -1821,6 +1936,7 @@ export function SettingsPanel({ isOpen, onClose, midi, parts, initialSection = "
           {active === "patches"      && <PatchesSection />}
           {active === "osc"          && <OscSection />}
           {active === "plugins"      && <PluginsSection />}
+          {active === "license"      && <LicenseSection />}
           {active === "about"        && <AboutSection />}
         </div>
 

@@ -11,6 +11,7 @@ import { bounceAllChannels, downloadWavInBrowser, type BounceAllProgress } from 
 import { useElectron } from "../../../../electron/useElectron";
 import { toast } from "@/store/useToastStore";
 import { requireProFeature, PRO_FEATURE_STEM_BOUNCE } from "@/utils/proFeatures";
+import { ProLockBadge } from "@/components/License/ProLockBadge";
 import type { PatternData } from "@/audio/AudioEngine";
 import type { Sample } from "@/store/useProjectStore";
 
@@ -185,11 +186,12 @@ export function ExportPanel({ pattern, bpm, samples, allPatterns = [], projectNa
         <button
           onClick={handleBounceAllStems}
           disabled={!pattern || isBouncingAll}
-          className="px-3 py-1 text-[10px] rounded border border-accent-primary/40 text-accent-primary hover:bg-accent-primary/10 disabled:opacity-40 font-bold transition-colors"
+          className="relative px-3 py-1 text-[10px] rounded border border-accent-primary/40 text-accent-primary hover:bg-accent-primary/10 disabled:opacity-40 font-bold transition-colors inline-flex items-center gap-1.5"
           title="Per-Channel Stem-Bounce: jeden Channel separat als WAV (inkl. Pan, Volume, Filter)"
           data-testid="export-bounce-all-stems"
         >
           {isBouncingAll ? "Bouncing…" : "🎬 Bounce All Stems"}
+          <ProLockBadge feature={PRO_FEATURE_STEM_BOUNCE} />
         </button>
       </div>
       {bounceAllMsg && (

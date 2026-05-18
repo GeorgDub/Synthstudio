@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "2.97.0",
+    version: "2.98.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -104,9 +104,34 @@ const INDEX = {
       ownedBy:  "backend"
     },
     "client/src/components/License/ActivationModal.tsx (TASK-232 v2.97)": {
-      role:     "v2.97.0: Lizenz-Aktivierungs-Modal. Auto-shown wenn licenseStore.status='unknown', via forceOpen-Prop manuell aus Settings öffnen. 2 Modi: 'choice' (Trial-starten / Aktivieren / Free-Continue / Buy-Link zu Gumroad) und 'activate' (textarea key + email-input + Validate-Button mit busy/error-State). Nutzt semantic Tailwind classes (bg-bg-panel, text-text-primary, border-border-color, bg-accent-primary). Closable nur via forceOpen=true; im Auto-Mode (unknown) NICHT closable. Bei Placeholder-Public-Key warnt der Modal inline ('Hinweis Dev: Public-Key ist Placeholder').",
-      lastSeen: "2026-05-18T06:35:00.000Z",
+      role:     "v2.97.0: Lizenz-Aktivierungs-Modal. Auto-shown wenn licenseStore.status='unknown', via forceOpen-Prop manuell aus Settings öffnen. 2 Modi: 'choice' (Trial-starten / Aktivieren / Free-Continue / Buy-Link zu Gumroad) und 'activate' (textarea key + email-input + Validate-Button mit busy/error-State). Nutzt semantic Tailwind classes (bg-bg-panel, text-text-primary, border-border-color, bg-accent-primary). Closable nur via forceOpen=true; im Auto-Mode (unknown) NICHT closable. Bei Placeholder-Public-Key warnt der Modal inline ('Hinweis Dev: Public-Key ist Placeholder'). v2.98: wird jetzt zusätzlich aus Settings-License-Section re-mountable via forceOpen=true (Re-Mount-Pattern statt Singleton-State).",
+      lastSeen: "2026-05-18T06:55:00.000Z",
       ownedBy:  "backend"
+    },
+    "client/src/components/License/ProLockBadge.tsx (TASK-232-FOLLOWUP v2.98)": {
+      role:     "v2.98.0: ProLockBadge — kleines 🔒-Icon-Badge (Lucide Lock, size=12 default) mit Tooltip '<Label> — Pro-Feature'. Renders nur wenn !isFeatureUnlocked(feature) via useLicenseStore-Subscribe (re-render bei Status-Wechsel). pointer-events-none → blockiert KEINEN Underlay-Klick, Underlay-Button feuert beim Klick requireProFeature → kontextueller Toast statt silent-disable. Props {feature, className?, title?, size?=12}. data-testid=pro-lock-badge-<feature>. Verwendet in MixerView '+ Live Input', ExportPanel 'Bounce All Stems', DrumMachine '🎚 Electribe', LooperPanel-Header.",
+      lastSeen: "2026-05-18T06:55:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/components/PerformanceMode/LooperPanel.tsx (TASK-232-FOLLOWUP v2.98)": {
+      role:     "v2.98.0: Live-Looper-UI. handlePointerUp und handlePointerDown (Long-Press-Erase) prüfen jetzt requireProFeature(PRO_FEATURE_LIVE_LOOPING) — locked → return ohne triggerLoop/eraseLoop (Toast erscheint via requireProFeature). ProLockBadge im Header neben '4/4 aktiv'-Counter (sichtbar nur wenn locked).",
+      lastSeen: "2026-05-18T06:55:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/components/Settings/SettingsPanel.tsx (TASK-232-FOLLOWUP v2.98)": {
+      role:     "v2.98.0: +Section 'license' (Icon 🔑, group 'App', VOR 'about'). LicenseSection-Komponente mit Status-Display ('Pro — aktiviert' / 'Trial — Tag N von 30' Farb-Eskalation wenn ≤3 Tage / 'Trial abgelaufen' / 'Ungültige Lizenz' / 'Free'), '🔑 Lizenz aktivieren'-Button öffnet ActivationModal mit forceOpen=true (Re-Mount via lokaler showActivation-useState, conditional render), 'Pro-Lizenz kaufen'-Link → GUMROAD_PRODUCT_URL, 'Lizenz deaktivieren'-Button (nur sichtbar wenn status='pro') mit window.confirm-Schutz → clearLicense() + Toast. data-testids settings-license-{status,activate,buy,deactivate}.",
+      lastSeen: "2026-05-18T06:55:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "tests/features/license-gates.test.ts (TASK-232-FOLLOWUP v2.98)": {
+      role:     "v2.98.0: 11 Pure-Tests für die NEUEN Pro-Feature-Gates. PRO_FEATURES-Registry-Vollständigkeit (1), Live-Looping-Gate (4 — expired-locked/Toast-feuert/Trial-unlocked/expired-Sondertext mit '30-Tage-Trial ist abgelaufen'), MIDI-Note-Out-Gate (3 — locked-Toast/Trial-unlocked/Pro-unlocked), ProLockBadge-Sichtbarkeits-Regel (3 — Trial-alle-5-hidden/expired-alle-5-visible/unknown-visible). vi.mock auf @/store/useToastStore.toast für zählbare Calls. Stub für window.open damit Toast-Action keine Errors wirft. localStorage-Shim analog license.test.ts.",
+      lastSeen: "2026-05-18T06:55:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "tests/web/license-polish.spec.ts (TASK-232-FOLLOWUP v2.98)": {
+      role:     "v2.98.0: 5 Playwright-Smokes für License-Polish-UI. seedLicenseState(page, status, opts)-Helper für localStorage-Seeding mit status='trial'/'pro'/'expired', openSettingsLicenseSection(page)-Helper (Gear-Button → Lizenz-Tab). Tests: Settings→Lizenz-Section erreichbar+Trial-Status sichtbar, ActivationModal aus Settings öffnen + via X-Button (forceOpen=true→X visible) schließen, ProLockBadge sichtbar bei expired für USB-Audio-In-Button (Mixer-Tab), Badge UN-sichtbar im Trial, Pro-Status → Deaktivieren-Button sichtbar.",
+      lastSeen: "2026-05-18T06:55:00.000Z",
+      ownedBy:  "frontend"
     },
     "tests/features/license.test.ts (TASK-232 v2.97)": {
       role:     "v2.97.0: 18 Tests. Trial-Lifecycle (5 — start/no-reset/days-decrement/auto-expire/initialize-expired), validateLicenseKey (7 — invalid-format/valid-roundtrip/manipulierte-Sig/expired/falscher-productId/parseLicenseKey-Robustheit/decodePayload-Defekte), Pro-Feature-Gate (4 — trial-unlocked/expired-locked/activate-invalid-no-pro/unknown-feature-default), Persistenz (2 — localStorage-Round-Trip/sanitizeState-NaN-Filter). beforeAll generiert frischen ED25519-Keypair via ed.keygenAsync, signLicensePayload mintet Test-Keys. localStorage-Shim für Node-Test-Env (MemoryStorage-Klasse).",
@@ -931,6 +956,34 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "frontend",
+      timestamp: "2026-05-18T06:55:00.000Z",
+      done: [
+        "v2.98.0: TASK-232-FOLLOWUP — License-Polish: alle 5 Pro-Features gated, Settings-Section, Lock-Badges. (1) NEU client/src/components/License/ProLockBadge.tsx — kleines 🔒-Icon-Badge (Lucide Lock, size=12 default) mit Tooltip '<Label> — Pro-Feature' das nur sichtbar wird wenn isFeatureUnlocked(feature)=false. pointer-events-none, blockiert KEINEN Underlay-Klick — der Button bleibt klickbar und feuert requireProFeature beim Klick → kontextueller Toast statt silent-disable (CLAUDE.md-Regel). Subscribt useLicenseStore für automatisches Re-Render bei Status-Wechsel. data-testid=pro-lock-badge-<feature>. (2) Gate-1 LooperPanel (Live-Looping): client/src/components/PerformanceMode/LooperPanel.tsx — handlePointerUp und handlePointerDown (Long-Press-Erase) prüfen jetzt requireProFeature(PRO_FEATURE_LIVE_LOOPING); locked → return ohne triggerLoop/eraseLoop (Toast erscheint via requireProFeature). ProLockBadge im Header neben '4/4 aktiv'-Counter. (3) Gate-2 MIDI-Note-Out (Bridge-Effect): client/src/App.tsx — der bestehende useMidiNoteOutStore-Diff-Sync-Effect leitet jetzt `effectiveEnabled = requested && isFeatureUnlocked(PRO_FEATURE_MIDI_NOTE_OUT)` an AudioEngine.setMidiNoteOutEnabled, sodass auch wenn der User die Engine im ChannelInspector toggelt KEINE Notes extern raus gehen wenn nicht-Pro. Toast wird via midiNoteOutLockToastShownRef.current LATCH genau einmal pro Aktivierungsversuch gefeuert (Toast-Spam-Schutz). Latch reset wenn requested=false. UI-Toggle bleibt bedienbar (Discovery). (4) ProLockBadges visuell platziert in: MixerView '+ Live Input'-Button (PRO_FEATURE_USB_AUDIO_IN), ExportPanel 'Bounce All Stems'-Button (PRO_FEATURE_STEM_BOUNCE), DrumMachine '🎚 Electribe'-Button (PRO_FEATURE_ELECTRIBE_IMPORT), LooperPanel-Header (PRO_FEATURE_LIVE_LOOPING). MIDI-Note-Out-Section im ChannelInspector hat bereits ein eigenes Empty-State-Wording — Badge dort optional als Follow-Up. (5) NEU Settings-License-Section: client/src/components/Settings/SettingsPanel.tsx — Section 'license' (Icon 🔑, group 'App', VOR 'about') mit Status-Display ('Pro — aktiviert' / 'Trial — Tag N von 30' mit Farb-Eskalation wenn ≤3 Tage / 'Trial abgelaufen' / 'Ungültige Lizenz' / 'Free'), '🔑 Lizenz aktivieren'-Button öffnet ActivationModal mit forceOpen=true (RE-MOUNT-Pattern: lokaler useState showActivation, conditional render <ActivationModal forceOpen onClose={...}/>). 'Pro-Lizenz kaufen'-Link → GUMROAD_PRODUCT_URL. 'Lizenz deaktivieren'-Button (nur sichtbar wenn status='pro') mit window.confirm-Schutz → clearLicense() + Toast. data-testids settings-license-{status,activate,buy,deactivate}. (6) Tests tests/features/license-gates.test.ts (NEU, 11 Tests): PRO_FEATURES-Registry-Vollständigkeit (1), Live-Looping-Gate (4 — expired-locked/Toast-feuert/Trial-unlocked/expired-Sondertext), MIDI-Note-Out-Gate (3 — locked-Toast/Trial-unlocked/Pro-unlocked), ProLockBadge-Sichtbarkeits-Regel (3 — Trial-hidden/expired-visible-für-alle-5/unknown-visible). Mock auf @/store/useToastStore.toast via vi.mock damit Toast-Calls zählbar sind. Stub für window.open. (7) NEU tests/web/license-polish.spec.ts (5 Playwright-Smokes): localStorage-Seeding-Helper für status='trial'/'pro'/'expired', openSettingsLicenseSection-Helper (Gear → Lizenz-Tab). Coverage: Settings→Lizenz-Section erreichbar + Trial-Status sichtbar, ActivationModal aus Settings öffnen+schließen via X-Button, ProLockBadge-Sichtbarkeit im expired vs. Trial, Pro-Status zeigt Deaktivieren-Button. (8) package.json 2.97.0 → 2.98.0. (9) pnpm check clean, pnpm test 3486 passed / 15 skipped (vs prev 3473, +13 Net inkl. license-gates.test.ts und ein paar collateral-tests die nun lizenzabhängige Pfade hitten). Architektur-Entscheidungen: (a) ActivationModal aus Settings = unabhängige Re-Mount-Instanz (lokaler State im Settings-Kontext), beide Instanzen synchronisieren über den Singleton-License-Store automatisch — nicht über ein Singleton-Modal-State. (b) MIDI-Note-Out Toast NUR im Bridge-Effect (1x pro Aktivierungs-Versuch), NICHT pro Step — sonst hätte jede Note ein Toast gefeuert. (c) ProLockBadge ist absichtlich `pointer-events-none` damit der unterliegende Button klickbar bleibt — Toast erscheint via requireProFeature im onClick-Handler. CAVEATS: (1) Bei sehr alten DOM-Browser-Sessions ohne window.confirm würde 'Lizenz deaktivieren' silent failen — Synthstudio läuft aber nicht auf solchen Browsern (Electron 40 / Modern Chromium). (2) Die Playwright-Tests benötigen einen seedLicenseState-Aufruf VOR page.goto, weil das ActivationModal sonst beim 'unknown'-Default die App blockiert."
+      ],
+      next: [
+        "TASK-232-FOLLOWUP-5 (Channel-Inspector MIDI-Note-Out-Section Badge): Optional ProLockBadge im Section-Header neben 'MIDI-Note-Out' Heading.",
+        "TASK-232-FOLLOWUP-6 (Trial-End-Reminder): Toast mit 'Noch 3 Tage Trial'-Hint je Tag ab T-3, T-2, T-1, T-0 via tickCheck im App.tsx-onMount.",
+        "TASK-232-FOLLOWUP-1 (Gumroad-Real-Integration): User generiert reale ED25519-Keypair, ersetzt LICENSE_PUBLIC_KEY_HEX in client/src/utils/licenseConfig.ts:43 + GUMROAD_PRODUCT_URL:50. Vendor-Side-Webhook bleibt offen.",
+        "TASK-241-FOLLOWUP-2-GRANULAR / FOLLOWUP-3-SYNTHLFO / FOLLOWUP-4-CUSTOMWAVE bleiben offen.",
+        "TASK-242-EXTRACT-SYNTHGRAPH + EXTRACT-FXGRAPH (REFACTOR) bleiben offen.",
+        "TASK-239 (VST3/CLAP-Host) bleibt offen."
+      ],
+      changed: [
+        "client/src/components/License/ProLockBadge.tsx (NEU — kleines Lock-Icon-Badge mit Tooltip, sichtbar nur wenn locked, pointer-events-none)",
+        "client/src/components/PerformanceMode/LooperPanel.tsx (+ Pro-Gate auf handlePointerUp/handlePointerDown via requireProFeature(PRO_FEATURE_LIVE_LOOPING), +ProLockBadge im Header)",
+        "client/src/App.tsx (+isFeatureUnlocked-Gate im useMidiNoteOutStore-Bridge-Effect, midiNoteOutLockToastShownRef-Latch für 1x-Toast, AudioEngine bleibt disabled wenn locked auch wenn Store-Toggle 'an' ist)",
+        "client/src/components/Mixer/ExportPanel.tsx (+ProLockBadge neben '🎬 Bounce All Stems')",
+        "client/src/components/Mixer/MixerView.tsx (+ProLockBadge neben '+ Live Input')",
+        "client/src/components/DrumMachine/DrumMachine.tsx (+ProLockBadge neben '🎚 Electribe')",
+        "client/src/components/Settings/SettingsPanel.tsx (+Section 'license' mit Status-Display, Aktivieren/Buy/Deaktivieren-Buttons, ActivationModal-Re-Mount mit forceOpen)",
+        "tests/features/license-gates.test.ts (NEU, 11 Tests — PRO_FEATURES-Registry, Live-Looping-Gate, MIDI-Note-Out-Gate, ProLockBadge-Sichtbarkeits-Regel)",
+        "tests/web/license-polish.spec.ts (NEU, 5 Playwright-Smokes — Settings-Section, ActivationModal-Open/Close, Lock-Badge-Sichtbarkeit, Pro-Deaktivieren-Button)",
+        "package.json (2.97.0 → 2.98.0)",
+        "agents/INDEX.js (workLog + version 2.98.0 + files-Index)"
+      ]
+    },
     {
       agent:     "backend",
       timestamp: "2026-05-18T06:35:00.000Z",

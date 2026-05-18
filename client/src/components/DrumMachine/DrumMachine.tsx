@@ -35,6 +35,7 @@ import {
   type SynthstudioPatternImport,
 } from "@/utils/electribeImport";
 import { requireProFeature, PRO_FEATURE_ELECTRIBE_IMPORT } from "@/utils/proFeatures";
+import { ProLockBadge } from "@/components/License/ProLockBadge";
 import { GranularSynthPanel } from "./GranularSynthPanel";
 import { DEFAULT_GRANULAR_PARAMS } from "@/audio/GranularEngine";
 import { PolyrhythmVisualizer } from "./PolyrhythmVisualizer";
@@ -1228,10 +1229,11 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
         <button
           onClick={() => electribeImportRef.current?.click()}
           title="KORG Electribe Pattern importieren (.e2pattern oder .e2sallpat)"
-          className="px-2 py-1 rounded text-[10px] bg-bg-elevated text-text-dim hover:bg-bg-elevated hover:text-text-primary transition-colors"
+          className="px-2 py-1 rounded text-[10px] bg-bg-elevated text-text-dim hover:bg-bg-elevated hover:text-text-primary transition-colors inline-flex items-center gap-1"
           data-testid="electribe-import"
         >
           🎚 Electribe
+          <ProLockBadge feature={PRO_FEATURE_ELECTRIBE_IMPORT} />
         </button>
         <input
           ref={electribeImportRef}

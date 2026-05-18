@@ -26,6 +26,9 @@ import {
   addLiveInputChannel,
   MAX_LIVE_INPUT_CHANNELS,
 } from "@/store/useLiveInputStore";
+// TASK-232-FOLLOWUP / v2.98: Live-Input (USB-Audio-In) ist ein Pro-Feature.
+import { ProLockBadge } from "@/components/License/ProLockBadge";
+import { PRO_FEATURE_USB_AUDIO_IN } from "@/utils/proFeatures";
 import {
   useAudioTrackStore,
   addAudioTrack,
@@ -679,12 +682,13 @@ export function MixerView({ dm, mixer, samples = [], bpm = 120, projectName = "S
               ? `Max ${MAX_LIVE_INPUT_CHANNELS} Live-Input-Kanäle erreicht`
               : "USB-Audio-Eingang als Mixer-Channel (Outboard-FX-Modus)"
           }
-          className="px-2 py-0.5 text-[10px] rounded border border-accent-primary/50 text-accent-primary bg-accent-primary/10 hover:bg-accent-primary/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          className="px-2 py-0.5 text-[10px] rounded border border-accent-primary/50 text-accent-primary bg-accent-primary/10 hover:bg-accent-primary/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center gap-1"
         >
           + Live Input
           <span className="ml-1 text-text-dim">
             ({liveInputChannels.length}/{MAX_LIVE_INPUT_CHANNELS})
           </span>
+          <ProLockBadge feature={PRO_FEATURE_USB_AUDIO_IN} />
         </button>
 
         {/* Time-Stretch Counter (TASK-121) – nur sichtbar, wenn Audio-Tracks existieren */}

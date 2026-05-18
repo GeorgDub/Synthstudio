@@ -29,6 +29,9 @@ import {
   MAX_LOOPS,
   type LoopState,
 } from "@/audio/looperUtils";
+// TASK-232-FOLLOWUP / v2.98: Live-Looping ist ein Pro-Feature.
+import { requireProFeature, PRO_FEATURE_LIVE_LOOPING } from "@/utils/proFeatures";
+import { ProLockBadge } from "@/components/License/ProLockBadge";
 
 /** Spezielle Source-Channel-Konstante: Master-Bus. */
 const SOURCE_MASTER = "master";
@@ -90,6 +93,7 @@ export function LooperPanel({ onClose }: LooperPanelProps) {
         >
           Live-Looper
         </span>
+        <ProLockBadge feature={PRO_FEATURE_LIVE_LOOPING} />
         <span
           className="text-[10px] font-mono"
           style={{ color: "var(--ss-text-dim)" }}
@@ -184,6 +188,8 @@ function LooperPad({ index, name, state, sourceChannelId }: LooperPadProps) {
     longPressFiredRef.current = false;
     longPressRef.current = window.setTimeout(() => {
       longPressFiredRef.current = true;
+      // v2.98 Pro-Gate: locked → silent no-op (Toast erscheint beim handlePointerUp-Pfad).
+      if (!requireProFeature(PRO_FEATURE_LIVE_LOOPING)) return;
       AudioEngine.eraseLoop(index);
     }, LOOP_ERASE_LONG_PRESS_MS);
   }, [index]);
@@ -194,6 +200,8 @@ function LooperPad({ index, name, state, sourceChannelId }: LooperPadProps) {
       longPressRef.current = null;
     }
     if (!longPressFiredRef.current) {
+      // v2.98 Pro-Gate: ohne Pro / Trial Toast statt triggerLoop.
+      if (!requireProFeature(PRO_FEATURE_LIVE_LOOPING)) return;
       AudioEngine.triggerLoop(index, sourceChannelId);
     }
   }, [index, sourceChannelId]);
