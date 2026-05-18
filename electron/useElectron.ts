@@ -121,6 +121,37 @@ const browserAPI = {
   }),
   getEsxBankSaveCap: async (): Promise<number> => 64 * 1024 * 1024, // 64 MB Cap mirror.
 
+  // ── Project AutoSave (v3.56.0) ─────────────────────────────────────────────
+  // Browser-Fallback: success:false → AutoSaveEngine fällt auf IndexedDB zurück.
+  autoSaveWrite: async (
+    _projectId: string,
+    _versionId: string,
+    _json: string,
+    _label?: string,
+  ): Promise<{ success: boolean; versionId?: string; filePath?: string; error?: string }> => ({
+    success: false,
+    error: "Nicht in Electron – nutze IndexedDB-Fallback",
+  }),
+  autoSaveList: async (_projectId: string): Promise<{
+    success: boolean;
+    versions?: Array<{ versionId: string; timestamp: number; size: number; label?: string; projectName?: string }>;
+    error?: string;
+  }> => ({ success: false, error: "Nicht in Electron – nutze IndexedDB-Fallback" }),
+  autoSaveRestore: async (
+    _projectId: string,
+    _versionId: string,
+  ): Promise<{ success: boolean; json?: string; meta?: { versionId: string; timestamp: number; size: number }; error?: string }> => ({
+    success: false,
+    error: "Nicht in Electron – nutze IndexedDB-Fallback",
+  }),
+  autoSaveDelete: async (
+    _projectId: string,
+    _versionId: string,
+  ): Promise<{ success: boolean; error?: string }> => ({
+    success: false,
+    error: "Nicht in Electron – nutze IndexedDB-Fallback",
+  }),
+
   importFolder: async (_folderPath: string) => ({ importId: "" }),
   cancelImport: async (_importId: string) => ({ success: false, error: "Nicht in Electron" }),
   importZip: async (_zipPath: string) => ({ importId: "" }),
@@ -377,6 +408,11 @@ export function useElectron() {
     // v3.29.0 — ESX-1 Bank Export (.esx)
     saveEsxBankAs: api.saveEsxBankAs ?? browserAPI.saveEsxBankAs,
     getEsxBankSaveCap: api.getEsxBankSaveCap ?? browserAPI.getEsxBankSaveCap,
+    // v3.56.0 — Project AutoSave
+    autoSaveWrite: api.autoSaveWrite ?? browserAPI.autoSaveWrite,
+    autoSaveList: api.autoSaveList ?? browserAPI.autoSaveList,
+    autoSaveRestore: api.autoSaveRestore ?? browserAPI.autoSaveRestore,
+    autoSaveDelete: api.autoSaveDelete ?? browserAPI.autoSaveDelete,
     importFolder: api.importFolder,
     cancelImport: api.cancelImport,
     importZip: api.importZip,

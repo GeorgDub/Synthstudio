@@ -75,6 +75,13 @@ import {
   validateEsxBankBuffer,
   ESX_BANK_SAVE_MAX_BYTES,
   LICENSE_FILE_MAX_BYTES as IPC_LICENSE_FILE_MAX_BYTES,
+  validateAutoSaveProjectId,
+  validateAutoSaveVersionId,
+  validateAutoSaveJson,
+  validateAutoSaveLabel,
+  guardAutoSavePath,
+  AUTOSAVE_MAX_JSON_BYTES,
+  AUTOSAVE_VERSION_ID_REGEX,
 } from "./ipcValidators";
 import {
   startCollabServer,
@@ -2957,6 +2964,217 @@ function registerIpcHandlers(): void {
   });
 
   ipcMain.handle("electribe:get-pattern-size", () => E2_PATTERN_FILE_SIZE_EXACT);
+
+  // ── Project AutoSave (v3.56.0) ─────────────────────────────────────────────
+  //
+  // Speichert Projekt-Versionen unter:
+  //   userData/autosave/<projectId>/<versionId>.synth
+  //
+  // Strict validation (defense-in-depth):
+  //  - projectId: alphanumeric + _ + -, max 64 chars
+  //  - versionId: 13..16-stelliger Timestamp-String
+  //  - JSON-Inhalt: max 50 MB, valides JSON
+  //  - Path-Guard: kein Traversal aus projectId / versionId
+  //
+  // Rolling-Cleanup (max 10 Versionen pro Projekt) erfolgt im Renderer-Engine
+  // nach jedem Write — der Main-Process listet/löscht aber selbst, damit der
+  // Renderer nicht "zu viele Versionen" sehen kann wenn der Cleanup vom letzten
+  // Run nicht durchgelaufen ist.
+  function getAutoSaveRoot(): string {
+    return path.join(app.getPath("userData"), "autosave");
+  }
+
+  ipcMain.handle(
+    "autosave:write",
+    async (
+      _event,
+      projectId: string,
+      versionId: string,
+      json: string,
+      label?: string,
+    ) => {
+      try {
+        const idCheck = validateAutoSaveProjectId(projectId);
+        if (!idCheck.ok) return { success: false as const, error: idCheck.error };
+        const verCheck = validateAutoSaveVersionId(versionId);
+        if (!verCheck.ok) return { success: false as const, error: verCheck.error };
+        const jsonCheck = validateAutoSaveJson(json);
+        if (!jsonCheck.ok) return { success: false as const, error: jsonCheck.error };
+        const labelCheck = validateAutoSaveLabel(label);
+        if (!labelCheck.ok) return { success: false as const, error: labelCheck.error };
+
+        const root = getAutoSaveRoot();
+        const filename = `${verCheck.value}.synth`;
+        const pathCheck = guardAutoSavePath(root, idCheck.value, filename);
+        if (!pathCheck.ok) return { success: false as const, error: pathCheck.error };
+
+        const projectDir = path.join(root, idCheck.value);
+        await fs.promises.mkdir(projectDir, { recursive: true });
+        await fs.promises.writeFile(pathCheck.resolved, json, "utf8");
+
+        // Optionales Label-Sidecar (für UI-Listing).
+        if (labelCheck.value) {
+          const sidecarPath = path.join(projectDir, `${verCheck.value}.label`);
+          await fs.promises
+            .writeFile(sidecarPath, labelCheck.value, "utf8")
+            .catch(() => {
+              /* best-effort, kein Crash */
+            });
+        }
+
+        return {
+          success: true as const,
+          versionId: verCheck.value,
+          filePath: pathCheck.resolved,
+        };
+      } catch (err) {
+        console.error("[IPC autosave:write] error:", err);
+        return { success: false as const, error: "Schreibfehler" };
+      }
+    },
+  );
+
+  ipcMain.handle("autosave:list", async (_event, projectId: string) => {
+    try {
+      const idCheck = validateAutoSaveProjectId(projectId);
+      if (!idCheck.ok) return { success: false as const, error: idCheck.error };
+
+      const projectDir = path.join(getAutoSaveRoot(), idCheck.value);
+      let entries: string[];
+      try {
+        entries = await fs.promises.readdir(projectDir);
+      } catch {
+        return { success: true as const, versions: [] };
+      }
+
+      const versions: Array<{
+        versionId: string;
+        timestamp: number;
+        size: number;
+        label?: string;
+        projectName?: string;
+      }> = [];
+      for (const entry of entries) {
+        if (!entry.endsWith(".synth")) continue;
+        const verId = entry.slice(0, -".synth".length);
+        if (!AUTOSAVE_VERSION_ID_REGEX.test(verId)) continue;
+        const filePath = path.join(projectDir, entry);
+        try {
+          const stat = await fs.promises.stat(filePath);
+          // projectName + label: best-effort.
+          let label: string | undefined;
+          let projectName: string | undefined;
+          const sidecarPath = path.join(projectDir, `${verId}.label`);
+          try {
+            label = await fs.promises.readFile(sidecarPath, "utf8");
+          } catch {
+            /* keine label */
+          }
+          // Nur erste 4096 Bytes für projectName-Sniff (Performance).
+          try {
+            const fh = await fs.promises.open(filePath, "r");
+            const buf = Buffer.alloc(Math.min(4096, stat.size));
+            await fh.read(buf, 0, buf.length, 0);
+            await fh.close();
+            const snippet = buf.toString("utf8");
+            const match = snippet.match(/"projectName"\s*:\s*"([^"\\]{0,200})"/);
+            if (match) projectName = match[1];
+          } catch {
+            /* ignore */
+          }
+          versions.push({
+            versionId: verId,
+            timestamp: parseInt(verId, 10),
+            size: stat.size,
+            label,
+            projectName,
+          });
+        } catch {
+          /* skip unreadable */
+        }
+      }
+      versions.sort((a, b) => b.timestamp - a.timestamp);
+      return { success: true as const, versions };
+    } catch (err) {
+      console.error("[IPC autosave:list] error:", err);
+      return { success: false as const, error: "Lesefehler" };
+    }
+  });
+
+  ipcMain.handle(
+    "autosave:restore",
+    async (_event, projectId: string, versionId: string) => {
+      try {
+        const idCheck = validateAutoSaveProjectId(projectId);
+        if (!idCheck.ok) return { success: false as const, error: idCheck.error };
+        const verCheck = validateAutoSaveVersionId(versionId);
+        if (!verCheck.ok) return { success: false as const, error: verCheck.error };
+
+        const root = getAutoSaveRoot();
+        const filename = `${verCheck.value}.synth`;
+        const pathCheck = guardAutoSavePath(root, idCheck.value, filename);
+        if (!pathCheck.ok) return { success: false as const, error: pathCheck.error };
+
+        try {
+          await fs.promises.access(pathCheck.resolved, fs.constants.R_OK);
+        } catch {
+          return { success: false as const, error: "Version nicht gefunden" };
+        }
+        const stat = await fs.promises.stat(pathCheck.resolved);
+        if (stat.size > AUTOSAVE_MAX_JSON_BYTES) {
+          return { success: false as const, error: "Datei zu groß" };
+        }
+        const json = await fs.promises.readFile(pathCheck.resolved, "utf8");
+
+        return {
+          success: true as const,
+          json,
+          meta: {
+            versionId: verCheck.value,
+            timestamp: parseInt(verCheck.value, 10),
+            size: stat.size,
+          },
+        };
+      } catch (err) {
+        console.error("[IPC autosave:restore] error:", err);
+        return { success: false as const, error: "Lesefehler" };
+      }
+    },
+  );
+
+  ipcMain.handle(
+    "autosave:delete",
+    async (_event, projectId: string, versionId: string) => {
+      try {
+        const idCheck = validateAutoSaveProjectId(projectId);
+        if (!idCheck.ok) return { success: false as const, error: idCheck.error };
+        const verCheck = validateAutoSaveVersionId(versionId);
+        if (!verCheck.ok) return { success: false as const, error: verCheck.error };
+
+        const root = getAutoSaveRoot();
+        const filename = `${verCheck.value}.synth`;
+        const pathCheck = guardAutoSavePath(root, idCheck.value, filename);
+        if (!pathCheck.ok) return { success: false as const, error: pathCheck.error };
+
+        await fs.promises.unlink(pathCheck.resolved).catch(() => {
+          /* idempotent — no-op wenn nicht da */
+        });
+        // Sidecar mit weg.
+        const sidecarPath = path.join(
+          getAutoSaveRoot(),
+          idCheck.value,
+          `${verCheck.value}.label`,
+        );
+        await fs.promises.unlink(sidecarPath).catch(() => {
+          /* best-effort */
+        });
+        return { success: true as const };
+      } catch (err) {
+        console.error("[IPC autosave:delete] error:", err);
+        return { success: false as const, error: "Löschfehler" };
+      }
+    },
+  );
 
   // ── ESX-1 Bank Pattern-Patch WRITE (.esx) — v3.29.0 ──────────────────────────
   //

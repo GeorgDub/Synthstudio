@@ -527,3 +527,119 @@ export function validateE2PatternBuffer(
   }
   return { ok: true };
 }
+
+// ─── PROJECT AUTOSAVE (v3.56.0) ──────────────────────────────────────────────
+
+/**
+ * Strikte Whitelist für projectId. Alphanumeric + _ + -, 1..64 chars.
+ * Diese ID wird als Verzeichnisname unter `userData/autosave/<projectId>/`
+ * verwendet — daher KEIN Punkt, kein Slash, kein Path-Traversal.
+ */
+export const AUTOSAVE_PROJECT_ID_MAX_LEN = 64;
+export const AUTOSAVE_PROJECT_ID_REGEX = /^[A-Za-z0-9_-]{1,64}$/;
+
+/**
+ * Strikte Whitelist für versionId. Reine 13..16-stellige Decimal-Strings
+ * (= epoch ms). Diese werden als Dateiname `<versionId>.synth` verwendet.
+ */
+export const AUTOSAVE_VERSION_ID_REGEX = /^\d{13,16}$/;
+
+/** Max-Größe pro AutoSave-Version (50 MB, hard-cap im Renderer-Mirror). */
+export const AUTOSAVE_MAX_JSON_BYTES = 50 * 1024 * 1024;
+
+/** Max-Label-Länge (UI-Hint, kein Sicherheits-Risiko aber LengthCheck). */
+export const AUTOSAVE_MAX_LABEL_LEN = 200;
+
+export type AutoSaveIdCheck =
+  | { ok: true; value: string }
+  | { ok: false; error: string };
+
+export function validateAutoSaveProjectId(input: unknown): AutoSaveIdCheck {
+  if (typeof input !== "string" || input.length === 0) {
+    return { ok: false, error: "Ungültige projectId" };
+  }
+  if (input.length > AUTOSAVE_PROJECT_ID_MAX_LEN) {
+    return { ok: false, error: "projectId zu lang" };
+  }
+  if (input.includes("\0") || input.includes("/") || input.includes("\\") || input.includes("..")) {
+    return { ok: false, error: "projectId enthält unzulässige Zeichen" };
+  }
+  if (!AUTOSAVE_PROJECT_ID_REGEX.test(input)) {
+    return { ok: false, error: "projectId muss alphanumerisch sein" };
+  }
+  return { ok: true, value: input };
+}
+
+export function validateAutoSaveVersionId(input: unknown): AutoSaveIdCheck {
+  if (typeof input !== "string" || input.length === 0) {
+    return { ok: false, error: "Ungültige versionId" };
+  }
+  if (input.includes("\0") || input.includes("/") || input.includes("\\") || input.includes("..")) {
+    return { ok: false, error: "versionId enthält unzulässige Zeichen" };
+  }
+  if (!AUTOSAVE_VERSION_ID_REGEX.test(input)) {
+    return { ok: false, error: "versionId muss 13..16-stelliger Timestamp sein" };
+  }
+  return { ok: true, value: input };
+}
+
+export type AutoSaveJsonCheck =
+  | { ok: true }
+  | { ok: false; error: string };
+
+export function validateAutoSaveJson(json: unknown): AutoSaveJsonCheck {
+  if (typeof json !== "string" || json.length === 0) {
+    return { ok: false, error: "Leerer JSON-Inhalt" };
+  }
+  // UTF-8-Approximation für byteLength.
+  const byteLen = Buffer.byteLength(json, "utf8");
+  if (byteLen > AUTOSAVE_MAX_JSON_BYTES) {
+    return { ok: false, error: `Projekt zu groß (${(byteLen / 1024 / 1024).toFixed(1)} MB > 50 MB)` };
+  }
+  // Sanity: muss JSON-parsen.
+  try {
+    JSON.parse(json);
+  } catch {
+    return { ok: false, error: "Ungültiges JSON" };
+  }
+  return { ok: true };
+}
+
+export type AutoSaveLabelCheck =
+  | { ok: true; value: string | null }
+  | { ok: false; error: string };
+
+export function validateAutoSaveLabel(input: unknown): AutoSaveLabelCheck {
+  if (input === undefined || input === null) return { ok: true, value: null };
+  if (typeof input !== "string") return { ok: false, error: "Label muss String sein" };
+  if (input.length > AUTOSAVE_MAX_LABEL_LEN) {
+    return { ok: false, error: "Label zu lang" };
+  }
+  if (input.includes("\0")) return { ok: false, error: "Label enthält NUL-Byte" };
+  return { ok: true, value: input };
+}
+
+/**
+ * Defense-in-depth path-guard für `userData/autosave/<projectId>/<versionId>.synth`.
+ * baseDir = autosaveRoot (z.B. `userData/autosave`).
+ * Verifiziert dass kein Path-Traversal aus projectId oder versionId möglich ist.
+ */
+export function guardAutoSavePath(
+  baseDir: string,
+  projectId: string,
+  filename: string,
+): PathGuardCheck {
+  const resolvedBase = path.resolve(baseDir);
+  const projectDir = path.resolve(path.join(resolvedBase, projectId));
+  const projectPrefix = resolvedBase + path.sep;
+  if (!projectDir.startsWith(projectPrefix)) {
+    return { ok: false, error: "Ungültiger projectId-Pfad" };
+  }
+  const expectedFile = path.join(projectDir, filename);
+  const resolvedFile = path.resolve(expectedFile);
+  const filePrefix = projectDir + path.sep;
+  if (resolvedFile !== expectedFile || !resolvedFile.startsWith(filePrefix)) {
+    return { ok: false, error: "Ungültiger Zielpfad" };
+  }
+  return { ok: true, resolved: resolvedFile };
+}

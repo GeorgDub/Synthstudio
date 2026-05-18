@@ -265,6 +265,40 @@ interface ElectronAPI {
   ): Promise<{ success: boolean; filePath?: string; bytesWritten?: number; error?: string }>;
   getEsxBankSaveCap(): Promise<number>;
 
+  // ── Project AutoSave (v3.56.0) ──────────────────────────────────────────────
+  autoSaveWrite(
+    projectId: string,
+    versionId: string,
+    json: string,
+    label?: string,
+  ): Promise<{ success: boolean; versionId?: string; filePath?: string; error?: string }>;
+  autoSaveList(
+    projectId: string,
+  ): Promise<{
+    success: boolean;
+    versions?: Array<{
+      versionId: string;
+      timestamp: number;
+      size: number;
+      label?: string;
+      projectName?: string;
+    }>;
+    error?: string;
+  }>;
+  autoSaveRestore(
+    projectId: string,
+    versionId: string,
+  ): Promise<{
+    success: boolean;
+    json?: string;
+    meta?: { versionId: string; timestamp: number; size: number };
+    error?: string;
+  }>;
+  autoSaveDelete(
+    projectId: string,
+    versionId: string,
+  ): Promise<{ success: boolean; error?: string }>;
+
   // ── Folder-Import ─────────────────────────────────────────────────────────────────────────────
   importFolder(folderPath: string): Promise<{ importId: string }>;
   importSamples(filePaths: string[]): Promise<{ success: boolean; importedCount: number; errors: string[] }>;

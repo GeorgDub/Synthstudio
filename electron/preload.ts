@@ -255,6 +255,49 @@ const electronAPI = {
   getEsxBankSaveCap: (): Promise<number> =>
     ipcRenderer.invoke("esx:get-bank-save-cap"),
 
+  // ── Project AutoSave (v3.56.0) ─────────────────────────────────────────────
+  /** Schreibt eine Projekt-Version unter userData/autosave/<projectId>/<versionId>.synth */
+  autoSaveWrite: (
+    projectId: string,
+    versionId: string,
+    json: string,
+    label?: string,
+  ): Promise<{ success: boolean; versionId?: string; filePath?: string; error?: string }> =>
+    ipcRenderer.invoke("autosave:write", projectId, versionId, json, label),
+
+  /** Listet alle Versionen für ein Projekt (DESC nach Timestamp). */
+  autoSaveList: (
+    projectId: string,
+  ): Promise<{
+    success: boolean;
+    versions?: Array<{
+      versionId: string;
+      timestamp: number;
+      size: number;
+      label?: string;
+      projectName?: string;
+    }>;
+    error?: string;
+  }> => ipcRenderer.invoke("autosave:list", projectId),
+
+  /** Lädt eine Version (JSON-Quelle zurück). */
+  autoSaveRestore: (
+    projectId: string,
+    versionId: string,
+  ): Promise<{
+    success: boolean;
+    json?: string;
+    meta?: { versionId: string; timestamp: number; size: number };
+    error?: string;
+  }> => ipcRenderer.invoke("autosave:restore", projectId, versionId),
+
+  /** Löscht eine Version (idempotent). */
+  autoSaveDelete: (
+    projectId: string,
+    versionId: string,
+  ): Promise<{ success: boolean; error?: string }> =>
+    ipcRenderer.invoke("autosave:delete", projectId, versionId),
+
   // Import-Events
   onImportStarted: createEventListener<{ importId: string }>("samples:import-started"),
   onImportProgress: createEventListener<{

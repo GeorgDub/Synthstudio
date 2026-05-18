@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.55.0",
+    version: "3.56.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -89,6 +89,26 @@ const INDEX = {
   // ─── KNOWN FILE INDEX ──────────────────────────────────────
   // Key files agents have analyzed. Add new entries after working on a file.
   files: {
+    "client/src/store/useAutoSaveStore.ts (v3.56.0)": {
+      role:     "v3.56.0 NEU (~165 LOC): Custom-Observer-Store für Project AutoSave Settings + Pause-State. AutoSaveSettings {enabled:bool default true, intervalMin:1..60 default 5, lastSaveAt:number|null}. LocalStorage Key 'ss-autosave-settings:v1'. Public-API: getAutoSaveSettings/setAutoSaveEnabled/setAutoSaveInterval (clampt 1..60)/markAutoSaveCompleted + pauseAutoSave/resumeAutoSave/isAutoSavePaused für Race-Schutz während Manual-Save. Konstanten exportiert: AUTOSAVE_DEFAULT_INTERVAL_MIN=5, MIN=1, MAX=60, MAX_VERSIONS=10, MAX_VERSION_BYTES=50MB. clampInterval Pure-fn defensiv (NaN/non-number → default, rundet+clampt). formatLastSave(ts, now) liefert 5 Zeit-Stufen (gerade eben/s/min/h/d). Defensive load(): korruptes JSON → fällt auf defaults() zurück. __resetAutoSaveStoreForTests Test-Helper. React-Hook useAutoSaveStore() für UI-Konsum.",
+      lastSeen: "2026-05-18T23:30:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/utils/autoSaveEngine.ts (v3.56.0)": {
+      role:     "v3.56.0 NEU (~360 LOC): Isomorpher AutoSave-Backend-Wrapper. Electron-Pfad via window.electronAPI.autoSaveWrite/List/Restore/Delete → IPC autosave:*. Browser-Fallback IndexedDB DB 'synthstudio-autosave' v1, ObjectStore 'versions' keyPath='key' (composite <projectId>:<versionId>), Index 'by-project' für getAll-by-projectId. Public-API: writeAutoSaveVersion(projectId, json, opts?:{label,now}) → {success,versionId?,error?}, listAutoSaveVersions(projectId) → AutoSaveVersionMeta[] (DESC), restoreAutoSaveVersion(projectId, versionId) → {success,json?,meta?,error?}, deleteAutoSaveVersion(projectId, versionId) → {success,error?}. Pure-fn-Helpers: sanitizeProjectId (/^[A-Za-z0-9_-]{1,64}$/), isValidVersionTimestamp (/^\\d{13,16}$/), pickVersionsForRolling(versions, max=10) → IDs der ältesten Versionen für Rolling-Cleanup. writeAutoSaveVersion ruft rollOldVersions nach jedem Write (best-effort, never crash). Pre-Write Size-Check via TextEncoder → 50MB-Cap reject. projectName-Sniff aus JSON.parse für UI-Meta (defensive try/catch). __setAutoSaveElectronOverrideForTests Test-Helper bypasst window.electronAPI für deterministische In-Memory-Backend-Tests.",
+      lastSeen: "2026-05-18T23:30:00.000Z",
+      ownedBy:  "backend"
+    },
+    "electron/ipcValidators.ts (v3.56.0)": {
+      role:     "v3.56.0 ERWEITERT (+130 LOC): bestehende Recording/License/Electribe/KORG/E2-Validators bleiben + NEU 4 Validators + 1 Path-Guard für autosave:*-Channels. validateAutoSaveProjectId (Whitelist /^[A-Za-z0-9_-]{1,64}$/, NUL/Slash/Backslash/.. reject, max 64 chars), validateAutoSaveVersionId (13..16-digit decimal-string regex, NUL/path-traversal reject), validateAutoSaveJson (max 50MB UTF-8 via Buffer.byteLength, JSON.parse-sanity, non-empty), validateAutoSaveLabel (null/undefined → ok:true value:null, max 200 chars, NUL-reject, non-string reject). guardAutoSavePath(baseDir, projectId, filename) defense-in-depth: zweistufiger path.resolve-check (zuerst projectDir innerhalb baseDir, dann filePath innerhalb projectDir) — kein Escape aus userData/autosave/ möglich. Konstanten: AUTOSAVE_PROJECT_ID_MAX_LEN=64, AUTOSAVE_PROJECT_ID_REGEX, AUTOSAVE_VERSION_ID_REGEX, AUTOSAVE_MAX_JSON_BYTES=50MB, AUTOSAVE_MAX_LABEL_LEN=200.",
+      lastSeen: "2026-05-18T23:30:00.000Z",
+      ownedBy:  "backend"
+    },
+    "tests/features/autosave.test.ts (v3.56.0)": {
+      role:     "v3.56.0 NEU (24 Tests in 4 describes, env:node): (1) Pure-fn × 6 — sanitizeProjectId (happy + path-traversal/NUL/slash/dot/space/long reject), isValidVersionTimestamp (13..16-digit accept + abc/short/long/traversal reject), pickVersionsForRolling (max=10 no-op, max=2 → 1 ID, max=1 → 2 IDs sorted), clampInterval (NaN→default, neg→min, oversize→max, rundet), formatLastSave (5 Zeit-Stufen). (2) Store × 6 — defaults (enabled=true,interval=5,lastSaveAt=null), setEnabled-Persist in localStorage, setInterval-Clamp, markCompleted, Pause/Resume, defensive Load (korruptes JSON → defaults). (3) Engine × 7 — write+list-DESC, restore-Roundtrip, invalid-id reject (../etc/passwd) + 0 Backend-Calls, 50MB-Cap reject, Rolling-Cleanup (12 versions → top 10, älteste 2 weg), delete idempotent (Doppel-Delete success), invalid versionId reject. (4) Validators × 5 — projectId (alphanumeric + - + _ accept, slash/NUL/traversal reject), versionId (13-digit accept, abc/traversal/short reject), json (size+invalid-JSON reject), label (null/undefined ok, 300 chars reject, NUL reject, number reject), guardPath (.. blocks).",
+      lastSeen: "2026-05-18T23:30:00.000Z",
+      ownedBy:  "backend"
+    },
     "client/src/utils/sampleLibrary.ts (v3.55.0)": {
       role:     "v3.55.0 ERWEITERT: v3.54-Pure-fn Pipeline bleibt (normalizeTag, getSampleTags, addTagToSample, removeTagFromSample, setSampleTags, applyAutoTagsFromFilename, matchesSearchQuery, filterByTags, filterByCategory, extractAllTags, applySampleFilters) + NEU COMMON_TAG_SUGGESTIONS (20 DAW-übliche Tags wie kick/snare/hihat/clap/perc/bass/lead/pad/vox/fx/loop/oneshot/rise/drop) + getTopTagSuggestions(samples, limit=10) pure-fn: Frequency-Count Tag-Vorkommen über Samples, sortiert DESC + alphabetisch bei Gleichstand, füllt mit COMMON_TAG_SUGGESTIONS auf wenn weniger als limit eigene Tags vorhanden, dedupliziert. Wird vom SampleBrowser für Autocomplete-Datalist im Tag-Editor konsumiert.",
       lastSeen: "2026-05-18T22:50:00.000Z",
@@ -1812,6 +1832,48 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "backend",
+      timestamp: "2026-05-18T23:30:00.000Z",
+      done: [
+        "v3.56.0: Project AutoSave + Version-History — DAW-Standard Datenschutz (alle 5 min Auto, max 10 rolling Versionen pro Projekt, Restore-Workflow). pnpm check clean, 204 Test-Files / 4731 tests grün (16 skipped, +24 NEU in autosave.test.ts).",
+        "client/src/store/useAutoSaveStore.ts NEU (~165 LOC): Custom-Observer-Store mit AutoSaveSettings {enabled:bool, intervalMin:1..60, lastSaveAt:number|null}. localStorage-Persistenz Key 'ss-autosave-settings:v1'. Public-API: getAutoSaveSettings/setAutoSaveEnabled/setAutoSaveInterval/markAutoSaveCompleted + Pause/Resume/isPaused für Race-Schutz während Manual-Save. Konstanten AUTOSAVE_DEFAULT_INTERVAL_MIN=5, MIN=1, MAX=60, MAX_VERSIONS=10, MAX_VERSION_BYTES=50MB. clampInterval Pure-fn defensiv (NaN/non-number → default, rundet+clampt). formatLastSave(ts, now) liefert 'gerade eben'/'vor N s'/'vor N min'/'vor N h'/'vor N d'. Defensive load(): korruptes localStorage-JSON → fällt auf defaults() zurück, kein Crash. __resetAutoSaveStoreForTests() für Test-Determinismus.",
+        "client/src/utils/autoSaveEngine.ts NEU (~360 LOC): Isomorpher Backend-Wrapper. Public-API writeAutoSaveVersion/listAutoSaveVersions/restoreAutoSaveVersion/deleteAutoSaveVersion — alle Defensive (sanitizeProjectId-check + size-cap + try/catch um IPC + IDB). Electron-Path via window.electronAPI.autoSaveWrite/List/Restore/Delete. Browser-Fallback IndexedDB DB 'synthstudio-autosave' v1, ObjectStore 'versions' mit keyPath='key' (=projectId:versionId) + Index 'by-project'. Rolling-Cleanup pickVersionsForRolling(versions,max) Pure-fn — gibt IDs der ältesten Versionen zurück, wird nach jedem Write aufgerufen (best-effort, never crash). Pure-fn sanitizeProjectId (Whitelist /^[A-Za-z0-9_-]{1,64}$/) + isValidVersionTimestamp (/^\\d{13,16}$/ epoch ms). __setAutoSaveElectronOverrideForTests Test-Helper für deterministische In-Memory-Backend-Tests.",
+        "electron/ipcValidators.ts +130 LOC: 4 neue Validator + 1 Path-Guard für autosave:*-Channels. validateAutoSaveProjectId (Whitelist + NUL/Slash/Backslash/.. reject, max 64 chars), validateAutoSaveVersionId (13..16-digit decimal-string, NUL/path-traversal reject), validateAutoSaveJson (max 50MB UTF-8, JSON.parse-sanity, non-empty), validateAutoSaveLabel (null/undefined ok, max 200 chars, NUL-reject). guardAutoSavePath (defense-in-depth: zweistufiger path.resolve-check für projectDir UND filePath, kein Escape aus userData/autosave/).",
+        "electron/main.ts +200 LOC: 4 neue IPC-Handler autosave:write/list/restore/delete. Write schreibt nach userData/autosave/<projectId>/<versionId>.synth + optional label-sidecar (<versionId>.label). List durchläuft Verzeichnis, filtert .synth-Endung + valider versionId-Regex, liest stat + label-sidecar + sniffed projectName aus ersten 4096 Bytes der Datei (regex \"projectName\":\"…\"). Restore liefert JSON-String zurück (50MB size-check, R_OK access-check). Delete idempotent (catch/no-op) + sidecar mit weg.",
+        "electron/preload.ts +44 LOC: 4 contextBridge-Exports autoSaveWrite/List/Restore/Delete. electron/useElectron.ts +35 LOC Browser-Fallback (alle 4 returnen success:false → Engine fällt auf IndexedDB). electron/types.d.ts +30 LOC ElectronAPI-Interface.",
+        "tests/features/autosave.test.ts NEU (24 Tests in 4 describes, env:node mit localStorage-Mock + In-Memory-Electron-Backend-Override): (1) Pure-fn × 6 — sanitizeProjectId (happy + path-traversal/NUL/slash/dot/space/long), isValidVersionTimestamp (13..16-digit + reject), pickVersionsForRolling (deterministic), clampInterval (NaN/neg/oversize), formatLastSave (4 Zeit-Stufen + null). (2) Store × 6 — defaults, setEnabled-Persist, setInterval-Clamp, markCompleted, Pause/Resume, defensive Load. (3) Engine × 7 — write+list DESC, restore-Roundtrip, invalid-id reject + kein Backend-Call, 50MB-Cap reject, Rolling-Cleanup (12 versions → top 10), delete idempotent, invalid versionId reject. (4) Validators × 5 — projectId, versionId, json size+invalid, label null+oversize, guardPath blocks traversal.",
+        "package.json + agents/INDEX.js version 3.55.0 → 3.56.0. INDEX.js IPC channels +autosave:write/list/restore/delete."
+      ],
+      next: [
+        "v3.57 AutoSave-UI: Topbar-Status-Indikator 'Letzter Save: vor 2 min' (useAutoSaveStore-Hook). File-Menü-Eintrag 'Versions-Verlauf...' → Modal mit Liste der Versionen pro Project. Per Version: Timestamp + Size + optional label + Restore-Button (mit Confirm-Dialog 'Aktuelles Projekt überschreiben?').",
+        "v3.57 Wiring in App.tsx: useEffect mit setInterval(intervalMin * 60_000) der writeAutoSaveVersion(project.projectId, toJson(serializeProject({...}))) ruft. Trigger nur wenn isDirty UND !isAutoSavePaused() UND nicht aktiv geöffneter Save-Dialog. project.projectId muss aus useProjectStore kommen (aktuell nur projectName — Migration nötig: 'project-' + nanoid(8) als ID generieren beim newProject + persistent in .synth speichern).",
+        "v3.57 Manual-Save-Pause-Wiring: project.saveProject() ruft pauseAutoSave() vor dem Schreiben + resumeAutoSave() im finally. Schützt vor zwei parallelen Writes.",
+        "v3.57 IndexedDB-Quota-Check: Browser-Path im autoSaveEngine.ts könnte die Quota überschreiten (manche Browser haben nur 50MB im Privat-Modus). navigator.storage.estimate() wäre ein guter Pre-Check vor jedem Write.",
+        "v3.57 Versions-Browser-Polish: Diff-Anzeige zwischen zwei Versionen (mind. BPM/Pattern-Count/Sample-Count). 'Beim Start: letzte AutoSave-Version anbieten wenn crash detected' — sentinel-file im Electron-Path."
+      ],
+      changed: [
+        "client/src/store/useAutoSaveStore.ts (NEU, ~165 LOC)",
+        "client/src/utils/autoSaveEngine.ts (NEU, ~360 LOC)",
+        "electron/ipcValidators.ts (+130 LOC: 4 Validators + guardAutoSavePath)",
+        "electron/main.ts (+200 LOC: 4 IPC-Handler autosave:* + 12 Imports)",
+        "electron/preload.ts (+44 LOC: 4 contextBridge-Exports)",
+        "electron/useElectron.ts (+44 LOC: Browser-Fallbacks + Passthrough)",
+        "electron/types.d.ts (+30 LOC: ElectronAPI-Interface)",
+        "tests/features/autosave.test.ts (NEU, 24 Tests in 4 describes)",
+        "package.json (3.55.0 → 3.56.0)",
+        "agents/INDEX.js (version 3.55.0 → 3.56.0 + 4 neue IPC-Channels + workLog v3.56.0)"
+      ],
+      caveats: [
+        "UI-WIRING FEHLT (bewusst Scope-Begrenzung): Topbar-Status-Display + Version-History-Modal + setInterval-Trigger sind NICHT implementiert. Der Engine + Store sind voll funktional und tested, aber App.tsx ruft writeAutoSaveVersion noch nicht. → FU v3.57. Begründung: useProjectStore.projectId Migration nötig + UI-Komponenten würden den Scope verdoppeln.",
+        "project.projectId existiert AKTUELL NICHT — useProjectStore hat nur projectName. Der Engine erwartet aber eine stabile ID für Per-Project-Versionierung. Workaround für v3.56: Renderer-Code kann projectName-slug als projectId nehmen (sanitizeProjectId clampt schon auf alphanumeric). Saubere Lösung: ID-Field in v1.24-Schema bumpen. → FU v3.57.",
+        "Tests laufen mit env:node (kein jsdom). Der echte IndexedDB-Path wurde NICHT end-to-end getestet — nur die Pure-fn + Validator + Electron-Pfad-via-Override. Der IDB-Pfad ist eine direkte Mirror-Implementation des recordingStorage.ts-Patterns (battle-tested) — geringes Risiko, aber technisch nicht abgesichert. → FU v3.57 (env:jsdom Tests + fake-indexeddb).",
+        "Pause/Resume-State ist Module-Singleton, NICHT persistiert — bei Hot-Reload landet er auf false. Bewusst: ein crashed Manual-Save soll AutoSave nicht permanent pausieren.",
+        "Electron-Pfad: label-Sidecar (`.label`-Datei neben `.synth`) ist getrennt vom JSON. Wenn User die `.synth`-Datei manuell verschiebt (außerhalb der App), bleibt das Label hinten — kein automatisches Cleanup. Minor: betrifft nur das Listing-UI, der Restore-Pfad funktioniert weiter.",
+        "Browser-Path: navigator.storage.estimate() ist NICHT geprüft. Bei vollem IDB-Quota wird der Write fail (catch-block returnt error), aber der User sieht keine Notification (Toast-Wiring fehlt im UI). → FU v3.57.",
+        "Rolling-Cleanup ist BEST-EFFORT: wenn deleteAutoSaveVersion fehlschlägt, sammeln sich Versionen über das Maximum hinaus. listAutoSaveVersions im UI würde dann mehr als 10 anzeigen — kein Crash, aber unsauber. Konsequente Lösung wäre der Cleanup im Main-Process (statt im Renderer-Engine), das wäre aber doppelte Logik."
+      ]
+    },
     {
       agent:     "frontend",
       timestamp: "2026-05-18T22:50:00.000Z",
@@ -6728,6 +6790,10 @@ const INDEX = {
       "korg:get-bank-save-cap", // v3.4.0 — liefert KORG_BANK_SAVE_MAX_BYTES (256 MB) für UI-Hinweise.
       "electribe:save-pattern", // v3.26.0 — speichert renderer-side gebauten 16640-Byte .e2spat-Buffer (Synthstudio-Pattern → E2 Sampler). Validation: filename-Whitelist /^[A-Za-z0-9._-]+\\.e2spat$/, GENAU 16640 Bytes (hardware-exact), "KORG"/"e2sampler"/"PTST" Markers. Pfad aus dialog.showSaveDialog.
       "electribe:get-pattern-size", // v3.26.0 — liefert die exakte Hardware-Größe einer .e2spat-Datei (= 16640 Bytes) für UI-Hinweise.
+      "autosave:write",   // v3.56.0 — speichert projekt-version in userData/autosave/<projectId>/<versionId>.synth. projectId-Whitelist /^[A-Za-z0-9_-]{1,64}$/, versionId-Whitelist /^\\d{13,16}$/, max 50 MB JSON, valides JSON, optional label-sidecar.
+      "autosave:list",    // v3.56.0 — listet alle .synth-Versionen in userData/autosave/<projectId>/ + projectName-Sniff aus erstem 4096B Header + label-sidecar-load. DESC nach Timestamp.
+      "autosave:restore", // v3.56.0 — lädt eine Version (projectId/versionId-validiert, path-guard, 50MB size-check) zurück als JSON-String + meta.
+      "autosave:delete",  // v3.56.0 — entfernt eine Version + ihren label-sidecar. Idempotent (no-op wenn nicht vorhanden).
       "license:read",  // TASK-232 (v2.97) — liest userData/license.json (Path hardcoded, 16 KB-Limit, JSON-Parse-Try-Catch). Returnt {success, data}|{success:false,error}.
       "license:write", // TASK-232 (v2.97) — schreibt LicenseState nach userData/license.json (Status-Whitelist, finite-number-only trialStartedAt, Längen-Limits, JSON-Size ≤16 KB).
 
