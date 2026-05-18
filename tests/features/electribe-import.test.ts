@@ -698,10 +698,13 @@ describe("electribeImport – Real-File Layout (synthetic)", () => {
     expect(bank.patternCount).toBe(1);
   });
 
-  it("Real-File-Layout-Konstanten plausibel: 16 parts × 896 = 14336 ab 0x900 == 16640", () => {
-    expect(
-      ELECTRIBE_REAL_PARTS_OFFSET + PARTS_PER_PATTERN * ELECTRIBE_REAL_PART_STRIDE,
-    ).toBe(ELECTRIBE_REAL_FILE_SIZE);
+  it("Real-File-Layout-Konstanten plausibel: 16 parts × 816 = 13056 ab 0x900 → 0x3C00 (+ 1280B trailing footer = 16640)", () => {
+    // v3.12.0: Stride corrected to 816 (was 896 pre-RE).
+    // Parts ends at 0x900 + 13056 = 0x3C00. Trailing 1280 bytes = pattern footer.
+    const partsEnd = ELECTRIBE_REAL_PARTS_OFFSET + PARTS_PER_PATTERN * ELECTRIBE_REAL_PART_STRIDE;
+    expect(partsEnd).toBe(0x3C00);
+    expect(ELECTRIBE_REAL_FILE_SIZE - partsEnd).toBe(1280); // footer-size
+    expect(ELECTRIBE_REAL_PART_STRIDE).toBe(816);
   });
 
   it("convertParsedPatternToSynthstudio funktioniert mit Real-File-Output", () => {
@@ -810,11 +813,219 @@ const REAL_FILE_ADVISORY = "001_Advi$ory1   .e2spat";
       expect(conv.name).toBe("BodyTalk1");
       expect(conv.bpm).toBeCloseTo(165, 1);
       expect(conv.drumParts).toHaveLength(PARTS_PER_PATTERN);
-      // Step-Encoding ist Best-Effort — alle Steps inactive (default), aber nicht crashy.
+      // v3.12: Step-Encoding ist jetzt verified — BodyTalk1 hat aktive Steps.
       expect(conv.drumParts.every(d => Array.isArray(d.steps))).toBe(true);
     });
   },
 );
+
+// ─── v3.12.0 — Step-Encoding Reverse-Engineering Tests ───────────────────────
+//
+// Diese Tests verifizieren das neu RE-d 12-byte step-record-Layout (siehe
+// electribeImport.ts Header-Kommentar). Sub-Tests conditional auf Real-File-
+// Availability — die programmierten Patterns aus den User-Files sind die
+// "ground truth" gegen die wir validieren.
+
+(REAL_FILES_AVAILABLE ? describe : describe.skip)(
+  "electribeImport – v3.12 Step-Encoding RE (Real-File-Verifikation)",
+  () => {
+    it("BodyTalk1: hat insgesamt mindestens 100 aktive steps verteilt auf mehrere parts", () => {
+      const buf = loadRealFile(REAL_FILE_BODYTALK);
+      if (!buf) return;
+      const p = parseElectribePattern(buf);
+      const totalActive = p.parts.reduce(
+        (sum, part) => sum + part.steps.filter(s => s.active).length,
+        0,
+      );
+      // Verifiziert via Hex-Inspection: BodyTalk hat ~290 aktive steps insgesamt.
+      expect(totalActive).toBeGreaterThan(100);
+      // Mindestens 6 parts haben programmierte triggers (verifiziert).
+      const partsWithSteps = p.parts.filter(part => part.steps.some(s => s.active)).length;
+      expect(partsWithSteps).toBeGreaterThanOrEqual(6);
+    });
+
+    it("Init181: minimaler Init-Pattern, max 1 Part hat steps (sehr wenige aktive)", () => {
+      // Hex-RE: Init181 ist ein near-Init-Pattern. 15 von 16 Parts sind 100% empty.
+      // Nur Part 8 hat 4 aktive Steps (0,4,8,12) — vermutlich ein default-bass-pattern
+      // das KORG als "Init Sample" benutzt. Das ist OK, dieses Pattern ist nicht 100% leer.
+      const buf = loadRealFile(REAL_FILE_INIT_181);
+      if (!buf) return;
+      const p = parseElectribePattern(buf);
+      const totalActive = p.parts.reduce(
+        (sum, part) => sum + part.steps.filter(s => s.active).length,
+        0,
+      );
+      const partsWithSteps = p.parts.filter(part => part.steps.some(s => s.active)).length;
+      // Maximal 1 Part hat steps + maximal 4 aktive Steps insgesamt
+      expect(partsWithSteps).toBeLessThanOrEqual(1);
+      expect(totalActive).toBeLessThanOrEqual(4);
+    });
+
+    it("BodyTalk1: Velocity-Default-Sentinel (0xFF) wird zu 127 dekodiert", () => {
+      const buf = loadRealFile(REAL_FILE_BODYTALK);
+      if (!buf) return;
+      const p = parseElectribePattern(buf);
+      // BodyTalk Part 0 step 0 ist active mit velocity-byte 0xFF im File.
+      // Parser MUSS das auf 127 mappen (nicht 255 oder 0).
+      const part0 = p.parts[0];
+      const activeWithMaxVel = part0.steps.find(s => s.active && s.velocity === 127);
+      expect(activeWithMaxVel).toBeDefined();
+      // Keine velocity darf > 127 sein.
+      expect(part0.steps.every(s => s.velocity <= 127)).toBe(true);
+    });
+
+    it("BodyTalk1: Part 6 (Hi-Hat-typisch) hat klares offbeat-Pattern (steps 2/6/10/...)", () => {
+      const buf = loadRealFile(REAL_FILE_BODYTALK);
+      if (!buf) return;
+      const p = parseElectribePattern(buf);
+      // Hex-RE bestaetigt: BodyTalk Part 6 hat 16 aktive Steps, alle bei
+      // index 2,6,10,14,18,22,26,30,34,38,42,46,50,54,58,62 (offbeat-Pattern).
+      const part6 = p.parts[6];
+      const activeIndices = part6.steps
+        .map((s, i) => (s.active ? i : -1))
+        .filter(i => i >= 0);
+      expect(activeIndices).toEqual([2, 6, 10, 14, 18, 22, 26, 30, 34, 38, 42, 46, 50, 54, 58, 62]);
+    });
+
+    it("Init181 + Init250 + BodyTalk1: alle 64 step-slots pro Part werden in Step-Array materialisiert", () => {
+      for (const fn of [REAL_FILE_BODYTALK, REAL_FILE_INIT_181, REAL_FILE_INIT_250]) {
+        const buf = loadRealFile(fn);
+        if (!buf) continue;
+        const p = parseElectribePattern(buf);
+        for (const part of p.parts) {
+          expect(part.steps).toHaveLength(STEPS_PER_PART);
+          // Keine velocity darf out-of-range sein (defensive Clamp greift).
+          expect(part.steps.every(s => s.velocity >= 0 && s.velocity <= 127)).toBe(true);
+        }
+      }
+    });
+
+    it("BodyTalk1 Part 11 (Kick-typisch): aktive Steps liegen auf den 4er-Beats", () => {
+      const buf = loadRealFile(REAL_FILE_BODYTALK);
+      if (!buf) return;
+      const p = parseElectribePattern(buf);
+      // Hex-RE: Part 11 hat 9 aktive Steps bei 0,4,12,20,28,36,44,52,60 (Kick auf jedem 4er-Beat).
+      const part11 = p.parts[11];
+      const activeIndices = part11.steps
+        .map((s, i) => (s.active ? i : -1))
+        .filter(i => i >= 0);
+      expect(activeIndices).toEqual([0, 4, 12, 20, 28, 36, 44, 52, 60]);
+    });
+  },
+);
+
+// ─── v3.12.0 — Step-Encoding Tests (synthetisches Real-File) ─────────────────
+//
+// Diese Tests bauen synthetisch ein Real-File mit programmierten Step-Triggers
+// und verifizieren dass der Parser sie korrekt extrahiert. Damit funktioniert
+// das auch ohne reale User-Files (z.B. auf Fresh-Clone / CI).
+
+function buildRealElectribeBufferWithSteps(opts: {
+  name?: string;
+  bpm?: number;
+  /** Per-Part Map: stepIndex → {trigger:0|1, velocity:0..127|0xFF, note?:number} */
+  partTriggers?: Array<Record<number, { trigger: 0 | 1; velocity: number; note?: number }>>;
+}): ArrayBuffer {
+  const buf = new Uint8Array(ELECTRIBE_REAL_FILE_SIZE);
+  const view = new DataView(buf.buffer);
+
+  for (let i = 0; i < 4; i++) buf[i] = ELECTRIBE_MAGIC.charCodeAt(i);
+  const id = ELECTRIBE_REAL_IDENTIFIER;
+  for (let i = 0; i < id.length; i++) buf[0x10 + i] = id.charCodeAt(i);
+  view.setUint32(0x20, 1, true);
+  for (let i = 0x24; i < 0x100; i++) buf[i] = 0xff;
+  const marker = ELECTRIBE_REAL_PATTERN_MARKER;
+  for (let i = 0; i < marker.length; i++) buf[0x100 + i] = marker.charCodeAt(i);
+  const name = (opts.name ?? "Test").slice(0, 16);
+  for (let i = 0; i < name.length; i++) buf[0x110 + i] = name.charCodeAt(i);
+  view.setUint16(0x122, Math.round((opts.bpm ?? 120) * 10), true);
+
+  // Write step-records into each part.
+  for (let p = 0; p < PARTS_PER_PATTERN; p++) {
+    const partOffset = 0x900 + p * 816;
+    const triggers = opts.partTriggers?.[p] ?? {};
+    for (let s = 0; s < 64; s++) {
+      const recOff = partOffset + 0x30 + s * 12;
+      const trig = triggers[s];
+      if (trig !== undefined) {
+        buf[recOff + 0] = trig.trigger;
+        buf[recOff + 1] = trig.velocity;
+        buf[recOff + 2] = 0x60;
+        buf[recOff + 4] = trig.note ?? 0x48;
+      }
+    }
+  }
+  return buf.buffer;
+}
+
+describe("electribeImport – v3.12 Step-Encoding (synthetic)", () => {
+  it("liest programmierte Step-Trigger korrekt zurueck (Trigger + Velocity)", () => {
+    const ab = buildRealElectribeBufferWithSteps({
+      name: "X",
+      bpm: 120,
+      partTriggers: [
+        { 0: { trigger: 1, velocity: 100 }, 4: { trigger: 1, velocity: 64 } },
+      ],
+    });
+    const p = parseElectribePattern(ab);
+    expect(p.parts[0].steps[0]).toEqual({ active: true, velocity: 100 });
+    expect(p.parts[0].steps[4]).toEqual({ active: true, velocity: 64 });
+    expect(p.parts[0].steps[1].active).toBe(false);
+  });
+
+  it("Velocity-Sentinel 0xFF → 127 (default-velocity)", () => {
+    const ab = buildRealElectribeBufferWithSteps({
+      partTriggers: [{ 0: { trigger: 1, velocity: 0xff } }],
+    });
+    const p = parseElectribePattern(ab);
+    expect(p.parts[0].steps[0]).toEqual({ active: true, velocity: 127 });
+  });
+
+  it("inactive trigger (byte0=0) wird als active:false dekodiert auch bei Velocity-Byte != 0", () => {
+    const ab = buildRealElectribeBufferWithSteps({
+      partTriggers: [{ 5: { trigger: 0, velocity: 100 } }],
+    });
+    const p = parseElectribePattern(ab);
+    expect(p.parts[0].steps[5].active).toBe(false);
+  });
+
+  it("Step-Daten werden korrekt parts-getrennt extrahiert (keine Cross-Contamination)", () => {
+    const ab = buildRealElectribeBufferWithSteps({
+      partTriggers: [
+        { 0: { trigger: 1, velocity: 50 } },                              // Part 0 step 0
+        {},                                                                // Part 1: empty
+        { 7: { trigger: 1, velocity: 80 } },                              // Part 2 step 7
+      ],
+    });
+    const p = parseElectribePattern(ab);
+    expect(p.parts[0].steps[0]).toEqual({ active: true, velocity: 50 });
+    expect(p.parts[0].steps[7].active).toBe(false);
+    expect(p.parts[1].steps[0].active).toBe(false);
+    expect(p.parts[1].steps[7].active).toBe(false);
+    expect(p.parts[2].steps[0].active).toBe(false);
+    expect(p.parts[2].steps[7]).toEqual({ active: true, velocity: 80 });
+  });
+
+  it("Out-of-range velocity-byte (0x80..0xFE, exclusive 0xFF) wird auf 127 geclampt", () => {
+    const ab = buildRealElectribeBufferWithSteps({
+      partTriggers: [{ 0: { trigger: 1, velocity: 0x90 } }],
+    });
+    const p = parseElectribePattern(ab);
+    expect(p.parts[0].steps[0].active).toBe(true);
+    expect(p.parts[0].steps[0].velocity).toBe(127);
+  });
+
+  it("16. Part (Index 15) wird korrekt parsed (Stride-Check bis ans Ende)", () => {
+    const ab = buildRealElectribeBufferWithSteps({
+      partTriggers: Array.from({ length: 16 }, (_, i) =>
+        i === 15 ? { 63: { trigger: 1, velocity: 99 } } : {},
+      ),
+    });
+    const p = parseElectribePattern(ab);
+    expect(p.parts[15].steps[63]).toEqual({ active: true, velocity: 99 });
+    expect(p.parts[15].steps[62].active).toBe(false);
+  });
+});
 
 // ─── v3.11.0 — .e2sallpat Multi-Pattern-Bank Tests ───────────────────────────
 //

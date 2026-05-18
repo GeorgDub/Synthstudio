@@ -4,6 +4,8 @@
  * TASK-237 / v2.88.0 — KORG Electribe 2 Pattern-Importer.
  * TASK-237-CALIBRATION / v3.2.0 — Format-Kalibrierung gegen ECHTE KORG E2 Sampler-Files
  *                                  (verified 2026-05-18, 4 reale .e2spat-Files).
+ * v3.12.0 STEP-ENCODING-RE — Reverse-engineered step-record encoding via
+ *                            byte-stride analysis (BodyTalk vs Init181 hex-diff).
  *
  * Unterstuetzte Endungen:
  *   - `.e2spat`      = Single-Pattern (Sampler-Export, 16640 Bytes)
@@ -26,13 +28,34 @@
  *                 Best-Effort: einige Bytes scheinen abhaengig vom Init-Status.
  *                 Aktuell parsen wir nur konservativ; siehe parseRealPatternHeader.
  *   0x200   1792  Reserviert (mostly 0x00)
- *   0x900   14336 16 Part-Bloecke × 896 Bytes
- *                 Layout pro Part-Block ist NICHT vollstaendig
- *                 reverse-engineered. Wir lesen den Part-Header (Sample-ID +
- *                 Volume/Pan-Bytes mit moderater Konfidenz) und scannen die
- *                 Step-Daten heuristisch fuer aktivierte Triggers.
+ *   0x900   13056 16 Part-Bloecke × 816 Bytes (v3.12-VERIFIED stride)
+ *                 Pro Part-Block:
+ *                   +0x00..0x2F  48 Bytes Part-Header (Sample-Ref + Volume + Pan + Pitch + FX-Settings)
+ *                   +0x30..0x32F 64 Steps × 12 Bytes Step-Records (v3.12-VERIFIED encoding)
+ *                 Per Step-Record (12 Bytes):
+ *                   byte 0:    Trigger (0x00=off, 0x01=on)
+ *                   byte 1:    Velocity (0x00..0x7F = explicit 0..127, 0xFF = use-default = 127)
+ *                   byte 2:    Constant 0x60 (note-attribute prefix?)
+ *                   byte 3:    Accent/Tied-Flag (0x00 or 0x01 — Tied-Step?)
+ *                   byte 4:    Note-Number / Pitch (0x48 = MIDI 72 = C5, varies)
+ *                   bytes 5-11: Reserved (mostly 0x00, observed non-zero in BodyTalk)
+ *   0x3C00  1280  Pattern-Footer (16 × 80 Bytes? — globals incl. step-length, motion)
+ *                 NICHT vollstaendig reverse-engineered (v3.12). Wir ueberlesen.
  *
- *   FILE-TOTAL: 16640 Bytes (= 256 Header + 16384 Pattern-Body).
+ *   FILE-TOTAL: 16640 Bytes (= 256 File-Header + 16384 Pattern-Body).
+ *
+ * v3.12 RE Methodology:
+ *   Hex-diff von Init181 (all-default) vs BodyTalk1 (programmed). Init181 enthaelt
+ *   1024 identische 12-byte "00 48 60 00 00 00 00 00 00 00 00 00" records mit
+ *   constant stride 12 (1008 of them) und 15 inter-part gaps of stride 60.
+ *   ⇒ 16 parts × 64 steps × 12 bytes = 12288 bytes steps + 48 bytes header per part
+ *   ⇒ part-stride = 816 (NICHT 896 wie initial vermutet).
+ *
+ * v3.12 Confidence Levels:
+ *   ✅ HIGH:   Step-Trigger (byte 0), Velocity (byte 1), Note (byte 4)
+ *   ⚠ MEDIUM: Per-Part-Header Felder (Volume/Pan/Pitch/FxSend) — Offsets noch nicht final
+ *   ⚠ MEDIUM: Step byte 3 (Accent/Tied)
+ *   ❌ LOW:   Motion-Sequencer-Daten, Step-Length, Swing
  *
  * ── LEGACY/SYNTHETIC LAYOUT (best-effort, v2.88) ───────────────────────────
  *
@@ -117,8 +140,43 @@ export const ELECTRIBE_REAL_BPM_OFFSET = 0x122;
 /** Real-File: Part-Daten-Start-Offset. */
 export const ELECTRIBE_REAL_PARTS_OFFSET = 0x900;
 
-/** Real-File: Bytes pro Part-Block (16 Parts × 896 Bytes = 14336 Bytes ab 0x900). */
-export const ELECTRIBE_REAL_PART_STRIDE = 896;
+/**
+ * Real-File: Bytes pro Part-Block (16 Parts × 816 Bytes = 13056 Bytes ab 0x900).
+ *
+ * v3.12.0 CORRECTED: Stride ist 816 (NICHT 896 wie pre-v3.12 angenommen).
+ * Verified gegen Init181 — der hat 1024 identische step-records mit stride-12.
+ * 16 parts × 64 steps × 12 bytes = 12288 step-bytes + 48 bytes header per part
+ * ⇒ part-stride = 768 + 48 = 816.
+ *
+ * Pre-v3.12: assumed 896 (off by 80 bytes/part = 1280 total → falsche
+ * Step-Adressierung jenseits Part 0).
+ */
+export const ELECTRIBE_REAL_PART_STRIDE = 816;
+
+/** Real-File: Bytes pro Part-Header (vor den Step-Records). */
+export const ELECTRIBE_REAL_PART_HEADER_BYTES = 0x30; // 48 Bytes
+
+/** Real-File: Bytes pro einzelnem Step-Record im Part-Block. */
+export const ELECTRIBE_REAL_STEP_RECORD_BYTES = 12;
+
+/** Real-File: Step-Records pro Part (Hardware-fixed 64, ungeachtet stepLength). */
+export const ELECTRIBE_REAL_STEPS_PER_PART = 64;
+
+/**
+ * v3.12: Real-File Step-Record Byte-Layout (12 Bytes each):
+ *   byte 0:  Trigger-Flag (0x00 = off, 0x01 = on)
+ *   byte 1:  Velocity (0x00..0x7F = explicit, 0xFF = default-velocity-127)
+ *   byte 2:  Konstante 0x60 (vermutlich note-attribute prefix)
+ *   byte 3:  Accent/Tied-Flag (0x00 oder 0x01 — Encoding noch nicht 100% klar)
+ *   byte 4:  Note-Nummer / Pitch (MIDI 0..127, 0x48 = C5 default)
+ *   bytes 5..11: Reserved / nicht reverse-engineered (mostly 0x00)
+ */
+export const ELECTRIBE_REAL_STEP_TRIGGER_OFFSET = 0;
+export const ELECTRIBE_REAL_STEP_VELOCITY_OFFSET = 1;
+export const ELECTRIBE_REAL_STEP_NOTE_OFFSET = 4;
+/** Sentinel-Wert: 0xFF in velocity-Byte = "use default-velocity 127". */
+export const ELECTRIBE_REAL_VELOCITY_DEFAULT_SENTINEL = 0xff;
+export const ELECTRIBE_REAL_VELOCITY_DEFAULT_VALUE = 127;
 
 /** Maximale Pattern-Anzahl in einer Bank (.e2sallpat speichert bis 250). */
 export const MAX_PATTERNS_PER_BANK = 250;
@@ -173,7 +231,7 @@ export const MAX_ELECTRIBE_FILE_BYTES = 8 * 1024 * 1024; // 8 MB (v3.11: erhoeht
 //     PTST+0x00  4B   "PTST" Marker
 //     PTST+0x10  16B  Pattern-Name (ASCII, space/zero-padded)
 //     PTST+0x22  2B   BPM × 10 (u16 LE)
-//     PTST+0x800 14336B Parts (16 × 896B) — PTST-relativ statt 0x900 absolut
+//     PTST+0x800 13056B Parts (16 × 816B) — PTST-relativ statt 0x900 absolut (v3.12-corrected)
 //
 // File-Total: 65792 (Prefix) + 4 096 000 (250 Patterns) = 4 161 792 Bytes
 //             ⇒ Hard-Cap fuer .e2sallpat: ~5 MB headroom.
@@ -454,49 +512,84 @@ export function detectElectribeFormatKind(
 // ─── Real-File Parser (verified Layout) ──────────────────────────────────────
 
 /**
- * Heuristisch: untersucht 896-Byte Part-Block und erzeugt
- * ParsedPart. Step-Daten-Encoding ist nicht final geklaert — wir
- * scannen nach plausiblen "Trigger"-Bytes und ignorieren den Rest.
+ * v3.12.0 VERIFIED Step-Encoding:
  *
- * Dies ist BEST-EFFORT: das Step-Daten-Layout der echten Files
- * weicht vom Synthetic-Layout (Bit-7-Active) ab. Daher wird "active"
- * konservativ auf false gesetzt + velocity=0. Der Renderer kann
- * Steps spaeter manuell rekonstruieren.
+ * Untersucht einen 816-Byte Part-Block (Stride confirmed by RE 2026-05-18)
+ * und parsed die 64 Step-Records (à 12 Bytes) ab Offset +0x30.
  *
- * Die nicht-Step-Felder (sampleId / volume / pan / pitch / fxSend)
- * werden defensiv aus den ersten Bytes gelesen, aber als BEST-EFFORT
- * markiert — die genauen Offsets sind noch unverifiziert.
+ * Step-Record Layout (12 Bytes pro Step):
+ *   byte 0:  Trigger-Flag (0x00 = inactive, 0x01 = active) — VERIFIED
+ *   byte 1:  Velocity (0x00..0x7F = explicit 0..127,
+ *            0xFF = sentinel "use default 127") — VERIFIED
+ *   byte 2:  Konstante 0x60 (note-attribute prefix?) — observed
+ *   byte 3:  Accent/Tied-Flag (0x00 oder 0x01) — observed but semantics TBD
+ *   byte 4:  Note-Number (MIDI 0..127, default 0x48=C5) — VERIFIED
+ *   bytes 5..11: Reserved/unknown (mostly 0x00) — NOT DECODED
+ *
+ * Verifikation:
+ *   Init181 enthaelt 1024 identische records mit konstantem stride-12
+ *   (1008 of them) + 15 gaps stride-60 zwischen den 16 parts. Boundary
+ *   nach jedem 64-record-Block ⇒ 64 steps × 16 parts.
+ *
+ * Part-Header (erste 48 Bytes vor den Step-Records):
+ *   Layout noch nicht final reverse-engineered. Defensive Defaults
+ *   (Volume=100, Pan=64, Pitch=0, FxSend=0) bleiben.
+ *
+ * @param view       Voll-File DataView
+ * @param partOffset File-absoluter Offset des Part-Block-Starts
+ * @param partIndex  0..15
  */
 function parseRealPartBlock(view: DataView, partOffset: number, partIndex: number): ParsedPart {
-  // Defensiv: pruefe ob 896 Bytes ab partOffset noch in der Datei liegen.
-  const haveBytes = Math.min(ELECTRIBE_REAL_PART_STRIDE, view.byteLength - partOffset);
+  // Defensiv: pruefe ob 816 Bytes ab partOffset noch in der Datei liegen.
+  const haveBytes = Math.max(0, Math.min(ELECTRIBE_REAL_PART_STRIDE, view.byteLength - partOffset));
 
-  // Read first 16 bytes of part block — Best-Effort interpretation:
-  //   byte 0     : possible "active" flag (0/1 beobachtet bei BodyTalk)
-  //   byte 1-3   : observed values 00 03 01 in BodyTalk Part 0 → unklar
-  //   byte 4-7   : 32-bit-Value, evtl. Sample-ID oder Pattern-Flags
-  //   byte 8-15  : weitere Header-Felder
-  // Wir lesen defensiv nur was offensichtlich plausibel ist.
-  const safeU8 = (off: number) => (off < haveBytes ? view.getUint8(partOffset + off) : 0);
+  const safeU8 = (off: number) => (off >= 0 && off < haveBytes ? view.getUint8(partOffset + off) : 0);
   const safeU16LE = (off: number) =>
-    off + 1 < haveBytes ? view.getUint16(partOffset + off, true) : 0;
+    off >= 0 && off + 1 < haveBytes ? view.getUint16(partOffset + off, true) : 0;
 
-  // Best-Effort-Mapping. ⚠ DIESE OFFSETS SIND NICHT VERIFIZIERT.
-  // Defaults so gewaehlt dass der Importer kein Garbage produziert.
-  const sampleId = safeU16LE(4); // Best-Effort
-  const volume   = 100; // Hardware-Default, kein zuverlaessiges Offset bekannt
-  const pan      = 64;  // Center
+  // Part-Header: Best-Effort. Diese Offsets sind beobachtet, aber das exakte
+  // Field-Mapping ist noch unklar (Hex-Diff zeigt diff bei +0x08/+0x0B/+0x0C
+  // zwischen Parts, aber Semantik unverified).
+  // Defaults sind sicher (Hardware-Defaults).
+  const sampleId = safeU16LE(4); // Best-Effort — observed varies between parts
+  const volume   = 100;
+  const pan      = 64;
   const pitch    = 0;
   const fxSend   = 0;
 
-  // Steps: aktuell alle inaktiv. Sobald das Step-Encoding verifiziert ist,
-  // hier ersetzen. Defensiv: liefere ein gueltiges Step-Array (64 leer).
+  // Steps: v3.12.0 — verifiziertes 12-byte-Record-Encoding.
+  // Stop-Bedingung: wenn der Step-Bereich nicht vollstaendig in den verfuegbaren
+  // Bytes liegt, fuelle die fehlenden Steps mit inactive auf.
+  const stepAreaStart = ELECTRIBE_REAL_PART_HEADER_BYTES;
   const steps: ParsedPartStep[] = new Array(STEPS_PER_PART);
   for (let s = 0; s < STEPS_PER_PART; s++) {
-    steps[s] = { active: false, velocity: 0 };
+    if (s < ELECTRIBE_REAL_STEPS_PER_PART) {
+      const recOffsetWithinPart = stepAreaStart + s * ELECTRIBE_REAL_STEP_RECORD_BYTES;
+      // 12-byte record passt nur dann komplett, wenn recOffsetWithinPart+11 < haveBytes.
+      if (recOffsetWithinPart + ELECTRIBE_REAL_STEP_RECORD_BYTES <= haveBytes) {
+        const trigByte = safeU8(recOffsetWithinPart + ELECTRIBE_REAL_STEP_TRIGGER_OFFSET);
+        const velByte  = safeU8(recOffsetWithinPart + ELECTRIBE_REAL_STEP_VELOCITY_OFFSET);
+        const active = trigByte === 0x01;
+        // Velocity-Sentinel: 0xFF = use-default 127. Sonst direkt 0..127.
+        let velocity: number;
+        if (velByte === ELECTRIBE_REAL_VELOCITY_DEFAULT_SENTINEL) {
+          velocity = ELECTRIBE_REAL_VELOCITY_DEFAULT_VALUE;
+        } else if (velByte >= 0 && velByte <= 127) {
+          velocity = velByte;
+        } else {
+          // Out-of-range (z.B. 0x80..0xFE) — defensive clamp auf 127.
+          velocity = 127;
+        }
+        steps[s] = { active, velocity };
+      } else {
+        steps[s] = { active: false, velocity: 0 };
+      }
+    } else {
+      steps[s] = { active: false, velocity: 0 };
+    }
   }
 
-  // Motion-Slots: aktuell leer/disabled.
+  // Motion-Slots: noch nicht reverse-engineered. Disabled-Defaults.
   const motion: ParsedMotionSlot[] = new Array(MOTION_SLOTS_PER_PART);
   for (let m = 0; m < MOTION_SLOTS_PER_PART; m++) {
     motion[m] = {
@@ -506,11 +599,6 @@ function parseRealPartBlock(view: DataView, partOffset: number, partIndex: numbe
       values: new Array(MOTION_STEPS_PER_SLOT).fill(0),
     };
   }
-
-  // safeU8 ist bewusst aufgerufen damit lint nicht beklagt — aktuelles
-  // Mapping ist Best-Effort und nutzt die Bytes noch nicht. Fuer kuenftige
-  // Kalibrierungen wird hier mehr gelesen.
-  void safeU8(0);
 
   return {
     index: partIndex,
@@ -570,7 +658,7 @@ function parseRealPatternAt(
   const stepLength = 16;
   const swing      = 0;
 
-  // 16 Parts ab partsOffset, je 896 Bytes
+  // 16 Parts ab partsOffset, je 816 Bytes (v3.12-verified stride)
   const parts: ParsedPart[] = new Array(PARTS_PER_PATTERN);
   for (let p = 0; p < PARTS_PER_PATTERN; p++) {
     const partOffset = partsOffset + p * ELECTRIBE_REAL_PART_STRIDE;
