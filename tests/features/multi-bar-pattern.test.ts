@@ -279,15 +279,15 @@ describe("v3.40: AI-Pattern-Generator mit 64-step Templates", () => {
     }
   });
 
-  it("generatePattern mit stepCount=64 erzeugt aktive Steps innerhalb 0..15 (Template-Basis)", () => {
+  it("generatePattern mit stepCount=64 erzeugt aktive Steps über alle 4 Bars (v3.51)", () => {
     const pattern = generatePattern({
       genre: "house",
       complexity: 0.8,
       seed: 99,
       stepCount: 64,
     });
-    // Templates haben Indices < 16; konservatives Verhalten: Steps 16..63 bleiben
-    // typischerweise leer (User füllt via Page-Switcher). Mindestens 1 aktiver Step.
+    // v3.51: Templates werden über alle Bars expandiert (16 → 32 → 64). Plus
+    // Last-Bar-Variation. Detail-Tests siehe pattern-generator-64step.test.ts.
     const kick = pattern.parts.find(p => p.name === "Kick");
     expect(kick).toBeDefined();
     const activeKick = kick!.steps.filter(s => s.active).length;

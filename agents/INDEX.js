@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.50.0",
+    version: "3.51.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -89,6 +89,16 @@ const INDEX = {
   // ─── KNOWN FILE INDEX ──────────────────────────────────────
   // Key files agents have analyzed. Add new entries after working on a file.
   files: {
+    "client/src/utils/patternGenerator.ts (v3.51.0)": {
+      role:     "v3.51.0 ERWEITERT (closes v3.40 Caveat 64-step Coverage): Templates basierten vorher auf festen 16er-Indices [0,4,8,12] etc. — Steps 16..63 blieben bei stepCount=64 LEER. NEU expandBars(baseIndices, stepCount) pure-fn die eine 16er-Indexliste über alle bars (= floor(stepCount/16)) expandiert. buildSteps ruft expandBars für base + extra Indices. Resultat: Techno-Kick base [0,4,8,12] @ 64-step → aktive Steps auf [0,4,8,...,60]. NEU applyLastBarVariation(pattern, stepCount, ctx): bei stepCount >= 32 wird Last-Bar variiert — (a) Snare-Fill auf Steps [N-4..N-1] mit Velocity-Ramp 70..100, (b) Per-Bar Beat-1 Velocity-Drift -5..+5, (c) bei 64-step Ghost-HiHat-Notes auf 16th-Offbeats in letzten 2 Bars (Velocity 30..55, Prob 0.4 + complexity*0.3). Backward-Compat: stepCount=16 ruft expandBars mit n=16 → IDENTISCH zur v3.50-Logik, kein Last-Bar-Fill (bars < 2 early return).",
+      lastSeen: "2026-05-18T22:05:00.000Z",
+      ownedBy:  "backend"
+    },
+    "tests/features/pattern-generator-64step.test.ts (v3.51.0)": {
+      role:     "v3.51.0 NEU (9 Tests, Node-Env): Coverage über alle Bars beim 64-step Pattern-Generator. Techno-Kick hat [0,4,...,60] aktiv (closes v3.40), Trap-HiHat hat 64 active Steps, House-Snare hat 8 Base-Triggers + Last-Bar-Fill auf 60..63, Last-Bar-Variation füllt 60..63 mit Velocity > 0, 32-step verhält sich analog (2 Bars + Fill auf 28..31), Backward-Compat 16-step bleibt unverändert (kein Fill, aktive Steps in [0,15]), Ghost-HiHat-Notes erscheinen mit Velocity 30..55 in Bar 2-3, Determinismus bei gleichem Seed, Gesamtcheck dass JEDE 16er-Bar aktive Steps hat (Bar 0/1/2/3) — der direkte v3.40-Closure-Beweis.",
+      lastSeen: "2026-05-18T22:05:00.000Z",
+      ownedBy:  "backend"
+    },
     "client/src/utils/korgProjectTemplates.ts (v3.50.0)": {
       role:     "v3.50.0 ERWEITERT (closes v3.49 Caveats): v3.49 Definitions + Apply bleiben + NEU End-to-End-Wiring (~120 LOC). Public-API erweitert: resolveMidiOutputIdByHint(source: MidiAccessLike|MidiOutputInfo[]|null, hint: string|null) → string|null (pure-fn, akzeptiert MIDIAccess oder flach MidiOutputInfo[], bevorzugt connected, defensive invalid-regex→null). isKorgTemplateApplyDestructive({existingPartCount?, defaultPartCount=9}) → boolean (prüft scenes-Store + Pad-Bank-non-default + Part-Count > default 9, für UI-Confirmation). KorgTemplateApplyDeps erweitert: enableClockOut/LedFeedback haben jetzt 2 Args (hint, resolvedOutputId), midiAccess?: MidiAccessLike|MidiOutputInfo[]|null (für Auto-Resolve), onMissingDevice?: (hint, sectionLabel) → void (für UI-Toast). KorgTemplateApplyResult +resolvedOutputId field. Apply-Flow: zuerst resolveMidiOutputIdByHint, dann pass resolvedOutputId an enableClockOut/LedFeedback + applyElectribeDrumMap (statt __pending__:* Placeholder). Bei Apply mit bereits existierenden __pending__:*-Configs werden diese rückwirkend auf echte ID aktualisiert. onMissingDevice fires bei midiAccess vorhanden aber no match. Backward-compat: v3.49 1-Arg-DI ist nun 2-Arg, alle bestehenden Tests wurden auf (hint, null) angepasst.",
       lastSeen: "2026-05-18T21:35:00.000Z",
@@ -1742,6 +1752,38 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "backend",
+      timestamp: "2026-05-18T22:05:00.000Z",
+      done: [
+        "v3.51.0: AI Pattern-Generator 64-step proper Coverage — closes v3.40 Caveat. v3.40 hatte den stepCount-Type auf 64 erweitert, aber Pattern-Generator-Templates basierten auf festen 16er-Indices ([0,4,8,12] etc.) — Steps 16..63 blieben LEER. User generierte 64-step pattern und bekam effektiv 16-step + 48 silence. pnpm check clean, 199 Test-Files / 4620 tests grün (16 skipped, +9 NEU).",
+        "client/src/utils/patternGenerator.ts refactored (~+90 LOC). NEU expandBars(baseIndices, stepCount): number[] — pure-fn die eine 16er-Indexliste über alle Bars expandiert (Bar-Offset = barIdx * 16, bar-count = floor(stepCount/16)). buildSteps ruft expandBars auf für base + extra Indices statt nur < 16 zu filtern. Resultat: Techno-Kick base [0,4,8,12] @ 64-step → aktive Steps auf [0,4,8,...,60].",
+        "NEU applyLastBarVariation(pattern, stepCount, ctx) — bei stepCount >= 32 wird die letzte Bar variiert: (a) Snare-Fill auf Steps [lastBarStart+12 .. lastBarStart+15] mit Velocity-Ramp 70..100 (klassisches Drum-Fill), (b) Per-Bar Beat-1 (Step 0 jeder weiteren Bar) bekommt -5..+5 Velocity-Drift für organische Variation, (c) bei stepCount >= 64 zusätzlich Ghost-HiHat-Notes auf 16th-Offbeats in den letzten 2 Bars (Velocity 30..55, Probability 0.4 + complexity*0.3). 16-step Patterns bleiben unverändert (bars < 2 → early return).",
+        "tests/features/pattern-generator-64step.test.ts NEU (9 Tests, Node-Env). Coverage: Techno-Kick @ 64-step hat alle [0,4,8,...,60] aktiv (closes v3.40), Trap-HiHat @ 64-step hat 64 aktive Steps, House-Snare @ 64-step hat 8 Base-Triggers + Last-Bar-Fill auf 60..63, Last-Bar-Variation füllt 60..63 mit Velocity > 0, 32-step verhält sich analog (2 Bars + Fill auf 28..31), Backward-Compat 16-step bleibt unverändert (kein Fill, alle aktiven Steps innerhalb 0..15), Ghost-HiHat-Notes erscheinen mit Velocity 30..55 in Bar 2-3 bei spärlichem House-HiHat-Base, Determinismus identisch bei gleichem Seed, Gesamtcheck dass Pattern aktive Steps in JEDEM 16er-Bar hat (Bar 0/1/2/3) — der eigentliche Coverage-Beweis dass v3.40-Bug geschlossen ist.",
+        "tests/features/multi-bar-pattern.test.ts: 1 outdated comment angepasst (v3.40 behauptete 'Steps 16..63 bleiben typischerweise leer' — Assertion war defensiv mit > 0, daher noch grün, aber Kommentar war irreführend für v3.51).",
+        "package.json + agents/INDEX.js version 3.50.0 → 3.51.0.",
+        "BACKWARD-COMPAT VERIFIZIERT: stepCount=16 ruft expandBars mit n=16 → return base.filter(i < 16) → IDENTISCH zur v3.50-Logik. applyLastBarVariation hat early-return bei stepCount < 32. Alle bestehenden 15 tests in tests/pattern-generator.test.ts + 17 in tests/features/multi-bar-pattern.test.ts grün."
+      ],
+      next: [
+        "v3.52 Euclidean Density-Spec — {kind: 'euclidean', steps, hits, rotation} Variante für komplexere rhythmische Patterns (z.B. 3-3-3-3-2-2 Tresillo).",
+        "v3.52 Variation-Density-Slider in UI — User kann Last-Bar-Variation-Stärke 0..1 wählen (0 = volles Repeat, 1 = jede Bar leicht anders).",
+        "v3.52 Fill-Type-Picker — User kann zwischen Snare-Fill / Tom-Fill / HiHat-Fill / Drop wählen.",
+        "v3.52 Per-Bar-Override — User kann Bar-Index N manuell als 'Fill-Bar' markieren statt nur die letzte Bar."
+      ],
+      changed: [
+        "client/src/utils/patternGenerator.ts (~+90 LOC — NEU expandBars + applyLastBarVariation, buildSteps ruft expandBars statt manuellem < n Filter)",
+        "tests/features/pattern-generator-64step.test.ts (NEU, 9 Tests in 1 describe — Coverage über alle Bars + Last-Bar-Fill + Ghost-HiHats + Determinismus + Backward-Compat)",
+        "tests/features/multi-bar-pattern.test.ts (1 outdated comment + Test-Title aktualisiert für v3.51-Semantik)",
+        "package.json (3.50.0 → 3.51.0)",
+        "agents/INDEX.js (version + workLog v3.51.0)"
+      ],
+      caveats: [
+        "applyLastBarVariation überschreibt vorhandene Snare-Hits auf 60..63 — wenn der Base-Spec auf Step 60 bereits ein Trigger hatte (z.B. dnb Snare [4,12] × 4 bars), wird dessen Velocity vom Fill-Ramp ersetzt. Akzeptiert: Fill-Hits sollen typischerweise lauter klingen als Base-Hits.",
+        "Ghost-HiHat-Notes verwenden eine separate PRNG-Rolle aus dem geteilten rand() — bei sehr niedriger complexity (0) ist die Probability 0.4, also nicht jeder Offbeat wird zur Ghost-Note. Test geht davon aus dass MIND. EIN Ghost-Step auftaucht (statistisch >99% bei Seed 555).",
+        "Bar-1 Velocity-Drift (-5..+5) ist additiv zur Base-Velocity-Variation in buildSteps. Bei complexity=1 kann die kombinierte Variation in der Summe größer als ±35 sein → trotzdem in [10, 127] geclamped.",
+        "Density-Spec ist aktuell nur 'fixed positions repeated per bar'. Euclidean/every-n-Varianten sind in v3.52 geplant — die aktuelle Architektur unterstützt das durch Austausch des expandBars-Helpers."
+      ]
+    },
     {
       agent:     "backend",
       timestamp: "2026-05-18T21:35:00.000Z",
