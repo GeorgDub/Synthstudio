@@ -268,11 +268,11 @@ describe("PluginHost — click-free bypass crossfade (5ms ramp)", () => {
 // ─── 4. Schema-Migration v1.20 → v1.21 (parseProject) ─────────────────────
 
 describe("parseProject — v1.20 single-slot → v1.21 multi-slot migration", () => {
-  it("SYNTH_FILE_VERSION ist '1.24' (stable projectId; pluginSlots bleiben multi-slot)", async () => {
+  it("SYNTH_FILE_VERSION ist '1.25' (macros; pluginSlots bleiben multi-slot)", async () => {
     const { SYNTH_FILE_VERSION } = await import(
       "../../client/src/utils/projectSerializer"
     );
-    expect(SYNTH_FILE_VERSION).toBe("1.24");
+    expect(SYNTH_FILE_VERSION).toBe("1.25");
   });
 
   it("migriert v1.20 single-slot Objects automatisch zu [slot]-Arrays", async () => {

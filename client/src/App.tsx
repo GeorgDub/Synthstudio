@@ -314,6 +314,16 @@ import {
   type SerializedSlicePads,
 } from "@/utils/projectSerializer";
 import { loadPadBankSlots, savePadBankSlots } from "@/utils/padBankPersistence";
+// v3.69.0: Quick-Action Macros — Hook-Mount + Context-Wiring + Schema-Persist.
+import {
+  getQuickActionMacros,
+  setAllQuickActionMacros,
+} from "@/store/useQuickActionStore";
+import { useQuickActionKeyBindings } from "@/hooks/useQuickActionKeyBindings";
+import type { QuickActionContext } from "@/utils/quickActionExecutor";
+import {
+  registerQuickActionContext,
+} from "@/utils/quickActionContextRegistry";
 
 // ─── Visual Metronome ──────────────────────────────────────────────────────────
 
@@ -711,6 +721,8 @@ export default function App() {
             }
           : null,
       ) as SerializedSlicePads,
+      // v3.69.0 (v1.25): Quick-Action Macros mit-persistieren.
+      macros: getQuickActionMacros(),
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -743,6 +755,81 @@ export default function App() {
       registerAutoBackup(null);
     };
   }, [doAutoBackupBeforeAction]);
+
+  // ─── v3.69.0: Quick-Action Macros — Hook-Mount + Setter-Wiring ────────────
+  // Schließt v3.68-Caveats. Wir bauen den QuickActionContext aus den
+  // existierenden Store-Refs (dmRef/mixerRef/projectRef) damit die Setter
+  // immer den aktuellen State sehen — keine Stale-Closures. setAllDrum-
+  // PartsMuted iteriert über die Parts des aktuellen Patterns und ruft
+  // dm.setPartMuted pro Part (es gibt keinen Bulk-Setter im Store).
+  const quickActionContext = useMemo<QuickActionContext>(() => ({
+    setBpm: (bpm: number) => {
+      const clamped = Math.max(20, Math.min(300, bpm));
+      AudioEngine.setBpm(clamped);
+      projectRef.current?.setBpm(clamped);
+    },
+    setMasterVolume: (v: number) => {
+      const clamped = Math.max(0, Math.min(1, v));
+      AudioEngine.setMasterVolume(clamped);
+      mixerRef.current?.setMasterVolume(clamped);
+    },
+    setChannelVolume: (channelId: string, value: number) => {
+      const clamped = Math.max(0, Math.min(1, value));
+      dmRef.current?.setPartVolume(channelId, clamped);
+    },
+    setChannelPan: (channelId: string, value: number) => {
+      const clamped = Math.max(-1, Math.min(1, value));
+      dmRef.current?.setPartPan(channelId, clamped);
+    },
+    setChannelMute: (channelId: string, value: boolean) => {
+      dmRef.current?.setPartMuted(channelId, value);
+    },
+    setAllDrumPartsMuted: (value: boolean) => {
+      const d = dmRef.current;
+      if (!d) return;
+      const active = d.patterns.find((p) => p.id === d.activePatternId);
+      if (!active) return;
+      for (const part of active.parts) {
+        d.setPartMuted(part.id, value);
+      }
+    },
+    switchPattern: (patternId: string) => {
+      dmRef.current?.setActivePattern(patternId);
+    },
+    triggerScene: (sceneIndex: number) => {
+      const scenes = getSceneState().scenes;
+      const scene = scenes[sceneIndex];
+      if (!scene) return;
+      sceneStoreSetActiveScene(scene.id);
+      if (scene.patternId) {
+        dmRef.current?.setActivePattern(scene.patternId);
+      }
+    },
+    playPad: (padIndex: number) => {
+      const pads = getPerformancePads();
+      const pad = pads[padIndex];
+      if (!pad || !pad.patternId) return;
+      dmRef.current?.setActivePattern(pad.patternId);
+      queuePerformancePattern(pad.patternId);
+    },
+    onUnhandled: (action) => {
+      // Best-effort: log nur in dev. Prod-User sieht keinen Toast.
+      if (typeof console !== "undefined" && console.warn) {
+        console.warn("[QuickAction] Unhandled action:", action.kind);
+      }
+    },
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), []);
+
+  // Globalen keydown-Listener für Macro-Triggers mounten.
+  useQuickActionKeyBindings(quickActionContext);
+
+  // Context in der Registry verfügbar machen — MacroEditor "Test"-Button
+  // greift ohne Prop-Drilling darauf zu.
+  useEffect(() => {
+    registerQuickActionContext(quickActionContext);
+    return () => { registerQuickActionContext(null); };
+  }, [quickActionContext]);
 
   const doSaveProject = useCallback(async () => {
     const snapshot = buildProjectSnapshot();
@@ -873,6 +960,13 @@ export default function App() {
           sliceIndex: slot.sliceIndex,
         });
       }
+    }
+
+    // v3.69.0 (v1.25): Quick-Action Macros aus dem .synth-File übernehmen.
+    // Pre-v1.25-Files haben das Feld nicht → undefined; in diesem Fall den
+    // User-localStorage NICHT überschreiben. Explicit [] respektieren.
+    if (data.macros !== undefined) {
+      setAllQuickActionMacros(data.macros);
     }
 
     // ── Relocate-Probe: Prüfe ob Datei-Pfad noch existiert ────────────────

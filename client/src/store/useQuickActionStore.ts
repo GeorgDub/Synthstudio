@@ -169,6 +169,15 @@ function isValidMacro(raw: unknown): raw is QuickActionMacro {
   return m.actions.every(isValidAction);
 }
 
+/**
+ * Public Validator-Export (v3.69.0). Wird vom projectSerializer beim
+ * Lade-Pfad genutzt, damit nur valide Macros aus dem .synth-File in den
+ * Store wandern. Identisch zur Internal-Variante.
+ */
+export function isValidQuickActionMacro(raw: unknown): raw is QuickActionMacro {
+  return isValidMacro(raw);
+}
+
 function load(): QuickActionMacro[] {
   try {
     const raw = (typeof localStorage !== "undefined")
@@ -273,6 +282,19 @@ export function reorderQuickActionMacro(
 
 export function resetQuickActionMacros(): void {
   _macros = builtInQuickActionMacros();
+  persist(_macros);
+  notify();
+}
+
+/**
+ * Bulk-Replacement aller Macros (v3.69.0, Project-Restore-Pfad).
+ * Wird vom App.tsx restoreProject-Callback gerufen wenn das .synth-File
+ * Macros enthält (Schema v1.25+). Invalide Einträge werden silent gefiltert.
+ * Leerer Array → leere Macro-Liste (User-Intent "keine Macros").
+ */
+export function setAllQuickActionMacros(list: unknown[]): void {
+  const filtered = Array.isArray(list) ? list.filter(isValidMacro) : [];
+  _macros = filtered as QuickActionMacro[];
   persist(_macros);
   notify();
 }

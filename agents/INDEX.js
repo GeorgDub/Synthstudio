@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.68.0",
+    version: "3.69.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -89,6 +89,31 @@ const INDEX = {
   // ─── KNOWN FILE INDEX ──────────────────────────────────────
   // Key files agents have analyzed. Add new entries after working on a file.
   files: {
+    "client/src/utils/quickActionContextRegistry.ts (v3.69.0)": {
+      role:     "v3.69.0 NEU (~40 LOC, Pure-Modul analog autoBackupController-Registry): Globale Registry für den aktiven QuickActionContext. Public-API: registerQuickActionContext(ctx|null) idempotent, getRegisteredQuickActionContext() → QuickActionContext|null, __resetQuickActionContextRegistryForTests. App.tsx registriert den im useMemo-gewireten Context beim Mount + setzt auf null beim Unmount (useEffect-Cleanup). MacroEditor in der SettingsPanel-Sidebar liest ihn ohne Prop-Drilling für den 'Test'-Button. Pattern erlaubt tief-verschachtelten Komponenten Zugriff ohne Context-Provider-Boilerplate.",
+      lastSeen: "2026-05-19T01:30:00.000Z",
+      ownedBy:  "backend"
+    },
+    "tests/features/quick-action-integration.test.ts (v3.69.0)": {
+      role:     "v3.69.0 NEU (~530 LOC, 24 Tests in 7 describes, env:node mit localStorage-Mock): (1) setAllDrumPartsMuted Forall-Wiring × 3 — iteriert mockParts via setPartMuted-Loop, toggle false unmute alle wieder, defensive bei leerem Pattern (no-op). (2) Multi-Action-Sequence Execution-Order × 2 — 6 Actions in deterministischer Array-Order, fehlender Setter überspringt + dispatched weiter. (3) Schema v1.25 Round-Trip × 6 — serialize+parse Round-Trip, pre-v1.25 macros bleibt undefined, Explicit [] respektiert, invalide Entries silent gefiltert, macros=null → undefined. (4) setAllQuickActionMacros × 5 — Bulk-Replace, [] erlaubt, invalide silent gefiltert, non-Array → leerer State, isValidQuickActionMacro Public-Export. (5) Registry × 3 — null vor Register, Round-Trip + Setter-Aufruf, register(null) deregistriert. (6) Hook-Mount Sanity × 3 — set-bpm/trigger-scene/play-pad dispatched. (7) Project-Restore-Flow End-to-End × 2 — User-Macro überlebt File-Transport, pre-v1.25 Load lässt User-localStorage in Ruhe.",
+      lastSeen: "2026-05-19T01:30:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/store/useQuickActionStore.ts (v3.69.0 macros-restore)": {
+      role:     "v3.68.0 NEU (~330 LOC) + v3.69.0 ERWEITERT (~+25 LOC). NEU isValidQuickActionMacro Public-Export (wrapping isValidMacro) + setAllQuickActionMacros(list) Bulk-Replace-Action für den Restore-Pfad: non-Array → leerer State, invalide Entries silent via isValidMacro gefiltert, leerer Array respektiert (User-Intent 'keine Macros'), localStorage-Persist + notify. Bestehende Store-API (add/update/remove/reorder/reset + normalizeKeybind/eventToKeybind/findMacroForKeybind + Built-in Macros + Custom-Observer-Pattern) unverändert.",
+      lastSeen: "2026-05-19T01:30:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/utils/projectSerializer.ts (v3.69.0 v1.25)": {
+      role:     "v3.69.0 SCHEMA-BUMP: SYNTH_FILE_VERSION 1.24 → 1.25. NEU macros?: QuickActionMacro[] Feld in SynthProject (additiv-optional). parseProject ergänzt um macros-Block: undefined bleibt undefined (Signal an restoreProject: User-localStorage NICHT überschreiben), null/non-Array → undefined (defensive), Array → silent-Filter via isValidQuickActionMacro. Imports +QuickActionMacro Type + isValidQuickActionMacro Validator. Header-Block dokumentiert v1.25 Migration. Backward-Compat: pre-v1.25-Files laden unverändert. Bestehende v1.23-Sample-Tags + v1.21-Plugin-Multi-Slot + v1.18-AudioTrack-Stretch + v1.17-PadBank + etc. Migrations unverändert.",
+      lastSeen: "2026-05-19T01:30:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/App.tsx (v3.69.0 quick-action-mount)": {
+      role:     "v3.69.0 ERWEITERT (+~80 LOC): bestehende v3.68 (kein Quick-Action-Mount) + v3.67 + v3.65 Pre-Action-AutoBackup-Wiring + v3.63 drum-recording + v3.60 post-restore-reset + v3.59 Legacy-Migration bleibt + NEU Quick-Action Macros komplett gewired. Imports +useQuickActionKeyBindings + QuickActionContext + registerQuickActionContext + getQuickActionMacros + setAllQuickActionMacros. quickActionContext useMemo nach registerAutoBackup-useEffect mit allen 9 Settern: setBpm (AudioEngine + project, clamped 20..300), setMasterVolume (AudioEngine + mixer, 0..1), setChannelVolume/Pan/Mute (dm.setPartVolume/Pan/Muted), setAllDrumPartsMuted (Forall-Loop über activePattern.parts), switchPattern (dm.setActivePattern), triggerScene (getSceneState()[idx] → sceneStoreSetActiveScene + dm.setActivePattern), playPad (getPerformancePads()[idx] → queuePerformancePattern). useQuickActionKeyBindings(ctx) gemountet + registerQuickActionContext(ctx) in einem useEffect für die Registry. buildProjectSnapshot bekommt `macros: getQuickActionMacros()`. restoreProject ruft `setAllQuickActionMacros(data.macros)` nur wenn data.macros !== undefined (pre-v1.25 User-localStorage NICHT überschreiben).",
+      lastSeen: "2026-05-19T01:30:00.000Z",
+      ownedBy:  "backend"
+    },
     "client/src/utils/waveformZoom.ts (v3.67.0)": {
       role:     "v3.67.0 NEU (~440 LOC, Pure-Modul, DOM-frei): Sample-precise Zoom/Scroll/Cursor/Loop-Math für ZoomableWaveform. Konstanten MIN_ZOOM=1, MAX_ZOOM=100, ZOOM_STEP=1.25, SAMPLE_LINE_THRESHOLD=1.0, DEFAULT_ZERO_CROSS_WINDOW=64. Public-API: clampNumber/clampZoom/clampScrollOffset/computeMaxScrollOffset (NaN/Infinity-defensive), computeViewport (visibleSamples/firstVisibleSample/lastVisibleSample/samplesPerPixel), zoomAtPoint (centered-zoom — Sample unter Cursor bleibt an Pixel-Position), scrollBy (Delta-Samples mit Bounds-Clamp), pixelToSample/sampleToPixel (Round-Trip ≤ 1 sample drift), isSampleVisible (Viewport-Check). Format-Helpers: formatSampleTime (MM:SS.mmm @ configurierbarer sampleRate, Edge-Case 999→1000 ms-overflow), formatZoomLevel ('Zoom: 5.2×' für <10, 'Zoom: 100×' ≥10). Zero-Crossing-Snap: snapToZeroCrossing (Vorzeichenwechsel-Suche in Window, kein-Crossing → passthrough), setLoopStart/setLoopEnd (clamped gegen partner-Marker + totalSamples), snapLoopPointsToZeroCrossing (No-op falls Snap end≤start). Peak-Cache: buildPeakCache(channelData, numPeaks) reduziert Float32 auf abs-peaks für O(viewport)-Rendering statt O(totalSamples), getVisiblePeaks slice-only.",
       lastSeen: "2026-05-19T01:00:00.000Z",
@@ -2017,6 +2042,52 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "backend",
+      timestamp: "2026-05-19T01:30:00.000Z",
+      done: [
+        "v3.69.0: Quick-Action Macros — Hook-Mount + Setter-Wiring + Schema v1.25 Persist. Closes alle v3.68 Caveats: Hook ist jetzt in App.tsx eingebunden, alle 9 Setter inkl. Forall-Loop für setAllDrumPartsMuted gewired, Macros werden im .synth-File mitgespeichert (Schema v1.24 → v1.25), MacroEditor 'Test'-Button funktioniert über Context-Registry ohne Prop-Drilling.",
+        "App.tsx ERWEITERT (~+80 LOC): NEU Import-Block useQuickActionKeyBindings/QuickActionContext/registerQuickActionContext + getQuickActionMacros/setAllQuickActionMacros aus dem Store. NEU quickActionContext useMemo unmittelbar nach dem registerAutoBackup-useEffect (~Zeile 757) mit allen 9 Settern: setBpm (AudioEngine.setBpm + project.setBpm, clamped 20..300), setMasterVolume (AudioEngine + mixer, 0..1), setChannelVolume/Pan/Mute (dm.setPartVolume/Pan/Muted), setAllDrumPartsMuted (Forall-Loop über activePattern.parts), switchPattern (dm.setActivePattern), triggerScene (getSceneState().scenes[idx] → sceneStoreSetActiveScene + dm.setActivePattern), playPad (getPerformancePads()[idx] → queuePerformancePattern). useQuickActionKeyBindings(ctx) gemountet danach + registerQuickActionContext(ctx) in einem zweiten useEffect für die Registry. buildProjectSnapshot bekommt `macros: getQuickActionMacros()`. restoreProject ruft `setAllQuickActionMacros(data.macros)` nur wenn data.macros !== undefined (pre-v1.25 User-localStorage NICHT überschreiben).",
+        "client/src/utils/projectSerializer.ts SCHEMA-BUMP v1.24 → v1.25: NEU `macros?: QuickActionMacro[]` Feld in SynthProject (additiv-optional, Pre-v1.25-Files laden weiter). parseProject ergänzt um macros-Block: undefined bleibt undefined (Signal: kein Overwrite), null/non-Array → undefined (defensive), Array → silent-Filter via isValidQuickActionMacro. Header-Block dokumentiert v1.25 Migration. Imports +QuickActionMacro Type + isValidQuickActionMacro Validator.",
+        "client/src/store/useQuickActionStore.ts ERWEITERT (~+25 LOC): NEU isValidQuickActionMacro Public-Export (wrapping der internen isValidMacro-Fn) + setAllQuickActionMacros(list) Bulk-Replace-Action für den Restore-Pfad. Defensive: non-Array Input → leerer State, invalide Entries silent gefiltert. localStorage-Persist + notify wie alle anderen Actions.",
+        "client/src/utils/quickActionContextRegistry.ts NEU (~40 LOC, Pure-Modul analog autoBackupController): registerQuickActionContext(ctx|null) + getRegisteredQuickActionContext() → ctx|null + __resetForTests. Erlaubt tief-verschachtelten Komponenten (MacroEditor in SettingsPanel) Zugriff auf den App-globalen Context ohne Prop-Drilling. App.tsx registriert beim Mount + unregistert bei Unmount.",
+        "client/src/components/Settings/SettingsPanel.tsx Mini-Edit: SavingSection-MacroEditor-Render bekommt `testContext={getRegisteredQuickActionContext() ?? undefined}`-Prop — der Test-Button im Editor ist jetzt aktiv sobald App.tsx den Context registriert hat. Import-Block + 1 Render-Zeile angepasst.",
+        "tests/features/quick-action-integration.test.ts NEU (~530 LOC, 24 Tests in 7 describes, env:node mit localStorage-Mock): (1) setAllDrumPartsMuted Forall-Wiring × 3 — iteriert mockParts mit setPartMuted-Loop, toggle false unmute alle wieder, defensive bei leerem Pattern (no-op). (2) Multi-Action-Sequence Execution-Order × 2 — 6 Actions in deterministischer Array-Order (set-bpm → set-channel-volume → delay → mute-all → switch-pattern → set-master-volume), fehlender Setter überspringt + dispatched weiter. (3) Schema v1.25 Round-Trip × 6 — serialize schreibt macros-Feld, Round-Trip serialize→toJson→parseProject preserves komplette Macro-Struktur (id/keybind/actions), pre-v1.25-File macros bleibt undefined (User-localStorage protect), Explicit [] respektiert, invalide Entries silent gefiltert, macros=null → undefined. (4) setAllQuickActionMacros × 5 — Bulk-Replace, [] erlaubt 'keine Macros', invalide Einträge silent gefiltert, non-Array Input → leerer State, isValidQuickActionMacro Public-Export. (5) Registry × 3 — getRegisteredQuickActionContext ohne Register → null, register+get Round-Trip + Setter-Aufruf, register(null) deregistriert. (6) Hook-Mount Sanity × 3 — executeQuickAction set-bpm/trigger-scene/play-pad dispatched. (7) Project-Restore-Flow End-to-End × 2 — User-Macro überlebt File-Transport (Save + Reset + Load + setAllQuickActionMacros), pre-v1.25 Load lässt User-localStorage in Ruhe.",
+        "tests/features Test-Anpassungen (7 Files × Schema-Version-Assertion 1.24 → 1.25): project-id-migration, project-serializer (2×), audio-track-store (2×), audio-track-stretch, multi-bar-pattern, plugin-host (2×), plugin-multislot, script-store. Keine Logik-Änderungen — nur das Erwartungs-Konstante updated nach dem Schema-Bump.",
+        "package.json (3.68.0 → 3.69.0). pnpm check clean. pnpm test grün: 215 Test-Files / 4982 Tests passed (16 skipped, +24 NEU vs. v3.68)."
+      ],
+      next: [
+        "v3.70: MacroEditor-UI sollte beim Loaden eines Projekts mit Macros einen Toast anzeigen ('N Quick-Action Macros aus Projekt geladen'). Derzeit ersetzt setAllQuickActionMacros silent — der User merkt erst beim Versuch ein Built-in zu nutzen dass es weg ist.",
+        "v3.70: ActionFields-Dropdown für channelId/patternId/sceneIndex/padIndex (closes v3.68 Caveat zu Free-Text-Inputs). Channel-Picker liest aus useDrumMachineStore.parts, Pattern-Picker aus useDrumMachineStore.patterns, Scene-Picker aus useSceneStore.scenes, Pad-Picker aus getPerformancePads().",
+        "v3.70: Auto-Backup vor 'Quick-Action Macro testen' wenn das Macro destruktive Actions enthält (mute-all-drum-parts, switch-pattern). Schließt Knopf-mash-Lücke ('Hab ich getestet und alles zerstört').",
+        "v3.70: ACTION-vs-Macro-Konflikt-UI im MacroEditor — wenn User einen Keybind wählt der bereits eine System-ACTION trifft, sollte ein Warning-Icon + Tooltip erscheinen ('System-ACTION gewinnt, Macro wird NIE getriggert')."
+      ],
+      changed: [
+        "client/src/App.tsx (+~80 LOC: Imports + quickActionContext useMemo mit 9 Settern + setAllDrumPartsMuted Forall-Loop + useQuickActionKeyBindings(ctx) Mount + Registry-Register-Effect + buildProjectSnapshot.macros + restoreProject.macros-Block)",
+        "client/src/store/useQuickActionStore.ts (+~25 LOC: isValidQuickActionMacro Public-Export + setAllQuickActionMacros Bulk-Replace)",
+        "client/src/utils/projectSerializer.ts (Schema v1.24 → v1.25: SYNTH_FILE_VERSION-Konstante, macros?-Feld in SynthProject, parseProject macros-Block, Header-Doku-Eintrag, Imports +QuickActionMacro/isValidQuickActionMacro)",
+        "client/src/utils/quickActionContextRegistry.ts (NEU ~40 LOC: registerQuickActionContext + getRegisteredQuickActionContext + __resetForTests)",
+        "client/src/components/Settings/SettingsPanel.tsx (Import getRegisteredQuickActionContext + MacroEditor.testContext-Prop)",
+        "tests/features/quick-action-integration.test.ts (NEU ~530 LOC: 24 Tests in 7 describes)",
+        "tests/features/project-id-migration.test.ts (Schema-Assertion 1.24 → 1.25, 2 Stellen)",
+        "tests/features/project-serializer.test.ts (Schema-Assertion 1.24 → 1.25, 3 Stellen)",
+        "tests/features/audio-track-store.test.ts (Schema-Assertion 1.24 → 1.25, 2 Stellen)",
+        "tests/features/audio-track-stretch.test.ts (Schema-Assertion 1.24 → 1.25)",
+        "tests/features/multi-bar-pattern.test.ts (Schema-Assertion 1.24 → 1.25)",
+        "tests/features/plugin-host.test.ts (Schema-Assertion 1.24 → 1.25, 2 Stellen)",
+        "tests/features/plugin-multislot.test.ts (Schema-Assertion 1.24 → 1.25)",
+        "tests/features/script-store.test.ts (Schema-Assertion 1.24 → 1.25)",
+        "package.json (3.68.0 → 3.69.0)",
+        "agents/INDEX.js (version + workLog v3.69.0)"
+      ],
+      caveats: [
+        "Der Forall-Loop in setAllDrumPartsMuted iteriert nur über das AKTIVE Pattern. Wenn ein Macro nach einem switch-pattern ein setAllDrumPartsMuted folgt, wird das mute auf das NEUE aktive Pattern angewendet — semantisch korrekt, aber für User die mehrere Patterns parallel halten wollen u.U. überraschend. Doku im MacroEditor wäre eine Verbesserung.",
+        "MacroEditor.testContext kommt aus der Registry — wird sie zwischen Render-Frames re-evaluated? Nein, getRegisteredQuickActionContext() liest nur den aktuellen Wert. Wenn der User SettingsPanel öffnet bevor App.tsx den Context registriert hat (theoretisch unmöglich, in Praxis immer registered weil useMemo synchron im Render läuft), würde der Test-Button disabled bleiben. Real-World keine bekannten Probleme.",
+        "Schema-Test-Anpassungen sind mechanisch — jeder weitere Schema-Bump wird wieder 9 Tests touchen. Eine konsolidierte 'Schema-Version-Constant'-Test-Datei wäre langfristig sauberer; derzeit ist die Assertion über viele Files verteilt.",
+        "Quick-Action-Macros werden bei Project-Save IMMER mitgespeichert (auch wenn der User keine angelegt hat — die 3 Built-ins sind drin). Das ist ~500B JSON-Overhead, akzeptabel. Optionale Toggle 'Macros in Projektdatei mitspeichern' wäre denkbar, scheint aber overkill.",
+        "Backward-Compat-Lücke: Ein User auf v3.68 öffnet ein in v3.69 gespeichertes File. parseProject in v3.68 würde das macros-Feld ignorieren (kein Throw, kein Issue), aber beim Re-Save mit v3.68 ginge das Feld verloren. Das ist erwartet — der v3.69-Schema-Bump ist forward-compatible (v3.68 liest v3.69 ohne Crash), nicht backward-compatible. Update auf v3.69 ist nicht Pflicht."
+      ]
+    },
     {
       agent:     "backend",
       timestamp: "2026-05-19T01:15:00.000Z",

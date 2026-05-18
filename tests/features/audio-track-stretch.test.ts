@@ -456,8 +456,8 @@ describe("v3.52.0 – Serializer Round-Trip (v1.22)", () => {
     localStorageMock.clear();
   });
 
-  it("SYNTH_FILE_VERSION wurde auf '1.24' gebumpt (v3.58 stable projectId)", () => {
-    expect(SYNTH_FILE_VERSION).toBe("1.24");
+  it("SYNTH_FILE_VERSION wurde auf '1.25' gebumpt (v3.69 macros)", () => {
+    expect(SYNTH_FILE_VERSION).toBe("1.25");
   });
 
   it("Round-Trip erhält stretchRatio + pitchLocked + bpmHint", () => {

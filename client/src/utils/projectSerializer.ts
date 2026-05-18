@@ -48,6 +48,15 @@
  *     pre-v1.24-Files ohne projectId → parseProject generiert eine frische
  *     UUID via ensureProjectId() (Auto-Upgrade beim ersten Load). Invalid
  *     projectId (non-string oder kein UUID-v4-Format) → ebenfalls regeneriert.
+ *   - "1.25": macros hinzugefügt (v3.69.0). Quick-Action Macros aus
+ *     useQuickActionStore werden mit-serialisiert, damit User-Macros beim
+ *     File-Transport zwischen Maschinen erhalten bleiben. Closes v3.68
+ *     Caveat "Quick-Action Macros sind NICHT teil des .synth-Projektformat".
+ *     Backward-Compat: pre-v1.25-Files ohne macros-Feld → parseProject
+ *     mappt auf []; restoreProject lässt dann den User-localStorage in
+ *     Ruhe (kein Overwrite). Explicit [] wird respektiert (User hat alle
+ *     Macros gelöscht und gespeichert). Invalide Einträge werden silent
+ *     gefiltert via isValidQuickActionMacro.
  * Dateiendung: .synth
  */
 
@@ -72,8 +81,10 @@ import {
   DEFAULT_NOTE_DURATION_MS,
 } from "@/audio/MidiNoteOut";
 import { ensureProjectId } from "@/utils/projectId";
+import type { QuickActionMacro } from "@/store/useQuickActionStore";
+import { isValidQuickActionMacro } from "@/store/useQuickActionStore";
 
-export const SYNTH_FILE_VERSION = "1.24";
+export const SYNTH_FILE_VERSION = "1.25";
 export const SYNTH_LATEST_KEY = "synthstudio:last-project";
 
 // ─── Typen ───────────────────────────────────────────────────────────────────
@@ -212,6 +223,21 @@ export interface SynthProject {
    * werden als `null` serialisiert (nicht weggelassen — Index-Stabilität).
    */
   slicePads?: SerializedSlicePads;
+
+  /**
+   * Quick-Action Macros (User-defined Multi-Action-Shortcuts, v3.68.0).
+   * Pro Macro: id, name, optionaler keybind, sequenzielle Action-Liste.
+   *
+   * Seit v1.25 (Synthstudio v3.69.0). Pre-v1.25-Files haben das Feld
+   * nicht → parseProject defaultet auf `undefined` (Signal an
+   * restoreProject: "User-localStorage nicht überschreiben"). Explicit
+   * leeres Array [] wird respektiert (User hat alle Macros gelöscht
+   * und gespeichert).
+   *
+   * Validation: Invalide Entries werden silent via isValidQuickActionMacro
+   * gefiltert (kein Throw bei korruptem Schema).
+   */
+  macros?: QuickActionMacro[];
 }
 
 // ─── v1.18 Sub-Types ─────────────────────────────────────────────────────────
@@ -580,6 +606,22 @@ export function parseProject(json: string): SynthProject {
       }
     }
     data.scripts = filtered;
+  }
+
+  // ─── macros (seit v1.25) ─────────────────────────────────────────────────
+  // Pre-v1.25-Files haben das Feld nicht → undefined bleibt undefined
+  // (Signal an restoreProject: User-localStorage nicht überschreiben).
+  // Null oder non-Array → undefined (kein Vertrauen in das Schema).
+  // Explicit leeres Array → bleibt [] (User-Intent "keine Macros").
+  // Invalide Entries werden silent via isValidQuickActionMacro gefiltert.
+  const rawMacros = (data as { macros?: unknown }).macros;
+  if (rawMacros === undefined) {
+    // nothing — bleibt undefined
+  } else if (rawMacros === null || !Array.isArray(rawMacros)) {
+    delete (data as { macros?: unknown }).macros;
+  } else {
+    const filtered = (rawMacros as unknown[]).filter(isValidQuickActionMacro) as QuickActionMacro[];
+    data.macros = filtered;
   }
 
   return data;

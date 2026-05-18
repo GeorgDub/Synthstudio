@@ -107,6 +107,8 @@ import {
   resetQuickActionMacros,
 } from "@/store/useQuickActionStore";
 import { MacroEditor } from "@/components/Macros/MacroEditor";
+// v3.69.0: Test-Button im MacroEditor braucht den globalen Quick-Action-Context.
+import { getRegisteredQuickActionContext } from "@/utils/quickActionContextRegistry";
 
 // ─── Sidebar-Abschnitte ───────────────────────────────────────────────────────
 
@@ -1567,7 +1569,11 @@ function QuickActionMacrosSection() {
         ))}
       </div>
 
-      <MacroEditor open={editorOpen} onClose={() => setEditorOpen(false)} />
+      <MacroEditor
+        open={editorOpen}
+        onClose={() => setEditorOpen(false)}
+        testContext={getRegisteredQuickActionContext() ?? undefined}
+      />
     </div>
   );
 }
