@@ -16,6 +16,13 @@ import { MidiNoteOut, type MidiPartConfig } from "./MidiNoteOut";
 import { AudioRecorder, type RecordingResult, MAX_SIMULTANEOUS_RECORDINGS } from "./AudioRecorder";
 import { LooperEngine } from "./LooperEngine";
 import type { LoopState } from "./looperUtils";
+// v3.44.0 (TASK-239 Phase 1): AudioWorklet-Plugin-Host. Built-Ins werden in
+// init() registriert, applyPluginSlot() wirt vom Mixer-Diff-Sync gerufen.
+import {
+  registerBuiltInPlugins,
+  getPlugin as getPluginManifest,
+} from "./PluginRegistry";
+import { createPluginHost, PluginHost } from "./PluginHost";
 // v3.0.0 (TASK-236-ALT): AudioContext-Low-Latency-Config (latencyHint + sampleRate)
 // gelesen aus dem User-Store. Store ist Browser-pure und im Node-Test safe
 // (siehe sanitize-on-load / typeof-localStorage-Guards).
@@ -1016,6 +1023,15 @@ class AudioEngineClass {
     } catch (e) {
       console.warn("[AudioEngine] AudioWorklet konnte nicht geladen werden:", e);
     }
+
+    // v3.44.0 (TASK-239 Phase 1): Built-In Plugin-Manifeste registrieren.
+    // Die Worklet-Module selbst werden via createPluginHost() lazy geladen
+    // (erst wenn ein Channel das Plugin tatsächlich aktiviert).
+    try {
+      registerBuiltInPlugins();
+    } catch (e) {
+      console.warn("[AudioEngine] Plugin-Registry-Init fehlgeschlagen:", e);
+    }
   }
 
   // ─── Insert Chain ─────────────────────────────────────────────────────────
@@ -1174,6 +1190,91 @@ class AudioEngineClass {
       prev.connect(nodes.panner);
     }
     this._insertChainNodes.set(partId, insertNodes);
+  }
+
+  // ─── Plugin-Slot (v3.44.0, TASK-239 Phase 1) ─────────────────────────────
+  // Per-Channel max 1 AudioWorklet-Plugin in series VOR der applyInsertChain-
+  // Position. Plugin-Node wird zwischen output(=channel-end) und panner
+  // eingefügt — analog zu Bitcrusher/RingMod in der Insert-Chain.
+  //
+  // ARCHITEKTUR-ENTSCHEIDUNG: Plugin-Slot ist eine SEPARATE Schicht neben
+  // den klassischen 12 Insert-Typen. In Phase-2 (native VST3) wird dies
+  // wichtig weil native Plugins via IPC ein anderes Wiring brauchen.
+
+  /** Pro-Channel PluginHost-Instanz. Wird beim Wiring gehalten. */
+  private _pluginHosts = new Map<string, PluginHost>();
+
+  /**
+   * Lädt/entlädt ein Plugin für einen Kanal. Bei null wird der Slot entfernt.
+   * Defensive: bei Plugin-Load-Fehler bleibt der Kanal ohne Plugin (keine
+   * Audio-Unterbrechung).
+   */
+  async applyPluginSlot(
+    partId: string,
+    slot: { pluginId: string; params: Record<string, number>; bypassed?: boolean } | null,
+  ): Promise<void> {
+    if (!this.ctx) return;
+
+    // Existierende Plugin-Instanz dieses Slots disposen
+    const existing = this._pluginHosts.get(partId);
+    if (existing) {
+      existing.dispose();
+      this._pluginHosts.delete(partId);
+    }
+
+    // Bei null: Wiring zurücksetzen — Insert-Chain übernimmt allein.
+    if (!slot) {
+      // Re-trigger applyInsertChain mit leerem chain neutralisiert Side-Effects;
+      // hier reicht der Plugin-Dispose, da panner→destination unverändert ist.
+      return;
+    }
+
+    // Plugin-Manifest aus Registry holen
+    const manifest = getPluginManifest(slot.pluginId);
+    if (!manifest) {
+      console.warn(`[AudioEngine] Unknown plugin id: ${slot.pluginId}`);
+      return;
+    }
+
+    const host = await createPluginHost(this.ctx, manifest, { params: slot.params });
+    if (!host) {
+      // createPluginHost loggt bereits — wir bleiben silent damit der
+      // Mixer weiter läuft (Audio-Continuity über UI-Robustheit).
+      return;
+    }
+
+    if (slot.bypassed) host.setBypassed(true);
+    this._pluginHosts.set(partId, host);
+
+    // Wiring: Plugin wird zwischen channel-output und panner eingefügt.
+    // applyInsertChain() macht das per Default direkt — wir hooken hier
+    // additiv ein damit beide Layer (Insert-Chain + Plugin) koexistieren.
+    // Strategy: Plugin-Node hängt sich an `nodes.output` (Insert-Chain-Tail)
+    // und führt zu `nodes.panner`. Wenn die Insert-Chain leer ist ist
+    // nodes.output direkt der Channel-Output.
+    const nodes = this._getOrCreateChannelNodes(partId, DEFAULT_CHANNEL_FX);
+    try { nodes.output.disconnect(); } catch { /* ignore */ }
+
+    if (slot.bypassed) {
+      // Bypass: Plugin-Knoten existiert (für Param-Persistenz), wird aber
+      // nicht im Signalweg verkabelt.
+      nodes.output.connect(nodes.panner);
+    } else {
+      nodes.output.connect(host.getNode());
+      host.getNode().connect(nodes.panner);
+    }
+  }
+
+  /** Setzt einen einzelnen Plugin-Param zur Laufzeit (für UI-Slider-Drag). */
+  setPluginParam(partId: string, paramId: string, value: number): void {
+    const host = this._pluginHosts.get(partId);
+    if (!host) return;
+    host.setParam(paramId, value);
+  }
+
+  /** Liefert die aktuell aktive Plugin-Host-Instanz (für Tests/UI). */
+  getPluginHost(partId: string): PluginHost | undefined {
+    return this._pluginHosts.get(partId);
   }
 
   // ─── Bus Compressor ───────────────────────────────────────────────────────

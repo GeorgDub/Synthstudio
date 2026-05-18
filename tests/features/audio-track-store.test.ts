@@ -399,10 +399,10 @@ describe("projectSerializer × audioTracks", () => {
     localStorageMock.clear();
   });
 
-  it("SYNTH_FILE_VERSION ist '1.19' (audioTracks bleiben kompatibel)", () => {
-    // v1.19 bumpt für PatternData.stepCount=64 (KORG-Parität, v3.39); audioTracks
+  it("SYNTH_FILE_VERSION ist '1.20' (audioTracks bleiben kompatibel)", () => {
+    // v1.20 bumpt für mixer.pluginSlots (TASK-239 Phase 1, v3.44); audioTracks
     // (seit v1.15) bleiben additiv-kompatibel.
-    expect(SYNTH_FILE_VERSION).toBe("1.19");
+    expect(SYNTH_FILE_VERSION).toBe("1.20");
   });
 
   it("Serializer Round-trip: serialize → JSON → parse erhält audioTracks", () => {
@@ -431,7 +431,7 @@ describe("projectSerializer × audioTracks", () => {
     expect(restored.audioTracks).toBeDefined();
     expect(restored.audioTracks).toHaveLength(1);
     expect(restored.audioTracks![0]).toEqual(tracks[0]);
-    expect(restored.version).toBe("1.19");
+    expect(restored.version).toBe("1.20");
   });
 
   it("Migration: v1.14-File ohne audioTracks-Feld → audioTracks ist []", () => {

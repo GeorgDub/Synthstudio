@@ -19,6 +19,11 @@
  *     Pre-v1.19-Files mit stepCount=64 sind impossible (Typ ließ es nicht zu);
  *     v1.19-Files mit stepCount=64 sind in v1.18-Readern ein Type-Mismatch,
  *     werden aber tolerant geladen (parseProject validiert stepCount nicht).
+ *   - "1.20": mixer.pluginSlots hinzugefügt (v3.44.0, TASK-239 Phase 1,
+ *     AudioWorklet-Plugin-Host). Additive/optional — Pre-v1.20-Files laden
+ *     unverändert mit pluginSlots=undefined; parseProject mappt undefined
+ *     auf leeres {} im MixerStore (kein silent-data-loss da Mixer ohnehin
+ *     ein eigener Persist-Layer ist, das Project-File ist nur ein Snapshot).
  * Dateiendung: .synth
  */
 
@@ -43,7 +48,7 @@ import {
   DEFAULT_NOTE_DURATION_MS,
 } from "@/audio/MidiNoteOut";
 
-export const SYNTH_FILE_VERSION = "1.19";
+export const SYNTH_FILE_VERSION = "1.20";
 export const SYNTH_LATEST_KEY = "synthstudio:last-project";
 
 // ─── Typen ───────────────────────────────────────────────────────────────────
@@ -69,6 +74,12 @@ export interface SynthProject {
     eq16: MixerState["eq16"];
     sidechains: MixerState["sidechains"];
     transientShapers: MixerState["transientShapers"];
+    /**
+     * v3.44.0 (v1.20, TASK-239 Phase 1): Plugin-Slots pro Channel.
+     * Optional/additiv — Pre-v1.20-Files haben das Feld nicht; in
+     * parseProject wird es auf {} defaultet.
+     */
+    pluginSlots?: MixerState["pluginSlots"];
   };
   humanizer: {
     global: HumanizerState["global"];

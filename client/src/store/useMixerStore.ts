@@ -45,6 +45,27 @@ export interface MixerReturnTrackState {
   muted: boolean;
 }
 
+/**
+ * v3.44.0 (TASK-239 Phase 1): Plugin-Slot pro Channel.
+ *
+ * Foundation für VST-Host-Architektur. Phase-1 unterstützt AudioWorklet-
+ * basierte Plugins (siehe `audio/PluginRegistry.ts`). Phase-2 (v4.0+) wird
+ * native VST3/CLAP via IPC laden, das Slot-Schema bleibt strukturell gleich.
+ *
+ * Schema:
+ *  - `pluginId`: Plugin-ID aus der Registry (z.B. "synthstudio.tape-sat")
+ *  - `params`: aktuelle Werte für die Plugin-Params (clamped auf Schema)
+ *  - `bypassed`: optionaler Bypass-State (Default false)
+ *
+ * Optional pro Channel — wenn kein Plugin geladen ist, ist der Slot
+ * undefined.
+ */
+export interface MixerPluginSlot {
+  pluginId: string;
+  params: Record<string, number>;
+  bypassed?: boolean;
+}
+
 export interface MixerState {
   channels: Record<string, MixerChannelState>;
   masterVolume: number; // 0–1
@@ -54,6 +75,11 @@ export interface MixerState {
   eq16: Record<string, EqBand[]>;
   sidechains: Record<string, SidechainSettings>;
   transientShapers: Record<string, TransientShaperSettings>;
+  /**
+   * v3.44.0 (TASK-239 Phase 1): Plugin-Slot pro Channel (max 1 in Phase 1).
+   * Schlüssel ist `partId`, Wert ist undefined wenn kein Plugin geladen.
+   */
+  pluginSlots: Record<string, MixerPluginSlot | undefined>;
 }
 
 export interface MixerActions {
@@ -73,6 +99,14 @@ export interface MixerActions {
   resetEqBands: (partId: string) => void;
   setSidechain: (partId: string, update: Partial<SidechainSettings>) => void;
   setTransientShaper: (partId: string, update: Partial<TransientShaperSettings>) => void;
+  /**
+   * v3.44.0: Plugin-Slot-Operationen. `setPluginSlot(partId, null)` entfernt
+   * den Slot. `setPluginParam` clampt nicht — der UI-Caller MUSS clampen
+   * (oder via `clampPluginParam` aus PluginRegistry).
+   */
+  setPluginSlot: (partId: string, slot: MixerPluginSlot | null) => void;
+  setPluginParam: (partId: string, paramId: string, value: number) => void;
+  setPluginBypassed: (partId: string, bypassed: boolean) => void;
   /** Resettet alle Mixer-Daten (Channels, Sends, EQ, FX-Chains) + entfernt localStorage-Persistenz (BUG-013 fix). */
   resetMixer: () => void;
 }
@@ -94,6 +128,7 @@ function defaultMixerState(): MixerState {
     eq16: {},
     sidechains: {},
     transientShapers: {},
+    pluginSlots: {},
   };
 }
 
@@ -149,6 +184,20 @@ function loadMixerState(): MixerState {
       ),
       transientShapers: Object.fromEntries(
         Object.entries(parsed.transientShapers ?? {}).map(([partId, settings]) => [partId, normalizeTransientShaper(settings)]),
+      ),
+      // v3.44.0: Plugin-Slots. Defensive — wenn fremde Felder im JSON sind,
+      // werden sie beim Re-Load von der Registry validiert (PluginHost
+      // wirft sonst, das fängt der Wiring-Layer im AudioEngine ab).
+      pluginSlots: Object.fromEntries(
+        Object.entries(parsed.pluginSlots ?? {}).map(([partId, slot]) => {
+          if (!slot || typeof slot !== "object") return [partId, undefined];
+          const s = slot as MixerPluginSlot;
+          return [partId, {
+            pluginId: String(s.pluginId ?? ""),
+            params: typeof s.params === "object" && s.params !== null ? { ...s.params } : {},
+            bypassed: s.bypassed === true,
+          }];
+        }),
       ),
     };
   } catch {
@@ -359,6 +408,47 @@ export function useMixerStore(): MixerState & MixerActions {
     }));
   }, [commit]);
 
+  // ─── v3.44.0: Plugin-Slot Actions ──────────────────────────────────────
+  const setPluginSlot = useCallback((partId: string, slot: MixerPluginSlot | null) => {
+    commit(prev => {
+      const next = { ...prev.pluginSlots };
+      if (slot === null) {
+        delete next[partId];
+      } else {
+        next[partId] = { ...slot, params: { ...slot.params } };
+      }
+      return { ...prev, pluginSlots: next };
+    });
+  }, [commit]);
+
+  const setPluginParam = useCallback((partId: string, paramId: string, value: number) => {
+    commit(prev => {
+      const slot = prev.pluginSlots[partId];
+      if (!slot) return prev;
+      return {
+        ...prev,
+        pluginSlots: {
+          ...prev.pluginSlots,
+          [partId]: { ...slot, params: { ...slot.params, [paramId]: value } },
+        },
+      };
+    });
+  }, [commit]);
+
+  const setPluginBypassed = useCallback((partId: string, bypassed: boolean) => {
+    commit(prev => {
+      const slot = prev.pluginSlots[partId];
+      if (!slot) return prev;
+      return {
+        ...prev,
+        pluginSlots: {
+          ...prev.pluginSlots,
+          [partId]: { ...slot, bypassed },
+        },
+      };
+    });
+  }, [commit]);
+
   const setTransientShaper = useCallback((partId: string, update: Partial<TransientShaperSettings>) => {
     commit(prev => ({
       ...prev,
@@ -390,6 +480,9 @@ export function useMixerStore(): MixerState & MixerActions {
     resetEqBands,
     setSidechain,
     setTransientShaper,
+    setPluginSlot,
+    setPluginParam,
+    setPluginBypassed,
     resetMixer,
   };
 }

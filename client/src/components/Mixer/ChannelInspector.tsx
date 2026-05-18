@@ -16,6 +16,13 @@ import React, { useState, useCallback } from "react";
 import type { PartData, PatternData } from "@/audio/AudioEngine";
 import type { MixerState, MixerActions } from "@/store/useMixerStore";
 import { MIXER_FX_TYPES, summarizeEqBands, type MixerFxType } from "@/utils/mixerFx";
+// v3.44.0 (TASK-239 Phase 1): Plugin-Slot UI
+import {
+  getPlugins as getRegisteredPlugins,
+  getPlugin as getPluginManifest,
+  getDefaultParams as getPluginDefaultParams,
+  clampPluginParam,
+} from "@/audio/PluginRegistry";
 import { extractPatch, type Patch } from "@/utils/patchSerialize";
 import { savePatch, usePatchStore } from "@/store/usePatchStore";
 import { toast } from "@/store/useToastStore";
@@ -304,6 +311,33 @@ export function ChannelInspector({ part, parts, mixer, className, onApplyPatch, 
           ))}
         </div>
       </section>
+
+      {/* v3.44.0 (TASK-239 Phase 1): AudioWorklet-Plugin-Slot */}
+      <PluginSlotSection
+        partId={part.id}
+        slot={mixer.pluginSlots[part.id]}
+        onChangePlugin={(pluginId) => {
+          if (!pluginId) {
+            mixer.setPluginSlot(part.id, null);
+            return;
+          }
+          const manifest = getPluginManifest(pluginId);
+          if (!manifest) return;
+          mixer.setPluginSlot(part.id, {
+            pluginId,
+            params: getPluginDefaultParams(manifest),
+            bypassed: false,
+          });
+        }}
+        onChangeParam={(paramId, value) => {
+          mixer.setPluginParam(part.id, paramId, value);
+        }}
+        onToggleBypass={() => {
+          const slot = mixer.pluginSlots[part.id];
+          if (!slot) return;
+          mixer.setPluginBypassed(part.id, !slot.bypassed);
+        }}
+      />
 
       <section className="border-b border-border-color p-3">
         <div className="mb-2 flex items-center justify-between">
@@ -827,5 +861,90 @@ function ControlRow({
       />
       <span className="text-right font-mono">{value.toFixed(2)}</span>
     </label>
+  );
+}
+
+// ─── v3.44.0 (TASK-239 Phase 1) — Plugin-Slot Section ─────────────────────
+
+interface PluginSlotSectionProps {
+  partId: string;
+  slot: { pluginId: string; params: Record<string, number>; bypassed?: boolean } | undefined;
+  onChangePlugin: (pluginId: string | null) => void;
+  onChangeParam: (paramId: string, value: number) => void;
+  onToggleBypass: () => void;
+}
+
+function PluginSlotSection({ partId, slot, onChangePlugin, onChangeParam, onToggleBypass }: PluginSlotSectionProps) {
+  const plugins = React.useMemo(() => getRegisteredPlugins(), []);
+  const manifest = slot ? getPluginManifest(slot.pluginId) : undefined;
+
+  return (
+    <section className="border-b border-border-color p-3" data-testid={`channel-plugin-slot-${partId}`}>
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <span className="text-[10px] font-semibold uppercase tracking-wide text-text-dim">Plugin</span>
+        <select
+          aria-label="Plugin auswählen"
+          value={slot?.pluginId ?? ""}
+          onChange={e => onChangePlugin(e.target.value || null)}
+          className="flex-1 rounded bg-bg-panel px-2 py-1 text-[10px] text-text-primary border border-border-color"
+          data-testid={`channel-plugin-select-${partId}`}
+        >
+          <option value="">None</option>
+          {plugins.map(p => (
+            <option key={p.id} value={p.id}>{p.name} {p.builtIn ? "(Built-In)" : ""}</option>
+          ))}
+        </select>
+        {slot && (
+          <button
+            type="button"
+            onClick={onToggleBypass}
+            className={`px-2 py-1 text-[10px] rounded border ${
+              slot.bypassed
+                ? "border-text-dim text-text-dim"
+                : "border-accent-secondary text-accent-secondary"
+            }`}
+            title="Bypass — Plugin überspringen"
+            data-testid={`channel-plugin-bypass-${partId}`}
+          >
+            {slot.bypassed ? "OFF" : "ON"}
+          </button>
+        )}
+      </div>
+
+      {!slot && (
+        <div className="rounded border border-dashed border-border-color px-2 py-3 text-center text-[10px] text-text-dim">
+          Kein Plugin geladen
+        </div>
+      )}
+
+      {slot && manifest && (
+        <div className="space-y-1">
+          {manifest.paramSchema.map(def => {
+            const raw = slot.params[def.id] ?? def.default;
+            const clamped = clampPluginParam(manifest, def.id, raw);
+            return (
+              <ControlRow
+                key={def.id}
+                label={def.label}
+                value={clamped}
+                min={def.min}
+                max={def.max}
+                step={def.step ?? 0.01}
+                onChange={v => onChangeParam(def.id, v)}
+              />
+            );
+          })}
+          <div className="mt-1 text-[9px] text-text-dim">
+            {manifest.name} v{manifest.version}
+          </div>
+        </div>
+      )}
+
+      {slot && !manifest && (
+        <div className="rounded border border-dashed border-accent-danger px-2 py-2 text-[10px] text-accent-danger">
+          Plugin „{slot.pluginId}" nicht gefunden — neu installiert?
+        </div>
+      )}
+    </section>
   );
 }

@@ -634,6 +634,26 @@ export function MixerView({ dm, mixer, samples = [], bpm = 120, projectName = "S
     });
   }, [mixer.insertChains]);
 
+  // v3.44.0 (TASK-239 Phase 1): Plugin-Slots an AudioEngine weitergeben.
+  // applyPluginSlot ist defensive — bei null wird der Slot entfernt, bei
+  // unbekannter pluginId wird gewarnt aber nichts crasht.
+  useEffect(() => {
+    Object.entries(mixer.pluginSlots).forEach(([partId, slot]) => {
+      AudioEngine.applyPluginSlot(partId, slot ?? null);
+    });
+  }, [mixer.pluginSlots]);
+
+  // Param-Updates aus dem Store werden direkt an die laufende Plugin-Instanz
+  // weitergegeben damit Slider-Drag keine Re-Wiring-Latenz verursacht.
+  useEffect(() => {
+    Object.entries(mixer.pluginSlots).forEach(([partId, slot]) => {
+      if (!slot) return;
+      for (const [paramId, value] of Object.entries(slot.params)) {
+        AudioEngine.setPluginParam(partId, paramId, value);
+      }
+    });
+  }, [mixer.pluginSlots]);
+
   return (
     <div className={`relative flex flex-col h-full bg-bg-base overflow-hidden ${className}`}>
       {/* Header */}

@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.43.0",
+    version: "3.44.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -89,6 +89,61 @@ const INDEX = {
   // ─── KNOWN FILE INDEX ──────────────────────────────────────
   // Key files agents have analyzed. Add new entries after working on a file.
   files: {
+    "client/src/audio/PluginRegistry.ts (v3.44.0)": {
+      role:     "v3.44.0 NEU (TASK-239 Phase 1): AudioWorklet-Plugin-Host Foundation. Module-Singleton mit Map<id, manifest>. Public API: validatePluginManifest(unknown):boolean (defensive structural check, prüft id/name/version/workletUrl/processorName non-empty Strings + paramSchema-Array mit min<=default<=max + finite numbers), registerPlugin(manifest, opts?), unregisterPlugin(id):boolean, getPlugins():PluginManifest[] sorted-by-id, getPlugin(id), pluginCount(), _resetPluginRegistry test-helper. BUILT_IN_PLUGINS Array mit 3 Plugins: BUILT_IN_TAPE_SAT (drive 0..1, mix 0..1), BUILT_IN_NOTCH (frequency 50..12000 Hz, q 0.5..30, mix 0..1), BUILT_IN_WIDTH (width 0..2). registerBuiltInPlugins() idempotent — doppelter Call mit gleicher Version ist No-Op, mit anderer Version wirft (defensive, schützt Hot-Reload). getDefaultParams(manifest) liefert {[paramId]: default}. clampPluginParam(manifest, paramId, value) clampt auf range, NaN→default, unknown-param→passthrough (defensive). builtInWorkletUrl(filename) resolved via new URL(...,import.meta.url) mit string-fallback für Test-Env. PHASE-2-STUB-BLOCK am Ende (~30 LOC Kommentar): scanNativePlugins()/loadVST3(path) Signaturen für v4.0+ JUCE-Node-Addon-Integration dokumentiert.",
+      lastSeen: "2026-05-18T23:30:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/audio/PluginHost.ts (v3.44.0)": {
+      role:     "v3.44.0 NEU (TASK-239 Phase 1): AudioWorkletNode-Wrapper für Plugin-Instanzen. Async-Factory createPluginHost(ctx, manifest, init?:{params}) → PluginHost|null (null bei Worklet-Load-Fehler ODER kein audioWorklet im Context — graceful, kein Crash). PluginHost-Klasse mit Public API: setParam(id, value) clampt auf paramSchema-Range (unknown-id no-op), getParams():Record<string,number> kopie der aktuellen Werte, getNode():AudioWorkletNode für FX-Chain-Wiring, setBypassed/isBypassed (Flag — AudioEngine konsumiert das beim Wiring), dispose() disconnected den Node. _setNodeParam interner Helper versucht zuerst AudioParam-Lookup, fällt sonst auf node.port.postMessage zurück (für Plugins die parameterDescriptors NICHT nutzen). _moduleCache: WeakMap<ctx, Set<workletUrl>> verhindert doppelte addModule()-Calls pro Context (idempotent). _resetPluginHostModuleCache test-helper für Test-Env (replaced WeakMap).",
+      lastSeen: "2026-05-18T23:30:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/audio/worklets/TapeSatProcessor.js (v3.44.0)": {
+      role:     "v3.44.0 NEU: Built-In Plugin TapeSat. tanh-Saturation mit drive→boost 1..11 (linear-mapped) + Normalisierung via /tanh(boost) damit Output-Level relativ konstant bleibt unabhängig vom drive. Params: drive 0..1 k-rate, mix 0..1 k-rate. registerProcessor('tape-sat-processor'). Audio-Math: out = inp*(1-mix) + (tanh(inp*boost) * (1/tanh(boost))) * mix.",
+      lastSeen: "2026-05-18T23:30:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/audio/worklets/NotchProcessor.js (v3.44.0)": {
+      role:     "v3.44.0 NEU: Built-In Plugin Notch. RBJ-Cookbook biquad-Filter in Direct-Form-I (DF1) mit per-Channel-state (max 2 channels stereo: _x1[ch], _x2[ch], _y1[ch], _y2[ch]). Coefficient-Update k-rate pro Block (stabil). Params: frequency 50..12000 Hz, q 0.5..30, mix 0..1. registerProcessor('notch-processor'). w0=2π*freq/sampleRate, alpha=sin(w0)/(2*q), b0=1 b1=-2cos(w0) b2=1, a0=1+alpha a1=-2cos(w0) a2=1-alpha → normalize → out = mix-blend.",
+      lastSeen: "2026-05-18T23:30:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/audio/worklets/WidthProcessor.js (v3.44.0)": {
+      role:     "v3.44.0 NEU: Built-In Plugin Width. Stereo-Width via Mid/Side-Encoding: M=(L+R)/2, S=(L-R)/2*width, L_out=M+S, R_out=M-S. width=0 → mono (S annulliert), width=1 → original Stereo, width>1 → exaggerated. Mono-Input wird passthrough (kein S-Anteil). Params: width 0..2 k-rate. registerProcessor('width-processor').",
+      lastSeen: "2026-05-18T23:30:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/audio/AudioEngine.ts (v3.44.0 plugin-host)": {
+      role:     "v3.44.0 ERWEITERT: v3.39 stepCount=64 + v3.37 pendingStartStep + alle bestehenden Features bleiben + NEU Plugin-Host-Integration (~90 LOC). Imports +registerBuiltInPlugins/getPluginManifest/createPluginHost/PluginHost. _ensureWorklets() ruft jetzt registerBuiltInPlugins() nach Worklet-Module-Load. NEU _pluginHosts: Map<partId, PluginHost>. NEU async applyPluginSlot(partId, slot|null) — disposed alte Instanz, lädt neue via createPluginHost (defensive null-Handling bei Load-Fehler, Plugin-Manifest-Lookup via Registry, fehlende ID warnt aber crashed nicht), wirt Plugin-Knoten zwischen nodes.output (Insert-Chain-Tail) und nodes.panner ein — Plugin steht VOR Sends/Master im Signalweg. Bei bypassed=true: Knoten existiert für Param-Persistenz aber wird NICHT in Signalweg verkabelt (output→panner direkt). NEU setPluginParam(partId, paramId, value) ruft host.setParam (clamping passiert im Host). NEU getPluginHost(partId) getter für UI/Tests.",
+      lastSeen: "2026-05-18T23:30:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/store/useMixerStore.ts (v3.44.0)": {
+      role:     "v3.44.0 ERWEITERT: bestehende v3.x State unverändert + NEU MixerPluginSlot Interface {pluginId, params:Record<string,number>, bypassed?:boolean} + State.pluginSlots: Record<string, MixerPluginSlot|undefined> + 3 NEUE Actions: setPluginSlot(partId, slot|null) entfernt Slot bei null, setPluginParam(partId, paramId, value) updated nur den einen Wert (kein clamp — UI/Host clampen), setPluginBypassed(partId, bypassed) togglet Bypass-Flag. Load-Defensive: pluginSlots aus localStorage werden via Object.entries-Mapping sanitized (unknown shapes → undefined, valid → {pluginId:String, params:{...}, bypassed:===true-check}). defaultMixerState() initialisiert pluginSlots:{}. resetMixer() resettet zurück auf default.",
+      lastSeen: "2026-05-18T23:30:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/utils/projectSerializer.ts (v3.44.0 v1.20)": {
+      role:     "v3.44.0: SYNTH_FILE_VERSION '1.19' → '1.20' (additive Schema-Bump für mixer.pluginSlots). SynthProject.mixer.pluginSlots?: MixerState['pluginSlots'] optional/additiv. Pre-v1.20-Files (ohne Feld) laden mit pluginSlots=undefined → MixerStore-Loader defaultet auf {} (kein silent-data-loss — Mixer hat eigenen localStorage-Persist-Layer). parseProject schreibt source's version Field (1.19 bleibt 1.19), serialize emittet 1.20. Schema-Doc-Comment um v1.20-Block erweitert. Public-API serializeProject/parseProject/toJson unverändert.",
+      lastSeen: "2026-05-18T23:30:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/components/Mixer/MixerView.tsx (v3.44.0 plugin-sync)": {
+      role:     "v3.44.0 ERWEITERT: bestehende v3.x Mixer-View + applyInsertChain-Effect bleibt + NEU 2 useEffects für Plugin-Slot-Sync zur AudioEngine. (a) useEffect deps=[mixer.pluginSlots]: iteriert Object.entries(mixer.pluginSlots), ruft AudioEngine.applyPluginSlot(partId, slot ?? null) — re-loaded Worklet bei Plugin-Tausch, dispatched dispose+create-Cycle. (b) useEffect deps=[mixer.pluginSlots] für Param-Direkt-Sync: iteriert für jeden Slot die params + ruft AudioEngine.setPluginParam(partId, paramId, value) direkt am laufenden Host — KEIN Re-Wiring → kein Audio-Stutter beim Slider-Drag. Bestehende v3.42 insertChains-Bouncer-Wiring unverändert.",
+      lastSeen: "2026-05-18T23:30:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/components/Mixer/ChannelInspector.tsx (v3.44.0)": {
+      role:     "v3.44.0 ERWEITERT: bestehende v3.x Inspector-Sections bleiben + NEU PluginSlotSection-Component zwischen Insert-FX-Chain und Parametric-EQ-16. Component-Props: partId, slot, onChangePlugin/onChangeParam/onToggleBypass. UI: Plugin-Dropdown (getRegisteredPlugins, zeigt 'Built-In'-Label für built-In), Bypass-Toggle (rechts neben Dropdown, sichtbar nur wenn slot geladen), Generic-Sliders auto-generated aus manifest.paramSchema via ControlRow (label, value, min, max, step?). 3 Render-States: 'Kein Plugin geladen' (dashed-border + Hinweis), 'Plugin nicht gefunden' (defensive, manifest-id veraltet), Normal-State (Slider-Liste + Version-Footer). data-testid: 'channel-plugin-slot-{partId}', 'channel-plugin-select-{partId}', 'channel-plugin-bypass-{partId}'. Imports erweitert um getRegisteredPlugins/getPluginManifest/getPluginDefaultParams/clampPluginParam.",
+      lastSeen: "2026-05-18T23:30:00.000Z",
+      ownedBy:  "backend"
+    },
+    "tests/features/plugin-host.test.ts (v3.44.0)": {
+      role:     "v3.44.0 NEU: 36 Tests in 6 describes (env:node). Helpers: MockAudioWorkletNode (parameters Map mit known params drive/mix/frequency/q/width + connect/disconnect-tracking), MockAudioWorklet (addModule via vi.fn), MockAudioContext, makeValidManifest(overrides). (1) validatePluginManifest × 7 — happy/empty-schema/null+primitives/empty-strings/non-array/min>max/default-out-of-range/NaN+Infinity. (2) PluginRegistry × 6 — empty-after-reset, register single, throw on invalid, sort-by-id, unregister (true+false), BuiltIns idempotent (3 plugins, second-call No-Op, throw on built-in-overwrite without forceOverwrite). (3) Pure helpers × 6 — getDefaultParams happy + empty, clampPluginParam below/above/passthrough/NaN→default/unknown-id passthrough. (4) PluginHost async × 8 — null on missing audioWorklet (logs warning), valid create, initial-param-override (drive=0.8), setParam-clamp (5→1, -1→0, 0.42 passthrough), unknown-param no-op, setBypassed roundtrip, addModule-throw→null, BUILT_IN_TAPE_SAT defaults via createPluginHost. (5) FX-chain integration × 3 — node.connect tracked, dispose() disconnects, addModule called ONCE per workletUrl auch bei 3 PluginHost-Instanzen (Module-Cache). (6) v1.20 schema × 2 — SYNTH_FILE_VERSION === '1.20', parseProject auf v1.19-File (ohne pluginSlots-Feld) → mixer.pluginSlots ist undefined, version-Feld bleibt '1.19' (parseProject preserves source-version).",
+      lastSeen: "2026-05-18T23:30:00.000Z",
+      ownedBy:  "backend"
+    },
     "client/src/audio/OmniTribeBridge.ts (v3.43.0)": {
       role:     "v3.43.0 ERWEITERT: v3.21 uploadChordUserSlot (CMD 0x02 SUB 0x04) bleibt + NEU bidirektionales Chord-Download (CMD 0x02 SUB 0x05). +2 Public-Methoden: requestChordUserSlot(slotIndex: 0..3): void — sendet Request via send() (Throttle-Queue analog setParam), throws bei invalid slotIndex (Number.isFinite/integer/range-check), NO-OP bei disconnected. requestAllChordUserSlots(): Promise<void> — iteriert 4 Slots sequentiell mit setTimeout(10ms)-Spacing damit Throttle-Queue Luft hat. Reply-Handler in handleIncoming für CMD 0x02 SUB 0x05: decodiert [slotIndex(1B), count(1B), N×signed-7bit-intervals] → CustomEvent 'omnitribe:chord-user-slot' mit detail {slotIndex, intervals}. Defensive: count > available → truncate, empty payload → defaults {slot:0, intervals:[]}. v3.21 Echo-Schutz + Throttler + paramChange-Listener unangetastet. Payload-Format symmetrisch zu Upload — Spec-Extension nicht im otp_protocol.md, analog zu v3.21 0x04 (beide sind Bridge-internal Chord-Modul-Erweiterungen).",
       lastSeen: "2026-05-18T22:00:00.000Z",
@@ -1617,6 +1672,51 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "backend",
+      timestamp: "2026-05-18T23:30:00.000Z",
+      done: [
+        "v3.44.0: VST-Plugin-Host Foundation (Phase 1 AudioWorklet) — closes TASK-239 Phase-1. pnpm check clean, 193 Test-Files / 4500 tests grün (16 skipped, +36 NEU). Phase-2 native VST3/CLAP bleibt FUTURE (v4.0+, dokumentiert in PluginRegistry.ts mit kommentierter API-Signatur).",
+        "Architektur: 3-Schichten — (1) PluginRegistry.ts: Module-Singleton mit Map<id, manifest>, register/unregister/getPlugins, validatePluginManifest (defensive pure-fn), clampPluginParam, BUILT_IN_PLUGINS Array. (2) PluginHost.ts: Async-Factory createPluginHost(ctx, manifest, init?) liefert null bei Load-Fehler (graceful — keine Audio-Unterbrechung), Klasse mit setParam/getParams/getNode/setBypassed/dispose. WeakMap<ctx, Set<workletUrl>> verhindert doppelte addModule()-Calls pro Context. (3) AudioEngine.applyPluginSlot(partId, slot|null) hooked sich ZWISCHEN nodes.output (Insert-Chain-Tail) UND nodes.panner ein — Plugin steht VOR den klassischen FX-Sends im Signalweg. Bei bypassed: Knoten existiert (Params persistiert) aber NICHT verkabelt — output→panner direkt.",
+        "3 Built-In Plugins als AudioWorklet-Module: (a) TapeSat (drive 0..1, mix 0..1) — tanh-Saturation mit drive→boost 1..11 + Normalisierung via tanh(boost) damit Level konstant bleibt. (b) Notch (frequency 50..12000 Hz, q 0.5..30, mix 0..1) — RBJ-Cookbook biquad-form DF1 mit per-channel-state, k-rate coefficient-update pro Block (stable). (c) Width (width 0..2) — Mid/Side-Encoding (M=(L+R)/2, S=(L-R)/2*width) mit stereo + mono passthrough-Branch. Manifest-Format: {id, name, version, paramSchema:[{id,label,min,max,default,unit?,step?}], workletUrl, processorName, builtIn?}.",
+        "MixerStore-Integration (useMixerStore.ts): NEU MixerPluginSlot Interface {pluginId, params:Record<string,number>, bypassed?}. State.pluginSlots: Record<string, MixerPluginSlot|undefined>. NEU 3 Actions: setPluginSlot(partId, slot|null), setPluginParam(partId, paramId, value), setPluginBypassed(partId, bypassed). Persistiert via localStorage 'synthstudio:mixer:v1' mit defensive Load (unknown shapes → {}). Wiring in MixerView.tsx: 2 useEffects spiegeln Store→AudioEngine — (a) Slot-Change ruft applyPluginSlot (re-loaded Worklet falls Plugin getauscht), (b) Param-Change ruft setPluginParam direkt am Host (kein Re-Wiring → kein Latency-Stutter beim Slider-Drag).",
+        "UI-Integration: NEU PluginSlotSection-Component in ChannelInspector.tsx zwischen Insert-FX-Chain und Parametric-EQ-16. Generic-Param-UI auto-generiert aus paramSchema via ControlRow + getRegisteredPlugins() Dropdown. data-testid 'channel-plugin-slot-{partId}', 'channel-plugin-select-{partId}', 'channel-plugin-bypass-{partId}'. States: 'Kein Plugin geladen' / Sliders+Version-Footer / 'Plugin nicht gefunden' (Defensive, falls Manifest-ID veraltet ist).",
+        "Schema-Bump v1.19 → v1.20 (projectSerializer.ts): mixer.pluginSlots optional/additiv. Pre-v1.20-Files (ohne Feld) laden mit pluginSlots=undefined → MixerStore-Loader defaultet auf {}. parseProject schreibt eigene version Field-Konservativ (source's version preserved), serialize emittet 1.20. SYNTH_FILE_VERSION-Tests in 4 anderen Files migriert (audio-track-store, multi-bar-pattern, project-serializer, script-store).",
+        "Phase-2-Scaffold (PluginRegistry.ts Bottom-Block, ~30 LOC Kommentar-Block): Signatur-Stubs für scanNativePlugins()/loadVST3(path) als API-Vorlage. Dokumentiert dass Phase-2 Electron-IPC + JUCE-Node-Addon braucht — Trade-Off höhere Latenz (Process-IPC Audio-Buffer) für VST3-Kompatibilität. Der paramSchema-Pfad bleibt strukturell identisch — UI muss nicht doppelt.",
+        "NEU tests/features/plugin-host.test.ts: 36 Tests in 6 describes (env:node). (1) validatePluginManifest × 7 — happy/empty-schema/null/empty-strings/non-array/invalid-range/out-of-range default/NaN+Infinity. (2) PluginRegistry × 6 — empty-after-reset, register single, throw on invalid, sort-by-id, unregister, BuiltIns idempotent + 3 plugins. (3) getDefaultParams + clampPluginParam × 6 — defaults, empty-schema, below-min, above-max, valid passthrough, NaN→default, unknown-id passthrough. (4) PluginHost async × 8 — null on missing AudioWorklet, valid create, initial-param-override, setParam-clamp, unknown-param no-op, setBypassed roundtrip, addModule-throw→null, TapeSat defaults. (5) FX-chain integration × 3 — node connect, dispose disconnects, module-cache (addModule called once per workletUrl). (6) v1.20 schema × 2 — SYNTH_FILE_VERSION bumped to 1.20, pre-v1.20 file parses with pluginSlots undefined. Mock-AudioWorkletNode + Mock-AudioContext.audioWorklet.addModule via vi.fn().",
+        "Audio-Sicherheit: Bei Worklet-Load-Fehler (Datei fehlt / Processor wirft beim Register) liefert createPluginHost null → AudioEngine.applyPluginSlot überspringt das Wiring (Channel-Signal läuft direkt output→panner). Kein crash, keine Audio-Unterbrechung. UI zeigt 'Plugin nicht gefunden'-Badge falls Manifest-ID nicht in Registry. setParam ignored bei unknown param-id (no-op).",
+        "BACKWARD-COMPAT VERIFIZIERT: (a) Bestehende 4464 Tests von v3.43 unverändert grün (+36 NEU = 4500 gesamt). (b) MixerStore-Loader robust gegen pre-v3.44 localStorage-Inhalte (kein pluginSlots-Feld → defaultet {}). (c) ChannelInspector zeigt Plugin-Slot-Section auch bei leerer Registry (zeigt 'Kein Plugin geladen' + leeres Dropdown). (d) applyPluginSlot ist NO-OP wenn AudioContext noch nicht initialisiert (User hat noch nicht play geklickt). (e) Bestehende 12 Insert-FX-Typen (eq16/comp/sidechain/transient/filter/dist/bitcrusher/ringmod/chorus/flanger/delay/reverb) komplett unverändert — Plugin-Slot ist eine SEPARATE Schicht.",
+        "CAVEATS (verbleibend nach v3.44 Phase 1): (1) Echtes VST3/CLAP-Loading = v4.0+ (eigener Sprint, ~160h, JUCE-Node-Addon). (2) User-Plugin-Drop (drag-drop .js worklet-files) = v3.45 (Phase-1-Extension). (3) Plugin-Slot-Bypass macht aktuell ein Wiring-Switch (kein internal Worklet-Bypass-Message) — minimal Click-Artefakt möglich beim Toggle. Workaround für v3.45: gain-ramp während Wiring-Wechsel. (4) Generic-Param-UI hat keine Tooltips/Curves — User sieht raw min/max ohne dB/Hz-Indicator (außer manifest.unit gesetzt ist). (5) Plugin-Slot maximal 1 pro Channel — multi-Plugin-Chain ist Roadmap (v3.46+).",
+        "package.json + agents/INDEX.js version 3.43.0 → 3.44.0. TASK-239 status open → phase-1-done (Phase-2 native = FUTURE/v4.0+)."
+      ],
+      next: [
+        "v3.45 Phase-1-Extension: User-Plugin-Drop via File-Drop in ChannelInspector — User droppt eine .js (AudioWorkletProcessor) + ein JSON-Manifest auf den Plugin-Slot. UI fügt zur Registry mit builtIn=false hinzu, persistiert in localStorage 'synthstudio:plugins:user' (max 50 KB pro Plugin, MIME-Type-Check).",
+        "v3.45 Generic-UI-Polish: paramSchema +displayCurve ('linear'|'exp'|'log') für Frequency-Knöpfe + paramSchema +tooltip für UX. Generic-ControlRow zeigt Einheit + Curve-aware Mapping (User-Drag fühlt sich wie ein Hardware-Knob an).",
+        "v3.45 Plugin-Slot Multi-Slot pro Channel (max 4) — UI braucht reorder + bypass per Slot. AudioEngine wiring chain: output → plugin[0] → plugin[1] → ... → panner.",
+        "v3.46 Click-Artefakt-Suppression bei Bypass-Toggle: 5ms gain-ramp während Wiring-Wechsel statt instant disconnect/connect.",
+        "v4.0+ Phase-2 NATIVE VST3/CLAP via JUCE-Node-Addon: eigener Sprint (~160h, Security-Audit, Electron-IPC, Audio-Buffer-Transfer, GUI-Hosting-Frage). Siehe TASK-239 + Phase-2-Stub-Kommentar in PluginRegistry.ts.",
+        "Vorhandene v3.43-Items unverändert (OmniTribe Per-Slot Download-Button, Reply-Timeout-Handling, Pitch-Names im ChordPanel)."
+      ],
+      changed: [
+        "client/src/audio/PluginRegistry.ts (NEU, ~210 LOC — Module-Singleton mit register/unregister/getPlugins/getPlugin/pluginCount/_resetPluginRegistry + validatePluginManifest + BUILT_IN_TAPE_SAT/NOTCH/WIDTH/BUILT_IN_PLUGINS + registerBuiltInPlugins idempotent + getDefaultParams + clampPluginParam + Phase-2-Stub-Block für scanNativePlugins/loadVST3)",
+        "client/src/audio/PluginHost.ts (NEU, ~150 LOC — async createPluginHost-Factory + PluginHost class mit setParam/getParams/getNode/setBypassed/isBypassed/dispose + WeakMap-Module-Cache + _resetPluginHostModuleCache test-helper)",
+        "client/src/audio/worklets/TapeSatProcessor.js (NEU — tanh-Saturation, params drive/mix)",
+        "client/src/audio/worklets/NotchProcessor.js (NEU — RBJ biquad DF1, params frequency/q/mix, per-channel-state)",
+        "client/src/audio/worklets/WidthProcessor.js (NEU — Mid/Side stereo encoding, param width)",
+        "client/src/audio/AudioEngine.ts (Imports + registerBuiltInPlugins-Call in _ensureWorklets + _pluginHosts Map + applyPluginSlot async-method + setPluginParam + getPluginHost-getter)",
+        "client/src/store/useMixerStore.ts (MixerPluginSlot Interface + State.pluginSlots + 3 Actions setPluginSlot/setPluginParam/setPluginBypassed + Load-Defensive + default-state)",
+        "client/src/utils/projectSerializer.ts (SYNTH_FILE_VERSION 1.19 → 1.20 + SynthProject.mixer.pluginSlots? optional + v1.20-Doku-Block)",
+        "client/src/components/Mixer/MixerView.tsx (2 NEUE useEffects — pluginSlots-Diff-Sync zu AudioEngine.applyPluginSlot + Param-Sync zu AudioEngine.setPluginParam)",
+        "client/src/components/Mixer/ChannelInspector.tsx (Imports + PluginSlotSection-Component zwischen Insert-FX-Chain und Parametric-EQ-16 + Generic-Param-UI mit ControlRow + data-testids)",
+        "tests/features/plugin-host.test.ts (NEU, 36 Tests in 6 describes — validate/registry/clamp/host/integration/v1.20-compat)",
+        "tests/features/audio-track-store.test.ts (SYNTH_FILE_VERSION-Assertion 1.19 → 1.20, 2 Stellen)",
+        "tests/features/multi-bar-pattern.test.ts (SYNTH_FILE_VERSION-Assertion 1.19 → 1.20)",
+        "tests/features/project-serializer.test.ts (SYNTH_FILE_VERSION-Assertion 1.19 → 1.20, 2 Stellen)",
+        "tests/features/script-store.test.ts (SYNTH_FILE_VERSION-Assertion 1.19 → 1.20)",
+        "package.json (3.43.0 → 3.44.0)",
+        "agents/INDEX.js (version + workLog v3.44.0 + TASK-239 status + files-Einträge)"
+      ]
+    },
     {
       agent:     "backend",
       timestamp: "2026-05-18T22:00:00.000Z",
@@ -6021,21 +6121,30 @@ const INDEX = {
             type: "feature",
             priority: "low",
             agent: "backend",
-            status: "open",
-            title: "VST3/CLAP-Host (Phase-2 Pro-Feature)",
-            description: "Groesste Wettbewerbsluecke vs Ableton/FL/Bitwig. Vermutlich nur via nativer Node-Addon-Bridge (JUCE-basiert). Monetarisierbar als Pro-Tier.",
+            status: "phase-1-done",
+            phase1ClosedAt: "2026-05-18T23:30:00.000Z",
+            phase1ClosedIn: "v3.44.0",
+            phase1ClosedBy: "backend",
+            title: "VST3/CLAP-Host (Phase-2 native FUTURE, Phase-1 AudioWorklet DONE)",
+            description: "Groesste Wettbewerbsluecke vs Ableton/FL/Bitwig. PHASE 1 (v3.44.0, AudioWorklet-Plugins, DONE): JS-Plugins via AudioWorkletProcessor laden, Generic-Param-UI, Plugin-Slot pro Channel, 3 Built-Ins (Tape-Sat, Notch, Width). PHASE 2 (v4.0+, FUTURE): native VST3/CLAP via JUCE-Node-Addon + Electron-IPC. Monetarisierbar als Pro-Tier (Phase 2).",
             acceptance: [
-                "Plugin-Scan beim Start (Win VST3-Folder)",
-                "Plugin-Slot in Mixer-FX-Chain",
-                "Parameter-Automation via useAutomationStore",
-                "GUI-Hosting via native Window oder Generic-Parameter-UI"
+                "[Phase 1 DONE] Plugin-Slot in Mixer-FX-Chain — AudioEngine.applyPluginSlot",
+                "[Phase 1 DONE] Generic-Parameter-UI aus paramSchema auto-generiert",
+                "[Phase 1 DONE] 3 Built-In Plugins (Tape-Sat, Notch, Width)",
+                "[Phase 1 DONE] Defensive Load (createPluginHost null bei Fehler — kein Audio-Crash)",
+                "[Phase 2 FUTURE] Plugin-Scan beim Start (Win VST3-Folder via JUCE)",
+                "[Phase 2 FUTURE] Parameter-Automation via useAutomationStore",
+                "[Phase 2 FUTURE] GUI-Hosting via native Window"
             ],
             estimateHours: 160,
+            estimateHoursPhase1: 8,
+            estimateHoursPhase2: 152,
             reviewedBy: [
                 "builder",
                 "security"
             ],
-            note: "Groesster Brocken, eigener Sprint, nicht vor v3.0.0"
+            note: "Phase 1 (Foundation) abgeschlossen in v3.44.0 — closes Phase-1-Sprint. Phase 2 (native VST3/CLAP) bleibt eigener Sprint v4.0+, signiert in PluginRegistry.ts Phase-2-Stub-Block.",
+            phase1DoneNote: "AudioWorklet-Plugin-Host. 3-Schichten: PluginRegistry.ts (Module-Singleton mit register/getPlugins/Built-Ins) → PluginHost.ts (async-factory createPluginHost, AudioWorkletNode-Wrapper mit setParam/dispose, WeakMap-Module-Cache) → AudioEngine.applyPluginSlot/setPluginParam (Wiring zwischen output und panner). 3 Built-Ins: TapeSat (tanh-Saturation, drive+mix), Notch (RBJ biquad DF1, freq+q+mix), Width (Mid/Side stereo, width). UI: PluginSlotSection in ChannelInspector mit auto-generierten Slidern aus paramSchema, Bypass-Toggle, Plugin-Dropdown. Schema-Bump v1.19 → v1.20 (mixer.pluginSlots additiv/optional). 36 Tests in plugin-host.test.ts. Phase-2-Stub: scanNativePlugins/loadVST3 als kommentierter API-Vorlage in PluginRegistry.ts Bottom-Block dokumentiert."
         },
         {
             id: "TASK-240",

@@ -50,8 +50,8 @@ function baseProject(overrides: Partial<SynthProject> = {}): SynthProject {
 }
 
 describe("ProjectSerializer – Konstanten", () => {
-  it("SYNTH_FILE_VERSION ist '1.19' (seit v3.39: + stepCount=64 KORG-Parität)", () => {
-    expect(SYNTH_FILE_VERSION).toBe("1.19");
+  it("SYNTH_FILE_VERSION ist '1.20' (seit v3.44: + mixer.pluginSlots, TASK-239 Phase 1)", () => {
+    expect(SYNTH_FILE_VERSION).toBe("1.20");
   });
 
   it("SYNTH_LATEST_KEY ist 'synthstudio:last-project' (localStorage-Key)", () => {
@@ -298,8 +298,8 @@ describe("ProjectSerializer – Mixed v1.14 (oldest) File", () => {
 // ─── padBank Migration (seit v1.17) ──────────────────────────────────────────
 
 describe("ProjectSerializer – padBank Migration (v1.16 → v1.17)", () => {
-  it("SYNTH_FILE_VERSION ist '1.19'", () => {
-    expect(SYNTH_FILE_VERSION).toBe("1.19");
+  it("SYNTH_FILE_VERSION ist '1.20'", () => {
+    expect(SYNTH_FILE_VERSION).toBe("1.20");
   });
 
   it("Fehlendes padBank-Feld (v1.16-File) → padBank bleibt undefined (Signal: localStorage nicht überschreiben)", () => {

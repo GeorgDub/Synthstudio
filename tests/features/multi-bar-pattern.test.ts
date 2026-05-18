@@ -137,8 +137,8 @@ describe("v3.39: PatternData mit stepCount=64", () => {
     expect(restored.patterns[0].parts[0].steps).toHaveLength(32);
   });
 
-  it("Schema-Version ist v1.19 (additive bump für stepCount=64)", () => {
-    expect(SYNTH_FILE_VERSION).toBe("1.19");
+  it("Schema-Version ist v1.20 (additive bump für mixer.pluginSlots; stepCount=64 ist v1.19)", () => {
+    expect(SYNTH_FILE_VERSION).toBe("1.20");
   });
 });
 
