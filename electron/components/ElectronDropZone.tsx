@@ -20,6 +20,7 @@ import {
   ZIP_EXTENSIONS as DD_ZIP,
   MIDI_EXTENSIONS as DD_MIDI,
   ELECTRIBE_EXTENSIONS as DD_ELECTRIBE,
+  KORG_BANK_EXTENSIONS as DD_KORG_BANK,
   getFileExtension as ddGetExt,
 } from "@/utils/dragDropDispatch";
 import { toast } from "@/store/useToastStore";
@@ -45,12 +46,18 @@ export interface ElectronDropZoneProps {
    */
   onMidiFile?: (file: File) => void;
   /**
-   * v3.1.0: Callback wenn ein .e2spat/.e2sallpat/.esx/.elst-File gedroppt
+   * v3.1.0: Callback wenn ein .e2spat/.e2sallpat/.elst-File gedroppt
    * wurde. Empfaenger ist DrumMachine (vorhandener `electribe:fileImport`-
    * Listener) — bei fehlendem Callback faellt der Default auf das
    * CustomEvent zurueck.
    */
   onElectribeFile?: (file: File) => void;
+  /**
+   * v3.3.0: Callback wenn ein .esx/.ess/.all KORG Sample-Bank-File gedroppt
+   * wurde. Bei fehlendem Callback dispatch des CustomEvents 'korg:bank:open'
+   * an window.
+   */
+  onKorgBankFile?: (file: File) => void;
   /**
    * v2.13: Callback mit den rohen File-Objekten der Audio-Drops (Browser).
    * Dient z.B. der BPM-Erkennung, da `onAudioFiles` nur den Dateinamen
@@ -64,7 +71,7 @@ export interface ElectronDropZoneProps {
 // v3.1.0: vereint sich DropType mit dem zentralen FileType (DragDropOverlay).
 // "folder" bleibt zonen-spezifisch (Webkit-Entry → isDirectory) und ist NICHT
 // im zentralen FileType, weil File-Drops keine Folder transportieren.
-type DropType = "audio" | "folder" | "project" | "zip" | "midi" | "electribe" | "unknown" | null;
+type DropType = "audio" | "folder" | "project" | "zip" | "midi" | "electribe" | "korg-bank" | "unknown" | null;
 
 // ─── Hilfsfunktionen ─────────────────────────────────────────────────────────
 
@@ -76,6 +83,7 @@ const PROJECT_EXTENSIONS = new Set([".synth", ".json"]);
 const ZIP_EXTENSIONS = DD_ZIP;
 const MIDI_EXTENSIONS = DD_MIDI;
 const ELECTRIBE_EXTENSIONS = DD_ELECTRIBE;
+const KORG_BANK_EXTENSIONS = DD_KORG_BANK;
 
 function getFileExtension(name: string): string {
   return ddGetExt(name);
@@ -93,6 +101,7 @@ function detectDropType(items: DataTransferItemList | null): DropType {
     if (AUDIO_EXTENSIONS.has(ext)) return "audio";
     if (PROJECT_EXTENSIONS.has(ext)) return "project";
     if (MIDI_EXTENSIONS.has(ext)) return "midi";
+    if (KORG_BANK_EXTENSIONS.has(ext)) return "korg-bank";
     if (ELECTRIBE_EXTENSIONS.has(ext)) return "electribe";
     // Mehrere Dateien → Audio-Import annehmen
     if (items.length > 1) return "audio";
@@ -123,6 +132,7 @@ export function ElectronDropZone({
   onZipFile,
   onMidiFile,
   onElectribeFile,
+  onKorgBankFile,
   onAudioFilesRaw,
   children,
 }: ElectronDropZoneProps) {
@@ -206,6 +216,15 @@ export function ElectronDropZone({
             try { window.dispatchEvent(new CustomEvent<File>("midi:fileImport", { detail: file })); }
             catch { /* ignore */ }
           }
+        } else if (KORG_BANK_EXTENSIONS.has(ext)) {
+          if (onKorgBankFile) {
+            onKorgBankFile(file);
+          } else {
+            // v3.3.0: Default-Fallback — DrumMachine.tsx hat einen Listener
+            // 'korg:bank:open' der den KorgBankModal oeffnet.
+            try { window.dispatchEvent(new CustomEvent<File>("korg:bank:open", { detail: file })); }
+            catch { /* ignore */ }
+          }
         } else if (ELECTRIBE_EXTENSIONS.has(ext)) {
           if (onElectribeFile) {
             onElectribeFile(file);
@@ -240,7 +259,7 @@ export function ElectronDropZone({
         } catch { /* test-env ohne toast → ignore */ }
       }
     },
-    [onAudioFiles, onProject, onZipFile, onMidiFile, onElectribeFile, onAudioFilesRaw]
+    [onAudioFiles, onProject, onZipFile, onMidiFile, onElectribeFile, onKorgBankFile, onAudioFilesRaw]
   );
 
   // ── Render ────────────────────────────────────────────────────────────────

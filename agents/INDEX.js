@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.2.0",
+    version: "3.3.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -83,6 +83,76 @@ const INDEX = {
   // ─── KNOWN FILE INDEX ──────────────────────────────────────
   // Key files agents have analyzed. Add new entries after working on a file.
   files: {
+    "client/src/utils/korg/constants.ts (v3.3.0)": {
+      role:     "v3.3.0: KORG ESX-1 + E2S Format-Konstanten (~190 LOC). Port aus Korg Editor/esx_e2s_editor/constants.py. Alle Offsets, Magic-Bytes, Size-Caps, Field-Layouts. Konstanten: ESX1_SIGNATURE='KORG' + ESX1_SUBMAGIC='ESX\\0' + ESX1_MAX_MONO_SLOTS=256 + ESX1_MAX_STEREO_SLOTS=128 + ESX1_ADDR_VALID_CHECK_2=0x1B0000 + ESX1_ADDR_SAMPLE_HEADER_MONO=0x1B0100 + ESX1_ADDR_SAMPLE_DATA=0x250000 + ESX1_EMPTY_OFFSET=0xFFFFFFFF + ESX1_SIZE_FILE_MIN=0x250010 + ESX_FILE_MAX_BYTES=64MB. E2S: E2S_ALL_SIGNATURE='e2s sample all\\x1a\\0' + E2S_ALL_OFFSET_TABLE_START=0x07E0 + E2S_ALL_SAMPLE_AREA_START=0x1000 + E2S_MAX_SLOTS=250 + E2S_MAX_TOTAL_PCM_BYTES=224MB + E2S_FILE_MAX_BYTES=512MB + KORG_BANK_IPC_MAX_BYTES=100MB. ESLI-Body-Offsets (NAME@0x0A 16B + CATEGORY@0x1A u16 LE + LOOP_START@0x34 + END@0x38 + ONESHOT@0x3C + USE_CHAN1@0x49 + PLUS12DB@0x4A + SLICES@0x58 (64×16B) + SLICE_STEPS@0x458 64B). E2S_CATEGORY_NAMES Tuple (18 Names: Analog/Audio In/Kick/Snare/Clap/HiHat/Cymbal/Hits/Shots/Voice/SE/FX/Tom/Perc./Phrase/Loop/PCM/User) + e2sCategoryName(idx) Helper.",
+      lastSeen: "2026-05-18T08:30:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/utils/korg/esxParser.ts (v3.3.0)": {
+      role:     "v3.3.0: ESX-1 .esx Sample-Bank Parser (~350 LOC, pure JS, isomorph). Port aus Korg Editor/esx_e2s_editor/services/esx_parser.py. Public API: parseEsxBank(buf, source?) → EsxBank, isEsxBuffer(buf) → bool, be16PcmToFloat32(raw) → Float32Array. EsxBank: {source, monoSamples: EsxSample[], stereoSamples: EsxSample[], patterns:[], declaredMonoCount, declaredStereoCount, warnings}. EsxSample: {index, name, channels:1|2, sampleRate, frames, pcmData:Float32Array, loopStart, loopEnd, level}. Defensive: 4-stufige Validation (size-min + size-max + 1st-magic + 2nd-magic@0x1B0000 + sample-count-bounds), per-Slot safeSlice mit OOB-Check, per-Slot MAX_BYTES_PER_SLOT=10MB cap, cumulative ESX1_MAX_SAMPLE_MEM_IN_BYTES=24MB cap. PCM-Konvertierung BE→LE-Int16→Float32 [-1,+1] via be16PcmToFloat32. Stereo wird interleaved L,R,L,R. Empty-Slot-Sentinel 0xFFFFFFFF skipped silently. Patterns-Field ist v3.3-Skeleton (leeres Array, FOLLOWUP v3.5).",
+      lastSeen: "2026-05-18T08:30:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/utils/korg/e2sBankReader.ts (v3.3.0)": {
+      role:     "v3.3.0: E2S .all Sample-Bank Reader (~470 LOC, pure JS). Port aus Korg Editor/esx_e2s_editor/services/e2s_parser.py. Public API: parseE2sBank(buf, source?) → E2sBank, isE2sBuffer(buf) → bool, le16PcmToFloat32(raw) → Float32Array, countE2sSlots(bank) → number. E2sBank: {source, slots: Array<E2sSlot|null> Länge 250, offsetTable: Uint32Array, trailingBytes, warnings}. E2sSlot: {index, name, category, categoryName, sampleRate, channels:1|2, frames, pcmData:Float32Array, loopType:0|1|2, loopStart, loopEnd, level, gain12db, slices: E2sSlice[], sliceSteps:Uint8Array, slicingNumSteps, slicingBeat, slicingNumActive}. RIFF-Parser walked WAVE-Body's Sub-Chunks (fmt + data + korg/esli) mit findSubchunk(). PCM 16-bit LE → Float32 via le16PcmToFloat32. Korg-Body parsed name (16B ASCII) + category (u16 LE) + level (u16 normalisiert auf 0..127) + loopStart/End (u32) + gain12db (u8) + 64 Slice-Records (4×LE32 = start,length,attack,amplitude, trim trailing-zeros). Defensive: signature, offset-table-bounds-check (no entry inside prelude), per-Slot RIFF-size cap (E2S_MAX_RIFF_BYTES), per-Slot PCM cap (10MB), cumulative cap (224MB). Bei kaputter Einzel-Slot: skip+warn (außer file-escape/cap-violation → throw).",
+      lastSeen: "2026-05-18T08:30:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/utils/korg/bankDetect.ts (v3.3.0)": {
+      role:     "v3.3.0: Thin wrapper für KORG-Bank-Type-Detection. detectKorgBankType(buf) → 'esx'|'e2s'|'unknown' (via isEsxBuffer + isE2sBuffer). detectKorgBankTypeFromName(name) → gleich aus Endung (.esx/.ess → 'esx', .all → 'e2s').",
+      lastSeen: "2026-05-18T08:30:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/components/KorgBank/KorgBankModal.tsx (v3.3.0)": {
+      role:     "v3.3.0: KORG-Sample-Bank-Modal (Read-Only, ~400 LOC). Props {file:File|null, onClose, onAddSample?(sample:KorgBankSample)}. Listet alle (non-null) Slots mit Index/Name/Category/Duration/Channels + 'Preview' (AudioEngine.playSliceBuffer) + 'Add' (encodeWav → Blob-URL → KorgBankSample-Spec). 'Alle importieren'-Bulk-Button mit window.confirm. Search-Filter ueber Name+Category. Warnings collapsible. encodeWav pure-Helper baut RIFF/WAVE Float32 → 16-bit LE. Auto-detect ESX vs E2S via detectKorgBankType. Semantic Tailwind classes (bg-bg-panel, border-border-color, text-accent-primary, accent-danger fuer Errors). data-testids korg-bank-{modal,close,search,import-all,row-*,preview-*,add-*,loading,error,list}.",
+      lastSeen: "2026-05-18T08:30:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/utils/dragDropDispatch.ts (v3.3.0)": {
+      role:     "v3.3.0: Pure-Helpers fuer globalen Drag-Drop-Dispatch (~180 LOC). FileType-Union erweitert um 'korg-bank'. KORG_BANK_EXTENSIONS = {'.esx','.ess','.all'} als separates Set, ELECTRIBE_EXTENSIONS reduziert auf {'.e2spat','.e2sallpat','.e2pattern','.elst'} (`.esx` wurde aus dem Electribe-Bucket entfernt). detectFileType priorisiert KORG_BANK_EXTENSIONS vor ELECTRIBE_EXTENSIONS. eventNameMap routet 'korg-bank' → CustomEvent 'korg:bank:open' (dispatched an window, App.tsx listener oeffnet KorgBankModal). Bestehende Funktionen unveraendert.",
+      lastSeen: "2026-05-18T08:30:00.000Z",
+      ownedBy:  "backend"
+    },
+    "electron/ipcValidators.ts (v3.3.0)": {
+      role:     "v3.3.0: +KORG_BANK_ALLOWED_EXTENSIONS Set {'.esx','.ess','.all'}, +KORG_BANK_MAX_BYTES=100MB, +validateKorgBankPath(input)→{ok,ext|error} (mit NUL-Byte+Pfadlaenge-Check), +validateKorgBankFileSize(byteSize)→{ok|error}. Pattern analog validateElectribePath/Size aus v2.99. Bestehende Validators (Recording/WAV/License/Electribe) unveraendert.",
+      lastSeen: "2026-05-18T08:30:00.000Z",
+      ownedBy:  "backend"
+    },
+    "electron/main.ts (v3.3.0 KORG-Bank-IPC)": {
+      role:     "v3.3.0: 3 neue IPC-Handler. (1) 'korg:import-bank' (filePath: string) → {success, data?: number[], fileName, ext} | {success:false, error}. Validation via validateKorgBankPath + validateKorgBankFileSize + path.resolve + fs.access(R_OK). Liest die ganze Datei und liefert sie als Array zurueck (Renderer parsed dann via parseEsxBank/parseE2sBank). (2) 'korg:open-bank-dialog' → nativer Datei-Dialog mit Filtern 'KORG Sample-Banks' (esx/ess/all) + 'ESX-1' (esx/ess) + 'E2S' (all). (3) 'korg:get-bank-cap' → Number (KORG_BANK_MAX_BYTES=100MB) fuer UI-Hinweise. Imports erweitert um validateKorgBankPath/Size + KORG_BANK_MAX_BYTES.",
+      lastSeen: "2026-05-18T08:30:00.000Z",
+      ownedBy:  "backend"
+    },
+    "electron/preload.ts (v3.3.0 KORG-Bank-API)": {
+      role:     "v3.3.0: 3 neue contextBridge-Methoden. openKorgBankDialog() → {canceled, filePaths}, importKorgBank(filePath: string) → {success, data?: number[], fileName, ext, error?}, getKorgBankCap() → Promise<number>. Pattern analog importElectribeFile + openElectribeDialog.",
+      lastSeen: "2026-05-18T08:30:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/utils/proFeatures.ts (v3.3.0 +korg-bank-import)": {
+      role:     "v3.3.0: PRO_FEATURE_KORG_BANK_IMPORT='korg-bank-import' hinzu. PRO_FEATURES jetzt Länge 6 (war 5). PRO_FEATURE_LABELS['korg-bank-import']='KORG Sample-Bank-Import'. UI gated via requireProFeature(PRO_FEATURE_KORG_BANK_IMPORT) in DrumMachine-Toolbar-Button und App-Level handleKorgBankFile.",
+      lastSeen: "2026-05-18T08:30:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/components/DrumMachine/DrumMachine.tsx (v3.3.0 KORG-Bank-Button)": {
+      role:     "v3.3.0: +'📦 KORG Bank'-Toolbar-Button neben '🎚 Electribe'. data-testid=korg-bank-import. Click → korgBankImportRef.current?.click() → hidden file-input mit accept='.esx,.ess,.all' (data-testid=korg-bank-import-input). onChange: requireProFeature(PRO_FEATURE_KORG_BANK_IMPORT) gate, dann window.dispatchEvent CustomEvent 'korg:bank:open' (detail=File). App.tsx-Listener oeffnet das Modal. ProLockBadge im Button. Imports erweitert um PRO_FEATURE_KORG_BANK_IMPORT.",
+      lastSeen: "2026-05-18T08:30:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/App.tsx (v3.3.0 KORG-Bank-Modal-Bridge)": {
+      role:     "v3.3.0: +Import KorgBankModal + KorgBankSample + PRO_FEATURE_KORG_BANK_IMPORT (in proFeatures-Import konsolidiert). +useState korgBankFile:File|null. handleKorgBankFile(file) gated via requireProFeature, setzt State. handleKorgBankAddSample(sample) ruft project.addSamples mit {id,name,path:url,category} (Blob-URL als path). useEffect-Listener auf 'korg:bank:open'-CustomEvent → ruft handleKorgBankFile. ElectronDropZone bekommt onKorgBankFile={handleKorgBankFile}. KorgBankModal-Render zwischen ActivationModal und </ElectronDropZone>. Damit wird der Modal sichtbar bei: (a) Picker-Click in DrumMachine, (b) Drag-Drop einer .esx/.all File (ueber ElectronDropZone → DrumMachine).",
+      lastSeen: "2026-05-18T08:30:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "tests/features/korg-esx-parser.test.ts (v3.3.0)": {
+      role:     "v3.3.0: 23 Tests fuer client/src/utils/korg/esxParser.ts. buildMinimalEsxBuffer-Builder baut synthetisch ein valides .esx-Layout (Magic + Sub-Magic + 2nd-Magic + 256 Mono-Headers + 128 Stereo-Headers + PCM-Bereich) mit konfigurierbaren Slots. Coverage: Magic-Detection (4 — pos+zerstoertes KORG+zerstoertes ESX\\0+zu klein), File-Size-Caps (2 — min/max), Magic-Validation (4 — first-magic/sub-magic/second-magic/sample-count-OOR), Mono-Parse (4 — name+frames+sample-rate, Float32-Range [-1,+1], Empty-Slot-Sentinel, Multi-Sample Order), Stereo-Parse (2 — interleaved L+R different per-channel), PCM-Helper be16PcmToFloat32 (4 — 0x0000/0x7FFF/0x8000/Multi-Frame), Defensive (2 — invertierter Offset → warning+skip, Level-Clamp [0..127]) + Real-File-Test conditional auf 'Korg ESX files/' Existenz.",
+      lastSeen: "2026-05-18T08:30:00.000Z",
+      ownedBy:  "backend"
+    },
+    "tests/features/korg-e2s-bank.test.ts (v3.3.0)": {
+      role:     "v3.3.0: 18 Tests fuer client/src/utils/korg/e2sBankReader.ts. buildMinimalE2sBuffer-Builder baut synthetisch '.all'-Layout (Signature + 250-Entry Offset-Table + RIFF/WAVE-Chunks mit fmt/data/korg-Subchunks). Coverage: Signature-Detection (3 — pos+zerstoert+tiny), File-Caps (2), Slot-Parse (6 — empty bank, single mono mit category, single stereo, mixed slots mit nulls, offsetTable preserved, category-mapping via e2sCategoryName), PCM-Helper le16PcmToFloat32 (3 — 0x0000/0x7FFF/0x8000), Defensive (1 — offset in prelude throws), bankDetect (2 — valid E2S, random bytes → unknown) + Real-File-Test conditional auf 'Korg e2s files/Sample/' Existenz. float32ToLe16-Helper im Test (inverse zu le16PcmToFloat32) erlaubt deterministische Round-Trip-Validierung.",
+      lastSeen: "2026-05-18T08:30:00.000Z",
+      ownedBy:  "backend"
+    },
     "client/src/utils/dragDropDispatch.ts (v3.1.0)": {
       role:     "v3.1.0: Pure-Helpers fuer globalen Drag-Drop-Dispatch (~165 LOC, kein React/DOM-Side-Effect). Exports: AUDIO_EXTENSIONS (Set, 7 Endungen wav/mp3/ogg/flac/aiff/aif/m4a), PROJECT_EXTENSIONS ({.synth}), ZIP_EXTENSIONS ({.zip}), MIDI_EXTENSIONS ({.mid,.midi}), ELECTRIBE_EXTENSIONS ({.e2spat,.e2sallpat,.e2pattern,.esx,.elst}), FileType-Union audio|project|zip|midi|electribe|unknown, DispatchResult-Interface. Funktionen: getFileExtension(name) defensive (null/empty/no-dot → ''), detectFileType(name) Lookup-Switch ueber 5 disjunkte Sets, detectFileTypeFromFiles(files[]) nimmt Typ der ersten Datei (fuer Overlay-Type-Detection bei Multi-Drop), dispatchFileDrop(file) feuert CustomEvent (drop:audio/drop:project/drop:zip/midi:fileImport/electribe:fileImport), dispatchAllFiles(files[]) iteriert und zaehlt handled+unknown. Defensive: typeof window undef → unhandled, dispatchEvent throws → catch+unhandled.",
       lastSeen: "2026-05-18T07:40:00.000Z",
@@ -1011,6 +1081,49 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "backend",
+      timestamp: "2026-05-18T08:30:00.000Z",
+      done: [
+        "v3.3.0: TASK-237-FOLLOWUP-5-SAMPLES (Read-Side) — Port der KORG ESX-1 + E2S Sample-Bank-Parser aus dem Python-Tool 'G:/IdeaProjects/Korg Editor' nach TypeScript. SoT-Quellen: constants.py (186 LOC) + esx_parser.py (554 LOC) + e2s_parser.py (497 LOC). (1) NEU client/src/utils/korg/constants.ts (~190 LOC) — alle Format-Konstanten aus Python (ESX-1: KORG+ESX\\0 Magic, 256 Mono-Slots, 128 Stereo-Slots, Header-Offsets 0x1B0000/0x1B0100/0x1B2900, PCM @ 0x250000, EMPTY_OFFSET=0xFFFFFFFF, SIZE_MIN=0x250010, 24MB cumulative PCM cap; E2S: 'e2s sample all\\x1a\\0' Signature, 250 RIFF slots ab 0x1000, Offset-Table @ 0x07E0, korg/esli Sub-Chunk 1180B mit Name@0x0A+Category@0x1A+LoopStart@0x34+LoopEnd@0x38+Slices@0x58+SliceSteps@0x458). E2S_CATEGORY_NAMES Tuple (18: Analog/Audio In/Kick/Snare/Clap/HiHat/Cymbal/Hits/Shots/Voice/SE/FX/Tom/Perc./Phrase/Loop/PCM/User) + e2sCategoryName(idx) Helper. Synthstudio-spezifische Caps: ESX_FILE_MAX_BYTES=64MB, E2S_FILE_MAX_BYTES=512MB, KORG_BANK_IPC_MAX_BYTES=100MB. (2) NEU client/src/utils/korg/esxParser.ts (~350 LOC, pure JS isomorph) — parseEsxBank(buf, source?) → EsxBank, isEsxBuffer(buf) → bool, be16PcmToFloat32(raw) → Float32Array. EsxBank = {source, monoSamples: EsxSample[], stereoSamples: EsxSample[], patterns:[] (FOLLOWUP v3.5), declaredMonoCount, declaredStereoCount, warnings}. EsxSample = {index, name, channels:1|2, sampleRate, frames, pcmData:Float32Array, loopStart, loopEnd, level}. 4-Stage-Validation (size-min/max + first-Magic + sub-Magic@0x08 + 2nd-Magic@0x1B0000 + sample-count-bounds). PCM Big-Endian → LE-i16 → Float32 [-1,+1]. Stereo wird interleaved L,R,L,R. Empty-Slot-Sentinel skipped silently. Per-Slot MAX_BYTES_PER_SLOT=10MB cap, cumulative ESX1_MAX_SAMPLE_MEM_IN_BYTES=24MB. Single-Slot-Error → warn+skip, ganzer-Datei-Error → throw. (3) NEU client/src/utils/korg/e2sBankReader.ts (~470 LOC) — parseE2sBank(buf, source?) → E2sBank, isE2sBuffer, le16PcmToFloat32, countE2sSlots. E2sBank = {source, slots: Array<E2sSlot|null> Länge 250, offsetTable: Uint32Array, trailingBytes, warnings}. E2sSlot enthaelt full korg/esli-Meta: name, category, categoryName, sampleRate, channels, frames, pcmData (interleaved bei stereo), loopType (0/1/2), loopStart/End (frames), level (0..127 normalisiert aus u16-playVolume), gain12db, slices (E2sSlice[] mit start/length/attack/amplitude, trailing-zeros getrimmt), sliceSteps (64B), slicingNumSteps/Beat/NumActive. RIFF-Parser walked WAVE-Body's Sub-Chunks (fmt + data + korg/esli) via findSubchunk(). PCM 16-bit LE → Float32. Korg-Body parsing best-effort: bei body.length < 1180 nur warn (keine throw). Defensive: signature check, offset-table-bounds (no entry inside 0x1000-prelude), per-RIFF-size cap (E2S_MAX_RIFF_BYTES = 10MB+overhead), per-slot PCM cap, cumulative cap (224MB). (4) NEU client/src/utils/korg/bankDetect.ts — detectKorgBankType(buf) → 'esx'|'e2s'|'unknown' (Magic-Sniff), detectKorgBankTypeFromName(name) (Endung-only). (5) NEU client/src/components/KorgBank/KorgBankModal.tsx (~400 LOC) — Read-Only-Viewer mit Props {file:File|null, onClose, onAddSample?(s:KorgBankSample)}. Listet alle (non-null) Slots: Index+Name+Category+Duration+Channels. Pro Slot 'Preview'-Button (AudioEngine.playSliceBuffer mit Mono-Reduce fuer Stereo) und 'Add'-Button (encodeWav-Helper baut RIFF/WAVE Blob mit Float32→i16 LE → URL.createObjectURL → KorgBankSample-Spec). 'Alle importieren'-Bulk-Button mit window.confirm. Search-Filter ueber Name+Category. Warnings collapsible (max 20 sichtbar). Semantic Tailwind classes durchgaengig (bg-bg-panel/elevated, border-border-color, accent-primary/danger/success). data-testids korg-bank-{modal,close,search,import-all,row-*,preview-*,add-*,loading,error,list}. (6) UPDATE client/src/utils/dragDropDispatch.ts — FileType-Union +'korg-bank'. KORG_BANK_EXTENSIONS={'.esx','.ess','.all'} als separates Set, ELECTRIBE_EXTENSIONS reduziert (.esx entfernt). detectFileType priorisiert korg-bank vor electribe. eventNameMap routet 'korg-bank' → CustomEvent 'korg:bank:open'. (7) UPDATE client/src/components/DragDropOverlay/DragDropOverlay.tsx — OVERLAY_STYLES['korg-bank'] mit accent-primary + 📦-Icon + 'KORG Sample-Bank importieren'-Label + Subtext '.esx / .all — ESX-1 oder E2S Sample-Bank (Read-Only v3.3)'. (8) UPDATE electron/components/ElectronDropZone.tsx — +onKorgBankFile?-Prop, +KORG_BANK_EXTENSIONS-Branch im handleDrop (Callback ODER Default-CustomEvent 'korg:bank:open'), detectDropType erkennt 'korg-bank'. (9) UPDATE electron/ipcValidators.ts — +KORG_BANK_ALLOWED_EXTENSIONS Set + KORG_BANK_MAX_BYTES=100MB + validateKorgBankPath/Size (Pattern analog validateElectribePath). (10) UPDATE electron/main.ts — 3 neue IPC-Handler: 'korg:import-bank' (filePath → {success,data:number[],fileName,ext} validated via path.resolve + access(R_OK) + size-cap), 'korg:open-bank-dialog' (nativer Dialog mit Filtern KORG/ESX-1/E2S), 'korg:get-bank-cap' (liefert KORG_BANK_MAX_BYTES). (11) UPDATE electron/preload.ts — 3 neue contextBridge-Methoden openKorgBankDialog/importKorgBank/getKorgBankCap. (12) UPDATE client/src/utils/proFeatures.ts — PRO_FEATURE_KORG_BANK_IMPORT='korg-bank-import' (PRO_FEATURES jetzt 6). (13) UPDATE client/src/components/DrumMachine/DrumMachine.tsx — '📦 KORG Bank'-Toolbar-Button neben '🎚 Electribe' mit ProLockBadge, hidden file-input accept='.esx,.ess,.all', onChange dispatcht CustomEvent 'korg:bank:open' nach Pro-Gate-Check. (14) UPDATE client/src/App.tsx — +Import KorgBankModal+KorgBankSample (proFeatures-Import konsolidiert auf einen). +useState korgBankFile:File|null. handleKorgBankFile gated requireProFeature, setzt State. handleKorgBankAddSample → project.addSamples mit Blob-URL als path + Auto-Category 'korg-esx-mono/stereo' oder 'korg-e2s'. useEffect listener 'korg:bank:open' → handleKorgBankFile. ElectronDropZone bekommt onKorgBankFile. KorgBankModal-Render zwischen ActivationModal und </ElectronDropZone>. (15) NEU tests/features/korg-esx-parser.test.ts — 23 Tests: buildMinimalEsxBuffer-Builder, Magic-Detection (4), File-Size-Caps (2), Magic-Validation (4), Mono-Parse (4), Stereo-Parse (2), PCM-Helper (4), Defensive (2) + Real-File-Test conditional auf 'Korg ESX files/'. (16) NEU tests/features/korg-e2s-bank.test.ts — 18 Tests: buildMinimalE2sBuffer-Builder, Signature-Detection (3), File-Caps (2), Slot-Parse (6: empty/mono+category/stereo/mixed-with-nulls/offset-table-preserved/category-mapping), PCM-Helper (3), Defensive (1), bankDetect (2), Real-File-Test conditional auf 'Korg e2s files/Sample/'. (17) UPDATE tests/features/drag-drop.test.ts — Test 'erkennt alle KORG-Electribe-Endungen' angepasst (.esx entfernt), NEU Test 'erkennt .esx/.ess/.all als KORG-Sample-Bank', disjoint-Sets-Test schliesst KORG_BANK_EXTENSIONS ein, multi-file-Test um korg-bank erweitert. (18) UPDATE tests/features/license-gates.test.ts — PRO_FEATURES toHaveLength(6), +PRO_FEATURE_KORG_BANK_IMPORT-Check. (19) package.json 3.2.0 → 3.3.0, agents/INDEX.js version 3.2.0 → 3.3.0 + IPC-Channels {'korg:import-bank', 'korg:open-bank-dialog', 'korg:get-bank-cap'} + files-Index +14 Eintraege. pnpm check clean (no diagnostics), pnpm test 3635 passed / 15 skipped (vs prev 3591/15, +44 net = 41 neue KORG-Tests + 3 angepasste). VERIFIED: ESX-1 Magic 'KORG'+'ESX\\0' (Pos 0+8), 2nd Magic @ 0x1B0000, 256+128 Slot-Header-Layout, BE-PCM @ 0x250000, EMPTY-Sentinel 0xFFFFFFFF; E2S Signature 'e2s sample all\\x1a\\0', 250 Offset-Table @ 0x07E0, RIFF/WAVE-Slots @ 0x1000+, korg/esli Sub-Chunk 1180B mit name@0x0A+category@0x1A. CAVEATS: (a) Patterns/Songs werden v3.3 NICHT geparst (Skeleton-Array, FOLLOWUP v3.5). (b) Slice-Decode-Skeleton OK aber Slice-Trigger-Playback nicht v3.3 (FOLLOWUP v3.4 fuer Per-Slice-Pads + v3.5 fuer Sequencing). (c) E2S-Build/Write ist explizit OUT-OF-SCOPE (FOLLOWUP v3.4) — Original e2s_builder.py 743 LOC ist die Spezifikation, aber das Round-Trip-bit-exact-Anspruch (raw_riff-Preservation, opaque_blob, offset_table-Reuse) ist eine eigene Task. (d) ESX-1 Stereo-Preview: KorgBankModal spielt nur Mono-Reduce (Left-Channel-only) — Slice-Player ist Mono-only by design. (e) Blob-URLs aus 'Add to Library' werden NICHT explizit revoked beim Modal-Schliessen — wenn der User Samples hinzugefuegt hat, koennen URLs noch im useProjectStore referenziert werden. Caller-Pflicht (FOLLOWUP-cleanup). (f) IPC-Pfad 'korg:import-bank' ist gebaut + getestbar via Renderer, aber der primaere Workflow ist File-basiert (FileReader.arrayBuffer im Renderer — isomorph zwischen Browser und Electron). Der IPC-Endpunkt bleibt als optional 'native-dialog'-Pfad. (g) Real-Files in 'Korg ESX files/' und 'Korg e2s files/' sind NICHT ins Repo committed — Tests sind via fs.existsSync gated mit describe.skip-Fallback. (h) Security-Agent fuer die neuen IPC-Channels: Whitelist-Endungen + path.resolve + access(R_OK) + size-cap, Pattern aus electribe:import-file uebernommen. Audit-Konsultation auf 'medium-prio' — die Implementation folgt validierten Mustern und hat keine neuen Risk-Faktoren ggu. dem electribe-Channel."
+      ],
+      next: [
+        "TASK-237-FOLLOWUP-5-SAMPLES-WRITE (v3.4): E2S Sample-Bank-Writer aus Korg Editor/services/e2s_builder.py (743 LOC) porten. Round-Trip-Anspruch bit-exact: raw_riff-Preservation pro Slot, opaque_blob am EOF, original-offsetTable-Reuse. Wichtigste Use-Cases: (a) User loescht Slot → Offset-Table-Entry auf 0, (b) User vertauscht Slots → Reorder-Offsets, (c) User fuegt neuen Sample hinzu → neuer RIFF-Chunk + korg/esli-Body-Build. (1) buildE2sBank(slots) → ArrayBuffer-Builder + (2) UI in KorgBankModal: 'Save Modified Bank As...'-Button + neue IPC korg:save-bank-as.",
+        "TASK-237-FOLLOWUP-5-PATTERNS (v3.5): ESX-1 Pattern-Parser. 256 Patterns × 4280 Bytes ab 0x0200. Step-Encoding + Part-Mappings reverse-engineeren — vermutlich Open Electribe Editor EsxUtil.java als Referenz. Convert nach Synthstudio-DrumPattern.",
+        "TASK-v3.3-FOLLOWUP-1 (Blob-URL-Cleanup): Modal trackt erzeugte URLs und revoked sie bei Sample-Removal aus useProjectStore (oder beim App-Reload). Aktuell leaken die URLs wenn der User viele Samples hinzufuegt und sie nicht behalten will.",
+        "TASK-v3.3-FOLLOWUP-2 (Stereo-Preview): AudioEngine.playSliceBuffer akzeptiert nur Mono. Fuer korrektes Stereo-Preview muesste die Engine einen 2-Channel-AudioBuffer mit copyToChannel(L,0)+copyToChannel(R,1) nehmen. Out-of-Scope v3.3.",
+        "TASK-v3.3-FOLLOWUP-3 (Per-Pad-Drop): User kann eine .esx/.all-Datei direkt auf einen Performance-Pad droppen, der Pad nimmt den ersten Sample als Slot — wuerde Pad-Slot-Resolver + Pre-Parse-on-Drop benoetigen.",
+        "TASK-237-CALIBRATION-FOLLOWUP-1 (Step-Encoding): User stellt 2-3 Real-Files mit bekannten Step-Positionen bereit. Hex-Diff → Step-Trigger-Byte-Layout im 896-Byte-Part-Block.",
+        "TASK-237-CALIBRATION-FOLLOWUP-2 (Part-Header-Fields): Sample-ID, Volume, Pan, Pitch, FxSend im 896-Byte-Block lokalisieren.",
+        "TASK-237-CALIBRATION-FOLLOWUP-3 (StepLength/Swing): Bytes im 0x124-0x140 Range kalibrieren.",
+        "TASK-232-FOLLOWUP-1 (Gumroad-Real-Integration) bleibt offen.",
+        "TASK-236-ALT-FOLLOWUP-1/2/3 bleiben offen.",
+        "TASK-241-FOLLOWUP-2-GRANULAR / FOLLOWUP-3-SYNTHLFO / FOLLOWUP-4-CUSTOMWAVE bleiben offen.",
+        "TASK-239 (VST3/CLAP-Host) bleibt offen."
+      ],
+      changed: [
+        "client/src/utils/korg/constants.ts (NEU — alle ESX-1+E2S-Konstanten aus Python constants.py portiert: Magic-Bytes, Slot-Counts, Header/PCM-Offsets, ESLI-Field-Offsets, Category-Names, File-Caps; ~190 LOC)",
+        "client/src/utils/korg/esxParser.ts (NEU — ~350 LOC ESX-1 .esx Parser mit isEsxBuffer + parseEsxBank + be16PcmToFloat32; PCM BE→LE→Float32; defensive size+magic+bounds; Stereo interleaved; Patterns-Skeleton)",
+        "client/src/utils/korg/e2sBankReader.ts (NEU — ~470 LOC E2S .all Reader mit parseE2sBank + isE2sBuffer + le16PcmToFloat32 + countE2sSlots; RIFF/WAVE-Walker; korg/esli Body-Parsing inkl. Slices+Steps; Per-Slot+Cumulative-Caps)",
+        "client/src/utils/korg/bankDetect.ts (NEU — detectKorgBankType+detectKorgBankTypeFromName)",
+        "client/src/components/KorgBank/KorgBankModal.tsx (NEU — ~400 LOC Read-Only-Viewer mit Sample-Liste/Preview/Add-to-Library/Bulk-Import; encodeWav-Pure-Helper; semantic Tailwind classes)",
+        "client/src/utils/dragDropDispatch.ts (FileType +'korg-bank', neues KORG_BANK_EXTENSIONS-Set, ELECTRIBE_EXTENSIONS reduziert ohne .esx, detectFileType priorisiert korg-bank vor electribe, eventNameMap → 'korg:bank:open')",
+        "client/src/components/DragDropOverlay/DragDropOverlay.tsx (OVERLAY_STYLES['korg-bank'] + SUBTEXT_BY_TYPE-Eintrag)",
+        "electron/components/ElectronDropZone.tsx (+onKorgBankFile-Prop, +KORG_BANK_EXTENSIONS-Branch, detectDropType erkennt 'korg-bank', DropType-Union erweitert)",
+        "electron/ipcValidators.ts (+KORG_BANK_ALLOWED_EXTENSIONS Set {'.esx','.ess','.all'}, +KORG_BANK_MAX_BYTES=100MB, +validateKorgBankPath, +validateKorgBankFileSize)",
+        "electron/main.ts (3 neue IPC-Handler: korg:import-bank + korg:open-bank-dialog + korg:get-bank-cap; Imports erweitert)",
+        "electron/preload.ts (3 neue contextBridge-Methoden: openKorgBankDialog + importKorgBank + getKorgBankCap)",
+        "client/src/utils/proFeatures.ts (+PRO_FEATURE_KORG_BANK_IMPORT='korg-bank-import' + Label 'KORG Sample-Bank-Import'; PRO_FEATURES jetzt Länge 6)",
+        "client/src/components/DrumMachine/DrumMachine.tsx (+'📦 KORG Bank'-Toolbar-Button mit ProLockBadge + hidden file-input accept='.esx,.ess,.all' + onChange-Handler mit Pro-Gate + dispatch 'korg:bank:open')",
+        "client/src/App.tsx (+Import KorgBankModal + proFeatures-Imports konsolidiert + useState korgBankFile + handleKorgBankFile + handleKorgBankAddSample + useEffect-Listener 'korg:bank:open' + onKorgBankFile-Prop an ElectronDropZone + KorgBankModal-Render)",
+        "tests/features/korg-esx-parser.test.ts (NEU — 23 Tests: Magic, Caps, Mono/Stereo-Parse, PCM-Helper, Defensive + Real-File-Test conditional auf 'Korg ESX files/')",
+        "tests/features/korg-e2s-bank.test.ts (NEU — 18 Tests: Signature, Caps, Slot-Parse, PCM-Helper, Defensive, bankDetect + Real-File-Test conditional auf 'Korg e2s files/Sample/')",
+        "tests/features/drag-drop.test.ts (.esx aus Electribe-Test entfernt, NEU korg-bank-Detection-Test, disjoint-Sets-Test inkl. KORG_BANK_EXTENSIONS, multi-file-Test +korg-bank)",
+        "tests/features/license-gates.test.ts (PRO_FEATURES.toHaveLength(6), +PRO_FEATURE_KORG_BANK_IMPORT-Check)",
+        "package.json (3.2.0 → 3.3.0)",
+        "agents/INDEX.js (workLog + version 3.3.0 + IPC-Channels {'korg:import-bank','korg:open-bank-dialog','korg:get-bank-cap'} + files-Index +14)"
+      ]
+    },
     {
       agent:     "backend",
       timestamp: "2026-05-18T08:00:00.000Z",
@@ -4239,6 +4352,9 @@ const INDEX = {
       "audio:save-recording", // TASK-234 (v2.86) — schreibt WAV in userData/recordings/, strict path-traversal-guard
       "electribe:import-file", // TASK-237 (v2.88) — liest .e2pattern/.e2sallpat (max 5 MB, Endung-Whitelist) als Uint8Array → Renderer parsed via parseElectribeBank()
       "electribe:open-dialog", // TASK-237 (v2.88) — nativer File-Dialog mit Filter "e2pattern, e2sallpat"
+      "korg:import-bank",     // v3.3.0 — liest .esx/.ess/.all (max 100 MB, Endung-Whitelist, path.resolve+access-check) als Uint8Array → Renderer parsed via parseEsxBank()/parseE2sBank().
+      "korg:open-bank-dialog", // v3.3.0 — nativer File-Dialog mit Filter ["esx", "ess", "all"].
+      "korg:get-bank-cap",    // v3.3.0 — liefert KORG_BANK_MAX_BYTES (100 MB) für UI-Hinweise.
       "license:read",  // TASK-232 (v2.97) — liest userData/license.json (Path hardcoded, 16 KB-Limit, JSON-Parse-Try-Catch). Returnt {success, data}|{success:false,error}.
       "license:write", // TASK-232 (v2.97) — schreibt LicenseState nach userData/license.json (Status-Whitelist, finite-number-only trialStartedAt, Längen-Limits, JSON-Size ≤16 KB).
 

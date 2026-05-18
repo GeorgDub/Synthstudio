@@ -75,9 +75,16 @@ import { MidiProvider } from "@/context/MidiContext";
 import { toast } from "@/store/useToastStore";
 import { ToastContainer } from "@/components/UI/ToastContainer";
 import { ActivationModal } from "@/components/License/ActivationModal";
+import { KorgBankModal, type KorgBankSample } from "@/components/KorgBank/KorgBankModal";
 import { initializeLicenseStore } from "@/store/useLicenseStore";
 // TASK-232-FOLLOWUP / v2.98: Pro-Feature-Gate für MIDI-Note-Out (Bridge-Effect).
-import { isFeatureUnlocked, PRO_FEATURE_MIDI_NOTE_OUT } from "@/utils/proFeatures";
+// v3.3.0: KORG-Bank-Import gated.
+import {
+  isFeatureUnlocked,
+  requireProFeature,
+  PRO_FEATURE_MIDI_NOTE_OUT,
+  PRO_FEATURE_KORG_BANK_IMPORT,
+} from "@/utils/proFeatures";
 import { toast as showToast } from "@/store/useToastStore";
 import { GUMROAD_PRODUCT_URL } from "@/utils/licenseConfig";
 import { useLiveStepRecorder } from "@/hooks/useLiveStepRecorder";
@@ -2357,6 +2364,44 @@ export default function App() {
     [project]
   );
 
+  // ── KORG Sample-Bank-Import (v3.3.0) ──────────────────────────────────────
+
+  const [korgBankFile, setKorgBankFile] = useState<File | null>(null);
+
+  /** Handler used by both DropZone und CustomEvent-Listener. */
+  const handleKorgBankFile = useCallback((file: File) => {
+    // Pro-Feature gate at entry point. The Modal is shown anyway if not Pro?
+    // Cleaner UX: gate at entry → no modal-flash for free-tier users.
+    if (!requireProFeature(PRO_FEATURE_KORG_BANK_IMPORT)) return;
+    setKorgBankFile(file);
+  }, []);
+
+  /** Wenn die Modal pro-Slot ein Sample hinzufügt: an Sample-Library weiterleiten. */
+  const handleKorgBankAddSample = useCallback(
+    (sample: KorgBankSample) => {
+      project.addSamples([
+        {
+          id: sample.id,
+          name: sample.name,
+          path: sample.url, // Blob-URL — Web Audio kann das direkt laden
+          category: sample.category,
+        },
+      ]);
+    },
+    [project],
+  );
+
+  // CustomEvent-Listener für Drag-Drop von App-Body und Picker-Aufrufe aus
+  // DrumMachine. dispatchFileDrop("KICK.esx") wird zu "korg:bank:open" geroutet.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const file = (e as CustomEvent<File>).detail;
+      if (file instanceof File) handleKorgBankFile(file);
+    };
+    window.addEventListener("korg:bank:open", handler);
+    return () => window.removeEventListener("korg:bank:open", handler);
+  }, [handleKorgBankFile]);
+
   const handleDropZipFile = useCallback(
     async (file: File) => {
       try {
@@ -2894,9 +2939,10 @@ export default function App() {
         window.dispatchEvent(new CustomEvent<File>("midi:fileImport", { detail: file }))
       }
       onElectribeFile={(file) =>
-        // v3.1.0: .e2spat/.e2sallpat/.esx/.elst-Drop → DrumMachine-Listener
+        // v3.1.0: .e2spat/.e2sallpat/.elst-Drop → DrumMachine-Listener
         window.dispatchEvent(new CustomEvent<File>("electribe:fileImport", { detail: file }))
       }
+      onKorgBankFile={handleKorgBankFile}
     >
       <MidiProvider value={midi}>
       <div className="flex flex-col h-screen bg-bg-base text-text-primary overflow-hidden">
@@ -3586,6 +3632,12 @@ export default function App() {
       <ToastContainer />
       {/* TASK-232 (v2.97): Lizenz-Aktivierungs-Modal (zeigt sich auto bei status=unknown) */}
       <ActivationModal />
+      {/* v3.3.0: KORG Sample-Bank-Modal (ESX-1 .esx + E2S .all Read-Only). */}
+      <KorgBankModal
+        file={korgBankFile}
+        onClose={() => setKorgBankFile(null)}
+        onAddSample={handleKorgBankAddSample}
+      />
       </MidiProvider>
     </ElectronDropZone>
   );

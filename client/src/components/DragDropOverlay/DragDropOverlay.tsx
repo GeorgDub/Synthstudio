@@ -79,6 +79,13 @@ const OVERLAY_STYLES: Record<FileType, { border: string; bg: string; text: strin
     label: "KORG Electribe Pattern importieren",
     icon: "🥁",
   },
+  "korg-bank": {
+    border: "border-accent-primary",
+    bg: "bg-accent-primary/10",
+    text: "text-accent-primary",
+    label: "KORG Sample-Bank importieren",
+    icon: "📦",
+  },
   unknown: {
     border: "border-border-color",
     bg: "bg-bg-elevated/40",
@@ -93,7 +100,8 @@ const SUBTEXT_BY_TYPE: Record<FileType, string> = {
   project: ".synth Projektdatei wird geladen",
   zip: "Audio-Samples aus dem Archiv werden extrahiert",
   midi: "Notes werden in das aktuelle Pattern importiert",
-  electribe: ".e2spat / .e2sallpat / .esx / .elst — KORG Hardware-Pattern",
+  electribe: ".e2spat / .e2sallpat / .elst — KORG Hardware-Pattern",
+  "korg-bank": ".esx / .all — ESX-1 oder E2S Sample-Bank (Read-Only v3.3)",
   unknown: "Datei-Typ unbekannt — wird ignoriert",
 };
 

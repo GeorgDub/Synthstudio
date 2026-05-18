@@ -38,22 +38,38 @@ export const MIDI_EXTENSIONS: ReadonlySet<string> = new Set([".mid", ".midi"]);
 /**
  * KORG Electribe Pattern/Bank-Endungen.
  *   .e2spat / .e2sallpat → Electribe 2 / Sampler
- *   .esx / .elst        → AeltereVarianten
+ *   .elst                → AeltereVariante
  *
  * v3.1.0: vollstaendige Drop-Unterstuetzung — der bestehende
  * `electribe:fileImport`-Listener in DrumMachine.tsx greift das CustomEvent.
+ *
+ * v3.3.0: `.esx` und `.all` sind KORG Sample-Banks (ESX-1 + E2S) und werden
+ * jetzt separat zu KORG_BANK_EXTENSIONS geroutet — siehe unten.
  */
 export const ELECTRIBE_EXTENSIONS: ReadonlySet<string> = new Set([
   ".e2spat",
   ".e2sallpat",
   ".e2pattern", // user-input alias — wird vom Parser akzeptiert (importElectribe matcht via endsWith)
-  ".esx",
   ".elst",
+]);
+
+/**
+ * KORG Sample-Bank-Endungen (v3.3.0).
+ *   .esx / .ess → ESX-1 Backup (Mono+Stereo PCM samples + Patterns)
+ *   .all        → E2S Sample-Bank (250 RIFF/WAVE slots mit korg/esli meta)
+ *
+ * Drop einer dieser Endungen → CustomEvent "korg:bank:open" wird mit der File
+ * als detail dispatched. Listener: `KorgBankModal` in DrumMachine.tsx.
+ */
+export const KORG_BANK_EXTENSIONS: ReadonlySet<string> = new Set([
+  ".esx",
+  ".ess",
+  ".all",
 ]);
 
 // ─── Typen ────────────────────────────────────────────────────────────────────
 
-export type FileType = "audio" | "project" | "zip" | "midi" | "electribe" | "unknown";
+export type FileType = "audio" | "project" | "zip" | "midi" | "electribe" | "korg-bank" | "unknown";
 
 /**
  * Ergebnis eines Dispatch-Aufrufs.
@@ -99,6 +115,7 @@ export function detectFileType(name: string): FileType {
   if (PROJECT_EXTENSIONS.has(ext)) return "project";
   if (ZIP_EXTENSIONS.has(ext)) return "zip";
   if (MIDI_EXTENSIONS.has(ext)) return "midi";
+  if (KORG_BANK_EXTENSIONS.has(ext)) return "korg-bank";
   if (ELECTRIBE_EXTENSIONS.has(ext)) return "electribe";
   return "unknown";
 }
@@ -146,6 +163,7 @@ export function dispatchFileDrop(file: { name: string }): DispatchResult {
     zip: "drop:zip",
     midi: "midi:fileImport",
     electribe: "electribe:fileImport",
+    "korg-bank": "korg:bank:open",
   };
 
   const eventName = eventNameMap[type];

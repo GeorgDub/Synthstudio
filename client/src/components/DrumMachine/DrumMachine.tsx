@@ -34,7 +34,7 @@ import {
   type ParsedPattern,
   type SynthstudioPatternImport,
 } from "@/utils/electribeImport";
-import { requireProFeature, PRO_FEATURE_ELECTRIBE_IMPORT } from "@/utils/proFeatures";
+import { requireProFeature, PRO_FEATURE_ELECTRIBE_IMPORT, PRO_FEATURE_KORG_BANK_IMPORT } from "@/utils/proFeatures";
 import { ProLockBadge } from "@/components/License/ProLockBadge";
 import { GranularSynthPanel } from "./GranularSynthPanel";
 import { DEFAULT_GRANULAR_PARAMS } from "@/audio/GranularEngine";
@@ -271,6 +271,7 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
   const midiImportRef = useRef<HTMLInputElement>(null);
   const flpImportRef = useRef<HTMLInputElement>(null);
   const electribeImportRef = useRef<HTMLInputElement>(null);
+  const korgBankImportRef = useRef<HTMLInputElement>(null);
   const sliceImportRef = useRef<HTMLInputElement>(null);
   const [selectedStep, setSelectedStep] = useState<{ partId: string; stepIndex: number } | null>(null);
   const [granularPartId, setGranularPartId] = useState<string | null>(null);
@@ -1248,6 +1249,39 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
           className="hidden"
           onChange={handleElectribeImport}
           data-testid="electribe-import-input"
+        />
+
+        {/* KORG Sample-Bank-Import (v3.3.0) — ESX-1 .esx + E2S .all (Read-Only). */}
+        <button
+          onClick={() => korgBankImportRef.current?.click()}
+          title="KORG Sample-Bank importieren (.esx ESX-1 oder .all E2S)"
+          className="px-2 py-1 rounded text-[10px] bg-bg-elevated text-text-dim hover:bg-bg-elevated hover:text-text-primary transition-colors inline-flex items-center gap-1"
+          data-testid="korg-bank-import"
+        >
+          📦 KORG Bank
+          <ProLockBadge feature={PRO_FEATURE_KORG_BANK_IMPORT} />
+        </button>
+        <input
+          ref={korgBankImportRef}
+          type="file"
+          accept=".esx,.ess,.all"
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) {
+              if (!requireProFeature(PRO_FEATURE_KORG_BANK_IMPORT)) {
+                e.target.value = "";
+                return;
+              }
+              try {
+                window.dispatchEvent(new CustomEvent<File>("korg:bank:open", { detail: file }));
+              } catch {
+                /* test-env without CustomEvent */
+              }
+            }
+            e.target.value = "";
+          }}
+          data-testid="korg-bank-import-input"
         />
 
         {/* Sample-Slicing (TASK-238 / v2.89) */}

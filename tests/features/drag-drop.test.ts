@@ -82,6 +82,7 @@ import {
   ZIP_EXTENSIONS,
   MIDI_EXTENSIONS,
   ELECTRIBE_EXTENSIONS,
+  KORG_BANK_EXTENSIONS,
 } from "../../client/src/utils/dragDropDispatch";
 
 // ─── getFileExtension ─────────────────────────────────────────────────────────
@@ -133,9 +134,15 @@ describe("detectFileType", () => {
   it("erkennt alle KORG-Electribe-Endungen als electribe", () => {
     expect(detectFileType("bank.e2spat")).toBe("electribe");
     expect(detectFileType("bank.e2sallpat")).toBe("electribe");
-    expect(detectFileType("legacy.esx")).toBe("electribe");
     expect(detectFileType("legacy.elst")).toBe("electribe");
     expect(detectFileType("alias.e2pattern")).toBe("electribe");
+  });
+
+  it("erkennt .esx/.ess/.all als KORG-Sample-Bank (v3.3.0)", () => {
+    expect(detectFileType("backup.esx")).toBe("korg-bank");
+    expect(detectFileType("BACKUP.ESX")).toBe("korg-bank");
+    expect(detectFileType("backup.ess")).toBe("korg-bank");
+    expect(detectFileType("e2sSample.all")).toBe("korg-bank");
   });
 
   it("liefert 'unknown' fuer unbekannte Endungen", () => {
@@ -150,7 +157,7 @@ describe("detectFileType", () => {
   });
 
   it("die Endungs-Sets sind disjunkt", () => {
-    const sets = [AUDIO_EXTENSIONS, PROJECT_EXTENSIONS, ZIP_EXTENSIONS, MIDI_EXTENSIONS, ELECTRIBE_EXTENSIONS];
+    const sets = [AUDIO_EXTENSIONS, PROJECT_EXTENSIONS, ZIP_EXTENSIONS, MIDI_EXTENSIONS, ELECTRIBE_EXTENSIONS, KORG_BANK_EXTENSIONS];
     const seen = new Set<string>();
     for (const s of sets) {
       for (const ext of s) {
@@ -275,20 +282,21 @@ describe("dispatchAllFiles", () => {
     expect(fakeWindow.__dispatched).toHaveLength(1);
   });
 
-  it("akzeptiert mixed Multi-File-Drop (alle 5 Typen + unknown)", () => {
+  it("akzeptiert mixed Multi-File-Drop (alle 6 Typen + unknown)", () => {
     const files = [
       { name: "kick.wav" },          // audio
       { name: "Song.synth" },        // project
       { name: "bank.e2sallpat" },    // electribe
       { name: "groove.mid" },        // midi
       { name: "samples.zip" },       // zip
+      { name: "backup.esx" },        // korg-bank (v3.3.0)
       { name: "video.mp4" },         // unknown
     ];
     const res = dispatchAllFiles(files);
-    expect(res.handled).toBe(5);
+    expect(res.handled).toBe(6);
     expect(res.unknown).toBe(1);
     expect(new Set(res.types)).toEqual(
-      new Set(["audio", "project", "electribe", "midi", "zip", "unknown"]),
+      new Set(["audio", "project", "electribe", "midi", "zip", "korg-bank", "unknown"]),
     );
   });
 

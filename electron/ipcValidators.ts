@@ -205,3 +205,45 @@ export function validateElectribeFileSize(byteSize: number): { ok: true } | { ok
   }
   return { ok: true };
 }
+
+// ─── KORG-Bank-Import-Extension-Whitelist (v3.3.0) ───────────────────────────
+
+// .esx = ESX-1 Backup (~25 MB), .all = E2S Sample-Bank (~23 MB).
+// Limit auf 100 MB als großzügige obere Schranke (Real-Files <30 MB, headroom
+// für firmware-spezifische extras).
+export const KORG_BANK_ALLOWED_EXTENSIONS = new Set([".esx", ".ess", ".all"]);
+export const KORG_BANK_MAX_BYTES = 100 * 1024 * 1024; // 100 MB
+
+export type KorgBankPathCheck =
+  | { ok: true; ext: string }
+  | { ok: false; error: string };
+
+/** Prüft Endung (lower-case, Whitelist) für KORG-Bank-Files. */
+export function validateKorgBankPath(input: unknown): KorgBankPathCheck {
+  if (typeof input !== "string" || input.length === 0) {
+    return { ok: false, error: "Kein Dateipfad" };
+  }
+  if (input.length > 4096) {
+    return { ok: false, error: "Dateipfad zu lang" };
+  }
+  if (input.includes("\0")) {
+    return { ok: false, error: "Pfad enthält NUL-Byte" };
+  }
+  const ext = path.extname(input).toLowerCase();
+  if (!KORG_BANK_ALLOWED_EXTENSIONS.has(ext)) {
+    return { ok: false, error: "Nur .esx/.ess/.all erlaubt" };
+  }
+  return { ok: true, ext };
+}
+
+export function validateKorgBankFileSize(
+  byteSize: number,
+): { ok: true } | { ok: false; error: string } {
+  if (!Number.isFinite(byteSize) || byteSize < 0) {
+    return { ok: false, error: "Ungültige Dateigröße" };
+  }
+  if (byteSize > KORG_BANK_MAX_BYTES) {
+    return { ok: false, error: `Datei zu gross (>${KORG_BANK_MAX_BYTES} Bytes)` };
+  }
+  return { ok: true };
+}

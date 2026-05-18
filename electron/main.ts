@@ -62,6 +62,9 @@ import {
   sanitizeLicenseState,
   validateElectribePath,
   validateElectribeFileSize,
+  validateKorgBankPath,
+  validateKorgBankFileSize,
+  KORG_BANK_MAX_BYTES,
   LICENSE_FILE_MAX_BYTES as IPC_LICENSE_FILE_MAX_BYTES,
 } from "./ipcValidators";
 import {
@@ -2767,6 +2770,56 @@ function registerIpcHandlers(): void {
     });
     return result;
   });
+
+  // ── KORG Sample-Bank-Import (v3.3.0) ────────────────────────────────────────
+  //
+  // Liest eine ESX-1 .esx oder E2S .all Sample-Bank von der Disk. Strikte
+  // Validation analog electribe:import-file:
+  //   - Endung .esx/.ess/.all
+  //   - Path normalisiert (path.resolve)
+  //   - Datei muss lesbar sein
+  //   - Max 100 MB
+  // Renderer ruft anschliessend parseEsxBank()/parseE2sBank().
+  ipcMain.handle("korg:import-bank", async (_event, filePath: string) => {
+    try {
+      const pathCheck = validateKorgBankPath(filePath);
+      if (!pathCheck.ok) return { success: false as const, error: pathCheck.error };
+      const resolvedPath = path.resolve(filePath as string);
+      try {
+        await fs.promises.access(resolvedPath, fs.constants.R_OK);
+      } catch {
+        return { success: false as const, error: "Datei nicht lesbar" };
+      }
+      const stat = await fs.promises.stat(resolvedPath);
+      const sizeCheck = validateKorgBankFileSize(stat.size);
+      if (!sizeCheck.ok) return { success: false as const, error: sizeCheck.error };
+      const buffer = await fs.promises.readFile(resolvedPath);
+      return {
+        success: true as const,
+        data: Array.from(buffer),
+        fileName: path.basename(resolvedPath),
+        ext: pathCheck.ext,
+      };
+    } catch (err) {
+      return { success: false as const, error: String(err) };
+    }
+  });
+
+  ipcMain.handle("korg:open-bank-dialog", async () => {
+    const result = await dialog.showOpenDialog(mainWindow!, {
+      title: "KORG Sample-Bank importieren",
+      filters: [
+        { name: "KORG Sample-Banks", extensions: ["esx", "ess", "all"] },
+        { name: "ESX-1", extensions: ["esx", "ess"] },
+        { name: "E2S", extensions: ["all"] },
+      ],
+      properties: ["openFile"],
+    });
+    return result;
+  });
+
+  // Surface the max-size cap so the renderer can show a friendly hint.
+  ipcMain.handle("korg:get-bank-cap", () => KORG_BANK_MAX_BYTES);
 
   // ── Kollaborations-Server ─────────────────────────────────────────────────────
 

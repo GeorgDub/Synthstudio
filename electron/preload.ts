@@ -171,6 +171,26 @@ const electronAPI = {
   ): Promise<{ success: boolean; data?: number[]; fileName?: string; error?: string }> =>
     ipcRenderer.invoke("electribe:import-file", filePath),
 
+  // ── KORG Sample-Bank-Import (v3.3.0) ─────────────────────────────────────────
+
+  /** Öffnet den nativen Datei-Dialog für .esx/.ess/.all KORG Sample-Banks. */
+  openKorgBankDialog: (): Promise<{ canceled: boolean; filePaths: string[] }> =>
+    ipcRenderer.invoke("korg:open-bank-dialog"),
+
+  /**
+   * Liest eine .esx oder .all Sample-Bank von Disk und liefert die Bytes als
+   * number[]. Main-Side validiert Endung (.esx/.ess/.all), Größe (max 100 MB)
+   * und Lesbarkeit. Renderer ruft anschließend parseEsxBank()/parseE2sBank().
+   */
+  importKorgBank: (
+    filePath: string
+  ): Promise<{ success: boolean; data?: number[]; fileName?: string; ext?: string; error?: string }> =>
+    ipcRenderer.invoke("korg:import-bank", filePath),
+
+  /** Liefert das aktuelle Bank-File-Size-Cap (Bytes) für UI-Hinweise. */
+  getKorgBankCap: (): Promise<number> =>
+    ipcRenderer.invoke("korg:get-bank-cap"),
+
   // Import-Events
   onImportStarted: createEventListener<{ importId: string }>("samples:import-started"),
   onImportProgress: createEventListener<{
