@@ -2,6 +2,9 @@
  * tests/features/electribe-pattern-write.test.ts
  *
  * v3.26.0 — E2 Pattern WRITE (.e2spat) → Synthstudio → KORG E2 Sampler.
+ * v3.34.0 — Adds bit-exact-polish coverage for the 3 KORG-native encoding
+ *           conventions (name NUL-pad, 0xFF velocity sentinel, inactive-step
+ *           note 0x00). Existing semantic round-trip tests remain green.
  *
  * Verifies the binary builder, the Synthstudio adapter, and the round-trip
  * property `parseRealPattern(buildE2PatternFile(input)) ≈ input`.
@@ -13,6 +16,8 @@ import {
   looksLikeE2PatternFile,
   E2_DEFAULT_NOTE,
   E2_DEFAULT_VELOCITY,
+  E2_DEFAULT_VELOCITY_RAW_BYTE,
+  E2_INACTIVE_STEP_NOTE,
   type E2PatternInput,
   type E2StepInput,
 } from "../../client/src/utils/electribePatternBuilder";
@@ -154,13 +159,13 @@ describe("BPM × 10 encoding", () => {
 // ─── 3. Pattern name (space-padded ASCII) ────────────────────────────────────
 
 describe("Pattern name encoding", () => {
-  it("space-pads short names to 16 bytes", () => {
+  it("v3.34: NUL-pads short names to 16 bytes (KORG-native encoding)", () => {
     const buffer = buildE2PatternFile(makeMinimalInput({ name: "Hi" }));
     const u8 = new Uint8Array(buffer);
     expect(u8[0x110]).toBe(0x48); // 'H'
     expect(u8[0x111]).toBe(0x69); // 'i'
-    expect(u8[0x112]).toBe(0x20); // ' '
-    expect(u8[0x110 + 15]).toBe(0x20); // last byte is space
+    expect(u8[0x112]).toBe(0x00); // v3.34: NUL pad (was 0x20 in v3.26)
+    expect(u8[0x110 + 15]).toBe(0x00); // last byte is NUL
   });
 
   it("truncates names longer than 16 chars", () => {
@@ -205,13 +210,18 @@ describe("Step encoding round-trip", () => {
     expect(view.getUint8(stepOffset + 2)).toBe(0x60); // constant
   });
 
-  it("uses default velocity 96 and default note 0x48 when unset", () => {
+  it("v3.34: writes 0xFF velocity sentinel and default note 0x48 for ACTIVE unset step", () => {
     const input = makeMinimalInput();
     input.parts[0].steps[0] = { active: true }; // no velocity, no note
     const buffer = buildE2PatternFile(input);
     const view = new DataView(buffer);
     const stepOffset = 0x900 + 0x30;
-    expect(view.getUint8(stepOffset + 1)).toBe(E2_DEFAULT_VELOCITY);
+    // v3.34: byte 1 = 0xFF KORG sentinel (parser maps → 127).
+    expect(view.getUint8(stepOffset + 1)).toBe(E2_DEFAULT_VELOCITY_RAW_BYTE);
+    expect(E2_DEFAULT_VELOCITY_RAW_BYTE).toBe(0xff);
+    // Decoded velocity is still the canonical default 127.
+    expect(E2_DEFAULT_VELOCITY).toBe(127);
+    // Active step still gets default note 0x48 (C5).
     expect(view.getUint8(stepOffset + 4)).toBe(E2_DEFAULT_NOTE);
   });
 
@@ -234,6 +244,98 @@ describe("Step encoding round-trip", () => {
     expect(part0.steps[4].velocity).toBe(64);
     expect(part0.steps[8].velocity).toBe(127);
     expect(part0.steps[12].velocity).toBe(32);
+  });
+});
+
+// ─── 4b. v3.34 bit-exact-polish encoding conventions ────────────────────────
+
+describe("v3.34: KORG-native encoding conventions", () => {
+  it("v3.34: Builder writes name NUL-padded after string content (BodyTalk1)", () => {
+    const buffer = buildE2PatternFile(makeMinimalInput({ name: "BodyTalk1" }));
+    const u8 = new Uint8Array(buffer);
+    // 9-char name, then 7 × 0x00 padding.
+    const expected = [0x42, 0x6f, 0x64, 0x79, 0x54, 0x61, 0x6c, 0x6b, 0x31,
+                      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+    for (let i = 0; i < 16; i++) {
+      expect(u8[0x110 + i], `byte ${i} of name field`).toBe(expected[i]);
+    }
+  });
+
+  it("v3.34: Builder writes name NUL-padded for empty / short names", () => {
+    const buffer = buildE2PatternFile(makeMinimalInput({ name: "Hi" }));
+    const u8 = new Uint8Array(buffer);
+    expect(u8[0x110]).toBe(0x48); // 'H'
+    expect(u8[0x111]).toBe(0x69); // 'i'
+    // All remaining 14 bytes are NUL (NOT 0x20 as in pre-v3.34).
+    for (let i = 2; i < 16; i++) {
+      expect(u8[0x110 + i], `byte ${i} of name field`).toBe(0x00);
+    }
+    // Parser still trims trailing whitespace+NUL → decoded name "Hi".
+    const parsed = parseElectribePattern(buffer) as ParsedPattern;
+    expect(parsed.name).toBe("Hi");
+  });
+
+  it("v3.34: Builder writes 0xFF sentinel for explicit velocity 127 on active step", () => {
+    const input = makeMinimalInput();
+    input.parts[0].steps[0] = { active: true, velocity: 127 };
+    const buffer = buildE2PatternFile(input);
+    const view = new DataView(buffer);
+    expect(view.getUint8(0x900 + 0x30 + 1)).toBe(0xff);
+    // Parser maps 0xFF → 127, so the decoded velocity round-trips.
+    const parsed = parseElectribePattern(buffer) as ParsedPattern;
+    expect(parsed.parts[0].steps[0].velocity).toBe(127);
+  });
+
+  it("v3.34: Builder writes literal byte for non-127 explicit velocities", () => {
+    const input = makeMinimalInput();
+    input.parts[0].steps[0] = { active: true, velocity: 100 };
+    input.parts[0].steps[1] = { active: true, velocity: 64 };
+    input.parts[0].steps[2] = { active: true, velocity: 0 };
+    input.parts[0].steps[3] = { active: true, velocity: 1 };
+    input.parts[0].steps[4] = { active: true, velocity: 126 };
+    const buffer = buildE2PatternFile(input);
+    const view = new DataView(buffer);
+    const base = 0x900 + 0x30;
+    expect(view.getUint8(base + 0 * 12 + 1)).toBe(100);
+    expect(view.getUint8(base + 1 * 12 + 1)).toBe(64);
+    expect(view.getUint8(base + 2 * 12 + 1)).toBe(0);
+    expect(view.getUint8(base + 3 * 12 + 1)).toBe(1);
+    expect(view.getUint8(base + 4 * 12 + 1)).toBe(126);
+  });
+
+  it("v3.34: Inactive step byte 4 (note) = 0x00 (NOT 0x48)", () => {
+    const input = makeMinimalInput();
+    // Leave all steps inactive (the makeMinimalInput default).
+    const buffer = buildE2PatternFile(input);
+    const view = new DataView(buffer);
+    const stepBase = 0x900 + 0x30;
+    // Spot-check the first 16 inactive steps of part 0.
+    for (let s = 0; s < 16; s++) {
+      expect(view.getUint8(stepBase + s * 12 + 4), `inactive step ${s} note byte`).toBe(
+        E2_INACTIVE_STEP_NOTE,
+      );
+      expect(view.getUint8(stepBase + s * 12 + 4), `inactive step ${s} == 0x00`).toBe(0x00);
+    }
+  });
+
+  it("v3.34: Inactive step byte 1 (velocity) = 0xFF sentinel (unset → 0xFF)", () => {
+    const input = makeMinimalInput();
+    // makeMinimalInput uses `{ active: false }` so velocity is unset.
+    const buffer = buildE2PatternFile(input);
+    const view = new DataView(buffer);
+    const stepBase = 0x900 + 0x30;
+    for (let s = 0; s < 16; s++) {
+      expect(view.getUint8(stepBase + s * 12 + 1), `inactive step ${s} vel byte`).toBe(0xff);
+    }
+  });
+
+  it("v3.34: Active step with explicit note still writes that note byte", () => {
+    const input = makeMinimalInput();
+    input.parts[0].steps[0] = { active: true, note: 60, velocity: 80 };
+    const buffer = buildE2PatternFile(input);
+    const view = new DataView(buffer);
+    expect(view.getUint8(0x900 + 0x30 + 4)).toBe(60);
+    expect(view.getUint8(0x900 + 0x30 + 1)).toBe(80);
   });
 });
 

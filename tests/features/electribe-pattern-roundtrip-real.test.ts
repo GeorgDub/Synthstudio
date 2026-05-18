@@ -2,6 +2,11 @@
  * tests/features/electribe-pattern-roundtrip-real.test.ts
  *
  * v3.33.0 — REAL-FILE ROUND-TRIP for the v3.26 `.e2spat` Builder.
+ * v3.34.0 — STRENGTHENED bit-exact-drift bounds + 3 NEW encoding-style
+ *           assertions verifying that the v3.34 builder adopts the KORG-native
+ *           encoding conventions (name NUL-pad, 0xFF velocity sentinel,
+ *           inactive-step note 0x00). The drift caps were ratcheted down to
+ *           catch any future regression.
  *
  * Motivation
  * ──────────
@@ -348,8 +353,17 @@ function computeByteDiff(built: ArrayBuffer, real: Uint8Array): ByteDiffReport {
 }
 
 /** True if the byte at `offset` corresponds to a field the v3.13/v3.15
- *  parser decodes — i.e. a field the builder is contractually obliged to
- *  preserve. */
+ *  parser ACTUALLY DECODES and returns from `parseElectribePattern`. A
+ *  decoded-field byte must round-trip BIT-EXACTLY through the builder
+ *  (any diff here is a regression / builder bug).
+ *
+ *  v3.34 NOTE: step byte 2 (constant 0x60), byte 3 (accent), and byte 4
+ *  (note) are NOT decoded by the parser — they don't appear in the
+ *  `ParsedPartStep` interface (which only has `active` + `velocity`).
+ *  Real KORG files use varying values at these offsets, but the builder
+ *  writes deterministic defaults. The drift in these bytes is encoding-
+ *  style, NOT a semantic round-trip failure.
+ */
 function isDecodedField(offset: number): boolean {
   // File-Header markers + version field (0x00..0x024).
   if (offset < 0x024) return true;
@@ -360,14 +374,16 @@ function isDecodedField(offset: number): boolean {
   if (offset === 0x122 || offset === 0x123) return true;
   if (offset === 0x125) return true;
 
-  // Per-part decoded bytes (volume @+0x15, pan @+0x22, steps @ +0x30..+0x32F)
+  // Per-part decoded bytes (volume @+0x15, pan @+0x22, step trigger +
+  // step velocity only — see v3.34 NOTE above).
   if (offset >= ELECTRIBE_REAL_PARTS_OFFSET) {
     const partRel = offset - ELECTRIBE_REAL_PARTS_OFFSET;
     if (partRel >= 16 * ELECTRIBE_REAL_PART_STRIDE) return false;
     const inPart = partRel % ELECTRIBE_REAL_PART_STRIDE;
     if (inPart === ELECTRIBE_REAL_PART_VOLUME_OFFSET) return true;
     if (inPart === ELECTRIBE_REAL_PART_PAN_OFFSET) return true;
-    // Step records: bytes 0 (trigger), 1 (velocity), 2 (const 0x60), 4 (note).
+    // Step records: ONLY byte 0 (trigger) and byte 1 (velocity) are
+    // parser-decoded. Bytes 2/3/4 are not exposed in ParsedPartStep.
     if (inPart >= ELECTRIBE_REAL_PART_HEADER_BYTES) {
       const stepArea = inPart - ELECTRIBE_REAL_PART_HEADER_BYTES;
       if (stepArea >= ELECTRIBE_REAL_STEPS_PER_PART * ELECTRIBE_REAL_STEP_RECORD_BYTES) {
@@ -376,9 +392,7 @@ function isDecodedField(offset: number): boolean {
       const inStep = stepArea % ELECTRIBE_REAL_STEP_RECORD_BYTES;
       return (
         inStep === ELECTRIBE_REAL_STEP_TRIGGER_OFFSET ||
-        inStep === ELECTRIBE_REAL_STEP_VELOCITY_OFFSET ||
-        inStep === 2 || // constant 0x60 — builder writes this
-        inStep === ELECTRIBE_REAL_STEP_NOTE_OFFSET
+        inStep === ELECTRIBE_REAL_STEP_VELOCITY_OFFSET
       );
     }
   }
@@ -604,50 +618,59 @@ runner("electribePatternBuilder – Real-File Round-Trip (v3.33.0)", () => {
   //   v3.26 BUILDER BUGS FOUND: NONE. All decoded-field values round-trip
   //   correctly; the byte-level diffs are pure encoding-style choices.
 
-  it("Bit-Diff (info): BodyTalk1 byte-drift is encoding-style only (not semantic)", () => {
+  it("v3.34 Bit-Diff: BodyTalk1 total-drift is BOUNDED-TIGHTER than v3.33", () => {
+    // v3.33 baseline: ~5000-7000 total drift. After v3.34 bit-exact-polish
+    // (name NUL-pad, 0xFF velocity sentinel, inactive-step note 0x00),
+    // BodyTalk1 drift drops to ~1030 total bytes. Remaining drift is in
+    // bytes the parser does NOT decode (step accent byte 3, step note
+    // byte 4, part-header unknown offsets, post-pattern footer "PTED"
+    // marker). NEW v3.34 upper bound: < 1500 total bytes (was ~7000 v3.33).
     const real = loadReal(REAL_FILE_BODYTALK);
     const parsed = parseElectribePattern(real);
     const built = buildE2PatternFile(projectParsedToBuilderInput(parsed));
 
     const diff = computeByteDiff(built, real);
 
-    // Total drift: includes name-padding + 0xFF-velocity + part-header
-    // unknown bytes + pattern footer. Recorded baseline ~5000-7000 bytes.
-    expect(diff.totalDiff).toBeGreaterThan(0); // some drift IS expected
-    expect(diff.totalDiff).toBeLessThan(8000);
+    // Total drift: post-v3.34 must be < 1500 bytes (was ~7000 v3.33).
+    expect(diff.totalDiff, "BodyTalk1 total drift after v3.34").toBeLessThan(1500);
 
-    // The "decoded-field" diff counter measures byte-difference inside
-    // the regions the v3.13/v3.15 parser inspects. We've documented the
-    // 3 encoding-style differences above; the bound (~1500) catches a
-    // *regression* in case a future change adds NEW kinds of decoded-byte
-    // drift on top of the 3 documented ones.
-    expect(diff.decodedFieldDiff).toBeLessThan(1500);
+    // CRITICAL: decoded-field drift = bytes the parser actually decodes
+    // (trigger, velocity, volume, pan, name, BPM, stepLength). After v3.34
+    // this should be near-zero — only the 3 trailing spaces in
+    // "BodyTalk1   \x00\x00\x00\x00" the parser strips → builder writes NULs.
+    expect(diff.decodedFieldDiff, "BodyTalk1 decoded-field drift after v3.34").toBeLessThan(
+      10,
+    );
   });
 
-  it("Bit-Diff (info): 181_Init drift is bounded (mostly-zero reference file)", () => {
+  it("v3.34 Bit-Diff: 181_Init total drift < 200 bytes (close to bit-exact)", () => {
     const real = loadReal(REAL_FILE_INIT_181);
     const parsed = parseElectribePattern(real);
     const built = buildE2PatternFile(projectParsedToBuilderInput(parsed));
 
     const diff = computeByteDiff(built, real);
-    // Init181 has only 4 active steps total → drift comes mainly from:
-    //   - name NUL-padding vs builder space-padding (8 bytes)
-    //   - per-step note: real has 0x00, builder has 0x48 (1020 inactive × 1)
-    //   - part-header unknown bytes (defaults differ)
-    //   - motion region + pattern footer (zeros either way, but real may
-    //     have unknown bytes)
-    // Recorded baseline 2026-05-18: ~1028 decoded-byte drift, ~5400 total.
-    expect(diff.totalDiff).toBeLessThan(7000);
-    expect(diff.decodedFieldDiff).toBeLessThan(1100);
+    // Init181 has only 4 active steps + uses 0x00 inactive-note convention.
+    // After v3.34 polish: total drift ~152 bytes (part-header unknown bytes
+    // + post-name header + post-pattern footer). Decoded-field drift = 0.
+    expect(diff.totalDiff, "Init181 total drift after v3.34").toBeLessThan(200);
+    expect(diff.decodedFieldDiff, "Init181 decoded-field drift after v3.34").toBe(0);
   });
 
-  it("Bit-Diff (info): all 4 real files show bounded decoded-byte drift", () => {
-    // We assert per-file caps so a regression in any single file is caught.
+  it("v3.34 Bit-Diff: all 4 real files show TIGHTENED bounded drift", () => {
+    // v3.34 ratcheted-down per-file caps. Recorded baselines after v3.34
+    // builder fixes (verified manually 2026-05-18):
+    //   BodyTalk1: ~1030 total / ~3 decoded (was ~7000 / ~492 in v3.33)
+    //   Init181:   ~152 total  / 0 decoded   (was ~5400 / ~1028 in v3.33)
+    //   Init250:   bounded (similar shape to BodyTalk1)
+    //   Advisory1: bounded
+    // Decoded-field caps are now stringent (< 20) — any future regression
+    // that adds new decoded-byte drift will trip these. Total caps still
+    // allow part-header unknown-byte drift the parser doesn't expose.
     const caps: Record<string, { decoded: number; total: number }> = {
-      [REAL_FILE_BODYTALK]: { decoded: 1500, total: 8000 },
-      [REAL_FILE_INIT_181]: { decoded: 1100, total: 7000 },
-      [REAL_FILE_INIT_250]: { decoded: 1500, total: 8000 },
-      [REAL_FILE_ADVISORY]: { decoded: 1500, total: 8000 },
+      [REAL_FILE_BODYTALK]: { decoded: 10, total: 1500 },
+      [REAL_FILE_INIT_181]: { decoded: 5, total: 200 },
+      [REAL_FILE_INIT_250]: { decoded: 20, total: 1500 },
+      [REAL_FILE_ADVISORY]: { decoded: 20, total: 1500 },
     };
     for (const name of REAL_FILES) {
       const real = loadReal(name);
@@ -659,6 +682,69 @@ runner("electribePatternBuilder – Real-File Round-Trip (v3.33.0)", () => {
       );
       expect(diff.totalDiff, `${name}: totalDiff`).toBeLessThan(caps[name].total);
     }
+  });
+
+  // ─── v3.34: encoding-convention assertions on built output ────────────────
+
+  it("v3.34: Builder output at 0x110 is NUL-padded ab name-length (BodyTalk1)", () => {
+    const real = loadReal(REAL_FILE_BODYTALK);
+    const parsed = parseElectribePattern(real);
+    const built = new Uint8Array(buildE2PatternFile(projectParsedToBuilderInput(parsed)));
+    // Real parsed name is "BodyTalk1" (9 chars). v3.34 builder must write
+    // 9 ASCII chars + 7 × 0x00 (NOT spaces) into the 16B name field.
+    const expected = [0x42, 0x6f, 0x64, 0x79, 0x54, 0x61, 0x6c, 0x6b, 0x31,
+                      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+    for (let i = 0; i < 16; i++) {
+      expect(built[0x110 + i], `name byte ${i}`).toBe(expected[i]);
+    }
+  });
+
+  it("v3.34: Builder writes 0xFF velocity sentinel on active steps with vel===127", () => {
+    // Construct minimal pattern with one active step at velocity 127. The
+    // v3.34 builder must encode byte 1 as 0xFF (the KORG sentinel).
+    const input: E2PatternInput = {
+      name: "Test",
+      bpm: 120,
+      stepLength: 16,
+      parts: new Array(16).fill(0).map(() => ({
+        steps: new Array(64).fill(0).map(() => ({ active: false } as E2StepInput)),
+      })),
+    };
+    input.parts[0].steps[0] = { active: true, velocity: 127 };
+    const built = new Uint8Array(buildE2PatternFile(input));
+    // part 0 step 0 record: offset = 0x900 + 0x30 = 0x930. byte 1 = velocity.
+    expect(built[0x930 + 1]).toBe(0xff);
+    // Parse-round-trip: still decodes as velocity 127.
+    const reparsed = parseElectribePattern(built.buffer);
+    expect(reparsed.parts[0].steps[0].velocity).toBe(127);
+  });
+
+  it("v3.34: Builder writes 0x00 on byte 4 of every INACTIVE step", () => {
+    const real = loadReal(REAL_FILE_INIT_181);
+    const parsed = parseElectribePattern(real);
+    const built = new Uint8Array(buildE2PatternFile(projectParsedToBuilderInput(parsed)));
+    // Count zero vs non-zero byte-4 values in inactive-step records across
+    // all 16 parts × 64 steps.
+    let inactiveTotal = 0;
+    let inactiveByte4Zero = 0;
+    for (let p = 0; p < 16; p++) {
+      const partStart = ELECTRIBE_REAL_PARTS_OFFSET + p * ELECTRIBE_REAL_PART_STRIDE;
+      const stepBase = partStart + ELECTRIBE_REAL_PART_HEADER_BYTES;
+      for (let s = 0; s < ELECTRIBE_REAL_STEPS_PER_PART; s++) {
+        const off = stepBase + s * ELECTRIBE_REAL_STEP_RECORD_BYTES;
+        const trig = built[off + ELECTRIBE_REAL_STEP_TRIGGER_OFFSET];
+        if (trig === 0x00) {
+          inactiveTotal++;
+          if (built[off + ELECTRIBE_REAL_STEP_NOTE_OFFSET] === 0x00) {
+            inactiveByte4Zero++;
+          }
+        }
+      }
+    }
+    // Init181 has 4 active steps total → 16×64 - 4 = 1020 inactive steps.
+    expect(inactiveTotal).toBeGreaterThan(1000);
+    // EVERY inactive step record must have byte 4 = 0x00.
+    expect(inactiveByte4Zero, "inactive steps with note byte 0x00").toBe(inactiveTotal);
   });
 
   // ─── 7. Builder produces 16640 bytes for every real input ─────────────────

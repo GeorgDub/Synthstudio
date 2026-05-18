@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.33.0",
+    version: "3.34.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -89,6 +89,21 @@ const INDEX = {
   // ─── KNOWN FILE INDEX ──────────────────────────────────────
   // Key files agents have analyzed. Add new entries after working on a file.
   files: {
+    "client/src/utils/electribePatternBuilder.ts (v3.34.0)": {
+      role:     "v3.34.0 BIT-EXACT POLISH: 3 KORG-native Encoding-Konventionen adoptiert um v3.33 RT-Findings zu schliessen. (1) writeAsciiNulPadded (vorher writeAsciiSpacePadded): name-Bytes NUL-padded ab string-content-length statt all-space (BodyTalk1 9-char → 9 ASCII + 7×0x00). Real KORG-Hardware-Files nutzen NUL-pad — Parser strippt beide Varianten trim+NUL, semantisch identisch. (2) Velocity-Sentinel: writeStepRecord schreibt byte 1 = 0xFF (ELECTRIBE_REAL_VELOCITY_DEFAULT_SENTINEL) wenn velocity unset ODER explicit===127. Andere Werte 0..126 literal. Parser map 0xFF → 127, round-trip semantisch identisch. (3) Inactive-Step Note-Byte: writeStepRecord byte 4 = 0x00 wenn !step.active (matches Real Init181 convention; Real BodyTalk1 nutzt 0x48 — beides parser-ignoriert da ParsedPartStep nur active+velocity exposed). Active steps behalten Default 0x48 oder explicit step.note. NEUE exports: E2_DEFAULT_VELOCITY_RAW_BYTE=0xFF, E2_INACTIVE_STEP_NOTE=0x00. E2_DEFAULT_VELOCITY=127 (canonical) statt 96. Imports erweitert um ELECTRIBE_REAL_VELOCITY_DEFAULT_SENTINEL/VALUE. BACKWARD-COMPAT: Parser bleibt unverändert, decode-Output für alle 4 Real-Files IDENTISCH zu v3.26. Drift-Reduction: BodyTalk1 7000→1030 (−85.3%) total, 492→3 (−99.4%) decoded; Init181 5400→152 (−97.2%) total, 1028→0 (−100%) decoded.",
+      lastSeen: "2026-05-18T17:40:00.000Z",
+      ownedBy:  "backend"
+    },
+    "tests/features/electribe-pattern-write.test.ts (v3.34.0)": {
+      role:     "v3.34.0 ERWEITERT: 34 → 41 Tests (7 NEU für v3.34 encoding conventions + 2 angepasst). NEU describe 'v3.34: KORG-native encoding conventions' (7 Tests): (1) name NUL-padded BodyTalk1 — exakte 16-Byte-Sequenz [0x42,0x6F,0x64,0x79,0x54,0x61,0x6C,0x6B,0x31, 0x00×7]. (2) name NUL-padded short 'Hi' + 14 NUL + Parser-Roundtrip 'Hi'. (3) 0xFF Sentinel für active vel===127 + Parser map 127. (4) Literal byte für non-127 (5 values: 100/64/0/1/126). (5) Inactive step byte 4 = 0x00 (E2_INACTIVE_STEP_NOTE) für 16 steps spot-check. (6) Inactive step byte 1 = 0xFF (Sentinel) für 16 steps spot-check. (7) Active step mit explicit note + velocity preserves both bytes. ANGEPASST: 'space-pads short names' → 'v3.34: NUL-pads short names' (Erwartung 0x20 → 0x00 für padding-bytes). 'uses default velocity 96 and default note 0x48 when unset' → 'v3.34: writes 0xFF velocity sentinel and default note 0x48 for ACTIVE unset step' (byte 1 = E2_DEFAULT_VELOCITY_RAW_BYTE=0xFF, canonical decoded vel = E2_DEFAULT_VELOCITY=127). Restliche 32 Tests UNVERÄNDERT grün. 41/41 GREEN nach pnpm test.",
+      lastSeen: "2026-05-18T17:40:00.000Z",
+      ownedBy:  "backend"
+    },
+    "tests/features/electribe-pattern-roundtrip-real.test.ts (v3.34.0)": {
+      role:     "v3.34.0 STRENGTHENED: 12 → 15 Tests (3 NEU + 3 Tightened-Caps). isDecodedField KORRIGIERT: step bytes 2/3/4 sind NICHT parser-decoded (ParsedPartStep exponiert nur active+velocity, NICHT accent/note/byte2-const). Nur trigger(0) + velocity(1) zählen als decoded fields. Bit-Diff-Bounds DRAMATISCH verschärft nach v3.34-builder-fixes: BodyTalk1 decoded-drift expect<10 (war <1500, actual=3 — die 3 trailing-spaces 'BodyTalk1   ' vor NULs in Real-File die wir nicht reproduzieren können da Parser strippt), BodyTalk1 total-drift expect<1500 (war <8000, actual=1030). Init181 decoded-drift EXACT===0 (war <1100, actual=0 — bit-perfekt für decoded fields), Init181 total-drift expect<200 (war <7000, actual=152). NEU 3 Encoding-Convention-Assertion-Tests: (1) 'Builder output at 0x110 NUL-padded ab name-length (BodyTalk1)' validiert byte-exakt erwartete 16-Byte-Sequenz gegen Real-File-parsed-name. (2) 'Builder writes 0xFF velocity sentinel auf active step mit vel===127' baut minimal pattern + checked byte @0x931 === 0xFF + Parser-decodes 127. (3) 'Builder writes 0x00 byte 4 auf EVERY inactive step' iteriert alle 16×64=1024 records (1020 inactive) + assertet alle inactive haben byte 4 = 0x00. Header-Comment um v3.34 STRENGTHENED section erweitert. 15/15 GREEN.",
+      lastSeen: "2026-05-18T17:40:00.000Z",
+      ownedBy:  "backend"
+    },
     "tests/features/electribe-pattern-roundtrip-real.test.ts (v3.33.0)": {
       role:     "v3.33.0 NEU: 12 Tests in 1 describe (+ conditional skip via fs.existsSync auf 'Korg e2s files/'), env:node. Closes Caveat 'v3.26 nur synthetischer round-trip, kein RT-Test mit ECHTEN User-Files'. (1) Sanity 1×: alle 4 real-Files load + isRealElectribeFile + looksLikeE2PatternFile + 16640B. (2) Verifier 1 (parse → projectParsedToBuilderInput → buildE2PatternFile → parseElectribePattern → expectParsedEqual) 4×: BodyTalk1 (name+BPM+stepLength+step-active state, 314 active steps), per-part volume+pan+per-step velocity sum, Init181 (16-step, 4 active), Init250 (64-step, 274 active), Advisory1 (BPM 128, 90 active, '$'-name). (3) Synthstudio-loop 2×: Init181 survives parse→synthImport→PatternData→convertSynthstudioPatternToE2→build→parse mit lossless name/bpm/stepLength + active-counts + vol/pan-drift≤1; BodyTalk1 caps 64→32 (documented loss, asserts final.stepLength===32 + active-counts match first-32-only). (4) Bit-Diff 3×: BodyTalk1 totalDiff<8000 + decodedFieldDiff<1500; Init181 bounded drift; all-4-files bounded per-file caps. (5) Builder yields exact 16640B für alle 4 real-Files. Helpers: projectParsedToBuilderInput (inverse map), synthImportToPatternData, computeByteDiff mit isDecodedField (whitelist v3.13/v3.15 parser-decoded bytes), expectParsedEqual. Top-of-file-Docstring (~80 lines) dokumentiert ALLE findings: (a) v3.26 BUILDER-BUGS=NONE (Verifier 1 GREEN), (b) byte-level encoding-style diffs (Name space vs NUL, Velocity 0xFF sentinel, Inactive-step note) sind dekodier-äquivalent, (c) Synthstudio-loop-lossy fields (64→32 cap, velocity-0→100, per-step→per-part pitch, motion NOT roundtripped), (d) optional builder-polish opportunities.",
       lastSeen: "2026-05-18T16:15:00.000Z",
@@ -1427,6 +1442,36 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "backend",
+      timestamp: "2026-05-18T17:40:00.000Z",
+      done: [
+        "v3.34.0: E2 Pattern Builder Bit-Exact Polish — closes v3.33 RT-Findings. 3 KORG-native Encoding-Konventionen adoptiert: (1) Name NUL-pad statt all-space ab name-length, (2) 0xFF Velocity-Sentinel für unset/explicit-127 (statt 96/127 literal), (3) Inactive-Step Note-Byte 0x00 (statt 0x48). Parser-Semantik UNVERÄNDERT — alle 3 Konventionen sind dekodier-äquivalent zum v3.26-Output, aber bringen Builder-Output BYTE-NÄHER an reale KORG-Hardware-Files.",
+        "GEÄNDERT client/src/utils/electribePatternBuilder.ts (~30 LOC diff). writeAsciiSpacePadded → writeAsciiNulPadded (NUL-pad nach Content-Length statt all-space). writeStepRecord: velocity-Logik 2-Branch (unset → 0xFF Sentinel | explicit===127 → 0xFF | sonst literal); note-Byte conditional (active → clamp(note, 0..127) default 0x48 | inactive → 0x00). NEUE Constants exportiert: E2_DEFAULT_VELOCITY_RAW_BYTE=0xFF, E2_INACTIVE_STEP_NOTE=0x00. E2_DEFAULT_VELOCITY canonical = 127 jetzt (war 96). Imports erweitert um ELECTRIBE_REAL_VELOCITY_DEFAULT_SENTINEL + ELECTRIBE_REAL_VELOCITY_DEFAULT_VALUE aus electribeImport.",
+        "GEÄNDERT tests/features/electribe-pattern-write.test.ts: 34 → 41 Tests (7 NEU). NEU describe 'v3.34: KORG-native encoding conventions' mit 7 Tests: name NUL-padded BodyTalk1 (exakte 16-Byte-Sequenz), name NUL-padded short ('Hi' + 14 NUL), 0xFF Sentinel für vel===127, literal byte für non-127 (5 values inkl. 0/1/126), inactive byte 4 = 0x00 (16-step spot-check), inactive byte 1 = 0xFF (16-step spot-check), explicit note byte für active. Existing test 'space-pads short names' → 'v3.34: NUL-pads short names' (Erwartung 0x20 → 0x00). Existing test 'uses default velocity 96' → 'v3.34: writes 0xFF velocity sentinel' (Erwartung 96 → 0xFF + canonical 127). Alle anderen 32 Tests UNVERÄNDERT grün.",
+        "GEÄNDERT tests/features/electribe-pattern-roundtrip-real.test.ts: 12 → 15 Tests (3 NEU + 3 Tightened). isDecodedField korrigiert: step bytes 2/3/4 sind NICHT parser-decoded (ParsedPartStep exponiert nur active+velocity), nur bytes 0+1 zählen als decoded. Bit-Diff-Bounds DRAMATISCH verschärft: BodyTalk1 decoded-drift <10 (war <1500, neuer Wert 3 — die 3 trailing-spaces 'BodyTalk1   ' vor NULs), BodyTalk1 total-drift <1500 (war <8000, neuer Wert 1030). Init181 decoded-drift ===0 (war <1100, neuer Wert 0), Init181 total-drift <200 (war <7000, neuer Wert 152). NEU 3 Encoding-Convention-Tests: 'Builder output at 0x110 NUL-padded ab name-length (BodyTalk1)' validiert byte-exakt erwartete 16-Byte-Sequenz, 'Builder writes 0xFF velocity sentinel auf active vel===127', 'Builder writes 0x00 byte 4 auf EVERY inactive step' iteriert alle 16×64 records.",
+        "MESSWERTE vor/nach v3.34 (real-file drift gegen unveränderte Real-Files):",
+        "  • BodyTalk1: totalDiff 7000 → 1030 (−85.3%), decodedFieldDiff 492 → 3 (−99.4%)",
+        "  • Init181:   totalDiff 5400 → 152  (−97.2%), decodedFieldDiff 1028 → 0 (−100%)",
+        "  Verbleibendes drift: part-header unknown-bytes (parser dekodiert NICHT), step accent (byte 3) + step note (byte 4) — beide NICHT parser-exposed → erwartet, kein Builder-Bug. Real-File Footer 'PTED' marker @0x3cfc..0x3cff (4B, parser ignoriert) bleibt.",
+        "BACKWARD-COMPAT: Parser-Logik bleibt unverändert (kein Schema-Bruch). Alle 34 existing electribe-pattern-write Tests grün (2 Tests in Erwartung an v3.34-Verhalten angepasst, sind aber NICHT 'gebrochen' — sie testen die Encoding-Convention die der Builder ab v3.34 verwendet). Alle 12 existing roundtrip-real Tests grün. parseElectribePattern decode-Output IDENTISCH vor/nach v3.34 — verified via expectParsedEqual auf alle 4 Real-Files.",
+        "TEST-RESULTAT: pnpm check clean. pnpm test 185 files / 4267 tests passed (16 skipped, keine Regression). electribe-pattern-write 41/41 GREEN. electribe-pattern-roundtrip-real 15/15 GREEN.",
+        "CAVEATS: Step-accent (byte 3) und step-note (byte 4) Drift bleibt — keine API um sie aus Parser zurück zu bekommen. Bei Bedarf später: ParsedPartStep um 'accent' + 'note' erweitern + projectParsedToBuilderInput durchreichen → BodyTalk1 drift ginge auf < 50. Aktuell nicht implementiert weil v3.34-Scope strikt auf 3 Encoding-Konventionen begrenzt.",
+        "package.json + agents/INDEX.js version 3.33.0 → 3.34.0."
+      ],
+      next: [
+        "Optional v3.35: ParsedPartStep um accent + note erweitern + projectParsedToBuilderInput forwarden → BodyTalk1 drift < 50 bytes (full bit-exact außer parser-unknown header-bytes).",
+        "Optional v3.35: 'PTED' Pattern-Footer-Marker @0x3cfc..0x3cff im Builder schreiben (4 bytes 'PTED' literal) → −4 bytes drift jedem File.",
+        "Optional v3.35: Pattern-Header-Region 0x120..0x200 reverse-engineer — Init181 hat 7 non-zero bytes hier, BodyTalk1 hat 8. Wahrscheinlich step-record-count, swing, length-bits o.ä."
+      ],
+      changed: [
+        "client/src/utils/electribePatternBuilder.ts (NUL-pad name, 0xFF velocity sentinel, inactive-step note 0x00)",
+        "tests/features/electribe-pattern-write.test.ts (34 → 41 Tests, 7 NEU für v3.34 + 2 angepasst)",
+        "tests/features/electribe-pattern-roundtrip-real.test.ts (12 → 15 Tests, 3 NEU + 3 Tightened-Caps + isDecodedField korrigiert)",
+        "package.json (3.33.0 → 3.34.0)",
+        "agents/INDEX.js (version + workLog v3.34.0 entry + files-Eintraege)"
+      ]
+    },
     {
       agent:     "testing",
       timestamp: "2026-05-18T16:15:00.000Z",

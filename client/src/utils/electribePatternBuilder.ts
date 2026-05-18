@@ -2,6 +2,11 @@
  * client/src/utils/electribePatternBuilder.ts
  *
  * v3.26.0 — E2 Pattern WRITE (.e2spat)
+ * v3.34.0 — BIT-EXACT POLISH: Adopt 3 KORG-native encoding conventions
+ *           (name NUL-pad, 0xFF velocity sentinel, inactive-step note 0x00)
+ *           to close the encoding-style drift the v3.33 real-file round-trip
+ *           tests surfaced. Parser semantics unchanged; output is closer to
+ *           real KORG E2 byte layout.
  *
  * Encodes a Synthstudio-Pattern into a binary 16640-byte KORG Electribe 2
  * Sampler `.e2spat` file. Pure-TypeScript, isomorphic, no Electron/DOM deps.
@@ -65,6 +70,8 @@ import {
   ELECTRIBE_REAL_STEP_TRIGGER_OFFSET,
   ELECTRIBE_REAL_STEP_VELOCITY_OFFSET,
   ELECTRIBE_REAL_STEP_NOTE_OFFSET,
+  ELECTRIBE_REAL_VELOCITY_DEFAULT_SENTINEL,
+  ELECTRIBE_REAL_VELOCITY_DEFAULT_VALUE,
   ELECTRIBE_MOTION_PARAM_TABLE_OFFSET,
   ELECTRIBE_MOTION_TARGET_TABLE_OFFSET,
   ELECTRIBE_MOTION_DATA_TABLE_OFFSET,
@@ -141,14 +148,21 @@ const STEP_LENGTH_CODE_MAP: Record<16 | 32 | 64, number> = {
 
 // ─── Defaults (match observed read-side defaults / bank-histogram defaults) ──
 
-/** Default velocity written when caller doesn't set one (matches the constant
- *  0x60 byte the reader sees in the step record at byte index 1 for default
- *  velocity-127, but we want round-trip to give back the SAME velocity the
- *  caller asked for — so we use 96 as a "no-velocity-specified" canonical). */
-export const E2_DEFAULT_VELOCITY = 96;
+/** v3.34: Default velocity written when caller doesn't set one is now encoded
+ *  as the 0xFF sentinel byte the KORG hardware uses ("use default 127"). The
+ *  parser decodes 0xFF → 127, so the semantic round-trip is `undefined →
+ *  byte 0xFF → parsed velocity 127`. This matches the byte layout observed in
+ *  the real BodyTalk1 reference file across ~1000 active step records. */
+export const E2_DEFAULT_VELOCITY = ELECTRIBE_REAL_VELOCITY_DEFAULT_VALUE; // 127
+/** v3.34: Raw byte written for unset (or 127) velocity — KORG default sentinel. */
+export const E2_DEFAULT_VELOCITY_RAW_BYTE = ELECTRIBE_REAL_VELOCITY_DEFAULT_SENTINEL; // 0xFF
 /** Default MIDI note (C5) — matches the `0x48` constant observed across the
- *  Init181 reference file (1024 identical step-records). */
+ *  Init181 reference file (1024 identical step-records). Used ONLY for ACTIVE
+ *  steps; inactive steps now write 0x00 (smaller bit-drift vs real files). */
 export const E2_DEFAULT_NOTE = 0x48;
+/** v3.34: Inactive-step note byte. Real Init181 uses 0x00 (smaller drift vs
+ *  the BodyTalk1 0x48 alternative). Parser ignores per-step note. */
+export const E2_INACTIVE_STEP_NOTE = 0x00;
 /** Byte 2 of every step record is a constant 0x60 (note-attribute prefix). */
 export const E2_STEP_BYTE2_CONSTANT = 0x60;
 
@@ -175,18 +189,32 @@ function clampInt(value: unknown, min: number, max: number, fallback: number): n
 }
 
 /**
- * Writes an ASCII string into `view` starting at `offset`, truncated to `length`
- * bytes and SPACE-padded (0x20). Non-ASCII chars are coerced to '?'.
- * The read-side `readAsciiAt` trims trailing whitespace so spaces vs zeros are
- * functionally identical, but spaces are the encoding the KORG hardware uses.
+ * v3.34: Writes an ASCII string into `view` starting at `offset`, truncated to
+ * `length` bytes and NUL-padded (0x00) after the string-content. Non-ASCII
+ * chars in the content are coerced to '?'.
+ *
+ * Real KORG E2 hardware files use NUL-padding after the name (e.g.
+ * `"BodyTalk1\x00\x00\x00\x00\x00\x00\x00"` for a 9-char name in a 16-byte
+ * field). Some files have trailing spaces then NUL (`"BodyTalk1\x20\x20\x20\x00..."`).
+ * Either form decodes identically through `readAsciiAt` (which strips NUL
+ * and trims trailing whitespace), but adopting the NUL-padding convention
+ * brings the builder output byte-closer to real-file layout (typical drift
+ * reduction: 5-7 bytes per file).
+ *
+ * Functions identically to the pre-v3.34 space-padded variant w.r.t. the
+ * parser; the change is encoding-style only.
  */
-function writeAsciiSpacePadded(view: DataView, offset: number, value: string, length: number): void {
+function writeAsciiNulPadded(view: DataView, offset: number, value: string, length: number): void {
   const safe = typeof value === "string" ? value : "";
   for (let i = 0; i < length; i++) {
-    const ch = i < safe.length ? safe.charCodeAt(i) : 0x20;
-    // Only printable ASCII (32..126). Replace others with '?'.
-    const byte = ch >= 32 && ch <= 126 ? ch : 0x3f;
-    view.setUint8(offset + i, byte);
+    if (i < safe.length) {
+      const ch = safe.charCodeAt(i);
+      // Only printable ASCII (32..126). Replace others with '?'.
+      const byte = ch >= 32 && ch <= 126 ? ch : 0x3f;
+      view.setUint8(offset + i, byte);
+    } else {
+      view.setUint8(offset + i, 0x00);
+    }
   }
 }
 
@@ -208,25 +236,55 @@ function writeAscii(view: DataView, offset: number, value: string, length: numbe
 /**
  * Writes a single 12-byte step record at the given file-absolute offset.
  *
- * Encoding (matches v3.12 read-side):
+ * v3.34 encoding (matches v3.12 read-side semantics + real-KORG byte layout):
  *   byte 0: trigger (0/1)
- *   byte 1: velocity (0..127)
+ *   byte 1: velocity raw byte:
+ *             - 0xFF "default" sentinel when caller did NOT pass velocity
+ *               OR explicitly passed velocity===127
+ *             - 0..127 literal when caller passed a non-127 value
+ *           (Parser maps 0xFF → 127, so both forms decode identically.)
  *   byte 2: constant 0x60
  *   byte 3: accent flag (0/1)
- *   byte 4: note (0..127)
+ *   byte 4: note number:
+ *             - ACTIVE steps:   clamp(note, 0..127), default 0x48 (C5)
+ *             - INACTIVE steps: 0x00 (Real Init181 convention — parser
+ *               doesn't expose per-step note so this is encoding-only)
  *   bytes 5..11: zero
  */
 export function writeStepRecord(view: DataView, offset: number, step: E2StepInput): void {
   const trigger = step.active ? 0x01 : 0x00;
-  const velocity = clampInt(step.velocity, 0, 127, E2_DEFAULT_VELOCITY);
-  const note = clampInt(step.note, 0, 127, E2_DEFAULT_NOTE);
   const accent = step.accent ? 0x01 : 0x00;
 
+  // v3.34 — velocity byte
+  let velocityByte: number;
+  const hasExplicitVelocity =
+    typeof step.velocity === "number" && Number.isFinite(step.velocity);
+  if (!hasExplicitVelocity) {
+    // Unset → KORG "use-default-127" sentinel.
+    velocityByte = E2_DEFAULT_VELOCITY_RAW_BYTE; // 0xFF
+  } else {
+    const v = clampInt(step.velocity, 0, 127, ELECTRIBE_REAL_VELOCITY_DEFAULT_VALUE);
+    // Explicit 127 → also 0xFF sentinel (matches KORG hardware encoding,
+    // round-trips to 127 through the parser).
+    velocityByte = v === ELECTRIBE_REAL_VELOCITY_DEFAULT_VALUE
+      ? E2_DEFAULT_VELOCITY_RAW_BYTE
+      : v;
+  }
+
+  // v3.34 — note byte: inactive steps get 0x00 (smaller drift vs real files
+  // for sparse patterns; parser doesn't expose per-step note).
+  let noteByte: number;
+  if (!step.active) {
+    noteByte = E2_INACTIVE_STEP_NOTE; // 0x00
+  } else {
+    noteByte = clampInt(step.note, 0, 127, E2_DEFAULT_NOTE); // default 0x48
+  }
+
   view.setUint8(offset + ELECTRIBE_REAL_STEP_TRIGGER_OFFSET, trigger);
-  view.setUint8(offset + ELECTRIBE_REAL_STEP_VELOCITY_OFFSET, velocity);
+  view.setUint8(offset + ELECTRIBE_REAL_STEP_VELOCITY_OFFSET, velocityByte);
   view.setUint8(offset + 2, E2_STEP_BYTE2_CONSTANT);
   view.setUint8(offset + 3, accent);
-  view.setUint8(offset + ELECTRIBE_REAL_STEP_NOTE_OFFSET, note);
+  view.setUint8(offset + ELECTRIBE_REAL_STEP_NOTE_OFFSET, noteByte);
   // bytes 5..11 are already 0 (full file is zero-initialised before fill).
 }
 
@@ -337,8 +395,10 @@ export function buildE2PatternFile(input: E2PatternInput): ArrayBuffer {
   const ptstOffset = 0x100;
   writeAscii(view, ptstOffset, ELECTRIBE_REAL_PATTERN_MARKER, 16); // "PTST" + zeros
 
-  // Pattern name @ PTST+0x10 = 0x110, 16B ASCII space-padded.
-  writeAsciiSpacePadded(view, ELECTRIBE_REAL_NAME_OFFSET, input.name ?? "", 16);
+  // v3.34: Pattern name @ PTST+0x10 = 0x110, 16B ASCII NUL-padded after
+  // string-content (KORG-native encoding). Parser strips NULs and trims, so
+  // semantically identical to the previous all-space variant.
+  writeAsciiNulPadded(view, ELECTRIBE_REAL_NAME_OFFSET, input.name ?? "", 16);
 
   // BPM × 10 u16 LE @ 0x122. Clamp to hardware range and round.
   const bpmRaw =
