@@ -3016,6 +3016,21 @@ class AudioEngineClass {
     return buf ? buf.duration : null;
   }
 
+  /**
+   * Liefert den dekodierten AudioBuffer für sample-precise Edit-Workflows
+   * (v3.67.0: ZoomableWaveform). Read-only — Mutationen am Buffer würden
+   * die Engine-Wiedergabe brechen.
+   */
+  getAudioTrackBuffer(id: string): AudioBuffer | null {
+    return this.audioTrackBuffers.get(id) ?? null;
+  }
+
+  /** Sample-Rate des geladenen Audio-Track-Buffers oder null. */
+  getAudioTrackSampleRate(id: string): number | null {
+    const buf = this.audioTrackBuffers.get(id);
+    return buf ? buf.sampleRate : null;
+  }
+
   // ─── Private: Audio-Track Helpers ──────────────────────────────────────────
 
   /**

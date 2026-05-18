@@ -18,8 +18,8 @@
  * Keine direkte `window.electronAPI`-Nutzung – alle native Calls über
  * `useElectron()`-Hook.
  */
-import React, { useCallback, useEffect, useRef, useState } from "react";
-import { X } from "lucide-react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { X, ZoomIn } from "lucide-react";
 import { AudioEngine } from "@/audio/AudioEngine";
 import {
   updateAudioTrack,
@@ -42,6 +42,7 @@ import {
   type AudioTrackRuntimeState,
 } from "@/store/useAudioTrackStore";
 import { WaveformDisplay } from "@/components/WaveformDisplay/WaveformDisplay";
+import { ZoomableWaveform } from "@/components/AudioTrack/ZoomableWaveform";
 import { useElectron } from "../../../../electron/useElectron";
 
 // ─── Hilfsfunktionen ─────────────────────────────────────────────────────────
@@ -94,6 +95,10 @@ export function AudioTrackStrip({
   const [editingName, setEditingName] = useState(false);
   const [draftName, setDraftName] = useState(track.name);
   const [pos01, setPos01] = useState(0);
+
+  // v3.67.0: Zoom-Edit-Mode — toggle between mini-WaveformDisplay and ZoomableWaveform.
+  const [zoomEditOpen, setZoomEditOpen] = useState(false);
+  const [editorCursorSample, setEditorCursorSample] = useState<number | null>(null);
 
   // Playhead-Position via Engine-Callback
   useEffect(() => {
@@ -469,8 +474,8 @@ export function AudioTrackStrip({
         </button>
       </div>
 
-      {/* ── Mini-Waveform ──────────────────────────────────────────────────── */}
-      <div onClick={(e) => e.stopPropagation()} className="w-full">
+      {/* ── Mini-Waveform + Zoom-Toggle ──────────────────────────────────── */}
+      <div onClick={(e) => e.stopPropagation()} className="w-full relative">
         <WaveformDisplay
           peaks={peaksArr.current}
           duration={runtime.durationSec ?? 0}
@@ -480,7 +485,36 @@ export function AudioTrackStrip({
           height={48}
           zoomEnabled={false}
         />
+        {/* v3.67.0: Zoom-In Button (öffnet ZoomableWaveform Edit-Panel) */}
+        <button
+          type="button"
+          data-testid={`audio-track-zoom-toggle-${track.id}`}
+          aria-label="Open zoomable waveform editor"
+          title="Sample-precise Zoom-Editor öffnen"
+          onClick={(e) => {
+            e.stopPropagation();
+            setZoomEditOpen((v) => !v);
+          }}
+          className="absolute bottom-0.5 right-0.5 p-0.5 rounded bg-bg-panel/80 text-text-dim hover:text-accent-primary transition-colors"
+        >
+          <ZoomIn size={10} />
+        </button>
       </div>
+
+      {/* ── Zoom-Edit-Panel (v3.67.0) ─────────────────────────────────────── */}
+      {zoomEditOpen && (
+        <div
+          data-testid={`audio-track-zoom-panel-${track.id}`}
+          onClick={(e) => e.stopPropagation()}
+          className="w-full"
+        >
+          <AudioTrackZoomEditor
+            trackId={track.id}
+            cursorSample={editorCursorSample}
+            onCursorChange={setEditorCursorSample}
+          />
+        </div>
+      )}
 
       {/* ── Broken-Banner ──────────────────────────────────────────────────── */}
       {broken && (
@@ -896,6 +930,59 @@ export function AudioTrackStrip({
  */
 export function computePeaksFromBuffer(buffer: AudioBuffer, numPeaks = 200): Float32Array {
   return downsamplePeaks(buffer, numPeaks);
+}
+
+// ─── Sub-Component: AudioTrackZoomEditor (v3.67.0) ──────────────────────────
+
+interface AudioTrackZoomEditorProps {
+  trackId: string;
+  cursorSample: number | null;
+  onCursorChange: (s: number | null) => void;
+}
+
+/**
+ * Sample-precise Zoom-Editor — wired ZoomableWaveform an einen Track-Buffer.
+ * Liest channelData[0] aus AudioEngine.getAudioTrackBuffer(id). Wenn der
+ * Buffer nicht (mehr) verfügbar ist, zeigt das Panel einen Empty-State.
+ */
+function AudioTrackZoomEditor({
+  trackId,
+  cursorSample,
+  onCursorChange,
+}: AudioTrackZoomEditorProps) {
+  // memo: cache channelData reference so wir den Buffer nicht jeden Render neu greifen
+  const buffer = AudioEngine.getAudioTrackBuffer(trackId);
+  const channelData = useMemo(() => {
+    if (!buffer) return null;
+    try {
+      return buffer.getChannelData(0);
+    } catch {
+      return null;
+    }
+  }, [buffer]);
+  const sampleRate = buffer?.sampleRate ?? 44100;
+
+  if (!channelData) {
+    return (
+      <div
+        data-testid={`audio-track-zoom-empty-${trackId}`}
+        className="w-full px-2 py-3 text-[9px] text-text-dim text-center bg-bg-panel/40 rounded border border-border-color"
+      >
+        — Buffer nicht geladen —
+      </div>
+    );
+  }
+
+  return (
+    <ZoomableWaveform
+      channelData={channelData}
+      sampleRate={sampleRate}
+      cursorSample={cursorSample}
+      onCursorChange={onCursorChange}
+      height={80}
+      testId={`audio-track-zoom-${trackId}`}
+    />
+  );
 }
 
 /** Re-export for components that may want to inspect runtime state. */
