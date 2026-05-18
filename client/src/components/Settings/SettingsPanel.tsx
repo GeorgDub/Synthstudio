@@ -100,6 +100,13 @@ import {
   type SampleRateOption,
 } from "@/store/useAudioEngineConfigStore";
 import { AudioEngine } from "@/audio/AudioEngine";
+// v3.68.0: Quick-Action Macros
+import {
+  useQuickActionStore,
+  removeQuickActionMacro,
+  resetQuickActionMacros,
+} from "@/store/useQuickActionStore";
+import { MacroEditor } from "@/components/Macros/MacroEditor";
 
 // ─── Sidebar-Abschnitte ───────────────────────────────────────────────────────
 
@@ -120,6 +127,7 @@ type Section =
   | "osc"
   | "plugins"
   | "patches"
+  | "macros"
   | "saving"
   | "license"
   | "about";
@@ -140,6 +148,7 @@ const SECTIONS: Array<{ id: Section; icon: string; label: string; group?: string
   { id: "omnitribe",    icon: "🔌", label: "OmniTribe Device",     group: "Hardware" },
   { id: "saving",       icon: "💾", label: "Speichern",           group: "App" },
   { id: "patches",      icon: "🎚", label: "Patch-Library",       group: "App" },
+  { id: "macros",       icon: "⚡", label: "Quick-Action Macros",  group: "App" },
   { id: "osc",          icon: "📡", label: "OSC",                 group: "App" },
   { id: "plugins",      icon: "🧩", label: "Plugins",             group: "App" },
   { id: "license",      icon: "🔑", label: "Lizenz",              group: "App" },
@@ -1485,6 +1494,85 @@ function OscSection() {
 }
 
 /**
+ * QuickActionMacrosSection (v3.68.0) — UI-Liste der Quick-Action Macros.
+ * Öffnet `MacroEditor` für Edit-Vorgänge; ermöglicht Quick-Delete + Reset.
+ */
+function QuickActionMacrosSection() {
+  const { macros } = useQuickActionStore();
+  const [editorOpen, setEditorOpen] = React.useState(false);
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h3 className="text-lg font-semibold text-text-primary">Quick-Action Macros</h3>
+        <p className="text-sm text-text-muted mt-1">
+          User-definierte Multi-Action-Shortcuts. Eine Sequenz von Actions kann an einen
+          Tastatur-Shortcut gebunden und mit einer Taste ausgelöst werden.
+        </p>
+      </div>
+
+      <div className="flex items-center gap-2">
+        <button
+          onClick={() => setEditorOpen(true)}
+          className="px-3 py-1.5 text-sm bg-accent-primary text-bg-base rounded font-medium hover:opacity-90 transition-opacity"
+        >
+          Editor öffnen…
+        </button>
+        <button
+          onClick={() => {
+            if (confirm("Alle Macros auf Built-in-Defaults zurücksetzen?")) {
+              resetQuickActionMacros();
+            }
+          }}
+          className="px-3 py-1.5 text-sm bg-bg-elevated text-text-primary border border-border-color rounded hover:bg-bg-panel transition-colors"
+        >
+          Reset auf Defaults
+        </button>
+      </div>
+
+      <div className="border border-border-color rounded overflow-hidden">
+        {macros.length === 0 && (
+          <div className="px-4 py-6 text-sm text-text-dim text-center">
+            Keine Macros vorhanden.
+          </div>
+        )}
+        {macros.map((m) => (
+          <div
+            key={m.id}
+            className="flex items-center justify-between gap-3 px-4 py-2.5 border-b border-border-subtle last:border-b-0 hover:bg-bg-elevated"
+          >
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="font-medium text-text-primary truncate">{m.name}</span>
+                {m.keybind && (
+                  <span className="text-xs text-accent-secondary font-mono">{m.keybind}</span>
+                )}
+              </div>
+              {m.description && (
+                <div className="text-xs text-text-muted truncate">{m.description}</div>
+              )}
+              <div className="text-xs text-text-dim mt-0.5">
+                {m.actions.length} Action{m.actions.length === 1 ? "" : "s"}
+              </div>
+            </div>
+            <button
+              onClick={() => {
+                if (confirm(`Macro "${m.name}" löschen?`)) removeQuickActionMacro(m.id);
+              }}
+              className="px-2 py-1 text-xs text-accent-danger hover:bg-bg-base rounded"
+            >
+              Löschen
+            </button>
+          </div>
+        ))}
+      </div>
+
+      <MacroEditor open={editorOpen} onClose={() => setEditorOpen(false)} />
+    </div>
+  );
+}
+
+/**
  * PatchesSection — UI für die in v2.16 eingeführte Hot-Swap-Patch-Library.
  * Vor v2.19 war der Store `usePatchStore` zwar implementiert, aber nirgends
  * im UI angebunden — die Patches waren reines dead code. Diese Section
@@ -2239,6 +2327,7 @@ export function SettingsPanel({ isOpen, onClose, midi, parts, initialSection = "
           {active === "omnitribe"    && <DeviceConnectionPanel />}
           {active === "saving"        && <SavingSection onOpenVersionHistory={onOpenVersionHistory} />}
           {active === "patches"      && <PatchesSection />}
+          {active === "macros"       && <QuickActionMacrosSection />}
           {active === "osc"          && <OscSection />}
           {active === "plugins"      && <PluginsSection />}
           {active === "license"      && <LicenseSection />}

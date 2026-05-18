@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.67.0",
+    version: "3.68.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -2017,6 +2017,44 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "backend",
+      timestamp: "2026-05-19T01:15:00.000Z",
+      done: [
+        "v3.68.0: Quick-Action Macros — User-defined Multi-Action-Shortcuts. Neuer Store useQuickActionStore (separate Identität von dem existierenden 8-Slot useMacroStore — beides nebeneinander). Sequenzielle Action-Listen mit 10 Action-Kinds + Delay, optional an Tastatur-Shortcut gebunden. Pre-installierte Built-in Macros (Mute All Drums, Unmute, Reset Master Volume).",
+        "client/src/store/useQuickActionStore.ts NEU (~330 LOC, custom Observer-Pattern wie der Rest): Discriminated-Union QuickActionMacroAction mit 10 Kinds — mute-all-drum-parts, set-channel-volume, set-channel-pan, set-channel-mute, switch-pattern, set-bpm, trigger-scene, play-pad, set-master-volume, delay (sequenzieller ms-Wait). localStorage persist 'ss-quick-action-macros:v1' mit isValidAction-Filter. Pure-Helpers normalizeKeybind (case+modifier-order deterministisch — 'Ctrl+Shift+R' → 'ctrl+shift+r', 'shift+ctrl+r' → 'ctrl+shift+r'), eventToKeybind (KeyboardEvent→normalisierter String), findMacroForKeybind. Built-in Macros werden NUR bei erstem Load gesetzt (User-Deletes überleben Reload).",
+        "client/src/utils/quickActionExecutor.ts NEU (~140 LOC, komplett DOM-frei): executeQuickAction (single Action, mit injected QuickActionContext-Settern) + executeQuickActionMacro (sequenziell, awaited delays). Setter-Bag mit allen 9 Setter-Slots optional — fehlende Setter → onUnhandled-Callback aber kein Abort. ctx.sleep injizierbar damit Tests Delays nicht real ausführen.",
+        "client/src/hooks/useQuickActionKeyBindings.ts NEU (~80 LOC): Globaler keydown-Listener analog useScriptKeyBindings. Skip in <input>/<textarea>/contentEditable. ACTION wins — wenn die Combo eine System-ACTION (mit Override oder Default) trifft, wird KEIN Macro getriggert. preventDefault nur auf Match. isActionCombo exportiert für Tests.",
+        "client/src/components/Macros/MacroEditor.tsx NEU (~360 LOC): Modal-Dialog (fixed inset-0 z-50) mit Sidebar (Macro-Liste + 'Neues Macro'-Button) + Detail-Pane (Name inline-editable, Description textarea, Keybind Capture-Input — nächster Tastendruck wird übernommen, Esc=Abbruch — Actions-Liste mit Up/Down-Reorder + per-Action Delete + 'Test Macro'-Button). AddActionDropdown listet alle 10 Kinds. ActionFields rendert per Action-Kind die spezifischen Inputs (channelId/value/bpm/padIndex/sceneIndex/ms). Theming: AUSSCHLIESSLICH semantische Tailwind-Klassen (bg-bg-panel, text-text-primary, border-border-color, bg-accent-primary/-secondary/-success/-danger). Keine hardcoded Hex-Farben.",
+        "client/src/components/Settings/SettingsPanel.tsx ERWEITERT: Section 'macros' (icon ⚡, group 'App') registriert. QuickActionMacrosSection mit Macro-Liste + 'Editor öffnen…'-Button + 'Reset auf Defaults'-Button + per-Row Delete. Editor öffnet via MacroEditor (state-controlled).",
+        "tests/features/quick-action-store.test.ts NEU (~280 LOC, 19 Tests in 8 describes): (1) Built-in Macros — 3 Built-ins laden mit korrekten Namen + werden persisted + builtInQuickActionMacros() returns fresh templates. (2) addQuickActionMacro persistiert + normalisiert keybind. (3) updateQuickActionMacro validiert actions (filtert invalid bpm<=0 raus) + description=undefined entfernt das Feld. (4) remove löscht aus State+Persistenz; reorder verschiebt Actions korrekt. (5) normalizeKeybind ist deterministisch + leerer Input → undefined; eventToKeybind erzeugt normalisierte Form. (6) findMacroForKeybind matched case-insensitive (Shift+1 ≡ shift+1 ≡ SHIFT+1); kein Match → null. (7) executeQuickActionMacro: 4 Actions sequenziell mit korrekten Settern; Delay-Action awaited injected sleep mit korrekter Summe (250+50=300ms); fehlender Setter → onUnhandled, anderer dispatched normal weiter. (8) resetQuickActionMacros stellt Built-ins wieder her.",
+        "package.json (3.67.0 → 3.68.0). pnpm check clean. pnpm test grün: 19 NEU + alle vorhandenen (4958 Tests total)."
+      ],
+      next: [
+        "v3.69: useQuickActionKeyBindings.ts in App.tsx wiren — Hook-Aufruf mit QuickActionContext, der die echten Stores referenziert (dm.setBpm, mixer.setMasterVolume, sceneStore.setActiveScene by index, performanceStore.queuePattern für play-pad). Derzeit ist die Keybind-Logik komplett implementiert + getestet, aber NICHT in App.tsx aktiviert — Macros sind über den Editor abfeuerbar (Test-Button), aber Keyboard-Shortcuts trigger noch nicht.",
+        "v3.69: ActionFields-UI für set-channel-volume/-pan/-mute braucht einen Channel-Picker (Dropdown statt Free-Text channelId Input). Derzeit muss der User die part.id manuell tippen — fehleranfällig.",
+        "v3.69: MacroEditor.tsx Pattern-Picker für switch-pattern (Dropdown aus dm.patterns) und Scene-Index-Picker mit Name-Anzeige aus useSceneStore.",
+        "v3.69: .synth-Projektdatei sollte die Quick-Action Macros mit-serialisieren (derzeit nur in localStorage). Wenn User Project von Maschine A nach B kopiert, gehen Macros verloren."
+      ],
+      changed: [
+        "client/src/store/useQuickActionStore.ts (NEU ~330 LOC: Macro-Store mit 10 Action-Kinds + Pure-Keybind-Helpers + localStorage-Persistenz + Built-ins)",
+        "client/src/utils/quickActionExecutor.ts (NEU ~140 LOC: sequenzieller Executor mit injected Setter-Bag + async sleep für Delays)",
+        "client/src/hooks/useQuickActionKeyBindings.ts (NEU ~80 LOC: globaler keydown-Listener, ACTION wins, Skip-in-Input)",
+        "client/src/components/Macros/MacroEditor.tsx (NEU ~360 LOC: Modal-Editor mit Sidebar+Detail-Pane, Keybind-Capture, AddActionDropdown, ActionFields per Kind)",
+        "client/src/components/Settings/SettingsPanel.tsx (+ 'macros' Section in Type-Union + SECTIONS-Array + active-Switch + QuickActionMacrosSection-Component ~70 LOC + Import-Block)",
+        "tests/features/quick-action-store.test.ts (NEU ~280 LOC, 19 Tests in 8 describes)",
+        "package.json (3.67.0 → 3.68.0)",
+        "agents/INDEX.js (version + workLog v3.68.0)"
+      ],
+      caveats: [
+        "Hook useQuickActionKeyBindings ist implementiert + getestet, aber NICHT in App.tsx eingebunden — Macros werden derzeit nur per Test-Button im Editor abgefeuert. Frontend-Agent muss in v3.69 in App.tsx den useQuickActionKeyBindings(ctx) Hook mounten + den konkreten QuickActionContext mit dm/mixer/scene/performance-Settern wiren.",
+        "ActionFields für set-channel-volume/-pan/-mute akzeptieren channelId als Free-Text — User muss die Part-ID manuell eingeben (UUID/short-id ist in DrumMachineStore nicht user-facing sichtbar). Ein Dropdown mit allen Parts wäre besser, braucht aber parts-Prop-Drilling oder Store-Lookup.",
+        "switch-pattern + trigger-scene + play-pad nehmen rohe IDs/Indexe ohne Validierung gegen die echten Stores. Wenn User invalid IDs einträgt → der Executor dispatched die Setter ohne Fehler, aber der Setter selbst wird wahrscheinlich no-op zurückkehren. Kein User-Feedback.",
+        "Built-in 'Mute All Drums' erwartet `ctx.setAllDrumPartsMuted(true)` — dm hat aktuell KEIN single 'mute-all' Setter (nur setPartMuted pro Part). App.tsx-Wiring muss eine Loop bauen: `dm.getPartList().forEach(p => p.kind === 'drum' && dm.setPartMuted(p.id, true))`.",
+        "Quick-Action Macros sind NICHT teil des .synth-Projektformat — sie liegen nur in localStorage. Beim Wechsel zwischen Geräten gehen die User-Macros verloren. Migration zur Project-Persistenz wäre eine eigene Welle.",
+        "MacroEditor verlangt einen optionalen `testContext` Prop. SettingsPanel übergibt keinen → 'Test'-Button ist im Settings-Flow disabled. Sobald App.tsx den globalen Context aufbaut, kann er als globaler Singleton (z.B. via useRef + window.__synthstudioMacroContext) injiziert werden."
+      ]
+    },
     {
       agent:     "frontend",
       timestamp: "2026-05-19T01:00:00.000Z",
