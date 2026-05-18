@@ -62,6 +62,30 @@ interface Props {
   onPlayStop: () => void;
   onBpmChange: (bpm: number) => void;
   className?: string;
+  /**
+   * v3.38.0 — External MIDI-Clock-IN active flag. When true AND
+   * `externalSyncStatus` indicates an active sync, the BPM-Slider is
+   * disabled with a tooltip indicating "BPM extern gesynced".
+   */
+  externalSyncEnabled?: boolean;
+  /**
+   * v3.38.0 — Current external sync status. Slider is locked when this is
+   * "running" or "tempo-only" (we know the master tempo). For "off"/"lost"
+   * the slider remains writable.
+   */
+  externalSyncStatus?: "off" | "tempo-only" | "running" | "lost";
+}
+
+/**
+ * v3.38.0 — Pure helper: when is the BPM slider locked by an external MIDI
+ * clock master? Exported so tests can assert behaviour without rendering.
+ */
+export function isBpmExternallyLocked(
+  enabled: boolean | undefined,
+  status: "off" | "tempo-only" | "running" | "lost" | undefined,
+): boolean {
+  if (!enabled) return false;
+  return status === "running" || status === "tempo-only";
 }
 
 
@@ -352,7 +376,9 @@ function ElectribePickerModal({ picker, onSelect, onClose }: ElectribePickerModa
 
 // ─── Haupt-Komponente ─────────────────────────────────────────────────────────
 
-export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChange, className = "" }: Props) {
+export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChange, className = "", externalSyncEnabled, externalSyncStatus }: Props) {
+  // v3.38.0 — BPM-Slider lock-state when external MIDI Clock-IN sync is active.
+  const bpmLocked = isBpmExternallyLocked(externalSyncEnabled, externalSyncStatus);
   const pattern = dm.getActivePattern();
   // v3.26.0 — Electron-Bridge für E2 Pattern Export
   const electron = useElectron();
@@ -1278,16 +1304,28 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
         </button>
         {playStopLearn.menu}
 
-        {/* BPM — v1.86: right-click für MIDI-Learn */}
+        {/* BPM — v1.86: right-click für MIDI-Learn; v3.38: disabled-State im Sync-Mode */}
         <div
-          className="flex items-center gap-1 relative"
+          className={`flex items-center gap-1 relative ${bpmLocked ? "opacity-50" : ""}`}
           onContextMenu={bpmLearn.onContextMenu}
+          data-testid="dm-bpm-control"
+          data-bpm-locked={bpmLocked ? "true" : "false"}
+          title={bpmLocked ? "BPM extern gesynced — Slider gesperrt" : undefined}
         >
+          {bpmLocked && (
+            <span
+              data-testid="dm-bpm-lock-icon"
+              className="text-[10px] text-accent-secondary mr-0.5 select-none"
+              aria-hidden="true"
+              title="BPM extern gesynced — Slider gesperrt"
+            >🔒</span>
+          )}
           <button
             onClick={() => onBpmChange(Math.max(20, bpm - 1))}
-            title="BPM −1 (Taste: −)"
+            disabled={bpmLocked}
+            title={bpmLocked ? "BPM extern gesynced — Slider gesperrt" : "BPM −1 (Taste: −)"}
             aria-label="BPM verringern"
-            className="w-5 h-6 rounded text-xs bg-bg-elevated text-text-muted hover:bg-bg-base hover:text-text-primary active:scale-95 transition-colors"
+            className="w-5 h-6 rounded text-xs bg-bg-elevated text-text-muted hover:bg-bg-base hover:text-text-primary active:scale-95 transition-colors disabled:cursor-not-allowed disabled:hover:bg-bg-elevated disabled:hover:text-text-muted"
           >−</button>
           <input
             ref={bpmInputRef}
@@ -1295,6 +1333,10 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
             value={bpmInput}
             onChange={e => setBpmInput(e.target.value)}
             onBlur={() => {
+              if (bpmLocked) {
+                setBpmInput(String(bpm));
+                return;
+              }
               const v = parseInt(bpmInput);
               if (!isNaN(v)) onBpmChange(Math.max(20, Math.min(300, v)));
               else setBpmInput(String(bpm));
@@ -1302,14 +1344,18 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
             onKeyDown={e => {
               if (e.key === "Enter") bpmInputRef.current?.blur();
             }}
-            title="BPM (Doppelklick zum Bearbeiten, Tasten + und − für ±1)"
-            className="w-14 bg-bg-elevated text-text-primary text-xs rounded px-1.5 py-1 border border-border-color text-center"
+            disabled={bpmLocked}
+            readOnly={bpmLocked}
+            title={bpmLocked ? "BPM extern gesynced — Slider gesperrt" : "BPM (Doppelklick zum Bearbeiten, Tasten + und − für ±1)"}
+            data-testid="dm-bpm-input"
+            className="w-14 bg-bg-elevated text-text-primary text-xs rounded px-1.5 py-1 border border-border-color text-center disabled:cursor-not-allowed"
           />
           <button
             onClick={() => onBpmChange(Math.min(300, bpm + 1))}
-            title="BPM +1 (Taste: +)"
+            disabled={bpmLocked}
+            title={bpmLocked ? "BPM extern gesynced — Slider gesperrt" : "BPM +1 (Taste: +)"}
             aria-label="BPM erhöhen"
-            className="w-5 h-6 rounded text-xs bg-bg-elevated text-text-muted hover:bg-bg-base hover:text-text-primary active:scale-95 transition-colors"
+            className="w-5 h-6 rounded text-xs bg-bg-elevated text-text-muted hover:bg-bg-base hover:text-text-primary active:scale-95 transition-colors disabled:cursor-not-allowed disabled:hover:bg-bg-elevated disabled:hover:text-text-muted"
           >+</button>
           {bpmLearn.isMapped && (
             <span className="text-[8px] font-mono bg-accent-secondary text-bg-base px-1 rounded leading-tight">CC{bpmLearn.mappedCC}</span>

@@ -1,5 +1,5 @@
 /**
- * Synthstudio – WelcomeWizard (v3.22.0)
+ * Synthstudio – WelcomeWizard (v3.38.0)
  *
  * First-Run-Tutorial. Zeigt 6 Slides, die die Killer-Features der letzten
  * 42 Releases vorstellen (KORG-Integration, Live-Performance, Sample-Workflow,
@@ -12,9 +12,13 @@
  * dispatchWelcomeTryIt in useWelcomeStore.ts). App.tsx hört darauf und
  * routet — z.B. öffnet Settings, switcht Tabs, scrollt zu Sections.
  *
+ * v3.38.0 — i18n: Strings werden aus `i18nStrings` Map gelesen. Default-Language
+ * aus `navigator.language` (de* → de, sonst en). User kann via Toggle wechseln,
+ * Auswahl persistiert in localStorage unter "synthstudio:welcome:lang".
+ *
  * Pure-Tailwind mit semantischen Tokens — keine hardcoded Farben.
  */
-import { useEffect, useState, type ReactElement } from "react";
+import { useEffect, useMemo, useState, type ReactElement } from "react";
 import {
   X,
   ChevronLeft,
@@ -34,6 +38,97 @@ import {
   type WelcomeTryItTarget,
 } from "@/store/useWelcomeStore";
 
+// ─── i18n ───────────────────────────────────────────────────────────────────
+
+/** Supported wizard languages. */
+export type WizardLanguage = "de" | "en";
+
+const LANG_STORAGE_KEY = "synthstudio:welcome:lang";
+
+/**
+ * v3.38.0 — Detect the wizard's default language.
+ * - `de*` → "de" (Synthstudio is originally German)
+ * - everything else → "en"
+ *
+ * Exported so tests can assert behaviour with stubbed `navigator.language`.
+ */
+export function detectDefaultLanguage(
+  navigatorLanguage: string | null | undefined = typeof navigator !== "undefined"
+    ? navigator.language
+    : undefined,
+): WizardLanguage {
+  if (typeof navigatorLanguage !== "string" || navigatorLanguage.length === 0) {
+    return "en";
+  }
+  const lower = navigatorLanguage.toLowerCase();
+  return lower.startsWith("de") ? "de" : "en";
+}
+
+/** Load persisted language preference, falling back to navigator-detection. */
+export function loadWizardLanguage(): WizardLanguage {
+  if (typeof localStorage === "undefined") return detectDefaultLanguage();
+  try {
+    const raw = localStorage.getItem(LANG_STORAGE_KEY);
+    if (raw === "de" || raw === "en") return raw;
+  } catch {
+    /* ignore */
+  }
+  return detectDefaultLanguage();
+}
+
+/** Persist language preference. */
+export function saveWizardLanguage(lang: WizardLanguage): void {
+  if (typeof localStorage === "undefined") return;
+  try {
+    localStorage.setItem(LANG_STORAGE_KEY, lang);
+  } catch {
+    /* ignore quota / private-mode */
+  }
+}
+
+/** Translatable UI strings (chrome only — slides have their own i18n map). */
+export interface WizardChromeStrings {
+  ariaDialog: string;
+  ariaClose: string;
+  ariaProgress: (current: number, total: number) => string;
+  ariaJumpToSlide: (n: number) => string;
+  slideCounter: (current: number, total: number) => string;
+  dontShowAgain: string;
+  back: string;
+  next: string;
+  finish: string;
+  langToggleLabel: string;
+}
+
+export const i18nStrings: Record<WizardLanguage, WizardChromeStrings> = {
+  de: {
+    ariaDialog: "Welcome-Tour",
+    ariaClose: "Schließen",
+    ariaProgress: (c, t) => `Fortschritt: ${c} von ${t}`,
+    ariaJumpToSlide: (n) => `Zu Slide ${n} springen`,
+    slideCounter: (c, t) => `Slide ${c} / ${t}`,
+    dontShowAgain: "Nicht mehr anzeigen",
+    back: "Zurück",
+    next: "Weiter",
+    finish: "Los geht's",
+    langToggleLabel: "Sprache",
+  },
+  en: {
+    ariaDialog: "Welcome Tour",
+    ariaClose: "Close",
+    ariaProgress: (c, t) => `Progress: ${c} of ${t}`,
+    ariaJumpToSlide: (n) => `Jump to slide ${n}`,
+    slideCounter: (c, t) => `Slide ${c} / ${t}`,
+    dontShowAgain: "Don't show again",
+    back: "Back",
+    next: "Next",
+    finish: "Let's go",
+    langToggleLabel: "Language",
+  },
+};
+
+// ─── Public Types ───────────────────────────────────────────────────────────
+
 export interface WelcomeWizardProps {
   /** Steuert Sichtbarkeit. Wenn false → render nichts. */
   open: boolean;
@@ -47,9 +142,14 @@ export interface WelcomeWizardProps {
   versionString?: string;
   /**
    * Override für die Slides — primär für Tests / Storybook. Default sind
-   * die 6 eingebauten Synthstudio-Slides.
+   * die 6 eingebauten Synthstudio-Slides (per-language).
    */
   slides?: WizardSlide[];
+  /**
+   * v3.38.0 — Override für die UI-Sprache (Tests/Storybook). Default ist
+   * `loadWizardLanguage()` (localStorage → navigator → 'en').
+   */
+  initialLanguage?: WizardLanguage;
 }
 
 export interface WizardSlideAction {
@@ -68,9 +168,11 @@ export interface WizardSlide {
   action?: WizardSlideAction;
 }
 
-const VERSION_STRING = "v3.22.0";
+const VERSION_STRING = "v3.38.0";
 
-const DEFAULT_SLIDES: WizardSlide[] = [
+// ─── Slides per language ────────────────────────────────────────────────────
+
+const SLIDES_DE: WizardSlide[] = [
   {
     id: "welcome",
     Icon: Sparkles,
@@ -150,14 +252,104 @@ const DEFAULT_SLIDES: WizardSlide[] = [
   },
 ];
 
+const SLIDES_EN: WizardSlide[] = [
+  {
+    id: "welcome",
+    Icon: Sparkles,
+    title: "Welcome to Synthstudio",
+    body:
+      "Professional audio workstation with drum machine, synth, piano roll, mixer and sample manager — as a web app and a native desktop app.",
+    bullets: [
+      "Over 40 releases with hundreds of features",
+      "Fully isomorphic: Browser ↔ Electron",
+      "MIDI-Learn on every knob (right-click)",
+    ],
+  },
+  {
+    id: "korg",
+    Icon: Cable,
+    title: "KORG Hardware Integration",
+    body:
+      "Synthstudio talks natively to KORG Electribe / nanoKONTROL2 — including bit-exact bank import and export.",
+    bullets: [
+      "nanoKONTROL2 with LED feedback",
+      "Electribe USB audio + pattern import",
+      "E2S .all bank editor with slice audition",
+    ],
+    action: { label: "Open MIDI settings", target: "midi-settings" },
+  },
+  {
+    id: "performance",
+    Icon: Mic,
+    title: "Live Performance",
+    body:
+      "Record, loop, switch scenes — all without breaking your flow.",
+    bullets: [
+      "Session recording with pattern changes",
+      "Live looper with quantize",
+      "Scene launch via Shift+1-8",
+    ],
+    action: { label: "Show Scene Pad", target: "scene-launch" },
+  },
+  {
+    id: "samples",
+    Icon: Scissors,
+    title: "Sample Workflow",
+    body:
+      "From WAV to finished KORG bank export — onset detection, slicing and pad-bank in one tool.",
+    bullets: [
+      "Transient-based auto-slicing",
+      "Custom pad bank per project",
+      "KORG E2S bank export (.all)",
+    ],
+    action: { label: "Open KORG Bank Editor", target: "korg-bank-editor" },
+  },
+  {
+    id: "omnitribe",
+    Icon: Cpu,
+    title: "OmniTribe (Custom Hardware)",
+    body:
+      "If you're using the OmniTribe: VU meter, spectrum analyzer, chord module and 16-pad performance grid are wired out-of-the-box.",
+    bullets: [
+      "Echo protection for 60 Hz sweeps",
+      "Wavetable + granular sysex upload",
+      "User chord slots are writable",
+    ],
+    action: { label: "Device settings", target: "midi-settings" },
+  },
+  {
+    id: "done",
+    Icon: CheckCircle2,
+    title: "You're ready to go",
+    body:
+      "You can reopen this tour anytime under Settings → About. Have fun making beats!",
+    bullets: [
+      "Settings: themes, MIDI, audio engine",
+      "Hardware templates for 13+ controllers",
+      "Right-click on knobs → MIDI-Learn",
+    ],
+    action: { label: "Open settings", target: "settings" },
+  },
+];
+
+/** v3.38.0 — Returns the built-in slides for a given language. */
+export function getDefaultSlidesForLanguage(lang: WizardLanguage): WizardSlide[] {
+  return lang === "de" ? SLIDES_DE : SLIDES_EN;
+}
+
 export function WelcomeWizard({
   open,
   onClose,
   versionString = VERSION_STRING,
-  slides = DEFAULT_SLIDES,
+  slides,
+  initialLanguage,
 }: WelcomeWizardProps): ReactElement | null {
   const [index, setIndex] = useState(0);
   const [dontShowAgain, setDontShowAgain] = useState(false);
+  // v3.38.0 — i18n state
+  const [lang, setLang] = useState<WizardLanguage>(
+    () => initialLanguage ?? loadWizardLanguage(),
+  );
 
   // Reset slide-pointer bei jedem open=true → false-Übergang.
   useEffect(() => {
@@ -178,12 +370,17 @@ export function WelcomeWizard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, dontShowAgain]);
 
+  const t = i18nStrings[lang];
+  const effectiveSlides = useMemo<WizardSlide[]>(() => {
+    if (slides && slides.length > 0) return slides;
+    return getDefaultSlidesForLanguage(lang);
+  }, [slides, lang]);
+
   if (!open) return null;
 
-  const safeSlides = slides.length > 0 ? slides : DEFAULT_SLIDES;
-  const safeIndex = Math.max(0, Math.min(index, safeSlides.length - 1));
-  const slide = safeSlides[safeIndex];
-  const isLast = safeIndex === safeSlides.length - 1;
+  const safeIndex = Math.max(0, Math.min(index, effectiveSlides.length - 1));
+  const slide = effectiveSlides[safeIndex];
+  const isLast = safeIndex === effectiveSlides.length - 1;
   const isFirst = safeIndex === 0;
 
   function finishAndClose(): void {
@@ -200,7 +397,7 @@ export function WelcomeWizard({
       finishAndClose();
       return;
     }
-    setIndex((i) => Math.min(i + 1, safeSlides.length - 1));
+    setIndex((i) => Math.min(i + 1, effectiveSlides.length - 1));
   }
 
   function handleBack(): void {
@@ -215,6 +412,11 @@ export function WelcomeWizard({
     finishAndClose();
   }
 
+  function handleLanguageChange(next: WizardLanguage): void {
+    setLang(next);
+    saveWizardLanguage(next);
+  }
+
   const SlideIcon = slide.Icon;
 
   return (
@@ -222,8 +424,9 @@ export function WelcomeWizard({
       className="fixed inset-0 z-[9998] flex items-center justify-center bg-black/70 backdrop-blur-sm"
       role="dialog"
       aria-modal="true"
-      aria-label="Welcome-Tour"
+      aria-label={t.ariaDialog}
       data-testid="welcome-wizard"
+      data-lang={lang}
       onClick={(e) => {
         // Klick auf Backdrop schließt
         if (e.target === e.currentTarget) finishAndClose();
@@ -233,7 +436,7 @@ export function WelcomeWizard({
         className="relative w-full max-w-lg mx-4 rounded-xl border border-border-color bg-bg-panel p-6 shadow-2xl"
         data-testid="welcome-wizard-panel"
       >
-        {/* Header: Icon + Title + Close-Button */}
+        {/* Header: Icon + Title + Lang-Toggle + Close-Button */}
         <div className="flex items-start gap-3 mb-4">
           <div className="rounded-full bg-accent-primary/20 p-2.5 text-accent-primary flex-shrink-0">
             <SlideIcon size={22} />
@@ -246,14 +449,47 @@ export function WelcomeWizard({
               {slide.title}
             </h2>
             <p className="text-[11px] text-text-dim mt-0.5">
-              {versionString} — Slide {safeIndex + 1} / {safeSlides.length}
+              {versionString} — {t.slideCounter(safeIndex + 1, effectiveSlides.length)}
             </p>
+          </div>
+          {/* v3.38.0 — Language-Toggle */}
+          <div
+            className="flex items-center gap-0.5 text-[10px] mr-1"
+            aria-label={t.langToggleLabel}
+            data-testid="welcome-wizard-lang-toggle"
+          >
+            <button
+              type="button"
+              onClick={() => handleLanguageChange("de")}
+              aria-pressed={lang === "de"}
+              className={`px-1.5 py-0.5 rounded font-mono uppercase transition-colors ${
+                lang === "de"
+                  ? "bg-accent-primary text-bg-base"
+                  : "text-text-muted hover:text-text-primary"
+              }`}
+              data-testid="welcome-wizard-lang-de"
+            >
+              DE
+            </button>
+            <button
+              type="button"
+              onClick={() => handleLanguageChange("en")}
+              aria-pressed={lang === "en"}
+              className={`px-1.5 py-0.5 rounded font-mono uppercase transition-colors ${
+                lang === "en"
+                  ? "bg-accent-primary text-bg-base"
+                  : "text-text-muted hover:text-text-primary"
+              }`}
+              data-testid="welcome-wizard-lang-en"
+            >
+              EN
+            </button>
           </div>
           <button
             type="button"
             onClick={finishAndClose}
             className="text-text-muted hover:text-text-primary p-1 -mr-1 -mt-1 rounded transition-colors"
-            aria-label="Schließen"
+            aria-label={t.ariaClose}
             data-testid="welcome-wizard-skip"
           >
             <X size={18} />
@@ -300,10 +536,10 @@ export function WelcomeWizard({
         {/* Progress-Dots */}
         <div
           className="mt-5 flex items-center justify-center gap-1.5"
-          aria-label={`Fortschritt: ${safeIndex + 1} von ${safeSlides.length}`}
+          aria-label={t.ariaProgress(safeIndex + 1, effectiveSlides.length)}
           data-testid="welcome-wizard-progress"
         >
-          {safeSlides.map((s, i) => (
+          {effectiveSlides.map((s, i) => (
             <button
               key={s.id}
               type="button"
@@ -313,7 +549,7 @@ export function WelcomeWizard({
                   ? "w-6 bg-accent-primary"
                   : "w-1.5 bg-bg-elevated hover:bg-border-color"
               }`}
-              aria-label={`Zu Slide ${i + 1} springen`}
+              aria-label={t.ariaJumpToSlide(i + 1)}
               data-testid={`welcome-wizard-dot-${i}`}
             />
           ))}
@@ -329,7 +565,7 @@ export function WelcomeWizard({
               className="accent-accent-primary"
               data-testid="welcome-wizard-dont-show"
             />
-            <span className="truncate">Nicht mehr anzeigen</span>
+            <span className="truncate">{t.dontShowAgain}</span>
           </label>
 
           <button
@@ -340,7 +576,7 @@ export function WelcomeWizard({
             data-testid="welcome-wizard-back"
           >
             <ChevronLeft size={14} />
-            Zurück
+            {t.back}
           </button>
 
           <button
@@ -349,7 +585,7 @@ export function WelcomeWizard({
             className="rounded bg-accent-primary px-4 py-1.5 text-xs font-medium text-bg-base hover:opacity-90 transition-opacity flex items-center gap-1"
             data-testid="welcome-wizard-next"
           >
-            {isLast ? "Los geht's" : "Weiter"}
+            {isLast ? t.finish : t.next}
             {!isLast && <ChevronRight size={14} />}
           </button>
         </div>

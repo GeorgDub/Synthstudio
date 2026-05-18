@@ -102,6 +102,15 @@ import {
   type EsxSamplePatchEntry,
   type EsxSlotRow,
   type EsxStereoSampleSlotRow,
+  // v3.38.0 — Undo/Redo
+  createEsxEditorHistory,
+  pushEsxHistory,
+  undoEsxEditor,
+  redoEsxEditor,
+  canUndoEsxEditor,
+  canRedoEsxEditor,
+  type EsxEditorHistory,
+  type EsxEditorSnapshot,
 } from "@/utils/korg/esxBankEditorState";
 import {
   compactEsxBank,
@@ -269,6 +278,11 @@ export function KorgBankEditor({
   const esxStereoSampleReplaceInputRef = useRef<HTMLInputElement | null>(null);
   const esxStereoSampleReplaceTargetSlotRef = useRef<number | null>(null);
 
+  // v3.38.0 — Undo/Redo history for the ESX editor.
+  const [esxHistory, setEsxHistory] = useState<EsxEditorHistory>(
+    () => createEsxEditorHistory(),
+  );
+
   // Shared
   const [busy, setBusy] = useState<boolean>(false);
   const [resultMsg, setResultMsg] = useState<string | null>(null);
@@ -339,6 +353,8 @@ export function KorgBankEditor({
       setEsxStereoSamplePending(new Map());
       setEsxStereoSampleSelectedSlot(null);
       esxStereoSampleReplaceTargetSlotRef.current = null;
+      // v3.38.0 — Undo/Redo history
+      setEsxHistory(createEsxEditorHistory());
     }
   }, [open]);
 
@@ -378,6 +394,120 @@ export function KorgBankEditor({
     }
     return { pcm, sampleRate: buf.sampleRate, channels };
   }
+
+  // ─── v3.38.0 — Undo/Redo Helpers ───────────────────────────────────────────
+
+  /**
+   * v3.38.0 — Capture the current ESX-pending state and push it onto the
+   * history stack BEFORE applying a new edit. Use this right before every
+   * stageEsxPatch / unstageEsxPatch / stage/unstage sample-call so that
+   * Undo restores the prior pending-set.
+   */
+  const pushEsxHistorySnapshot = useCallback((): void => {
+    setEsxHistory((prev) =>
+      pushEsxHistory(prev, {
+        patternMap: esxPendingPatches,
+        sampleMap: esxSamplePending,
+        stereoSampleMap: esxStereoSamplePending,
+      }),
+    );
+  }, [esxPendingPatches, esxSamplePending, esxStereoSamplePending]);
+
+  /**
+   * v3.38.0 — Undo last ESX edit. Re-applies the prior snapshot and pushes
+   * the *current* state onto the redo stack. Re-parses overview rows from
+   * the bank for visual consistency.
+   */
+  const handleEsxUndo = useCallback((): void => {
+    setEsxHistory((prevHist) => {
+      const result = undoEsxEditor(prevHist, {
+        patternMap: esxPendingPatches,
+        sampleMap: esxSamplePending,
+        stereoSampleMap: esxStereoSamplePending,
+      });
+      if (!result) return prevHist;
+      // Apply the restored snapshot.
+      setEsxPendingPatches(result.snapshot.patternMap);
+      setEsxSamplePending(result.snapshot.sampleMap);
+      setEsxStereoSamplePending(result.snapshot.stereoSampleMap);
+      // Refresh overview rows from the (untouched) bank buffer so name/bpm
+      // fall back to the on-disk values when a patch is removed.
+      if (esxBankBuffer) {
+        try {
+          const bank = parseEsxBank(esxBankBuffer);
+          setEsxRows(buildEsxSlotOverview(bank));
+          setEsxSampleRows(buildEsxSampleSlotOverview(bank));
+          setEsxStereoSampleRows(buildEsxStereoSampleSlotOverview(bank));
+        } catch {
+          /* Defensive — keep stale rows if re-parse fails. */
+        }
+      }
+      return result.history;
+    });
+  }, [esxBankBuffer, esxPendingPatches, esxSamplePending, esxStereoSamplePending]);
+
+  /**
+   * v3.38.0 — Redo last undone edit. Mirror of handleEsxUndo.
+   */
+  const handleEsxRedo = useCallback((): void => {
+    setEsxHistory((prevHist) => {
+      const result = redoEsxEditor(prevHist, {
+        patternMap: esxPendingPatches,
+        sampleMap: esxSamplePending,
+        stereoSampleMap: esxStereoSamplePending,
+      });
+      if (!result) return prevHist;
+      setEsxPendingPatches(result.snapshot.patternMap);
+      setEsxSamplePending(result.snapshot.sampleMap);
+      setEsxStereoSamplePending(result.snapshot.stereoSampleMap);
+      if (esxBankBuffer) {
+        try {
+          const bank = parseEsxBank(esxBankBuffer);
+          setEsxRows(buildEsxSlotOverview(bank));
+          setEsxSampleRows(buildEsxSampleSlotOverview(bank));
+          setEsxStereoSampleRows(buildEsxStereoSampleSlotOverview(bank));
+        } catch {
+          /* Defensive */
+        }
+      }
+      return result.history;
+    });
+  }, [esxBankBuffer, esxPendingPatches, esxSamplePending, esxStereoSamplePending]);
+
+  const esxCanUndo = canUndoEsxEditor(esxHistory);
+  const esxCanRedo = canRedoEsxEditor(esxHistory);
+
+  // v3.38.0 — Keyboard shortcuts: Ctrl+Z undo, Ctrl+Shift+Z redo.
+  // Only active while the editor is open AND in ESX mode (where the
+  // undo stack is meaningful). Avoids hijacking shortcuts from text-inputs
+  // inside Settings / DrumMachine.
+  useEffect(() => {
+    if (!open || mode !== "esx") return;
+    function onKeyDown(e: KeyboardEvent): void {
+      // Allow native undo/redo inside text inputs.
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+      const isCtrlOrMeta = e.ctrlKey || e.metaKey;
+      if (!isCtrlOrMeta) return;
+      const key = e.key.toLowerCase();
+      if (key === "z" && !e.shiftKey) {
+        e.preventDefault();
+        handleEsxUndo();
+      } else if ((key === "z" && e.shiftKey) || key === "y") {
+        e.preventDefault();
+        handleEsxRedo();
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [open, mode, handleEsxUndo, handleEsxRedo]);
 
   // ─── Mode Switching ────────────────────────────────────────────────────────
 
@@ -427,6 +557,8 @@ export function KorgBankEditor({
       setEsxStereoSampleRows([]);
       setEsxStereoSamplePending(new Map());
       setEsxStereoSampleSelectedSlot(null);
+      // v3.38.0 — clear history when leaving ESX mode
+      setEsxHistory(createEsxEditorHistory());
     }
     setResultMsg(null);
     setMode(next);
@@ -470,6 +602,8 @@ export function KorgBankEditor({
       setEsxStereoSampleSelectedSlot(null);
       setEsxSampleChannelMode("mono");
       setEsxSubTab("patterns");
+      // v3.38.0 — reset history when loading a fresh bank
+      setEsxHistory(createEsxEditorHistory());
       setMode("esx");
       // Filename default for save: original name (user can rename).
       const baseName = file.name.replace(/\.[^.]+$/, "");
@@ -664,6 +798,8 @@ export function KorgBankEditor({
           : current;
       const esxInput = convertSynthstudioPatternToEsx(patched);
       const block = buildEsxPatternBlock(esxInput);
+      // v3.38.0 — push history snapshot BEFORE applying the patch.
+      pushEsxHistorySnapshot();
       setEsxPendingPatches((prev) => stageEsxPatch(prev, slotIndex, block));
       // Update overview row so the UI immediately reflects the new name/bpm.
       setEsxRows((prev) =>
@@ -693,6 +829,8 @@ export function KorgBankEditor({
   }
 
   function handleEsxRevertSlot(slotIndex: number): void {
+    // v3.38.0 — capture pre-revert snapshot for undo.
+    pushEsxHistorySnapshot();
     setEsxPendingPatches((prev) => unstageEsxPatch(prev, slotIndex));
     // Refresh overview row from the (untouched) loaded bank by re-parsing —
     // cheap because parseEsxPattern is per-slot, but we already have the
@@ -783,6 +921,8 @@ export function KorgBankEditor({
         setEsxPendingPatches(new Map());
         setEsxSamplePending(new Map());
         setEsxStereoSamplePending(new Map());
+        // v3.38.0 — reset history after save (committed state is the new baseline).
+        setEsxHistory(createEsxEditorHistory());
       } else {
         const blob = new Blob([newBuffer], { type: "application/octet-stream" });
         const url = URL.createObjectURL(blob);
@@ -805,6 +945,8 @@ export function KorgBankEditor({
         setEsxPendingPatches(new Map());
         setEsxSamplePending(new Map());
         setEsxStereoSamplePending(new Map());
+        // v3.38.0 — reset history after save.
+        setEsxHistory(createEsxEditorHistory());
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -882,6 +1024,8 @@ export function KorgBankEditor({
         name: decoded.name.slice(0, 8),
         level: 100,
       };
+      // v3.38.0 — push history snapshot BEFORE applying the patch.
+      pushEsxHistorySnapshot();
       setEsxSamplePending((prev) => stageEsxSamplePatch(prev, slot, entry));
       setEsxSampleRows((prev) =>
         prev.map((r) =>
@@ -911,6 +1055,8 @@ export function KorgBankEditor({
   }
 
   function handleEsxSampleRevertSlot(slot: number): void {
+    // v3.38.0 — push history snapshot BEFORE applying the revert.
+    pushEsxHistorySnapshot();
     setEsxSamplePending((prev) => unstageEsxSamplePatch(prev, slot));
     // Refresh row from the (untouched) loaded bank by re-parsing.
     if (esxBankBuffer) {
@@ -1040,6 +1186,8 @@ export function KorgBankEditor({
         name: decoded.name.slice(0, 8),
         level: 100,
       };
+      // v3.38.0 — push history snapshot BEFORE applying the patch.
+      pushEsxHistorySnapshot();
       setEsxStereoSamplePending((prev) =>
         stageEsxStereoSamplePatch(prev, slot, entry),
       );
@@ -1071,6 +1219,8 @@ export function KorgBankEditor({
   }
 
   function handleEsxStereoSampleRevertSlot(slot: number): void {
+    // v3.38.0 — push history snapshot BEFORE applying the revert.
+    pushEsxHistorySnapshot();
     setEsxStereoSamplePending((prev) => unstageEsxStereoSamplePatch(prev, slot));
     if (esxBankBuffer) {
       try {
@@ -1138,6 +1288,8 @@ export function KorgBankEditor({
       setEsxStereoSamplePending(new Map());
       setEsxSampleSelectedSlot(null);
       setEsxStereoSampleSelectedSlot(null);
+      // v3.38.0 — reset history after compact (compaction is a non-undoable rewrite).
+      setEsxHistory(createEsxEditorHistory());
       toast(
         `Bank compactiert · ${mb} MB gespart`,
         { kind: "success", duration: 3500 },
@@ -2141,22 +2293,44 @@ export function KorgBankEditor({
             </div>
           )}
 
+          {/* v3.38.0 — Undo/Redo-Buttons (always visible in ESX mode, right-side) */}
+          <div
+            className="ml-auto flex items-center gap-1"
+            data-testid="korg-bank-editor-esx-history-controls"
+          >
+            <button
+              data-testid="korg-bank-editor-esx-undo"
+              onClick={handleEsxUndo}
+              disabled={busy || !esxCanUndo}
+              className="px-2 py-0.5 rounded text-[11px] bg-bg-elevated text-text-muted hover:text-text-primary disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              title={`Rückgängig (Ctrl+Z) — ${esxHistory.past.length} verfügbar`}
+              aria-label="Undo"
+            >
+              ↶ Undo {esxHistory.past.length > 0 && <span className="text-[9px] text-text-dim ml-0.5">({esxHistory.past.length})</span>}
+            </button>
+            <button
+              data-testid="korg-bank-editor-esx-redo"
+              onClick={handleEsxRedo}
+              disabled={busy || !esxCanRedo}
+              className="px-2 py-0.5 rounded text-[11px] bg-bg-elevated text-text-muted hover:text-text-primary disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              title={`Wiederholen (Ctrl+Shift+Z) — ${esxHistory.future.length} verfügbar`}
+              aria-label="Redo"
+            >
+              ↷ Redo {esxHistory.future.length > 0 && <span className="text-[9px] text-text-dim ml-0.5">({esxHistory.future.length})</span>}
+            </button>
+          </div>
+
           {/* v3.32.0 — Compact-Bank-Button (only in samples tab) */}
           {esxSubTab === "samples" && esxCompactReport && esxCompactReport.orphanBytes > 0 && (
             <button
               data-testid="korg-bank-editor-esx-compact"
               onClick={handleEsxCompactBank}
               disabled={busy}
-              className="ml-auto px-2 py-0.5 rounded text-[10px] bg-accent-secondary text-bg-base hover:opacity-90 transition-opacity disabled:opacity-40"
+              className="px-2 py-0.5 rounded text-[10px] bg-accent-secondary text-bg-base hover:opacity-90 transition-opacity disabled:opacity-40"
               title={`Spare ${(esxCompactReport.orphanBytes / 1024 / 1024).toFixed(2)} MB durch Compaction`}
             >
               🗜 Compact Bank ({(esxCompactReport.orphanBytes / 1024 / 1024).toFixed(2)} MB)
             </button>
-          )}
-          {esxSubTab !== "samples" && (
-            <span className="text-[10px] text-text-dim ml-auto">
-              v3.32 · Mono + Stereo + Compact
-            </span>
           )}
         </div>
 

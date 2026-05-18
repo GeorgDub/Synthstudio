@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.37.0",
+    version: "3.38.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -89,6 +89,41 @@ const INDEX = {
   // ─── KNOWN FILE INDEX ──────────────────────────────────────
   // Key files agents have analyzed. Add new entries after working on a file.
   files: {
+    "client/src/components/DrumMachine/DrumMachine.tsx (v3.38.0)": {
+      role:     "v3.38.0 ERWEITERT: Props um optional externalSyncEnabled?:boolean + externalSyncStatus?:'off'|'tempo-only'|'running'|'lost' erweitert. NEU EXPORT pure-fn isBpmExternallyLocked(enabled, status) — locked nur wenn enabled===true UND status===('running'|'tempo-only'); 'off'/'lost'/undefined→false (defensive). bpmLocked-Flag im Komponenten-Body → BPM-Block bekommt opacity-50 + Lock-Icon 🔒 + alle 3 controls (−/+/input) bekommen disabled + readOnly + Tooltip 'BPM extern gesynced — Slider gesperrt'. onBlur ignored bei locked. data-testid dm-bpm-control + dm-bpm-input + dm-bpm-lock-icon. v1.86 MIDI-Learn-Bridge unverändert (rechtsklick weiterhin aktiv). Alle anderen Toolbar-Features unverändert.",
+      lastSeen: "2026-05-18T19:00:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/components/Welcome/WelcomeWizard.tsx (v3.38.0)": {
+      role:     "v3.38.0 i18n EN: NEU WizardLanguage='de'|'en' type + detectDefaultLanguage(navigator.language?) (de* → 'de', sonst 'en', defensive für '', null, undefined). NEU loadWizardLanguage/saveWizardLanguage mit localStorage-Key 'synthstudio:welcome:lang' (defensive bei garbage-values). NEU i18nStrings: Record<WizardLanguage, WizardChromeStrings> map (ariaDialog/ariaClose/ariaProgress/ariaJumpToSlide/slideCounter/dontShowAgain/back/next/finish/langToggleLabel). NEU 2 separate Slide-Arrays SLIDES_DE + SLIDES_EN mit übersetzten title/body/bullets/action.label, gleiche slide-IDs (welcome/korg/performance/samples/omnitribe/done) für stable target-routing. NEU getDefaultSlidesForLanguage(lang) helper. Komponente: useState<WizardLanguage> mit initialLanguage-prop-override; useMemo für effective slides. Header bekommt Inline-Lang-Toggle (DE|EN-Pills mit aria-pressed), data-testid welcome-wizard-lang-toggle/welcome-wizard-lang-de/-en + data-lang Attribut. Default-Version-String → 'v3.38.0'.",
+      lastSeen: "2026-05-18T19:00:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/utils/korg/esxBankEditorState.ts (v3.38.0)": {
+      role:     "v3.38.0 ERWEITERT: v3.31/v3.32 Pattern+Mono+Stereo-Sample-Patch-State bleibt + NEU Undo/Redo-History-API (~150 LOC). EDITOR_HISTORY_MAX=20 (memory-safe cap). EsxEditorSnapshot {patternMap: Map<i, ArrayBuffer>, sampleMap: Map<i, EsxSamplePatchEntry>, stereoSampleMap: Map<i, EsxSamplePatchEntry>}. EsxEditorHistory {past: Snapshot[], future: Snapshot[]} (oldest→newest left→right). Pure-fn API: createEsxEditorHistory(), cloneEsxEditorSnapshot(snap) (new Map(src) für alle 3 maps — Values bleiben by-ref weil ArrayBuffer/EsxSamplePatchEntry immutable by convention), pushEsxHistory(history, prevSnap) (cloned snap → past + clear future + drop oldest wenn >cap), undoEsxEditor(history, current) → {snapshot, history}|null (pop past, push current onto future, future-cap), redoEsxEditor(history, current) → {snapshot, history}|null (mirror), canUndoEsxEditor(history)/canRedoEsxEditor(history) predicates. v3.32 commitEsxStereoSamplePatches + v3.31 commitEsxPatchesAll + v3.29 stage/unstage/build/filter/format-Helpers alle unverändert.",
+      lastSeen: "2026-05-18T19:00:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/components/KorgBank/KorgBankEditor.tsx (v3.38.0)": {
+      role:     "v3.38.0 ERWEITERT: v3.32 ESX-Mode + Sub-Tabs (Patterns|Samples Mono/Stereo) + Compact bleibt + NEU Undo/Redo-Stack (+~120 LOC). NEU State esxHistory (createEsxEditorHistory()). NEU pushEsxHistorySnapshot useCallback captures (esxPendingPatches, esxSamplePending, esxStereoSamplePending). NEU handleEsxUndo / handleEsxRedo useCallback wenden snapshot an + re-parsen overview rows aus bankBuffer für visual consistency. Keyboard-Handler useEffect (open && mode==='esx'): Ctrl+Z = undo, Ctrl+Shift+Z = redo, Ctrl+Y = redo (alt-shortcut). Native undo/redo in INPUT/TEXTAREA/contentEditable bleibt unangetastet. pushEsxHistorySnapshot() vor jedem stage/unstage-Call eingebaut: replaceEsxSlot, handleEsxRevertSlot, replaceEsxSampleSlot, handleEsxSampleRevertSlot, replaceEsxStereoSampleSlot, handleEsxStereoSampleRevertSlot. History wird zurückgesetzt bei: close (useEffect), tryChangeMode (esx→other), loadEsxBankFromFile, save (commit electron+browser branches), handleEsxCompactBank. NEU Undo+Redo-Buttons in der ESX-Sub-Tab-Header-Bar (ml-auto, links neben Compact-Button) mit Count-Badges + disabled-State (busy oder canUndo===false). Title-Tooltips 'Rückgängig (Ctrl+Z) — N verfügbar' / 'Wiederholen (Ctrl+Shift+Z) — N verfügbar'. data-testid korg-bank-editor-esx-undo / -redo / -history-controls.",
+      lastSeen: "2026-05-18T19:00:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "tests/features/dm-bpm-slider-lock.test.ts (v3.38.0)": {
+      role:     "v3.38.0 NEU: 7 Tests in 1 describe (env:node). Pure-fn tests für isBpmExternallyLocked(enabled, status) predicate. Coverage: enabled=undefined-default→false (3 cases), enabled=false→false (4 status cases), enabled+running→true, enabled+tempo-only→true, enabled+off→false (no clock yet), enabled+lost→false (sync verloren, fallback internal), status=undefined defensive→false. Helper-Test ohne JSDOM weil pure predicate.",
+      lastSeen: "2026-05-18T19:00:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "tests/features/welcome-wizard-i18n.test.ts (v3.38.0)": {
+      role:     "v3.38.0 NEU: 13 Tests in 4 describes (env:jsdom). (1) detectDefaultLanguage 3× — DE locales (de/de-DE/de-AT/de-CH/DE-de) → 'de', EN/FR/JA/ZH/EN-GB → 'en', invalid '/null/undefined' → 'en'. (2) i18nStrings 3× — DE+EN key parity (deKeys.sort===enKeys.sort), back/next/finish/dontShowAgain translation correctness + DE!==EN, slideCounter+ariaProgress callbacks return localised strings. (3) getDefaultSlidesForLanguage 3× — DE slides (6, 'Willkommen bei…', 'Du bist startklar'), EN slides (6, 'Welcome to…', 'You're ready to go'), slide-IDs sprachstabil (de.map(id)===en.map(id)). (4) save/loadWizardLanguage 4× — fresh-load fällt zurück auf jsdom navigator, save+load round-trip, override (EN→DE), garbage-fallback (klingon → navigator-default).",
+      lastSeen: "2026-05-18T19:00:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "tests/features/korg-esx-editor-undo.test.ts (v3.38.0)": {
+      role:     "v3.38.0 NEU: 19 Tests in 6 describes (env:node, kein jsdom). (1) createEsxEditorHistory 2× — empty past+future, EDITOR_HISTORY_MAX exported===20. (2) pushEsxHistory 4× — append cloned snap, clear future on push, snapshot cloned (mutate src doesn't affect history), 5-consecutive ordering. (3) undoEsxEditor 3× — null wenn past leer, restore prior snap + push current onto future + edited byte 0xAB vs prior 0x42, full snapshot equality across patternMap+sampleMap+stereoSampleMap, 2 consecutive walks past A→B→C→D. (4) redoEsxEditor 2× — null wenn future leer, undo→redo round-trip lands at original (byte 0xAB preserved). (5) Max-history 2× — 25 push → 20 stored (oldest=5, newest=24), future-stack cap on long undo chains. (6) canUndo/canRedo 3× — fresh false-false, after-push true-false, after-undo false-true, after-redo true-false. (7) cloneEsxEditorSnapshot 2× — new Map refs (not src refs), mutating dst doesn't affect src.",
+      lastSeen: "2026-05-18T19:00:00.000Z",
+      ownedBy:  "frontend"
+    },
     "client/src/audio/MidiClockIn.ts (v3.37.0)": {
       role:     "v3.37.0 ERWEITERT: v3.36 SPP-driven Pattern-Seek bleibt + NEU SPP-Throttle (closes v3.36-Caveat). (a) NEU Constant SPP_THROTTLE_MS=50 (leading+trailing edge, ~20 events/sec max). (b) NEU _emitSppThrottled(midiBeat) — leading-Event sofort dispatched, weitere innerhalb 50ms zwischengespeichert; trailing-Timer feuert LETZTEN Wert nach Ablauf des Fensters. (c) _onStart killt pending trailing-Timer (Spec-Konformität — keine SPP-Dispatches während running). (d) NEU optional `scheduler` in MidiClockInOptions für Test-Injection (setTimeout/clearTimeout). (e) pendingStartStep wird im SPP-Handler IMMER gesetzt (auch bei suppressed dispatch) — finaler Burst-Wert vor 0xFA niemals verloren. (f) enable/disable/reset → _resetSppThrottle() cleanup. v3.36-API unverändert: handleMidiMessage(ArrayLike<number>) + pendingStartStep getter. EWMA alpha=0.1 + Outlier-Filter (>50% off-mean discarded). Status getStatus() → 'off'|'tempo-only'|'running'|'lost' mit 500ms Sync-Loss. Events: midiclockin:start/stop/continue/tempo/spp. Isomorphic. 47/47 Tests GREEN (vorher 32).",
       lastSeen: "2026-05-18T18:30:00.000Z",
@@ -1477,6 +1512,42 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "frontend",
+      timestamp: "2026-05-18T19:00:00.000Z",
+      done: [
+        "v3.38.0: UX-Polish-Bundle — 3 alte Caveats geschlossen (BPM-Slider disabled, Welcome-i18n EN, KorgBankEditor Undo-Stack). Pure-funktionale Helpers + 39 neue Tests, alles isomorphic + backward-compatible.",
+        "Sub-Task 1 BPM-Slider Disabled-State (closes v3.35-Caveat). GEÄNDERT client/src/components/DrumMachine/DrumMachine.tsx: Props erweitert um optional `externalSyncEnabled?: boolean` + `externalSyncStatus?: 'off'|'tempo-only'|'running'|'lost'`. NEU exportierte pure-fn `isBpmExternallyLocked(enabled, status)` — locked nur wenn enabled===true UND status===('running'|'tempo-only'); 'off'/'lost'/undefined→false (defensive). BPM-Block in Toolbar: bpmLocked-Flag → opacity-50 + 🔒-Lock-Icon vor Slider + alle 3 controls (−button, input, +button) bekommen disabled + readOnly + Tooltip 'BPM extern gesynced — Slider gesperrt'. onBlur ignored bei locked. data-testid 'dm-bpm-control' + 'dm-bpm-input' + 'dm-bpm-lock-icon' für UI-Asserts.",
+        "GEÄNDERT client/src/App.tsx: <DrumMachine> bekommt jetzt externalSyncEnabled={midi.clockInEnabled} + externalSyncStatus={midi.clockInStatus} (props sind optional → keine Regression an anderen Call-Sites wie SequencerPanel/CollabSplitView).",
+        "Sub-Task 2 Welcome-Wizard i18n EN (closes v3.22-Caveat). GEÄNDERT client/src/components/Welcome/WelcomeWizard.tsx: NEU exportiertes WizardLanguage-Type 'de'|'en' + detectDefaultLanguage(navigator.language?): de* → 'de', sonst 'en' (case-insensitive, defensive für '', null, undefined → 'en'). NEU loadWizardLanguage/saveWizardLanguage mit localStorage-Key 'synthstudio:welcome:lang' (defensive bei garbage-values). NEU i18nStrings: Record<WizardLanguage, WizardChromeStrings> map für ariaDialog/ariaClose/ariaProgress/ariaJumpToSlide/slideCounter/dontShowAgain/back/next/finish/langToggleLabel. NEU 2 separate Slide-Arrays SLIDES_DE + SLIDES_EN mit übersetzten title/body/bullets/action.label, gleiche slide-IDs (welcome/korg/performance/samples/omnitribe/done) für stable target-routing. NEU getDefaultSlidesForLanguage(lang) helper. Komponente: useState<WizardLanguage> mit initialLanguage-prop-override fuer Tests, useMemo für effective slides (per lang). Header bekommt Inline-Lang-Toggle (DE|EN-Pills mit aria-pressed), data-testid welcome-wizard-lang-toggle/welcome-wizard-lang-de/-en + data-lang Attribut am Dialog-Root. Default-Version-String → 'v3.38.0'.",
+        "Sub-Task 3 KorgBankEditor Undo-Stack (closes v3.32-Caveat). GEÄNDERT client/src/utils/korg/esxBankEditorState.ts (+~150 LOC): NEU EDITOR_HISTORY_MAX=20 (memory-safe cap). NEU EsxEditorSnapshot {patternMap, sampleMap, stereoSampleMap} + EsxEditorHistory {past[], future[]}. NEU pure-fn createEsxEditorHistory(), cloneEsxEditorSnapshot(snap) (new Map(src) für alle 3 maps — Values bleiben by-ref weil ArrayBuffer/EsxSamplePatchEntry immutable by convention), pushEsxHistory(history, prevSnap) (cloned snap → past + clear future + drop oldest wenn >cap), undoEsxEditor(history, current) (returns {snapshot, history}|null — pop past, push current onto future), redoEsxEditor(history, current) (mirror — pop future, push current onto past), canUndoEsxEditor / canRedoEsxEditor.",
+        "GEÄNDERT client/src/components/KorgBank/KorgBankEditor.tsx (+~120 LOC): NEU State esxHistory (createEsxEditorHistory()). NEU pushEsxHistorySnapshot useCallback captures (esxPendingPatches, esxSamplePending, esxStereoSamplePending). NEU handleEsxUndo / handleEsxRedo useCallback wenden snapshot an + re-parsen overview rows aus bankBuffer für visual consistency. Keyboard-Handler useEffect (open && mode==='esx'): Ctrl+Z = undo, Ctrl+Shift+Z = redo, Ctrl+Y = redo (alt-shortcut). Native undo/redo in INPUT/TEXTAREA/contentEditable bleibt unangetastet. pushEsxHistorySnapshot() vor jedem stage/unstage-Call eingebaut: replaceEsxSlot, handleEsxRevertSlot, replaceEsxSampleSlot, handleEsxSampleRevertSlot, replaceEsxStereoSampleSlot, handleEsxStereoSampleRevertSlot. History wird zurückgesetzt bei: close, mode-change, bank-load, save (commit), compact. NEU Undo+Redo-Buttons in der ESX-Sub-Tab-Header-Bar mit Count-Badges + disabled-State (busy oder canUndo===false). data-testid korg-bank-editor-esx-undo / -redo / -history-controls.",
+        "NEU 3 Test-Dateien (39 Tests gesamt): (a) tests/features/dm-bpm-slider-lock.test.ts (7 Tests) — isBpmExternallyLocked predicate-Tests für alle 4 status-States + enabled=true/false/undefined + status=undefined defensive. (b) tests/features/welcome-wizard-i18n.test.ts (13 Tests, jsdom) — detectDefaultLanguage (DE/EN/invalid 7 cases), i18nStrings DE/EN parity (deKeys===enKeys, distinct translations für back/next/finish/dontShowAgain, callback-helpers slideCounter+ariaProgress), getDefaultSlidesForLanguage (6 slides je sprache mit gleichem ID-Set), save/loadWizardLanguage localStorage (fresh-load, save→load, override, garbage-fallback). (c) tests/features/korg-esx-editor-undo.test.ts (19 Tests) — createHistory, push (append+clear-future+clone-defensive+5-consecutive), undo (null wenn past leer, single-undo, full-snapshot-equality patternMap+sampleMap+stereoSampleMap, 2-consecutive-walks past), redo (null wenn future leer, undo→redo round-trip), max-cap (25 push → 20 stored, oldest=5 newest=24, future-cap), canUndo/canRedo predicates (fresh, after-push, after-undo, after-redo), cloneSnapshot defensive copy + mutation-safety.",
+        "TEST-RESULTAT: pnpm check clean (TypeScript strict ✓). pnpm vitest run 189 files / 4353 tests passed (16 skipped, KEINE Regression vs v3.37 — vorher 4314, jetzt +39 = 4353). Drei neue Files: dm-bpm-slider-lock 7/7, welcome-wizard-i18n 13/13, korg-esx-editor-undo 19/19.",
+        "BACKWARD-COMPAT: (a) DrumMachine props erweitert um 2 OPTIONAL fields — alle bestehenden Caller (CollabSplitView, SequencerPanel) bleiben kompatibel. (b) WelcomeWizard signature unverändert (slides + versionString bleiben), neu nur optionales initialLanguage; defaults aus localStorage→navigator. Bestehende welcome-wizard.test.ts (15 Tests) bleibt grün. (c) esxBankEditorState public API unverändert — Undo-Helpers sind ADDITIV. KorgBankEditor data-testids alle bestehenden bleiben — Undo+Redo sind neue testids.",
+        "CAVEATS (verbleibend nach v3.38): (1) Undo-Stack respektiert nicht Bank-Buffer-Replace-Operationen (Compact, Save) — bewusst, History wird dort geleert weil semantic-reset. (2) Welcome-Wizard-Slides werden nicht ON-THE-FLY übersetzt wenn user mid-tour wechselt — useMemo([slides, lang]) löst neuen slides-Array aus, slide-pointer bleibt aber bei safeIndex (selber slot, nur mit anderer Sprache). Acceptable da slide-IDs sprach-stabil sind. (3) BPM-Slider-Lock greift NICHT auf MIDI-CC-Mappings auf dem BPM-target — MIDI-Right-Click-Learn bleibt aktiv (bewusst, weil user evtl. trotzdem das mapping editieren will).",
+        "package.json + agents/INDEX.js version 3.37.0 → 3.38.0."
+      ],
+      next: [
+        "Optional v3.39: BPM-Slider-Lock erweitern auf MIDI-CC-Inbound-Block (aktuell sperren wir UI, aber MIDI-CC fired weiter durch — der externe Sync gewinnt aber im AudioEngine.setBpm-Override, also funktional korrekt).",
+        "Optional v3.39: Welcome-Wizard Slides per-translation maintenance — aktuell parallel-arrays, könnte zu Map<id, {de: SlideContent, en: SlideContent}> refactored werden (DRY-Vorteil bei zukünftigen 3+ Sprachen).",
+        "Optional v3.39: Undo-Stack-Persistence über Editor-Close hinweg — derzeit reset-on-close. Würde Power-User helfen die mid-edit das Modal schließen.",
+        "Optional v3.39: Visual-Indicator im DrumMachine-Header wenn external-sync running — kleines LED rechts neben BPM (statt nur die opacity-50 am Slider).",
+        "Vorhandene v3.37-Items unverändert (Optional v3.39+: Multi-Bar-Pattern-Support, Topbar-SPP-Display)."
+      ],
+      changed: [
+        "client/src/components/DrumMachine/DrumMachine.tsx (Props erweitert + isBpmExternallyLocked helper exportiert + Toolbar-BPM-Block disabled+🔒+opacity-50 wenn locked)",
+        "client/src/App.tsx (<DrumMachine> bekommt externalSyncEnabled/Status props aus midi-Hook)",
+        "client/src/components/Welcome/WelcomeWizard.tsx (i18n: detectDefaultLanguage + i18nStrings DE/EN + SLIDES_DE/EN + getDefaultSlidesForLanguage + save/loadWizardLanguage + Header-Lang-Toggle + initialLanguage prop)",
+        "client/src/utils/korg/esxBankEditorState.ts (NEU Undo-History-API: EDITOR_HISTORY_MAX=20 + EsxEditorSnapshot + EsxEditorHistory + create/push/undo/redo/canUndo/canRedo/cloneSnapshot)",
+        "client/src/components/KorgBank/KorgBankEditor.tsx (esxHistory state + pushEsxHistorySnapshot vor 6 stage/unstage call-sites + handleEsxUndo/Redo callbacks + Ctrl+Z/Ctrl+Shift+Z keyboard listener (mode='esx' gated) + Undo/Redo-Buttons in Sub-Tab-Header + history reset on close/mode-change/load/save/compact)",
+        "tests/features/dm-bpm-slider-lock.test.ts (NEU — 7 Tests für isBpmExternallyLocked predicate)",
+        "tests/features/welcome-wizard-i18n.test.ts (NEU — 13 Tests jsdom für detect/i18nStrings/slides/save+load)",
+        "tests/features/korg-esx-editor-undo.test.ts (NEU — 19 Tests für create/push/undo/redo/max-cap/predicates/clone)",
+        "package.json (3.37.0 → 3.38.0)",
+        "agents/INDEX.js (version + workLog v3.38.0 + files-Einträge)"
+      ]
+    },
     {
       agent:     "backend",
       timestamp: "2026-05-18T18:30:00.000Z",

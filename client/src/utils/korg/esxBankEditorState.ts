@@ -690,3 +690,135 @@ export function filterEsxStereoSampleRows(
     return false;
   });
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// v3.38.0 — Undo / Redo Stack for the KorgBankEditor
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** Maximum number of snapshots kept in the undo/redo stack (memory-safe). */
+export const EDITOR_HISTORY_MAX = 20;
+
+/**
+ * v3.38.0 — Single editor snapshot. Captures the three pending-patch maps
+ * (patterns + mono samples + stereo samples) that comprise the ESX edit
+ * session. Maps are kept by reference: the editor produces new Map instances
+ * on every stage/unstage (immutable pattern) so reference equality is enough
+ * to detect "no change". We do NOT snapshot the bank buffer itself — patches
+ * are applied at save-time only.
+ */
+export interface EsxEditorSnapshot {
+  patternMap: Map<number, ArrayBuffer>;
+  sampleMap: Map<number, EsxSamplePatchEntry>;
+  stereoSampleMap: Map<number, EsxSamplePatchEntry>;
+}
+
+/**
+ * v3.38.0 — Undo/Redo history container. `past` stores prior snapshots
+ * (oldest first → newest last), `future` stores undone snapshots that can
+ * be re-applied via redo (newest first → oldest last).
+ */
+export interface EsxEditorHistory {
+  past: EsxEditorSnapshot[];
+  future: EsxEditorSnapshot[];
+}
+
+/** Create an empty history container. */
+export function createEsxEditorHistory(): EsxEditorHistory {
+  return { past: [], future: [] };
+}
+
+/**
+ * Shallow-clone a snapshot. Maps are wrapped in `new Map(src)` so callers
+ * can keep modifying their state without disturbing the saved snapshot.
+ * The Map *values* (ArrayBuffer / EsxSamplePatchEntry) are NOT deep-cloned
+ * — they are treated as immutable by convention in this module.
+ */
+export function cloneEsxEditorSnapshot(
+  snap: EsxEditorSnapshot,
+): EsxEditorSnapshot {
+  return {
+    patternMap: new Map(snap.patternMap),
+    sampleMap: new Map(snap.sampleMap),
+    stereoSampleMap: new Map(snap.stereoSampleMap),
+  };
+}
+
+/**
+ * Push the *previous* state onto the past stack. Caller must invoke this
+ * BEFORE applying a new patch (so the snapshot represents the pre-change
+ * state). Clears the future stack — once a new edit is made, the old redo
+ * trail is gone.
+ *
+ * Returns a NEW history object (input is not mutated). When the resulting
+ * `past` would exceed `EDITOR_HISTORY_MAX`, the oldest entry is dropped.
+ */
+export function pushEsxHistory(
+  history: EsxEditorHistory,
+  prevSnapshot: EsxEditorSnapshot,
+): EsxEditorHistory {
+  const snap = cloneEsxEditorSnapshot(prevSnapshot);
+  const nextPast = [...history.past, snap];
+  // Drop oldest entries until we're at or below cap.
+  while (nextPast.length > EDITOR_HISTORY_MAX) {
+    nextPast.shift();
+  }
+  return { past: nextPast, future: [] };
+}
+
+/**
+ * Pop the most recent past-snapshot, returning it as the snapshot to apply
+ * and pushing the *current* state onto the future stack so it can be redone.
+ *
+ * Returns `null` when there's nothing to undo (the editor should leave the
+ * current state untouched in that case).
+ */
+export function undoEsxEditor(
+  history: EsxEditorHistory,
+  currentSnapshot: EsxEditorSnapshot,
+): { snapshot: EsxEditorSnapshot; history: EsxEditorHistory } | null {
+  if (history.past.length === 0) return null;
+  const nextPast = history.past.slice(0, -1);
+  const snap = history.past[history.past.length - 1];
+  const future = [...history.future, cloneEsxEditorSnapshot(currentSnapshot)];
+  while (future.length > EDITOR_HISTORY_MAX) {
+    future.shift();
+  }
+  return {
+    snapshot: snap,
+    history: { past: nextPast, future },
+  };
+}
+
+/**
+ * Pop the most recent future-snapshot (= an earlier undone state), returning
+ * it as the snapshot to apply and pushing the *current* state onto the past
+ * stack so the redo can be re-undone.
+ *
+ * Returns `null` when there's nothing to redo.
+ */
+export function redoEsxEditor(
+  history: EsxEditorHistory,
+  currentSnapshot: EsxEditorSnapshot,
+): { snapshot: EsxEditorSnapshot; history: EsxEditorHistory } | null {
+  if (history.future.length === 0) return null;
+  const nextFuture = history.future.slice(0, -1);
+  const snap = history.future[history.future.length - 1];
+  const past = [...history.past, cloneEsxEditorSnapshot(currentSnapshot)];
+  while (past.length > EDITOR_HISTORY_MAX) {
+    past.shift();
+  }
+  return {
+    snapshot: snap,
+    history: { past, future: nextFuture },
+  };
+}
+
+/** Returns true if at least one undo step is available. */
+export function canUndoEsxEditor(history: EsxEditorHistory): boolean {
+  return history.past.length > 0;
+}
+
+/** Returns true if at least one redo step is available. */
+export function canRedoEsxEditor(history: EsxEditorHistory): boolean {
+  return history.future.length > 0;
+}
