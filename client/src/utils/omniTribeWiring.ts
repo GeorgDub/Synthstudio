@@ -319,6 +319,39 @@ export function chordPidToKey(pid: number): ChordParamKey | null {
   }
 }
 
+// ─── v3.21.0: Chord User-Slot Upload ────────────────────────────────────────
+
+/**
+ * Parst eine CSV-Intervall-Liste wie "0,4,7" oder " -3, 5, 10 " in number[].
+ * Pure-Helper, Whitespace-tolerant, ungueltige Tokens werden geskipped.
+ * Used in ChordPanel + Tests.
+ */
+export function parseChordIntervalCsv(csv: string): number[] {
+  if (typeof csv !== "string") return [];
+  return csv
+    .split(",")
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0)
+    .map((s) => parseInt(s, 10))
+    .filter((n) => Number.isFinite(n));
+}
+
+/**
+ * Sendet eine User-Chord-Slot-Definition ans Geraet.
+ * slotIndex: 0..3 (entspricht ChordType 11..14 in CHORD_TYPES).
+ * intervals: signed Halbtoene -64..+63 relativ zum Root.
+ *
+ * Returns true bei erfolgreichem Aufruf (Bridge connected),
+ * false wenn NO-OP (disconnected) — der Caller kann Status anzeigen.
+ *
+ * NO-OP wenn Bridge nicht connected — isomorphic-Regel.
+ */
+export function uploadChordUserSlot(slotIndex: number, intervals: number[]): boolean {
+  if (!omniTribeBridge.isConnected) return false;
+  omniTribeBridge.uploadChordUserSlot(slotIndex, intervals);
+  return true;
+}
+
 // ─── Performance-Pad-Modul (paramHigh = 0x1F) ────────────────────────────────
 
 /**

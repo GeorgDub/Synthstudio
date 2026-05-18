@@ -21,6 +21,8 @@ import {
   chordPidToKey,
   decodeParamLow,
   OMNITRIBE_CHORD,
+  uploadChordUserSlot,
+  parseChordIntervalCsv,
 } from "../../utils/omniTribeWiring";
 
 const STAGGER_MAX_MS = 200;
@@ -74,6 +76,21 @@ export function ChordPanel({
   const handleUserIntervalsChange = useCallback((slotId: number, csv: string) => {
     setUserIntervals((prev) => ({ ...prev, [slotId]: csv }));
   }, []);
+
+  // ── v3.21.0 Upload User-Slot to Device ─────────────────────────────────
+  const [uploadStatus, setUploadStatus] = useState<Record<number, "ok" | "err" | undefined>>({});
+  const handleUploadUserSlot = useCallback((slotId: number) => {
+    // slotId in UI: 11..14 entspricht User1..User4 → bridge erwartet 0..3.
+    const slotIndex = slotId - 11;
+    const csv = userIntervals[slotId] ?? "";
+    const intervals = parseChordIntervalCsv(csv);
+    const ok = uploadChordUserSlot(slotIndex, intervals);
+    setUploadStatus((prev) => ({ ...prev, [slotId]: ok ? "ok" : "err" }));
+    // Auto-clear nach 2 s.
+    setTimeout(() => {
+      setUploadStatus((prev) => ({ ...prev, [slotId]: undefined }));
+    }, 2000);
+  }, [userIntervals]);
 
   // ── Inbound: paramChange-Listener für 2-Wege-Sync ──────────────────────
   useEffect(() => {
@@ -186,27 +203,57 @@ export function ChordPanel({
           User-Slots (4)
         </summary>
         <div className="mt-2 space-y-2">
-          {[11, 12, 13, 14].map((slotId) => (
-            <div
-              key={slotId}
-              className="flex items-center gap-2"
-              data-testid={`chord-user-slot-${slotId}`}
-            >
-              <span className="text-xs text-text-muted w-16">
-                User {slotId - 10}
-              </span>
-              <input
-                type="text"
-                value={userIntervals[slotId] ?? ""}
-                onChange={(e) => handleUserIntervalsChange(slotId, e.target.value)}
-                placeholder="0,4,7"
-                className="flex-1 px-2 py-1 rounded bg-bg-base border border-border-color text-xs text-text-primary font-mono focus:outline-none focus:border-accent-primary"
-                aria-label={`User chord slot ${slotId - 10} intervals`}
-              />
-            </div>
-          ))}
+          {[11, 12, 13, 14].map((slotId) => {
+            const status = uploadStatus[slotId];
+            return (
+              <div
+                key={slotId}
+                className="flex items-center gap-2"
+                data-testid={`chord-user-slot-${slotId}`}
+              >
+                <span className="text-xs text-text-muted w-16">
+                  User {slotId - 10}
+                </span>
+                <input
+                  type="text"
+                  value={userIntervals[slotId] ?? ""}
+                  onChange={(e) => handleUserIntervalsChange(slotId, e.target.value)}
+                  placeholder="0,4,7"
+                  className="flex-1 px-2 py-1 rounded bg-bg-base border border-border-color text-xs text-text-primary font-mono focus:outline-none focus:border-accent-primary"
+                  aria-label={`User chord slot ${slotId - 10} intervals`}
+                />
+                <button
+                  type="button"
+                  onClick={() => handleUploadUserSlot(slotId)}
+                  disabled={!connected}
+                  data-testid={`chord-user-slot-${slotId}-upload`}
+                  className={[
+                    "px-2 py-1 rounded text-[10px] font-semibold border transition-colors",
+                    status === "ok"
+                      ? "bg-accent-success/20 border-accent-success text-accent-success"
+                      : status === "err"
+                      ? "bg-accent-danger/20 border-accent-danger text-accent-danger"
+                      : connected
+                      ? "bg-bg-elevated border-border-color text-text-muted hover:text-text-primary"
+                      : "bg-bg-elevated border-border-subtle text-text-dim cursor-not-allowed",
+                  ].join(" ")}
+                  title={
+                    status === "ok"
+                      ? "Hochgeladen"
+                      : status === "err"
+                      ? "Upload fehlgeschlagen (Disconnected?)"
+                      : connected
+                      ? "Slot ans Geraet senden"
+                      : "Disconnected"
+                  }
+                >
+                  {status === "ok" ? "✓" : status === "err" ? "✗" : "Upload"}
+                </button>
+              </div>
+            );
+          })}
           <p className="text-[10px] text-text-dim italic">
-            Halbtoene relativ zum Root. Lokal — Upload an Geraet via Sysex (geplant).
+            Halbtoene relativ zum Root. CSV-Format z.B. <code>0,4,7</code> fuer Major.
           </p>
         </div>
       </details>

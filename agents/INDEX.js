@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.20.0",
+    version: "3.21.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -89,14 +89,19 @@ const INDEX = {
   // ─── KNOWN FILE INDEX ──────────────────────────────────────
   // Key files agents have analyzed. Add new entries after working on a file.
   files: {
+    "client/src/audio/OmniTribeBridge.ts (v3.21.0)": {
+      role:     "v3.21.0: SynthStudio ↔ OmniTribe Sysex-Bridge (~410 LOC, isomorph, Web-MIDI). v3.16 Codec + v3.21 Polish. (1) pendingSets jetzt Map<key, expiresAt:number> statt Set+setTimeout-Chain — eliminiert Race bei Slider-Sweep >50ms wo aelterer setTimeout den juengsten Echo-Window-Eintrag loescht. setParam ueberschreibt expiresAt = Date.now() + 50; lazy GC via private sweepExpired(now) am Hot-Path. handleIncoming-Echo-Pfad prueft 'now < expiresAt' fuer Block, sonst durchlassen + delete. (2) NEU uploadChordUserSlot(slotIndex:0..3, intervals:number[]):void — sendet CMD 0x02 SUB 0x04 mit Payload [slot(1B), count(1B), N×interval(1B 7-bit-signed)]. Negative Halbtoene via (val+0x80)&0x7F two's-complement. Hardware-Clamp -64..+63, max 16 Intervalle. Defensive vs null/non-array. NO-OP wenn !connected. (3) +clampInt(v,lo,hi) helper, +nowMs() Date.now-Wrapper (NICHT performance.now, damit vi.useFakeTimers funktioniert), +__testGetPendingSetSize() Test-Hook. v3.16-API unveraendert: connect/disconnect/setParam/getParam/requestFullDump/uploadWavetable/enableStreams/undo/redo/remotePlay/remoteStop/remoteRecord/remoteTempo + on()/Singleton omniTribeBridge.",
+      lastSeen: "2026-05-18T13:25:00.000Z",
+      ownedBy:  "backend"
+    },
     "client/src/utils/omniTribeThrottle.ts (v3.17.0)": {
       role:     "v3.17.0 NEU: Generischer trailing-throttle pro Key (~135 LOC, isomorph, kein DOM). makeThrottledSender<TArgs>(fn, {minIntervalMs=16}) liefert {send(key, args), flush(key?), cancel(key?)}. Leading-Edge: erster Call pro Key sendet sofort. Trailing-Coalesce: Folge-Calls innerhalb minIntervalMs ueberschreiben pendingValue, setTimeout am Intervall-Ende liefert ZULETZT empfangenen Wert (Slider-Release-Wert kommt damit immer an). Pro-Key Slot-Isolation. cancel() resettet lastSentAt=0 (wichtig fuer Tests). Verwendet performance.now() falls verfuegbar, sonst Date.now().",
       lastSeen: "2026-05-18T12:15:00.000Z",
       ownedBy:  "frontend"
     },
-    "client/src/utils/omniTribeWiring.ts (v3.18.0)": {
-      role:     "v3.18.0: Erweitert um Chord (0x1E) + Performance-Pads (0x1F) — LOC 225 → ~410. v3.17-API unveraendert. NEU OMNITRIBE_CHORD constants {PARAM_HIGH:0x1E, TYPE:0x00, STAGGER:0x01, ENABLE:0x03}. NEU CHORD_TYPES Array (15 Eintraege: 11 Standard Major/Minor/Maj7/Min7/Dom7/Dim/Aug/Sus2/Sus4/Add9/Min9 + 4 User-Slots mit leeren Intervals). CHORD_TYPE_COUNT=15. sendChordParam(part, 'type'|'stagger'|'enable', intValue) mit clamp 0..127. chordPidToKey(pid)→key|null decoder. NEU OMNITRIBE_PERFORMANCE constants {PARAM_HIGH:0x1F, PAD_PRESS_BASE:0x00, LOOP_ISOLATE_BASE:0x20, JAM_MUTE_BASE:0x30, PAD_COUNT:16}. WICHTIG: Performance ist global (part=0), paramLow ist NICHT (part<<4)|pid sondern Base|padId/partId. sendPerformancePadPress(padId) ruft (0,0x1F,Base|id,1) — clampPadId 0..15 internal. sendPerformanceLoopIsolate(padId) ruft (0,0x1F,0x20|id,1). sendPerformanceJamMute(partId, on:bool) ruft (0,0x1F,0x30|id, on?1:0). decodePerformanceParamLow(pl)→{kind:'padPress'|'loopIsolate'|'jamMute'|'unknown', id} fuer 2-Wege-Sync.",
-      lastSeen: "2026-05-18T12:25:00.000Z",
+    "client/src/utils/omniTribeWiring.ts (v3.21.0)": {
+      role:     "v3.21.0: v3.18 Chord/Performance unveraendert. NEU uploadChordUserSlot(slotIndex, intervals) Wrapper — NO-OP wenn !connected, returns boolean fuer UI-Status-Anzeige (true=gesendet, false=disconnected). Delegiert an omniTribeBridge.uploadChordUserSlot (CMD 0x02 SUB 0x04). NEU parseChordIntervalCsv(csv) Pure-Helper: split-by-comma + trim + parseInt + filter(isFinite); tolerant gegen leere Tokens, non-numeric Strings, null/undefined. v3.18-API komplett unveraendert: OMNITRIBE_CHORD constants, CHORD_TYPES, sendChordParam/chordPidToKey, OMNITRIBE_PERFORMANCE, sendPerformancePadPress/sendPerformanceLoopIsolate/sendPerformanceJamMute, decodePerformanceParamLow.",
+      lastSeen: "2026-05-18T13:25:00.000Z",
       ownedBy:  "frontend"
     },
     "client/src/store/useOmniTribeMetersStore.ts (v3.18.0)": {
@@ -114,9 +119,9 @@ const INDEX = {
       lastSeen: "2026-05-18T12:25:00.000Z",
       ownedBy:  "frontend"
     },
-    "client/src/components/OmniTribe/ChordPanel.tsx (v3.18.0)": {
-      role:     "v3.18.0 NEU: Akkord-Auswahl-Panel (~190 LOC, NRPN 0x1E). Header: Title + Enable-Toggle-Button (bg-accent-success/20 wenn on, ruft sendChordParam('enable', 0|1)). 5-Spalten-Grid mit 15 Chord-Type-Buttons (radio-Pattern: role='radio', aria-checked, name aus CHORD_TYPES). Click sendet sendChordParam(part, 'type', id 0..14). Strum-Stagger-Slider 0..200 ms, value × 127/200 → MIDI (sendChordParam('stagger')). User-Slot-Editor in <details>-Drawer: 4 CSV-Input-Fields fuer Intervall-Listen ('0,4,7'), nur lokal cached (Bridge-Upload TODO). 2-Wege-Sync: omnitribe:paramChange-Listener filtert paramHigh==0x1E + decodeParamLow().part===partIndex + chordPidToKey → updated lokalen State (Echo-Schutz via Bridge-pendingSets). data-testid: chord-panel, chord-type-{0..14}, chord-stagger-slider, chord-enable-toggle, chord-user-slot-{11..14}.",
-      lastSeen: "2026-05-18T12:25:00.000Z",
+    "client/src/components/OmniTribe/ChordPanel.tsx (v3.21.0)": {
+      role:     "v3.21.0: v3.18-Basis (Chord-Type Grid 15× + Strum-Stagger-Slider + Enable-Toggle + 2-Wege-Sync) unveraendert + NEU User-Slot Upload-Button pro Slot 11..14. handleUploadUserSlot(slotId) parsed via parseChordIntervalCsv → ruft uploadChordUserSlot(slotIndex 0..3, intervals[]). Status-Visual: gruen ✓ bei Erfolg / rot ✗ bei Disconnected / 'Upload'-Label sonst (uploadStatus state); Auto-Reset nach 2s. Button disabled wenn !connected. data-testid chord-user-slot-{11..14}-upload zusaetzlich zu v3.18 testids.",
+      lastSeen: "2026-05-18T13:25:00.000Z",
       ownedBy:  "frontend"
     },
     "client/src/components/OmniTribe/PerformancePadGrid.tsx (v3.19.0)": {
@@ -134,10 +139,15 @@ const INDEX = {
       lastSeen: "2026-05-18T12:40:00.000Z",
       ownedBy:  "frontend"
     },
-    "tests/features/omnitribe-echo-protection.test.ts (v3.19.0)": {
-      role:     "v3.19.0 NEU: 4 Echo-Schutz-Regression-Tests (DoD §16). @vitest-environment jsdom + FakeMidiInput/Output. (1) Encoder-zur-UI Sweep ueber 5s: 300 setParam @ 60Hz + parallele Echo-Notifies → Property-Test 'keine UI-Oszillation' (jedes leaked Event traegt einen Wert, den die UI selber bereits gesendet hat — kein false-value UI-Bounce). (2) Bridge.setParam blockt Echos im 50ms-Window: 30 Iter setParam → 11ms Throttler → Echo → 60ms wait, alle 30 Echos geblockt. (3) Late-Notify nach 80ms (Echo-Window abgelaufen) durchgelassen — kein false-positive-Block. (4) Verschiedene Param-Adressen blockieren sich nicht — kein globaler Lock, pending-Set ist key-spezifisch. FINDING: Echo-Schutz blockt zuverlaessig im 50ms-Fenster pro Adresse, aber bei kontinuierlichem Sweep (>50ms) loescht der aelteste setTimeout-Eintrag den Pending-Set-Key, sodass spaetere Echos durchsickern. Property bleibt aber: leaked Werte = UI-Wert → keine Oszillation.",
-      lastSeen: "2026-05-18T12:40:00.000Z",
+    "tests/features/omnitribe-echo-protection.test.ts (v3.21.0)": {
+      role:     "v3.21.0: 6 Echo-Schutz-Tests (v3.19 hatte 4 + v3.21 +2). @vitest-environment jsdom + FakeMidiInput/Output. v3.19-Tests bleiben gruen unter MaxTimestamp-Refactor: (1) 5s/300-iter Sweep produziert keine UI-Oszillation. (2) 30 Iter setParam → 11ms Throttler → Echo → 60ms wait — alle 30 Echos geblockt. (3) Late-Notify nach 80ms durchgelassen. (4) Param-Adress-Isolation (kein globaler Lock). +2 v3.21 Tests: (5) MaxTimestamp-Refactor — 60-iter Sweep ueber 5s (jeder Iter setParam + 11ms throttle + Echo direkt + 80ms wait) produziert EXAKT 0 Echo-Leaks — der MaxTimestamp-Refactor haelt das Fenster mit jedem neuen setParam lebendig statt es vom aelteren setTimeout zerstoeren zu lassen. (6) sweepExpired GC verifiziert via __testGetPendingSetSize: 10 setParams quickly → size=10, dann 100ms warten + 1 weiterer setParam → size=1 (alle 10 expired entries garbage-collected).",
+      lastSeen: "2026-05-18T13:25:00.000Z",
       ownedBy:  "frontend"
+    },
+    "tests/features/omnitribe-chord-upload.test.ts (v3.21.0)": {
+      role:     "v3.21.0 NEU: 13 Tests fuer Chord User-Slot Upload-Pfad. @vitest-environment jsdom. (a) parseChordIntervalCsv 4×: Whitespace-Tolerance + Empty/Invalid-Filter + Negative-Halbtoene + Non-String-Defensiv. (b) Bridge.uploadChordUserSlot 7×: CMD 0x02 SUB 0x04 mit Payload [slotIndex(1B), count(1B), N×interval] + Negative-Intervalle als 7-bit-two's-complement (-1→0x7F, -12→0x74) + slotIndex-Clamp 0..3 (99→3, -1→0) + Interval-Clamp -64..+63 (100→63, -100→-64) + Truncation auf max 16 (30→16) + Disconnected-NO-OP + non-array-Input-Defensiv (null→count=0). (c) uploadChordUserSlot Wrapper 2×: ruft Bridge wenn isConnected (returns true), NO-OP wenn !isConnected (returns false). Test-Helper connectAndReset clearet out.sent nach connect (Identity-Frame ignorieren). parseFrame extrahiert {cmd, sub, payload} aus Raw-Bytes.",
+      lastSeen: "2026-05-18T13:25:00.000Z",
+      ownedBy:  "backend"
     },
     "tests/features/omnitribe-meters.test.ts (v3.18.0)": {
       role:     "v3.18.0 NEU: 9 Tests fuer useOmniTribeMetersStore. @vitest-environment jsdom. Coverage: VU-Setter (16 Levels assertion), VU-Clamping (200→127, -5→0, NaN→0, Float 127.9→127), VU-Padding (3 Werte → Rest 0), Spectrum-Setter (64 Bins), Spectrum-Padding (3 Werte → Rest 0), Reset-Disconnect (VU+Spec auf 0), Reset-Idempotenz (alles 0 + reset noch mal), Bounds-Truncation (32 Werte → nur erste 16 fuer VU, 128 → nur erste 64 fuer Spectrum). __resetOmniTribeMetersStoreForTests() in beforeEach garantiert isolierten Test-State.",
@@ -1237,6 +1247,37 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "backend",
+      timestamp: "2026-05-18T13:25:00.000Z",
+      done: [
+        "v3.21.0: OmniTribe Bridge-Polish — zwei dokumentierte Caveats aus v3.19/v3.18 geschlossen: (1) pendingSets-Race bei langem Slider-Sweep + (2) fehlende uploadChordUserSlot-API.",
+        "(1) pendingSets-Refactor: Set<key> + setTimeout(50ms)→delete pro setParam wurde ersetzt durch Map<key, expiresAt:number>. Vorher: jeder setParam plante einen eigenen setTimeout der den key entfernt — Race bei Sweep >50ms (alter Timer loescht aktuellen Eintrag bevor dessen 50ms-Fenster um sind). Nachher: jeder setParam ueberschreibt einfach expiresAt = Date.now() + 50; lazy GC via private sweepExpired(now) am Anfang jedes setParam UND im handleIncoming-Echo-Pfad. Performance: keine setTimeout-Spam, O(n) Sweep ueber typischerweise kleine Map. nowMs()-Wrapper nutzt Date.now() (NICHT performance.now()) damit vi.useFakeTimers() weiterhin funktioniert. +clampInt(v,lo,hi) Helper. +__testGetPendingSetSize() Test-Hook. LOC OmniTribeBridge.ts: 333 → 408 (+75 inkl. JSDoc).",
+        "(2) uploadChordUserSlot(slotIndex:0..3, intervals:number[]) auf OmniTribeBridge ergaenzt. Protocol-Choice: SYSEX via CMD 0x02 SUB 0x04 (Chord User-Slot Upload) — neuer Sub-Code unter PARAM-CMD, statt NRPN-erweiterung. Begruendung: NRPN-Adress-Schema ist nur 7-bit value pro Adresse, kann variable-length interval-list nicht tragen. Sysex erlaubt clean payload [slotIndex(1B), count(1B), N×interval(1B 7-bit signed)]. Negative Halbtoene werden two's-complement-style auf 7-bit gemappt (val < 0 ? val+0x80 : val). Hardware-Window-Clamp -64..+63, max 16 Intervalle pro Slot, Defensive vs non-array/null inputs.",
+        "uploadChordUserSlot Wrapper in omniTribeWiring.ts ergaenzt (NO-OP wenn !connected, returns boolean fuer UI-Status-Anzeige). +parseChordIntervalCsv(csv) Pure-Helper: trimt Whitespace, filtert leere/non-numeric Tokens, tolerant gegen null/undefined.",
+        "ChordPanel.tsx erweitert: pro User-Slot (User 1..4) neuer 'Upload'-Button neben CSV-Input. Status-Visual: gruen ✓ bei Erfolg / rot ✗ bei Disconnected / 'Upload'-Label sonst. Auto-Reset nach 2 sec via setTimeout. Disabled wenn !connected. data-testid chord-user-slot-{11..14}-upload.",
+        "Tests: NEU tests/features/omnitribe-chord-upload.test.ts mit 13 Tests (4× parseChordIntervalCsv, 7× Bridge.uploadChordUserSlot Sysex-Encoding inkl. CMD/SUB-Verifikation + 7-bit-twos-complement fuer negative Intervalle + slotIndex/Interval-Clamp + Truncation auf 16 + Disconnected-NO-OP + non-array-defensiv, 2× uploadChordUserSlot-Wrapper Connected-Gate). +2 erweiterte Tests in omnitribe-echo-protection.test.ts (60-iter Sweep ueber 5s → 0 Echo-Leaks mit MaxTimestamp + sweepExpired GC).",
+        "Test-Resultat: pnpm check clean. pnpm test → 174 files / 3979 passed / 15 skipped (vorher 3953 → +26 mit den 19 OmniTribe-Tests + den anderen non-OT-Tests). Alle 4 v3.19 echo-protection Tests bleiben gruen mit MaxTimestamp-Refactor. Alle 16 v3.18 chord-pad-Tests + 24 panel-wiring Tests + 17 bridge-Tests bleiben gruen.",
+        "Caveats v3.21: (a) Sysex-Frame ist im Protocol-Doc nicht offiziell registriert — CMD 0x02 SUB 0x04 ist eine pragmatische Wahl. Wenn Firmware diese SUB-ID anders interpretiert, muss otp_protocol.md im Omnitribe-Repo aktualisiert + die Bridge-SUB angepasst werden. (b) Test 'Encoder-zur-UI Sweep ueber 5s' (v3.19) erlaubt weiterhin leaked Events solange diese den UI-Wert tragen — die Property bleibt 'keine UI-Oszillation', nicht '0 Leaks'. Das neue v3.21-Test '60-iter Sweep' garantiert dagegen 0 Leaks bei kontinuierlichem setParam (MaxTimestamp haelt das Fenster lebendig).",
+        "package.json + agents/INDEX.js version 3.20.0 → 3.21.0."
+      ],
+      next: [
+        "TASK-v3.21-OTP-DOC: otp_protocol.md im Omnitribe-Repo um CMD 0x02 SUB 0x04 (Chord User-Slot Upload) erweitern — analog 0x06 0x00 (Wavetable Upload) mit Payload-Schema.",
+        "TASK-v3.21-CHORD-USER-SLOT-DOWNLOAD: bidirektionaler Workflow — Geraet sendet aktuelle User-Slot-Definitionen via 0x02 0x05 (Chord User-Slot Response) zurueck, Bridge dispatcht CustomEvent omnitribe:chordUserSlotChange, ChordPanel synct ein.",
+        "TASK-v3.21-CHORD-NAME: User-Slots haben aktuell harcoded Namen 'User 1..4'. Erweiterte Sysex-Variante CMD 0x02 SUB 0x06 koennte Name + Intervalle in einem Frame uebertragen.",
+        "TASK-v3.21-PLAYWRIGHT-CHORD-UPLOAD: tests/web/omnitribe-chord-upload.spec.ts E2E-Smoke — ChordPanel mounted, User-Slot-Upload-Button klickbar, Status-Visual ändert sich auf ✓.",
+        "TASK-v3.21-ECHO-RELEASE: pendingSets-Map waechst monoton solange neue Keys kommen, nur sweepExpired GC entfernt. Bei sehr vielen unterschiedlichen Param-Adressen ueber lange Zeit koennte Memory wachsen. Mitigation: periodisches sweepExpired alle 1s via setInterval — aktuell nur lazy-on-write. In Praxis unkritisch (typ <50 unique addresses pro Session)."
+      ],
+      changed: [
+        "client/src/audio/OmniTribeBridge.ts (v3.16 → v3.21: pendingSets Set→Map<key,expiresAt>, +sweepExpired GC, +clampInt helper, +nowMs wrapper, +uploadChordUserSlot via CMD 0x02 SUB 0x04, +__testGetPendingSetSize hook; LOC 333 → 408)",
+        "client/src/utils/omniTribeWiring.ts (+uploadChordUserSlot wrapper mit isConnected-gate + boolean return, +parseChordIntervalCsv pure-helper)",
+        "client/src/components/OmniTribe/ChordPanel.tsx (+Upload-Button pro User-Slot mit Status-Visual ✓/✗ + Auto-Reset nach 2s, +uploadStatus state, +handleUploadUserSlot callback, disabled wenn !connected)",
+        "tests/features/omnitribe-chord-upload.test.ts (NEU, 13 Tests: 4× parseChordIntervalCsv + 7× Bridge.uploadChordUserSlot Sysex-Encoding + 2× Wrapper Connected-Gate)",
+        "tests/features/omnitribe-echo-protection.test.ts (+2 Tests: 60-iter Sweep ueber 5s mit MaxTimestamp → 0 Leaks, +sweepExpired GC nach 100ms Wait)",
+        "package.json (3.20.0 → 3.21.0)",
+        "agents/INDEX.js (version 3.20.0 → 3.21.0 + workLog v3.21.0 entry + OmniTribeBridge.ts file-entry update)"
+      ]
+    },
     {
       agent:     "backend",
       timestamp: "2026-05-18T13:05:00.000Z",

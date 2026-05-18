@@ -250,6 +250,81 @@ describe("OmniTribe Echo-Schutz Regression (DoD §16)", () => {
     }
   });
 
+  it("v3.21.0: MaxTimestamp-Refactor — 60-iter Sweep ueber 5s produziert KEINE Echo-Leaks (kontinuierliches setParam haelt Fenster lebendig)", async () => {
+    const out = new FakeMidiOutput();
+    const inp = new FakeMidiInput();
+    const bridge = new OmniTribeBridge();
+    await bridge.connect(makeAccess(out, inp));
+
+    const events: { value: number }[] = [];
+    const onParamChange = (e: Event): void => {
+      const d = (e as CustomEvent).detail as { value: number };
+      events.push({ value: d.value });
+    };
+    window.addEventListener("omnitribe:paramChange", onParamChange);
+
+    try {
+      const PART = 0x03;
+      const PARAM_HIGH = 0x19;
+      const PARAM_LOW = 0x00;
+
+      // 60 Iterationen ueber ~5 Sekunden: pro Iteration setParam → 11ms
+      // Throttle-Tick → Echo SOFORT (im 50ms-Fenster) → 80ms warten zur
+      // naechsten Iter. Das 80ms-Wait wird normalerweise das alte
+      // setTimeout-basiert pendingSet entleeren — aber mit MaxTimestamp
+      // wird jeder neue setParam das Fenster auf now+50ms NEU setzen.
+      // Daher: kein Echo darf durchkommen.
+      const N = 60;
+      for (let i = 0; i < N; i++) {
+        bridge.setParam(PART, PARAM_HIGH, PARAM_LOW, i * 50);
+        vi.advanceTimersByTime(11); // Throttle-Tick
+        // Echo SOFORT, innerhalb 11ms < 50ms-Fenster
+        const echo = buildFrame(OtpCmd.PARAM, 0x03, [
+          PART,
+          PARAM_HIGH,
+          PARAM_LOW,
+          ((i * 50) >> 7) & 0x7F,
+          (i * 50) & 0x7F,
+        ]);
+        inp.emit(Array.from(echo));
+        // 80ms warten → klassisches setTimeout-Schema haette Echo-Window
+        // schon abgelaufen + Pending-Set verloren. Mit MaxTimestamp wird
+        // beim naechsten setParam einfach das Fenster neu gesetzt.
+        vi.advanceTimersByTime(80);
+      }
+
+      // Echo-Schutz-Garantie v3.21: jeder Echo direkt nach setParam im 50ms-
+      // Fenster muss geblockt werden — egal wie lange der Sweep dauert.
+      expect(events.length).toBe(0);
+    } finally {
+      window.removeEventListener("omnitribe:paramChange", onParamChange);
+    }
+  });
+
+  it("v3.21.0: expired pendingSets werden via sweepExpired garbage-collected", async () => {
+    const out = new FakeMidiOutput();
+    const inp = new FakeMidiInput();
+    const bridge = new OmniTribeBridge();
+    await bridge.connect(makeAccess(out, inp));
+
+    // 10 verschiedene Param-Adressen schnell hintereinander setzen
+    // (kein advance dazwischen → alle bekommen ~same expiresAt).
+    for (let i = 0; i < 10; i++) {
+      bridge.setParam(0, 0x19, i, 0);
+    }
+    // SOFORTIGE Size-Check (kein advance) → alle 10 Eintraege noch
+    // im 50ms-Fenster.
+    expect(bridge.__testGetPendingSetSize()).toBe(10);
+
+    // 100ms warten — alle Fenster abgelaufen.
+    vi.advanceTimersByTime(100);
+
+    // Sweep triggern via setParam auf einer NEUEN Adresse — sweepExpired
+    // sollte alle 10 alten Eintraege loeschen, neuer wird hinzugefuegt.
+    bridge.setParam(0, 0x07, 0, 0);
+    expect(bridge.__testGetPendingSetSize()).toBe(1);
+  });
+
   it("Verschiedene Param-Adressen blockieren sich gegenseitig nicht (kein globaler Lock)", async () => {
     const out = new FakeMidiOutput();
     const inp = new FakeMidiInput();

@@ -94,6 +94,15 @@ function xorChecksum(payload: number[] | Uint8Array): number {
   return chk & 0x7F;
 }
 
+/** Klammert einen Integer auf [lo..hi] und floort. NaN/Infinity → lo. */
+function clampInt(v: number, lo: number, hi: number): number {
+  if (!Number.isFinite(v)) return lo;
+  const f = Math.floor(v);
+  if (f < lo) return lo;
+  if (f > hi) return hi;
+  return f;
+}
+
 // ─── Frame-Builder ───────────────────────────────────────────
 
 export function buildFrame(cmd: number, sub: number, payload: number[] | Uint8Array): Uint8Array {
@@ -117,13 +126,48 @@ export function buildFrame(cmd: number, sub: number, payload: number[] | Uint8Ar
 
 export type FrameHandler = (cmd: number, sub: number, payload: Uint8Array) => void;
 
+// ─── Echo-Schutz-Konfiguration ───────────────────────────────
+/**
+ * Zeitfenster (ms) in dem nach einem setParam(...) eingehende
+ * Param-Notify-Echos auf derselben Adresse verworfen werden. 50 ms
+ * ist groesser als USB-MIDI-Round-Trip-Latenz (typ < 3 ms), klein
+ * genug fuer echtes Encoder-Pickup ohne UI-Lag.
+ */
+const PENDING_SET_TTL_MS = 50;
+
+/**
+ * Monotone Zeitquelle.
+ *
+ * NB: Wir nutzen Date.now() statt performance.now() weil vi.useFakeTimers()
+ * Date kontrolliert, performance.now() aber typischerweise NICHT. Die Bridge
+ * verwendet ohnehin nur ms-Granularitaet (50ms Echo-Fenster) — der
+ * Wall-Clock-Drift von Date.now() ist hier irrelevant.
+ */
+function nowMs(): number {
+  return Date.now();
+}
+
 export class OmniTribeBridge {
   private output: MIDIOutput | null = null;
   private input: MIDIInput | null = null;
   private connected = false;
   private handlers: Map<number, FrameHandler[]> = new Map();
-  // Echo-Vermeidung: vom Host gesetzte Params nicht als Notify zurueck-verarbeiten
-  private pendingSets = new Set<string>();
+  /**
+   * Echo-Vermeidung: vom Host via setParam gesetzte Params duerfen nicht
+   * sofort danach als Notify zurueck-verarbeitet werden.
+   *
+   * v3.21.0-Refactor: Map<key, expiresAt:number> statt Set+setTimeout-Chain.
+   * Vorher gewesen: jeder setParam plante einen eigenen setTimeout(50ms),
+   * der den key wieder loescht. Bei einem Slider-Sweep (>50ms zwischen
+   * erstem und zweitem Set) loescht der aelteste Timer den Eintrag, BEVOR
+   * das 50 ms-Fenster des juengsten Sets abgelaufen ist — Echos sickern
+   * fuer ~50ms nach jedem Sweep-Tick durch.
+   *
+   * Neu: bei jedem setParam wird expiresAt = now + 50ms gesetzt; alte
+   * Eintraege werden lazy beim naechsten Zugriff (set OR Notify) per
+   * sweepExpired() entfernt. Keine setTimeout-Spam.
+   */
+  private pendingSets = new Map<string, number>();
   private throttleQueue: Uint8Array[] = [];
   private throttleTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -174,11 +218,26 @@ export class OmniTribeBridge {
   /** CMD 0x02 0x00: Parameter setzen mit Echo-Vermeidung. */
   setParam(part: number, paramHigh: number, paramLow: number, value: number): void {
     const key = `${part}:${paramHigh}:${paramLow}`;
-    this.pendingSets.add(key);
-    setTimeout(() => this.pendingSets.delete(key), 50);
+    const now = nowMs();
+    // Lazy GC: alte abgelaufene Eintraege beim Hot-Path entfernen.
+    this.sweepExpired(now);
+    this.pendingSets.set(key, now + PENDING_SET_TTL_MS);
     const v = value & 0x3FFF;
     this.send(OtpCmd.PARAM, 0x00,
       [part & 0x0F, paramHigh & 0x7F, paramLow & 0x7F, (v >> 7) & 0x7F, v & 0x7F]);
+  }
+
+  /**
+   * v3.21.0: Garbage-Collect abgelaufene pendingSets-Eintraege.
+   * O(n) ueber die typischerweise kleine Map (selten >20 Eintraege bei
+   * aktivem Slider-Sweep), wird nur in Hot-Paths (setParam, handleIncoming)
+   * aufgerufen. Test-Hook fuer explizites Clearen.
+   */
+  private sweepExpired(now: number): void {
+    if (this.pendingSets.size === 0) return;
+    for (const [key, expiresAt] of this.pendingSets) {
+      if (now >= expiresAt) this.pendingSets.delete(key);
+    }
   }
 
   /** CMD 0x02 0x01: Parameter abfragen — Response via `on(OtpCmd.PARAM, ...)`. */
@@ -214,6 +273,33 @@ export class OmniTribeBridge {
   undo(): void { this.send(OtpCmd.UNDO_REDO, 0x00, []); }
   redo(): void { this.send(OtpCmd.UNDO_REDO, 0x01, []); }
 
+  /**
+   * v3.21.0: CMD 0x02 0x04 — Chord User-Slot Upload.
+   *
+   * Payload-Format: [slotIndex(1B), intervalCount(1B), N×interval(1B signed semitones)].
+   * - slotIndex: 0..3 (entspricht Chord-Type 11..14 in CHORD_TYPES).
+   * - Intervalle: -64..+63 Halbtoene (signed-i8, gemapped auf 7-bit).
+   *
+   * Defensive: Disconnected → NO-OP. Invalide Eingaben werden geklamt.
+   * Wird gebaut via buildFrame() — landet im Throttle-Queue analog zu setParam.
+   */
+  uploadChordUserSlot(slotIndex: number, intervals: number[]): void {
+    if (!this.connected) return;
+    const slot = clampInt(slotIndex, 0, 3);
+    const list = Array.isArray(intervals) ? intervals : [];
+    // Max 16 Intervalle pro User-Slot (Hardware-Window) — laengere truncaten.
+    const trimmed = list.slice(0, 16);
+    const payload: number[] = [slot & 0x7F, trimmed.length & 0x7F];
+    for (const iv of trimmed) {
+      // signed semitones -64..+63 → 7-bit two's-complement (0x00..0x7F).
+      // negative: rawByte = (val + 0x80) & 0x7F → MIDI-safe.
+      const clamped = clampInt(iv, -64, 63);
+      const byte = clamped < 0 ? (clamped + 0x80) & 0x7F : clamped & 0x7F;
+      payload.push(byte);
+    }
+    this.send(OtpCmd.PARAM, 0x04, payload);
+  }
+
   /** CMD 0x0E: Transport. */
   remotePlay():   void { this.send(OtpCmd.TRANSPORT, 0x00, []); }
   remoteStop():   void { this.send(OtpCmd.TRANSPORT, 0x01, []); }
@@ -237,6 +323,15 @@ export class OmniTribeBridge {
   /** Test-Hook: simuliert eingehende Sysex-Frames (für Vitest). */
   __testInject(raw: Uint8Array): void {
     this.handleIncoming(raw);
+  }
+
+  /**
+   * v3.21.0 Test-Hook: liefert die aktuelle Groesse der pendingSets-Map
+   * (fuer Garbage-Collection-Verifikation in Tests).
+   */
+  __testGetPendingSetSize(): number {
+    this.sweepExpired(nowMs());
+    return this.pendingSets.size;
   }
 
   /** Test-Hook: liefert zuletzt gesendete Frames (für Vitest). */
@@ -303,7 +398,13 @@ export class OmniTribeBridge {
       let value = (vh << 7) | vl;
       if (value >= 0x2000) value -= 0x4000;
       const key = `${part}:${ph}:${pl}`;
-      if (this.pendingSets.has(key)) return;     // Echo, ignorieren
+      // v3.21.0: MaxTimestamp-Lookup statt setTimeout-Set.
+      const expiresAt = this.pendingSets.get(key);
+      const now = nowMs();
+      if (expiresAt !== undefined) {
+        if (now < expiresAt) return;             // Echo im Fenster, ignorieren
+        this.pendingSets.delete(key);            // abgelaufen → GC + durchlassen
+      }
       if (typeof window !== "undefined") {
         window.dispatchEvent(new CustomEvent("omnitribe:paramChange", {
           detail: { part, paramHigh: ph, paramLow: pl, value } as ParamChangeEvent,
