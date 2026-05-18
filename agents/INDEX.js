@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.49.0",
+    version: "3.50.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -89,20 +89,25 @@ const INDEX = {
   // ─── KNOWN FILE INDEX ──────────────────────────────────────
   // Key files agents have analyzed. Add new entries after working on a file.
   files: {
-    "client/src/utils/korgProjectTemplates.ts (v3.49.0)": {
-      role:     "v3.49.0 NEU: KORG-zentrierte Project-Setup-Templates. Anders als utils/projectTemplates.ts (Genre/Drum-Pattern) und store/projectTemplates.ts (Track-Skelette) bündelt dieses Modul KONFIGURATIONS-Templates: MIDI-Clock-Out, MIDI-Note-Out, Scenes, Pad-Bank. Pure-TS, isomorphic, alle Side-Effects via Dependency-Injection (KorgTemplateApplyDeps {setBpm?, setStepCount?, reseedParts?, enableClockOut?, enableLedFeedback?, postApplyNotice?}). Public-API: KORG_PROJECT_TEMPLATES (3 readonly Templates: korg-e2-studio mit 8d+8s/Clock-Out/GM-Note-Map, korg-esx-live mit 10d/8 Scenes/16 Pads, nanokontrol2-mix mit LED-Feedback/16 Pads), getKorgTemplate(id), listKorgTemplateIds(), buildPerfPadBankSlots() liefert 16 perf-pad-Slots mit param '0'..'15', applyKorgProjectTemplate(id, deps): KorgTemplateApplyResult {templateId, partIds, scenesCreated, padBankSlots, hints}. Apply ist destructive auf Pad-Bank/Scenes (UI muss confirm). MIDI-Note-Out-Configs werden mit Placeholder-outputId '__pending__:<regex>' geschrieben — UI-Layer ersetzt via MIDIAccess-Lookup.",
-      lastSeen: "2026-05-18T21:18:00.000Z",
-      ownedBy:  "frontend"
+    "client/src/utils/korgProjectTemplates.ts (v3.50.0)": {
+      role:     "v3.50.0 ERWEITERT (closes v3.49 Caveats): v3.49 Definitions + Apply bleiben + NEU End-to-End-Wiring (~120 LOC). Public-API erweitert: resolveMidiOutputIdByHint(source: MidiAccessLike|MidiOutputInfo[]|null, hint: string|null) → string|null (pure-fn, akzeptiert MIDIAccess oder flach MidiOutputInfo[], bevorzugt connected, defensive invalid-regex→null). isKorgTemplateApplyDestructive({existingPartCount?, defaultPartCount=9}) → boolean (prüft scenes-Store + Pad-Bank-non-default + Part-Count > default 9, für UI-Confirmation). KorgTemplateApplyDeps erweitert: enableClockOut/LedFeedback haben jetzt 2 Args (hint, resolvedOutputId), midiAccess?: MidiAccessLike|MidiOutputInfo[]|null (für Auto-Resolve), onMissingDevice?: (hint, sectionLabel) → void (für UI-Toast). KorgTemplateApplyResult +resolvedOutputId field. Apply-Flow: zuerst resolveMidiOutputIdByHint, dann pass resolvedOutputId an enableClockOut/LedFeedback + applyElectribeDrumMap (statt __pending__:* Placeholder). Bei Apply mit bereits existierenden __pending__:*-Configs werden diese rückwirkend auf echte ID aktualisiert. onMissingDevice fires bei midiAccess vorhanden aber no match. Backward-compat: v3.49 1-Arg-DI ist nun 2-Arg, alle bestehenden Tests wurden auf (hint, null) angepasst.",
+      lastSeen: "2026-05-18T21:35:00.000Z",
+      ownedBy:  "backend"
     },
     "client/src/components/KorgTemplatePicker/KorgTemplatePicker.tsx (v3.49.0)": {
       role:     "v3.49.0 NEU: Modal-Picker für KORG-Setup-Templates. Renders 3 Cards (Mic/Disc/Sliders Lucide-Icons) mit Name, Tagline, Description, Feature-Badges (BPM, Drum-Count, Synth-Count, Clock-Out, Note-Out, Scenes, Pads), 'Use Template'-Button. Props: {isOpen, onClose, onSelect: (id: KorgTemplateId) => void}. ESC-Key + Backdrop-Click schließen. Pure-Tailwind mit semantischen Tokens (bg-bg-panel, text-text-primary, bg-accent-primary/15, border-border-color, text-text-muted, bg-bg-base) — keine hardcoded Farben. Keine direkten Store-Imports — Caller (App.tsx) entscheidet was passiert.",
       lastSeen: "2026-05-18T21:18:00.000Z",
       ownedBy:  "frontend"
     },
-    "tests/features/korg-project-templates.test.ts (v3.49.0)": {
-      role:     "v3.49.0 NEU: 19 Tests, env:jsdom (für localStorage). Coverage: Definitions-Integrity (3 Templates mit eindeutigen IDs, alle Pflichtfelder/Hints), pro-Template-Spezifika (E2 hat 8d+8s/Clock-Out/Note-Out, ESX 10d/8 Scenes/Pad-Bank, nanoKONTROL2 LED-but-no-Clock), Lookup-Helpers (getKorgTemplate liefert null bei unknown), buildPerfPadBankSlots erzeugt 16 perf-pad mit param 0..15, apply-Sequenz mit Spy-Deps (setBpm + reseedParts werden korrekt gerufen), Per-Template-Side-Effects (E2 → applyElectribeDrumMap füllt 8 Configs mit Channel 9 + GM-Note 36 für part-0; ESX → 8 Scenes in localStorage 'ss-scenes:v1'; ESX + nanoKONTROL2 → 16 Pad-Bank-Slots), Error-Handling (unknown ID throws), Isomorphie (fehlende DI-Setter werden geskippt ohne Error), Notice-Toast enthält Template-Name, Hints-Result-Propagation. localStorage-Reset zwischen Tests via __resetMidiNoteOutStoreForTests + __resetPadBankForTests + manueller localStorage.removeItem('ss-scenes:v1').",
-      lastSeen: "2026-05-18T21:18:00.000Z",
-      ownedBy:  "testing"
+    "tests/features/korg-project-templates.test.ts (v3.50.0)": {
+      role:     "v3.50.0 ERWEITERT: v3.49 19 Tests bleiben (2 mit angepasster 2-Arg-Signature für enableClockOut/LedFeedback) + NEU 16 Tests in describe 'v3.50.0 End-to-End Wiring' = 35 Tests gesamt. env:jsdom. fullReset() nutzt jetzt __resetSceneStoreForTests statt manueller localStorage.removeItem. v3.50 Coverage: reseedParts mit 8d+8s erzeugt 16 part-IDs (drum-first), enableClockOut bekommt resolvedOutputId via Auto-Resolve, enableClockOut bekommt null + onMissingDevice fires wenn no-match, MIDI-Note-Out outputId wird zu echter ID resolved bei match (Test mit 'Electribe 2 MIDI' Output), Placeholder bleibt bei no-match, resolveMidiOutputIdByHint (case-insensitive + connected-preferred + null-cases × 3 Tests), isKorgTemplateApplyDestructive (fresh / highPartCount / scenes / non-default-PadBank / default-Layout × 5 Tests), __resetSceneStoreForTests test, result.resolvedOutputId null ohne midiAccess, pre-existing __pending__-Configs werden bei späterem Apply mit match aktualisiert.",
+      lastSeen: "2026-05-18T21:35:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/store/useSceneStore.ts (v3.50.0)": {
+      role:     "v3.50.0 ERWEITERT: bestehende Scene Launch State (Snapshots von Pattern-IDs für Live-Performance, addScene/updateScene/removeScene/setActiveScene/cycleScene/reorderScene/getSceneState/useSceneStore Hook) + localStorage 'ss-scenes:v1' bleibt. NEU __resetSceneStoreForTests() — setzt state auf { scenes:[], activeSceneId:null }, persistiert + notify. Bisheriger Test-Workaround localStorage.removeItem('ss-scenes:v1') ist deprecated.",
+      lastSeen: "2026-05-18T21:35:00.000Z",
+      ownedBy:  "backend"
     },
     "client/src/audio/PluginRegistry.ts (v3.44.0)": {
       role:     "v3.44.0 NEU (TASK-239 Phase 1): AudioWorklet-Plugin-Host Foundation. Module-Singleton mit Map<id, manifest>. Public API: validatePluginManifest(unknown):boolean (defensive structural check, prüft id/name/version/workletUrl/processorName non-empty Strings + paramSchema-Array mit min<=default<=max + finite numbers), registerPlugin(manifest, opts?), unregisterPlugin(id):boolean, getPlugins():PluginManifest[] sorted-by-id, getPlugin(id), pluginCount(), _resetPluginRegistry test-helper. BUILT_IN_PLUGINS Array mit 3 Plugins: BUILT_IN_TAPE_SAT (drive 0..1, mix 0..1), BUILT_IN_NOTCH (frequency 50..12000 Hz, q 0.5..30, mix 0..1), BUILT_IN_WIDTH (width 0..2). registerBuiltInPlugins() idempotent — doppelter Call mit gleicher Version ist No-Op, mit anderer Version wirft (defensive, schützt Hot-Reload). getDefaultParams(manifest) liefert {[paramId]: default}. clampPluginParam(manifest, paramId, value) clampt auf range, NaN→default, unknown-param→passthrough (defensive). builtInWorkletUrl(filename) resolved via new URL(...,import.meta.url) mit string-fallback für Test-Env. PHASE-2-STUB-BLOCK am Ende (~30 LOC Kommentar): scanNativePlugins()/loadVST3(path) Signaturen für v4.0+ JUCE-Node-Addon-Integration dokumentiert.",
@@ -1737,6 +1742,41 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "backend",
+      timestamp: "2026-05-18T21:35:00.000Z",
+      done: [
+        "v3.50.0: Template-Apply End-to-End Wiring — closes v3.49 Caveats (1) reseedParts/enableClockOut/enableLedFeedback DI-Slots no-op, (2) MIDI-Note-Out __pending__-Placeholder Auto-Resolve, (3) useSceneStore.__resetStoreForTests fehlt, (4) Destructive Pad-Bank-Apply ohne Confirmation. pnpm check clean, 198 Test-Files / 4611 tests grün (16 skipped, +16 NEU). Alle bestehenden v3.49 Tests unverändert grün (backward-compat).",
+        "client/src/utils/korgProjectTemplates.ts erweitert (+~120 LOC): NEU resolveMidiOutputIdByHint(source: MidiAccessLike|MidiOutputInfo[]|null, hint: string|null) → string|null — pure-fn, akzeptiert sowohl Web-MIDI MIDIAccess als auch eine flach enumerierte MidiOutputInfo[] (z.B. useMidi().outputDevices). Bevorzugt connected vor disconnected Devices. Defensive: invalid Regex → null statt throw. NEU isKorgTemplateApplyDestructive({existingPartCount?, defaultPartCount=9}) → boolean — prüft localStorage 'ss-scenes:v1' + loadPadBankSlots() + Part-Count gegen default 9 (Standard Drum-Bank). UI ruft das vor window.confirm. KorgTemplateApplyDeps erweitert: enableClockOut/enableLedFeedback bekommen jetzt 2 Args (hint, resolvedOutputId), midiAccess?: MidiAccessLike|MidiOutputInfo[]|null, onMissingDevice?: (hint, sectionLabel) → void. KorgTemplateApplyResult +resolvedOutputId field. Apply-Flow: zuerst Auto-Resolve, dann pass resolvedOutputId an enableClockOut/LedFeedback und an applyElectribeDrumMap (statt __pending__-Placeholder), bei Apply mit existing __pending__:*-Configs werden diese rückwirkend auf echte ID ersetzt. onMissingDevice fires bei midiAccess vorhanden aber kein Match.",
+        "client/src/App.tsx KorgTemplatePicker-Apply-Handler vollständig gewired (~80 LOC). dm.getActivePattern → existingPartCount für Destructive-Heuristik. window.confirm bei isKorgTemplateApplyDestructive. reseedParts: dropt alle Parts bis auf 1 (removePart-Guard) → renamePart auf 'Kick' → addPart-Loop für N-1 Drum-Names + M Synth-Names → re-read active pattern.parts.map(p.id). enableClockOut: midi.setClockOutEnabled(true) + midi.setClockOutputDeviceId(resolvedOutputId) wenn vorhanden. enableLedFeedback: midi.setFeedbackEnabled(true) + midi.setFeedbackOutputDeviceId(resolvedOutputId). midiAccess: midi.outputDevices (MidiDevice[] structural match auf MidiOutputInfo[]). onMissingDevice: showToast info. Toast wenn result.resolvedOutputId gesetzt.",
+        "client/src/store/useSceneStore.ts NEU __resetSceneStoreForTests() — setzt state auf { scenes:[], activeSceneId:null }, ruft persist + notify. Tests benutzen jetzt die offizielle API statt manueller localStorage.removeItem-Hacks.",
+        "tests/features/korg-project-templates.test.ts erweitert: 19 → 35 Tests (+16 NEU). 2 v3.49-Tests angepasst auf enableClockOut/LedFeedback's neue 2-Arg-Signature ('electribe', null). fullReset() nutzt jetzt __resetSceneStoreForTests. NEUE Tests: reseedParts liefert 16 Part-IDs in DI-Result (drum-first-then-synth Order), enableClockOut bekommt resolvedOutputId wenn match, enableClockOut bekommt null + onMissingDevice fires wenn kein match, MIDI-Note-Out outputId zu echter ID resolved bei match, Placeholder bleibt bei kein match, resolveMidiOutputIdByHint case-insensitive + connected-preferred + null-cases (3 Tests), isKorgTemplateApplyDestructive bei fresh / hochPartCount / scenes / non-default-PadBank / default-Layout (5 Tests), __resetSceneStoreForTests persistiert + clear, result.resolvedOutputId null ohne midiAccess, pre-existing __pending__-Configs werden bei späterem Apply mit match aktualisiert.",
+        "package.json + agents/INDEX.js version 3.49.0 → 3.50.0.",
+        "BACKWARD-COMPAT VERIFIZIERT: enableClockOut/LedFeedback DI war in v3.49 1-Arg, jetzt 2-Arg (hint, resolvedOutputId) — Breaking. Aber: alle v3.49-Tests hatten die DI-Slots als Spies (vi.fn()), TypeScript-strict prüft Call-Args nicht außer im toHaveBeenCalledWith — wurden in 2 Test-Cases aktualisiert (E2 ClockOut, nanoKONTROL2 LedFeedback) auf ('electribe', null) bzw ('nanokontrol', null). Andere Caller (App.tsx) wurden in v3.50 mit-aktualisiert. midiAccess + onMissingDevice + resolvedOutputId sind optional/additive — fehlen einfach in v3.49-Tests ohne Crash."
+      ],
+      next: [
+        "v3.51 Welcome-Wizard KORG-Slide mit 3 Inline-Buttons (statt Routing 'korg-templates' → openPicker).",
+        "v3.51 Real-MIDIAccess-Listener: bei device-state-change (z.B. ESX wird angeschlossen NACH Template-Apply) → automatisch __pending__-Configs auflösen.",
+        "v3.51 Template-Picker Preview-Screenshots/Demo-Animations.",
+        "v3.51 Custom-Template-Builder UI: User schreibt eigene KORG-Templates als JSON.",
+        "v3.51 Confirmation-Dialog: ersetze window.confirm durch eigenes Modal mit Diff-Übersicht (z.B. '8 Pads werden überschrieben, 5 Scenes gelöscht')."
+      ],
+      changed: [
+        "client/src/utils/korgProjectTemplates.ts (+~120 LOC — NEU resolveMidiOutputIdByHint + isKorgTemplateApplyDestructive, KorgTemplateApplyDeps erweitert um midiAccess + onMissingDevice + 2-Arg-DI für enableClockOut/LedFeedback, KorgTemplateApplyResult +resolvedOutputId, Apply-Flow ruft Auto-Resolve + ersetzt __pending__-Configs rückwirkend)",
+        "client/src/App.tsx (+~80 LOC — KorgTemplatePicker-onSelect vollständig gewired: Destructive-Guard mit window.confirm, reseedParts via dm.removePart/renamePart/addPart, enableClockOut/LedFeedback via midi.setClockOut/Feedback, midiAccess=midi.outputDevices, onMissingDevice via showToast, import isKorgTemplateApplyDestructive)",
+        "client/src/store/useSceneStore.ts (+12 LOC — NEU __resetSceneStoreForTests test-helper)",
+        "tests/features/korg-project-templates.test.ts (19 → 35 Tests — fullReset nutzt __resetSceneStoreForTests, 2 v3.49 Spy-Assertions angepasst, 16 NEU in 1 describe 'v3.50.0 End-to-End Wiring')",
+        "package.json (3.49.0 → 3.50.0)",
+        "agents/INDEX.js (version + workLog v3.50.0)"
+      ],
+      caveats: [
+        "Confirmation-Dialog nutzt window.confirm — in Electron-Mode okay (native dialog), in Tests/SSR mit !window → automatically proceed (ok=true Default). v3.51 sollte ein eigenes Modal mit Diff-Übersicht zeigen.",
+        "reseedParts in App.tsx-Handler rebuilds Parts im AKTIVEN Pattern. Andere Patterns bleiben unangetastet. Falls User multiple Patterns hat und alle reseeden will, muss er Template pro Pattern apply'n.",
+        "midi.outputDevices wird zum Zeitpunkt des Template-Apply ausgelesen. Wenn das ESX später erst angeschlossen wird, bleiben die __pending__-Configs stehen. v3.51 sollte einen device-state-change-Listener haben der nachträglich resolved.",
+        "Toast 'MIDI-Device auto-gewählt (ID: …)' zeigt die rohe outputId (truncated 8 chars) statt des Device-Namens — sollte v3.51 den name aus midi.outputDevices lookup'n.",
+        "isKorgTemplateApplyDestructive prüft Pad-Bank-Default als '16 perf-pad mit param 0..15'. Wenn ein User die Default-Pads via Pad-Bank-Builder modifiziert hat (z.B. nur 14 statt 16), wird das als destructive gewertet — defensive aber möglicherweise lästig."
+      ]
+    },
     {
       agent:     "frontend",
       timestamp: "2026-05-18T21:18:00.000Z",

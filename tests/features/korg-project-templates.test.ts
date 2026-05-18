@@ -36,21 +36,19 @@ import {
   getAllPartMidiOutConfigs,
 } from "@/store/useMidiNoteOutStore";
 import { __resetPadBankForTests, loadPadBankSlots } from "@/utils/padBankPersistence";
+import { __resetSceneStoreForTests } from "@/store/useSceneStore";
 
 // ─── Test-Helpers ─────────────────────────────────────────────────────────────
 
 /**
- * Vor jedem Test alle berührten Stores resetten. `useSceneStore` hat keinen
- * exportierten Test-Reset, deshalb räumen wir den localStorage-Key manuell.
+ * Vor jedem Test alle berührten Stores resetten. v3.50.0: nutzt jetzt den
+ * offiziellen `__resetSceneStoreForTests` API-Export anstelle des manuellen
+ * localStorage.removeItem-Hacks.
  */
 function fullReset(): void {
   __resetMidiNoteOutStoreForTests();
   __resetPadBankForTests();
-  try {
-    localStorage.removeItem("ss-scenes:v1");
-  } catch {
-    /* ignore */
-  }
+  __resetSceneStoreForTests();
 }
 
 function buildSpyDeps(partCount: number): {
@@ -184,7 +182,8 @@ describe("KORG Project Templates (v3.49.0)", () => {
     const { deps, enableClockOut, enableLedFeedback } = buildSpyDeps(16);
     applyKorgProjectTemplate("korg-e2-studio", deps);
     expect(enableClockOut).toHaveBeenCalledTimes(1);
-    expect(enableClockOut).toHaveBeenCalledWith("electribe");
+    // v3.50.0: enableClockOut(hint, resolvedOutputId) — ohne midiAccess → null
+    expect(enableClockOut).toHaveBeenCalledWith("electribe", null);
     expect(enableLedFeedback).not.toHaveBeenCalled();
   });
 
@@ -192,7 +191,8 @@ describe("KORG Project Templates (v3.49.0)", () => {
     const { deps, enableClockOut, enableLedFeedback } = buildSpyDeps(8);
     applyKorgProjectTemplate("nanokontrol2-mix", deps);
     expect(enableLedFeedback).toHaveBeenCalledTimes(1);
-    expect(enableLedFeedback).toHaveBeenCalledWith("nanokontrol");
+    // v3.50.0: enableLedFeedback(hint, resolvedOutputId) — ohne midiAccess → null
+    expect(enableLedFeedback).toHaveBeenCalledWith("nanokontrol", null);
     expect(enableClockOut).not.toHaveBeenCalled();
   });
 
@@ -265,5 +265,233 @@ describe("KORG Project Templates (v3.49.0)", () => {
     const result = applyKorgProjectTemplate("korg-e2-studio", deps);
     expect(result.hints.length).toBeGreaterThanOrEqual(2);
     expect(result.hints[0]).toMatch(/clock/i);
+  });
+});
+
+// ── v3.50.0 — Template-Apply End-to-End Wiring ──────────────────────────────
+
+describe("KORG Project Templates — v3.50.0 End-to-End Wiring", () => {
+  beforeEach(() => {
+    __resetMidiNoteOutStoreForTests();
+    __resetPadBankForTests();
+    __resetSceneStoreForTests();
+  });
+
+  // ── reseedParts ─────────────────────────────────────────────────────────────
+
+  it("reseedParts mit 8 drum + 8 synth erzeugt 16 part-IDs in DI-Result", () => {
+    const reseedParts = vi.fn((drum: number, synth: number) =>
+      Array.from({ length: drum + synth }, (_, i) =>
+        i < drum ? `drum-${i}` : `synth-${i - drum}`,
+      ),
+    );
+    const result = applyKorgProjectTemplate("korg-e2-studio", { reseedParts });
+    expect(reseedParts).toHaveBeenCalledWith(8, 8);
+    expect(result.partIds.length).toBe(16);
+    // Drum-IDs zuerst, dann Synth.
+    expect(result.partIds[0]).toBe("drum-0");
+    expect(result.partIds[8]).toBe("synth-0");
+  });
+
+  // ── enableClockOut Auto-Resolve ─────────────────────────────────────────────
+
+  it("enableClockOut bekommt resolvedOutputId wenn midiAccess match liefert", () => {
+    const enableClockOut = vi.fn();
+    const midiOutputs = [
+      { id: "out-1", name: "Some MIDI Thru", manufacturer: "X", state: "connected" as const },
+      { id: "out-2", name: "Electribe 2 Sampler", manufacturer: "KORG", state: "connected" as const },
+    ];
+    const result = applyKorgProjectTemplate("korg-e2-studio", {
+      reseedParts: (d, s) => Array.from({ length: d + s }, (_, i) => `p-${i}`),
+      enableClockOut,
+      midiAccess: midiOutputs,
+    });
+    expect(enableClockOut).toHaveBeenCalledWith("electribe", "out-2");
+    expect(result.resolvedOutputId).toBe("out-2");
+  });
+
+  it("enableClockOut bekommt null wenn kein device matched", () => {
+    const enableClockOut = vi.fn();
+    const onMissingDevice = vi.fn();
+    const result = applyKorgProjectTemplate("korg-e2-studio", {
+      reseedParts: (d, s) => Array.from({ length: d + s }, (_, i) => `p-${i}`),
+      enableClockOut,
+      midiAccess: [
+        { id: "out-x", name: "Unrelated Synth", manufacturer: "Y", state: "connected" as const },
+      ],
+      onMissingDevice,
+    });
+    expect(enableClockOut).toHaveBeenCalledWith("electribe", null);
+    expect(onMissingDevice).toHaveBeenCalledWith("electribe", "Clock-Out");
+    expect(result.resolvedOutputId).toBeNull();
+  });
+
+  // ── MIDI-Note-Out Placeholder Auto-Resolve ──────────────────────────────────
+
+  it("MIDI-Note-Out outputId wird zu echter ID resolved wenn midiAccess match liefert", () => {
+    // E2-Template Hint = "electribe" → match-Test mit "Electribe 2 MIDI"
+    const midiOutputs = [
+      { id: "korg-e2-001", name: "Electribe 2 MIDI", manufacturer: "KORG", state: "connected" as const },
+    ];
+    applyKorgProjectTemplate("korg-e2-studio", {
+      reseedParts: (d, s) => Array.from({ length: d + s }, (_, i) => `part-${i}`),
+      midiAccess: midiOutputs,
+    });
+    const cfgs = getAllPartMidiOutConfigs();
+    const ids = Object.values(cfgs).map((c) => c.outputId);
+    expect(ids.every((id) => id === "korg-e2-001")).toBe(true);
+    // Kein __pending__-Rest
+    expect(ids.some((id) => id.startsWith("__pending__"))).toBe(false);
+  });
+
+  it("MIDI-Note-Out Placeholder bleibt bestehen wenn kein device matched", () => {
+    applyKorgProjectTemplate("korg-e2-studio", {
+      reseedParts: (d, s) => Array.from({ length: d + s }, (_, i) => `part-${i}`),
+      midiAccess: [
+        { id: "x", name: "Random Device", manufacturer: "Y", state: "connected" as const },
+      ],
+    });
+    const cfgs = getAllPartMidiOutConfigs();
+    const firstCfg = Object.values(cfgs)[0];
+    expect(firstCfg.outputId).toMatch(/^__pending__:/);
+  });
+
+  // ── resolveMidiOutputIdByHint ───────────────────────────────────────────────
+
+  it("resolveMidiOutputIdByHint findet connected device case-insensitive", async () => {
+    const { resolveMidiOutputIdByHint } = await import(
+      "@/utils/korgProjectTemplates"
+    );
+    const id = resolveMidiOutputIdByHint(
+      [
+        { id: "a", name: "ELECTRIBE 2", manufacturer: "KORG", state: "connected" as const },
+      ],
+      "electribe",
+    );
+    expect(id).toBe("a");
+  });
+
+  it("resolveMidiOutputIdByHint liefert null bei keine outputs", async () => {
+    const { resolveMidiOutputIdByHint } = await import(
+      "@/utils/korgProjectTemplates"
+    );
+    expect(resolveMidiOutputIdByHint([], "electribe")).toBeNull();
+    expect(resolveMidiOutputIdByHint(null, "electribe")).toBeNull();
+    expect(resolveMidiOutputIdByHint([], null)).toBeNull();
+  });
+
+  it("resolveMidiOutputIdByHint bevorzugt connected vor disconnected", async () => {
+    const { resolveMidiOutputIdByHint } = await import(
+      "@/utils/korgProjectTemplates"
+    );
+    const id = resolveMidiOutputIdByHint(
+      [
+        { id: "disco", name: "Electribe 2", manufacturer: "KORG", state: "disconnected" as const },
+        { id: "live", name: "Electribe 2 Sampler", manufacturer: "KORG", state: "connected" as const },
+      ],
+      "electribe",
+    );
+    expect(id).toBe("live");
+  });
+
+  // ── isKorgTemplateApplyDestructive ──────────────────────────────────────────
+
+  it("isKorgTemplateApplyDestructive: false bei fresh state", async () => {
+    const { isKorgTemplateApplyDestructive } = await import(
+      "@/utils/korgProjectTemplates"
+    );
+    expect(isKorgTemplateApplyDestructive()).toBe(false);
+    expect(isKorgTemplateApplyDestructive({ existingPartCount: 9 })).toBe(false);
+  });
+
+  it("isKorgTemplateApplyDestructive: true wenn existingPartCount > default", async () => {
+    const { isKorgTemplateApplyDestructive } = await import(
+      "@/utils/korgProjectTemplates"
+    );
+    expect(isKorgTemplateApplyDestructive({ existingPartCount: 12 })).toBe(true);
+  });
+
+  it("isKorgTemplateApplyDestructive: true wenn scenes existieren", async () => {
+    const { isKorgTemplateApplyDestructive } = await import(
+      "@/utils/korgProjectTemplates"
+    );
+    const { addScene } = await import("@/store/useSceneStore");
+    addScene("Scene 1", "default");
+    expect(isKorgTemplateApplyDestructive()).toBe(true);
+  });
+
+  it("isKorgTemplateApplyDestructive: true wenn Pad-Bank Slots non-default sind", async () => {
+    const { isKorgTemplateApplyDestructive } = await import(
+      "@/utils/korgProjectTemplates"
+    );
+    const { savePadBankSlots } = await import("@/utils/padBankPersistence");
+    // Macro-Slot statt perf-pad → destructive
+    savePadBankSlots([
+      { kind: "macro", param: "0" },
+      ...Array.from({ length: 15 }, (_, i) => ({ kind: "perf-pad" as const, param: String(i) })),
+    ]);
+    expect(isKorgTemplateApplyDestructive()).toBe(true);
+  });
+
+  it("isKorgTemplateApplyDestructive: false bei default-Layout (16 perf-pads, 0 scenes)", async () => {
+    const { isKorgTemplateApplyDestructive } = await import(
+      "@/utils/korgProjectTemplates"
+    );
+    const { savePadBankSlots } = await import("@/utils/padBankPersistence");
+    savePadBankSlots(
+      Array.from({ length: 16 }, (_, i) => ({
+        kind: "perf-pad" as const,
+        param: String(i),
+      })),
+    );
+    expect(isKorgTemplateApplyDestructive()).toBe(false);
+  });
+
+  // ── useSceneStore reset API ─────────────────────────────────────────────────
+
+  it("__resetSceneStoreForTests killt scenes + persistiert leeren state", async () => {
+    const { addScene, getSceneState, __resetSceneStoreForTests: resetFn } =
+      await import("@/store/useSceneStore");
+    addScene("Scene A", "p1");
+    addScene("Scene B", "p2");
+    expect(getSceneState().scenes.length).toBe(2);
+    resetFn();
+    expect(getSceneState().scenes.length).toBe(0);
+    // localStorage muss ebenfalls leer sein
+    const raw = localStorage.getItem("ss-scenes:v1");
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      expect(parsed.scenes.length).toBe(0);
+    }
+  });
+
+  // ── Result.resolvedOutputId ─────────────────────────────────────────────────
+
+  it("result.resolvedOutputId === null wenn kein midiAccess", () => {
+    const result = applyKorgProjectTemplate("korg-e2-studio", {
+      reseedParts: (d, s) => Array.from({ length: d + s }, (_, i) => `p-${i}`),
+    });
+    expect(result.resolvedOutputId).toBeNull();
+  });
+
+  // ── Pre-existing __pending__ → auto-Update wenn Resolve gefunden ────────────
+
+  it("apply ersetzt bestehende __pending__-Configs mit echter ID wenn match", async () => {
+    const { setPartMidiOutConfig } = await import("@/store/useMidiNoteOutStore");
+    setPartMidiOutConfig("legacy-part", {
+      outputId: "__pending__:electribe",
+      channel: 9,
+      note: 36,
+      noteDurationMs: 50,
+      localSoundEnabled: true,
+    });
+    applyKorgProjectTemplate("korg-e2-studio", {
+      reseedParts: (d, s) => Array.from({ length: d + s }, (_, i) => `part-${i}`),
+      midiAccess: [
+        { id: "live-out", name: "Electribe 2 USB", manufacturer: "KORG", state: "connected" as const },
+      ],
+    });
+    const cfgs = getAllPartMidiOutConfigs();
+    expect(cfgs["legacy-part"].outputId).toBe("live-out");
   });
 });

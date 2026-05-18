@@ -120,3 +120,15 @@ export function useSceneStore(): SceneState {
   }, []);
   return _state;
 }
+
+// ─── Test Helper (v3.50.0) ───────────────────────────────────────────────────
+/**
+ * Setzt den Scene-Store auf Default zurück (leeres scenes-Array, kein active).
+ * Wird in Tests verwendet damit zwischen den Specs keine Scenes leaken.
+ * Wirkt sowohl auf den In-Memory-State als auch auf localStorage.
+ */
+export function __resetSceneStoreForTests(): void {
+  _state = { scenes: [], activeSceneId: null };
+  persist(_state);
+  notify();
+}

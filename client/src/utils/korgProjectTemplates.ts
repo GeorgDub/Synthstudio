@@ -24,12 +24,22 @@
  *    fällt sonst zurück auf "User must pick"
  */
 
-import { applyElectribeDrumMap } from "../store/useMidiNoteOutStore";
+import {
+  applyElectribeDrumMap,
+  getAllPartMidiOutConfigs,
+  setPartMidiOutConfig,
+} from "../store/useMidiNoteOutStore";
 import { addScene } from "../store/useSceneStore";
 import {
+  loadPadBankSlots,
   savePadBankSlots,
   type PadBankSlot,
 } from "./padBankPersistence";
+import {
+  enumerateMidiOutputs,
+  type MidiAccessLike,
+  type MidiOutputInfo,
+} from "./midiOutput";
 
 // ─── Public Types ─────────────────────────────────────────────────────────────
 
@@ -88,14 +98,41 @@ export interface KorgTemplateApplyDeps {
   setBpm?: (bpm: number) => void;
   /** Setze Step-Count auf Drum-Machine. */
   setStepCount?: (steps: 16 | 32 | 64) => void;
-  /** Stelle Part-Anzahl her (drum + synth). */
+  /**
+   * Stelle Part-Anzahl her (drum + synth). Implementierungen sollten
+   * bestehende Parts ggf. droppen und Defaults erzeugen. Liefert die neuen
+   * Part-IDs in Reihenfolge zurück (drum vor synth) — werden für die
+   * MIDI-Note-Out-Mappings (Drum-GM-Map) benötigt.
+   */
   reseedParts?: (drumCount: number, synthCount: number) => string[];
-  /** Aktiviere MIDI-Clock-Output mit Device-Lookup-Hint. */
-  enableClockOut?: (deviceHintRegex: string | null) => void;
-  /** Aktiviere LED-Feedback (nanoKONTROL2). */
-  enableLedFeedback?: (deviceHintRegex: string | null) => void;
+  /**
+   * Aktiviere MIDI-Clock-Output. Wenn `resolvedOutputId` gesetzt ist, wurde
+   * via {@link KorgTemplateApplyDeps.midiAccess} ein passendes Device gefunden
+   * und kann direkt als Clock-Out-Target gesetzt werden. Andernfalls flagt
+   * der UI-Layer den User dass er manuell wählen muss.
+   */
+  enableClockOut?: (deviceHintRegex: string | null, resolvedOutputId: string | null) => void;
+  /**
+   * Aktiviere LED-Feedback (nanoKONTROL2). Symmetrisch zu `enableClockOut`.
+   */
+  enableLedFeedback?: (deviceHintRegex: string | null, resolvedOutputId: string | null) => void;
   /** Ergebnis von Apply: dem Caller zurückgegebene Apply-Notes für Toast. */
   postApplyNotice?: (msg: string) => void;
+  /**
+   * v3.50.0: Optionaler MIDIAccess (oder Mock) ODER eine flach enumerierte
+   * `MidiOutputInfo[]` (z.B. aus `useMidi().outputDevices`). Wenn gesetzt,
+   * sucht der Apply-Helper nach einem Output dessen Name auf den Template-
+   * Regex matched und ersetzt die `__pending__:`-Placeholder in den
+   * MIDI-Note-Out-Configs mit der echten outputId. Fehlt der Match, bleibt
+   * der Placeholder stehen und der UI-Layer zeigt einen Hinweis-Toast.
+   */
+  midiAccess?: MidiAccessLike | MidiOutputInfo[] | null;
+  /**
+   * v3.50.0: Wird gerufen wenn der Apply-Helper für ein erwartetes Device
+   * keinen Match in der MIDIAccess findet — der UI-Layer kann dann einen
+   * Info-Toast rendern ("Output 'electribe' nicht gefunden — manuell wählen").
+   */
+  onMissingDevice?: (deviceHintRegex: string, sectionLabel: string) => void;
 }
 
 /** Resultat eines apply()-Calls. Pure-Data, kein React. */
@@ -105,6 +142,92 @@ export interface KorgTemplateApplyResult {
   scenesCreated: number;
   padBankSlots: number;
   hints: string[];
+  /**
+   * v3.50.0: Wenn der MIDIAccess durchsucht wurde, hier die outputId des
+   * Matches (oder null bei kein-Match). Nützlich für UI-Toast und für
+   * Tests die das Auto-Resolve-Verhalten verifizieren.
+   */
+  resolvedOutputId: string | null;
+}
+
+/**
+ * v3.50.0: Pure-Helper. Sucht in einer Output-Liste nach einem Output dessen
+ * Name auf das angegebene Regex matched (case-insensitive). Liefert die
+ * outputId oder null. Wird im Apply-Pfad benutzt, ist aber export-sichtbar
+ * damit andere UI-Pfade (Welcome-Wizard, Settings) den gleichen Mechanismus
+ * benutzen können.
+ *
+ * @param source MIDIAccess (Web-MIDI), Mock, oder einfach ein
+ *               MidiOutputInfo[]-Array (z.B. aus useMidi().outputDevices).
+ *               Kann null/undefined sein → liefert null.
+ * @param hint Regex-String (z.B. "electribe", "nanokontrol|nano kontrol"). Wenn
+ *             null/leer → liefert null.
+ * @returns ID des ersten matchenden connected-Output, oder null.
+ */
+export function resolveMidiOutputIdByHint(
+  source: MidiAccessLike | MidiOutputInfo[] | null | undefined,
+  hint: string | null,
+): string | null {
+  if (!source || !hint) return null;
+  let re: RegExp;
+  try {
+    re = new RegExp(hint, "i");
+  } catch {
+    return null; // invalid regex
+  }
+  const outputs: MidiOutputInfo[] = Array.isArray(source)
+    ? source
+    : enumerateMidiOutputs(source);
+  // Bevorzuge connected vor disconnected (User hat ggf. mehrere Devices).
+  const connected = outputs.find(
+    (o) => o.state === "connected" && re.test(o.name),
+  );
+  if (connected) return connected.id;
+  const any = outputs.find((o) => re.test(o.name));
+  return any?.id ?? null;
+}
+
+/**
+ * v3.50.0: Confirmation-Heuristik. Liefert `true` wenn der Apply destructive
+ * wäre (existierende Pad-Bank non-default, Scenes vorhanden, oder mehr Parts
+ * als Default). Der UI-Layer benutzt das vor `window.confirm()`.
+ *
+ * Hinweis: wir testen die persistierten Stores (localStorage) für Pad-Bank +
+ * Scenes. Drum-/Synth-Parts laufen über DI — Caller muss `existingPartCount`
+ * selbst befüllen wenn er die Heuristik aktivieren will. Default 9 = Standard
+ * Drum-Bank.
+ */
+export function isKorgTemplateApplyDestructive(opts: {
+  existingPartCount?: number;
+  defaultPartCount?: number;
+} = {}): boolean {
+  const { existingPartCount, defaultPartCount = 9 } = opts;
+  if (typeof existingPartCount === "number" && existingPartCount > defaultPartCount) {
+    return true;
+  }
+  try {
+    const pad = loadPadBankSlots();
+    if (pad.length > 0) {
+      // Default ist 16 perf-pad mit param 0..15. Wenn etwas anderes vorhanden
+      // ist (z.B. Macro-/Script-Slots), ist das destructive.
+      const isAllDefault = pad.length === 16 && pad.every(
+        (s, i) => s.kind === "perf-pad" && s.param === String(i),
+      );
+      if (!isAllDefault) return true;
+    }
+  } catch { /* ignore */ }
+  try {
+    if (typeof localStorage !== "undefined") {
+      const raw = localStorage.getItem("ss-scenes:v1");
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed?.scenes) && parsed.scenes.length > 0) {
+          return true;
+        }
+      }
+    }
+  } catch { /* ignore */ }
+  return false;
 }
 
 // ─── Template Definitions ─────────────────────────────────────────────────────
@@ -238,6 +361,14 @@ export function applyKorgProjectTemplate(
     throw new Error(`Unknown KORG template: ${id}`);
   }
 
+  // v3.50.0 — Auto-Resolve MIDI-Output via MIDIAccess + Regex-Hint.
+  // resolvedOutputId wird in den nachfolgenden Steps statt des __pending__-
+  // Placeholders verwendet. null bei: kein MIDIAccess, kein Hint, kein Match.
+  const resolvedOutputId = resolveMidiOutputIdByHint(
+    deps.midiAccess ?? null,
+    tmpl.midiDeviceHintRegex,
+  );
+
   // 1. Transport — BPM + Step-Count
   deps.setBpm?.(tmpl.bpm);
   deps.setStepCount?.(tmpl.stepCount);
@@ -251,25 +382,52 @@ export function applyKorgProjectTemplate(
 
   // 3. MIDI Clock-Out (nur E2 Studio)
   if (tmpl.modifies.midiClockOut) {
-    deps.enableClockOut?.(tmpl.midiDeviceHintRegex);
+    deps.enableClockOut?.(tmpl.midiDeviceHintRegex, resolvedOutputId);
+    if (
+      tmpl.midiDeviceHintRegex
+      && deps.midiAccess
+      && !resolvedOutputId
+      && deps.onMissingDevice
+    ) {
+      deps.onMissingDevice(tmpl.midiDeviceHintRegex, "Clock-Out");
+    }
   }
 
   // 4. LED-Feedback (nur nanoKONTROL2 Mix)
   if (tmpl.id === "nanokontrol2-mix") {
-    deps.enableLedFeedback?.(tmpl.midiDeviceHintRegex);
+    deps.enableLedFeedback?.(tmpl.midiDeviceHintRegex, resolvedOutputId);
+    if (
+      tmpl.midiDeviceHintRegex
+      && deps.midiAccess
+      && !resolvedOutputId
+      && deps.onMissingDevice
+    ) {
+      deps.onMissingDevice(tmpl.midiDeviceHintRegex, "LED-Feedback");
+    }
   }
 
   // 5. MIDI Note-Out (E2 Studio + ESX Live). Wir nutzen den DI-Store-Helper
   //    `applyElectribeDrumMap` aus useMidiNoteOutStore — der ist Store-Layer-
-  //    Code, aber storage-only (kein UI). Für reine Tests kann der Caller den
-  //    Apply-Helper mocken; hier verlassen wir uns auf die echte Funktion.
+  //    Code, aber storage-only (kein UI). Wenn Auto-Resolve einen echten
+  //    outputId gefunden hat, schreiben wir ihn direkt. Andernfalls bleibt
+  //    der Placeholder + onMissingDevice-Toast.
   if (tmpl.modifies.midiNoteOut && partIds.length > 0) {
-    // outputId wird beim ersten Toast in der UI vom User gesetzt, wenn die
-    // Auto-Resolution fehl schlägt. Wir nutzen einen Placeholder, den der UI-
-    // Layer überschreibt sobald die MIDIAccess das passende Device findet.
-    const placeholder = `__pending__:${tmpl.midiDeviceHintRegex ?? ""}`;
+    const targetOutputId =
+      resolvedOutputId
+      ?? `__pending__:${tmpl.midiDeviceHintRegex ?? ""}`;
     const drumPartIds = partIds.slice(0, tmpl.drumPartCount);
-    applyElectribeDrumMap(drumPartIds, placeholder);
+    applyElectribeDrumMap(drumPartIds, targetOutputId);
+    if (
+      !resolvedOutputId
+      && tmpl.midiDeviceHintRegex
+      && deps.midiAccess
+      && deps.onMissingDevice
+    ) {
+      deps.onMissingDevice(tmpl.midiDeviceHintRegex, "Note-Out");
+    }
+  } else if (resolvedOutputId && tmpl.modifies.midiNoteOut) {
+    // Defensive: midiAccess vorhanden + Match aber partIds leer → kein-op
+    // (reseedParts wurde nicht injected). UI sieht das via partIds-Länge.
   }
 
   // 6. Scenes (nur ESX Live — 8 Scenes als Cycle-Targets)
@@ -290,6 +448,21 @@ export function applyKorgProjectTemplate(
     savePadBankSlots(buildPerfPadBankSlots());
   }
 
+  // v3.50.0 — Wenn nachträglich ein Match gefunden wurde (z.B. weil
+  // applyKorgProjectTemplate von einem späteren useEffect erneut gerufen
+  // wird, sobald die MIDIAccess gepopulated ist), ersetze leftover
+  // __pending__:* outputIds in der Note-Out-Map mit der echten ID.
+  if (resolvedOutputId) {
+    try {
+      const all = getAllPartMidiOutConfigs();
+      for (const [partId, cfg] of Object.entries(all)) {
+        if (cfg.outputId.startsWith("__pending__:")) {
+          setPartMidiOutConfig(partId, { ...cfg, outputId: resolvedOutputId });
+        }
+      }
+    } catch { /* defensive — store kann in test-Env fehlen */ }
+  }
+
   // 8. Notice an die UI rausgeben
   const hints = [...tmpl.postApplyHints];
   deps.postApplyNotice?.(`Template angewendet: ${tmpl.name}`);
@@ -300,5 +473,6 @@ export function applyKorgProjectTemplate(
     scenesCreated,
     padBankSlots: tmpl.modifies.padBankSlots,
     hints,
+    resolvedOutputId,
   };
 }

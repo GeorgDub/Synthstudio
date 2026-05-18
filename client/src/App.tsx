@@ -45,7 +45,10 @@ import { AudioInputRecorder } from "@/components/SampleBrowser/AudioInputRecorde
 import { ProjectManager } from "@/components/ProjectManager";
 import { NewProjectDialog } from "@/components/NewProjectDialog";
 import KorgTemplatePicker from "@/components/KorgTemplatePicker";
-import { applyKorgProjectTemplate } from "@/utils/korgProjectTemplates";
+import {
+  applyKorgProjectTemplate,
+  isKorgTemplateApplyDestructive,
+} from "@/utils/korgProjectTemplates";
 import { SongTimeline } from "@/components/SongTimeline";
 import { Humanizer } from "@/components/Humanizer";
 import { DrumMachine } from "@/components/DrumMachine";
@@ -3823,15 +3826,99 @@ export default function App() {
       />
 
       {/* v3.49.0 — KORG Quick-Start Templates (E2 Studio / ESX Live / nanoKONTROL2 Mix) */}
+      {/* v3.50.0: Vollständig gewireter Apply-Handler.
+          - Confirmation-Dialog wenn destructive (existing Pad-Bank / Scenes / extra Parts)
+          - reseedParts: schreibt N Drum-Parts + M Synth-Parts in das aktive Pattern
+          - enableClockOut / enableLedFeedback aktivieren useMidi mit Auto-Resolved outputId
+          - midiAccess: midi.outputDevices → resolveMidiOutputIdByHint
+          - onMissingDevice → Info-Toast */}
       <KorgTemplatePicker
         isOpen={showKorgTemplatePicker}
         onClose={() => setShowKorgTemplatePicker(false)}
         onSelect={(id) => {
+          // v3.50: destructive guard
+          const activePattern = dm.getActivePattern();
+          const existingPartCount = activePattern?.parts.length ?? 0;
+          const isDestructive = isKorgTemplateApplyDestructive({
+            existingPartCount,
+            defaultPartCount: 9,
+          });
+          if (isDestructive) {
+            const ok = typeof window !== "undefined"
+              ? window.confirm(
+                  "Template überschreibt deine aktuellen Pads + Scenes + Parts. Fortfahren?",
+                )
+              : true;
+            if (!ok) {
+              setShowKorgTemplatePicker(false);
+              return;
+            }
+          }
+
           const result = applyKorgProjectTemplate(id, {
             setBpm: (bpm) => project.setBpm(bpm),
+            setStepCount: (steps) => dm.setStepCount(steps),
+            reseedParts: (drumCount, synthCount) => {
+              // v3.50.0: existing Parts auf 1 reduzieren (removePart schützt
+              // gegen <=1 — daher iterieren wir bis pattern.parts.length === 1)
+              // und dann das eine erste Part umbenennen, anschließend N-1+M
+              // weitere Parts hinzufügen.
+              const pat = dm.getActivePattern();
+              if (!pat) return [];
+              // Snapshot current part IDs and drop all but the first.
+              const snapshotIds = pat.parts.map((p) => p.id);
+              for (let i = snapshotIds.length - 1; i >= 1; i--) {
+                dm.removePart(snapshotIds[i]);
+              }
+              // Rename first part to "Kick" (drum-1)
+              const firstAfter = dm.getActivePattern()?.parts[0];
+              if (firstAfter && drumCount >= 1) {
+                dm.renamePart(firstAfter.id, "Kick");
+              }
+              // Add remaining drum parts
+              const drumNames = [
+                "Snare", "Hi-Hat cl.", "Hi-Hat op.", "Clap",
+                "Tom Hi", "Tom Lo", "Perc", "FX", "Drum 10",
+              ];
+              for (let i = 1; i < drumCount; i++) {
+                dm.addPart(drumNames[i - 1] ?? `Drum ${i + 1}`);
+              }
+              // Add synth parts
+              for (let i = 0; i < synthCount; i++) {
+                dm.addPart(`Synth ${i + 1}`);
+              }
+              // Re-read part-IDs from the active pattern
+              const refreshed = dm.getActivePattern();
+              return refreshed?.parts.map((p) => p.id) ?? [];
+            },
+            enableClockOut: (_hint, resolvedOutputId) => {
+              midi.setClockOutEnabled(true);
+              if (resolvedOutputId) {
+                midi.setClockOutputDeviceId(resolvedOutputId);
+              }
+            },
+            enableLedFeedback: (_hint, resolvedOutputId) => {
+              midi.setFeedbackEnabled(true);
+              if (resolvedOutputId) {
+                midi.setFeedbackOutputDeviceId(resolvedOutputId);
+              }
+            },
+            midiAccess: midi.outputDevices,
+            onMissingDevice: (hint, section) => {
+              showToast(
+                `Output für '${hint}' nicht gefunden — wähle ${section} manuell.`,
+                { kind: "info" },
+              );
+            },
             postApplyNotice: (msg) => showToast(msg, { kind: "success" }),
           });
           showToast(result.hints[0] ?? "Template applied", { kind: "info" });
+          if (result.resolvedOutputId) {
+            showToast(
+              `MIDI-Device auto-gewählt (ID: ${result.resolvedOutputId.slice(0, 8)}…)`,
+              { kind: "info" },
+            );
+          }
         }}
       />
 
