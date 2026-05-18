@@ -255,8 +255,12 @@ export function KorgBankEditor({
         sampleRate: s.sampleRate!,
         channels: s.channels!,
         loopType: s.oneshot ? 1 : 2,
+        // v3.6.0 — Slots aus der Picker-Liste sind immer "neu" → isDirty.
+        // Wenn später ein "Bank laden"-Flow dazukommt, kann dieser
+        // unedited slots mit rawRiff durchreichen → preserveRawRiff opt.
+        isDirty: true,
       }));
-      const result = buildE2sBank(inputs);
+      const result = buildE2sBank(inputs, { preserveRawRiff: true });
       if (result.warnings.length > 0) {
         console.warn("[KorgBankEditor] build warnings:", result.warnings);
       }

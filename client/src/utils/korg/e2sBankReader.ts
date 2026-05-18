@@ -115,6 +115,14 @@ export interface E2sSlot {
   slicingBeat: number;
   /** Anzahl tatsächlich aktiver Slices. */
   slicingNumActive: number;
+  /**
+   * v3.6.0 — RAW RIFF chunk bytes (RIFF<size>WAVE...) für Bit-Exact-Round-Trip.
+   *
+   * Default ist UNDEFINED — wird nur befüllt wenn `parseE2sBank(buf, src, {
+   * preserveRawRiff: true })` gesetzt ist. Erlaubt Builder, unedited Slots
+   * verbatim durchzureichen und so eine bit-exakte Re-Save zu garantieren.
+   */
+  rawRiff?: Uint8Array;
 }
 
 export interface E2sBank {
@@ -403,10 +411,15 @@ interface ParsedSlot {
   endPos: number;
 }
 
+interface ParseSlotOptions {
+  preserveRawRiff?: boolean;
+}
+
 function parseSlot(
   buf: Uint8Array,
   slotIndex: number,
   fileOffset: number,
+  opts: ParseSlotOptions = {},
 ): { parsed: ParsedSlot; warnings: string[] } {
   const warnings: string[] = [];
 
@@ -465,6 +478,17 @@ function parseSlot(
   const loopStartFrames = bytesPerFrame > 0 ? Math.floor(meta.loopStart / bytesPerFrame) : 0;
   const loopEndFrames = bytesPerFrame > 0 ? Math.floor(meta.loopEnd / bytesPerFrame) : 0;
 
+  // v3.6.0 — Optional raw RIFF preservation für Bit-Exact-Round-Trip.
+  // Wir kopieren die kompletten 8+riffSize Bytes (inkl. RIFF-Header) in einen
+  // EIGENEN Buffer (nicht subarray-View), damit GC den Mutter-Buffer freigeben
+  // darf, sobald der Reader fertig ist.
+  let rawRiff: Uint8Array | undefined;
+  if (opts.preserveRawRiff) {
+    const totalLen = 8 + riffSize;
+    rawRiff = new Uint8Array(totalLen);
+    rawRiff.set(buf.subarray(fileOffset, fileOffset + totalLen));
+  }
+
   return {
     parsed: {
       slot: {
@@ -486,6 +510,7 @@ function parseSlot(
         slicingNumSteps: meta.slicingNumSteps,
         slicingBeat: meta.slicingBeat,
         slicingNumActive: meta.slicingNumActive,
+        rawRiff,
       },
       endPos,
     },
@@ -494,6 +519,19 @@ function parseSlot(
 }
 
 // ─── Public API ───────────────────────────────────────────────────────────────
+
+/** v3.6.0 — Parser-Optionen. */
+export interface ParseE2sBankOptions {
+  /**
+   * v3.6.0 — Wenn `true`, wird pro Slot der **rohe RIFF-Chunk-Buffer**
+   * (`RIFF<size>WAVE...`) als `slot.rawRiff` aufbewahrt. Erlaubt Builder
+   * `preserveRawRiff: true` für **Bit-Exact-Round-Trip**: unedited Slots
+   * werden verbatim ins .all geschrieben.
+   *
+   * Defaultt `false` (kein zusätzlicher Memory-Overhead).
+   */
+  preserveRawRiff?: boolean;
+}
 
 /**
  * Parses an E2S `.all` Sample-Bank from a buffer.
@@ -504,6 +542,7 @@ function parseSlot(
 export function parseE2sBank(
   input: ArrayBuffer | Uint8Array,
   source = "<bytes>",
+  opts: ParseE2sBankOptions = {},
 ): E2sBank {
   const buf = input instanceof Uint8Array ? input : new Uint8Array(input);
 
@@ -556,7 +595,9 @@ export function parseE2sBank(
     const off = offsetTable[i];
     if (off === 0) continue;
     try {
-      const { parsed, warnings: slotWarnings } = parseSlot(buf, i, off);
+      const { parsed, warnings: slotWarnings } = parseSlot(buf, i, off, {
+        preserveRawRiff: opts.preserveRawRiff,
+      });
       slots[i] = parsed.slot;
       lastEnd = Math.max(lastEnd, parsed.endPos);
       warnings.push(...slotWarnings);

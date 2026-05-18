@@ -1,10 +1,11 @@
 /**
- * Synthstudio – KORG E2S Audio-Processor (v3.4.0)
+ * Synthstudio – KORG E2S Audio-Processor (v3.6.0)
  *
  * TypeScript-Port aus `G:/IdeaProjects/Korg Editor/esx_e2s_editor/services/audio_processor.py`.
  *
- * SCOPE — v3.4 Write-Side Hilfsfunktionen:
- *   - Resampling auf 44.1 oder 48 kHz (lineare Interpolation – MVP-Qualität)
+ * SCOPE — Write-Side Hilfsfunktionen:
+ *   - Resampling auf 44.1 oder 48 kHz (v3.6: poly-phase FIR Lanczos-3, +
+ *     `resampleLinear`-Fallback für Backwards-Compat + Tests)
  *   - Channel-Adjust: Mono ↔ Stereo (mit Average-Downmix)
  *   - Float32 [-1, +1] → 16-bit signed-LE PCM-Bytes
  *   - Defensive Caps: max 10 MB PCM pro Slot, NaN/Infinity-Filter
@@ -15,11 +16,20 @@
  *
  * SoT-Marker:
  *   - `convertToE2sSpec`     ⇄ audio_processor.py::convert_to_e2s_spec
- *   - `resampleLinear`       ⇄ audio_processor.py::resample (poly-phase FIR
- *                              ist out-of-scope, MVP-Replacement = lineare
- *                              Interpolation; Quality-Followup v3.5)
+ *   - `polyPhaseResample`    ⇄ audio_processor.py::resample (scipy.signal.resample_poly,
+ *                              hier als Lanczos-3-windowed-sinc-Approximation)
+ *   - `resampleLinear`       ⇄ legacy MVP linear interpolation (Test+Fallback)
  *   - `downmixToMono`        ⇄ audio_processor.py::downmix_to_mono
  *   - `floatToInt16LeBytes`  ⇄ audio_processor.py::_float_to_int16_le
+ *
+ * Resampler-Algorithmus (v3.6.0):
+ *   - 3-Lobe Lanczos windowed-sinc-Kernel (a=3)
+ *   - Rational Upsample(L)→Filter→Downsample(M) via direkter Convolution
+ *   - L/M aus reduzierten in/out-Rates via GCD
+ *   - Anti-Alias-Cutoff = min(1, in/out) · π (relative Nyquist)
+ *   - Stereo: deinterleave → je Kanal resample → re-interleave
+ *   - Defensive: clip Output auf [-1,+1] vor Float→i16, NaN/Inf→0 via
+ *     bestehender floatToInt16LeBytes-Sanitization
  */
 
 import {
@@ -32,6 +42,9 @@ import {
 
 export type E2sTargetSampleRate = (typeof E2S_SAMPLE_RATES)[number]; // 44100 | 48000
 
+/** v3.6.0 — Resampler-Algorithmus-Wahl. */
+export type ResamplerKind = "poly-phase" | "linear";
+
 export interface ProcessAudioOptions {
   /** Ziel-Sample-Rate für den E2-Sampler. Muss 44100 oder 48000 sein. */
   targetSampleRate?: E2sTargetSampleRate;
@@ -39,6 +52,13 @@ export interface ProcessAudioOptions {
   forceMono?: boolean;
   /** Optional: Peak-Normalize auf den Wert (0,1]. Default keine Normalize. */
   normalizePeak?: number;
+  /**
+   * v3.6.0 — Resampler-Algorithmus.
+   *   - "poly-phase" (Default): Lanczos-3 windowed-sinc, anti-aliased.
+   *   - "linear":               legacy MVP, hörbares Aliasing bei Downsampling.
+   * `linear` ist nur für Tests + Backwards-Compat-Vergleiche da.
+   */
+  resampler?: ResamplerKind;
 }
 
 export interface ProcessedAudio {
@@ -121,7 +141,12 @@ export function convertToE2sSpec(
 
   // Schritt 2 — Resampling
   if (inputSampleRate !== targetSr) {
-    workingPcm = resampleLinear(workingPcm, inputSampleRate, targetSr, workingChannels);
+    const algo = opts.resampler ?? "poly-phase";
+    if (algo === "linear") {
+      workingPcm = resampleLinear(workingPcm, inputSampleRate, targetSr, workingChannels);
+    } else {
+      workingPcm = polyPhaseResample(workingPcm, inputSampleRate, targetSr, workingChannels);
+    }
   }
 
   // Schritt 3 — Optional Peak-Normalize
@@ -275,6 +300,176 @@ export function peakNormalize(pcm: Float32Array, target = 0.95): Float32Array {
   const out = new Float32Array(pcm.length);
   for (let i = 0; i < pcm.length; i++) {
     out[i] = pcm[i] * factor;
+  }
+  return out;
+}
+
+// ─── Poly-Phase FIR Resampling (v3.6.0) ──────────────────────────────────────
+
+/**
+ * Lanczos-Kernel mit `a` Lobes (windowed sinc).
+ *
+ *   lanczos(x; a) = sinc(x) · sinc(x/a)     für |x| < a
+ *                 = 0                       sonst
+ *
+ *   sinc(x) = sin(πx) / (πx)                für x ≠ 0
+ *           = 1                             für x = 0
+ *
+ * `a=3` ist der defacto-Standard für Audio (gutes Stop-Band, akzeptabler
+ * Compute). `a=2` wäre weicher, `a=4` schärfer aber teurer.
+ *
+ * Defensive: NaN → 0. Wir clampen NICHT auf die Lobe (Caller ist verantwortlich).
+ */
+export function lanczosKernel(x: number, a = 3): number {
+  if (!Number.isFinite(x)) return 0;
+  if (x === 0) return 1;
+  const ax = Math.abs(x);
+  if (ax >= a) return 0;
+  const piX = Math.PI * x;
+  const piXa = piX / a;
+  return (Math.sin(piX) / piX) * (Math.sin(piXa) / piXa);
+}
+
+const LANCZOS_LOBES = 3;
+
+/**
+ * Greatest common divisor (Euclidean). Für Rational-Rate-Conversion.
+ * @internal
+ */
+function gcd(a: number, b: number): number {
+  let x = Math.abs(a | 0);
+  let y = Math.abs(b | 0);
+  while (y !== 0) {
+    const t = y;
+    y = x % y;
+    x = t;
+  }
+  return x || 1;
+}
+
+/**
+ * Poly-Phase FIR Resampler mit Lanczos-3 windowed-sinc-Kernel.
+ *
+ * Algorithmus:
+ *   1. Reduce L = outSr / gcd, M = inSr / gcd (rational ratio).
+ *   2. Equivalent: Upsample by L (insert L-1 zeros) → low-pass FIR →
+ *      Downsample by M. Wir machen das direkt im Output-Domain
+ *      (`direct convolution at output samples`) — O(outFrames · 2a · max(L,M)/L)
+ *      mit kürzerem effective kernel als naive multi-stage.
+ *   3. Anti-Alias-Cutoff = min(L, M) / max(L, M) — bei Downsampling die
+ *      kleinere relative Nyquist, bei Upsampling die input-Nyquist.
+ *
+ * Mathematische Form (output sample n bei output rate outSr):
+ *   t_in     = n · M / L           (Position im Input-Index-Space)
+ *   y[n]     = Σ_k x[k] · h(t_in − k)
+ *
+ *   wobei h(u) = lanczos(u · cutoff, a) · cutoff     der skalierte Kernel ist.
+ *
+ * Für upsampling (L > M) ist `cutoff = 1` (kein Anti-Alias nötig, Input ist
+ * bandbegrenzt). Für downsampling (M > L) ist `cutoff = L / M < 1` damit
+ * wir Frequenzen über der Output-Nyquist filtern.
+ *
+ * Komplexität: O(N · 2a / cutoff). Für 48k→44.1k Stereo 1s = 44100×2×6/0.91 ≈
+ * 580k mul-adds — auf Modern-CPU < 5ms in JS. CPU-Caveat: bei sehr starken
+ * Downsampling-Ratios (z.B. 96k→8k) wäre eine Multi-Stage-Pipeline sinnvoll,
+ * für E2S (Target 44.1/48 kHz) sind Ratios immer ~1.0 → Compute akzeptabel.
+ */
+export function polyPhaseResample(
+  pcm: Float32Array,
+  inputSampleRate: number,
+  outputSampleRate: number,
+  channels: 1 | 2,
+): Float32Array {
+  if (!(pcm instanceof Float32Array)) {
+    throw new AudioProcessError("pcm must be Float32Array");
+  }
+  if (!Number.isFinite(inputSampleRate) || inputSampleRate <= 0) {
+    throw new AudioProcessError(`invalid input sample rate ${inputSampleRate}`);
+  }
+  if (!Number.isFinite(outputSampleRate) || outputSampleRate <= 0) {
+    throw new AudioProcessError(`invalid output sample rate ${outputSampleRate}`);
+  }
+  if (channels !== 1 && channels !== 2) {
+    throw new AudioProcessError(`unsupported channels ${channels}`);
+  }
+  if (inputSampleRate === outputSampleRate) {
+    return pcm.slice();
+  }
+  if (channels === 1) {
+    return polyPhaseMono(pcm, inputSampleRate, outputSampleRate);
+  }
+  const inFrames = (pcm.length / 2) | 0;
+  const left = new Float32Array(inFrames);
+  const right = new Float32Array(inFrames);
+  for (let i = 0; i < inFrames; i++) {
+    left[i] = pcm[i * 2];
+    right[i] = pcm[i * 2 + 1];
+  }
+  const lOut = polyPhaseMono(left, inputSampleRate, outputSampleRate);
+  const rOut = polyPhaseMono(right, inputSampleRate, outputSampleRate);
+  const outFrames = Math.min(lOut.length, rOut.length);
+  const out = new Float32Array(outFrames * 2);
+  for (let i = 0; i < outFrames; i++) {
+    out[i * 2] = lOut[i];
+    out[i * 2 + 1] = rOut[i];
+  }
+  return out;
+}
+
+function polyPhaseMono(
+  pcm: Float32Array,
+  inSr: number,
+  outSr: number,
+): Float32Array {
+  const inFrames = pcm.length;
+  if (inFrames === 0) return new Float32Array(0);
+
+  const div = gcd(inSr, outSr);
+  const L = outSr / div; // up-factor
+  const M = inSr / div;  // down-factor
+
+  // Anti-Alias cutoff (in Input-Sample-Units of the kernel).
+  // For downsampling (M > L): kernel needs to bandlimit to outSr/2 → cutoff < 1.
+  // For upsampling (L > M):   kernel can pass full input-Nyquist → cutoff = 1.
+  const cutoff = Math.min(1, L / M);
+
+  // Output frame count: floor(inFrames · outSr / inSr) = floor(inFrames · L / M).
+  // Use multiplication BEFORE the divide to minimize fp error.
+  const outFrames = Math.max(1, Math.floor((inFrames * L) / M));
+  const out = new Float32Array(outFrames);
+
+  // Kernel half-width in INPUT samples (compensated for the cutoff).
+  // The lanczos kernel has support [-a, +a] in its argument space; when we
+  // scale by `cutoff` we widen the time-support to [-a/cutoff, +a/cutoff].
+  const halfWidth = LANCZOS_LOBES / cutoff;
+
+  // Step ratio inSr/outSr in input-index-space per output sample.
+  const step = M / L;
+
+  for (let n = 0; n < outFrames; n++) {
+    const tIn = n * step;
+    const kMin = Math.max(0, Math.ceil(tIn - halfWidth));
+    const kMax = Math.min(inFrames - 1, Math.floor(tIn + halfWidth));
+    let acc = 0;
+    let wSum = 0;
+    for (let k = kMin; k <= kMax; k++) {
+      // Argument of the un-windowed sinc, scaled by cutoff for AA.
+      const u = (tIn - k) * cutoff;
+      const w = lanczosKernel(u, LANCZOS_LOBES) * cutoff;
+      const s = pcm[k];
+      if (!Number.isFinite(s)) continue;
+      acc += s * w;
+      wSum += w;
+    }
+    // Normalize against the discrete kernel-sum to avoid edge attenuation
+    // (the analytical sum is ≈1.0 in interior, but truncated at the edges).
+    // wSum could be near-zero at extreme edge cases — fall back to 0 then.
+    let y = wSum !== 0 ? acc / wSum : 0;
+    // Defensive clip to legal float range; the int16 step will clip again
+    // but this saves a tiny bit of dynamic-range at the boundary.
+    if (y > 1) y = 1;
+    if (y < -1) y = -1;
+    out[n] = y;
   }
   return out;
 }

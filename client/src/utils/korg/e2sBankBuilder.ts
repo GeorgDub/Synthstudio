@@ -1,5 +1,5 @@
 /**
- * Synthstudio – KORG E2S Sample-Bank Builder (v3.4.0)
+ * Synthstudio – KORG E2S Sample-Bank Builder (v3.6.0)
  *
  * TypeScript-Port aus
  * `G:/IdeaProjects/Korg Editor/esx_e2s_editor/services/e2s_builder.py`.
@@ -24,11 +24,12 @@
  *     'data'<size> <16-bit signed LE interleaved PCM>
  *     'korg'<1180> 'esli' + LE32 0x0494 + LE16 0x01F4 + 1170B body
  *
- * Bit-exact Round-Trip:
- *   buildE2sBank(parseE2sBank(buf).slots)  ≠  buf  (Verbatim-Roundtrip ist
- *   nicht garantiert — die Python-Builder behält `raw_riff` für unedited
- *   Slots, was wir hier nicht vorhalten). Aber:
- *   parseE2sBank(buildE2sBank(inputs)).slots  ≈  inputs  (Semantic-Round-Trip).
+ * Bit-exact Round-Trip (v3.6.0 KILLER-FEATURE):
+ *   Wenn ein Slot via `parseE2sBank(buf, src, { preserveRawRiff: true })`
+ *   geladen wurde, kann sein `rawRiff` Buffer beim Builder durchgereicht
+ *   werden — `buildE2sBank(slots, { preserveRawRiff: true })` schreibt
+ *   unedited Slots verbatim. Edit-Detection via `isDirty: boolean` Flag.
+ *   Geänderte oder neu hinzugefügte Slots werden re-encoded wie in v3.4.
  *
  * Bounds-Checks:
  *   - max 250 Slots
@@ -115,6 +116,35 @@ export interface E2sSlotInput {
   slicingNumSteps?: number;
   slicingBeat?: number;
   slicingNumActive?: number;
+  /**
+   * v3.6.0 — Original RIFF-Chunk-Bytes vom Reader. Wenn vorhanden UND der
+   * Slot ist **nicht** dirty UND der Caller ruft `buildE2sBank(slots, {
+   * preserveRawRiff: true })` auf, dann wird `rawRiff` verbatim
+   * durchgereicht — Bit-Exact-Round-Trip.
+   */
+  rawRiff?: Uint8Array;
+  /**
+   * v3.6.0 — Edit-Detection-Flag. Default `false` (Slot kommt unverändert
+   * aus einem Read). Wenn der User via UI Name/Category/etc. ändert, muss
+   * der Caller das auf `true` setzen — dann re-encoded der Builder neu.
+   *
+   * Wirkt nur in Verbindung mit `rawRiff` UND `BuildE2sBankOptions.preserveRawRiff`.
+   */
+  isDirty?: boolean;
+}
+
+/** v3.6.0 — Optionen für `buildE2sBank`. */
+export interface BuildE2sBankOptions {
+  /**
+   * v3.6.0 — Aktiviert den Raw-RIFF-Passthrough-Pfad:
+   *   Wenn ein Slot ein `rawRiff` UND `isDirty !== true` hat, wird das
+   *   originale RIFF-Chunk-Bytes-Buffer **bit-exakt** ins .all geschrieben
+   *   — ohne re-encoding. Faktory-Banks bleiben so bit-exakt erhalten,
+   *   auch wenn ein anderer Slot editiert wurde.
+   *
+   * Default `false` (alle Slots werden re-encoded wie in v3.4).
+   */
+  preserveRawRiff?: boolean;
 }
 
 export interface SliceInput {
@@ -148,7 +178,10 @@ export class E2sBuildError extends Error {
  * @throws E2sBuildError bei Validation-Fehlern (zu viele Slots, Caps,
  *         ungültige Werte). Im Fehler-Fall wird nichts allokiert.
  */
-export function buildE2sBank(slots: E2sSlotInput[]): BuildResult {
+export function buildE2sBank(
+  slots: E2sSlotInput[],
+  opts: BuildE2sBankOptions = {},
+): BuildResult {
   if (!Array.isArray(slots)) {
     throw new E2sBuildError("slots must be an array");
   }
@@ -158,6 +191,7 @@ export function buildE2sBank(slots: E2sSlotInput[]): BuildResult {
     );
   }
 
+  const preserveRawRiff = opts.preserveRawRiff === true;
   const warnings: string[] = [];
 
   // ── Stage 1 — pro-Slot RIFF in-memory bauen + Offsets vormerken ─────────────
@@ -169,7 +203,24 @@ export function buildE2sBank(slots: E2sSlotInput[]): BuildResult {
 
   for (let i = 0; i < slots.length; i++) {
     const input = slots[i];
-    const { riff, pcmByteLen } = buildRiffForSlot(input, warnings);
+
+    // v3.6.0 — Raw-RIFF Fast-Path für unedited Slots mit Original-Bytes.
+    let riff: Uint8Array;
+    let pcmByteLen: number;
+    const canPassthrough =
+      preserveRawRiff &&
+      input.rawRiff instanceof Uint8Array &&
+      input.rawRiff.length >= 8 &&
+      input.isDirty !== true;
+    if (canPassthrough) {
+      const passthroughResult = passthroughRiff(input, warnings);
+      riff = passthroughResult.riff;
+      pcmByteLen = passthroughResult.pcmByteLen;
+    } else {
+      const built = buildRiffForSlot(input, warnings);
+      riff = built.riff;
+      pcmByteLen = built.pcmByteLen;
+    }
     totalPcm += pcmByteLen;
     if (totalPcm > E2S_MAX_TOTAL_PCM_BYTES) {
       throw new E2sBuildError(
@@ -243,6 +294,89 @@ export function buildE2sBank(slots: E2sSlotInput[]): BuildResult {
     slotCount: pending.length,
     warnings,
   };
+}
+
+// ─── Raw-RIFF-Passthrough (v3.6.0) ────────────────────────────────────────────
+
+/**
+ * v3.6.0 — Validiert + reicht einen unedited Slot's `rawRiff`-Buffer durch.
+ *
+ * Defensive Checks (vor Memory-Alloc):
+ *   - Magic 'RIFF' bei rawRiff[0..4]
+ *   - LE32 size matcht rawRiff.length (8 + size = total)
+ *   - WAVE marker bei rawRiff[8..12]
+ *   - Findet 'data'-Sub-Chunk → liefert pcmByteLen für Cap-Tracking
+ *
+ * Bei Validation-Fehler: Fallback auf normal re-encoding (`buildRiffForSlot`)
+ * + Warning. Das ist absichtlich defensiv — wir wollen niemals einen
+ * korrupten Slot durchreichen.
+ */
+function passthroughRiff(
+  slot: E2sSlotInput,
+  warnings: string[],
+): { riff: Uint8Array; pcmByteLen: number } {
+  const raw = slot.rawRiff!;
+  // RIFF magic
+  const isRiff =
+    raw.length >= 12 &&
+    raw[0] === 0x52 && raw[1] === 0x49 && raw[2] === 0x46 && raw[3] === 0x46;
+  if (!isRiff) {
+    warnings.push(
+      `slot ${slot.slotIndex} rawRiff has invalid magic — falling back to re-encode`,
+    );
+    return buildRiffForSlot(slot, warnings);
+  }
+  const dv = new DataView(raw.buffer, raw.byteOffset, raw.byteLength);
+  const declaredSize = dv.getUint32(4, true);
+  if (declaredSize + 8 !== raw.length) {
+    warnings.push(
+      `slot ${slot.slotIndex} rawRiff size mismatch (${declaredSize}+8 != ${raw.length}) — re-encoding`,
+    );
+    return buildRiffForSlot(slot, warnings);
+  }
+  // WAVE marker (rawRiff[8..12])
+  if (!(raw[8] === 0x57 && raw[9] === 0x41 && raw[10] === 0x56 && raw[11] === 0x45)) {
+    warnings.push(
+      `slot ${slot.slotIndex} rawRiff missing WAVE marker — re-encoding`,
+    );
+    return buildRiffForSlot(slot, warnings);
+  }
+  // Per-slot RIFF size cap (Defense gegen riesige durchgereichte Slots).
+  if (raw.length > MAX_BYTES_PER_SLOT + 4096) {
+    warnings.push(
+      `slot ${slot.slotIndex} rawRiff ${raw.length} bytes too large — re-encoding`,
+    );
+    return buildRiffForSlot(slot, warnings);
+  }
+  // Find 'data' sub-chunk to extract PCM length for cap tracking.
+  const DATA_ID = [0x64, 0x61, 0x74, 0x61];
+  let pcmByteLen = 0;
+  // Walk sub-chunks within RIFF body (start at pos 12, after RIFF+size+WAVE).
+  let pos = 12;
+  while (pos + 8 <= raw.length) {
+    const ssize = dv.getUint32(pos + 4, true);
+    if (
+      raw[pos] === DATA_ID[0] &&
+      raw[pos + 1] === DATA_ID[1] &&
+      raw[pos + 2] === DATA_ID[2] &&
+      raw[pos + 3] === DATA_ID[3]
+    ) {
+      pcmByteLen = ssize;
+      break;
+    }
+    pos += 8 + ssize + (ssize & 1);
+  }
+  if (pcmByteLen > MAX_BYTES_PER_SLOT) {
+    warnings.push(
+      `slot ${slot.slotIndex} rawRiff data-chunk ${pcmByteLen} > per-slot cap — re-encoding`,
+    );
+    return buildRiffForSlot(slot, warnings);
+  }
+  // Passthrough valid — copy into a fresh Uint8Array so the caller cannot
+  // accidentally mutate the buffer after we recorded its offset.
+  const copy = new Uint8Array(raw.length);
+  copy.set(raw);
+  return { riff: copy, pcmByteLen };
 }
 
 // ─── RIFF + korg Sub-Chunk Builder ────────────────────────────────────────────

@@ -610,3 +610,235 @@ describe("e2sBankBuilder — File-Size invariants", () => {
     expect(() => buildE2sBank(inputs)).toThrow(/cumulative PCM/);
   });
 });
+
+// ─── v3.6.0 — Raw-RIFF-Preservation ─────────────────────────────────────────
+
+describe("e2sBankBuilder — Raw-RIFF-Preservation (v3.6.0)", () => {
+  it("identisches read→write Round-Trip ist bit-exact (preserveRawRiff)", () => {
+    const pcm = sineFloat(500, 440, 44100, 0.3);
+    // Stage 1 — bauen mit "frischem" Slot (re-encoded).
+    const baseline = buildE2sBank([
+      {
+        slotIndex: 0,
+        name: "BitExact",
+        pcmData: pcm,
+        sampleRate: 44100,
+        channels: 1,
+        category: 2,
+        level: 100,
+      },
+    ]);
+    // Stage 2 — Reader liest mit preserveRawRiff: true, dann Builder mit
+    // preserveRawRiff: true + isDirty=false.
+    const bank = parseE2sBank(baseline.buffer, "<test>", { preserveRawRiff: true });
+    const slot = bank.slots[0]!;
+    expect(slot.rawRiff).toBeInstanceOf(Uint8Array);
+    expect(slot.rawRiff!.length).toBeGreaterThan(0);
+
+    const rebuilt = buildE2sBank(
+      [
+        {
+          slotIndex: 0,
+          name: slot.name,
+          pcmData: slot.pcmData,
+          sampleRate: slot.sampleRate,
+          channels: slot.channels,
+          category: slot.category,
+          rawRiff: slot.rawRiff,
+          isDirty: false,
+        },
+      ],
+      { preserveRawRiff: true },
+    );
+
+    // Bit-exakt zu Baseline (prelude + RIFF beide identisch).
+    expect(rebuilt.buffer.byteLength).toBe(baseline.buffer.byteLength);
+    const a = new Uint8Array(baseline.buffer);
+    const b = new Uint8Array(rebuilt.buffer);
+    for (let i = 0; i < a.length; i++) {
+      if (a[i] !== b[i]) {
+        throw new Error(`bit-diff at byte ${i}: ${a[i]} != ${b[i]}`);
+      }
+    }
+    expect(b.length).toBe(a.length);
+  });
+
+  it("dirty Slot wird re-encoded, unedited Slot bleibt rawRiff (mixed bank)", () => {
+    // Baseline: 2 slots
+    const baseline = buildE2sBank([
+      { slotIndex: 0, name: "Keep", pcmData: sineFloat(40, 440, 44100, 0.2), sampleRate: 44100, channels: 1, category: 3 },
+      { slotIndex: 1, name: "Change", pcmData: sineFloat(40, 880, 44100, 0.2), sampleRate: 44100, channels: 1, category: 4 },
+    ]);
+    const bank = parseE2sBank(baseline.buffer, "<t>", { preserveRawRiff: true });
+    const slot0 = bank.slots[0]!;
+    const slot1 = bank.slots[1]!;
+
+    // Slot 0 unedited (rawRiff Passthrough), Slot 1 mit neuem Namen → re-encoded.
+    const rebuilt = buildE2sBank(
+      [
+        {
+          slotIndex: 0,
+          name: slot0.name,
+          pcmData: slot0.pcmData,
+          sampleRate: slot0.sampleRate,
+          channels: slot0.channels,
+          category: slot0.category,
+          rawRiff: slot0.rawRiff,
+          isDirty: false,
+        },
+        {
+          slotIndex: 1,
+          name: "Renamed",
+          pcmData: slot1.pcmData,
+          sampleRate: slot1.sampleRate,
+          channels: slot1.channels,
+          category: slot1.category,
+          rawRiff: slot1.rawRiff,
+          isDirty: true,
+        },
+      ],
+      { preserveRawRiff: true },
+    );
+
+    const reparsed = parseE2sBank(rebuilt.buffer);
+    expect(reparsed.slots[0]?.name).toBe("Keep");
+    expect(reparsed.slots[1]?.name).toBe("Renamed");
+
+    // Verify slot 0's RIFF-bytes in rebuilt == baseline's slot 0 RIFF-bytes.
+    const a = new Uint8Array(baseline.buffer);
+    const b = new Uint8Array(rebuilt.buffer);
+    const baselineDv = new DataView(baseline.buffer);
+    const rebuiltDv = new DataView(rebuilt.buffer);
+    const off0Base = baselineDv.getUint32(E2S_ALL_OFFSET_TABLE_START + 0 * 4, true);
+    const off0Reb = rebuiltDv.getUint32(E2S_ALL_OFFSET_TABLE_START + 0 * 4, true);
+    expect(off0Reb).toBe(off0Base);
+    const riffSize0Base = baselineDv.getUint32(off0Base + 4, true);
+    const riffSize0Reb = rebuiltDv.getUint32(off0Reb + 4, true);
+    expect(riffSize0Reb).toBe(riffSize0Base);
+    for (let i = off0Base; i < off0Base + 8 + riffSize0Base; i++) {
+      if (a[i] !== b[i]) {
+        throw new Error(`slot 0 RIFF byte ${i} differs: ${a[i]} != ${b[i]}`);
+      }
+    }
+  });
+
+  it("Hash der gesamten .all-Datei nach Round-Trip ist identical (preserveRawRiff)", () => {
+    // Hash = simple FNV-1a 32-bit für Test-Determinismus.
+    function fnv1a(buf: Uint8Array): number {
+      let h = 0x811c9dc5;
+      for (let i = 0; i < buf.length; i++) {
+        h ^= buf[i];
+        h = (h * 0x01000193) >>> 0;
+      }
+      return h >>> 0;
+    }
+    const baseline = buildE2sBank([
+      { slotIndex: 0, name: "Hash1", pcmData: sineFloat(60, 220, 44100, 0.1), sampleRate: 44100, channels: 1, category: 1 },
+      { slotIndex: 7, name: "Hash2", pcmData: sineFloat(60, 660, 44100, 0.1), sampleRate: 44100, channels: 1, category: 5 },
+    ]);
+    const bank = parseE2sBank(baseline.buffer, "<h>", { preserveRawRiff: true });
+    const slots = bank.slots.flatMap((s, i) =>
+      s
+        ? [{
+            slotIndex: i,
+            name: s.name,
+            pcmData: s.pcmData,
+            sampleRate: s.sampleRate,
+            channels: s.channels,
+            category: s.category,
+            rawRiff: s.rawRiff,
+            isDirty: false,
+          }]
+        : [],
+    );
+    const rebuilt = buildE2sBank(slots, { preserveRawRiff: true });
+    const baselineHash = fnv1a(new Uint8Array(baseline.buffer));
+    const rebuiltHash = fnv1a(new Uint8Array(rebuilt.buffer));
+    expect(rebuiltHash).toBe(baselineHash);
+  });
+
+  it("ohne preserveRawRiff → Slots werden re-encoded (legacy v3.4-Pfad)", () => {
+    const baseline = buildE2sBank([
+      { slotIndex: 0, name: "LegacyA", pcmData: new Float32Array(20), sampleRate: 44100, channels: 1, category: 2, level: 50 },
+    ]);
+    const bank = parseE2sBank(baseline.buffer, "<l>", { preserveRawRiff: true });
+    const slot = bank.slots[0]!;
+    expect(slot.rawRiff).toBeInstanceOf(Uint8Array);
+
+    // OPT-OUT: kein preserveRawRiff im Builder → muss neu encoden, kann
+    // sich aber semantisch identisch verhalten.
+    const rebuilt = buildE2sBank([
+      {
+        slotIndex: 0,
+        name: slot.name,
+        pcmData: slot.pcmData,
+        sampleRate: slot.sampleRate,
+        channels: slot.channels,
+        category: slot.category,
+        level: slot.level,
+        rawRiff: slot.rawRiff,
+        isDirty: false,
+      },
+    ]);
+    // Semantic round-trip works either way:
+    const reparsed = parseE2sBank(rebuilt.buffer);
+    expect(reparsed.slots[0]?.name).toBe("LegacyA");
+  });
+
+  it("isDirty=true bricht Passthrough auch wenn rawRiff vorhanden", () => {
+    const baseline = buildE2sBank([
+      { slotIndex: 0, name: "BeforeEdit", pcmData: new Float32Array(20), sampleRate: 44100, channels: 1, category: 2 },
+    ]);
+    const bank = parseE2sBank(baseline.buffer, "<e>", { preserveRawRiff: true });
+    const slot = bank.slots[0]!;
+
+    const rebuilt = buildE2sBank(
+      [
+        {
+          slotIndex: 0,
+          name: "AfterEdit",
+          pcmData: slot.pcmData,
+          sampleRate: slot.sampleRate,
+          channels: slot.channels,
+          category: slot.category,
+          rawRiff: slot.rawRiff,
+          isDirty: true, // ← forces re-encode despite rawRiff
+        },
+      ],
+      { preserveRawRiff: true },
+    );
+
+    const reparsed = parseE2sBank(rebuilt.buffer);
+    expect(reparsed.slots[0]?.name).toBe("AfterEdit");
+  });
+
+  it("Reader OHNE preserveRawRiff: slot.rawRiff bleibt undefined", () => {
+    const baseline = buildE2sBank([
+      { slotIndex: 0, name: "NoRaw", pcmData: new Float32Array(10), sampleRate: 44100, channels: 1 },
+    ]);
+    const bank = parseE2sBank(baseline.buffer); // default opts
+    expect(bank.slots[0]?.rawRiff).toBeUndefined();
+  });
+
+  it("kaputtes rawRiff → Fallback auf Re-Encode + Warning", () => {
+    const corrupt = new Uint8Array([0x42, 0x42, 0x42, 0x42, 0, 0, 0, 0, 0, 0, 0, 0]); // not RIFF
+    const result = buildE2sBank(
+      [
+        {
+          slotIndex: 0,
+          name: "Salvage",
+          pcmData: new Float32Array(10),
+          sampleRate: 44100,
+          channels: 1,
+          rawRiff: corrupt,
+          isDirty: false,
+        },
+      ],
+      { preserveRawRiff: true },
+    );
+    // Should have warned about invalid magic, then re-encoded successfully.
+    expect(result.warnings.some((w) => w.includes("invalid magic"))).toBe(true);
+    const bank = parseE2sBank(result.buffer);
+    expect(bank.slots[0]?.name).toBe("Salvage");
+  });
+});
