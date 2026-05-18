@@ -26,6 +26,9 @@ import { useMidiLearn } from "@/hooks/useMidiLearn";
 import { toast } from "@/store/useToastStore";
 // v3.65.0: Pre-Action AutoBackup via globaler Registry.
 import { getRegisteredAutoBackup } from "@/utils/autoBackupController";
+// v3.66.0: Pattern als PNG/SVG exportieren.
+import { PatternImageExportModal } from "@/components/PatternImageExport/PatternImageExportModal";
+import type { PatternForExport } from "@/utils/patternImageExport";
 import { MixAssistantPanel } from "./MixAssistantPanel";
 import type { MixAnalysisInput, MixRecommendation } from "@/utils/mixAnalysis";
 import { parseMidiFile } from "../../../../src/utils/midiParser.js";
@@ -113,12 +116,14 @@ interface PatternRowProps {
   allPatterns: ReadonlyArray<{ id: string; name: string }>;
   /** v2.8: Drag-Drop Reorder callback (fromIndex, toIndex). */
   onReorder: (fromIndex: number, toIndex: number) => void;
+  /** v3.66.0: Pattern als PNG/SVG exportieren. */
+  onExportImage?: () => void;
 }
 
 function PatternRow({
   pattern, patternIndex, isActive, isPlaying, isLiveEditing, showDelete,
   hasPrevPattern, prevPatternId, allPatterns,
-  onSelect, onDuplicate, onRemove, onCopySamplesFrom, onReorder,
+  onSelect, onDuplicate, onRemove, onCopySamplesFrom, onReorder, onExportImage,
 }: PatternRowProps) {
   const isDraft  = isLiveEditing && isActive;
   const isLocked = isLiveEditing && isPlaying;
@@ -244,6 +249,14 @@ function PatternRow({
             </div>
           )}
         </div>
+      )}
+      {!isLocked && onExportImage && (
+        <button
+          onClick={onExportImage}
+          className="px-1.5 py-1.5 text-text-dim hover:text-accent-primary text-xs opacity-0 group-hover:opacity-100"
+          title="Als Bild exportieren (PNG / SVG)"
+          data-testid={`pattern-row-export-image-${patternIndex}`}
+        >🖼</button>
       )}
       {!isLocked && (
         <button
@@ -438,6 +451,8 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
     channelData: Float32Array;
     sampleRate: number;
   } | null>(null);
+  // v3.66.0: Pattern-Image-Export-Modal-State.
+  const [patternImageExport, setPatternImageExport] = useState<PatternForExport | null>(null);
 
   // MIDI-Import: MIDI-Datei in aktives Pattern übertragen
   /**
@@ -960,6 +975,21 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
                   onReorder={(from, to) => {
                     dm.reorderPatterns(from, to);
                     toast(`Pattern „${dm.patterns[from]?.name ?? "?"}" verschoben`, { kind: "info", duration: 2000 });
+                  }}
+                  onExportImage={() => {
+                    // v3.66.0: Snapshot des Patterns für den Export-Modal.
+                    setPatternImageExport({
+                      id: p.id,
+                      name: p.name,
+                      stepCount: p.stepCount,
+                      bpm: p.bpm,
+                      parts: p.parts.map(pp => ({
+                        id: pp.id,
+                        name: pp.name,
+                        steps: pp.steps,
+                      })),
+                    });
+                    setShowPatternMenu(false);
                   }}
                 />
               ))}
@@ -2126,6 +2156,13 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
           onReplaceSample={handleSliceFile}
         />
       )}
+
+      {/* ── Pattern als Bild exportieren (v3.66.0) ──────────────────────── */}
+      <PatternImageExportModal
+        isOpen={patternImageExport !== null}
+        pattern={patternImageExport}
+        onClose={() => setPatternImageExport(null)}
+      />
     </div>
   );
 }

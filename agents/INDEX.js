@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.65.0",
+    version: "3.66.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -89,6 +89,26 @@ const INDEX = {
   // ─── KNOWN FILE INDEX ──────────────────────────────────────
   // Key files agents have analyzed. Add new entries after working on a file.
   files: {
+    "client/src/utils/patternImageExport.ts (v3.66.0)": {
+      role:     "v3.66.0 NEU (~400 LOC, Pure-Modul): Rendert Patterns als PNG (Canvas) oder SVG (string) für Documentation/Sharing/Social-Media. PatternForExport-Type (reduzierter PatternData ohne FX/Audio) + RenderOpts {width,height,theme,showVelocity,showPartNames,titleText,createCanvas?}. Public-API: renderPatternToCanvas(pattern,opts)→HTMLCanvasElement (Caller-injizierbare createCanvas-Factory für Node/Test), exportPatternAsPng→Promise<Blob> (canvas.toBlob im Browser, toBuffer-Fallback für node-canvas, 4-byte PNG-Magic-Last-Resort), exportPatternAsSvg→string (pure-Vector, kein Canvas nötig). Pure-Helpers: computeLayout (titleBar + footer + partLabel + grid), velocityToAlpha (0..127→0.4..1.0 mit clamp + showVelocity=false→1.0), getStepRect (Pixel-Geometrie), resolveStyle (ID|Object|Fallback default-dark), isPatternImageStyleId Whitelist, sanitizePatternExportFileName (lowercase + non-alphanum→-, cap 60). Konstanten: PATTERN_IMAGE_STYLES Record<id,PatternImageStyle> mit 3 Templates (default-dark Cyan #22d3ee, light-documentation schwarz/weiß, korg-tribute neon-grün #7fff7f mit Glow), PATTERN_IMAGE_SIZES 3 Presets (default 800×600, twitter 1200×675, instagram 1080×1080). XML-Escape für SVG: &, <, >, \", ' werden escaped.",
+      lastSeen: "2026-05-19T00:50:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/components/PatternImageExport/PatternImageExportModal.tsx (v3.66.0)": {
+      role:     "v3.66.0 NEU (~210 LOC): Modal mit Live-Preview, Style/Size-Picker, Title-Override + Download-PNG/SVG. Props: {isOpen, pattern: PatternForExport|null, onClose}. State: styleId (default 'default-dark'), sizeId (default 'default'), titleOverride (string). Live-Preview useEffect rendert renderPatternToCanvas in Originalgröße → CSS-skaliert auf max-w-560px in den previewRef-Container. ESC + Backdrop-Click schließen. handleDownloadPng baut Blob via exportPatternAsPng + triggert <a download>-Click; handleDownloadSvg analog mit image/svg+xml. data-testids: pattern-image-export-overlay, pattern-image-export-close, pattern-image-style-{id}, pattern-image-size-{id}, pattern-image-title-override, pattern-image-preview, pattern-image-download-png, pattern-image-download-svg, pattern-image-export-cancel. Ausschließlich semantische Tokens (bg-bg-panel, text-text-primary, border-border-color, accent-primary/20 Active-Style, accent-secondary/20 Active-Size, accent-danger Error). Inline-Style nur border-color: var(--ss-border) für die Preview-Canvas (Tailwind-Klasse auf einem ja-DOM-Canvas-Child geht nicht).",
+      lastSeen: "2026-05-19T00:50:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "tests/features/pattern-image-export.test.ts (v3.66.0)": {
+      role:     "v3.66.0 NEU (~370 LOC, 27 Tests in 9 describes, env:node mit Mock-Canvas — KEIN node-canvas-Binary-Build nötig): (1) computeLayout × 3 (positive Dimensionen für 800×600, partLabelWidth=0 wenn showPartNames=false, colWidth 16<32<64 step-Skalierung). (2) velocityToAlpha × 4 (showVelocity=false → 1.0, default undefined → [0.4,1.0], 127→1.0/0→0.4, clamp). (3) Style-Variants × 4 (3 Templates existieren, unterschiedliche stepActiveFill — Cyan vs Schwarz vs neon-Grün, KORG-Glow not-null vs andere null, resolveStyle ID/Object/unknown-Fallback, isPatternImageStyleId Whitelist). (4) renderPatternToCanvas × 4 (16-step canvas mit width/height, Auto-Clamp 10→64/48, Active-Steps an korrekten Pixel-Positionen via __calls-Match mit getStepRect, titleText-Override im fillText). (5) exportPatternAsPng × 2 (Blob+MIME image/png+size>0, toBlob-Mock-Pfad). (6) exportPatternAsSvg × 5 (SVG-Root + xmlns + width/height + </svg>, 4 Kicks → 4 active-fill rects via Regex-Count, 3 Style-Variants unterschiedlicher Output mit KORG-Glow-Stroke, XML-Escape A<b>\"&', titleText-Override). (7) Filename + Sizes × 3 (Sanitize Sonderzeichen→-, 60-char-Cap, 3 Size-Presets exakte Dimensionen). (8+9) 32/64-step Render-Smoke × 2. Mock-Canvas: Vollständiger 2d-Context-Stub mit get/set fillStyle/strokeStyle/lineWidth/font/textAlign/textBaseline, fillRect/strokeRect/fillText/beginPath/moveTo/lineTo/stroke/measureText. __calls-Array trackt op + args + state.fillStyle für Geometry+Color-Assertions.",
+      lastSeen: "2026-05-19T00:50:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/components/DrumMachine/DrumMachine.tsx (v3.66.0)": {
+      role:     "v3.66.0 ERWEITERT (~+30 LOC): bestehende v3.65 Pre-Action-AutoBackup-Wiring (CLR + Pattern-onRemove) bleibt + NEU Pattern-PNG-Export-Wiring. Imports +PatternImageExportModal + PatternForExport. PatternRow-Props +onExportImage?:()=>void (optional damit andere Caller die Komponente ohne Export-Feature nutzen können). Neuer 🖼-Button im PatternRow zwischen Sampler-Picker und 'Duplizieren' (data-testid pattern-row-export-image-<idx>, hover:text-accent-primary, opacity-0 group-hover:opacity-100, title 'Als Bild exportieren (PNG / SVG)'). State patternImageExport: PatternForExport|null (Snapshot von p.id/name/stepCount/bpm + parts.map → {id, name, steps}). onExportImage-Callback befüllt State + schließt das Pattern-Menu. Modal-Render am Komponenten-Ende nach SampleSliceEditor.",
+      lastSeen: "2026-05-19T00:50:00.000Z",
+      ownedBy:  "frontend"
+    },
     "client/src/utils/autoBackupController.ts (v3.65.0)": {
       role:     "v3.65.0 NEU (~140 LOC, Pure-Modul + Registry-Pattern): Pre-Action AutoBackup-Helper. autoBackupBeforeAction(actionLabel, projectId, snapshotProvider) → Promise<AutoBackupResult{success,versionId?,label?,error?}> — schreibt VOR jeder destructive Action eine markierte AutoSave-Version (Label 'Before: <action>') via writeAutoSaveVersion. Defensiv: NIE blockierend, jeder Fail-Pfad (missing projectId, snapshot-throw, empty snapshot, Engine-Fail) returnt success=false ohne zu werfen — Caller führt die Action trotzdem aus. Pure-Helpers: buildAutoBackupLabel (idempotent, cappt bei 150 chars + Fallback 'Before: Action' bei leerem Input), isAutoBackupLabel (Filter-Erkennung), stripAutoBackupPrefix (UI-Display). Globale Registry: registerAutoBackup(fn)/getRegisteredAutoBackup() damit tief-verschachtelte Komponenten (DrumMachine, KorgBankEditor) ohne Prop-Drilling rufen — App.tsx registriert nach useCallback-Init, Unmount-Cleanup setzt null. __resetAutoBackupRegistryForTests Test-Helper. Konstanten AUTO_BACKUP_LABEL_PREFIX='Before: ', AUTO_BACKUP_MAX_ACTION_LABEL=150.",
       lastSeen: "2026-05-19T00:40:00.000Z",
@@ -1972,6 +1992,41 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "frontend",
+      timestamp: "2026-05-19T00:50:00.000Z",
+      done: [
+        "v3.66.0: Pattern als PNG/SVG-Export für Documentation/Sharing/Social-Media. Neuer 🖼-Button pro Pattern-Row im Pattern-Picker öffnet Export-Modal mit Live-Preview, Style/Größe-Picker, Title-Override + Download-PNG/SVG Buttons.",
+        "client/src/utils/patternImageExport.ts NEU (~400 LOC, Pure-Modul): renderPatternToCanvas(pattern, opts) → HTMLCanvasElement (Caller-injizierbare createCanvas-Factory für Node/Test-Env), exportPatternAsPng → Promise<Blob> (canvas.toBlob im Browser, toBuffer-Fallback für node-canvas, Empty-PNG-Last-Resort), exportPatternAsSvg → string (pure SVG-Vector, kein Canvas nötig — komplett deterministisch). Pure-Helpers: computeLayout (Title-Bar + Footer + Part-Label-Spalte + Grid), velocityToAlpha (0..127 → 0.4..1.0 mit clamp), getStepRect (Pixel-Geometrie pro Step), resolveStyle (ID|Object|Fallback), sanitizePatternExportFileName (lowercase + non-alphanum→-, cap 60). Konstanten: PATTERN_IMAGE_STYLES (3 Templates) + PATTERN_IMAGE_SIZES (3 Presets) + isPatternImageStyleId Whitelist.",
+        "3 Style-Templates definiert: (1) 'Default Dark' — bg #0f1115, accent #22d3ee Cyan-Steps, kein Glow. (2) 'Light Documentation' — bg #fff, schwarze Steps + helle Borders für Print. (3) 'KORG Tribute' — bg #050805, neon-grüne #7fff7f LED-Steps + rgba-Glow-Halo (stepActiveGlow), Electribe-inspired.",
+        "3 Size-Presets: 'default' 800×600, 'twitter' 1200×675, 'instagram' 1080×1080 — wählbar via Modal-Buttons.",
+        "client/src/components/PatternImageExport/PatternImageExportModal.tsx NEU (~210 LOC): Radix-loses Modal (data-testid 'pattern-image-export-overlay' + ESC + Backdrop-Click). Style-Picker mit accent-primary/20-Active-State, Size-Picker mit accent-secondary/20, Title-Override-Input. Live-Preview-Container rendert Canvas mit voller Größe + CSS-Skalierung auf max-w-560px. handleDownloadPng baut Blob via exportPatternAsPng + triggert <a download>-Click. handleDownloadSvg analog mit image/svg+xml MIME. Ausschließlich semantische Tokens (bg-bg-panel, text-text-primary, border-border-color, accent-*).",
+        "client/src/components/DrumMachine/DrumMachine.tsx ERWEITERT (~+30 LOC): PatternRow-Props +onExportImage?:()=>void, neuer 🖼-Button zwischen 'Sampler-Picker' und 'Duplizieren' (data-testid 'pattern-row-export-image-<idx>', opacity-0 group-hover:opacity-100). State patternImageExport: PatternForExport|null mit onExportImage → setPatternImageExport({id, name, stepCount, bpm, parts: …}). Modal-Render am Komponenten-Ende. Imports +PatternImageExportModal, PatternForExport.",
+        "tests/features/pattern-image-export.test.ts NEU (~370 LOC, 27 Tests in 9 describes, env:node mit Mock-Canvas — KEIN node-canvas-Binary-Build nötig): (1) computeLayout × 3 (Standard-Größen, showPartNames=false, 16/32/64-Step colWidth-Skalierung). (2) velocityToAlpha × 4 (showVelocity=false → 1.0, default 100, 127→1.0/0→0.4, clamp). (3) Style-Variants × 4 (3 Templates existieren, unterschiedliche stepActiveFill, resolveStyle ID/Object/Fallback, isPatternImageStyleId Whitelist). (4) renderPatternToCanvas × 4 (16-step canvas, clamp 10×10→64×48, Active-Steps an korrekten Pixel-Positionen via getStepRect-Match, titleText-Override im fillText). (5) exportPatternAsPng × 2 (Blob+MIME image/png, toBlob-Pfad mit Mock). (6) exportPatternAsSvg × 5 (SVG-Root + xmlns, 4 Kicks → 4 active-fill rects, Style-Variants unterschiedlicher Output mit KORG-Glow-Stroke, XML-Escape A<b>\"&', titleText-Override). (7) sanitizePatternExportFileName + PATTERN_IMAGE_SIZES × 3 (Sanitize, 60-char-Cap, 3 Presets exakte Dimensionen). (8+9) 32/64-step Render-Smoke × 2.",
+        "Mock-Canvas (in Test-File): Vollständiger 2d-Context-Stub mit get/set fillStyle/strokeStyle/lineWidth/font/textAlign/textBaseline, fillRect/strokeRect/fillText/beginPath/moveTo/lineTo/stroke/measureText. __calls-Array für Assertion (Geometry+Color), __fillStyles-Array für Color-Tracking. toBuffer-Methode für node-canvas-API-Fallback-Pfad.",
+        "pnpm check clean. pnpm test grün: 212 Test-Files / 4897 Tests passed (16 skipped, +29 Tests gegenüber v3.65)."
+      ],
+      next: [
+        "v3.67: Browser-Fallback canvas.toBlob im Node-Build — derzeit returnt der Last-Resort-Pfad einen 4-byte PNG-Magic-Header-Blob (für Mocks die weder toBlob noch toBuffer haben). Echte Browser-Pfade sind nicht betroffen, aber Node-Skripte ohne node-canvas würden einen non-functional PNG bekommen — könnten wir entweder hart erroren oder eine SVG-zu-PNG-Konvertierung via sharp/resvg liefern.",
+        "v3.67: Export-Modal sollte auch via Right-Click-Context-Menu erreichbar sein (analog zum bestehenden useMidiLearn-Menu — derzeit nur via Hover-🖼-Button). Bonus: 'Export all patterns'-Bulk-Modal.",
+        "v3.67: PatternImageExportModal könnte als Popout-Window (analog FxPanel/MixerView v3.30+) öffnen damit User Style ausprobiert während er weiter im Sequencer arbeitet."
+      ],
+      changed: [
+        "client/src/utils/patternImageExport.ts (NEU ~400 LOC: Pure-Modul renderPatternToCanvas + exportPatternAsPng + exportPatternAsSvg + 3 Style-Templates + 3 Size-Presets + Layout-Helpers + Filename-Sanitize)",
+        "client/src/components/PatternImageExport/PatternImageExportModal.tsx (NEU ~210 LOC: Modal mit Live-Preview + Style/Size-Picker + Title-Override + Download-PNG/SVG-Buttons, semantische Tailwind-Tokens)",
+        "client/src/components/DrumMachine/DrumMachine.tsx (+30 LOC: PatternRow onExportImage-Prop + 🖼-Button + patternImageExport-State + Modal-Render)",
+        "tests/features/pattern-image-export.test.ts (NEU ~370 LOC: 27 Tests in 9 describes, env:node mit Mock-Canvas)",
+        "package.json (3.65.0 → 3.66.0)",
+        "agents/INDEX.js (version + workLog v3.66.0)"
+      ],
+      caveats: [
+        "PNG-Export im Node-Pfad ohne node-canvas-Binary liefert einen 4-byte PNG-Magic-Header-Blob (Last-Resort). Im Browser greift canvas.toBlob → echtes PNG. In Tests verwendet das Mock-Canvas toBuffer mit einem 8-byte PNG-Header-Sample. Production ist nicht betroffen.",
+        "Live-Preview im Modal rendert das Canvas in der vollen gewählten Größe und skaliert via CSS (max-w-560px). Bei großen Größen (Instagram 1080×1080) wird der Browser kurz Memory belegen — okay für Modal-Anwendung, kein Stream.",
+        "Title-Override leerer String wird zum Pattern-Name-Fallback (trim().|| undefined). Manche User wollen explizit 'leeren' Titel — derzeit nicht möglich, müsste über einen Toggle erweitert werden.",
+        "SVG-Export rendert ALL Step-Boxes als rect-Elemente — bei 64 Steps × 16 Parts = 1024 rects. Das ist im Browser kein Problem aber File-Size ~50kB. PNG-Komprimierung wäre kleiner für Sharing.",
+        "Modal hat KEINEN Loading-State während des Download-PNG-Pfads (canvas.toBlob ist asynchron). Bei sehr großen Größen + KORG-Glow-Style kann das ~100-300ms dauern. UI bleibt klickbar, aber kein Spinner."
+      ]
+    },
     {
       agent:     "backend",
       timestamp: "2026-05-19T00:40:00.000Z",
