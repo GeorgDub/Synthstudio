@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.23.0",
+    version: "3.25.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -89,6 +89,21 @@ const INDEX = {
   // ─── KNOWN FILE INDEX ──────────────────────────────────────
   // Key files agents have analyzed. Add new entries after working on a file.
   files: {
+    "client/src/store/useAudioPerformanceStore.ts (v3.25.0)": {
+      role:     "v3.25.0 NEU: Live-Performance-Telemetrie-Store (~210 LOC, Custom Observer-Pattern, KEINE Persistenz). State: {cpuPercent, audioCallbackMs, bufferUnderruns, outputLatencyMs, baseLatencyMs, glitchEvents}. recordScheduleTick(ms) berechnet instantPct=ms/intervalMs*100 (geclampt 0..100) → EWMA alpha=0.2 in cpuPercent + Underrun-Inkrement bei ms > 2× interval + Glitch-Inkrement bei EWMA > 90%. updateContextLatency(base, out) spiegelt AudioContext.baseLatency+outputLatency. resetPerformanceCounters() setzt Underrun+Glitch auf 0 (CPU bleibt). setSchedulerInterval(ms) konfiguriert die Bezugsgröße (Default 16ms). getPerformanceStatus(state?) liefert 'ok' <70% / 'warn' 70-90% / 'critical' >90%. shouldFireWarning(type, nowMs?) throttled 1×/min via Map<type, lastFiredAt> — erstes Warning IMMER erlaubt (last===undefined). Diff-vor-Notify (Compare gerundete %, callback*10, counter) → <60Hz UI-Updates. Defensive: NaN/Infinity/negative ignored, Latency-negative clamped auf 0. __resetPerformanceStoreForTests + __resetWarningThrottleForTests.",
+      lastSeen: "2026-05-18T14:00:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/components/PerformanceMonitor/PerformanceMonitor.tsx (v3.25.0)": {
+      role:     "v3.25.0 NEU: Discriminated-Union-Props PerformanceMonitor (~230 LOC). mode='compact': Topbar-Indicator (Status-Dot bg-accent-success/secondary/danger + tabular-nums CPU%-Label + Click-onOpenDetails). mode='expanded': Settings-Panel (Activity-Icon + CPU-Bar mit Color-Coded-Fill 0..100% transition-200 + 4-Grid Base/Output/Underruns/Glitches mit border-border-color bg-bg-panel + Last-Callback-ms-Display + Reset-Button). Warning-Toasts via useEffect im CompactIndicator (immer mounted in Topbar): status==='critical' → 'Hohe CPU-Last (X%) — Glitches möglich' (kind=warning) / state.bufferUnderruns>0 → 'Audio-Buffer-Underrun (Total: N)' (kind=error). Throttle via shouldFireWarning(type) max 1×/min. pickWarning(state, prevState) Pure-Helper exportiert. data-testids: performance-monitor-compact / -dot / -expanded / -cpu / -cpu-bar / -base-latency / -output-latency / -underruns / -glitches / -callback-ms / -reset (alle mit data-status für Color-Assertion). KEINE hardcoded Tailwind-Farben.",
+      lastSeen: "2026-05-18T14:00:00.000Z",
+      ownedBy:  "backend"
+    },
+    "tests/features/audio-performance.test.ts (v3.25.0)": {
+      role:     "v3.25.0 NEU: 23 Tests in 7 describes (@vitest-environment jsdom). beforeEach __resetPerformanceStoreForTests + __resetWarningThrottleForTests. (1) Defaults 2×: alle Felder=0 + schedulerInterval=16. (2) recordScheduleTick 6×: callback-ms-set + EWMA-Smoothing-zwischen-Aufrufen + Underrun-Inkrement bei >2× interval + Glitch-Counter bei >90% + Defensive-NaN/Infinity/negative + Clamp-100. (3) resetPerformanceCounters 2×: setzt Underrun+Glitch auf 0 behält CPU + Idempotenz. (4) updateContextLatency 3×: setzt base+out + Defensive-NaN + Negative-Clamp. (5) getPerformanceStatus 4×: ok/warn/critical Branches + isPerformanceCritical-Inkrement. (6) shouldFireWarning 4×: first-allowed + Cooldown-Block bei +30s + Recover bei +61s + per-Type-Isolation. (7) setSchedulerInterval 2×: Underrun-Threshold-Change + Defensive-Zero-NaN.",
+      lastSeen: "2026-05-18T14:00:00.000Z",
+      ownedBy:  "backend"
+    },
     "client/src/store/useWelcomeStore.ts (v3.22.0)": {
       role:     "v3.22.0 NEU: Custom Observer-Pattern Store (~190 LOC, isomorph) für First-Run Welcome-Wizard. State {firstRun:bool, dismissed:bool} persist in localStorage('synthstudio:welcome:v1') mit Version-Wrapper {v:1, firstRun, dismissed}. Pure-API: getWelcomeState() / shouldAutoShowWelcome() (=firstRun && !dismissed) / markFirstRunComplete() (firstRun→false, idempotent) / dismissWelcomeWizard() (beides setzen) / resetWelcomeWizard() (für Re-Open aus Settings) / useWelcomeStore() React-Hook (useReducer-Rerender). Defensive: korrupter JSON → defaults, kein localStorage in SSR → in-memory, try/catch um setItem für Quota/Private-Mode. CustomEvent-Helpers: WELCOME_EVENT_NAME='synthstudio:welcome:try-it', WelcomeTryItTarget union (7 targets), buildWelcomeTryItDetail(target) Pure-Helper, dispatchWelcomeTryIt(target) feuert window-CustomEvent (NO-OP wenn !window). __resetWelcomeStoreForTests() für Vitest.",
       lastSeen: "2026-05-18T13:30:00.000Z",
@@ -1262,6 +1277,40 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "backend",
+      timestamp: "2026-05-18T14:00:00.000Z",
+      done: [
+        "v3.25.0: CPU + Audio-Performance-Monitor — Live-Performance-Peace-of-Mind. Telemetrie-Pipeline + UI-Indicator + Settings-Section + Warning-Toasts + 23 Unit-Tests.",
+        "NEU client/src/store/useAudioPerformanceStore.ts (~210 LOC, Custom Observer-Pattern, KEINE Persistenz). State: {cpuPercent, audioCallbackMs, bufferUnderruns, outputLatencyMs, baseLatencyMs, glitchEvents}. Pure-API: recordScheduleTick(msTaken) (von AudioEngine pro _schedule-Iteration), updateContextLatency(base, out), resetPerformanceCounters() (UI-Reset-Button), setSchedulerInterval(ms) (AudioEngine init), getPerformanceStatus() liefert 'ok'|'warn'|'critical' (Thresholds 70%/90%), shouldFireWarning(type, nowMs?) throttled 1×/min via Map<type, lastFiredAt>. CPU%-Approximation: instantPct = msTaken/intervalMs*100, geclampt 0..100, EWMA-Glättung mit alpha=0.2. Underrun-Detection: msTaken > 2× intervalMs. Glitch-Counter: jeder Tick mit EWMA>90% inkrementiert. Diff-vor-Notify (nur Re-Render bei gerundeter %-Änderung oder Counter-Inkrement) → <60Hz UI-Updates. Defensive vs NaN/Infinity/negative.",
+        "MEASUREMENT-STRATEGIE: Web Audio bietet keinen direkten CPU%-Access. Wir messen die Dauer der JS-Scheduler-Iteration (Performance.now() vor/nach AudioEngine._schedule()) und teilen durch SCHEDULE_INTERVAL (16ms). Das ist nicht der Audio-Thread-CPU-Verbrauch, aber ein guter Proxy für 'wird der Scheduler überlastet → Step-Drop droht'. AudioContext.baseLatency + outputLatency werden bei init() in den Store gespiegelt (gepullt, weil sich diese Werte zur Laufzeit kaum ändern). Performance.now() Fallback auf Date.now() für SSR-Safety.",
+        "NEU client/src/components/PerformanceMonitor/PerformanceMonitor.tsx (~230 LOC). Discriminated-Union-Props: mode='compact' (Topbar-Indicator: Status-Dot bg-accent-success/secondary/danger + CPU%-Label, onOpenDetails-Callback) oder mode='expanded' (Settings-Panel: CPU-Bar mit Color-Coded-Fill + 4-Grid Base/Output/Underruns/Glitches + Last-Callback-ms + Reset-Button). Warning-Toasts via useEffect: CPU-critical (3+ glitchEvents in kurzer Zeit) → 'Hohe CPU-Last (X%) — Glitches möglich' / Underrun-Counter steigt → 'Audio-Buffer-Underrun (Total: N)'. Throttle via shouldFireWarning(type) max 1×/min. data-testids: performance-monitor-compact / -dot / -expanded / -cpu / -cpu-bar / -base-latency / -output-latency / -underruns / -glitches / -callback-ms / -reset. KEINE hardcoded Tailwind-Farben — alle Status via semantische Tokens.",
+        "AUDIOENGINE-INSTRUMENTATION: client/src/audio/AudioEngine.ts._schedule() bekommt am Anfang Performance.now()-Stempel, am Ende _perfRecordScheduleTick(t1-t0) Aufruf. try/catch um Telemetry — niemals Audio-Pfad crashen. init() ruft _perfSetSchedulerInterval(SCHEDULE_INTERVAL) + initial _perfUpdateContextLatency aus ctx.baseLatency + ctx.outputLatency. NEU public getAudioPerformanceSnapshot() für UI-Refresh außerhalb des Scheduler-Loops.",
+        "MOUNT-POSITION: Topbar zwischen Settings-Knopf und UpdateBadge (App.tsx, neben den ⚙/⌨/🎹-Buttons). Klick auf Indicator → setSettingsInitialSection('performance') + setShowSettings(true). Settings-Section 'Performance' (📊-Icon, group='Audio') zwischen 'Audio Engine' und 'MIDI Geräte'. Section-Type um 'performance' erweitert.",
+        "WARNING-TRIGGER-THRESHOLDS: CPU-bar grün <70% / gelb 70-90% / rot >90%. Glitch-Counter inkrementiert pro Tick mit CPU>90%. Toast feuert wenn (a) Status wechselt auf 'critical' AND Cooldown abgelaufen oder (b) bufferUnderruns inkrementiert AND Cooldown abgelaufen. 60s-Cooldown verhindert Toast-Spam bei dauerhafter Last.",
+        "Tests NEU tests/features/audio-performance.test.ts (@vitest-environment jsdom, 23 Tests in 7 describes): Defaults (2× state-zero + scheduler-default), recordScheduleTick (6× callback-ms-set + EWMA-Smoothing + Underrun-Inkrement + Glitch-Threshold + Defensive-NaN + Clamp-100), resetPerformanceCounters (2× counter-reset behält CPU + Idempotenz), updateContextLatency (3× set + Defensive-NaN + Negative-Clamp), getPerformanceStatus (4× ok/warn/critical + isPerformanceCritical), shouldFireWarning Throttle (4× first-allowed + Cooldown-Block + 60s-Recover + per-Type-Isolation), setSchedulerInterval (2× Underrun-Threshold-Change + Defensive-Zero-NaN).",
+        "Test-Resultat: pnpm check clean. pnpm test → 177 files / 4064 passed / 15 skipped (vorher v3.23 4008 → +56 tests inkl. der 23 perf-Tests + 33 weitere). Alle existing Tests bleiben grün — keine Regressionen.",
+        "CAVEATS: (a) CPU% ist Approximation der JS-Scheduler-Last, NICHT echter Audio-Thread-CPU. Wenn AudioWorklet/-Processor-Code (im Web-Audio-Thread) langsam läuft, sieht der Monitor das nicht. (b) Vor dem ersten _schedule()-Tick (Transport stop) bleibt cpuPercent=0 — visuell 'OK'-Dot ist korrekt (kein Audio läuft → keine Last). (c) baseLatency/outputLatency werden NUR bei init() abgerufen — wenn der User mid-session den AudioDevice wechselt, müsste getAudioPerformanceSnapshot()+updateContextLatency manuell getriggert werden (Future-Task). (d) AudioWorkletNode wäre der korrekte Weg für echte Audio-Thread-Latenz-Messung, ist aber Refactor-Aufwand v3.26+.",
+        "package.json + agents/INDEX.js version 3.24.0 → 3.25.0."
+      ],
+      next: [
+        "TASK-v3.25-AUDIOWORKLET-CPU: echte Audio-Thread-CPU-Messung via AudioWorkletNode mit messaging-port. Worklet sendet performance.now()-Differenz pro Render-Quantum → MainThread mittelt. Wäre der Industry-Standard (DAW-vergleichbar) statt JS-Side-Approx.",
+        "TASK-v3.25-LATENCY-AUTO-REFRESH: getAudioPerformanceSnapshot() periodisch (5s-Interval) abrufen damit DeviceChange-Latenz live updated. Aktuell nur init-time.",
+        "TASK-v3.25-CHARTS: ExpandedPanel sollte 30-Sekunden-Line-Graph der letzten CPU-Werte zeigen (analog SpectrumAnalyzer im Mixer). Aktuell nur Bar + Counter — kein History-Visual.",
+        "TASK-v3.25-PLAYWRIGHT: tests/web/performance-monitor.spec.ts E2E — Compact-Indicator sichtbar nach Transport-Start, Klick öffnet Settings/Performance, Reset-Button setzt Counter zurück.",
+        "TASK-v3.25-EXPORT-METRICS: Performance-Logs als CSV exportieren für Bug-Reports (User-Report 'glitch happened at 14:32' wäre mit zeitstempelter History reproduzierbar)."
+      ],
+      changed: [
+        "client/src/store/useAudioPerformanceStore.ts (NEU, ~210 LOC: Observer-Pattern Store + EWMA-Smoothing + Underrun/Glitch-Counter + Warning-Throttle)",
+        "client/src/components/PerformanceMonitor/PerformanceMonitor.tsx (NEU, ~230 LOC: discriminated-union compact/expanded mode + Warning-Toasts + Reset-Button + semantische Tailwind-Tokens)",
+        "client/src/audio/AudioEngine.ts (+Performance.now() Mess-Stempel in _schedule() + init() Mirror-to-Store + getAudioPerformanceSnapshot() public)",
+        "client/src/components/Settings/SettingsPanel.tsx (+Section-Type 'performance' + SECTIONS-Eintrag mit 📊-Icon zwischen audio-engine und midi-devices + active==='performance' Render-Branch + PerformanceMonitor-Import)",
+        "client/src/App.tsx (+PerformanceMonitor-Import + setSettingsInitialSection-Union um 'performance' erweitert + <PerformanceMonitor mode='compact' onOpenDetails=...> in Topbar vor UpdateBadge)",
+        "tests/features/audio-performance.test.ts (NEU, 23 Tests in 7 describes: Defaults + recordScheduleTick + Reset + updateContextLatency + getPerformanceStatus + shouldFireWarning + setSchedulerInterval)",
+        "package.json (3.24.0 → 3.25.0)",
+        "agents/INDEX.js (version 3.23.0 → 3.25.0 + workLog v3.25.0 entry)"
+      ]
+    },
     {
       agent:     "backend",
       timestamp: "2026-05-18T13:50:00.000Z",

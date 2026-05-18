@@ -23,6 +23,14 @@ import {
   getAudioEngineConfig,
   buildAudioContextOptions,
 } from "../store/useAudioEngineConfigStore";
+// v3.25.0: Live-Performance-Telemetrie. Pro Scheduler-Tick wird die Dauer
+// gemessen und in den globalen Store gespiegelt. Kein Re-Import-Zyklus weil
+// useAudioPerformanceStore nur pure-Funktionen exportiert.
+import {
+  recordScheduleTick as _perfRecordScheduleTick,
+  updateContextLatency as _perfUpdateContextLatency,
+  setSchedulerInterval as _perfSetSchedulerInterval,
+} from "../store/useAudioPerformanceStore";
 
 // ─── Typen ────────────────────────────────────────────────────────────────────
 
@@ -570,6 +578,29 @@ class AudioEngineClass {
     // sodass Loop-Playback nicht durch die per-Channel-FX-Chain läuft).
     this._looperEngine.setContext(this.ctx, this.masterGain);
     this._looperEngine.setBpm(this._bpm);
+
+    // v3.25.0: Performance-Telemetrie initialisieren. SCHEDULE_INTERVAL ist
+    // im Store die Bezugsgröße für CPU% (callback-ms / interval-ms × 100).
+    try {
+      _perfSetSchedulerInterval(this.SCHEDULE_INTERVAL);
+      const base = (this.ctx as AudioContext & { baseLatency?: number }).baseLatency ?? 0;
+      const out = (this.ctx as AudioContext & { outputLatency?: number }).outputLatency ?? 0;
+      _perfUpdateContextLatency(base * 1000, out * 1000);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  /**
+   * v3.25.0: Liefert aktuelle AudioContext-Latency-Snapshot in ms (für die
+   * UI um auch außerhalb des Scheduler-Loops aktuelle Werte abzulesen).
+   */
+  getAudioPerformanceSnapshot(): { baseLatencyMs: number; outputLatencyMs: number } {
+    const ctx = this.ctx;
+    if (!ctx) return { baseLatencyMs: 0, outputLatencyMs: 0 };
+    const base = (ctx as AudioContext & { baseLatency?: number }).baseLatency ?? 0;
+    const out = (ctx as AudioContext & { outputLatency?: number }).outputLatency ?? 0;
+    return { baseLatencyMs: base * 1000, outputLatencyMs: out * 1000 };
   }
 
   async resume(): Promise<void> {
@@ -1388,6 +1419,13 @@ class AudioEngineClass {
 
   private _schedule() {
     if (!this.ctx || !this._isPlaying) return;
+    // v3.25.0: Live-Performance-Telemetrie. Performance.now() ist <1µs
+    // Overhead. Wir messen die Dauer der vollständigen Scheduler-Iteration
+    // (inkl. MIDI-Clock + Step-Scheduling). Schreiben ans Ende.
+    const _perfT0 =
+      typeof performance !== "undefined" && typeof performance.now === "function"
+        ? performance.now()
+        : Date.now();
     const now = this.ctx.currentTime;
     const lookAheadUntil = now + this.LOOK_AHEAD;
 
@@ -1430,6 +1468,16 @@ class AudioEngineClass {
         this.queuedPatternId = null;
         this.patternSwitchCallback?.(nextId);
       }
+    }
+    // v3.25.0: Telemetrie schreiben. Defensive vs. Store-Throws.
+    try {
+      const t1 =
+        typeof performance !== "undefined" && typeof performance.now === "function"
+          ? performance.now()
+          : Date.now();
+      _perfRecordScheduleTick(t1 - _perfT0);
+    } catch {
+      /* ignore — Telemetry darf den Audio-Pfad nie crashen */
     }
   }
 

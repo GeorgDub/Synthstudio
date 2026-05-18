@@ -114,6 +114,7 @@ import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { MidiSettings } from "@/components/MidiSettings";
 import { ShortcutsHelp } from "@/components/ShortcutsHelp";
 import { UpdateBadge } from "@/components/UpdateBadge";
+import { PerformanceMonitor } from "@/components/PerformanceMonitor/PerformanceMonitor";
 import { useCollabSession } from "@/hooks/useCollabSession";
 import { useCollabSync } from "@/hooks/useCollabSync";
 import { useSessionStore } from "@/store/useSessionStore";
@@ -1039,7 +1040,7 @@ export default function App() {
   const [showThemeSettings, setShowThemeSettings] = useState(false);
   // Unified Settings Panel
   const [showSettings, setShowSettings] = useState(false);
-  const [settingsInitialSection, setSettingsInitialSection] = useState<"design" | "ki" | "keyboard" | "midi-devices" | "midi-cc" | "midi-notes" | "about">("design");
+  const [settingsInitialSection, setSettingsInitialSection] = useState<"design" | "ki" | "keyboard" | "midi-devices" | "midi-cc" | "midi-notes" | "about" | "performance">("design");
 
   // v3.22.0: First-Run Welcome-Wizard. shouldAutoShowWelcome liest localStorage
   // synchron — daher lazy init, kein useEffect-Race.
@@ -3239,6 +3240,11 @@ export default function App() {
               >
                 ⚙
               </button>
+
+              <PerformanceMonitor
+                mode="compact"
+                onOpenDetails={() => { setSettingsInitialSection("performance"); setShowSettings(true); }}
+              />
 
               {electron.isElectron && <UpdateBadge />}
 

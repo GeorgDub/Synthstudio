@@ -14,6 +14,7 @@
 import React, { useState, useCallback, useEffect, useReducer } from "react";
 import { X } from "lucide-react";
 import { KeyboardBindingsPanel } from "./KeyboardBindingsPanel";
+import { PerformanceMonitor } from "../PerformanceMonitor/PerformanceMonitor";
 // v3.16.0 — OmniTribe Hardware-Bridge
 import { DeviceConnectionPanel } from "./DeviceConnectionPanel";
 import {
@@ -99,6 +100,7 @@ type Section =
   | "keyboard"
   | "metronome"
   | "audio-engine"
+  | "performance"
   | "midi-devices"
   | "midi-cc"
   | "midi-notes"
@@ -119,6 +121,7 @@ const SECTIONS: Array<{ id: Section; icon: string; label: string; group?: string
   { id: "keyboard",     icon: "⌨️", label: "Tastatur",            group: "Steuerung" },
   { id: "metronome",    icon: "🥁", label: "Metronom",            group: "Audio" },
   { id: "audio-engine", icon: "⚡", label: "Audio Engine",         group: "Audio" },
+  { id: "performance",  icon: "📊", label: "Performance",         group: "Audio" },
   { id: "midi-devices", icon: "🎹", label: "MIDI Geräte",         group: "MIDI" },
   { id: "midi-cc",      icon: "🎛",  label: "CC-Zuweisungen",      group: "MIDI" },
   { id: "midi-notes",   icon: "🎵", label: "Note-Zuweisungen",    group: "MIDI" },
@@ -2120,6 +2123,7 @@ export function SettingsPanel({ isOpen, onClose, midi, parts, initialSection = "
           {active === "keyboard"     && <KeyboardBindingsPanel />}
           {active === "metronome"    && <MetronomeSection />}
           {active === "audio-engine" && <AudioEngineSection />}
+          {active === "performance"  && <PerformanceMonitor mode="expanded" />}
           {active === "midi-devices" && <MidiDevicesSection midi={midi} onOpenAdvancedMidi={onOpenAdvancedMidi} />}
           {active === "midi-cc"      && <MidiCcSection midi={midi} parts={parts} onOpenAdvancedMidi={onOpenAdvancedMidi} />}
           {active === "midi-notes"   && <MidiNotesSection midi={midi} parts={parts} onOpenAdvancedMidi={onOpenAdvancedMidi} />}
