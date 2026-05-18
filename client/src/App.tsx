@@ -77,6 +77,17 @@ import { ToastContainer } from "@/components/UI/ToastContainer";
 import { ActivationModal } from "@/components/License/ActivationModal";
 import { KorgBankModal, type KorgBankSample } from "@/components/KorgBank/KorgBankModal";
 import { KorgBankEditor } from "@/components/KorgBank/KorgBankEditor";
+// v3.18.0: OmniTribe-Tab (VU + Spectrum + Chord + Performance-Pads).
+import { OmniTribeVuMeter } from "@/components/OmniTribe/OmniTribeVuMeter";
+import { OmniTribeSpectrumAnalyzer } from "@/components/OmniTribe/OmniTribeSpectrumAnalyzer";
+import { ChordPanel } from "@/components/OmniTribe/ChordPanel";
+import { PerformancePadGrid } from "@/components/OmniTribe/PerformancePadGrid";
+import {
+  setOmniTribeVuLevels,
+  setOmniTribeSpectrumBins,
+  resetOmniTribeMeters,
+} from "@/store/useOmniTribeMetersStore";
+import { omniTribeBridge } from "@/audio/OmniTribeBridge";
 import { initializeLicenseStore } from "@/store/useLicenseStore";
 // TASK-232-FOLLOWUP / v2.98: Pro-Feature-Gate für MIDI-Note-Out (Bridge-Effect).
 // v3.3.0: KORG-Bank-Import gated.
@@ -1010,7 +1021,7 @@ export default function App() {
     setActiveTab(tab);
     localStorage.setItem("ss-layout:active-tab", tab);
   }, []);
-  const [activeTool, setActiveTool] = useState<'prompt' | 'algorithmic' | 'chords' | 'sampler' | 'workbench' | 'library' | 'script'>('prompt');
+  const [activeTool, setActiveTool] = useState<'prompt' | 'algorithmic' | 'chords' | 'sampler' | 'workbench' | 'library' | 'script' | 'omnitribe'>('prompt');
 
   // ── Dialog-State ─────────────────────────────────────────────────────────
   const [showMidiSettings, setShowMidiSettings] = useState(false);
@@ -1921,30 +1932,27 @@ export default function App() {
     return () => window.removeEventListener("midi:runScript", handleRunScript);
   }, []);
 
-  // ── v3.16.0: OmniTribe-Bridge CustomEvents ───────────────────────────────
+  // ── v3.16.0 / v3.18.0: OmniTribe-Bridge CustomEvents ─────────────────────
   // Bridge dispatched paramChange / vuMeter / spectrum auf window.
-  // Wir loggen sie für jetzt nur — Panel-Wiring (GranularSynth, WavetableEditor,
-  // ModMatrix) folgt in v3.17, neue ChordPanel/PerformancePadGrid in v3.18.
+  // v3.18.0: VU + Spectrum werden in useOmniTribeMetersStore gepiped, der
+  // OmniTribe-Tab (VU-Meter, Spectrum-Analyzer) re-rendert daraus.
   useEffect(() => {
     const onParam = (e: Event) => {
-      const detail = (e as CustomEvent).detail;
-      // eslint-disable-next-line no-console
-      console.log("[OmniTribe] paramChange", detail);
+      // ChordPanel + (zukunftig) andere Panels lauschen direkt auf das Event.
+      // App.tsx loggt nur für Debug (10% Sample-Rate).
+      if (Math.random() < 0.1) {
+        const detail = (e as CustomEvent).detail;
+        // eslint-disable-next-line no-console
+        console.log("[OmniTribe] paramChange", detail);
+      }
     };
     const onVu = (e: Event) => {
-      const detail = (e as CustomEvent).detail;
-      // Hot path — nur sporadisch loggen, sonst flooded die Console
-      if (Math.random() < 0.02) {
-        // eslint-disable-next-line no-console
-        console.log("[OmniTribe] vuMeter", detail);
-      }
+      const detail = (e as CustomEvent).detail as { levels?: number[] } | undefined;
+      if (detail?.levels) setOmniTribeVuLevels(detail.levels);
     };
     const onSpectrum = (e: Event) => {
-      const detail = (e as CustomEvent).detail;
-      if (Math.random() < 0.02) {
-        // eslint-disable-next-line no-console
-        console.log("[OmniTribe] spectrum bins=", detail?.bins?.length);
-      }
+      const detail = (e as CustomEvent).detail as { bins?: number[] } | undefined;
+      if (detail?.bins) setOmniTribeSpectrumBins(detail.bins);
     };
     window.addEventListener("omnitribe:paramChange", onParam);
     window.addEventListener("omnitribe:vuMeter", onVu);
@@ -1955,6 +1963,24 @@ export default function App() {
       window.removeEventListener("omnitribe:spectrum", onSpectrum);
     };
   }, []);
+
+  // ── v3.18.0: OmniTribe-Connection-Polling (für UI-Disconnect-Banner) ─────
+  const [omniTribeConnected, setOmniTribeConnected] = useState<boolean>(false);
+  useEffect(() => {
+    const tick = () => {
+      const wasConnected = omniTribeConnected;
+      const isConnected  = omniTribeBridge.isConnected;
+      if (wasConnected && !isConnected) {
+        // Disconnect → reset VU/Spectrum auf 0.
+        resetOmniTribeMeters();
+      }
+      if (wasConnected !== isConnected) {
+        setOmniTribeConnected(isConnected);
+      }
+    };
+    const id = window.setInterval(tick, 1000);
+    return () => window.clearInterval(id);
+  }, [omniTribeConnected]);
 
   // ── Launchpad Grid Controller ─────────────────────────────────────────────
   const launchpadEnabled = midi.outputDevices.some(d => isGridDevice(d.name));
@@ -3386,6 +3412,7 @@ export default function App() {
                       { id: "workbench",   label: "🎚 Workbench" },
                       { id: "library",     label: "📚 Library" },
                       { id: "script",      label: "⚡ Script" },
+                      { id: "omnitribe",   label: "🎛 OmniTribe" },
                     ] as const).map(t => (
                       <button key={t.id} onClick={() => setActiveTool(t.id)}
                         className={`px-4 py-2 text-xs font-medium border-b-2 transition-colors ${activeTool === t.id ? "border-accent-primary text-accent-primary bg-bg-elevated" : "border-transparent text-text-dim hover:text-text-muted"}`}>
@@ -3495,6 +3522,40 @@ export default function App() {
                           onPlayStop={project.togglePlayStop}
                           dm={dm}
                         />
+                      </div>
+                    )}
+                    {activeTool === 'omnitribe' && (
+                      <div className="h-full overflow-y-auto p-4 space-y-4 max-w-5xl">
+                        <div className="bg-bg-panel border border-border-color rounded p-3">
+                          <div className="flex items-center justify-between">
+                            <h3 className="text-sm font-semibold text-text-primary">
+                              OmniTribe Device
+                            </h3>
+                            <span
+                              className={[
+                                "text-[10px] uppercase tracking-wider px-2 py-0.5 rounded",
+                                omniTribeConnected
+                                  ? "bg-accent-success/15 text-accent-success"
+                                  : "bg-bg-elevated text-text-dim",
+                              ].join(" ")}
+                              data-testid="omnitribe-connection-status"
+                            >
+                              {omniTribeConnected ? "Connected" : "Disconnected"}
+                            </span>
+                          </div>
+                          <p className="text-xs text-text-dim mt-1">
+                            Live-Streams (VU + Spectrum) + Chord-Panel + Performance-Pad-Grid.
+                            Verbindung via Settings → Devices.
+                          </p>
+                        </div>
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                          <OmniTribeVuMeter connected={omniTribeConnected} />
+                          <OmniTribeSpectrumAnalyzer connected={omniTribeConnected} />
+                        </div>
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                          <ChordPanel connected={omniTribeConnected} />
+                          <PerformancePadGrid connected={omniTribeConnected} />
+                        </div>
                       </div>
                     )}
                   </div>

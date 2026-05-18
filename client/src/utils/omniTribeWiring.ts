@@ -236,3 +236,152 @@ export function sendEuclideanParam(part: number, key: EuclideanParamKey, intValu
   const v   = Math.max(0, Math.min(127, Math.round(intValue)));
   sendNrpn(part, OMNITRIBE_EUCLIDEAN.PARAM_HIGH, pl, v);
 }
+
+// ─── Chord-Modul (paramHigh = 0x1E) ──────────────────────────────────────────
+
+/**
+ * Chord-Modul (Chord-PAD).
+ * paramLow LSB-Schema:
+ *   0x00 | (part << 4) → CHORD_TYPE
+ *   0x01 | (part << 4) → STAGGER (0..200 ms)
+ *   0x03 | (part << 4) → ENABLE  (0/1)
+ *
+ * Akkord-Typen (Index 0..14):
+ *   0  Major          1  Minor          2  Maj7         3  Min7
+ *   4  Dom7           5  Dim            6  Aug          7  Sus2
+ *   8  Sus4           9  Add9           10 Min9
+ *   11 User1 12 User2 13 User3 14 User4
+ */
+export const OMNITRIBE_CHORD = {
+  PARAM_HIGH: 0x1E,
+  TYPE:       0x00,
+  STAGGER:    0x01,
+  ENABLE:     0x03,
+} as const;
+
+export type ChordParamKey = "type" | "stagger" | "enable";
+
+const CHORD_PID: Record<ChordParamKey, number> = {
+  type:    OMNITRIBE_CHORD.TYPE,
+  stagger: OMNITRIBE_CHORD.STAGGER,
+  enable:  OMNITRIBE_CHORD.ENABLE,
+};
+
+/**
+ * Akkord-Typen + ihre Intervalle (Halbtoene ueber dem Root).
+ * Nur informativ fuer UI — die Firmware kennt die Definition selbst.
+ * User-Slots haben leere Intervalle (im UI editierbar, lokal cached).
+ */
+export interface ChordType {
+  id: number;
+  name: string;
+  intervals: number[];
+  isUser: boolean;
+}
+
+export const CHORD_TYPES: ChordType[] = [
+  { id: 0,  name: "Major",  intervals: [0, 4, 7],       isUser: false },
+  { id: 1,  name: "Minor",  intervals: [0, 3, 7],       isUser: false },
+  { id: 2,  name: "Maj7",   intervals: [0, 4, 7, 11],   isUser: false },
+  { id: 3,  name: "Min7",   intervals: [0, 3, 7, 10],   isUser: false },
+  { id: 4,  name: "Dom7",   intervals: [0, 4, 7, 10],   isUser: false },
+  { id: 5,  name: "Dim",    intervals: [0, 3, 6],       isUser: false },
+  { id: 6,  name: "Aug",    intervals: [0, 4, 8],       isUser: false },
+  { id: 7,  name: "Sus2",   intervals: [0, 2, 7],       isUser: false },
+  { id: 8,  name: "Sus4",   intervals: [0, 5, 7],       isUser: false },
+  { id: 9,  name: "Add9",   intervals: [0, 4, 7, 14],   isUser: false },
+  { id: 10, name: "Min9",   intervals: [0, 3, 7, 10, 14], isUser: false },
+  { id: 11, name: "User 1", intervals: [],              isUser: true },
+  { id: 12, name: "User 2", intervals: [],              isUser: true },
+  { id: 13, name: "User 3", intervals: [],              isUser: true },
+  { id: 14, name: "User 4", intervals: [],              isUser: true },
+];
+
+export const CHORD_TYPE_COUNT = CHORD_TYPES.length;
+
+/**
+ * Sendet Chord-Param (type 0..14 / stagger 0..200ms / enable 0..1).
+ */
+export function sendChordParam(part: number, key: ChordParamKey, intValue: number): void {
+  const pid = CHORD_PID[key];
+  const pl  = buildParamLow(pid, part);
+  const v   = Math.max(0, Math.min(127, Math.round(intValue)));
+  sendNrpn(part, OMNITRIBE_CHORD.PARAM_HIGH, pl, v);
+}
+
+/** Decodiert Chord-PID → UI-Key (oder null wenn unbekannt). */
+export function chordPidToKey(pid: number): ChordParamKey | null {
+  switch (pid & 0x0F) {
+    case OMNITRIBE_CHORD.TYPE:    return "type";
+    case OMNITRIBE_CHORD.STAGGER: return "stagger";
+    case OMNITRIBE_CHORD.ENABLE:  return "enable";
+    default: return null;
+  }
+}
+
+// ─── Performance-Pad-Modul (paramHigh = 0x1F) ────────────────────────────────
+
+/**
+ * Performance-Pads (16 Pads). paramLow ist NICHT (part<<4)|pid sondern
+ * eine eigene Konvention:
+ *   0x00..0x0F → Pad-Press           padId = pl & 0x0F
+ *   0x20..0x2F → Loop-Isolate Pad    padId = pl & 0x0F
+ *   0x30..0x3F → Jam-Mute Part       partId = pl & 0x0F
+ * Part-Argument im Frame ist 0 (Modul ist Global, kein Per-Part).
+ */
+export const OMNITRIBE_PERFORMANCE = {
+  PARAM_HIGH:        0x1F,
+  PAD_PRESS_BASE:    0x00,
+  LOOP_ISOLATE_BASE: 0x20,
+  JAM_MUTE_BASE:     0x30,
+  PAD_COUNT:         16,
+} as const;
+
+/** Pad-Index 0..15 (clampt out-of-range auf 0). */
+function clampPadId(padId: number): number {
+  if (!Number.isFinite(padId)) return 0;
+  if (padId < 0) return 0;
+  if (padId > 15) return 15;
+  return Math.floor(padId);
+}
+
+/** Pad-Press: triggert Pattern-Switch / Pad-Action am Geraet. */
+export function sendPerformancePadPress(padId: number): void {
+  const id = clampPadId(padId);
+  sendNrpn(0, OMNITRIBE_PERFORMANCE.PARAM_HIGH,
+           (OMNITRIBE_PERFORMANCE.PAD_PRESS_BASE | id) & 0x7F, 1);
+}
+
+/** Loop-Isolate: Long-Press / Right-Click. */
+export function sendPerformanceLoopIsolate(padId: number): void {
+  const id = clampPadId(padId);
+  sendNrpn(0, OMNITRIBE_PERFORMANCE.PARAM_HIGH,
+           (OMNITRIBE_PERFORMANCE.LOOP_ISOLATE_BASE | id) & 0x7F, 1);
+}
+
+/** Jam-Mute: toggle Part (partId 0..15). value 0/1. */
+export function sendPerformanceJamMute(partId: number, on: boolean): void {
+  const id = clampPadId(partId);
+  sendNrpn(0, OMNITRIBE_PERFORMANCE.PARAM_HIGH,
+           (OMNITRIBE_PERFORMANCE.JAM_MUTE_BASE | id) & 0x7F, on ? 1 : 0);
+}
+
+/** Decodiert ein Performance-paramLow zurueck auf {kind, id}. */
+export interface PerformanceDecode {
+  kind: "padPress" | "loopIsolate" | "jamMute" | "unknown";
+  id: number;
+}
+
+export function decodePerformanceParamLow(paramLow: number): PerformanceDecode {
+  const pl = paramLow & 0x7F;
+  if (pl >= OMNITRIBE_PERFORMANCE.JAM_MUTE_BASE && pl <= 0x3F) {
+    return { kind: "jamMute", id: pl & 0x0F };
+  }
+  if (pl >= OMNITRIBE_PERFORMANCE.LOOP_ISOLATE_BASE && pl <= 0x2F) {
+    return { kind: "loopIsolate", id: pl & 0x0F };
+  }
+  if (pl <= 0x0F) {
+    return { kind: "padPress", id: pl & 0x0F };
+  }
+  return { kind: "unknown", id: 0 };
+}

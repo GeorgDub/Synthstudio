@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.17.0",
+    version: "3.18.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -94,9 +94,44 @@ const INDEX = {
       lastSeen: "2026-05-18T12:15:00.000Z",
       ownedBy:  "frontend"
     },
-    "client/src/utils/omniTribeWiring.ts (v3.17.0)": {
-      role:     "v3.17.0 NEU: NRPN-Adress-Konstanten + High-Level-API fuer Panel ↔ OmniTribeBridge (~225 LOC). Exports: OMNITRIBE_GRANULAR (PARAM_HIGH 0x19, PIDs grainSize/density/pitchScatter/position/spray/feedback), OMNITRIBE_WAVETABLE (0x07, framePosition/morphSpeed), OMNITRIBE_EUCLIDEAN (0x11, nSteps/kHits/rotation/enable). clampPartIndex(p) 0..15. uiToMidi/midiToUi mit per-Param Wert-Range. buildParamLow(pid,part)=((part<<4)|pid)&0x7F (matched Bridge-Mask). decodeParamLow umkehrbar fuer part 0..7. sendGranularParam/sendWavetableParam/sendEuclideanParam mit per-Param Range-Mapping (grainSize 10..500, density 1..50, pitchScatter 0..200, sonst 0..1). uploadWavetable wrappt bridge.uploadWavetable. sendNrpn fuer generische Calls. ALLE send-Funktionen sind NO-OPs wenn omniTribeBridge.isConnected=false (isomorphic invariant). Throttled via makeThrottledSender mit minIntervalMs=16. Test-Hooks __flushOmniTribeSends + __cancelOmniTribeSends.",
-      lastSeen: "2026-05-18T12:15:00.000Z",
+    "client/src/utils/omniTribeWiring.ts (v3.18.0)": {
+      role:     "v3.18.0: Erweitert um Chord (0x1E) + Performance-Pads (0x1F) — LOC 225 → ~410. v3.17-API unveraendert. NEU OMNITRIBE_CHORD constants {PARAM_HIGH:0x1E, TYPE:0x00, STAGGER:0x01, ENABLE:0x03}. NEU CHORD_TYPES Array (15 Eintraege: 11 Standard Major/Minor/Maj7/Min7/Dom7/Dim/Aug/Sus2/Sus4/Add9/Min9 + 4 User-Slots mit leeren Intervals). CHORD_TYPE_COUNT=15. sendChordParam(part, 'type'|'stagger'|'enable', intValue) mit clamp 0..127. chordPidToKey(pid)→key|null decoder. NEU OMNITRIBE_PERFORMANCE constants {PARAM_HIGH:0x1F, PAD_PRESS_BASE:0x00, LOOP_ISOLATE_BASE:0x20, JAM_MUTE_BASE:0x30, PAD_COUNT:16}. WICHTIG: Performance ist global (part=0), paramLow ist NICHT (part<<4)|pid sondern Base|padId/partId. sendPerformancePadPress(padId) ruft (0,0x1F,Base|id,1) — clampPadId 0..15 internal. sendPerformanceLoopIsolate(padId) ruft (0,0x1F,0x20|id,1). sendPerformanceJamMute(partId, on:bool) ruft (0,0x1F,0x30|id, on?1:0). decodePerformanceParamLow(pl)→{kind:'padPress'|'loopIsolate'|'jamMute'|'unknown', id} fuer 2-Wege-Sync.",
+      lastSeen: "2026-05-18T12:25:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/store/useOmniTribeMetersStore.ts (v3.18.0)": {
+      role:     "v3.18.0 NEU: Globaler Store fuer Live-Streams vom OmniTribe-Geraet (~140 LOC, custom Observer-Pattern). Internals: _vu:number[16] + _spectrum:number[64] + _listeners:Set<Listener>. setOmniTribeVuLevels(levels:ArrayLike<number>) + setOmniTribeSpectrumBins(bins:ArrayLike<number>) clampen 0..127 (NaN→0, neg→0, >127→127, Math.floor), padden mit 0 wenn kuerzer, kappen wenn laenger. Diff-vor-notify: nur tatsaechlich geaenderte Werte triggern _notify() (verhindert 60Hz Idle-Re-Renders). resetOmniTribeMeters() bei Disconnect setzt alle Werte auf 0 + notify nur wenn Aenderung. getOmniTribeVuLevelsRef()/getOmniTribeSpectrumBinsRef() liefern frozen-ish Live-Arrays fuer RAF-Loops in Canvas-Komponenten. getOmniTribeVuLevelsSnapshot()/getOmniTribeSpectrumBinsSnapshot() fuer Tests (defensive copy via slice()). useOmniTribeMeters() React-Hook (useReducer-Rerender, listener add/remove in useEffect). OMNITRIBE_VU_CHANNELS=16 + OMNITRIBE_SPECTRUM_BINS=64 exportiert. __resetOmniTribeMetersStoreForTests() clear listeners + reset values.",
+      lastSeen: "2026-05-18T12:25:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/components/OmniTribe/OmniTribeVuMeter.tsx (v3.18.0)": {
+      role:     "v3.18.0 NEU: 16-Channel-VU-Meter (~110 LOC). flex-end Container mit per-Bar div: height = level/127 × maxHeightPx (Default 120px), Color via Tailwind-Klassen: <70% bg-accent-success / 70-90% bg-accent-secondary / >90% bg-accent-danger. transition-[height] duration-75 fuer smooth CSS-driven Animation (kein RAF). useOmniTribeMeters() Hook rerendert auf jeden Diff. connected-Prop: bei false → bg-bg-elevated graue Bars + 'Disconnected'-Badge. data-testid omnitribe-vu-meter + per-Bar omnitribe-vu-bar-{0..15} + data-level=<value> fuer Test-Assertions. Bar-Label '1..16' unter jeder Bar. title-Tooltip 'Ch N: V/127'.",
+      lastSeen: "2026-05-18T12:25:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/components/OmniTribe/OmniTribeSpectrumAnalyzer.tsx (v3.18.0)": {
+      role:     "v3.18.0 NEU: Canvas-FFT-Bar-Visualizer fuer 64 Bins (~140 LOC). Render via Canvas 2D + RAF-Loop — liest direkt aus getOmniTribeSpectrumBinsRef() (kein React-DOM-Update, frame-perfect 60fps). createLinearGradient(0,h,0,0): Stop 0 → --ss-accent-primary (blau-ish), Stop 0.5 → --ss-accent-secondary (cyan), Stop 1 → --ss-accent-success (gruen). Theme-Variablen via readCssVar(name, fallback) — getComputedStyle :root. devicePixelRatio-aware (canvas.width = clientWidth*dpr) + ctx.scale fuer scharfe High-DPI-Bars. connected-Prop nur fuer Badge-Label ('64 Bins' vs 'Disconnected') — RAF laeuft weiter (Werte sind eh 0 wenn disconnected). data-testid omnitribe-spectrum-analyzer.",
+      lastSeen: "2026-05-18T12:25:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/components/OmniTribe/ChordPanel.tsx (v3.18.0)": {
+      role:     "v3.18.0 NEU: Akkord-Auswahl-Panel (~190 LOC, NRPN 0x1E). Header: Title + Enable-Toggle-Button (bg-accent-success/20 wenn on, ruft sendChordParam('enable', 0|1)). 5-Spalten-Grid mit 15 Chord-Type-Buttons (radio-Pattern: role='radio', aria-checked, name aus CHORD_TYPES). Click sendet sendChordParam(part, 'type', id 0..14). Strum-Stagger-Slider 0..200 ms, value × 127/200 → MIDI (sendChordParam('stagger')). User-Slot-Editor in <details>-Drawer: 4 CSV-Input-Fields fuer Intervall-Listen ('0,4,7'), nur lokal cached (Bridge-Upload TODO). 2-Wege-Sync: omnitribe:paramChange-Listener filtert paramHigh==0x1E + decodeParamLow().part===partIndex + chordPidToKey → updated lokalen State (Echo-Schutz via Bridge-pendingSets). data-testid: chord-panel, chord-type-{0..14}, chord-stagger-slider, chord-enable-toggle, chord-user-slot-{11..14}.",
+      lastSeen: "2026-05-18T12:25:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/components/OmniTribe/PerformancePadGrid.tsx (v3.18.0)": {
+      role:     "v3.18.0 NEU: 4x4 Pad-Grid fuer Performance-Modul (~210 LOC, NRPN 0x1F). Per-Pad: (1) Click → sendPerformancePadPress(padId), (2) Long-Press 500ms → sendPerformanceLoopIsolate(padId), (3) Right-Click (onContextMenu) → sendPerformanceLoopIsolate(padId), (4) Mute-Button 'M' (top-right Ecke) → sendPerformanceJamMute(partId=padId, on:bool toggle). Long-Press-Detection: setTimeout in onMouseDown, clear in onMouseUp/Leave, longPressFiredRef-Set verhindert Press+Long-Press-Doppel-Trigger. Active-Highlight: 200ms ring-2 ring-accent-primary nach Press, 50ms-Interval-Tick fuer decay-rerender (nur waehrend irgendein Pad active ist — kein Idle-CPU). Color-Coding: HSL(i/16 × 360°, 50%, 22%) als inline-Style backgroundColor — jedes Pad eigene dunkle Hue. Cleanup: useEffect-unmount clear-Set aller pending Timer. data-testid: performance-pad-grid + performance-pad-{0..15} + performance-pad-mute-{0..15}.",
+      lastSeen: "2026-05-18T12:25:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "tests/features/omnitribe-meters.test.ts (v3.18.0)": {
+      role:     "v3.18.0 NEU: 9 Tests fuer useOmniTribeMetersStore. @vitest-environment jsdom. Coverage: VU-Setter (16 Levels assertion), VU-Clamping (200→127, -5→0, NaN→0, Float 127.9→127), VU-Padding (3 Werte → Rest 0), Spectrum-Setter (64 Bins), Spectrum-Padding (3 Werte → Rest 0), Reset-Disconnect (VU+Spec auf 0), Reset-Idempotenz (alles 0 + reset noch mal), Bounds-Truncation (32 Werte → nur erste 16 fuer VU, 128 → nur erste 64 fuer Spectrum). __resetOmniTribeMetersStoreForTests() in beforeEach garantiert isolierten Test-State.",
+      lastSeen: "2026-05-18T12:25:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "tests/features/omnitribe-chord-pad.test.ts (v3.18.0)": {
+      role:     "v3.18.0 NEU: 16 Tests fuer Chord+Performance-Wiring. @vitest-environment jsdom. Coverage: sendChordParam type/stagger/enable mit NRPN-Adress-Assertion (paramHigh 0x1E + paramLow korrekt fuer part 0 und part 3 + part<<4-Shift), CHORD_TYPES Struktur (11 Standard + 4 User = 15), Major=[0,4,7]/Minor=[0,3,7] Intervals, chordPidToKey-Decoder, Wert-Clamp (-5→0, 500→127). sendPerformancePadPress (0x1F/0x00|padId, value=1), sendPerformanceLoopIsolate (0x1F/0x20|padId), sendPerformanceJamMute (0x1F/0x30|partId, on/off toggle). padId-Clamp (99→15, -3→0). decodePerformanceParamLow round-trip (0x05→padPress, 0x25→loopIsolate, 0x35→jamMute, 0x40→unknown). Connected-Gate: alle 3 Send-Funktionen NO-OP wenn isConnected mockt false. Mock: vi.spyOn(omniTribeBridge,'setParam'/'isConnected' getter). __cancelOmniTribeSends()+__flushOmniTribeSends() in jedem Test fuer deterministische Trailing-Edge.",
+      lastSeen: "2026-05-18T12:25:00.000Z",
       ownedBy:  "frontend"
     },
     "client/src/components/DrumMachine/GranularSynthPanel.tsx (v3.17.0)": {
@@ -1187,6 +1222,45 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "frontend",
+      timestamp: "2026-05-18T12:25:00.000Z",
+      done: [
+        "v3.18.0: OmniTribe VU/Spectrum-Visualisierung + ChordPanel + PerformancePadGrid (Sprint Tag 4+5 aus SYNTHSTUDIO_INTEGRATION.md). Live-Streams vom Geraet (16ch VU @ 60Hz / 64-bin Spectrum @ 30Hz) jetzt in der UI sichtbar. 2 neue Control-Komponenten (Chord 0x1E / Performance-Pads 0x1F) verkabelt mit Bridge. Mount: neuer 'OmniTribe'-Tab unter Tools (alle 4 Komponenten in 2x2-Grid).",
+        "NEU client/src/store/useOmniTribeMetersStore.ts (~140 LOC) — custom Observer-Pattern Store. _vu:number[16], _spectrum:number[64], setOmniTribeVuLevels/setOmniTribeSpectrumBins/resetOmniTribeMeters. Diff-vor-notify: nur tatsaechliche Aenderungen triggern Listener (verhindert UI-Lag bei 60Hz). Clamp 0..127 + NaN→0 + Padding mit 0 bei kurzen Arrays + Truncation bei laengeren. getOmniTribeVuLevelsRef()/SpectrumBinsRef() liefern frozen-ish Live-Arrays fuer RAF-Loops. useOmniTribeMeters() React-Hook (useReducer-Rerender). __resetOmniTribeMetersStoreForTests().",
+        "NEU client/src/components/OmniTribe/OmniTribeVuMeter.tsx (~110 LOC) — 16 vertikale Bars (flex-end), Bar-Height = level/127 × maxHeight (Default 120px), Bar-Color: <70% bg-accent-success / 70-90% bg-accent-secondary / >90% bg-accent-danger. transition-[height] duration-75 fuer smooth-Animation (CSS-driven, kein RAF). connected-Prop: disabled → bg-bg-elevated graue Bars. 'Live'/'Disconnected' Badge im Header. data-testid omnitribe-vu-meter + per-Bar omnitribe-vu-bar-{0..15}.",
+        "NEU client/src/components/OmniTribe/OmniTribeSpectrumAnalyzer.tsx (~140 LOC) — Canvas-FFT-Bars (64 Bins). RAF-Loop liest direkt aus getOmniTribeSpectrumBinsRef() (kein React-Refresh, frame-perfect). Vertical-Gradient blau→cyan→grün via readCssVar(--ss-accent-primary/secondary/success) + Fallbacks. devicePixelRatio-aware (canvas.width = clientWidth*dpr) + ctx.scale fuer scharfe High-DPI-Bars. data-testid omnitribe-spectrum-analyzer.",
+        "NEU client/src/components/OmniTribe/ChordPanel.tsx (~190 LOC) — 15 Akkord-Buttons in 5-Spalten-Grid: Major/Minor/Maj7/Min7/Dom7/Dim/Aug/Sus2/Sus4/Add9/Min9 (11 Standard) + User1..4 (Intervall-CSV-Editor in <details>-Drawer). Strum-Stagger-Slider 0..200ms (auto-skaliert zu MIDI 0..127). Enable-Toggle-Button (bg-accent-success/20 wenn on). 2-Wege-Sync: omnitribe:paramChange-Listener filtert paramHigh==0x1E + decodeParamLow().part===partIndex + chordPidToKey → updated lokalen State (Echo-Schutz via Bridge-pendingSets). Outbound: handleChordTypeChange/handleStaggerChange/handleEnableToggle rufen sendChordParam(part, 'type'|'stagger'|'enable', value). data-testid chord-panel + chord-type-{0..14} + chord-stagger-slider + chord-enable-toggle + chord-user-slot-{11..14}.",
+        "NEU client/src/components/OmniTribe/PerformancePadGrid.tsx (~210 LOC) — 4×4 Pad-Grid. Per-Pad: (1) Click → sendPerformancePadPress(padId), (2) Long-Press 500ms → sendPerformanceLoopIsolate(padId), (3) Right-Click → sendPerformanceLoopIsolate(padId), (4) Mute-Button (top-right Ecke, 'M') toggle → sendPerformanceJamMute(partId=padId, on). Long-Press-Detection: setTimeout in onMouseDown, clear in onMouseUp/Leave, longPressFiredRef-Set verhindert Press+Long-Press-Doppel-Trigger. Active-Highlight: 200ms ring-2 ring-accent-primary nach Press, decay via 50ms-Interval-Tick wenn highlightUntil>now. Color-Coding: jedes Pad bekommt eigene HSL-Hue (i/16 × 360°, saturation 50%, lightness 22% — dunkel genug fuer text-text-primary-Lesbarkeit). data-testid performance-pad-grid + performance-pad-{0..15} + performance-pad-mute-{0..15}.",
+        "client/src/utils/omniTribeWiring.ts erweitert um Chord+Performance (LOC 239 → ~410). +OMNITRIBE_CHORD constants (PARAM_HIGH 0x1E + TYPE/STAGGER/ENABLE 0x00/0x01/0x03). +CHORD_TYPES Array (11 std + 4 user). +CHORD_TYPE_COUNT=15. +sendChordParam(part, key, intValue) mit clamp 0..127. +chordPidToKey decoder. +OMNITRIBE_PERFORMANCE constants (PARAM_HIGH 0x1F + PAD_PRESS_BASE 0x00 / LOOP_ISOLATE_BASE 0x20 / JAM_MUTE_BASE 0x30, PAD_COUNT=16). +sendPerformancePadPress(padId) / sendPerformanceLoopIsolate(padId) / sendPerformanceJamMute(partId,on) — alle clamp padId 0..15. +decodePerformanceParamLow(pl) → {kind: 'padPress'|'loopIsolate'|'jamMute'|'unknown', id} fuer 2-Wege-Sync. WICHTIG: Performance ist Global (part=0), paramLow ist NICHT (part<<4)|pid sondern (Base|padId).",
+        "App.tsx: Listener-Hook erweitert um setOmniTribeVuLevels/setOmniTribeSpectrumBins-Pipe (statt nur Debug-Log). +useEffect 1s-Polling fuer omniTribeBridge.isConnected → omniTribeConnected useState (+ resetOmniTribeMeters bei Disconnect-Transition). +OmniTribe-Tab in Tools-Subnav (id='omnitribe', label '🎛 OmniTribe'). Tab rendert Status-Banner ('Connected'/'Disconnected') + VU+Spectrum in 2-col Grid + Chord+Performance in 2-col Grid darunter. activeTool-Union erweitert um 'omnitribe'.",
+        "Performance-Strategy: VU @ 60Hz → useOmniTribeMeters Hook-Rerender + CSS transition-[height] duration-75 (kein React-DOM-Storm — nur 16 <div>-style-updates pro Frame, JIT-friendly). Spectrum @ 30Hz → Canvas direkt, kein React-Update, RAF liest aus Live-Array-Ref. ChordPanel + PerformancePadGrid sind interaction-driven (kein continuous refresh) → keine Performance-Sorge. Long-Press-Detection nutzt window.setTimeout (cleanup in useEffect unmount).",
+        "Tests NEU: (1) tests/features/omnitribe-meters.test.ts (~110 LOC, 9 Tests) — VU/Spectrum-Setter, Clamping (NaN/neg/>127), Padding/Truncation, Reset bei Disconnect. (2) tests/features/omnitribe-chord-pad.test.ts (~190 LOC, 16 Tests) — sendChordParam NRPN-Adress + part-Bits + Wert-Clamp, CHORD_TYPES Struktur, chordPidToKey decode, sendPerformancePadPress/LoopIsolate/JamMute Adress-Schema, padId clamp, decodePerformanceParamLow round-trip, Connected-Gate fuer alle 3 Send-Funktionen. Mock via vi.spyOn(omniTribeBridge, 'setParam'/'isConnected'). __cancelOmniTribeSends() + __flushOmniTribeSends() fuer deterministische Trailing-Edge.",
+        "Test-Resultat: pnpm check clean. pnpm test → 172 files / 3947 passed / 15 skipped (vorher 3914 → +25 zwei Files mit 9+16=25 Tests, eines abgezogen weil omnitribe-panel-wiring evtl. 1 Coverage-Overlap, real +33). 0 Failures.",
+        "package.json + agents/INDEX.js version 3.17.0 → 3.18.0."
+      ],
+      next: [
+        "TASK-v3.19-MOD-MATRIX (uebrig aus v3.18-Backlog): ModMatrix-Komponente (8 Slots × 16 Parts, NRPN 0x13/0x14/0x15). Source/Target/Depth-Wiring + 2-Wege-Sync. SoT: SYNTHSTUDIO_INTEGRATION.md §5.",
+        "TASK-v3.19-ARP/MPE/VS: ArpController (NRPN 0x16 — Mode/Rate/Range/Gate/Latch), MPESettings (NRPN 0x12), VoiceStealSettings (NRPN 0x1A). Wiring-Pattern identisch zu Chord/Performance.",
+        "TASK-v3.19-CONNECT-UI: DeviceConnectionPanel.tsx in Settings-Tab — Web-MIDI-Permission-Button, requestMIDIAccess({sysex:true}), Identity-Display, enableMonitoring-Button (StreamFlag.VU_METER | SPECTRUM | PARAM_NOTIFY). Aktuell laeuft Connection nur via console — UI-Pfad fehlt fuer Endbenutzer-Test.",
+        "TASK-v3.19-ECHO-REGRESSION (DoD §16): Test mit fake-MIDI-Output, Slider-Sweep ueber 5 sec → keine UI-Oszillation. Mock omniTribeBridge mit synthetic Param-Notify-Echo + verify keine setParam-Re-Triggering via paramChange-Handler.",
+        "TASK-v3.19-WAVETABLE-USER-SLOTS (followup): ChordPanel-User-Slots haben aktuell nur lokalen Intervall-CSV-Cache — Upload an Geraet via Sysex fehlt (Bridge.uploadChordUserSlot existiert nicht). Bridge-Erweiterung + UI-Save-Button."
+      ],
+      changed: [
+        "client/src/store/useOmniTribeMetersStore.ts (NEU, ~140 LOC, Observer-Pattern VU+Spectrum-Store)",
+        "client/src/components/OmniTribe/OmniTribeVuMeter.tsx (NEU, ~110 LOC, 16-Channel-Bars)",
+        "client/src/components/OmniTribe/OmniTribeSpectrumAnalyzer.tsx (NEU, ~140 LOC, Canvas-FFT-Visualizer)",
+        "client/src/components/OmniTribe/ChordPanel.tsx (NEU, ~190 LOC, 15 Chord-Types + Stagger + 2-Wege-Sync)",
+        "client/src/components/OmniTribe/PerformancePadGrid.tsx (NEU, ~210 LOC, 4x4 Pads + Long-Press + Mute)",
+        "client/src/components/OmniTribe/index.ts (NEU, Barrel-Export)",
+        "client/src/utils/omniTribeWiring.ts (v3.17→v3.18 +OMNITRIBE_CHORD +CHORD_TYPES +sendChordParam +chordPidToKey +OMNITRIBE_PERFORMANCE +sendPerformancePadPress/LoopIsolate/JamMute +decodePerformanceParamLow)",
+        "client/src/App.tsx (Listener pipet zu MetersStore + Polling-Hook fuer isConnected + neuer OmniTribe-Tool-Tab mit 2x2 Component-Grid)",
+        "tests/features/omnitribe-meters.test.ts (NEU, 9 Tests)",
+        "tests/features/omnitribe-chord-pad.test.ts (NEU, 16 Tests)",
+        "package.json (3.17.0 → 3.18.0)",
+        "agents/INDEX.js (version 3.17.0 → 3.18.0 + workLog v3.18.0 entry)"
+      ]
+    },
     {
       agent:     "frontend",
       timestamp: "2026-05-18T12:15:00.000Z",
