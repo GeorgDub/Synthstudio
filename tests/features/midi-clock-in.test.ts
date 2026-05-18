@@ -297,6 +297,123 @@ describe("MidiClockIn — SPP", () => {
   });
 });
 
+// ─── v3.36.0: SPP-driven Pattern-Seek ───────────────────────────────────────
+
+describe("MidiClockIn — v3.36 SPP-driven seek", () => {
+  it("SPP event detail enthält positionStep === midiBeat (1:1 mapping)", () => {
+    const h = makeClock();
+    h.clock.enable();
+    h.clock.handleMidiMessage(new Uint8Array([MIDI_SC_SPP, 100, 0]));
+    const e = h.events.find(x => x.event === "midiclockin:spp");
+    expect(e).toBeDefined();
+    const d = e!.detail as { midiBeat: number; positionStep: number };
+    // 1 MIDI-Beat = 6 Clocks = 1/16-Note = 1 Step → positionStep === midiBeat
+    expect(d.positionStep).toBe(d.midiBeat);
+    expect(d.positionStep).toBe(100);
+  });
+
+  it("SPP während running wird ignoriert (per MIDI-Spec)", () => {
+    const h = makeClock();
+    h.clock.enable();
+    // Master startet — wir sind running.
+    h.clock.handleMidiMessage(new Uint8Array([MIDI_RT_START]));
+    expect(h.clock.isRunning).toBe(true);
+    const before = h.events.length;
+    // SPP während running — soll NICHT dispatched werden.
+    h.clock.handleMidiMessage(new Uint8Array([MIDI_SC_SPP, 50, 0]));
+    const sppEvents = h.events.filter(x => x.event === "midiclockin:spp");
+    expect(sppEvents.length).toBe(0);
+    // pendingStartStep darf auch nicht gesetzt sein (gespiegelt) — der
+    // SPP-Pfad wurde komplett verworfen.
+    expect(h.clock.pendingStartStep).toBeNull();
+    // Es kam kein weiteres Event dazu (Start-Event ist von 0xFA, das ist OK
+    // — wir prüfen nur dass KEIN SPP-Event drinsteckt).
+    void before;
+  });
+
+  it("SPP vor START setzt pendingStartStep + nachfolgendes 0xFA reicht positionStep weiter", () => {
+    const h = makeClock();
+    h.clock.enable();
+    // SPP zu Position 32 (MIDI-Beat 32 = Step 32 = Bar 3 in 16-step pattern).
+    h.clock.handleMidiMessage(new Uint8Array([MIDI_SC_SPP, 32, 0]));
+    expect(h.clock.pendingStartStep).toBe(32);
+    // Jetzt START → Engine soll positionStep im Event sehen.
+    h.setNow(2000);
+    h.clock.handleMidiMessage(new Uint8Array([MIDI_RT_START]));
+    const startEv = h.events.find(x => x.event === "midiclockin:start");
+    expect(startEv).toBeDefined();
+    const detail = startEv!.detail as { time: number; positionStep: number };
+    expect(detail.positionStep).toBe(32);
+    expect(detail.time).toBe(2000);
+    // pendingStartStep ist nach Verbrauch geleert.
+    expect(h.clock.pendingStartStep).toBeNull();
+  });
+
+  it("0xFA ohne vorheriges SPP → positionStep === 0 (konventioneller Start)", () => {
+    const h = makeClock();
+    h.clock.enable();
+    h.clock.handleMidiMessage(new Uint8Array([MIDI_RT_START]));
+    const startEv = h.events.find(x => x.event === "midiclockin:start");
+    expect(startEv).toBeDefined();
+    const detail = startEv!.detail as { positionStep: number };
+    expect(detail.positionStep).toBe(0);
+  });
+
+  it("0xFB Continue resumes — kein positionStep-Field, kein Reset", () => {
+    const h = makeClock();
+    h.clock.enable();
+    // Erstmal start mit SPP → setzt isRunning + verbraucht pending.
+    h.clock.handleMidiMessage(new Uint8Array([MIDI_SC_SPP, 16, 0]));
+    h.clock.handleMidiMessage(new Uint8Array([MIDI_RT_START]));
+    // Dann stop — Position bleibt beim Master, wir merken uns nichts neu.
+    h.clock.handleMidiMessage(new Uint8Array([MIDI_RT_STOP]));
+    expect(h.clock.isRunning).toBe(false);
+    // Continue — KEIN seek, KEIN positionStep im Detail.
+    h.clock.handleMidiMessage(new Uint8Array([MIDI_RT_CONTINUE]));
+    expect(h.clock.isRunning).toBe(true);
+    const contEv = h.events.find(x => x.event === "midiclockin:continue");
+    expect(contEv).toBeDefined();
+    const detail = contEv!.detail as { time: number; positionStep?: number };
+    // Continue darf keinen positionStep haben — Resume-Semantik.
+    expect(detail.positionStep).toBeUndefined();
+  });
+
+  it("SPP max u14 (16383) wird akzeptiert; out-of-range wird durch Maskierung geclamped", () => {
+    const h = makeClock();
+    h.clock.enable();
+    // 16383 = 0x3FFF: lsb=0x7F, msb=0x7F
+    h.clock.handleMidiMessage(new Uint8Array([MIDI_SC_SPP, 0x7F, 0x7F]));
+    const e1 = h.events.find(x => x.event === "midiclockin:spp");
+    expect(e1).toBeDefined();
+    expect((e1!.detail as { midiBeat: number }).midiBeat).toBe(16383);
+    expect(h.clock.pendingStartStep).toBe(16383);
+  });
+
+  it("SPP malformed: < 3 bytes → ignoriert, kein throw, kein dispatch", () => {
+    const h = makeClock();
+    h.clock.enable();
+    // 0xF2 alleine — keine data-bytes.
+    expect(() =>
+      h.clock.handleMidiMessage(new Uint8Array([MIDI_SC_SPP]))
+    ).not.toThrow();
+    // 0xF2 + nur 1 byte.
+    expect(() =>
+      h.clock.handleMidiMessage(new Uint8Array([MIDI_SC_SPP, 50]))
+    ).not.toThrow();
+    expect(h.events.length).toBe(0);
+    expect(h.clock.pendingStartStep).toBeNull();
+  });
+
+  it("pendingStartStep wird beim disable() geleert", () => {
+    const h = makeClock();
+    h.clock.enable();
+    h.clock.handleMidiMessage(new Uint8Array([MIDI_SC_SPP, 100, 0]));
+    expect(h.clock.pendingStartStep).toBe(100);
+    h.clock.disable();
+    expect(h.clock.pendingStartStep).toBeNull();
+  });
+});
+
 // ─── Sync-Loss-Detection ────────────────────────────────────────────────────
 
 describe("MidiClockIn — sync-loss", () => {

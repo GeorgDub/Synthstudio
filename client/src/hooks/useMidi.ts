@@ -261,6 +261,12 @@ export interface MidiState {
    * `lost` = > 500ms keine Ticks (Master disconnected / paused without stop).
    */
   clockInStatus: MidiClockInStatus;
+  /**
+   * v3.36.0: Letzte empfangene SPP-Position vom externen Master (in
+   * MIDI-Beats = 1/16-Note-Steps). null = noch kein SPP empfangen. UI
+   * zeigt das als "Beat: N (step N)" in den MidiSettings.
+   */
+  clockInSpp: number | null;
   /** MIDI Out aktiv */
   midiOutEnabled: boolean;
   /** MIDI-Ausgangskanal (1–16, 0 = Ch10 Drums) */
@@ -700,6 +706,8 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
   // v3.35.0: External-Sync (MIDI-Clock-IN als Slave).
   const [clockInEnabled, setClockInEnabledState] = useState<boolean>(() => loadClockInEnabled());
   const [clockInStatus, setClockInStatus] = useState<MidiClockInStatus>("off");
+  // v3.36.0: SPP-Display-Position für UI-Anzeige.
+  const [clockInSpp, setClockInSpp] = useState<number | null>(null);
   const clockInRef = useRef<MidiClockIn>(new MidiClockIn());
   const clockInEnabledRef = useRef(false);
   useEffect(() => { clockInEnabledRef.current = clockInEnabled; }, [clockInEnabled]);
@@ -1550,16 +1558,24 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
     } else {
       clockInRef.current.disable();
       setExternalBpm(null);
+      setClockInSpp(null);
     }
     // AudioEngine-Side: setBpm() blockieren wenn aktiv. Damit ignoriert die
     // Engine UI-Slider-Inputs solange Master die Führung hat.
     AudioEngine.setExternalSyncActive(enabled);
   }, []);
 
-  // Bei Enable: globalen Listener für tempo/start/stop installieren. Wir
+  // Bei Enable: globalen Listener für tempo/start/stop/spp installieren. Wir
   // konsumieren die CustomEvents die MidiClockIn auf window dispatched —
   // damit kommt App.tsx ohne extra Subscription aus, falls es nur die
   // klassischen onBpmChange/onPlayStop-Callbacks nutzt.
+  //
+  // v3.36.0: SPP-driven Pattern-Seek. Bei `midiclockin:spp` (nur wenn
+  // Transport NICHT running — die Klasse filtert das selbst) rufen wir
+  // AudioEngine.seekToStep(positionStep). Beim nachfolgenden 0xFA Start
+  // schiebt der Event-Detail ebenfalls den positionStep mit — wir seeken
+  // unmittelbar bevor wir den Play-Callback feuern, damit App.tsx bei
+  // play() ab der korrekten Position startet.
   useEffect(() => {
     if (!clockInEnabled) return;
     const onTempo = (ev: Event) => {
@@ -1571,17 +1587,40 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
       optionsRef.current.onClockBpm?.(detail.bpm);
       optionsRef.current.onBpmChange?.(Math.round(detail.bpm));
     };
-    const onStart = () => { optionsRef.current.onPlayStop?.(); };
-    const onStop  = () => { optionsRef.current.onPlayStop?.(); };
+    const onStart = (ev: Event) => {
+      // v3.36.0: positionStep aus dem Detail extrahieren — wenn vorher SPP
+      // empfangen wurde, ist das != 0, sonst 0 (von-Anfang-Start).
+      const detail = (ev as CustomEvent).detail as { positionStep?: number } | undefined;
+      const pos = typeof detail?.positionStep === "number" ? detail.positionStep : 0;
+      AudioEngine.seekToStep(pos);
+      optionsRef.current.onPlayStop?.();
+    };
+    // v3.36.0: Continue (0xFB) preserved aktuelle Position — KEIN seek.
+    const onContinue = () => { optionsRef.current.onPlayStop?.(); };
+    const onStop = () => { optionsRef.current.onPlayStop?.(); };
+    const onSpp = (ev: Event) => {
+      const detail = (ev as CustomEvent).detail as
+        | { midiBeat: number; positionStep: number }
+        | undefined;
+      if (!detail || typeof detail.positionStep !== "number") return;
+      setClockInSpp(detail.midiBeat);
+      // SPP nur konsumiert wenn external-sync aktiv (sind wir hier per
+      // Vorbedingung) UND Transport nicht running (MidiClockIn-Klasse filtert
+      // das bereits selbst — dispatched dann gar nicht erst). Wir seeken den
+      // Sequencer SOFORT damit beim nächsten Start die Position stimmt.
+      AudioEngine.seekToStep(detail.positionStep);
+    };
     window.addEventListener("midiclockin:tempo", onTempo as EventListener);
-    window.addEventListener("midiclockin:start", onStart);
+    window.addEventListener("midiclockin:start", onStart as EventListener);
     window.addEventListener("midiclockin:stop",  onStop);
-    window.addEventListener("midiclockin:continue", onStart);
+    window.addEventListener("midiclockin:continue", onContinue);
+    window.addEventListener("midiclockin:spp", onSpp as EventListener);
     return () => {
       window.removeEventListener("midiclockin:tempo", onTempo as EventListener);
-      window.removeEventListener("midiclockin:start", onStart);
+      window.removeEventListener("midiclockin:start", onStart as EventListener);
       window.removeEventListener("midiclockin:stop",  onStop);
-      window.removeEventListener("midiclockin:continue", onStart);
+      window.removeEventListener("midiclockin:continue", onContinue);
+      window.removeEventListener("midiclockin:spp", onSpp as EventListener);
     };
   }, [clockInEnabled]);
 
@@ -1707,6 +1746,8 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
     // v3.35.0: External-Sync (MIDI-Clock-IN)
     clockInEnabled,
     clockInStatus,
+    // v3.36.0: SPP-Position (für UI-Display "Beat: N / step N")
+    clockInSpp,
     setClockInEnabled,
     // Output Actions
     setActiveOutputDevice,

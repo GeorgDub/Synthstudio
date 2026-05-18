@@ -711,6 +711,41 @@ class AudioEngineClass {
     this._updateAudioTrackPlaybackRates();
     this._looperEngine.setBpm(this._bpm);
   }
+
+  /**
+   * v3.36.0: Sequencer-Position seeken (in Steps, 0..steps-1). Wird vom
+   * useMidi-Hook bei `midiclockin:spp`-Events aufgerufen ODER beim
+   * `midiclockin:start` mit positionStep>0 (SPP-driven Start-Resume).
+   *
+   * Semantik:
+   *   - Wenn aktuell nicht spielend: setzt `_currentStep` für den nächsten
+   *     `play()`-Aufruf — sobald 0xFA Start ankommt und der Scheduler
+   *     anläuft, wird ab dieser Position weitergespielt. Achtung: `play()`
+   *     selbst überschreibt `_currentStep` per default mit `fromStep=0` —
+   *     der Caller (App.tsx-Listener) muss daher entweder vor `play(0)`
+   *     `seekToStep(N)` aufrufen UND `play(N)` aufrufen, oder den
+   *     SPP-Listener UNTERHALB der Start-Bridge ausführen.
+   *   - Wenn bereits laufend: hard-jump zum Step. Tritt bei laufender
+   *     External-Sync auf wenn ein DAW-Master mid-track repositioniert wird.
+   *     `_nextStepTime` wird NICHT angefasst — der nächste Tick triggert
+   *     dann den neuen Step.
+   *   - Negative Steps werden auf 0 geclampt; Werte ≥ `_steps` werden
+   *     modulo `_steps` gefaltet (defensiv gegen lange SPP-Werte aus DAWs
+   *     mit Song-Ranges > Pattern-Länge).
+   */
+  seekToStep(step: number): void {
+    if (!isFinite(step)) return;
+    const total = Math.max(1, this._steps);
+    const wrapped = ((Math.floor(step) % total) + total) % total;
+    this._currentStep = wrapped;
+    // Position-Callbacks sofort feuern damit UI (Step-LED) sich neu zeichnet.
+    this.positionCallbacks.forEach(cb => cb(wrapped));
+  }
+
+  /** v3.36.0: read-only — aktuell anvisierter / laufender Step. */
+  get currentStepIndex(): number {
+    return this._currentStep;
+  }
   setSteps(steps: 16 | 32) { this._steps = steps; }
   setStepResolution(res: StepResolution) { this._stepResolution = res; }
 

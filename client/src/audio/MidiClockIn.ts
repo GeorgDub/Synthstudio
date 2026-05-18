@@ -1,17 +1,17 @@
 /**
- * Synthstudio — MidiClockIn.ts (v3.35.0)
+ * Synthstudio — MidiClockIn.ts (v3.36.0)
  *
  * MIDI-Clock-Slave-Implementierung — Pendant zu MidiClockOut.ts (v2.83).
  * Empfängt MIDI-Real-Time-Messages von einem externen Master (Electribe,
  * OmniTribe, DAW, Drum-Machine) und liefert ein stabiles BPM-Estimate +
- * Transport-Events (start/stop/continue).
+ * Transport-Events (start/stop/continue) + Song-Position-Seek (SPP).
  *
  * Protokoll (Web MIDI Status-Bytes):
  *   0xF8 — Timing Clock (24× pro Quarternote)
- *   0xFA — Start
- *   0xFB — Continue
- *   0xFC — Stop
- *   0xF2 — Song Position Pointer (BE u14, optional)
+ *   0xFA — Start    — Reset position to start (oder zur letzten SPP-Position)
+ *   0xFB — Continue — Resume from current position (kein Reset)
+ *   0xFC — Stop     — Halt at current position
+ *   0xF2 — Song Position Pointer (BE u14: MIDI-Beats = 1/16-Note-Steps)
  *
  * Design-Entscheidungen:
  *   - Stateful Klasse (instance pro Hook), kein Modul-Singleton. Damit lassen
@@ -24,6 +24,9 @@
  *     verworfen — schützt gegen Spike-Bursts (USB-Hub-Hickups, GC-Pausen).
  *   - Sync-Loss-Detection: kein Tick > 500ms → Status "lost". Caller pollt
  *     `getStatus()` (z.B. UI-LED-Indikator) ODER hört auf `midiclockin:lost`.
+ *   - v3.36.0: SPP wird nur akzeptiert wenn Transport NICHT running (per MIDI-
+ *     Spec). Während Playback ignoriert der Slave SPP-Messages — der Master
+ *     soll erst stoppen, seeken, dann starten.
  *
  * Performance:
  *   - `handleMidiMessage` ist heap-allocation-frei im Hot-Path (0xF8). Keine
@@ -31,11 +34,16 @@
  *   - Tempo-Events werden gerundet & ge-throttled (nur bei Δ ≥ 0.1 BPM).
  *
  * Events (alle CustomEvent auf window):
- *   "midiclockin:start"  detail: { time: number }
- *   "midiclockin:stop"   detail: { time: number }
+ *   "midiclockin:start"    detail: { time: number, positionStep: number }
+ *   "midiclockin:stop"     detail: { time: number }
  *   "midiclockin:continue" detail: { time: number }
- *   "midiclockin:tempo"  detail: { bpm: number, raw: number }
- *   "midiclockin:lost"   detail: { lastTickTime: number }
+ *   "midiclockin:tempo"    detail: { bpm: number, raw: number }
+ *   "midiclockin:lost"     detail: { lastTickTime: number }
+ *   "midiclockin:spp"      detail: { midiBeat: number, positionStep: number }
+ *
+ * Konversion: 1 MIDI-Beat = 6 MIDI-Clocks = 1/16-Note = 1 Sequencer-Step.
+ * D.h. `positionStep === midiBeat`. Wir liefern beide Felder explizit für
+ * Klarheit & Downstream-Kompatibilität.
  *
  * Isomorphic: keine React/Electron-Imports, läuft im Browser + Node-Tests.
  */
@@ -71,6 +79,9 @@ export const TEMPO_MIN_SAMPLES = 6;
 /** BPM-Bereich für Sanity-Check. */
 export const TEMPO_MIN_BPM = 20;
 export const TEMPO_MAX_BPM = 300;
+
+/** SPP-Maximum (14-bit unsigned). MIDI 1.0 Spec. */
+export const SPP_MAX_MIDI_BEAT = 16383;
 
 // ─── Pure Helpers ───────────────────────────────────────────────────────────
 
@@ -157,6 +168,13 @@ export class MidiClockIn {
   private _meanInterval: number | null = null;
   /** Letzte herausgegebene gerundete BPM (für Throttle des `tempo`-Events). */
   private _lastEmittedBpm: number | null = null;
+  /**
+   * v3.36.0: Zuletzt empfangene SPP-Position (in MIDI-Beats = 1/16-Steps).
+   * Wird beim nächsten 0xFA Start an die Engine durchgereicht damit der
+   * Sequencer von der gewünschten Position weiterspielt. null = noch nie SPP
+   * empfangen → 0xFA startet bei step 0. Wird beim 0xFA verbraucht (cleared).
+   */
+  private _pendingStartStep: number | null = null;
 
   // ── Konfiguration ────────────────────────────────────────────────────────
   private readonly _now: NowProvider;
@@ -180,6 +198,7 @@ export class MidiClockIn {
     this._ticksSeen = 0;
     this._meanInterval = null;
     this._lastEmittedBpm = null;
+    this._pendingStartStep = null;
   }
 
   disable(): void {
@@ -190,6 +209,7 @@ export class MidiClockIn {
     this._ticksSeen = 0;
     this._meanInterval = null;
     this._lastEmittedBpm = null;
+    this._pendingStartStep = null;
   }
 
   /** Vollständiger State-Reset — typischerweise nach Device-Wechsel. */
@@ -199,6 +219,7 @@ export class MidiClockIn {
     this._ticksSeen = 0;
     this._meanInterval = null;
     this._lastEmittedBpm = null;
+    this._pendingStartStep = null;
   }
 
   // ── Getters ──────────────────────────────────────────────────────────────
@@ -207,6 +228,12 @@ export class MidiClockIn {
   get isRunning(): boolean     { return this._isRunning; }
   get lastTickTime(): number   { return this._lastTickTime; }
   get ticksSeen(): number      { return this._ticksSeen; }
+  /**
+   * v3.36.0: Letzte empfangene SPP-Position (in MIDI-Beats = 1/16-Steps).
+   * Wird beim nächsten 0xFA Start an die Engine durchgereicht. null = kein
+   * SPP empfangen ODER bereits verbraucht.
+   */
+  get pendingStartStep(): number | null { return this._pendingStartStep; }
 
   /**
    * Liefert das aktuelle BPM-Estimate (gerundet auf 0.1) oder null wenn noch
@@ -268,12 +295,22 @@ export class MidiClockIn {
       return;
     }
 
-    // ── 0xF2 — Song Position Pointer (optional, nur dispatchen) ──────────
+    // ── 0xF2 — Song Position Pointer ────────────────────────────────────
+    // v3.36.0: per MIDI-Spec wird SPP nur akzeptiert wenn Transport NICHT
+    // läuft. Der Master soll erst stop, dann SPP, dann start senden. Während
+    // Playback würde SPP zu Audio-Glitches führen — wir verwerfen still.
     if (status === MIDI_SC_SPP && bytes.length >= 3) {
+      if (this._isRunning) return;
       const lsb = bytes[1] & 0x7f;
       const msb = bytes[2] & 0x7f;
       const midiBeat = (msb << 7) | lsb;
-      this._dispatch("midiclockin:spp", { midiBeat });
+      // 14-bit u14 implicit by the masks above → range 0..16383. Defensive
+      // Sanity-Check vs. fremde / korrupte Streams.
+      if (midiBeat < 0 || midiBeat > SPP_MAX_MIDI_BEAT) return;
+      // 1 MIDI-Beat = 6 MIDI-Clocks = 1/16-Note → positionStep === midiBeat.
+      const positionStep = midiBeat;
+      this._pendingStartStep = positionStep;
+      this._dispatch("midiclockin:spp", { midiBeat, positionStep });
       return;
     }
   }
@@ -323,7 +360,13 @@ export class MidiClockIn {
     // braucht bis ein BPM kommt.
     this._lastTickTime = 0;
     this._ticksSeen = 0;
-    this._dispatch("midiclockin:start", { time: now });
+    // v3.36.0: pendingStartStep (aus letztem SPP) wird beim Start verbraucht.
+    // null → konventionelles Start-from-0. Wir reichen die positionStep im
+    // Event-Detail weiter, damit der Bridge-Listener AudioEngine.seekToStep
+    // aufrufen kann.
+    const positionStep = this._pendingStartStep ?? 0;
+    this._pendingStartStep = null;
+    this._dispatch("midiclockin:start", { time: now, positionStep });
   }
 
   private _onContinue(): void {

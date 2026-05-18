@@ -1760,6 +1760,28 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
             ) : (
               <div className="text-xs text-text-muted">Warte auf 0xF8-Ticks…</div>
             )}
+            {/* v3.36.0: SPP-Display — wenn der Master eine Song-Position gesendet
+                hat, zeigen wir Beat + Step + Bar.Beat-Notation an. */}
+            {midi.clockInSpp !== null && (
+              <div className="mt-2 pt-2 border-t border-border-subtle">
+                <div
+                  data-testid="clock-in-spp-display"
+                  className="text-sm font-mono text-text-primary"
+                >
+                  {(() => {
+                    // 1 MIDI-Beat = 1/16-Step. 16 Steps per Bar (4/4) = 1 Bar.
+                    const step = midi.clockInSpp;
+                    const bar  = Math.floor(step / 16) + 1;
+                    const beat = Math.floor((step % 16) / 4) + 1;
+                    const sub  = (step % 4) + 1;
+                    return `Bar ${bar}.${beat}.${sub}`;
+                  })()}
+                </div>
+                <div className="text-xs text-text-muted">
+                  Step {midi.clockInSpp} · MIDI-Beat {midi.clockInSpp}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -1767,7 +1789,8 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
           <div className="mt-3 text-xs text-text-muted">
             <span className="text-accent-secondary">Hinweis:</span> Tempo-Slider in der Toolbar ist
             jetzt read-only — BPM kommt vom Master. Stoppt der Master, bleibt
-            der zuletzt gemessene Wert stehen.
+            der zuletzt gemessene Wert stehen. v3.36 Song-Position-Pointer
+            (SPP) wird empfangen und der Sequencer zur Master-Position gespult.
           </div>
         )}
       </div>
