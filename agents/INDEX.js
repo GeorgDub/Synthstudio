@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.62.0",
+    version: "3.63.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -89,6 +89,36 @@ const INDEX = {
   // ─── KNOWN FILE INDEX ──────────────────────────────────────
   // Key files agents have analyzed. Add new entries after working on a file.
   files: {
+    "client/src/store/useDrumPartRecordArmStore.ts (v3.63.0)": {
+      role:     "v3.63.0 NEU (~185 LOC): Custom-Observer-Store für Drum/Synth-Channel-Record-Arm. Session-UI-Flag — NICHT in PartData / .synth-File persistiert, sondern in localStorage 'synthstudio:drum-recordarm:v1' als Record<partId, boolean>. Public-API: setPartRecordArm(id, armed) idempotent + entfernt-key-bei-false (Map klein halten), isPartRecordArmed, getArmedDrumPartIds, countArmedDrumParts, setAllDrumPartRecordArm(ids[], armed) Bulk mit Mutated-Tracking (kein notify bei No-Op), pruneArmedDrumParts(validIds) optional Cleanup nach removePart, __resetDrumPartRecordArmForTests. Hook useDrumPartRecordArmStore returnt {armedMap, armedCount, setRecordArm, setAllRecordArm, isArmed, getArmedIds}. Loader defensive: typeof-localStorage-check, korrupte JSON → {}, non-string-keys/non-true-values silent-gefiltert. Wird vom MixerView (parts.map → MixerChannel.recordArmed) und App.tsx Transport-Play-Hook (getArmedDrumPartIds) konsumiert.",
+      lastSeen: "2026-05-19T00:15:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/utils/recordingArmCount.ts (v3.63.0)": {
+      role:     "v3.63.0 NEU (~25 LOC): Pure-fn Aggregator-Helper. getTotalArmedCount() returnt countArmedLiveInputs() + countArmedDrumParts() für Mixer-Topbar 'X armed'-Counter. getAllArmedChannelIds() returnt [...getArmedLiveInputChannelIds(), ...getArmedDrumPartIds()] für Transport-Play-Hook in App.tsx. Keine eigene Subscription — beide Source-Stores nutzen Custom-Observer und der Caller liest in der Render-Phase. Nur diese 2 Exports, deutlich kleiner als ein eigener Store.",
+      lastSeen: "2026-05-19T00:15:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/components/Mixer/MixerView.tsx (v3.63.0)": {
+      role:     "v3.63.0 ERWEITERT: v3.62 Multi-Track-Toolbar (Arm-All + armed-Counter) + v3.53/v3.54 Audio-Tracks/BPM-Detection bleibt + NEU Drum/Synth Record-Arm-UI (~+90 LOC). (1) MixerChannel-Komponente +3 Props: recordArmed?:boolean, isRecording?:boolean, onRecordArmToggle?:()=>void. NEU Record-Arm-Button data-testid 'channel-record-arm-<partId>' zwischen Mute/Solo und Send-Knöpfen — bg-accent-danger wenn armed, animate-pulse wenn armed+isRecording, neutrale border-accent-danger/30 wenn disarmed. Master-Channel zeigt den Button NICHT (onRecordArmToggle undefined → conditional rendering). (2) NEU useDrumPartRecordArmStore-Hook. parts.map-Loop wired armed/isRecording (AudioEngine.isRecordingChannel) + onRecordArmToggle → drumPartArmStore.setRecordArm. (3) Topbar-Counter 'mixer-armed-counter' zeigt totalArmed=liveArmed+drumArmed, Tooltip splittet die Anteile, overLimit-Badge bei totalArmed>8. Block sichtbar wenn liveInputChannels.length>0 ODER drumPartArmStore.armedCount>0. Arm-All-Button bleibt auf Live-Inputs beschränkt — kein Bulk-Arm für Drum-Channels (verhindert versehentliches 16-Parts-Armen über Engine-Limit von 8).",
+      lastSeen: "2026-05-19T00:15:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/App.tsx (v3.63.0 drum-recording)": {
+      role:     "v3.63.0 ERWEITERT: bestehende v3.60 Auto-Save-Reset + v3.59 Legacy-Migration + v3.58 projectId-Adopt bleibt + NEU Drum/Synth Recording-Wiring (~+15 LOC). Import getArmedDrumPartIds aus useDrumPartRecordArmStore. Transport-Play-Hook (prevRecArmPlayRef-useEffect) baut jetzt armedIds = [...getArmedLiveInputChannelIds(), ...getArmedDrumPartIds()] und ruft AudioEngine.startRecordingForChannels(armedIds). Liest result.rejected — wenn rejected.length>0: showToast(`X channels could not start recording (over limit).`) mit kind:'warning', duration:5000. Closes v3.62-Caveat 'Performance-Warning-Toast bei Engine-Limit-Overflow'. transport:stop-Pfad (finalizeAllRecordings + persistRecording + addAudioTrack) unverändert — funktioniert für Drum/Synth-Channels analog (channel-ID ist die part-ID, dieselbe wie in channelNodes-Map der AudioEngine).",
+      lastSeen: "2026-05-19T00:15:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/audio/AudioEngine.ts (v3.63.0)": {
+      role:     "v3.63.0 BREAKING-COMPAT: startRecordingForChannels(channelIds) Return-Type von `string[]` (v2.86) auf `{ok: boolean, started: string[], rejected: string[]}` erweitert. ok=true ↔ rejected.length===0. Caller (App.tsx) liest result.rejected um Performance-Toast zu triggern. Bestehende Methoden startRecording(channelId), stopRecording, finalizeAllRecordings, isRecordingChannel, getActiveRecordingChannelIds, getRecordingDurationMs, cancelRecording unverändert. Komplette v2.86 Recording-Pipeline (AudioRecorder-Instanz, MAX_SIMULTANEOUS_RECORDINGS=8, channelNodes.panner-Tap, encodeWav-Output) unverändert. Nur App.tsx-Caller war betroffen, alle anderen Pfade lesen weiterhin den Bool-Return von startRecording(id).",
+      lastSeen: "2026-05-19T00:15:00.000Z",
+      ownedBy:  "backend"
+    },
+    "tests/features/audio-recording-drum.test.ts (v3.63.0)": {
+      role:     "v3.63.0 NEU (~270 LOC, 12 Tests in 3 describes, env:node mit localStorage-Mock + Mock-AudioContext/ScriptProcessor analog zu audio-recording-multitrack.test.ts). (1) useDrumPartRecordArmStore × 6 — setPartRecordArm Round-Trip + Idempotenz, localStorage-Persist-Format + Disarm-cleanup-Key, setAllDrumPartRecordArm Bulk armed+disarmed, ignoriere leeres Array + ungültige IDs, pruneArmedDrumParts Phantom-Cleanup, korrupte JSON → leerer State + setPartRecordArm funktioniert weiter. (2) Transport-Wiring × 3 — armed → AudioRecorder.start startet alle (simuliert App.tsx-Pfad), Engine-Overflow rejected[] wird befüllt (12 Parts → 8 started, 4 rejected, ok=false → Toast feuert), Mixed Live+Drum getAllArmedChannelIds liefert kombinierte Liste in Reihenfolge. (3) Topbar-Counter × 3 — getTotalArmedCount = live + drum dynamisch updated, ignoriert disarmed Channels, over-Limit-Detection (10 armed > MAX_SIMULTANEOUS_RECORDINGS).",
+      lastSeen: "2026-05-19T00:15:00.000Z",
+      ownedBy:  "frontend"
+    },
     "client/src/components/AutoSave/LegacyMigrationModal.tsx (v3.59.0)": {
       role:     "v3.59.0 NEU (~230 LOC): Modal-Komponente die beim Project-Load erscheint wenn Legacy-Slug-AutoSave-Versionen existieren. Props: {isOpen, onClose, legacySlug, newProjectId, legacyCount, onComplete?: (action:'migrate'|'discard'|'later')=>void}. Phase-State idle|running|done|error für UI-Lock während Migration. 3 Aktionen: 'Migrieren' (ruft migrateLegacyVersions mit onProgress-Callback, zeigt Progress-Bar 'Migrating N/M…' + accent-primary-Border, auto-close 1.2s nach Success), 'Verwerfen' (window.confirm + deleteAllVersions, auto-close 0.7s), 'Später' (dismissable, der App.tsx-Caller markiert die projectId als gecheckt damit Prompt nicht jeden Reload erscheint). ESC blockiert während running, Backdrop-Click blockiert während running. data-testids: autosave-legacy-migration-modal, legacy-migration-{migrate,discard,later,close}-btn, legacy-migration-{message,progress,progress-bar,error}. Ausschließlich semantische Tailwind-Tokens (bg-bg-panel, text-text-primary, accent-primary/15, accent-danger/30, accent-success/10).",
       lastSeen: "2026-05-18T23:40:00.000Z",
@@ -1907,6 +1937,41 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "frontend",
+      timestamp: "2026-05-19T00:15:00.000Z",
+      done: [
+        "v3.63.0: Drum/Synth Channel-Recording UI + Performance-Toast — closes v3.62 Caveats 'AudioTrack-Strip Record-Arm-UI für interne Channels' und 'Performance-Warning-Toast bei Overflow'. pnpm check clean, 209 Test-Files / 4829 Tests passed (16 skipped, +12 NEU in audio-recording-drum.test.ts).",
+        "client/src/store/useDrumPartRecordArmStore.ts NEU (~185 LOC): separater runtime-Observer-Store für Drum/Synth-Part-Record-Arm. State: Record<partId, true>. localStorage-Key 'synthstudio:drum-recordarm:v1'. NICHT in .synth-File persistiert (Session-UI-Flag — anderes Verhalten als z.B. PartData.muted). Public-API: setPartRecordArm(id, armed), isPartRecordArmed, getArmedDrumPartIds, countArmedDrumParts, setAllDrumPartRecordArm(ids, armed) Bulk-Action mit Mutated-Tracking, pruneArmedDrumParts(validIds) optional Cleanup nach removePart, __resetDrumPartRecordArmForTests. Hook useDrumPartRecordArmStore returnt {armedMap, armedCount, setRecordArm, setAllRecordArm, isArmed, getArmedIds}. Loader defensive (typeof localStorage check, korrupte JSON → {}).",
+        "client/src/audio/AudioEngine.ts: startRecordingForChannels(channelIds) Return-Type-Erweiterung von `string[]` auf `{ok: boolean, started: string[], rejected: string[]}` — ok=true ↔ rejected.length===0. Caller (App.tsx) liest result.rejected um Performance-Toast zu triggern. Backward-Compat: nur App.tsx ruft die Funktion (überprüft via grep).",
+        "client/src/App.tsx: Transport-Play-Hook kombiniert jetzt getArmedLiveInputChannelIds() + getArmedDrumPartIds() vor dem startRecordingForChannels-Call. Bei rejected.length>0 feuert showToast(`X channels could not start recording (over limit).`) mit kind:'warning', duration:5000ms. Closes v3.62-Caveat 'Performance-Warning-Toast wenn Engine Limit-Overflow zurückmeldet'.",
+        "client/src/components/Mixer/MixerView.tsx: MixerChannel-Komponente +3 Props (recordArmed?:boolean, isRecording?:boolean, onRecordArmToggle?:()=>void). NEU Record-Arm-Button data-testid 'channel-record-arm-<partId>' zwischen Mute/Solo-Block und Send-Knöpfen — accent-danger-Background wenn armed, animate-pulse wenn armed+isRecording, neutrale border-accent-danger/30 wenn disarmed. Master-Channel zeigt den Button nicht (onRecordArmToggle undefined). parts.map-Loop wired armed/isRecording (via AudioEngine.isRecordingChannel) + onRecordArmToggle → drumPartArmStore.setRecordArm. Topbar 'mixer-armed-counter' zeigt jetzt totalArmed=liveArmed+drumArmed, Tooltip splittet die Anteile, overLimit-Badge bei totalArmed>8. Topbar-Block sichtbar wenn liveInputChannels.length>0 ODER drumPartArmStore.armedCount>0. Arm-All-Button bleibt auf Live-Inputs beschränkt (kein Bulk-Arm für Drum/Synth-Channels — verhindert versehentliches Über-Limit-Armen von 16 Parts).",
+        "client/src/utils/recordingArmCount.ts NEU (~25 LOC): Pure-fn Aggregator getTotalArmedCount() + getAllArmedChannelIds() kombiniert beide Stores. Wird vom Mixer-Topbar-Counter + Test-Coverage konsumiert.",
+        "tests/features/audio-recording-drum.test.ts NEU: 12 Tests in 3 describes (env:node mit localStorage-Mock + Mock-AudioContext). (1) Store-API × 6 — setPartRecordArm Round-Trip + Idempotenz + Persist, setAllDrumPartRecordArm Bulk + ungültige IDs, pruneArmedDrumParts Phantom-Cleanup, korrupte JSON → leerer State. (2) Transport-Wiring × 3 — armed → Recorder.start startet alle, Engine-Overflow rejected[] wird befüllt (12 Parts, 8 started, 4 rejected), Mixed Live+Drum kombiniert. (3) Topbar-Counter × 3 — total = live + drum dynamic, ignored disarmed, over-Limit-Detection.",
+        "package.json + agents/INDEX.js version 3.62.0 → 3.63.0."
+      ],
+      next: [
+        "v3.64: AudioEngine.isRecordingChannel-Reaktivität — derzeit lebt das im AudioRecorder.Map und der MixerChannel liest es nur beim Render. Bei laufender Aufnahme wird die Pulse-Animation erst sichtbar wenn der MixerView aus anderem Grund re-rendert. Lösung: requestAnimationFrame-loop oder explicit Store-Notify aus AudioEngine.",
+        "v3.64: pruneArmedDrumParts in removePart-Hook wiren — derzeit kann ein gelöschter Part als Phantom-Entry im Record-Arm-Store hängen bleiben. Korrektheits-neutral (Engine ignoriert unknown channelIds), aber Map wächst über Zeit.",
+        "v3.64: Stereo-Recording-Mode pro Drum/Synth-Strip (analog v3.63-Live-Input-Caveat) — AudioRecorder unterstützt's, UI noch nicht."
+      ],
+      changed: [
+        "client/src/store/useDrumPartRecordArmStore.ts (NEU ~185 LOC: Observer-Store + Bulk-API + localStorage-Persist + Test-Helper)",
+        "client/src/audio/AudioEngine.ts (~+15 LOC: startRecordingForChannels Return-Type {ok,started,rejected})",
+        "client/src/App.tsx (~+15 LOC: getArmedDrumPartIds-Import + combined armed-Liste + Performance-Toast bei rejected.length>0)",
+        "client/src/components/Mixer/MixerView.tsx (~+90 LOC: MixerChannel +3 Props, Record-Arm-Button-Render, useDrumPartRecordArmStore-Hook, parts.map wired, Topbar-Counter combined live+drum)",
+        "client/src/utils/recordingArmCount.ts (NEU ~25 LOC: getTotalArmedCount + getAllArmedChannelIds Aggregator)",
+        "tests/features/audio-recording-drum.test.ts (NEU ~270 LOC: 12 Tests in 3 describes)",
+        "package.json (3.62.0 → 3.63.0)",
+        "agents/INDEX.js (version + workLog v3.63.0)"
+      ],
+      caveats: [
+        "Record-Arm-Flag lebt NICHT in PartData / .synth-File. Begründung: ein Mitarbeiter der ein Projekt lädt, soll nicht zufällig mit 16 armed Drum-Channels starten. Konsequenz: pro Browser-Profil sind die armed-States lokal — beim Wechsel zwischen Computern muss der User die Channels neu armen. localStorage-Persist trägt den Zustand über Reload weiter aber nicht über Geräte hinweg.",
+        "removePart cleant nicht automatisch den Record-Arm-Store. pruneArmedDrumParts() existiert als Helper aber wird noch nicht im useDrumMachineStore.removePart-Pfad gerufen — V3.64 Followup. Korrektheits-neutral weil AudioEngine.startRecording bei unbekannter channelId false zurückgibt (Phantom-Entries treffen den rejected-Pfad).",
+        "isRecording-State im MixerChannel wird per Render-Cycle abgefragt (AudioEngine.isRecordingChannel-Polling). Die animate-pulse-Animation startet daher nicht sofort beim transport:play sondern erst wenn der nächste MixerView-Render läuft (durch Store-Notifies, üblicherweise <50ms). Für visuell trägere Updates wäre ein requestAnimationFrame-Loop in MixerView nötig (v3.64).",
+        "startRecordingForChannels-Return-Type-Change ist Breaking-Compat: alle Caller die das alte `string[]` Result lasen müssen jetzt `.started` extrahieren. Im aktuellen Codebase nur App.tsx — gefixt. Sollte ein Test direkt den Engine-Call mocken, könnte er fehlschlagen — keine bekannten Fälle, aber als Folgekontrolle dokumentiert."
+      ]
+    },
     {
       agent:     "backend",
       timestamp: "2026-05-19T00:05:00.000Z",

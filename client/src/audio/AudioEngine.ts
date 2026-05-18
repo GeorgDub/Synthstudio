@@ -3443,15 +3443,32 @@ class AudioEngineClass {
 
   /**
    * Startet Aufnahmen für alle Channels in der Liste (typisch: alle armed
-   * Channels beim Transport-Play). Returnt die Liste der tatsächlich
-   * gestarteten Channels (gefiltert um unbekannte + Limit-Overflows).
+   * Channels beim Transport-Play). Returnt eine detaillierte Map:
+   * - `started`: Channels die erfolgreich Aufnahme starten konnten
+   * - `rejected`: Channels die NICHT starten konnten (Engine-Limit oder
+   *               unbekannte channelId — typischer Grund: User hat mehr
+   *               Channels armed als MAX_SIMULTANEOUS_RECORDINGS erlaubt)
+   * - `ok`:       true wenn rejected.length === 0, sonst false
+   *
+   * v3.63.0: API-Erweiterung von `string[]` auf Detail-Result um Performance-
+   * Toast im UI zu unterstützen ("X channels could not start recording").
+   * Kein Breakage — Caller die nur das Array brauchen lesen `.started`.
    */
-  startRecordingForChannels(channelIds: string[]): string[] {
+  startRecordingForChannels(channelIds: string[]): {
+    ok: boolean;
+    started: string[];
+    rejected: string[];
+  } {
     const started: string[] = [];
+    const rejected: string[] = [];
     for (const id of channelIds) {
-      if (this.startRecording(id)) started.push(id);
+      if (this.startRecording(id)) {
+        started.push(id);
+      } else {
+        rejected.push(id);
+      }
     }
-    return started;
+    return { ok: rejected.length === 0, started, rejected };
   }
 
   /**

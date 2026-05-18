@@ -26,6 +26,10 @@ import {
   addLiveInputChannel,
   MAX_LIVE_INPUT_CHANNELS,
 } from "@/store/useLiveInputStore";
+// v3.63.0: Drum/Synth-Part Record-Arm
+import {
+  useDrumPartRecordArmStore,
+} from "@/store/useDrumPartRecordArmStore";
 // TASK-232-FOLLOWUP / v2.98: Live-Input (USB-Audio-In) ist ein Pro-Feature.
 import { ProLockBadge } from "@/components/License/ProLockBadge";
 import { PRO_FEATURE_USB_AUDIO_IN } from "@/utils/proFeatures";
@@ -198,6 +202,10 @@ interface MixerChannelProps {
   peakLevel: number;
   selected?: boolean;
   isMaster?: boolean;
+  /** v3.63.0: Record-Arm-Flag — visualisiert via roten Button. */
+  recordArmed?: boolean;
+  /** v3.63.0: True wenn der Channel gerade tatsächlich aufnimmt (für Blink-Animation). */
+  isRecording?: boolean;
   onSelect?: () => void;
   onVolumeChange: (v: number) => void;
   onPanChange: (v: number) => void;
@@ -205,13 +213,16 @@ interface MixerChannelProps {
   /** Solo-Toggle. event.shiftKey wechselt zwischen Default und additive Verhalten (FOLLOWUP-102-3). */
   onSoloToggle: (e: { shiftKey: boolean }) => void;
   onSendChange: (bus: "reverb" | "delay", v: number) => void;
+  /** v3.63.0: Toggle Record-Arm. Optional — bei Master nicht gerendert. */
+  onRecordArmToggle?: () => void;
 }
 
 function MixerChannel({
   partId, name, volume, pan, muted, soloed,
   sendReverb, sendDelay, peakLevel,
-  selected, isMaster, onSelect,
+  selected, isMaster, recordArmed, isRecording, onSelect,
   onVolumeChange, onPanChange, onMuteToggle, onSoloToggle, onSendChange,
+  onRecordArmToggle,
 }: MixerChannelProps) {
   const labelColor = muted ? "text-text-dim" : soloed ? "text-accent-success" : "text-text-primary";
 
@@ -335,6 +346,38 @@ function MixerChannel({
           {muteLearn.menu}
           {soloLearn.menu}
         </div>
+      )}
+
+      {/* v3.63.0: Record-Arm-Button (für Drum/Synth-Channels). Rot wenn armed,
+          blinkt zusätzlich wenn AudioEngine gerade aufnimmt. */}
+      {!isMaster && onRecordArmToggle && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onRecordArmToggle();
+          }}
+          data-testid={`channel-record-arm-${partId}`}
+          aria-label={recordArmed ? "Record-Arm aufheben" : "Channel record-armen"}
+          aria-pressed={!!recordArmed}
+          title={
+            isRecording
+              ? "Recording — wird bei Transport-Stop als Audio-Track gespeichert"
+              : recordArmed
+                ? "Armed — startet Aufnahme bei Transport-Play (Rechtsklick zum Aufheben)"
+                : "Record this channel — Aufnahme startet bei Transport-Play"
+          }
+          className={[
+            "relative w-6 h-5 rounded text-[8px] font-bold transition-colors duration-100",
+            recordArmed
+              ? isRecording
+                ? "bg-accent-danger text-bg-base animate-pulse"
+                : "bg-accent-danger text-bg-base"
+              : "bg-bg-elevated text-text-dim hover:bg-bg-elevated hover:text-accent-danger border border-accent-danger/30",
+          ].join(" ")}
+        >
+          ●
+        </button>
       )}
 
       {/* Send-Regler (nur für normale Kanäle) — v2.1 mit Rechtsklick MIDI-Learn */}
@@ -517,6 +560,8 @@ export function MixerView({ dm, mixer, samples = [], bpm = 120, projectName = "S
   const audioTracks = audioTrackStore.tracks;
   const liveInputStore = useLiveInputStore();
   const liveInputChannels = liveInputStore.channels;
+  // v3.63.0: Record-Arm-Store für Drum/Synth-Channels (Mixer-Strip-Button).
+  const drumPartArmStore = useDrumPartRecordArmStore();
   const electron = useElectron();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [addError, setAddError] = useState<string | null>(null);
@@ -853,51 +898,59 @@ export function MixerView({ dm, mixer, samples = [], bpm = 120, projectName = "S
         </button>
 
         {/* v3.62.0: Multi-Track Recording — Arm-All-Button + armed-Counter.
-            Sichtbar nur wenn mind. ein Live-Input existiert. Counter zeigt
-            armed/total + ggf. >MAX_SIMULTANEOUS_RECORDINGS=8 Warnung.
+            v3.63.0: Counter zeigt jetzt Live-Inputs + Drum/Synth-Parts
+            kombiniert. Arm-All-Button bleibt auf Live-Inputs beschränkt
+            (Drum/Synth-Channels haben einen eigenen Strip-Button — kein
+            Bulk-Arm via Toolbar damit User nicht versehentlich 16 Parts
+            armed und das Engine-Limit von 8 überschreitet).
+            Sichtbar wenn mind. ein Live-Input ODER ein armed Drum/Synth-Part.
         */}
-        {liveInputChannels.length > 0 && (() => {
-          const armedCount = liveInputStore.armedCount;
-          const allArmed = armedCount === liveInputChannels.length && liveInputChannels.length > 0;
-          const overLimit = armedCount > 8;
+        {(liveInputChannels.length > 0 || drumPartArmStore.armedCount > 0) && (() => {
+          const liveArmedCount = liveInputStore.armedCount;
+          const drumArmedCount = drumPartArmStore.armedCount;
+          const totalArmed = liveArmedCount + drumArmedCount;
+          const allLiveArmed = liveArmedCount === liveInputChannels.length && liveInputChannels.length > 0;
+          const overLimit = totalArmed > 8;
           const counterColor = overLimit
             ? "text-accent-danger"
-            : armedCount > 0
+            : totalArmed > 0
               ? "text-accent-danger"
               : "text-text-dim";
           return (
             <>
-              <button
-                type="button"
-                onClick={() => liveInputStore.setAllRecordArm(!allArmed)}
-                data-testid="mixer-arm-all-live-inputs"
-                aria-label={allArmed ? "Alle Live-Inputs disarmen" : "Alle Live-Inputs record-armen"}
-                aria-pressed={allArmed}
-                title={
-                  allArmed
-                    ? "Alle Live-Input-Channels disarmen"
-                    : "Alle Live-Input-Channels für Multi-Track-Aufnahme armen"
-                }
-                className={[
-                  "px-2 py-0.5 text-[10px] rounded border inline-flex items-center gap-1 transition-colors",
-                  allArmed
-                    ? "border-accent-danger bg-accent-danger/15 text-accent-danger hover:bg-accent-danger/25"
-                    : "border-accent-danger/40 text-accent-danger/80 hover:bg-accent-danger/10",
-                ].join(" ")}
-              >
-                <span aria-hidden>●</span>
-                {allArmed ? "Disarm All" : "Arm All"}
-              </button>
+              {liveInputChannels.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => liveInputStore.setAllRecordArm(!allLiveArmed)}
+                  data-testid="mixer-arm-all-live-inputs"
+                  aria-label={allLiveArmed ? "Alle Live-Inputs disarmen" : "Alle Live-Inputs record-armen"}
+                  aria-pressed={allLiveArmed}
+                  title={
+                    allLiveArmed
+                      ? "Alle Live-Input-Channels disarmen"
+                      : "Alle Live-Input-Channels für Multi-Track-Aufnahme armen"
+                  }
+                  className={[
+                    "px-2 py-0.5 text-[10px] rounded border inline-flex items-center gap-1 transition-colors",
+                    allLiveArmed
+                      ? "border-accent-danger bg-accent-danger/15 text-accent-danger hover:bg-accent-danger/25"
+                      : "border-accent-danger/40 text-accent-danger/80 hover:bg-accent-danger/10",
+                  ].join(" ")}
+                >
+                  <span aria-hidden>●</span>
+                  {allLiveArmed ? "Disarm All" : "Arm All"}
+                </button>
+              )}
               <span
                 data-testid="mixer-armed-counter"
                 className={`text-[10px] font-mono ml-1 ${counterColor}`}
                 title={
                   overLimit
-                    ? `${armedCount} Channels armed — Engine limitiert auf 8 gleichzeitige Aufnahmen.`
-                    : `${armedCount} von ${liveInputChannels.length} Live-Inputs record-armed`
+                    ? `${totalArmed} Channels armed (${liveArmedCount} live + ${drumArmedCount} drum/synth) — Engine-Limit 8 gleichzeitige Aufnahmen, Rest startet nicht.`
+                    : `${totalArmed} armed — ${liveArmedCount} Live-Input${liveArmedCount === 1 ? "" : "s"} + ${drumArmedCount} Drum/Synth-Part${drumArmedCount === 1 ? "" : "s"}`
                 }
               >
-                {armedCount > 0 ? `🔴 ${armedCount} armed` : "0 armed"}
+                {totalArmed > 0 ? `🔴 ${totalArmed} armed` : "0 armed"}
                 {overLimit && <span className="ml-1">⚠</span>}
               </span>
             </>
@@ -1035,6 +1088,7 @@ export function MixerView({ dm, mixer, samples = [], bpm = 120, projectName = "S
           <div className="flex h-full items-stretch">
             {parts.map(part => {
               const ch = mixer.channels[part.id];
+              const armed = drumPartArmStore.isArmed(part.id);
               return (
                 <MixerChannel
                   key={part.id}
@@ -1048,12 +1102,15 @@ export function MixerView({ dm, mixer, samples = [], bpm = 120, projectName = "S
                   sendDelay={ch?.sends.delay ?? 0}
                   peakLevel={ch?.peakLevel ?? 0}
                   selected={selectedPart?.id === part.id}
+                  recordArmed={armed}
+                  isRecording={armed && AudioEngine.isRecordingChannel(part.id)}
                   onSelect={() => mixer.setSelectedChannel(part.id)}
                   onVolumeChange={vol => handleVolumeChange(part.id, vol)}
                   onPanChange={pan => handlePanChange(part.id, pan)}
                   onMuteToggle={() => dm.setPartMuted(part.id, !part.muted)}
                   onSoloToggle={(e) => dm.setPartSoloed(part.id, !part.soloed, !e.shiftKey)}
                   onSendChange={(bus, level) => handleSendChange(part.id, bus, level)}
+                  onRecordArmToggle={() => drumPartArmStore.setRecordArm(part.id, !armed)}
                 />
               );
             })}

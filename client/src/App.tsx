@@ -250,6 +250,10 @@ import {
   getAllLiveInputChannels,
   loadLiveInputChannels,
 } from "@/store/useLiveInputStore";
+// v3.63.0: Drum/Synth-Part Record-Arm (Mixer-Channel-Strip-UI).
+import {
+  getArmedDrumPartIds,
+} from "@/store/useDrumPartRecordArmStore";
 import {
   saveRecording as persistRecording,
 } from "@/utils/recordingStorage";
@@ -1086,12 +1090,16 @@ export default function App() {
     // MIDI Out wird nach midi-Hook Initialisierung via useEffect registriert
   });
 
-  // ── Audio-Recording (TASK-234 / v2.86) ──────────────────────────────────────
+  // ── Audio-Recording (TASK-234 / v2.86, v3.63.0 extended) ───────────────────
   // Bei transport:play → AudioEngine.startRecordingForChannels(armed[])
   // Bei transport:stop → AudioEngine.finalizeAllRecordings() → für jeden:
   //   1) WAV via persistRecording (Electron-IPC oder IndexedDB) speichern
   //   2) addAudioTrack({filePath, name, ...}) → erscheint im Mixer als
   //      regulärer Audio-Track (abspielbar nach Stop)
+  //
+  // v3.63.0: kombiniert armed Live-Inputs + armed Drum/Synth-Parts. Engine
+  // erzwingt MAX_SIMULTANEOUS_RECORDINGS=8 — Overflow wird als Performance-
+  // Toast an den User gemeldet ("X channels could not start recording").
   const prevRecArmPlayRef = useRef(project.isPlaying);
   useEffect(() => {
     const wasPlaying = prevRecArmPlayRef.current;
@@ -1099,10 +1107,22 @@ export default function App() {
     if (wasPlaying === project.isPlaying) return;
 
     if (project.isPlaying) {
-      // PLAY: alle armed Live-Inputs starten
-      const armedIds = getArmedLiveInputChannelIds();
+      // PLAY: alle armed Channels starten (Live-Inputs + Drum/Synth-Parts)
+      const armedLiveInputs = getArmedLiveInputChannelIds();
+      const armedDrumParts = getArmedDrumPartIds();
+      const armedIds = [...armedLiveInputs, ...armedDrumParts];
       if (armedIds.length > 0) {
-        AudioEngine.startRecordingForChannels(armedIds);
+        const result = AudioEngine.startRecordingForChannels(armedIds);
+        if (!result.ok && result.rejected.length > 0) {
+          // v3.63.0: Performance-Toast — Engine konnte nicht alle Channels
+          // gleichzeitig aufnehmen (z.B. mehr als MAX_SIMULTANEOUS_RECORDINGS=8
+          // armed). Wir nennen die Anzahl + den Grund (Limit) und lassen den
+          // User entscheiden ob er einige Channels disarmt.
+          showToast(
+            `${result.rejected.length} channel${result.rejected.length === 1 ? "" : "s"} could not start recording (over limit).`,
+            { kind: "warning", duration: 5000 },
+          );
+        }
       }
       return;
     }
