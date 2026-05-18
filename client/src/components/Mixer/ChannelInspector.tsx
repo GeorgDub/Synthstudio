@@ -24,6 +24,13 @@ import {
   clampPluginParam,
 } from "@/audio/PluginRegistry";
 import { MAX_PLUGIN_SLOTS_PER_CHANNEL, type MixerPluginSlot } from "@/store/useMixerStore";
+// v3.46: Plugin-Chain Preset Save/Load (schließt v3.45 Caveat 4)
+import {
+  usePluginChainPresetStore,
+  addPluginChainPreset,
+  removePluginChainPreset,
+  cloneSlotsFromPreset,
+} from "@/store/usePluginChainPresetStore";
 import { extractPatch, type Patch } from "@/utils/patchSerialize";
 import { savePatch, usePatchStore } from "@/store/usePatchStore";
 import { toast } from "@/store/useToastStore";
@@ -314,6 +321,7 @@ export function ChannelInspector({ part, parts, mixer, className, onApplyPatch, 
       </section>
 
       {/* v3.45.0: AudioWorklet-Plugin-Chain (max 4 Slots, seriell) */}
+      {/* v3.46.0: + Save/Load Preset (closes v3.45 Caveat 4) */}
       <PluginChainSection
         partId={part.id}
         slots={mixer.pluginSlots[part.id] ?? []}
@@ -345,6 +353,40 @@ export function ChannelInspector({ part, parts, mixer, className, onApplyPatch, 
           const slot = slots[index];
           if (!slot) return;
           mixer.setPluginSlotBypassed(part.id, index, !slot.bypassed);
+        }}
+        onApplyPreset={(presetId) => {
+          const slotsToApply = cloneSlotsFromPreset(presetId);
+          if (!slotsToApply) return;
+          // Replace-Strategie: erst aktuelle Chain leeren, dann Preset
+          // anhängen. Wir nutzen movePluginSlot/removePluginSlot weil das
+          // bestehende Multi-Slot-Diff-Sync sauber bleibt.
+          const current = mixer.pluginSlots[part.id] ?? [];
+          for (let i = current.length - 1; i >= 0; i--) {
+            mixer.removePluginSlot(part.id, i);
+          }
+          for (const slot of slotsToApply) {
+            mixer.addPluginSlot(part.id, slot);
+          }
+          toast(`Plugin-Chain-Preset angewendet (${slotsToApply.length} Slots)`, { kind: "success" });
+        }}
+        onSavePreset={(name) => {
+          const slots = mixer.pluginSlots[part.id] ?? [];
+          if (slots.length === 0) {
+            toast("Chain ist leer — kein Preset zum Speichern", { kind: "info" });
+            return false;
+          }
+          const id = addPluginChainPreset(name, slots);
+          if (id) {
+            toast(`Plugin-Chain-Preset „${name}" gespeichert`, { kind: "success" });
+            return true;
+          }
+          toast("Preset konnte nicht gespeichert werden", { kind: "error" });
+          return false;
+        }}
+        onRemovePreset={(id) => {
+          if (removePluginChainPreset(id)) {
+            toast("Preset entfernt", { kind: "success" });
+          }
         }}
       />
 
@@ -874,6 +916,7 @@ function ControlRow({
 }
 
 // ─── v3.45.0 — Plugin-Chain Section (Multi-Slot, max 4) ───────────────────
+// v3.46.0: + Save/Load-Preset Sub-UI
 
 interface PluginChainSectionProps {
   partId: string;
@@ -884,6 +927,12 @@ interface PluginChainSectionProps {
   onChangePlugin: (index: number, pluginId: string) => void;
   onChangeParam: (index: number, paramId: string, value: number) => void;
   onToggleBypass: (index: number) => void;
+  /** v3.46: Wendet ein Preset (id) als komplette neue Chain an. */
+  onApplyPreset: (presetId: string) => void;
+  /** v3.46: Speichert die aktuelle Chain unter einem Namen. Liefert true bei Erfolg. */
+  onSavePreset: (name: string) => boolean;
+  /** v3.46: Entfernt ein User-Preset. */
+  onRemovePreset: (presetId: string) => void;
 }
 
 function PluginChainSection({
@@ -895,10 +944,25 @@ function PluginChainSection({
   onChangePlugin,
   onChangeParam,
   onToggleBypass,
+  onApplyPreset,
+  onSavePreset,
+  onRemovePreset,
 }: PluginChainSectionProps) {
   const plugins = React.useMemo(() => getRegisteredPlugins(), []);
   const canAddMore = slots.length < MAX_PLUGIN_SLOTS_PER_CHANNEL;
   const [addOpen, setAddOpen] = useState(false);
+  // v3.46: Preset-UI State
+  const { presets } = usePluginChainPresetStore();
+  const [presetSaveOpen, setPresetSaveOpen] = useState(false);
+  const [presetLoadOpen, setPresetLoadOpen] = useState(false);
+  const [presetName, setPresetName] = useState("");
+  const handleSavePreset = useCallback(() => {
+    const ok = onSavePreset(presetName);
+    if (ok) {
+      setPresetSaveOpen(false);
+      setPresetName("");
+    }
+  }, [onSavePreset, presetName]);
 
   return (
     <section className="border-b border-border-color p-3" data-testid={`channel-plugin-chain-${partId}`}>
@@ -906,17 +970,154 @@ function PluginChainSection({
         <span className="text-[10px] font-semibold uppercase tracking-wide text-text-dim">
           Plugin-Chain ({slots.length}/{MAX_PLUGIN_SLOTS_PER_CHANNEL})
         </span>
-        {canAddMore && !addOpen && (
+        <div className="flex items-center gap-1">
+          {/* v3.46: Load Preset */}
           <button
             type="button"
-            onClick={() => setAddOpen(true)}
-            className="rounded border border-accent-secondary px-2 py-1 text-[10px] text-accent-secondary hover:bg-bg-elevated"
-            data-testid={`channel-plugin-add-${partId}`}
+            onClick={() => {
+              setPresetLoadOpen((o) => !o);
+              setPresetSaveOpen(false);
+              setAddOpen(false);
+            }}
+            className={`rounded border px-2 py-1 text-[10px] ${
+              presetLoadOpen
+                ? "border-accent-primary text-accent-primary"
+                : "border-border-color text-text-dim hover:text-text-primary"
+            }`}
+            title={`Plugin-Chain-Preset laden (${presets.length} verfügbar)`}
+            data-testid={`channel-plugin-load-preset-${partId}`}
           >
-            + Add Plugin
+            📂 Load
           </button>
-        )}
+          {/* v3.46: Save Preset */}
+          <button
+            type="button"
+            onClick={() => {
+              setPresetSaveOpen((o) => !o);
+              setPresetLoadOpen(false);
+              setAddOpen(false);
+            }}
+            disabled={slots.length === 0}
+            className={`rounded border px-2 py-1 text-[10px] ${
+              presetSaveOpen
+                ? "border-accent-secondary text-accent-secondary"
+                : "border-border-color text-text-dim hover:text-text-primary"
+            } disabled:opacity-40 disabled:cursor-not-allowed`}
+            title="Aktuelle Chain als Preset speichern"
+            data-testid={`channel-plugin-save-preset-${partId}`}
+          >
+            💾 Save
+          </button>
+          {canAddMore && !addOpen && (
+            <button
+              type="button"
+              onClick={() => {
+                setAddOpen(true);
+                setPresetSaveOpen(false);
+                setPresetLoadOpen(false);
+              }}
+              className="rounded border border-accent-secondary px-2 py-1 text-[10px] text-accent-secondary hover:bg-bg-elevated"
+              data-testid={`channel-plugin-add-${partId}`}
+            >
+              + Add Plugin
+            </button>
+          )}
+        </div>
       </div>
+
+      {presetSaveOpen && (
+        <div
+          className="mb-2 p-2 rounded border border-accent-secondary/60 bg-accent-secondary/10 space-y-2"
+          data-testid={`channel-plugin-save-preset-form-${partId}`}
+        >
+          <input
+            type="text"
+            autoFocus
+            value={presetName}
+            onChange={(e) => setPresetName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") handleSavePreset();
+              if (e.key === "Escape") setPresetSaveOpen(false);
+            }}
+            placeholder="Preset-Name"
+            className="w-full bg-bg-base text-text-primary text-xs px-2 py-1 rounded border border-border-color"
+            data-testid={`channel-plugin-save-preset-name-${partId}`}
+          />
+          <div className="flex justify-end gap-1">
+            <button
+              type="button"
+              onClick={() => setPresetSaveOpen(false)}
+              className="px-2 py-1 text-[10px] rounded text-text-muted hover:text-text-primary"
+            >
+              Abbrechen
+            </button>
+            <button
+              type="button"
+              onClick={handleSavePreset}
+              disabled={!presetName.trim()}
+              className="px-2 py-1 text-[10px] rounded bg-accent-secondary text-bg-base hover:bg-accent-secondary/80 disabled:opacity-40 disabled:cursor-not-allowed"
+              data-testid={`channel-plugin-save-preset-commit-${partId}`}
+            >
+              Speichern
+            </button>
+          </div>
+        </div>
+      )}
+
+      {presetLoadOpen && (
+        <div
+          className="mb-2 p-2 rounded border border-accent-primary/60 bg-accent-primary/10"
+          data-testid={`channel-plugin-load-preset-list-${partId}`}
+        >
+          {presets.length === 0 && (
+            <div className="text-center text-[10px] text-text-dim py-2">
+              Keine Presets gespeichert.
+            </div>
+          )}
+          <div className="max-h-48 overflow-y-auto space-y-1">
+            {presets.map((p) => (
+              <div
+                key={p.id}
+                className="flex items-center gap-1 rounded bg-bg-base/50 border border-transparent hover:border-accent-primary/50"
+              >
+                <button
+                  type="button"
+                  onClick={() => {
+                    onApplyPreset(p.id);
+                    setPresetLoadOpen(false);
+                  }}
+                  className="flex-1 text-left px-2 py-1"
+                  data-testid={`channel-plugin-load-preset-${partId}-${p.id}`}
+                  title={`${p.slots.length} Slot(s) — ${
+                    p.builtIn ? "Built-In" : new Date(p.createdAt).toLocaleString()
+                  }`}
+                >
+                  <div className="text-xs text-text-primary truncate">
+                    {p.name}
+                    {p.builtIn ? (
+                      <span className="ml-1 text-[9px] text-text-dim">(Built-In)</span>
+                    ) : null}
+                  </div>
+                  <div className="text-[9px] text-text-dim">
+                    {p.slots.length} Slot{p.slots.length === 1 ? "" : "s"}
+                  </div>
+                </button>
+                {!p.builtIn && (
+                  <button
+                    type="button"
+                    onClick={() => onRemovePreset(p.id)}
+                    title="Preset entfernen"
+                    className="px-2 py-1 text-[10px] text-accent-danger hover:text-accent-danger/80"
+                    data-testid={`channel-plugin-remove-preset-${partId}-${p.id}`}
+                  >
+                    X
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {addOpen && canAddMore && (
         <div className="mb-2 flex items-center gap-2">

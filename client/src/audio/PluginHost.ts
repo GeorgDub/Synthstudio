@@ -193,17 +193,27 @@ export class PluginHost {
   }
 
   /**
-   * Click-Free Bypass-Toggle (v3.45).
+   * Click-Free Bypass-Toggle (v3.45 + v3.46 S-Curve).
    *
    * Rampt die internen Wet/Dry-Gains parallel über `rampMs` Millisekunden
    * (Default 5ms) — schnell genug für UI-Responsiveness, langsam genug um
    * Click-Artefakte zu vermeiden. Der Plugin-Knoten bleibt verkabelt damit
    * interne States (Filter-History, Saturation-Hysterese) nicht poppen.
    *
+   * v3.46: Optionaler `useExponentialRamp`-Param. Wenn `true`, nutzt der
+   * Wrapper eine S-Curve via `setValueCurveAtTime` mit cubic-ease-in-out
+   * statt linearer Rampe. Das ergibt bei sehr lauten Signalen einen noch
+   * weniger hörbaren Übergang — der Anfang/Ende des Crossfades hat keinen
+   * scharfen Knick. Default bleibt linear für Backward-Compat (v3.45).
+   *
    * Fallback-Pfad: ohne createGain (Test-Mock) wird nur das Flag gesetzt —
    * Caller (AudioEngine) konsumiert das Flag beim Re-Wiring (Legacy v3.44).
    */
-  setBypassed(bypassed: boolean, rampMs: number = DEFAULT_BYPASS_RAMP_MS): void {
+  setBypassed(
+    bypassed: boolean,
+    rampMs: number = DEFAULT_BYPASS_RAMP_MS,
+    useExponentialRamp: boolean = false,
+  ): void {
     this._bypassed = bypassed;
     if (!this._wetGain || !this._dryGain || !this._ctx) {
       // Kein crossfader gebaut (Test-Env / kein createGain) — Flag bleibt
@@ -212,6 +222,11 @@ export class PluginHost {
     }
     const ramp = Math.max(0.0001, rampMs) / 1000;
     const now = this._ctx.currentTime;
+    const wetStart = this._wetGain.gain.value;
+    const dryStart = this._dryGain.gain.value;
+    const wetEnd = bypassed ? 0 : 1;
+    const dryEnd = bypassed ? 1 : 0;
+
     try {
       // cancelScheduledValues vermeidet stranded automation falls Toggle
       // schneller als die Rampe getriggert wird.
@@ -219,20 +234,40 @@ export class PluginHost {
       this._dryGain.gain.cancelScheduledValues(now);
       // Aktuellen Wert verankern (sonst springt linearRamp vom letzten
       // gescheduleten Wert, nicht vom aktuellen).
-      this._wetGain.gain.setValueAtTime(this._wetGain.gain.value, now);
-      this._dryGain.gain.setValueAtTime(this._dryGain.gain.value, now);
-      if (bypassed) {
-        this._wetGain.gain.linearRampToValueAtTime(0, now + ramp);
-        this._dryGain.gain.linearRampToValueAtTime(1, now + ramp);
+      this._wetGain.gain.setValueAtTime(wetStart, now);
+      this._dryGain.gain.setValueAtTime(dryStart, now);
+
+      if (useExponentialRamp) {
+        // S-Curve via setValueCurveAtTime — cubic ease-in-out smoothstep.
+        // 32 samples ist genug für eine smooth-perceived 5ms-Rampe.
+        const wetCurve = buildSCurve(wetStart, wetEnd, 32);
+        const dryCurve = buildSCurve(dryStart, dryEnd, 32);
+        // setValueCurveAtTime ist optional auf manchen Mocks — fallback auf
+        // linearRampToValueAtTime im catch-Block unten.
+        const wetParam = this._wetGain.gain as AudioParam & {
+          setValueCurveAtTime?: (curve: Float32Array, time: number, duration: number) => void;
+        };
+        const dryParam = this._dryGain.gain as AudioParam & {
+          setValueCurveAtTime?: (curve: Float32Array, time: number, duration: number) => void;
+        };
+        if (typeof wetParam.setValueCurveAtTime === "function" &&
+            typeof dryParam.setValueCurveAtTime === "function") {
+          wetParam.setValueCurveAtTime(wetCurve, now, ramp);
+          dryParam.setValueCurveAtTime(dryCurve, now, ramp);
+        } else {
+          // Fallback wenn setValueCurveAtTime fehlt: linear-Ramp.
+          this._wetGain.gain.linearRampToValueAtTime(wetEnd, now + ramp);
+          this._dryGain.gain.linearRampToValueAtTime(dryEnd, now + ramp);
+        }
       } else {
-        this._wetGain.gain.linearRampToValueAtTime(1, now + ramp);
-        this._dryGain.gain.linearRampToValueAtTime(0, now + ramp);
+        this._wetGain.gain.linearRampToValueAtTime(wetEnd, now + ramp);
+        this._dryGain.gain.linearRampToValueAtTime(dryEnd, now + ramp);
       }
     } catch {
       // Defensive: AudioParam-Methods fehlen in manchen Test-Mocks.
       // Fallback auf instant value set.
-      try { this._wetGain.gain.value = bypassed ? 0 : 1; } catch { /* ignore */ }
-      try { this._dryGain.gain.value = bypassed ? 1 : 0; } catch { /* ignore */ }
+      try { this._wetGain.gain.value = wetEnd; } catch { /* ignore */ }
+      try { this._dryGain.gain.value = dryEnd; } catch { /* ignore */ }
     }
   }
 
@@ -316,4 +351,31 @@ export async function createPluginHost(
 /** Test-Helper: Reset des Module-Load-Caches. */
 export function _resetPluginHostModuleCache(): void {
   _moduleCache.map = new WeakMap();
+}
+
+/**
+ * v3.46: Generiert eine S-Curve (cubic ease-in-out / smoothstep) zwischen
+ * `from` und `to`. Liefert eine Float32Array mit `steps` Samples, von
+ * exakt `from` bis exakt `to`. Diskontinuitätsfrei (1st-derivative zero
+ * an den Endpunkten) — das ist der Punkt der "natural feel" gegenüber
+ * linearer Rampe ausmacht.
+ *
+ * Formel: smoothstep(t) = t² · (3 − 2·t)
+ *   value(t) = from + (to − from) · smoothstep(t)
+ *
+ * Exportiert für Tests.
+ */
+export function buildSCurve(from: number, to: number, steps: number): Float32Array {
+  const safeSteps = Math.max(2, Math.floor(steps));
+  const out = new Float32Array(safeSteps);
+  const delta = to - from;
+  for (let i = 0; i < safeSteps; i++) {
+    const t = i / (safeSteps - 1);
+    const smooth = t * t * (3 - 2 * t);
+    out[i] = from + delta * smooth;
+  }
+  // Endpunkte exakt verankern (Floating-Point-Drift im Loop vermeiden).
+  out[0] = from;
+  out[safeSteps - 1] = to;
+  return out;
 }

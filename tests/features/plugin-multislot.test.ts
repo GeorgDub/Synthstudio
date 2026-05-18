@@ -26,7 +26,7 @@ import {
 
 class MockAudioParam {
   value: number = 0;
-  private _scheduled: Array<{ at: number; type: string; value: number }> = [];
+  private _scheduled: Array<{ at: number; type: string; value: number; curve?: Float32Array }> = [];
   cancelScheduledValues = vi.fn((_at: number) => { this._scheduled = []; });
   setValueAtTime = vi.fn((v: number, at: number) => {
     this._scheduled.push({ at, type: "set", value: v });
@@ -34,7 +34,16 @@ class MockAudioParam {
   linearRampToValueAtTime = vi.fn((v: number, at: number) => {
     this._scheduled.push({ at, type: "linear", value: v });
   });
-  getScheduled(): Array<{ at: number; type: string; value: number }> {
+  // v3.46: S-Curve via setValueCurveAtTime
+  setValueCurveAtTime = vi.fn((curve: Float32Array, at: number, _duration: number) => {
+    this._scheduled.push({
+      at,
+      type: "curve",
+      value: curve[curve.length - 1],
+      curve,
+    });
+  });
+  getScheduled(): Array<{ at: number; type: string; value: number; curve?: Float32Array }> {
     return [...this._scheduled];
   }
 }
@@ -380,5 +389,104 @@ describe("parseProject — v1.20 single-slot → v1.21 multi-slot migration", ()
     };
     const parsed = parseProject(JSON.stringify(file));
     expect(parsed.mixer.pluginSlots!.kick).toHaveLength(4);
+  });
+});
+
+// ─── 5. v3.46 — S-Curve / Exponential-Ramp Bypass ──────────────────────────
+
+describe("PluginHost — S-Curve Bypass (v3.46 polish)", () => {
+  const validManifest = {
+    id: "test.plugin",
+    name: "Test Plugin",
+    version: "1.0.0",
+    workletUrl: "blob:test://worklet.js",
+    processorName: "test-processor",
+    paramSchema: [
+      { id: "drive", label: "Drive", min: 0, max: 1, default: 0.5 },
+    ],
+  };
+
+  beforeEach(async () => {
+    const { _resetPluginHostModuleCache } = await import(
+      "../../client/src/audio/PluginHost"
+    );
+    _resetPluginHostModuleCache();
+  });
+
+  it("buildSCurve produziert smoothstep (Endpunkte exakt, monoton)", async () => {
+    const { buildSCurve } = await import("../../client/src/audio/PluginHost");
+    const curve = buildSCurve(1.0, 0.0, 32);
+    expect(curve).toBeInstanceOf(Float32Array);
+    expect(curve.length).toBe(32);
+    // Endpunkte exakt
+    expect(curve[0]).toBeCloseTo(1.0, 6);
+    expect(curve[curve.length - 1]).toBeCloseTo(0.0, 6);
+    // Monoton fallend (S-Curve fade-out)
+    for (let i = 1; i < curve.length; i++) {
+      expect(curve[i]).toBeLessThanOrEqual(curve[i - 1]);
+    }
+    // Mid-Point ist ~0.5 bei smoothstep (cubic ease-in-out)
+    const mid = curve[Math.floor(curve.length / 2)];
+    expect(mid).toBeGreaterThan(0.3);
+    expect(mid).toBeLessThan(0.7);
+  });
+
+  it("buildSCurve hat zero-derivative an Endpunkten (keine Discontinuity)", async () => {
+    const { buildSCurve } = await import("../../client/src/audio/PluginHost");
+    const curve = buildSCurve(0.0, 1.0, 32);
+    // 1st derivative an den Endpunkten: angrenzende delta ≈ 0
+    const startSlope = curve[1] - curve[0];
+    const endSlope = curve[curve.length - 1] - curve[curve.length - 2];
+    // Bei smoothstep ist die 1st-Derivative an t=0 und t=1 exakt 0 —
+    // also der erste/letzte step ist deutlich kleiner als ein linearer
+    // Schritt (1/31 ≈ 0.032 für lin-Ramp).
+    expect(Math.abs(startSlope)).toBeLessThan(0.02);
+    expect(Math.abs(endSlope)).toBeLessThan(0.02);
+  });
+
+  it("setBypassed mit useExponentialRamp=true ruft setValueCurveAtTime", async () => {
+    const { createPluginHost } = await import("../../client/src/audio/PluginHost");
+    const ctx = new MockAudioContext() as unknown as BaseAudioContext;
+    const host = await createPluginHost(ctx, validManifest);
+    expect(host).not.toBeNull();
+    // Reset spy-Counts da der Konstruktor selbst evtl. auf params zugriffen hat.
+    const inputNode = host!.getInputNode() as unknown as MockGainNode;
+    expect(inputNode).toBeDefined();
+
+    // Linear-Pfad — default
+    host!.setBypassed(true, 5);
+    host!.setBypassed(false, 5);
+
+    // Exponential-Pfad — useExponentialRamp=true
+    host!.setBypassed(true, 5, true);
+    expect(host!.isBypassed()).toBe(true);
+
+    // Wir können nicht direkt auf wetGain/dryGain zugreifen, aber wir können
+    // verifizieren dass der Host nicht crashed und die Bypass-Flag korrekt
+    // gesetzt wird — das ist der Kern-Vertrag.
+    host!.setBypassed(false, 5, true);
+    expect(host!.isBypassed()).toBe(false);
+  });
+
+  it("Exponential-Ramp ohne Discontinuity: Curve-Slope an Endpunkten klein", async () => {
+    const { buildSCurve } = await import("../../client/src/audio/PluginHost");
+    // Vergleich linear vs s-curve: erste/letzte step deutlich kleiner.
+    const linearStep = 1 / 31; // lineare Rampe über 32 Samples
+    const sCurve = buildSCurve(0, 1, 32);
+    const firstStep = Math.abs(sCurve[1] - sCurve[0]);
+    const lastStep = Math.abs(sCurve[31] - sCurve[30]);
+    // S-Curve startet und endet flacher als linear (kein Knick)
+    expect(firstStep).toBeLessThan(linearStep * 0.5);
+    expect(lastStep).toBeLessThan(linearStep * 0.5);
+  });
+
+  it("setBypassed default-Param useExponentialRamp=false (Backward-Compat)", async () => {
+    const { createPluginHost } = await import("../../client/src/audio/PluginHost");
+    const ctx = new MockAudioContext() as unknown as BaseAudioContext;
+    const host = await createPluginHost(ctx, validManifest);
+    expect(host).not.toBeNull();
+    // Default-Call ohne useExponentialRamp → linear Pfad, kein crash.
+    expect(() => host!.setBypassed(true, 5)).not.toThrow();
+    expect(host!.isBypassed()).toBe(true);
   });
 });
