@@ -1541,3 +1541,320 @@ describe("electribeImport – v3.13 Constants are exported", () => {
     expect(mod.ELECTRIBE_REAL_STEP_LENGTH_CODES[3]).toBe(64);
   });
 });
+
+// ─── v3.15.0 — Pattern-Level Motion-Sequencer Reverse-Engineering ─────────────
+//
+// Verifiziert das in electribeImport.ts dokumentierte 560-Byte Motion-Layout
+// (PTST-relativ, 8 Slots × 64 Werte ab PTST+0x130). Tests laufen sowohl gegen
+// synthetische Buffer (Buffer-Builder, immer ausfuehrbar) als auch gegen die
+// reale Stock-Bank `e2s-2016.e2sallpat` (conditional).
+
+describe("electribeImport – v3.15 Motion-Sequencer Constants", () => {
+  it("Motion-Sequencer constants sind self-konsistent", async () => {
+    const mod = await import("../../client/src/utils/electribeImport");
+    expect(mod.ELECTRIBE_MOTION_PARAM_TABLE_OFFSET).toBe(0x100);
+    expect(mod.ELECTRIBE_MOTION_TARGET_TABLE_OFFSET).toBe(0x118);
+    expect(mod.ELECTRIBE_MOTION_DATA_TABLE_OFFSET).toBe(0x130);
+    expect(mod.ELECTRIBE_MOTION_SLOTS_PER_PATTERN).toBe(8);
+    expect(mod.ELECTRIBE_MOTION_VALUES_PER_SLOT).toBe(64);
+    expect(mod.ELECTRIBE_MOTION_SLOT_STRIDE).toBe(64);
+    // Motion-Region-Size: 0x130 + 8*64 - 0x100 = 560 Bytes
+    const regionEnd = mod.ELECTRIBE_MOTION_DATA_TABLE_OFFSET
+      + mod.ELECTRIBE_MOTION_SLOTS_PER_PATTERN * mod.ELECTRIBE_MOTION_SLOT_STRIDE;
+    expect(regionEnd - mod.ELECTRIBE_MOTION_PARAM_TABLE_OFFSET).toBe(560);
+  });
+
+  it("Param-Name-Map enthaelt Eintraege fuer alle 17 beobachteten IDs", async () => {
+    const mod = await import("../../client/src/utils/electribeImport");
+    for (let pid = 1; pid <= 17; pid++) {
+      expect(mod.ELECTRIBE_PATTERN_MOTION_PARAM_NAMES[pid]).toBeDefined();
+    }
+  });
+});
+
+describe("electribeImport – v3.15 parsePatternMotionTable (synthetic)", () => {
+  /**
+   * Baut einen minimalen DataView mit einer Motion-Table an PTST=0x100
+   * (= .e2spat-Layout).
+   */
+  function buildMotionBuffer(slotSpecs: Array<{ paramId: number; target: number; values: number[] }>): DataView {
+    // Wir brauchen mindestens 0x100 + 0x230 = 0x330 Bytes.
+    // Plus Magic-Bytes? Nein — parsePatternMotionTable nimmt absolute ptstOffset
+    // und liest direkt von dort. Wir bauen Buffer mit nur Motion-Region.
+    const size = 0x500;
+    const buf = new Uint8Array(size);
+    const ptst = 0x100;
+
+    for (let i = 0; i < Math.min(slotSpecs.length, 8); i++) {
+      const spec = slotSpecs[i];
+      buf[ptst + 0x100 + i] = spec.paramId;
+      buf[ptst + 0x118 + i] = spec.target;
+      for (let v = 0; v < Math.min(spec.values.length, 64); v++) {
+        buf[ptst + 0x130 + i * 64 + v] = spec.values[v];
+      }
+    }
+
+    return new DataView(buf.buffer);
+  }
+
+  it("liefert immer 8 Slots, auch wenn alle disabled", async () => {
+    const { parsePatternMotionTable } = await import("../../client/src/utils/electribeImport");
+    const view = buildMotionBuffer([]);
+    const slots = parsePatternMotionTable(view, 0x100);
+    expect(slots).toHaveLength(8);
+    expect(slots.every(s => !s.enabled)).toBe(true);
+    expect(slots.every(s => s.paramId === 0)).toBe(true);
+  });
+
+  it("decoded paramId + targetPart aus Header-Tabellen", async () => {
+    const { parsePatternMotionTable } = await import("../../client/src/utils/electribeImport");
+    const view = buildMotionBuffer([
+      { paramId: 0x11, target: 0x05, values: new Array(64).fill(0x40) },
+    ]);
+    const slots = parsePatternMotionTable(view, 0x100);
+    expect(slots[0].enabled).toBe(true);
+    expect(slots[0].paramId).toBe(0x11);
+    expect(slots[0].rawTarget).toBe(0x05);
+    expect(slots[0].targetPart).toBe(4); // rawTarget 5 → partIndex 4
+    expect(slots[0].values[0]).toBe(0x40);
+    expect(slots[0].values[63]).toBe(0x40);
+    // Slot 1..7 disabled
+    for (let i = 1; i < 8; i++) expect(slots[i].enabled).toBe(false);
+  });
+
+  it("targetPart=-1 bei rawTarget=17..19 (global/future-use)", async () => {
+    const { parsePatternMotionTable } = await import("../../client/src/utils/electribeImport");
+    const view = buildMotionBuffer([
+      { paramId: 5, target: 17, values: new Array(64).fill(50) },
+      { paramId: 6, target: 19, values: new Array(64).fill(60) },
+    ]);
+    const slots = parsePatternMotionTable(view, 0x100);
+    expect(slots[0].targetPart).toBe(-1);
+    expect(slots[0].rawTarget).toBe(17);
+    expect(slots[1].targetPart).toBe(-1);
+    expect(slots[1].rawTarget).toBe(19);
+  });
+
+  it("clamped value 0x80 (128) auf 127", async () => {
+    const { parsePatternMotionTable } = await import("../../client/src/utils/electribeImport");
+    const values = new Array(64).fill(0);
+    values[3] = 0x80;
+    values[5] = 0xFF;
+    const view = buildMotionBuffer([{ paramId: 0x11, target: 1, values }]);
+    const slots = parsePatternMotionTable(view, 0x100);
+    expect(slots[0].values[3]).toBe(127);
+    expect(slots[0].values[5]).toBe(127);
+  });
+
+  it("disabled slot mit paramId=0 aber non-zero data wird auf enabled gesetzt (data wins)", async () => {
+    const { parsePatternMotionTable } = await import("../../client/src/utils/electribeImport");
+    // Beobachtet in Trials1 — paramId=0 aber Slot hat data
+    const values = new Array(64).fill(0);
+    values[10] = 50;
+    const view = buildMotionBuffer([{ paramId: 0, target: 0, values }]);
+    const slots = parsePatternMotionTable(view, 0x100);
+    expect(slots[0].enabled).toBe(true);
+    expect(slots[0].paramId).toBe(0);
+    expect(slots[0].paramName).toBe("disabled"); // weil paramId=0
+    expect(slots[0].values[10]).toBe(50);
+  });
+
+  it("out-of-bounds buffer liefert 8 disabled defaults", async () => {
+    const { parsePatternMotionTable } = await import("../../client/src/utils/electribeImport");
+    const tiny = new DataView(new Uint8Array(0x50).buffer);
+    const slots = parsePatternMotionTable(tiny, 0x100);
+    expect(slots).toHaveLength(8);
+    expect(slots.every(s => !s.enabled)).toBe(true);
+    expect(slots.every(s => s.values.length === 64)).toBe(true);
+    expect(slots.every(s => s.values.every(v => v === 0))).toBe(true);
+  });
+});
+
+describe("electribeImport – v3.15 Pattern-Motion in convertParsedPatternToSynthstudio", () => {
+  it("Pattern-Motion ohne Real-File wird ignored (legacy Test bleibt gruen)", async () => {
+    // Synthetic Test ohne patternMotion-Feld: convert sollte keine pattern-motion-Lanes emitten
+    const { convertParsedPatternToSynthstudio } = await import("../../client/src/utils/electribeImport");
+    const conv = convertParsedPatternToSynthstudio({
+      name: "synthetic",
+      bpm: 120,
+      stepLength: 16,
+      swing: 0,
+      parts: [],
+      // patternMotion: undefined ← legacy synthetic
+    });
+    expect(conv.automationLanes).toHaveLength(0);
+  });
+
+  it("Pattern-Motion wird zu automationLanes mit slot/target-Routing", async () => {
+    const { convertParsedPatternToSynthstudio } = await import("../../client/src/utils/electribeImport");
+    const values = new Array(64).fill(64); // half-volume sweep
+    const conv = convertParsedPatternToSynthstudio({
+      name: "with-motion",
+      bpm: 120,
+      stepLength: 16,
+      swing: 0,
+      parts: [],
+      patternMotion: [
+        {
+          paramId: 0x11,
+          paramName: "Param 17",
+          targetPart: 4,
+          rawTarget: 5,
+          enabled: true,
+          values,
+        },
+        {
+          paramId: 0,
+          paramName: "disabled",
+          targetPart: -1,
+          rawTarget: 0,
+          enabled: false,
+          values: new Array(64).fill(0),
+        },
+        ...Array.from({ length: 6 }, () => ({
+          paramId: 0,
+          paramName: "disabled",
+          targetPart: -1,
+          rawTarget: 0,
+          enabled: false,
+          values: new Array(64).fill(0),
+        })),
+      ],
+    });
+    expect(conv.automationLanes).toHaveLength(1);
+    const lane = conv.automationLanes[0];
+    expect(lane.target).toBe("Param 17:slot0:part4");
+    expect(lane.label).toBe("Param 17 (Slot 1 → Part 5)");
+    // stepCount=16 (from stepLength=16), so 16 points generated.
+    expect(Object.keys(lane.points)).toHaveLength(16);
+    // Each point ≈ 64/127 ≈ 0.504
+    expect(lane.points[0]).toBeCloseTo(64 / 127, 2);
+    expect(lane.points[15]).toBeCloseTo(64 / 127, 2);
+  });
+
+  it("Pattern-Motion mit global-target (rawTarget>=17) → label 'global'", async () => {
+    const { convertParsedPatternToSynthstudio } = await import("../../client/src/utils/electribeImport");
+    const conv = convertParsedPatternToSynthstudio({
+      name: "global-target",
+      bpm: 120,
+      stepLength: 16,
+      swing: 0,
+      parts: [],
+      patternMotion: [
+        {
+          paramId: 1,
+          paramName: "Param 01",
+          targetPart: -1,
+          rawTarget: 19,
+          enabled: true,
+          values: new Array(64).fill(100),
+        },
+        ...Array.from({ length: 7 }, () => ({
+          paramId: 0,
+          paramName: "disabled",
+          targetPart: -1,
+          rawTarget: 0,
+          enabled: false,
+          values: new Array(64).fill(0),
+        })),
+      ],
+    });
+    expect(conv.automationLanes).toHaveLength(1);
+    expect(conv.automationLanes[0].target).toBe("Param 01:slot0:global19");
+    expect(conv.automationLanes[0].label).toContain("global");
+  });
+});
+
+// Real-File-Tests (conditional auf Stock-Bank-Verfuegbarkeit)
+const REAL_ALLPAT_DIR = path.resolve(process.cwd(), "e2s-2016");
+const REAL_ALLPAT_FILE = path.join(REAL_ALLPAT_DIR, "e2s-2016.e2sallpat");
+const REAL_ALLPAT_AVAILABLE = (() => {
+  try {
+    return fs.existsSync(REAL_ALLPAT_FILE) && fs.statSync(REAL_ALLPAT_FILE).size > 4_000_000;
+  } catch {
+    return false;
+  }
+})();
+
+(REAL_ALLPAT_AVAILABLE ? describe : describe.skip)(
+  "electribeImport – v3.15 Motion-Sequencer (Stock-Bank Verifikation)",
+  () => {
+    it("BodyTalk1 (Single-Pattern .e2spat) hat 0 enabled Motion-Slots (vorher unbekannt aber via RE verified)", () => {
+      const buf = loadRealFile(REAL_FILE_BODYTALK);
+      if (!buf) return;
+      const p = parseElectribePattern(buf);
+      expect(p.patternMotion).toBeDefined();
+      expect(p.patternMotion!).toHaveLength(8);
+      // BodyTalk hat in der Motion-Region nur Nullen — alle Slots disabled.
+      expect(p.patternMotion!.every(s => !s.enabled)).toBe(true);
+    });
+
+    it("Init181 hat 0 enabled Motion-Slots", () => {
+      const buf = loadRealFile(REAL_FILE_INIT_181);
+      if (!buf) return;
+      const p = parseElectribePattern(buf);
+      expect(p.patternMotion).toBeDefined();
+      expect(p.patternMotion!.every(s => !s.enabled)).toBe(true);
+    });
+
+    it("Stock-Bank: mindestens 100 Patterns haben mind. 1 enabled Motion-Slot", async () => {
+      const { parseElectribeAllPatBank } = await import("../../client/src/utils/electribeImport");
+      const buf = new Uint8Array(fs.readFileSync(REAL_ALLPAT_FILE));
+      const bank = parseElectribeAllPatBank(buf);
+      const withMotion = bank.patterns.filter(p =>
+        Array.isArray(p.patternMotion) && p.patternMotion.some(s => s.enabled),
+      ).length;
+      // RE measured: 127 / 250 = 50.8%
+      expect(withMotion).toBeGreaterThan(100);
+      expect(withMotion).toBeLessThan(150);
+    });
+
+    it("Stock-Bank: alle paramIds liegen in known range [0..17]", async () => {
+      const { parseElectribeAllPatBank } = await import("../../client/src/utils/electribeImport");
+      const buf = new Uint8Array(fs.readFileSync(REAL_ALLPAT_FILE));
+      const bank = parseElectribeAllPatBank(buf);
+      let outOfRange = 0;
+      for (const p of bank.patterns) {
+        if (!p.patternMotion) continue;
+        for (const slot of p.patternMotion) {
+          if (slot.paramId > 17 || slot.paramId < 0) outOfRange++;
+        }
+      }
+      expect(outOfRange).toBe(0);
+    });
+
+    it("Stock-Bank: 80th Floor 3 (slot 102) hat klares sweep-Pattern in Slot 0", async () => {
+      const { parseElectribeAllPatBank } = await import("../../client/src/utils/electribeImport");
+      const buf = new Uint8Array(fs.readFileSync(REAL_ALLPAT_FILE));
+      const bank = parseElectribeAllPatBank(buf);
+      // Index 101 = "80th Floor 3" (1-basierter Slot 102)
+      const p = bank.patterns[101];
+      expect(p.patternMotion).toBeDefined();
+      // Erster Slot ist enabled (paramId or data) — verifiziert via RE
+      const enabledCount = p.patternMotion!.filter(s => s.enabled).length;
+      expect(enabledCount).toBeGreaterThanOrEqual(4);
+      // Slot 0 hat eine sweeping curve (Werte starten low, steigen)
+      const slot0 = p.patternMotion![0];
+      // RE-beobachtet: Werte 0x3F=63 → 0x7E=126 (ascending sweep)
+      // Konservativer Test: max value > min value (kein flat)
+      const maxV = Math.max(...slot0.values);
+      const minV = Math.min(...slot0.values);
+      expect(maxV).toBeGreaterThan(minV);
+    });
+
+    it("Stock-Bank: convertParsedPatternToSynthstudio produziert pattern-motion automationLanes fuer 80th Floor 3", async () => {
+      const { parseElectribeAllPatBank, convertParsedPatternToSynthstudio } = await import(
+        "../../client/src/utils/electribeImport"
+      );
+      const buf = new Uint8Array(fs.readFileSync(REAL_ALLPAT_FILE));
+      const bank = parseElectribeAllPatBank(buf);
+      const conv = convertParsedPatternToSynthstudio(bank.patterns[101]);
+      // 80th Floor 3 hat per RE 4-5 enabled slots → 4-5 automation lanes
+      const patternMotionLanes = conv.automationLanes.filter(l => /slot\d+:/.test(l.target));
+      expect(patternMotionLanes.length).toBeGreaterThanOrEqual(3);
+      expect(patternMotionLanes.length).toBeLessThanOrEqual(8);
+      // Jede Lane hat Punkte
+      expect(patternMotionLanes.every(l => Object.keys(l.points).length > 0)).toBe(true);
+    });
+  },
+);

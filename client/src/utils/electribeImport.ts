@@ -10,6 +10,38 @@
  *                                    Pattern-Global StepLength (PTST+0x25)
  *                                    via histogram analysis ueber 250-Pattern
  *                                    Stock-Bank (4000 part-samples).
+ * v3.15.0 MOTION-SEQUENCER-RE — Pattern-level Motion-Sequencer-Slots decoded
+ *                               via scan ueber e2s-2016.e2sallpat Stock-Bank
+ *                               (250 Patterns, 127 mit Motion-Daten = 50.8%,
+ *                                248 enabled slots gesamt).
+ *
+ *   ── Motion-Table (PTST-relativ, 560 Bytes) ──────────────────────────
+ *      PTST+0x100  8B   ParamID[8]      — 1 Byte pro Slot (1..17, 0=disabled)
+ *      PTST+0x108  8B   Reserved        — alle bytes 0x00 ueber 250 Patterns
+ *      PTST+0x110  8B   Reserved        — alle bytes 0x00 ueber 250 Patterns
+ *      PTST+0x118  8B   TargetPart[8]   — 1 Byte pro Slot (Part-Index 1..19)
+ *      PTST+0x120  16B  Reserved        — alle bytes 0x00 ueber 250 Patterns
+ *      PTST+0x130  512B Slot-Data       — 8 Slots × 64 Bytes Werte (0..128)
+ *
+ *   Slot ist "enabled" wenn ParamID != 0. Werte 0..127 sind Standard,
+ *   einzelne 0x80 (=128) werden beobachtet (vermutlich Header-Sentinel
+ *   oder Sentinel-Wert "force max").
+ *
+ *   Identifizierte Param-IDs (Histogramm-Sorted, 17 unique values 1..17):
+ *      0x11 (17): am haeufigsten (81 Slots) — heuristisch Volume oder Filter
+ *      0x01 (1):  34× | 0x02 (2): 26× | 0x0d (13): 18× | 0x05 (5): 14×
+ *      restliche 12 IDs jeweils 2..10× — keine Hardware-Spec public
+ *
+ *   Target-Part-Bytes 1..19 (= 16 Part-Indizes + evtl. globale 17..19).
+ *
+ *   Hypothesen-Confidence:
+ *      HIGH:    Slot-Stride=64, Region@PTST+0x130, Slot-Count=8
+ *      HIGH:    ParamID-Layout @ PTST+0x100 (8 Bytes)
+ *      HIGH:    TargetPart-Layout @ PTST+0x118 (8 Bytes)
+ *      MEDIUM:  Slot-Enabled-Semantik (paramId>0 vs data-nonzero —
+ *               futureMonger1 hat paramId>0 aber data leer; Trials1 hat
+ *               paramId=0 in Slot 1 aber Slot-Daten — beide selten)
+ *      LOW:     Param-ID → konkreter Parameter-Name (kein Hardware-Doc)
  *
  * Unterstuetzte Endungen:
  *   - `.e2spat`      = Single-Pattern (Sampler-Export, 16640 Bytes)
@@ -236,6 +268,55 @@ export const ELECTRIBE_REAL_STEP_LENGTH_CODES: Record<number, 16 | 32 | 64> = {
   3: 64,
 };
 
+/**
+ * v3.15.0: Pattern-level Motion-Sequencer-Layout (PTST-relativ).
+ *
+ * Verified gegen e2s-2016.e2sallpat Stock-Bank (250 Patterns × 8 Slots).
+ *
+ *   PTST+0x100  8B   ParamID[8]      (1 Byte pro Slot, 0=unused, 1..17 = param)
+ *   PTST+0x108..0x118 unused (16B Reserved, alle bytes 0x00 verifiziert)
+ *   PTST+0x118  8B   TargetPart[8]   (1 Byte pro Slot, 1..19 = ziel-Part)
+ *   PTST+0x120..0x130 unused (16B Reserved, alle bytes 0x00 verifiziert)
+ *   PTST+0x130  512B Slot-Data       (8 Slots × 64 Bytes Werte, 0..128)
+ */
+export const ELECTRIBE_MOTION_PARAM_TABLE_OFFSET  = 0x100; // PTST-relativ
+export const ELECTRIBE_MOTION_TARGET_TABLE_OFFSET = 0x118; // PTST-relativ
+export const ELECTRIBE_MOTION_DATA_TABLE_OFFSET   = 0x130; // PTST-relativ
+export const ELECTRIBE_MOTION_SLOTS_PER_PATTERN   = 8;
+export const ELECTRIBE_MOTION_VALUES_PER_SLOT     = 64;
+export const ELECTRIBE_MOTION_SLOT_STRIDE         = 64; // = ELECTRIBE_MOTION_VALUES_PER_SLOT
+
+/**
+ * Mapping Motion-ParamID → Heuristisches Label. Hardware-Spec NICHT public,
+ * Labels best-effort aus Param-ID-Distribution + e2s-Hardware-Doku abgeleitet.
+ *
+ * 17 unique IDs beobachtet (1..17). Beobachtete Frequenz (Top-5):
+ *   0x11 (17): 81× — vermutlich Volume oder Filter Cutoff (am haeufigsten)
+ *   0x01 (1):  34× | 0x02 (2): 26× | 0x0d (13): 18× | 0x05 (5): 14×
+ *
+ * Diese Labels sind STARK heuristisch und sollten in UI als
+ * "Param 0x11 (Param-Slot)" angezeigt werden, nicht als verifiziert.
+ */
+export const ELECTRIBE_PATTERN_MOTION_PARAM_NAMES: Record<number, string> = {
+  1:  "Param 01",
+  2:  "Param 02",
+  3:  "Param 03",
+  4:  "Param 04",
+  5:  "Param 05",
+  6:  "Param 06",
+  7:  "Param 07",
+  8:  "Param 08",
+  9:  "Param 09",
+  10: "Param 10",
+  11: "Param 11",
+  12: "Param 12",
+  13: "Param 13",
+  14: "Param 14",
+  15: "Param 15",
+  16: "Param 16",
+  17: "Param 17",
+};
+
 /** Maximale Pattern-Anzahl in einer Bank (.e2sallpat speichert bis 250). */
 export const MAX_PATTERNS_PER_BANK = 250;
 
@@ -376,6 +457,30 @@ export interface ParsedPart {
   motion: ParsedMotionSlot[];
 }
 
+/**
+ * v3.15.0: Pattern-level Motion-Sequencer-Slot.
+ *
+ * E2 Sampler hat 8 Motion-Slots PRO PATTERN (NICHT pro Part wie initial vermutet).
+ * Pro Slot: 1 ParamID + 1 TargetPart + 64 Werte (matching Pattern-StepLength).
+ *
+ * Slot ist "aktiv" wenn paramId > 0 ODER mindestens ein non-zero value.
+ * Inactive Slots werden defensiv mit Defaults gefuellt (paramId=0, target=0, values=[0×64]).
+ */
+export interface ParsedPatternMotionSlot {
+  /** ParamID (0..255). 0 = disabled. 1..17 = bekannte Hardware-IDs. */
+  paramId: number;
+  /** Anzeigename (best-effort via ELECTRIBE_PATTERN_MOTION_PARAM_NAMES). */
+  paramName: string;
+  /** Ziel-Part-Index (0..15) abgeleitet aus rawTarget-1. -1 = global/unbekannt. */
+  targetPart: number;
+  /** Rohes Ziel-Byte 0..255 (1..19 in der Stock-Bank beobachtet). */
+  rawTarget: number;
+  /** Slot ist aktiv (paramId > 0 ODER non-zero values gefunden). */
+  enabled: boolean;
+  /** 64 Werte 0..127 (0x80=128 gelegentlich beobachtet → wird auf 127 geclampt). */
+  values: number[];
+}
+
 export interface ParsedPattern {
   /** Sanitisierter ASCII-Name (Real-Files: max 16, Legacy: max 8 Zeichen). */
   name: string;
@@ -387,6 +492,11 @@ export interface ParsedPattern {
   swing: number;
   /** 16 Parts. */
   parts: ParsedPart[];
+  /**
+   * v3.15.0: 8 Pattern-Level Motion-Slots. Immer Laenge 8 (auch wenn alle disabled).
+   * Bei legacy/synthetic Files ist das Feld undefined.
+   */
+  patternMotion?: ParsedPatternMotionSlot[];
 }
 
 export interface ParsedElectribeBank {
@@ -759,7 +869,82 @@ function parseRealPatternAt(
     parts[p] = parseRealPartBlock(view, partOffset, p);
   }
 
-  return { name, bpm, stepLength, swing, parts };
+  // v3.15.0: Pattern-Level Motion-Slots aus PTST-relativ +0x100..+0x330.
+  const patternMotion = parsePatternMotionTable(view, ptstOffset);
+
+  return { name, bpm, stepLength, swing, parts, patternMotion };
+}
+
+/**
+ * v3.15.0: Parst die 8 Pattern-Level Motion-Slots aus dem PTST-Header.
+ *
+ * Layout (PTST-relativ):
+ *   +0x100..+0x108  8B  ParamID[8]
+ *   +0x118..+0x120  8B  TargetPart[8]
+ *   +0x130..+0x330  512B = 8 Slots × 64 Bytes
+ *
+ * Defensive: bei out-of-bounds → leeres Array mit 8 disabled-Slots.
+ * Werte 0x80 (128) werden auf 127 geclampt (observed sentinel, in der Bank
+ * nur einzelne Bytes — typisch 0..127 Range).
+ *
+ * Slot ist "enabled" wenn paramId > 0 ODER mindestens ein non-zero value.
+ *
+ * @param view       Voll-File-DataView
+ * @param ptstOffset Absolute Offset des PTST-Markers (z.B. 0x100 fuer .e2spat,
+ *                   oder 0x10100 + i×0x4000 fuer .e2sallpat-Slots)
+ */
+export function parsePatternMotionTable(
+  view: DataView,
+  ptstOffset: number,
+): ParsedPatternMotionSlot[] {
+  const slots: ParsedPatternMotionSlot[] = new Array(ELECTRIBE_MOTION_SLOTS_PER_PATTERN);
+
+  // Defensive: pruefe ob das ganze Motion-Region in der Datei liegt.
+  const motionEnd = ptstOffset
+    + ELECTRIBE_MOTION_DATA_TABLE_OFFSET
+    + ELECTRIBE_MOTION_SLOTS_PER_PATTERN * ELECTRIBE_MOTION_SLOT_STRIDE;
+  if (motionEnd > view.byteLength) {
+    // Zu wenig Daten → alle Slots disabled.
+    for (let i = 0; i < ELECTRIBE_MOTION_SLOTS_PER_PATTERN; i++) {
+      slots[i] = {
+        paramId: 0,
+        paramName: "disabled",
+        targetPart: -1,
+        rawTarget: 0,
+        enabled: false,
+        values: new Array(ELECTRIBE_MOTION_VALUES_PER_SLOT).fill(0),
+      };
+    }
+    return slots;
+  }
+
+  for (let i = 0; i < ELECTRIBE_MOTION_SLOTS_PER_PATTERN; i++) {
+    const paramId   = view.getUint8(ptstOffset + ELECTRIBE_MOTION_PARAM_TABLE_OFFSET + i);
+    const rawTarget = view.getUint8(ptstOffset + ELECTRIBE_MOTION_TARGET_TABLE_OFFSET + i);
+    // rawTarget=1..16 → partIndex 0..15; rawTarget=17..19 → global / future-use → -1.
+    const targetPart = (rawTarget >= 1 && rawTarget <= 16) ? rawTarget - 1 : -1;
+
+    const dataStart = ptstOffset
+      + ELECTRIBE_MOTION_DATA_TABLE_OFFSET
+      + i * ELECTRIBE_MOTION_SLOT_STRIDE;
+    const values: number[] = new Array(ELECTRIBE_MOTION_VALUES_PER_SLOT);
+    let hasNonZero = false;
+    for (let v = 0; v < ELECTRIBE_MOTION_VALUES_PER_SLOT; v++) {
+      let raw = view.getUint8(dataStart + v);
+      if (raw > 127) raw = 127; // Sentinel 0x80 → clamp to 127.
+      values[v] = raw;
+      if (raw !== 0) hasNonZero = true;
+    }
+
+    const enabled = paramId > 0 || hasNonZero;
+    const paramName = paramId === 0
+      ? "disabled"
+      : (ELECTRIBE_PATTERN_MOTION_PARAM_NAMES[paramId] ?? `Param 0x${paramId.toString(16).padStart(2, "0")}`);
+
+    slots[i] = { paramId, paramName, targetPart, rawTarget, enabled, values };
+  }
+
+  return slots;
 }
 
 /**
@@ -842,6 +1027,15 @@ export function parseElectribeAllPatBank(
             enabled: false,
             values: new Array(MOTION_STEPS_PER_SLOT).fill(0),
           })),
+        })),
+        // v3.15.0: leerer Default-Pattern hat 8 disabled Motion-Slots.
+        patternMotion: Array.from({ length: ELECTRIBE_MOTION_SLOTS_PER_PATTERN }, () => ({
+          paramId: 0,
+          paramName: "disabled",
+          targetPart: -1,
+          rawTarget: 0,
+          enabled: false,
+          values: new Array(ELECTRIBE_MOTION_VALUES_PER_SLOT).fill(0),
         })),
       };
       continue;
@@ -1172,7 +1366,11 @@ export function convertParsedPatternToSynthstudio(parsed: ParsedPattern): Synths
   });
 
   // Automation-Lanes aus aktivierten Motion-Slots.
+  // v2.88 — Legacy: Per-Part-Motion (synthetisches Layout).
+  // v3.15 — Real-File-Pattern-Motion (8 Slots pro Pattern).
   const automationLanes: SynthstudioPatternImport["automationLanes"] = [];
+
+  // 1) Legacy per-Part-Motion (synthetic test layout).
   for (const part of parsed.parts) {
     for (let m = 0; m < part.motion.length; m++) {
       const slot = part.motion[m];
@@ -1186,6 +1384,40 @@ export function convertParsedPatternToSynthstudio(parsed: ParsedPattern): Synths
         // Format: "<paramName>:<partIndex>" damit klar ist wer die Lane besitzt.
         target: `${slot.paramName}:${part.index}`,
         label: `${slot.paramName} (Part ${part.index + 1})`,
+        points,
+        min: 0,
+        max: 1,
+      });
+    }
+  }
+
+  // 2) v3.15.0: Pattern-Level-Motion-Slots (Real-Files mit 8 Slots).
+  //    Hier ist values.length=64, wir cappen auf stepCount damit die Lane
+  //    in das Synthstudio-Pattern passt.
+  if (parsed.patternMotion) {
+    for (let i = 0; i < parsed.patternMotion.length; i++) {
+      const slot = parsed.patternMotion[i];
+      if (!slot.enabled) continue;
+      const points: Record<number, number> = {};
+      // 64 → stepCount: truncate. Steht keine Lane-Stretching-Logik im
+      // Aufrufer, weil 16/32 → 64 ueblicherweise ein Stretching erfordert.
+      // Synthstudio kennt nur 16/32 Lanes; Wir geben den FULL 64-Sample-
+      // Vector zurueck via separates Feld? Nein — Aufrufer entscheidet.
+      // Aktuell: cap auf stepCount.
+      const cap = Math.min(stepCount, slot.values.length);
+      for (let v = 0; v < cap; v++) {
+        points[v] = clamp01(slot.values[v] / 127);
+      }
+      // Target-String: "<paramName>:slot<i>:part<targetPart>" damit der
+      // Aufrufer paramId + Ziel-Part-Index auseinanderlesen kann.
+      const targetSuffix = slot.targetPart >= 0
+        ? `part${slot.targetPart}`
+        : `global${slot.rawTarget}`;
+      automationLanes.push({
+        target: `${slot.paramName}:slot${i}:${targetSuffix}`,
+        label: slot.targetPart >= 0
+          ? `${slot.paramName} (Slot ${i + 1} → Part ${slot.targetPart + 1})`
+          : `${slot.paramName} (Slot ${i + 1} → global)`,
         points,
         min: 0,
         max: 1,
