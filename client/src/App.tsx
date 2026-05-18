@@ -192,14 +192,23 @@ import {
   markAutoSaveCompleted,
   isAutoSavePaused,
 } from "@/store/useAutoSaveStore";
-import { writeAutoSaveVersion } from "@/utils/autoSaveEngine";
+import {
+  writeAutoSaveVersion,
+  listAutoSaveVersions,
+} from "@/utils/autoSaveEngine";
 import {
   computeAutoSaveIntervalMs,
   decideAutoSaveTick,
   projectNameToId,
+  checkLegacySlugMigration,
+  isMigrationChecked,
+  markMigrationChecked,
+  cacheLastProjectId,
 } from "@/utils/autoSaveController";
 import { AutoSaveStatusIndicator } from "@/components/AutoSave/AutoSaveStatusIndicator";
 import { VersionHistoryModal } from "@/components/AutoSave/VersionHistoryModal";
+// v3.59.0: Legacy-Slug-Migration UI (closes v3.58 caveat).
+import { LegacyMigrationModal } from "@/components/AutoSave/LegacyMigrationModal";
 import { SessionRecorder } from "@/components/CollabSession/SessionRecorder";
 import { RelayPanel } from "@/components/CollabSession/RelayPanel";
 import { PerformanceRecorderBadge } from "@/components/PerformanceRecorder/PerformanceRecorderBadge";
@@ -856,6 +865,46 @@ export default function App() {
       }
     })();
 
+    // ── v3.59.0: Legacy-Slug-Migration Post-Load-Check ──────────────────────
+    // Wenn unter projectNameToId(name) (alter Schlüssel) Versionen liegen
+    // aber unter project.projectId (UUID) noch keine, einmalig dem User
+    // den Migration-Prompt zeigen. Run-Once per projectId in localStorage.
+    void (async () => {
+      try {
+        const projectName = data.projectName ?? "";
+        const newPid = data.projectId;
+        if (!newPid) return;
+        // v3.59: projectId für Reload-Persistenz cachen.
+        cacheLastProjectId(newPid);
+        if (isMigrationChecked(newPid)) return; // run-once
+        const legacySlug = projectNameToId(projectName);
+        if (legacySlug === newPid) return; // bereits identisch (unwahrscheinlich, defensive)
+        const [legacyVersions, uuidVersions] = await Promise.all([
+          listAutoSaveVersions(legacySlug),
+          listAutoSaveVersions(newPid),
+        ]);
+        const check = checkLegacySlugMigration(
+          legacyVersions.length,
+          uuidVersions.length,
+          projectName,
+        );
+        if (check.reason === "migrate" && check.shouldPrompt) {
+          setLegacyMigration({
+            isOpen: true,
+            legacySlug: check.legacySlug,
+            newProjectId: newPid,
+            legacyCount: check.legacyCount,
+          });
+        } else {
+          // Kein Prompt nötig → trotzdem als gecheckt markieren, damit wir
+          // bei jedem Reload nicht erneut die Listen ziehen.
+          markMigrationChecked(newPid);
+        }
+      } catch (err) {
+        console.warn("[AutoSave-Migration] check failed:", err);
+      }
+    })();
+
     project.setDirty(false);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project, dm, song]);
@@ -908,6 +957,14 @@ export default function App() {
     return () => clearInterval(id);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [apiSettings2.autoSaveEnabled, apiSettings2.autoSaveIntervalMin]);
+
+  // v3.59.0: projectId localStorage Cache — verhindert ephemere UUID nach
+  // Browser-Reload (Hook-Init würde sonst eine frische UUID generieren,
+  // bevor loadCachedProject das alte Projekt restored). Schreibt bei jeder
+  // ID-Änderung in `synthstudio:last-projectid`.
+  useEffect(() => {
+    if (project.projectId) cacheLastProjectId(project.projectId);
+  }, [project.projectId]);
 
   // ── v3.57.0: AutoSave Versions-Engine (Trigger + Toast on Fail) ─────────────
   // Erzeugt rolling Versionen via autoSaveEngine.writeAutoSaveVersion +
@@ -1107,6 +1164,14 @@ export default function App() {
   const [settingsInitialSection, setSettingsInitialSection] = useState<"design" | "ki" | "keyboard" | "midi-devices" | "midi-cc" | "midi-notes" | "about" | "performance">("design");
   // v3.57.0: Versions-History-Modal-State.
   const [showVersionHistory, setShowVersionHistory] = useState(false);
+
+  // v3.59.0: Legacy-Slug Migration Modal-State.
+  const [legacyMigration, setLegacyMigration] = useState<{
+    isOpen: boolean;
+    legacySlug: string;
+    newProjectId: string;
+    legacyCount: number;
+  }>({ isOpen: false, legacySlug: "", newProjectId: "", legacyCount: 0 });
 
   // v3.22.0: First-Run Welcome-Wizard. shouldAutoShowWelcome liest localStorage
   // synchron — daher lazy init, kein useEffect-Race.
@@ -3821,6 +3886,28 @@ export default function App() {
           } catch (err) {
             console.error("[VersionRestore]", err);
             toast("Wiederherstellung fehlgeschlagen", { kind: "error", duration: 5000 });
+          }
+        }}
+      />
+
+      {/* v3.59.0: Legacy-Slug Migration Modal (closes v3.58 caveat). */}
+      <LegacyMigrationModal
+        isOpen={legacyMigration.isOpen}
+        legacySlug={legacyMigration.legacySlug}
+        newProjectId={legacyMigration.newProjectId}
+        legacyCount={legacyMigration.legacyCount}
+        onClose={() =>
+          setLegacyMigration((s) => ({ ...s, isOpen: false }))
+        }
+        onComplete={(action) => {
+          // Egal welche Aktion gewählt wurde — die projectId ist gecheckt.
+          if (legacyMigration.newProjectId) {
+            markMigrationChecked(legacyMigration.newProjectId);
+          }
+          if (action === "later") {
+            // "Später" markiert trotzdem als gecheckt, damit der Prompt
+            // nicht bei jedem Reload erneut erscheint. User kann manuell
+            // über Settings → "Alle Versionen löschen" aufräumen.
           }
         }}
       />

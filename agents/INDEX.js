@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.58.0",
+    version: "3.59.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -89,6 +89,31 @@ const INDEX = {
   // ─── KNOWN FILE INDEX ──────────────────────────────────────
   // Key files agents have analyzed. Add new entries after working on a file.
   files: {
+    "client/src/components/AutoSave/LegacyMigrationModal.tsx (v3.59.0)": {
+      role:     "v3.59.0 NEU (~230 LOC): Modal-Komponente die beim Project-Load erscheint wenn Legacy-Slug-AutoSave-Versionen existieren. Props: {isOpen, onClose, legacySlug, newProjectId, legacyCount, onComplete?: (action:'migrate'|'discard'|'later')=>void}. Phase-State idle|running|done|error für UI-Lock während Migration. 3 Aktionen: 'Migrieren' (ruft migrateLegacyVersions mit onProgress-Callback, zeigt Progress-Bar 'Migrating N/M…' + accent-primary-Border, auto-close 1.2s nach Success), 'Verwerfen' (window.confirm + deleteAllVersions, auto-close 0.7s), 'Später' (dismissable, der App.tsx-Caller markiert die projectId als gecheckt damit Prompt nicht jeden Reload erscheint). ESC blockiert während running, Backdrop-Click blockiert während running. data-testids: autosave-legacy-migration-modal, legacy-migration-{migrate,discard,later,close}-btn, legacy-migration-{message,progress,progress-bar,error}. Ausschließlich semantische Tailwind-Tokens (bg-bg-panel, text-text-primary, accent-primary/15, accent-danger/30, accent-success/10).",
+      lastSeen: "2026-05-18T23:40:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/utils/autoSaveEngine.ts (v3.59.0)": {
+      role:     "v3.59.0 ERWEITERT (~+115 LOC): bestehende v3.56 Engine + NEU migrateLegacyVersions(legacySlugRaw, newUuidRaw, opts?:{onProgress?, keepLegacy?}) → Promise<MigrateLegacyResult{migrated,errors[],total}>. Iteriert Versionen ASC nach Timestamp (Rolling-Cleanup behält dann jüngere History bei limit-Überschreitung), pro Version: restoreAutoSaveVersion(legacy) → writeAutoSaveVersion(uuid, json, {label, now:original-ts}) → deleteAutoSaveVersion(legacy) (außer keepLegacy=true). Defensive: legacySlug===newUuid → No-op, invalid IDs → error result, Einzelfehler stoppen Migration nicht. NEU deleteAllVersions(projectId) → {deleted, errors} für Discard-Pfad, idempotent. Bestehende v3.56-API (write/list/restore/delete) + sanitizeProjectId/isValidVersionTimestamp/pickVersionsForRolling + IndexedDB-Fallback + Electron-IPC-Pfad + Test-Helpers unverändert.",
+      lastSeen: "2026-05-18T23:40:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/utils/autoSaveController.ts (v3.59.0)": {
+      role:     "v3.59.0 ERWEITERT (~+95 LOC): bestehende v3.57/v3.58 Pure-fn-Helper (computeAutoSaveIntervalMs, decideAutoSaveTick, buildAutoSaveStatusDisplay, projectNameToId, formatBytes, formatVersionTimestamp, checkLegacySlugMigration) + NEU 2 localStorage-Keys + 6 Helpers. MIGRATION_CHECKED_STORAGE_KEY='synthstudio:autosave-migration-checked' (JSON-Array von projectIds). LAST_PROJECT_ID_STORAGE_KEY='synthstudio:last-projectid' (string). Public-API: loadMigrationCheckedSet() → Set<string> (defensive bei korruptem JSON + non-string-Filter), saveMigrationCheckedSet(Set), isMigrationChecked(projectId) → bool, markMigrationChecked(projectId) idempotent (ignoriert empty/null), __resetMigrationCheckedForTests. cacheLastProjectId(id|null|undefined) (ignore empty/null), readLastProjectId() → string|null. Alle Helper nutzen safeLocalStorageGet/Set die typeof undefined + try/catch um QuotaExceeded/Private-Mode handlen.",
+      lastSeen: "2026-05-18T23:40:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "tests/features/autosave-migration.test.ts (v3.59.0)": {
+      role:     "v3.59.0 NEU (20 Tests in 5 describes, env:node mit localStorage-Mock + In-Memory-Electron-Backend via __setAutoSaveElectronOverrideForTests): (1) migrateLegacyVersions × 5 — Happy 3-Versionen-Migration mit Progress-Callback-Trace + Legacy-Cleanup + Timestamp-Preserve, empty-Legacy no-op, invalid IDs error-result, legacy===uuid no-op (Source=Target Defense), keepLegacy=true behält beides. (2) deleteAllVersions × 3 — happy 2-Version-Delete, invalid id, idempotent doppel-Call. (3) Run-Once-Tracking × 6 — isMigrationChecked false bei frisch, markMigrationChecked persistiert in localStorage MIGRATION_CHECKED_STORAGE_KEY mit JSON-Array, idempotent doppel-Call=1 Eintrag, korruptes JSON → leeres Set, non-string-Filter, ignore empty projectId. (4) projectId-Cache × 4 — cacheLastProjectId persistiert in LAST_PROJECT_ID_STORAGE_KEY, readLastProjectId null wenn nichts, ignore empty/null/undefined, überschreibt vorherige ID. (5) End-to-End checkLegacySlugMigration × 2 — vor/nach migrate-Workflow (legacy=2 → migrate → legacy=0+uuid=2 → no-legacy), uuid-has-history Konfliktfall (legacy=3 uuid=1 → kein Prompt).",
+      lastSeen: "2026-05-18T23:40:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/App.tsx (v3.59.0 legacy-migration-wiring)": {
+      role:     "v3.59.0 ERWEITERT (+70 LOC): bestehende v3.58 AutoSave-Wiring + projectId-adopt + Versions-Modal bleibt + NEU Legacy-Migration-UI. Import-Block: +listAutoSaveVersions, +checkLegacySlugMigration, +isMigrationChecked, +markMigrationChecked, +cacheLastProjectId, +LegacyMigrationModal. NEU legacyMigration-State {isOpen,legacySlug,newProjectId,legacyCount}. restoreProject ergänzt um post-load IIFE: cacheLastProjectId(newPid) → falls !isMigrationChecked(newPid) → parallel listAutoSaveVersions(legacySlug) + listAutoSaveVersions(newPid) → checkLegacySlugMigration → bei reason='migrate' setLegacyMigration; sonst markMigrationChecked (run-once). Neuer useEffect der project.projectId bei jeder Änderung in localStorage cacht. LegacyMigrationModal-Mount neben VersionHistoryModal mit onComplete-Callback der unabhängig vom action (migrate/discard/later) die projectId als gecheckt markiert.",
+      lastSeen: "2026-05-18T23:40:00.000Z",
+      ownedBy:  "frontend"
+    },
     "client/src/utils/projectId.ts (v3.58.0)": {
       role:     "v3.58.0 NEU (~95 LOC): Pure-fn-Modul für stable Project-UUID v4. generateProjectId() liefert RFC-4122-v4-UUID — 3 Pfade: native crypto.randomUUID (Node 19+, alle modernen Browser, bevorzugt), crypto.getRandomValues + manuelle v4-Konstruktion mit RFC-Bits (Fallback), Math.random (Test-Env-Fallback, NICHT kryptographisch). isValidProjectId(raw) strikte Whitelist /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i (nur v4, kein v1/v3/v5). ensureProjectId(existing) Pass-through bei valid, regeneriert bei invalid — Migrations-Brücke für pre-v1.24-Files. UUID v4 (36 chars, alphanumeric + -) passt in die sanitizeProjectId-Whitelist (alphanum + - + _, ≤64) der AutoSave-Engine. Wird konsumiert von projectSerializer (parseProject + serializeProject Migration) und useProjectStore (makeDefaultState + adoptProjectId).",
       lastSeen: "2026-05-18T23:30:00.000Z",
@@ -1872,6 +1897,39 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "frontend",
+      timestamp: "2026-05-18T23:40:00.000Z",
+      done: [
+        "v3.59.0: AutoSave Legacy-Migration UI — closes v3.58 caveat. pnpm check clean, 207 Test-Files / 4791 Tests grün (16 skipped, +20 NEU in autosave-migration.test.ts).",
+        "client/src/components/AutoSave/LegacyMigrationModal.tsx NEU (~230 LOC): Modal-Komponente die beim Project-Load erscheint wenn Legacy-Slug-Versionen existieren. Props {isOpen,onClose,legacySlug,newProjectId,legacyCount,onComplete?}. 3 Aktionen: Migrieren (ruft migrateLegacyVersions mit onProgress-Callback, zeigt Progress-Bar 'Migrating 3/5...'), Verwerfen (window.confirm + deleteAllVersions), Später (markiert als gecheckt damit Prompt nicht jedes Reload erneut erscheint). Phase-State idle|running|done|error. ESC blockiert während running. data-testids: autosave-legacy-migration-modal, legacy-migration-{migrate,discard,later,close}-btn, legacy-migration-{message,progress,progress-bar,error}. Ausschließlich semantische Tokens.",
+        "client/src/utils/autoSaveEngine.ts ERWEITERT (~+115 LOC): NEU migrateLegacyVersions(legacySlug, newUuid, opts?) → {migrated, errors, total}. Iteriert Versionen ASC nach Timestamp (Rolling-Cleanup behält dann die jüngste History wenn limit gesprengt wird), pro Version: restoreAutoSaveVersion → writeAutoSaveVersion(uuid, json, {label, now:original-timestamp}) → deleteAutoSaveVersion (außer keepLegacy=true). Einzelne Fehler stoppen Migration nicht — alle landen im errors-Array. Defensive: legacySlug===newUuid → No-op. NEU deleteAllVersions(projectId) → {deleted, errors} für Discard-Pfad. Idempotent.",
+        "client/src/utils/autoSaveController.ts ERWEITERT (~+95 LOC): NEU Run-Once-Tracking via localStorage Key 'synthstudio:autosave-migration-checked' (JSON-Array). Public-API: loadMigrationCheckedSet/saveMigrationCheckedSet/isMigrationChecked/markMigrationChecked/__resetMigrationCheckedForTests. NEU projectId localStorage Cache via Key 'synthstudio:last-projectid'. Public-API: cacheLastProjectId/readLastProjectId. Beide Helper defensiv (safe localStorage access, ignore corrupted JSON, filter non-string entries).",
+        "client/src/App.tsx ERWEITERT (+~70 LOC): restoreProject ruft post-load async-IIFE: cacheLastProjectId(newPid) → falls !isMigrationChecked: listAutoSaveVersions(legacySlug) + listAutoSaveVersions(newPid) parallel → checkLegacySlugMigration → bei reason='migrate' setLegacyMigration({isOpen:true, ...}); sonst markMigrationChecked. Neuer Effect-Hook cacht project.projectId in localStorage bei jeder Änderung. LegacyMigrationModal-Mount neben VersionHistoryModal mit onComplete-Callback der nach Migrate/Discard/Later die ID als gecheckt markiert (Prompt erscheint nie wieder für diese projectId).",
+        "tests/features/autosave-migration.test.ts NEU (20 Tests in 5 describes, env:node mit localStorage-Mock + In-Memory-Electron-Backend): (1) migrateLegacyVersions × 5 — Happy 3-Versionen-Migration mit Progress-Calls + Legacy-Cleanup + Timestamp-Preserve, empty-Legacy no-op, invalid IDs error result, legacy===uuid no-op, keepLegacy=true behält Legacy. (2) deleteAllVersions × 3 — happy, invalid id, idempotent doppel-call. (3) Run-Once-Tracking × 6 — isMigrationChecked false bei frisch, markMigrationChecked persistiert in localStorage, idempotent (Doppel-Call=1 Eintrag), korruptes JSON → leeres Set, non-string-Filter, ignore empty projectId. (4) projectId-Cache × 4 — cacheLastProjectId persistiert, readLastProjectId null wenn nichts, ignore empty/null/undefined, Überschreiben. (5) End-to-End × 2 — checkLegacySlugMigration vor/nach migrate-Workflow, uuid-has-history Konfliktfall.",
+        "package.json + agents/INDEX.js version 3.58.0 → 3.59.0."
+      ],
+      next: [
+        "v3.60: useProjectStore Hook-Init liest readLastProjectId() bevor generateProjectId() — Pfad existiert (cacheLastProjectId schreibt jetzt), aber der Lese-Pfad ist noch nicht in useProjectStore.makeDefaultState() verdrahtet. Würde das v3.58-Caveat 'ephemere UUID nach Browser-Reload' final schließen.",
+        "v3.60: Pro-projectId-lastSaveAt-Tracking im useAutoSaveStore (v3.58-next übernommen, weiter offen). Aktuell zeigt der Topbar-Indikator den letzten Save IRGENDEINES Projekts; bei Projekt-Wechsel sollte er sich auf die neue projectId beziehen.",
+        "v3.60: serializeProject Pure halten — ensureProjectId-Side-Effect aus dem v3.58-Bump in einen opt-in Helper extrahieren (offen aus v3.58)."
+      ],
+      changed: [
+        "client/src/components/AutoSave/LegacyMigrationModal.tsx (NEU, ~230 LOC)",
+        "client/src/utils/autoSaveEngine.ts (+115 LOC: migrateLegacyVersions + deleteAllVersions + MigrateLegacyResult/Options Typen)",
+        "client/src/utils/autoSaveController.ts (+95 LOC: Run-Once-Tracking-Helpers + projectId-Cache-Helpers + STORAGE_KEY-Konstanten)",
+        "client/src/App.tsx (+70 LOC: legacyMigration-State + restoreProject Post-Load-Check + projectId-Cache-useEffect + LegacyMigrationModal-Mount)",
+        "tests/features/autosave-migration.test.ts (NEU, 20 Tests in 5 describes)",
+        "package.json (3.58.0 → 3.59.0)",
+        "agents/INDEX.js (version 3.58.0 → 3.59.0 + workLog v3.59.0)"
+      ],
+      caveats: [
+        "useProjectStore Hook-Init liest noch nicht den localStorage-Cache von readLastProjectId() — die UUID wird zwar geschrieben (cacheLastProjectId läuft on every project.projectId change), aber beim Browser-Reload generiert makeDefaultState() trotzdem eine neue UUID, bevor loadCachedProject das alte Projekt restored. loadCachedProject ruft restoreProject → adoptProjectId mit der ID aus dem .synth-File, also wird die UUID innerhalb von ms korrigiert — kein User-sichtbarer Bug, aber der Schreib-Pfad ist da, der Lese-Pfad fehlt noch.",
+        "Migration-Modal markiert die projectId beim 'Später'-Klick TROTZDEM als gecheckt — das verhindert annoying-Re-Prompts bei jedem Reload, bedeutet aber dass User die Migration nicht mehr nachträglich aus dem UI auslösen können. Kompromiss: Settings-Panel hat seit v3.57 den 'Alle Versionen löschen'-Button, der zumindest die Legacy-Slugs aufräumen kann.",
+        "migrateLegacyVersions schreibt mit dem Original-Timestamp via opts.now — das funktioniert weil writeAutoSaveVersion versionId = String(now) verwendet. Bei Kollisionen (sehr unwahrscheinlich, theoretisch wenn legacy + uuid-Slot beide identische Timestamps haben) würde die ältere Version überschrieben. Praktisch kein Risiko, weil bei reason='migrate' der uuidVersionsCount=0 ist.",
+        "Die Modal-Komponente nutzt window.confirm für Discard — kein modal-internes Confirm-Dialog. Bei E2E-Tests mit Playwright muss page.on('dialog') gehandhabt werden. Migrate hat KEIN window.confirm (nur Phase-Animation), da Migrate non-destructive ist (keepLegacy=false löscht nur Quellen nachdem Ziel beschrieben wurde)."
+      ]
+    },
     {
       agent:     "backend",
       timestamp: "2026-05-18T23:30:00.000Z",

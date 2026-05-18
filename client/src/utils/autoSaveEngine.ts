@@ -1,5 +1,5 @@
 /**
- * Synthstudio – autoSaveEngine.ts (v3.56.0)
+ * Synthstudio – autoSaveEngine.ts (v3.59.0)
  *
  * Isomorpher AutoSave-Backend für Projekt-Versionen.
  *
@@ -16,6 +16,7 @@
  *   listAutoSaveVersions(projectId)               → AutoSaveVersionMeta[]
  *   restoreAutoSaveVersion(projectId, versionId)  → { success, json?, error? }
  *   deleteAutoSaveVersion(projectId, versionId)   → { success, error? }
+ *   migrateLegacyVersions(legacySlug, newUuid, onProgress?) — v3.59.0
  *
  * Pure-fn-Helpers (test-friendly):
  *   sanitizeProjectId(raw):string|null  — alphanumeric + - + _ , 1..64 chars
@@ -404,6 +405,127 @@ async function rollOldVersions(projectId: string): Promise<void> {
   } catch {
     /* best-effort, never crash AutoSave */
   }
+}
+
+// ─── v3.59.0: Legacy-Slug Migration ──────────────────────────────────────────
+
+export interface MigrateLegacyResult {
+  /** Anzahl erfolgreich migrierter Versionen. */
+  migrated: number;
+  /** Fehler pro Versions-ID (versionId → Fehlermeldung). */
+  errors: Array<{ versionId: string; error: string }>;
+  /** Anzahl gefundener Legacy-Versionen (vor Migration). */
+  total: number;
+}
+
+export interface MigrateLegacyOptions {
+  /** Progress-Callback nach jedem migrierten Eintrag (1-basiert). */
+  onProgress?: (done: number, total: number) => void;
+  /** Wenn true: nach Migration werden Legacy-Versionen NICHT gelöscht. */
+  keepLegacy?: boolean;
+}
+
+/**
+ * Kopiert alle AutoSave-Versionen von `legacySlug` zu `newUuid`. Die
+ * Original-Timestamps werden via `opts.now` an writeAutoSaveVersion
+ * weitergereicht — der Versions-Schlüssel bleibt also identisch (selbe
+ * Zeit-Sortierung). Nach erfolgreichem Kopieren wird die Legacy-Version
+ * gelöscht (außer keepLegacy=true).
+ *
+ * Defensive: Einzelne Fehler stoppen die Migration nicht — alle Einträge
+ * werden versucht, fehlerhafte landen im errors-Array.
+ */
+export async function migrateLegacyVersions(
+  legacySlugRaw: string,
+  newUuidRaw: string,
+  opts: MigrateLegacyOptions = {},
+): Promise<MigrateLegacyResult> {
+  const legacySlug = sanitizeProjectId(legacySlugRaw);
+  const newUuid = sanitizeProjectId(newUuidRaw);
+  if (!legacySlug || !newUuid) {
+    return {
+      migrated: 0,
+      errors: [{ versionId: "", error: "Ungültige projectId(s)" }],
+      total: 0,
+    };
+  }
+  if (legacySlug === newUuid) {
+    // Nichts zu tun — Quelle = Ziel
+    return { migrated: 0, errors: [], total: 0 };
+  }
+
+  const legacyVersions = await listAutoSaveVersions(legacySlug);
+  const total = legacyVersions.length;
+  if (total === 0) {
+    return { migrated: 0, errors: [], total: 0 };
+  }
+
+  // Aufsteigend nach Timestamp migrieren, damit Rolling-Cleanup (das nach
+  // jedem Write feuert) die ÄLTESTEN entfernt wenn das Limit gesprengt
+  // wird — User behält die neueste History.
+  const ordered = [...legacyVersions].sort((a, b) => a.timestamp - b.timestamp);
+  const errors: Array<{ versionId: string; error: string }> = [];
+  let migrated = 0;
+
+  for (const v of ordered) {
+    try {
+      const restore = await restoreAutoSaveVersion(legacySlug, v.versionId);
+      if (!restore.success || !restore.json) {
+        errors.push({
+          versionId: v.versionId,
+          error: restore.error ?? "Restore-Fehler",
+        });
+        continue;
+      }
+      const write = await writeAutoSaveVersion(newUuid, restore.json, {
+        label: v.label,
+        now: v.timestamp,
+      });
+      if (!write.success) {
+        errors.push({
+          versionId: v.versionId,
+          error: write.error ?? "Write-Fehler",
+        });
+        continue;
+      }
+      if (!opts.keepLegacy) {
+        // Best-effort delete der Legacy-Version; Fehler ignorieren.
+        await deleteAutoSaveVersion(legacySlug, v.versionId).catch(() => {
+          /* ignore */
+        });
+      }
+      migrated += 1;
+      opts.onProgress?.(migrated, total);
+    } catch (err) {
+      errors.push({ versionId: v.versionId, error: String(err) });
+    }
+  }
+
+  return { migrated, errors, total };
+}
+
+/**
+ * Löscht ALLE Versionen unter einer projectId. Wird vom Discard-Pfad des
+ * Migration-Modals genutzt. Idempotent + defensiv: Fehler werden gezählt
+ * aber stoppen die Iteration nicht.
+ */
+export async function deleteAllVersions(
+  projectIdRaw: string,
+): Promise<{ deleted: number; errors: number }> {
+  const projectId = sanitizeProjectId(projectIdRaw);
+  if (!projectId) return { deleted: 0, errors: 0 };
+  const versions = await listAutoSaveVersions(projectId);
+  let deleted = 0;
+  let errors = 0;
+  for (const v of versions) {
+    const res = await deleteAutoSaveVersion(projectId, v.versionId).catch(() => ({
+      success: false,
+      error: "throw",
+    }));
+    if (res.success) deleted += 1;
+    else errors += 1;
+  }
+  return { deleted, errors };
 }
 
 // ─── Test-Helpers ────────────────────────────────────────────────────────────

@@ -1,5 +1,5 @@
 /**
- * Synthstudio – autoSaveController.ts (v3.57.0)
+ * Synthstudio – autoSaveController.ts (v3.59.0)
  *
  * UI-Wiring-Logik für AutoSave — Pure-fn-Helper für die Trigger-
  * und Topbar-Status-Berechnung. Trennt die UI-Komponenten (App.tsx,
@@ -8,8 +8,18 @@
  * Die echte Side-Effect-Ausführung (setInterval + writeAutoSaveVersion)
  * liegt im Hook `useAutoSaveTrigger` in App.tsx — hier sind nur die
  * Pure-Funktionen, damit sie deterministisch getestet werden können.
+ *
+ * v3.59.0: Run-Once-Tracking + projectId-Cache.
  */
 import type { AutoSaveSettings } from "@/store/useAutoSaveStore";
+
+// ─── v3.59.0: localStorage Keys ──────────────────────────────────────────────
+
+/** Set von projectIds für die der Legacy-Migrations-Check bereits gelaufen ist. */
+export const MIGRATION_CHECKED_STORAGE_KEY = "synthstudio:autosave-migration-checked";
+
+/** Letzte gesehene projectId für Reload-Persistenz (verhindert ephemere UUID). */
+export const LAST_PROJECT_ID_STORAGE_KEY = "synthstudio:last-projectid";
 
 /**
  * Berechnet die Trigger-Periode in Millisekunden.
@@ -195,4 +205,103 @@ export function formatVersionTimestamp(ts: number): string {
   return `${pad2(d.getDate())}.${pad2(d.getMonth() + 1)}.${d.getFullYear()} ${pad2(
     d.getHours(),
   )}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
+}
+
+// ─── v3.59.0: Run-Once Migration-Tracking ────────────────────────────────────
+
+/**
+ * Sicheres localStorage-Lookup — defensive bei SSR/Tests ohne localStorage.
+ */
+function safeLocalStorageGet(key: string): string | null {
+  try {
+    if (typeof localStorage === "undefined") return null;
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function safeLocalStorageSet(key: string, value: string): void {
+  try {
+    if (typeof localStorage === "undefined") return;
+    localStorage.setItem(key, value);
+  } catch {
+    /* QuotaExceeded oder Private-Mode — ignorieren */
+  }
+}
+
+/**
+ * Lädt die Set von bereits gecheckten projectIds aus localStorage.
+ * Defensive: korruptes JSON → leeres Set, niemals throw.
+ */
+export function loadMigrationCheckedSet(): Set<string> {
+  const raw = safeLocalStorageGet(MIGRATION_CHECKED_STORAGE_KEY);
+  if (!raw) return new Set();
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return new Set();
+    return new Set(parsed.filter((x): x is string => typeof x === "string"));
+  } catch {
+    return new Set();
+  }
+}
+
+/**
+ * Persistiert die Set von gecheckten projectIds in localStorage.
+ */
+export function saveMigrationCheckedSet(ids: Set<string>): void {
+  safeLocalStorageSet(MIGRATION_CHECKED_STORAGE_KEY, JSON.stringify([...ids]));
+}
+
+/**
+ * True wenn die projectId schon einen Migration-Check durchlaufen hat.
+ */
+export function isMigrationChecked(projectId: string): boolean {
+  if (typeof projectId !== "string" || projectId.length === 0) return false;
+  return loadMigrationCheckedSet().has(projectId);
+}
+
+/**
+ * Markiert die projectId als bereits gecheckt (idempotent).
+ */
+export function markMigrationChecked(projectId: string): void {
+  if (typeof projectId !== "string" || projectId.length === 0) return;
+  const set = loadMigrationCheckedSet();
+  if (set.has(projectId)) return;
+  set.add(projectId);
+  saveMigrationCheckedSet(set);
+}
+
+/**
+ * Setzt den Tracker für Tests zurück.
+ */
+export function __resetMigrationCheckedForTests(): void {
+  try {
+    if (typeof localStorage !== "undefined") {
+      localStorage.removeItem(MIGRATION_CHECKED_STORAGE_KEY);
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
+// ─── v3.59.0: projectId localStorage Cache ───────────────────────────────────
+
+/**
+ * Persistiert die zuletzt aktive projectId, damit beim Browser-Reload die
+ * neue Hook-Instance NICHT eine frische UUID generiert (verlöre die Ver-
+ * knüpfung zur AutoSave-History bis loadCachedProject läuft).
+ */
+export function cacheLastProjectId(projectId: string | null | undefined): void {
+  if (typeof projectId !== "string" || projectId.length === 0) return;
+  safeLocalStorageSet(LAST_PROJECT_ID_STORAGE_KEY, projectId);
+}
+
+/**
+ * Liest die zuletzt aktive projectId. Wird beim App-Init benutzt um eine
+ * stable UUID zu reaktivieren, falls vorhanden.
+ */
+export function readLastProjectId(): string | null {
+  const v = safeLocalStorageGet(LAST_PROJECT_ID_STORAGE_KEY);
+  return typeof v === "string" && v.length > 0 ? v : null;
 }
