@@ -93,6 +93,13 @@ const OVERLAY_STYLES: Record<FileType, { border: string; bg: string; text: strin
     label: "Plugin-Chain-Preset importieren",
     icon: "🔌",
   },
+  "midi-mapping": {
+    border: "border-accent-primary",
+    bg: "bg-accent-primary/10",
+    text: "text-accent-primary",
+    label: "MIDI-Mapping importieren",
+    icon: "🎛️",
+  },
   unknown: {
     border: "border-border-color",
     bg: "bg-bg-elevated/40",
@@ -110,6 +117,7 @@ const SUBTEXT_BY_TYPE: Record<FileType, string> = {
   electribe: ".e2spat / .e2sallpat / .elst — KORG Hardware-Pattern",
   "korg-bank": ".esx / .all — ESX-1 oder E2S Sample-Bank (Read-Only v3.3)",
   "plugin-preset": ".synthpreset.json — Plugin-Chain-Preset (Save/Load über Channel-Inspector)",
+  "midi-mapping": ".synthmidi.json — MIDI-Mapping (v2-Envelope, v1-Layouts werden migriert)",
   unknown: "Datei-Typ unbekannt — wird ignoriert",
 };
 

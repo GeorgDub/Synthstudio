@@ -79,6 +79,18 @@ export const KORG_BANK_EXTENSIONS: ReadonlySet<string> = new Set([
  */
 export const PLUGIN_PRESET_SUFFIX = ".synthpreset.json" as const;
 
+/**
+ * MIDI-Mapping-Share Endung (v3.64.0).
+ *   .synthmidi.json → v2-Envelope mit CC + Note-Mappings + metadata.
+ *
+ * Drop → CustomEvent "midi-mapping:import" mit detail=File. Listener in App.tsx
+ * liest die Datei und routet sie über `parseMidiMappingShareJson()`.
+ *
+ * Compound-Suffix-Routing (analog .synthpreset.json), damit normales `.json`
+ * weiterhin als "unknown" durchfällt.
+ */
+export const MIDI_MAPPING_SUFFIX = ".synthmidi.json" as const;
+
 // ─── Typen ────────────────────────────────────────────────────────────────────
 
 export type FileType =
@@ -89,6 +101,7 @@ export type FileType =
   | "electribe"
   | "korg-bank"
   | "plugin-preset"
+  | "midi-mapping"
   | "unknown";
 
 /**
@@ -133,6 +146,7 @@ export function detectFileType(name: string): FileType {
   // Compound-suffix check zuerst — `.synthpreset.json` würde sonst als
   // `.json` interpretiert und unten als `unknown` durchfallen.
   if (name.toLowerCase().endsWith(PLUGIN_PRESET_SUFFIX)) return "plugin-preset";
+  if (name.toLowerCase().endsWith(MIDI_MAPPING_SUFFIX)) return "midi-mapping";
   const ext = getFileExtension(name);
   if (ext === "") return "unknown";
   if (AUDIO_EXTENSIONS.has(ext)) return "audio";
@@ -189,6 +203,7 @@ export function dispatchFileDrop(file: { name: string }): DispatchResult {
     electribe: "electribe:fileImport",
     "korg-bank": "korg:bank:open",
     "plugin-preset": "plugin-preset:import",
+    "midi-mapping": "midi-mapping:import",
   };
 
   const eventName = eventNameMap[type];

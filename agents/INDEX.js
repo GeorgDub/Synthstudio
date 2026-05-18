@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.63.0",
+    version: "3.64.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -1937,6 +1937,41 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "backend",
+      timestamp: "2026-05-19T00:25:00.000Z",
+      done: [
+        "v3.64.0: MIDI-Mapping JSON-Sharing — analog v3.47 Plugin-Preset. Neuer v2-Envelope-Schema 'synthstudio-midi-mapping-v2' mit metadata (name, description, hardwareHint, author, createdAt, appVersion) + CC + Note-Mappings. Backward-Compat: v1-Layout-JSONs werden automatisch migriert (parseMidiMappingShareJson erkennt 'synthstudioLayout: v1' und ruft parseMidiLayoutJson + lifted Result auf v2-Shape).",
+        "client/src/utils/midiMappingShare.ts NEU (~395 LOC, Pure-Module): buildMidiMappingShareJson (pretty-printed 2-Space JSON), parseMidiMappingShareJson (Schema-Validation + v1-Migration), applyMappingShareImport (merge vs replace + missingPartIds-Detection), sanitizeMappingFileName, MIDI_MAPPING_SHARE_SCHEMA + MIDI_MAPPING_SHARE_SUFFIX Konstanten. Strikte Validierung: cc/note 0-127, channel 0-16, target.type ∈ VALID_TARGET_TYPES (re-use aus midiLayoutImport). performancePadIndex/target-Felder bleiben round-trip. MAX_MAPPING_SHARE_BYTES = 64kB (mehr als v1 wg meta-overhead).",
+        "client/src/utils/dragDropDispatch.ts erweitert: FileType + 'midi-mapping', MIDI_MAPPING_SUFFIX-Konstante (.synthmidi.json), compound-suffix-Check vor Standard-Endung-Lookup. dispatchFileDrop feuert 'midi-mapping:import' CustomEvent mit detail=File.",
+        "client/src/App.tsx: useEffect-Listener für 'midi-mapping:import' (lazy-import des Share-Moduls + Toast-Feedback). Default-Mode: merge (sichert vor versehentlichem clear via Drag-Drop). Migrierte v1-Files bekommen '(v1-migriert)' Suffix im Toast.",
+        "client/src/components/MidiSettings/MidiSettings.tsx: neue 'Community Sharing (v2)' Section unterhalb des bestehenden v1-Templates: Description + Author Inputs, '⬇ Export Mapping' + '⬆ Import Mapping' + Library-Button (FU disabled), Merge/Replace Selector. handleExportShare bauert v2-Envelope und triggert Blob-Download mit .synthmidi.json Endung. handleImportShareFile parst File, ruft applyMappingShareImport mit aktuellem parts.map(p=>p.id) als knownPartIds für missing-Part-Toast.",
+        "client/src/components/DragDropOverlay/DragDropOverlay.tsx: OVERLAY_STYLES + SUBTEXT_BY_TYPE um 'midi-mapping'-Entry erweitert (TS-strict Record<FileType,...> brauchte den Eintrag).",
+        "tests/features/midi-mapping-share.test.ts NEU (~290 LOC): 22 Tests in 8 describes — Schema-Build × 3, v2-Parse × 6 (inkl. Schema-Reject, fehlende meta.name, leere Mappings, einzelne ungültige Einträge mit warnings), v1-Migration × 1, merge/replace × 3 (CC-Kollision, Note-Kollision, Counter), Missing-Part × 2, Round-Trip × 1, Filename-Sanitize × 3, Drag-Drop × 3.",
+        "pnpm check clean, pnpm test grün: 210 Test-Files / 4851 Tests passed (16 skipped, +22 NEU)."
+      ],
+      next: [
+        "v3.65: Community-Library-Endpoint — der 'Browse Library (FU)'-Button ist disabled. Ein hosted Repo (z.B. Github gist-index) mit kuratierten Mappings würde User-Adoption beschleunigen. Sicherheits-Review notwendig vor Network-Fetch.",
+        "v3.65: Layout-Templates-Tab in MidiSettings könnte v2-Format unter der Haube nutzen damit User-Templates und community-shared Mappings dieselbe storage-shape teilen — derzeit ist useUserMidiTemplatesStore eigener Schema-Pfad.",
+        "v3.65: applyMappingShareImport hat keinen 'preserve unknown' Modus — wenn ein File target-types referenziert die in der aktuellen Synthstudio-Version nicht existieren (z.B. neuere Build importiert in ältere), werden sie als ungültig verworfen. Wäre via VALID_TARGET_TYPES.size-Check + soft-skip lösbar."
+      ],
+      changed: [
+        "client/src/utils/midiMappingShare.ts (NEU ~395 LOC: Pure-Modul Export/Import/Apply + v1-Migration)",
+        "client/src/utils/dragDropDispatch.ts (+15 LOC: FileType 'midi-mapping' + Suffix + Dispatch-Route)",
+        "client/src/App.tsx (+45 LOC: useEffect-Listener für 'midi-mapping:import' mit Merge-Default + Toast)",
+        "client/src/components/MidiSettings/MidiSettings.tsx (+~150 LOC: Imports + handleExport/Import + Sharing-UI-Section mit Mode-Selector + File-Picker)",
+        "client/src/components/DragDropOverlay/DragDropOverlay.tsx (+8 LOC: midi-mapping OVERLAY_STYLES + SUBTEXT)",
+        "tests/features/midi-mapping-share.test.ts (NEU ~290 LOC: 22 Tests in 8 describes)",
+        "package.json (3.63.0 → 3.64.0)",
+        "agents/INDEX.js (version + workLog v3.64.0)"
+      ],
+      caveats: [
+        "Import-Modus 'replace' setzt ALLE bestehenden Mappings auf null und ersetzt sie — irreversibel ohne vorherigen Export. UI warnt nicht explizit (kein confirm-Dialog), nur Toast nach dem Fakt. Library-Workflow sollte 'merge' als Default belassen.",
+        "v1-Migration setzt meta.createdAt=Date.now() und füllt keine description/author/hardwareHint — Round-Trip von v1 → v2 → v2 ist nicht byte-identisch. Korrektheits-neutral.",
+        "missingPartIds-Detection ist informational only — die Note-Mappings mit unbekannten partIds werden TROTZDEM in den Store geschrieben (User könnte später passende Parts erstellen). Ein 'strict' Mode würde diese filtern.",
+        "Drag-Drop-Default ist 'merge' — der UI-Mode-Selector in MidiSettings wird nur beim File-Picker-Import angewendet, NICHT beim Drag-Drop. Konsistente UX wäre eine globale Mode-Settings (localStorage)."
+      ]
+    },
     {
       agent:     "frontend",
       timestamp: "2026-05-19T00:15:00.000Z",

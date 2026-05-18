@@ -23,6 +23,14 @@ import {
   type MidiTemplateSuggestedDetail,
 } from "@/utils/midiDeviceDetection";
 import { buildMidiLayoutJson, sanitizeLayoutFileName, defaultLayoutNameForDevice } from "@/utils/midiLayoutExport";
+import {
+  MIDI_MAPPING_SHARE_SUFFIX,
+  buildMidiMappingShareJson,
+  parseMidiMappingShareJson,
+  applyMappingShareImport,
+  sanitizeMappingFileName,
+  type MidiMappingImportMode,
+} from "@/utils/midiMappingShare";
 import { toast } from "@/store/useToastStore";
 import { FX_PARAM_RANGES, AudioEngine } from "@/audio/AudioEngine";
 import { formatPatternPosition } from "@/utils/patternPosition";
@@ -288,6 +296,82 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
       const msg = err instanceof Error ? err.message : String(err);
       setExportFeedback(`Fehler: ${msg}`);
       toast(`Export-Fehler: ${msg}`, { kind: "error", duration: 5000 });
+    }
+  };
+
+  // ─── v3.64.0: MIDI-Mapping Share (v2 envelope) ───────────────────────────
+  const [shareDescription, setShareDescription] = useState("");
+  const [shareAuthor, setShareAuthor] = useState("");
+  const [shareImportMode, setShareImportMode] = useState<MidiMappingImportMode>("merge");
+  const shareFileInputRef = React.useRef<HTMLInputElement | null>(null);
+
+  const handleExportShare = () => {
+    const activeDevice = midi.devices.find((d) => d.id === midi.activeDeviceId);
+    const json = buildMidiMappingShareJson({
+      meta: {
+        name: exportName.trim() || "Mein MIDI-Setup",
+        description: shareDescription.trim() || undefined,
+        hardwareHint: activeDevice?.name,
+        author: shareAuthor.trim() || undefined,
+        appVersion: undefined,
+      },
+      ccMappings: midi.mappings,
+      noteMappings: midi.noteMappings,
+    });
+    try {
+      const blob = new Blob([json], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${sanitizeMappingFileName(exportName)}${MIDI_MAPPING_SHARE_SUFFIX}`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      const summary = `${midi.mappings.length} CC + ${midi.noteMappings.length} Notes`;
+      setExportFeedback(`Gespeichert: ${a.download}`);
+      setTimeout(() => setExportFeedback(null), 3000);
+      toast(`Mapping exportiert: ${a.download} (${summary})`, { kind: "success" });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setExportFeedback(`Fehler: ${msg}`);
+      toast(`Share-Export Fehler: ${msg}`, { kind: "error", duration: 5000 });
+    }
+  };
+
+  const handleImportShareFile = async (file: File) => {
+    try {
+      const text = await file.text();
+      const r = parseMidiMappingShareJson(text);
+      if (!r.success || !r.envelope) {
+        toast(r.errors[0] ?? "Import fehlgeschlagen", { kind: "error", duration: 5000 });
+        return;
+      }
+      const applied = applyMappingShareImport(
+        r.envelope,
+        { ccMappings: midi.mappings, noteMappings: midi.noteMappings },
+        shareImportMode,
+        parts.map((p) => p.id),
+      );
+      midi.loadTemplate(applied.ccMappings, applied.noteMappings);
+      const v1Tag = r.migratedFromV1 ? " (v1-migriert)" : "";
+      const modeTag = shareImportMode === "replace" ? "ersetzt" : "gemerged";
+      toast(
+        `Mapping „${r.envelope.meta.name}" ${modeTag}${v1Tag}: +${applied.addedCount} neu, ${applied.replacedCount} überschrieben`,
+        { kind: "success" },
+      );
+      for (const w of r.warnings.slice(0, 3)) {
+        toast(w, { kind: "info" });
+      }
+      if (applied.missingPartIds.length > 0) {
+        toast(
+          `${applied.missingPartIds.length} unbekannte Part-IDs werden ignoriert: ${applied.missingPartIds.slice(0, 3).join(", ")}${applied.missingPartIds.length > 3 ? "…" : ""}`,
+          { kind: "warning", duration: 5000 },
+        );
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast(`Import-Fehler: ${msg}`, { kind: "error", duration: 5000 });
     }
   };
 
@@ -1446,6 +1530,82 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
           </div>
         </div>
       )}
+
+      {/* v3.64.0: Community-Sharing v2-Envelope ─────────────────────────── */}
+      <div className="pt-3 mt-3 border-t border-border-color">
+        <div className="text-xs font-medium text-text-muted mb-2 uppercase tracking-wider">
+          Community Sharing (v2)
+        </div>
+        <div className="text-xs text-text-dim mb-2">
+          Teile dein Mapping mit Metadaten (Name, Beschreibung, Hardware-Hint,
+          Autor) als <code className="text-accent-secondary">{MIDI_MAPPING_SHARE_SUFFIX}</code>.
+          Importiert wahlweise als <b>Merge</b> (additiv) oder <b>Replace</b>
+          (alle bestehenden Mappings ersetzen). v1-Layouts werden automatisch
+          migriert.
+        </div>
+        <div className="space-y-2">
+          <input
+            type="text"
+            value={shareDescription}
+            onChange={(e) => setShareDescription(e.target.value)}
+            placeholder="Beschreibung (optional)"
+            className="w-full px-2 py-1.5 bg-bg-elevated border border-border-color rounded text-xs text-text-primary placeholder:text-text-dim focus:outline-none focus:border-accent-secondary"
+          />
+          <input
+            type="text"
+            value={shareAuthor}
+            onChange={(e) => setShareAuthor(e.target.value)}
+            placeholder="Autor (optional)"
+            className="w-full px-2 py-1.5 bg-bg-elevated border border-border-color rounded text-xs text-text-primary placeholder:text-text-dim focus:outline-none focus:border-accent-secondary"
+          />
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={handleExportShare}
+              disabled={midi.mappings.length === 0 && midi.noteMappings.length === 0}
+              className="px-3 py-1.5 bg-accent-secondary/30 hover:bg-accent-secondary/50 disabled:opacity-40 disabled:cursor-not-allowed text-accent-secondary text-xs rounded font-medium transition-colors"
+              title="Mappings als .synthmidi.json downloaden"
+            >
+              ⬇ Export Mapping
+            </button>
+            <button
+              onClick={() => shareFileInputRef.current?.click()}
+              className="px-3 py-1.5 bg-accent-primary/20 hover:bg-accent-primary/40 text-accent-primary text-xs rounded font-medium transition-colors"
+              title=".synthmidi.json oder v1-Layout importieren"
+            >
+              ⬆ Import Mapping
+            </button>
+            <button
+              disabled
+              className="px-3 py-1.5 bg-bg-elevated text-text-dim text-xs rounded font-medium opacity-50 cursor-not-allowed"
+              title="Community-Library — folgt"
+            >
+              📦 Browse Library (FU)
+            </button>
+            <label className="flex items-center gap-2 ml-auto text-[10px] text-text-dim">
+              <span>Import-Modus:</span>
+              <select
+                value={shareImportMode}
+                onChange={(e) => setShareImportMode(e.target.value as MidiMappingImportMode)}
+                className="px-1 py-0.5 bg-bg-elevated border border-border-color rounded text-xs text-text-primary focus:outline-none focus:border-accent-secondary"
+              >
+                <option value="merge">Merge (additiv)</option>
+                <option value="replace">Replace (alles ersetzen)</option>
+              </select>
+            </label>
+          </div>
+          <input
+            ref={shareFileInputRef}
+            type="file"
+            accept=".json,application/json"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) void handleImportShareFile(f);
+              e.target.value = "";
+            }}
+          />
+        </div>
+      </div>
     </div>
   );
 

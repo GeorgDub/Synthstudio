@@ -2796,6 +2796,49 @@ export default function App() {
     return () => window.removeEventListener("plugin-preset:import", handler);
   }, []);
 
+  // v3.64.0: MIDI-Mapping JSON-Sharing — analog v3.47 Plugin-Preset.
+  // dragDropDispatch routet .synthmidi.json → "midi-mapping:import".
+  // Default-Modus: merge (sichert vor versehentlichem clear). Replace ist
+  // explizit über den File-Picker in MidiSettings erreichbar.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const file = (e as CustomEvent<File>).detail;
+      if (!(file instanceof File)) return;
+      void (async () => {
+        try {
+          const text = await file.text();
+          const { parseMidiMappingShareJson, applyMappingShareImport } = await import(
+            "@/utils/midiMappingShare"
+          );
+          const { toast } = await import("@/store/useToastStore");
+          const r = parseMidiMappingShareJson(text);
+          if (!r.success || !r.envelope) {
+            toast(r.errors[0] ?? "MIDI-Mapping-Import fehlgeschlagen", { kind: "error" });
+            return;
+          }
+          const applied = applyMappingShareImport(
+            r.envelope,
+            { ccMappings: midi.mappings, noteMappings: midi.noteMappings },
+            "merge",
+          );
+          midi.loadTemplate(applied.ccMappings, applied.noteMappings);
+          const v1Tag = r.migratedFromV1 ? " (v1-migriert)" : "";
+          toast(
+            `MIDI-Mapping „${r.envelope.meta.name}" importiert${v1Tag}: +${applied.addedCount} neu, ${applied.replacedCount} ersetzt`,
+            { kind: "success" },
+          );
+          for (const w of r.warnings.slice(0, 3)) {
+            toast(w, { kind: "info" });
+          }
+        } catch (err) {
+          console.error("[App] midi-mapping:import Fehler:", err);
+        }
+      })();
+    };
+    window.addEventListener("midi-mapping:import", handler);
+    return () => window.removeEventListener("midi-mapping:import", handler);
+  }, [midi]);
+
   const handleDropZipFile = useCallback(
     async (file: File) => {
       try {
