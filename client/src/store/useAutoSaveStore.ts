@@ -125,6 +125,20 @@ export function markAutoSaveCompleted(at: number = Date.now()): void {
   notify();
 }
 
+/**
+ * v3.60.0: Setzt lastSaveAt explizit auf null zurück. Wird nach einem
+ * restoreProject() gerufen, weil dann eine "frische" AutoSave-History
+ * beginnt — die letzten Saves galten dem vorherigen Projekt.
+ *
+ * Defensive: persistiert sofort, damit ein Browser-Reload nicht den
+ * alten Stand zurücklädt.
+ */
+export function resetAutoSaveLastSaveAt(): void {
+  _state = { ..._state, lastSaveAt: null };
+  persist(_state);
+  notify();
+}
+
 /** Pause AutoSave während ein Manual-Save läuft. */
 export function pauseAutoSave(): void {
   _paused = true;

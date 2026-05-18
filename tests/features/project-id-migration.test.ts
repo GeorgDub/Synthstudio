@@ -2,6 +2,7 @@
  * tests/features/project-id-migration.test.ts
  *
  * v3.58.0 — Schema v1.24: Stable projectId UUID + AutoSave-Migration.
+ * v3.60.0 — projectId localStorage Cache + Post-Restore lastSaveAt-Reset.
  *
  * Coverage:
  *   (1) projectId.ts Pure-fn:
@@ -23,10 +24,35 @@
  *       - checkLegacySlugMigration: kein Prompt wenn keine Legacy-Versionen
  *       - checkLegacySlugMigration: kein Prompt wenn UUID schon History hat
  *       - checkLegacySlugMigration: Prompt wenn Legacy>0 und UUID=0
+ *   (5) v3.60.0 makeDefaultState + AutoSave Post-Restore:
+ *       - makeDefaultState liest gecachte projectId
+ *       - makeDefaultState({forceFresh:true}) ignoriert Cache
+ *       - newProject-Action erzeugt frische UUID trotz Cache
+ *       - resetAutoSaveLastSaveAt setzt lastSaveAt auf null
+ *       - Cache mit invalider ID → frische UUID (defensive)
  *
- * Pure node-env Tests (kein DOM nötig).
+ * Pure node-env Tests (kein DOM nötig — v3.60-Block mit localStorage-Mock).
  */
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach } from "vitest";
+
+// ─── v3.60.0: localStorage Mock (für makeDefaultState-Cache-Tests) ───────────
+
+function createLocalStorageMock() {
+  let store: Record<string, string> = {};
+  return {
+    getItem: (k: string): string | null => store[k] ?? null,
+    setItem: (k: string, v: string): void => { store[k] = v; },
+    removeItem: (k: string): void => { delete store[k]; },
+    clear: (): void => { store = {}; },
+  };
+}
+
+const localStorageMock = createLocalStorageMock();
+Object.defineProperty(globalThis, "localStorage", {
+  value: localStorageMock,
+  writable: true,
+  configurable: true,
+});
 
 import {
   generateProjectId,
@@ -271,5 +297,112 @@ describe("v3.58.0 – checkLegacySlugMigration", () => {
     expect(r.reason).toBe("migrate");
     expect(r.legacyCount).toBe(7);
     expect(r.legacySlug).toBe("my-beat-2024");
+  });
+});
+
+// ─── (5) v3.60.0 makeDefaultState Cache + Post-Restore-Reset ─────────────────
+
+import {
+  __makeDefaultStateForTests,
+} from "../../client/src/store/useProjectStore";
+import {
+  cacheLastProjectId,
+  readLastProjectId,
+  LAST_PROJECT_ID_STORAGE_KEY,
+} from "../../client/src/utils/autoSaveController";
+import {
+  resetAutoSaveLastSaveAt,
+  markAutoSaveCompleted,
+  getAutoSaveSettings,
+  __resetAutoSaveStoreForTests,
+} from "../../client/src/store/useAutoSaveStore";
+
+describe("v3.60.0 – makeDefaultState liest projectId-Cache", () => {
+  beforeEach(() => {
+    localStorageMock.clear();
+    __resetAutoSaveStoreForTests();
+  });
+
+  it("makeDefaultState reads readLastProjectId wenn cached vorhanden", () => {
+    // Cache eine valide UUID
+    const cached = generateProjectId();
+    cacheLastProjectId(cached);
+    expect(readLastProjectId()).toBe(cached);
+    // Hook-Init-Pfad (forceFresh nicht gesetzt) → nutzt Cache
+    const state = __makeDefaultStateForTests();
+    expect(state.projectId).toBe(cached);
+  });
+
+  it("makeDefaultState ignoriert leeren Cache und generiert frische UUID", () => {
+    // Kein Cache → fallback auf generateProjectId()
+    expect(readLastProjectId()).toBeNull();
+    const state = __makeDefaultStateForTests();
+    expect(isValidProjectId(state.projectId)).toBe(true);
+    expect(state.projectId.length).toBe(36);
+  });
+
+  it("makeDefaultState mit invalider gecachter ID → frische UUID (defensive)", () => {
+    // Korrumpiere den Cache mit einer non-UUID
+    localStorageMock.setItem(LAST_PROJECT_ID_STORAGE_KEY, "not-a-valid-uuid");
+    const state = __makeDefaultStateForTests();
+    expect(state.projectId).not.toBe("not-a-valid-uuid");
+    expect(isValidProjectId(state.projectId)).toBe(true);
+  });
+
+  it("newProject ignoriert cached projectId (forceFresh=true)", () => {
+    // User klickt New Project — soll IMMER eine frische UUID bekommen,
+    // auch wenn vorher eine valide ID gecacht war.
+    const cached = generateProjectId();
+    cacheLastProjectId(cached);
+    const state = __makeDefaultStateForTests({ forceFresh: true });
+    expect(state.projectId).not.toBe(cached);
+    expect(isValidProjectId(state.projectId)).toBe(true);
+  });
+
+  it("makeDefaultState liefert konsistente Default-Felder (kein Side-Effect auf Cache)", () => {
+    const cached = generateProjectId();
+    cacheLastProjectId(cached);
+    const a = __makeDefaultStateForTests();
+    const b = __makeDefaultStateForTests();
+    // Beide laden dieselbe gecachte ID
+    expect(a.projectId).toBe(cached);
+    expect(b.projectId).toBe(cached);
+    expect(a.projectName).toBe("Neues Projekt");
+    expect(a.bpm).toBe(120);
+    expect(a.samples).toEqual([]);
+    expect(a.isDirty).toBe(false);
+  });
+});
+
+describe("v3.60.0 – resetAutoSaveLastSaveAt (Post-Restore)", () => {
+  beforeEach(() => {
+    localStorageMock.clear();
+    __resetAutoSaveStoreForTests();
+  });
+
+  it("restoreProject resets lastSaveAt — markAutoSaveCompleted → resetAutoSaveLastSaveAt → null", () => {
+    // Simuliere: User hat schon ein AutoSave gehabt (lastSaveAt != null)
+    markAutoSaveCompleted(1700000000000);
+    expect(getAutoSaveSettings().lastSaveAt).toBe(1700000000000);
+    // Dann lädt er ein Projekt → lastSaveAt soll auf null gehen
+    resetAutoSaveLastSaveAt();
+    expect(getAutoSaveSettings().lastSaveAt).toBeNull();
+  });
+
+  it("resetAutoSaveLastSaveAt erhält andere Settings (enabled, intervalMin)", () => {
+    markAutoSaveCompleted(123456);
+    const before = getAutoSaveSettings();
+    resetAutoSaveLastSaveAt();
+    const after = getAutoSaveSettings();
+    expect(after.lastSaveAt).toBeNull();
+    expect(after.enabled).toBe(before.enabled);
+    expect(after.intervalMin).toBe(before.intervalMin);
+  });
+
+  it("resetAutoSaveLastSaveAt idempotent bei bereits null", () => {
+    // Default ist lastSaveAt=null — Reset soll trotzdem nicht crashen
+    expect(getAutoSaveSettings().lastSaveAt).toBeNull();
+    expect(() => resetAutoSaveLastSaveAt()).not.toThrow();
+    expect(getAutoSaveSettings().lastSaveAt).toBeNull();
   });
 });

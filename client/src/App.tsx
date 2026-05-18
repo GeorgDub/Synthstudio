@@ -191,6 +191,8 @@ import {
   useAutoSaveStore,
   markAutoSaveCompleted,
   isAutoSavePaused,
+  // v3.60.0: Nach restoreProject lastSaveAt zurücksetzen (fresh project).
+  resetAutoSaveLastSaveAt,
 } from "@/store/useAutoSaveStore";
 import {
   writeAutoSaveVersion,
@@ -742,6 +744,11 @@ export default function App() {
     project.adoptProjectId(data.projectId);
     project.setProjectName(data.projectName);
     project.setBpm(data.bpm);
+    // v3.60.0: lastSaveAt im AutoSaveStore auf null setzen — das geladene
+    // Projekt hat eine eigene History (per UUID), die alten Save-Zeiten
+    // des vorherigen Projekts sollen NICHT in der Topbar erscheinen.
+    // Der nächste echte AutoSave-Tick aktualisiert lastSaveAt wieder.
+    resetAutoSaveLastSaveAt();
     // Samples
     project.addSamples(data.samples ?? []);
     // Patterns in die DM laden

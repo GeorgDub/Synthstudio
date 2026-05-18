@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.59.0",
+    version: "3.60.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -109,19 +109,19 @@ const INDEX = {
       lastSeen: "2026-05-18T23:40:00.000Z",
       ownedBy:  "frontend"
     },
-    "client/src/App.tsx (v3.59.0 legacy-migration-wiring)": {
-      role:     "v3.59.0 ERWEITERT (+70 LOC): bestehende v3.58 AutoSave-Wiring + projectId-adopt + Versions-Modal bleibt + NEU Legacy-Migration-UI. Import-Block: +listAutoSaveVersions, +checkLegacySlugMigration, +isMigrationChecked, +markMigrationChecked, +cacheLastProjectId, +LegacyMigrationModal. NEU legacyMigration-State {isOpen,legacySlug,newProjectId,legacyCount}. restoreProject ergänzt um post-load IIFE: cacheLastProjectId(newPid) → falls !isMigrationChecked(newPid) → parallel listAutoSaveVersions(legacySlug) + listAutoSaveVersions(newPid) → checkLegacySlugMigration → bei reason='migrate' setLegacyMigration; sonst markMigrationChecked (run-once). Neuer useEffect der project.projectId bei jeder Änderung in localStorage cacht. LegacyMigrationModal-Mount neben VersionHistoryModal mit onComplete-Callback der unabhängig vom action (migrate/discard/later) die projectId als gecheckt markiert.",
-      lastSeen: "2026-05-18T23:40:00.000Z",
-      ownedBy:  "frontend"
+    "client/src/App.tsx (v3.60.0 post-restore-reset)": {
+      role:     "v3.60.0 ERWEITERT (+3 LOC): v3.59 Legacy-Migration-UI + v3.58 AutoSave-Wiring/projectId-adopt + Versions-Modal bleiben + NEU resetAutoSaveLastSaveAt-Import + Call in restoreProject direkt nach project.adoptProjectId/setProjectName/setBpm. Closes v3.59-Caveat 'lastSaveAt zeigt den letzten Save eines anderen Projekts'. Semantik: nach jedem Project-Load steht der Topbar-Indicator auf 'Noch nie' bis der nächste echte AutoSave-Tick markAutoSaveCompleted ruft. Bestehende v3.59-Architektur (legacyMigration-State, post-load IIFE mit cacheLastProjectId/isMigrationChecked/listAutoSaveVersions/checkLegacySlugMigration, projectId-Cache-useEffect, LegacyMigrationModal-Mount) unverändert.",
+      lastSeen: "2026-05-18T23:55:00.000Z",
+      ownedBy:  "backend"
     },
     "client/src/utils/projectId.ts (v3.58.0)": {
       role:     "v3.58.0 NEU (~95 LOC): Pure-fn-Modul für stable Project-UUID v4. generateProjectId() liefert RFC-4122-v4-UUID — 3 Pfade: native crypto.randomUUID (Node 19+, alle modernen Browser, bevorzugt), crypto.getRandomValues + manuelle v4-Konstruktion mit RFC-Bits (Fallback), Math.random (Test-Env-Fallback, NICHT kryptographisch). isValidProjectId(raw) strikte Whitelist /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i (nur v4, kein v1/v3/v5). ensureProjectId(existing) Pass-through bei valid, regeneriert bei invalid — Migrations-Brücke für pre-v1.24-Files. UUID v4 (36 chars, alphanumeric + -) passt in die sanitizeProjectId-Whitelist (alphanum + - + _, ≤64) der AutoSave-Engine. Wird konsumiert von projectSerializer (parseProject + serializeProject Migration) und useProjectStore (makeDefaultState + adoptProjectId).",
       lastSeen: "2026-05-18T23:30:00.000Z",
       ownedBy:  "backend"
     },
-    "tests/features/project-id-migration.test.ts (v3.58.0)": {
-      role:     "v3.58.0 NEU (20 Tests in 4 describes, env:node): (1) projectId.ts Pure-fn × 6 — UUID-v4-Format-Match, isValidProjectId Reject-Matrix (undefined/null/number/empty/non-uuid/slug/UUID-v1), ensureProjectId Pass-through bei valid + Regenerate bei invalid (undefined/null/empty/foo/number), generateProjectId nicht-deterministisch (100 Calls keine Kollisionen). (2) Schema v1.24 × 8 — SYNTH_FILE_VERSION='1.24', serializeProject übernimmt mitgegebene projectId, serializeProject auto-generiert wenn fehlt, parseProject migriert pre-v1.24 (Feld fehlt → fresh UUID), parseProject preserves valide projectId, parseProject regeneriert bei invalider projectId (Defense), Round-Trip serialize→parse projectId konstant, Rename-Szenario projectName ändert sich aber projectId bleibt stable, End-to-End AutoSave-Schlüssel-Stabilität via Rename. (3) sanitizeProjectId-Kompat × 2 — UUID v4 passt durch die AutoSave-Engine-Whitelist, 100 generierte UUIDs validieren alle. (4) Legacy-Slug-Migration × 3 — checkLegacySlugMigration no-legacy (kein Prompt), uuid-has-history (kein Prompt — konservativ um Doppel-Historie zu vermeiden), migrate (Legacy>0 + UUID=0 → Prompt mit legacySlug='my-beat-2024').",
-      lastSeen: "2026-05-18T23:30:00.000Z",
+    "tests/features/project-id-migration.test.ts (v3.60.0)": {
+      role:     "v3.60.0 ERWEITERT: v3.58 20 Tests bleiben + NEU 8 Tests in 2 describes = 28 Tests gesamt (env:node mit localStorage-Mock). v3.58 Coverage: (1) projectId.ts Pure-fn × 6 — UUID-v4-Format, isValidProjectId Reject-Matrix, ensureProjectId Pass-through + Regenerate, Determinismus 100-Calls. (2) Schema v1.24 × 8 — SYNTH_FILE_VERSION='1.24', serializeProject preserve/auto-generate, parseProject Pre-v1.24-Migration + Defensive bei invalid, Round-Trip, Rename-Stability. (3) sanitizeProjectId-Kompat × 2. (4) Legacy-Slug-Migration × 3. v3.60 NEU: (5) makeDefaultState Cache × 5 — Cache-Lookup bei valider gecachter ID, fallback bei leerem Cache, defensive bei invalider gecachter ID (frische UUID via isValidProjectId-Check), forceFresh=true ignoriert Cache (newProject-Pfad), konsistente Default-Felder. (6) resetAutoSaveLastSaveAt × 3 — Reset auf null nach markAutoSaveCompleted, andere Settings (enabled, intervalMin) unverändert, idempotent bei bereits null. Imports __makeDefaultStateForTests aus useProjectStore + cacheLastProjectId/readLastProjectId aus autoSaveController + resetAutoSaveLastSaveAt/markAutoSaveCompleted/getAutoSaveSettings/__resetAutoSaveStoreForTests aus useAutoSaveStore. localStorage-Mock via Object.defineProperty + beforeEach clear.",
+      lastSeen: "2026-05-18T23:55:00.000Z",
       ownedBy:  "backend"
     },
     "client/src/utils/autoSaveController.ts (v3.57.0)": {
@@ -154,9 +154,9 @@ const INDEX = {
       lastSeen: "2026-05-18T23:15:00.000Z",
       ownedBy:  "frontend"
     },
-    "client/src/store/useAutoSaveStore.ts (v3.56.0)": {
-      role:     "v3.56.0 NEU (~165 LOC): Custom-Observer-Store für Project AutoSave Settings + Pause-State. AutoSaveSettings {enabled:bool default true, intervalMin:1..60 default 5, lastSaveAt:number|null}. LocalStorage Key 'ss-autosave-settings:v1'. Public-API: getAutoSaveSettings/setAutoSaveEnabled/setAutoSaveInterval (clampt 1..60)/markAutoSaveCompleted + pauseAutoSave/resumeAutoSave/isAutoSavePaused für Race-Schutz während Manual-Save. Konstanten exportiert: AUTOSAVE_DEFAULT_INTERVAL_MIN=5, MIN=1, MAX=60, MAX_VERSIONS=10, MAX_VERSION_BYTES=50MB. clampInterval Pure-fn defensiv (NaN/non-number → default, rundet+clampt). formatLastSave(ts, now) liefert 5 Zeit-Stufen (gerade eben/s/min/h/d). Defensive load(): korruptes JSON → fällt auf defaults() zurück. __resetAutoSaveStoreForTests Test-Helper. React-Hook useAutoSaveStore() für UI-Konsum.",
-      lastSeen: "2026-05-18T23:30:00.000Z",
+    "client/src/store/useAutoSaveStore.ts (v3.60.0)": {
+      role:     "v3.60.0 ERWEITERT: v3.56-Store (AutoSaveSettings {enabled, intervalMin:1..60, lastSaveAt}, LocalStorage 'ss-autosave-settings:v1', getAutoSaveSettings/setAutoSaveEnabled/setAutoSaveInterval/markAutoSaveCompleted/pauseAutoSave/resumeAutoSave/isAutoSavePaused, clampInterval Pure-fn, formatLastSave Pure-fn, defensive load(), __resetAutoSaveStoreForTests) bleibt + NEU resetAutoSaveLastSaveAt() Public-Action (~+12 LOC). Setzt lastSaveAt explizit auf null und persistiert via persist() — wird nach restoreProject in App.tsx gerufen damit Topbar-Indicator nicht den vorherigen Save-Zeitpunkt für das neu geladene Projekt zeigt. Andere Settings (enabled, intervalMin) bleiben unverändert. Idempotent bei bereits null. Test-Coverage in project-id-migration.test.ts describe (6) × 3 Tests.",
+      lastSeen: "2026-05-18T23:55:00.000Z",
       ownedBy:  "backend"
     },
     "client/src/utils/autoSaveEngine.ts (v3.56.0)": {
@@ -194,10 +194,10 @@ const INDEX = {
       lastSeen: "2026-05-18T22:50:00.000Z",
       ownedBy:  "frontend"
     },
-    "client/src/store/useProjectStore.ts (v3.54.0)": {
-      role:     "v3.54.0 ERWEITERT: bestehende ProjectState (samples/bpm/recordingMode/punchIn-Out/playStop/record/undo/redo) bleibt + NEU 4 Sample-Actions (~+50 LOC). Sample-Interface hat tags?:string[] schon seit autoTagFromFilename-Era. NEU Actions: addTagToSample(id, tag) + removeTagFromSample(id, tag) + setSampleTags(id, tags[]) ruft pure-fn aus sampleLibrary.ts auf Sample-Liste, updateSample(id, patch) für partial-Update beliebiger Felder (closes broken handleUpdateSampleCategory der via addSamples lief und Path-Dupes filterte). importSamplesFromPaths ruft jetzt applyAutoTagsFromFilename pro neuem Sample für sofortiges Auto-Tagging (vorher: nur App.tsx-Drop-Path). Imports: sampleLibrary helpers.",
-      lastSeen: "2026-05-18T23:10:00.000Z",
-      ownedBy:  "frontend"
+    "client/src/store/useProjectStore.ts (v3.60.0)": {
+      role:     "v3.60.0 ERWEITERT: v3.58 stable projectId UUID + v3.54 Sample-Tag-Actions bleiben + NEU Cache-Read im Hook-Init (~+15 LOC). makeDefaultState(opts?:{forceFresh?:boolean}) liest jetzt readLastProjectId() aus autoSaveController.ts und übernimmt die gecachte UUID falls valide (isValidProjectId-Check). Bei forceFresh=true wird Cache-Lookup übersprungen — newProject + newProjectFromTemplate rufen jetzt forceFresh=true damit User-initiierte 'New'-Aktionen IMMER eine frische UUID bekommen. Export __makeDefaultStateForTests für deterministisches Testing beider Pfade. Cache-Lifecycle: read in makeDefaultState (Hook-Init) → use in adoptProjectId/restoreProject → write in App.tsx useEffect bei jeder projectId-Änderung. Closes v3.59-Caveat 'ephemere UUID nach Browser-Reload'. Bestehende v3.58/v3.54-API (adoptProjectId, addTagToSample, removeTagFromSample, setSampleTags, updateSample, addSamples, importSamplesFromPaths, applyAutoTagsFromFilename-Auto-Wiring) unverändert.",
+      lastSeen: "2026-05-18T23:55:00.000Z",
+      ownedBy:  "backend"
     },
     "client/src/components/Mixer/MixerView.tsx (v3.54.0 worker-bpm)": {
       role:     "v3.54.0 ERWEITERT: v3.53 Auto-BPM (analyzeBpmFromBufferDirect + detectAndApplyBpm + bpmDetectionToast) bleibt + NEU detectAndApplyBpm nutzt jetzt analyzeBpmInWorker (off-thread) als First-Attempt, silent-Fallback zu analyzeBpmFromBufferDirect (Main-Thread) bei Worker-null. Closes v3.53-Caveat. analyzeBpmFromBufferDirect bleibt exported als Worker-Mirror für audio-track-auto-bpm.test.ts. +1 Import bpmWorkerClient. Bestehende v3.53 Toast-State + 4s-Auto-Fade + ingestAudioFile-Wiring unverändert.",
@@ -1897,6 +1897,36 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "backend",
+      timestamp: "2026-05-18T23:55:00.000Z",
+      done: [
+        "v3.60.0: projectId Cache-Read + Post-Restore-Reset — closes v3.59 letzte Caveat (useProjectStore Hook-Init liest jetzt readLastProjectId() bevor generateProjectId()). pnpm check clean, 207 Test-Files / 4799 Tests grün (16 skipped, +8 NEU in project-id-migration.test.ts → 28 total in der Datei).",
+        "client/src/store/useProjectStore.ts: makeDefaultState() liest jetzt readLastProjectId() aus autoSaveController.ts und übernimmt die gecachte UUID falls valide (isValidProjectId-Check defensiv). Neue Signatur makeDefaultState(opts?:{forceFresh?:boolean}) — bei forceFresh=true wird Cache-Lookup übersprungen. newProject + newProjectFromTemplate rufen jetzt makeDefaultState({forceFresh:true}) damit User-initiierte 'New'-Aktionen IMMER eine frische UUID bekommen (Cache-Lookup wäre dort kontraintuitiv: alte UUID würde übernommen). Export __makeDefaultStateForTests für deterministisches Testing beider Pfade.",
+        "client/src/store/useAutoSaveStore.ts: NEU resetAutoSaveLastSaveAt() — setzt lastSaveAt explizit auf null und persistiert. Wird nach restoreProject gerufen damit die Topbar nicht den alten Save-Zeitpunkt des vorherigen Projekts zeigt. Andere Settings (enabled, intervalMin) bleiben unverändert.",
+        "client/src/App.tsx: restoreProject ruft jetzt resetAutoSaveLastSaveAt() direkt nach project.adoptProjectId/setProjectName/setBpm — fresh-project-Semantik im UI: 'Noch nie' im Indikator bis der nächste echte AutoSave-Tick lastSaveAt aktualisiert. Import-Block erweitert.",
+        "tests/features/project-id-migration.test.ts ERWEITERT: +8 Tests in 2 neuen describes (5+3). (5) makeDefaultState Cache × 5 — liest gecachte UUID, fallback bei leerem Cache, defensive bei invalider gecachter ID (UUID-Format wird via isValidProjectId verifiziert, korrupte Cache-Einträge → frische UUID), forceFresh=true ignoriert Cache, konsistente Default-Felder. (6) resetAutoSaveLastSaveAt × 3 — Reset auf null nach markAutoSaveCompleted, andere Settings unverändert, idempotent bei bereits null. localStorage-Mock + __resetAutoSaveStoreForTests im beforeEach.",
+        "package.json + agents/INDEX.js version 3.59.0 → 3.60.0."
+      ],
+      next: [
+        "v3.61: Pro-projectId-lastSaveAt-Tracking im useAutoSaveStore — Topbar-Indikator sollte sich auf die aktive projectId beziehen, nicht globalen Zustand. Aktuell wird beim Projekt-Wechsel via reset auf null geclear-t, was 'Noch nie' anzeigt — aber wenn der User zurück zum vorherigen Projekt wechselt, wäre die Anzeige des dort echten letzten-Save informativer. Erfordert Schema-Change: lastSaveAt: Record<projectId, number>.",
+        "v3.61: serializeProject Pure halten — ensureProjectId-Side-Effect aus dem v3.58-Bump in einen opt-in Helper extrahieren (offen aus v3.58/v3.59).",
+        "v3.61: Settings-Panel könnte einen 'Migration nachträglich auslösen'-Button bekommen, der die in markMigrationChecked gesetzten projectIds wieder entfernt — closes v3.59-Caveat 'Später-Klick markiert dauerhaft'."
+      ],
+      changed: [
+        "client/src/store/useProjectStore.ts (+15 LOC: makeDefaultState forceFresh-Option + readLastProjectId-Read + isValidProjectId-Check + __makeDefaultStateForTests Export)",
+        "client/src/store/useAutoSaveStore.ts (+12 LOC: resetAutoSaveLastSaveAt Public-Action)",
+        "client/src/App.tsx (+3 LOC: resetAutoSaveLastSaveAt-Import + Call in restoreProject)",
+        "tests/features/project-id-migration.test.ts (+~110 LOC: localStorage-Mock + 8 NEU Tests in 2 describes)",
+        "package.json (3.59.0 → 3.60.0)",
+        "agents/INDEX.js (version 3.59.0 → 3.60.0 + workLog v3.60.0)"
+      ],
+      caveats: [
+        "Cache-Lifecycle: read → use → write läuft so: (1) Hook-Init read in makeDefaultState() liefert UUID falls valide gecached, sonst fresh. (2) restoreProject ruft adoptProjectId mit data.projectId — überschreibt cache-loaded ID falls User ein anderes Projekt lädt. (3) App.tsx useEffect schreibt project.projectId in den Cache bei jeder Änderung. Folge: nach jedem Reload sieht der User dieselbe UUID, AutoSave-History bleibt erreichbar — auch wenn loadCachedProject erst nach dem Hook-Init feuert.",
+        "newProject ignoriert den Cache via forceFresh=true. Das ist beabsichtigt: User klickt 'Neues Projekt' und erwartet eine frische Identity. Allerdings cacht der App.tsx-useEffect die neue ID sofort wieder — beim nächsten Reload würde diese neue UUID gezogen, nicht die vor dem New gefahrene. Falls der User undo-en will, gibt es weiterhin den AutoSave-Versionsverlauf der vorherigen UUID (über das History-Modal manuell suchbar via projectName).",
+        "resetAutoSaveLastSaveAt löscht NICHT die AutoSave-Versionen — nur das UI-State-Feld lastSaveAt. Die echten Versionen liegen unter projectId-Schlüssel in IndexedDB/Electron-Backend und sind via VersionHistoryModal weiterhin sichtbar. 'Noch nie' im Topbar ist also kosmetisch korrekt für ein frisch geladenes Projekt aber technisch zeigt es nur das Fehlen eines TICK-completed-Events seit dem Restore."
+      ]
+    },
     {
       agent:     "frontend",
       timestamp: "2026-05-18T23:40:00.000Z",

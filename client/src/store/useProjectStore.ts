@@ -16,6 +16,9 @@ import {
 } from "@/utils/sampleLibrary";
 // v3.58.0: Stable UUID v4 — projectId ist immutable nach init.
 import { generateProjectId, isValidProjectId } from "@/utils/projectId";
+// v3.60.0: Cached projectId aus localStorage lesen, damit Browser-Reload nicht
+// jedes Mal eine ephemere UUID generiert (würde AutoSave-History verlieren).
+import { readLastProjectId } from "@/utils/autoSaveController";
 
 export interface Sample {
   id: string;
@@ -115,10 +118,23 @@ export interface ProjectActions {
  * Wichtig: projectId darf NICHT eine Modul-Konstante sein, weil sonst
  * alle Projekt-Resets dieselbe UUID hätten → AutoSave-History würde
  * zwischen Sessions kollidieren.
+ *
+ * v3.60.0: Beim Hook-Init wird zuerst geprüft, ob im localStorage eine
+ * gecachte projectId steht (synthstudio:last-projectid). Falls ja und
+ * valide → diese wird wiederverwendet, damit Browser-Reload nicht eine
+ * neue UUID erzeugt bevor loadCachedProject das alte Projekt restored.
+ * Bei "New Project"-Action (siehe `newProject` unten) wird die Cache-
+ * Lookup explizit übersprungen: User erwartet bei New eine frische ID.
+ *
+ * @param opts.forceFresh Wenn true → ignoriert Cache, generiert immer
+ *                        eine neue UUID. Default false (Cache-Lookup).
  */
-function makeDefaultState(): ProjectState {
+function makeDefaultState(opts?: { forceFresh?: boolean }): ProjectState {
+  const cached = opts?.forceFresh ? null : readLastProjectId();
+  const projectId =
+    cached && isValidProjectId(cached) ? cached : generateProjectId();
   return {
-    projectId: generateProjectId(),
+    projectId,
     projectName: "Neues Projekt",
     isDirty: false,
     canUndo: false,
@@ -132,6 +148,12 @@ function makeDefaultState(): ProjectState {
     punchOutStep: null,
   };
 }
+
+/**
+ * v3.60.0: Export für Tests, damit beide Pfade (Cache-Read und
+ * forceFresh) deterministisch verifiziert werden können.
+ */
+export { makeDefaultState as __makeDefaultStateForTests };
 
 /**
  * Hook der den gesamten Projekt-State und alle Aktionen bereitstellt.
@@ -180,7 +202,10 @@ export function useProjectStore(): ProjectState & ProjectActions {
     // v3.58.0: makeDefaultState() statt DEFAULT_STATE — jedes neue Projekt
     // bekommt eine frische UUID, sonst würde die History sich zwischen
     // Projekten überschneiden.
-    setState(makeDefaultState());
+    // v3.60.0: forceFresh=true → User klickt explizit "New Project", soll
+    // NICHT die gecachte alte ID bekommen. Der Cache wird durch das
+    // App.tsx-useEffect bei der nächsten projectId-Änderung überschrieben.
+    setState(makeDefaultState({ forceFresh: true }));
   }, []);
 
   /**
@@ -191,8 +216,10 @@ export function useProjectStore(): ProjectState & ProjectActions {
     (templateState: ReturnType<typeof templateToProjectState>) => {
       console.log("[ProjectStore] newProjectFromTemplate aufgerufen", templateState.projectName);
       // v3.58.0: Frischer Default = neue UUID, dann Template-Felder draufpatchen.
+      // v3.60.0: forceFresh=true — Templates sollen wie New-Project eine
+      // eigene Identity bekommen, nicht die letzte gecachte projectId erben.
       setState({
-        ...makeDefaultState(),
+        ...makeDefaultState({ forceFresh: true }),
         projectName: templateState.projectName,
         bpm: templateState.bpm,
         samples: templateState.samples,
