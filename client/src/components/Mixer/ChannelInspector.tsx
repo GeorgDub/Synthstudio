@@ -12,8 +12,8 @@
  *  - `mixer`: MixerStore + Actions
  *  - `className`: optional override (default `w-80 shrink-0`)
  */
-import React, { useState } from "react";
-import type { PartData } from "@/audio/AudioEngine";
+import React, { useState, useCallback } from "react";
+import type { PartData, PatternData } from "@/audio/AudioEngine";
 import type { MixerState, MixerActions } from "@/store/useMixerStore";
 import { MIXER_FX_TYPES, summarizeEqBands, type MixerFxType } from "@/utils/mixerFx";
 import { extractPatch, type Patch } from "@/utils/patchSerialize";
@@ -32,6 +32,16 @@ import {
   DEFAULT_NOTE_DURATION_MS,
 } from "@/audio/MidiNoteOut";
 import { ELECTRIBE_2_DRUM_MAP } from "@/utils/midiTemplates";
+import {
+  bounceChannelToWavBuffer,
+  computeBounceDurationSec,
+  defaultStemFilename,
+  resolveBounceBars,
+  BOUNCE_WARN_DURATION_SEC,
+  downloadWavInBrowser,
+  type BounceLengthMode,
+} from "@/utils/channelBounce";
+import { useElectron } from "../../../../electron/useElectron";
 
 export interface ChannelInspectorProps {
   part: PartData | undefined;
@@ -43,9 +53,17 @@ export interface ChannelInspectorProps {
    * gesetzt, bleibt nur Save-Patch ohne Apply-Loop (back-compat zu v2.20).
    */
   onApplyPatch?: (partId: string, patch: Patch, options?: { replaceFx?: boolean }) => void;
+  /**
+   * TASK-241 / v2.94.0: Per-Channel WAV-Bounce (Stem-Export).
+   * Wenn `pattern` UND `bpm` gesetzt, erscheint die "Bounce to WAV"-Section.
+   * Ohne diese Props bleibt das Feature ausgeblendet (back-compat zu v2.93).
+   */
+  pattern?: PatternData;
+  bpm?: number;
+  projectName?: string;
 }
 
-export function ChannelInspector({ part, parts, mixer, className, onApplyPatch }: ChannelInspectorProps) {
+export function ChannelInspector({ part, parts, mixer, className, onApplyPatch, pattern, bpm, projectName }: ChannelInspectorProps) {
   const baseClass = className ?? "w-80 shrink-0";
   // Save-Patch-Affordance (v2.20): Inline-Form damit der Name in einem
   // schmalen Inspector-Strip ohne Modal eingegeben werden kann.
@@ -365,9 +383,231 @@ export function ChannelInspector({ part, parts, mixer, className, onApplyPatch }
         <ControlRow label="Mix" value={transient?.mix ?? 1} min={0} max={1} step={0.01} onChange={v => mixer.setTransientShaper(part.id, { mix: v })} />
       </section>
 
+      {/* TASK-241 / v2.94: Per-Channel WAV-Bounce (Stem-Export) */}
+      {pattern && bpm !== undefined && (
+        <PartBounceSection
+          part={part}
+          pattern={pattern}
+          bpm={bpm}
+          projectName={projectName ?? "Synthstudio"}
+        />
+      )}
+
       {/* TASK-240 / v2.92: MIDI-Note-Output (KORG Electribe als Sound-Modul) */}
       <PartMidiOutSection partId={part.id} partName={part.name} parts={parts} />
     </aside>
+  );
+}
+
+/**
+ * Per-Channel WAV-Bounce (TASK-241 / v2.94.0).
+ *
+ * Rendert genau diesen einen Channel via OfflineAudioContext und speichert
+ * ihn als WAV-Datei — Electron via `audio:save-recording` IPC, im Browser
+ * als Blob-Download.
+ */
+function PartBounceSection({
+  part,
+  pattern,
+  bpm,
+  projectName,
+}: {
+  part: PartData;
+  pattern: PatternData;
+  bpm: number;
+  projectName: string;
+}) {
+  const electron = useElectron();
+  const [open, setOpen] = useState(false);
+  const [mode, setMode] = useState<BounceLengthMode>("currentPattern");
+  const [bars, setBars] = useState(4);
+  const [sampleRate, setSampleRate] = useState<44100 | 48000>(44100);
+  const [stereo, setStereo] = useState(true);
+  const [filenameStem, setFilenameStem] = useState("");
+  const [isBouncing, setIsBouncing] = useState(false);
+  const [bounceMsg, setBounceMsg] = useState<string | null>(null);
+
+  // Vorausschau-Dauer berechnen
+  const resolved = resolveBounceBars({ mode, bars });
+  const effectiveBpm = pattern.bpm ?? bpm;
+  const previewDuration = computeBounceDurationSec(resolved, pattern.stepCount, effectiveBpm, 0.5);
+
+  const defaultFilename = defaultStemFilename(projectName, part.name);
+  const finalFilename = filenameStem
+    ? (filenameStem.endsWith(".wav") ? filenameStem : `${filenameStem}.wav`)
+    : defaultFilename;
+
+  const handleBounce = useCallback(async () => {
+    if (isBouncing) return;
+    if (previewDuration > BOUNCE_WARN_DURATION_SEC) {
+      const ok = typeof window !== "undefined"
+        ? window.confirm(`Lange Render-Dauer (${Math.round(previewDuration)}s). Fortfahren?`)
+        : true;
+      if (!ok) return;
+    }
+    setIsBouncing(true);
+    setBounceMsg("Lade Sample-Buffer…");
+    try {
+      // Sample-Buffer vorladen (separater AudioContext — bewusst kurzlebig,
+      // wird nach dem decode wieder freigegeben). Ein Buffer pro Channel.
+      let sampleBuffer: AudioBuffer | null = null;
+      if (part.sampleUrl) {
+        const tmpCtx = new AudioContext();
+        try {
+          const resp = await fetch(part.sampleUrl);
+          const ab = await resp.arrayBuffer();
+          sampleBuffer = await tmpCtx.decodeAudioData(ab);
+        } catch (err) {
+          console.warn("[Bounce] Sample-Buffer load failed", err);
+        } finally {
+          await tmpCtx.close().catch(() => {});
+        }
+      }
+
+      setBounceMsg("Rendere Channel…");
+      const wav = await bounceChannelToWavBuffer(part, pattern, {
+        length: { mode, bars },
+        bpm,
+        sampleRate,
+        channels: stereo ? 2 : 1,
+        sampleBuffer,
+      });
+
+      setBounceMsg("Speichere WAV…");
+      if (electron.isElectron) {
+        // Electron-Save: nutzt den existierenden audio:save-recording IPC.
+        // Filename wird nochmals gesäubert weil das IPC streng nur
+        // [A-Za-z0-9._-]+.wav akzeptiert.
+        const safeFilename = finalFilename.replace(/[^A-Za-z0-9._-]/g, "_");
+        const result = await electron.saveRecording(safeFilename, wav);
+        if (result.success) {
+          toast(`Stem gespeichert: ${result.filePath ?? safeFilename}`, { kind: "success" });
+          setBounceMsg(null);
+          setOpen(false);
+        } else {
+          toast(`Save fehlgeschlagen: ${result.error ?? "unbekannt"}`, { kind: "error" });
+          setBounceMsg(`Fehler: ${result.error ?? "unbekannt"}`);
+        }
+      } else {
+        // Browser: Blob-Download
+        downloadWavInBrowser(wav, finalFilename);
+        toast(`Stem heruntergeladen: ${finalFilename}`, { kind: "success" });
+        setBounceMsg(null);
+        setOpen(false);
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast(`Bounce fehlgeschlagen: ${msg}`, { kind: "error" });
+      setBounceMsg(`Fehler: ${msg}`);
+    } finally {
+      setIsBouncing(false);
+    }
+  }, [part, pattern, mode, bars, bpm, sampleRate, stereo, finalFilename, isBouncing, previewDuration, electron]);
+
+  return (
+    <section className="border-t border-border-color p-3" data-testid="channel-inspector-bounce-section">
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        className={`w-full text-left text-[10px] uppercase tracking-widest ${open ? "text-accent-primary" : "text-text-dim hover:text-text-primary"} mb-2`}
+        data-testid="channel-bounce-toggle"
+      >
+        🎬 Bounce to WAV {open ? "▾" : "▸"}
+      </button>
+      {open && (
+        <div className="space-y-2">
+          <div className="flex gap-1 flex-wrap">
+            {(["currentPattern", "currentLoop", "customBars"] as const).map(m => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => setMode(m)}
+                className={`px-2 py-0.5 text-[10px] rounded border transition-colors ${
+                  mode === m
+                    ? "border-accent-primary text-accent-primary bg-accent-primary/10"
+                    : "border-border-color text-text-dim hover:text-text-primary"
+                }`}
+                data-testid={`channel-bounce-mode-${m}`}
+              >
+                {m === "currentPattern" ? "Pattern" : m === "currentLoop" ? "Loop" : "Custom"}
+              </button>
+            ))}
+          </div>
+
+          {(mode === "currentLoop" || mode === "customBars") && (
+            <label className="flex items-center gap-2 text-[10px] text-text-dim">
+              <span>Bars:</span>
+              <input
+                type="number"
+                min={1}
+                max={64}
+                value={bars}
+                onChange={e => setBars(Math.max(1, Math.min(64, parseInt(e.target.value, 10) || 1)))}
+                className="w-16 bg-bg-elevated border border-border-color rounded px-1.5 py-0.5 text-text-primary"
+                data-testid="channel-bounce-bars"
+              />
+            </label>
+          )}
+
+          <div className="flex items-center gap-2 text-[10px] text-text-dim">
+            <label className="flex items-center gap-1">
+              <span>Hz:</span>
+              <select
+                value={sampleRate}
+                onChange={e => setSampleRate(Number(e.target.value) as 44100 | 48000)}
+                className="bg-bg-elevated border border-border-color rounded px-1.5 py-0.5 text-text-primary"
+                data-testid="channel-bounce-sr"
+              >
+                <option value={44100}>44100</option>
+                <option value={48000}>48000</option>
+              </select>
+            </label>
+            <label className="flex items-center gap-1 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={stereo}
+                onChange={e => setStereo(e.target.checked)}
+                className="accent-accent-primary"
+                data-testid="channel-bounce-stereo"
+              />
+              Stereo
+            </label>
+          </div>
+
+          <input
+            type="text"
+            value={filenameStem}
+            onChange={e => setFilenameStem(e.target.value)}
+            placeholder={defaultFilename}
+            className="w-full bg-bg-base border border-border-color rounded px-2 py-1 text-[10px] text-text-primary placeholder:text-text-dim"
+            data-testid="channel-bounce-filename"
+          />
+
+          <div className="text-[10px] text-text-dim flex justify-between">
+            <span>Dauer: {previewDuration.toFixed(1)}s</span>
+            {previewDuration > BOUNCE_WARN_DURATION_SEC && (
+              <span className="text-accent-danger">⚠ Lang</span>
+            )}
+          </div>
+
+          <button
+            type="button"
+            onClick={handleBounce}
+            disabled={isBouncing}
+            className="w-full px-3 py-1.5 text-[11px] rounded bg-accent-primary text-white hover:opacity-80 disabled:opacity-40 font-bold transition-opacity"
+            data-testid="channel-bounce-start"
+          >
+            {isBouncing ? "Bouncing…" : "⬇ Bounce"}
+          </button>
+
+          {bounceMsg && (
+            <div className="text-[10px] text-text-muted" data-testid="channel-bounce-status">
+              {bounceMsg}
+            </div>
+          )}
+        </div>
+      )}
+    </section>
   );
 }
 

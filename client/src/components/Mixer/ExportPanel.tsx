@@ -7,6 +7,9 @@
 import React, { useCallback, useState } from "react";
 import { exportPattern, type ExportOptions, type ExportProgress } from "@/utils/wavExporter";
 import { downloadMidiBundle } from "@/utils/midiExport";
+import { bounceAllChannels, downloadWavInBrowser, type BounceAllProgress } from "@/utils/channelBounce";
+import { useElectron } from "../../../../electron/useElectron";
+import { toast } from "@/store/useToastStore";
 import type { PatternData } from "@/audio/AudioEngine";
 import type { Sample } from "@/store/useProjectStore";
 
@@ -24,6 +27,80 @@ export function ExportPanel({ pattern, bpm, samples, allPatterns = [], projectNa
   const [sampleRate, setSr]   = useState<44100 | 48000>(44100);
   const [progress, setProgress] = useState<ExportProgress | null>(null);
   const [isExporting, setIsExporting] = useState(false);
+  // TASK-241 / v2.94.0: Per-Channel Stem-Bounce (mit Pan + Filter + Volume).
+  const electron = useElectron();
+  const [isBouncingAll, setIsBouncingAll] = useState(false);
+  const [bounceAllMsg, setBounceAllMsg] = useState<string | null>(null);
+
+  const handleBounceAllStems = useCallback(async () => {
+    if (!pattern || isBouncingAll) return;
+    setIsBouncingAll(true);
+    setBounceAllMsg("Lade Sample-Buffer…");
+    try {
+      // Sample-Buffers vorladen
+      const bufMap = new Map<string, AudioBuffer>();
+      const ctx = new AudioContext();
+      try {
+        await Promise.all(
+          pattern.parts
+            .filter(p => p.sampleUrl)
+            .map(async p => {
+              try {
+                const resp = await fetch(p.sampleUrl!);
+                const ab = await resp.arrayBuffer();
+                const buf = await ctx.decodeAudioData(ab);
+                bufMap.set(p.sampleUrl!, buf);
+              } catch { /* ignore */ }
+            }),
+        );
+      } finally {
+        await ctx.close().catch(() => {});
+      }
+
+      const results = await bounceAllChannels(
+        pattern.parts,
+        pattern,
+        bufMap,
+        {
+          length: { mode: "currentLoop", bars },
+          bpm,
+          sampleRate,
+          channels: 2,
+        },
+        projectName,
+        (p: BounceAllProgress) => {
+          if (p.phase === "rendering") {
+            setBounceAllMsg(`Render ${p.current + 1}/${p.total}: ${p.channelName}…`);
+          } else if (p.phase === "done") {
+            setBounceAllMsg("Speichere…");
+          } else if (p.phase === "error") {
+            setBounceAllMsg(`Fehler bei ${p.channelName}: ${p.error}`);
+          }
+        },
+      );
+
+      // Save
+      let savedCount = 0;
+      for (const r of results) {
+        if (electron.isElectron) {
+          const safe = r.filename.replace(/[^A-Za-z0-9._-]/g, "_");
+          const res = await electron.saveRecording(safe, r.wav);
+          if (res.success) savedCount++;
+        } else {
+          downloadWavInBrowser(r.wav, r.filename);
+          savedCount++;
+        }
+      }
+      toast(`${savedCount}/${results.length} Stems gespeichert`, { kind: "success" });
+      setBounceAllMsg(null);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast(`Bounce All fehlgeschlagen: ${msg}`, { kind: "error" });
+      setBounceAllMsg(`Fehler: ${msg}`);
+    } finally {
+      setIsBouncingAll(false);
+    }
+  }, [pattern, bars, bpm, sampleRate, projectName, electron, isBouncingAll]);
 
   const handleExport = useCallback(async () => {
     if (!pattern || isExporting) return;
@@ -101,7 +178,22 @@ export function ExportPanel({ pattern, bpm, samples, allPatterns = [], projectNa
         >
           🎵 MIDI Export
         </button>
+        {/* TASK-241 / v2.94.0: Per-Channel Stems mit Pan + Filter */}
+        <button
+          onClick={handleBounceAllStems}
+          disabled={!pattern || isBouncingAll}
+          className="px-3 py-1 text-[10px] rounded border border-accent-primary/40 text-accent-primary hover:bg-accent-primary/10 disabled:opacity-40 font-bold transition-colors"
+          title="Per-Channel Stem-Bounce: jeden Channel separat als WAV (inkl. Pan, Volume, Filter)"
+          data-testid="export-bounce-all-stems"
+        >
+          {isBouncingAll ? "Bouncing…" : "🎬 Bounce All Stems"}
+        </button>
       </div>
+      {bounceAllMsg && (
+        <div className="mt-2 text-[10px] text-text-muted" data-testid="export-bounce-all-status">
+          {bounceAllMsg}
+        </div>
+      )}
 
       {/* Progress */}
       {progress && (

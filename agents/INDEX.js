@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "2.93.0",
+    version: "2.94.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -83,6 +83,31 @@ const INDEX = {
   // ─── KNOWN FILE INDEX ──────────────────────────────────────
   // Key files agents have analyzed. Add new entries after working on a file.
   files: {
+    "client/src/utils/channelBounce.ts (TASK-241 v2.94)": {
+      role:     "v2.94.0: Per-Channel WAV-Bounce Pure-Render-Engine. renderChannelToBuffer(part, pattern, opts, OfflineCtxCtor?) → OfflineAudioContext-Render eines EINZELNEN Channels mit Gain+Filter(lowpass-bei-cutoff<20k)+StereoPanner-Chain. Pure-Helpers: computeBounceDurationSec/resolveBounceBars/sanitizeStemFilenameStem/defaultStemFilename. bounceChannelToWavBuffer = render+encodeWav (reuse wavEncoder.ts, kein Duplikat). bounceAllChannels sequenziell mit Error-Isolation + Progress-Callback. Konstanten BOUNCE_WARN_DURATION_SEC=300/BOUNCE_MAX_DURATION_SEC=1800. downloadWavInBrowser für Web-Fallback. OfflineAudioContextCtor-Type für DI in Tests. README dokumentiert Limitations: kein Insert-FX (außer Lowpass), keine Synth-Parts, kein globaler Reverb/Delay-Bus.",
+      lastSeen: "2026-05-18T03:35:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/components/Mixer/ChannelInspector.tsx (TASK-241 v2.94)": {
+      role:     "v2.94.0: +optional props {pattern, bpm, projectName} + PartBounceSection-Sub-Component am Ende vor PartMidiOutSection. UI '🎬 Bounce to WAV': 3 Mode-Pills (currentPattern/currentLoop/customBars), Bars-Input 1-64, SR-Select 44100/48000, Stereo-Checkbox, Filename-Input mit Default-Placeholder, Live-Dauer-Preview + ⚠-Warn ab 300s, Bounce-Button mit Status. Save-Path: electron→saveRecording-IPC (filename-resanitize auf strict regex), Browser→downloadWavInBrowser. Toast bei Success/Error. data-testids: channel-inspector-bounce-section + channel-bounce-{toggle,mode-{currentPattern,currentLoop,customBars},bars,sr,stereo,filename,start,status}.",
+      lastSeen: "2026-05-18T03:35:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/components/Mixer/ExportPanel.tsx (TASK-241 v2.94)": {
+      role:     "v2.94.0: +'Bounce All Stems'-Button (data-testid=export-bounce-all-stems) iteriert via bounceAllChannels mit Sample-Buffer-Preload (temporärer AudioContext, im finally close). Unterschied zum bestehenden Stems-Mode in wavExporter.ts: respektiert Pan + Volume + Lowpass-Filter pro Step. Save via electron.saveRecording (filename-resanitize) oder downloadWavInBrowser. Progress-Banner unter Buttons (data-testid=export-bounce-all-status).",
+      lastSeen: "2026-05-18T03:35:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/App.tsx (TASK-241 ChannelInspector-Bounce-Bridge)": {
+      role:     "v2.94.0: beide ChannelInspector-Aufrufsites (Mixer-Dock-Slot Zeile ~3195 + FloatingPanel Zeile ~3416) um pattern={dm.getActivePattern()} bpm={project.bpm} projectName={project.projectName} erweitert. Bounce-Section ist gated auf pattern && bpm≠undefined — ohne diese Props bleibt back-compat.",
+      lastSeen: "2026-05-18T03:35:00.000Z",
+      ownedBy:  "backend"
+    },
+    "tests/features/channel-bounce.test.ts (TASK-241 v2.94)": {
+      role:     "v2.94.0: 35 Unit-Tests (alle grün). Mock-OfflineAudioContext mit capture-stats für bufferSourcesCreated/startCalls/gainValuesSet/panValuesSet/filterFreqsSet/filterNodesCreated. Coverage: computeBounceDurationSec (5 — 2.0s@120bpm/tailSec/linear-bars/NaN-Invalid/BPM-Inverse), resolveBounceBars (3 Modes), sanitizeStemFilenameStem (5 — whitespace/sonderzeichen/default/truncate/allowed-underscore-dash), defaultStemFilename (3), renderChannelToBuffer (10 — buffer-length/bufferSource-per-active-step/pan-propagation/muted→gain=0/no-sample-buffer→silent/filter-create-bei-cutoff<20k/filter-skip-bei-20k/mono-skips-panner/max-duration-reject/pattern.bpm-override), bounceChannelToWavBuffer (2 — valid-WAV-header/stereo-numChannels=2), bounceAllChannels (3 — N-results/onProgress-callback/error-isolation), Konstanten + no-OfflineAudioContext-throw.",
+      lastSeen: "2026-05-18T03:35:00.000Z",
+      ownedBy:  "backend"
+    },
     "client/src/utils/projectSerializer.ts (TASK-PROJ-FILE-V18 v2.93)": {
       role:     "v2.93.0: SYNTH_FILE_VERSION 1.17→1.18. +3 additiv-optionale Top-Level-Felder: liveInputs?: LiveInputChannelData[], midiNoteOut?: { enabled:boolean, configs:Record<partId, MidiPartConfig> }, slicePads?: SerializedSlicePadSlot[]. Schema-Entscheidung Slice-Buffers: embed-full als plain number[]-Array, optionale Strip-API via SerializeProjectOptions { includeSliceBuffers?: boolean=true } für Metadata-only-Saves. Pure-Helper float32ToFrames / framesToFloat32 (lossless null-safe Codec). Drei neue Parse-Migration-Blöcke (analog padBank): undefined bleibt undefined (Signal: User-localStorage in Ruhe lassen), null/wrong-type → undefined, valides Array/Object → silent-filter invalid items + clamp MIDI-Channel/Note bei MidiNoteOut-Configs. Validation-Helper isValidMidiPartConfigEntry + isValidSerializedSlicePadSlot. Pre-v1.18-Files (v1.14/v1.15/v1.16/v1.17) laden komplett unverändert.",
       lastSeen: "2026-05-18T03:20:00.000Z",
@@ -856,6 +881,30 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "backend",
+      timestamp: "2026-05-18T03:35:00.000Z",
+      done: [
+        "v2.94.0: TASK-241 — Per-Channel WAV-Bounce (Stem-Export). Standard-DAW-Feature komplementär zum existierenden Full-Mix-Export. (1) NEU client/src/utils/channelBounce.ts (Pure-Render-Engine, ~350 LOC, KEINE React-Abhängigkeit). renderChannelToBuffer(part, pattern, opts, OfflineCtxCtor?) → OfflineAudioContext-basierter Render eines EINZELNEN Channels: BufferSource → Gain(velocity*partVol) → optional BiquadFilter (lowpass wenn fx.filterFreq<20k) → optional StereoPanner (skip in mono) → ctx.destination. Andere Channels existieren im Offline-Graph NICHT (kein silent-mute-Hack). Pure-Helpers: computeBounceDurationSec(bars,stepsPerBar,bpm,tailSec=0.5) — Formel durationSec = bars * stepsPerBar * (60*4/(bpm*stepsPerBar)) + tail. resolveBounceBars(opt) — Mode-Switch currentPattern=1bar, currentLoop=opt.bars??4, customBars=opt.bars clamped 1..64. sanitizeStemFilenameStem(str) — trim → ws→underscore → strip non-[A-Za-z0-9_-] → max 80 chars → 'stem'-Fallback. defaultStemFilename(proj,ch) — kombiniert mit 'synthstudio'/'channel' Defaults bei leerem Input (NICHT 'stem-stem' was der raw-Sanitizer liefern würde). bounceChannelToWavBuffer = render + encodeWav (reuse client/src/audio/wavEncoder.ts, KEIN Duplikat). bounceAllChannels(parts, pattern, sampleBuffers, opts, projectName, onProgress, OfflineCtxCtor?) — sequenziell (nicht parallel, RAM-Peak-Control), error-isolation (failing channel blocked nicht den Rest). Konstanten: BOUNCE_WARN_DURATION_SEC=300 (5min, UI-Warnung), BOUNCE_MAX_DURATION_SEC=1800 (30min, harter Reject mit Error). downloadWavInBrowser(wav,filename) — Browser-Fallback via Blob + URL.createObjectURL + <a download> + revoke nach 1s. OfflineAudioContextCtor-Type für DI in Tests (Node hat keinen Web-Audio-Globalen). (2) ChannelInspector.tsx erweitert um optional props {pattern, bpm, projectName} und PartBounceSection-Sub-Component am Ende vor PartMidiOutSection. UI: '🎬 Bounce to WAV ▸/▾' Toggle, 3 Mode-Pills (Pattern/Loop/Custom), Bars-Input (1-64, nur Loop/Custom), Sample-Rate-Select 44100/48000, Stereo-Checkbox, Filename-Input mit Default-Placeholder, Live-Dauer-Preview + ⚠-Hinweis ab 300s, Bounce-Button mit Status-Text. Save-Path: electron.isElectron → saveRecording IPC (filename-resanitize auf strict [A-Za-z0-9._-]+ damit der Main-Side-Guard nicht ablehnt), sonst downloadWavInBrowser. Toast bei Success/Error. data-testids: channel-inspector-bounce-section, channel-bounce-toggle, channel-bounce-mode-{currentPattern,currentLoop,customBars}, channel-bounce-bars/sr/stereo/filename/start/status. Sample-Buffer-Load: temporärer AudioContext + fetch+decodeAudioData, Context wird im finally-Block geschlossen. (3) ExportPanel.tsx erweitert um 'Bounce All Stems'-Button (data-testid=export-bounce-all-stems) — iteriert via bounceAllChannels, jeder Channel separat mit Pan+Filter+Volume. Unterschied zu existierendem 'Stems'-Mode in wavExporter.ts: wavExporter ignoriert Pan komplett (mono-Mix), bounceChannel respektiert Pan/Volume/Filter pro Step. (4) App.tsx: beide ChannelInspector-Aufrufsites (Dock-Slot Zeile 3195 + FloatingPanel Zeile 3416) um pattern/bpm/projectName erweitert. (5) NEU tests/features/channel-bounce.test.ts (35 Cases, alle grün). Mock-OfflineAudioContext: capture-stats für bufferSourcesCreated, startCalls, gainValuesSet, panValuesSet, filterFreqsSet. Coverage: computeBounceDurationSec (5 — 2.0s@120bpm, tailSec, linear-bars, NaN-Invalid, BPM-Inverse), resolveBounceBars (3 Modes), sanitizeStemFilenameStem (5 — whitespace, sonderzeichen, default, truncate, allowed-underscore-dash), defaultStemFilename (3), renderChannelToBuffer (10 — buffer-length, bufferSource-per-step-count, pan-propagation, muted→gain=0, no-sample-buffer→silent, filter-create-bei-cutoff<20k, filter-skip-bei-20k, mono-skips-panner, max-duration-reject, pattern.bpm-override), bounceChannelToWavBuffer (2 — valid-WAV-header, stereo-numChannels=2), bounceAllChannels (3 — N results, onProgress-callback, error-isolation continues), Konstanten + no-OfflineAudioContext-throw. (6) package.json 2.93.0 → 2.94.0. pnpm check clean, pnpm test 3388 passed/15 skipped (vs 3353 prev, +35 neue Tests in 0 failed Files). CAVEATS (siehe README am Ende von channelBounce.ts): (a) Insert-FX-Chain (16-Band-EQ, Distortion, Comp, Delay, Reverb-Send, Sidechain, Transient-Shaper, Bitcrusher, RingMod) wird NICHT im Offline-Render gespiegelt — nur Volume, Pan und Lowpass (fx.filterFreq). Für volle FX-Genauigkeit müsste der gesamte AudioEngine-Graph 1:1 im Offline-Context nachgebaut werden (>4000 LOC engine — explizit out-of-scope, Feature-Backlog 'OfflineRenderEngine v2'). (b) Synth/Wavetable/FM/Granular-Parts (sourceType≠'sample') werden als stille Frames gebounced — kein Synth-Offline-Pfad. (c) Live-Input + AudioTrack-Channels haben keinen part.steps[] und werden ignoriert. (d) Globale Reverb/Delay-Buses fehlen. Für 95% der Bounce-Use-Cases (Stem-Sharing, Quick-Master-Check, Collab-Sharing einzelner Channels) ausreichend. ISOMORPHIC: Browser- + Electron-Pfad vollständig getrennt — Web-User bekommt Blob-Download, Electron-User schreibt in userData/recordings/ via existierenden audio:save-recording-IPC (TASK-234 v2.86). KEIN neuer IPC-Channel nötig — reuse passte perfekt. WAV-Header: Wiederverwendung von wavEncoder.ts encodeWav() — KEIN Duplikat-Code."
+      ],
+      next: [
+        "TASK-241-FOLLOWUP-1: OfflineRenderEngine v2 — vollständige Re-Construction des AudioEngine-Channel-Graph im OfflineAudioContext inkl. aller 12 FX-Typen. Großes Projekt (~1500 LOC), Voraussetzung wäre eine Refactor des FX-Pipeline in eine factory-funktion mit (ctx, source, opts) → outputNode-Signatur damit Live + Offline denselben Code teilen.",
+        "TASK-241-FOLLOWUP-2: Synth-Offline-Render — SynthEngine.ts hat heute keinen Offline-Pfad. Mindestens Wavetable-Synth ist trivial portierbar (Oscillator + ADSR), FM braucht ModulatorGraph-Replikation.",
+        "TASK-241-FOLLOWUP-3: Stem-Export ZIP-Bundle — bounceAllChannels liefert N WAVs, derzeit speichern wir N Dateien. JSZip-Wrapper könnte sie zu einem proj-stems.zip schnüren (1 Klick Share).",
+        "TASK-241-FOLLOWUP-4: Realtime-Tap-Bounce als Alternative — neue Option 'Bounce Mode: Offline (fast, no-FX) | Realtime (slow, full-FX)'. Realtime würde via AudioRecorder den panner-Output tappen während ein silent-Render läuft (Master auf 0). Vollständig FX-genau aber 1:1 Echtzeit-Aufwand.",
+        "TASK-241-FOLLOWUP-5: Bounce-History-Panel — kleine Liste der letzten 10 Bounces mit Re-Play-Preview-Button + Reveal-in-Folder.",
+        "TASK-239 (VST3/CLAP-Host) bleibt offen."
+      ],
+      changed: [
+        "client/src/utils/channelBounce.ts (NEU — Pure-Render-Engine OfflineAudioContext + Helpers + encodeWav-reuse + Browser-Blob-Download)",
+        "client/src/components/Mixer/ChannelInspector.tsx (+optionale props pattern/bpm/projectName + PartBounceSection-Sub-Component mit Mode-Pills/Bars/SR/Stereo/Filename/Save-Flow)",
+        "client/src/components/Mixer/ExportPanel.tsx (+'Bounce All Stems'-Button + bounceAll-Flow mit Sample-Buffer-Preload + electron-save / browser-download)",
+        "client/src/App.tsx (beide ChannelInspector-Aufrufsites um pattern={dm.getActivePattern()} bpm={project.bpm} projectName={project.projectName} erweitert)",
+        "tests/features/channel-bounce.test.ts (NEU, 35 Cases — Pure-Helpers + renderChannelToBuffer-Mock + bounceChannelToWavBuffer-Header-Check + bounceAllChannels-Iteration + Error-Isolation)",
+        "package.json (2.93.0 → 2.94.0)",
+        "agents/INDEX.js (workLog + version 2.94.0 + files-Index)"
+      ]
+    },
     {
       agent:     "backend",
       timestamp: "2026-05-18T03:20:00.000Z",

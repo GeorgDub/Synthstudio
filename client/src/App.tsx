@@ -3197,6 +3197,9 @@ export default function App() {
                       parts={dm.getActivePattern()?.parts ?? []}
                       mixer={mixer}
                       onApplyPatch={dm.applyPatchToPart}
+                      pattern={dm.getActivePattern()}
+                      bpm={project.bpm}
+                      projectName={project.projectName}
                     />
                   </div>
                 )
@@ -3418,6 +3421,9 @@ export default function App() {
             parts={dm.getActivePattern()?.parts ?? []}
             mixer={mixer}
             onApplyPatch={dm.applyPatchToPart}
+            pattern={dm.getActivePattern()}
+            bpm={project.bpm}
+            projectName={project.projectName}
             className="w-full h-full"
           />
         </FloatingPanel>
