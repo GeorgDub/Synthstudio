@@ -184,6 +184,39 @@ export function getArmedLiveInputChannelIds(): string[] {
   return _channels.filter((c) => c.recordArmed).map((c) => c.id);
 }
 
+/**
+ * v3.62.0: Setzt `recordArmed` für alle Live-Input-Channels in einem Rutsch.
+ *
+ * Multi-Track-Recording-UX (Bulk-Action für die Mixer-Topbar). Hartes Wechseln
+ * auf den Ziel-Status, keine inkrementelle Toggle-Logik. Idempotent — wenn
+ * der State bereits identisch ist passiert nichts (kein notify, keine
+ * Persist-Schreibe).
+ *
+ * Limit-Check: die Engine erzwingt MAX_SIMULTANEOUS_RECORDINGS=8 zur
+ * Aufnahmezeit (siehe AudioRecorder.start). Hier dürfen alle vorhandenen
+ * Live-Inputs armed werden — die Konsequenz (welche kommen tatsächlich
+ * durch) wird erst bei `transport:play` sichtbar.
+ */
+export function setAllLiveInputRecordArm(armed: boolean): void {
+  let mutated = false;
+  const next = _channels.map((c) => {
+    if ((c.recordArmed ?? false) === armed) return c;
+    mutated = true;
+    return { ...c, recordArmed: armed };
+  });
+  if (!mutated) return;
+  _channels = next;
+  persist();
+  notify();
+}
+
+/** v3.62.0: Anzahl der gerade armed Live-Input-Channels (für UI-Counter). */
+export function countArmedLiveInputs(): number {
+  let n = 0;
+  for (const c of _channels) if (c.recordArmed) n++;
+  return n;
+}
+
 /** Entfernt einen Live-Input-Channel. Caller MUSS vorher den Stream detachen. */
 export function removeLiveInputChannel(id: string): void {
   const next = _channels.filter((c) => c.id !== id);
@@ -287,6 +320,10 @@ export interface LiveInputStoreApi {
   update: (id: string, patch: Partial<LiveInputChannelData>) => void;
   setSoloed: (id: string, soloed: boolean, exclusive?: boolean) => void;
   setRecordArm: (id: string, armed: boolean) => void;
+  /** v3.62.0: Bulk-Action für Multi-Track-Recording. */
+  setAllRecordArm: (armed: boolean) => void;
+  /** v3.62.0: Anzahl armed Channels (für UI-Counter-Badges). */
+  armedCount: number;
   get: (id: string) => LiveInputChannelData | null;
 }
 
@@ -308,6 +345,8 @@ export function useLiveInputStore(): LiveInputStoreApi {
     update: updateLiveInputChannel,
     setSoloed: setLiveInputSoloed,
     setRecordArm: setLiveInputRecordArm,
+    setAllRecordArm: setAllLiveInputRecordArm,
+    armedCount: _channels.reduce((n, c) => n + (c.recordArmed ? 1 : 0), 0),
     get: getLiveInputChannel,
   };
 }

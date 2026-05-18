@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.61.0",
+    version: "3.62.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -1374,9 +1374,19 @@ const INDEX = {
       lastSeen: "2026-05-17T23:20:00.000Z",
       ownedBy:  "backend"
     },
-    "client/src/store/useLiveInputStore.ts": {
-      role:     "TASK-233 (v2.85.0): Custom Observer Store für Live-Input-Mixer-Channels. MAX_LIVE_INPUT_CHANNELS=4, DEFAULT_LIVE_INPUT_VOLUME=0.5, ID-Prefix 'liveinput:', localStorage-Key 'synthstudio:liveinputs:v1'. Schema: {id, name, deviceId|null, deviceLabel?, volume, pan, muted, soloed, sends:{reverb,delay}, latencyCompensationMs}. API: addLiveInputChannel(overrides?)+throw bei MAX, removeLiveInputChannel, updateLiveInputChannel (Patch-Semantik, ID-Schutz, alle Werte werden auf valid-Range geklemmt), setLiveInputSoloed (additive vs exclusive DAW-Convention), loadLiveInputChannels (Project-Restore filtert invalide + cappt), clearLiveInputChannels, isValidChannel Type-Guard, useLiveInputStore React-Hook.",
-      lastSeen: "2026-05-17T23:20:00.000Z",
+    "client/src/store/useLiveInputStore.ts (v3.62.0)": {
+      role:     "v2.85 Foundation + v2.86 recordArmed + v3.62.0 Multi-Track-UX. MAX_LIVE_INPUT_CHANNELS=4, DEFAULT_LIVE_INPUT_VOLUME=0.5, ID-Prefix 'liveinput:', localStorage-Key 'synthstudio:liveinputs:v1'. Schema: {id, name, deviceId|null, deviceLabel?, volume, pan, muted, soloed, sends:{reverb,delay}, latencyCompensationMs, recordArmed?:boolean}. v3.62 NEU: setAllLiveInputRecordArm(armed) — Bulk-Action mit mutated-Flag (No-Op → kein notify/persist), countArmedLiveInputs() Pure-Reader, Hook-API +setAllRecordArm/armedCount. KEINE Single-Arm-Constraint — recordArmed war seit v2.86 schon pro Channel boolean, die Engine (AudioRecorder) ist multi-track-capable bis MAX_SIMULTANEOUS_RECORDINGS=8. v3.62 ergänzt nur UX.",
+      lastSeen: "2026-05-19T00:05:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/components/Mixer/MixerView.tsx (v3.62.0 multitrack-rec)": {
+      role:     "v3.62.0 ERWEITERT (+~55 LOC): bestehende Mixer-Toolbar (Add-Audio-Track / Add-Live-Input / Time-Stretch-Counter / v3.53 BPM-Detection-Toast / v3.54 Worker-BPM) bleibt + NEU Multi-Track Recording UI nach 'Add Live-Input'-Button. Block bedingt sichtbar wenn liveInputChannels.length>0. Arm-All-Button (data-testid mixer-arm-all-live-inputs, aria-pressed=allArmed) toggelt liveInputStore.setAllRecordArm(!allArmed) — bei allArmed → 'Disarm All', sonst → 'Arm All'. Styling accent-danger/15 background bei allArmed, sonst accent-danger/40-border. Counter-Badge (data-testid mixer-armed-counter) zeigt '🔴 N armed' (accent-danger) bei armedCount>0, '0 armed' (text-dim) sonst. Über-Limit-Warnung (⚠) bei armedCount>8 — defensive für Future MAX_LIVE_INPUT_CHANNELS-Expansion. Tooltip-Text informiert User über die 8-simultan-Engine-Cap.",
+      lastSeen: "2026-05-19T00:05:00.000Z",
+      ownedBy:  "backend"
+    },
+    "tests/features/audio-recording-multitrack.test.ts (v3.62.0)": {
+      role:     "v3.62.0 NEU (~290 LOC, 11 Tests in 2 describes, env:node). (1) Store-API × 6 — setAllLiveInputRecordArm armed 3 Channels parallel + countArmed=3, disarm-All clear-t alle armed-Flags, Idempotenz (No-Op auf bereits-true/false), keine Single-Arm-Constraint (4 IDs alle armed), localStorage-Persist mit recordArmed:true in JSON, leerer Store No-Op count=0. (2) Engine-Pipeline × 5 — 3 Live-Inputs armed → recorder.start für jeden true + activeCount=3, jede der 3 parallel-Aufnahmen produziert separates WAV mit isValidWavHeader+korrekter byteLength (44+8192*2 für 2 Ticks Mono 4096), MAX 8 simultaneous enforced (9. start liefert false + stopAll=8 Results), Disarm-while-running Map-Isolation (cancel(b) lässt a+c intakt → stopAll=2 Results ohne b), 10-IDs am Recorder → nur 8 starten (Engine-Cap-Beweis ohne Store-Mediation). Mock-AudioContext analog zu audio-recording.test.ts (MockAudioNode/ScriptProcessor/AudioBuffer/GainNode + feedFrames-Helper).",
+      lastSeen: "2026-05-19T00:05:00.000Z",
       ownedBy:  "backend"
     },
     "client/src/components/Mixer/LiveInputStrip.tsx": {
@@ -1897,6 +1907,30 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "backend",
+      timestamp: "2026-05-19T00:05:00.000Z",
+      done: [
+        "v3.62.0: Multi-Track Audio Recording UI — v2.86 AudioRecorder-Engine ist BEREITS multi-track-capable (Map<channelId, ActiveRecording> + MAX_SIMULTANEOUS_RECORDINGS=8). Es gab KEINE Single-Arm-Constraint im Store — recordArmed war schon pro Channel boolean. Diese Version ergänzt nur die UX-Schicht (Bulk-Arm-Action + Counter-Badge + Test-Coverage).",
+        "client/src/store/useLiveInputStore.ts: NEU setAllLiveInputRecordArm(armed:boolean) — Bulk-Action, mutated-Flag-Tracking damit No-Op kein notify/persist auslöst. NEU countArmedLiveInputs():number Pure-Reader für UI-Counter. Hook-API erweitert um setAllRecordArm + armedCount (rechnet im Hook-Snapshot live aus _channels).",
+        "client/src/components/Mixer/MixerView.tsx: NEU Multi-Track-Toolbar-Block nach 'Add Live-Input'-Button. Arm-All-Button (data-testid mixer-arm-all-live-inputs) toggelt setAllRecordArm(true/false) je nach allArmed-State. Counter-Badge (data-testid mixer-armed-counter) zeigt '🔴 N armed' bei armedCount>0 (accent-danger) bzw. '0 armed' (text-dim). Über-Limit-Warnung (⚠) bei armedCount>8 — da MAX_LIVE_INPUT_CHANNELS=4 derzeit unmöglich, aber defensiv für Future-Expansion. Block nur sichtbar wenn liveInputChannels.length>0.",
+        "tests/features/audio-recording-multitrack.test.ts NEU: 11 Tests in 2 describes (env:node). Store-API × 6 (Bulk-Arm/Disarm, Idempotenz, keine Single-Arm-Constraint, localStorage-Persist, empty-Store-No-Op, count). Engine-Pipeline × 5 (3 parallele Recordings starten, jede produziert separates WAV mit isValidWavHeader, MAX=8 enforced, Disarm-while-running Map-Isolation, 10-IDs-Engine-Cap-Test). Mock-AudioContext analog zu audio-recording.test.ts.",
+        "pnpm check clean. pnpm test grün: 208 Test-Files / 4817 Tests passed (16 skipped). Neue Datei läuft mit 11 Tests in 19ms.",
+        "package.json + agents/INDEX.js version 3.61.0 → 3.62.0."
+      ],
+      next: [
+        "v3.63: Audio-Track-Strip Record-Arm-UI für interne Channels (Drum/Synth-Mixer-Channels) — aktuell ist Multi-Track-Recording auf Live-Inputs beschränkt. AudioEngine.startRecording funktioniert für alle channelIds.",
+        "v3.63: Performance-Warning-Toast wenn Arm-All > MAX_LIVE_INPUT_CHANNELS oder Engine zur Aufnahmezeit Limit-Overflow zurückmeldet (App.tsx-Hook).",
+        "v3.63: Optional Stereo-Recording-Mode (channels=2) per Live-Input-Strip-Toggle — AudioRecorder unterstützt's, UI noch nicht."
+      ],
+      changed: [
+        "client/src/store/useLiveInputStore.ts (+~50 LOC: setAllLiveInputRecordArm, countArmedLiveInputs, Hook-API +setAllRecordArm/armedCount)",
+        "client/src/components/Mixer/MixerView.tsx (+~55 LOC: Arm-All-Button + armed-Counter-Badge im Toolbar)",
+        "tests/features/audio-recording-multitrack.test.ts (NEU ~290 LOC: 11 Tests, Mock-AudioContext, Engine + Store Coverage)",
+        "package.json (3.61.0 → 3.62.0)",
+        "agents/INDEX.js (version + workLog v3.62.0)"
+      ]
+    },
     {
       agent:     "backend",
       timestamp: "2026-05-18T23:59:30.000Z",

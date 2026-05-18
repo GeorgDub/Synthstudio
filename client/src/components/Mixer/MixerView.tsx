@@ -852,6 +852,58 @@ export function MixerView({ dm, mixer, samples = [], bpm = 120, projectName = "S
           <ProLockBadge feature={PRO_FEATURE_USB_AUDIO_IN} />
         </button>
 
+        {/* v3.62.0: Multi-Track Recording — Arm-All-Button + armed-Counter.
+            Sichtbar nur wenn mind. ein Live-Input existiert. Counter zeigt
+            armed/total + ggf. >MAX_SIMULTANEOUS_RECORDINGS=8 Warnung.
+        */}
+        {liveInputChannels.length > 0 && (() => {
+          const armedCount = liveInputStore.armedCount;
+          const allArmed = armedCount === liveInputChannels.length && liveInputChannels.length > 0;
+          const overLimit = armedCount > 8;
+          const counterColor = overLimit
+            ? "text-accent-danger"
+            : armedCount > 0
+              ? "text-accent-danger"
+              : "text-text-dim";
+          return (
+            <>
+              <button
+                type="button"
+                onClick={() => liveInputStore.setAllRecordArm(!allArmed)}
+                data-testid="mixer-arm-all-live-inputs"
+                aria-label={allArmed ? "Alle Live-Inputs disarmen" : "Alle Live-Inputs record-armen"}
+                aria-pressed={allArmed}
+                title={
+                  allArmed
+                    ? "Alle Live-Input-Channels disarmen"
+                    : "Alle Live-Input-Channels für Multi-Track-Aufnahme armen"
+                }
+                className={[
+                  "px-2 py-0.5 text-[10px] rounded border inline-flex items-center gap-1 transition-colors",
+                  allArmed
+                    ? "border-accent-danger bg-accent-danger/15 text-accent-danger hover:bg-accent-danger/25"
+                    : "border-accent-danger/40 text-accent-danger/80 hover:bg-accent-danger/10",
+                ].join(" ")}
+              >
+                <span aria-hidden>●</span>
+                {allArmed ? "Disarm All" : "Arm All"}
+              </button>
+              <span
+                data-testid="mixer-armed-counter"
+                className={`text-[10px] font-mono ml-1 ${counterColor}`}
+                title={
+                  overLimit
+                    ? `${armedCount} Channels armed — Engine limitiert auf 8 gleichzeitige Aufnahmen.`
+                    : `${armedCount} von ${liveInputChannels.length} Live-Inputs record-armed`
+                }
+              >
+                {armedCount > 0 ? `🔴 ${armedCount} armed` : "0 armed"}
+                {overLimit && <span className="ml-1">⚠</span>}
+              </span>
+            </>
+          );
+        })()}
+
         {/* Time-Stretch Counter (TASK-121) – nur sichtbar, wenn Audio-Tracks existieren */}
         {audioTracks.length > 0 && (() => {
           const tsCount = countTimestretchTracks();
