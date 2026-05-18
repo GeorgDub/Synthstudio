@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.48.0",
+    version: "3.49.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -89,6 +89,21 @@ const INDEX = {
   // ─── KNOWN FILE INDEX ──────────────────────────────────────
   // Key files agents have analyzed. Add new entries after working on a file.
   files: {
+    "client/src/utils/korgProjectTemplates.ts (v3.49.0)": {
+      role:     "v3.49.0 NEU: KORG-zentrierte Project-Setup-Templates. Anders als utils/projectTemplates.ts (Genre/Drum-Pattern) und store/projectTemplates.ts (Track-Skelette) bündelt dieses Modul KONFIGURATIONS-Templates: MIDI-Clock-Out, MIDI-Note-Out, Scenes, Pad-Bank. Pure-TS, isomorphic, alle Side-Effects via Dependency-Injection (KorgTemplateApplyDeps {setBpm?, setStepCount?, reseedParts?, enableClockOut?, enableLedFeedback?, postApplyNotice?}). Public-API: KORG_PROJECT_TEMPLATES (3 readonly Templates: korg-e2-studio mit 8d+8s/Clock-Out/GM-Note-Map, korg-esx-live mit 10d/8 Scenes/16 Pads, nanokontrol2-mix mit LED-Feedback/16 Pads), getKorgTemplate(id), listKorgTemplateIds(), buildPerfPadBankSlots() liefert 16 perf-pad-Slots mit param '0'..'15', applyKorgProjectTemplate(id, deps): KorgTemplateApplyResult {templateId, partIds, scenesCreated, padBankSlots, hints}. Apply ist destructive auf Pad-Bank/Scenes (UI muss confirm). MIDI-Note-Out-Configs werden mit Placeholder-outputId '__pending__:<regex>' geschrieben — UI-Layer ersetzt via MIDIAccess-Lookup.",
+      lastSeen: "2026-05-18T21:18:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/components/KorgTemplatePicker/KorgTemplatePicker.tsx (v3.49.0)": {
+      role:     "v3.49.0 NEU: Modal-Picker für KORG-Setup-Templates. Renders 3 Cards (Mic/Disc/Sliders Lucide-Icons) mit Name, Tagline, Description, Feature-Badges (BPM, Drum-Count, Synth-Count, Clock-Out, Note-Out, Scenes, Pads), 'Use Template'-Button. Props: {isOpen, onClose, onSelect: (id: KorgTemplateId) => void}. ESC-Key + Backdrop-Click schließen. Pure-Tailwind mit semantischen Tokens (bg-bg-panel, text-text-primary, bg-accent-primary/15, border-border-color, text-text-muted, bg-bg-base) — keine hardcoded Farben. Keine direkten Store-Imports — Caller (App.tsx) entscheidet was passiert.",
+      lastSeen: "2026-05-18T21:18:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "tests/features/korg-project-templates.test.ts (v3.49.0)": {
+      role:     "v3.49.0 NEU: 19 Tests, env:jsdom (für localStorage). Coverage: Definitions-Integrity (3 Templates mit eindeutigen IDs, alle Pflichtfelder/Hints), pro-Template-Spezifika (E2 hat 8d+8s/Clock-Out/Note-Out, ESX 10d/8 Scenes/Pad-Bank, nanoKONTROL2 LED-but-no-Clock), Lookup-Helpers (getKorgTemplate liefert null bei unknown), buildPerfPadBankSlots erzeugt 16 perf-pad mit param 0..15, apply-Sequenz mit Spy-Deps (setBpm + reseedParts werden korrekt gerufen), Per-Template-Side-Effects (E2 → applyElectribeDrumMap füllt 8 Configs mit Channel 9 + GM-Note 36 für part-0; ESX → 8 Scenes in localStorage 'ss-scenes:v1'; ESX + nanoKONTROL2 → 16 Pad-Bank-Slots), Error-Handling (unknown ID throws), Isomorphie (fehlende DI-Setter werden geskippt ohne Error), Notice-Toast enthält Template-Name, Hints-Result-Propagation. localStorage-Reset zwischen Tests via __resetMidiNoteOutStoreForTests + __resetPadBankForTests + manueller localStorage.removeItem('ss-scenes:v1').",
+      lastSeen: "2026-05-18T21:18:00.000Z",
+      ownedBy:  "testing"
+    },
     "client/src/audio/PluginRegistry.ts (v3.44.0)": {
       role:     "v3.44.0 NEU (TASK-239 Phase 1): AudioWorklet-Plugin-Host Foundation. Module-Singleton mit Map<id, manifest>. Public API: validatePluginManifest(unknown):boolean (defensive structural check, prüft id/name/version/workletUrl/processorName non-empty Strings + paramSchema-Array mit min<=default<=max + finite numbers), registerPlugin(manifest, opts?), unregisterPlugin(id):boolean, getPlugins():PluginManifest[] sorted-by-id, getPlugin(id), pluginCount(), _resetPluginRegistry test-helper. BUILT_IN_PLUGINS Array mit 3 Plugins: BUILT_IN_TAPE_SAT (drive 0..1, mix 0..1), BUILT_IN_NOTCH (frequency 50..12000 Hz, q 0.5..30, mix 0..1), BUILT_IN_WIDTH (width 0..2). registerBuiltInPlugins() idempotent — doppelter Call mit gleicher Version ist No-Op, mit anderer Version wirft (defensive, schützt Hot-Reload). getDefaultParams(manifest) liefert {[paramId]: default}. clampPluginParam(manifest, paramId, value) clampt auf range, NaN→default, unknown-param→passthrough (defensive). builtInWorkletUrl(filename) resolved via new URL(...,import.meta.url) mit string-fallback für Test-Env. PHASE-2-STUB-BLOCK am Ende (~30 LOC Kommentar): scanNativePlugins()/loadVST3(path) Signaturen für v4.0+ JUCE-Node-Addon-Integration dokumentiert.",
       lastSeen: "2026-05-18T23:30:00.000Z",
@@ -1722,6 +1737,42 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "frontend",
+      timestamp: "2026-05-18T21:18:00.000Z",
+      done: [
+        "v3.49.0: KORG Project-Templates — 3 Instant-Ready Setups (KORG E2 Studio / KORG ESX Live / nanoKONTROL2 Mix). Neuer User schaltet via 1-Click ein kompletes KORG-Setup statt Settings-Felder einzeln zu finden. pnpm check clean, 198 Test-Files / 4595 tests grün (16 skipped, +19 NEU).",
+        "NEU client/src/utils/korgProjectTemplates.ts (~270 LOC, pure-TS, isomorphic). Public-API: KORG_PROJECT_TEMPLATES (readonly Array 3 Templates) + getKorgTemplate(id) + listKorgTemplateIds() + buildPerfPadBankSlots() + applyKorgProjectTemplate(id, deps: KorgTemplateApplyDeps). Template-Schema deklarativ: {id, name, tagline, description, icon, bpm, stepCount, drumPartCount, synthPartCount, postApplyHints, midiDeviceHintRegex, modifies: {drumParts, synthParts, midiClockOut, midiNoteOut, scenes, padBank, sceneCount, padBankSlots}}. Dependency-Injection für Side-Effects: setBpm/setStepCount/reseedParts/enableClockOut/enableLedFeedback/postApplyNotice alle optional — testbar in Node ohne DOM/electronAPI.",
+        "Templates: (1) KORG E2 Studio — bpm 120, 16 steps, 8 drum + 8 synth, GM-Drum-Map auto-applied, MIDI-Clock-Out aktiviert mit Device-Hint 'electribe'. (2) KORG ESX Live — bpm 128, 10 drum, 8 Scenes (Shift+1..8 cycle), 16 Performance-Pads in Pad-Bank, Device-Hint 'esx|electribe'. (3) nanoKONTROL2 Mix — bpm 120, 8 drum, LED-Feedback aktiviert (KEIN Clock-Out), 16 Pad-Bank-Slots, Device-Hint 'nanokontrol'.",
+        "NEU client/src/components/KorgTemplatePicker/{KorgTemplatePicker.tsx,index.ts} (~170 LOC) — Modal-Picker. 3 Cards mit Icon (Mic/Disc/Sliders), Name, Tagline, Description, Feature-Badges (BPM/Drum-Count/Synth-Count/Clock-Out/Note-Out/Scenes/Pads), 'Use Template'-Button. ESC schließt. Pure-Tailwind mit semantischen Tokens (bg-bg-panel, text-text-primary, bg-accent-primary/15, border-border-color etc.) — keine hardcoded Farben.",
+        "App.tsx-Integration: import KorgTemplatePicker + applyKorgProjectTemplate, NEU showKorgTemplatePicker-state, NEU useEffect-Listener auf window-Event 'synthstudio:open-korg-templates' (Externe Trigger: Menüs/Wizard), Welcome-Wizard-Try-It-Routing 'korg-templates' → setShowKorgTemplatePicker(true), Modal-Mount mit onSelect-Handler der applyKorgProjectTemplate({setBpm: project.setBpm, postApplyNotice: showToast}) ruft + Toast-Hint vom Result.hints[0].",
+        "useWelcomeStore.ts: WelcomeTryItTarget union erweitert um 'korg-templates' (für künftige Welcome-Wizard-Slide-Integration).",
+        "NEU tests/features/korg-project-templates.test.ts (19 Tests, env:jsdom für localStorage). Coverage: Definitions-Integrity (3 Templates, eindeutige IDs, alle Pflichtfelder), pro-Template-Spezifika (E2 hat 8d+8s, ESX 10d+8 Scenes, nanoKONTROL2 LED-but-no-Clock), Lookup-Helpers (getKorgTemplate null bei unknown), buildPerfPadBankSlots (16 perf-pad mit param 0..15), apply-Sequenz (setBpm + reseedParts spies), Per-Template-Side-Effects (Clock-Out für E2, LED für nanoKONTROL2, 8 Scenes für ESX persistiert in localStorage, 16 Pad-Bank-Slots persistiert, MIDI-Note-Out-Configs für 8 Drum-Parts mit GM-Note 36 Channel 9), Error-Handling (unknown ID throws), Isomorphie (fehlende DI-Setter geskippt ohne Error), Notice-Toast (template-name enthalten), Hints-Result-Propagation.",
+        "package.json + agents/INDEX.js version 3.48.0 → 3.49.0."
+      ],
+      next: [
+        "v3.50 Welcome-Wizard KORG-Slide mit '🆕 Quick-Start mit Template'-Buttons direkt im Wizard rendern (statt nur via WelcomeTryItTarget-Routing).",
+        "v3.50 MIDI-Device-Auto-Resolve im Apply-Handler: bei verbundener MIDIAccess regex-match aus template.midiDeviceHintRegex → outputId statt placeholder __pending__.",
+        "v3.50 Template-Picker Preview-Screenshots oder animierte Demos (statt nur Text-Description).",
+        "v3.50 Reseed-Parts-Implementation in App.tsx-Handler — aktuell wird nur setBpm gesetzt, drum-/synth-part-counts werden noch nicht angepasst.",
+        "v3.50 Confirmation-Dialog bei destructive Apply (existing Scenes/Pad-Bank überschrieben)."
+      ],
+      changed: [
+        "client/src/utils/korgProjectTemplates.ts (NEU, ~270 LOC — KORG_PROJECT_TEMPLATES + getKorgTemplate + listKorgTemplateIds + buildPerfPadBankSlots + applyKorgProjectTemplate + Types)",
+        "client/src/components/KorgTemplatePicker/KorgTemplatePicker.tsx (NEU, ~170 LOC — Modal mit 3 Cards + ESC-Close + Feature-Badges)",
+        "client/src/components/KorgTemplatePicker/index.ts (NEU — Re-Export)",
+        "client/src/App.tsx (+~25 LOC — import, showKorgTemplatePicker-state, useEffect-Listener auf custom-event, Modal-Mount, Welcome-Routing korg-templates → openPicker)",
+        "client/src/store/useWelcomeStore.ts (+1 Zeile — WelcomeTryItTarget um 'korg-templates' erweitert)",
+        "tests/features/korg-project-templates.test.ts (NEU, 19 Tests in 1 describe — Definitions/Lookups/Pad-Bank-Builder/Apply mit DI-Spies/Per-Template-Spezifika/Errors/Isomorphie)",
+        "package.json (3.48.0 → 3.49.0)",
+        "agents/INDEX.js (version + workLog v3.49.0)"
+      ],
+      caveats: [
+        "applyKorgProjectTemplate's reseedParts-DI wird in App.tsx aktuell NICHT gesetzt — Drum-/Synth-Part-Anzahl wird beim Template-Apply nicht remodelt. setBpm + Scenes + Pad-Bank werden korrekt angewendet. MIDI-Note-Out-Configs werden mit placeholder-outputId '__pending__:<regex>' geschrieben — der UI-Layer muss die MIDIAccess durchsuchen und die outputId nachträglich setzen.",
+        "enableClockOut + enableLedFeedback sind in App.tsx aktuell als no-op (DI nicht injected) — Templates schreiben aktuell nur Pad-Bank/Scenes/Note-Out-Configs persistent + BPM/Toast in den Project-State. Vollständige MIDI-Settings-Aktivierung kommt in v3.50.",
+        "useSceneStore hat keinen offiziellen Test-Reset → Test-Cleanup macht localStorage.removeItem('ss-scenes:v1') direkt. Sollte v3.50 als __resetSceneStoreForTests() exportiert werden."
+      ]
+    },
     {
       agent:     "backend",
       timestamp: "2026-05-18T21:05:00.000Z",

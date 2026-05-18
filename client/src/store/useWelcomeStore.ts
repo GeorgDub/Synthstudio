@@ -158,7 +158,8 @@ export type WelcomeTryItTarget =
   | "looper"             // → Sequencer-Tab + Looper sichtbar
   | "sample-slicer"      // → Tools-Tab → Sample-Slicer
   | "settings"           // → Settings-Modal öffnen (Default-Section)
-  | "templates";         // → MIDI-Hardware-Templates anzeigen
+  | "templates"          // → MIDI-Hardware-Templates anzeigen
+  | "korg-templates";    // v3.49.0 → KORG-Project-Templates-Picker öffnen
 
 export interface WelcomeTryItDetail {
   target: WelcomeTryItTarget;

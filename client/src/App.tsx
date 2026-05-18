@@ -44,6 +44,8 @@ import { SampleBrowser } from "@/components/SampleBrowser";
 import { AudioInputRecorder } from "@/components/SampleBrowser/AudioInputRecorder";
 import { ProjectManager } from "@/components/ProjectManager";
 import { NewProjectDialog } from "@/components/NewProjectDialog";
+import KorgTemplatePicker from "@/components/KorgTemplatePicker";
+import { applyKorgProjectTemplate } from "@/utils/korgProjectTemplates";
 import { SongTimeline } from "@/components/SongTimeline";
 import { Humanizer } from "@/components/Humanizer";
 import { DrumMachine } from "@/components/DrumMachine";
@@ -472,6 +474,8 @@ export default function App() {
   const inSession = session.status === "hosting" || session.status === "joined";
   // ── Dialog-State ────────────────────────────────────────────────────────────────
   const [showNewProjectDialog, setShowNewProjectDialog] = useState(false);
+  // v3.49.0 — KORG Quick-Start Template-Picker
+  const [showKorgTemplatePicker, setShowKorgTemplatePicker] = useState(false);
 
   // ── Browser-Warning Toast (Audio-Tracks beim Save im Web-Modus) ───────────
   const [showAudioTrackBrowserWarning, setShowAudioTrackBrowserWarning] = useState(false);
@@ -1124,6 +1128,10 @@ export default function App() {
         case "templates":
           setSettingsInitialSection("midi-devices");
           setShowSettings(true);
+          break;
+        case "korg-templates":
+          // v3.49.0 — KORG Quick-Start Picker öffnen
+          setShowKorgTemplatePicker(true);
           break;
         case "settings":
         default:
@@ -2297,6 +2305,13 @@ export default function App() {
 
   const handleNewProject = useCallback(() => {
     setShowNewProjectDialog(true);
+  }, []);
+
+  // v3.49.0 — KORG Quick-Start Picker via Global-Event (Welcome-Wizard + Menüs)
+  useEffect(() => {
+    const handler = () => setShowKorgTemplatePicker(true);
+    window.addEventListener("synthstudio:open-korg-templates", handler);
+    return () => window.removeEventListener("synthstudio:open-korg-templates", handler);
   }, []);
 
   /**
@@ -3804,6 +3819,19 @@ export default function App() {
           doFullProjectReset();
           // Project-Store mit Template-Daten überschreiben (BPM, Name, Samples)
           project.newProjectFromTemplate(templateState);
+        }}
+      />
+
+      {/* v3.49.0 — KORG Quick-Start Templates (E2 Studio / ESX Live / nanoKONTROL2 Mix) */}
+      <KorgTemplatePicker
+        isOpen={showKorgTemplatePicker}
+        onClose={() => setShowKorgTemplatePicker(false)}
+        onSelect={(id) => {
+          const result = applyKorgProjectTemplate(id, {
+            setBpm: (bpm) => project.setBpm(bpm),
+            postApplyNotice: (msg) => showToast(msg, { kind: "success" }),
+          });
+          showToast(result.hints[0] ?? "Template applied", { kind: "info" });
         }}
       />
 
