@@ -13,19 +13,27 @@
  *
  * v3.5.0 SCOPE (Patterns — TASK-237-FOLLOWUP-5):
  *   - 256 Patterns × 4280 Bytes ab Offset 0x0200
- *   - Best-Effort Pattern-Parser (Python-SoT ist nur opaque-Container):
+ *   - Best-Effort Pattern-Parser:
  *       • Name (8 ASCII Bytes ab Pattern-Offset 0)
- *       • BPM (BE u16 / 128 ab Pattern-Offset 8)  — verifiziert gegen
- *         5 reale .esx-Files mit "Tekk 175"/"160"/"180"/"178"/"120"-Patterns
+ *       • BPM (BE u16 / 128 ab Pattern-Offset 8)
  *       • Step-Length-Indikator (Pattern-Offset 13, init=0x0F=16 Steps)
  *       • Swing (Pattern-Offset 15, Best-Effort)
  *       • Empty-Pattern-Erkennung (Bytes 8..19 matchen "Init"-Signatur)
- *   - Per-Part-Step-Daten + Motion-Sequencer-Slots:
- *       NICHT vollstaendig RE-d. Das Python-Tool behaelt pattern-data
- *       komplett opak (siehe esx_parser.py:8 "256 patterns × 4280 bytes
- *       (preserved opaque per-pattern)"). Wir liefern rohe Pattern-Bytes
- *       mit verifiziertem Header und ueberlassen Step-Extraktion einem
- *       Folge-Task wenn weitere RE-Daten verfuegbar sind.
+ *
+ * v3.14.0 SCOPE (Step-Encoding RE — TASK-v3.5-FU):
+ *   Hex-Diff Analyse 2026-05-18 (init vs real Patterns aus BOTTROP/KASSEL/
+ *   ENDLICH/DUSSELBUNKAAA) hat folgende Layout-Felder verifiziert:
+ *     • Per-Part-Stride: 34 Bytes (18B Header + 16B Step-Trigger)
+ *     • 10 Drum-Parts (Drum 1..10) ab Offset 0x18 (= 24)
+ *     • sample-id BE u16 @ part+0  (0x8000 = unassigned)
+ *     • level @ part+9 (0..127)
+ *     • pan @ part+10 (0..127, 64=center)
+ *     • Step-Trigger: 16B @ part+18, bit 0 = active
+ *     • Beweis: BOTTROP[0] Part 5 = '01 00 00 00 01 00 00 00 ...'
+ *       dekodiert zu Kick-Pattern Steps 0,4,8,12 + Extra (4-on-the-floor)
+ *   Parts 10..15 (Stretch/Slice/Audio-In/Synth 1/2) bleiben Defaults — ihr
+ *   Layout liegt nach der ~240B Motion-Sequencer-Region und ist nicht final
+ *   RE-d.
  *
  * Defensive Parsing:
  *   - File-Size-Check (Min/Max)
@@ -362,6 +370,81 @@ export function isEmptyEsxPattern(raw: Uint8Array): boolean {
   return true;
 }
 
+// ─── v3.14.0: Part-Block-Layout im 4280B Pattern-Block ──────────────────────
+//
+// Hex-Diff Analyse 2026-05-18 (init vs real Patterns aus BOTTROP/KASSEL/
+// ENDLICH/DUSSELBUNKAAA):
+//
+//   Pattern-Block:
+//     0x000..0x007 = 8B Name (ASCII)
+//     0x008..0x009 = BE u16 BPM×128
+//     0x00A..0x017 = 24B Globals (step-length @0x0D, swing @0x0F, …)
+//     0x018..0x163 = 9 Drum-Parts × 34B  (Drum 1..9)        ← v3.14 decoded
+//     0x14A..0x16B = 10. Drum-Part (Stretch-Slot oder Drum 10), 34B
+//     0x16C..0x25B = ~240B Motion-Sequencer-Daten (0xBC = neutral)
+//     0x25C..      = Stretch / Slice / Audio-In / Synth1 / Synth2 + Motion
+//
+//   Per-Part-Layout (34B):
+//     +0..+1  = sample-id (BE u16). 0x8000 = unassigned/empty.
+//     +2..+3  = constant 'ff 00' (loop/reverse flag?)
+//     +4..+7  = pitch/eg fields (best-effort)
+//     +8..+9  = level (byte +9 = 0..127, init=0x64=100)
+//     +10     = pan (0..127, init=0x40=64=center)
+//     +11..+17 = fx, modulation, lfo (best-effort)
+//     +18..+33 = 16 step bytes (1 byte/step)
+//
+//   Step-Encoding (verifiziert gegen BOTTROP[0] Part 5/6):
+//     bit 0 = trigger active (1 = step gespielt)
+//     bits 1..7 = velocity/accent/roll (best-effort, nicht final RE-d)
+//
+//   Beweis: BOTTROP[0] Part 5 step-bytes:
+//     01 00 00 00 01 00 00 00 01 00 00 00 01 00 01 00
+//     → bit-0 pattern: 1000 1000 1000 1010 (klassischer Kick + Extra)
+//
+// ESX1_DRUM_PARTS_DECODED = 10 (Drum 1..10). Die restlichen 6 Parts (Stretch
+// 1/2, Slice 1/2, Audio-In, Synth 1/2) liegen nach der Motion-Region und
+// haben ein anderes Layout — diese bleiben Best-Effort-Defaults.
+const ESX1_PART_STRIDE = 34;
+const ESX1_PART_HEADER_BYTES = 18;
+const ESX1_PART_STEPS_BYTES = 16;
+const ESX1_DRUM_PART_OFFSET = 24;
+const ESX1_DRUM_PARTS_DECODED = 10;
+const ESX1_SAMPLEID_UNASSIGNED = 0x8000;
+
+/** Decoded part = 0..9 (Drum 1..10). Out-of-range → undefined (Defaults). */
+function decodeDrumPart(
+  raw: Uint8Array,
+  partIndex: number,
+): { sampleId: number; volume: number; pan: number; steps: EsxStepEvent[] } | undefined {
+  if (partIndex < 0 || partIndex >= ESX1_DRUM_PARTS_DECODED) return undefined;
+  const partOff = ESX1_DRUM_PART_OFFSET + partIndex * ESX1_PART_STRIDE;
+  if (partOff + ESX1_PART_STRIDE > raw.length) return undefined;
+
+  // sample-id BE u16
+  const sidRaw = (raw[partOff] << 8) | raw[partOff + 1];
+  // 0x8000 = unassigned. Lower 9 bits cover 0..511 valid slot range
+  // (ESX-1: 256 mono + 128 stereo = 384 max).
+  const sampleId = sidRaw === ESX1_SAMPLEID_UNASSIGNED ? 0 : (sidRaw & 0x01ff);
+
+  // Level + Pan
+  const volume = Math.max(0, Math.min(127, raw[partOff + 9] || 100));
+  const pan = Math.max(0, Math.min(127, raw[partOff + 10] || 64));
+
+  // 16 step-bytes
+  const stepsOff = partOff + ESX1_PART_HEADER_BYTES;
+  const steps: EsxStepEvent[] = new Array(ESX1_DEFAULT_STEPS);
+  for (let s = 0; s < ESX1_DEFAULT_STEPS; s++) {
+    const b = raw[stepsOff + s] || 0;
+    const active = (b & 0x01) !== 0;
+    // Velocity: upper 7 bits are best-effort. ESX-1 stores acccent/roll there.
+    // Wir mappen `b >> 1` als 0..127 Pseudo-Velocity, default 100 wenn keine Daten.
+    let velocity = (b >> 1) & 0x7f;
+    if (active && velocity === 0) velocity = 100;
+    steps[s] = { active, velocity };
+  }
+  return { sampleId, volume, pan, steps };
+}
+
 /**
  * Parst ein einzelnes Pattern aus dem 4280-Byte-Block.
  *
@@ -369,21 +452,21 @@ export function isEmptyEsxPattern(raw: Uint8Array): boolean {
  * @param patternIndex 0..255 — der Pattern-Slot-Index.
  * @returns Geparstes Pattern oder null wenn der Block leer ist.
  *
- * Verifizierte Felder (gegen 5 reale .esx-Files am 2026-05-18):
+ * Verifizierte Felder (gegen reale .esx-Files am 2026-05-18):
  *   Offset 0..7  : 8-byte ASCII name (space/NUL-padded)
- *   Offset 8..9  : BE u16 = BPM × 128  (z.B. 0x5780 → 22400 / 128 = 175 BPM)
+ *   Offset 8..9  : BE u16 = BPM × 128
  *   Offset 13    : step-length-1 (init=0x0F → 16 Steps)
  *
- * Best-Effort (nicht verifiziert):
- *   Offset 12    : roll-type (init=0x00)
- *   Offset 14    : (init=0x00, reserved?)
- *   Offset 15    : swing (init=0x3c, real-files 0x21..0x54 → 0..100 plausibel)
+ * v3.14.0 NEU: Drum-Parts 0..9 (Drum 1..10) decoded:
+ *   - sampleId, volume, pan aus 34-byte Part-Header
+ *   - 16 steps mit trigger-active (bit 0)
+ *   Beweis: BOTTROP[0] Part 5 dekodiert zu 4-on-the-floor Kick (1,5,9,13).
  *
- * Per-Part-Daten (Step-Trigger / Volume / Pan etc.) werden konservativ als
- * Default gefuellt — die exakte Byte-Lage im 4262 Bytes Pattern-Body ist
- * nicht final RE-d. Der Caller bekommt 16 Parts mit allen Steps inaktiv,
- * d.h. das Pattern-Layout-Skeleton ist anhand der Real-Files nutzbar, aber
- * die Step-Daten muessen aktuell manuell rekonstruiert werden.
+ * Parts 10..15 (Stretch/Slice/Audio-In/Synth) bleiben Best-Effort Defaults.
+ *
+ * Best-Effort:
+ *   Offset 12    : roll-type (init=0x00)
+ *   Offset 15    : swing (init=0x3c)
  */
 export function parseEsxPattern(
   raw: Uint8Array,
@@ -411,28 +494,40 @@ export function parseEsxPattern(
   let lengthSteps = (stepIndicator & 0x7f) + 1;
   if (!Number.isFinite(lengthSteps) || lengthSteps < 1) lengthSteps = ESX1_DEFAULT_STEPS;
   if (lengthSteps > 64) lengthSteps = ESX1_DEFAULT_STEPS;
-  // Real-Files (5/5) hatten immer 16; falls anders, dann Hardware-edit.
 
   // Swing: byte 15, Best-Effort, geklemmt 0..100.
   let swing = raw[15] & 0x7f;
   if (swing > 100) swing = 100;
 
-  // Build 16 Default-Parts. Step-Daten Layout NICHT verifiziert → leer.
+  // Build 16 Parts. Parts 0..9 (Drum) werden v3.14 decoded; 10..15 Defaults.
   const parts: EsxPart[] = new Array(ESX1_PARTS_PER_PATTERN);
   for (let p = 0; p < ESX1_PARTS_PER_PATTERN; p++) {
-    const steps: EsxStepEvent[] = new Array(ESX1_DEFAULT_STEPS);
-    for (let s = 0; s < ESX1_DEFAULT_STEPS; s++) {
-      steps[s] = { active: false, velocity: 0 };
+    const decoded = decodeDrumPart(raw, p);
+    if (decoded) {
+      parts[p] = {
+        partIndex: p,
+        sampleId: decoded.sampleId,
+        volume: decoded.volume,
+        pan: decoded.pan,
+        pitch: 0,
+        fxAmount: 0,
+        steps: decoded.steps,
+      };
+    } else {
+      const steps: EsxStepEvent[] = new Array(ESX1_DEFAULT_STEPS);
+      for (let s = 0; s < ESX1_DEFAULT_STEPS; s++) {
+        steps[s] = { active: false, velocity: 0 };
+      }
+      parts[p] = {
+        partIndex: p,
+        sampleId: 0,
+        volume: 100,
+        pan: 64,
+        pitch: 0,
+        fxAmount: 0,
+        steps,
+      };
     }
-    parts[p] = {
-      partIndex: p,
-      sampleId: 0,
-      volume: 100,
-      pan: 64,
-      pitch: 0,
-      fxAmount: 0,
-      steps,
-    };
   }
 
   return {

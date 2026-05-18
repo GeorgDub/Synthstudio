@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.13.0",
+    version: "3.14.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -153,9 +153,9 @@ const INDEX = {
       lastSeen: "2026-05-18T08:30:00.000Z",
       ownedBy:  "backend"
     },
-    "client/src/utils/korg/esxParser.ts (v3.5.0)": {
-      role:     "v3.5.0: ESX-1 .esx Sample-Bank + Pattern Parser (~500 LOC, pure JS, isomorph). Port aus Korg Editor/esx_e2s_editor/services/esx_parser.py (samples) + direkte RE gegen 5 reale .esx-Files (patterns). Sample-API (v3.3): parseEsxBank → EsxBank{monoSamples,stereoSamples,patterns,declaredCounts,warnings}, isEsxBuffer, be16PcmToFloat32. Pattern-API (v3.5): parseEsxPattern(raw,idx) → EsxPattern|null, isEmptyEsxPattern(raw) → bool. EsxPattern: {index, name, bpm (BE u16 @ off 8 / 128), lengthSteps (byte 13 + 1), swing (byte 15, 0..100 clamp), parts: EsxPart[16] mit {partIndex,sampleId,volume,pan,pitch,fxAmount,steps[16]:{active,velocity}, motionSequencer?}, raw?}. parseEsxBank befuellt jetzt patterns[] mit non-leeren Patterns (alle 256 Slots gescannt, init/all-zero geskippt via isEmptyEsxPattern). Init-Signatur 12B '3c 00 00 00 00 0f 00 3c 00 00 7f ff' bei offset 8..19 + empty-name → leer. v3.5-Caveats: Step-Daten + Motion-Sequencer-Slot-Encoding NICHT RE-d — defensive Defaults (alle Steps inactive, Hardware-Defaults vol=100/pan=64). Defensive: 4-stufige Validation, per-Slot MAX_BYTES_PER_SLOT=10MB, cumulative ESX1_MAX_SAMPLE_MEM_IN_BYTES=24MB, Pattern-OOB-Check (warnings wenn truncated).",
-      lastSeen: "2026-05-18T09:10:00.000Z",
+    "client/src/utils/korg/esxParser.ts (v3.14.0)": {
+      role:     "v3.14.0: ESX-1 .esx Sample-Bank + Pattern + Step-Encoding Parser (~580 LOC, pure JS, isomorph). v3.14-NEU: Drum-Parts 0..9 step-encoding decoded via Hex-Diff analyse (BOTTROP/KASSEL/ENDLICH vs DUSSELBUNKAAA init). Per-Part-Layout (34B stride, 9-10 Drum-Parts ab Offset 0x18): sample-id BE u16 @ part+0 (0x8000=unassigned), level @ part+9, pan @ part+10, 16 step-trigger-bytes @ part+18 (bit 0 = active). Beweis BOTTROP[0] Part 5 = klassischer Kick auf Steps 0/4/8/12+14. Konstanten ESX1_PART_STRIDE=34/ESX1_PART_HEADER_BYTES=18/ESX1_PART_STEPS_BYTES=16/ESX1_DRUM_PART_OFFSET=24/ESX1_DRUM_PARTS_DECODED=10/ESX1_SAMPLEID_UNASSIGNED=0x8000. Interner Helper decodeDrumPart(raw, partIndex) → {sampleId, volume, pan, steps[]} (Parts 10..15 = undefined → Defaults). velocity Best-Effort (bits 1..7 mit Fallback 100). Sample-API + Pattern-Header-API (v3.3/v3.5) unverändert. Parts 10..15 (Stretch/Slice/Audio-In/Synth) bleiben Defaults — Layout nach 240B Motion-Region nicht final RE-d.",
+      lastSeen: "2026-05-18T11:30:00.000Z",
       ownedBy:  "backend"
     },
     "client/src/utils/korg/esxPatternConvert.ts (v3.5.0)": {
@@ -1151,6 +1151,30 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "backend",
+      timestamp: "2026-05-18T11:30:00.000Z",
+      done: [
+        "v3.14.0: ESX-1 Step-Encoding Reverse-Engineering — analog v3.12-Methode auf ESX-1 angewandt. Hex-Diff Analyse aus 4 realen .esx-Files (BOTTROP.ESX 32 patterns / KASSEL.esx 75 patterns / ENDLICH.ESX / DUSSELBUNKAAA.esx als init-only reference) hat folgendes Pattern-Block-Layout (4280B) verifiziert: (1) Per-Part-Stride = 34 Bytes (18B Header + 16B Step-Trigger-Bytes), 9 Drum-Anchors '80 00 ff 00' bei Offsets 24/58/92/126/160/194/228/262/296 mit konstantem Stride 34. (2) 10 Drum-Parts (Drum 1..10) ab Offset 24 — Part 10 sitzt bei 330, danach ~240B Motion-Sequencer-Region (0xBC = neutral signed byte). (3) Per-Part-Felder: sample-id BE u16 @ part+0 (0x8000=unassigned), level @ part+9 (0..127, init=0x64=100), pan @ part+10 (0..127, init=0x40=64=center), Step-Trigger 16B @ part+18 (1 byte/step, bit 0 = active).",
+        "Beweis-Step-Decoding: BOTTROP[0] Part 5 step-bytes '01 00 00 00 01 00 00 00 01 00 00 00 01 00 01 00' → bit-0 pattern 1000 1000 1000 1010 = klassischer 4-on-the-floor Kick auf Steps 0/4/8/12+14 ✓. BOTTROP[0] Part 6 = '01 00 00 00 01 00 00 00 01 00 00 00 01 00 00 00' = pure 4-on-the-floor (4 hits). BOTTROP[0] Part 4 hat 10 aktive 16th-notes (hihat-ghost-pattern). Confidence HIGH für trigger-active. velocity (bits 1..7) Best-Effort, default 100 wenn nicht extrahiert. Parts 10..15 (Stretch1/2, Slice1/2, Audio-In, Synth1/2) bleiben Defaults — ihr Layout liegt nach der Motion-Region und ist nicht final RE-d.",
+        "Implementation: (1) client/src/utils/korg/esxParser.ts: +5 v3.14-Konstanten (ESX1_PART_STRIDE=34, ESX1_PART_HEADER_BYTES=18, ESX1_PART_STEPS_BYTES=16, ESX1_DRUM_PART_OFFSET=24, ESX1_DRUM_PARTS_DECODED=10), neue interne Helper decodeDrumPart(raw, partIndex) → {sampleId, volume, pan, steps[]}, parseEsxPattern befüllt Parts 0..9 mit decoded-data und Parts 10..15 mit Defaults, Header-Doc-Comment um v3.14-RE-Findings ergänzt mit explizitem Layout + Confidence-Level. (2) tests/features/korg-esx-patterns.test.ts: +8 v3.14-Tests: 4-on-the-floor Kick (mask 0x1111 → Steps 0/4/8/12), Offbeat-Hat (mask 0xAAAA → odd steps), sampleId/volume/pan-Decoding (0x002a/120/32), 0x8000-unassigned-Erkennung, Parts 10..15 bleiben Defaults, velocity-Fallback 100 wenn bit-0-only, +2 Real-File-Tests (foundActiveSteps in mind. 1 Pattern, plausibleCount > 0 für Drum-Patterns mit 1..16 aktiven Steps). Bestehender 'liefert 16 Parts'-Test ergänzt um v3.14-Kommentar (buildPatternBlock fills 0x42 → bit0=0 → inactive bleibt korrekt).",
+        "Test-Resultat: pnpm vitest run korg-esx-patterns → 27 passed (vorher 17, +10 neue v3.14-Tests, inkl. 2 conditional real-file). pnpm test gesamt → 3854 passed / 15 skipped (vorher 3846 → +8 neue). pnpm check clean. Real-File-Tests verifizieren: aus den ersten 10 .esx-Files in 'Korg ESX files/' liefert mind. 1 Pattern mit aktiven Drum-Step-Triggers (foundActiveSteps=true), und mind. 1 Pattern hat plausible Drum-Hit-Counts 1..16 (plausibleCount>0).",
+        "Confidence-Level (v3.14 NEU): ✅ HIGH (verifiziert gegen 4 reale .esx + Hex-Diff): Per-Part-Stride 34B, 9-10 Drum-Parts ab Offset 24, sample-id BE u16 @ +0, level @ +9, pan @ +10, Step-Trigger bit 0 @ +18..+33. ⚠ MEDIUM: velocity in bits 1..7 (sichtbare Varianz 0x11/0x49/0x15/0x44/0x51, aber Semantik nicht final RE-d, Fallback 100 wenn aktiv). ❌ LOW (noch nicht decodiert): Pitch (kein klares signed byte), FxAmount, Parts 10..15 (Stretch/Slice/Audio-In/Synth — Layout liegt nach 240B Motion-Region), Motion-Sequencer-Daten (~240B 0xBC-Region), Roll/Accent-Flags, Choke-Group-Settings.",
+        "package.json 3.13.0 → 3.14.0."
+      ],
+      next: [
+        "TASK-v3.14-FU-1 (Parts 10..15 Layout): Stretch1/2, Slice1/2, Audio-In, Synth1/2 sitzen nach der 240B Motion-Region (ab Offset ~604). Layout muss separat RE-d werden — vermutlich anderes header-format (Stretch-Slot hat 64-Step-Sequencer, Synth-Parts haben Note-Daten statt nur Trigger).",
+        "TASK-v3.14-FU-2 (velocity-Bits Semantik): 0x49/0x44/0x51 in BOTTROP[0] Part 0 zeigen Varianz, aber 0x11 dominiert. Möglicherweise: bit 4 = accent-flag, bits 1..3 = roll-count. Cross-Check mit User-bekannten patterns wo accent/roll bewusst gesetzt ist wäre der nächste Schritt.",
+        "TASK-v3.14-FU-3 (Motion-Sequencer-Region): 0xBC ist signed -68 = neutral. Motion-Lanes pro Drum-Part vermutlich 24 Bytes (16 steps × 1 byte data + 8 byte header). Vergleich Init vs Real für ein Pattern wo Motion bewusst aufgenommen ist wäre nötig.",
+        "TASK-v3.14-FU-4 (esxPatternConvert: Steps in DrumPart): convertEsxPatternToSynthstudio bislang ignoriert step-data komplett. Nach v3.14 sollte das Mapping die decodierten Steps in das Synthstudio drumPart-Step-Format übernehmen. Aktueller Konverter wurde bewusst NICHT in v3.14 erweitert — separater Folge-Task."
+      ],
+      changed: [
+        "client/src/utils/korg/esxParser.ts (+5 v3.14-Konstanten + decodeDrumPart-Helper + parseEsxPattern decodiert Parts 0..9 mit sample-id/volume/pan/steps statt all-defaults, Header-Doc-Comment um v3.14-RE-Findings + Layout + Confidence)",
+        "tests/features/korg-esx-patterns.test.ts (+10 Tests: 8 synthetic step-encoding + 2 real-file foundActiveSteps/plausibleCount, plus 'liefert 16 Parts'-Test mit v3.14-Kommentar)",
+        "package.json (3.13.0 → 3.14.0)",
+        "agents/INDEX.js (version 3.13.0 → 3.14.0 + workLog v3.14.0 + TASK-v3.5-FU closed via Step-Encoding-RE)"
+      ]
+    },
     {
       agent:     "backend",
       timestamp: "2026-05-18T11:15:00.000Z",
