@@ -33,12 +33,20 @@ import {
   bounceAllChannels,
   BOUNCE_MAX_DURATION_SEC,
   BOUNCE_WARN_DURATION_SEC,
+  // v3.41 — neue FX-Helpers
+  makeBitcrusherCurve,
+  applyBitcrusher,
+  applyBitcrusherToBuffer,
+  applyTransientShaper,
+  applyTransientShaperToBuffer,
+  buildRingModOffline,
   type ChannelBounceRenderOptions,
   type BounceAllProgress,
   type OfflineAudioContextCtor,
 } from "../../client/src/utils/channelBounce";
 import { isValidWavHeader, WAV_HEADER_SIZE } from "../../client/src/audio/wavEncoder";
 import type { PartData, PatternData, ChannelFx } from "../../client/src/audio/AudioEngine";
+import type { MixerFxSlot } from "../../client/src/utils/mixerFx";
 
 // ─── Mocks ───────────────────────────────────────────────────────────────────
 
@@ -1530,7 +1538,483 @@ describe("constants & boundaries", () => {
   });
 });
 
-// ─── 13. Helper: void-Reference für Type-Check ────────────────────────────────
+// ─── 13. v3.41 — Bitcrusher / RingMod / Transient-Shaper im Bounce ───────────
+
+describe("v3.41 — Bitcrusher pure-fn", () => {
+  it("makeBitcrusherCurve liefert 256-Sample Float32Array", () => {
+    const curve = makeBitcrusherCurve(8);
+    expect(curve.length).toBe(256);
+    expect(curve).toBeInstanceOf(Float32Array);
+  });
+
+  it("Bit-Depth=1 erzeugt wenige diskrete Werte (heavy crush)", () => {
+    // bitDepth=1 → steps=2 → round(x*2)/2 → {-1, -0.5, 0, 0.5, 1}
+    const curve = makeBitcrusherCurve(1);
+    const distinct = new Set<number>();
+    for (const v of curve) distinct.add(Math.round(v * 100) / 100);
+    // Heavy-crush sollte signifikant weniger distinct values als input haben.
+    // Input-Curve hätte ~256 distinct values; gecrusht max 5.
+    expect(distinct.size).toBeLessThanOrEqual(5);
+  });
+
+  it("Bit-Depth=16 (max) verändert das Signal kaum (near-identity)", () => {
+    const curve = makeBitcrusherCurve(16);
+    // Bei 16-bit / 65536 Stufen sollte die Curve in der Mitte fast identisch
+    // zur Eingangs-X-Reihe sein.
+    for (let i = 0; i < 256; i++) {
+      const x = (i * 2) / 256 - 1;
+      expect(Math.abs(curve[i] - x)).toBeLessThan(0.001);
+    }
+  });
+
+  it("applyBitcrusher reduziert die Auflösung tatsächlich (FX wirkt)", () => {
+    // Sinus-Welle als Input
+    const N = 1024;
+    const input = new Float32Array(N);
+    for (let i = 0; i < N; i++) input[i] = Math.sin(2 * Math.PI * i * 4 / N);
+
+    const crushed = applyBitcrusher(input, 2, 1, 1);
+
+    // Anzahl distinct values sollte massiv reduziert sein
+    const inputDistinct = new Set<number>();
+    const crushedDistinct = new Set<number>();
+    for (const v of input) inputDistinct.add(v);
+    for (const v of crushed) crushedDistinct.add(v);
+
+    expect(crushedDistinct.size).toBeLessThan(inputDistinct.size);
+    expect(crushedDistinct.size).toBeLessThanOrEqual(10); // bitDepth=2 → 4 Stufen, signed range ergibt 9 mögliche
+  });
+
+  it("applyBitcrusher: sample-rate-reduction hält Sample N mal (FX wirkt)", () => {
+    // Linear ascending input
+    const input = new Float32Array(20);
+    for (let i = 0; i < 20; i++) input[i] = i / 20;
+
+    // sampleReduct=5 → jedes 5. Sample neu, dazwischen hold
+    // bitDepth=16 (lossless), mix=1
+    const crushed = applyBitcrusher(input, 16, 5, 1);
+
+    // Sample[0] sollte gleich Sample[1]..[4] sein (hold-mode)
+    // Hinweis: Counter inkrementiert VOR check, also: counter=1,2,3,4,5
+    // bei counter=5: neuer hold, dann counter=0 → counter=1,2,3,4 nutzen alten hold
+    // Erwartung: nach erstem update (i=4 if sampleReduct=5? siehe Impl):
+    // counter starts at 0, inc → counter=1, check 1>=5? no.
+    // ... at i=4: counter inc to 5, hold=input[4], counter=0
+    // so output[0..3] = 0 (initial hold), output[4] = input[4], output[5..8]=input[4], output[9]=input[9]...
+    expect(crushed[5]).toBe(crushed[6]);
+    expect(crushed[6]).toBe(crushed[7]);
+    expect(crushed[8]).toBe(crushed[7]);
+  });
+
+  it("applyBitcrusher mix=0 → pure passthrough", () => {
+    const input = new Float32Array([0.1, 0.5, -0.3, 0.7, -0.9]);
+    const out = applyBitcrusher(input, 1, 1, 0);
+    for (let i = 0; i < input.length; i++) {
+      expect(out[i]).toBeCloseTo(input[i], 5);
+    }
+  });
+
+  it("applyBitcrusherToBuffer erzeugt neuen Buffer mit pre-quantized Daten", () => {
+    const stats = freshStats();
+    const Ctor = makeMockOfflineCtxCtor(stats);
+    const ctx = new (Ctor as unknown as new (...a: number[]) => BaseAudioContext)(2, 1000, 48000);
+    const input = new MockAudioBuffer(2, 1000, 48000) as unknown as AudioBuffer;
+    // Fill input mit sinusoidal data
+    for (let ch = 0; ch < 2; ch++) {
+      const data = input.getChannelData(ch);
+      for (let i = 0; i < data.length; i++) data[i] = Math.sin(i * 0.1);
+    }
+    const crushed = applyBitcrusherToBuffer(ctx, input, 2, 1, 1);
+    expect(crushed).not.toBeNull();
+    if (crushed) {
+      expect(crushed.length).toBe(input.length);
+      expect(crushed.numberOfChannels).toBe(input.numberOfChannels);
+      // Quantization sollte sichtbar sein: bitDepth=2 → steps=4 →
+      // round(x*4)/4 erlaubt {-1, -3/4, -1/2, -1/4, 0, 1/4, 1/2, 3/4, 1} = 9 max.
+      const crushedDistinct = new Set<number>();
+      for (const v of crushed.getChannelData(0)) crushedDistinct.add(v);
+      expect(crushedDistinct.size).toBeLessThanOrEqual(10);
+      // Original-Input hat klar mehr distinct values (sinusoidal, 1000 samples)
+      const inputDistinct = new Set<number>();
+      for (const v of input.getChannelData(0)) inputDistinct.add(v);
+      expect(crushedDistinct.size).toBeLessThan(inputDistinct.size);
+    }
+  });
+
+  it("applyBitcrusherToBuffer mit null input → null (defensive)", () => {
+    const stats = freshStats();
+    const Ctor = makeMockOfflineCtxCtor(stats);
+    const ctx = new (Ctor as unknown as new (...a: number[]) => BaseAudioContext)(2, 1000, 48000);
+    expect(applyBitcrusherToBuffer(ctx, null, 2, 1, 1)).toBeNull();
+    expect(applyBitcrusherToBuffer(ctx, undefined, 2, 1, 1)).toBeNull();
+  });
+});
+
+describe("v3.41 — Transient-Shaper pure-fn", () => {
+  it("applyTransientShaper: positive attack boostet Transient-Peak", () => {
+    // Impulse-Signal mit klarem Transient + Tail
+    const N = 200;
+    const input = new Float32Array(N);
+    input[0] = 1.0; // initial peak
+    for (let i = 1; i < N; i++) input[i] = 0.3 * Math.exp(-i / 50); // exponential decay
+
+    const boosted = applyTransientShaper(input, 1, 0, 1);
+
+    // Initial peak sollte verstärkt sein oder mindestens gleich
+    expect(Math.abs(boosted[0])).toBeGreaterThanOrEqual(Math.abs(input[0]) * 0.99);
+    // Mehrere Samples nach Peak: boosted > original (oder gleich)
+    // weil envFast > envSlow → transient > 0 → gain > 1
+    let foundBoost = false;
+    for (let i = 1; i < 30; i++) {
+      if (Math.abs(boosted[i]) > Math.abs(input[i]) * 1.01) {
+        foundBoost = true;
+        break;
+      }
+    }
+    expect(foundBoost).toBe(true);
+  });
+
+  it("applyTransientShaper: negative attack reduziert Peak", () => {
+    const N = 100;
+    const input = new Float32Array(N);
+    input[0] = 1.0;
+    for (let i = 1; i < N; i++) input[i] = 0.3 * Math.exp(-i / 50);
+
+    const ducked = applyTransientShaper(input, -1, 0, 1);
+
+    // Bei attack=-1 sollte transient-period gedämpft sein
+    // Min. EIN Sample im transient-bereich sollte < original sein
+    let foundDuck = false;
+    for (let i = 1; i < 30; i++) {
+      if (Math.abs(ducked[i]) < Math.abs(input[i]) * 0.99) {
+        foundDuck = true;
+        break;
+      }
+    }
+    expect(foundDuck).toBe(true);
+  });
+
+  it("applyTransientShaper attack=0 sustain=0 mix=0 → pure passthrough", () => {
+    const input = new Float32Array([0.1, 0.5, -0.3, 0.7, -0.9]);
+    const out = applyTransientShaper(input, 0, 0, 0);
+    for (let i = 0; i < input.length; i++) {
+      expect(out[i]).toBeCloseTo(input[i], 5);
+    }
+  });
+
+  it("applyTransientShaperToBuffer erzeugt neuen Buffer", () => {
+    const stats = freshStats();
+    const Ctor = makeMockOfflineCtxCtor(stats);
+    const ctx = new (Ctor as unknown as new (...a: number[]) => BaseAudioContext)(2, 1000, 48000);
+    const input = new MockAudioBuffer(2, 1000, 48000) as unknown as AudioBuffer;
+    // Impuls bei 0, decay danach
+    for (let ch = 0; ch < 2; ch++) {
+      const data = input.getChannelData(ch);
+      data[0] = 1;
+      for (let i = 1; i < data.length; i++) data[i] = 0.2 * Math.exp(-i / 30);
+    }
+    const shaped = applyTransientShaperToBuffer(ctx, input, 1, 0, 1);
+    expect(shaped).not.toBeNull();
+    if (shaped) {
+      expect(shaped.length).toBe(input.length);
+      expect(shaped.numberOfChannels).toBe(2);
+      // Mindestens ein Sample muss sich vom Original unterscheiden
+      const data = shaped.getChannelData(0);
+      const orig = input.getChannelData(0);
+      let foundDiff = false;
+      for (let i = 0; i < data.length; i++) {
+        if (Math.abs(data[i] - orig[i]) > 0.001) { foundDiff = true; break; }
+      }
+      expect(foundDiff).toBe(true);
+    }
+  });
+
+  it("applyTransientShaperToBuffer mit null input → null (defensive)", () => {
+    const stats = freshStats();
+    const Ctor = makeMockOfflineCtxCtor(stats);
+    const ctx = new (Ctor as unknown as new (...a: number[]) => BaseAudioContext)(2, 1000, 48000);
+    expect(applyTransientShaperToBuffer(ctx, null, 1, 0, 1)).toBeNull();
+  });
+});
+
+describe("v3.41 — RingMod offline native nodes", () => {
+  it("buildRingModOffline erzeugt OscillatorNode + Gain-Subgraph", () => {
+    const stats = freshStats();
+    const Ctor = makeMockOfflineCtxCtor(stats);
+    const ctx = new (Ctor as unknown as new (...a: number[]) => BaseAudioContext)(2, 96000, 48000);
+    const before = { osc: stats.oscillatorsCreated, gain: stats.gainNodesCreated };
+    buildRingModOffline(ctx, 200, 0.5);
+    // 1 OscillatorNode + mindestens 4 Gain-Nodes (input/output/dryGain/ringGain + modScale)
+    expect(stats.oscillatorsCreated).toBe(before.osc + 1);
+    expect(stats.gainNodesCreated - before.gain).toBeGreaterThanOrEqual(4);
+  });
+
+  it("buildRingModOffline setzt Frequenz und sin-Waveform", () => {
+    const stats = freshStats();
+    const Ctor = makeMockOfflineCtxCtor(stats);
+    const ctx = new (Ctor as unknown as new (...a: number[]) => BaseAudioContext)(2, 96000, 48000);
+    buildRingModOffline(ctx, 440, 0.7);
+    expect(stats.oscTypesSet).toContain("sine");
+    expect(stats.oscFreqSets).toContain(440);
+    // Oscillator wird gestartet
+    expect(stats.oscStarts.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("buildRingModOffline clampt Frequency auf [20, 5000]", () => {
+    const stats = freshStats();
+    const Ctor = makeMockOfflineCtxCtor(stats);
+    const ctx = new (Ctor as unknown as new (...a: number[]) => BaseAudioContext)(2, 96000, 48000);
+    buildRingModOffline(ctx, 100000, 0.5);
+    // Frequenz sollte auf 5000 geclampt sein
+    expect(stats.oscFreqSets.some(f => f === 5000)).toBe(true);
+  });
+});
+
+describe("v3.41 — buildOfflinePartGraph mit InsertChain", () => {
+  it("RingMod-Insert fügt Oscillator hinzu", () => {
+    const stats = freshStats();
+    const Ctor = makeMockOfflineCtxCtor(stats);
+    const ctx = new (Ctor as unknown as new (...a: number[]) => BaseAudioContext)(2, 96000, 48000);
+    const part = makePart();
+    const inserts: MixerFxSlot[] = [{
+      id: "rm-1",
+      type: "ringmod",
+      name: "RingMod",
+      enabled: true,
+      params: { frequency: 333, mix: 0.6 },
+    }];
+    buildOfflinePartGraph(ctx, part, 2, inserts);
+    // OHNE RingMod hätte buildOfflinePartGraph nur 0 Oscillators erzeugt
+    expect(stats.oscillatorsCreated).toBeGreaterThanOrEqual(1);
+    expect(stats.oscFreqSets).toContain(333);
+  });
+
+  it("Disabled RingMod-Insert wird ignoriert", () => {
+    const stats = freshStats();
+    const Ctor = makeMockOfflineCtxCtor(stats);
+    const ctx = new (Ctor as unknown as new (...a: number[]) => BaseAudioContext)(2, 96000, 48000);
+    const part = makePart();
+    const inserts: MixerFxSlot[] = [{
+      id: "rm-1", type: "ringmod", name: "RingMod", enabled: false,
+      params: { frequency: 333, mix: 0.6 },
+    }];
+    buildOfflinePartGraph(ctx, part, 2, inserts);
+    expect(stats.oscillatorsCreated).toBe(0);
+  });
+
+  it("Bitcrusher-Insert wird als preProcessing zurueckgegeben", () => {
+    const stats = freshStats();
+    const Ctor = makeMockOfflineCtxCtor(stats);
+    const ctx = new (Ctor as unknown as new (...a: number[]) => BaseAudioContext)(2, 96000, 48000);
+    const part = makePart();
+    const inserts: MixerFxSlot[] = [{
+      id: "bc-1", type: "bitcrusher", name: "Bitcrusher", enabled: true,
+      params: { bitDepth: 4, sampleReduct: 8, mix: 0.7 },
+    }];
+    const graph = buildOfflinePartGraph(ctx, part, 2, inserts);
+    expect(graph.preProcessing).toBeDefined();
+    expect(graph.preProcessing?.bitcrusher).toEqual({ bitDepth: 4, sampleReduct: 8, mix: 0.7 });
+  });
+
+  it("Transient-Insert wird als preProcessing zurueckgegeben", () => {
+    const stats = freshStats();
+    const Ctor = makeMockOfflineCtxCtor(stats);
+    const ctx = new (Ctor as unknown as new (...a: number[]) => BaseAudioContext)(2, 96000, 48000);
+    const part = makePart();
+    const inserts: MixerFxSlot[] = [{
+      id: "tr-1", type: "transient", name: "TS", enabled: true,
+      params: { attack: 0.8, sustain: -0.3, mix: 1 },
+    }];
+    const graph = buildOfflinePartGraph(ctx, part, 2, inserts);
+    expect(graph.preProcessing?.transient).toEqual({ attack: 0.8, sustain: -0.3, mix: 1 });
+  });
+
+  it("Mehrere Inserts zusammen: RingMod (inline) + Bitcrusher + Transient (preProc)", () => {
+    const stats = freshStats();
+    const Ctor = makeMockOfflineCtxCtor(stats);
+    const ctx = new (Ctor as unknown as new (...a: number[]) => BaseAudioContext)(2, 96000, 48000);
+    const part = makePart();
+    const inserts: MixerFxSlot[] = [
+      { id: "bc", type: "bitcrusher", name: "BC", enabled: true,
+        params: { bitDepth: 4, sampleReduct: 2, mix: 1 } },
+      { id: "rm", type: "ringmod", name: "RM", enabled: true,
+        params: { frequency: 200, mix: 0.5 } },
+      { id: "tr", type: "transient", name: "TS", enabled: true,
+        params: { attack: 0.5, sustain: 0, mix: 1 } },
+    ];
+    const graph = buildOfflinePartGraph(ctx, part, 2, inserts);
+    expect(graph.preProcessing?.bitcrusher).toBeDefined();
+    expect(graph.preProcessing?.transient).toBeDefined();
+    expect(stats.oscillatorsCreated).toBeGreaterThanOrEqual(1);
+    expect(stats.oscFreqSets).toContain(200);
+  });
+
+  it("Backward-Compat: ohne insertChain bleibt preProcessing undefined", () => {
+    const stats = freshStats();
+    const Ctor = makeMockOfflineCtxCtor(stats);
+    const ctx = new (Ctor as unknown as new (...a: number[]) => BaseAudioContext)(2, 96000, 48000);
+    const part = makePart();
+    const graph = buildOfflinePartGraph(ctx, part, 2);
+    expect(graph.preProcessing).toBeUndefined();
+    expect(stats.oscillatorsCreated).toBe(0);
+  });
+
+  it("Andere Insert-Typen (chorus/filter/comp) werden silent ignoriert", () => {
+    const stats = freshStats();
+    const Ctor = makeMockOfflineCtxCtor(stats);
+    const ctx = new (Ctor as unknown as new (...a: number[]) => BaseAudioContext)(2, 96000, 48000);
+    const part = makePart();
+    const inserts: MixerFxSlot[] = [
+      { id: "ch", type: "chorus", name: "Chorus", enabled: true, params: {} },
+      { id: "ft", type: "filter", name: "Filter", enabled: true, params: {} },
+    ];
+    expect(() => buildOfflinePartGraph(ctx, part, 2, inserts)).not.toThrow();
+    expect(stats.oscillatorsCreated).toBe(0);
+  });
+});
+
+describe("v3.41 — renderChannelToBuffer mit InsertChain", () => {
+  it("Bitcrusher-Insert wird im Sample-Pfad angewendet (Buffer wird neu erzeugt)", async () => {
+    const stats = freshStats();
+    const CtxCtor = makeMockOfflineCtxCtor(stats);
+    const part = makePart();
+    const pattern = makePattern();
+    const sampleBuffer = new MockAudioBuffer(1, 1000, 48000) as unknown as AudioBuffer;
+    // Fill input mit Daten — sonst kann der Crusher nichts quantizen
+    const data = sampleBuffer.getChannelData(0);
+    for (let i = 0; i < data.length; i++) data[i] = Math.sin(i * 0.1);
+
+    const beforeBuffers = stats.buffersCreated;
+    await renderChannelToBuffer(part, pattern, {
+      length: { mode: "currentPattern" },
+      bpm: 120,
+      sampleRate: 48000,
+      sampleBuffer,
+      insertChain: [{
+        id: "bc", type: "bitcrusher", name: "BC", enabled: true,
+        params: { bitDepth: 2, sampleReduct: 1, mix: 1 },
+      }],
+    }, CtxCtor);
+    // Mindestens ein neues Buffer wurde durch applyBitcrusherToBuffer erzeugt
+    expect(stats.buffersCreated).toBeGreaterThan(beforeBuffers);
+  });
+
+  it("RingMod-Insert fügt Oscillator zum Render-Graph hinzu", async () => {
+    const stats = freshStats();
+    const CtxCtor = makeMockOfflineCtxCtor(stats);
+    const part = makePart();
+    const pattern = makePattern();
+    const sampleBuffer = new MockAudioBuffer(1, 1000, 48000) as unknown as AudioBuffer;
+    await renderChannelToBuffer(part, pattern, {
+      length: { mode: "currentPattern" },
+      bpm: 120,
+      sampleRate: 48000,
+      sampleBuffer,
+      insertChain: [{
+        id: "rm", type: "ringmod", name: "RM", enabled: true,
+        params: { frequency: 440, mix: 0.5 },
+      }],
+    }, CtxCtor);
+    expect(stats.oscillatorsCreated).toBeGreaterThanOrEqual(1);
+    expect(stats.oscFreqSets).toContain(440);
+  });
+
+  it("Transient-Shaper-Insert pre-processed Sample-Buffer", async () => {
+    const stats = freshStats();
+    const CtxCtor = makeMockOfflineCtxCtor(stats);
+    const part = makePart();
+    const pattern = makePattern();
+    const sampleBuffer = new MockAudioBuffer(1, 1000, 48000) as unknown as AudioBuffer;
+    // Impulse-Signal damit transient-shaper was zu tun hat
+    sampleBuffer.getChannelData(0)[0] = 1;
+
+    const beforeBuffers = stats.buffersCreated;
+    await renderChannelToBuffer(part, pattern, {
+      length: { mode: "currentPattern" },
+      bpm: 120,
+      sampleRate: 48000,
+      sampleBuffer,
+      insertChain: [{
+        id: "tr", type: "transient", name: "TS", enabled: true,
+        params: { attack: 1, sustain: 0, mix: 1 },
+      }],
+    }, CtxCtor);
+    expect(stats.buffersCreated).toBeGreaterThan(beforeBuffers);
+  });
+
+  it("Alle 3 FX zusammen: produzieren erwarteten Output (kein Crash, Buffer + Osc beide angelegt)", async () => {
+    const stats = freshStats();
+    const CtxCtor = makeMockOfflineCtxCtor(stats);
+    const part = makePart();
+    const pattern = makePattern();
+    const sampleBuffer = new MockAudioBuffer(1, 1000, 48000) as unknown as AudioBuffer;
+    sampleBuffer.getChannelData(0)[0] = 1;
+
+    const beforeBuffers = stats.buffersCreated;
+    const beforeOsc = stats.oscillatorsCreated;
+    const result = await renderChannelToBuffer(part, pattern, {
+      length: { mode: "currentPattern" },
+      bpm: 120,
+      sampleRate: 48000,
+      sampleBuffer,
+      insertChain: [
+        { id: "bc", type: "bitcrusher", name: "BC", enabled: true,
+          params: { bitDepth: 4, sampleReduct: 2, mix: 1 } },
+        { id: "rm", type: "ringmod", name: "RM", enabled: true,
+          params: { frequency: 333, mix: 0.5 } },
+        { id: "tr", type: "transient", name: "TS", enabled: true,
+          params: { attack: 0.5, sustain: 0.2, mix: 1 } },
+      ],
+    }, CtxCtor);
+    // Bitcrusher + Transient produzieren je 1 neues Buffer = 2 zusaetzliche Buffers
+    expect(stats.buffersCreated).toBeGreaterThanOrEqual(beforeBuffers + 2);
+    // RingMod produziert 1 Oscillator
+    expect(stats.oscillatorsCreated).toBeGreaterThanOrEqual(beforeOsc + 1);
+    expect(result.buffer.length).toBeGreaterThan(0);
+  });
+
+  it("Backward-Compat: ohne insertChain → keine zusätzlichen Buffers oder Oszillatoren", async () => {
+    const stats = freshStats();
+    const CtxCtor = makeMockOfflineCtxCtor(stats);
+    const part = makePart();
+    const pattern = makePattern();
+    const sampleBuffer = new MockAudioBuffer(1, 1000, 48000) as unknown as AudioBuffer;
+    await renderChannelToBuffer(part, pattern, {
+      length: { mode: "currentPattern" },
+      bpm: 120,
+      sampleRate: 48000,
+      sampleBuffer,
+    }, CtxCtor);
+    // KEIN Bitcrusher/Transient → keine zusätzlichen Buffers (außer ggf. Reverb-IR — aber Reverb ist disabled)
+    expect(stats.buffersCreated).toBe(0);
+    // KEIN RingMod → keine Oszillatoren
+    expect(stats.oscillatorsCreated).toBe(0);
+  });
+
+  it("Disabled Inserts werden komplett ignoriert (kein Buffer, kein Osc)", async () => {
+    const stats = freshStats();
+    const CtxCtor = makeMockOfflineCtxCtor(stats);
+    const part = makePart();
+    const pattern = makePattern();
+    const sampleBuffer = new MockAudioBuffer(1, 1000, 48000) as unknown as AudioBuffer;
+    await renderChannelToBuffer(part, pattern, {
+      length: { mode: "currentPattern" },
+      bpm: 120,
+      sampleRate: 48000,
+      sampleBuffer,
+      insertChain: [
+        { id: "bc", type: "bitcrusher", name: "BC", enabled: false,
+          params: { bitDepth: 2, sampleReduct: 8, mix: 1 } },
+        { id: "rm", type: "ringmod", name: "RM", enabled: false,
+          params: { frequency: 333, mix: 0.5 } },
+      ],
+    }, CtxCtor);
+    expect(stats.buffersCreated).toBe(0);
+    expect(stats.oscillatorsCreated).toBe(0);
+  });
+});
+
+// ─── 14. Helper: void-Reference für Type-Check ────────────────────────────────
 
 it("type-spread: vi-spy unused-import-clearance", () => {
   void vi;

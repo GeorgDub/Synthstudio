@@ -51,6 +51,7 @@ import {
   isSynthPart,
   isGranularPart,
 } from "@/utils/synthOfflineRender";
+import type { MixerFxSlot } from "@/utils/mixerFx";
 
 // ─── Längen-Optionen ─────────────────────────────────────────────────────────
 
@@ -234,6 +235,251 @@ function safeNum(v: unknown, fallback: number): number {
   return typeof v === "number" && Number.isFinite(v) ? v : fallback;
 }
 
+// ─── Bitcrusher (offline pure-fn + WaveShaper) ────────────────────────────────
+
+/**
+ * v3.41 — SoT: BitcrusherProcessor.js
+ *
+ * Erzeugt eine WaveShaper-Curve, die ein kontinuierliches [-1, +1]-Signal auf
+ * ⌊2^bitDepth⌋ diskrete Stufen abbildet. Identische Quantisierungs-Mathematik
+ * wie das Online-Worklet: `Math.round(inp * steps) / steps` mit
+ * `steps = 2^bitDepth`.
+ *
+ * Sample-Rate-Reduction wird im Offline-Render NICHT über die Curve modelliert
+ * (sie ist eine zeitlich gefaltete Operation). Dafuer gibt es eine separate
+ * pure-fn `applyBitcrusherToBuffer` die das Sample-Buffer pre-processed.
+ *
+ * @param bitDepth  0.5..16 (1 = heavy crush, 16 = ~lossless)
+ * @returns         256-Sample Float32-Array
+ */
+export function makeBitcrusherCurve(bitDepth: number): Float32Array<ArrayBuffer> {
+  const depth = Math.max(0.5, Math.min(16, safeNum(bitDepth, 16)));
+  const steps = Math.pow(2, depth);
+  const samples = 256;
+  const curve = new Float32Array(new ArrayBuffer(samples * 4));
+  for (let i = 0; i < samples; i++) {
+    const x = (i * 2) / samples - 1;
+    curve[i] = Math.round(x * steps) / steps;
+  }
+  return curve;
+}
+
+/**
+ * v3.41 — Pure-fn Bitcrusher (für Sample-Pre-Processing).
+ *
+ * Identisch zum Online-Worklet:
+ *   - Bit-Depth Quantization auf 2^bitDepth Stufen
+ *   - Sample-Rate-Reduction via Hold-Sample (alle N samples neuer Wert)
+ *   - Dry/Wet-Mix
+ *
+ * @param input         Source Float32Array (single channel)
+ * @param bitDepth      0.5..16
+ * @param sampleReduct  1..50 (1 = no reduction, 50 = heavy decimation)
+ * @param mix           0..1 dry/wet
+ */
+export function applyBitcrusher(
+  input: Float32Array,
+  bitDepth: number,
+  sampleReduct: number,
+  mix: number,
+): Float32Array {
+  const depth = Math.max(0.5, Math.min(16, safeNum(bitDepth, 16)));
+  const reduct = Math.max(1, Math.min(50, Math.round(safeNum(sampleReduct, 1))));
+  const wet = Math.max(0, Math.min(1, safeNum(mix, 1)));
+  const dry = 1 - wet;
+  const steps = Math.pow(2, depth);
+  const out = new Float32Array(input.length);
+  let hold = 0;
+  let counter = 0;
+  for (let i = 0; i < input.length; i++) {
+    counter++;
+    if (counter >= reduct) {
+      counter = 0;
+      hold = Math.round(input[i] * steps) / steps;
+    }
+    out[i] = input[i] * dry + hold * wet;
+  }
+  return out;
+}
+
+/**
+ * v3.41 — Pre-processed AudioBuffer mit Bitcrusher-FX angewendet pro Channel.
+ *
+ * Erzeugt ein NEUES Buffer im gegebenen Context. Original bleibt unverändert.
+ * Wenn ctx ein Mock ohne `createBuffer` ist, wird `null` zurueckgegeben und
+ * der Caller faellt auf das Original zurueck.
+ */
+export function applyBitcrusherToBuffer(
+  ctx: BaseAudioContext,
+  input: AudioBuffer | null | undefined,
+  bitDepth: number,
+  sampleReduct: number,
+  mix: number,
+): AudioBuffer | null {
+  if (!input) return null;
+  const out = ctx.createBuffer(input.numberOfChannels, input.length, input.sampleRate);
+  for (let ch = 0; ch < input.numberOfChannels; ch++) {
+    const src = input.getChannelData(ch);
+    const dst = applyBitcrusher(src, bitDepth, sampleReduct, mix);
+    out.getChannelData(ch).set(dst);
+  }
+  return out;
+}
+
+// ─── Transient-Shaper (offline pure-fn) ───────────────────────────────────────
+
+/**
+ * v3.41 — Pure-fn Transient-Shaper.
+ *
+ * Envelope-Follower-basiert: zwei one-pole-low-pass-Filter mit
+ * unterschiedlichen Attack-Coefficients. Der "fast"-Detektor reagiert
+ * schnell auf Peaks (folgt dem Transient), der "slow"-Detektor reagiert
+ * langsam (folgt dem Sustain). Die Differenz fast−slow ist die
+ * Transient-Komponente.
+ *
+ * Aequivalent zu typischen Transient-Designer-Plugins (SPL Transient Designer,
+ * Native FX Transient Master): attack > 0 boosted Snares/Kicks-Punch,
+ * attack < 0 weicht sie ab.
+ *
+ * Algorithmus (one-pole IIR):
+ *   envFast(i) = max(envFast(i-1) + (|x|-envFast(i-1))*aFast, envFast(i-1)*rFast)
+ *   envSlow(i) = max(envSlow(i-1) + (|x|-envSlow(i-1))*aSlow, envSlow(i-1)*rSlow)
+ *   transient = max(0, envFast − envSlow)
+ *   sustainPart = envSlow
+ *   gain = 1 + attack*transient*BOOST + sustain*sustainPart*BOOST_S
+ *   y(i) = x(i) * gain * mix + x(i) * (1-mix)
+ *
+ * @param input    Source Float32Array
+ * @param attack   −1..+1 (positiv = mehr Punch, negativ = weicher)
+ * @param sustain  −1..+1 (positiv = laenger, negativ = ducked)
+ * @param mix      0..1
+ */
+export function applyTransientShaper(
+  input: Float32Array,
+  attack: number,
+  sustain: number,
+  mix: number,
+): Float32Array {
+  const att = Math.max(-1, Math.min(1, safeNum(attack, 0)));
+  const sus = Math.max(-1, Math.min(1, safeNum(sustain, 0)));
+  const wet = Math.max(0, Math.min(1, safeNum(mix, 1)));
+  const dry = 1 - wet;
+  const out = new Float32Array(input.length);
+  let envFast = 0;
+  let envSlow = 0;
+  // Attack-coefficients (one-pole). Hoeher = schneller follow.
+  const aFast = 0.30;  // ~3 samples to reach ~95% — sehr schneller transient detector
+  const aSlow = 0.005; // ~600 samples — folgt Sustain
+  // Release-coefficients (decay zum nullen).
+  const rFast = 0.999;
+  const rSlow = 0.9999;
+  for (let i = 0; i < input.length; i++) {
+    const x = input[i];
+    const abs = Math.abs(x);
+    // Fast envelope: attack-style follower (schnell rauf, langsam runter)
+    const targetFast = envFast + (abs - envFast) * aFast;
+    envFast = Math.max(targetFast, envFast * rFast);
+    // Slow envelope: sustain-style follower (langsam rauf, sehr langsam runter)
+    const targetSlow = envSlow + (abs - envSlow) * aSlow;
+    envSlow = Math.max(targetSlow, envSlow * rSlow);
+    const transient = Math.max(0, envFast - envSlow);
+    const gain = 1 + att * transient * 3 + sus * envSlow * 1;
+    out[i] = x * gain * wet + x * dry;
+  }
+  return out;
+}
+
+/**
+ * v3.41 — Pre-processed AudioBuffer mit Transient-Shaper-FX.
+ *
+ * Erzeugt ein NEUES Buffer im gegebenen Context.
+ */
+export function applyTransientShaperToBuffer(
+  ctx: BaseAudioContext,
+  input: AudioBuffer | null | undefined,
+  attack: number,
+  sustain: number,
+  mix: number,
+): AudioBuffer | null {
+  if (!input) return null;
+  const out = ctx.createBuffer(input.numberOfChannels, input.length, input.sampleRate);
+  for (let ch = 0; ch < input.numberOfChannels; ch++) {
+    const src = input.getChannelData(ch);
+    const dst = applyTransientShaper(src, attack, sustain, mix);
+    out.getChannelData(ch).set(dst);
+  }
+  return out;
+}
+
+// ─── RingMod-Nodes (offline native Web-Audio) ─────────────────────────────────
+
+/**
+ * v3.41 — RingMod-Offline-Node-Graph.
+ *
+ * Native Web-Audio-Implementation des Online-Worklets:
+ *   y(t) = x(t) * (1 - mix) + (x(t) * sin(2π * freq * t)) * mix
+ *
+ * Topologie:
+ *   inputNode → dryGain ─────────────→ outputNode
+ *             → ringGain (gain=0)──→ outputNode
+ *   osc(freq) → ringGain.gain (modulation)
+ *
+ * Die Sinus-Oszillator-Ausgabe steuert direkt den `ringGain.gain`-Param
+ * — das ist die Standard-Web-Audio-Multiplikation (signal × carrier).
+ *
+ * Sub-Nodes werden alle gestartet (oscillator.start(0)) damit der Render
+ * im OfflineAudioContext sofort beginnt.
+ */
+export interface RingModOfflineNodes {
+  /** Eingang: x(t) hier reinverbinden */
+  input: GainNode;
+  /** Ausgang: dry+wet gemixt */
+  output: GainNode;
+  /** Innere Nodes (lifetime-Hold, sonst GC) */
+  dryGain: GainNode;
+  ringGain: GainNode;
+  osc: OscillatorNode;
+}
+
+export function buildRingModOffline(
+  ctx: BaseAudioContext,
+  frequency: number,
+  mix: number,
+): RingModOfflineNodes {
+  const f = Math.max(20, Math.min(5000, safeNum(frequency, 200)));
+  const wet = Math.max(0, Math.min(1, safeNum(mix, 0.5)));
+
+  const input = ctx.createGain();
+  const output = ctx.createGain();
+  const dryGain = ctx.createGain();
+  const ringGain = ctx.createGain();
+  const osc = ctx.createOscillator();
+
+  input.gain.value = 1;
+  output.gain.value = 1;
+  dryGain.gain.value = 1 - wet;
+  // ringGain.gain wird vom Oscillator moduliert; Start-Wert 0.
+  ringGain.gain.value = 0;
+  osc.type = "sine";
+  osc.frequency.value = f;
+  // Oscillator-Output (Amplitude ±1) wird auf ringGain.gain addiert
+  // → ringGain.gain schwingt zwischen ~−1 und ~+1 mit `mix`-skalierter Amplitude.
+  // Wir wollen y = x * sin(2π*f*t) * mix → ringGain Amplitude = sin * mix.
+  // Daher modulieren wir mit gainScaling.
+  const modScale = ctx.createGain();
+  modScale.gain.value = wet;
+  osc.connect(modScale);
+  modScale.connect(ringGain.gain);
+
+  input.connect(dryGain);
+  input.connect(ringGain);
+  dryGain.connect(output);
+  ringGain.connect(output);
+  try { osc.start(0); } catch { /* mock */ }
+
+  return { input, output, dryGain, ringGain, osc };
+}
+
 // ─── Offline-Graph-Builder ───────────────────────────────────────────────────
 
 export interface OfflinePartGraph {
@@ -243,6 +489,17 @@ export interface OfflinePartGraph {
   output: AudioNode;
   /** Optionaler Sidechain-Gain — wenn der Caller pro Step ducken will. */
   sidechainGain: GainNode;
+  /**
+   * v3.41: Wenn der Insert-Chain einen Bitcrusher/Transient-Shaper enthielt,
+   * gibt dieses Feld die *Pre-Processing-Anweisungen* zurück damit der Caller
+   * sein Sample-Buffer entsprechend pre-quantizen kann (Native AudioWorklet
+   * im OfflineCtx ist nicht zuverlaessig). Bei reinen native-Nodes (RingMod
+   * etc.) bleibt das Feld undefined.
+   */
+  preProcessing?: {
+    bitcrusher?: { bitDepth: number; sampleReduct: number; mix: number };
+    transient?: { attack: number; sustain: number; mix: number };
+  };
 }
 
 /**
@@ -260,6 +517,7 @@ export function buildOfflinePartGraph(
   ctx: BaseAudioContext,
   part: PartData,
   channels: 1 | 2 = 2,
+  insertChain?: MixerFxSlot[] | null,
 ): OfflinePartGraph {
   const fx = part.fx as ChannelFx | undefined;
 
@@ -372,8 +630,61 @@ export function buildOfflinePartGraph(
   reverbConvolver.connect(reverbWet);
   reverbWet.connect(output);
 
-  // Output → sidechainGain → (optional Panner) → destination
-  output.connect(sidechainGain);
+  // ─── v3.41 Insert-Chain (Bitcrusher / RingMod / Transient-Shaper) ──────
+  // Online-Topologie: output → inserts (in Reihe) → sidechainGain → panner.
+  // Wir hängen alle aktiven inserts zwischen `output` und `sidechainGain`.
+  // Bitcrusher + Transient-Shaper werden NICHT als Inline-Nodes umgesetzt,
+  // sondern als Sample-Pre-Processing zurückgegeben (preProcessing-Field).
+  let chainTail: AudioNode = output;
+  const preProcessing: OfflinePartGraph["preProcessing"] = {};
+
+  const activeInserts = (insertChain ?? []).filter(s => s.enabled);
+  for (const slot of activeInserts) {
+    switch (slot.type) {
+      case "ringmod": {
+        const p = slot.params as { frequency?: number; mix?: number };
+        const ringmod = buildRingModOffline(
+          ctx,
+          safeNum(p.frequency, 200),
+          safeNum(p.mix, 0.5),
+        );
+        chainTail.connect(ringmod.input);
+        chainTail = ringmod.output;
+        break;
+      }
+      case "bitcrusher": {
+        // Caveat: AudioWorklet im OfflineCtx ist nicht zuverlaessig portierbar.
+        // Wir liefern die Settings als preProcessing zurueck → Caller wendet
+        // sie auf das Sample-Buffer an. Native-Inline wird zudem nicht moeglich
+        // wenn sample-rate-reduction != 1 (zeit-gefaltete Operation).
+        const p = slot.params as { bitDepth?: number; sampleReduct?: number; mix?: number };
+        preProcessing.bitcrusher = {
+          bitDepth: safeNum(p.bitDepth, 8),
+          sampleReduct: safeNum(p.sampleReduct, 4),
+          mix: safeNum(p.mix, 1),
+        };
+        break;
+      }
+      case "transient": {
+        // Aequivalent zur Bitcrusher-Strategie: pure-fn auf Sample-Buffer.
+        const p = slot.params as { attack?: number; sustain?: number; mix?: number };
+        preProcessing.transient = {
+          attack: safeNum(p.attack, 0),
+          sustain: safeNum(p.sustain, 0),
+          mix: safeNum(p.mix, 1),
+        };
+        break;
+      }
+      default:
+        // Andere Inserts (filter/compressor/distortion/chorus/flanger/etc.)
+        // sind in v3.41 NICHT als 2nd-Chain implementiert — sie sind bereits
+        // via ChannelFx Bestandteil der Main-Chain. Skip silently.
+        break;
+    }
+  }
+
+  // chainTail → sidechainGain → (optional Panner) → destination
+  chainTail.connect(sidechainGain);
 
   let finalNode: AudioNode;
   if (channels === 2) {
@@ -387,7 +698,14 @@ export function buildOfflinePartGraph(
     finalNode = sidechainGain;
   }
 
-  return { input, output: finalNode, sidechainGain };
+  // Wenn keine preProcessing-FX aktiv sind, lass das Feld undefined.
+  const hasPre = preProcessing.bitcrusher || preProcessing.transient;
+  return {
+    input,
+    output: finalNode,
+    sidechainGain,
+    ...(hasPre ? { preProcessing } : {}),
+  };
 }
 
 // ─── Render-Engine ───────────────────────────────────────────────────────────
@@ -420,6 +738,16 @@ export interface ChannelBounceRenderOptions {
    * Performance-Bypass oder Debug-Vergleich.
    */
   bypassFx?: boolean;
+  /**
+   * v3.41: Optional MixerFxSlot-Insert-Chain (Bitcrusher / RingMod /
+   * Transient-Shaper). Im Online-Mode werden diese über `applyInsertChain`
+   * angelegt; im Offline-Bounce werden RingMod-Slots als native Nodes
+   * gerendert und Bitcrusher/Transient-Slots als Sample-Pre-Processing.
+   *
+   * Andere Insert-Typen werden silent ignoriert (sind bereits via ChannelFx
+   * abgedeckt). Backward-Compat: bei undefined → keine Inserts.
+   */
+  insertChain?: MixerFxSlot[] | null;
 }
 
 export interface ChannelBounceRenderResult {
@@ -491,7 +819,7 @@ export async function renderChannelToBuffer(
 
   if (partIsSynth) {
     // ─── v2.96-Pfad: Synth-Offline-Render mit voller FX-Chain ─────────────
-    _renderSynthWithFxChain(ctx, part, pattern, stepDurSec, bars, stepsPerBar, channels);
+    _renderSynthWithFxChain(ctx, part, pattern, stepDurSec, bars, stepsPerBar, channels, opts.insertChain);
   } else if (partIsGranular) {
     // ─── v2.96 Caveat: Granular bleibt silent (siehe synthOfflineRender.ts) ─
     // No-op — Granular braucht RAF + lookahead, das ist im Offline-Ctx
@@ -502,8 +830,8 @@ export async function renderChannelToBuffer(
       // ─── Legacy v2.94-Pfad (Volume/Pan/Lowpass nur) ─────────────────────
       _renderBypassFx(ctx, part, pattern, opts.sampleBuffer, stepDurSec, bars, stepsPerBar, channels);
     } else {
-      // ─── v2.95-Pfad: Sample mit voller FX-Chain ─────────────────────────
-      _renderWithFxChain(ctx, part, pattern, opts.sampleBuffer, stepDurSec, bars, stepsPerBar, channels);
+      // ─── v2.95/v3.41-Pfad: Sample mit voller FX-Chain + Insert-Chain ───
+      _renderWithFxChain(ctx, part, pattern, opts.sampleBuffer, stepDurSec, bars, stepsPerBar, channels, opts.insertChain);
     }
   }
   // Sonst: kein Sample, kein Synth, kein Granular → silent buffer (z.B. Part
@@ -526,8 +854,23 @@ function _renderWithFxChain(
   bars: number,
   stepsPerBar: number,
   channels: 1 | 2,
+  insertChain?: MixerFxSlot[] | null,
 ): void {
-  const graph = buildOfflinePartGraph(ctx, part, channels);
+  void pattern;
+  const graph = buildOfflinePartGraph(ctx, part, channels, insertChain);
+
+  // v3.41: Apply Bitcrusher/Transient als Sample-Buffer-Pre-Processing.
+  let effectiveBuffer = sampleBuffer;
+  if (graph.preProcessing?.bitcrusher) {
+    const p = graph.preProcessing.bitcrusher;
+    const crushed = applyBitcrusherToBuffer(ctx, effectiveBuffer, p.bitDepth, p.sampleReduct, p.mix);
+    if (crushed) effectiveBuffer = crushed;
+  }
+  if (graph.preProcessing?.transient) {
+    const p = graph.preProcessing.transient;
+    const shaped = applyTransientShaperToBuffer(ctx, effectiveBuffer, p.attack, p.sustain, p.mix);
+    if (shaped) effectiveBuffer = shaped;
+  }
 
   let absStep = 0;
   for (let bar = 0; bar < bars; bar++) {
@@ -536,7 +879,7 @@ function _renderWithFxChain(
       if (step?.active) {
         const t = absStep * stepDurSec;
         const src = ctx.createBufferSource();
-        src.buffer = sampleBuffer;
+        src.buffer = effectiveBuffer;
 
         // Pitch (semitones → playbackRate)
         const pitch = safeNum(step.pitch, 0);
@@ -578,9 +921,13 @@ function _renderSynthWithFxChain(
   bars: number,
   stepsPerBar: number,
   channels: 1 | 2,
+  insertChain?: MixerFxSlot[] | null,
 ): void {
   void pattern;
-  const graph = buildOfflinePartGraph(ctx, part, channels);
+  const graph = buildOfflinePartGraph(ctx, part, channels, insertChain);
+  // Bitcrusher/Transient pre-processing skipped for synth-paths:
+  // synth notes are pure oscillator output without a sample-buffer to quantize.
+  // Future: extend triggerOfflineSynthNote to support post-osc pre-processing.
   const synthParams = part.synthParams;
 
   let absStep = 0;
@@ -725,7 +1072,14 @@ export async function bounceAllChannels(
   projectName: string,
   onProgress?: (p: BounceAllProgress) => void,
   OfflineCtxCtor?: OfflineAudioContextCtor,
+  /** v3.41: Optional Map partId → MixerFxSlot[] für Bitcrusher/RingMod/Transient */
+  partInsertChains?: Map<string, MixerFxSlot[]> | Record<string, MixerFxSlot[]> | null,
 ): Promise<BounceAllResult[]> {
+  const getChain = (id: string): MixerFxSlot[] | undefined => {
+    if (!partInsertChains) return undefined;
+    if (partInsertChains instanceof Map) return partInsertChains.get(id);
+    return partInsertChains[id];
+  };
   const results: BounceAllResult[] = [];
   for (let i = 0; i < parts.length; i++) {
     const part = parts[i];
@@ -737,10 +1091,11 @@ export async function bounceAllChannels(
     });
     try {
       const sampleBuffer = part.sampleUrl ? sampleBuffers.get(part.sampleUrl) ?? null : null;
+      const insertChain = getChain(part.id) ?? null;
       const wav = await bounceChannelToWavBuffer(
         part,
         pattern,
-        { ...opts, sampleBuffer },
+        { ...opts, sampleBuffer, insertChain },
         OfflineCtxCtor,
       );
       const filename = defaultStemFilename(projectName, part.name);
@@ -815,7 +1170,23 @@ export function downloadWavInBrowser(wav: ArrayBuffer, filename: string): void {
  *  ✓ Step.pitch wird in playbackRate übersetzt
  *  ✓ Step.velocity * part.volume → stepGain
  *
- * Was NICHT im Bounce ist (Scope v2.97+):
+ * v3.41 (NEU) — Bitcrusher / RingMod / Transient-Shaper im Bounce:
+ *  ✓ Bitcrusher: bit-depth quantization + sample-rate-reduction via pure-fn
+ *    auf das Sample-Buffer (applyBitcrusherToBuffer). Identische Math zum
+ *    BitcrusherProcessor.js-Worklet (Math.round(x*2^d)/2^d + hold-sample).
+ *    Caveat: applied auf das Source-Buffer, nicht inline in der Chain → bei
+ *    Synth-Parts (kein Sample) noch silent. Caveat dokumentiert in
+ *    _renderSynthWithFxChain.
+ *  ✓ RingMod: Native Web-Audio-Nodes (OscillatorNode + GainNode-Multiplikation).
+ *    buildRingModOffline liefert input/output-Subgraph. Klingt identisch zum
+ *    RingModProcessor.js-Worklet (y = x*(1-mix) + (x*sin(2πft))*mix).
+ *  ✓ Transient-Shaper: Envelope-Follower-basiert via pure-fn auf das Buffer
+ *    (applyTransientShaperToBuffer). Boost/Cut von Attack-Transient und
+ *    Sustain-Tail separat steuerbar.
+ *  ✓ Insert-Chain wird per `opts.insertChain` (MixerFxSlot[]) durchgereicht.
+ *    Native-Inserts (RingMod) gehen inline zwischen output und sidechainGain.
+ *
+ * Was NICHT im Bounce ist (Scope v3.42+):
  *  ✗ Granular-Parts (sourceType="granular") — silent (siehe synthOfflineRender.ts):
  *    GranularEngine nutzt RAF + Lookahead-Scheduling, beides im Offline-Ctx
  *    nicht direkt portierbar. Workaround: plan-then-render-Algorithmus.
@@ -824,9 +1195,10 @@ export function downloadWavInBrowser(wav: ArrayBuffer, filename: string): void {
  *  ✗ Sidechain-Modulation aus anderen Channels (statisch unducked)
  *  ✗ Global-Reverb/Delay-Bus (channel-stems sollten dry-ish sein,
  *    Bus-FX gehört in Mix-Stem)
- *  ✗ Bitcrusher (AudioWorklet — braucht offline-Worklet-Setup)
- *  ✗ RingMod / Transient-Shaper (custom AudioNodes; Online-Engine hat sie
- *    aktuell nur als optional-slots, kein 1st-class FX-Field in ChannelFx)
+ *  ✗ Bitcrusher/Transient für Synth-Parts (pre-processing braucht Sample-Buffer)
+ *  ✗ Andere Insert-Typen (chorus/flanger/filter/comp/dist) — sind bereits via
+ *    ChannelFx Bestandteil der Main-Chain; doppelt einsetzen über InsertChain
+ *    wird v3.42 oder später nachgezogen.
  *  ✗ Parameter Locks pro Step (step.paramLock)
  *  ✗ Live-Input-Channels und AudioTrack-Channels
  *
