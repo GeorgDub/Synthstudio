@@ -78,6 +78,8 @@ import {
 } from "@/store/useLicenseStore";
 import { ActivationModal } from "@/components/License/ActivationModal";
 import { GUMROAD_PRODUCT_URL, TRIAL_DURATION_DAYS } from "@/utils/licenseConfig";
+// v3.22.0: Welcome-Wizard manueller Reopen aus der About-Section.
+import { resetWelcomeWizard } from "@/store/useWelcomeStore";
 // v3.0.0 (TASK-236-ALT): Audio-Engine-Low-Latency-Config.
 import {
   useAudioEngineConfigStore,
@@ -2013,6 +2015,25 @@ function AboutSection() {
           </button>
         </div>
       )}
+
+      {/* v3.22.0: Welcome-Tour erneut anzeigen */}
+      <div className="border-t border-border-color pt-3 space-y-2">
+        <h4 className="text-xs font-bold text-text-primary">Hilfe</h4>
+        <button
+          data-testid="settings-replay-welcome"
+          onClick={() => {
+            resetWelcomeWizard();
+            toast("Welcome-Tour wird beim nächsten Start angezeigt — oder lade die App neu.", {
+              kind: "info",
+              duration: 5000,
+            });
+          }}
+          className="px-3 py-1.5 rounded text-[11px] font-medium bg-accent-primary/20 text-accent-primary hover:bg-accent-primary/30 border border-accent-primary/40 transition-colors"
+          title="Setzt firstRun zurück — Wizard erscheint beim nächsten App-Mount erneut."
+        >
+          ↻ Welcome-Tour erneut anzeigen
+        </button>
+      </div>
 
       <div className="border-t border-border-color pt-3 text-[10px] text-text-dim space-y-1">
         <div>Speicher-Nutzung: localStorage für Settings & Presets</div>

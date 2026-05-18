@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.21.0",
+    version: "3.22.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -89,6 +89,21 @@ const INDEX = {
   // ─── KNOWN FILE INDEX ──────────────────────────────────────
   // Key files agents have analyzed. Add new entries after working on a file.
   files: {
+    "client/src/store/useWelcomeStore.ts (v3.22.0)": {
+      role:     "v3.22.0 NEU: Custom Observer-Pattern Store (~190 LOC, isomorph) für First-Run Welcome-Wizard. State {firstRun:bool, dismissed:bool} persist in localStorage('synthstudio:welcome:v1') mit Version-Wrapper {v:1, firstRun, dismissed}. Pure-API: getWelcomeState() / shouldAutoShowWelcome() (=firstRun && !dismissed) / markFirstRunComplete() (firstRun→false, idempotent) / dismissWelcomeWizard() (beides setzen) / resetWelcomeWizard() (für Re-Open aus Settings) / useWelcomeStore() React-Hook (useReducer-Rerender). Defensive: korrupter JSON → defaults, kein localStorage in SSR → in-memory, try/catch um setItem für Quota/Private-Mode. CustomEvent-Helpers: WELCOME_EVENT_NAME='synthstudio:welcome:try-it', WelcomeTryItTarget union (7 targets), buildWelcomeTryItDetail(target) Pure-Helper, dispatchWelcomeTryIt(target) feuert window-CustomEvent (NO-OP wenn !window). __resetWelcomeStoreForTests() für Vitest.",
+      lastSeen: "2026-05-18T13:30:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/components/Welcome/WelcomeWizard.tsx (v3.22.0)": {
+      role:     "v3.22.0 NEU: 6-Slide First-Run Modal (~300 LOC). Props {open, onClose, versionString?='v3.22.0', slides?=DEFAULT_SLIDES}. DEFAULT_SLIDES exported als pure Konstante für Tests/Storybook: welcome (Sparkles) / korg (Cable) / performance (Mic) / samples (Scissors) / omnitribe (Cpu) / done (CheckCircle2). Pro Slide: Icon (Lucide LucideIcon-typed) + Title + Body + bullets[] + optional action {label, target:WelcomeTryItTarget}. UI: rounded-xl bg-bg-panel + border-border-color, fixed inset-0 z-[9998] (License-Modal ist 9999 — Vorrang). Header (Icon-Badge bg-accent-primary/20 + h2-Titel + p-Versionscounter + X-Close). Body mit bullets (accent-primary 1.5px Dots). Try-It-Button nur wenn slide.action — dispatched dispatchWelcomeTryIt(target) und finishAndClose (User landet direkt im UI). Progress-Dots (klickbar zum Direkt-Springen, aktiver Dot ist w-6 accent-primary, andere w-1.5 bg-bg-elevated). Footer: 'Nicht mehr anzeigen' Checkbox + Back-Button (disabled auf Slide 0) + Next-Button (ändert auf 'Los geht's' auf letztem Slide ohne Chevron). ESC schließt. Backdrop-Click schließt. Finish-Logic: dontShowAgain ? dismissWelcomeWizard() : markFirstRunComplete(). data-testids: welcome-wizard, welcome-wizard-panel, welcome-wizard-title, welcome-wizard-body, welcome-wizard-skip, welcome-wizard-try-it (mit data-target), welcome-wizard-progress, welcome-wizard-dot-{0..5}, welcome-wizard-dont-show, welcome-wizard-back, welcome-wizard-next. ReactElement|null Return-Type (React 19 — kein JSX.Element global namespace).",
+      lastSeen: "2026-05-18T13:30:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "tests/features/welcome-wizard.test.ts (v3.22.0)": {
+      role:     "v3.22.0 NEU: 15 Tests in 4 describes (@vitest-environment jsdom). beforeEach clearLocalStorage + vi.resetModules. (1) First-Run-Detection 4×: firstRun=true bei frischer Installation / shouldAutoShowWelcome === true wenn firstRun && !dismissed / === false nach markFirstRunComplete / === false wenn dismissed. (2) Persistenz 5×: dismissWelcomeWizard persistiert localStorage / Persistierter dismissed=true überlebt module-reload via vi.resetModules + freshImport-Helper / markFirstRunComplete überlebt reload / Korrupter localStorage-Inhalt → defaults / resetWelcomeWizard macht beides true/false. (3) Try-It Event-Dispatch 3×: buildWelcomeTryItDetail liefert {target} / dispatchWelcomeTryIt feuert 3 CustomEvents auf window in korrekter Reihenfolge / WELCOME_EVENT_NAME ist non-empty String mit 'welcome'. (4) Edge-Cases 3×: markFirstRunComplete idempotent / dismissWelcomeWizard idempotent / __resetWelcomeStoreForTests löscht localStorage UND state.",
+      lastSeen: "2026-05-18T13:30:00.000Z",
+      ownedBy:  "frontend"
+    },
     "client/src/audio/OmniTribeBridge.ts (v3.21.0)": {
       role:     "v3.21.0: SynthStudio ↔ OmniTribe Sysex-Bridge (~410 LOC, isomorph, Web-MIDI). v3.16 Codec + v3.21 Polish. (1) pendingSets jetzt Map<key, expiresAt:number> statt Set+setTimeout-Chain — eliminiert Race bei Slider-Sweep >50ms wo aelterer setTimeout den juengsten Echo-Window-Eintrag loescht. setParam ueberschreibt expiresAt = Date.now() + 50; lazy GC via private sweepExpired(now) am Hot-Path. handleIncoming-Echo-Pfad prueft 'now < expiresAt' fuer Block, sonst durchlassen + delete. (2) NEU uploadChordUserSlot(slotIndex:0..3, intervals:number[]):void — sendet CMD 0x02 SUB 0x04 mit Payload [slot(1B), count(1B), N×interval(1B 7-bit-signed)]. Negative Halbtoene via (val+0x80)&0x7F two's-complement. Hardware-Clamp -64..+63, max 16 Intervalle. Defensive vs null/non-array. NO-OP wenn !connected. (3) +clampInt(v,lo,hi) helper, +nowMs() Date.now-Wrapper (NICHT performance.now, damit vi.useFakeTimers funktioniert), +__testGetPendingSetSize() Test-Hook. v3.16-API unveraendert: connect/disconnect/setParam/getParam/requestFullDump/uploadWavetable/enableStreams/undo/redo/remotePlay/remoteStop/remoteRecord/remoteTempo + on()/Singleton omniTribeBridge.",
       lastSeen: "2026-05-18T13:25:00.000Z",
@@ -1247,6 +1262,36 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "frontend",
+      timestamp: "2026-05-18T13:30:00.000Z",
+      done: [
+        "v3.22.0: First-Run KORG Welcome-Wizard — Feature-Discovery für die 42 Releases seit v2.80.0. Modal mit 6 Slides (Welcome / KORG-Hardware / Live-Performance / Sample-Workflow / OmniTribe / Got-it), dismissable via Skip/Don't-show-again, manuell re-openable aus Settings → Über.",
+        "NEU client/src/store/useWelcomeStore.ts (~190 LOC, Custom Observer-Pattern wie useToastStore/useSceneStore). State: {firstRun:bool, dismissed:bool}. Persist via localStorage('synthstudio:welcome:v1') mit Version-Wrapper {v:1, firstRun, dismissed}. Pure-API: getWelcomeState() / shouldAutoShowWelcome() / markFirstRunComplete() / dismissWelcomeWizard() / resetWelcomeWizard() / useWelcomeStore() Hook. Defensive: korrupter JSON → defaults, kein localStorage in SSR → in-memory. __resetWelcomeStoreForTests() für Vitest-Isolation.",
+        "Try-it-now Wiring via CustomEvent 'synthstudio:welcome:try-it' (Pattern analog 'korg:bank:open' aus dragDropDispatch.ts). WelcomeTryItTarget union: 'midi-settings'|'korg-bank-editor'|'scene-launch'|'looper'|'sample-slicer'|'settings'|'templates'. dispatchWelcomeTryIt(target) feuert window.dispatchEvent; App.tsx-Listener routet → Tab-Switch (handleSetActiveTab) oder Settings-Open (setSettingsInitialSection + setShowSettings) oder KorgBankEditor-Open. Tour beendet sich nach Try-It automatisch damit der User direkt mit dem aufgerufenen UI weiterarbeiten kann.",
+        "NEU client/src/components/Welcome/WelcomeWizard.tsx (~300 LOC). Props {open, onClose, versionString?, slides?}. 6 eingebaute DEFAULT_SLIDES als pure Konstanten exportiert für Tests. Pro Slide: Icon (Lucide) + Title + Body + bullets[] + optional action {label, target}. UI: Header (Icon + Titel + Versions/Slide-Counter + X-Close), Body (transition-opacity-200), Try-It-Button (nur wenn slide.action), Progress-Dots (klickbar zum Direkt-Springen), Footer (Don't-show-again Checkbox + Back + Next/'Los geht's'). Letzter Slide ändert Next-Button auf 'Los geht's' ohne Chevron. ESC schließt. Backdrop-Click schließt. Alle Tailwind-Klassen semantisch: bg-bg-panel, text-accent-primary, border-border-color, bg-accent-primary/20 etc — KEINE hardcoded Farben.",
+        "Wiring in App.tsx: showWelcomeWizard state mit lazy-init aus shouldAutoShowWelcome() (synchron — kein useEffect-Race). Render neben <ActivationModal /> bei z-index 9998 (License ist 9999 → behält Vorrang). CustomEvent-Listener in eigenem useEffect: switch über detail.target → entsprechende Tab/Settings-Open. SettingsPanel → AboutSection: NEU 'Hilfe'-Block mit '↻ Welcome-Tour erneut anzeigen' Button (data-testid settings-replay-welcome) der resetWelcomeWizard() ruft + Toast 'Wizard erscheint beim nächsten Start' anzeigt.",
+        "Tests NEU tests/features/welcome-wizard.test.ts (@vitest-environment jsdom, 15 Tests in 4 describes): First-Run-Detection (4× shouldAutoShowWelcome Branches), Persistenz (5× localStorage round-trip + Reload via vi.resetModules + korrupter JSON Fallback + resetWelcomeWizard), Try-It-Event-Dispatch (3× buildDetail/dispatchWelcomeTryIt/EVENT_NAME), Edge-Cases (3× Idempotenz + __resetForTests).",
+        "Test-Resultat: pnpm check clean. pnpm test → 175 files / 3996 passed / 15 skipped (vorher v3.21 174/3979 → +1 file +17 tests). Existing 3979 tests bleiben unverändert grün — keine Regressionen.",
+        "package.json 3.21.0 → 3.22.0. agents/INDEX.js version + workLog entry."
+      ],
+      next: [
+        "TASK-v3.22-PLAYWRIGHT: tests/web/welcome-wizard.spec.ts E2E-Smoke — Modal sichtbar bei firstRun, Next/Back navigiert Slides, Skip persistiert dismissed=true, Reload zeigt KEIN Modal mehr.",
+        "TASK-v3.22-I18N: Slides sind aktuell hardcoded deutsch — für künftige EN/JP-Lokalisierung sollten DEFAULT_SLIDES aus einer i18n-Resource gebaut werden statt im Component-File.",
+        "TASK-v3.22-ANALYTICS: Klick auf Try-It-Buttons könnte ein anonymes Analytics-Event feuern (welcher Slide hat höchste Engagement?). Aktuell kein Tracking — kein PII, aber Hardware-Discovery wäre ein Geschäftssignal.",
+        "TASK-v3.22-PROGRESS-PERSIST: Bei sehr langer Tour (10+ Slides) könnte der State auch slideIndex persistieren damit User mit-Reload genau dort weitermacht. Aktuell wird bei jedem Open auf Slide 0 resetted.",
+        "TASK-v3.22-A11Y-FOCUS: Modal hat aktuell role='dialog'+aria-modal=true aber kein automatisches Focus-Trap. Bei stricter A11y-Audit sollte Focus auf Next-Button starten + tabbing eingegrenzt sein."
+      ],
+      changed: [
+        "client/src/store/useWelcomeStore.ts (NEU, ~190 LOC: Observer-Pattern Store + localStorage persist + CustomEvent helpers)",
+        "client/src/components/Welcome/WelcomeWizard.tsx (NEU, ~300 LOC: 6-Slide Modal mit semantischen Tailwind-Tokens + ESC/Backdrop/Skip/Try-It-Flows)",
+        "client/src/App.tsx (+ Imports WelcomeWizard/shouldAutoShowWelcome/WELCOME_EVENT_NAME/WelcomeTryItDetail, +showWelcomeWizard state lazy-init, +CustomEvent-Listener mit switch über target, +<WelcomeWizard /> render neben ActivationModal)",
+        "client/src/components/Settings/SettingsPanel.tsx (+ Import resetWelcomeWizard, + 'Hilfe'-Block in AboutSection mit '↻ Welcome-Tour erneut anzeigen' Button + Toast-Feedback)",
+        "tests/features/welcome-wizard.test.ts (NEU, 15 Tests in 4 describes: First-Run + Persistenz inkl. Module-Reload + Try-It-Dispatch + Edge-Cases)",
+        "package.json (3.21.0 → 3.22.0)",
+        "agents/INDEX.js (version 3.21.0 → 3.22.0 + workLog v3.22.0 entry)"
+      ]
+    },
     {
       agent:     "backend",
       timestamp: "2026-05-18T13:25:00.000Z",

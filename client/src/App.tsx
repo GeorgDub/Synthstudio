@@ -76,6 +76,13 @@ import { toast } from "@/store/useToastStore";
 import { ToastContainer } from "@/components/UI/ToastContainer";
 import { ActivationModal } from "@/components/License/ActivationModal";
 import { KorgBankModal, type KorgBankSample } from "@/components/KorgBank/KorgBankModal";
+// v3.22.0: First-Run-Tutorial — Welcome-Wizard mit 6 Slides.
+import { WelcomeWizard } from "@/components/Welcome/WelcomeWizard";
+import {
+  shouldAutoShowWelcome,
+  WELCOME_EVENT_NAME,
+  type WelcomeTryItDetail,
+} from "@/store/useWelcomeStore";
 import { KorgBankEditor } from "@/components/KorgBank/KorgBankEditor";
 // v3.18.0: OmniTribe-Tab (VU + Spectrum + Chord + Performance-Pads).
 // v3.19.0: Browser-Support-Banner + DeviceConnectionPanel im Tab.
@@ -1034,6 +1041,16 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [settingsInitialSection, setSettingsInitialSection] = useState<"design" | "ki" | "keyboard" | "midi-devices" | "midi-cc" | "midi-notes" | "about">("design");
 
+  // v3.22.0: First-Run Welcome-Wizard. shouldAutoShowWelcome liest localStorage
+  // synchron — daher lazy init, kein useEffect-Race.
+  const [showWelcomeWizard, setShowWelcomeWizard] = useState<boolean>(() => {
+    try {
+      return shouldAutoShowWelcome();
+    } catch {
+      return false;
+    }
+  });
+
   // ── Theme beim Start laden ─────────────────────────────────────────────────
   React.useEffect(() => { initTheme(); }, []);
 
@@ -1077,6 +1094,46 @@ export default function App() {
       setMacroValue: (idx: number, v: number) => setMacroValue(idx, v),
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── v3.22.0: Welcome-Wizard "Try it now" Routing ──────────────────────────
+  // Pro Wizard-Slide kann ein CustomEvent "synthstudio:welcome:try-it"
+  // gefeuert werden. Wir routen ihn hier auf Tab-Switches / Settings-Open.
+  useEffect(() => {
+    const onTryIt = (e: Event) => {
+      const detail = (e as CustomEvent<WelcomeTryItDetail>).detail;
+      if (!detail || !detail.target) return;
+      switch (detail.target) {
+        case "midi-settings":
+          setSettingsInitialSection("midi-devices");
+          setShowSettings(true);
+          break;
+        case "korg-bank-editor":
+          setKorgBankExportOpen(true);
+          break;
+        case "scene-launch":
+          handleSetActiveTab("sequencer");
+          break;
+        case "looper":
+          handleSetActiveTab("sequencer");
+          break;
+        case "sample-slicer":
+          handleSetActiveTab("tools");
+          break;
+        case "templates":
+          setSettingsInitialSection("midi-devices");
+          setShowSettings(true);
+          break;
+        case "settings":
+        default:
+          setSettingsInitialSection("design");
+          setShowSettings(true);
+          break;
+      }
+    };
+    window.addEventListener(WELCOME_EVENT_NAME, onTryIt as EventListener);
+    return () => window.removeEventListener(WELCOME_EVENT_NAME, onTryIt as EventListener);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // ── ss:navigate Event-Handler ─────────────────────────────────────────────
@@ -3759,6 +3816,11 @@ export default function App() {
       <ToastContainer />
       {/* TASK-232 (v2.97): Lizenz-Aktivierungs-Modal (zeigt sich auto bei status=unknown) */}
       <ActivationModal />
+      {/* v3.22.0: First-Run Welcome-Wizard (6 Slides). Auto-Show on first launch. */}
+      <WelcomeWizard
+        open={showWelcomeWizard}
+        onClose={() => setShowWelcomeWizard(false)}
+      />
       {/* v3.3.0: KORG Sample-Bank-Modal (ESX-1 .esx + E2S .all Read-Only). */}
       <KorgBankModal
         file={korgBankFile}
