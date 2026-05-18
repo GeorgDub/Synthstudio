@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "2.94.0",
+    version: "2.95.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -83,9 +83,9 @@ const INDEX = {
   // ─── KNOWN FILE INDEX ──────────────────────────────────────
   // Key files agents have analyzed. Add new entries after working on a file.
   files: {
-    "client/src/utils/channelBounce.ts (TASK-241 v2.94)": {
-      role:     "v2.94.0: Per-Channel WAV-Bounce Pure-Render-Engine. renderChannelToBuffer(part, pattern, opts, OfflineCtxCtor?) → OfflineAudioContext-Render eines EINZELNEN Channels mit Gain+Filter(lowpass-bei-cutoff<20k)+StereoPanner-Chain. Pure-Helpers: computeBounceDurationSec/resolveBounceBars/sanitizeStemFilenameStem/defaultStemFilename. bounceChannelToWavBuffer = render+encodeWav (reuse wavEncoder.ts, kein Duplikat). bounceAllChannels sequenziell mit Error-Isolation + Progress-Callback. Konstanten BOUNCE_WARN_DURATION_SEC=300/BOUNCE_MAX_DURATION_SEC=1800. downloadWavInBrowser für Web-Fallback. OfflineAudioContextCtor-Type für DI in Tests. README dokumentiert Limitations: kein Insert-FX (außer Lowpass), keine Synth-Parts, kein globaler Reverb/Delay-Bus.",
-      lastSeen: "2026-05-18T03:35:00.000Z",
+    "client/src/utils/channelBounce.ts (TASK-241 v2.95)": {
+      role:     "v2.95.0: Per-Channel WAV-Bounce mit VOLLER Insert-FX-Chain. NEU buildOfflinePartGraph(ctx, part, channels) baut analog zu AudioEngine._getOrCreateChannelNodes: input → eqLow(lowshelf200) → eqMid(peaking1k Q=1) → eqHigh(highshelf6k) → filter(lowpass/HP/BP/notch oder allpass-bypass) → distortion(WaveShaper) → compressor → delay(dry/wet+feedback-loop) → reverb(convolver mit synthetischem IR aus weißem-Rauschen*(1-t)² + dry/wet) → output → sidechainGain → panner → destination. Triggers connecten via stepGain(vel*partVol) auf graph.input. NEU makeDistortionCurve(amount) → Float32Array<ArrayBuffer> (SoT: AudioEngine._makeDistortionCurve, copy-pasted mit Marker, Refactor in shared fxGraph.ts als Follow-Up dokumentiert). NEU buildReverbImpulse(ctx, decay) → AudioBuffer mit 2 Channels (SoT: AudioEngine._getOrCreateReverbBuffer, ungecacht da Offline-Ctx einmalig). NEU computeDynamicTailSec(fx) → max(0.5, reverbDecay+0.2, delayTime*(1+fb/(1-fb))) capped 4s — Reverb/Delay-Tails fallen nicht mehr ab. NEU opts.bypassFx → Legacy v2.94-Pfad (nur Volume/Pan/Lowpass per Step). Step.pitch wird auf playbackRate (2^(semi/12)) gemappt. Defensive: safeNum(v,fallback) für NaN/Infinity/undefined, fx-undefined → Pass-Through ohne Crash. CAVEATS v2.95 (siehe README am Datei-Ende): Synth/Wavetable/FM/Granular weiter silent (v2.96+), Sidechain statisch=1 (kein Modulations-Graph), Global-Reverb/Delay-Bus nicht im Channel-Stem, Bitcrusher/RingMod/Transient-Shaper noch nicht (AudioWorklet bzw. nicht in ChannelFx 1st-class), step.paramLock nicht respektiert.",
+      lastSeen: "2026-05-18T03:50:00.000Z",
       ownedBy:  "backend"
     },
     "client/src/components/Mixer/ChannelInspector.tsx (TASK-241 v2.94)": {
@@ -103,9 +103,9 @@ const INDEX = {
       lastSeen: "2026-05-18T03:35:00.000Z",
       ownedBy:  "backend"
     },
-    "tests/features/channel-bounce.test.ts (TASK-241 v2.94)": {
-      role:     "v2.94.0: 35 Unit-Tests (alle grün). Mock-OfflineAudioContext mit capture-stats für bufferSourcesCreated/startCalls/gainValuesSet/panValuesSet/filterFreqsSet/filterNodesCreated. Coverage: computeBounceDurationSec (5 — 2.0s@120bpm/tailSec/linear-bars/NaN-Invalid/BPM-Inverse), resolveBounceBars (3 Modes), sanitizeStemFilenameStem (5 — whitespace/sonderzeichen/default/truncate/allowed-underscore-dash), defaultStemFilename (3), renderChannelToBuffer (10 — buffer-length/bufferSource-per-active-step/pan-propagation/muted→gain=0/no-sample-buffer→silent/filter-create-bei-cutoff<20k/filter-skip-bei-20k/mono-skips-panner/max-duration-reject/pattern.bpm-override), bounceChannelToWavBuffer (2 — valid-WAV-header/stereo-numChannels=2), bounceAllChannels (3 — N-results/onProgress-callback/error-isolation), Konstanten + no-OfflineAudioContext-throw.",
-      lastSeen: "2026-05-18T03:35:00.000Z",
+    "tests/features/channel-bounce.test.ts (TASK-241 v2.95)": {
+      role:     "v2.95.0: 65 Unit-Tests (alle grün, +30 ggü v2.94). Enhanced Mock-OfflineAudioContext mit allen FX-Nodes: createWaveShaper (curve-capture), createDynamicsCompressor (threshold/ratio/attack/release-capture), createDelay (delayTime), createConvolver (buffer), createBuffer (für IR-Generierung), playbackRate auf bufferSource, gain auf biquad, type/Q/frequency-Setter mit Capture. NEU-Suites: computeDynamicTailSec (5 — default/reverb/delay/combined/undefined-defensive), makeDistortionCurve (4 — length/linear-bei-amount=0/saturation/monotonic-drive), buildReverbImpulse (3 — length/null-bei-decay≤0/exp-decay-amplitude), buildOfflinePartGraph (15 — full-topology/EQ-disabled-zero-gain/EQ-enabled-bands/distortion-curve-saturation/distortion-disabled-flat/comp-params/comp-bypass/delay-params/reverb-IR/reverb-disabled-no-IR/filter-enabled/filter-allpass-bypass/mono-no-panner/stereo-pan-set/fx-undefined-defensive/NaN-fallback). renderChannelToBuffer um 4 neue Cases erweitert: fx-chain-built-once (nicht pro Step), bypassFx-toggle (Legacy v2.94), dynamic-tail-Reverb, step.pitch→playbackRate. v2.94-Tests bleiben grün (back-compat).",
+      lastSeen: "2026-05-18T03:50:00.000Z",
       ownedBy:  "backend"
     },
     "client/src/utils/projectSerializer.ts (TASK-PROJ-FILE-V18 v2.93)": {
@@ -881,6 +881,27 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "backend",
+      timestamp: "2026-05-18T03:50:00.000Z",
+      done: [
+        "v2.95.0: TASK-241-FOLLOWUP-1 (partial-done) — Stem-Bounce mit voller Insert-FX-Chain. Schließt die schmerzhafte v2.94-Limitation: Stems hatten nur Volume/Pan/Lowpass — keine EQ, kein Distortion, kein Comp, kein Delay, kein Reverb. Stem-Export ist jetzt produktionsreif für Drum-Sample-Channels. (1) client/src/utils/channelBounce.ts erweitert um buildOfflinePartGraph(ctx, part, channels) — baut die komplette Per-Channel-FX-Chain 1:1 analog zu AudioEngine._getOrCreateChannelNodes: input → 3-Band-EQ(lowshelf200/peaking1k Q=1/highshelf6k) → filter(lowpass/HP/BP/notch oder allpass-bypass bei disabled) → distortion(WaveShaper) → compressor → delay(dry/wet+feedback-loop) → reverb(convolver mit synthetischem IR + dry/wet) → output → sidechainGain → panner → destination. Triggers connecten via stepGain(velocity*partVol) auf graph.input — die FX-Chain wird EINMAL pro Channel gebaut (nicht pro Step wie in v2.94). Pure-Helpers makeDistortionCurve(amount): Float32Array<ArrayBuffer> und buildReverbImpulse(ctx, decay): AudioBuffer|null als exportierte Top-Level-Funktionen (statt Engine-private). NEU computeDynamicTailSec(fx) — dynamic-fadeout-tail aus Reverb-Decay + Delay-Geometric-Series statt hartem 0.5s-Cutoff (Reverb 3s → Tail 3.2s, Delay 0.5s @ 80% Feedback → ~2.5s Tail, capped 4s). NEU opts.bypassFx → schaltet auf den v2.94-Legacy-Pfad zurück (für A/B-Vergleich oder defensive Fallback). Step.pitch wird jetzt auf playbackRate = 2^(semi/12) gemappt (war in v2.94 ignoriert). Defensive: safeNum(v,fallback) für NaN/Infinity/undefined-fx-Felder, fx-undefined → Pass-Through-Topologie ohne Crash. Architektur-Entscheidung: COPY mit SoT-Marker statt Refactor (AudioEngine.ts ist 3154-Zeilen-Singleton — saubere Extraction bräuchte ein neues shared/fxGraph.ts-Modul + Migration aller call-sites). Begründung: (a) FX-Helpers sind ~20 LoC und seit v1.x stabil, (b) Test-Coverage garantiert die Parität, (c) Refactor als TASK-242-Follow-Up dokumentiert in channelBounce.ts-README. (2) tests/features/channel-bounce.test.ts auf 65 Tests erweitert (vs 35 in v2.94, alle grün). Enhanced Mock-OfflineAudioContext mit createWaveShaper (curve-capture), createDynamicsCompressor (threshold/ratio/attack/release-capture), createDelay, createConvolver (buffer-capture), createBuffer (für IR), playbackRate auf bufferSource. NEU-Suites: computeDynamicTailSec (5), makeDistortionCurve (4 — length/identity/saturation/monotonic), buildReverbImpulse (3 — length/null-decay/exp-decay-shape), buildOfflinePartGraph (15 — full-topology/EQ-disabled-zero/EQ-enabled-bands/distortion-curve-saturation/distortion-disabled-flat/comp-params/comp-bypass/delay-params/reverb-IR/reverb-disabled-no-IR/filter-enabled/filter-allpass-bypass/mono-no-panner/stereo-pan-set/fx-undefined-defensive/NaN-fallback). renderChannelToBuffer um 4 neue Cases erweitert: fx-chain-built-once-per-channel (nicht pro Step), bypassFx-toggle, dynamic-tail-Reverb-vergrößert-Buffer, step.pitch→playbackRate. v2.94-Tests bleiben grün (back-compat erhalten). (3) package.json 2.94.0 → 2.95.0. pnpm check clean, pnpm test 3418 passed / 15 skipped (+30 neue Tests, 0 failed Files). NICHT im Scope von v2.95 (siehe channelBounce.ts-README): Synth/Wavetable/FM/Granular-Parts werden weiter als silent gebounced — TASK-241-FOLLOWUP-2 verschoben auf v2.96. Sidechain-Modulation aus anderen Channels: Sidechain-Gain-Node ist im Graph vorhanden aber statisch=1 (kein Live-Modulations-Pfad). Globaler Reverb-/Delay-Bus nicht gespiegelt (Channel-Stems sollten dry-ish bleiben, Bus-FX gehört in Mix-Stem). Bitcrusher/RingMod/Transient-Shaper nicht enthalten (Bitcrusher braucht AudioWorklet-Setup im Offline-Ctx, die anderen sind keine 1st-class-Felder in ChannelFx-Interface). step.paramLock (Per-Step-FX-Override) nicht respektiert. Live-Input + AudioTrack-Channels nicht supported (kein part.steps[])."
+      ],
+      next: [
+        "TASK-242 (REFACTOR): Extract `buildPartFxChain(ctx, part)` in shared client/src/audio/fxGraph.ts und nutze es in BEIDEN AudioEngine._getOrCreateChannelNodes + channelBounce.buildOfflinePartGraph. Aktuell ist makeDistortionCurve+buildReverbImpulse-Logik via Copy-with-Marker doppelt — wenn jemand das Online-Verhalten ändert, MUSS er den Offline-Code mit-aktualisieren. Mit shared Modul wäre Online + Offline garantiert byte-identisch.",
+        "TASK-241-FOLLOWUP-2 (v2.96): Synth/Wavetable/FM-Offline-Render. SynthEngine.ts in Offline-Pfad portieren — mindestens Wavetable (Oscillator + ADSR) ist trivial, FM braucht ModulatorGraph-Replikation. Granular ist komplexer wegen Grain-Scheduling.",
+        "TASK-241-FOLLOWUP-3 (v2.96): Stem-Export ZIP-Bundle — bounceAllChannels liefert N WAVs, JSZip-Wrapper könnte sie zu einem proj-stems.zip schnüren (1 Klick Share).",
+        "TASK-241-FOLLOWUP-4 (alternative): Realtime-Tap-Bounce als Option für 100% FX-Genauigkeit (Bitcrusher/RingMod inkl.) — neue UI-Option 'Bounce Mode: Offline (fast) | Realtime (slow, all-FX)'.",
+        "TASK-241-FOLLOWUP-5 (UI): Bounce-History-Panel mit Re-Play-Preview-Button + Reveal-in-Folder.",
+        "TASK-239 (VST3/CLAP-Host) bleibt offen."
+      ],
+      changed: [
+        "client/src/utils/channelBounce.ts (v2.95: +buildOfflinePartGraph mit voller FX-Chain, +makeDistortionCurve, +buildReverbImpulse, +computeDynamicTailSec, +bypassFx-Option, +step.pitch→playbackRate, +defensive safeNum-Helper)",
+        "tests/features/channel-bounce.test.ts (35 → 65 Tests, +30 FX-Chain-Coverage, enhanced Mock-Ctx)",
+        "package.json (2.94.0 → 2.95.0)",
+        "agents/INDEX.js (workLog + files-Index v2.95)"
+      ]
+    },
     {
       agent:     "backend",
       timestamp: "2026-05-18T03:35:00.000Z",
