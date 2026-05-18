@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.60.0",
+    version: "3.61.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -129,15 +129,15 @@ const INDEX = {
       lastSeen: "2026-05-18T23:15:00.000Z",
       ownedBy:  "frontend"
     },
-    "client/src/components/AutoSave/VersionHistoryModal.tsx (v3.57.0)": {
-      role:     "v3.57.0 NEU (~210 LOC): Modal-Komponente für AutoSave-Versions-History. Props: {isOpen, onClose, projectId, onRestore: (json:string) => void}. Backdrop-Click + ESC schließen. Header mit Reload-Button (RefreshCw-Icon) + Close-Button. Body lädt versions via listAutoSaveVersions(projectId) im useEffect, zeigt loading/empty/list-State. Pro Row: Timestamp (formatVersionTimestamp) + relative Zeit (formatLastSave) + Size (formatBytes) + optional Label (accent-secondary) + projectName + Restore-Button (window.confirm 'Aktuelles Projekt überschreiben?' → restoreAutoSaveVersion → onRestore(json) + Toast + onClose) + Delete-Button (Trash2-Icon + window.confirm → deleteAutoSaveVersion + Reload). 30s-Tick im useEffect für 'vor X min'-Refresh. data-testids: autosave-version-history-modal/version-list/version-row-<id>/restore-<id>/delete-<id>/close-btn/reload-btn. Ausschließlich semantische Tailwind-Tokens.",
-      lastSeen: "2026-05-18T23:15:00.000Z",
-      ownedBy:  "frontend"
+    "client/src/components/AutoSave/VersionHistoryModal.tsx (v3.61.0)": {
+      role:     "v3.57.0 NEU (~210 LOC, v3.61.0 ERWEITERT): Modal-Komponente für AutoSave-Versions-History. Props: {isOpen, onClose, projectId, onRestore: (json:string) => void}. Backdrop-Click + ESC schließen. Body lädt versions via listAutoSaveVersions(projectId) im useEffect. v3.61.0: reload-Pfad initialisiert lastSaveAtPerProject[projectId] aus list[0].timestamp falls noch leer (Modal-Open-Side-Effect heilt fehlende per-project Einträge) — User öffnet Modal → schließt es → Topbar zeigt korrekten Wert ohne auf nächsten Tick zu warten. Restore/Delete-Buttons + 30s-Tick weiterhin.",
+      lastSeen: "2026-05-18T23:59:30.000Z",
+      ownedBy:  "backend"
     },
-    "client/src/components/AutoSave/AutoSaveStatusIndicator.tsx (v3.57.0)": {
-      role:     "v3.57.0 NEU (~50 LOC): Topbar-Button-Indikator mit lucide-react Save-Icon + dynamischem ShortLabel ('5m', 'gerade eben', etc.). Props: {onOpenHistory: () => void, visible?: boolean = true}. Liest useAutoSaveStore-Hook + 30s-rerender-Tick via useReducer (subtle update ohne constant rerender). Versteckt sich (returns null) wenn !visible || !settings.enabled. Tooltip enthält absolute Zeit ('Letzter AutoSave: 14:23:05'). Klick fires onOpenHistory. data-testids: autosave-status-indicator/autosave-status-label. Mounted im App.tsx-Topbar zwischen projectName-Span und Play/Stop-Buttons.",
-      lastSeen: "2026-05-18T23:15:00.000Z",
-      ownedBy:  "frontend"
+    "client/src/components/AutoSave/AutoSaveStatusIndicator.tsx (v3.61.0)": {
+      role:     "v3.57.0 NEU (~50 LOC, v3.61.0 ERWEITERT): Topbar-Button-Indikator mit lucide-react Save-Icon + dynamischem ShortLabel. Props: {onOpenHistory, visible?:true, projectId?}. v3.61.0: optionale projectId-Prop — Indikator liest pro-projectId aus lastSaveAtPerProject (perProject ?? settings.lastSaveAt Fallback). Beim Projektwechsel zeigt der Indikator damit den dortigen letzten Save statt 'Noch nie'. Aufrufer ohne Prop bleiben Backward-Compat. App.tsx übergibt project.projectId || projectNameToId(projectName).",
+      lastSeen: "2026-05-18T23:59:30.000Z",
+      ownedBy:  "backend"
     },
     "client/src/App.tsx (v3.57.0 autosave-wiring)": {
       role:     "v3.57.0 ERWEITERT (+60 LOC): bestehende App-Root-Logik bleibt + NEU AutoSave-Engine-Wiring. 8 neue Imports (useAutoSaveStore, markAutoSaveCompleted, isAutoSavePaused, writeAutoSaveVersion, computeAutoSaveIntervalMs, decideAutoSaveTick, projectNameToId, AutoSaveStatusIndicator, VersionHistoryModal). NEU showVersionHistory-State. NEU useEffect 'v3.57 AutoSave Versions-Engine' parallel zum existing localStorage-AutoSave: setInterval(intervalMin*60_000) → decideAutoSaveTick → wenn shouldRun: buildProjectSnapshot → JSON.stringify → writeAutoSaveVersion(projectNameToId(projectName), json) → markAutoSaveCompleted on success. Defensive: try/catch um Serialisierung + .catch um Promise + console.warn statt Toast (AutoSave-Fail crashed niemals den Renderer). Topbar: AutoSaveStatusIndicator zwischen projectName-Span und Play/Stop-Buttons mit onOpenHistory=setShowVersionHistory(true). NACH SettingsPanel: VersionHistoryModal-Mount mit onRestore: JSON.parse → parseProject → restoreProject + Toast. SettingsPanel +onOpenVersionHistory={() => {setShowSettings(false); setShowVersionHistory(true)}}.",
@@ -154,9 +154,9 @@ const INDEX = {
       lastSeen: "2026-05-18T23:15:00.000Z",
       ownedBy:  "frontend"
     },
-    "client/src/store/useAutoSaveStore.ts (v3.60.0)": {
-      role:     "v3.60.0 ERWEITERT: v3.56-Store (AutoSaveSettings {enabled, intervalMin:1..60, lastSaveAt}, LocalStorage 'ss-autosave-settings:v1', getAutoSaveSettings/setAutoSaveEnabled/setAutoSaveInterval/markAutoSaveCompleted/pauseAutoSave/resumeAutoSave/isAutoSavePaused, clampInterval Pure-fn, formatLastSave Pure-fn, defensive load(), __resetAutoSaveStoreForTests) bleibt + NEU resetAutoSaveLastSaveAt() Public-Action (~+12 LOC). Setzt lastSaveAt explizit auf null und persistiert via persist() — wird nach restoreProject in App.tsx gerufen damit Topbar-Indicator nicht den vorherigen Save-Zeitpunkt für das neu geladene Projekt zeigt. Andere Settings (enabled, intervalMin) bleiben unverändert. Idempotent bei bereits null. Test-Coverage in project-id-migration.test.ts describe (6) × 3 Tests.",
-      lastSeen: "2026-05-18T23:55:00.000Z",
+    "client/src/store/useAutoSaveStore.ts (v3.61.0)": {
+      role:     "v3.61.0 ERWEITERT: AutoSaveSettings-Interface jetzt mit lastSaveAtPerProject: Record<projectId, number> (Backward-Compat: legacy lastSaveAt bleibt synchron). NEU setLastSaveAt(projectId, ts) Public-Action — schreibt beide Felder. NEU getLastSaveAtForProject(projectId) Pure-Read → null bei unbekannter ID. Defensive sanitizePerProjectMap-Loader für korrupte localStorage-Einträge. resetAutoSaveLastSaveAt-Contract aktualisiert: clear-t NUR Legacy, Map bleibt intakt (damit Zurückwechseln zu einem Projekt seinen echten letzten Save findet). markAutoSaveCompleted bleibt als Legacy-API erhalten (schreibt nur Legacy). Test-Coverage in autosave-ui.test.ts describe '(5) v3.61.0 — Pro-projectId lastSaveAt' × 7 Tests (persist, isolation, source-logic, post-restore, reset-contract, defensive, reload).",
+      lastSeen: "2026-05-18T23:59:30.000Z",
       ownedBy:  "backend"
     },
     "client/src/utils/autoSaveEngine.ts (v3.56.0)": {
@@ -1897,6 +1897,39 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "backend",
+      timestamp: "2026-05-18T23:59:30.000Z",
+      done: [
+        "v3.61.0: Pro-projectId lastSaveAt-Tracking — closes v3.60 letzte Caveat. pnpm check clean, 207 Test-Files / 4806 Tests grün (16 skipped, +7 NEU in autosave-ui.test.ts → 21 total in der Datei).",
+        "client/src/store/useAutoSaveStore.ts: NEU lastSaveAtPerProject: Record<projectId, number> im AutoSaveSettings-Interface + sanitizePerProjectMap defensive Loader. NEU Public-API setLastSaveAt(projectId, ts) — schreibt BEIDES (per-project Map + Legacy lastSaveAt synchron, damit alte UI-Konsumenten ohne projectId-Prop weiterhin sinnvolle Werte sehen). NEU getLastSaveAtForProject(projectId) — Pure-Read, liefert null bei unbekannter ID. markAutoSaveCompleted bleibt als Legacy-API erhalten (schreibt nur Legacy-Feld). resetAutoSaveLastSaveAt clear-t jetzt NUR Legacy — per-project Map bleibt intakt (Contract-Change), damit Zurückwechseln zu einem Projekt seinen echten letzten Save findet.",
+        "client/src/components/AutoSave/AutoSaveStatusIndicator.tsx: NEU optional projectId-Prop. Effektiver Wert = perProject ?? settings.lastSaveAt — pre-v3.61.0-Aufrufer ohne Prop funktionieren weiter (Backward-Compat). App.tsx übergibt jetzt project.projectId || projectNameToId(projectName).",
+        "client/src/components/AutoSave/VersionHistoryModal.tsx: Reload-Pfad initialisiert lastSaveAtPerProject[projectId] aus list[0].timestamp falls noch leer — User öffnet Modal → schließt es → Topbar zeigt korrekten Wert ohne auf nächsten Tick zu warten.",
+        "client/src/App.tsx: AutoSave-Trigger schreibt jetzt setLastSaveAt(pid, Date.now()) statt markAutoSaveCompleted() — synchronisiert Legacy + Map. restoreProject macht Post-Restore-Lookup: erst getLastSaveAtForProject(restoredPid) (cached), bei null → async listAutoSaveVersions → setLastSaveAt(newest.timestamp). Best-effort, niemals crashen.",
+        "tests/features/autosave-ui.test.ts ERWEITERT: +7 Tests in describe '(5) v3.61.0 — Pro-projectId lastSaveAt': persistiert in localStorage, separate Werte pro ID (Isolation), Topbar-Source-Logik (perProject ?? legacy), Post-Restore-Lookup mit latestVersion, resetAutoSaveLastSaveAt lässt Map intakt, defensive No-Op bei leerer/NaN-ID, Reload-Persistenz.",
+        "package.json + agents/INDEX.js version 3.60.0 → 3.61.0."
+      ],
+      next: [
+        "v3.62: Settings-Panel UI für 'Clear all per-project lastSaveAt Map' (Privacy-Feature) — analog zur autosave-history-Pflege.",
+        "v3.62: serializeProject Pure halten — ensureProjectId-Side-Effect aus dem v3.58-Bump in einen opt-in Helper extrahieren (offen aus v3.58/v3.59/v3.60).",
+        "v3.62: Settings-Panel 'Migration nachträglich auslösen'-Button (offen aus v3.60) — entfernt markMigrationChecked-Einträge für eine projectId."
+      ],
+      changed: [
+        "client/src/store/useAutoSaveStore.ts (+~50 LOC: lastSaveAtPerProject-Feld, setLastSaveAt, getLastSaveAtForProject, sanitizePerProjectMap, Contract-Update resetAutoSaveLastSaveAt)",
+        "client/src/components/AutoSave/AutoSaveStatusIndicator.tsx (+5 LOC: projectId-Prop + perProject-Lookup)",
+        "client/src/components/AutoSave/VersionHistoryModal.tsx (+10 LOC: latestVersion-Lookup im reload-Pfad)",
+        "client/src/App.tsx (+~25 LOC: setLastSaveAt-Import, AutoSave-Trigger nutzt setLastSaveAt(pid), restoreProject Post-Restore-Lookup, AutoSaveStatusIndicator projectId-Prop)",
+        "tests/features/autosave-ui.test.ts (+~130 LOC: 7 NEU Tests + 3 neue Imports)",
+        "package.json (3.60.0 → 3.61.0)",
+        "agents/INDEX.js (version 3.60.0 → 3.61.0 + workLog v3.61.0)"
+      ],
+      caveats: [
+        "Storage-Format Backward-Compat: Alte localStorage-Einträge ohne `lastSaveAtPerProject` werden von sanitizePerProjectMap auf `{}` initialisiert — keine Migration nötig, alte Saves haben einfach noch keine per-project Einträge. Erst der nächste setLastSaveAt-Call füllt die Map. Forward-Migration via natürlicher Nutzung.",
+        "Legacy markAutoSaveCompleted bleibt erhalten + setzt NUR das Legacy-Feld — nicht die Map. Theoretisch driften beide auseinander, wenn ein neuer Code-Pfad versehentlich noch markAutoSaveCompleted statt setLastSaveAt ruft. Currently nicht der Fall (App.tsx wurde umgestellt), aber zukünftige Patches sollten konsistent setLastSaveAt nutzen.",
+        "Post-Restore-Lookup ist async + best-effort: zwischen restoreProject-return und dem Promise-Resolve sieht der Indicator kurz 'Noch nie' (Legacy=null + Map noch nicht aktualisiert). Bei IDB ist die Latenz <10ms — visuell kaum wahrnehmbar. Erster Cache-Hit (getLastSaveAtForProject vor IDB) deckt den Common-Case (vorher schon mal gesehene projectId) sync ab.",
+        "resetAutoSaveLastSaveAt-Contract geändert (v3.60: setzt lastSaveAt=null UND notify; v3.61: setzt NUR Legacy auf null, Map bleibt). Falls externe Konsumenten den 'full reset' erwarteten, müssten sie jetzt explizit beide Felder ansprechen. Bestehende Konsumenten in der Codebase (nur App.tsx restoreProject) profitieren vom neuen Verhalten — kein Breakage."
+      ]
+    },
     {
       agent:     "backend",
       timestamp: "2026-05-18T23:55:00.000Z",

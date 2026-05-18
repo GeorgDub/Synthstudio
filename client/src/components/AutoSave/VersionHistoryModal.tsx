@@ -20,7 +20,11 @@ import {
   formatBytes,
   formatVersionTimestamp,
 } from "@/utils/autoSaveController";
-import { formatLastSave } from "@/store/useAutoSaveStore";
+import {
+  formatLastSave,
+  getLastSaveAtForProject,
+  setLastSaveAt,
+} from "@/store/useAutoSaveStore";
 import { toast } from "@/store/useToastStore";
 
 export interface VersionHistoryModalProps {
@@ -47,6 +51,16 @@ export function VersionHistoryModal({
     try {
       const list = await listAutoSaveVersions(projectId);
       setVersions(list);
+      // v3.61.0: Falls für diese projectId noch kein lastSaveAt im Store steht,
+      // initialisieren wir ihn aus dem latestVersion-Timestamp. So zeigt der
+      // Topbar-Indikator nach dem Schließen den korrekten Wert, statt erst auf
+      // den nächsten AutoSave-Tick zu warten.
+      if (list.length > 0 && getLastSaveAtForProject(projectId) === null) {
+        const newest = list[0];
+        if (newest && Number.isFinite(newest.timestamp)) {
+          setLastSaveAt(projectId, newest.timestamp);
+        }
+      }
     } catch {
       setVersions([]);
     } finally {

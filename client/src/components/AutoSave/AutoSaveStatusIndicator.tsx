@@ -1,12 +1,16 @@
 /**
- * Synthstudio – AutoSaveStatusIndicator.tsx (v3.57.0)
+ * Synthstudio – AutoSaveStatusIndicator.tsx (v3.61.0)
  *
  * Subtiler Topbar-Indikator der den letzten erfolgreichen AutoSave anzeigt.
  * Klick öffnet die Versions-History (Caller-Prop). Updates 1×/30s.
+ *
+ * v3.61.0: Liest pro-projectId aus `lastSaveAtPerProject` falls Prop gesetzt
+ * — sonst Fallback auf den Legacy-`lastSaveAt`. Beim Projektwechsel zeigt der
+ * Indikator damit den dortigen letzten Save statt "Noch nie".
  */
 import { useEffect, useReducer } from "react";
 import { Save } from "lucide-react";
-import { useAutoSaveStore } from "@/store/useAutoSaveStore";
+import { useAutoSaveStore, getLastSaveAtForProject } from "@/store/useAutoSaveStore";
 import { buildAutoSaveStatusDisplay } from "@/utils/autoSaveController";
 
 export interface AutoSaveStatusIndicatorProps {
@@ -14,11 +18,18 @@ export interface AutoSaveStatusIndicatorProps {
   onOpenHistory: () => void;
   /** Wenn false, versteckt sich der Indikator komplett (z.B. AutoSave AUS). */
   visible?: boolean;
+  /**
+   * v3.61.0: Aktive projectId. Wenn gesetzt, wird der per-project Wert aus
+   * `lastSaveAtPerProject[projectId]` angezeigt; Fallback auf Legacy
+   * `lastSaveAt`. Wenn undefined, wird wie pre-v3.61.0 nur Legacy genutzt.
+   */
+  projectId?: string;
 }
 
 export function AutoSaveStatusIndicator({
   onOpenHistory,
   visible = true,
+  projectId,
 }: AutoSaveStatusIndicatorProps) {
   const settings = useAutoSaveStore();
   // 30s-Tick damit "vor X min" sich aktualisiert ohne constant-re-render.
@@ -30,7 +41,10 @@ export function AutoSaveStatusIndicator({
 
   if (!visible || !settings.enabled) return null;
 
-  const display = buildAutoSaveStatusDisplay(settings.lastSaveAt);
+  // v3.61.0: pro-projectId-Lookup zuerst, sonst Legacy-Feld.
+  const perProject = projectId ? getLastSaveAtForProject(projectId) : null;
+  const effectiveLastSaveAt = perProject ?? settings.lastSaveAt;
+  const display = buildAutoSaveStatusDisplay(effectiveLastSaveAt);
 
   return (
     <button

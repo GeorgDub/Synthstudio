@@ -193,6 +193,9 @@ import {
   isAutoSavePaused,
   // v3.60.0: Nach restoreProject lastSaveAt zurücksetzen (fresh project).
   resetAutoSaveLastSaveAt,
+  // v3.61.0: Pro-projectId lastSaveAt-Tracking.
+  setLastSaveAt,
+  getLastSaveAtForProject,
 } from "@/store/useAutoSaveStore";
 import {
   writeAutoSaveVersion,
@@ -749,6 +752,29 @@ export default function App() {
     // des vorherigen Projekts sollen NICHT in der Topbar erscheinen.
     // Der nächste echte AutoSave-Tick aktualisiert lastSaveAt wieder.
     resetAutoSaveLastSaveAt();
+    // v3.61.0: Post-Restore-Lookup — falls das geladene Projekt bereits eine
+    // AutoSave-History hat, übernimm den Timestamp der NEUESTEN Version damit
+    // der Topbar-Indikator NICHT "Noch nie" zeigt sondern den echten Wert.
+    // Defensive: async + best-effort, niemals den Restore crashen lassen.
+    const restoredPid = data.projectId;
+    if (restoredPid) {
+      // Erst pro-projectId Map fragen (vermeidet IDB-Call falls vorhanden).
+      const cached = getLastSaveAtForProject(restoredPid);
+      if (cached !== null) {
+        setLastSaveAt(restoredPid, cached);
+      } else {
+        void listAutoSaveVersions(restoredPid)
+          .then((versions) => {
+            if (versions.length > 0) {
+              const newest = versions[0]; // listAutoSaveVersions liefert DESC.
+              if (newest && Number.isFinite(newest.timestamp)) {
+                setLastSaveAt(restoredPid, newest.timestamp);
+              }
+            }
+          })
+          .catch(() => { /* best-effort */ });
+      }
+    }
     // Samples
     project.addSamples(data.samples ?? []);
     // Patterns in die DM laden
@@ -994,8 +1020,10 @@ export default function App() {
           || projectNameToId(projectRef.current.projectName);
         void writeAutoSaveVersion(pid, json)
           .then((res) => {
-            if (res.success) markAutoSaveCompleted();
-            else if (res.error) {
+            if (res.success) {
+              // v3.61.0: pro-projectId + Legacy synchron aktualisieren.
+              setLastSaveAt(pid, Date.now());
+            } else if (res.error) {
               console.warn("[AutoSave] Schreibfehler:", res.error);
             }
           })
@@ -3367,9 +3395,11 @@ export default function App() {
                 )}
               </span>
 
-              {/* v3.57.0: AutoSave-Status — Klick öffnet Versions-History. */}
+              {/* v3.57.0: AutoSave-Status — Klick öffnet Versions-History.
+                  v3.61.0: projectId-Prop für per-project lastSaveAt-Lookup. */}
               <AutoSaveStatusIndicator
                 onOpenHistory={() => setShowVersionHistory(true)}
+                projectId={project.projectId || projectNameToId(project.projectName)}
               />
 
               <div className="flex items-center gap-2">

@@ -45,6 +45,10 @@ import {
   pauseAutoSave,
   resumeAutoSave,
   isAutoSavePaused,
+  // v3.61.0: Pro-projectId Tracking
+  setLastSaveAt,
+  getLastSaveAtForProject,
+  resetAutoSaveLastSaveAt,
   type AutoSaveSettings,
 } from "../../client/src/store/useAutoSaveStore";
 
@@ -331,5 +335,153 @@ describe("AutoSave Delete-Workflow (Modal-Action)", () => {
     expect(first.success).toBe(true);
     const second = await deleteAutoSaveVersion(projectId, versionId);
     expect(second.success).toBe(true); // best-effort: idempotent
+  });
+});
+
+// ─── (5) v3.61.0: Pro-projectId lastSaveAt-Tracking ──────────────────────────
+
+describe("v3.61.0 — Pro-projectId lastSaveAt", () => {
+  it("setLastSaveAt persistiert pro projectId in localStorage", () => {
+    setLastSaveAt("projectA", 1_700_000_100_000);
+    setLastSaveAt("projectB", 1_700_000_200_000);
+
+    // Runtime-Read
+    expect(getLastSaveAtForProject("projectA")).toBe(1_700_000_100_000);
+    expect(getLastSaveAtForProject("projectB")).toBe(1_700_000_200_000);
+
+    // localStorage-Persistenz
+    const raw = localStorageMock.getItem("ss-autosave-settings:v1");
+    expect(raw).toBeTruthy();
+    const parsed = JSON.parse(raw!);
+    expect(parsed.lastSaveAtPerProject).toBeDefined();
+    expect(parsed.lastSaveAtPerProject.projectA).toBe(1_700_000_100_000);
+    expect(parsed.lastSaveAtPerProject.projectB).toBe(1_700_000_200_000);
+  });
+
+  it("Different projectIds haben separate lastSaveAt-Werte (Isolation)", () => {
+    setLastSaveAt("alpha", 1_700_000_300_000);
+    setLastSaveAt("beta", 1_700_000_400_000);
+    setLastSaveAt("gamma", 1_700_000_500_000);
+
+    expect(getLastSaveAtForProject("alpha")).toBe(1_700_000_300_000);
+    expect(getLastSaveAtForProject("beta")).toBe(1_700_000_400_000);
+    expect(getLastSaveAtForProject("gamma")).toBe(1_700_000_500_000);
+
+    // Update einer ID darf andere nicht beeinflussen.
+    setLastSaveAt("alpha", 1_700_000_999_000);
+    expect(getLastSaveAtForProject("alpha")).toBe(1_700_000_999_000);
+    expect(getLastSaveAtForProject("beta")).toBe(1_700_000_400_000);
+    expect(getLastSaveAtForProject("gamma")).toBe(1_700_000_500_000);
+
+    // Unbekannte ID → null
+    expect(getLastSaveAtForProject("delta")).toBeNull();
+  });
+
+  it("Topbar-Indicator-Source: effectiveLastSaveAt = perProject ?? legacy", () => {
+    // Simuliert die Indicator-Logik (perProject ?? settings.lastSaveAt).
+    const projectId = "topbarTest";
+
+    // Initial: keiner gesetzt → effective = null → "Noch nie"
+    expect(getLastSaveAtForProject(projectId)).toBeNull();
+    expect(getAutoSaveSettings().lastSaveAt).toBeNull();
+
+    // Legacy gesetzt aber kein per-project Eintrag → effective = legacy
+    markAutoSaveCompleted(1_700_000_700_000);
+    {
+      const perProject = getLastSaveAtForProject(projectId);
+      const legacy = getAutoSaveSettings().lastSaveAt;
+      const effective = perProject ?? legacy;
+      expect(effective).toBe(1_700_000_700_000);
+    }
+
+    // per-project gesetzt → effective = per-project (auch wenn legacy
+    // einen anderen Wert hat)
+    setLastSaveAt(projectId, 1_700_000_800_000);
+    {
+      const perProject = getLastSaveAtForProject(projectId);
+      const effective = perProject ?? getAutoSaveSettings().lastSaveAt;
+      expect(effective).toBe(1_700_000_800_000);
+    }
+
+    // Anderer Projekt-Wechsel: kein per-project Eintrag für "andere" →
+    // fällt auf legacy zurück (welcher beim letzten setLastSaveAt aktualisiert
+    // wurde, weil v3.61 setLastSaveAt synchronisiert Legacy+Map).
+    {
+      const perProject = getLastSaveAtForProject("andere");
+      const effective = perProject ?? getAutoSaveSettings().lastSaveAt;
+      expect(effective).toBe(1_700_000_800_000);
+    }
+  });
+
+  it("Post-Restore-Lookup: latestVersion.timestamp → setLastSaveAt", async () => {
+    // Simuliert App.tsx restoreProject-Flow:
+    //  1) resetAutoSaveLastSaveAt() (Legacy auf null)
+    //  2) listAutoSaveVersions(projectId) → newest = list[0]
+    //  3) setLastSaveAt(projectId, newest.timestamp)
+    const backend = makeMemoryElectronBackend();
+    __setAutoSaveElectronOverrideForTests(backend.api);
+
+    const projectId = projectNameToId("RestoreLookup");
+    const json = JSON.stringify({ projectName: "RestoreLookup" });
+    await writeAutoSaveVersion(projectId, json, { now: 1_700_000_900_000 });
+    await writeAutoSaveVersion(projectId, json, { now: 1_700_000_950_000 });
+    await writeAutoSaveVersion(projectId, json, { now: 1_700_000_980_000 });
+
+    // Simuliere Restore-Phase
+    resetAutoSaveLastSaveAt();
+    expect(getAutoSaveSettings().lastSaveAt).toBeNull();
+    expect(getLastSaveAtForProject(projectId)).toBeNull();
+
+    // Post-Restore-Lookup
+    const list = await listAutoSaveVersions(projectId);
+    expect(list.length).toBeGreaterThan(0);
+    const newest = list[0]!;
+    expect(newest.timestamp).toBe(1_700_000_980_000); // DESC
+
+    setLastSaveAt(projectId, newest.timestamp);
+    expect(getLastSaveAtForProject(projectId)).toBe(1_700_000_980_000);
+    // Legacy mirror (für Indicator ohne projectId-Prop)
+    expect(getAutoSaveSettings().lastSaveAt).toBe(1_700_000_980_000);
+  });
+
+  it("resetAutoSaveLastSaveAt lässt per-project Map intakt (v3.61 contract)", () => {
+    setLastSaveAt("retained", 1_700_001_000_000);
+    expect(getLastSaveAtForProject("retained")).toBe(1_700_001_000_000);
+    expect(getAutoSaveSettings().lastSaveAt).toBe(1_700_001_000_000);
+
+    // Reset clear-t NUR Legacy, NICHT die Map (damit Zurückwechseln zum
+    // alten Projekt sein lastSaveAt wieder finden kann).
+    resetAutoSaveLastSaveAt();
+    expect(getAutoSaveSettings().lastSaveAt).toBeNull();
+    expect(getLastSaveAtForProject("retained")).toBe(1_700_001_000_000);
+  });
+
+  it("setLastSaveAt defensive: leere/ungültige projectId ist No-Op", () => {
+    setLastSaveAt("valid", 1_700_001_100_000);
+    const before = getAutoSaveSettings().lastSaveAt;
+
+    // Defensive: keine Mutation bei kaputtem Input.
+    setLastSaveAt("", 1_700_001_200_000);
+    setLastSaveAt("alsoValid", NaN);
+    setLastSaveAt("alsoValid", -1);
+
+    expect(getAutoSaveSettings().lastSaveAt).toBe(before);
+    expect(getLastSaveAtForProject("")).toBeNull();
+    expect(getLastSaveAtForProject("alsoValid")).toBeNull();
+    // Der einzige valide bleibt erhalten.
+    expect(getLastSaveAtForProject("valid")).toBe(1_700_001_100_000);
+  });
+
+  it("Reload-Persistenz: Map überlebt einen Store-Reset wenn localStorage erhalten bleibt", () => {
+    // Simuliert: User schreibt mehrere Saves, schließt App, öffnet wieder.
+    setLastSaveAt("persisted-a", 1_700_001_300_000);
+    setLastSaveAt("persisted-b", 1_700_001_400_000);
+
+    // Inspiziere den persistierten State direkt.
+    const raw = localStorageMock.getItem("ss-autosave-settings:v1");
+    expect(raw).toBeTruthy();
+    const parsed = JSON.parse(raw!);
+    expect(parsed.lastSaveAtPerProject["persisted-a"]).toBe(1_700_001_300_000);
+    expect(parsed.lastSaveAtPerProject["persisted-b"]).toBe(1_700_001_400_000);
   });
 });
