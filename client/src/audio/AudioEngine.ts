@@ -303,6 +303,28 @@ export interface AudioTrackChannelData {
    */
   syncMode?: "free" | "stretch" | "timestretch";
   originalBpm?: number | null;
+  /**
+   * v3.52.0: Manueller Stretch-Faktor unabhängig vom BPM-Sync (0.25..4.0).
+   * Wirkt MULTIPLIKATIV zur BPM-Sync-Rate (für "stretch"/"timestretch"). Bei
+   * `syncMode === "free"` ist `stretchRatio` die einzige Quelle der Rate.
+   * Default 1.0 (= keine Veränderung). `autoWarpToBpm` setzt diesen Wert
+   * direkt auf `projectBpm / bpmHint` für tap-and-warp Workflows.
+   */
+  stretchRatio?: number;
+  /**
+   * v3.52.0: Wenn true, wird der Track via Pitch-erhaltendem AudioWorklet-OLA
+   * abgespielt (unabhängig von `syncMode`). False → klassischer Resample-Pfad
+   * (CPU-günstig, Pitch+Tempo gekoppelt). Greift nur wenn die effektive Rate
+   * != 1.0 ist. Default false.
+   */
+  pitchLocked?: boolean;
+  /**
+   * v3.52.0: User-eingegebenes Original-BPM des Samples (für Auto-Warp via
+   * `autoWarpToBpm`). Bewusst separat von `originalBpm` (= BPM-Sync) gehalten
+   * damit man "Tap-BPM-Hint" setzen kann ohne sofort den Track-Tempo-Sync zu
+   * aktivieren. Bei undefined: autoWarp fällt auf `originalBpm` zurück.
+   */
+  bpmHint?: number;
 }
 
 export interface PartData {
@@ -2621,7 +2643,9 @@ class AudioEngineClass {
     if (!buf) return;
     const data = this.audioTrackData.get(id);
 
-    if (data?.syncMode === "timestretch") {
+    // v3.52.0: Worklet-Routing entweder via syncMode="timestretch" (Legacy)
+    // oder via pitchLocked=true (neuer manueller Stretch-Pfad).
+    if (this._shouldUseWorklet(data)) {
       void this._playAudioTrackViaWorklet(id, opts);
       return;
     }
@@ -2744,9 +2768,9 @@ class AudioEngineClass {
       } catch { /* ignore */ }
     }
 
-    // Stretch-Param: bpm / originalBpm (default 1.0).
-    const orig = data?.originalBpm && data.originalBpm > 0 ? data.originalBpm : null;
-    const ratio = orig ? this._bpm / orig : 1.0;
+    // v3.52.0: Stretch-Param berücksichtigt sowohl BPM-Sync als auch
+    // manuellen `stretchRatio` (Multiplikation).
+    const ratio = this._calcAudioTrackPlaybackRate(data);
     try {
       const p = node.parameters.get("stretch");
       if (p) p.setValueAtTime(ratio, this.ctx.currentTime);
@@ -3001,10 +3025,34 @@ class AudioEngineClass {
    */
   private _calcAudioTrackPlaybackRate(data: AudioTrackChannelData | undefined): number {
     if (!data) return 1;
-    if (data.syncMode !== "stretch" && data.syncMode !== "timestretch") return 1;
-    const orig = data.originalBpm;
-    if (!orig || orig <= 0) return 1;
-    return this._bpm / orig;
+    let bpmRate = 1;
+    if (data.syncMode === "stretch" || data.syncMode === "timestretch") {
+      const orig = data.originalBpm;
+      if (orig && orig > 0) {
+        bpmRate = this._bpm / orig;
+      }
+    }
+    // v3.52.0: Manueller Stretch wirkt MULTIPLIKATIV zur BPM-Sync-Rate.
+    // Clamp auf 0.25..4.0 wie der Worklet-Param es ohnehin tut.
+    const manual = data.stretchRatio;
+    let manualClamped = 1;
+    if (typeof manual === "number" && Number.isFinite(manual) && manual > 0) {
+      manualClamped = Math.max(0.25, Math.min(4.0, manual));
+    }
+    return bpmRate * manualClamped;
+  }
+
+  /**
+   * v3.52.0: Entscheidet ob ein Track via AudioWorklet (Pitch-Lock) ODER
+   * AudioBufferSourceNode (Resample) abgespielt wird. Wahr wenn der User
+   * explizit Pitch-Lock will (`pitchLocked === true`) ODER `syncMode ===
+   * "timestretch"` für Backward-Compat. Pure-fn, kein State.
+   */
+  private _shouldUseWorklet(data: AudioTrackChannelData | undefined): boolean {
+    if (!data) return false;
+    if (data.syncMode === "timestretch") return true;
+    if (data.pitchLocked === true) return true;
+    return false;
   }
 
   private _updateAudioTrackPlaybackRates(): void {
@@ -3081,10 +3129,8 @@ class AudioEngineClass {
         const sr = buf.sampleRate || this.ctx.sampleRate || 44100;
         sec = samplePos / sr;
       } else {
-        const rate = (data?.syncMode === "stretch" || data?.syncMode === "timestretch")
-          && data.originalBpm
-          ? this._bpm / data.originalBpm
-          : 1;
+        // v3.52.0: gemeinsame Rate-Berechnung mit playAudioTrack (inkl. stretchRatio)
+        const rate = this._calcAudioTrackPlaybackRate(data);
         const elapsedCtx = this.ctx.currentTime - start.ctxStart;
         sec = start.offsetSec + elapsedCtx * rate;
       }

@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.51.0",
+    version: "3.52.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -1752,6 +1752,47 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "frontend",
+      timestamp: "2026-05-18T22:10:00.000Z",
+      done: [
+        "v3.52.0: Audio-Track Time-Stretch UI — existing Worklet+OLA-Engine endlich nutzbar. Schema-Bump 1.21 → 1.22 (additive). pnpm check clean, 200 Test-Files / 4638 tests grün (16 skipped, +18 NEU in audio-track-stretch.test.ts).",
+        "client/src/audio/AudioEngine.ts: AudioTrackChannelData +3 Felder stretchRatio?:number / pitchLocked?:boolean / bpmHint?:number (additiv, JSDoc dokumentiert). _calcAudioTrackPlaybackRate jetzt: bpmRate (aus syncMode='stretch'|'timestretch' + originalBpm) × manualClamped (aus stretchRatio, clamped 0.25..4.0). NEU _shouldUseWorklet(data) pure-fn — true wenn syncMode='timestretch' ODER pitchLocked=true. playAudioTrack routet jetzt via _shouldUseWorklet statt nur === 'timestretch'. _playAudioTrackViaWorklet nutzt _calcAudioTrackPlaybackRate für stretch-Param (statt eigener Berechnung). rAF-Position-Loop nutzt ebenfalls _calcAudioTrackPlaybackRate (Drift-frei).",
+        "client/src/store/useAudioTrackStore.ts: isValidTrack akzeptiert die 3 neuen Felder (Typ-Check, undefined ok). NEU exports clampStretchRatio(v) (NaN/0/neg/Inf → 1.0, sonst clamped 0.25..4.0), computeWarpRatio(projectBpm, sourceBpm) (null bei invalid, sonst clamped projectBpm/sourceBpm), setTrackStretchRatio (clampt), setTrackPitchLocked, setTrackBpmHint (null/0 → entfernt), autoWarpToBpm (nutzt bpmHint, fallback auf originalBpm).",
+        "client/src/components/Mixer/AudioTrackStrip.tsx: NEU Stretch-Section zwischen Sync-Mode und Sends. Logarithmisch zentrierter Slider (-1..1 → 4^x → 0.25..4.0, Mitte = 1.0). Pitch-Lock-Toggle-Button + 1×-Reset-Button. BPM-Hint-Number-Input + Tap-Button (setzt aktuellen Projekt-BPM als Hint). Warp-to-BPM-Button (disabled wenn weder bpmHint noch originalBpm). Effektives-Tempo-Anzeige '100 → 130.0 BPM (1.300x)' wenn bpmHint gesetzt. Alle Klassen semantisch (bg-bg-elevated, border-border-subtle, text-accent-primary, etc.).",
+        "client/src/utils/projectSerializer.ts: SYNTH_FILE_VERSION 1.21 → 1.22. Doc-Comment für v1.22 ergänzt. isValidAudioTrackEntry verwirft Tracks mit falschem Typ in den 3 neuen Feldern (typeof !== 'number'/'boolean' → false). Backward-compat: Pre-v1.22-Files ohne diese Felder laden unverändert.",
+        "tests/features/audio-track-stretch.test.ts NEU (18 Tests, 5 describes, Mix node+jsdom-Mock). (1) Pure Helpers × 4 — clampStretchRatio Min/Max/Mid + NaN/0/neg/Inf defensive; computeWarpRatio mit clamp; null bei invalid inputs. (2) Store Actions × 7 — setTrackStretchRatio clampt, setTrackPitchLocked toggelt, setTrackBpmHint speichert+entfernt, autoWarpToBpm berechnet ratio, autoWarp fällt auf originalBpm zurück wenn kein bpmHint, autoWarp null bei keine source, updateAudioTrack raw vs clamp. (3) Serializer Round-Trip × 4 — SYNTH_FILE_VERSION=1.22, Round-Trip mit allen 3 Feldern, v1.21-Backward-Compat (Felder undefined), Invalid-Type-Verwerfung. (4) AudioEngine Routing × 3 — pitchLocked=true forciert Worklet, kombinierte Rate (BPM × stretchRatio) auf BufferSource, setBpm aktualisiert live.",
+        "tests/features/multi-bar-pattern.test.ts + plugin-host.test.ts + plugin-multislot.test.ts + project-serializer.test.ts + script-store.test.ts + audio-track-store.test.ts: alle SYNTH_FILE_VERSION-Assertions 1.21 → 1.22 (7 Test-Files, 9 Stellen). Pre-v1.20-File-Test in plugin-host.test.ts hat Source-Version 1.19 (preserved), aktueller Schreib-Output ist 1.22.",
+        "package.json + agents/INDEX.js version 3.51.0 → 3.52.0."
+      ],
+      next: [
+        "v3.53 Auto-BPM-Detection beim Audio-Track-Add — useBpmDetection-Hook ist da (client/src/hooks/useBpmDetection.ts), aber AudioTrackStrip ruft ihn aktuell NICHT auf. Beim Drop einer neuen WAV könnte die Engine den detected BPM in bpmHint vorbefüllen.",
+        "v3.53 Stretch-Quality-Badge — aktuell zeigt der Strip eine '⚠ Extreme Ratio'-Warnung nur bei syncMode='timestretch' + |bpm/orig-1|>0.5. Sollte erweitert werden auf manuellen stretchRatio (bei pitchLocked=true und |stretchRatio-1|>0.5 → Warnung anzeigen).",
+        "v3.53 Tap-Tempo-BPM-Hint — Tap-Button setzt aktuell den Projekt-BPM als Hint. Erweiterung: 4× Tap auf den Button = Beat-Tempo-Detection (analog dem Drum-Machine-Tap-Tempo-Workflow).",
+        "v3.53 Stretch-Ratio in PerformancePad-MIDI-Learn-Bindings — User könnte einen MIDI-Encoder auf stretchRatio binden für Live-Tempo-Modulation."
+      ],
+      changed: [
+        "client/src/audio/AudioEngine.ts (~+50 LOC: 3 neue Interface-Felder + _calcAudioTrackPlaybackRate refactored + NEU _shouldUseWorklet + 2 Call-Sites umgestellt)",
+        "client/src/store/useAudioTrackStore.ts (~+90 LOC: isValidTrack erweitert, NEU clampStretchRatio/computeWarpRatio/setTrackStretchRatio/setTrackPitchLocked/setTrackBpmHint/autoWarpToBpm)",
+        "client/src/components/Mixer/AudioTrackStrip.tsx (~+110 LOC: 5 neue Callbacks + komplette Stretch-Section UI mit Slider/Pitch-Lock/Reset/BPM-Hint/Tap/Warp/Effective-BPM-Display)",
+        "client/src/utils/projectSerializer.ts (SYNTH_FILE_VERSION 1.21→1.22, Doc-Comment-Block, isValidAudioTrackEntry erweitert)",
+        "tests/features/audio-track-stretch.test.ts (NEU, 18 Tests, 5 describes — pure helpers + store actions + serializer + audioengine routing)",
+        "tests/features/multi-bar-pattern.test.ts (1× 1.21→1.22)",
+        "tests/features/plugin-host.test.ts (3× 1.21→1.22, describe-Heading)",
+        "tests/features/plugin-multislot.test.ts (1× 1.21→1.22, Test-Title)",
+        "tests/features/project-serializer.test.ts (2× 1.21→1.22, Test-Titles)",
+        "tests/features/script-store.test.ts (1× 1.21→1.22)",
+        "tests/features/audio-track-store.test.ts (2× 1.21→1.22, 1× Test-Title)",
+        "package.json (3.51.0 → 3.52.0)",
+        "agents/INDEX.js (version 3.51.0 → 3.52.0 + workLog v3.52.0)"
+      ],
+      caveats: [
+        "Manual stretchRatio + BPM-Sync wirken MULTIPLIKATIV. Wenn syncMode='stretch' AND originalBpm=120 AND bpm=140 (ergibt BPM-rate 1.167) AND stretchRatio=2 → effektive rate = 2.333 (> 4.0 wäre, würde geclamped → 4.0). Im UI gibt es aktuell KEINE Warnung darauf — User sieht nur 'stretchRatio: 2.0' im Label, aber die tatsächlich abgespielte Rate ist 2.333. Fix: ein zweites Label 'Effective: X.XXXx' das die kombinierte Rate zeigt. → v3.53.",
+        "Auto-BPM-Detection ist NICHT verwired — der Worker existiert (client/src/workers/audioAnalysis.worker.ts via useBpmDetection-Hook), wird aber bei AudioTrack-Add nicht gerufen. User muss BPM via Tap-Button selbst eingeben. Dokumentiert als FU für v3.53.",
+        "Logarithmisch zentrierter Slider via 4^slider-Formel: Slider in [-1..1] → ratio in [0.25..4.0], Mitte=1.0. Step ist 0.001 — feine Auflösung, aber 'exakt 1.0' triggert kein Snap. Bei sehr nahem 1.0 (z.B. 0.999) bleibt der Reset-Button aktiv. UX-Polish: ein Snap-zu-1.0 bei |slider| < 0.01 wäre nett. → v3.53.",
+        "Backward-Compat: pre-v1.22-Files ohne stretchRatio laden mit undefined. _calcAudioTrackPlaybackRate behandelt undefined wie 1.0 (kein manualClamped angewendet). Beim Re-Save schreibt der User v1.22 mit den neuen Feldern — der File ist nicht mehr in v1.21-Readern parseable (würde 1.22-Track als invalid verwerfen wenn der v1.21-Reader strikter wäre, aber unser isValidAudioTrackEntry akzeptiert sowohl 1.21 als auch 1.22 Tracks)."
+      ]
+    },
     {
       agent:     "backend",
       timestamp: "2026-05-18T22:05:00.000Z",

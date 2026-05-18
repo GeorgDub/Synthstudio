@@ -441,14 +441,14 @@ describe("PluginHost — FX-chain integration (mock-wiring)", () => {
   });
 });
 
-// ─── 6. Backward-Compat for SYNTH_FILE_VERSION 1.21 ──────────────────────
+// ─── 6. Backward-Compat for SYNTH_FILE_VERSION 1.22 ──────────────────────
 
-describe("v1.21 schema — pluginSlots backward-compat", () => {
-  it("SYNTH_FILE_VERSION is bumped to 1.21", async () => {
+describe("v1.22 schema — pluginSlots backward-compat", () => {
+  it("SYNTH_FILE_VERSION is bumped to 1.22", async () => {
     const { SYNTH_FILE_VERSION } = await import(
       "../../client/src/utils/projectSerializer"
     );
-    expect(SYNTH_FILE_VERSION).toBe("1.21");
+    expect(SYNTH_FILE_VERSION).toBe("1.22");
   });
 
   it("parseProject defaults pluginSlots to undefined for pre-v1.20 files", async () => {
@@ -480,6 +480,6 @@ describe("v1.21 schema — pluginSlots backward-compat", () => {
     const parsed = parseProject(JSON.stringify(preV120));
     expect(parsed.version).toBe("1.19"); // preserves source version
     expect(parsed.mixer.pluginSlots).toBeUndefined();
-    expect(SYNTH_FILE_VERSION).toBe("1.21"); // current writes as 1.21
+    expect(SYNTH_FILE_VERSION).toBe("1.22"); // current writes as 1.22
   });
 });

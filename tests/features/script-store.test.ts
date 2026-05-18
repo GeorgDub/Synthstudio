@@ -542,8 +542,8 @@ describe("projectSerializer × scripts (v1.16)", () => {
     localStorageMock.clear();
   });
 
-  it("SYNTH_FILE_VERSION ist '1.21'", () => {
-    expect(SYNTH_FILE_VERSION).toBe("1.21");
+  it("SYNTH_FILE_VERSION ist '1.22'", () => {
+    expect(SYNTH_FILE_VERSION).toBe("1.22");
   });
 
   it("Round-trip: store (project-scope) → serialize → parse → loadProjectScripts", () => {

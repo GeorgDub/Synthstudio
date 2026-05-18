@@ -109,6 +109,11 @@ function isValidTrack(t: unknown): t is AudioTrackChannelData {
       return false;
     }
   }
+  // v3.52.0 (v1.22): stretchRatio/pitchLocked/bpmHint sind alle optional.
+  // Wenn gesetzt müssen sie den richtigen Typ haben — invalid → Track verwerfen.
+  if (o.stretchRatio !== undefined && typeof o.stretchRatio !== "number") return false;
+  if (o.pitchLocked !== undefined && typeof o.pitchLocked !== "boolean") return false;
+  if (o.bpmHint !== undefined && typeof o.bpmHint !== "number") return false;
   return (
     typeof o.id === "string" &&
     o.id.startsWith(ID_PREFIX) &&
@@ -172,6 +177,78 @@ export function updateAudioTrack(
   persist();
   notify();
 }
+
+// ─── v3.52.0: Manual Stretch Actions ────────────────────────────────────────
+
+/** Clamp wie der TimeStretchProcessor-Param (0.25..4.0). */
+const STRETCH_MIN = 0.25;
+const STRETCH_MAX = 4.0;
+
+/** Pure-fn: clampt eine Stretch-Ratio in den erlaubten Bereich. NaN/Inf → 1.0. */
+export function clampStretchRatio(v: number): number {
+  if (!Number.isFinite(v) || v <= 0) return 1.0;
+  return Math.max(STRETCH_MIN, Math.min(STRETCH_MAX, v));
+}
+
+/**
+ * v3.52.0: Setzt den manuellen Stretch-Faktor (0.25..4.0).
+ * 1.0 = Original-Geschwindigkeit. Werte ausserhalb werden geclamped.
+ */
+export function setTrackStretchRatio(id: string, ratio: number): void {
+  const safe = clampStretchRatio(ratio);
+  updateAudioTrack(id, { stretchRatio: safe });
+}
+
+/**
+ * v3.52.0: Setzt den Pitch-Lock-Flag. true → Worklet (Pitch erhalten),
+ * false → Resample (Pitch+Tempo gekoppelt).
+ */
+export function setTrackPitchLocked(id: string, locked: boolean): void {
+  updateAudioTrack(id, { pitchLocked: !!locked });
+}
+
+/**
+ * v3.52.0: Setzt den User-detektierten Original-BPM-Hint (für autoWarp).
+ * Bei null/0/negativen Werten wird das Feld entfernt (undefined).
+ */
+export function setTrackBpmHint(id: string, bpm: number | null): void {
+  if (bpm === null || !Number.isFinite(bpm) || bpm <= 0) {
+    updateAudioTrack(id, { bpmHint: undefined });
+    return;
+  }
+  updateAudioTrack(id, { bpmHint: bpm });
+}
+
+/**
+ * v3.52.0: Pure-fn die die nötige stretchRatio berechnet damit ein Track mit
+ * Source-BPM `sourceBpm` zum `projectBpm` warpt. null wenn kein valid hint.
+ */
+export function computeWarpRatio(
+  projectBpm: number,
+  sourceBpm: number | null | undefined,
+): number | null {
+  if (!sourceBpm || !Number.isFinite(sourceBpm) || sourceBpm <= 0) return null;
+  if (!projectBpm || !Number.isFinite(projectBpm) || projectBpm <= 0) return null;
+  return clampStretchRatio(projectBpm / sourceBpm);
+}
+
+/**
+ * v3.52.0: Berechnet stretchRatio aus `projectBpm / bpmHint` und setzt sie auf
+ * den Track. Fällt auf `originalBpm` zurück wenn kein `bpmHint` gesetzt ist
+ * (Backward-Compat — User kann den existing originalBpm-Eintrag direkt warpen).
+ * Returnt die effektive ratio oder null wenn keine Quelle vorhanden.
+ */
+export function autoWarpToBpm(id: string, projectBpm: number): number | null {
+  const track = getAudioTrack(id);
+  if (!track) return null;
+  const source = track.bpmHint ?? track.originalBpm ?? null;
+  const ratio = computeWarpRatio(projectBpm, source);
+  if (ratio === null) return null;
+  updateAudioTrack(id, { stretchRatio: ratio });
+  return ratio;
+}
+
+// ─── Solo (FOLLOWUP-102-3) ──────────────────────────────────────────────────
 
 /**
  * Setzt den Solo-Status eines Audio-Tracks (FOLLOWUP-102-3).

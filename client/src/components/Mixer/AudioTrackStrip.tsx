@@ -29,6 +29,11 @@ import {
   getRuntimeState,
   countTimestretchTracks,
   setAudioTrackSoloed,
+  setTrackStretchRatio,
+  setTrackPitchLocked,
+  setTrackBpmHint,
+  autoWarpToBpm,
+  clampStretchRatio,
   MAX_TIMESTRETCH_TRACKS,
   type AudioTrackChannelData,
   type AudioTrackRuntimeState,
@@ -291,6 +296,57 @@ export function AudioTrackStrip({
     },
     [track],
   );
+
+  // ── Time-Stretch (v3.52.0) ─────────────────────────────────────────────────
+  const stretchRatio = track.stretchRatio ?? 1.0;
+  const pitchLocked = track.pitchLocked === true;
+  const bpmHint = track.bpmHint;
+  const effectiveBpm = (() => {
+    // Anzeige der effektiven Tempo wenn der User einen bpmHint hat.
+    if (!bpmHint || bpmHint <= 0) return null;
+    return bpmHint * stretchRatio;
+  })();
+
+  const handleStretchRatio = useCallback(
+    (v: number) => {
+      const safe = clampStretchRatio(v);
+      setTrackStretchRatio(track.id, safe);
+      AudioEngine.registerAudioTrack({ ...track, stretchRatio: safe });
+    },
+    [track],
+  );
+
+  const handlePitchLockToggle = useCallback(() => {
+    const next = !pitchLocked;
+    setTrackPitchLocked(track.id, next);
+    AudioEngine.registerAudioTrack({ ...track, pitchLocked: next });
+  }, [track, pitchLocked]);
+
+  const handleBpmHint = useCallback(
+    (v: number) => {
+      const valid = Number.isFinite(v) && v > 0 ? v : null;
+      setTrackBpmHint(track.id, valid);
+      AudioEngine.registerAudioTrack({ ...track, bpmHint: valid ?? undefined });
+    },
+    [track],
+  );
+
+  const handleWarpToBpm = useCallback(() => {
+    const projectBpm = AudioEngine.bpm || 120;
+    const newRatio = autoWarpToBpm(track.id, projectBpm);
+    if (newRatio !== null) {
+      AudioEngine.registerAudioTrack({ ...track, stretchRatio: newRatio });
+    }
+  }, [track]);
+
+  // Tap-BPM-Hint: setzt den `bpmHint` auf den aktuellen Projekt-BPM. User-Workflow:
+  // Track loopen + Project-BPM auf Originaltempo schieben → diesen Button drücken
+  // → bpmHint ist gesetzt → "Warp to BPM" funktioniert.
+  const handleTapBpmHint = useCallback(() => {
+    const projectBpm = AudioEngine.bpm || 120;
+    setTrackBpmHint(track.id, projectBpm);
+    AudioEngine.registerAudioTrack({ ...track, bpmHint: projectBpm });
+  }, [track]);
 
   // ── Sends ──────────────────────────────────────────────────────────────────
   const handleSend = useCallback(
@@ -607,6 +663,131 @@ export function AudioTrackStrip({
             title="Original-BPM des Samples (für Tempo-Sync)"
             className="w-full mt-0.5 px-1 py-0.5 text-[9px] bg-bg-elevated text-text-primary border border-border-color rounded font-mono disabled:opacity-40"
           />
+        )}
+      </div>
+
+      {/* ── Time-Stretch (v3.52.0) ────────────────────────────────────────── */}
+      <div
+        data-testid="audio-track-stretch-section"
+        className="flex flex-col gap-0.5 w-full mt-1 px-1 py-1 rounded border border-border-subtle bg-bg-elevated/40"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between">
+          <span className="text-[8px] text-text-dim uppercase tracking-wide">Stretch</span>
+          <span
+            data-testid="audio-track-stretch-ratio-label"
+            className="text-[8px] text-text-muted font-mono"
+            title="Aktueller Stretch-Faktor (1.0 = Original)"
+          >
+            {stretchRatio.toFixed(3)}x
+          </span>
+        </div>
+        {/* Slider — logarithmisch zentriert auf 1.0 ist nicht trivial; wir
+            nutzen einen linearen Wertbereich 0.25..4.0 aber den Slider exp-
+            mappen damit die Mitte bei 1.0 liegt. */}
+        <input
+          data-testid="audio-track-stretch-slider"
+          aria-label="Stretch Ratio"
+          type="range"
+          min={-1}
+          max={1}
+          step={0.001}
+          // Log-Mapping: slider in [-1,1] → ratio in [0.25, 4.0], 0 = 1.0
+          // ratio = 4^slider (denn 4^(-1)=0.25, 4^0=1, 4^1=4)
+          value={Math.log(stretchRatio) / Math.log(4)}
+          onChange={(e) => {
+            const sliderVal = parseFloat(e.target.value);
+            const ratio = Math.pow(4, sliderVal);
+            handleStretchRatio(ratio);
+          }}
+          disabled={broken}
+          className="w-full accent-accent-primary cursor-pointer disabled:opacity-40"
+          title={`Stretch ${stretchRatio.toFixed(3)}x`}
+        />
+        <div className="flex gap-1 items-center mt-0.5">
+          <button
+            type="button"
+            data-testid="audio-track-pitch-lock"
+            aria-pressed={pitchLocked}
+            aria-label="Pitch Lock"
+            onClick={handlePitchLockToggle}
+            disabled={broken}
+            title={
+              pitchLocked
+                ? "Pitch Lock AN — Tempo ändern, Pitch bleibt (Worklet)"
+                : "Pitch Lock AUS — Resample (Pitch+Tempo gekoppelt)"
+            }
+            className={[
+              "flex-1 px-1 py-0.5 text-[9px] rounded border transition-colors",
+              "disabled:opacity-40 disabled:cursor-not-allowed",
+              pitchLocked
+                ? "bg-accent-primary/20 border-accent-primary text-accent-primary"
+                : "bg-bg-base border-border-color text-text-muted hover:text-text-primary",
+            ].join(" ")}
+          >
+            🔒 Pitch
+          </button>
+          <button
+            type="button"
+            data-testid="audio-track-reset-stretch"
+            aria-label="Reset Stretch"
+            onClick={() => handleStretchRatio(1.0)}
+            disabled={broken || Math.abs(stretchRatio - 1.0) < 0.001}
+            title="Auf 1.0 zurücksetzen"
+            className="px-1 py-0.5 text-[9px] rounded border border-border-color bg-bg-base text-text-dim hover:text-text-primary transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            1×
+          </button>
+        </div>
+        <div className="flex gap-1 items-center mt-0.5">
+          <input
+            data-testid="audio-track-bpm-hint"
+            aria-label="BPM Hint"
+            type="number"
+            min={20}
+            max={300}
+            step={1}
+            value={bpmHint ?? ""}
+            placeholder="Src BPM"
+            onChange={(e) => {
+              const v = parseFloat(e.target.value);
+              handleBpmHint(v);
+            }}
+            disabled={broken}
+            title="Original-BPM des Samples (für Auto-Warp)"
+            className="flex-1 min-w-0 px-1 py-0.5 text-[9px] bg-bg-base text-text-primary border border-border-color rounded font-mono disabled:opacity-40"
+          />
+          <button
+            type="button"
+            data-testid="audio-track-tap-bpm-hint"
+            aria-label="Tap BPM Hint"
+            onClick={handleTapBpmHint}
+            disabled={broken}
+            title="Aktuellen Projekt-BPM als Original-BPM merken"
+            className="px-1 py-0.5 text-[9px] rounded border border-border-color bg-bg-base text-text-dim hover:text-accent-primary hover:border-accent-primary transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            Tap
+          </button>
+        </div>
+        <button
+          type="button"
+          data-testid="audio-track-warp-to-bpm"
+          aria-label="Warp to project BPM"
+          onClick={handleWarpToBpm}
+          disabled={broken || (!bpmHint && !track.originalBpm)}
+          title="Stretch-Ratio auf projectBpm / sourceBpm setzen"
+          className="mt-0.5 px-1 py-0.5 text-[9px] rounded bg-accent-secondary/20 border border-accent-secondary text-accent-secondary hover:bg-accent-secondary/30 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          Warp to BPM
+        </button>
+        {effectiveBpm !== null && (
+          <span
+            data-testid="audio-track-effective-bpm"
+            className="text-[8px] text-text-muted font-mono mt-0.5 text-center"
+            title="Effektives Tempo bei aktueller Stretch-Ratio"
+          >
+            {bpmHint!.toFixed(0)} → {effectiveBpm.toFixed(1)} BPM ({stretchRatio.toFixed(3)}x)
+          </span>
         )}
       </div>
 

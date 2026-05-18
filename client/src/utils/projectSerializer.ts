@@ -30,6 +30,11 @@
  *     Multi-Slot Plugin-Chain. Backward-compat: parseProject migriert
  *     v1.20-Files (single-slot Objects) automatisch in [slot]-Arrays.
  *     Pre-v1.20-Files bleiben unverändert (Feld fehlt → undefined).
+ *   - "1.22": AudioTrack erweitert um stretchRatio/pitchLocked/bpmHint
+ *     (v3.52.0, manueller Time-Stretch UI für die existing Engine). Alle
+ *     drei Felder sind additiv-optional. Pre-v1.22-Tracks ohne diese
+ *     Felder laden unverändert (stretchRatio defaultet effektiv auf 1.0
+ *     in _calcAudioTrackPlaybackRate, pitchLocked auf false).
  * Dateiendung: .synth
  */
 
@@ -54,7 +59,7 @@ import {
   DEFAULT_NOTE_DURATION_MS,
 } from "@/audio/MidiNoteOut";
 
-export const SYNTH_FILE_VERSION = "1.21";
+export const SYNTH_FILE_VERSION = "1.22";
 export const SYNTH_LATEST_KEY = "synthstudio:last-project";
 
 // ─── Typen ───────────────────────────────────────────────────────────────────
@@ -239,6 +244,11 @@ function isValidAudioTrackEntry(t: unknown): t is AudioTrackChannelData {
       return false;
     }
   }
+  // v3.52.0 (v1.22): stretchRatio/pitchLocked/bpmHint sind alle optional.
+  // Bei falschem Typ → Track verwerfen (defensive).
+  if (o.stretchRatio !== undefined && typeof o.stretchRatio !== "number") return false;
+  if (o.pitchLocked !== undefined && typeof o.pitchLocked !== "boolean") return false;
+  if (o.bpmHint !== undefined && typeof o.bpmHint !== "number") return false;
   return (
     typeof o.id === "string" &&
     typeof o.name === "string" &&
