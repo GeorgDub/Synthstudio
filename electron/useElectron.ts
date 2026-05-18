@@ -97,6 +97,18 @@ const browserAPI = {
   }),
   getKorgBankSaveCap: async (): Promise<number> => 256 * 1024 * 1024, // Hard-Cap-Mirror der Main-Side.
 
+  // ── E2 Pattern EXPORT (v3.26.0) ────────────────────────────────────────────
+  // Browser-Fallback signalisiert success:false → DrumMachine fällt auf
+  // Blob/<a download> zurück.
+  saveE2Pattern: async (
+    _suggestedFilename: string,
+    _data: ArrayBuffer | Uint8Array,
+  ): Promise<{ success: boolean; filePath?: string; bytesWritten?: number; error?: string }> => ({
+    success: false,
+    error: "Nicht in Electron – nutze Blob-Download-Fallback",
+  }),
+  getE2PatternSize: async (): Promise<number> => 16640, // Hardware-Exact-Size mirror.
+
   importFolder: async (_folderPath: string) => ({ importId: "" }),
   cancelImport: async (_importId: string) => ({ success: false, error: "Nicht in Electron" }),
   importZip: async (_zipPath: string) => ({ importId: "" }),
@@ -347,6 +359,9 @@ export function useElectron() {
     // v3.10.0 — KORG Bank Export
     saveKorgBankAs: api.saveKorgBankAs ?? browserAPI.saveKorgBankAs,
     getKorgBankSaveCap: api.getKorgBankSaveCap ?? browserAPI.getKorgBankSaveCap,
+    // v3.26.0 — E2 Pattern Export (.e2spat)
+    saveE2Pattern: api.saveE2Pattern ?? browserAPI.saveE2Pattern,
+    getE2PatternSize: api.getE2PatternSize ?? browserAPI.getE2PatternSize,
     importFolder: api.importFolder,
     cancelImport: api.cancelImport,
     importZip: api.importZip,

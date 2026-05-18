@@ -51,6 +51,7 @@ import {
   PRO_FEATURE_ELECTRIBE_IMPORT,
   PRO_FEATURE_KORG_BANK_IMPORT,
   PRO_FEATURE_KORG_BANK_WRITE,
+  PRO_FEATURE_E2_PATTERN_EXPORT,
   PRO_FEATURES,
 } from "../../client/src/utils/proFeatures";
 
@@ -68,8 +69,8 @@ beforeEach(() => {
 
 // ─── PRO_FEATURES Registry ───────────────────────────────────────────────────
 
-describe("PRO_FEATURES registry (v2.98 / v3.3 / v3.4)", () => {
-  it("enthält alle 7 erwarteten Features (v3.4.0: +korg-bank-write)", () => {
+describe("PRO_FEATURES registry (v2.98 / v3.3 / v3.4 / v3.26)", () => {
+  it("enthält alle 8 erwarteten Features (v3.26.0: +e2-pattern-export)", () => {
     expect(PRO_FEATURES).toContain(PRO_FEATURE_LIVE_LOOPING);
     expect(PRO_FEATURES).toContain(PRO_FEATURE_MIDI_NOTE_OUT);
     expect(PRO_FEATURES).toContain(PRO_FEATURE_STEM_BOUNCE);
@@ -77,7 +78,8 @@ describe("PRO_FEATURES registry (v2.98 / v3.3 / v3.4)", () => {
     expect(PRO_FEATURES).toContain(PRO_FEATURE_ELECTRIBE_IMPORT);
     expect(PRO_FEATURES).toContain(PRO_FEATURE_KORG_BANK_IMPORT);
     expect(PRO_FEATURES).toContain(PRO_FEATURE_KORG_BANK_WRITE);
-    expect(PRO_FEATURES).toHaveLength(7);
+    expect(PRO_FEATURES).toContain(PRO_FEATURE_E2_PATTERN_EXPORT);
+    expect(PRO_FEATURES).toHaveLength(8);
   });
 });
 

@@ -214,6 +214,26 @@ const electronAPI = {
   getKorgBankSaveCap: (): Promise<number> =>
     ipcRenderer.invoke("korg:get-bank-save-cap"),
 
+  // ── E2 Pattern Export (v3.26.0) ────────────────────────────────────────────
+  /**
+   * Speichert ein gebautes 16640-Byte `.e2spat`-File via nativen Save-Dialog.
+   * Main-Side validiert Magic + Größe (exakt 16640) + PTST-Marker + Endung.
+   * Pfad kommt aus dem Dialog — kein Path-Traversal-Vektor.
+   */
+  saveE2Pattern: (
+    suggestedFilename: string,
+    data: ArrayBuffer | Uint8Array,
+  ): Promise<{ success: boolean; filePath?: string; bytesWritten?: number; error?: string }> =>
+    ipcRenderer.invoke(
+      "electribe:save-pattern",
+      suggestedFilename,
+      data instanceof Uint8Array ? Array.from(data) : Array.from(new Uint8Array(data)),
+    ),
+
+  /** Liefert die exakte Hardware-Größe einer .e2spat-Datei (= 16640 Bytes). */
+  getE2PatternSize: (): Promise<number> =>
+    ipcRenderer.invoke("electribe:get-pattern-size"),
+
   // Import-Events
   onImportStarted: createEventListener<{ importId: string }>("samples:import-started"),
   onImportProgress: createEventListener<{

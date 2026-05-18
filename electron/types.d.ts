@@ -251,6 +251,13 @@ interface ElectronAPI {
   ): Promise<{ success: boolean; filePath?: string; bytesWritten?: number; error?: string }>;
   getKorgBankSaveCap(): Promise<number>;
 
+  // ── E2 Pattern EXPORT (v3.26.0) ─────────────────────────────────────────────
+  saveE2Pattern(
+    suggestedFilename: string,
+    data: ArrayBuffer | Uint8Array,
+  ): Promise<{ success: boolean; filePath?: string; bytesWritten?: number; error?: string }>;
+  getE2PatternSize(): Promise<number>;
+
   // ── Folder-Import ─────────────────────────────────────────────────────────────────────────────
   importFolder(folderPath: string): Promise<{ importId: string }>;
   importSamples(filePaths: string[]): Promise<{ success: boolean; importedCount: number; errors: string[] }>;

@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.25.0",
+    version: "3.26.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -89,6 +89,41 @@ const INDEX = {
   // ─── KNOWN FILE INDEX ──────────────────────────────────────
   // Key files agents have analyzed. Add new entries after working on a file.
   files: {
+    "client/src/utils/electribePatternBuilder.ts (v3.26.0)": {
+      role:     "v3.26.0 NEU: Pure-TS Binary-Builder fuer KORG E2 Sampler `.e2spat`-Files (~340 LOC, isomorph, KEINE Electron/DOM-Deps). buildE2PatternFile(input: E2PatternInput) → ArrayBuffer (immer exakt 16640 Bytes, ELECTRIBE_REAL_FILE_SIZE-Konstante geshared mit read-side). Field-Layout per v3.5/v3.12/v3.13/v3.15 Read-Side: 0x000 KORG-magic+padding, 0x010 e2sampler+padding, 0x020 u32 version=1, 0x024..0x100 0xFF-padding (matches real bank dumps), 0x100 PTST+padding, 0x110 16B Name space-padded, 0x122 BPM×10 u16 LE clamped 200..3000, 0x125 StepLength-Code (16→0/32→1/64→3), 0x200 PTST-Motion-Region (PTST+0x100 ParamID[8] + +0x118 TargetPart[8] +1-based + +0x130 8×64B values), 0x900..0x3F00 16 Parts × 816B (stride aus ELECTRIBE_REAL_PART_STRIDE). Pro Part: +0x15 Volume default 127, +0x22 Pan default 64, +0x08 Pitch signed-int8, +0x0B FxSend, +0x30..+0x32F 64×12B Step-Records. Pro Step: byte0=Trigger(0/1), byte1=Velocity(default 96), byte2=0x60 const, byte3=Accent, byte4=Note(default 0x48=C5), bytes5..11=0. Defensive clampInt (range+NaN/Infinity-Guard) ueberall. Defaults: E2_DEFAULT_VELOCITY=96, E2_DEFAULT_NOTE=0x48, E2_DEFAULT_PART_VOLUME=127, E2_DEFAULT_PART_PAN=64, E2_STEP_BYTE2_CONSTANT=0x60. Public-Sub-Exports: writeStepRecord/writePartBlock/writeMotionTable (fuer Tests + future fine-grained-write). looksLikeE2PatternFile(buf) Validator-Helper. Types exportiert: E2PatternInput/E2PartInput/E2StepInput/E2MotionSlot.",
+      lastSeen: "2026-05-18T14:20:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/utils/electribePatternConvert.ts (v3.26.0)": {
+      role:     "v3.26.0 NEU: Synthstudio PatternData → E2PatternInput Adapter (~165 LOC, isomorph, NUR TYPE-Imports von AudioEngine). convertSynthstudioPatternToE2(pattern, options?: {globalBpm?, motionSlots?}) → E2PatternInput. Mapping: pattern.bpm (null → options.globalBpm || 120) → bpm, stepCount (16/32/64) → stepLength via synthStepCountToE2StepLength, PartData.volume (0..1) → 0..127 via synthVolumeToE2 (Math.round nach clamp), PartData.pan (-1..+1) → 0..127 via synthPanToE2 (64+p*63), StepData.active → step.active, StepData.velocity (0..127) → step.velocity (undefined → builder-default 96), StepData.pitch (semitones) → step.note = 0x48+pitch clamped 0..127 via synthPitchToE2Note, accent immer false. Padding: <16 Synthstudio-Parts → 16 E2-Parts mit leeren Default-Parts. Pure-Helpers exportiert: synthVolumeToE2 / synthPanToE2 / synthPitchToE2Note / synthStepCountToE2StepLength / convertStepToE2 / convertPartToE2. Motion-Lane-Synthese NICHT in v3.26.0 (Caller liefert options.motionSlots oder es bleibt undefined → all-disabled).",
+      lastSeen: "2026-05-18T14:20:00.000Z",
+      ownedBy:  "backend"
+    },
+    "tests/features/electribe-pattern-write.test.ts (v3.26.0)": {
+      role:     "v3.26.0 NEU: 34 Tests in 10 describes (env:node, kein jsdom). (1) Builder-Basics 3× (16640-Byte exact + KORG/e2sampler/PTST/version markers + looksLikeE2PatternFile+isRealElectribeFile-Match). (2) BPM-Encoding 4× (120→1200, 170.5→1705 round, range-clamp 5→200/999→3000, round-trip via parseElectribePattern fuer [120,170,165,128,90.5,200]). (3) Pattern-Name 3× (space-padding short, truncate long, round-trip). (4) Step-Encoding 4× (byte0 trigger + byte1 velocity + byte4 note, defaults wenn unset, full round-trip mit sparse pattern). (5) Volume+Pan 3× (Offsets +0x15/+0x22 + part-stride 816, clamp 500→127/-50→0, round-trip 4 sample values). (6) StepLength 2× (Code-Mapping 16→0/32→1/64→3, round-trip alle 3). (7) CRITICAL Round-Trip Write→Read→Write 1× (3-Parts programmiertes Pattern bit-equal nach build→parse). (8) Adapter 8× (16/32-step mapping, BPM-Fallback, vol/pan-conversion, pitch→note centered C5, stepCount-mapping mit invalid-defaults, convertStepToE2 active+velocity+pitch, partial-parts-padding zu 16). (9) Full Synthstudio→E2→Parse 1× (kick-pattern 4er-Grid mit volume=1.0/pan=0/velocity=110 verifiziert). (10) IPC Validators 4× (filename accept/reject + path-traversal-NUL-guard, buffer accept exact-size, reject wrong-size + missing-markers).",
+      lastSeen: "2026-05-18T14:20:00.000Z",
+      ownedBy:  "backend"
+    },
+    "electron/ipcValidators.ts (v3.26.0)": {
+      role:     "v3.26.0: +validateE2PatternFilename + validateE2PatternBuffer + E2_PATTERN_FILE_SIZE_EXACT=16640 + E2_PATTERN_FILENAME_REGEX /^[A-Za-z0-9._-]+\\.e2spat$/ + E2_PATTERN_FILENAME_MAX_LEN=120. Buffer-Validator prueft size===16640 (NICHT range), KORG@0x00, e2sa@0x10, PTST@0x100 (prefix-Slice 0x104 Bytes required). v3.4.0 KORG-Bank-Save-Validators bleiben unveraendert.",
+      lastSeen: "2026-05-18T14:20:00.000Z",
+      ownedBy:  "backend"
+    },
+    "electron/main.ts (v3.26.0)": {
+      role:     "v3.26.0: +ipcMain.handle 'electribe:save-pattern' (suggestedFilename, data: number[]|Uint8Array|ArrayBuffer) → {success, filePath, bytesWritten}|{success:false, error}. STRIKT: validateE2PatternFilename → validateE2PatternBuffer (prefix-slice 0x104) → dialog.showSaveDialog (filters [{name:'KORG E2 Pattern', extensions:['e2spat']}]) → final path.extname-Check → fs.writeFile. +'electribe:get-pattern-size' returnt konstant 16640. Path-Traversal-Vektor durch Renderer eliminiert (Pfad aus Dialog). v3.4.0 'korg:save-bank-as' unveraendert.",
+      lastSeen: "2026-05-18T14:20:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/utils/proFeatures.ts (v3.26.0)": {
+      role:     "v3.26.0: +PRO_FEATURE_E2_PATTERN_EXPORT='e2-pattern-export' + Label 'KORG E2 Pattern-Export (.e2spat)' + PRO_FEATURES-Eintrag Index 7 (Laenge jetzt 8). license-gates.test.ts angepasst (7→8 expected). v3.4.0 KORG_BANK_WRITE bleibt.",
+      lastSeen: "2026-05-18T14:20:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/components/DrumMachine/DrumMachine.tsx (v3.26.0)": {
+      role:     "v3.26.0: +useElectron Hook + 📤 E2 Pattern Button (data-testid=e2-pattern-export) direkt nach KORG-Bank-Export-Button (📤 KORG Export). Click: requireProFeature(PRO_FEATURE_E2_PATTERN_EXPORT) → dm.getActivePattern() (toast warning wenn null) → convertSynthstudioPatternToE2(pattern, {globalBpm: bpm}) → buildE2PatternFile → Filename-Sanitize ASCII-only + max 60 Zeichen + '.e2spat' → IF electron.isElectron: electron.saveE2Pattern (native Save-Dialog, success/canceled-aware Toasts) ELSE: Blob-Download via document.createElement('a').click() + URL.revokeObjectURL. ProLockBadge inline. Pre-v3.26-Funktionen unveraendert.",
+      lastSeen: "2026-05-18T14:20:00.000Z",
+      ownedBy:  "backend"
+    },
     "client/src/store/useAudioPerformanceStore.ts (v3.25.0)": {
       role:     "v3.25.0 NEU: Live-Performance-Telemetrie-Store (~210 LOC, Custom Observer-Pattern, KEINE Persistenz). State: {cpuPercent, audioCallbackMs, bufferUnderruns, outputLatencyMs, baseLatencyMs, glitchEvents}. recordScheduleTick(ms) berechnet instantPct=ms/intervalMs*100 (geclampt 0..100) → EWMA alpha=0.2 in cpuPercent + Underrun-Inkrement bei ms > 2× interval + Glitch-Inkrement bei EWMA > 90%. updateContextLatency(base, out) spiegelt AudioContext.baseLatency+outputLatency. resetPerformanceCounters() setzt Underrun+Glitch auf 0 (CPU bleibt). setSchedulerInterval(ms) konfiguriert die Bezugsgröße (Default 16ms). getPerformanceStatus(state?) liefert 'ok' <70% / 'warn' 70-90% / 'critical' >90%. shouldFireWarning(type, nowMs?) throttled 1×/min via Map<type, lastFiredAt> — erstes Warning IMMER erlaubt (last===undefined). Diff-vor-Notify (Compare gerundete %, callback*10, counter) → <60Hz UI-Updates. Defensive: NaN/Infinity/negative ignored, Latency-negative clamped auf 0. __resetPerformanceStoreForTests + __resetWarningThrottleForTests.",
       lastSeen: "2026-05-18T14:00:00.000Z",
@@ -1277,6 +1312,47 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "backend",
+      timestamp: "2026-05-18T14:20:00.000Z",
+      done: [
+        "v3.26.0: E2 Pattern Write (.e2spat) — Synthstudio-Patterns → KORG E2 Sampler komplett. Pure-TS Binary Builder + Synthstudio-Adapter + UI-Button + IPC Save + 34 Tests (Round-Trip-Verified).",
+        "NEU client/src/utils/electribePatternBuilder.ts (~340 LOC, isomorph, KEINE Electron/DOM-Deps). Public API: buildE2PatternFile(input: E2PatternInput) → ArrayBuffer (immer exakt 16640 Bytes, Hardware-Spec). Layout per v3.5/v3.12/v3.13/v3.15 Read-Side-Konstanten: 0x000 'KORG'+padding, 0x010 'e2sampler'+padding, 0x020 u32 version=1, 0x024..0x100 0xFF-Padding (matches real KORG bank dumps), 0x100 'PTST'+padding, 0x110 16B Name space-padded (matches hardware encoding), 0x122 BPM×10 u16 LE, 0x125 StepLength-Code (0=16, 1=32, 3=64), 0x200..0x430 PTST-Motion-Region (PTST+0x100 ParamID[8] + PTST+0x118 TargetPart[8] + PTST+0x130 8×64-Byte values), 0x900..0x3F00 16 Parts × 816B. Pro Part: +0x15 Volume (0..127, default 127), +0x22 Pan (0..127, default 64), +0x08 Pitch signed, +0x0B FxSend, +0x30..+0x32F 64×12B Step-Records. Pro Step-Record: byte0=Trigger(0/1), byte1=Velocity(default 96), byte2=0x60 const, byte3=Accent(0/1), byte4=Note(default 0x48=C5), bytes5..11=0. Defensive: alle Ranges clamped (BPM 20..300, Volume 0..127, Velocity 0..127, Note 0..127, ParamID 0..127). Exports E2PatternInput/E2PartInput/E2StepInput/E2MotionSlot types + buildE2PatternFile + writeStepRecord + writePartBlock + writeMotionTable + looksLikeE2PatternFile + Defaults-Konstanten (E2_DEFAULT_VELOCITY, E2_DEFAULT_NOTE, E2_DEFAULT_PART_VOLUME, E2_DEFAULT_PART_PAN, E2_STEP_BYTE2_CONSTANT).",
+        "NEU client/src/utils/electribePatternConvert.ts (~165 LOC, isomorph, NUR TYPE-Imports von AudioEngine). Public API: convertSynthstudioPatternToE2(pattern: PatternData, options?: {globalBpm}) → E2PatternInput. Mapping: pattern.bpm (null→globalBpm) → bpm, stepCount (16/32) → stepLength (auch 64 wird akzeptiert), PartData.volume (0..1) → 0..127 via synthVolumeToE2 (round), PartData.pan (-1..+1) → 0..127 via synthPanToE2 (64 + p*63), StepData.active → step.active, StepData.velocity (0..127) → step.velocity (default 96 wenn undefined), StepData.pitch (semitones) → step.note = 0x48 + pitch clamped 0..127, accent immer false (Synthstudio hat kein 1st-class accent). Padding: <16 Synthstudio-Parts → 16 E2-Parts mit leeren Defaults. Helpers exportiert: synthVolumeToE2 / synthPanToE2 / synthPitchToE2Note / synthStepCountToE2StepLength / convertStepToE2 / convertPartToE2.",
+        "ELECTRON-IPC NEU: 'electribe:save-pattern' (suggestedFilename, data: number[]) → {success, filePath, bytesWritten} | {success:false, error}. STRIKTE Validierung: filename whitelist /^[A-Za-z0-9._-]+\\.e2spat$/ + max 120 Zeichen + Path-Traversal-Guard, Buffer GENAU 16640 Bytes (KORG hardware-spec, NICHT cap-range wie .all), 'KORG'/'e2sampler'/'PTST' Marker müssen vorhanden sein (prefix 260B-Check), Save-Pfad aus dialog.showSaveDialog (kein Renderer-Path), Final-Extension-Check '.e2spat'. Companion 'electribe:get-pattern-size' liefert konstant 16640. Path-Traversal-Vektor durch Renderer eliminiert.",
+        "VALIDATORS NEU electron/ipcValidators.ts: validateE2PatternFilename (whitelist regex .e2spat + NUL/slash/dotdot-defense) + validateE2PatternBuffer (size===16640 + KORG@0x00 + e2sa@0x10 + PTST@0x100) + E2_PATTERN_FILE_SIZE_EXACT=16640 + E2_PATTERN_FILENAME_REGEX + E2_PATTERN_FILENAME_MAX_LEN=120.",
+        "PRELOAD + TYPES + HOOK: saveE2Pattern + getE2PatternSize in preload.ts (contextBridge) + types.d.ts (ElectronAPI interface) + useElectron.ts (Electron-side via api.saveE2Pattern ?? browserAPI.saveE2Pattern; Browser-Fallback returnt success:false → Renderer faellt auf Blob-Download zurueck).",
+        "UI-BUTTON: DrumMachine.tsx Toolbar — 'mailbox-E2 Pattern' Button direkt nach KORG-Bank-Export-Button. Click: requireProFeature(PRO_FEATURE_E2_PATTERN_EXPORT) → dm.getActivePattern() → convertSynthstudioPatternToE2 → buildE2PatternFile → wenn electron.isElectron: electron.saveE2Pattern (native Save-Dialog), sonst: Blob-Download mit safe filename. Toast bei Erfolg/Fehler. data-testid='e2-pattern-export'. Filename sanitization: /[^A-Za-z0-9._-]+/g → '_', max 60 Zeichen.",
+        "PRO-FEATURE-GATE NEU PRO_FEATURE_E2_PATTERN_EXPORT='e2-pattern-export' in client/src/utils/proFeatures.ts + Label 'KORG E2 Pattern-Export (.e2spat)' + Eintrag in PRO_FEATURES[] (Länge jetzt 8). license-gates.test.ts angepasst (7→8 expected).",
+        "TESTS NEU tests/features/electribe-pattern-write.test.ts (34 Tests in 10 describes, env:node): (1) Builder-Basics 3× (16640-Byte exact + KORG/e2sampler/PTST/u32-version markers + looksLikeE2PatternFile+isRealElectribeFile-Match). (2) BPM-Encoding 4× (120→1200, 170.5→1705 rounded, range-clamp 5→200/999→3000, round-trip via parseElectribePattern für [120,170,165,128,90.5,200]). (3) Pattern-Name 3× (space-padding short, truncate long, round-trip trim-trailing). (4) Step-Encoding 4× (byte0 trigger, byte1 velocity + byte4 note, defaults wenn unset, full round-trip via parseElectribePattern). (5) Volume+Pan 3× (Offsets +0x15/+0x22 + part-stride 816, clamp 500→127/-50→0, round-trip 4 sample values). (6) StepLength 2× (Code-Mapping 16→0/32→1/64→3, round-trip alle 3). (7) CRITICAL Round-Trip Write→Read→Write 1× (3-Parts programmiertes Pattern incl. velocities, pans, volumes, steps verifiziert bit-equal nach build→parse). (8) Adapter 8× (16/32-step mapping, BPM-Fallback, vol/pan-conversion, pitch→note centered C5, stepCount-mapping mit invalid-defaults, convertStepToE2 active+velocity+pitch, partial-parts-padding zu 16). (9) Full Round-Trip Synthstudio→E2→Parse 1× (kick-pattern auf 4er-Grid mit volume=1.0/pan=0/velocity=110 verifiziert nach Read). (10) IPC Validators 4× (filename accept/reject, buffer accept exact-size, reject wrong-size + missing-markers).",
+        "TEST-RESULTAT: pnpm check clean. pnpm test → 178 files / 4098 passed / 15 skipped (vorher v3.25 4064 → +34 neue E2-Write-Tests). license-gates.test.ts wurde von 7→8 PRO_FEATURES angepasst. ALLE existing Tests bleiben grün — keine Regressionen.",
+        "ROUND-TRIP-VERIFIED: build → parseElectribePattern liefert identical input für name, BPM (bis 0.1 BPM), stepLength, parts[i].volume, parts[i].pan, alle step.active, step.velocity. Felder die der Reader NICHT decodiert (swing, pitch, fxSend, sampleId) werden vom Builder bit-deterministisch geschrieben aber kommen vom Reader als Defaults zurück — kein Round-Trip-Bruch.",
+        "CAVEATS: (a) 32-Step Synthstudio-Pattern → E2 stepLength=32 (Code 1) + 64 step-records mit padding-Zeros (Hardware reads only first 32). 16-Step → stepLength=16 (Code 0). 64 wird vom Adapter akzeptiert (synthStepCountToE2StepLength), Synthstudio produziert das aktuell aber nicht. (b) Motion-Slots werden im Adapter NICHT aus Synthstudio-Automation-Lanes synthetisiert (initial v3.26.0). Caller kann motionSlots: E2MotionSlot[] manuell ueber options uebergeben. Future-Task v3.27+: useAutomationStore → 8 E2 Motion-Slots Adapter. (c) sampleId-Feld bleibt unbenutzt — der KORG Reader extrahiert kein sampleId zuverlaessig, also schreiben wir es nicht. (d) Pitch in Step encoded als MIDI-Note (0x48 + semitones), keine separate Pitch-Spur. (e) Accent ist immer false (Synthstudio StepData hat kein accent-Feld). (f) Filenames werden auf 60 Zeichen begrenzt mit ASCII-Sanitization — non-ASCII Patterns wie 'Hôtel' → 'H_tel.e2spat'.",
+        "package.json + agents/INDEX.js version 3.25.0 → 3.26.0."
+      ],
+      next: [
+        "TASK-v3.26-MOTION-LANE-ADAPTER: useAutomationStore → E2 Motion-Slots (8 Slots × 64 Values × Param+Target) Adapter. Aktuell muss Caller motionSlots manuell uebergeben. Inverse von v3.15 convertParsedPatternToSynthstudio.automationLanes.",
+        "TASK-v3.26-SWING-ENCODING: Swing-Wert im Builder wird gesetzt aber Layout-Offset unklar (PTST+0x123..0x12a hat varying bytes laut v3.13 RE). Histogram-Analyse oder Sample-Comparison gegen E2-Files mit unterschiedlichen Swing-Werten benoetigt.",
+        "TASK-v3.26-SAMPLE-ID-BINDING: Wenn Synthstudio-Sample → E2-Sample-Slot-Mapping moeglich ist, sampleId in part-header schreiben. Reader-Side hat sampleId-Offset=4 best-effort — Builder-Side passenden Bit-exact-Test benoetigt.",
+        "TASK-v3.26-PLAYWRIGHT: tests/web/e2-pattern-export.spec.ts E2E — Button-Click triggert Save-Dialog (mocked) / Browser-Fallback triggert Blob-Download mit korrektem Mime + Filename.",
+        "TASK-v3.26-REAL-FILE-ROUND-TRIP: Read echten BodyTalk1.e2spat aus G:/IdeaProjects/Synthstudio/Korg e2s files/ via parseElectribePattern, convert NACH E2PatternInput (Inverse-Adapter), buildE2PatternFile, re-read → assert structural equal. Aktuell nur synthetic round-trips."
+      ],
+      changed: [
+        "client/src/utils/electribePatternBuilder.ts (NEU, ~340 LOC: Pure-TS 16640-Byte builder + writeStepRecord + writePartBlock + writeMotionTable + looksLikeE2PatternFile + Defaults)",
+        "client/src/utils/electribePatternConvert.ts (NEU, ~165 LOC: Synthstudio PatternData → E2PatternInput Adapter + Helper-Konvertierungen)",
+        "client/src/utils/proFeatures.ts (+PRO_FEATURE_E2_PATTERN_EXPORT + Label + PRO_FEATURES Eintrag Index 7)",
+        "client/src/components/DrumMachine/DrumMachine.tsx (+useElectron Hook + 📤 E2 Pattern Button mit Pro-Gate + Build+Save/Blob-Fallback-Logik + Toast)",
+        "electron/ipcValidators.ts (+validateE2PatternFilename + validateE2PatternBuffer + E2_PATTERN_FILE_SIZE_EXACT + E2_PATTERN_FILENAME_REGEX/MAX_LEN)",
+        "electron/main.ts (+ipcMain.handle 'electribe:save-pattern' mit Filename-Whitelist + 16640-Byte-Exact + Magic-Marker-Check + showSaveDialog + writeFile + 'electribe:get-pattern-size')",
+        "electron/preload.ts (+saveE2Pattern + getE2PatternSize in contextBridge)",
+        "electron/types.d.ts (+saveE2Pattern + getE2PatternSize in ElectronAPI interface)",
+        "electron/useElectron.ts (+browser-Fallback saveE2Pattern success:false + getE2PatternSize=16640 + Electron-side delegation)",
+        "tests/features/electribe-pattern-write.test.ts (NEU, 34 Tests in 10 describes: Builder-Basics + BPM-Encoding + Pattern-Name + Step-Encoding + Volume+Pan + StepLength + CRITICAL Round-Trip + Adapter + Full-Round-Trip + IPC-Validators)",
+        "tests/features/license-gates.test.ts (Update 7→8 expected PRO_FEATURES)",
+        "package.json (3.25.0 → 3.26.0)",
+        "agents/INDEX.js (version 3.25.0 → 3.26.0 + workLog v3.26.0 entry + ipc.channels +electribe:save-pattern,electribe:get-pattern-size + neue files-Eintraege)"
+      ]
+    },
     {
       agent:     "backend",
       timestamp: "2026-05-18T14:00:00.000Z",
@@ -5162,6 +5238,8 @@ const INDEX = {
       "korg:get-bank-cap",    // v3.3.0 — liefert KORG_BANK_MAX_BYTES (100 MB) für UI-Hinweise.
       "korg:save-bank-as",    // v3.4.0 — speichert renderer-side gebauten .all-Buffer (Synthstudio → E2 Sampler). Validation: filename-Whitelist /^[A-Za-z0-9._-]+\\.all$/, 16B-Magic-Sniff "e2s sample all\\x1a\\0", max 256 MB. Pfad kommt aus dialog.showSaveDialog (kein Path-Traversal-Vektor vom Renderer).
       "korg:get-bank-save-cap", // v3.4.0 — liefert KORG_BANK_SAVE_MAX_BYTES (256 MB) für UI-Hinweise.
+      "electribe:save-pattern", // v3.26.0 — speichert renderer-side gebauten 16640-Byte .e2spat-Buffer (Synthstudio-Pattern → E2 Sampler). Validation: filename-Whitelist /^[A-Za-z0-9._-]+\\.e2spat$/, GENAU 16640 Bytes (hardware-exact), "KORG"/"e2sampler"/"PTST" Markers. Pfad aus dialog.showSaveDialog.
+      "electribe:get-pattern-size", // v3.26.0 — liefert die exakte Hardware-Größe einer .e2spat-Datei (= 16640 Bytes) für UI-Hinweise.
       "license:read",  // TASK-232 (v2.97) — liest userData/license.json (Path hardcoded, 16 KB-Limit, JSON-Parse-Try-Catch). Returnt {success, data}|{success:false,error}.
       "license:write", // TASK-232 (v2.97) — schreibt LicenseState nach userData/license.json (Status-Whitelist, finite-number-only trialStartedAt, Längen-Limits, JSON-Size ≤16 KB).
 

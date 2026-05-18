@@ -68,6 +68,9 @@ import {
   validateKorgBankBuffer,
   KORG_BANK_MAX_BYTES,
   KORG_BANK_SAVE_MAX_BYTES,
+  validateE2PatternFilename,
+  validateE2PatternBuffer,
+  E2_PATTERN_FILE_SIZE_EXACT,
   LICENSE_FILE_MAX_BYTES as IPC_LICENSE_FILE_MAX_BYTES,
 } from "./ipcValidators";
 import {
@@ -2889,6 +2892,68 @@ function registerIpcHandlers(): void {
   });
 
   ipcMain.handle("korg:get-bank-save-cap", () => KORG_BANK_SAVE_MAX_BYTES);
+
+  // ── E2 Pattern WRITE (.e2spat) — v3.26.0 ─────────────────────────────────
+  //
+  // Persistiert ein vom Renderer gebautes 16640-Byte `.e2spat`-File via
+  // native Save-Dialog. Strikte Validierung:
+  //  - filename whitelist (.e2spat, ASCII alnum + . _ -, max 120 Zeichen)
+  //  - buffer GENAU 16640 Bytes (KORG hardware-spec)
+  //  - "KORG"/"e2sampler"/"PTST" Marker müssen vorhanden sein
+  //  - Output-Pfad ist user-chosen (showSaveDialog) → kein Path-Traversal
+  //  - Final-Sanity: gespeicherter Pfad MUSS auf .e2spat enden.
+  ipcMain.handle("electribe:save-pattern", async (
+    _event,
+    suggestedFilename: string,
+    data: ArrayBuffer | Uint8Array | number[],
+  ) => {
+    try {
+      const nameCheck = validateE2PatternFilename(suggestedFilename);
+      if (!nameCheck.ok) return { success: false as const, error: nameCheck.error };
+      if (!data) return { success: false as const, error: "Keine Daten erhalten" };
+
+      // Normalize incoming data (Array<number> via IPC, Uint8Array, ArrayBuffer)
+      let buf: Buffer;
+      if (Array.isArray(data)) {
+        buf = Buffer.from(data);
+      } else if (data instanceof Uint8Array) {
+        buf = Buffer.from(data);
+      } else {
+        buf = Buffer.from(new Uint8Array(data));
+      }
+
+      // Slice the prefix used by the validator (must reach 0x103 inclusive
+      // for the PTST marker). 260 = 0x104.
+      const prefix = new Uint8Array(buf.subarray(0, 0x104));
+      const bufCheck = validateE2PatternBuffer(buf.byteLength, prefix);
+      if (!bufCheck.ok) return { success: false as const, error: bufCheck.error };
+
+      const result = await dialog.showSaveDialog({
+        title: "KORG E2 Pattern speichern (.e2spat)",
+        defaultPath: nameCheck.filename,
+        filters: [{ name: "KORG E2 Pattern", extensions: ["e2spat"] }],
+      });
+      if (result.canceled || !result.filePath) {
+        return { success: false as const, error: "canceled" };
+      }
+      const resolvedPath = path.resolve(result.filePath);
+      if (path.extname(resolvedPath).toLowerCase() !== ".e2spat") {
+        return { success: false as const, error: "Nur .e2spat-Endung erlaubt" };
+      }
+
+      await fs.promises.writeFile(resolvedPath, buf);
+      return {
+        success: true as const,
+        filePath: resolvedPath,
+        bytesWritten: buf.byteLength,
+      };
+    } catch (err) {
+      console.error("[IPC electribe:save-pattern] error:", err);
+      return { success: false as const, error: "Schreibfehler" };
+    }
+  });
+
+  ipcMain.handle("electribe:get-pattern-size", () => E2_PATTERN_FILE_SIZE_EXACT);
 
   // ── Kollaborations-Server ─────────────────────────────────────────────────────
 

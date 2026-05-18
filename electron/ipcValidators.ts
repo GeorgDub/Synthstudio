@@ -332,3 +332,104 @@ export function validateKorgBankBuffer(
   }
   return { ok: true };
 }
+
+// ─── E2 PATTERN WRITE (.e2spat) — v3.26.0 ────────────────────────────────────
+
+/**
+ * Filename-Whitelist beim Save-As .e2spat File (Synthstudio → KORG E2 Sampler-Pattern).
+ * ASCII-alnum + . _ - und MUSS auf .e2spat enden.
+ */
+export const E2_PATTERN_FILENAME_MAX_LEN = 120;
+export const E2_PATTERN_FILENAME_REGEX = /^[A-Za-z0-9._-]+\.e2spat$/;
+
+/**
+ * Buffer-Cap fürs IPC-Save. Exakte Hardware-Größe = 16640 Bytes. Wir prüfen
+ * gegen STRICT === 16640 in `validateE2PatternBuffer`. Diese Konstante bleibt
+ * für Symmetrie zu `KORG_BANK_SAVE_MAX_BYTES` definiert.
+ */
+export const E2_PATTERN_FILE_SIZE_EXACT = 16640;
+
+export type E2PatternFilenameCheck =
+  | { ok: true; filename: string }
+  | { ok: false; error: string };
+
+/**
+ * Strict filename validator for .e2spat writes. Defensiv gegen Path-Traversal,
+ * NUL-Bytes und Endungs-Spoofing. Returns the validated string only — no
+ * implicit normalisation.
+ */
+export function validateE2PatternFilename(input: unknown): E2PatternFilenameCheck {
+  if (typeof input !== "string" || input.length === 0) {
+    return { ok: false, error: "Ungültiger Dateiname" };
+  }
+  if (input.length > E2_PATTERN_FILENAME_MAX_LEN) {
+    return { ok: false, error: "Dateiname zu lang" };
+  }
+  if (
+    input.includes("\0") ||
+    input.includes("/") ||
+    input.includes("\\") ||
+    input.includes("..")
+  ) {
+    return { ok: false, error: "Dateiname enthält unzulässige Zeichen" };
+  }
+  if (!E2_PATTERN_FILENAME_REGEX.test(input)) {
+    return { ok: false, error: "Nur alphanumerische .e2spat-Dateinamen erlaubt" };
+  }
+  return { ok: true, filename: input };
+}
+
+export type E2PatternBufferCheck =
+  | { ok: true }
+  | { ok: false; error: string };
+
+/**
+ * Strict buffer validator for .e2spat writes. Verifies:
+ *   - Exact size 16640 bytes (KORG hardware-spec)
+ *   - "KORG" magic @ 0x00
+ *   - "e2sampler" identifier @ 0x10
+ *   - "PTST" pattern marker @ 0x100
+ *
+ * `prefixBytes` must contain at least the first 260 bytes of the file (to
+ * reach the PTST marker at 0x100..0x103). The caller is responsible for
+ * sending enough bytes — main.ts slices 260 from the incoming buffer.
+ */
+export function validateE2PatternBuffer(
+  byteLength: number,
+  prefixBytes: Uint8Array,
+): E2PatternBufferCheck {
+  if (byteLength !== E2_PATTERN_FILE_SIZE_EXACT) {
+    return { ok: false, error: `Ungültige Dateigröße (${byteLength} Bytes, erwartet 16640)` };
+  }
+  if (!prefixBytes || prefixBytes.length < 0x104) {
+    return { ok: false, error: "Prefix kürzer als 260 Bytes" };
+  }
+  // "KORG" @ 0x00
+  if (
+    prefixBytes[0] !== 0x4b ||
+    prefixBytes[1] !== 0x4f ||
+    prefixBytes[2] !== 0x52 ||
+    prefixBytes[3] !== 0x47
+  ) {
+    return { ok: false, error: "Ungültige KORG-Signatur" };
+  }
+  // "e2sa" @ 0x10 (prefix of "e2sampler")
+  if (
+    prefixBytes[0x10] !== 0x65 ||
+    prefixBytes[0x11] !== 0x32 ||
+    prefixBytes[0x12] !== 0x73 ||
+    prefixBytes[0x13] !== 0x61
+  ) {
+    return { ok: false, error: "Ungültige e2sampler-Signatur" };
+  }
+  // "PTST" @ 0x100
+  if (
+    prefixBytes[0x100] !== 0x50 ||
+    prefixBytes[0x101] !== 0x54 ||
+    prefixBytes[0x102] !== 0x53 ||
+    prefixBytes[0x103] !== 0x54
+  ) {
+    return { ok: false, error: "Ungültiger PTST-Marker" };
+  }
+  return { ok: true };
+}

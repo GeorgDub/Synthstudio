@@ -30,6 +30,7 @@ export const PRO_FEATURE_ELECTRIBE_IMPORT   = "electribe-import";
 export const PRO_FEATURE_MIDI_NOTE_OUT      = "midi-note-out";
 export const PRO_FEATURE_KORG_BANK_IMPORT   = "korg-bank-import";
 export const PRO_FEATURE_KORG_BANK_WRITE    = "korg-bank-write";
+export const PRO_FEATURE_E2_PATTERN_EXPORT  = "e2-pattern-export";
 
 /** Full registry — keep in sync with constants above. */
 export const PRO_FEATURES = [
@@ -40,6 +41,7 @@ export const PRO_FEATURES = [
   PRO_FEATURE_MIDI_NOTE_OUT,
   PRO_FEATURE_KORG_BANK_IMPORT,
   PRO_FEATURE_KORG_BANK_WRITE,
+  PRO_FEATURE_E2_PATTERN_EXPORT,
 ] as const;
 
 export type ProFeature = (typeof PRO_FEATURES)[number];
@@ -53,6 +55,7 @@ export const PRO_FEATURE_LABELS: Record<string, string> = {
   [PRO_FEATURE_MIDI_NOTE_OUT]:    "MIDI-Note-Out",
   [PRO_FEATURE_KORG_BANK_IMPORT]: "KORG Sample-Bank-Import",
   [PRO_FEATURE_KORG_BANK_WRITE]:  "KORG Sample-Bank-Export (E2S .all)",
+  [PRO_FEATURE_E2_PATTERN_EXPORT]: "KORG E2 Pattern-Export (.e2spat)",
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

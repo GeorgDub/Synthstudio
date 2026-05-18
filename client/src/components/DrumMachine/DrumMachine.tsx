@@ -35,7 +35,10 @@ import {
   type ParsedPattern,
   type SynthstudioPatternImport,
 } from "@/utils/electribeImport";
-import { requireProFeature, PRO_FEATURE_ELECTRIBE_IMPORT, PRO_FEATURE_KORG_BANK_IMPORT, PRO_FEATURE_KORG_BANK_WRITE } from "@/utils/proFeatures";
+import { requireProFeature, PRO_FEATURE_ELECTRIBE_IMPORT, PRO_FEATURE_KORG_BANK_IMPORT, PRO_FEATURE_KORG_BANK_WRITE, PRO_FEATURE_E2_PATTERN_EXPORT } from "@/utils/proFeatures";
+import { buildE2PatternFile } from "@/utils/electribePatternBuilder";
+import { convertSynthstudioPatternToE2 } from "@/utils/electribePatternConvert";
+import { useElectron } from "../../../../electron/useElectron";
 import { ProLockBadge } from "@/components/License/ProLockBadge";
 import { GranularSynthPanel } from "./GranularSynthPanel";
 import { DEFAULT_GRANULAR_PARAMS } from "@/audio/GranularEngine";
@@ -351,6 +354,8 @@ function ElectribePickerModal({ picker, onSelect, onClose }: ElectribePickerModa
 
 export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChange, className = "" }: Props) {
   const pattern = dm.getActivePattern();
+  // v3.26.0 — Electron-Bridge für E2 Pattern Export
+  const electron = useElectron();
   const [showPatternMenu, setShowPatternMenu] = useState(false);
   const [metronomOn, setMetronomOn] = useState(false);
   const [metronomGain, setMetronomGain] = useState(0.5);
@@ -1413,6 +1418,57 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
         >
           📤 KORG Export
           <ProLockBadge feature={PRO_FEATURE_KORG_BANK_WRITE} />
+        </button>
+
+        {/* KORG E2 Pattern EXPORT (v3.26.0) — Synthstudio-Pattern → .e2spat */}
+        <button
+          onClick={async () => {
+            if (!requireProFeature(PRO_FEATURE_E2_PATTERN_EXPORT)) return;
+            const currentPattern = dm.getActivePattern();
+            if (!currentPattern) {
+              toast("Kein Pattern aktiv", { kind: "warning" });
+              return;
+            }
+            try {
+              const e2Input = convertSynthstudioPatternToE2(currentPattern, { globalBpm: bpm });
+              const buffer = buildE2PatternFile(e2Input);
+              // Sanitize name for filename — only ASCII alnum + _ - .
+              const safeName = (currentPattern.name || "pattern")
+                .replace(/[^A-Za-z0-9._-]+/g, "_")
+                .slice(0, 60) || "pattern";
+              const filename = `${safeName}.e2spat`;
+
+              if (electron.isElectron) {
+                const result = await electron.saveE2Pattern(filename, buffer);
+                if (result.success) {
+                  toast(`E2 Pattern gespeichert: ${result.filePath}`, { kind: "success" });
+                } else if (result.error && result.error !== "canceled") {
+                  toast(`Speichern fehlgeschlagen: ${result.error}`, { kind: "error" });
+                }
+              } else {
+                // Browser-Fallback: Blob-Download
+                const blob = new Blob([buffer], { type: "application/octet-stream" });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                toast(`E2 Pattern heruntergeladen: ${filename}`, { kind: "success" });
+              }
+            } catch (err) {
+              console.error("[E2 Pattern Export] error:", err);
+              toast(`Export-Fehler: ${(err as Error)?.message ?? "unbekannt"}`, { kind: "error" });
+            }
+          }}
+          title="Aktuelles Pattern für KORG Electribe 2 Sampler exportieren (.e2spat)"
+          className="px-2 py-1 rounded text-[10px] bg-bg-elevated text-text-dim hover:bg-bg-elevated hover:text-text-primary transition-colors inline-flex items-center gap-1"
+          data-testid="e2-pattern-export"
+        >
+          📤 E2 Pattern
+          <ProLockBadge feature={PRO_FEATURE_E2_PATTERN_EXPORT} />
         </button>
 
         {/* Sample-Slicing (TASK-238 / v2.89) */}
