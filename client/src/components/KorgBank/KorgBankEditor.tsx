@@ -77,15 +77,25 @@ import {
   type SynthstudioPatternLike,
 } from "@/utils/korg/esxPatternConvert";
 import {
+  buildEsxSampleSlotOverview,
   buildEsxSlotOverview,
-  commitEsxPatches,
+  commitEsxPatchesAll,
   countPendingEsxPatches,
+  countPendingEsxSamplePatches,
   filterEsxRows,
+  filterEsxSampleRows,
+  formatSampleLength,
   hasPendingEsxPatches,
+  hasPendingEsxSamplePatches,
   stageEsxPatch,
+  stageEsxSamplePatch,
   unstageEsxPatch,
+  unstageEsxSamplePatch,
+  type EsxSampleSlotRow,
+  type EsxSamplePatchEntry,
   type EsxSlotRow,
 } from "@/utils/korg/esxBankEditorState";
+import { polyPhaseResample } from "@/utils/korg/audioProcessor";
 import {
   MAX_ESLI_SLICES,
   onsetsToSlices as onsetsToEsliSlices,
@@ -212,6 +222,24 @@ export function KorgBankEditor({
   const [esxHideInit, setEsxHideInit] = useState<boolean>(true);
   const [esxHideEmpty, setEsxHideEmpty] = useState<boolean>(true);
 
+  // v3.31.0 — ESX sample-tab state
+  type EsxSubTab = "patterns" | "samples";
+  const [esxSubTab, setEsxSubTab] = useState<EsxSubTab>("patterns");
+  const [esxSampleRows, setEsxSampleRows] = useState<EsxSampleSlotRow[]>([]);
+  const [esxSamplePending, setEsxSamplePending] = useState<
+    Map<number, EsxSamplePatchEntry>
+  >(() => new Map());
+  const [esxSampleSelectedSlot, setEsxSampleSelectedSlot] = useState<number | null>(
+    null,
+  );
+  const [esxSampleSearch, setEsxSampleSearch] = useState<string>("");
+  const [esxSampleHideEmpty, setEsxSampleHideEmpty] = useState<boolean>(true);
+  const [esxSampleDropTargetSlot, setEsxSampleDropTargetSlot] = useState<number | null>(
+    null,
+  );
+  const esxSampleReplaceInputRef = useRef<HTMLInputElement | null>(null);
+  const esxSampleReplaceTargetSlotRef = useRef<number | null>(null);
+
   // Shared
   const [busy, setBusy] = useState<boolean>(false);
   const [resultMsg, setResultMsg] = useState<string | null>(null);
@@ -268,6 +296,14 @@ export function KorgBankEditor({
       setEsxPendingPatches(new Map());
       setEsxSelectedSlot(null);
       setEsxSearch("");
+      // v3.31.0 — Sample-Tab-State zurücksetzen
+      setEsxSubTab("patterns");
+      setEsxSampleRows([]);
+      setEsxSamplePending(new Map());
+      setEsxSampleSelectedSlot(null);
+      setEsxSampleSearch("");
+      setEsxSampleDropTargetSlot(null);
+      esxSampleReplaceTargetSlotRef.current = null;
     }
   }, [open]);
 
@@ -319,7 +355,10 @@ export function KorgBankEditor({
     } else if (mode === "edit") {
       hasChanges = hasUnsavedChanges(openedSlots) || openedSlots.length > 0;
     } else if (mode === "esx") {
-      hasChanges = hasPendingEsxPatches(esxPendingPatches) || esxBankBuffer !== null;
+      hasChanges =
+        hasPendingEsxPatches(esxPendingPatches) ||
+        hasPendingEsxSamplePatches(esxSamplePending) ||
+        esxBankBuffer !== null;
     }
     if (hasChanges) {
       const ok = window.confirm(
@@ -340,6 +379,13 @@ export function KorgBankEditor({
       setEsxPendingPatches(new Map());
       setEsxSelectedSlot(null);
       setEsxSearch("");
+      // v3.31.0 — auch Sample-Tab-State zurücksetzen
+      setEsxSubTab("patterns");
+      setEsxSampleRows([]);
+      setEsxSamplePending(new Map());
+      setEsxSampleSelectedSlot(null);
+      setEsxSampleSearch("");
+      setEsxSampleDropTargetSlot(null);
     }
     setResultMsg(null);
     setMode(next);
@@ -369,10 +415,15 @@ export function KorgBankEditor({
       }
       const bank = parseEsxBank(ab, file.name);
       const rows = buildEsxSlotOverview(bank);
+      const sampleRows = buildEsxSampleSlotOverview(bank);
       setEsxBankBuffer(ab);
       setEsxRows(rows);
+      setEsxSampleRows(sampleRows);
       setEsxPendingPatches(new Map());
+      setEsxSamplePending(new Map());
       setEsxSelectedSlot(null);
+      setEsxSampleSelectedSlot(null);
+      setEsxSubTab("patterns");
       setMode("esx");
       // Filename default for save: original name (user can rename).
       const baseName = file.name.replace(/\.[^.]+$/, "");
@@ -628,13 +679,17 @@ export function KorgBankEditor({
       toast("Keine ESX-Bank geladen.", { kind: "warning" });
       return;
     }
-    if (!hasPendingEsxPatches(esxPendingPatches)) {
+    const patchCount = countPendingEsxPatches(esxPendingPatches);
+    const sampleCount = countPendingEsxSamplePatches(esxSamplePending);
+    if (patchCount === 0 && sampleCount === 0) {
       toast("Keine Slots zum Speichern modifiziert.", { kind: "warning" });
       return;
     }
-    const patchCount = countPendingEsxPatches(esxPendingPatches);
+    const summaryParts: string[] = [];
+    if (patchCount > 0) summaryParts.push(`${patchCount} Pattern-Slot(s)`);
+    if (sampleCount > 0) summaryParts.push(`${sampleCount} Sample-Slot(s)`);
     const ok = window.confirm(
-      `${patchCount} Pattern-Slot(s) wurden geändert.\n` +
+      `${summaryParts.join(" + ")} wurden geändert.\n` +
         `Alle anderen Slots, Sample-Daten und Song-Daten bleiben bit-exakt erhalten.\n\n` +
         `Bank speichern?`,
     );
@@ -642,11 +697,16 @@ export function KorgBankEditor({
     setBusy(true);
     setResultMsg("Schreibe ESX-Bank...");
     try {
-      const newBuffer = commitEsxPatches(esxBankBuffer, esxPendingPatches);
+      const newBuffer = commitEsxPatchesAll(
+        esxBankBuffer,
+        esxPendingPatches,
+        esxSamplePending,
+      );
       const safeName = filename.replace(/[^A-Za-z0-9._-]/g, "_");
       const finalName = safeName.toLowerCase().endsWith(".esx")
         ? safeName
         : `${safeName}.esx`;
+      const summaryMsg = summaryParts.join(" + ") + " geändert";
       if (electron.isElectron) {
         const result = await electron.saveEsxBankAs(finalName, newBuffer);
         if (!result.success) {
@@ -659,13 +719,14 @@ export function KorgBankEditor({
           return;
         }
         toast(
-          `ESX-Bank gespeichert: ${result.filePath} (${patchCount} Slot(s) geändert)`,
+          `ESX-Bank gespeichert: ${result.filePath} (${summaryMsg})`,
           { kind: "success", duration: 4000 },
         );
         setResultMsg(`Gespeichert: ${result.filePath}`);
         // Update working copy + clear pending patches.
         setEsxBankBuffer(newBuffer);
         setEsxPendingPatches(new Map());
+        setEsxSamplePending(new Map());
       } else {
         const blob = new Blob([newBuffer], { type: "application/octet-stream" });
         const url = URL.createObjectURL(blob);
@@ -680,12 +741,13 @@ export function KorgBankEditor({
           setTimeout(() => URL.revokeObjectURL(url), 1000);
         }
         toast(
-          `ESX-Bank heruntergeladen: ${finalName} (${patchCount} Slot(s) geändert)`,
+          `ESX-Bank heruntergeladen: ${finalName} (${summaryMsg})`,
           { kind: "success", duration: 4000 },
         );
         setResultMsg(`Download: ${finalName}`);
         setEsxBankBuffer(newBuffer);
         setEsxPendingPatches(new Map());
+        setEsxSamplePending(new Map());
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -694,6 +756,148 @@ export function KorgBankEditor({
     } finally {
       setBusy(false);
     }
+  }
+
+  // ─── ESX-Sample-Mode Operations (v3.31.0) ──────────────────────────────────
+
+  /**
+   * Decodes a WAV/AIFF/MP3 file, resamples to 44100 Hz (ESX-target), and
+   * returns Float32 mono PCM. Stereo files are downmixed to mono (channel 0 +
+   * channel 1 averaged) — v3.31 fokussiert auf mono. v3.32 wird stereo
+   * unterstützen.
+   */
+  async function decodeWavForEsxSample(file: File): Promise<{
+    pcm: Float32Array;
+    sampleRate: number;
+    channels: 1;
+    name: string;
+  }> {
+    const ab = await file.arrayBuffer();
+    const ctx = getCtx();
+    const buf = await ctx.decodeAudioData(ab.slice(0));
+    const numCh = buf.numberOfChannels;
+    const frames = buf.length;
+    // Downmix to mono.
+    let mono: Float32Array;
+    if (numCh === 1) {
+      mono = new Float32Array(buf.getChannelData(0));
+    } else {
+      const l = buf.getChannelData(0);
+      const r = buf.getChannelData(Math.min(1, numCh - 1));
+      mono = new Float32Array(frames);
+      for (let i = 0; i < frames; i++) mono[i] = (l[i] + r[i]) * 0.5;
+    }
+    // Resample to 44100 Hz (ESX-1 target rate).
+    const ESX_TARGET_SR = 44100;
+    if (buf.sampleRate !== ESX_TARGET_SR) {
+      mono = polyPhaseResample(mono, buf.sampleRate, ESX_TARGET_SR, 1);
+    }
+    // Strip extension from filename for the slot-name.
+    const baseName = file.name.replace(/\.[^.]+$/, "");
+    return { pcm: mono, sampleRate: ESX_TARGET_SR, channels: 1, name: baseName };
+  }
+
+  function handleEsxSampleReplaceClick(slot: number): void {
+    if (!requireProFeature(PRO_FEATURE_KORG_BANK_WRITE)) return;
+    esxSampleReplaceTargetSlotRef.current = slot;
+    esxSampleReplaceInputRef.current?.click();
+  }
+
+  async function handleEsxSampleReplaceInput(
+    e: React.ChangeEvent<HTMLInputElement>,
+  ): Promise<void> {
+    const f = e.target.files?.[0];
+    e.target.value = "";
+    const slot = esxSampleReplaceTargetSlotRef.current;
+    esxSampleReplaceTargetSlotRef.current = null;
+    if (!f || slot == null) return;
+    await replaceEsxSampleSlot(slot, f);
+  }
+
+  async function replaceEsxSampleSlot(slot: number, file: File): Promise<void> {
+    setBusy(true);
+    try {
+      const decoded = await decodeWavForEsxSample(file);
+      const entry: EsxSamplePatchEntry = {
+        pcmData: decoded.pcm,
+        sampleRate: decoded.sampleRate,
+        channels: decoded.channels,
+        name: decoded.name.slice(0, 8),
+        level: 100,
+      };
+      setEsxSamplePending((prev) => stageEsxSamplePatch(prev, slot, entry));
+      setEsxSampleRows((prev) =>
+        prev.map((r) =>
+          r.index === slot
+            ? {
+                index: slot,
+                empty: false,
+                name: decoded.name.slice(0, 8),
+                channels: 1,
+                sampleRate: decoded.sampleRate,
+                frames: decoded.pcm.length,
+                level: 100,
+              }
+            : r,
+        ),
+      );
+      toast(
+        `Slot #${slot} → "${decoded.name.slice(0, 8) || "(unnamed)"}" (${decoded.pcm.length} frames)`,
+        { kind: "success", duration: 2500 },
+      );
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast(`Fehler beim Replace: ${msg}`, { kind: "error", duration: 5000 });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function handleEsxSampleRevertSlot(slot: number): void {
+    setEsxSamplePending((prev) => unstageEsxSamplePatch(prev, slot));
+    // Refresh row from the (untouched) loaded bank by re-parsing.
+    if (esxBankBuffer) {
+      try {
+        const bank = parseEsxBank(esxBankBuffer);
+        const rows = buildEsxSampleSlotOverview(bank);
+        setEsxSampleRows((prev) =>
+          rows.map((r) => {
+            if (esxSamplePending.has(r.index) && r.index !== slot) {
+              const old = prev.find((p) => p.index === r.index);
+              return old ?? r;
+            }
+            return r;
+          }),
+        );
+      } catch {
+        /* keep existing rows */
+      }
+    }
+  }
+
+  function handleEsxSampleDragOver(
+    e: React.DragEvent<HTMLLIElement>,
+    slot: number,
+  ): void {
+    if (!e.dataTransfer.types.includes("Files")) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "copy";
+    setEsxSampleDropTargetSlot(slot);
+  }
+
+  function handleEsxSampleDragLeave(): void {
+    setEsxSampleDropTargetSlot(null);
+  }
+
+  async function handleEsxSampleDrop(
+    e: React.DragEvent<HTMLLIElement>,
+    slot: number,
+  ): Promise<void> {
+    e.preventDefault();
+    setEsxSampleDropTargetSlot(null);
+    const file = e.dataTransfer.files?.[0];
+    if (!file) return;
+    await replaceEsxSampleSlot(slot, file);
   }
 
   // ─── Slice-Editor (v3.8.0) ─────────────────────────────────────────────────
@@ -927,6 +1131,28 @@ export function KorgBankEditor({
     [esxRows, esxSelectedSlot],
   );
 
+  // v3.31.0 — Sample-Tab computed
+  const esxSampleFilledCount = useMemo(
+    () => esxSampleRows.filter((r) => !r.empty).length,
+    [esxSampleRows],
+  );
+  const esxSamplePendingCount = useMemo(
+    () => countPendingEsxSamplePatches(esxSamplePending),
+    [esxSamplePending],
+  );
+  const esxSampleVisibleRows = useMemo(
+    () => filterEsxSampleRows(esxSampleRows, esxSampleSearch, esxSampleHideEmpty),
+    [esxSampleRows, esxSampleSearch, esxSampleHideEmpty],
+  );
+  const esxSampleSelectedRow = useMemo(
+    () =>
+      esxSampleSelectedSlot == null
+        ? null
+        : esxSampleRows.find((r) => r.index === esxSampleSelectedSlot) ?? null,
+    [esxSampleRows, esxSampleSelectedSlot],
+  );
+  const esxTotalPendingCount = esxPendingCount + esxSamplePendingCount;
+
   if (!open) return null;
 
   return (
@@ -954,8 +1180,8 @@ export function KorgBankEditor({
                 : mode === "edit"
                   ? `Editiere ${openedSourceName || "Bank"} · ${filledCountOpened}/${E2S_MAX_SLOTS} Slots · ${dirtyCountOpened} geändert`
                   : esxBankBuffer
-                    ? `ESX Pattern-Patch · ${esxFilledCount}/256 belegt · ${esxPendingCount} geändert`
-                    : "ESX Pattern-Patch · keine Bank geladen"}
+                    ? `ESX Bank-Edit · ${esxFilledCount}/256 Pat · ${esxSampleFilledCount}/256 Smp · ${esxTotalPendingCount} geändert`
+                    : "ESX Bank-Edit · keine Bank geladen"}
             </p>
           </div>
 
@@ -1047,6 +1273,15 @@ export function KorgBankEditor({
           className="hidden"
           onChange={handleEsxBankFileInput}
         />
+        {/* v3.31.0 — ESX-Sample WAV picker */}
+        <input
+          ref={esxSampleReplaceInputRef}
+          data-testid="korg-bank-editor-esx-sample-replace-input"
+          type="file"
+          accept=".wav,.aiff,.aif,.mp3,audio/*"
+          className="hidden"
+          onChange={handleEsxSampleReplaceInput}
+        />
 
         {/* Body */}
         <div className="flex-1 min-h-0 flex flex-col md:flex-row">
@@ -1065,7 +1300,7 @@ export function KorgBankEditor({
               : mode === "edit"
                 ? `${filledCountOpened} Slots · ${dirtyCountOpened} geändert / ${filledCountOpened - dirtyCountOpened} bit-exakt`
                 : esxBankBuffer
-                  ? `${esxFilledCount}/256 belegt · ${esxPendingCount} Patch(es) ausstehend · Rest bit-exakt`
+                  ? `${esxFilledCount}/256 Pat · ${esxSampleFilledCount}/256 Smp · ${esxTotalPendingCount} Patch(es) ausstehend · Rest bit-exakt`
                   : "Keine ESX-Bank geladen"}
           </p>
           <div className="flex items-center gap-2">
@@ -1081,7 +1316,7 @@ export function KorgBankEditor({
               <button
                 data-testid="korg-bank-editor-esx-save"
                 onClick={handleEsxSaveBank}
-                disabled={busy || !esxBankBuffer || esxPendingCount === 0}
+                disabled={busy || !esxBankBuffer || esxTotalPendingCount === 0}
                 className="px-3 py-1 rounded text-xs bg-accent-primary text-bg-base hover:opacity-90 transition-opacity disabled:opacity-40 flex items-center gap-2"
               >
                 {busy ? "Speichere..." : "Als .esx speichern"}
@@ -1491,7 +1726,7 @@ export function KorgBankEditor({
     );
   }
 
-  // ─── Render: ESX-Pattern-Patch Mode (v3.29.0) ──────────────────────────────
+  // ─── Render: ESX-Pattern-Patch + Sample-Patch Mode (v3.29.0, v3.31.0) ──────
 
   function renderEsxModeBody(): React.ReactElement {
     if (!esxBankBuffer) {
@@ -1500,12 +1735,11 @@ export function KorgBankEditor({
           <div className="text-center space-y-3">
             <p className="text-sm text-text-muted">
               Lade eine existierende <code className="text-text-primary">.esx</code>{" "}
-              Pattern-Bank (KORG ESX-1 Backup).
+              ESX-1 Bank (KORG ESX-1 Backup).
             </p>
             <p className="text-xs text-text-dim">
-              Du kannst einzelne Pattern-Slots mit deinem aktuellen Synthstudio-
-              Pattern überschreiben. Alles andere (Samples, Songs, Globals)
-              bleibt bit-exakt erhalten.
+              Du kannst einzelne Pattern- oder Sample-Slots ersetzen. Alles
+              andere (Songs, Globals, andere Slots) bleibt bit-exakt erhalten.
             </p>
             <button
               data-testid="korg-bank-editor-esx-open"
@@ -1524,6 +1758,65 @@ export function KorgBankEditor({
       );
     }
 
+    return (
+      <div className="flex-1 flex flex-col min-h-0">
+        {/* Sub-Tab Toggle (Patterns | Samples) */}
+        <div
+          data-testid="korg-bank-editor-esx-subtab-toggle"
+          role="tablist"
+          className="flex items-center gap-2 px-3 py-2 border-b border-border-color"
+        >
+          <button
+            role="tab"
+            data-testid="korg-bank-editor-esx-subtab-patterns"
+            aria-selected={esxSubTab === "patterns"}
+            onClick={() => setEsxSubTab("patterns")}
+            disabled={busy}
+            className={`px-3 py-1 rounded text-xs transition-colors disabled:opacity-40 ${
+              esxSubTab === "patterns"
+                ? "bg-accent-primary text-bg-base"
+                : "bg-bg-elevated text-text-muted hover:text-text-primary"
+            }`}
+          >
+            Patterns
+            {esxPendingCount > 0 && (
+              <span className="ml-1 text-[10px] text-accent-danger">
+                ●{esxPendingCount}
+              </span>
+            )}
+          </button>
+          <button
+            role="tab"
+            data-testid="korg-bank-editor-esx-subtab-samples"
+            aria-selected={esxSubTab === "samples"}
+            onClick={() => setEsxSubTab("samples")}
+            disabled={busy}
+            className={`px-3 py-1 rounded text-xs transition-colors disabled:opacity-40 ${
+              esxSubTab === "samples"
+                ? "bg-accent-primary text-bg-base"
+                : "bg-bg-elevated text-text-muted hover:text-text-primary"
+            }`}
+          >
+            Samples (Mono)
+            {esxSamplePendingCount > 0 && (
+              <span className="ml-1 text-[10px] text-accent-danger">
+                ●{esxSamplePendingCount}
+              </span>
+            )}
+          </button>
+          <span className="text-[10px] text-text-dim ml-auto">
+            Stereo-Samples folgen in v3.32
+          </span>
+        </div>
+
+        <div className="flex-1 min-h-0 flex flex-col md:flex-row">
+          {esxSubTab === "patterns" ? renderEsxPatternsBody() : renderEsxSamplesBody()}
+        </div>
+      </div>
+    );
+  }
+
+  function renderEsxPatternsBody(): React.ReactElement {
     return (
       <>
         {/* Left — Pattern-Slot-Liste mit Filter */}
@@ -1736,6 +2029,233 @@ export function KorgBankEditor({
           {resultMsg && (
             <p
               data-testid="korg-bank-editor-esx-status"
+              className="text-xs text-text-muted pt-2 border-t border-border-color"
+            >
+              {resultMsg}
+            </p>
+          )}
+        </div>
+      </>
+    );
+  }
+
+  // ─── Render: ESX-Sample-Patch Sub-Tab (v3.31.0) ────────────────────────────
+
+  function renderEsxSamplesBody(): React.ReactElement {
+    return (
+      <>
+        {/* Left — Sample-Slot-Liste mit Filter */}
+        <div className="md:w-2/5 border-r border-border-color overflow-y-auto p-2 flex flex-col gap-2">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <h3 className="text-xs font-semibold text-text-primary">
+              Mono-Sample-Slots ({esxSampleVisibleRows.length}/{esxSampleRows.length})
+            </h3>
+          </div>
+
+          {/* Filter row */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <input
+              data-testid="korg-bank-editor-esx-sample-search"
+              type="text"
+              placeholder="Suchen (Name oder Index)"
+              value={esxSampleSearch}
+              onChange={(e) => setEsxSampleSearch(e.target.value)}
+              className="flex-1 min-w-[120px] bg-bg-elevated border border-border-color rounded text-xs px-2 py-0.5 text-text-primary placeholder:text-text-dim"
+            />
+            <label className="text-[10px] text-text-muted flex items-center gap-1">
+              <input
+                data-testid="korg-bank-editor-esx-sample-hide-empty"
+                type="checkbox"
+                checked={esxSampleHideEmpty}
+                onChange={(e) => setEsxSampleHideEmpty(e.target.checked)}
+                className="accent-accent-primary"
+              />
+              Leere verbergen
+            </label>
+          </div>
+
+          <ul
+            className="space-y-0.5 flex-1 min-h-0"
+            data-testid="korg-bank-editor-esx-sample-list"
+          >
+            {esxSampleVisibleRows.length === 0 ? (
+              <li className="text-xs text-text-dim italic py-4 text-center">
+                Keine Sample-Slots passen zu deinem Filter.
+              </li>
+            ) : (
+              esxSampleVisibleRows.map((r) => {
+                const dirty = esxSamplePending.has(r.index);
+                const selected = esxSampleSelectedSlot === r.index;
+                const isDropTarget = esxSampleDropTargetSlot === r.index;
+                return (
+                  <li
+                    key={r.index}
+                    onDragOver={(e) => handleEsxSampleDragOver(e, r.index)}
+                    onDragLeave={handleEsxSampleDragLeave}
+                    onDrop={(e) => handleEsxSampleDrop(e, r.index)}
+                  >
+                    <button
+                      data-testid={`korg-bank-editor-esx-sample-slot-${r.index}`}
+                      onClick={() => setEsxSampleSelectedSlot(r.index)}
+                      className={`w-full flex items-center gap-2 px-2 py-1 rounded text-xs text-left transition-colors border ${
+                        selected
+                          ? "border-accent-primary bg-bg-elevated"
+                          : isDropTarget
+                            ? "border-accent-success bg-bg-elevated"
+                            : "border-transparent hover:bg-bg-elevated"
+                      } ${r.empty && !dirty ? "opacity-50" : ""}`}
+                    >
+                      <span className="font-mono text-text-dim w-10 flex-shrink-0">
+                        #{r.index.toString().padStart(3, "0")}
+                      </span>
+                      <span
+                        className={`flex-1 truncate ${
+                          r.empty && !dirty
+                            ? "text-text-dim italic"
+                            : "text-text-primary"
+                        }`}
+                      >
+                        {r.empty && !dirty ? "—Empty—" : r.name || "(unnamed)"}
+                      </span>
+                      {!r.empty && (
+                        <span className="text-[10px] text-text-dim w-16 truncate text-right">
+                          {formatSampleLength(r.frames, r.sampleRate)}
+                        </span>
+                      )}
+                      {dirty && (
+                        <span
+                          data-testid={`korg-bank-editor-esx-sample-dirty-${r.index}`}
+                          className="text-[10px] text-accent-danger flex-shrink-0"
+                          title="Slot wird beim Speichern überschrieben"
+                        >
+                          ●
+                        </span>
+                      )}
+                    </button>
+                  </li>
+                );
+              })
+            )}
+          </ul>
+        </div>
+
+        {/* Right — Sample-Slot-Detail */}
+        <div className="flex-1 overflow-y-auto p-3 space-y-3">
+          {esxSampleSelectedRow === null ? (
+            <p
+              data-testid="korg-bank-editor-esx-sample-no-selection"
+              className="text-xs text-text-muted text-center py-8"
+            >
+              Wähle links einen Sample-Slot aus, um ihn mit einer WAV-Datei zu
+              ersetzen.
+              <br />
+              <span className="text-[10px] text-text-dim">
+                Tipp: Du kannst auch eine WAV-Datei direkt auf einen Slot ziehen.
+              </span>
+            </p>
+          ) : (
+            <div
+              data-testid="korg-bank-editor-esx-sample-detail"
+              className="space-y-3"
+            >
+              <div className="flex items-center justify-between pb-2 border-b border-border-color">
+                <span className="font-mono text-xs text-text-dim">
+                  Mono-Sample-Slot #{esxSampleSelectedRow.index.toString().padStart(3, "0")}
+                </span>
+                {esxSamplePending.has(esxSampleSelectedRow.index) && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] text-accent-danger">
+                      ● wird ersetzt
+                    </span>
+                    <button
+                      data-testid="korg-bank-editor-esx-sample-revert"
+                      onClick={() => handleEsxSampleRevertSlot(esxSampleSelectedRow.index)}
+                      className="px-2 py-0.5 rounded text-[10px] bg-bg-elevated text-text-muted hover:text-text-primary transition-colors"
+                      title="Patch verwerfen — Originalslot wiederherstellen"
+                    >
+                      ↺ Revert
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-1 text-xs text-text-muted">
+                <p>
+                  <span className="text-text-dim">Name:</span>{" "}
+                  <span className="text-text-primary font-medium">
+                    {esxSampleSelectedRow.empty
+                      ? "—Empty—"
+                      : esxSampleSelectedRow.name || "(unnamed)"}
+                  </span>
+                </p>
+                {!esxSampleSelectedRow.empty && (
+                  <>
+                    <p>
+                      <span className="text-text-dim">Channels:</span>{" "}
+                      <span className="text-text-primary">
+                        {esxSampleSelectedRow.channels === 1 ? "Mono" : "Stereo"}
+                      </span>
+                    </p>
+                    <p>
+                      <span className="text-text-dim">Sample-Rate:</span>{" "}
+                      <span className="text-text-primary">
+                        {esxSampleSelectedRow.sampleRate} Hz
+                      </span>
+                    </p>
+                    <p>
+                      <span className="text-text-dim">Länge:</span>{" "}
+                      <span className="text-text-primary">
+                        {formatSampleLength(
+                          esxSampleSelectedRow.frames,
+                          esxSampleSelectedRow.sampleRate,
+                        )}{" "}
+                        ({esxSampleSelectedRow.frames} fr)
+                      </span>
+                    </p>
+                    <p>
+                      <span className="text-text-dim">Level:</span>{" "}
+                      <span className="text-text-primary">
+                        {esxSampleSelectedRow.level}/127
+                      </span>
+                    </p>
+                  </>
+                )}
+              </div>
+
+              <div className="pt-2 border-t border-border-color space-y-2">
+                <p className="text-xs text-text-muted">
+                  Den Slot mit einer WAV/AIFF/MP3-Datei ersetzen. Wird auf
+                  44100 Hz Mono resampelt (ESX-1 Hardware-Format).
+                </p>
+                <button
+                  data-testid="korg-bank-editor-esx-sample-replace"
+                  onClick={() => handleEsxSampleReplaceClick(esxSampleSelectedRow.index)}
+                  disabled={busy}
+                  className="w-full px-3 py-2 rounded text-sm bg-accent-primary text-bg-base hover:opacity-90 transition-opacity disabled:opacity-40 inline-flex items-center justify-center gap-2"
+                >
+                  🎵 Mit WAV-Datei ersetzen…
+                </button>
+              </div>
+
+              {/* Dateiname */}
+              <div className="pt-2 border-t border-border-color">
+                <label className="block text-xs text-text-muted">
+                  Dateiname beim Speichern
+                  <input
+                    data-testid="korg-bank-editor-esx-sample-filename"
+                    type="text"
+                    value={filename}
+                    onChange={(e) => setFilename(e.target.value)}
+                    className="w-full mt-1 bg-bg-base border border-border-color rounded px-2 py-1 text-sm text-text-primary"
+                  />
+                </label>
+              </div>
+            </div>
+          )}
+
+          {resultMsg && (
+            <p
+              data-testid="korg-bank-editor-esx-sample-status"
               className="text-xs text-text-muted pt-2 border-t border-border-color"
             >
               {resultMsg}
