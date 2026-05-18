@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.38.0",
+    version: "3.39.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -89,6 +89,36 @@ const INDEX = {
   // ─── KNOWN FILE INDEX ──────────────────────────────────────
   // Key files agents have analyzed. Add new entries after working on a file.
   files: {
+    "client/src/audio/AudioEngine.ts (v3.39.0 stepCount=64)": {
+      role:     "v3.39.0 ERWEITERT: PatternData.stepCount '16 | 32' → '16 | 32 | 64' (KORG-Parität, ESX-1 + E2 Sampler max-Length). setSteps(steps: 16|32|64). smoothBpmTransition(stepCount: 16|32|64 = 16). _steps internal field bleibt private number — Schedule-Loop _currentStep modulo _steps läuft alle 64 Steps unverändert durch. v3.37.0 pendingStartStep / consumePendingStartStep / stepCount-Getter unverändert.",
+      lastSeen: "2026-05-18T19:30:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/utils/projectSerializer.ts (v3.39.0 v1.19)": {
+      role:     "v3.39.0: SYNTH_FILE_VERSION '1.18' → '1.19' (additive schema-bump für stepCount=64). SynthProject.automation.stepCount '16|32' → '16|32|64'. Schema-Doc-Comment erweitert: v1.19-Files mit stepCount=64 sind valid; v1.18-Files mit stepCount=16/32 laden unverändert (parseProject validiert stepCount nicht). serializeProject/parseProject/toJson/openProjectFilePicker/cacheProjectLocally Public-API unverändert.",
+      lastSeen: "2026-05-18T19:30:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/utils/electribeImport.ts (v3.39.0 64→64)": {
+      role:     "v3.39.0: convertParsedPatternToSynthstudio mappt parsed.stepLength=64 → stepCount=64 (vorher capped 32 mit Truncation). SynthstudioPatternImport.stepCount '16|32' → '16|32|64'. Mapping-Logic: >=64 → 64, >=32 → 32, sonst 16. v3.34-Builder + Parser unverändert — User-Win BodyTalk1 (64-step) wird jetzt LOSSLESS importiert.",
+      lastSeen: "2026-05-18T19:30:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/utils/korg/esxPatternConvert.ts (v3.39.0 64→64)": {
+      role:     "v3.39.0: convertEsxPatternToSynthstudio mappt lengthSteps>32 → 64 (vorher max 32 mit cap). SynthstudioPatternImport.stepCount '16|32' → '16|32|64'. Synthstudio kann jetzt ESX-1-Patterns mit > 32 Steps nativ als 64-step laden.",
+      lastSeen: "2026-05-18T19:30:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/components/DrumMachine/DrumMachine.tsx (v3.39.0 step-count-toggle)": {
+      role:     "v3.39.0: Step-Count-Toggle in Pattern-Settings-Toolbar erweitert um 64-Button (vorher nur 16/32). data-testid 'dm-step-count-toggle' + 'dm-step-count-16/-32/-64' + Tooltip '64 Steps (KORG ESX-1 / E2 Max)' für 64-Button. Grid-Rendering in ChannelStrip nutzt bereits dynamisches stepCount: number → 64-Cells werden voll flex-1 horizontal gerendert (cells werden bei 64 entsprechend schmaler ~7px). v3.38 BPM-Slider-Lock + alle anderen Toolbar-Features unverändert.",
+      lastSeen: "2026-05-18T19:30:00.000Z",
+      ownedBy:  "backend"
+    },
+    "tests/features/multi-bar-pattern.test.ts (v3.39.0)": {
+      role:     "v3.39.0 NEU: 13 Tests in 4 describes (env:node). (1) PatternData mit 64 Steps × 5: literal-type acceptance, Round-Trip serialize→toJson→parseProject (alle 64 frames erhalten), BC für 16/32 (separate Tests), SYNTH_FILE_VERSION === '1.19'. (2) ESX-Importer × 3: lengthSteps=64 mappt zu stepCount=64 (8 active beats survive), 32→32, 16→16. (3) E2-Importer × 2: parsed.stepLength=64 → 64 (Beat 0/16/32/48 preserved, war vorher nur 0/16 weil 32-cap), 32→32. (4) scaleMotionPointsToStepCount × 3: factor=4 für targetStepCount=64 (key*4), factor=2 für 32, passthrough für 16.",
+      lastSeen: "2026-05-18T19:30:00.000Z",
+      ownedBy:  "backend"
+    },
     "client/src/components/DrumMachine/DrumMachine.tsx (v3.38.0)": {
       role:     "v3.38.0 ERWEITERT: Props um optional externalSyncEnabled?:boolean + externalSyncStatus?:'off'|'tempo-only'|'running'|'lost' erweitert. NEU EXPORT pure-fn isBpmExternallyLocked(enabled, status) — locked nur wenn enabled===true UND status===('running'|'tempo-only'); 'off'/'lost'/undefined→false (defensive). bpmLocked-Flag im Komponenten-Body → BPM-Block bekommt opacity-50 + Lock-Icon 🔒 + alle 3 controls (−/+/input) bekommen disabled + readOnly + Tooltip 'BPM extern gesynced — Slider gesperrt'. onBlur ignored bei locked. data-testid dm-bpm-control + dm-bpm-input + dm-bpm-lock-icon. v1.86 MIDI-Learn-Bridge unverändert (rechtsklick weiterhin aktiv). Alle anderen Toolbar-Features unverändert.",
       lastSeen: "2026-05-18T19:00:00.000Z",
@@ -1512,6 +1542,53 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "backend",
+      timestamp: "2026-05-18T19:30:00.000Z",
+      done: [
+        "v3.39.0: 64-Step Pattern Support — matched KORG max-Length (ESX-1 + E2 Sampler). Closes Caveat from electribeImport/esxPatternConvert: BodyTalk1 64-step lädt jetzt NATIV als 64-step (vorher capped 32). pnpm check clean, 4366/4382 tests passed (16 skipped, +13 NEU).",
+        "PatternData TYPE ERWEITERT: client/src/audio/AudioEngine.ts PatternData.stepCount '16 | 32' → '16 | 32 | 64'. AudioEngine.setSteps(steps: 16|32|64), AudioEngine.smoothBpmTransition(stepCount: 16|32|64 = 16). stepCount-Getter unverändert (number). _steps internal field bleibt number — kein scheduling-loop-Change nötig: _currentStep modulo _steps läuft alle 64 Steps korrekt durch.",
+        "PROPAGATED durch 11 Files: useDrumMachineStore.ts (setStepCount + makePattern), useAutomationStore.ts (AutomationState.stepCount + setStepCount), useAutomationStore-set-callback, usePatternLibraryStore.ts (PatternLibraryEntry.stepCount), Automation/AutomationView.tsx (AutomationViewProps), utils/imports/index.ts, utils/imports/alsImport.ts (loopEnd > 32 → 64), utils/electribeMotionMapping.ts (scaleMotionPointsToStepCount factor 4 für 64), utils/projectTemplates.ts (ProjectTemplate.stepCount), utils/projectSerializer.ts (SynthProject.automation.stepCount), tests/features/midi-export.test.ts makePattern-helper, App.tsx motion-bridge targetStepCount.",
+        "KORG-IMPORTER 64-CAP ENTFERNT (Hauptgewinn dieses Release): (a) client/src/utils/electribeImport.ts convertParsedPatternToSynthstudio — stepLength>=64 → 64 (vorher capped 32), Comment-Update v3.39. (b) client/src/utils/korg/esxPatternConvert.ts convertEsxPatternToSynthstudio — lengthSteps>32 → 64, lengthSteps>16 → 32, sonst 16 (vorher nur 16/32 mit cap).",
+        "UI-TOGGLE ERWEITERT: client/src/components/DrumMachine/DrumMachine.tsx Pattern-Settings-Toolbar — Step-Count-Buttons '16|32' → '16|32|64'. data-testid 'dm-step-count-toggle' + 'dm-step-count-16/-32/-64' + Title-Tooltip '64 Steps (KORG ESX-1 / E2 Max)'. Grid-Rendering in ChannelStrip nutzt bereits dynamisches stepCount: number → 64-Cells werden korrekt flex-1 voll gerendert (1px gap, h-7 px). KEIN Page-Switcher in v3.39 (konservativer Approach): Steps werden voll horizontal gerendert mit flex-1, cells werden bei 64 entsprechend schmaler (~7px statt 13px @ typischer Bildschirmbreite). UI-Polish (Pages oder scroll) auf v3.40 verschoben — Funktional alle 64 Steps editierbar.",
+        "SCHEMA-BUMP v1.18 → v1.19: client/src/utils/projectSerializer.ts SYNTH_FILE_VERSION '1.18' → '1.19'. Comment-Block aktualisiert mit v1.19-Beschreibung: additive bump für stepCount=64. BACKWARD-COMPAT: v1.18-Files mit stepCount=16/32 laden unverändert (parseProject validiert stepCount nicht — Pattern-Daten gehen as-is durch). v1.19-Files mit stepCount=64 werden in v1.18-Readern silent toleriert (type-only contract).",
+        "NEU tests/features/multi-bar-pattern.test.ts: 13 Tests in 4 describes (env:node). (1) PatternData mit 64 Steps × 5: literal-type acceptance, Round-Trip serialize/parse, BC für 16/32, SYNTH_FILE_VERSION === '1.19'. (2) ESX-Importer mit 64 × 3: 64→64 (no cap, 8 active beats survive), 32→32, 16→16. (3) E2-Importer mit 64 × 2: 64→64 (Beat 0/16/32/48 all preserved), 32→32. (4) scaleMotionPointsToStepCount × 3: factor=4 für 64, factor=2 für 32, passthrough für 16.",
+        "UPDATED 8 BESTEHENDE TESTS: project-serializer.test.ts (2× '1.18' → '1.19'), script-store.test.ts (1× '1.18' → '1.19'), audio-track-store.test.ts (2× '1.18' → '1.19'), electribe-import.test.ts (2× 'clampt 64→32' / 'wird auf 32 geclampt' → 'v3.39 bleibt 64'), electribe-pattern-roundtrip-real.test.ts (1× 'caps 64→32' → 'bleibt 64 lossless' + Active-Step-Count-Assertion erweitert auf alle 64 Steps statt nur first-32). v1.18-Format-Literals in parseProject-Tests UNVERÄNDERT (testen weiter dass v1.18-Files korrekt geladen werden).",
+        "BACKWARD-COMPAT VERIFIZIERT: (a) Default-Pattern-Length bei New-Pattern bleibt 16 (User-Choice unverändert — makePattern signature default = 16). (b) Bestehende v1.18 .synth-Files mit 16/32 patterns laden in v1.19 unverändert. (c) usePatternGeneratorStore.ts bleibt '16 | 32' (Generator-Templates nutzen keine 64-Step-Presets — folgt potentiell in v3.40 wenn AI-Templates Multi-Bar lernen).",
+        "package.json + agents/INDEX.js version 3.38.0 → 3.39.0."
+      ],
+      next: [
+        "v3.40 UI-Polish für 64-Step-Grid: Page-Switcher '1/4 | 2/4 | 3/4 | 4/4' mit jeweils 16 Steps angezeigt, ODER horizontal-scrollable Grid mit Group-Border alle 16 Steps (vorhandene stepGroupBorder-fn unterstützt das bereits). Aktuell flex-1 macht cells bei 64 Steps schmal (~7px) — funktional, aber nicht ideal für tactile Bedienung auf kleineren Displays.",
+        "v3.40 Optional: usePatternGeneratorStore + patternGenerator.ts auf 16|32|64 erweitern damit AI-Templates auch 64-Step-Patterns erzeugen können (aktuell beschränkt auf 16/32).",
+        "v3.40 Optional: ESX-Builder (Synthstudio → ESX-1 Export) muss umgekehrt 64-Step-Patterns serialisieren — esxPatternBuilder.ts prüfen.",
+        "Vorhandene v3.38-Items unverändert (UI-LED für external-sync, Welcome-Wizard-translation-refactor, Undo-Stack-Persistence)."
+      ],
+      changed: [
+        "client/src/audio/AudioEngine.ts (PatternData.stepCount 16|32 → 16|32|64, setSteps + smoothBpmTransition signatures, comment update)",
+        "client/src/store/useDrumMachineStore.ts (setStepCount type + makePattern default + Action-signature)",
+        "client/src/store/useAutomationStore.ts (AutomationState.stepCount + setStepCount action)",
+        "client/src/store/usePatternLibraryStore.ts (PatternLibraryEntry.stepCount)",
+        "client/src/components/Automation/AutomationView.tsx (AutomationViewProps.stepCount)",
+        "client/src/components/DrumMachine/DrumMachine.tsx (Step-Count-Toggle erweitert um 64 + data-testids dm-step-count-toggle/-16/-32/-64 + Tooltip)",
+        "client/src/utils/imports/index.ts (importResultToPatterns return-type)",
+        "client/src/utils/imports/alsImport.ts (loopEnd > 32 → 64)",
+        "client/src/utils/electribeImport.ts (convertParsedPatternToSynthstudio 64→64, Cap entfernt, SynthstudioPatternImport.stepCount)",
+        "client/src/utils/korg/esxPatternConvert.ts (convertEsxPatternToSynthstudio 64→64, SynthstudioPatternImport.stepCount)",
+        "client/src/utils/electribeMotionMapping.ts (scaleMotionPointsToStepCount targetStepCount + factor 4 für 64)",
+        "client/src/utils/projectTemplates.ts (ProjectTemplate.stepCount)",
+        "client/src/utils/projectSerializer.ts (SYNTH_FILE_VERSION '1.18' → '1.19' + Schema-Doc + SynthProject.automation.stepCount)",
+        "client/src/App.tsx (targetStepCount type)",
+        "tests/features/multi-bar-pattern.test.ts (NEU 13 Tests)",
+        "tests/features/midi-export.test.ts (makePattern signature)",
+        "tests/features/project-serializer.test.ts (SYNTH_FILE_VERSION assertion)",
+        "tests/features/script-store.test.ts (SYNTH_FILE_VERSION assertion)",
+        "tests/features/audio-track-store.test.ts (SYNTH_FILE_VERSION assertions)",
+        "tests/features/electribe-import.test.ts (Cap-Tests → 64-bleibt-64-Tests)",
+        "tests/features/electribe-pattern-roundtrip-real.test.ts (BodyTalk1 lossless 64 statt cap 32)",
+        "package.json (3.38.0 → 3.39.0)",
+        "agents/INDEX.js (version + workLog)"
+      ]
+    },
     {
       agent:     "frontend",
       timestamp: "2026-05-18T19:00:00.000Z",

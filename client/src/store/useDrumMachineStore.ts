@@ -125,7 +125,7 @@ export interface DrumMachineActions {
   randomizePattern: (partId: string) => void;
   shiftPattern: (partId: string, direction: "left" | "right") => void;
 
-  setStepCount: (count: 16 | 32) => void;
+  setStepCount: (count: 16 | 32 | 64) => void;
   setCurrentStep: (step: number) => void;
   setVelocityMode: (active: boolean) => void;
   setPitchMode: (active: boolean) => void;
@@ -240,7 +240,7 @@ const DEFAULT_PART_NAMES = [
   "Clap", "Tom Hi", "Tom Lo", "Perc", "FX",
 ];
 
-function makePattern(name: string, stepCount: 16 | 32 = 16): PatternData {
+function makePattern(name: string, stepCount: 16 | 32 | 64 = 16): PatternData {
   return {
     id: makeId(),
     name,
@@ -963,7 +963,7 @@ export function useDrumMachineStore(): DrumMachineState & DrumMachineActions {
     }));
   }, [updatePatterns, state.activePatternId]);
 
-  const setStepCount = useCallback((count: 16 | 32) => {
+  const setStepCount = useCallback((count: 16 | 32 | 64) => {
     updatePatterns(ps => ps.map(p => {
       if (p.id !== state.activePatternId) return p;
       return {

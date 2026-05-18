@@ -1285,8 +1285,8 @@ export interface SynthstudioPatternImport {
   name: string;
   /** BPM (z.B. 120.0). */
   bpm: number;
-  /** Pattern-Step-Count (16 oder 32 — Hardware-64 wird auf 32 geclampt mit Warn). */
-  stepCount: 16 | 32;
+  /** Pattern-Step-Count (16, 32 oder 64 — Hardware-64 wird ab v3.39 voll übernommen). */
+  stepCount: 16 | 32 | 64;
   /** Swing 0..100 (aktuell Info-only — Synthstudio hat eigenes Groove-System). */
   swing: number;
   /**
@@ -1335,8 +1335,10 @@ export interface SynthstudioPatternImport {
  *   - StepCount 64 wird auf 32 geclampt (Synthstudio max ist 32).
  */
 export function convertParsedPatternToSynthstudio(parsed: ParsedPattern): SynthstudioPatternImport {
-  // StepCount-Mapping: Hardware 16 → 16, 32 → 32, 64 → 32 mit Truncation.
-  const stepCount: 16 | 32 = parsed.stepLength >= 32 ? 32 : 16;
+  // v3.39: StepCount-Mapping: Hardware 16 → 16, 32 → 32, 64 → 64 (vorher capped 64→32).
+  // Synthstudio unterstützt seit v3.39.0 native 64-Step-Patterns (KORG-Parität).
+  const stepCount: 16 | 32 | 64 =
+    parsed.stepLength >= 64 ? 64 : parsed.stepLength >= 32 ? 32 : 16;
   const cap = Math.min(stepCount, parsed.stepLength);
 
   const drumParts: SynthstudioPatternImport["drumParts"] = parsed.parts.map(p => {

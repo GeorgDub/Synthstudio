@@ -18,7 +18,7 @@ export interface PatternLibraryEntry {
   genre: string;
   tags: string[];
   bpm: number;
-  stepCount: 16 | 32;
+  stepCount: 16 | 32 | 64;
   /** Serialisiertes PatternData */
   patternJson: string;
   createdAt: number;

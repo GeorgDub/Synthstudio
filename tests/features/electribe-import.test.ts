@@ -466,11 +466,11 @@ describe("electribeImport – convertParsedPatternToSynthstudio", () => {
     expect(conv.drumParts[2].pan).toBeCloseTo(-1, 1);
   });
 
-  it("clampt StepCount 64 auf 32 (Synthstudio-Limit)", () => {
+  it("v3.39: StepCount 64 bleibt 64 (KORG-Parität, vorher 32-cap)", () => {
     const ab = buildElectribeBuffer({ patterns: [{ stepLength: 64 }] });
     const conv = convertParsedPatternToSynthstudio(parseElectribePattern(ab));
-    expect(conv.stepCount).toBe(32);
-    expect(conv.drumParts[0].steps.length).toBe(32);
+    expect(conv.stepCount).toBe(64);
+    expect(conv.drumParts[0].steps.length).toBe(64);
   });
 
   it("uebernimmt BPM und Pattern-Name", () => {
@@ -1444,12 +1444,12 @@ const REAL_E2SALLPAT_AVAILABLE = (() => {
       }
     });
 
-    it("convertParsedPatternToSynthstudio: StepCount 64 wird auf 32 geclampt", () => {
+    it("v3.39: convertParsedPatternToSynthstudio: StepCount 64 bleibt 64 (KORG-Parität)", () => {
       const buf = loadRealFile(REAL_FILE_BODYTALK);
       if (!buf) return;
       const conv = convertParsedPatternToSynthstudio(parseElectribePattern(buf));
-      // BodyTalk parsed mit stepLength=64, aber Synthstudio-max ist 32.
-      expect(conv.stepCount).toBe(32);
+      // BodyTalk parsed mit stepLength=64 → Synthstudio v3.39 unterstützt 64.
+      expect(conv.stepCount).toBe(64);
     });
   },
 );

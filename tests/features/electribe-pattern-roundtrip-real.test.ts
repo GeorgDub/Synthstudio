@@ -550,31 +550,28 @@ runner("electribePatternBuilder – Real-File Round-Trip (v3.33.0)", () => {
     }
   });
 
-  it("Synthstudio-loop: BodyTalk1 caps 64→32 steps (documented loss)", () => {
+  it("v3.39: Synthstudio-loop: BodyTalk1 bleibt 64 steps (KORG-Parität, kein cap mehr)", () => {
     const real = loadReal(REAL_FILE_BODYTALK);
     const parsed = parseElectribePattern(real);
     expect(parsed.stepLength).toBe(64);
 
     const synthImport = convertParsedPatternToSynthstudio(parsed);
-    // Synthstudio max is 32 — converter caps 64→32 with truncation.
-    expect(synthImport.stepCount).toBe(32);
+    // v3.39: Synthstudio unterstützt jetzt nativ 64 Steps — kein cap mehr.
+    expect(synthImport.stepCount).toBe(64);
 
     const patternData = synthImportToPatternData(synthImport, parsed.bpm);
     const e2Input = convertSynthstudioPatternToE2(patternData, { globalBpm: parsed.bpm });
     const built = buildE2PatternFile(e2Input);
     const final = parseElectribePattern(built);
 
-    // After the loop the rebuilt file is a 32-step pattern (NOT 64).
-    expect(final.stepLength).toBe(32);
+    // After the loop the rebuilt file is STILL a 64-step pattern (lossless).
+    expect(final.stepLength).toBe(64);
 
-    // Only the first 32 steps of the original survive — verify the active-
-    // count of the first 32 steps matches the active-count after the loop.
+    // Alle 64 steps der Original-Aktivitäten müssen erhalten bleiben.
     for (let p = 0; p < parsed.parts.length; p++) {
-      const origFirst32 = parsed.parts[p].steps
-        .slice(0, 32)
-        .filter(s => s.active).length;
+      const origActive = parsed.parts[p].steps.filter(s => s.active).length;
       const finalActive = final.parts[p].steps.filter(s => s.active).length;
-      expect(finalActive, `part ${p} active in first 32 steps`).toBe(origFirst32);
+      expect(finalActive, `part ${p} active steps (lossless)`).toBe(origActive);
     }
   });
 

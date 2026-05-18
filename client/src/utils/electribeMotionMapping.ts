@@ -98,23 +98,24 @@ export function mapElectribeLaneToAutomationTarget(
 
 /**
  * Konvertiert die Sparse-Motion-Points (0..1 normalisiert in 16-Step-Slots)
- * auf den Synthstudio-Step-Range. Electribe-Motion-Slots haben 16 Steps; falls
- * targetStepCount=32, werden die Werte ueber 2x gestreckt (Step 0..15 → 0..30).
+ * auf den Synthstudio-Step-Range. Electribe-Motion-Slots haben 16 Steps; bei
+ * targetStepCount=32/64 werden die Werte über 2x bzw. 4x gestreckt.
  *
  * @param points         Electribe-Points (key=0..15)
- * @param targetStepCount 16 | 32 — Step-Count des Ziel-Patterns
+ * @param targetStepCount 16 | 32 | 64 — Step-Count des Ziel-Patterns
  * @returns gestrechtes Sparse-Map
  */
 export function scaleMotionPointsToStepCount(
   points: Record<number, number>,
-  targetStepCount: 16 | 32,
+  targetStepCount: 16 | 32 | 64,
 ): Record<number, number> {
   if (targetStepCount === 16) return { ...points };
+  const factor = targetStepCount === 32 ? 2 : 4;
   const out: Record<number, number> = {};
   for (const key of Object.keys(points)) {
     const k = Number(key);
     if (!Number.isFinite(k)) continue;
-    const targetStep = Math.min(targetStepCount - 1, k * 2);
+    const targetStep = Math.min(targetStepCount - 1, k * factor);
     out[targetStep] = points[k];
   }
   return out;

@@ -172,7 +172,7 @@ function LaneEditor({ lane, stepCount, currentStep, onSetPoint, onClearPoint, on
 
 export interface AutomationViewProps {
   lanes: AutomationLane[];
-  stepCount: 16 | 32;
+  stepCount: 16 | 32 | 64;
   currentStep?: number;
   parts: PartData[];
   recording: boolean;

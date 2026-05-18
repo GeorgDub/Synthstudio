@@ -1840,7 +1840,7 @@ export default function App() {
       }
       const partIds = pattern.parts.map(p => p.id);
       const auto = automationRef.current;
-      const targetStepCount: 16 | 32 = pattern.stepCount;
+      const targetStepCount: 16 | 32 | 64 = pattern.stepCount;
 
       let added = 0;
       let skipped = 0;

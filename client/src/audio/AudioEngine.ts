@@ -346,7 +346,7 @@ export interface FollowAction {
 export interface PatternData {
   id: string;
   name: string;
-  stepCount: 16 | 32;
+  stepCount: 16 | 32 | 64;
   /** Standard-Step-Auflösung für alle Parts (kann pro Part überschrieben werden) */
   stepResolution: StepResolution;
   /** Eigenes BPM (null = globales BPM verwenden) */
@@ -767,11 +767,11 @@ class AudioEngineClass {
   get currentStepIndex(): number {
     return this._currentStep;
   }
-  /** v3.37.0: read-only — aktive Pattern-Step-Anzahl (16 oder 32). */
+  /** v3.39.0: read-only — aktive Pattern-Step-Anzahl (16, 32 oder 64). */
   get stepCount(): number {
     return this._steps;
   }
-  setSteps(steps: 16 | 32) { this._steps = steps; }
+  setSteps(steps: 16 | 32 | 64) { this._steps = steps; }
   setStepResolution(res: StepResolution) { this._stepResolution = res; }
 
   setMetronom(
@@ -910,7 +910,7 @@ class AudioEngineClass {
    * Berechnet wie viele Steps N Bars entsprechen und
    * ändert das interne BPM schrittweise.
    */
-  smoothBpmTransition(targetBpm: number, bars: number, stepCount: 16 | 32 = 16): void {
+  smoothBpmTransition(targetBpm: number, bars: number, stepCount: 16 | 32 | 64 = 16): void {
     const totalSteps = bars * stepCount;
     if (totalSteps <= 0 || Math.abs(this._bpm - targetBpm) < 0.1) {
       this.setBpm(targetBpm);

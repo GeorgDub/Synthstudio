@@ -37,7 +37,7 @@ export interface AutomationLane {
 export interface AutomationState {
   lanes: AutomationLane[];
   /** Anzahl Steps (Pattern-Steps, typisch 16 oder 32) */
-  stepCount: 16 | 32;
+  stepCount: 16 | 32 | 64;
   /** Ob Aufnahme aktiv ist (Live-Recording von Parameteränderungen) */
   recording: boolean;
 }
@@ -49,7 +49,7 @@ export interface AutomationActions {
   clearPoint: (laneId: string, step: number) => void;
   clearLane: (laneId: string) => void;
   setLaneEnabled: (laneId: string, enabled: boolean) => void;
-  setStepCount: (count: 16 | 32) => void;
+  setStepCount: (count: 16 | 32 | 64) => void;
   setRecording: (recording: boolean) => void;
   /** Resettet alle Automation-Lanes + StepCount auf Defaults (BUG-013 fix). */
   resetAutomation: () => void;
@@ -157,7 +157,7 @@ export function useAutomationStore(): AutomationState & AutomationActions {
     }));
   }, []);
 
-  const setStepCount = useCallback((count: 16 | 32) => {
+  const setStepCount = useCallback((count: 16 | 32 | 64) => {
     setState(prev => ({ ...prev, stepCount: count }));
   }, []);
 

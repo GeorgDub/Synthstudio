@@ -4,7 +4,7 @@
  * Serialisiert den vollständigen Projekt-State in ein JSON-Objekt (SynthProject)
  * und stellt Lade-Utilities bereit.
  *
- * Format-Version: "1.18"
+ * Format-Version: "1.19"
  *   - "1.15": audioTracks hinzugefügt – v1.14-Dateien laden weiter
  *   - "1.16": scripts hinzugefügt (project-scope, additiv-optional)
  *     v1.15/v1.14-Dateien laden ohne scripts-Feld weiter → defaultet auf [].
@@ -14,6 +14,11 @@
  *     Stores ausschließlich in localStorage lebten und beim File-Transport
  *     zwischen Rechnern verloren gingen. Alle drei Felder sind additiv-
  *     optional. Pre-v1.18-Files laden unverändert mit Feldern=undefined.
+ *   - "1.19": PatternData.stepCount erweitert um 64 (v3.39, KORG-Parität).
+ *     Backward-compatible: v1.18-Files mit stepCount=16/32 laden unverändert.
+ *     Pre-v1.19-Files mit stepCount=64 sind impossible (Typ ließ es nicht zu);
+ *     v1.19-Files mit stepCount=64 sind in v1.18-Readern ein Type-Mismatch,
+ *     werden aber tolerant geladen (parseProject validiert stepCount nicht).
  * Dateiendung: .synth
  */
 
@@ -38,7 +43,7 @@ import {
   DEFAULT_NOTE_DURATION_MS,
 } from "@/audio/MidiNoteOut";
 
-export const SYNTH_FILE_VERSION = "1.18";
+export const SYNTH_FILE_VERSION = "1.19";
 export const SYNTH_LATEST_KEY = "synthstudio:last-project";
 
 // ─── Typen ───────────────────────────────────────────────────────────────────
@@ -70,7 +75,7 @@ export interface SynthProject {
   };
   automation: {
     lanes: AutomationLane[];
-    stepCount: 16 | 32;
+    stepCount: 16 | 32 | 64;
   };
   /**
    * Externe Audio-Track-Channels (Vocals, Songs zum Remixen).

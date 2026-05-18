@@ -59,7 +59,7 @@ export interface SynthstudioPatternImport {
   /** BPM. */
   bpm: number;
   /** Pattern-Step-Count (16 oder 32). ESX-1 ist immer 16. */
-  stepCount: 16 | 32;
+  stepCount: 16 | 32 | 64;
   /** Swing 0..100 (Info — Synthstudio hat eigenes Groove-System). */
   swing: number;
   /** 16 Parts. */
@@ -104,8 +104,9 @@ export function esxPartHint(partIndex: number): string {
  * Konvertiert ein geparstes ESX-1-Pattern in das Synthstudio-Import-Format.
  *
  * Annahmen:
- *   - StepCount immer 16 (Hardware-Spec). Falls esxPattern.lengthSteps > 16:
- *     wir klampen auf 32 (Synthstudio's Maximum) und uebernehmen die ersten N.
+ *   - StepCount typisch 16 (Hardware-Spec). Seit v3.39.0 unterstützen wir 32/64
+ *     nativ (KORG-Parität). lengthSteps wird gemappt:
+ *       > 32 → 64, > 16 → 32, sonst 16
  *   - Volume 0..127 → 0..1, Pan 0..127 (64=center) → -1..+1.
  *   - Sample-Id wird informativ uebernommen (kein Auto-Load der Slots).
  *
@@ -117,7 +118,8 @@ export function convertEsxPatternToSynthstudio(
   esxPattern: EsxPattern,
   opts: ConvertEsxPatternOpts = {},
 ): SynthstudioPatternImport {
-  const stepCount: 16 | 32 = esxPattern.lengthSteps > 16 ? 32 : 16;
+  const stepCount: 16 | 32 | 64 =
+    esxPattern.lengthSteps > 32 ? 64 : esxPattern.lengthSteps > 16 ? 32 : 16;
   const sourceSteps = Math.min(esxPattern.parts[0]?.steps.length ?? 0, stepCount);
 
   const drumParts: SynthstudioDrumPartImport[] = esxPattern.parts.map((part) => {

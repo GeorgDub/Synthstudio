@@ -10,7 +10,7 @@ export interface ProjectTemplate {
   description: string;
   /** 16 booleans representing the kick pattern for UI preview */
   preview: boolean[];
-  stepCount: 16 | 32;
+  stepCount: 16 | 32 | 64;
   parts: Array<{
     name: string;
     steps: boolean[];

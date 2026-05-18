@@ -33,7 +33,7 @@ function makePart(id: string, name: string, steps: StepData[]): PartData {
   };
 }
 
-function makePattern(id: string, name: string, stepCount: 16 | 32, parts: PartData[]): PatternData {
+function makePattern(id: string, name: string, stepCount: 16 | 32 | 64, parts: PartData[]): PatternData {
   return {
     id,
     name,

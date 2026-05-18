@@ -1042,12 +1042,14 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
           ))}
         </div>
 
-        {/* Step-Count */}
-        <div className="flex items-center gap-1">
-          {([16, 32] as const).map(n => (
+        {/* Step-Count (v3.39: 64 für KORG-Parität — ESX-1 + E2 Sampler max) */}
+        <div className="flex items-center gap-1" data-testid="dm-step-count-toggle">
+          {([16, 32, 64] as const).map(n => (
             <button
               key={n}
               onClick={() => dm.setStepCount(n)}
+              data-testid={`dm-step-count-${n}`}
+              title={n === 64 ? "64 Steps (KORG ESX-1 / E2 Max)" : `${n} Steps`}
               className={[
                 "px-2 py-0.5 rounded text-[10px] font-mono transition-colors",
                 pattern.stepCount === n

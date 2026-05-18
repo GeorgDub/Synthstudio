@@ -86,7 +86,7 @@ export async function importAls(file: File): Promise<ImportResult> {
 
       // Clip-Länge (für Step-Count-Schätzung)
       const loopEnd = getNumAttr(clip, "Loop > LoopEnd") ?? 16;
-      const stepCount: 16 | 32 = loopEnd > 16 ? 32 : 16;
+      const stepCount: 16 | 32 | 64 = loopEnd > 32 ? 64 : loopEnd > 16 ? 32 : 16;
 
       for (const keyTrack of keyTracks) {
         const midiKey = parseInt(keyTrack.querySelector("MidiKey")?.getAttribute("Value") ?? "60", 10);
