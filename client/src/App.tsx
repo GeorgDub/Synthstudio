@@ -127,7 +127,15 @@ import {
   scaleMotionPointsToStepCount,
   type ElectribeMotionLane,
 } from "@/utils/electribeMotionMapping";
-import { assignSlicesToPads, getSlicePadSlot, MAX_SLICE_PADS } from "@/store/useSlicePadStore";
+import {
+  assignSlicesToPads,
+  getSlicePadSlot,
+  MAX_SLICE_PADS,
+  // v2.93 (TASK-PROJ-FILE-V18): Snapshot + Rehydration für .synth-Persistenz.
+  getAllSlicePadSlots,
+  setSlicePadSlot,
+  clearAllSlicePads,
+} from "@/store/useSlicePadStore";
 import { AutomationView } from "@/components/Automation/AutomationView";
 import { SceneLaunchPad } from "@/components/Scene/SceneLaunchPad";
 import { AudioEngine } from "@/audio/AudioEngine";
@@ -169,6 +177,9 @@ import {
 import {
   getArmedLiveInputChannelIds,
   getLiveInputChannel,
+  // v2.93 (TASK-PROJ-FILE-V18): Snapshot + Rehydration für .synth-Persistenz.
+  getAllLiveInputChannels,
+  loadLiveInputChannels,
 } from "@/store/useLiveInputStore";
 import {
   saveRecording as persistRecording,
@@ -195,7 +206,15 @@ import { getSceneState, setActiveScene as sceneStoreSetActiveScene } from "@/sto
 // v2.87 (TASK-235): Live-Looper Store-Bridge — Module-Funktionen, kein Hook.
 import { getLoopSlot, setLoopState, setLoopLength } from "@/store/useLooperStore";
 // v2.92 (TASK-240): MIDI-Note-Out Bridge — pro Part-Config in die AudioEngine syncen.
-import { useMidiNoteOutStore } from "@/store/useMidiNoteOutStore";
+import {
+  useMidiNoteOutStore,
+  // v2.93 (TASK-PROJ-FILE-V18): Snapshot + Rehydration für .synth-Persistenz.
+  getAllPartMidiOutConfigs,
+  getMidiNoteOutEnabled,
+  setMidiNoteOutEnabled,
+  setPartMidiOutConfig,
+  clearAllPartMidiOutConfigs,
+} from "@/store/useMidiNoteOutStore";
 import { scriptSandbox } from "@/sandbox/scriptSandboxInstance";
 import {
   startHoldLoop,
@@ -211,6 +230,10 @@ import {
   cacheProjectLocally,
   loadCachedProject,
   parseProject,
+  // v2.93 (TASK-PROJ-FILE-V18): Float32-Codec für Slice-Pad-Buffer.
+  float32ToFrames,
+  framesToFloat32,
+  type SerializedSlicePads,
 } from "@/utils/projectSerializer";
 import { loadPadBankSlots, savePadBankSlots } from "@/utils/padBankPersistence";
 
@@ -582,6 +605,25 @@ export default function App() {
       scripts: getProjectScripts(),
       // v2.81: Pad-Bank-Setup als Pro-Project-Settings persistieren
       padBank: loadPadBankSlots(),
+      // v2.93 (TASK-PROJ-FILE-V18): Schließt silent-data-loss zwischen
+      // Rechnern. liveInputs + midiNoteOut + slicePads waren bis v2.92
+      // ausschließlich localStorage-only.
+      liveInputs: getAllLiveInputChannels(),
+      midiNoteOut: {
+        enabled: getMidiNoteOutEnabled(),
+        configs: getAllPartMidiOutConfigs(),
+      },
+      slicePads: getAllSlicePadSlots().map((slot) =>
+        slot.buffer
+          ? {
+              index: slot.index,
+              sampleRate: slot.sampleRate,
+              sampleName: slot.sampleName,
+              sliceIndex: slot.sliceIndex,
+              frames: float32ToFrames(slot.buffer),
+            }
+          : null,
+      ) as SerializedSlicePads,
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -655,6 +697,35 @@ export default function App() {
     if (data.padBank !== undefined) {
       savePadBankSlots(data.padBank);
       window.dispatchEvent(new CustomEvent("padBank:loaded"));
+    }
+
+    // v2.93 (TASK-PROJ-FILE-V18): Live-Inputs / MIDI-Note-Out / Slice-Pads
+    // wurden bis v2.92 nur in localStorage gehalten und gingen beim File-
+    // Transport zwischen Rechnern verloren. Ab v1.18 sind sie im .synth-File
+    // mitgespeichert. Undefined = "im File nicht enthalten" (Pre-v1.18-File)
+    // → User-localStorage in Ruhe lassen.
+    if (data.liveInputs !== undefined) {
+      loadLiveInputChannels(data.liveInputs);
+    }
+    if (data.midiNoteOut !== undefined) {
+      clearAllPartMidiOutConfigs();
+      setMidiNoteOutEnabled(data.midiNoteOut.enabled);
+      for (const [partId, cfg] of Object.entries(data.midiNoteOut.configs)) {
+        setPartMidiOutConfig(partId, cfg);
+      }
+    }
+    if (data.slicePads !== undefined) {
+      clearAllSlicePads();
+      for (const slot of data.slicePads) {
+        if (!slot) continue;
+        const buf = framesToFloat32(slot.frames);
+        if (!buf || buf.length === 0) continue;
+        setSlicePadSlot(slot.index, buf, {
+          sampleRate: slot.sampleRate,
+          sampleName: slot.sampleName,
+          sliceIndex: slot.sliceIndex,
+        });
+      }
     }
 
     // ── Relocate-Probe: Prüfe ob Datei-Pfad noch existiert ────────────────

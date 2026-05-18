@@ -15,6 +15,8 @@ import {
   serializeProject,
   toJson,
   parseProject,
+  float32ToFrames,
+  framesToFloat32,
   type SynthProject,
 } from "@/utils/projectSerializer";
 
@@ -48,8 +50,8 @@ function baseProject(overrides: Partial<SynthProject> = {}): SynthProject {
 }
 
 describe("ProjectSerializer – Konstanten", () => {
-  it("SYNTH_FILE_VERSION ist '1.17' (seit v2.81: + padBank-Feld)", () => {
-    expect(SYNTH_FILE_VERSION).toBe("1.17");
+  it("SYNTH_FILE_VERSION ist '1.18' (seit v2.93: + liveInputs/midiNoteOut/slicePads)", () => {
+    expect(SYNTH_FILE_VERSION).toBe("1.18");
   });
 
   it("SYNTH_LATEST_KEY ist 'synthstudio:last-project' (localStorage-Key)", () => {
@@ -296,8 +298,8 @@ describe("ProjectSerializer – Mixed v1.14 (oldest) File", () => {
 // ─── padBank Migration (seit v1.17) ──────────────────────────────────────────
 
 describe("ProjectSerializer – padBank Migration (v1.16 → v1.17)", () => {
-  it("SYNTH_FILE_VERSION ist '1.17'", () => {
-    expect(SYNTH_FILE_VERSION).toBe("1.17");
+  it("SYNTH_FILE_VERSION ist '1.18'", () => {
+    expect(SYNTH_FILE_VERSION).toBe("1.18");
   });
 
   it("Fehlendes padBank-Feld (v1.16-File) → padBank bleibt undefined (Signal: localStorage nicht überschreiben)", () => {
@@ -356,5 +358,305 @@ describe("ProjectSerializer – padBank Migration (v1.16 → v1.17)", () => {
     expect(result).toHaveLength(2);
     expect(result![0]).toEqual({ kind: "perf-pad", param: "0" });
     expect(result![1]).toEqual({ kind: "action", param: "tapTempo" });
+  });
+});
+
+// ─── v1.18 Extended Persistence ──────────────────────────────────────────────
+
+describe("ProjectSerializer – v1.18 extended persistence (liveInputs/midiNoteOut/slicePads)", () => {
+  describe("liveInputs Migration (v1.17 → v1.18)", () => {
+    it("Pre-v1.18-File ohne liveInputs-Feld → undefined (Signal: User-localStorage in Ruhe lassen)", () => {
+      const file = JSON.stringify({ version: "1.17", patterns: [] });
+      expect(parseProject(file).liveInputs).toBeUndefined();
+    });
+
+    it("liveInputs=null → undefined", () => {
+      const file = JSON.stringify({ version: "1.18", patterns: [], liveInputs: null });
+      expect(parseProject(file).liveInputs).toBeUndefined();
+    });
+
+    it("liveInputs=non-array → undefined", () => {
+      const file = JSON.stringify({ version: "1.18", patterns: [], liveInputs: "broken" });
+      expect(parseProject(file).liveInputs).toBeUndefined();
+    });
+
+    it("liveInputs leeres Array bleibt leer (User-Reset wird respektiert)", () => {
+      const file = JSON.stringify({ version: "1.18", patterns: [], liveInputs: [] });
+      expect(parseProject(file).liveInputs).toEqual([]);
+    });
+
+    it("Round-Trip valider LiveInputChannel mit allen Feldern", () => {
+      const ch = {
+        id: "liveinput:abc123",
+        name: "KORG In",
+        deviceId: "dev-uuid-456",
+        deviceLabel: "USB Audio Codec",
+        volume: 0.6,
+        pan: -0.2,
+        muted: false,
+        soloed: true,
+        sends: { reverb: 0.3, delay: 0.1 },
+        latencyCompensationMs: 12,
+        recordArmed: true,
+      };
+      const file = JSON.stringify({ version: "1.18", patterns: [], liveInputs: [ch] });
+      const parsed = parseProject(file).liveInputs;
+      expect(parsed).toHaveLength(1);
+      expect(parsed![0].id).toBe("liveinput:abc123");
+      expect(parsed![0].deviceId).toBe("dev-uuid-456");
+      expect(parsed![0].sends).toEqual({ reverb: 0.3, delay: 0.1 });
+      expect(parsed![0].recordArmed).toBe(true);
+    });
+
+    it("Invalid liveInput-Eintrag wird silent gefiltert", () => {
+      const validCh = {
+        id: "liveinput:ok",
+        name: "X",
+        deviceId: null,
+        volume: 0.5, pan: 0, muted: false, soloed: false,
+        sends: { reverb: 0, delay: 0 },
+        latencyCompensationMs: 0,
+      };
+      const file = JSON.stringify({
+        version: "1.18", patterns: [],
+        liveInputs: [validCh, { broken: true }, null, { id: "no-prefix" }],
+      });
+      expect(parseProject(file).liveInputs).toHaveLength(1);
+      expect(parseProject(file).liveInputs![0].id).toBe("liveinput:ok");
+    });
+  });
+
+  describe("midiNoteOut Migration (v1.17 → v1.18)", () => {
+    it("Pre-v1.18-File ohne midiNoteOut-Feld → undefined", () => {
+      const file = JSON.stringify({ version: "1.17", patterns: [] });
+      expect(parseProject(file).midiNoteOut).toBeUndefined();
+    });
+
+    it("midiNoteOut=null → undefined", () => {
+      const file = JSON.stringify({ version: "1.18", patterns: [], midiNoteOut: null });
+      expect(parseProject(file).midiNoteOut).toBeUndefined();
+    });
+
+    it("midiNoteOut=Array (falscher Typ) → undefined", () => {
+      const file = JSON.stringify({ version: "1.18", patterns: [], midiNoteOut: [] });
+      expect(parseProject(file).midiNoteOut).toBeUndefined();
+    });
+
+    it("Round-Trip midiNoteOut mit enabled + Configs", () => {
+      const mno = {
+        enabled: true,
+        configs: {
+          "part-0": { outputId: "out-electribe", channel: 9, note: 36, noteDurationMs: 120, localSoundEnabled: false },
+          "part-1": { outputId: "out-electribe", channel: 9, note: 38 },
+        },
+      };
+      const file = JSON.stringify({ version: "1.18", patterns: [], midiNoteOut: mno });
+      const parsed = parseProject(file).midiNoteOut;
+      expect(parsed?.enabled).toBe(true);
+      expect(parsed?.configs["part-0"].outputId).toBe("out-electribe");
+      expect(parsed?.configs["part-0"].channel).toBe(9);
+      expect(parsed?.configs["part-0"].note).toBe(36);
+      expect(parsed?.configs["part-0"].noteDurationMs).toBe(120);
+      expect(parsed?.configs["part-0"].localSoundEnabled).toBe(false);
+      // Defaults bei fehlenden optionalen Feldern
+      expect(parsed?.configs["part-1"].noteDurationMs).toBeGreaterThan(0);
+      expect(parsed?.configs["part-1"].localSoundEnabled).toBe(true);
+    });
+
+    it("Configs mit invaliden Einträgen werden silent gefiltert", () => {
+      const mno = {
+        enabled: false,
+        configs: {
+          "ok": { outputId: "x", channel: 0, note: 60 },
+          "no-output": { outputId: "", channel: 0, note: 60 },
+          "broken-channel": { outputId: "x", channel: "abc", note: 60 },
+        },
+      };
+      const file = JSON.stringify({ version: "1.18", patterns: [], midiNoteOut: mno });
+      const parsed = parseProject(file).midiNoteOut;
+      expect(Object.keys(parsed!.configs)).toEqual(["ok"]);
+    });
+
+    it("enabled wird auf boolean reduziert (truthy non-bool → false)", () => {
+      const file = JSON.stringify({
+        version: "1.18", patterns: [],
+        midiNoteOut: { enabled: "yes", configs: {} },
+      });
+      expect(parseProject(file).midiNoteOut?.enabled).toBe(false);
+    });
+
+    it("midiNoteOut.channel/note werden geclamped (out-of-range → in-range)", () => {
+      const mno = {
+        enabled: true,
+        configs: {
+          "p": { outputId: "x", channel: 99, note: 9999 },
+        },
+      };
+      const file = JSON.stringify({ version: "1.18", patterns: [], midiNoteOut: mno });
+      const cfg = parseProject(file).midiNoteOut?.configs["p"];
+      expect(cfg?.channel).toBeLessThanOrEqual(15);
+      expect(cfg?.note).toBeLessThanOrEqual(127);
+    });
+  });
+
+  describe("slicePads Migration (v1.17 → v1.18)", () => {
+    it("Pre-v1.18-File ohne slicePads-Feld → undefined", () => {
+      const file = JSON.stringify({ version: "1.17", patterns: [] });
+      expect(parseProject(file).slicePads).toBeUndefined();
+    });
+
+    it("slicePads=null → undefined", () => {
+      const file = JSON.stringify({ version: "1.18", patterns: [], slicePads: null });
+      expect(parseProject(file).slicePads).toBeUndefined();
+    });
+
+    it("slicePads=Object (kein Array) → undefined", () => {
+      const file = JSON.stringify({ version: "1.18", patterns: [], slicePads: { foo: 1 } });
+      expect(parseProject(file).slicePads).toBeUndefined();
+    });
+
+    it("slicePads leeres Array bleibt leer", () => {
+      const file = JSON.stringify({ version: "1.18", patterns: [], slicePads: [] });
+      expect(parseProject(file).slicePads).toEqual([]);
+    });
+
+    it("Round-Trip slicePad mit eingebettetem Float32-Buffer", () => {
+      const slot = {
+        index: 0,
+        sampleRate: 48000,
+        sampleName: "kick.wav",
+        sliceIndex: 0,
+        frames: [0.1, -0.2, 0.3, -0.4],
+      };
+      const file = JSON.stringify({
+        version: "1.18", patterns: [],
+        slicePads: [slot, null, slot, null],
+      });
+      const parsed = parseProject(file).slicePads;
+      expect(parsed).toHaveLength(4);
+      expect(parsed![0]).not.toBeNull();
+      expect(parsed![0]!.frames).toEqual([0.1, -0.2, 0.3, -0.4]);
+      expect(parsed![0]!.sampleRate).toBe(48000);
+      expect(parsed![1]).toBeNull();
+    });
+
+    it("Metadata-only-Slot (frames=null) bleibt null beim Parse", () => {
+      const slot = {
+        index: 5,
+        sampleRate: 44100,
+        sampleName: "snare.wav",
+        sliceIndex: 2,
+        frames: null,
+      };
+      const file = JSON.stringify({ version: "1.18", patterns: [], slicePads: [slot] });
+      const parsed = parseProject(file).slicePads;
+      expect(parsed![0]!.frames).toBeNull();
+      expect(parsed![0]!.sampleName).toBe("snare.wav");
+    });
+
+    it("Invalide slot-Einträge werden zu null (Index-Stabilität)", () => {
+      const validSlot = {
+        index: 0, sampleRate: 48000, sampleName: "x", sliceIndex: 0, frames: [0.1],
+      };
+      const file = JSON.stringify({
+        version: "1.18", patterns: [],
+        slicePads: [validSlot, { broken: true }, "string", validSlot],
+      });
+      const parsed = parseProject(file).slicePads;
+      expect(parsed).toHaveLength(4);
+      expect(parsed![0]).not.toBeNull();
+      expect(parsed![1]).toBeNull();
+      expect(parsed![2]).toBeNull();
+      expect(parsed![3]).not.toBeNull();
+    });
+  });
+
+  describe("Float32 ↔ Frames Codec", () => {
+    it("float32ToFrames(null) → null", () => {
+      expect(float32ToFrames(null)).toBeNull();
+    });
+
+    it("framesToFloat32(null) → null", () => {
+      expect(framesToFloat32(null)).toBeNull();
+    });
+
+    it("Round-Trip: identical values (Float32 precision-safe)", () => {
+      const original = new Float32Array([0.5, -0.5, 0.25, 0]);
+      const frames = float32ToFrames(original);
+      const restored = framesToFloat32(frames);
+      expect(restored).toBeInstanceOf(Float32Array);
+      expect(restored!.length).toBe(4);
+      expect(restored![0]).toBeCloseTo(0.5);
+      expect(restored![1]).toBeCloseTo(-0.5);
+      expect(restored![3]).toBe(0);
+    });
+  });
+
+  describe("serializeProject mit includeSliceBuffers-Option", () => {
+    it("Default: includeSliceBuffers=true behält frames", () => {
+      const result = serializeProject({
+        projectName: "P", bpm: 120, samples: [], patterns: [], activePatternId: "x",
+        song: { slots: [], songModeActive: false, loopSong: false },
+        mixer: baseProject().mixer,
+        humanizer: baseProject().humanizer,
+        automation: baseProject().automation,
+        slicePads: [
+          { index: 0, sampleRate: 48000, sampleName: "k.wav", sliceIndex: 0, frames: [0.1, 0.2] },
+        ],
+      });
+      expect(result.slicePads![0]!.frames).toEqual([0.1, 0.2]);
+    });
+
+    it("includeSliceBuffers=false strippt nur frames, behält Metadata", () => {
+      const result = serializeProject(
+        {
+          projectName: "P", bpm: 120, samples: [], patterns: [], activePatternId: "x",
+          song: { slots: [], songModeActive: false, loopSong: false },
+          mixer: baseProject().mixer,
+          humanizer: baseProject().humanizer,
+          automation: baseProject().automation,
+          slicePads: [
+            { index: 0, sampleRate: 48000, sampleName: "k.wav", sliceIndex: 0, frames: [0.1, 0.2] },
+            null,
+            { index: 2, sampleRate: 48000, sampleName: "s.wav", sliceIndex: 1, frames: [0.3] },
+          ],
+        },
+        { includeSliceBuffers: false },
+      );
+      expect(result.slicePads![0]!.frames).toBeNull();
+      expect(result.slicePads![0]!.sampleName).toBe("k.wav");
+      expect(result.slicePads![1]).toBeNull();
+      expect(result.slicePads![2]!.frames).toBeNull();
+      expect(result.slicePads![2]!.sampleName).toBe("s.wav");
+    });
+  });
+
+  describe("Back-Compat Combined", () => {
+    it("Pre-v1.18-File (v1.14) hat liveInputs/midiNoteOut/slicePads alle undefined und wirft NICHT", () => {
+      const oldFile = JSON.stringify({
+        version: "1.14",
+        patterns: [{ id: "p1" }],
+      });
+      const parsed = parseProject(oldFile);
+      expect(parsed.liveInputs).toBeUndefined();
+      expect(parsed.midiNoteOut).toBeUndefined();
+      expect(parsed.slicePads).toBeUndefined();
+      // Andere migrations greifen weiter (audioTracks/scripts default auf [])
+      expect(parsed.audioTracks).toEqual([]);
+      expect(parsed.scripts).toEqual([]);
+    });
+
+    it("v1.18-File mit leeren neuen Feldern lädt fehlerfrei", () => {
+      const file = JSON.stringify({
+        version: "1.18", patterns: [],
+        liveInputs: [],
+        midiNoteOut: { enabled: false, configs: {} },
+        slicePads: [],
+      });
+      const parsed = parseProject(file);
+      expect(parsed.liveInputs).toEqual([]);
+      expect(parsed.midiNoteOut).toEqual({ enabled: false, configs: {} });
+      expect(parsed.slicePads).toEqual([]);
+    });
   });
 });

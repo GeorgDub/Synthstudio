@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "2.92.0",
+    version: "2.93.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -83,6 +83,21 @@ const INDEX = {
   // ─── KNOWN FILE INDEX ──────────────────────────────────────
   // Key files agents have analyzed. Add new entries after working on a file.
   files: {
+    "client/src/utils/projectSerializer.ts (TASK-PROJ-FILE-V18 v2.93)": {
+      role:     "v2.93.0: SYNTH_FILE_VERSION 1.17→1.18. +3 additiv-optionale Top-Level-Felder: liveInputs?: LiveInputChannelData[], midiNoteOut?: { enabled:boolean, configs:Record<partId, MidiPartConfig> }, slicePads?: SerializedSlicePadSlot[]. Schema-Entscheidung Slice-Buffers: embed-full als plain number[]-Array, optionale Strip-API via SerializeProjectOptions { includeSliceBuffers?: boolean=true } für Metadata-only-Saves. Pure-Helper float32ToFrames / framesToFloat32 (lossless null-safe Codec). Drei neue Parse-Migration-Blöcke (analog padBank): undefined bleibt undefined (Signal: User-localStorage in Ruhe lassen), null/wrong-type → undefined, valides Array/Object → silent-filter invalid items + clamp MIDI-Channel/Note bei MidiNoteOut-Configs. Validation-Helper isValidMidiPartConfigEntry + isValidSerializedSlicePadSlot. Pre-v1.18-Files (v1.14/v1.15/v1.16/v1.17) laden komplett unverändert.",
+      lastSeen: "2026-05-18T03:20:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/App.tsx (TASK-PROJ-FILE-V18 v2.93)": {
+      role:     "v2.93.0: buildProjectSnapshot um liveInputs (getAllLiveInputChannels), midiNoteOut ({enabled, configs}), slicePads (getAllSlicePadSlots → SerializedSlicePadSlot[] mit float32ToFrames) erweitert. restoreProject um drei defensive Rehydration-Blöcke ergänzt (undefined-check sonst Pre-v1.18-Files würden User-localStorage löschen): loadLiveInputChannels, clearAllPartMidiOutConfigs+setMidiNoteOutEnabled+setPartMidiOutConfig-Loop, clearAllSlicePads+setSlicePadSlot mit framesToFloat32. Imports konsolidiert: useLiveInputStore um getAllLiveInputChannels/loadLiveInputChannels, useMidiNoteOutStore um 4 Bridge-API-Funktionen, useSlicePadStore (bestehender Import dedupliziert) um getAllSlicePadSlots/setSlicePadSlot/clearAllSlicePads.",
+      lastSeen: "2026-05-18T03:20:00.000Z",
+      ownedBy:  "backend"
+    },
+    "tests/features/project-serializer.test.ts (TASK-PROJ-FILE-V18 v2.93)": {
+      role:     "v2.93.0: +25 v1.18-Tests in neuem Block 'v1.18 extended persistence': liveInputs-Migration (6), midiNoteOut-Migration (7 inkl. clamp), slicePads-Migration (6 inkl. index-stability), Float32-Codec (3), serializeProject-Option (2), Combined-Back-Compat (2 — v1.14-File hat alle drei undefined / v1.18 mit empty-Feldern lädt clean). SYNTH_FILE_VERSION-Check auf '1.18'. Suite jetzt 56 Tests.",
+      lastSeen: "2026-05-18T03:20:00.000Z",
+      ownedBy:  "backend"
+    },
     "client/src/audio/MidiNoteOut.ts": {
       role:     "TASK-240 (v2.92.0): MIDI-Note-Out-Engine. DI-Sender (outputId, bytes)=>void damit ein Sender mehrere Geräte bedienen kann. Class MidiNoteOut: setSender/setEnabled/setPartConfig/getPartConfig/clearPartConfig/clearAllConfigs/isPartConfigured/getAllConfiguredPartIds/shouldPlayLocalSound/triggerNote. Retrigger-Policy (sofort Note-Off bei selber Note), setEnabled(false)-Flush gegen Stuck-Notes, internal Map<partId, MidiPartConfig> + Pending-Off-Map mit setTimeout-Cleanup. Pure-Helpers: clampVelocity/clampMidiChannel/clampMidiNote/clampNoteDuration/buildNoteOn/buildNoteOff/noteNameFromNumber. Konstanten: DEFAULT_NOTE_DURATION_MS=100, MIN/MAX_NOTE_DURATION_MS.",
       lastSeen: "2026-05-18T03:05:00.000Z",
@@ -841,6 +856,28 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "backend",
+      timestamp: "2026-05-18T03:20:00.000Z",
+      done: [
+        "v2.93.0: TASK-PROJ-FILE-V18 — .synth Schema v1.17 → v1.18. Schließt silent-data-loss aus v2.85–v2.92 wo drei neue Stores (useLiveInputStore v2.85, useMidiNoteOutStore v2.92, useSlicePadStore v2.90) ausschließlich in localStorage lebten und beim Datei-Transport zwischen Rechnern verloren gingen. (1) client/src/utils/projectSerializer.ts: SYNTH_FILE_VERSION '1.17' → '1.18'. Drei neue Felder im SynthProject-Interface (alle additiv-optional): liveInputs?: LiveInputChannelData[], midiNoteOut?: { enabled, configs: Record<partId, MidiPartConfig> }, slicePads?: SerializedSlicePadSlot[]. SchemaDecision für Slice-Buffers: embed-full als plain number[]-Array (Float32Array→number[] via Array.from). Begründung im Header-Kommentar: Session-kritisch (sonst muss User neu slicen), Trade-off File-Size, Alternative metadata-only verworfen weil sample-hash-rebuild den User-Workflow bricht. Optionale Toggle-API SerializeProjectOptions { includeSliceBuffers?: boolean=true } — bei false werden frames auf null gesetzt, Metadata bleibt erhalten. Neue Pure-Helper float32ToFrames / framesToFloat32 (lossless, null-safe). Drei neue Parse-Migration-Blöcke (analog padBank-Pattern): undefined bleibt undefined (Signal: User-localStorage nicht überschreiben), null/wrong-type → undefined, valides Array/Object → silent-filter invalider Items. midiNoteOut.channel/note werden via clampMidiChannel/clampMidiNote bei Parse normalisiert. (2) client/src/App.tsx: buildProjectSnapshot erweitert um liveInputs (getAllLiveInputChannels), midiNoteOut (getMidiNoteOutEnabled+getAllPartMidiOutConfigs), slicePads (getAllSlicePadSlots → SerializedSlicePadSlot mit float32ToFrames). restoreProject erweitert um drei Rehydration-Blöcke (alle defensiv mit undefined-check, sonst Pre-v1.18-Files würden User-localStorage löschen): loadLiveInputChannels(data.liveInputs), clearAllPartMidiOutConfigs+setMidiNoteOutEnabled+setPartMidiOutConfig-Loop, clearAllSlicePads+setSlicePadSlot-Loop mit framesToFloat32. Imports aus useLiveInputStore um getAllLiveInputChannels/loadLiveInputChannels erweitert, useMidiNoteOutStore um 4 Bridge-API-Funktionen, useSlicePadStore (bestehender Import dedupliziert) um getAllSlicePadSlots/setSlicePadSlot/clearAllSlicePads. (3) tests/features/project-serializer.test.ts: +25 neue Tests in 'v1.18 extended persistence'-Block: liveInputs-Migration (6 — undefined/null/non-array/empty/Round-Trip-all-fields/silent-filter-invalid), midiNoteOut-Migration (7 — undefined/null/array-wrong-type/Round-Trip/silent-filter/non-bool-enabled/clamping), slicePads-Migration (6 — undefined/null/object-wrong-type/empty/Round-Trip-embedded/metadata-only-Slot/index-stability-bei-invalid), Float32-Codec (3 — null/null/lossless-round-trip), serializeProject-Option (2 — default-include/strip-frames-keep-meta), Combined-Back-Compat (2 — v1.14-File hat alle drei undefined + audioTracks/scripts default-[], v1.18-File-mit-empty-Feldern lädt clean). SYNTH_FILE_VERSION-Test bei script-store + audio-track-store auf '1.18' aktualisiert. (4) package.json 2.92.0 → 2.93.0. pnpm check clean, pnpm test 3353 passed / 15 skipped (vs 3326 prev, +27 neue Tests). File-Size-Impact: typische .synth wächst ~150 Bytes pro Live-Input-Channel + ~80 Bytes pro MIDI-Note-Out-Config + ~12 Bytes pro Slice-Sample-Frame (16 Pads à 1s @ 48kHz Mono ≈ 9MB plain-text-JSON, kann mit gzip auf ~20% schrumpfen). Empty-Session bleibt unter 5KB (alle neuen Felder leer)."
+      ],
+      next: [
+        "TASK-PROJ-FILE-V18-FOLLOWUP-1: UI-Toggle 'Include Slice-Pad-Buffers (large)' im Save-Dialog wenn slicePads buffer haben + File-Size-Estimate. Default abhängig vom geschätzten Volumen (>10MB → off).",
+        "TASK-PROJ-FILE-V18-FOLLOWUP-2: gzip-Compression-Layer in der Electron-Save-Pipeline (electron/main.ts writeFile mit zlib) — würde Slice-Buffer-JSON auf ~20% schrumpfen. Browser-Path bleibt Plain-JSON (kein nativer gzip-Stream).",
+        "TASK-PROJ-FILE-V18-FOLLOWUP-3: Visueller Hinweis im LiveInput-Channel-Strip wenn nach Project-Load die deviceId nicht mehr auflösbar ist (Hardware-Wechsel/anderer Rechner). Aktuell stiller Soft-Fail.",
+        "TASK-PROJ-FILE-V18-FOLLOWUP-4: MidiNoteOut-Reconnect-UI — wenn outputId auf einem fremden Rechner unbekannt ist, biete einen Bulk-Replace-Dialog 'Original-Output → neues Output'.",
+        "TASK-239 (VST3/CLAP-Host) bleibt offen."
+      ],
+      changed: [
+        "client/src/utils/projectSerializer.ts (SYNTH_FILE_VERSION 1.17→1.18, +liveInputs/midiNoteOut/slicePads Felder + Validation-Helper + float32-Codec + SerializeProjectOptions)",
+        "client/src/App.tsx (buildProjectSnapshot um drei neue Felder erweitert, restoreProject mit drei Rehydration-Blöcken, Imports konsolidiert)",
+        "tests/features/project-serializer.test.ts (+25 v1.18-Tests, SYNTH_FILE_VERSION-Check auf 1.18)",
+        "tests/features/audio-track-store.test.ts (SYNTH_FILE_VERSION-Check auf 1.18)",
+        "tests/features/script-store.test.ts (SYNTH_FILE_VERSION-Check auf 1.18)",
+        "package.json (2.92.0 → 2.93.0)"
+      ]
+    },
     {
       agent:     "backend",
       timestamp: "2026-05-18T03:05:00.000Z",
