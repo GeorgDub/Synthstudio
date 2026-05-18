@@ -56,6 +56,15 @@ import {
 } from "./crashLog";
 import { registerZipImportHandlers } from "./zip-import";
 import {
+  validateRecordingFilename,
+  validateWavBuffer,
+  guardRecordingPath,
+  sanitizeLicenseState,
+  validateElectribePath,
+  validateElectribeFileSize,
+  LICENSE_FILE_MAX_BYTES as IPC_LICENSE_FILE_MAX_BYTES,
+} from "./ipcValidators";
+import {
   startCollabServer,
   stopCollabServer,
   isCollabServerRunning,
@@ -2141,52 +2150,33 @@ function registerIpcHandlers(): void {
     data: ArrayBuffer | Uint8Array,
   ) => {
     try {
-      // ── Input-Validation ─────────────────────────────────────────────────
-      if (typeof filename !== "string" || filename.length === 0 || filename.length > 120) {
-        return { success: false, error: "Ungültiger Dateiname" };
-      }
-      if (filename.includes("\0") || filename.includes("/") || filename.includes("\\") || filename.includes("..")) {
-        return { success: false, error: "Dateiname enthält unzulässige Zeichen" };
-      }
-      if (!/^[A-Za-z0-9._-]+\.wav$/.test(filename)) {
-        return { success: false, error: "Nur alphanumerische .wav-Dateinamen erlaubt" };
-      }
-      if (!data) {
-        return { success: false, error: "Keine Daten erhalten" };
-      }
+      // ── Input-Validation (Pure-Validators v2.99) ─────────────────────────
+      const nameCheck = validateRecordingFilename(filename);
+      if (!nameCheck.ok) return { success: false, error: nameCheck.error };
+      if (!data) return { success: false, error: "Keine Daten erhalten" };
+
       // ArrayBuffer oder Uint8Array vom Renderer akzeptieren
       const buf = data instanceof Uint8Array
         ? Buffer.from(data.buffer, data.byteOffset, data.byteLength)
         : Buffer.from(data as ArrayBuffer);
-      // Min-Header-Größe + WAV-Magic-Check
-      if (buf.byteLength < 44) {
-        return { success: false, error: "Buffer zu klein für WAV-Header" };
-      }
-      const riff = buf.subarray(0, 4).toString("ascii");
-      const wave = buf.subarray(8, 12).toString("ascii");
-      if (riff !== "RIFF" || wave !== "WAVE") {
-        return { success: false, error: "Ungültiger WAV-Header" };
-      }
-      // Größen-Limit: max 500 MB pro Aufnahme (Schutz vor Disk-Fill).
-      const MAX_RECORDING_BYTES = 500 * 1024 * 1024;
-      if (buf.byteLength > MAX_RECORDING_BYTES) {
-        return { success: false, error: "Aufnahme zu groß (>500 MB)" };
-      }
+
+      // WAV-Magic + Größen-Limit (max 500 MB, Disk-Fill-Schutz)
+      const prefix = buf.subarray(0, Math.min(12, buf.byteLength)).toString("ascii");
+      const wavCheck = validateWavBuffer(buf.byteLength, prefix);
+      if (!wavCheck.ok) return { success: false, error: wavCheck.error };
 
       // ── Path-Resolution + Traversal-Guard ────────────────────────────────
       const recordingsDir = path.resolve(path.join(app.getPath("userData"), "recordings"));
       await fs.promises.mkdir(recordingsDir, { recursive: true });
-      const targetPath = path.resolve(path.join(recordingsDir, filename));
-      // Realpath muss mit recordingsDir + sep beginnen, sonst Traversal.
-      const expectedPrefix = recordingsDir + path.sep;
-      if (targetPath !== path.join(recordingsDir, filename) || !targetPath.startsWith(expectedPrefix)) {
-        return { success: false, error: "Ungültiger Zielpfad" };
-      }
+      const pathCheck = guardRecordingPath(recordingsDir, nameCheck.filename);
+      if (!pathCheck.ok) return { success: false, error: pathCheck.error };
 
-      await fs.promises.writeFile(targetPath, buf);
-      return { success: true, filePath: targetPath };
+      await fs.promises.writeFile(pathCheck.resolved, buf);
+      return { success: true, filePath: pathCheck.resolved };
     } catch (err) {
-      return { success: false, error: String(err) };
+      // SEC: Stack-Trace nicht an Renderer leaken — generic Error-String reicht.
+      console.error("[IPC audio:save-recording] error:", err);
+      return { success: false, error: "Schreibfehler" };
     }
   });
 
@@ -2204,8 +2194,6 @@ function registerIpcHandlers(): void {
   //  - JSON.parse wrapped in try/catch.
   //  - Object shape validated server-side before re-serializing on write.
   //  - No execution of any payload contents.
-  const LICENSE_FILE_MAX_BYTES = 16 * 1024;
-
   function licenseFilePath(): string {
     return path.join(app.getPath("userData"), "license.json");
   }
@@ -2220,7 +2208,7 @@ function registerIpcHandlers(): void {
         return { success: true, data: null };
       }
       if (!stat.isFile()) return { success: false, error: "license.json ist keine Datei" };
-      if (stat.size > LICENSE_FILE_MAX_BYTES) {
+      if (stat.size > IPC_LICENSE_FILE_MAX_BYTES) {
         return { success: false, error: "license.json zu groß" };
       }
       const text = await fs.promises.readFile(filePath, "utf-8");
@@ -2233,35 +2221,19 @@ function registerIpcHandlers(): void {
       }
       return { success: true, data: parsed };
     } catch (err) {
-      return { success: false, error: String(err) };
+      console.error("[IPC license:read] error:", err);
+      return { success: false, error: "Lesefehler" };
     }
   });
 
   ipcMain.handle("license:write", async (_event, state: unknown) => {
     try {
-      if (!state || typeof state !== "object") {
-        return { success: false, error: "Ungültiger State" };
-      }
-      // Whitelist serialisation — never write unknown keys.
-      const s = state as Record<string, unknown>;
-      const validStatus = new Set(["unknown", "trial", "pro", "expired", "invalid"]);
-      const safe = {
-        status: validStatus.has(s.status as string) ? (s.status as string) : "unknown",
-        trialStartedAt:
-          typeof s.trialStartedAt === "number" && Number.isFinite(s.trialStartedAt)
-            ? s.trialStartedAt
-            : null,
-        licenseKey:
-          typeof s.licenseKey === "string" && s.licenseKey.length > 0 && s.licenseKey.length <= 4096
-            ? s.licenseKey
-            : null,
-        activatedEmail:
-          typeof s.activatedEmail === "string" && s.activatedEmail.length > 0 && s.activatedEmail.length <= 254
-            ? s.activatedEmail
-            : null,
-      };
+      // Whitelist-Sanitization (Pure-Validator v2.99): unbekannte Keys werden
+      // verworfen, invalid types fallen auf Defaults. Niemals direkt
+      // user-input persistieren.
+      const safe = sanitizeLicenseState(state);
       const json = JSON.stringify(safe);
-      if (json.length > LICENSE_FILE_MAX_BYTES) {
+      if (json.length > IPC_LICENSE_FILE_MAX_BYTES) {
         return { success: false, error: "Payload zu groß" };
       }
       const filePath = licenseFilePath();
@@ -2269,7 +2241,8 @@ function registerIpcHandlers(): void {
       await fs.promises.writeFile(filePath, json, "utf-8");
       return { success: true };
     } catch (err) {
-      return { success: false, error: String(err) };
+      console.error("[IPC license:write] error:", err);
+      return { success: false, error: "Schreibfehler" };
     }
   });
 

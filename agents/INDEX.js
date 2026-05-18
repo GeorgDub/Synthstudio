@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "2.98.0",
+    version: "2.99.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",

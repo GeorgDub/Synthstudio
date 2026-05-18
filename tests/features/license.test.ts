@@ -146,9 +146,9 @@ describe("validateLicenseKey", () => {
   it("manipulierte Signatur → valid=false", async () => {
     const payload = { email: "x@y.de", expiresAt: null, productId: LICENSE_PRODUCT_ID };
     const key = await signLicensePayload(payload, TEST_SECRET);
-    // letztes Zeichen der Signatur kippen
+    // Komplette Signatur durch all-zero (base64) ersetzen → bit-pattern definitiv invalid
     const [p, s] = key.split(".");
-    const broken = p + "." + (s.slice(0, -1) + (s.endsWith("A") ? "B" : "A"));
+    const broken = p + "." + "A".repeat(s.length);
     const r = await validateLicenseKey(broken, TEST_PUBLIC_HEX);
     expect(r.valid).toBe(false);
   });
