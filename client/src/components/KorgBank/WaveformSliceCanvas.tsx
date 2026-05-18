@@ -34,6 +34,7 @@ import {
   snapToZeroCrossing,
   type OnsetCandidate,
 } from "@/utils/sampleSlicing";
+import { findSliceUnderFrame } from "@/utils/korg/sliceAudition";
 
 export interface WaveformSliceCanvasProps {
   /** Mono-Float32-Array — Kanal 0 reicht für Visualisierung. */
@@ -54,6 +55,32 @@ export interface WaveformSliceCanvasProps {
   testId?: string;
   /** Optionale Klasse für äußeres Container-Div. */
   className?: string;
+  /**
+   * v3.9.0 — Audition-Modus:
+   * Wenn gesetzt UND die Onset-Liste hat ≥1 Marker, wird ein Linksklick auf
+   * eine bestehende Slice-Region als Audition gewertet (statt Add). Add bleibt
+   * via Alt/Ctrl-Modifier verfügbar (und automatisch wenn `onsets` leer ist).
+   * Die Komponente ruft `onAudition(sliceIndex, startFrame, endFrame)` —
+   * tatsächliches Playback macht der Caller.
+   */
+  onAudition?: (sliceIndex: number, startFrame: number, endFrame: number) => void;
+  /**
+   * v3.9.0 — Highlight: Index der aktuell spielenden Slice-Region.
+   * Caller setzt diesen Wert beim Start des Auditions und resettet ihn auf
+   * `null` beim Ende (onEnded). Während Playback wird die Region mit einem
+   * leichten Accent-Tint hinterlegt und ein Playhead bewegt sich darin.
+   */
+  playingSliceIndex?: number | null;
+  /**
+   * v3.9.0 — Start-Zeitstempel (performance.now()) für die Playhead-Animation.
+   * Caller setzt das gleichzeitig mit `playingSliceIndex` beim Start.
+   */
+  playingStartedAt?: number | null;
+  /**
+   * v3.9.0 — Dauer der aktuellen Audition in Millisekunden (für den Playhead-
+   * Range). Wenn fehlend, fällt der Playhead auf die Region-Breite zurück.
+   */
+  playingDurationMs?: number | null;
 }
 
 const DEFAULT_HEIGHT = 120;
@@ -106,11 +133,16 @@ export function WaveformSliceCanvas({
   snapToZero = true,
   testId,
   className,
+  onAudition,
+  playingSliceIndex = null,
+  playingStartedAt = null,
+  playingDurationMs = null,
 }: WaveformSliceCanvasProps): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [canvasWidth, setCanvasWidth] = useState<number>(600);
   const [dragFrame, setDragFrame] = useState<number | null>(null);
+  const [hoverFrame, setHoverFrame] = useState<number | null>(null);
   const totalFrames = channelData.length;
 
   // ── Resize: Canvas-Breite an Container anpassen ─────────────────────────────
@@ -134,6 +166,8 @@ export function WaveformSliceCanvas({
   );
 
   // ── Canvas-Render via RAF ───────────────────────────────────────────────────
+  // v3.9.0: Render läuft kontinuierlich, solange ein Slice "playing" ist
+  // (für den animierten Playhead). Sonst nur einmaliges Frame.
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -152,15 +186,42 @@ export function WaveformSliceCanvas({
     const centerLine = getCssVar("--ss-border", "#374151");
     const markerColor = getCssVar("--ss-accent-primary", "#f59e0b");
     const markerDragColor = getCssVar("--ss-accent-secondary", "#06b6d4");
+    const accentPrimary = getCssVar("--ss-accent-primary", "#f59e0b");
+    const playheadColor = getCssVar("--ss-accent-success", "#22c55e");
 
-    let raf = 0;
-    const draw = (): void => {
+    const drawFrame = (): void => {
       ctx.save();
       ctx.scale(dpr, dpr);
       ctx.clearRect(0, 0, w, h);
 
       ctx.fillStyle = bgColor;
       ctx.fillRect(0, 0, w, h);
+
+      // v3.9.0 — Playing-Slice-Region: tinted Background hinter der Waveform.
+      let playingRegion: { startFrame: number; endFrame: number } | null = null;
+      if (
+        playingSliceIndex !== null &&
+        playingSliceIndex !== undefined &&
+        playingSliceIndex >= 0 &&
+        playingSliceIndex < onsets.length &&
+        totalFrames > 0
+      ) {
+        const sorted = [...onsets].sort((a, b) => a.frame - b.frame);
+        const target = onsets[playingSliceIndex];
+        const sIdx = sorted.findIndex((o) => o.frame === target.frame);
+        if (sIdx >= 0) {
+          const sFrame = sorted[sIdx].frame;
+          const eFrame =
+            sIdx + 1 < sorted.length ? sorted[sIdx + 1].frame : totalFrames;
+          playingRegion = { startFrame: sFrame, endFrame: eFrame };
+          const xs = Math.floor((sFrame / totalFrames) * w);
+          const xe = Math.floor((eFrame / totalFrames) * w);
+          ctx.fillStyle = accentPrimary;
+          ctx.globalAlpha = 0.2;
+          ctx.fillRect(xs, 0, Math.max(1, xe - xs), h);
+          ctx.globalAlpha = 1;
+        }
+      }
 
       ctx.strokeStyle = centerLine;
       ctx.lineWidth = 1;
@@ -199,12 +260,53 @@ export function WaveformSliceCanvas({
           ctx.font = "10px monospace";
           ctx.fillText(String(idx + 1), x + 3, 11);
         }
+
+        // v3.9.0 — Playhead innerhalb der Playing-Region.
+        if (playingRegion && playingStartedAt !== null && playingStartedAt !== undefined) {
+          const elapsedMs =
+            (typeof performance !== "undefined" ? performance.now() : Date.now()) -
+            playingStartedAt;
+          const regionFrames =
+            playingRegion.endFrame - playingRegion.startFrame;
+          const regionDurationMs =
+            playingDurationMs ?? (regionFrames / Math.max(1, sampleRate)) * 1000;
+          const t = Math.min(1, Math.max(0, elapsedMs / Math.max(1, regionDurationMs)));
+          const phFrame =
+            playingRegion.startFrame + t * regionFrames;
+          const phX = Math.floor((phFrame / totalFrames) * w);
+          ctx.strokeStyle = playheadColor;
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(phX + 0.5, 0);
+          ctx.lineTo(phX + 0.5, h);
+          ctx.stroke();
+        }
       }
       ctx.restore();
     };
-    raf = requestAnimationFrame(draw);
+
+    // Animation loop: solange ein Slice playing ist, läuft RAF; sonst 1 Frame.
+    let raf = 0;
+    const animate = (): void => {
+      drawFrame();
+      if (playingSliceIndex !== null && playingSliceIndex !== undefined) {
+        raf = requestAnimationFrame(animate);
+      }
+    };
+    raf = requestAnimationFrame(animate);
     return () => cancelAnimationFrame(raf);
-  }, [peaks, canvasWidth, onsets, dragFrame, totalFrames, height]);
+  }, [
+    peaks,
+    canvasWidth,
+    onsets,
+    dragFrame,
+    totalFrames,
+    height,
+    playingSliceIndex,
+    playingStartedAt,
+    playingDurationMs,
+    sampleRate,
+  ]);
 
   // ── Pointer-Mapping ─────────────────────────────────────────────────────────
   const xToFrame = useCallback(
@@ -248,23 +350,52 @@ export function WaveformSliceCanvas({
         return;
       }
 
+      // v3.9.0 — Audition: Linksklick auf einen Marker startet die Slice-
+      // Audition (statt Drag). Drag bleibt verfügbar via Alt/Ctrl-Modifier.
+      if (
+        nearby &&
+        e.button === 0 &&
+        onAudition &&
+        !e.altKey &&
+        !e.ctrlKey &&
+        !e.metaKey
+      ) {
+        const region = findSliceUnderFrame(onsets, nearby.frame, totalFrames);
+        if (region) {
+          onAudition(region.index, region.startFrame, region.endFrame);
+          return;
+        }
+      }
+
       if (nearby) {
         setDragFrame(nearby.frame);
         return;
       }
 
-      // Linksklick auf leere Stelle → addOnset
+      // v3.9.0 — Audition: Linksklick auf eine bestehende Slice-Region
+      // (zwischen zwei Markern) spielt die Slice ab. Add-Geste = Alt/Ctrl-Mod.
+      if (e.button === 0 && onAudition && onsets.length > 0 && !e.altKey && !e.ctrlKey && !e.metaKey) {
+        const region = findSliceUnderFrame(onsets, frame, totalFrames);
+        if (region) {
+          onAudition(region.index, region.startFrame, region.endFrame);
+          return;
+        }
+      }
+
+      // Linksklick auf leere Stelle (oder Alt/Ctrl-Click) → addOnset
       if (e.button === 0) {
         onChange(addOnset(onsets, frame, maxSlices));
       }
     },
-    [canvasWidth, findNearestOnset, totalFrames, xToFrame, onsets, onChange, maxSlices],
+    [canvasWidth, findNearestOnset, totalFrames, xToFrame, onsets, onChange, maxSlices, onAudition],
   );
 
   const handleMouseMove = useCallback(
     (e: React.MouseEvent<HTMLCanvasElement>) => {
-      if (dragFrame === null) return;
       const newFrame = xToFrame(e.clientX);
+      // Hover-Tracking für Cursor-Hint (v3.9.0).
+      setHoverFrame(newFrame);
+      if (dragFrame === null) return;
       if (newFrame === dragFrame) return;
       onChange(moveOnset(onsets, dragFrame, newFrame));
       setDragFrame(newFrame);
@@ -282,6 +413,26 @@ export function WaveformSliceCanvas({
     }
     setDragFrame(null);
   }, [dragFrame, snapToZero, channelData, onsets, onChange]);
+
+  const handleMouseLeave = useCallback(() => {
+    setHoverFrame(null);
+    if (dragFrame !== null) handleMouseUp();
+  }, [dragFrame, handleMouseUp]);
+
+  // v3.9.0 — Cursor-Indikator: ▶ über bestehender Slice (Audition-Modus),
+  // sonst crosshair / grabbing.
+  const cursorStyle = useMemo<string>(() => {
+    if (dragFrame !== null) return "grabbing";
+    if (
+      onAudition &&
+      hoverFrame !== null &&
+      onsets.length > 0 &&
+      findSliceUnderFrame(onsets, hoverFrame, totalFrames) !== null
+    ) {
+      return "pointer";
+    }
+    return "crosshair";
+  }, [dragFrame, hoverFrame, onsets, totalFrames, onAudition]);
 
   const handleContextMenu = useCallback(
     (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -302,13 +453,18 @@ export function WaveformSliceCanvas({
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseUp}
+        onMouseLeave={handleMouseLeave}
         onContextMenu={handleContextMenu}
         style={{
           display: "block",
           width: "100%",
-          cursor: dragFrame !== null ? "grabbing" : "crosshair",
+          cursor: cursorStyle,
         }}
+        title={
+          onAudition && onsets.length > 0
+            ? "Klick auf Slice = abspielen · Alt/Ctrl+Klick = neuen Marker setzen · Shift/Rechtsklick = entfernen"
+            : "Klick = Marker hinzufügen · Shift/Rechtsklick = entfernen"
+        }
         data-testid={testId ? `${testId}-canvas` : undefined}
       />
     </div>

@@ -73,6 +73,11 @@ import {
   autoSlice,
   type OnsetCandidate,
 } from "@/utils/sampleSlicing";
+import {
+  extractSliceBuffer,
+  playSliceWithContext,
+  type SliceAuditionHandle,
+} from "@/utils/korg/sliceAudition";
 import { WaveformSliceCanvas } from "./WaveformSliceCanvas";
 import {
   PRO_FEATURE_KORG_BANK_WRITE,
@@ -167,14 +172,37 @@ export function KorgBankEditor({
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const replaceInputRef = useRef<HTMLInputElement | null>(null);
 
+  // v3.9.0 — Slice-Audition (Preview)
+  const [auditionState, setAuditionState] = useState<{
+    rowId: string;
+    sliceIndex: number;
+    startedAt: number;
+    durationMs: number;
+  } | null>(null);
+  const auditionHandleRef = useRef<SliceAuditionHandle | null>(null);
+
+  const stopCurrentAudition = useCallback((): void => {
+    try { auditionHandleRef.current?.stop(); } catch { /* ignore */ }
+    auditionHandleRef.current = null;
+    setAuditionState(null);
+  }, []);
+
   // Lazy-init shared AudioContext (closed beim Unmount).
   useEffect(() => {
     if (!open) return;
     return () => {
+      // v3.9.0 — Stop laufende Audition vor Context-Close.
+      try { auditionHandleRef.current?.stop(); } catch { /* ignore */ }
+      auditionHandleRef.current = null;
       audioContextRef.current?.close().catch(() => {/* */});
       audioContextRef.current = null;
     };
   }, [open]);
+
+  // v3.9.0 — Bei Slot-Wechsel oder Mode-Wechsel: Audition stoppen.
+  useEffect(() => {
+    stopCurrentAudition();
+  }, [selectedRowId, mode, stopCurrentAudition]);
 
   // Reset state on close
   useEffect(() => {
@@ -1138,6 +1166,64 @@ export function KorgBankEditor({
       editSlotSetSlices(slot.rowId, eSlices);
     };
 
+    // v3.9.0 — Audition: Click auf eine Slice-Region → Web-Audio Playback.
+    const handleAudition = (
+      sliceIndex: number,
+      startFrame: number,
+      endFrame: number,
+    ): void => {
+      // Toggle: zweiter Klick auf dasselbe Slice stoppt es (kein Re-Play).
+      if (
+        auditionState &&
+        auditionState.rowId === slot.rowId &&
+        auditionState.sliceIndex === sliceIndex
+      ) {
+        stopCurrentAudition();
+        return;
+      }
+      // Vorheriges Audition stoppen (kein Overlap).
+      stopCurrentAudition();
+      if (!slot.pcmData || !slot.channels || !slot.sampleRate) return;
+      try {
+        const ctx = getCtx();
+        const buf = extractSliceBuffer(
+          slot.pcmData,
+          slot.channels,
+          startFrame,
+          endFrame,
+        );
+        if (buf.length === 0) return;
+        const startedAt =
+          typeof performance !== "undefined" ? performance.now() : Date.now();
+        const durationMs = (buf.length / Math.max(1, slot.sampleRate)) * 1000;
+        const handle = playSliceWithContext(ctx, buf, slot.sampleRate, {
+          onEnded: (): void => {
+            // Bei natürlichem Ende oder stop(): Audition-State leeren —
+            // aber nur wenn es noch das aktuelle Audition ist.
+            setAuditionState((prev) =>
+              prev && prev.rowId === slot.rowId && prev.sliceIndex === sliceIndex
+                ? null
+                : prev,
+            );
+          },
+        });
+        if (handle) {
+          auditionHandleRef.current = handle;
+          setAuditionState({
+            rowId: slot.rowId,
+            sliceIndex,
+            startedAt,
+            durationMs,
+          });
+        }
+      } catch (err) {
+        console.warn("[KorgBankEditor] audition failed", err);
+      }
+    };
+
+    const isPlayingThisSlot =
+      auditionState !== null && auditionState.rowId === slot.rowId;
+
     return (
       <div
         data-testid="korg-bank-editor-slice-editor"
@@ -1185,11 +1271,25 @@ export function KorgBankEditor({
           snapToZero={true}
           testId="korg-bank-editor-slice-canvas"
           className="rounded border border-border-color overflow-hidden"
+          onAudition={handleAudition}
+          playingSliceIndex={isPlayingThisSlot ? auditionState!.sliceIndex : null}
+          playingStartedAt={isPlayingThisSlot ? auditionState!.startedAt : null}
+          playingDurationMs={isPlayingThisSlot ? auditionState!.durationMs : null}
         />
 
-        <p className="text-[10px] text-text-dim">
-          Linksklick = Marker hinzufügen · Drag = verschieben · Shift/Rechtsklick = entfernen ·
-          max {MAX_ESLI_SLICES} Slices (E2S-Hardware-Limit)
+        <p
+          className="text-[10px] text-text-dim"
+          data-testid="korg-bank-editor-slice-help"
+        >
+          {sliceCount > 0 ? (
+            <>
+              <span className="text-accent-primary font-semibold">▶ Klick auf Slice</span>
+              {" "}= abspielen · Alt/Ctrl+Klick = Marker hinzufügen · Drag = verschieben ·
+              Shift/Rechtsklick = entfernen · max {MAX_ESLI_SLICES} Slices
+            </>
+          ) : (
+            <>Linksklick = Marker hinzufügen · max {MAX_ESLI_SLICES} Slices (E2S-Hardware-Limit)</>
+          )}
         </p>
       </div>
     );
