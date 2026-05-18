@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.16.0",
+    version: "3.17.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -89,6 +89,36 @@ const INDEX = {
   // ─── KNOWN FILE INDEX ──────────────────────────────────────
   // Key files agents have analyzed. Add new entries after working on a file.
   files: {
+    "client/src/utils/omniTribeThrottle.ts (v3.17.0)": {
+      role:     "v3.17.0 NEU: Generischer trailing-throttle pro Key (~135 LOC, isomorph, kein DOM). makeThrottledSender<TArgs>(fn, {minIntervalMs=16}) liefert {send(key, args), flush(key?), cancel(key?)}. Leading-Edge: erster Call pro Key sendet sofort. Trailing-Coalesce: Folge-Calls innerhalb minIntervalMs ueberschreiben pendingValue, setTimeout am Intervall-Ende liefert ZULETZT empfangenen Wert (Slider-Release-Wert kommt damit immer an). Pro-Key Slot-Isolation. cancel() resettet lastSentAt=0 (wichtig fuer Tests). Verwendet performance.now() falls verfuegbar, sonst Date.now().",
+      lastSeen: "2026-05-18T12:15:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/utils/omniTribeWiring.ts (v3.17.0)": {
+      role:     "v3.17.0 NEU: NRPN-Adress-Konstanten + High-Level-API fuer Panel ↔ OmniTribeBridge (~225 LOC). Exports: OMNITRIBE_GRANULAR (PARAM_HIGH 0x19, PIDs grainSize/density/pitchScatter/position/spray/feedback), OMNITRIBE_WAVETABLE (0x07, framePosition/morphSpeed), OMNITRIBE_EUCLIDEAN (0x11, nSteps/kHits/rotation/enable). clampPartIndex(p) 0..15. uiToMidi/midiToUi mit per-Param Wert-Range. buildParamLow(pid,part)=((part<<4)|pid)&0x7F (matched Bridge-Mask). decodeParamLow umkehrbar fuer part 0..7. sendGranularParam/sendWavetableParam/sendEuclideanParam mit per-Param Range-Mapping (grainSize 10..500, density 1..50, pitchScatter 0..200, sonst 0..1). uploadWavetable wrappt bridge.uploadWavetable. sendNrpn fuer generische Calls. ALLE send-Funktionen sind NO-OPs wenn omniTribeBridge.isConnected=false (isomorphic invariant). Throttled via makeThrottledSender mit minIntervalMs=16. Test-Hooks __flushOmniTribeSends + __cancelOmniTribeSends.",
+      lastSeen: "2026-05-18T12:15:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/components/DrumMachine/GranularSynthPanel.tsx (v3.17.0)": {
+      role:     "v3.17.0: Granular-Synth-Panel mit OmniTribe-Bridge-Wiring. +partIndex?-Prop (Default 0, 0..15). Header zeigt OmniTribeIndicator (Plug/PlugZap-Icon + 'Local'/'OmniTribe' Badge, text-accent-success wenn connected). Slider-onChange ruft set() → sendGranularParam fuer 6 mapbare Felder (grainSize/density/pitchSpray→pitchScatter/position/spray/amplitude→feedback). Plus useEffect 'omnitribe:paramChange'-Listener: filtert paramHigh==0x19 + decodeParamLow().part===part + granularPidToKey → patcht via onChangeRef + AudioEngine.updateGranularParams (wenn aktiv). paramsRef/onChangeRef vermeiden re-bind bei jeder Param-Aenderung. setInterval(1s) Polling fuer isConnected-State. Bestehende Visualizer/Presets unveraendert.",
+      lastSeen: "2026-05-18T12:15:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/components/DrumMachine/WavetableEditor.tsx (v3.17.0)": {
+      role:     "v3.17.0: Wavetable-Editor-Modal mit OmniTribe-Bridge-Wiring. +partIndex?/wavetableSlot? Props (Default 0). Header zeigt OmniTribeIndicator. 2 NEUE Slider 'Frame-Position' + 'Morph-Speed' (0..1, ruft sendWavetableParam → NRPN 0x07/0x01 bzw. 0x07/0x02) mit data-testid wavetable-frame-position/morph-speed. Save-Button ruft VOR onSave die uploadWavetable(wavetableSlot, [waveData]) (NO-OP wenn nicht connected). paramChange-Listener filtert paramHigh==0x07 + decodeParamLow().part===part + wavetablePidToKey → updated lokalen Slider-State. Bestehender Canvas-Editor + Presets unveraendert.",
+      lastSeen: "2026-05-18T12:15:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/components/DrumMachine/EuclideanControls.tsx (v3.17.0)": {
+      role:     "v3.17.0: Euclidean-Popover mit OmniTribe-Bridge-Wiring. +partIndex?-Prop (Default 0). handleApply ruft VOR setOpen(false) → onApply, dann 4× sendEuclideanParam fuer nSteps/kHits/rotation/enable (Rotation wird auf positiv normalisiert wenn < 0). Bestehender Popover-UI + Preview-Grid + Apply-Button unveraendert.",
+      lastSeen: "2026-05-18T12:15:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "tests/features/omnitribe-panel-wiring.test.ts (v3.17.0)": {
+      role:     "v3.17.0 NEU: 24 Tests fuer omniTribeWiring.ts + omniTribeThrottle.ts. @vitest-environment jsdom fuer window-Zugriff. Mock-Strategy: vi.spyOn(omniTribeBridge, 'setParam'/'uploadWavetable'/'isConnected' getter) + __cancelOmniTribeSends in beforeEach. Coverage: helpers (clampPartIndex 7 cases / uiToMidi+midiToUi round-trip / buildParamLow+decodeParamLow 7-bit mask + part 0..7 round-trip / granularPidToKey + wavetablePidToKey), Connected-Gate (sendNrpn/sendGranular/uploadWavetable NO-OP wenn !connected), sendGranularParam (NRPN-Adress + part-Bits + Wert-Skalierung), sendWavetableParam (Frame-Position 0x07/0x01 + Morph-Speed 0x07/0x02 + uploadWavetable), sendEuclideanParam (4-Call Apply mit korrekten PIDs + Value-Clamp 0..127), paramChange decode + Part-Filter, makeThrottledSender (leading immediate, trailing coalesce mit vi.useFakeTimers, flush(key), cancel(key), per-Key-Isolation).",
+      lastSeen: "2026-05-18T12:15:00.000Z",
+      ownedBy:  "frontend"
+    },
     "client/src/utils/korg/audioProcessor.ts (v3.6.0)": {
       role:     "v3.6.0: Pure-TypeScript Audio-Processor für E2S-Export (~430 LOC). Port aus Korg Editor/esx_e2s_editor/services/audio_processor.py. Public API: convertToE2sSpec(pcm, sr, ch, opts) → ProcessedAudio (resample auf 44100|48000 mit default 'poly-phase' Resampler, optional forceMono via average-downmix, optional peakNormalize, +ResamplerKind='poly-phase'|'linear' via opts.resampler). NEU v3.6 polyPhaseResample(pcm,inSr,outSr,ch) — 3-Lobe Lanczos windowed-sinc Direct-Convolution, rational rate via gcd→L/M, Anti-Alias cutoff=min(1,L/M), kernel-sum-Normalize gegen Edge-Attenuation. NEU lanczosKernel(x,a=3) — public-export für Tests (sinc(πx)/(πx) · sinc(πx/a)/(πx/a), 0 außerhalb |x|<a, defensive NaN→0). resampleLinear bleibt als Fallback exportiert. floatToInt16LeBytes(pcm) Float32→16-bit-LE-Bytes (clip [-1,+1], NaN→0, +1.0→0xFF7F, -1.0→0x0080). downmixToMono(stereo) (L+R)/2 pro Frame + Post-Peak-Return. peakNormalize(pcm, target ∈ (0,1]) silent-input passthrough. sanitizeE2sSlotName(name, maxLen=16) ASCII-printable-Filter (0x20..0x7E). AudioProcessError sealed-class. Defensive: targetSampleRate ∈ E2S_SAMPLE_RATES, per-Slot-Cap MAX_BYTES_PER_SLOT=10MB, NaN/Infinity-Filter im float→i16-Pfad UND im poly-phase Convolution-Loop.",
       lastSeen: "2026-05-18T09:35:00.000Z",
@@ -1157,6 +1187,41 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "frontend",
+      timestamp: "2026-05-18T12:15:00.000Z",
+      done: [
+        "v3.17.0: OmniTribe-Panel-Wiring (Sprint Tag 3 aus SYNTHSTUDIO_INTEGRATION.md). 3 existierende Panels mit der Bridge verkabelt — UI-Slider sendet NRPN an Hardware, Encoder am Geraet spiegelt in der UI (paramChange-CustomEvent via Bridge mit 50ms Echo-Schutz). Synthstudio bleibt vollstaendig funktional ohne OmniTribe: alle sendNrpn/uploadWavetable-Calls sind NO-OPs wenn isConnected=false.",
+        "Neue Pure-Helpers: (1) client/src/utils/omniTribeThrottle.ts — generischer makeThrottledSender<TArgs> mit leading+trailing-Edge (16ms = ~60Hz Default), pro-Key Slot-Map, flush(key?) + cancel(key?) + Test-Hooks. lastSentAt wird in cancel auf 0 zurueckgesetzt damit Tests deterministisch sind. (2) client/src/utils/omniTribeWiring.ts — NRPN-Adress-Konstanten (OMNITRIBE_GRANULAR/WAVETABLE/EUCLIDEAN) + High-Level-API sendGranularParam/sendWavetableParam/sendEuclideanParam/uploadWavetable mit pro-Key throttled-Sender Singleton + isConnected-Gate. uiToMidi/midiToUi mit per-Param Wert-Ranges (Granular: grainSize 10..500, density 1..50, pitchScatter 0..200, rest 0..1). buildParamLow ((part<<4)|pid)&0x7F entsprechend Bridge-Mask. decodeParamLow umkehrbar fuer part 0..7 (part 8..15 nutzen separaten 'part'-Arg im Sysex-Frame).",
+        "Verkabelte Params: GRANULAR (NRPN 0x19) — grainSize 0x00, density 0x01, pitchSpray→pitchScatter 0x02, position 0x03, spray 0x04, amplitude→feedback 0x05. WAVETABLE (NRPN 0x07) — framePosition 0x01, morphSpeed 0x02, plus Save→uploadWavetable(slot,[waveData]). EUCLIDEAN (NRPN 0x11) — nSteps 0x00, kHits 0x01, rotation 0x02 (negative Werte werden auf positiv normalisiert), enable 0x03 (immer 1 bei Apply). Mapping aus SYNTHSTUDIO_INTEGRATION.md §5 1:1 uebernommen.",
+        "GranularSynthPanel.tsx (v3.17 erweitert um partIndex?-Prop, omniTribeBridge-Wiring, paramChange-Listener mit Part-Filter, OmniTribeIndicator-Header-Badge). Slider-onChange ruft sendGranularParam fuer 6 mapbare Felder. paramChange-CustomEvent-Handler dekodiert paramHigh==0x19 + decodeParamLow().part===part-Filter + granularPidToKey → patcht via onChange + updateGranularParams (wenn aktiv). paramsRef/onChangeRef Closures vermeiden re-bind bei jeder Param-Aenderung. WavetableEditor.tsx (v3.17 +partIndex/wavetableSlot Props, 2 neue Slider Frame-Position+Morph-Speed, paramChange-Listener, OmniTribeIndicator, Save ruft uploadWavetable(slot,[waveData]) VOR onSave). EuclideanControls.tsx (v3.17 +partIndex-Prop, handleApply ruft 4× sendEuclideanParam nach onApply).",
+        "Hardware-Connected-Indicator: kleines Plug/PlugZap-Icon (lucide-react) + 'Local'/'OmniTribe' Text-Badge im Panel-Header. text-accent-success wenn verbunden, text-text-dim sonst. Position im Granular-Panel-Header zwischen Title und Play-Button, im Wavetable-Editor-Header zwischen Title und der 'Klick/Drag'-Subline. data-testid omnitribe-indicator-granular / omnitribe-indicator-wavetable. Tooltip via title-Attribut: 'Verbunden mit OmniTribe — Encoder spiegeln in der UI' vs 'Lokale Synthese'. Update-Polling: 1s setInterval pro Panel (Bridge ist Singleton ohne Observer — Polling ist gut genug fuer den seltenen Connect/Disconnect-Event).",
+        "Throttle-Strategy: makeThrottledSender mit minIntervalMs=16 (~60Hz pro Param-Key, deutlich unter dem 100/sec Bridge-Limit aus MD §14). Leading-Edge: erster Call sendet sofort. Trailing-Coalesce: Folge-Calls innerhalb 16ms ueberschreiben pendingValue, ein setTimeout flushed am Intervall-Ende den ZULETZT empfangenen Wert (trailing-edge garantiert dass Slider-Release-Wert immer ankommt). Pro-Key-Isolation: '0:25:0' (Granular Grain-Size Part 0) und '0:25:1' (Density Part 0) teilen sich keinen Slot. Native Implementierung (keine lodash-Dependency hinzugefuegt, ~120 LOC). flush() + cancel() Test-Hooks via __flushOmniTribeSends/__cancelOmniTribeSends in omniTribeWiring exposed.",
+        "DrumMachine.tsx: GranularSynthPanel-Render-Site (Zeile ~1798) bekommt partIndex={pattern.parts.findIndex(p => p.id === granularPartId)} mit >=0-Guard. EuclideanControls bleibt mit Default partIndex=0 (nicht aktuell renderiert irgendwo, nur Component-API-vorbereitet). SynthPanel rendert WavetableEditor ohne explizites partIndex — Default 0 ist OK fuer Phase-3.",
+        "Tests: tests/features/omnitribe-panel-wiring.test.ts NEU mit 24 Tests. Coverage: clampPartIndex (7), uiToMidi/midiToUi round-trip (2), buildParamLow + decodeParamLow round-trip part 0..7 (2), granularPidToKey/wavetablePidToKey (1), Connected-Gate NO-OPs fuer sendNrpn/sendGranularParam/uploadWavetable (3), sendGranularParam NRPN-Adress + part-Index + Wert-Skalierung (3), sendWavetableParam Frame-Position/Morph-Speed/uploadWavetable (3), sendEuclideanParam 4-Call-Apply + Wert-Clamp (2), paramChange-Event-Decode + Part-Filter (2), makeThrottledSender leading/trailing/flush/cancel/per-key-isolation (5). Mock-Strategy: vi.spyOn(omniTribeBridge,'setParam'/'uploadWavetable'/'isConnected' getter). __cancelOmniTribeSends() in beforeEach garantiert deterministischen Reset.",
+        "Test-Resultat: pnpm test → 3914 passed / 15 skipped (vorher 3890 → +24 v3.17). pnpm check clean. Bestehende omnitribeBridge.test.ts (17 Tests) bleibt gruen.",
+        "Bekannte Caveats: (a) Granular hat 6 mapbare Params, Bridge-Spec hat 6 NRPN-Slots — perfekter 1:1 Match. Synthstudio's pitch/panSpread werden NICHT auf NRPN gemappt (kein Slot reserviert), das ist Absicht — Pitch lebt im Audio-Engine-Domain und panSpread im Mix-Bus. (b) amplitude → feedback Mapping ist semantisch nicht perfekt (Granular-Engine hat keinen echten Feedback-Param), aber best-fit fuer den 6ten Slot bis dedizierter Feedback-Param kommt. (c) WavetableEditor's Frame-Position + Morph-Speed sind NEUE Slider — sie steuern aktuell NUR die Hardware (keine lokale Audio-Engine-Wirkung), weil Synthstudio's Wavetable-Synthese eh single-frame ist. Bei lokaler Multi-Frame-Wavetable-Erweiterung sollten die Slider beide Pfade speisen. (d) EuclideanControls.partIndex default 0 ist konservativ — Mehrfach-Render fuer verschiedene Parts wuerde alle gleich auf part=0 senden. Sobald Mehrfach-Apply implementiert wird, muss DrumMachine den korrekten findIndex pro Channel-Row mitgeben. (e) ModMatrix existiert in Synthstudio nicht — als v3.18-TASK markiert (eigene neue Komponente).",
+        "package.json + agents/INDEX.js version 3.16.0 → 3.17.0."
+      ],
+      next: [
+        "TASK-v3.18-MOD-MATRIX (NEU): ModMatrix-Komponente bauen (8 Slots × 16 Parts, NRPN 0x13/0x14/0x15). Wiring analog v3.17 — Source/Target/Depth pro Slot. SoT: SYNTHSTUDIO_INTEGRATION.md §5 ModMatrix-Section.",
+        "TASK-v3.18-NEW-PANELS (Sprint Tag 5): ChordPanel (NRPN 0x1E) + PerformancePadGrid (NRPN 0x1F) + ArpController (NRPN 0x16) + MPESettings (NRPN 0x12) + VoiceStealSettings (NRPN 0x1A). Pro Komponente: Wiring + Hardware-Indicator + Tests.",
+        "TASK-v3.17-FU-1: EuclideanControls wird aktuell nirgends gerendert — Render-Site pro DrumMachine-Channel-Row hinzufuegen, plus partIndex=findIndex weitergeben. Backend-Owner darf hier mitreden weil's die Channel-Liste betrifft.",
+        "TASK-v3.17-FU-2: VU-Meter-Store + Spectrum-Store (useOmniTribeMetersStore mit Custom-Observer, 16-Channel-VU + 64-Bin-Spectrum) und live-render im Mixer/Performance-Tab. Aktuell loggt App.tsx die Events nur in die Console.",
+        "TASK-v3.17-FU-3 (Multi-Frame-Wavetable): WavetableEditor speichert single-Frame. Fuer echte Wavetable-Synthese (mehrere Tabellen mit Morph): UI-Erweiterung um Frame-Slider innerhalb der gezeichneten Tabelle, dann uploadWavetable mit echtem Frame-Array."
+      ],
+      changed: [
+        "client/src/utils/omniTribeThrottle.ts (NEU, ~135 LOC, generischer trailing-throttle pro Key)",
+        "client/src/utils/omniTribeWiring.ts (NEU, ~225 LOC, NRPN-Konstanten + sendGranular/Wavetable/Euclidean/Upload + uiToMidi/midiToUi/buildParamLow/decodeParamLow + Test-Hooks)",
+        "client/src/components/DrumMachine/GranularSynthPanel.tsx (v3.17 +partIndex?-Prop +OmniTribeIndicator +sendGranularParam-Hook fuer 6 Params +paramChange-Listener mit Part-Filter +Polling-isConnected-Status)",
+        "client/src/components/DrumMachine/WavetableEditor.tsx (v3.17 +partIndex?/wavetableSlot? Props +Frame-Position+Morph-Speed Slider +paramChange-Listener +OmniTribeIndicator +Save ruft uploadWavetable VOR onSave)",
+        "client/src/components/DrumMachine/EuclideanControls.tsx (v3.17 +partIndex?-Prop +handleApply ruft 4× sendEuclideanParam fuer N/K/Rotation/Enable nach onApply)",
+        "client/src/components/DrumMachine/DrumMachine.tsx (GranularSynthPanel-Render-Site +partIndex={findIndex-Guard})",
+        "tests/features/omnitribe-panel-wiring.test.ts (NEU, 24 Tests + jsdom-Env + spyOn(omniTribeBridge) Mocks)",
+        "package.json (3.16.0 → 3.17.0)",
+        "agents/INDEX.js (version 3.16.0 → 3.17.0 + workLog v3.17.0 entry)"
+      ]
+    },
     {
       agent:     "backend",
       timestamp: "2026-05-18T12:00:00.000Z",

@@ -4,14 +4,36 @@
  * UI für den Granular-Synthesizer. Steuert alle GranularParams
  * und zeigt einen Mini-Visualizer der Grain-Wolke.
  * Startet / stoppt die Granular-Engine im AudioEngine-Singleton.
+ *
+ * v3.17.0: OmniTribe-Bridge-Wiring. Wenn die Bridge connected ist:
+ *   - UI-Slider → omniTribeBridge.setParam(part, 0x19, paramLow, midi)
+ *     via Throttled-Sender (60 Hz pro Param-Key).
+ *   - paramChange-CustomEvent von der Bridge → patcht den lokalen
+ *     Store via onChange. Bridge-side Echo-Schutz (50ms pendingSets)
+ *     verhindert die Endlosschleife.
+ * Disconnected: alle Bridge-Calls sind NO-OPs (sendNrpn checkt
+ * isConnected vor Throttler), Synthstudio bleibt eigenstaendig.
  */
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import { Plug, PlugZap } from "lucide-react";
 import type { GranularParams } from "@/audio/GranularEngine";
 import { DEFAULT_GRANULAR_PARAMS } from "@/audio/GranularEngine";
 import { AudioEngine } from "@/audio/AudioEngine";
+import { omniTribeBridge, type ParamChangeEvent } from "@/audio/OmniTribeBridge";
+import {
+  OMNITRIBE_GRANULAR,
+  clampPartIndex,
+  decodeParamLow,
+  granularPidToKey,
+  midiToGranularUi,
+  sendGranularParam,
+  type GranularParamKey,
+} from "@/utils/omniTribeWiring";
 
 interface GranularSynthPanelProps {
   partId: string;
+  /** v3.17: numerischer Part-Index 0..15 fuer OmniTribe-NRPN. Default 0. */
+  partIndex?: number;
   sampleUrl?: string;
   params: GranularParams;
   onChange: (params: GranularParams) => void;
@@ -79,6 +101,33 @@ function GranularViz({ params, active }: { params: GranularParams; active: boole
   return <canvas ref={canvasRef} className="w-full h-16 rounded block" />;
 }
 
+// ─── OmniTribe-Connected-Indicator ────────────────────────────────────────────
+
+function OmniTribeIndicator({ connected }: { connected: boolean }) {
+  const title = connected
+    ? "Verbunden mit OmniTribe — Encoder spiegeln in der UI"
+    : "Lokale Synthese (keine OmniTribe-Hardware verbunden)";
+  return (
+    <span
+      title={title}
+      data-testid="omnitribe-indicator-granular"
+      data-connected={connected ? "true" : "false"}
+      className={`inline-flex items-center gap-1 text-[10px] ${
+        connected ? "text-accent-success" : "text-text-dim"
+      }`}
+    >
+      {connected ? (
+        <PlugZap className="w-3 h-3" aria-hidden="true" />
+      ) : (
+        <Plug className="w-3 h-3" aria-hidden="true" />
+      )}
+      <span className="font-mono uppercase tracking-wide">
+        {connected ? "OmniTribe" : "Local"}
+      </span>
+    </span>
+  );
+}
+
 // ─── Haupt-Komponente ─────────────────────────────────────────────────────────
 
 function Slider({ label, value, min, max, step = 0.01, onChange, unit = "", fmt }: {
@@ -99,15 +148,43 @@ function Slider({ label, value, min, max, step = 0.01, onChange, unit = "", fmt 
   );
 }
 
-export function GranularSynthPanel({ partId, sampleUrl, params, onChange }: GranularSynthPanelProps) {
+export function GranularSynthPanel({ partId, partIndex = 0, sampleUrl, params, onChange }: GranularSynthPanelProps) {
   const [active, setActive] = useState(false);
+  const [hardwareConnected, setHardwareConnected] = useState(() => omniTribeBridge.isConnected);
   const p = params;
+  const part = clampPartIndex(partIndex);
+
+  // Sliding-Reference auf aktuelle Params fuer den paramChange-Listener,
+  // damit dieser nicht auf jeden Param-Change re-renderen muss.
+  const paramsRef = useRef(p);
+  paramsRef.current = p;
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
+
   const set = useCallback((update: Partial<GranularParams>) => {
-    const next = { ...p, ...update };
-    onChange(next);
+    const next = { ...paramsRef.current, ...update };
+    onChangeRef.current(next);
     // Live-Update ohne Restart
     if (active) AudioEngine.updateGranularParams(partId, update);
-  }, [p, onChange, active, partId]);
+    // v3.17: an OmniTribe spiegeln (NO-OP wenn nicht connected, throttled).
+    for (const k of Object.keys(update) as (keyof GranularParams)[]) {
+      const value = update[k];
+      if (typeof value !== "number") continue;
+      switch (k) {
+        case "grainSize":   sendGranularParam(part, "grainSize", value); break;
+        case "density":     sendGranularParam(part, "density", value); break;
+        case "pitchSpray":  sendGranularParam(part, "pitchScatter", value); break;
+        case "position":    sendGranularParam(part, "position", value); break;
+        case "spray":       sendGranularParam(part, "spray", value); break;
+        // Amplitude wird auf 'feedback'-NRPN gemappt (Bridge-Mapping §5 nutzt
+        // 'Feedback' als 6ten Slot — Granular-Engine hat keinen echten
+        // Feedback-Param, Amplitude ist die naechstliegende UI-Repraesentation
+        // bis ein dedizierter Feedback-Param ergaenzt wird).
+        case "amplitude":   sendGranularParam(part, "feedback", value); break;
+        default: /* pitch, panSpread, pitchSpray-doppelt nicht gemappt */ break;
+      }
+    }
+  }, [active, partId, part]);
 
   // Granular-Engine starten/stoppen
   const handleToggle = useCallback(async () => {
@@ -126,11 +203,51 @@ export function GranularSynthPanel({ partId, sampleUrl, params, onChange }: Gran
     return () => { AudioEngine.stopGranular(partId); };
   }, [partId]);
 
+  // v3.17: paramChange-Listener fuer Encoder am Geraet → UI-Update.
+  // Bridge dispatchet nur wenn der Wert NICHT von uns kommt (Echo-Schutz),
+  // daher kein zusaetzlicher Schutz noetig.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<ParamChangeEvent>).detail;
+      if (!detail) return;
+      if (detail.paramHigh !== OMNITRIBE_GRANULAR.PARAM_HIGH) return;
+      const decoded = decodeParamLow(detail.paramLow);
+      if (decoded.part !== part) return;
+      const uiKey: GranularParamKey | null = granularPidToKey(decoded.pid);
+      if (!uiKey) return;
+      const uiValue = midiToGranularUi(uiKey, detail.value);
+      const next: Partial<GranularParams> = {};
+      switch (uiKey) {
+        case "grainSize":    next.grainSize  = uiValue; break;
+        case "density":      next.density    = uiValue; break;
+        case "pitchScatter": next.pitchSpray = uiValue; break;
+        case "position":     next.position   = uiValue; break;
+        case "spray":        next.spray      = uiValue; break;
+        case "feedback":     next.amplitude  = uiValue; break;
+      }
+      onChangeRef.current({ ...paramsRef.current, ...next });
+      if (active) AudioEngine.updateGranularParams(partId, next);
+    };
+    window.addEventListener("omnitribe:paramChange", handler);
+    return () => window.removeEventListener("omnitribe:paramChange", handler);
+  }, [part, active, partId]);
+
+  // Bridge-Connection-Polling. Bridge ist Singleton ohne Observer-Pattern —
+  // wir checken alle 1s ob sich der Connected-State geaendert hat.
+  useEffect(() => {
+    const id = setInterval(() => {
+      const c = omniTribeBridge.isConnected;
+      setHardwareConnected(prev => (prev === c ? prev : c));
+    }, 1000);
+    return () => clearInterval(id);
+  }, []);
+
   return (
     <div className="bg-bg-panel border border-border-color rounded-lg p-3 text-xs min-w-[280px]">
       {/* Header */}
-      <div className="flex items-center justify-between mb-3">
+      <div className="flex items-center justify-between mb-3 gap-2">
         <span className="text-xs font-bold text-accent-primary uppercase tracking-wider">Granular</span>
+        <OmniTribeIndicator connected={hardwareConnected} />
         <button
           onClick={handleToggle}
           className={`px-3 py-1 rounded font-bold text-[10px] transition-colors ${

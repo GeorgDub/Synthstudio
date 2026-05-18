@@ -1,18 +1,25 @@
 /**
  * EuclideanControls – Inline-Euclidean-Rhythm-Editor pro Channel-Row
  * Öffnet Mini-Popover mit Hits/Steps/Rotation-Inputs und Apply-Button
+ *
+ * v3.17.0: Apply spiegelt Euclidean-Params an OmniTribe via NRPN 0x11
+ * (N-Steps 0x00, K-Hits 0x01, Rotation 0x02, Enable 0x03). Disconnected
+ * sind die Calls NO-OPs (sendEuclideanParam checkt isConnected).
  */
 import React, { useState } from "react";
 import * as Popover from "@radix-ui/react-popover";
 import { euclidean } from "@/utils/euclidean";
+import { sendEuclideanParam, clampPartIndex } from "@/utils/omniTribeWiring";
 
 interface EuclideanControlsProps {
   partId: string;
+  /** v3.17: numerischer Part-Index 0..15 fuer OmniTribe-NRPN. Default 0. */
+  partIndex?: number;
   stepCount: number;
   onApply: (partId: string, hits: number, steps: number, rotation: number) => void;
 }
 
-export function EuclideanControls({ partId, stepCount, onApply }: EuclideanControlsProps) {
+export function EuclideanControls({ partId, partIndex = 0, stepCount, onApply }: EuclideanControlsProps) {
   const [open, setOpen] = useState(false);
   const [hits, setHits] = useState(3);
   const [steps, setSteps] = useState(stepCount);
@@ -23,6 +30,12 @@ export function EuclideanControls({ partId, stepCount, onApply }: EuclideanContr
 
   const handleApply = () => {
     onApply(partId, hits, steps, rotation);
+    // v3.17: an OmniTribe spiegeln (NO-OP wenn nicht connected).
+    const part = clampPartIndex(partIndex);
+    sendEuclideanParam(part, "nSteps", steps);
+    sendEuclideanParam(part, "kHits", hits);
+    sendEuclideanParam(part, "rotation", rotation < 0 ? rotation + steps : rotation);
+    sendEuclideanParam(part, "enable", 1);
     setOpen(false);
   };
 

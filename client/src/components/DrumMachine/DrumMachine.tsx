@@ -1787,6 +1787,8 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
       {granularPartId && (() => {
         const grPart = pattern.parts.find(p => p.id === granularPartId);
         if (!grPart) return null;
+        // v3.17: Part-Index 0..15 fuer OmniTribe-NRPN herausfinden.
+        const grPartIndex = pattern.parts.findIndex(p => p.id === granularPartId);
         return (
           // v1.94: title gesetzt damit der Header (mit Close-Button) prominent ist.
           // User-Feedback aus neue_todos.md: 'alle fenster sollen mit X zumachbar
@@ -1797,6 +1799,7 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
             onClose={() => setGranularPartId(null)}>
             <GranularSynthPanel
               partId={grPart.id}
+              partIndex={grPartIndex >= 0 ? grPartIndex : 0}
               sampleUrl={grPart.sampleUrl}
               params={{ ...DEFAULT_GRANULAR_PARAMS, ...grPart.granularParams }}
               onChange={params => dm.setPartGranularParams(grPart.id, params)}
