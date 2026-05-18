@@ -25,6 +25,12 @@
  */
 
 import type { EsxPattern } from "./esxParser";
+import type {
+  EsxPatternInput,
+  EsxDrumPartInput,
+  EsxShortPartInput,
+  EsxStepInput,
+} from "./esxPatternBuilder";
 
 /** Synthstudio-Drum-Part-Slot wie er fuer Pattern-Import benoetigt wird. */
 export interface SynthstudioDrumPartImport {
@@ -174,4 +180,178 @@ function clampPan(value: number): number {
   if (value < -1) return -1;
   if (value > 1) return 1;
   return value;
+}
+
+// ─── v3.27.0: Synthstudio → ESX WRITE-side adapter ───────────────────────────
+
+/**
+ * Minimal shape of a Synthstudio drum-part for ESX conversion.
+ *
+ * Kept structurally compatible with `PartData` from
+ * `client/src/audio/AudioEngine.ts` but defined here as a structural type so
+ * the converter remains pure (no AudioEngine dependency) and easy to test.
+ */
+export interface SynthstudioPartLike {
+  /** 0..1 Synthstudio volume. */
+  volume?: number;
+  /** -1..+1 (0 = center) Synthstudio pan. */
+  pan?: number;
+  /** Per-step trigger data. Velocity > 100 → accent in ESX. */
+  steps: Array<{ active: boolean; velocity?: number; pitch?: number }>;
+}
+
+/** Minimal shape of a Synthstudio pattern for ESX conversion. */
+export interface SynthstudioPatternLike {
+  /** Pattern display name. Truncated to 8 chars for ESX. */
+  name?: string;
+  /** Pattern BPM (Hardware-Range 20..300). */
+  bpm?: number | null;
+  /** Step-count: typically 16 (ESX hardware). */
+  stepCount?: number;
+  /** Swing 0..100. */
+  swing?: number;
+  /** Synthstudio drum-parts (up to 16 — extras are dropped). */
+  parts: SynthstudioPartLike[];
+}
+
+/** Velocity threshold above which a step is treated as accented in ESX. */
+export const ESX_ACCENT_VELOCITY_THRESHOLD = 100;
+
+/** Convert Synthstudio volume (0..1) → ESX level (0..127). */
+export function synthVolumeToEsxLevel(volume: number | undefined): number {
+  if (typeof volume !== "number" || !Number.isFinite(volume)) return 100;
+  const clamped = Math.max(0, Math.min(1, volume));
+  return Math.round(clamped * 127);
+}
+
+/** Convert Synthstudio pan (-1..+1) → ESX pan (0..127, 64 = center). */
+export function synthPanToEsxPan(pan: number | undefined): number {
+  if (typeof pan !== "number" || !Number.isFinite(pan)) return 64;
+  const clamped = Math.max(-1, Math.min(1, pan));
+  return Math.round(64 + clamped * 63);
+}
+
+/** Convert a single Synthstudio step → ESX step (accent if velocity > threshold). */
+export function synthStepToEsx(
+  step: { active: boolean; velocity?: number } | undefined,
+): EsxStepInput {
+  if (!step || !step.active) return { active: false };
+  const accent =
+    typeof step.velocity === "number" &&
+    Number.isFinite(step.velocity) &&
+    step.velocity > ESX_ACCENT_VELOCITY_THRESHOLD;
+  return { active: true, accent };
+}
+
+/**
+ * Builds a default 16-step empty `steps` array (used for missing/padding parts).
+ */
+function emptyEsxSteps(): EsxStepInput[] {
+  const out: EsxStepInput[] = new Array(16);
+  for (let i = 0; i < 16; i++) out[i] = { active: false };
+  return out;
+}
+
+/**
+ * Convert one Synthstudio part → ESX drum/short part input.
+ *
+ * Volume/pan are mapped via {@link synthVolumeToEsxLevel} / {@link synthPanToEsxPan}.
+ * Pitch is taken from the first step that has a defined `.pitch` field (the
+ * ESX has only a single per-part pitch — step-level pitch motion is not
+ * encoded in v3.27). Steps are converted via {@link synthStepToEsx}.
+ */
+export function synthPartToEsxDrumPart(
+  part: SynthstudioPartLike | undefined,
+): EsxDrumPartInput {
+  if (!part) {
+    return {
+      level: 100,
+      pan: 64,
+      pitch: 0,
+      fxSend: 0,
+      steps: emptyEsxSteps(),
+    };
+  }
+  const stepsIn = Array.isArray(part.steps) ? part.steps : [];
+  const steps: EsxStepInput[] = new Array(16);
+  let pitchSemis = 0;
+  for (let s = 0; s < 16; s++) {
+    const src = stepsIn[s];
+    steps[s] = synthStepToEsx(src);
+    if (src && typeof src.pitch === "number" && Number.isFinite(src.pitch) && src.active) {
+      // Take the pitch from the first active step that defines it (best-effort).
+      if (pitchSemis === 0) pitchSemis = Math.max(-64, Math.min(63, Math.floor(src.pitch)));
+    }
+  }
+  return {
+    level: synthVolumeToEsxLevel(part.volume),
+    pan: synthPanToEsxPan(part.pan),
+    pitch: pitchSemis,
+    fxSend: 0,
+    steps,
+  };
+}
+
+/** Same shape mapping, but returned as a short-part (different stride at write time). */
+export function synthPartToEsxShortPart(
+  part: SynthstudioPartLike | undefined,
+): EsxShortPartInput {
+  // Structurally identical to drum mapping — the difference is only in the
+  // binary encoding (stride / header layout), which the builder handles.
+  return synthPartToEsxDrumPart(part);
+}
+
+/**
+ * Convert a full Synthstudio pattern → ESX pattern input (ready for
+ * {@link buildEsxPatternBlock}).
+ *
+ * Mapping convention (1:1 part-index 0..14):
+ *   parts[0..9]   → drumParts[0..9]
+ *   parts[10]     → stretchPart
+ *   parts[11..14] → shortParts[0..3]
+ *   parts[15]     → audioInPart (typically silent in real ESX files)
+ *
+ * Missing parts get all-default empty values. Extra parts beyond index 15
+ * are dropped.
+ */
+export function convertSynthstudioPatternToEsx(
+  pattern: SynthstudioPatternLike,
+): EsxPatternInput {
+  const safeName = (pattern.name ?? "").slice(0, 8);
+  const bpm =
+    typeof pattern.bpm === "number" && Number.isFinite(pattern.bpm) ? pattern.bpm : 120;
+
+  const parts = Array.isArray(pattern.parts) ? pattern.parts : [];
+
+  const drumParts: EsxDrumPartInput[] = new Array(10);
+  for (let i = 0; i < 10; i++) drumParts[i] = synthPartToEsxDrumPart(parts[i]);
+
+  const stretchPart = synthPartToEsxDrumPart(parts[10]);
+
+  const shortParts: EsxShortPartInput[] = new Array(4);
+  for (let i = 0; i < 4; i++) shortParts[i] = synthPartToEsxShortPart(parts[11 + i]);
+
+  // Audio-In = part 15. Defaults to silent if not provided.
+  const audioInPart = parts[15] ? synthPartToEsxShortPart(parts[15]) : undefined;
+
+  const stepCount =
+    typeof pattern.stepCount === "number" && Number.isFinite(pattern.stepCount)
+      ? Math.max(1, Math.min(64, Math.floor(pattern.stepCount)))
+      : 16;
+
+  const swing =
+    typeof pattern.swing === "number" && Number.isFinite(pattern.swing)
+      ? Math.max(0, Math.min(100, Math.floor(pattern.swing)))
+      : 0;
+
+  return {
+    name: safeName,
+    bpm,
+    stepLength: stepCount,
+    swing,
+    drumParts,
+    stretchPart,
+    shortParts,
+    audioInPart,
+  };
 }
