@@ -234,6 +234,27 @@ const electronAPI = {
   getE2PatternSize: (): Promise<number> =>
     ipcRenderer.invoke("electribe:get-pattern-size"),
 
+  // ── ESX-1 Bank Pattern-Patch Export (v3.29.0) ──────────────────────────────
+  /**
+   * Speichert eine vom Renderer per `patchEsxBankPattern` modifizierte .esx-
+   * Bank via nativen Save-Dialog. Main-Side validiert Magic (KORG@0x00 +
+   * ESX\0@0x08) + Größe (Min 0x00250010..Max 64MB) + Endung (.esx). Pfad kommt
+   * aus dem Dialog — kein Path-Traversal-Vektor.
+   */
+  saveEsxBankAs: (
+    suggestedFilename: string,
+    data: ArrayBuffer | Uint8Array,
+  ): Promise<{ success: boolean; filePath?: string; bytesWritten?: number; error?: string }> =>
+    ipcRenderer.invoke(
+      "esx:save-bank-as",
+      suggestedFilename,
+      data instanceof Uint8Array ? Array.from(data) : Array.from(new Uint8Array(data)),
+    ),
+
+  /** Liefert das ESX-Bank-Save-Cap (Bytes) für UI-Hinweise. */
+  getEsxBankSaveCap: (): Promise<number> =>
+    ipcRenderer.invoke("esx:get-bank-save-cap"),
+
   // Import-Events
   onImportStarted: createEventListener<{ importId: string }>("samples:import-started"),
   onImportProgress: createEventListener<{

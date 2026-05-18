@@ -65,6 +65,27 @@ import {
   setSlotSlices,
   type OpenedSlot,
 } from "@/utils/korg/bankEditorState";
+// v3.29.0 — ESX-1 Bank Pattern-Patch
+import {
+  parseEsxBank,
+  EsxParseError,
+  isEsxBuffer,
+} from "@/utils/korg/esxParser";
+import { buildEsxPatternBlock } from "@/utils/korg/esxPatternBuilder";
+import {
+  convertSynthstudioPatternToEsx,
+  type SynthstudioPatternLike,
+} from "@/utils/korg/esxPatternConvert";
+import {
+  buildEsxSlotOverview,
+  commitEsxPatches,
+  countPendingEsxPatches,
+  filterEsxRows,
+  hasPendingEsxPatches,
+  stageEsxPatch,
+  unstageEsxPatch,
+  type EsxSlotRow,
+} from "@/utils/korg/esxBankEditorState";
 import {
   MAX_ESLI_SLICES,
   onsetsToSlices as onsetsToEsliSlices,
@@ -96,10 +117,20 @@ export interface KorgBankEditorProps {
    * v3.7.0 — Optional externer File-Drop. Wenn der Caller hier einen .all-File
    * durchreicht (z.B. weil der User auf das offene Editor-Modal eine .all
    * gedroppt hat), öffnet der Editor das File automatisch im "edit" Modus.
+   * v3.29.0 — Auch .esx-Files werden hier durchgereicht (ESX-Mode).
    */
   externalOpenFile?: File | null;
   /** Wird aufgerufen sobald `externalOpenFile` verarbeitet wurde — Caller kann state resetten. */
   onExternalOpenFileConsumed?: () => void;
+  /**
+   * v3.29.0 — Optionaler Zugriff auf das aktuell aktive Synthstudio-Pattern,
+   * damit der User es in einen ESX-Slot replacen kann. Wird vom App-Root
+   * durchgereicht (closure über `dm.getActivePattern()`). Wenn null/undefined
+   * geliefert wird, deaktiviert sich der "Replace"-Button im ESX-Tab.
+   */
+  getActiveSynthPattern?: () => SynthstudioPatternLike | null;
+  /** Globale BPM-Quelle (falls Pattern.bpm null ist — Fallback). */
+  globalBpm?: number;
 }
 
 // ─── Internal State (Create-New mode) ─────────────────────────────────────────
@@ -122,7 +153,7 @@ interface NewModeSlot {
 
 const TARGET_SAMPLE_RATE_OPTIONS: ReadonlyArray<44100 | 48000> = E2S_SAMPLE_RATES;
 
-type EditorMode = "new" | "edit";
+type EditorMode = "new" | "edit" | "esx";
 
 /**
  * v3.8.0 — Extrahiere einen Mono-Channel aus dem (möglicherweise interleaved
@@ -148,6 +179,8 @@ export function KorgBankEditor({
   onClose,
   externalOpenFile = null,
   onExternalOpenFileConsumed,
+  getActiveSynthPattern,
+  globalBpm,
 }: KorgBankEditorProps): React.ReactElement | null {
   const project = useProjectStore();
   const samples = project.samples;
@@ -168,12 +201,24 @@ export function KorgBankEditor({
   const [openedSourceName, setOpenedSourceName] = useState<string>("");
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
 
+  // v3.29.0 — "esx" mode state
+  const [esxBankBuffer, setEsxBankBuffer] = useState<ArrayBuffer | null>(null);
+  const [esxRows, setEsxRows] = useState<EsxSlotRow[]>([]);
+  const [esxPendingPatches, setEsxPendingPatches] = useState<Map<number, ArrayBuffer>>(
+    () => new Map(),
+  );
+  const [esxSelectedSlot, setEsxSelectedSlot] = useState<number | null>(null);
+  const [esxSearch, setEsxSearch] = useState<string>("");
+  const [esxHideInit, setEsxHideInit] = useState<boolean>(true);
+  const [esxHideEmpty, setEsxHideEmpty] = useState<boolean>(true);
+
   // Shared
   const [busy, setBusy] = useState<boolean>(false);
   const [resultMsg, setResultMsg] = useState<string | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const replaceInputRef = useRef<HTMLInputElement | null>(null);
+  const esxFileInputRef = useRef<HTMLInputElement | null>(null);
 
   // v3.9.0 — Slice-Audition (Preview)
   const [auditionState, setAuditionState] = useState<{
@@ -217,6 +262,12 @@ export function KorgBankEditor({
       setResultMsg(null);
       setBusy(false);
       setMode("new");
+      // v3.29.0 — auch ESX-State zurücksetzen
+      setEsxBankBuffer(null);
+      setEsxRows([]);
+      setEsxPendingPatches(new Map());
+      setEsxSelectedSlot(null);
+      setEsxSearch("");
     }
   }, [open]);
 
@@ -261,22 +312,34 @@ export function KorgBankEditor({
 
   function tryChangeMode(next: EditorMode): void {
     if (mode === next) return;
-    const hasChanges =
-      next === "new"
-        ? hasUnsavedChanges(openedSlots) || openedSlots.length > 0
-        : newSlots.length > 0;
+    // Detect "dirty" state in the *outgoing* mode and prompt before discarding.
+    let hasChanges = false;
+    if (mode === "new") {
+      hasChanges = newSlots.length > 0;
+    } else if (mode === "edit") {
+      hasChanges = hasUnsavedChanges(openedSlots) || openedSlots.length > 0;
+    } else if (mode === "esx") {
+      hasChanges = hasPendingEsxPatches(esxPendingPatches) || esxBankBuffer !== null;
+    }
     if (hasChanges) {
       const ok = window.confirm(
         "Ungespeicherte Änderungen gehen verloren. Trotzdem Modus wechseln?",
       );
       if (!ok) return;
     }
-    if (next === "new") {
+    // Clear the outgoing mode's state so re-entering starts fresh.
+    if (mode === "new") {
+      setNewSlots([]);
+    } else if (mode === "edit") {
       setOpenedSlots([]);
       setOpenedSourceName("");
       setSelectedRowId(null);
-    } else {
-      setNewSlots([]);
+    } else if (mode === "esx") {
+      setEsxBankBuffer(null);
+      setEsxRows([]);
+      setEsxPendingPatches(new Map());
+      setEsxSelectedSlot(null);
+      setEsxSearch("");
     }
     setResultMsg(null);
     setMode(next);
@@ -284,10 +347,63 @@ export function KorgBankEditor({
 
   // ─── Open Existing Bank ────────────────────────────────────────────────────
 
+  // v3.29.0 — Lädt eine .esx ESX-1 Bank in den ESX-Pattern-Mode.
+  const loadEsxBankFromFile = useCallback(async (file: File): Promise<void> => {
+    if (!requireProFeature(PRO_FEATURE_KORG_BANK_WRITE)) return;
+    if (file.size === 0) {
+      toast("Datei ist leer.", { kind: "error" });
+      return;
+    }
+    setBusy(true);
+    setResultMsg("Lade ESX-Bank...");
+    try {
+      const ab = await file.arrayBuffer();
+      if (!isEsxBuffer(ab)) {
+        toast(
+          "Kein gültiges ESX-1-Format (KORG/ESX-Magic fehlt).",
+          { kind: "error", duration: 5000 },
+        );
+        setBusy(false);
+        setResultMsg(null);
+        return;
+      }
+      const bank = parseEsxBank(ab, file.name);
+      const rows = buildEsxSlotOverview(bank);
+      setEsxBankBuffer(ab);
+      setEsxRows(rows);
+      setEsxPendingPatches(new Map());
+      setEsxSelectedSlot(null);
+      setMode("esx");
+      // Filename default for save: original name (user can rename).
+      const baseName = file.name.replace(/\.[^.]+$/, "");
+      const safeName = baseName.replace(/[^A-Za-z0-9._-]/g, "_");
+      setFilename(`${safeName}.esx`);
+      const filledRows = rows.filter((r) => !r.empty).length;
+      toast(
+        `ESX-Bank geladen: ${filledRows}/256 Pattern — ${bank.warnings.length} Warnungen`,
+        { kind: "success", duration: 4000 },
+      );
+      setResultMsg(`${filledRows} Pattern bereit — wähle einen Slot zum Ersetzen.`);
+    } catch (err) {
+      const msg =
+        err instanceof EsxParseError ? err.message :
+        err instanceof Error ? err.message : String(err);
+      toast(`Fehler beim Laden: ${msg}`, { kind: "error", duration: 6000 });
+      setResultMsg(null);
+    } finally {
+      setBusy(false);
+    }
+  }, []);
+
   const loadBankFromFile = useCallback(async (file: File): Promise<void> => {
     if (!requireProFeature(PRO_FEATURE_KORG_BANK_WRITE)) return;
     if (file.size === 0) {
       toast("Datei ist leer.", { kind: "error" });
+      return;
+    }
+    // v3.29.0 — .esx → ESX-Mode, .all (default) → E2-Edit-Mode.
+    if (file.name.toLowerCase().endsWith(".esx")) {
+      await loadEsxBankFromFile(file);
       return;
     }
     setBusy(true);
@@ -319,7 +435,7 @@ export function KorgBankEditor({
     } finally {
       setBusy(false);
     }
-  }, []);
+  }, [loadEsxBankFromFile]);
 
   // v3.7: external file (drag-drop into editor) auto-open
   useEffect(() => {
@@ -417,6 +533,167 @@ export function KorgBankEditor({
   function handleReplaceClick(rowId: string): void {
     setSelectedRowId(rowId);
     replaceInputRef.current?.click();
+  }
+
+  // ─── ESX-Pattern-Mode Operations (v3.29.0) ─────────────────────────────────
+
+  function handleOpenEsxBankClick(): void {
+    if (!requireProFeature(PRO_FEATURE_KORG_BANK_WRITE)) return;
+    esxFileInputRef.current?.click();
+  }
+
+  function handleEsxBankFileInput(e: React.ChangeEvent<HTMLInputElement>): void {
+    const f = e.target.files?.[0];
+    e.target.value = ""; // allow re-selecting same file
+    if (f) loadEsxBankFromFile(f);
+  }
+
+  function handleEsxReplaceSlot(slotIndex: number): void {
+    if (!requireProFeature(PRO_FEATURE_KORG_BANK_WRITE)) return;
+    if (!getActiveSynthPattern) {
+      toast("Kein aktives Synthstudio-Pattern verfügbar.", { kind: "warning" });
+      return;
+    }
+    const current = getActiveSynthPattern();
+    if (!current) {
+      toast("Kein aktives Synthstudio-Pattern.", { kind: "warning" });
+      return;
+    }
+    try {
+      // Apply BPM fallback if pattern.bpm is null/undefined.
+      const patched: SynthstudioPatternLike =
+        current.bpm == null && typeof globalBpm === "number"
+          ? { ...current, bpm: globalBpm }
+          : current;
+      const esxInput = convertSynthstudioPatternToEsx(patched);
+      const block = buildEsxPatternBlock(esxInput);
+      setEsxPendingPatches((prev) => stageEsxPatch(prev, slotIndex, block));
+      // Update overview row so the UI immediately reflects the new name/bpm.
+      setEsxRows((prev) =>
+        prev.map((r) =>
+          r.index === slotIndex
+            ? {
+                index: slotIndex,
+                empty: false,
+                name: (patched.name ?? "").slice(0, 8),
+                bpm:
+                  typeof patched.bpm === "number" && Number.isFinite(patched.bpm)
+                    ? patched.bpm
+                    : 120,
+                stepLength: patched.stepCount ?? 16,
+              }
+            : r,
+        ),
+      );
+      toast(
+        `Slot #${slotIndex} mit "${(patched.name ?? "").slice(0, 8) || "(unnamed)"}" ersetzt`,
+        { kind: "success", duration: 2500 },
+      );
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast(`Fehler beim Ersetzen: ${msg}`, { kind: "error" });
+    }
+  }
+
+  function handleEsxRevertSlot(slotIndex: number): void {
+    setEsxPendingPatches((prev) => unstageEsxPatch(prev, slotIndex));
+    // Refresh overview row from the (untouched) loaded bank by re-parsing —
+    // cheap because parseEsxPattern is per-slot, but we already have the
+    // pre-load snapshot in esxRows pre-stage. Simpler: re-build rows from the
+    // original buffer.
+    if (esxBankBuffer) {
+      try {
+        const bank = parseEsxBank(esxBankBuffer);
+        const rows = buildEsxSlotOverview(bank);
+        // Preserve any *other* still-staged slots' overview rows so the user
+        // doesn't see them flicker back to the original.
+        setEsxRows((prev) =>
+          rows.map((r) => {
+            if (esxPendingPatches.has(r.index) && r.index !== slotIndex) {
+              const old = prev.find((p) => p.index === r.index);
+              return old ?? r;
+            }
+            return r;
+          }),
+        );
+      } catch {
+        /* keep existing rows */
+      }
+    }
+  }
+
+  async function handleEsxSaveBank(): Promise<void> {
+    if (!requireProFeature(PRO_FEATURE_KORG_BANK_WRITE)) return;
+    if (!esxBankBuffer) {
+      toast("Keine ESX-Bank geladen.", { kind: "warning" });
+      return;
+    }
+    if (!hasPendingEsxPatches(esxPendingPatches)) {
+      toast("Keine Slots zum Speichern modifiziert.", { kind: "warning" });
+      return;
+    }
+    const patchCount = countPendingEsxPatches(esxPendingPatches);
+    const ok = window.confirm(
+      `${patchCount} Pattern-Slot(s) wurden geändert.\n` +
+        `Alle anderen Slots, Sample-Daten und Song-Daten bleiben bit-exakt erhalten.\n\n` +
+        `Bank speichern?`,
+    );
+    if (!ok) return;
+    setBusy(true);
+    setResultMsg("Schreibe ESX-Bank...");
+    try {
+      const newBuffer = commitEsxPatches(esxBankBuffer, esxPendingPatches);
+      const safeName = filename.replace(/[^A-Za-z0-9._-]/g, "_");
+      const finalName = safeName.toLowerCase().endsWith(".esx")
+        ? safeName
+        : `${safeName}.esx`;
+      if (electron.isElectron) {
+        const result = await electron.saveEsxBankAs(finalName, newBuffer);
+        if (!result.success) {
+          if (result.error === "canceled") {
+            setResultMsg(null);
+            return;
+          }
+          toast(`Fehler beim Speichern: ${result.error}`, { kind: "error" });
+          setResultMsg(null);
+          return;
+        }
+        toast(
+          `ESX-Bank gespeichert: ${result.filePath} (${patchCount} Slot(s) geändert)`,
+          { kind: "success", duration: 4000 },
+        );
+        setResultMsg(`Gespeichert: ${result.filePath}`);
+        // Update working copy + clear pending patches.
+        setEsxBankBuffer(newBuffer);
+        setEsxPendingPatches(new Map());
+      } else {
+        const blob = new Blob([newBuffer], { type: "application/octet-stream" });
+        const url = URL.createObjectURL(blob);
+        try {
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = finalName;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+        } finally {
+          setTimeout(() => URL.revokeObjectURL(url), 1000);
+        }
+        toast(
+          `ESX-Bank heruntergeladen: ${finalName} (${patchCount} Slot(s) geändert)`,
+          { kind: "success", duration: 4000 },
+        );
+        setResultMsg(`Download: ${finalName}`);
+        setEsxBankBuffer(newBuffer);
+        setEsxPendingPatches(new Map());
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast(`Speichern fehlgeschlagen: ${msg}`, { kind: "error", duration: 6000 });
+      setResultMsg(null);
+    } finally {
+      setBusy(false);
+    }
   }
 
   // ─── Slice-Editor (v3.8.0) ─────────────────────────────────────────────────
@@ -632,6 +909,24 @@ export function KorgBankEditor({
     [openedSlots, selectedRowId],
   );
 
+  // v3.29.0 — ESX-Mode computed
+  const esxFilledCount = useMemo(
+    () => esxRows.filter((r) => !r.empty).length,
+    [esxRows],
+  );
+  const esxPendingCount = useMemo(
+    () => countPendingEsxPatches(esxPendingPatches),
+    [esxPendingPatches],
+  );
+  const esxVisibleRows = useMemo(
+    () => filterEsxRows(esxRows, esxSearch, esxHideInit, esxHideEmpty),
+    [esxRows, esxSearch, esxHideInit, esxHideEmpty],
+  );
+  const esxSelectedRow = useMemo(
+    () => (esxSelectedSlot == null ? null : esxRows.find((r) => r.index === esxSelectedSlot) ?? null),
+    [esxRows, esxSelectedSlot],
+  );
+
   if (!open) return null;
 
   return (
@@ -650,13 +945,17 @@ export function KorgBankEditor({
         <header className="px-4 py-3 border-b border-border-color flex items-center justify-between flex-shrink-0 gap-3 flex-wrap">
           <div className="flex-1 min-w-[200px]">
             <h2 className="text-base font-semibold text-text-primary flex items-center gap-2">
-              KORG E2 Sample-Bank
+              {mode === "esx" ? "KORG ESX-1 Bank" : "KORG E2 Sample-Bank"}
               <ProLockBadge feature={PRO_FEATURE_KORG_BANK_WRITE} />
             </h2>
             <p className="text-xs text-text-muted mt-0.5">
               {mode === "new"
                 ? `Erstelle neue Bank · ${newSlots.length}/${E2S_MAX_SLOTS} Slots · ${(totalBytesNew / 1024 / 1024).toFixed(1)} MB PCM`
-                : `Editiere ${openedSourceName || "Bank"} · ${filledCountOpened}/${E2S_MAX_SLOTS} Slots · ${dirtyCountOpened} geändert`}
+                : mode === "edit"
+                  ? `Editiere ${openedSourceName || "Bank"} · ${filledCountOpened}/${E2S_MAX_SLOTS} Slots · ${dirtyCountOpened} geändert`
+                  : esxBankBuffer
+                    ? `ESX Pattern-Patch · ${esxFilledCount}/256 belegt · ${esxPendingCount} geändert`
+                    : "ESX Pattern-Patch · keine Bank geladen"}
             </p>
           </div>
 
@@ -694,6 +993,21 @@ export function KorgBankEditor({
             >
               Bank bearbeiten
             </button>
+            <button
+              role="tab"
+              data-testid="korg-bank-editor-mode-esx"
+              aria-selected={mode === "esx"}
+              onClick={() => tryChangeMode("esx")}
+              disabled={busy}
+              className={`px-3 py-1 transition-colors disabled:opacity-40 ${
+                mode === "esx"
+                  ? "bg-accent-primary text-bg-base"
+                  : "bg-bg-elevated text-text-muted hover:text-text-primary"
+              }`}
+              title="KORG ESX-1 Pattern Bank-Patch"
+            >
+              ESX Patterns
+            </button>
           </div>
 
           <button
@@ -724,10 +1038,23 @@ export function KorgBankEditor({
           className="hidden"
           onChange={handleReplaceInput}
         />
+        {/* v3.29.0 — ESX-Bank file picker */}
+        <input
+          ref={esxFileInputRef}
+          data-testid="korg-bank-editor-esx-open-input"
+          type="file"
+          accept=".esx,.ESX"
+          className="hidden"
+          onChange={handleEsxBankFileInput}
+        />
 
         {/* Body */}
         <div className="flex-1 min-h-0 flex flex-col md:flex-row">
-          {mode === "new" ? renderNewModeBody() : renderEditModeBody()}
+          {mode === "new"
+            ? renderNewModeBody()
+            : mode === "edit"
+              ? renderEditModeBody()
+              : renderEsxModeBody()}
         </div>
 
         {/* Footer */}
@@ -735,7 +1062,11 @@ export function KorgBankEditor({
           <p className="text-xs text-text-muted">
             {mode === "new"
               ? `Total: ${newSlots.length} Slots · ${(totalBytesNew / 1024 / 1024).toFixed(2)} MB PCM`
-              : `${filledCountOpened} Slots · ${dirtyCountOpened} geändert / ${filledCountOpened - dirtyCountOpened} bit-exakt`}
+              : mode === "edit"
+                ? `${filledCountOpened} Slots · ${dirtyCountOpened} geändert / ${filledCountOpened - dirtyCountOpened} bit-exakt`
+                : esxBankBuffer
+                  ? `${esxFilledCount}/256 belegt · ${esxPendingCount} Patch(es) ausstehend · Rest bit-exakt`
+                  : "Keine ESX-Bank geladen"}
           </p>
           <div className="flex items-center gap-2">
             <button
@@ -746,19 +1077,31 @@ export function KorgBankEditor({
             >
               Abbrechen
             </button>
-            <button
-              data-testid="korg-bank-editor-save"
-              onClick={handleSaveAs}
-              disabled={
-                busy ||
-                (mode === "new" && newSlots.length === 0) ||
-                (mode === "edit" && filledCountOpened === 0)
-              }
-              className="px-3 py-1 rounded text-xs bg-accent-primary text-bg-base hover:opacity-90 transition-opacity disabled:opacity-40 flex items-center gap-2"
-            >
-              {busy ? "Speichere..." : "Als .all speichern"}
-              <ProLockBadge feature={PRO_FEATURE_KORG_BANK_WRITE} />
-            </button>
+            {mode === "esx" ? (
+              <button
+                data-testid="korg-bank-editor-esx-save"
+                onClick={handleEsxSaveBank}
+                disabled={busy || !esxBankBuffer || esxPendingCount === 0}
+                className="px-3 py-1 rounded text-xs bg-accent-primary text-bg-base hover:opacity-90 transition-opacity disabled:opacity-40 flex items-center gap-2"
+              >
+                {busy ? "Speichere..." : "Als .esx speichern"}
+                <ProLockBadge feature={PRO_FEATURE_KORG_BANK_WRITE} />
+              </button>
+            ) : (
+              <button
+                data-testid="korg-bank-editor-save"
+                onClick={handleSaveAs}
+                disabled={
+                  busy ||
+                  (mode === "new" && newSlots.length === 0) ||
+                  (mode === "edit" && filledCountOpened === 0)
+                }
+                className="px-3 py-1 rounded text-xs bg-accent-primary text-bg-base hover:opacity-90 transition-opacity disabled:opacity-40 flex items-center gap-2"
+              >
+                {busy ? "Speichere..." : "Als .all speichern"}
+                <ProLockBadge feature={PRO_FEATURE_KORG_BANK_WRITE} />
+              </button>
+            )}
           </div>
         </footer>
       </div>
@@ -1138,6 +1481,261 @@ export function KorgBankEditor({
           {resultMsg && (
             <p
               data-testid="korg-bank-editor-status"
+              className="text-xs text-text-muted pt-2 border-t border-border-color"
+            >
+              {resultMsg}
+            </p>
+          )}
+        </div>
+      </>
+    );
+  }
+
+  // ─── Render: ESX-Pattern-Patch Mode (v3.29.0) ──────────────────────────────
+
+  function renderEsxModeBody(): React.ReactElement {
+    if (!esxBankBuffer) {
+      return (
+        <div className="flex-1 flex items-center justify-center p-8">
+          <div className="text-center space-y-3">
+            <p className="text-sm text-text-muted">
+              Lade eine existierende <code className="text-text-primary">.esx</code>{" "}
+              Pattern-Bank (KORG ESX-1 Backup).
+            </p>
+            <p className="text-xs text-text-dim">
+              Du kannst einzelne Pattern-Slots mit deinem aktuellen Synthstudio-
+              Pattern überschreiben. Alles andere (Samples, Songs, Globals)
+              bleibt bit-exakt erhalten.
+            </p>
+            <button
+              data-testid="korg-bank-editor-esx-open"
+              onClick={handleOpenEsxBankClick}
+              disabled={busy}
+              className="px-4 py-2 rounded text-sm bg-accent-primary text-bg-base hover:opacity-90 transition-opacity disabled:opacity-40 inline-flex items-center gap-2"
+            >
+              📂 ESX-Bank öffnen
+            </button>
+            <p className="text-[10px] text-text-dim">
+              Tipp: Du kannst auch eine <code>.esx</code>-Datei direkt in dieses
+              Fenster ziehen.
+            </p>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <>
+        {/* Left — Pattern-Slot-Liste mit Filter */}
+        <div className="md:w-2/5 border-r border-border-color overflow-y-auto p-2 flex flex-col gap-2">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <h3 className="text-xs font-semibold text-text-primary">
+              Pattern-Slots ({esxVisibleRows.length}/{esxRows.length})
+            </h3>
+            <button
+              data-testid="korg-bank-editor-esx-open-another"
+              onClick={handleOpenEsxBankClick}
+              disabled={busy}
+              className="px-2 py-0.5 rounded text-[10px] bg-bg-elevated text-text-muted hover:text-text-primary transition-colors disabled:opacity-40"
+              title="Andere .esx-Bank öffnen"
+            >
+              📂 Andere
+            </button>
+          </div>
+
+          {/* Filter row */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <input
+              data-testid="korg-bank-editor-esx-search"
+              type="text"
+              placeholder="Suchen (Name oder Index)"
+              value={esxSearch}
+              onChange={(e) => setEsxSearch(e.target.value)}
+              className="flex-1 min-w-[120px] bg-bg-elevated border border-border-color rounded text-xs px-2 py-0.5 text-text-primary placeholder:text-text-dim"
+            />
+            <label className="text-[10px] text-text-muted flex items-center gap-1">
+              <input
+                data-testid="korg-bank-editor-esx-hide-init"
+                type="checkbox"
+                checked={esxHideInit}
+                onChange={(e) => setEsxHideInit(e.target.checked)}
+                className="accent-accent-primary"
+              />
+              Init verbergen
+            </label>
+            <label className="text-[10px] text-text-muted flex items-center gap-1">
+              <input
+                data-testid="korg-bank-editor-esx-hide-empty"
+                type="checkbox"
+                checked={esxHideEmpty}
+                onChange={(e) => setEsxHideEmpty(e.target.checked)}
+                className="accent-accent-primary"
+              />
+              Leere verbergen
+            </label>
+          </div>
+
+          <ul
+            className="space-y-0.5 flex-1 min-h-0"
+            data-testid="korg-bank-editor-esx-slot-list"
+          >
+            {esxVisibleRows.length === 0 ? (
+              <li className="text-xs text-text-dim italic py-4 text-center">
+                Keine Slots passen zu deinem Filter.
+              </li>
+            ) : (
+              esxVisibleRows.map((r) => {
+                const dirty = esxPendingPatches.has(r.index);
+                const selected = esxSelectedSlot === r.index;
+                return (
+                  <li key={r.index}>
+                    <button
+                      data-testid={`korg-bank-editor-esx-slot-${r.index}`}
+                      onClick={() => setEsxSelectedSlot(r.index)}
+                      className={`w-full flex items-center gap-2 px-2 py-1 rounded text-xs text-left transition-colors border ${
+                        selected
+                          ? "border-accent-primary bg-bg-elevated"
+                          : "border-transparent hover:bg-bg-elevated"
+                      } ${r.empty && !dirty ? "opacity-50" : ""}`}
+                    >
+                      <span className="font-mono text-text-dim w-10 flex-shrink-0">
+                        #{r.index.toString().padStart(3, "0")}
+                      </span>
+                      <span
+                        className={`flex-1 truncate ${
+                          r.empty && !dirty
+                            ? "text-text-dim italic"
+                            : "text-text-primary"
+                        }`}
+                      >
+                        {r.empty && !dirty ? "(empty)" : r.name || "(unnamed)"}
+                      </span>
+                      {!r.empty && (
+                        <span className="text-[10px] text-text-dim w-16 truncate text-right">
+                          {r.bpm > 0 ? `${r.bpm.toFixed(1)} BPM` : ""}
+                        </span>
+                      )}
+                      {dirty && (
+                        <span
+                          data-testid={`korg-bank-editor-esx-dirty-${r.index}`}
+                          className="text-[10px] text-accent-danger flex-shrink-0"
+                          title="Slot wird beim Speichern überschrieben"
+                        >
+                          ●
+                        </span>
+                      )}
+                    </button>
+                  </li>
+                );
+              })
+            )}
+          </ul>
+        </div>
+
+        {/* Right — Slot-Detail + Replace Action */}
+        <div className="flex-1 overflow-y-auto p-3 space-y-3">
+          {esxSelectedRow === null ? (
+            <p className="text-xs text-text-muted text-center py-8">
+              Wähle links einen Pattern-Slot aus, um ihn mit dem aktuellen
+              Synthstudio-Pattern zu ersetzen.
+            </p>
+          ) : (
+            <div
+              data-testid="korg-bank-editor-esx-detail"
+              className="space-y-3"
+            >
+              <div className="flex items-center justify-between pb-2 border-b border-border-color">
+                <span className="font-mono text-xs text-text-dim">
+                  Slot #{esxSelectedRow.index.toString().padStart(3, "0")}
+                </span>
+                {esxPendingPatches.has(esxSelectedRow.index) && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] text-accent-danger">
+                      ● wird ersetzt
+                    </span>
+                    <button
+                      data-testid="korg-bank-editor-esx-revert"
+                      onClick={() => handleEsxRevertSlot(esxSelectedRow.index)}
+                      className="px-2 py-0.5 rounded text-[10px] bg-bg-elevated text-text-muted hover:text-text-primary transition-colors"
+                      title="Patch verwerfen — Originalslot wiederherstellen"
+                    >
+                      ↺ Revert
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-1 text-xs text-text-muted">
+                <p>
+                  <span className="text-text-dim">Name:</span>{" "}
+                  <span className="text-text-primary font-medium">
+                    {esxSelectedRow.empty
+                      ? "(empty)"
+                      : esxSelectedRow.name || "(unnamed)"}
+                  </span>
+                </p>
+                {!esxSelectedRow.empty && (
+                  <>
+                    <p>
+                      <span className="text-text-dim">BPM:</span>{" "}
+                      <span className="text-text-primary">
+                        {esxSelectedRow.bpm.toFixed(1)}
+                      </span>
+                    </p>
+                    <p>
+                      <span className="text-text-dim">Step-Length:</span>{" "}
+                      <span className="text-text-primary">
+                        {esxSelectedRow.stepLength}
+                      </span>
+                    </p>
+                  </>
+                )}
+              </div>
+
+              <div className="pt-2 border-t border-border-color space-y-2">
+                <p className="text-xs text-text-muted">
+                  Den Slot mit dem aktuell aktiven Synthstudio-Pattern
+                  ersetzen.
+                </p>
+                <button
+                  data-testid="korg-bank-editor-esx-replace"
+                  onClick={() => handleEsxReplaceSlot(esxSelectedRow.index)}
+                  disabled={busy || !getActiveSynthPattern}
+                  className="w-full px-3 py-2 rounded text-sm bg-accent-primary text-bg-base hover:opacity-90 transition-opacity disabled:opacity-40 inline-flex items-center justify-center gap-2"
+                  title={
+                    getActiveSynthPattern
+                      ? "Slot mit aktuellem Synthstudio-Pattern überschreiben"
+                      : "Kein Pattern verfügbar"
+                  }
+                >
+                  ↻ Mit aktuellem Pattern ersetzen
+                </button>
+                {!getActiveSynthPattern && (
+                  <p className="text-[10px] text-text-dim italic">
+                    Kein Synthstudio-Pattern verfügbar.
+                  </p>
+                )}
+              </div>
+
+              {/* Dateiname */}
+              <div className="pt-2 border-t border-border-color">
+                <label className="block text-xs text-text-muted">
+                  Dateiname beim Speichern
+                  <input
+                    data-testid="korg-bank-editor-esx-filename"
+                    type="text"
+                    value={filename}
+                    onChange={(e) => setFilename(e.target.value)}
+                    className="w-full mt-1 bg-bg-base border border-border-color rounded px-2 py-1 text-sm text-text-primary"
+                  />
+                </label>
+              </div>
+            </div>
+          )}
+
+          {resultMsg && (
+            <p
+              data-testid="korg-bank-editor-esx-status"
               className="text-xs text-text-muted pt-2 border-t border-border-color"
             >
               {resultMsg}

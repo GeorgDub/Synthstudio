@@ -71,6 +71,9 @@ import {
   validateE2PatternFilename,
   validateE2PatternBuffer,
   E2_PATTERN_FILE_SIZE_EXACT,
+  validateEsxBankSaveFilename,
+  validateEsxBankBuffer,
+  ESX_BANK_SAVE_MAX_BYTES,
   LICENSE_FILE_MAX_BYTES as IPC_LICENSE_FILE_MAX_BYTES,
 } from "./ipcValidators";
 import {
@@ -2954,6 +2957,73 @@ function registerIpcHandlers(): void {
   });
 
   ipcMain.handle("electribe:get-pattern-size", () => E2_PATTERN_FILE_SIZE_EXACT);
+
+  // ── ESX-1 Bank Pattern-Patch WRITE (.esx) — v3.29.0 ──────────────────────────
+  //
+  // Persists a renderer-built .esx bank-buffer (~24-28 MB) after the renderer
+  // has used `patchEsxBankPattern(...)` to replace one or more pattern slots
+  // bit-exactly. Companion to v3.28.0's pure-TS patcher library.
+  //
+  // STRICT validation:
+  //  - filename whitelist (.esx, ASCII alnum + . _ -, max 120 chars, no
+  //    NUL/slash/dotdot)
+  //  - buffer size [ESX_BANK_SAVE_MIN_BYTES..ESX_BANK_SAVE_MAX_BYTES=64MB]
+  //  - "KORG"@0x00 + "ESX\0"@0x08 magic-prefix check
+  //  - Output path is user-chosen via dialog.showSaveDialog (no
+  //    path-traversal vector — renderer never supplies the final path)
+  //  - Final-Sanity: saved path MUST end on .esx
+  ipcMain.handle("esx:save-bank-as", async (
+    _event,
+    suggestedFilename: string,
+    data: ArrayBuffer | Uint8Array | number[],
+  ) => {
+    try {
+      const nameCheck = validateEsxBankSaveFilename(suggestedFilename);
+      if (!nameCheck.ok) return { success: false as const, error: nameCheck.error };
+      if (!data) return { success: false as const, error: "Keine Daten erhalten" };
+
+      // Normalize incoming data (Array<number> via IPC, Uint8Array, ArrayBuffer)
+      let buf: Buffer;
+      if (Array.isArray(data)) {
+        buf = Buffer.from(data);
+      } else if (data instanceof Uint8Array) {
+        buf = Buffer.from(data.buffer, data.byteOffset, data.byteLength);
+      } else {
+        buf = Buffer.from(data as ArrayBuffer);
+      }
+
+      // Buffer-Validation (Size + Magic)
+      const prefix = new Uint8Array(buf.subarray(0, Math.min(16, buf.byteLength)));
+      const bufCheck = validateEsxBankBuffer(buf.byteLength, prefix);
+      if (!bufCheck.ok) return { success: false as const, error: bufCheck.error };
+
+      // User-Save-Dialog (path comes from dialog, NOT from renderer)
+      const result = await dialog.showSaveDialog(mainWindow!, {
+        title: "KORG ESX-1 Bank speichern (.esx)",
+        defaultPath: nameCheck.filename,
+        filters: [{ name: "KORG ESX-1 Bank", extensions: ["esx"] }],
+      });
+      if (result.canceled || !result.filePath) {
+        return { success: false as const, error: "canceled" };
+      }
+      const resolvedPath = path.resolve(result.filePath);
+      if (path.extname(resolvedPath).toLowerCase() !== ".esx") {
+        return { success: false as const, error: "Nur .esx-Endung erlaubt" };
+      }
+
+      await fs.promises.writeFile(resolvedPath, buf);
+      return {
+        success: true as const,
+        filePath: resolvedPath,
+        bytesWritten: buf.byteLength,
+      };
+    } catch (err) {
+      console.error("[IPC esx:save-bank-as] error:", err);
+      return { success: false as const, error: "Schreibfehler" };
+    }
+  });
+
+  ipcMain.handle("esx:get-bank-save-cap", () => ESX_BANK_SAVE_MAX_BYTES);
 
   // ── Kollaborations-Server ─────────────────────────────────────────────────────
 

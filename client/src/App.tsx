@@ -2529,8 +2529,12 @@ export default function App() {
     const handler = (e: Event) => {
       const file = (e as CustomEvent<File>).detail;
       if (!(file instanceof File)) return;
-      const isAll = file.name.toLowerCase().endsWith(".all");
-      if (korgBankExportOpen && isAll) {
+      const lower = file.name.toLowerCase();
+      const isAll = lower.endsWith(".all");
+      const isEsx = lower.endsWith(".esx");
+      // v3.29.0 — Wenn der Editor offen ist, gehen .all (E2 mode) UND
+      // .esx (ESX mode) in den Editor statt in den Read-Only Modal.
+      if (korgBankExportOpen && (isAll || isEsx)) {
         setKorgBankEditorFile(file);
       } else {
         handleKorgBankFile(file);
@@ -3869,6 +3873,11 @@ export default function App() {
         }}
         externalOpenFile={korgBankEditorFile}
         onExternalOpenFileConsumed={() => setKorgBankEditorFile(null)}
+        // v3.29.0 — ESX-Pattern-Patch braucht Zugriff auf das aktive
+        // Synthstudio-Pattern + globale BPM-Quelle (Fallback wenn
+        // pattern.bpm == null).
+        getActiveSynthPattern={() => dmRef.current.getActivePattern() ?? null}
+        globalBpm={project.bpm}
       />
       </MidiProvider>
     </ElectronDropZone>

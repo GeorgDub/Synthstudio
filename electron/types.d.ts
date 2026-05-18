@@ -258,6 +258,13 @@ interface ElectronAPI {
   ): Promise<{ success: boolean; filePath?: string; bytesWritten?: number; error?: string }>;
   getE2PatternSize(): Promise<number>;
 
+  // ── ESX-1 Bank EXPORT (v3.29.0) ─────────────────────────────────────────────
+  saveEsxBankAs(
+    suggestedFilename: string,
+    data: ArrayBuffer | Uint8Array,
+  ): Promise<{ success: boolean; filePath?: string; bytesWritten?: number; error?: string }>;
+  getEsxBankSaveCap(): Promise<number>;
+
   // ── Folder-Import ─────────────────────────────────────────────────────────────────────────────
   importFolder(folderPath: string): Promise<{ importId: string }>;
   importSamples(filePaths: string[]): Promise<{ success: boolean; importedCount: number; errors: string[] }>;
