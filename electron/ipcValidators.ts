@@ -166,7 +166,9 @@ export function sanitizeLicenseState(input: unknown): SafeLicenseState {
 
 // ─── Electribe-Import-Extension-Whitelist ────────────────────────────────────
 
-export const ELECTRIBE_ALLOWED_EXTENSIONS = new Set([".e2pattern", ".e2sallpat"]);
+// v3.2.0: .e2spat (Sampler-Export) als dritte Endung neben .e2pattern + .e2sallpat.
+//         Verified gegen reale KORG E2 Sampler-Files (16640 Bytes Single-Pattern).
+export const ELECTRIBE_ALLOWED_EXTENSIONS = new Set([".e2pattern", ".e2sallpat", ".e2spat"]);
 export const ELECTRIBE_MAX_BYTES = 5 * 1024 * 1024; // 5 MB
 
 export type ElectribePathCheck =
@@ -189,7 +191,7 @@ export function validateElectribePath(input: unknown): ElectribePathCheck {
   }
   const ext = path.extname(input).toLowerCase();
   if (!ELECTRIBE_ALLOWED_EXTENSIONS.has(ext)) {
-    return { ok: false, error: "Nur .e2pattern/.e2sallpat erlaubt" };
+    return { ok: false, error: "Nur .e2pattern/.e2sallpat/.e2spat erlaubt" };
   }
   return { ok: true, ext };
 }

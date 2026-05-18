@@ -2733,8 +2733,9 @@ function registerIpcHandlers(): void {
         return { success: false as const, error: "Kein Dateipfad" };
       }
       const ext = path.extname(filePath).toLowerCase();
-      if (ext !== ".e2pattern" && ext !== ".e2sallpat") {
-        return { success: false as const, error: "Nur .e2pattern/.e2sallpat erlaubt" };
+      // v3.2.0: .e2spat (KORG E2 Sampler-Single-Pattern, 16640 Bytes) zusaetzlich erlaubt.
+      if (ext !== ".e2pattern" && ext !== ".e2sallpat" && ext !== ".e2spat") {
+        return { success: false as const, error: "Nur .e2pattern/.e2sallpat/.e2spat erlaubt" };
       }
       const resolvedPath = path.resolve(filePath);
       try {
@@ -2761,7 +2762,7 @@ function registerIpcHandlers(): void {
   ipcMain.handle("electribe:open-dialog", async () => {
     const result = await dialog.showOpenDialog(mainWindow!, {
       title: "KORG Electribe Pattern importieren",
-      filters: [{ name: "Electribe-Dateien", extensions: ["e2pattern", "e2sallpat"] }],
+      filters: [{ name: "Electribe-Dateien", extensions: ["e2pattern", "e2sallpat", "e2spat"] }],
       properties: ["openFile"],
     });
     return result;

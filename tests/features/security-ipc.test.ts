@@ -205,9 +205,16 @@ describe("validateElectribePath", () => {
     expect(result.ok).toBe(true);
   });
 
+  // v3.2.0: Real KORG E2 Sampler-Endung
+  it("akzeptiert .e2spat (KORG E2 Sampler Real-Files)", () => {
+    const result = validateElectribePath("C:/Korg/245_BodyTalk1.e2spat");
+    expect(result.ok).toBe(true);
+  });
+
   it("case-insensitive Endung", () => {
     expect(validateElectribePath("rec.E2PATTERN").ok).toBe(true);
     expect(validateElectribePath("rec.E2SallPat").ok).toBe(true);
+    expect(validateElectribePath("rec.E2SPAT").ok).toBe(true);
   });
 
   it("lehnt andere Endungen ab", () => {

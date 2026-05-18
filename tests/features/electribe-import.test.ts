@@ -14,8 +14,17 @@
  * gemeinsam kalibriert werden.
  */
 import { describe, it, expect } from "vitest";
+import * as fs from "node:fs";
+import * as path from "node:path";
 import {
   ELECTRIBE_MAGIC,
+  ELECTRIBE_REAL_IDENTIFIER,
+  ELECTRIBE_REAL_PATTERN_MARKER,
+  ELECTRIBE_REAL_FILE_SIZE,
+  ELECTRIBE_REAL_NAME_OFFSET,
+  ELECTRIBE_REAL_BPM_OFFSET,
+  ELECTRIBE_REAL_PARTS_OFFSET,
+  ELECTRIBE_REAL_PART_STRIDE,
   MAX_PATTERNS_PER_BANK,
   PARTS_PER_PATTERN,
   STEPS_PER_PART,
@@ -31,6 +40,7 @@ import {
   parseElectribePattern,
   convertParsedPatternToSynthstudio,
   detectElectribeFormat,
+  isRealElectribeFile,
   looksLikeElectribeFile,
   clamp01,
   clampPan,
@@ -545,3 +555,253 @@ describe("electribeImport – clamp helpers", () => {
     expect(clampPan(NaN)).toBe(0);
   });
 });
+
+// ─── Tests: Echtes KORG E2 Sampler-Layout (v3.2.0 Calibration) ──────────────
+//
+// Diese Tests bauen synthetisch das ECHTE Real-File-Layout nach (Magic + ID +
+// PTST-Marker + Name-Offset + BPM-Offset). Damit ist der Test deterministisch
+// und das Repository bleibt frei von User-Daten / grossen Binary-Files.
+//
+// Falls die echten Files am erwarteten Pfad vorliegen, laufen zusaetzliche
+// Real-File-Tests; sonst .skip mit Begruendung.
+
+function buildRealElectribeBuffer(opts: {
+  name?: string;
+  bpm?: number;
+  version?: number;
+  totalSize?: number;
+}): ArrayBuffer {
+  const total = opts.totalSize ?? ELECTRIBE_REAL_FILE_SIZE;
+  const buf = new Uint8Array(total);
+  const view = new DataView(buf.buffer);
+
+  // 0x00: "KORG" + 12× 0x00
+  for (let i = 0; i < 4; i++) buf[i] = ELECTRIBE_MAGIC.charCodeAt(i);
+
+  // 0x10: "e2sampler" + zeros
+  const id = ELECTRIBE_REAL_IDENTIFIER;
+  for (let i = 0; i < id.length; i++) buf[0x10 + i] = id.charCodeAt(i);
+
+  // 0x20: version (u32 LE)
+  view.setUint32(0x20, opts.version ?? 1, true);
+
+  // 0x24..0x100: 0xFF padding (matches real files)
+  for (let i = 0x24; i < 0x100; i++) buf[i] = 0xff;
+
+  // 0x100: "PTST" + 12× 0x00
+  const marker = ELECTRIBE_REAL_PATTERN_MARKER;
+  for (let i = 0; i < marker.length; i++) buf[0x100 + i] = marker.charCodeAt(i);
+
+  // 0x110: Pattern-Name (16 Byte ASCII, space-padded with trailing zeros)
+  const name = (opts.name ?? "TestPattern").slice(0, 16);
+  for (let i = 0; i < name.length; i++) buf[ELECTRIBE_REAL_NAME_OFFSET + i] = name.charCodeAt(i);
+
+  // 0x122: BPM × 10 (u16 LE)
+  view.setUint16(ELECTRIBE_REAL_BPM_OFFSET, Math.round((opts.bpm ?? 120) * 10), true);
+
+  return buf.buffer;
+}
+
+describe("electribeImport – isRealElectribeFile detector", () => {
+  it("erkennt synthetisch gebautes Real-File-Layout", () => {
+    const ab = buildRealElectribeBuffer({ name: "Test", bpm: 120 });
+    expect(isRealElectribeFile(ab)).toBe(true);
+  });
+
+  it("lehnt synthetisches Legacy-Layout ab (kein PTST-Marker)", () => {
+    const legacy = new Uint8Array(BANK_HEADER_SIZE + PATTERN_BLOCK_SIZE);
+    for (let i = 0; i < 4; i++) legacy[i] = ELECTRIBE_MAGIC.charCodeAt(i);
+    expect(isRealElectribeFile(legacy.buffer)).toBe(false);
+  });
+
+  it("lehnt Buffer ohne KORG-Magic ab", () => {
+    const ab = buildRealElectribeBuffer({ name: "X", bpm: 120 });
+    const buf = new Uint8Array(ab);
+    buf[0] = 0; // zerstoere Magic
+    expect(isRealElectribeFile(buf.buffer)).toBe(false);
+  });
+
+  it("lehnt Buffer ohne e2sampler-ID ab", () => {
+    const ab = buildRealElectribeBuffer({ name: "X", bpm: 120 });
+    const buf = new Uint8Array(ab);
+    buf[0x10] = 0; // zerstoere ID-Marker
+    expect(isRealElectribeFile(buf.buffer)).toBe(false);
+  });
+
+  it("lehnt Buffer ohne PTST-Marker ab", () => {
+    const ab = buildRealElectribeBuffer({ name: "X", bpm: 120 });
+    const buf = new Uint8Array(ab);
+    buf[0x100] = 0; // zerstoere Pattern-Marker
+    expect(isRealElectribeFile(buf.buffer)).toBe(false);
+  });
+
+  it("lehnt zu kleine Buffer ab", () => {
+    expect(isRealElectribeFile(new Uint8Array(0x100).buffer)).toBe(false);
+  });
+});
+
+describe("electribeImport – Real-File Layout (synthetic)", () => {
+  it("liest BPM aus 0x122 (u16 LE / 10) — 120 BPM", () => {
+    const ab = buildRealElectribeBuffer({ name: "Init", bpm: 120 });
+    const p = parseElectribePattern(ab);
+    expect(p.bpm).toBeCloseTo(120, 1);
+  });
+
+  it("liest BPM 165.0 (BodyTalk1-Beispiel)", () => {
+    const ab = buildRealElectribeBuffer({ name: "BodyTalk1", bpm: 165 });
+    const p = parseElectribePattern(ab);
+    expect(p.bpm).toBeCloseTo(165, 1);
+  });
+
+  it("liest Pattern-Namen aus 0x110 (max 16 Zeichen, trailing zeros gestrippt)", () => {
+    const ab = buildRealElectribeBuffer({ name: "Advi$ory1", bpm: 128 });
+    const p = parseElectribePattern(ab);
+    expect(p.name).toBe("Advi$ory1");
+  });
+
+  it("liest Pattern-Namen 'Init Pattern' korrekt (12 Zeichen, mit Space)", () => {
+    const ab = buildRealElectribeBuffer({ name: "Init Pattern", bpm: 120 });
+    expect(parseElectribePattern(ab).name).toBe("Init Pattern");
+  });
+
+  it("liefert 16 Parts (mit Defaults — Best-Effort)", () => {
+    const ab = buildRealElectribeBuffer({ name: "X", bpm: 120 });
+    const p = parseElectribePattern(ab);
+    expect(p.parts).toHaveLength(PARTS_PER_PATTERN);
+    expect(p.parts.every(part => part.steps.length === STEPS_PER_PART)).toBe(true);
+  });
+
+  it("klemmt BPM-Garbage auf valid Range (Real-File-Path)", () => {
+    const ab = buildRealElectribeBuffer({ name: "X", bpm: 5 });
+    expect(parseElectribePattern(ab).bpm).toBe(20);
+  });
+
+  it("detectElectribeFormat liefert 'pattern' fuer Real-File-Layout", () => {
+    const ab = buildRealElectribeBuffer({ name: "X", bpm: 120 });
+    expect(detectElectribeFormat(ab)).toBe("pattern");
+  });
+
+  it("version aus 0x20 (u32 LE) in den Bank-Output uebernommen", () => {
+    const ab = buildRealElectribeBuffer({ name: "X", bpm: 120, version: 1 });
+    const bank = parseElectribeBank(ab);
+    expect(bank.version).toBe(1);
+    expect(bank.patternCount).toBe(1);
+  });
+
+  it("Real-File-Layout-Konstanten plausibel: 16 parts × 896 = 14336 ab 0x900 == 16640", () => {
+    expect(
+      ELECTRIBE_REAL_PARTS_OFFSET + PARTS_PER_PATTERN * ELECTRIBE_REAL_PART_STRIDE,
+    ).toBe(ELECTRIBE_REAL_FILE_SIZE);
+  });
+
+  it("convertParsedPatternToSynthstudio funktioniert mit Real-File-Output", () => {
+    const ab = buildRealElectribeBuffer({ name: "RealTest", bpm: 140 });
+    const conv = convertParsedPatternToSynthstudio(parseElectribePattern(ab));
+    expect(conv.name).toBe("RealTest");
+    expect(conv.bpm).toBeCloseTo(140, 1);
+    expect(conv.drumParts).toHaveLength(PARTS_PER_PATTERN);
+  });
+});
+
+// ─── Tests: Echte KORG E2 Sampler-Files (nur wenn vorhanden) ─────────────────
+//
+// Falls die User-Files im Repo-Root unter "Korg e2s files/" liegen, laufen
+// diese Tests gegen echte Bytes. Auf CI / Fresh-Clone ohne diese User-Daten
+// wird .skip — das ist absichtlich, damit das Repo schlank bleibt.
+
+const REAL_FILES_DIR = path.resolve(process.cwd(), "Korg e2s files");
+const REAL_FILES_AVAILABLE = (() => {
+  try {
+    return fs.existsSync(REAL_FILES_DIR) && fs.statSync(REAL_FILES_DIR).isDirectory();
+  } catch {
+    return false;
+  }
+})();
+
+function loadRealFile(name: string): Uint8Array | null {
+  try {
+    const full = path.join(REAL_FILES_DIR, name);
+    if (!fs.existsSync(full)) return null;
+    return new Uint8Array(fs.readFileSync(full));
+  } catch {
+    return null;
+  }
+}
+
+// Note: Filenames enthalten ASCII-Spaces — exakt wie auf Disk.
+const REAL_FILE_BODYTALK = "245_BodyTalk1   .e2spat";
+const REAL_FILE_INIT_181 = "181_Init Pattern.e2spat";
+const REAL_FILE_INIT_250 = "250_Init Pattern.e2spat";
+const REAL_FILE_ADVISORY = "001_Advi$ory1   .e2spat";
+
+(REAL_FILES_AVAILABLE ? describe : describe.skip)(
+  "electribeImport – Real KORG E2 Sampler Files (.e2spat verified 2026-05-18)",
+  () => {
+    it("245_BodyTalk1.e2spat: 16640 Bytes, KORG + e2sampler magic, BPM=165, name='BodyTalk1'", () => {
+      const buf = loadRealFile(REAL_FILE_BODYTALK);
+      expect(buf).not.toBeNull();
+      if (!buf) return;
+      expect(buf.byteLength).toBe(ELECTRIBE_REAL_FILE_SIZE);
+      expect(isRealElectribeFile(buf)).toBe(true);
+      const p = parseElectribePattern(buf);
+      expect(p.bpm).toBeCloseTo(165, 1);
+      expect(p.name).toBe("BodyTalk1");
+    });
+
+    it("181_Init Pattern.e2spat: BPM=120, name='Init Pattern'", () => {
+      const buf = loadRealFile(REAL_FILE_INIT_181);
+      expect(buf).not.toBeNull();
+      if (!buf) return;
+      const p = parseElectribePattern(buf);
+      expect(p.bpm).toBeCloseTo(120, 1);
+      expect(p.name).toBe("Init Pattern");
+    });
+
+    it("250_Init Pattern.e2spat: BPM=170, name='Init Pattern'", () => {
+      const buf = loadRealFile(REAL_FILE_INIT_250);
+      expect(buf).not.toBeNull();
+      if (!buf) return;
+      const p = parseElectribePattern(buf);
+      // 250er-File hat ueberraschend BPM=170 — Init-Defaults variieren
+      // pro Slot je nach Werkseinstellung des Geraets.
+      expect(p.bpm).toBeCloseTo(170, 1);
+      expect(p.name).toBe("Init Pattern");
+    });
+
+    it("001_Advisory1.e2spat: BPM=128, name='Advi$ory1', 16 Parts gerendert", () => {
+      const buf = loadRealFile(REAL_FILE_ADVISORY);
+      expect(buf).not.toBeNull();
+      if (!buf) return;
+      const p = parseElectribePattern(buf);
+      expect(p.bpm).toBeCloseTo(128, 1);
+      expect(p.name).toBe("Advi$ory1");
+      expect(p.parts).toHaveLength(PARTS_PER_PATTERN);
+    });
+
+    it("Real-Files haben einheitliches Magic-Layout (4 Files round-trip)", () => {
+      const files = [REAL_FILE_BODYTALK, REAL_FILE_INIT_181, REAL_FILE_INIT_250, REAL_FILE_ADVISORY];
+      for (const name of files) {
+        const buf = loadRealFile(name);
+        if (!buf) continue;
+        expect(buf.byteLength).toBe(ELECTRIBE_REAL_FILE_SIZE);
+        expect(isRealElectribeFile(buf)).toBe(true);
+        // detectElectribeFormat liefert 'pattern' (single)
+        expect(detectElectribeFormat(buf)).toBe("pattern");
+        // parseElectribePattern crasht nicht
+        const p = parseElectribePattern(buf);
+        expect(p.parts).toHaveLength(PARTS_PER_PATTERN);
+      }
+    });
+
+    it("convertParsedPatternToSynthstudio mit echtem BodyTalk1 produziert valid Output", () => {
+      const buf = loadRealFile(REAL_FILE_BODYTALK);
+      if (!buf) return;
+      const conv = convertParsedPatternToSynthstudio(parseElectribePattern(buf));
+      expect(conv.name).toBe("BodyTalk1");
+      expect(conv.bpm).toBeCloseTo(165, 1);
+      expect(conv.drumParts).toHaveLength(PARTS_PER_PATTERN);
+      // Step-Encoding ist Best-Effort — alle Steps inactive (default), aber nicht crashy.
+      expect(conv.drumParts.every(d => Array.isArray(d.steps))).toBe(true);
+    });
+  },
+);
