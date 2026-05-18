@@ -506,6 +506,12 @@ class AudioEngineClass {
   private _bpm = 120;
   private _steps = 16;
   private _currentStep = 0;
+  /**
+   * v3.37.0: SPP-driven pending-start-position. Wird von `seekToStep`
+   * gesetzt und von `play()` konsumiert (oder ignoriert wenn explizit ein
+   * fromStep-Parameter übergeben wurde). null = kein Pending-Seek.
+   */
+  private _pendingStartStep: number | null = null;
   private _nextStepTime = 0;
   private _stepResolution: StepResolution = "1/16";
 
@@ -738,13 +744,32 @@ class AudioEngineClass {
     const total = Math.max(1, this._steps);
     const wrapped = ((Math.floor(step) % total) + total) % total;
     this._currentStep = wrapped;
+    // v3.37.0: Race-Fix — _pendingStartStep wird gesetzt damit ein
+    // nachfolgendes `play(0)` (durch den klassischen useTransport-Pfad) nicht
+    // den Seek-Wert überschreibt. play() konsumiert das Feld am Anfang.
+    this._pendingStartStep = wrapped;
     // Position-Callbacks sofort feuern damit UI (Step-LED) sich neu zeichnet.
     this.positionCallbacks.forEach(cb => cb(wrapped));
+  }
+
+  /**
+   * v3.37.0: Konsumiert den pendingStartStep — vom Caller (useTransport) am
+   * Anfang von play() verwendet um die SPP-Position vor `play(0)`-Default
+   * zu schützen. Single-Use: nach Lesen wird der Wert geleert.
+   */
+  consumePendingStartStep(): number | null {
+    const pending = this._pendingStartStep;
+    this._pendingStartStep = null;
+    return pending;
   }
 
   /** v3.36.0: read-only — aktuell anvisierter / laufender Step. */
   get currentStepIndex(): number {
     return this._currentStep;
+  }
+  /** v3.37.0: read-only — aktive Pattern-Step-Anzahl (16 oder 32). */
+  get stepCount(): number {
+    return this._steps;
   }
   setSteps(steps: 16 | 32) { this._steps = steps; }
   setStepResolution(res: StepResolution) { this._stepResolution = res; }
@@ -1386,7 +1411,13 @@ class AudioEngineClass {
     if (this._isPlaying) this.stop();
 
     this._isPlaying = true;
-    this._currentStep = fromStep;
+    // v3.37.0: Race-Fix — wenn explizit fromStep=0 übergeben wurde (Default
+    // Call vom Transport-Hook) UND ein pendingStartStep gesetzt ist (vorher
+    // via seekToStep z.B. durch SPP-driven Sync), konsumieren wir den Pending-
+    // Wert. Explizit übergebene fromStep>0 bleiben unverändert.
+    const pending = this._pendingStartStep;
+    this._pendingStartStep = null;
+    this._currentStep = (fromStep === 0 && pending !== null) ? pending : fromStep;
     this._nextStepTime = this.ctx!.currentTime + 0.05;
 
     // Looper (TASK-235): Transport-Anchor für Bar-Boundary-Quantisierung.

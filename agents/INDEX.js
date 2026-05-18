@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.36.0",
+    version: "3.37.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -89,30 +89,40 @@ const INDEX = {
   // ─── KNOWN FILE INDEX ──────────────────────────────────────
   // Key files agents have analyzed. Add new entries after working on a file.
   files: {
-    "client/src/audio/MidiClockIn.ts (v3.36.0)": {
-      role:     "v3.36.0 ERWEITERT: v3.35 Receiver-Klasse bleibt + NEU SPP-driven Pattern-Seek (closes v3.35-Caveat). (a) 0xF2 SPP wird gated on `!_isRunning` — per MIDI-Spec wird SPP nur akzeptiert wenn Transport NICHT läuft; während Playback still verworfen (kein Audio-Glitch). (b) SPP-Event-Detail erweitert: {midiBeat, positionStep}. Konversion 1 MIDI-Beat = 6 Clocks = 1/16-Note = 1 Sequencer-Step → positionStep === midiBeat (1:1). (c) NEU _pendingStartStep: number|null — letzte SPP-Position bis zum nächsten 0xFA. Beim Start verbraucht und im `midiclockin:start`-Event-Detail als positionStep weitergereicht. (d) 0xFB Continue bleibt unverändert (preserve currentStep, kein Seek). (e) NEU SPP_MAX_MIDI_BEAT=16383 Export + 14-bit-Range-Sanity-Check. (f) Public Getter pendingStartStep für Test-Inspection. (g) disable()/reset() leeren pendingStartStep. v3.35-API bleibt unverändert: enable/disable/reset + handleMidiMessage(ArrayLike<number>) für 0xF8/0xFA/0xFB/0xFC/0xF2. EWMA alpha=0.1 + Outlier-Filter (>50% off-mean discarded). Status getStatus() → 'off'|'tempo-only'|'running'|'lost' mit 500ms Sync-Loss. Events: midiclockin:start/stop/continue/tempo/spp. Pure-Helpers: bpmFromTickInterval, ewmaStep, isOutlier. Hot-Path 0xF8 alloc-free. Mean preserved über start/stop. Isomorphic. 32/32 Tests GREEN.",
-      lastSeen: "2026-05-18T18:10:00.000Z",
+    "client/src/audio/MidiClockIn.ts (v3.37.0)": {
+      role:     "v3.37.0 ERWEITERT: v3.36 SPP-driven Pattern-Seek bleibt + NEU SPP-Throttle (closes v3.36-Caveat). (a) NEU Constant SPP_THROTTLE_MS=50 (leading+trailing edge, ~20 events/sec max). (b) NEU _emitSppThrottled(midiBeat) — leading-Event sofort dispatched, weitere innerhalb 50ms zwischengespeichert; trailing-Timer feuert LETZTEN Wert nach Ablauf des Fensters. (c) _onStart killt pending trailing-Timer (Spec-Konformität — keine SPP-Dispatches während running). (d) NEU optional `scheduler` in MidiClockInOptions für Test-Injection (setTimeout/clearTimeout). (e) pendingStartStep wird im SPP-Handler IMMER gesetzt (auch bei suppressed dispatch) — finaler Burst-Wert vor 0xFA niemals verloren. (f) enable/disable/reset → _resetSppThrottle() cleanup. v3.36-API unverändert: handleMidiMessage(ArrayLike<number>) + pendingStartStep getter. EWMA alpha=0.1 + Outlier-Filter (>50% off-mean discarded). Status getStatus() → 'off'|'tempo-only'|'running'|'lost' mit 500ms Sync-Loss. Events: midiclockin:start/stop/continue/tempo/spp. Isomorphic. 47/47 Tests GREEN (vorher 32).",
+      lastSeen: "2026-05-18T18:30:00.000Z",
       ownedBy:  "backend"
     },
-    "tests/features/midi-clock-in.test.ts (v3.36.0)": {
-      role:     "v3.36.0 ERWEITERT: v3.35 24 Tests + NEU 8 v3.36-Tests = 32 Tests gesamt. NEU describe 'v3.36 SPP-driven seek' (8 Tests): (1) SPP-Event-Detail enthält positionStep===midiBeat (1:1 mapping). (2) SPP während running wird ignoriert per MIDI-Spec — dispatched kein Event + pendingStartStep bleibt null. (3) SPP vor START setzt pendingStartStep, nachfolgendes 0xFA reicht positionStep im Event-Detail weiter, pendingStartStep ist nach Verbrauch null. (4) 0xFA ohne vorheriges SPP → positionStep=0 (konventioneller Start). (5) 0xFB Continue resumes — kein positionStep im Detail, kein Reset, isRunning=true. (6) SPP max u14 (16383) mit lsb=msb=0x7F. (7) Malformed SPP < 3 bytes → ignoriert, kein throw, kein dispatch, kein pendingStartStep. (8) pendingStartStep wird beim disable() geleert. v3.35 Tests UNVERÄNDERT grün (32/32). Harness: nowMs base 1000ms, dispatch-Recorder-Array.",
-      lastSeen: "2026-05-18T18:10:00.000Z",
+    "tests/features/midi-clock-in.test.ts (v3.37.0)": {
+      role:     "v3.37.0 ERWEITERT: v3.36 32 Tests + NEU 15 v3.37-Tests = 47 Tests gesamt. NEU 3 describes: (1) 'v3.37 SPP throttle' (6 Tests: leading-edge immediate, 100-Events-Burst max-3-dispatches bounds, trailing-edge-last-value, widely-spaced no-throttling, 0xFA cancels trailing, disable cancels timer). (2) 'v3.37 0xFA with positionStep' (2 Tests: SPP-then-FA → positionStep=48, no-SPP → positionStep=0). (3) 'formatPatternPosition' (7 Tests: step 0/5/15 no-loop, step 16/48 loop, 32-step pattern bar 2, defensive negative/NaN/zero-stepCount). NEU ManualScheduler-Test-Harness (deterministic setTimeout-Mock + advanceBoth-Sync mit now()) — Throttle-Bursts bit-genau steuerbar ohne vi.useFakeTimers. v3.36 + v3.35 Tests UNVERÄNDERT grün.",
+      lastSeen: "2026-05-18T18:30:00.000Z",
       ownedBy:  "backend"
     },
-    "client/src/audio/AudioEngine.ts (v3.36.0 seekToStep)": {
-      role:     "v3.36.0: NEU Public-API seekToStep(step: number) — setzt _currentStep modulo _steps für SPP-driven Pattern-Seek vom externen MIDI-Master. Defensive: NaN/Infinity ignored, negative steps werden auf 0 geclampt, ≥ _steps werden modulo gefaltet (für DAW-Song-Ranges > Pattern-Länge). Bei laufendem Sequencer ein hard-jump (next _schedule-Iteration triggert neuen Step). Bei nicht-laufendem Sequencer setzt es _currentStep für den nächsten play()-Aufruf. positionCallbacks feuern sofort damit Step-LED-UI re-zeichnet. NEU Getter currentStepIndex (read-only). v3.35 _externalSyncActive + setBpm()/applyExternalBpm()/setExternalSyncActive() unverändert.",
-      lastSeen: "2026-05-18T18:10:00.000Z",
+    "client/src/audio/AudioEngine.ts (v3.37.0 pendingStartStep)": {
+      role:     "v3.37.0 ERWEITERT: v3.36 seekToStep + currentStepIndex Getter bleiben + NEU Race-Fix gegen play(0)-Overwrite. (a) NEU _pendingStartStep: number|null Field. seekToStep setzt jetzt _pendingStartStep=wrapped (zusätzlich zu _currentStep). (b) NEU consumePendingStartStep(): number|null — Single-use Konsumer für Tests/Inspektion. (c) NEU play(fromStep=0)-Verhalten: wenn fromStep===0 (Default Transport-Hook) UND pendingStartStep gesetzt → konsumiert pending statt 0 zu nutzen; explizit fromStep>0 bleibt unverändert. Damit Race aufgelöst: useTransport.play(0) liest automatisch SPP-Wert ohne Modify-Notwendigkeit. (d) NEU read-only Getter `stepCount` (parallel zu currentStepIndex) — für UI-Konsumenten (MidiSettings) die die Pattern-Länge brauchen ohne dm-Referenz. v3.35 _externalSyncActive + setBpm/applyExternalBpm/setExternalSyncActive unverändert.",
+      lastSeen: "2026-05-18T18:30:00.000Z",
       ownedBy:  "backend"
     },
-    "client/src/hooks/useMidi.ts (v3.36.0 SPP-Bridge)": {
-      role:     "v3.36.0 ERWEITERT: v3.35 MidiClockIn-Wiring bleibt + NEU SPP-Bridge zu AudioEngine. (a) NEU clockInSpp: number|null State + Listener midiclockin:spp → setClockInSpp(midiBeat) + AudioEngine.seekToStep(positionStep). UI bekommt Live-SPP-Display ohne extra-Poll. (b) onStart-Listener liest positionStep aus dem Event-Detail und ruft AudioEngine.seekToStep(pos) BEVOR optionsRef.current.onPlayStop?.() — damit App.tsx beim nachfolgenden play() ab der richtigen Position startet. (c) onContinue-Listener (NEU getrennt von onStart) ruft NUR onPlayStop — KEIN seek (MIDI-Spec konform: Continue resumes from current position). (d) disable() leert clockInSpp. (e) MidiState-Interface um clockInSpp erweitert. (f) Return-Object exposed clockInSpp.",
-      lastSeen: "2026-05-18T18:10:00.000Z",
+    "client/src/hooks/useMidi.ts (v3.37.0 onPlayStop signature)": {
+      role:     "v3.37.0 ERWEITERT: v3.36 MidiClockIn-Wiring + SPP-Bridge bleiben + NEU onPlayStop-Signature-Erweiterung (Race-Fix). (a) UseMidiOptions.onPlayStop `() => void` → `(positionStep?: number) => void`. (b) onStart-Listener im midiclockin:start-Useeffect ruft `optionsRef.current.onPlayStop?.(pos)` mit positionStep aus Event-Detail (statt parameter-los + zusätzlichem seekToStep-Call). Der seekToStep-Call im Listener wurde ENTFERNT — Single-Source-of-Truth: useMidi reicht den Wert weiter, der Konsument (App.tsx-Wrapper) entscheidet. (c) onContinue/onStop rufen onPlayStop OHNE positionStep (Continue-Spec: resume from current). (d) midiclockin:spp-Listener weiter mit setClockInSpp + AudioEngine.seekToStep. (e) Backward-compatible: optionaler Parameter — alle 7+ Callsites bleiben kompatibel. v3.36 clockInSpp State + Return-Object unverändert.",
+      lastSeen: "2026-05-18T18:30:00.000Z",
       ownedBy:  "backend"
     },
-    "client/src/components/MidiSettings/MidiSettings.tsx (v3.36.0 SPP-Display)": {
-      role:     "v3.36.0 ERWEITERT: v3.35 Clock-IN-Section bleibt + NEU SPP-Display-Block. Zeigt sich nur wenn midi.clockInSpp !== null. Format 'Bar B.b.s' (Bar.Beat.Sub) in font-mono mit bar=floor(step/16)+1, beat=floor((step%16)/4)+1, sub=(step%4)+1. Sub-Text 'Step N · MIDI-Beat N' (data-testid clock-in-spp-display). Hinweis-Text um v3.36-Hinweis ergänzt: 'Song-Position-Pointer (SPP) wird empfangen und der Sequencer zur Master-Position gespult.' v3.35 Status-LED + externes BPM-Display + Toggle unverändert.",
-      lastSeen: "2026-05-18T18:10:00.000Z",
+    "client/src/components/MidiSettings/MidiSettings.tsx (v3.37.0 formatPatternPosition)": {
+      role:     "v3.37.0 ERWEITERT: v3.36 Clock-IN-Section + SPP-Display bleiben + NEU Pattern-Length-aware Display. SPP-Display ruft jetzt formatPatternPosition(midi.clockInSpp, AudioEngine.stepCount) und rendert display.label. Wenn isLooped (positionStep ≥ stepCount): label endet auf ' (loop)' + Sub-Text 'Step N/M · MIDI-Beat N · Loop X' (statt nur 'Step N · MIDI-Beat N'). Imports erweitert um AudioEngine + formatPatternPosition. v3.35 Status-LED + externes BPM-Display + Toggle unverändert. v3.36 Hinweis-Text unverändert.",
+      lastSeen: "2026-05-18T18:30:00.000Z",
       ownedBy:  "frontend"
+    },
+    "client/src/utils/patternPosition.ts (v3.37.0)": {
+      role:     "v3.37.0 NEU: Pure-TS Helper für Bar.Beat.Sub-Display aus MIDI-Beat-/Step-Positionen (~75 LOC, isomorph, kein React/Electron). Public: formatPatternPosition(positionStep, stepCount): PatternPositionDisplay {bar, beat, sub, effectiveStep, isLooped, loopCount, label}. Zerlegt step in bar (1+floor/STEPS_PER_BAR), beat (1+floor((effective%16)/4)), sub (1+(effective%4)). Wenn positionStep ≥ stepCount: effectiveStep=step%stepCount, isLooped=true, loopCount=floor/stepCount, label suffix ' (loop)'. Defensive: negative/NaN-Steps → 0, stepCount≤0 → 16 fallback. Constants exportiert: STEPS_PER_BEAT=4, BEATS_PER_BAR=4, STEPS_PER_BAR=16.",
+      lastSeen: "2026-05-18T18:30:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/audio/MidiClockIn.ts (v3.36.0)": {
+      role:     "v3.36.0: SUPERSEDED → siehe v3.37.0 Eintrag oben. v3.36-Verhalten bleibt erhalten (SPP-driven Pattern-Seek + pendingStartStep + 0xFA Event-Detail).",
+      lastSeen: "2026-05-18T18:10:00.000Z",
+      ownedBy:  "backend"
     },
     "client/src/utils/electribePatternBuilder.ts (v3.34.0)": {
       role:     "v3.34.0 BIT-EXACT POLISH: 3 KORG-native Encoding-Konventionen adoptiert um v3.33 RT-Findings zu schliessen. (1) writeAsciiNulPadded (vorher writeAsciiSpacePadded): name-Bytes NUL-padded ab string-content-length statt all-space (BodyTalk1 9-char → 9 ASCII + 7×0x00). Real KORG-Hardware-Files nutzen NUL-pad — Parser strippt beide Varianten trim+NUL, semantisch identisch. (2) Velocity-Sentinel: writeStepRecord schreibt byte 1 = 0xFF (ELECTRIBE_REAL_VELOCITY_DEFAULT_SENTINEL) wenn velocity unset ODER explicit===127. Andere Werte 0..126 literal. Parser map 0xFF → 127, round-trip semantisch identisch. (3) Inactive-Step Note-Byte: writeStepRecord byte 4 = 0x00 wenn !step.active (matches Real Init181 convention; Real BodyTalk1 nutzt 0x48 — beides parser-ignoriert da ParsedPartStep nur active+velocity exposed). Active steps behalten Default 0x48 oder explicit step.note. NEUE exports: E2_DEFAULT_VELOCITY_RAW_BYTE=0xFF, E2_INACTIVE_STEP_NOTE=0x00. E2_DEFAULT_VELOCITY=127 (canonical) statt 96. Imports erweitert um ELECTRIBE_REAL_VELOCITY_DEFAULT_SENTINEL/VALUE. BACKWARD-COMPAT: Parser bleibt unverändert, decode-Output für alle 4 Real-Files IDENTISCH zu v3.26. Drift-Reduction: BodyTalk1 7000→1030 (−85.3%) total, 492→3 (−99.4%) decoded; Init181 5400→152 (−97.2%) total, 1028→0 (−100%) decoded.",
@@ -1467,6 +1477,41 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "backend",
+      timestamp: "2026-05-18T18:30:00.000Z",
+      done: [
+        "v3.37.0: SPP Race-Fix + Throttle + Pattern-Length-Display — closes v3.36 caveats (3 items). Closes: (a) onPlayStop-timing-race (0xFA → play(0) überschreibt seekToStep), (b) SPP-Throttle fehlt (DAW-Scrub-Bursts fluten Sequencer), (c) Pattern-Length > 16 fold display.",
+        "RACE-FIX (Option A — onPlayStop-Signature-Erweiterung). GEÄNDERT client/src/hooks/useMidi.ts: UseMidiOptions.onPlayStop signature `() => void` → `(positionStep?: number) => void`. onStart-Listener im midiclockin:start-Useeffect ruft jetzt `optionsRef.current.onPlayStop?.(pos)` mit positionStep aus dem Event-Detail (statt parameter-los). Der bisherige `AudioEngine.seekToStep(pos)`-Call im Listener wurde ENTFERNT — Single-Source-of-Truth: useMidi reicht den Wert weiter, der Konsument (App.tsx) entscheidet was passiert. onContinue/onStop rufen onPlayStop OHNE positionStep (Continue-Spec: resume from current). Backward-compatible: bestehende Caller (CollabSplitView, ScriptRunner, useKeyboardShortcuts, Workspace) bleiben ohne Änderung — der optionale Parameter ist undefined.",
+        "GEÄNDERT client/src/App.tsx: midi-Hook-onPlayStop von `project.togglePlayStop` zu wrapper `(positionStep) => { if (typeof positionStep === 'number') AudioEngine.seekToStep(positionStep); project.togglePlayStop(); }`. AudioEngine.seekToStep wird VOR togglePlayStop gerufen — damit setzt der Wrapper den _pendingStartStep BEVOR isPlaying flippt und useTransport.play(0) feuert. Die anderen 2 onPlayStop-Stellen (useKeyboardShortcuts, useMenuHandlers) bleiben unverändert — UI-Trigger erhalten keinen positionStep.",
+        "GEÄNDERT client/src/audio/AudioEngine.ts: NEU `_pendingStartStep: number|null` Field + `consumePendingStartStep(): number|null` (single-use Konsumer). seekToStep setzt jetzt auch `_pendingStartStep = wrapped`. NEU `play(fromStep=0)`: wenn fromStep===0 (Default) UND pendingStartStep gesetzt → konsumiert pending statt 0 zu nutzen; explizit fromStep>0 bleibt unverändert. Damit ist der Race aufgelöst — useTransport.play(0) liest automatisch den letzten SPP-Wert. NEU read-only Getter `stepCount` (parallel zu currentStepIndex) für UI-Konsumenten die die Pattern-Länge brauchen ohne dm-Referenz.",
+        "SPP-THROTTLE (50ms leading + trailing edge). GEÄNDERT client/src/audio/MidiClockIn.ts: NEU Constant `SPP_THROTTLE_MS=50` (=20 events/sec max). NEU private state `_sppLastDispatchTime`/`_sppTrailingPending`/`_sppTrailingTimer`. NEU private method `_emitSppThrottled(midiBeat)` — leading-edge: erstes Event sofort dispatched, folgende innerhalb 50ms werden zwischengespeichert; trailing-Timer feuert den LETZTEN Wert nach Ablauf. _onStart killt pending trailing-Timer (running-Gate). enable/disable/reset clean via `_resetSppThrottle()`. SPP-Handler im handleMidiMessage setzt pendingStartStep IMMER (auch bei suppressed dispatch) — finaler Wert vor 0xFA niemals verloren. NEU optional `scheduler` Option in MidiClockInOptions für Test-Injection (manual setTimeout/clearTimeout) — Default bindet globale.",
+        "PATTERN-LENGTH-DISPLAY. NEU client/src/utils/patternPosition.ts (~75 LOC, pure isomorph, kein React/Electron). Public-API `formatPatternPosition(positionStep, stepCount): PatternPositionDisplay`. Zerlegt step in bar (1+floor/STEPS_PER_BAR), beat (1+floor((effective%16)/4)), sub (1+(effective%4)). Wenn positionStep ≥ stepCount: effectiveStep = step%stepCount, isLooped=true, loopCount=floor/stepCount, label endet auf ' (loop)'. Defensive: negative/NaN-Steps → 0, stepCount ≤ 0 → 16 fallback. Constants: STEPS_PER_BEAT=4, BEATS_PER_BAR=4, STEPS_PER_BAR=16.",
+        "GEÄNDERT client/src/components/MidiSettings/MidiSettings.tsx: SPP-Display-Block ruft jetzt `formatPatternPosition(midi.clockInSpp, AudioEngine.stepCount)` und rendert `display.label`. Sub-Text differenziert: wenn isLooped → 'Step N/M · MIDI-Beat N · Loop X'; sonst 'Step N · MIDI-Beat N' (v3.36-Format). Import um AudioEngine + formatPatternPosition erweitert.",
+        "NEU 15 Tests in tests/features/midi-clock-in.test.ts (47 total, vorher 32). 3 describes: 'v3.37 SPP throttle' (6 Tests: leading immediate, 100-events-burst max-3-dispatches bounds, trailing-edge-last-value, widely-spaced no-throttling, FA cancels trailing, disable cancels timer), 'v3.37 0xFA with positionStep' (2 Tests: SPP-then-FA → positionStep=48, no-SPP → positionStep=0), 'formatPatternPosition' (7 Tests: step 0/5/15 → no loop, step 16/48 → loop, 32-step pattern bar 2, defensive negative/NaN/zero-stepCount). NEU ManualScheduler-Test-Harness (deterministic setTimeout-Mock, sync mit now()) damit Throttle-Bursts bit-genau steuerbar ohne vi.useFakeTimers.",
+        "TEST-RESULTAT: pnpm check clean (TypeScript strict ✓). pnpm test 186 files / 4314 tests passed (16 skipped, KEINE Regression vs v3.36 — vorher 4299, jetzt +15). midi-clock-in 47/47 GREEN.",
+        "BACKWARD-COMPAT: useMidi-API erweitert (optionaler 2. Param) — alle 7+ Callsites (App.tsx, CollabSplitView, ScriptRunner, useKeyboardShortcuts, Workspace, useMenuHandlers) bleiben ohne Änderung kompatibel. AudioEngine.play(fromStep) Default-Verhalten unverändert wenn _pendingStartStep===null; explizite play(fromStep>0)-Calls bleiben unverändert. SPP-Event-Detail unverändert (midiBeat + positionStep). MidiSettings-UI bleibt visuell identisch wenn stepCount===16 ODER positionStep<stepCount (kein '(loop)'-Suffix).",
+        "CAVEATS (verbleibend nach v3.37): (1) Externer Sync mit Pattern-Length > 16 nutzt jetzt die effective-step-Anzeige, aber der seekToStep moduloed weiter — d.h. ein DAW-Master der zu Bar 5 (step 80) springt, landet auf step 0 wenn der Synthstudio-Sequencer ein 16-step-Pattern hat. Bewusste Design-Entscheidung: kein Multi-Bar-Pattern-Konzept in Synthstudio bisher. (2) Trailing-Dispatch in der Default-Schedule-Variante nutzt window.setTimeout — bei Tab-Hidden (Background-Throttle) kann der trailing-Dispatch >50ms zu spät kommen. Akzeptabel da SPP nur außerhalb von Running gilt. (3) Optional v3.38: Toolbar-BPM-Slider explizit-disabled in External-Sync-Mode + Status-LED in Topbar (war schon v3.35/v3.36-Caveat).",
+        "package.json + agents/INDEX.js version 3.36.0 → 3.37.0."
+      ],
+      next: [
+        "Optional v3.38: Toolbar-BPM-Slider explizit disabled-State + Status-LED in Topbar (statt nur Settings) — bislang ist nur AudioEngine.setBpm geblockt, UI zeigt Werte ohne visuellen Hinweis.",
+        "Optional v3.38: SPP-Display in der Topbar (nicht nur Settings) wenn external-sync running. Schöner UX-Feedback wenn der Master mid-track Position-Sprünge macht.",
+        "Optional v3.38: Multi-Bar-Pattern-Support (z.B. 64-step Patterns) damit DAW-Master mit langen Song-Ranges 1:1 abgespielt werden ohne Loop-Faltung.",
+        "Vorhandene v3.36-Items unverändert (Optional v3.38: ParsedPartStep accent+note, PTED Footer-Marker, Pattern-Header 0x120..0x200 RE)."
+      ],
+      changed: [
+        "client/src/audio/MidiClockIn.ts (v3.37 SPP throttle leading+trailing 50ms + scheduler injection + _onStart cancels pending trailing)",
+        "client/src/audio/AudioEngine.ts (NEU _pendingStartStep + consumePendingStartStep + play() konsumiert pending + stepCount getter)",
+        "client/src/hooks/useMidi.ts (onPlayStop signature → (positionStep?: number) → void, onStart-Listener reicht positionStep durch statt seekToStep zu rufen)",
+        "client/src/App.tsx (onPlayStop-Wrapper: seekToStep(pos) before togglePlayStop)",
+        "client/src/utils/patternPosition.ts (NEU — formatPatternPosition Helper für Bar.Beat.Sub + Loop-Display)",
+        "client/src/components/MidiSettings/MidiSettings.tsx (formatPatternPosition statt inline Bar-Calc + Loop-info subtitle)",
+        "tests/features/midi-clock-in.test.ts (+15 v3.37-Tests, 32 → 47 GREEN, NEU ManualScheduler-Harness)",
+        "package.json (3.36.0 → 3.37.0)",
+        "agents/INDEX.js (version + workLog v3.37.0 + files-Einträge)"
+      ]
+    },
     {
       agent:     "backend",
       timestamp: "2026-05-18T18:10:00.000Z",

@@ -1,5 +1,5 @@
 /**
- * Synthstudio — MidiClockIn.ts (v3.36.0)
+ * Synthstudio — MidiClockIn.ts (v3.37.0)
  *
  * MIDI-Clock-Slave-Implementierung — Pendant zu MidiClockOut.ts (v2.83).
  * Empfängt MIDI-Real-Time-Messages von einem externen Master (Electribe,
@@ -83,6 +83,19 @@ export const TEMPO_MAX_BPM = 300;
 /** SPP-Maximum (14-bit unsigned). MIDI 1.0 Spec. */
 export const SPP_MAX_MIDI_BEAT = 16383;
 
+/**
+ * v3.37.0: SPP-Throttle-Window in Millisekunden. Closes v3.36-Caveat: DAW-
+ * Master in Scrub-/Jog-Modus senden SPP teils 10+ Hz; jeder Dispatch
+ * triggert seekToStep() + UI-Re-Render. Wir collapsen hochfrequente Bursts
+ * auf max ~20 Hz (= 50ms-Window) via leading + trailing edge:
+ *   - Erstes Event in einer Burst-Periode wird SOFORT dispatched (leading).
+ *   - Folgevents werden gespeichert; nach Ablauf des Fensters dispatch des
+ *     LETZTEN gespeicherten Werts (trailing edge → endgültige Position).
+ *   - Beispiel: 100 SPP-Events in 100ms → 2-3 dispatches (1 leading bei 0ms,
+ *     trailing-Dispatches bei 50ms+100ms).
+ */
+export const SPP_THROTTLE_MS = 50;
+
 // ─── Pure Helpers ───────────────────────────────────────────────────────────
 
 /**
@@ -144,6 +157,13 @@ const defaultNow: NowProvider = () =>
 
 // ─── Public API: MidiClockIn ────────────────────────────────────────────────
 
+/** v3.37.0: Test-Hook für Throttle — Timer-API injizierbar. */
+export type SchedulerTimerId = unknown;
+export interface MidiClockInScheduler {
+  setTimeout: (fn: () => void, ms: number) => SchedulerTimerId;
+  clearTimeout: (id: SchedulerTimerId) => void;
+}
+
 export interface MidiClockInOptions {
   /** Test-Hook: stelle eine deterministische Zeitquelle bereit. Default: performance.now(). */
   now?: NowProvider;
@@ -152,6 +172,13 @@ export interface MidiClockInOptions {
    * In Node-Tests einfach mit einem mock-Recorder ersetzen.
    */
   dispatch?: (event: string, detail: unknown) => void;
+  /**
+   * v3.37.0: optionale Scheduler-Injection für die SPP-Throttle-Trailing-
+   * Dispatch-Logik. Default: globale `setTimeout`/`clearTimeout`. In Tests
+   * darf man hier einen synchronen Mock einsetzen — z.B. Liste pending
+   * Callbacks plus manueller `flush()`.
+   */
+  scheduler?: MidiClockInScheduler;
 }
 
 /**
@@ -176,13 +203,23 @@ export class MidiClockIn {
    */
   private _pendingStartStep: number | null = null;
 
+  /**
+   * v3.37.0: Throttle-State für SPP-Events. Letzte Dispatch-Zeit (now()),
+   * letzter pending Trailing-Wert, Trailing-Timer-Handle.
+   */
+  private _sppLastDispatchTime = 0;
+  private _sppTrailingPending: number | null = null;
+  private _sppTrailingTimer: SchedulerTimerId | null = null;
+
   // ── Konfiguration ────────────────────────────────────────────────────────
   private readonly _now: NowProvider;
   private readonly _dispatch: (event: string, detail: unknown) => void;
+  private readonly _scheduler: MidiClockInScheduler;
 
   constructor(opts: MidiClockInOptions = {}) {
     this._now = opts.now ?? defaultNow;
     this._dispatch = opts.dispatch ?? defaultDispatch;
+    this._scheduler = opts.scheduler ?? defaultScheduler;
   }
 
   // ── Lifecycle ────────────────────────────────────────────────────────────
@@ -199,6 +236,7 @@ export class MidiClockIn {
     this._meanInterval = null;
     this._lastEmittedBpm = null;
     this._pendingStartStep = null;
+    this._resetSppThrottle();
   }
 
   disable(): void {
@@ -210,6 +248,7 @@ export class MidiClockIn {
     this._meanInterval = null;
     this._lastEmittedBpm = null;
     this._pendingStartStep = null;
+    this._resetSppThrottle();
   }
 
   /** Vollständiger State-Reset — typischerweise nach Device-Wechsel. */
@@ -220,6 +259,7 @@ export class MidiClockIn {
     this._meanInterval = null;
     this._lastEmittedBpm = null;
     this._pendingStartStep = null;
+    this._resetSppThrottle();
   }
 
   // ── Getters ──────────────────────────────────────────────────────────────
@@ -299,6 +339,8 @@ export class MidiClockIn {
     // v3.36.0: per MIDI-Spec wird SPP nur akzeptiert wenn Transport NICHT
     // läuft. Der Master soll erst stop, dann SPP, dann start senden. Während
     // Playback würde SPP zu Audio-Glitches führen — wir verwerfen still.
+    // v3.37.0: SPP-Dispatch wird via _emitSppThrottled gefiltert (50ms
+    // leading+trailing) damit DAW-Scrub-Bursts nicht den Sequencer fluten.
     if (status === MIDI_SC_SPP && bytes.length >= 3) {
       if (this._isRunning) return;
       const lsb = bytes[1] & 0x7f;
@@ -308,11 +350,71 @@ export class MidiClockIn {
       // Sanity-Check vs. fremde / korrupte Streams.
       if (midiBeat < 0 || midiBeat > SPP_MAX_MIDI_BEAT) return;
       // 1 MIDI-Beat = 6 MIDI-Clocks = 1/16-Note → positionStep === midiBeat.
-      const positionStep = midiBeat;
-      this._pendingStartStep = positionStep;
-      this._dispatch("midiclockin:spp", { midiBeat, positionStep });
+      // pendingStartStep IMMER updaten (auch wenn Dispatch geschluckt wird) —
+      // andernfalls könnte der finale Trailing-Wert vor 0xFA "verloren" gehen
+      // wenn das Master direkt nach scrub die Start-Message sendet.
+      this._pendingStartStep = midiBeat;
+      this._emitSppThrottled(midiBeat);
       return;
     }
+  }
+
+  /**
+   * v3.37.0: SPP-Dispatch mit Leading-Trailing-Edge-Throttle (Window
+   * SPP_THROTTLE_MS=50ms). Erstes Event in einer Burst-Periode wird sofort
+   * dispatched (leading); Folge-Events werden zwischengespeichert und beim
+   * Ablauf des Fensters als trailing-Dispatch ausgelöst — damit erhält der
+   * Caller IMMER den letzten Wert der Burst.
+   */
+  private _emitSppThrottled(midiBeat: number): void {
+    const now = this._now();
+    const elapsed = now - this._sppLastDispatchTime;
+    if (this._sppLastDispatchTime === 0 || elapsed >= SPP_THROTTLE_MS) {
+      // Leading edge — sofort dispatchen.
+      this._sppLastDispatchTime = now;
+      this._sppTrailingPending = null;
+      // Falls noch ein Trailing-Timer pending ist (defensive), löschen.
+      if (this._sppTrailingTimer !== null) {
+        this._scheduler.clearTimeout(this._sppTrailingTimer);
+        this._sppTrailingTimer = null;
+      }
+      this._dispatch("midiclockin:spp", {
+        midiBeat,
+        positionStep: midiBeat,
+      });
+      return;
+    }
+    // Innerhalb der Throttle-Periode: nur letzten Wert merken.
+    this._sppTrailingPending = midiBeat;
+    if (this._sppTrailingTimer !== null) return;
+    const wait = SPP_THROTTLE_MS - elapsed;
+    this._sppTrailingTimer = this._scheduler.setTimeout(() => {
+      this._sppTrailingTimer = null;
+      const pending = this._sppTrailingPending;
+      this._sppTrailingPending = null;
+      if (pending === null) return;
+      // Falls wir zwischenzeitlich disabled wurden, kein Dispatch.
+      if (!this._enabled) return;
+      // Falls wir running geworden sind (0xFA in der Zwischenzeit), kein
+      // Dispatch — wäre Spec-Violation.
+      if (this._isRunning) return;
+      this._sppLastDispatchTime = this._now();
+      this._pendingStartStep = pending;
+      this._dispatch("midiclockin:spp", {
+        midiBeat: pending,
+        positionStep: pending,
+      });
+    }, Math.max(0, wait));
+  }
+
+  /** v3.37.0: Trailing-Timer cancel + State-Reset. Used by disable/reset. */
+  private _resetSppThrottle(): void {
+    if (this._sppTrailingTimer !== null) {
+      this._scheduler.clearTimeout(this._sppTrailingTimer);
+      this._sppTrailingTimer = null;
+    }
+    this._sppTrailingPending = null;
+    this._sppLastDispatchTime = 0;
   }
 
   // ── Internals ────────────────────────────────────────────────────────────
@@ -366,6 +468,13 @@ export class MidiClockIn {
     // aufrufen kann.
     const positionStep = this._pendingStartStep ?? 0;
     this._pendingStartStep = null;
+    // v3.37.0: pending trailing-SPP-Dispatch killen — sobald wir running
+    // sind, würde ein nachträgliches SPP-Event gegen die MIDI-Spec verstoßen.
+    if (this._sppTrailingTimer !== null) {
+      this._scheduler.clearTimeout(this._sppTrailingTimer);
+      this._sppTrailingTimer = null;
+    }
+    this._sppTrailingPending = null;
     this._dispatch("midiclockin:start", { time: now, positionStep });
   }
 
@@ -392,3 +501,9 @@ function defaultDispatch(event: string, detail: unknown): void {
     /* swallow — niemals tick-handler crashen lassen */
   }
 }
+
+/** v3.37.0: Default-Scheduler — bindet globale setTimeout/clearTimeout. */
+const defaultScheduler: MidiClockInScheduler = {
+  setTimeout:   (fn, ms) => setTimeout(fn, ms),
+  clearTimeout: (id) => clearTimeout(id as ReturnType<typeof setTimeout>),
+};

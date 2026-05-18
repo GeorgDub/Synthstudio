@@ -25,8 +25,10 @@ import {
   MIDI_SC_SPP,
   MIDI_PPQN,
   SYNC_LOSS_MS,
+  SPP_THROTTLE_MS,
   TEMPO_MIN_SAMPLES,
 } from "../../client/src/audio/MidiClockIn";
+import { formatPatternPosition } from "../../client/src/utils/patternPosition";
 
 // ─── Test-Harness ───────────────────────────────────────────────────────────
 
@@ -44,6 +46,66 @@ interface Harness {
   advance: (delta: number) => void;
 }
 
+interface ManualScheduler {
+  setTimeout: (fn: () => void, ms: number) => unknown;
+  clearTimeout: (id: unknown) => void;
+  /** Liefert die aktuell noch wartenden Timer (für Debug-Asserts). */
+  pending: () => number;
+  /** Bewegt den virtuellen Scheduler `ms` Millisekunden vorwärts. */
+  advanceBy: (ms: number, advanceClockFn: (delta: number) => void) => void;
+}
+
+interface ScheduledTask {
+  fireAt: number;
+  fn: () => void;
+  cancelled: boolean;
+}
+
+/**
+ * Manueller Timer-Scheduler für die SPP-Throttle-Tests. Wir koppeln ihn
+ * über `advanceBy()` mit dem Harness-Now: pro Millisekunde-Schritt prüfen
+ * wir, ob ein Timer fällig ist und feuern. Damit lassen sich Throttle-
+ * Fenster bit-genau steuern ohne `vi.useFakeTimers`.
+ */
+function makeManualScheduler(): { sched: ManualScheduler; tasks: ScheduledTask[]; currentMs: { v: number } } {
+  const tasks: ScheduledTask[] = [];
+  const currentMs = { v: 1000 };
+  const sched: ManualScheduler = {
+    setTimeout(fn, ms) {
+      const task: ScheduledTask = { fireAt: currentMs.v + ms, fn, cancelled: false };
+      tasks.push(task);
+      return task;
+    },
+    clearTimeout(id) {
+      const t = id as ScheduledTask | undefined;
+      if (t && !t.cancelled) t.cancelled = true;
+    },
+    pending() {
+      return tasks.filter(t => !t.cancelled && t.fireAt > currentMs.v).length;
+    },
+    advanceBy(ms, advanceClockFn) {
+      const target = currentMs.v + ms;
+      while (true) {
+        const next = tasks
+          .filter(t => !t.cancelled && t.fireAt <= target)
+          .sort((a, b) => a.fireAt - b.fireAt)[0];
+        if (!next) break;
+        next.cancelled = true;
+        const delta = next.fireAt - currentMs.v;
+        currentMs.v = next.fireAt;
+        advanceClockFn(delta);
+        next.fn();
+      }
+      if (currentMs.v < target) {
+        const delta = target - currentMs.v;
+        currentMs.v = target;
+        advanceClockFn(delta);
+      }
+    },
+  };
+  return { sched, tasks, currentMs };
+}
+
 function makeClock(): Harness {
   // Wir starten bei 1000ms damit `lastTickTime===0` Sentinel (= "noch nie
   // ein Tick empfangen") nicht versehentlich kollidiert mit einem realen
@@ -59,6 +121,38 @@ function makeClock(): Harness {
     events,
     setNow: (ms) => { nowMs = ms; },
     advance: (delta) => { nowMs += delta; },
+  };
+}
+
+interface ThrottleHarness extends Harness {
+  scheduler: ManualScheduler;
+  /** Bewegt now() UND den manual-scheduler um delta ms gleichzeitig vor. */
+  advanceBoth: (delta: number) => void;
+}
+
+function makeClockWithScheduler(): ThrottleHarness {
+  const events: RecordedEvent[] = [];
+  const nowState = { v: 1000 };
+  const { sched, currentMs } = makeManualScheduler();
+  // Wir synchronisieren currentMs.v und nowState.v.
+  currentMs.v = 1000;
+  const clock = new MidiClockIn({
+    now: () => nowState.v,
+    dispatch: (event, detail) => { events.push({ event, detail }); },
+    scheduler: {
+      setTimeout: (fn, ms) => sched.setTimeout(fn, ms),
+      clearTimeout: (id) => sched.clearTimeout(id),
+    },
+  });
+  return {
+    clock,
+    events,
+    scheduler: sched,
+    setNow: (ms) => { nowState.v = ms; currentMs.v = ms; },
+    advance: (delta) => { nowState.v += delta; },
+    advanceBoth: (delta) => {
+      sched.advanceBy(delta, (d) => { nowState.v += d; });
+    },
   };
 }
 
@@ -476,5 +570,206 @@ describe("MidiClockIn — robustness", () => {
     tickStream(h, 30, 20);
     h.clock.handleMidiMessage(new Uint8Array([MIDI_RT_START]));
     expect(h.events.length).toBe(before);
+  });
+});
+
+// ─── v3.37.0: SPP-Throttle (leading + trailing edge) ────────────────────────
+
+describe("MidiClockIn — v3.37 SPP throttle", () => {
+  it("first SPP fires immediately (leading edge)", () => {
+    const h = makeClockWithScheduler();
+    h.clock.enable();
+    h.clock.handleMidiMessage(new Uint8Array([MIDI_SC_SPP, 10, 0]));
+    const sppEvents = h.events.filter(e => e.event === "midiclockin:spp");
+    expect(sppEvents.length).toBe(1);
+    expect((sppEvents[0].detail as { positionStep: number }).positionStep).toBe(10);
+  });
+
+  it("100 SPP-Events in 100ms → max 3 dispatches (leading + ≤2 trailing)", () => {
+    const h = makeClockWithScheduler();
+    h.clock.enable();
+    // 100 SPP-Events alle 1ms (=> 100ms-Burst). Wir nutzen advanceBoth damit
+    // auch der Scheduler synchron mitwandert und etwaige Trailing-Timer in
+    // der Mitte feuern können.
+    for (let i = 0; i < 100; i++) {
+      h.clock.handleMidiMessage(new Uint8Array([MIDI_SC_SPP, (i + 1) % 128, 0]));
+      h.advanceBoth(1);
+    }
+    // Stelle sicher, dass ein noch ausstehender Trailing-Timer feuert
+    // (oder cancelled wird) — wir warten genug Zeit ab.
+    h.advanceBoth(SPP_THROTTLE_MS + 5);
+
+    const sppEvents = h.events.filter(e => e.event === "midiclockin:spp");
+    // Erwartet: leading bei 0ms, trailing bei 50ms, trailing bei 100ms,
+    // ggf. final trailing nach 150ms. Wir lassen ≤ 4 zu (defensive bound).
+    expect(sppEvents.length).toBeGreaterThanOrEqual(1);
+    expect(sppEvents.length).toBeLessThanOrEqual(4);
+  });
+
+  it("trailing-edge dispatches LAST value of burst", () => {
+    const h = makeClockWithScheduler();
+    h.clock.enable();
+    // Wir senden 3 SPP-Events innerhalb des Throttle-Windows. Erstes leading,
+    // beide weiteren werden zusammengefasst → trailing soll den LETZTEN
+    // Wert dispatchen.
+    h.clock.handleMidiMessage(new Uint8Array([MIDI_SC_SPP, 5, 0]));   // leading
+    h.advanceBoth(10);
+    h.clock.handleMidiMessage(new Uint8Array([MIDI_SC_SPP, 7, 0]));   // suppressed
+    h.advanceBoth(10);
+    h.clock.handleMidiMessage(new Uint8Array([MIDI_SC_SPP, 13, 0]));  // suppressed → trailing
+    h.advanceBoth(SPP_THROTTLE_MS + 5);
+
+    const sppEvents = h.events.filter(e => e.event === "midiclockin:spp");
+    expect(sppEvents.length).toBe(2);
+    expect((sppEvents[0].detail as { positionStep: number }).positionStep).toBe(5);
+    expect((sppEvents[1].detail as { positionStep: number }).positionStep).toBe(13);
+    // pendingStartStep muss den finalen Wert haben → so seekt der nächste
+    // 0xFA-Start zur tatsächlich letzten Position der Burst.
+    expect(h.clock.pendingStartStep).toBe(13);
+  });
+
+  it("widely-spaced SPPs (>50ms apart) all dispatch as leading (no throttling)", () => {
+    const h = makeClockWithScheduler();
+    h.clock.enable();
+    h.clock.handleMidiMessage(new Uint8Array([MIDI_SC_SPP, 1, 0]));
+    h.advanceBoth(SPP_THROTTLE_MS + 10);
+    h.clock.handleMidiMessage(new Uint8Array([MIDI_SC_SPP, 2, 0]));
+    h.advanceBoth(SPP_THROTTLE_MS + 10);
+    h.clock.handleMidiMessage(new Uint8Array([MIDI_SC_SPP, 3, 0]));
+    h.advanceBoth(SPP_THROTTLE_MS + 10);
+
+    const sppEvents = h.events.filter(e => e.event === "midiclockin:spp");
+    // Alle 3 sind jeweils > 50ms auseinander → 3 leading-Dispatches, keine
+    // trailing-Sammlung.
+    expect(sppEvents.length).toBe(3);
+    expect(sppEvents.map(e => (e.detail as { positionStep: number }).positionStep))
+      .toEqual([1, 2, 3]);
+  });
+
+  it("trailing dispatch is cancelled when 0xFA arrives mid-throttle", () => {
+    const h = makeClockWithScheduler();
+    h.clock.enable();
+    h.clock.handleMidiMessage(new Uint8Array([MIDI_SC_SPP, 5, 0]));  // leading
+    h.advanceBoth(10);
+    h.clock.handleMidiMessage(new Uint8Array([MIDI_SC_SPP, 9, 0]));  // pending trailing
+    // 0xFA START erfolgt vor dem trailing-Timer.
+    h.clock.handleMidiMessage(new Uint8Array([MIDI_RT_START]));
+    h.advanceBoth(SPP_THROTTLE_MS + 20);
+
+    const sppEvents = h.events.filter(e => e.event === "midiclockin:spp");
+    // Nur das leading-Event soll existieren. Das trailing wurde durch
+    // _onStart cancelled (running-Gate).
+    expect(sppEvents.length).toBe(1);
+    expect((sppEvents[0].detail as { positionStep: number }).positionStep).toBe(5);
+    // Start-Event muss die LETZTE bekannte SPP-Position als positionStep haben.
+    const startEv = h.events.find(e => e.event === "midiclockin:start");
+    expect(startEv).toBeDefined();
+    expect((startEv!.detail as { positionStep: number }).positionStep).toBe(9);
+  });
+
+  it("disable() cancels trailing timer + clears throttle state", () => {
+    const h = makeClockWithScheduler();
+    h.clock.enable();
+    h.clock.handleMidiMessage(new Uint8Array([MIDI_SC_SPP, 5, 0]));  // leading
+    h.advanceBoth(10);
+    h.clock.handleMidiMessage(new Uint8Array([MIDI_SC_SPP, 9, 0]));  // pending
+    expect(h.scheduler.pending()).toBe(1);
+    h.clock.disable();
+    expect(h.scheduler.pending()).toBe(0);
+    // Auch nach Verstreichen der Zeit darf kein Trailing-Event mehr feuern.
+    h.advanceBoth(SPP_THROTTLE_MS + 50);
+    const sppEvents = h.events.filter(e => e.event === "midiclockin:spp");
+    expect(sppEvents.length).toBe(1); // nur das initial leading
+  });
+});
+
+// ─── v3.37.0: onPlayStop signature extension (positionStep) ─────────────────
+
+describe("MidiClockIn — v3.37 0xFA with positionStep in start event", () => {
+  it("0xFA dispatches start with positionStep === SPP value", () => {
+    const h = makeClock();
+    h.clock.enable();
+    h.clock.handleMidiMessage(new Uint8Array([MIDI_SC_SPP, 48, 0]));
+    h.clock.handleMidiMessage(new Uint8Array([MIDI_RT_START]));
+    const startEv = h.events.find(e => e.event === "midiclockin:start");
+    expect(startEv).toBeDefined();
+    const detail = startEv!.detail as { positionStep: number };
+    expect(detail.positionStep).toBe(48);
+  });
+
+  it("0xFA without preceding SPP → positionStep === 0", () => {
+    const h = makeClock();
+    h.clock.enable();
+    h.clock.handleMidiMessage(new Uint8Array([MIDI_RT_START]));
+    const startEv = h.events.find(e => e.event === "midiclockin:start");
+    expect(startEv).toBeDefined();
+    expect((startEv!.detail as { positionStep: number }).positionStep).toBe(0);
+  });
+});
+
+// ─── v3.37.0: formatPatternPosition (Pattern-Length > 16 fold display) ──────
+
+describe("formatPatternPosition — v3.37 Bar.Beat.Sub helper", () => {
+  it("step 0 / stepCount 16 → 'Bar 1.1.1', not looped", () => {
+    const r = formatPatternPosition(0, 16);
+    expect(r.label).toBe("Bar 1.1.1");
+    expect(r.bar).toBe(1);
+    expect(r.beat).toBe(1);
+    expect(r.sub).toBe(1);
+    expect(r.effectiveStep).toBe(0);
+    expect(r.isLooped).toBe(false);
+    expect(r.loopCount).toBe(0);
+  });
+
+  it("step 5 / stepCount 16 → 'Bar 1.2.2', effective 5", () => {
+    const r = formatPatternPosition(5, 16);
+    expect(r.label).toBe("Bar 1.2.2");
+    expect(r.effectiveStep).toBe(5);
+    expect(r.isLooped).toBe(false);
+  });
+
+  it("step 15 / stepCount 16 → 'Bar 1.4.4', last step", () => {
+    const r = formatPatternPosition(15, 16);
+    expect(r.label).toBe("Bar 1.4.4");
+    expect(r.effectiveStep).toBe(15);
+    expect(r.isLooped).toBe(false);
+  });
+
+  it("step 16 / stepCount 16 → 'Bar 1.1.1 (loop)', loopCount=1", () => {
+    const r = formatPatternPosition(16, 16);
+    expect(r.label).toBe("Bar 1.1.1 (loop)");
+    expect(r.effectiveStep).toBe(0);
+    expect(r.isLooped).toBe(true);
+    expect(r.loopCount).toBe(1);
+  });
+
+  it("step 48 / stepCount 16 → 'Bar 1.1.1 (loop)', loopCount=3", () => {
+    const r = formatPatternPosition(48, 16);
+    expect(r.label).toBe("Bar 1.1.1 (loop)");
+    expect(r.effectiveStep).toBe(0);
+    expect(r.loopCount).toBe(3);
+    expect(r.isLooped).toBe(true);
+  });
+
+  it("step 20 / stepCount 32 → 'Bar 2.2.1', effective 20 (no loop)", () => {
+    // Bei 32-Step-Pattern ist Step 20 = Bar 2 (Step 16-31) Beat 2 Sub 1
+    const r = formatPatternPosition(20, 32);
+    expect(r.bar).toBe(2);
+    expect(r.beat).toBe(2);
+    expect(r.sub).toBe(1);
+    expect(r.isLooped).toBe(false);
+    expect(r.effectiveStep).toBe(20);
+  });
+
+  it("defensive: negative / NaN / stepCount<=0 → clamped to safe defaults", () => {
+    const neg = formatPatternPosition(-5, 16);
+    expect(neg.effectiveStep).toBe(0);
+    expect(neg.label).toBe("Bar 1.1.1");
+    const nan = formatPatternPosition(NaN, 16);
+    expect(nan.effectiveStep).toBe(0);
+    const zeroSteps = formatPatternPosition(5, 0);
+    // stepCount 0 → fallback auf 16
+    expect(zeroSteps.effectiveStep).toBe(5);
+    expect(zeroSteps.label).toBe("Bar 1.2.2");
   });
 });

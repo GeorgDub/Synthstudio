@@ -24,7 +24,8 @@ import {
 } from "@/utils/midiDeviceDetection";
 import { buildMidiLayoutJson, sanitizeLayoutFileName, defaultLayoutNameForDevice } from "@/utils/midiLayoutExport";
 import { toast } from "@/store/useToastStore";
-import { FX_PARAM_RANGES } from "@/audio/AudioEngine";
+import { FX_PARAM_RANGES, AudioEngine } from "@/audio/AudioEngine";
+import { formatPatternPosition } from "@/utils/patternPosition";
 import { useScriptStore } from "@/store/useScriptStore";
 import {
   loadPadBankSlots,
@@ -1761,27 +1762,32 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
               <div className="text-xs text-text-muted">Warte auf 0xF8-Ticks…</div>
             )}
             {/* v3.36.0: SPP-Display — wenn der Master eine Song-Position gesendet
-                hat, zeigen wir Beat + Step + Bar.Beat-Notation an. */}
-            {midi.clockInSpp !== null && (
-              <div className="mt-2 pt-2 border-t border-border-subtle">
-                <div
-                  data-testid="clock-in-spp-display"
-                  className="text-sm font-mono text-text-primary"
-                >
-                  {(() => {
-                    // 1 MIDI-Beat = 1/16-Step. 16 Steps per Bar (4/4) = 1 Bar.
-                    const step = midi.clockInSpp;
-                    const bar  = Math.floor(step / 16) + 1;
-                    const beat = Math.floor((step % 16) / 4) + 1;
-                    const sub  = (step % 4) + 1;
-                    return `Bar ${bar}.${beat}.${sub}`;
-                  })()}
+                hat, zeigen wir Beat + Step + Bar.Beat-Notation an.
+                v3.37.0: formatPatternPosition berücksichtigt Pattern-Length —
+                wenn der externe Position-Pointer > stepCount ist (DAW-Song-Range
+                vs. Pattern-Loop), zeigt der Helper "Bar X.Y.Z (loop)" + den
+                effektiv klingenden Step. */}
+            {midi.clockInSpp !== null && (() => {
+              const display = formatPatternPosition(
+                midi.clockInSpp,
+                AudioEngine.stepCount,
+              );
+              return (
+                <div className="mt-2 pt-2 border-t border-border-subtle">
+                  <div
+                    data-testid="clock-in-spp-display"
+                    className="text-sm font-mono text-text-primary"
+                  >
+                    {display.label}
+                  </div>
+                  <div className="text-xs text-text-muted">
+                    {display.isLooped
+                      ? `Step ${display.effectiveStep}/${AudioEngine.stepCount} · MIDI-Beat ${midi.clockInSpp} · Loop ${display.loopCount + 1}`
+                      : `Step ${midi.clockInSpp} · MIDI-Beat ${midi.clockInSpp}`}
+                  </div>
                 </div>
-                <div className="text-xs text-text-muted">
-                  Step {midi.clockInSpp} · MIDI-Beat {midi.clockInSpp}
-                </div>
-              </div>
-            )}
+              );
+            })()}
           </div>
         )}
 

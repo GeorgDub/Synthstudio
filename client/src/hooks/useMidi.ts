@@ -667,7 +667,15 @@ interface UseMidiOptions {
   // DrumMachine-Callbacks
   onPartTrigger?: (partId: string, velocity: number) => void;
   onBpmChange?: (bpm: number) => void;
-  onPlayStop?: () => void;
+  /**
+   * Transport-Toggle-Callback. v3.37.0: optionaler `positionStep` Parameter
+   * für SPP-driven External-Sync — wenn der Master via 0xFA + vorherigem
+   * Song-Position-Pointer einen Mid-Track-Start triggert, reicht useMidi
+   * den Ziel-Step direkt durch (Race-Fix gegen play(0)-Overwrite).
+   * Bei manuellen UI-Triggers (Spacebar, Klick) bleibt der Parameter
+   * undefined — Caller behandelt das wie bisher (Start ab 0 / Stop).
+   */
+  onPlayStop?: (positionStep?: number) => void;
   onMute?: (partId: string) => void;
   // Parts für Note-Mapping
   parts?: Array<{ id: string; name: string }>;
@@ -1588,14 +1596,19 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
       optionsRef.current.onBpmChange?.(Math.round(detail.bpm));
     };
     const onStart = (ev: Event) => {
-      // v3.36.0: positionStep aus dem Detail extrahieren — wenn vorher SPP
-      // empfangen wurde, ist das != 0, sonst 0 (von-Anfang-Start).
+      // v3.36.0/v3.37.0: positionStep aus dem Detail extrahieren — wenn vorher
+      // SPP empfangen wurde, ist das != 0, sonst 0 (von-Anfang-Start).
+      // v3.37.0 RACE-FIX: Statt erst seekToStep + dann onPlayStop (was zu
+      // play(0) führte und damit den Seek überschrieb), reichen wir den
+      // positionStep direkt an onPlayStop weiter. App.tsx ist verantwortlich
+      // play(positionStep) zu rufen — single-source-of-truth, kein Race.
       const detail = (ev as CustomEvent).detail as { positionStep?: number } | undefined;
       const pos = typeof detail?.positionStep === "number" ? detail.positionStep : 0;
-      AudioEngine.seekToStep(pos);
-      optionsRef.current.onPlayStop?.();
+      optionsRef.current.onPlayStop?.(pos);
     };
     // v3.36.0: Continue (0xFB) preserved aktuelle Position — KEIN seek.
+    // Kein positionStep an onPlayStop → App.tsx triggert "vom alten Step
+    // weiter" über die normale Toggle-Logik.
     const onContinue = () => { optionsRef.current.onPlayStop?.(); };
     const onStop = () => { optionsRef.current.onPlayStop?.(); };
     const onSpp = (ev: Event) => {

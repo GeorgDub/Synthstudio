@@ -1593,7 +1593,16 @@ export default function App() {
   // ── MIDI-Hook ─────────────────────────────────────────────────────────────
   const midi = useMidi({
     onBpmChange: project.setBpm,
-    onPlayStop: project.togglePlayStop,
+    // v3.37.0: SPP-driven Start — wenn useMidi den positionStep weiterreicht
+    // (External-Sync 0xFA mit vorherigem SPP), seeken wir die AudioEngine
+    // BEVOR togglePlayStop läuft. play() in useTransport konsumiert das
+    // _pendingStartStep statt nur fromStep=0 zu nutzen.
+    onPlayStop: (positionStep) => {
+      if (typeof positionStep === "number") {
+        AudioEngine.seekToStep(positionStep);
+      }
+      project.togglePlayStop();
+    },
     onClockBpm: (bpm) => project.setBpm(Math.round(bpm)),
     onNoteOn: (note, velocity) => {
       const ks = getKeyboardSamplerState();
