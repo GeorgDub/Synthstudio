@@ -333,6 +333,100 @@ export function validateKorgBankBuffer(
   return { ok: true };
 }
 
+// ─── ESX-1 BANK WRITE (.esx) — v3.28.0 ────────────────────────────────────────
+
+/**
+ * Filename-Whitelist beim Save-As .esx File (Synthstudio → KORG ESX-1 Bank).
+ * Wir akzeptieren nur ASCII-alnum + . _ - und MÜSSEN auf .esx enden.
+ *
+ * Separat vom KORG_BANK_SAVE (.all = E2S) Validator, damit die Endungs-Pflicht
+ * pro Format strikt enforced bleibt — kein Misch-Save.
+ */
+export const ESX_BANK_SAVE_FILENAME_MAX_LEN = 120;
+export const ESX_BANK_SAVE_FILENAME_REGEX = /^[A-Za-z0-9._-]+\.esx$/;
+/**
+ * Buffer-Cap fürs IPC-Save. ESX-Files sind ~24-28 MB (256 patterns + 384
+ * samples + 24 MB PCM). 64 MB = großzügige obere Schranke (matcht
+ * ESX_FILE_MAX_BYTES in constants.ts, ohne Cross-Module-Import).
+ */
+export const ESX_BANK_SAVE_MAX_BYTES = 64 * 1024 * 1024; // 64 MB
+/**
+ * Minimum sinnvolle .esx-Größe: bis zum Sample-Section-Start (matched
+ * ESX1_SIZE_FILE_MIN = 0x00250010, ohne Cross-Module-Import).
+ */
+export const ESX_BANK_SAVE_MIN_BYTES = 0x00250010;
+
+export type EsxBankFilenameCheck =
+  | { ok: true; filename: string }
+  | { ok: false; error: string };
+
+export function validateEsxBankSaveFilename(input: unknown): EsxBankFilenameCheck {
+  if (typeof input !== "string" || input.length === 0) {
+    return { ok: false, error: "Ungültiger Dateiname" };
+  }
+  if (input.length > ESX_BANK_SAVE_FILENAME_MAX_LEN) {
+    return { ok: false, error: "Dateiname zu lang" };
+  }
+  if (
+    input.includes("\0") ||
+    input.includes("/") ||
+    input.includes("\\") ||
+    input.includes("..")
+  ) {
+    return { ok: false, error: "Dateiname enthält unzulässige Zeichen" };
+  }
+  if (!ESX_BANK_SAVE_FILENAME_REGEX.test(input)) {
+    return { ok: false, error: "Nur alphanumerische .esx-Dateinamen erlaubt" };
+  }
+  return { ok: true, filename: input };
+}
+
+export type EsxBankBufferCheck =
+  | { ok: true }
+  | { ok: false; error: string };
+
+/**
+ * Prüft Min/Max-Größe + erste 16 Bytes auf "KORG" @ 0x00 und "ESX\0" @ 0x08.
+ * Validation greift VOR dem Schreiben — Disk-Fill-Schutz + kein arbiträrer
+ * Binär-Müll auf der Platte.
+ *
+ * @param byteLength volle Buffer-Größe in Bytes
+ * @param prefixBytes erste 16 Bytes des Buffers (als Uint8Array vom Caller)
+ */
+export function validateEsxBankBuffer(
+  byteLength: number,
+  prefixBytes: Uint8Array,
+): EsxBankBufferCheck {
+  if (!Number.isFinite(byteLength) || byteLength < ESX_BANK_SAVE_MIN_BYTES) {
+    return { ok: false, error: "Buffer zu klein für ESX-1 Bank-Header" };
+  }
+  if (byteLength > ESX_BANK_SAVE_MAX_BYTES) {
+    return { ok: false, error: "ESX-Bank zu groß (>64 MB)" };
+  }
+  if (!prefixBytes || prefixBytes.length < 16) {
+    return { ok: false, error: "Prefix kürzer als 16 Bytes" };
+  }
+  // "KORG" @ 0x00
+  if (
+    prefixBytes[0] !== 0x4b ||
+    prefixBytes[1] !== 0x4f ||
+    prefixBytes[2] !== 0x52 ||
+    prefixBytes[3] !== 0x47
+  ) {
+    return { ok: false, error: "Ungültige KORG-Signatur" };
+  }
+  // "ESX\0" @ 0x08
+  if (
+    prefixBytes[0x08] !== 0x45 ||
+    prefixBytes[0x09] !== 0x53 ||
+    prefixBytes[0x0a] !== 0x58 ||
+    prefixBytes[0x0b] !== 0x00
+  ) {
+    return { ok: false, error: "Ungültige ESX-1 Sub-Magic" };
+  }
+  return { ok: true };
+}
+
 // ─── E2 PATTERN WRITE (.e2spat) — v3.26.0 ────────────────────────────────────
 
 /**
