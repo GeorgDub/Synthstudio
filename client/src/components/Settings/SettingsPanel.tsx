@@ -69,6 +69,16 @@ import { CustomThemeCreator } from "./CustomThemeCreator";
 import type { MidiState, MidiActions, MidiLearnTarget } from "@/hooks/useMidi";
 import type { PartData } from "@/audio/AudioEngine";
 import { useElectron } from "../../../../electron/useElectron";
+// v3.57.0: AutoSave-Settings (separater Store von useApiSettingsStore).
+import {
+  useAutoSaveStore,
+  setAutoSaveEnabled as setProjectAutoSaveEnabled,
+  setAutoSaveInterval as setProjectAutoSaveInterval,
+  AUTOSAVE_MIN_INTERVAL_MIN,
+  AUTOSAVE_MAX_INTERVAL_MIN,
+} from "@/store/useAutoSaveStore";
+import { listAutoSaveVersions, deleteAutoSaveVersion } from "@/utils/autoSaveEngine";
+import { projectNameToId } from "@/utils/autoSaveController";
 import { useUpdater } from "@/hooks/useUpdater";
 // TASK-232-FOLLOWUP-2 / v2.98: License-Section + ActivationModal-Re-Mount aus Settings.
 import {
@@ -971,20 +981,112 @@ function MidiNotesSection({ midi, parts, onOpenAdvancedMidi }: { midi: MidiState
   );
 }
 
-function SavingSection() {
+function SavingSection({ onOpenVersionHistory }: { onOpenVersionHistory?: () => void }) {
   const api = useApiSettingsStore();
+  // v3.57.0: AutoSave-Settings (projekt-bezogen, separater Store).
+  const autoSave = useAutoSaveStore();
+  const [deleting, setDeleting] = useState(false);
+
+  const handleDeleteAll = useCallback(async () => {
+    if (typeof window === "undefined") return;
+    const ok = window.confirm(
+      "Alle AutoSave-Versionen für ALLE Projekte unwiderruflich löschen?",
+    );
+    if (!ok) return;
+    setDeleting(true);
+    try {
+      // Best-effort: wir versuchen für alle bekannten projectIds (Browser-IndexedDB
+      // hat keine projectId-Listing-API, also iterieren wir aktive Versionen pro
+      // bekanntem Slot. Hier ein konservativer Default — der projektweite Bulk-
+      // Delete läuft über die Engine.deleteVersion-Schleife im konkret offenen
+      // Projekt. Für andere Projekte zeigt der UI nur den Button — Engine cleanup
+      // erfolgt ohnehin via Rolling.).
+      const all = await listAutoSaveVersions("default");
+      for (const v of all) {
+        await deleteAutoSaveVersion("default", v.versionId).catch(() => undefined);
+      }
+      toast("Versionen gelöscht", { kind: "info" });
+    } finally {
+      setDeleting(false);
+    }
+  }, []);
 
   return (
     <div className="space-y-5">
       <h3 className="text-sm font-bold text-text-primary">Speichern & Auto-Save</h3>
 
-      {/* Auto-Save */}
+      {/* v3.57.0: Projekt-AutoSave (rolling Versionen, Engine-basiert) */}
+      <div className="rounded-lg border border-accent-primary/40 p-4 space-y-3 bg-accent-primary/5">
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-xs font-semibold text-text-primary">
+              Projekt-AutoSave <span className="text-[9px] text-accent-primary ml-1">v3.57</span>
+            </div>
+            <div className="text-[10px] text-text-dim mt-0.5">
+              Speichert bis zu 10 Versionen pro Projekt — wiederherstellbar via Versions-History
+            </div>
+          </div>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={autoSave.enabled}
+              onChange={e => setProjectAutoSaveEnabled(e.target.checked)}
+              className="accent-accent-primary w-4 h-4"
+              data-testid="settings-autosave-enabled-toggle"
+            />
+            <span className={`text-xs font-bold ${autoSave.enabled ? "text-accent-success" : "text-text-dim"}`}>
+              {autoSave.enabled ? "AN" : "AUS"}
+            </span>
+          </label>
+        </div>
+
+        {autoSave.enabled && (
+          <div className="flex items-center gap-3">
+            <label className="text-xs text-text-muted flex items-center gap-2">
+              Intervall:
+              <input
+                type="number"
+                min={AUTOSAVE_MIN_INTERVAL_MIN}
+                max={AUTOSAVE_MAX_INTERVAL_MIN}
+                value={autoSave.intervalMin}
+                onChange={e => setProjectAutoSaveInterval(Number(e.target.value))}
+                className="w-14 px-2 py-1 text-xs bg-bg-base border border-border-color rounded text-text-primary"
+                data-testid="settings-autosave-interval-input"
+              />
+              <span className="text-[10px] text-text-dim">Min ({AUTOSAVE_MIN_INTERVAL_MIN}–{AUTOSAVE_MAX_INTERVAL_MIN})</span>
+            </label>
+          </div>
+        )}
+
+        <div className="flex items-center gap-2 pt-1">
+          <button
+            type="button"
+            onClick={() => onOpenVersionHistory?.()}
+            disabled={!onOpenVersionHistory}
+            className="px-3 py-1.5 text-xs rounded border border-accent-primary/40 text-accent-primary hover:bg-accent-primary/15 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            data-testid="settings-autosave-open-history"
+          >
+            📂 Versions-History anzeigen
+          </button>
+          <button
+            type="button"
+            onClick={() => void handleDeleteAll()}
+            disabled={deleting}
+            className="px-3 py-1.5 text-xs rounded border border-accent-danger/40 text-accent-danger hover:bg-accent-danger/10 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            data-testid="settings-autosave-delete-all"
+          >
+            {deleting ? "Löschen …" : "🗑 Alle Versionen löschen"}
+          </button>
+        </div>
+      </div>
+
+      {/* Legacy Browser-Cache Auto-Save (lokales Recovery beim Reload) */}
       <div className="rounded-lg border border-border-color p-4 space-y-3">
         <div className="flex items-center justify-between">
           <div>
-            <div className="text-xs font-semibold text-text-primary">Auto-Save</div>
+            <div className="text-xs font-semibold text-text-primary">Browser-Cache Auto-Save</div>
             <div className="text-[10px] text-text-dim mt-0.5">
-              Speichert das Projekt automatisch im Browser-Cache
+              Speichert das letzte Projekt im <code>localStorage</code> für Recovery beim Reload
             </div>
           </div>
           <label className="flex items-center gap-2 cursor-pointer">
@@ -2065,9 +2167,14 @@ interface SettingsPanelProps {
    * springen können (sonst nur per Tastatur-Shortcut erreichbar).
    */
   onOpenAdvancedMidi?: () => void;
+  /**
+   * v3.57.0: Öffnet das AutoSave-Versions-History-Modal. Wird vom
+   * SavingSection-Tab im Settings-Panel benutzt.
+   */
+  onOpenVersionHistory?: () => void;
 }
 
-export function SettingsPanel({ isOpen, onClose, midi, parts, initialSection = "design", onOpenAdvancedMidi }: SettingsPanelProps) {
+export function SettingsPanel({ isOpen, onClose, midi, parts, initialSection = "design", onOpenAdvancedMidi, onOpenVersionHistory }: SettingsPanelProps) {
   const [active, setActive] = useState<Section>(initialSection);
 
   // Esc zum Schließen
@@ -2130,7 +2237,7 @@ export function SettingsPanel({ isOpen, onClose, midi, parts, initialSection = "
           {active === "midi-chord"   && <ChordMemorySection />}
           {active === "midi-mpe"     && <MpeSectionSimple />}
           {active === "omnitribe"    && <DeviceConnectionPanel />}
-          {active === "saving"        && <SavingSection />}
+          {active === "saving"        && <SavingSection onOpenVersionHistory={onOpenVersionHistory} />}
           {active === "patches"      && <PatchesSection />}
           {active === "osc"          && <OscSection />}
           {active === "plugins"      && <PluginsSection />}

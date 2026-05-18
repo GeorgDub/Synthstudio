@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.56.0",
+    version: "3.57.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -89,6 +89,36 @@ const INDEX = {
   // ─── KNOWN FILE INDEX ──────────────────────────────────────
   // Key files agents have analyzed. Add new entries after working on a file.
   files: {
+    "client/src/utils/autoSaveController.ts (v3.57.0)": {
+      role:     "v3.57.0 NEU (~135 LOC): Pure-fn-Helper-Modul für UI-Trennung zwischen autoSaveEngine/useAutoSaveStore und Topbar-Indicator/Versions-Modal. computeAutoSaveIntervalMs(min) → ms (NaN/0/neg/Infinity → 5min default), decideAutoSaveTick(settings, paused) → {shouldRun, reason: 'ok'|'disabled'|'paused'} pure deterministic für Trigger-Tests, buildAutoSaveStatusDisplay(lastSaveAt, now) → {shortLabel, tooltip, isEmpty} mit 5 Zeitstufen 'gerade eben'/'Ns'/'Nm'/'Nh'/'Nd' + absolute-time-Tooltip, projectNameToId(name) → string (Lowercase + non-alphanum→'-' + collapse + max 64 chars + 'default'-Fallback bei leer/null/undefined), formatBytes(size) → 'N B'/'N.N KB'/'N.NN MB' (NaN/neg → '0 B'), formatVersionTimestamp(ts) → 'DD.MM.YYYY HH:MM:SS' (NaN → '—'). Internal pad2-Helper. Wird konsumiert von App.tsx (Trigger-useEffect), AutoSaveStatusIndicator.tsx (Indikator) und VersionHistoryModal.tsx (Row-Formatierung).",
+      lastSeen: "2026-05-18T23:15:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/components/AutoSave/VersionHistoryModal.tsx (v3.57.0)": {
+      role:     "v3.57.0 NEU (~210 LOC): Modal-Komponente für AutoSave-Versions-History. Props: {isOpen, onClose, projectId, onRestore: (json:string) => void}. Backdrop-Click + ESC schließen. Header mit Reload-Button (RefreshCw-Icon) + Close-Button. Body lädt versions via listAutoSaveVersions(projectId) im useEffect, zeigt loading/empty/list-State. Pro Row: Timestamp (formatVersionTimestamp) + relative Zeit (formatLastSave) + Size (formatBytes) + optional Label (accent-secondary) + projectName + Restore-Button (window.confirm 'Aktuelles Projekt überschreiben?' → restoreAutoSaveVersion → onRestore(json) + Toast + onClose) + Delete-Button (Trash2-Icon + window.confirm → deleteAutoSaveVersion + Reload). 30s-Tick im useEffect für 'vor X min'-Refresh. data-testids: autosave-version-history-modal/version-list/version-row-<id>/restore-<id>/delete-<id>/close-btn/reload-btn. Ausschließlich semantische Tailwind-Tokens.",
+      lastSeen: "2026-05-18T23:15:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/components/AutoSave/AutoSaveStatusIndicator.tsx (v3.57.0)": {
+      role:     "v3.57.0 NEU (~50 LOC): Topbar-Button-Indikator mit lucide-react Save-Icon + dynamischem ShortLabel ('5m', 'gerade eben', etc.). Props: {onOpenHistory: () => void, visible?: boolean = true}. Liest useAutoSaveStore-Hook + 30s-rerender-Tick via useReducer (subtle update ohne constant rerender). Versteckt sich (returns null) wenn !visible || !settings.enabled. Tooltip enthält absolute Zeit ('Letzter AutoSave: 14:23:05'). Klick fires onOpenHistory. data-testids: autosave-status-indicator/autosave-status-label. Mounted im App.tsx-Topbar zwischen projectName-Span und Play/Stop-Buttons.",
+      lastSeen: "2026-05-18T23:15:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/App.tsx (v3.57.0 autosave-wiring)": {
+      role:     "v3.57.0 ERWEITERT (+60 LOC): bestehende App-Root-Logik bleibt + NEU AutoSave-Engine-Wiring. 8 neue Imports (useAutoSaveStore, markAutoSaveCompleted, isAutoSavePaused, writeAutoSaveVersion, computeAutoSaveIntervalMs, decideAutoSaveTick, projectNameToId, AutoSaveStatusIndicator, VersionHistoryModal). NEU showVersionHistory-State. NEU useEffect 'v3.57 AutoSave Versions-Engine' parallel zum existing localStorage-AutoSave: setInterval(intervalMin*60_000) → decideAutoSaveTick → wenn shouldRun: buildProjectSnapshot → JSON.stringify → writeAutoSaveVersion(projectNameToId(projectName), json) → markAutoSaveCompleted on success. Defensive: try/catch um Serialisierung + .catch um Promise + console.warn statt Toast (AutoSave-Fail crashed niemals den Renderer). Topbar: AutoSaveStatusIndicator zwischen projectName-Span und Play/Stop-Buttons mit onOpenHistory=setShowVersionHistory(true). NACH SettingsPanel: VersionHistoryModal-Mount mit onRestore: JSON.parse → parseProject → restoreProject + Toast. SettingsPanel +onOpenVersionHistory={() => {setShowSettings(false); setShowVersionHistory(true)}}.",
+      lastSeen: "2026-05-18T23:15:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/components/Settings/SettingsPanel.tsx (v3.57.0 autosave-section)": {
+      role:     "v3.57.0 ERWEITERT (+110 LOC): bestehende 17-Section-Sidebar bleibt + NEU Projekt-AutoSave-Subsection im SavingSection-Tab. SettingsPanelProps +onOpenVersionHistory?: () => void Optional-Callback. SavingSection-Signature ({onOpenVersionHistory?}) durchgereicht. Imports useAutoSaveStore + setProjectAutoSaveEnabled/Interval + AUTOSAVE_MIN_INTERVAL_MIN/MAX + listAutoSaveVersions + deleteAutoSaveVersion + projectNameToId. SavingSection rendert OBERHALB der Legacy-Browser-Cache-Section (useApiSettingsStore.autoSave*) die NEUE v3.57 Projekt-AutoSave-Box mit accent-primary/40-Border + bg-accent-primary/5-Background: Toggle (data-testid: settings-autosave-enabled-toggle), Interval-Number-Input 1..60 (settings-autosave-interval-input), 'Versions-History anzeigen'-Button (settings-autosave-open-history → onOpenVersionHistory), 'Alle Versionen löschen'-Button (settings-autosave-delete-all → window.confirm + listAutoSaveVersions+deleteAutoSaveVersion-Schleife für 'default'-Slot).",
+      lastSeen: "2026-05-18T23:15:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "tests/features/autosave-ui.test.ts (v3.57.0)": {
+      role:     "v3.57.0 NEU (14 Tests in 4 describes, env:node mit localStorage-Mock + In-Memory-Electron-Backend-Override): (1) Pure-fn-Controller × 6 — computeAutoSaveIntervalMs (NaN/0/neg/Infinity → 5min default + 5min/1min/60min happy), decideAutoSaveTick (enabled+paused 4-Matrix), buildAutoSaveStatusDisplay (null/just-now/sec/min/hr/day + Tooltip-Inhalt), projectNameToId (slashes/dots/empty/null/special/long-Cap 64), formatBytes (B/KB/MB/NaN/neg), formatVersionTimestamp (DD.MM.YYYY HH:MM:SS Regex + NaN-Fallback '—'). (2) Trigger-Decision × 3 — enabled-Flag → disabled, paused-during-manual-save mit isAutoSavePaused-Roundtrip, clampInterval-Path über setAutoSaveInterval+computeAutoSaveIntervalMs-Chain. (3) Engine-Integration × 3 — writeAutoSaveVersion+markAutoSaveCompleted Roundtrip mit makeMemoryElectronBackend-Override, listAutoSaveVersions DESC-Sortierung, Restore-Workflow JSON-Parse-Roundtrip. (4) Delete × 2 — deleteAutoSaveVersion entfernt aus Liste mit vi.spy-Assertion, Idempotenz (Doppel-Delete success).",
+      lastSeen: "2026-05-18T23:15:00.000Z",
+      ownedBy:  "frontend"
+    },
     "client/src/store/useAutoSaveStore.ts (v3.56.0)": {
       role:     "v3.56.0 NEU (~165 LOC): Custom-Observer-Store für Project AutoSave Settings + Pause-State. AutoSaveSettings {enabled:bool default true, intervalMin:1..60 default 5, lastSaveAt:number|null}. LocalStorage Key 'ss-autosave-settings:v1'. Public-API: getAutoSaveSettings/setAutoSaveEnabled/setAutoSaveInterval (clampt 1..60)/markAutoSaveCompleted + pauseAutoSave/resumeAutoSave/isAutoSavePaused für Race-Schutz während Manual-Save. Konstanten exportiert: AUTOSAVE_DEFAULT_INTERVAL_MIN=5, MIN=1, MAX=60, MAX_VERSIONS=10, MAX_VERSION_BYTES=50MB. clampInterval Pure-fn defensiv (NaN/non-number → default, rundet+clampt). formatLastSave(ts, now) liefert 5 Zeit-Stufen (gerade eben/s/min/h/d). Defensive load(): korruptes JSON → fällt auf defaults() zurück. __resetAutoSaveStoreForTests Test-Helper. React-Hook useAutoSaveStore() für UI-Konsum.",
       lastSeen: "2026-05-18T23:30:00.000Z",
@@ -1832,6 +1862,44 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "frontend",
+      timestamp: "2026-05-18T23:15:00.000Z",
+      done: [
+        "v3.57.0: AutoSave UI-Wiring — Engine vom v3.56 user-visible (Topbar-Indikator + Versions-History-Modal + Settings-Section + Trigger-useEffect in App.tsx). pnpm check clean, 205 Test-Files / 4749 tests grün (16 skipped, +14 NEU in autosave-ui.test.ts).",
+        "client/src/utils/autoSaveController.ts NEU (~135 LOC): Pure-fn-Helper-Modul für UI-Trennung. computeAutoSaveIntervalMs(min) → ms (defensive, NaN/0/neg → 5min default), decideAutoSaveTick(settings, paused) → {shouldRun, reason: 'ok'|'disabled'|'paused'} für deterministische Trigger-Tests, buildAutoSaveStatusDisplay(lastSaveAt, now) → {shortLabel, tooltip, isEmpty} (5 Zeitstufen 'gerade eben'/'Ns'/'Nm'/'Nh'/'Nd'), projectNameToId(name) → string (Lowercase + non-alphanum→'-' + dedupe + max 64 chars + 'default'-Fallback), formatBytes(size) → 'N B'/'N.N KB'/'N.NN MB', formatVersionTimestamp(ts) → 'DD.MM.YYYY HH:MM:SS'.",
+        "client/src/components/AutoSave/VersionHistoryModal.tsx NEU (~210 LOC): Modal mit Backdrop + ESC-Close + Reload-Button + leeren-Zustand. Listet Versionen DESC (newest first) mit Timestamp + relativer Zeit + Size + optionalem Label + projectName. Pro Row: Wiederherstellen-Button (window.confirm → restoreAutoSaveVersion → onRestore-Callback + Toast) + Delete-Button (window.confirm → deleteAutoSaveVersion + Reload). 30s-Tick für 'vor X min'-Update ohne constant rerender. Ausschließlich semantische Tokens (bg-bg-panel/border-border-color/text-text-primary/accent-primary/accent-danger). data-testids: autosave-version-history-modal/version-list/version-row-<id>/restore-<id>/delete-<id>.",
+        "client/src/components/AutoSave/AutoSaveStatusIndicator.tsx NEU (~50 LOC): Topbar-Button mit Save-Icon + shortLabel (z.B. '5m'). useAutoSaveStore-Hook + 30s-rerender-Tick. Versteckt sich wenn settings.enabled=false oder visible=false. Klick fires onOpenHistory. Tooltip enthält absolute Zeit ('Letzter AutoSave: 14:23:05'). Mounted im App.tsx-Topbar zwischen projectName-Span und Play/Stop-Buttons (~line 3239).",
+        "client/src/App.tsx +60 LOC: 8 neue Imports (useAutoSaveStore, markAutoSaveCompleted, isAutoSavePaused, writeAutoSaveVersion, controller-helpers, Modal, Indicator). NEU useEffect 'v3.57 AutoSave Versions-Engine' parallel zum existing localStorage-AutoSave: setInterval(intervalMin*60_000) → decideAutoSaveTick → buildProjectSnapshot → JSON.stringify → writeAutoSaveVersion(projectId, json) → markAutoSaveCompleted on success. Defensive: try/catch um Serialisierung + .catch um Promise + console.warn statt Toast (AutoSave-Fail crashed niemals den Renderer). NEU showVersionHistory-State + Mount des VersionHistoryModal nach SettingsPanel mit onRestore: JSON.parse → parseProject → restoreProject + Toast.",
+        "client/src/components/Settings/SettingsPanel.tsx +110 LOC: Imports useAutoSaveStore + setProjectAutoSave* + AUTOSAVE_MIN/MAX + autoSaveEngine-Helpers + projectNameToId. SettingsPanelProps +onOpenVersionHistory-Optional-Callback. SavingSection erweitert: oberhalb der Legacy-Browser-Cache-Section neue v3.57 Projekt-AutoSave-Box (accent-primary/40-Border + bg-accent-primary/5): Toggle settings-autosave-enabled-toggle, Interval-Number-Input settings-autosave-interval-input (1..60), 'Versions-History anzeigen'-Button settings-autosave-open-history (öffnet Modal), 'Alle Versionen löschen'-Button settings-autosave-delete-all (window.confirm + listAutoSaveVersions+deleteAutoSaveVersion-Schleife für 'default'-Slot).",
+        "tests/features/autosave-ui.test.ts NEU (14 Tests in 4 describes, env:node mit localStorage-Mock + In-Memory-Electron-Backend-Override): (1) Pure-fn × 6 — computeAutoSaveIntervalMs (NaN/0/neg/Infinity → default), decideAutoSaveTick (enabled+paused-Matrix), buildAutoSaveStatusDisplay (null/just-now/sec/min/hr/day mit Tooltip-Check), projectNameToId (slashes/dots/empty/long → sanitized + Cap 64 chars), formatBytes (B/KB/MB + NaN), formatVersionTimestamp (DD.MM.YYYY HH:MM:SS Regex + NaN-Fallback). (2) Trigger-Decision × 3 — enabled-Flag-respect, pause-during-manual-save mit isAutoSavePaused-Roundtrip, clampInterval-Path über setAutoSaveInterval. (3) Engine-Integration × 3 — writeAutoSaveVersion→markAutoSaveCompleted Roundtrip mit Override-Backend, listAutoSaveVersions DESC, Restore-Workflow mit JSON-Parse-Roundtrip. (4) Delete × 2 — Delete-Workflow + Idempotenz.",
+        "package.json + agents/INDEX.js version 3.56.0 → 3.57.0."
+      ],
+      next: [
+        "v3.58: project.projectId stabile Persistenz — aktuell wird projectNameToId(projectName) als ID benutzt. Wenn der User den Projekt-Namen umbenennt, gehen ALLE alten AutoSave-Versionen 'verloren' (sie liegen unter der alten ID weiter, aber das Modal listet sie nicht mehr). Saubere Lösung: ID-Feld in .synth-Schema (v1.24 bump) + Migration: pre-v1.24-Files erzeugen ID via projectNameToId beim ersten Load.",
+        "v3.58: Settings-Section 'Alle Versionen löschen' iteriert NUR über projectId='default' (Browser-IDB hat keine Multi-Project-Iterator-API). Echter Bulk-Delete: navigator.storage.estimate() + Browser-spezifischer IDB-cursor über alle Records.",
+        "v3.58: Restore-Workflow ruft restoreProject(parseProject(JSON.parse(json))), aber parseProject könnte werfen wenn das Schema-Version-Migration scheitert. Aktuell wird im outer try/catch ein Toast 'Wiederherstellung fehlgeschlagen' angezeigt — der User weiß aber nicht, WARUM. Detail-Error-Anzeige im Modal wäre nice.",
+        "v3.58: AutoSave-Fail Toast-Wiring — aktuell nur console.warn. Wenn IndexedDB voll ist, sieht der User nichts. Toast 'AutoSave fehlgeschlagen: Speicher voll' wäre user-friendly."
+      ],
+      changed: [
+        "client/src/utils/autoSaveController.ts (NEU, ~135 LOC)",
+        "client/src/components/AutoSave/VersionHistoryModal.tsx (NEU, ~210 LOC)",
+        "client/src/components/AutoSave/AutoSaveStatusIndicator.tsx (NEU, ~50 LOC)",
+        "client/src/App.tsx (+60 LOC: 8 Imports + AutoSave-Trigger-useEffect + Modal-Mount + Indicator im Topbar)",
+        "client/src/components/Settings/SettingsPanel.tsx (+110 LOC: onOpenVersionHistory-Prop + v3.57 AutoSave-Subsection im SavingSection)",
+        "tests/features/autosave-ui.test.ts (NEU, 14 Tests in 4 describes)",
+        "package.json (3.56.0 → 3.57.0)",
+        "agents/INDEX.js (version 3.56.0 → 3.57.0 + workLog v3.57.0)"
+      ],
+      caveats: [
+        "projectId ist eine Slug-Ableitung aus dem projectName — bei Umbenennung verlieren wir die History (vgl. next-Punkt 1). Workaround: User benennt nur einmal, oder restored explizit vor Umbenennung. Saubere Migration ist ein v3.58-Task.",
+        "Versions-History-Modal überschreibt das aktuelle Projekt OHNE Backup zu erstellen. Wenn der User aus Versehen Restore klickt und ungespeicherte Änderungen hatte, sind sie weg (window.confirm warnt aber). Eine 'Aktuelles Projekt als Snapshot speichern und dann restoren'-Option wäre user-friendly.",
+        "Trigger-useEffect ruft buildProjectSnapshot SYNCHRON im setInterval-Callback. Bei sehr großen Projekten könnte das die UI für ein paar Frames blockieren (typisch <50ms, aber bei 50MB-Files messbar). Mitigation: snapshot in requestIdleCallback wäre besser, aber nicht trivial mit dem aktuellen Snapshot-Flow.",
+        "Indicator updated alle 30s via setInterval — der useReducer-rerender ist billig, aber technisch ein periodisches re-render eines Topbar-Buttons. Nicht-blockierend, aber sichtbar in React-DevTools.",
+        "Legacy useApiSettingsStore.autoSave* bleibt parallel aktiv (Browser-Cache via localStorage). Der User sieht jetzt ZWEI AutoSave-Sections im Settings (Projekt-AutoSave NEU + Browser-Cache LEGACY). Bewusst belassen: der Legacy-Cache wird beim Start automatisch geladen + ist ein Recovery-Pfad falls die Engine fail. Konsolidierung wäre v3.58.",
+        "Settings-'Alle Versionen löschen' arbeitet nur auf projectId='default' (Workaround für fehlende Multi-Project-Iteration). Bei aktivem Projekt löscht es somit nur dann etwas, wenn der Projektname leer/Sonderzeichen-only ist (→ projectNameToId='default'). Sonst macht der Button nichts sichtbares. Confirmation-Text ist trotzdem korrekt formuliert. → FU v3.58."
+      ]
+    },
     {
       agent:     "backend",
       timestamp: "2026-05-18T23:30:00.000Z",

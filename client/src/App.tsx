@@ -186,6 +186,20 @@ import { saveSnapshot } from "@/store/useVersionSnapshotStore";
 import { useApiSettingsStore } from "@/store/useApiSettingsStore";
 import { VersionSnapshotPanel } from "@/components/ProjectManager/VersionSnapshotPanel";
 import { SettingsPanel } from "@/components/Settings/SettingsPanel";
+// v3.57.0: AutoSave UI-Wiring (Trigger + Topbar-Indicator + Versions-Modal).
+import {
+  useAutoSaveStore,
+  markAutoSaveCompleted,
+  isAutoSavePaused,
+} from "@/store/useAutoSaveStore";
+import { writeAutoSaveVersion } from "@/utils/autoSaveEngine";
+import {
+  computeAutoSaveIntervalMs,
+  decideAutoSaveTick,
+  projectNameToId,
+} from "@/utils/autoSaveController";
+import { AutoSaveStatusIndicator } from "@/components/AutoSave/AutoSaveStatusIndicator";
+import { VersionHistoryModal } from "@/components/AutoSave/VersionHistoryModal";
 import { SessionRecorder } from "@/components/CollabSession/SessionRecorder";
 import { RelayPanel } from "@/components/CollabSession/RelayPanel";
 import { PerformanceRecorderBadge } from "@/components/PerformanceRecorder/PerformanceRecorderBadge";
@@ -877,7 +891,7 @@ export default function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Auto-Save (konfigurierbares Intervall, ein-/ausschaltbar)
+  // Auto-Save (konfigurierbares Intervall, ein-/ausschaltbar) — Browser-Cache.
   const apiSettings2 = useApiSettingsStore();
   useEffect(() => {
     if (!apiSettings2.autoSaveEnabled) return;
@@ -889,6 +903,40 @@ export default function App() {
     return () => clearInterval(id);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [apiSettings2.autoSaveEnabled, apiSettings2.autoSaveIntervalMin]);
+
+  // ── v3.57.0: AutoSave Versions-Engine (Trigger + Toast on Fail) ─────────────
+  // Erzeugt rolling Versionen via autoSaveEngine.writeAutoSaveVersion +
+  // markiert lastSaveAt im useAutoSaveStore. Defensive: jeder Fehler wird
+  // gefangen — AutoSave-Fail crashed niemals den Renderer.
+  const autoSaveSettings = useAutoSaveStore();
+  useEffect(() => {
+    if (!autoSaveSettings.enabled) return;
+    const ms = computeAutoSaveIntervalMs(autoSaveSettings.intervalMin);
+    const id = window.setInterval(() => {
+      const decision = decideAutoSaveTick(autoSaveSettings, isAutoSavePaused());
+      if (!decision.shouldRun) return;
+      try {
+        const snapshot = buildProjectSnapshot();
+        const json = JSON.stringify(snapshot);
+        const projectId = projectNameToId(projectRef.current.projectName);
+        void writeAutoSaveVersion(projectId, json)
+          .then((res) => {
+            if (res.success) markAutoSaveCompleted();
+            else if (res.error) {
+              console.warn("[AutoSave] Schreibfehler:", res.error);
+            }
+          })
+          .catch((err) => {
+            console.warn("[AutoSave] Promise-Reject:", err);
+          });
+      } catch (err) {
+        // Serialisierung kann theoretisch werfen — niemals crashen.
+        console.warn("[AutoSave] Serialisierungsfehler:", err);
+      }
+    }, ms);
+    return () => window.clearInterval(id);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoSaveSettings.enabled, autoSaveSettings.intervalMin]);
 
   // ── Transport (Audio-Engine ↔ React-State) ────────────────────────────────────
   useTransport({
@@ -1048,6 +1096,8 @@ export default function App() {
   // Unified Settings Panel
   const [showSettings, setShowSettings] = useState(false);
   const [settingsInitialSection, setSettingsInitialSection] = useState<"design" | "ki" | "keyboard" | "midi-devices" | "midi-cc" | "midi-notes" | "about" | "performance">("design");
+  // v3.57.0: Versions-History-Modal-State.
+  const [showVersionHistory, setShowVersionHistory] = useState(false);
 
   // v3.22.0: First-Run Welcome-Wizard. shouldAutoShowWelcome liest localStorage
   // synchron — daher lazy init, kein useEffect-Race.
@@ -3236,6 +3286,11 @@ export default function App() {
                 )}
               </span>
 
+              {/* v3.57.0: AutoSave-Status — Klick öffnet Versions-History. */}
+              <AutoSaveStatusIndicator
+                onOpenHistory={() => setShowVersionHistory(true)}
+              />
+
               <div className="flex items-center gap-2">
                 <button
                   onClick={project.togglePlayStop}
@@ -3741,6 +3796,24 @@ export default function App() {
         parts={dm.getActivePattern()?.parts ?? []}
         initialSection={settingsInitialSection}
         onOpenAdvancedMidi={() => { setShowSettings(false); setShowMidiSettings(true); }}
+        onOpenVersionHistory={() => { setShowSettings(false); setShowVersionHistory(true); }}
+      />
+
+      {/* v3.57.0: AutoSave Versions-History-Modal. */}
+      <VersionHistoryModal
+        isOpen={showVersionHistory}
+        onClose={() => setShowVersionHistory(false)}
+        projectId={projectNameToId(project.projectName)}
+        onRestore={(json) => {
+          try {
+            const data = parseProject(JSON.parse(json));
+            restoreProject(data);
+            toast(`Version wiederhergestellt: ${data.projectName}`, { kind: "success" });
+          } catch (err) {
+            console.error("[VersionRestore]", err);
+            toast("Wiederherstellung fehlgeschlagen", { kind: "error", duration: 5000 });
+          }
+        }}
       />
 
       {/* ── Legacy Dialoge (Keyboard-Shortcuts für rückwärtskompatiblen Zugriff) */}
