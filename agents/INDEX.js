@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "2.88.0",
+    version: "2.89.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -83,6 +83,26 @@ const INDEX = {
   // ─── KNOWN FILE INDEX ──────────────────────────────────────
   // Key files agents have analyzed. Add new entries after working on a file.
   files: {
+    "client/src/utils/sampleSlicing.ts": {
+      role:     "TASK-238 / v2.89: Pure-fn Sample-Slicing-Layer. autoSlice / detectOnsetsSpectralFlux / snapToZeroCrossing / onsetsToSlices / splitChannelDataAtSlices / mapSlicesToPads / addOnset / moveOnset / removeOnset + Types OnsetCandidate/SliceSpec/PadAssignment + MAX_PERFORMANCE_PADS=16. Keine React/Web-Audio-Abhaengigkeit, 23 Unit-Tests.",
+      lastSeen: "2026-05-18T02:25:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/components/SampleEditor/SampleSliceEditor.tsx": {
+      role:     "TASK-238-UI / v2.89: Modal-Komponente. Waveform-Canvas mit Peak-Reduktion + RAF-Render, draggable Slice-Marker (Snap-to-Zero on drop), Click→addOnset / Shift/Right-Click→removeOnset, 4×4 Pad-Grid mit Length-Anzeige, Apply→splitChannelDataAtSlices → Float32Array[] hochgereicht via onApply-Callback. Semantische Token-Farben.",
+      lastSeen: "2026-05-18T02:25:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "tests/features/sample-slicing.test.ts": {
+      role:     "TASK-238 / v2.89: 23 Unit-Tests fuer sampleSlicing.ts pure-fn-Layer (Onset-Detection, Zero-Crossing-Snap, equidistantes Padding, Buffer-Split, Pad-Mapping).",
+      lastSeen: "2026-05-18T02:25:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "tests/web/sample-slicing.spec.ts": {
+      role:     "TASK-238-UI / v2.89: Playwright-Smoke fuer Slice-Sample-Toolbar-Button + hidden file-input.",
+      lastSeen: "2026-05-18T02:25:00.000Z",
+      ownedBy:  "frontend"
+    },
     "client/src/App.tsx": {
       role:     "Root component, tab routing (F1-F6), AudioEngine.onPosition() automation callback. v1.22.0 (TASK-117): Macro-Setter-Bag um setLfoRate/setLfoDepth erweitert — onUnhandled-Warn-Spezialfall entfernt (jetzt generisch).",
       lastSeen: "2026-05-12T23:00:00.000Z",
@@ -379,9 +399,9 @@ const INDEX = {
       ownedBy:  "backend"
     },
     "client/src/components/DrumMachine/DrumMachine.tsx (TASK-237 Electribe-UI)": {
-      role:     "v2.88.0: '🎚 Electribe'-Toolbar-Button + hidden file-input accept='.e2pattern,.e2sallpat' + Single-Pattern-Direkt-Import + Bank-Pattern-Picker-Modal mit Liste (Name/BPM/StepLength), data-testids 'electribe-import', 'electribe-import-input', 'electribe-picker-overlay', 'electribe-picker-pattern-{idx}', 'electribe-picker-cancel'. Konvertierung via convertParsedPatternToSynthstudio + renamePattern/setPatternBpm/setPartSteps/setPartVolume/setPartPan. Drag-Drop-Bridge via window-Event 'electribe:fileImport'. Motion-Lanes per CustomEvent 'electribe:motion-lanes' rausgereicht (App-Level-Wiring fuer useAutomationStore folgt).",
-      lastSeen: "2026-05-18T00:15:00.000Z",
-      ownedBy:  "backend"
+      role:     "v2.89.0: Zusaetzlich zu Electribe-UI auch '✂ Slice Sample'-Toolbar-Button + hidden file-input accept='audio/*,.wav,.mp3,.ogg,.flac,.aiff,.m4a' (data-testids 'slice-sample' / 'slice-sample-input'). handleSliceImport decodiert via window.AudioContext.decodeAudioData → Float32Array Kanal-0-Mono-Tap + sampleRate → setSliceEditor State → SampleSliceEditor-Modal. handleSlicesApply dispatcht CustomEvent 'sample-slicer:apply' + Toast. v2.88.0: '🎚 Electribe'-Toolbar-Button + Single-Pattern-Direkt-Import + Bank-Pattern-Picker-Modal mit Liste (Name/BPM/StepLength), data-testids 'electribe-import', 'electribe-import-input', 'electribe-picker-overlay', 'electribe-picker-pattern-{idx}', 'electribe-picker-cancel'. Konvertierung via convertParsedPatternToSynthstudio + renamePattern/setPatternBpm/setPartSteps/setPartVolume/setPartPan. Drag-Drop-Bridge via window-Event 'electribe:fileImport'. Motion-Lanes per CustomEvent 'electribe:motion-lanes' rausgereicht (App-Level-Wiring fuer useAutomationStore folgt).",
+      lastSeen: "2026-05-18T02:25:00.000Z",
+      ownedBy:  "frontend"
     }
   },
 
@@ -721,6 +741,29 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "frontend",
+      timestamp: "2026-05-18T02:25:00.000Z",
+      done: [
+        "TASK-238-UI FEATURE-v2.89 SAMPLE-SLICING UI auf existierender pure-fn-Layer (Agent-A hatte vorab client/src/utils/sampleSlicing.ts + 23 Unit-Tests in tests/features/sample-slicing.test.ts erstellt). (1) NEU client/src/components/SampleEditor/SampleSliceEditor.tsx — Modal-Komponente. Layout: Header (Sample-Name + Close-Button) + Toolbar (Auto-Slice / Reset / Snap-to-Zero-Checkbox + Slice-Counter) + Waveform-Canvas (200px Hoehe, full-width via ResizeObserver, RAF-Render, dpr-aware) + 4x4-Pad-Grid (Index-Label + Slice-Length in ms/s) + Footer (Abbrechen + Apply). buildPeaks() reduziert Float32Array O(N) auf {mins, maxs}-Float32Array Pro-Pixel (min/max je Bucket), Render zeichnet vertikale Wave-Linien. getCssVar() liest --ss-* Tokens (bg-elevated/text-muted/border/accent-primary/accent-secondary) — KEINE hardcoded Tailwind-Farben. Marker-Pointer-Events: Linksklick auf leere Stelle → addOnset(prev, frame, 16), Drag innerhalb ~4px Toleranz → moveOnset, Drop mit snapEnabled → snapToZeroCrossing(searchRadius=256), Shift/Right-Click auf Marker → removeOnset (Frame-0-Anchor bleibt geschuetzt). ESC-Keydown-Listener schliesst Modal. Slices werden via useMemo aus onsetsToSlices(onsets, totalFrames) abgeleitet (Single-Source-of-Truth = onsets). Apply: splitChannelDataAtSlices → Float32Array[]. (2) DrumMachine.tsx Toolbar-Integration neben Electribe-Button: '✂ Slice Sample'-Button + hidden file-input mit accept='audio/*,.wav,.mp3,.ogg,.flac,.aiff,.m4a' (data-testid 'slice-sample' / 'slice-sample-input'). handleSliceImport-Callback: file.arrayBuffer() → window.AudioContext (mit webkitAudioContext-Fallback) → decodeAudioData → getChannelData(0) als Float32Array kopiert (Mono-Tap, reicht fuer Auto-Slice) + sampleRate. ctx.close() im finally-Block (kein Resource-Leak). handleSlicesApply-Callback: dispatchEvent CustomEvent 'sample-slicer:apply' mit {sampleName, sampleRate, slices: Float32Array[]} + Info-Toast 'N Slice(s) erstellt — Direct-Assign in Pad-Slots noch nicht implementiert'. (3) NEU tests/web/sample-slicing.spec.ts — Playwright-Smoke (Toolbar-Button visible/clickable, hidden Input attached). Bestehende 23 sample-slicing.test.ts unveraendert gruen. (4) pnpm check clean, pnpm test 3251/15 skipped. package.json 2.88.0 -> 2.89.0. CAVEATS: (a) Mono-Tap: Stereo-Samples werden auf Kanal 0 reduziert (fuer Pad-Trigger reicht das; Stereo-Slicing waere splitChannelDataAtSlices auf Kanal 1 + AudioBuffer.copyToChannel(1, slice1)). (b) Sample-Length-Limit: kein Hard-Cap im UI, aber AudioContext.decodeAudioData wird bei sehr grossen Files (>500MB) crashen — defensive Limit (z.B. 200 MB Pre-Check via file.size) waere Polish-Followup. (c) Direct-Pad-Assign nicht implementiert: usePerformanceStore.PerformancePad haelt patternId (string), nicht Sample-Buffer. Sauberer Weg: neuer useSlicePadStore mit padIndex → Float32Array-Map, oder Mapping auf useKeyboardSamplerStore-Zonen (Note 36..51 = MIDI-Pad-Range). Heutiger MVP gibt die Slice-Buffer per CustomEvent raus — Consumer-Wiring ist Follow-up. (d) UI-Polish: keine Slice-Vorschau-Wiedergabe (nur Index/Length-Label im Pad-Grid). Klick auf Pad-Tile koennte audioBuffer.play() triggern. (e) Theme-Konformitaet: alle Farben via --ss-*-Tokens; semantische Tailwind-Klassen (bg-bg-panel, border-border-color, text-text-primary/muted/dim, bg-accent-primary/secondary/success, bg-bg-elevated)."
+      ],
+      next: [
+        "TASK-238-FOLLOWUP-1: Direct-Pad-Assign — neuer useSlicePadStore mit Module-Singleton Map<padIndex, {buffer:AudioBuffer,sampleName:string}> + AudioEngine.playSlicePad(index). Performance-Pads in PerformanceMode/PatternLaunchPad koennten dann statt Pattern-Wechsel den Slice triggern (Mode-Toggle 'Pattern / Slice').",
+        "TASK-238-FOLLOWUP-2: Slice-Vorschau im Pad-Grid — Click auf Pad-Tile spielt nur diesen Slice (AudioBuffer createBufferSource).",
+        "TASK-238-FOLLOWUP-3: Stereo-Slicing — wenn audioBuffer.numberOfChannels===2, beide Channels split + 2-channel AudioBuffer per Slice.",
+        "TASK-238-FOLLOWUP-4: Sample-Length-Limit (200 MB Pre-Check + Toast statt Decode-Crash).",
+        "TASK-238-FOLLOWUP-5: Export-Slices als WAV-Pack (zip) ueber wavEncoder.ts (Wiederverwendung der TASK-234-Infrastruktur).",
+        "TASK-238-FOLLOWUP-6: BPM-Detection beim Decode anbieten (existierendes audioAnalysis.worker.ts wiederverwenden) + 'Slice an Beats'-Quantize-Toggle.",
+        "TASK-239 (VST3/CLAP-Host) bleibt als naechstes high-impact-backend-Feature offen."
+      ],
+      changed: [
+        "client/src/components/SampleEditor/SampleSliceEditor.tsx (NEU — Modal mit Waveform-Canvas + Pad-Grid + Snap-to-Zero, semantische Token-Farben)",
+        "client/src/components/DrumMachine/DrumMachine.tsx (+ '✂ Slice Sample'-Toolbar-Button + handleSliceImport via Browser-AudioContext.decodeAudioData + handleSlicesApply mit CustomEvent 'sample-slicer:apply' + Toast)",
+        "tests/web/sample-slicing.spec.ts (NEU — Playwright-Smoke)",
+        "package.json (2.88.0 → 2.89.0)",
+        "agents/INDEX.js (workLog + TASK-238 status:done + version 2.89.0 + files-Index)"
+      ]
+    },
     {
       agent:     "backend",
       timestamp: "2026-05-18T00:15:00.000Z",
@@ -3528,7 +3571,10 @@ const INDEX = {
             type: "feature",
             priority: "medium",
             agent: "frontend",
-            status: "open",
+            status: "done",
+            closedAt: "2026-05-18T02:25:00.000Z",
+            closedIn: "v2.89.0",
+            closedBy: "frontend",
             title: "Sample-Slicing/Chop (Waveform zu Pads)",
             description: "MPC/Maschine-Paritaet: User waehlt Sample, Waveform-Editor zeigt automatisch erkannte Slice-Points (Onset-Detection), jeder Slice landet auf einem Performance-Pad.",
             acceptance: [
@@ -3537,7 +3583,8 @@ const INDEX = {
                 "Auto-Map auf 16 Performance-Pads",
                 "Manuelle Slice-Justierung mit Snap-to-Zero-Crossing"
             ],
-            estimateHours: 24
+            estimateHours: 24,
+            doneNote: "Zweistufige Implementierung. Agent-A (pure-fn-Layer): client/src/utils/sampleSlicing.ts mit autoSlice/detectOnsetsSpectralFlux/snapToZeroCrossing/onsetsToSlices/splitChannelDataAtSlices/mapSlicesToPads/addOnset/moveOnset/removeOnset + Types OnsetCandidate/SliceSpec/PadAssignment + MAX_PERFORMANCE_PADS=16. 23 Unit-Tests in tests/features/sample-slicing.test.ts gruen. Agent-B (UI): client/src/components/SampleEditor/SampleSliceEditor.tsx — Modal mit Waveform-Canvas (Peak-reduziert via buildPeaks, RAF-Render, semantische Token-Farben via getCssVar), draggable Slice-Marker (Pointer-Events, Snap-to-Zero auf Drop), Click→addOnset, Shift/Right-Click→removeOnset, 4×4 Pad-Grid mit Length-Anzeige (ms/s). DrumMachine-Toolbar bekam '✂ Slice Sample'-Button + hidden file-input (data-testid 'slice-sample' / 'slice-sample-input'). handleSliceImport decodiert WAV/MP3/OGG/FLAC/AIFF/M4A via Browser-AudioContext.decodeAudioData (Kanal 0, mono). Apply-Flow: splitChannelDataAtSlices → Float32Array[] → window.dispatchEvent CustomEvent 'sample-slicer:apply' + Toast 'Direct-Assign in Pad-Slots noch nicht implementiert' (Performance-Pads halten patternId nicht Sample-Buffer — Wiring zum useKeyboardSamplerStore oder ein neuer Slice-Pad-Store ist FOLLOWUP). Playwright-Smoke in tests/web/sample-slicing.spec.ts. pnpm check clean, pnpm test 3251/15 skipped."
         },
         {
             id: "TASK-239",

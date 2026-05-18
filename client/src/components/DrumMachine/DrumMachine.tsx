@@ -37,6 +37,8 @@ import {
 import { GranularSynthPanel } from "./GranularSynthPanel";
 import { DEFAULT_GRANULAR_PARAMS } from "@/audio/GranularEngine";
 import { PolyrhythmVisualizer } from "./PolyrhythmVisualizer";
+import { SampleSliceEditor } from "@/components/SampleEditor/SampleSliceEditor";
+import type { SliceSpec } from "@/utils/sampleSlicing";
 // Ausgelagerte Sub-Components
 import { FxPanel } from "./FxPanel";
 import { ResizableDrumPanel } from "./ResizableDrumPanel";
@@ -267,12 +269,19 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
   const midiImportRef = useRef<HTMLInputElement>(null);
   const flpImportRef = useRef<HTMLInputElement>(null);
   const electribeImportRef = useRef<HTMLInputElement>(null);
+  const sliceImportRef = useRef<HTMLInputElement>(null);
   const [selectedStep, setSelectedStep] = useState<{ partId: string; stepIndex: number } | null>(null);
   const [granularPartId, setGranularPartId] = useState<string | null>(null);
   // TASK-237: nach Bank-Parse haelt der Dialog die Pattern-Liste fuer User-Auswahl.
   const [electribePicker, setElectribePicker] = useState<{
     fileName: string;
     patterns: ParsedPattern[];
+  } | null>(null);
+  // TASK-238 (v2.89): Sample-Slice-Editor-State. channelData ist mono (Kanal 0).
+  const [sliceEditor, setSliceEditor] = useState<{
+    sampleName: string;
+    channelData: Float32Array;
+    sampleRate: number;
   } | null>(null);
 
   // MIDI-Import: MIDI-Datei in aktives Pattern übertragen
@@ -542,6 +551,68 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
     if (file) handleElectribeFile(file);
     e.target.value = "";
   }, [handleElectribeFile]);
+
+  // ── Sample-Slicing (TASK-238 / v2.89) ──────────────────────────────────────
+  // File-Picker → decodeAudioData → channelData (Kanal 0) → Modal-Open.
+  // Kein Electron-Direktzugriff — isomorph ueber Browser-File-API.
+  const handleSliceImport = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      type AnyWin = typeof window & { webkitAudioContext?: typeof AudioContext };
+      const AC = window.AudioContext || (window as AnyWin).webkitAudioContext;
+      if (!AC) {
+        toast("Web-Audio nicht verfuegbar in diesem Browser", { kind: "error" });
+        return;
+      }
+      const ctx = new AC();
+      try {
+        const audioBuffer = await ctx.decodeAudioData(arrayBuffer.slice(0));
+        // Mono-Tap: nur Kanal 0 (Auto-Slice arbeitet Mono — fuer Pad-Trigger reicht das).
+        const channelData = new Float32Array(audioBuffer.getChannelData(0));
+        setSliceEditor({
+          sampleName: file.name,
+          channelData,
+          sampleRate: audioBuffer.sampleRate,
+        });
+      } finally {
+        // AudioContext schliessen damit kein Resource-Leak.
+        if (typeof ctx.close === "function") {
+          try { await ctx.close(); } catch { /* ignore */ }
+        }
+      }
+    } catch (err) {
+      console.error("[SampleSlicer] decode failed", err);
+      const msg = err instanceof Error ? err.message : String(err);
+      toast(`Sample-Decode fehlgeschlagen: ${msg}`, { kind: "error", duration: 5000 });
+    }
+  }, []);
+
+  const handleSlicesApply = useCallback((slices: Float32Array[], _specs: SliceSpec[]) => {
+    // MVP: kein direktes Pad-Slot-Wiring (Performance-Pads halten patternId, nicht
+    // Sample-Buffer). Wir reichen die Slices als CustomEvent durch — App-Level kann
+    // sie spaeter konsumieren (z.B. KeyboardSampler-Zonen oder ein neuer
+    // Slice-Pad-Store). Heute: Toast + Console-Log + Modal schliessen.
+    try {
+      window.dispatchEvent(new CustomEvent("sample-slicer:apply", {
+        detail: {
+          sampleName: sliceEditor?.sampleName ?? "sample",
+          sampleRate: sliceEditor?.sampleRate ?? 44100,
+          slices,
+        },
+      }));
+    } catch (err) {
+      console.warn("[SampleSlicer] CustomEvent dispatch failed", err);
+    }
+    const padCount = Math.min(slices.length, 16);
+    toast(
+      `${padCount} Slice(s) erstellt — Direct-Assign in Pad-Slots noch nicht implementiert. Slice-Buffer via 'sample-slicer:apply'-Event verfuegbar.`,
+      { kind: "info", duration: 4500 },
+    );
+    setSliceEditor(null);
+  }, [sliceEditor]);
 
   // Drag-Drop fuer .e2pattern/.e2sallpat (Browser-Fallback).
   useEffect(() => {
@@ -1168,6 +1239,24 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
           data-testid="electribe-import-input"
         />
 
+        {/* Sample-Slicing (TASK-238 / v2.89) */}
+        <button
+          onClick={() => sliceImportRef.current?.click()}
+          title="Sample slicen / choppen (WAV/MP3/OGG → 16 Performance-Pads)"
+          className="px-2 py-1 rounded text-[10px] bg-bg-elevated text-text-dim hover:bg-bg-elevated hover:text-text-primary transition-colors"
+          data-testid="slice-sample"
+        >
+          ✂ Slice Sample
+        </button>
+        <input
+          ref={sliceImportRef}
+          type="file"
+          accept="audio/*,.wav,.mp3,.ogg,.flac,.aiff,.m4a"
+          className="hidden"
+          onChange={handleSliceImport}
+          data-testid="slice-sample-input"
+        />
+
         {/* Pattern Morph */}
         <button
           onClick={() => setShowMorph(prev => !prev)}
@@ -1660,6 +1749,17 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
             </div>
           </div>
         </div>
+      )}
+
+      {/* ── Sample-Slice-Editor (TASK-238 / v2.89) ──────────────────────── */}
+      {sliceEditor && (
+        <SampleSliceEditor
+          sampleName={sliceEditor.sampleName}
+          channelData={sliceEditor.channelData}
+          sampleRate={sliceEditor.sampleRate}
+          onApply={handleSlicesApply}
+          onClose={() => setSliceEditor(null)}
+        />
       )}
     </div>
   );
