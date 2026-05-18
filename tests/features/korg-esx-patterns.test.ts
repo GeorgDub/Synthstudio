@@ -490,17 +490,21 @@ describe("korg/esxParser — v3.14 Step-Encoding (Drum-Parts)", () => {
     expect(pat!.parts[3].sampleId).toBe(0);
   });
 
-  it("Parts 10..15 (non-drum) bleiben Defaults (sampleId=0, alle inactive)", () => {
+  it("Parts 10..14 dekodieren aus dezidierten Offsets (v3.20), Part 15 bleibt Default", () => {
+    // v3.20: Pattern-Block ist mit 0x42 vor-gefuellt. Das wirkt sich auf die
+    // dezidierten Part-10..14 Offsets aus (0x25C fuer Stretch, 0x36E/8E/AE/CE
+    // fuer Sample/Slice/Synth). Wir testen daher hier nur Part 15, das in
+    // v3.20 KEIN dezidiertes Layout hat → bleibt Defaults.
     const block = buildPatternBlock({ name: "X", bpm: 120 });
     const pat = parseEsxPattern(block, 0);
     expect(pat).not.toBeNull();
-    for (let p = 10; p < 16; p++) {
-      expect(pat!.parts[p].sampleId).toBe(0);
-      expect(pat!.parts[p].volume).toBe(100);
-      expect(pat!.parts[p].pan).toBe(64);
-      for (const step of pat!.parts[p].steps) {
-        expect(step.active).toBe(false);
-      }
+    expect(pat!.parts[15].sampleId).toBe(0);
+    expect(pat!.parts[15].volume).toBe(100);
+    expect(pat!.parts[15].pan).toBe(64);
+    expect(pat!.parts[15].pitch).toBe(0);
+    expect(pat!.parts[15].fxAmount).toBe(0);
+    for (const step of pat!.parts[15].steps) {
+      expect(step.active).toBe(false);
     }
   });
 
@@ -511,6 +515,245 @@ describe("korg/esxParser — v3.14 Step-Encoding (Drum-Parts)", () => {
     expect(pat!.parts[0].steps[0].velocity).toBe(100); // 0x01 >> 1 = 0 → fallback 100
     expect(pat!.parts[0].steps[1].active).toBe(false);
     expect(pat!.parts[0].steps[1].velocity).toBe(0);
+  });
+});
+
+// ─── v3.20: Pitch + FxSend + Parts 10..14 Layout ────────────────────────────
+
+/**
+ * Erweitert buildPatternBlockWithSteps um pitch+fxSend-Bytes pro Drum-Part.
+ *
+ * +8  = pitch (signed i8 around 0x40)
+ * +11 = fxSend (u8 0..127)
+ */
+function buildPatternBlockWithPitchFx(
+  baseName: string,
+  bpm: number,
+  p: number,
+  pitchSigned: number, // -64..+63
+  fxSendU8: number,    // 0..127
+  sampleId = 0x000a,
+): Uint8Array {
+  const block = buildPatternBlockWithSteps(baseName, bpm, p, 0, sampleId);
+  if (p < 0 || p >= 10) return block;
+  const partOff = 24 + p * 34;
+  // Pitch @ +8 (raw byte = pitchSigned + 0x40)
+  const pitchClamped = Math.max(-64, Math.min(63, pitchSigned));
+  block[partOff + 8] = (pitchClamped + 0x40) & 0xff;
+  // FxSend @ +11
+  block[partOff + 11] = Math.max(0, Math.min(127, fxSendU8)) & 0x7f;
+  return block;
+}
+
+describe("korg/esxParser — v3.20 Pitch + FxSend (Drum-Parts)", () => {
+  it("dekodiert pitch=0 (neutral) bei Byte 0x40 default", () => {
+    // buildPatternBlockWithSteps setzt nicht explizit pitch → bleibt 0x42 (B)
+    // aus pre-fill. Wir setzen explizit auf 0x40 fuer einen sauberen Test.
+    const block = buildPatternBlockWithPitchFx("N", 120, 0, 0, 0);
+    const pat = parseEsxPattern(block, 0);
+    expect(pat!.parts[0].pitch).toBe(0);
+    expect(pat!.parts[0].fxAmount).toBe(0);
+  });
+
+  it("dekodiert positives + negatives Pitch korrekt (signed i8 um 0x40)", () => {
+    const blockUp = buildPatternBlockWithPitchFx("U", 120, 0, +12, 0);
+    const patUp = parseEsxPattern(blockUp, 0);
+    expect(patUp!.parts[0].pitch).toBe(12);
+    const blockDown = buildPatternBlockWithPitchFx("D", 120, 0, -24, 0);
+    const patDown = parseEsxPattern(blockDown, 0);
+    expect(patDown!.parts[0].pitch).toBe(-24);
+  });
+
+  it("klammert Pitch auf Hardware-Range -64..+63", () => {
+    const blockHigh = buildPatternBlockWithPitchFx("H", 120, 0, +127, 0);
+    const patHigh = parseEsxPattern(blockHigh, 0);
+    expect(patHigh!.parts[0].pitch).toBe(63);
+    // Direkt Byte 0x80 setzen → signed i8 = -128 + 64-offset = -128 → klampt auf -64
+    const blockLow = buildPatternBlockWithSteps("L", 120, 0, 0);
+    blockLow[24 + 8] = 0x00; // 0x00 = -64 nach subtract 0x40
+    const patLow = parseEsxPattern(blockLow, 0);
+    expect(patLow!.parts[0].pitch).toBe(-64);
+  });
+
+  it("dekodiert FxSend (0..127)", () => {
+    const block = buildPatternBlockWithPitchFx("F", 120, 1, 0, 96);
+    const pat = parseEsxPattern(block, 0);
+    expect(pat!.parts[1].fxAmount).toBe(96);
+    const blockMax = buildPatternBlockWithPitchFx("M", 120, 1, 0, 127);
+    expect(parseEsxPattern(blockMax, 0)!.parts[1].fxAmount).toBe(127);
+  });
+
+  it("FxSend unterscheidet Kick (0) vs HiHat (high) typischen Reverb-Bus-Setup", () => {
+    let block = buildPatternBlockWithPitchFx("K", 120, 0, 0, 0); // Kick Part 0
+    block = buildPatternBlockWithPitchFx("K", 120, 6, 0, 90); // HiHat Part 6
+    // Pre-fill auf 0x42 ueberschreibt Part 0's bytes. Wir bauen seperaten Block:
+    const both = buildPatternBlockWithSteps("KH", 120, 0, 0);
+    both[24 + 0 * 34 + 8] = 0x40; // Kick pitch neutral
+    both[24 + 0 * 34 + 11] = 0x00; // Kick fxSend 0
+    both[24 + 6 * 34 + 8] = 0x40;
+    both[24 + 6 * 34 + 11] = 0x5a; // HiHat fxSend 90 (Reverb bus)
+    const pat = parseEsxPattern(both, 0);
+    expect(pat!.parts[0].fxAmount).toBe(0);
+    expect(pat!.parts[6].fxAmount).toBe(90);
+  });
+});
+
+describe("korg/esxParser — v3.20 Stretch (Part 10) + Short-Parts (11..14)", () => {
+  function buildBlockWithStretchPart(
+    sampleId: number,
+    pitchSigned: number,
+    level: number,
+    pan: number,
+    fxSend: number,
+    stepsMask: number,
+  ): Uint8Array {
+    const block = buildPatternBlock({ name: "S", bpm: 120 });
+    const partOff = 0x25c;
+    block[partOff] = (sampleId >> 8) & 0xff;
+    block[partOff + 1] = sampleId & 0xff;
+    block[partOff + 2] = 0xff;
+    block[partOff + 3] = 0x00;
+    block[partOff + 8] = (pitchSigned + 0x40) & 0xff;
+    block[partOff + 9] = level & 0x7f;
+    block[partOff + 10] = pan & 0x7f;
+    block[partOff + 11] = fxSend & 0x7f;
+    for (let s = 0; s < 16; s++) {
+      block[partOff + 18 + s] = (stepsMask >> s) & 1 ? 0x01 : 0x00;
+    }
+    return block;
+  }
+
+  function buildBlockWithShortPart(
+    shortIndex: number, // 0..3 → parts 11..14
+    sampleId: number,
+    pitchSigned: number,
+    level: number,
+    pan: number,
+    fxSend: number,
+    stepsMask: number,
+  ): Uint8Array {
+    const block = buildPatternBlock({ name: "X", bpm: 120 });
+    const SHORT_OFFSETS = [0x36e, 0x38e, 0x3ae, 0x3ce];
+    const partOff = SHORT_OFFSETS[shortIndex];
+    block[partOff] = (sampleId >> 8) & 0xff;
+    block[partOff + 1] = sampleId & 0xff;
+    block[partOff + 6] = (pitchSigned + 0x40) & 0xff;
+    block[partOff + 7] = level & 0x7f;
+    block[partOff + 8] = pan & 0x7f;
+    block[partOff + 10] = fxSend & 0x7f;
+    for (let s = 0; s < 16; s++) {
+      block[partOff + 16 + s] = (stepsMask >> s) & 1 ? 0x01 : 0x00;
+    }
+    return block;
+  }
+
+  it("Part 10 (Stretch) wird aus 34B-Layout @ 0x25C dekodiert", () => {
+    // 4-on-the-floor mask
+    const block = buildBlockWithStretchPart(0x1f, +3, 120, 64, 64, 0x1111);
+    const pat = parseEsxPattern(block, 0);
+    expect(pat).not.toBeNull();
+    const part10 = pat!.parts[10];
+    expect(part10.sampleId).toBe(0x1f);
+    expect(part10.pitch).toBe(3);
+    expect(part10.volume).toBe(120);
+    expect(part10.pan).toBe(64);
+    expect(part10.fxAmount).toBe(64);
+    expect(part10.steps[0].active).toBe(true);
+    expect(part10.steps[4].active).toBe(true);
+    expect(part10.steps[8].active).toBe(true);
+    expect(part10.steps[12].active).toBe(true);
+    const activeCount = part10.steps.filter((s) => s.active).length;
+    expect(activeCount).toBe(4);
+  });
+
+  it("Parts 11..14 (Short-Parts) verwenden 32B-Stride aus dezidierten Offsets", () => {
+    for (let si = 0; si < 4; si++) {
+      const partIndex = 11 + si;
+      const block = buildBlockWithShortPart(si, 0x42 + si, +5, 100, 64, 80, 0x8888);
+      const pat = parseEsxPattern(block, 0);
+      expect(pat).not.toBeNull();
+      const part = pat!.parts[partIndex];
+      expect(part.sampleId).toBe(0x42 + si);
+      expect(part.pitch).toBe(5);
+      expect(part.volume).toBe(100);
+      expect(part.pan).toBe(64);
+      expect(part.fxAmount).toBe(80);
+      // Steps 3, 7, 11, 15 active
+      expect(part.steps[3].active).toBe(true);
+      expect(part.steps[7].active).toBe(true);
+      expect(part.steps[11].active).toBe(true);
+      expect(part.steps[15].active).toBe(true);
+    }
+  });
+
+  it("0x8000-Sentinel im Short-Part wird als sampleId=0 interpretiert", () => {
+    const block = buildBlockWithShortPart(0, 0x8000, 0, 100, 64, 0, 0);
+    const pat = parseEsxPattern(block, 0);
+    expect(pat!.parts[11].sampleId).toBe(0);
+  });
+
+  it("Part 15 (Audio-In) bleibt Defaults — kein Decoder gewired", () => {
+    const block = buildPatternBlock({ name: "A", bpm: 120 });
+    const pat = parseEsxPattern(block, 0);
+    expect(pat!.parts[15].sampleId).toBe(0);
+    expect(pat!.parts[15].volume).toBe(100);
+    expect(pat!.parts[15].pan).toBe(64);
+    expect(pat!.parts[15].fxAmount).toBe(0);
+    expect(pat!.parts[15].pitch).toBe(0);
+  });
+});
+
+describe.skipIf(!hasRealFiles)("korg/esxParser — v3.20 Real-File Pitch/FxSend Variance", () => {
+  function tryParseFile(filePath: string): ReturnType<typeof parseEsxBank> | null {
+    try {
+      const bytes = fs.readFileSync(filePath);
+      return parseEsxBank(new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength), path.basename(filePath));
+    } catch {
+      return null;
+    }
+  }
+
+  it("findet Real-Patterns mit non-default pitch (≠0) ODER non-default fxSend (>0)", () => {
+    const files = fs.readdirSync(REAL_FILES_DIR).filter((f) => f.toLowerCase().endsWith(".esx"));
+    let foundPitch = false;
+    let foundFx = false;
+    let allParts = 0;
+    for (const f of files.slice(0, 5)) {
+      const bank = tryParseFile(path.join(REAL_FILES_DIR, f));
+      if (!bank) continue;
+      for (const pat of bank.patterns.slice(0, 10)) {
+        for (let p = 0; p < 11; p++) {
+          // include Stretch (part 10) too
+          allParts++;
+          if (pat.parts[p].pitch !== 0) foundPitch = true;
+          if (pat.parts[p].fxAmount > 0) foundFx = true;
+        }
+      }
+      if (foundPitch && foundFx) break;
+    }
+    expect(allParts).toBeGreaterThan(0);
+    // Real-File-Variance: in BOTTROP alone hat ~10 % der Parts pitch != 0
+    // (signed-i8 around 0x40). FxSend > 0 ist in fast jedem File.
+    expect(foundPitch || foundFx).toBe(true);
+  });
+
+  it("Pitch + FxSend bleiben in Hardware-Range (-64..+63 / 0..127)", () => {
+    const files = fs.readdirSync(REAL_FILES_DIR).filter((f) => f.toLowerCase().endsWith(".esx"));
+    let totalChecked = 0;
+    for (const f of files.slice(0, 5)) {
+      const bank = tryParseFile(path.join(REAL_FILES_DIR, f));
+      if (!bank) continue;
+      for (const pat of bank.patterns.slice(0, 5)) {
+        for (const part of pat.parts) {
+          expect(part.pitch).toBeGreaterThanOrEqual(-64);
+          expect(part.pitch).toBeLessThanOrEqual(63);
+          expect(part.fxAmount).toBeGreaterThanOrEqual(0);
+          expect(part.fxAmount).toBeLessThanOrEqual(127);
+          totalChecked++;
+        }
+      }
+    }
+    expect(totalChecked).toBeGreaterThan(0);
   });
 });
 

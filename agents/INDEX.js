@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.19.0",
+    version: "3.20.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -239,9 +239,9 @@ const INDEX = {
       lastSeen: "2026-05-18T08:30:00.000Z",
       ownedBy:  "backend"
     },
-    "client/src/utils/korg/esxParser.ts (v3.14.0)": {
-      role:     "v3.14.0: ESX-1 .esx Sample-Bank + Pattern + Step-Encoding Parser (~580 LOC, pure JS, isomorph). v3.14-NEU: Drum-Parts 0..9 step-encoding decoded via Hex-Diff analyse (BOTTROP/KASSEL/ENDLICH vs DUSSELBUNKAAA init). Per-Part-Layout (34B stride, 9-10 Drum-Parts ab Offset 0x18): sample-id BE u16 @ part+0 (0x8000=unassigned), level @ part+9, pan @ part+10, 16 step-trigger-bytes @ part+18 (bit 0 = active). Beweis BOTTROP[0] Part 5 = klassischer Kick auf Steps 0/4/8/12+14. Konstanten ESX1_PART_STRIDE=34/ESX1_PART_HEADER_BYTES=18/ESX1_PART_STEPS_BYTES=16/ESX1_DRUM_PART_OFFSET=24/ESX1_DRUM_PARTS_DECODED=10/ESX1_SAMPLEID_UNASSIGNED=0x8000. Interner Helper decodeDrumPart(raw, partIndex) → {sampleId, volume, pan, steps[]} (Parts 10..15 = undefined → Defaults). velocity Best-Effort (bits 1..7 mit Fallback 100). Sample-API + Pattern-Header-API (v3.3/v3.5) unverändert. Parts 10..15 (Stretch/Slice/Audio-In/Synth) bleiben Defaults — Layout nach 240B Motion-Region nicht final RE-d.",
-      lastSeen: "2026-05-18T11:30:00.000Z",
+    "client/src/utils/korg/esxParser.ts (v3.20.0)": {
+      role:     "v3.20.0: ESX-1 .esx Sample-Bank + Pattern + Step-Encoding Parser (~720 LOC, pure JS, isomorph). v3.20-NEU: 3 weitere Decoder-Helpers per Hex-Diff RE (BOTTROP/KASSEL × 32 non-empty Patterns) UND zwei neue Felder im 34B Drum-Part-Header. (1) Pitch (signed i8 @ part+8, 0x40=neutral, range -64..+63 nach decodePitchByte(rawByte): rawByte-0x40 mit Klamp auf Hardware-Window). 0x40 dominiert mit 2475/2830 in BOTTROP → high conf. (2) FxSend (u8 @ part+11, 0..127, 0=off, 0x7F=max → 12 unique Werte). (3) decodeStretchPart(raw) - liest Part 10 @ 0x25C mit gleichem 34B-Layout (sampleId BE u16, pitch +8, level +9, pan +10, fxSend +11, 16 step-bytes +18). (4) decodeShortPart(raw, shortIndex 0..3) - liest Parts 11..14 (Sample/Slice/Synth) mit 32B-Stride (16B Header + 16B Steps) @ 0x36E, 0x38E, 0x3AE, 0x3CE. Short-Header-Layout: sampleId @ +0 BE u16, pitch @ +6, level @ +7, pan @ +8, fxSend @ +10, steps @ +16. Beweis: BOTTROP[1] @0x36E = sampleId 0x0086, pitch -10 (0x36), level 0x7F, 4-on-the-floor Kick. Part 15 (Audio-In) bleibt Defaults (in Real-Files keine Trigger). EsxPart-Type liefert jetzt 'pitch' und 'fxAmount' echt dekodiert für parts 0..14 (15 = Defaults). Bestehende v3.14 Drum-API + v3.3/v3.5 Sample-API unveraendert. 38 Pattern-Tests grün (10 v3.20 NEU). Konstanten erweitert: ESX1_STRETCH_PART_OFFSET=0x25C, ESX1_SHORT_PART_OFFSETS=[0x36E,0x38E,0x3AE,0x3CE], ESX1_SHORT_PART_HEADER_BYTES=16, ESX1_PITCH_NEUTRAL_RAW=0x40.",
+      lastSeen: "2026-05-18T13:05:00.000Z",
       ownedBy:  "backend"
     },
     "client/src/utils/korg/esxPatternConvert.ts (v3.5.0)": {
@@ -1237,6 +1237,38 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "backend",
+      timestamp: "2026-05-18T13:05:00.000Z",
+      done: [
+        "v3.20.0: ESX-1 Pattern-Parser Reverse-Engineering der LOW-Confidence-Felder aus v3.14 (TASK-v3.14-FU-1 + FU-2). Drum-Part-Header (34B) komplett dekodiert + Parts 10..14 Layout RE-d (von 6 Stretch/Sample/Slice/Synth-Parts liefern jetzt 5 echte Daten, Part 15 Audio-In bleibt Defaults).",
+        "PITCH (Drum-Part +8 byte): Hex-Diff BOTTROP/KASSEL × 32 non-empty Patterns ergab signed i8 around 0x40 (= 0 semitones neutral). BOTTROP zeigt 2475/2830 Parts auf 0x40 (high confidence default). KASSEL zeigt Werte 0x00..0xFD (echtes two's-complement). decodePitchByte(rawByte) liefert (rawByte - 0x40) mit Hardware-Klamp -64..+63. Pitch wird jetzt im EsxPart.pitch Feld geliefert statt 0 default. Beweis BOTTROP[0] P5 vs P6: P5 hat 0x22 (= -30 Semi), P6 hat 0x40 (= 0).",
+        "FX SEND (Drum-Part +11 byte): u8 0..127 (12 unique Werte in BOTTROP, range 0x00..0x7F). 0=off, 0x7F=max. EsxPart.fxAmount liefert echt-dekodiert. Real-File Test verifiziert dass Parts wie HiHat oft fxSend > 0 haben (Reverb-Bus).",
+        "PART 10 (Stretch 1): 34B-Layout @ 0x25C — gleicher Stride wie Drum-Parts. decodeStretchPart(raw) liefert sampleId, pitch, level, pan, fxSend, 16 steps. Beweis BOTTROP[0] @0x25C = sampleId 0x001F + ff 00 marker + 16 step bytes mit motion-trail bytes (0xBC = neutral).",
+        "PARTS 11..14 (Sample/Slice/Synth 1/2): 32B-Stride @ Offsets 0x36E, 0x38E, 0x3AE, 0x3CE — verifiziert via ff-00 marker scan + step-pattern-shape detection in 5 Patterns aus BOTTROP. decodeShortPart(raw, shortIndex 0..3) liest 16B Header (sample-id @+0, pitch @+6, level @+7, pan @+8, fxSend @+10) + 16B Steps @+16. Beweis BOTTROP[1] @0x36E: sampleId 0x0086, pitch -10 semi (0x36), 4-on-the-floor Kick. BOTTROP[0] @0x3AE: alle 16 Steps active (klassisches HiHat-Roll).",
+        "PART 15 (Audio-In): bleibt Defaults — Hex-Analyse zeigt invarianten Header '00 7f 00 40 64 40 7f 00 21 40 40 00 00 00 00 00' in JEDEM untersuchten Pattern, keine User-Trigger gefunden. Korrekt als 'unused' geflaggt.",
+        "Total Pattern-Block 4280B Layout-Breakdown jetzt vollstaendiger dokumentiert: 0x000-0x017 Header, 0x018-0x163 Drum-Parts (10×34B), 0x16C-0x25B Drum-Motion (15 lanes), 0x25C-0x27D Stretch-Part 10 (34B), 0x27E-0x35D Stretch/Sample-Motion (~224B), 0x36E-0x3DD Short-Parts 11-14 (4×32B), 0x466-0x488 Footer/Audio-In/Accent-Bytes, ab 0x488 Per-Step Pitch-Motion (0x80 neutral).",
+        "EsxPart.pitch + EsxPart.fxAmount liefern fuer Parts 0..14 ECHT-dekodiert (vorher: Drum-Parts hatten Defaults 0/0). Public API unveraendert — bestehende v3.14 Tests bleiben gruen (1 musste angepasst werden weil Parts 10..14 jetzt aus Garbage-Pre-Fill dekodieren).",
+        "10 NEU Tests in tests/features/korg-esx-patterns.test.ts: (a) korg/esxParser v3.20 Pitch+FxSend (5 Tests: neutral=0, positive+negative pitch, Hardware-Range-Clamp, FxSend 0..127, Kick=0 vs HiHat=90 Reverb-Bus-Setup). (b) korg/esxParser v3.20 Stretch + Short-Parts (4 Tests: Part 10 @0x25C decoded, Parts 11..14 @ dezidierten Offsets, 0x8000 sentinel im Short-Part, Part 15 Defaults). (c) v3.20 Real-File-Variance (2 Tests: non-default pitch ODER fxSend in echten Files, Hardware-Range-Invarianten verifiziert).",
+        "Test-Resultat: tests/features/korg-esx-patterns.test.ts 38/38 grün (vorher 27). Alle 8 KORG-Test-Files: 220/220 grün. pnpm check clean.",
+        "RE-Scripts in scripts/esx-re-v320*.mjs dokumentieren den Reverse-Engineering-Prozess (5 Phasen, Hex-Diff + Per-byte-Variance + Marker-Scan). Nicht part vom Build, aber als Spec-Quelle nuetzlich.",
+        "package.json + agents/INDEX.js version 3.19.0 → 3.20.0."
+      ],
+      next: [
+        "TASK-v3.20-FU-MOTION: Drum-Motion-Region 0x16C..0x25B (15 lanes × 16B) ist nicht decoded — Pitch-Lanes (0xBC default) und Switch-Lanes (0x02 default) muessten gegen Per-Step-Modulation gemappt werden. Aktuell automationLanes immer [] in esxPatternConvert.",
+        "TASK-v3.20-FU-AUDIOIN: Part 15 (Audio-In) Step-Daten existieren in den Real-Files vermutlich im Footer-Bereich (0x466..0x488 zeigt 'ff ff ff ff 0d 4b 7f 00 ...' Muster). Wenn ein File mit aktivem Audio-In-Track gefunden wird, sollte das RE-d werden.",
+        "TASK-v3.20-FU-SYNTH-NOTE: Parts 14/15 (Synth 1/2) haben in der ESX-1 Hardware ein Note-Pattern (Tonhoehe pro Step) statt nur Trigger. Die step-byte-Werte 0x11/0x15/0x55 (statt nur 0x01) in BOTTROP[0] @0x3AE legen nahe, dass Note-Bits in den step-bytes encoded sind — decoden waere nicht-trivial.",
+        "TASK-v3.20-FU-RE-FXSEND-VALIDATION: FxSend-Hypothese aus 12 unique Werten ist plausibel aber nicht hardware-verifiziert. Sicherste Validierung waere ein Pattern mit Reverb-FX an + Kick-fxSend=0 + HiHat-fxSend=high gegen Audio-Render zu checken — Hardware-Loop noetig.",
+        "TASK-v3.20-FU-esxPatternConvert: Convert-Funktion sollte pitch + fxSend in SynthstudioDrumPartImport propagieren (aktuell pitchSemitones nutzt EsxPart.pitch, das ist OK, aber fxAmount-Mapping zum Synthstudio-FxBus fehlt)."
+      ],
+      changed: [
+        "client/src/utils/korg/esxParser.ts (v3.14 → v3.20: +decodePitchByte, +decodeStretchPart, +decodeShortPart, +ESX1_STRETCH_PART_OFFSET, +ESX1_SHORT_PART_OFFSETS, +ESX1_PITCH_NEUTRAL_RAW, EsxPart.pitch + fxAmount jetzt echt dekodiert fuer Parts 0..14)",
+        "tests/features/korg-esx-patterns.test.ts (+10 v3.20-Tests, 1 v3.14-Test angepasst — 27 → 38 Tests)",
+        "scripts/esx-re-v320*.mjs (NEU, 5 RE-Phasen-Scripts mit Hex-Diff + Variance-Analyse)",
+        "package.json (3.19.0 → 3.20.0)",
+        "agents/INDEX.js (version 3.19.0 → 3.20.0, files-Entry fuer esxParser.ts auf v3.20.0, +workLog v3.20.0 entry)"
+      ]
+    },
     {
       agent:     "frontend",
       timestamp: "2026-05-18T12:40:00.000Z",

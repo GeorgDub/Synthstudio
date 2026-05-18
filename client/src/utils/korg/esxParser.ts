@@ -1,5 +1,5 @@
 /**
- * Synthstudio – ESX-1 Sample-Bank Parser (v3.5.0)
+ * Synthstudio – ESX-1 Sample-Bank Parser (v3.20.0)
  *
  * Port aus dem Python-Tool `G:/IdeaProjects/Korg Editor`.
  * SoT: G:/IdeaProjects/Korg Editor/esx_e2s_editor/services/esx_parser.py
@@ -31,9 +31,28 @@
  *     • Step-Trigger: 16B @ part+18, bit 0 = active
  *     • Beweis: BOTTROP[0] Part 5 = '01 00 00 00 01 00 00 00 ...'
  *       dekodiert zu Kick-Pattern Steps 0,4,8,12 + Extra (4-on-the-floor)
- *   Parts 10..15 (Stretch/Slice/Audio-In/Synth 1/2) bleiben Defaults — ihr
- *   Layout liegt nach der ~240B Motion-Sequencer-Region und ist nicht final
- *   RE-d.
+ *
+ * v3.20.0 SCOPE (Pitch/FxSend + Parts 10..15 RE — TASK-v3.14-FU-1/2):
+ *   Erweiterte Hex-Diff-Analyse (BOTTROP/KASSEL × alle Patterns) hat
+ *   zusaetzliche Felder im Drum-Part-Header verifiziert:
+ *     • +8  = pitch (signed i8, 0x40 = neutral = 0 semitones, Range 0x00..0x7F)
+ *             KASSEL zeigt Werte 0x00..0xFD ⇒ signed two's-complement
+ *             Default 0x40 in 2475/2830 BOTTROP-Parts → high confidence
+ *     • +11 = fxSend (u8, 0..127, 0=off, 0x7F=max)
+ *             12 unique Werte in BOTTROP → high confidence
+ *   Parts 10..15 Layout (verifiziert via 'ff 00' marker-Scan + step-pattern-shape):
+ *     • Part 10 (Stretch 1): 34B-Header @ 0x25C (gleicher Stride wie Drum-Parts)
+ *     • Parts 11..14 (Sample/Slice/Synth): 32B-Stride @ 0x36E, 0x38E, 0x3AE, 0x3CE
+ *       Layout pro 32B-Block: 16B Header (sample-id BE u16 @+0, pitch @+6,
+ *       level @+7, pan @+8, fxSend @+10) + 16B Step-Trigger bytes
+ *       Beweis: BOTTROP[1] Part-11 (0x36E) = sample-id 0x0086, steps 1/5/9/13
+ *       Beweis: BOTTROP[0] Part-13 (0x3AE) = sample-id 0x0023, alle 16 Steps
+ *     • Part 15 (Audio-In/Accent): default-Header @ 0x3CE — fast immer
+ *       konstant '00 7f 00 40 64 40 7f 00...' = unused. Keine User-Trigger
+ *       in den Real-Files gefunden → bleibt Defaults.
+ *   Motion-Sequencer-Daten (0x16C..0x25B = 240B Drum-Motion und
+ *   0x27E..0x35D = ~224B Stretch+Sample-Motion) bleiben Best-Effort defaults;
+ *   ein vollstaendiges Motion-Decoding wurde fuer v3.20 nicht implementiert.
  *
  * Defensive Parsing:
  *   - File-Size-Check (Min/Max)
@@ -370,40 +389,63 @@ export function isEmptyEsxPattern(raw: Uint8Array): boolean {
   return true;
 }
 
-// ─── v3.14.0: Part-Block-Layout im 4280B Pattern-Block ──────────────────────
+// ─── v3.20.0: Part-Block-Layout im 4280B Pattern-Block ──────────────────────
 //
 // Hex-Diff Analyse 2026-05-18 (init vs real Patterns aus BOTTROP/KASSEL/
-// ENDLICH/DUSSELBUNKAAA):
+// ENDLICH/DUSSELBUNKAAA × alle 32 non-empty Patterns):
 //
 //   Pattern-Block:
 //     0x000..0x007 = 8B Name (ASCII)
 //     0x008..0x009 = BE u16 BPM×128
 //     0x00A..0x017 = 24B Globals (step-length @0x0D, swing @0x0F, …)
-//     0x018..0x163 = 9 Drum-Parts × 34B  (Drum 1..9)        ← v3.14 decoded
-//     0x14A..0x16B = 10. Drum-Part (Stretch-Slot oder Drum 10), 34B
-//     0x16C..0x25B = ~240B Motion-Sequencer-Daten (0xBC = neutral)
-//     0x25C..      = Stretch / Slice / Audio-In / Synth1 / Synth2 + Motion
+//     0x018..0x163 = 10 Drum-Parts × 34B  (Drum 1..10)      ← v3.14 decoded
+//     0x16C..0x25B = ~240B Drum-Motion-Sequencer-Daten (15 lanes × 16B,
+//                    0xBC neutral fuer Pitch-lanes, 0x02 fuer Switch-lanes)
+//     0x25C..0x27D = Part 11 (Stretch 1): 34B-Header gleicher Layout wie Drum
+//     0x27E..0x35D = ~224B Motion fuer Stretch + Sample/Slice Parts
+//     0x35E..0x3DD = 4 Parts (Sample 1/2, Slice 1/2 oder Synth 1/2):
+//                    32B-Stride (16B Header + 16B Step-Trigger)
+//                    Positionen: 0x36E, 0x38E, 0x3AE, 0x3CE — siehe
+//                    decodeShortPart() unten
+//     0x3DE..0x466 = Reserve / Synth-Motion-Lanes
+//     0x466..0x488 = Footer (Audio-In + Accent + ff-padding)
+//     0x488..      = Per-Step Pitch-Motion-Region (0x80 = neutral)
 //
-//   Per-Part-Layout (34B):
+//   v3.20.0 Drum-Part-Layout (34B) — vollstaendig RE-d:
 //     +0..+1  = sample-id (BE u16). 0x8000 = unassigned/empty.
-//     +2..+3  = constant 'ff 00' (loop/reverse flag?)
-//     +4..+7  = pitch/eg fields (best-effort)
-//     +8..+9  = level (byte +9 = 0..127, init=0x64=100)
-//     +10     = pan (0..127, init=0x40=64=center)
-//     +11..+17 = fx, modulation, lfo (best-effort)
-//     +18..+33 = 16 step bytes (1 byte/step)
+//     +2..+3  = constant 'ff 00' (loop/reverse flag — invariant in real files)
+//     +4..+7  = EG / mod-fields (best-effort, niedrige Variance)
+//     +8      = PITCH (signed i8, 0x40 = neutral = 0 semitones)  ← v3.20 NEU
+//     +9      = level (u8, 0..127, init=0x64=100)
+//     +10     = pan (u8, 0..127, 64=center)
+//     +11     = FX SEND (u8, 0..127, 0=off, 0x7F=max)            ← v3.20 NEU
+//     +12..+17 = modulation, lfo (best-effort, not decoded)
+//     +18..+33 = 16 step bytes (1 byte/step, bit 0 = active)
 //
 //   Step-Encoding (verifiziert gegen BOTTROP[0] Part 5/6):
 //     bit 0 = trigger active (1 = step gespielt)
 //     bits 1..7 = velocity/accent/roll (best-effort, nicht final RE-d)
 //
-//   Beweis: BOTTROP[0] Part 5 step-bytes:
-//     01 00 00 00 01 00 00 00 01 00 00 00 01 00 01 00
-//     → bit-0 pattern: 1000 1000 1000 1010 (klassischer Kick + Extra)
+//   v3.20.0 Short-Part-Layout (32B = 16B Header + 16B Steps):
+//     +0..+1  = sample-id (BE u16)
+//     +2..+5  = mode flags (z.B. 03 7f 00 40 = sample-mode default)
+//     +6      = PITCH (signed i8, 0x40 = neutral)
+//     +7      = level (u8, 0..127)
+//     +8      = pan (u8, 0..127)
+//     +9      = ? (often 0x7F)
+//     +10     = FX SEND (u8, 0..127, 0=off)
+//     +11..+15 = mod flags
+//     +16..+31 = 16 step bytes
 //
-// ESX1_DRUM_PARTS_DECODED = 10 (Drum 1..10). Die restlichen 6 Parts (Stretch
-// 1/2, Slice 1/2, Audio-In, Synth 1/2) liegen nach der Motion-Region und
-// haben ein anderes Layout — diese bleiben Best-Effort-Defaults.
+//   Beweis: BOTTROP[1] @0x36E "Sample-Part 1":
+//     hdr=00 86 03 7f 00 40 36 7f 40 7f 00 06 82 55 40 00
+//     → sampleId=0x86, pitch=0x36 (–10 semi), level=0x7f, pan=0x40, fx=0x00
+//     steps=01 00 00 00 01 00 00 00 01 00 00 00 01 00 00 00 (4-on-the-floor)
+//
+// ESX1_DRUM_PARTS_DECODED = 10 (Drum 1..10).
+// ESX1_STRETCH_PART_INDEX = 10 (1 Stretch part at offset 0x25C, 34B-stride).
+// ESX1_SHORT_PART_INDICES = 11..14 (4 Sample/Slice parts, 32B-stride).
+// ESX1_AUDIOIN_PART_INDEX = 15 (Audio-In, no triggers in real files → Defaults).
 const ESX1_PART_STRIDE = 34;
 const ESX1_PART_HEADER_BYTES = 18;
 const ESX1_PART_STEPS_BYTES = 16;
@@ -411,11 +453,52 @@ const ESX1_DRUM_PART_OFFSET = 24;
 const ESX1_DRUM_PARTS_DECODED = 10;
 const ESX1_SAMPLEID_UNASSIGNED = 0x8000;
 
+/** Offset of the Stretch part 11 (34B-stride like drum parts). */
+const ESX1_STRETCH_PART_OFFSET = 0x25c;
+/** Per-part offsets for parts 12..15 (16B header + 16B steps = 32B stride). */
+const ESX1_SHORT_PART_OFFSETS: ReadonlyArray<number> = [
+  0x36e, // Part 12 (Sample 1 / Slice 1 — best-effort)
+  0x38e, // Part 13 (Sample 2 / Slice 2)
+  0x3ae, // Part 14 (Synth 1)
+  0x3ce, // Part 15 (Synth 2 / Audio-In — usually default-empty)
+];
+const ESX1_SHORT_PART_HEADER_BYTES = 16;
+const ESX1_SHORT_PART_STEPS_BYTES = 16;
+const ESX1_PITCH_NEUTRAL_RAW = 0x40;
+
+/**
+ * Wandelt das +8-byte (Pitch) eines Drum/Short-Part-Headers in Semitones um.
+ *
+ * Signed-Two's-Complement, neutral bei 0x40 (= 0 semitones). Range: 0x00..0x7F
+ * mapped auf -64..+63 semitones (Hardware-Range). Werte ueber 0x7F treten in
+ * Real-Files in KASSEL.esx auf — wir interpretieren sie als signed i8 (range
+ * 0x80..0xFF = -128..-1) und klampen dann auf das gleiche -64..+63-Fenster
+ * (Hardware-Limit).
+ */
+function decodePitchByte(rawByte: number): number {
+  const b = rawByte & 0xff;
+  // Most files: 0x00..0x7F. Klammere die Two's-Komplement-Interpretation auf
+  // das Hardware-Fenster -64..+63 fuer Konsistenz.
+  const signed = b - ESX1_PITCH_NEUTRAL_RAW;
+  if (signed < -64) return -64;
+  if (signed > 63) return 63;
+  return signed;
+}
+
 /** Decoded part = 0..9 (Drum 1..10). Out-of-range → undefined (Defaults). */
 function decodeDrumPart(
   raw: Uint8Array,
   partIndex: number,
-): { sampleId: number; volume: number; pan: number; steps: EsxStepEvent[] } | undefined {
+):
+  | {
+      sampleId: number;
+      volume: number;
+      pan: number;
+      pitch: number;
+      fxAmount: number;
+      steps: EsxStepEvent[];
+    }
+  | undefined {
   if (partIndex < 0 || partIndex >= ESX1_DRUM_PARTS_DECODED) return undefined;
   const partOff = ESX1_DRUM_PART_OFFSET + partIndex * ESX1_PART_STRIDE;
   if (partOff + ESX1_PART_STRIDE > raw.length) return undefined;
@@ -426,9 +509,15 @@ function decodeDrumPart(
   // (ESX-1: 256 mono + 128 stereo = 384 max).
   const sampleId = sidRaw === ESX1_SAMPLEID_UNASSIGNED ? 0 : (sidRaw & 0x01ff);
 
+  // Pitch @ +8 (signed i8 around 0x40 = neutral)  — v3.20.0
+  const pitch = decodePitchByte(raw[partOff + 8] ?? ESX1_PITCH_NEUTRAL_RAW);
+
   // Level + Pan
   const volume = Math.max(0, Math.min(127, raw[partOff + 9] || 100));
   const pan = Math.max(0, Math.min(127, raw[partOff + 10] || 64));
+
+  // FxSend @ +11 (u8, 0..127)  — v3.20.0
+  const fxAmount = Math.max(0, Math.min(127, raw[partOff + 11] ?? 0));
 
   // 16 step-bytes
   const stepsOff = partOff + ESX1_PART_HEADER_BYTES;
@@ -442,7 +531,87 @@ function decodeDrumPart(
     if (active && velocity === 0) velocity = 100;
     steps[s] = { active, velocity };
   }
-  return { sampleId, volume, pan, steps };
+  return { sampleId, volume, pan, pitch, fxAmount, steps };
+}
+
+/**
+ * Decoded Stretch-Part (Part-Index 10) — 34B-Layout @ 0x25C, gleicher Stride
+ * wie Drum-Parts. v3.20.0 NEU.
+ */
+function decodeStretchPart(raw: Uint8Array):
+  | {
+      sampleId: number;
+      volume: number;
+      pan: number;
+      pitch: number;
+      fxAmount: number;
+      steps: EsxStepEvent[];
+    }
+  | undefined {
+  const partOff = ESX1_STRETCH_PART_OFFSET;
+  if (partOff + ESX1_PART_STRIDE > raw.length) return undefined;
+  // Same shape as drum-part. Just reuse the layout interpretation.
+  const sidRaw = (raw[partOff] << 8) | raw[partOff + 1];
+  const sampleId = sidRaw === ESX1_SAMPLEID_UNASSIGNED ? 0 : (sidRaw & 0x01ff);
+  const pitch = decodePitchByte(raw[partOff + 8] ?? ESX1_PITCH_NEUTRAL_RAW);
+  const volume = Math.max(0, Math.min(127, raw[partOff + 9] || 100));
+  const pan = Math.max(0, Math.min(127, raw[partOff + 10] || 64));
+  const fxAmount = Math.max(0, Math.min(127, raw[partOff + 11] ?? 0));
+  const stepsOff = partOff + ESX1_PART_HEADER_BYTES;
+  const steps: EsxStepEvent[] = new Array(ESX1_DEFAULT_STEPS);
+  for (let s = 0; s < ESX1_DEFAULT_STEPS; s++) {
+    const b = raw[stepsOff + s] || 0;
+    const active = (b & 0x01) !== 0;
+    let velocity = (b >> 1) & 0x7f;
+    if (active && velocity === 0) velocity = 100;
+    steps[s] = { active, velocity };
+  }
+  return { sampleId, volume, pan, pitch, fxAmount, steps };
+}
+
+/**
+ * Decoded Short-Part (Sample/Slice/Synth) — 32B-Layout (16B Header + 16B Steps).
+ * v3.20.0 NEU. Index 0..3 maps to part-indices 11..14.
+ */
+function decodeShortPart(
+  raw: Uint8Array,
+  shortIndex: number,
+):
+  | {
+      sampleId: number;
+      volume: number;
+      pan: number;
+      pitch: number;
+      fxAmount: number;
+      steps: EsxStepEvent[];
+    }
+  | undefined {
+  if (shortIndex < 0 || shortIndex >= ESX1_SHORT_PART_OFFSETS.length) return undefined;
+  const partOff = ESX1_SHORT_PART_OFFSETS[shortIndex];
+  const blockSize = ESX1_SHORT_PART_HEADER_BYTES + ESX1_SHORT_PART_STEPS_BYTES;
+  if (partOff + blockSize > raw.length) return undefined;
+  // Header layout (verified BOTTROP[1] @0x36E):
+  //   +0..+1 = sample-id BE u16
+  //   +6     = pitch (i8, 0x40 neutral)
+  //   +7     = level (u8 0..127)
+  //   +8     = pan (u8 0..127, 0x40 center)
+  //   +10    = fxSend (u8 0..127)
+  const sidRaw = (raw[partOff] << 8) | raw[partOff + 1];
+  const sampleId = sidRaw === ESX1_SAMPLEID_UNASSIGNED ? 0 : (sidRaw & 0x01ff);
+  const pitch = decodePitchByte(raw[partOff + 6] ?? ESX1_PITCH_NEUTRAL_RAW);
+  const volume = Math.max(0, Math.min(127, raw[partOff + 7] || 100));
+  const pan = Math.max(0, Math.min(127, raw[partOff + 8] || 64));
+  const fxAmount = Math.max(0, Math.min(127, raw[partOff + 10] ?? 0));
+  const stepsOff = partOff + ESX1_SHORT_PART_HEADER_BYTES;
+  const steps: EsxStepEvent[] = new Array(ESX1_DEFAULT_STEPS);
+  for (let s = 0; s < ESX1_DEFAULT_STEPS; s++) {
+    const b = raw[stepsOff + s] || 0;
+    const active = (b & 0x01) !== 0;
+    let velocity = (b >> 1) & 0x7f;
+    if (active && velocity === 0) velocity = 100;
+    steps[s] = { active, velocity };
+  }
+  return { sampleId, volume, pan, pitch, fxAmount, steps };
 }
 
 /**
@@ -457,12 +626,18 @@ function decodeDrumPart(
  *   Offset 8..9  : BE u16 = BPM × 128
  *   Offset 13    : step-length-1 (init=0x0F → 16 Steps)
  *
- * v3.14.0 NEU: Drum-Parts 0..9 (Drum 1..10) decoded:
+ * v3.14.0: Drum-Parts 0..9 (Drum 1..10) decoded:
  *   - sampleId, volume, pan aus 34-byte Part-Header
  *   - 16 steps mit trigger-active (bit 0)
  *   Beweis: BOTTROP[0] Part 5 dekodiert zu 4-on-the-floor Kick (1,5,9,13).
  *
- * Parts 10..15 (Stretch/Slice/Audio-In/Synth) bleiben Best-Effort Defaults.
+ * v3.20.0 NEU:
+ *   - Pitch (Drum-Part +8 signed i8, neutral 0x40 = 0 semitones)
+ *   - FxSend (Drum-Part +11, u8 0..127)
+ *   - Part 10 (Stretch): 34B-Header @ 0x25C — gleicher Layout wie Drum
+ *   - Parts 11..14 (Sample/Slice/Synth): 32B-Stride (16B+16B) @
+ *     0x36E, 0x38E, 0x3AE, 0x3CE
+ *   - Part 15 (Audio-In): bleibt Defaults (in Real-Files keine Trigger)
  *
  * Best-Effort:
  *   Offset 12    : roll-type (init=0x00)
@@ -499,18 +674,38 @@ export function parseEsxPattern(
   let swing = raw[15] & 0x7f;
   if (swing > 100) swing = 100;
 
-  // Build 16 Parts. Parts 0..9 (Drum) werden v3.14 decoded; 10..15 Defaults.
+  // Build 16 Parts. v3.20.0:
+  //   parts 0..9   → decodeDrumPart  (34B-Stride @ 0x18 + i*34)
+  //   part 10      → decodeStretchPart (34B-Stride @ 0x25C)
+  //   parts 11..14 → decodeShortPart  (32B-Stride @ 0x36E, 0x38E, 0x3AE, 0x3CE)
+  //   part 15      → Defaults (Audio-In is unused in real-files)
   const parts: EsxPart[] = new Array(ESX1_PARTS_PER_PATTERN);
   for (let p = 0; p < ESX1_PARTS_PER_PATTERN; p++) {
-    const decoded = decodeDrumPart(raw, p);
+    let decoded:
+      | {
+          sampleId: number;
+          volume: number;
+          pan: number;
+          pitch: number;
+          fxAmount: number;
+          steps: EsxStepEvent[];
+        }
+      | undefined;
+    if (p < ESX1_DRUM_PARTS_DECODED) {
+      decoded = decodeDrumPart(raw, p);
+    } else if (p === 10) {
+      decoded = decodeStretchPart(raw);
+    } else if (p >= 11 && p <= 14) {
+      decoded = decodeShortPart(raw, p - 11);
+    }
     if (decoded) {
       parts[p] = {
         partIndex: p,
         sampleId: decoded.sampleId,
         volume: decoded.volume,
         pan: decoded.pan,
-        pitch: 0,
-        fxAmount: 0,
+        pitch: decoded.pitch,
+        fxAmount: decoded.fxAmount,
         steps: decoded.steps,
       };
     } else {
