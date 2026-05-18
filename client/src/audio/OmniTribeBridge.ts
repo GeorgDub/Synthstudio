@@ -300,6 +300,51 @@ export class OmniTribeBridge {
     this.send(OtpCmd.PARAM, 0x04, payload);
   }
 
+  /**
+   * v3.43.0: CMD 0x02 0x05 — Chord User-Slot Download (Request).
+   *
+   * Host → Device Request: [slotIndex(1B)].
+   * Device antwortet mit gleichem CMD/SUB:
+   *   D → H Response Payload: [slotIndex(1B), intervalCount(1B), N×interval(1B)].
+   *   Format identisch zur 0x04-Upload-Payload — Symmetrie ist Absicht.
+   *
+   * Antworten werden im handleIncoming-Dispatch erkannt und als
+   * CustomEvent "omnitribe:chord-user-slot" weitergereicht (kein State
+   * in der Bridge — UI ist Single-Source-of-Truth).
+   *
+   * Defensive: Disconnected → NO-OP. Invalide slotIndex throws — der
+   * Caller (UI-Loop) muss bewusst pro Slot iterieren.
+   */
+  requestChordUserSlot(slotIndex: number): void {
+    if (!this.connected) return;
+    if (!Number.isFinite(slotIndex) ||
+        Math.floor(slotIndex) !== slotIndex ||
+        slotIndex < 0 || slotIndex > 3) {
+      throw new Error(`requestChordUserSlot: invalid slotIndex ${slotIndex} — must be 0..3`);
+    }
+    this.send(OtpCmd.PARAM, 0x05, [slotIndex & 0x7F]);
+  }
+
+  /**
+   * v3.43.0: Fordert sequentiell alle 4 User-Slots an.
+   *
+   * Returns Promise das aufloest sobald alle Requests gesendet sind.
+   * NOTE: Das ist NICHT ein Warten auf Antwort — die Replies kommen
+   * asynchron via "omnitribe:chord-user-slot"-Event. UI-Layer ist
+   * verantwortlich fuer das Aggregieren.
+   *
+   * Zwischen den Requests ein minimales Delay (10ms) damit Throttle-
+   * Queue nicht ueberlaeuft + Device-side Parser nicht blockiert.
+   */
+  async requestAllChordUserSlots(): Promise<void> {
+    if (!this.connected) return;
+    for (let i = 0; i < 4; i++) {
+      this.requestChordUserSlot(i);
+      // Throttle-Wait — kein Hard-Sync, aber gibt Bridge.flushQueue() Luft.
+      await new Promise<void>((resolve) => setTimeout(resolve, 10));
+    }
+  }
+
   /** CMD 0x0E: Transport. */
   remotePlay():   void { this.send(OtpCmd.TRANSPORT, 0x00, []); }
   remoteStop():   void { this.send(OtpCmd.TRANSPORT, 0x01, []); }
@@ -408,6 +453,27 @@ export class OmniTribeBridge {
       if (typeof window !== "undefined") {
         window.dispatchEvent(new CustomEvent("omnitribe:paramChange", {
           detail: { part, paramHigh: ph, paramLow: pl, value } as ParamChangeEvent,
+        }));
+      }
+    }
+    if (cmd === OtpCmd.PARAM && sub === 0x05) {
+      // v3.43.0: Chord User-Slot Download Reply.
+      // Payload: [slotIndex(1B), intervalCount(1B), N×interval(1B signed-7bit)].
+      // Defensive: leerer Payload → defaults (slot 0, leere intervals).
+      const slotIndex = payload.length >= 1 ? (payload[0] & 0x7F) : 0;
+      const count = payload.length >= 2 ? (payload[1] & 0x7F) : 0;
+      const intervals: number[] = [];
+      const available = Math.max(0, payload.length - 2);
+      const safeCount = Math.min(count, available, 16);
+      for (let i = 0; i < safeCount; i++) {
+        const raw = payload[2 + i] & 0x7F;
+        // 7-bit two's-complement → signed semitone. >= 0x40 → negativ.
+        const signed = raw >= 0x40 ? raw - 0x80 : raw;
+        intervals.push(signed);
+      }
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("omnitribe:chord-user-slot", {
+          detail: { slotIndex, intervals },
         }));
       }
     }

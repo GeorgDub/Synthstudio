@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.41.0",
+    version: "3.43.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -89,6 +89,26 @@ const INDEX = {
   // ─── KNOWN FILE INDEX ──────────────────────────────────────
   // Key files agents have analyzed. Add new entries after working on a file.
   files: {
+    "client/src/audio/OmniTribeBridge.ts (v3.43.0)": {
+      role:     "v3.43.0 ERWEITERT: v3.21 uploadChordUserSlot (CMD 0x02 SUB 0x04) bleibt + NEU bidirektionales Chord-Download (CMD 0x02 SUB 0x05). +2 Public-Methoden: requestChordUserSlot(slotIndex: 0..3): void — sendet Request via send() (Throttle-Queue analog setParam), throws bei invalid slotIndex (Number.isFinite/integer/range-check), NO-OP bei disconnected. requestAllChordUserSlots(): Promise<void> — iteriert 4 Slots sequentiell mit setTimeout(10ms)-Spacing damit Throttle-Queue Luft hat. Reply-Handler in handleIncoming für CMD 0x02 SUB 0x05: decodiert [slotIndex(1B), count(1B), N×signed-7bit-intervals] → CustomEvent 'omnitribe:chord-user-slot' mit detail {slotIndex, intervals}. Defensive: count > available → truncate, empty payload → defaults {slot:0, intervals:[]}. v3.21 Echo-Schutz + Throttler + paramChange-Listener unangetastet. Payload-Format symmetrisch zu Upload — Spec-Extension nicht im otp_protocol.md, analog zu v3.21 0x04 (beide sind Bridge-internal Chord-Modul-Erweiterungen).",
+      lastSeen: "2026-05-18T22:00:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/utils/omniTribeWiring.ts (v3.43.0)": {
+      role:     "v3.43.0 ERWEITERT: v3.21 uploadChordUserSlot + parseChordIntervalCsv-Wrapper bleiben + NEU 2 Wrapper: requestChordUserSlot(slotIndex): boolean — connected-Gate, ruft omniTribeBridge.requestChordUserSlot. requestAllChordUserSlots(): Promise<boolean> — connected-Gate, awaitet Bridge-Iteration. Beide returnen false wenn disconnected (isomorphic-Regel). v3.16-v3.21 alle Granular/Wavetable/Euclidean/Chord/Performance-Helper unverändert.",
+      lastSeen: "2026-05-18T22:00:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/components/OmniTribe/ChordPanel.tsx (v3.43.0)": {
+      role:     "v3.43.0 ERWEITERT: v3.21 User-Slot-CSV-Editor + Per-Slot-Upload bleiben + NEU bidirektionaler Download-Workflow. Inbound: NEU useEffect subscribt 'omnitribe:chord-user-slot' CustomEvent — bei Receive setUserIntervals[slotId 11..14] = intervals.join(',') (slotIndex 0..3 → slotId 11..14 mapping). Outbound: NEU downloadStatus state 'idle'|'loading'|'ok'|'err' + handleDownloadAllUserSlots async-callback (setStatus loading → await requestAllChordUserSlots() → ok/err + setTimeout(2.5s) auto-clear). NEU '↓ Download All'-Button rechts oben im <details>-Block 'User-Slots (4)' mit 4 Visual-States (Farbschema accent-success/accent-danger/accent-primary/neutral) + Titel-Tooltips ('Alle 4 User-Slots vom Geraet laden'/'Lade Slots…'/'Slots geladen'/'Disconnected') + disabled bei !connected oder loading. data-testid 'chord-user-slot-download-all'. v3.21 Per-Slot-Upload-Buttons unverändert.",
+      lastSeen: "2026-05-18T22:00:00.000Z",
+      ownedBy:  "backend"
+    },
+    "tests/features/omnitribe-chord-download.test.ts (v3.43.0)": {
+      role:     "v3.43.0 NEU: 14 Tests in 4 describes (env:jsdom). (1) requestChordUserSlot Sysex-Encoding × 4: CMD 0x02 SUB 0x05 mit [slotIndex] payload + Frame-Format-Verify via parseFrame-Helper, je 1 Frame pro slotIndex 0..3, throws bei invalid slotIndex (4, -1, 1.5, NaN), NO-OP bei disconnected (kein Frame, kein throw). (2) Reply-Handler × 4: buildReplyFrame-Helper für signed-7bit-Encoding, dispatch 'omnitribe:chord-user-slot' mit detail {slotIndex, intervals=[0,4,7]}, signed-Decode für negative intervals (-1, -12, 0, 4 ↔ 0x7F, 0x74, 0, 4), empty payload → intervals=[], malformed count > available bytes → truncate auf available. (3) requestAllChordUserSlots Iteration × 2: 4 sequentielle Requests mit slotIndex 0,1,2,3 via vi.advanceTimersByTimeAsync(15) cycles, NO-OP bei disconnected (Promise resolved sofort). (4) Wrapper × 4: requestChordUserSlot connected→true+bridge-call, disconnected→false+no-call, gleiches für requestAllChordUserSlots. Helpers: FakeMidiOutput/Input, makeAccess, parseFrame, flushThrottler, buildReplyFrame.",
+      lastSeen: "2026-05-18T22:00:00.000Z",
+      ownedBy:  "backend"
+    },
     "client/src/utils/channelBounce.ts (v3.41.0)": {
       role:     "v3.41.0 ERWEITERT: v2.95/v2.96 Sample+Synth-Pfade bleiben + NEU Bitcrusher/RingMod/Transient-Shaper im Stem-Bounce. Closes v2.95-Caveat (3 silent FX). +5 Public-fn-Exports: makeBitcrusherCurve(bitDepth) → WaveShaper-Curve mit Math.round(x*2^d)/2^d Quantization; applyBitcrusher(Float32Array, bitDepth, sampleReduct, mix) → pure-fn quantize + hold-sample (identisch BitcrusherProcessor.js-Worklet); applyBitcrusherToBuffer(ctx, AudioBuffer, ...) → neuer Buffer mit per-Channel-Bitcrush, defensive null-Returns; applyTransientShaper(Float32Array, attack, sustain, mix) → pure-fn Envelope-Follower mit one-pole-IIR (aFast=0.30/aSlow=0.005/rFast=0.999/rSlow=0.9999); applyTransientShaperToBuffer; buildRingModOffline(ctx, freq, mix) → native Web-Audio-Subgraph mit OscillatorNode (sine) → modScale-gain → ringGain.gain Multiplikation (1:1 RingModProcessor.js-Math). OfflinePartGraph-Interface +preProcessing? Feld { bitcrusher?, transient? } für Sample-Pre-Processing-Anweisungen. buildOfflinePartGraph nimmt optional insertChain?: MixerFxSlot[] | null — aktive RingMod-Slots werden inline zwischen reverb-out und sidechainGain hinzugefügt; aktive Bitcrusher/Transient-Slots werden als preProcessing zurückgegeben; andere Insert-Types (chorus/flanger/filter/comp/dist) silent ignoriert (sind via ChannelFx Bestandteil der Main-Chain). ChannelBounceRenderOptions +insertChain?. _renderWithFxChain pre-processed Sample-Buffer via applyBitcrusher+TransientToBuffer wenn preProcessing gesetzt. bounceAllChannels +partInsertChains?: Map | Record mit partId-Lookup. _renderSynthWithFxChain noch ohne Pre-Processing-Support (Caveat v3.42). README v3.41-Block dokumentiert Strategie.",
       lastSeen: "2026-05-18T21:00:00.000Z",
@@ -1597,6 +1617,35 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "backend",
+      timestamp: "2026-05-18T22:00:00.000Z",
+      done: [
+        "v3.43.0: OmniTribe Bridge bidirektionales Chord-User-Slot Download — closes v3.21-Caveat. pnpm check clean, alle 192 Test-Files / 4464 tests grün (16 skipped, +14 NEU). 99 OmniTribe-Tests gesamt grün (vorher 85).",
+        "Protokoll: CMD 0x02 SUB 0x05 = Chord User-Slot Download (bidirektional). Request (H→D) Payload [slotIndex(1B)]. Reply (D→H) Payload [slotIndex(1B), intervalCount(1B), N×interval(1B signed-7bit)] — Format identisch zur v3.21 0x04-Upload-Payload (Symmetrie Absicht). otp_protocol.md spec listet 0x02/0x05 nicht explizit — Synthstudio-Extension, analog zu v3.21 0x04 Upload das ebenfalls nicht im spec gelistet ist (beide sind Bridge-internal Chord-Modul-NRPN-Extensions).",
+        "OmniTribeBridge.ts +2 Public-Methoden: requestChordUserSlot(slotIndex: 0..3): void — sendet Sysex-Request via send() (Throttle-Queue analog setParam), throws bei invalid slotIndex (NaN/float/out-of-range), NO-OP bei disconnected. requestAllChordUserSlots(): Promise<void> — iteriert sequentiell 4 Slots mit setTimeout(10ms) zwischen Requests damit Throttle-Queue nicht überläuft.",
+        "OmniTribeBridge.handleIncoming +Reply-Handler für CMD 0x02 SUB 0x05: decodiert payload[0]=slotIndex, payload[1]=count, danach N signed-7bit intervals (raw>=0x40 → raw-0x80). Defensive: empty payload → slot=0+intervals=[], count > available bytes → truncate auf available (max 16). Dispatch CustomEvent 'omnitribe:chord-user-slot' mit detail {slotIndex, intervals}.",
+        "omniTribeWiring.ts +2 Wrapper: requestChordUserSlot(slotIndex): boolean — connected-gate, ruft Bridge. requestAllChordUserSlots(): Promise<boolean> — connected-gate, awaitet Bridge.requestAllChordUserSlots.",
+        "ChordPanel.tsx Integration: NEU useEffect subscribt 'omnitribe:chord-user-slot' und updated lokal userIntervals[slotId 11..14] mit CSV aus intervals.join(','). NEU State downloadStatus: 'idle'|'loading'|'ok'|'err' + handleDownloadAllUserSlots async-callback. NEU '↓ Download All'-Button im User-Slots-<details>-Block (rechts oben mit flex-justify-end). Visual-Polish: 4 Status-States mit Farben (ok=green, err=red, loading=primary, idle=neutral) + Titel-Tooltips + Auto-Clear nach 2.5s. data-testid 'chord-user-slot-download-all'. disabled bei !connected oder loading.",
+        "NEU tests/features/omnitribe-chord-download.test.ts: 14 Tests in 4 describes (env:jsdom). (1) requestChordUserSlot Sysex × 4: CMD 0x02 SUB 0x05 mit korrektem Payload [slotIndex], sendet je Frame pro Slot 0..3, throws bei invalid slotIndex (4, -1, 1.5, NaN), NO-OP bei disconnected. (2) Reply-Handler × 4: CustomEvent dispatch mit korrektem detail, signed-7bit-decoding (-1, -12, 0, 4), empty payload defaults zu [], truncate bei count > available (defensive). (3) requestAllChordUserSlots Iteration × 2: 4 sequentielle Requests mit slotIndex 0,1,2,3, NO-OP bei disconnected. (4) Wrapper × 4: connected → bridge-call (returns true), disconnected → NO-OP (returns false), gleiches für requestAllChordUserSlots-Wrapper.",
+        "Bestehende v3.21 uploadChordUserSlot-Logic + v3.16/v3.18/v3.19 OmniTribe-Tests UNVERÄNDERT grün. Echo-Schutz, Throttling, paramChange-Listener — alles unangetastet.",
+        "package.json + agents/INDEX.js version 3.41.0 → 3.43.0 (v3.42.0 wird im vorigen Slot übersprungen — INDEX.js spiegelt jetzt 3.43.0 als 'current')."
+      ],
+      next: [
+        "v3.44 Pro-Slot Download-Button im ChordPanel (zusätzlich zu Download-All) — UI-Polish: User kann einzelne Slots refreshen ohne alle 4 zu re-fetchen.",
+        "v3.44 Reply-Timeout-Handling im downloadStatus: wenn nach 1s kein CustomEvent kommt, automatisch 'err' setzen (aktuell bleibt 'ok' selbst wenn Device nicht antwortet — der Async-Resolve sagt nur 'Request gesendet', nicht 'Reply empfangen').",
+        "v3.44 ChordPanel-User-Slot-Display: zeige zusätzlich die intervals-Liste lesbar (z.B. 'C, E, G, Bb') statt nur CSV — Tooltip mit Pitch-Names.",
+        "Firmware-Side (Omnitribe-Repo): chord.c muss CMD 0x02 SUB 0x05 implementieren — Request lesen, slotIndex extrahieren, Slot-Daten aus chord-modul-State serialisieren, Reply mit gleichem CMD/SUB zurücksenden."
+      ],
+      changed: [
+        "client/src/audio/OmniTribeBridge.ts (+requestChordUserSlot + requestAllChordUserSlots + Reply-Handler für 0x02/0x05 in handleIncoming → CustomEvent 'omnitribe:chord-user-slot')",
+        "client/src/utils/omniTribeWiring.ts (+requestChordUserSlot + requestAllChordUserSlots Wrapper mit connected-Gate)",
+        "client/src/components/OmniTribe/ChordPanel.tsx (+inbound useEffect für chord-user-slot-Event + downloadStatus state + handleDownloadAllUserSlots + Download All Button)",
+        "tests/features/omnitribe-chord-download.test.ts (NEU, 14 Tests in 4 describes)",
+        "package.json (3.42.0 → 3.43.0)",
+        "agents/INDEX.js (version + workLog v3.43.0 + files-Einträge)"
+      ]
+    },
     {
       agent:     "backend",
       timestamp: "2026-05-18T21:00:00.000Z",

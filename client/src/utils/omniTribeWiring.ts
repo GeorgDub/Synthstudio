@@ -352,6 +352,35 @@ export function uploadChordUserSlot(slotIndex: number, intervals: number[]): boo
   return true;
 }
 
+// ─── v3.43.0: Chord User-Slot Download ───────────────────────────────────────
+
+/**
+ * v3.43.0: Fordert einen einzelnen User-Chord-Slot vom Geraet an.
+ *
+ * Returns true wenn Request gesendet (connected), false wenn NO-OP.
+ * Antwort kommt asynchron als "omnitribe:chord-user-slot"-CustomEvent.
+ *
+ * NO-OP wenn Bridge nicht connected — isomorphic-Regel.
+ */
+export function requestChordUserSlot(slotIndex: number): boolean {
+  if (!omniTribeBridge.isConnected) return false;
+  omniTribeBridge.requestChordUserSlot(slotIndex);
+  return true;
+}
+
+/**
+ * v3.43.0: Fordert alle 4 User-Chord-Slots sequentiell an.
+ *
+ * Returns true wenn Iteration gestartet, false wenn NO-OP. Promise
+ * resolved sobald alle 4 Requests rausgegangen sind — die Replies
+ * kommen asynchron als 4 separate CustomEvents.
+ */
+export async function requestAllChordUserSlots(): Promise<boolean> {
+  if (!omniTribeBridge.isConnected) return false;
+  await omniTribeBridge.requestAllChordUserSlots();
+  return true;
+}
+
 // ─── Performance-Pad-Modul (paramHigh = 0x1F) ────────────────────────────────
 
 /**

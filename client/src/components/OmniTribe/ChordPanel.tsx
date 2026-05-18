@@ -23,6 +23,7 @@ import {
   OMNITRIBE_CHORD,
   uploadChordUserSlot,
   parseChordIntervalCsv,
+  requestAllChordUserSlots,
 } from "../../utils/omniTribeWiring";
 
 const STAGGER_MAX_MS = 200;
@@ -92,6 +93,20 @@ export function ChordPanel({
     }, 2000);
   }, [userIntervals]);
 
+  // ── v3.43.0 Download All User-Slots from Device ────────────────────────
+  const [downloadStatus, setDownloadStatus] = useState<"idle" | "loading" | "ok" | "err">("idle");
+  const handleDownloadAllUserSlots = useCallback(async () => {
+    setDownloadStatus("loading");
+    try {
+      const ok = await requestAllChordUserSlots();
+      setDownloadStatus(ok ? "ok" : "err");
+    } catch {
+      setDownloadStatus("err");
+    }
+    // Auto-clear nach 2.5 s.
+    setTimeout(() => setDownloadStatus("idle"), 2500);
+  }, []);
+
   // ── Inbound: paramChange-Listener für 2-Wege-Sync ──────────────────────
   useEffect(() => {
     function onParam(e: Event): void {
@@ -113,6 +128,22 @@ export function ChordPanel({
     window.addEventListener("omnitribe:paramChange", onParam);
     return () => window.removeEventListener("omnitribe:paramChange", onParam);
   }, [partIndex]);
+
+  // ── v3.43.0 Inbound: chord-user-slot Reply ─────────────────────────────
+  useEffect(() => {
+    function onChordSlot(e: Event): void {
+      const detail = (e as CustomEvent).detail as {
+        slotIndex: number; intervals: number[];
+      } | undefined;
+      if (!detail) return;
+      // slotIndex 0..3 → UI slotId 11..14.
+      const slotId = (detail.slotIndex & 0x03) + 11;
+      const csv = Array.isArray(detail.intervals) ? detail.intervals.join(",") : "";
+      setUserIntervals((prev) => ({ ...prev, [slotId]: csv }));
+    }
+    window.addEventListener("omnitribe:chord-user-slot", onChordSlot);
+    return () => window.removeEventListener("omnitribe:chord-user-slot", onChordSlot);
+  }, []);
 
   return (
     <div
@@ -203,6 +234,46 @@ export function ChordPanel({
           User-Slots (4)
         </summary>
         <div className="mt-2 space-y-2">
+          {/* v3.43.0: Download All — fetch slots from device */}
+          <div className="flex items-center justify-end">
+            <button
+              type="button"
+              onClick={handleDownloadAllUserSlots}
+              disabled={!connected || downloadStatus === "loading"}
+              data-testid="chord-user-slot-download-all"
+              className={[
+                "px-2 py-1 rounded text-[10px] font-semibold border transition-colors",
+                downloadStatus === "ok"
+                  ? "bg-accent-success/20 border-accent-success text-accent-success"
+                  : downloadStatus === "err"
+                  ? "bg-accent-danger/20 border-accent-danger text-accent-danger"
+                  : downloadStatus === "loading"
+                  ? "bg-bg-elevated border-accent-primary text-accent-primary"
+                  : connected
+                  ? "bg-bg-elevated border-border-color text-text-muted hover:text-text-primary"
+                  : "bg-bg-elevated border-border-subtle text-text-dim cursor-not-allowed",
+              ].join(" ")}
+              title={
+                downloadStatus === "ok"
+                  ? "Slots geladen"
+                  : downloadStatus === "err"
+                  ? "Download fehlgeschlagen (Disconnected?)"
+                  : downloadStatus === "loading"
+                  ? "Lade Slots…"
+                  : connected
+                  ? "Alle 4 User-Slots vom Geraet laden"
+                  : "Disconnected"
+              }
+            >
+              {downloadStatus === "ok"
+                ? "✓ Geladen"
+                : downloadStatus === "err"
+                ? "✗ Fehler"
+                : downloadStatus === "loading"
+                ? "⏳ …"
+                : "↓ Download All"}
+            </button>
+          </div>
           {[11, 12, 13, 14].map((slotId) => {
             const status = uploadStatus[slotId];
             return (
