@@ -150,7 +150,53 @@ export const PATTERN_BLOCK_SIZE    = PATTERN_HEADER_SIZE + (PARTS_PER_PATTERN * 
 export const BANK_HEADER_SIZE = 8;
 
 /** Maximum acceptable file size (Hard-Cap, Schutz vor riesigen Inputs). */
-export const MAX_ELECTRIBE_FILE_BYTES = 5 * 1024 * 1024; // 5 MB
+export const MAX_ELECTRIBE_FILE_BYTES = 8 * 1024 * 1024; // 8 MB (v3.11: erhoeht von 5MB fuer .e2sallpat Stock-Banks, ~4 MB)
+
+// ─── .e2sallpat Multi-Pattern-Bank Layout (v3.11.0, verified gegen 2016 Stock-Bank) ───
+//
+// File-Header (analog .e2spat):
+//   0x00000   16B   "KORG" + 12× 0x00
+//   0x00010   16B   "e2sampler" + zeros
+//   0x00020   4B    Version (u32 LE = 1)
+//   0x00024   220B  0xFF padding
+//
+// Bank-Header / GLST (Global Slot Table):
+//   0x00100   4B    "GLST"
+//   0x00104   4B    Chunk-Length u32 LE (256 in 2016 Stock-Bank)
+//   0x00108..0x001FC reserved/metadata (mostly zeros)
+//   0x001FC   4B    "GLED" (Global End)
+//   0x00200..0x0FFFF Padding (0xFF) — bringt das File-Prefix auf 65792 Bytes
+//
+// Pattern-Records (250 × 16384 Bytes = 4 096 000 Bytes):
+//   Beginnen bei 0x10100. Jede Pattern hat denselben PTST-relativen Aufbau
+//   wie .e2spat-Bodies:
+//     PTST+0x00  4B   "PTST" Marker
+//     PTST+0x10  16B  Pattern-Name (ASCII, space/zero-padded)
+//     PTST+0x22  2B   BPM × 10 (u16 LE)
+//     PTST+0x800 14336B Parts (16 × 896B) — PTST-relativ statt 0x900 absolut
+//
+// File-Total: 65792 (Prefix) + 4 096 000 (250 Patterns) = 4 161 792 Bytes
+//             ⇒ Hard-Cap fuer .e2sallpat: ~5 MB headroom.
+
+/** .e2sallpat: Offset des ersten PTST-Pattern-Records. */
+export const ELECTRIBE_ALLPAT_FIRST_PATTERN_OFFSET = 0x10100;
+
+/** .e2sallpat: Stride zwischen Pattern-Records (= Pattern-Body-Size). */
+export const ELECTRIBE_ALLPAT_PATTERN_STRIDE = 0x4000; // 16384 Bytes
+
+/** .e2sallpat: Erwartete Slot-Anzahl (KORG hardware-fixed). */
+export const ELECTRIBE_ALLPAT_SLOT_COUNT = 250;
+
+/** .e2sallpat: Erwartete File-Size = Prefix + 250 × Stride. */
+export const ELECTRIBE_ALLPAT_EXPECTED_SIZE =
+  ELECTRIBE_ALLPAT_FIRST_PATTERN_OFFSET + ELECTRIBE_ALLPAT_SLOT_COUNT * ELECTRIBE_ALLPAT_PATTERN_STRIDE;
+
+/** .e2sallpat: Bank-Header-Marker (Global Slot Table). */
+export const ELECTRIBE_ALLPAT_GLST_MARKER = "GLST";
+export const ELECTRIBE_ALLPAT_GLST_OFFSET = 0x100;
+
+/** .e2sallpat: Bank-Header-End-Marker (Global End). */
+export const ELECTRIBE_ALLPAT_GLED_MARKER = "GLED";
 
 /**
  * Mapping ParamId → Anzeigename. Best-Effort — die echten ParamIds des Electribe 2
@@ -353,6 +399,58 @@ export function isRealElectribeFile(input: ArrayBuffer | Uint8Array | DataView):
   }
 }
 
+/**
+ * v3.11.0: Erkennt das .e2sallpat-Bank-Layout (250 Pattern Records).
+ *
+ * Marker:
+ *   - Offset 0x00: "KORG" (gleich wie .e2spat)
+ *   - Offset 0x10: "e2sampler" (gleich wie .e2spat)
+ *   - Offset 0x100: "GLST" (statt PTST — distinktes Bank-Magic)
+ *   - File-Size >= 1 MB (Single-Pattern .e2spat ist nur 16640 Bytes)
+ */
+export function isElectribeAllPatBank(input: ArrayBuffer | Uint8Array | DataView): boolean {
+  try {
+    const view = toDataView(input);
+    if (view.byteLength < 0x10100 + ELECTRIBE_ALLPAT_PATTERN_STRIDE) return false;
+    const magic = readAsciiAt(view, 0x00, 4);
+    if (magic !== ELECTRIBE_MAGIC) return false;
+    const id = readAsciiAt(view, 0x10, 16);
+    if (!id.startsWith(ELECTRIBE_REAL_IDENTIFIER)) return false;
+    const glst = readAsciiAt(view, ELECTRIBE_ALLPAT_GLST_OFFSET, 4);
+    if (glst !== ELECTRIBE_ALLPAT_GLST_MARKER) return false;
+    // Mindestens ein PTST-Marker beim ersten Pattern-Record erwartet.
+    const ptst = readAsciiAt(view, ELECTRIBE_ALLPAT_FIRST_PATTERN_OFFSET, 4);
+    if (ptst !== ELECTRIBE_REAL_PATTERN_MARKER) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * v3.11.0: 3-Wege-Format-Klassifikation (low-level).
+ *
+ * Heute liefert `detectElectribeFormat` aus historischen Gruenden nur
+ * "pattern" | "bank" (auf Hardware-Single-Pattern abgebildet). Diese
+ * granulare Variante unterscheidet die echten 3 Datei-Layouts.
+ */
+export function detectElectribeFormatKind(
+  input: ArrayBuffer | Uint8Array | DataView,
+): "e2spat" | "e2sallpat" | "legacy" | "unknown" {
+  try {
+    const view = toDataView(input);
+    if (view.byteLength < BANK_HEADER_SIZE) return "unknown";
+    if (isElectribeAllPatBank(view)) return "e2sallpat";
+    if (isRealElectribeFile(view)) return "e2spat";
+    // Synthetic/Legacy: KORG + nicht-real
+    const magic = readAsciiAt(view, 0x00, 4);
+    if (magic === ELECTRIBE_MAGIC) return "legacy";
+    return "unknown";
+  } catch {
+    return "unknown";
+  }
+}
+
 // ─── Real-File Parser (verified Layout) ──────────────────────────────────────
 
 /**
@@ -427,11 +525,13 @@ function parseRealPartBlock(view: DataView, partOffset: number, partIndex: numbe
 }
 
 /**
- * Parst ein verifiziertes Real-File (KORG E2 Sampler .e2spat).
+ * v3.11.0: Generischer Real-Pattern-Parser, der relativ zu einem PTST-Marker
+ * arbeitet. Wird sowohl von .e2spat (ptstOffset = 0x100) als auch von
+ * .e2sallpat (ptstOffset = 0x10100, 0x14100, ...) genutzt.
  *
- * Verified Fields:
- *   - Name aus 0x110 (16 Byte ASCII)
- *   - BPM aus 0x122 (u16 LE / 10)
+ * Verified Fields (PTST-relativ):
+ *   - PTST+0x10 Name (16 Byte ASCII)
+ *   - PTST+0x22 BPM × 10 (u16 LE)
  *
  * Best-Effort Fields:
  *   - StepLength (default 16)
@@ -439,35 +539,163 @@ function parseRealPartBlock(view: DataView, partOffset: number, partIndex: numbe
  *   - Part-Header (Volume/Pan/Pitch/FxSend = Hardware-Defaults)
  *   - Steps (alle inactive — Encoding noch nicht reverse-engineered)
  *   - Motion-Slots (alle disabled)
+ *
+ * @param view       Voll-File-DataView (kein Sub-View — wir indizieren mit absoluten Offsets).
+ * @param ptstOffset File-absoluter Offset des PTST-Markers.
+ * @param slotIndex  1-basierter Slot-Index (1..250) fuer Fallback-Naming.
  */
-function parseRealPattern(view: DataView): ParsedPattern {
+function parseRealPatternAt(
+  view: DataView,
+  ptstOffset: number,
+  slotIndex: number,
+): ParsedPattern {
+  // PTST-relative Felder.
+  const nameOffset  = ptstOffset + 0x10;
+  const bpmOffset   = ptstOffset + 0x22;
+  const partsOffset = ptstOffset + 0x800; // PTST-relativ (statt 0x900 file-absolut bei .e2spat).
+
   // Name
-  const nameRaw = readAsciiAt(view, ELECTRIBE_REAL_NAME_OFFSET, 16);
-  const name = nameRaw || "PATTERN_1";
+  const nameRaw = readAsciiAt(view, nameOffset, 16);
+  const name = nameRaw || `PATTERN_${slotIndex}`;
 
   // BPM (u16 LE / 10)
   let bpm = 120;
-  if (ELECTRIBE_REAL_BPM_OFFSET + 1 < view.byteLength) {
-    const bpmRaw = view.getUint16(ELECTRIBE_REAL_BPM_OFFSET, true);
+  if (bpmOffset + 1 < view.byteLength) {
+    const bpmRaw = view.getUint16(bpmOffset, true);
     bpm = bpmRaw / 10;
     if (!Number.isFinite(bpm) || bpm < ELECTRIBE_MIN_BPM) bpm = ELECTRIBE_MIN_BPM;
     if (bpm > ELECTRIBE_MAX_BPM) bpm = ELECTRIBE_MAX_BPM;
   }
 
-  // Step-Length / Swing — aktuell Best-Effort:
-  //   In den Real-Files variieren die Bytes bei 0x124-0x130 stark.
-  //   Konservativ default 16 / 0. Sobald verifiziert: hier lesen.
   const stepLength = 16;
   const swing      = 0;
 
-  // 16 Parts ab 0x900, je 896 Bytes
+  // 16 Parts ab partsOffset, je 896 Bytes
   const parts: ParsedPart[] = new Array(PARTS_PER_PATTERN);
   for (let p = 0; p < PARTS_PER_PATTERN; p++) {
-    const partOffset = ELECTRIBE_REAL_PARTS_OFFSET + p * ELECTRIBE_REAL_PART_STRIDE;
+    const partOffset = partsOffset + p * ELECTRIBE_REAL_PART_STRIDE;
     parts[p] = parseRealPartBlock(view, partOffset, p);
   }
 
   return { name, bpm, stepLength, swing, parts };
+}
+
+/**
+ * Parst ein verifiziertes Real-File (KORG E2 Sampler .e2spat).
+ *
+ * Verified Fields:
+ *   - Name aus 0x110 (16 Byte ASCII)
+ *   - BPM aus 0x122 (u16 LE / 10)
+ */
+function parseRealPattern(view: DataView): ParsedPattern {
+  // .e2spat: PTST liegt file-absolut bei 0x100. PTST+0x10=0x110=Name, PTST+0x22=0x122=BPM.
+  // PTST+0x800 = 0x900 = Parts-Offset (= ELECTRIBE_REAL_PARTS_OFFSET).
+  return parseRealPatternAt(view, 0x100, 1);
+}
+
+/**
+ * v3.11.0: Parst eine .e2sallpat-Multi-Pattern-Bank (250 Slots).
+ *
+ * - Walked alle 250 Pattern-Records mit fixem Stride 16384B ab 0x10100.
+ * - Pro Record: validiert PTST-Marker, parst Name/BPM/Parts via parseRealPatternAt.
+ * - Defensiv: kaputter PTST-Marker → Slot bleibt "Init Pattern" Default, kein Throw.
+ * - Init-Slots (Name = "Init Pattern") werden NICHT geskippt — User soll alle 250
+ *   Slots sehen koennen, um z.B. ueberschriebene gegen Werks-Init zu vergleichen.
+ *
+ * @returns ParsedElectribeBank mit 250 Patterns (Index 0..249 == Slot 1..250).
+ */
+export function parseElectribeAllPatBank(
+  input: ArrayBuffer | Uint8Array | DataView,
+): ParsedElectribeBank {
+  const view = toDataView(input);
+
+  if (view.byteLength < ELECTRIBE_ALLPAT_FIRST_PATTERN_OFFSET + ELECTRIBE_ALLPAT_PATTERN_STRIDE) {
+    throw new Error(
+      `Electribe-Parser: .e2sallpat Datei zu klein (${view.byteLength} Bytes, erwartet >= ${
+        ELECTRIBE_ALLPAT_FIRST_PATTERN_OFFSET + ELECTRIBE_ALLPAT_PATTERN_STRIDE
+      })`,
+    );
+  }
+  if (view.byteLength > MAX_ELECTRIBE_FILE_BYTES) {
+    throw new Error(`Electribe-Parser: Datei zu gross (${view.byteLength} > ${MAX_ELECTRIBE_FILE_BYTES}).`);
+  }
+
+  const version =
+    view.byteLength >= 0x24 ? view.getUint32(0x20, true) : 1;
+
+  // Wie viele Slots passen tatsaechlich in das File? (Defensive gegen
+  // truncated Banks; Stock-Bank hat exakt 250.)
+  const maxSlotsByFileSize = Math.floor(
+    (view.byteLength - ELECTRIBE_ALLPAT_FIRST_PATTERN_OFFSET) / ELECTRIBE_ALLPAT_PATTERN_STRIDE,
+  );
+  const slotCount = Math.min(ELECTRIBE_ALLPAT_SLOT_COUNT, maxSlotsByFileSize);
+
+  const patterns: ParsedPattern[] = new Array(slotCount);
+  for (let i = 0; i < slotCount; i++) {
+    const ptstOffset =
+      ELECTRIBE_ALLPAT_FIRST_PATTERN_OFFSET + i * ELECTRIBE_ALLPAT_PATTERN_STRIDE;
+
+    // PTST-Marker-Check (defensive — malformed records duerfen nicht crashen).
+    const marker = readAsciiAt(view, ptstOffset, 4);
+    if (marker !== ELECTRIBE_REAL_PATTERN_MARKER) {
+      // Slot ohne PTST → minimaler Default-Eintrag.
+      patterns[i] = {
+        name: `Slot ${i + 1}`,
+        bpm: 120,
+        stepLength: 16,
+        swing: 0,
+        parts: Array.from({ length: PARTS_PER_PATTERN }, (_, p) => ({
+          index: p,
+          sampleId: 0,
+          volume: 100,
+          pan: 64,
+          pitch: 0,
+          fxSend: 0,
+          steps: Array.from({ length: STEPS_PER_PART }, () => ({ active: false, velocity: 0 })),
+          motion: Array.from({ length: MOTION_SLOTS_PER_PART }, () => ({
+            paramId: 0,
+            paramName: MOTION_PARAM_NAMES[0] ?? "Param 0",
+            enabled: false,
+            values: new Array(MOTION_STEPS_PER_SLOT).fill(0),
+          })),
+        })),
+      };
+      continue;
+    }
+
+    try {
+      patterns[i] = parseRealPatternAt(view, ptstOffset, i + 1);
+    } catch {
+      // Per-Slot defensive Fallback — Bank-Parse darf nie crashen.
+      patterns[i] = {
+        name: `Slot ${i + 1} (Parse-Error)`,
+        bpm: 120,
+        stepLength: 16,
+        swing: 0,
+        parts: [],
+      };
+    }
+  }
+
+  return {
+    version,
+    patternCount: patterns.length,
+    patterns,
+  };
+}
+
+/**
+ * v3.11.0: Filtert Slots, deren Name auf "Init Pattern" zeigt (Werks-Init).
+ * Convenience-Helper fuer UI-Code, der nur User-Custom-Patterns anzeigen will.
+ */
+export function filterNonInitPatterns(patterns: ParsedPattern[]): ParsedPattern[] {
+  return patterns.filter(p => {
+    const name = (p.name ?? "").trim();
+    if (!name) return false;
+    if (name === "Init Pattern") return false;
+    if (/^Slot \d+/i.test(name)) return false;
+    return true;
+  });
 }
 
 // ─── Pattern-Block-Parser (Legacy/Synthetic) ─────────────────────────────────
@@ -566,7 +794,12 @@ export function detectElectribeFormat(input: ArrayBuffer | Uint8Array | DataView
     throw new Error("Electribe-Parser: Datei zu klein (< 8 Bytes Header).");
   }
 
-  // Real-Files sind immer single-pattern (.e2spat = 16640 Bytes).
+  // v3.11: .e2sallpat Multi-Pattern-Bank (KORG hardware-fixed 250 Slots, ~4 MB).
+  if (isElectribeAllPatBank(view)) {
+    return "bank";
+  }
+
+  // Real-Files (.e2spat) sind immer single-pattern (16640 Bytes).
   if (isRealElectribeFile(view)) {
     return "pattern";
   }
@@ -598,7 +831,12 @@ export function parseElectribeBank(input: ArrayBuffer | Uint8Array | DataView): 
     throw new Error("Electribe-Parser: Datei zu klein (< 8 Bytes Header).");
   }
 
-  // ── Real-File-Layout (verified) ────────────────────────────────────────
+  // ── v3.11.0: .e2sallpat Multi-Pattern-Bank (250 Slots) ─────────────────
+  if (isElectribeAllPatBank(view)) {
+    return parseElectribeAllPatBank(view);
+  }
+
+  // ── Real-File-Layout (verified, single .e2spat) ────────────────────────
   if (isRealElectribeFile(view)) {
     // Version aus Offset 0x20 (u32 LE).
     const version = view.byteLength >= 0x24 ? view.getUint32(0x20, true) : 1;

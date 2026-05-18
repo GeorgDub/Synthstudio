@@ -36,11 +36,21 @@ import {
   PART_HEADER_SIZE,
   MOTION_SLOT_SIZE,
   BANK_HEADER_SIZE,
+  ELECTRIBE_ALLPAT_FIRST_PATTERN_OFFSET,
+  ELECTRIBE_ALLPAT_PATTERN_STRIDE,
+  ELECTRIBE_ALLPAT_SLOT_COUNT,
+  ELECTRIBE_ALLPAT_EXPECTED_SIZE,
+  ELECTRIBE_ALLPAT_GLST_MARKER,
+  ELECTRIBE_ALLPAT_GLST_OFFSET,
   parseElectribeBank,
   parseElectribePattern,
+  parseElectribeAllPatBank,
   convertParsedPatternToSynthstudio,
   detectElectribeFormat,
+  detectElectribeFormatKind,
   isRealElectribeFile,
+  isElectribeAllPatBank,
+  filterNonInitPatterns,
   looksLikeElectribeFile,
   clamp01,
   clampPan,
@@ -372,8 +382,8 @@ describe("electribeImport – Defensive Reads", () => {
   });
 
   it("wirft bei Datei > MAX_ELECTRIBE_FILE_BYTES", () => {
-    // 6 MB buffer (> 5 MB Limit), valid magic.
-    const huge = new Uint8Array(6 * 1024 * 1024);
+    // v3.11: Limit ist jetzt 8 MB. 9 MB Buffer ueberschreitet das.
+    const huge = new Uint8Array(9 * 1024 * 1024);
     for (let i = 0; i < 4; i++) huge[i] = ELECTRIBE_MAGIC.charCodeAt(i);
     new DataView(huge.buffer).setUint16(4, 1, true);
     new DataView(huge.buffer).setUint16(6, 0, true);
@@ -802,6 +812,298 @@ const REAL_FILE_ADVISORY = "001_Advi$ory1   .e2spat";
       expect(conv.drumParts).toHaveLength(PARTS_PER_PATTERN);
       // Step-Encoding ist Best-Effort — alle Steps inactive (default), aber nicht crashy.
       expect(conv.drumParts.every(d => Array.isArray(d.steps))).toBe(true);
+    });
+  },
+);
+
+// ─── v3.11.0 — .e2sallpat Multi-Pattern-Bank Tests ───────────────────────────
+//
+// Layout (verified gegen 2016 Stock-Bank):
+//   - 0x00000..0x000FF  File-Header (KORG + e2sampler + Version + 0xFF padding)
+//   - 0x00100..0x001FF  GLST/GLED Bank-Metadata-Chunks
+//   - 0x00200..0x100FF  0xFF padding
+//   - 0x10100..0x3F40FF 250 × 16384B Pattern-Records (PTST-prefixed)
+//
+// File-Total: exakt 4 161 792 Bytes.
+
+function buildAllPatBuffer(opts: {
+  /** Per-Slot Name + BPM (Slot 1..250). Andere Slots werden auf "Init Pattern" / 120 BPM gesetzt. */
+  slots?: Array<{ slot: number; name: string; bpm: number }>;
+  /** Optionale Slot-Anzahl Truncation (Default = 250). */
+  slotCount?: number;
+  /** Markert PTST-Marker bei diesen Slot-Indizes als kaputt (zum Defensive-Test). */
+  brokenSlots?: number[];
+}): ArrayBuffer {
+  const slotCount = opts.slotCount ?? ELECTRIBE_ALLPAT_SLOT_COUNT;
+  const total = ELECTRIBE_ALLPAT_FIRST_PATTERN_OFFSET + slotCount * ELECTRIBE_ALLPAT_PATTERN_STRIDE;
+  const buf = new Uint8Array(total);
+  const view = new DataView(buf.buffer);
+
+  // 0x00: "KORG"
+  for (let i = 0; i < 4; i++) buf[i] = ELECTRIBE_MAGIC.charCodeAt(i);
+  // 0x10: "e2sampler"
+  const id = ELECTRIBE_REAL_IDENTIFIER;
+  for (let i = 0; i < id.length; i++) buf[0x10 + i] = id.charCodeAt(i);
+  // 0x20: version=1
+  view.setUint32(0x20, 1, true);
+  // 0x24..0x100: 0xFF
+  for (let i = 0x24; i < 0x100; i++) buf[i] = 0xff;
+  // 0x100: "GLST"
+  for (let i = 0; i < 4; i++) buf[ELECTRIBE_ALLPAT_GLST_OFFSET + i] = ELECTRIBE_ALLPAT_GLST_MARKER.charCodeAt(i);
+  // 0x104: chunk-length = 256
+  view.setUint32(0x104, 256, true);
+  // 0x1FC: "GLED"
+  const gled = "GLED";
+  for (let i = 0; i < 4; i++) buf[0x1fc + i] = gled.charCodeAt(i);
+  // 0x200..0x10100: 0xFF padding
+  for (let i = 0x200; i < ELECTRIBE_ALLPAT_FIRST_PATTERN_OFFSET; i++) buf[i] = 0xff;
+
+  // Init alle Slots mit "Init Pattern" / 120 BPM und PTST-Marker.
+  for (let i = 0; i < slotCount; i++) {
+    const ptst = ELECTRIBE_ALLPAT_FIRST_PATTERN_OFFSET + i * ELECTRIBE_ALLPAT_PATTERN_STRIDE;
+    for (let k = 0; k < 4; k++) buf[ptst + k] = ELECTRIBE_REAL_PATTERN_MARKER.charCodeAt(k);
+    const initName = "Init Pattern";
+    for (let k = 0; k < initName.length; k++) buf[ptst + 0x10 + k] = initName.charCodeAt(k);
+    view.setUint16(ptst + 0x22, 1200, true); // BPM=120
+  }
+
+  // Overrides
+  for (const s of opts.slots ?? []) {
+    const idx = s.slot - 1;
+    if (idx < 0 || idx >= slotCount) continue;
+    const ptst = ELECTRIBE_ALLPAT_FIRST_PATTERN_OFFSET + idx * ELECTRIBE_ALLPAT_PATTERN_STRIDE;
+    // Zero-out name area before write
+    for (let k = 0; k < 16; k++) buf[ptst + 0x10 + k] = 0;
+    const n = s.name.slice(0, 16);
+    for (let k = 0; k < n.length; k++) buf[ptst + 0x10 + k] = n.charCodeAt(k);
+    view.setUint16(ptst + 0x22, Math.round(s.bpm * 10), true);
+  }
+
+  // Broken-Slot-Markers
+  for (const idx of opts.brokenSlots ?? []) {
+    if (idx < 0 || idx >= slotCount) continue;
+    const ptst = ELECTRIBE_ALLPAT_FIRST_PATTERN_OFFSET + idx * ELECTRIBE_ALLPAT_PATTERN_STRIDE;
+    buf[ptst] = 0; // zerstoere PTST-Marker
+  }
+
+  return buf.buffer;
+}
+
+describe("electribeImport – v3.11 .e2sallpat Multi-Pattern-Bank-Layout", () => {
+  it("Layout-Konstanten konsistent: 0x10100 + 250 × 0x4000 = 0x3F4100 (4 161 792 Bytes)", () => {
+    expect(ELECTRIBE_ALLPAT_EXPECTED_SIZE).toBe(4_161_792);
+    expect(ELECTRIBE_ALLPAT_FIRST_PATTERN_OFFSET).toBe(0x10100);
+    expect(ELECTRIBE_ALLPAT_PATTERN_STRIDE).toBe(0x4000);
+    expect(ELECTRIBE_ALLPAT_SLOT_COUNT).toBe(250);
+  });
+
+  it("isElectribeAllPatBank erkennt synthetisches Layout", () => {
+    const ab = buildAllPatBuffer({});
+    expect(isElectribeAllPatBank(ab)).toBe(true);
+    // Standalone .e2spat darf nicht als allpat-Bank durchgehen.
+    const single = buildRealElectribeBuffer({ name: "X", bpm: 120 });
+    expect(isElectribeAllPatBank(single)).toBe(false);
+  });
+
+  it("isElectribeAllPatBank lehnt File ohne GLST-Marker ab", () => {
+    const ab = buildAllPatBuffer({});
+    const u8 = new Uint8Array(ab);
+    u8[0x100] = 0; // zerstoere GLST
+    expect(isElectribeAllPatBank(u8.buffer)).toBe(false);
+  });
+
+  it("detectElectribeFormat liefert 'bank' fuer .e2sallpat", () => {
+    const ab = buildAllPatBuffer({});
+    expect(detectElectribeFormat(ab)).toBe("bank");
+  });
+
+  it("detectElectribeFormatKind liefert 'e2sallpat' / 'e2spat' / 'legacy' / 'unknown'", () => {
+    const allpat = buildAllPatBuffer({});
+    const single = buildRealElectribeBuffer({ name: "X", bpm: 120 });
+    // Legacy: bare KORG + Version-Bytes (kein PTST/GLST).
+    const legacy = new Uint8Array(64);
+    for (let i = 0; i < 4; i++) legacy[i] = ELECTRIBE_MAGIC.charCodeAt(i);
+    expect(detectElectribeFormatKind(allpat)).toBe("e2sallpat");
+    expect(detectElectribeFormatKind(single)).toBe("e2spat");
+    expect(detectElectribeFormatKind(legacy.buffer)).toBe("legacy");
+    expect(detectElectribeFormatKind(new Uint8Array(2).buffer)).toBe("unknown");
+  });
+
+  it("parseElectribeAllPatBank parsed 250 PTST-Records mit korrekten Namen/BPMs", () => {
+    const ab = buildAllPatBuffer({
+      slots: [
+        { slot: 1,   name: "Stalactite 1", bpm: 73.4 },
+        { slot: 4,   name: "Solar 1",      bpm: 120 },
+        { slot: 245, name: "BodyTalk1",    bpm: 165 },
+        { slot: 250, name: "Last Slot",    bpm: 200 },
+      ],
+    });
+    const bank = parseElectribeAllPatBank(ab);
+    expect(bank.patternCount).toBe(250);
+    expect(bank.patterns).toHaveLength(250);
+    expect(bank.patterns[0].name).toBe("Stalactite 1");
+    expect(bank.patterns[0].bpm).toBeCloseTo(73.4, 1);
+    expect(bank.patterns[3].name).toBe("Solar 1");
+    expect(bank.patterns[244].name).toBe("BodyTalk1");
+    expect(bank.patterns[244].bpm).toBeCloseTo(165, 1);
+    expect(bank.patterns[249].name).toBe("Last Slot");
+    expect(bank.patterns[249].bpm).toBeCloseTo(200, 1);
+    // Init-Slots auf 120 BPM
+    expect(bank.patterns[1].name).toBe("Init Pattern");
+    expect(bank.patterns[1].bpm).toBeCloseTo(120, 1);
+  });
+
+  it("parseElectribeAllPatBank: BPMs sind in plausibler Range (>=20, <=300)", () => {
+    const ab = buildAllPatBuffer({
+      slots: [
+        { slot: 1, name: "Slow",  bpm: 60 },
+        { slot: 2, name: "Med",   bpm: 128 },
+        { slot: 3, name: "Fast",  bpm: 200 },
+      ],
+    });
+    const bank = parseElectribeAllPatBank(ab);
+    for (const p of bank.patterns) {
+      expect(p.bpm).toBeGreaterThanOrEqual(20);
+      expect(p.bpm).toBeLessThanOrEqual(300);
+    }
+  });
+
+  it("parseElectribeAllPatBank: Pattern-Namen werden korrekt extrahiert", () => {
+    const ab = buildAllPatBuffer({
+      slots: [
+        { slot: 50, name: "Test 123",      bpm: 120 },
+        { slot: 51, name: "Init Pattern",  bpm: 120 },
+        { slot: 52, name: "CircuitDaughter", bpm: 110 },
+      ],
+    });
+    const bank = parseElectribeAllPatBank(ab);
+    expect(bank.patterns[49].name).toBe("Test 123");
+    expect(bank.patterns[50].name).toBe("Init Pattern");
+    expect(bank.patterns[51].name).toBe("CircuitDaughter");
+  });
+
+  it("parseElectribeAllPatBank ist defensive gegen kaputte PTST-Marker — kein Throw", () => {
+    const ab = buildAllPatBuffer({
+      slots: [{ slot: 1, name: "OK", bpm: 120 }],
+      brokenSlots: [5, 10, 200],
+    });
+    const bank = parseElectribeAllPatBank(ab);
+    expect(bank.patternCount).toBe(250);
+    // Kaputte Slots haben Fallback-Namen + Default-BPM 120
+    expect(bank.patterns[5].name).toBe("Slot 6");
+    expect(bank.patterns[10].name).toBe("Slot 11");
+    expect(bank.patterns[200].name).toBe("Slot 201");
+    expect(bank.patterns[200].bpm).toBe(120);
+    // OK-Slot bleibt intakt
+    expect(bank.patterns[0].name).toBe("OK");
+  });
+
+  it("parseElectribeAllPatBank lehnt zu kleine Buffer ab", () => {
+    const tiny = new Uint8Array(0x100).buffer;
+    expect(() => parseElectribeAllPatBank(tiny)).toThrow(/zu klein/);
+  });
+
+  it("parseElectribeBank dispatched .e2sallpat-Layout an parseElectribeAllPatBank", () => {
+    const ab = buildAllPatBuffer({
+      slots: [{ slot: 1, name: "First", bpm: 140 }],
+    });
+    const bank = parseElectribeBank(ab);
+    expect(bank.patternCount).toBe(250);
+    expect(bank.patterns[0].name).toBe("First");
+  });
+
+  it("filterNonInitPatterns filtert 'Init Pattern' + 'Slot N' Fallbacks", () => {
+    const patterns = [
+      { name: "Init Pattern", bpm: 120, stepLength: 16, swing: 0, parts: [] },
+      { name: "BodyTalk1",    bpm: 165, stepLength: 16, swing: 0, parts: [] },
+      { name: "Slot 42",      bpm: 120, stepLength: 16, swing: 0, parts: [] },
+      { name: "",             bpm: 120, stepLength: 16, swing: 0, parts: [] },
+      { name: "Custom",       bpm: 130, stepLength: 16, swing: 0, parts: [] },
+    ];
+    const nonInit = filterNonInitPatterns(patterns);
+    expect(nonInit).toHaveLength(2);
+    expect(nonInit.map(p => p.name)).toEqual(["BodyTalk1", "Custom"]);
+  });
+
+  it("parseElectribeAllPatBank: Truncated-Bank wird sicher geparst (nur passende Slots)", () => {
+    const ab = buildAllPatBuffer({
+      slotCount: 100, // truncated
+      slots: [{ slot: 1, name: "Trunc", bpm: 120 }],
+    });
+    const bank = parseElectribeAllPatBank(ab);
+    expect(bank.patternCount).toBe(100);
+    expect(bank.patterns[0].name).toBe("Trunc");
+  });
+});
+
+// ─── v3.11.0 — Real Stock-Bank Conditional-Test ──────────────────────────────
+//
+// Falls die 2016-Stock-Bank am erwarteten Pfad liegt, validieren wir gegen
+// echte Bytes. CI / Fresh-Clone ohne diese User-Daten → .skip.
+
+const REAL_E2SALLPAT_PATH = path.resolve(
+  process.cwd(),
+  "e2s-2016",
+  "e2s-2016.e2sallpat",
+);
+const REAL_E2SALLPAT_AVAILABLE = (() => {
+  try {
+    return fs.existsSync(REAL_E2SALLPAT_PATH);
+  } catch {
+    return false;
+  }
+})();
+
+(REAL_E2SALLPAT_AVAILABLE ? describe : describe.skip)(
+  "electribeImport – Real .e2sallpat Stock Bank (2016 Summer)",
+  () => {
+    it("Stock-Bank: exakte File-Size = 4 161 792 Bytes", () => {
+      const buf = fs.readFileSync(REAL_E2SALLPAT_PATH);
+      expect(buf.byteLength).toBe(ELECTRIBE_ALLPAT_EXPECTED_SIZE);
+    });
+
+    it("Stock-Bank: isElectribeAllPatBank=true, detectElectribeFormat='bank'", () => {
+      const buf = new Uint8Array(fs.readFileSync(REAL_E2SALLPAT_PATH));
+      expect(isElectribeAllPatBank(buf)).toBe(true);
+      expect(detectElectribeFormat(buf)).toBe("bank");
+      expect(detectElectribeFormatKind(buf)).toBe("e2sallpat");
+    });
+
+    it("Stock-Bank: parseElectribeAllPatBank liefert 250 Patterns mit gueltigen BPMs", () => {
+      const buf = new Uint8Array(fs.readFileSync(REAL_E2SALLPAT_PATH));
+      const bank = parseElectribeAllPatBank(buf);
+      expect(bank.patternCount).toBe(250);
+      expect(bank.patterns).toHaveLength(250);
+      for (const p of bank.patterns) {
+        expect(p.bpm).toBeGreaterThanOrEqual(20);
+        expect(p.bpm).toBeLessThanOrEqual(300);
+        expect(p.parts).toHaveLength(PARTS_PER_PATTERN);
+      }
+    });
+
+    it("Stock-Bank: erste 3 Patterns heissen 'Stalactite 1/2/3'", () => {
+      const buf = new Uint8Array(fs.readFileSync(REAL_E2SALLPAT_PATH));
+      const bank = parseElectribeAllPatBank(buf);
+      expect(bank.patterns[0].name).toBe("Stalactite 1");
+      expect(bank.patterns[1].name).toBe("Stalactite 2");
+      expect(bank.patterns[2].name).toBe("Stalactite 3");
+      // BPM 73.4 (verifiziert via binary inspection)
+      expect(bank.patterns[0].bpm).toBeCloseTo(73.4, 1);
+    });
+
+    it("Stock-Bank: filterNonInitPatterns liefert mehrere hundert User-Patterns", () => {
+      const buf = new Uint8Array(fs.readFileSync(REAL_E2SALLPAT_PATH));
+      const bank = parseElectribeAllPatBank(buf);
+      const nonInit = filterNonInitPatterns(bank.patterns);
+      // 2016-Stock-Bank: 241 non-Init Slots laut binary inspection.
+      expect(nonInit.length).toBeGreaterThan(200);
+      expect(nonInit.length).toBeLessThan(250);
+    });
+
+    it("Stock-Bank: parseElectribeBank dispatched korrekt (kein Throw, 250 Patterns)", () => {
+      const buf = new Uint8Array(fs.readFileSync(REAL_E2SALLPAT_PATH));
+      const bank = parseElectribeBank(buf);
+      expect(bank.patternCount).toBe(250);
     });
   },
 );

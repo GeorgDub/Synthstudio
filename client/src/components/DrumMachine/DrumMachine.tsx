@@ -11,7 +11,7 @@
  * - Sample-Picker per Drag & Drop
  */
 
-import React, { useState, useRef, useCallback, useEffect } from "react";
+import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import type { DrumMachineState, DrumMachineActions } from "@/store/useDrumMachineStore";
 import type { PartData, ChannelFx, StepResolution } from "@/audio/AudioEngine";
 import { AudioEngine } from "@/audio/AudioEngine";
@@ -31,6 +31,7 @@ import { parseFlp, flpPositionToStep, groupNotesByBar, calculateBarCount } from 
 import {
   parseElectribeBank,
   convertParsedPatternToSynthstudio,
+  filterNonInitPatterns,
   type ParsedPattern,
   type SynthstudioPatternImport,
 } from "@/utils/electribeImport";
@@ -230,6 +231,118 @@ function PatternRow({
         >✕</button>
       )}
       {learn.menu}
+    </div>
+  );
+}
+
+// ─── Electribe-Bank-Picker-Modal (v3.11: Search + Init-Filter) ───────────────
+
+interface ElectribePickerModalProps {
+  picker: { fileName: string; patterns: ParsedPattern[] };
+  onSelect: (p: ParsedPattern) => void;
+  onClose: () => void;
+}
+
+function ElectribePickerModal({ picker, onSelect, onClose }: ElectribePickerModalProps) {
+  const [search, setSearch] = useState("");
+  // Default: bei grossen Banks (>50 Patterns, also .e2sallpat) Init-Slots ausblenden.
+  const [hideInit, setHideInit] = useState(picker.patterns.length > 50);
+
+  // Pre-compute slot-indizierte Liste (#1..#250) bevor wir filtern.
+  const indexed = useMemo(
+    () => picker.patterns.map((p, idx) => ({ slot: idx + 1, pattern: p })),
+    [picker.patterns],
+  );
+
+  const visible = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    let arr = indexed;
+    if (hideInit) {
+      const nonInit = new Set(filterNonInitPatterns(picker.patterns));
+      arr = arr.filter(x => nonInit.has(x.pattern));
+    }
+    if (q) {
+      arr = arr.filter(x =>
+        x.pattern.name.toLowerCase().includes(q) ||
+        String(x.slot).includes(q) ||
+        x.pattern.bpm.toFixed(1).includes(q),
+      );
+    }
+    return arr;
+  }, [indexed, picker.patterns, search, hideInit]);
+
+  const totalCount    = picker.patterns.length;
+  const filteredCount = visible.length;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+      onClick={onClose}
+      data-testid="electribe-picker-overlay"
+    >
+      <div
+        className="bg-bg-panel border border-border-color rounded-lg shadow-xl w-full max-w-lg max-h-[85vh] flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-label="Electribe-Pattern auswählen"
+      >
+        <div className="px-4 py-3 border-b border-border-color">
+          <div className="text-sm font-bold text-text-primary">Electribe Bank importieren</div>
+          <div className="text-xs text-text-muted truncate">
+            {picker.fileName} · {filteredCount}/{totalCount} Pattern(s)
+          </div>
+          <div className="mt-2 flex items-center gap-2">
+            <input
+              type="text"
+              placeholder="Filter: Name / Slot / BPM..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="flex-1 bg-bg-elevated border border-border-color rounded px-2 py-1 text-xs text-text-primary placeholder:text-text-dim focus:outline-none focus:border-accent-primary"
+              data-testid="electribe-picker-search"
+            />
+            {totalCount > 50 && (
+              <label className="inline-flex items-center gap-1 text-[10px] text-text-muted cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={hideInit}
+                  onChange={(e) => setHideInit(e.target.checked)}
+                  data-testid="electribe-picker-hide-init"
+                />
+                Init ausblenden
+              </label>
+            )}
+          </div>
+        </div>
+        <div className="flex-1 overflow-y-auto p-2 space-y-1">
+          {visible.length === 0 ? (
+            <div className="text-center text-text-dim text-xs py-8">
+              Keine Patterns entsprechen dem Filter.
+            </div>
+          ) : (
+            visible.map(({ slot, pattern: p }) => (
+              <button
+                key={slot}
+                data-testid={`electribe-picker-pattern-${slot - 1}`}
+                onClick={() => onSelect(p)}
+                className="w-full text-left px-3 py-2 rounded bg-bg-elevated hover:bg-bg-base text-text-primary text-xs flex items-center justify-between gap-2 transition-colors"
+              >
+                <span className="font-mono text-text-dim w-10">#{slot}</span>
+                <span className="flex-1 truncate">{p.name}</span>
+                <span className="text-text-muted text-[10px]">{p.bpm.toFixed(1)} BPM · {p.stepLength}st</span>
+              </button>
+            ))
+          )}
+        </div>
+        <div className="px-4 py-2 border-t border-border-color flex justify-end">
+          <button
+            onClick={onClose}
+            className="px-3 py-1 rounded text-xs bg-bg-elevated text-text-muted hover:text-text-primary transition-colors"
+            data-testid="electribe-picker-cancel"
+          >
+            Abbrechen
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -1235,7 +1348,7 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
         {/* KORG Electribe Pattern-Import (TASK-237) */}
         <button
           onClick={() => electribeImportRef.current?.click()}
-          title="KORG Electribe Pattern importieren (.e2pattern oder .e2sallpat)"
+          title="KORG Electribe Pattern importieren (.e2pattern, .e2spat oder .e2sallpat — Multi-Pattern-Bank mit 250 Slots)"
           className="px-2 py-1 rounded text-[10px] bg-bg-elevated text-text-dim hover:bg-bg-elevated hover:text-text-primary transition-colors inline-flex items-center gap-1"
           data-testid="electribe-import"
         >
@@ -1245,7 +1358,7 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
         <input
           ref={electribeImportRef}
           type="file"
-          accept=".e2pattern,.e2sallpat"
+          accept=".e2pattern,.e2sallpat,.e2spat"
           className="hidden"
           onChange={handleElectribeImport}
           data-testid="electribe-import-input"
@@ -1765,53 +1878,16 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
         );
       })()}
 
-      {/* ── Electribe-Bank-Pattern-Picker (TASK-237) ─────────────────────── */}
+      {/* ── Electribe-Bank-Pattern-Picker (TASK-237, v3.11 multi-pattern) ─── */}
       {electribePicker && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
-          onClick={() => setElectribePicker(null)}
-          data-testid="electribe-picker-overlay"
-        >
-          <div
-            className="bg-bg-panel border border-border-color rounded-lg shadow-xl w-full max-w-md max-h-[80vh] flex flex-col"
-            onClick={(e) => e.stopPropagation()}
-            role="dialog"
-            aria-label="Electribe-Pattern auswählen"
-          >
-            <div className="px-4 py-3 border-b border-border-color">
-              <div className="text-sm font-bold text-text-primary">Electribe Bank importieren</div>
-              <div className="text-xs text-text-muted truncate">
-                {electribePicker.fileName} · {electribePicker.patterns.length} Pattern(s)
-              </div>
-            </div>
-            <div className="flex-1 overflow-y-auto p-2 space-y-1">
-              {electribePicker.patterns.map((p, idx) => (
-                <button
-                  key={idx}
-                  data-testid={`electribe-picker-pattern-${idx}`}
-                  onClick={() => {
-                    importElectribePatternIntoActive(p, electribePicker.fileName);
-                    setElectribePicker(null);
-                  }}
-                  className="w-full text-left px-3 py-2 rounded bg-bg-elevated hover:bg-bg-base text-text-primary text-xs flex items-center justify-between gap-2 transition-colors"
-                >
-                  <span className="font-mono text-text-dim w-8">#{idx + 1}</span>
-                  <span className="flex-1 truncate">{p.name}</span>
-                  <span className="text-text-muted text-[10px]">{p.bpm.toFixed(1)} BPM · {p.stepLength}st</span>
-                </button>
-              ))}
-            </div>
-            <div className="px-4 py-2 border-t border-border-color flex justify-end">
-              <button
-                onClick={() => setElectribePicker(null)}
-                className="px-3 py-1 rounded text-xs bg-bg-elevated text-text-muted hover:text-text-primary transition-colors"
-                data-testid="electribe-picker-cancel"
-              >
-                Abbrechen
-              </button>
-            </div>
-          </div>
-        </div>
+        <ElectribePickerModal
+          picker={electribePicker}
+          onSelect={(p) => {
+            importElectribePatternIntoActive(p, electribePicker.fileName);
+            setElectribePicker(null);
+          }}
+          onClose={() => setElectribePicker(null)}
+        />
       )}
 
       {/* ── Sample-Slice-Editor (TASK-238 / v2.89) ──────────────────────── */}

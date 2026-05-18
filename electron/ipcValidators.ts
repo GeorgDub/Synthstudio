@@ -169,7 +169,10 @@ export function sanitizeLicenseState(input: unknown): SafeLicenseState {
 // v3.2.0: .e2spat (Sampler-Export) als dritte Endung neben .e2pattern + .e2sallpat.
 //         Verified gegen reale KORG E2 Sampler-Files (16640 Bytes Single-Pattern).
 export const ELECTRIBE_ALLOWED_EXTENSIONS = new Set([".e2pattern", ".e2sallpat", ".e2spat"]);
-export const ELECTRIBE_MAX_BYTES = 5 * 1024 * 1024; // 5 MB
+// v3.11.0: erhoeht von 5 MB auf 8 MB damit .e2sallpat Stock-Banks
+// (~4 MB) plus User-modifizierte Varianten (manchmal mit Sample-Embedded-Data
+// auf Hardware-Side, hier nur theoretisch) sicher reinpassen.
+export const ELECTRIBE_MAX_BYTES = 8 * 1024 * 1024; // 8 MB
 
 export type ElectribePathCheck =
   | { ok: true; ext: string }

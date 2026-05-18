@@ -2728,11 +2728,12 @@ function registerIpcHandlers(): void {
   // Uint8Array (transferiert als number[]). Strikte Validation:
   //   - Nur die zwei Endungen erlaubt.
   //   - Datei muss lesbar sein.
-  //   - Datei darf max ELECTRIBE_MAX_BYTES gross sein (5 MB analog Parser-Limit).
+  //   - Datei darf max ELECTRIBE_MAX_BYTES gross sein (8 MB analog Parser-Limit).
   //   - Path wird via path.resolve normalisiert (kein Trick mit relativem ..).
   //
+  // v3.11.0: Limit von 5 MB auf 8 MB erhoeht — .e2sallpat Stock-Banks sind ~4 MB.
   // Der Renderer fuehrt anschliessend parseElectribeBank() aus.
-  const ELECTRIBE_MAX_BYTES = 5 * 1024 * 1024;
+  const ELECTRIBE_MAX_BYTES = 8 * 1024 * 1024;
   ipcMain.handle("electribe:import-file", async (_event, filePath: string) => {
     try {
       if (typeof filePath !== "string" || filePath.length === 0) {
