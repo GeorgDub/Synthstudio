@@ -14,6 +14,7 @@ import { requireProFeature, PRO_FEATURE_STEM_BOUNCE } from "@/utils/proFeatures"
 import { ProLockBadge } from "@/components/License/ProLockBadge";
 import type { PatternData } from "@/audio/AudioEngine";
 import type { Sample } from "@/store/useProjectStore";
+import type { MixerFxSlot } from "@/utils/mixerFx";
 
 interface ExportPanelProps {
   pattern: PatternData | undefined;
@@ -21,9 +22,15 @@ interface ExportPanelProps {
   samples: Sample[];
   allPatterns?: PatternData[];
   projectName?: string;
+  /**
+   * v3.42: Pass-Through der User-konfigurierten Insert-Chains pro Part
+   * (Bitcrusher/RingMod/Transient). Wird an bounceAllChannels durchgereicht
+   * damit Stem-Bounce die richtige Fidelity erreicht.
+   */
+  insertChains?: Record<string, MixerFxSlot[]>;
 }
 
-export function ExportPanel({ pattern, bpm, samples, allPatterns = [], projectName = "Synthstudio" }: ExportPanelProps) {
+export function ExportPanel({ pattern, bpm, samples, allPatterns = [], projectName = "Synthstudio", insertChains }: ExportPanelProps) {
   const [mode, setMode]       = useState<"master" | "stems">("master");
   const [bars, setBars]       = useState(4);
   const [sampleRate, setSr]   = useState<44100 | 48000>(44100);
@@ -81,6 +88,9 @@ export function ExportPanel({ pattern, bpm, samples, allPatterns = [], projectNa
             setBounceAllMsg(`Fehler bei ${p.channelName}: ${p.error}`);
           }
         },
+        undefined, // OfflineCtxCtor — Default = globaler OfflineAudioContext
+        // v3.42: insertChains-Map durchreichen damit User-Inserts wirken.
+        insertChains ?? null,
       );
 
       // Save
@@ -104,7 +114,7 @@ export function ExportPanel({ pattern, bpm, samples, allPatterns = [], projectNa
     } finally {
       setIsBouncingAll(false);
     }
-  }, [pattern, bars, bpm, sampleRate, projectName, electron, isBouncingAll]);
+  }, [pattern, bars, bpm, sampleRate, projectName, electron, isBouncingAll, insertChains]);
 
   const handleExport = useCallback(async () => {
     if (!pattern || isExporting) return;

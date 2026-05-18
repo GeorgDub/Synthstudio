@@ -384,12 +384,14 @@ export function ChannelInspector({ part, parts, mixer, className, onApplyPatch, 
       </section>
 
       {/* TASK-241 / v2.94: Per-Channel WAV-Bounce (Stem-Export) */}
+      {/* v3.42: insertChain wird durchgereicht damit User-Inserts (Bitcrusher/RingMod/Transient) im Bounce greifen. */}
       {pattern && bpm !== undefined && (
         <PartBounceSection
           part={part}
           pattern={pattern}
           bpm={bpm}
           projectName={projectName ?? "Synthstudio"}
+          insertChain={chain}
         />
       )}
 
@@ -411,11 +413,14 @@ function PartBounceSection({
   pattern,
   bpm,
   projectName,
+  insertChain,
 }: {
   part: PartData;
   pattern: PatternData;
   bpm: number;
   projectName: string;
+  /** v3.42: User-konfigurierte Insert-Chain (Bitcrusher/RingMod/Transient). */
+  insertChain?: import("@/utils/mixerFx").MixerFxSlot[];
 }) {
   const electron = useElectron();
   const [open, setOpen] = useState(false);
@@ -465,12 +470,15 @@ function PartBounceSection({
       }
 
       setBounceMsg("Rendere Channel…");
+      // v3.42: User-konfigurierte Insert-Chain durchreichen (Bitcrusher/
+      // RingMod/Transient-Shaper). Closes v3.41-Caveat.
       const wav = await bounceChannelToWavBuffer(part, pattern, {
         length: { mode, bars },
         bpm,
         sampleRate,
         channels: stereo ? 2 : 1,
         sampleBuffer,
+        insertChain: insertChain ?? null,
       });
 
       setBounceMsg("Speichere WAV…");
@@ -502,7 +510,7 @@ function PartBounceSection({
     } finally {
       setIsBouncing(false);
     }
-  }, [part, pattern, mode, bars, bpm, sampleRate, stereo, finalFilename, isBouncing, previewDuration, electron]);
+  }, [part, pattern, mode, bars, bpm, sampleRate, stereo, finalFilename, isBouncing, previewDuration, electron, insertChain]);
 
   return (
     <section className="border-t border-border-color p-3" data-testid="channel-inspector-bounce-section">

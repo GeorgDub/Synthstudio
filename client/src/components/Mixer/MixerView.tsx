@@ -912,7 +912,15 @@ export function MixerView({ dm, mixer, samples = [], bpm = 120, projectName = "S
       </div>
 
       {/* Export Panel */}
-      <ExportPanel pattern={pattern} bpm={bpm} samples={samples} allPatterns={dm.patterns} projectName={projectName} />
+      {/* v3.42: insertChains wird durchgereicht damit Stem-Bounce die User-Inserts nutzt. */}
+      <ExportPanel
+        pattern={pattern}
+        bpm={bpm}
+        samples={samples}
+        allPatterns={dm.patterns}
+        projectName={projectName}
+        insertChains={mixer.insertChains}
+      />
 
       {/* Audio-Track Error Toast (z.B. Max-Limit) */}
       {addError && (

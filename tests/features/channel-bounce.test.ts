@@ -40,6 +40,8 @@ import {
   applyTransientShaper,
   applyTransientShaperToBuffer,
   buildRingModOffline,
+  // v3.42 — synth pre-processing
+  hasSynthPreProcessing,
   type ChannelBounceRenderOptions,
   type BounceAllProgress,
   type OfflineAudioContextCtor,
@@ -2011,6 +2013,322 @@ describe("v3.41 — renderChannelToBuffer mit InsertChain", () => {
     }, CtxCtor);
     expect(stats.buffersCreated).toBe(0);
     expect(stats.oscillatorsCreated).toBe(0);
+  });
+});
+
+// ─── v3.42 — hasSynthPreProcessing pure-fn ────────────────────────────────────
+
+describe("v3.42 — hasSynthPreProcessing", () => {
+  it("liefert false für undefined/null/leer", () => {
+    expect(hasSynthPreProcessing(undefined)).toBe(false);
+    expect(hasSynthPreProcessing(null)).toBe(false);
+    expect(hasSynthPreProcessing([])).toBe(false);
+  });
+
+  it("liefert true für aktive Bitcrusher-Insert", () => {
+    const inserts: MixerFxSlot[] = [{
+      id: "bc", type: "bitcrusher", name: "BC", enabled: true,
+      params: { bitDepth: 4, sampleReduct: 2, mix: 1 },
+    }];
+    expect(hasSynthPreProcessing(inserts)).toBe(true);
+  });
+
+  it("liefert true für aktive Transient-Insert", () => {
+    const inserts: MixerFxSlot[] = [{
+      id: "tr", type: "transient", name: "TS", enabled: true,
+      params: { attack: 0.5, sustain: 0, mix: 1 },
+    }];
+    expect(hasSynthPreProcessing(inserts)).toBe(true);
+  });
+
+  it("liefert false für disabled Bitcrusher-Insert", () => {
+    const inserts: MixerFxSlot[] = [{
+      id: "bc", type: "bitcrusher", name: "BC", enabled: false,
+      params: { bitDepth: 4, sampleReduct: 2, mix: 1 },
+    }];
+    expect(hasSynthPreProcessing(inserts)).toBe(false);
+  });
+
+  it("liefert false für RingMod-only (kein pre-processing benoetigt)", () => {
+    const inserts: MixerFxSlot[] = [{
+      id: "rm", type: "ringmod", name: "RM", enabled: true,
+      params: { frequency: 200, mix: 0.5 },
+    }];
+    expect(hasSynthPreProcessing(inserts)).toBe(false);
+  });
+
+  it("liefert true wenn mind. 1 BC oder TS aktiv ist (mixed chain)", () => {
+    const inserts: MixerFxSlot[] = [
+      { id: "rm", type: "ringmod", name: "RM", enabled: true, params: {} },
+      { id: "bc", type: "bitcrusher", name: "BC", enabled: true, params: {} },
+    ];
+    expect(hasSynthPreProcessing(inserts)).toBe(true);
+  });
+});
+
+// ─── v3.42 — Synth-Part Pre-Processing (two-stage Render) ─────────────────────
+
+describe("v3.42 — Synth-Part mit Bitcrusher/Transient (two-stage Render)", () => {
+  /** Helper: Wavetable-Synth-Part. */
+  function makeSynthPart(overrides: Partial<PartData> = {}): PartData {
+    return makePart({
+      sourceType: "wavetable",
+      sampleUrl: undefined,
+      synthParams: {
+        mode: "wavetable",
+        oscType: "sawtooth",
+        detune: 0,
+        fmRatio: 2,
+        fmDepth: 100,
+        attack: 0.01,
+        decay: 0.1,
+        sustain: 0.8,
+        release: 0.3,
+        lfoEnabled: false,
+        lfoRate: 4,
+        lfoDepth: 10,
+        lfoTarget: "pitch",
+        lfoWaveform: "sine",
+        lfoBpmSync: "free",
+        glide: 0,
+      },
+      ...overrides,
+    });
+  }
+
+  it("Synth-Part mit Bitcrusher: two-stage Render erzeugt zusaetzliches AudioBuffer", async () => {
+    const stats = freshStats();
+    const CtxCtor = makeMockOfflineCtxCtor(stats);
+    const part = makeSynthPart();
+    const pattern = makePattern({ parts: [part] });
+    await renderChannelToBuffer(part, pattern, {
+      length: { mode: "currentPattern" },
+      bpm: 120,
+      sampleRate: 48000,
+      insertChain: [{
+        id: "bc", type: "bitcrusher", name: "BC", enabled: true,
+        params: { bitDepth: 2, sampleReduct: 1, mix: 1 },
+      }],
+    }, CtxCtor);
+    // Two-stage: temp-ctx rendert Synth, dann main-ctx baut FX-Chain.
+    // applyBitcrusherToBuffer erzeugt 1 zusaetzliches Buffer im main-ctx.
+    expect(stats.buffersCreated).toBeGreaterThanOrEqual(1);
+    // Synth-Notes wurden in tempCtx erzeugt — Oscillators sind dort gelandet.
+    // Im main-ctx existiert eine BufferSource fuer die Pre-processed Stage-2-Buffer.
+    expect(stats.bufferSourcesCreated).toBeGreaterThanOrEqual(1);
+  });
+
+  it("Synth-Part mit Transient: two-stage Render erzeugt zusaetzliches AudioBuffer", async () => {
+    const stats = freshStats();
+    const CtxCtor = makeMockOfflineCtxCtor(stats);
+    const part = makeSynthPart();
+    const pattern = makePattern({ parts: [part] });
+    await renderChannelToBuffer(part, pattern, {
+      length: { mode: "currentPattern" },
+      bpm: 120,
+      sampleRate: 48000,
+      insertChain: [{
+        id: "tr", type: "transient", name: "TS", enabled: true,
+        params: { attack: 1, sustain: 0, mix: 1 },
+      }],
+    }, CtxCtor);
+    expect(stats.buffersCreated).toBeGreaterThanOrEqual(1);
+    expect(stats.bufferSourcesCreated).toBeGreaterThanOrEqual(1);
+  });
+
+  it("Synth-Part mit BC+TS+RingMod: two-stage Render + RingMod-Inline-Node", async () => {
+    const stats = freshStats();
+    const CtxCtor = makeMockOfflineCtxCtor(stats);
+    const part = makeSynthPart();
+    const pattern = makePattern({ parts: [part] });
+    await renderChannelToBuffer(part, pattern, {
+      length: { mode: "currentPattern" },
+      bpm: 120,
+      sampleRate: 48000,
+      insertChain: [
+        { id: "bc", type: "bitcrusher", name: "BC", enabled: true,
+          params: { bitDepth: 4, sampleReduct: 2, mix: 1 } },
+        { id: "rm", type: "ringmod", name: "RM", enabled: true,
+          params: { frequency: 333, mix: 0.5 } },
+        { id: "tr", type: "transient", name: "TS", enabled: true,
+          params: { attack: 0.5, sustain: 0.2, mix: 1 } },
+      ],
+    }, CtxCtor);
+    // BC + TS = 2 zusaetzliche Buffers
+    expect(stats.buffersCreated).toBeGreaterThanOrEqual(2);
+    // RingMod erzeugt mind. 1 Oscillator (im main-ctx).
+    // Plus Synth-Oscillators wurden in tempCtx erzeugt — die zaehlen auch in stats
+    // weil beide Ctor's denselben MockOfflineCtx benutzen.
+    expect(stats.oscFreqSets).toContain(333);
+  });
+
+  it("Synth-Part OHNE BC/TS: einstufiger v2.96-Render bleibt unveraendert (kein zusaetzliches Buffer)", async () => {
+    const stats = freshStats();
+    const CtxCtor = makeMockOfflineCtxCtor(stats);
+    const part = makeSynthPart();
+    const pattern = makePattern({ parts: [part] });
+    await renderChannelToBuffer(part, pattern, {
+      length: { mode: "currentPattern" },
+      bpm: 120,
+      sampleRate: 48000,
+      // Kein insertChain
+    }, CtxCtor);
+    // KEIN BC/TS → kein Pre-Processing → 0 createBuffer calls in main-ctx
+    // (Reverb-IR ist auch disabled in defaultChannelFx).
+    expect(stats.buffersCreated).toBe(0);
+    // Kein BufferSource im main-ctx (Synth-Notes direkt in main-ctx via Osc).
+    expect(stats.bufferSourcesCreated).toBe(0);
+    // Aber Oscillators wurden erzeugt (Synth-Notes).
+    expect(stats.oscillatorsCreated).toBeGreaterThanOrEqual(4);
+  });
+
+  it("Synth-Part mit nur RingMod (kein BC/TS): einstufiger Render — kein temp-Render noetig", async () => {
+    const stats = freshStats();
+    const CtxCtor = makeMockOfflineCtxCtor(stats);
+    const part = makeSynthPart();
+    const pattern = makePattern({ parts: [part] });
+    await renderChannelToBuffer(part, pattern, {
+      length: { mode: "currentPattern" },
+      bpm: 120,
+      sampleRate: 48000,
+      insertChain: [{
+        id: "rm", type: "ringmod", name: "RM", enabled: true,
+        params: { frequency: 200, mix: 0.5 },
+      }],
+    }, CtxCtor);
+    // Kein BC/TS → KEIN two-stage Render → 0 createBuffer
+    expect(stats.buffersCreated).toBe(0);
+    expect(stats.bufferSourcesCreated).toBe(0);
+    // RingMod-Oscillator + Synth-Oscillators (alle im main-ctx).
+    expect(stats.oscillatorsCreated).toBeGreaterThanOrEqual(5);
+    expect(stats.oscFreqSets).toContain(200);
+  });
+
+  it("Synth-Part mit disabled BC: einstufiger Render (kein Pre-Processing)", async () => {
+    const stats = freshStats();
+    const CtxCtor = makeMockOfflineCtxCtor(stats);
+    const part = makeSynthPart();
+    const pattern = makePattern({ parts: [part] });
+    await renderChannelToBuffer(part, pattern, {
+      length: { mode: "currentPattern" },
+      bpm: 120,
+      sampleRate: 48000,
+      insertChain: [{
+        id: "bc", type: "bitcrusher", name: "BC", enabled: false,
+        params: { bitDepth: 2, sampleReduct: 4, mix: 1 },
+      }],
+    }, CtxCtor);
+    // Disabled → kein Pre-Processing → kein zusaetzliches Buffer
+    expect(stats.buffersCreated).toBe(0);
+    expect(stats.bufferSourcesCreated).toBe(0);
+  });
+});
+
+// ─── v3.42 — bounceAllChannels mit partInsertChains-Map ───────────────────────
+
+describe("v3.42 — bounceAllChannels mit partInsertChains-Map (ExportPanel-Wiring)", () => {
+  it("Map: partId → insertChain wird pro Part korrekt aufgeloest", async () => {
+    const stats = freshStats();
+    const CtxCtor = makeMockOfflineCtxCtor(stats);
+    const parts = [
+      makePart({ id: "p1", name: "Kick" }),
+      makePart({ id: "p2", name: "Snare" }),
+    ];
+    const pattern = makePattern({ parts });
+    const samples = new Map<string, AudioBuffer>();
+    samples.set("test-sample.wav", new MockAudioBuffer(1, 1000, 48000) as unknown as AudioBuffer);
+
+    const insertChainMap = new Map<string, MixerFxSlot[]>();
+    insertChainMap.set("p1", [{
+      id: "rm-1", type: "ringmod", name: "RM-p1", enabled: true,
+      params: { frequency: 555, mix: 0.5 },
+    }]);
+    // p2 hat keine Inserts
+
+    const results = await bounceAllChannels(
+      parts, pattern, samples,
+      { length: { mode: "currentPattern" }, bpm: 120, sampleRate: 48000 },
+      "MyProj", undefined, CtxCtor, insertChainMap,
+    );
+    expect(results).toHaveLength(2);
+    // Mind. 1 Oscillator mit freq=555 wurde erzeugt (fuer Part p1).
+    expect(stats.oscFreqSets).toContain(555);
+  });
+
+  it("Record: partId → insertChain (object-Form) wird ebenfalls akzeptiert", async () => {
+    const stats = freshStats();
+    const CtxCtor = makeMockOfflineCtxCtor(stats);
+    const parts = [makePart({ id: "p1", name: "Kick" })];
+    const pattern = makePattern({ parts });
+    const samples = new Map<string, AudioBuffer>();
+    samples.set("test-sample.wav", new MockAudioBuffer(1, 1000, 48000) as unknown as AudioBuffer);
+
+    const insertChainsObj: Record<string, MixerFxSlot[]> = {
+      p1: [{
+        id: "rm-1", type: "ringmod", name: "RM", enabled: true,
+        params: { frequency: 777, mix: 0.5 },
+      }],
+    };
+
+    await bounceAllChannels(
+      parts, pattern, samples,
+      { length: { mode: "currentPattern" }, bpm: 120, sampleRate: 48000 },
+      "MyProj", undefined, CtxCtor, insertChainsObj,
+    );
+    expect(stats.oscFreqSets).toContain(777);
+  });
+
+  it("partInsertChains=null/undefined: Bestandsverhalten — keine Inserts angewendet", async () => {
+    const stats = freshStats();
+    const CtxCtor = makeMockOfflineCtxCtor(stats);
+    const parts = [makePart({ id: "p1", name: "Kick" })];
+    const pattern = makePattern({ parts });
+    const samples = new Map<string, AudioBuffer>();
+    samples.set("test-sample.wav", new MockAudioBuffer(1, 1000, 48000) as unknown as AudioBuffer);
+
+    // null
+    await bounceAllChannels(
+      parts, pattern, samples,
+      { length: { mode: "currentPattern" }, bpm: 120, sampleRate: 48000 },
+      "MyProj", undefined, CtxCtor, null,
+    );
+    expect(stats.oscillatorsCreated).toBe(0);
+
+    // undefined
+    const stats2 = freshStats();
+    const CtxCtor2 = makeMockOfflineCtxCtor(stats2);
+    await bounceAllChannels(
+      parts, pattern, samples,
+      { length: { mode: "currentPattern" }, bpm: 120, sampleRate: 48000 },
+      "MyProj", undefined, CtxCtor2,
+    );
+    expect(stats2.oscillatorsCreated).toBe(0);
+  });
+
+  it("Map mit unknown partId: nur Parts mit passender Map-Entry kriegen Inserts", async () => {
+    const stats = freshStats();
+    const CtxCtor = makeMockOfflineCtxCtor(stats);
+    const parts = [
+      makePart({ id: "p1", name: "Kick" }),
+      makePart({ id: "p2", name: "Snare" }),
+    ];
+    const pattern = makePattern({ parts });
+    const samples = new Map<string, AudioBuffer>();
+    samples.set("test-sample.wav", new MockAudioBuffer(1, 1000, 48000) as unknown as AudioBuffer);
+
+    const insertChainMap = new Map<string, MixerFxSlot[]>();
+    insertChainMap.set("unknown-part", [{
+      id: "rm", type: "ringmod", name: "RM", enabled: true,
+      params: { frequency: 999, mix: 0.5 },
+    }]);
+
+    await bounceAllChannels(
+      parts, pattern, samples,
+      { length: { mode: "currentPattern" }, bpm: 120, sampleRate: 48000 },
+      "MyProj", undefined, CtxCtor, insertChainMap,
+    );
+    // Kein Part hat die Map-Entry → keine RingMod-Oscillators
+    expect(stats.oscFreqSets.includes(999)).toBe(false);
   });
 });
 

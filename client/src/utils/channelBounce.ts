@@ -818,8 +818,20 @@ export async function renderChannelToBuffer(
   const stepDurSec = 60 / (effectiveBpm * stepsPerBar / 4);
 
   if (partIsSynth) {
-    // ─── v2.96-Pfad: Synth-Offline-Render mit voller FX-Chain ─────────────
-    _renderSynthWithFxChain(ctx, part, pattern, stepDurSec, bars, stepsPerBar, channels, opts.insertChain);
+    // ─── v3.42-Pfad: Synth mit optionalem Pre-Processing (Bitcrusher/Transient) ─
+    // Wenn Bitcrusher oder Transient als Insert aktiv sind, machen wir einen
+    // two-stage Render: erst Synth-Output in einen temporären OfflineAudioContext,
+    // dann pre-process Buffer, dann als BufferSource in den Main-FX-Graph.
+    const needsSynthPreProc = _hasSynthPreProcessing(opts.insertChain);
+    if (needsSynthPreProc) {
+      await _renderSynthWithPreProcessing(
+        ctx, Ctor, part, pattern, stepDurSec, bars, stepsPerBar, channels,
+        opts.insertChain, durationSec, opts.sampleRate,
+      );
+    } else {
+      // ─── v2.96-Pfad: Synth-Offline-Render mit voller FX-Chain ───────────
+      _renderSynthWithFxChain(ctx, part, pattern, stepDurSec, bars, stepsPerBar, channels, opts.insertChain);
+    }
   } else if (partIsGranular) {
     // ─── v2.96 Caveat: Granular bleibt silent (siehe synthOfflineRender.ts) ─
     // No-op — Granular braucht RAF + lookahead, das ist im Offline-Ctx
@@ -925,9 +937,11 @@ function _renderSynthWithFxChain(
 ): void {
   void pattern;
   const graph = buildOfflinePartGraph(ctx, part, channels, insertChain);
-  // Bitcrusher/Transient pre-processing skipped for synth-paths:
-  // synth notes are pure oscillator output without a sample-buffer to quantize.
-  // Future: extend triggerOfflineSynthNote to support post-osc pre-processing.
+  // v3.42: Bitcrusher/Transient pre-processing fuer Synth-Parts laeuft im
+  // 2-Stage-Pfad (siehe _renderSynthWithPreProcessing). Wenn Caller diesen
+  // Pfad nimmt, sind preProcessing-Settings hier irrelevant (graph wird
+  // ohnehin neu gebaut). Wenn Caller den direkten Pfad nimmt (kein BC/TS),
+  // bleibt das Verhalten identisch zu v2.96.
   const synthParams = part.synthParams;
 
   let absStep = 0;
@@ -957,6 +971,128 @@ function _renderSynthWithFxChain(
       absStep++;
     }
   }
+}
+
+/**
+ * v3.42 — Helper: prüft ob die Insert-Chain Bitcrusher oder Transient enthält
+ * (die einzigen FX die pre-processing benoetigen). Reine Pure-fn, exportiert
+ * für Testbarkeit.
+ */
+export function hasSynthPreProcessing(insertChain?: MixerFxSlot[] | null): boolean {
+  if (!insertChain || insertChain.length === 0) return false;
+  return insertChain.some(s => s.enabled && (s.type === "bitcrusher" || s.type === "transient"));
+}
+
+/** Alias mit underscore-prefix für interne Konsistenz. */
+const _hasSynthPreProcessing = hasSynthPreProcessing;
+
+/**
+ * v3.42 — Two-stage Synth-Render mit Pre-Processing.
+ *
+ * Stage 1: Render Synth-Notes in einen separaten OfflineAudioContext (ohne FX).
+ * Stage 2: Pre-process das resultierende Buffer via Bitcrusher/Transient.
+ * Stage 3: Feed Buffer als BufferSource in den Main-FX-Graph zurueck.
+ *
+ * Closes v3.41 Caveat: Bitcrusher + Transient sind nun auch fuer Synth-Parts
+ * wirksam.
+ */
+async function _renderSynthWithPreProcessing(
+  mainCtx: BaseAudioContext,
+  Ctor: OfflineAudioContextCtor,
+  part: PartData,
+  pattern: PatternData,
+  stepDurSec: number,
+  bars: number,
+  stepsPerBar: number,
+  channels: 1 | 2,
+  insertChain: MixerFxSlot[] | null | undefined,
+  durationSec: number,
+  sampleRate: number,
+): Promise<void> {
+  void pattern;
+  // ─── Stage 1: Render Synth-Notes pur in tempCtx (kein FX-Chain) ──────────
+  const intermediateLength = Math.ceil(durationSec * sampleRate);
+  const tempCtx = new Ctor(channels, intermediateLength, sampleRate);
+
+  const synthParams = part.synthParams;
+  // Direct-connect: alle Notes direkt zu tempCtx.destination (kein FX-Filter).
+  // Damit ist Stage-1-Output das pure Synth-Signal.
+  let absStep = 0;
+  for (let bar = 0; bar < bars; bar++) {
+    for (let s = 0; s < stepsPerBar; s++) {
+      const step = part.steps[s];
+      if (step?.active) {
+        const t = absStep * stepDurSec;
+        const pitch = safeNum(step.pitch, 0);
+        const freq = pitchToFrequency(pitch);
+        const vel = safeNum(step.velocity, 100) / 127;
+        const partVol = safeNum(part.volume, 1);
+        const volume = part.muted ? 0 : vel * partVol;
+        triggerOfflineSynthNote(
+          tempCtx,
+          synthParams,
+          freq,
+          t,
+          volume,
+          tempCtx.destination,
+        );
+      }
+      absStep++;
+    }
+  }
+
+  let synthBuffer: AudioBuffer;
+  try {
+    synthBuffer = await tempCtx.startRendering();
+  } catch {
+    // Defensive: wenn der Mock kein startRendering hat, fallen wir auf v2.96
+    // Behavior zurueck (direct FX-chain render).
+    _renderSynthWithFxChain(mainCtx, part, pattern, stepDurSec, bars, stepsPerBar, channels, insertChain);
+    return;
+  }
+
+  // ─── Stage 2: Pre-process Buffer ─────────────────────────────────────────
+  // Wir verwenden die SELBEN Bitcrusher/Transient-Settings die der Caller via
+  // insertChain mitgegeben hat. Reihenfolge: erst Bitcrusher, dann Transient
+  // (identisch zur Sample-Path-Logik in _renderWithFxChain).
+  let processedBuffer: AudioBuffer = synthBuffer;
+  const bcSlot = (insertChain ?? []).find(s => s.enabled && s.type === "bitcrusher");
+  const tsSlot = (insertChain ?? []).find(s => s.enabled && s.type === "transient");
+
+  if (bcSlot) {
+    const p = bcSlot.params as { bitDepth?: number; sampleReduct?: number; mix?: number };
+    const crushed = applyBitcrusherToBuffer(
+      mainCtx,
+      processedBuffer,
+      safeNum(p.bitDepth, 8),
+      safeNum(p.sampleReduct, 4),
+      safeNum(p.mix, 1),
+    );
+    if (crushed) processedBuffer = crushed;
+  }
+  if (tsSlot) {
+    const p = tsSlot.params as { attack?: number; sustain?: number; mix?: number };
+    const shaped = applyTransientShaperToBuffer(
+      mainCtx,
+      processedBuffer,
+      safeNum(p.attack, 0),
+      safeNum(p.sustain, 0),
+      safeNum(p.mix, 1),
+    );
+    if (shaped) processedBuffer = shaped;
+  }
+
+  // ─── Stage 3: BufferSource im Main-Graph durch FX-Chain feeden ──────────
+  // Wir bauen den FX-Graph mit derselben insertChain — buildOfflinePartGraph
+  // ueberspringt Bitcrusher/Transient als Inline-Nodes (sie sind bereits in
+  // Stage 2 angewendet), aber RingMod-Slots werden trotzdem korrekt inline
+  // gehaengt. preProcessing-Field auf dem Graph wird ignoriert (Buffer ist
+  // bereits pre-processed).
+  const graph = buildOfflinePartGraph(mainCtx, part, channels, insertChain);
+  const src = mainCtx.createBufferSource();
+  src.buffer = processedBuffer;
+  src.connect(graph.input);
+  try { src.start(0); } catch { /* mock */ }
 }
 
 /**
@@ -1170,13 +1306,22 @@ export function downloadWavInBrowser(wav: ArrayBuffer, filename: string): void {
  *  ✓ Step.pitch wird in playbackRate übersetzt
  *  ✓ Step.velocity * part.volume → stepGain
  *
+ * v3.42 (NEU) — Bitcrusher / Transient fuer Synth-Parts + ExportPanel-Wiring:
+ *  ✓ Two-stage Synth-Render: synth notes werden in einen separaten
+ *    OfflineAudioContext gerendert, dann Buffer pre-processed (Bitcrusher /
+ *    Transient pure-fn), dann als BufferSource in den Main-FX-Graph gefeedet.
+ *    Closes v3.41-Caveat (Synth-Parts hatten kein BC/TS).
+ *  ✓ ExportPanel + ChannelInspector reichen jetzt useMixerStore.insertChains
+ *    als partInsertChains-Map an bounceAllChannels/renderChannelToBuffer durch.
+ *    Damit greifen User-konfigurierte Inserts im Stem-Bounce wirklich.
+ *  ✓ hasSynthPreProcessing(insertChain) als Pure-fn fuer Testbarkeit.
+ *
  * v3.41 (NEU) — Bitcrusher / RingMod / Transient-Shaper im Bounce:
  *  ✓ Bitcrusher: bit-depth quantization + sample-rate-reduction via pure-fn
  *    auf das Sample-Buffer (applyBitcrusherToBuffer). Identische Math zum
  *    BitcrusherProcessor.js-Worklet (Math.round(x*2^d)/2^d + hold-sample).
- *    Caveat: applied auf das Source-Buffer, nicht inline in der Chain → bei
- *    Synth-Parts (kein Sample) noch silent. Caveat dokumentiert in
- *    _renderSynthWithFxChain.
+ *    v3.42: auch fuer Synth-Parts wirksam via two-stage Render
+ *    (_renderSynthWithPreProcessing).
  *  ✓ RingMod: Native Web-Audio-Nodes (OscillatorNode + GainNode-Multiplikation).
  *    buildRingModOffline liefert input/output-Subgraph. Klingt identisch zum
  *    RingModProcessor.js-Worklet (y = x*(1-mix) + (x*sin(2πft))*mix).
@@ -1195,7 +1340,6 @@ export function downloadWavInBrowser(wav: ArrayBuffer, filename: string): void {
  *  ✗ Sidechain-Modulation aus anderen Channels (statisch unducked)
  *  ✗ Global-Reverb/Delay-Bus (channel-stems sollten dry-ish sein,
  *    Bus-FX gehört in Mix-Stem)
- *  ✗ Bitcrusher/Transient für Synth-Parts (pre-processing braucht Sample-Buffer)
  *  ✗ Andere Insert-Typen (chorus/flanger/filter/comp/dist) — sind bereits via
  *    ChannelFx Bestandteil der Main-Chain; doppelt einsetzen über InsertChain
  *    wird v3.42 oder später nachgezogen.
