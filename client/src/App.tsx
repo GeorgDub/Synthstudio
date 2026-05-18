@@ -2392,20 +2392,32 @@ export default function App() {
     [project],
   );
 
-  // CustomEvent-Listener für Drag-Drop von App-Body und Picker-Aufrufe aus
-  // DrumMachine. dispatchFileDrop("KICK.esx") wird zu "korg:bank:open" geroutet.
-  useEffect(() => {
-    const handler = (e: Event) => {
-      const file = (e as CustomEvent<File>).detail;
-      if (file instanceof File) handleKorgBankFile(file);
-    };
-    window.addEventListener("korg:bank:open", handler);
-    return () => window.removeEventListener("korg:bank:open", handler);
-  }, [handleKorgBankFile]);
-
   // v3.4: KORG-Bank-EXPORT (Synthstudio → .all). Toolbar-Button feuert
   // "korg:bank:export-open"; wir öffnen den Editor-Modal.
   const [korgBankExportOpen, setKorgBankExportOpen] = useState<boolean>(false);
+  // v3.7: extern gedroppte .all-Datei, die in den OFFENEN Editor geleitet wird
+  // (statt in den Read-Only KorgBankModal). Editor consumed → Reset auf null.
+  const [korgBankEditorFile, setKorgBankEditorFile] = useState<File | null>(null);
+
+  // CustomEvent-Listener für Drag-Drop von App-Body und Picker-Aufrufe aus
+  // DrumMachine. dispatchFileDrop("KICK.esx") wird zu "korg:bank:open" geroutet.
+  // v3.7: Wenn der Editor offen ist und es eine .all ist, geht der Drop in den
+  // Editor (Edit-Existing-Flow) statt in den Read-Only Modal.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const file = (e as CustomEvent<File>).detail;
+      if (!(file instanceof File)) return;
+      const isAll = file.name.toLowerCase().endsWith(".all");
+      if (korgBankExportOpen && isAll) {
+        setKorgBankEditorFile(file);
+      } else {
+        handleKorgBankFile(file);
+      }
+    };
+    window.addEventListener("korg:bank:open", handler);
+    return () => window.removeEventListener("korg:bank:open", handler);
+  }, [handleKorgBankFile, korgBankExportOpen]);
+
   useEffect(() => {
     const handler = () => setKorgBankExportOpen(true);
     window.addEventListener("korg:bank:export-open", handler);
@@ -3675,9 +3687,15 @@ export default function App() {
         }}
       />
       {/* v3.4.0: KORG E2 Sample-Bank-Editor (Synthstudio → .all). */}
+      {/* v3.7.0: externalOpenFile route drag-dropped .all hier hin wenn offen. */}
       <KorgBankEditor
         open={korgBankExportOpen}
-        onClose={() => setKorgBankExportOpen(false)}
+        onClose={() => {
+          setKorgBankExportOpen(false);
+          setKorgBankEditorFile(null);
+        }}
+        externalOpenFile={korgBankEditorFile}
+        onExternalOpenFileConsumed={() => setKorgBankEditorFile(null)}
       />
       </MidiProvider>
     </ElectronDropZone>
