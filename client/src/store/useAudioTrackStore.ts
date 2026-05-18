@@ -114,6 +114,23 @@ function isValidTrack(t: unknown): t is AudioTrackChannelData {
   if (o.stretchRatio !== undefined && typeof o.stretchRatio !== "number") return false;
   if (o.pitchLocked !== undefined && typeof o.pitchLocked !== "boolean") return false;
   if (o.bpmHint !== undefined && typeof o.bpmHint !== "number") return false;
+  // v3.70.0 (v1.26): Loop-Engine-Wiring. Alle drei optional, bei falschem Typ
+  // → Track verwerfen.
+  if (o.loopEnabled !== undefined && typeof o.loopEnabled !== "boolean") return false;
+  if (
+    o.loopStartSample !== undefined &&
+    o.loopStartSample !== null &&
+    typeof o.loopStartSample !== "number"
+  ) {
+    return false;
+  }
+  if (
+    o.loopEndSample !== undefined &&
+    o.loopEndSample !== null &&
+    typeof o.loopEndSample !== "number"
+  ) {
+    return false;
+  }
   return (
     typeof o.id === "string" &&
     o.id.startsWith(ID_PREFIX) &&
@@ -217,6 +234,44 @@ export function setTrackBpmHint(id: string, bpm: number | null): void {
     return;
   }
   updateAudioTrack(id, { bpmHint: bpm });
+}
+
+// ─── v3.70.0: Loop-Point Actions ─────────────────────────────────────────────
+
+/**
+ * v3.70.0: Setzt den `loopEnabled`-Flag des Tracks. Engine ignoriert den
+ * Loop-Range solange das Flag nicht true ist (UI-State bleibt erhalten,
+ * damit User Enable/Disable togglen kann ohne die Marker zu verlieren).
+ */
+export function setTrackLoopEnabled(id: string, enabled: boolean): void {
+  updateAudioTrack(id, { loopEnabled: !!enabled });
+}
+
+/**
+ * v3.70.0: Setzt loopStartSample + loopEndSample in einer einzelnen Action.
+ * Defensive: NaN/Infinity → null (unset). Wenn end ≤ start, wird die
+ * Eingabe in-place getauscht damit Loops nie negative Länge haben. null
+ * wird explizit unterstützt (User klärt einen Marker).
+ */
+export function setTrackLoopPoints(
+  id: string,
+  loopStartSample: number | null,
+  loopEndSample: number | null,
+): void {
+  const ns = sanitizeLoopSample(loopStartSample);
+  const ne = sanitizeLoopSample(loopEndSample);
+  // Wenn beide gesetzt und end ≤ start → swap (defensive UI-Input).
+  if (ns !== null && ne !== null && ne <= ns) {
+    updateAudioTrack(id, { loopStartSample: ne, loopEndSample: ns });
+    return;
+  }
+  updateAudioTrack(id, { loopStartSample: ns, loopEndSample: ne });
+}
+
+function sanitizeLoopSample(v: number | null): number | null {
+  if (v === null || v === undefined) return null;
+  if (!Number.isFinite(v) || v < 0) return null;
+  return Math.floor(v);
 }
 
 /**

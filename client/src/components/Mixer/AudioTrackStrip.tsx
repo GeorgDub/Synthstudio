@@ -32,6 +32,9 @@ import {
   setTrackStretchRatio,
   setTrackPitchLocked,
   setTrackBpmHint,
+  setTrackLoopEnabled,
+  setTrackLoopPoints,
+  getAudioTrack,
   autoWarpToBpm,
   clampStretchRatio,
   snapStretchRatio,
@@ -512,6 +515,9 @@ export function AudioTrackStrip({
             trackId={track.id}
             cursorSample={editorCursorSample}
             onCursorChange={setEditorCursorSample}
+            loopEnabled={track.loopEnabled === true}
+            loopStartSample={track.loopStartSample ?? null}
+            loopEndSample={track.loopEndSample ?? null}
           />
         </div>
       )}
@@ -932,23 +938,33 @@ export function computePeaksFromBuffer(buffer: AudioBuffer, numPeaks = 200): Flo
   return downsamplePeaks(buffer, numPeaks);
 }
 
-// ─── Sub-Component: AudioTrackZoomEditor (v3.67.0) ──────────────────────────
+// ─── Sub-Component: AudioTrackZoomEditor (v3.67.0 + v3.70.0 loop-engine) ────
 
 interface AudioTrackZoomEditorProps {
   trackId: string;
   cursorSample: number | null;
   onCursorChange: (s: number | null) => void;
+  /** v3.70.0: Loop-State aus dem Track-Datensatz (controlled). */
+  loopEnabled: boolean;
+  loopStartSample: number | null;
+  loopEndSample: number | null;
 }
 
 /**
  * Sample-precise Zoom-Editor — wired ZoomableWaveform an einen Track-Buffer.
  * Liest channelData[0] aus AudioEngine.getAudioTrackBuffer(id). Wenn der
  * Buffer nicht (mehr) verfügbar ist, zeigt das Panel einen Empty-State.
+ *
+ * v3.70.0: Loop-Engine-Wiring — Initial-Loop-Points kommen aus dem Track,
+ * Drag-End → setTrackLoopPoints. Enable-Loop-Toggle direkt im Editor-Header.
  */
 function AudioTrackZoomEditor({
   trackId,
   cursorSample,
   onCursorChange,
+  loopEnabled,
+  loopStartSample,
+  loopEndSample,
 }: AudioTrackZoomEditorProps) {
   // memo: cache channelData reference so wir den Buffer nicht jeden Render neu greifen
   const buffer = AudioEngine.getAudioTrackBuffer(trackId);
@@ -961,6 +977,67 @@ function AudioTrackZoomEditor({
     }
   }, [buffer]);
   const sampleRate = buffer?.sampleRate ?? 44100;
+  const totalSamples = channelData?.length ?? 0;
+
+  // v3.70.0: Build LoopPoints für die Waveform. Wenn der Track noch keine
+  // Punkte gesetzt hat aber der User "Enable Loop" aktiviert, defaulten wir
+  // auf 25%..75% der Buffer-Länge damit die Marker sichtbar sind.
+  const loopPoints = useMemo(() => {
+    if (!loopEnabled || totalSamples === 0) return null;
+    const start =
+      loopStartSample !== null && loopStartSample >= 0
+        ? loopStartSample
+        : Math.floor(totalSamples * 0.25);
+    const end =
+      loopEndSample !== null && loopEndSample > start
+        ? loopEndSample
+        : Math.floor(totalSamples * 0.75);
+    return { loopStart: start, loopEnd: end };
+  }, [loopEnabled, loopStartSample, loopEndSample, totalSamples]);
+
+  const handleLoopChange = useCallback(
+    (loop: { loopStart: number; loopEnd: number }) => {
+      setTrackLoopPoints(trackId, loop.loopStart, loop.loopEnd);
+      // Engine-Sync — registerAudioTrack akzeptiert ein neues Snapshot pro
+      // Update, damit der nächste playAudioTrack die frischen Loop-Werte
+      // sieht. Wir lesen den Track frisch um die Loop-Sanitize-Logik des
+      // Stores (Swap bei end ≤ start) zu respektieren.
+      const track = getAudioTrack(trackId);
+      if (track) {
+        AudioEngine.registerAudioTrack({
+          ...track,
+          loopStartSample: loop.loopStart,
+          loopEndSample: loop.loopEnd,
+        });
+      }
+    },
+    [trackId],
+  );
+
+  const handleEnableLoopToggle = useCallback(() => {
+    const nextEnabled = !loopEnabled;
+    setTrackLoopEnabled(trackId, nextEnabled);
+    // Wenn wir Loop erst aktivieren UND noch keine Punkte gesetzt sind,
+    // gleich die Default-Range persistieren damit der Engine-Start korrekt
+    // läuft (sonst hätte source.loop=true aber loopStart=loopEnd=0).
+    let nextStart = loopStartSample;
+    let nextEnd = loopEndSample;
+    if (nextEnabled && loopStartSample === null && loopEndSample === null && totalSamples > 0) {
+      nextStart = Math.floor(totalSamples * 0.25);
+      nextEnd = Math.floor(totalSamples * 0.75);
+      setTrackLoopPoints(trackId, nextStart, nextEnd);
+    }
+    // Engine-Sync
+    const track = getAudioTrack(trackId);
+    if (track) {
+      AudioEngine.registerAudioTrack({
+        ...track,
+        loopEnabled: nextEnabled,
+        loopStartSample: nextStart,
+        loopEndSample: nextEnd,
+      });
+    }
+  }, [loopEnabled, loopStartSample, loopEndSample, totalSamples, trackId]);
 
   if (!channelData) {
     return (
@@ -974,14 +1051,42 @@ function AudioTrackZoomEditor({
   }
 
   return (
-    <ZoomableWaveform
-      channelData={channelData}
-      sampleRate={sampleRate}
-      cursorSample={cursorSample}
-      onCursorChange={onCursorChange}
-      height={80}
-      testId={`audio-track-zoom-${trackId}`}
-    />
+    <div className="flex flex-col gap-1.5">
+      <div className="flex items-center gap-2 px-0.5">
+        <button
+          type="button"
+          data-testid={`audio-track-loop-toggle-${trackId}`}
+          onClick={handleEnableLoopToggle}
+          aria-pressed={loopEnabled}
+          className={
+            "px-2 py-0.5 text-[10px] rounded border transition-colors " +
+            (loopEnabled
+              ? "bg-accent-secondary/20 text-accent-secondary border-accent-secondary/50"
+              : "bg-bg-panel/60 text-text-dim border-border-color hover:text-text-primary")
+          }
+        >
+          Loop {loopEnabled ? "On" : "Off"}
+        </button>
+        {loopEnabled && loopPoints && (
+          <span
+            data-testid={`audio-track-loop-range-${trackId}`}
+            className="text-[9px] font-mono text-text-dim"
+          >
+            {loopPoints.loopStart}–{loopPoints.loopEnd} samples
+          </span>
+        )}
+      </div>
+      <ZoomableWaveform
+        channelData={channelData}
+        sampleRate={sampleRate}
+        cursorSample={cursorSample}
+        onCursorChange={onCursorChange}
+        loopPoints={loopPoints}
+        onLoopChange={handleLoopChange}
+        height={80}
+        testId={`audio-track-zoom-${trackId}`}
+      />
+    </div>
   );
 }
 

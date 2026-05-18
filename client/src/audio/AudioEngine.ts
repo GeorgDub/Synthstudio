@@ -325,6 +325,21 @@ export interface AudioTrackChannelData {
    * aktivieren. Bei undefined: autoWarp fällt auf `originalBpm` zurück.
    */
   bpmHint?: number;
+  /**
+   * v3.70.0: Loop-Engine-Wiring (closes v3.67-Caveat — Loop-Marker waren
+   * visual-only). Wenn `loopEnabled === true` UND `loopStartSample`/
+   * `loopEndSample` gesetzt sind, wird die Engine im Continuous-Loop-Mode
+   * zwischen loopStart und loopEnd zirkulieren (AudioBufferSourceNode.loop
+   * + loopStart/loopEnd in Sekunden). Bei `loopEnabled === false`
+   * werden die Sample-Indizes weiter persistiert (UI-Zustand) — die Engine
+   * ignoriert sie aber. Bei loopEnabled=true ohne valid loopPoints fällt
+   * der Code auf eine sichere Default-Range zurück (komplette Buffer-Länge).
+   */
+  loopEnabled?: boolean;
+  /** v3.70.0: Loop-Start-Sample (≥0, < loopEndSample). null = unset. */
+  loopStartSample?: number | null;
+  /** v3.70.0: Loop-End-Sample (> loopStartSample, ≤ buffer.length). null = unset. */
+  loopEndSample?: number | null;
 }
 
 export interface PartData {
@@ -2656,7 +2671,38 @@ class AudioEngineClass {
 
     const source = this.ctx.createBufferSource();
     source.buffer = buf;
-    source.loop = opts?.loop ?? data?.loop ?? false;
+    // v3.70.0: Loop-Engine-Wiring. Wenn loopEnabled + valid loopPoints gesetzt
+    // sind, dominiert das den (legacy) loop-Flag. Sample→Sec via buf.sampleRate.
+    // Defensive: NaN/Infinity/negative → fallback auf 0..duration.
+    const wantsLoopRange =
+      data?.loopEnabled === true &&
+      typeof data?.loopStartSample === "number" &&
+      typeof data?.loopEndSample === "number" &&
+      Number.isFinite(data.loopStartSample as number) &&
+      Number.isFinite(data.loopEndSample as number) &&
+      (data.loopStartSample as number) >= 0 &&
+      (data.loopEndSample as number) > (data.loopStartSample as number);
+    if (wantsLoopRange) {
+      source.loop = true;
+      const sr = buf.sampleRate || 44100;
+      const totalSec = buf.duration;
+      const startSec = Math.max(
+        0,
+        Math.min(totalSec, (data!.loopStartSample as number) / sr),
+      );
+      const endSec = Math.max(
+        startSec,
+        Math.min(totalSec, (data!.loopEndSample as number) / sr),
+      );
+      source.loopStart = startSec;
+      source.loopEnd = endSec;
+    } else if (data?.loopEnabled === true) {
+      // loopEnabled=true ohne valid points → komplette Buffer-Länge (no-op
+      // semantically equivalent zu loop=true ohne range).
+      source.loop = true;
+    } else {
+      source.loop = opts?.loop ?? data?.loop ?? false;
+    }
 
     // PlaybackRate aus syncMode ableiten
     const rate = this._calcAudioTrackPlaybackRate(data);

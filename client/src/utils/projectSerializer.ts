@@ -57,6 +57,12 @@
  *     Ruhe (kein Overwrite). Explicit [] wird respektiert (User hat alle
  *     Macros gelöscht und gespeichert). Invalide Einträge werden silent
  *     gefiltert via isValidQuickActionMacro.
+ *   - "1.26": AudioTrack loopEnabled/loopStartSample/loopEndSample (v3.70.0).
+ *     Closes v3.67-Caveat "Loop-Marker waren visual-only". Engine respektiert
+ *     die Loop-Range im AudioBufferSourceNode (.loop=true + loopStart/End in
+ *     Sekunden) wenn loopEnabled=true UND start < end. Alle 3 Felder additiv-
+ *     optional; pre-v1.26-Files laden unverändert (Engine fällt auf das
+ *     legacy `loop`-Flag zurück).
  * Dateiendung: .synth
  */
 
@@ -84,7 +90,7 @@ import { ensureProjectId } from "@/utils/projectId";
 import type { QuickActionMacro } from "@/store/useQuickActionStore";
 import { isValidQuickActionMacro } from "@/store/useQuickActionStore";
 
-export const SYNTH_FILE_VERSION = "1.25";
+export const SYNTH_FILE_VERSION = "1.26";
 export const SYNTH_LATEST_KEY = "synthstudio:last-project";
 
 // ─── Typen ───────────────────────────────────────────────────────────────────
@@ -301,6 +307,23 @@ function isValidAudioTrackEntry(t: unknown): t is AudioTrackChannelData {
   if (o.stretchRatio !== undefined && typeof o.stretchRatio !== "number") return false;
   if (o.pitchLocked !== undefined && typeof o.pitchLocked !== "boolean") return false;
   if (o.bpmHint !== undefined && typeof o.bpmHint !== "number") return false;
+  // v3.70.0 (v1.26): loopEnabled + loopStartSample/loopEndSample. Alle 3
+  // additiv-optional. Invalide Typen → Track verwerfen.
+  if (o.loopEnabled !== undefined && typeof o.loopEnabled !== "boolean") return false;
+  if (
+    o.loopStartSample !== undefined &&
+    o.loopStartSample !== null &&
+    typeof o.loopStartSample !== "number"
+  ) {
+    return false;
+  }
+  if (
+    o.loopEndSample !== undefined &&
+    o.loopEndSample !== null &&
+    typeof o.loopEndSample !== "number"
+  ) {
+    return false;
+  }
   return (
     typeof o.id === "string" &&
     typeof o.name === "string" &&

@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.69.0",
+    version: "3.70.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -2042,6 +2042,51 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "backend",
+      timestamp: "2026-05-19T02:10:00.000Z",
+      done: [
+        "v3.70.0: Audio-Loop-Point Engine-Wiring — closes v3.67-Caveat 'Loop-Marker visual-only'. AudioTrackChannelData um loopEnabled?:boolean + loopStartSample?:number|null + loopEndSample?:number|null erweitert (additiv-optional). AudioEngine.playAudioTrack respektiert die Loop-Range jetzt: bei loopEnabled=true + valid points (start≥0 && end>start, beide finite) → AudioBufferSourceNode.loop=true + source.loopStart=startSample/sampleRate + source.loopEnd=endSample/sampleRate. Fallback-Logik: loopEnabled=true ohne valid points → source.loop=true OHNE Range (ganzer Buffer); loopEnabled=true mit invalider Range (end≤start) → fallback Pfad (source.loop=true ohne Range); loopEnabled=false → legacy opts.loop ?? data.loop ?? false. Engine bleibt voll backward-kompatibel — pre-v3.70-Tracks mit nur data.loop=true funktionieren weiterhin (continuous loop ohne Range).",
+        "client/src/audio/AudioEngine.ts (~+45 LOC): NEU 3 Felder in AudioTrackChannelData-Interface mit v3.70-Doku-Block. playAudioTrack-Logik um wantsLoopRange-Block erweitert (mit defensive Number.isFinite-Guards). Routing via _shouldUseWorklet bleibt unverändert (Worklet-Pfad ist Pitch-erhaltend Time-Stretch, NICHT Loop-Range; Loop-Range gilt nur für den klassischen BufferSource-Pfad — getestet weil Default-Test-Tracks alle pitchLocked=false haben).",
+        "client/src/store/useAudioTrackStore.ts (~+50 LOC): NEU setTrackLoopEnabled(id, enabled) Action + setTrackLoopPoints(id, start|null, end|null) mit defensive Sanitization. sanitizeLoopSample Pure-Helper (NaN/Infinity/negativ → null, sonst Math.floor). End ≤ Start → automatic Swap damit Loops nie negative Länge haben. isValidTrack-Validator + isValidAudioTrackEntry im Serializer um loopEnabled (boolean) + loopStartSample/loopEndSample (number|null) erweitert — invalide Typen → Track verwerfen.",
+        "client/src/utils/projectSerializer.ts SCHEMA-BUMP v1.25 → v1.26: SYNTH_FILE_VERSION-Konstante + Header-Doku-Block v1.26 Migration. isValidAudioTrackEntry um 3 Felder ergänzt. Backward-Compat: Pre-v1.26-Files ohne Loop-Felder laden unverändert (Felder bleiben undefined). Schema-Bump ist forward-compatible (v3.69 liest v3.70-Files ohne Crash, ignoriert nur die neuen Felder).",
+        "client/src/components/Mixer/AudioTrackStrip.tsx ERWEITERT (+~80 LOC im AudioTrackZoomEditor Sub-Component): NEU loopEnabled/loopStartSample/loopEndSample Props (controlled). loopPoints useMemo defaultet auf 25%..75% wenn enabled aber keine points gesetzt sind. Enable-Loop-Toggle-Button (audio-track-loop-toggle-<id> testid, aria-pressed, accent-secondary/20 active, hover) mit Sample-Range-Badge daneben (audio-track-loop-range-<id>). handleLoopChange dispatched setTrackLoopPoints + AudioEngine.registerAudioTrack mit frischen Loop-Werten (Engine-Sync — playAudioTrack liest audioTrackData-Map). handleEnableLoopToggle setzt enabled + (bei first-enable ohne points) default Loop-Range + Engine-Sync.",
+        "tests/features/audio-track-loop.test.ts NEU (~510 LOC, 16 Tests in 5 describes, env:node mit Mock-AudioContext): (1) Store Actions × 6 — setTrackLoopEnabled Round-Trip, setTrackLoopPoints happy/swap/null/sanitize-NaN-Infinity-negativ/Float-floor. (2) AudioEngine Loop-Playback × 5 — loopEnabled+valid → source.loop=true + loopStart/loopEnd in Sekunden (44100samples @ 44100Hz = 1.0s), loopEnabled=false → loop=false, pre-v3.70 mit data.loop=true → source.loop=true ohne Range (loopStart/End=0), loopEnabled=true ohne points → fallback loop=true, end≤start → fallback loop=true ohne Range. (3) Serializer Round-Trip v1.26 × 2 — SYNTH_FILE_VERSION='1.26', Round-Trip preserves loopEnabled+start+end. (4) Pre-v1.26 Backward-Compat × 2 — v1.25-Files ohne Loop-Felder → defaults undefined, source.version preserved; invalide Loop-Typen (string statt boolean) → Track verworfen. (5) localStorage-Persist × 1 — Round-Trip via Store-Action lands in localStorage 'synthstudio:audiotracks:v1' JSON.",
+        "tests/features Schema-Version-Assertion-Update v1.25 → v1.26 (7 Files): audio-track-store (2 Stellen), audio-track-stretch, multi-bar-pattern, plugin-host (2 Stellen), plugin-multislot, project-serializer (3 Stellen), project-id-migration (2 Stellen), quick-action-integration (1 Stelle für Live-Schreibung; 4 weitere Stellen mit hardcoded '1.25' bleiben unverändert da sie Pre-v1.26-File-Fixtures simulieren), script-store.",
+        "package.json (3.69.0 → 3.70.0). pnpm check clean. pnpm test grün: 216 Test-Files / 4998 Tests passed (16 skipped, +16 NEU vs. v3.69)."
+      ],
+      next: [
+        "v3.71: Loop-Range Preview-Playback im ZoomEditor — kleiner 'Loop-Preview'-Button der den Track temporär startet damit User die Loop hören kann ohne den globalen Transport-Play zu nutzen. Aktuell muss er das Strip starten + es klingt nicht-loopend wenn er ein anderes Strip in zwischenzeit drückt.",
+        "v3.71: Snap-to-Beat statt nur Zero-Crossing — wenn Track originalBpm/bpmHint gesetzt hat, kann der Loop-Marker auf 1/4/1/8/1/16-Beat-Grid snappen. Pure-fn-Helper in waveformZoom.ts: snapToBeat(sample, sampleRate, bpm, subdivision).",
+        "v3.71: Loop-Crossfade beim Loop-Wrap-Around. Aktuell macht AudioBufferSourceNode einen harten Cut bei loopEnd → loopStart was Click-Artefakte erzeugt. Lösung: Loop-Range-getriggertes Gain-Envelope mit 5-20ms Fade-Out vor loopEnd + Fade-In nach loopStart.",
+        "v3.71: Loop-State an .synth-File-Drag-Drop / KORG-Bank-Import propagieren — wenn User ein altes Project lädt das einen Track mit loop=true (legacy) hat, könnte ein 'Migrate Legacy Loop?'-Hint erscheinen der ihm vorschlägt loopStartSample=0 + loopEndSample=buffer.length zu setzen, um in den neuen Engine-Pfad zu wechseln."
+      ],
+      changed: [
+        "client/src/audio/AudioEngine.ts (+~45 LOC: AudioTrackChannelData +3 Felder, playAudioTrack wantsLoopRange-Block, fallback-Logik)",
+        "client/src/store/useAudioTrackStore.ts (+~50 LOC: setTrackLoopEnabled + setTrackLoopPoints + sanitizeLoopSample, isValidTrack +3 Validierungen)",
+        "client/src/utils/projectSerializer.ts (Schema v1.25 → v1.26: SYNTH_FILE_VERSION, Header-Doku-Block, isValidAudioTrackEntry +3 Validierungen)",
+        "client/src/components/Mixer/AudioTrackStrip.tsx (+~80 LOC AudioTrackZoomEditor: loopEnabled+start+end Props, loopPoints useMemo mit 25%..75% Default, Enable-Loop-Toggle, handleLoopChange + handleEnableLoopToggle mit Engine-Sync via registerAudioTrack; getAudioTrack Import)",
+        "tests/features/audio-track-loop.test.ts (NEU ~510 LOC: 16 Tests in 5 describes mit Mock-AudioContext)",
+        "tests/features/audio-track-store.test.ts (2× Schema-Assertion 1.25 → 1.26)",
+        "tests/features/audio-track-stretch.test.ts (Schema-Assertion 1.25 → 1.26)",
+        "tests/features/multi-bar-pattern.test.ts (Schema-Assertion 1.25 → 1.26)",
+        "tests/features/plugin-host.test.ts (2× Schema-Assertion 1.25 → 1.26)",
+        "tests/features/plugin-multislot.test.ts (Schema-Assertion 1.25 → 1.26)",
+        "tests/features/project-serializer.test.ts (3× Schema-Assertion 1.25 → 1.26)",
+        "tests/features/project-id-migration.test.ts (2× Schema-Assertion 1.25 → 1.26)",
+        "tests/features/quick-action-integration.test.ts (1× write-side Assertion 1.25 → 1.26)",
+        "tests/features/script-store.test.ts (Schema-Assertion 1.25 → 1.26)",
+        "package.json (3.69.0 → 3.70.0)",
+        "agents/INDEX.js (version + workLog v3.70.0)"
+      ],
+      caveats: [
+        "Worklet-Pfad (_playAudioTrackViaWorklet, pitchLocked=true ODER syncMode='timestretch') ignoriert die neuen Loop-Felder. Der Time-Stretch-Worklet liest den Buffer in OLA-Frames und kennt keinen 'loop'-Begriff — wenn User pitchLocked=true UND loopEnabled=true setzt, läuft der Track One-Shot. Engine-Doku müsste das explizit erwähnen; UI könnte die Loop-Toggle disablen wenn Worklet-Pfad aktiv ist.",
+        "Defensive Range-Validation in playAudioTrack: end ≤ start fällt auf 'loopEnabled=true ohne Range' zurück (source.loop=true, kompletter Buffer-Loop). Alternativ wäre ein No-Op (= one-shot) plausibel; aktuelle Wahl ist Range > Toggle (User-Erwartung 'Ich hab Loop an, also loopt es'). Wenn das Verwirrung erzeugt, lieber One-Shot.",
+        "Loop-Marker-Drag-End dispatched setTrackLoopPoints + AudioEngine.registerAudioTrack JEDEN Drag-Frame (move-Listener). Das ist ein notify-Sturm bei laufendem Drag. Aktuell keine Throttle/Debounce — wenn Performance-Probleme auftreten, dragRef setzen + onMouseUp final-dispatch.",
+        "AudioBufferSourceNode.loop+loopStart+loopEnd sind read-only nach source.start(). Wenn User die Loop-Marker ändert WÄHREND der Track läuft, sieht die Engine das NICHT — sie muss den Track stop+restart machen. Aktuell macht handleLoopChange das nicht. Für sample-genaue Loop-Edits live wäre ein Auto-Restart wünschenswert; für Edit-Mode (Track gestoppt) reicht die aktuelle Lösung.",
+        "Backward-Compat-Lücke: Ein User auf v3.69 öffnet ein v3.70-File. parseProject in v3.69 ignoriert die Loop-Felder ohne Crash, beim Re-Save mit v3.69 gehen sie aber verloren (kein Roundtrip). Forward-kompatibel ✓, backward-kompatibel ✗ — wie bei allen v1.x-Schema-Bumps."
+      ]
+    },
     {
       agent:     "backend",
       timestamp: "2026-05-19T01:30:00.000Z",
