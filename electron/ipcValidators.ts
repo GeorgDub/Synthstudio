@@ -247,3 +247,85 @@ export function validateKorgBankFileSize(
   }
   return { ok: true };
 }
+
+// ─── KORG-Bank-EXPORT-Filename + Buffer-Validation (v3.4.0) ──────────────────
+
+/**
+ * Filename-Whitelist beim Save-As .all File (Synthstudio → KORG E2S).
+ * Wir akzeptieren nur ASCII-alnum + . _ - und MÜSSEN auf .all enden.
+ */
+export const KORG_BANK_SAVE_FILENAME_MAX_LEN = 120;
+export const KORG_BANK_SAVE_FILENAME_REGEX = /^[A-Za-z0-9._-]+\.all$/;
+/**
+ * Buffer-Cap fürs IPC-Save. 256 MB = etwas über E2S_MAX_TOTAL_PCM_BYTES (224 MB)
+ * für Header-Overhead + zukünftige globale-Section-Erweiterungen.
+ */
+export const KORG_BANK_SAVE_MAX_BYTES = 256 * 1024 * 1024; // 256 MB
+
+export type KorgBankFilenameCheck =
+  | { ok: true; filename: string }
+  | { ok: false; error: string };
+
+export function validateKorgBankSaveFilename(input: unknown): KorgBankFilenameCheck {
+  if (typeof input !== "string" || input.length === 0) {
+    return { ok: false, error: "Ungültiger Dateiname" };
+  }
+  if (input.length > KORG_BANK_SAVE_FILENAME_MAX_LEN) {
+    return { ok: false, error: "Dateiname zu lang" };
+  }
+  if (
+    input.includes("\0") ||
+    input.includes("/") ||
+    input.includes("\\") ||
+    input.includes("..")
+  ) {
+    return { ok: false, error: "Dateiname enthält unzulässige Zeichen" };
+  }
+  if (!KORG_BANK_SAVE_FILENAME_REGEX.test(input)) {
+    return { ok: false, error: "Nur alphanumerische .all-Dateinamen erlaubt" };
+  }
+  return { ok: true, filename: input };
+}
+
+export type KorgBankBufferCheck =
+  | { ok: true }
+  | { ok: false; error: string };
+
+/**
+ * Prüft das erste 16-Byte-Prefix auf "e2s sample all\x1a\x00" + Min/Max-Größe.
+ * Validation greift VOR dem Schreiben — Disk-Fill-Schutz + kein arbiträrer
+ * Binär-Müll auf der Platte.
+ *
+ * @param byteLength volle Buffer-Größe in Bytes
+ * @param prefixBytes erste 16 Bytes des Buffers (als Uint8Array vom Caller)
+ */
+export function validateKorgBankBuffer(
+  byteLength: number,
+  prefixBytes: Uint8Array,
+): KorgBankBufferCheck {
+  // E2S_ALL_SAMPLE_AREA_START = 0x1000 ist die kleinste sinnvolle Größe
+  // (Prelude + leere Offset-Table). Wir prüfen hardcoded statt Import um
+  // ipcValidators.ts unabhängig von client-Code zu halten.
+  const MIN_BYTES = 0x1000;
+  if (byteLength < MIN_BYTES) {
+    return { ok: false, error: "Buffer zu klein für E2S .all-Header" };
+  }
+  if (byteLength > KORG_BANK_SAVE_MAX_BYTES) {
+    return { ok: false, error: "Sample-Bank zu groß (>256 MB)" };
+  }
+  if (!prefixBytes || prefixBytes.length < 16) {
+    return { ok: false, error: "Prefix kürzer als 16 Bytes" };
+  }
+  const expected = [
+    0x65, 0x32, 0x73, 0x20, // "e2s "
+    0x73, 0x61, 0x6d, 0x70, // "samp"
+    0x6c, 0x65, 0x20, 0x61, // "le a"
+    0x6c, 0x6c, 0x1a, 0x00, // "ll\x1a\0"
+  ];
+  for (let i = 0; i < 16; i++) {
+    if (prefixBytes[i] !== expected[i]) {
+      return { ok: false, error: "Ungültige E2S-Bank-Signatur" };
+    }
+  }
+  return { ok: true };
+}

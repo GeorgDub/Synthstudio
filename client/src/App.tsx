@@ -76,6 +76,7 @@ import { toast } from "@/store/useToastStore";
 import { ToastContainer } from "@/components/UI/ToastContainer";
 import { ActivationModal } from "@/components/License/ActivationModal";
 import { KorgBankModal, type KorgBankSample } from "@/components/KorgBank/KorgBankModal";
+import { KorgBankEditor } from "@/components/KorgBank/KorgBankEditor";
 import { initializeLicenseStore } from "@/store/useLicenseStore";
 // TASK-232-FOLLOWUP / v2.98: Pro-Feature-Gate für MIDI-Note-Out (Bridge-Effect).
 // v3.3.0: KORG-Bank-Import gated.
@@ -2402,6 +2403,15 @@ export default function App() {
     return () => window.removeEventListener("korg:bank:open", handler);
   }, [handleKorgBankFile]);
 
+  // v3.4: KORG-Bank-EXPORT (Synthstudio → .all). Toolbar-Button feuert
+  // "korg:bank:export-open"; wir öffnen den Editor-Modal.
+  const [korgBankExportOpen, setKorgBankExportOpen] = useState<boolean>(false);
+  useEffect(() => {
+    const handler = () => setKorgBankExportOpen(true);
+    window.addEventListener("korg:bank:export-open", handler);
+    return () => window.removeEventListener("korg:bank:export-open", handler);
+  }, []);
+
   const handleDropZipFile = useCallback(
     async (file: File) => {
       try {
@@ -3637,6 +3647,11 @@ export default function App() {
         file={korgBankFile}
         onClose={() => setKorgBankFile(null)}
         onAddSample={handleKorgBankAddSample}
+      />
+      {/* v3.4.0: KORG E2 Sample-Bank-Editor (Synthstudio → .all). */}
+      <KorgBankEditor
+        open={korgBankExportOpen}
+        onClose={() => setKorgBankExportOpen(false)}
       />
       </MidiProvider>
     </ElectronDropZone>

@@ -244,6 +244,13 @@ interface ElectronAPI {
   // ── Audio-Recording-Save (TASK-234 / v2.86) ─────────────────────────────────
   saveRecording(filename: string, data: ArrayBuffer): Promise<{ success: boolean; filePath?: string; error?: string }>;
 
+  // ── KORG Sample-Bank EXPORT (v3.4.0) ────────────────────────────────────────
+  saveKorgBankAs(
+    suggestedFilename: string,
+    data: ArrayBuffer | Uint8Array,
+  ): Promise<{ success: boolean; filePath?: string; bytesWritten?: number; error?: string }>;
+  getKorgBankSaveCap(): Promise<number>;
+
   // ── Folder-Import ─────────────────────────────────────────────────────────────────────────────
   importFolder(folderPath: string): Promise<{ importId: string }>;
   importSamples(filePaths: string[]): Promise<{ success: boolean; importedCount: number; errors: string[] }>;

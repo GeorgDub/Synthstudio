@@ -64,7 +64,10 @@ import {
   validateElectribeFileSize,
   validateKorgBankPath,
   validateKorgBankFileSize,
+  validateKorgBankSaveFilename,
+  validateKorgBankBuffer,
   KORG_BANK_MAX_BYTES,
+  KORG_BANK_SAVE_MAX_BYTES,
   LICENSE_FILE_MAX_BYTES as IPC_LICENSE_FILE_MAX_BYTES,
 } from "./ipcValidators";
 import {
@@ -2820,6 +2823,71 @@ function registerIpcHandlers(): void {
 
   // Surface the max-size cap so the renderer can show a friendly hint.
   ipcMain.handle("korg:get-bank-cap", () => KORG_BANK_MAX_BYTES);
+
+  // ── E2S Sample-Bank WRITE (v3.4.0) ────────────────────────────────────────
+  //
+  // Speichert eine vom Renderer-Side gebaute .all-Datei via nativen Save-Dialog.
+  // STRENGE Validierung (analog audio:save-recording / electribe:import-file):
+  //  - filename MUSS reine ASCII-Filename-Chars enthalten + .all enden
+  //  - filename MUSS <=120 Zeichen sein
+  //  - data MUSS ArrayBuffer mit gültiger E2S-Signature beginnen
+  //  - Total-Size <=256 MB
+  //  - Output-Pfad ist user-chosen via dialog.showSaveDialog (kein Path-
+  //    Traversal-Vektor möglich, weil Pfad NICHT vom Renderer kommt).
+  ipcMain.handle("korg:save-bank-as", async (
+    _event,
+    suggestedFilename: string,
+    data: ArrayBuffer | Uint8Array | number[],
+  ) => {
+    try {
+      // ── 1. Filename-Validation (defensiv, auch wenn nur als Suggestion) ───
+      const nameCheck = validateKorgBankSaveFilename(suggestedFilename);
+      if (!nameCheck.ok) return { success: false as const, error: nameCheck.error };
+      if (!data) return { success: false as const, error: "Keine Daten erhalten" };
+
+      // Normalize incoming data (Array<number> via IPC, Uint8Array, ArrayBuffer)
+      let buf: Buffer;
+      if (Array.isArray(data)) {
+        buf = Buffer.from(data);
+      } else if (data instanceof Uint8Array) {
+        buf = Buffer.from(data.buffer, data.byteOffset, data.byteLength);
+      } else {
+        buf = Buffer.from(data as ArrayBuffer);
+      }
+
+      // ── 2. Buffer-Validation (Magic + Size-Caps) ──────────────────────────
+      const prefix = new Uint8Array(buf.subarray(0, Math.min(16, buf.byteLength)));
+      const bufCheck = validateKorgBankBuffer(buf.byteLength, prefix);
+      if (!bufCheck.ok) return { success: false as const, error: bufCheck.error };
+
+      // ── 3. User-Save-Dialog (Pfad kommt NICHT vom Renderer) ───────────────
+      const result = await dialog.showSaveDialog(mainWindow!, {
+        title: "KORG E2 Sample-Bank speichern",
+        defaultPath: nameCheck.filename,
+        filters: [{ name: "E2S Sample-Bank", extensions: ["all"] }],
+      });
+      if (result.canceled || !result.filePath) {
+        return { success: false as const, error: "canceled" };
+      }
+      const resolvedPath = path.resolve(result.filePath);
+      // Final-Sanity: dialog ist user-chosen, aber wir prüfen .all-Endung.
+      if (path.extname(resolvedPath).toLowerCase() !== ".all") {
+        return { success: false as const, error: "Nur .all-Endung erlaubt" };
+      }
+
+      await fs.promises.writeFile(resolvedPath, buf);
+      return {
+        success: true as const,
+        filePath: resolvedPath,
+        bytesWritten: buf.byteLength,
+      };
+    } catch (err) {
+      console.error("[IPC korg:save-bank-as] error:", err);
+      return { success: false as const, error: "Schreibfehler" };
+    }
+  });
+
+  ipcMain.handle("korg:get-bank-save-cap", () => KORG_BANK_SAVE_MAX_BYTES);
 
   // ── Kollaborations-Server ─────────────────────────────────────────────────────
 

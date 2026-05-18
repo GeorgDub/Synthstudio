@@ -1,0 +1,309 @@
+================================================================================
+                   SYNTHSTUDIO → OMNITRIBE INTEGRATION
+                      CODEBASE ANALYSIS REPORT
+================================================================================
+
+Date: 2026-05-18
+Analyst: Claude Code
+Scope: Full stack analysis (frontend, audio engine, MIDI, Electron)
+Status: Analysis Complete ✓
+
+================================================================================
+                            QUICK SUMMARY
+================================================================================
+
+PROJECT STRUCTURE
+─────────────────────────────────────────────────────────────────────────────
+  Language:        TypeScript 5.9 + React 19
+  Platform:        Electron 40 (Chromium 130) + Web Browser
+  Build Tool:      Vite 7
+  Audio Engine:    Web Audio API + Tone.js 15
+  UI Framework:    Radix UI + TailwindCSS 4
+  Package Manager: pnpm 10.15.1
+  Code Size:       5,841 lines in /audio/ alone
+  Total Size:      ~150KB TypeScript (client/src/)
+
+EXISTING MIDI SUPPORT
+─────────────────────────────────────────────────────────────────────────────
+  ✓ Web MIDI API integration (useMidi hook, 1200+ lines)
+  ✓ MIDI clock output (MidiClockOut class, v2.83)
+  ✓ MIDI note output (MidiNoteOut class, v2.92)
+  ✓ CC mapping (140+ actionable targets)
+  ✓ Hardware templates (13 presets: Launchpad, Push, MPC, etc.)
+  ✓ Auto-learn workflow (sequential CC+Note capture)
+  ✓ Right-click MIDI-learn (v1.86+)
+  ✓ Layout import/export (JSON round-trip)
+  ✓ Device enumeration & persistence
+
+ARCHITECTURE READY FOR OMNITRIBE?
+─────────────────────────────────────────────────────────────────────────────
+  ✓ Dependency injection pattern (MidiClockOut takes callback)
+  ✓ Testability focus (no hardcoded navigator.requestMIDIAccess)
+  ✓ Electron + browser fallback pattern (useElectron hook)
+  ✓ Isomorphic design (web app works standalone)
+  ✓ Korg format parsers available (ESX-1, E2S binary readers)
+  ✓ Multi-window support (Electron)
+  ✓ IPC bridge pattern established (collab-server, OSC, etc.)
+
+WHAT'S MISSING FOR OMNITRIBE
+─────────────────────────────────────────────────────────────────────────────
+  ✗ USB/Serial bridge (custom binary protocol, not MIDI class)
+  ✗ OmniTribeBridge class (USB enumeration + framing)
+  ✗ Electron IPC handlers (omnitribe-specific)
+  ✗ React useOmniTribe hook
+  ✗ Device state synchronization UI
+  ✗ WebUSB / Web Serial fallback for browser
+  ✗ Integration tests with device simulation
+
+================================================================================
+                         KEY FINDINGS
+================================================================================
+
+1. TECHNOLOGY STACK
+   ────────────────────────────────────────────────────────────────────────
+   
+   Frontend:  React 19 with custom store pattern (NOT Zustand)
+   Audio:     Web Audio API + Tone.js 15.1.22 (advanced synthesis)
+   Build:     Vite 7 + TypeScript + esbuild
+   Desktop:   Electron 40 (Chromium 130)
+   MIDI:      Web MIDI API (no third-party library)
+   
+   → Implication: Lightweight, no bloated MIDI libraries; web-native stack
+
+
+2. MIDI IMPLEMENTATION DEPTH
+   ────────────────────────────────────────────────────────────────────────
+   
+   MidiClockOut (175 lines):
+     • Sends 24 PPQN clock ticks every 16ms scheduling window
+     • Stateless relative to AudioContext (no setInterval/setTimeout drift)
+     • Integrated into AudioEngine._schedule() main loop
+     • Supports Start/Stop/Continue/Song Position Pointer
+   
+   MidiNoteOut (320 lines):
+     • Per-part configuration map (note, channel, duration)
+     • Retrigger protection (cancels pending Note-Off before new Note-On)
+     • Stuck note prevention (flush all Note-Offs on disable)
+     • Local vs. external sound layering toggle
+   
+   useMidi Hook (1200+ lines):
+     • Device enumeration + persistent selection (localStorage)
+     • CC mapping to 140+ app actions (bpm, volume, pattern, fx, etc.)
+     • Auto-learn with sequential CC+Note queue
+     • 13 hardware presets with round-trip JSON import/export
+     • Separate routing: clock-out device ≠ note-out device ≠ feedback device
+     • Clock sync (receive external MIDI clock, sync BPM)
+   
+   → Implication: Highly sophisticated MIDI implementation; good foundation
+
+
+3. AUDIO ENGINE ARCHITECTURE
+   ────────────────────────────────────────────────────────────────────────
+   
+   Singleton pattern:
+     • AudioEngine = new AudioEngineClass() (global singleton)
+     • Scheduling loop: _schedule() called every 16ms (100ms lookahead)
+     • Per-channel FX chain: Filter → Distortion → Compressor → Delay → Reverb
+   
+   MIDI integration points (lines 474, 482, 816, 1214-1267):
+     • _midiClockOut: MidiClockOut instance (dependency injected)
+     • _midiNoteOut: MidiNoteOut instance (dependency injected)
+     • _midiOutCallback: legacy callback for custom MIDI processing
+     • Public API: setMidiClockOutSender(), setMidiNoteOutSender(), etc.
+   
+   Scheduling:
+     • play() → _midiClockOut.start()
+     • _schedule() → _midiClockOut.scheduleTicks()
+     • _scheduleStep() → _midiNoteOut.triggerNote()
+   
+   → Implication: Clean integration points; ready for OmniTribe protocol
+
+
+4. ELECTRON INFRASTRUCTURE
+   ────────────────────────────────────────────────────────────────────────
+   
+   Main process (electron/main.ts):
+     • Window lifecycle management (BrowserWindow)
+     • IPC handlers (ipcMain.handle, ipcMain.on)
+     • Context isolation (preload.ts bridges secure API)
+   
+   IPC patterns:
+     • useElectron() hook (renderer → main, with browser fallbacks)
+     • Established precedent: collab-server, OSC-server, export handlers
+     • Form: ipcMain.handle("name", async (event, args) => { ... })
+   
+   Existing feature: WebSocket relay (collab-server.ts)
+     • Shows pattern for device ↔ host bidirectional sync
+   
+   → Implication: USB/serial IPC layer can be built following collab-server pattern
+
+
+5. BROWSER FALLBACK STRATEGY
+   ────────────────────────────────────────────────────────────────────────
+   
+   Isomorphic design:
+     • All components check useElectron().isElectron before native calls
+     • Browser version works fully (minus file dialogs, native menus)
+     • Pattern can be extended: if not Electron, try WebUSB / Web Serial
+   
+   Limitations:
+     • WebUSB: HTTPS only, user must grant permission, limited to Chrome/Edge
+     • Web Serial: HTTPS only, same permission model, better generic USB support
+     • MIDI fallback: Full Web MIDI API works in all modern browsers
+   
+   → Implication: Browser support requires WebUSB + Web Serial polyfills
+
+
+6. STATE MANAGEMENT PATTERN
+   ────────────────────────────────────────────────────────────────────────
+   
+   NOT Zustand, but custom observer:
+     • let _state = loadFromStorage()
+     • useReducer(x => x+1, 0) to trigger re-render on change
+     • _listeners.add(rerender) / useEffect cleanup
+   
+   Implication:
+     • Can store OmniTribe connection state in custom store (useOmniTribeStore)
+     • Follows established pattern for consistency
+     • No Zustand overhead (already excluded from deps)
+
+
+7. EXISTING KORG SUPPORT
+   ────────────────────────────────────────────────────────────────────────
+   
+   Files:
+     • client/src/utils/electribeImport.ts (30KB) - parse .e2s/.esx binary
+     • client/src/utils/korg/constants.ts - ESX-1 format specs
+     • client/src/utils/korg/esxParser.ts - binary parsing
+     • client/src/utils/korg/e2sBankReader.ts - E2S bank parsing
+   
+   Capability:
+     • Can import Electribe 2 sample banks and patterns
+     • Bi-directional sync NOT YET implemented (samples only)
+   
+   → Implication: Can reuse format knowledge for OmniTribe parameter encoding
+
+================================================================================
+                      RECOMMENDED APPROACH
+================================================================================
+
+1. PROTOCOL CHOICE
+   • Custom binary (not MIDI class) for bandwidth efficiency + bidirectional sync
+   • Frame format: [SoF 0xA5] [Len LE16] [Type u8] [Payload...] [CRC8]
+   • Message types: ~20 enum values (HELLO, CLOCK_TICK, PATTERN_DATA, etc.)
+   • Rationale: Standard MIDI is 3-byte packets; OmniTribe needs patterns (512+ bytes)
+
+2. TRANSPORT LAYER
+   Electron:
+     • Native USB library (npm: usb, serialport)
+     • OmniTribeBridge class (abstraction over USB I/O)
+     • Electron IPC handlers (omnitribe-ipc.ts) → renderer
+   
+   Browser:
+     • WebUSB API (navigator.usb.requestDevice())
+     • Web Serial API (navigator.serial.requestPort())
+     • Same Bridge interface, different backend
+
+3. INTEGRATION PATH
+   Week 1-2:  USB enumeration, connection, handshake
+   Week 3:    Clock sync (START/STOP/TICK)
+   Week 4:    Pattern + sound sync (bidirectional)
+   Week 5:    Hardware button/encoder feedback
+   Week 6:    Browser fallback (WebUSB/Serial) + testing
+
+4. FILES TO CREATE
+   NEW:
+     • electron/omnitribe-bridge.ts (USB comm, ~300 lines)
+     • electron/omnitribe-ipc.ts (IPC handlers, ~150 lines)
+     • client/src/hooks/useOmniTribe.ts (React hook, ~200 lines)
+     • client/src/utils/omnitribe-protocol.ts (encode/decode, ~250 lines)
+     • client/src/components/OmniTribePanel/ (UI, ~300 lines)
+     • tests/integration/omnitribe.test.ts (mock device, ~400 lines)
+   
+   MODIFY (minimal):
+     • client/src/audio/AudioEngine.ts (add setOmniTribeSync())
+     • electron/main.ts (register handlers)
+     • client/src/components/MidiSettings/ (add connect button)
+
+================================================================================
+                         DELIVERABLES
+================================================================================
+
+✓ OMNITRIBE_INTEGRATION_ARCHITECTURE.md (974 lines)
+  • Complete protocol specification with message types
+  • Firmware API design
+  • SynthStudio integration layer
+  • Implementation roadmap (6-week plan)
+  • Security & reliability discussion
+  • Testing strategy with code examples
+  • Example interaction flow
+  • Appendices: dependencies, firmware checklist, trade-offs
+
+✓ CODEBASE_SUMMARY.md (7KB)
+  • Quick reference guide
+  • Quick facts table
+  • Architectural patterns with code examples
+  • Existing MIDI implementation summary
+  • Building blocks checklist
+  • File organization for new code
+  • Key interfaces to implement
+  • Integration checklist
+
+✓ SOURCE FILES ANALYZED
+  • package.json (100+ dependencies)
+  • client/src/audio/ (5,841 lines TypeScript)
+  • client/src/hooks/useMidi.ts (1,200+ lines)
+  • client/src/utils/midiOutput.ts (400+ lines)
+  • electron/ directory (20+ files)
+  • client/src/utils/korg/ (4 binary format parsers)
+
+================================================================================
+                         CRITICAL INSIGHTS
+================================================================================
+
+1. MIDI ARCHITECTURE IS SOPHISTICATED
+   SynthStudio's existing MIDI implementation (MidiClockOut, MidiNoteOut, useMidi)
+   is production-grade and directly applicable to OmniTribe. The dependency
+   injection pattern makes it testable without hardware.
+
+2. CUSTOM PROTOCOL RECOMMENDED (NOT MIDI)
+   Standard MIDI (24 PPQN clock + note messages) cannot efficiently sync patterns
+   (256+ bytes bidirectional). A custom binary protocol with message framing is
+   necessary for OmniTribe's full feature set.
+
+3. ELECTRON + BROWSER DUAL PATH
+   SynthStudio's isomorphic design (useElectron hook with browser fallbacks) means
+   OmniTribe can be implemented for both desktop (native USB) and browser (WebUSB)
+   with parallel code paths.
+
+4. TESTING IS STRAIGHTFORWARD
+   Dependency injection + mock device + Vitest make integration testing simple
+   without real hardware (critical for CI/CD).
+
+5. KORG KNOWLEDGE ALREADY IN CODEBASE
+   Electribe 2 format parsers exist (ESX-1, E2S). Parameter encoding for OmniTribe
+   can reuse this domain knowledge.
+
+================================================================================
+                            NEXT STEPS
+================================================================================
+
+1. ✓ [DONE] Codebase analysis complete
+2. Coordinate with OmniTribe firmware team on:
+   - USB VID/PID assignment
+   - Final protocol specification
+   - Firmware implementation timeline
+3. Create OmniTribeBridge (USB comm + message framing)
+4. Build Electron IPC handlers
+5. Implement useOmniTribe hook + UI
+6. Create mock device for testing
+7. Browser fallback (WebUSB / Web Serial)
+8. Integration testing with real hardware
+
+================================================================================
+
+Documentation created: 2026-05-18
+Estimated implementation time: 6 weeks (with firmware team coordination)
+Confidence level: HIGH (existing infrastructure well-suited to task)
+
+See OMNITRIBE_INTEGRATION_ARCHITECTURE.md for complete technical specification.

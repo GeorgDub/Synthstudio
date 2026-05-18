@@ -50,6 +50,7 @@ import {
   PRO_FEATURE_USB_AUDIO_IN,
   PRO_FEATURE_ELECTRIBE_IMPORT,
   PRO_FEATURE_KORG_BANK_IMPORT,
+  PRO_FEATURE_KORG_BANK_WRITE,
   PRO_FEATURES,
 } from "../../client/src/utils/proFeatures";
 
@@ -67,15 +68,16 @@ beforeEach(() => {
 
 // ─── PRO_FEATURES Registry ───────────────────────────────────────────────────
 
-describe("PRO_FEATURES registry (v2.98 / v3.3)", () => {
-  it("enthält alle 6 erwarteten Features (v3.3.0: +korg-bank-import)", () => {
+describe("PRO_FEATURES registry (v2.98 / v3.3 / v3.4)", () => {
+  it("enthält alle 7 erwarteten Features (v3.4.0: +korg-bank-write)", () => {
     expect(PRO_FEATURES).toContain(PRO_FEATURE_LIVE_LOOPING);
     expect(PRO_FEATURES).toContain(PRO_FEATURE_MIDI_NOTE_OUT);
     expect(PRO_FEATURES).toContain(PRO_FEATURE_STEM_BOUNCE);
     expect(PRO_FEATURES).toContain(PRO_FEATURE_USB_AUDIO_IN);
     expect(PRO_FEATURES).toContain(PRO_FEATURE_ELECTRIBE_IMPORT);
     expect(PRO_FEATURES).toContain(PRO_FEATURE_KORG_BANK_IMPORT);
-    expect(PRO_FEATURES).toHaveLength(6);
+    expect(PRO_FEATURES).toContain(PRO_FEATURE_KORG_BANK_WRITE);
+    expect(PRO_FEATURES).toHaveLength(7);
   });
 });
 

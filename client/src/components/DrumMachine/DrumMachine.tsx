@@ -34,7 +34,7 @@ import {
   type ParsedPattern,
   type SynthstudioPatternImport,
 } from "@/utils/electribeImport";
-import { requireProFeature, PRO_FEATURE_ELECTRIBE_IMPORT, PRO_FEATURE_KORG_BANK_IMPORT } from "@/utils/proFeatures";
+import { requireProFeature, PRO_FEATURE_ELECTRIBE_IMPORT, PRO_FEATURE_KORG_BANK_IMPORT, PRO_FEATURE_KORG_BANK_WRITE } from "@/utils/proFeatures";
 import { ProLockBadge } from "@/components/License/ProLockBadge";
 import { GranularSynthPanel } from "./GranularSynthPanel";
 import { DEFAULT_GRANULAR_PARAMS } from "@/audio/GranularEngine";
@@ -1283,6 +1283,24 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
           }}
           data-testid="korg-bank-import-input"
         />
+
+        {/* KORG E2 Sampler EXPORT (v3.4.0) — Synthstudio → .all */}
+        <button
+          onClick={() => {
+            if (!requireProFeature(PRO_FEATURE_KORG_BANK_WRITE)) return;
+            try {
+              window.dispatchEvent(new CustomEvent("korg:bank:export-open"));
+            } catch {
+              /* test-env without CustomEvent */
+            }
+          }}
+          title="Sample-Bank für KORG Electribe 2 Sampler exportieren (.all)"
+          className="px-2 py-1 rounded text-[10px] bg-bg-elevated text-text-dim hover:bg-bg-elevated hover:text-text-primary transition-colors inline-flex items-center gap-1"
+          data-testid="korg-bank-export"
+        >
+          📤 KORG Export
+          <ProLockBadge feature={PRO_FEATURE_KORG_BANK_WRITE} />
+        </button>
 
         {/* Sample-Slicing (TASK-238 / v2.89) */}
         <button

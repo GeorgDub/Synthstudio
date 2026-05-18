@@ -191,6 +191,29 @@ const electronAPI = {
   getKorgBankCap: (): Promise<number> =>
     ipcRenderer.invoke("korg:get-bank-cap"),
 
+  // ── KORG Sample-Bank EXPORT (v3.4.0) ────────────────────────────────────────
+
+  /**
+   * Speichert einen E2S `.all`-Buffer via nativen Save-Dialog. Main-Side
+   * validiert Magic-Bytes + Größen-Cap (256 MB) + Endung. Pfad kommt aus
+   * dem Dialog (nicht vom Renderer) — kein Path-Traversal-Vektor.
+   *
+   * Datenformat: ArrayBuffer wird über IPC als Uint8Array übertragen.
+   */
+  saveKorgBankAs: (
+    suggestedFilename: string,
+    data: ArrayBuffer | Uint8Array,
+  ): Promise<{ success: boolean; filePath?: string; bytesWritten?: number; error?: string }> =>
+    ipcRenderer.invoke(
+      "korg:save-bank-as",
+      suggestedFilename,
+      data instanceof Uint8Array ? Array.from(data) : Array.from(new Uint8Array(data)),
+    ),
+
+  /** Liefert das Export-Buffer-Cap (Bytes) für UI-Hinweise. */
+  getKorgBankSaveCap: (): Promise<number> =>
+    ipcRenderer.invoke("korg:get-bank-save-cap"),
+
   // Import-Events
   onImportStarted: createEventListener<{ importId: string }>("samples:import-started"),
   onImportProgress: createEventListener<{

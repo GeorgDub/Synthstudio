@@ -29,6 +29,7 @@ export const PRO_FEATURE_STEM_BOUNCE        = "stem-bounce";
 export const PRO_FEATURE_ELECTRIBE_IMPORT   = "electribe-import";
 export const PRO_FEATURE_MIDI_NOTE_OUT      = "midi-note-out";
 export const PRO_FEATURE_KORG_BANK_IMPORT   = "korg-bank-import";
+export const PRO_FEATURE_KORG_BANK_WRITE    = "korg-bank-write";
 
 /** Full registry — keep in sync with constants above. */
 export const PRO_FEATURES = [
@@ -38,6 +39,7 @@ export const PRO_FEATURES = [
   PRO_FEATURE_ELECTRIBE_IMPORT,
   PRO_FEATURE_MIDI_NOTE_OUT,
   PRO_FEATURE_KORG_BANK_IMPORT,
+  PRO_FEATURE_KORG_BANK_WRITE,
 ] as const;
 
 export type ProFeature = (typeof PRO_FEATURES)[number];
@@ -50,6 +52,7 @@ export const PRO_FEATURE_LABELS: Record<string, string> = {
   [PRO_FEATURE_ELECTRIBE_IMPORT]: "Electribe-Import",
   [PRO_FEATURE_MIDI_NOTE_OUT]:    "MIDI-Note-Out",
   [PRO_FEATURE_KORG_BANK_IMPORT]: "KORG Sample-Bank-Import",
+  [PRO_FEATURE_KORG_BANK_WRITE]:  "KORG Sample-Bank-Export (E2S .all)",
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
