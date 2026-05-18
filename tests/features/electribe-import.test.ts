@@ -1318,3 +1318,226 @@ const REAL_E2SALLPAT_AVAILABLE = (() => {
     });
   },
 );
+
+// ─── v3.13.0 — Part-Header Volume/Pan + Pattern-Globals StepLength RE ────────
+//
+// Diese Tests verifizieren die in v3.13.0 reverse-engineerten Felder:
+//   - Part-Volume @ part_off + 0x15 (HIGH confidence)
+//   - Part-Pan    @ part_off + 0x22 (HIGH confidence)
+//   - StepLength  @ PTST    + 0x25 (HIGH confidence, code 0/1/3 → 16/32/64)
+//
+// Methodology: Histogram-Analyse ueber 4000 part-samples + maxStep-Korrelation.
+
+(REAL_FILES_AVAILABLE ? describe : describe.skip)(
+  "electribeImport – v3.13 Part-Header Volume/Pan (Real-File-Verifikation)",
+  () => {
+    it("BodyTalk1: Parts haben unterschiedliche Volume-Werte (nicht alle = default)", () => {
+      const buf = loadRealFile(REAL_FILE_BODYTALK);
+      if (!buf) return;
+      const p = parseElectribePattern(buf);
+      const volumes = p.parts.map(part => part.volume);
+      const uniqueVols = new Set(volumes);
+      // BodyTalk hat bewusst gemixte Levels — sollte mindestens 3 verschiedene
+      // Volume-Werte ueber die 16 Parts haben.
+      expect(uniqueVols.size).toBeGreaterThanOrEqual(3);
+      // Alle im erwarteten 0..127-Range.
+      expect(volumes.every(v => v >= 0 && v <= 127)).toBe(true);
+    });
+
+    it("BodyTalk1: spezifische Part-Volumes match Hex-RE", () => {
+      const buf = loadRealFile(REAL_FILE_BODYTALK);
+      if (!buf) return;
+      const p = parseElectribePattern(buf);
+      // Hex-Inspection (file offset 0x900 + p*816 + 0x15):
+      // Part 0: 0x14 = 20, Part 1: 0x7F = 127, Part 2: 0x6C = 108,
+      // Part 8: 0x2E = 46, Part 15: 0x7F = 127.
+      expect(p.parts[0].volume).toBe(20);
+      expect(p.parts[1].volume).toBe(127);
+      expect(p.parts[2].volume).toBe(108);
+      expect(p.parts[8].volume).toBe(46);
+      expect(p.parts[15].volume).toBe(127);
+    });
+
+    it("Init181: alle 16 Parts haben Default-Volume 127", () => {
+      const buf = loadRealFile(REAL_FILE_INIT_181);
+      if (!buf) return;
+      const p = parseElectribePattern(buf);
+      // Hex-RE: Init181 hat 0x7F bei +0x15 fuer alle 16 Parts.
+      for (const part of p.parts) {
+        expect(part.volume).toBe(127);
+      }
+    });
+
+    it("Init181: alle 16 Parts haben Pan = 64 (center)", () => {
+      const buf = loadRealFile(REAL_FILE_INIT_181);
+      if (!buf) return;
+      const p = parseElectribePattern(buf);
+      // Hex-RE: Init181 hat 0x40 bei +0x22 fuer alle 16 Parts.
+      for (const part of p.parts) {
+        expect(part.pan).toBe(64);
+      }
+    });
+
+    it("BodyTalk1: Pan-Werte variieren ueber Parts (Stereo-Mix)", () => {
+      const buf = loadRealFile(REAL_FILE_BODYTALK);
+      if (!buf) return;
+      const p = parseElectribePattern(buf);
+      const pans = p.parts.map(part => part.pan);
+      const uniquePans = new Set(pans);
+      // Mindestens 3 verschiedene Pan-Positionen.
+      expect(uniquePans.size).toBeGreaterThanOrEqual(3);
+      // Alle im 0..127-Range.
+      expect(pans.every(v => v >= 0 && v <= 127)).toBe(true);
+      // Hex-RE: Part 0 hat Pan=0x5D=93, Part 15 hat Pan=0x00=0 (hard-L).
+      expect(p.parts[0].pan).toBe(93);
+      expect(p.parts[15].pan).toBe(0);
+    });
+
+    it("convertParsedPatternToSynthstudio: BodyTalk Pan wird auf -1..+1 normalisiert", () => {
+      const buf = loadRealFile(REAL_FILE_BODYTALK);
+      if (!buf) return;
+      const conv = convertParsedPatternToSynthstudio(parseElectribePattern(buf));
+      // Part 15 hat raw-Pan=0 → normalisiert (0-64)/63 = -1.016 → clamped auf -1.
+      expect(conv.drumParts[15].pan).toBeCloseTo(-1, 2);
+      // Part 0 hat raw-Pan=93 → (93-64)/63 = 0.46.
+      expect(conv.drumParts[0].pan).toBeCloseTo(0.46, 1);
+    });
+
+    it("convertParsedPatternToSynthstudio: BodyTalk Volume wird auf 0..1 normalisiert", () => {
+      const buf = loadRealFile(REAL_FILE_BODYTALK);
+      if (!buf) return;
+      const conv = convertParsedPatternToSynthstudio(parseElectribePattern(buf));
+      // Part 0 hat raw-Vol=20 → 20/127 ≈ 0.157.
+      expect(conv.drumParts[0].volume).toBeCloseTo(20 / 127, 2);
+      // Part 1 hat raw-Vol=127 → 1.0.
+      expect(conv.drumParts[1].volume).toBeCloseTo(1.0, 2);
+    });
+  },
+);
+
+(REAL_FILES_AVAILABLE ? describe : describe.skip)(
+  "electribeImport – v3.13 Pattern-Globals StepLength (Real-File-Verifikation)",
+  () => {
+    it("BodyTalk1: StepLength code 3 → 64 Steps", () => {
+      const buf = loadRealFile(REAL_FILE_BODYTALK);
+      if (!buf) return;
+      const p = parseElectribePattern(buf);
+      // Hex-RE: PTST+0x25 = 0x03 ⇒ 64 Steps.
+      expect(p.stepLength).toBe(64);
+    });
+
+    it("Init181: StepLength code 0 → 16 Steps (Default)", () => {
+      const buf = loadRealFile(REAL_FILE_INIT_181);
+      if (!buf) return;
+      const p = parseElectribePattern(buf);
+      // Hex-RE: PTST+0x25 = 0x00 ⇒ 16 Steps.
+      expect(p.stepLength).toBe(16);
+    });
+
+    it("Advisory1 + Init250: StepLength code 3 → 64 Steps", () => {
+      for (const fn of [REAL_FILE_ADVISORY, REAL_FILE_INIT_250]) {
+        const buf = loadRealFile(fn);
+        if (!buf) continue;
+        const p = parseElectribePattern(buf);
+        // Hex-RE bestaetigt: beide Files haben PTST+0x25 = 3.
+        expect(p.stepLength).toBe(64);
+      }
+    });
+
+    it("convertParsedPatternToSynthstudio: StepCount 64 wird auf 32 geclampt", () => {
+      const buf = loadRealFile(REAL_FILE_BODYTALK);
+      if (!buf) return;
+      const conv = convertParsedPatternToSynthstudio(parseElectribePattern(buf));
+      // BodyTalk parsed mit stepLength=64, aber Synthstudio-max ist 32.
+      expect(conv.stepCount).toBe(32);
+    });
+  },
+);
+
+// ─── v3.13.0 — Stock-Bank histogram verification ──────────────────────────────
+
+(REAL_E2SALLPAT_AVAILABLE ? describe : describe.skip)(
+  "electribeImport – v3.13 Stock-Bank Volume/Pan/StepLength Statistik",
+  () => {
+    it("Stock-Bank: Volume-Range 0..127 ueber alle 4000 Parts (kein clamp-warning)", () => {
+      const buf = new Uint8Array(fs.readFileSync(REAL_E2SALLPAT_PATH));
+      const bank = parseElectribeAllPatBank(buf);
+      let minVol = 200, maxVol = -1;
+      let totalParts = 0;
+      for (const p of bank.patterns) {
+        for (const part of p.parts) {
+          if (part.volume < minVol) minVol = part.volume;
+          if (part.volume > maxVol) maxVol = part.volume;
+          totalParts++;
+          expect(part.volume).toBeGreaterThanOrEqual(0);
+          expect(part.volume).toBeLessThanOrEqual(127);
+        }
+      }
+      expect(totalParts).toBe(250 * 16);
+      // Min sollte irgendwo bei 0 sein (mindestens 1 muted part), max bei 127.
+      expect(minVol).toBeLessThanOrEqual(64);
+      expect(maxVol).toBe(127);
+    });
+
+    it("Stock-Bank: Pan-Center (64) dominiert, aber hard-L (0) und hard-R (127) kommen vor", () => {
+      const buf = new Uint8Array(fs.readFileSync(REAL_E2SALLPAT_PATH));
+      const bank = parseElectribeAllPatBank(buf);
+      let centerCount = 0, hardLCount = 0, hardRCount = 0;
+      for (const p of bank.patterns) {
+        for (const part of p.parts) {
+          expect(part.pan).toBeGreaterThanOrEqual(0);
+          expect(part.pan).toBeLessThanOrEqual(127);
+          if (part.pan === 64) centerCount++;
+          if (part.pan === 0) hardLCount++;
+          if (part.pan === 127) hardRCount++;
+        }
+      }
+      // Center dominiert (>40% laut Histogram).
+      expect(centerCount).toBeGreaterThan(1600);
+      // Hard-L und Hard-R existieren in mehreren Patterns.
+      expect(hardLCount).toBeGreaterThan(50);
+      expect(hardRCount).toBeGreaterThan(200);
+    });
+
+    it("Stock-Bank: StepLength-Distribution (16=Init, 32=Edge-Cases, 64=Mehrheit)", () => {
+      const buf = new Uint8Array(fs.readFileSync(REAL_E2SALLPAT_PATH));
+      const bank = parseElectribeAllPatBank(buf);
+      const counts = { 16: 0, 32: 0, 64: 0 };
+      for (const p of bank.patterns) {
+        const len = p.stepLength as 16 | 32 | 64;
+        counts[len]++;
+      }
+      // Laut Hex-Analyse: 9 Init-Patterns (16), 2 patterns (32), 239 patterns (64).
+      expect(counts[16]).toBeGreaterThan(5);
+      expect(counts[16]).toBeLessThan(20);
+      expect(counts[32]).toBeGreaterThanOrEqual(1);
+      expect(counts[64]).toBeGreaterThan(200);
+      expect(counts[16] + counts[32] + counts[64]).toBe(250);
+    });
+
+    it("Stock-Bank: futureMonger1 (Slot 202) hat StepLength=32", () => {
+      const buf = new Uint8Array(fs.readFileSync(REAL_E2SALLPAT_PATH));
+      const bank = parseElectribeAllPatBank(buf);
+      // Slot 202 = index 201. Hex-RE: PTST+0x25 = 0x01 ⇒ 32 Steps.
+      const slot202 = bank.patterns[201];
+      expect(slot202.name).toBe("futureMonger1");
+      expect(slot202.stepLength).toBe(32);
+    });
+  },
+);
+
+// ─── v3.13.0 — Synthetic edge-case tests for new constants ──────────────────
+
+describe("electribeImport – v3.13 Constants are exported", () => {
+  it("Volume/Pan offset constants sind self-konsistent", async () => {
+    const mod = await import("../../client/src/utils/electribeImport");
+    expect(mod.ELECTRIBE_REAL_PART_VOLUME_OFFSET).toBe(0x15);
+    expect(mod.ELECTRIBE_REAL_PART_PAN_OFFSET).toBe(0x22);
+    expect(mod.ELECTRIBE_REAL_PART_VOLUME_DEFAULT).toBe(127);
+    expect(mod.ELECTRIBE_REAL_PART_PAN_DEFAULT).toBe(64);
+    expect(mod.ELECTRIBE_REAL_STEP_LENGTH_OFFSET).toBe(0x25);
+    expect(mod.ELECTRIBE_REAL_STEP_LENGTH_CODES[0]).toBe(16);
+    expect(mod.ELECTRIBE_REAL_STEP_LENGTH_CODES[1]).toBe(32);
+    expect(mod.ELECTRIBE_REAL_STEP_LENGTH_CODES[3]).toBe(64);
+  });
+});

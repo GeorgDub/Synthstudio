@@ -6,6 +6,10 @@
  *                                  (verified 2026-05-18, 4 reale .e2spat-Files).
  * v3.12.0 STEP-ENCODING-RE — Reverse-engineered step-record encoding via
  *                            byte-stride analysis (BodyTalk vs Init181 hex-diff).
+ * v3.13.0 PART-HEADER + GLOBALS-RE — Per-Part Volume (+0x15), Pan (+0x22) und
+ *                                    Pattern-Global StepLength (PTST+0x25)
+ *                                    via histogram analysis ueber 250-Pattern
+ *                                    Stock-Bank (4000 part-samples).
  *
  * Unterstuetzte Endungen:
  *   - `.e2spat`      = Single-Pattern (Sampler-Export, 16640 Bytes)
@@ -53,9 +57,24 @@
  *
  * v3.12 Confidence Levels:
  *   ✅ HIGH:   Step-Trigger (byte 0), Velocity (byte 1), Note (byte 4)
- *   ⚠ MEDIUM: Per-Part-Header Felder (Volume/Pan/Pitch/FxSend) — Offsets noch nicht final
  *   ⚠ MEDIUM: Step byte 3 (Accent/Tied)
- *   ❌ LOW:   Motion-Sequencer-Daten, Step-Length, Swing
+ *   ❌ LOW:   Motion-Sequencer-Daten, Swing
+ *
+ * v3.13 Confidence Levels (NEU):
+ *   ✅ HIGH:   Part-Volume   @ part_off + 0x15 (0..127, default 0x7F)
+ *   ✅ HIGH:   Part-Pan      @ part_off + 0x22 (0..127, 64=center)
+ *   ✅ HIGH:   StepLength    @ PTST    + 0x25 (0=16, 1=32, 3=64)
+ *   ⚠ MEDIUM: Part-Volume #2 @ part_off + 0x18 (0..127, beobachtet aber semantisch unklar)
+ *   ❌ LOW:   Pitch (signed) — kein Byte zeigt signed-distribution in 4000 samples
+ *   ❌ LOW:   FxSend — kein klares default-Byte identifiziert
+ *   ❌ LOW:   Swing — PTST+0x123..0x12a hat varying bytes, keine klare Korrelation
+ *
+ * v3.13 RE Methodology:
+ *   Histogramm-Analyse ueber e2s-2016.e2sallpat Stock-Bank (250 Patterns × 16 Parts
+ *   = 4000 Part-Header-Samples). Volume@0x15 zeigt peak bei 0x7F (default) und
+ *   uniform distribution 0..127, Pan@0x22 peak bei 0x40 (center). StepLength
+ *   verifiziert via maxStep-Korrelation: PTST+0x25=0 ⇒ keine Steps > index 16,
+ *   PTST+0x25=1 ⇒ steps up to index 31, PTST+0x25=3 ⇒ steps up to index 63.
  *
  * ── LEGACY/SYNTHETIC LAYOUT (best-effort, v2.88) ───────────────────────────
  *
@@ -177,6 +196,45 @@ export const ELECTRIBE_REAL_STEP_NOTE_OFFSET = 4;
 /** Sentinel-Wert: 0xFF in velocity-Byte = "use default-velocity 127". */
 export const ELECTRIBE_REAL_VELOCITY_DEFAULT_SENTINEL = 0xff;
 export const ELECTRIBE_REAL_VELOCITY_DEFAULT_VALUE = 127;
+
+/**
+ * v3.13.0: Real-File Part-Header byte offsets (relative zum part-block start).
+ *
+ * Verified via histogram analysis ueber 4000 part-samples (250 patterns × 16 parts):
+ *   - 0x15 = Volume (peak bei 0x7F default, range 0..127)
+ *   - 0x22 = Pan    (peak bei 0x40 center, range 0..127)
+ *
+ * NICHT decodiert (Pitch und FxSend bleiben Hardware-Defaults):
+ *   - Pitch: kein Byte zeigt signed-distribution in der Bank.
+ *   - FxSend: kein klares default-pattern identifiziert.
+ */
+export const ELECTRIBE_REAL_PART_VOLUME_OFFSET = 0x15;
+export const ELECTRIBE_REAL_PART_PAN_OFFSET    = 0x22;
+
+/** Hardware-Default fuer Part-Volume (beobachtet in 63.4% aller part-samples). */
+export const ELECTRIBE_REAL_PART_VOLUME_DEFAULT = 127;
+/** Hardware-Default fuer Part-Pan (Center, beobachtet in 59.7% aller part-samples). */
+export const ELECTRIBE_REAL_PART_PAN_DEFAULT = 64;
+
+/**
+ * v3.13.0: Real-File Pattern-Globals offset (relativ zum PTST-Marker).
+ *
+ *   - PTST+0x25 = Step-Length-Code (verified via maxStep-Korrelation):
+ *       0 → 16 Steps (alle Init-Patterns)
+ *       1 → 32 Steps (z.B. futureMonger1, TopieIterate1)
+ *       3 → 64 Steps (vast majority der Stock-Patterns)
+ *
+ * NICHT decodiert: Swing-Wert. PTST+0x123..0x12a haben varying bytes, aber
+ * keine klare Korrelation zu User-bekannten Swing-Werten.
+ */
+export const ELECTRIBE_REAL_STEP_LENGTH_OFFSET = 0x25; // PTST-relativ
+
+/** Mapping Step-Length-Code → tatsaechliche Step-Anzahl. */
+export const ELECTRIBE_REAL_STEP_LENGTH_CODES: Record<number, 16 | 32 | 64> = {
+  0: 16,
+  1: 32,
+  3: 64,
+};
 
 /** Maximale Pattern-Anzahl in einer Bank (.e2sallpat speichert bis 250). */
 export const MAX_PATTERNS_PER_BANK = 250;
@@ -547,13 +605,32 @@ function parseRealPartBlock(view: DataView, partOffset: number, partIndex: numbe
   const safeU16LE = (off: number) =>
     off >= 0 && off + 1 < haveBytes ? view.getUint16(partOffset + off, true) : 0;
 
-  // Part-Header: Best-Effort. Diese Offsets sind beobachtet, aber das exakte
-  // Field-Mapping ist noch unklar (Hex-Diff zeigt diff bei +0x08/+0x0B/+0x0C
-  // zwischen Parts, aber Semantik unverified).
-  // Defaults sind sicher (Hardware-Defaults).
+  // Part-Header: v3.13.0 — Volume + Pan jetzt decodiert via histogram-RE.
+  // SampleId-Offset 0x04 ist Best-Effort (varies aber semantisch unverified).
+  // Pitch + FxSend bleiben Hardware-Defaults (keine signed-distribution oder
+  // klares default-byte in der 4000-sample-bank gefunden).
   const sampleId = safeU16LE(4); // Best-Effort — observed varies between parts
-  const volume   = 100;
-  const pan      = 64;
+
+  // Volume @ +0x15: 0..127. Defensive clamp gegen out-of-range (sollte nie
+  // > 127 sein laut bank-histogram, aber defensiv parsen).
+  const rawVol = safeU8(ELECTRIBE_REAL_PART_VOLUME_OFFSET);
+  let volume: number = rawVol;
+  if (volume > 127) {
+    // eslint-disable-next-line no-console
+    console.warn(`Electribe-Parser: Part ${partIndex} volume ${rawVol} > 127 — clamp auf 127`);
+    volume = 127;
+  }
+
+  // Pan @ +0x22: 0..127 (64 = center). Defensive clamp.
+  const rawPan = safeU8(ELECTRIBE_REAL_PART_PAN_OFFSET);
+  let pan: number = rawPan;
+  if (pan > 127) {
+    // eslint-disable-next-line no-console
+    console.warn(`Electribe-Parser: Part ${partIndex} pan ${rawPan} > 127 — clamp auf 127`);
+    pan = 127;
+  }
+
+  // Pitch + FxSend: nicht decodiert → Hardware-Defaults.
   const pitch    = 0;
   const fxSend   = 0;
 
@@ -655,8 +732,25 @@ function parseRealPatternAt(
     if (bpm > ELECTRIBE_MAX_BPM) bpm = ELECTRIBE_MAX_BPM;
   }
 
-  const stepLength = 16;
-  const swing      = 0;
+  // v3.13.0: StepLength aus PTST+0x25 (code 0=16, 1=32, 3=64).
+  // Defensive: unbekannte codes → default 16.
+  let stepLength: 16 | 32 | 64 = 16;
+  const stepLenOff = ptstOffset + ELECTRIBE_REAL_STEP_LENGTH_OFFSET;
+  if (stepLenOff < view.byteLength) {
+    const code = view.getUint8(stepLenOff);
+    const mapped = ELECTRIBE_REAL_STEP_LENGTH_CODES[code];
+    if (mapped !== undefined) {
+      stepLength = mapped;
+    } else {
+      // eslint-disable-next-line no-console
+      console.warn(
+        `Electribe-Parser: unbekannter Step-Length-Code ${code} bei PTST+0x25 — Fallback auf 16`,
+      );
+    }
+  }
+
+  // Swing: noch nicht decodiert.
+  const swing = 0;
 
   // 16 Parts ab partsOffset, je 816 Bytes (v3.12-verified stride)
   const parts: ParsedPart[] = new Array(PARTS_PER_PATTERN);
@@ -727,6 +821,8 @@ export function parseElectribeAllPatBank(
     const marker = readAsciiAt(view, ptstOffset, 4);
     if (marker !== ELECTRIBE_REAL_PATTERN_MARKER) {
       // Slot ohne PTST → minimaler Default-Eintrag.
+      // v3.13.0: Volume-Default ist 127 (Hardware-Standard, 63.4% Bank-Distribution),
+      // Pan-Default ist 64 (Center, 59.7%).
       patterns[i] = {
         name: `Slot ${i + 1}`,
         bpm: 120,
@@ -735,8 +831,8 @@ export function parseElectribeAllPatBank(
         parts: Array.from({ length: PARTS_PER_PATTERN }, (_, p) => ({
           index: p,
           sampleId: 0,
-          volume: 100,
-          pan: 64,
+          volume: ELECTRIBE_REAL_PART_VOLUME_DEFAULT,
+          pan: ELECTRIBE_REAL_PART_PAN_DEFAULT,
           pitch: 0,
           fxSend: 0,
           steps: Array.from({ length: STEPS_PER_PART }, () => ({ active: false, velocity: 0 })),

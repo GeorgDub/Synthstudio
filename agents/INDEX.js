@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.12.0",
+    version: "3.13.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -1151,6 +1151,31 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "backend",
+      timestamp: "2026-05-18T11:15:00.000Z",
+      done: [
+        "v3.13.0: Part-Header + Pattern-Globals Reverse-Engineering — schließt TASK-v3.12-FU-1 (teilweise) + TASK-v3.12-FU-3. Drei neue Felder decodiert via Histogramm-Analyse über e2s-2016.e2sallpat Stock-Bank (250 Patterns × 16 Parts = 4000 part-samples): (1) Part-Volume @ part_off + 0x15 (0..127, default 0x7F, beobachtet in 63.4% aller samples) — HIGH confidence. (2) Part-Pan @ part_off + 0x22 (0..127, 0x40=center, beobachtet in 59.7%) — HIGH confidence. (3) StepLength @ PTST+0x25 als Code-Mapping {0:16, 1:32, 3:64} — HIGH confidence via maxStep-Korrelation: alle 9 Patterns mit PTST+0x25=0 haben kein step > index 15, beide Patterns mit code=1 (futureMonger1, TopieIterate1) haben max steps bei 31, 239 Patterns mit code=3 haben steps bis 63.",
+        "RE-Methodology: (a) Hex-Diff aller 16 Part-Header (48B each) von BodyTalk1 vs Init181 vs Init250 vs Advi$ory1. Init181 zeigt deutlich identische Defaults für alle Parts (vol=0x7F, pan=0x40 jeweils), während BodyTalk programmierte Mixer-Settings hat (vol=0x14, 0x7F, 0x6C, 0x40, 0x2E etc; pan=0x5D, 0x22, 0x40, 0x7F, 0x00). (b) Cross-Check mit 4000-Sample Histogram aus Stock-Bank: Volume@0x15 top-distribution 127(2538)/64(208)/50(39); Pan@0x22 top 64(2386)/127(329)/0(83) — klare Default-Peaks mit voller 0..127-Range. (c) Pitch + FxSend NICHT decodiert: kein Byte in den 48 Part-Header-Bytes zeigt signed-distribution (alle constant-zero columns 0x16, 0x17, 0x23, 0x26..0x2F) oder klares default-pattern für FxSend. Konservativ als Hardware-Default 0 belassen.",
+        "Implementation: (1) client/src/utils/electribeImport.ts: +6 neue Konstanten ELECTRIBE_REAL_PART_VOLUME_OFFSET=0x15, ELECTRIBE_REAL_PART_PAN_OFFSET=0x22, ELECTRIBE_REAL_PART_VOLUME_DEFAULT=127, ELECTRIBE_REAL_PART_PAN_DEFAULT=64, ELECTRIBE_REAL_STEP_LENGTH_OFFSET=0x25 (PTST-relativ), ELECTRIBE_REAL_STEP_LENGTH_CODES={0:16, 1:32, 3:64}. parseRealPartBlock: alte volume=100/pan=64 Hardware-Defaults ersetzt durch safeU8-Read aus +0x15 / +0x22 mit out-of-range console.warn + defensive clamp auf 127. parseRealPatternAt: StepLength wird aus PTST+0x25 via Mapping decodiert (Fallback 16 bei unbekanntem code mit console.warn). Init181 e2sallpat-Fallback (slots ohne PTST) auf neue _DEFAULT-Konstanten umgestellt (vorher hardcoded 100/64). Header-Kommentar dokumentiert v3.13-RE-Methodik mit allen confidence-Levels. (2) tests/features/electribe-import.test.ts: +16 neue Tests in 3 describe-Blöcken: 'v3.13 Part-Header Volume/Pan' (7 Tests, real-file conditional): BodyTalk1 vol-Varianz >= 3 unique-Werte, spezifische Part-Volumes (P0=20, P1=127, P2=108, P8=46, P15=127), Init181 alle 16 Parts vol=127+pan=64, BodyTalk Pan-Varianz + P0=93/P15=0, convert→Synthstudio Pan-Normalisierung (P15→-1, P0→0.46), Volume-Normalisierung. 'v3.13 Pattern-Globals StepLength' (4 Tests): BodyTalk/Advi/Init250 alle 64, Init181=16, convert clampt 64→32. 'v3.13 Stock-Bank Volume/Pan/StepLength' (4 Tests, e2sallpat conditional): Volume-Range-check über 4000 parts, Pan-Center-Dominanz + hard-L/R-Existenz, StepLength-Distribution 16/32/64 counts, futureMonger1 (Slot 202) hat exakt StepLength=32. +1 Test 'Constants are exported' verifiziert ELECTRIBE_REAL_PART_VOLUME_OFFSET+_PAN_OFFSET+_DEFAULTs+_STEP_LENGTH_CODES sind public-API.",
+        "Test-Resultat: pnpm vitest run tests/features/electribe-import.test.ts → 111 passed (vorher 95, +16 neue v3.13-Tests). pnpm test gesamt → 3846 passed / 15 skipped (vorher 3818 → +28: 16 v3.13 + andere unrelated Increments). pnpm check clean. Tests gegen reale Files sind conditional via REAL_FILES_AVAILABLE / REAL_E2SALLPAT_AVAILABLE — CI ohne 'Korg e2s files/' bzw. 'e2s-2016/' skipped automatisch.",
+        "Confidence-Level (v3.13 NEU): ✅ HIGH (verifiziert gegen 4 reale .e2spat + 250-Pattern Stock-Bank): Part-Volume @ +0x15, Part-Pan @ +0x22, StepLength code @ PTST+0x25 mit 3-Werte-Mapping. ❌ LOW (noch nicht decodiert): Pitch (kein signed-byte in 4000-sample Histogram), FxSend (kein klares default-pattern), Swing (PTST+0x123..0x12A varying bytes ohne erkennbare Korrelation zu User-bekannten Werten), Motion-Sequencer-Daten, byte 0x18 in part-header (zeigt 127/85 als peak — vermutlich Sample-Volume vs Part-Volume, semantisch unklar gelassen).",
+        "package.json 3.12.0 → 3.13.0."
+      ],
+      next: [
+        "TASK-v3.13-FU-1 (Pitch RE): kein Byte in den part-header 48 Bytes zeigt signed-distribution. Möglicherweise ist Pitch nicht per-Part-Header sondern in motion-data / pattern-globals encoded — oder als unsigned offset mit center=0x40. Cross-Check mit User-Pattern wo Pitch bewusst gesetzt ist (z.B. Synth-Parts mit nicht-default Tune) wäre der nächste RE-Schritt.",
+        "TASK-v3.13-FU-2 (FxSend RE): kein klares default-pattern in der Bank. Möglicherweise im 1280B trailing pattern-footer oder als motion-modulation gespeichert. Hex-Diff Init vs BodyTalk Part 0 zeigt diff bei +0x18 (Init=0x55, BodyTalk=0x7F) — könnte FxSend sein, aber Init181 alle 16 Parts bei 0x55 ist unverdächtig (gleicher Default), während Init250 0x7F hat. Zwei verschiedene 'init' Defaults für FxSend wären strange.",
+        "TASK-v3.13-FU-3 (Swing RE): PTST+0x123..0x12A im Bereich der Pattern-Header-Felder hat varying bytes (z.B. PTST+0x23 = 4/5/3, PTST+0x29 = 2 fast immer). Vergleich gegen User-bekannte Swing-Werte (in Pattern-Documentation der KORG E2) wäre notwendig — aktuelle Stock-Bank hat keine annotierten Swing-Werte abrufbar.",
+        "TASK-v3.13-FU-4 (Motion-Sequencer im 1280B trailing footer): unverändert vs v3.12 — separater RE-Pass benötigt mit BodyTalk-Patterns die bekanntermaßen Motion-Daten haben.",
+        "TASK-v3.13-FU-5 (byte 0x18 Semantik): Init181 hat 0x55=85, Init250 hat 0x7F=127, BodyTalk varied 0x14..0x7F. Mit 2 verschiedenen Init-Defaults ist es kein Motion-Volume — könnte Sample-Volume sein (vs Part-Volume), Send-Level, oder Pitch (unsigned 0..127 statt signed)."
+      ],
+      changed: [
+        "client/src/utils/electribeImport.ts (+6 v3.13-Konstanten für Volume/Pan/StepLength-Offsets + Mapping, parseRealPartBlock decodiert Volume @ +0x15 + Pan @ +0x22 mit defensive clamp, parseRealPatternAt decodiert stepLength via PTST+0x25-Mapping, e2sallpat-Fallback nutzt neue _DEFAULT-Konstanten, Header-Kommentar dokumentiert v3.13-RE-Findings + Confidence-Levels)",
+        "tests/features/electribe-import.test.ts (+16 Tests: 7 real-file v3.13 Volume/Pan + 4 real-file StepLength + 4 e2sallpat-Stock-Bank histogram-Validation + 1 Constants-Export-Check)",
+        "package.json (3.12.0 → 3.13.0)",
+        "agents/INDEX.js (version 3.12.0 → 3.13.0 + workLog v3.13.0 + TASK-v3.12-FU-1 partial + TASK-v3.12-FU-3 closed)"
+      ]
+    },
     {
       agent:     "backend",
       timestamp: "2026-05-18T11:05:00.000Z",
