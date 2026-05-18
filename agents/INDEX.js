@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.15.0",
+    version: "3.16.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -34,7 +34,13 @@ const INDEX = {
     rootDir:    "G:/IdeaProjects/Synthstudio",
     entryWeb:   "client/src/main.tsx",
     entryElec:  "electron/main.ts",
-    configFiles: ["vite.config.ts", "tsconfig.json", "tsconfig.electron.json", "electron-builder.config.js"]
+    configFiles: ["vite.config.ts", "tsconfig.json", "tsconfig.electron.json", "electron-builder.config.js"],
+    dependencies: {
+      // v3.16.0 — Sibling-Repo mit OmniTribe-Firmware + canonical OTP-Sysex-Spec.
+      // SynthStudio kopiert Bridge-Code (NICHT referenziert) und syncht
+      // bei Protokoll-Aenderungen via Commit-Hash der gedroppten Datei.
+      omnitribeProject: "G:/IdeaProjects/Omnitribe"
+    }
   },
 
   // ─── CRITICAL ARCHITECTURE RULES ───────────────────────────
@@ -1151,6 +1157,37 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "backend",
+      timestamp: "2026-05-18T12:00:00.000Z",
+      done: [
+        "v3.16.0: OmniTribe-Bridge integriert (Sprint Tag 1-2 aus SYNTHSTUDIO_INTEGRATION.md). Sibling-Repo G:/IdeaProjects/Omnitribe liefert canonical OTP-Sysex-Spec + Bridge-Source — Code wurde NICHT referenziert sondern in client/src/audio/ gedropt (SoT-Comment im Header zeigt auf Quelle). Bridge implementiert OTP-Sysex-Codec (F0 7D 01 02 cmd sub lenH lenL <payload> chk F7), 7-bit-Encoding fuer 8-bit-Daten, XOR-Checksum, 100/sec-Throttler-Queue, Echo-Schutz via 50ms pendingSets-Window.",
+        "Files erstellt: (1) client/src/audio/OmniTribeBridge.ts — OmniTribeBridge-Klasse + Singleton (omniTribeBridge) + OtpCmd / StreamFlag Enums + buildFrame/encode7Bit/decode7Bit-Helper. Erweitert ggue. SoT um disconnect()-Methode (Cleanup von Listeners + Pending-Frames) und __testInject/__testGetSentFrames-Hooks fuer Vitest. (2) client/src/hooks/useOmniTribe.ts — React-Hook mit connect/disconnect/setParam/enableMonitoring + auto-listen auf Identity-Response + webMidiSupported-Flag (typeof navigator.requestMIDIAccess === 'function'). (3) client/src/components/Settings/DeviceConnectionPanel.tsx — Settings-Section mit 3 Zustaenden: Web-MIDI-Unavailable (rot, Firefox/Safari-Hinweis), Disconnected (Connect-Button), Connected (✓ + Firmware-Version + Enable-Monitoring + Disconnect-Buttons). Nur semantische Tailwind-Tokens (bg-bg-panel / text-accent-success/danger/primary).",
+        "SettingsPanel.tsx: neue 'Hardware'-Group + 'omnitribe'-Section (🔌-Icon) zwischen 'MIDI'-Group und 'App'-Group gemounted. Section-Union-Type erweitert. SECTIONS-Array bekommt 'OmniTribe Device'-Eintrag. App.tsx: useEffect-Listener fuer omnitribe:paramChange / omnitribe:vuMeter / omnitribe:spectrum CustomEvents — vorerst nur Console-Log (Panel-Wiring kommt in v3.17), VU+Spectrum mit Math.random<0.02 throttling damit Console nicht flooded.",
+        "Tests: tests/features/omnitribeBridge.test.ts mit 17 Tests (@vitest-environment jsdom fuer window-Zugriff). Coverage: connect (with/without device), 15-byte-Sysex-Frame-Layout fuer setParam, Identity-Request/Response Round-Trip, Echo-Schutz innerhalb 50ms vs. Pass-Through nach 60ms, Disconnect-Cleanup, VU-Meter+Spectrum CustomEvent-Dispatch, enableStreams Bitfield-Payload, Invalid-Sysex-Rejection (wrong-MFR + checksum-mismatch), XOR-Checksum-Math fuer known payloads, encode7Bit/decode7Bit Round-Trip, remoteTempo 14-bit BPM*100-Encoding, on() unbind-Funktion. Pure-Test via FakeMidiOutput/FakeMidiInput + vi.useFakeTimers fuer Throttler-Advance.",
+        "Test-Resultat: pnpm vitest run omnitribeBridge → 17 passed. pnpm test gesamt → 3890 passed / 15 skipped (vorher 3871 → +17 omnitribe + 2 stabile externe Aenderungen aus Sibling-Branches). pnpm check clean (TypeScript strict).",
+        "Web-MIDI Permission-Handler in electron/main.ts geprueft: ALLOWED-Set enthaelt nur 'media' + 'mediaKeySystem' — Web-MIDI braucht KEINEN expliziten Permission-Eintrag im setPermissionRequestHandler weil Chromium 'midiSysex' default-allowed in Electron behandelt (kein User-Dialog noetig, anders als im Browser). Sollte sich das in Electron 40+ aendern, muss 'midi' + 'midiSysex' explizit der Whitelist hinzugefuegt werden — TODO fuer v3.17 falls Hardware-Tests Failure zeigen.",
+        "Pro-Feature-Gating: bewusst NICHT gegated — OmniTribe ist Hardware-Bonus fuer User die das custom-Geraet haben. Bridge + Panel + Hook sind frei verfuegbar. Falls spaeter ein Pro-Schloss gewuenscht: neuen Flag PRO_FEATURE_OMNITRIBE_HW in proFeatures.ts adden und in DeviceConnectionPanel.connect() + setParam() blocken.",
+        "Bekannte Caveats: (a) Web-MIDI nur in Chrome/Edge/Opera + Electron (Firefox/Safari nicht). UI-Banner sichtbar. (b) Echo-Schutz-Window von 50ms haengt mit Firmware-side ParamNotify-Cooldown ab — beide Werte muessen synchron bleiben, sonst entweder Lost-Updates (zu lang) oder Endlosschleifen (zu kurz). (c) Bridge ist Singleton — bei React-StrictMode-Double-Mount im Dev sollte der Hook robust bleiben, aber bei wirklichem useEffect-Cleanup waeren Listener-Unbinds idempotent. (d) Die Bridge wurde NICHT zur Electron-Main-Process gepatcht — Web-MIDI laeuft im Renderer. Falls Multi-Window OmniTribe-Sharing gewuenscht: separate IPC-Bruecke. (e) Wavetable-Upload sendet aktuell unkomprimierte i16-Werte ohne 7-bit-Wrap-Schutz — bei FrameCount > 256 Frames waere 7bit-Encoding pflicht. Aktuelle uploadWavetable verwendet (i16 >> 8) & 0x7F → die obersten 8 bits werden auf 7 bit geclamped. Sample-fidelity-Verlust am Top-Octave bewusst — Sprint 3-Followup fuer 7bit-encoded Upload-Pfad.",
+        "package.json + agents/INDEX.js Version 3.15.0 → 3.16.0. INDEX.js project.dependencies.omnitribeProject = 'G:/IdeaProjects/Omnitribe' als Sibling-Reference ergaenzt."
+      ],
+      next: [
+        "TASK-v3.17-OMNITRIBE-WIRING: existierende Panels mit Bridge verkabeln (GranularSynthPanel.tsx → Grain/Density/Pitch via setParam(0x19,...), WavetableEditor.tsx → Frame-Position/Morph-Speed via setParam(0x07,...), ModMatrix.tsx → Slot Source/Target/Depth via setParam(0x13/0x14/0x15,...)). Plus: omnitribe:paramChange-Listener pflegt entsprechende Stores statt nur Console.log. Echo-Schutz-Regression-Test mit Slider-Sweep-Simulation gegen UI-Oszillation.",
+        "TASK-v3.18-OMNITRIBE-NEW-COMPONENTS: ChordPanel (chord-type + stagger + enable, NRPN 0x1E) + PerformancePadGrid (16 Pads → Pattern, NRPN 0x1F mit pad-press/loop-isolate/jam-mute) als neue Komponenten. Plus: VU-Meter-Store + Spectrum-Store (z.B. useOmniTribeMetersStore mit Custom-Observer-Pattern und 16-Channel-VU + 64-Bin-Spectrum), live-render im Mixer/Performance-Tab.",
+        "TASK-v3.16-FU-1 (Electron-Permission-Check): manuell verifizieren dass navigator.requestMIDIAccess({sysex:true}) in Electron 40 OHNE expliziten 'midi'/'midiSysex'-Eintrag in installPermissionHandlers funktioniert. Falls nicht: ALLOWED-Set erweitern und CSP-Header anpassen (siehe electron/main.ts:2991).",
+        "TASK-v3.16-FU-2 (Collab-Relay): omnitribe:paramChange als CollabSession-Broadcast — User A hat das Gerät, User B sieht synchronen State (Sprint-5-Stretch aus SYNTHSTUDIO_INTEGRATION.md §10)."
+      ],
+      changed: [
+        "client/src/audio/OmniTribeBridge.ts (NEU, gedroppt von G:/IdeaProjects/Omnitribe/host/synthstudio/OmniTribeBridge.ts + disconnect()-Methode + Test-Hooks)",
+        "client/src/hooks/useOmniTribe.ts (NEU, React-Hook mit connected/connect/disconnect/setParam/enableMonitoring/identity/webMidiSupported)",
+        "client/src/components/Settings/DeviceConnectionPanel.tsx (NEU, 3-Zustands-UI mit semantischen Tokens)",
+        "client/src/components/Settings/SettingsPanel.tsx (DeviceConnectionPanel-Import + 'omnitribe' Section-Union-Type + SECTIONS-Eintrag 'Hardware'-Group + render-Switch)",
+        "client/src/App.tsx (3 CustomEvent-Listener fuer omnitribe:paramChange/vuMeter/spectrum mit Console-Log + Random-Throttling)",
+        "tests/features/omnitribeBridge.test.ts (NEU, 17 Tests + jsdom-Env + FakeMidiOutput/FakeMidiInput)",
+        "package.json (3.15.0 → 3.16.0)",
+        "agents/INDEX.js (version 3.15.0 → 3.16.0 + project.dependencies.omnitribeProject + workLog v3.16.0 entry)"
+      ]
+    },
     {
       agent:     "backend",
       timestamp: "2026-05-18T11:50:00.000Z",

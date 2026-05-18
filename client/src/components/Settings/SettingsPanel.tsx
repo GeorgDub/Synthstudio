@@ -14,6 +14,8 @@
 import React, { useState, useCallback, useEffect, useReducer } from "react";
 import { X } from "lucide-react";
 import { KeyboardBindingsPanel } from "./KeyboardBindingsPanel";
+// v3.16.0 — OmniTribe Hardware-Bridge
+import { DeviceConnectionPanel } from "./DeviceConnectionPanel";
 import {
   useApiSettingsStore,
   setApiKey,
@@ -100,6 +102,7 @@ type Section =
   | "midi-notes"
   | "midi-chord"
   | "midi-mpe"
+  | "omnitribe"
   | "osc"
   | "plugins"
   | "patches"
@@ -119,6 +122,7 @@ const SECTIONS: Array<{ id: Section; icon: string; label: string; group?: string
   { id: "midi-notes",   icon: "🎵", label: "Note-Zuweisungen",    group: "MIDI" },
   { id: "midi-chord",   icon: "🎼", label: "Chord Memory",        group: "MIDI" },
   { id: "midi-mpe",     icon: "🖐", label: "MPE",                 group: "MIDI" },
+  { id: "omnitribe",    icon: "🔌", label: "OmniTribe Device",     group: "Hardware" },
   { id: "saving",       icon: "💾", label: "Speichern",           group: "App" },
   { id: "patches",      icon: "🎚", label: "Patch-Library",       group: "App" },
   { id: "osc",          icon: "📡", label: "OSC",                 group: "App" },
@@ -2100,6 +2104,7 @@ export function SettingsPanel({ isOpen, onClose, midi, parts, initialSection = "
           {active === "midi-notes"   && <MidiNotesSection midi={midi} parts={parts} onOpenAdvancedMidi={onOpenAdvancedMidi} />}
           {active === "midi-chord"   && <ChordMemorySection />}
           {active === "midi-mpe"     && <MpeSectionSimple />}
+          {active === "omnitribe"    && <DeviceConnectionPanel />}
           {active === "saving"        && <SavingSection />}
           {active === "patches"      && <PatchesSection />}
           {active === "osc"          && <OscSection />}

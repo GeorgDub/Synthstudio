@@ -1921,6 +1921,41 @@ export default function App() {
     return () => window.removeEventListener("midi:runScript", handleRunScript);
   }, []);
 
+  // ── v3.16.0: OmniTribe-Bridge CustomEvents ───────────────────────────────
+  // Bridge dispatched paramChange / vuMeter / spectrum auf window.
+  // Wir loggen sie für jetzt nur — Panel-Wiring (GranularSynth, WavetableEditor,
+  // ModMatrix) folgt in v3.17, neue ChordPanel/PerformancePadGrid in v3.18.
+  useEffect(() => {
+    const onParam = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      // eslint-disable-next-line no-console
+      console.log("[OmniTribe] paramChange", detail);
+    };
+    const onVu = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      // Hot path — nur sporadisch loggen, sonst flooded die Console
+      if (Math.random() < 0.02) {
+        // eslint-disable-next-line no-console
+        console.log("[OmniTribe] vuMeter", detail);
+      }
+    };
+    const onSpectrum = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (Math.random() < 0.02) {
+        // eslint-disable-next-line no-console
+        console.log("[OmniTribe] spectrum bins=", detail?.bins?.length);
+      }
+    };
+    window.addEventListener("omnitribe:paramChange", onParam);
+    window.addEventListener("omnitribe:vuMeter", onVu);
+    window.addEventListener("omnitribe:spectrum", onSpectrum);
+    return () => {
+      window.removeEventListener("omnitribe:paramChange", onParam);
+      window.removeEventListener("omnitribe:vuMeter", onVu);
+      window.removeEventListener("omnitribe:spectrum", onSpectrum);
+    };
+  }, []);
+
   // ── Launchpad Grid Controller ─────────────────────────────────────────────
   const launchpadEnabled = midi.outputDevices.some(d => isGridDevice(d.name));
   const launchpadPattern = dm.getActivePattern();
