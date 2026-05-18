@@ -212,6 +212,11 @@ import {
 } from "@/utils/autoSaveController";
 import { AutoSaveStatusIndicator } from "@/components/AutoSave/AutoSaveStatusIndicator";
 import { VersionHistoryModal } from "@/components/AutoSave/VersionHistoryModal";
+// v3.65.0: Pre-Action AutoBackup.
+import {
+  autoBackupBeforeAction,
+  registerAutoBackup,
+} from "@/utils/autoBackupController";
 // v3.59.0: Legacy-Slug-Migration UI (closes v3.58 caveat).
 import { LegacyMigrationModal } from "@/components/AutoSave/LegacyMigrationModal";
 import { SessionRecorder } from "@/components/CollabSession/SessionRecorder";
@@ -709,6 +714,35 @@ export default function App() {
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // v3.65.0: Pre-Action AutoBackup-Helper. Wird vor destructive Actions
+  // gerufen — schreibt eine Versions-mit-Label "Before: <action>" in die
+  // History, damit der User auch zwischen 5-Minuten-Ticks geschützt ist.
+  // NIE blockierend: bei Fehler wird die Action trotzdem ausgeführt.
+  const doAutoBackupBeforeAction = useCallback(async (actionLabel: string) => {
+    const pid = projectRef.current.projectId
+      || projectNameToId(projectRef.current.projectName);
+    return autoBackupBeforeAction(actionLabel, pid, () => {
+      try {
+        const snapshot = buildProjectSnapshot();
+        return JSON.stringify(snapshot);
+      } catch (err) {
+        console.warn("[AutoBackup] Snapshot-Build-Fehler:", err);
+        return null;
+      }
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [buildProjectSnapshot]);
+
+  // v3.65.0: Pre-Action-AutoBackup global registrieren — damit auch tief
+  // verschachtelte Komponenten (DrumMachine, KorgBankEditor) ohne Prop-
+  // Drilling rufen können.
+  useEffect(() => {
+    registerAutoBackup((label: string) => doAutoBackupBeforeAction(label));
+    return () => {
+      registerAutoBackup(null);
+    };
+  }, [doAutoBackupBeforeAction]);
 
   const doSaveProject = useCallback(async () => {
     const snapshot = buildProjectSnapshot();
@@ -1729,7 +1763,13 @@ export default function App() {
           }
           break;
         }
-        case "pattern-clear":     dm.clearPattern(); break;
+        case "pattern-clear": {
+          // v3.65.0: Pre-Action AutoBackup vor destructive Action.
+          void doAutoBackupBeforeAction("Clear Pattern").finally(() => {
+            dm.clearPattern();
+          });
+          break;
+        }
         case "pattern-fill": {
           const partId = dm.activePartId ?? pattern?.parts[0]?.id;
           if (partId) dm.fillPattern(partId);
@@ -4124,6 +4164,10 @@ export default function App() {
               setShowKorgTemplatePicker(false);
               return;
             }
+            // v3.65.0: Pre-Action AutoBackup vor Template-Apply.
+            // Non-blocking — wir warten NICHT, weil die Apply-Sequenz
+            // synchron mehrere Store-Updates triggert. Best-effort.
+            void doAutoBackupBeforeAction(`Apply Template: ${id}`);
           }
 
           const result = applyKorgProjectTemplate(id, {

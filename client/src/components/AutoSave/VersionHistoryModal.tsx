@@ -1,15 +1,18 @@
 /**
- * Synthstudio – VersionHistoryModal.tsx (v3.57.0)
+ * Synthstudio – VersionHistoryModal.tsx (v3.65.0)
  *
  * Modal zur Anzeige + Wiederherstellung der AutoSave-Versionen für das
  * aktuelle Projekt. Liest die Liste aus dem isomorphen Engine, zeigt sie
  * sortiert (newest first) mit Timestamp + Size + optionalem Label und
  * bietet Restore- + Delete-Buttons pro Eintrag.
  *
+ * v3.65.0: Label-Display prominenter (eigene Row), Filter-Toggle
+ * "Nur manuelle/Action-Backups" um die 5-Minuten-Auto-Saves auszublenden.
+ *
  * Nutzt ausschließlich semantische Tailwind-Klassen.
  */
-import { useCallback, useEffect, useState } from "react";
-import { X, RotateCcw, Trash2, RefreshCw } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { X, RotateCcw, Trash2, RefreshCw, Filter } from "lucide-react";
 import {
   listAutoSaveVersions,
   restoreAutoSaveVersion,
@@ -20,6 +23,10 @@ import {
   formatBytes,
   formatVersionTimestamp,
 } from "@/utils/autoSaveController";
+import {
+  isAutoBackupLabel,
+  stripAutoBackupPrefix,
+} from "@/utils/autoBackupController";
 import {
   formatLastSave,
   getLastSaveAtForProject,
@@ -45,6 +52,24 @@ export function VersionHistoryModal({
   const [versions, setVersions] = useState<AutoSaveVersionMeta[]>([]);
   const [loading, setLoading] = useState(false);
   const [now, setNow] = useState<number>(() => Date.now());
+  // v3.65.0: Filter-Toggle. Default false (alle Versionen zeigen).
+  const [onlyLabeled, setOnlyLabeled] = useState(false);
+
+  const filteredVersions = useMemo(() => {
+    if (!onlyLabeled) return versions;
+    // Manuelle Backups = jede Version mit einem Label (User-vergeben ODER
+    // Pre-Action AutoBackup mit "Before: ..."-Präfix).
+    return versions.filter((v) => typeof v.label === "string" && v.label.length > 0);
+  }, [versions, onlyLabeled]);
+
+  const labeledCount = useMemo(
+    () =>
+      versions.reduce(
+        (acc, v) => acc + (typeof v.label === "string" && v.label.length > 0 ? 1 : 0),
+        0,
+      ),
+    [versions],
+  );
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -163,6 +188,31 @@ export function VersionHistoryModal({
             </p>
           </div>
           <div className="flex items-center gap-2">
+            {/* v3.65.0: Filter — nur Labeled-Versionen (Pre-Action-Backups + manuelle Saves) */}
+            <button
+              onClick={() => setOnlyLabeled((v) => !v)}
+              title={
+                onlyLabeled
+                  ? "Alle Versionen zeigen (auch 5min-Auto-Saves)"
+                  : "Nur manuelle/Pre-Action-Backups zeigen"
+              }
+              className={
+                "h-7 px-2 rounded flex items-center gap-1 text-[10px] transition-colors " +
+                (onlyLabeled
+                  ? "bg-accent-primary/20 text-accent-primary border border-accent-primary/40"
+                  : "text-text-dim hover:text-text-primary hover:bg-bg-elevated border border-border-subtle")
+              }
+              data-testid="autosave-filter-labeled-toggle"
+              aria-pressed={onlyLabeled}
+            >
+              <Filter size={11} />
+              {onlyLabeled ? "Nur Labels" : "Alle"}
+              {onlyLabeled && (
+                <span className="ml-1 px-1 rounded bg-accent-primary/30 text-[9px]">
+                  {labeledCount}
+                </span>
+              )}
+            </button>
             <button
               onClick={() => void reload()}
               title="Liste aktualisieren"
@@ -196,18 +246,58 @@ export function VersionHistoryModal({
               </span>
             </div>
           )}
-          {!loading && versions.length > 0 && (
+          {!loading && versions.length > 0 && filteredVersions.length === 0 && (
+            <div
+              className="text-xs text-text-dim text-center py-12"
+              data-testid="autosave-version-list-empty-filter"
+            >
+              Keine Treffer mit aktivem Filter.
+              <br />
+              <span className="text-[10px]">
+                Pre-Action-Backups erscheinen automatisch, wenn du Aktionen
+                wie "Pattern löschen" ausführst.
+              </span>
+            </div>
+          )}
+          {!loading && filteredVersions.length > 0 && (
             <ul
               className="space-y-2"
               data-testid="autosave-version-list"
             >
-              {versions.map((v) => (
+              {filteredVersions.map((v) => {
+                const isPreAction = isAutoBackupLabel(v.label);
+                const labelDisplay = isPreAction
+                  ? stripAutoBackupPrefix(v.label)
+                  : v.label;
+                return (
                 <li
                   key={v.versionId}
                   className="flex items-center gap-3 px-3 py-2 bg-bg-elevated rounded border border-border-subtle hover:border-border-color transition-colors"
                   data-testid={`autosave-version-row-${v.versionId}`}
+                  data-version-label={v.label ?? ""}
+                  data-version-kind={isPreAction ? "pre-action" : (v.label ? "labeled" : "auto")}
                 >
                   <div className="flex-1 min-w-0">
+                    {/* v3.65.0: Label prominenter wenn vorhanden — eigene Zeile mit Badge. */}
+                    {v.label && (
+                      <div
+                        className="flex items-center gap-1 mb-0.5"
+                        data-testid={`autosave-version-label-${v.versionId}`}
+                      >
+                        {isPreAction ? (
+                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-accent-danger/15 text-accent-danger border border-accent-danger/30 font-semibold uppercase tracking-wide">
+                            Pre-Action
+                          </span>
+                        ) : (
+                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-accent-secondary/15 text-accent-secondary border border-accent-secondary/30 font-semibold uppercase tracking-wide">
+                            Manual
+                          </span>
+                        )}
+                        <span className="text-[11px] font-medium text-text-primary truncate">
+                          {labelDisplay}
+                        </span>
+                      </div>
+                    )}
                     <div className="flex items-baseline gap-2">
                       <span className="text-xs font-semibold text-text-primary">
                         {formatVersionTimestamp(v.timestamp)}
@@ -218,11 +308,6 @@ export function VersionHistoryModal({
                     </div>
                     <div className="text-[10px] text-text-dim mt-0.5">
                       {formatBytes(v.size)}
-                      {v.label && (
-                        <span className="ml-2 text-accent-secondary">
-                          • {v.label}
-                        </span>
-                      )}
                       {v.projectName && (
                         <span className="ml-2 text-text-muted">
                           • {v.projectName}
@@ -248,7 +333,8 @@ export function VersionHistoryModal({
                     <Trash2 size={12} />
                   </button>
                 </li>
-              ))}
+                );
+              })}
             </ul>
           )}
         </div>
@@ -256,8 +342,11 @@ export function VersionHistoryModal({
         {/* Footer */}
         <div className="px-5 py-3 border-t border-border-color text-[10px] text-text-dim">
           {versions.length > 0 && (
-            <span>
-              {versions.length} Version{versions.length === 1 ? "" : "en"} •
+            <span data-testid="autosave-version-footer">
+              {onlyLabeled
+                ? `${filteredVersions.length} / ${versions.length} Version${versions.length === 1 ? "" : "en"} (Filter aktiv)`
+                : `${versions.length} Version${versions.length === 1 ? "" : "en"}`}
+              {" • "}
               Älteste wird bei Erreichen des Limits automatisch entfernt
             </span>
           )}

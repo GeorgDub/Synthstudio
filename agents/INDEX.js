@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.64.0",
+    version: "3.65.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -89,6 +89,41 @@ const INDEX = {
   // ─── KNOWN FILE INDEX ──────────────────────────────────────
   // Key files agents have analyzed. Add new entries after working on a file.
   files: {
+    "client/src/utils/autoBackupController.ts (v3.65.0)": {
+      role:     "v3.65.0 NEU (~140 LOC, Pure-Modul + Registry-Pattern): Pre-Action AutoBackup-Helper. autoBackupBeforeAction(actionLabel, projectId, snapshotProvider) → Promise<AutoBackupResult{success,versionId?,label?,error?}> — schreibt VOR jeder destructive Action eine markierte AutoSave-Version (Label 'Before: <action>') via writeAutoSaveVersion. Defensiv: NIE blockierend, jeder Fail-Pfad (missing projectId, snapshot-throw, empty snapshot, Engine-Fail) returnt success=false ohne zu werfen — Caller führt die Action trotzdem aus. Pure-Helpers: buildAutoBackupLabel (idempotent, cappt bei 150 chars + Fallback 'Before: Action' bei leerem Input), isAutoBackupLabel (Filter-Erkennung), stripAutoBackupPrefix (UI-Display). Globale Registry: registerAutoBackup(fn)/getRegisteredAutoBackup() damit tief-verschachtelte Komponenten (DrumMachine, KorgBankEditor) ohne Prop-Drilling rufen — App.tsx registriert nach useCallback-Init, Unmount-Cleanup setzt null. __resetAutoBackupRegistryForTests Test-Helper. Konstanten AUTO_BACKUP_LABEL_PREFIX='Before: ', AUTO_BACKUP_MAX_ACTION_LABEL=150.",
+      lastSeen: "2026-05-19T00:40:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/components/AutoSave/VersionHistoryModal.tsx (v3.65.0)": {
+      role:     "v3.65.0 ERWEITERT: v3.57 + v3.61 Reload-Side-Effects bleiben + NEU Filter-Toggle + prominenter Label-Display (+60 LOC). State: onlyLabeled boolean (default false). useMemo filteredVersions filtert auf typeof label==='string' && length>0 wenn onlyLabeled. useMemo labeledCount für Badge im Toggle. Header-Toggle data-testid 'autosave-filter-labeled-toggle' mit Filter-Icon (lucide), aria-pressed, dynamic-Label 'Alle' / 'Nur Labels' + Badge mit labeledCount. Versionen-Row: wenn v.label gesetzt, NEU eine Zeile über dem Timestamp mit Pre-Action-Badge (rote Pille bg-accent-danger/15) ODER Manual-Badge (cyan bg-accent-secondary/15) plus User-readable Label-Text (stripAutoBackupPrefix bei Pre-Action). Empty-State-Variante 'keine Treffer mit aktivem Filter'. Footer zeigt 'N/M Versionen (Filter aktiv)' bei onlyLabeled=true. Imports +isAutoBackupLabel/stripAutoBackupPrefix aus autoBackupController + Filter-Icon. Caveat: Toggle-State NICHT persistiert (Modal-Close reset auf 'Alle').",
+      lastSeen: "2026-05-19T00:40:00.000Z",
+      ownedBy:  "backend"
+    },
+    "tests/features/autobackup-destructive.test.ts (v3.65.0)": {
+      role:     "v3.65.0 NEU (~310 LOC, 17 Tests in 5 describes, env:node + localStorage-Mock + In-Memory-Electron-Backend Override): (1) Label-Helpers × 6 — buildAutoBackupLabel happy 'Clear Pattern' → 'Before: Clear Pattern', idempotent (doppel-Präfix unmöglich), leerer/undefined/null Input → 'Before: Action' Fallback, 300-char-Cap auf 150, isAutoBackupLabel erkennt Präfix + reject nicht-string, stripAutoBackupPrefix entfernt Präfix + pass-through. (2) autoBackupBeforeAction Happy × 2 — Version mit Label landet in History (autoSaveWrite-Call-Args verifiziert: projectId + label), Multiple Backups sortierbar nach Label, alle isAutoBackupLabel-erkannt. (3) Fail-Silent × 4 — null projectId → success=false + error matches /projectId/, Snapshot-Provider wirft → success=false + error matches /snapshot-throw|boom/, empty snapshot → success=false + 0 Backend-Calls, Backend-write-fail (failWrites:true Override) → success=false + 1 Backend-Call + console.warn-Spy. (4) Registry × 3 — getRegisteredAutoBackup ohne Registrierung returnt safe-noop mit success=false/error='no backup registered'/label, register+get ruft echte Fn (calls-Array Verifikation), register(null) deaktiviert. (5) History-Filter × 2 — gemischte 3-Versionen (auto + Pre-Action + manual) → labeled-Filter ergibt 2 Einträge, Pre-Action-Subfilter via isAutoBackupLabel ergibt 1; nach autoBackupBeforeAction sichtbar im labeled-Filter mit korrektem stripAutoBackupPrefix-Display.",
+      lastSeen: "2026-05-19T00:40:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/App.tsx (v3.65.0 pre-action-backup)": {
+      role:     "v3.65.0 ERWEITERT: bestehende v3.63 drum-recording + v3.60 post-restore-reset + v3.59 Legacy-Migration + v3.57 AutoSave-Wiring bleibt + NEU Pre-Action AutoBackup-Wiring (+35 LOC). Imports +autoBackupBeforeAction/registerAutoBackup aus autoBackupController. NEU doAutoBackupBeforeAction useCallback (resolved projectId via projectRef.current.projectId || projectNameToId-Fallback, baut Snapshot via buildProjectSnapshot+JSON.stringify mit defensiver try/catch). NEU useEffect registriert die Fn in der globalen autoBackupController-Registry, Unmount setzt null. case 'pattern-clear' wrapped: void doAutoBackupBeforeAction('Clear Pattern').finally(dm.clearPattern). Korg-Template-Picker isDestructive-Pfad nach window.confirm: void doAutoBackupBeforeAction(`Apply Template: ${id}`) best-effort (non-blocking, Apply-Sequenz ist synchron).",
+      lastSeen: "2026-05-19T00:40:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/components/DrumMachine/DrumMachine.tsx (v3.65.0)": {
+      role:     "v3.65.0 ERWEITERT: getRegisteredAutoBackup-Import + Pre-Action vor CLR-Button (Clear Pattern via .finally(dm.clearPattern)) + Pattern-onRemove Wrapping (await getRegisteredAutoBackup()(`Delete Pattern: ${p.name}`).finally(dm.removePattern(p.id))). Verwendet die globale Registry damit App.tsx kein Prop-Drilling braucht. Bestehende DM-Logik (FxPanel, ChannelStrip, Pattern-Picker etc.) unverändert.",
+      lastSeen: "2026-05-19T00:40:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/components/KorgBank/KorgBankEditor.tsx (v3.65.0)": {
+      role:     "v3.65.0 ERWEITERT (+8 LOC): bestehende v3.32+ ESX-Bank-Editor + NEU Pre-Action vor compactEsxBank. Imports +getRegisteredAutoBackup. handleEsxCompactBank: nach window.confirm vor setBusy(true) wird await getRegisteredAutoBackup()('Compact ESX-Bank').catch(silent) gerufen. Begründung: Mode-A append-replace ist irreversibel sobald esxBankBuffer ersetzt ist, History-Reset gehört eh zur Compact-Aktion (createEsxEditorHistory()). Awaits hier ist okay weil setBusy(true) eh sequenzielles UI-Lock triggert.",
+      lastSeen: "2026-05-19T00:40:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/hooks/useKeyboardShortcuts.ts (v3.65.0)": {
+      role:     "v3.65.0 ERWEITERT (+8 LOC): bestehende Zentrale Tastatur-Belegung + NEU Ctrl+Delete Pre-Action AutoBackup. Imports +getRegisteredAutoBackup. Im Ctrl+Delete-Branch (Pattern leeren) wird void getRegisteredAutoBackup()('Clear Pattern').finally(dm.clearPattern) gerufen statt direkt dm.clearPattern. Other Shortcuts (Space/Ctrl+R/T/+/-/Ctrl+D/Ctrl+F/Q-W-E...etc) unverändert.",
+      lastSeen: "2026-05-19T00:40:00.000Z",
+      ownedBy:  "frontend"
+    },
     "client/src/store/useDrumPartRecordArmStore.ts (v3.63.0)": {
       role:     "v3.63.0 NEU (~185 LOC): Custom-Observer-Store für Drum/Synth-Channel-Record-Arm. Session-UI-Flag — NICHT in PartData / .synth-File persistiert, sondern in localStorage 'synthstudio:drum-recordarm:v1' als Record<partId, boolean>. Public-API: setPartRecordArm(id, armed) idempotent + entfernt-key-bei-false (Map klein halten), isPartRecordArmed, getArmedDrumPartIds, countArmedDrumParts, setAllDrumPartRecordArm(ids[], armed) Bulk mit Mutated-Tracking (kein notify bei No-Op), pruneArmedDrumParts(validIds) optional Cleanup nach removePart, __resetDrumPartRecordArmForTests. Hook useDrumPartRecordArmStore returnt {armedMap, armedCount, setRecordArm, setAllRecordArm, isArmed, getArmedIds}. Loader defensive: typeof-localStorage-check, korrupte JSON → {}, non-string-keys/non-true-values silent-gefiltert. Wird vom MixerView (parts.map → MixerChannel.recordArmed) und App.tsx Transport-Play-Hook (getArmedDrumPartIds) konsumiert.",
       lastSeen: "2026-05-19T00:15:00.000Z",
@@ -1937,6 +1972,45 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "backend",
+      timestamp: "2026-05-19T00:40:00.000Z",
+      done: [
+        "v3.65.0: AutoBackup vor destructive Actions — Pre-Action-Hook schreibt eine markierte AutoSave-Version mit Label 'Before: <action>' VOR jeder undo-baren User-Action. Schützt zwischen den 5-Minuten-AutoSave-Ticks vor Daten-Verlust. Defensiv: Backup-Fail blockiert NIE die Aktion (silent skip + console.warn).",
+        "client/src/utils/autoBackupController.ts NEU (~140 LOC, Pure-Modul): autoBackupBeforeAction(actionLabel, projectId, snapshotProvider) → Promise<AutoBackupResult{success,versionId?,label?,error?}>, buildAutoBackupLabel (idempotent, cappt bei 150 chars), isAutoBackupLabel (Label-Erkennung für Filter), stripAutoBackupPrefix (UI-Display). Globale Registry: registerAutoBackup/getRegisteredAutoBackup damit tief-verschachtelte Komponenten (DrumMachine, KorgBankEditor) ohne Prop-Drilling rufen können. Konstanten: AUTO_BACKUP_LABEL_PREFIX='Before: ', AUTO_BACKUP_MAX_ACTION_LABEL=150.",
+        "client/src/App.tsx: NEU doAutoBackupBeforeAction useCallback (baut Snapshot lazy via buildProjectSnapshot, resolved projectId via projectRef.current.projectId || projectNameToId-Fallback), useEffect registriert die Fn in autoBackupController-Registry (Unmount-Cleanup). Wired in case 'pattern-clear' (await + finally → dm.clearPattern) und im Korg-Template-Picker isDestructive-Pfad (best-effort vor applyKorgProjectTemplate).",
+        "client/src/components/DrumMachine/DrumMachine.tsx: getRegisteredAutoBackup-Import + Pre-Action vor CLR-Button (Clear Pattern) + vor onRemove Pattern-Picker (Delete Pattern: <name>).",
+        "client/src/components/KorgBank/KorgBankEditor.tsx: getRegisteredAutoBackup-Import + await vor compactEsxBank (Compact ESX-Bank — Mode-A append-replace ist irreversibel sobald Bank-Buffer ersetzt ist).",
+        "client/src/hooks/useKeyboardShortcuts.ts: Pre-Action für Ctrl+Delete (Clear Pattern via Shortcut).",
+        "client/src/components/AutoSave/VersionHistoryModal.tsx: NEU Filter-Toggle 'Nur Labels' (autosave-filter-labeled-toggle data-testid) + filteredVersions useMemo + Label-Display als prominentes Pre-Action/Manual-Badge (rote bzw. cyan Pille) in eigener Zeile über dem Timestamp. Footer zeigt 'N/M Versionen (Filter aktiv)' im Filter-Modus. Empty-State bei aktivem Filter mit eigenem Hinweis (autosave-version-list-empty-filter).",
+        "tests/features/autobackup-destructive.test.ts NEU (~310 LOC, 17 Tests in 5 describes): (1) Label-Helpers × 6 (buildAutoBackupLabel happy + idempotent + leerer Input + Cap + isAutoBackupLabel + stripAutoBackupPrefix). (2) autoBackupBeforeAction Happy × 2 (Label in History, Multiple Backups). (3) Fail-Silent × 4 (missing projectId, snapshot-throw, empty snapshot, Backend write fail). (4) Registry × 3 (safe no-op, register+get, unregister). (5) History-Filter × 2 (Pre-Action+manual passieren Label-Filter, nach autoBackupBeforeAction sichtbar).",
+        "pnpm check clean. pnpm test grün: 211 Test-Files / 4868 Tests passed (16 skipped, +17 NEU)."
+      ],
+      next: [
+        "v3.66: weitere destructive Actions wiren (z.B. dm.resetAll, project.newProject, Sample-Library-Massen-Delete) — derzeit nur Pattern-Clear/Delete + Korg-Template + ESX-Compact gewired.",
+        "v3.66: Confirm-Dialog optional via autoBackupController-Helper anbieten — derzeit wartet keiner der Caller auf das Backup-Ergebnis. Bei vielen Backups in Folge (z.B. User klickt 5× CLR schnell) wird die History rasch mit 'Before: Clear Pattern'-Einträgen geflutet. Engine cappt auf 10 Versionen (Rolling-Cleanup), aber UX-mäßig könnte Dedup binnen 30s sinnvoll sein.",
+        "v3.66: Filter-Toggle State persistieren (localStorage) damit User-Präferenz nach Modal-Close erhalten bleibt."
+      ],
+      changed: [
+        "client/src/utils/autoBackupController.ts (NEU ~140 LOC: Pure-Modul + Registry-Pattern)",
+        "client/src/App.tsx (+35 LOC: doAutoBackupBeforeAction useCallback + Registry-Effect + case 'pattern-clear' + Korg-Template-Apply)",
+        "client/src/components/DrumMachine/DrumMachine.tsx (+15 LOC: getRegisteredAutoBackup Import + CLR-Button + Pattern-onRemove Wrapping)",
+        "client/src/components/KorgBank/KorgBankEditor.tsx (+8 LOC: getRegisteredAutoBackup Import + await vor compactEsxBank)",
+        "client/src/hooks/useKeyboardShortcuts.ts (+8 LOC: getRegisteredAutoBackup + Ctrl+Delete Wrapping)",
+        "client/src/components/AutoSave/VersionHistoryModal.tsx (+60 LOC: Filter-Toggle + filteredVersions useMemo + Pre-Action/Manual-Badge + Footer-Count + Empty-State)",
+        "tests/features/autobackup-destructive.test.ts (NEU ~310 LOC: 17 Tests in 5 describes)",
+        "package.json (3.64.0 → 3.65.0)",
+        "agents/INDEX.js (version + workLog v3.65.0)"
+      ],
+      caveats: [
+        "Pre-Action-Backup wartet im case 'pattern-clear' explizit ab (.finally(dm.clearPattern())), aber im Korg-Template-Apply NICHT — die Apply-Sequenz schreibt synchron mehrere Store-Updates, ein await hätte die UX spürbar verzögert. Best-effort akzeptiert.",
+        "Beim Browser-Path (IndexedDB) kann der Pre-Action-Write theoretisch 50-200ms dauern (asynchroner IDB-Transaction-Roundtrip). Da .finally() den Action-Call dispatcht, fühlt sich Clear/Delete im Browser ~100ms verzögert an. Im Electron-Path (Disk-Write) deutlich schneller.",
+        "Registry-Pattern: getRegisteredAutoBackup() returnt eine safe no-op wenn nichts registriert ist — z.B. in Tests die Komponenten isoliert mounten. Sichtbar als success=false / error='no backup registered'. Tests die das Verhalten erwarten brauchen die App.tsx-Registrierung.",
+        "Filter-Toggle State ist NICHT persistiert (UI-State only). Beim Re-Open des Modals startet der Filter wieder auf 'Alle'.",
+        "Pre-Action-Backups zählen ins Rolling-Cleanup-Limit (10 Versionen pro Projekt). Bei vielen Pre-Actions in kurzer Zeit (z.B. Power-User-Session) werden ältere 5min-Auto-Saves verdrängt. User behält die jüngste History — siehe migrateLegacyVersions-Doku in autoSaveEngine.ts.",
+        "v3.64-Eintrag bleibt UNTEN — diese v3.65-Story ist der neueste Eintrag. Original v3.64 Eintrag siehe im darunter folgenden Block."
+      ]
+    },
     {
       agent:     "backend",
       timestamp: "2026-05-19T00:25:00.000Z",

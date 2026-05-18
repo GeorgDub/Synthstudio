@@ -30,6 +30,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useProjectStore, type Sample } from "@/store/useProjectStore";
 import { toast } from "@/store/useToastStore";
 import { useElectron } from "../../../../electron/useElectron";
+// v3.65.0: Pre-Action AutoBackup vor irreversiblen Bank-Operationen.
+import { getRegisteredAutoBackup } from "@/utils/autoBackupController";
 import {
   buildE2sBank,
   E2sBuildError,
@@ -1317,6 +1319,12 @@ export function KorgBankEditor({
         "Bank compactieren?",
     );
     if (!ok) return;
+    // v3.65.0: Pre-Action AutoBackup vor irreversiblem Compact.
+    // Non-blocking — wir warten ab (fire-and-forget hier sicher, da
+    // setBusy(true) gleich folgt + Compact-Workflow eh asynchron).
+    await getRegisteredAutoBackup()("Compact ESX-Bank").catch(() => {
+      /* silent — Action darf nicht blockiert werden */
+    });
     setBusy(true);
     setResultMsg("Compactiere ESX-Bank…");
     try {

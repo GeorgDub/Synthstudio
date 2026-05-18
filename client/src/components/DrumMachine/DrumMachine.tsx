@@ -24,6 +24,8 @@ import { MacroPanel } from "@/components/Macro/MacroPanel";
 import { EnvelopeFollowerPanel } from "./EnvelopeFollowerPanel";
 import { useMidiLearn } from "@/hooks/useMidiLearn";
 import { toast } from "@/store/useToastStore";
+// v3.65.0: Pre-Action AutoBackup via globaler Registry.
+import { getRegisteredAutoBackup } from "@/utils/autoBackupController";
 import { MixAssistantPanel } from "./MixAssistantPanel";
 import type { MixAnalysisInput, MixRecommendation } from "@/utils/mixAnalysis";
 import { parseMidiFile } from "../../../../src/utils/midiParser.js";
@@ -945,7 +947,12 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
                   allPatterns={dm.patterns.map(pp => ({ id: pp.id, name: pp.name }))}
                   onSelect={() => { dm.setActivePattern(p.id); setShowPatternMenu(false); }}
                   onDuplicate={() => dm.duplicatePattern(p.id)}
-                  onRemove={() => dm.removePattern(p.id)}
+                  onRemove={() => {
+                    // v3.65.0: Pre-Action AutoBackup vor Delete-Pattern.
+                    void getRegisteredAutoBackup()(`Delete Pattern: ${p.name}`).finally(() => {
+                      dm.removePattern(p.id);
+                    });
+                  }}
                   onCopySamplesFrom={(srcId, srcName) => {
                     dm.copySamplesFromPattern(srcId, p.id);
                     toast(`Sampler aus „${srcName}" in „${p.name}" übernommen`, { kind: "success" });
@@ -1305,7 +1312,12 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
 
         {/* Clear */}
         <button
-          onClick={dm.clearPattern}
+          onClick={() => {
+            // v3.65.0: Pre-Action AutoBackup vor Clear-Pattern.
+            void getRegisteredAutoBackup()("Clear Pattern").finally(() => {
+              dm.clearPattern();
+            });
+          }}
           className="px-2 py-1 rounded text-[10px] bg-bg-elevated text-text-dim hover:bg-accent-danger/30 hover:text-accent-danger transition-colors"
           title="Pattern leeren"
         >CLR</button>

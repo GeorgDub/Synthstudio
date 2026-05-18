@@ -43,6 +43,8 @@
 
 import { useEffect, useRef, useCallback } from "react";
 import type { DrumMachineState, DrumMachineActions } from "@/store/useDrumMachineStore";
+// v3.65.0: Pre-Action AutoBackup vor destructive Shortcut-Actions.
+import { getRegisteredAutoBackup } from "@/utils/autoBackupController";
 
 // ─── Pad-Tasten-Mapping ───────────────────────────────────────────────────────
 
@@ -247,7 +249,10 @@ export function useKeyboardShortcuts({
 
     if (ctrl && !shift && e.code === "Delete") {
       e.preventDefault();
-      dm.clearPattern();
+      // v3.65.0: Pre-Action AutoBackup vor Clear-Pattern (Ctrl+Delete).
+      void getRegisteredAutoBackup()("Clear Pattern").finally(() => {
+        dm.clearPattern();
+      });
       return;
     }
 
