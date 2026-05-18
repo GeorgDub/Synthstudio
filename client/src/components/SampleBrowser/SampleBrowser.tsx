@@ -27,6 +27,13 @@ import { useElectron } from "../../../../electron/useElectron";
 import type { Sample } from "../../store/useProjectStore";
 import { WaveformDisplay } from "../WaveformDisplay";
 import { useAudioAnalysis } from "../../hooks/useAudioAnalysis";
+// v3.54.0: Pure-fn Sample-Library Filter + Search.
+import {
+  applySampleFilters,
+  extractAllTags,
+  getSampleTags,
+  type FilterMode,
+} from "@/utils/sampleLibrary";
 
 // ─── Typen ────────────────────────────────────────────────────────────────────
 
@@ -527,7 +534,9 @@ export function SampleBrowser({
   // ── Filter-State ──────────────────────────────────────────────────────────
   const [activeCategory, setActiveCategory] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState<string>("");
-  const [activeTag, setActiveTag] = useState<string>("");
+  // v3.54.0: Multi-Tag-Filter + AND/OR-Mode (Default OR — DAW-üblich).
+  const [activeTags, setActiveTags] = useState<string[]>([]);
+  const [tagFilterMode, setTagFilterMode] = useState<FilterMode>("OR");
 
   // ── Reorder-DnD-State ─────────────────────────────────────────────────────
   const [dragOverSampleId, setDragOverSampleId] = useState<string | null>(null);
@@ -621,6 +630,9 @@ export function SampleBrowser({
   }, [electron]);
 
   // ── Gefilterte Samples (mit Playlist-Filter) ──────────────────────────────
+  // v3.54.0: Filter-Pipeline läuft jetzt durch pure-fn applySampleFilters.
+  // Analyse-Cache-Tags werden vor dem Filter in eine virtuelle "tags"-Liste
+  // gemerged, damit der pure Filter ohne separate Cache-Awareness arbeitet.
   const filteredSamples = useMemo(() => {
     let base = samples;
 
@@ -632,26 +644,54 @@ export function SampleBrowser({
       }
     }
 
-    return base.filter((sample) => {
-      const matchesCategory = activeCategory === "all" || sample.category === activeCategory;
-      const matchesSearch = searchQuery === "" ||
-        sample.name.toLowerCase().includes(searchQuery.toLowerCase());
-      const matchesTag = activeTag === "" ||
-        (sample.tags?.includes(activeTag) ?? false) ||
-        (analysisCache[sample.id]?.tags?.includes(activeTag) ?? false);
-      return matchesCategory && matchesSearch && matchesTag;
+    // Analyse-Tags virtuell anhängen (z.B. BPM-Genre-Tags).
+    const enriched = base.map((s) => {
+      const cacheTags = analysisCache[s.id]?.tags;
+      if (!cacheTags || cacheTags.length === 0) return s;
+      const ownTags = getSampleTags(s);
+      const merged = Array.from(new Set([...ownTags, ...cacheTags]));
+      return { ...s, tags: merged };
     });
-  }, [samples, activeCategory, searchQuery, activeTag, activePlaylistId, playlists, analysisCache]);
+
+    return applySampleFilters(enriched, {
+      category: activeCategory,
+      tags: activeTags,
+      tagMode: tagFilterMode,
+      query: searchQuery,
+    });
+  }, [samples, activeCategory, searchQuery, activeTags, tagFilterMode, activePlaylistId, playlists, analysisCache]);
 
   // ── Verfügbare Tags aller Samples (aus Import + Analyse-Cache) ─────────────
   const availableTags = useMemo(() => {
-    const tagSet = new Set<string>();
-    for (const sample of samples) {
-      sample.tags?.forEach(t => tagSet.add(t));
-      analysisCache[sample.id]?.tags?.forEach(t => tagSet.add(t));
-    }
-    return Array.from(tagSet).sort();
+    // Auch hier mit Analyse-Cache-Tags ergänzen.
+    const enriched = samples.map((s) => {
+      const cacheTags = analysisCache[s.id]?.tags;
+      if (!cacheTags || cacheTags.length === 0) return s;
+      const ownTags = getSampleTags(s);
+      return { ...s, tags: Array.from(new Set([...ownTags, ...cacheTags])) };
+    });
+    return extractAllTags(enriched);
   }, [samples, analysisCache]);
+
+  // v3.54.0: Filter aktiv? Für "Clear Filters"-Button-Disabled-State.
+  const hasActiveFilters =
+    activeCategory !== "all" ||
+    searchQuery !== "" ||
+    activeTags.length > 0 ||
+    activePlaylistId !== null;
+
+  const handleClearFilters = useCallback(() => {
+    setActiveCategory("all");
+    setSearchQuery("");
+    setActiveTags([]);
+    setActivePlaylistId(null);
+  }, []);
+
+  const handleToggleTag = useCallback((tag: string) => {
+    setActiveTags((prev) =>
+      prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]
+    );
+  }, []);
 
   const selectedIndex = useMemo(() => {
     if (!selectedSampleId) return -1;
@@ -1284,24 +1324,79 @@ export function SampleBrowser({
             </div>
           )}
 
-          {/* Tag-Filter */}
-          {availableTags.length > 0 && (
-            <div className="flex flex-wrap gap-1 px-3 py-2 border-b border-border-color/50">
-              {availableTags.map(tag => (
-                <button
-                  key={tag}
-                  onClick={() => setActiveTag(activeTag === tag ? "" : tag)}
-                  title={`Nach Tag #${tag} filtern`}
-                  className={[
-                    "px-2 py-0.5 text-[10px] rounded-full border transition-all duration-100",
-                    activeTag === tag
-                      ? "bg-accent-primary/60 text-accent-primary border-accent-primary"
-                      : "bg-transparent text-text-dim border-border-color hover:text-text-muted hover:border-border-color",
-                  ].join(" ")}
-                >
-                  #{tag}
-                </button>
-              ))}
+          {/* Tag-Filter (v3.54.0: Multi-Select + AND/OR-Mode + Clear-Button) */}
+          {(availableTags.length > 0 || hasActiveFilters) && (
+            <div className="flex flex-col gap-1 px-3 py-2 border-b border-border-color/50">
+              {availableTags.length > 0 && (
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-[10px] text-text-dim">Tags:</span>
+                  {availableTags.map((tag) => {
+                    const active = activeTags.includes(tag);
+                    return (
+                      <button
+                        key={tag}
+                        data-testid={`sample-browser-tag-${tag}`}
+                        onClick={() => handleToggleTag(tag)}
+                        title={`Tag #${tag} ${active ? "abwählen" : "auswählen"}`}
+                        className={[
+                          "px-2 py-0.5 text-[10px] rounded-full border transition-all duration-100",
+                          active
+                            ? "bg-accent-primary/60 text-accent-primary border-accent-primary"
+                            : "bg-transparent text-text-dim border-border-color hover:text-text-muted hover:border-border-color",
+                        ].join(" ")}
+                      >
+                        #{tag}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+              {/* AND/OR-Toggle + Clear-Button (immer sichtbar wenn Filter aktiv ODER mehr als 1 Tag) */}
+              {(activeTags.length > 1 || hasActiveFilters) && (
+                <div className="flex items-center gap-2 mt-1">
+                  {activeTags.length > 1 && (
+                    <>
+                      <span className="text-[10px] text-text-dim">Modus:</span>
+                      <button
+                        data-testid="sample-browser-tag-mode-or"
+                        onClick={() => setTagFilterMode("OR")}
+                        className={[
+                          "px-2 py-0.5 text-[10px] rounded border transition-colors",
+                          tagFilterMode === "OR"
+                            ? "bg-accent-secondary/40 text-accent-secondary border-accent-secondary"
+                            : "bg-transparent text-text-dim border-border-color hover:text-text-muted",
+                        ].join(" ")}
+                        title="Sample passt, wenn mindestens ein Tag übereinstimmt"
+                      >
+                        OR
+                      </button>
+                      <button
+                        data-testid="sample-browser-tag-mode-and"
+                        onClick={() => setTagFilterMode("AND")}
+                        className={[
+                          "px-2 py-0.5 text-[10px] rounded border transition-colors",
+                          tagFilterMode === "AND"
+                            ? "bg-accent-secondary/40 text-accent-secondary border-accent-secondary"
+                            : "bg-transparent text-text-dim border-border-color hover:text-text-muted",
+                        ].join(" ")}
+                        title="Sample passt nur, wenn alle Tags übereinstimmen"
+                      >
+                        AND
+                      </button>
+                    </>
+                  )}
+                  {hasActiveFilters && (
+                    <button
+                      data-testid="sample-browser-clear-filters"
+                      onClick={handleClearFilters}
+                      className="ml-auto px-2 py-0.5 text-[10px] rounded border border-accent-danger/60 text-accent-danger hover:bg-accent-danger/20 transition-colors"
+                      title="Alle Filter zurücksetzen"
+                    >
+                      ✕ Filter löschen
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
@@ -1321,7 +1416,7 @@ export function SampleBrowser({
               <div className="flex flex-col items-center justify-center h-full gap-2 text-text-dim">
                 <p className="text-sm">Keine Treffer</p>
                 <button
-                  onClick={() => { setActiveCategory("all"); setSearchQuery(""); setActivePlaylistId(null); setActiveTag(""); }}
+                  onClick={handleClearFilters}
                   className="text-xs text-accent-secondary hover:text-accent-primary transition-colors"
                 >
                   Filter zurücksetzen

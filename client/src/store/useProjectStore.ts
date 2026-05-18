@@ -7,6 +7,13 @@
  */
 import { useState, useCallback } from "react";
 import type { templateToProjectState } from "./projectTemplates";
+// v3.54.0: Sample-Library Tag-Helper für Auto-Tagging und Tag-Mutations.
+import {
+  addTagToSample as addTagToSamplePure,
+  removeTagFromSample as removeTagFromSamplePure,
+  setSampleTags as setSampleTagsPure,
+  applyAutoTagsFromFilename,
+} from "@/utils/sampleLibrary";
 
 export interface Sample {
   id: string;
@@ -77,6 +84,14 @@ export interface ProjectActions {
   importSamplesFromPaths: (paths: string[]) => void;
   /** Reihenfolge der Samples ändern: draggedId wird vor targetId eingesetzt. */
   reorderSamples: (draggedId: string, targetId: string) => void;
+  /** v3.54.0: Tag zu einem Sample hinzufügen (idempotent). */
+  addTagToSample: (id: string, tag: string) => void;
+  /** v3.54.0: Tag aus einem Sample entfernen. */
+  removeTagFromSample: (id: string, tag: string) => void;
+  /** v3.54.0: Tags eines Samples komplett ersetzen. */
+  setSampleTags: (id: string, tags: string[]) => void;
+  /** v3.54.0: Beliebige Sample-Felder partiell updaten (z.B. Kategorie). */
+  updateSample: (id: string, patch: Partial<Sample>) => void;
 }
 
 const DEFAULT_STATE: ProjectState = {
@@ -223,15 +238,62 @@ export function useProjectStore(): ProjectState & ProjectActions {
   const importSamplesFromPaths = useCallback((paths: string[]) => {
     const newSamples: Sample[] = paths.map((p) => {
       const name = p.split(/[\\/]/).pop() ?? p;
-      return {
+      // v3.54.0: Auto-Tagging beim Import — Filename-basiert (schnell + synchron).
+      const base: Sample = {
         id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
         name,
         path: p,
         category: "imported",
       };
+      return applyAutoTagsFromFilename(base);
     });
     addSamples(newSamples);
   }, [addSamples]);
+
+  // v3.54.0: Tag-Mutations für ein einzelnes Sample.  Liefert immer einen
+  // NEUEN State (auch wenn das Sample unverändert ist), damit useState die
+  // Subscription korrekt feuert — aber das Sample-Objekt bleibt referenz-
+  // identisch falls der Tag-Mutator unverändert returned.
+
+  const addTagToSampleAction = useCallback((id: string, tag: string) => {
+    setState((prev) => ({
+      ...prev,
+      isDirty: true,
+      samples: prev.samples.map((s) =>
+        s.id === id ? addTagToSamplePure(s, tag) : s
+      ),
+    }));
+  }, []);
+
+  const removeTagFromSampleAction = useCallback((id: string, tag: string) => {
+    setState((prev) => ({
+      ...prev,
+      isDirty: true,
+      samples: prev.samples.map((s) =>
+        s.id === id ? removeTagFromSamplePure(s, tag) : s
+      ),
+    }));
+  }, []);
+
+  const setSampleTagsAction = useCallback((id: string, tags: string[]) => {
+    setState((prev) => ({
+      ...prev,
+      isDirty: true,
+      samples: prev.samples.map((s) =>
+        s.id === id ? setSampleTagsPure(s, tags) : s
+      ),
+    }));
+  }, []);
+
+  const updateSampleAction = useCallback((id: string, patch: Partial<Sample>) => {
+    setState((prev) => ({
+      ...prev,
+      isDirty: true,
+      samples: prev.samples.map((s) =>
+        s.id === id ? { ...s, ...patch } : s
+      ),
+    }));
+  }, []);
 
   const reorderSamples = useCallback((draggedId: string, targetId: string) => {
     if (draggedId === targetId) return;
@@ -269,5 +331,9 @@ export function useProjectStore(): ProjectState & ProjectActions {
     removeSample,
     importSamplesFromPaths,
     reorderSamples,
+    addTagToSample: addTagToSampleAction,
+    removeTagFromSample: removeTagFromSampleAction,
+    setSampleTags: setSampleTagsAction,
+    updateSample: updateSampleAction,
   };
 }

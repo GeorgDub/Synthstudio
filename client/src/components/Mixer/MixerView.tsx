@@ -44,6 +44,8 @@ import {
 } from "@/store/useAudioTrackStore";
 import { useElectron } from "../../../../electron/useElectron";
 import { useMidiLearn } from "@/hooks/useMidiLearn";
+// v3.54.0: BPM-Detection im Web-Worker (closes v3.53-Caveat).
+import { analyzeBpmInWorker } from "@/utils/bpmWorkerClient";
 
 // ─── Hilfsfunktionen ─────────────────────────────────────────────────────────
 
@@ -402,11 +404,23 @@ async function detectAndApplyBpm(
   buf: AudioBuffer,
 ): Promise<{ bpm: number; confidence: number; applied: boolean } | null> {
   try {
-    // Direkter Pfad ohne Worker: BPM-Detection auf dem Main-Thread.
-    // Performance-Impact ist begrenzt da decodeAudioData bereits passiert ist
-    // und wir nur den ChannelData iterieren (≤ 30s davon).
-    const result = analyzeBpmFromBufferDirect(buf);
+    // v3.54.0: Erst-Versuch via Web-Worker (off-thread).
+    // Worker-Path schluckt CPU-Last für die ~50ms Onset-Detection bei
+    // langen Files (~5 min Song).
+    let result: { bpm: number; confidence: number } | null = null;
+    try {
+      result = await analyzeBpmInWorker(buf);
+    } catch {
+      result = null;
+    }
+
+    // Silent-Fallback zu Main-Thread (z.B. Worker nicht verfügbar in
+    // alten Browsern, Test-Env ohne Web-Worker, oder Worker-Timeout).
+    if (!result) {
+      result = analyzeBpmFromBufferDirect(buf);
+    }
     if (!result) return null;
+
     const applied = applyAutoBpmToTrack(trackId, result.bpm, result.confidence);
     return applied;
   } catch (err) {

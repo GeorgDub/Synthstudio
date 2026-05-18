@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.53.0",
+    version: "3.54.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -89,6 +89,41 @@ const INDEX = {
   // ─── KNOWN FILE INDEX ──────────────────────────────────────
   // Key files agents have analyzed. Add new entries after working on a file.
   files: {
+    "client/src/utils/sampleLibrary.ts (v3.54.0)": {
+      role:     "v3.54.0 NEU (~230 LOC, pure-fn, env:node-testbar): Sample-Library Tag-Pipeline + Filter. Public-API: normalizeTag(unknown)→string|null (trim+lowercase, null bei leer/non-string), getSampleTags(sample)→string[] (backward-compat: missing tags-Feld → []), addTagToSample(sample, tag)→Sample (immutable, idempotent — gleiche Referenz bei No-Op), removeTagFromSample (gleiche Ref wenn Tag fehlt), setSampleTags (dedup+normalize), applyAutoTagsFromFilename (autoTagFromFilename-Wrapper, gleiche Ref wenn keine neuen Tags), matchesSearchQuery(sample, query) (leerer Query=true, case-insensitive Name+Tag-Substring), filterByTags(samples, tags, mode='OR'|'AND') Set-basiert (leere Liste → unveränderte Kopie), filterByCategory ('all'/'' → Kopie), extractAllTags (Set→sortiertes Array), applySampleFilters Komposit (category+tags+query). Konstanten: SAMPLE_CATEGORIES, DEFAULT_FILTER_MODE='OR'. Type FilterMode = 'AND'|'OR'.",
+      lastSeen: "2026-05-18T23:10:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/utils/bpmWorkerClient.ts (v3.54.0)": {
+      role:     "v3.54.0 NEU (~210 LOC, closes v3.53-Caveat Auto-BPM-Main-Thread): Module-Singleton Worker-Client für audioAnalysis.worker.ts BPM-Detection. Public-API: encodeBufferToMonoWav(AudioBuffer)→ArrayBuffer pure-fn (RIFF/WAVE 16-bit PCM Mono Encoder mit 30s-Trim, Clipping [-1,1], transferable), analyzeBpmInWorker(buf, timeoutMs=10000)→Promise<{bpm,confidence}|null> (encodet+postMessage+Timeout, returnt null bei kein Worker / Init-Fail / Timeout / Worker-Error). Defensive: typeof Worker==='undefined' (Node-Env) → ensureWorker null, Init-Fail wird gemerkt (kein Retry-Loop), onerror disposed alle Pendings. Test-Override: globalThis.__bpmWorkerTestOverride für deterministische Unit-Tests umgeht den echten Worker. __resetBpmWorkerClientForTests + __getBpmWorkerPendingCount Test-Helpers. Konstanten: BPM_WORKER_MAX_DURATION_SEC=30, BPM_WORKER_DEFAULT_TIMEOUT_MS=10000.",
+      lastSeen: "2026-05-18T23:10:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/components/SampleBrowser/SampleBrowser.tsx (v3.54.0)": {
+      role:     "v3.54.0 ERWEITERT: bestehende Kategorien/Playlists/Waveform/Preview bleiben + NEU Multi-Tag-Filter mit AND/OR-Mode + Clear-Filters. activeTag:string → activeTags:string[] + tagFilterMode:'AND'|'OR' (Default OR). filteredSamples nutzt jetzt applySampleFilters pure-fn aus sampleLibrary.ts (mit Analyse-Cache-Tags virtuell pre-gemerged). availableTags via extractAllTags. NEU UI-Block: Tags-Liste als Multi-Select-Buttons (Toggle), AND/OR-Mode-Toggle (sichtbar ab 2 aktive Tags), 'Filter löschen'-Button (sichtbar wenn beliebiger Filter aktiv: Category/Search/Tags/Playlist). handleClearFilters + handleToggleTag callbacks. NEU data-testids: sample-browser-tag-{tag}, sample-browser-tag-mode-or/and, sample-browser-clear-filters. Bestehende v4-Architektur (Tabs Samples/Playlists, Waveform-Panel, Import-Progress-Overlay, Category-Context-Menu) unverändert.",
+      lastSeen: "2026-05-18T23:10:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/store/useProjectStore.ts (v3.54.0)": {
+      role:     "v3.54.0 ERWEITERT: bestehende ProjectState (samples/bpm/recordingMode/punchIn-Out/playStop/record/undo/redo) bleibt + NEU 4 Sample-Actions (~+50 LOC). Sample-Interface hat tags?:string[] schon seit autoTagFromFilename-Era. NEU Actions: addTagToSample(id, tag) + removeTagFromSample(id, tag) + setSampleTags(id, tags[]) ruft pure-fn aus sampleLibrary.ts auf Sample-Liste, updateSample(id, patch) für partial-Update beliebiger Felder (closes broken handleUpdateSampleCategory der via addSamples lief und Path-Dupes filterte). importSamplesFromPaths ruft jetzt applyAutoTagsFromFilename pro neuem Sample für sofortiges Auto-Tagging (vorher: nur App.tsx-Drop-Path). Imports: sampleLibrary helpers.",
+      lastSeen: "2026-05-18T23:10:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/components/Mixer/MixerView.tsx (v3.54.0 worker-bpm)": {
+      role:     "v3.54.0 ERWEITERT: v3.53 Auto-BPM (analyzeBpmFromBufferDirect + detectAndApplyBpm + bpmDetectionToast) bleibt + NEU detectAndApplyBpm nutzt jetzt analyzeBpmInWorker (off-thread) als First-Attempt, silent-Fallback zu analyzeBpmFromBufferDirect (Main-Thread) bei Worker-null. Closes v3.53-Caveat. analyzeBpmFromBufferDirect bleibt exported als Worker-Mirror für audio-track-auto-bpm.test.ts. +1 Import bpmWorkerClient. Bestehende v3.53 Toast-State + 4s-Auto-Fade + ingestAudioFile-Wiring unverändert.",
+      lastSeen: "2026-05-18T23:10:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "tests/features/sample-library-tags.test.ts (v3.54.0)": {
+      role:     "v3.54.0 NEU: 28 Tests in 6 describes (env:node, pure-fn). (1) Tag-Mutations × 7 — addTagToSample round-trip, idempotent (gleiche Ref bei No-Op), normalize lowercase+trim, ignore empty+whitespace, removeTagFromSample no-op-Ref, setSampleTags dedup+normalize, normalizeTag null-cases. (2) Backward-Compat × 3 — getSampleTags ohne tags-Feld → [], add/remove auf fehlendem tags. (3) filterByTags × 6 — OR-Mode (mindestens 1 Tag), AND-Mode (alle Tags), unmögliche Kombi → leer, leere Tag-Liste → unveränderte Kopie, case-insensitive Input, no-tags-Samples werden ignoriert. (4) matchesSearchQuery × 4 — Name+Tag-Substring case-insensitive, leerer Query = match-all, no-match. (5) applyAutoTagsFromFilename × 3 — Filename kick → kick-Tag, Merge ohne Duplikate, no-Match-Filename → gleiche Ref. (6) Komposit × 5 — extractAllTags sortiert, applySampleFilters (category+tags+query=AND-Komposition), leerer Filter = neue Kopie, filterByCategory.",
+      lastSeen: "2026-05-18T23:10:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "tests/features/audio-bpm-worker.test.ts (v3.54.0)": {
+      role:     "v3.54.0 NEU: 7 Tests in 3 describes (env:node). (1) encodeBufferToMonoWav × 3 — gültiger RIFF/WAVE Header bei 1s Audio (Größe = 44 + 88200 Bytes), 30s-Trim bei 40s Buffer (Größe = 44 + 30*44100*2 Bytes), Sample-Clipping auf [-1,1] (2.0 → 0x7FFF, -2.0 → -0x8000). (2) Worker-Override × 2 — Round-Trip via __bpmWorkerTestOverride liefert {bpm:128, confidence:0.85}, Override-null liefert null. (3) Worker-Fail × 2 — Node-Env ohne Worker-Global → analyzeBpmInWorker liefert null (silent), __resetBpmWorkerClientForTests setzt __getBpmWorkerPendingCount auf 0.",
+      lastSeen: "2026-05-18T23:10:00.000Z",
+      ownedBy:  "frontend"
+    },
     "client/src/store/useAudioTrackStore.ts (v3.53.0)": {
       role:     "v3.53.0 ERWEITERT: v3.52 Manual-Stretch-API bleibt (clampStretchRatio/computeWarpRatio/setTrackStretchRatio/setTrackPitchLocked/setTrackBpmHint/autoWarpToBpm/AudioTrackChannelData mit stretchRatio/pitchLocked/bpmHint) + NEU 5 Helpers + 2 Konstanten (~+115 LOC). Konstanten: AUTO_BPM_CONFIDENCE_THRESHOLD=0.5, STRETCH_SNAP_THRESHOLD=0.05. shouldApplyAutoBpm(bpm,confidence,threshold?) → {bpm,confidence,applied} — Pure-fn, defensive: NaN/0/neg/>=1000 BPM oder confidence<threshold → applied=false. applyAutoBpmToTrack(id,bpm,confidence,threshold?) → ruft shouldApplyAutoBpm + setzt bpmHint NUR bei applied=true UND track.bpmHint undefined (kein User-Overwrite). snapStretchRatio(value,threshold?) — Werte in [1-threshold, 1+threshold] → exakt 1.0, clamped 0.25..4.0, NaN/0/neg → 1.0 default. computeEffectiveStretchRate(projectBpm,originalBpm,syncMode,stretchRatio) → {rate,bpmRate,manualRatio,clamped} — bpmRate=projectBpm/originalBpm wenn syncMode=stretch|timestretch+originalBpm>0, sonst 1.0. rate=bpmRate×manualRatio clamped 0.25..4.0, clamped-Flag für UI-Warn. AudioTrackChannelData unverändert (additive in v3.52).",
       lastSeen: "2026-05-18T22:25:00.000Z",
@@ -1772,6 +1807,48 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "frontend",
+      timestamp: "2026-05-18T23:10:00.000Z",
+      done: [
+        "v3.54.0: Sample-Library Tags+Search+Filter (AND/OR) + Auto-BPM Worker-Async — closes v3.53-Caveat (Auto-BPM auf Main-Thread). pnpm check clean, 203 Test-Files / 4692 tests grün (16 skipped, +35 NEU: 28 sample-library-tags + 7 audio-bpm-worker).",
+        "client/src/utils/sampleLibrary.ts NEU (~230 LOC, pure-fn): Public-API: normalizeTag (lowercase+trim, null bei leer), getSampleTags (backward-compat: missing tags → []), addTagToSample (immutable, idempotent — gleiche Referenz bei No-Op), removeTagFromSample, setSampleTags (dedup+normalize), applyAutoTagsFromFilename (autoTagFromFilename-Wrapper + Merge ohne Duplikate, gleiche Referenz wenn keine neuen Tags), matchesSearchQuery (case-insensitive, Name+Tag-Substring), filterByTags(samples, tags, mode='AND'|'OR') (Set-basiert, leere Tag-Liste → unveränderte Kopie), filterByCategory ('all'/'' → Kopie), extractAllTags (unique sortiert), applySampleFilters (Komposit category+tags+query). Konstante DEFAULT_FILTER_MODE='OR' + SAMPLE_CATEGORIES.",
+        "client/src/utils/bpmWorkerClient.ts NEU (~210 LOC, closes v3.53-Caveat): Module-Singleton Worker-Client für BPM-Detection in audioAnalysis.worker.ts. encodeBufferToMonoWav(buf) pure-fn — RIFF/WAVE 16-bit PCM Mono Encoder mit 30s-Trim, Sample-Clipping auf [-1,1], transferable ArrayBuffer. analyzeBpmInWorker(buf, timeoutMs=10000) Promise<{bpm,confidence}|null> — encodet via encodeBufferToMonoWav, postMessage 'analyzeBpm' an Worker, 10s-Timeout. Defensive: typeof Worker==='undefined' → null (Test-Env/Node), Worker-Init-Fail wird gemerkt (kein Retry-Loop), onerror disposed alle Pendings. Test-Override: globalThis.__bpmWorkerTestOverride für deterministische Unit-Tests. __resetBpmWorkerClientForTests + __getBpmWorkerPendingCount Test-Helpers.",
+        "client/src/components/Mixer/MixerView.tsx: detectAndApplyBpm wechselt von Main-Thread analyzeBpmFromBufferDirect → erst analyzeBpmInWorker (off-thread, await), bei Worker-Fail (null) silent-Fallback zu analyzeBpmFromBufferDirect (Main-Thread). Bestehende silent-fail-Strategy (try/catch + console.warn) bleibt. analyzeBpmFromBufferDirect bleibt exported für Worker-Mirror-Tests in audio-track-auto-bpm.test.ts. +1 Import bpmWorkerClient.",
+        "client/src/store/useProjectStore.ts: Sample-Interface unverändert (tags?: string[] schon da). +4 neue Actions: addTagToSample(id, tag) / removeTagFromSample(id, tag) / setSampleTags(id, tags) / updateSample(id, patch). importSamplesFromPaths ruft jetzt applyAutoTagsFromFilename pro neuem Sample (vorher: Auto-Tagging nur in App.tsx-Drop-Path, nicht im allgemeinen Import). Imports: sampleLibrary helpers.",
+        "client/src/App.tsx: handleUpdateSampleCategory wechselt von broken project.addSamples(...map) auf project.updateSample(id, {category}) — addSamples filtert Path-Dupes raus, somit wurde Update verschluckt. Closes silent-Update-Bug.",
+        "client/src/components/SampleBrowser/SampleBrowser.tsx: Single-Tag-Filter activeTag:string → Multi-Tag activeTags:string[] + tagFilterMode:'AND'|'OR' (Default OR). NEU Tag-Filter-Bar mit Multi-Select, AND/OR-Toggle (sichtbar ab 2 aktiven Tags), 'Filter löschen'-Button (sichtbar bei aktiven Filtern). filteredSamples nutzt applySampleFilters pure-fn (mit Analyse-Cache-Tags virtuell gemerged). availableTags via extractAllTags. NEU data-testids: sample-browser-tag-{tag}, sample-browser-tag-mode-or, sample-browser-tag-mode-and, sample-browser-clear-filters. Bestehender Single-Tag-Workflow bleibt funktional (Toggle = Add/Remove).",
+        "tests/features/sample-library-tags.test.ts NEU (28 Tests in 6 describes, env:node): (1) Tag-Mutations × 7 — round-trip, idempotent, normalize, ignore-empty, no-op-Referenz, dedup, normalizeTag-null-cases. (2) Backward-Compat × 3 — getSampleTags ohne tags-Feld, add/remove auf fehlendem tags. (3) filterByTags × 6 — OR+AND-Mode, unmögliche Kombi, empty-Liste, case-insensitive, ignoriert no-tags-Samples. (4) Search × 4 — Name+Tag case-insensitive, leer = match-all, no-match. (5) AutoTags × 3 — Filename-Match, Merge ohne Duplikate, gleiche Referenz wenn nichts neues. (6) Komposit × 5 — extractAllTags sortiert, applySampleFilters mit category+tags+query, leerer Filter = Kopie, filterByCategory.",
+        "tests/features/audio-bpm-worker.test.ts NEU (7 Tests in 3 describes, env:node): (1) encodeBufferToMonoWav × 3 — gültiger RIFF/WAVE Header, 30s-Trim, Sample-Clipping [-1,1] auf 16-bit PCM. (2) Worker-Override × 2 — Round-Trip {bpm,confidence}, Override returnt null. (3) Worker-Fail × 2 — typeof Worker===undefined (Node-Env) → null, __resetBpmWorkerClientForTests setzt Pending=0.",
+        "package.json + agents/INDEX.js version 3.53.0 → 3.54.0."
+      ],
+      next: [
+        "v3.55 Tag-CRUD-UI im SampleBrowser: User kann pro Sample Tags manuell hinzufügen/entfernen (Rechtsklick-Submenu oder Inline-Edit-Modal). Store-Actions sind da (addTagToSample/removeTagFromSample), nur die UI fehlt. Aktuell setzt nur autoTagFromFilename die Tags beim Import.",
+        "v3.55 Tags in .synth-Datei persistieren — Sample-Tags landen aktuell im useProjectStore-State, projectSerializer.ts müsste mitziehen damit Tags beim Save/Load erhalten bleiben (Schema-Bump auf v1.21).",
+        "v3.55 Worker-Result für analyzeBpmInWorker via Transferable in beide Richtungen (postMessage liefert das ArrayBuffer zurück damit nichts kopiert wird). Aktuell wird nur in den Worker hinein transferiert.",
+        "v3.55 Search-Pipeline-Highlighting (matchedRanges für Search-Hits in Sample-Namen). Frontend-Sache, pure-fn liefert die Daten — UI muss sie rendern."
+      ],
+      changed: [
+        "client/src/utils/sampleLibrary.ts (NEU, ~230 LOC: pure-fn Tag-Pipeline + Filter)",
+        "client/src/utils/bpmWorkerClient.ts (NEU, ~210 LOC: Worker-Singleton + WAV-Encoder)",
+        "client/src/components/Mixer/MixerView.tsx (~+10 LOC: Worker-First-Pfad mit Main-Thread-Fallback in detectAndApplyBpm)",
+        "client/src/store/useProjectStore.ts (~+50 LOC: 4 neue Actions, Auto-Tag-Import)",
+        "client/src/App.tsx (~+3 LOC: handleUpdateSampleCategory nutzt updateSample)",
+        "client/src/components/SampleBrowser/SampleBrowser.tsx (~+80 LOC: Multi-Tag-Filter, AND/OR-Toggle, Clear-Filters-Button, applySampleFilters-Integration)",
+        "tests/features/sample-library-tags.test.ts (NEU, 28 Tests)",
+        "tests/features/audio-bpm-worker.test.ts (NEU, 7 Tests)",
+        "package.json (3.53.0 → 3.54.0)",
+        "agents/INDEX.js (version 3.53.0 → 3.54.0 + workLog v3.54.0)"
+      ],
+      caveats: [
+        "Worker-Pfad nutzt encodeBufferToMonoWav → der AudioBuffer wird auf dem Main-Thread in 16-bit-PCM-WAV serialisiert (~50ms für 30s @44.1kHz). Der Worker dekodiert ihn dann erneut via OfflineAudioContext.decodeAudioData. Insgesamt ist das LANGSAMER als der direkte Main-Thread-Pfad für kurze Files, aber es blockt nicht den Main-Thread. Trade-off bewusst — wir tauschen Wall-Clock-Time gegen UI-Responsiveness. Bei sehr langen Files (>10 min) dürfte der Worker-Pfad netto schneller sein weil die Onset-Iteration länger als das WAV-Encoding dauert.",
+        "Worker-Singleton lebt für die App-Lifetime — kein Cleanup beim Unmount. Bei Hot-Reload in dev läuft __resetBpmWorkerClientForTests NICHT automatisch, alte Worker bleiben in der Page. Memory-Impact ist gering (1 Worker), aber dev-only-Inconvenience.",
+        "Sample-Tags landen aktuell im React-State (useProjectStore), NICHT im Projekt-File. Beim Save/Load gehen sie verloren. projectSerializer.ts hat tags?: string[] noch nicht im SynthProject.samples-Schema. → FU v3.55.",
+        "SampleBrowser-Tag-CRUD ist read-only: User kann zwar nach Tags FILTERN aber nicht manuell ADD/REMOVE im UI. Die Store-Actions existieren, nur Inline-UI fehlt. Workaround: Filename umbenennen + Re-Import triggert autoTagFromFilename.",
+        "applyAutoTagsFromFilename nutzt aus Performance-Gründen autoTagFromFilename aus useBpmDetection.ts. Bei zukünftigen Tag-Logik-Erweiterungen sollte die Function ggf. nach sampleLibrary.ts wandern damit Hook-Datei wirklich nur Hook-Code enthält.",
+        "Analyse-Cache-Tags (BPM-Genre wie 'techno', 'house') werden im SampleBrowser virtuell in das Sample gemerged BEVOR der Filter läuft. Das macht extractAllTags + filteredSamples konsistent, aber die Cache-Tags persistieren NIE im Store — bei Hot-Reload sind sie weg. Bewusst — Auto-BPM ist on-demand."
+      ]
+    },
     {
       agent:     "frontend",
       timestamp: "2026-05-18T22:25:00.000Z",

@@ -2422,11 +2422,11 @@ export default function App() {
   }, [dm]);
 
   // Kategorie eines Samples aktualisieren
+  // v3.54.0: Nutzt jetzt updateSample (statt addSamples, das Duplikate per
+  // Path filtert und somit Updates verschluckte).
   const handleUpdateSampleCategory = useCallback(
     (id: string, category: string) => {
-      project.addSamples(
-        project.samples.map(s => s.id === id ? { ...s, category } : s)
-      );
+      project.updateSample(id, { category });
     },
     [project]
   );
