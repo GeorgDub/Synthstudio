@@ -15,7 +15,7 @@
  * the picker (always dirty), `edit` slots may pass-through rawRiff verbatim.
  */
 
-import type { E2sBank, E2sSlot } from "./e2sBankReader";
+import type { E2sBank, E2sSlice, E2sSlot } from "./e2sBankReader";
 import type { E2sSlotInput } from "./e2sBankBuilder";
 import {
   E2S_CATEGORY_NAMES,
@@ -59,6 +59,12 @@ export interface OpenedSlot {
   /** Raw RIFF chunk bytes from the parser; bit-exact passthrough source. */
   rawRiff?: Uint8Array;
 
+  /**
+   * v3.8.0 — ESLI-Slices (max 64). Leeres Array = keine Slices definiert,
+   * E2S spielt das Sample als Single-Shot. Edits hier setzen isDirty=true.
+   */
+  slices: E2sSlice[];
+
   // — Edit tracking —
   /** True = any field edited since load OR sample replaced; forces re-encode at save. */
   isDirty: boolean;
@@ -80,6 +86,8 @@ export interface OpenedSlotSnapshot {
   channels: 1 | 2;
   frames: number;
   rawRiff?: Uint8Array;
+  /** v3.8.0 — Snapshot der Slices für Revert. */
+  slices: E2sSlice[];
 }
 
 // ─── Bank → OpenedSlot[] ──────────────────────────────────────────────────────
@@ -113,11 +121,20 @@ export function bankToOpenedSlots(
         oneshot: true,
         gain12db: false,
         sampleTune: 0,
+        slices: [],
         isDirty: false,
         original: null,
       });
       continue;
     }
+    // Defensive: kopiere Slices in eigene Objekte (Builder mutiert sie nicht,
+    // aber wir wollen Snapshot-Isolation für Revert garantieren).
+    const slicesCopy: E2sSlice[] = src.slices.map((s) => ({
+      start: s.start,
+      length: s.length,
+      attackLength: s.attackLength,
+      amplitude: s.amplitude,
+    }));
     const snapshot: OpenedSlotSnapshot = {
       name: src.name,
       category: src.category,
@@ -129,6 +146,7 @@ export function bankToOpenedSlots(
       channels: src.channels,
       frames: src.frames,
       rawRiff: src.rawRiff,
+      slices: slicesCopy.map((s) => ({ ...s })),
     };
     out.push({
       rowId: `${keyPrefix}-${i}`,
@@ -144,6 +162,7 @@ export function bankToOpenedSlots(
       channels: src.channels,
       frames: src.frames,
       rawRiff: src.rawRiff,
+      slices: slicesCopy,
       isDirty: false,
       original: snapshot,
     });
@@ -178,13 +197,30 @@ export function patchOpenedSlot(
       (patch.sampleTune !== undefined && patch.sampleTune !== s.sampleTune) ||
       patch.pcmData !== undefined ||
       patch.sampleRate !== undefined ||
-      patch.channels !== undefined;
+      patch.channels !== undefined ||
+      patch.slices !== undefined;
     return {
       ...s,
       ...patch,
       isDirty: editableTouched ? true : (patch.isDirty ?? s.isDirty),
     };
   });
+}
+
+/**
+ * v3.8.0 — Convenience-Helper: setze nur die Slices eines Slots. Flippt
+ * `isDirty=true` (auch wenn die Liste leer wird — Delete-All ist eine Edit).
+ */
+export function setSlotSlices(
+  slots: OpenedSlot[],
+  rowId: string,
+  slices: E2sSlice[],
+): OpenedSlot[] {
+  return slots.map((s) =>
+    s.rowId === rowId
+      ? { ...s, slices: slices.map((sl) => ({ ...sl })), isDirty: true }
+      : s,
+  );
 }
 
 /**
@@ -209,6 +245,10 @@ export function replaceSlotSample(
           sampleRate,
           channels,
           frames,
+          // v3.8.0 — Slices beziehen sich auf das alte PCM. Bei Sample-Replace
+          // werden sie zurückgesetzt — der User kann anschließend Auto-Slice
+          // oder manuelle Marker setzen.
+          slices: [],
           isDirty: true,
         }
       : s,
@@ -240,6 +280,7 @@ export function deleteSlot(slots: OpenedSlot[], rowId: string): OpenedSlot[] {
           channels: undefined,
           frames: undefined,
           rawRiff: undefined,
+          slices: [],
           isDirty: true,
         }
       : s,
@@ -269,6 +310,7 @@ export function revertSlot(slots: OpenedSlot[], rowId: string): OpenedSlot[] {
         channels: undefined,
         frames: undefined,
         rawRiff: undefined,
+        slices: [],
         isDirty: false,
       };
     }
@@ -285,6 +327,7 @@ export function revertSlot(slots: OpenedSlot[], rowId: string): OpenedSlot[] {
       channels: o.channels,
       frames: o.frames,
       rawRiff: o.rawRiff,
+      slices: o.slices.map((sl) => ({ ...sl })),
       isDirty: false,
     };
   });
@@ -337,6 +380,10 @@ export function openedSlotsToBuildInputs(
       loopType: s.oneshot ? LOOP_TYPE_ONESHOT : LOOP_TYPE_FORWARD,
       gain12db: s.gain12db,
       sampleTune: s.sampleTune,
+      // v3.8.0 — Slices propagieren. Builder ignoriert sie für passthrough-Slots
+      // (rawRiff bit-exact), aber bei dirty/re-encode werden sie korrekt
+      // serialisiert (siehe e2sBankBuilder.ts:548).
+      slices: s.slices.length > 0 ? s.slices.map((sl) => ({ ...sl })) : undefined,
       rawRiff: s.rawRiff,
       isDirty: s.isDirty,
     };

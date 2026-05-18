@@ -48,6 +48,9 @@ import {
   ESLI_CATEGORY_OFFSET,
   ESLI_NAME_LEN,
   ESLI_NAME_OFFSET,
+  ESLI_SLICE_STRUCT_SIZE,
+  ESLI_SLICES_COUNT,
+  ESLI_SLICES_OFFSET,
   KORG_BODY_SUBMAGIC,
   KORG_BODY_VERSION_WORD,
   KORG_SUBCHUNK_BODY_SIZE,
@@ -840,5 +843,134 @@ describe("e2sBankBuilder — Raw-RIFF-Preservation (v3.6.0)", () => {
     expect(result.warnings.some((w) => w.includes("invalid magic"))).toBe(true);
     const bank = parseE2sBank(result.buffer);
     expect(bank.slots[0]?.name).toBe("Salvage");
+  });
+});
+
+// ─── v3.8.0 ESLI-Slice Round-Trip & Byte-Layout ───────────────────────────────
+
+describe("v3.8.0 ESLI Slice serialization", () => {
+  /** Finds the offset of the 'korg' chunk *body* (i.e. start of the 1180-byte body)
+   *  for the first slot. */
+  function findKorgBodyOffset(buf: ArrayBuffer): number {
+    const view = new Uint8Array(buf);
+    for (let i = E2S_ALL_SAMPLE_AREA_START; i < view.length - 8; i++) {
+      if (
+        view[i] === 0x6b &&
+        view[i + 1] === 0x6f &&
+        view[i + 2] === 0x72 &&
+        view[i + 3] === 0x67
+      ) {
+        return i + 8; // skip 'korg' + size = 8 bytes
+      }
+    }
+    return -1;
+  }
+
+  it("Slices werden in ESLI bei 0x58 korrekt als 4×LE32 serialisiert", () => {
+    const result = buildE2sBank([
+      {
+        slotIndex: 0,
+        name: "Slice",
+        pcmData: new Float32Array(10_000),
+        sampleRate: 44100,
+        channels: 1,
+        slices: [
+          { start: 0, length: 1234, attackLength: 10, amplitude: 100 },
+          { start: 1234, length: 5678, attackLength: 20, amplitude: 200 },
+        ],
+      },
+    ]);
+    const bodyOff = findKorgBodyOffset(result.buffer);
+    expect(bodyOff).toBeGreaterThan(0);
+    const dv = new DataView(result.buffer);
+
+    // Slice 0 @ body+0x58
+    const s0 = bodyOff + ESLI_SLICES_OFFSET;
+    expect(dv.getInt32(s0, true)).toBe(0);
+    expect(dv.getUint32(s0 + 4, true)).toBe(1234);
+    expect(dv.getUint32(s0 + 8, true)).toBe(10);
+    expect(dv.getUint32(s0 + 12, true)).toBe(100);
+
+    // Slice 1 @ body+0x58+16
+    const s1 = s0 + ESLI_SLICE_STRUCT_SIZE;
+    expect(dv.getInt32(s1, true)).toBe(1234);
+    expect(dv.getUint32(s1 + 4, true)).toBe(5678);
+    expect(dv.getUint32(s1 + 8, true)).toBe(20);
+    expect(dv.getUint32(s1 + 12, true)).toBe(200);
+
+    // Slice 2 @ body+0x58+32 — should be all zero (no slice given)
+    const s2 = s0 + 2 * ESLI_SLICE_STRUCT_SIZE;
+    expect(dv.getInt32(s2, true)).toBe(0);
+    expect(dv.getUint32(s2 + 4, true)).toBe(0);
+    expect(dv.getUint32(s2 + 8, true)).toBe(0);
+    expect(dv.getUint32(s2 + 12, true)).toBe(0);
+  });
+
+  it("Read → Edit Slices → Write → Read produziert identische Slices", () => {
+    const inputSlices = [
+      { start: 0, length: 4000, attackLength: 0, amplitude: 0 },
+      { start: 4000, length: 3000, attackLength: 0, amplitude: 0 },
+      { start: 7000, length: 3000, attackLength: 0, amplitude: 0 },
+    ];
+    const built = buildE2sBank([
+      {
+        slotIndex: 7,
+        name: "Loop",
+        pcmData: new Float32Array(10_000),
+        sampleRate: 44100,
+        channels: 1,
+        slices: inputSlices,
+      },
+    ]);
+    const bank = parseE2sBank(built.buffer);
+    const slot = bank.slots[7];
+    expect(slot).not.toBeNull();
+    expect(slot!.slices).toEqual(inputSlices);
+
+    // Now edit the slices: add one, modify one, then re-write
+    const editedSlices = [
+      { start: 0, length: 2000, attackLength: 0, amplitude: 0 },
+      { start: 2000, length: 2000, attackLength: 0, amplitude: 0 },
+      { start: 4000, length: 3000, attackLength: 0, amplitude: 0 },
+      { start: 7000, length: 3000, attackLength: 0, amplitude: 0 },
+    ];
+    const built2 = buildE2sBank([
+      {
+        slotIndex: 7,
+        name: "Loop",
+        pcmData: slot!.pcmData,
+        sampleRate: slot!.sampleRate,
+        channels: slot!.channels,
+        slices: editedSlices,
+      },
+    ]);
+    const bank2 = parseE2sBank(built2.buffer);
+    expect(bank2.slots[7]?.slices).toEqual(editedSlices);
+  });
+
+  it("Slice-Cap auf 64 wird im Builder enforced + Warning", () => {
+    const tooMany = Array.from({ length: 80 }, (_, i) => ({
+      start: i * 100,
+      length: 100,
+      attackLength: 0,
+      amplitude: 0,
+    }));
+    const result = buildE2sBank([
+      {
+        slotIndex: 0,
+        name: "Cap",
+        pcmData: new Float32Array(10_000),
+        sampleRate: 44100,
+        channels: 1,
+        slices: tooMany,
+      },
+    ]);
+    // Warning enthält "slices > 64"
+    expect(result.warnings.some((w) => /slices > 64|truncating/.test(w))).toBe(true);
+    const bank = parseE2sBank(result.buffer);
+    // After parse, trailing all-zero slices are trimmed (Reader-Konvention).
+    // Wir prüfen nur, dass nicht mehr als ESLI_SLICES_COUNT geschrieben wurden.
+    expect((bank.slots[0]?.slices.length ?? 0)).toBeLessThanOrEqual(ESLI_SLICES_COUNT);
+    expect((bank.slots[0]?.slices.length ?? 0)).toBe(ESLI_SLICES_COUNT);
   });
 });

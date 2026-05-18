@@ -61,8 +61,19 @@ import {
   patchOpenedSlot,
   replaceSlotSample,
   revertSlot,
+  setSlotSlices,
   type OpenedSlot,
 } from "@/utils/korg/bankEditorState";
+import {
+  MAX_ESLI_SLICES,
+  onsetsToSlices as onsetsToEsliSlices,
+  slicesToOnsets as esliSlicesToOnsets,
+} from "@/utils/korg/sliceBridge";
+import {
+  autoSlice,
+  type OnsetCandidate,
+} from "@/utils/sampleSlicing";
+import { WaveformSliceCanvas } from "./WaveformSliceCanvas";
 import {
   PRO_FEATURE_KORG_BANK_WRITE,
   requireProFeature,
@@ -106,6 +117,23 @@ interface NewModeSlot {
 const TARGET_SAMPLE_RATE_OPTIONS: ReadonlyArray<44100 | 48000> = E2S_SAMPLE_RATES;
 
 type EditorMode = "new" | "edit";
+
+/**
+ * v3.8.0 — Extrahiere einen Mono-Channel aus dem (möglicherweise interleaved
+ * Stereo) PCM-Buffer für die Waveform-Visualisierung. Bei Stereo: Kanal 0
+ * (Left). Mono: gibt die Eingabe unverändert zurück.
+ *
+ * Keine Allocation wenn schon Mono — sonst neue Float32Array.
+ */
+function extractMonoChannel(pcm: Float32Array, channels: 1 | 2): Float32Array {
+  if (channels === 1) return pcm;
+  const frames = Math.floor(pcm.length / 2);
+  const out = new Float32Array(frames);
+  for (let i = 0; i < frames; i++) {
+    out[i] = pcm[i * 2];
+  }
+  return out;
+}
 
 // ─── Public Component ─────────────────────────────────────────────────────────
 
@@ -358,6 +386,41 @@ export function KorgBankEditor({
   function handleReplaceClick(rowId: string): void {
     setSelectedRowId(rowId);
     replaceInputRef.current?.click();
+  }
+
+  // ─── Slice-Editor (v3.8.0) ─────────────────────────────────────────────────
+
+  function editSlotSetSlices(
+    rowId: string,
+    slices: ReturnType<typeof onsetsToEsliSlices>,
+  ): void {
+    setOpenedSlots((prev) => setSlotSlices(prev, rowId, slices));
+  }
+
+  function handleAutoSlice(slot: OpenedSlot): void {
+    if (!slot.pcmData || !slot.sampleRate || !slot.channels || !slot.frames) return;
+    const mono = extractMonoChannel(slot.pcmData, slot.channels);
+    try {
+      const specs = autoSlice(mono, slot.sampleRate, {
+        maxSlices: MAX_ESLI_SLICES,
+        snapToZero: true,
+        fillToMax: false,
+      });
+      const onsets: OnsetCandidate[] = specs.map((s) => ({
+        frame: s.startFrame,
+        strength: 1,
+      }));
+      // Auto-Slice gibt Frame-0-anchored Onsets — passt direkt zu ESLI-Slices.
+      const eSlices = onsetsToEsliSlices(onsets, slot.frames);
+      editSlotSetSlices(slot.rowId, eSlices);
+    } catch (err) {
+      console.error("[KorgBankEditor] autoSlice failed", err);
+      toast("Auto-Slice fehlgeschlagen", { kind: "error" });
+    }
+  }
+
+  function handleClearSlices(rowId: string): void {
+    editSlotSetSlices(rowId, []);
   }
 
   function handleReplaceInput(e: React.ChangeEvent<HTMLInputElement>): void {
@@ -1040,6 +1103,9 @@ export function KorgBankEditor({
                   🎵 Sample ersetzen…
                 </button>
               </div>
+
+              {/* v3.8.0 — Slices */}
+              {renderSliceEditor(selectedSlot)}
             </div>
           )}
 
@@ -1053,6 +1119,79 @@ export function KorgBankEditor({
           )}
         </div>
       </>
+    );
+  }
+
+  // ─── Render: Slice-Editor (v3.8.0) ─────────────────────────────────────────
+
+  function renderSliceEditor(slot: OpenedSlot): React.ReactElement | null {
+    if (!slot.pcmData || !slot.sampleRate || !slot.channels || !slot.frames) {
+      return null;
+    }
+    const mono = extractMonoChannel(slot.pcmData, slot.channels);
+    // ESLI-Slice-Liste → Onset-Liste (für die Canvas-UI).
+    const onsets = esliSlicesToOnsets(slot.slices);
+    const sliceCount = onsets.length;
+
+    const handleOnsetChange = (next: OnsetCandidate[]): void => {
+      const eSlices = onsetsToEsliSlices(next, slot.frames ?? 0);
+      editSlotSetSlices(slot.rowId, eSlices);
+    };
+
+    return (
+      <div
+        data-testid="korg-bank-editor-slice-editor"
+        className="pt-2 border-t border-border-color space-y-2"
+      >
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <div className="text-xs font-semibold text-text-primary flex items-center gap-2">
+            <span>✂ Slices</span>
+            <span
+              data-testid="korg-bank-editor-slice-count"
+              className="text-[10px] font-normal text-text-muted"
+            >
+              ({sliceCount}/{MAX_ESLI_SLICES})
+            </span>
+          </div>
+          <div className="flex items-center gap-1">
+            <button
+              data-testid="korg-bank-editor-slice-auto"
+              onClick={() => handleAutoSlice(slot)}
+              disabled={busy}
+              className="px-2 py-0.5 rounded text-[10px] bg-accent-primary text-bg-base font-bold hover:opacity-90 transition-opacity disabled:opacity-40"
+              title="Onset-Detection + automatische Slice-Marker setzen"
+            >
+              Auto-Slice
+            </button>
+            <button
+              data-testid="korg-bank-editor-slice-clear"
+              onClick={() => handleClearSlices(slot.rowId)}
+              disabled={busy || sliceCount === 0}
+              className="px-2 py-0.5 rounded text-[10px] bg-bg-elevated text-text-muted hover:text-accent-danger transition-colors disabled:opacity-40"
+              title="Alle Slice-Marker entfernen"
+            >
+              Clear
+            </button>
+          </div>
+        </div>
+
+        <WaveformSliceCanvas
+          channelData={mono}
+          sampleRate={slot.sampleRate}
+          onsets={onsets}
+          onChange={handleOnsetChange}
+          maxSlices={MAX_ESLI_SLICES}
+          height={120}
+          snapToZero={true}
+          testId="korg-bank-editor-slice-canvas"
+          className="rounded border border-border-color overflow-hidden"
+        />
+
+        <p className="text-[10px] text-text-dim">
+          Linksklick = Marker hinzufügen · Drag = verschieben · Shift/Rechtsklick = entfernen ·
+          max {MAX_ESLI_SLICES} Slices (E2S-Hardware-Limit)
+        </p>
+      </div>
     );
   }
 }
