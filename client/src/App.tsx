@@ -2893,6 +2893,10 @@ export default function App() {
       onMidiFile={(file) =>
         window.dispatchEvent(new CustomEvent<File>("midi:fileImport", { detail: file }))
       }
+      onElectribeFile={(file) =>
+        // v3.1.0: .e2spat/.e2sallpat/.esx/.elst-Drop → DrumMachine-Listener
+        window.dispatchEvent(new CustomEvent<File>("electribe:fileImport", { detail: file }))
+      }
     >
       <MidiProvider value={midi}>
       <div className="flex flex-col h-screen bg-bg-base text-text-primary overflow-hidden">

@@ -15,6 +15,15 @@
  * ```
  */
 import React, { useState, useEffect, useCallback, useRef } from "react";
+import {
+  AUDIO_EXTENSIONS as DD_AUDIO,
+  ZIP_EXTENSIONS as DD_ZIP,
+  MIDI_EXTENSIONS as DD_MIDI,
+  ELECTRIBE_EXTENSIONS as DD_ELECTRIBE,
+  getFileExtension as ddGetExt,
+} from "@/utils/dragDropDispatch";
+import { toast } from "@/store/useToastStore";
+import { DragDropOverlay } from "@/components/DragDropOverlay/DragDropOverlay";
 
 // ─── Typen ────────────────────────────────────────────────────────────────────
 
@@ -36,6 +45,13 @@ export interface ElectronDropZoneProps {
    */
   onMidiFile?: (file: File) => void;
   /**
+   * v3.1.0: Callback wenn ein .e2spat/.e2sallpat/.esx/.elst-File gedroppt
+   * wurde. Empfaenger ist DrumMachine (vorhandener `electribe:fileImport`-
+   * Listener) — bei fehlendem Callback faellt der Default auf das
+   * CustomEvent zurueck.
+   */
+  onElectribeFile?: (file: File) => void;
+  /**
    * v2.13: Callback mit den rohen File-Objekten der Audio-Drops (Browser).
    * Dient z.B. der BPM-Erkennung, da `onAudioFiles` nur den Dateinamen
    * weiterreicht, nicht das ArrayBuffer.
@@ -45,18 +61,24 @@ export interface ElectronDropZoneProps {
   children?: React.ReactNode;
 }
 
-type DropType = "audio" | "folder" | "project" | "zip" | "midi" | "unknown" | null;
+// v3.1.0: vereint sich DropType mit dem zentralen FileType (DragDropOverlay).
+// "folder" bleibt zonen-spezifisch (Webkit-Entry → isDirectory) und ist NICHT
+// im zentralen FileType, weil File-Drops keine Folder transportieren.
+type DropType = "audio" | "folder" | "project" | "zip" | "midi" | "electribe" | "unknown" | null;
 
 // ─── Hilfsfunktionen ─────────────────────────────────────────────────────────
 
-const AUDIO_EXTENSIONS = new Set([".wav", ".mp3", ".ogg", ".flac", ".aiff", ".aif", ".m4a"]);
+// v3.1.0: Extensions kommen jetzt zentral aus dragDropDispatch.ts; die hiesigen
+// Konstanten bleiben fuer Drop-Handler-Iteration im Browser-Fallback.
+const AUDIO_EXTENSIONS = DD_AUDIO;
+// PROJECT-Drop akzeptiert legacy .json + neue .synth-Files
 const PROJECT_EXTENSIONS = new Set([".synth", ".json"]);
-const ZIP_EXTENSIONS = new Set([".zip"]);
-const MIDI_EXTENSIONS = new Set([".mid", ".midi"]);
+const ZIP_EXTENSIONS = DD_ZIP;
+const MIDI_EXTENSIONS = DD_MIDI;
+const ELECTRIBE_EXTENSIONS = DD_ELECTRIBE;
 
 function getFileExtension(name: string): string {
-  const dot = name.lastIndexOf(".");
-  return dot >= 0 ? name.slice(dot).toLowerCase() : "";
+  return ddGetExt(name);
 }
 
 function detectDropType(items: DataTransferItemList | null): DropType {
@@ -65,70 +87,31 @@ function detectDropType(items: DataTransferItemList | null): DropType {
   if (item.kind === "file") {
     const entry = item.webkitGetAsEntry?.();
     if (entry?.isDirectory) return "folder";
-    const ext = getFileExtension(entry?.name ?? "");
+    const name = entry?.name ?? "";
+    const ext = getFileExtension(name);
     if (ZIP_EXTENSIONS.has(ext)) return "zip";
     if (AUDIO_EXTENSIONS.has(ext)) return "audio";
     if (PROJECT_EXTENSIONS.has(ext)) return "project";
     if (MIDI_EXTENSIONS.has(ext)) return "midi";
+    if (ELECTRIBE_EXTENSIONS.has(ext)) return "electribe";
     // Mehrere Dateien → Audio-Import annehmen
     if (items.length > 1) return "audio";
   }
   return "unknown";
 }
 
-// ─── Farben pro Drop-Typ ──────────────────────────────────────────────────────
+// ─── Folder-Overlay-Style (zonen-spezifisch, im DragDropOverlay nicht enthalten) ──
 //
-// Kategorische Palette: jeder Drop-Typ benötigt eine visuell unterscheidbare
-// Farbe. Wir mappen auf die vier semantischen Akzent-Tokens (TASK-122):
-//   audio   → accent-primary   (Hauptaktion, kommt am häufigsten vor)
-//   folder  → accent-success   (Bulk-Import = positiv)
-//   project → accent-secondary (Projektdatei, abgehoben)
-//   zip     → accent-secondary (verwandt mit Projektimport)
-//   unknown → text-muted       (neutral, keine Aktion bestimmt)
-//
-// Wegen der Überschneidung project/zip wird zip im Border-Stil über die
-// Border-Farbe zusätzlich gedimmt. Themes mit nur drei Akzenten verlieren
-// die Differenzierung zwischen project und zip – akzeptiert als trade-off,
-// da die ohnehin große Drop-Overlay-Icons + Texte die Drop-Type-Information
-// dominant tragen.
+// Folders kommen nur per webkitGetAsEntry und werden nicht ueber den File-
+// Drop-Pfad geroutet — die ElectronDropZone reicht sie direkt an
+// onFolder() durch. Wir rendern den Folder-Overlay daher inline statt
+// ueber DragDropOverlay zu gehen.
 
-const DROP_STYLES: Record<NonNullable<DropType>, { border: string; bg: string; text: string; label: string }> = {
-  audio: {
-    border: "border-accent-primary",
-    bg: "bg-accent-primary/10",
-    text: "text-accent-primary",
-    label: "Audio-Dateien ablegen",
-  },
-  folder: {
-    border: "border-accent-success",
-    bg: "bg-accent-success/10",
-    text: "text-accent-success",
-    label: "Ordner importieren",
-  },
-  project: {
-    border: "border-accent-secondary",
-    bg: "bg-accent-secondary/10",
-    text: "text-accent-secondary",
-    label: "Projekt öffnen",
-  },
-  zip: {
-    border: "border-accent-secondary",
-    bg: "bg-accent-secondary/10",
-    text: "text-accent-secondary",
-    label: "ZIP-Archiv extrahieren",
-  },
-  midi: {
-    border: "border-accent-success",
-    bg: "bg-accent-success/10",
-    text: "text-accent-success",
-    label: "MIDI-File importieren",
-  },
-  unknown: {
-    border: "border-border-color",
-    bg: "bg-bg-elevated/10",
-    text: "text-text-muted",
-    label: "Dateien ablegen",
-  },
+const FOLDER_OVERLAY = {
+  border: "border-accent-success",
+  bg: "bg-accent-success/10",
+  text: "text-accent-success",
+  label: "Ordner importieren",
 };
 
 // ─── Komponente ───────────────────────────────────────────────────────────────
@@ -139,6 +122,7 @@ export function ElectronDropZone({
   onProject,
   onZipFile,
   onMidiFile,
+  onElectribeFile,
   onAudioFilesRaw,
   children,
 }: ElectronDropZoneProps) {
@@ -208,28 +192,63 @@ export function ElectronDropZone({
 
       const audioFiles: string[] = [];
       const audioFileObjects: File[] = [];
+      const unknownExts: string[] = [];
+
       for (const file of files) {
         const ext = getFileExtension(file.name);
         if (ZIP_EXTENSIONS.has(ext)) {
           onZipFile?.(file);
         } else if (MIDI_EXTENSIONS.has(ext)) {
-          onMidiFile?.(file);
+          if (onMidiFile) {
+            onMidiFile(file);
+          } else {
+            // Default-Fallback: dispatch CustomEvent fuer den DrumMachine-Listener
+            try { window.dispatchEvent(new CustomEvent<File>("midi:fileImport", { detail: file })); }
+            catch { /* ignore */ }
+          }
+        } else if (ELECTRIBE_EXTENSIONS.has(ext)) {
+          if (onElectribeFile) {
+            onElectribeFile(file);
+          } else {
+            // v3.1.0: Default-Fallback — DrumMachine.tsx hat einen Listener fuer
+            // dieses Event, der den Electribe-Parser anwirft (siehe v2.88).
+            try { window.dispatchEvent(new CustomEvent<File>("electribe:fileImport", { detail: file })); }
+            catch { /* ignore */ }
+          }
         } else if (AUDIO_EXTENSIONS.has(ext)) {
           // Im Browser: Dateiname (kein echter Pfad verfügbar)
           audioFiles.push(file.name);
           audioFileObjects.push(file);
         } else if (PROJECT_EXTENSIONS.has(ext)) {
           onProject?.(file.name);
+        } else {
+          // v3.1.0: unbekannte Endung → Toast statt silent-ignore
+          unknownExts.push(ext || file.name);
         }
       }
       if (audioFiles.length > 0) onAudioFiles?.(audioFiles);
       if (audioFileObjects.length > 0) onAudioFilesRaw?.(audioFileObjects);
+      if (unknownExts.length > 0) {
+        // Defensive: ein Toast pro Drop, nicht pro File (Toast-Spam-Schutz).
+        const sample = unknownExts.slice(0, 3).join(", ");
+        const more = unknownExts.length > 3 ? ` (+${unknownExts.length - 3} weitere)` : "";
+        try {
+          toast(`Nicht unterstuetztes Dateiformat: ${sample}${more}`, {
+            kind: "warning",
+            duration: 4500,
+          });
+        } catch { /* test-env ohne toast → ignore */ }
+      }
     },
-    [onAudioFiles, onProject, onZipFile, onMidiFile, onAudioFilesRaw]
+    [onAudioFiles, onProject, onZipFile, onMidiFile, onElectribeFile, onAudioFilesRaw]
   );
 
   // ── Render ────────────────────────────────────────────────────────────────
-  const style = dropType ? DROP_STYLES[dropType] : DROP_STYLES.unknown;
+  //
+  // v3.1.0: folder bleibt als Spezialfall inline (Webkit-Entry, kein
+  // CustomEvent-Route), alles andere geht ueber DragDropOverlay.
+  const showFolderOverlay = isDragging && dropType === "folder";
+  const overlayType = dropType === "folder" ? null : dropType;
 
   return (
     <div
@@ -241,45 +260,28 @@ export function ElectronDropZone({
     >
       {children}
 
-      {/* Overlay – nur sichtbar wenn aktiv gedraggt wird */}
-      {isDragging && (
+      {/* Folder-Overlay (zonen-spezifisch — kein CustomEvent-Route). */}
+      {showFolderOverlay && (
         <div
+          data-testid="drag-drop-overlay-folder"
           className={`
             fixed inset-0 z-50 pointer-events-none
             flex flex-col items-center justify-center gap-4
             border-4 border-dashed transition-all duration-150
-            ${style.border} ${style.bg}
+            ${FOLDER_OVERLAY.border} ${FOLDER_OVERLAY.bg}
           `}
         >
-          {/* Icon */}
-          <div className={`text-6xl ${style.text}`}>
-            {dropType === "folder"
-              ? "📁"
-              : dropType === "project"
-              ? "🎵"
-              : dropType === "zip"
-              ? "🗜️"
-              : dropType === "midi"
-              ? "🎹"
-              : "🎚️"}
-          </div>
-
-          {/* Label */}
-          <p className={`text-2xl font-bold tracking-wide ${style.text}`}>
-            {style.label}
-          </p>
-
-          {/* Subtext */}
-          <p className="text-sm text-text-muted">
-            {dropType === "audio" && "WAV, MP3, OGG, FLAC, AIFF werden unterstützt"}
-            {dropType === "folder" && "Alle Audio-Dateien im Ordner werden importiert"}
-            {dropType === "project" && ".synth Projektdatei wird geöffnet"}
-            {dropType === "zip" && "Audio-Dateien aus dem Archiv werden extrahiert"}
-            {dropType === "midi" && "Notes werden in das aktuelle Pattern importiert"}
-            {dropType === "unknown" && "Datei wird analysiert..."}
-          </p>
+          <div className={`text-6xl ${FOLDER_OVERLAY.text}`}>📁</div>
+          <p className={`text-2xl font-bold tracking-wide ${FOLDER_OVERLAY.text}`}>{FOLDER_OVERLAY.label}</p>
+          <p className="text-sm text-text-muted">Alle Audio-Dateien im Ordner werden importiert</p>
         </div>
       )}
+
+      {/* Standalone-Overlay (alle File-basierten Drop-Typen). */}
+      <DragDropOverlay
+        isVisible={isDragging && !showFolderOverlay}
+        fileType={overlayType ?? "unknown"}
+      />
     </div>
   );
 }

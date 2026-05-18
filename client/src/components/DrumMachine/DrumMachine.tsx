@@ -559,10 +559,11 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
   // ── Sample-Slicing (TASK-238 / v2.89) ──────────────────────────────────────
   // File-Picker → decodeAudioData → channelData (Kanal 0) → Modal-Open.
   // Kein Electron-Direktzugriff — isomorph ueber Browser-File-API.
-  const handleSliceImport = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = "";
-    if (!file) return;
+  //
+  // v3.1.0: handleSliceFile extrahiert als reine File→Modal-Pipeline, damit
+  // sowohl der Picker-Pfad (handleSliceImport) als auch der Drag-Drop-Pfad
+  // (onReplaceSample in SampleSliceEditor) dieselbe Decode-Logik nutzen.
+  const handleSliceFile = useCallback(async (file: File) => {
     try {
       const arrayBuffer = await file.arrayBuffer();
       type AnyWin = typeof window & { webkitAudioContext?: typeof AudioContext };
@@ -574,7 +575,6 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
       const ctx = new AC();
       try {
         const audioBuffer = await ctx.decodeAudioData(arrayBuffer.slice(0));
-        // Mono-Tap: nur Kanal 0 (Auto-Slice arbeitet Mono — fuer Pad-Trigger reicht das).
         const channelData = new Float32Array(audioBuffer.getChannelData(0));
         setSliceEditor({
           sampleName: file.name,
@@ -582,7 +582,6 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
           sampleRate: audioBuffer.sampleRate,
         });
       } finally {
-        // AudioContext schliessen damit kein Resource-Leak.
         if (typeof ctx.close === "function") {
           try { await ctx.close(); } catch { /* ignore */ }
         }
@@ -593,6 +592,13 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
       toast(`Sample-Decode fehlgeschlagen: ${msg}`, { kind: "error", duration: 5000 });
     }
   }, []);
+
+  const handleSliceImport = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    await handleSliceFile(file);
+  }, [handleSliceFile]);
 
   const handleSlicesApply = useCallback((slices: Float32Array[], _specs: SliceSpec[]) => {
     // MVP: kein direktes Pad-Slot-Wiring (Performance-Pads halten patternId, nicht
@@ -1764,6 +1770,7 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
           sampleRate={sliceEditor.sampleRate}
           onApply={handleSlicesApply}
           onClose={() => setSliceEditor(null)}
+          onReplaceSample={handleSliceFile}
         />
       )}
     </div>

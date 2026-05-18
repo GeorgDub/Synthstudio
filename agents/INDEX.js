@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.0.0",
+    version: "3.1.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -83,6 +83,36 @@ const INDEX = {
   // ─── KNOWN FILE INDEX ──────────────────────────────────────
   // Key files agents have analyzed. Add new entries after working on a file.
   files: {
+    "client/src/utils/dragDropDispatch.ts (v3.1.0)": {
+      role:     "v3.1.0: Pure-Helpers fuer globalen Drag-Drop-Dispatch (~165 LOC, kein React/DOM-Side-Effect). Exports: AUDIO_EXTENSIONS (Set, 7 Endungen wav/mp3/ogg/flac/aiff/aif/m4a), PROJECT_EXTENSIONS ({.synth}), ZIP_EXTENSIONS ({.zip}), MIDI_EXTENSIONS ({.mid,.midi}), ELECTRIBE_EXTENSIONS ({.e2spat,.e2sallpat,.e2pattern,.esx,.elst}), FileType-Union audio|project|zip|midi|electribe|unknown, DispatchResult-Interface. Funktionen: getFileExtension(name) defensive (null/empty/no-dot → ''), detectFileType(name) Lookup-Switch ueber 5 disjunkte Sets, detectFileTypeFromFiles(files[]) nimmt Typ der ersten Datei (fuer Overlay-Type-Detection bei Multi-Drop), dispatchFileDrop(file) feuert CustomEvent (drop:audio/drop:project/drop:zip/midi:fileImport/electribe:fileImport), dispatchAllFiles(files[]) iteriert und zaehlt handled+unknown. Defensive: typeof window undef → unhandled, dispatchEvent throws → catch+unhandled.",
+      lastSeen: "2026-05-18T07:40:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/components/DragDropOverlay/DragDropOverlay.tsx (v3.1.0)": {
+      role:     "v3.1.0: Standalone visuelles Drop-Feedback-Overlay (~110 LOC). Props {isVisible, fileType}. OVERLAY_STYLES-Map liefert pro FileType: border-Klasse (border-accent-primary/secondary/success/border-color), bg-Klasse (bg-accent-*/10), text-Klasse (text-accent-*/text-text-muted), label (DE), icon (Emoji). 5 Akzent-Farben fuer audio/project/zip/midi/electribe + unknown=text-muted. NULL hardcoded slate/gray/cyan. fixed inset-0 z-50 pointer-events-none, border-4 dashed transition-all 150ms. data-testid=drag-drop-overlay + data-drop-type=<type> fuer Playwright. SUBTEXT_BY_TYPE pro Typ erklaert was passieren wird.",
+      lastSeen: "2026-05-18T07:40:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "electron/components/ElectronDropZone.tsx (v3.1.0)": {
+      role:     "v3.1.0: Globale Drag-Drop-Zone fuer App-Root. importiert jetzt zentrale dragDropDispatch.ts-Constants (AUDIO/ZIP/MIDI/ELECTRIBE_EXTENSIONS) statt Inline-Duplikate. +onElectribeFile?-Prop in ElectronDropZoneProps. handleDrop iteriert Files: ZIP→onZipFile, MIDI→onMidiFile-Callback ODER Default-CustomEvent midi:fileImport, ELECTRIBE→onElectribeFile-Callback ODER Default-CustomEvent electribe:fileImport, AUDIO→onAudioFiles+onAudioFilesRaw, PROJECT→onProject. NEU: unknownExts-Sammel-Array sammelt Endungen unbekannter Files → EIN Toast pro Drop (kein Spam) 'Nicht unterstuetzt: <ext1>, <ext2>, <ext3> (+N weitere)' kind:'warning' 4500ms. detectDropType erkennt jetzt 'electribe' fuer Overlay-Farbe. Render: Folder-Overlay inline (Webkit-Entry-spezifisch), alle anderen via <DragDropOverlay isVisible fileType=... />. Electron-Path (window.electronAPI.onDragDropBulkImport/onDragDropLoadSample/onDragDropOpenProject) bleibt unveraendert. @/-Aliase statt relativer Pfade.",
+      lastSeen: "2026-05-18T07:40:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/components/SampleEditor/SampleSliceEditor.tsx (v3.1.0 zone-drop)": {
+      role:     "v2.89.0 + v3.1.0-ZONE-DROP: Sample-Slice-Editor-Modal mit Waveform-Canvas + Slice-Marker + 4x4 Pad-Grid. v3.1.0 ADD: optionaler onReplaceSample?-Prop. Wenn vorhanden, fuegt Waveform-Bereich (data-testid=slice-editor-waveform-zone) onDragOver/onDragEnter/onDragLeave/onDrop-Cycle hinzu. Audio-File-Match via Regex /\\.(wav|mp3|ogg|flac|aiff?|m4a)$/i ODER mime audio/*. dragLeave-Logik benutzt currentTarget.contains(relatedTarget) gegen Child-Bubble-False-Positives. Visueller Indikator data-testid=slice-editor-drop-indicator zentriert ueber dem Canvas wenn isDragOver. Backwards-Compat: ohne onReplaceSample-Prop kein Drop-Listener (Picker-only).",
+      lastSeen: "2026-05-18T07:40:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/components/DrumMachine/DrumMachine.tsx (v3.1.0 sliceFile-Extract + electribeFile-Drop)": {
+      role:     "v3.1.0: handleSliceFile aus handleSliceImport extrahiert (~30 LOC pure File→Modal-Pipeline mit AudioContext decodeAudioData + setSliceEditor). handleSliceImport (Picker-onChange-Handler) ruft jetzt handleSliceFile auf. SampleSliceEditor bekommt onReplaceSample={handleSliceFile} → Drop einer .wav auf den Waveform-Bereich oeffnet den Editor mit dem neuen Sample (Modal bleibt offen, Slices werden re-initialisiert via channelData-Prop-Change). electribe:fileImport-Listener seit v2.88 unveraendert — feuert handleElectribeFile mit File aus CustomEvent.detail.",
+      lastSeen: "2026-05-18T07:40:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "tests/features/drag-drop.test.ts (v3.1.0)": {
+      role:     "v3.1.0: 27 Pure-Tests fuer dragDropDispatch.ts. getFileExtension (3 — lowercase+dot/empty-cases/null-defensive), detectFileType (8 — alle AUDIO-Endungen via Iteration/SYNTH+.SYNTH/ZIP/MID+MIDI/Electribe-5-Varianten/Unknown-Endungen/Empty-Name/disjoint-Sets-Invariant), detectFileTypeFromFiles (2), dispatchFileDrop (7 — Audio/Project/Electribe/Midi/Zip/Unknown-handled-false/Endpoint-Listener-empfaengt-File), dispatchAllFiles (4 — 3-Audio+Project-Multi/Mixed-Unknown-Counter/Alle-5-Typen+1unknown/Empty-Array), defensive (3 — kaputt-File-ohne-name/kein-window-Global/dispatchEvent-throws-catch). Custom-Window+CustomEvent-Shim fuer Node-Env (FakeWindow mit __dispatched-Array, FakeCustomEvent-Class) — kein JSDOM noetig.",
+      lastSeen: "2026-05-18T07:40:00.000Z",
+      ownedBy:  "frontend"
+    },
     "client/src/store/useAudioEngineConfigStore.ts (TASK-236-ALT v3.0)": {
       role:     "v3.0.0: Audio-Engine-Low-Latency-Config-Store (~140 LOC, Custom-Observer analog useThemeStore/useApiSettingsStore). State {latencyHint:'interactive'|'balanced'|'playback', sampleRate:44100|48000|96000|'auto'}, Defaults 'interactive'+'auto'. Public API: getAudioEngineConfig(), setLatencyHint(hint), setSampleRate(rate), buildAudioContextOptions(cfg?=current) → AudioContextOptions (sampleRate-Feld OMITTED bei 'auto' damit Browser nicht resampelt), __resetAudioEngineConfigForTests(), useAudioEngineConfigStore() React-Hook. localStorage-Key 'ss-audio-engine-config:v1', sanitize-on-load mit VALID_HINTS+VALID_SAMPLE_RATES-Whitelists. Identity-Short-Circuit (kein extra Write bei No-Op-Setter). DEFAULT_CONFIG exported für externe Konsumenten.",
       lastSeen: "2026-05-18T07:25:00.000Z",
@@ -976,6 +1006,33 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "frontend",
+      timestamp: "2026-05-18T07:40:00.000Z",
+      done: [
+        "v3.1.0: Drag-Drop für .wav/.synth/.e2pattern/.midi/.zip — vollständiger Standard-DAW-Drop-Workflow. (1) NEU client/src/utils/dragDropDispatch.ts (~165 LOC, pure-utility): detectFileType(name)→audio|project|zip|midi|electribe|unknown via Lookup-Switch über 5 disjunkte Endungs-Sets (AUDIO_EXTENSIONS, PROJECT_EXTENSIONS={'.synth'}, ZIP_EXTENSIONS, MIDI_EXTENSIONS, ELECTRIBE_EXTENSIONS={'.e2spat','.e2sallpat','.e2pattern','.esx','.elst'}). getFileExtension(name) defensive (null/undefined/empty/no-dot → ''). dispatchFileDrop(file) feuert CustomEvent: drop:audio/drop:project/drop:zip/midi:fileImport/electribe:fileImport. dispatchAllFiles(files[]) für Multi-File-Drop, zählt handled+unknown+types[]. detectFileTypeFromFiles(files[]) für Overlay-Type-Detection bei mehreren Files (nimmt Typ der ersten). (2) NEU client/src/components/DragDropOverlay/DragDropOverlay.tsx — standalone visuelles Drop-Feedback (~110 LOC). Props {isVisible, fileType}. Pro Typ eigene Farbe via semantic Tailwind classes (border-accent-primary/secondary/success, bg-accent-*/10, text-accent-*) — NULL hardcoded slate/gray/cyan. Pointer-events-none. data-testid=drag-drop-overlay + data-drop-type=<type>. Subtext pro Typ erklärt was passieren wird. (3) UPDATE electron/components/ElectronDropZone.tsx: importiert jetzt zentrale dragDropDispatch.ts-Constants statt Inline-Duplikate. +ELECTRIBE_EXTENSIONS-Branch im handleDrop der entweder onElectribeFile-Prop ODER Default-CustomEvent electribe:fileImport dispatcht (DrumMachine-Listener existiert seit v2.88). +unknownExts-Sammelung pro Drop → genau EIN Toast pro Drop (nicht pro File, Toast-Spam-Schutz, max 3 Endungen + Count). +onElectribeFile-Prop in ElectronDropZoneProps. Inline-DROP_STYLES entfernt, ersetzt durch DragDropOverlay-Render. Folder-Overlay bleibt inline weil 'folder' kein CustomEvent-Route hat (Webkit-Entry-spezifisch). (4) UPDATE client/src/App.tsx — onElectribeFile-Prop an ElectronDropZone übergeben (dispatcht electribe:fileImport CustomEvent). (5) Zone-spezifisches Drop MVP: SampleSliceEditor (TASK-238-Modal) bekommt onReplaceSample?-Prop. Waveform-Bereich (data-testid=slice-editor-waveform-zone) hat eigenen onDragOver/onDragEnter/onDragLeave/onDrop-Cycle. Audio-File-Drop → Decode via geteiltem handleSliceFile in DrumMachine.tsx. dragLeave nur dann false wenn das Element wirklich verlassen wird (contains(relatedTarget)-Check gegen Child-Bubble). Visueller Indikator data-testid=slice-editor-drop-indicator. DrumMachine extrahiert handleSliceFile aus handleSliceImport — DRY für Picker+Drop-Pfad. (6) Tests tests/features/drag-drop.test.ts (NEU, 27 Tests, alle grün): getFileExtension (3 — lowercase+dot/ohne-Endung/null-defensive), detectFileType (8 — AUDIO-Iteration/.synth/.zip/.mid+.MIDI/Electribe-5-Varianten/unknown/leer/disjoint-Sets-Invariant), detectFileTypeFromFiles (2), dispatchFileDrop (7 — Audio/Project/Electribe/Midi/Zip/Unknown-handled-false/EndpointListener-empfängt), dispatchAllFiles (4 — Multi-Audio+Synth/Mixed-Unknown-Counter/Alle-5-Typen+1unknown/leer-Array), defensive (3 — kaputt-File/kein-window/throw-im-dispatchEvent). Custom-Window-+CustomEvent-Shim für Node-Env (kein JSDOM nötig). (7) package.json 3.0.0 → 3.1.0. (8) pnpm check clean, pnpm test 3568 passed / 15 skipped (vs prev 3539, +29 Net — 27 von der neuen Suite + 2 Side-Counts). CAVEATS: (a) Mixer-Channel-Strip-Audio-Drop (v2.x) UND Globaler Drop könnten beide auslösen bei Bubbling — Mixer-Drop ruft e.stopPropagation(), ist also winner. Bei SampleSliceEditor-Drop ebenfalls stopPropagation. (b) Sample-Pack (.zip) wird durch existierendes onZipFile→extractSamplesFromZip in App.tsx weiter geleitet — keine Änderung notwendig. (c) Browser hat keinen file.path — nur file.name, deshalb erzeugt App.tsx synthetische IDs/URLs (existierendes Verhalten unverändert). Electron hat IPC-Bridge die echte Pfade liefert (onDragDropBulkImport). (d) Electribe-Drop ist PRO-Feature-gated im DrumMachine-Handler (requireProFeature seit v2.97) — Drop funktioniert technisch immer aber zeigt Toast bei expired-Trial. (e) Unknown-Extension-Toast einmalig pro Drop, nicht pro File (z.B. 5 .mp4 → 1 Toast 'Nicht unterstützt: .mp4 (+4 weitere)'). NICHT erledigt (User-Empfehlung 'MVP'): Drop einer .wav auf einzelnen Performance-Pad in PatternLaunchPad (würde Sample-Pad-Slot-Store + Audio-Decode benötigen, deferred); Drop auf Mixer-Channel-Strip ist bereits seit MixerView v2.x vorhanden (audio-track-Erstellung)."
+      ],
+      next: [
+        "TASK v3.1.0-FOLLOWUP-1: Drop einer .wav auf einzelnen PatternLaunchPad-Pad → setSlicePadSlot direkt (würde decodeAudioData + Sample-Pad-Slot-Lookup brauchen).",
+        "TASK v3.1.0-FOLLOWUP-2: Playwright-Smoke 'DragDropOverlay erscheint bei dragenter' (jsdom-Env wegen DataTransfer-Shim) — optional als CI-Erweiterung.",
+        "TASK v3.1.0-FOLLOWUP-3: Electron-Side: nativeFileDrop-Listener im Main-Process um .e2sallpat/.esx/.elst mit echten Pfaden (statt File-Objekt mit nur name) zu liefern.",
+        "TASK-232-FOLLOWUP-1 (Gumroad-Real-Integration) bleibt offen.",
+        "TASK-236-ALT-FOLLOWUP-1/2/3 bleiben offen.",
+        "TASK-241-FOLLOWUP-2-GRANULAR / FOLLOWUP-3-SYNTHLFO / FOLLOWUP-4-CUSTOMWAVE bleiben offen.",
+        "TASK-239 (VST3/CLAP-Host) bleibt offen."
+      ],
+      changed: [
+        "client/src/utils/dragDropDispatch.ts (NEU — pure detectFileType/dispatchFileDrop/dispatchAllFiles + 5 disjunkte Endungs-Sets inkl. Electribe-Endungen)",
+        "client/src/components/DragDropOverlay/DragDropOverlay.tsx (NEU — standalone Overlay-Komponente mit per-Type-Farbe via semantic Tailwind classes)",
+        "electron/components/ElectronDropZone.tsx (+ELECTRIBE_EXTENSIONS-Branch, +onElectribeFile-Prop, +Unknown-Toast pro Drop, DROP_STYLES ersetzt durch DragDropOverlay-Render, +@/-Aliase statt relativer Pfade)",
+        "client/src/App.tsx (+onElectribeFile-Prop an ElectronDropZone der electribe:fileImport CustomEvent dispatcht)",
+        "client/src/components/SampleEditor/SampleSliceEditor.tsx (+onReplaceSample?-Prop, Zone-Drop auf Waveform-Bereich mit dragOver/dragEnter/dragLeave/drop-Cycle und visuellem Indikator)",
+        "client/src/components/DrumMachine/DrumMachine.tsx (handleSliceFile aus handleSliceImport extrahiert für DRY Picker+Drop-Pfad, +onReplaceSample={handleSliceFile} an SampleSliceEditor)",
+        "tests/features/drag-drop.test.ts (NEU, 27 Tests — detectFileType-Matrix für 5 Typen+Unknown, dispatchFileDrop EventName-Routing, Multi-File mit dispatchAllFiles, defensive Paths)",
+        "package.json (3.0.0 → 3.1.0)",
+        "agents/INDEX.js (workLog + version 3.1.0 + files-Index +3 Eintraege)"
+      ]
+    },
     {
       agent:     "backend",
       timestamp: "2026-05-18T07:25:00.000Z",

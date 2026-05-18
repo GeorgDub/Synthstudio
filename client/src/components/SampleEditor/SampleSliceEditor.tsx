@@ -39,6 +39,13 @@ export interface SampleSliceEditorProps {
   onApply: (slices: Float32Array[], specs: SliceSpec[]) => void;
   /** Bei Close ohne Apply (Cancel-Button oder ESC). */
   onClose: () => void;
+  /**
+   * v3.1.0: optional. Wenn der User eine neue .wav/.mp3/.ogg/.flac-Datei
+   * auf den Waveform-Bereich draggt, wird diese Callback aufgerufen.
+   * Der Parent ist verantwortlich fuer decodeAudioData + setSliceEditor-
+   * Neumount (analog dem File-Picker-Pfad).
+   */
+  onReplaceSample?: (file: File) => void;
 }
 
 const WAVE_HEIGHT_PX = 200;
@@ -87,10 +94,13 @@ export function SampleSliceEditor({
   sampleRate,
   onApply,
   onClose,
+  onReplaceSample,
 }: SampleSliceEditorProps): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [canvasWidth, setCanvasWidth] = useState<number>(800);
+  // v3.1.0: Zone-spezifisches Drag-Drop auf den Waveform-Bereich.
+  const [isDragOver, setIsDragOver] = useState(false);
   const [onsets, setOnsets] = useState<OnsetCandidate[]>([{ frame: 0, strength: 0 }]);
   const [snapEnabled, setSnapEnabled] = useState(true);
   const [dragFrame, setDragFrame] = useState<number | null>(null);
@@ -373,8 +383,48 @@ export function SampleSliceEditor({
           </div>
         </div>
 
-        {/* Waveform-Canvas */}
-        <div ref={containerRef} className="px-4 py-3 border-b border-border-color">
+        {/* Waveform-Canvas (v3.1.0: zonen-spezifisches Drop-Target) */}
+        <div
+          ref={containerRef}
+          data-testid="slice-editor-waveform-zone"
+          className={`px-4 py-3 border-b border-border-color relative ${
+            isDragOver ? "outline-2 outline-dashed outline-accent-primary bg-accent-primary/5" : ""
+          }`}
+          onDragOver={(e) => {
+            if (!onReplaceSample) return;
+            const hasFiles = e.dataTransfer.types.includes("Files");
+            if (!hasFiles) return;
+            e.preventDefault();
+            e.stopPropagation();
+            e.dataTransfer.dropEffect = "copy";
+            if (!isDragOver) setIsDragOver(true);
+          }}
+          onDragEnter={(e) => {
+            if (!onReplaceSample) return;
+            e.preventDefault();
+            e.stopPropagation();
+          }}
+          onDragLeave={(e) => {
+            if (!onReplaceSample) return;
+            // Nur dann ausblenden, wenn der Mouse-Cursor wirklich das Element verlaesst
+            // (nicht nur ein Child-Element). currentTarget.contains(relatedTarget) check.
+            const rel = e.relatedTarget as Node | null;
+            if (rel && (e.currentTarget as Node).contains(rel)) return;
+            setIsDragOver(false);
+          }}
+          onDrop={(e) => {
+            if (!onReplaceSample) return;
+            e.preventDefault();
+            e.stopPropagation();
+            setIsDragOver(false);
+            const files = Array.from(e.dataTransfer.files ?? []);
+            if (files.length === 0) return;
+            const audio = files.find((f) =>
+              /\.(wav|mp3|ogg|flac|aiff?|m4a)$/i.test(f.name) || f.type.startsWith("audio/")
+            );
+            if (audio) onReplaceSample(audio);
+          }}
+        >
           <canvas
             ref={canvasRef}
             onMouseDown={handleMouseDown}
@@ -385,6 +435,14 @@ export function SampleSliceEditor({
             style={{ display: "block", width: "100%", cursor: dragFrame !== null ? "grabbing" : "crosshair" }}
             data-testid="slice-editor-canvas"
           />
+          {isDragOver && onReplaceSample && (
+            <div
+              data-testid="slice-editor-drop-indicator"
+              className="absolute inset-0 flex items-center justify-center pointer-events-none"
+            >
+              <div className="text-accent-primary font-bold text-lg">Audio-Datei ablegen</div>
+            </div>
+          )}
         </div>
 
         {/* Pad-Grid 4x4 */}
