@@ -132,6 +132,51 @@ export function projectNameToId(name: string | null | undefined): string {
 }
 
 /**
+ * v3.58.0: Prüft ob für einen Project-Name noch Legacy-Slug-Versionen
+ * existieren (pre-v1.24-Schema, projectNameToId(name)-Schlüssel) während
+ * unter der neuen stable UUID-projectId noch keine Versionen liegen.
+ *
+ * In dem Fall sollte der User einen Migrations-Prompt sehen:
+ *   "<n> Versionen unter altem Namen gefunden — migrieren?"
+ *
+ * Pure-fn: nimmt zwei Listen + Slug + UUID, entscheidet rein logisch.
+ */
+export interface LegacySlugMigrationCheck {
+  shouldPrompt: boolean;
+  legacyCount: number;
+  legacySlug: string;
+  /** Bei "shouldPrompt: false" gleich legacyCount=0 oder UUID hat schon Verlauf. */
+  reason: "no-legacy" | "uuid-has-history" | "migrate";
+}
+
+export function checkLegacySlugMigration(
+  legacyVersionsCount: number,
+  uuidVersionsCount: number,
+  projectName: string,
+): LegacySlugMigrationCheck {
+  const legacySlug = projectNameToId(projectName);
+  if (legacyVersionsCount <= 0) {
+    return { shouldPrompt: false, legacyCount: 0, legacySlug, reason: "no-legacy" };
+  }
+  if (uuidVersionsCount > 0) {
+    // UUID hat schon AutoSaves → kein Prompt (User würde sonst doppelte
+    // History bekommen). Konservative Wahl.
+    return {
+      shouldPrompt: false,
+      legacyCount: legacyVersionsCount,
+      legacySlug,
+      reason: "uuid-has-history",
+    };
+  }
+  return {
+    shouldPrompt: true,
+    legacyCount: legacyVersionsCount,
+    legacySlug,
+    reason: "migrate",
+  };
+}
+
+/**
  * Wandelt Bytes in eine kurze "MB / KB"-Anzeige um. Pure-fn.
  */
 export function formatBytes(size: number): string {

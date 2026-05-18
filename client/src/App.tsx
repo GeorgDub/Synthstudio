@@ -639,6 +639,8 @@ export default function App() {
     const m  = mixerRef.current;
     const a  = automationRef2.current;
     return serializeProject({
+      // v3.58.0: projectId ist immutable + im Schema v1.24 persistent.
+      projectId:       p.projectId,
       projectName:     p.projectName,
       bpm:             p.bpm,
       samples:         p.samples,
@@ -726,6 +728,9 @@ export default function App() {
 
   const restoreProject = useCallback((data: ReturnType<typeof parseProject>) => {
     // Projekt-Metadaten
+    // v3.58.0: projectId aus dem .synth-File übernehmen — parseProject
+    // hat sie bereits validiert/ggf. neu generiert (Pre-v1.24-Migration).
+    project.adoptProjectId(data.projectId);
     project.setProjectName(data.projectName);
     project.setBpm(data.bpm);
     // Samples
@@ -918,8 +923,12 @@ export default function App() {
       try {
         const snapshot = buildProjectSnapshot();
         const json = JSON.stringify(snapshot);
-        const projectId = projectNameToId(projectRef.current.projectName);
-        void writeAutoSaveVersion(projectId, json)
+        // v3.58.0: stable UUID statt name-slug — Rename verliert History
+        // nicht mehr. Legacy-Fallback nur wenn projectId fehlt (defensive,
+        // sollte nach v1.24-Migration nie passieren).
+        const pid = projectRef.current.projectId
+          || projectNameToId(projectRef.current.projectName);
+        void writeAutoSaveVersion(pid, json)
           .then((res) => {
             if (res.success) markAutoSaveCompleted();
             else if (res.error) {
@@ -3803,7 +3812,7 @@ export default function App() {
       <VersionHistoryModal
         isOpen={showVersionHistory}
         onClose={() => setShowVersionHistory(false)}
-        projectId={projectNameToId(project.projectName)}
+        projectId={project.projectId || projectNameToId(project.projectName)}
         onRestore={(json) => {
           try {
             const data = parseProject(JSON.parse(json));

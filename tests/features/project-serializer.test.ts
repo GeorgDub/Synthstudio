@@ -25,6 +25,9 @@ import {
 function baseProject(overrides: Partial<SynthProject> = {}): SynthProject {
   return {
     version: SYNTH_FILE_VERSION,
+    // v3.58.0 (v1.24): projectId ist required im Schema. Test-Fixture
+    // verwendet einen statischen UUID-v4-String für Determinismus.
+    projectId: "11111111-2222-4333-8444-555555555555",
     projectName: "Test Project",
     savedAt: new Date().toISOString(),
     bpm: 120,
@@ -50,8 +53,8 @@ function baseProject(overrides: Partial<SynthProject> = {}): SynthProject {
 }
 
 describe("ProjectSerializer – Konstanten", () => {
-  it("SYNTH_FILE_VERSION ist '1.23' (seit v3.55: Sample-Tags Persist)", () => {
-    expect(SYNTH_FILE_VERSION).toBe("1.23");
+  it("SYNTH_FILE_VERSION ist '1.24' (seit v3.58: stable projectId UUID)", () => {
+    expect(SYNTH_FILE_VERSION).toBe("1.24");
   });
 
   it("SYNTH_LATEST_KEY ist 'synthstudio:last-project' (localStorage-Key)", () => {
@@ -298,8 +301,8 @@ describe("ProjectSerializer – Mixed v1.14 (oldest) File", () => {
 // ─── padBank Migration (seit v1.17) ──────────────────────────────────────────
 
 describe("ProjectSerializer – padBank Migration (v1.16 → v1.17)", () => {
-  it("SYNTH_FILE_VERSION ist '1.23'", () => {
-    expect(SYNTH_FILE_VERSION).toBe("1.23");
+  it("SYNTH_FILE_VERSION ist '1.24'", () => {
+    expect(SYNTH_FILE_VERSION).toBe("1.24");
   });
 
   it("Fehlendes padBank-Feld (v1.16-File) → padBank bleibt undefined (Signal: localStorage nicht überschreiben)", () => {
@@ -751,7 +754,7 @@ describe("ProjectSerializer – samples[].tags Migration (v1.22 → v1.23)", () 
     const ser = serializeProject(p as any);
     const json = toJson(ser);
     const parsed = parseProject(json);
-    expect(parsed.version).toBe("1.23");
+    expect(parsed.version).toBe("1.24");
     expect(parsed.samples).toHaveLength(2);
     expect(parsed.samples[0].tags).toEqual(["kick", "808"]);
     expect(parsed.samples[1].tags).toEqual(["vox", "wet"]);

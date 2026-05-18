@@ -4,7 +4,7 @@
  * Serialisiert den vollständigen Projekt-State in ein JSON-Objekt (SynthProject)
  * und stellt Lade-Utilities bereit.
  *
- * Format-Version: "1.19"
+ * Format-Version: "1.24"
  *   - "1.15": audioTracks hinzugefügt – v1.14-Dateien laden weiter
  *   - "1.16": scripts hinzugefügt (project-scope, additiv-optional)
  *     v1.15/v1.14-Dateien laden ohne scripts-Feld weiter → defaultet auf [].
@@ -41,6 +41,13 @@
  *     undefined und wird in getSampleTags() als [] interpretiert.
  *     Validator: Non-String-Entries werden silent gefiltert,
  *     non-Array → tags-Property entfernt (defensive).
+ *   - "1.24": projectId hinzugefügt (v3.58.0). Closes v3.57-Caveat
+ *     "projectNameToId(projectName) als AutoSave-ID → Rename verliert
+ *     History". projectId ist eine stable UUID v4, einmal bei newProject
+ *     generiert, immutable, im File persistiert. Backward-Compat:
+ *     pre-v1.24-Files ohne projectId → parseProject generiert eine frische
+ *     UUID via ensureProjectId() (Auto-Upgrade beim ersten Load). Invalid
+ *     projectId (non-string oder kein UUID-v4-Format) → ebenfalls regeneriert.
  * Dateiendung: .synth
  */
 
@@ -64,14 +71,27 @@ import {
   clampNoteDuration,
   DEFAULT_NOTE_DURATION_MS,
 } from "@/audio/MidiNoteOut";
+import { ensureProjectId } from "@/utils/projectId";
 
-export const SYNTH_FILE_VERSION = "1.23";
+export const SYNTH_FILE_VERSION = "1.24";
 export const SYNTH_LATEST_KEY = "synthstudio:last-project";
 
 // ─── Typen ───────────────────────────────────────────────────────────────────
 
 export interface SynthProject {
   version:     string;
+  /**
+   * Stabile UUID v4 — einmal bei `newProject` generiert, immutable für
+   * die Lebenszeit des Projekts (auch bei Rename). Wird von AutoSave
+   * statt des Project-Name-Slugs verwendet, damit der Versions-Verlauf
+   * Rename-resistent ist.
+   *
+   * Seit v1.24 (Synthstudio v3.58.0). Pre-v1.24-Files haben das Feld
+   * nicht → parseProject generiert beim ersten Load eine frische UUID
+   * (Auto-Upgrade). Das Feld ist im Type nicht optional, weil
+   * parseProject die Backward-Compat-Lücke beim Load schließt.
+   */
+  projectId:   string;
   projectName: string;
   savedAt:     string;         // ISO-Timestamp
   bpm:         number;
@@ -334,15 +354,22 @@ function isValidSerializedSlicePadSlot(x: unknown): x is SerializedSlicePadSlot 
 // ─── Serialisierung ───────────────────────────────────────────────────────────
 
 export function serializeProject(
-  data: Omit<SynthProject, "version" | "savedAt">,
+  data: Omit<SynthProject, "version" | "savedAt" | "projectId"> & { projectId?: string },
   opts: SerializeProjectOptions = {},
 ): SynthProject {
   const includeSliceBuffers = opts.includeSliceBuffers ?? true;
+  // v3.58.0: projectId ist immer erforderlich im Output — falls der Caller
+  // sie nicht mitliefert (Legacy-Tests, Plugin-Code), generieren wir eine
+  // frische UUID. Auf dem normalen App-Pfad kommt sie aus useProjectStore.
   const result: SynthProject = {
     version: SYNTH_FILE_VERSION,
     savedAt: new Date().toISOString(),
+    projectId: ensureProjectId(data.projectId),
     ...data,
-  };
+    // Explicit overwrite: ...data spreadet projectId u.U. wieder weg, wenn
+    // sie undefined ist; nach dem Spread setzen wir sie noch einmal sicher.
+  } as SynthProject;
+  result.projectId = ensureProjectId(data.projectId);
   // Metadata-only-Modus: alle slice-pads-frames auf null setzen, Index +
   // sampleName etc. bleiben erhalten damit beim Reload zumindest die
   // Slot-Belegung-Info da ist (für UI-Recovery).
@@ -382,6 +409,13 @@ export function parseProject(json: string): SynthProject {
   if (!data.version || !data.patterns) {
     throw new Error("Ungültiges Synthstudio-Projektformat");
   }
+
+  // ─── projectId Migration (seit v1.24) ────────────────────────────────────
+  // Pre-v1.24-Files haben kein projectId → ensureProjectId generiert eine
+  // frische UUID (Auto-Upgrade). Beim nächsten Save wird sie persistiert.
+  // Invalid (non-string oder kein UUID-v4) → ebenfalls regeneriert.
+  // Defensive: nie crashen, immer eine valide projectId returnieren.
+  data.projectId = ensureProjectId((data as { projectId?: unknown }).projectId);
 
   // ─── samples[].tags Sanitization (seit v1.23) ────────────────────────────
   // Pre-v1.23-Files: Samples haben kein tags-Feld → bleibt unverändert.

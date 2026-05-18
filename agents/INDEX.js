@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.57.0",
+    version: "3.58.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -89,6 +89,16 @@ const INDEX = {
   // ─── KNOWN FILE INDEX ──────────────────────────────────────
   // Key files agents have analyzed. Add new entries after working on a file.
   files: {
+    "client/src/utils/projectId.ts (v3.58.0)": {
+      role:     "v3.58.0 NEU (~95 LOC): Pure-fn-Modul für stable Project-UUID v4. generateProjectId() liefert RFC-4122-v4-UUID — 3 Pfade: native crypto.randomUUID (Node 19+, alle modernen Browser, bevorzugt), crypto.getRandomValues + manuelle v4-Konstruktion mit RFC-Bits (Fallback), Math.random (Test-Env-Fallback, NICHT kryptographisch). isValidProjectId(raw) strikte Whitelist /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i (nur v4, kein v1/v3/v5). ensureProjectId(existing) Pass-through bei valid, regeneriert bei invalid — Migrations-Brücke für pre-v1.24-Files. UUID v4 (36 chars, alphanumeric + -) passt in die sanitizeProjectId-Whitelist (alphanum + - + _, ≤64) der AutoSave-Engine. Wird konsumiert von projectSerializer (parseProject + serializeProject Migration) und useProjectStore (makeDefaultState + adoptProjectId).",
+      lastSeen: "2026-05-18T23:30:00.000Z",
+      ownedBy:  "backend"
+    },
+    "tests/features/project-id-migration.test.ts (v3.58.0)": {
+      role:     "v3.58.0 NEU (20 Tests in 4 describes, env:node): (1) projectId.ts Pure-fn × 6 — UUID-v4-Format-Match, isValidProjectId Reject-Matrix (undefined/null/number/empty/non-uuid/slug/UUID-v1), ensureProjectId Pass-through bei valid + Regenerate bei invalid (undefined/null/empty/foo/number), generateProjectId nicht-deterministisch (100 Calls keine Kollisionen). (2) Schema v1.24 × 8 — SYNTH_FILE_VERSION='1.24', serializeProject übernimmt mitgegebene projectId, serializeProject auto-generiert wenn fehlt, parseProject migriert pre-v1.24 (Feld fehlt → fresh UUID), parseProject preserves valide projectId, parseProject regeneriert bei invalider projectId (Defense), Round-Trip serialize→parse projectId konstant, Rename-Szenario projectName ändert sich aber projectId bleibt stable, End-to-End AutoSave-Schlüssel-Stabilität via Rename. (3) sanitizeProjectId-Kompat × 2 — UUID v4 passt durch die AutoSave-Engine-Whitelist, 100 generierte UUIDs validieren alle. (4) Legacy-Slug-Migration × 3 — checkLegacySlugMigration no-legacy (kein Prompt), uuid-has-history (kein Prompt — konservativ um Doppel-Historie zu vermeiden), migrate (Legacy>0 + UUID=0 → Prompt mit legacySlug='my-beat-2024').",
+      lastSeen: "2026-05-18T23:30:00.000Z",
+      ownedBy:  "backend"
+    },
     "client/src/utils/autoSaveController.ts (v3.57.0)": {
       role:     "v3.57.0 NEU (~135 LOC): Pure-fn-Helper-Modul für UI-Trennung zwischen autoSaveEngine/useAutoSaveStore und Topbar-Indicator/Versions-Modal. computeAutoSaveIntervalMs(min) → ms (NaN/0/neg/Infinity → 5min default), decideAutoSaveTick(settings, paused) → {shouldRun, reason: 'ok'|'disabled'|'paused'} pure deterministic für Trigger-Tests, buildAutoSaveStatusDisplay(lastSaveAt, now) → {shortLabel, tooltip, isEmpty} mit 5 Zeitstufen 'gerade eben'/'Ns'/'Nm'/'Nh'/'Nd' + absolute-time-Tooltip, projectNameToId(name) → string (Lowercase + non-alphanum→'-' + collapse + max 64 chars + 'default'-Fallback bei leer/null/undefined), formatBytes(size) → 'N B'/'N.N KB'/'N.NN MB' (NaN/neg → '0 B'), formatVersionTimestamp(ts) → 'DD.MM.YYYY HH:MM:SS' (NaN → '—'). Internal pad2-Helper. Wird konsumiert von App.tsx (Trigger-useEffect), AutoSaveStatusIndicator.tsx (Indikator) und VersionHistoryModal.tsx (Row-Formatierung).",
       lastSeen: "2026-05-18T23:15:00.000Z",
@@ -1862,6 +1872,46 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "backend",
+      timestamp: "2026-05-18T23:30:00.000Z",
+      done: [
+        "v3.58.0: Schema v1.24 mit stable projectId UUID — closes v3.57-Caveat (AutoSave-History ging beim Rename verloren). pnpm check clean, 206 Test-Files / 4769 Tests grün (16 skipped, +20 NEU in project-id-migration.test.ts).",
+        "client/src/utils/projectId.ts NEU (~95 LOC): Pure-fn-Modul. generateProjectId() → RFC-4122 UUID v4. Pfad 1 native crypto.randomUUID (Node 19+, alle modernen Browser), Pfad 2 crypto.getRandomValues + manuelle v4-Konstruktion (RFC-Bits), Pfad 3 Math.random-Fallback (Test-Env). isValidProjectId(raw) Whitelist /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i (strikt v4). ensureProjectId(existing) Pass-through bei valid, regeneriert bei invalid — die Migrations-Brücke für pre-v1.24-Files.",
+        "client/src/utils/projectSerializer.ts: SYNTH_FILE_VERSION 1.23 → 1.24. SynthProject erweitert um projectId: string (required, nicht optional — parseProject schließt die Backward-Compat-Lücke beim Load). serializeProject akzeptiert projectId? im Input (defensive Auto-Generate via ensureProjectId, damit Legacy-Tests + Plugin-Code weiter funktionieren). parseProject(): data.projectId = ensureProjectId(raw) — pre-v1.24-Files (kein Feld), invalid types (non-string), invalid format (non-UUID-v4) bekommen alle eine frische UUID. Schema-Header-Doc erweitert um v1.24-Eintrag.",
+        "client/src/store/useProjectStore.ts: ProjectState +projectId: string (immutable nach init). makeDefaultState() Lazy-Factory (statt Modul-Konstante DEFAULT_STATE) damit jedes New-Project + jeder Hook-Mount eine frische UUID bekommt — kein Sharing zwischen Sessions. newProject() / newProjectFromTemplate() rufen makeDefaultState(). Neue Action adoptProjectId(id) für den Load-Pfad — defensiv: bei invalider ID wird lieber generiert statt gecrashed. setProjectName() lässt projectId BEWUSST unverändert (Kommentar: 'Rename ändert nur Anzeige, NICHT den AutoSave-Schlüssel').",
+        "client/src/utils/autoSaveController.ts: NEU checkLegacySlugMigration(legacyCount, uuidCount, projectName) → {shouldPrompt, legacyCount, legacySlug, reason}. 3 Zustände: 'no-legacy' (keine alten Versionen), 'uuid-has-history' (Konflikt — UUID hat schon AutoSaves, kein Prompt), 'migrate' (Legacy>0 + UUID=0). Pure-fn, deterministisch.",
+        "client/src/App.tsx: buildProjectSnapshot() inkludiert p.projectId. restoreProject() ruft project.adoptProjectId(data.projectId) vor allen anderen Updates. AutoSave-Trigger-useEffect verwendet projectRef.current.projectId (mit projectNameToId(projectName)-Fallback wenn UUID fehlt — defensive, sollte nach v1.24 nie passieren). VersionHistoryModal-projectId-Prop ist jetzt project.projectId || projectNameToId(project.projectName).",
+        "tests/features/project-id-migration.test.ts NEU (20 Tests in 4 describes, env:node): (1) projectId.ts Pure-fn × 6 — UUID-v4-Format-Regex, isValidProjectId Reject-Matrix (non-string/empty/UUID-v1/slug), ensureProjectId Pass-through + Regenerate, 100-Calls-Kollisionsfreiheit. (2) Schema v1.24 × 8 — SYNTH_FILE_VERSION='1.24', serializeProject übernimmt + auto-generiert, parseProject migriert pre-v1.24 + preserves valid + regeneriert invalid, Round-Trip-Equality, Rename-Szenario (projectName ändert sich, projectId konstant), End-to-end AutoSave-Schlüssel-Stabilität. (3) sanitizeProjectId × 2 — UUID v4 passt durch die AutoSave-Engine-Whitelist, 100 generierte UUIDs validieren alle. (4) Legacy-Slug-Migration × 3 — no-legacy, uuid-has-history (konservativ kein Prompt), migrate (Legacy>0 + UUID=0).",
+        "tests/features/project-serializer.test.ts: baseProject-Fixture +projectId (statischer Test-UUID), version-Tests 1.23 → 1.24. tests/features/{audio-track-store,audio-track-stretch,multi-bar-pattern,plugin-host,plugin-multislot,script-store}.test.ts: alle SYNTH_FILE_VERSION-Assertions auf '1.24' aktualisiert (10 Stellen).",
+        "package.json + agents/INDEX.js version 3.57.0 → 3.58.0."
+      ],
+      next: [
+        "v3.59: AutoSave-Migration-Prompt UI-Wiring — checkLegacySlugMigration() ist pure-fn implementiert, aber NICHT im App.tsx-Load-Pfad eingehängt. Nach restoreProject() sollte ein listAutoSaveVersions(legacySlug) + listAutoSaveVersions(projectId) Vergleich laufen + bei shouldPrompt=true ein Modal/Toast zeigen ('N Versionen unter altem Namen — migrieren?'). Migration selbst: Iteration über Legacy-Versionen + writeAutoSaveVersion(uuid, json) + Cleanup der Slug-Versionen.",
+        "v3.59: useProjectStore.projectId Persistenz in localStorage. Aktuell wird die UUID nur in der laufenden Hook-Instance gehalten — bei Browser-Reload generiert das Hook eine neue UUID bevor cacheProjectLocally() das alte Projekt restored. cacheProjectLocally → loadCachedProject läuft zwar parseProject + adoptProjectId, aber während des kurzen Fensters zwischen Hook-Init und Cache-Load existiert eine 'falsche' UUID. Kein Bug-Risiko (Cache wird sofort überschrieben), aber unsauber.",
+        "v3.59: serializeProject hat seit v3.58 den Side-Effect, dass ensureProjectId-Aufrufe bei fehlendem Input eine UUID generieren — der Caller bekommt das aber zurück und kann sie ignorieren. Saubere Lösung: serializeProject Pure halten, die Auto-Generierung in ein opt-in Helper auslagern.",
+        "v3.59: Frontend-Agent: AutoSave-Status-Indikator zeigt aktuell shortLabel basierend auf settings.lastSaveAt, aber NICHT pro-projectId. Bei Wechsel zwischen Projekten zeigt der Indikator den letzten Save IRGENDEINES Projekts. → Pro-projectId-lastSaveAt-Tracking."
+      ],
+      changed: [
+        "client/src/utils/projectId.ts (NEU, ~95 LOC)",
+        "client/src/utils/projectSerializer.ts (+30 LOC: SynthProject.projectId + parseProject Migration + serializeProject ensureProjectId + Schema-Header-Doc)",
+        "client/src/store/useProjectStore.ts (+30 LOC: makeDefaultState Lazy-Factory + adoptProjectId Action + projectId in ProjectState)",
+        "client/src/utils/autoSaveController.ts (+40 LOC: checkLegacySlugMigration Pure-fn)",
+        "client/src/App.tsx (+5 LOC: buildProjectSnapshot.projectId + restoreProject.adoptProjectId + AutoSave-Trigger nutzt projectId + Modal-Prop)",
+        "tests/features/project-id-migration.test.ts (NEU, 20 Tests in 4 describes)",
+        "tests/features/project-serializer.test.ts (+1 LOC: baseProject.projectId statisch; 2× version-Assertion 1.23→1.24)",
+        "tests/features/{audio-track-store,audio-track-stretch,multi-bar-pattern,plugin-host,plugin-multislot,script-store}.test.ts (8× version-Assertions 1.23→1.24)",
+        "package.json (3.57.0 → 3.58.0)",
+        "agents/INDEX.js (version 3.57.0 → 3.58.0 + workLog v3.58.0)"
+      ],
+      caveats: [
+        "AutoSave-History-Migration ist NICHT automatisch — der Prompt-Helper checkLegacySlugMigration ist pure-fn-bereit, aber das App.tsx-Wiring fehlt (siehe next). Praktisch bedeutet das: bei pre-v3.58-Projekten landen die alten Slug-Versionen ungenutzt im Storage, der User sieht nach Update zunächst eine leere Versions-History für sein Projekt bis der nächste AutoSave-Tick die erste UUID-Version anlegt. Workaround: Settings → 'Alle Versionen löschen' räumt die Legacy-Slugs zumindest auf.",
+        "useProjectStore.projectId wird NICHT in localStorage gecached — die UUID lebt nur im Hook-State und im .synth-File. Wenn ein Project gespeichert/geladen wird, ist die Persistenz korrekt. Wenn der User aber direkt nach Browser-Reload (ohne Save) weiterarbeitet, bekommt das Projekt eine neue UUID (Hook-Init) bevor loadCachedProject() die alte aus dem localStorage-Cache restored. Da loadCachedProject sofort beim Mount läuft, ist das Fenster sub-millisekundös — kein User-sichtbarer Bug.",
+        "serializeProject ist seit v3.58 nicht mehr 100% deterministisch (bei fehlender Input-projectId generiert ensureProjectId eine zufällige UUID). Auf dem normalen App-Pfad kommt die ID aber immer aus useProjectStore → deterministisch. Test-Code, der serializeProject() ohne projectId aufruft, bekommt unterschiedliche Files — daher liefert das neue Test-Fixture eine statische Test-UUID '11111111-2222-4333-8444-555555555555'.",
+        "Math.random-Fallback in generateProjectId (Pfad 3) ist NICHT kryptographisch — würde ein Angreifer mehrere Tausend Projekte erstellen, könnte er theoretisch UUID-Kollisionen erzwingen. Praktisch relevant: nein, weil Pfad 1 (crypto.randomUUID) auf allen Targets verfügbar ist. Pfad 3 ist nur ein letzter Notnagel für exotische Test-Umgebungen.",
+        "Schema-v1.23 → v1.24 Auto-Upgrade beim Save: sobald der User ein altes File lädt und speichert, wird die generierte UUID persistiert. Wenn der User die Datei NUR lädt + nie speichert, bleibt die UUID ephemer. Kein Datenverlust, aber jeder neue Load eines pre-v1.24-Files generiert eine andere UUID — die AutoSave-History matched dann nur innerhalb derselben Hook-Lifetime."
+      ]
+    },
     {
       agent:     "frontend",
       timestamp: "2026-05-18T23:15:00.000Z",

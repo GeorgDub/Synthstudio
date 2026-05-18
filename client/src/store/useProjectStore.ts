@@ -14,6 +14,8 @@ import {
   setSampleTags as setSampleTagsPure,
   applyAutoTagsFromFilename,
 } from "@/utils/sampleLibrary";
+// v3.58.0: Stable UUID v4 — projectId ist immutable nach init.
+import { generateProjectId, isValidProjectId } from "@/utils/projectId";
 
 export interface Sample {
   id: string;
@@ -27,6 +29,12 @@ export interface Sample {
 }
 
 export interface ProjectState {
+  /**
+   * Stabile UUID v4 — einmal bei `newProject` generiert, immutable für
+   * die Lebenszeit des Projekts. Wird von AutoSave als rename-resistenter
+   * Versions-Schlüssel verwendet. Seit v3.58.0 (Schema v1.24).
+   */
+  projectId: string;
   /** Name des aktuellen Projekts */
   projectName: string;
   /** Ob es ungespeicherte Änderungen gibt */
@@ -64,6 +72,12 @@ export interface ProjectState {
 
 export interface ProjectActions {
   setProjectName: (name: string) => void;
+  /**
+   * v3.58.0: Übernimmt eine projectId aus einem geladenen .synth-File.
+   * Wird NICHT für Rename oder normale State-Mutations benutzt — nur
+   * beim Load. Bei invalider ID wird defensiv eine neue UUID generiert.
+   */
+  adoptProjectId: (id: string) => void;
   setDirty: (dirty: boolean) => void;
   setBpm: (bpm: number) => void;
   saveProject: () => void;
@@ -94,29 +108,51 @@ export interface ProjectActions {
   updateSample: (id: string, patch: Partial<Sample>) => void;
 }
 
-const DEFAULT_STATE: ProjectState = {
-  projectName: "Neues Projekt",
-  isDirty: false,
-  canUndo: false,
-  canRedo: false,
-  samples: [],
-  isPlaying: false,
-  isRecording: false,
-  bpm: 120,
-  recordingMode: "overdub",
-  punchInStep: null,
-  punchOutStep: null,
-};
+/**
+ * v3.58.0: Liefert einen frischen Default-State mit NEU generierter
+ * projectId. Wird bei Hook-Init und bei `newProject` aufgerufen.
+ *
+ * Wichtig: projectId darf NICHT eine Modul-Konstante sein, weil sonst
+ * alle Projekt-Resets dieselbe UUID hätten → AutoSave-History würde
+ * zwischen Sessions kollidieren.
+ */
+function makeDefaultState(): ProjectState {
+  return {
+    projectId: generateProjectId(),
+    projectName: "Neues Projekt",
+    isDirty: false,
+    canUndo: false,
+    canRedo: false,
+    samples: [],
+    isPlaying: false,
+    isRecording: false,
+    bpm: 120,
+    recordingMode: "overdub",
+    punchInStep: null,
+    punchOutStep: null,
+  };
+}
 
 /**
  * Hook der den gesamten Projekt-State und alle Aktionen bereitstellt.
  * Wird einmalig in App.tsx instanziiert und per Props oder Context weitergegeben.
  */
 export function useProjectStore(): ProjectState & ProjectActions {
-  const [state, setState] = useState<ProjectState>(DEFAULT_STATE);
+  // v3.58.0: Lazy-Init damit jeder Hook-Instance eine eigene UUID bekommt.
+  const [state, setState] = useState<ProjectState>(() => makeDefaultState());
 
   const setProjectName = useCallback((name: string) => {
+    // v3.58.0: WICHTIG — projectId bleibt unverändert. Rename ändert nur
+    // den anzeigenden Namen, NICHT den AutoSave-History-Schlüssel.
     setState((prev) => ({ ...prev, projectName: name }));
+  }, []);
+
+  const adoptProjectId = useCallback((id: string) => {
+    // v3.58.0: Wird beim Load eines .synth-Files aufgerufen, um die
+    // projectId aus dem File zu übernehmen. Defensive: bei invalider ID
+    // generieren wir lieber eine neue UUID, statt zu crashen.
+    const adopted = isValidProjectId(id) ? id : generateProjectId();
+    setState((prev) => ({ ...prev, projectId: adopted }));
   }, []);
 
   const setDirty = useCallback((dirty: boolean) => {
@@ -141,7 +177,10 @@ export function useProjectStore(): ProjectState & ProjectActions {
 
   const newProject = useCallback(() => {
     console.log("[ProjectStore] newProject aufgerufen");
-    setState({ ...DEFAULT_STATE });
+    // v3.58.0: makeDefaultState() statt DEFAULT_STATE — jedes neue Projekt
+    // bekommt eine frische UUID, sonst würde die History sich zwischen
+    // Projekten überschneiden.
+    setState(makeDefaultState());
   }, []);
 
   /**
@@ -151,8 +190,9 @@ export function useProjectStore(): ProjectState & ProjectActions {
   const newProjectFromTemplate = useCallback(
     (templateState: ReturnType<typeof templateToProjectState>) => {
       console.log("[ProjectStore] newProjectFromTemplate aufgerufen", templateState.projectName);
+      // v3.58.0: Frischer Default = neue UUID, dann Template-Felder draufpatchen.
       setState({
-        ...DEFAULT_STATE,
+        ...makeDefaultState(),
         projectName: templateState.projectName,
         bpm: templateState.bpm,
         samples: templateState.samples,
@@ -312,6 +352,7 @@ export function useProjectStore(): ProjectState & ProjectActions {
   return {
     ...state,
     setProjectName,
+    adoptProjectId,
     setDirty,
     setBpm,
     saveProject,
