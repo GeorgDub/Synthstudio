@@ -81,6 +81,15 @@ interface MockCtxStats {
   delaysCreated: number;
   convolversCreated: number;
   buffersCreated: number;
+  oscillatorsCreated: number;
+  oscTypesSet: string[];
+  oscStarts: Array<{ when: number }>;
+  oscStops: Array<{ when: number }>;
+  oscFreqSets: number[];
+  oscFreqRampTargets: number[];
+  oscDetuneSet: number[];
+  ampRamps: Array<{ value: number; time: number }>;
+  ampSetAt: Array<{ value: number; time: number }>;
   panValuesSet: number[];
   gainValuesSet: number[];
   filterFreqsSet: number[];
@@ -136,7 +145,57 @@ function makeMockOfflineCtxCtor(stats: MockCtxStats): OfflineAudioContextCtor {
         gain: {
           get value() { return 0; },
           set value(v: number) { stats.gainValuesSet.push(v); },
-        } as { value: number },
+          setValueAtTime(value: number, time: number) {
+            stats.ampSetAt.push({ value, time });
+          },
+          linearRampToValueAtTime(value: number, time: number) {
+            stats.ampRamps.push({ value, time });
+          },
+          exponentialRampToValueAtTime(value: number, time: number) {
+            stats.ampRamps.push({ value, time });
+          },
+          cancelScheduledValues() { /* noop */ },
+        },
+        connect(target: { _kind?: string }) {
+          stats.connections.push({ from: _kind, to: target?._kind ?? "unknown" });
+        },
+        disconnect() { /* noop */ },
+      };
+      return node;
+    }
+    createOscillator() {
+      stats.oscillatorsCreated++;
+      const _kind = "oscillator";
+      const freqParam = {
+        get value() { return 0; },
+        set value(v: number) { stats.oscFreqSets.push(v); },
+        setValueAtTime(value: number, _time: number) {
+          stats.oscFreqSets.push(value);
+        },
+        linearRampToValueAtTime(value: number, _time: number) {
+          stats.oscFreqRampTargets.push(value);
+        },
+        cancelScheduledValues() { /* noop */ },
+      };
+      const detuneParam = {
+        get value() { return 0; },
+        set value(v: number) { stats.oscDetuneSet.push(v); },
+        setValueAtTime(value: number, _time: number) { stats.oscDetuneSet.push(value); },
+        linearRampToValueAtTime() { /* noop */ },
+        cancelScheduledValues() { /* noop */ },
+      };
+      const node = {
+        _kind,
+        _type: "sine" as string,
+        get type() { return node._type; },
+        set type(v: string) {
+          node._type = v;
+          stats.oscTypesSet.push(v);
+        },
+        frequency: freqParam,
+        detune: detuneParam,
+        start(when: number = 0) { stats.oscStarts.push({ when }); },
+        stop(when: number = 0) { stats.oscStops.push({ when }); },
         connect(target: { _kind?: string }) {
           stats.connections.push({ from: _kind, to: target?._kind ?? "unknown" });
         },
@@ -290,6 +349,15 @@ function freshStats(): MockCtxStats {
     delaysCreated: 0,
     convolversCreated: 0,
     buffersCreated: 0,
+    oscillatorsCreated: 0,
+    oscTypesSet: [],
+    oscStarts: [],
+    oscStops: [],
+    oscFreqSets: [],
+    oscFreqRampTargets: [],
+    oscDetuneSet: [],
+    ampRamps: [],
+    ampSetAt: [],
     panValuesSet: [],
     gainValuesSet: [],
     filterFreqsSet: [],
@@ -989,6 +1057,305 @@ describe("renderChannelToBuffer", () => {
     // +12 → playbackRate=2, -12 → playbackRate=0.5
     expect(stats.playbackRatesSet).toContain(2);
     expect(stats.playbackRatesSet).toContain(0.5);
+  });
+});
+
+// ─── 9b. Synth-Parts im Bounce (NEU v2.96) ───────────────────────────────────
+
+describe("renderChannelToBuffer — Synth-Parts (v2.96)", () => {
+  /** Helper für Wavetable-Synth-Part mit Default-Params. */
+  function makeWavetablePart(overrides: Partial<PartData> = {}): PartData {
+    return makePart({
+      sourceType: "wavetable",
+      sampleUrl: undefined,
+      synthParams: {
+        mode: "wavetable",
+        oscType: "sawtooth",
+        detune: 0,
+        fmRatio: 2,
+        fmDepth: 100,
+        attack: 0.01,
+        decay: 0.1,
+        sustain: 0.8,
+        release: 0.3,
+        lfoEnabled: false,
+        lfoRate: 4,
+        lfoDepth: 10,
+        lfoTarget: "pitch",
+        lfoWaveform: "sine",
+        lfoBpmSync: "free",
+        glide: 0,
+      },
+      ...overrides,
+    });
+  }
+
+  function makeFmPart(overrides: Partial<PartData> = {}): PartData {
+    return makeWavetablePart({
+      sourceType: "fm",
+      synthParams: {
+        mode: "fm",
+        oscType: "sine",
+        detune: 0,
+        fmRatio: 3,
+        fmDepth: 200,
+        attack: 0.01,
+        decay: 0.1,
+        sustain: 0.7,
+        release: 0.2,
+        lfoEnabled: false,
+        lfoRate: 4,
+        lfoDepth: 10,
+        lfoTarget: "pitch",
+        lfoWaveform: "sine",
+        lfoBpmSync: "free",
+        glide: 0,
+      },
+      ...overrides,
+    });
+  }
+
+  it("subtractive/wavetable: erzeugt OscillatorNode pro aktiven Step (nicht silent)", async () => {
+    const stats = freshStats();
+    const CtxCtor = makeMockOfflineCtxCtor(stats);
+    const part = makeWavetablePart(); // 4 active steps
+    const pattern = makePattern({ parts: [part] });
+    await renderChannelToBuffer(part, pattern, {
+      length: { mode: "currentPattern" },
+      bpm: 120,
+      sampleRate: 48000,
+      // KEIN sampleBuffer — Synth braucht keinen
+    }, CtxCtor);
+    // 4 aktive Steps → 4 Oscillators (Wavetable = 1 Osc pro Note)
+    expect(stats.oscillatorsCreated).toBe(4);
+    expect(stats.oscStarts.length).toBe(4);
+  });
+
+  it("wavetable: oscType wird auf OscillatorNode.type übernommen", async () => {
+    const stats = freshStats();
+    const CtxCtor = makeMockOfflineCtxCtor(stats);
+    const part = makeWavetablePart({
+      synthParams: {
+        ...makeWavetablePart().synthParams!,
+        oscType: "square",
+      },
+    });
+    const pattern = makePattern({ parts: [part] });
+    await renderChannelToBuffer(part, pattern, {
+      length: { mode: "currentPattern" },
+      bpm: 120,
+      sampleRate: 48000,
+    }, CtxCtor);
+    expect(stats.oscTypesSet).toContain("square");
+  });
+
+  it("FM-Part: 2 Oszillator-Setup pro Note (carrier + modulator)", async () => {
+    const stats = freshStats();
+    const CtxCtor = makeMockOfflineCtxCtor(stats);
+    const part = makeFmPart(); // 4 active steps
+    const pattern = makePattern({ parts: [part] });
+    await renderChannelToBuffer(part, pattern, {
+      length: { mode: "currentPattern" },
+      bpm: 120,
+      sampleRate: 48000,
+    }, CtxCtor);
+    // 4 aktive Steps × 2 Oszillatoren (carrier + modulator) = 8
+    expect(stats.oscillatorsCreated).toBe(8);
+    // 8 starts und 8 stops
+    expect(stats.oscStarts.length).toBe(8);
+    expect(stats.oscStops.length).toBe(8);
+  });
+
+  it("FM-Part: modulator-Frequenz = note-freq × fmRatio", async () => {
+    const stats = freshStats();
+    const CtxCtor = makeMockOfflineCtxCtor(stats);
+    const part = makeFmPart({
+      synthParams: {
+        ...makeFmPart().synthParams!,
+        mode: "fm",
+        fmRatio: 3,
+        fmDepth: 100,
+      },
+    });
+    // Nur 1 active step für deterministische Assertion
+    part.steps = Array.from({ length: 16 }, (_, i) => ({
+      active: i === 0,
+      velocity: 100,
+    }));
+    const pattern = makePattern({ parts: [part] });
+    await renderChannelToBuffer(part, pattern, {
+      length: { mode: "currentPattern" },
+      bpm: 120,
+      sampleRate: 48000,
+    }, CtxCtor);
+    // Carrier-Freq = 440 (A4, kein pitch). Modulator-Freq = 440 * 3 = 1320.
+    // Beide werden via setValueAtTime/value-Setter erfasst.
+    expect(stats.oscFreqSets).toContain(440);
+    expect(stats.oscFreqSets).toContain(1320);
+  });
+
+  it("ADSR-Hüllkurve: setValueAtTime + linearRamp-Sequenz wird parametrisiert", async () => {
+    const stats = freshStats();
+    const CtxCtor = makeMockOfflineCtxCtor(stats);
+    const part = makeWavetablePart({
+      synthParams: {
+        ...makeWavetablePart().synthParams!,
+        attack: 0.05,
+        decay: 0.2,
+        sustain: 0.6,
+        release: 0.4,
+      },
+    });
+    // Single active step
+    part.steps = Array.from({ length: 16 }, (_, i) => ({
+      active: i === 0,
+      velocity: 100,
+    }));
+    const pattern = makePattern({ parts: [part] });
+    await renderChannelToBuffer(part, pattern, {
+      length: { mode: "currentPattern" },
+      bpm: 120,
+      sampleRate: 48000,
+    }, CtxCtor);
+    // Mindestens 2 setValueAtTime calls (start=0 + noteEnd-sustain)
+    // und mindestens 3 linearRamp calls (attack peak, decay → sustain, release → 0).
+    expect(stats.ampSetAt.length).toBeGreaterThanOrEqual(2);
+    expect(stats.ampRamps.length).toBeGreaterThanOrEqual(3);
+    // Erster setValueAtTime ist gain=0 zu time=0 (Note-Start).
+    expect(stats.ampSetAt[0].value).toBe(0);
+    // Letzter Ramp soll auf 0 gehen (Release-Ende).
+    const lastRamp = stats.ampRamps[stats.ampRamps.length - 1];
+    expect(lastRamp.value).toBe(0);
+  });
+
+  it("Mehrere Steps in einem Pattern werden alle als Synth-Notes gerendert", async () => {
+    const stats = freshStats();
+    const CtxCtor = makeMockOfflineCtxCtor(stats);
+    const part = makeWavetablePart();
+    // 8 active steps (alle geraden positionen)
+    part.steps = Array.from({ length: 16 }, (_, i) => ({
+      active: i % 2 === 0,
+      velocity: 100,
+    }));
+    const pattern = makePattern({ parts: [part] });
+    await renderChannelToBuffer(part, pattern, {
+      length: { mode: "currentPattern" },
+      bpm: 120,
+      sampleRate: 48000,
+    }, CtxCtor);
+    expect(stats.oscillatorsCreated).toBe(8);
+    expect(stats.oscStarts.length).toBe(8);
+  });
+
+  it("step.pitch transponiert die Note-Frequenz (Semitones)", async () => {
+    const stats = freshStats();
+    const CtxCtor = makeMockOfflineCtxCtor(stats);
+    const part = makeWavetablePart();
+    // +12 Semis = Oktave hoch (880 Hz), -12 Semis = Oktave runter (220 Hz).
+    part.steps = Array.from({ length: 16 }, () => ({ active: false }));
+    part.steps[0] = { active: true, velocity: 100, pitch: 12 };
+    part.steps[4] = { active: true, velocity: 100, pitch: -12 };
+    const pattern = makePattern({ parts: [part] });
+    await renderChannelToBuffer(part, pattern, {
+      length: { mode: "currentPattern" },
+      bpm: 120,
+      sampleRate: 48000,
+    }, CtxCtor);
+    // Erwartete Frequenzen: A5=880, A3=220
+    expect(stats.oscFreqSets.some(f => Math.abs(f - 880) < 0.001)).toBe(true);
+    expect(stats.oscFreqSets.some(f => Math.abs(f - 220) < 0.001)).toBe(true);
+  });
+
+  it("Synth-Part wird durch die FX-Chain geroutet (EQ+Filter+Comp+Reverb wirken)", async () => {
+    const stats = freshStats();
+    const CtxCtor = makeMockOfflineCtxCtor(stats);
+    const part = makeWavetablePart({
+      fx: defaultChannelFx({
+        eqEnabled: true, eqLow: 3,
+        compressorEnabled: true, compressorThreshold: -12,
+        reverbEnabled: true, reverbDecay: 1.5,
+      }),
+    });
+    const pattern = makePattern({ parts: [part] });
+    await renderChannelToBuffer(part, pattern, {
+      length: { mode: "currentPattern" },
+      bpm: 120,
+      sampleRate: 48000,
+    }, CtxCtor);
+    // Volle FX-Chain wurde gebaut (analog zum Sample-Pfad in v2.95)
+    expect(stats.filterNodesCreated).toBe(4); // 3 EQ + 1 Filter
+    expect(stats.compressorsCreated).toBe(1);
+    expect(stats.delaysCreated).toBe(1);
+    expect(stats.convolversCreated).toBe(1);
+    // EQ-Low-Gain wurde übernommen
+    expect(stats.filterGainsSet).toContain(3);
+    // Compressor-Threshold übernommen
+    expect(stats.compressorThresholds).toContain(-12);
+    // Reverb-IR wurde angelegt
+    expect(stats.buffersCreated).toBeGreaterThan(0);
+  });
+
+  it("Granular-Part bleibt silent (v2.96-Caveat — kein Crash)", async () => {
+    const stats = freshStats();
+    const CtxCtor = makeMockOfflineCtxCtor(stats);
+    const part = makePart({
+      sourceType: "granular",
+      sampleUrl: undefined,
+      // synthParams absichtlich weggelassen
+    });
+    const pattern = makePattern({ parts: [part] });
+    const result = await renderChannelToBuffer(part, pattern, {
+      length: { mode: "currentPattern" },
+      bpm: 120,
+      sampleRate: 48000,
+    }, CtxCtor);
+    // Keine Oscillators, keine BufferSources → Silent Buffer
+    expect(stats.oscillatorsCreated).toBe(0);
+    expect(stats.bufferSourcesCreated).toBe(0);
+    // Aber Buffer wird zurückgegeben (kein Crash)
+    expect(result.buffer.length).toBeGreaterThan(0);
+  });
+
+  it("muted Synth-Part: volume=0 wird in ADSR-Peak gemappt", async () => {
+    const stats = freshStats();
+    const CtxCtor = makeMockOfflineCtxCtor(stats);
+    const part = makeWavetablePart({ muted: true });
+    part.steps = Array.from({ length: 16 }, (_, i) => ({
+      active: i === 0,
+      velocity: 100,
+    }));
+    const pattern = makePattern({ parts: [part] });
+    await renderChannelToBuffer(part, pattern, {
+      length: { mode: "currentPattern" },
+      bpm: 120,
+      sampleRate: 48000,
+    }, CtxCtor);
+    // Oscillator wird trotzdem gebaut (Topologie bleibt konsistent), aber
+    // ADSR-Peak = 0 — ein der ampRamps sollte auf 0 sein.
+    expect(stats.oscillatorsCreated).toBe(1);
+    // Attack-Ramp Ziel: peak * 1.0 = 0 (weil muted)
+    const peakRamp = stats.ampRamps.find(r => r.time > 0 && r.time < 0.1);
+    // Wenn muted → peak ist 0
+    if (peakRamp) expect(peakRamp.value).toBe(0);
+  });
+
+  it("Synth-Part ohne synthParams (sourceType='wavetable' aber kein params) → silent", async () => {
+    const stats = freshStats();
+    const CtxCtor = makeMockOfflineCtxCtor(stats);
+    const part = makePart({
+      sourceType: "wavetable",
+      sampleUrl: undefined,
+      // synthParams fehlt — isSynthPart() liefert false
+    });
+    const pattern = makePattern({ parts: [part] });
+    const result = await renderChannelToBuffer(part, pattern, {
+      length: { mode: "currentPattern" },
+      bpm: 120,
+      sampleRate: 48000,
+    }, CtxCtor);
+    expect(stats.oscillatorsCreated).toBe(0);
+    expect(stats.bufferSourcesCreated).toBe(0);
+    expect(result.buffer.length).toBeGreaterThan(0);
   });
 });
 

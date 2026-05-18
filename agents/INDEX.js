@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "2.95.0",
+    version: "2.96.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -83,6 +83,26 @@ const INDEX = {
   // ─── KNOWN FILE INDEX ──────────────────────────────────────
   // Key files agents have analyzed. Add new entries after working on a file.
   files: {
+    "client/src/utils/synthOfflineRender.ts (TASK-241-FOLLOWUP-2 v2.96)": {
+      role:     "v2.96.0: Synth-Offline-Render fuer Stem-Bounce (~290 LOC, pure). Exports: triggerOfflineSynthNote(ctx, params, freq, time, volume, output, prevFreq?) → OfflineSynthNoteHandle (baut Oscillator + ADSR identisch zu SynthEngine.triggerNote, connectet auf output-Node), pitchToFrequency(semi, baseHz=440) → A4-Transpose `440 * 2^(semi/12)`, normalizeSynthParams(p) → defensive Defaults bei missing/NaN (clamped sustain[0,1], detune[-100,100], fmRatio≥0.1, attack/decay/release≥0.001s), computeNoteHoldSec()=1.0, isSynthPart(part) → `!!synthParams && (sourceType==='wavetable'|'fm')`, isGranularPart(part). Wavetable-Branch: 1 OscillatorNode mit type/detune/glide (custom→sine fallback). FM-Branch: 2 OscillatorNodes (carrier+modulator) + modDepth-GainNode für fmRatio*freq-Modulation. ADSR via setValueAtTime + linearRampToValueAtTime (offline-kompatibel). Architektur-Entscheidung: Copy-with-Marker statt SynthEngine-Refactor (SoT-Marker im Code, FOLLOWUP-242-EXTRACT-SYNTHGRAPH). CAVEATS: Granular silent (RAF nicht offline-portierbar), Synth-LFO statisch (FOLLOWUP-3), Custom-Wavetables→sine (FOLLOWUP-4), Macro-LFO-Cache live-only.",
+      lastSeen: "2026-05-18T06:15:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/utils/channelBounce.ts (TASK-241-FOLLOWUP-2 v2.96)": {
+      role:     "v2.96.0: +Import {triggerOfflineSynthNote, pitchToFrequency, isSynthPart, isGranularPart} aus @/utils/synthOfflineRender. renderChannelToBuffer routet jetzt 3 Wege: partIsSynth → _renderSynthWithFxChain, partIsGranular → silent (no-op, dokumentierter Caveat), opts.sampleBuffer → bestehender v2.95-Pfad (_renderWithFxChain oder _renderBypassFx). NEU _renderSynthWithFxChain(ctx, part, pattern, stepDurSec, bars, stepsPerBar, channels) — baut buildOfflinePartGraph(ctx, part, channels) einmal, dispatcht pro aktivem Step triggerOfflineSynthNote(graph.input) mit volume=velocity*partVol (muted→0) und freq=pitchToFrequency(step.pitch). Synth-Output läuft durch die identische v2.95-FX-Chain → EQ + Filter + Distortion + Comp + Delay + Reverb wirken auch auf Synth-Parts. README-Block am Datei-Ende um 'v2.96 (NEU) — Synth-Parts im Bounce'-Section erweitert, 'NICHT im Bounce'-Block listet Granular/SynthLFO/CustomWavetables.",
+      lastSeen: "2026-05-18T06:15:00.000Z",
+      ownedBy:  "backend"
+    },
+    "tests/features/synth-offline-render.test.ts (TASK-241-FOLLOWUP-2 v2.96)": {
+      role:     "v2.96.0: 24 Pure-Helper + Integration-Tests. pitchToFrequency (5 — 0/+12/-12/custom-base/NaN-defensive), normalizeSynthParams (6 — undefined→defaults/invalid-mode/NaN-attack/sustain-clamp/detune-clamp/fmRatio-min), computeNoteHoldSec (1), isSynthPart (5 — wavetable+params/fm+params/sample/granular/no-params), isGranularPart (2), triggerOfflineSynthNote-Integration mit MockCtx (5 — Wavetable 1osc+1gain, FM 2osc+2gain, undefined→defensive-no-crash, releaseEnd-Handle ≈1.4s, custom→sine fallback).",
+      lastSeen: "2026-05-18T06:15:00.000Z",
+      ownedBy:  "backend"
+    },
+    "tests/features/channel-bounce.test.ts (TASK-241-FOLLOWUP-2 v2.96)": {
+      role:     "v2.96.0: 65 → 76 Tests (+11 in neuer Suite 'renderChannelToBuffer — Synth-Parts (v2.96)'). Tests: subtractive/wavetable erzeugt 1 OscillatorNode pro aktivem Step (nicht silent), oscType (square) auf node.type übernommen, FM-Part 2-Oszillator-Setup (4 active steps → 8 oscillators), FM-Modulator-Freq=440×fmRatio=1320 für Single-Step, ADSR-Sequenz (mind. 2 setValueAtTime + 3 linearRamp, letzter Ramp=0), Multi-Step-Pattern alle 8 Steps gerendert, step.pitch transponiert (+12→880, -12→220), Synth-Part durch volle FX-Chain (EQ-Low=3, Comp-Threshold=-12, Reverb-IR angelegt), Granular-Part silent ohne Crash, muted Synth-Part peak=0, Synth ohne synthParams (sourceType='wavetable' aber missing params) → defensive silent. Enhanced Mock-Ctx: createOscillator (mit type-Setter, frequency.value+setValueAtTime+linearRampToValueAtTime, detune-Param, start/stop-Captures), createGain um setValueAtTime/linearRampToValueAtTime/exponentialRampToValueAtTime/cancelScheduledValues ergänzt (für ADSR-Tracking via stats.ampSetAt + stats.ampRamps). +oscFreqSets/oscFreqRampTargets/oscTypesSet/oscStarts/oscStops/oscDetuneSet Stats-Felder.",
+      lastSeen: "2026-05-18T06:15:00.000Z",
+      ownedBy:  "backend"
+    },
     "client/src/utils/channelBounce.ts (TASK-241 v2.95)": {
       role:     "v2.95.0: Per-Channel WAV-Bounce mit VOLLER Insert-FX-Chain. NEU buildOfflinePartGraph(ctx, part, channels) baut analog zu AudioEngine._getOrCreateChannelNodes: input → eqLow(lowshelf200) → eqMid(peaking1k Q=1) → eqHigh(highshelf6k) → filter(lowpass/HP/BP/notch oder allpass-bypass) → distortion(WaveShaper) → compressor → delay(dry/wet+feedback-loop) → reverb(convolver mit synthetischem IR aus weißem-Rauschen*(1-t)² + dry/wet) → output → sidechainGain → panner → destination. Triggers connecten via stepGain(vel*partVol) auf graph.input. NEU makeDistortionCurve(amount) → Float32Array<ArrayBuffer> (SoT: AudioEngine._makeDistortionCurve, copy-pasted mit Marker, Refactor in shared fxGraph.ts als Follow-Up dokumentiert). NEU buildReverbImpulse(ctx, decay) → AudioBuffer mit 2 Channels (SoT: AudioEngine._getOrCreateReverbBuffer, ungecacht da Offline-Ctx einmalig). NEU computeDynamicTailSec(fx) → max(0.5, reverbDecay+0.2, delayTime*(1+fb/(1-fb))) capped 4s — Reverb/Delay-Tails fallen nicht mehr ab. NEU opts.bypassFx → Legacy v2.94-Pfad (nur Volume/Pan/Lowpass per Step). Step.pitch wird auf playbackRate (2^(semi/12)) gemappt. Defensive: safeNum(v,fallback) für NaN/Infinity/undefined, fx-undefined → Pass-Through ohne Crash. CAVEATS v2.95 (siehe README am Datei-Ende): Synth/Wavetable/FM/Granular weiter silent (v2.96+), Sidechain statisch=1 (kein Modulations-Graph), Global-Reverb/Delay-Bus nicht im Channel-Stem, Bitcrusher/RingMod/Transient-Shaper noch nicht (AudioWorklet bzw. nicht in ChannelFx 1st-class), step.paramLock nicht respektiert.",
       lastSeen: "2026-05-18T03:50:00.000Z",
@@ -881,6 +901,31 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "backend",
+      timestamp: "2026-05-18T06:15:00.000Z",
+      done: [
+        "v2.96.0: TASK-241-FOLLOWUP-2 — Synth-Parts (Wavetable/FM) im Stem-Bounce. Closes v2.95-Caveat: Synth-Parts wurden vorher als silent gebounced, weil channelBounce.ts nur BufferSource(sample)-Trigger kannte. Jetzt landen auch Wavetable/Subtractive- und FM-Patches im Stem, gerendert durch die KOMPLETTE v2.95-FX-Chain (EQ + Filter + Distortion + Comp + Delay + Reverb). (1) NEU client/src/utils/synthOfflineRender.ts (~290 LOC, pure). Exports: triggerOfflineSynthNote(ctx, params, freq, time, volume, output, prevFreq?) → OfflineSynthNoteHandle. Architektur SoT=SynthEngine.ts (Copy-with-Marker analog v2.95-Pattern statt Refactor — Begründung im Datei-README): identische ADSR-Hüllkurve via setValueAtTime + linearRampToValueAtTime, identische Wavetable-Branch (osc.type sine/saw/square/triangle + detune + glide, custom→sine fallback), identische FM-Branch (carrier+modulator→modDepth→carrier.frequency mit fmRatio*freq). Pure-Helpers: pitchToFrequency(semi, baseHz=440) — A4-Transpose identisch zu AudioEngine._scheduleStep (`440 * Math.pow(2, pitch/12)`); normalizeSynthParams(p) — defensive Defaults bei missing/NaN inkl. Clamp für sustain[0,1], detune[-100,100], fmRatio≥0.1, attack/decay/release≥0.001s; computeNoteHoldSec()=1.0 (identisch SynthEngine); isSynthPart(part) — Detection-Logik analog AudioEngine (`!!synthParams && (sourceType==='wavetable'|'fm')`); isGranularPart(part). (2) channelBounce.ts erweitert: Import von triggerOfflineSynthNote+pitchToFrequency+isSynthPart+isGranularPart aus synthOfflineRender. renderChannelToBuffer routet jetzt drei Wege: synth→_renderSynthWithFxChain, granular→silent (Caveat dokumentiert), sample→bestehender v2.95-Pfad. NEU _renderSynthWithFxChain(ctx, part, pattern, ...) — baut buildOfflinePartGraph(ctx, part, channels) einmal, dispatcht pro aktivem Step einen triggerOfflineSynthNote(graph.input) mit volume=velocity*partVol (muted→0) und freq=pitchToFrequency(step.pitch). Synth-Output läuft durch die identische v2.95-FX-Chain → ein FM-Bass mit Reverb-Send klingt im Stem wie live. (3) channelBounce.ts README-Block aktualisiert: 'v2.96 (NEU)'-Section listet Synth-Coverage, 'NICHT im Bounce'-Block listet Granular/SynthLFO/CustomWavetables explizit als Caveats. (4) tests/features/channel-bounce.test.ts 65 → 76 Tests (+11 in neuer Suite 'Synth-Parts (v2.96)'): subtractive erzeugt 1 OscillatorNode pro Step, oscType (square) auf node.type übernommen, FM erzeugt 2 Oszillatoren pro Note (carrier+modulator), FM-Modulator-Freq = note*fmRatio (440×3=1320 für Single-Step), ADSR-Sequenz (mind. 2 setValueAtTime + 3 linearRamp, letzter Ramp auf 0), Multi-Step-Pattern alle 8 Steps gerendert, step.pitch transponiert (Oktave hoch=880, runter=220), Synth-FX-Chain-Routing (EQ/Filter/Comp/Reverb wirken), Granular-Part bleibt silent ohne Crash, muted→peak=0, Synth ohne synthParams (defensive). Enhanced Mock-Ctx: createOscillator (mit type/frequency/detune-Captures via setValueAtTime + Setter), createGain um setValueAtTime/linearRampToValueAtTime/cancelScheduledValues ergänzt (für ADSR-Tracking). (5) NEU tests/features/synth-offline-render.test.ts (24 Pure-Helper-Tests): pitchToFrequency (5 — 0/+12/-12/custom-base/NaN-defensive), normalizeSynthParams (6 — undefined/invalid-mode/NaN-attack/sustain-clamp/detune-clamp/fmRatio-min), computeNoteHoldSec (1), isSynthPart (5 — wavetable+params/fm+params/sample/granular/no-params), isGranularPart (2), triggerOfflineSynthNote (5 — wavetable 1osc+1gain, FM 2osc+2gain, undefined-defensive, releaseEnd-handle, custom→sine). (6) package.json 2.95.0 → 2.96.0. pnpm check clean, pnpm test 3453 passed/15 skipped (vs prev 3418, +35 neue Tests, 0 failed Files). Architektur-Entscheidung: COPY mit SoT-Marker (Begründung im synthOfflineRender.ts-README) statt SynthEngine-Refactor (FOLLOWUP-242). v2.96 IM Bounce: Wavetable+FM+ADSR+Pitch-Transpose+volle-FX-Chain. v2.96 NICHT: Granular (RAF+lookahead nicht offline-portierbar — FOLLOWUP-2-GRANULAR), Synth-LFO (statischer Bounce — FOLLOWUP-3-SYNTHLFO), Custom-Wavetables (oscType=custom wird auf sine abgebildet wie online — FOLLOWUP-4), Per-Part-Macro-LFO-Cache (Live-only). Back-Compat: alle v2.94/v2.95-Tests grün."
+      ],
+      next: [
+        "TASK-241-FOLLOWUP-2-GRANULAR: GranularEngine im Offline-Ctx — braucht plan-then-render-Algorithmus, der alle Grains der gesamten Bounce-Dauer im Voraus berechnet (kein RAF im Offline-Ctx). Mittlerer Aufwand ~150 LOC + Tests.",
+        "TASK-241-FOLLOWUP-3-SYNTHLFO: LFO-Modulation im Offline-Synth-Bounce — Oscillator-LFO trivial (OscillatorNode + connect), S&H/Random nutzt setValueAtTime-Loop (identisch in Offline reproduzierbar).",
+        "TASK-241-FOLLOWUP-4-CUSTOMWAVE: Custom-Wavetables via ctx.createPeriodicWave — braucht App-seitige Persistenz für User-defined Float32-Tables (heute nicht vorhanden).",
+        "TASK-242-EXTRACT-SYNTHGRAPH (REFACTOR): Shared `client/src/audio/synthGraph.ts` — gemeinsame Builder-Funktionen für Online (SynthEngine) + Offline (synthOfflineRender). Aktuell Logik-Duplizierung via Copy-with-Marker.",
+        "TASK-242-EXTRACT-FXGRAPH (REFACTOR, von v2.95): Analog für FX-Chain-Builder (channelBounce.buildOfflinePartGraph + AudioEngine._getOrCreateChannelNodes).",
+        "TASK-241-FOLLOWUP-3 (v2.97): Stem-Export ZIP-Bundle — JSZip-Wrapper für bounceAllChannels-Output.",
+        "TASK-241-FOLLOWUP-4-REALTIME (alternative): Realtime-Tap-Bounce als 100%-FX-genaue Option (inkl. Bitcrusher/RingMod/Granular).",
+        "TASK-239 (VST3/CLAP-Host) bleibt offen."
+      ],
+      changed: [
+        "client/src/utils/synthOfflineRender.ts (NEU, ~290 LOC: triggerOfflineSynthNote + pitchToFrequency + normalizeSynthParams + computeNoteHoldSec + isSynthPart + isGranularPart, SoT=SynthEngine.ts)",
+        "client/src/utils/channelBounce.ts (v2.96: +Import synthOfflineRender, +_renderSynthWithFxChain, renderChannelToBuffer routet synth/granular/sample drei Wege, README aktualisiert)",
+        "tests/features/channel-bounce.test.ts (65 → 76 Tests, +11 Synth-Bounce-Suite, Mock-Ctx um createOscillator + ADSR-Gain-Methods erweitert)",
+        "tests/features/synth-offline-render.test.ts (NEU, 24 Pure-Helper + Integration-Tests)",
+        "package.json (2.95.0 → 2.96.0)",
+        "agents/INDEX.js (workLog + version 2.96.0 + files-Index)"
+      ]
+    },
     {
       agent:     "backend",
       timestamp: "2026-05-18T03:50:00.000Z",

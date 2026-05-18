@@ -45,6 +45,12 @@ import type {
   ChannelFx,
 } from "@/audio/AudioEngine";
 import { encodeWav } from "@/audio/wavEncoder";
+import {
+  triggerOfflineSynthNote,
+  pitchToFrequency,
+  isSynthPart,
+  isGranularPart,
+} from "@/utils/synthOfflineRender";
 
 // ─── Längen-Optionen ─────────────────────────────────────────────────────────
 
@@ -476,22 +482,32 @@ export async function renderChannelToBuffer(
   const channels: 1 | 2 = opts.channels ?? 2;
   const ctx = new Ctor(channels, Math.ceil(durationSec * opts.sampleRate), opts.sampleRate);
 
-  // Wenn kein Sample-Buffer da ist (z.B. Synth-Part oder Sample noch nicht
-  // geladen) liefern wir trotzdem einen valid-leeren Buffer zurück. Das
-  // erlaubt der UI ein "leeres Stem"-Hinweis und blockt den Workflow nicht.
-  if (opts.sampleBuffer) {
-    const stepDurSec = 60 / (effectiveBpm * stepsPerBar / 4);
+  // v2.96: Synth-Parts (Wavetable/FM) brauchen KEIN sampleBuffer und werden
+  // jetzt rein offline mit OscillatorNodes gerendert. Granular bleibt silent.
+  const partIsSynth = isSynthPart(part);
+  const partIsGranular = isGranularPart(part);
 
+  const stepDurSec = 60 / (effectiveBpm * stepsPerBar / 4);
+
+  if (partIsSynth) {
+    // ─── v2.96-Pfad: Synth-Offline-Render mit voller FX-Chain ─────────────
+    _renderSynthWithFxChain(ctx, part, pattern, stepDurSec, bars, stepsPerBar, channels);
+  } else if (partIsGranular) {
+    // ─── v2.96 Caveat: Granular bleibt silent (siehe synthOfflineRender.ts) ─
+    // No-op — Granular braucht RAF + lookahead, das ist im Offline-Ctx
+    // nicht ohne separates "plan-then-render"-Modul moeglich. Buffer wird
+    // als stiller Frame zurueckgegeben.
+  } else if (opts.sampleBuffer) {
     if (opts.bypassFx) {
       // ─── Legacy v2.94-Pfad (Volume/Pan/Lowpass nur) ─────────────────────
-      // Bleibt erhalten für A/B-Vergleich und falls FX-Chain einen Crash
-      // verursacht (defensive fallback).
       _renderBypassFx(ctx, part, pattern, opts.sampleBuffer, stepDurSec, bars, stepsPerBar, channels);
     } else {
-      // ─── v2.95-Pfad: volle FX-Chain ─────────────────────────────────────
+      // ─── v2.95-Pfad: Sample mit voller FX-Chain ─────────────────────────
       _renderWithFxChain(ctx, part, pattern, opts.sampleBuffer, stepDurSec, bars, stepsPerBar, channels);
     }
   }
+  // Sonst: kein Sample, kein Synth, kein Granular → silent buffer (z.B. Part
+  // ohne sampleUrl und ohne synthParams). Liefert trotzdem valid-leeres Result.
 
   const buffer = await ctx.startRendering();
   return { buffer, durationSec, sampleRate: opts.sampleRate, channels };
@@ -541,6 +557,55 @@ function _renderWithFxChain(
         } catch {
           // ignore — manche Mocks haben keine start-Implementation
         }
+      }
+      absStep++;
+    }
+  }
+}
+
+/**
+ * v2.96-Render-Pfad: Synth-Parts (Wavetable/FM) durch die volle FX-Chain
+ * routen. Identische Topologie wie der Sample-Pfad — nur dass jeder aktive
+ * Step einen OscillatorNode statt eines BufferSource erzeugt.
+ *
+ * SoT: AudioEngine._scheduleStep + _triggerSynthOnChannel.
+ */
+function _renderSynthWithFxChain(
+  ctx: BaseAudioContext,
+  part: PartData,
+  pattern: PatternData,
+  stepDurSec: number,
+  bars: number,
+  stepsPerBar: number,
+  channels: 1 | 2,
+): void {
+  void pattern;
+  const graph = buildOfflinePartGraph(ctx, part, channels);
+  const synthParams = part.synthParams;
+
+  let absStep = 0;
+  for (let bar = 0; bar < bars; bar++) {
+    for (let s = 0; s < stepsPerBar; s++) {
+      const step = part.steps[s];
+      if (step?.active) {
+        const t = absStep * stepDurSec;
+        // Pitch → Frequenz (identisch AudioEngine: 440 Hz Basis + Semitones).
+        const pitch = safeNum(step.pitch, 0);
+        const freq = pitchToFrequency(pitch);
+
+        // velocity * partVolume → pre-envelope volume
+        const vel = safeNum(step.velocity, 100) / 127;
+        const partVol = safeNum(part.volume, 1);
+        const volume = part.muted ? 0 : vel * partVol;
+
+        triggerOfflineSynthNote(
+          ctx,
+          synthParams,
+          freq,
+          t,
+          volume,
+          graph.input,
+        );
       }
       absStep++;
     }
@@ -728,7 +793,16 @@ export function downloadWavInBrowser(wav: ArrayBuffer, filename: string): void {
 /*
  * ─── README ──────────────────────────────────────────────────────────────────
  *
- * v2.95 — Was IM Bounce ist:
+ * v2.96 (NEU) — Synth-Parts im Bounce:
+ *  ✓ Wavetable/Subtractive (sourceType="wavetable", mode="wavetable"):
+ *    OscillatorNode + ADSR + Detune + Glide. Klingt identisch zur Online-Engine.
+ *  ✓ FM (mode="fm"): carrier+modulator+modDepth, identisch zu SynthEngine._triggerFm.
+ *  ✓ Synth-Output geht durch die KOMPLETTE FX-Chain (v2.95): EQ, Filter,
+ *    Distortion, Comp, Delay, Reverb. D.h. ein FM-Bass mit Reverb-Send
+ *    klingt im Stem-Bounce so wie live.
+ *  ✓ step.pitch → Note-Frequenz (A4=440 + Semitones, identisch AudioEngine).
+ *
+ * v2.95 — Was IM Bounce ist (Sample-Pfad):
  *  ✓ Volume + Pan (wie v2.94)
  *  ✓ 3-Band-EQ (Lowshelf 200Hz / Peaking 1kHz Q=1 / Highshelf 6kHz)
  *  ✓ Filter (lowpass/highpass/bandpass/notch + Cutoff + Q)
@@ -741,9 +815,12 @@ export function downloadWavInBrowser(wav: ArrayBuffer, filename: string): void {
  *  ✓ Step.pitch wird in playbackRate übersetzt
  *  ✓ Step.velocity * part.volume → stepGain
  *
- * Was NICHT im Bounce ist (Scope v2.96+):
- *  ✗ Synth/Wavetable/FM/Granular-Parts (sourceType ≠ "sample")
- *    → werden als stille Frames gebounced
+ * Was NICHT im Bounce ist (Scope v2.97+):
+ *  ✗ Granular-Parts (sourceType="granular") — silent (siehe synthOfflineRender.ts):
+ *    GranularEngine nutzt RAF + Lookahead-Scheduling, beides im Offline-Ctx
+ *    nicht direkt portierbar. Workaround: plan-then-render-Algorithmus.
+ *  ✗ Synth-LFO (lfoEnabled/lfoRate/lfoDepth/lfoTarget) — Bounce ist statisch.
+ *  ✗ Custom-Wavetables (oscType="custom") — wird auf "sine" abgebildet (wie online).
  *  ✗ Sidechain-Modulation aus anderen Channels (statisch unducked)
  *  ✗ Global-Reverb/Delay-Bus (channel-stems sollten dry-ish sein,
  *    Bus-FX gehört in Mix-Stem)
