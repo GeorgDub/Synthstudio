@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.9.0",
+    version: "3.10.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -93,9 +93,9 @@ const INDEX = {
       lastSeen: "2026-05-18T09:35:00.000Z",
       ownedBy:  "backend"
     },
-    "client/src/components/KorgBank/KorgBankEditor.tsx (v3.9.0)": {
-      role:     "v3.9.0: Korg E2S Sample-Bank-Editor + Slice-Audition-Preview. v3.8-Funktionen unverändert. NEU v3.9: Imports +extractSliceBuffer/playSliceWithContext/SliceAuditionHandle aus @/utils/korg/sliceAudition. NEU State auditionState{rowId,sliceIndex,startedAt,durationMs}|null + auditionHandleRef:SliceAuditionHandle. NEU stopCurrentAudition useCallback (handle.stop() + null setzen). Cleanup-useEffect erweitert: vor ctx.close auch auditionHandle stoppen. NEU useEffect mit [selectedRowId,mode,stopCurrentAudition] deps: stoppt audition bei Slot-/Mode-Wechsel. renderSliceEditor erweitert: handleAudition(sliceIndex,start,end) — Toggle-Logic (zweiter Click auf gleiches Slice stoppt), sonst stopCurrentAudition → getCtx → extractSliceBuffer(pcmData,channels,start,end) → playSliceWithContext(ctx, buf, sampleRate, {onEnded race-safe via prev.rowId+sliceIndex match}). WaveformSliceCanvas-Wiring +onAudition +playingSliceIndex/StartedAt/DurationMs (nur wenn isPlayingThisSlot). Help-Text dynamisch: sliceCount>0 zeigt '▶ Klick auf Slice = abspielen · Alt/Ctrl+Klick = Marker hinzufügen · …', sonst legacy 'Linksklick = Marker hinzufügen · …'. data-testid=korg-bank-editor-slice-help.",
-      lastSeen: "2026-05-18T10:20:00.000Z",
+    "client/src/components/KorgBank/KorgBankEditor.tsx (v3.9.0, useElectron-Refactor v3.10.0)": {
+      role:     "v3.10.0: handleSaveAs nutzt jetzt useElectron() statt direkten window.electronAPI-Casts (isomorphic-Regel aus CLAUDE.md). Hook-Aufruf am Component-Body-Start; electron.isElectron + electron.saveKorgBankAs(finalName, buf) ersetzt das alte typeof-window-Duck-Typing. Verhalten unverändert: Electron → IPC Save-Dialog, Web → Blob-Download. v3.9.0 Slice-Audition-Preview + v3.8 Slice-Editor + v3.7 Open-Edit-Save-Flow + v3.4 Create-New-Flow unverändert. LOC 1 299 → 1 295.",
+      lastSeen: "2026-05-18T10:30:00.000Z",
       ownedBy:  "frontend"
     },
     "client/src/utils/korg/bankEditorState.ts (v3.8.0)": {
@@ -693,9 +693,9 @@ const INDEX = {
       lastSeen: "2026-05-17T23:38:00.000Z",
       ownedBy:  "backend"
     },
-    "electron/useElectron.ts (TASK-234 saveRecording fallback)": {
-      role:     "v2.86.0: browserAPI.saveRecording → {success:false, error:'Nicht in Electron – nutze IndexedDB'}. Renderer-Code (recordingStorage.saveRecording) erkennt das und legt automatisch IndexedDB ab. Electron-API wird mit ?? fallback gemerged.",
-      lastSeen: "2026-05-17T23:38:00.000Z",
+    "electron/useElectron.ts (TASK-234 saveRecording fallback, KORG-Hook-Expose v3.10.0)": {
+      role:     "v2.86.0: browserAPI.saveRecording → {success:false, error:'Nicht in Electron – nutze IndexedDB'}. Renderer-Code (recordingStorage.saveRecording) erkennt das und legt automatisch IndexedDB ab. Electron-API wird mit ?? fallback gemerged. v3.10.0: +saveKorgBankAs Stub (success:false → triggert Blob-Download im KorgBankEditor) + getKorgBankSaveCap Stub (256 MB mirror-cap). Electron-Pfad-Delegation api.saveKorgBankAs ?? browserAPI.saveKorgBankAs (defensive falls altes preload geladen).",
+      lastSeen: "2026-05-18T10:30:00.000Z",
       ownedBy:  "backend"
     },
     "client/src/App.tsx (TASK-234 Transport-Record-Hook)": {
@@ -1151,6 +1151,28 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "refactor",
+      timestamp: "2026-05-18T10:30:00.000Z",
+      done: [
+        "v3.10.0: KORG-Module Quality-Sweep nach 7 Feature-Releases (v3.3-v3.9). SCOPE: Tech-Debt-Audit von client/src/utils/korg/*.ts (10 Files, 3 600 LOC), client/src/components/KorgBank/*.tsx (3 Files, 2 423 LOC) und tests/features/korg-*.test.ts (8 Files, 3 275 LOC) ohne neue Features. (1) FIX: window.electronAPI-Direktzugriff in KorgBankEditor.tsx::handleSaveAs (Zeile 571-580) verletzt die isomorphic-Invariante aus CLAUDE.md. saveKorgBankAs + getKorgBankSaveCap waren nur in electron/preload.ts + electron/types.d.ts exposed, aber NICHT im useElectron()-Hook → der einzige Konsumer (KorgBankEditor) hat direkt window.electronAPI ge-casted. REFACTOR: electron/useElectron.ts: browserAPI bekommt saveKorgBankAs-Stub (success:false → triggert Blob-Download-Fallback im Editor) + getKorgBankSaveCap (mirror-cap 256 MB). Electron-Pfad delegiert via api.saveKorgBankAs ?? browserAPI.saveKorgBankAs (defensive falls altes Preload geladen). KorgBankEditor.tsx: +import useElectron, +const electron = useElectron() im Component-Body, handleSaveAs verwendet jetzt electron.isElectron + electron.saveKorgBankAs(finalName, buf). Vorher 9 Zeilen mit 2 Type-Casts (window.electronAPI as {…}) + duck-typing-Check, nachher 4 Zeilen ohne any/cast. (2) AUDIT 'any'-Vorkommen in den Binary-Parsern (esxParser, e2sBankReader, e2sBankBuilder, audioProcessor) + KorgBank-Komponenten: keine echten any/<any>/as any gefunden — alle Treffer waren English-Wort 'any' in Kommentaren. KORG-Module ist bereits strict-typed: alle DataView/Uint8Array/Float32Array korrekt typisiert, ESLI_*-Offset-Konstanten als const numerische Literals, LoopType als 0|1|2 union, channels als 1|2 union, E2sSlotInput.pcmData strikt Float32Array. (3) AUDIT ESLI-Field-Layout-Duplication zwischen e2sBankReader und e2sBankBuilder: KEINE Duplikation — beide importieren alle 20+ ESLI_*_OFFSET Konstanten aus client/src/utils/korg/constants.ts. Das ist exakt das richtige Pattern (Single-Source-of-Truth ohne Über-Abstraktion). Nichts zu tun. (4) AUDIT KorgBankEditor.tsx Größe: 1 299 LOC. Subkomponenten-Extraction (SlotBrowser/SlotDetailPanel/SliceSection) wäre theoretisch möglich, aber: a) Slot-Detail-Panel teilt State (busy/auditionState/selectedRowId/replaceInputRef) sehr eng mit Parent — Extraktion würde ~10 Props pro Subkomponente bedeuten und die Lesbarkeit verschlechtern. b) Render-Code ist linear top-down strukturiert (Mode-Toggle → Header → Body { left: Slot-Browser, right: Detail mit Slice-Section } → Footer) — gut zu folgen ohne zerteilen. c) Tests sind bereits Top-Level-Smoke (korg-bank-editor.test.ts testet via testid). Bewusste Entscheidung: nicht extrahieren — DRY > Lesbarkeit hier nicht gegeben. Followup-Marker: TASK-v3.10-FU-1 falls die Datei in v3.11+ über 1 500 LOC wächst, dann SliceSection als erste Extraction-Kandidatin. (5) AUDIT Tests-Fixtures: 8 KORG-Test-Files (3 275 LOC). Wiederkehrende Patterns: sineFloat(frames,freq,sr,amp) und bytesEqual(a,b) sind in korg-e2s-builder.test.ts und tangential in korg-e2s-bank.test.ts dupliziert. ABER: Extraktion in tests/fixtures/korg-fixtures.ts würde Import-Pfad-Churn in 8 Files für ~10 LOC Ersparnis bedeuten. Bewusste Entscheidung: nicht extrahieren — die Helpers sind 3-5 Zeilen pure-funktional, Lesbarkeit der Tests bleibt höher wenn der Helper im File ist. Followup-Marker: TASK-v3.10-FU-2 falls in v3.11+ noch mehr KORG-Tests dazukommen UND die Helper-Lib wirklich wächst (z.B. eine minimal-valid-E2S-Bank-Buffer-Builder-Funktion >20 LOC). (6) AUDIT Konsistenz Public-API-Naming: parseE2sBank/buildE2sBank/parseEsxBank/convertToE2sSpec — alle konsistent verb-noun. Error-Handling konsistent: alle Module werfen named Errors (E2sParseError, E2sBuildError, EsxParseError, AudioProcessError) statt return-Result-Types — match-Pattern in den Konsumern bleibt einheitlich. SoT-Marker (// SoT: Python:filepath:line) ist in 4/4 Binary-Modulen vorhanden (e2sBankReader, e2sBankBuilder, audioProcessor, esxParser). (7) VERIFIED: pnpm check clean. pnpm test 3 799 passed / 15 skipped (UNVERÄNDERT — Refactor hat KEIN Verhalten geändert). pnpm test gegen korg-bank-editor.test.ts spezifisch: weiter alle 33+ Tests grün. package.json 3.9.0 → 3.10.0. INDEX.js version-Bump.",
+        "Findings-Liste konkret (File:Line → Was geändert): (a) client/src/components/KorgBank/KorgBankEditor.tsx:573-580 → window.electronAPI direct + Type-Cast eliminiert (electron.saveKorgBankAs via Hook). (b) electron/useElectron.ts:86-99 → +browserAPI.saveKorgBankAs/getKorgBankSaveCap Fallbacks. (c) electron/useElectron.ts:335-337 → +Electron-Pfad-Delegation api.saveKorgBankAs/getKorgBankSaveCap. (d) client/src/components/KorgBank/KorgBankEditor.tsx:32 → +import useElectron. (e) client/src/components/KorgBank/KorgBankEditor.tsx:154 → +const electron = useElectron(). Vor/Nach LOC KorgBankEditor.tsx: 1 299 → 1 295 (4 Zeilen netto-Reduktion durch Cast-Eliminierung).",
+        "any-Vorkommen vor/nach: vor=0 (echte any-Casts), nach=0. KORG-Module war bereits strict typed. Audit-Methode: Grep ': any|as any|<any>' + Grep '\\bany\\b' jeweils zero Real-Hits (nur Kommentar-Wort 'any').",
+        "Test-Resultat: Baseline 3 799 passed / 15 skipped (168 files) → Nach Refactor 3 799 passed / 15 skipped (168 files). Identisch — Refactor garantiert verhaltensneutral.",
+        "Bewusst NICHT angefasst (mit Begründung): (1) KorgBankEditor.tsx Subkomponenten-Extraction → State-Coupling zu eng, Render-Flow linear, Tests bereits Top-Level-Smoke (Extraction würde Props-Drilling von >10 Werten pro Subkomponente einführen ohne Lesbarkeit zu erhöhen). (2) ESLI-Field-Layout shared esliLayout.ts → bereits in constants.ts zentralisiert, weitere Abstraktion wäre Über-Engineering. (3) Test-Fixtures shared korg-fixtures.ts → Helper sind 3-5 LOC pro File, Import-Churn würde mehr kosten als sparen. (4) v3.4 Builder vs v3.6 Builder-Erweiterung Code-Duplication → existiert nicht: passthroughRiff() + buildRiffForSlot() sind 2 unterschiedliche Pfade die DIFFERENT Code teilen müssen (Raw-Passthrough vs Re-Encoding), Refactor zu shared-helper würde defensive-Validierung der beiden Pfade durcheinanderwerfen."
+      ],
+      next: [
+        "TASK-v3.10-FU-1 (KorgBankEditor.tsx LOC-Monitor): aktuell 1 295 LOC. Wenn in v3.11+ über 1 500 LOC steigt, dann SliceSection als erste Extraction-Kandidatin (kapselbarer Sub-State: auditionState + audition-Handlers + WaveformSliceCanvas-Wiring).",
+        "TASK-v3.10-FU-2 (KORG Test-Fixtures Re-Eval): falls neue KORG-Test-Files dazukommen UND wiederkehrende Buffer-Builder >20 LOC entstehen, dann tests/fixtures/korg-fixtures.ts mit minimalValidE2sBankBuffer() + slotMockFactory().",
+        "TASK-v3.10-FU-3 (Migration Audit andere window.electronAPI Hotspots): client/src/audio/AudioEngine.ts:2129-2130 hat noch window.electronAPI?.readFile-Direktzugriff (vermutlich für Local-Path-Resolution). Nicht im KORG-Scope dieser Session, aber wäre nächster Refactor-Pass."
+      ],
+      changed: [
+        "electron/useElectron.ts (+browserAPI saveKorgBankAs/getKorgBankSaveCap Stubs + Electron-Pfad-Delegation)",
+        "client/src/components/KorgBank/KorgBankEditor.tsx (+useElectron Import + const electron, handleSaveAs nutzt electron.saveKorgBankAs statt window.electronAPI as any, Header-Comment ergänzt v3.10.0-Marker)",
+        "package.json (3.9.0 → 3.10.0)",
+        "agents/INDEX.js (version 3.9.0 → 3.10.0 + workLog v3.10.0)"
+      ]
+    },
     {
       agent:     "frontend",
       timestamp: "2026-05-18T10:20:00.000Z",

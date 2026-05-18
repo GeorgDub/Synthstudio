@@ -1,5 +1,5 @@
 /**
- * Synthstudio – KorgBankEditor (v3.7.0)
+ * Synthstudio – KorgBankEditor (v3.7.0, useElectron-Refactor v3.10.0)
  *
  * WRITE-Side für KORG E2S `.all` Sample-Banks. Komplementär zu KorgBankModal
  * (das nur READ macht).
@@ -29,6 +29,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useProjectStore, type Sample } from "@/store/useProjectStore";
 import { toast } from "@/store/useToastStore";
+import { useElectron } from "../../../../electron/useElectron";
 import {
   buildE2sBank,
   E2sBuildError,
@@ -150,6 +151,8 @@ export function KorgBankEditor({
 }: KorgBankEditorProps): React.ReactElement | null {
   const project = useProjectStore();
   const samples = project.samples;
+  // v3.10.0 — Isomorpher Zugriff über useElectron() statt window.electronAPI.
+  const electron = useElectron();
 
   // Mode
   const [mode, setMode] = useState<EditorMode>("new");
@@ -568,17 +571,12 @@ export function KorgBankEditor({
         console.warn("[KorgBankEditor] build warnings:", result.warnings);
       }
       const buf = result.buffer;
-      const isElectron =
-        typeof window !== "undefined" &&
-        typeof window.electronAPI !== "undefined" &&
-        typeof (window.electronAPI as { saveKorgBankAs?: unknown }).saveKorgBankAs === "function";
 
       const safeName = filename.replace(/[^A-Za-z0-9._-]/g, "_");
       const finalName = safeName.endsWith(".all") ? safeName : `${safeName}.all`;
 
-      if (isElectron) {
-        const apiAny = window.electronAPI as { saveKorgBankAs: (n: string, d: ArrayBuffer) => Promise<{ success: boolean; filePath?: string; bytesWritten?: number; error?: string }> };
-        const saveResult = await apiAny.saveKorgBankAs(finalName, buf);
+      if (electron.isElectron) {
+        const saveResult = await electron.saveKorgBankAs(finalName, buf);
         if (!saveResult.success) {
           if (saveResult.error === "canceled") {
             setResultMsg(null);

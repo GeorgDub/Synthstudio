@@ -85,6 +85,18 @@ const browserAPI = {
     error: "Nicht in Electron – nutze IndexedDB",
   }),
 
+  // ── KORG Sample-Bank Export (v3.4.0+, exposed im Hook ab v3.10.0) ───────────
+  // Browser-Fallback signalisiert success:false → KorgBankEditor fällt auf
+  // Blob/<a download> zurück.
+  saveKorgBankAs: async (
+    _suggestedFilename: string,
+    _data: ArrayBuffer | Uint8Array,
+  ): Promise<{ success: boolean; filePath?: string; bytesWritten?: number; error?: string }> => ({
+    success: false,
+    error: "Nicht in Electron – nutze Blob-Download-Fallback",
+  }),
+  getKorgBankSaveCap: async (): Promise<number> => 256 * 1024 * 1024, // Hard-Cap-Mirror der Main-Side.
+
   importFolder: async (_folderPath: string) => ({ importId: "" }),
   cancelImport: async (_importId: string) => ({ success: false, error: "Nicht in Electron" }),
   importZip: async (_zipPath: string) => ({ importId: "" }),
@@ -332,6 +344,9 @@ export function useElectron() {
     listDirectory: api.listDirectory,
     writeFile: api.writeFile,
     saveRecording: api.saveRecording ?? browserAPI.saveRecording,
+    // v3.10.0 — KORG Bank Export
+    saveKorgBankAs: api.saveKorgBankAs ?? browserAPI.saveKorgBankAs,
+    getKorgBankSaveCap: api.getKorgBankSaveCap ?? browserAPI.getKorgBankSaveCap,
     importFolder: api.importFolder,
     cancelImport: api.cancelImport,
     importZip: api.importZip,
