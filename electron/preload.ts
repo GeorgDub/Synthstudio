@@ -105,6 +105,23 @@ const electronAPI = {
   ): Promise<{ success: boolean; filePath?: string; error?: string }> =>
     ipcRenderer.invoke("audio:save-recording", filename, data),
 
+  // ── License Persistence (TASK-232 / v2.97) ─────────────────────────────────
+  /**
+   * Liest die persistente Lizenz-State aus userData/license.json.
+   * Bei fehlender Datei: { success: true, data: null }.
+   */
+  readLicense: (): Promise<{ success: boolean; data?: unknown; error?: string }> =>
+    ipcRenderer.invoke("license:read"),
+
+  /**
+   * Schreibt die Lizenz-State nach userData/license.json. Main-Side
+   * validiert das Shape (Whitelist) bevor geschrieben wird.
+   */
+  writeLicense: (
+    state: { status: string; trialStartedAt: number | null; licenseKey: string | null; activatedEmail: string | null },
+  ): Promise<{ success: boolean; error?: string }> =>
+    ipcRenderer.invoke("license:write", state),
+
   // ── Folder-Import ────────────────────────────────────────────────────────────
 
   /** Startet einen Folder-Import und gibt die importId zurück */

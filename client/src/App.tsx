@@ -74,6 +74,8 @@ import { usePopupCloseBridges } from "@/hooks/usePopupCloseBridges";
 import { MidiProvider } from "@/context/MidiContext";
 import { toast } from "@/store/useToastStore";
 import { ToastContainer } from "@/components/UI/ToastContainer";
+import { ActivationModal } from "@/components/License/ActivationModal";
+import { initializeLicenseStore } from "@/store/useLicenseStore";
 import { useLiveStepRecorder } from "@/hooks/useLiveStepRecorder";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { MidiSettings } from "@/components/MidiSettings";
@@ -475,6 +477,11 @@ export default function App() {
     });
     return cleanup;
   }, [electron]);
+
+  // TASK-232 (v2.97): License-Store beim App-Start initialisieren (Electron-IPC oder localStorage).
+  useEffect(() => {
+    void initializeLicenseStore();
+  }, []);
 
   // Sample-Browser / Pattern-Gen / Tools-Popups: Open-State-Variablen
   const [sampleBrowserPopupOpen, setSampleBrowserPopupOpen] = useState(false);
@@ -3539,6 +3546,8 @@ export default function App() {
       )}
       {/* v2.5: Toast-Notifications (oben rechts) */}
       <ToastContainer />
+      {/* TASK-232 (v2.97): Lizenz-Aktivierungs-Modal (zeigt sich auto bei status=unknown) */}
+      <ActivationModal />
       </MidiProvider>
     </ElectronDropZone>
   );

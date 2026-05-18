@@ -27,6 +27,7 @@
  *  - discardPendingSample()      Take verwerfen (z.B. Versprecher)
  */
 import { useCallback, useEffect, useRef, useState } from "react";
+import { requireProFeature, PRO_FEATURE_USB_AUDIO_IN } from "@/utils/proFeatures";
 
 export interface AudioInputDevice {
   deviceId: string;
@@ -138,6 +139,8 @@ export function useAudioInput({ onSample }: AudioInputOptions) {
 
   const start = useCallback(async () => {
     if (isRecording) return;
+    // TASK-232 (v2.97): USB-Audio-In (Mic/Line-In Recording) ist ein Pro-Feature.
+    if (!requireProFeature(PRO_FEATURE_USB_AUDIO_IN)) return;
     setError(null);
     try {
       // Constraints: optional deviceId für Picker

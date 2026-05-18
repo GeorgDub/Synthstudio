@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "2.96.0",
+    version: "2.97.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -83,6 +83,36 @@ const INDEX = {
   // ─── KNOWN FILE INDEX ──────────────────────────────────────
   // Key files agents have analyzed. Add new entries after working on a file.
   files: {
+    "client/src/utils/licenseConfig.ts (TASK-232 v2.97)": {
+      role:     "v2.97.0: License-Konstanten + Format-Doku. LICENSE_PUBLIC_KEY_HEX (32-byte hex, aktuell Placeholder '0'*64 mit TODO-Marker — Verification schlägt fehl bis User Real-Key einsetzt; Keypair-Generation-Snippet inline doku'd). LICENSE_PRODUCT_ID='synthstudio-pro-1'. TRIAL_DURATION_DAYS=30. DAY_MS. GUMROAD_PRODUCT_URL='https://gumroad.com/l/synthstudio-pro' (TODO Placeholder). isUsingPlaceholderPublicKey() → bool für UI-Warning. License-Format dokumentiert: '<base64url(payload-json)>.<base64url(signature-64)>' mit Payload {email, expiresAt:number|null, productId}.",
+      lastSeen: "2026-05-18T06:35:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/utils/licenseValidator.ts (TASK-232 v2.97)": {
+      role:     "v2.97.0: Pure ED25519-License-Validator (~150 LOC). Exports: base64UrlDecode/Encode (browser atob+node Buffer Fallback, max 4096 Zeichen Key), parseLicenseKey(key) → {payloadB64, sigB64}|null (strict: genau 1 Dot, leerer-Teil-reject), decodePayload(b64) → Payload|null (JSON max 1 KB, email-Länge ≤254, productId-Whitelist), validateLicenseKey(key, pubHex, now) → LicenseValidationResult ({valid:true,payload}|{valid:false,reason}) via ed.verifyAsync (WebCrypto, keine sha512-Wiring). Defensive Längen-Checks: Pub-Key 32 Bytes, Signatur 64 Bytes. expiresAt-Check NULL=perpetual. signLicensePayload(payload, secretKey) für Vendor-Tooling + Tests (NICHT im Prod-Pfad genutzt — secret bleibt offline beim Vendor).",
+      lastSeen: "2026-05-18T06:35:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/store/useLicenseStore.ts (TASK-232 v2.97)": {
+      role:     "v2.97.0: License-State-Store (Custom-Observer analog useThemeStore). State {status: 'unknown'|'trial'|'pro'|'expired'|'invalid', trialStartedAt: number|null, licenseKey, activatedEmail}. Status-Machine: unknown→trial (startTrial), unknown→pro (activate-success), unknown→invalid (activate-fail), unknown→expired (markUnknownAsExpired für 'continue free'), trial→expired (Clock-Tick), trial→pro (mid-trial activate). Public API: initializeLicenseStore(now), isPro(now), daysRemainingInTrial(now), startTrial(now) NO-OP wenn trialStartedAt!=null (kein User-Reset), activate(key, email, now) async, clear() (entfernt key, behält trialStartedAt), markUnknownAsExpired(). useLicenseStore() Hook. sanitizeState() Status-Whitelist + finite-Number-only + Längen-Limits 254/4096. Persistenz: window.electronAPI.readLicense/writeLicense (Electron) ODER localStorage 'synthstudio:license:v1' (Browser-Fallback). Test-Helper __resetLicenseForTests + __setLicenseStateForTests.",
+      lastSeen: "2026-05-18T06:35:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/utils/proFeatures.ts (TASK-232 v2.97)": {
+      role:     "v2.97.0: Pro-Feature-Gating-Helper. Konstanten PRO_FEATURE_LIVE_LOOPING/USB_AUDIO_IN/STEM_BOUNCE/ELECTRIBE_IMPORT/MIDI_NOTE_OUT, PRO_FEATURES-Tuple, PRO_FEATURE_LABELS (DE). isFeatureUnlocked(feature, unknownDefault=false) → bool via isPro() (im Trial alles unlocked, nach Expire nur base-DAW). requireProFeature(feature) → bool, zeigt bei locked einen Toast {kind:'warning', duration:6000} mit Sondertext 'dein 30-Tage-Trial ist abgelaufen' bei status=expired + Action-Button 'Lizenz kaufen' der GUMROAD_PRODUCT_URL in neuem Tab öffnet. Components calls 'if (!requireProFeature(...)) return;' am Entry-Point — UI bleibt sichtbar, Action wird nur unterbrochen.",
+      lastSeen: "2026-05-18T06:35:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/components/License/ActivationModal.tsx (TASK-232 v2.97)": {
+      role:     "v2.97.0: Lizenz-Aktivierungs-Modal. Auto-shown wenn licenseStore.status='unknown', via forceOpen-Prop manuell aus Settings öffnen. 2 Modi: 'choice' (Trial-starten / Aktivieren / Free-Continue / Buy-Link zu Gumroad) und 'activate' (textarea key + email-input + Validate-Button mit busy/error-State). Nutzt semantic Tailwind classes (bg-bg-panel, text-text-primary, border-border-color, bg-accent-primary). Closable nur via forceOpen=true; im Auto-Mode (unknown) NICHT closable. Bei Placeholder-Public-Key warnt der Modal inline ('Hinweis Dev: Public-Key ist Placeholder').",
+      lastSeen: "2026-05-18T06:35:00.000Z",
+      ownedBy:  "backend"
+    },
+    "tests/features/license.test.ts (TASK-232 v2.97)": {
+      role:     "v2.97.0: 18 Tests. Trial-Lifecycle (5 — start/no-reset/days-decrement/auto-expire/initialize-expired), validateLicenseKey (7 — invalid-format/valid-roundtrip/manipulierte-Sig/expired/falscher-productId/parseLicenseKey-Robustheit/decodePayload-Defekte), Pro-Feature-Gate (4 — trial-unlocked/expired-locked/activate-invalid-no-pro/unknown-feature-default), Persistenz (2 — localStorage-Round-Trip/sanitizeState-NaN-Filter). beforeAll generiert frischen ED25519-Keypair via ed.keygenAsync, signLicensePayload mintet Test-Keys. localStorage-Shim für Node-Test-Env (MemoryStorage-Klasse).",
+      lastSeen: "2026-05-18T06:35:00.000Z",
+      ownedBy:  "backend"
+    },
     "client/src/utils/synthOfflineRender.ts (TASK-241-FOLLOWUP-2 v2.96)": {
       role:     "v2.96.0: Synth-Offline-Render fuer Stem-Bounce (~290 LOC, pure). Exports: triggerOfflineSynthNote(ctx, params, freq, time, volume, output, prevFreq?) → OfflineSynthNoteHandle (baut Oscillator + ADSR identisch zu SynthEngine.triggerNote, connectet auf output-Node), pitchToFrequency(semi, baseHz=440) → A4-Transpose `440 * 2^(semi/12)`, normalizeSynthParams(p) → defensive Defaults bei missing/NaN (clamped sustain[0,1], detune[-100,100], fmRatio≥0.1, attack/decay/release≥0.001s), computeNoteHoldSec()=1.0, isSynthPart(part) → `!!synthParams && (sourceType==='wavetable'|'fm')`, isGranularPart(part). Wavetable-Branch: 1 OscillatorNode mit type/detune/glide (custom→sine fallback). FM-Branch: 2 OscillatorNodes (carrier+modulator) + modDepth-GainNode für fmRatio*freq-Modulation. ADSR via setValueAtTime + linearRampToValueAtTime (offline-kompatibel). Architektur-Entscheidung: Copy-with-Marker statt SynthEngine-Refactor (SoT-Marker im Code, FOLLOWUP-242-EXTRACT-SYNTHGRAPH). CAVEATS: Granular silent (RAF nicht offline-portierbar), Synth-LFO statisch (FOLLOWUP-3), Custom-Wavetables→sine (FOLLOWUP-4), Macro-LFO-Cache live-only.",
       lastSeen: "2026-05-18T06:15:00.000Z",
@@ -901,6 +931,39 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "backend",
+      timestamp: "2026-05-18T06:35:00.000Z",
+      done: [
+        "v2.97.0: TASK-232 — License-Layer + Pro-Feature-Gating (Technical-Scaffolding für Gumroad-PoC). (1) NEU client/src/utils/licenseConfig.ts — Konstanten LICENSE_PUBLIC_KEY_HEX (32-Byte hex, aktuell all-zero Placeholder mit TODO-Marker), LICENSE_PRODUCT_ID='synthstudio-pro-1', TRIAL_DURATION_DAYS=30, DAY_MS, GUMROAD_PRODUCT_URL='https://gumroad.com/l/synthstudio-pro' (TODO Placeholder), isUsingPlaceholderPublicKey(). Inline-Dokumentation enthält Keypair-Generation-Snippet (ed.keygenAsync) für den User. (2) NEU client/src/utils/licenseValidator.ts (~150 LOC, pure) — base64UrlDecode/Encode (mit atob-Browser + Buffer-Node-Fallback ohne ts-expect-error), parseLicenseKey(key) → {payloadB64, sigB64} | null (strict: genau 1 Dot, max 4096 Zeichen), decodePayload(b64) (max 1 KB JSON, validiert email-Länge ≤254 + productId-Match), validateLicenseKey(key, pubKeyHex, now=Date.now()) → {valid:true,payload} | {valid:false,reason} via ed.verifyAsync (WebCrypto-backed → keine sha512-Wiring nötig), signLicensePayload(payload, secretKey) für Tests + Vendor-Tooling. expiresAt-Check + Pub-Key-Länge-Check + Sig-Länge-Check (32+64 Bytes) defensiv. (3) NEU client/src/store/useLicenseStore.ts (Custom-Observer-Pattern analog useThemeStore). State: status('unknown'|'trial'|'pro'|'expired'|'invalid') + trialStartedAt + licenseKey + activatedEmail. Public API: initializeLicenseStore(now), getLicenseState(), isPro(now), daysRemainingInTrial(now), startTrial(now) (NO-OP wenn trialStartedAt!=null — kein User-Reset-Pfad), activate(key,email,now) (validiert via licenseValidator, setzt status='pro' bei Erfolg, status='invalid' nur wenn vorher 'unknown'), clear() (entfernt key, behält trialStartedAt), markUnknownAsExpired() (für 'continue free'-Click). useLicenseStore() Hook. sanitizeState() defensive Filter für persistierte Blobs (Status-Whitelist, NaN→null, Längen-Limits 254/4096). Persistenz: window.electronAPI.readLicense/writeLicense (Electron) ODER localStorage('synthstudio:license:v1') Fallback. Test-Helper __resetLicenseForTests + __setLicenseStateForTests. (4) NEU client/src/utils/proFeatures.ts — Konstanten PRO_FEATURE_LIVE_LOOPING/USB_AUDIO_IN/STEM_BOUNCE/ELECTRIBE_IMPORT/MIDI_NOTE_OUT, PRO_FEATURE_LABELS (DE), isFeatureUnlocked(feature, unknownFeatureDefault=false) liest isPro(), requireProFeature(feature) — wenn nicht unlocked: zeigt Toast mit 'Lizenz kaufen'-Action öffnet GUMROAD_PRODUCT_URL und gibt false zurück, im 'expired'-Case Sondertext 'dein 30-Tage-Trial ist abgelaufen'. (5) NEU client/src/components/License/ActivationModal.tsx — fixed inset-0 z-9999 Dialog (Tailwind semantic classes), 2 Modi 'choice'+'activate'. Choice-Mode: 'Trial starten' (startTrial) / 'Lizenz aktivieren' (→Mode-Switch) / 'Mit Free-Version fortfahren' (markUnknownAsExpired). Activate-Mode: textarea(key)+input(email)+Validate-Button(busy/error-State). Modal closable nur via 'forceOpen'-Prop (Settings → 'License-Aktivieren'); im Auto-Mode (status='unknown') NICHT closable bis Entscheidung. (6) IPC: NEU 'license:read'/'license:write' in electron/main.ts (analog 'audio:save-recording'-Pattern aus v2.86). Path-hardcoded: userData/license.json (KEIN user-supplied path, kein Path-Traversal-Vektor). Read: 16-KB-Limit + try-catch JSON.parse + object-shape-check. Write: status-Whitelist (5 Werte), trialStartedAt finite-number-only, licenseKey/email Längen-Limits (4096/254), JSON.stringify-Size-Check ≤16 KB. Preload electron/preload.ts exposed via electronAPI.readLicense / electronAPI.writeLicense. (7) Beispiel-Gates (minimal-invasiv): client/src/components/Mixer/ExportPanel.tsx handleBounceAllStems → requireProFeature(PRO_FEATURE_STEM_BOUNCE), client/src/components/DrumMachine/DrumMachine.tsx handleElectribeFile → requireProFeature(PRO_FEATURE_ELECTRIBE_IMPORT), client/src/hooks/useAudioInput.ts start() → requireProFeature(PRO_FEATURE_USB_AUDIO_IN). LiveLooping + MIDI-Note-Out Constants angelegt, Gate-Calls überlassen wir folgenden Aufgaben. (8) Wiring: client/src/App.tsx mountet ActivationModal nach ToastContainer + useEffect ruft initializeLicenseStore() einmalig. (9) Tests tests/features/license.test.ts (18 Tests, alle grün): Trial-Lifecycle (start/no-reset/days-decrement/auto-expire), validateLicenseKey (invalid-format/valid-roundtrip/manipulierte-Sig/expired/falscher-productId/parseLicenseKey-Robustheit/decodePayload-Defekte), isFeatureUnlocked (trial-unlocked/expired-locked/invalid-key→nicht-pro/unknown-feature-default), Persistenz (localStorage-Round-Trip/sanitizeState-NaN-Filter). Test generiert pro Suite einen frischen ED25519-Keypair via ed.keygenAsync + signLicensePayload. tests/features/use-audio-input-hook.test.ts beforeEach erweitert um __setLicenseStateForTests({status:'pro'}) damit existing-Tests am USB-Audio-In-Gate vorbeikommen. (10) @noble/ed25519 ^3.1.0 als Dependency: zero-dep, MIT-Lizenz, audit-history (used by ethereum/cosmos/solana SDKs), kein eigenes Native-Code, sha512 läuft via WebCrypto-API (browser+electron+test). Security-Posture im Klartext: Crypto-Lib in Renderer ok (kein Side-Channel-Risk weil Public-Key-Verification ist constant-data-Verarbeitung). LICENSE_PUBLIC_KEY_HEX hartcodiert ALL-ZERO mit TODO-Marker — Verification schlägt fehl bis User Real-Key einsetzt; das ist der gewollte Default-State während dev. SECRET-KEY NIEMALS im Client. (11) package.json 2.96.0 → 2.97.0. pnpm check clean, pnpm test 3473 passed / 15 skipped (vs prev 3458, +15 Net inkl. license.test.ts). TODO-PLACEHOLDERS für User: licenseConfig.ts:43 (LICENSE_PUBLIC_KEY_HEX) + licenseConfig.ts:50 (GUMROAD_PRODUCT_URL). Future-Tasks: TASK-232-FOLLOWUP — Gumroad-Webhook-Server zum Minting der signierten Keys, Settings-License-Section (zeigt Status + daysRemaining + Aktivieren-Button öffnet ActivationModal mit forceOpen=true), Locked-Feature-Lock-Icon-Badge in UI, weitere Gates an LiveLooping + MIDI-Note-Out + ggf. Granular/VST."
+      ],
+      next: [
+        "TASK-232-FOLLOWUP-1 (Gumroad-Real-Integration): User generiert reale ED25519-Keypair, ersetzt LICENSE_PUBLIC_KEY_HEX in client/src/utils/licenseConfig.ts:43 + GUMROAD_PRODUCT_URL:50. Vendor-Side: kleines Node-Skript / Cloudflare-Worker das Gumroad-Sale-Webhook empfängt → signiert Payload {email, expiresAt:null} via signLicensePayload(secretKey) → mailt Key an Käufer.",
+        "TASK-232-FOLLOWUP-2 (Settings-License-Section): NEU client/src/components/Settings/LicensePanel.tsx — zeigt status/daysRemaining/activatedEmail. 'Lizenz aktivieren'-Button öffnet ActivationModal mit forceOpen=true. 'Lizenz entfernen' ruft clear().",
+        "TASK-232-FOLLOWUP-3 (Lock-Icon-Badges): isFeatureUnlocked-Check vor Render-Statt-Click in den Buttons der Pro-Features → kleines Lock-Icon + Tooltip 'Pro-Feature'. Nicht hidden — Discovery soll erhalten bleiben.",
+        "TASK-232-FOLLOWUP-4 (mehr Gates): LiveLooping (sobald Feature existiert) + MIDI-Note-Out + ggf. Granular-Synth + VST/CLAP-Host (TASK-239) → alle via requireProFeature gaten.",
+        "TASK-241-FOLLOWUP-2-GRANULAR / FOLLOWUP-3-SYNTHLFO / FOLLOWUP-4-CUSTOMWAVE bleiben offen.",
+        "TASK-242-EXTRACT-SYNTHGRAPH + EXTRACT-FXGRAPH (REFACTOR) bleiben offen.",
+        "TASK-239 (VST3/CLAP-Host) bleibt offen."
+      ],
+      changed: [
+        "client/src/utils/licenseConfig.ts (NEU — LICENSE_PUBLIC_KEY_HEX-Placeholder + LICENSE_PRODUCT_ID + TRIAL_DURATION_DAYS + GUMROAD_PRODUCT_URL-Placeholder)",
+        "client/src/utils/licenseValidator.ts (NEU ~150 LOC — base64UrlDecode/Encode, parseLicenseKey, decodePayload, validateLicenseKey async + signLicensePayload für Tests)",
+        "client/src/store/useLicenseStore.ts (NEU — Custom-Observer, status/trial/pro/expired/invalid State-Machine, IPC + localStorage Fallback, defensive sanitizeState)",
+        "client/src/utils/proFeatures.ts (NEU — 5 Pro-Feature-Konstanten + isFeatureUnlocked + requireProFeature mit Toast + Gumroad-Action)",
+        "client/src/components/License/ActivationModal.tsx (NEU — Choice/Activate Mode, semantic Tailwind classes, closable nur via forceOpen)",
+        "electron/main.ts (+'license:read'/'license:write' IPC-Handler, Path hardcoded auf userData/license.json, 16 KB-Limit, Status-Whitelist beim Write)",
+        "electron/preload.ts (+readLicense/writeLicense im electronAPI-Objekt)",
+        "client/src/components/Mixer/ExportPanel.tsx (handleBounceAllStems → requireProFeature(PRO_FEATURE_STEM_BOUNCE))",
+        "client/src/components/DrumMachine/DrumMachine.tsx (handleElectribeFile → requireProFeature(PRO_FEATURE_ELECTRIBE_IMPORT))",
+        "client/src/hooks/useAudioInput.ts (start() → requireProFeature(PRO_FEATURE_USB_AUDIO_IN))",
+        "client/src/App.tsx (+ActivationModal Mount nach ToastContainer + initializeLicenseStore useEffect)",
+        "tests/features/license.test.ts (NEU, 18 Tests — trial-lifecycle/validate/featureGate/persistence)",
+        "tests/features/use-audio-input-hook.test.ts (+__setLicenseStateForTests pro-mode in beforeEach + __resetLicenseForTests in afterEach)",
+        "package.json (2.96.0 → 2.97.0 + dependency @noble/ed25519 ^3.1.0)",
+        "agents/INDEX.js (workLog + version 2.97.0 + ipc.channels +2 (license:read/license:write) + files-Index)"
+      ]
+    },
     {
       agent:     "backend",
       timestamp: "2026-05-18T06:15:00.000Z",
@@ -3974,6 +4037,8 @@ const INDEX = {
       "audio:save-recording", // TASK-234 (v2.86) — schreibt WAV in userData/recordings/, strict path-traversal-guard
       "electribe:import-file", // TASK-237 (v2.88) — liest .e2pattern/.e2sallpat (max 5 MB, Endung-Whitelist) als Uint8Array → Renderer parsed via parseElectribeBank()
       "electribe:open-dialog", // TASK-237 (v2.88) — nativer File-Dialog mit Filter "e2pattern, e2sallpat"
+      "license:read",  // TASK-232 (v2.97) — liest userData/license.json (Path hardcoded, 16 KB-Limit, JSON-Parse-Try-Catch). Returnt {success, data}|{success:false,error}.
+      "license:write", // TASK-232 (v2.97) — schreibt LicenseState nach userData/license.json (Status-Whitelist, finite-number-only trialStartedAt, Längen-Limits, JSON-Size ≤16 KB).
 
       // Performance-Mode Popup-Window (ROADMAP feature, post-v1.23.0):
       // alle Channels haben narrow-data-only Payloads — keine file paths,

@@ -1,6 +1,6 @@
 {
   "name": "synthstudio",
-  "version": "2.96.0",
+  "version": "2.97.0",
   "type": "module",
   "license": "MIT",
   "main": "electron-dist/main.cjs",
@@ -38,6 +38,7 @@
     "@aws-sdk/client-s3": "^3.693.0",
     "@aws-sdk/s3-request-presigner": "^3.693.0",
     "@hookform/resolvers": "^5.2.2",
+    "@noble/ed25519": "^3.1.0",
     "@radix-ui/react-accordion": "^1.2.12",
     "@radix-ui/react-alert-dialog": "^1.1.15",
     "@radix-ui/react-aspect-ratio": "^1.1.7",

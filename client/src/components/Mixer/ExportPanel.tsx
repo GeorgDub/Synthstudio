@@ -10,6 +10,7 @@ import { downloadMidiBundle } from "@/utils/midiExport";
 import { bounceAllChannels, downloadWavInBrowser, type BounceAllProgress } from "@/utils/channelBounce";
 import { useElectron } from "../../../../electron/useElectron";
 import { toast } from "@/store/useToastStore";
+import { requireProFeature, PRO_FEATURE_STEM_BOUNCE } from "@/utils/proFeatures";
 import type { PatternData } from "@/audio/AudioEngine";
 import type { Sample } from "@/store/useProjectStore";
 
@@ -34,6 +35,8 @@ export function ExportPanel({ pattern, bpm, samples, allPatterns = [], projectNa
 
   const handleBounceAllStems = useCallback(async () => {
     if (!pattern || isBouncingAll) return;
+    // TASK-232 (v2.97): Stem-Bounce ist ein Pro-Feature.
+    if (!requireProFeature(PRO_FEATURE_STEM_BOUNCE)) return;
     setIsBouncingAll(true);
     setBounceAllMsg("Lade Sample-Buffer…");
     try {

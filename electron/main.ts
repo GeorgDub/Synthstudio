@@ -2190,6 +2190,89 @@ function registerIpcHandlers(): void {
     }
   });
 
+  // ── License Persistence (TASK-232 / v2.97) ───────────────────────────────────
+  //
+  // Reads/writes `userData/license.json`. The renderer-side store falls back
+  // to localStorage when these handlers aren't available (browser mode).
+  //
+  // Security posture (mirrors audio:save-recording / v2.86):
+  //  - No user-supplied path. The file name is hard-coded as `license.json`
+  //    relative to app.getPath("userData") — there is no path-traversal vector.
+  //  - File-size limit on read: 16 KB (license state is tiny; bigger files are
+  //    treated as corruption).
+  //  - File-size limit on write: 16 KB.
+  //  - JSON.parse wrapped in try/catch.
+  //  - Object shape validated server-side before re-serializing on write.
+  //  - No execution of any payload contents.
+  const LICENSE_FILE_MAX_BYTES = 16 * 1024;
+
+  function licenseFilePath(): string {
+    return path.join(app.getPath("userData"), "license.json");
+  }
+
+  ipcMain.handle("license:read", async () => {
+    try {
+      const filePath = licenseFilePath();
+      let stat: fs.Stats;
+      try {
+        stat = await fs.promises.stat(filePath);
+      } catch {
+        return { success: true, data: null };
+      }
+      if (!stat.isFile()) return { success: false, error: "license.json ist keine Datei" };
+      if (stat.size > LICENSE_FILE_MAX_BYTES) {
+        return { success: false, error: "license.json zu groß" };
+      }
+      const text = await fs.promises.readFile(filePath, "utf-8");
+      let parsed: unknown;
+      try { parsed = JSON.parse(text); } catch {
+        return { success: false, error: "license.json kein valides JSON" };
+      }
+      if (!parsed || typeof parsed !== "object") {
+        return { success: false, error: "license.json kein Objekt" };
+      }
+      return { success: true, data: parsed };
+    } catch (err) {
+      return { success: false, error: String(err) };
+    }
+  });
+
+  ipcMain.handle("license:write", async (_event, state: unknown) => {
+    try {
+      if (!state || typeof state !== "object") {
+        return { success: false, error: "Ungültiger State" };
+      }
+      // Whitelist serialisation — never write unknown keys.
+      const s = state as Record<string, unknown>;
+      const validStatus = new Set(["unknown", "trial", "pro", "expired", "invalid"]);
+      const safe = {
+        status: validStatus.has(s.status as string) ? (s.status as string) : "unknown",
+        trialStartedAt:
+          typeof s.trialStartedAt === "number" && Number.isFinite(s.trialStartedAt)
+            ? s.trialStartedAt
+            : null,
+        licenseKey:
+          typeof s.licenseKey === "string" && s.licenseKey.length > 0 && s.licenseKey.length <= 4096
+            ? s.licenseKey
+            : null,
+        activatedEmail:
+          typeof s.activatedEmail === "string" && s.activatedEmail.length > 0 && s.activatedEmail.length <= 254
+            ? s.activatedEmail
+            : null,
+      };
+      const json = JSON.stringify(safe);
+      if (json.length > LICENSE_FILE_MAX_BYTES) {
+        return { success: false, error: "Payload zu groß" };
+      }
+      const filePath = licenseFilePath();
+      await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
+      await fs.promises.writeFile(filePath, json, "utf-8");
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: String(err) };
+    }
+  });
+
   // ── Folder-Import ────────────────────────────────────────────────────────────
 
   ipcMain.handle("samples:import-folder", async (_event, folderPath: string) => {

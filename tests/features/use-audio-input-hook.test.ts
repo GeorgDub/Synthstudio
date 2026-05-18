@@ -99,6 +99,7 @@ const revokeObjectURLMock = vi.fn();
 // jsdom hat schon requestAnimationFrame; wir lassen das so.
 
 import { useAudioInput, formatRecordingDuration } from "@/hooks/useAudioInput";
+import { __setLicenseStateForTests, __resetLicenseForTests } from "@/store/useLicenseStore";
 
 // ─── Reset ───────────────────────────────────────────────────────────────────
 
@@ -114,11 +115,19 @@ beforeEach(() => {
   enumerateDevicesMock.mockClear();
   createObjectURLMock.mockClear();
   revokeObjectURLMock.mockClear();
+  // TASK-232 (v2.97): USB-Audio-In ist Pro-gated. Tests laufen in Pro-Mode.
+  __setLicenseStateForTests({
+    status: "pro",
+    trialStartedAt: null,
+    licenseKey: "test-key",
+    activatedEmail: "test@example.com",
+  });
 });
 
 afterEach(() => {
   cleanup();
   vi.useRealTimers();
+  __resetLicenseForTests();
 });
 
 // ─── formatRecordingDuration (pure) ──────────────────────────────────────────

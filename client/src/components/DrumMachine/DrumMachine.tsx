@@ -34,6 +34,7 @@ import {
   type ParsedPattern,
   type SynthstudioPatternImport,
 } from "@/utils/electribeImport";
+import { requireProFeature, PRO_FEATURE_ELECTRIBE_IMPORT } from "@/utils/proFeatures";
 import { GranularSynthPanel } from "./GranularSynthPanel";
 import { DEFAULT_GRANULAR_PARAMS } from "@/audio/GranularEngine";
 import { PolyrhythmVisualizer } from "./PolyrhythmVisualizer";
@@ -521,6 +522,8 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
   // Pure-File-Variante (fuer Drag-Drop + File-Picker).
   const handleElectribeFile = useCallback((file: File) => {
     if (!pattern) return;
+    // TASK-232 (v2.97): Electribe-Import ist ein Pro-Feature.
+    if (!requireProFeature(PRO_FEATURE_ELECTRIBE_IMPORT)) return;
     const reader = new FileReader();
     reader.onload = (ev) => {
       try {
