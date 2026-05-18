@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.32.0",
+    version: "3.33.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -89,6 +89,11 @@ const INDEX = {
   // ─── KNOWN FILE INDEX ──────────────────────────────────────
   // Key files agents have analyzed. Add new entries after working on a file.
   files: {
+    "tests/features/electribe-pattern-roundtrip-real.test.ts (v3.33.0)": {
+      role:     "v3.33.0 NEU: 12 Tests in 1 describe (+ conditional skip via fs.existsSync auf 'Korg e2s files/'), env:node. Closes Caveat 'v3.26 nur synthetischer round-trip, kein RT-Test mit ECHTEN User-Files'. (1) Sanity 1×: alle 4 real-Files load + isRealElectribeFile + looksLikeE2PatternFile + 16640B. (2) Verifier 1 (parse → projectParsedToBuilderInput → buildE2PatternFile → parseElectribePattern → expectParsedEqual) 4×: BodyTalk1 (name+BPM+stepLength+step-active state, 314 active steps), per-part volume+pan+per-step velocity sum, Init181 (16-step, 4 active), Init250 (64-step, 274 active), Advisory1 (BPM 128, 90 active, '$'-name). (3) Synthstudio-loop 2×: Init181 survives parse→synthImport→PatternData→convertSynthstudioPatternToE2→build→parse mit lossless name/bpm/stepLength + active-counts + vol/pan-drift≤1; BodyTalk1 caps 64→32 (documented loss, asserts final.stepLength===32 + active-counts match first-32-only). (4) Bit-Diff 3×: BodyTalk1 totalDiff<8000 + decodedFieldDiff<1500; Init181 bounded drift; all-4-files bounded per-file caps. (5) Builder yields exact 16640B für alle 4 real-Files. Helpers: projectParsedToBuilderInput (inverse map), synthImportToPatternData, computeByteDiff mit isDecodedField (whitelist v3.13/v3.15 parser-decoded bytes), expectParsedEqual. Top-of-file-Docstring (~80 lines) dokumentiert ALLE findings: (a) v3.26 BUILDER-BUGS=NONE (Verifier 1 GREEN), (b) byte-level encoding-style diffs (Name space vs NUL, Velocity 0xFF sentinel, Inactive-step note) sind dekodier-äquivalent, (c) Synthstudio-loop-lossy fields (64→32 cap, velocity-0→100, per-step→per-part pitch, motion NOT roundtripped), (d) optional builder-polish opportunities.",
+      lastSeen: "2026-05-18T16:15:00.000Z",
+      ownedBy:  "testing"
+    },
     "client/src/utils/korg/esxSamplePatcher.ts (v3.30.0)": {
       role:     "v3.30.0 NEU: Pure-TS ESX-1 Sample-Slot-Patcher (~370 LOC, isomorph, KEINE Electron/DOM/AudioEngine-Deps). Mirror v3.28 esxBankPatcher.ts fuer PCM-Samples (statt 4280B-Pattern-Slots). Compact-Mode A (Append + Header-Update): Bank waechst um new PCM bytes, alte PCM-Region des replaced Slot wird Orphan (waste, simple). ALLE anderen Sample-Header + PCM bit-exact. Public API: patchEsxBankSample(bankBuffer, patch: EsxSamplePatchInput) → ArrayBuffer (grown by new PCM bytes). EsxSamplePatchInput: {index 0..255 mono / 0..127 stereo, channels: 1|2, pcmData: Float32Array (interleaved bei stereo), sampleRate, name?, level?}. Workflow: validateBankBufferForSample (magic + ESX1_ADDR_VALID_CHECK_2 second-magic) → validateSamplePatch → float32ToBe16Pcm (Float32→BE i16, clip/NaN-defensive) → safeCurrent = max(currentOffset@0x1B0028, file-end-relative) → appendRel = max(safeCurrent, file-end) → grow buffer → write PCM @ ESX1_ADDR_SAMPLE_DATA+appendRel → mono-Header (40B) ODER stereo-Header (44B) update: name(8B)+offset(u32 BE)+length(frames)+sampleRate(u32 BE)+playLevel(u8). Stereo: PCM split L/R contiguous (off1=L, off2=R). Cumulative-Cap-Check vs ESX1_MAX_SAMPLE_MEM_IN_BYTES=24MB. Per-slot-Cap vs MAX_BYTES_PER_SLOT=10MB. Counter@0x1B0020/0x1B0024 inkrementiert NUR wenn Slot vorher empty (isSlotEmpty-Helper). currentOffset@0x1B0028 → projected new end-of-pcm. Public helpers: encodeEsxName (8 ASCII space-padded, non-printable → '?'), float32ToBe16Pcm (BE clipping + NaN→0), isSlotEmpty(bank, index, channels), getEsxMonoHeaderOffset/getEsxStereoHeaderOffset. EsxSamplePatchError. Defensive: alle Range-Checks throw, Input wird NIE mutiert, Output ist NEUER Buffer.",
       lastSeen: "2026-05-18T15:45:00.000Z",
@@ -1422,6 +1427,32 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "testing",
+      timestamp: "2026-05-18T16:15:00.000Z",
+      done: [
+        "v3.33.0: E2 Pattern Real-File Round-Trip Tests — 12 tests gegen 4 echte User-Files (BodyTalk1/Init181/Init250/Advisory1). Closes Caveat 'v3.26 nur synthetischer Round-Trip, kein RT-Test mit ECHTEN User-Files'.",
+        "NEU tests/features/electribe-pattern-roundtrip-real.test.ts (~420 LOC, env:node, conditional skip via fs.existsSync auf 'Korg e2s files/'). 12 Tests in 1 describe + 1 sanity-Test. Verifier 1 (parse → projectParsedToBuilderInput → buildE2PatternFile → parseElectribePattern → assertEqual): GREEN für alle 4 Files. Verifier 2 (parse → convertParsedPatternToSynthstudio → synthImportToPatternData → convertSynthstudioPatternToE2 → buildE2PatternFile → parseElectribePattern): GREEN für Init181 (16-step) + dokumentiert 64→32 cap auf BodyTalk1. Bit-Diff-Inspection: 3 Tests bound die per-file totalDiff (<8000) + decodedFieldDiff (<1500).",
+        "REAL-FILE-DATEN (verified 2026-05-18): BodyTalk1 BPM 165, 64-step, 314 active steps. 181_Init BPM 120, 16-step, 4 (!) active steps — NICHT empty wie Filename suggeriert. 250_Init BPM 170, 64-step, 274 (!) active steps. Advisory1 BPM 128, 64-step, 90 active steps, name mit '$'. Alle 4 Files exakt 16640 Bytes, alle bestehen isRealElectribeFile + looksLikeE2PatternFile.",
+        "FINDINGS — v3.26 BUILDER-BUGS: NONE. Alle decoded-Felder roundtrippen bit-genau (name/bpm/stepLength/per-part volume+pan/per-step active+velocity). Verifier 1 ist GRÜN für alle 4 Reference-Files.",
+        "FINDINGS — ENCODING-STYLE-DIFFS (lossy bytes, lossless decode): (1) Name-Padding: Real-Files NUL-padded ab erster '\\0', Builder ALL-space-padded — Parser trimmt beides → decoded identisch. (2) Velocity-Sentinel: Real BodyTalk1 schreibt 0xFF (use-default-127), Builder echo'd 127 — Parser map 0xFF → 127, dekodiert identisch. (3) Inactive-Step-Note: Real Init181 hat byte 4 = 0x00, Real BodyTalk1 hat 0x48, Builder immer 0x48 — Parser exponiert per-step note nicht, kein Effekt.",
+        "FINDINGS — SYNTHSTUDIO-LOOP-LOSSY: 64-step-Patterns werden auf 32 Steps gekürzt (convertParsedPatternToSynthstudio Line 1339: 'stepCount: 16 | 32 = parsed.stepLength >= 32 ? 32 : 16'). Velocity-0 → 100 (Default). Per-Step-Pitch wird per-PART (Synthstudio-Modell). Motion-Slots NICHT durch Synthstudio-Loop (convertSynthstudioPatternToE2 erwartet options.motionSlots als raw E2-Layout, Synthstudio Automation-Lanes werden NICHT konvertiert). Alles in test-file-Header dokumentiert + getestet (BodyTalk1 first-32-active-count test).",
+        "POLISH-OPPORTUNITIES (optional, nicht required): (a) Builder könnte 0xFF velocity-sentinel adoptieren bei unset-velocity → ~1000B drift reduction auf BodyTalk1. (b) NUL-padding nach erstem NUL im Name → ~5-7B drift reduction per File. Beides würde KEINE semantic round-trip property ändern.",
+        "TEST-RESULTAT: tests/features/electribe-pattern-roundtrip-real.test.ts 12/12 GREEN. tests/features/electribe-pattern-write.test.ts 34/34 GREEN (keine Regression). tests/features/electribe-import.test.ts 128/128 GREEN. pnpm check clean.",
+        "CONDITIONAL-SKIP: REAL_FILES_AVAILABLE prüft alle 4 Files via fs.existsSync — wenn ein File fehlt → describe.skip → CI-grün auch ohne User-Daten. Repo bleibt schlank (keine Real-Files commited).",
+        "package.json + agents/INDEX.js version 3.32.0 → 3.33.0."
+      ],
+      next: [
+        "Optional v3.34: Builder-Polish — 0xFF velocity-sentinel + NUL-padding adoption für bit-näheren round-trip (Cosmetic, kein bug).",
+        "Optional v3.34: Motion-Slot-Round-Trip durch Synthstudio (convertSynthstudioPatternToE2 müsste Automation-Lanes ↔ E2-Motion-Slots konvertieren).",
+        "Optional v3.34: 64-step support in Synthstudio convertParsedPatternToSynthstudio (statt 64→32 cap)."
+      ],
+      changed: [
+        "tests/features/electribe-pattern-roundtrip-real.test.ts (NEU, 12 Tests, ~420 LOC)",
+        "package.json (3.32.0 → 3.33.0)",
+        "agents/INDEX.js (version + workLog + files-Entry)"
+      ]
+    },
     {
       agent:     "backend",
       timestamp: "2026-05-18T16:00:00.000Z",
