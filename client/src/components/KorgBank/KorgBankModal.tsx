@@ -27,7 +27,16 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { AudioEngine } from "@/audio/AudioEngine";
-import { parseEsxBank, type EsxBank, type EsxSample } from "@/utils/korg/esxParser";
+import {
+  parseEsxBank,
+  type EsxBank,
+  type EsxPattern,
+  type EsxSample,
+} from "@/utils/korg/esxParser";
+import {
+  convertEsxPatternToSynthstudio,
+  type SynthstudioPatternImport,
+} from "@/utils/korg/esxPatternConvert";
 import {
   parseE2sBank,
   type E2sBank,
@@ -50,6 +59,12 @@ export interface KorgBankModalProps {
    * das mit useProjectStore.addSamples / useDrumMachineStore etc.
    */
   onAddSample?: (sample: KorgBankSample) => void;
+  /**
+   * v3.5 — wird pro Pattern aufgerufen wenn der User "Import Pattern"
+   * klickt. Liefert das konvertierte Synthstudio-Pattern; der Caller
+   * wendet es auf useDrumMachineStore / useAutomationStore an.
+   */
+  onAddPattern?: (pattern: SynthstudioPatternImport) => void;
 }
 
 /** Result-Spec, die der Caller in seinen Sample-Store überführen kann. */
@@ -163,14 +178,19 @@ function rowsFromE2s(bank: E2sBank): DisplayRow[] {
 
 interface ModalState {
   rows: DisplayRow[];
+  /** v3.5 — Patterns (nur fuer ESX-1). E2S hat keine Patterns. */
+  patterns: EsxPattern[];
   bankType: KorgBankType;
   warnings: string[];
   loading: boolean;
   error: string | null;
 }
 
+type ModalTab = "samples" | "patterns";
+
 const INITIAL_STATE: ModalState = {
   rows: [],
+  patterns: [],
   bankType: "unknown",
   warnings: [],
   loading: false,
@@ -183,10 +203,12 @@ export function KorgBankModal({
   file,
   onClose,
   onAddSample,
+  onAddPattern,
 }: KorgBankModalProps): React.ReactElement | null {
   const [state, setState] = useState<ModalState>(INITIAL_STATE);
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [previewSlot, setPreviewSlot] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<ModalTab>("samples");
 
   useEffect(() => {
     if (!file) {
@@ -207,6 +229,7 @@ export function KorgBankModal({
             const rows = rowsFromEsx(bank);
             setState({
               rows,
+              patterns: bank.patterns,
               bankType: "esx",
               warnings: bank.warnings,
               loading: false,
@@ -217,6 +240,7 @@ export function KorgBankModal({
             const rows = rowsFromE2s(bank);
             setState({
               rows,
+              patterns: [],
               bankType: "e2s",
               warnings: bank.warnings,
               loading: false,
@@ -328,6 +352,44 @@ export function KorgBankModal({
     toast(`KORG: ${added}/${count} Samples importiert`, { kind: "success", duration: 3000 });
   }
 
+  // ── Pattern Handlers (v3.5) ────────────────────────────────────────────────
+  function handleImportPattern(pat: EsxPattern): void {
+    if (!onAddPattern) {
+      toast("Kein Pattern-Receiver konfiguriert", { kind: "warning" });
+      return;
+    }
+    try {
+      const conv = convertEsxPatternToSynthstudio(pat);
+      onAddPattern(conv);
+      toast(`KORG: Pattern "${conv.name}" importiert`, { kind: "success", duration: 2000 });
+    } catch (err) {
+      toast(`Pattern-Import-Fehler: ${String(err)}`, { kind: "error" });
+    }
+  }
+
+  function handleImportAllPatterns(): void {
+    if (!onAddPattern) {
+      toast("Kein Pattern-Receiver konfiguriert", { kind: "warning" });
+      return;
+    }
+    const count = state.patterns.length;
+    if (count === 0) return;
+    const ok = typeof window !== "undefined" && window.confirm
+      ? window.confirm(`${count} Pattern(s) importieren?`)
+      : true;
+    if (!ok) return;
+    let added = 0;
+    for (const pat of state.patterns) {
+      try {
+        onAddPattern(convertEsxPatternToSynthstudio(pat));
+        added++;
+      } catch {
+        /* skip errored */
+      }
+    }
+    toast(`KORG: ${added}/${count} Patterns importiert`, { kind: "success", duration: 3000 });
+  }
+
   if (!file) return null;
 
   return (
@@ -385,27 +447,76 @@ export function KorgBankModal({
             </div>
           )}
 
-          {!state.loading && !state.error && state.rows.length > 0 && (
+          {!state.loading && !state.error && (state.rows.length > 0 || state.patterns.length > 0) && (
             <>
-              {/* Toolbar */}
-              <div className="flex items-center justify-between gap-2 sticky top-0 bg-bg-panel pb-2 -mt-1">
-                <input
-                  data-testid="korg-bank-search"
-                  type="search"
-                  placeholder="Filter nach Name / Kategorie..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="flex-1 px-2 py-1 rounded text-xs bg-bg-elevated border border-border-color text-text-primary placeholder:text-text-dim focus:outline-none focus:border-accent-primary"
-                />
-                <button
-                  data-testid="korg-bank-import-all"
-                  onClick={handleImportAll}
-                  disabled={!onAddSample || filteredRows.length === 0}
-                  className="px-3 py-1 rounded text-xs bg-accent-primary text-bg-base hover:opacity-90 transition-opacity disabled:opacity-40"
+              {/* Tab-Bar (nur wenn Patterns vorhanden, sonst nur Samples) */}
+              {state.bankType === "esx" && state.patterns.length > 0 && (
+                <div
+                  data-testid="korg-bank-tabs"
+                  className="flex items-center gap-1 border-b border-border-color -mt-1 mb-2"
                 >
-                  Alle importieren ({filteredRows.length})
-                </button>
-              </div>
+                  <button
+                    data-testid="korg-bank-tab-samples"
+                    onClick={() => setActiveTab("samples")}
+                    className={`px-3 py-1 text-xs ${
+                      activeTab === "samples"
+                        ? "text-accent-primary border-b-2 border-accent-primary -mb-px"
+                        : "text-text-muted hover:text-text-primary"
+                    }`}
+                  >
+                    Samples ({state.rows.length})
+                  </button>
+                  <button
+                    data-testid="korg-bank-tab-patterns"
+                    onClick={() => setActiveTab("patterns")}
+                    className={`px-3 py-1 text-xs ${
+                      activeTab === "patterns"
+                        ? "text-accent-primary border-b-2 border-accent-primary -mb-px"
+                        : "text-text-muted hover:text-text-primary"
+                    }`}
+                  >
+                    Patterns ({state.patterns.length})
+                  </button>
+                </div>
+              )}
+
+              {/* Toolbar */}
+              {activeTab === "samples" && state.rows.length > 0 && (
+                <div className="flex items-center justify-between gap-2 sticky top-0 bg-bg-panel pb-2 -mt-1">
+                  <input
+                    data-testid="korg-bank-search"
+                    type="search"
+                    placeholder="Filter nach Name / Kategorie..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="flex-1 px-2 py-1 rounded text-xs bg-bg-elevated border border-border-color text-text-primary placeholder:text-text-dim focus:outline-none focus:border-accent-primary"
+                  />
+                  <button
+                    data-testid="korg-bank-import-all"
+                    onClick={handleImportAll}
+                    disabled={!onAddSample || filteredRows.length === 0}
+                    className="px-3 py-1 rounded text-xs bg-accent-primary text-bg-base hover:opacity-90 transition-opacity disabled:opacity-40"
+                  >
+                    Alle importieren ({filteredRows.length})
+                  </button>
+                </div>
+              )}
+
+              {activeTab === "patterns" && state.patterns.length > 0 && (
+                <div className="flex items-center justify-between gap-2 sticky top-0 bg-bg-panel pb-2 -mt-1">
+                  <p className="text-xs text-text-muted">
+                    {state.patterns.length} Patterns geparst · Step-Daten Best-Effort
+                  </p>
+                  <button
+                    data-testid="korg-bank-import-all-patterns"
+                    onClick={handleImportAllPatterns}
+                    disabled={!onAddPattern}
+                    className="px-3 py-1 rounded text-xs bg-accent-primary text-bg-base hover:opacity-90 transition-opacity disabled:opacity-40"
+                  >
+                    Alle Patterns importieren ({state.patterns.length})
+                  </button>
+                </div>
+              )}
 
               {state.warnings.length > 0 && (
                 <details className="text-xs text-text-muted">
@@ -428,6 +539,7 @@ export function KorgBankModal({
               )}
 
               {/* Sample-Tabelle */}
+              {activeTab === "samples" && (
               <div data-testid="korg-bank-list" className="space-y-1">
                 {filteredRows.map((row) => (
                   <div
@@ -482,12 +594,51 @@ export function KorgBankModal({
                   </p>
                 )}
               </div>
+              )}
+
+              {/* Pattern-Tabelle (v3.5) */}
+              {activeTab === "patterns" && state.patterns.length > 0 && (
+                <div data-testid="korg-bank-pattern-list" className="space-y-1">
+                  {state.patterns.map((pat) => (
+                    <div
+                      key={`pattern-${pat.index}`}
+                      data-testid={`korg-bank-pattern-${pat.index}`}
+                      className="flex items-center gap-2 px-2 py-1.5 rounded text-xs bg-bg-elevated border border-transparent hover:border-border-color transition-colors"
+                    >
+                      <span className="font-mono text-text-dim w-12 flex-shrink-0">
+                        P{pat.index + 1}
+                      </span>
+                      <span
+                        className="flex-1 truncate text-text-primary"
+                        title={pat.name || `(unnamed pattern ${pat.index + 1})`}
+                      >
+                        {pat.name || `(unbenanntes Pattern ${pat.index + 1})`}
+                      </span>
+                      <span className="text-text-muted w-20 flex-shrink-0 text-right">
+                        {pat.bpm.toFixed(1)} BPM
+                      </span>
+                      <span className="text-text-muted w-16 flex-shrink-0 text-right">
+                        {pat.lengthSteps} Steps
+                      </span>
+                      <button
+                        data-testid={`korg-bank-pattern-add-${pat.index}`}
+                        onClick={() => handleImportPattern(pat)}
+                        disabled={!onAddPattern}
+                        className="px-2 py-0.5 rounded text-[10px] bg-bg-base text-text-muted hover:text-accent-success transition-colors disabled:opacity-40"
+                        title="Pattern importieren"
+                      >
+                        + Pattern
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </>
           )}
 
-          {!state.loading && !state.error && state.rows.length === 0 && state.bankType !== "unknown" && (
+          {!state.loading && !state.error && state.rows.length === 0 && state.patterns.length === 0 && state.bankType !== "unknown" && (
             <p className="text-sm text-text-muted">
-              Bank enthaelt keine Samples.
+              Bank enthaelt keine Samples oder Patterns.
             </p>
           )}
         </div>

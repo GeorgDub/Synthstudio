@@ -152,7 +152,7 @@ import {
 } from "@/store/useSlicePadStore";
 import { AutomationView } from "@/components/Automation/AutomationView";
 import { SceneLaunchPad } from "@/components/Scene/SceneLaunchPad";
-import { AudioEngine } from "@/audio/AudioEngine";
+import { AudioEngine, DEFAULT_CHANNEL_FX } from "@/audio/AudioEngine";
 import { CollabChat } from "@/components/CollabSession/CollabChat";
 import { addChatMessage } from "@/store/useCollabChatStore";
 import { saveSnapshot } from "@/store/useVersionSnapshotStore";
@@ -3647,6 +3647,32 @@ export default function App() {
         file={korgBankFile}
         onClose={() => setKorgBankFile(null)}
         onAddSample={handleKorgBankAddSample}
+        onAddPattern={(p) => {
+          // v3.5: SynthstudioPatternImport → PatternData. addPatternData füllt id auto.
+          dm.addPatternData({
+            id: "",
+            name: p.name,
+            stepCount: p.stepCount,
+            stepResolution: "1/16",
+            bpm: p.bpm,
+            parts: p.drumParts.map((dp) => ({
+              id: "",
+              name: dp.sampleHint,
+              sampleName: dp.sampleHint,
+              muted: false,
+              soloed: false,
+              volume: dp.volume,
+              pan: dp.pan,
+              steps: dp.steps.map((active, i) => ({
+                active,
+                velocity: dp.velocities[i] ?? 100,
+                pitch: dp.pitchSemitones,
+              })),
+              fx: { ...DEFAULT_CHANNEL_FX },
+            })),
+            followAction: { type: "none", barsBeforeSwitch: 1 },
+          });
+        }}
       />
       {/* v3.4.0: KORG E2 Sample-Bank-Editor (Synthstudio → .all). */}
       <KorgBankEditor
