@@ -16,6 +16,13 @@ import { MidiNoteOut, type MidiPartConfig } from "./MidiNoteOut";
 import { AudioRecorder, type RecordingResult, MAX_SIMULTANEOUS_RECORDINGS } from "./AudioRecorder";
 import { LooperEngine } from "./LooperEngine";
 import type { LoopState } from "./looperUtils";
+// v3.0.0 (TASK-236-ALT): AudioContext-Low-Latency-Config (latencyHint + sampleRate)
+// gelesen aus dem User-Store. Store ist Browser-pure und im Node-Test safe
+// (siehe sanitize-on-load / typeof-localStorage-Guards).
+import {
+  getAudioEngineConfig,
+  buildAudioContextOptions,
+} from "../store/useAudioEngineConfigStore";
 
 // ─── Typen ────────────────────────────────────────────────────────────────────
 
@@ -447,6 +454,17 @@ class AudioEngineClass {
   private _pendingTimeouts = new Set<ReturnType<typeof setTimeout>>();
   private readonly LOOK_AHEAD = 0.1;
   private readonly SCHEDULE_INTERVAL = 16;
+  /**
+   * v3.0.0 (TASK-236-ALT, MIDI-Clock-Lead): MIDI-Clock-Tick-Lookahead.
+   * Bis v2.99 wurde der Step-Lookahead (100ms) auch für Clock-Ticks genutzt.
+   * 50ms reduzieren die Vor-Latenz zum externen Empfänger spürbar — die
+   * Drift-Robustheit bleibt erhalten weil `MidiClockOut.scheduleTicks`
+   * den Tick-Cursor unabhängig vom Wallclock-`now` fortschreibt
+   * (siehe `planTicks`). Tatsächliche Drift bei 50 ms Lookahead und 16 ms
+   * Schedule-Interval: < 1 Tick (~20 ms bei 120 BPM). Revert auf 100 ms
+   * wenn externe Empfänger (Volca/Digitakt) Jitter melden.
+   */
+  private readonly MIDI_CLOCK_LOOK_AHEAD = 0.05;
 
   /**
    * MIDI-Clock-Out (TASK-230 / v2.83.0). 24 PPQN Tick-Generator + Transport-
@@ -507,7 +525,17 @@ class AudioEngineClass {
 
   async init(): Promise<void> {
     if (this.ctx) return;
-    this.ctx = new AudioContext();
+    // v3.0.0 (TASK-236-ALT): AudioContext mit latencyHint + (optional) sampleRate
+    // aus dem User-Config-Store erzeugen. Browser-Default ohne Options =
+    // 'balanced' → auf Windows ~30-50ms; mit 'interactive' → ~10-20ms.
+    // Wenn der Browser die Options nicht akzeptiert (sehr alte Engines),
+    // fallback auf zero-arg-Ctor — Web-Audio-Spec garantiert das.
+    try {
+      const opts = buildAudioContextOptions(getAudioEngineConfig());
+      this.ctx = new AudioContext(opts);
+    } catch {
+      this.ctx = new AudioContext();
+    }
     this.masterGain = this.ctx.createGain();
     this.masterGain.gain.value = 0.85;
     this.masterGain.connect(this.ctx.destination);
@@ -546,6 +574,62 @@ class AudioEngineClass {
 
   async resume(): Promise<void> {
     if (this.ctx?.state === "suspended") await this.ctx.resume();
+  }
+
+  /**
+   * v3.0.0 (TASK-236-ALT): Vollständiges Tear-Down + Re-Initialisierung des
+   * AudioContexts. Notwendig wenn der User in den Settings den
+   * `latencyHint` oder die `sampleRate` ändert — eine bestehende
+   * AudioContext-Instanz akzeptiert diese Felder NICHT zur Laufzeit.
+   *
+   * Vorgehen:
+   *   1. Transport stoppen (clear-Schedulers, Note-Off, Looper-Cleanup).
+   *   2. Pro-Channel-Nodes-Cache, Reverb-Buffers, Granular-Engines wegwerfen.
+   *   3. AudioContext.close() — alle weiteren Nodes werden mit-GC'd.
+   *   4. init() neu — liest aktuelle Config aus dem Store.
+   *
+   * Live-State (BPM, Volume, FX-Configs in den Stores) bleibt erhalten —
+   * die Nodes werden bei den nächsten Step-Triggers via _getOrCreateChannelNodes
+   * lazy neu gebaut. Aktive Recordings + Live-Inputs werden abgebrochen
+   * (kein State-Sync möglich über einen Context-Wechsel).
+   */
+  async reinit(): Promise<void> {
+    // 1) Transport sicher stoppen — schließt auch MIDI-Clock/-Note-Out flush.
+    if (this._isPlaying) {
+      try { this.stop(); } catch { /* swallow */ }
+    }
+    // 2) Granular-Engines stoppen — sie halten eigene Refs auf Nodes.
+    try {
+      this._granularEngines.forEach((g) => { try { g.stop(); } catch { /* swallow */ } });
+      this._granularEngines.clear();
+    } catch { /* swallow */ }
+    // 3) Live-Inputs abreißen — MediaStreamTracks werden via stop() befreit.
+    try {
+      this.getAttachedLiveInputChannelIds().forEach((id) => {
+        try { this.detachLiveInput(id); } catch { /* swallow */ }
+      });
+    } catch { /* swallow */ }
+    // 4) Caches leeren — sonst hängen Nodes am alten Context.
+    this.channelNodes.clear();
+    this.reverbBuffers.clear();
+    this._globalReverbBus = null;
+    this._globalReverbWet = null;
+    this._globalDelayBus = null;
+    this._globalDelayFeedback = null;
+    this._globalDelayWet = null;
+    this.masterGain = null;
+    this._outputAnalyser = null;
+    // 5) AudioContext schließen (kein await — close ist robust gegen state).
+    if (this.ctx) {
+      try { await this.ctx.close(); } catch { /* swallow — already closed */ }
+      this.ctx = null;
+    }
+    // 6) Bufferleichen sind noch im Cache; sie werden vom GC erst entfernt
+    //    wenn keiner sie mehr referenziert. Wir LEEREN den Cache nicht
+    //    aktiv — Sample-URLs werden beim nächsten _loadBuffer reused
+    //    weil decodeAudioData buffer-ctx-agnostisch ist.
+    // 7) Re-init — liest neue Config aus dem Store.
+    await this.init();
   }
 
   setBpm(bpm: number) {
@@ -1309,9 +1393,12 @@ class AudioEngineClass {
 
     // MIDI-Clock-Out: 24 PPQN-Ticks im Look-Ahead-Fenster senden.
     // Nutzt die effektive BPM (pattern.bpm overrides this._bpm). (TASK-230)
+    // v3.0.0: Eigener (kleinerer) Lookahead reduziert Lead-Latenz zum
+    // externen Empfänger ohne den Step-Scheduler zu beeinflussen.
     const clockPattern = this.patternGetter?.();
     const clockBpm = clockPattern?.bpm ?? this._bpm;
-    this._midiClockOut.scheduleTicks(lookAheadUntil, clockBpm);
+    const clockLookAheadUntil = now + this.MIDI_CLOCK_LOOK_AHEAD;
+    this._midiClockOut.scheduleTicks(clockLookAheadUntil, clockBpm);
 
     while (this._nextStepTime < lookAheadUntil) {
       const pattern = this.patternGetter?.();

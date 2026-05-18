@@ -11,7 +11,7 @@
  *  - MIDI Note-Zuweisungen
  *  - Über
  */
-import React, { useState, useCallback, useEffect } from "react";
+import React, { useState, useCallback, useEffect, useReducer } from "react";
 import { X } from "lucide-react";
 import { KeyboardBindingsPanel } from "./KeyboardBindingsPanel";
 import {
@@ -76,6 +76,15 @@ import {
 } from "@/store/useLicenseStore";
 import { ActivationModal } from "@/components/License/ActivationModal";
 import { GUMROAD_PRODUCT_URL, TRIAL_DURATION_DAYS } from "@/utils/licenseConfig";
+// v3.0.0 (TASK-236-ALT): Audio-Engine-Low-Latency-Config.
+import {
+  useAudioEngineConfigStore,
+  setLatencyHint,
+  setSampleRate,
+  type LatencyHint,
+  type SampleRateOption,
+} from "@/store/useAudioEngineConfigStore";
+import { AudioEngine } from "@/audio/AudioEngine";
 
 // ─── Sidebar-Abschnitte ───────────────────────────────────────────────────────
 
@@ -85,6 +94,7 @@ type Section =
   | "workspace"
   | "keyboard"
   | "metronome"
+  | "audio-engine"
   | "midi-devices"
   | "midi-cc"
   | "midi-notes"
@@ -103,6 +113,7 @@ const SECTIONS: Array<{ id: Section; icon: string; label: string; group?: string
   { id: "ki",           icon: "✨", label: "KI & API",            group: "Erscheinungsbild" },
   { id: "keyboard",     icon: "⌨️", label: "Tastatur",            group: "Steuerung" },
   { id: "metronome",    icon: "🥁", label: "Metronom",            group: "Audio" },
+  { id: "audio-engine", icon: "⚡", label: "Audio Engine",         group: "Audio" },
   { id: "midi-devices", icon: "🎹", label: "MIDI Geräte",         group: "MIDI" },
   { id: "midi-cc",      icon: "🎛",  label: "CC-Zuweisungen",      group: "MIDI" },
   { id: "midi-notes",   icon: "🎵", label: "Note-Zuweisungen",    group: "MIDI" },
@@ -1759,6 +1770,162 @@ function LicenseSection() {
   );
 }
 
+// ─── Audio-Engine-Section (v3.0.0 / TASK-236-ALT) ────────────────────────────
+//
+// Low-Latency-Konfiguration für den AudioContext. Sicherer Web-Audio-Pfad
+// statt nativem WASAPI Exclusive Mode (TASK-236):
+//   - latencyHint: 'interactive' → ~10-20ms Output-Latenz auf Windows
+//   - sampleRate: 'auto' | 44.1k | 48k | 96k — fixiert den Mix-Sample-Rate
+//
+// Beim "Apply" wird AudioEngine.reinit() aufgerufen — der AudioContext wird
+// kurz geschlossen + neu erzeugt. Playback unterbricht.
+function AudioEngineSection() {
+  const cfg = useAudioEngineConfigStore();
+  const [busy, setBusy] = useState(false);
+  // Tickender Latenz-Anzeige-Refresh (~1×/s) — getEstimatedSystemLatencyMs
+  // ist kein React-State, also brauchen wir ein Trigger.
+  const [, tickLatency] = useReducer((x: number) => x + 1, 0);
+  useEffect(() => {
+    const t = setInterval(tickLatency, 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  const latencyMs = AudioEngine.getEstimatedSystemLatencyMs();
+  // AudioEngine.ctx ist privat — wir lesen es defensiv über einen
+  // strukturellen Cast (kein ts-expect-error, der Cast ist explizit).
+  const ctxRate =
+    typeof window !== "undefined" && (window as unknown as { AudioContext?: typeof AudioContext }).AudioContext
+      ? (AudioEngine as unknown as { ctx?: AudioContext | null }).ctx?.sampleRate ?? null
+      : null;
+  const rateMismatch =
+    typeof cfg.sampleRate === "number" &&
+    ctxRate !== null &&
+    Math.abs(ctxRate - cfg.sampleRate) > 1;
+
+  const handleApply = async () => {
+    setBusy(true);
+    try {
+      // Toast vor reinit damit User die Unterbrechung erwartet.
+      toast("Audio-Engine wird neu gestartet — kurze Unterbrechung …", {
+        kind: "info",
+        duration: 2500,
+      });
+      await AudioEngine.reinit();
+      toast("Audio-Engine aktualisiert.", { kind: "success", duration: 2500 });
+    } catch (e) {
+      toast(`Re-Init fehlgeschlagen: ${(e as Error).message ?? "unbekannt"}`, {
+        kind: "warning",
+        duration: 5000,
+      });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4" data-testid="settings-audio-engine">
+      <h3 className="text-sm font-bold text-text-primary">Audio Engine</h3>
+
+      <div className="text-[11px] text-text-muted leading-relaxed">
+        Konfiguriert den Web-Audio-Context. Niedrigere Latenz reduziert das
+        spürbare Verzögerung zwischen Tastendruck und Klang, kostet aber
+        mehr CPU und kann bei sehr alten Geräten zu Glitches führen.
+        <span className="text-text-dim"> Empfehlung für Live-Performance: „Interactive".</span>
+      </div>
+
+      {/* Latency-Hint-Dropdown */}
+      <div className="space-y-1">
+        <label className="text-xs text-text-muted">Latenz-Profil</label>
+        <select
+          value={cfg.latencyHint}
+          onChange={(e) => setLatencyHint(e.target.value as LatencyHint)}
+          data-testid="audio-engine-latency-hint"
+          className="w-full bg-bg-elevated border border-border-color rounded px-3 py-2 text-sm text-text-primary focus:border-accent-primary focus:outline-none"
+        >
+          <option value="interactive">Interactive — ~10-20 ms (empfohlen)</option>
+          <option value="balanced">Balanced — ~30-50 ms (Browser-Default)</option>
+          <option value="playback">Playback — ~50-200 ms (CPU-schonend)</option>
+        </select>
+      </div>
+
+      {/* Sample-Rate-Dropdown */}
+      <div className="space-y-1">
+        <label className="text-xs text-text-muted">Sample-Rate</label>
+        <select
+          value={String(cfg.sampleRate)}
+          onChange={(e) => {
+            const v = e.target.value;
+            setSampleRate(v === "auto" ? "auto" : (Number(v) as SampleRateOption));
+          }}
+          data-testid="audio-engine-sample-rate"
+          className="w-full bg-bg-elevated border border-border-color rounded px-3 py-2 text-sm text-text-primary focus:border-accent-primary focus:outline-none"
+        >
+          <option value="auto">Auto — Hardware-Default</option>
+          <option value="44100">44.1 kHz — Audio-CD</option>
+          <option value="48000">48 kHz — Studio/Video</option>
+          <option value="96000">96 kHz — High-Res (CPU-intensiv)</option>
+        </select>
+        {rateMismatch && (
+          <div
+            className="text-[11px] text-accent-danger mt-1"
+            data-testid="audio-engine-rate-mismatch"
+          >
+            ⚠ Hardware liefert {ctxRate} Hz — der Browser muss resampeln, was
+            CPU kostet. Wenn das nicht gewünscht ist: „Auto" wählen.
+          </div>
+        )}
+      </div>
+
+      {/* Live-Latenz-Anzeige */}
+      <div
+        className="rounded border border-border-color bg-bg-elevated p-3"
+        data-testid="audio-engine-status"
+      >
+        <div className="flex items-center justify-between">
+          <span className="text-xs text-text-muted">Aktuelle System-Latenz</span>
+          <span className="text-xs font-mono font-semibold text-accent-primary">
+            {latencyMs > 0 ? `${latencyMs} ms` : "—"}
+          </span>
+        </div>
+        <div className="flex items-center justify-between mt-1">
+          <span className="text-xs text-text-muted">Aktive Sample-Rate</span>
+          <span className="text-xs font-mono text-text-primary">
+            {ctxRate !== null ? `${ctxRate} Hz` : "—"}
+          </span>
+        </div>
+      </div>
+
+      {/* Apply-Button */}
+      <button
+        type="button"
+        onClick={handleApply}
+        disabled={busy}
+        data-testid="audio-engine-apply"
+        className={[
+          "w-full rounded px-4 py-2 text-sm font-medium transition-colors",
+          busy
+            ? "bg-bg-elevated text-text-dim cursor-not-allowed"
+            : "bg-accent-primary text-bg-base hover:opacity-90",
+        ].join(" ")}
+      >
+        {busy ? "Audio-Engine wird neu gestartet …" : "Anwenden (Audio-Engine neu starten)"}
+      </button>
+
+      <div className="border-t border-border-subtle pt-3 text-[10px] text-text-dim space-y-1">
+        <div>
+          Hinweis: Beim Anwenden wird der AudioContext zerstört + neu erzeugt.
+          Playback wird kurz unterbrochen. Aktive Aufnahmen und Live-Inputs
+          werden beendet.
+        </div>
+        <div>
+          Wenn nach dem Wechsel kein Ton kommt: prüfe das System-Audio-Device
+          oder starte die App neu.
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function AboutSection() {
   const electron = useElectron();
   const { state: updaterState, checkForUpdates } = useUpdater();
@@ -1927,6 +2094,7 @@ export function SettingsPanel({ isOpen, onClose, midi, parts, initialSection = "
           {active === "ki"           && <KiSection />}
           {active === "keyboard"     && <KeyboardBindingsPanel />}
           {active === "metronome"    && <MetronomeSection />}
+          {active === "audio-engine" && <AudioEngineSection />}
           {active === "midi-devices" && <MidiDevicesSection midi={midi} onOpenAdvancedMidi={onOpenAdvancedMidi} />}
           {active === "midi-cc"      && <MidiCcSection midi={midi} parts={parts} onOpenAdvancedMidi={onOpenAdvancedMidi} />}
           {active === "midi-notes"   && <MidiNotesSection midi={midi} parts={parts} onOpenAdvancedMidi={onOpenAdvancedMidi} />}

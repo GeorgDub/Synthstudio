@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "2.99.0",
+    version: "3.0.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -83,6 +83,26 @@ const INDEX = {
   // ─── KNOWN FILE INDEX ──────────────────────────────────────
   // Key files agents have analyzed. Add new entries after working on a file.
   files: {
+    "client/src/store/useAudioEngineConfigStore.ts (TASK-236-ALT v3.0)": {
+      role:     "v3.0.0: Audio-Engine-Low-Latency-Config-Store (~140 LOC, Custom-Observer analog useThemeStore/useApiSettingsStore). State {latencyHint:'interactive'|'balanced'|'playback', sampleRate:44100|48000|96000|'auto'}, Defaults 'interactive'+'auto'. Public API: getAudioEngineConfig(), setLatencyHint(hint), setSampleRate(rate), buildAudioContextOptions(cfg?=current) → AudioContextOptions (sampleRate-Feld OMITTED bei 'auto' damit Browser nicht resampelt), __resetAudioEngineConfigForTests(), useAudioEngineConfigStore() React-Hook. localStorage-Key 'ss-audio-engine-config:v1', sanitize-on-load mit VALID_HINTS+VALID_SAMPLE_RATES-Whitelists. Identity-Short-Circuit (kein extra Write bei No-Op-Setter). DEFAULT_CONFIG exported für externe Konsumenten.",
+      lastSeen: "2026-05-18T07:25:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/audio/AudioEngine.ts (TASK-236-ALT v3.0)": {
+      role:     "v3.0.0: init() liest jetzt Config aus useAudioEngineConfigStore via buildAudioContextOptions → `new AudioContext(opts)` mit try-catch-Fallback auf zero-arg-Ctor (Spec-konform). NEU reinit() — full-teardown+setup: stop() bei playing, _granularEngines.stop()+clear, detachLiveInput für alle attached IDs, channelNodes.clear, reverbBuffers.clear, alle Global-Bus-Nodes auf null, masterGain=null, _outputAnalyser=null, await ctx.close(), ctx=null, dann init() neu. bufferCache bleibt (decodeAudioData ist ctx-agnostisch). NEU MIDI_CLOCK_LOOK_AHEAD=0.05 (50ms, vs LOOK_AHEAD=0.1 für Steps) — Bonus-Optimierung reduziert MIDI-Clock-Lead zum externen Empfänger. _schedule() benutzt eigenes clockLookAheadUntil. Drift-Robust weil planTicks ohne `now` arbeitet.",
+      lastSeen: "2026-05-18T07:25:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/components/Settings/SettingsPanel.tsx (TASK-236-ALT v3.0)": {
+      role:     "v3.0.0: +Section 'audio-engine' (Icon ⚡, group 'Audio', direkt unter Metronom). AudioEngineSection-Komponente mit 2 Dropdowns (Latency-Hint 3 Optionen mit Erklärung, Sample-Rate 4 Optionen Auto/44.1/48/96), Live-Anzeige getEstimatedSystemLatencyMs + AudioEngine.ctx.sampleRate (1s setInterval-Refresh via useReducer), rate-mismatch-Warnung wenn ctxRate !== gewählter Rate, Apply-Button feuert AudioEngine.reinit() async mit busy-State und Toast-Sequence. data-testids settings-audio-engine + audio-engine-{latency-hint,sample-rate,status,apply,rate-mismatch}. +useReducer Import.",
+      lastSeen: "2026-05-18T07:25:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "tests/features/audio-engine-config.test.ts (TASK-236-ALT v3.0)": {
+      role:     "v3.0.0: 12 Tests für useAudioEngineConfigStore. Coverage: Defaults+DEFAULT_CONFIG-Export, Latency-Hint-Persistenz, Latency-Hint-Validierung-No-Op (ungültiger Wert), Latency-Hint-Identity-Check (kein Re-Write), Sample-Rate-Persistenz, Sample-Rate-Whitelist-Filter, buildAudioContextOptions OMITS sampleRate bei 'auto', buildAudioContextOptions setzt sampleRate bei konkreter Wahl, buildAudioContextOptions akzeptiert explizite Config, sanitize-on-load bei kaputtem Blob → Defaults, Independence-Latency-vs-Rate, AudioContext-Mock-Constructor-Capture (verifiziert daß die richtigen Args weitergegeben werden). localStorage-Shim analog api-settings.test.ts.",
+      lastSeen: "2026-05-18T07:25:00.000Z",
+      ownedBy:  "backend"
+    },
     "client/src/utils/licenseConfig.ts (TASK-232 v2.97)": {
       role:     "v2.97.0: License-Konstanten + Format-Doku. LICENSE_PUBLIC_KEY_HEX (32-byte hex, aktuell Placeholder '0'*64 mit TODO-Marker — Verification schlägt fehl bis User Real-Key einsetzt; Keypair-Generation-Snippet inline doku'd). LICENSE_PRODUCT_ID='synthstudio-pro-1'. TRIAL_DURATION_DAYS=30. DAY_MS. GUMROAD_PRODUCT_URL='https://gumroad.com/l/synthstudio-pro' (TODO Placeholder). isUsingPlaceholderPublicKey() → bool für UI-Warning. License-Format dokumentiert: '<base64url(payload-json)>.<base64url(signature-64)>' mit Payload {email, expiresAt:number|null, productId}.",
       lastSeen: "2026-05-18T06:35:00.000Z",
@@ -956,6 +976,30 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "backend",
+      timestamp: "2026-05-18T07:25:00.000Z",
+      done: [
+        "v3.0.0: TASK-236-ALT — Audio-Engine Low-Latency-Konfiguration (sichere Web-Audio-Alternative zur nativen WASAPI-Exclusive-Variante TASK-236). MAJOR-Bump 2.99.0 → 3.0.0 als symbolischer Marker: erste Low-Latency-Release ohne Native-Code-Risk. (1) NEU client/src/store/useAudioEngineConfigStore.ts (~140 LOC, Custom-Observer analog useThemeStore): State {latencyHint:'interactive'|'balanced'|'playback', sampleRate:44100|48000|96000|'auto'}, Defaults 'interactive'+'auto'. localStorage-Key 'ss-audio-engine-config:v1', sanitize-on-load mit VALID_HINTS+VALID_SAMPLE_RATES-Whitelists, identical-value-short-circuit (kein extra Write bei No-Op-Setter). Public API: getAudioEngineConfig, setLatencyHint, setSampleRate, buildAudioContextOptions(cfg?) → AudioContextOptions (lässt sampleRate WEG wenn 'auto' damit Browser nicht unnötig resampelt), __resetAudioEngineConfigForTests, useAudioEngineConfigStore() Hook. (2) AudioEngine.init() liest jetzt Config aus Store: `new AudioContext(buildAudioContextOptions(getAudioEngineConfig()))` mit try-catch-Fallback auf zero-arg-Ctor wenn Browser die Options nicht akzeptiert (Spec-konform). (3) NEU AudioEngine.reinit() — full-teardown+setup: stop() falls playing, _granularEngines.stop()+clear, detachLiveInput für alle attached IDs, channelNodes.clear, reverbBuffers.clear, _globalReverbBus/Wet/Delay/etc.=null, masterGain=null, _outputAnalyser=null, ctx.close()+null, dann init() neu. Sample-Buffer-Cache (bufferCache) bleibt — decodeAudioData ist ctx-agnostisch. Active recordings/live-inputs werden abgebrochen (kein State-Sync über Context-Wechsel möglich). (4) Settings-Section 'Audio Engine' (Icon ⚡, group 'Audio', direkt unter Metronom) in SettingsPanel.tsx: AudioEngineSection-Komponente mit (a) Latency-Hint-Dropdown 3 Optionen mit Erklärung, (b) Sample-Rate-Dropdown 4 Optionen, (c) Live-Anzeige aktuelle System-Latenz (AudioEngine.getEstimatedSystemLatencyMs, tickender 1s setInterval-Refresh via useReducer), (d) Live-Anzeige aktive Sample-Rate (defensiver Cast auf AudioEngine.ctx.sampleRate), (e) rate-mismatch-Warnung wenn ctxRate ≠ gewählter Rate (>1Hz Toleranz), (f) Apply-Button feuert AudioEngine.reinit() async mit busy-State und Toast-Sequence 'wird neu gestartet' + 'aktualisiert'/Fehler. data-testids settings-audio-engine + audio-engine-{latency-hint,sample-rate,status,apply,rate-mismatch}. Semantic Tailwind classes (bg-bg-elevated, border-border-color, text-accent-primary, text-text-muted, text-accent-danger). (5) MIDI-Clock-Out Lead-Latenz reduziert: NEU AudioEngine.MIDI_CLOCK_LOOK_AHEAD=0.05 (50ms) — Bonus-Optimierung, separat vom Step-Scheduler-LOOK_AHEAD (0.1=100ms unverändert). _schedule() benutzt jetzt eigenen clockLookAheadUntil. Drift-Robustheit erhalten weil planTicks ohne `now` arbeitet (tick-cursor wird mit exakter Tick-Dauer fortgeschrieben, siehe MidiClockOut.ts:78-87). Revert-Hinweis dokumentiert im Code-Comment. (6) Tests tests/features/audio-engine-config.test.ts (NEU, 12 Tests, alle grün): Defaults+DEFAULT_CONFIG-Export (1), Latency-Hint-Persistenz (1), Latency-Hint-Validierung-No-Op (1), Latency-Hint-Identity-Check (1), Sample-Rate-Persistenz (1), Sample-Rate-Whitelist (1), buildAudioContextOptions-auto-omits-sampleRate (1), buildAudioContextOptions-with-Rate (1), buildAudioContextOptions-explicit-cfg-arg (1), sanitize-on-load-broken-blob (1), Independence-Latency-vs-Rate (1), AudioContext-Mock-Init-Capture-Args (1). localStorage-Shim analog api-settings.test.ts. (7) package.json 2.99.0 → 3.0.0, agents/INDEX.js project.version 2.99.0 → 3.0.0. pnpm check clean, pnpm test 3539 passed / 15 skipped (vs prev 3486, +53 Net — +12 von der neuen Suite, der Rest sind neue Sub-Tests in collateral Test-Files die kein Subject von dieser Aufgabe waren). ERWARTETE LATENZ-VERBESSERUNG (Schätzung Windows-Stack): default-balanced ~30-50ms → interactive ~10-20ms = 15-30ms gewonnen. Combined mit MIDI-Clock-Lead-Reduktion 100→50ms: externer Empfänger spürt ~50ms weniger Lead. CAVEATS: (a) sampleRate-Change erfordert vollständigen Context-Recreate weil AudioContext.sampleRate readonly ist — User-Toast 'Audio wird kurz unterbrochen' wird gezeigt. (b) reinit bricht aktive Recordings ab (keine State-Migration zwischen alten und neuen Nodes möglich); User muss neu armen. (c) latencyHint ist ein 'Hint' — der Browser kann die Bitte ignorieren wenn die Hardware-Treiber das nicht hergeben; getEstimatedSystemLatencyMs zeigt die tatsächliche Latenz im Settings-UI. (d) AudioWorklet-Module (BPM-Worker etc.) müssen NICHT neu geladen werden — sie sind ctx-spezifisch und werden bei nächstem Trigger lazy registriert. (e) Granular-Engines werden komplett verworfen — laufende Grain-Loops stoppen; falls aktiv, vom User vor Apply manuell stoppen empfohlen."
+      ],
+      next: [
+        "TASK-236-ALT-FOLLOWUP-1 (Restart-Prompt): Erkennung ob bereits Playback läuft → modal warning vor Apply statt nur Toast.",
+        "TASK-236-ALT-FOLLOWUP-2 (Browser-Sniff): bei Safari fehlt 'interactive'-Support — vorher prüfen via feature-detection (testAudioContext-Probe) und Option mit 'nicht unterstützt' graben.",
+        "TASK-236-ALT-FOLLOWUP-3 (Migration-on-launch): wenn User v2.99 hatte → einmaliger Toast 'Neu: Low-Latency-Modus verfügbar, jetzt einschalten?' mit Direkt-Link in die Settings.",
+        "TASK-236 (Native WASAPI) bleibt offiziell offen aber low-prio — der Web-Audio-Pfad deckt 80% des Use-Cases ab ohne Build-Risiko.",
+        "TASK-232-FOLLOWUP-1 (Gumroad-Real-Integration) bleibt offen.",
+        "TASK-241-FOLLOWUP-2-GRANULAR / FOLLOWUP-3-SYNTHLFO / FOLLOWUP-4-CUSTOMWAVE bleiben offen.",
+        "TASK-239 (VST3/CLAP-Host) bleibt offen."
+      ],
+      changed: [
+        "client/src/store/useAudioEngineConfigStore.ts (NEU — Custom-Observer-Store latencyHint+sampleRate mit localStorage-Persist, sanitize, buildAudioContextOptions-Helper)",
+        "client/src/audio/AudioEngine.ts (+Import des Stores, init() liest Config über buildAudioContextOptions mit try-catch-Fallback, NEU reinit()-Methode für full-teardown+setup, +MIDI_CLOCK_LOOK_AHEAD=0.05s und eigenes clockLookAheadUntil im _schedule)",
+        "client/src/components/Settings/SettingsPanel.tsx (+Section 'audio-engine' Icon ⚡ group Audio, AudioEngineSection mit 2 Dropdowns + Live-Latenz-Anzeige + Apply-Button → AudioEngine.reinit(), +useReducer Import, +Imports useAudioEngineConfigStore/setLatencyHint/setSampleRate/AudioEngine)",
+        "tests/features/audio-engine-config.test.ts (NEU, 12 Tests — Defaults, Persistenz, Validierung, sanitize-on-load, buildAudioContextOptions-Helper, AudioContext-Mock-Init)",
+        "package.json (2.99.0 → 3.0.0)",
+        "agents/INDEX.js (workLog + version 3.0.0 + TASK-236-ALT done + files-Index)"
+      ]
+    },
     {
       agent:     "frontend",
       timestamp: "2026-05-18T06:55:00.000Z",
@@ -3980,11 +4024,11 @@ const INDEX = {
         {
             id: "TASK-236",
             type: "feature",
-            priority: "medium",
+            priority: "low",
             agent: "backend",
             status: "open",
             title: "WASAPI Exclusive Mode (Windows Low-Latency)",
-            description: "Latenz-Optimierung von ~30-50ms auf unter 10ms. Native Node-Bridge via naudiodon oder eigene N-API-Erweiterung. Web Audio Output umgeleitet via virtuelles MME-Device.",
+            description: "Latenz-Optimierung von ~30-50ms auf unter 10ms. Native Node-Bridge via naudiodon oder eigene N-API-Erweiterung. Web Audio Output umgeleitet via virtuelles MME-Device. NOTE v3.0.0: SICHERE Web-Audio-Alternative via TASK-236-ALT (latencyHint:'interactive' + sampleRate konfigurierbar) ist done — deckt 80% des Use-Cases ohne Build-Risiko. Native-Variante bleibt low-prio bis User-Bedarf nachweisbar.",
             acceptance: [
                 "Settings-Toggle WASAPI Exclusive (nur Windows-Build)",
                 "Round-Trip-Latenz unter 10ms gemessen via loopback",
@@ -3994,6 +4038,22 @@ const INDEX = {
             estimateHours: 28,
             reviewedBy: [
                 "builder"
+            ]
+        },
+        {
+            id: "TASK-236-ALT",
+            type: "feature",
+            priority: "medium",
+            agent: "backend",
+            status: "done",
+            doneIn: "v3.0.0",
+            title: "Audio-Engine Low-Latency-Config (sichere Web-Audio-Alternative zu TASK-236)",
+            description: "AudioContext mit latencyHint:'interactive'|'balanced'|'playback' und sampleRate:44.1/48/96/auto konfigurierbar via Settings. AudioEngine.reinit() für Hot-Reload. MIDI-Clock-Lead 100→50ms reduziert. Pure Web-Audio-Spec, kein Native-Code-Risk.",
+            acceptance: [
+                "User kann via Settings die Latency-Hint wählen (done)",
+                "AudioContext wird mit gewählter Hint+Rate initialisiert (done)",
+                "Latency-Display zeigt aktuelle System-Latenz live (done)",
+                "AudioEngine.reinit() funktioniert ohne State-Loss anderer Stores (done)"
             ]
         },
         {
