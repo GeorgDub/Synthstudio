@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.52.0",
+    version: "3.53.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -89,6 +89,26 @@ const INDEX = {
   // ─── KNOWN FILE INDEX ──────────────────────────────────────
   // Key files agents have analyzed. Add new entries after working on a file.
   files: {
+    "client/src/store/useAudioTrackStore.ts (v3.53.0)": {
+      role:     "v3.53.0 ERWEITERT: v3.52 Manual-Stretch-API bleibt (clampStretchRatio/computeWarpRatio/setTrackStretchRatio/setTrackPitchLocked/setTrackBpmHint/autoWarpToBpm/AudioTrackChannelData mit stretchRatio/pitchLocked/bpmHint) + NEU 5 Helpers + 2 Konstanten (~+115 LOC). Konstanten: AUTO_BPM_CONFIDENCE_THRESHOLD=0.5, STRETCH_SNAP_THRESHOLD=0.05. shouldApplyAutoBpm(bpm,confidence,threshold?) → {bpm,confidence,applied} — Pure-fn, defensive: NaN/0/neg/>=1000 BPM oder confidence<threshold → applied=false. applyAutoBpmToTrack(id,bpm,confidence,threshold?) → ruft shouldApplyAutoBpm + setzt bpmHint NUR bei applied=true UND track.bpmHint undefined (kein User-Overwrite). snapStretchRatio(value,threshold?) — Werte in [1-threshold, 1+threshold] → exakt 1.0, clamped 0.25..4.0, NaN/0/neg → 1.0 default. computeEffectiveStretchRate(projectBpm,originalBpm,syncMode,stretchRatio) → {rate,bpmRate,manualRatio,clamped} — bpmRate=projectBpm/originalBpm wenn syncMode=stretch|timestretch+originalBpm>0, sonst 1.0. rate=bpmRate×manualRatio clamped 0.25..4.0, clamped-Flag für UI-Warn. AudioTrackChannelData unverändert (additive in v3.52).",
+      lastSeen: "2026-05-18T22:25:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/components/Mixer/MixerView.tsx (v3.53.0)": {
+      role:     "v3.53.0 ERWEITERT: v3.52 Mixer-Channel-Strips/AudioTrack-Wiring/Plugin-Sync bleibt + NEU Auto-BPM-Detection beim Track-Add (~+115 LOC). analyzeBpmFromBufferDirect(buf): Worker-Mirror-fn — Energy-basierte Onset-Detection in 10ms-Fenstern (max 30s), Intervall-Median → BPM, octave-snap auf 60..200, returnt null bei zu wenig Onsets oder leerem Buffer. detectAndApplyBpm(trackId,buf): async-Wrapper der analyzeBpmFromBufferDirect ruft + applyAutoBpmToTrack durchreicht, silent-fail bei Worker-Error (defensive try/catch, console.warn). ingestAudioFile-Pfad ruft nach setRuntimeWaveform 'void detectAndApplyBpm(...).then(r=>{if(r?.applied) setBpmDetectionToast(...)})'. NEU State bpmDetectionToast + 4s-Auto-Fade-useEffect + Render-Block 'absolute bottom-14 right-4' mit accent-success-Border. Toast-Format '🎵 Detected BPM: 128 (Confidence 85%)'. Verwendet KEINEN echten Worker — Main-Thread-Pfad weil dekodierter Buffer schon in der Hand ist (vermeidet Re-Decode-Trip). FUTURE: Worker-Roundtrip via useAudioAnalysis bei sehr langen Files.",
+      lastSeen: "2026-05-18T22:25:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/components/Mixer/AudioTrackStrip.tsx (v3.53.0)": {
+      role:     "v3.53.0 ERWEITERT: v3.52 Stretch-Section (Slider/Pitch-Lock/Reset/BPM-Hint/Tap/Warp/Effective-BPM-Display) bleibt + NEU UI-Polish (~+50 LOC). (a) Effective-Rate-Label data-testid 'audio-track-effective-rate' zeigt 'Effective: 1.083x (130 / 120 × 1.000)' nur bei syncMode=stretch/timestretch UND originalBpm>0, accent-danger-Color + ⚠-Icon bei clamped=true (rate über 4.0). (b) handleStretchRatio nutzt snapStretchRatio (statt clampStretchRatio) — Slider-Werte 0.97..1.03 snappen auf exakt 1.0. (c) NEU handleResetStretch setzt explizit auf 1.0 (kein Slider-Detour). (d) Reset-Button disabled-Bedingung nutzt isNeutralRatio = |stretchRatio - 1| < threshold/5 (closes 0.999-Bug aus v3.52). (e) Visueller Tick-Marker absolute div an Slider-Mitte (left-1/2 w-px bg-border-color opacity-60) — semantische Tokens, keine hardcoded Farben. Imports: snapStretchRatio + computeEffectiveStretchRate + STRETCH_SNAP_THRESHOLD aus useAudioTrackStore. Bestehende v3.52-Architektur (4^slider-Log-Mapping, BPM-Hint-Input, Tap-Button, Warp-to-BPM) unverändert.",
+      lastSeen: "2026-05-18T22:25:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "tests/features/audio-track-auto-bpm.test.ts (v3.53.0)": {
+      role:     "v3.53.0 NEU: 19 Tests in 5 describes (env:node, kein jsdom — pure functions + Store ohne DOM). Imports analyzeBpmFromBufferDirect aus MixerView.tsx (re-export für Tests). Mock-Helpers: makeFakeAudioBuffer({beatsPerMin,durationSec,spikeAmplitude}) erzeugt deterministische Beat-Pattern mit Decay-Hüllkurve, makeTrackData für Store-Setup. (1) shouldApplyAutoBpm × 4 — High-Conf applied, Low-Conf dim-only, Threshold-Boundary 0.499/0.5, defensive NaN/0/neg/Inf/1500. (2) applyAutoBpmToTrack × 4 — High setzt bpmHint, Low NICHT, User-bpmHint wird nicht überschrieben, unknown ID → no-op. (3) computeEffectiveStretchRate × 4 — free → manual only, stretch+origBpm → bpmRate × manual, clamping > 4.0, defensive ohne origBpm. (4) snapStretchRatio × 3 — Snap-Zone [0.95,1.05], clamp+NaN-Defense, Custom-Threshold. (5) analyzeBpmFromBufferDirect × 4 — 120/100 BPM auf synthetic spikes erkannt mit ±5 BPM Toleranz, null bei Silence, null bei Empty-Buffer (length=0), Confidence ≥ Threshold bei klarem Pattern.",
+      lastSeen: "2026-05-18T22:25:00.000Z",
+      ownedBy:  "frontend"
+    },
     "client/src/utils/patternGenerator.ts (v3.51.0)": {
       role:     "v3.51.0 ERWEITERT (closes v3.40 Caveat 64-step Coverage): Templates basierten vorher auf festen 16er-Indices [0,4,8,12] etc. — Steps 16..63 blieben bei stepCount=64 LEER. NEU expandBars(baseIndices, stepCount) pure-fn die eine 16er-Indexliste über alle bars (= floor(stepCount/16)) expandiert. buildSteps ruft expandBars für base + extra Indices. Resultat: Techno-Kick base [0,4,8,12] @ 64-step → aktive Steps auf [0,4,8,...,60]. NEU applyLastBarVariation(pattern, stepCount, ctx): bei stepCount >= 32 wird Last-Bar variiert — (a) Snare-Fill auf Steps [N-4..N-1] mit Velocity-Ramp 70..100, (b) Per-Bar Beat-1 Velocity-Drift -5..+5, (c) bei 64-step Ghost-HiHat-Notes auf 16th-Offbeats in letzten 2 Bars (Velocity 30..55, Prob 0.4 + complexity*0.3). Backward-Compat: stepCount=16 ruft expandBars mit n=16 → IDENTISCH zur v3.50-Logik, kein Last-Bar-Fill (bars < 2 early return).",
       lastSeen: "2026-05-18T22:05:00.000Z",
@@ -1752,6 +1772,38 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "frontend",
+      timestamp: "2026-05-18T22:25:00.000Z",
+      done: [
+        "v3.53.0: Auto-BPM Detection beim Track-Add + Time-Stretch UI Polish — closes v3.52 Caveats. pnpm check clean, 201 Test-Files / 4657 tests grün (16 skipped, +19 NEU in audio-track-auto-bpm.test.ts).",
+        "client/src/store/useAudioTrackStore.ts (~+115 LOC): NEU AUTO_BPM_CONFIDENCE_THRESHOLD=0.5, STRETCH_SNAP_THRESHOLD=0.05. 5 neue Public Exports: shouldApplyAutoBpm(bpm,confidence,threshold?) → {bpm,confidence,applied} (pure, defensive NaN/0/neg/>1000), applyAutoBpmToTrack(id,bpm,confidence,threshold?) → setzt bpmHint NUR wenn confidence ≥ threshold UND noch kein User-bpmHint gesetzt ist (kein Overwrite), snapStretchRatio(value,threshold?) → snappt Werte in [0.95,1.05] auf exakt 1.0 + clamped 0.25..4.0, computeEffectiveStretchRate(projectBpm,originalBpm,syncMode,stretchRatio) → {rate,bpmRate,manualRatio,clamped} pure-fn die BPM-Sync × manualStretch kombiniert und auf 0.25..4.0 clampt (clamped-Flag für UI-Warn).",
+        "client/src/components/Mixer/MixerView.tsx (~+115 LOC): NEU detectAndApplyBpm(trackId, AudioBuffer) async-helper + analyzeBpmFromBufferDirect(buf) Worker-Mirror-fn (Energy-Onsets → Median-Intervall → BPM, 30s-Window, octave-snap auf 60..200). ingestAudioFile ruft nach setRuntimeWaveform den Auto-BPM-Pfad mit 'void detectAndApplyBpm(...).then(...)' — async, silent-fail (kein Crash bei fehlendem Worker, defensive try/catch). NEU State bpmDetectionToast + 4s-Auto-Fade-useEffect + render-Block 'absolute bottom-14 right-4' (über addError-Toast, accent-success-Border). Toast-Text '🎵 Detected BPM: 128 (Confidence 85%)' nach Math.round + .toFixed(0).",
+        "client/src/components/Mixer/AudioTrackStrip.tsx (~+50 LOC): Stretch-Section v3.52 erweitert um (a) v3.53 Effective-Rate-Label data-testid 'audio-track-effective-rate' zeigt 'Effective: 1.083x (130 / 120 × 1.000)' nur bei syncMode=stretch/timestretch UND originalBpm>0, accent-danger-Color + ⚠-Icon bei clamped=true, (b) Snap-zu-1.0 im handleStretchRatio (nutzt snapStretchRatio statt clampStretchRatio direkt — Slider-Werte 0.97..1.03 → exakt 1.0), (c) NEU handleResetStretch setzt explizit auf 1.0 (kein Slider-Detour), (d) isNeutralRatio = |stretchRatio - 1| < threshold/5 für Reset-Button-Disable (closes 0.999-Bug), (e) Visueller Tick-Marker an Slider-Mitte (absolute div, bg-border-color, w-px).",
+        "tests/features/audio-track-auto-bpm.test.ts NEU (19 Tests, 5 describes, env:node): (1) shouldApplyAutoBpm × 4 — High-Confidence applies, Low-Confidence dim-only, Threshold=0.5 + 0.499/0.5 boundary, defensive NaN/0/neg/Inf/1500. (2) applyAutoBpmToTrack × 4 — High setzt bpmHint, Low NICHT, User-bpmHint wird nicht überschrieben, unknown ID → no-op. (3) computeEffectiveStretchRate × 4 — free → manual only, stretch + originalBpm → bpmRate × manual, clamping bei rate > 4.0, defensive ohne originalBpm. (4) snapStretchRatio × 3 — Snap-Zone [0.95,1.05], NaN/clamp-Verhalten, Custom-Threshold. (5) analyzeBpmFromBufferDirect × 4 — 120/100 BPM auf synthetic spikes, null bei Silence/Empty-Buffer, Confidence ≥ Threshold bei klarem Pattern.",
+        "package.json + agents/INDEX.js version 3.52.0 → 3.53.0."
+      ],
+      next: [
+        "v3.54 echter Worker-Pfad für Auto-BPM — analyzeBpmFromBufferDirect läuft aktuell auf dem Main-Thread (synchron). Bei sehr langen Files (>10 min) blockt das ~50ms. useAudioAnalysis bietet schon den Worker-Pool — Wiring von ingestAudioFile auf workerRef[0].postMessage('analyzeBpm') ist FU.",
+        "v3.54 BPM-Detection-UI für Confidence < 0.5 — aktuell wird Low-Confidence stumm verworfen. Detected-BPM-Hint im UI dim anzeigen mit '?'-Marker + Click→akzeptieren-Button wäre besser als kompletter Silent-Skip.",
+        "v3.54 Worker-Result für 'analyze'-Type (mit Peaks) durchreichen statt direktem analyzeBpmFromBufferDirect: spart eine Iteration der ChannelData (Peaks + BPM in einem Pass im Worker)."
+      ],
+      changed: [
+        "client/src/store/useAudioTrackStore.ts (~+115 LOC: 5 neue Helpers + 2 Konstanten)",
+        "client/src/components/Mixer/MixerView.tsx (~+115 LOC: detectAndApplyBpm + analyzeBpmFromBufferDirect + bpmDetectionToast-State + Toast-Render-Block + Import-Erweiterung)",
+        "client/src/components/Mixer/AudioTrackStrip.tsx (~+50 LOC: snapStretchRatio + computeEffectiveStretchRate + handleResetStretch + isNeutralRatio + Effective-Rate-Label + Slider-Tick-Marker + neue Imports)",
+        "tests/features/audio-track-auto-bpm.test.ts (NEU, 19 Tests, 5 describes)",
+        "package.json (3.52.0 → 3.53.0)",
+        "agents/INDEX.js (version 3.52.0 → 3.53.0 + workLog v3.53.0)"
+      ],
+      caveats: [
+        "Auto-BPM läuft AKTUELL auf dem Main-Thread (analyzeBpmFromBufferDirect) statt im Web-Worker. Begründung: ingestAudioFile hat bereits den dekodierten AudioBuffer in der Hand — den Worker-Roundtrip (ArrayBuffer-Transfer + Re-Decode) zu vermeiden ist deutlich schneller für die häufigen Cases (≤ 3 min Audio). Für sehr lange Files (>10 min) wäre der Worker-Pfad besser → FU v3.54.",
+        "Confidence-Threshold 0.5 ist konservativ. False-Negatives sind möglich (User-Sample hat klare 130 BPM, Detection liefert Confidence=0.49 → kein Auto-Set). UX-Workaround: User klickt 'Tap'-Button im Stretch-Panel. Threshold-Tuning + Confidence-UI-Anzeige bleibt v3.54.",
+        "Auto-BPM-Toast erscheint NUR bei applied=true. Bei Low-Confidence sieht der User nichts — keine 'Detection failed'-Message. Kann verwirren wenn User explicit erwartet hatte. Dokumentiert als Quiet-by-design.",
+        "Effective-Rate-Label rendert NUR bei (syncMode=stretch|timestretch) UND originalBpm>0. Wenn der User syncMode=free hat aber stretchRatio=2 setzt, sieht er das Label NICHT (weil bpmRate=1.0 wäre und das Label redundant wäre zum bestehenden 'X.XXXx'-Label). Bewusste Entscheidung — kein Doppel-Information.",
+        "Snap-zu-1.0 hat Threshold 0.05 (=5%). Im 4^slider-Mapping entspricht das einem Slider-Bereich ~[-0.036..+0.036] um die Mitte — der Snap-Effekt fühlt sich auf einer 100px-Slider-Breite wie 3.6px an, was UI-typischer Snap-Zone entspricht. Reset-Button-Disable nutzt threshold/5 = 0.01 für 'wirklich neutral' damit Slider-Reset auch nach erfolgtem Snap noch funktioniert."
+      ]
+    },
     {
       agent:     "frontend",
       timestamp: "2026-05-18T22:10:00.000Z",

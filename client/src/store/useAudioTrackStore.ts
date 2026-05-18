@@ -248,6 +248,143 @@ export function autoWarpToBpm(id: string, projectBpm: number): number | null {
   return ratio;
 }
 
+// ─── v3.53.0: UI-Polish Helpers ──────────────────────────────────────────────
+
+/**
+ * Snap-Threshold für den logarithmischen Stretch-Slider:
+ * Werte innerhalb dieses Abstands von 1.0 werden auf exakt 1.0 gesnappt.
+ * UX-Effekt: Reset-Button bleibt sauber deaktivierbar (vorher: 0.999 hielt ihn aktiv).
+ * 0.05 = 5% — gross genug für komfortablen Snap, klein genug um nicht in den
+ * Nutzbereich zu schneiden (1.0 ± 5% = 0.95..1.05).
+ */
+export const STRETCH_SNAP_THRESHOLD = 0.05;
+
+/**
+ * v3.53.0: Snap-zu-1.0 für den Stretch-Slider.
+ * Wenn der Wert in [1 - threshold, 1 + threshold] liegt → exakt 1.0.
+ * Sonst wird der Wert unverändert (aber clamped 0.25..4.0) zurückgegeben.
+ * Pure-fn — keine Store-Mutation.
+ */
+export function snapStretchRatio(
+  value: number,
+  threshold = STRETCH_SNAP_THRESHOLD,
+): number {
+  if (!Number.isFinite(value) || value <= 0) return 1.0;
+  if (Math.abs(value - 1.0) < threshold) return 1.0;
+  return clampStretchRatio(value);
+}
+
+/**
+ * v3.53.0: Berechnet die *effektive* Playback-Rate eines Tracks bei aktuellem
+ * Projekt-BPM. Kombiniert BPM-Sync (projectBpm / originalBpm) × manualStretch.
+ *
+ * - syncMode = 'free' oder kein originalBpm → nur stretchRatio
+ * - syncMode = 'stretch' | 'timestretch' mit originalBpm → bpmRate × stretchRatio
+ *
+ * Wert wird auf [0.25, 4.0] geclamped wie es die Engine intern auch tut.
+ * Returnt { rate, clamped, bpmRate } für UI-Anzeige (Warning-Icon wenn clamped).
+ */
+export interface EffectiveStretchRate {
+  rate: number;
+  bpmRate: number;
+  manualRatio: number;
+  clamped: boolean;
+}
+
+export function computeEffectiveStretchRate(
+  projectBpm: number,
+  originalBpm: number | null | undefined,
+  syncMode: "free" | "stretch" | "timestretch" | undefined,
+  stretchRatio: number | undefined,
+): EffectiveStretchRate {
+  const manualRatio =
+    Number.isFinite(stretchRatio) && (stretchRatio as number) > 0
+      ? (stretchRatio as number)
+      : 1.0;
+
+  let bpmRate = 1.0;
+  if (
+    (syncMode === "stretch" || syncMode === "timestretch") &&
+    Number.isFinite(originalBpm) &&
+    (originalBpm as number) > 0 &&
+    Number.isFinite(projectBpm) &&
+    projectBpm > 0
+  ) {
+    bpmRate = projectBpm / (originalBpm as number);
+  }
+
+  const raw = bpmRate * manualRatio;
+  const clampedRate = Math.max(STRETCH_MIN, Math.min(STRETCH_MAX, raw));
+  const clamped = Math.abs(clampedRate - raw) > 1e-6;
+
+  return {
+    rate: Number.isFinite(clampedRate) ? clampedRate : 1.0,
+    bpmRate,
+    manualRatio,
+    clamped,
+  };
+}
+
+// ─── v3.53.0: Auto-BPM-Detection ─────────────────────────────────────────────
+
+/**
+ * v3.53.0: Confidence-Threshold für automatische `bpmHint`-Setzung beim
+ * Track-Add. Liegt der Worker-Result-Confidence unter dieser Schwelle, wird
+ * der detected BPM NICHT auto-gesetzt — UI darf den Wert dim anzeigen aber
+ * nicht persistieren. 0.5 ist Branchenkompromiss (≥0.5 = "wahrscheinlich
+ * rhythmisch", <0.5 = "zu unsicher um den User zu nerven").
+ */
+export const AUTO_BPM_CONFIDENCE_THRESHOLD = 0.5;
+
+export interface AutoBpmDetectionResult {
+  bpm: number;
+  confidence: number;
+  applied: boolean;
+}
+
+/**
+ * v3.53.0: Pure-fn die entscheidet ob ein BPM-Detection-Result aufs Track
+ * angewendet werden soll. Returnt { bpm, confidence, applied } für UI-Toast.
+ * Wird vom Auto-BPM-Hook (siehe MixerView ingestAudioFile) aufgerufen.
+ *
+ * Defensive: NaN/Infinity/0/negative bpm → applied=false, confidence < threshold
+ * → applied=false (UI darf dim-display anzeigen aber nicht setzen).
+ */
+export function shouldApplyAutoBpm(
+  bpm: number,
+  confidence: number,
+  threshold = AUTO_BPM_CONFIDENCE_THRESHOLD,
+): AutoBpmDetectionResult {
+  const validBpm =
+    Number.isFinite(bpm) && bpm > 0 && bpm < 1000 ? bpm : 0;
+  const validConf = Number.isFinite(confidence) ? Math.max(0, Math.min(1, confidence)) : 0;
+  const applied = validBpm > 0 && validConf >= threshold;
+  return { bpm: validBpm, confidence: validConf, applied };
+}
+
+/**
+ * v3.53.0: Wendet ein Auto-BPM-Detection-Result auf einen Track an,
+ * wenn die Confidence ausreicht. Returnt das Detection-Result für UI-Toast.
+ * NO-OP wenn Track unbekannt oder confidence < threshold.
+ */
+export function applyAutoBpmToTrack(
+  id: string,
+  bpm: number,
+  confidence: number,
+  threshold = AUTO_BPM_CONFIDENCE_THRESHOLD,
+): AutoBpmDetectionResult {
+  const result = shouldApplyAutoBpm(bpm, confidence, threshold);
+  if (!result.applied) return result;
+  const track = getAudioTrack(id);
+  if (!track) return { ...result, applied: false };
+  // Nur setzen wenn kein User-eingegebener bpmHint existiert (kein Overwrite).
+  if (track.bpmHint !== undefined && track.bpmHint > 0) {
+    return { ...result, applied: false };
+  }
+  updateAudioTrack(id, { bpmHint: result.bpm });
+  return result;
+}
+
 // ─── Solo (FOLLOWUP-102-3) ──────────────────────────────────────────────────
 
 /**

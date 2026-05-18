@@ -34,6 +34,9 @@ import {
   setTrackBpmHint,
   autoWarpToBpm,
   clampStretchRatio,
+  snapStretchRatio,
+  computeEffectiveStretchRate,
+  STRETCH_SNAP_THRESHOLD,
   MAX_TIMESTRETCH_TRACKS,
   type AudioTrackChannelData,
   type AudioTrackRuntimeState,
@@ -297,7 +300,7 @@ export function AudioTrackStrip({
     [track],
   );
 
-  // ── Time-Stretch (v3.52.0) ─────────────────────────────────────────────────
+  // ── Time-Stretch (v3.52.0 + v3.53.0 UI-Polish) ────────────────────────────
   const stretchRatio = track.stretchRatio ?? 1.0;
   const pitchLocked = track.pitchLocked === true;
   const bpmHint = track.bpmHint;
@@ -307,14 +310,35 @@ export function AudioTrackStrip({
     return bpmHint * stretchRatio;
   })();
 
+  // v3.53.0: Kombinierte effektive Rate inklusive BPM-Sync (projectBpm/originalBpm)
+  // × stretchRatio. Zeigt dem User die tatsächlich abgespielte Rate, auch wenn
+  // sie durch das 0.25..4.0-Clamp begrenzt wird.
+  const projectBpm = AudioEngine.bpm || 120;
+  const effectiveStretch = computeEffectiveStretchRate(
+    projectBpm,
+    track.originalBpm,
+    track.syncMode,
+    stretchRatio,
+  );
+  // Snap-to-1.0 für Reset-Button: bei |ratio - 1| < threshold zählt als "neutral".
+  const isNeutralRatio = Math.abs(stretchRatio - 1.0) < STRETCH_SNAP_THRESHOLD / 5;
+
   const handleStretchRatio = useCallback(
     (v: number) => {
-      const safe = clampStretchRatio(v);
-      setTrackStretchRatio(track.id, safe);
-      AudioEngine.registerAudioTrack({ ...track, stretchRatio: safe });
+      // v3.53.0: Snap-zu-1.0 anwenden BEVOR clampStretchRatio gerufen wird —
+      // so wird ein Slider-Wert wie 0.97 oder 1.03 zu exakt 1.0 (Reset-Button-Fix).
+      const snapped = snapStretchRatio(v);
+      setTrackStretchRatio(track.id, snapped);
+      AudioEngine.registerAudioTrack({ ...track, stretchRatio: snapped });
     },
     [track],
   );
+
+  // v3.53.0: Reset-Button setzt explizit auf 1.0 (kein Slider-Detour).
+  const handleResetStretch = useCallback(() => {
+    setTrackStretchRatio(track.id, 1.0);
+    AudioEngine.registerAudioTrack({ ...track, stretchRatio: 1.0 });
+  }, [track]);
 
   const handlePitchLockToggle = useCallback(() => {
     const next = !pitchLocked;
@@ -684,26 +708,35 @@ export function AudioTrackStrip({
         </div>
         {/* Slider — logarithmisch zentriert auf 1.0 ist nicht trivial; wir
             nutzen einen linearen Wertbereich 0.25..4.0 aber den Slider exp-
-            mappen damit die Mitte bei 1.0 liegt. */}
-        <input
-          data-testid="audio-track-stretch-slider"
-          aria-label="Stretch Ratio"
-          type="range"
-          min={-1}
-          max={1}
-          step={0.001}
-          // Log-Mapping: slider in [-1,1] → ratio in [0.25, 4.0], 0 = 1.0
-          // ratio = 4^slider (denn 4^(-1)=0.25, 4^0=1, 4^1=4)
-          value={Math.log(stretchRatio) / Math.log(4)}
-          onChange={(e) => {
-            const sliderVal = parseFloat(e.target.value);
-            const ratio = Math.pow(4, sliderVal);
-            handleStretchRatio(ratio);
-          }}
-          disabled={broken}
-          className="w-full accent-accent-primary cursor-pointer disabled:opacity-40"
-          title={`Stretch ${stretchRatio.toFixed(3)}x`}
-        />
+            mappen damit die Mitte bei 1.0 liegt.
+            v3.53.0: Snap-zu-1.0 bei |ratio - 1| < threshold (snapStretchRatio). */}
+        <div className="relative w-full">
+          <input
+            data-testid="audio-track-stretch-slider"
+            aria-label="Stretch Ratio"
+            type="range"
+            min={-1}
+            max={1}
+            step={0.001}
+            // Log-Mapping: slider in [-1,1] → ratio in [0.25, 4.0], 0 = 1.0
+            // ratio = 4^slider (denn 4^(-1)=0.25, 4^0=1, 4^1=4)
+            value={Math.log(stretchRatio) / Math.log(4)}
+            onChange={(e) => {
+              const sliderVal = parseFloat(e.target.value);
+              const ratio = Math.pow(4, sliderVal);
+              handleStretchRatio(ratio);
+            }}
+            disabled={broken}
+            className="relative w-full accent-accent-primary cursor-pointer disabled:opacity-40"
+            title={`Stretch ${stretchRatio.toFixed(3)}x`}
+          />
+          {/* v3.53.0: Visueller Tick-Marker bei 1.0 (Slider-Mitte). */}
+          <div
+            data-testid="audio-track-stretch-tick"
+            aria-hidden="true"
+            className="pointer-events-none absolute top-0 bottom-0 left-1/2 w-px bg-border-color opacity-60"
+          />
+        </div>
         <div className="flex gap-1 items-center mt-0.5">
           <button
             type="button"
@@ -731,8 +764,10 @@ export function AudioTrackStrip({
             type="button"
             data-testid="audio-track-reset-stretch"
             aria-label="Reset Stretch"
-            onClick={() => handleStretchRatio(1.0)}
-            disabled={broken || Math.abs(stretchRatio - 1.0) < 0.001}
+            onClick={handleResetStretch}
+            // v3.53.0: nutzt den Snap-Threshold — Reset bleibt deaktiviert
+            // sobald der Slider als "1.0-neutral" zählt (vermeidet 0.999-Bug).
+            disabled={broken || isNeutralRatio}
             title="Auf 1.0 zurücksetzen"
             className="px-1 py-0.5 text-[9px] rounded border border-border-color bg-bg-base text-text-dim hover:text-text-primary transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           >
@@ -789,6 +824,33 @@ export function AudioTrackStrip({
             {bpmHint!.toFixed(0)} → {effectiveBpm.toFixed(1)} BPM ({stretchRatio.toFixed(3)}x)
           </span>
         )}
+        {/* v3.53.0: Kombinierte Effective-Rate (BPM-Sync × manualStretch).
+            Wird nur angezeigt wenn der Sync-Mode 'stretch' oder 'timestretch'
+            ist UND ein originalBpm gesetzt ist (sonst ist effectiveStretch.rate
+            identisch mit manualRatio = stretchRatio, also redundant). */}
+        {(track.syncMode === "stretch" || track.syncMode === "timestretch") &&
+          track.originalBpm && track.originalBpm > 0 && (
+            <span
+              data-testid="audio-track-effective-rate"
+              className={[
+                "text-[8px] font-mono mt-0.5 text-center",
+                effectiveStretch.clamped ? "text-accent-danger" : "text-text-muted",
+              ].join(" ")}
+              title={
+                effectiveStretch.clamped
+                  ? "Effektive Rate wurde geclamped (0.25..4.0)"
+                  : "Effektive Rate = BPM-Sync × Manual Stretch"
+              }
+            >
+              {effectiveStretch.clamped && (
+                <span aria-label="Warning" data-testid="audio-track-effective-rate-warn">
+                  ⚠{" "}
+                </span>
+              )}
+              Effective: {effectiveStretch.rate.toFixed(3)}x ({projectBpm.toFixed(0)}{" "}
+              / {track.originalBpm} × {effectiveStretch.manualRatio.toFixed(3)})
+            </span>
+          )}
       </div>
 
       {/* ── Sends ─────────────────────────────────────────────────────────── */}
