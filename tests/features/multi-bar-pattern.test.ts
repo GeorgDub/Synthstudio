@@ -19,6 +19,7 @@ import type { PatternData } from "../../client/src/audio/AudioEngine";
 import { convertEsxPatternToSynthstudio } from "../../client/src/utils/korg/esxPatternConvert";
 import { convertParsedPatternToSynthstudio } from "../../client/src/utils/electribeImport";
 import { scaleMotionPointsToStepCount } from "../../client/src/utils/electribeMotionMapping";
+import { generatePattern } from "../../client/src/utils/patternGenerator";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -261,6 +262,55 @@ describe("v3.39: E2-Importer mit 64-Step-Pattern", () => {
     };
     const imported = convertParsedPatternToSynthstudio(parsed as never);
     expect(imported.stepCount).toBe(32);
+  });
+});
+
+describe("v3.40: AI-Pattern-Generator mit 64-step Templates", () => {
+  it("generatePattern akzeptiert stepCount=64 und erzeugt 64 Steps pro Part", () => {
+    const pattern = generatePattern({
+      genre: "techno",
+      complexity: 0.5,
+      seed: 12345,
+      stepCount: 64,
+    });
+    expect(pattern.parts.length).toBeGreaterThan(0);
+    for (const part of pattern.parts) {
+      expect(part.steps).toHaveLength(64);
+    }
+  });
+
+  it("generatePattern mit stepCount=64 erzeugt aktive Steps innerhalb 0..15 (Template-Basis)", () => {
+    const pattern = generatePattern({
+      genre: "house",
+      complexity: 0.8,
+      seed: 99,
+      stepCount: 64,
+    });
+    // Templates haben Indices < 16; konservatives Verhalten: Steps 16..63 bleiben
+    // typischerweise leer (User füllt via Page-Switcher). Mindestens 1 aktiver Step.
+    const kick = pattern.parts.find(p => p.name === "Kick");
+    expect(kick).toBeDefined();
+    const activeKick = kick!.steps.filter(s => s.active).length;
+    expect(activeKick).toBeGreaterThan(0);
+  });
+
+  it("generatePattern mit stepCount=32 (Bestandsverhalten unverändert)", () => {
+    const pattern = generatePattern({
+      genre: "techno",
+      complexity: 0.5,
+      seed: 7,
+      stepCount: 32,
+    });
+    for (const part of pattern.parts) expect(part.steps).toHaveLength(32);
+  });
+
+  it("generatePattern Default ohne stepCount → 16 Steps (Backward-Compat)", () => {
+    const pattern = generatePattern({
+      genre: "trap",
+      complexity: 0.4,
+      seed: 1,
+    });
+    for (const part of pattern.parts) expect(part.steps).toHaveLength(16);
   });
 });
 

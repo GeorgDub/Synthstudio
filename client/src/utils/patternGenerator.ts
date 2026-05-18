@@ -7,7 +7,14 @@ export interface GeneratorOptions {
   genre: Genre;
   complexity: number;  // 0.0 = minimal, 1.0 = maximal
   seed?: number;
-  stepCount?: 16 | 32;
+  /**
+   * v3.40: 64 unterstützt (vorher nur 16/32). Templates haben in der Regel
+   * Base/Extra-Step-Listen mit Indizes < 16; bei stepCount=64 bleiben die
+   * höheren Steps standardmäßig leer und können nachträglich vom User per
+   * Page-Switcher gefüllt werden. AI-Pfade (callActiveLlm) generieren das
+   * Pattern komplett bis zur angeforderten stepCount-Länge.
+   */
+  stepCount?: 16 | 32 | 64;
   description?: string;
 }
 

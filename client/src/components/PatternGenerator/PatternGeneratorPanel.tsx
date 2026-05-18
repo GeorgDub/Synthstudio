@@ -238,9 +238,12 @@ export function PatternGeneratorPanel() {
 
             <div>
               <div style={{ fontSize: 11, color: "var(--ss-text-muted)", marginBottom: 4, fontWeight: 600 }}>Steps</div>
-              <div style={{ display: "flex", gap: 3 }}>
-                {([16, 32] as const).map(n => (
-                  <button key={n} onClick={() => setTemplateStepCount(n)} style={{
+              <div style={{ display: "flex", gap: 3 }} data-testid="pattern-gen-template-step-count">
+                {([16, 32, 64] as const).map(n => (
+                  <button key={n} onClick={() => setTemplateStepCount(n)}
+                    data-testid={`pattern-gen-template-steps-${n}`}
+                    title={n === 64 ? "64 Steps (KORG ESX-1 / E2 Max)" : `${n} Steps`}
+                    style={{
                     padding: "4px 10px", borderRadius: 5,
                     background: store.templateStepCount === n ? "var(--ss-accent-secondary)" : "var(--ss-bg-elevated)",
                     border: "1px solid " + (store.templateStepCount === n ? "var(--ss-accent-secondary)" : "var(--ss-border)"),
@@ -434,9 +437,12 @@ export function PatternGeneratorPanel() {
 
             <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
               <span style={{ fontSize: 11, color: "var(--ss-text-muted)" }}>Steps</span>
-              <div style={{ display: "flex", gap: 3 }}>
-                {([16, 32] as const).map(n => (
-                  <button key={n} onClick={() => setPromptStepCount(n)} style={{
+              <div style={{ display: "flex", gap: 3 }} data-testid="pattern-gen-prompt-step-count">
+                {([16, 32, 64] as const).map(n => (
+                  <button key={n} onClick={() => setPromptStepCount(n)}
+                    data-testid={`pattern-gen-prompt-steps-${n}`}
+                    title={n === 64 ? "64 Steps (KORG ESX-1 / E2 Max)" : `${n} Steps`}
+                    style={{
                     padding: "5px 12px", borderRadius: 5,
                     background: store.promptStepCount === n ? "var(--ss-accent-secondary)" : "var(--ss-bg-elevated)",
                     border: "1px solid " + (store.promptStepCount === n ? "var(--ss-accent-secondary)" : "var(--ss-border)"),

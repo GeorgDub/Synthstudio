@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.39.0",
+    version: "3.40.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -89,6 +89,51 @@ const INDEX = {
   // ─── KNOWN FILE INDEX ──────────────────────────────────────
   // Key files agents have analyzed. Add new entries after working on a file.
   files: {
+    "client/src/components/DrumMachine/drumMachineHelpers.ts (v3.40.0)": {
+      role:     "v3.40.0 ERWEITERT: bestehende velocityColor/stepGroupBorder/getSourceTypeBadge/pitchToLabel bleiben + NEU 5 pure-fn Helpers für 64-Step Page-Switcher (~75 LOC). STEPS_PER_PAGE=16 const. getPageCount(stepCount: number): number — 16→1, 32→2, 64→4, defensive NaN/0→1. getPageStepRange(stepCount, page): {start, end} — clamped 0..pages-1, negative→page 0, oversize→letzte page. getPageForStep(stepIndex, stepCount): number — Page-Index für Auto-Follow während Playback, defensive negativ/NaN→0, oversize→letzte. getPageLabel(page, stepCount): '1/4'|'3/4'|'2/2' Display. getPageRangeLabel(page, stepCount): '1-16'|'17-32'|'49-64' Slot-Range-Display. Alle pure ohne React/Electron — testbar in env:node.",
+      lastSeen: "2026-05-18T20:30:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/components/DrumMachine/DrumMachine.tsx (v3.40.0 page-switcher)": {
+      role:     "v3.40.0 ERWEITERT: v3.39 Step-Count-Toggle 16/32/64 bleibt + NEU 64-Step Page-Switcher UI + Auto-Follow (~80 LOC). Imports erweitert um getPageCount/getPageStepRange/getPageForStep/getPageRangeLabel. NEU 2 local state hooks: currentPatternPage (default 0) + autoPageFollow (default true). NEU 2 useEffects: (a) Reset page bei pattern.id-Wechsel oder wenn currentPatternPage >= getPageCount(stepCount) (z. B. 64→16 Toggle). (b) Auto-Page-Follow: isPlaying && autoPageFollow && stepCount > 16 → setCurrentPatternPage(getPageForStep(dm.currentStep, stepCount)). NEU UI-Block Page-Switcher über Step-Grid-Header (nur wenn getPageCount > 1): 'Seite:'-Label + 4 Page-Buttons mit getPageRangeLabel '1-16'/'17-32'/'33-48'/'49-64' + Live-Step-Dot (accent-secondary) auf nicht-aktiven Pages während Playback + Auto-Follow-Toggle 'Auto-Follow: AN/AUS' + Status-Suffix '{stepCount} Steps / {pages} Pages'. data-testid 'dm-page-switcher', 'dm-page-0..3', 'dm-page-autofollow'. Step-Nummern-Row + ChannelStrip-Map wrappt jetzt in IIFE mit visibleStepRange={pattern.stepCount > 16 ? getPageStepRange(...) : null}. stepGroupBorder bekommt idx (page-relativ) statt absolutem i damit 4er-Gruppen-Indents innerhalb Page korrekt sind.",
+      lastSeen: "2026-05-18T20:30:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/components/DrumMachine/ChannelStrip.tsx (v3.40.0)": {
+      role:     "v3.40.0 ERWEITERT: ChannelStripProps +optional visibleStepRange?: {start: number; end: number} | null. Step-Grid-Render-Loop wrappt jetzt Array.from in IIFE — bei visibleStepRange=null bleibt Bestandsverhalten (alle stepCount Cells). Bei gesetztem range werden nur Cells für i im [start, end) gerendert. idx (page-relativ 0..15) wird für stepGroupBorder + key benutzt; absoluter i (start+idx) bleibt für onToggleStep/onContextMenu/aria-label/title/MIDI-Mapping-Lookup. Bestandsverhalten unverändert für stepCount===16 und alle Caller die keine visibleStepRange-Prop setzen.",
+      lastSeen: "2026-05-18T20:30:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/utils/patternGenerator.ts (v3.40.0)": {
+      role:     "v3.40.0 ERWEITERT: GeneratorOptions.stepCount '16 | 32' → '16 | 32 | 64' (KORG-Parität). buildSteps-Logic war bereits parameter-fähig (n: number) — bei stepCount=64 bleiben die höheren Steps (16..63) durch Template-Defaults leer (SPECS templates haben base/extra-Indices < 16, der `if (s < n)`-Check filtert nichts raus aber es gibt einfach keine Indices > 15). User füllt Steps 16..63 via Page-Switcher manuell. AI-Pfad (callActiveLlm in usePatternGeneratorStore) generiert das Pattern komplett bis zur angeforderten stepCount-Länge — siehe Bugfix in store dass stepCount jetzt korrekt an generatePattern weitergegeben wird.",
+      lastSeen: "2026-05-18T20:30:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/store/usePatternGeneratorStore.ts (v3.40.0)": {
+      role:     "v3.40.0 ERWEITERT: PatternGeneratorState.templateStepCount + promptStepCount '16 | 32' → '16 | 32 | 64'. setTemplateStepCount + setPromptStepCount Signature '(count: 16|32)' → '(count: 16|32|64)'. CRITICAL BUGFIX: generateAndStore() + generateAndStoreAI()-catch-Fallback rufen jetzt generatePattern({..., stepCount: _state.templateStepCount}) — vorher KEIN stepCount-Argument → Default 16 (User-Selection wurde ignoriert!). DEFAULT-Werte unverändert: templateStepCount=16, promptStepCount=16 (Backward-Compat). localStorage-Schema unverändert (Persist-Layer akzeptiert number).",
+      lastSeen: "2026-05-18T20:30:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/components/PatternGenerator/PatternGeneratorPanel.tsx (v3.40.0)": {
+      role:     "v3.40.0 ERWEITERT: Beide Step-Count-Toggle-Sektionen (Template-Mode @line 243 + Prompt-Mode @line 441) erweitert von ([16, 32] as const) → ([16, 32, 64] as const). NEU data-testids 'pattern-gen-template-step-count' / 'pattern-gen-template-steps-16/-32/-64' + 'pattern-gen-prompt-step-count' / 'pattern-gen-prompt-steps-16/-32/-64'. NEU Tooltip '64 Steps (KORG ESX-1 / E2 Max)' für 64-Button. Inline-Style bleibt (var(--ss-*) tokens) — keine hardcoded Farben. v3.40 inkonsistenz vs DrumMachine-Toolbar bewusst: Pattern-Generator-Panel nutzt inline-styles statt Tailwind weil es ein älteres Modal ist; theming bleibt via CSS-Variablen funktional.",
+      lastSeen: "2026-05-18T20:30:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "tests/features/64-step-pageswitcher.test.ts (v3.40.0)": {
+      role:     "v3.40.0 NEU: 29 Tests in 5 describes (env:node). (1) getPageCount × 6 — 16→1, 32→2, 64→4, 8→1, 0/NaN→1, STEPS_PER_PAGE===16. (2) getPageStepRange × 7 — 64-step page 0/1/2/3 → [0,16)/[16,32)/[32,48)/[48,64), 32-step page 1 → [16,32), out-of-range 99 → clamped letzte, negative → page 0. (3) getPageForStep × 8 — step 0/15/16/48 für 64-step, step 17 für 32-step, step 5 für 16-step (no switcher), defensive negativ/NaN→0, oversize 99→3. (4) getPageLabel/getPageRangeLabel × 7 — '1/4', '3/4', '2/2', '1-16', '17-32', '49-64', '17-32' für 32-step. (5) Edge 16-step × 1 — pageCount===1 → UI rendert KEIN Switcher.",
+      lastSeen: "2026-05-18T20:30:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "tests/features/multi-bar-pattern.test.ts (v3.40.0 +4 Tests)": {
+      role:     "v3.40.0 ERWEITERT: v3.39 13 Tests + NEU 4 Tests in 1 describe 'v3.40: AI-Pattern-Generator mit 64-step Templates' = 17 Tests gesamt. (1) generatePattern({genre:'techno', complexity:0.5, seed:12345, stepCount:64}) erzeugt 64 Steps pro Part. (2) generatePattern({genre:'house', complexity:0.8, seed:99, stepCount:64}) → mindestens 1 aktiver Kick-Step (Template-Basis-Indices < 16). (3) generatePattern mit stepCount=32 (Bestandsverhalten, 32 Steps pro Part). (4) generatePattern ohne stepCount-Argument (Default 16, Backward-Compat). v3.39 Tests UNVERÄNDERT grün.",
+      lastSeen: "2026-05-18T20:30:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "tests/features/korg-esx-pattern-write.test.ts (v3.40.0 +6 Tests)": {
+      role:     "v3.40.0 ERWEITERT: v3.27/v3.29 40 Tests + NEU 6 Tests in 1 describe 'v3.40: buildEsxPatternBlock — 64-step pattern verify' = 46 Tests gesamt. (1) stepLength=64 schreibt byte 0x0D = 0x3F = (stepLength-1) & 0x7f. (2) Block bleibt 4280 Bytes bei stepLength=64 (Format-konstante Größe — Builder schreibt stepLength-Field, NICHT mehr step-bytes). (3) Round-Trip build→parseEsxPattern: lengthSteps===64 + name+bpm preserved. (4) stepLength=32 schreibt 0x1F (Bestandsverhalten unverändert). (5) convertSynthstudioPatternToEsx({stepCount:64}) → esxInput.stepLength===64 + drumParts[0].steps bleibt 16 (Format-Constraint dokumentiert). (6) Full-Pipeline Synthstudio→convert→build→parse Round-Trip: lengthSteps=64 preserved. ERGEBNIS: ESX-Builder hat KEINEN Bug — Tests dokumentieren bestehende korrekte Implementierung + Format-Constraint (ESX-1 Hardware loopt 16 step-bytes für stepLength > 16).",
+      lastSeen: "2026-05-18T20:30:00.000Z",
+      ownedBy:  "frontend"
+    },
     "client/src/audio/AudioEngine.ts (v3.39.0 stepCount=64)": {
       role:     "v3.39.0 ERWEITERT: PatternData.stepCount '16 | 32' → '16 | 32 | 64' (KORG-Parität, ESX-1 + E2 Sampler max-Length). setSteps(steps: 16|32|64). smoothBpmTransition(stepCount: 16|32|64 = 16). _steps internal field bleibt private number — Schedule-Loop _currentStep modulo _steps läuft alle 64 Steps unverändert durch. v3.37.0 pendingStartStep / consumePendingStartStep / stepCount-Getter unverändert.",
       lastSeen: "2026-05-18T19:30:00.000Z",
@@ -1542,6 +1587,47 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "frontend",
+      timestamp: "2026-05-18T20:30:00.000Z",
+      done: [
+        "v3.40.0: 64-Step Page-Switcher + AI-Generator 64-step + ESX-Builder verify — Closes 3 v3.39-Caveats. pnpm check clean, 4405/4421 tests passed (16 skipped, +39 NEU = 29 page-switcher + 4 AI-gen + 6 ESX-builder verify).",
+        "Sub-Task 1 — Page-Switcher (closes v3.39 'flex-1 ~7px cells'). NEU 5 pure-fn Helpers in client/src/components/DrumMachine/drumMachineHelpers.ts: STEPS_PER_PAGE=16, getPageCount(stepCount) → 1|2|4 (16/32/64 pattern), getPageStepRange(stepCount, page) → {start,end} (clamped 0..pages-1), getPageForStep(stepIndex, stepCount) → page für Auto-Follow, getPageLabel(page, stepCount) → '1/4' und getPageRangeLabel(page, stepCount) → '1-16'/'17-32'/.../'49-64' Display. Alle defensive für NaN/negative/oversize.",
+        "DrumMachine.tsx — State: useState<number>(currentPatternPage=0) + useState<boolean>(autoPageFollow=true). 2 NEUE useEffects: (a) Reset page when pattern.id wechselt oder stepCount sinkt unter currentPatternPage+1, (b) Auto-Page-Follow: bei isPlaying && autoPageFollow && stepCount > 16 → setCurrentPatternPage(getPageForStep(dm.currentStep, stepCount)). UI: NEUER Page-Switcher-Block über dem Step-Grid-Header (nur wenn pageCount > 1) mit 4 Page-Buttons (data-testid 'dm-page-0' .. 'dm-page-3') + getPageRangeLabel als Beschriftung + Live-Step-Dot auf nicht-aktiven Pages + Auto-Follow-Toggle (data-testid 'dm-page-autofollow'). Step-Nummern-Row + Channel-Strip-Map nutzen jetzt getPageStepRange + verwenden idx als visual-render-index ABER absoluten i als step-action-index (Toggle/MIDI-Learn).",
+        "ChannelStrip.tsx — Props erweitert um optional visibleStepRange?: {start, end}|null. Render-Loop wrappt jetzt Array.from in IIFE und nutzt start/end zum Slicing. Bei visibleStepRange=null bleibt das Bestandsverhalten (alle stepCount Cells). stepGroupBorder bekommt idx (page-relativ) statt i (global) damit das 4er/8er-Grouping innerhalb der Page konsistent wirkt.",
+        "Sub-Task 2 — AI-Pattern-Generator 64-step (closes v3.39 'usePatternGeneratorStore beschränkt auf 16|32'). GEÄNDERT client/src/utils/patternGenerator.ts: GeneratorOptions.stepCount '16|32' → '16|32|64'. buildSteps-Logic war bereits parameter-fähig (n: number) — bei stepCount=64 bleiben die höheren Steps (16..63) durch Template-Defaults leer (templates haben base/extra-Indices < 16); user füllt via Page-Switcher.",
+        "GEÄNDERT client/src/store/usePatternGeneratorStore.ts: PatternGeneratorState.templateStepCount + promptStepCount '16|32' → '16|32|64'. Setter-Signaturen setTemplateStepCount/setPromptStepCount: '(count: 16|32)' → '(count: 16|32|64)'. WICHTIG: generateAndStore() + generateAndStoreAI()-Fallback rufen jetzt generatePattern({…, stepCount: _state.templateStepCount}) (vorher kein stepCount-Argument → Default 16!). Bugfix: vorherige Versions ignorierten User-Selection.",
+        "GEÄNDERT client/src/components/PatternGenerator/PatternGeneratorPanel.tsx: Beide Step-Count-Toggles erweitert um 64-Button (Template-Mode + Prompt-Mode). data-testid 'pattern-gen-template-step-count' + 'pattern-gen-template-steps-64', 'pattern-gen-prompt-step-count' + 'pattern-gen-prompt-steps-64' + Tooltip '64 Steps (KORG ESX-1 / E2 Max)'.",
+        "Sub-Task 3 — ESX-Builder 64-step verify (closes v3.39 'esxPatternBuilder prüfen ob 64 serialisierbar'). ERGEBNIS: KEIN Bug. esxPatternBuilder.ts schreibt stepLength=64 → byte 0x0D = 0x3F (= 63 = stepLength-1) via `(stepLen - 1) & 0x7f`. ESX_MAX_STEP_LENGTH=64 bereits korrekt deklariert. Round-Trip build → parseEsxPattern liefert lengthSteps=64. KEINE Code-Änderung nötig.",
+        "DOKUMENTIERT (Format-Constraint, nicht behebbar im Builder): ESX-1 Pattern-Block speichert pro Drum-Part nur 16 step-bytes (ESX_DRUM_PART_STEPS_BYTES=16). Bei stepLength > 16 fährt die Hardware das Pattern N Steps lang ab und wiederholt die 16 Step-Trigger im 16er-Loop. Steps 16..63 in einem Synthstudio-Pattern werden beim Export NICHT als unabhängige Trigger serialisiert — sie loopen auf Hardware. Acceptable Trade-Off: stepLength-Feld korrekt für Length-Sync; volle 64 unabhängige Trigger sind ESX-1-Format-Limit. Test 'convertSynthstudioPatternToEsx: stepCount=64 → esxInput.stepLength=64' dokumentiert dieses Verhalten.",
+        "NEU tests/features/64-step-pageswitcher.test.ts (29 Tests in 5 describes, env:node): (1) getPageCount × 6 — 16/32/64/8/0/NaN, STEPS_PER_PAGE const. (2) getPageStepRange × 7 — 64-step page 0/1/2/3 expected ranges, 32-step page 1, out-of-range clamp, negative→page 0. (3) getPageForStep × 8 — step 0/15/16/48 für 64-step, step 17 für 32-step, step 5 für 16-step (no switcher), defensive negative/NaN, oversize-clamp. (4) getPageLabel/getPageRangeLabel × 7 — '1/4', '3/4', '2/2', '1-16', '17-32', '49-64', '17-32' für 32-step. (5) Edge 16-step × 1 — pageCount===1 → kein Switcher.",
+        "ERWEITERT tests/features/multi-bar-pattern.test.ts — NEU describe 'v3.40: AI-Pattern-Generator mit 64-step Templates' (4 Tests): generatePattern({stepCount:64}) erzeugt 64 Steps pro Part, mind. 1 aktiver Kick-Step, 32-step Bestand, Default 16. Bestehende 17 Tests unverändert grün.",
+        "ERWEITERT tests/features/korg-esx-pattern-write.test.ts — NEU describe 'v3.40: buildEsxPatternBlock — 64-step pattern verify' (6 Tests): stepLength=64 → byte 0x3F, Block bleibt 4280B, Round-Trip lengthSteps=64 (build→parse), stepLength=32 Bestand 0x1F unverändert, convertSynthstudioPatternToEsx mit stepCount=64 → esxInput.stepLength=64 (drumParts[0].steps bleibt 16 wegen Format-Constraint), Full-Pipeline Synthstudio→build→parse Round-Trip lengthSteps=64.",
+        "BACKWARD-COMPAT VERIFIZIERT: (a) 16-step Pattern zeigt KEIN Page-Switcher (pageCount===1, conditional return null). (b) Bestehende 32-step Patterns kriegen jetzt 2 Pages — Verhalten ähnlich aber neu, opt-in via Auto-Follow-Toggle. (c) ChannelStrip ohne visibleStepRange-Prop (z. B. von CollabSplitView wenn vorhanden) rendert weiterhin alle Steps in einer Zeile. (d) generatePattern() ohne stepCount-Argument bleibt 16-step.",
+        "CAVEATS (verbleibend nach v3.40): (1) ESX-1 Pattern-Format: 16 step-bytes pro Part-Header — Steps 16..63 loopen auf Hardware statt eigene Trigger. Workaround für volle 64 unabhängige Steps wäre E2-Format (electribePatternBuilder.ts schreibt bereits 64 step-records pro Part bit-exact, v3.34). (2) Auto-Page-Follow wechselt während Playback automatisch — wenn User auf Page 2 editieren will während step 0..15 abspielt, Auto-Follow per Toggle deaktivieren. (3) Page-State wird NICHT persistiert pro Pattern — beim Pattern-Wechsel oder Refresh startet immer Page 0. Bewusst gewählt (User-Erwartung).",
+        "package.json + agents/INDEX.js version 3.39.0 → 3.40.0."
+      ],
+      next: [
+        "Optional v3.41: Page-State persistieren pro Pattern (z. B. lastEditedPage in PatternData). Würde Power-User helfen die mid-edit zwischen Patterns wechseln und auf der gleichen Page weitermachen wollen.",
+        "Optional v3.41: AI-Templates lernen 64-step-aware Patterns zu generieren (statt steps 16..63 leer zu lassen). Z. B. genre-specific 'long-form' Templates mit Variation in Page 2..4.",
+        "Optional v3.41: Page-Switcher Keyboard-Shortcut (z. B. PageUp/PageDown oder Shift+1..4) für schnelles Hin- und Herwechseln ohne Maus.",
+        "Optional v3.41: Page-Indikator im Bottom-Status-Bar ('Page 2/4 · Steps 17-32') statt nur 'Steps 17-32' visible. Aktuell zeigt status-bar nur stepCount + currentStep+1/stepCount.",
+        "Vorhandene v3.39-Items unverändert (Optional: MIDI-CC-Block bei BPM-Slider-Lock, Welcome-Wizard-Slides-Map, Undo-Stack-Persistence, External-Sync-LED)."
+      ],
+      changed: [
+        "client/src/components/DrumMachine/drumMachineHelpers.ts (NEU 5 pure-fn: STEPS_PER_PAGE + getPageCount + getPageStepRange + getPageForStep + getPageLabel + getPageRangeLabel)",
+        "client/src/components/DrumMachine/DrumMachine.tsx (Imports +4 page-helpers + currentPatternPage/autoPageFollow useState + 2 useEffect für reset+auto-follow + Page-Switcher-Block über Step-Grid-Header + step-numbers row paginiert + ChannelStrip-Map wrappt visibleStepRange in IIFE)",
+        "client/src/components/DrumMachine/ChannelStrip.tsx (Props +visibleStepRange optional + step-grid-render-loop wrappt IIFE + start/end-Slice + stepGroupBorder mit idx statt i)",
+        "client/src/utils/patternGenerator.ts (GeneratorOptions.stepCount '16|32' → '16|32|64' + JSDoc)",
+        "client/src/store/usePatternGeneratorStore.ts (State.templateStepCount + promptStepCount '16|32' → '16|32|64' + setter signatures + generateAndStore/generateAndStoreAI passes stepCount: _state.templateStepCount an generatePattern)",
+        "client/src/components/PatternGenerator/PatternGeneratorPanel.tsx (Beide Step-Count-Toggles erweitert um 64 + data-testid 'pattern-gen-template-steps-64' / 'pattern-gen-prompt-steps-64' + Tooltip)",
+        "tests/features/64-step-pageswitcher.test.ts (NEU — 29 Tests für 5 pure-fn-Helpers)",
+        "tests/features/multi-bar-pattern.test.ts (NEU describe 'v3.40: AI-Pattern-Generator mit 64-step Templates' + 4 Tests; bestehende 17 Tests unverändert)",
+        "tests/features/korg-esx-pattern-write.test.ts (NEU describe 'v3.40: buildEsxPatternBlock — 64-step pattern verify' + 6 Tests; bestehende 40 Tests unverändert)",
+        "package.json (3.39.0 → 3.40.0)",
+        "agents/INDEX.js (version + workLog v3.40.0 + files-Einträge)"
+      ]
+    },
     {
       agent:     "backend",
       timestamp: "2026-05-18T19:30:00.000Z",

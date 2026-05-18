@@ -22,6 +22,71 @@ export function stepGroupBorder(index: number, total: number): string {
   return index % 8 === 0 ? "ml-1.5" : index % 4 === 0 ? "ml-0.5" : "";
 }
 
+// ─── v3.40 64-Step Page-Switcher Helpers ───────────────────────────────────
+//
+// Bei stepCount > 16 wird das Step-Grid in 16er-Pages aufgeteilt damit Cells
+// nicht auf ~7px zusammengestaucht werden. Pure-funktional damit testbar.
+
+/** Steps pro Page im 64-Step-Modus (immer 16). */
+export const STEPS_PER_PAGE = 16;
+
+/**
+ * Liefert die Anzahl Pages für ein Pattern.
+ * - stepCount 16 → 1 (kein Switcher nötig)
+ * - stepCount 32 → 2
+ * - stepCount 64 → 4
+ * - sonst: ceil(stepCount / 16), defensiv mindestens 1.
+ */
+export function getPageCount(stepCount: number): number {
+  if (!Number.isFinite(stepCount) || stepCount <= STEPS_PER_PAGE) return 1;
+  return Math.max(1, Math.ceil(stepCount / STEPS_PER_PAGE));
+}
+
+/**
+ * Liefert für eine Page-ID den [start, end)-Step-Range im Pattern.
+ * Page wird auf gültiges Intervall geclampt.
+ */
+export function getPageStepRange(
+  stepCount: number,
+  page: number,
+): { start: number; end: number } {
+  const pages = getPageCount(stepCount);
+  const safePage = Math.max(0, Math.min(pages - 1, Math.floor(page)));
+  const start = safePage * STEPS_PER_PAGE;
+  const end = Math.min(stepCount, start + STEPS_PER_PAGE);
+  return { start, end };
+}
+
+/**
+ * Liefert die Page-ID für einen gegebenen Step (z. B. für Auto-Follow während
+ * Playback). Defensive bei negativen oder oversize-Indices.
+ */
+export function getPageForStep(stepIndex: number, stepCount: number): number {
+  const pages = getPageCount(stepCount);
+  if (!Number.isFinite(stepIndex) || stepIndex < 0) return 0;
+  const safeIndex = Math.min(stepIndex, stepCount - 1);
+  return Math.max(0, Math.min(pages - 1, Math.floor(safeIndex / STEPS_PER_PAGE)));
+}
+
+/**
+ * Liefert ein Page-Label "1/N" für ein 1-basiertes Display.
+ * Beispiele: (0, 64) → "1/4", (2, 64) → "3/4", (1, 32) → "2/2".
+ */
+export function getPageLabel(page: number, stepCount: number): string {
+  const pages = getPageCount(stepCount);
+  const safePage = Math.max(0, Math.min(pages - 1, Math.floor(page)));
+  return `${safePage + 1}/${pages}`;
+}
+
+/**
+ * Detaillierterer Label-Range "1-16", "17-32", … — wird im Header der
+ * Page-Buttons gerendert.
+ */
+export function getPageRangeLabel(page: number, stepCount: number): string {
+  const { start, end } = getPageStepRange(stepCount, page);
+  return `${start + 1}-${end}`;
+}
+
 export const NOTE_NAMES = ["C","C#","D","D#","E","F","F#","G","A","A#","B"];
 
 /**

@@ -19,13 +19,13 @@ interface PatternGeneratorState {
   isGenerating: boolean;
   // Vorlagen-Modus Einstellungen
   templateBpm: number | null;       // null = Genre-Standard nutzen
-  templateStepCount: 16 | 32;
+  templateStepCount: 16 | 32 | 64;  // v3.40: 64 erlaubt (KORG ESX-1 / E2 Sampler max)
   templateSwing: number;            // 0–50
   templateDensity: number;          // 0–1 (wie dicht die Steps gesetzt sind)
   templateParts: string[];          // ausgewählte Instrumente
   // Reiner Prompt-Modus (AI-only)
   promptBpm: number;
-  promptStepCount: 16 | 32;
+  promptStepCount: 16 | 32 | 64;    // v3.40: 64 erlaubt
   promptParts: string[];
   promptSwing: number;
   promptText: string;
@@ -150,7 +150,7 @@ export function setCustomPrompt(customPrompt: string): void {
 // ── Vorlagen-Modus Setter ─────────────────────────────────────────────────────
 
 export function setTemplateBpm(bpm: number | null): void { _state = { ..._state, templateBpm: bpm === null ? null : Math.max(40, Math.min(240, bpm)) }; notify(); }
-export function setTemplateStepCount(count: 16 | 32): void { _state = { ..._state, templateStepCount: count }; notify(); }
+export function setTemplateStepCount(count: 16 | 32 | 64): void { _state = { ..._state, templateStepCount: count }; notify(); }
 export function setTemplateSwing(swing: number): void { _state = { ..._state, templateSwing: Math.max(0, Math.min(50, swing)) }; notify(); }
 export function setTemplateDensity(density: number): void { _state = { ..._state, templateDensity: Math.max(0, Math.min(1, density)) }; notify(); }
 export function toggleTemplatePart(part: string): void {
@@ -165,7 +165,7 @@ export function toggleTemplatePart(part: string): void {
 
 export function setPromptText(text: string): void { _state = { ..._state, promptText: text }; notify(); }
 export function setPromptBpm(bpm: number): void { _state = { ..._state, promptBpm: Math.max(40, Math.min(240, bpm)) }; notify(); }
-export function setPromptStepCount(count: 16 | 32): void { _state = { ..._state, promptStepCount: count }; notify(); }
+export function setPromptStepCount(count: 16 | 32 | 64): void { _state = { ..._state, promptStepCount: count }; notify(); }
 export function setPromptSwing(swing: number): void { _state = { ..._state, promptSwing: Math.max(0, Math.min(50, swing)) }; notify(); }
 export function togglePromptPart(part: string): void {
   const parts = _state.promptParts.includes(part)
@@ -442,12 +442,13 @@ export async function generateAndStoreAI(): Promise<void> {
     _state = { ..._state, lastGenerated: pattern, isGenerating: false };
   } catch (err) {
     console.error("[AI Beat Co-Pilot]", err);
-    // Fallback auf prozedurale Generierung
+    // Fallback auf prozedurale Generierung — v3.40: stepCount-aware
     const pattern = generatePattern({
       genre: _state.selectedGenre,
       complexity: _state.complexity,
       description: _state.customPrompt,
       seed: Math.floor(Math.random() * 0xffffffff),
+      stepCount: _state.templateStepCount,
     });
     _state = { ..._state, lastGenerated: pattern, isGenerating: false };
   }
@@ -460,11 +461,13 @@ export function generateAndStore(): void {
   setTimeout(() => {
     try {
       const effectiveBpm = _state.templateBpm ?? (GENRE_BPM[_state.selectedGenre] as number) ?? 120;
+      // v3.40: stepCount aus Store-State (16|32|64) — vorher hardcoded 16.
       const pattern = generatePattern({
         genre: _state.selectedGenre,
         complexity: _state.complexity,
         description: _state.customPrompt,
         seed: Math.floor(Math.random() * 0xffffffff),
+        stepCount: _state.templateStepCount,
       });
       // Template-Overrides anwenden
       const finalPattern = {

@@ -16,6 +16,13 @@ export interface ChannelStripProps {
   part: PartData;
   partIndex: number;
   stepCount: number;
+  /**
+   * v3.40: Optional sichtbarer Step-Range im Page-Modus (stepCount > 16).
+   * Wenn gesetzt, werden nur Steps im Intervall [start, end) gerendert. Bei
+   * null wird das gesamte Pattern in einer Zeile dargestellt (Default für
+   * stepCount === 16).
+   */
+  visibleStepRange?: { start: number; end: number } | null;
   currentStep: number;
   isActive: boolean;
   velocityMode: boolean;
@@ -56,7 +63,7 @@ export interface ChannelStripProps {
 }
 
 export function ChannelStrip({
-  part, stepCount, currentStep, isActive,
+  part, stepCount, visibleStepRange, currentStep, isActive,
   velocityMode, patternResolution, fxPanelOpen,
   onToggleStep, onSetVelocity,
   onMute, onSolo, onVolumeChange, onPanChange,
@@ -261,18 +268,27 @@ export function ChannelStrip({
         onContextMenu={e => e.preventDefault()}
         style={{ touchAction: "none" }}
       >
-        {Array.from({ length: stepCount }).map((_, i) => {
-          const step = part.steps[i];
-          const isCurrentStep = i === currentStep;
-          const isActiveStep = step?.active ?? false;
-          const velocity = step?.velocity ?? 100;
+        {(() => {
+          // v3.40: Wenn visibleStepRange gesetzt ist, nur Steps in [start, end)
+          // rendern; sonst kompletter Pattern-Range. Visuelle Indices bleiben
+          // 1-basiert global (i+1), nicht page-relativ — damit User immer den
+          // "echten" Step-Index sieht.
+          const start = visibleStepRange?.start ?? 0;
+          const end = visibleStepRange?.end ?? stepCount;
+          const renderedCount = end - start;
+          return Array.from({ length: renderedCount }).map((_, idx) => {
+            const i = start + idx;
+            const step = part.steps[i];
+            const isCurrentStep = i === currentStep;
+            const isActiveStep = step?.active ?? false;
+            const velocity = step?.velocity ?? 100;
 
-          let touchTimer: ReturnType<typeof setTimeout> | null = null;
+            let touchTimer: ReturnType<typeof setTimeout> | null = null;
 
-          // v1.99: zeige kleinen Dot wenn dieser Step MIDI-gebunden ist
-          const stepMapping = midi
-            ? findMappingForTarget(midi.mappings, { type: "step", partId: part.id, stepIndex: i })
-            : undefined;
+            // v1.99: zeige kleinen Dot wenn dieser Step MIDI-gebunden ist
+            const stepMapping = midi
+              ? findMappingForTarget(midi.mappings, { type: "step", partId: part.id, stepIndex: i })
+              : undefined;
 
           return (
             <button
@@ -291,7 +307,7 @@ export function ChannelStrip({
               }}
               className={[
                 "flex-1 h-7 rounded-sm transition-colors duration-75 relative select-none",
-                stepGroupBorder(i, stepCount),
+                stepGroupBorder(idx, renderedCount),
                 velocityColor(velocity, isActiveStep),
                 isCurrentStep ? "ring-2 ring-accent-secondary" : "",
                 selectedStepIndex === i ? "ring-2 ring-accent-primary ring-offset-1" : "",
@@ -338,7 +354,8 @@ export function ChannelStrip({
               )}
             </button>
           );
-        })}
+          });
+        })()}
       </div>
     </div>
   );

@@ -555,3 +555,83 @@ describe("convertSynthstudioPatternToEsx — adapter", () => {
     }
   });
 });
+
+// ─── 9. v3.40: 64-step pattern verification ─────────────────────────────────
+//
+// Hintergrund: ESX-1 unterstützt stepLength bis 64 (byte 0x0D = stepLength-1
+// = 0..63). Die Hardware fährt das Pattern dann 64 Steps lang ab und wiederholt
+// die 16 Step-Trigger-Bytes pro Part im 16er-Loop (Drum-Mode). Der Builder
+// schreibt das stepLength-Byte korrekt; die 16 step-Bytes pro Part-Header
+// bleiben unverändert (Format-Constraint).
+
+describe("v3.40: buildEsxPatternBlock — 64-step pattern verify", () => {
+  it("writes stepLength=64 als byte 0x3F (= 63 = stepLength - 1)", () => {
+    const input = makeMinimalInput({ stepLength: 64 });
+    const bytes = toBytes(buildEsxPatternBlock(input));
+    expect(bytes[ESX_PATTERN_STEP_LENGTH_OFFSET]).toBe(0x3f);
+    expect(bytes[ESX_PATTERN_STEP_LENGTH_OFFSET]).toBe(64 - 1);
+  });
+
+  it("Block bleibt 4280 Bytes bei stepLength=64 (Format-konstante Größe)", () => {
+    const bytes = toBytes(buildEsxPatternBlock(makeMinimalInput({ stepLength: 64 })));
+    expect(bytes.byteLength).toBe(ESX_PATTERN_BLOCK_SIZE);
+  });
+
+  it("Round-Trip build → parse: lengthSteps === 64", () => {
+    const input = makeMinimalInput({
+      name: "BANK64",
+      bpm: 130,
+      stepLength: 64,
+    });
+    const block = buildEsxPatternBlock(input);
+    const parsed = parseEsxPattern(new Uint8Array(block), 0);
+    expect(parsed.lengthSteps).toBe(64);
+    expect(parsed.name).toBe("BANK64");
+    expect(parsed.bpm).toBeCloseTo(130, 1);
+  });
+
+  it("stepLength=32 schreibt 0x1F (Bestandsverhalten unverändert)", () => {
+    const bytes = toBytes(buildEsxPatternBlock(makeMinimalInput({ stepLength: 32 })));
+    expect(bytes[ESX_PATTERN_STEP_LENGTH_OFFSET]).toBe(0x1f);
+  });
+
+  it("convertSynthstudioPatternToEsx: stepCount=64 → esxInput.stepLength=64", () => {
+    const synth: SynthstudioPatternLike = {
+      name: "S64",
+      bpm: 140,
+      stepCount: 64,
+      parts: [
+        {
+          id: "kick",
+          name: "Kick",
+          volume: 100,
+          pan: 0,
+          steps: Array.from({ length: 64 }, (_, i) => ({
+            active: i % 4 === 0,
+            velocity: 100,
+          })),
+        },
+      ],
+    };
+    const esxInput = convertSynthstudioPatternToEsx(synth);
+    expect(esxInput.stepLength).toBe(64);
+    // Format-Constraint: nur 16 step-bytes pro Part-Header — der Builder
+    // serialisiert die ersten 16 Steps korrekt; Steps 16..63 werden in der
+    // Hardware durch Loop-Wiederholung erzeugt.
+    expect(esxInput.drumParts[0].steps).toHaveLength(16);
+  });
+
+  it("Full pipeline: Synthstudio 64-step → build → parse round-trip lengthSteps preserved", () => {
+    const synth: SynthstudioPatternLike = {
+      name: "PIPE",
+      bpm: 125,
+      stepCount: 64,
+      parts: [],
+    };
+    const esxInput = convertSynthstudioPatternToEsx(synth);
+    expect(esxInput.stepLength).toBe(64);
+    const block = buildEsxPatternBlock(esxInput);
+    const parsed = parseEsxPattern(new Uint8Array(block), 0);
+    expect(parsed.lengthSteps).toBe(64);
+  });
+});
