@@ -809,3 +809,217 @@ describe.skipIf(!hasRealFiles)("korg/esxParser — v3.14 Real-File Step-Decoding
     expect(plausibleCount).toBeGreaterThan(0);
   });
 });
+
+// ─── v3.23.0: Step-Byte Accent-Flag (bit-4) ──────────────────────────────────
+
+/**
+ * Setzt das step-byte fuer Drum-Part `p`, Step `s` direkt (raw byte).
+ * Erlaubt explizite Tests von 0x01 (active), 0x11 (active+accent), 0x55 etc.
+ */
+function setDrumStepByteRaw(
+  block: Uint8Array,
+  p: number,
+  s: number,
+  value: number,
+): void {
+  const partOff = 24 + p * 34;
+  block[partOff + 18 + s] = value & 0xff;
+}
+
+/** Setzt das step-byte fuer Short-Part `shortIndex` (0..3 → parts 11..14). */
+function setShortStepByteRaw(
+  block: Uint8Array,
+  shortIndex: number,
+  s: number,
+  value: number,
+): void {
+  const SHORT_OFFSETS = [0x36e, 0x38e, 0x3ae, 0x3ce];
+  const partOff = SHORT_OFFSETS[shortIndex];
+  block[partOff + 16 + s] = value & 0xff;
+}
+
+describe("korg/esxParser — v3.23 Accent (Drum-Parts)", () => {
+  it("0x01 (bit-0 only) → active=true, accent=false, velocity=100", () => {
+    const block = buildPatternBlockWithSteps("A", 120, 0, 0);
+    setDrumStepByteRaw(block, 0, 0, 0x01);
+    const pat = parseEsxPattern(block, 0);
+    const step = pat!.parts[0].steps[0];
+    expect(step.active).toBe(true);
+    expect(step.accent).toBe(false);
+    expect(step.velocity).toBe(100);
+  });
+
+  it("0x11 (bit-0 + bit-4) → active=true, accent=true, velocity=127", () => {
+    const block = buildPatternBlockWithSteps("A", 120, 0, 0);
+    setDrumStepByteRaw(block, 0, 0, 0x11);
+    const pat = parseEsxPattern(block, 0);
+    const step = pat!.parts[0].steps[0];
+    expect(step.active).toBe(true);
+    expect(step.accent).toBe(true);
+    expect(step.velocity).toBe(127);
+  });
+
+  it("0x55 (bits 0+2+4+6) → active=true, accent=true (bit-4 set)", () => {
+    const block = buildPatternBlockWithSteps("A", 120, 0, 0);
+    setDrumStepByteRaw(block, 0, 0, 0x55);
+    const pat = parseEsxPattern(block, 0);
+    const step = pat!.parts[0].steps[0];
+    expect(step.active).toBe(true);
+    expect(step.accent).toBe(true);
+    expect(step.velocity).toBe(127);
+  });
+
+  it("0x15 (bits 0+2+4) → active+accent (bit-4 set, bit-2 ignored)", () => {
+    const block = buildPatternBlockWithSteps("A", 120, 0, 0);
+    setDrumStepByteRaw(block, 0, 0, 0x15);
+    const pat = parseEsxPattern(block, 0);
+    const step = pat!.parts[0].steps[0];
+    expect(step.active).toBe(true);
+    expect(step.accent).toBe(true);
+  });
+
+  it("0x10 (bit-4 only, kein trigger) → active=false (accent ignoriert)", () => {
+    const block = buildPatternBlockWithSteps("A", 120, 0, 0);
+    setDrumStepByteRaw(block, 0, 0, 0x10);
+    const pat = parseEsxPattern(block, 0);
+    const step = pat!.parts[0].steps[0];
+    expect(step.active).toBe(false);
+    expect(step.velocity).toBe(0);
+    // accent darf nicht gesetzt sein, wenn step inaktiv
+    expect(step.accent).toBeUndefined();
+  });
+
+  it("0x00 (kein trigger) → active=false, velocity=0, accent=undefined", () => {
+    const block = buildPatternBlockWithSteps("A", 120, 0, 0);
+    setDrumStepByteRaw(block, 0, 0, 0x00);
+    const pat = parseEsxPattern(block, 0);
+    const step = pat!.parts[0].steps[0];
+    expect(step.active).toBe(false);
+    expect(step.velocity).toBe(0);
+    expect(step.accent).toBeUndefined();
+  });
+
+  it("mischt accent + non-accent steps korrekt in einem Pattern", () => {
+    // BOTTROP-style: '01 11 00 11 01 11 00 11 ...' alternierend
+    const block = buildPatternBlockWithSteps("MIX", 120, 2, 0);
+    setDrumStepByteRaw(block, 2, 0, 0x01); // no accent
+    setDrumStepByteRaw(block, 2, 1, 0x11); // accent
+    setDrumStepByteRaw(block, 2, 2, 0x00); // off
+    setDrumStepByteRaw(block, 2, 3, 0x11); // accent
+    const pat = parseEsxPattern(block, 0);
+    const steps = pat!.parts[2].steps;
+    expect(steps[0].active).toBe(true);
+    expect(steps[0].accent).toBe(false);
+    expect(steps[1].active).toBe(true);
+    expect(steps[1].accent).toBe(true);
+    expect(steps[2].active).toBe(false);
+    expect(steps[3].active).toBe(true);
+    expect(steps[3].accent).toBe(true);
+  });
+});
+
+describe("korg/esxParser — v3.23 Accent (Short-Parts 11..14)", () => {
+  it("Short-Part-Steps haben dieselbe accent-Decoding-Logik", () => {
+    const block = buildPatternBlock({ name: "S", bpm: 120 });
+    setShortStepByteRaw(block, 0, 0, 0x01); // part 11 step 0: active, no accent
+    setShortStepByteRaw(block, 0, 4, 0x11); // part 11 step 4: active + accent
+    setShortStepByteRaw(block, 2, 0, 0x11); // part 13 (synth) step 0: accent
+    const pat = parseEsxPattern(block, 0);
+    expect(pat!.parts[11].steps[0].active).toBe(true);
+    expect(pat!.parts[11].steps[0].accent).toBe(false);
+    expect(pat!.parts[11].steps[4].active).toBe(true);
+    expect(pat!.parts[11].steps[4].accent).toBe(true);
+    expect(pat!.parts[11].steps[4].velocity).toBe(127);
+    expect(pat!.parts[13].steps[0].accent).toBe(true);
+  });
+});
+
+describe("korg/esxParser — v3.23 Synth-Note-Encoding NICHT exportiert", () => {
+  it("EsxStepEvent hat KEIN `note`-Feld (RE widerlegt — siehe Header-Doc v3.23)", () => {
+    const block = buildPatternBlockWithSteps("N", 120, 0, 0);
+    setDrumStepByteRaw(block, 0, 0, 0x55); // exotic value
+    const pat = parseEsxPattern(block, 0);
+    const step = pat!.parts[0].steps[0] as { note?: number };
+    expect(step.note).toBeUndefined();
+  });
+
+  it("Drum-Parts und Short-Parts liefern KEINEN note-Wert (konservativ)", () => {
+    const block = buildPatternBlock({ name: "X", bpm: 120 });
+    setDrumStepByteRaw(block, 5, 0, 0x11);
+    setShortStepByteRaw(block, 2, 0, 0x55);
+    const pat = parseEsxPattern(block, 0);
+    for (const part of pat!.parts) {
+      for (const step of part.steps as Array<{ note?: number }>) {
+        expect(step.note).toBeUndefined();
+      }
+    }
+  });
+});
+
+describe.skipIf(!hasRealFiles)("korg/esxParser — v3.23 Real-File Accent-Stats", () => {
+  it("findet active steps mit accent=true in mindestens einem Real-File", () => {
+    const files = fs.readdirSync(REAL_FILES_DIR).filter((f) => f.toLowerCase().endsWith(".esx"));
+    let foundAccent = false;
+    let accentCount = 0;
+    let activeCount = 0;
+    for (const f of files.slice(0, 5)) {
+      try {
+        const bytes = fs.readFileSync(path.join(REAL_FILES_DIR, f));
+        const bank = parseEsxBank(
+          new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength),
+          f,
+        );
+        for (const pat of bank.patterns.slice(0, 20)) {
+          for (let p = 0; p < 15; p++) {
+            for (const step of pat.parts[p].steps) {
+              if (step.active) {
+                activeCount++;
+                if (step.accent === true) {
+                  accentCount++;
+                  foundAccent = true;
+                }
+              }
+            }
+          }
+        }
+        if (foundAccent && accentCount > 10) break;
+      } catch {
+        // ignore corrupt files
+      }
+    }
+    expect(activeCount).toBeGreaterThan(0);
+    expect(foundAccent).toBe(true);
+    // Aus Hex-Diff-Analyse: ~70% Drum + ~38% Short → mind. 25% gesamt erwartet.
+    expect(accentCount / activeCount).toBeGreaterThan(0.2);
+  });
+
+  it("alle accent=true Steps haben velocity=127 (TR-style boost)", () => {
+    const files = fs.readdirSync(REAL_FILES_DIR).filter((f) => f.toLowerCase().endsWith(".esx"));
+    let checked = 0;
+    let mismatched = 0;
+    outer: for (const f of files.slice(0, 3)) {
+      try {
+        const bytes = fs.readFileSync(path.join(REAL_FILES_DIR, f));
+        const bank = parseEsxBank(
+          new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength),
+          f,
+        );
+        for (const pat of bank.patterns.slice(0, 10)) {
+          for (let p = 0; p < 15; p++) {
+            for (const step of pat.parts[p].steps) {
+              if (step.active && step.accent === true) {
+                checked++;
+                if (step.velocity !== 127) mismatched++;
+                if (checked >= 200) break outer;
+              }
+            }
+          }
+        }
+      } catch {
+        // ignore
+      }
+    }
+    expect(checked).toBeGreaterThan(0);
+    expect(mismatched).toBe(0);
+  });
+});

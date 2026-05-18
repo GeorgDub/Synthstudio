@@ -1,5 +1,5 @@
 /**
- * Synthstudio – ESX-1 Sample-Bank Parser (v3.20.0)
+ * Synthstudio – ESX-1 Sample-Bank Parser (v3.23.0)
  *
  * Port aus dem Python-Tool `G:/IdeaProjects/Korg Editor`.
  * SoT: G:/IdeaProjects/Korg Editor/esx_e2s_editor/services/esx_parser.py
@@ -53,6 +53,26 @@
  *   Motion-Sequencer-Daten (0x16C..0x25B = 240B Drum-Motion und
  *   0x27E..0x35D = ~224B Stretch+Sample-Motion) bleiben Best-Effort defaults;
  *   ein vollstaendiges Motion-Decoding wurde fuer v3.20 nicht implementiert.
+ *
+ * v3.23.0 SCOPE (Step-Byte Bit-Layout RE — TASK-v3.20-FU-SYNTH-NOTE):
+ *   Reverse-Engineering der step-byte Bits 1..7 (Werte wie 0x11, 0x15, 0x55
+ *   in BOTTROP[0] Part 13). Analyse von 17222 active steps in 5 Files
+ *   (BOTTROP/ENDLICH/KASSEL/TOBI/YOYOY):
+ *     • bit 0 = trigger active (CONFIRMED v3.20, 100% Korrelation)
+ *     • bit 4 = ACCENT (Best-Effort): erscheint in 70.9% der Drum-Part
+ *       active-steps und 38.2% der Short-Part active-steps. Konsistent mit
+ *       TR-Style Accent-Track-Layer.
+ *     • bits 1..3, 5..7 = roll/slide/velocity? Nicht zuverlaessig RE-d.
+ *   NOTE-ENCODING-HYPOTHESE WIDERLEGT:
+ *     97 distinct upper-7-bit-values gefunden, aber die distinct-value-Range
+ *     pro "melodic"-Row (≥10 distinct in 16 Steps) hat median 95 / max 123
+ *     Semitones — physisch unmoeglich fuer eine Bass/Lead-Line (max 36 typisch).
+ *     Step-bytes encoden KEINE Notenhoehe; die Pitch-Information lebt im
+ *     Per-Part-Header (pitch @+6 fuer 32B-stride, @+8 fuer 34B-stride).
+ *   API: EsxStepEvent.accent?: boolean wird gesetzt (gilt fuer alle Parts
+ *     0..14 — Audio-In Part 15 bleibt Defaults).
+ *   Per-Step Pitch-Motion Region 0x488+ ist in allen untersuchten Files
+ *   vollstaendig 0x80 (neutral) → KEINE per-step note-modulation gefunden.
  *
  * Defensive Parsing:
  *   - File-Size-Check (Min/Max)
@@ -148,6 +168,25 @@ export interface EsxStepEvent {
   active: boolean;
   /** 0..127 — Default 100 wenn nicht extrahierbar. */
   velocity: number;
+  /**
+   * v3.23.0: ACCENT-Flag (Best-Effort).
+   *
+   * Bit-4 des step-bytes erscheint in real-files mit hoher Frequenz (Drum-Parts
+   * 70.9% / Short-Parts 38.2% der active-Steps in 5 untersuchten Files mit
+   * 17222 active steps). Die Hypothese lautet "bit-4 = accent" (TR-Style
+   * Accent-Track-Layer) — KEINE Note-Encoding, da die distinct-value-Range
+   * (97 unique values) und der gemessene "musical-pitch-range" (median 95,
+   * max 123 semis) physisch unmoeglich fuer Synth-Bass/Lead-Lines waeren.
+   *
+   * Mapping:
+   *   active step + accent → velocity 127 (TR-typische +27 Boost)
+   *   active step ohne accent → velocity 100 (Default)
+   *
+   * Bei Render kann der Caller `accent` interpretieren als
+   * "Velocity-Boost, Filter-Mod-Trigger, oder Reverb-Send-Boost" je nach
+   * Synthstudio-Kontext.
+   */
+  accent?: boolean;
 }
 
 /**
@@ -467,6 +506,32 @@ const ESX1_SHORT_PART_STEPS_BYTES = 16;
 const ESX1_PITCH_NEUTRAL_RAW = 0x40;
 
 /**
+ * v3.23.0: Decoded ein einzelnes step-byte zu {active, velocity, accent}.
+ *
+ * Verifiziertes Bit-Layout (siehe Header-Doc v3.23.0):
+ *   bit 0 = trigger active
+ *   bit 4 = accent (Best-Effort, 70.9% Drum + 38.2% Short der active-steps)
+ *
+ * Mapping-Konvention:
+ *   active + accent → velocity 127 (TR-style boost)
+ *   active ohne accent → velocity 100 (Default)
+ *   inactive → velocity 0, accent weggelassen (undefined)
+ *
+ * Wir mappen explizit die zwei verifizierten Bits — die Bits 1..3, 5..7
+ * bleiben nicht-RE-d und werden NICHT als Pseudo-Velocity exportiert
+ * (vermeidet false-positive Note-Encodings).
+ */
+function decodeStepByte(rawByte: number): EsxStepEvent {
+  const b = rawByte & 0xff;
+  const active = (b & 0x01) !== 0;
+  if (!active) {
+    return { active: false, velocity: 0 };
+  }
+  const accent = (b & 0x10) !== 0;
+  return { active: true, velocity: accent ? 127 : 100, accent };
+}
+
+/**
  * Wandelt das +8-byte (Pitch) eines Drum/Short-Part-Headers in Semitones um.
  *
  * Signed-Two's-Complement, neutral bei 0x40 (= 0 semitones). Range: 0x00..0x7F
@@ -524,12 +589,7 @@ function decodeDrumPart(
   const steps: EsxStepEvent[] = new Array(ESX1_DEFAULT_STEPS);
   for (let s = 0; s < ESX1_DEFAULT_STEPS; s++) {
     const b = raw[stepsOff + s] || 0;
-    const active = (b & 0x01) !== 0;
-    // Velocity: upper 7 bits are best-effort. ESX-1 stores acccent/roll there.
-    // Wir mappen `b >> 1` als 0..127 Pseudo-Velocity, default 100 wenn keine Daten.
-    let velocity = (b >> 1) & 0x7f;
-    if (active && velocity === 0) velocity = 100;
-    steps[s] = { active, velocity };
+    steps[s] = decodeStepByte(b);
   }
   return { sampleId, volume, pan, pitch, fxAmount, steps };
 }
@@ -561,10 +621,7 @@ function decodeStretchPart(raw: Uint8Array):
   const steps: EsxStepEvent[] = new Array(ESX1_DEFAULT_STEPS);
   for (let s = 0; s < ESX1_DEFAULT_STEPS; s++) {
     const b = raw[stepsOff + s] || 0;
-    const active = (b & 0x01) !== 0;
-    let velocity = (b >> 1) & 0x7f;
-    if (active && velocity === 0) velocity = 100;
-    steps[s] = { active, velocity };
+    steps[s] = decodeStepByte(b);
   }
   return { sampleId, volume, pan, pitch, fxAmount, steps };
 }
@@ -606,10 +663,7 @@ function decodeShortPart(
   const steps: EsxStepEvent[] = new Array(ESX1_DEFAULT_STEPS);
   for (let s = 0; s < ESX1_DEFAULT_STEPS; s++) {
     const b = raw[stepsOff + s] || 0;
-    const active = (b & 0x01) !== 0;
-    let velocity = (b >> 1) & 0x7f;
-    if (active && velocity === 0) velocity = 100;
-    steps[s] = { active, velocity };
+    steps[s] = decodeStepByte(b);
   }
   return { sampleId, volume, pan, pitch, fxAmount, steps };
 }

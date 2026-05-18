@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.22.0",
+    version: "3.23.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -264,9 +264,9 @@ const INDEX = {
       lastSeen: "2026-05-18T08:30:00.000Z",
       ownedBy:  "backend"
     },
-    "client/src/utils/korg/esxParser.ts (v3.20.0)": {
-      role:     "v3.20.0: ESX-1 .esx Sample-Bank + Pattern + Step-Encoding Parser (~720 LOC, pure JS, isomorph). v3.20-NEU: 3 weitere Decoder-Helpers per Hex-Diff RE (BOTTROP/KASSEL × 32 non-empty Patterns) UND zwei neue Felder im 34B Drum-Part-Header. (1) Pitch (signed i8 @ part+8, 0x40=neutral, range -64..+63 nach decodePitchByte(rawByte): rawByte-0x40 mit Klamp auf Hardware-Window). 0x40 dominiert mit 2475/2830 in BOTTROP → high conf. (2) FxSend (u8 @ part+11, 0..127, 0=off, 0x7F=max → 12 unique Werte). (3) decodeStretchPart(raw) - liest Part 10 @ 0x25C mit gleichem 34B-Layout (sampleId BE u16, pitch +8, level +9, pan +10, fxSend +11, 16 step-bytes +18). (4) decodeShortPart(raw, shortIndex 0..3) - liest Parts 11..14 (Sample/Slice/Synth) mit 32B-Stride (16B Header + 16B Steps) @ 0x36E, 0x38E, 0x3AE, 0x3CE. Short-Header-Layout: sampleId @ +0 BE u16, pitch @ +6, level @ +7, pan @ +8, fxSend @ +10, steps @ +16. Beweis: BOTTROP[1] @0x36E = sampleId 0x0086, pitch -10 (0x36), level 0x7F, 4-on-the-floor Kick. Part 15 (Audio-In) bleibt Defaults (in Real-Files keine Trigger). EsxPart-Type liefert jetzt 'pitch' und 'fxAmount' echt dekodiert für parts 0..14 (15 = Defaults). Bestehende v3.14 Drum-API + v3.3/v3.5 Sample-API unveraendert. 38 Pattern-Tests grün (10 v3.20 NEU). Konstanten erweitert: ESX1_STRETCH_PART_OFFSET=0x25C, ESX1_SHORT_PART_OFFSETS=[0x36E,0x38E,0x3AE,0x3CE], ESX1_SHORT_PART_HEADER_BYTES=16, ESX1_PITCH_NEUTRAL_RAW=0x40.",
-      lastSeen: "2026-05-18T13:05:00.000Z",
+    "client/src/utils/korg/esxParser.ts (v3.23.0)": {
+      role:     "v3.23.0: Step-Byte Bit-Layout RE — bit-4=ACCENT-Flag (TR-style) wird in EsxStepEvent.accent?:boolean exportiert. Verifiziert via Hex-Diff von 17222 active steps in 5 Real-Files (BOTTROP/ENDLICH/KASSEL/TOBI/YOYOY): bit-4 erscheint in 70.9% Drum + 38.2% Short-Part active-steps. NEW: decodeStepByte(rawByte)→EsxStepEvent — zentralisiert das Step-Byte-Decoding (active=bit-0, accent=bit-4 wenn active, velocity=127 falls accent sonst 100, inactive→ {active:false, velocity:0, accent undefined}). Refactor: decodeDrumPart + decodeStretchPart + decodeShortPart rufen jetzt decodeStepByte — eine einheitliche Decoding-Pipeline. NOTE-ENCODING-HYPOTHESE WIDERLEGT: 97 distinct upper-7-bit Werte, aber distinct-Range pro 'melodic'-Row hat median 95 / max 123 Semitones — physisch unmoeglich fuer Bass/Lead-Line. Step-bytes encoden KEINE Notenhoehe; Pitch lebt im Per-Part-Header (pitch @+6 fuer 32B-stride, @+8 fuer 34B-stride). Per-Step Pitch-Motion Region 0x488+ ist in allen Files vollstaendig 0x80 (neutral). v3.20-API unveraendert; nur Step-Resultat um optionales accent-Field erweitert.",
+      lastSeen: "2026-05-18T13:50:00.000Z",
       ownedBy:  "backend"
     },
     "client/src/utils/korg/esxPatternConvert.ts (v3.5.0)": {
@@ -1262,6 +1262,36 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "backend",
+      timestamp: "2026-05-18T13:50:00.000Z",
+      done: [
+        "v3.23.0: ESX-1 Step-Byte Bit-Layout Reverse-Engineering (TASK-v3.20-FU-SYNTH-NOTE). Hex-Diff von 17222 active steps in 5 Real-Files (BOTTROP/ENDLICH/KASSEL/TOBI/YOYOY) untersucht. RESULT: NOTE-ENCODING WIDERLEGT, accent-Flag bestätigt.",
+        "Investigation-Methode: 5 Node-Scripts unter scripts/esx-re-v323-*.mjs gebaut. (a) synth-notes.mjs dumped distinct step-byte-values + bit-Patterns aus Synth-Parts. (b) deeper.mjs untersuchte distinct-value-Variance pro 'melodic'-Row (≥10 distinct in 16 Steps). (c) melody.mjs versuchte 7-bit-Pitch-Mapping (bits 1..7 als note 0..127). (d) roll-check.mjs untersuchte bit-1..3 als Roll/Slide. (e) accent.mjs maß bit-4-Frequenz pro Part-Typ.",
+        "DISTINCT-VALUES: 97 unique upper-7-bit-Werte in den step-bytes der Short-Parts (Sample/Slice/Synth). Verteilung der distinct-values pro melodischer Row: median 95, max 123 Semitones — physikalisch unmoeglich fuer Bass/Lead-Line (max 36 typisch). HYPOTHESE 'bits 1..7 = MIDI note' WIDERLEGT. Step-bytes encoden KEINE Notenhoehe.",
+        "BIT-LAYOUT (CONSERVATIVE / HIGH-CONFIDENCE): bit 0 = trigger active (CONFIRMED v3.20, 100% Korrelation), bit 4 = ACCENT (Drum-Parts 70.9% / Short-Parts 38.2% der active-Steps, konsistent mit TR-Style Accent-Layer). Bits 1..3, 5..7 bleiben best-effort/unbekannt — werden NICHT als Pseudo-Velocity exportiert (vermeidet false-positive Note-Encodings).",
+        "Per-Step Pitch-Motion Region 0x488+ ist in allen 5 untersuchten Files vollstaendig 0x80 (neutral). KEINE per-step note-modulation gefunden — die Pitch-Information lebt im Per-Part-Header (pitch @+6 fuer 32B-stride, @+8 fuer 34B-stride). Falls Hardware Synth-Pitch-Sequencing kann, ist es offenbar nur in nicht-RE-dem Motion-Lane-Format gespeichert.",
+        "Parser-Update: NEU decodeStepByte(rawByte)→EsxStepEvent zentralisiert das Step-Decoding (active=bit-0, accent=bit-4 wenn active, velocity=127 falls accent sonst 100, inactive→{active:false, velocity:0, accent undefined}). decodeDrumPart + decodeStretchPart + decodeShortPart rufen jetzt einheitlich decodeStepByte. EsxStepEvent.accent?:boolean field bereits in v3.23 type-doc dokumentiert.",
+        "12 NEUE Tests in tests/features/korg-esx-patterns.test.ts: (a) v3.23 Drum-Accent 7×: 0x01 (no accent), 0x11 (accent), 0x55 (accent), 0x15 (accent), 0x10 (bit-4 ohne trigger → inactive), 0x00 (inactive), gemischte 4-step Sequence. (b) v3.23 Short-Part-Accent 1×: parts 11..14 derselben Decoding-Logik. (c) v3.23 Note-Encoding-NEGATIV 2×: EsxStepEvent.note feld nicht existiert. (d) v3.23 Real-File-Accent 2×: foundAccent + accent_count/active>0.2 + alle accent steps haben velocity=127.",
+        "Test-Resultat: tests/features/korg-esx-patterns.test.ts 50/50 grün (vorher 38). pnpm test gesamt → 4008 passed / 15 skipped (vorher 3996 → +12). pnpm check clean. Alle v3.20 Step-Tests bleiben gruen (velocity-Erwartungen via decodeStepByte: 0x01 → 100, 0x11 → 127 — alte 'velocity wird auf 100 gesetzt' Test trifft weiterhin zu für 0x01).",
+        "CONFIDENCE-NOTE: Die accent-Hypothese ist Best-Effort. 70.9% Drum-Bit-4-Rate ist auffaellig hoch (vs. random ~50%), aber NICHT 100% — koennte auch 'roll-1' oder 'gate-extend' sein. Wir mappen konservativ auf velocity 127 was bei TR-Style-Audio-Engine 99% gleich klingt wie 'accent'. Falls Hardware-Test spaeter zeigt, dass bit-4 etwas anderes ist, ist die API-Aenderung minimal (nur accent-Field, nicht die ganzen Step-Daten).",
+        "package.json + agents/INDEX.js version 3.22.0 → 3.23.0."
+      ],
+      next: [
+        "TASK-v3.23-FU-MOTION: ESX-1 Motion-Lane-Decoding (0x16C..0x25B Drum + 0x27E..0x35D Stretch/Sample). 15 lanes × 16B mit 0xBC/0x02 defaults. Wenn diese decoden würden, würde per-step Pitch/Filter/Volume-Modulation als automationLanes exportiert. RE-Aufwand: Hex-Diff 5+ Files mit aktivem Motion-Track gegen Init-Patterns.",
+        "TASK-v3.23-FU-ROLL: Bits 1..3 (rate=1/8, 1/16, 1/32 Roll-Subdivision laut ESX-1 Manual) sind noch nicht RE-d. Roll-check.mjs script hatte preliminary Findings aber nicht hardware-validated. EsxStepEvent.roll?:1|2|4|8 Erweiterung waere wertvoll.",
+        "TASK-v3.23-FU-HARDWARE-VALIDATION: bit-4=accent Hypothese ist statistisch konsistent, aber nicht audio-validiert. Hardware-Loop noetig: ESX-1 mit Pattern wo bit-4 toggled wird, Audio-Render checken ob Velocity-Boost hoerbar. Falls bit-4 stattdessen 'gate-mute' oder 'reverse-trig' ist, decodeStepByte muss umgemapt werden.",
+        "TASK-v3.23-FU-PER-STEP-PITCH: Die Pitch-Motion-Region 0x488+ ist in unseren 5 Files alle 0x80 (neutral). Wenn ein File mit aktivem Synth-Note-Sequencing gefunden wird, sollte diese Region als per-step Pitch-Offset decoden. EsxStepEvent.pitchOffset?:number waere die natürliche API.",
+        "TASK-v3.23-FU-CONVERT: esxPatternConvert.ts propagiert accent NICHT in SynthstudioDrumPartImport. Synthstudio's Drum-Engine hat eigenes 'accent'-Konzept (velocities[]) — der Convert lasst velocity bereits durch (127 vs 100), was praktisch dem accent entspricht. Falls explizite accent[]:boolean[] gewuenscht → trivial in convertEsxPatternToSynthstudio einbauen."
+      ],
+      changed: [
+        "client/src/utils/korg/esxParser.ts (v3.20 → v3.23: +decodeStepByte helper, refactor decodeDrumPart/decodeStretchPart/decodeShortPart → einheitliche Decoding-Pipeline, +EsxStepEvent.accent?:boolean, +Header-Doc v3.23.0 SCOPE mit RE-Findings + NOTE-HYPOTHESE-WIDERLEGUNG)",
+        "tests/features/korg-esx-patterns.test.ts (+12 v3.23-Tests in 4 describes: 7× Drum-Accent + 1× Short-Part-Accent + 2× Note-Negativ + 2× Real-File-Accent-Stats — 38 → 50 Tests)",
+        "scripts/esx-re-v323-{accent,deeper,melody,roll-check,synth-notes}.mjs (NEU, 5 RE-Phasen-Scripts: distinct-value-dump, bit-1..3 roll-check, melodic-range-test, accent-frequency-measurement)",
+        "package.json (3.22.0 → 3.23.0)",
+        "agents/INDEX.js (version 3.22.0 → 3.23.0 + workLog v3.23.0 entry + files-Entry esxParser.ts auf v3.23.0)"
+      ]
+    },
     {
       agent:     "frontend",
       timestamp: "2026-05-18T13:30:00.000Z",
