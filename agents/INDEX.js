@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.34.0",
+    version: "3.35.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -89,6 +89,16 @@ const INDEX = {
   // ─── KNOWN FILE INDEX ──────────────────────────────────────
   // Key files agents have analyzed. Add new entries after working on a file.
   files: {
+    "client/src/audio/MidiClockIn.ts (v3.35.0)": {
+      role:     "v3.35.0 NEU: MIDI-Clock-Slave Receiver, Komplement zu MidiClockOut.ts (v2.83). Stateful-Klasse: enable/disable/reset + handleMidiMessage(ArrayLike<number>) für 0xF8/0xFA/0xFB/0xFC/0xF2. BPM-Berechnung via EWMA (alpha=0.1 default) mit Outlier-Filter (>50% off-mean discarded). Sync-Status getStatus() → 'off'|'tempo-only'|'running'|'lost' mit 500ms Sync-Loss-Threshold. Events via injectable dispatch (default window.dispatchEvent): midiclockin:start/stop/continue/tempo/spp. Pure-Helpers exportiert: bpmFromTickInterval, ewmaStep, isOutlier. Hot-Path 0xF8 alloc-free. Mean wird über start/stop hinweg preserved damit re-Start nicht 6 Bootstrap-Ticks braucht. NowProvider-Injection für deterministische Tests (kein performance.now/Date.now-Mock nötig). Isomorphic — keine React/Electron-Imports, läuft im Browser + Node-Vitest. 24/24 Tests GREEN.",
+      lastSeen: "2026-05-18T17:55:00.000Z",
+      ownedBy:  "backend"
+    },
+    "tests/features/midi-clock-in.test.ts (v3.35.0)": {
+      role:     "v3.35.0 NEU: 24 Tests für MidiClockIn-Receiver. Coverage: (a) Pure-Helpers (4): bpmFromTickInterval 20.833ms→120BPM + out-of-range-reject, ewmaStep first-sample-1:1 + smoothing-math, isOutlier-threshold + null-mean-bootstrap-safe. (b) Lifecycle (3): starts-disabled-ignores-all, enable→disable-clears-state, re-enable-fresh-EWMA. (c) Tempo-Estimation (5): ticks-accumulate-EWMA-output, exact-120-BPM-24-Ticks-20.833ms, tempo-event-throttled-Δ-0.1BPM, jitter-resistance-±20%-stable, outlier-spike-200ms-discarded. (d) Transport (4): 0xFA-start-event+isRunning, 0xFC-stop-event, 0xFB-continue-keeps-mean, 0xFA-resets-counter-preserves-mean. (e) SPP (2): u14-LE-100 + 200-mit-MSB-bit. (f) Sync-Loss (3): lost-after-500ms, running-after-START+Tick, tempo-only-Ticks-ohne-START. (g) Robustness (3): malformed-empty + short-SPP, number[]-and-Uint8Array, disable-while-running-stops-events. Harness: nowMs starts 1000 (Sentinel-0-Kollision-Schutz), Event-Recorder-Array statt window.dispatchEvent.",
+      lastSeen: "2026-05-18T17:55:00.000Z",
+      ownedBy:  "backend"
+    },
     "client/src/utils/electribePatternBuilder.ts (v3.34.0)": {
       role:     "v3.34.0 BIT-EXACT POLISH: 3 KORG-native Encoding-Konventionen adoptiert um v3.33 RT-Findings zu schliessen. (1) writeAsciiNulPadded (vorher writeAsciiSpacePadded): name-Bytes NUL-padded ab string-content-length statt all-space (BodyTalk1 9-char → 9 ASCII + 7×0x00). Real KORG-Hardware-Files nutzen NUL-pad — Parser strippt beide Varianten trim+NUL, semantisch identisch. (2) Velocity-Sentinel: writeStepRecord schreibt byte 1 = 0xFF (ELECTRIBE_REAL_VELOCITY_DEFAULT_SENTINEL) wenn velocity unset ODER explicit===127. Andere Werte 0..126 literal. Parser map 0xFF → 127, round-trip semantisch identisch. (3) Inactive-Step Note-Byte: writeStepRecord byte 4 = 0x00 wenn !step.active (matches Real Init181 convention; Real BodyTalk1 nutzt 0x48 — beides parser-ignoriert da ParsedPartStep nur active+velocity exposed). Active steps behalten Default 0x48 oder explicit step.note. NEUE exports: E2_DEFAULT_VELOCITY_RAW_BYTE=0xFF, E2_INACTIVE_STEP_NOTE=0x00. E2_DEFAULT_VELOCITY=127 (canonical) statt 96. Imports erweitert um ELECTRIBE_REAL_VELOCITY_DEFAULT_SENTINEL/VALUE. BACKWARD-COMPAT: Parser bleibt unverändert, decode-Output für alle 4 Real-Files IDENTISCH zu v3.26. Drift-Reduction: BodyTalk1 7000→1030 (−85.3%) total, 492→3 (−99.4%) decoded; Init181 5400→152 (−97.2%) total, 1028→0 (−100%) decoded.",
       lastSeen: "2026-05-18T17:40:00.000Z",
@@ -1442,6 +1452,40 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "backend",
+      timestamp: "2026-05-18T17:55:00.000Z",
+      done: [
+        "v3.35.0: MIDI-Clock-IN External-Sync — Synthstudio als Slave zu Electribe/OmniTribe/DAW. Komplement zu v2.83 Clock-OUT (Master). Eingehende 0xF8/0xFA/0xFB/0xFC/0xF2 werden in BPM-Estimate + Transport-Events übersetzt; AudioEngine folgt externem Tempo; UI-Slider wird im Sync-Mode read-only.",
+        "NEU client/src/audio/MidiClockIn.ts (~270 LOC) — Stateful Receiver-Klasse, Pendant zu MidiClockOut.ts. Public-API: enable/disable/reset, handleMidiMessage(ArrayLike<number>), getEstimatedBpm(), getStatus() → 'off'|'tempo-only'|'running'|'lost'. Pure-Helpers exportiert: bpmFromTickInterval (60000/(int*24)), ewmaStep (alpha=0.1 default), isOutlier (threshold 0.5). Events via injectable dispatch (default window.dispatchEvent): midiclockin:start/stop/continue/tempo/spp.",
+        "BPM-Smoothing-Strategie: EWMA alpha=0.1 (langsam-adaptiv, kein Yoyo). Erstes Sample 1:1 übernommen (kein Bootstrap-Bias). Outlier-Filter: Intervalle > 50% off EWMA-Mean werden discarded (USB-Spike/GC-Pause-Schutz). Tempo-Event throttled: nur emit wenn BPM-Δ ≥ 0.1 (gerundet auf 0.1). Mean wird über start/stop hinweg preserviert — re-Start braucht keine 6 Bootstrap-Ticks.",
+        "Sync-Stability: kein Tick > 500ms → status='lost' (UI-LED rot). Verbleibende Risiken: (1) Master der Tempo-Jumps > 50% in 1 Tick macht → einzelne Outlier-Filter-Hits, EWMA-Recovery dauert ~24 Ticks (1 Beat @120). (2) Bei aktivem External-Sync ignoriert AudioEngine.setBpm() — geblockt via _externalSyncActive flag; UI muss disabled-State zeigen. (3) Position-Reset bei 0xFA: ticksSeen=0, mean preserved → BPM-Output braucht nochmal 6 Ticks bevor er erscheint.",
+        "GEÄNDERT client/src/audio/AudioEngine.ts: _externalSyncActive Field, setBpm() respektiert flag (no-op wenn aktiv), neue Public-API setExternalSyncActive(bool) + applyExternalBpm(bpm) (Bypass für setBpm-Block) + Getter externalSyncActive. Looper bekommt BPM via applyExternalBpm normal weitergereicht.",
+        "GEÄNDERT client/src/utils/midiOutput.ts: 2 neue Persistence-Helpers loadClockInEnabled/saveClockInEnabled, Storage-Key synthstudio:midi:clockInEnabled.",
+        "GEÄNDERT client/src/hooks/useMidi.ts: MidiClockIn-Instance-Ref + clockInEnabled+clockInStatus State, setClockInEnabled-Action. handleMidiMessage routet 0xF8/0xFA/0xFB/0xFC zur Klasse wenn enabled — alter clockSync-Pfad (MidiClockAnalyzer) bleibt parallel. useEffect-Subscriber für midiclockin:tempo/start/stop/continue Events → applyExternalBpm + onPlayStop-Callback. Status-Poll alle 200ms via setInterval (lightweight für UI-LED). MidiState/MidiActions interfaces erweitert.",
+        "GEÄNDERT client/src/components/MidiSettings/MidiSettings.tsx: neue Section 'MIDI-Clock-IN (External-Sync, Slave)' im Clock-Tab, positioniert NACH 'MIDI-Clock Sync (In)' (alter Pfad) und VOR Clock-Out. Sync-Status-LED (data-testid clock-in-status-led) mit 4 Color-States (success/secondary/danger/dim), externes BPM-Display, Hinweis-Text zum read-only Slider.",
+        "NEU tests/features/midi-clock-in.test.ts (~310 LOC, 24 Tests, alle GREEN): pure-helpers (4), lifecycle (3), tempo-estimation (5: ticks-accumulate, exact-120-BPM, throttled-events, 20%-jitter-stable, outlier-spike-resilience), transport (4: 0xFA/0xFC/0xFB/start-reset-mean-preserve), SPP (2), sync-loss (3: lost-after-500ms, running, tempo-only), robustness (3: malformed, both-array-types, disable-stops-events). Test-Harness mit injizierter now()-Funktion (nowMs base 1000ms damit Sentinel===0 nicht kollidiert) + dispatch-Recorder — keine Real-Time-Abhängigkeit.",
+        "TEST-RESULTAT: pnpm check clean. pnpm test 186 files / 4291 tests passed (16 skipped, keine Regression vs v3.34). midi-clock-in 24/24 GREEN.",
+        "BACKWARD-COMPAT: alter clockSync-Pfad (MidiClockAnalyzer + externalBpm-State) bleibt funktionsfähig — User der nur das einfache Toggle nutzt merkt nichts. External-Sync ist ein PARALLEL aktivierbarer Mode, nicht eine Replacement der alten Sync-Section. Tempo-Slider-Read-only-Verhalten ist via AudioEngine.setBpm-Guard implementiert (kein UI-Refactor nötig).",
+        "package.json + agents/INDEX.js version 3.34.0 → 3.35.0."
+      ],
+      next: [
+        "Optional v3.36: Toolbar-BPM-Slider explizit disabled-State + Status-LED in Topbar (nicht nur Settings) — bislang ist nur AudioEngine.setBpm geblockt, das UI selbst zeigt Werte ohne Hinweis.",
+        "Optional v3.36: 0xFA bei aktivem External-Sync direkt AudioEngine.play() triggern statt nur onPlayStop-Callback (App.tsx-side decision). Aktuell delegieren wir bewusst an die existierende onPlayStop-Logik damit User-State (z.B. Recording-Modus) erhalten bleibt.",
+        "Optional v3.36: Pattern-Position via SPP-Empfang seeken — derzeit dispatchen wir midiclockin:spp aber kein Consumer hört zu. Nice-to-have wenn Master mid-track resumed (DAW-Use-Case).",
+        "Vorhandene v3.34-Items unverändert (Optional v3.35: ParsedPartStep accent+note, PTED Footer-Marker, Pattern-Header 0x120..0x200 RE)."
+      ],
+      changed: [
+        "client/src/audio/MidiClockIn.ts (NEU — Receiver-Klasse, EWMA-Smoothing, Sync-Status, Event-Dispatch)",
+        "client/src/audio/AudioEngine.ts (_externalSyncActive + setExternalSyncActive/applyExternalBpm/setBpm-Guard)",
+        "client/src/utils/midiOutput.ts (loadClockInEnabled/saveClockInEnabled + STORAGE_KEY_CLOCK_IN_ON)",
+        "client/src/hooks/useMidi.ts (MidiClockIn-Instance + Routing in handleMidiMessage + Status-Poll + Action setClockInEnabled, MidiState/MidiActions erweitert)",
+        "client/src/components/MidiSettings/MidiSettings.tsx (neue Clock-IN-Section mit Status-LED + extern-BPM-Display)",
+        "tests/features/midi-clock-in.test.ts (NEU — 24 Tests, alle GREEN)",
+        "package.json (3.34.0 → 3.35.0)",
+        "agents/INDEX.js (version + workLog v3.35.0 + files-Einträge)"
+      ]
+    },
     {
       agent:     "backend",
       timestamp: "2026-05-18T17:40:00.000Z",

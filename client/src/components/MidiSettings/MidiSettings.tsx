@@ -1699,6 +1699,79 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
         )}
       </div>
 
+      {/* ── v3.35.0: MIDI-Clock-IN External-Sync (Synthstudio als Slave) ─── */}
+      {/* Komplement zu v2.83 Clock-Out: externer Master (Electribe, OmniTribe,
+          DAW) sendet 24 PPQN + 0xFA/0xFC, Synthstudio folgt BPM + Transport.
+          Tempo-Slider wird read-only solange aktiv. */}
+      <div className="p-3 bg-bg-elevated rounded-lg" data-testid="clock-in-section">
+        <div className="flex items-center justify-between mb-2">
+          <div>
+            <div className="text-sm font-medium text-text-primary">MIDI-Clock-IN (External-Sync, Slave)</div>
+            <div className="text-xs text-text-muted mt-0.5">
+              Synthstudio folgt externem MIDI-Master (Tempo + Start/Stop)
+            </div>
+          </div>
+          <button
+            data-testid="clock-in-toggle"
+            onClick={() => midi.setClockInEnabled(!midi.clockInEnabled)}
+            className={`relative w-10 h-5 rounded-full transition-colors ${
+              midi.clockInEnabled ? "bg-accent-primary" : "bg-bg-elevated"
+            }`}
+            aria-label="External-Sync an/aus"
+          >
+            <div className={`absolute top-0.5 w-4 h-4 bg-text-primary rounded-full shadow transition-transform ${
+              midi.clockInEnabled ? "translate-x-5" : "translate-x-0.5"
+            }`} />
+          </button>
+        </div>
+
+        {midi.clockInEnabled && (
+          <div className="mt-3 p-2 bg-bg-elevated rounded text-center">
+            <div className="flex items-center justify-center gap-2 mb-1">
+              <span
+                data-testid="clock-in-status-led"
+                className={`inline-block w-2 h-2 rounded-full ${
+                  midi.clockInStatus === "running"    ? "bg-accent-success"   :
+                  midi.clockInStatus === "tempo-only" ? "bg-accent-secondary" :
+                  midi.clockInStatus === "lost"       ? "bg-accent-danger"    :
+                                                        "bg-text-dim"
+                }`}
+                title={
+                  midi.clockInStatus === "running"    ? `Synced & running @ ${midi.externalBpm?.toFixed(1) ?? "?"} BPM` :
+                  midi.clockInStatus === "tempo-only" ? `Tempo only @ ${midi.externalBpm?.toFixed(1) ?? "?"} BPM` :
+                  midi.clockInStatus === "lost"       ? "Sync verloren — kein Tick > 500ms" :
+                                                        "Receiver aktiv, kein Master verbunden"
+                }
+              />
+              <span className="text-xs text-text-muted">
+                {midi.clockInStatus === "running"    ? "Synced & running"    :
+                 midi.clockInStatus === "tempo-only" ? "Tempo only (no transport)" :
+                 midi.clockInStatus === "lost"       ? "Sync verloren (>500ms)" :
+                                                       "Warte auf Master…"}
+              </span>
+            </div>
+            {midi.externalBpm !== null ? (
+              <div>
+                <div className="text-2xl font-mono text-accent-secondary font-bold">
+                  {midi.externalBpm.toFixed(1)}
+                </div>
+                <div className="text-xs text-text-muted">BPM (extern, gemittelt)</div>
+              </div>
+            ) : (
+              <div className="text-xs text-text-muted">Warte auf 0xF8-Ticks…</div>
+            )}
+          </div>
+        )}
+
+        {midi.clockInEnabled && (
+          <div className="mt-3 text-xs text-text-muted">
+            <span className="text-accent-secondary">Hinweis:</span> Tempo-Slider in der Toolbar ist
+            jetzt read-only — BPM kommt vom Master. Stoppt der Master, bleibt
+            der zuletzt gemessene Wert stehen.
+          </div>
+        )}
+      </div>
+
       {/* ── Clock-Out: Synthstudio als Master ─────────────────────────────── */}
       {/* TASK-230 (v2.83): 24 PPQN + Start/Stop/Continue an externes Gerät. */}
       <div className="p-3 bg-bg-elevated rounded-lg" data-testid="clock-out-section">

@@ -28,11 +28,14 @@ import {
   saveFeedbackEnabled,
   loadFeedbackSceneMode,
   saveFeedbackSceneMode,
+  loadClockInEnabled,
+  saveClockInEnabled,
   sendMessage as midiSendMessage,
   NANO_KONTROL2,
   type MidiAccessLike,
 } from "@/utils/midiOutput";
 import { NanoKontrolFeedback, type NanoKontrolChannelState } from "@/audio/NanoKontrolFeedback";
+import { MidiClockIn, type MidiClockInStatus } from "@/audio/MidiClockIn";
 import { cycleScene } from "@/store/useSceneStore";
 import {
   detectTemplatesFromDeviceList,
@@ -245,6 +248,19 @@ export interface MidiState {
   autoLearnFilterChannel: number;
   clockSync: boolean;
   externalBpm: number | null;
+  /**
+   * v3.35.0: MIDI-Clock-IN External-Sync. Wenn true, übernimmt Synthstudio
+   * BPM + Play/Stop vom externen Master (Electribe, OmniTribe, DAW). Der
+   * Tempo-Slider wird read-only, BPM-Anzeige zeigt das gemittelte externe
+   * Tempo. Komplement zu clockOutEnabled (v2.83).
+   */
+  clockInEnabled: boolean;
+  /**
+   * v3.35.0: Sync-Status für UI-LED. `off` = Receiver disabled, `tempo-only`
+   * = Ticks fließen aber kein Transport-Start, `running` = Master spielt,
+   * `lost` = > 500ms keine Ticks (Master disconnected / paused without stop).
+   */
+  clockInStatus: MidiClockInStatus;
   /** MIDI Out aktiv */
   midiOutEnabled: boolean;
   /** MIDI-Ausgangskanal (1–16, 0 = Ch10 Drums) */
@@ -307,6 +323,13 @@ export interface MidiActions {
   setFeedbackEnabled: (enabled: boolean) => void;
   /** v2.84: Toggle für Marker-PREV/NEXT → Scene-Cycle. */
   setFeedbackSceneMode: (enabled: boolean) => void;
+  /**
+   * v3.35.0: Aktiviert/deaktiviert External-Sync (MIDI-Clock-IN als Slave).
+   * Wenn an: Synthstudio übernimmt BPM + Play/Stop vom externen Master. UI-
+   * Slider wird read-only. AudioEngine.setExternalSyncActive() wird parallel
+   * gesetzt damit setBpm() blockiert wird.
+   */
+  setClockInEnabled: (enabled: boolean) => void;
   /**
    * v2.84: Synchronisiert den LED-State mit dem aktuellen Mixer-Snapshot.
    * Wird typischerweise im useEffect aufgerufen wenn sich Mute/Solo ändert.
@@ -674,6 +697,13 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
   useEffect(() => { clockOutBpmRef.current = clockOutBpm; }, [clockOutBpm]);
   useEffect(() => { clockOutputDeviceIdRef.current = clockOutputDeviceId; }, [clockOutputDeviceId]);
 
+  // v3.35.0: External-Sync (MIDI-Clock-IN als Slave).
+  const [clockInEnabled, setClockInEnabledState] = useState<boolean>(() => loadClockInEnabled());
+  const [clockInStatus, setClockInStatus] = useState<MidiClockInStatus>("off");
+  const clockInRef = useRef<MidiClockIn>(new MidiClockIn());
+  const clockInEnabledRef = useRef(false);
+  useEffect(() => { clockInEnabledRef.current = clockInEnabled; }, [clockInEnabled]);
+
   // v2.84 (TASK-231): LED-Feedback-State + Scene-Mode.
   const [feedbackOutputDeviceId, setFeedbackOutputDeviceIdState] = useState<string | null>(() => loadFeedbackOutputId());
   const [feedbackEnabled, setFeedbackEnabledState] = useState<boolean>(() => loadFeedbackEnabled());
@@ -738,7 +768,20 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
     const type = status & 0xf0;
     const channel = (status & 0x0f) + 1; // 1-16
 
-    // MIDI-Clock
+    // v3.35.0: MIDI-Clock-IN External-Sync (Receiver-Klasse). Wenn aktiv,
+    // schicken wir ALLE Real-Time-Messages an die Instance — sie kümmert sich
+    // um BPM-EWMA + dispatched Events. Wir leiten den Tempo-Event hier in den
+    // optionalen Callback weiter, falls Caller das nutzen möchten.
+    if (clockInEnabledRef.current) {
+      clockInRef.current.handleMidiMessage(data);
+      // ausgewählte Status-Bytes wollen wir hier KOMPLETT konsumieren damit
+      // sie nicht doppelt verarbeitet werden (z.B. alter clockSync-Pfad).
+      if (status === 0xf8 || status === 0xfa || status === 0xfb || status === 0xfc) {
+        return;
+      }
+    }
+
+    // MIDI-Clock (alter Pfad, läuft parallel solange clockSync separat enabled).
     if (status === 0xf8) {
       if (clockSyncRef.current) {
         const bpm = clockAnalyzer.current.tick(event.timeStamp);
@@ -1498,6 +1541,62 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
     saveFeedbackSceneMode(enabled);
   }, []);
 
+  // ── v3.35.0: External-Sync (MIDI-Clock-IN) ───────────────────────────────
+  const setClockInEnabled = useCallback((enabled: boolean) => {
+    setClockInEnabledState(enabled);
+    saveClockInEnabled(enabled);
+    if (enabled) {
+      clockInRef.current.enable();
+    } else {
+      clockInRef.current.disable();
+      setExternalBpm(null);
+    }
+    // AudioEngine-Side: setBpm() blockieren wenn aktiv. Damit ignoriert die
+    // Engine UI-Slider-Inputs solange Master die Führung hat.
+    AudioEngine.setExternalSyncActive(enabled);
+  }, []);
+
+  // Bei Enable: globalen Listener für tempo/start/stop installieren. Wir
+  // konsumieren die CustomEvents die MidiClockIn auf window dispatched —
+  // damit kommt App.tsx ohne extra Subscription aus, falls es nur die
+  // klassischen onBpmChange/onPlayStop-Callbacks nutzt.
+  useEffect(() => {
+    if (!clockInEnabled) return;
+    const onTempo = (ev: Event) => {
+      const detail = (ev as CustomEvent).detail as { bpm: number } | undefined;
+      if (!detail || typeof detail.bpm !== "number") return;
+      setExternalBpm(detail.bpm);
+      // Direkter Pfad in AudioEngine (umgeht setBpm-Block).
+      AudioEngine.applyExternalBpm(detail.bpm);
+      optionsRef.current.onClockBpm?.(detail.bpm);
+      optionsRef.current.onBpmChange?.(Math.round(detail.bpm));
+    };
+    const onStart = () => { optionsRef.current.onPlayStop?.(); };
+    const onStop  = () => { optionsRef.current.onPlayStop?.(); };
+    window.addEventListener("midiclockin:tempo", onTempo as EventListener);
+    window.addEventListener("midiclockin:start", onStart);
+    window.addEventListener("midiclockin:stop",  onStop);
+    window.addEventListener("midiclockin:continue", onStart);
+    return () => {
+      window.removeEventListener("midiclockin:tempo", onTempo as EventListener);
+      window.removeEventListener("midiclockin:start", onStart);
+      window.removeEventListener("midiclockin:stop",  onStop);
+      window.removeEventListener("midiclockin:continue", onStart);
+    };
+  }, [clockInEnabled]);
+
+  // Status-Poll alle 200ms — lightweight, reicht für eine LED.
+  useEffect(() => {
+    if (!clockInEnabled) {
+      setClockInStatus("off");
+      return;
+    }
+    const timer = setInterval(() => {
+      setClockInStatus(clockInRef.current.getStatus());
+    }, 200);
+    return () => clearInterval(timer);
+  }, [clockInEnabled]);
+
   /**
    * v2.84: Sync der LED-States mit dem aktuellen Mute/Solo-Snapshot.
    * App.tsx ruft dies in einem useEffect auf, das den aktiven Pattern-State
@@ -1605,6 +1704,10 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
     setFeedbackSceneMode,
     syncFeedbackLeds,
     sendPanic,
+    // v3.35.0: External-Sync (MIDI-Clock-IN)
+    clockInEnabled,
+    clockInStatus,
+    setClockInEnabled,
     // Output Actions
     setActiveOutputDevice,
     setMidiOutEnabled,

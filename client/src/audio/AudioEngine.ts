@@ -489,6 +489,18 @@ class AudioEngineClass {
    */
   private _midiNoteOut = new MidiNoteOut(null);
 
+  // ─── MIDI-Clock-IN External-Sync (v3.35.0) ────────────────────────────────
+  //
+  // Wenn `_externalSyncActive === true`, akzeptiert die Engine externe
+  // Tempo-Updates per `applyExternalBpm()` und ignoriert manuelle BPM-Slider-
+  // Inputs auf der Settings-/UI-Seite. Start/Stop-Trigger kommen ebenfalls
+  // von außen — entweder über `play()/stop()`-Calls die der useMidi-Hook auf
+  // 0xFA/0xFC einstellt, oder direkt via `externalStart()/externalStop()`.
+  //
+  // Diese State-Variable spiegelt das User-Toggle in MidiSettings wider; die
+  // tatsächliche MidiClockIn-Instanz lebt im useMidi-Hook.
+  private _externalSyncActive = false;
+
   // Transport
   private _isPlaying = false;
   private _bpm = 120;
@@ -664,9 +676,39 @@ class AudioEngineClass {
   }
 
   setBpm(bpm: number) {
+    // v3.35.0: External-Sync-Pflicht. Wenn ein externer MIDI-Master aktiv
+    // ist, ignorieren wir manuelle BPM-Updates (UI-Slider, Hotkey, KI). Der
+    // externe Wert kommt ausschließlich über `applyExternalBpm()`.
+    if (this._externalSyncActive) return;
     this._bpm = Math.max(20, Math.min(300, bpm));
     this._updateAudioTrackPlaybackRates();
     // Looper (TASK-235) braucht aktuelle BPM für Bar-Boundary-Mathematik.
+    this._looperEngine.setBpm(this._bpm);
+  }
+
+  /**
+   * v3.35.0: External-Sync-Schalter. Wenn aktiv, wird `setBpm()` no-op und
+   * BPM-Updates kommen nur noch via `applyExternalBpm()`. UI muss den Slider
+   * read-only schalten und ein "ext-sync"-Badge zeigen.
+   */
+  setExternalSyncActive(active: boolean): void {
+    this._externalSyncActive = active;
+  }
+
+  /** v3.35.0: read-only Flag. */
+  get externalSyncActive(): boolean {
+    return this._externalSyncActive;
+  }
+
+  /**
+   * v3.35.0: Bypass für `setBpm`, wird vom useMidi-Hook bei jedem
+   * `midiclockin:tempo`-Event aufgerufen. Schlägt durch zum Looper.
+   * Triggert KEINE Re-Trigger des Step-Sequencers — der nutzt _bpm beim
+   * nächsten _schedule()-Loop.
+   */
+  applyExternalBpm(bpm: number): void {
+    this._bpm = Math.max(20, Math.min(300, bpm));
+    this._updateAudioTrackPlaybackRates();
     this._looperEngine.setBpm(this._bpm);
   }
   setSteps(steps: 16 | 32) { this._steps = steps; }

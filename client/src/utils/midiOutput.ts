@@ -62,6 +62,8 @@ const STORAGE_KEY_CLOCK_OUT_ON    = "synthstudio:midi:clockOutEnabled";
 const STORAGE_KEY_FB_OUT_ID       = "synthstudio:midi:feedbackOutputId";
 const STORAGE_KEY_FB_OUT_ON       = "synthstudio:midi:feedbackOutEnabled";
 const STORAGE_KEY_FB_SCENE_MODE   = "synthstudio:midi:feedbackSceneMode";
+// v3.35.0 — External-Sync (Clock-IN als Master):
+const STORAGE_KEY_CLOCK_IN_ON     = "synthstudio:midi:clockInEnabled";
 
 /** Lädt die zuletzt gewählte Clock-Out-Device-ID aus localStorage. */
 export function loadClockOutputId(): string | null {
@@ -146,6 +148,24 @@ export function saveFeedbackSceneMode(enabled: boolean): void {
   if (typeof localStorage === "undefined") return;
   try {
     localStorage.setItem(STORAGE_KEY_FB_SCENE_MODE, enabled ? "1" : "0");
+  } catch { /* ignore */ }
+}
+
+// ─── v3.35.0: MIDI-Clock-IN External-Sync (Synthstudio als Slave) ───────────
+
+/** Lädt den External-Sync-Enable-Flag (default: false). */
+export function loadClockInEnabled(): boolean {
+  if (typeof localStorage === "undefined") return false;
+  try {
+    return localStorage.getItem(STORAGE_KEY_CLOCK_IN_ON) === "1";
+  } catch { return false; }
+}
+
+/** Persistiert den External-Sync-Enable-Flag. */
+export function saveClockInEnabled(enabled: boolean): void {
+  if (typeof localStorage === "undefined") return;
+  try {
+    localStorage.setItem(STORAGE_KEY_CLOCK_IN_ON, enabled ? "1" : "0");
   } catch { /* ignore */ }
 }
 
