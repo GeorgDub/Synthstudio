@@ -1192,89 +1192,126 @@ class AudioEngineClass {
     this._insertChainNodes.set(partId, insertNodes);
   }
 
-  // ─── Plugin-Slot (v3.44.0, TASK-239 Phase 1) ─────────────────────────────
-  // Per-Channel max 1 AudioWorklet-Plugin in series VOR der applyInsertChain-
-  // Position. Plugin-Node wird zwischen output(=channel-end) und panner
-  // eingefügt — analog zu Bitcrusher/RingMod in der Insert-Chain.
+  // ─── Plugin-Slot Chain (v3.44.0 → v3.45.0) ───────────────────────────────
+  // Per-Channel Plugin-Chain mit max MAX_PLUGIN_SLOTS_PER_CHANNEL Slots
+  // (siehe useMixerStore). Chain ist seriell: nodes.output → plugin[0] →
+  // plugin[1] → ... → plugin[N-1] → nodes.panner.
   //
-  // ARCHITEKTUR-ENTSCHEIDUNG: Plugin-Slot ist eine SEPARATE Schicht neben
+  // v3.45.0:
+  //   - Multi-Slot (1–4 Plugins pro Channel) statt Single-Slot.
+  //   - Click-Free Bypass via PluginHost.setBypassed (5ms gain-ramp).
+  //     Plugin-Knoten bleibt im Signalweg verkabelt — Bypass crossfaded
+  //     intern wet/dry. Keine disconnect/connect-Pops mehr.
+  //
+  // ARCHITEKTUR-ENTSCHEIDUNG: Plugin-Slots sind eine SEPARATE Schicht neben
   // den klassischen 12 Insert-Typen. In Phase-2 (native VST3) wird dies
   // wichtig weil native Plugins via IPC ein anderes Wiring brauchen.
 
-  /** Pro-Channel PluginHost-Instanz. Wird beim Wiring gehalten. */
-  private _pluginHosts = new Map<string, PluginHost>();
+  /** Pro-Channel Plugin-Chain (Liste von Hosts). Slot-Index === Chain-Position. */
+  private _pluginHosts = new Map<string, PluginHost[]>();
 
   /**
-   * Lädt/entlädt ein Plugin für einen Kanal. Bei null wird der Slot entfernt.
-   * Defensive: bei Plugin-Load-Fehler bleibt der Kanal ohne Plugin (keine
-   * Audio-Unterbrechung).
+   * Lädt/entlädt eine Plugin-Chain für einen Kanal. Bei leerer Liste wird
+   * die Chain entfernt. Defensive: bei Plugin-Load-Fehler wird der Slot
+   * übersprungen (Chain bleibt funktional, keine Audio-Unterbrechung).
+   *
+   * v3.45.0: ersetzt die single-slot `applyPluginSlot` API. Die Legacy-
+   * Single-Slot-Variante delegiert auf diese Methode (siehe Wrapper unten).
+   */
+  async applyPluginSlots(
+    partId: string,
+    slots: Array<{ pluginId: string; params: Record<string, number>; bypassed?: boolean }>,
+  ): Promise<void> {
+    if (!this.ctx) return;
+
+    // Existierende Plugin-Instanzen disposen damit kein Memory-Leak entsteht.
+    const existing = this._pluginHosts.get(partId);
+    if (existing) {
+      for (const h of existing) {
+        try { h.dispose(); } catch { /* ignore */ }
+      }
+      this._pluginHosts.delete(partId);
+    }
+
+    // Plugin-Hosts für jeden Slot async erzeugen. Failed-Loads landen als
+    // `null` im Array und werden vor dem Wiring gefiltert.
+    const hostsRaw = await Promise.all(
+      slots.map(async (slot) => {
+        const manifest = getPluginManifest(slot.pluginId);
+        if (!manifest) {
+          console.warn(`[AudioEngine] Unknown plugin id: ${slot.pluginId}`);
+          return null;
+        }
+        const host = await createPluginHost(this.ctx!, manifest, { params: slot.params });
+        if (!host) return null;
+        // Bypass-State direkt setzen — durch den crossfade-Wrapper ist das
+        // click-free, der Knoten bleibt im Signalweg verkabelt.
+        if (slot.bypassed) host.setBypassed(true, 0); // initial — keine Rampe nötig
+        return host;
+      }),
+    );
+    const hosts = hostsRaw.filter((h): h is PluginHost => h !== null);
+    this._pluginHosts.set(partId, hosts);
+
+    // Wiring: nodes.output → plugin[0].in → plugin[0].out → plugin[1].in → ...
+    // → plugin[N-1].out → nodes.panner. Bei leerer Chain: output → panner.
+    const nodes = this._getOrCreateChannelNodes(partId, DEFAULT_CHANNEL_FX);
+    try { nodes.output.disconnect(); } catch { /* ignore */ }
+
+    if (hosts.length === 0) {
+      nodes.output.connect(nodes.panner);
+      return;
+    }
+
+    let cursor: AudioNode = nodes.output;
+    for (const host of hosts) {
+      cursor.connect(host.getInputNode());
+      cursor = host.getOutputNode();
+    }
+    cursor.connect(nodes.panner);
+  }
+
+  /**
+   * Legacy v3.44 API — single-slot applyPluginSlot.
+   * Convenience-Wrapper auf `applyPluginSlots`. Slot=null → leere Chain.
    */
   async applyPluginSlot(
     partId: string,
     slot: { pluginId: string; params: Record<string, number>; bypassed?: boolean } | null,
   ): Promise<void> {
-    if (!this.ctx) return;
-
-    // Existierende Plugin-Instanz dieses Slots disposen
-    const existing = this._pluginHosts.get(partId);
-    if (existing) {
-      existing.dispose();
-      this._pluginHosts.delete(partId);
-    }
-
-    // Bei null: Wiring zurücksetzen — Insert-Chain übernimmt allein.
-    if (!slot) {
-      // Re-trigger applyInsertChain mit leerem chain neutralisiert Side-Effects;
-      // hier reicht der Plugin-Dispose, da panner→destination unverändert ist.
-      return;
-    }
-
-    // Plugin-Manifest aus Registry holen
-    const manifest = getPluginManifest(slot.pluginId);
-    if (!manifest) {
-      console.warn(`[AudioEngine] Unknown plugin id: ${slot.pluginId}`);
-      return;
-    }
-
-    const host = await createPluginHost(this.ctx, manifest, { params: slot.params });
-    if (!host) {
-      // createPluginHost loggt bereits — wir bleiben silent damit der
-      // Mixer weiter läuft (Audio-Continuity über UI-Robustheit).
-      return;
-    }
-
-    if (slot.bypassed) host.setBypassed(true);
-    this._pluginHosts.set(partId, host);
-
-    // Wiring: Plugin wird zwischen channel-output und panner eingefügt.
-    // applyInsertChain() macht das per Default direkt — wir hooken hier
-    // additiv ein damit beide Layer (Insert-Chain + Plugin) koexistieren.
-    // Strategy: Plugin-Node hängt sich an `nodes.output` (Insert-Chain-Tail)
-    // und führt zu `nodes.panner`. Wenn die Insert-Chain leer ist ist
-    // nodes.output direkt der Channel-Output.
-    const nodes = this._getOrCreateChannelNodes(partId, DEFAULT_CHANNEL_FX);
-    try { nodes.output.disconnect(); } catch { /* ignore */ }
-
-    if (slot.bypassed) {
-      // Bypass: Plugin-Knoten existiert (für Param-Persistenz), wird aber
-      // nicht im Signalweg verkabelt.
-      nodes.output.connect(nodes.panner);
-    } else {
-      nodes.output.connect(host.getNode());
-      host.getNode().connect(nodes.panner);
-    }
+    return this.applyPluginSlots(partId, slot ? [slot] : []);
   }
 
-  /** Setzt einen einzelnen Plugin-Param zur Laufzeit (für UI-Slider-Drag). */
-  setPluginParam(partId: string, paramId: string, value: number): void {
-    const host = this._pluginHosts.get(partId);
-    if (!host) return;
-    host.setParam(paramId, value);
+  /**
+   * Setzt einen einzelnen Plugin-Param zur Laufzeit (für UI-Slider-Drag).
+   * v3.45: nutzt optional einen Slot-Index. Default 0 für Legacy-Kompatibilität.
+   */
+  setPluginParam(partId: string, paramId: string, value: number, slotIndex: number = 0): void {
+    const hosts = this._pluginHosts.get(partId);
+    if (!hosts || slotIndex < 0 || slotIndex >= hosts.length) return;
+    hosts[slotIndex].setParam(paramId, value);
   }
 
-  /** Liefert die aktuell aktive Plugin-Host-Instanz (für Tests/UI). */
+  /**
+   * Setzt den Bypass-State für einen Slot mit click-free gain-ramp (v3.45).
+   * Default rampMs=5ms — schnell genug für UI-Responsiveness, lang genug
+   * gegen Click-Artefakte.
+   */
+  setPluginSlotBypassed(partId: string, slotIndex: number, bypassed: boolean, rampMs: number = 5): void {
+    const hosts = this._pluginHosts.get(partId);
+    if (!hosts || slotIndex < 0 || slotIndex >= hosts.length) return;
+    hosts[slotIndex].setBypassed(bypassed, rampMs);
+  }
+
+  /** Liefert die aktuell aktive Plugin-Host-Chain (für Tests/UI). */
+  getPluginHosts(partId: string): PluginHost[] {
+    return this._pluginHosts.get(partId) ?? [];
+  }
+
+  /** Legacy v3.44 — liefert nur Slot 0. */
   getPluginHost(partId: string): PluginHost | undefined {
-    return this._pluginHosts.get(partId);
+    const hosts = this._pluginHosts.get(partId);
+    return hosts && hosts.length > 0 ? hosts[0] : undefined;
   }
 
   // ─── Bus Compressor ───────────────────────────────────────────────────────

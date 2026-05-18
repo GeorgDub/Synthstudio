@@ -634,23 +634,28 @@ export function MixerView({ dm, mixer, samples = [], bpm = 120, projectName = "S
     });
   }, [mixer.insertChains]);
 
-  // v3.44.0 (TASK-239 Phase 1): Plugin-Slots an AudioEngine weitergeben.
-  // applyPluginSlot ist defensive — bei null wird der Slot entfernt, bei
+  // v3.44.0 / v3.45.0: Plugin-Chain (multi-slot) an AudioEngine weitergeben.
+  // applyPluginSlots ist defensive — leere Liste entfernt die Chain, bei
   // unbekannter pluginId wird gewarnt aber nichts crasht.
   useEffect(() => {
-    Object.entries(mixer.pluginSlots).forEach(([partId, slot]) => {
-      AudioEngine.applyPluginSlot(partId, slot ?? null);
+    Object.entries(mixer.pluginSlots).forEach(([partId, slots]) => {
+      AudioEngine.applyPluginSlots(partId, slots ?? []);
     });
   }, [mixer.pluginSlots]);
 
-  // Param-Updates aus dem Store werden direkt an die laufende Plugin-Instanz
-  // weitergegeben damit Slider-Drag keine Re-Wiring-Latenz verursacht.
+  // Param-Updates aus dem Store werden direkt an die laufenden Plugin-
+  // Instanzen weitergegeben damit Slider-Drag keine Re-Wiring-Latenz
+  // verursacht. Pro Slot wird je Param der korrekte slotIndex mitgegeben.
   useEffect(() => {
-    Object.entries(mixer.pluginSlots).forEach(([partId, slot]) => {
-      if (!slot) return;
-      for (const [paramId, value] of Object.entries(slot.params)) {
-        AudioEngine.setPluginParam(partId, paramId, value);
-      }
+    Object.entries(mixer.pluginSlots).forEach(([partId, slots]) => {
+      if (!slots) return;
+      slots.forEach((slot, slotIndex) => {
+        for (const [paramId, value] of Object.entries(slot.params)) {
+          AudioEngine.setPluginParam(partId, paramId, value, slotIndex);
+        }
+        // Bypass-State pro Slot synchen (click-free Ramp innerhalb des Hosts).
+        AudioEngine.setPluginSlotBypassed(partId, slotIndex, slot.bypassed === true);
+      });
     });
   }, [mixer.pluginSlots]);
 

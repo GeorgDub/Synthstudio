@@ -47,6 +47,7 @@ export interface MixerReturnTrackState {
 
 /**
  * v3.44.0 (TASK-239 Phase 1): Plugin-Slot pro Channel.
+ * v3.45.0: Multi-Slot Plugin-Chain (max 4 pro Channel, seriell).
  *
  * Foundation für VST-Host-Architektur. Phase-1 unterstützt AudioWorklet-
  * basierte Plugins (siehe `audio/PluginRegistry.ts`). Phase-2 (v4.0+) wird
@@ -57,14 +58,22 @@ export interface MixerReturnTrackState {
  *  - `params`: aktuelle Werte für die Plugin-Params (clamped auf Schema)
  *  - `bypassed`: optionaler Bypass-State (Default false)
  *
- * Optional pro Channel — wenn kein Plugin geladen ist, ist der Slot
- * undefined.
+ * Optional pro Channel — wenn kein Plugin geladen ist, ist die Slot-Liste leer.
  */
 export interface MixerPluginSlot {
   pluginId: string;
   params: Record<string, number>;
   bypassed?: boolean;
 }
+
+/**
+ * Maximalanzahl Plugin-Slots pro Channel. Begründung: CPU-Budget eines
+ * AudioWorklet-Plugins liegt bei ~3–8% pro Channel (RBJ-Biquad/Saturation).
+ * Bei 8 Channels und 4 Slots ergibt das im Worst-Case ~256% CPU — Audio-
+ * Underrun-Schwelle. 4 ist außerdem ein klares "ich hab eine Plugin-Chain"-
+ * Signal in der UI ohne Scroll. Höhere Counts sind eher VST3-Host-Territorium.
+ */
+export const MAX_PLUGIN_SLOTS_PER_CHANNEL = 4;
 
 export interface MixerState {
   channels: Record<string, MixerChannelState>;
@@ -76,10 +85,12 @@ export interface MixerState {
   sidechains: Record<string, SidechainSettings>;
   transientShapers: Record<string, TransientShaperSettings>;
   /**
-   * v3.44.0 (TASK-239 Phase 1): Plugin-Slot pro Channel (max 1 in Phase 1).
-   * Schlüssel ist `partId`, Wert ist undefined wenn kein Plugin geladen.
+   * v3.44.0 (TASK-239 Phase 1): Plugin-Slot pro Channel.
+   * v3.45.0: Multi-Slot — Schlüssel ist `partId`, Wert ist eine Liste mit
+   * max `MAX_PLUGIN_SLOTS_PER_CHANNEL` Slots. Leere Liste / undefined heißt
+   * "keine Plugins geladen".
    */
-  pluginSlots: Record<string, MixerPluginSlot | undefined>;
+  pluginSlots: Record<string, MixerPluginSlot[]>;
 }
 
 export interface MixerActions {
@@ -100,10 +111,35 @@ export interface MixerActions {
   setSidechain: (partId: string, update: Partial<SidechainSettings>) => void;
   setTransientShaper: (partId: string, update: Partial<TransientShaperSettings>) => void;
   /**
-   * v3.44.0: Plugin-Slot-Operationen. `setPluginSlot(partId, null)` entfernt
-   * den Slot. `setPluginParam` clampt nicht — der UI-Caller MUSS clampen
-   * (oder via `clampPluginParam` aus PluginRegistry).
+   * v3.44.0 / v3.45.0: Plugin-Slot-Operationen.
+   *
+   * Multi-Slot-API (v3.45):
+   *  - `addPluginSlot(partId, slot)` hängt einen Slot an die Chain an. NO-OP
+   *    falls bereits MAX_PLUGIN_SLOTS_PER_CHANNEL erreicht (returnt false).
+   *  - `removePluginSlot(partId, index)` entfernt Slot an Position. Bei
+   *    out-of-range NO-OP.
+   *  - `movePluginSlot(partId, from, to)` reordert die Chain (Up/Down).
+   *  - `setPluginSlotParam(partId, index, paramId, value)` Param-Update am
+   *    Slot mit Position `index`.
+   *  - `setPluginSlotBypassed(partId, index, bypassed)`
+   *  - `setPluginSlotPlugin(partId, index, slot)` ersetzt einen kompletten
+   *    Slot (z.B. Plugin-Wechsel via Dropdown).
+   *
+   * Legacy-API (v3.44, single-slot):
+   *  - `setPluginSlot(partId, slot|null)` ist ein Convenience-Wrapper:
+   *    null → leert die Chain, sonst setzt die Chain auf [slot]. Bleibt
+   *    erhalten damit bestehender Code (MixerView-useEffect, ChannelInspector-
+   *    Legacy-Pfade) ohne Breaking-Change weiterläuft.
+   *  - `setPluginParam(partId, paramId, value)` operiert auf Slot 0.
+   *  - `setPluginBypassed(partId, bypassed)` operiert auf Slot 0.
    */
+  addPluginSlot: (partId: string, slot: MixerPluginSlot) => boolean;
+  removePluginSlot: (partId: string, index: number) => void;
+  movePluginSlot: (partId: string, from: number, to: number) => void;
+  setPluginSlotParam: (partId: string, index: number, paramId: string, value: number) => void;
+  setPluginSlotBypassed: (partId: string, index: number, bypassed: boolean) => void;
+  setPluginSlotPlugin: (partId: string, index: number, slot: MixerPluginSlot) => void;
+
   setPluginSlot: (partId: string, slot: MixerPluginSlot | null) => void;
   setPluginParam: (partId: string, paramId: string, value: number) => void;
   setPluginBypassed: (partId: string, bypassed: boolean) => void;
@@ -142,6 +178,55 @@ function makeChannel(partId: string): MixerChannelState {
 
 function clamp01(value: number): number {
   return Math.max(0, Math.min(1, value));
+}
+
+/**
+ * Sanitizer für einen einzelnen MixerPluginSlot aus unbekannter Quelle
+ * (User-localStorage, .synth-File). Liefert null wenn unbrauchbar.
+ */
+function sanitizePluginSlot(raw: unknown): MixerPluginSlot | null {
+  if (!raw || typeof raw !== "object") return null;
+  const s = raw as Partial<MixerPluginSlot>;
+  if (typeof s.pluginId !== "string" || s.pluginId.length === 0) return null;
+  return {
+    pluginId: s.pluginId,
+    params: typeof s.params === "object" && s.params !== null
+      ? { ...(s.params as Record<string, number>) }
+      : {},
+    bypassed: s.bypassed === true,
+  };
+}
+
+/**
+ * Migriert pluginSlots aus v3.44 (single-slot) und v3.45 (multi-slot) Format
+ * auf das aktuelle v3.45 Schema `Record<partId, MixerPluginSlot[]>`.
+ *
+ * v3.44 hatte `Record<partId, MixerPluginSlot | undefined>` (Single-Slot pro
+ * Channel). Diese Werte werden in `[slot]` gewrappt damit der bestehende
+ * Channel-State erhalten bleibt (keine Daten verloren).
+ *
+ * Empty-/Invalid-Channels → []. Excess-Slots (>MAX) → trimmed silent.
+ */
+export function migratePluginSlots(raw: unknown): Record<string, MixerPluginSlot[]> {
+  if (!raw || typeof raw !== "object") return {};
+  const out: Record<string, MixerPluginSlot[]> = {};
+  for (const [partId, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (Array.isArray(value)) {
+      // v3.45 multi-slot format
+      const cleaned = value
+        .map(sanitizePluginSlot)
+        .filter((s): s is MixerPluginSlot => s !== null)
+        .slice(0, MAX_PLUGIN_SLOTS_PER_CHANNEL);
+      out[partId] = cleaned;
+    } else if (value && typeof value === "object") {
+      // v3.44 single-slot format — wrap in array
+      const single = sanitizePluginSlot(value);
+      out[partId] = single ? [single] : [];
+    } else {
+      out[partId] = [];
+    }
+  }
+  return out;
 }
 
 function loadMixerState(): MixerState {
@@ -185,20 +270,14 @@ function loadMixerState(): MixerState {
       transientShapers: Object.fromEntries(
         Object.entries(parsed.transientShapers ?? {}).map(([partId, settings]) => [partId, normalizeTransientShaper(settings)]),
       ),
-      // v3.44.0: Plugin-Slots. Defensive — wenn fremde Felder im JSON sind,
-      // werden sie beim Re-Load von der Registry validiert (PluginHost
-      // wirft sonst, das fängt der Wiring-Layer im AudioEngine ab).
-      pluginSlots: Object.fromEntries(
-        Object.entries(parsed.pluginSlots ?? {}).map(([partId, slot]) => {
-          if (!slot || typeof slot !== "object") return [partId, undefined];
-          const s = slot as MixerPluginSlot;
-          return [partId, {
-            pluginId: String(s.pluginId ?? ""),
-            params: typeof s.params === "object" && s.params !== null ? { ...s.params } : {},
-            bypassed: s.bypassed === true,
-          }];
-        }),
-      ),
+      // v3.44.0 / v3.45.0: Plugin-Slots. Defensive Re-Load.
+      //  - v3.45 schema: Record<partId, MixerPluginSlot[]> — Liste pro Channel.
+      //  - v3.44 schema (Migration): Record<partId, MixerPluginSlot | undefined>
+      //    — Single-Slot pro Channel. Wir mappen das automatisch auf [slot].
+      // Defensive: ungültige Slots (fehlende pluginId etc.) werden silent
+      // gefiltert, das Plugin-Registry-Lookup im AudioEngine entscheidet
+      // dann nochmal über Validität.
+      pluginSlots: migratePluginSlots(parsed.pluginSlots),
     };
   } catch {
     return defaultMixerState();
@@ -408,14 +487,104 @@ export function useMixerStore(): MixerState & MixerActions {
     }));
   }, [commit]);
 
-  // ─── v3.44.0: Plugin-Slot Actions ──────────────────────────────────────
+  // ─── v3.44.0 / v3.45.0: Plugin-Slot Actions ─────────────────────────────
+  // Multi-Slot Chain pro Channel (max MAX_PLUGIN_SLOTS_PER_CHANNEL = 4).
+  // Reihenfolge wirkt seriell: chain[0] → chain[1] → ... → chain[N-1].
+  const addPluginSlot = useCallback((partId: string, slot: MixerPluginSlot): boolean => {
+    let appended = false;
+    commit(prev => {
+      const current = prev.pluginSlots[partId] ?? [];
+      if (current.length >= MAX_PLUGIN_SLOTS_PER_CHANNEL) {
+        return prev; // ignore — chain full
+      }
+      appended = true;
+      return {
+        ...prev,
+        pluginSlots: {
+          ...prev.pluginSlots,
+          [partId]: [...current, { ...slot, params: { ...slot.params } }],
+        },
+      };
+    });
+    return appended;
+  }, [commit]);
+
+  const removePluginSlot = useCallback((partId: string, index: number) => {
+    commit(prev => {
+      const current = prev.pluginSlots[partId] ?? [];
+      if (index < 0 || index >= current.length) return prev;
+      const next = [...current.slice(0, index), ...current.slice(index + 1)];
+      return {
+        ...prev,
+        pluginSlots: { ...prev.pluginSlots, [partId]: next },
+      };
+    });
+  }, [commit]);
+
+  const movePluginSlot = useCallback((partId: string, from: number, to: number) => {
+    commit(prev => {
+      const current = prev.pluginSlots[partId] ?? [];
+      if (from === to) return prev;
+      if (from < 0 || from >= current.length) return prev;
+      if (to < 0 || to >= current.length) return prev;
+      const reordered = [...current];
+      const [moved] = reordered.splice(from, 1);
+      reordered.splice(to, 0, moved);
+      return {
+        ...prev,
+        pluginSlots: { ...prev.pluginSlots, [partId]: reordered },
+      };
+    });
+  }, [commit]);
+
+  const setPluginSlotParam = useCallback((partId: string, index: number, paramId: string, value: number) => {
+    commit(prev => {
+      const current = prev.pluginSlots[partId] ?? [];
+      if (index < 0 || index >= current.length) return prev;
+      const next = current.map((s, i) =>
+        i === index ? { ...s, params: { ...s.params, [paramId]: value } } : s,
+      );
+      return {
+        ...prev,
+        pluginSlots: { ...prev.pluginSlots, [partId]: next },
+      };
+    });
+  }, [commit]);
+
+  const setPluginSlotBypassed = useCallback((partId: string, index: number, bypassed: boolean) => {
+    commit(prev => {
+      const current = prev.pluginSlots[partId] ?? [];
+      if (index < 0 || index >= current.length) return prev;
+      const next = current.map((s, i) => i === index ? { ...s, bypassed } : s);
+      return {
+        ...prev,
+        pluginSlots: { ...prev.pluginSlots, [partId]: next },
+      };
+    });
+  }, [commit]);
+
+  const setPluginSlotPlugin = useCallback((partId: string, index: number, slot: MixerPluginSlot) => {
+    commit(prev => {
+      const current = prev.pluginSlots[partId] ?? [];
+      if (index < 0 || index >= current.length) return prev;
+      const next = current.map((s, i) =>
+        i === index ? { ...slot, params: { ...slot.params } } : s,
+      );
+      return {
+        ...prev,
+        pluginSlots: { ...prev.pluginSlots, [partId]: next },
+      };
+    });
+  }, [commit]);
+
+  // ─── Legacy single-slot API (v3.44) — Wrapper auf Multi-Slot ──────────
   const setPluginSlot = useCallback((partId: string, slot: MixerPluginSlot | null) => {
     commit(prev => {
       const next = { ...prev.pluginSlots };
       if (slot === null) {
-        delete next[partId];
+        next[partId] = [];
       } else {
-        next[partId] = { ...slot, params: { ...slot.params } };
+        next[partId] = [{ ...slot, params: { ...slot.params } }];
       }
       return { ...prev, pluginSlots: next };
     });
@@ -423,28 +592,26 @@ export function useMixerStore(): MixerState & MixerActions {
 
   const setPluginParam = useCallback((partId: string, paramId: string, value: number) => {
     commit(prev => {
-      const slot = prev.pluginSlots[partId];
-      if (!slot) return prev;
+      const current = prev.pluginSlots[partId] ?? [];
+      if (current.length === 0) return prev;
+      const next = current.map((s, i) =>
+        i === 0 ? { ...s, params: { ...s.params, [paramId]: value } } : s,
+      );
       return {
         ...prev,
-        pluginSlots: {
-          ...prev.pluginSlots,
-          [partId]: { ...slot, params: { ...slot.params, [paramId]: value } },
-        },
+        pluginSlots: { ...prev.pluginSlots, [partId]: next },
       };
     });
   }, [commit]);
 
   const setPluginBypassed = useCallback((partId: string, bypassed: boolean) => {
     commit(prev => {
-      const slot = prev.pluginSlots[partId];
-      if (!slot) return prev;
+      const current = prev.pluginSlots[partId] ?? [];
+      if (current.length === 0) return prev;
+      const next = current.map((s, i) => i === 0 ? { ...s, bypassed } : s);
       return {
         ...prev,
-        pluginSlots: {
-          ...prev.pluginSlots,
-          [partId]: { ...slot, bypassed },
-        },
+        pluginSlots: { ...prev.pluginSlots, [partId]: next },
       };
     });
   }, [commit]);
@@ -480,6 +647,12 @@ export function useMixerStore(): MixerState & MixerActions {
     resetEqBands,
     setSidechain,
     setTransientShaper,
+    addPluginSlot,
+    removePluginSlot,
+    movePluginSlot,
+    setPluginSlotParam,
+    setPluginSlotBypassed,
+    setPluginSlotPlugin,
     setPluginSlot,
     setPluginParam,
     setPluginBypassed,

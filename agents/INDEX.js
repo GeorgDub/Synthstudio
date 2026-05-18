@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.44.0",
+    version: "3.45.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -94,9 +94,9 @@ const INDEX = {
       lastSeen: "2026-05-18T23:30:00.000Z",
       ownedBy:  "backend"
     },
-    "client/src/audio/PluginHost.ts (v3.44.0)": {
-      role:     "v3.44.0 NEU (TASK-239 Phase 1): AudioWorkletNode-Wrapper für Plugin-Instanzen. Async-Factory createPluginHost(ctx, manifest, init?:{params}) → PluginHost|null (null bei Worklet-Load-Fehler ODER kein audioWorklet im Context — graceful, kein Crash). PluginHost-Klasse mit Public API: setParam(id, value) clampt auf paramSchema-Range (unknown-id no-op), getParams():Record<string,number> kopie der aktuellen Werte, getNode():AudioWorkletNode für FX-Chain-Wiring, setBypassed/isBypassed (Flag — AudioEngine konsumiert das beim Wiring), dispose() disconnected den Node. _setNodeParam interner Helper versucht zuerst AudioParam-Lookup, fällt sonst auf node.port.postMessage zurück (für Plugins die parameterDescriptors NICHT nutzen). _moduleCache: WeakMap<ctx, Set<workletUrl>> verhindert doppelte addModule()-Calls pro Context (idempotent). _resetPluginHostModuleCache test-helper für Test-Env (replaced WeakMap).",
-      lastSeen: "2026-05-18T23:30:00.000Z",
+    "client/src/audio/PluginHost.ts (v3.45.0)": {
+      role:     "v3.45.0 UPGRADE (Click-Free Bypass + Multi-Slot Foundation): AudioWorkletNode-Wrapper mit internal crossfade-Wrapper für click-free Bypass. Async-Factory createPluginHost(ctx, manifest, init?:{params}) → PluginHost|null (null bei Worklet-Load-Fehler ODER kein audioWorklet im Context — graceful, kein Crash). NEUE crossfade-Architektur im Konstruktor wenn ctx.createGain verfügbar: _inputGain → AudioWorkletNode → _wetGain → _outputGain, parallel _inputGain → _dryGain → _outputGain (Bypass-Bus). setBypassed(bypassed, rampMs=DEFAULT_BYPASS_RAMP_MS=5) cancelt scheduled values, verankert via setValueAtTime und rampt _wetGain.gain (1↔0) + _dryGain.gain (0↔1) via linearRampToValueAtTime — Plugin-Knoten bleibt verkabelt, interner State (Filter/Sat) bleibt hot. NEUE getInputNode()/getOutputNode() für Chain-Wiring (Caller-API). getNode() bleibt als Legacy AudioWorkletNode-Direktzugriff. setParam(id, value) clampt auf paramSchema-Range (unknown-id no-op), getParams():Record<string,number>, isBypassed(). dispose() disconnected ALLE Wrapper-Nodes (in/wet/dry/out + node). _setNodeParam interner Helper versucht AudioParam-Lookup, fällt sonst auf node.port.postMessage. _moduleCache: WeakMap<ctx, Set<workletUrl>> verhindert doppelte addModule()-Calls (idempotent). _resetPluginHostModuleCache test-helper. Fallback ohne createGain (Test-Mock): naked-node-Modus, setBypassed setzt nur Flag.",
+      lastSeen: "2026-05-18T23:59:00.000Z",
       ownedBy:  "backend"
     },
     "client/src/audio/worklets/TapeSatProcessor.js (v3.44.0)": {
@@ -1672,6 +1672,49 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "backend",
+      timestamp: "2026-05-18T23:59:00.000Z",
+      done: [
+        "v3.45.0: Multi-Slot Plugin-Chain (4) + Click-Free Bypass — closes v3.44 Caveats (3) + (5). pnpm check clean, 194 Test-Files / 4517 tests grün (16 skipped, +17 NEU). Bestehende 36 v3.44 Plugin-Host-Tests unverändert grün (backward-compat).",
+        "Multi-Slot State (useMixerStore.ts): MixerState.pluginSlots wechselt von Record<partId, MixerPluginSlot | undefined> (Single-Slot) zu Record<partId, MixerPluginSlot[]> (Multi-Slot, max MAX_PLUGIN_SLOTS_PER_CHANNEL = 4). Begründung 4: CPU-Budget eines AudioWorklet-Plugins ~3–8%, bei 8 Channels × 4 Slots = ~256% worst-case (Underrun-Schwelle); 4 ist außerdem klares 'Plugin-Chain'-Signal in der UI ohne Scroll. Höhere Counts sind VST3-Host-Territorium. Plus NEUE Actions: addPluginSlot(partId, slot):boolean (NO-OP+false bei full chain), removePluginSlot(partId, index), movePluginSlot(partId, from, to), setPluginSlotParam(partId, index, paramId, value), setPluginSlotBypassed(partId, index, bypassed), setPluginSlotPlugin(partId, index, slot). Legacy single-slot API (setPluginSlot/setPluginParam/setPluginBypassed) bleibt als Wrapper auf Slot[0] für back-compat.",
+        "Migration v3.44 → v3.45 (useMixerStore.ts): NEUER pure-Helper migratePluginSlots(raw):Record<partId, MixerPluginSlot[]> exportiert. Erkennt v3.44 single-slot Objects und wrappt in [slot], passt v3.45 Arrays durch, trimmt > MAX_PLUGIN_SLOTS_PER_CHANNEL silent, filtert invalide Entries (fehlende pluginId etc.). Wird im loadMixerState defensive aufgerufen → bestehende v3.44-localStorage-Snapshots laden ohne Daten-Verlust.",
+        "AudioEngine Chain-Build (AudioEngine.ts): _pluginHosts wechselt von Map<partId, PluginHost> zu Map<partId, PluginHost[]>. NEU applyPluginSlots(partId, slots[]) erzeugt N PluginHosts via Promise.all (mit Failed-Load-Filtering), wired seriell: nodes.output → plugin[0].in → plugin[0].out → plugin[1].in → ... → plugin[N-1].out → nodes.panner. Bei leerer Chain: output → panner direkt. Legacy applyPluginSlot(slot|null) bleibt als single-slot Wrapper auf applyPluginSlots([slot]). NEUE setPluginSlotBypassed(partId, slotIndex, bypassed, rampMs=5). setPluginParam erhält optionalen slotIndex (default 0 für back-compat). getPluginHosts(partId):PluginHost[] und getPluginHost(partId):PluginHost|undefined (Legacy Slot[0]).",
+        "Click-Free Bypass (PluginHost.ts): NEUE interne crossfade-Architektur. PluginHost-Konstruktor erzeugt 4 GainNodes wenn ctx.createGain verfügbar: _inputGain → node → _wetGain → _outputGain, parallel _inputGain → _dryGain → _outputGain. setBypassed(bypassed, rampMs=5) cancelt scheduled values, verankert aktuellen Wert via setValueAtTime und rampt _wetGain.gain (1↔0) + _dryGain.gain (0↔1) via linearRampToValueAtTime über `rampMs` ms (DEFAULT_BYPASS_RAMP_MS = 5). Plugin-Node bleibt verkabelt — keine disconnect/connect-Pops, interne States (Filter-History, Saturation-Hysterese) bleiben hot. Ohne createGain (Test-Mock): naked-node-Fallback, setBypassed setzt nur das Flag. NEU getInputNode()/getOutputNode() für Chain-Wiring; getNode() bleibt als Legacy-API.",
+        "UI Plugin-Chain (ChannelInspector.tsx): PluginSlotSection ersetzt durch PluginChainSection. Renders bis zu MAX_PLUGIN_SLOTS_PER_CHANNEL=4 PluginSlotItem-Komponenten. Pro Slot: Plugin-Dropdown (austauschbar), Bypass-Button (5ms-ramp), Up/Down (movePluginSlot), Remove (X). '+ Add Plugin'-Inline-Form öffnet ein Select; nach Auswahl wird via addPluginSlot ein neuer Slot mit Default-Params angehängt. Wenn Chain voll: Add-Button verschwindet, '(N/4)'-Label im Header zeigt Status. data-testids: channel-plugin-chain-{partId}, channel-plugin-slot-{partId}-{index}, channel-plugin-add-{partId}, channel-plugin-add-select-{partId}, channel-plugin-select/bypass/up/down/remove-{partId}-{index}.",
+        "MixerView-Wiring (MixerView.tsx): useEffect-Hook ruft applyPluginSlots(partId, slots[]) statt applyPluginSlot(partId, slot|null) — Diff-Sync funktioniert weiter weil React-Identity der gewrappten Arrays gut tracked ist. Param-Sync-useEffect iteriert pro Slot mit slotIndex und ruft setPluginParam(partId, paramId, value, slotIndex); zusätzlich pro Slot setPluginSlotBypassed(partId, slotIndex, slot.bypassed) — die click-free 5ms Ramp wird DA gefahren, nicht via Re-Wiring.",
+        "Schema-Bump v1.20 → v1.21 (projectSerializer.ts): SYNTH_FILE_VERSION 1.20 → 1.21. NEUER inline-Migration-Block in parseProject: erkennt v1.20-Single-Slot-Objects in mixer.pluginSlots und wrappt in [slot]-Arrays, passt v1.21-Arrays durch (idempotent), trimmt überlange Arrays auf 4. Pre-v1.20-Files (kein pluginSlots-Feld) bleiben unangetastet → MixerStore-Loader defaultet auf {}. Round-Trip getestet: v1.20-Project mit { kick: {pluginId,params} } liest als { kick: [{pluginId,params}] }; v1.21-Project mit 6 Slots wird auf 4 getrimmt.",
+        "NEU tests/features/plugin-multislot.test.ts (17 Tests in 4 describes, env:node): (1) migratePluginSlots × 7 — null-handling, v3.44 single→[slot]-wrap, v3.45 idempotent pass-through, MAX-trim, invalid-slot-filter, undefined/null-channel→[], bypassed-flag preserve. (2) MAX_PLUGIN_SLOTS_PER_CHANNEL × 1 — Konstante = 4. (3) Click-Free Bypass × 5 — setBypassed(true/false)-Roundtrip, DEFAULT_BYPASS_RAMP_MS=5, fallback-Pfad ohne createGain (Flag-Only-Mode), getInputNode/getOutputNode verbindbar, dispose-Robustheit mit Wrapper-Nodes. (4) Schema-Migration × 4 — SYNTH_FILE_VERSION=1.21, v1.20 single→[slot] migration, v1.21 idempotent, MAX-trim beim Parsen. Mock-AudioContext mit/ohne createGain, Mock-AudioParam mit cancelScheduledValues/setValueAtTime/linearRampToValueAtTime spies.",
+        "Bestehende 5 SYNTH_FILE_VERSION-Assertions in script-store/project-serializer/multi-bar-pattern/audio-track-store/plugin-host-tests von '1.20' auf '1.21' aktualisiert. plugin-host.test.ts Backward-Compat-Block beschriftet von 'v1.20' auf 'v1.21' (Test-Content unverändert: pre-v1.20-Files ohne pluginSlots → undefined).",
+        "BACKWARD-COMPAT VERIFIZIERT: (a) v3.44 single-slot localStorage-Snapshots werden via migratePluginSlots automatisch in [slot]-Arrays gewrappt (Daten-erhaltend). (b) v3.44 single-slot .synth-Files (v1.20) werden via parseProject-Migration in v1.21-Arrays gewrappt. (c) Legacy setPluginSlot/setPluginParam/setPluginBypassed im MixerStore bleiben verfügbar als Slot[0]-Wrapper. (d) Legacy applyPluginSlot(partId, slot|null) im AudioEngine bleibt als single-slot-Wrapper. (e) ALLE 36 v3.44 Plugin-Host-Tests grün ohne Anpassung (außer 1× v1.20→1.21 Label-Update).",
+        "CAVEATS (verbleibend nach v3.45): (1) Echtes VST3/CLAP-Loading = v4.0+ (eigener Sprint, ~160h, JUCE-Node-Addon). (2) User-Plugin-Drop (drag-drop .js worklet-files) bleibt offen (v3.46+). (3) Generic-Param-UI hat keine Tooltips/Curves — User sieht raw min/max ohne dB/Hz-Indicator (außer manifest.unit gesetzt ist). (4) Plugin-Chain hat noch keine 'Save Preset'-Affordance (Chain mit allen Param-Values als Patch speichern). (5) Bypass-Ramp ist linear; bei extrem laute Signale könnte exponential-Ramp (S-Curve) noch weniger hörbar sein — v3.46-polish.",
+        "package.json + agents/INDEX.js version 3.44.0 → 3.45.0. v3.44-Caveats (3) Bypass-Click + (5) Multi-Plugin-Chain als CLOSED markiert."
+      ],
+      next: [
+        "v3.46 User-Plugin-Drop in ChannelInspector — User droppt .js (AudioWorkletProcessor) + JSON-Manifest auf Plugin-Slot. UI fügt zur Registry mit builtIn=false, persistiert in localStorage 'synthstudio:plugins:user' (max 50KB/Plugin, MIME-Type-Check, sandbox-warning).",
+        "v3.46 Generic-UI-Polish: paramSchema +displayCurve ('linear'|'exp'|'log') für Frequency-Knöpfe + paramSchema +tooltip für UX. Generic-ControlRow zeigt Einheit + Curve-aware Mapping (Hardware-Knob-Feel).",
+        "v3.46 Plugin-Chain Save/Load Preset — komplette Chain mit allen Param-Werten als wiederverwendbares Patch speichern (Chain-Preset-Library).",
+        "v3.46 Bypass-Ramp-Polish: optional exponential / equal-power S-Curve statt linear für noch weniger hörbare Toggles bei laut bei höheren Material.",
+        "v4.0+ Phase-2 NATIVE VST3/CLAP via JUCE-Node-Addon: eigener Sprint (~160h, Security-Audit, Electron-IPC, Audio-Buffer-Transfer, GUI-Hosting-Frage). Siehe TASK-239 + Phase-2-Stub-Kommentar in PluginRegistry.ts.",
+        "Vorhandene v3.43-Items unverändert (OmniTribe Per-Slot Download-Button, Reply-Timeout-Handling, Pitch-Names im ChordPanel)."
+      ],
+      changed: [
+        "client/src/audio/PluginHost.ts (crossfade-Wrapper: 4 GainNodes (_inputGain/_wetGain/_dryGain/_outputGain), setBypassed(bypassed, rampMs=5) mit linearRampToValueAtTime + cancelScheduledValues, getInputNode/getOutputNode, DEFAULT_BYPASS_RAMP_MS exportiert, dispose disconnected alle Wrapper-Nodes)",
+        "client/src/store/useMixerStore.ts (MAX_PLUGIN_SLOTS_PER_CHANNEL=4 exportiert, pluginSlots Record<partId, MixerPluginSlot[]>, 6 NEUE Multi-Slot-Actions addPluginSlot/removePluginSlot/movePluginSlot/setPluginSlotParam/setPluginSlotBypassed/setPluginSlotPlugin, Legacy 3 Actions als Slot[0]-Wrapper, migratePluginSlots pure-Helper, sanitizePluginSlot defensive)",
+        "client/src/audio/AudioEngine.ts (_pluginHosts Map<partId, PluginHost[]>, applyPluginSlots(partId, slots[]) serielles Chain-Wiring, applyPluginSlot single-slot Wrapper, setPluginParam mit slotIndex, NEUE setPluginSlotBypassed mit rampMs, getPluginHosts/getPluginHost)",
+        "client/src/components/Mixer/MixerView.tsx (Plugin-Chain-Sync useEffect ruft applyPluginSlots statt applyPluginSlot, Param-Sync iteriert mit slotIndex + setPluginSlotBypassed pro Slot)",
+        "client/src/components/Mixer/ChannelInspector.tsx (PluginSlotSection → PluginChainSection mit Liste max 4 PluginSlotItem, '+ Add Plugin' Inline-Form, Up/Down/Remove pro Slot, data-testids channel-plugin-{slot,select,bypass,up,down,remove}-{partId}-{index})",
+        "client/src/utils/projectSerializer.ts (SYNTH_FILE_VERSION 1.20 → 1.21, v1.21-Doku-Block, parseProject inline-Migration für mixer.pluginSlots v1.20-single → v1.21-array)",
+        "tests/features/plugin-multislot.test.ts (NEU, 17 Tests in 4 describes — migratePluginSlots/MAX/Bypass-Crossfade/Schema-Migration)",
+        "tests/features/script-store.test.ts (SYNTH_FILE_VERSION-Assertion 1.20 → 1.21)",
+        "tests/features/project-serializer.test.ts (SYNTH_FILE_VERSION-Assertion 1.20 → 1.21, 2 Stellen)",
+        "tests/features/multi-bar-pattern.test.ts (SYNTH_FILE_VERSION-Assertion 1.20 → 1.21)",
+        "tests/features/audio-track-store.test.ts (SYNTH_FILE_VERSION-Assertion 1.20 → 1.21, 2 Stellen)",
+        "tests/features/plugin-host.test.ts (Backward-Compat-Describe-Label 'v1.20' → 'v1.21', SYNTH_FILE_VERSION-Expect angepasst)",
+        "package.json (3.44.0 → 3.45.0)",
+        "agents/INDEX.js (version + workLog v3.45.0)"
+      ]
+    },
     {
       agent:     "backend",
       timestamp: "2026-05-18T23:30:00.000Z",

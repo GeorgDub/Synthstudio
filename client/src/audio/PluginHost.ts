@@ -1,9 +1,9 @@
 /**
- * PluginHost — v3.44.0 (TASK-239 Phase 1)
+ * PluginHost — v3.45.0 (TASK-239 Phase 1 + Multi-Slot / Click-Free Bypass)
  *
  * Wrapper um einen AudioWorkletNode der ein Synthstudio-Plugin instanziiert.
- * API ist bewusst minimal damit die AudioEngine Plugin-Knoten in die FX-Chain
- * einfügen kann (analog zu Built-In Insert-FX wie Bitcrusher/RingMod).
+ * API ist bewusst minimal damit die AudioEngine Plugin-Knoten in eine Multi-
+ * Slot-Plugin-Chain (max 4 pro Channel, v3.45) einfügen kann.
  *
  * Wichtig:
  *  - `addModule()` wird nur einmal pro AudioContext + workletUrl gerufen
@@ -13,6 +13,16 @@
  *    den null-Fall graceful behandeln (FX-Chain überspringt den Slot).
  *  - `setParam(id, value)` clampt automatisch auf den paramSchema-Range
  *    (defensive — User-Slider-Input kann Nan/Out-of-Range liefern).
+ *
+ * Click-Free Bypass (v3.45):
+ *  - Plugin-Node sitzt zwischen `getInputNode()` und `getOutputNode()`.
+ *  - Die zwei Gain-Wrapper bilden einen Crossfader: Plugin-Pfad (wetGain)
+ *    und Bypass-Pfad (dryGain) summieren sich am Output. setBypassed()
+ *    rampt beide Gains parallel über `rampMs` (Default 5ms) — der Plugin-
+ *    Knoten bleibt verkabelt, sodass interne State-Pops (Filter-History)
+ *    beim Re-Aktivieren ausbleiben.
+ *  - Fällt der AudioContext (Test-Env / Node) weg, läuft setBypassed in
+ *    einen No-Op-Pfad: das Flag wird gesetzt, aber kein gain-ramp gefahren.
  */
 
 import {
@@ -69,9 +79,26 @@ async function ensureModuleLoaded(
   loaded.add(workletUrl);
 }
 
+/** Default-Ramp-Time für click-free Bypass (in ms). */
+export const DEFAULT_BYPASS_RAMP_MS = 5;
+
 export class PluginHost {
   readonly manifest: PluginManifest;
   readonly node: AudioWorkletNode;
+  /**
+   * Input-Wrapper: Caller verkettet Signal hier hinein.
+   * Splittet auf Plugin-Pfad (wetGain) und Bypass-Pfad (dryGain).
+   */
+  private readonly _inputGain: GainNode | null;
+  /** Plugin-Pfad-Output (wet). Bei Bypass auf 0 gerampt. */
+  private readonly _wetGain: GainNode | null;
+  /** Bypass-Pfad-Output (dry). Bei Bypass auf 1 gerampt. */
+  private readonly _dryGain: GainNode | null;
+  /** Output-Summing-Node. Caller verkettet ab hier weiter. */
+  private readonly _outputGain: GainNode | null;
+  /** AudioContext-Referenz für currentTime + Ramps. */
+  private readonly _ctx: BaseAudioContext | null;
+
   private _params: Record<string, number>;
   private _bypassed = false;
 
@@ -83,10 +110,40 @@ export class PluginHost {
     manifest: PluginManifest,
     node: AudioWorkletNode,
     initialParams: Record<string, number>,
+    ctx?: BaseAudioContext | null,
   ) {
     this.manifest = manifest;
     this.node = node;
     this._params = { ...initialParams };
+    this._ctx = ctx ?? null;
+
+    // Crossfade-Wrapper bauen — nur wenn ctx + createGain verfügbar sind.
+    // Test-Env (Mock-Context ohne createGain) fällt auf "naked node" zurück:
+    // dann ist getInputNode/getOutputNode == this.node, Bypass-Ramp ist No-Op.
+    const hasGain = !!ctx && typeof (ctx as { createGain?: () => GainNode }).createGain === "function";
+    if (hasGain && ctx) {
+      const c = ctx as AudioContext;
+      this._inputGain = c.createGain();
+      this._wetGain = c.createGain();
+      this._dryGain = c.createGain();
+      this._outputGain = c.createGain();
+      this._inputGain.gain.value = 1;
+      this._wetGain.gain.value = 1;
+      this._dryGain.gain.value = 0;
+      this._outputGain.gain.value = 1;
+      // Wiring: input → node → wet → output ; input → dry → output
+      this._inputGain.connect(this.node);
+      this.node.connect(this._wetGain);
+      this._wetGain.connect(this._outputGain);
+      this._inputGain.connect(this._dryGain);
+      this._dryGain.connect(this._outputGain);
+    } else {
+      this._inputGain = null;
+      this._wetGain = null;
+      this._dryGain = null;
+      this._outputGain = null;
+    }
+
     // Initial-Werte am Worklet setzen (clamped via Manifest-Range).
     for (const def of manifest.paramSchema) {
       const v = clampPluginParam(manifest, def.id, this._params[def.id] ?? def.default);
@@ -112,19 +169,71 @@ export class PluginHost {
     return { ...this._params };
   }
 
-  /** Liefert den AudioWorkletNode für Wiring in die FX-Chain. */
+  /**
+   * Liefert den AudioNode den die Plugin-Chain als Eingang nutzen soll.
+   * (Pre-v3.45 war das identisch zur AudioWorkletNode; mit Crossfade-Wrapper
+   * ist es jetzt der _inputGain. Caller braucht NICHT zu unterscheiden.)
+   */
+  getInputNode(): AudioNode {
+    return this._inputGain ?? this.node;
+  }
+
+  /**
+   * Liefert den AudioNode der die Plugin-Chain als Ausgang nutzen soll.
+   * Vor v3.45 lieferte getNode() den AudioWorkletNode direkt — getOutputNode
+   * ist der semantisch korrekte Output. getNode() bleibt für Tests/Legacy.
+   */
+  getOutputNode(): AudioNode {
+    return this._outputGain ?? this.node;
+  }
+
+  /** Liefert den AudioWorkletNode (Legacy — bevorzuge getInputNode/getOutputNode). */
   getNode(): AudioWorkletNode {
     return this.node;
   }
 
   /**
-   * Bypass-Toggle: leitet das Signal beim Wiring direkt durch. AudioWorklet-
-   * basierte Plugins können in Phase-1 keinen "echten" internal Bypass via
-   * Worklet-Message machen — der Bypass-State wird vom Caller (AudioEngine)
-   * beim Re-Wiring konsumiert. Hier merken wir uns nur das Flag.
+   * Click-Free Bypass-Toggle (v3.45).
+   *
+   * Rampt die internen Wet/Dry-Gains parallel über `rampMs` Millisekunden
+   * (Default 5ms) — schnell genug für UI-Responsiveness, langsam genug um
+   * Click-Artefakte zu vermeiden. Der Plugin-Knoten bleibt verkabelt damit
+   * interne States (Filter-History, Saturation-Hysterese) nicht poppen.
+   *
+   * Fallback-Pfad: ohne createGain (Test-Mock) wird nur das Flag gesetzt —
+   * Caller (AudioEngine) konsumiert das Flag beim Re-Wiring (Legacy v3.44).
    */
-  setBypassed(bypassed: boolean): void {
+  setBypassed(bypassed: boolean, rampMs: number = DEFAULT_BYPASS_RAMP_MS): void {
     this._bypassed = bypassed;
+    if (!this._wetGain || !this._dryGain || !this._ctx) {
+      // Kein crossfader gebaut (Test-Env / kein createGain) — Flag bleibt
+      // gesetzt, Caller muss ggf. via Re-Wiring reagieren.
+      return;
+    }
+    const ramp = Math.max(0.0001, rampMs) / 1000;
+    const now = this._ctx.currentTime;
+    try {
+      // cancelScheduledValues vermeidet stranded automation falls Toggle
+      // schneller als die Rampe getriggert wird.
+      this._wetGain.gain.cancelScheduledValues(now);
+      this._dryGain.gain.cancelScheduledValues(now);
+      // Aktuellen Wert verankern (sonst springt linearRamp vom letzten
+      // gescheduleten Wert, nicht vom aktuellen).
+      this._wetGain.gain.setValueAtTime(this._wetGain.gain.value, now);
+      this._dryGain.gain.setValueAtTime(this._dryGain.gain.value, now);
+      if (bypassed) {
+        this._wetGain.gain.linearRampToValueAtTime(0, now + ramp);
+        this._dryGain.gain.linearRampToValueAtTime(1, now + ramp);
+      } else {
+        this._wetGain.gain.linearRampToValueAtTime(1, now + ramp);
+        this._dryGain.gain.linearRampToValueAtTime(0, now + ramp);
+      }
+    } catch {
+      // Defensive: AudioParam-Methods fehlen in manchen Test-Mocks.
+      // Fallback auf instant value set.
+      try { this._wetGain.gain.value = bypassed ? 0 : 1; } catch { /* ignore */ }
+      try { this._dryGain.gain.value = bypassed ? 1 : 0; } catch { /* ignore */ }
+    }
   }
 
   isBypassed(): boolean {
@@ -133,10 +242,16 @@ export class PluginHost {
 
   /** Disconnect + Cleanup. Nach `dispose()` ist die Instanz unbrauchbar. */
   dispose(): void {
-    try {
-      this.node.disconnect();
-    } catch {
-      /* ignore — Node war eventuell nie connected */
+    const toDisconnect: Array<{ disconnect: () => void } | null> = [
+      this._inputGain,
+      this._wetGain,
+      this._dryGain,
+      this._outputGain,
+      this.node,
+    ];
+    for (const n of toDisconnect) {
+      if (!n) continue;
+      try { n.disconnect(); } catch { /* ignore */ }
     }
   }
 
@@ -168,8 +283,8 @@ export class PluginHost {
  *   console.warn("Plugin konnte nicht geladen werden — überspringe Slot");
  *   return;
  * }
- * sourceNode.connect(host.getNode());
- * host.getNode().connect(destination);
+ * sourceNode.connect(host.getInputNode());
+ * host.getOutputNode().connect(destination);
  * ```
  */
 export async function createPluginHost(
@@ -186,7 +301,7 @@ export async function createPluginHost(
       outputChannelCount: [2],
     });
     const params = { ...getDefaultParams(manifest), ...(init?.params ?? {}) };
-    return new PluginHost(manifest, node, params);
+    return new PluginHost(manifest, node, params, ctx);
   } catch (e) {
     // Defensive: bei Worklet-Load- oder Konstruktor-Fehlern crashen wir
     // nicht den Mixer. UI zeigt das Plugin als "konnte nicht geladen werden".

@@ -24,6 +24,12 @@
  *     unverändert mit pluginSlots=undefined; parseProject mappt undefined
  *     auf leeres {} im MixerStore (kein silent-data-loss da Mixer ohnehin
  *     ein eigener Persist-Layer ist, das Project-File ist nur ein Snapshot).
+ *   - "1.21": mixer.pluginSlots wechselt von Single-Slot pro Channel
+ *     (Record<partId, MixerPluginSlot | undefined>) zu Multi-Slot
+ *     (Record<partId, MixerPluginSlot[]>, max 4 pro Channel). v3.45.0
+ *     Multi-Slot Plugin-Chain. Backward-compat: parseProject migriert
+ *     v1.20-Files (single-slot Objects) automatisch in [slot]-Arrays.
+ *     Pre-v1.20-Files bleiben unverändert (Feld fehlt → undefined).
  * Dateiendung: .synth
  */
 
@@ -48,7 +54,7 @@ import {
   DEFAULT_NOTE_DURATION_MS,
 } from "@/audio/MidiNoteOut";
 
-export const SYNTH_FILE_VERSION = "1.20";
+export const SYNTH_FILE_VERSION = "1.21";
 export const SYNTH_LATEST_KEY = "synthstudio:last-project";
 
 // ─── Typen ───────────────────────────────────────────────────────────────────
@@ -75,9 +81,11 @@ export interface SynthProject {
     sidechains: MixerState["sidechains"];
     transientShapers: MixerState["transientShapers"];
     /**
-     * v3.44.0 (v1.20, TASK-239 Phase 1): Plugin-Slots pro Channel.
-     * Optional/additiv — Pre-v1.20-Files haben das Feld nicht; in
-     * parseProject wird es auf {} defaultet.
+     * v3.44.0 (v1.20) / v3.45.0 (v1.21): Plugin-Slots pro Channel.
+     * v1.20: single-slot (Record<partId, MixerPluginSlot | undefined>).
+     * v1.21: multi-slot (Record<partId, MixerPluginSlot[]>, max 4).
+     * Optional/additiv. Backward-compat: parseProject migriert v1.20-Single
+     * automatisch zu [slot]-Array. Pre-v1.20-Files: Feld fehlt → undefined.
      */
     pluginSlots?: MixerState["pluginSlots"];
   };
@@ -424,6 +432,31 @@ export function parseProject(json: string): SynthProject {
       };
     });
     data.slicePads = filtered;
+  }
+
+  // ─── mixer.pluginSlots Migration v1.20 → v1.21 ──────────────────────────
+  // v1.20 hatte Single-Slot pro Channel: Record<partId, MixerPluginSlot|undef>
+  // v1.21 ist Multi-Slot: Record<partId, MixerPluginSlot[]>, max 4.
+  // Migration: ein Single-Object → [Object]; Array bleibt; null/undefined → [].
+  // Pre-v1.20-Files (keine pluginSlots im JSON) bleiben unangetastet —
+  // der MixerStore-Loader defaultet beim Re-Load auf {}.
+  if (data.mixer && typeof data.mixer === "object") {
+    const rawSlots = (data.mixer as { pluginSlots?: unknown }).pluginSlots;
+    if (rawSlots !== undefined && rawSlots !== null && typeof rawSlots === "object" && !Array.isArray(rawSlots)) {
+      const migrated: Record<string, unknown[]> = {};
+      for (const [partId, value] of Object.entries(rawSlots as Record<string, unknown>)) {
+        if (Array.isArray(value)) {
+          migrated[partId] = value.slice(0, 4);
+        } else if (value && typeof value === "object") {
+          // v1.20 single-slot → wrap in [slot]
+          migrated[partId] = [value];
+        } else {
+          migrated[partId] = [];
+        }
+      }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (data.mixer as any).pluginSlots = migrated;
+    }
   }
 
   // ─── scripts (seit v1.16) ────────────────────────────────────────────────

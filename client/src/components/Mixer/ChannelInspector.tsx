@@ -16,13 +16,14 @@ import React, { useState, useCallback } from "react";
 import type { PartData, PatternData } from "@/audio/AudioEngine";
 import type { MixerState, MixerActions } from "@/store/useMixerStore";
 import { MIXER_FX_TYPES, summarizeEqBands, type MixerFxType } from "@/utils/mixerFx";
-// v3.44.0 (TASK-239 Phase 1): Plugin-Slot UI
+// v3.44.0 (TASK-239 Phase 1) / v3.45.0 Multi-Slot Chain: Plugin-Slot UI
 import {
   getPlugins as getRegisteredPlugins,
   getPlugin as getPluginManifest,
   getDefaultParams as getPluginDefaultParams,
   clampPluginParam,
 } from "@/audio/PluginRegistry";
+import { MAX_PLUGIN_SLOTS_PER_CHANNEL, type MixerPluginSlot } from "@/store/useMixerStore";
 import { extractPatch, type Patch } from "@/utils/patchSerialize";
 import { savePatch, usePatchStore } from "@/store/usePatchStore";
 import { toast } from "@/store/useToastStore";
@@ -312,30 +313,38 @@ export function ChannelInspector({ part, parts, mixer, className, onApplyPatch, 
         </div>
       </section>
 
-      {/* v3.44.0 (TASK-239 Phase 1): AudioWorklet-Plugin-Slot */}
-      <PluginSlotSection
+      {/* v3.45.0: AudioWorklet-Plugin-Chain (max 4 Slots, seriell) */}
+      <PluginChainSection
         partId={part.id}
-        slot={mixer.pluginSlots[part.id]}
-        onChangePlugin={(pluginId) => {
-          if (!pluginId) {
-            mixer.setPluginSlot(part.id, null);
-            return;
-          }
+        slots={mixer.pluginSlots[part.id] ?? []}
+        onAddSlot={(pluginId) => {
           const manifest = getPluginManifest(pluginId);
           if (!manifest) return;
-          mixer.setPluginSlot(part.id, {
+          mixer.addPluginSlot(part.id, {
             pluginId,
             params: getPluginDefaultParams(manifest),
             bypassed: false,
           });
         }}
-        onChangeParam={(paramId, value) => {
-          mixer.setPluginParam(part.id, paramId, value);
+        onRemoveSlot={(index) => mixer.removePluginSlot(part.id, index)}
+        onMoveSlot={(from, to) => mixer.movePluginSlot(part.id, from, to)}
+        onChangePlugin={(index, pluginId) => {
+          const manifest = getPluginManifest(pluginId);
+          if (!manifest) return;
+          mixer.setPluginSlotPlugin(part.id, index, {
+            pluginId,
+            params: getPluginDefaultParams(manifest),
+            bypassed: false,
+          });
         }}
-        onToggleBypass={() => {
-          const slot = mixer.pluginSlots[part.id];
+        onChangeParam={(index, paramId, value) => {
+          mixer.setPluginSlotParam(part.id, index, paramId, value);
+        }}
+        onToggleBypass={(index) => {
+          const slots = mixer.pluginSlots[part.id] ?? [];
+          const slot = slots[index];
           if (!slot) return;
-          mixer.setPluginBypassed(part.id, !slot.bypassed);
+          mixer.setPluginSlotBypassed(part.id, index, !slot.bypassed);
         }}
       />
 
@@ -864,62 +873,210 @@ function ControlRow({
   );
 }
 
-// ─── v3.44.0 (TASK-239 Phase 1) — Plugin-Slot Section ─────────────────────
+// ─── v3.45.0 — Plugin-Chain Section (Multi-Slot, max 4) ───────────────────
 
-interface PluginSlotSectionProps {
+interface PluginChainSectionProps {
   partId: string;
-  slot: { pluginId: string; params: Record<string, number>; bypassed?: boolean } | undefined;
-  onChangePlugin: (pluginId: string | null) => void;
-  onChangeParam: (paramId: string, value: number) => void;
-  onToggleBypass: () => void;
+  slots: MixerPluginSlot[];
+  onAddSlot: (pluginId: string) => void;
+  onRemoveSlot: (index: number) => void;
+  onMoveSlot: (from: number, to: number) => void;
+  onChangePlugin: (index: number, pluginId: string) => void;
+  onChangeParam: (index: number, paramId: string, value: number) => void;
+  onToggleBypass: (index: number) => void;
 }
 
-function PluginSlotSection({ partId, slot, onChangePlugin, onChangeParam, onToggleBypass }: PluginSlotSectionProps) {
+function PluginChainSection({
+  partId,
+  slots,
+  onAddSlot,
+  onRemoveSlot,
+  onMoveSlot,
+  onChangePlugin,
+  onChangeParam,
+  onToggleBypass,
+}: PluginChainSectionProps) {
   const plugins = React.useMemo(() => getRegisteredPlugins(), []);
-  const manifest = slot ? getPluginManifest(slot.pluginId) : undefined;
+  const canAddMore = slots.length < MAX_PLUGIN_SLOTS_PER_CHANNEL;
+  const [addOpen, setAddOpen] = useState(false);
 
   return (
-    <section className="border-b border-border-color p-3" data-testid={`channel-plugin-slot-${partId}`}>
+    <section className="border-b border-border-color p-3" data-testid={`channel-plugin-chain-${partId}`}>
       <div className="mb-2 flex items-center justify-between gap-2">
-        <span className="text-[10px] font-semibold uppercase tracking-wide text-text-dim">Plugin</span>
-        <select
-          aria-label="Plugin auswählen"
-          value={slot?.pluginId ?? ""}
-          onChange={e => onChangePlugin(e.target.value || null)}
-          className="flex-1 rounded bg-bg-panel px-2 py-1 text-[10px] text-text-primary border border-border-color"
-          data-testid={`channel-plugin-select-${partId}`}
-        >
-          <option value="">None</option>
-          {plugins.map(p => (
-            <option key={p.id} value={p.id}>{p.name} {p.builtIn ? "(Built-In)" : ""}</option>
-          ))}
-        </select>
-        {slot && (
+        <span className="text-[10px] font-semibold uppercase tracking-wide text-text-dim">
+          Plugin-Chain ({slots.length}/{MAX_PLUGIN_SLOTS_PER_CHANNEL})
+        </span>
+        {canAddMore && !addOpen && (
           <button
             type="button"
-            onClick={onToggleBypass}
-            className={`px-2 py-1 text-[10px] rounded border ${
-              slot.bypassed
-                ? "border-text-dim text-text-dim"
-                : "border-accent-secondary text-accent-secondary"
-            }`}
-            title="Bypass — Plugin überspringen"
-            data-testid={`channel-plugin-bypass-${partId}`}
+            onClick={() => setAddOpen(true)}
+            className="rounded border border-accent-secondary px-2 py-1 text-[10px] text-accent-secondary hover:bg-bg-elevated"
+            data-testid={`channel-plugin-add-${partId}`}
           >
-            {slot.bypassed ? "OFF" : "ON"}
+            + Add Plugin
           </button>
         )}
       </div>
 
-      {!slot && (
+      {addOpen && canAddMore && (
+        <div className="mb-2 flex items-center gap-2">
+          <select
+            aria-label="Plugin auswählen"
+            defaultValue=""
+            onChange={(e) => {
+              const id = e.target.value;
+              if (id) {
+                onAddSlot(id);
+                setAddOpen(false);
+              }
+            }}
+            className="flex-1 rounded bg-bg-panel px-2 py-1 text-[10px] text-text-primary border border-border-color"
+            data-testid={`channel-plugin-add-select-${partId}`}
+          >
+            <option value="">Plugin wählen…</option>
+            {plugins.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name} {p.builtIn ? "(Built-In)" : ""}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={() => setAddOpen(false)}
+            className="rounded border border-border-color px-2 py-1 text-[10px] text-text-dim hover:text-text-primary"
+          >
+            Abbruch
+          </button>
+        </div>
+      )}
+
+      {slots.length === 0 && !addOpen && (
         <div className="rounded border border-dashed border-border-color px-2 py-3 text-center text-[10px] text-text-dim">
           Kein Plugin geladen
         </div>
       )}
 
-      {slot && manifest && (
+      <div className="space-y-2">
+        {slots.map((slot, index) => (
+          <PluginSlotItem
+            key={`${index}-${slot.pluginId}`}
+            partId={partId}
+            slot={slot}
+            index={index}
+            isFirst={index === 0}
+            isLast={index === slots.length - 1}
+            availablePlugins={plugins}
+            onChangePlugin={(pluginId) => onChangePlugin(index, pluginId)}
+            onChangeParam={(paramId, value) => onChangeParam(index, paramId, value)}
+            onToggleBypass={() => onToggleBypass(index)}
+            onRemove={() => onRemoveSlot(index)}
+            onMoveUp={() => onMoveSlot(index, index - 1)}
+            onMoveDown={() => onMoveSlot(index, index + 1)}
+          />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+interface PluginSlotItemProps {
+  partId: string;
+  slot: MixerPluginSlot;
+  index: number;
+  isFirst: boolean;
+  isLast: boolean;
+  availablePlugins: ReturnType<typeof getRegisteredPlugins>;
+  onChangePlugin: (pluginId: string) => void;
+  onChangeParam: (paramId: string, value: number) => void;
+  onToggleBypass: () => void;
+  onRemove: () => void;
+  onMoveUp: () => void;
+  onMoveDown: () => void;
+}
+
+function PluginSlotItem({
+  partId,
+  slot,
+  index,
+  isFirst,
+  isLast,
+  availablePlugins,
+  onChangePlugin,
+  onChangeParam,
+  onToggleBypass,
+  onRemove,
+  onMoveUp,
+  onMoveDown,
+}: PluginSlotItemProps) {
+  const manifest = getPluginManifest(slot.pluginId);
+
+  return (
+    <div
+      className="rounded border border-border-subtle bg-bg-elevated p-2"
+      data-testid={`channel-plugin-slot-${partId}-${index}`}
+    >
+      <div className="mb-2 flex items-center gap-1">
+        <span className="text-[9px] text-text-dim font-mono">#{index + 1}</span>
+        <select
+          aria-label={`Plugin Slot ${index + 1}`}
+          value={slot.pluginId}
+          onChange={(e) => onChangePlugin(e.target.value)}
+          className="flex-1 rounded bg-bg-panel px-2 py-1 text-[10px] text-text-primary border border-border-color"
+          data-testid={`channel-plugin-select-${partId}-${index}`}
+        >
+          {availablePlugins.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name} {p.builtIn ? "(Built-In)" : ""}
+            </option>
+          ))}
+        </select>
+        <button
+          type="button"
+          onClick={onToggleBypass}
+          className={`px-2 py-1 text-[10px] rounded border ${
+            slot.bypassed
+              ? "border-text-dim text-text-dim"
+              : "border-accent-secondary text-accent-secondary"
+          }`}
+          title="Bypass — Plugin überspringen (5ms click-free)"
+          data-testid={`channel-plugin-bypass-${partId}-${index}`}
+        >
+          {slot.bypassed ? "OFF" : "ON"}
+        </button>
+        <button
+          type="button"
+          onClick={onMoveUp}
+          disabled={isFirst}
+          title="Nach oben"
+          className="text-[10px] text-text-dim hover:text-text-primary disabled:opacity-30"
+          data-testid={`channel-plugin-up-${partId}-${index}`}
+        >
+          Up
+        </button>
+        <button
+          type="button"
+          onClick={onMoveDown}
+          disabled={isLast}
+          title="Nach unten"
+          className="text-[10px] text-text-dim hover:text-text-primary disabled:opacity-30"
+          data-testid={`channel-plugin-down-${partId}-${index}`}
+        >
+          Dn
+        </button>
+        <button
+          type="button"
+          onClick={onRemove}
+          title="Entfernen"
+          className="text-[10px] text-accent-danger hover:text-accent-danger/80"
+          data-testid={`channel-plugin-remove-${partId}-${index}`}
+        >
+          X
+        </button>
+      </div>
+
+      {manifest && (
         <div className="space-y-1">
-          {manifest.paramSchema.map(def => {
+          {manifest.paramSchema.map((def) => {
             const raw = slot.params[def.id] ?? def.default;
             const clamped = clampPluginParam(manifest, def.id, raw);
             return (
@@ -930,7 +1087,7 @@ function PluginSlotSection({ partId, slot, onChangePlugin, onChangeParam, onTogg
                 min={def.min}
                 max={def.max}
                 step={def.step ?? 0.01}
-                onChange={v => onChangeParam(def.id, v)}
+                onChange={(v) => onChangeParam(def.id, v)}
               />
             );
           })}
@@ -940,11 +1097,11 @@ function PluginSlotSection({ partId, slot, onChangePlugin, onChangeParam, onTogg
         </div>
       )}
 
-      {slot && !manifest && (
+      {!manifest && (
         <div className="rounded border border-dashed border-accent-danger px-2 py-2 text-[10px] text-accent-danger">
           Plugin „{slot.pluginId}" nicht gefunden — neu installiert?
         </div>
       )}
-    </section>
+    </div>
   );
 }
