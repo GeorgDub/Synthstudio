@@ -3045,6 +3045,41 @@ class AudioEngineClass {
   stopAllLoopPlayback(): void {
     this._looperEngine.stopAllPlayback();
   }
+
+  // ─── Slice-Pad-Playback (TASK-238-FOLLOWUP-1 / v2.90) ────────────────────
+  /**
+   * Spielt einen Slice-Buffer (Float32Array, Mono) als One-Shot ab.
+   *
+   * @param buffer     Float32Array mit Audio-Daten (Mono).
+   * @param sampleRate Sample-Rate des Buffers.
+   * @returns true wenn erfolgreich gestartet, false wenn AudioContext fehlt.
+   */
+  playSliceBuffer(buffer: Float32Array, sampleRate: number): boolean {
+    if (!this.ctx || !this.masterGain) return false;
+    if (!buffer || buffer.length === 0) return false;
+    const rate = Number.isFinite(sampleRate) && sampleRate > 0 ? sampleRate : 44100;
+    try {
+      const audioBuffer = this.ctx.createBuffer(1, buffer.length, rate);
+      // copyToChannel akzeptiert nur Float32Array<ArrayBuffer>; bei
+      // Float32Array<ArrayBufferLike> (z.B. aus File.arrayBuffer) braucht es
+      // einen impliziten Copy → neue Float32Array vom selben Inhalt.
+      audioBuffer.copyToChannel(new Float32Array(buffer), 0);
+      const src = this.ctx.createBufferSource();
+      src.buffer = audioBuffer;
+      const gain = this.ctx.createGain();
+      gain.gain.value = 0.85;
+      src.connect(gain);
+      gain.connect(this.masterGain);
+      src.start();
+      src.onended = () => {
+        try { src.disconnect(); gain.disconnect(); } catch { /* ignore */ }
+      };
+      return true;
+    } catch (err) {
+      console.warn("[AudioEngine] playSliceBuffer failed", err);
+      return false;
+    }
+  }
 }
 
 export const AudioEngine = new AudioEngineClass();

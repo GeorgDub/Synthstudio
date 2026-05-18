@@ -122,6 +122,12 @@ import {
 import { useResizablePanel } from "@/hooks/useResizablePanel";
 import { ResizablePanelHandle } from "@/components/UI/ResizablePanelHandle";
 import { useAutomationStore } from "@/store/useAutomationStore";
+import {
+  mapElectribeLaneToAutomationTarget,
+  scaleMotionPointsToStepCount,
+  type ElectribeMotionLane,
+} from "@/utils/electribeMotionMapping";
+import { assignSlicesToPads, MAX_SLICE_PADS } from "@/store/useSlicePadStore";
 import { AutomationView } from "@/components/Automation/AutomationView";
 import { SceneLaunchPad } from "@/components/Scene/SceneLaunchPad";
 import { AudioEngine } from "@/audio/AudioEngine";
@@ -1587,6 +1593,97 @@ export default function App() {
       (index, lengthBeats, lengthSec, frameCount) =>
         setLoopLength(index, lengthBeats, lengthSec, frameCount),
     );
+  }, []);
+
+  // v2.90 (TASK-237-FOLLOWUP-1): electribe:motion-lanes — beim Electribe-Import
+  // dispatcht electribeImport.ts diesen Event mit den Motion-Sequencer-Lanes.
+  // Wir mappen partIndex → echte partId via dmRef.current.patterns[id], konvertieren
+  // das Electribe-Target ("Volume:3") auf ein Synthstudio AutomationTarget
+  // ("vol:<partId>") und fuettern jeden Punkt via setPoint. Lanes mit unsupported
+  // Param-Names werden uebersprungen + geloggt.
+  useEffect(() => {
+    const handleMotionLanes = (e: Event) => {
+      const detail = (e as CustomEvent<{ patternId: string; lanes: unknown }>).detail;
+      if (!detail || !Array.isArray(detail.lanes)) return;
+      const dmNow = dmRef.current;
+      if (!dmNow) return;
+      const pattern = dmNow.patterns.find(p => p.id === detail.patternId);
+      if (!pattern) {
+        console.warn("[electribe:motion-lanes] Pattern nicht gefunden:", detail.patternId);
+        return;
+      }
+      const partIds = pattern.parts.map(p => p.id);
+      const auto = automationRef.current;
+      const targetStepCount: 16 | 32 = pattern.stepCount;
+
+      let added = 0;
+      let skipped = 0;
+      for (const raw of detail.lanes) {
+        if (!raw || typeof raw !== "object") { skipped++; continue; }
+        const lane = raw as ElectribeMotionLane;
+        const target = mapElectribeLaneToAutomationTarget(lane.target, partIds);
+        if (!target) { skipped++; continue; }
+        const laneId = auto.addLane(target, lane.label);
+        const scaledPoints = scaleMotionPointsToStepCount(lane.points, targetStepCount);
+        for (const key of Object.keys(scaledPoints)) {
+          const step = Number(key);
+          if (!Number.isFinite(step)) continue;
+          auto.setPoint(laneId, step, scaledPoints[step]);
+        }
+        added++;
+      }
+      if (added > 0 || skipped > 0) {
+        toast(
+          `Motion-Lanes: ${added} importiert${skipped > 0 ? ` (${skipped} unsupported)` : ""}`,
+          { kind: added > 0 ? "success" : "info", duration: 3500 },
+        );
+      }
+    };
+    window.addEventListener("electribe:motion-lanes", handleMotionLanes);
+    return () => window.removeEventListener("electribe:motion-lanes", handleMotionLanes);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // v2.90 (TASK-238-FOLLOWUP-1): sample-slicer:apply — DrumMachine dispatcht
+  // diesen Event nachdem der SampleSliceEditor "Apply" gedrueckt hat. Wir
+  // legen die Slice-Buffer in useSlicePadStore ab (max 16 Pads). Mehr als 16
+  // Slices werden abgeschnitten.
+  //
+  // Trigger-Pfad (Phase 2, separater Task): Performance-Pad-Klick im "Slice"-
+  // Mode wuerde AudioEngine.playSliceBuffer mit slot.buffer + sampleRate
+  // aufrufen. Heute: Auto-Preview-Toast + Buffer ist im Store ablegbar.
+  useEffect(() => {
+    const handleSlicerApply = (e: Event) => {
+      const detail = (e as CustomEvent<{
+        sampleName: string;
+        sampleRate: number;
+        slices: unknown;
+      }>).detail;
+      if (!detail || !Array.isArray(detail.slices)) return;
+      // Validierung: nur Float32Array-Slices akzeptieren
+      const slices: Float32Array[] = [];
+      for (const item of detail.slices) {
+        if (item instanceof Float32Array) slices.push(item);
+      }
+      if (slices.length === 0) {
+        toast("Keine validen Slices erhalten", { kind: "warning", duration: 3500 });
+        return;
+      }
+      const assigned = assignSlicesToPads(slices, {
+        sampleName: detail.sampleName ?? "sample",
+        sampleRate: detail.sampleRate ?? 44100,
+        replace: true,
+      });
+      const truncated = slices.length > MAX_SLICE_PADS;
+      toast(
+        truncated
+          ? `${assigned}/${slices.length} Slices auf Slice-Pads gelegt (max ${MAX_SLICE_PADS})`
+          : `${assigned} Slice(s) auf Slice-Pads gelegt`,
+        { kind: "success", duration: 3500 },
+      );
+    };
+    window.addEventListener("sample-slicer:apply", handleSlicerApply);
+    return () => window.removeEventListener("sample-slicer:apply", handleSlicerApply);
   }, []);
 
   // v2.78: midi:perfpad — Note-Mapping mit performancePadIndex triggert

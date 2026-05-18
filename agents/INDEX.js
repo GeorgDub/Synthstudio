@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "2.89.0",
+    version: "2.90.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -399,8 +399,38 @@ const INDEX = {
       ownedBy:  "backend"
     },
     "client/src/components/DrumMachine/DrumMachine.tsx (TASK-237 Electribe-UI)": {
-      role:     "v2.89.0: Zusaetzlich zu Electribe-UI auch '✂ Slice Sample'-Toolbar-Button + hidden file-input accept='audio/*,.wav,.mp3,.ogg,.flac,.aiff,.m4a' (data-testids 'slice-sample' / 'slice-sample-input'). handleSliceImport decodiert via window.AudioContext.decodeAudioData → Float32Array Kanal-0-Mono-Tap + sampleRate → setSliceEditor State → SampleSliceEditor-Modal. handleSlicesApply dispatcht CustomEvent 'sample-slicer:apply' + Toast. v2.88.0: '🎚 Electribe'-Toolbar-Button + Single-Pattern-Direkt-Import + Bank-Pattern-Picker-Modal mit Liste (Name/BPM/StepLength), data-testids 'electribe-import', 'electribe-import-input', 'electribe-picker-overlay', 'electribe-picker-pattern-{idx}', 'electribe-picker-cancel'. Konvertierung via convertParsedPatternToSynthstudio + renamePattern/setPatternBpm/setPartSteps/setPartVolume/setPartPan. Drag-Drop-Bridge via window-Event 'electribe:fileImport'. Motion-Lanes per CustomEvent 'electribe:motion-lanes' rausgereicht (App-Level-Wiring fuer useAutomationStore folgt).",
+      role:     "v2.89.0: Zusaetzlich zu Electribe-UI auch '✂ Slice Sample'-Toolbar-Button + hidden file-input accept='audio/*,.wav,.mp3,.ogg,.flac,.aiff,.m4a' (data-testids 'slice-sample' / 'slice-sample-input'). handleSliceImport decodiert via window.AudioContext.decodeAudioData → Float32Array Kanal-0-Mono-Tap + sampleRate → setSliceEditor State → SampleSliceEditor-Modal. handleSlicesApply dispatcht CustomEvent 'sample-slicer:apply' + Toast. v2.88.0: '🎚 Electribe'-Toolbar-Button + Single-Pattern-Direkt-Import + Bank-Pattern-Picker-Modal mit Liste (Name/BPM/StepLength), data-testids 'electribe-import', 'electribe-import-input', 'electribe-picker-overlay', 'electribe-picker-pattern-{idx}', 'electribe-picker-cancel'. Konvertierung via convertParsedPatternToSynthstudio + renamePattern/setPatternBpm/setPartSteps/setPartVolume/setPartPan. Drag-Drop-Bridge via window-Event 'electribe:fileImport'. Motion-Lanes per CustomEvent 'electribe:motion-lanes' rausgereicht — v2.90 App.tsx-Listener konsumiert das jetzt.",
       lastSeen: "2026-05-18T02:25:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/utils/electribeMotionMapping.ts": {
+      role:     "TASK-237-FOLLOWUP-1 / v2.90: Pure-Logik-Bridge zwischen Electribe-Motion-Lanes (CustomEvent-Payload) und useAutomationStore-Targets. Exports: parseElectribeLaneTarget('Volume:3' → {paramName:'Volume', partIndex:3}), mapElectribeLaneToAutomationTarget(electribeTarget, partIds[]) → AutomationTarget|null (mappt Volume:N → vol:<partId>, Pan:N → pan:<partId>, FX Send:N → send-rev:<partId>; alle anderen Params null), scaleMotionPointsToStepCount(points, 16|32) (16-Step-Pattern: identity; 32-Step: Faktor-2-Stretch + cap auf max-1), selectConvertableLanes(lanes, partIds). KEINE Web-Audio/React-Imports — 21 Unit-Tests gruen.",
+      lastSeen: "2026-05-18T02:33:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/store/useSlicePadStore.ts": {
+      role:     "TASK-238-FOLLOWUP-1 / v2.90: Module-Singleton Custom-Observer-Store fuer 16 Slice-Pad-Slots (entspricht MAX_PERFORMANCE_PADS). Schema: {index, buffer:Float32Array|null, sampleRate, sampleName, sliceIndex}. Buffer leben NUR im RAM — KEIN localStorage (Quota-Suizid bei Float32-Audio-Daten). Public-API: getSlicePadSlot/getAllSlicePadSlots/setSlicePadSlot/clearSlicePadSlot/clearAllSlicePads/assignSlicesToPads (Bulk; replace-Toggle; cappt bei MAX_SLICE_PADS=16) + __resetSlicePadStoreForTests + useSlicePadStore-Hook. 15 Unit-Tests gruen.",
+      lastSeen: "2026-05-18T02:33:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/audio/AudioEngine.ts (TASK-238-FOLLOWUP-1 playSliceBuffer)": {
+      role:     "v2.90: +playSliceBuffer(buffer:Float32Array, sampleRate:number):boolean — One-Shot-Playback. Erzeugt AudioBuffer (Mono, 1 Channel), copyToChannel (mit defensiver Float32Array-Copy fuer ArrayBufferLike→ArrayBuffer-Coercion), createBufferSource → Gain (0.85) → masterGain, src.start + onended-Cleanup. Wird vom Performance-Pad-Slice-Mode konsumiert (Wiring follow-up).",
+      lastSeen: "2026-05-18T02:33:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/App.tsx (TASK-237/238-FOLLOWUP-1 Bridges)": {
+      role:     "v2.90: 2 neue useEffect-Listener. (a) 'electribe:motion-lanes' → liest dmRef.current.patterns[id].parts.map(p=>p.id), mappElectribeLane→AutomationTarget mit scaleMotionPointsToStepCount, ruft automationRef.current.addLane + setPoint pro Punkt. Unsupported Params (Filter Cutoff etc.) werden uebersprungen + im Toast-Counter angezeigt. (b) 'sample-slicer:apply' → filtert non-Float32Array-Items, assignSlicesToPads(slices, {sampleName, sampleRate, replace:true}), Toast mit ggf. truncated-Hint. Imports: mapElectribeLaneToAutomationTarget + scaleMotionPointsToStepCount + ElectribeMotionLane-Type aus utils/electribeMotionMapping; assignSlicesToPads + MAX_SLICE_PADS aus store/useSlicePadStore.",
+      lastSeen: "2026-05-18T02:33:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "tests/features/electribe-motion-bridge.test.ts": {
+      role:     "TASK-237-FOLLOWUP-1 / v2.90: 21 Tests. Coverage: parseElectribeLaneTarget (6 — happy/space-im-paramName/letzter-Doppelpunkt/fehlender-Index/leerer-paramName/negativ), mapElectribeLaneToAutomationTarget (6 — Volume/Pan/FX-Send/unsupported/out-of-range/garbage), scaleMotionPointsToStepCount (4 — 16-identity/32-faktor2/16→30-fullspread/clamp-31), selectConvertableLanes (3), End-to-End Mock-Store-Calls (2 — addLane mit korrektem Target + 32-Step-Stretch).",
+      lastSeen: "2026-05-18T02:33:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "tests/features/sample-slice-pad-assign.test.ts": {
+      role:     "TASK-238-FOLLOWUP-1 / v2.90: 15 Tests. Coverage: default-state (3), setSlicePadSlot+clear (5 — happy/out-of-range/Slot-Isolation/clearAll/sampleRate-Clamp), assignSlicesToPads (5 — Bulk-Assign/Truncate-bei-25/replace:true-leert-Rest/replace:false-merge/empty-array), End-to-End sample-slicer:apply Event-Simulation (2 — Payload-Validation + non-Float32Array-Filter).",
+      lastSeen: "2026-05-18T02:33:00.000Z",
       ownedBy:  "frontend"
     }
   },
@@ -741,6 +771,32 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "frontend",
+      timestamp: "2026-05-18T02:33:00.000Z",
+      done: [
+        "v2.90.0 POLISH — zwei CustomEvent-Bridges geschlossen, die als MVP in v2.88/v2.89 als 'TODO App-Level-Wiring'-Hinweise rausgegeben wurden. (BRIDGE 1) electribe:motion-lanes → useAutomationStore: (1) NEU client/src/utils/electribeMotionMapping.ts — pure-Logik-Layer ohne React/Web-Audio-Imports. parseElectribeLaneTarget('Volume:3' → {paramName, partIndex}) nimmt den LETZTEN Doppelpunkt als Trenner, mapElectribeLaneToAutomationTarget(electribeTarget, partIds[]) mappt nur 3 unterstuetzte Params (Volume→vol:<partId>, Pan→pan:<partId>, FX Send→send-rev:<partId>) — Filter Cutoff/Resonance/Pitch/etc. werden null retourniert weil useAutomationStore nur 6 Targets kennt (bpm/master-vol/vol/pan/send-rev/send-dly). scaleMotionPointsToStepCount(points, 16|32) streckt die 16-Step-Motion-Slots auf 32-Step-Patterns mit Faktor 2 + Clamp auf max-1. selectConvertableLanes ist Convenience-Filter. (2) App.tsx: 'electribe:motion-lanes'-Listener installiert nach dem Looper-Block. Liest dmRef.current.patterns[id].parts → partIds. Ruft automationRef.current.addLane + setPoint pro Motion-Punkt. Toast '{added} importiert ({skipped} unsupported)' am Ende. (3) Tests: tests/features/electribe-motion-bridge.test.ts NEU mit 21 Cases (6 parseElectribeLaneTarget + 6 mapping + 4 scale + 3 selectConvertable + 2 End-to-End Mock-Store-Calls). (BRIDGE 2) sample-slicer:apply → Slice-Pad-Store: (1) NEU client/src/store/useSlicePadStore.ts — Module-Singleton Custom-Observer-Pattern (analog useLooperStore). 16 Slots, jeder {index, buffer:Float32Array|null, sampleRate, sampleName, sliceIndex}. NICHT persistiert (Float32-Audio in localStorage ist Quota-Suizid — bei 16 Pads × wenige Sekunden = MB+). Public-API: getSlicePadSlot/getAllSlicePadSlots/setSlicePadSlot/clearSlicePadSlot/clearAllSlicePads + assignSlicesToPads (Bulk; replace-Toggle; cappt bei MAX_SLICE_PADS=16). (2) AudioEngine.ts: +playSliceBuffer(buffer, sampleRate) — One-Shot Mono-Playback via createBuffer+createBufferSource→masterGain. Defensive new Float32Array(buffer)-Copy fuer ArrayBufferLike→ArrayBuffer-Coercion (TypeScript-Strict-Forderung). (3) App.tsx: 'sample-slicer:apply'-Listener installiert. Filtert non-Float32Array-Items aus dem Event-Payload (Robustheit), ruft assignSlicesToPads(replace:true). Toast mit ggf. truncated-Hint wenn >16 Slices. (4) Tests: tests/features/sample-slice-pad-assign.test.ts NEU mit 15 Cases (3 default-state + 5 setSlot/clear + 5 assignSlicesToPads (inkl. >16-Truncate, replace:true vs false) + 2 End-to-End Payload-Simulation). FOLLOW-UPS DOKUMENTIERT: Performance-Pad-Slice-Mode (Mode-Toggle 'Pattern / Slice' im PatternLaunchPad mit AudioEngine.playSliceBuffer-Routing) — Architektur ist offen, Wiring fehlt (TASK-238-FOLLOWUP-1B); fxParam-Lanes im useAutomationStore (damit Filter Cutoff & Co. auch durchkommen) — TASK-237-FOLLOWUP-1B als eigener Task; Slice-Preview-Click im Pad-Grid des SampleSliceEditor; Stereo-Slicing (Kanal-1-Tap). pnpm check clean. pnpm test 3287/15 skipped (vs vorher 3251/15, +36 neue Tests). package.json 2.89.0 → 2.90.0."
+      ],
+      next: [
+        "TASK-238-FOLLOWUP-1B: Performance-Pad-Mode-Toggle (Pattern / Slice). PerformanceMode/PatternLaunchPad lesen aus useSlicePadStore und triggern via AudioEngine.playSliceBuffer statt setActivePattern. UI: 'Pattern / Slice'-Toggle in der Performance-Toolbar, im Slice-Mode zeigen die Pads die Slice-Sample-Namen + Index. Folge-LOC: ~80.",
+        "TASK-237-FOLLOWUP-1B: useAutomationStore um fxParam-Targets erweitern (Filter Cutoff, Resonance, Pitch, Reverse — die Electribe-Motion-Params die heute gefiltert werden). Braucht neues AutomationTarget 'fxParam:<partId>:<paramName>' + Bridge zu AudioEngine.setPartFx pro Step. Etwa 100 LOC + 8 Tests. Erst danach kann selectConvertableLanes mehr durchlassen.",
+        "TASK-238-FOLLOWUP-2: Slice-Vorschau im Pad-Grid (Click auf Pad-Tile spielt nur diesen Slice; nutzt AudioEngine.playSliceBuffer + sampleRate aus useSlicePadStore).",
+        "TASK-238-FOLLOWUP-3: Stereo-Slicing (zweiter Float32Array fuer Kanal 1, AudioBuffer-Channels=2 in playSliceBuffer).",
+        "TASK-237-FOLLOWUP-2: Reale Electribe-File-Kalibrierung (Offsets verifizieren mit Original-.e2sallpat).",
+        "TASK-239 (VST3/CLAP-Host) bleibt offen.",
+        "ARCHITEKTUR-HINWEIS: useAutomationStore ist useState-basiert (im Gegensatz zu useLooperStore Module-Singleton) — Bridge konsumiert ueber automationRef. Falls man in Zukunft den Store auf Module-Singleton-Pattern migriert, wird das App.tsx-Wiring einfacher (kein Ref noetig)."
+      ],
+      changed: [
+        "client/src/utils/electribeMotionMapping.ts (NEU — Pure-Mapping-Layer, 21 Tests gruen)",
+        "client/src/store/useSlicePadStore.ts (NEU — Module-Singleton fuer 16 Slice-Pad-Slots, 15 Tests gruen)",
+        "client/src/audio/AudioEngine.ts (+ playSliceBuffer(buffer, sampleRate) One-Shot-Playback-API)",
+        "client/src/App.tsx (+ 2 useEffect-Listener: electribe:motion-lanes + sample-slicer:apply; + 2 Imports aus utils/electribeMotionMapping + store/useSlicePadStore)",
+        "tests/features/electribe-motion-bridge.test.ts (NEU, 21 Cases)",
+        "tests/features/sample-slice-pad-assign.test.ts (NEU, 15 Cases)",
+        "package.json (2.89.0 → 2.90.0)",
+        "agents/INDEX.js (workLog + version 2.90.0 + files-Index +5 Eintraege)"
+      ]
+    },
     {
       agent:     "frontend",
       timestamp: "2026-05-18T02:25:00.000Z",
@@ -3564,7 +3620,7 @@ const INDEX = {
             ],
             estimateHours: 24,
             doneIn: "v2.88.0",
-            doneNote: "Parser browser-safe in client/src/utils/electribeImport.ts (isomorph), IPC electribe:import-file + electribe:open-dialog in electron/main.ts mit 5MB-Limit + Endung-Whitelist, UI in DrumMachine-Toolbar (Button + File-Picker + Bank-Pattern-Picker-Dialog), Drag-Drop via window-Event 'electribe:fileImport'. 42 Unit-Tests gruen. Motion-Sequencer-Lanes per CustomEvent 'electribe:motion-lanes' rausgereicht (App-Level-Wiring fuer useAutomationStore-Konsum folgt als TASK-237-FOLLOWUP). Format-Spec ist BEST-EFFORT, Kalibrierung mit echten .e2sallpat-Files erforderlich."
+            doneNote: "Parser browser-safe in client/src/utils/electribeImport.ts (isomorph), IPC electribe:import-file + electribe:open-dialog in electron/main.ts mit 5MB-Limit + Endung-Whitelist, UI in DrumMachine-Toolbar (Button + File-Picker + Bank-Pattern-Picker-Dialog), Drag-Drop via window-Event 'electribe:fileImport'. 42 Unit-Tests gruen. Motion-Sequencer-Lanes per CustomEvent 'electribe:motion-lanes' rausgereicht (App-Level-Wiring fuer useAutomationStore-Konsum folgt als TASK-237-FOLLOWUP). Format-Spec ist BEST-EFFORT, Kalibrierung mit echten .e2sallpat-Files erforderlich. FOLLOWUP-1 (v2.90): App.tsx-Listener konsumiert das Event jetzt, mapped Volume/Pan/FX-Send-Lanes auf useAutomationStore-Targets, 21 zusaetzliche Tests in tests/features/electribe-motion-bridge.test.ts. Filter Cutoff/Resonance/Pitch bleiben gefiltert weil useAutomationStore keine fxParam-Lanes hat (= TASK-237-FOLLOWUP-1B)."
         },
         {
             id: "TASK-238",
@@ -3584,7 +3640,7 @@ const INDEX = {
                 "Manuelle Slice-Justierung mit Snap-to-Zero-Crossing"
             ],
             estimateHours: 24,
-            doneNote: "Zweistufige Implementierung. Agent-A (pure-fn-Layer): client/src/utils/sampleSlicing.ts mit autoSlice/detectOnsetsSpectralFlux/snapToZeroCrossing/onsetsToSlices/splitChannelDataAtSlices/mapSlicesToPads/addOnset/moveOnset/removeOnset + Types OnsetCandidate/SliceSpec/PadAssignment + MAX_PERFORMANCE_PADS=16. 23 Unit-Tests in tests/features/sample-slicing.test.ts gruen. Agent-B (UI): client/src/components/SampleEditor/SampleSliceEditor.tsx — Modal mit Waveform-Canvas (Peak-reduziert via buildPeaks, RAF-Render, semantische Token-Farben via getCssVar), draggable Slice-Marker (Pointer-Events, Snap-to-Zero auf Drop), Click→addOnset, Shift/Right-Click→removeOnset, 4×4 Pad-Grid mit Length-Anzeige (ms/s). DrumMachine-Toolbar bekam '✂ Slice Sample'-Button + hidden file-input (data-testid 'slice-sample' / 'slice-sample-input'). handleSliceImport decodiert WAV/MP3/OGG/FLAC/AIFF/M4A via Browser-AudioContext.decodeAudioData (Kanal 0, mono). Apply-Flow: splitChannelDataAtSlices → Float32Array[] → window.dispatchEvent CustomEvent 'sample-slicer:apply' + Toast 'Direct-Assign in Pad-Slots noch nicht implementiert' (Performance-Pads halten patternId nicht Sample-Buffer — Wiring zum useKeyboardSamplerStore oder ein neuer Slice-Pad-Store ist FOLLOWUP). Playwright-Smoke in tests/web/sample-slicing.spec.ts. pnpm check clean, pnpm test 3251/15 skipped."
+            doneNote: "Zweistufige Implementierung. Agent-A (pure-fn-Layer): client/src/utils/sampleSlicing.ts mit autoSlice/detectOnsetsSpectralFlux/snapToZeroCrossing/onsetsToSlices/splitChannelDataAtSlices/mapSlicesToPads/addOnset/moveOnset/removeOnset + Types OnsetCandidate/SliceSpec/PadAssignment + MAX_PERFORMANCE_PADS=16. 23 Unit-Tests in tests/features/sample-slicing.test.ts gruen. Agent-B (UI): client/src/components/SampleEditor/SampleSliceEditor.tsx — Modal mit Waveform-Canvas (Peak-reduziert via buildPeaks, RAF-Render, semantische Token-Farben via getCssVar), draggable Slice-Marker (Pointer-Events, Snap-to-Zero auf Drop), Click→addOnset, Shift/Right-Click→removeOnset, 4×4 Pad-Grid mit Length-Anzeige (ms/s). DrumMachine-Toolbar bekam '✂ Slice Sample'-Button + hidden file-input (data-testid 'slice-sample' / 'slice-sample-input'). handleSliceImport decodiert WAV/MP3/OGG/FLAC/AIFF/M4A via Browser-AudioContext.decodeAudioData (Kanal 0, mono). Apply-Flow: splitChannelDataAtSlices → Float32Array[] → window.dispatchEvent CustomEvent 'sample-slicer:apply' + Toast 'Direct-Assign in Pad-Slots noch nicht implementiert' (Performance-Pads halten patternId nicht Sample-Buffer — Wiring zum useKeyboardSamplerStore oder ein neuer Slice-Pad-Store ist FOLLOWUP). Playwright-Smoke in tests/web/sample-slicing.spec.ts. pnpm check clean, pnpm test 3251/15 skipped. FOLLOWUP-1 (v2.90): NEU client/src/store/useSlicePadStore.ts (Module-Singleton mit 16 Slots) + NEU AudioEngine.playSliceBuffer(buffer, sampleRate) + App.tsx-Listener auf 'sample-slicer:apply' der die Slices via assignSlicesToPads(replace:true) ablegt. 15 Tests in tests/features/sample-slice-pad-assign.test.ts. Pad-Mode-Toggle 'Pattern / Slice' im PatternLaunchPad bleibt offen (= TASK-238-FOLLOWUP-1B)."
         },
         {
             id: "TASK-239",
