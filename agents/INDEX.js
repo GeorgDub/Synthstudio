@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "2.91.0",
+    version: "2.92.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -83,6 +83,46 @@ const INDEX = {
   // ─── KNOWN FILE INDEX ──────────────────────────────────────
   // Key files agents have analyzed. Add new entries after working on a file.
   files: {
+    "client/src/audio/MidiNoteOut.ts": {
+      role:     "TASK-240 (v2.92.0): MIDI-Note-Out-Engine. DI-Sender (outputId, bytes)=>void damit ein Sender mehrere Geräte bedienen kann. Class MidiNoteOut: setSender/setEnabled/setPartConfig/getPartConfig/clearPartConfig/clearAllConfigs/isPartConfigured/getAllConfiguredPartIds/shouldPlayLocalSound/triggerNote. Retrigger-Policy (sofort Note-Off bei selber Note), setEnabled(false)-Flush gegen Stuck-Notes, internal Map<partId, MidiPartConfig> + Pending-Off-Map mit setTimeout-Cleanup. Pure-Helpers: clampVelocity/clampMidiChannel/clampMidiNote/clampNoteDuration/buildNoteOn/buildNoteOff/noteNameFromNumber. Konstanten: DEFAULT_NOTE_DURATION_MS=100, MIN/MAX_NOTE_DURATION_MS.",
+      lastSeen: "2026-05-18T03:05:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/audio/AudioEngine.ts (TASK-240 Note-Out)": {
+      role:     "v2.92.0: +_midiNoteOut-Instanz + 5 Public-API (setMidiNoteOutSender/setMidiNoteOutEnabled/setMidiNoteOutPartConfig/clearMidiNoteOutPartConfig/getMidiNoteOut). Wire-Up im _scheduleStep nach stepCallbacks.forEach (vor MIDI-Clock-Pulse). Neuer Local-Sound-Gate: shouldPlayLocalSound(partId) entscheidet ob Sample/Synth lokal getriggert wird — Backwards-Compat: ohne MIDI-Config IMMER local. stop() macht disable+enable-Cycle, damit pending Note-Offs sofort rausgehen (kein Stuck am externen Gerät).",
+      lastSeen: "2026-05-18T03:05:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/hooks/useMidi.ts (TASK-240 Note-Out Sender-Wiring)": {
+      role:     "v2.92.0: +useEffect ohne Deps der (outputId, bytes) => midiSendMessage(midiAccessRef, outputId, bytes) als AudioEngine.setMidiNoteOutSender injiziert. Cleanup setzt Sender→null. Configs werden NICHT hier verwaltet — das macht useMidiNoteOutStore + App.tsx-Diff-Sync.",
+      lastSeen: "2026-05-18T03:05:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/store/useMidiNoteOutStore.ts": {
+      role:     "TASK-240 (v2.92.0): Custom-Observer-Store für Per-Part MIDI-Note-Out-Configs. localStorage-Keys 'synthstudio:midi:noteout:v1' (configs) + 'synthstudio:midi:noteout:enabled:v1' (enabled-Flag). Schema: {enabled:boolean, configs:Record<partId, MidiPartConfig>}. Defensive loadState filtert invalid-shape configs (outputId-Pflicht, alles andere clamped). API: getMidiNoteOutEnabled/setMidiNoteOutEnabled/getPartMidiOutConfig/getAllPartMidiOutConfigs/setPartMidiOutConfig/clearPartMidiOutConfig/clearAllPartMidiOutConfigs/applyElectribeDrumMap (GM-Drum-Map Ch10 für die ersten 8 Parts, weitere auf Note 50+) + useMidiNoteOutStore React-Hook + __resetMidiNoteOutStoreForTests.",
+      lastSeen: "2026-05-18T03:05:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/App.tsx (TASK-240 Note-Out Bridge)": {
+      role:     "v2.92.0: +Import useMidiNoteOutStore, +Diff-Sync-Effect mit Dep [midiNoteOutState]. setMidiNoteOutEnabled(state.enabled), dann diff vs. AudioEngine.getMidiNoteOut().getAllConfiguredPartIds → clearPartConfig für removed parts, setPartConfig für aktuelle Configs. Idempotent. Damit ist der Store die Single-Source-of-Truth und die AudioEngine wird passiv synchronisiert.",
+      lastSeen: "2026-05-18T03:05:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/components/Mixer/ChannelInspector.tsx (TASK-240 Per-Part MIDI-Out-UI)": {
+      role:     "v2.92.0: +PartMidiOutSection als letzte Section vor </aside>. Nutzt useMidiContext() + useMidiNoteOutStore(). Controls: Global-Enable-Checkbox (toggelt store.enabled), Output-Device-Select (— keiner — ODER outputDevices vom useMidi, '' wählt clearPartMidiOutConfig), Channel-Select 1-16 (mit '(Drum/GM)'-Hint auf Ch 10), Note-Range-Slider 0-127 mit noteNameFromNumber-Display, Note-Duration-Slider 10-2000ms, Local-Sound-Toggle, Per-Part-Clear-Button, Electribe-Template-Button (ruft applyElectribeDrumMap auf alle parts). Empty-State wenn outputDevices.length===0. data-testids: channel-inspector-midi-out-section + midi-note-out-{global-enable,device-select,channel-select,note-slider,duration-slider,local-sound-toggle,clear,apply-electribe}.",
+      lastSeen: "2026-05-18T03:05:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/utils/midiTemplates.ts (TASK-240 Note-Out Drum-Map)": {
+      role:     "v2.92.0: +NoteOutTemplate/NoteOutDrumMapping-Interface (semantisch getrennt von den input-orientierten MidiTemplates oben) + ELECTRIBE_2_DRUM_MAP-Constant (8 Mappings GM Drum-Map auf Channel 10: Kick 36, Snare 38, HiHat-cl 42, HiHat-op 46, Clap 39, Tom-Hi 45, Tom-Lo 41, Crash 49) + NOTE_OUT_TEMPLATES-Array als Extension-Point.",
+      lastSeen: "2026-05-18T03:05:00.000Z",
+      ownedBy:  "backend"
+    },
+    "tests/features/midi-note-out.test.ts": {
+      role:     "TASK-240 (v2.92.0): 24 Unit-Tests. Coverage: buildNoteOn/Off mit Channel-Encoding (4), Velocity/Channel/Note/Duration-Clamp (4), noteNameFromNumber (1), Per-Part-Config Lifecycle setPartConfig/clearPartConfig/clearAll/isPartConfigured/getAllConfiguredPartIds (5), triggerNote-Lifecycle (10 — Note-On+Off-Timing via vi.useFakeTimers, Duration-Respekt, ohne Config no-op, !enabled no-op, Velocity-Clamp, Status-Byte-Encoding 0x9N, ohne Sender no-Crash, setSender-Wechsel, setEnabled(false)-Flush, Sender-Exception-Swallow, Default-Duration, Retrigger feuert sofort Note-Off+Note-On). Sender mit (outputId,bytes)-Signatur, captureSender-Helper für deterministische Assertions.",
+      lastSeen: "2026-05-18T03:05:00.000Z",
+      ownedBy:  "backend"
+    },
     "client/src/utils/padBankPersistence.ts (TASK-238-FOLLOWUP-1B v2.91)": {
       role:     "v2.91: PadBankSlotKind union +'slice', VALID_KINDS-Set entsprechend. +Const PAD_BANK_SLICE_MAX=16 (spiegelt MAX_SLICE_PADS). +sliceAutoConfigureSlots() liefert 16 {kind:'slice', param:'0'..'15'}-Slots fuer Quick-Action 'Slices → Pads (Auto)'.",
       lastSeen: "2026-05-18T02:50:00.000Z",
@@ -801,6 +841,34 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "backend",
+      timestamp: "2026-05-18T03:05:00.000Z",
+      done: [
+        "v2.92.0: MIDI-Note-Output — Electribe als Sound-Modul (TASK-240 done). Komplettiert die KORG-Bidir-Brücke nach v2.83 (Clock-Out). (1) NEU client/src/audio/MidiNoteOut.ts — DI-Sender-Pattern (analog MidiClockOut). Sender-Signatur (outputId, bytes)→void damit ein Sender mehrere Geräte bedienen kann (Kick→Electribe, Snare→Volca). Public-API: setSender/setEnabled/setPartConfig/getPartConfig/clearPartConfig/clearAllConfigs/isPartConfigured/getAllConfiguredPartIds/shouldPlayLocalSound/triggerNote. Pure-Helper: clampVelocity/clampMidiChannel/clampMidiNote/clampNoteDuration/buildNoteOn/buildNoteOff/noteNameFromNumber + Konstanten DEFAULT_NOTE_DURATION_MS=100/MIN/MAX. Retrigger-Policy: bei zweitem triggerNote für gleichen partId wird altes Note-Off SOFORT gefeuert + cleanup pending timer, dann neues Note-On. setEnabled(false) flushed alle pending Note-Offs (verhindert Stuck-Notes am externen Gerät). (2) AudioEngine.ts: +_midiNoteOut-Instanz, +5 Public-API (setMidiNoteOutSender/Enabled/PartConfig/clearPartConfig/getMidiNoteOut), Wire-Up im _scheduleStep direkt nach stepCallbacks.forEach (vor MIDI-Clock-Pulse + Sample-Trigger). Neuer Local-Sound-Gate: wenn part eine MIDI-Out-Config hat UND localSoundEnabled=false ist, wird der Sample-/Synth-Trigger übersprungen → 'MIDI only'-Modus. Backwards-Compat: ohne Config IMMER local (unverändertes Verhalten). stop() macht disable+enable-Cycle damit pending Note-Offs sofort rausgehen. (3) useMidi.ts: neuer Effect injiziert (outputId, bytes) => midiSendMessage(midiAccessRef, outputId, bytes) als AudioEngine.setMidiNoteOutSender. Mount-only ([] deps), Cleanup setzt Sender→null. (4) NEU client/src/store/useMidiNoteOutStore.ts — Custom-Observer-Store mit localStorage-Persistenz ('synthstudio:midi:noteout:v1' + separater enabled-Key). Schema {enabled:boolean, configs:Record<partId, MidiPartConfig>}. Defensive loadState: filtert invalid-shape configs (outputId-Pflicht, alles andere clamped). API: getMidiNoteOutEnabled/setMidiNoteOutEnabled/getPartMidiOutConfig/getAllPartMidiOutConfigs/setPartMidiOutConfig/clearPartMidiOutConfig/clearAllPartMidiOutConfigs/applyElectribeDrumMap + useMidiNoteOutStore React-Hook. (5) App.tsx: neuer Diff-Sync-Effect spiegelt Store→Engine. Bei jedem Store-State-Change: setMidiNoteOutEnabled(state.enabled), dann diff vs. engine.getAllConfiguredPartIds → clearPartConfig für removed parts, setPartConfig für aktuelle Configs. Idempotent. (6) ChannelInspector.tsx: neue Section 'MIDI-Note-Out (extern triggern)' nach Transient Shaper. PartMidiOutSection-Sub-Component nutzt useMidiContext() + useMidiNoteOutStore(). Controls: Global-Enable-Checkbox (toggelt store.enabled), Output-Device-Select (— keiner — ODER outputDevices vom useMidi), Channel-Select 1-16 (mit '(Drum/GM)'-Label auf Ch 10), Note-Range-Slider 0-127 mit noteNameFromNumber-Display, Note-Duration-Slider 10-2000ms, Local-Sound-Toggle, Per-Part-Clear-Button, Electribe-Template-Button (ruft applyElectribeDrumMap auf alle Mixer-Parts). Empty-State wenn outputDevices.length===0. data-testids: channel-inspector-midi-out-section, midi-note-out-global-enable, midi-note-out-device-select, midi-note-out-channel-select, midi-note-out-note-slider, midi-note-out-duration-slider, midi-note-out-local-sound-toggle, midi-note-out-clear, midi-note-out-apply-electribe. (7) midiTemplates.ts: neues NoteOutTemplate/NoteOutDrumMapping-Interface + ELECTRIBE_2_DRUM_MAP-Constant (8 GM-Drum-Mappings Ch10) + NOTE_OUT_TEMPLATES-Array (Extension-Point). (8) NEU tests/features/midi-note-out.test.ts mit 24 Cases — buildNoteOn/Off (4), Velocity/Channel/Note/Duration-Clamp (4), noteNameFromNumber (1), setPartConfig/clearPartConfig/clearAll/isPartConfigured/getAllConfiguredPartIds (5), triggerNote (10 — Note-On+Off-Timing, Duration-Respekt, ohne Config no-op, !enabled no-op, Velocity-Clamp, Status-Byte-Encoding, ohne Sender no-Crash, setSender-Wechsel, setEnabled(false)-Flush, Sender-Exception-Swallow, Default-Duration, Retrigger). pnpm check clean, pnpm test 3326 passed/15 skipped (vs 3302 prev, +24 neue). package.json 2.91.0 → 2.92.0. CAVEATS: (a) MIDI-Send läuft NICHT through Web-Audio-Scheduling — JS-setTimeout-Genauigkeit ist ~1-2ms Jitter ggü. AudioContext-Scheduling, was für MIDI-Devices akzeptabel ist (Hardware-MIDI-Latenz oft schon ≥1ms). Wer Sample-genaues Timing braucht müsste auf MIDI-2.0 / High-Resolution-Time-Stamps gehen (currently Web-MIDI v1 only). (b) Polyphony pro Part = 1: Retrigger derselben Note schickt sofort Note-Off + neue Note-On. Für Polyphony am Sample-Modul müsste man je Step eine andere Note senden (Performance-Mode-Feature, eigener Task). (c) Note-Stealing am externen Gerät ist Geräte-eigene Logik — wir senden korrekt Note-On + Note-Off, der Rest ist Electribe-Sache. (d) Output-ID kann bei Hardware-Reconnect wechseln — useMidi enumeriert beim devicechange-Event neu. Wenn die alte ID nicht mehr existiert, ist der Send no-op (silent fail), config bleibt im Store für späteren Reconnect. (e) Bei MIDI-Drum-Modulen mit Velocity-Sensitivity (Electribe ja, manche alte Volcas nein) wird die Step-Velocity korrekt durchgereicht. (f) Kein neuer IPC-Channel — alles läuft über Web-MIDI (Browser+Electron-Chromium 130 nativ supported)."
+      ],
+      next: [
+        "TASK-240-FOLLOWUP-1: Per-Channel-Pitch — z.B. für Sample-Modul ohne MIDI-Drum-Map kann ein Slider 'Note-Offset (Semitones)' das Pitch live durchschicken (Pitch-Bend oder zweite Note). Aktuell ein fixer Note-Wert pro Part.",
+        "TASK-240-FOLLOWUP-2: Project-Persistenz — die per-part MIDI-Out-Configs liegen heute NUR in localStorage, NICHT in der .synth-Datei. Wenn der User ein Projekt teilt, sind die Mappings weg. Migration: Field projectMidiOut auf MIDI-Out-Configs in useProjectStore mit Schema-Bump.",
+        "TASK-240-FOLLOWUP-3: Visuelle Indikator-LED im ChannelStrip (Mixer) — kleiner 'MIDI'-Badge wenn der Part eine Output-Config hat. Heute muss man den Inspector öffnen um es zu sehen.",
+        "TASK-240-FOLLOWUP-4: Auto-Discovery KORG Electribe per Device-Name-Match — wenn 'electribe' im outputDevice.name ist, blende prominent ein '🎚 Electribe erkannt — Template anwenden?'-Banner ein.",
+        "TASK-240-FOLLOWUP-5: Pattern-Change MIDI-Out — beim Performance-Mode-Pattern-Switch kann auch ein MIDI Program Change rausgehen (Electribe wechselt Pattern-Slot). Heute schickt sendPatternProgramChange nur an _midiProgramChangeCallback, nicht an die per-part MidiNoteOut-Geräte.",
+        "TASK-239 (VST3/CLAP-Host) bleibt offen.",
+        "Optional Playwright-E2E in tests/web/midi-note-out.spec.ts für UI-Smoke (Device-Picker rendert leer, Apply-Electribe-Button disabled ohne Device)."
+      ],
+      changed: [
+        "client/src/audio/MidiNoteOut.ts (NEU — DI-Sender, Per-Part-Config-Map, Retrigger-Policy, Pure-Helpers)",
+        "client/src/audio/AudioEngine.ts (+_midiNoteOut-Instanz, +5 Public-API, Wire-Up im _scheduleStep, Local-Sound-Gate via shouldPlayLocalSound, stop()-Flush)",
+        "client/src/hooks/useMidi.ts (+useEffect der midiSendMessage als AudioEngine.setMidiNoteOutSender injiziert)",
+        "client/src/store/useMidiNoteOutStore.ts (NEU — Custom-Observer-Store, localStorage-Persistenz, applyElectribeDrumMap-Quick-Action)",
+        "client/src/App.tsx (+useMidiNoteOutStore-Hook + Diff-Sync-Effect Store→Engine; Import useMidiNoteOutStore)",
+        "client/src/components/Mixer/ChannelInspector.tsx (+PartMidiOutSection unter Transient Shaper: Device/Channel/Note/Duration-Controls + Local-Sound-Toggle + Electribe-Template-Button)",
+        "client/src/utils/midiTemplates.ts (+NoteOutTemplate/NoteOutDrumMapping-Interface + ELECTRIBE_2_DRUM_MAP-Constant + NOTE_OUT_TEMPLATES-Array)",
+        "tests/features/midi-note-out.test.ts (NEU, 24 Cases — Pure-Helpers + setPartConfig/clearPartConfig + triggerNote-Lifecycle + Retrigger + setEnabled-Flush + Sender-Exception-Swallow)",
+        "package.json (2.91.0 → 2.92.0)",
+        "agents/INDEX.js (workLog + TASK-240 status:done + version 2.92.0 + files-Index)"
+      ]
+    },
     {
       agent:     "frontend",
       timestamp: "2026-05-18T02:50:00.000Z",
@@ -3718,6 +3786,28 @@ const INDEX = {
                 "security"
             ],
             note: "Groesster Brocken, eigener Sprint, nicht vor v3.0.0"
+        },
+        {
+            id: "TASK-240",
+            type: "feature",
+            priority: "medium",
+            agent: "backend",
+            status: "done",
+            closedAt: "2026-05-18T03:05:00.000Z",
+            closedIn: "v2.92.0",
+            closedBy: "backend",
+            title: "MIDI-Note-Output to External Device (KORG Electribe als Sound-Modul)",
+            description: "Komplettiert die KORG-Bidir-Brücke nach v2.83 (Clock-Out). Per-Part konfigurierbarer MIDI-Note-Out: Step-Trigger schickt Note-On + Note-Off an externen MIDI-Output (z.B. Electribe 2 mit GM Drum-Map auf Channel 10). User baut Patterns in Synthstudio (Morph/Humanize/Probability) und nutzt die Electribe als Sample-Engine.",
+            acceptance: [
+                "Per-Part MIDI-Out-Config (outputId, channel, note, noteDurationMs, localSoundEnabled)",
+                "MidiNoteOut-Engine mit DI-Sender-Pattern (test-friendly)",
+                "AudioEngine-Integration: triggerNote parallel zum optionalen lokalen Sound",
+                "UI im ChannelInspector mit Device/Channel/Note-Picker + Local-Sound-Toggle",
+                "Electribe-Drum-Map-Template (Apply-Button)",
+                "min 7 Unit-Tests, persistierter Store"
+            ],
+            estimateHours: 6,
+            doneNote: "MidiNoteOut.ts mit (outputId,bytes)→void Sender-Signatur (damit unterschiedliche Parts auf unterschiedliche Geräte routen können), Retrigger-Policy (sofortiges Note-Off bei Re-Trigger gleicher Note, kein Overlap), setEnabled(false)-Flush gegen Stuck-Notes, internal Map<partId, MidiPartConfig>, internal Pending-Off-Map mit setTimeout-Cleanup, clampMidiChannel/Note/Velocity/Duration als pure-Helper. AudioEngine: _midiNoteOut-Instanz + 5 Public-API (setSender/setEnabled/setPartConfig/clearPartConfig/getMidiNoteOut), Wire-Up im _scheduleStep direkt nach stepCallbacks (also vor MIDI-Clock-Pulse + lokalem Trigger), Local-Sound-Gate via shouldPlayLocalSound (Backwards-Compat: ohne Config IMMER local), Auto-Flush in stop() (disable+enable-Cycle leert pending Note-Offs). useMidi.ts: Sender-Effect injiziert midiSendMessage-Lambda (Web-MIDI durch outputId-Resolve). useMidiNoteOutStore.ts: Custom-Observer-Pattern (localStorage 'synthstudio:midi:noteout:v1' + Enable-Key), API setMidiNoteOutEnabled/setPartMidiOutConfig/clearPartMidiOutConfig/clearAll/applyElectribeDrumMap (GM-Drum-Map auf Ch10 für die ersten 8 Parts). App.tsx: Diff-Sync-Effect spiegelt Store→Engine bei jedem Store-Change. ChannelInspector.tsx: neue Section 'MIDI-Note-Out' mit Global-Enable-Checkbox, Output-Device-Select (zeigt useMidiContext.outputDevices), Channel-Select (1-16, Drum-Label auf 10), Note-Range-Slider mit Note-Name-Display (noteNameFromNumber), Duration-Slider (10-2000ms), Local-Sound-Toggle, Per-Part-Clear-Button + Electribe-Template-Button. midiTemplates.ts: neues NoteOutTemplate-Interface + ELECTRIBE_2_DRUM_MAP-Constant (8 Mappings GM-Drum-Map). 24 Unit-Tests in tests/features/midi-note-out.test.ts (pure Helpers + setPartConfig/clearPartConfig/triggerNote/Retrigger-Policy/setEnabled-Flush/Sender-Exception-Swallow). pnpm check clean, pnpm test 3326 passed / 15 skipped. CAVEATS: (a) MIDI-Send läuft NICHT through Web-Audio-Scheduling — JS-setTimeout-Genauigkeit ist ~1-2ms Jitter ggü. AudioContext-Scheduling, was für MIDI-Devices akzeptabel ist (Hardware-MIDI-Latenz oft schon ≥1ms). (b) Polyphony pro Part = 1: bei Retrigger derselben Note wird die alte sofort beendet. Für Polyphony-Spiel an einem Sample-Modul müsste man je Step eine andere Note senden (z.B. Performance-Mode). (c) Note-Stealing am externen Gerät ist Geräte-eigene Logik — wir senden korrekt Note-On + Note-Off, der Rest ist Electribe-Sache. (d) Output-ID kann bei Hardware-Reconnect wechseln — useMidi enumeriert beim devicechange-Event neu. Wenn die alte ID nicht mehr existiert, ist der Send no-op (silent fail), config bleibt im Store für Reconnect."
         }
     ],
 

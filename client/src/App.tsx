@@ -194,6 +194,8 @@ import { resetMorph, getMorphState, setActive as setMorphActive } from "@/store/
 import { getSceneState, setActiveScene as sceneStoreSetActiveScene } from "@/store/useSceneStore";
 // v2.87 (TASK-235): Live-Looper Store-Bridge — Module-Funktionen, kein Hook.
 import { getLoopSlot, setLoopState, setLoopLength } from "@/store/useLooperStore";
+// v2.92 (TASK-240): MIDI-Note-Out Bridge — pro Part-Config in die AudioEngine syncen.
+import { useMidiNoteOutStore } from "@/store/useMidiNoteOutStore";
 import { scriptSandbox } from "@/sandbox/scriptSandboxInstance";
 import {
   startHoldLoop,
@@ -1594,6 +1596,29 @@ export default function App() {
         setLoopLength(index, lengthBeats, lengthSec, frameCount),
     );
   }, []);
+
+  // v2.92 (TASK-240): MIDI-Note-Out — synchronisiert die Per-Part-Configs aus
+  // useMidiNoteOutStore mit der laufenden AudioEngine. Diff-Sync: bei jedem
+  // State-Change vergleichen wir die Store-Configs mit dem aktuellen Engine-
+  // State (via getMidiNoteOut().getAllConfiguredPartIds()) und schicken
+  // setPartConfig / clearPartConfig entsprechend rein. Setzen außerdem den
+  // globalen Enable-Flag durch.
+  const midiNoteOutState = useMidiNoteOutStore();
+  useEffect(() => {
+    AudioEngine.setMidiNoteOutEnabled(midiNoteOutState.enabled);
+    const engineConfigured = new Set(AudioEngine.getMidiNoteOut().getAllConfiguredPartIds());
+    const storeConfigured = new Set(Object.keys(midiNoteOutState.configs));
+    // Entfernen: was in Engine ist aber nicht im Store
+    for (const partId of engineConfigured) {
+      if (!storeConfigured.has(partId)) {
+        AudioEngine.clearMidiNoteOutPartConfig(partId);
+      }
+    }
+    // Setzen / Aktualisieren: aktuelle Store-Configs
+    for (const [partId, cfg] of Object.entries(midiNoteOutState.configs)) {
+      AudioEngine.setMidiNoteOutPartConfig(partId, cfg);
+    }
+  }, [midiNoteOutState]);
 
   // v2.90 (TASK-237-FOLLOWUP-1): electribe:motion-lanes — beim Electribe-Import
   // dispatcht electribeImport.ts diesen Event mit den Motion-Sequencer-Lanes.

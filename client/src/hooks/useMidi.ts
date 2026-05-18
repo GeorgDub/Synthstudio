@@ -1232,6 +1232,26 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
     // Reagiert auf: enabled-Wechsel, Output-Device-Wechsel, Clock-Routing-Wechsel.
   }, [clockOutEnabled, clockOutputDeviceId, activeOutputDeviceId]);
 
+  // ─── MIDI-Note-Out → AudioEngine wiring (TASK-240 / v2.92) ──────────────
+  // Sender löst die outputId pro Send auf — damit kann ein einziger Sender
+  // alle Per-Part-Configs bedienen (verschiedene Parts können auf verschiedene
+  // Geräte geroutet werden — z.B. Kick auf Electribe, Snare auf Volca).
+  // Configs werden vom App.tsx-Listener aus useMidiNoteOutStore in die Engine
+  // gepusht — wir kümmern uns hier nur ums Senden.
+  useEffect(() => {
+    const sender = (outputId: string, bytes: number[]) => {
+      midiSendMessage(
+        midiAccessRef.current as MidiAccessLike | null,
+        outputId,
+        bytes,
+      );
+    };
+    AudioEngine.setMidiNoteOutSender(sender);
+    return () => {
+      AudioEngine.setMidiNoteOutSender(null);
+    };
+  }, []);
+
   // ─── TASK-231 (v2.84): LED-Feedback Sender-Wiring ────────────────────────
   // Bei Device/Enable-Wechsel den Sender im NanoKontrolFeedback aktualisieren.
   // Wenn enabled=true und Output verfügbar → sender = midiSendMessage-Lambda.

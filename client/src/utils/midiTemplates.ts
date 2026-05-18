@@ -374,6 +374,65 @@ export const MIDI_TEMPLATES: MidiTemplate[] = [
   },
 ];
 
+// ─── MIDI-Note-Out Drum-Maps (TASK-240 / v2.92.0) ────────────────────────────
+//
+// Anders als die MIDI_TEMPLATES oben (die DEFINIERE was wir lesen, wenn die
+// Hardware uns triggern soll) beschreiben diese Drum-Maps was Synthstudio
+// SCHICKT, wenn die Hardware als Sound-Modul agiert. Sie werden pro Part im
+// useMidiNoteOutStore eingetragen via `applyElectribeDrumMap` (oder analog).
+
+export interface NoteOutDrumMapping {
+  /** 0-basierter Part-Index in der Drum-Bank. */
+  partIndex: number;
+  /** MIDI-Note die für diesen Part rausgeschickt wird (0..127). */
+  note: number;
+  /** MIDI-Channel (0..15). Drum-Default = 9 (== MIDI Channel 10). */
+  channel: number;
+  /** Anzeigename für UI. */
+  label: string;
+}
+
+export interface NoteOutTemplate {
+  id: string;
+  name: string;
+  manufacturer: string;
+  description: string;
+  mappings: NoteOutDrumMapping[];
+}
+
+/**
+ * KORG Electribe 2 (E2 / E2S) als Sound-Modul. Pads triggern auf Channel 10
+ * mit GM-Drum-Notes. Bei der Electribe kann der MIDI-Channel pro Part im
+ * Global-Menü geändert werden — Default-Layout entspricht aber dem GM-Drum-Map.
+ *
+ * Mapping bewährt für Techno/Hardtekk-Workflow: User baut Patterns in
+ * Synthstudio (mit Morph/Humanize/Probability) und schickt sie zur Electribe
+ * → Electribe spielt die Hardware-Samples → Mix kommt zurück über Audio-In
+ * oder USB.
+ */
+export const ELECTRIBE_2_DRUM_MAP: NoteOutTemplate = {
+  id: "korg-electribe-2-drumout",
+  name: "KORG Electribe 2 / 2S — Drum-Out",
+  manufacturer: "Korg",
+  description:
+    "Sendet Drum-Triggers an Electribe 2 (Channel 10, GM Drum-Map). Pads 1-8 → Note 36/38/42/46/39/45/41/49.",
+  mappings: [
+    { partIndex: 0, note: 36, channel: 9, label: "Kick (C2)" },
+    { partIndex: 1, note: 38, channel: 9, label: "Snare (D2)" },
+    { partIndex: 2, note: 42, channel: 9, label: "Hi-Hat cl. (F#2)" },
+    { partIndex: 3, note: 46, channel: 9, label: "Hi-Hat op. (A#2)" },
+    { partIndex: 4, note: 39, channel: 9, label: "Clap (D#2)" },
+    { partIndex: 5, note: 45, channel: 9, label: "Tom Hi (A2)" },
+    { partIndex: 6, note: 41, channel: 9, label: "Tom Lo (F2)" },
+    { partIndex: 7, note: 49, channel: 9, label: "Crash (C#3)" },
+  ],
+};
+
+/** Liste aller verfügbaren Note-Out-Drum-Maps. */
+export const NOTE_OUT_TEMPLATES: NoteOutTemplate[] = [
+  ELECTRIBE_2_DRUM_MAP,
+];
+
 /** Findet eine Vorlage anhand der ID. */
 export function getMidiTemplate(id: string): MidiTemplate | undefined {
   return MIDI_TEMPLATES.find(t => t.id === id);

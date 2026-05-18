@@ -12,6 +12,7 @@
 
 import { SynthEngine } from "./SynthEngine";
 import { MidiClockOut } from "./MidiClockOut";
+import { MidiNoteOut, type MidiPartConfig } from "./MidiNoteOut";
 import { AudioRecorder, type RecordingResult, MAX_SIMULTANEOUS_RECORDINGS } from "./AudioRecorder";
 import { LooperEngine } from "./LooperEngine";
 import type { LoopState } from "./looperUtils";
@@ -453,6 +454,14 @@ class AudioEngineClass {
    * (typisch vom useMidi-Hook). Default: kein Sender = no-op.
    */
   private _midiClockOut = new MidiClockOut(null);
+
+  /**
+   * MIDI-Note-Out (TASK-240 / v2.92.0). Per-Part Note-On/Off-Generator für
+   * externe Sample-Engines (z.B. KORG Electribe als Sound-Modul). Sender
+   * wird per `setMidiNoteOutSender()` injiziert. Pro Part wird via
+   * `setMidiNoteOutPartConfig()` ein Output/Channel/Note-Mapping gesetzt.
+   */
+  private _midiNoteOut = new MidiNoteOut(null);
 
   // Transport
   private _isPlaying = false;
@@ -1135,6 +1144,45 @@ class AudioEngineClass {
     return this._midiClockOut;
   }
 
+  // ─── MIDI-Note-Out (TASK-240 / v2.92.0) ──────────────────────────────────
+
+  /**
+   * Setzt den Sender für MIDI-Note-Out. Bekommt die kompletten Bytes
+   * (Note-On / Note-Off) und muss sie an einen Web-MIDI-Output schicken.
+   * Typischerweise vom useMidi-Hook aufgerufen mit
+   * `(bytes) => sendMessage(midiAccess, partConfig.outputId, bytes)`.
+   *
+   * Wichtig: der Sender muss selber die richtige Output-ID auswählen — wir
+   * geben hier nur Bytes raus. Der Sender liest pro Call die aktuelle
+   * Config-Map (oder löst die outputId aus dem aufrufenden Kontext).
+   */
+  setMidiNoteOutSender(sender: ((outputId: string, bytes: number[]) => void) | null) {
+    this._midiNoteOut.setSender(sender);
+  }
+
+  /**
+   * Aktiviert/deaktiviert die MIDI-Note-Out global. Bei Disable während
+   * offene Notes werden alle pending Note-Offs sofort gesendet (kein stuck).
+   */
+  setMidiNoteOutEnabled(enabled: boolean) {
+    this._midiNoteOut.setEnabled(enabled);
+  }
+
+  /** Setzt eine Per-Part-Config für MIDI-Note-Out. */
+  setMidiNoteOutPartConfig(partId: string, config: MidiPartConfig) {
+    this._midiNoteOut.setPartConfig(partId, config);
+  }
+
+  /** Entfernt eine Per-Part-Config (Part spielt wieder ausschließlich lokal). */
+  clearMidiNoteOutPartConfig(partId: string) {
+    this._midiNoteOut.clearPartConfig(partId);
+  }
+
+  /** Liefert die laufende MidiNoteOut-Instanz (read-only access für UI/Tests). */
+  getMidiNoteOut(): MidiNoteOut {
+    return this._midiNoteOut;
+  }
+
   onPosition(cb: PositionCallback) {
     this.positionCallbacks.push(cb);
     return () => { this.positionCallbacks = this.positionCallbacks.filter(c => c !== cb); };
@@ -1172,6 +1220,13 @@ class AudioEngineClass {
     }
     // MIDI-Clock-Out: sendet 0xFC (Stop). (TASK-230)
     this._midiClockOut.stop();
+    // MIDI-Note-Out (TASK-240): pending Note-Offs sofort flushen damit auf
+    // dem externen Gerät keine Stuck Notes hängenbleiben. Wir tun das per
+    // Disable/Enable-Cycle — Configs bleiben erhalten.
+    if (this._midiNoteOut.enabled) {
+      this._midiNoteOut.setEnabled(false);
+      this._midiNoteOut.setEnabled(true);
+    }
     // Pending Position-Callbacks abräumen — sonst feuern sie nach Stop
     this._pendingTimeouts.forEach((id) => clearTimeout(id));
     this._pendingTimeouts.clear();
@@ -1438,6 +1493,12 @@ class AudioEngineClass {
 
       this.stepCallbacks.forEach(cb => cb(scheduled));
 
+      // MIDI-Note-Out (TASK-240 / v2.92): wenn Part eine externe MIDI-Out-Config
+      // hat (z.B. KORG Electribe), Note-On feuern. Note-Off läuft intern über
+      // setTimeout im MidiNoteOut. Parallel zum optionalen lokalen Sample (siehe
+      // shouldPlayLocalSound-Check weiter unten).
+      this._midiNoteOut.triggerNote(part.id, scheduledTime, humanizedVelocity);
+
       // MIDI Clock: 6 Pulse pro 1/16-Step (= 24 Pulse/Viertelnote)
       if (this._midiClockCallback) {
         const clockMsg = new Uint8Array([0xF8]);
@@ -1475,6 +1536,14 @@ class AudioEngineClass {
           // Linearer Ramp zurück zu 1 über release-Zeit
           g.linearRampToValueAtTime(1, time + sc.release);
         });
+      }
+
+      // Local-Sound-Gate (TASK-240): wenn Part nur als MIDI-Out konfiguriert
+      // ist (localSoundEnabled=false), Sample-/Synth-Trigger überspringen.
+      // shouldPlayLocalSound liefert true wenn kein MIDI-Out-Config existiert
+      // (Backwards-Compat) oder localSoundEnabled !== false.
+      if (!this._midiNoteOut.shouldPlayLocalSound(part.id)) {
+        return;
       }
 
       // Synth-Pfad (TASK-129): Parts mit sourceType=wavetable/fm + synthParams

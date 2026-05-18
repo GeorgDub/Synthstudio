@@ -19,6 +19,19 @@ import { MIXER_FX_TYPES, summarizeEqBands, type MixerFxType } from "@/utils/mixe
 import { extractPatch, type Patch } from "@/utils/patchSerialize";
 import { savePatch, usePatchStore } from "@/store/usePatchStore";
 import { toast } from "@/store/useToastStore";
+import { useMidiContext } from "@/context/MidiContext";
+import {
+  useMidiNoteOutStore,
+  setMidiNoteOutEnabled,
+  setPartMidiOutConfig,
+  clearPartMidiOutConfig,
+  applyElectribeDrumMap,
+} from "@/store/useMidiNoteOutStore";
+import {
+  noteNameFromNumber,
+  DEFAULT_NOTE_DURATION_MS,
+} from "@/audio/MidiNoteOut";
+import { ELECTRIBE_2_DRUM_MAP } from "@/utils/midiTemplates";
 
 export interface ChannelInspectorProps {
   part: PartData | undefined;
@@ -337,7 +350,7 @@ export function ChannelInspector({ part, parts, mixer, className, onApplyPatch }
         <ControlRow label="Release" value={sidechain?.release ?? 0.18} min={0.01} max={2} step={0.01} onChange={v => mixer.setSidechain(part.id, { release: v })} />
       </section>
 
-      <section className="p-3">
+      <section className="border-b border-border-color p-3">
         <label className="mb-2 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wide text-text-dim">
           <input
             type="checkbox"
@@ -351,7 +364,189 @@ export function ChannelInspector({ part, parts, mixer, className, onApplyPatch }
         <ControlRow label="Sustain" value={transient?.sustain ?? 0} min={-1} max={1} step={0.01} onChange={v => mixer.setTransientShaper(part.id, { sustain: v })} />
         <ControlRow label="Mix" value={transient?.mix ?? 1} min={0} max={1} step={0.01} onChange={v => mixer.setTransientShaper(part.id, { mix: v })} />
       </section>
+
+      {/* TASK-240 / v2.92: MIDI-Note-Output (KORG Electribe als Sound-Modul) */}
+      <PartMidiOutSection partId={part.id} partName={part.name} parts={parts} />
     </aside>
+  );
+}
+
+/**
+ * Per-Part MIDI-Note-Output-Picker (TASK-240 / v2.92).
+ *
+ * Erlaubt dem User, einen Drum-Part auf ein externes MIDI-Gerät (Output +
+ * Channel + Note) zu routen. Bei jedem Step-Trigger schickt AudioEngine dann
+ * Note-On / Note-Off — parallel oder ANSTATT der lokalen Sample-Wiedergabe.
+ *
+ * Komplettiert die KORG-Bidir-Brücke (Clock-Out kam mit v2.83).
+ */
+function PartMidiOutSection({
+  partId,
+  partName,
+  parts,
+}: {
+  partId: string;
+  partName: string;
+  parts: PartData[];
+}) {
+  const midi = useMidiContext();
+  const noteOut = useMidiNoteOutStore();
+  const cfg = noteOut.configs[partId];
+  const outputDevices = midi?.outputDevices ?? [];
+
+  // Defaults für "neu konfigurieren": Channel 10 (=ch 9), Note 36 (GM Kick).
+  const channel = cfg?.channel ?? 9;
+  const note = cfg?.note ?? 36;
+  const noteDurationMs = cfg?.noteDurationMs ?? DEFAULT_NOTE_DURATION_MS;
+  const localSoundEnabled = cfg?.localSoundEnabled ?? true;
+  const outputId = cfg?.outputId ?? "";
+
+  const updateCfg = (patch: Partial<typeof cfg & { outputId: string }>) => {
+    const resolvedOutputId = patch.outputId ?? outputId;
+    if (!resolvedOutputId) return;
+    setPartMidiOutConfig(partId, {
+      outputId: resolvedOutputId,
+      channel: patch.channel ?? channel,
+      note: patch.note ?? note,
+      noteDurationMs: patch.noteDurationMs ?? noteDurationMs,
+      localSoundEnabled: patch.localSoundEnabled ?? localSoundEnabled,
+    });
+  };
+
+  const handleApplyElectribeTemplate = () => {
+    if (!outputId) {
+      toast("Bitte zuerst ein MIDI-Output-Gerät wählen", { kind: "info" });
+      return;
+    }
+    const partIds = parts.map(p => p.id);
+    applyElectribeDrumMap(partIds, outputId);
+    toast(`Electribe-2-Drum-Map auf ${partIds.length} Parts angewendet`, { kind: "success" });
+  };
+
+  return (
+    <section className="p-3" data-testid="channel-inspector-midi-out-section">
+      <label className="mb-2 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wide text-text-dim">
+        <input
+          type="checkbox"
+          checked={noteOut.enabled}
+          onChange={e => setMidiNoteOutEnabled(e.target.checked)}
+          className="accent-accent-primary"
+          data-testid="midi-note-out-global-enable"
+        />
+        MIDI-Note-Out (extern triggern)
+      </label>
+
+      {outputDevices.length === 0 && (
+        <p className="mb-2 rounded border border-border-color bg-bg-elevated p-2 text-[10px] text-text-dim">
+          Keine MIDI-Output-Geräte erkannt. Schließe ein MIDI-Interface an oder
+          aktiviere Web-MIDI in den Browser-Einstellungen.
+        </p>
+      )}
+
+      <label className="mb-2 block text-[10px] text-text-muted">
+        Output-Gerät
+        <select
+          aria-label={`MIDI-Output für ${partName}`}
+          value={outputId}
+          onChange={e => {
+            const next = e.target.value;
+            if (!next) {
+              clearPartMidiOutConfig(partId);
+            } else {
+              updateCfg({ outputId: next });
+            }
+          }}
+          className="mt-1 w-full rounded border border-border-color bg-bg-panel px-2 py-1 text-xs text-text-primary"
+          data-testid="midi-note-out-device-select"
+        >
+          <option value="">— keiner (lokales Sample) —</option>
+          {outputDevices.map(d => (
+            <option key={d.id} value={d.id}>{d.name}</option>
+          ))}
+        </select>
+      </label>
+
+      {cfg && (
+        <>
+          <label className="mb-2 block text-[10px] text-text-muted">
+            MIDI-Channel (1-16)
+            <select
+              aria-label={`MIDI-Channel für ${partName}`}
+              value={channel}
+              onChange={e => updateCfg({ channel: parseInt(e.target.value, 10) })}
+              className="mt-1 w-full rounded border border-border-color bg-bg-panel px-2 py-1 text-xs text-text-primary"
+              data-testid="midi-note-out-channel-select"
+            >
+              {Array.from({ length: 16 }, (_, i) => (
+                <option key={i} value={i}>
+                  Ch {i + 1}{i === 9 ? " (Drum/GM)" : ""}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="mb-2 block text-[10px] text-text-muted">
+            Note ({noteNameFromNumber(note)} = {note})
+            <input
+              type="range"
+              min={0}
+              max={127}
+              step={1}
+              value={note}
+              onChange={e => updateCfg({ note: parseInt(e.target.value, 10) })}
+              className="mt-1 w-full accent-accent-primary"
+              data-testid="midi-note-out-note-slider"
+              aria-label={`MIDI-Note für ${partName}`}
+            />
+          </label>
+
+          <label className="mb-2 block text-[10px] text-text-muted">
+            Note-Länge: {noteDurationMs} ms
+            <input
+              type="range"
+              min={10}
+              max={2000}
+              step={10}
+              value={noteDurationMs}
+              onChange={e => updateCfg({ noteDurationMs: parseInt(e.target.value, 10) })}
+              className="mt-1 w-full accent-accent-primary"
+              data-testid="midi-note-out-duration-slider"
+            />
+          </label>
+
+          <label className="mb-2 flex items-center gap-2 text-[10px] text-text-muted">
+            <input
+              type="checkbox"
+              checked={localSoundEnabled}
+              onChange={e => updateCfg({ localSoundEnabled: e.target.checked })}
+              className="accent-accent-primary"
+              data-testid="midi-note-out-local-sound-toggle"
+            />
+            Lokalen Sound zusätzlich spielen (Layer)
+          </label>
+
+          <button
+            type="button"
+            onClick={() => clearPartMidiOutConfig(partId)}
+            className="mb-2 w-full rounded border border-border-color px-2 py-1 text-[10px] text-text-muted hover:text-accent-danger hover:border-accent-danger"
+            data-testid="midi-note-out-clear"
+          >
+            MIDI-Out für diesen Part entfernen
+          </button>
+        </>
+      )}
+
+      <button
+        type="button"
+        onClick={handleApplyElectribeTemplate}
+        disabled={!outputId}
+        className="w-full rounded border border-border-color px-2 py-1 text-[10px] text-text-muted hover:text-accent-primary hover:border-accent-primary disabled:opacity-40 disabled:cursor-not-allowed"
+        title={ELECTRIBE_2_DRUM_MAP.description}
+        data-testid="midi-note-out-apply-electribe"
+      >
+        Electribe-Template anwenden (alle Parts)
+      </button>
+    </section>
   );
 }
 
