@@ -72,6 +72,8 @@ import {
   isEsxBuffer,
 } from "@/utils/korg/esxParser";
 import { buildEsxPatternBlock } from "@/utils/korg/esxPatternBuilder";
+// v3.48.0 — full from-scratch ESX-1 Bank Builder (closes last KORG-write gap)
+import { buildEsxBankFromScratch } from "@/utils/korg/esxBankBuilder";
 import {
   convertSynthstudioPatternToEsx,
   type SynthstudioPatternLike,
@@ -620,6 +622,48 @@ export function KorgBankEditor({
         err instanceof EsxParseError ? err.message :
         err instanceof Error ? err.message : String(err);
       toast(`Fehler beim Laden: ${msg}`, { kind: "error", duration: 6000 });
+      setResultMsg(null);
+    } finally {
+      setBusy(false);
+    }
+  }, []);
+
+  // v3.48.0 — Build a fresh empty ESX-1 bank from scratch and open it for editing.
+  const handleNewEsxBankFromScratch = useCallback((): void => {
+    if (!requireProFeature(PRO_FEATURE_KORG_BANK_WRITE)) return;
+    setBusy(true);
+    setResultMsg("Erzeuge frische ESX-Bank...");
+    try {
+      const ab = buildEsxBankFromScratch({});
+      const bank = parseEsxBank(ab, "new-bank.esx");
+      const rows = buildEsxSlotOverview(bank);
+      const sampleRows = buildEsxSampleSlotOverview(bank);
+      const stereoSampleRows = buildEsxStereoSampleSlotOverview(bank);
+      setEsxBankBuffer(ab);
+      setEsxRows(rows);
+      setEsxSampleRows(sampleRows);
+      setEsxStereoSampleRows(stereoSampleRows);
+      setEsxPendingPatches(new Map());
+      setEsxSamplePending(new Map());
+      setEsxStereoSamplePending(new Map());
+      setEsxSelectedSlot(null);
+      setEsxSampleSelectedSlot(null);
+      setEsxStereoSampleSelectedSlot(null);
+      setEsxSampleChannelMode("mono");
+      setEsxSubTab("patterns");
+      setEsxHistory(createEsxEditorHistory());
+      setMode("esx");
+      setFilename("new-bank.esx");
+      toast(
+        `Frische ESX-Bank erzeugt — 256 leere Pattern + 0 Samples (${(ab.byteLength / 1024 / 1024).toFixed(2)} MB)`,
+        { kind: "success", duration: 4000 },
+      );
+      setResultMsg(
+        "Leere ESX-Bank bereit — füge Pattern + Samples ein. Speichern via Save-Button.",
+      );
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast(`Fehler beim Erzeugen: ${msg}`, { kind: "error", duration: 6000 });
       setResultMsg(null);
     } finally {
       setBusy(false);
@@ -2182,7 +2226,7 @@ export function KorgBankEditor({
     if (!esxBankBuffer) {
       return (
         <div className="flex-1 flex items-center justify-center p-8">
-          <div className="text-center space-y-3">
+          <div className="text-center space-y-3 max-w-md">
             <p className="text-sm text-text-muted">
               Lade eine existierende <code className="text-text-primary">.esx</code>{" "}
               ESX-1 Bank (KORG ESX-1 Backup).
@@ -2191,15 +2235,26 @@ export function KorgBankEditor({
               Du kannst einzelne Pattern- oder Sample-Slots ersetzen. Alles
               andere (Songs, Globals, andere Slots) bleibt bit-exakt erhalten.
             </p>
-            <button
-              data-testid="korg-bank-editor-esx-open"
-              onClick={handleOpenEsxBankClick}
-              disabled={busy}
-              className="px-4 py-2 rounded text-sm bg-accent-primary text-bg-base hover:opacity-90 transition-opacity disabled:opacity-40 inline-flex items-center gap-2"
-            >
-              📂 ESX-Bank öffnen
-            </button>
-            <p className="text-[10px] text-text-dim">
+            <div className="flex flex-col sm:flex-row items-stretch justify-center gap-2 pt-2">
+              <button
+                data-testid="korg-bank-editor-esx-open"
+                onClick={handleOpenEsxBankClick}
+                disabled={busy}
+                className="px-4 py-2 rounded text-sm bg-accent-primary text-bg-base hover:opacity-90 transition-opacity disabled:opacity-40 inline-flex items-center justify-center gap-2"
+              >
+                📂 ESX-Bank öffnen
+              </button>
+              <button
+                data-testid="korg-bank-editor-esx-new-from-scratch"
+                onClick={handleNewEsxBankFromScratch}
+                disabled={busy}
+                className="px-4 py-2 rounded text-sm bg-accent-secondary text-bg-base hover:opacity-90 transition-opacity disabled:opacity-40 inline-flex items-center justify-center gap-2"
+                title="Frische 256-Pattern ESX-1 Bank erzeugen (alle Slots leer, init-Pattern + keine Samples)"
+              >
+                🆕 Neue Bank from Scratch
+              </button>
+            </div>
+            <p className="text-[10px] text-text-dim pt-1">
               Tipp: Du kannst auch eine <code>.esx</code>-Datei direkt in dieses
               Fenster ziehen.
             </p>
