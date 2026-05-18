@@ -17,18 +17,26 @@ import { describe, it, expect } from "vitest";
 
 import {
   buildEsxSampleSlotOverview,
+  buildEsxStereoSampleSlotOverview,
   commitEsxPatches,
   commitEsxPatchesAll,
   commitEsxSamplePatches,
+  commitEsxStereoSamplePatches,
   countPendingEsxSamplePatches,
+  countPendingEsxStereoSamplePatches,
   filterEsxSampleRows,
+  filterEsxStereoSampleRows,
   formatSampleLength,
   hasPendingEsxSamplePatches,
+  hasPendingEsxStereoSamplePatches,
   stageEsxPatch,
   stageEsxSamplePatch,
+  stageEsxStereoSamplePatch,
   unstageEsxSamplePatch,
+  unstageEsxStereoSamplePatch,
   type EsxSamplePatchEntry,
   type EsxSampleSlotRow,
+  type EsxStereoSampleSlotRow,
 } from "../../client/src/utils/korg/esxBankEditorState";
 import {
   buildEsxPatternBlock,
@@ -496,5 +504,226 @@ describe("esxBankEditorState — filterEsxSampleRows + formatSampleLength", () =
     expect(formatSampleLength(132300, 44100)).toBe("0:03.000");
     expect(formatSampleLength(0, 44100)).toBe("—");
     expect(formatSampleLength(100, 0)).toBe("100 fr"); // bad sample rate fallback
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// v3.32.0 — Stereo Sample-Tab Tests
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe("esxBankEditorState — buildEsxStereoSampleSlotOverview (v3.32)", () => {
+  it("returns 128 dense stereo rows from an empty bank", () => {
+    const bank = parseEsxBank(buildSyntheticEsxBank().buffer);
+    const rows = buildEsxStereoSampleSlotOverview(bank);
+    expect(rows.length).toBe(128);
+    expect(rows.every((r) => r.empty)).toBe(true);
+    expect(rows[0]).toEqual({
+      index: 0,
+      empty: true,
+      name: "",
+      channels: 2,
+      sampleRate: 0,
+      frames: 0,
+      level: 0,
+    });
+    // All rows have channels === 2 (per the type contract).
+    expect(rows.every((r) => r.channels === 2)).toBe(true);
+  });
+
+  it("synthesises rows including a seeded stereo slot", () => {
+    // Build empty bank, then patch a stereo slot via the patcher.
+    const empty = buildSyntheticEsxBank();
+    const stereoPcm = new Float32Array(128 * 2);
+    for (let i = 0; i < 128; i++) {
+      stereoPcm[i * 2] = Math.sin((i / 128) * 2 * Math.PI) * 0.4;
+      stereoPcm[i * 2 + 1] = Math.cos((i / 128) * 2 * Math.PI) * 0.4;
+    }
+    const patched = patchEsxBankSample(empty.buffer, {
+      index: 7,
+      channels: 2,
+      pcmData: stereoPcm,
+      sampleRate: 44100,
+      name: "STEREO",
+    });
+    const bank = parseEsxBank(patched);
+    const rows = buildEsxStereoSampleSlotOverview(bank);
+    expect(rows.length).toBe(128);
+    expect(rows[7].empty).toBe(false);
+    expect(rows[7].name).toBe("STEREO");
+    expect(rows[7].channels).toBe(2);
+    expect(rows[7].sampleRate).toBe(44100);
+    expect(rows[7].frames).toBe(128);
+    // Other rows still empty.
+    expect(rows[6].empty).toBe(true);
+    expect(rows[127].empty).toBe(true);
+  });
+});
+
+describe("esxBankEditorState — stageEsxStereoSamplePatch (v3.32)", () => {
+  function makeStereoEntry(frames = 100): EsxSamplePatchEntry {
+    const pcm = new Float32Array(frames * 2);
+    for (let i = 0; i < frames; i++) {
+      pcm[i * 2] = 0.3;
+      pcm[i * 2 + 1] = -0.3;
+    }
+    return {
+      pcmData: pcm,
+      sampleRate: 44100,
+      channels: 2,
+      name: "ST",
+      level: 100,
+    };
+  }
+
+  it("stages a stereo patch immutably and counts it as pending", () => {
+    const entry = makeStereoEntry();
+    const empty = new Map<number, EsxSamplePatchEntry>();
+    const next = stageEsxStereoSamplePatch(empty, 7, entry);
+    expect(empty.size).toBe(0);
+    expect(next.size).toBe(1);
+    expect(next.has(7)).toBe(true);
+    expect(hasPendingEsxStereoSamplePatches(next)).toBe(true);
+    expect(countPendingEsxStereoSamplePatches(next)).toBe(1);
+  });
+
+  it("rejects out-of-range stereo-slot index (>= 128)", () => {
+    const entry = makeStereoEntry();
+    expect(() => stageEsxStereoSamplePatch(new Map(), 128, entry)).toThrow();
+    expect(() => stageEsxStereoSamplePatch(new Map(), -1, entry)).toThrow();
+    expect(() => stageEsxStereoSamplePatch(new Map(), 1.5, entry)).toThrow();
+  });
+
+  it("rejects entries with channels != 2", () => {
+    const monoEntry: EsxSamplePatchEntry = {
+      pcmData: new Float32Array(100),
+      sampleRate: 44100,
+      channels: 1,
+      name: "X",
+    };
+    expect(() => stageEsxStereoSamplePatch(new Map(), 0, monoEntry)).toThrow();
+  });
+
+  it("rejects stereo pcmData with odd length", () => {
+    const badEntry: EsxSamplePatchEntry = {
+      pcmData: new Float32Array(101), // odd → cannot be interleaved L,R
+      sampleRate: 44100,
+      channels: 2,
+      name: "X",
+    };
+    expect(() => stageEsxStereoSamplePatch(new Map(), 0, badEntry)).toThrow();
+  });
+
+  it("unstages a stereo patch and returns SAME ref when slot is unknown", () => {
+    const entry = makeStereoEntry();
+    const staged = stageEsxStereoSamplePatch(new Map(), 5, entry);
+    const reverted = unstageEsxStereoSamplePatch(staged, 5);
+    expect(reverted.size).toBe(0);
+    const sameRef = unstageEsxStereoSamplePatch(reverted, 42);
+    expect(sameRef).toBe(reverted);
+  });
+});
+
+describe("esxBankEditorState — commitEsxStereoSamplePatches (v3.32)", () => {
+  it("Stereo-Replace decoded L+R contiguous (NOT interleaved on disk)", () => {
+    const bank = buildSyntheticEsxBank().buffer;
+    // Build a known L,R interleaved input.
+    const frames = 64;
+    const pcm = new Float32Array(frames * 2);
+    for (let i = 0; i < frames; i++) {
+      pcm[i * 2] = 0.5;     // L = 0.5
+      pcm[i * 2 + 1] = -0.5; // R = -0.5
+    }
+    const entry: EsxSamplePatchEntry = {
+      pcmData: pcm,
+      sampleRate: 44100,
+      channels: 2,
+      name: "LR",
+      level: 100,
+    };
+    const staged = stageEsxStereoSamplePatch(new Map(), 0, entry);
+    const committed = commitEsxStereoSamplePatches(bank, staged);
+
+    // Bank grew by frames × 2 channels × 2 bytes = frames * 4 bytes.
+    expect(committed.byteLength).toBe(bank.byteLength + frames * 4);
+
+    // Verify L and R blocks live in contiguous (NOT interleaved) regions:
+    // The stereo header at slot 0 will have off1Start (L block) and
+    // off2Start = off1End (R block immediately after).
+    const dv = new DataView(committed);
+    const stereoHdr = 0x001b2900; // ESX1_ADDR_SAMPLE_HEADER_STEREO
+    const off1Start = dv.getUint32(stereoHdr + 8, false);
+    const off1End = dv.getUint32(stereoHdr + 12, false);
+    const off2Start = dv.getUint32(stereoHdr + 16, false);
+    const off2End = dv.getUint32(stereoHdr + 20, false);
+    expect(off1End).toBe(off1Start + frames * 2);
+    expect(off2Start).toBe(off1End); // R starts where L ends → contiguous
+    expect(off2End).toBe(off2Start + frames * 2);
+  });
+
+  it("Round-Trip Stereo via parseEsxBank liefert L+R-Channels separat (interleaved on read)", () => {
+    const bank = buildSyntheticEsxBank().buffer;
+    const frames = 100;
+    const pcm = new Float32Array(frames * 2);
+    for (let i = 0; i < frames; i++) {
+      pcm[i * 2] = Math.sin((i / frames) * 2 * Math.PI) * 0.5;
+      pcm[i * 2 + 1] = Math.cos((i / frames) * 2 * Math.PI) * 0.5;
+    }
+    const entry: EsxSamplePatchEntry = {
+      pcmData: pcm,
+      sampleRate: 44100,
+      channels: 2,
+      name: "RTSTER",
+      level: 100,
+    };
+    const staged = stageEsxStereoSamplePatch(new Map(), 3, entry);
+    const committed = commitEsxStereoSamplePatches(bank, staged);
+    const parsed = parseEsxBank(committed);
+    expect(parsed.stereoSamples.length).toBe(1);
+    const smp = parsed.stereoSamples[0];
+    expect(smp.channels).toBe(2);
+    expect(smp.frames).toBe(frames);
+    expect(smp.name).toBe("RTSTER");
+    // Parser returns interleaved L,R,L,R … of length frames*2.
+    expect(smp.pcmData.length).toBe(frames * 2);
+    // Verify L and R round-tripped (within int16 quantization error).
+    for (let i = 0; i < frames; i++) {
+      expect(smp.pcmData[i * 2]).toBeCloseTo(pcm[i * 2], 3);
+      expect(smp.pcmData[i * 2 + 1]).toBeCloseTo(pcm[i * 2 + 1], 3);
+    }
+  });
+
+  it("filterEsxStereoSampleRows behaves like its mono counterpart", () => {
+    const rows: EsxStereoSampleSlotRow[] = [
+      {
+        index: 0,
+        empty: false,
+        name: "BASS",
+        channels: 2,
+        sampleRate: 44100,
+        frames: 1000,
+        level: 100,
+      },
+      {
+        index: 1,
+        empty: true,
+        name: "",
+        channels: 2,
+        sampleRate: 0,
+        frames: 0,
+        level: 0,
+      },
+      {
+        index: 2,
+        empty: false,
+        name: "PAD",
+        channels: 2,
+        sampleRate: 44100,
+        frames: 2000,
+        level: 100,
+      },
+    ];
+    expect(filterEsxStereoSampleRows(rows, "", true).map((r) => r.index)).toEqual([0, 2]);
+    expect(filterEsxStereoSampleRows(rows, "bass", false).map((r) => r.index)).toEqual([0]);
+    expect(filterEsxStereoSampleRows(rows, "2", false).map((r) => r.index)).toEqual([2]);
   });
 });

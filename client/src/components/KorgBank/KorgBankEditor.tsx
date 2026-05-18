@@ -79,22 +79,35 @@ import {
 import {
   buildEsxSampleSlotOverview,
   buildEsxSlotOverview,
+  buildEsxStereoSampleSlotOverview,
   commitEsxPatchesAll,
+  commitEsxStereoSamplePatches,
   countPendingEsxPatches,
   countPendingEsxSamplePatches,
+  countPendingEsxStereoSamplePatches,
   filterEsxRows,
   filterEsxSampleRows,
+  filterEsxStereoSampleRows,
   formatSampleLength,
   hasPendingEsxPatches,
   hasPendingEsxSamplePatches,
+  hasPendingEsxStereoSamplePatches,
   stageEsxPatch,
   stageEsxSamplePatch,
+  stageEsxStereoSamplePatch,
   unstageEsxPatch,
   unstageEsxSamplePatch,
+  unstageEsxStereoSamplePatch,
   type EsxSampleSlotRow,
   type EsxSamplePatchEntry,
   type EsxSlotRow,
+  type EsxStereoSampleSlotRow,
 } from "@/utils/korg/esxBankEditorState";
+import {
+  compactEsxBank,
+  inspectEsxBankWaste,
+  EsxBankCompactError,
+} from "@/utils/korg/esxBankCompacter";
 import { polyPhaseResample } from "@/utils/korg/audioProcessor";
 import {
   MAX_ESLI_SLICES,
@@ -240,6 +253,22 @@ export function KorgBankEditor({
   const esxSampleReplaceInputRef = useRef<HTMLInputElement | null>(null);
   const esxSampleReplaceTargetSlotRef = useRef<number | null>(null);
 
+  // v3.32.0 — ESX stereo-sample state + sample-channel-toggle
+  type EsxSampleChannelMode = "mono" | "stereo";
+  const [esxSampleChannelMode, setEsxSampleChannelMode] =
+    useState<EsxSampleChannelMode>("mono");
+  const [esxStereoSampleRows, setEsxStereoSampleRows] = useState<
+    EsxStereoSampleSlotRow[]
+  >([]);
+  const [esxStereoSamplePending, setEsxStereoSamplePending] = useState<
+    Map<number, EsxSamplePatchEntry>
+  >(() => new Map());
+  const [esxStereoSampleSelectedSlot, setEsxStereoSampleSelectedSlot] = useState<
+    number | null
+  >(null);
+  const esxStereoSampleReplaceInputRef = useRef<HTMLInputElement | null>(null);
+  const esxStereoSampleReplaceTargetSlotRef = useRef<number | null>(null);
+
   // Shared
   const [busy, setBusy] = useState<boolean>(false);
   const [resultMsg, setResultMsg] = useState<string | null>(null);
@@ -304,6 +333,12 @@ export function KorgBankEditor({
       setEsxSampleSearch("");
       setEsxSampleDropTargetSlot(null);
       esxSampleReplaceTargetSlotRef.current = null;
+      // v3.32.0 — Stereo sample state
+      setEsxSampleChannelMode("mono");
+      setEsxStereoSampleRows([]);
+      setEsxStereoSamplePending(new Map());
+      setEsxStereoSampleSelectedSlot(null);
+      esxStereoSampleReplaceTargetSlotRef.current = null;
     }
   }, [open]);
 
@@ -358,6 +393,7 @@ export function KorgBankEditor({
       hasChanges =
         hasPendingEsxPatches(esxPendingPatches) ||
         hasPendingEsxSamplePatches(esxSamplePending) ||
+        hasPendingEsxStereoSamplePatches(esxStereoSamplePending) ||
         esxBankBuffer !== null;
     }
     if (hasChanges) {
@@ -386,6 +422,11 @@ export function KorgBankEditor({
       setEsxSampleSelectedSlot(null);
       setEsxSampleSearch("");
       setEsxSampleDropTargetSlot(null);
+      // v3.32.0 — Stereo
+      setEsxSampleChannelMode("mono");
+      setEsxStereoSampleRows([]);
+      setEsxStereoSamplePending(new Map());
+      setEsxStereoSampleSelectedSlot(null);
     }
     setResultMsg(null);
     setMode(next);
@@ -416,13 +457,18 @@ export function KorgBankEditor({
       const bank = parseEsxBank(ab, file.name);
       const rows = buildEsxSlotOverview(bank);
       const sampleRows = buildEsxSampleSlotOverview(bank);
+      const stereoSampleRows = buildEsxStereoSampleSlotOverview(bank);
       setEsxBankBuffer(ab);
       setEsxRows(rows);
       setEsxSampleRows(sampleRows);
+      setEsxStereoSampleRows(stereoSampleRows);
       setEsxPendingPatches(new Map());
       setEsxSamplePending(new Map());
+      setEsxStereoSamplePending(new Map());
       setEsxSelectedSlot(null);
       setEsxSampleSelectedSlot(null);
+      setEsxStereoSampleSelectedSlot(null);
+      setEsxSampleChannelMode("mono");
       setEsxSubTab("patterns");
       setMode("esx");
       // Filename default for save: original name (user can rename).
@@ -681,13 +727,18 @@ export function KorgBankEditor({
     }
     const patchCount = countPendingEsxPatches(esxPendingPatches);
     const sampleCount = countPendingEsxSamplePatches(esxSamplePending);
-    if (patchCount === 0 && sampleCount === 0) {
+    const stereoSampleCount = countPendingEsxStereoSamplePatches(
+      esxStereoSamplePending,
+    );
+    if (patchCount === 0 && sampleCount === 0 && stereoSampleCount === 0) {
       toast("Keine Slots zum Speichern modifiziert.", { kind: "warning" });
       return;
     }
     const summaryParts: string[] = [];
     if (patchCount > 0) summaryParts.push(`${patchCount} Pattern-Slot(s)`);
-    if (sampleCount > 0) summaryParts.push(`${sampleCount} Sample-Slot(s)`);
+    if (sampleCount > 0) summaryParts.push(`${sampleCount} Mono-Sample-Slot(s)`);
+    if (stereoSampleCount > 0)
+      summaryParts.push(`${stereoSampleCount} Stereo-Sample-Slot(s)`);
     const ok = window.confirm(
       `${summaryParts.join(" + ")} wurden geändert.\n` +
         `Alle anderen Slots, Sample-Daten und Song-Daten bleiben bit-exakt erhalten.\n\n` +
@@ -697,11 +748,15 @@ export function KorgBankEditor({
     setBusy(true);
     setResultMsg("Schreibe ESX-Bank...");
     try {
-      const newBuffer = commitEsxPatchesAll(
+      let newBuffer = commitEsxPatchesAll(
         esxBankBuffer,
         esxPendingPatches,
         esxSamplePending,
       );
+      // v3.32.0 — apply stereo patches after mono/patterns.
+      if (stereoSampleCount > 0) {
+        newBuffer = commitEsxStereoSamplePatches(newBuffer, esxStereoSamplePending);
+      }
       const safeName = filename.replace(/[^A-Za-z0-9._-]/g, "_");
       const finalName = safeName.toLowerCase().endsWith(".esx")
         ? safeName
@@ -727,6 +782,7 @@ export function KorgBankEditor({
         setEsxBankBuffer(newBuffer);
         setEsxPendingPatches(new Map());
         setEsxSamplePending(new Map());
+        setEsxStereoSamplePending(new Map());
       } else {
         const blob = new Blob([newBuffer], { type: "application/octet-stream" });
         const url = URL.createObjectURL(blob);
@@ -748,6 +804,7 @@ export function KorgBankEditor({
         setEsxBankBuffer(newBuffer);
         setEsxPendingPatches(new Map());
         setEsxSamplePending(new Map());
+        setEsxStereoSamplePending(new Map());
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -898,6 +955,205 @@ export function KorgBankEditor({
     const file = e.dataTransfer.files?.[0];
     if (!file) return;
     await replaceEsxSampleSlot(slot, file);
+  }
+
+  // ─── ESX-Stereo-Sample-Mode Operations (v3.32.0) ──────────────────────────
+
+  /**
+   * v3.32.0 — Decode a file into Float32 STEREO (interleaved L,R,L,R …).
+   * - Mono input → duplicates the channel to L=R.
+   * - Stereo input → preserves channels separately (NO downmix).
+   * - Resamples to 44100 Hz (ESX target).
+   */
+  async function decodeWavForEsxStereoSample(file: File): Promise<{
+    pcm: Float32Array;
+    sampleRate: number;
+    channels: 2;
+    name: string;
+  }> {
+    const ab = await file.arrayBuffer();
+    const ctx = getCtx();
+    const buf = await ctx.decodeAudioData(ab.slice(0));
+    const frames = buf.length;
+    let leftSrc: Float32Array;
+    let rightSrc: Float32Array;
+    if (buf.numberOfChannels === 1) {
+      // Duplicate mono → L=R
+      const m = buf.getChannelData(0);
+      leftSrc = new Float32Array(m);
+      rightSrc = new Float32Array(m);
+    } else {
+      leftSrc = new Float32Array(buf.getChannelData(0));
+      rightSrc = new Float32Array(buf.getChannelData(1));
+    }
+    // Resample each channel separately to 44100 Hz (ESX-1 target).
+    const ESX_TARGET_SR = 44100;
+    if (buf.sampleRate !== ESX_TARGET_SR) {
+      leftSrc = polyPhaseResample(leftSrc, buf.sampleRate, ESX_TARGET_SR, 1);
+      rightSrc = polyPhaseResample(rightSrc, buf.sampleRate, ESX_TARGET_SR, 1);
+    }
+    const newFrames = Math.min(leftSrc.length, rightSrc.length);
+    const interleaved = new Float32Array(newFrames * 2);
+    for (let i = 0; i < newFrames; i++) {
+      interleaved[i * 2] = leftSrc[i];
+      interleaved[i * 2 + 1] = rightSrc[i];
+    }
+    const baseName = file.name.replace(/\.[^.]+$/, "");
+    return {
+      pcm: interleaved,
+      sampleRate: ESX_TARGET_SR,
+      channels: 2,
+      name: baseName,
+    };
+    // Note: frames counter is implicit (interleaved length / 2).
+  }
+
+  function handleEsxStereoSampleReplaceClick(slot: number): void {
+    if (!requireProFeature(PRO_FEATURE_KORG_BANK_WRITE)) return;
+    esxStereoSampleReplaceTargetSlotRef.current = slot;
+    esxStereoSampleReplaceInputRef.current?.click();
+  }
+
+  async function handleEsxStereoSampleReplaceInput(
+    e: React.ChangeEvent<HTMLInputElement>,
+  ): Promise<void> {
+    const f = e.target.files?.[0];
+    e.target.value = "";
+    const slot = esxStereoSampleReplaceTargetSlotRef.current;
+    esxStereoSampleReplaceTargetSlotRef.current = null;
+    if (!f || slot == null) return;
+    await replaceEsxStereoSampleSlot(slot, f);
+  }
+
+  async function replaceEsxStereoSampleSlot(
+    slot: number,
+    file: File,
+  ): Promise<void> {
+    setBusy(true);
+    try {
+      const decoded = await decodeWavForEsxStereoSample(file);
+      const frames = decoded.pcm.length / 2;
+      const entry: EsxSamplePatchEntry = {
+        pcmData: decoded.pcm,
+        sampleRate: decoded.sampleRate,
+        channels: 2,
+        name: decoded.name.slice(0, 8),
+        level: 100,
+      };
+      setEsxStereoSamplePending((prev) =>
+        stageEsxStereoSamplePatch(prev, slot, entry),
+      );
+      setEsxStereoSampleRows((prev) =>
+        prev.map((r) =>
+          r.index === slot
+            ? {
+                index: slot,
+                empty: false,
+                name: decoded.name.slice(0, 8),
+                channels: 2,
+                sampleRate: decoded.sampleRate,
+                frames,
+                level: 100,
+              }
+            : r,
+        ),
+      );
+      toast(
+        `Stereo-Slot #${slot} → "${decoded.name.slice(0, 8) || "(unnamed)"}" (${frames} fr)`,
+        { kind: "success", duration: 2500 },
+      );
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast(`Fehler beim Stereo-Replace: ${msg}`, { kind: "error", duration: 5000 });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function handleEsxStereoSampleRevertSlot(slot: number): void {
+    setEsxStereoSamplePending((prev) => unstageEsxStereoSamplePatch(prev, slot));
+    if (esxBankBuffer) {
+      try {
+        const bank = parseEsxBank(esxBankBuffer);
+        const rows = buildEsxStereoSampleSlotOverview(bank);
+        setEsxStereoSampleRows((prev) =>
+          rows.map((r) => {
+            if (esxStereoSamplePending.has(r.index) && r.index !== slot) {
+              const old = prev.find((p) => p.index === r.index);
+              return old ?? r;
+            }
+            return r;
+          }),
+        );
+      } catch {
+        /* keep existing rows */
+      }
+    }
+  }
+
+  // ─── ESX-Compact-Action (v3.32.0) ─────────────────────────────────────────
+
+  /**
+   * v3.32.0 — Compact the PCM region of the loaded ESX-bank in-memory.
+   * Removes orphan bytes left behind by Mode-A append-replace. Headers, magic,
+   * patterns and song-data stay bit-exact. Bank buffer + sample-rows are
+   * refreshed; pending sample-patches are dropped to avoid stale-offset
+   * conflicts (user must re-stage them).
+   */
+  async function handleEsxCompactBank(): Promise<void> {
+    if (!requireProFeature(PRO_FEATURE_KORG_BANK_WRITE)) return;
+    if (!esxBankBuffer) {
+      toast("Keine ESX-Bank geladen.", { kind: "warning" });
+      return;
+    }
+    const report = inspectEsxBankWaste(esxBankBuffer);
+    if (!report) {
+      toast("Bank-Buffer ist beschädigt — Compaction nicht möglich.", { kind: "error" });
+      return;
+    }
+    if (report.orphanBytes === 0) {
+      toast("Bank ist bereits compact (keine Orphan-Bytes).", { kind: "info" });
+      return;
+    }
+    const mb = (report.orphanBytes / 1024 / 1024).toFixed(2);
+    const ok = window.confirm(
+      `Compact spart ${report.orphanBytes.toLocaleString()} Bytes (~${mb} MB).\n\n` +
+        "Alle Patterns, Globals und Song-Daten bleiben bit-exakt erhalten. " +
+        "Bereits-gestagte (aber noch nicht gespeicherte) Sample-Patches gehen verloren.\n\n" +
+        "Bank compactieren?",
+    );
+    if (!ok) return;
+    setBusy(true);
+    setResultMsg("Compactiere ESX-Bank…");
+    try {
+      const compacted = compactEsxBank(esxBankBuffer);
+      // Refresh state: new buffer + fresh rows. Drop pending sample-patches
+      // (they reference old offsets) — keep pattern-pending (offsets are
+      // fixed inside the pattern region).
+      const bank = parseEsxBank(compacted);
+      setEsxBankBuffer(compacted);
+      setEsxSampleRows(buildEsxSampleSlotOverview(bank));
+      setEsxStereoSampleRows(buildEsxStereoSampleSlotOverview(bank));
+      setEsxSamplePending(new Map());
+      setEsxStereoSamplePending(new Map());
+      setEsxSampleSelectedSlot(null);
+      setEsxStereoSampleSelectedSlot(null);
+      toast(
+        `Bank compactiert · ${mb} MB gespart`,
+        { kind: "success", duration: 3500 },
+      );
+      setResultMsg(
+        `Compact: ${report.orphanBytes.toLocaleString()} Bytes Orphans entfernt (~${mb} MB)`,
+      );
+    } catch (err) {
+      const msg =
+        err instanceof EsxBankCompactError ? err.message :
+        err instanceof Error ? err.message : String(err);
+      toast(`Compact fehlgeschlagen: ${msg}`, { kind: "error", duration: 6000 });
+      setResultMsg(null);
+    } finally {
+      setBusy(false);
+    }
   }
 
   // ─── Slice-Editor (v3.8.0) ─────────────────────────────────────────────────
@@ -1151,7 +1407,40 @@ export function KorgBankEditor({
         : esxSampleRows.find((r) => r.index === esxSampleSelectedSlot) ?? null,
     [esxSampleRows, esxSampleSelectedSlot],
   );
-  const esxTotalPendingCount = esxPendingCount + esxSamplePendingCount;
+
+  // v3.32.0 — Stereo computed
+  const esxStereoSampleFilledCount = useMemo(
+    () => esxStereoSampleRows.filter((r) => !r.empty).length,
+    [esxStereoSampleRows],
+  );
+  const esxStereoSamplePendingCount = useMemo(
+    () => countPendingEsxStereoSamplePatches(esxStereoSamplePending),
+    [esxStereoSamplePending],
+  );
+  const esxStereoSampleVisibleRows = useMemo(
+    () =>
+      filterEsxStereoSampleRows(
+        esxStereoSampleRows,
+        esxSampleSearch,
+        esxSampleHideEmpty,
+      ),
+    [esxStereoSampleRows, esxSampleSearch, esxSampleHideEmpty],
+  );
+  const esxStereoSampleSelectedRow = useMemo(
+    () =>
+      esxStereoSampleSelectedSlot == null
+        ? null
+        : esxStereoSampleRows.find(
+            (r) => r.index === esxStereoSampleSelectedSlot,
+          ) ?? null,
+    [esxStereoSampleRows, esxStereoSampleSelectedSlot],
+  );
+  const esxCompactReport = useMemo(
+    () => (esxBankBuffer ? inspectEsxBankWaste(esxBankBuffer) : null),
+    [esxBankBuffer],
+  );
+  const esxTotalPendingCount =
+    esxPendingCount + esxSamplePendingCount + esxStereoSamplePendingCount;
 
   if (!open) return null;
 
@@ -1180,7 +1469,7 @@ export function KorgBankEditor({
                 : mode === "edit"
                   ? `Editiere ${openedSourceName || "Bank"} · ${filledCountOpened}/${E2S_MAX_SLOTS} Slots · ${dirtyCountOpened} geändert`
                   : esxBankBuffer
-                    ? `ESX Bank-Edit · ${esxFilledCount}/256 Pat · ${esxSampleFilledCount}/256 Smp · ${esxTotalPendingCount} geändert`
+                    ? `ESX Bank-Edit · ${esxFilledCount}/256 Pat · ${esxSampleFilledCount}M/${esxStereoSampleFilledCount}S Smp · ${esxTotalPendingCount} geändert${esxCompactReport && esxCompactReport.orphanBytes > 0 ? ` · ${(esxCompactReport.orphanBytes / 1024 / 1024).toFixed(1)} MB Waste` : ""}`
                     : "ESX Bank-Edit · keine Bank geladen"}
             </p>
           </div>
@@ -1273,7 +1562,7 @@ export function KorgBankEditor({
           className="hidden"
           onChange={handleEsxBankFileInput}
         />
-        {/* v3.31.0 — ESX-Sample WAV picker */}
+        {/* v3.31.0 — ESX-Sample WAV picker (mono) */}
         <input
           ref={esxSampleReplaceInputRef}
           data-testid="korg-bank-editor-esx-sample-replace-input"
@@ -1281,6 +1570,15 @@ export function KorgBankEditor({
           accept=".wav,.aiff,.aif,.mp3,audio/*"
           className="hidden"
           onChange={handleEsxSampleReplaceInput}
+        />
+        {/* v3.32.0 — ESX-Stereo-Sample WAV picker */}
+        <input
+          ref={esxStereoSampleReplaceInputRef}
+          data-testid="korg-bank-editor-esx-stereo-sample-replace-input"
+          type="file"
+          accept=".wav,.aiff,.aif,.mp3,audio/*"
+          className="hidden"
+          onChange={handleEsxStereoSampleReplaceInput}
         />
 
         {/* Body */}
@@ -1797,20 +2095,77 @@ export function KorgBankEditor({
                 : "bg-bg-elevated text-text-muted hover:text-text-primary"
             }`}
           >
-            Samples (Mono)
-            {esxSamplePendingCount > 0 && (
+            Samples
+            {esxSamplePendingCount + esxStereoSamplePendingCount > 0 && (
               <span className="ml-1 text-[10px] text-accent-danger">
-                ●{esxSamplePendingCount}
+                ●{esxSamplePendingCount + esxStereoSamplePendingCount}
               </span>
             )}
           </button>
-          <span className="text-[10px] text-text-dim ml-auto">
-            Stereo-Samples folgen in v3.32
-          </span>
+
+          {/* v3.32.0 — Mono/Stereo Channel-Mode-Toggle (only in samples tab) */}
+          {esxSubTab === "samples" && (
+            <div
+              role="tablist"
+              data-testid="korg-bank-editor-esx-sample-channel-toggle"
+              className="flex rounded border border-border-color overflow-hidden text-[10px] ml-2"
+            >
+              <button
+                role="tab"
+                data-testid="korg-bank-editor-esx-sample-channel-mono"
+                aria-selected={esxSampleChannelMode === "mono"}
+                onClick={() => setEsxSampleChannelMode("mono")}
+                disabled={busy}
+                className={`px-2 py-0.5 transition-colors disabled:opacity-40 ${
+                  esxSampleChannelMode === "mono"
+                    ? "bg-accent-secondary text-bg-base"
+                    : "bg-bg-elevated text-text-muted hover:text-text-primary"
+                }`}
+              >
+                Mono ({esxSampleFilledCount})
+              </button>
+              <button
+                role="tab"
+                data-testid="korg-bank-editor-esx-sample-channel-stereo"
+                aria-selected={esxSampleChannelMode === "stereo"}
+                onClick={() => setEsxSampleChannelMode("stereo")}
+                disabled={busy}
+                className={`px-2 py-0.5 transition-colors disabled:opacity-40 ${
+                  esxSampleChannelMode === "stereo"
+                    ? "bg-accent-secondary text-bg-base"
+                    : "bg-bg-elevated text-text-muted hover:text-text-primary"
+                }`}
+              >
+                Stereo ({esxStereoSampleFilledCount})
+              </button>
+            </div>
+          )}
+
+          {/* v3.32.0 — Compact-Bank-Button (only in samples tab) */}
+          {esxSubTab === "samples" && esxCompactReport && esxCompactReport.orphanBytes > 0 && (
+            <button
+              data-testid="korg-bank-editor-esx-compact"
+              onClick={handleEsxCompactBank}
+              disabled={busy}
+              className="ml-auto px-2 py-0.5 rounded text-[10px] bg-accent-secondary text-bg-base hover:opacity-90 transition-opacity disabled:opacity-40"
+              title={`Spare ${(esxCompactReport.orphanBytes / 1024 / 1024).toFixed(2)} MB durch Compaction`}
+            >
+              🗜 Compact Bank ({(esxCompactReport.orphanBytes / 1024 / 1024).toFixed(2)} MB)
+            </button>
+          )}
+          {esxSubTab !== "samples" && (
+            <span className="text-[10px] text-text-dim ml-auto">
+              v3.32 · Mono + Stereo + Compact
+            </span>
+          )}
         </div>
 
         <div className="flex-1 min-h-0 flex flex-col md:flex-row">
-          {esxSubTab === "patterns" ? renderEsxPatternsBody() : renderEsxSamplesBody()}
+          {esxSubTab === "patterns"
+            ? renderEsxPatternsBody()
+            : esxSampleChannelMode === "mono"
+              ? renderEsxSamplesBody()
+              : renderEsxStereoSamplesBody()}
         </div>
       </div>
     );
@@ -2256,6 +2611,221 @@ export function KorgBankEditor({
           {resultMsg && (
             <p
               data-testid="korg-bank-editor-esx-sample-status"
+              className="text-xs text-text-muted pt-2 border-t border-border-color"
+            >
+              {resultMsg}
+            </p>
+          )}
+        </div>
+      </>
+    );
+  }
+
+  // ─── Render: ESX-Stereo-Sample-Patch Sub-Tab (v3.32.0) ────────────────────
+
+  function renderEsxStereoSamplesBody(): React.ReactElement {
+    return (
+      <>
+        {/* Left — Stereo-Sample-Slot-Liste */}
+        <div className="md:w-2/5 border-r border-border-color overflow-y-auto p-2 flex flex-col gap-2">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <h3 className="text-xs font-semibold text-text-primary">
+              Stereo-Sample-Slots ({esxStereoSampleVisibleRows.length}/{esxStereoSampleRows.length})
+            </h3>
+          </div>
+
+          <div className="flex items-center gap-2 flex-wrap">
+            <input
+              data-testid="korg-bank-editor-esx-stereo-sample-search"
+              type="text"
+              placeholder="Suchen (Name oder Index)"
+              value={esxSampleSearch}
+              onChange={(e) => setEsxSampleSearch(e.target.value)}
+              className="flex-1 min-w-[120px] bg-bg-elevated border border-border-color rounded text-xs px-2 py-0.5 text-text-primary placeholder:text-text-dim"
+            />
+            <label className="text-[10px] text-text-muted flex items-center gap-1">
+              <input
+                data-testid="korg-bank-editor-esx-stereo-sample-hide-empty"
+                type="checkbox"
+                checked={esxSampleHideEmpty}
+                onChange={(e) => setEsxSampleHideEmpty(e.target.checked)}
+                className="accent-accent-primary"
+              />
+              Leere verbergen
+            </label>
+          </div>
+
+          <ul
+            className="space-y-0.5 flex-1 min-h-0"
+            data-testid="korg-bank-editor-esx-stereo-sample-list"
+          >
+            {esxStereoSampleVisibleRows.length === 0 ? (
+              <li className="text-xs text-text-dim italic py-4 text-center">
+                Keine Stereo-Slots passen zu deinem Filter.
+              </li>
+            ) : (
+              esxStereoSampleVisibleRows.map((r) => {
+                const dirty = esxStereoSamplePending.has(r.index);
+                const selected = esxStereoSampleSelectedSlot === r.index;
+                return (
+                  <li key={r.index}>
+                    <button
+                      data-testid={`korg-bank-editor-esx-stereo-sample-slot-${r.index}`}
+                      onClick={() => setEsxStereoSampleSelectedSlot(r.index)}
+                      className={`w-full flex items-center gap-2 px-2 py-1 rounded text-xs text-left transition-colors border ${
+                        selected
+                          ? "border-accent-primary bg-bg-elevated"
+                          : "border-transparent hover:bg-bg-elevated"
+                      } ${r.empty && !dirty ? "opacity-50" : ""}`}
+                    >
+                      <span className="font-mono text-text-dim w-10 flex-shrink-0">
+                        S#{r.index.toString().padStart(3, "0")}
+                      </span>
+                      <span
+                        className={`flex-1 truncate ${
+                          r.empty && !dirty
+                            ? "text-text-dim italic"
+                            : "text-text-primary"
+                        }`}
+                      >
+                        {r.empty && !dirty ? "—Empty—" : r.name || "(unnamed)"}
+                      </span>
+                      {!r.empty && (
+                        <span className="text-[10px] text-text-dim w-16 truncate text-right">
+                          {formatSampleLength(r.frames, r.sampleRate)}
+                        </span>
+                      )}
+                      {dirty && (
+                        <span
+                          data-testid={`korg-bank-editor-esx-stereo-sample-dirty-${r.index}`}
+                          className="text-[10px] text-accent-danger flex-shrink-0"
+                          title="Stereo-Slot wird beim Speichern überschrieben"
+                        >
+                          ●
+                        </span>
+                      )}
+                    </button>
+                  </li>
+                );
+              })
+            )}
+          </ul>
+        </div>
+
+        {/* Right — Stereo-Sample-Slot-Detail */}
+        <div className="flex-1 overflow-y-auto p-3 space-y-3">
+          {esxStereoSampleSelectedRow === null ? (
+            <p
+              data-testid="korg-bank-editor-esx-stereo-sample-no-selection"
+              className="text-xs text-text-muted text-center py-8"
+            >
+              Wähle links einen Stereo-Sample-Slot aus, um ihn mit einer WAV-Datei
+              zu ersetzen.
+              <br />
+              <span className="text-[10px] text-text-dim">
+                Stereo-Inputs bleiben L+R; Mono-Inputs werden auf beide Channels dupliziert.
+              </span>
+            </p>
+          ) : (
+            <div
+              data-testid="korg-bank-editor-esx-stereo-sample-detail"
+              className="space-y-3"
+            >
+              <div className="flex items-center justify-between pb-2 border-b border-border-color">
+                <span className="font-mono text-xs text-text-dim">
+                  Stereo-Sample-Slot S#{esxStereoSampleSelectedRow.index.toString().padStart(3, "0")}
+                </span>
+                {esxStereoSamplePending.has(esxStereoSampleSelectedRow.index) && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] text-accent-danger">
+                      ● wird ersetzt
+                    </span>
+                    <button
+                      data-testid="korg-bank-editor-esx-stereo-sample-revert"
+                      onClick={() => handleEsxStereoSampleRevertSlot(esxStereoSampleSelectedRow.index)}
+                      className="px-2 py-0.5 rounded text-[10px] bg-bg-elevated text-text-muted hover:text-text-primary transition-colors"
+                      title="Patch verwerfen — Originalslot wiederherstellen"
+                    >
+                      ↺ Revert
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-1 text-xs text-text-muted">
+                <p>
+                  <span className="text-text-dim">Name:</span>{" "}
+                  <span className="text-text-primary font-medium">
+                    {esxStereoSampleSelectedRow.empty
+                      ? "—Empty—"
+                      : esxStereoSampleSelectedRow.name || "(unnamed)"}
+                  </span>
+                </p>
+                {!esxStereoSampleSelectedRow.empty && (
+                  <>
+                    <p>
+                      <span className="text-text-dim">Channels:</span>{" "}
+                      <span className="text-text-primary">Stereo (L+R)</span>
+                    </p>
+                    <p>
+                      <span className="text-text-dim">Sample-Rate:</span>{" "}
+                      <span className="text-text-primary">
+                        {esxStereoSampleSelectedRow.sampleRate} Hz
+                      </span>
+                    </p>
+                    <p>
+                      <span className="text-text-dim">Länge:</span>{" "}
+                      <span className="text-text-primary">
+                        {formatSampleLength(
+                          esxStereoSampleSelectedRow.frames,
+                          esxStereoSampleSelectedRow.sampleRate,
+                        )}{" "}
+                        ({esxStereoSampleSelectedRow.frames} fr / Kanal)
+                      </span>
+                    </p>
+                    <p>
+                      <span className="text-text-dim">Level:</span>{" "}
+                      <span className="text-text-primary">
+                        {esxStereoSampleSelectedRow.level}/127
+                      </span>
+                    </p>
+                  </>
+                )}
+              </div>
+
+              <div className="pt-2 border-t border-border-color space-y-2">
+                <p className="text-xs text-text-muted">
+                  Den Stereo-Slot mit einer WAV/AIFF/MP3-Datei ersetzen. Wird
+                  auf 44100 Hz resampelt. Mono-Inputs → L=R dupliziert.
+                </p>
+                <button
+                  data-testid="korg-bank-editor-esx-stereo-sample-replace"
+                  onClick={() => handleEsxStereoSampleReplaceClick(esxStereoSampleSelectedRow.index)}
+                  disabled={busy}
+                  className="w-full px-3 py-2 rounded text-sm bg-accent-primary text-bg-base hover:opacity-90 transition-opacity disabled:opacity-40 inline-flex items-center justify-center gap-2"
+                >
+                  🎵 Mit Stereo-WAV ersetzen…
+                </button>
+              </div>
+
+              <div className="pt-2 border-t border-border-color">
+                <label className="block text-xs text-text-muted">
+                  Dateiname beim Speichern
+                  <input
+                    data-testid="korg-bank-editor-esx-stereo-sample-filename"
+                    type="text"
+                    value={filename}
+                    onChange={(e) => setFilename(e.target.value)}
+                    className="w-full mt-1 bg-bg-base border border-border-color rounded px-2 py-1 text-sm text-text-primary"
+                  />
+                </label>
+              </div>
+            </div>
+          )}
+
+          {resultMsg && (
+            <p
+              data-testid="korg-bank-editor-esx-stereo-sample-status"
               className="text-xs text-text-muted pt-2 border-t border-border-color"
             >
               {resultMsg}

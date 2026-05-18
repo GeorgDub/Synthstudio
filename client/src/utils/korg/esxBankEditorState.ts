@@ -1,12 +1,12 @@
 /**
- * Synthstudio – ESX-1 Bank Pattern + Sample Editor State (v3.29.0, v3.31.0)
+ * Synthstudio – ESX-1 Bank Pattern + Sample Editor State (v3.29.0, v3.31.0, v3.32.0)
  *
  * Pure-TypeScript model for the **ESX Edit-Modes** in `KorgBankEditor.tsx`.
  * Wraps a loaded `.esx`-bank (~24-28 MB ArrayBuffer) plus:
  *   - 256 pattern-slot overview rows
- *   - 256 mono-sample slot overview rows (v3.31)
+ *   - 256 mono-sample + 128 stereo-sample slot overview rows (v3.31/v3.32)
  *   - Map of staged pattern-replacements
- *   - Map of staged sample-replacements (v3.31)
+ *   - Map of staged sample-replacements (v3.31 mono / v3.32 stereo)
  *
  * Workflow Patterns:
  *   1. parseEsxBank(buffer) → 0..N patterns
@@ -15,14 +15,22 @@
  *   4. unstageEsxPatch(map, index) → next map
  *   5. commitEsxPatches(bankBuffer, map) → new ArrayBuffer
  *
- * Workflow Samples (v3.31):
+ * Workflow Samples (v3.31 mono):
  *   1. parseEsxBank(buffer) → bank.monoSamples
- *   2. buildEsxSampleSlotOverview(bank) → 256 rows
+ *   2. buildEsxSampleSlotOverview(bank) → 256 mono rows
  *   3. stageEsxSamplePatch(map, slot, sampleData) → next map
  *   4. unstageEsxSamplePatch(map, slot) → next map
  *   5. commitEsxSamplePatches(bankBuffer, map) → new ArrayBuffer
- *   6. commitEsxPatchesAll(bankBuffer, patternMap, sampleMap) → applies BOTH,
+ *   6. commitEsxPatchesAll(bankBuffer, patternMap, sampleMap) → applies BOTTH,
  *      patterns first (slot-replace), samples after (append + header-update)
+ *
+ * Workflow Samples (v3.32 stereo):
+ *   Identical API but `buildEsxStereoSampleSlotOverview(bank)` returns 128
+ *   stereo rows. The sample patcher (`patchEsxBankSample`) already handles
+ *   `channels: 2` (PCM split L+R contiguous). `commitEsxSamplePatches`
+ *   transparently routes mono+stereo entries via their `channels` field, so
+ *   one staged map can mix slot 0 mono + slot 0 stereo without collision —
+ *   they patch separate header tables.
  *
  * KEINE Electron-/DOM-/AudioEngine-Dependencies. Reine Daten-Operationen.
  */
@@ -462,6 +470,216 @@ export function filterEsxSampleRows(
   query: string,
   hideEmpty: boolean,
 ): EsxSampleSlotRow[] {
+  const q = (query ?? "").trim().toLowerCase();
+  return rows.filter((r) => {
+    if (hideEmpty && r.empty) return false;
+    if (q.length === 0) return true;
+    const idxStr = String(r.index);
+    if (idxStr === q || idxStr.padStart(3, "0") === q) return true;
+    if (r.name.toLowerCase().includes(q)) return true;
+    return false;
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// v3.32.0 — Stereo Sample-Tab State
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * v3.32.0 — Overview row for one of the 128 stereo sample-slots.
+ *
+ * Same shape as `EsxSampleSlotRow` but the `index` is in stereo-slot-space
+ * (0..127). The underlying parser stores stereo samples with `index = 256+i`
+ * (mono-slots use 0..255 so the parser uses a single shared index-space). We
+ * normalise back to stereo-local indices 0..127 here so the UI can render a
+ * dense 128-row list.
+ */
+export interface EsxStereoSampleSlotRow {
+  /** 0..127 — stereo slot-index inside the bank (LOCAL, not the parser's 256+i). */
+  index: number;
+  /** True when the slot was empty in the loaded bank. */
+  empty: boolean;
+  /** Sample name (ASCII, trimmed). For empty slots: "". */
+  name: string;
+  /** Always 2 (stereo). */
+  channels: 2;
+  /** Sample-Rate in Hz. For empty slots: 0. */
+  sampleRate: number;
+  /** Anzahl PCM-Frames pro Channel (NOT total — stereo encodes 2× this). */
+  frames: number;
+  /** Geräte-Lautstärke 0..127. For empty slots: 0. */
+  level: number;
+}
+
+/**
+ * v3.32.0 — Build the 128-row stereo-sample overview list from a parsed bank.
+ *
+ * Mirrors `buildEsxSampleSlotOverview` but operates on `bank.stereoSamples`.
+ * The parser uses `sample.index = ESX1_MAX_MONO_SLOTS + i` for stereo slots,
+ * so we subtract `ESX1_MAX_MONO_SLOTS` (256) to get the stereo-local 0..127.
+ *
+ * @param bank Parsed bank
+ * @param totalSlots Number of stereo slots (default 128 — ESX1_MAX_STEREO_SLOTS)
+ */
+export function buildEsxStereoSampleSlotOverview(
+  bank: EsxBank,
+  totalSlots = 128,
+): EsxStereoSampleSlotRow[] {
+  const MONO_SLOTS = 256;
+  const byIndex = new Map<number, EsxSample>();
+  for (const s of bank.stereoSamples) {
+    if (typeof s.index === "number") {
+      // Parser uses 256+i — normalise to 0..127.
+      const local = s.index - MONO_SLOTS;
+      if (local >= 0 && local < totalSlots) byIndex.set(local, s);
+    }
+  }
+  const rows: EsxStereoSampleSlotRow[] = new Array(totalSlots);
+  for (let i = 0; i < totalSlots; i++) {
+    const s = byIndex.get(i);
+    if (!s) {
+      rows[i] = {
+        index: i,
+        empty: true,
+        name: "",
+        channels: 2,
+        sampleRate: 0,
+        frames: 0,
+        level: 0,
+      };
+    } else {
+      rows[i] = {
+        index: i,
+        empty: false,
+        name: s.name ?? "",
+        channels: 2,
+        sampleRate: s.sampleRate,
+        frames: s.frames,
+        level: s.level,
+      };
+    }
+  }
+  return rows;
+}
+
+/**
+ * v3.32.0 — Stage a stereo-sample-slot replacement. Slot is 0..127 (stereo-
+ * local). Entry must have `channels === 2` and an interleaved L,R,L,R PCM
+ * Float32Array (length === frames*2).
+ */
+export function stageEsxStereoSamplePatch(
+  pending: Map<number, EsxSamplePatchEntry>,
+  slot: number,
+  entry: EsxSamplePatchEntry,
+): Map<number, EsxSamplePatchEntry> {
+  if (
+    typeof slot !== "number" ||
+    !Number.isInteger(slot) ||
+    slot < 0 ||
+    slot >= 128
+  ) {
+    throw new Error(`stageEsxStereoSamplePatch: invalid stereo-slot index ${slot}`);
+  }
+  if (!entry || typeof entry !== "object") {
+    throw new Error("stageEsxStereoSamplePatch: entry must be an object");
+  }
+  if (!(entry.pcmData instanceof Float32Array) || entry.pcmData.length === 0) {
+    throw new Error("stageEsxStereoSamplePatch: entry.pcmData must be non-empty Float32Array");
+  }
+  if (entry.channels !== 2) {
+    throw new Error(`stageEsxStereoSamplePatch: entry.channels must be 2 (got ${entry.channels})`);
+  }
+  if (entry.pcmData.length % 2 !== 0) {
+    throw new Error("stageEsxStereoSamplePatch: stereo pcmData must have even length (L,R interleaved)");
+  }
+  if (
+    typeof entry.sampleRate !== "number" ||
+    !Number.isFinite(entry.sampleRate) ||
+    entry.sampleRate <= 0
+  ) {
+    throw new Error(`stageEsxStereoSamplePatch: invalid sampleRate ${entry.sampleRate}`);
+  }
+  const next = new Map(pending);
+  next.set(slot, entry);
+  return next;
+}
+
+/** v3.32.0 — Remove a staged stereo-sample-patch. */
+export function unstageEsxStereoSamplePatch(
+  pending: Map<number, EsxSamplePatchEntry>,
+  slot: number,
+): Map<number, EsxSamplePatchEntry> {
+  if (!pending.has(slot)) return pending;
+  const next = new Map(pending);
+  next.delete(slot);
+  return next;
+}
+
+/** v3.32.0 — Returns true when at least one stereo-slot replacement is staged. */
+export function hasPendingEsxStereoSamplePatches(
+  pending: Map<number, EsxSamplePatchEntry>,
+): boolean {
+  return pending.size > 0;
+}
+
+/** v3.32.0 — Count of staged stereo-slot replacements. */
+export function countPendingEsxStereoSamplePatches(
+  pending: Map<number, EsxSamplePatchEntry>,
+): number {
+  return pending.size;
+}
+
+/**
+ * v3.32.0 — Apply all staged stereo-sample-patches to the loaded bank-buffer.
+ * Mirrors `commitEsxSamplePatches` but invokes `patchEsxBankSample` with
+ * `channels: 2` for each entry.
+ */
+export function commitEsxStereoSamplePatches(
+  bankBuffer: ArrayBuffer | Uint8Array,
+  pending: Map<number, EsxSamplePatchEntry>,
+): ArrayBuffer {
+  if (pending.size === 0) {
+    const src = bankBuffer instanceof Uint8Array ? bankBuffer : new Uint8Array(bankBuffer);
+    const out = new ArrayBuffer(src.byteLength);
+    new Uint8Array(out).set(src);
+    return out;
+  }
+  const indices = Array.from(pending.keys()).sort((a, b) => a - b);
+  let current: ArrayBuffer | Uint8Array = bankBuffer;
+  for (const idx of indices) {
+    const entry = pending.get(idx);
+    if (!entry) continue;
+    if (entry.channels !== 2) {
+      throw new Error(
+        `commitEsxStereoSamplePatches: entry at slot ${idx} has channels ${entry.channels}, expected 2`,
+      );
+    }
+    const patch: EsxSamplePatchInput = {
+      index: idx,
+      channels: 2,
+      pcmData: entry.pcmData,
+      sampleRate: entry.sampleRate,
+      name: entry.name,
+      level: entry.level,
+    };
+    current = patchEsxBankSample(current, patch);
+  }
+  return current instanceof ArrayBuffer
+    ? current
+    : (current as Uint8Array).buffer.slice(
+        (current as Uint8Array).byteOffset,
+        (current as Uint8Array).byteOffset + (current as Uint8Array).byteLength,
+      ) as ArrayBuffer;
+}
+
+/**
+ * v3.32.0 — Filter helper for stereo-sample-rows. Mirrors filterEsxSampleRows.
+ */
+export function filterEsxStereoSampleRows(
+  rows: ReadonlyArray<EsxStereoSampleSlotRow>,
+  query: string,
+  hideEmpty: boolean,
+): EsxStereoSampleSlotRow[] {
   const q = (query ?? "").trim().toLowerCase();
   return rows.filter((r) => {
     if (hideEmpty && r.empty) return false;
