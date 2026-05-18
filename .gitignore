@@ -121,3 +121,16 @@ temp/
 # Playwright E2E-Test-Ausgaben
 playwright-report/
 test-results/
+
+# User-private KORG hardware data (not for repo)
+/Korg ESX files/
+/Korg e2s files/
+/e2s-2016/
+/backup.esx
+*.e2spat
+*.e2sallpat
+*.ESX
+*.esx
+*.all
+!tests/fixtures/**/*.all
+
