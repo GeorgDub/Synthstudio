@@ -137,6 +137,46 @@ export function ZoomableWaveform({
     | null
   >(null);
 
+  // v3.71.0: RAF-Throttle für Loop-Marker-Drag.
+  // Closes v3.70-Caveat "Loop-Drag dispatched JEDEN move-Frame → setTrackLoopPoints flooded".
+  // Strategie: dragMoveRef speichert den NEUESTEN loopPoints-Wert, ein
+  // pendingRaf scheduled die echte onLoopChange-Auslieferung auf den nächsten
+  // Animation-Frame. Mehrere mousemove-Events im selben Frame collapsen damit
+  // auf EINE dispatch — typischerweise 60Hz max. Bei drop cancellt die
+  // useEffect-Cleanup den ausstehenden RAF.
+  const pendingLoopRef = useRef<LoopPoints | null>(null);
+  const pendingRafRef = useRef<number | null>(null);
+
+  const flushPendingLoop = useCallback(() => {
+    pendingRafRef.current = null;
+    const next = pendingLoopRef.current;
+    pendingLoopRef.current = null;
+    if (next && onLoopChange) {
+      onLoopChange(next);
+    }
+  }, [onLoopChange]);
+
+  const scheduleLoopUpdate = useCallback(
+    (next: LoopPoints) => {
+      pendingLoopRef.current = next;
+      if (pendingRafRef.current !== null) return; // already scheduled
+      if (typeof window === "undefined" || typeof requestAnimationFrame !== "function") {
+        // SSR/Test-Fallback: sofort flushen (kein RAF verfügbar).
+        flushPendingLoop();
+        return;
+      }
+      pendingRafRef.current = requestAnimationFrame(flushPendingLoop);
+    },
+    [flushPendingLoop],
+  );
+
+  const cancelPendingLoopRaf = useCallback(() => {
+    if (pendingRafRef.current !== null) {
+      try { cancelAnimationFrame(pendingRafRef.current); } catch { /* ignore */ }
+      pendingRafRef.current = null;
+    }
+  }, []);
+
   const totalSamples = channelData?.length ?? 0;
 
   // ── Peak-Cache (einmalig pro channelData) ──────────────────────────────────
@@ -387,21 +427,36 @@ export function ZoomableWaveform({
         }
       } else if (drag.kind === "loopStart" && loopPoints && onLoopChange) {
         const s = pixelToSample(xInCanvas, zoomState, totalSamples, viewportWidthPx);
-        const next = setLoopStartPure(loopPoints, s, totalSamples);
-        onLoopChange(next);
+        // v3.71.0: nehme den NEUESTEN bekannten Range (entweder pending oder
+        // committed) als Basis — damit mehrere Drags pro Frame nicht den
+        // gemarkten Marker auf den letzten committed-State zurückspringen.
+        const base = pendingLoopRef.current ?? loopPoints;
+        const next = setLoopStartPure(base, s, totalSamples);
+        scheduleLoopUpdate(next);
       } else if (drag.kind === "loopEnd" && loopPoints && onLoopChange) {
         const s = pixelToSample(xInCanvas, zoomState, totalSamples, viewportWidthPx);
-        const next = setLoopEndPure(loopPoints, s, totalSamples);
-        onLoopChange(next);
+        const base = pendingLoopRef.current ?? loopPoints;
+        const next = setLoopEndPure(base, s, totalSamples);
+        scheduleLoopUpdate(next);
       }
     };
     const up = () => {
       const drag = dragRef.current;
+      // v3.71.0: pending RAF cancellen — die Drop-Logik liefert den finalen
+      // Wert direkt (mit zero-crossing-Snap), kein extra RAF-Tick mehr nötig.
+      cancelPendingLoopRaf();
       // On drop: snap loop points to zero-crossing
       if (drag && (drag.kind === "loopStart" || drag.kind === "loopEnd")
-          && loopPoints && onLoopChange && channelData) {
-        const snapped = snapLoopPointsToZeroCrossing(loopPoints, channelData);
-        onLoopChange(snapped);
+          && onLoopChange && channelData) {
+        // Den allerletzten pending-Wert (sofern vorhanden) als Basis für den
+        // Snap nehmen, damit auch der allerletzte mousemove vor mouseup
+        // berücksichtigt wird (selbst wenn der RAF noch nicht gefeuert hat).
+        const base = pendingLoopRef.current ?? loopPoints;
+        pendingLoopRef.current = null;
+        if (base) {
+          const snapped = snapLoopPointsToZeroCrossing(base, channelData);
+          onLoopChange(snapped);
+        }
       }
       dragRef.current = null;
     };
@@ -410,8 +465,11 @@ export function ZoomableWaveform({
     return () => {
       window.removeEventListener("mousemove", move);
       window.removeEventListener("mouseup", up);
+      // Cleanup: pending RAF abbrechen damit kein dangling-Callback nach
+      // unmount feuert.
+      cancelPendingLoopRaf();
     };
-  }, [channelData, loopPoints, onLoopChange, totalSamples, viewportWidthPx, zoomState]);
+  }, [cancelPendingLoopRaf, channelData, loopPoints, onLoopChange, scheduleLoopUpdate, totalSamples, viewportWidthPx, zoomState]);
 
   // ── Keyboard ───────────────────────────────────────────────────────────────
   const handleKeyDown = useCallback(

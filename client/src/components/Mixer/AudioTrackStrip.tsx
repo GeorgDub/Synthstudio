@@ -1009,6 +1009,11 @@ function AudioTrackZoomEditor({
           loopStartSample: loop.loopStart,
           loopEndSample: loop.loopEnd,
         });
+        // v3.71.0: Live-Loop-Edit. Wenn der Track gerade spielt, restartet
+        // setAudioTrackLoopPoints die Source mit der neuen Range
+        // (Worklet-Pfad: postMessage; BufferSource-Pfad: Stop+Restart mit
+        // position-preservation falls innerhalb der neuen Range).
+        AudioEngine.setAudioTrackLoopPoints(trackId);
       }
     },
     [trackId],
@@ -1036,6 +1041,9 @@ function AudioTrackZoomEditor({
         loopStartSample: nextStart,
         loopEndSample: nextEnd,
       });
+      // v3.71.0: Live-Edit — falls Track gerade spielt, übernimmt die
+      // Engine die neue loopEnabled/-Range sofort.
+      AudioEngine.setAudioTrackLoopPoints(trackId);
     }
   }, [loopEnabled, loopStartSample, loopEndSample, totalSamples, trackId]);
 

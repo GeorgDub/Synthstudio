@@ -8,7 +8,9 @@
  * Messages (port):
  *   in:
  *     - { type: "setBuffer", channels: Float32Array[] }  // 1 (mono→up) oder 2 channels
- *     - { type: "setLoop",   loop: boolean }
+ *     - { type: "setLoop",   loop: boolean,
+ *                            loopStart?: number | null,
+ *                            loopEnd?: number | null }    // v3.71.0: optional range
  *     - { type: "seek",      samplePos: number }
  *   out:
  *     - { type: "position",  samplePos: number }         // ca. alle ~50ms
@@ -19,8 +21,18 @@
  *     (kanal-synchron für saubere Stereo-Imaging)
  *
  * Loop-Flag:
- *   - true (default): _readPos %= length (endlos)
+ *   - true (default): _readPos %= length (endlos) ODER %= range falls Range
+ *     gesetzt (v3.71.0 — Worklet-Pfad respektiert nun Loop-Range analog zum
+ *     BufferSource-Pfad).
  *   - false: bei Erreichen von length → silence (output fill 0)
+ *
+ * Loop-Range (v3.71.0):
+ *   - Wenn loopStart und loopEnd gesetzt sind (Number, >=0, end>start) und
+ *     loop=true: bei Erreichen von loopEnd wird _readPos zurück auf loopStart
+ *     gesetzt. Grain-Lesen wrappt entsprechend in [loopStart, loopEnd).
+ *   - Phase-Vocoder-State (_outAccums) wird NICHT geresettet — der Akku
+ *     trägt die Hann-Fenster-Überlappung über die Loop-Boundary, damit es
+ *     keinen Click gibt. Position-Report gibt den realen _readPos zurück.
  */
 class TimeStretchProcessor extends AudioWorkletProcessor {
   static get parameterDescriptors() {
@@ -45,6 +57,11 @@ class TimeStretchProcessor extends AudioWorkletProcessor {
     this._window = this._makeHann(this._GRAIN);
     this._loop = true;
     this._ended = false;
+    // v3.71.0: Loop-Range. null = ganzer Buffer.
+    /** @type {number | null} */
+    this._loopStart = null;
+    /** @type {number | null} */
+    this._loopEnd = null;
 
     // Position-Reporting throttle: ca. alle ~50ms (≈ 2200 samples bei 44.1kHz).
     this._posReportInterval = 2200;
@@ -77,6 +94,28 @@ class TimeStretchProcessor extends AudioWorkletProcessor {
           this._loop = !!msg.loop;
           // Wenn Loop wieder eingeschaltet wird, _ended reset.
           if (this._loop) this._ended = false;
+          // v3.71.0: Optional Loop-Range. null/undefined → ganzer Buffer.
+          const ls = msg.loopStart;
+          const le = msg.loopEnd;
+          if (
+            typeof ls === "number" && typeof le === "number"
+            && Number.isFinite(ls) && Number.isFinite(le)
+            && ls >= 0 && le > ls
+          ) {
+            this._loopStart = Math.floor(ls);
+            this._loopEnd = Math.floor(le);
+            // Wenn die aktuelle Position außerhalb der neuen Range liegt
+            // (Live-Edit-Fall) → an loopStart anker. Phase-Vocoder-Akku
+            // bleibt erhalten, damit der Übergang weich bleibt.
+            if (this._loop && (this._readPos < this._loopStart || this._readPos >= this._loopEnd)) {
+              this._readPos = this._loopStart;
+            }
+          } else if (ls === null || le === null) {
+            // Explizites Range-Clear.
+            this._loopStart = null;
+            this._loopEnd = null;
+          }
+          // Falls msg keine loopStart/loopEnd-Felder enthält: behalte alte Range.
           break;
         }
         case "seek": {
@@ -126,6 +165,16 @@ class TimeStretchProcessor extends AudioWorkletProcessor {
     const srcL = this._channels[0];
     const srcR = useStereo ? this._channels[1] : srcL;
 
+    // v3.71.0: effektive Loop-Boundary (Range falls gesetzt, sonst Buffer-Ende).
+    const hasRange = this._loop
+      && this._loopStart !== null
+      && this._loopEnd !== null
+      && this._loopEnd > this._loopStart
+      && this._loopEnd <= this._length;
+    const rangeStart = hasRange ? this._loopStart : 0;
+    const rangeEnd = hasRange ? this._loopEnd : this._length;
+    const rangeLen = rangeEnd - rangeStart;
+
     for (let i = 0; i < outLen; i++) {
       if ((this._outPos + i) % this._HOP_OUT === 0) {
         const startIn = Math.round(this._readPos);
@@ -137,7 +186,13 @@ class TimeStretchProcessor extends AudioWorkletProcessor {
             const srcIdx = startIn + j;
             let sampleL = 0;
             let sampleR = 0;
-            if (srcIdx < this._length) {
+            if (hasRange) {
+              // Loop-Range-Mode: wrap in [rangeStart, rangeEnd).
+              // (rangeLen > 0 garantiert durch hasRange-Check)
+              const wrapped = rangeStart + ((srcIdx - rangeStart) % rangeLen + rangeLen) % rangeLen;
+              sampleL = srcL[wrapped] || 0;
+              sampleR = useStereo ? (srcR[wrapped] || 0) : sampleL;
+            } else if (srcIdx < this._length) {
               sampleL = srcL[srcIdx];
               sampleR = useStereo ? srcR[srcIdx] : sampleL;
             } else if (this._loop) {
@@ -155,7 +210,12 @@ class TimeStretchProcessor extends AudioWorkletProcessor {
             this._outAccums[1][accumIdx] += sampleR * win;
           }
           this._readPos += hopIn;
-          if (this._readPos >= this._length) {
+          if (hasRange) {
+            // v3.71.0: Position-Wrap an der Range-Grenze, NICHT am Buffer-Ende.
+            if (this._readPos >= rangeEnd) {
+              this._readPos = rangeStart + ((this._readPos - rangeStart) % rangeLen);
+            }
+          } else if (this._readPos >= this._length) {
             if (this._loop) {
               this._readPos %= this._length;
             } else {

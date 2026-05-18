@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.70.0",
+    version: "3.71.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -89,6 +89,31 @@ const INDEX = {
   // ─── KNOWN FILE INDEX ──────────────────────────────────────
   // Key files agents have analyzed. Add new entries after working on a file.
   files: {
+    "tests/features/audio-loop-polish.test.ts (v3.71.0)": {
+      role:     "v3.71.0 NEU (~510 LOC, 12 Tests in 4 describes, env:node mit Mock-AudioContext + MockAudioWorkletNode + tickRaf-Helper). Closes v3.70-Caveats (Loop-Drag-Floods, Worklet-Loop-Range-bypass, Live-Edit-readonly). (1) RAF-Throttle × 4 — makeThrottle-Helper baut den Scheduler nach, mehrere schedules collapsen auf 1 flush mit latest-value, nach flush wieder bereit, cancel() verhindert flush, 60 rapide updates → 1 flush mit allerletztem Wert. (2) Worklet Loop-Range × 3 — pitchLocked+loopEnabled+range → setLoop-Message-Filter findet payload mit korrekten loopStart/loopEnd, ohne loopEnabled → loop=false + null, loopEnabled ohne Range → loop=true + null/null. (3) Live-Edit BufferSource × 4 — Stop+Restart mit neuer Range (alte src.__stopped=true, neue src.loopStart/loopEnd in Sekunden), Position-Preservation innerhalb new range (offset ~2.5s bleibt erhalten), Restart-at-loopStart wenn außerhalb (offset = 132300/SR), no-op wenn nicht playing (__createdSources.length unchanged). (4) Live-Edit Worklet × 1 — in-place postMessage ohne neuen Worklet-Node + exakt 1 zusätzlicher setLoop-Call mit aktualisierter Range.",
+      lastSeen: "2026-05-19T02:55:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/audio/worklets/TimeStretchProcessor.js (v3.71.0 loop-range)": {
+      role:     "v3.71.0 ERWEITERT (+~50 LOC, bestehende v1.19 WSOLA-Pipeline unverändert): NEU _loopStart/_loopEnd Instance-State (null=ganzer Buffer). setLoop-Message-Handler erweitert um optionale loopStart/loopEnd-Felder (Number, Finite, ls>=0, le>ls; null → clear; fehlend → unverändert). Live-Edit-Branch: wenn _readPos außerhalb der neuen Range liegt → anker an _loopStart (Phase-Vocoder-Akku _outAccums + _window bleibt erhalten damit Übergang click-frei). process() hat NEU hasRange-Branch: rangeStart/rangeEnd/rangeLen lokale Konstanten, Grain-Lesen mit Modulo-Wrap in [rangeStart, rangeEnd), Position-Wrap an rangeEnd statt _length. Backward-Compat: alte setLoop-Messages ohne Range → wrap am Buffer-Ende wie vorher.",
+      lastSeen: "2026-05-19T02:55:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/audio/AudioEngine.ts (v3.71.0 loop-live-edit)": {
+      role:     "v3.71.0 ERWEITERT (+~130 LOC): bestehende v3.70-Loop-Engine-Wiring (wantsLoopRange-Block in playAudioTrack) + v3.67/v3.63/v3.52 bleibt + NEU _computeWorkletLoopParams(data, opts) Pure-Helper — mirrors die wantsLoopRange-Logik des BufferSource-Pfads für die Worklet-Seite. _playAudioTrackViaWorklet sendet jetzt setLoop-Message MIT loopStart/loopEnd (closes v3.70-Caveat 'Worklet-Pfad ignoriert Loop-Range'). NEU public setAudioTrackLoopPoints(id): Worklet-Pfad postet setLoop in-place (kein Restart); BufferSource-Pfad berechnet aktuelle Position via _calcAudioTrackPlaybackRate aus audioTrackStartTimes-Meta, stoppt alte Source via _stopAudioTrackSource + _cleanupAudioTrackSource und ruft playAudioTrack mit startOffsetSec — Position bleibt preserved falls innerhalb der neuen Range, sonst restart bei loopStart. No-op wenn Track nicht aktiv (kein src + kein workletNode).",
+      lastSeen: "2026-05-19T02:55:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/components/AudioTrack/ZoomableWaveform.tsx (v3.71.0 raf-throttle)": {
+      role:     "v3.71.0 ERWEITERT (+~50 LOC, bestehende v3.67-Zoom/Scroll/Cursor/Loop-Math unverändert): RAF-Throttle für Loop-Marker-Drag. NEU pendingLoopRef (latest LoopPoints) + pendingRafRef (max 1 scheduled RAF) + flushPendingLoop/scheduleLoopUpdate/cancelPendingLoopRaf useCallback-Trio. mousemove-Handler ruft scheduleLoopUpdate(next) statt direkt onLoopChange — typischerweise ~60Hz statt vorher 200+Hz Flood. mouseup cancelt pending RAF + liefert finalen Wert via snapToZeroCrossing direkt (kein extra Tick). useEffect-Cleanup cancelt pending RAF beim Unmount → kein dangling-Callback. Drag nutzt pendingLoopRef.current ?? loopPoints als Basis damit mehrere Drags-pro-Frame nicht auf den committed-State zurückspringen. SSR/Test-Fallback: kein RAF → sofortiger flushPendingLoop.",
+      lastSeen: "2026-05-19T02:55:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/components/Mixer/AudioTrackStrip.tsx (v3.71.0 live-loop-call)": {
+      role:     "v3.71.0 ERWEITERT (+~4 LOC im AudioTrackZoomEditor): bestehende v3.70-Loop-UI (Toggle + Range-Badge + ZoomableWaveform-Mount) + v3.67/v3.63 bleibt + NEU handleLoopChange und handleEnableLoopToggle rufen nach AudioEngine.registerAudioTrack zusätzlich AudioEngine.setAudioTrackLoopPoints(trackId) damit Live-Edit sofort greift wenn der Track gerade spielt (Worklet: in-place postMessage; BufferSource: Stop+Restart mit position-preservation).",
+      lastSeen: "2026-05-19T02:55:00.000Z",
+      ownedBy:  "frontend"
+    },
     "client/src/utils/quickActionContextRegistry.ts (v3.69.0)": {
       role:     "v3.69.0 NEU (~40 LOC, Pure-Modul analog autoBackupController-Registry): Globale Registry für den aktiven QuickActionContext. Public-API: registerQuickActionContext(ctx|null) idempotent, getRegisteredQuickActionContext() → QuickActionContext|null, __resetQuickActionContextRegistryForTests. App.tsx registriert den im useMemo-gewireten Context beim Mount + setzt auf null beim Unmount (useEffect-Cleanup). MacroEditor in der SettingsPanel-Sidebar liest ihn ohne Prop-Drilling für den 'Test'-Button. Pattern erlaubt tief-verschachtelten Komponenten Zugriff ohne Context-Provider-Boilerplate.",
       lastSeen: "2026-05-19T01:30:00.000Z",
@@ -2042,6 +2067,33 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "backend",
+      timestamp: "2026-05-19T02:55:00.000Z",
+      done: [
+        "v3.71.0: Loop-Drag-Throttle (RAF) + Worklet Loop-Range + Live-Loop-Edit — closes alle 3 v3.70-Caveats. (1) ZoomableWaveform.tsx Loop-Drag wird jetzt via requestAnimationFrame batched: pendingLoopRef speichert latest LoopPoints + pendingRafRef hält EINEN scheduled-RAF gleichzeitig. Mehrere mousemove-Events im selben Frame collapsen damit auf EINEN onLoopChange-Dispatch — typischerweise 60Hz statt vorher 200+Hz an setTrackLoopPoints-Floods. cancelPendingLoopRaf cleant pending RAF beim drop + unmount damit kein dangling-Callback feuert. SSR/Test-Fallback: kein RAF verfügbar → sofortiger flushPendingLoop. (2) AudioEngine._playAudioTrackViaWorklet schickt jetzt setLoop-Message MIT loopStart/loopEnd-Range; neue Pure-fn _computeWorkletLoopParams(data, opts) mirrors die wantsLoopRange-Logik des BufferSource-Pfads. (3) TimeStretchProcessor.js Worklet wrappt im hasRange-Branch jetzt in [loopStart, loopEnd) statt am Buffer-Ende — Phase-Vocoder-Akku (_outAccums + _window) bleibt erhalten über die Loop-Boundary damit es keinen Click gibt. Bei setLoop mit Range außerhalb der aktuellen _readPos → seek an loopStart anker. (4) NEU public AudioEngine.setAudioTrackLoopPoints(id) für Live-Edit: Worklet-Pfad postet setLoop in-place (kein Restart); BufferSource-Pfad stoppt alte Source + restarted mit neuer Range, dabei wird die aktuelle Wiedergabe-Position via _calcAudioTrackPlaybackRate berechnet — falls innerhalb der neuen Range bleibt sie preserved, sonst restart bei loopStart. No-op wenn Track nicht spielt.",
+        "client/src/components/AudioTrack/ZoomableWaveform.tsx (~+50 LOC): pendingLoopRef + pendingRafRef + flushPendingLoop/scheduleLoopUpdate/cancelPendingLoopRaf useCallback-Trio. mousemove-Handler ruft scheduleLoopUpdate statt direkt onLoopChange. mouseup cancelt pending RAF + liefert den finalen Wert via snapToZeroCrossing direkt aus (kein extra Tick). useEffect-Cleanup cancelt pending RAF beim Unmount. Drag liest pendingLoopRef.current ?? loopPoints als Basis — verhindert dass mehrere Drags-pro-Frame auf den committed-State zurückspringen.",
+        "client/src/audio/AudioEngine.ts (~+130 LOC): NEU _computeWorkletLoopParams(data, opts) Pure-Helper + NEU public setAudioTrackLoopPoints(id) Live-Edit-Method (Worklet-Pfad: postMessage; BufferSource-Pfad: Stop+Restart mit position-preservation falls innerhalb new range, sonst restart bei loopStart). _playAudioTrackViaWorklet sendet setLoop nun MIT loopStart/loopEnd statt nur boolean.",
+        "client/src/audio/worklets/TimeStretchProcessor.js (~+50 LOC): setLoop-Message-Handler erweitert um optional loopStart/loopEnd (Number, Finite, end>start, start>=0; null clear). _loopStart/_loopEnd Instance-State. Live-Edit-Branch: wenn _readPos außerhalb der neuen Range liegt → anker an _loopStart (Phase-Vocoder-State bleibt erhalten für click-freies Übergang). process() hat hasRange-Branch: Grain-Lesen + Position-Wrap in [rangeStart, rangeEnd) statt [0, _length). Backward-Compat: kein loopStart/End-Feld in Message → behält alte Range (oder kein Range falls nie gesetzt).",
+        "client/src/components/Mixer/AudioTrackStrip.tsx (+~4 LOC): handleLoopChange + handleEnableLoopToggle rufen nach registerAudioTrack zusätzlich AudioEngine.setAudioTrackLoopPoints(trackId) — Live-Edit greift sofort wenn der Track gerade spielt.",
+        "tests/features/audio-loop-polish.test.ts NEU (~510 LOC, 12 Tests in 4 describes, env:node mit Mock-AudioContext + MockAudioWorkletNode + tickRaf-Helper): (1) RAF-Throttle × 4 — mehrere schedules collapsen auf 1 flush mit latest-value, nach flush ist scheduler wieder bereit, cancel() verhindert flush, 60 rapide updates → 1 flush mit allerletztem Wert. (2) Worklet Loop-Range × 3 — pitchLocked+loopEnabled+range → setLoop-Message mit loopStart/loopEnd, ohne loopEnabled → loop=false + null, loopEnabled ohne Range → loop=true + null/null. (3) Live-Edit BufferSource × 4 — Stop+Restart mit neuer Range, Position-Preservation innerhalb new range, Restart-at-loopStart wenn außerhalb, no-op wenn nicht playing. (4) Live-Edit Worklet × 1 — in-place postMessage ohne neuen Worklet-Node + exakt 1 zusätzlicher setLoop-Call.",
+        "package.json (3.70.0 → 3.71.0). pnpm check clean. pnpm test grün: 217 Test-Files / 5010 Tests passed (16 skipped, +12 NEU vs. v3.70)."
+      ],
+      next: [
+        "v3.72: Loop-Crossfade beim Wrap-Around. Aktuell macht AudioBufferSourceNode einen harten Cut bei loopEnd → loopStart was bei nicht-zero-crossing-snapped Marken Click-Artefakte erzeugt. Lösung: Loop-Range-getriggertes Gain-Envelope mit 5-20ms Fade-Out vor loopEnd + Fade-In nach loopStart (BufferSource: zusätzlicher Gain-Node + scheduled ramps; Worklet: in-Processor Cross-Fade-Window).",
+        "v3.72: setAudioTrackLoopPoints Worklet-Pfad nutzt aktuell die Loop-Range-Wrap im Processor — bei sehr kurzen Ranges (< _GRAIN=2048 Samples) wird der Phase-Vocoder-Akku überlappen und es kann zu Aliasing kommen. Lösung: Minimum-Range-Check in _computeWorkletLoopParams (Range < GRAIN_SIZE → fallback auf full buffer + console.warn).",
+        "v3.72: Snap-to-Beat statt nur Zero-Crossing — wenn Track originalBpm/bpmHint gesetzt hat, kann der Loop-Marker auf 1/4/1/8/1/16-Beat-Grid snappen. Pure-fn-Helper in waveformZoom.ts: snapToBeat(sample, sampleRate, bpm, subdivision).",
+        "v3.72: Loop-Preview-Button im ZoomEditor — kleiner 'Loop-Preview'-Button der den Track temporär startet damit User die Loop hören kann ohne den globalen Transport zu nutzen."
+      ],
+      changed: [
+        "client/src/components/AudioTrack/ZoomableWaveform.tsx (+~50 LOC RAF-Throttle: pendingLoopRef/pendingRafRef + flushPendingLoop/scheduleLoopUpdate/cancelPendingLoopRaf + mousemove/mouseup-Wiring + Cleanup)",
+        "client/src/audio/AudioEngine.ts (+~130 LOC: _computeWorkletLoopParams + setAudioTrackLoopPoints + _playAudioTrackViaWorklet setLoop-Range)",
+        "client/src/audio/worklets/TimeStretchProcessor.js (+~50 LOC: _loopStart/_loopEnd State + setLoop-Range-Message + process() hasRange-Branch mit Wrap in [rangeStart, rangeEnd))",
+        "client/src/components/Mixer/AudioTrackStrip.tsx (+~4 LOC: setAudioTrackLoopPoints-Call in handleLoopChange + handleEnableLoopToggle)",
+        "tests/features/audio-loop-polish.test.ts (NEU ~510 LOC: 12 Tests in 4 describes)",
+        "package.json (3.70.0 → 3.71.0)"
+      ]
+    },
     {
       agent:     "backend",
       timestamp: "2026-05-19T02:10:00.000Z",

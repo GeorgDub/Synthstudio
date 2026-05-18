@@ -2797,10 +2797,17 @@ class AudioEngineClass {
     }
 
     // Loop-Flag + Buffer initial setzen.
-    const wantLoop = opts?.loop ?? data?.loop ?? false;
+    // v3.71.0: Worklet-Pfad respektiert nun Loop-Range analog zum BufferSource-
+    // Pfad — closes v3.70-Caveat "Worklet-Pfad ignoriert Loop-Range".
+    const loopParams = this._computeWorkletLoopParams(data, opts);
     try {
       node.port.postMessage({ type: "setBuffer", channels });
-      node.port.postMessage({ type: "setLoop", loop: wantLoop });
+      node.port.postMessage({
+        type: "setLoop",
+        loop: loopParams.loop,
+        loopStart: loopParams.loopStart,
+        loopEnd: loopParams.loopEnd,
+      });
     } catch (err) {
       console.warn("[AudioEngine] timestretch: postMessage(setBuffer) failed:", err);
     }
@@ -3114,6 +3121,119 @@ class AudioEngineClass {
     if (data.syncMode === "timestretch") return true;
     if (data.pitchLocked === true) return true;
     return false;
+  }
+
+  /**
+   * v3.71.0: Berechnet Loop-Parameter für die Worklet-postMessage(setLoop)-
+   * Payload. Mirrors die wantsLoopRange-Logik aus dem BufferSource-Pfad damit
+   * beide Engines konsistent loopen. Pure-fn — kein State.
+   *
+   * - loopEnabled=true + valid range → {loop:true, loopStart, loopEnd} (Sample-Indizes)
+   * - loopEnabled=true ohne valid range → {loop:true, loopStart:null, loopEnd:null}
+   * - sonst → legacy {loop: opts?.loop ?? data.loop ?? false, …null}
+   */
+  private _computeWorkletLoopParams(
+    data: AudioTrackChannelData | undefined,
+    opts?: { loop?: boolean },
+  ): { loop: boolean; loopStart: number | null; loopEnd: number | null } {
+    const wantsRange =
+      data?.loopEnabled === true
+      && typeof data?.loopStartSample === "number"
+      && typeof data?.loopEndSample === "number"
+      && Number.isFinite(data.loopStartSample as number)
+      && Number.isFinite(data.loopEndSample as number)
+      && (data.loopStartSample as number) >= 0
+      && (data.loopEndSample as number) > (data.loopStartSample as number);
+    if (wantsRange) {
+      return {
+        loop: true,
+        loopStart: data!.loopStartSample as number,
+        loopEnd: data!.loopEndSample as number,
+      };
+    }
+    if (data?.loopEnabled === true) {
+      return { loop: true, loopStart: null, loopEnd: null };
+    }
+    return {
+      loop: opts?.loop ?? data?.loop ?? false,
+      loopStart: null,
+      loopEnd: null,
+    };
+  }
+
+  /**
+   * v3.71.0: Live-Edit von Loop-Range bei laufender Wiedergabe.
+   *
+   * - Buffer-Source-Pfad: AudioBufferSourceNode.loop/loopStart/loopEnd sind
+   *   read-only NACH start() in vielen Browsern — wir restarten die Source
+   *   mit der neuen Range. Position wird preserved falls sie innerhalb der
+   *   neuen Range liegt, sonst restart from new loopStart.
+   * - Worklet-Pfad: postMessage(setLoop) mit neuer Range — keine Restart
+   *   nötig (der Processor wrappt live an der neuen Boundary).
+   *
+   * `data` wird vorher zwingend via registerAudioTrack aktualisiert (Caller-
+   * Verantwortung — analog zu setAudioTrackVolume/Pan etc.).
+   */
+  setAudioTrackLoopPoints(id: string): void {
+    if (!this.ctx) return;
+    const data = this.audioTrackData.get(id);
+    const buf = this.audioTrackBuffers.get(id);
+    if (!data || !buf) return;
+
+    // Worklet aktiv → in-place update via postMessage.
+    const workletNode = this.audioTrackWorkletNodes.get(id);
+    if (workletNode) {
+      const params = this._computeWorkletLoopParams(data);
+      try {
+        workletNode.port.postMessage({
+          type: "setLoop",
+          loop: params.loop,
+          loopStart: params.loopStart,
+          loopEnd: params.loopEnd,
+        });
+      } catch (err) {
+        console.warn("[AudioEngine] setAudioTrackLoopPoints worklet error:", err);
+      }
+      return;
+    }
+
+    // BufferSource aktiv → Stop+Restart mit position-preservation.
+    const src = this.audioTrackSources.get(id);
+    const startMeta = this.audioTrackStartTimes.get(id);
+    if (!src || !startMeta) return;
+
+    // Aktuelle Position in Sekunden berechnen (analog zu rAF-Tick).
+    const rate = this._calcAudioTrackPlaybackRate(data);
+    const elapsedCtx = this.ctx.currentTime - startMeta.ctxStart;
+    const currentSec = Math.max(0, startMeta.offsetSec + elapsedCtx * rate);
+
+    // Falls neue Range gesetzt + currentSec außerhalb → restart bei loopStart.
+    const sr = buf.sampleRate || 44100;
+    const totalSec = buf.duration;
+    const lsSec =
+      typeof data.loopStartSample === "number" && Number.isFinite(data.loopStartSample)
+        ? Math.max(0, Math.min(totalSec, data.loopStartSample / sr))
+        : null;
+    const leSec =
+      typeof data.loopEndSample === "number" && Number.isFinite(data.loopEndSample)
+        ? Math.max(0, Math.min(totalSec, data.loopEndSample / sr))
+        : null;
+
+    let restartSec = currentSec;
+    if (
+      data.loopEnabled === true
+      && lsSec !== null
+      && leSec !== null
+      && leSec > lsSec
+      && (currentSec < lsSec || currentSec >= leSec)
+    ) {
+      restartSec = lsSec;
+    }
+
+    // Restart mit aktualisierter Range. playAudioTrack stoppt vorher die alte
+    // Source via _stopAudioTrackSource + cleanup; die neue Source liest die
+    // frischen loopEnabled/loopStartSample/loopEndSample-Werte aus data.
+    this.playAudioTrack(id, { startOffsetSec: restartSec });
   }
 
   private _updateAudioTrackPlaybackRates(): void {
