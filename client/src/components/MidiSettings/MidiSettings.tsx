@@ -23,6 +23,8 @@ import {
   loadPadBankSlots,
   savePadBankSlots,
   defaultPadBankSlots,
+  sliceAutoConfigureSlots,
+  PAD_BANK_SLICE_MAX,
   type PadBankSlot,
   type PadBankSlotKind,
 } from "@/utils/padBankPersistence";
@@ -452,12 +454,16 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
    * v2.79: Pad-Bank-Slot → konkretes UI-Label für die Auto-Learn-Progress-
    * Karte und den Builder selbst.
    */
-  function padBankSlotLabel(slot: { kind: "perf-pad" | "macro" | "script" | "action"; param: string }): string {
+  function padBankSlotLabel(slot: { kind: PadBankSlotKind; param: string }): string {
     if (slot.kind === "perf-pad")  return `Perf-Pad ${Number(slot.param) + 1}`;
     if (slot.kind === "macro")     return `Macro ${Number(slot.param) + 1}`;
     if (slot.kind === "script") {
       const s = scripts.find((x) => x.id === slot.param);
       return s ? `Script: ${s.name}` : "Script: (unbekannt)";
+    }
+    if (slot.kind === "slice") {
+      const idx = Number(slot.param);
+      return Number.isFinite(idx) ? `Slice-Pad ${idx + 1}` : "Slice-Pad (invalid)";
     }
     // action
     const a = findChainAction(slot.param);
@@ -469,7 +475,7 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
    * Bei perf-pad: legacy-Path über performancePadIndex (kein target nötig).
    * Bei anderen Kinds: target wird gesetzt, applyMapping greift im Note-Handler.
    */
-  function padBankSlotToEntry(slot: { kind: "perf-pad" | "macro" | "script" | "action"; param: string }, index: number): AutoLearnEntry | null {
+  function padBankSlotToEntry(slot: { kind: PadBankSlotKind; param: string }, index: number): AutoLearnEntry | null {
     const partId = `pad-bank-${index}`;
     const partName = padBankSlotLabel(slot);
     if (slot.kind === "perf-pad") {
@@ -486,6 +492,15 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
       if (!slot.param) return null;
       const s = scripts.find((x) => x.id === slot.param);
       return { kind: "note", partId, partName, target: { type: "runScript", scriptId: slot.param, scriptName: s?.name } };
+    }
+    if (slot.kind === "slice") {
+      // v2.91: Slice-Index 0..15 → playSlicePad-Target. Out-of-range wird
+      // auf 0..MAX-1 geclampt damit AutoLearn nicht stillschweigend einen
+      // Slot ueberspringt (User-Experience: lieber das nahe Pad lernen).
+      const raw = Number(slot.param);
+      if (!Number.isFinite(raw)) return null;
+      const sliceIndex = Math.max(0, Math.min(PAD_BANK_SLICE_MAX - 1, Math.trunc(raw)));
+      return { kind: "note", partId, partName, target: { type: "playSlicePad", sliceIndex } };
     }
     // action
     const action = findChainAction(slot.param);
@@ -508,7 +523,7 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
   function removePadBankSlot(index: number) {
     setPadBankSlots((prev) => prev.filter((_, i) => i !== index));
   }
-  function updatePadBankSlot(index: number, changes: Partial<{ kind: "perf-pad" | "macro" | "script" | "action"; param: string }>) {
+  function updatePadBankSlot(index: number, changes: Partial<{ kind: PadBankSlotKind; param: string }>) {
     setPadBankSlots((prev) =>
       prev.map((s, i) => {
         if (i !== index) return s;
@@ -519,6 +534,8 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
           else if (changes.kind === "macro") next.param = String(Math.min(7, i));
           else if (changes.kind === "script") next.param = scripts[0]?.id ?? "";
           else if (changes.kind === "action") next.param = CHAIN_BUILDER_ACTIONS[0].key;
+          // v2.91: slice — 1:1-Mapping pad-index → slice-index (intuitiv)
+          else if (changes.kind === "slice")  next.param = String(Math.min(PAD_BANK_SLICE_MAX - 1, i));
         }
         return next;
       })
@@ -526,6 +543,15 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
   }
   function resetPadBankSlots() {
     setPadBankSlots(defaultPadBankSlots());
+  }
+
+  /**
+   * v2.91 (TASK-238-FOLLOWUP-1B): Quick-Action — füllt alle 16 Slots mit
+   * Slice-Pad-Targets {kind:slice, sliceIndex: 0..15}. Damit ist nach einem
+   * Sample-Slice direkt das Pad-Bank-Mapping fertig konfiguriert.
+   */
+  function sliceAutoConfigurePadBank() {
+    setPadBankSlots(sliceAutoConfigureSlots());
   }
 
   const autoLearnPresets: Array<{ label: string; description: string; build: () => AutoLearnEntry[] }> = [
@@ -1086,9 +1112,10 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
             <div data-testid="pad-bank-builder" className="space-y-2 p-3 bg-bg-elevated/50 rounded border border-border-color">
               <div className="text-xs text-text-dim">
                 Pro Hardware-Pad einen Target-Typ wählen (Perf-Pad/Macro/Script/
-                Action), dann "Start Auto-Learn" klicken und die Pads in
+                Action/Slice), dann "Start Auto-Learn" klicken und die Pads in
                 Reihenfolge drücken. Default sind 16 Perf-Pad-Slots — ändere/
-                lösche/füge Slots nach Bedarf hinzu.
+                lösche/füge Slots nach Bedarf hinzu. <b>Slice</b> triggert einen
+                Slice-Buffer aus dem Sample-Slicer (v2.91).
               </div>
 
               <div className="space-y-1 max-h-72 overflow-y-auto" data-testid="pad-bank-slots">
@@ -1103,7 +1130,7 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
                     <span className="text-[10px] text-text-dim font-mono w-6">#{idx + 1}</span>
                     <select
                       value={slot.kind}
-                      onChange={(e) => updatePadBankSlot(idx, { kind: e.target.value as "perf-pad" | "macro" | "script" | "action" })}
+                      onChange={(e) => updatePadBankSlot(idx, { kind: e.target.value as PadBankSlotKind })}
                       data-testid={`pad-bank-slot-kind-${idx}`}
                       className="px-1.5 py-1 bg-bg-elevated border border-border-color rounded text-[11px] text-text-primary"
                     >
@@ -1111,6 +1138,7 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
                       <option value="macro">Macro</option>
                       <option value="script">Script</option>
                       <option value="action">Action</option>
+                      <option value="slice">Slice</option>
                     </select>
                     {slot.kind === "perf-pad" && (
                       <select
@@ -1166,6 +1194,18 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
                         ))}
                       </select>
                     )}
+                    {slot.kind === "slice" && (
+                      <select
+                        value={slot.param}
+                        onChange={(e) => updatePadBankSlot(idx, { param: e.target.value })}
+                        data-testid={`pad-bank-slot-param-${idx}`}
+                        className="flex-1 px-1.5 py-1 bg-bg-elevated border border-border-color rounded text-[11px] text-text-primary"
+                      >
+                        {Array.from({ length: PAD_BANK_SLICE_MAX }, (_, i) => (
+                          <option key={i} value={String(i)}>Slice-Pad {i + 1}</option>
+                        ))}
+                      </select>
+                    )}
                     <button
                       onClick={() => removePadBankSlot(idx)}
                       data-testid={`pad-bank-slot-remove-${idx}`}
@@ -1196,9 +1236,17 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
                   ▶ Start Auto-Learn ({padBankSlots.length})
                 </button>
                 <button
+                  onClick={sliceAutoConfigurePadBank}
+                  data-testid="pad-bank-slice-auto"
+                  className="px-3 py-1 text-xs bg-accent-primary/20 hover:bg-accent-primary/40 text-text-primary rounded transition-colors ml-auto"
+                  title="Belegt alle 16 Slots mit Slice-Pad 1..16 (v2.91 — füllt das Pad-Bank nach einem Sample-Slice automatisch)"
+                >
+                  🎯 Slices → Pads (Auto)
+                </button>
+                <button
                   onClick={resetPadBankSlots}
                   data-testid="pad-bank-reset"
-                  className="px-3 py-1 text-xs text-text-muted hover:text-text-primary ml-auto"
+                  className="px-3 py-1 text-xs text-text-muted hover:text-text-primary"
                   title="Auf 16 Perf-Pad-Slots zurücksetzen"
                 >
                   Reset (16 Perf-Pads)

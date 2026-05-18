@@ -114,7 +114,15 @@ export type MidiLearnTarget =
    * Erase: setzt einen Loop unconditional zurück auf empty.
    * Long-Press im UI mappt darauf, oder ein eigener MIDI-Trigger.
    */
-  | { type: "loopErase"; loopIndex: number };
+  | { type: "loopErase"; loopIndex: number }
+  // ── Sample-Slice-Pad (v2.91 / TASK-238-FOLLOWUP-1B) ───────────────────────
+  /**
+   * Spielt einen in `useSlicePadStore` abgelegten Slice-Buffer ab. CC>63 oder
+   * Note-On feuern ein "midi:slicePad" CustomEvent mit `{ sliceIndex }`. App.tsx
+   * konsumiert es und ruft `AudioEngine.playSliceBuffer(slot.buffer, slot.sampleRate)`.
+   * sliceIndex ist 0..15 (entspricht MAX_SLICE_PADS).
+   */
+  | { type: "playSlicePad"; sliceIndex: number };
 
 /** Ein Schritt in einer Function-Chain (v1.77). */
 export interface ChainStep {
@@ -349,6 +357,7 @@ export function labelForTarget(target: MidiLearnTarget): string {
     case "chain":           return `Chain: ${target.label} (${target.steps.length} Schritte)`;
     case "loopTrigger":     return `Loop ${target.loopIndex + 1} Trigger`;
     case "loopErase":       return `Loop ${target.loopIndex + 1} Erase`;
+    case "playSlicePad":    return `Slice-Pad ${target.sliceIndex + 1}`;
     default:                return "Unbekannt";
   }
 }
@@ -392,6 +401,8 @@ export function targetsMatch(a: MidiLearnTarget, b: MidiLearnTarget): boolean {
     case "loopTrigger":
     case "loopErase":
       return a.loopIndex === (b as { loopIndex: number }).loopIndex;
+    case "playSlicePad":
+      return a.sliceIndex === (b as { sliceIndex: number }).sliceIndex;
     default:
       // Single-target types ohne Param: bpm, playStop, record, tapTempo,
       // bpmUp, bpmDown, masterVolume, partUp, partDown, patternNext,
@@ -1007,6 +1018,11 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
       case "loopErase": if (on) {
         // v2.87 (TASK-235): Loop-Erase via dedizierter MIDI-Action.
         window.dispatchEvent(new CustomEvent("midi:loopErase", { detail: t.loopIndex }));
+      } break;
+      case "playSlicePad": if (on) {
+        // v2.91 (TASK-238-FOLLOWUP-1B): Slice-Pad-Trigger. App.tsx liest
+        // useSlicePadStore und ruft AudioEngine.playSliceBuffer.
+        window.dispatchEvent(new CustomEvent("midi:slicePad", { detail: t.sliceIndex }));
       } break;
     }
   }

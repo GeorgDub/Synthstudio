@@ -81,6 +81,8 @@ export const VALID_TARGET_TYPES = new Set<string>([
   "send",
   // v2.87 (TASK-235): Live-Looper Pad/Footswitch-Targets
   "loopTrigger", "loopErase",
+  // v2.91 (TASK-238-FOLLOWUP-1B): Sample-Slice-Pad-Trigger
+  "playSlicePad",
 ]);
 
 export interface ParsedMidiLayout {

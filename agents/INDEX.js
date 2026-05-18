@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "2.90.0",
+    version: "2.91.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -83,6 +83,36 @@ const INDEX = {
   // ─── KNOWN FILE INDEX ──────────────────────────────────────
   // Key files agents have analyzed. Add new entries after working on a file.
   files: {
+    "client/src/utils/padBankPersistence.ts (TASK-238-FOLLOWUP-1B v2.91)": {
+      role:     "v2.91: PadBankSlotKind union +'slice', VALID_KINDS-Set entsprechend. +Const PAD_BANK_SLICE_MAX=16 (spiegelt MAX_SLICE_PADS). +sliceAutoConfigureSlots() liefert 16 {kind:'slice', param:'0'..'15'}-Slots fuer Quick-Action 'Slices → Pads (Auto)'.",
+      lastSeen: "2026-05-18T02:50:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/hooks/useMidi.ts (TASK-238-FOLLOWUP-1B playSlicePad)": {
+      role:     "v2.91: MidiLearnTarget union erweitert um {type:'playSlicePad', sliceIndex:number}. labelForTarget liefert 'Slice-Pad N' (1-indexed), targetsMatch vergleicht sliceIndex, applyMapping dispatcht CustomEvent 'midi:slicePad' (detail=sliceIndex) auf CC>63 / Note-On.",
+      lastSeen: "2026-05-18T02:50:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/utils/midiLayoutImport.ts (TASK-238-FOLLOWUP-1B)": {
+      role:     "v2.91: VALID_TARGET_TYPES Set +'playSlicePad' fuer Layout-Import/Export Round-Trip.",
+      lastSeen: "2026-05-18T02:50:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/App.tsx (TASK-238-FOLLOWUP-1B midi:slicePad)": {
+      role:     "v2.91: +useEffect-Listener auf 'midi:slicePad'-CustomEvent. Liest getSlicePadSlot(sliceIndex) aus useSlicePadStore, ruft AudioEngine.playSliceBuffer(slot.buffer, slot.sampleRate). Defensive: kein-Op wenn slot null oder buffer null. getSlicePadSlot zum bestehenden useSlicePadStore-Import hinzu.",
+      lastSeen: "2026-05-18T02:50:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/components/MidiSettings/MidiSettings.tsx (TASK-238-FOLLOWUP-1B Slice-Picker + Auto-Configure)": {
+      role:     "v2.91: Pad-Bank-Builder — 'Slice'-Option im Kind-Dropdown, neuer slice-Param-Picker (16-Optionen-<select> 'Slice-Pad N'). padBankSlotLabel/padBankSlotToEntry/updatePadBankSlot um slice-Branch erweitert (Clamp-Policy 0..PAD_BANK_SLICE_MAX-1). Neuer Quick-Action-Button '🎯 Slices → Pads (Auto)' (data-testid=pad-bank-slice-auto, position ml-auto vor Reset) ruft sliceAutoConfigurePadBank → fuellt alle 16 Slots in einem Klick.",
+      lastSeen: "2026-05-18T02:50:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "tests/features/slice-pad-kind.test.ts (v2.91)": {
+      role:     "TASK-238-FOLLOWUP-1B / v2.91: 15 Unit-Tests fuer Slice-Pad-Kind. Schema-Validierung (isValidPadBankSlot akzeptiert kind=slice / lehnt non-string param ab), PAD_BANK_SLICE_MAX===MAX_SLICE_PADS===16, sliceAutoConfigureSlots() korrekt 16 Slots, localStorage Round-Trip + Back-Compat Pre-v2.91, labelForTarget/targetsMatch fuer playSlicePad inkl. Cross-Type-Verwechslungsschutz, End-to-End-Simulation des App-Listeners mit playSliceBuffer-Spy, Out-of-range sliceIndex liefert null.",
+      lastSeen: "2026-05-18T02:50:00.000Z",
+      ownedBy:  "frontend"
+    },
     "client/src/utils/sampleSlicing.ts": {
       role:     "TASK-238 / v2.89: Pure-fn Sample-Slicing-Layer. autoSlice / detectOnsetsSpectralFlux / snapToZeroCrossing / onsetsToSlices / splitChannelDataAtSlices / mapSlicesToPads / addOnset / moveOnset / removeOnset + Types OnsetCandidate/SliceSpec/PadAssignment + MAX_PERFORMANCE_PADS=16. Keine React/Web-Audio-Abhaengigkeit, 23 Unit-Tests.",
       lastSeen: "2026-05-18T02:25:00.000Z",
@@ -771,6 +801,32 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "frontend",
+      timestamp: "2026-05-18T02:50:00.000Z",
+      done: [
+        "v2.91.0: Slice-Pad-Kind — vollständiger Sample-Slice-Workflow (TASK-238-FOLLOWUP-1B done). (1) padBankPersistence.ts: PadBankSlotKind union um 'slice' erweitert, VALID_KINDS-Set entsprechend, neue Konstante PAD_BANK_SLICE_MAX=16 (spiegelt MAX_SLICE_PADS aus useSlicePadStore), neue Helper sliceAutoConfigureSlots() liefert 16 Slice-Pads-Slots {kind:'slice', param:'0'..'15'} fuer Quick-Action. isValidPadBankSlot bleibt shape-Validierung (param=string), Bound-Check geschieht beim Trigger via Clamp. (2) useMidi.ts: neue MidiLearnTarget-Variante {type:'playSlicePad', sliceIndex:number}. labelForTarget liefert 'Slice-Pad N' (1-indexed). targetsMatch vergleicht sliceIndex. applyMapping dispatcht CustomEvent 'midi:slicePad' (detail=sliceIndex) auf CC>63 / Note-On. (3) midiLayoutImport.ts: VALID_TARGET_TYPES um 'playSlicePad' erweitert, damit Layout-Import/Export Round-Trip-faehig bleibt. (4) App.tsx: neuer useEffect-Listener auf 'midi:slicePad' → liest getSlicePadSlot(sliceIndex) → ruft AudioEngine.playSliceBuffer(slot.buffer, slot.sampleRate). Defensive null/buffer-Check, out-of-range silent ignored. (5) MidiSettings.tsx Pad-Bank-Builder: neue Dropdown-Option 'Slice' im pad-bank-slot-kind-Select. Wenn kind='slice' gewaehlt: 16-Optionen-<select> mit 'Slice-Pad N'-Labels (data-testid bleibt pad-bank-slot-param-{idx}). updatePadBankSlot setzt Default sliceIndex=i (1:1 pad-index → slice-index, intuitiv). padBankSlotLabel + padBankSlotToEntry um slice-Branch erweitert (Clamp auf 0..PAD_BANK_SLICE_MAX-1 falls param ausser Range — Tests dokumentieren das). Builder-Description nennt jetzt 'Slice' im Toolbox-Hint. Neue Quick-Action-Button '🎯 Slices → Pads (Auto)' (data-testid=pad-bank-slice-auto) ruft sliceAutoConfigurePadBank()=setPadBankSlots(sliceAutoConfigureSlots()) — fuellt alle 16 Slots in einem Klick. Position: ml-auto vor dem Reset-Button. (6) tests/features/slice-pad-kind.test.ts (NEU, 15 Cases): (a) Schema-Validierung kind=slice akzeptiert/lehnt korrekt ab, PAD_BANK_SLICE_MAX===MAX_SLICE_PADS===16. (b) sliceAutoConfigureSlots() liefert 16 valide Slots. (c) localStorage Round-Trip + Back-Compat (Pre-v2.91-Files ohne slice loaden unveraendert) + invalides slice-Item silent gefiltert. (d) labelForTarget/targetsMatch fuer playSlicePad inkl. Cross-Type-Verwechslungs-Schutz (playSlicePad != loopTrigger != scenelaunch). (e) End-to-End: getSlicePadSlot Lookup + simulierter App-Listener mit playSliceBuffer-Spy → korrekter Buffer/Sample-Rate propagiert, leerer Slot triggert nicht, out-of-range null. (7) Verifikation: pnpm check clean, pnpm test 3302/15 skipped (vs 3287 prev, +15 neue). package.json 2.90.0 → 2.91.0. CLAMP-POLICY-Doku: padBankSlotToEntry clampt sliceIndex auf 0..15 mit Math.trunc — damit ein verirrter param='42' nicht silent skipped, sondern auf Slot 15 lernt (user-friendlier). isValidPadBankSlot prueft NICHT die numerische Range, das ist konsistent mit anderen Kinds (macro=0..7 wird auch nicht im Type-Guard erzwungen). ARCHITEKTUR: midi:slicePad analog zu midi:perfpad / midi:scene / midi:loopTrigger CustomEvent-Pattern — kein direkter Store-Coupling im useMidi-Hook."
+      ],
+      next: [
+        "TASK-238-FOLLOWUP-2: Slice-Vorschau im Pad-Grid (Click auf Pad-Tile spielt nur diesen Slice). Heute laeuft das via MIDI-Pad → playSlicePad; der Slot-Picker im MidiSettings hat noch keinen Inline-Preview-Button.",
+        "TASK-238-FOLLOWUP-3: Stereo-Slicing (zweiter Float32Array fuer Kanal 1; AudioEngine.playSliceBuffer hat noch Mono-only Pfad).",
+        "TASK-237-FOLLOWUP-1B: useAutomationStore um fxParam-Targets erweitern (filter cutoff, resonance, pitch — Electribe-Motion-Lanes die heute gefiltert werden).",
+        "TASK-237-FOLLOWUP-2: Reale Electribe-File-Kalibrierung.",
+        "TASK-239 (VST3/CLAP-Host) bleibt offen.",
+        "OPTIONAL UX: Im Pad-Bank-Builder einen Auto-Configure-Banner zeigen wenn useSlicePadStore aktive Slices hat aber kein Slot kind='slice' ist (User-Hint 'Slices liegen bereit — Pads auto-konfigurieren?'). Wuerde requirements einen useSlicePadStore-Read im UI; aktuell vermieden weil Inhalt des Stores leerlauffaehig ist.",
+        "OPTIONAL TESTS: Playwright-E2E in tests/web/pad-bank.spec.ts erweitern um Slice-Slot-Picker + slice-auto-Button (eigener Test-Block analog v2.82-Smoke). Nicht Teil dieser Session."
+      ],
+      changed: [
+        "client/src/utils/padBankPersistence.ts (PadBankSlotKind += 'slice', VALID_KINDS-Set erweitert, +PAD_BANK_SLICE_MAX const, +sliceAutoConfigureSlots() Quick-Action-Helper)",
+        "client/src/hooks/useMidi.ts (+MidiLearnTarget playSlicePad-Variante, labelForTarget/targetsMatch/applyMapping-Cases, dispatcht 'midi:slicePad' CustomEvent)",
+        "client/src/utils/midiLayoutImport.ts (VALID_TARGET_TYPES += 'playSlicePad' fuer Layout Round-Trip)",
+        "client/src/App.tsx (+useEffect-Listener 'midi:slicePad' → AudioEngine.playSliceBuffer via getSlicePadSlot-Lookup; getSlicePadSlot zum bestehenden Import hinzu)",
+        "client/src/components/MidiSettings/MidiSettings.tsx (Pad-Bank-Builder: 'Slice'-Option im Kind-Select, slice-Param-Picker 0..15, padBankSlotLabel/padBankSlotToEntry/updatePadBankSlot um slice erweitert, Clamp-Policy 0..MAX-1, neuer Quick-Action-Button '🎯 Slices → Pads (Auto)' data-testid=pad-bank-slice-auto, sliceAutoConfigurePadBank()-Handler)",
+        "tests/features/slice-pad-kind.test.ts (NEU, 15 Cases — Schema/Round-Trip/Label/targetsMatch/End-to-End)",
+        "package.json (2.90.0 → 2.91.0)",
+        "agents/INDEX.js (workLog + version 2.91.0 + files-Index)"
+      ]
+    },
     {
       agent:     "frontend",
       timestamp: "2026-05-18T02:33:00.000Z",

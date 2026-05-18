@@ -127,7 +127,7 @@ import {
   scaleMotionPointsToStepCount,
   type ElectribeMotionLane,
 } from "@/utils/electribeMotionMapping";
-import { assignSlicesToPads, MAX_SLICE_PADS } from "@/store/useSlicePadStore";
+import { assignSlicesToPads, getSlicePadSlot, MAX_SLICE_PADS } from "@/store/useSlicePadStore";
 import { AutomationView } from "@/components/Automation/AutomationView";
 import { SceneLaunchPad } from "@/components/Scene/SceneLaunchPad";
 import { AudioEngine } from "@/audio/AudioEngine";
@@ -1684,6 +1684,24 @@ export default function App() {
     };
     window.addEventListener("sample-slicer:apply", handleSlicerApply);
     return () => window.removeEventListener("sample-slicer:apply", handleSlicerApply);
+  }, []);
+
+  // v2.91 (TASK-238-FOLLOWUP-1B): midi:slicePad — Pad-Bank-Slot mit
+  // kind=slice (oder beliebiges Mapping mit target playSlicePad) triggert
+  // den Slice-Buffer aus useSlicePadStore. AudioEngine.playSliceBuffer ist
+  // defensive (kein-Op wenn buffer null). Out-of-range-sliceIndex → silent
+  // ignored (getSlicePadSlot returnt null).
+  useEffect(() => {
+    const handleSlicePad = (e: Event) => {
+      const detail = (e as CustomEvent<number>).detail;
+      const sliceIndex = typeof detail === "number" ? detail : Number(detail);
+      if (!Number.isFinite(sliceIndex)) return;
+      const slot = getSlicePadSlot(sliceIndex);
+      if (!slot || !slot.buffer) return;
+      AudioEngine.playSliceBuffer(slot.buffer, slot.sampleRate);
+    };
+    window.addEventListener("midi:slicePad", handleSlicePad);
+    return () => window.removeEventListener("midi:slicePad", handleSlicePad);
   }, []);
 
   // v2.78: midi:perfpad — Note-Mapping mit performancePadIndex triggert

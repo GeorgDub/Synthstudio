@@ -5,15 +5,25 @@
  * MidiSettings (v2.79). Eigenständig testbar — keine React-Abhängigkeit.
  */
 
-export type PadBankSlotKind = "perf-pad" | "macro" | "script" | "action";
+export type PadBankSlotKind = "perf-pad" | "macro" | "script" | "action" | "slice";
 
 export interface PadBankSlot {
   kind: PadBankSlotKind;
-  /** Perf-Pad: 0..15, Macro: 0..7, Script: scriptId, Action: action-key. */
+  /**
+   * Per-Kind-Bedeutung:
+   *  - perf-pad: 0..15 (Index ins Performance-Pad-Grid).
+   *  - macro:    0..7  (Index in useMacroStore).
+   *  - script:   scriptId aus useScriptStore.
+   *  - action:   action-key aus CHAIN_BUILDER_ACTIONS.
+   *  - slice:    0..15 (Index in useSlicePadStore, v2.91).
+   */
   param: string;
 }
 
 export const PAD_BANK_STORAGE_KEY = "ss-pad-bank:v1";
+
+/** Anzahl Slice-Pad-Slots — gespiegelt von MAX_SLICE_PADS in useSlicePadStore.ts. */
+export const PAD_BANK_SLICE_MAX = 16;
 
 /** Default-Setup: 16 Performance-Pad-Slots. */
 export function defaultPadBankSlots(): PadBankSlot[] {
@@ -23,8 +33,20 @@ export function defaultPadBankSlots(): PadBankSlot[] {
   }));
 }
 
+/**
+ * Quick-Action-Helper (v2.91): liefert 16 Slice-Pads-Slots {kind:slice,
+ * sliceIndex:0..15}. Wird vom Pad-Bank-Builder als "Slices → Pads (Auto)"
+ * angeboten.
+ */
+export function sliceAutoConfigureSlots(): PadBankSlot[] {
+  return Array.from({ length: PAD_BANK_SLICE_MAX }, (_, i) => ({
+    kind: "slice" as const,
+    param: String(i),
+  }));
+}
+
 const VALID_KINDS: ReadonlySet<PadBankSlotKind> = new Set([
-  "perf-pad", "macro", "script", "action",
+  "perf-pad", "macro", "script", "action", "slice",
 ]);
 
 /**
