@@ -34,6 +34,11 @@ import {
 } from "@/utils/midiOutput";
 import { NanoKontrolFeedback, type NanoKontrolChannelState } from "@/audio/NanoKontrolFeedback";
 import { cycleScene } from "@/store/useSceneStore";
+import {
+  detectTemplatesFromDeviceList,
+  dispatchTemplateSuggestion,
+  loadNeverList,
+} from "@/utils/midiDeviceDetection";
 
 // ─── Typen ────────────────────────────────────────────────────────────────────
 
@@ -1079,12 +1084,25 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
     if (devicesInitializedRef.current) {
       const currentInIds = new Set(list.map(d => d.id));
       const currentOutIds = new Set(outList.map(d => d.id));
+      // v3.24.0: Sammle neu verbundene Devices für Auto-Detection-Suggestion.
+      const newlyConnected: string[] = [];
       // Inputs: new (added) vs removed
       list.forEach(d => {
         if (!prevDevicesRef.current.has(d.id)) {
           toast(`MIDI verbunden: ${d.name}${d.manufacturer ? ` (${d.manufacturer})` : ""}`, { kind: "success" });
+          newlyConnected.push(d.name);
         }
       });
+      // v3.24.0: Fire-and-forget Auto-Detection — UI-Layer (MidiSettings)
+      // hört auf 'midi:template-suggested' und zeigt die Suggestion-Banner.
+      // Never-List + Disabled-Toggle werden im dispatchTemplateSuggestion
+      // geprüft → kein Spam wenn User "Nie wieder" gewählt hat.
+      if (newlyConnected.length > 0) {
+        const neverList = loadNeverList();
+        detectTemplatesFromDeviceList(newlyConnected, neverList).forEach(match => {
+          dispatchTemplateSuggestion(match);
+        });
+      }
       prevDevicesRef.current.forEach((name, id) => {
         if (!currentInIds.has(id)) {
           toast(`MIDI getrennt: ${name}`, { kind: "warning" });
@@ -1103,6 +1121,16 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
       });
     } else {
       devicesInitializedRef.current = true;
+      // v3.24.0: Auch beim allerersten Refresh wollen wir Hardware
+      // erkennen die schon beim Aktivieren angeschlossen war. Kein Toast,
+      // aber Suggestion-Event feuert (Never-List + Toggle gating sorgt
+      // dafür dass User nicht genervt wird).
+      if (list.length > 0) {
+        const neverList = loadNeverList();
+        detectTemplatesFromDeviceList(list.map(d => d.name), neverList).forEach(match => {
+          dispatchTemplateSuggestion(match);
+        });
+      }
     }
     // Update refs für nächstes Diff
     prevDevicesRef.current = new Map(list.map(d => [d.id, d.name]));

@@ -14,7 +14,14 @@ import React, { useState, useEffect } from "react";
 import { X } from "lucide-react";
 import type { MidiState, MidiActions, MidiLearnTarget, MidiNoteMapping, AutoLearnEntry } from "@/hooks/useMidi";
 import { GM_DRUM_DEFAULTS } from "@/hooks/useMidi";
-import { MIDI_TEMPLATES, templateToMappings } from "@/utils/midiTemplates";
+import { MIDI_TEMPLATES, templateToMappings, getMidiTemplate } from "@/utils/midiTemplates";
+import {
+  MIDI_TEMPLATE_SUGGESTED_EVENT,
+  isAutoDetectionEnabled,
+  setAutoDetectionEnabled,
+  addToNeverList,
+  type MidiTemplateSuggestedDetail,
+} from "@/utils/midiDeviceDetection";
 import { buildMidiLayoutJson, sanitizeLayoutFileName, defaultLayoutNameForDevice } from "@/utils/midiLayoutExport";
 import { toast } from "@/store/useToastStore";
 import { FX_PARAM_RANGES } from "@/audio/AudioEngine";
@@ -129,6 +136,59 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
     window.addEventListener("midi:rawmessage", handler);
     return () => window.removeEventListener("midi:rawmessage", handler);
   }, []);
+
+  // v3.24.0: Hardware Auto-Detection — hört auf 'midi:template-suggested'-
+  // Events die useMidi.refreshDevices feuert wenn ein bekanntes Gerät
+  // verbunden wird. Wir queuen Suggestions damit User mehrere Geräte
+  // nacheinander beantworten kann (nano + Launchpad gleichzeitig stöpseln).
+  const [suggestionQueue, setSuggestionQueue] = useState<MidiTemplateSuggestedDetail[]>([]);
+  const [autoDetectEnabled, setAutoDetectEnabledState] = useState<boolean>(() => isAutoDetectionEnabled());
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<MidiTemplateSuggestedDetail>).detail;
+      if (!detail) return;
+      setSuggestionQueue(prev => {
+        // Dedupe: gleichen Device-Namen nur 1× queuen
+        if (prev.some(s => s.deviceName === detail.deviceName)) return prev;
+        return [...prev, detail];
+      });
+    };
+    window.addEventListener(MIDI_TEMPLATE_SUGGESTED_EVENT, handler);
+    return () => window.removeEventListener(MIDI_TEMPLATE_SUGGESTED_EVENT, handler);
+  }, []);
+  const currentSuggestion = suggestionQueue[0] ?? null;
+
+  function dismissCurrentSuggestion() {
+    setSuggestionQueue(prev => prev.slice(1));
+  }
+
+  function applySuggestion(detail: MidiTemplateSuggestedDetail) {
+    const t = getMidiTemplate(detail.templateId);
+    if (!t) {
+      toast(`Vorlage "${detail.templateId}" nicht gefunden`, { kind: "error" });
+      dismissCurrentSuggestion();
+      return;
+    }
+    const partResolver = (id: string) => {
+      const partIndex = parseInt(id.replace("part-", ""), 10);
+      return parts[partIndex]?.name ?? parts[partIndex]?.id;
+    };
+    const { cc, notes } = templateToMappings(t, partResolver);
+    const resolvedNotes = notes.map(n => {
+      const partIndex = parseInt(n.partId.replace("part-", ""), 10);
+      const realPart = parts[partIndex];
+      return { ...n, partId: realPart?.id ?? n.partId, label: realPart?.name ?? n.label };
+    });
+    midi.loadTemplate(cc, resolvedNotes);
+    toast(`Hardware-Template „${t.name}" angewendet (${cc.length} CC + ${resolvedNotes.length} Notes)`, { kind: "success" });
+    dismissCurrentSuggestion();
+  }
+
+  function neverAskAgain(detail: MidiTemplateSuggestedDetail) {
+    addToNeverList(detail.deviceName);
+    toast(`Auto-Detection für „${detail.deviceName}" deaktiviert`, { kind: "info" });
+    dismissCurrentSuggestion();
+  }
 
   /** Pretty-print für die letzte empfangene MIDI-Message. */
   function formatActivity(a: NonNullable<typeof lastActivity>): string {
@@ -1916,6 +1976,79 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
                 </div>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* v3.24.0: Hardware Auto-Detection — Plug-and-Play */}
+      <div
+        className="mb-4 p-3 rounded-lg border border-border-color bg-bg-elevated/50 flex items-center justify-between gap-3"
+        data-testid="midi-auto-detect-toggle-row"
+      >
+        <div className="flex-1 min-w-0">
+          <div className="text-xs font-semibold text-text-primary">
+            Hardware-Auto-Detection
+          </div>
+          <p className="text-[11px] text-text-muted mt-0.5 leading-snug">
+            Erkennt bekannte Controller (nanoKONTROL2, Launchpad, Push, MPC, …) per Device-Name und schlägt das passende Template vor.
+          </p>
+        </div>
+        <label className="flex items-center gap-2 cursor-pointer flex-shrink-0">
+          <input
+            type="checkbox"
+            checked={autoDetectEnabled}
+            onChange={(e) => {
+              setAutoDetectEnabledState(e.target.checked);
+              setAutoDetectionEnabled(e.target.checked);
+            }}
+            className="accent-accent-primary w-4 h-4"
+            data-testid="midi-auto-detect-toggle"
+          />
+          <span className="text-xs text-text-muted">{autoDetectEnabled ? "AN" : "AUS"}</span>
+        </label>
+      </div>
+
+      {/* v3.24.0: Suggestion-Banner — taucht auf wenn Auto-Detection ein
+          bekanntes Gerät erkannt hat. User muss explizit anwenden, kein Auto-Apply. */}
+      {currentSuggestion && (
+        <div
+          className="mb-4 p-3 rounded-lg border border-accent-primary bg-accent-primary/10"
+          role="alert"
+          data-testid="midi-template-suggestion"
+        >
+          <div className="flex items-start gap-2">
+            <span className="text-base flex-shrink-0" aria-hidden>🎹</span>
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-semibold text-text-primary">
+                {currentSuggestion.displayName} erkannt
+              </div>
+              <p className="text-[11px] text-text-muted mt-0.5 leading-snug">
+                Soll das passende Template angewendet werden? Ersetzt aktuelle Mappings.
+              </p>
+              <div className="flex flex-wrap gap-2 mt-2">
+                <button
+                  onClick={() => applySuggestion(currentSuggestion)}
+                  className="px-3 py-1.5 rounded text-xs font-medium bg-accent-primary text-bg-base hover:bg-accent-primary/80"
+                  data-testid="midi-template-suggestion-apply"
+                >
+                  ✓ Anwenden
+                </button>
+                <button
+                  onClick={dismissCurrentSuggestion}
+                  className="px-3 py-1.5 rounded text-xs font-medium bg-bg-elevated text-text-muted hover:text-text-primary"
+                  data-testid="midi-template-suggestion-skip"
+                >
+                  ✗ Überspringen
+                </button>
+                <button
+                  onClick={() => neverAskAgain(currentSuggestion)}
+                  className="px-3 py-1.5 rounded text-xs font-medium bg-bg-elevated text-text-dim hover:text-accent-danger"
+                  data-testid="midi-template-suggestion-never"
+                >
+                  Nie wieder für dieses Gerät
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
