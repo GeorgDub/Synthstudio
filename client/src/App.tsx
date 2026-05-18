@@ -78,10 +78,13 @@ import { ActivationModal } from "@/components/License/ActivationModal";
 import { KorgBankModal, type KorgBankSample } from "@/components/KorgBank/KorgBankModal";
 import { KorgBankEditor } from "@/components/KorgBank/KorgBankEditor";
 // v3.18.0: OmniTribe-Tab (VU + Spectrum + Chord + Performance-Pads).
+// v3.19.0: Browser-Support-Banner + DeviceConnectionPanel im Tab.
 import { OmniTribeVuMeter } from "@/components/OmniTribe/OmniTribeVuMeter";
 import { OmniTribeSpectrumAnalyzer } from "@/components/OmniTribe/OmniTribeSpectrumAnalyzer";
 import { ChordPanel } from "@/components/OmniTribe/ChordPanel";
 import { PerformancePadGrid } from "@/components/OmniTribe/PerformancePadGrid";
+import { OmniTribeBrowserSupport } from "@/components/OmniTribe/OmniTribeBrowserSupport";
+import { DeviceConnectionPanel } from "@/components/Settings/DeviceConnectionPanel";
 import {
   setOmniTribeVuLevels,
   setOmniTribeSpectrumBins,
@@ -3526,10 +3529,17 @@ export default function App() {
                     )}
                     {activeTool === 'omnitribe' && (
                       <div className="h-full overflow-y-auto p-4 space-y-4 max-w-5xl">
+                        {/* v3.19: Firefox/Safari-Hinweis prominent oben (render-noop wenn Web-MIDI vorhanden). */}
+                        <OmniTribeBrowserSupport />
+
+                        {/* v3.19: Connection-UI im Tab — User kann direkt aus dem Tab connecten,
+                            statt erst in Settings → Hardware navigieren zu müssen. */}
+                        <DeviceConnectionPanel />
+
                         <div className="bg-bg-panel border border-border-color rounded p-3">
                           <div className="flex items-center justify-between">
                             <h3 className="text-sm font-semibold text-text-primary">
-                              OmniTribe Device
+                              OmniTribe Live-View
                             </h3>
                             <span
                               className={[
@@ -3545,7 +3555,6 @@ export default function App() {
                           </div>
                           <p className="text-xs text-text-dim mt-1">
                             Live-Streams (VU + Spectrum) + Chord-Panel + Performance-Pad-Grid.
-                            Verbindung via Settings → Devices.
                           </p>
                         </div>
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">

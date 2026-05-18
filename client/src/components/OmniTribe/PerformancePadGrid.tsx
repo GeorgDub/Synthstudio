@@ -83,10 +83,12 @@ export function PerformancePadGrid({
     });
   }, []);
 
-  // ── MouseDown: Start Long-Press-Timer ──────────────────────────────────
-  const handleMouseDown = useCallback((padId: number, e: React.MouseEvent) => {
-    // Only main button.
-    if (e.button !== 0) return;
+  // ── PointerDown: Start Long-Press-Timer ────────────────────────────────
+  // v3.19: PointerEvents statt MouseEvents — funktioniert auf Touch+Stift+Maus.
+  // pointerType 'mouse' → button===0 prüfen, 'touch'/'pen' → button ist 0 oder -1.
+  const handlePointerDown = useCallback((padId: number, e: React.PointerEvent) => {
+    // Touch + Pen melden button=0; Mouse muss main-button sein.
+    if (e.pointerType === "mouse" && e.button !== 0) return;
     longPressFiredRef.current.delete(padId);
     const timer = window.setTimeout(() => {
       longPressFiredRef.current.add(padId);
@@ -95,9 +97,9 @@ export function PerformancePadGrid({
     pressTimerRef.current.set(padId, timer);
   }, [handleLoopIsolate]);
 
-  // ── MouseUp: Cancel Long-Press oder triggere Press ────────────────────
-  const handleMouseUp = useCallback((padId: number, e: React.MouseEvent) => {
-    if (e.button !== 0) return;
+  // ── PointerUp: Cancel Long-Press oder triggere Press ───────────────────
+  const handlePointerUp = useCallback((padId: number, e: React.PointerEvent) => {
+    if (e.pointerType === "mouse" && e.button !== 0) return;
     const timer = pressTimerRef.current.get(padId);
     if (timer !== undefined) {
       window.clearTimeout(timer);
@@ -109,8 +111,9 @@ export function PerformancePadGrid({
     longPressFiredRef.current.delete(padId);
   }, [handlePadPress]);
 
-  // ── MouseLeave: Cancel pending long-press ─────────────────────────────
-  const handleMouseLeave = useCallback((padId: number) => {
+  // ── PointerLeave/Cancel: Cancel pending long-press ────────────────────
+  // PointerCancel feuert bei Touch-Scroll-Hijack — Long-Press abbrechen.
+  const handlePointerCancel = useCallback((padId: number) => {
     const timer = pressTimerRef.current.get(padId);
     if (timer !== undefined) {
       window.clearTimeout(timer);
@@ -184,10 +187,17 @@ export function PerformancePadGrid({
                 type="button"
                 data-testid={`performance-pad-${padId}`}
                 aria-label={`Performance pad ${padId + 1}${pad.muted ? " (muted)" : ""}`}
-                onMouseDown={(e) => handleMouseDown(padId, e)}
-                onMouseUp={(e) => handleMouseUp(padId, e)}
-                onMouseLeave={() => handleMouseLeave(padId)}
+                onPointerDown={(e) => handlePointerDown(padId, e)}
+                onPointerUp={(e) => handlePointerUp(padId, e)}
+                onPointerLeave={() => handlePointerCancel(padId)}
+                onPointerCancel={() => handlePointerCancel(padId)}
                 onContextMenu={(e) => handleContextMenu(padId, e)}
+                style={{
+                  backgroundColor: `hsl(${hue}, 50%, 22%)`,
+                  // touch-action:none verhindert dass der Browser zwischen Scroll
+                  // und Long-Press disambiguiert (sonst feuert PointerCancel zu früh).
+                  touchAction: "none",
+                }}
                 className={[
                   "w-full aspect-square rounded-lg border-2 font-bold text-sm transition-all duration-100",
                   "text-text-primary",
@@ -196,9 +206,6 @@ export function PerformancePadGrid({
                     : "border-border-color hover:border-accent-primary/60",
                   pad.muted ? "opacity-30" : "opacity-100",
                 ].join(" ")}
-                style={{
-                  backgroundColor: `hsl(${hue}, 50%, 22%)`,
-                }}
               >
                 {padId + 1}
               </button>

@@ -51,7 +51,17 @@ export function useOmniTribe(): UseOmniTribeReturn {
   useEffect(() => {
     const unbind = omniTribeBridge.on(OtpCmd.IDENTITY, (_cmd, sub, payload) => {
       if (sub === 0x01 && payload.length >= 3) {
-        setIdentity({ major: payload[0], minor: payload[1], patch: payload[2] });
+        const id: OmniTribeIdentity = {
+          major: payload[0],
+          minor: payload[1],
+          patch: payload[2],
+        };
+        setIdentity(id);
+        // v3.19: DoD §16 — Identity-Handshake im Console-Log nach Connect.
+        // eslint-disable-next-line no-console
+        console.log(
+          `[OmniTribe] Connected to Firmware v${id.major}.${id.minor}.${id.patch}`,
+        );
       }
     });
     return unbind;

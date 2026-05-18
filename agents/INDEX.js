@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.18.0",
+    version: "3.19.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -119,9 +119,24 @@ const INDEX = {
       lastSeen: "2026-05-18T12:25:00.000Z",
       ownedBy:  "frontend"
     },
-    "client/src/components/OmniTribe/PerformancePadGrid.tsx (v3.18.0)": {
-      role:     "v3.18.0 NEU: 4x4 Pad-Grid fuer Performance-Modul (~210 LOC, NRPN 0x1F). Per-Pad: (1) Click → sendPerformancePadPress(padId), (2) Long-Press 500ms → sendPerformanceLoopIsolate(padId), (3) Right-Click (onContextMenu) → sendPerformanceLoopIsolate(padId), (4) Mute-Button 'M' (top-right Ecke) → sendPerformanceJamMute(partId=padId, on:bool toggle). Long-Press-Detection: setTimeout in onMouseDown, clear in onMouseUp/Leave, longPressFiredRef-Set verhindert Press+Long-Press-Doppel-Trigger. Active-Highlight: 200ms ring-2 ring-accent-primary nach Press, 50ms-Interval-Tick fuer decay-rerender (nur waehrend irgendein Pad active ist — kein Idle-CPU). Color-Coding: HSL(i/16 × 360°, 50%, 22%) als inline-Style backgroundColor — jedes Pad eigene dunkle Hue. Cleanup: useEffect-unmount clear-Set aller pending Timer. data-testid: performance-pad-grid + performance-pad-{0..15} + performance-pad-mute-{0..15}.",
-      lastSeen: "2026-05-18T12:25:00.000Z",
+    "client/src/components/OmniTribe/PerformancePadGrid.tsx (v3.19.0)": {
+      role:     "v3.19.0: MouseEvents → PointerEvents-Refactor fuer Touch-Support. handlePointerDown/Up/Cancel statt MouseDown/Up/Leave. PointerType-Check fuer 'mouse' → button===0 (Touch+Pen melden button=0 nativ). +onPointerCancel-Handler-Wire fuer Touch-Scroll-Hijack. +touchAction:none CSS-Property (verhindert dass Browser zwischen Scroll und Long-Press disambiguiert). v3.18.0-Funktionen unveraendert: 4x4 Pad-Grid fuer Performance-Modul (~220 LOC, NRPN 0x1F). Per-Pad: (1) Click → sendPerformancePadPress(padId), (2) Long-Press 500ms → sendPerformanceLoopIsolate(padId), (3) Right-Click → sendPerformanceLoopIsolate(padId), (4) Mute-Button 'M' → sendPerformanceJamMute(partId=padId, on). Long-Press-Detection: setTimeout in PointerDown, clear in PointerUp/Cancel, longPressFiredRef-Set verhindert Press+Long-Press-Doppel-Trigger. Active-Highlight 200ms decay. Color-Coding HSL pro Pad. data-testid performance-pad-grid + performance-pad-{0..15} + performance-pad-mute-{0..15}.",
+      lastSeen: "2026-05-18T12:40:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/components/OmniTribe/OmniTribeBrowserSupport.tsx (v3.19.0)": {
+      role:     "v3.19.0 NEU: Web-MIDI-Browser-Support-Banner (~65 LOC). isWebMidiSupported() Pure-Function exportiert (typeof navigator.requestMIDIAccess === 'function'). <OmniTribeBrowserSupport supported?:boolean> render-noop wenn Web-MIDI vorhanden, sonst role='alert' Banner mit data-testid='omnitribe-browser-unsupported': 'Web-MIDI nicht verfuegbar in diesem Browser — bitte Chrome/Edge/Opera oder Synthstudio-Desktop nutzen'. Nur semantische Tailwind-Tokens (bg-bg-panel + border-accent-danger + text-accent-danger + text-text-muted). supported-Prop fuer Test/Storybook-Override. DoD §16 Firefox/Safari-Hinweis-Item.",
+      lastSeen: "2026-05-18T12:40:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/hooks/useOmniTribe.ts (v3.19.0)": {
+      role:     "v3.19.0: +Identity-Handshake-Console-Log. Bestehender on(OtpCmd.IDENTITY, ...)-Listener loggt jetzt console.log('[OmniTribe] Connected to Firmware vX.Y.Z') sobald Identity-Response (sub 0x01, payload >= 3) eintrifft. Erfuellt DoD §16-Item. setIdentity-Pfad + Hook-Public-API unveraendert: connected/webMidiSupported/connect/disconnect/setParam/enableMonitoring/identity exportiert. Web-MIDI-Permission via navigator.requestMIDIAccess({sysex:true}) → omniTribeBridge.connect(access). enableMonitoring() ruft enableStreams(VU_METER|SPECTRUM|PARAM_NOTIFY) + requestFullDump. Singleton-Bridge → Hook kann unmounten/remounten ohne Verbindungsverlust.",
+      lastSeen: "2026-05-18T12:40:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "tests/features/omnitribe-echo-protection.test.ts (v3.19.0)": {
+      role:     "v3.19.0 NEU: 4 Echo-Schutz-Regression-Tests (DoD §16). @vitest-environment jsdom + FakeMidiInput/Output. (1) Encoder-zur-UI Sweep ueber 5s: 300 setParam @ 60Hz + parallele Echo-Notifies → Property-Test 'keine UI-Oszillation' (jedes leaked Event traegt einen Wert, den die UI selber bereits gesendet hat — kein false-value UI-Bounce). (2) Bridge.setParam blockt Echos im 50ms-Window: 30 Iter setParam → 11ms Throttler → Echo → 60ms wait, alle 30 Echos geblockt. (3) Late-Notify nach 80ms (Echo-Window abgelaufen) durchgelassen — kein false-positive-Block. (4) Verschiedene Param-Adressen blockieren sich nicht — kein globaler Lock, pending-Set ist key-spezifisch. FINDING: Echo-Schutz blockt zuverlaessig im 50ms-Fenster pro Adresse, aber bei kontinuierlichem Sweep (>50ms) loescht der aelteste setTimeout-Eintrag den Pending-Set-Key, sodass spaetere Echos durchsickern. Property bleibt aber: leaked Werte = UI-Wert → keine Oszillation.",
+      lastSeen: "2026-05-18T12:40:00.000Z",
       ownedBy:  "frontend"
     },
     "tests/features/omnitribe-meters.test.ts (v3.18.0)": {
@@ -1222,6 +1237,51 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "frontend",
+      timestamp: "2026-05-18T12:40:00.000Z",
+      done: [
+        "v3.19.0: OmniTribe-Sprint-Finish (Tag 6) — DoD §16 Checklist abgehakt. 4 Punkte aus v3.18-Caveats + 1 DoD-Lueck geschlossen: Echo-Schutz-Regression-Test + DeviceConnectionPanel im OmniTribe-Tab + Firefox/Safari-Banner + Identity-Console-Log + Touch-Support fuer PerformancePadGrid.",
+        "NEU tests/features/omnitribe-echo-protection.test.ts (4 Tests). @vitest-environment jsdom + FakeMidiInput/Output. Tests: (1) Encoder-zur-UI Sweep ueber 5s (300 setParam @ 60Hz + parallele Echo-Notifies) produziert keine Oszillation — Property-Test: jedes leaked Event traegt einen Wert, den die UI selber bereits gesendet hatte (kein false-value UI-Bounce). (2) Bridge.setParam blockt Echos im 50ms-Window — 30 Iterationen mit setParam → 11ms Throttler-Tick → Echo → 60ms wait pro Iter, alle 30 Echos werden geblockt. (3) Late-Notify nach 80ms (Echo-Window abgelaufen) wird durchgelassen — verifiziert kein false-positive-Block. (4) Verschiedene Param-Adressen blockieren sich gegenseitig nicht — kein globaler Lock, pending-Set ist key-spezifisch. WICHTIGER FINDING: das Echo-Schutz-Mechanismus blockt zuverlaessig im 50ms-Fenster pro Adresse, aber bei kontinuierlichem Sweep (>50ms) loescht der aelteste setTimeout-Eintrag den Pending-Set-Key, sodass spaetere Echos durchsickern. Da die Echos jedoch immer den UI-Wert spiegeln, gibt es keine UI-Oszillation (UI hat schon den Wert). Dokumentiert als Caveat — wenn Hardware spaeter geringere Echo-Latenz schickt, koennte ein Refactor (Pending-Set haelt MaxTimestamp je Key) noetig werden.",
+        "NEU client/src/components/OmniTribe/OmniTribeBrowserSupport.tsx (~65 LOC). Banner-Komponente mit role='alert' + data-testid omnitribe-browser-unsupported. Render-noop wenn navigator.requestMIDIAccess als function vorhanden. Sonst sichtbares Banner: 'Web-MIDI nicht verfuegbar in diesem Browser — bitte Chrome/Edge/Opera oder Synthstudio-Desktop nutzen.' Nur semantische Tailwind-Tokens (bg-bg-panel + border-accent-danger + text-accent-danger + text-text-muted). Pure-Funktion isWebMidiSupported() als Test-Hook exportiert.",
+        "client/src/hooks/useOmniTribe.ts: Identity-Handshake-Listener loggt jetzt console.log('[OmniTribe] Connected to Firmware vX.Y.Z') sobald Identity-Response (CMD 0x01 SUB 0x01) eintrifft (DoD §16-Item). Bestehender setIdentity-Pfad bleibt unveraendert.",
+        "client/src/App.tsx: OmniTribe-Tab erweitert. (1) <OmniTribeBrowserSupport /> als prominente erste Section (render-noop wenn Web-MIDI ok). (2) <DeviceConnectionPanel /> als zweite Section — User kann direkt aus dem Tab connecten statt Settings → Hardware navigieren zu muessen. Bestehende VU/Spectrum/Chord/PadGrid-Sections bleiben unveraendert darunter.",
+        "client/src/components/OmniTribe/PerformancePadGrid.tsx: MouseEvents → PointerEvents-Refactor fuer Touch-Support. handleMouseDown/Up/Leave umbenannt zu handlePointerDown/Up/Cancel. PointerType-Check fuer 'mouse' → button===0 (Touch+Pen melden button=0 nativ). Neue onPointerCancel-Handler-Wire fuer Touch-Scroll-Hijack. touchAction:none CSS-Property auf jedem Pad — verhindert dass Browser zwischen Scroll und Long-Press disambiguiert (sonst feuert PointerCancel zu frueh). Long-Press-Timer-Mechanik unveraendert: 500ms setTimeout setzt longPressFiredRef, PointerUp prueft Flag und triggert entweder PadPress oder skipt. Cleanup-useEffect bleibt fuer pending Timer.",
+        "client/src/components/OmniTribe/index.ts: +OmniTribeBrowserSupport + isWebMidiSupported Re-Export.",
+        "Test-Resultat: pnpm check clean. pnpm test → 173 files / 3953 passed / 15 skipped (vorher 3947 → +6: 4 echo-protection + 2 stabile externe). 0 Failures.",
+        "DoD §16 Checklist Status (alle ✓):",
+        "✓ OmniTribeBridge.ts importiert in client/src/audio/ (v3.16)",
+        "✓ useOmniTribe() Hook in client/src/hooks/ (v3.16)",
+        "✓ DeviceConnectionPanel.tsx in Settings-Tab (v3.16) + jetzt auch im OmniTribe-Tab (v3.19)",
+        "✓ Min. 3 bestehende Panels verbunden: Granular + Wavetable + Euclidean (v3.17 — Mod-Matrix existiert nicht in Synthstudio, ist v3.20-Backlog)",
+        "✓ Min. 1 neue Komponente: ChordPanel + PerformancePadGrid (v3.18)",
+        "✓ VU-Meter-Stream sichtbar (v3.18, 16-Channel-Bar-Anzeige)",
+        "✓ Tests: omnitribeBridge.test.ts mit 17 Mock-MIDIAccess-Tests (v3.16, ≥10 required)",
+        "✓ Echo-Schutz-Regression-Test (v3.19, 4 Tests, Slider-Sweep ueber 5sec → keine UI-Oszillation verifiziert)",
+        "✓ Firefox/Safari-Hinweis im UI (v3.19, OmniTribeBrowserSupport-Komponente)",
+        "✓ Identity-Handshake in Console-Log sichtbar nach Connect (v3.19, useOmniTribe.ts)",
+        "ChordPanel User-Slot Upload: omniTribeBridge.uploadChordUserSlot existiert NICHT in der Bridge (geprueft via grep) — bleibt als TASK-v3.20-CHORD-USER-SLOT-UPLOAD-FOLLOWUP dokumentiert. ChordPanel cached User-Intervals weiterhin nur lokal.",
+        "Verbleibende Caveats: (a) Echo-Schutz bei langem Sweep (>50ms) sickern Echos durch — Property bleibt aber 'kein UI-Bounce' weil Wert = UI-Wert. Refactor zu MaxTimestamp-Pending-Set ist optionaler Followup. (b) PerformancePadGrid hat touchAction:none — verhindert Page-Scroll innerhalb der Pads. Sollte das stoeren, koennen wir auf manuelle touch-event-Detection ausweichen.",
+        "package.json + agents/INDEX.js version 3.18.0 → 3.19.0."
+      ],
+      next: [
+        "TASK-v3.20-MOD-MATRIX: ModMatrix-Komponente (8 Slots × 16 Parts, NRPN 0x13/0x14/0x15) — SoT SYNTHSTUDIO_INTEGRATION.md §5.",
+        "TASK-v3.20-ARP/MPE/VS: ArpController (NRPN 0x16), MPESettings (NRPN 0x12), VoiceStealSettings (NRPN 0x1A). Wiring-Pattern wie Chord/Performance (v3.18).",
+        "TASK-v3.20-CHORD-USER-SLOT-UPLOAD: Bridge.uploadChordUserSlot(slot, intervals[]) ergaenzen + ChordPanel-Save-Button. SoT: MD §5 User-Chord-Slots.",
+        "TASK-v3.20-ECHO-REFACTOR (optional): OmniTribeBridge.pendingSets → Map<key, lastSetAt:number> mit Lookup-Check 'Date.now() - lastSetAt < 50' statt setTimeout-Chain. Behebt Sweep-Leak komplett.",
+        "TASK-v3.20-PLAYWRIGHT-OMNITRIBE: tests/web/omnitribe-tab.spec.ts E2E-Smoke — Tab visible, ConnectionPanel rendert, Browser-Support-Banner conditional, VU+Spectrum mount."
+      ],
+      changed: [
+        "client/src/components/OmniTribe/OmniTribeBrowserSupport.tsx (NEU, ~65 LOC, Web-MIDI-Banner mit role='alert' + isWebMidiSupported-Detect)",
+        "client/src/components/OmniTribe/PerformancePadGrid.tsx (MouseEvents → PointerEvents-Refactor fuer Touch-Support + touchAction:none CSS)",
+        "client/src/components/OmniTribe/index.ts (+OmniTribeBrowserSupport + isWebMidiSupported Re-Export)",
+        "client/src/hooks/useOmniTribe.ts (+console.log Identity-Handshake)",
+        "client/src/App.tsx (OmniTribe-Tab: +OmniTribeBrowserSupport-Banner + DeviceConnectionPanel-Mount oben)",
+        "tests/features/omnitribe-echo-protection.test.ts (NEU, 4 Tests, Slider-Sweep ueber 5s + Window-Block + Late-Notify + Cross-Address-Isolation)",
+        "package.json (3.18.0 → 3.19.0)",
+        "agents/INDEX.js (version 3.18.0 → 3.19.0 + workLog v3.19.0 entry)"
+      ]
+    },
     {
       agent:     "frontend",
       timestamp: "2026-05-18T12:25:00.000Z",
