@@ -27,6 +27,8 @@ import {
   applySampleFilters,
   normalizeTag,
   getSampleTags,
+  getTopTagSuggestions,
+  COMMON_TAG_SUGGESTIONS,
 } from "@/utils/sampleLibrary";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -261,5 +263,97 @@ describe("v3.54.0 — extractAllTags / applySampleFilters Komposit", () => {
   it("filterByCategory: spezifische Kategorie filtert korrekt", () => {
     const out = filterByCategory(samples, "synth");
     expect(out.map((s) => s.id)).toEqual(["3"]);
+  });
+});
+
+// ─── v3.55.0 — Tag-CRUD UI Coverage ──────────────────────────────────────────
+
+describe("v3.55.0 — Tag-Editor UI: Add/Remove Tag-Pipeline", () => {
+  it("Add tag persistiert in der Sample-Liste (Store-Update-Simulation)", () => {
+    // Simuliert was useProjectStore.addTagToSample tut: samples.map mit
+    // addTagToSample auf dem Treffer-ID. Closes v3.54 Caveat:
+    // "User kann Tags nicht pro Sample im UI hinzufügen".
+    const samples: Sample[] = [
+      makeSample({ id: "s1", name: "kick.wav" }),
+      makeSample({ id: "s2", name: "snare.wav" }),
+    ];
+    const updated = samples.map((s) =>
+      s.id === "s1" ? addTagToSample(s, "kick") : s,
+    );
+    expect(getSampleTags(updated[0])).toEqual(["kick"]);
+    expect(getSampleTags(updated[1])).toEqual([]);
+    // Idempotent: zweiter Add ändert nichts an Tags
+    const updated2 = updated.map((s) =>
+      s.id === "s1" ? addTagToSample(s, "kick") : s,
+    );
+    expect(updated2[0]).toBe(updated[0]);
+  });
+
+  it("Remove tag via ✕-Button entfernt korrekt — andere Samples unangetastet", () => {
+    const samples: Sample[] = [
+      makeSample({ id: "s1", name: "k", tags: ["kick", "808", "drum"] }),
+      makeSample({ id: "s2", name: "s", tags: ["snare", "drum"] }),
+    ];
+    const updated = samples.map((s) =>
+      s.id === "s1" ? removeTagFromSample(s, "808") : s,
+    );
+    expect(getSampleTags(updated[0])).toEqual(["kick", "drum"]);
+    // Andere Samples bleiben referenz-identisch (kein Re-Render-Storm)
+    expect(updated[1]).toBe(samples[1]);
+  });
+
+  it("Tag-Input normalisiert User-Input (Caps, Whitespace) beim Add", () => {
+    const s = makeSample();
+    const out = addTagToSample(s, "  KICK  ");
+    // Closes UX-Risiko: User tippt "Kick" und filterByTags("kick") matched
+    expect(getSampleTags(out)).toEqual(["kick"]);
+  });
+});
+
+describe("v3.55.0 — getTopTagSuggestions Autocomplete", () => {
+  it("liefert most-used Tags zuerst (Frequency-Sort)", () => {
+    const samples: Sample[] = [
+      makeSample({ id: "1", tags: ["kick", "drum"] }),
+      makeSample({ id: "2", tags: ["kick", "808"] }),
+      makeSample({ id: "3", tags: ["kick"] }),
+      makeSample({ id: "4", tags: ["snare", "drum"] }),
+    ];
+    const out = getTopTagSuggestions(samples, 5);
+    // kick=3, drum=2, snare=1, 808=1 — kick first
+    expect(out[0]).toBe("kick");
+    expect(out[1]).toBe("drum");
+    expect(out).toContain("snare");
+    expect(out).toContain("808");
+  });
+
+  it("füllt mit COMMON_TAG_SUGGESTIONS auf, wenn weniger als limit eigene Tags da sind", () => {
+    const samples: Sample[] = [
+      makeSample({ id: "1", tags: ["custom-tag"] }),
+    ];
+    const out = getTopTagSuggestions(samples, 10);
+    expect(out).toHaveLength(10);
+    expect(out[0]).toBe("custom-tag"); // own tag first
+    // Weitere Slots aus COMMON_TAG_SUGGESTIONS (kick, snare, …)
+    expect(COMMON_TAG_SUGGESTIONS).toContain(out[1]);
+  });
+
+  it("dedupliziert wenn Common-Tag schon als own Tag existiert", () => {
+    const samples: Sample[] = [makeSample({ id: "1", tags: ["kick"] })];
+    const out = getTopTagSuggestions(samples, 5);
+    // 'kick' darf nur EINMAL drin sein, obwohl es in COMMON_TAG_SUGGESTIONS auch ist
+    expect(out.filter((t) => t === "kick")).toHaveLength(1);
+  });
+
+  it("leere Sample-Liste → fallback komplett aus COMMON_TAG_SUGGESTIONS", () => {
+    const out = getTopTagSuggestions([], 10);
+    expect(out).toHaveLength(10);
+    for (const t of out) {
+      expect(COMMON_TAG_SUGGESTIONS).toContain(t);
+    }
+  });
+
+  it("limit clampt die Ausgabe", () => {
+    const out = getTopTagSuggestions([], 3);
+    expect(out).toHaveLength(3);
   });
 });

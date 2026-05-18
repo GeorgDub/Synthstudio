@@ -35,6 +35,12 @@
  *     drei Felder sind additiv-optional. Pre-v1.22-Tracks ohne diese
  *     Felder laden unverändert (stretchRatio defaultet effektiv auf 1.0
  *     in _calcAudioTrackPlaybackRate, pitchLocked auf false).
+ *   - "1.23": Sample erweitert um tags?: string[] (v3.55.0). Closes v3.54
+ *     Caveat "Sample-Tags landen nicht im .synth-File". Backward-Compat:
+ *     pre-v1.23-Files mit Samples ohne tags-Property → tags bleibt
+ *     undefined und wird in getSampleTags() als [] interpretiert.
+ *     Validator: Non-String-Entries werden silent gefiltert,
+ *     non-Array → tags-Property entfernt (defensive).
  * Dateiendung: .synth
  */
 
@@ -59,7 +65,7 @@ import {
   DEFAULT_NOTE_DURATION_MS,
 } from "@/audio/MidiNoteOut";
 
-export const SYNTH_FILE_VERSION = "1.22";
+export const SYNTH_FILE_VERSION = "1.23";
 export const SYNTH_LATEST_KEY = "synthstudio:last-project";
 
 // ─── Typen ───────────────────────────────────────────────────────────────────
@@ -263,6 +269,43 @@ function isValidAudioTrackEntry(t: unknown): t is AudioTrackChannelData {
   );
 }
 
+// ─── v1.23 Sample-Tags Sanitizer ─────────────────────────────────────────────
+
+/**
+ * v1.23: Sanitiziert die `tags`-Property eines Sample-Eintrags.
+ *
+ * Regeln (siehe v3.55.0 Schema-Bump):
+ *  - Property fehlt komplett (pre-v1.23-Files)             → unverändert (undefined bleibt)
+ *  - tags === null                                          → tags-Property wird entfernt
+ *  - tags ist kein Array (z.B. string, number, object)      → tags-Property wird entfernt
+ *  - tags ist ein Array                                     → non-string Entries werden
+ *    silent gefiltert; verbleibende Strings werden ge-trimmed/lowercased + dedupliziert
+ *
+ * Mutiert das übergebene Objekt in-place und gibt es zurück.
+ */
+export function sanitizeSampleTags(sample: unknown): unknown {
+  if (!sample || typeof sample !== "object") return sample;
+  const s = sample as Record<string, unknown>;
+  if (!("tags" in s)) return sample;
+  const raw = s.tags;
+  if (raw === undefined) return sample;
+  if (raw === null || !Array.isArray(raw)) {
+    delete s.tags;
+    return sample;
+  }
+  const seen = new Set<string>();
+  const cleaned: string[] = [];
+  for (const t of raw) {
+    if (typeof t !== "string") continue;
+    const norm = t.trim().toLowerCase();
+    if (norm.length === 0 || seen.has(norm)) continue;
+    seen.add(norm);
+    cleaned.push(norm);
+  }
+  s.tags = cleaned;
+  return sample;
+}
+
 // ─── v1.18 Validation Helpers ────────────────────────────────────────────────
 
 function isValidMidiPartConfigEntry(x: unknown): x is MidiPartConfig {
@@ -338,6 +381,16 @@ export function parseProject(json: string): SynthProject {
   const data = JSON.parse(json) as SynthProject;
   if (!data.version || !data.patterns) {
     throw new Error("Ungültiges Synthstudio-Projektformat");
+  }
+
+  // ─── samples[].tags Sanitization (seit v1.23) ────────────────────────────
+  // Pre-v1.23-Files: Samples haben kein tags-Feld → bleibt unverändert.
+  // v1.23+: tags muss string[] sein. Non-string Entries silent filtern,
+  // non-Array → tags-Property entfernen.
+  if (Array.isArray(data.samples)) {
+    for (const s of data.samples) {
+      sanitizeSampleTags(s);
+    }
   }
 
   // ─── audioTracks (seit v1.15) ────────────────────────────────────────────

@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.54.0",
+    version: "3.55.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -89,9 +89,14 @@ const INDEX = {
   // ─── KNOWN FILE INDEX ──────────────────────────────────────
   // Key files agents have analyzed. Add new entries after working on a file.
   files: {
-    "client/src/utils/sampleLibrary.ts (v3.54.0)": {
-      role:     "v3.54.0 NEU (~230 LOC, pure-fn, env:node-testbar): Sample-Library Tag-Pipeline + Filter. Public-API: normalizeTag(unknown)→string|null (trim+lowercase, null bei leer/non-string), getSampleTags(sample)→string[] (backward-compat: missing tags-Feld → []), addTagToSample(sample, tag)→Sample (immutable, idempotent — gleiche Referenz bei No-Op), removeTagFromSample (gleiche Ref wenn Tag fehlt), setSampleTags (dedup+normalize), applyAutoTagsFromFilename (autoTagFromFilename-Wrapper, gleiche Ref wenn keine neuen Tags), matchesSearchQuery(sample, query) (leerer Query=true, case-insensitive Name+Tag-Substring), filterByTags(samples, tags, mode='OR'|'AND') Set-basiert (leere Liste → unveränderte Kopie), filterByCategory ('all'/'' → Kopie), extractAllTags (Set→sortiertes Array), applySampleFilters Komposit (category+tags+query). Konstanten: SAMPLE_CATEGORIES, DEFAULT_FILTER_MODE='OR'. Type FilterMode = 'AND'|'OR'.",
-      lastSeen: "2026-05-18T23:10:00.000Z",
+    "client/src/utils/sampleLibrary.ts (v3.55.0)": {
+      role:     "v3.55.0 ERWEITERT: v3.54-Pure-fn Pipeline bleibt (normalizeTag, getSampleTags, addTagToSample, removeTagFromSample, setSampleTags, applyAutoTagsFromFilename, matchesSearchQuery, filterByTags, filterByCategory, extractAllTags, applySampleFilters) + NEU COMMON_TAG_SUGGESTIONS (20 DAW-übliche Tags wie kick/snare/hihat/clap/perc/bass/lead/pad/vox/fx/loop/oneshot/rise/drop) + getTopTagSuggestions(samples, limit=10) pure-fn: Frequency-Count Tag-Vorkommen über Samples, sortiert DESC + alphabetisch bei Gleichstand, füllt mit COMMON_TAG_SUGGESTIONS auf wenn weniger als limit eigene Tags vorhanden, dedupliziert. Wird vom SampleBrowser für Autocomplete-Datalist im Tag-Editor konsumiert.",
+      lastSeen: "2026-05-18T22:50:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/utils/projectSerializer.ts (v3.55.0)": {
+      role:     "v3.55.0 SCHEMA-BUMP: SYNTH_FILE_VERSION 1.22 → 1.23. NEU sanitizeSampleTags(unknown)→unknown pure-fn (in-place): fehlende Property bleibt unverändert (pre-v1.23 backward-compat), tags=null/non-Array → property entfernt (defensive — kein Vertrauen in Schema), tags=Array wird normalisiert (trim+lowercase) und dedupliziert, non-string Entries silent gefiltert. parseProject ruft sanitizeSampleTags pro Sample im samples-Array, VOR allen anderen Migration-Steps (audioTracks, padBank, liveInputs, midiNoteOut, slicePads, mixer-pluginSlots, scripts). Header-Block dokumentiert v1.23 Migration-Story. Backward-Compat: pre-v1.23-Files laden unverändert (tags bleibt undefined → getSampleTags returnt []).",
+      lastSeen: "2026-05-18T22:50:00.000Z",
       ownedBy:  "frontend"
     },
     "client/src/utils/bpmWorkerClient.ts (v3.54.0)": {
@@ -99,9 +104,9 @@ const INDEX = {
       lastSeen: "2026-05-18T23:10:00.000Z",
       ownedBy:  "frontend"
     },
-    "client/src/components/SampleBrowser/SampleBrowser.tsx (v3.54.0)": {
-      role:     "v3.54.0 ERWEITERT: bestehende Kategorien/Playlists/Waveform/Preview bleiben + NEU Multi-Tag-Filter mit AND/OR-Mode + Clear-Filters. activeTag:string → activeTags:string[] + tagFilterMode:'AND'|'OR' (Default OR). filteredSamples nutzt jetzt applySampleFilters pure-fn aus sampleLibrary.ts (mit Analyse-Cache-Tags virtuell pre-gemerged). availableTags via extractAllTags. NEU UI-Block: Tags-Liste als Multi-Select-Buttons (Toggle), AND/OR-Mode-Toggle (sichtbar ab 2 aktive Tags), 'Filter löschen'-Button (sichtbar wenn beliebiger Filter aktiv: Category/Search/Tags/Playlist). handleClearFilters + handleToggleTag callbacks. NEU data-testids: sample-browser-tag-{tag}, sample-browser-tag-mode-or/and, sample-browser-clear-filters. Bestehende v4-Architektur (Tabs Samples/Playlists, Waveform-Panel, Import-Progress-Overlay, Category-Context-Menu) unverändert.",
-      lastSeen: "2026-05-18T23:10:00.000Z",
+    "client/src/components/SampleBrowser/SampleBrowser.tsx (v3.55.0)": {
+      role:     "v3.55.0 ERWEITERT: v3.54-Multi-Tag-Filter bleibt + NEU per-Sample Tag-Editor (Tag-Chips + Add-Button + Inline-Input). Neue Props onAddTagToSample(id,tag) + onRemoveTagFromSample(id,tag). Pro Sample-Row unter dem Namen: Container mit Tag-Chips (#tag-Pills mit ×-Remove-Button, testid sample-tag-chip-<id>-<tag> / sample-tag-remove-<id>-<tag>), '+ Tag'-Button (sample-tag-add-<id>) öffnet Inline-Input (sample-tag-input-<id>) mit HTML-datalist-Autocomplete aus getTopTagSuggestions, Enter committet / Escape canceln / Blur committet. Container nur sichtbar wenn Tags existieren ODER Editor offen ODER Sample selektiert (UI-Clutter-Vermeidung). tagEditorOpenFor:string|null + tagDraft:string lokaler State. e.stopPropagation auf Container damit Sample-Row-onClick nicht feuert. Bestehende v3.54-Multi-Tag-Filter-Bar + v4-Architektur (Tabs, Waveform, Preview, Category-Menu) unverändert.",
+      lastSeen: "2026-05-18T22:50:00.000Z",
       ownedBy:  "frontend"
     },
     "client/src/store/useProjectStore.ts (v3.54.0)": {
@@ -1807,6 +1812,49 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "frontend",
+      timestamp: "2026-05-18T22:50:00.000Z",
+      done: [
+        "v3.55.0: Sample-Tag UI CRUD + .synth Persist — closes v3.54 Caveats (UI-Tag-Editor + Schema-Persist). pnpm check clean, 203 Test-Files / 4707 tests grün (16 skipped, +15 NEU: 8 tag-editor/getTopTagSuggestions in sample-library-tags + 7 v1.23-Migration in project-serializer).",
+        "client/src/utils/projectSerializer.ts: SYNTH_FILE_VERSION 1.22 → 1.23. NEU sanitizeSampleTags(unknown) pure-fn: in-place Validierung, fehlende Property bleibt unverändert (pre-v1.23 backward-compat), tags=null/non-Array → property entfernt, tags-Array wird normalisiert (trim+lowercase) und dedupliziert, non-string Entries silent gefiltert. parseProject ruft sanitizeSampleTags pro Sample VOR allen anderen Migration-Steps. Header-Block + Format-Doku auf v1.23 erweitert.",
+        "client/src/utils/sampleLibrary.ts: NEU COMMON_TAG_SUGGESTIONS (20 DAW-übliche Tags wie kick/snare/hihat/clap/perc/bass/lead/pad/vox/fx/loop). NEU getTopTagSuggestions(samples, limit=10) pure-fn: zählt Tag-Frequenzen über Sample-Liste, sortiert nach Häufigkeit DESC (Gleichstand: alphabetisch), füllt mit COMMON_TAG_SUGGESTIONS auf wenn weniger als limit own Tags, dedupliziert.",
+        "client/src/components/SampleBrowser/SampleBrowser.tsx: 2 neue Props onAddTagToSample(id,tag) + onRemoveTagFromSample(id,tag). Pro Sample-Row: Tag-Chips als #tag-Pills mit ×-Remove-Button (testid sample-tag-chip-<id>-<tag> / sample-tag-remove-<id>-<tag>), '+ Tag'-Button (sample-tag-add-<id>) öffnet Inline-Input (sample-tag-input-<id>) mit datalist-Autocomplete aus getTopTagSuggestions, Enter committet / Escape canceln / Blur committet. tagEditorOpenFor:string|null + tagDraft:string als lokaler State. Container nur sichtbar wenn Tags existieren ODER Editor offen ODER Sample selektiert (closes UI-Clutter). e.stopPropagation auf Container damit Sample-Row-Click-Handler nicht feuert.",
+        "client/src/App.tsx: <SampleBrowser> erhält onAddTagToSample={project.addTagToSample} + onRemoveTagFromSample={project.removeTagFromSample} aus dem schon existing v3.54-Store.",
+        "tests/features/project-serializer.test.ts: +7 NEU im v1.23-Block: pre-v1.23-Files ohne tags-Property → tags undefined, v1.23 tags=string[] round-trip, non-string Entries gefiltert, tags=null → property entfernt, tags=non-array (String) → entfernt, tags werden normalisiert+dedupliziert, full serialize→parse round-trip. Vorhandene SYNTH_FILE_VERSION-Asserts in 6 anderen Test-Files mit angepasst (audio-track-stretch/store, multi-bar-pattern, plugin-host, plugin-multislot, script-store).",
+        "tests/features/sample-library-tags.test.ts: +8 NEU in 2 describes: (1) Tag-Editor-UI-Pipeline (3 Tests) — Store-Update-Simulation Add/Remove via samples.map, idempotenter Add, Reference-Identity für andere Samples bei Remove, User-Input-Normalisierung beim Add. (2) getTopTagSuggestions (5 Tests) — Frequency-Sort, Auffüllen mit COMMON_TAG_SUGGESTIONS, Dedup bei Common-Tag-Überlapp, leere Liste = nur Common-Tags, limit-Clamping.",
+        "package.json + agents/INDEX.js version 3.54.0 → 3.55.0."
+      ],
+      next: [
+        "v3.56 Bulk-Tag-Action bei Multi-Select: 'Tag selected as…' Dropdown im SampleBrowser-Header sobald 2+ Samples selektiert sind. Erfordert Multi-Select-State (Set<string>) — aktuell ist Browser nur Single-Select via selectedSampleId.",
+        "v3.56 Tag-Editor-Polish: Backspace bei leerem tagDraft löscht den letzten Tag-Chip (Gmail-Style). Aktuell muss User explizit auf × klicken.",
+        "v3.56 Auto-Complete-Suggestion-Dropdown statt datalist: native datalist hat schlechte Styling-Kontrolle. Custom-Suggestion-List mit Keyboard-Nav (↑↓ Enter) für besseren UX.",
+        "v3.56 Tag-Rename: Globaler Rename-Flow (alle Samples mit Tag X umbenennen auf Y) — aktuell müsste User pro Sample editieren."
+      ],
+      changed: [
+        "client/src/utils/projectSerializer.ts (+~50 LOC: sanitizeSampleTags + Header-Block + Aufruf in parseProject)",
+        "client/src/utils/sampleLibrary.ts (+~50 LOC: COMMON_TAG_SUGGESTIONS + getTopTagSuggestions)",
+        "client/src/components/SampleBrowser/SampleBrowser.tsx (+~100 LOC: 2 Props, Tag-Editor-State, Tag-Chip/Add-Button-Render, Inline-Input mit datalist)",
+        "client/src/App.tsx (+2 LOC: 2 neue Props an <SampleBrowser>)",
+        "tests/features/project-serializer.test.ts (+~95 LOC: 7 v1.23-Tests + 2 SYNTH_FILE_VERSION-Updates)",
+        "tests/features/sample-library-tags.test.ts (+~95 LOC: 8 neue Tests in 2 describes, +2 Imports)",
+        "tests/features/audio-track-stretch.test.ts (Version-String 1.22→1.23)",
+        "tests/features/audio-track-store.test.ts (Version-Strings 1.22→1.23 in 2 Asserts)",
+        "tests/features/multi-bar-pattern.test.ts (Version-String 1.22→1.23)",
+        "tests/features/plugin-host.test.ts (Version-Strings 1.22→1.23 in 2 Asserts + describe-Label)",
+        "tests/features/plugin-multislot.test.ts (Version-String 1.22→1.23)",
+        "tests/features/script-store.test.ts (Version-String 1.22→1.23)",
+        "package.json (3.54.0 → 3.55.0)",
+        "agents/INDEX.js (version 3.54.0 → 3.55.0 + workLog v3.55.0)"
+      ],
+      caveats: [
+        "SampleBrowserPopupApp.tsx (Detached-Window-Mode) hat einen EIGENEN Sample-Renderer (kein <SampleBrowser>-Reuse) — der Tag-Editor existiert dort NICHT. User der den Browser ins eigene Fenster ausgklickt hat sieht keine Tag-Editoren. FU: SampleBrowserPopupApp auf gemeinsame Komponente migrieren ODER eigenen Tag-Editor-Mini-UI dort einbauen.",
+        "Bulk-Tag-Action bei Multi-Select war Teil des v3.55-Tasks, ist aber NICHT implementiert — der bestehende Browser unterstützt nur Single-Select (selectedSampleId:string|null), nicht Set<string>. Würde einen größeren Multi-Select-Refactor erfordern. → FU v3.56.",
+        "Native HTML-datalist hat schlechte Styling-Kontrolle und feuert nur on-keystroke. Ein Custom-Suggestion-Dropdown wäre besser, aber für v3.55 hatten wir den 'just works'-Pfad priorisiert. → FU v3.56.",
+        "v1.23-Schema ist additiv-only — Tags landen JETZT in .synth-Files, aber dort wo bisher tags fehlten (lokale localStorage-Cached-Projects pre-v3.55) wird das Feld erst beim nächsten Save geschrieben. Kein Risiko, nur Hinweis.",
+        "Analyse-Cache-Tags (BPM-Genre wie 'techno', 'house') werden NICHT von sanitizeSampleTags angefasst (die leben im SampleBrowser-Local-State, nicht im Sample-Objekt). Bewusst: sie sind on-demand und sollen NICHT in .synth-Files persistieren."
+      ]
+    },
     {
       agent:     "frontend",
       timestamp: "2026-05-18T23:10:00.000Z",

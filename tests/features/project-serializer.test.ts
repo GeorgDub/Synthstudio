@@ -50,8 +50,8 @@ function baseProject(overrides: Partial<SynthProject> = {}): SynthProject {
 }
 
 describe("ProjectSerializer – Konstanten", () => {
-  it("SYNTH_FILE_VERSION ist '1.22' (seit v3.52: audio-track time-stretch)", () => {
-    expect(SYNTH_FILE_VERSION).toBe("1.22");
+  it("SYNTH_FILE_VERSION ist '1.23' (seit v3.55: Sample-Tags Persist)", () => {
+    expect(SYNTH_FILE_VERSION).toBe("1.23");
   });
 
   it("SYNTH_LATEST_KEY ist 'synthstudio:last-project' (localStorage-Key)", () => {
@@ -298,8 +298,8 @@ describe("ProjectSerializer – Mixed v1.14 (oldest) File", () => {
 // ─── padBank Migration (seit v1.17) ──────────────────────────────────────────
 
 describe("ProjectSerializer – padBank Migration (v1.16 → v1.17)", () => {
-  it("SYNTH_FILE_VERSION ist '1.22'", () => {
-    expect(SYNTH_FILE_VERSION).toBe("1.22");
+  it("SYNTH_FILE_VERSION ist '1.23'", () => {
+    expect(SYNTH_FILE_VERSION).toBe("1.23");
   });
 
   it("Fehlendes padBank-Feld (v1.16-File) → padBank bleibt undefined (Signal: localStorage nicht überschreiben)", () => {
@@ -658,5 +658,102 @@ describe("ProjectSerializer – v1.18 extended persistence (liveInputs/midiNoteO
       expect(parsed.midiNoteOut).toEqual({ enabled: false, configs: {} });
       expect(parsed.slicePads).toEqual([]);
     });
+  });
+});
+
+// ─── v1.23 Sample-Tags Persist (seit v3.55.0) ────────────────────────────────
+
+describe("ProjectSerializer – samples[].tags Migration (v1.22 → v1.23)", () => {
+  it("Pre-v1.23-File ohne tags-Property an Samples → tags bleibt undefined", () => {
+    const file = JSON.stringify({
+      version: "1.22", patterns: [],
+      samples: [
+        { id: "s1", name: "kick.wav", path: "/k.wav", category: "drum" },
+        { id: "s2", name: "snare.wav", path: "/sn.wav", category: "drum" },
+      ],
+    });
+    const parsed = parseProject(file);
+    expect(parsed.samples).toHaveLength(2);
+    expect(parsed.samples[0].tags).toBeUndefined();
+    expect(parsed.samples[1].tags).toBeUndefined();
+  });
+
+  it("v1.23-File mit tags=string[] → round-trip erhalten", () => {
+    const file = JSON.stringify({
+      version: "1.23", patterns: [],
+      samples: [
+        { id: "s1", name: "kick.wav", path: "/k.wav", category: "drum", tags: ["kick", "808"] },
+      ],
+    });
+    const parsed = parseProject(file);
+    expect(parsed.samples[0].tags).toEqual(["kick", "808"]);
+  });
+
+  it("v1.23-File mit tags=non-string-Entries → werden silent gefiltert", () => {
+    const file = JSON.stringify({
+      version: "1.23", patterns: [],
+      samples: [
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        { id: "s1", name: "x", path: "/x.wav", category: "drum", tags: ["kick", 42, null, "snare", undefined] } as any,
+      ],
+    });
+    const parsed = parseProject(file);
+    expect(parsed.samples[0].tags).toEqual(["kick", "snare"]);
+  });
+
+  it("v1.23-File mit tags=null → tags-Property wird entfernt (defensive)", () => {
+    const file = JSON.stringify({
+      version: "1.23", patterns: [],
+      samples: [
+        { id: "s1", name: "x", path: "/x.wav", category: "drum", tags: null },
+      ],
+    });
+    const parsed = parseProject(file);
+    expect(parsed.samples[0].tags).toBeUndefined();
+  });
+
+  it("v1.23-File mit tags=non-array (z.B. String) → tags-Property wird entfernt", () => {
+    const file = JSON.stringify({
+      version: "1.23", patterns: [],
+      samples: [
+        { id: "s1", name: "x", path: "/x.wav", category: "drum", tags: "not-an-array" },
+      ],
+    });
+    const parsed = parseProject(file);
+    expect(parsed.samples[0].tags).toBeUndefined();
+  });
+
+  it("v1.23 tags werden normalisiert (trim + lowercase + dedup)", () => {
+    const file = JSON.stringify({
+      version: "1.23", patterns: [],
+      samples: [
+        { id: "s1", name: "x", path: "/x.wav", category: "drum", tags: ["  KICK ", "kick", "Snare", "snare"] },
+      ],
+    });
+    const parsed = parseProject(file);
+    expect(parsed.samples[0].tags).toEqual(["kick", "snare"]);
+  });
+
+  it("Full round-trip: serialize → parse mit tags-Feldern", () => {
+    const p = {
+      projectName: "Tag-Test", bpm: 128,
+      samples: [
+        { id: "s1", name: "k.wav", path: "/k.wav", category: "drum", tags: ["kick", "808"] },
+        { id: "s2", name: "v.wav", path: "/v.wav", category: "vocal", tags: ["vox", "wet"] },
+      ],
+      patterns: [], activePatternId: "x",
+      song: { slots: [], songModeActive: false, loopSong: false },
+      mixer: { masterVolume: 1, channels: [], returnTracks: [], insertChains: {}, eq16: {}, sidechains: {}, transientShapers: {} },
+      humanizer: { global: {} },
+      automation: { lanes: [], stepCount: 16 as 16 | 32 | 64 },
+    };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const ser = serializeProject(p as any);
+    const json = toJson(ser);
+    const parsed = parseProject(json);
+    expect(parsed.version).toBe("1.23");
+    expect(parsed.samples).toHaveLength(2);
+    expect(parsed.samples[0].tags).toEqual(["kick", "808"]);
+    expect(parsed.samples[1].tags).toEqual(["vox", "wet"]);
   });
 });

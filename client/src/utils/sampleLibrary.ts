@@ -201,6 +201,59 @@ export function extractAllTags(samples: Sample[]): string[] {
 }
 
 /**
+ * v3.55.0: Vordefinierte Tag-Suggestions (DAW-übliche Drum/Synth-Begriffe).
+ * Werden als Fallback in die Auto-Complete-Liste eingefügt wenn der User
+ * noch wenig eigene Tags hat.  Wird vom SampleBrowser für die Datalist
+ * konsumiert.
+ */
+export const COMMON_TAG_SUGGESTIONS: ReadonlyArray<string> = [
+  "kick", "snare", "hihat", "clap", "perc", "tom", "cymbal", "ride",
+  "bass", "lead", "pad", "pluck", "arp",
+  "vox", "vocal", "fx", "loop", "oneshot", "rise", "drop",
+];
+
+/**
+ * v3.55.0: Liefert die Top-N most-used Tags aus einer Sample-Liste.
+ *
+ * Verhalten:
+ *  - Tags werden über die Sample-Liste gezählt (mehr Vorkommen = höher).
+ *  - Bei Gleichstand wird stabil sortiert (lexikografisch alphabetisch).
+ *  - Wenn weniger als `limit` eigene Tags vorhanden sind, wird mit
+ *    COMMON_TAG_SUGGESTIONS aufgefüllt (ohne Duplikate).
+ *  - `limit` (default 10) clampt die Ausgabe.
+ */
+export function getTopTagSuggestions(
+  samples: Sample[],
+  limit: number = 10,
+): string[] {
+  const counts = new Map<string, number>();
+  for (const s of samples) {
+    for (const t of getSampleTags(s)) {
+      counts.set(t, (counts.get(t) ?? 0) + 1);
+    }
+  }
+  const own = Array.from(counts.entries())
+    .sort((a, b) => {
+      if (b[1] !== a[1]) return b[1] - a[1];
+      return a[0].localeCompare(b[0]);
+    })
+    .map(([t]) => t);
+
+  const out: string[] = own.slice(0, limit);
+  if (out.length >= limit) return out;
+
+  const seen = new Set(out);
+  for (const t of COMMON_TAG_SUGGESTIONS) {
+    if (out.length >= limit) break;
+    if (!seen.has(t)) {
+      seen.add(t);
+      out.push(t);
+    }
+  }
+  return out;
+}
+
+/**
  * Komposit-Filter: Category + Tags + Search.
  *
  *  - category 'all'/''       → keine Kategorie-Filterung

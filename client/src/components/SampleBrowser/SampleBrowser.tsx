@@ -28,10 +28,12 @@ import type { Sample } from "../../store/useProjectStore";
 import { WaveformDisplay } from "../WaveformDisplay";
 import { useAudioAnalysis } from "../../hooks/useAudioAnalysis";
 // v3.54.0: Pure-fn Sample-Library Filter + Search.
+// v3.55.0: getTopTagSuggestions für Autocomplete-Liste im Tag-Editor.
 import {
   applySampleFilters,
   extractAllTags,
   getSampleTags,
+  getTopTagSuggestions,
   type FilterMode,
 } from "@/utils/sampleLibrary";
 
@@ -59,6 +61,10 @@ export interface SampleBrowserProps {
   onReorderSamples?: (draggedId: string, targetId: string) => void;
   /** Callback wenn Kategorie eines Samples geändert wurde */
   onUpdateSampleCategory?: (id: string, category: string) => void;
+  /** v3.55.0: Tag zu einem Sample hinzufügen */
+  onAddTagToSample?: (id: string, tag: string) => void;
+  /** v3.55.0: Tag aus einem Sample entfernen */
+  onRemoveTagFromSample?: (id: string, tag: string) => void;
 }
 
 // ─── Konstanten ───────────────────────────────────────────────────────────────
@@ -519,6 +525,8 @@ export function SampleBrowser({
   activeChannelName,
   onUpdateSampleCategory,
   onReorderSamples,
+  onAddTagToSample,
+  onRemoveTagFromSample,
 }: SampleBrowserProps) {
   // ── Einziger Zugriffspunkt auf Electron-Features ──────────────────────────
   const electron = useElectron();
@@ -692,6 +700,45 @@ export function SampleBrowser({
       prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]
     );
   }, []);
+
+  // ── v3.55.0: Tag-Editor pro Sample ────────────────────────────────────────
+  // Inline-Input: nur EIN Sample hat gerade den Add-Tag-Input geöffnet.
+  // null = niemand. Bei Open wird der Input fokussiert; Blur/Enter committet,
+  // Escape/leer-Submit canceln.
+  const [tagEditorOpenFor, setTagEditorOpenFor] = useState<string | null>(null);
+  const [tagDraft, setTagDraft] = useState<string>("");
+
+  // Top-10-most-used Tags aus dem aktuellen Sample-Set (Frequency-Map).
+  // Wird als Suggestion-Liste neben dem Input gezeigt — mit den hardcoded
+  // COMMON_TAG_SUGGESTIONS als Fallback wenn die Library noch leer ist.
+  const tagSuggestions = useMemo<string[]>(
+    () => getTopTagSuggestions(samples, 10),
+    [samples],
+  );
+
+  const handleOpenTagEditor = useCallback((sampleId: string) => {
+    setTagEditorOpenFor(sampleId);
+    setTagDraft("");
+  }, []);
+
+  const handleCommitTagDraft = useCallback((sampleId: string) => {
+    const raw = tagDraft.trim();
+    if (raw.length > 0 && onAddTagToSample) {
+      onAddTagToSample(sampleId, raw);
+    }
+    setTagEditorOpenFor(null);
+    setTagDraft("");
+  }, [tagDraft, onAddTagToSample]);
+
+  const handleRemoveTag = useCallback((sampleId: string, tag: string) => {
+    if (onRemoveTagFromSample) onRemoveTagFromSample(sampleId, tag);
+  }, [onRemoveTagFromSample]);
+
+  const handleApplySuggestion = useCallback((sampleId: string, tag: string) => {
+    if (onAddTagToSample) onAddTagToSample(sampleId, tag);
+    setTagEditorOpenFor(null);
+    setTagDraft("");
+  }, [onAddTagToSample]);
 
   const selectedIndex = useMemo(() => {
     if (!selectedSampleId) return -1;
@@ -1505,11 +1552,92 @@ export function SampleBrowser({
                           {sample.category.slice(0, 3).toUpperCase()}
                         </span>
 
-                        {/* Name */}
+                        {/* Name + v3.55.0 Tag-Chips/Editor */}
                         <div className="flex-1 min-w-0">
                           <p className={`text-xs truncate ${isSelected ? "text-accent-primary" : "text-text-primary"}`}>
                             {sample.name}
                           </p>
+                          {/* v3.55.0: Tag-Chips + Add-Tag-Input. Nur sichtbar wenn Tags
+                             vorhanden ODER User gerade den Editor geöffnet hat ODER
+                             Sample selektiert ist (für sauberen ersten "+"-Click). */}
+                          {(getSampleTags(sample).length > 0 || tagEditorOpenFor === sample.id || isSelected) && (
+                            <div
+                              className="flex flex-wrap items-center gap-1 mt-0.5"
+                              data-testid={`sample-tags-${sample.id}`}
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              {getSampleTags(sample).map((tag) => (
+                                <span
+                                  key={tag}
+                                  data-testid={`sample-tag-chip-${sample.id}-${tag}`}
+                                  className="inline-flex items-center gap-0.5 px-1.5 py-0 rounded-full text-[9px] bg-accent-secondary/30 text-accent-secondary border border-accent-secondary/40"
+                                  title={`Tag #${tag}`}
+                                >
+                                  #{tag}
+                                  {onRemoveTagFromSample && (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleRemoveTag(sample.id, tag);
+                                      }}
+                                      data-testid={`sample-tag-remove-${sample.id}-${tag}`}
+                                      title="Tag entfernen"
+                                      className="ml-0.5 w-3 h-3 inline-flex items-center justify-center rounded-full text-text-dim hover:text-accent-danger hover:bg-accent-danger/20 transition-colors leading-none"
+                                    >
+                                      ×
+                                    </button>
+                                  )}
+                                </span>
+                              ))}
+                              {/* Add-Tag-Trigger / Inline-Input */}
+                              {onAddTagToSample && (
+                                tagEditorOpenFor === sample.id ? (
+                                  <span className="inline-flex items-center gap-1">
+                                    <input
+                                      type="text"
+                                      autoFocus
+                                      value={tagDraft}
+                                      onChange={(e) => setTagDraft(e.target.value)}
+                                      onKeyDown={(e) => {
+                                        if (e.key === "Enter") {
+                                          e.preventDefault();
+                                          handleCommitTagDraft(sample.id);
+                                        } else if (e.key === "Escape") {
+                                          e.preventDefault();
+                                          setTagEditorOpenFor(null);
+                                          setTagDraft("");
+                                        }
+                                      }}
+                                      onBlur={() => handleCommitTagDraft(sample.id)}
+                                      placeholder="tag…"
+                                      data-testid={`sample-tag-input-${sample.id}`}
+                                      list={`sample-tag-suggest-${sample.id}`}
+                                      className="px-1 py-0 text-[10px] rounded bg-bg-elevated border border-border-color text-text-primary w-20 focus:border-accent-primary outline-none"
+                                    />
+                                    <datalist id={`sample-tag-suggest-${sample.id}`}>
+                                      {tagSuggestions.map((t) => (
+                                        <option key={t} value={t} />
+                                      ))}
+                                    </datalist>
+                                  </span>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleOpenTagEditor(sample.id);
+                                    }}
+                                    data-testid={`sample-tag-add-${sample.id}`}
+                                    title="Tag hinzufügen"
+                                    className="px-1 py-0 text-[9px] rounded-full border border-dashed border-border-color text-text-dim hover:text-accent-primary hover:border-accent-primary transition-colors"
+                                  >
+                                    + Tag
+                                  </button>
+                                )
+                              )}
+                            </div>
+                          )}
                         </div>
 
                         {/* Größe */}

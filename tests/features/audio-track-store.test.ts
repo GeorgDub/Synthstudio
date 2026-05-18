@@ -399,10 +399,10 @@ describe("projectSerializer × audioTracks", () => {
     localStorageMock.clear();
   });
 
-  it("SYNTH_FILE_VERSION ist '1.22' (audioTracks bleiben kompatibel)", () => {
-    // v1.22 bumpt für AudioTrack-Time-Stretch (v3.52); audioTracks
+  it("SYNTH_FILE_VERSION ist '1.23' (audioTracks bleiben kompatibel)", () => {
+    // v1.23 bumpt für Sample-Tags-Persist (v3.55); audioTracks
     // (seit v1.15) bleiben additiv-kompatibel.
-    expect(SYNTH_FILE_VERSION).toBe("1.22");
+    expect(SYNTH_FILE_VERSION).toBe("1.23");
   });
 
   it("Serializer Round-trip: serialize → JSON → parse erhält audioTracks", () => {
@@ -431,7 +431,7 @@ describe("projectSerializer × audioTracks", () => {
     expect(restored.audioTracks).toBeDefined();
     expect(restored.audioTracks).toHaveLength(1);
     expect(restored.audioTracks![0]).toEqual(tracks[0]);
-    expect(restored.version).toBe("1.22");
+    expect(restored.version).toBe("1.23");
   });
 
   it("Migration: v1.14-File ohne audioTracks-Feld → audioTracks ist []", () => {

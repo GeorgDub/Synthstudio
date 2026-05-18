@@ -3203,6 +3203,8 @@ export default function App() {
                 activeChannelName={activeChannelName}
                 onUpdateSampleCategory={handleUpdateSampleCategory}
                 onReorderSamples={project.reorderSamples}
+                onAddTagToSample={project.addTagToSample}
+                onRemoveTagFromSample={project.removeTagFromSample}
               />
             )}
             {/* Resize Handle */}
