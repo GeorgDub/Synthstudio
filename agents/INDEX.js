@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.113.0",
+    version: "3.114.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -89,7 +89,32 @@ const INDEX = {
   // ─── KNOWN FILE INDEX ──────────────────────────────────────
   // Key files agents have analyzed. Add new entries after working on a file.
   files: {
-    "client/src/audio/AudioInputRecorder.ts (v3.113.0 NEU)": {
+    "client/public/worklets/recorder-worklet.js (v3.114.0 NEU)": {
+      role:     "v3.114.0 NEU (~160 LOC plain JS, kein TS-Compile). AudioWorkletProcessor 'recorder-processor' für LiveRecorder + AudioInputRecorder. Läuft im Audio-Rendering-Thread (off main). Protokoll port.onmessage: {cmd:'start'} reset+running, {cmd:'stop'} flush+'done', {cmd:'getBuffer'} flush+'chunks', {cmd:'setMaxFrames',value:n} Memory-Cap setter. Outgoing-Messages: {type:'chunks',left,right,frameCount} alle ~85ms (FLUSH_FRAMES=4*128), {type:'limit',frameCount} bei Memory-Cap-Hit, {type:'done',left,right,frameCount,truncated} final concat-Float32. process(inputs) Pflicht-Copy der Input-Arrays (audio-thread reuse-Schutz). DEFAULT_MAX_FRAMES=600*48000 (~10min @ 48k). registerProcessor()-Call am Ende. Mono/Stereo auto-detection per inputs[0]-channel-count.",
+      lastSeen: "2026-05-19T13:35:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/audio/worklets/recorderWorkletLoader.ts (v3.114.0 NEU)": {
+      role:     "v3.114.0 NEU (~70 LOC). Async-Init-Helper für recorder-processor. RECORDER_WORKLET_URL='./worklets/recorder-worklet.js' + RECORDER_DEFAULT_MAX_FRAMES=600*48000 konstanten-exports. isAudioWorkletAvailable(ctx) Feature-Detect (checked audioWorklet?.addModule typeof function). loadRecorderWorklet(ctx, urlOverride?) idempotent per WeakMap<BaseAudioContext, boolean>-Cache + in-flight WeakMap<BaseAudioContext, Promise<void>> (verhindert double-addModule bei concurrent calls). Throws Error wenn AudioWorklet undefined — Caller handled das als Fallback-Signal. __resetRecorderWorkletForTests(ctx) Test-Helper.",
+      lastSeen: "2026-05-19T13:35:00.000Z",
+      ownedBy:  "backend"
+    },
+    "tests/features/audio-worklet-recorder.test.ts (v3.114.0 NEU)": {
+      role:     "v3.114.0 NEU (~430 LOC, 20 Tests in 5 describes). MockAudioWorkletNode + MockMessagePort + MockAudioContext-mit-MockAudioWorklet (addModuleCalls-Trace + failNext-Flag). Cluster: (1) recorderWorkletLoader × 6 — Available true/false/null-ctx, addModule mit korrekter URL, idempotent (2nd call skip addModule), throws wenn AudioWorklet undefined. (2) LiveRecorder Worklet-Pfad × 6 — addTrack-Worklet-Flag, port.onmessage 'chunks' appended Buffer + frameCount, 'limit' truncated, Per-Channel 2 separate Workletnodes, Master+Channel separation, 'done' überschreibt streaming. (3) LiveRecorder Fallback × 2 — audioWorklet=undefined nimmt ScriptProcessor, __pushFramesForTest im Fallback. (4) AudioInputRecorder Worklet × 5 — connect+start+Worklet, chunks-Append+wavBytes, limit-truncated, audioWorklet=undefined Fallback, disconnect cleared. (5) Cleanup. globalThis.AudioWorkletNode-Mock installiert beforeEach. Alle 20 grün.",
+      lastSeen: "2026-05-19T13:35:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/audio/AudioInputRecorder.ts (v3.114.0 AudioWorklet-Migration)": {
+      role:     "v3.114.0 MIGRIERT (~470 LOC, +~120 vs v3.113). Public API UNVERÄNDERT. ScriptProcessorNode → AudioWorkletNode (recorder-processor) im Audio-Rendering-Thread off-main. NEU import isAudioWorkletAvailable+loadRecorderWorklet aus ./worklets/recorderWorkletLoader. NEU private _usesWorklet, _workletAvailable, _workletReady. connect() prüft Worklet-Availability + lädt Worklet im Hintergrund per loadRecorderWorklet().then. _armCapture entscheidet via (_workletAvailable && _workletReady) zwischen _armCaptureWorklet (preferred) und _armCaptureScriptProcessor (Fallback). _armCaptureWorklet: new AudioWorkletNode(ctx,'recorder-processor',{numberOfInputs:1,channelCount,channelCountMode:'explicit'}), port.onmessage Append-Pattern für 'chunks'/'limit'/'done', cmd:'setMaxFrames'+'start' posten. stop() schickt cmd:'stop' bevor teardown. _teardownCapture nullt port.onmessage wenn worklet, sonst onaudioprocess=null. NEU Getter usesAudioWorklet. NEU __postWorkletMessageForTest-Test-Helper. AUDIO_INPUT_MAX_FRAMES = RECORDER_DEFAULT_MAX_FRAMES (unverändert numerisch).",
+      lastSeen: "2026-05-19T13:35:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/audio/LiveRecorder.ts (v3.114.0 AudioWorklet-Migration)": {
+      role:     "v3.114.0 MIGRIERT (~580 LOC, +~140 vs v3.110). Public API UNVERÄNDERT (addTrack/removeTrack/start/stop/cancel/dispose/__pushFramesForTest). ScriptProcessorNode → AudioWorkletNode (recorder-processor). NEU import isAudioWorkletAvailable+loadRecorderWorklet+RECORDER_DEFAULT_MAX_FRAMES aus ./worklets/recorderWorkletLoader. ActiveTrackState.processor: AudioNode (entweder AudioWorkletNode oder ScriptProcessorNode). NEU usesWorklet-Flag pro Track + donePromise/doneResolve für stop-Synchronisation. setContext() invalidiert Worklet-Ready-Flag bei Context-Switch. start(): einmaliges Feature-Detect (_workletDetected-Flag) + async loadRecorderWorklet (fire-and-forget). _armTap entscheidet via (_workletAvailable && _workletReady) zwischen _armTapWorklet (preferred) und _armTapScriptProcessor (Fallback). _armTapWorklet: AudioWorkletNode-Konstruktion mit channelCount=state.channels + 'explicit' mode, port.onmessage Append-Pattern, cmd:'setMaxFrames' + 'start' posten. stop() schickt cmd:'stop' bevor teardown an ALLE Worklet-Tracks. NEU Getter usesAudioWorklet. NEU __postWorkletMessageForTest-Test-Helper. LIVE_REC_MAX_FRAMES_PER_TRACK = RECORDER_DEFAULT_MAX_FRAMES (unverändert numerisch).",
+      lastSeen: "2026-05-19T13:35:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/audio/AudioInputRecorder.ts (v3.113.0 NEU — replaced by v3.114.0)": {
       role:     "v3.113.0 NEU (+~395 LOC). External-Audio-Input-Recorder (Mic/Synth/Line-In). Vs. useLiveInputStore (Outboard-FX-Multi-Channel-Modus) ist das ein single-stream Recorder. Pure-Helpers exported: rmsDbFromTimeDomain(buf) RMS-Berechnung mit -100 dB Silence-Floor, concatFloat32Chunks(chunks[]) chunk-merger. Class AudioInputRecorder: enumerateDevices()→AudioInputDeviceInfo[], connect(deviceId, ctx) throws on permission-deny + idempotent + auto-cleanup, disconnect() stoppt MediaStreamTracks (kein Zombie-Mic-LED), start()/stop()→AudioInputRecordingResult (Float32 left/right + sampleRate + durationMs + channels + truncated + wavBytes). Setter setMonitorGain/setInputGain (0..2 clamp + setTargetAtTime). Getter isConnected/isRecording/tapNode/recordedDurationMs. Level-Meter via AnalyserNode (fftSize=1024) — getLevel() returnt RMS dB. Memory-Cap AUDIO_INPUT_MAX_FRAMES=600*48000 → auto-truncated. ScriptProcessor 4096 Frames. Pipeline: source → inputGain → [analyser, monitorGain→destination, processor→silentSink→destination]. Monitor-Path parallel. __pushFramesForTest + __forceTestState für DOM-frei Tests. AudioInputRoute Type exportiert ('master'|'live-recorder'|'both').",
       lastSeen: "2026-05-19T13:25:00.000Z",
       ownedBy:  "backend"
@@ -2747,6 +2772,37 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "backend",
+      timestamp: "2026-05-19T13:35:00.000Z",
+      done: [
+        "v3.114.0: AudioWorklet Recording Migration — closes v3.110 + v3.113 ScriptProcessor-Caveats. LiveRecorder + AudioInputRecorder verwenden ab jetzt AudioWorkletNode (recorder-processor) im Audio-Rendering-Thread off-main statt deprecated ScriptProcessorNode. Public API IDENTISCH — kein UI-Break, alle 6 existierenden v3.110/v3.113 Tests bleiben grün (audio-recording-multitrack.test.ts + audio-input-recorder-v3113.test.ts).",
+        "client/public/worklets/recorder-worklet.js NEU (~160 LOC plain JS, browser-readable). AudioWorkletProcessor 'recorder-processor'. Protokoll port.onmessage: {cmd:'start'|'stop'|'getBuffer'|'setMaxFrames'}. Outgoing: {type:'chunks',left,right,frameCount} streaming alle ~85ms (4 chunks á 128 frames), {type:'limit'} bei Memory-Cap, {type:'done'} final mit concat-Float32-Buffer. process(inputs): pending-Chunks akkumulieren + periodisch flushen + post → main behält stets aktuellen Buffer-State. Memory-Cap = 600*48000 frames (~10min @ 48k) default, via setMaxFrames-cmd uebersteuerbar.",
+        "client/src/audio/worklets/recorderWorkletLoader.ts NEU (~70 LOC). Pure-Helpers: isAudioWorkletAvailable(ctx) Feature-Detect, loadRecorderWorklet(ctx, urlOverride?) idempotent per WeakMap<Context, boolean> + in-flight-Promise-Cache (verhindert double-addModule bei concurrent calls), RECORDER_WORKLET_URL='./worklets/recorder-worklet.js', RECORDER_DEFAULT_MAX_FRAMES=600*48000. Throws Error wenn AudioWorklet undefined — Caller handled das als Fallback-Signal. __resetRecorderWorkletForTests-Test-Helper.",
+        "client/src/audio/LiveRecorder.ts MIGRIERT (+~140 LOC, ~580 LOC gesamt). Public API IDENTISCH. NEU _armTapWorklet (preferred) vs _armTapScriptProcessor (Fallback). setContext invalidiert Worklet-Ready-Flag bei Context-Switch. start() triggert async loadRecorderWorklet (fire-and-forget) — pre-registered Tracks fallen temporär auf ScriptProcessor zurueck, neue addTracks NACH ready nutzen Worklet. AudioWorkletNode {numberOfInputs:1, channelCount=channels, channelCountMode:'explicit'}. port.onmessage append-Pattern: 'chunks' → bufferLeft/Right.push, 'limit' → truncated=true, 'done' → bufferLeft = [data.left] (überschreibt streaming). stop() schickt cmd:'stop' an Worklet-Port bevor teardown. usesAudioWorklet-Getter für Tests/Telemetry. __postWorkletMessageForTest-Test-Helper.",
+        "client/src/audio/AudioInputRecorder.ts MIGRIERT (+~120 LOC, ~470 LOC gesamt). Public API IDENTISCH. connect() prüft Worklet-Availability + lädt Worklet im Hintergrund — start() entscheidet via _workletReady welcher Pfad. _armCaptureWorklet vs _armCaptureScriptProcessor symmetrisch zu LiveRecorder. usesAudioWorklet-Getter. __postWorkletMessageForTest-Test-Helper. disconnect() cleared _workletReady + _workletAvailable.",
+        "tests/features/audio-worklet-recorder.test.ts NEU (~430 LOC, 20 Tests in 5 describes). Cluster: (1) recorderWorkletLoader × 6 — isAudioWorkletAvailable mit/ohne audioWorklet/null-ctx, loadRecorderWorklet ruft addModule mit korrekter URL, idempotent (zweiter Call kein addModule), throws ohne AudioWorklet. (2) LiveRecorder Worklet-Pfad × 6 — start+addTrack→usesAudioWorklet=true, port.onmessage 'chunks' appended bufferLeft + frameCount, 'limit' → truncated, Per-Channel 2 separate Workletnodes, Master + Channel separation, 'done' überschreibt streaming-Buffer. (3) LiveRecorder Fallback × 2 — audioWorklet=undefined → usesAudioWorklet=false + ScriptProcessor wired, __pushFramesForTest funktioniert im Fallback. (4) AudioInputRecorder Worklet-Pfad × 5 — connect+start→usesAudioWorklet=true, chunks-Message appended Buffer + stop liefert Frames + wavBytes, 'limit' → truncated, audioWorklet=undefined → ScriptProcessor-Fallback, disconnect cleared State. (5) Cleanup × 1. MockAudioWorkletNode + MockMessagePort + MockAudioContext-mit-MockAudioWorklet. Alle 20 grün.",
+        "package.json 3.113.0 → 3.114.0. pnpm check: clean. pnpm test: 261 Files / 5969 passed / 16 skipped / 0 fail (+20 vs v3.113)."
+      ],
+      next: [
+        "Channel-Mismatch zwischen Pre-Registered + Worklet-Ready: pre-registered Tracks während async loadRecorderWorklet bleiben auf ScriptProcessor. Schöner wäre seamless re-attach nach ready — aber das würde mitten in der Aufnahme den Buffer fragmentieren. Doku-Hinweis aufnehmen.",
+        "Worklet-URL für PROD-Builds: in dev klappt './worklets/recorder-worklet.js' weil Vite publicDir serviert; in Electron-Production muss der Pfad mit base:'./' im vite.config.ts noch validiert werden (visuell via pnpm build:electron+packed open).",
+        "MessagePort-Backpressure: bei extrem hoher Sample-Rate (96k) + 32 Tracks könnten die postMessage-Bursts main-thread saturieren. Profilieren mit Performance.measureUserAgentSpecificMemory.",
+        "Worklet wiederverwenden vs neu instantiieren: aktuell baut jeder Track einen eigenen AudioWorkletNode. Bei 32 Tracks = 32 Worklet-Instances. Multi-Track-Single-Worklet mit Per-Input-Indexing wäre Speicher-effizienter aber komplexer.",
+        "AudioWorklet bei Vitest: aktueller Test simuliert MockAudioWorkletNode+MessagePort. Echtes Browser-Verhalten kann nur mit Playwright/Chromium verifiziert werden — separate E2E-Suite tests/web/audio-worklet.spec.ts wäre ergänzend.",
+        "Sample-Library-Integration für 'Add to Sample-Library'-Button (carried from v3.113): aktuell dispatcht der Button ein CustomEvent, aber kein Consumer ist verkabelt.",
+        "Permission-Lifecycle: navigator.permissions.query({name:'microphone'}) (carried from v3.113)."
+      ],
+      changed: [
+        "client/public/worklets/recorder-worklet.js (NEU, ~160 LOC, plain JS für browser-direct-load)",
+        "client/src/audio/worklets/recorderWorkletLoader.ts (NEU, ~70 LOC, Feature-Detect + idempotenter addModule-Loader)",
+        "client/src/audio/LiveRecorder.ts (MIGRIERT, +~140 LOC, Worklet-Pfad + ScriptProcessor-Fallback)",
+        "client/src/audio/AudioInputRecorder.ts (MIGRIERT, +~120 LOC, Worklet-Pfad + ScriptProcessor-Fallback)",
+        "tests/features/audio-worklet-recorder.test.ts (NEU, ~430 LOC, 20 Tests)",
+        "package.json (version 3.113.0 → 3.114.0)",
+        "agents/INDEX.js (version + workLog + files)"
+      ]
+    },
     {
       agent:     "backend",
       timestamp: "2026-05-19T13:25:00.000Z",

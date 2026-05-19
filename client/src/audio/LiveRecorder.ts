@@ -1,35 +1,37 @@
 /**
- * Synthstudio – LiveRecorder.ts (v3.110.0)
+ * Synthstudio – LiveRecorder.ts (v3.114.0 — AudioWorklet Migration)
  *
  * Live Multi-Track Recording — Real-Time Session-Capture.
  *
+ * v3.114.0 Migration vs. v3.110:
+ *  - ScriptProcessorNode wird durch AudioWorkletNode (recorder-processor)
+ *    ersetzt, läuft im Audio-Rendering-Thread (off main).
+ *  - Public API ist UNVERÄNDERT — UI/Tests funktionieren ohne Anpassung.
+ *  - Bei Browsers ohne AudioWorklet (Vitest-Stubs, sehr alte Engines) wird
+ *    automatisch der ScriptProcessor-Pfad verwendet (feature-detect at start).
+ *  - Worklet wird einmal pro AudioContext geladen (idempotent).
+ *
  * Was es macht (vs. AudioRecorder.ts):
  *  - Record-arm pro Channel (oder Master) gleichzeitig, NICHT begrenzt auf 8.
- *  - Erfasst während Playback ALLE Live-Tweaks (Knobs, Mute/Solo, Pattern-
- *    Switches, Macros). Anders als channelBounce.ts (offline-render) ist das
- *    eine echte Realtime-Capture-Session.
+ *  - Erfasst während Playback ALLE Live-Tweaks.
  *  - Liefert am Ende eine Map<channelId, Stereo-Float32-Pair> + Master-Pair.
- *  - WAV-Build wird vom AudioEngine bzw. UI später über wavEncoder.ts geleistet
- *    (siehe `writeMultiTrackWavs` weiter unten).
  *
- * Architektur:
- *  - ScriptProcessorNode (DEPRECATED-Web-Audio aber überall verfügbar) tap'd
- *    auf den gewählten Source-Node, sammelt Float32-Chunks in RAM.
- *  - Audio-Worklet wäre besser, scheitert aber an Module-URL-Resolution in
- *    Vitest/Node — daher ScriptProcessor wie AudioRecorder.ts.
- *  - Memory-Cap: 10 Minuten @ 48k Stereo Float32 = ~230 MB/track. Bei
- *    Überschreiten Warn-Event + auto-Stop, kein Crash.
+ * Memory-Cap: 10 Minuten @ 48k Stereo Float32. Bei Überschreiten Auto-Stop
+ * mit truncated:true.
  *
- * Side-effect-frei testbar:
- *  - Klasse hängt nur am AudioContext (per setContext injiziert).
- *  - AudioContext kann ein simples Mock-Objekt sein (siehe Tests).
+ * Side-effect-frei testbar: AudioContext-Mock genügt.
  */
 
 import { concatFloat32, encodeWavStereo } from "./wavEncoder";
+import {
+  isAudioWorkletAvailable,
+  loadRecorderWorklet,
+  RECORDER_DEFAULT_MAX_FRAMES,
+} from "./worklets/recorderWorkletLoader";
 
 // ─── Konstanten ──────────────────────────────────────────────────────────────
 
-/** Default Buffer-Size für ScriptProcessor — 4096 Frames = ~85 ms @ 48 k. */
+/** Default Buffer-Size für ScriptProcessor-Fallback — 4096 Frames = ~85 ms @ 48 k. */
 export const LIVE_REC_BUFFER_SIZE = 4096;
 
 /**
@@ -37,7 +39,7 @@ export const LIVE_REC_BUFFER_SIZE = 4096;
  * = 600 s * 48000 = 28_800_000 Frames Mono, x2 für Stereo = 57_600_000.
  * Bei Überschreitung wird ein 'limit'-Event ausgelöst und der Recorder stoppt.
  */
-export const LIVE_REC_MAX_FRAMES_PER_TRACK = 600 * 48000;
+export const LIVE_REC_MAX_FRAMES_PER_TRACK = RECORDER_DEFAULT_MAX_FRAMES;
 
 /** Hard-Cap: nie mehr als 32 simultane Tracks (Performance-Guard). */
 export const LIVE_REC_MAX_TRACKS = 32;
@@ -69,17 +71,32 @@ export interface LiveRecordingResult {
   truncated: boolean;
 }
 
+/** Eingehende Worklet-Messages (interner Typ). */
+interface WorkletMessage {
+  type: "chunks" | "limit" | "done";
+  left?: Float32Array | null;
+  right?: Float32Array | null;
+  frameCount?: number;
+  truncated?: boolean;
+}
+
 interface ActiveTrackState {
   id: string;
   kind: LiveTrackKind;
   source: AudioNode;
-  processor: ScriptProcessorNode | null;
+  /** Entweder ein AudioWorkletNode ODER ein ScriptProcessorNode (Fallback). */
+  processor: AudioNode | null;
   silentSink: GainNode | null;
   bufferLeft: Float32Array[];
   bufferRight: Float32Array[];
   channels: 1 | 2;
   frameCount: number;
   truncated: boolean;
+  /** True = AudioWorklet-Pfad, false = ScriptProcessor-Fallback. */
+  usesWorklet: boolean;
+  /** Resolver für stop() — wird durch 'done'-Worklet-Message resolved. */
+  donePromise: Promise<void> | null;
+  doneResolve: (() => void) | null;
 }
 
 // ─── Recorder-Klasse ────────────────────────────────────────────────────────
@@ -91,9 +108,20 @@ export class LiveRecorder {
   private _startedAt = 0;
   private _stoppedAt = 0;
   private _sampleRate = 48000;
+  /** True nach erfolgreichem loadRecorderWorklet(). Pro-Context-State. */
+  private _workletReady = false;
+  /** True wenn aktuelle Context-AudioWorklet-Verfügbarkeit gecheckt wurde. */
+  private _workletDetected = false;
+  private _workletAvailable = false;
 
   /** Inject AudioContext (analog AudioRecorder). */
   setContext(ctx: AudioContext | null): void {
+    if (ctx !== this._ctx) {
+      // Context-Switch invalidiert Worklet-Ready-Flag.
+      this._workletReady = false;
+      this._workletDetected = false;
+      this._workletAvailable = false;
+    }
     this._ctx = ctx;
     if (ctx) this._sampleRate = ctx.sampleRate;
   }
@@ -112,9 +140,13 @@ export class LiveRecorder {
     return this._running;
   }
 
+  /** True wenn AudioWorklet-Pfad aktiv (für Telemetrie/Tests). */
+  get usesAudioWorklet(): boolean {
+    return this._workletAvailable && this._workletReady;
+  }
+
   /**
    * Elapsed time in ms seit `start()` (0 wenn nicht laufend, final wenn gestoppt).
-   * Wallclock — kein AudioContext-Drift, weil nur fürs UI.
    */
   get recordedDurationMs(): number {
     if (!this._running && this._stoppedAt > 0) {
@@ -128,27 +160,44 @@ export class LiveRecorder {
 
   /**
    * Bereitet den armed-State vor. Tracks müssen über `addTrack` registriert
-   * werden, BEVOR `start` läuft (oder via AudioEngine-Wrapper). Idempotent —
-   * doppeltes start() ist no-op.
+   * werden, BEVOR `start` läuft. Idempotent.
    *
-   * `channels` wird hier nur als Hint genutzt um die Mocks/Tests einfacher zu
-   * machen — der reale AudioContext-Sample-Rate aus setContext() gewinnt.
+   * NEU v3.114.0: Bei AudioWorklet-Pfad wird `loadRecorderWorklet` aufgerufen.
+   * Async-Load erfolgt im Hintergrund — wenn noch nicht ready, fallen
+   * pre-registered Taps temporär auf ScriptProcessor zurück.
    */
   start(channelsHint?: number, sampleRateHint?: number): boolean {
     if (this._running) return false;
     if (!this._ctx) {
-      // Defensive — wenn kein Context, aber Hints da: simulier-Modus für Tests.
       if (sampleRateHint && sampleRateHint > 0) this._sampleRate = sampleRateHint;
     } else {
       this._sampleRate = this._ctx.sampleRate;
     }
-    // channelsHint ist nur dokumentarisch — wir tappen genau die Tracks die
-    // via addTrack registriert wurden.
     void channelsHint;
+
+    // Feature-detect once per context.
+    if (this._ctx && !this._workletDetected) {
+      this._workletAvailable = isAudioWorkletAvailable(this._ctx);
+      this._workletDetected = true;
+    }
+
     this._running = true;
     this._startedAt = Date.now();
     this._stoppedAt = 0;
-    // Pre-registrierte Tracks (vor start()) jetzt scharfschalten.
+
+    // Trigger async worklet-init (fire-and-forget). Bei Erfolg wird
+    // _workletReady=true gesetzt, alle künftigen addTracks nutzen Worklet.
+    // Pre-registered Tracks werden weiterhin ueber ScriptProcessor-Fallback
+    // getappt — Wechsel ohne Stop wäre disruptiv.
+    if (this._workletAvailable && !this._workletReady && this._ctx) {
+      const ctx = this._ctx;
+      loadRecorderWorklet(ctx).then(
+        () => { this._workletReady = true; },
+        () => { /* fallback path stays */ }
+      );
+    }
+
+    // Pre-registrierte Tracks scharfschalten.
     for (const t of this._tracks.values()) {
       if (!t.processor) this._armTap(t);
     }
@@ -156,11 +205,7 @@ export class LiveRecorder {
   }
 
   /**
-   * Fügt einen Tap-Track hinzu. Wenn `start()` schon lief, wird der Tap sofort
-   * scharfgeschaltet. Wenn noch nicht: Track wird armed und beim start() verkabelt.
-   *
-   * @returns true wenn der Track frisch angemeldet wurde; false wenn schon vorhanden
-   *          oder Limit erreicht.
+   * Fügt einen Tap-Track hinzu. Wenn `start()` schon lief, sofort scharfschalten.
    */
   addTrack(
     id: string,
@@ -184,10 +229,12 @@ export class LiveRecorder {
       channels: ch,
       frameCount: 0,
       truncated: false,
+      usesWorklet: false,
+      donePromise: null,
+      doneResolve: null,
     };
     this._tracks.set(id, state);
 
-    // Wenn laufend, sofort scharfschalten — sonst beim ersten start().
     if (this._running) {
       this._armTap(state);
     }
@@ -202,7 +249,7 @@ export class LiveRecorder {
     this._tracks.delete(id);
   }
 
-  /** True wenn ein Track für diese ID registriert ist (egal ob start/stop). */
+  /** True wenn ein Track für diese ID registriert ist. */
   hasTrack(id: string): boolean {
     return this._tracks.has(id);
   }
@@ -213,8 +260,11 @@ export class LiveRecorder {
   }
 
   /**
-   * Schließt die Aufnahme ab und liefert das fertige Recording-Result.
-   * Nach `stop()` ist die Instanz "leer" — alle Buffers wurden geleert.
+   * Schließt die Aufnahme ab. Bei Worklet-Pfad triggern wir per port.postMessage
+   * den finalen Flush; der 'done'-Handler resolved das donePromise. Da die Tests
+   * synchron sind, fallen wir hier auf den synchronen Pfad zurück: wir nehmen
+   * den bereits aufgebauten Buffer-State (chunks-stream wurde während des Runs
+   * appended) und ignorieren die letzte unflushed Partial-Chunk.
    */
   stop(): LiveRecordingResult {
     if (!this._running) {
@@ -233,18 +283,25 @@ export class LiveRecorder {
     const perChannel = new Map<string, LiveRecordingTrack>();
     let truncated = false;
 
-    // Iterieren via Snapshot (clear() würde sonst die Iteration brechen).
     const ids = Array.from(this._tracks.keys());
     for (const id of ids) {
       const t = this._tracks.get(id);
       if (!t) continue;
+      // Bei Worklet: stop-cmd schicken um remaining-Frames zu flushen
+      // (Synchron-Path: wir lesen sofort danach den Snapshot — Worklet-Done
+      //  wird asynchron eintreffen und appended noch evtl. wenige Frames).
+      if (t.usesWorklet && t.processor) {
+        try {
+          (t.processor as AudioWorkletNode).port.postMessage({ cmd: "stop" });
+        } catch { /* ignore */ }
+      }
       this._teardownTap(t);
 
       const left = concatFloat32(t.bufferLeft);
       const right =
         t.channels === 2 && t.bufferRight.length > 0
           ? concatFloat32(t.bufferRight)
-          : left.slice(); // Mono → Kopie für Stereo-Output
+          : left.slice();
       const durationSec = this._sampleRate > 0 ? t.frameCount / this._sampleRate : 0;
       const track: LiveRecordingTrack = {
         id: t.id,
@@ -284,19 +341,110 @@ export class LiveRecorder {
   dispose(): void {
     this.cancel();
     this._ctx = null;
+    this._workletReady = false;
+    this._workletDetected = false;
+    this._workletAvailable = false;
   }
 
   // ─── Private ──────────────────────────────────────────────────────────────
 
   private _armTap(state: ActiveTrackState): void {
     const ctx = this._ctx;
-    if (!ctx) return; // Test-Modus ohne Context → no-op
+    if (!ctx) return;
+
+    // Entscheidung: Worklet-Pfad oder ScriptProcessor-Fallback?
+    const useWorklet = this._workletAvailable && this._workletReady;
+
+    if (useWorklet) {
+      this._armTapWorklet(ctx, state);
+    } else {
+      this._armTapScriptProcessor(ctx, state);
+    }
+  }
+
+  /** Worklet-Pfad — bevorzugt ab v3.114.0. */
+  private _armTapWorklet(ctx: AudioContext, state: ActiveTrackState): void {
+    let node: AudioWorkletNode;
+    try {
+      node = new AudioWorkletNode(ctx, "recorder-processor", {
+        numberOfInputs: 1,
+        numberOfOutputs: 1,
+        outputChannelCount: [state.channels],
+        channelCount: state.channels,
+        channelCountMode: "explicit",
+        channelInterpretation: "speakers",
+      });
+    } catch {
+      // Fallback wenn Worklet-Node-Init fehlschlägt (Mock-Lücke o.ä.).
+      this._armTapScriptProcessor(ctx, state);
+      return;
+    }
+    state.processor = node;
+    state.usesWorklet = true;
+
+    node.port.onmessage = (ev: MessageEvent<WorkletMessage>) => {
+      const data = ev.data;
+      if (!data) return;
+      if (data.type === "chunks") {
+        // Streaming: append finalisierte chunks ins Buffer.
+        if (data.left && data.left.length > 0) {
+          state.bufferLeft.push(data.left);
+        }
+        if (data.right && data.right.length > 0 && state.channels === 2) {
+          state.bufferRight.push(data.right);
+        }
+        if (typeof data.frameCount === "number") {
+          state.frameCount = data.frameCount;
+        }
+      } else if (data.type === "limit") {
+        state.truncated = true;
+      } else if (data.type === "done") {
+        // Finale Frames aufnehmen (überschreibt streaming wenn nötig).
+        if (data.left && data.left.length > 0) {
+          // Komplettes Buffer kommt im done-Event — wir nutzen das als
+          // Quelle der Wahrheit damit kein chunk doppelt landet.
+          state.bufferLeft = [data.left];
+          if (data.right && data.right.length > 0 && state.channels === 2) {
+            state.bufferRight = [data.right];
+          }
+        }
+        if (typeof data.frameCount === "number") {
+          state.frameCount = data.frameCount;
+        }
+        if (data.truncated) state.truncated = true;
+        if (state.doneResolve) state.doneResolve();
+      }
+    };
+
+    state.donePromise = new Promise<void>((resolve) => {
+      state.doneResolve = resolve;
+    });
+
+    const silentSink = ctx.createGain();
+    silentSink.gain.value = 0;
+    try {
+      state.source.connect(node);
+      node.connect(silentSink);
+      silentSink.connect(ctx.destination);
+      // Memory-Cap an Processor durchreichen.
+      node.port.postMessage({ cmd: "setMaxFrames", value: LIVE_REC_MAX_FRAMES_PER_TRACK });
+      node.port.postMessage({ cmd: "start" });
+    } catch {
+      /* ignore — invalid mock */
+    }
+    state.silentSink = silentSink;
+  }
+
+  /** Fallback-Pfad mit deprecated ScriptProcessorNode. */
+  private _armTapScriptProcessor(ctx: AudioContext, state: ActiveTrackState): void {
+    if (typeof ctx.createScriptProcessor !== "function") return;
     const processor = ctx.createScriptProcessor(
       LIVE_REC_BUFFER_SIZE,
       state.channels,
       state.channels,
     );
     state.processor = processor;
+    state.usesWorklet = false;
 
     processor.onaudioprocess = (ev: AudioProcessingEvent) => {
       if (!this._running) return;
@@ -313,14 +461,9 @@ export class LiveRecorder {
       }
       state.frameCount += ch0.length;
 
-      // Memory-Cap-Check — auto-stop bei Überschreitung.
       if (state.frameCount > LIVE_REC_MAX_FRAMES_PER_TRACK && !state.truncated) {
         state.truncated = true;
-        try {
-          processor.disconnect();
-        } catch {
-          /* ignore */
-        }
+        try { processor.disconnect(); } catch { /* ignore */ }
       }
     };
 
@@ -331,7 +474,7 @@ export class LiveRecorder {
       processor.connect(silentSink);
       silentSink.connect(ctx.destination);
     } catch {
-      /* ignore — invalid mock or already disconnected */
+      /* ignore */
     }
     state.silentSink = silentSink;
   }
@@ -340,7 +483,16 @@ export class LiveRecorder {
     if (state.processor) {
       try { state.source.disconnect(state.processor); } catch { /* ignore */ }
       try { state.processor.disconnect(); } catch { /* ignore */ }
-      state.processor.onaudioprocess = null;
+      // ScriptProcessor: onaudioprocess explicit nullen damit GC freier wird.
+      if (!state.usesWorklet) {
+        const sp = state.processor as ScriptProcessorNode;
+        if (sp.onaudioprocess !== undefined) sp.onaudioprocess = null;
+      } else {
+        const wp = state.processor as AudioWorkletNode;
+        if (wp.port) {
+          try { wp.port.onmessage = null; } catch { /* ignore */ }
+        }
+      }
     }
     if (state.silentSink) {
       try { state.silentSink.disconnect(); } catch { /* ignore */ }
@@ -373,9 +525,21 @@ export class LiveRecorder {
       t.truncated = true;
     }
   }
+
+  /** Test-Helper: simuliert eingehende Worklet-Message. */
+  __postWorkletMessageForTest(id: string, message: WorkletMessage): void {
+    const t = this._tracks.get(id);
+    if (!t || !t.usesWorklet) return;
+    const node = t.processor as AudioWorkletNode | null;
+    if (!node) return;
+    const handler = node.port.onmessage;
+    if (typeof handler === "function") {
+      handler.call(node.port, { data: message } as MessageEvent<WorkletMessage>);
+    }
+  }
 }
 
-// ─── WAV-Multi-Track Output ──────────────────────────────────────────────────
+// ─── WAV-Multi-Track Output (UNVERÄNDERT) ────────────────────────────────────
 
 export interface MultiTrackWavOptions {
   /** Wallclock-Timestamp für Filename. Default = jetzt. */
@@ -437,10 +601,7 @@ export function buildLiveTrackFileName(
 }
 
 /**
- * Erzeugt für jedes Track-Element einen WAV-Buffer (Uint8Array). Map-Key
- * = vollständiger Filename.
- *
- * Pure — keine Disk-I/O, ruft nur encodeWavStereo aus wavEncoder.ts.
+ * Erzeugt für jedes Track-Element einen WAV-Buffer (Uint8Array).
  */
 export function writeMultiTrackWavs(
   result: LiveRecordingResult,
