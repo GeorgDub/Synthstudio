@@ -31,6 +31,13 @@
  *   - Detailliertes Editing per Modal "Bus FX" via Doppelklick auf FX-Toggle.
  *   - Per-Section Slider rufen setBusEq3/setBusCompressor/setBusReverbSend/
  *     setBusDelaySend — der App-Subscribe-Effect synchront mit AudioEngine.
+ *
+ * v3.88.0:
+ *   - Right-Click MIDI-Learn auf den 7 v3.87-Bus-FX-Targets im BusFxModal:
+ *     EQ Low/Mid/High, Comp Threshold/Ratio, Reverb-Send, Delay-Send.
+ *     ·CC<n>-Badge in den Slider-Labels (analog v1.86 Right-Click-Learn).
+ *   - NEU postGain-Slider (Post-Comp-Trim 0..2) im Modal — verbunden mit
+ *     setBusPostGain → AudioEngine compMix → postGain → gain Wiring.
  */
 import React, { useCallback, useState } from "react";
 import {
@@ -49,6 +56,7 @@ import {
   setBusReverbSend,
   setBusDelaySend,
   setBusFx,
+  setBusPostGain,
 } from "@/store/useSubMixStore";
 import { useMidiLearn } from "@/hooks/useMidiLearn";
 import { ChannelColorPicker } from "@/components/Mixer/ChannelColorPicker";
@@ -546,6 +554,17 @@ interface BusFxModalProps {
 }
 
 function BusFxModal({ bus, fx, onClose }: BusFxModalProps): React.ReactElement {
+  // v3.88.0: Right-Click MIDI-Learn auf alle 7 v3.87-Bus-FX-Targets + Modal-Slider.
+  // Pro Control wird ein useMidiLearn-Hook bezogen — die Targets matchen 1:1
+  // den useMidi.MidiLearnTarget-Union (subMixBusEqLowGain etc.).
+  const learnEqLow    = useMidiLearn({ type: "subMixBusEqLowGain",    busId: bus.id, busName: bus.name });
+  const learnEqMid    = useMidiLearn({ type: "subMixBusEqMidGain",    busId: bus.id, busName: bus.name });
+  const learnEqHigh   = useMidiLearn({ type: "subMixBusEqHighGain",   busId: bus.id, busName: bus.name });
+  const learnCompThr  = useMidiLearn({ type: "subMixBusCompThreshold", busId: bus.id, busName: bus.name });
+  const learnCompRat  = useMidiLearn({ type: "subMixBusCompRatio",    busId: bus.id, busName: bus.name });
+  const learnReverbSend = useMidiLearn({ type: "subMixBusReverbSend", busId: bus.id, busName: bus.name });
+  const learnDelaySend  = useMidiLearn({ type: "subMixBusDelaySend",  busId: bus.id, busName: bus.name });
+
   return (
     <div
       role="dialog"
@@ -602,6 +621,10 @@ function BusFxModal({ bus, fx, onClose }: BusFxModalProps): React.ReactElement {
             onChange={(v) => setBusEq3(bus.id, { lowGain: v })}
             format={(v) => `${v >= 0 ? "+" : ""}${v.toFixed(1)} dB`}
             testId={`sub-mix-bus-fx-modal-eq-low-${bus.id}`}
+            onContextMenu={learnEqLow.onContextMenu}
+            isMapped={learnEqLow.isMapped}
+            mappedCC={learnEqLow.mappedCC}
+            menu={learnEqLow.menu}
           />
           <FxModalSlider
             label="Mid"
@@ -610,6 +633,10 @@ function BusFxModal({ bus, fx, onClose }: BusFxModalProps): React.ReactElement {
             onChange={(v) => setBusEq3(bus.id, { midGain: v })}
             format={(v) => `${v >= 0 ? "+" : ""}${v.toFixed(1)} dB`}
             testId={`sub-mix-bus-fx-modal-eq-mid-${bus.id}`}
+            onContextMenu={learnEqMid.onContextMenu}
+            isMapped={learnEqMid.isMapped}
+            mappedCC={learnEqMid.mappedCC}
+            menu={learnEqMid.menu}
           />
           <FxModalSlider
             label="High"
@@ -618,6 +645,10 @@ function BusFxModal({ bus, fx, onClose }: BusFxModalProps): React.ReactElement {
             onChange={(v) => setBusEq3(bus.id, { highGain: v })}
             format={(v) => `${v >= 0 ? "+" : ""}${v.toFixed(1)} dB`}
             testId={`sub-mix-bus-fx-modal-eq-high-${bus.id}`}
+            onContextMenu={learnEqHigh.onContextMenu}
+            isMapped={learnEqHigh.isMapped}
+            mappedCC={learnEqHigh.mappedCC}
+            menu={learnEqHigh.menu}
           />
         </section>
 
@@ -647,6 +678,10 @@ function BusFxModal({ bus, fx, onClose }: BusFxModalProps): React.ReactElement {
             onChange={(v) => setBusCompressor(bus.id, { threshold: v })}
             format={(v) => `${v.toFixed(1)} dB`}
             testId={`sub-mix-bus-fx-modal-comp-threshold-${bus.id}`}
+            onContextMenu={learnCompThr.onContextMenu}
+            isMapped={learnCompThr.isMapped}
+            mappedCC={learnCompThr.mappedCC}
+            menu={learnCompThr.menu}
           />
           <FxModalSlider
             label="Ratio"
@@ -655,6 +690,10 @@ function BusFxModal({ bus, fx, onClose }: BusFxModalProps): React.ReactElement {
             onChange={(v) => setBusCompressor(bus.id, { ratio: v })}
             format={(v) => `${v.toFixed(1)}:1`}
             testId={`sub-mix-bus-fx-modal-comp-ratio-${bus.id}`}
+            onContextMenu={learnCompRat.onContextMenu}
+            isMapped={learnCompRat.isMapped}
+            mappedCC={learnCompRat.mappedCC}
+            menu={learnCompRat.menu}
           />
           <FxModalSlider
             label="Attack"
@@ -684,6 +723,10 @@ function BusFxModal({ bus, fx, onClose }: BusFxModalProps): React.ReactElement {
             onChange={(v) => setBusReverbSend(bus.id, v)}
             format={(v) => `${(v * 100).toFixed(0)}%`}
             testId={`sub-mix-bus-fx-modal-reverb-send-${bus.id}`}
+            onContextMenu={learnReverbSend.onContextMenu}
+            isMapped={learnReverbSend.isMapped}
+            mappedCC={learnReverbSend.mappedCC}
+            menu={learnReverbSend.menu}
           />
           <FxModalSlider
             label="Delay"
@@ -692,6 +735,23 @@ function BusFxModal({ bus, fx, onClose }: BusFxModalProps): React.ReactElement {
             onChange={(v) => setBusDelaySend(bus.id, v)}
             format={(v) => `${(v * 100).toFixed(0)}%`}
             testId={`sub-mix-bus-fx-modal-delay-send-${bus.id}`}
+            onContextMenu={learnDelaySend.onContextMenu}
+            isMapped={learnDelaySend.isMapped}
+            mappedCC={learnDelaySend.mappedCC}
+            menu={learnDelaySend.menu}
+          />
+        </section>
+
+        {/* v3.88.0: postGain (Post-Comp-Trim) — wirkt zwischen compMix und bus.gain. */}
+        <section className="flex flex-col gap-1 border-t border-border-subtle pt-2">
+          <h4 className="text-xs font-medium text-text-primary">Post-Comp Gain</h4>
+          <FxModalSlider
+            label="Trim"
+            min={0} max={2} step={0.01}
+            value={fx.postGain}
+            onChange={(v) => setBusPostGain(bus.id, v)}
+            format={(v) => `${v.toFixed(2)}×`}
+            testId={`sub-mix-bus-fx-modal-post-gain-${bus.id}`}
           />
         </section>
       </div>
@@ -708,14 +768,33 @@ interface FxModalSliderProps {
   testId: string;
   format: (v: number) => string;
   onChange: (v: number) => void;
+  /** v3.88.0: optional Right-Click-MIDI-Learn-Handler (useMidiLearn). */
+  onContextMenu?: (e: React.MouseEvent) => void;
+  /** v3.88.0: optional — wenn true zeigt einen ·CC<n>-Badge im Label. */
+  isMapped?: boolean;
+  /** v3.88.0: optional CC# zum Badge-Render (nur sichtbar wenn isMapped). */
+  mappedCC?: number | null;
+  /** v3.88.0: optional ReactNode — Context-Menu vom useMidiLearn-Hook. */
+  menu?: React.ReactNode;
 }
 
 function FxModalSlider({
   label, value, min, max, step, testId, format, onChange,
+  onContextMenu, isMapped, mappedCC, menu,
 }: FxModalSliderProps): React.ReactElement {
   return (
-    <label className="flex items-center gap-2 text-xs">
-      <span className="w-16 text-text-muted">{label}</span>
+    <label className="flex items-center gap-2 text-xs relative">
+      <span className="w-16 text-text-muted">
+        {label}
+        {isMapped && mappedCC != null && (
+          <span
+            className="ml-1 text-accent-secondary text-[9px] font-mono"
+            data-testid={`${testId}-cc-badge`}
+          >
+            ·CC{mappedCC}
+          </span>
+        )}
+      </span>
       <input
         type="range"
         min={min}
@@ -723,10 +802,13 @@ function FxModalSlider({
         step={step}
         value={value}
         onChange={(e) => onChange(parseFloat(e.target.value))}
+        onContextMenu={onContextMenu}
         data-testid={testId}
         className="flex-1 accent-accent-primary"
+        title={onContextMenu ? `${format(value)} · Rechtsklick: MIDI-Learn${isMapped ? ` · CC${mappedCC}` : ""}` : format(value)}
       />
       <span className="w-16 text-right text-text-primary tabular-nums">{format(value)}</span>
+      {menu}
     </label>
   );
 }

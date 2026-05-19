@@ -479,6 +479,19 @@ export function setBusDelaySend(id: string, send: number): void {
 }
 
 /**
+ * v3.88.0: Setzt den Post-Comp-Gain (0..2 linear) des Bus.
+ * NOOP wenn busId unbekannt. Bestehender `setBusFx({postGain})`-Pfad bleibt
+ * unverändert — dies ist ein Convenience-Setter analog setBusReverbSend.
+ *
+ * postGain wirkt im Audio-Graph ZWISCHEN compMix und bus.gain (also nach der
+ * gesamten EQ+Compressor-Chain, aber VOR dem Volume-Fader/Mute/Solo) und
+ * skaliert NICHT die Sends (diese zweigen weiter post-bus.gain ab).
+ */
+export function setBusPostGain(id: string, postGain: number): void {
+  setBusFx(id, { postGain });
+}
+
+/**
  * Weist `partId` dem Bus `busId` zu. Entfernt den Channel automatisch aus
  * allen anderen Buses (ein Channel kann nur in einem Bus sein).
  * NO-OP wenn busId nicht existiert.

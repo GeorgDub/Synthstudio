@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.86.0",
+    version: "3.88.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -89,19 +89,24 @@ const INDEX = {
   // ─── KNOWN FILE INDEX ──────────────────────────────────────
   // Key files agents have analyzed. Add new entries after working on a file.
   files: {
-    "client/src/store/useSubMixStore.ts (v3.86.0)": {
-      role:     "v3.86.0 ERWEITERT (+~115 LOC, bestehende v3.79.0/v3.81.0 unverändert): SubMixBusFx erweitert auf volle FX-Chain. NEU Interfaces SubMixBusEq3 {lowGain,midGain,highGain in dB ±24} + SubMixBusCompressor {enabled,threshold -60..0,ratio 1..20,attack 0..1,release 0..1}. SubMixBusFx-Felder: enabled, postGain, eq3, compressor, reverbSend (0..1), delaySend (0..1). NEU exportierte Defaults DEFAULT_BUS_EQ3 + DEFAULT_BUS_COMPRESSOR + DEFAULT_BUS_FX (alle FX-Felder transparent gesetzt). Pure-Helpers clampBusEq3/clampBusCompressor. clampBusFx fillt fehlende v3.86-Felder mit Defaults (Pre-v1.33-Migration). NEU Setter setBusEq3/setBusCompressor/setBusReverbSend/setBusDelaySend (alle Merge-Update mit Pre-Clamping). sanitizeBus + setBusFx-API unverändert; akzeptieren jetzt erweiterte Partial<SubMixBusFx>.",
-      lastSeen: "2026-05-19T06:25:00.000Z",
-      ownedBy:  "backend"
+    "client/src/store/useSubMixStore.ts (v3.88.0)": {
+      role:     "v3.88.0 ERWEITERT (+13 LOC, bestehende v3.86/v3.79 unverändert): NEU exported Setter setBusPostGain(id, postGain) — Convenience-Wrapper um setBusFx({postGain}) analog setBusReverbSend/setBusDelaySend. JSDoc dokumentiert Routing: 'wirkt im Audio-Graph ZWISCHEN compMix und bus.gain (also nach EQ+Compressor, aber VOR Volume/Mute/Solo) und skaliert NICHT die Sends'. Vorheriger v3.86-Stand: SubMixBusFx erweitert auf volle FX-Chain mit eq3/compressor/reverbSend/delaySend + clampBusEq3/clampBusCompressor + Setter setBusEq3/setBusCompressor/setBusReverbSend/setBusDelaySend (alle merge-update mit pre-clamping).",
+      lastSeen: "2026-05-19T07:18:00.000Z",
+      ownedBy:  "frontend"
     },
-    "client/src/audio/AudioEngine.ts (v3.86.0 sub-mix-bus-fx-chain)": {
-      role:     "v3.86.0 ERWEITERT (+~200 LOC, bestehende v3.79.1-v3.85 unverändert). NEU exported Interface SubMixBusNodes mit allen FX-Nodes (input, eqLow/Mid/High, compIn, compressor, compWet/Dry, compMix, gain, panner, reverbSend, delaySend). _subMixBusNodes-Map jetzt SubMixBusNodes-Type. NEU private _createSubMixBusNodes() baut die volle Chain: input → eqLow(lowshelf 200Hz) → eqMid(peak 1kHz Q=1) → eqHigh(highshelf 4kHz) → compIn → [compressor → compWet] || [compDry] → compMix → gain → panner → master. Plus gain → reverbSend → _globalReverbPreDelay (oder _globalReverbBus fallback) und gain → delaySend → _globalDelayBus. Compressor init: knee=6, attack 10ms, release 100ms. applySubMixBus REWRITE — rampt jetzt zusätzlich zu Vol/Pan/Mute/Solo: EQ-Bänder (auf 0 wenn fx.enabled=false → transparent), Compressor-Threshold/Ratio/Attack/Release, Wet/Dry-Crossfade (1/0 bei compOn, 0/1 bei bypass), reverbSend.gain, delaySend.gain. Alles setTargetAtTime mit SUB_MIX_BUS_RAMP_SEC=0.02. _resolveChannelDestination zeigt auf bus.input statt bus.gain. removeSubMixBus disconnected alle 13 FX-Nodes. reinit() Cleanup-Loop erweitert.",
-      lastSeen: "2026-05-19T06:25:00.000Z",
-      ownedBy:  "backend"
+    "client/src/audio/AudioEngine.ts (v3.88.0 sub-mix-bus-postgain-wiring)": {
+      role:     "v3.88.0 ERWEITERT (+~25 LOC, bestehende v3.86 FX-Chain bleibt). SubMixBusNodes-Interface erweitert um postGain:GainNode-Feld (Position: zwischen compMix und gain). JSDoc-Routing-Doku aktualisiert: 'compMix → postGain → gain (volume·solo) → panner → master'. _createSubMixBusNodes erzeugt postGain (createGain, default 1.0=transparent) und wired compMix.connect(postGain).connect(gain). applySubMixBus rampt fx.postGain via setTargetAtTime mit SUB_MIX_BUS_RAMP_SEC=0.02 — bei fx.enabled=false fällt postGain auf 1.0 (analog EQ-Bypass-Semantik). removeSubMixBus + reinit-Cleanup disconnecten den neuen postGain-Node (insgesamt jetzt 14 Nodes pro Bus statt 13). Vorheriger v3.86-Stand: volle FX-Chain mit input→eqLow→eqMid→eqHigh→compIn→[compressor→compWet]||[compDry]→compMix→gain→panner + Sends.",
+      lastSeen: "2026-05-19T07:18:00.000Z",
+      ownedBy:  "frontend"
     },
-    "client/src/components/Mixer/SubMixBusStrip.tsx (v3.86.0 fx-chain-ui)": {
-      role:     "v3.86.0 ERWEITERT (+~370 LOC, bestehende v3.81.0 MIDI-Learn + Color-Picker bleibt). NEU exportierter Pure-Helper resolveBusFx(bus)→SubMixBusFx (Pre-v1.33-Buses bekommen Defaults). NEU State fxExpanded + fxModalOpen. NEU expandable FX-Section unter Mute/Solo: Master-FX-Enable-Toggle + EQ-3 Mini-Sliders (Lo/Md/Hi je -24..+24dB) + Compressor ON/OFF + Threshold-Slider + Reverb/Delay-Send-Sliders. FX-Toggle-Button zeigt ●-Indikator wenn fx.enabled. Doppelklick öffnet BusFxModal mit detaillierter EQ/Comp/Sends-UI (analog ChannelInspector). Modal als fixed-Overlay mit semantischen Tokens (bg-bg-base/80, border-border-color). Sub-Komponenten FxMiniSlider + FxModalSlider. data-testids für alle Controls: sub-mix-bus-fx-toggle/section/enabled/eq-low/eq-mid/eq-high/comp-enabled/comp-threshold/reverb-send/delay-send-<busId>.",
-      lastSeen: "2026-05-19T06:25:00.000Z",
+    "client/src/components/Mixer/SubMixBusStrip.tsx (v3.88.0 bus-fx-midi-learn + postgain-ui)": {
+      role:     "v3.88.0 ERWEITERT (+~110 LOC, bestehende v3.86 FX-Chain-UI + v3.81 MIDI-Learn + v3.80 Layout bleibt). BusFxModal nutzt 7× useMidiLearn-Hook für die v3.87-Targets (subMixBusEqLowGain/MidGain/HighGain/CompThreshold/CompRatio/ReverbSend/DelaySend) jeweils mit busId+busName-Context. FxModalSlider-Interface erweitert um optionale Props onContextMenu/isMapped/mappedCC/menu — wenn gesetzt rendert ein ·CC<n>-Badge im Label + menu-ReactNode (Context-Menu vom useMidiLearn-Hook). Title-Attribut der Sliders enthält 'Rechtsklick: MIDI-Learn'-Hinweis wenn gebunden. NEU postGain-Section am unteren Modal-Ende ('Post-Comp Gain' Header, FxModalSlider 0..2 in 0.01-Steps, format '1.50×') wired auf setBusPostGain. Header-JSDoc-Block v3.86→v3.88 erweitert (Right-Click-Learn + postGain-Slider). Import setBusPostGain ergänzt. Comp-Attack/Release-Slider bleiben ohne MIDI-Learn (kein v3.87-Target dafür).",
+      lastSeen: "2026-05-19T07:18:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "tests/features/sub-mix-bus-fx-midi.test.ts (v3.88.0)": {
+      role:     "v3.88.0 NEU (~310 LOC, 9 Tests in 5 describes, env:node mit localStorage-Mock + Mock-AudioContext mit GainNode-Tracking + setTargetAtTime-Spy der den Wert direkt schreibt). (1) MIDI-Targets × 3: targetsMatch erkennt alle 7 BusFx-Targets über busId (mit/ohne busName-Override, andere busIds matchen nicht, andere types matchen nicht), findMappingForTarget findet alle 7 distinkten Mappings korrekt in einer Liste, VALID_TARGET_TYPES enthält alle 7 (Layout-Import-Pfad). (2) labelForTarget × 1: alle 4 Standard-FX-Labels (Bus EQ Low/Comp Threshold/Reverb Send/Delay Send mit busName) + busId-Slice-Fallback. (3) postGain-Wiring × 2: applySubMixBus rampt fx.postGain auf einen SEPARATEN Gain-Node (NICHT bus.gain — Test prüft .postGain !== .gain und value=1.5 vs 0.85), Routing-Order compMix.connect(postGain) + postGain.connect(gain) + gain.connect(panner) verkabelt. (4) Bypass × 2: fx.enabled=false → postGain auf 1.0 obwohl Store-Wert 2.0 (transparent-Semantik), nach re-enable kommt 2.0 durch; postGain wirkt nicht auf Sends. (5) setBusPostGain × 1: merge-update mit Clamping (99→2.0, -1→0), Persistenz in localStorage, andere FX-Felder unverändert (Merge-Semantik).",
+      lastSeen: "2026-05-19T07:18:00.000Z",
       ownedBy:  "frontend"
     },
     "client/src/utils/projectSerializer.ts (v3.86.0 v1.33)": {
@@ -2357,6 +2362,34 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "frontend",
+      timestamp: "2026-05-19T07:18:00.000Z",
+      done: [
+        "v3.88.0: Bus FX MIDI-Learn UI + postGain-Wiring — completes v3.87. v3.87 lieferte 7 neue MidiLearnTargets (subMixBusEqLowGain/MidGain/HighGain, subMixBusCompThreshold/Ratio, subMixBusReverbSend/DelaySend) im useMidi-Layer + Event-Bridge in useMidiEventBridge, aber das BusFxModal hat onContextMenu nicht ge-wired. v3.88 schließt diese Lücke: alle 7 v3.87-Targets sind jetzt per Right-Click auf den Modal-Slidern lernbar (analog v1.86 useMidiLearn-Pattern). Plus: postGain (im Store seit v3.79.0 als Field, in v3.86 erweitert) bekommt endlich einen echten GainNode im Audio-Graph zwischen compMix und bus.gain — vorher war das Feld dead-code (Caveat von v3.86 workLog).",
+        "client/src/components/Mixer/SubMixBusStrip.tsx ERWEITERT (+~110 LOC, bestehende v3.86 + v3.81 + v3.80 bleibt). BusFxModal nutzt 7× useMidiLearn-Hook (subMixBusEqLowGain/MidGain/HighGain/CompThreshold/CompRatio/ReverbSend/DelaySend) jeweils mit busId+busName-Context. FxModalSlider-Interface erweitert um optionale Props onContextMenu/isMapped/mappedCC/menu — wenn gesetzt rendert es ein ·CC<n>-Badge im Label + menu-ReactNode (Context-Menu vom useMidiLearn). Title-Attribut der Sliders enthält 'Rechtsklick: MIDI-Learn'-Hinweis wenn gebunden. NEU postGain-Section am unteren Modal-Ende ('Post-Comp Gain' Header, FxModalSlider 0..2 in 0.01-Steps, format '1.50×'), wired auf setBusPostGain. Import setBusPostGain. Comp-Attack/Release-Slider bleiben ohne MIDI-Learn (kein v3.87-Target dafür — könnten in v3.89 nachgereicht werden).",
+        "client/src/store/useSubMixStore.ts ERWEITERT (+13 LOC). NEU exported Setter setBusPostGain(id, postGain) — Convenience-Wrapper um setBusFx({postGain}) analog setBusReverbSend/setBusDelaySend. Routing-Doku im JSDoc: 'wirkt im Audio-Graph ZWISCHEN compMix und bus.gain (also nach EQ+Compressor, aber VOR Volume/Mute/Solo) und skaliert NICHT die Sends'.",
+        "client/src/audio/AudioEngine.ts ERWEITERT (+~25 LOC, bestehende v3.86/v3.79.1 bleibt). SubMixBusNodes-Interface erweitert um postGain:GainNode-Feld (JSDoc: 'Post-Comp-Gain-Trim, wirkt ZWISCHEN compMix und gain. NICHT in der Sends-Kette — Reverb/Delay-Sends zweigen weiterhin post-gain ab'). Header-Routing-Doku v3.86→v3.88 angepasst: 'compMix → postGain → gain (volume·solo) → panner → master'. _createSubMixBusNodes erzeugt jetzt postGain (createGain, default value=1.0=transparent) und wired compMix→postGain→gain (statt direkt compMix→gain). applySubMixBus rampt fx.postGain via setTargetAtTime mit SUB_MIX_BUS_RAMP_SEC=0.02 — bei fx.enabled=false fällt postGain auf 1.0 (analog EQ-Bypass-Semantik). removeSubMixBus + reinit-Cleanup disconnecten den neuen postGain-Node (insgesamt jetzt 14 Nodes pro Bus statt 13).",
+        "tests/features/sub-mix-bus-fx-midi.test.ts (NEU, ~310 LOC, 9 Tests in 5 describes, env:node mit localStorage-Mock + Mock-AudioContext mit GainNode-Tracking + setTargetAtTime-Spy der den Wert direkt schreibt). (1) MIDI-Targets × 3: targetsMatch erkennt alle 7 BusFx-Targets über busId (mit/ohne busName-Override, andere busIds matchen nicht, andere types matchen nicht), findMappingForTarget findet alle 7 distinkten Mappings korrekt in einer Liste, VALID_TARGET_TYPES enthält alle 7 (Layout-Import-Pfad). (2) labelForTarget × 1: alle 4 Standard-FX-Labels (Bus EQ Low/Comp Threshold/Reverb Send/Delay Send mit busName) + busId-Slice-Fallback. (3) postGain-Wiring × 2: applySubMixBus rampt fx.postGain auf einen SEPARATEN Gain-Node (NICHT bus.gain — Test prüft .postGain !== .gain und value=1.5 vs 0.85), Routing-Order compMix.connect(postGain) + postGain.connect(gain) + gain.connect(panner) verkabelt. (4) Bypass × 2: fx.enabled=false → postGain auf 1.0 obwohl Store-Wert 2.0 (transparent-Semantik), nach re-enable kommt 2.0 durch; postGain wirkt nicht auf Sends (.reverbSend.value/.delaySend.value bleiben vom postGain-Wert unberührt). (5) setBusPostGain × 1: merge-update mit Clamping (99→2.0, -1→0), Persistenz in localStorage, andere FX-Felder unverändert (Merge-Semantik).",
+        "package.json (3.87.0 → 3.88.0). pnpm check clean (TypeScript strict). pnpm test grün: 233 Test-Files / 5264 Tests passed (16 skipped, +1 file +9 vs v3.87.0). Bestehende Sub-Mix-Tests (sub-mix-engine: 11, sub-mix-bus: 15, sub-mix-bus-fx: 13, sub-mix-bus-midi: 16, sub-mix-ui: 8) alle weiterhin grün — assertion 'mind. 8 Gains pro Bus' bleibt valide (jetzt 9 inkl. postGain). Backward-Compat: Pre-v1.33-Buses ohne fx-Feld → applySubMixBus crash-frei mit postGain=1.0 transparent."
+      ],
+      next: [
+        "v3.89: Comp-Attack/Release als MIDI-Targets (aktuell nicht im v3.87-Set — würde die Set auf 9 erweitern).",
+        "v3.89: Per-Bus FX-Snapshot/-Preset-Save (User-saved 'Drum Bus Mastering' etc.) — würde die ganze FX-Chain als Patch persistieren.",
+        "v3.89: SubMixBusStrip Inline-FX-Section sollte auch postGain-Slider zeigen (aktuell nur im Modal).",
+        "v3.89: postGain könnte ein Quick-Win Auto-Learn-Preset 'Bus Trim' bekommen — analog v3.82-Preset-Pattern.",
+        "v3.89: Side-Chain-Input für Bus-Compressor (z.B. Kick→Bass-Bus-Ducking, aus v3.87-next übernommen).",
+        "v3.89: Pro-Bus EQ-Frequenz-Slider (Cutoffs sind aktuell hart auf 200/1k/4kHz — aus v3.87-next übernommen)."
+      ],
+      changed: [
+        "client/src/components/Mixer/SubMixBusStrip.tsx (+~110 LOC: 7× useMidiLearn-Hook für BusFxModal + FxModalSlider-Interface-Erweiterung + postGain-Section)",
+        "client/src/store/useSubMixStore.ts (+13 LOC: setBusPostGain Convenience-Setter)",
+        "client/src/audio/AudioEngine.ts (+~25 LOC: SubMixBusNodes.postGain-Field + _createSubMixBusNodes postGain-Creation + Wiring compMix→postGain→gain + applySubMixBus rampt fx.postGain + Cleanup-Loops)",
+        "tests/features/sub-mix-bus-fx-midi.test.ts (NEU, ~310 LOC, 9 Tests in 5 describes)",
+        "package.json (3.87.0 → 3.88.0)",
+        "agents/INDEX.js (version + workLog + files-Einträge)"
+      ]
+    },
     {
       agent:     "backend",
       timestamp: "2026-05-19T06:25:00.000Z",

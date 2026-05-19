@@ -481,12 +481,13 @@ interface ChannelNodes {
 }
 
 /**
- * v3.86.0: Pro-Sub-Mix-Bus Audio-Nodes.
+ * v3.86.0 / v3.88.0: Pro-Sub-Mix-Bus Audio-Nodes.
  *
- * Routing-Order (input → output):
+ * Routing-Order (input → output) — v3.88.0 inserts postGain zwischen compMix
+ * und gain:
  *   input → eqLow → eqMid → eqHigh → compIn
  *     → compressor → compWet ──┐
- *                              ├→ compMix → gain (volume·solo) → panner → master
+ *                              ├→ compMix → postGain → gain (volume·solo) → panner → master
  *     → compDry ───────────────┘
  *
  *   gain → reverbSend → global-reverb-bus
@@ -497,6 +498,11 @@ interface ChannelNodes {
  *
  * Compressor-Bypass (fx.compressor.enabled=false): compWet=0 + compDry=1
  * (kein disconnect, click-frei via setTargetAtTime).
+ *
+ * postGain (v3.88.0): linear 0..2, wirkt vor dem Volume-Fader (also vor
+ * Mute/Solo-Multiplikation). Default = 1.0 (transparent). Sends zweigen
+ * weiterhin POST-bus.gain ab — postGain skaliert sie damit indirekt nur über
+ * den dazwischenliegenden gain-Faktor.
  */
 export interface SubMixBusNodes {
   /** Channel-Output landet hier — Multi-Source-Tap. */
@@ -509,6 +515,12 @@ export interface SubMixBusNodes {
   compWet: GainNode;
   compDry: GainNode;
   compMix: GainNode;
+  /**
+   * v3.88.0: Post-Comp-Gain-Trim, wirkt ZWISCHEN compMix und gain.
+   * Skaliert linear 0..2 via bus.fx.postGain. NICHT in der Sends-Kette —
+   * Reverb-/Delay-Sends zweigen weiterhin post-`gain` ab.
+   */
+  postGain: GainNode;
   /** Post-FX Volume + Solo/Mute-Multiplikator. */
   gain: GainNode;
   panner: StereoPannerNode;
@@ -1063,6 +1075,7 @@ class AudioEngineClass {
       try { bus.compWet.disconnect(); } catch { /* ignore */ }
       try { bus.compDry.disconnect(); } catch { /* ignore */ }
       try { bus.compMix.disconnect(); } catch { /* ignore */ }
+      try { bus.postGain.disconnect(); } catch { /* ignore */ }
       try { bus.gain.disconnect(); } catch { /* ignore */ }
       try { bus.panner.disconnect(); } catch { /* ignore */ }
       try { bus.reverbSend.disconnect(); } catch { /* ignore */ }
@@ -1852,6 +1865,12 @@ class AudioEngineClass {
     nodeSet.compWet.gain.setTargetAtTime(compOn ? 1 : 0, now, rampSec);
     nodeSet.compDry.gain.setTargetAtTime(compOn ? 0 : 1, now, rampSec);
 
+    // v3.88.0: postGain (zwischen compMix und gain). Liegt im FX-Block, daher
+    // bei fx.enabled=false transparent (1.0) — Werte aus fx.postGain wirken
+    // erst wenn die FX-Chain aktiv ist. Default-Fallback auf 1.0.
+    const postGain = enabled ? (fx?.postGain ?? 1.0) : 1.0;
+    nodeSet.postGain.gain.setTargetAtTime(postGain, now, rampSec);
+
     // Reverb-Send / Delay-Send — independent von fx.enabled (Send ist eigener Pfad).
     const reverbSend = fx?.reverbSend ?? 0;
     const delaySend  = fx?.delaySend  ?? 0;
@@ -1903,6 +1922,10 @@ class AudioEngineClass {
     const compMix = ctx.createGain();
     compMix.gain.value = 1;
 
+    // v3.88.0: postGain (zwischen compMix und gain) — Post-Comp-Trim 0..2.
+    const postGain = ctx.createGain();
+    postGain.gain.value = 1; // Default transparent (1.0).
+
     // Main Gain + Panner.
     const gain = ctx.createGain();
     gain.gain.value = 0; // Start stumm — wird gleich gerampt.
@@ -1928,8 +1951,9 @@ class AudioEngineClass {
     // Both merge into compMix.
     compWet.connect(compMix);
     compDry.connect(compMix);
-    // compMix → gain → panner → master.
-    compMix.connect(gain);
+    // v3.88.0: compMix → postGain → gain → panner → master.
+    compMix.connect(postGain);
+    postGain.connect(gain);
     gain.connect(panner);
     panner.connect(this.masterGain);
 
@@ -1948,6 +1972,7 @@ class AudioEngineClass {
     return {
       input, eqLow, eqMid, eqHigh,
       compIn, compressor, compWet, compDry, compMix,
+      postGain,
       gain, panner,
       reverbSend, delaySend,
       volume: 0,
@@ -1971,6 +1996,7 @@ class AudioEngineClass {
     try { nodeSet.compWet.disconnect();    } catch { /* ignore */ }
     try { nodeSet.compDry.disconnect();    } catch { /* ignore */ }
     try { nodeSet.compMix.disconnect();    } catch { /* ignore */ }
+    try { nodeSet.postGain.disconnect();   } catch { /* ignore */ }
     try { nodeSet.gain.disconnect();       } catch { /* ignore */ }
     try { nodeSet.panner.disconnect();     } catch { /* ignore */ }
     try { nodeSet.reverbSend.disconnect(); } catch { /* ignore */ }
