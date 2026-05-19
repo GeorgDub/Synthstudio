@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.89.0",
+    version: "3.90.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -89,8 +89,23 @@ const INDEX = {
   // ─── KNOWN FILE INDEX ──────────────────────────────────────
   // Key files agents have analyzed. Add new entries after working on a file.
   files: {
+    "client/src/utils/korg/esxParser.ts (v3.90.0 hardening)": {
+      role:     "v3.90.0 ERWEITERT (+~80 LOC, bestehende v3.89 Song-Mode + v3.23 Pattern-Parser bleiben): Schliesst 4 dokumentierte Caveats. (1) PCM-Cap Soft-Limit-Tolerance: throw nur wenn totalPcm > ESX1_SAMPLE_MEM_SOFT_LIMIT_BYTES (25 MiB); zwischen 24-MiB-Hardware-Cap und Soft-Limit = warning + continue (pcmCapWarned-Flag, eine Warning pro Parse). KASSEL.esx (244B overshoot) jetzt parsebar. (2) Variant-Header Tolerance: invalid 'KORG'-Magic ODER 'ESX\\0'-Submagic geben empty bank + warning statt EsxParseError zu throwen — defense bei Batch-Import. ASCII-String wird im Warning gezeigt ('OoQC' etc.). (3) parseEsxSongEvents iter-cap: neue Konstante ESX1_MAX_ITERATIONS_NO_END=1000 + iterationsSinceLastEnd-Counter, resettet bei jedem 0xFFFF-Marker. Bei garbage-only-files silent break (currentSong=0), bei suspekter Korruption nach echtem Song warning + break. (4) length=0xF7 als ESX1_SONG_EVENT_LENGTH_INIT-Konstante; events mit length=0xF7 werden im Parser geskipped (statt durchgereicht). End-marker (data=0xFFFF) dominiert weiterhin auch wenn length=0xF7. Vorherige v3.89-Felder: EsxSongEvent + EsxSong + EsxBank.songs[] + isEmptyEsxSong/parseEsxSong/parseEsxSongEvents/parseEsxSongs. v3.23: Pattern-Parser mit 16 Parts + accent-bit-4.",
+      lastSeen: "2026-05-19T07:48:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/utils/korg/constants.ts (v3.90.0 soft-limit)": {
+      role:     "v3.90.0 ERWEITERT (+~15 LOC, alle bestehenden Konstanten unveraendert): NEU exportierte Konstante ESX1_SAMPLE_MEM_SOFT_LIMIT_BYTES = 25 * 1024 * 1024 (26,214,400 Bytes = ~1 MiB Headroom ueber den 24-MiB-Hardware-Cap ESX1_MAX_SAMPLE_MEM_IN_BYTES = 25,165,824). Doku verfeinert: '24 MiB Hardware-Datasheet-Wert; Real-Files toleriert bis 25 MiB (KASSEL.esx 244B overshoot)'. ESX1_MAX_SAMPLE_MEM_IN_FRAMES + ESX1_MAX_SAMPLE_MEM_IN_BYTES bleiben definitiv = Datasheet-Wert (24 MiB).",
+      lastSeen: "2026-05-19T07:48:00.000Z",
+      ownedBy:  "backend"
+    },
+    "tests/features/korg-esx-parser-hardening.test.ts (v3.90.0 NEU)": {
+      role:     "v3.90.0 NEU (~280 LOC, 9 Tests in 4 describes, env:node, vitest): (1) PCM-Cap soft-limit × 2 — KASSEL-like 244B overshoot mit 3 Slots à 8 MiB + 1 Slot mit overshoot = warning statt throw; soft-limit-Konstante = 25 MiB mit ≥244B Headroom. (2) Variant-Header × 2 — 'OoQC'-Magic + 'E2S\\0'-Submagic geben empty bank + warning OHNE throw. (3) Song-Event hard-stop × 2 — 1500 garbage events ohne end-marker = silent break (<1000 returned); 1500 garbage NACH 1 healthy end-marker = warning emittiert; 3 Songs × 500 events alle clean (counter resettet bei jedem Marker). (4) length=0xF7 × 2 — mixed real/init-marker events: nur real-events landen in eventsPerSong, 0xF7 wird geskipped; 0xF7 mit data=0xFFFF wirkt trotzdem als end-marker. Helper buildEsxWithMonoPcm + buildEventFrames synthetisieren minimal valide ESX-Buffer mit konfigurierbarem PCM-Layout/Magic/Submagic.",
+      lastSeen: "2026-05-19T07:48:00.000Z",
+      ownedBy:  "backend"
+    },
     "client/src/utils/korg/esxParser.ts (v3.89.0 song-mode)": {
-      role:     "v3.89.0 ERWEITERT (+~210 LOC, bestehende v3.23 Pattern-Parser bleibt): NEU EsxSongEvent + EsxSong + EsxBank.songs[]. Pure-Helpers isEmptyEsxSong (8x0x20+0x3c+519x0x00 init-signature match OR all-zero-block), parseEsxSong (528B → EsxSong|null, BPM-Clamp 20..300, name 8-byte ASCII), parseEsxSongEvents (8B-Frames ab 0x138400 bis 0x1B0000, end-marker = data 0xFFFF, defensiv break bei first-all-zero-frame um Pseudo-Events zu vermeiden), parseEsxSongs (Bulk 64-Slot mit truncated-warnings + ESX1_MAX_EVENTS_PER_SONG=4096-cap). parseEsxBank ergänzt Step 8 'Songs parsen' (additive non-breaking — songs[] zur EsxBank-Return-Shape). Real-File-RE 2026-05-19 gegen 38 Korg ESX files/: 37 Files haben 64 init-Slots (User-typische Nicht-Nutzung), KASSEL.esx hat 32 non-empty Slots 31..63 (mixed/partial-content layout, opaque preserved im raw-Feld). Vorheriger v3.23-Stand: parseEsxBank+parseEsxPattern mit 16 Drum/Stretch/Short/Audio-In-Parts, accent-bit bit-4 RE-d.",
+      role:     "v3.89.0 ERWEITERT (+~210 LOC, bestehende v3.23 Pattern-Parser bleibt): NEU EsxSongEvent + EsxSong + EsxBank.songs[]. Pure-Helpers isEmptyEsxSong (8x0x20+0x3c+519x0x00 init-signature match OR all-zero-block), parseEsxSong (528B → EsxSong|null, BPM-Clamp 20..300, name 8-byte ASCII), parseEsxSongEvents (8B-Frames ab 0x138400 bis 0x1B0000, end-marker = data 0xFFFF, defensiv break bei first-all-zero-frame um Pseudo-Events zu vermeiden), parseEsxSongs (Bulk 64-Slot mit truncated-warnings + ESX1_MAX_EVENTS_PER_SONG=4096-cap). parseEsxBank ergänzt Step 8 'Songs parsen' (additive non-breaking — songs[] zur EsxBank-Return-Shape). Real-File-RE 2026-05-19 gegen 38 Korg ESX files/: 37 Files haben 64 init-Slots (User-typische Nicht-Nutzung), KASSEL.esx hat 32 non-empty Slots 31..63 (mixed/partial-content layout, opaque preserved im raw-Feld). Vorheriger v3.23-Stand: parseEsxBank+parseEsxPattern mit 16 Drum/Stretch/Short/Audio-In-Parts, accent-bit bit-4 RE-d. v3.90: hardening + variant-header-tolerance — siehe v3.90.0 hardening-Eintrag.",
       lastSeen: "2026-05-19T07:35:00.000Z",
       ownedBy:  "backend"
     },
@@ -2382,6 +2397,34 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "backend",
+      timestamp: "2026-05-19T07:48:00.000Z",
+      done: [
+        "v3.90.0: ESX-Parser Hardening — KASSEL/OoQC/iter-cap/0xF7. Schliesst die 4 dokumentierten Caveats aus v3.89 fuer reale User-Files (insbesondere KASSEL.esx das 244 Bytes ueber dem 24 MiB Hardware-Cap landet, sowie Variant-Header-Files mit 'OoQC' statt 'KORG'-Magic).",
+        "client/src/utils/korg/constants.ts ERWEITERT (+~15 LOC): NEU exported ESX1_SAMPLE_MEM_SOFT_LIMIT_BYTES = 25 * 1024 * 1024 (= 26,214,400). Doku verfeinert: 24 MiB Hardware-Datasheet-Wert vs. 25 MiB Soft-Limit. ESX1_MAX_SAMPLE_MEM_IN_BYTES bleibt unveraendert (25,165,824) — wir adden nur den groesseren Soft-Cap.",
+        "client/src/utils/korg/esxParser.ts ERWEITERT (+~80 LOC): (1) PCM-Cap-Logic in beiden Sample-Loop-Schleifen (mono + stereo): throw nur wenn totalPcm > Soft-Limit (25 MiB), warning + continue wenn zwischen Hardware-Cap und Soft-Limit. pcmCapWarned-Flag verhindert Spam (eine Warning pro Parse). (2) Magic-Check: bei invalid 'KORG'-Signature oder 'ESX\\0'-Submagic kein throw mehr, sondern return empty bank ({monoSamples:[], stereoSamples:[], patterns:[], songs:[], warnings:[<msg>]}) — defense bei Batch-Import-Workflows. ASCII-Variant-String wird im Warning gezeigt fuer Debug-Hilfe ('OoQC' usw.). (3) parseEsxSongEvents: neuer iter-counter `iterationsSinceLastEnd` resettet bei jedem 0xFFFF-Marker. Wenn >1000 ohne End-Marker, break Loop. Warning nur gepusht wenn currentSong>0 (echte song-data + suspekte Korruption); bei pure-garbage (kein einziger Marker, z.B. random PCM bei kleinen Test-Files) silent break um Existing-Tests nicht zu spammen. (4) length=0xF7 in Song-Events wird im Parser geskipped (statt durchgereicht). Neue Konstanten ESX1_MAX_ITERATIONS_NO_END=1000 und ESX1_SONG_EVENT_LENGTH_INIT=0xF7.",
+        "tests/features/korg-esx-parser-hardening.test.ts (NEU, ~280 LOC, 9 Tests in 4 describes): (1) PCM-Cap soft-limit × 2 — KASSEL-like 244B overshoot wird mit warning toleriert (3 Slots 8 MiB + 1 mit overshoot); soft-limit-Konstante = 25 MiB mit ≥244B Headroom. (2) Variant-Header × 2 — 'OoQC'-Magic + 'E2S\\0'-Submagic geben empty bank + warning OHNE throw. (3) Song-Event hard-stop × 2 — 1500 garbage events ohne end-marker = silent break (<1000 returned); aber 1500 garbage NACH 1 healthy end-marker = warning emittiert. Hard-stop counter reset by end-marker verifiziert (3 Songs × 500 events alle clean). (4) length=0xF7 × 2 — mixed real/init-marker events: nur real-events landen in eventsPerSong, 0xF7 events werden geskipped; aber 0xF7 mit data=0xFFFF wirkt trotzdem als end-marker (end-marker-Path dominiert).",
+        "tests/features/korg-esx-parser.test.ts ANGEPASST (2 existing tests): 'throws on invalid first magic' + 'throws on invalid sub-magic' jetzt 'returns empty bank + warning' — passt zur v3.90-Defense-Semantik. Bestehende anderen tests (second magic missing, mono count > 256) bleiben throw-based (das sind interne Konsistenz-Fehler, nicht Variant-Format-Cases).",
+        "Tolerance-Werte: ESX1_MAX_SAMPLE_MEM_IN_BYTES=25,165,824 (24 MiB Hardware), ESX1_SAMPLE_MEM_SOFT_LIMIT_BYTES=26,214,400 (25 MiB Soft-Cap, ~1 MiB Headroom; KASSEL-Overshoot=244B, weit unter Soft-Limit). ESX1_MAX_ITERATIONS_NO_END=1000 frames (= 8 KB Event-Region bei 8B/frame, generous fuer einen Standard-Song-Run aber haert gegen 200k+ Garbage-Frames). ESX1_SONG_EVENT_LENGTH_INIT=0xF7.",
+        "package.json (3.89.0 → 3.90.0). pnpm check clean (TypeScript strict). pnpm test gruen: 235 Test-Files / 5302 Tests passed (16 skipped, +1 file +9 tests vs v3.89.0). Bestehende korg-esx-* Tests (12 Files / 300 tests + 1 skipped) alle weiterhin gruen — die 2 angepassten v3.3-Tests in korg-esx-parser.test.ts pruefen nun das neue Variant-Header-Verhalten."
+      ],
+      next: [
+        "v3.91: PCM-Cap-Tolerance Refinement — falls noch mehr User-Files trotzdem Soft-Limit ueberschreiten (e.g. modded-firmware 32 MiB), dann Soft-Limit konfigurierbar machen oder noch hoeher (32 MiB).",
+        "v3.91: Real-File Bulk-Test gegen alle 38 Korg ESX files/ — nach v3.90 sollte KASSEL.esx jetzt parsebar sein. Test `parseEsxBank` Bulk-Smoke + Sample-Counts dokumentieren.",
+        "v3.91: Variant-Header-Detection erweitern — moeglicherweise gibt es eine 'OoQC'-Spec irgendwo (Korg ELECTRIBE 2 vs ESX-1?). Wenn das Format teilweise lesbar ist, lohnt sich ein Side-Parser.",
+        "v3.91: Song-Event-Hardening fuer length=0x00 (auch ein Init-Marker?) — KASSEL hat moeglicherweise mehr Init-Sentinels als nur 0xF7.",
+        "v3.91: Hard-stop-Konstante (1000) testen mit Real-Files — vielleicht braucht ein Stress-Song 1500+ events? KASSEL-RE liefert Daten."
+      ],
+      changed: [
+        "client/src/utils/korg/constants.ts (+~15 LOC: ESX1_SAMPLE_MEM_SOFT_LIMIT_BYTES Konstante + Doku)",
+        "client/src/utils/korg/esxParser.ts (+~80 LOC: PCM-Cap-Tolerance + Variant-Header-Return + iter-cap + 0xF7-skip)",
+        "tests/features/korg-esx-parser-hardening.test.ts (NEU, ~280 LOC, 9 Tests in 4 describes)",
+        "tests/features/korg-esx-parser.test.ts (2 existing tests angepasst auf neue Variant-Header-Semantik)",
+        "package.json (3.89.0 → 3.90.0)",
+        "agents/INDEX.js (version + workLog + files-Eintraege)"
+      ]
+    },
     {
       agent:     "backend",
       timestamp: "2026-05-19T07:35:00.000Z",

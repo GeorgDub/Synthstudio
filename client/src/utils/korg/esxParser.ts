@@ -103,6 +103,7 @@ import {
   ESX1_EMPTY_OFFSET,
   ESX1_MAX_MONO_SLOTS,
   ESX1_MAX_SAMPLE_MEM_IN_BYTES,
+  ESX1_SAMPLE_MEM_SOFT_LIMIT_BYTES,
   ESX1_MAX_STEREO_SLOTS,
   ESX1_NUM_PATTERNS,
   ESX1_NUM_SONGS,
@@ -918,6 +919,23 @@ const ESX1_MAX_EVENTS_PER_SONG = 4096;
 const ESX1_MAX_TOTAL_EVENTS = 64 * ESX1_MAX_EVENTS_PER_SONG;
 
 /**
+ * v3.90.0: Hard-stop fuer Events ohne end-marker.
+ *
+ * Real-Files koennen mal aus Versehen ohne 0xFFFF-Terminator enden (corrupt
+ * oder partial-write). Damit der Loop nicht alle 262144 Frames bis zum
+ * absoluten Cap weiterlaeuft, brechen wir nach 1000 non-terminator-Events
+ * vorzeitig ab und fuegen ein warning hinzu.
+ */
+const ESX1_MAX_ITERATIONS_NO_END = 1000;
+
+/**
+ * v3.90.0: Init-Length-Marker — 0xF7 in length-field bedeutet
+ * "uninitialized" (kein gueltiger Repeat-Count). Solche Events werden
+ * im Parser uebersprungen.
+ */
+const ESX1_SONG_EVENT_LENGTH_INIT = 0xf7;
+
+/**
  * Pruefft ob ein 528B Song-Block ein "init"/leeres Song-Slot ist.
  *
  * Heuristik (zwei Wege):
@@ -1055,6 +1073,11 @@ export function parseEsxSongEvents(
   );
 
   let currentSong = 0;
+  // v3.90.0: Hard-stop counter for runs without end-marker. Resets on
+  // every 0xFFFF-terminator hit. If the counter exceeds the cap we break
+  // out of the loop and warn — defends against corrupted files that have
+  // 200,000+ non-terminator frames.
+  let iterationsSinceLastEnd = 0;
   const dv = new DataView(buf.buffer, buf.byteOffset + start, maxFrames * ESX1_CHUNKSIZE_SONG_EVENT);
   for (let f = 0; f < maxFrames; f++) {
     const off = f * ESX1_CHUNKSIZE_SONG_EVENT;
@@ -1080,7 +1103,32 @@ export function parseEsxSongEvents(
         eventsPerSong[currentSong].push(event);
         currentSong++;
       }
+      iterationsSinceLastEnd = 0; // reset hard-stop counter
       if (currentSong >= numSongs) break; // alle Songs gefuellt
+      continue;
+    }
+
+    // v3.90.0: Hard-stop after N iterations without end-marker. Prevents
+    // infinite-loop / runaway parsing on malformed data. We emit the warning
+    // only when we've already seen at least one end-marker (i.e. we know the
+    // file has real song-data and the runaway is suspect) — when the
+    // event-region appears to be pure garbage (no end-marker yet), we just
+    // break silently to avoid polluting warnings on files that don't use
+    // the song-feature at all.
+    iterationsSinceLastEnd++;
+    if (iterationsSinceLastEnd > ESX1_MAX_ITERATIONS_NO_END) {
+      if (currentSong > 0) {
+        warnings.push(
+          `song-event stream exceeded ${ESX1_MAX_ITERATIONS_NO_END} events without end-marker; aborting parse at frame ${f}`,
+        );
+      }
+      break;
+    }
+
+    // v3.90.0: length=0xF7 means "uninitialized" — skip event so it doesn't
+    // get assigned a bogus repeat-count downstream. Real ESX-1 files use
+    // 0x01..0x10 (1..16 repeats) for actual song-arrangement entries.
+    if (length === ESX1_SONG_EVENT_LENGTH_INIT) {
       continue;
     }
 
@@ -1178,17 +1226,49 @@ export function parseEsxBank(
   }
 
   // ── 2. Magic-Check ─────────────────────────────────────────────────────────
+  // v3.90.0: Variant-Header Tolerance. Some user files start with non-'KORG'
+  // magic (e.g. 'OoQC' — observed in real user-uploads). These are NOT
+  // ESX-1 backups but variant Korg containers we cannot parse. Instead
+  // of throwing (which crashes batch-import workflows), return an empty
+  // bank with a warning so the caller can keep processing siblings.
   const sig = safeSlice(buf, 0, 4);
   if (!bytesEqual(sig, ESX1_SIGNATURE)) {
-    throw new EsxParseError(
-      `Invalid signature at offset 0x00: expected 'KORG', got ${Array.from(sig).map((b) => b.toString(16).padStart(2, "0")).join(" ")}`,
-    );
+    const sigHex = Array.from(sig)
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join(" ");
+    const sigAscii = Array.from(sig)
+      .map((b) => (b >= 0x20 && b <= 0x7e ? String.fromCharCode(b) : "?"))
+      .join("");
+    return {
+      source,
+      monoSamples: [],
+      stereoSamples: [],
+      patterns: [],
+      songs: [],
+      declaredMonoCount: 0,
+      declaredStereoCount: 0,
+      warnings: [
+        `unsupported variant header: expected 'KORG', got '${sigAscii}' (${sigHex}); returning empty bank`,
+      ],
+    };
   }
   const submagic = safeSlice(buf, ESX1_SUBMAGIC_OFFSET, 4);
   if (!bytesEqual(submagic, ESX1_SUBMAGIC)) {
-    throw new EsxParseError(
-      `Invalid sub-format at offset 0x${ESX1_SUBMAGIC_OFFSET.toString(16)}: expected 'ESX\\0'`,
-    );
+    const subHex = Array.from(submagic)
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join(" ");
+    return {
+      source,
+      monoSamples: [],
+      stereoSamples: [],
+      patterns: [],
+      songs: [],
+      declaredMonoCount: 0,
+      declaredStereoCount: 0,
+      warnings: [
+        `unsupported sub-format at offset 0x${ESX1_SUBMAGIC_OFFSET.toString(16)}: expected 'ESX\\0', got '${subHex}'; returning empty bank`,
+      ],
+    };
   }
 
   // ── 3. Second magic at 0x001B0000 ─────────────────────────────────────────
@@ -1224,6 +1304,9 @@ export function parseEsxBank(
   const monoSamples: EsxSample[] = [];
   const stereoSamples: EsxSample[] = [];
   let totalPcm = 0;
+  // v3.90.0: Only emit one PCM-cap-tolerance warning per parse to avoid
+  // spamming the warnings array with one entry per slot above the cap.
+  let pcmCapWarned = false;
 
   // ── 5. Mono-Header Parse ──────────────────────────────────────────────────
   const monoTableStart = ESX1_ADDR_SAMPLE_HEADER_MONO;
@@ -1249,10 +1332,20 @@ export function parseEsxBank(
       const pcmBytes = readPcmRange(buf, f.off1Start, f.off1End, i, "mono");
       const pcm = be16PcmToFloat32(pcmBytes);
       totalPcm += pcmBytes.length;
-      if (totalPcm > ESX1_MAX_SAMPLE_MEM_IN_BYTES) {
+      // v3.90.0: Defensive tolerance — KASSEL.esx and friends overflow the
+      // 24 MiB hardware cap by a few hundred bytes (real-file-padding /
+      // rounding). Only throw above the soft-limit (~25 MiB); between
+      // cap and soft-limit, emit a single warning per parse + continue.
+      if (totalPcm > ESX1_SAMPLE_MEM_SOFT_LIMIT_BYTES) {
         throw new EsxParseError(
-          `cumulative PCM size ${totalPcm} exceeds ESX-1 cap ${ESX1_MAX_SAMPLE_MEM_IN_BYTES}`,
+          `cumulative PCM size ${totalPcm} exceeds ESX-1 soft-limit ${ESX1_SAMPLE_MEM_SOFT_LIMIT_BYTES}`,
         );
+      }
+      if (totalPcm > ESX1_MAX_SAMPLE_MEM_IN_BYTES && !pcmCapWarned) {
+        warnings.push(
+          `cumulative PCM size ${totalPcm} exceeds ESX-1 hardware cap ${ESX1_MAX_SAMPLE_MEM_IN_BYTES} (within ${ESX1_SAMPLE_MEM_SOFT_LIMIT_BYTES} soft-limit, continuing)`,
+        );
+        pcmCapWarned = true;
       }
 
       const frames = pcm.length;
@@ -1318,10 +1411,17 @@ export function parseEsxBank(
         inter[k * 2 + 1] = right[k];
       }
       totalPcm += leftBytes.length + rightBytes.length;
-      if (totalPcm > ESX1_MAX_SAMPLE_MEM_IN_BYTES) {
+      // v3.90.0: Same soft-limit/warning logic as mono path.
+      if (totalPcm > ESX1_SAMPLE_MEM_SOFT_LIMIT_BYTES) {
         throw new EsxParseError(
-          `cumulative PCM size ${totalPcm} exceeds ESX-1 cap ${ESX1_MAX_SAMPLE_MEM_IN_BYTES}`,
+          `cumulative PCM size ${totalPcm} exceeds ESX-1 soft-limit ${ESX1_SAMPLE_MEM_SOFT_LIMIT_BYTES}`,
         );
+      }
+      if (totalPcm > ESX1_MAX_SAMPLE_MEM_IN_BYTES && !pcmCapWarned) {
+        warnings.push(
+          `cumulative PCM size ${totalPcm} exceeds ESX-1 hardware cap ${ESX1_MAX_SAMPLE_MEM_IN_BYTES} (within ${ESX1_SAMPLE_MEM_SOFT_LIMIT_BYTES} soft-limit, continuing)`,
+        );
+        pcmCapWarned = true;
       }
 
       stereoSamples.push({

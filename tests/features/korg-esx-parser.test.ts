@@ -210,16 +210,22 @@ describe("korg/esxParser — file-size caps", () => {
 });
 
 describe("korg/esxParser — magic + sample-count validation", () => {
-  it("throws on invalid first magic", () => {
+  it("returns empty bank + warning on invalid first magic (v3.90.0: variant-header tolerance)", () => {
     const buf = buildMinimalEsxBuffer({});
     buf[0] = 0x00;
-    expect(() => parseEsxBank(buf)).toThrow(/Invalid signature/);
+    const bank = parseEsxBank(buf);
+    expect(bank.monoSamples).toEqual([]);
+    expect(bank.warnings.some((w) => /variant header|unsupported variant/i.test(w))).toBe(
+      true,
+    );
   });
 
-  it("throws on invalid sub-magic", () => {
+  it("returns empty bank + warning on invalid sub-magic (v3.90.0: variant-format tolerance)", () => {
     const buf = buildMinimalEsxBuffer({});
     buf[ESX1_SUBMAGIC_OFFSET] = 0x00;
-    expect(() => parseEsxBank(buf)).toThrow(/Invalid sub-format/);
+    const bank = parseEsxBank(buf);
+    expect(bank.monoSamples).toEqual([]);
+    expect(bank.warnings.some((w) => /unsupported sub-format/i.test(w))).toBe(true);
   });
 
   it("throws when second magic is missing", () => {

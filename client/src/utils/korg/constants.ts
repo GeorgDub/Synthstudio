@@ -61,9 +61,29 @@ export const ESX1_NUM_SONGS = 64;
 export const ESX1_CHUNKSIZE_SAMPLE_HEADER_MONO = 40;
 export const ESX1_CHUNKSIZE_SAMPLE_HEADER_STEREO = 44;
 export const ESX1_CHUNKSIZE_SLICE_DATA = 2048;
-/** 12,582,912 = 24 MB / 2 (16-bit-Frames). */
+/** 12,582,912 = 24 MB / 2 (16-bit-Frames). Hardware-Datasheet-Wert. */
 export const ESX1_MAX_SAMPLE_MEM_IN_FRAMES = 0xc00000;
+/**
+ * Hardware-Datasheet Sample-Memory-Cap = 24 MiB (25,165,824 Bytes).
+ *
+ * v3.90.0: Real-File-Variabilität — KASSEL.esx hat 25,166,068 Bytes PCM
+ * (244 Bytes Overshoot vs. 24-MiB-Datasheet-Wert). Die Hardware-Spec
+ * scheint einen kleinen Slack zu erlauben (Rounding/Padding). Wir
+ * erlauben deshalb defensiv bis 25 MiB (= 26,214,400 Bytes; ~1 MiB
+ * Headroom) BEVOR wir throwen.
+ *
+ * Real-Hardware: Korg ESX-1 hat 24 MiB SD-Card-quantized Sample-RAM, aber
+ * der File-Container kann ein paar hundert Bytes Padding tolerieren.
+ */
 export const ESX1_MAX_SAMPLE_MEM_IN_BYTES = ESX1_MAX_SAMPLE_MEM_IN_FRAMES * 2;
+/**
+ * v3.90.0: Soft-Cap mit Tolerance fuer Real-Files (default = +1 MiB).
+ *
+ * Files <= ESX1_MAX_SAMPLE_MEM_IN_BYTES → no warning, no error.
+ * Files in (cap..ESX1_SAMPLE_MEM_SOFT_LIMIT_BYTES] → warning + continue.
+ * Files > soft-limit → EsxParseError (defense in depth).
+ */
+export const ESX1_SAMPLE_MEM_SOFT_LIMIT_BYTES = 25 * 1024 * 1024; // 26,214,400
 /** Absolute Min-Dateigröße: Header + Tables + min. 1 PCM-Frame. */
 export const ESX1_SIZE_FILE_MIN = 0x00250010;
 /** Sentinel im offsetChannel*-Feld: Slot ist leer. */
