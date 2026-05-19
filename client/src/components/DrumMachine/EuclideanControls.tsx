@@ -10,6 +10,8 @@ import React, { useState } from "react";
 import * as Popover from "@radix-ui/react-popover";
 import { euclidean } from "@/utils/euclidean";
 import { sendEuclideanParam, clampPartIndex } from "@/utils/omniTribeWiring";
+// v3.158: Klassische Euclidean-Presets (aus v3.157).
+import { EUCLIDEAN_PRESETS } from "@/utils/euclideanRhythm";
 
 interface EuclideanControlsProps {
   partId: string;
@@ -57,6 +59,29 @@ export function EuclideanControls({ partId, partIndex = 0, stepCount, onApply }:
         >
           <Popover.Arrow className="fill-border-color" />
           <div className="font-semibold text-text-primary mb-2">Euclidean Generator</div>
+
+          {/* v3.158: Quick-Presets (Tresillo, Cinquillo, ...) */}
+          <div className="mb-2">
+            <div className="text-[10px] text-text-dim mb-1">Presets</div>
+            <div className="flex flex-wrap gap-1">
+              {EUCLIDEAN_PRESETS.slice(0, 5).map((preset) => (
+                <button
+                  key={preset.id}
+                  type="button"
+                  onClick={() => {
+                    setHits(preset.hits);
+                    setSteps(preset.steps);
+                    setRotation(0);
+                  }}
+                  title={preset.description}
+                  className="px-1.5 py-0.5 rounded text-[10px] bg-bg-elevated hover:bg-accent-primary/40 hover:text-accent-primary text-text-muted transition-colors"
+                  data-testid={`euclidean-preset-${preset.id}`}
+                >
+                  {preset.hits}/{preset.steps}
+                </button>
+              ))}
+            </div>
+          </div>
 
           <div className="flex gap-2 mb-2">
             <label className="flex flex-col gap-0.5 flex-1">
