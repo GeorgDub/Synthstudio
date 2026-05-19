@@ -480,6 +480,44 @@ interface ChannelNodes {
   globalDelaySend: GainNode;
 }
 
+/**
+ * v3.86.0: Pro-Sub-Mix-Bus Audio-Nodes.
+ *
+ * Routing-Order (input → output):
+ *   input → eqLow → eqMid → eqHigh → compIn
+ *     → compressor → compWet ──┐
+ *                              ├→ compMix → gain (volume·solo) → panner → master
+ *     → compDry ───────────────┘
+ *
+ *   gain → reverbSend → global-reverb-bus
+ *   gain → delaySend  → global-delay-bus
+ *
+ * EQ-Bypass: wenn fx.enabled=false werden die EQ-Bänder auf 0dB Gain
+ * gefahren (Pfad bleibt verkabelt, Audio passt aber transparent durch).
+ *
+ * Compressor-Bypass (fx.compressor.enabled=false): compWet=0 + compDry=1
+ * (kein disconnect, click-frei via setTargetAtTime).
+ */
+export interface SubMixBusNodes {
+  /** Channel-Output landet hier — Multi-Source-Tap. */
+  input: GainNode;
+  eqLow: BiquadFilterNode;
+  eqMid: BiquadFilterNode;
+  eqHigh: BiquadFilterNode;
+  compIn: GainNode;
+  compressor: DynamicsCompressorNode;
+  compWet: GainNode;
+  compDry: GainNode;
+  compMix: GainNode;
+  /** Post-FX Volume + Solo/Mute-Multiplikator. */
+  gain: GainNode;
+  panner: StereoPannerNode;
+  reverbSend: GainNode;
+  delaySend: GainNode;
+  /** Memo der zuletzt applied volume (Solo-Logik kommt vom Store-Snapshot). */
+  volume: number;
+}
+
 // ─── Engine ───────────────────────────────────────────────────────────────────
 
 class AudioEngineClass {
@@ -668,27 +706,37 @@ class AudioEngineClass {
 
   // ─── Sub-Mix-Buses (v3.79.1) ──────────────────────────────────────────────
   /**
-   * v3.79.1: Sub-Mix-Bus Audio-Wiring.
+   * v3.79.1 / v3.86.0: Sub-Mix-Bus Audio-Wiring + volle FX-Chain.
    *
    * v3.79.0 hat den State (useSubMixStore) + Schema (v1.32). v3.79.1
-   * verdrahtet das Routing im Audio-Graph:
+   * verdrahtete das Routing initial:
    *
    *   channelOutput (sidechainGain) → busGain(volume·soloFactor) →
    *     busPanner(pan) → masterGain
    *
+   * v3.86.0 erweitert auf volle FX-Chain analog Channel-FX:
+   *
+   *   channelOutput → bus.input → bus.eqLow → bus.eqMid → bus.eqHigh →
+   *     bus.compIn → [compressor] / [compDry] (Wet/Dry-Crossfade) →
+   *     bus.compMix → bus.gain (volume·soloFactor) →
+   *     bus.panner → masterGain
+   *
+   *   bus.gain → bus.reverbSend → global-reverb-bus (via _globalReverbPreDelay)
+   *   bus.gain → bus.delaySend  → global-delay-bus
+   *
    * Channels ohne `subMixBusId` routen weiter direkt in `masterGain`
    * (Default-Verhalten, backward-compat).
-   *
-   * Per Bus halten wir genau zwei Nodes (gain + panner). Eine optionale
-   * Pro-Bus-FX-Chain (postGain etc.) wird in v3.80 ergänzt — aktueller
-   * SubMixBusFx ist im Store noch minimal.
    *
    * Solo-Logik: anyBusSolo → andere Buses bekommen gain=0 (Bus-Gain
    * gemultiplext mit einem effective-mute-Faktor in `applySubMixBus`).
    * Mute analog: gain.value = 0. Beides ohne disconnect — der Pfad bleibt
    * permanent verkabelt, nur der Pegel wird auf 0 gerampt.
+   *
+   * Compressor-Bypass: Wet/Dry-Crossfade via 2 GainNodes (compWet/compDry).
+   * Kein disconnect, keine Clicks. `enabled` toggle't compWet=1+compDry=0
+   * bzw. compWet=0+compDry=1.
    */
-  private _subMixBusNodes = new Map<string, { gain: GainNode; panner: StereoPannerNode; volume: number }>();
+  private _subMixBusNodes = new Map<string, SubMixBusNodes>();
   /** Mapping partId → busId. Channels ohne Eintrag routen direkt in master. */
   private _channelSubMixAssignments = new Map<string, string>();
   /** Smoothing-Konstante (ms*1e-3) für Bus-Gain-Rampe (no-click). */
@@ -1002,11 +1050,23 @@ class AudioEngineClass {
     this._masterLimiterLookahead = null;
     this._masterLimiterWet = null;
     this._masterLimiterDry = null;
-    // v3.79.1: Sub-Mix-Bus-Nodes verwerfen — werden bei nächstem
+    // v3.79.1 / v3.86.0: Sub-Mix-Bus-Nodes verwerfen — werden bei nächstem
     // syncSubMixState() neu erzeugt wenn der Store noch Buses hat.
+    // Alle FX-Nodes disconnecten damit sie GC-frei werden.
     for (const bus of this._subMixBusNodes.values()) {
-      try { bus.panner.disconnect(); } catch { /* ignore */ }
+      try { bus.input.disconnect(); } catch { /* ignore */ }
+      try { bus.eqLow.disconnect(); } catch { /* ignore */ }
+      try { bus.eqMid.disconnect(); } catch { /* ignore */ }
+      try { bus.eqHigh.disconnect(); } catch { /* ignore */ }
+      try { bus.compIn.disconnect(); } catch { /* ignore */ }
+      try { bus.compressor.disconnect(); } catch { /* ignore */ }
+      try { bus.compWet.disconnect(); } catch { /* ignore */ }
+      try { bus.compDry.disconnect(); } catch { /* ignore */ }
+      try { bus.compMix.disconnect(); } catch { /* ignore */ }
       try { bus.gain.disconnect(); } catch { /* ignore */ }
+      try { bus.panner.disconnect(); } catch { /* ignore */ }
+      try { bus.reverbSend.disconnect(); } catch { /* ignore */ }
+      try { bus.delaySend.disconnect(); } catch { /* ignore */ }
     }
     this._subMixBusNodes.clear();
     // Assignments bleiben — sie werden beim nächsten Channel-Get bzw.
@@ -1723,54 +1783,198 @@ class AudioEngineClass {
     const busId = this._channelSubMixAssignments.get(partId);
     if (busId) {
       const bus = this._subMixBusNodes.get(busId);
-      if (bus) return bus.gain;
+      // v3.86.0: Channel-Output landet jetzt am Bus-Input (vor der FX-Chain).
+      if (bus) return bus.input;
     }
     return this.masterGain!;
   }
 
   /**
-   * v3.79.1: Erzeugt (falls nicht existent) die Bus-Nodes (gain + panner) und
-   * verbindet sie zum Master. Wendet anschließend volume/pan/mute/solo-Faktor
-   * auf den Gain-Param an (mit 20ms Rampe, no-click).
+   * v3.79.1 / v3.86.0: Erzeugt (falls nicht existent) die Bus-Nodes inkl. voller
+   * FX-Chain (EQ-3 + Compressor + Reverb/Delay-Sends) und verbindet sie zum
+   * Master. Wendet volume/pan/mute/solo/FX-Params mit 20ms Rampen an (no-click).
+   *
+   * Routing-Order: input → eqLow → eqMid → eqHigh → compIn
+   *   → [compressor → compWet] || [compDry] → compMix
+   *   → gain (·solo) → panner → master
+   *
+   *   gain → reverbSend → global-reverb-bus
+   *   gain → delaySend  → global-delay-bus
    *
    * Solo-Logik: wenn `anyBusSolo` true ist und dieser Bus selbst nicht solo'd
    * ist, wird das effective-Volume auf 0 multipliziert (Sister-Bus-Ducking).
    *
    * Idempotent — mehrfacher Aufruf mit identischem State ist no-op am Audio-
-   * Graph (rampt nur den Gain auf den selben Wert).
+   * Graph (rampt nur die Parameter auf die selben Werte).
    */
   applySubMixBus(busId: string, bus: SubMixBus, anyBusSolo: boolean): void {
     if (!this.ctx || !this.masterGain) return;
     let nodeSet = this._subMixBusNodes.get(busId);
     if (!nodeSet) {
-      const gain = this.ctx.createGain();
-      const panner = this.ctx.createStereoPanner();
-      gain.gain.value = 0; // Start stumm — wird gleich gerampt.
-      panner.pan.value = bus.pan;
-      gain.connect(panner);
-      panner.connect(this.masterGain);
-      nodeSet = { gain, panner, volume: bus.volume };
+      nodeSet = this._createSubMixBusNodes();
       this._subMixBusNodes.set(busId, nodeSet);
     }
-    // Pan smooth.
-    nodeSet.panner.pan.setTargetAtTime(bus.pan, this.ctx.currentTime, this.SUB_MIX_BUS_RAMP_SEC);
-    // Effective Gain.
+    const now = this.ctx.currentTime;
+    const rampSec = this.SUB_MIX_BUS_RAMP_SEC;
+
+    // ─── Pan smooth ─────────────────────────────────────────────────────
+    nodeSet.panner.pan.setTargetAtTime(bus.pan, now, rampSec);
+
+    // ─── Effective Main-Gain (Volume × Mute × Solo) ────────────────────
     const muted = bus.mute || (anyBusSolo && !bus.solo);
     const target = muted ? 0 : bus.volume;
     nodeSet.volume = bus.volume;
-    nodeSet.gain.gain.setTargetAtTime(target, this.ctx.currentTime, this.SUB_MIX_BUS_RAMP_SEC);
+    nodeSet.gain.gain.setTargetAtTime(target, now, rampSec);
+
+    // ─── v3.86.0: FX-Chain auf bus.fx anwenden ──────────────────────────
+    // bus.fx ist optional — Pre-v3.79.1-Buses haben kein fx-Feld. Defaults
+    // entsprechen flacher EQ + bypassed Compressor + 0 Sends (transparent).
+    const fx = bus.fx;
+    const enabled = fx?.enabled ?? false;
+
+    // EQ-3: wenn enabled=false fallen alle Bänder auf 0dB (transparent).
+    const lowGain  = enabled ? (fx?.eq3?.lowGain  ?? 0) : 0;
+    const midGain  = enabled ? (fx?.eq3?.midGain  ?? 0) : 0;
+    const highGain = enabled ? (fx?.eq3?.highGain ?? 0) : 0;
+    nodeSet.eqLow.gain.setTargetAtTime(lowGain,   now, rampSec);
+    nodeSet.eqMid.gain.setTargetAtTime(midGain,   now, rampSec);
+    nodeSet.eqHigh.gain.setTargetAtTime(highGain, now, rampSec);
+
+    // Compressor: Wet/Dry-Crossfade (kein disconnect → click-frei).
+    const comp = fx?.compressor;
+    const compOn = enabled && (comp?.enabled ?? false);
+    if (comp) {
+      nodeSet.compressor.threshold.setTargetAtTime(comp.threshold, now, rampSec);
+      nodeSet.compressor.ratio.setTargetAtTime(comp.ratio,         now, rampSec);
+      nodeSet.compressor.attack.setTargetAtTime(comp.attack,       now, rampSec);
+      nodeSet.compressor.release.setTargetAtTime(comp.release,     now, rampSec);
+    }
+    nodeSet.compWet.gain.setTargetAtTime(compOn ? 1 : 0, now, rampSec);
+    nodeSet.compDry.gain.setTargetAtTime(compOn ? 0 : 1, now, rampSec);
+
+    // Reverb-Send / Delay-Send — independent von fx.enabled (Send ist eigener Pfad).
+    const reverbSend = fx?.reverbSend ?? 0;
+    const delaySend  = fx?.delaySend  ?? 0;
+    nodeSet.reverbSend.gain.setTargetAtTime(reverbSend, now, rampSec);
+    nodeSet.delaySend.gain.setTargetAtTime(delaySend,   now, rampSec);
   }
 
   /**
-   * v3.79.1: Entfernt einen Bus aus dem Audio-Graph. Alle Channels die noch
-   * darauf zeigten müssen vom Store bereits via assignChannelToBus(null) auf
-   * master umgehängt worden sein — defensive disconnect ohne reroute hier.
+   * v3.86.0: Baut eine frische Sub-Mix-Bus-Node-Sammlung mit voller FX-Chain
+   * und verkabelt alle Nodes intern + zu master / global-bus.
+   */
+  private _createSubMixBusNodes(): SubMixBusNodes {
+    if (!this.ctx || !this.masterGain) {
+      throw new Error("AudioEngine not initialized");
+    }
+    const ctx = this.ctx;
+
+    const input  = ctx.createGain();
+    input.gain.value = 1;
+
+    // EQ-3 (Channel-FX-konsistent: Lowshelf 200Hz, Peak 1kHz Q=1, Highshelf 4kHz).
+    const eqLow = ctx.createBiquadFilter();
+    eqLow.type = "lowshelf";
+    eqLow.frequency.value = 200;
+    eqLow.gain.value = 0;
+    const eqMid = ctx.createBiquadFilter();
+    eqMid.type = "peaking";
+    eqMid.frequency.value = 1000;
+    eqMid.Q.value = 1;
+    eqMid.gain.value = 0;
+    const eqHigh = ctx.createBiquadFilter();
+    eqHigh.type = "highshelf";
+    eqHigh.frequency.value = 4000;
+    eqHigh.gain.value = 0;
+
+    // Compressor + Wet/Dry-Crossfade (bypass-frei mittels Mix-Bus).
+    const compIn = ctx.createGain();
+    compIn.gain.value = 1;
+    const compressor = ctx.createDynamicsCompressor();
+    compressor.threshold.value = -18;
+    compressor.ratio.value = 4;
+    compressor.attack.value = 0.01;
+    compressor.release.value = 0.1;
+    compressor.knee.value = 6;
+    const compWet = ctx.createGain();
+    compWet.gain.value = 0; // Default: Compressor bypassed (dry pfad aktiv).
+    const compDry = ctx.createGain();
+    compDry.gain.value = 1;
+    const compMix = ctx.createGain();
+    compMix.gain.value = 1;
+
+    // Main Gain + Panner.
+    const gain = ctx.createGain();
+    gain.gain.value = 0; // Start stumm — wird gleich gerampt.
+    const panner = ctx.createStereoPanner();
+    panner.pan.value = 0;
+
+    // Reverb-Send / Delay-Send.
+    const reverbSend = ctx.createGain();
+    reverbSend.gain.value = 0;
+    const delaySend = ctx.createGain();
+    delaySend.gain.value = 0;
+
+    // ─── Wiring: input → eqLow → eqMid → eqHigh → compIn ───
+    input.connect(eqLow);
+    eqLow.connect(eqMid);
+    eqMid.connect(eqHigh);
+    eqHigh.connect(compIn);
+
+    // compIn fans out to compressor (wet) + compDry (parallel).
+    compIn.connect(compressor);
+    compressor.connect(compWet);
+    compIn.connect(compDry);
+    // Both merge into compMix.
+    compWet.connect(compMix);
+    compDry.connect(compMix);
+    // compMix → gain → panner → master.
+    compMix.connect(gain);
+    gain.connect(panner);
+    panner.connect(this.masterGain);
+
+    // Sends zweigen post-gain ab → global-buses (sofern initialisiert).
+    gain.connect(reverbSend);
+    if (this._globalReverbPreDelay) {
+      reverbSend.connect(this._globalReverbPreDelay);
+    } else if (this._globalReverbBus) {
+      reverbSend.connect(this._globalReverbBus);
+    }
+    gain.connect(delaySend);
+    if (this._globalDelayBus) {
+      delaySend.connect(this._globalDelayBus);
+    }
+
+    return {
+      input, eqLow, eqMid, eqHigh,
+      compIn, compressor, compWet, compDry, compMix,
+      gain, panner,
+      reverbSend, delaySend,
+      volume: 0,
+    };
+  }
+
+  /**
+   * v3.79.1 / v3.86.0: Entfernt einen Bus aus dem Audio-Graph. Disconnected
+   * alle FX-Nodes (input, EQ-Bänder, Compressor-Mix, Gain, Panner, Sends).
+   * Channels die noch auf diesen Bus zeigten werden zu master rerouted.
    */
   removeSubMixBus(busId: string): void {
     const nodeSet = this._subMixBusNodes.get(busId);
     if (!nodeSet) return;
-    try { nodeSet.panner.disconnect(); } catch { /* ignore */ }
-    try { nodeSet.gain.disconnect(); } catch { /* ignore */ }
+    try { nodeSet.input.disconnect();      } catch { /* ignore */ }
+    try { nodeSet.eqLow.disconnect();      } catch { /* ignore */ }
+    try { nodeSet.eqMid.disconnect();      } catch { /* ignore */ }
+    try { nodeSet.eqHigh.disconnect();     } catch { /* ignore */ }
+    try { nodeSet.compIn.disconnect();     } catch { /* ignore */ }
+    try { nodeSet.compressor.disconnect(); } catch { /* ignore */ }
+    try { nodeSet.compWet.disconnect();    } catch { /* ignore */ }
+    try { nodeSet.compDry.disconnect();    } catch { /* ignore */ }
+    try { nodeSet.compMix.disconnect();    } catch { /* ignore */ }
+    try { nodeSet.gain.disconnect();       } catch { /* ignore */ }
+    try { nodeSet.panner.disconnect();     } catch { /* ignore */ }
+    try { nodeSet.reverbSend.disconnect(); } catch { /* ignore */ }
+    try { nodeSet.delaySend.disconnect();  } catch { /* ignore */ }
     this._subMixBusNodes.delete(busId);
     // Channels die noch auf diesen Bus zeigen → unassign + reroute zu master.
     const orphans: string[] = [];
@@ -1867,8 +2071,8 @@ class AudioEngineClass {
     }
   }
 
-  /** v3.79.1: Test-Helper / Inspection — liefert die Bus-Node-Map kopiert. */
-  getSubMixBusNodes(): ReadonlyMap<string, { gain: GainNode; panner: StereoPannerNode; volume: number }> {
+  /** v3.79.1 / v3.86.0: Test-Helper / Inspection — liefert die Bus-Node-Map. */
+  getSubMixBusNodes(): ReadonlyMap<string, SubMixBusNodes> {
     return this._subMixBusNodes;
   }
 

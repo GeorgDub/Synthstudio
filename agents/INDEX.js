@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.85.0",
+    version: "3.86.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -89,6 +89,31 @@ const INDEX = {
   // ─── KNOWN FILE INDEX ──────────────────────────────────────
   // Key files agents have analyzed. Add new entries after working on a file.
   files: {
+    "client/src/store/useSubMixStore.ts (v3.86.0)": {
+      role:     "v3.86.0 ERWEITERT (+~115 LOC, bestehende v3.79.0/v3.81.0 unverändert): SubMixBusFx erweitert auf volle FX-Chain. NEU Interfaces SubMixBusEq3 {lowGain,midGain,highGain in dB ±24} + SubMixBusCompressor {enabled,threshold -60..0,ratio 1..20,attack 0..1,release 0..1}. SubMixBusFx-Felder: enabled, postGain, eq3, compressor, reverbSend (0..1), delaySend (0..1). NEU exportierte Defaults DEFAULT_BUS_EQ3 + DEFAULT_BUS_COMPRESSOR + DEFAULT_BUS_FX (alle FX-Felder transparent gesetzt). Pure-Helpers clampBusEq3/clampBusCompressor. clampBusFx fillt fehlende v3.86-Felder mit Defaults (Pre-v1.33-Migration). NEU Setter setBusEq3/setBusCompressor/setBusReverbSend/setBusDelaySend (alle Merge-Update mit Pre-Clamping). sanitizeBus + setBusFx-API unverändert; akzeptieren jetzt erweiterte Partial<SubMixBusFx>.",
+      lastSeen: "2026-05-19T06:25:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/audio/AudioEngine.ts (v3.86.0 sub-mix-bus-fx-chain)": {
+      role:     "v3.86.0 ERWEITERT (+~200 LOC, bestehende v3.79.1-v3.85 unverändert). NEU exported Interface SubMixBusNodes mit allen FX-Nodes (input, eqLow/Mid/High, compIn, compressor, compWet/Dry, compMix, gain, panner, reverbSend, delaySend). _subMixBusNodes-Map jetzt SubMixBusNodes-Type. NEU private _createSubMixBusNodes() baut die volle Chain: input → eqLow(lowshelf 200Hz) → eqMid(peak 1kHz Q=1) → eqHigh(highshelf 4kHz) → compIn → [compressor → compWet] || [compDry] → compMix → gain → panner → master. Plus gain → reverbSend → _globalReverbPreDelay (oder _globalReverbBus fallback) und gain → delaySend → _globalDelayBus. Compressor init: knee=6, attack 10ms, release 100ms. applySubMixBus REWRITE — rampt jetzt zusätzlich zu Vol/Pan/Mute/Solo: EQ-Bänder (auf 0 wenn fx.enabled=false → transparent), Compressor-Threshold/Ratio/Attack/Release, Wet/Dry-Crossfade (1/0 bei compOn, 0/1 bei bypass), reverbSend.gain, delaySend.gain. Alles setTargetAtTime mit SUB_MIX_BUS_RAMP_SEC=0.02. _resolveChannelDestination zeigt auf bus.input statt bus.gain. removeSubMixBus disconnected alle 13 FX-Nodes. reinit() Cleanup-Loop erweitert.",
+      lastSeen: "2026-05-19T06:25:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/components/Mixer/SubMixBusStrip.tsx (v3.86.0 fx-chain-ui)": {
+      role:     "v3.86.0 ERWEITERT (+~370 LOC, bestehende v3.81.0 MIDI-Learn + Color-Picker bleibt). NEU exportierter Pure-Helper resolveBusFx(bus)→SubMixBusFx (Pre-v1.33-Buses bekommen Defaults). NEU State fxExpanded + fxModalOpen. NEU expandable FX-Section unter Mute/Solo: Master-FX-Enable-Toggle + EQ-3 Mini-Sliders (Lo/Md/Hi je -24..+24dB) + Compressor ON/OFF + Threshold-Slider + Reverb/Delay-Send-Sliders. FX-Toggle-Button zeigt ●-Indikator wenn fx.enabled. Doppelklick öffnet BusFxModal mit detaillierter EQ/Comp/Sends-UI (analog ChannelInspector). Modal als fixed-Overlay mit semantischen Tokens (bg-bg-base/80, border-border-color). Sub-Komponenten FxMiniSlider + FxModalSlider. data-testids für alle Controls: sub-mix-bus-fx-toggle/section/enabled/eq-low/eq-mid/eq-high/comp-enabled/comp-threshold/reverb-send/delay-send-<busId>.",
+      lastSeen: "2026-05-19T06:25:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/utils/projectSerializer.ts (v3.86.0 v1.33)": {
+      role:     "v3.86.0 SCHEMA-BUMP v1.32 → v1.33: SYNTH_FILE_VERSION='1.33'. Header-Doku-Block v1.33-Migration (Sub-Mix-Bus volle FX-Chain). SubMixBusFx erweitert um eq3/compressor/reverbSend/delaySend — additiv-optional. Backward-Compat: Pre-v1.33-Buses (nur enabled+postGain) laden via sanitizeBus → clampBusFx ergänzt fehlende Felder mit Defaults (EQ flat 0dB, Compressor disabled, Sends=0). Round-Trip mit erweitertem FX-Block preserves alle Werte. Bestehende v1.32-Sub-Mix-Logik (parseProject migration-Block) bleibt unverändert.",
+      lastSeen: "2026-05-19T06:25:00.000Z",
+      ownedBy:  "backend"
+    },
+    "tests/features/sub-mix-bus-fx.test.ts (v3.86.0)": {
+      role:     "v3.86.0 NEU (~430 LOC, 13 Tests in 6 describes, env:node mit localStorage-Mock + Mock-AudioContext mit BiquadFilter/DynamicsCompressor/StereoPanner-Tracking + setTargetAtTime-Spy der den Wert direkt schreibt für deterministische Assertions). (1) Store-Setter × 3: setBusEq3 mergt + clampt (lowGain Werte + Out-of-Range → 24/-24, persist localStorage), setBusCompressor mergt + clampt (ratio 999→20, threshold 99→0), setBusReverbSend/DelaySend clampen auf 0..1. (2) Engine-Wiring × 3: setBusEqLowGain wirkt im Engine (eqLow.gain auf 9), Compressor Wet/Dry-Crossfade (enabled → wet=1+dry=0, disabled → wet=0+dry=1, Threshold+Ratio gesetzt), FX-Chain Routing (input/eqLow/gain/panner alle .connect-called). (3) Sends × 2: reverbSend.gain.value=0.7 + .connect-called, delaySend analog. (4) Schema v1.33 × 3: SYNTH_FILE_VERSION='1.33', Round-Trip preserves alle FX-Felder, Pre-v1.33-Bus mit minimal-Shape lädt → Defaults ergänzt. (5) FX-Disabled × 1: fx.enabled=false → EQ-Bänder auf 0 + Compressor bypassed (compDry=1) auch wenn fx.compressor.enabled=true. (6) Backward-Compat × 1: Bus ohne fx-Feld → applySubMixBus crash-frei, alle FX-Params Default-Transparent.",
+      lastSeen: "2026-05-19T06:25:00.000Z",
+      ownedBy:  "backend"
+    },
     "client/src/utils/audioCompressEncoder.ts (v3.83.0)": {
       role:     "v3.83.0 NEU (~420 LOC, Pure-TS DOM-frei testbar): Compressed Audio-Export via WebCodecs `AudioEncoder` (Opus in OGG-Container) mit transparenter Fallback-Logik. Public-API: encodeAsOgg(buffer, opts?) → Promise<Blob audio/ogg | audio/wav>, encodeCompressed(...) → {blob,format,bitrate,usedFallback}, isWebCodecsOpusSupported() → Promise<boolean>, clampBitrate(v), filenameForFormat(name,fmt). Konstanten DEFAULT_OGG_BITRATE_BPS=192_000 + SUPPORTED_OGG_BITRATES_BPS=[96k,128k,192k,256k,320k] + MIN/MAX_OGG_BITRATE_BPS=32k/510k + OGG_MIME='audio/ogg' + WAV_MIME='audio/wav'. AudioBufferLike-Minimal-Interface (Node-testbar ohne Web-Audio). WebCodecs-Pfad: 20ms-Frames (sampleRate*0.02) → encoder.encode() → chunks gesammelt → packageOggOpus baut RFC 3533 Ogg-Pages mit RFC 7845 OpusHead (19 Bytes) + OpusTags (vendor='Synthstudio') + Audio-Pages mit korrekter CRC32 (0x04C11DB7-Polynom, no input reflection). Bei Fehlen von globalThis.AudioEncoder ODER encoder.error()-Callback ODER opts.forceWav=true → silent WAV-Fallback (44-byte RIFF/WAVE + 16-bit PCM interleaved, max 2 channels). Test-Injection via opts.encoderImpl damit Node-Tests ohne WebCodecs laufen (Mock-Encoder spied lastEncoderConfig.bitrate). Multi-Page-Spanning fehlt (>255 Bytes/Frame würde werfen) — bei 20ms-Opus-Packets praktisch nie ein Problem.",
       lastSeen: "2026-05-19T05:45:00.000Z",
@@ -2332,6 +2357,40 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "backend",
+      timestamp: "2026-05-19T06:25:00.000Z",
+      done: [
+        "v3.86.0: Sub-Mix Bus-FX-Chain (closes v3.79.x minimal-FX). Vorher hatte SubMixBus nur Volume/Pan/Mute/Solo + minimaler fx {enabled,postGain}. Jetzt: volle FX-Chain analog Channel-FX — EQ-3 (Low/Mid/High Gain) + Compressor (Threshold/Ratio/Attack/Release + Bypass via Wet/Dry-Crossfade) + Reverb-Send + Delay-Send. Routing-Order: channelOutput → bus.input → eqLow → eqMid → eqHigh → compIn → [compressor → compWet] || [compDry] → compMix → gain(·solo) → panner → master. gain → reverbSend → global-reverb-bus (via _globalReverbPreDelay), gain → delaySend → global-delay-bus. Schema v1.32 → v1.33.",
+        "client/src/store/useSubMixStore.ts ERWEITERT (+~115 LOC, bestehende v3.79.0/v3.81.0 unverändert). NEU Interfaces SubMixBusEq3 + SubMixBusCompressor. SubMixBusFx erweitert: enabled, postGain, eq3 {lowGain,midGain,highGain in dB ±24}, compressor {enabled,threshold -60..0,ratio 1..20,attack 0..1,release 0..1}, reverbSend 0..1, delaySend 0..1. NEU exportierte Defaults DEFAULT_BUS_EQ3 + DEFAULT_BUS_COMPRESSOR + DEFAULT_BUS_FX (jetzt mit allen Feldern). NEU Pure-Helpers clampBusEq3 + clampBusCompressor — clampBusFx ergänzt fehlende v3.86-Felder mit Defaults (Pre-v1.33-Migration). NEU Setter: setBusEq3 (Merge-Update mit Pre-Clamping), setBusCompressor (Merge-Update), setBusReverbSend, setBusDelaySend. setBusFx unchanged signature (akzeptiert jetzt erweiterte Partial<SubMixBusFx>).",
+        "client/src/audio/AudioEngine.ts ERWEITERT (+~200 LOC, bestehende v3.79.1 sub-mix-engine bleibt). NEU exported Interface SubMixBusNodes (input,eqLow,eqMid,eqHigh,compIn,compressor,compWet,compDry,compMix,gain,panner,reverbSend,delaySend,volume). _subMixBusNodes-Map-Type von minimal-Shape auf SubMixBusNodes umgestellt. NEU private _createSubMixBusNodes() — baut die volle FX-Chain (input → eqLow→eqMid→eqHigh→compIn → compressor→compWet/compDry → compMix → gain → panner → master), plus gain → reverbSend → globalReverbPreDelay (oder _globalReverbBus fallback) und gain → delaySend → _globalDelayBus. EQ-Filter-Konfig: Lowshelf 200Hz, Peak 1kHz Q=1, Highshelf 4kHz (Channel-FX-konsistent). Compressor init mit knee=6, attack 10ms, release 100ms. applySubMixBus REWRITE — rampt jetzt zusätzlich zu Volume/Pan/Mute/Solo auch: EQ-Bänder (auf 0 bei fx.enabled=false → transparent), Compressor-Threshold/Ratio/Attack/Release, Wet/Dry-Crossfade auf 1/0 bzw 0/1, reverbSend.gain, delaySend.gain. Alles via setTargetAtTime mit SUB_MIX_BUS_RAMP_SEC=0.02 (no-click). _resolveChannelDestination zeigt jetzt auf bus.input (nicht mehr bus.gain) — Channel-Output landet damit am Anfang der FX-Chain. removeSubMixBus erweitert: disconnected alle 13 FX-Nodes der Sub-Chain. reinit() Cleanup-Loop disconnected ebenfalls alle Nodes.",
+        "client/src/components/Mixer/SubMixBusStrip.tsx ERWEITERT (+~370 LOC, bestehende v3.81.0 MIDI-Learn + Color-Picker bleibt). NEU exportierter Pure-Helper resolveBusFx(bus) → SubMixBusFx (Pre-v1.33-Buses bekommen Defaults). NEU lokaler State fxExpanded + fxModalOpen. NEU expandable FX-Section unter den Mute/Solo-Buttons: Master-FX-Enable-Toggle, EQ-3 Mini-Sliders (Lo/Md/Hi je -24..+24 dB), Compressor mit ON/OFF-Toggle + Threshold-Slider, Reverb/Delay-Send-Sliders. data-testids: sub-mix-bus-fx-toggle/section/enabled/eq-low/eq-mid/eq-high/comp-enabled/comp-threshold/reverb-send/delay-send-<id>. NEU FX-Toggle-Button zeigt ON-Indikator (●) wenn fx.enabled. Doppelklick öffnet detailliertes BusFxModal (analog ChannelInspector): EQ-3 Voll-Slider, Compressor-Voll-Slider (Threshold/Ratio/Attack/Release), Sends. Modal-Mount via fixed-Overlay mit semantischen Tokens (bg-bg-base/80, border-border-color, etc). Sub-Komponenten FxMiniSlider + FxModalSlider als pure-render Helpers.",
+        "client/src/utils/projectSerializer.ts SCHEMA-BUMP v1.32 → v1.33. Header-Doku-Block v1.33-Migration: Sub-Mix-Bus volle FX-Chain (eq3 + compressor + reverbSend + delaySend additiv-erweitert). Backward-Compat: Pre-v1.33-Buses (nur enabled + postGain) laden via sanitizeBus → clampBusFx ergänzt fehlende Felder mit Defaults (EQ flat 0dB, Compressor disabled, Sends=0). Round-Trip mit erweitertem FX-Block preserves alle Werte.",
+        "tests/features/sub-mix-bus-fx.test.ts (NEU, ~430 LOC, 13 Tests in 6 describes, env:node mit localStorage-Mock + Mock-AudioContext mit BiquadFilter/DynamicsCompressor/StereoPanner-Tracking + setTargetAtTime-Spy der den Wert direkt schreibt für deterministische Assertions). (1) Store-Setter × 3: setBusEq3 mergt + clampt (lowGain 6→6, 99→24, persist localStorage), setBusCompressor mergt + clampt (ratio 999→20, threshold 99→0), setBusReverbSend/DelaySend clampen 0..1. (2) Engine-Wiring × 3: setBusEqLowGain wirkt im Engine (eqLow.gain auf 9), Compressor Wet/Dry-Crossfade (enabled → wet=1+dry=0, disabled → wet=0+dry=1), FX-Chain-Routing verkabelt (input/eqLow/gain/panner alle .connect-called). (3) Sends × 2: reverbSend.gain.value=0.7 + .connect-called (zum global-reverb-bus), delaySend analog. (4) Schema v1.33 × 3: SYNTH_FILE_VERSION='1.33', volle Round-Trip preserves alle FX-Felder (eq3 lowGain=4/midGain=-2/highGain=6, compressor enabled=true/threshold=-15/ratio=6/attack=0.02/release=0.2, reverbSend=0.6, delaySend=0.25), Pre-v1.33-Bus mit minimal-Shape lädt → fehlende FX-Felder mit Defaults ergänzt (eq3 alle 0, compressor disabled, sends 0). (5) FX-Disabled × 1: fx.enabled=false → EQ-Bänder auf 0 (transparent) + Compressor bypassed (compDry=1) auch wenn fx.compressor.enabled=true. (6) Backward-Compat × 1: Bus ohne fx-Feld → applySubMixBus crash-frei, alle FX-Params Default-Transparent.",
+        "Bestehende Tests sub-mix-bus.test.ts + sub-mix-engine.test.ts angepasst: SYNTH_FILE_VERSION-Assertion 1.32→1.33 (3 Stellen), 'GainNode + Panner pro Bus'-Assertion auf 'mind. 8 Gains + 1 Panner' (durch FX-Chain erzeugt der Engine jetzt mehr Nodes pro Bus). Bulk-Replace toBe('1.32') → toBe('1.33') über 14 Test-Files (audio-loop-crossfade/audio-track-*/channel-colors/master-fx-bus/master-limiter/multi-bar-pattern/plugin-*/project-*/quick-action-integration/script-store). Test-Namen mit 'Schema v1.32' bleiben unverändert (rein deskriptiv).",
+        "package.json (3.85.0 → 3.86.0). pnpm check clean. pnpm test grün: 232 Test-Files / 5255 Tests passed (16 skipped, +1 file +13 vs v3.85.0). Backward-Compat: bestehende v1.32-Projekte laden ohne Verlust (Defaults für fehlende FX-Felder). Engine-Default: alle FX bypassed (fx.enabled=false) — Bus-Sound bleibt akustisch identisch zu v3.79.x bis User die FX aktiviert."
+      ],
+      next: [
+        "v3.87: Bus-FX-MIDI-Learn (analog v3.81 Volume/Pan/Mute/Solo) — EQ-Bänder + Compressor-Threshold + Reverb/Delay-Send als bindbare Targets.",
+        "v3.87: Auto-Learn-Preset 'Bus FX' (analog v3.82 Sub-Mix-Buses-Preset, deckt EQ-3 + Comp-Threshold + Sends pro Bus).",
+        "v3.87: Pro-Bus EQ-Frequenz-Slider (aktuell hart auf 200Hz/1kHz/4kHz wie Channel-FX — User-Edit der Cutoffs).",
+        "v3.87: Bus-FX-Presets (User-saved Snapshots der ganzen FX-Chain für 'Drum Bus Mastering', 'Vocal Comp', etc.).",
+        "v3.87: Side-Chain-Input für Bus-Compressor (z.B. Kick→Bass-Bus-Ducking).",
+        "v3.87 caveat: postGain-Feld bleibt im Store aber wird im Engine nicht angewendet (compMix→gain ist schon der Post-FX-Gain via bus.volume). Entweder entfernen oder mit eigenem GainNode nach compMix verkabeln."
+      ],
+      changed: [
+        "client/src/store/useSubMixStore.ts (+~115 LOC: SubMixBusEq3/SubMixBusCompressor-Interfaces + erweiterte SubMixBusFx + Defaults + clampBusEq3/Compressor + setBusEq3/Compressor/ReverbSend/DelaySend Setter)",
+        "client/src/audio/AudioEngine.ts (+~200 LOC: exported SubMixBusNodes-Interface + _createSubMixBusNodes Builder + applySubMixBus REWRITE mit voller FX-Apply + removeSubMixBus 13-Node-Cleanup + reinit-Cleanup + _resolveChannelDestination zeigt auf bus.input)",
+        "client/src/components/Mixer/SubMixBusStrip.tsx (+~370 LOC: resolveBusFx Pure-Helper + fxExpanded/fxModalOpen-State + Inline-FX-Section (EQ-3 Mini + Comp + Sends) + BusFxModal (detailliertes Editor) + FxMiniSlider/FxModalSlider Sub-Komponenten)",
+        "client/src/utils/projectSerializer.ts (SCHEMA-BUMP v1.32 → v1.33 + Header-Doku v1.33-Migration)",
+        "tests/features/sub-mix-bus-fx.test.ts (NEU, ~430 LOC, 13 Tests in 6 describes)",
+        "tests/features/sub-mix-bus.test.ts (Schema-Assertion 1.32→1.33 in 2 Stellen, Section-Header)",
+        "tests/features/sub-mix-engine.test.ts (Gain-Count-Assertion +1 → +8 wegen FX-Chain)",
+        "Bulk-Update toBe('1.32') → toBe('1.33') in 14 weiteren Test-Files (sed)",
+        "package.json (3.85.0 → 3.86.0)",
+        "agents/INDEX.js (version + workLog + files-Einträge)"
+      ]
+    },
     {
       agent:     "backend",
       timestamp: "2026-05-19T06:00:00.000Z",

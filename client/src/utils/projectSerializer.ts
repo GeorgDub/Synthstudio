@@ -110,6 +110,16 @@
  *     bleibt undefined (Signal an Restore: User-localStorage nicht über-
  *     schreiben). Explicit `null`/non-Array → undefined. Invalide Bus-Einträge
  *     werden via sanitizeBus silent gefiltert (Cap auf 8 hart enforced).
+ *   - "1.33": Sub-Mix-Bus volle FX-Chain (v3.86.0). Closes v3.79.x Caveat
+ *     "SubMixBusFx minimal". SubMixBusFx wird erweitert um:
+ *       - eq3 {lowGain, midGain, highGain}   (3-Band EQ)
+ *       - compressor {enabled, threshold, ratio, attack, release}
+ *       - reverbSend (0..1)                  (Bus → global-reverb-bus)
+ *       - delaySend  (0..1)                  (Bus → global-delay-bus)
+ *     Backward-Compat: Pre-v1.33-Buses (nur enabled + postGain) laden via
+ *     sanitizeBus → clampBusFx ergänzt die fehlenden Felder mit Defaults
+ *     (EQ flat 0dB, Compressor disabled, Sends=0). Round-Trip mit erweitertem
+ *     FX-Block in v1.33-Files preserves alle Werte.
  * Dateiendung: .synth
  */
 
@@ -142,7 +152,7 @@ import { sanitizeMasterFx } from "@/store/useMasterFxStore";
 import type { SubMixBus } from "@/store/useSubMixStore";
 import { sanitizeBus, MAX_SUB_MIX_BUSES } from "@/store/useSubMixStore";
 
-export const SYNTH_FILE_VERSION = "1.32";
+export const SYNTH_FILE_VERSION = "1.33";
 export const SYNTH_LATEST_KEY = "synthstudio:last-project";
 
 // ─── Typen ───────────────────────────────────────────────────────────────────

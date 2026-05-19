@@ -445,7 +445,7 @@ describe("AudioEngine — Channel-Send-Wiring", () => {
 
 describe("Schema v1.31 — masterFx Round-Trip", () => {
   it("SYNTH_FILE_VERSION ist '1.32'", () => {
-    expect(serializer.SYNTH_FILE_VERSION).toBe("1.32");
+    expect(serializer.SYNTH_FILE_VERSION).toBe("1.33");
   });
 
   it("Round-Trip preserves masterFx Reverb/Delay/EQ", () => {

@@ -186,7 +186,7 @@ beforeEach(async () => {
 // ─── (1) applySubMixBus erzeugt GainNode + Panner ────────────────────────────
 
 describe("AudioEngine — applySubMixBus", () => {
-  it("erzeugt einen GainNode + StereoPanner pro Bus und verbindet sie zum master", async () => {
+  it("erzeugt FX-Chain (Gain-Nodes + StereoPanner) pro Bus und verbindet sie zum master", async () => {
     await AudioEngine.init();
     const bus = {
       id: "drums",
@@ -200,7 +200,9 @@ describe("AudioEngine — applySubMixBus", () => {
     const beforeGainCount = __createdGains.length;
     const beforePanCount = __createdPanners.length;
     AudioEngine.applySubMixBus(bus.id, bus, false);
-    expect(__createdGains.length).toBe(beforeGainCount + 1);
+    // v3.86.0: Pro Bus werden mehrere Gains erzeugt (input + compIn + compWet
+    // + compDry + compMix + gain + reverbSend + delaySend = 8). Plus 1 Panner.
+    expect(__createdGains.length).toBeGreaterThanOrEqual(beforeGainCount + 8);
     expect(__createdPanners.length).toBe(beforePanCount + 1);
     const nodes = AudioEngine.getSubMixBusNodes();
     expect(nodes.has("drums")).toBe(true);

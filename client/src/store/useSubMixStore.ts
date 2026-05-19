@@ -1,31 +1,36 @@
 /**
- * Synthstudio – useSubMixStore.ts (v3.79.0)
+ * Synthstudio – useSubMixStore.ts (v3.86.0)
  *
  * Sub-Mix-Bus-State: Channel-Grouping mit shared FX (DAW-Standard).
  *
  * Konzept:
  *   - Bis zu MAX_SUB_MIX_BUSES (=8) Sub-Mix-Buses pro Projekt.
- *   - Jeder Bus hat eigene Volume/Pan/Mute/Solo + optional ChannelFx (reused
- *     von der bestehenden ChannelFx-Definition, damit AudioEngine den
- *     channel-FX-graph-builder wiederverwenden kann).
+ *   - Jeder Bus hat eigene Volume/Pan/Mute/Solo + volle FX-Chain
+ *     (EQ-3 + Compressor + Reverb-Send + Delay-Send + postGain).
  *   - Channels werden via `channelIds: string[]` assigned. Ein Channel kann
  *     pro Zeitpunkt nur an einem Bus hängen (auto-unassign aus anderen Buses
  *     beim Re-Assign).
  *   - Channels ohne Bus default zu master (kein Eintrag in irgendeinem Bus).
  *
  * Routing-Schema (siehe AudioEngine.ts):
- *     channelOutput → (bus.fx?) → bus.gain → bus.panner → masterEq → … → destination
+ *     channelOutput → bus.input → bus.eqLow → bus.eqMid → bus.eqHigh
+ *                  → (bus.compressor?) → bus.gain → bus.panner → master-bus
+ *
+ *     bus.gain → bus.reverbSend → global-reverb-bus
+ *     bus.gain → bus.delaySend  → global-delay-bus
  *
  * Architektur:
  *   - Custom Observer-Pattern (analog useMasterFxStore), KEIN zustand-npm.
  *   - localStorage-Persist unter `synthstudio:sub-mix:v1`.
- *   - Zusätzlich Snapshot-Round-Trip im .synth-Projektformat (Schema v1.32).
+ *   - Zusätzlich Snapshot-Round-Trip im .synth-Projektformat (Schema v1.33).
  *   - Audio-Wiring übernimmt AudioEngine.setSubMixBus*() — diese Datei selbst
  *     hat KEINE Audio-Side-Effects.
  *
  * Backward-Compat:
  *   - Pre-v3.79 hat keine Persistenz → defaults (leere bus-Liste) werden geladen.
  *   - parseProject (v1.32) toleriert fehlendes `subMixBuses`-Feld (→ defaults).
+ *   - parseProject (v1.33): SubMixBusFx-Erweiterung um eq3/compressor/sends.
+ *     Pre-v1.33-Buses ohne diese Felder → Defaults werden silent ergänzt.
  *   - Channels ohne Bus-Membership default zu master (additiv-Feature).
  */
 import { useEffect, useReducer } from "react";
@@ -46,17 +51,56 @@ import { useEffect, useReducer } from "react";
 export const MAX_SUB_MIX_BUSES = 8;
 
 /**
- * Pro-Bus ChannelFx-Snapshot. Reuse vom bestehenden ChannelFx-Type aus
- * AudioEngine, damit der channel-FX-graph-builder wiederverwendbar ist.
- * Wir importieren den Type lazy hier rein um keinen circular-dependency-
- * risk zu erzeugen.
+ * Pro-Bus EQ (3-Band, analog Channel-EQ + Master-EQ).
+ * Gain-Werte in dB (-24..+24); enabled-Toggle hängt den EQ-Pfad in den Bus.
+ */
+export interface SubMixBusEq3 {
+  /** Low-Shelf Gain in dB (-24..+24). */
+  lowGain: number;
+  /** Peak Mid Gain in dB (-24..+24). */
+  midGain: number;
+  /** High-Shelf Gain in dB (-24..+24). */
+  highGain: number;
+}
+
+/**
+ * Pro-Bus Compressor (DynamicsCompressorNode-Params, analog Channel-FX).
+ * Ratio 1..20, Threshold -60..0 dB, Attack/Release Sekunden.
+ */
+export interface SubMixBusCompressor {
+  /** Wenn false, ist der Compressor im Bypass (Audio läuft trotzdem durch — siehe Engine-Wet/Dry). */
+  enabled: boolean;
+  /** Threshold in dB (-60..0). */
+  threshold: number;
+  /** Ratio (1..20). */
+  ratio: number;
+  /** Attack in Sekunden (0..1). */
+  attack: number;
+  /** Release in Sekunden (0..1). */
+  release: number;
+}
+
+/**
+ * Pro-Bus FX-Chain. v3.86.0 erweitert um EQ-3 + Compressor + Reverb/Delay-Sends.
+ * Pre-v3.86-Buses hatten nur enabled + postGain — Defaults werden via sanitizeBus
+ * silent ergänzt.
+ *
+ * Routing-Order: bus.input → eq.low → eq.mid → eq.high → (compressor?) → bus.gain.
+ * Sends zweigen post-gain ab: bus.gain → reverbSend → global-reverb-bus.
  */
 export interface SubMixBusFx {
-  /** Wenn true, durchläuft das Bus-Signal die FX-Chain. */
+  /** Wenn false, sind EQ + Compressor im Bypass (postGain + sends wirken weiter). */
   enabled: boolean;
-  /** Volume-Trim hinter den FX (linear, 0..2). */
+  /** Volume-Trim hinter dem FX-Block, vor dem Bus-Panner (linear, 0..2). */
   postGain: number;
-  // Future: reverbSend, delaySend, EQ, etc. — gehalten klein für v3.79.0.
+  /** EQ-3 (Low/Mid/High Gain in dB). v3.86.0 NEU. */
+  eq3: SubMixBusEq3;
+  /** Compressor (Threshold/Ratio/Attack/Release + Bypass). v3.86.0 NEU. */
+  compressor: SubMixBusCompressor;
+  /** Reverb-Send 0..1 — Bus-Post-Gain in den global-reverb-bus. v3.86.0 NEU. */
+  reverbSend: number;
+  /** Delay-Send 0..1 — Bus-Post-Gain in den global-delay-bus. v3.86.0 NEU. */
+  delaySend: number;
 }
 
 export interface SubMixBus {
@@ -92,9 +136,27 @@ export function defaultSubMixState(): SubMixState {
   return { buses: [] };
 }
 
-const DEFAULT_BUS_FX: SubMixBusFx = {
+export const DEFAULT_BUS_EQ3: SubMixBusEq3 = {
+  lowGain: 0,
+  midGain: 0,
+  highGain: 0,
+};
+
+export const DEFAULT_BUS_COMPRESSOR: SubMixBusCompressor = {
+  enabled: false,
+  threshold: -18,
+  ratio: 4,
+  attack: 0.01,
+  release: 0.1,
+};
+
+export const DEFAULT_BUS_FX: SubMixBusFx = {
   enabled: false,
   postGain: 1.0,
+  eq3: { ...DEFAULT_BUS_EQ3 },
+  compressor: { ...DEFAULT_BUS_COMPRESSOR },
+  reverbSend: 0,
+  delaySend: 0,
 };
 
 // ─── Clamping (defensiv) ─────────────────────────────────────────────────────
@@ -117,11 +179,38 @@ function clampString(v: unknown, maxLen: number, fallback: string): string {
   return t.length > maxLen ? t.slice(0, maxLen) : t;
 }
 
+function clampBusEq3(input: Partial<SubMixBusEq3> | undefined): SubMixBusEq3 {
+  const i = input ?? {};
+  return {
+    lowGain:  clampNum(i.lowGain,  -24, 24, DEFAULT_BUS_EQ3.lowGain),
+    midGain:  clampNum(i.midGain,  -24, 24, DEFAULT_BUS_EQ3.midGain),
+    highGain: clampNum(i.highGain, -24, 24, DEFAULT_BUS_EQ3.highGain),
+  };
+}
+
+function clampBusCompressor(
+  input: Partial<SubMixBusCompressor> | undefined,
+): SubMixBusCompressor {
+  const i = input ?? {};
+  return {
+    enabled:   clampBool(i.enabled,   DEFAULT_BUS_COMPRESSOR.enabled),
+    threshold: clampNum(i.threshold, -60, 0,  DEFAULT_BUS_COMPRESSOR.threshold),
+    ratio:     clampNum(i.ratio,      1, 20,  DEFAULT_BUS_COMPRESSOR.ratio),
+    attack:    clampNum(i.attack,     0, 1,   DEFAULT_BUS_COMPRESSOR.attack),
+    release:   clampNum(i.release,    0, 1,   DEFAULT_BUS_COMPRESSOR.release),
+  };
+}
+
 function clampBusFx(input: Partial<SubMixBusFx> | undefined): SubMixBusFx {
   const i = input ?? {};
   return {
-    enabled: clampBool(i.enabled, DEFAULT_BUS_FX.enabled),
-    postGain: clampNum(i.postGain, 0, 2, DEFAULT_BUS_FX.postGain),
+    enabled:    clampBool(i.enabled, DEFAULT_BUS_FX.enabled),
+    postGain:   clampNum(i.postGain, 0, 2, DEFAULT_BUS_FX.postGain),
+    // v3.86.0: additiv — Pre-v1.33-Buses haben diese Felder nicht.
+    eq3:        clampBusEq3(i.eq3),
+    compressor: clampBusCompressor(i.compressor),
+    reverbSend: clampNum(i.reverbSend, 0, 1, DEFAULT_BUS_FX.reverbSend),
+    delaySend:  clampNum(i.delaySend,  0, 1, DEFAULT_BUS_FX.delaySend),
   };
 }
 
@@ -342,6 +431,51 @@ export function setBusFx(id: string, update: Partial<SubMixBusFx>): void {
     return { ...b, fx: merged };
   });
   commit({ buses: next });
+}
+
+// ─── v3.86.0: Convenience-Setter für EQ-3 / Compressor / Sends ───────────────
+
+/**
+ * Merge-Update eines EQ-3-Subbands. NOOP wenn busId unbekannt.
+ * Liefert das aktuelle eq3-Objekt durch clampBusEq3 + clampBusFx — fehlende
+ * v3.86-Felder werden mit Defaults gefüllt (v1.32-Migration).
+ */
+export function setBusEq3(id: string, update: Partial<SubMixBusEq3>): void {
+  const next = _state.buses.map((b) => {
+    if (b.id !== id) return b;
+    const currentFx = b.fx ?? DEFAULT_BUS_FX;
+    const mergedEq = clampBusEq3({ ...currentFx.eq3, ...update });
+    const mergedFx = clampBusFx({ ...currentFx, eq3: mergedEq });
+    return { ...b, fx: mergedFx };
+  });
+  commit({ buses: next });
+}
+
+/**
+ * Merge-Update des Compressor-Sub-Objekts. NOOP wenn busId unbekannt.
+ */
+export function setBusCompressor(
+  id: string,
+  update: Partial<SubMixBusCompressor>,
+): void {
+  const next = _state.buses.map((b) => {
+    if (b.id !== id) return b;
+    const currentFx = b.fx ?? DEFAULT_BUS_FX;
+    const mergedComp = clampBusCompressor({ ...currentFx.compressor, ...update });
+    const mergedFx = clampBusFx({ ...currentFx, compressor: mergedComp });
+    return { ...b, fx: mergedFx };
+  });
+  commit({ buses: next });
+}
+
+/** Setzt den Reverb-Send (0..1) des Bus. NOOP wenn busId unbekannt. */
+export function setBusReverbSend(id: string, send: number): void {
+  setBusFx(id, { reverbSend: send });
+}
+
+/** Setzt den Delay-Send (0..1) des Bus. NOOP wenn busId unbekannt. */
+export function setBusDelaySend(id: string, send: number): void {
+  setBusFx(id, { delaySend: send });
 }
 
 /**

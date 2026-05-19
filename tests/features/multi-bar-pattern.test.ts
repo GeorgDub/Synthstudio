@@ -138,7 +138,7 @@ describe("v3.39: PatternData mit stepCount=64", () => {
   });
 
   it("Schema-Version ist v1.32 (v3.79 Sub-Mix-Buses; stepCount=64 ist v1.19)", () => {
-    expect(SYNTH_FILE_VERSION).toBe("1.32");
+    expect(SYNTH_FILE_VERSION).toBe("1.33");
   });
 });
 

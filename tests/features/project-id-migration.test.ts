@@ -152,14 +152,14 @@ describe("v3.58.0 – projectId.ts Pure-fn", () => {
 describe("v3.58.0 – projectSerializer Schema v1.24", () => {
   it("SYNTH_FILE_VERSION = '1.32'", () => {
     // v3.79.0 bumped to 1.32 (Sub-Mix-Buses). v1.24/…/1.31-Files laden weiterhin.
-    expect(SYNTH_FILE_VERSION).toBe("1.32");
+    expect(SYNTH_FILE_VERSION).toBe("1.33");
   });
 
   it("serializeProject übernimmt mitgegebene projectId", () => {
     const id = generateProjectId();
     const result = serializeProject({ ...makeBaseInput(), projectId: id });
     expect(result.projectId).toBe(id);
-    expect(result.version).toBe("1.32");
+    expect(result.version).toBe("1.33");
   });
 
   it("serializeProject auto-generiert projectId wenn fehlt", () => {

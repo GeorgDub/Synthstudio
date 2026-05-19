@@ -448,7 +448,7 @@ describe("v1.24 schema — pluginSlots backward-compat", () => {
     const { SYNTH_FILE_VERSION } = await import(
       "../../client/src/utils/projectSerializer"
     );
-    expect(SYNTH_FILE_VERSION).toBe("1.32");
+    expect(SYNTH_FILE_VERSION).toBe("1.33");
   });
 
   it("parseProject defaults pluginSlots to undefined for pre-v1.20 files", async () => {
@@ -480,6 +480,6 @@ describe("v1.24 schema — pluginSlots backward-compat", () => {
     const parsed = parseProject(JSON.stringify(preV120));
     expect(parsed.version).toBe("1.19"); // preserves source version
     expect(parsed.mixer.pluginSlots).toBeUndefined();
-    expect(SYNTH_FILE_VERSION).toBe("1.32"); // current writes as 1.32
+    expect(SYNTH_FILE_VERSION).toBe("1.33"); // current writes as 1.32
   });
 });

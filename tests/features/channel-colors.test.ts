@@ -284,7 +284,7 @@ describe("v3.73.0 — applyPartColorUpdate (Pure-Transform)", () => {
 
 describe("v3.73.0 — Schema v1.28 Round-Trip + Backward-Compat", () => {
   it("SYNTH_FILE_VERSION ist '1.32'", () => {
-    expect(SYNTH_FILE_VERSION).toBe("1.32");
+    expect(SYNTH_FILE_VERSION).toBe("1.33");
   });
 
   it("Schema v1.32 Round-Trip: PartData.color wird preserved", () => {
@@ -295,7 +295,7 @@ describe("v3.73.0 — Schema v1.28 Round-Trip + Backward-Compat", () => {
     const ser = serializeProject(input as any);
     const json = toJson(ser);
     const parsed = parseProject(json);
-    expect(parsed.version).toBe("1.32");
+    expect(parsed.version).toBe("1.33");
     expect(parsed.patterns[0].parts[0].color).toBe("#ef4444");
   });
 
@@ -529,7 +529,7 @@ describe("v3.74.0 — LiveInput color persist", () => {
 
 describe("v3.74.0 — Schema v1.29 Round-Trip + Backward-Compat", () => {
   it("SYNTH_FILE_VERSION ist '1.32' (v3.79 Sub-Mix-Buses)", () => {
-    expect(SYNTH_FILE_VERSION).toBe("1.32");
+    expect(SYNTH_FILE_VERSION).toBe("1.33");
   });
 
   it("Round-Trip: AudioTrack.color wird preserved", () => {
@@ -565,7 +565,7 @@ describe("v3.74.0 — Schema v1.29 Round-Trip + Backward-Compat", () => {
     const ser = serializeProject(input as any);
     const json = toJson(ser);
     const parsed = parseProject(json);
-    expect(parsed.version).toBe("1.32");
+    expect(parsed.version).toBe("1.33");
     expect(parsed.audioTracks).toBeDefined();
     expect(parsed.audioTracks![0].color).toBe("#a855f7");
   });
