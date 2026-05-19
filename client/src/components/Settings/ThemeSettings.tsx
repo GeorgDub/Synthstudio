@@ -12,9 +12,10 @@
 
 import React, { useCallback, useEffect, useState } from "react";
 import { X } from "lucide-react";
-import { useThemeStore, applyCustomTheme, deleteCustomTheme, applyTheme as applyBaseThemeFromStore } from "@/store/useThemeStore";
+import { useThemeStore, applyCustomTheme, deleteCustomTheme, applyTheme as applyBaseThemeFromStore, addCustomTheme } from "@/store/useThemeStore";
 import { CustomThemeCreator } from "./CustomThemeCreator";
 import { useApiSettingsStore, setApiKey, setAiModel } from "@/store/useApiSettingsStore";
+import { serializeTheme, parseTheme, defaultThemeFilename } from "@/utils/themeImportExport";
 
 // ─── Theme-Definition ─────────────────────────────────────────────────────────
 
@@ -151,6 +152,51 @@ export function ThemeSettings({ isOpen, onClose }: Props) {
     applyCustomTheme(id);
   }, []);
 
+  // v3.140: Theme-Export — download als .synth-theme.json
+  const exportTheme = useCallback((themeId: string) => {
+    const theme = customThemes.find((t) => t.id === themeId);
+    if (!theme) return;
+    try {
+      const json = serializeTheme(theme);
+      const blob = new Blob([json], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = defaultThemeFilename(theme.name);
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (err) {
+      console.warn("[Theme] Export failed:", err);
+    }
+  }, [customThemes]);
+
+  // v3.140: Theme-Import — file picker → parseTheme → addCustomTheme
+  const importTheme = useCallback(() => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".json,application/json";
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      try {
+        const text = await file.text();
+        const parsed = parseTheme(text);
+        if (!parsed) {
+          window.alert("Theme-Datei ungültig oder beschädigt. Datei muss ein gültiger Synthstudio-Theme-Export sein.");
+          return;
+        }
+        const newId = addCustomTheme(parsed);
+        applyCustomTheme(newId);
+      } catch (err) {
+        console.warn("[Theme] Import failed:", err);
+        window.alert("Theme konnte nicht importiert werden.");
+      }
+    };
+    input.click();
+  }, []);
+
   useEffect(() => {
     if (!isOpen) return;
     const onKey = (e: KeyboardEvent) => {
@@ -279,16 +325,39 @@ export function ThemeSettings({ isOpen, onClose }: Props) {
                                 </div>
                                 {isSelected && <div className="ml-auto flex-shrink-0"><div className="w-2 h-2 rounded-full bg-accent-success" /></div>}
                             </button>
-                            <button onClick={() => deleteCustomTheme(theme.id)} className="text-text-dim hover:text-accent-danger text-xs p-1">✕</button>
+                            <button
+                              onClick={() => exportTheme(theme.id)}
+                              className="text-text-dim hover:text-accent-primary text-xs p-1"
+                              title="Theme exportieren (.json)"
+                              data-testid={`theme-export-${theme.id}`}
+                            >↓</button>
+                            <button onClick={() => deleteCustomTheme(theme.id)} className="text-text-dim hover:text-accent-danger text-xs p-1" title="Theme löschen">✕</button>
                         </div>
                     );
                 })}
             </div>
           </div>}
 
-          {showCreator ? <CustomThemeCreator onClose={() => setShowCreator(false)} /> : <button onClick={() => setShowCreator(true)} className="mt-6 w-full text-center text-xs text-text-dim hover:text-text-primary py-2 rounded border border-dashed border-border-color hover:border-border-color">
-            + Eigenes Design erstellen
-          </button>}
+          {showCreator ? (
+            <CustomThemeCreator onClose={() => setShowCreator(false)} />
+          ) : (
+            <div className="mt-6 flex gap-2">
+              <button
+                onClick={() => setShowCreator(true)}
+                className="flex-1 text-center text-xs text-text-dim hover:text-text-primary py-2 rounded border border-dashed border-border-color hover:border-border-color"
+              >
+                + Eigenes Design erstellen
+              </button>
+              <button
+                onClick={importTheme}
+                className="px-3 text-xs text-text-dim hover:text-accent-primary py-2 rounded border border-dashed border-border-color hover:border-accent-primary transition-colors"
+                title="Theme aus .json-Datei importieren"
+                data-testid="theme-import-btn"
+              >
+                ↑ Import
+              </button>
+            </div>
+          )}
         </>)}
         </div>
 
