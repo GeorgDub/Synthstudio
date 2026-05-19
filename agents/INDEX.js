@@ -73,15 +73,41 @@ const INDEX = {
       utils:      "client/src/utils/",
       audio:      "client/src/audio/",
       hooks:      "client/src/hooks/",
+      context:    "client/src/context/",
+      workers:    "client/src/workers/",
       styles:     "client/src/index.css"
     },
     electron: {
-      root:       "electron/",
-      main:       "electron/main.ts",
-      preload:    "electron/preload.ts",
-      ipcBridge:  "electron/preload-additions.ts",
-      collabSrv:  "electron/collab-server.ts",
-      export:     "electron/export.ts"
+      // v3.143-resync — Backend-Drift-Fix. Verified via glob:
+      //   electron/**/*.ts → 27 files. Pre-resync nannte nur 5.
+      // Anchor: glob 'electron/**/*.ts' im Projekt-Root.
+      root:           "electron/",
+      main:           "electron/main.ts",
+      preload:        "electron/preload.ts",
+      ipcBridge:      "electron/preload-additions.ts",
+      ipcValidate:    "electron/ipcValidators.ts",       // v3.56 input-validation für IPC payloads
+      csp:            "electron/csp.ts",                 // Content-Security-Policy für BrowserWindows
+      store:          "electron/store.ts",               // electron-store wrapper + recents
+      updater:        "electron/updater.ts",             // electron-updater integration
+      crashLog:       "electron/crashLog.ts",            // renderer crash report sink
+      windows:        "electron/windows.ts",             // multi-window lifecycle (new/list/focus/force-close)
+      dragdrop:       "electron/dragdrop.ts",            // file-drop path resolver
+      collabSrv:      "electron/collab-server.ts",       // LAN WebSocket server
+      collabDisc:     "electron/collab-discovery.ts",    // mDNS session announce + scan
+      oscSrv:         "electron/osc-server.ts",          // OSC UDP listener + sender
+      export:         "electron/export.ts",              // WAV/MIDI/project/bundle export
+      exportStereo:   "electron/export-stereo.ts",       // stereo-master WAV pipeline
+      wavWriter:      "electron/wav-writer.ts",          // WAV byte encoder
+      zipImport:      "electron/zip-import.ts",          // sample-pack ZIP extractor (zip-slip guarded)
+      packScanner:    "electron/packScanner.ts",         // v3.108 recursive sample-pack scan with allow-list
+      waveform:       "electron/waveform.ts",            // peak/metadata IPC
+      waveformCache:  "electron/waveform-cache.ts",      // disk cache for computed peaks
+      waveformWrk:    "electron/workers/waveform.worker.ts", // off-thread peak reduction
+      // Renderer-side hooks that historically live under electron/ — TS is compiled
+      // to electron-dist/ but imported by the React app, not by the main process.
+      rendererHook:   "electron/useElectron.ts",
+      rendererStore:  "electron/useElectronStore.ts",
+      menuBindings:   "electron/hooks/useElectronMenuBindings.ts"
     },
     generation: {
       engine:     "src/generation/",
