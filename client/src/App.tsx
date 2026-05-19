@@ -320,6 +320,8 @@ import {
   getQuickActionMacros,
   setAllQuickActionMacros,
 } from "@/store/useQuickActionStore";
+// v3.94.0: MIDI-FX Chain Restore-Wiring (Pre-v1.34 = undefined → no-op).
+import { setAllNodes as setAllMidiFxNodes } from "@/store/useMidiFxStore";
 import { useQuickActionKeyBindings } from "@/hooks/useQuickActionKeyBindings";
 import type { QuickActionContext } from "@/utils/quickActionExecutor";
 import {
@@ -978,6 +980,21 @@ export default function App() {
     // User-localStorage NICHT überschreiben. Explicit [] respektieren.
     if (data.macros !== undefined) {
       setAllQuickActionMacros(data.macros);
+    }
+
+    // v3.94.0 (v1.34): MIDI-FX Chain aus dem .synth-File übernehmen.
+    // Pre-v1.34-Files haben das Feld nicht (parseProject hat midiFxChain auf
+    // undefined gemappt) → User-localStorage NICHT überschreiben.
+    // Explicit [] = User hat die Chain bewusst geleert → respektieren.
+    // setAllMidiFxNodes(undefined) ist defensiv ein no-op, doppelte
+    // Sicherheit hier mit explizitem Check + Logging schadet nicht.
+    try {
+      if (data.midiFxChain !== undefined) {
+        setAllMidiFxNodes(data.midiFxChain);
+      }
+    } catch (err) {
+      // Defensive: invalid Chain darf den Restore NICHT crashen.
+      console.warn("[restoreProject] midiFxChain restore failed:", err);
     }
 
     // ── Relocate-Probe: Prüfe ob Datei-Pfad noch existiert ────────────────

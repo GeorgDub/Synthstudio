@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.93.0",
+    version: "3.94.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -109,10 +109,25 @@ const INDEX = {
       lastSeen: "2026-05-19T08:30:00.000Z",
       ownedBy:  "frontend"
     },
-    "client/src/components/MidiFx/MidiFxPanel.tsx (v3.92.0 NEU, mounted v3.93.0)": {
-      role:     "v3.92.0 NEU (~410 LOC, React-Komponente mit semantic-tokens-only). Header (Title + Count-Badge {N}/{MAX} + Add-Dropdown + Clear-Button). Chain-Liste mit NodeCard pro Node: Reorder ▲▼-Buttons (disabled bei first/last), Bypass-Toggle (Tailwind opacity-60 + accent-success/danger), Remove ✕. Per-Kind-ParamUI: Scale (scale+root-Select), Velocity-Curve (curve-Select + amount-Slider 0..1 + %-Display), Octave-Shift (semitones-Slider -24..+24), Chord-Expander (chordType-Select), Note-Repeat (rate-Select + count-Number-Input). Empty-State wenn chain leer. data-testids: midi-fx-panel/empty/chain/add-toggle/add-menu/add-<kind>/node-<id>/up-<id>/down-<id>/bypass-<id>/remove-<id>/clear + scale-/root-/curve-/amount-/semitones-/chord-/rate-/count-<id>. compact-Prop fuer Sidebar-Mount (kleinerer Header-Font). Aktuell NICHT in App.tsx gemountet — Komponente bereitgestellt aber Integration in Settings/Performance-Tab steht als v3.93-Task aus.",
-      lastSeen: "2026-05-19T08:15:00.000Z",
+    "client/src/components/MidiFx/MidiFxPanel.tsx (v3.94.0 +PresetDropdown)": {
+      role:     "v3.94.0 ERWEITERT (+~40 LOC): NEU PresetDropdown-Komponente (native <select> mit Placeholder 'Load Preset…' + 5 Optionen aus MIDI_FX_PRESETS, Tooltip per option.title). onChange: loadPreset(id) → setAllNodes(chain) ersetzt aktuelle Chain; danach reset value='' damit dasselbe Preset erneut wählbar bleibt. data-testid='midi-fx-preset-select'. Header-Layout: PresetDropdown + AddNodeButton + Clear-Button. Imports +loadPreset/MIDI_FX_PRESETS/MidiFxPresetId aus @/utils/midiFxPresets +setAllNodes aus Store. Vorheriger v3.92-Stand (~410 LOC NodeCard + Per-Kind-ParamUI) bleibt unverändert.",
+      lastSeen: "2026-05-19T08:40:00.000Z",
       ownedBy:  "backend"
+    },
+    "client/src/utils/midiFxPresets.ts (v3.94.0 NEU)": {
+      role:     "v3.94.0 NEU (+~165 LOC, Pure-TS, DOM-frei, Node-testbar). Factory-Pattern: loadPreset(id) liefert frische MidiFxNode[] mit makeNodeId() pro Call (sonst UUID-Konflikte beim mehrfachen Laden). MidiFxPresetId Union: strum|glissando|arp-up|octave-double|hard-hits. MIDI_FX_PRESETS readonly-Meta-Liste mit {id,label,description} für UI-Dropdown. Preset-Builders nutzen makeDefaultNode(kind) + Param-Override pattern. STRUM=[chord-expander Major, note-repeat 1/32 ×4]. GLISSANDO=[scale-snap Major C, chord-expander 7th, note-repeat 1/32 ×8] → 4×8=32 Events pro Note. ARP_UP=[chord-expander Major, note-repeat 1/16 ×4]. OCTAVE_DOUBLE=[octave-shift -12, octave-shift +12]. HARD_HITS=[velocity-curve exp/0.7, scale-snap Major C]. Plus getPresetMeta(id) Lookup-Helper.",
+      lastSeen: "2026-05-19T08:40:00.000Z",
+      ownedBy:  "backend"
+    },
+    "tests/features/midi-fx-presets.test.ts (v3.94.0 NEU)": {
+      role:     "v3.94.0 NEU (+~210 LOC, 15 Tests in 4 describes). Cluster (1) Preset-Definitions × 6: MIDI_FX_PRESETS Liste, jedes Preset hat erwartete Node-Sequence + Default-Params. (2) Engine-Interplay × 3: Glissando 1→32 Events, Strum 1→12, Octave-Double round-trip bleibt Original. (3) Restore-Wiring × 4: setAllNodes lädt chain in Store, setAllNodes(undefined) → no-op (Pre-v1.34-File), setAllNodes([]) respektiert User-leer, Round-Trip preserves kinds. (4) UUID-Frische × 2: zwei loadPreset()-Calls liefern verschiedene IDs, getPresetMeta liefert Label+Description. localStorage-Mock + dynamic imports nach Reset-Pattern analog midi-fx-engine.test.ts.",
+      lastSeen: "2026-05-19T08:40:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/App.tsx (v3.94.0 +midiFxChain-restore)": {
+      role:     "v3.94.0 ERWEITERT (+~14 LOC in restoreProject + 1 Import-Zeile): NEU Import setAllNodes as setAllMidiFxNodes aus @/store/useMidiFxStore. Nach setAllQuickActionMacros-Block try/catch um setAllMidiFxNodes(data.midiFxChain). Defensive — invalide Chain darf den Restore nicht crashen → console.warn. Pre-v1.34-Files: data.midiFxChain=undefined → setAllNodes(undefined) defensiv no-op → User-localStorage bleibt unverändert. Schließt v3.93-Caveat 'App.tsx wire setAllNodes im Project-Restore-Pfad'. Bestehende restoreProject-Logik (Projekt-Metadaten, Samples, Patterns, Song, AudioTracks, Scripts, PadBank, LiveInputs, MidiNoteOut, SlicePads, Macros) bleibt unverändert.",
+      lastSeen: "2026-05-19T08:40:00.000Z",
+      ownedBy:  "frontend"
     },
     "client/src/hooks/useMidi.ts (v3.93.0 note-off-tracking)": {
       role:     "v3.93.0 ERWEITERT (+~30 LOC, bestehende v3.92 MIDI-FX-Routing + v3.81+ Mappings bleibt). NEU midiFxTrackerRef = useRef(new MidiFxNoteTracker()). Im Note-On-Block: nach applyMidiFx wird tracker.trackNoteOn(byte1, channel, fxEvents) gerufen (für Chord-Expander/Octave-Shift Routing). Im Note-Off-Block: tracker.consumeNoteOff liefert Expanded-Liste — bei Treffer werden alle expanded outputs released (onNoteOff-Callback + MIDI-Out-Echo mit try/catch); bei No-Match Original-Note-Off direkt durchgereicht. Note-Repeat-Voices werden NICHT getrackt (eigener ADSR-Release). Vorheriger v3.92-Stand: handleMidiMessage routet Note-Ons durch getMidiFxChain() VOR ChordMemory/onNoteOn-Dispatch.",
@@ -2447,6 +2462,34 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "backend",
+      timestamp: "2026-05-19T08:40:00.000Z",
+      done: [
+        "v3.94.0: MidiFx Restore-Wiring + 5 Built-In Presets (closes v3.92/v3.93 Caveat 'App.tsx wire setAllNodes' + 'Pre-Set Strum/Glissando/Arp-Like'). Damit ist der Projekt-File-Round-Trip vollstaendig: parseProject() liefert midiFxChain, restoreProject() lädt es in useMidiFxStore. Plus 5 One-Click-Presets im MidiFxPanel-Header.",
+        "client/src/utils/midiFxPresets.ts NEU (+~165 LOC): Factory-Helper-Pattern (frische UUIDs pro Aufruf, kein Konstanten-Export sonst ID-Konflikte). 5 Built-Ins: PRESET_STRUM ([chord-expander Major, note-repeat 1/32 ×4]), PRESET_GLISSANDO ([scale-snap C-Major, chord-expander 7th, note-repeat 1/32 ×8] → 32 Events pro Note), PRESET_ARP_UP ([chord-expander Major, note-repeat 1/16 ×4]), PRESET_OCTAVE_DOUBLE ([octave-shift -12, octave-shift +12] sequenziell → bleibt 1 Event auf Original-Note), PRESET_HARD_HITS ([velocity-curve exp/0.7, scale-snap C-Major]). Plus MIDI_FX_PRESETS meta-array + getPresetMeta() Lookup. Pure-TS, DOM-frei, Node-testbar.",
+        "client/src/App.tsx restoreProject WIRE (+~14 LOC): NEU Import setAllNodes as setAllMidiFxNodes aus useMidiFxStore. Nach setAllQuickActionMacros-Block: try/catch um setAllMidiFxNodes(data.midiFxChain). Defensive — invalide Chain darf den Restore nicht crashen → console.warn. Pre-v1.34-Files: data.midiFxChain ist undefined → setAllNodes(undefined) ist defensiv no-op → User-localStorage bleibt unverändert. Explicit [] = User-Intent leeren → respektiert.",
+        "client/src/components/MidiFx/MidiFxPanel.tsx ERWEITERT (+~40 LOC): NEU Import setAllNodes aus Store + loadPreset/MIDI_FX_PRESETS/MidiFxPresetId aus midiFxPresets. NEU PresetDropdown-Komponente (native select mit Placeholder 'Load Preset…' + 5 Optionen mit Tooltip-Beschreibung). Bei Auswahl: loadPreset(id) → setAllNodes(chain) — ersetzt die aktuelle Chain. Nach onChange resettet die Selection zurück auf Placeholder, damit dasselbe Preset erneut wählbar bleibt. Positioniert im Header zwischen Counter und +Add-Button.",
+        "tests/features/midi-fx-presets.test.ts NEU (+~210 LOC, 15 Tests in 4 describes): Cluster (1) Preset-Definitions × 6 (MIDI_FX_PRESETS=5 IDs in fester Reihenfolge, Strum=[chord+repeat] Major+4, Glissando=[snap+chord(7th)+repeat] count=8, Octave-Double=[-12,+12], Hard-Hits=[exp+snap], Arp-Up=[chord+repeat] rate=1/16). (2) Engine-Interplay × 3 (Glissando 1→32 Events = 4×8, Strum 1→12 = 3×4, Octave-Double round-trip bleibt Originalnote). (3) Restore-Wiring × 4 (setAllNodes lädt Chain, setAllNodes(undefined) → Store unverändert (Pre-v1.34), setAllNodes([]) respektiert leer, Round-Trip preserves kinds). (4) UUID-Frische × 2 (verschiedene IDs pro Call + getPresetMeta-Lookup).",
+        "package.json (3.93.0 → 3.94.0). pnpm check: clean (TypeScript strict). pnpm test: 238 Files / 5384 passed / 16 skipped — +15 neue Tests in der neuen Datei midi-fx-presets.test.ts (vs v3.93.0: 237/5369). Keine bestehenden Tests broken.",
+        "Caveats: (1) PresetDropdown ersetzt die aktuelle Chain ohne Confirm-Dialog — User-Intent. Bei UI-Reload bleibt Auswahl als Placeholder. (2) Glissando ist Approximation (echtes Pitch-Sweep braucht eigenen Node-Typ). (3) Note-Repeat-Voice-Limit bei Glissando: 32 Events × pro getriggerter Note = bei mehreren parallel-Notes Annäherung an Engine-Cap 256."
+      ],
+      next: [
+        "v3.95: Custom-Preset-Save — User kann eigene Chain als named preset in localStorage speichern (analog useThemeStore custom themes).",
+        "v3.95: Sample-genaues Note-Repeat-Scheduling via Tone.Transport statt setTimeout — eliminiert CPU-Load-Drift.",
+        "v3.95: MIDI-FX-Chain MIDI-Learn — Bypass-Toggle pro Node per CC steuerbar (Live-Performance-Workflow).",
+        "v3.95: Confirm-Dialog vor Preset-Apply wenn Chain nicht leer (verhindert ungewolltes Überschreiben).",
+        "v3.95: Pitch-Sweep-Node für echtes Glissando — kontinuierliche Pitch-Transition statt diskreter Repeats."
+      ],
+      changed: [
+        "client/src/utils/midiFxPresets.ts (NEU +~165 LOC — 5 Preset-Factories + Meta-Liste)",
+        "client/src/App.tsx (restoreProject midiFxChain-wire + Import setAllMidiFxNodes, +~14 LOC)",
+        "client/src/components/MidiFx/MidiFxPanel.tsx (PresetDropdown + Imports, +~40 LOC)",
+        "tests/features/midi-fx-presets.test.ts (NEU +~210 LOC — 15 Tests in 4 describes)",
+        "package.json (3.93.0 → 3.94.0)",
+        "agents/INDEX.js (version + workLog + files-Eintraege)"
+      ]
+    },
     {
       agent:     "frontend",
       timestamp: "2026-05-19T08:30:00.000Z",

@@ -22,6 +22,7 @@ import {
   updateNode,
   setNodeBypass,
   clearChain,
+  setAllNodes,
   MAX_MIDI_FX_CHAIN,
   type MidiFxNode,
   type MidiFxKind,
@@ -30,6 +31,12 @@ import {
   type NoteRepeatRate,
   type ChordExpanderType,
 } from "@/store/useMidiFxStore";
+// v3.94.0: Built-In Preset-Chains (Strum, Glissando, Arp-Up, ...).
+import {
+  MIDI_FX_PRESETS,
+  loadPreset,
+  type MidiFxPresetId,
+} from "@/utils/midiFxPresets";
 
 const NODE_TYPE_LABELS: Record<MidiFxKind, string> = {
   "scale-snap":     "Scale-Snap",
@@ -78,6 +85,7 @@ export function MidiFxPanel({ compact = false }: MidiFxPanelProps): React.ReactE
           </span>
         </div>
         <div className="flex items-center gap-1">
+          <PresetDropdown />
           <AddNodeButton disabled={chainFull} open={addOpen} onToggle={setAddOpen} />
           {state.chain.length > 0 && (
             <button
@@ -116,6 +124,41 @@ export function MidiFxPanel({ compact = false }: MidiFxPanelProps): React.ReactE
         </ul>
       )}
     </div>
+  );
+}
+
+// ─── Preset-Dropdown (v3.94.0) ───────────────────────────────────────────────
+
+/**
+ * Native `<select>` mit Placeholder-Option. Bei Auswahl: lade die
+ * Preset-Chain in den Store (ersetzt aktuelle Chain via setAllNodes).
+ */
+function PresetDropdown(): React.ReactElement {
+  return (
+    <select
+      defaultValue=""
+      onChange={(e) => {
+        const id = e.target.value as MidiFxPresetId | "";
+        if (!id) return;
+        const chain = loadPreset(id);
+        setAllNodes(chain);
+        // Reset zurück auf Placeholder, damit der User dasselbe Preset
+        // erneut anwählen kann (z.B. nach manueller Bearbeitung).
+        e.target.value = "";
+      }}
+      className="text-xs px-2 py-1 rounded-md border border-border-subtle bg-bg-elevated text-text-primary hover:border-accent-primary transition-colors"
+      data-testid="midi-fx-preset-select"
+      title="Built-In Preset laden (ersetzt aktuelle Chain)"
+    >
+      <option value="" disabled>
+        Load Preset…
+      </option>
+      {MIDI_FX_PRESETS.map((p) => (
+        <option key={p.id} value={p.id} title={p.description}>
+          {p.label}
+        </option>
+      ))}
+    </select>
   );
 }
 
