@@ -131,6 +131,9 @@ function isValidTrack(t: unknown): t is AudioTrackChannelData {
   ) {
     return false;
   }
+  // v3.72.0 (v1.27): Loop-Crossfade-Länge (ms). Optional, bei falschem Typ
+  // → Track verwerfen.
+  if (o.loopCrossfadeMs !== undefined && typeof o.loopCrossfadeMs !== "number") return false;
   return (
     typeof o.id === "string" &&
     o.id.startsWith(ID_PREFIX) &&
@@ -272,6 +275,32 @@ function sanitizeLoopSample(v: number | null): number | null {
   if (v === null || v === undefined) return null;
   if (!Number.isFinite(v) || v < 0) return null;
   return Math.floor(v);
+}
+
+// ─── v3.72.0: Loop-Crossfade Action ──────────────────────────────────────────
+
+/**
+ * v3.72.0: Maximaler Crossfade in ms an der Loop-Boundary. Werte > 200ms
+ * werden geclamped — Crossfade > 200ms macht akustisch keinen Sinn und
+ * würde bei kurzen Loops > halbe Range werden. Engine clampt zusätzlich
+ * gegen `loopRange / 2` zur Laufzeit.
+ */
+export const LOOP_CROSSFADE_MAX_MS = 200;
+
+/** Pure-fn: clampt eine Crossfade-Länge (ms) in [0, 200]. NaN/Inf/negativ → 0. */
+export function clampLoopCrossfadeMs(v: number): number {
+  if (!Number.isFinite(v) || v <= 0) return 0;
+  return Math.min(LOOP_CROSSFADE_MAX_MS, v);
+}
+
+/**
+ * v3.72.0: Setzt die Loop-Boundary-Crossfade-Länge in Millisekunden (0..200).
+ * 0 = hard cut (backward-compat zu v3.71). > 0 = smooth equal-power fade
+ * an loopStart/loopEnd. Closes v3.71-Caveat "harter Cut bei loopEnd → loopStart".
+ */
+export function setTrackLoopCrossfadeMs(id: string, ms: number): void {
+  const safe = clampLoopCrossfadeMs(ms);
+  updateAudioTrack(id, { loopCrossfadeMs: safe });
 }
 
 /**

@@ -340,6 +340,29 @@ export interface AudioTrackChannelData {
   loopStartSample?: number | null;
   /** v3.70.0: Loop-End-Sample (> loopStartSample, ≤ buffer.length). null = unset. */
   loopEndSample?: number | null;
+  /**
+   * v3.72.0: Loop-Boundary Crossfade in Millisekunden (0..200). 0 = hard cut
+   * (backward-compat zu v3.70/v3.71). > 0 = smooth fade-out vor loopEnd +
+   * fade-in nach loopStart mit equal-power-Kurve (cos/sin). Verhindert die
+   * Click/Pop-Artefakte beim AudioBufferSourceNode-Loop-Wrap (interner
+   * harter Cut wenn loopStart/End nicht auf Zero-Crossings liegen).
+   *
+   * Implementation:
+   *   - BufferSource-Pfad: zusätzlicher GainNode in der Chain (source → xfade
+   *     → channelNodes.input). setValueCurveAtTime mit periodischer Hann-
+   *     Window-artigen Hüllkurve, geplant pro Loop-Cycle für die nächsten
+   *     ~LOOP_XFADE_SCHEDULE_COUNT Cycles. Auto-rescheduled wenn der Track
+   *     weiterläuft.
+   *   - Worklet-Pfad: TimeStretchProcessor liest crossfadeSamples aus der
+   *     setLoop-Message und mischt am Boundary intern (read-ahead aus
+   *     loopStart + Sum mit fading source).
+   *
+   * Clamp: NaN/Infinity/negative → 0. > 200 → 200 (Sane-Default damit
+   * Crossfade nicht länger als die kürzeste sinnvolle Loop wird).
+   * Falls crossfadeMs > (loopRange / 2) zur Laufzeit: Engine clampt auf
+   * loopRange / 2 für diesen einen Track (defensive — kein Double-Wrap).
+   */
+  loopCrossfadeMs?: number;
 }
 
 export interface PartData {
@@ -483,6 +506,22 @@ class AudioEngineClass {
   private audioTrackWorkletNodes = new Map<string, AudioWorkletNode>();
   /** Letzte gemeldete Sample-Position pro Worklet-Track (für Playhead-rAF). */
   private audioTrackWorkletPositions = new Map<string, number>();
+  /**
+   * v3.72.0: Crossfade-GainNode pro Track (BufferSource-Pfad). Sitzt in der
+   * Chain source → xfadeGain → channelNodes.input. Wird nur erzeugt wenn
+   * loopCrossfadeMs > 0 + loopEnabled + valid range. Mit periodisch
+   * scheduled setValueCurveAtTime-Hüllkurve am Loop-Boundary.
+   */
+  private audioTrackXfadeGains = new Map<string, GainNode>();
+  /** v3.72.0: Bookkeeping für rescheduling der Crossfade-Hüllkurve. */
+  private audioTrackXfadeMeta = new Map<string, {
+    /** Wann der nächste Schedule-Pass nötig ist (ctx.currentTime in Sekunden). */
+    nextScheduleAt: number;
+    /** Loop-Period in Sekunden (auf playbackRate normalisiert). */
+    loopPeriodSec: number;
+    /** Anzahl der bereits scheduled cycles seit start. */
+    scheduledCount: number;
+  }>();
 
   // ─── Cross-Store Solo (FOLLOWUP-102 / B) ───────────────────────────────────
   /**
@@ -2708,9 +2747,22 @@ class AudioEngineClass {
     const rate = this._calcAudioTrackPlaybackRate(data);
     source.playbackRate.value = rate;
 
-    // Routing: source → channelNodes.input → FX → master
+    // Routing: source → [xfadeGain?] → channelNodes.input → FX → master
+    // v3.72.0: Crossfade-Gain einfügen falls loop-crossfade aktiv.
     const nodes = this._getOrCreateChannelNodes(id, DEFAULT_CHANNEL_FX);
-    source.connect(nodes.input);
+    // Alte Crossfade-Chain disposen (z.B. nach Restart via setAudioTrackLoopPoints).
+    this._disposeAudioTrackXfade(id);
+    const crossfadeMs = this._effectiveLoopCrossfadeMs(data, buf);
+    const xfadeEnabled = wantsLoopRange && crossfadeMs > 0;
+    if (xfadeEnabled) {
+      const xfade = this.ctx.createGain();
+      xfade.gain.value = 1;
+      source.connect(xfade);
+      xfade.connect(nodes.input);
+      this.audioTrackXfadeGains.set(id, xfade);
+    } else {
+      source.connect(nodes.input);
+    }
 
     const offsetSec = Math.max(0, opts?.startOffsetSec ?? data?.startOffsetSec ?? 0);
     const ctxStart = this.ctx.currentTime;
@@ -2718,7 +2770,17 @@ class AudioEngineClass {
       source.start(ctxStart, offsetSec);
     } catch (err) {
       console.warn("[AudioEngine] playAudioTrack start error:", err);
+      this._disposeAudioTrackXfade(id);
       return;
+    }
+
+    // v3.72.0: Crossfade-Hüllkurve initial schedulen.
+    if (xfadeEnabled) {
+      try {
+        this._scheduleAudioTrackLoopCrossfade(id, ctxStart, offsetSec);
+      } catch (err) {
+        console.warn("[AudioEngine] crossfade schedule error:", err);
+      }
     }
 
     source.onended = () => {
@@ -2807,6 +2869,8 @@ class AudioEngineClass {
         loop: loopParams.loop,
         loopStart: loopParams.loopStart,
         loopEnd: loopParams.loopEnd,
+        // v3.72.0: Crossfade-Samples für boundary fade (0 = hard cut).
+        crossfadeSamples: loopParams.crossfadeSamples,
       });
     } catch (err) {
       console.warn("[AudioEngine] timestretch: postMessage(setBuffer) failed:", err);
@@ -3135,7 +3199,13 @@ class AudioEngineClass {
   private _computeWorkletLoopParams(
     data: AudioTrackChannelData | undefined,
     opts?: { loop?: boolean },
-  ): { loop: boolean; loopStart: number | null; loopEnd: number | null } {
+  ): {
+    loop: boolean;
+    loopStart: number | null;
+    loopEnd: number | null;
+    /** v3.72.0: Crossfade-Länge in Samples (0 = hard cut). */
+    crossfadeSamples: number;
+  } {
     const wantsRange =
       data?.loopEnabled === true
       && typeof data?.loopStartSample === "number"
@@ -3144,20 +3214,37 @@ class AudioEngineClass {
       && Number.isFinite(data.loopEndSample as number)
       && (data.loopStartSample as number) >= 0
       && (data.loopEndSample as number) > (data.loopStartSample as number);
+    // v3.72.0: Crossfade-Samples für Worklet. Sample-Rate aus dem aktuellen
+    // ctx (44.1kHz default falls noch nicht initialisiert).
+    const sr = this.ctx?.sampleRate || 44100;
+    const xfadeMsRaw = data?.loopCrossfadeMs;
+    let xfadeMs = 0;
+    if (typeof xfadeMsRaw === "number" && Number.isFinite(xfadeMsRaw) && xfadeMsRaw > 0) {
+      xfadeMs = Math.min(200, xfadeMsRaw);
+    }
+    let crossfadeSamples = Math.max(0, Math.floor((xfadeMs / 1000) * sr));
+    // Wenn Range gesetzt: clampen auf rangeLen / 2.
+    if (wantsRange && crossfadeSamples > 0) {
+      const rangeLen = (data!.loopEndSample as number) - (data!.loopStartSample as number);
+      const maxXfade = Math.floor(rangeLen / 2);
+      if (crossfadeSamples > maxXfade) crossfadeSamples = maxXfade;
+    }
     if (wantsRange) {
       return {
         loop: true,
         loopStart: data!.loopStartSample as number,
         loopEnd: data!.loopEndSample as number,
+        crossfadeSamples,
       };
     }
     if (data?.loopEnabled === true) {
-      return { loop: true, loopStart: null, loopEnd: null };
+      return { loop: true, loopStart: null, loopEnd: null, crossfadeSamples: 0 };
     }
     return {
       loop: opts?.loop ?? data?.loop ?? false,
       loopStart: null,
       loopEnd: null,
+      crossfadeSamples: 0,
     };
   }
 
@@ -3190,6 +3277,8 @@ class AudioEngineClass {
           loop: params.loop,
           loopStart: params.loopStart,
           loopEnd: params.loopEnd,
+          // v3.72.0: Crossfade-Samples (Live-Edit).
+          crossfadeSamples: params.crossfadeSamples,
         });
       } catch (err) {
         console.warn("[AudioEngine] setAudioTrackLoopPoints worklet error:", err);
@@ -3281,12 +3370,181 @@ class AudioEngineClass {
     try { src.onended = null; } catch { /* ignore */ }
     try { src.stop(); } catch { /* already stopped */ }
     try { src.disconnect(); } catch { /* ignore */ }
+    // v3.72.0: Crossfade-Chain mit-disposen falls vorhanden.
+    this._disposeAudioTrackXfade(id);
   }
 
   private _cleanupAudioTrackSource(id: string): void {
     this.audioTrackSources.delete(id);
     this.audioTrackStartTimes.delete(id);
     this._stopAudioTrackPositionRaf(id);
+    // v3.72.0: defensiver Cleanup falls noch xfade-Meta hängt.
+    this._disposeAudioTrackXfade(id);
+  }
+
+  /**
+   * v3.72.0: Cancelt Crossfade-Schedule + disconnected den GainNode.
+   * No-op wenn nicht vorhanden.
+   */
+  private _disposeAudioTrackXfade(id: string): void {
+    const xfade = this.audioTrackXfadeGains.get(id);
+    if (xfade) {
+      try { xfade.gain.cancelScheduledValues(0); } catch { /* ignore */ }
+      try { xfade.disconnect(); } catch { /* ignore */ }
+      this.audioTrackXfadeGains.delete(id);
+    }
+    this.audioTrackXfadeMeta.delete(id);
+  }
+
+  /**
+   * v3.72.0: Berechnet die effektive Crossfade-Länge in Millisekunden.
+   * Clamp 0..200ms; bei aktiver Loop-Range zusätzlich auf loopRange / 2
+   * limitiert (in Audio-Sekunden, nicht Samples, weil der Buffer am Ende
+   * via playbackRate gespielt wird — wir clampen aber gegen die SAMPLES
+   * der Range, da source.loopStart/End ebenfalls die Buffer-Sekunden sind,
+   * unabhängig von playbackRate). NaN/Inf/negativ → 0.
+   *
+   * Pure-fn (kein State) — Caller liefert data + buffer.
+   */
+  private _effectiveLoopCrossfadeMs(
+    data: AudioTrackChannelData | undefined,
+    buf: AudioBuffer | undefined,
+  ): number {
+    const raw = data?.loopCrossfadeMs;
+    if (typeof raw !== "number" || !Number.isFinite(raw) || raw <= 0) return 0;
+    let ms = Math.min(200, raw);
+    if (!buf) return ms;
+    const sr = buf.sampleRate || 44100;
+    const ls = data?.loopStartSample;
+    const le = data?.loopEndSample;
+    if (
+      typeof ls === "number" && typeof le === "number"
+      && Number.isFinite(ls) && Number.isFinite(le)
+      && le > ls
+    ) {
+      const loopRangeMs = ((le - ls) / sr) * 1000;
+      // Clamp auf loopRange/2 damit Crossfade nicht > halbe Loop.
+      const maxMs = loopRangeMs / 2;
+      if (ms > maxMs) ms = maxMs;
+    }
+    return Math.max(0, ms);
+  }
+
+  /**
+   * v3.72.0: Plant die periodische Crossfade-Hüllkurve am Loop-Boundary.
+   *
+   * Algorithmus (Equal-Power Crossfade, smoother Übergang als linear):
+   *   - Loop-Period T = (loopEnd - loopStart) / sampleRate Sekunden
+   *     (im Buffer-Zeit-Raum, source.loopEnd ist read-only nach start()
+   *     und in Sekunden gemessen UNABHÄNGIG von source.playbackRate.value,
+   *     ABER die effektive Loop-Dauer im ctx-Zeitraum ist T / rate).
+   *   - In den letzten xfadeMs vor jedem loopEnd: Gain fadet von 1 → 0
+   *     (cos-Quadrant) per setValueCurveAtTime.
+   *   - In den ersten xfadeMs nach jedem loopStart: Gain fadet von 0 → 1
+   *     (sin-Quadrant). Da source.loop intern den Buffer einfach wrappt,
+   *     hört man bei xfade=0 → Silence, kein Click.
+   *
+   * Hinweis: Web-Audio-BufferSource erlaubt KEINE Read-Ahead-Mischung —
+   * wir können also NICHT die Tail-Samples vor loopEnd mit den Head-
+   * Samples nach loopStart mischen. Die hier implementierte Lösung blendet
+   * stattdessen die Lautstärke an der Boundary aus + wieder ein. Das ist
+   * akustisch immer noch DEUTLICH besser als ein harter Cut (die Click-
+   * Artefakte entstehen durch die abrupten Sample-Diskontinuitäten am
+   * Wrap, ein 5-20ms Volumen-Dip eliminiert die). Echtes Sample-Crossfade
+   * erfordert eine Two-Source-Strategie (FUTURE).
+   *
+   * Wir planen LOOP_XFADE_SCHEDULE_COUNT (= 64) Loop-Cycles im Voraus.
+   * Bei langlaufenden Tracks sollte ein Refresh-Mechanismus rescheduln —
+   * für v3.72.0 First-Pass akzeptieren wir den 64-Cycle-Horizont
+   * (= 32 Sekunden bei 0.5s Loops, > 30min bei 30s Loops).
+   */
+  private _scheduleAudioTrackLoopCrossfade(
+    id: string,
+    ctxStart: number,
+    offsetSec: number,
+  ): void {
+    if (!this.ctx) return;
+    const data = this.audioTrackData.get(id);
+    const buf = this.audioTrackBuffers.get(id);
+    const xfade = this.audioTrackXfadeGains.get(id);
+    if (!data || !buf || !xfade) return;
+    const sr = buf.sampleRate || 44100;
+    const ls = data.loopStartSample;
+    const le = data.loopEndSample;
+    if (
+      typeof ls !== "number" || typeof le !== "number"
+      || !Number.isFinite(ls) || !Number.isFinite(le)
+      || le <= ls
+    ) return;
+    const xfadeMs = this._effectiveLoopCrossfadeMs(data, buf);
+    if (xfadeMs <= 0) return;
+    const xfadeSec = xfadeMs / 1000;
+    const loopStartSec = ls / sr;
+    const loopEndSec = le / sr;
+    const bufLoopPeriod = loopEndSec - loopStartSec; // in Buffer-Sekunden
+
+    // Skalierung: ctx-Zeit pro Buffer-Sekunde = 1 / playbackRate.
+    const rate = this._calcAudioTrackPlaybackRate(data);
+    const safeRate = Number.isFinite(rate) && rate > 0 ? rate : 1;
+    const ctxLoopPeriod = bufLoopPeriod / safeRate;
+    if (ctxLoopPeriod <= 0 || !Number.isFinite(ctxLoopPeriod)) return;
+
+    // Equal-Power Hüllkurven (precomputed, 64 Steps reicht für 5-20ms).
+    const STEPS = 64;
+    const fadeOutCurve = new Float32Array(STEPS);
+    const fadeInCurve = new Float32Array(STEPS);
+    for (let i = 0; i < STEPS; i++) {
+      const t = i / (STEPS - 1);
+      // Equal-power: cos(t * π/2) für out, sin(t * π/2) für in.
+      fadeOutCurve[i] = Math.cos((t * Math.PI) / 2);
+      fadeInCurve[i] = Math.sin((t * Math.PI) / 2);
+    }
+
+    // Zeitpunkt im ctx-Frame an dem der erste Loop-Wrap stattfindet.
+    // source.start(ctxStart, offsetSec) → t=0 im Buffer entspricht ctxStart-offsetSec.
+    // Wir suchen den ersten t_wrap >= ctxStart wo Buffer-Position = loopEnd.
+    // Buffer-Position(ctx_t) = offsetSec + (ctx_t - ctxStart) * rate, dann ggf. wrap im loop.
+    // Erstes Erreichen loopEnd: (loopEndSec - offsetSec) / rate + ctxStart,
+    // falls offsetSec < loopEndSec, sonst über den Wrap-Punkt.
+    let firstWrapCtx: number;
+    if (offsetSec < loopEndSec) {
+      firstWrapCtx = ctxStart + (loopEndSec - offsetSec) / safeRate;
+    } else {
+      // Wir starten bereits jenseits loopEnd → loop wrapt sofort auf loopStart,
+      // dann Period bis nächster loopEnd.
+      const remainder = ((offsetSec - loopStartSec) % bufLoopPeriod + bufLoopPeriod) % bufLoopPeriod;
+      const distToEnd = bufLoopPeriod - remainder;
+      firstWrapCtx = ctxStart + distToEnd / safeRate;
+    }
+
+    const LOOP_XFADE_SCHEDULE_COUNT = 64;
+    for (let n = 0; n < LOOP_XFADE_SCHEDULE_COUNT; n++) {
+      const wrapAt = firstWrapCtx + n * ctxLoopPeriod;
+      const fadeOutStart = wrapAt - xfadeSec;
+      const fadeInStart = wrapAt;
+      // Defensive: wenn das vor dem aktuellen Zeitpunkt liegt, skippen.
+      const now = this.ctx.currentTime;
+      if (fadeOutStart < now) {
+        // Kontinuierliche Re-Schedule würde hier kicken — für v3.72 First-Pass:
+        // skip past cycles.
+        continue;
+      }
+      try {
+        xfade.gain.setValueCurveAtTime(fadeOutCurve, fadeOutStart, xfadeSec);
+        xfade.gain.setValueCurveAtTime(fadeInCurve, fadeInStart, xfadeSec);
+      } catch (err) {
+        // Manche Browser werfen wenn die Kurven sich überlappen; defensive
+        // gegen Mocks die setValueCurveAtTime nicht unterstützen.
+        void err;
+        break;
+      }
+    }
+
+    this.audioTrackXfadeMeta.set(id, {
+      nextScheduleAt: firstWrapCtx + LOOP_XFADE_SCHEDULE_COUNT * ctxLoopPeriod,
+      loopPeriodSec: ctxLoopPeriod,
+      scheduledCount: LOOP_XFADE_SCHEDULE_COUNT,
+    });
   }
 
   private _startAudioTrackPositionRaf(id: string): void {

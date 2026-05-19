@@ -34,6 +34,9 @@ import {
   setTrackBpmHint,
   setTrackLoopEnabled,
   setTrackLoopPoints,
+  setTrackLoopCrossfadeMs,
+  clampLoopCrossfadeMs,
+  LOOP_CROSSFADE_MAX_MS,
   getAudioTrack,
   autoWarpToBpm,
   clampStretchRatio,
@@ -518,6 +521,7 @@ export function AudioTrackStrip({
             loopEnabled={track.loopEnabled === true}
             loopStartSample={track.loopStartSample ?? null}
             loopEndSample={track.loopEndSample ?? null}
+            loopCrossfadeMs={track.loopCrossfadeMs ?? 0}
           />
         </div>
       )}
@@ -948,6 +952,8 @@ interface AudioTrackZoomEditorProps {
   loopEnabled: boolean;
   loopStartSample: number | null;
   loopEndSample: number | null;
+  /** v3.72.0: Loop-Boundary-Crossfade in ms (0..200). */
+  loopCrossfadeMs: number;
 }
 
 /**
@@ -965,6 +971,7 @@ function AudioTrackZoomEditor({
   loopEnabled,
   loopStartSample,
   loopEndSample,
+  loopCrossfadeMs,
 }: AudioTrackZoomEditorProps) {
   // memo: cache channelData reference so wir den Buffer nicht jeden Render neu greifen
   const buffer = AudioEngine.getAudioTrackBuffer(trackId);
@@ -1047,6 +1054,25 @@ function AudioTrackZoomEditor({
     }
   }, [loopEnabled, loopStartSample, loopEndSample, totalSamples, trackId]);
 
+  // v3.72.0: Crossfade-Slider Handler — clamped 0..200ms, Engine-Sync via
+  // setAudioTrackLoopPoints damit Live-Edit (Worklet postMessage + Buffer-
+  // Source xfade-Schedule) sofort greift wenn der Track gerade spielt.
+  const handleCrossfadeChange = useCallback(
+    (ms: number) => {
+      const safe = clampLoopCrossfadeMs(ms);
+      setTrackLoopCrossfadeMs(trackId, safe);
+      const track = getAudioTrack(trackId);
+      if (track) {
+        AudioEngine.registerAudioTrack({
+          ...track,
+          loopCrossfadeMs: safe,
+        });
+        AudioEngine.setAudioTrackLoopPoints(trackId);
+      }
+    },
+    [trackId],
+  );
+
   if (!channelData) {
     return (
       <div
@@ -1084,6 +1110,39 @@ function AudioTrackZoomEditor({
           </span>
         )}
       </div>
+      {/* v3.72.0: Loop-Crossfade Slider — sichtbar wenn Loop aktiv. */}
+      {loopEnabled && (
+        <div
+          data-testid={`audio-track-loop-crossfade-row-${trackId}`}
+          className="flex items-center gap-2 px-0.5"
+        >
+          <label
+            htmlFor={`audio-track-loop-crossfade-${trackId}`}
+            className="text-[10px] text-text-dim whitespace-nowrap"
+            title={`Smooth loop boundary with ${Math.round(loopCrossfadeMs)} ms crossfade`}
+          >
+            Crossfade:
+          </label>
+          <input
+            type="range"
+            id={`audio-track-loop-crossfade-${trackId}`}
+            data-testid={`audio-track-loop-crossfade-${trackId}`}
+            min={0}
+            max={LOOP_CROSSFADE_MAX_MS}
+            step={1}
+            value={Math.round(loopCrossfadeMs)}
+            onChange={(e) => handleCrossfadeChange(Number(e.target.value))}
+            className="flex-1 h-1 accent-accent-secondary"
+            title={`Smooth loop boundary with ${Math.round(loopCrossfadeMs)} ms crossfade`}
+          />
+          <span
+            data-testid={`audio-track-loop-crossfade-value-${trackId}`}
+            className="text-[10px] font-mono text-text-primary w-10 text-right"
+          >
+            {Math.round(loopCrossfadeMs)} ms
+          </span>
+        </div>
+      )}
       <ZoomableWaveform
         channelData={channelData}
         sampleRate={sampleRate}

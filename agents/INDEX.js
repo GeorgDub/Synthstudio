@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.71.0",
+    version: "3.72.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -89,6 +89,36 @@ const INDEX = {
   // ─── KNOWN FILE INDEX ──────────────────────────────────────
   // Key files agents have analyzed. Add new entries after working on a file.
   files: {
+    "tests/features/audio-loop-crossfade.test.ts (v3.72.0)": {
+      role:     "v3.72.0 NEU (~470 LOC, 14 Tests in 4 describes, env:node mit Mock-AudioContext + MockGain + MockWorklet + setValueCurveAtTime-Stub). Closes v3.71-Caveat 'harter Cut bei Loop-Wrap'. (1) Store × 4 — clampLoopCrossfadeMs Edge-Cases (50/0/-10/250/NaN/Infinity → defensive 0), setTrackLoopCrossfadeMs persistiert + localStorage-RoundTrip, Clamp auf 200 bei zu großen Werten, Clamp auf 0 bei negativen. (2) BufferSource × 3 — loopCrossfadeMs=20 → setValueCurveAtTime > 0 Calls auf einem GainNode (xfade-gain in Chain), crossfade=0 → keine Calls (backward-compat), crossfade > rangeMs/2 → Engine clampt Schedule-duration auf rangeSec/2 (max ≤ 0.0114s bei 1000-Samples-Range). (3) Worklet × 3 — pitchLocked+xfade=20ms → setLoop-Payload hat crossfadeSamples=882 (= 20ms * 44.1kHz / 1000), xfade=0 → crossfadeSamples=0, xfade > rangeLen/2 → clamp im Engine-Helper. (4) Schema v1.27 × 4 — SYNTH_FILE_VERSION='1.27', Round-Trip preserves loopCrossfadeMs=15, pre-v1.27-File ohne Feld → undefined + source.version='1.26' preserved, invalider Typ (string) → Track verworfen.",
+      lastSeen: "2026-05-19T02:30:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/audio/AudioEngine.ts (v3.72.0 loop-crossfade)": {
+      role:     "v3.72.0 ERWEITERT (+~190 LOC, bestehende v3.71/v3.70/v3.67/v3.63/v3.52 bleibt). NEU loopCrossfadeMs?:number Field in AudioTrackChannelData mit Doku-Block (Clamp 0..200ms, > 200 → 200, > rangeMs/2 → rangeMs/2 zur Laufzeit). NEU audioTrackXfadeGains-Map<string,GainNode> + audioTrackXfadeMeta-Map<string,{nextScheduleAt,loopPeriodSec,scheduledCount}>. NEU private _effectiveLoopCrossfadeMs(data, buf) Pure-Helper für Engine-seitiges Clamping. NEU private _scheduleAudioTrackLoopCrossfade(id, ctxStart, offsetSec) plant equal-power-Hüllkurven für 64 Loop-Cycles im Voraus via setValueCurveAtTime — Berücksichtigung von playbackRate via ctxLoopPeriod = bufLoopPeriod / rate, cos/sin Curves precomputed mit 64 Steps. NEU private _disposeAudioTrackXfade(id) cancelScheduledValues + disconnect + Map-cleanup. playAudioTrack-BufferSource-Branch: wenn wantsLoopRange && crossfadeMs > 0 → source.connect(xfade).connect(input) statt direkt zu input. _stopAudioTrackSource + _cleanupAudioTrackSource rufen _disposeAudioTrackXfade defensiv. _computeWorkletLoopParams um crossfadeSamples-Feld erweitert (sample-rate aus ctx, Sample-Math: ms/1000*sr, clamp auf rangeLen/2 falls Range gesetzt). _playAudioTrackViaWorklet + setAudioTrackLoopPoints senden crossfadeSamples in setLoop-Payload.",
+      lastSeen: "2026-05-19T02:30:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/audio/worklets/TimeStretchProcessor.js (v3.72.0 loop-crossfade)": {
+      role:     "v3.72.0 ERWEITERT (+~50 LOC, bestehende v3.71 Loop-Range + v1.19 WSOLA-Pipeline unverändert). NEU _crossfadeSamples Instance-State (default 0, backward-compat). setLoop-Message-Handler liest optional crossfadeSamples-Feld (Number, ≥0, Finite) mit Clamp auf Math.floor(rangeLen / 2) falls Range gesetzt — explizit defensive auch wenn Engine bereits clampt. process() hasRange-Branch hat neuen xfade-Block in der Grain-Sample-Lesung: distToEnd = rangeEnd - wrapped; wenn 0 < distToEnd ≤ xfade → t = 1 - (distToEnd-1)/xfade, tailGain = cos(t*π/2), headGain = sin(t*π/2), headIdx = rangeStart + (xfade - distToEnd), baseL/R = tail*tailGain + head*headGain (equal-power Mix). 0 = backward-compat (kein Mix wie v3.71).",
+      lastSeen: "2026-05-19T02:30:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/store/useAudioTrackStore.ts (v3.72.0 loop-crossfade)": {
+      role:     "v3.72.0 ERWEITERT (+~30 LOC, bestehende v3.70 Loop-Points + v3.52 Stretch-Actions + v1.18 AudioTrack-Persistenz bleibt). NEU public LOOP_CROSSFADE_MAX_MS = 200 Konstante. NEU clampLoopCrossfadeMs(v) Pure-fn — NaN/Inf/negativ/<=0 → 0, sonst Math.min(200, v). NEU setTrackLoopCrossfadeMs(id, ms) Action ruft updateAudioTrack mit clamped-Wert. isValidTrack um loopCrossfadeMs-Typ-Check erweitert (number oder undefined; falscher Typ → Track verwerfen).",
+      lastSeen: "2026-05-19T02:30:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/utils/projectSerializer.ts (v3.72.0 v1.27)": {
+      role:     "v3.72.0 SCHEMA-BUMP: SYNTH_FILE_VERSION 1.26 → 1.27. Header-Doku-Block v1.27 Migration: AudioTrack loopCrossfadeMs (0..200ms, additiv-optional, default 0 = hard cut backward-compat). isValidAudioTrackEntry um loopCrossfadeMs-Typ-Check erweitert (number oder undefined; falscher Typ → Track verwerfen). Pre-v1.27-Files ohne Feld laden unverändert. Bestehende v1.26-AudioTrack-Loop + v1.25-Macros + v1.24-projectId + v1.23-Sample-Tags + etc. bleibt.",
+      lastSeen: "2026-05-19T02:30:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/components/Mixer/AudioTrackStrip.tsx (v3.72.0 crossfade-slider)": {
+      role:     "v3.72.0 ERWEITERT (+~50 LOC im AudioTrackZoomEditor Sub-Component, bestehende v3.70 Loop-Engine + v3.67 Zoom-Edit + v3.52/v3.63 Time-Stretch bleibt). NEU loopCrossfadeMs Prop. NEU handleCrossfadeChange-useCallback ruft setTrackLoopCrossfadeMs + AudioEngine.registerAudioTrack + AudioEngine.setAudioTrackLoopPoints (Live-Edit). NEU Slider-UI sichtbar wenn loopEnabled: <input type=range min=0 max=200 step=1> mit Label 'Crossfade:' + Value-Span 'X ms', tooltip 'Smooth loop boundary with X ms crossfade'. data-testids: audio-track-loop-crossfade-row-{id}, audio-track-loop-crossfade-{id}, audio-track-loop-crossfade-value-{id}. Imports +setTrackLoopCrossfadeMs/clampLoopCrossfadeMs/LOOP_CROSSFADE_MAX_MS.",
+      lastSeen: "2026-05-19T02:30:00.000Z",
+      ownedBy:  "frontend"
+    },
     "tests/features/audio-loop-polish.test.ts (v3.71.0)": {
       role:     "v3.71.0 NEU (~510 LOC, 12 Tests in 4 describes, env:node mit Mock-AudioContext + MockAudioWorkletNode + tickRaf-Helper). Closes v3.70-Caveats (Loop-Drag-Floods, Worklet-Loop-Range-bypass, Live-Edit-readonly). (1) RAF-Throttle × 4 — makeThrottle-Helper baut den Scheduler nach, mehrere schedules collapsen auf 1 flush mit latest-value, nach flush wieder bereit, cancel() verhindert flush, 60 rapide updates → 1 flush mit allerletztem Wert. (2) Worklet Loop-Range × 3 — pitchLocked+loopEnabled+range → setLoop-Message-Filter findet payload mit korrekten loopStart/loopEnd, ohne loopEnabled → loop=false + null, loopEnabled ohne Range → loop=true + null/null. (3) Live-Edit BufferSource × 4 — Stop+Restart mit neuer Range (alte src.__stopped=true, neue src.loopStart/loopEnd in Sekunden), Position-Preservation innerhalb new range (offset ~2.5s bleibt erhalten), Restart-at-loopStart wenn außerhalb (offset = 132300/SR), no-op wenn nicht playing (__createdSources.length unchanged). (4) Live-Edit Worklet × 1 — in-place postMessage ohne neuen Worklet-Node + exakt 1 zusätzlicher setLoop-Call mit aktualisierter Range.",
       lastSeen: "2026-05-19T02:55:00.000Z",
@@ -2067,6 +2097,54 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "backend",
+      timestamp: "2026-05-19T02:30:00.000Z",
+      done: [
+        "v3.72.0: Loop-Boundary Crossfade — closes v3.71-Caveat 'harter Cut bei loopEnd → loopStart erzeugt Click/Pop'. End-to-end Wiring: Store-Action setTrackLoopCrossfadeMs + clampLoopCrossfadeMs (0..200ms), Engine-Field loopCrossfadeMs in AudioTrackChannelData (additiv-optional), BufferSource-Pfad nutzt zusätzlichen GainNode in der Chain source → xfadeGain → channelNodes.input mit periodisch geschedultem equal-power-Envelope (cos für fade-out, sin für fade-in) via setValueCurveAtTime — 64 Loop-Cycles im Voraus geplant, automatisches Dispose bei _stopAudioTrackSource und _cleanupAudioTrackSource. Worklet-Pfad bekommt crossfadeSamples-Feld in setLoop-Message; TimeStretchProcessor mischt am Boundary in den letzten N Samples vor rangeEnd den Tail (cos) mit dem Head-Sample aus rangeStart (sin) per equal-power. Schema v1.26 → v1.27 (loopCrossfadeMs additiv-optional, pre-v1.27-Files laden unverändert). UI-Slider 0-200ms im AudioTrackZoomEditor sichtbar wenn Loop-Enabled — Live-Edit via setAudioTrackLoopPoints sofort wirksam wenn Track spielt.",
+        "client/src/audio/AudioEngine.ts (+~190 LOC): NEU loopCrossfadeMs in AudioTrackChannelData mit Doku-Block. NEU audioTrackXfadeGains-Map + audioTrackXfadeMeta-Map (Bookkeeping). NEU private _effectiveLoopCrossfadeMs(data, buf) Pure-Helper — clampt auf [0, 200] + zusätzlich gegen loopRangeMs / 2. NEU private _scheduleAudioTrackLoopCrossfade(id, ctxStart, offsetSec) plant equal-power Hann-artige Hüllkurve für 64 Loop-Cycles im Voraus mit Berücksichtigung von playbackRate (ctxLoopPeriod = bufLoopPeriod / rate). NEU private _disposeAudioTrackXfade(id) cancel + disconnect. playAudioTrack-Chain erweitert: wenn wantsLoopRange && crossfadeMs > 0 → source.connect(xfade).connect(input) statt direkt zu input, _disposeAudioTrackXfade vor Setup (Cleanup nach Restart). _computeWorkletLoopParams um crossfadeSamples-Feld erweitert (sample-rate-based aus ctx, clamp auf rangeLen / 2). _playAudioTrackViaWorklet + setAudioTrackLoopPoints senden crossfadeSamples in setLoop-Payload. _stopAudioTrackSource + _cleanupAudioTrackSource rufen _disposeAudioTrackXfade defensiv.",
+        "client/src/audio/worklets/TimeStretchProcessor.js (+~50 LOC): NEU _crossfadeSamples Instance-State (default 0, backward-compat). setLoop-Message-Handler liest optional crossfadeSamples (Number, ≥0, Finite) mit Clamp auf rangeLen / 2 falls Range gesetzt. process() hasRange-Branch hat neuen xfade-Block: in den letzten xfade Samples vor rangeEnd wird das Sample am wrapped-Index mit cos(t*π/2)-Gain multipliziert + ein Head-Sample aus rangeStart+(xfade-distToEnd) mit sin(t*π/2)-Gain dazugemischt (equal-power). 0 = backward-compat (kein Mix, wie v3.71).",
+        "client/src/store/useAudioTrackStore.ts (+~30 LOC): NEU LOOP_CROSSFADE_MAX_MS = 200 + clampLoopCrossfadeMs Pure-fn (NaN/Inf/negativ → 0, Clamp auf 200) + setTrackLoopCrossfadeMs(id, ms) Action. isValidTrack um loopCrossfadeMs-Typ-Check erweitert (number oder undefined; falscher Typ → Track verwerfen).",
+        "client/src/utils/projectSerializer.ts SCHEMA-BUMP v1.26 → v1.27: SYNTH_FILE_VERSION-Konstante + Header-Doku-Block v1.27 Migration. isValidAudioTrackEntry um loopCrossfadeMs-Typ-Check ergänzt. Backward-Compat: pre-v1.27-Files ohne loopCrossfadeMs-Feld laden unverändert (Feld bleibt undefined → Engine fällt auf 0 = hard cut).",
+        "client/src/components/Mixer/AudioTrackStrip.tsx (+~50 LOC im AudioTrackZoomEditor): NEU loopCrossfadeMs-Prop (controlled) + handleCrossfadeChange-useCallback. Slider-UI: <input type=range min=0 max=200 step=1> mit Label 'Crossfade:' + Value-Span 'X ms', sichtbar wenn loopEnabled. data-testid audio-track-loop-crossfade-{id} + -row-{id} + -value-{id}. Engine-Sync via registerAudioTrack + setAudioTrackLoopPoints (Live-Edit). Imports +setTrackLoopCrossfadeMs/clampLoopCrossfadeMs/LOOP_CROSSFADE_MAX_MS.",
+        "tests/features/audio-loop-crossfade.test.ts NEU (~470 LOC, 14 Tests in 4 describes, env:node mit Mock-AudioContext + MockGain + MockWorklet + setValueCurveAtTime-Stub): (1) Store × 4 — clampLoopCrossfadeMs Edge-Cases (50/0/-10/250/NaN/Infinity → defensive 0), setTrackLoopCrossfadeMs persistiert + localStorage-RoundTrip, Clamp auf 200 bei zu großen Werten, Clamp auf 0 bei negativen. (2) BufferSource Crossfade × 3 — loopCrossfadeMs=20 → setValueCurveAtTime > 0 Calls auf einem GainNode (xfade-gain in Chain), crossfade=0 → keine Calls (backward-compat), crossfade > rangeMs/2 → Engine clampt Schedule-duration auf rangeSec/2. (3) Worklet × 3 — pitchLocked+xfade=20ms → setLoop-Payload hat crossfadeSamples=882 (= 20ms * 44.1kHz / 1000), xfade=0 → crossfadeSamples=0, xfade > rangeLen/2 → clamp im Engine-Helper. (4) Schema v1.27 × 4 — SYNTH_FILE_VERSION='1.27', Round-Trip preserves loopCrossfadeMs=15, pre-v1.27-File ohne Feld → undefined, invalider Typ (string) → Track verworfen.",
+        "Schema-Version-Assertions in 9 Test-Files v1.26 → v1.27 (audio-track-store, audio-track-stretch, audio-track-loop, multi-bar-pattern, plugin-host (2×), plugin-multislot, project-serializer (3×), project-id-migration (2×), quick-action-integration, script-store). v1.26-Fixtures in audio-track-loop.test.ts und audio-loop-crossfade.test.ts bleiben unverändert (simulieren pre-v1.27 für Backward-Compat-Tests).",
+        "package.json (3.71.0 → 3.72.0). pnpm check clean. pnpm test grün: 218 Test-Files / 5024 Tests passed (16 skipped, +14 NEU vs. v3.71)."
+      ],
+      next: [
+        "v3.73: True Two-Source Crossfade für BufferSource-Pfad — aktuell macht der GainNode-Envelope-Ansatz einen Volumen-Dip am Boundary (akustisch besser als hard cut, aber nicht sample-präzises echtes Crossfading wie zwei überlappende Sources). Lösung: source1 + source2 Strategie — source2 startet crossfadeMs vor loopEnd mit offset=loopStart, beide laufen parallel mit gegenläufigen Gain-Envelopes. Komplex weil source.loop interne loopStart/End-Wraps macht — entweder loop=false setzen und Sources manuell schedulen, oder mit ConstantSourceNode + paired BufferSources arbeiten.",
+        "v3.73: setValueCurveAtTime-Reschedule für langlaufende Tracks — aktuell planen wir 64 Loop-Cycles im Voraus. Bei 0.5s Loops = 32s. Bei sehr langen Sessions sollte ein onPositionListener das Reschedule pro Buffer triggern (z.B. wenn audioTrackXfadeMeta.scheduledCount-Cycles abgespielt sind, nochmal 64 Cycles dranplanen).",
+        "v3.73: Loop-Crossfade Worklet-Pfad braucht Cubic-Curve statt Equal-Power für sehr kurze xfades (< 5ms) — bei nahezu identischen Tail/Head-Samples ist Equal-Power gut, bei stark unterschiedlichen Sample-Werten am Boundary könnte logarithmische Kurve clipping reduzieren. Aktuell: linear-Equal-Power für alle Längen.",
+        "v3.73: Snap-to-Beat statt nur Zero-Crossing für Loop-Marker (verschoben von v3.72) — wenn Track bpmHint/originalBpm gesetzt hat, snappen Loop-Marker auf 1/4/1/8/1/16-Beat-Grid via snapToBeat(sample, sampleRate, bpm, subdivision) Pure-fn in waveformZoom.ts."
+      ],
+      changed: [
+        "client/src/audio/AudioEngine.ts (+~190 LOC: loopCrossfadeMs-Field, audioTrackXfadeGains/Meta-Maps, _effectiveLoopCrossfadeMs, _scheduleAudioTrackLoopCrossfade, _disposeAudioTrackXfade, playAudioTrack-Chain mit xfade, _computeWorkletLoopParams +crossfadeSamples, setLoop-Calls mit crossfadeSamples)",
+        "client/src/audio/worklets/TimeStretchProcessor.js (+~50 LOC: _crossfadeSamples State, setLoop-Handler erweitert, process() xfade-Block in hasRange-Branch mit Tail+Head equal-power Mix)",
+        "client/src/store/useAudioTrackStore.ts (+~30 LOC: LOOP_CROSSFADE_MAX_MS, clampLoopCrossfadeMs, setTrackLoopCrossfadeMs, isValidTrack +loopCrossfadeMs-Check)",
+        "client/src/utils/projectSerializer.ts (Schema v1.26 → v1.27: SYNTH_FILE_VERSION, Header-Doku-Block, isValidAudioTrackEntry +loopCrossfadeMs-Check)",
+        "client/src/components/Mixer/AudioTrackStrip.tsx (+~50 LOC AudioTrackZoomEditor: loopCrossfadeMs-Prop, handleCrossfadeChange, Slider-UI mit Engine-Sync)",
+        "tests/features/audio-loop-crossfade.test.ts (NEU ~470 LOC: 14 Tests in 4 describes)",
+        "tests/features/audio-track-store.test.ts (2× Schema-Assertion 1.26 → 1.27)",
+        "tests/features/audio-track-stretch.test.ts (Schema-Assertion 1.26 → 1.27)",
+        "tests/features/audio-track-loop.test.ts (Schema-Assertion 1.26 → 1.27)",
+        "tests/features/multi-bar-pattern.test.ts (Schema-Assertion 1.26 → 1.27)",
+        "tests/features/plugin-host.test.ts (2× Schema-Assertion 1.26 → 1.27)",
+        "tests/features/plugin-multislot.test.ts (Schema-Assertion 1.26 → 1.27)",
+        "tests/features/project-serializer.test.ts (3× Schema-Assertion 1.26 → 1.27)",
+        "tests/features/project-id-migration.test.ts (2× Schema-Assertion 1.26 → 1.27)",
+        "tests/features/quick-action-integration.test.ts (1× write-side Assertion 1.26 → 1.27)",
+        "tests/features/script-store.test.ts (Schema-Assertion 1.26 → 1.27)",
+        "package.json (3.71.0 → 3.72.0)",
+        "agents/INDEX.js (version + workLog v3.72.0)"
+      ],
+      caveats: [
+        "BufferSource-Pfad nutzt KEINEN echten Two-Source-Crossfade — der GainNode-Envelope macht einen Volumen-Dip am Boundary (cos→0→sin), nicht eine sample-präzise Überlappung von Tail+Head. Akustisch immer noch DEUTLICH besser als hard cut (eliminiert Click-Artefakte durch Sample-Diskontinuitäten), aber für eine wirklich nahtlose Loop wie in Ableton/Pro Tools wäre eine Two-Source-Strategie nötig (FUTURE v3.73).",
+        "setValueCurveAtTime wird 64 Loop-Cycles im Voraus geplant. Bei kurzen Loops (0.5s) reicht das für 32 Sekunden Audio. Bei einer langen Performance > 32s ohne Stop reschedulen wir aktuell NICHT — die Crossfades hören dann auf und es gibt wieder hard cuts. Lösung-vorhanden (audioTrackXfadeMeta.nextScheduleAt), aber Refresh-Trigger fehlt (FUTURE v3.73).",
+        "Worklet-Pfad: der Tail+Head-Mix funktioniert nur wenn der Head-Bereich (rangeStart..rangeStart+xfade) im Buffer existiert (= xfade < bufferLength - rangeStart). Bei extrem kleinen Buffern oder rangeStart nahe rangeEnd könnte headIdx aus dem Buffer raus laufen — wir nutzen `srcL[headIdx] || 0` als defensive Fallback, das macht den Mix in dem Edge-Case still (kein Crash).",
+        "Schema-Bump v1.27: Forward-kompatibel (v3.72 liest v3.71-Files). Backward-Lücke: v3.71 öffnet v3.72-File, ignoriert loopCrossfadeMs, beim Re-Save geht es verloren — wie bei allen v1.x-Schema-Bumps.",
+        "Worklet-Live-Edit: wenn User crossfadeMs zur Laufzeit ändert (Slider-Drag), schicken wir setLoop-Message mit dem neuen Wert. Der Worklet-Processor übernimmt das in-place ohne dass _outAccums/_window-Akku resettet wird → smooth transition. ABER: wenn der Read-Cursor (`_readPos`) gerade IN der alten xfade-Zone steht, kann es einen Sprung geben bevor der neue Boundary einsetzt. Akzeptabel als seltener Edge-Case."
+      ]
+    },
     {
       agent:     "backend",
       timestamp: "2026-05-19T02:55:00.000Z",

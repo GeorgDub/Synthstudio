@@ -10,7 +10,8 @@
  *     - { type: "setBuffer", channels: Float32Array[] }  // 1 (mono→up) oder 2 channels
  *     - { type: "setLoop",   loop: boolean,
  *                            loopStart?: number | null,
- *                            loopEnd?: number | null }    // v3.71.0: optional range
+ *                            loopEnd?: number | null,     // v3.71.0: optional range
+ *                            crossfadeSamples?: number }  // v3.72.0: boundary fade
  *     - { type: "seek",      samplePos: number }
  *   out:
  *     - { type: "position",  samplePos: number }         // ca. alle ~50ms
@@ -33,6 +34,19 @@
  *   - Phase-Vocoder-State (_outAccums) wird NICHT geresettet — der Akku
  *     trägt die Hann-Fenster-Überlappung über die Loop-Boundary, damit es
  *     keinen Click gibt. Position-Report gibt den realen _readPos zurück.
+ *
+ * Loop-Crossfade (v3.72.0):
+ *   - crossfadeSamples > 0 + Loop-Range gesetzt: in den letzten N Samples
+ *     vor loopEnd wird der Grain auf jedes wrapped-Sample summiert, das
+ *     bereits "über die Boundary" liest, sodass am Boundary kein harter
+ *     Cut entsteht. Implementierung: bei der Grain-Lesung mischen wir
+ *     einen Read-Ahead aus [loopStart, loopStart+crossfadeSamples) mit
+ *     dem Tail aus [loopEnd-crossfadeSamples, loopEnd) per Equal-Power
+ *     (cos/sin). Der Phase-Vocoder-Akku trägt die OLA-Hann-Überlappung
+ *     wie gehabt, der Crossfade reduziert die zusätzlichen Sample-
+ *     Diskontinuitäten am Wrap.
+ *   - Clamp auf rangeLen / 2 (defensive — Engine-Seite clampt bereits).
+ *   - 0 = backward-compat (Range-Wrap ohne Crossfade, wie v3.71).
  */
 class TimeStretchProcessor extends AudioWorkletProcessor {
   static get parameterDescriptors() {
@@ -62,6 +76,8 @@ class TimeStretchProcessor extends AudioWorkletProcessor {
     this._loopStart = null;
     /** @type {number | null} */
     this._loopEnd = null;
+    // v3.72.0: Loop-Crossfade-Länge in Samples (0 = hard cut, backward-compat).
+    this._crossfadeSamples = 0;
 
     // Position-Reporting throttle: ca. alle ~50ms (≈ 2200 samples bei 44.1kHz).
     this._posReportInterval = 2200;
@@ -114,6 +130,18 @@ class TimeStretchProcessor extends AudioWorkletProcessor {
             // Explizites Range-Clear.
             this._loopStart = null;
             this._loopEnd = null;
+          }
+          // v3.72.0: optional Crossfade-Samples für boundary fade.
+          const cf = msg.crossfadeSamples;
+          if (typeof cf === "number" && Number.isFinite(cf) && cf >= 0) {
+            // Clamp auf rangeLen / 2 falls Range gesetzt.
+            let cfSafe = Math.floor(cf);
+            if (this._loopStart !== null && this._loopEnd !== null) {
+              const rangeLen = this._loopEnd - this._loopStart;
+              const maxCf = Math.floor(rangeLen / 2);
+              if (cfSafe > maxCf) cfSafe = maxCf;
+            }
+            this._crossfadeSamples = Math.max(0, cfSafe);
           }
           // Falls msg keine loopStart/loopEnd-Felder enthält: behalte alte Range.
           break;
@@ -174,6 +202,10 @@ class TimeStretchProcessor extends AudioWorkletProcessor {
     const rangeStart = hasRange ? this._loopStart : 0;
     const rangeEnd = hasRange ? this._loopEnd : this._length;
     const rangeLen = rangeEnd - rangeStart;
+    // v3.72.0: Crossfade-Samples (clamped auf rangeLen/2). 0 = hard cut.
+    const xfade = hasRange && this._crossfadeSamples > 0
+      ? Math.min(this._crossfadeSamples, Math.floor(rangeLen / 2))
+      : 0;
 
     for (let i = 0; i < outLen; i++) {
       if ((this._outPos + i) % this._HOP_OUT === 0) {
@@ -190,8 +222,31 @@ class TimeStretchProcessor extends AudioWorkletProcessor {
               // Loop-Range-Mode: wrap in [rangeStart, rangeEnd).
               // (rangeLen > 0 garantiert durch hasRange-Check)
               const wrapped = rangeStart + ((srcIdx - rangeStart) % rangeLen + rangeLen) % rangeLen;
-              sampleL = srcL[wrapped] || 0;
-              sampleR = useStereo ? (srcR[wrapped] || 0) : sampleL;
+              let baseL = srcL[wrapped] || 0;
+              let baseR = useStereo ? (srcR[wrapped] || 0) : baseL;
+              // v3.72.0: Boundary-Crossfade. In den letzten xfade Samples
+              // vor rangeEnd: tail fadet aus (cos), und wir mischen mit
+              // dem Head-Sample aus rangeStart..rangeStart+xfade ein.
+              if (xfade > 0) {
+                const distToEnd = rangeEnd - wrapped;
+                if (distToEnd > 0 && distToEnd <= xfade) {
+                  // t in [0,1]: 0 = mitten in xfade-Zone (=distToEnd=xfade),
+                  // 1 = direkt vor rangeEnd (distToEnd=1).
+                  const t = 1 - (distToEnd - 1) / xfade;
+                  const tClamped = t < 0 ? 0 : t > 1 ? 1 : t;
+                  // Equal-power: tail (cos), head (sin).
+                  const tailGain = Math.cos((tClamped * Math.PI) / 2);
+                  const headGain = Math.sin((tClamped * Math.PI) / 2);
+                  // Head-Sample: rangeStart + (xfade - distToEnd) Position.
+                  const headIdx = rangeStart + (xfade - distToEnd);
+                  const headL = srcL[headIdx] || 0;
+                  const headR = useStereo ? (srcR[headIdx] || 0) : headL;
+                  baseL = baseL * tailGain + headL * headGain;
+                  baseR = baseR * tailGain + headR * headGain;
+                }
+              }
+              sampleL = baseL;
+              sampleR = baseR;
             } else if (srcIdx < this._length) {
               sampleL = srcL[srcIdx];
               sampleR = useStereo ? srcR[srcIdx] : sampleL;

@@ -63,6 +63,13 @@
  *     Sekunden) wenn loopEnabled=true UND start < end. Alle 3 Felder additiv-
  *     optional; pre-v1.26-Files laden unverändert (Engine fällt auf das
  *     legacy `loop`-Flag zurück).
+ *   - "1.27": AudioTrack loopCrossfadeMs (v3.72.0). Closes v3.71-Caveat
+ *     "harter Cut bei loopEnd → loopStart Click-Artefakte". 0..200ms,
+ *     additiv-optional. BufferSource-Pfad mit GainNode + scheduled
+ *     setValueCurveAtTime equal-power-Envelope an Loop-Boundary;
+ *     Worklet-Pfad mit in-process Sample-Mix (Tail + Head fade).
+ *     Backward-Compat: pre-v1.27-Files laden ohne Crash, Feld bleibt
+ *     undefined → 0 (hard cut wie vorher).
  * Dateiendung: .synth
  */
 
@@ -90,7 +97,7 @@ import { ensureProjectId } from "@/utils/projectId";
 import type { QuickActionMacro } from "@/store/useQuickActionStore";
 import { isValidQuickActionMacro } from "@/store/useQuickActionStore";
 
-export const SYNTH_FILE_VERSION = "1.26";
+export const SYNTH_FILE_VERSION = "1.27";
 export const SYNTH_LATEST_KEY = "synthstudio:last-project";
 
 // ─── Typen ───────────────────────────────────────────────────────────────────
@@ -322,6 +329,10 @@ function isValidAudioTrackEntry(t: unknown): t is AudioTrackChannelData {
     o.loopEndSample !== null &&
     typeof o.loopEndSample !== "number"
   ) {
+    return false;
+  }
+  // v3.72.0 (v1.27): loopCrossfadeMs (optional, number). Invalider Typ → Track verwerfen.
+  if (o.loopCrossfadeMs !== undefined && typeof o.loopCrossfadeMs !== "number") {
     return false;
   }
   return (
