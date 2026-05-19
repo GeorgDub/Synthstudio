@@ -66,6 +66,8 @@ import {
 import { variatePattern } from "@/utils/patternProbability";
 // v3.168.0: Pattern-Fill-Generator Pure-Helpers für Fill-Toolbar.
 import { generateFill, generateBuildUp, generateRoll } from "@/utils/patternFillGenerator";
+// v3.169.0: Pattern-Humanize Pure-Helper für Humanize-Toolbar.
+import { humanizePattern, type HumanizeIntensity } from "@/utils/patternHumanize";
 // Ausgelagerte Sub-Components
 import { FxPanel } from "./FxPanel";
 import { ResizableDrumPanel } from "./ResizableDrumPanel";
@@ -635,6 +637,17 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
       dm.setPartSteps(part.id, newSteps);
     }
   }, [pattern, dm]);
+
+  // v3.169.0: Pattern-Humanize-Toolbar State + Handler.
+  const [humanizeIntensity, setHumanizeIntensity] = useState<HumanizeIntensity>("subtle");
+  const handleHumanize = useCallback(() => {
+    const seed = Date.now();
+    applyMutator((p) => {
+      // humanizePattern liefert HumanizedStep[]. Extrahiere nur die active-Komponente.
+      const humanized = humanizePattern(p, { intensity: humanizeIntensity, seed, keepProbability: 0.95 });
+      return humanized.map((h) => h.active);
+    });
+  }, [applyMutator, humanizeIntensity]);
 
   // v2.12: Drag-Drop für .mid-Files via globales Event (von ElectronDropZone dispatched).
   useEffect(() => {
@@ -1734,6 +1747,34 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
             className="px-1.5 py-0.5 rounded text-[10px] bg-bg-elevated hover:bg-accent-primary/30 hover:text-accent-primary transition-colors"
             title="Drum-Roll — alle letzten 4 Steps aktiv"
           >Roll</button>
+        </div>
+
+        {/* v3.169: Humanize-Toolbar */}
+        <div
+          className="flex items-center gap-1 px-2 py-1 border-l border-border-color"
+          data-testid="pattern-humanize-toolbar"
+          title="Pattern-Humanize (Probability-Decay basierend auf Intensity)"
+        >
+          <span className="text-[10px] text-text-dim mr-1">Humanize:</span>
+          <select
+            value={humanizeIntensity}
+            onChange={(e) => setHumanizeIntensity(e.target.value as HumanizeIntensity)}
+            className="bg-bg-panel border border-border-color rounded px-1 py-0.5 text-[10px] text-text-muted hover:text-text-primary focus:outline-none"
+            data-testid="pattern-humanize-intensity"
+          >
+            <option value="none">none</option>
+            <option value="subtle">subtle</option>
+            <option value="moderate">moderate</option>
+            <option value="heavy">heavy</option>
+          </select>
+          <button
+            onClick={handleHumanize}
+            data-testid="pattern-humanize-apply"
+            className="px-1.5 py-0.5 rounded text-[10px] bg-bg-elevated hover:bg-accent-secondary/30 hover:text-accent-secondary transition-colors"
+            title="Pattern humanisieren (kleine Probability-Drops je nach Intensity)"
+          >
+            Apply
+          </button>
         </div>
 
         {/* MIDI-Import */}

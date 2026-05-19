@@ -21,6 +21,7 @@ import {
   type PartDiff,
   type StepDiffKind,
 } from "@/utils/patternDiff";
+import { comparePatterns, formatCompareSummary } from "@/utils/patternCompare";
 
 interface Props {
   isOpen: boolean;
@@ -105,6 +106,14 @@ export function PatternCompareModal({
   const diff = useMemo(() => {
     if (!patternA || !patternB) return null;
     return diffPatterns(patternA, patternB);
+  }, [patternA, patternB]);
+
+  // v3.165: zusätzliche kompakte Summary auf Basis des v3.163-patternCompare-Helpers.
+  // Liefert einen Single-Line-Status ("+N steps, -N steps, ..."), additiv zum
+  // bestehenden Header-Summary aus patternDiff.ts.
+  const compactSummary = useMemo(() => {
+    if (!patternA || !patternB) return null;
+    return formatCompareSummary(comparePatterns(patternA, patternB));
   }, [patternA, patternB]);
 
   if (!isOpen) return null;
@@ -215,6 +224,16 @@ export function PatternCompareModal({
             ×
           </button>
         </div>
+
+        {/* ── v3.165 Compact-Summary (patternCompare-Helper) ──────────── */}
+        {compactSummary && (
+          <div
+            className="text-[11px] text-accent-secondary font-mono px-4 py-1 border-b border-border-color bg-bg-panel/40"
+            data-testid="pattern-compare-summary-v3"
+          >
+            v3.163-Summary: {compactSummary}
+          </div>
+        )}
 
         {/* ── Body ────────────────────────────────────────────────────── */}
         <div className="flex-1 overflow-y-auto p-4">

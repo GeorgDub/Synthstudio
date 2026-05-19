@@ -3449,6 +3449,25 @@ const INDEX = {
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
     {
+      agent:     "frontend",
+      timestamp: "2026-05-19T18:00:00.000Z",
+      done: [
+        "v3.169 UI-Wire: client/src/components/DrumMachine/DrumMachine.tsx — Humanize-Toolbar eingehaengt nach pattern-fill-toolbar. Importiert humanizePattern + HumanizeIntensity aus @/utils/patternHumanize (v3.168 Pure-Helper).",
+        "State: useState<HumanizeIntensity>('subtle'). Handler handleHumanize ruft applyMutator((p) => humanizePattern(p,{intensity,seed:Date.now(),keepProbability:0.95}).map(h => h.active)) — extrahiert nur active-Komponente aus HumanizedStep[], da DrumMachine bool[] pro Part erwartet.",
+        "UI: <div data-testid='pattern-humanize-toolbar'> mit <select data-testid='pattern-humanize-intensity'> (none/subtle/moderate/heavy) + <button data-testid='pattern-humanize-apply'>. Semantische Tailwind-Klassen (bg-bg-panel, text-text-dim, border-border-color, hover:bg-accent-secondary/30) — keine hardcodierten Farben.",
+        "keepProbability=0.95 als sanfter Default — Apply ist nicht zu destructive.",
+        "pnpm check: GRUEN (tsc --noEmit, keine Fehler). KEIN git commit, KEIN package.json bump. NUR DrumMachine.tsx editiert (OmniTribeBridge.ts NICHT beruehrt)."
+      ],
+      next: [
+        "v3.169+ Tests: tests/web/ Playwright-Smoke fuer pattern-humanize-toolbar (Intensity-Selector + Apply-Click → Pattern-Aenderung detectable). Testing-Agent.",
+        "v3.170+ Optional: HumanizedStep.timingOffsetMs + .velocity in setPartSteps integrieren (aktuell verworfen — nur active-bool genutzt). Erfordert Erweiterung der DrumMachineCore-API um per-Step velocity/timing. Refactor-Agent.",
+        "Optional: Humanize-Intensity in Project-Save persistieren statt useState (useProjectStore)."
+      ],
+      changed: [
+        "client/src/components/DrumMachine/DrumMachine.tsx (Import humanizePattern + HumanizeIntensity, State humanizeIntensity, Handler handleHumanize, UI-Toolbar nach pattern-fill-toolbar)"
+      ]
+    },
+    {
       agent:     "refactor",
       timestamp: "2026-05-20T03:00:00.000Z",
       done: [
