@@ -28,10 +28,13 @@ import {
   setProviderKey,
   setProviderModel,
   setEmbedBehavior,
+  setWavBitDepth,
   AI_PROVIDERS,
   AVAILABLE_MODELS,
+  WAV_BIT_DEPTHS,
   type AiProvider,
   type EmbedBehavior,
+  type WavBitDepth,
 } from "@/store/useApiSettingsStore";
 import { useWorkspaceMode, setWorkspaceMode } from "@/store/useWorkspaceMode";
 import {
@@ -1203,6 +1206,44 @@ function SavingSection({ onOpenVersionHistory }: { onOpenVersionHistory?: () => 
                   {b === "auto" && "Default-Verhalten — Blob-URL-Samples (z.B. nach Sample-Transform) werden eingebettet."}
                   {b === "always" && "Alle Samples werden eingebettet — die .synth-Datei ist vollständig self-contained, größere Dateien."}
                   {b === "never" && "Keine Einbettung — kleinere Dateien, aber transformierte Samples gehen nach Reload verloren."}
+                </span>
+              </span>
+            </label>
+          ))}
+        </div>
+      </div>
+
+      {/* v3.151: WAV-Export Bit-Depth */}
+      <div className="rounded-lg border border-border-color p-4 space-y-3" data-testid="wav-bit-depth-section">
+        <div>
+          <div className="text-xs font-semibold text-text-primary">WAV-Export Bit-Depth</div>
+          <div className="text-[10px] text-text-dim mt-0.5">
+            Betrifft Live-Recording, Audio-Input-Aufnahme und Channel-Bounce.
+            16-bit ist DAW-Standard, 24-bit hat höhere Dynamic Range (~50% mehr Dateigröße).
+          </div>
+        </div>
+        <div className="flex flex-col gap-2 mt-2">
+          {WAV_BIT_DEPTHS.map((d: WavBitDepth) => (
+            <label
+              key={d}
+              className="flex items-start gap-2 text-xs cursor-pointer hover:text-text-primary"
+            >
+              <input
+                type="radio"
+                name="wav-bit-depth"
+                value={d}
+                checked={api.wavBitDepth === d}
+                onChange={() => setWavBitDepth(d)}
+                className="accent-accent-primary mt-0.5"
+                data-testid={`wav-bit-depth-${d}`}
+              />
+              <span className="flex flex-col gap-0.5">
+                <span className={api.wavBitDepth === d ? "text-accent-primary font-semibold" : "text-text-muted"}>
+                  {d === 16 ? "16-bit (default, DAW-Standard)" : "24-bit (Mastering-Standard)"}
+                </span>
+                <span className="text-[10px] text-text-dim">
+                  {d === 16 && "Kompaktere Dateien, kompatibel mit allen DAWs."}
+                  {d === 24 && "Höhere Dynamic Range für Mastering / Hi-Res-Distribution."}
                 </span>
               </span>
             </label>

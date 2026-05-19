@@ -34,6 +34,19 @@ function isEmbedBehavior(v: unknown): v is EmbedBehavior {
   return v === "auto" || v === "always" || v === "never";
 }
 
+/**
+ * v3.151: WAV-Export Bit-Depth — Default 16 (DAW-Standard, kleinste Files),
+ * Optional 24 (höhere Dynamic Range, ~50% mehr Dateigröße, Mastering-Standard).
+ * Betrifft alle Live-Recorder, AudioInputRecorder, Channel-Bounce-Exports.
+ */
+export type WavBitDepth = 16 | 24;
+
+export const WAV_BIT_DEPTHS: ReadonlyArray<WavBitDepth> = [16, 24];
+
+function isWavBitDepth(v: unknown): v is WavBitDepth {
+  return v === 16 || v === 24;
+}
+
 /** Default-Modell pro Provider. */
 export const DEFAULT_MODELS: Record<AiProvider, string> = {
   anthropic: "claude-haiku-4-5-20251001",
@@ -94,6 +107,12 @@ interface ApiSettings {
    *  - "never":  Keine Einbettung (kompakte Files, Data-Loss-Risiko bei Blob-URLs).
    */
   embedBehavior: EmbedBehavior;
+
+  /**
+   * v3.151: WAV-Export Bit-Depth. Default 16 (DAW-Standard), Optional 24
+   * (höhere Dynamic Range fürs Mastering, ~50% mehr Dateigröße).
+   */
+  wavBitDepth: WavBitDepth;
 }
 
 type Listener = () => void;
@@ -113,6 +132,7 @@ function defaults(): ApiSettings {
     snapshotsEnabled: true,
     autoSaveIntervalMin: 3,
     embedBehavior: "auto",
+    wavBitDepth: 16,
   });
 }
 
@@ -167,6 +187,7 @@ function migrateFromLegacy(raw: Record<string, unknown>): ApiSettings {
           ? Math.max(1, Math.min(60, raw.autoSaveIntervalMin))
           : base.autoSaveIntervalMin,
       embedBehavior: isEmbedBehavior(raw.embedBehavior) ? raw.embedBehavior : base.embedBehavior,
+      wavBitDepth: isWavBitDepth(raw.wavBitDepth) ? raw.wavBitDepth : base.wavBitDepth,
     });
   }
 
@@ -295,6 +316,17 @@ export function setAutoSaveInterval(minutes: number): void {
 export function setEmbedBehavior(behavior: EmbedBehavior): void {
   if (!isEmbedBehavior(behavior)) return;
   _state = withDerivedFields({ ..._state, embedBehavior: behavior });
+  persist(_state);
+  notify();
+}
+
+/**
+ * Setzt die WAV-Export Bit-Depth (v3.151). Invalid-Inputs werden silent
+ * ignoriert (defensive gegen accidental cast).
+ */
+export function setWavBitDepth(depth: WavBitDepth): void {
+  if (!isWavBitDepth(depth)) return;
+  _state = withDerivedFields({ ..._state, wavBitDepth: depth });
   persist(_state);
   notify();
 }

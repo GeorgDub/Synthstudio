@@ -45,6 +45,7 @@ import type {
   ChannelFx,
 } from "@/audio/AudioEngine";
 import { encodeWav } from "@/audio/wavEncoder";
+import { getApiSettings } from "@/store/useApiSettingsStore";
 import {
   triggerOfflineSynthNote,
   pitchToFrequency,
@@ -1198,7 +1199,8 @@ export async function bounceChannelToWavBuffer(
   for (let ch = 0; ch < channels; ch++) {
     channelData.push(buffer.getChannelData(ch));
   }
-  return encodeWav(channelData, { sampleRate, channels, bitDepth: 16 });
+  // v3.151: WAV-Bit-Depth aus User-Setting (default 16, optional 24).
+  return encodeWav(channelData, { sampleRate, channels, bitDepth: getApiSettings().wavBitDepth });
 }
 
 /**
@@ -1243,7 +1245,8 @@ export async function bounceChannelToBuffer(
     for (let ch = 0; ch < channels; ch++) {
       channelData.push(buffer.getChannelData(ch));
     }
-    const data = encodeWav(channelData, { sampleRate, channels, bitDepth: 16 });
+    // v3.151: WAV-Bit-Depth aus User-Setting (default 16, optional 24).
+    const data = encodeWav(channelData, { sampleRate, channels, bitDepth: getApiSettings().wavBitDepth });
     return {
       data,
       actualFormat: "wav",

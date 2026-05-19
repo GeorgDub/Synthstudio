@@ -54,11 +54,12 @@ export interface WavEncodeOptions {
 export function encodeWavMono(
   samples: Float32Array,
   sampleRate: number,
+  bitDepth: 16 | 24 = 16,
 ): ArrayBuffer {
   if (!Number.isFinite(sampleRate) || sampleRate <= 0) {
     throw new Error(`Invalid sampleRate: ${sampleRate}`);
   }
-  return encodeWav([samples], { sampleRate, channels: 1 });
+  return encodeWav([samples], { sampleRate, channels: 1, bitDepth });
 }
 
 /**
@@ -69,6 +70,7 @@ export function encodeWavStereo(
   left: Float32Array,
   right: Float32Array,
   sampleRate: number,
+  bitDepth: 16 | 24 = 16,
 ): ArrayBuffer {
   if (!Number.isFinite(sampleRate) || sampleRate <= 0) {
     throw new Error(`Invalid sampleRate: ${sampleRate}`);
@@ -76,7 +78,7 @@ export function encodeWavStereo(
   const len = Math.min(left.length, right.length);
   const l = left.length === len ? left : left.subarray(0, len);
   const r = right.length === len ? right : right.subarray(0, len);
-  return encodeWav([l, r], { sampleRate, channels: 2 });
+  return encodeWav([l, r], { sampleRate, channels: 2, bitDepth });
 }
 
 /**

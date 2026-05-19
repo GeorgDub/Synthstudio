@@ -23,6 +23,7 @@
  */
 
 import { concatFloat32, encodeWavStereo } from "./wavEncoder";
+import { getApiSettings } from "@/store/useApiSettingsStore";
 import {
   isAudioWorkletAvailable,
   loadRecorderWorklet,
@@ -615,9 +616,11 @@ export function writeMultiTrackWavs(
   if (result.master) allTracks.push(result.master);
   for (const t of result.perChannel.values()) allTracks.push(t);
 
+  // v3.151: WAV-Bit-Depth aus User-Setting (default 16, optional 24).
+  const bitDepth = getApiSettings().wavBitDepth;
   for (const t of allTracks) {
     const name = buildLiveTrackFileName(t.kind, t.id, date, prefix);
-    const buffer = encodeWavStereo(t.left, t.right, t.sampleRate);
+    const buffer = encodeWavStereo(t.left, t.right, t.sampleRate, bitDepth);
     out.set(name, new Uint8Array(buffer));
   }
   return out;

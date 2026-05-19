@@ -28,6 +28,7 @@
  */
 
 import { concatFloat32, encodeWavMono, encodeWavStereo } from "./wavEncoder";
+import { getApiSettings } from "@/store/useApiSettingsStore";
 
 // ─── Konstanten ──────────────────────────────────────────────────────────────
 
@@ -176,10 +177,12 @@ export class AudioRecorder {
     }
 
     const leftBuf = concatFloat32(rec.bufferLeft);
+    // v3.151: WAV-Bit-Depth aus User-Setting (default 16, optional 24).
+    const bitDepth = getApiSettings().wavBitDepth;
     const wavBuffer =
       rec.channels === 2 && rec.bufferRight.length > 0
-        ? encodeWavStereo(leftBuf, concatFloat32(rec.bufferRight), rec.sampleRate)
-        : encodeWavMono(leftBuf, rec.sampleRate);
+        ? encodeWavStereo(leftBuf, concatFloat32(rec.bufferRight), rec.sampleRate, bitDepth)
+        : encodeWavMono(leftBuf, rec.sampleRate, bitDepth);
     const durationSec = rec.sampleRate > 0 ? rec.frameCount / rec.sampleRate : 0;
 
     return {

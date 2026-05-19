@@ -27,6 +27,7 @@
  */
 
 import { encodeWavStereo } from "./wavEncoder";
+import { getApiSettings } from "@/store/useApiSettingsStore";
 import {
   isAudioWorkletAvailable,
   loadRecorderWorklet,
@@ -292,7 +293,8 @@ export class AudioInputRecorder {
       : left.slice();
 
     const durationMs = Math.max(0, this._stoppedAt - this._startedAt);
-    const wavBuffer = encodeWavStereo(left, right, this._sampleRate);
+    // v3.151: WAV-Bit-Depth aus User-Setting (default 16, optional 24).
+    const wavBuffer = encodeWavStereo(left, right, this._sampleRate, getApiSettings().wavBitDepth);
     return {
       left,
       right,
