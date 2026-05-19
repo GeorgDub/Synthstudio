@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.115.0",
+    version: "3.116.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -89,6 +89,16 @@ const INDEX = {
   // ─── KNOWN FILE INDEX ──────────────────────────────────────
   // Key files agents have analyzed. Add new entries after working on a file.
   files: {
+    "client/src/utils/sampleTransform.ts (v3.116.0 NEU)": {
+      role:     "v3.116.0 NEU (~170 LOC). Wrapper-Util für Time-Stretch + Pitch-Shift auf AudioBuffern. Reuse: timeStretchBuffer aus client/src/audio/timeStretchUtils.ts (OLA, kein neuer Phase-Vocoder). Public API: stretchSample(ctx,buf,ratio), pitchShiftSample(ctx,buf,semitones) (via stretch+resample-trick → length erhalten), combinedTransform(ctx,buf,ratio,semitones). Helpers: semitonesToRatio (2^(st/12)), resampleLinear (pure Float32→Float32 mit linearer Interpolation). Konstanten: STRETCH_MIN=0.25, STRETCH_MAX=4.0, PITCH_MIN=-24, PITCH_MAX=+24. Clamps + NaN-Identity-Fallback. Leerer Buffer (length=0) → Error. Immutable (gibt immer neuen AudioBuffer zurück). 33/33 Tests grün.",
+      lastSeen: "2026-05-19T14:00:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/components/SampleBrowser/SampleTransformDialog.tsx (v3.116.0 NEU)": {
+      role:     "v3.116.0 NEU (~250 LOC). Radix-Dialog (modal+a11y) für DAW-übliche Sample-Transform-Workflow. Props: {sample:Sample|null, buffer:AudioBuffer|null, onClose, onApply(newBuffer,newBlobUrl)}. State: stretchRatio (0.25..4.0), pitchSemitones (-24..+24), preserveLength-Toggle (sperrt Stretch=1× wenn pitch≠0), isProcessing+progress (kosmetisch). Preview-Button: combinedTransform → wavEncoder.encodeWav → Blob-URL → <audio> autoplay; auto-revoke beim Re-Preview/Close. Apply-Button: ruft onApply + onClose. Komplett semantische Tokens (--ss-*, bg-bg-*, text-text-*, accent-primary/secondary). data-testids: sample-transform-dialog/stretch/pitch/preserve-length/preview/apply.",
+      lastSeen: "2026-05-19T14:00:00.000Z",
+      ownedBy:  "frontend"
+    },
     "client/src/utils/macroMorph.ts (v3.115.0 NEU)": {
       role:     "v3.115.0 NEU (~65 LOC, pure-helpers). Macro-Snapshot Morphing Math. MACRO_VALUES_LENGTH=8 (muss mit useMacroStore.MACRO_COUNT übereinstimmen). morphValues(a,b,amount): liefert Array von 8 Werten 0..1 via linear-interp result[i] = a[i] + (b[i]-a[i])*amount. amount auf 0..1 geclampt (NaN→0). normalizeMacroValues(arr) als reused helper: pad/truncate auf 8, NaN/Infinity→0, clamp 0..1. side-effect-frei, jsdom-frei. Defensive null/undefined/garbage-input handling. Pure import-able in Node.",
       lastSeen: "2026-05-19T13:45:00.000Z",
@@ -2802,6 +2812,38 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "frontend",
+      timestamp: "2026-05-19T14:00:00.000Z",
+      done: [
+        "v3.116.0: Sample-Manager Time-Stretch + Pitch-Shift UI (DAW-level transform).",
+        "client/src/utils/sampleTransform.ts NEU (~170 LOC). Reused existing OLA-Engine timeStretchBuffer aus client/src/audio/timeStretchUtils.ts (kein eigener Phase-Vocoder reimplementiert). Public API: stretchSample(ctx,buf,ratio) → length × ratio, pitch erhalten; pitchShiftSample(ctx,buf,semitones) → pitch shift via stretch+resample-trick (length erhalten); combinedTransform(ctx,buf,ratio,semitones) → ein-Schritt-Pipeline (effizienter als zwei separate calls). Helpers: semitonesToRatio (2^(st/12)), resampleLinear (lineare Interpolation auf Float32). Clamps: ratio [0.25, 4.0], semitones [-24, 24], NaN/Infinity → Identity-Fallback. Leerer Buffer → Error. Immutable: gibt immer neuen Buffer zurück (kein in-place edit).",
+        "client/src/components/SampleBrowser/SampleTransformDialog.tsx NEU (~250 LOC). Radix-Dialog (a11y, modal). State: stretchRatio, pitchSemitones, preserveLength-Toggle. Stretch-Slider 0.25..4.0 (step 0.05), Pitch-Slider -24..+24 (step 1). Preserve-Length lockt Stretch auf 1× wenn pitch≠0 (visueller 'locked'-Hint). Preview-Button: erzeugt transformed Buffer → wavEncoder.encodeWav → Blob-URL → <audio> autoplay; auto-revoke beim Schließen/Re-Preview. Apply-Button: ruft onApply(newBuffer, newBlobUrl). Progress-Bar (kosmetisch, da timeStretchBuffer synchron). Alle Klassen semantisch (--ss-*, accent-primary/secondary, bg-bg-*, text-text-*). data-testids für E2E.",
+        "client/src/components/SampleBrowser/SampleBrowser.tsx ERWEITERT: import SampleTransformDialog + AudioEngine. Neuer prop onTransformSample?:(id,newBlobUrl,newBuffer)→void. State transformSample/transformBuffer. handleOpenTransform(sample) lädt buffer via AudioEngine.loadSample(path) + öffnet Dialog. WaveformPanel um neuen Button '⤬' (Transform) ergänzt — sichtbar nur wenn onTransform-Prop gesetzt. SampleTransformDialog am Component-Footer gerendert (controlled).",
+        "client/src/audio/AudioEngine.ts ERWEITERT: 2 neue Public-Methoden setBufferCache(url,buffer) und invalidateBufferCache(url) für Cache-Updates nach Transform (kein Re-Decode nötig, neuer Blob-URL bekommt direkt seinen Buffer).",
+        "client/src/App.tsx ERWEITERT: SampleBrowser bekommt onTransformSample-Callback → AudioEngine.invalidateBufferCache(altePath) + setBufferCache(newBlobUrl, newBuffer) + project.updateSample(id, {path:newBlobUrl}) → markiert Projekt automatisch dirty.",
+        "tests/features/sample-transform.test.ts NEU (~270 LOC, 33 Tests in 6 describes). Cluster: semitonesToRatio × 4 (0/±12/+7), resampleLinear × 4 (identity/upsample/downsample/empty), stretchSample × 8 (ratio=1/2/0.5, clamp <MIN/>MAX, NaN-Identity, leerer Buffer throws, Stereo-Erhaltung), pitchShiftSample × 8 (semitones=0/+12/-12/preserves length, clamp >MAX/<MIN, NaN-Identity, throws, Stereo), combinedTransform × 6 (Identity, stretch-only, pitch-only, kombiniert, empty throws, clamp), Konstanten × 3. Mock-AudioBuffer + Mock-Context (Pattern wie audio-edit.test.ts). Alle 33 grün.",
+        "package.json + agents/INDEX.js: 3.115.0 → 3.116.0. pnpm check: clean. pnpm test: 263 Files / 6038 passed / 16 skipped / 0 fail (+33 vs v3.115)."
+      ],
+      next: [
+        "OfflineAudioContext-basierter Echtzeit-Phase-Vocoder für deutlich bessere Audio-Qualität bei Pitch-Shift > 5 Semitones (aktuelle OLA + resample-trick wird bei großen pitch-shifts hörbar artefaktig).",
+        "Worker-Pfad für combinedTransform — bei langen Loops (>30 sec stereo @ 48k) blockiert die Sync-Variante den Main-Thread für >1 Sekunde.",
+        "BPM-aware Preset-Buttons im Dialog ('halftime', 'doubletime', '+1 oct', '-1 oct', 'detune ±50ct').",
+        "Original-Sample als Backup behalten (currently wird path direkt überschrieben — Undo via Project-Undo-Stack reicht eigentlich, aber 'Revert Transform' wäre netter).",
+        "Electron-Pfad: aktuell wird immer Blob-URL erzeugt — bei Electron könnten wir transformed sample stattdessen als WAV in cache-Dir schreiben (kein Memory-Held).",
+        "E2E-Test in tests/web/sample-transform.spec.ts (dialog open + slider drag + apply + check sample replaced)."
+      ],
+      changed: [
+        "client/src/utils/sampleTransform.ts (NEU, ~170 LOC, Wrapper um timeStretchBuffer + Phase-Vocoder-Pitch-Shift via resample-trick)",
+        "client/src/components/SampleBrowser/SampleTransformDialog.tsx (NEU, ~250 LOC, Radix-Dialog mit Preview + Apply)",
+        "client/src/components/SampleBrowser/SampleBrowser.tsx (ERWEITERT, Transform-Button in WaveformPanel + onTransformSample-Prop + Dialog-Render)",
+        "client/src/audio/AudioEngine.ts (ERWEITERT, setBufferCache + invalidateBufferCache public API)",
+        "client/src/App.tsx (ERWEITERT, onTransformSample-Callback wired)",
+        "tests/features/sample-transform.test.ts (NEU, ~270 LOC, 33 Tests)",
+        "package.json (version 3.115.0 → 3.116.0)",
+        "agents/INDEX.js (version + workLog + files)"
+      ]
+    },
     {
       agent:     "frontend",
       timestamp: "2026-05-19T13:45:00.000Z",

@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "manifest_signed_at": "2026-05-19T11:57:00Z",
+  "manifest_hmac": "b98f8c2e8ead5f1bbde254e0303bba0322017e5dc84285f3deb1d98ec330c7ee",
+  "releases": [
+    {
+      "version": "0.5.0",
+      "channel": "stable",
+      "url": "https://example.org/v0.5.0.vsb",
+      "size_bytes": 2097408,
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "released_at": "2026-05-19T12:00:00Z",
+      "min_loader_version": "0.1.0",
+      "release_notes_url": "",
+      "hmac": "e4f02ef3cae6ee0e524b1eef2bf2ec2fa068666539a72bc3ff8731ba00120601"
+    }
+  ]
+}

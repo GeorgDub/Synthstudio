@@ -98,6 +98,7 @@ import { ChordPanel } from "@/components/OmniTribe/ChordPanel";
 import { PerformancePadGrid } from "@/components/OmniTribe/PerformancePadGrid";
 import { OmniTribeBrowserSupport } from "@/components/OmniTribe/OmniTribeBrowserSupport";
 import { DeviceConnectionPanel } from "@/components/Settings/DeviceConnectionPanel";
+import { OtaUpdatePanel } from "@/components/Settings/OtaUpdatePanel";
 import { SamplePackBrowser } from "@/components/SamplePackBrowser/SamplePackBrowser";
 import {
   setOmniTribeVuLevels,
@@ -3805,6 +3806,15 @@ export default function App() {
                 onReorderSamples={project.reorderSamples}
                 onAddTagToSample={project.addTagToSample}
                 onRemoveTagFromSample={project.removeTagFromSample}
+                onTransformSample={(id, newBlobUrl, newBuffer) => {
+                  // v3.116.0: AudioEngine-Cache + Sample-Path-Update.
+                  // Alte URL wird invalidiert, neue URL bekommt direkt
+                  // den Buffer (kein Re-Decode). Project wird dirty markiert.
+                  const sample = project.samples.find((s) => s.id === id);
+                  if (sample) AudioEngine.invalidateBufferCache(sample.path);
+                  AudioEngine.setBufferCache(newBlobUrl, newBuffer);
+                  project.updateSample(id, { path: newBlobUrl });
+                }}
               />
             )}
             {/* Resize Handle */}
@@ -4285,6 +4295,9 @@ export default function App() {
                         {/* v3.19: Connection-UI im Tab — User kann direkt aus dem Tab connecten,
                             statt erst in Settings → Hardware navigieren zu müssen. */}
                         <DeviceConnectionPanel />
+
+                        {/* Sprint-101: OTA-Update-Check direkt im Tab */}
+                        <OtaUpdatePanel />
 
                         <div className="bg-bg-panel border border-border-color rounded p-3">
                           <div className="flex items-center justify-between">

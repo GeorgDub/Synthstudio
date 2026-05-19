@@ -2800,6 +2800,24 @@ class AudioEngineClass {
     return this._loadBuffer(url);
   }
 
+  /**
+   * v3.116.0: Manuelles Eintragen eines bereits dekodierten AudioBuffers
+   * in den Cache. Wird vom Sample-Transform-Workflow genutzt, um den
+   * transformierten Buffer sofort ohne erneutes decodeAudioData verfügbar
+   * zu machen (path → newBlobUrl bekommt direkt seinen Buffer).
+   */
+  setBufferCache(url: string, buffer: AudioBuffer): void {
+    this.bufferCache.set(url, buffer);
+  }
+
+  /**
+   * v3.116.0: Entfernt einen Buffer aus dem Cache (z.B. wenn alte Blob-URL
+   * obsolet wird nach Transform). Side-effect-frei wenn URL nicht im Cache.
+   */
+  invalidateBufferCache(url: string): void {
+    this.bufferCache.delete(url);
+  }
+
   clearCache() {
     this.bufferCache.clear();
     this.loadingPromises.clear();

@@ -36,6 +36,9 @@ import {
   getTopTagSuggestions,
   type FilterMode,
 } from "@/utils/sampleLibrary";
+// v3.116.0: Time-Stretch + Pitch-Shift Dialog für Samples.
+import { SampleTransformDialog } from "./SampleTransformDialog";
+import { AudioEngine } from "@/audio/AudioEngine";
 
 // ─── Typen ────────────────────────────────────────────────────────────────────
 
@@ -65,6 +68,13 @@ export interface SampleBrowserProps {
   onAddTagToSample?: (id: string, tag: string) => void;
   /** v3.55.0: Tag aus einem Sample entfernen */
   onRemoveTagFromSample?: (id: string, tag: string) => void;
+  /**
+   * v3.116.0: Sample wurde transformiert (Stretch/Pitch). Der Aufrufer
+   * ersetzt `sample.path` mit der neuen Blob-URL und markiert das Projekt
+   * als dirty. Der neue AudioBuffer wird parallel im AudioEngine-Cache
+   * abgelegt (damit das Sample sofort hörbar ist).
+   */
+  onTransformSample?: (id: string, newBlobUrl: string, newBuffer: AudioBuffer) => void;
 }
 
 // ─── Konstanten ───────────────────────────────────────────────────────────────
@@ -203,6 +213,8 @@ interface WaveformPanelProps {
   activeChannelName?: string;
   analysisResult: { peaks: number[]; duration: number; sampleRate?: number; channels?: number; estimatedBpm?: number } | null;
   isAnalyzing: boolean;
+  /** v3.116.0: Time-Stretch + Pitch-Shift Dialog öffnen. */
+  onTransform?: () => void;
 }
 
 function WaveformPanel({
@@ -215,6 +227,7 @@ function WaveformPanel({
   activeChannelName,
   analysisResult,
   isAnalyzing,
+  onTransform,
 }: WaveformPanelProps) {
   const waveformColor = getWaveformColor(sample.category);
 
@@ -247,6 +260,16 @@ function WaveformPanel({
           >
             {isPlaying ? "■" : "▶"}
           </button>
+          {onTransform && (
+            <button
+              onClick={onTransform}
+              data-testid="sample-transform-open"
+              className="w-7 h-7 rounded flex items-center justify-center text-[11px] bg-bg-elevated text-text-primary hover:bg-accent-primary/30 hover:text-accent-primary transition-colors flex-shrink-0"
+              title="Time-Stretch + Pitch-Shift (Transformieren)"
+            >
+              ⤬
+            </button>
+          )}
         </div>
       </div>
 
@@ -527,6 +550,7 @@ export function SampleBrowser({
   onReorderSamples,
   onAddTagToSample,
   onRemoveTagFromSample,
+  onTransformSample,
 }: SampleBrowserProps) {
   // ── Einziger Zugriffspunkt auf Electron-Features ──────────────────────────
   const electron = useElectron();
@@ -564,6 +588,10 @@ export function SampleBrowser({
   const [categoryMenu, setCategoryMenu] = useState<{
     x: number; y: number; sampleId: string; currentCategory: string;
   } | null>(null);
+
+  // ── v3.116.0: Sample-Transform-Dialog ────────────────────────────────────
+  const [transformSample, setTransformSample] = useState<Sample | null>(null);
+  const [transformBuffer, setTransformBuffer] = useState<AudioBuffer | null>(null);
 
   // ── Waveform-Analyse-Cache ────────────────────────────────────────────────
   const [analysisCache, setAnalysisCache] = useState<Record<string, {
@@ -739,6 +767,31 @@ export function SampleBrowser({
     setTagEditorOpenFor(null);
     setTagDraft("");
   }, [onAddTagToSample]);
+
+  // v3.116.0: Transform-Dialog öffnen — lädt AudioBuffer via Engine.
+  const handleOpenTransform = useCallback(async (sample: Sample) => {
+    try {
+      const buf = await AudioEngine.loadSample(sample.path);
+      if (!buf) {
+        console.warn("[SampleBrowser] Transform: Konnte Buffer nicht laden:", sample.path);
+        return;
+      }
+      setTransformBuffer(buf);
+      setTransformSample(sample);
+    } catch (err) {
+      console.warn("[SampleBrowser] Transform: Fehler beim Laden:", err);
+    }
+  }, []);
+
+  const handleTransformApply = useCallback((newBuffer: AudioBuffer, newBlobUrl: string) => {
+    if (!transformSample || !onTransformSample) return;
+    onTransformSample(transformSample.id, newBlobUrl, newBuffer);
+  }, [transformSample, onTransformSample]);
+
+  const handleTransformClose = useCallback(() => {
+    setTransformSample(null);
+    setTransformBuffer(null);
+  }, []);
 
   const selectedIndex = useMemo(() => {
     if (!selectedSampleId) return -1;
@@ -1712,8 +1765,17 @@ export function SampleBrowser({
           activeChannelName={activeChannelName}
           analysisResult={analysisCache[selectedSample.id] ?? null}
           isAnalyzing={analyzingId === selectedSample.id}
+          onTransform={onTransformSample ? () => handleOpenTransform(selectedSample) : undefined}
         />
       )}
+
+      {/* v3.116.0: Sample-Transform-Dialog */}
+      <SampleTransformDialog
+        sample={transformSample}
+        buffer={transformBuffer}
+        onClose={handleTransformClose}
+        onApply={handleTransformApply}
+      />
 
       {/* ── Status-Leiste ─────────────────────────────────────────────────────── */}
       <div className="px-3 py-1 bg-bg-panel border-t border-border-color flex items-center gap-2">
