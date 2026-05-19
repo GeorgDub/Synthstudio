@@ -34,6 +34,12 @@ export interface DrumMachineState {
   commitPending: boolean;
   /** Pattern-IDs die zusätzlich zum aktiven Pattern abgespielt werden */
   stackedPatternIds: string[];
+  /**
+   * v3.164.0: Globaler Swing-Amount (0..1, Default 0 = straight).
+   * Wird via `setSwingAmount()` gesetzt. Engine-Wire pending v3.165+
+   * (Pure-Helper `patternSwing.ts` ist seit v3.162 verfügbar).
+   */
+  swingAmount: number;
 }
 
 export interface DrumMachineActions {
@@ -136,6 +142,11 @@ export interface DrumMachineActions {
   setCurrentStep: (step: number) => void;
   setVelocityMode: (active: boolean) => void;
   setPitchMode: (active: boolean) => void;
+  /**
+   * v3.164.0: Setzt den globalen Swing-Amount (0..1, Werte außerhalb des
+   * Bereichs werden geclamped, NaN/Infinity → 0). Engine-Wire pending v3.165+.
+   */
+  setSwingAmount: (amount: number) => void;
 
   undo: () => void;
   redo: () => void;
@@ -300,6 +311,7 @@ export function useDrumMachineStore(): DrumMachineState & DrumMachineActions {
     fxPanelPartId: null,
     commitPending: false,
     stackedPatternIds: [],
+    swingAmount: 0,
   });
 
   const undoStack = useRef<PatternData[][]>([]);
@@ -963,6 +975,7 @@ export function useDrumMachineStore(): DrumMachineState & DrumMachineActions {
       fxPanelPartId: null,
       commitPending: false,
       stackedPatternIds: [],
+      swingAmount: 0,
     });
     // Undo-History leeren damit User keinen Restore zum alten Projekt machen kann
     undoStack.current = [];
@@ -1038,6 +1051,14 @@ export function useDrumMachineStore(): DrumMachineState & DrumMachineActions {
     setState(prev => ({ ...prev, pitchMode: active, velocityMode: active ? false : prev.velocityMode }));
   }, []);
 
+  // v3.164.0: Globaler Swing-Amount. Clamping in [0..1], NaN/Infinity → 0.
+  // Engine-Wire pending v3.165+ (Pure-Helper patternSwing.ts existiert seit v3.162).
+  const setSwingAmount = useCallback((amount: number) => {
+    const safe = Number.isFinite(amount) ? amount : 0;
+    const clamped = Math.max(0, Math.min(1, safe));
+    setState(prev => prev.swingAmount === clamped ? prev : { ...prev, swingAmount: clamped });
+  }, []);
+
   // ── Undo/Redo ─────────────────────────────────────────────────────────────
 
   const undo = useCallback(() => {
@@ -1088,6 +1109,7 @@ export function useDrumMachineStore(): DrumMachineState & DrumMachineActions {
     clearPattern, resetAll, fillPattern, randomizePattern, shiftPattern,
     setStepCount, setCurrentStep,
     setVelocityMode, setPitchMode,
+    setSwingAmount,
     undo, redo, canUndo, canRedo,
     getActivePattern, getPlaybackPattern,
   };

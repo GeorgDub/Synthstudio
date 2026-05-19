@@ -1555,6 +1555,25 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
         </div>
         {bpmLearn.menu}
 
+        {/* v3.164.0: Globaler Swing-Slider. Engine-Wire pending v3.165+. */}
+        <label
+          className="flex items-center gap-1.5 text-[10px] text-text-muted"
+          title="Swing-Quantization (0=straight, 0.5=max shuffle). Audio-Engine-Wire pending v3.165+."
+        >
+          <span>Swing</span>
+          <input
+            type="range"
+            min={0}
+            max={0.5}
+            step={0.05}
+            value={dm.swingAmount}
+            onChange={(e) => dm.setSwingAmount(parseFloat(e.target.value))}
+            className="w-16 accent-accent-primary"
+            data-testid="drum-machine-swing-slider"
+          />
+          <span className="font-mono w-8 text-right">{Math.round(dm.swingAmount * 100)}%</span>
+        </label>
+
         {/* MIDI-Import */}
         <button
           onClick={() => midiImportRef.current?.click()}

@@ -298,6 +298,17 @@ const INDEX = {
   //     a new bare-path entry while old version-suffixed ones remain
   //     is the explicit transition path.
   files: {
+    // ─── v3.164 Pure-Helpers (refactor) ─────────────────────────
+    "client/src/utils/drumPatternMutator.ts": {
+      role:     "Pure-Helpers für Drum-Pattern-Mutationen: shiftPattern (wrap-modulo), doubleTimePattern (stretch-pair), halfTimePattern (decimation), invertPattern, reversePattern, mirrorPattern. Alle seiteneffekt-frei, NEUE Arrays, Input unverändert. Foundation für künftige UI-Toolbar-Buttons + Script-Commands.",
+      lastSeen: "2026-05-20T00:05:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "tests/features/drum-pattern-mutator.test.ts": {
+      role:     "Pure-Coverage für drumPatternMutator.ts. 19 Tests in 7 describes: shift (5 inkl. wrap+empty), doubleTime (3), halfTime (3), invert (2), reverse (2), mirror (3), immutability (1). Vitest node-env.",
+      lastSeen: "2026-05-20T00:05:00.000Z",
+      ownedBy:  "frontend"
+    },
     // ─── v3.143-canonical-store-backfill (frontend drift fix) ─
     // Per parallel-dispatch DRIFT-FE: 30 Stores auf Disk hatten
     // bisher keinen canonical-Eintrag. Roles aus Source-Signal
@@ -3415,6 +3426,46 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "refactor",
+      timestamp: "2026-05-20T00:05:00.000Z",
+      done: [
+        "v3.164 Pure-Helper: client/src/utils/drumPatternMutator.ts NEU + tests/features/drum-pattern-mutator.test.ts NEU. Foundation für Pattern-Mutation-UI-Buttons (Shift Left/Right, Double-/Half-Time, Invert, Reverse, Mirror) und Script-Commands.",
+        "API: shiftPattern(pattern, shift) wraps modulo length, positiv=rechts, negativ=links, shift=0 liefert distincte Kopie. doubleTimePattern: stretch-pair erste Hälfte (in[i] → out[i*2]=out[i*2+1]); single [T] → [T]. halfTimePattern: Dezimation jeder 2. Step, floor(n/2) Länge. invertPattern: bool-flip, gleiche Länge. reversePattern: Standard-Reverse. mirrorPattern: pattern + reversed, doppelte Länge.",
+        "Alle 6 Funktionen seiteneffekt-frei: NEUE Arrays via new Array(n), Input bleibt unverändert (explizit getestet via shapshot-Compare).",
+        "Test-Suite: 19 Tests in 7 describes — shiftPattern (5: zero, +1, -1, wrap, empty), doubleTimePattern (3), halfTimePattern (3), invertPattern (2), reversePattern (2), mirrorPattern (3), immutability (1). Alle 19 grün in 5ms.",
+        "pnpm check: 1 pre-existing TS-Error in client/src/components/CollabSplitView/CollabSplitView.tsx Z.86 (swingAmount fehlt in DrumMachineState-Cast, aus paralleler v3.163-Bundle-Arbeit anderer Agenten). Meine 2 neuen Files type-rein (grep nach 'drumPatternMutator' in pnpm-check-Output: 0 Treffer).",
+        "KEIN git commit, KEIN package.json bump (User-Vorgabe). Working-Tree modified files anderer Agenten NICHT angefasst."
+      ],
+      next: [
+        "v3.165+ UI-Wire: DrumMachine-Toolbar oder Pattern-Picker-Context-Menu mit Buttons 'Shift L/R', 'Half', 'Double', 'Invert', 'Reverse', 'Mirror'. Pro aktivem Part einen aktuellen Pattern.steps[]-Slice mutieren und via dm.setPart bzw. Step-Setter zurückschreiben. Frontend-Owner.",
+        "Optional: Script-Commands ss.shift(part, n), ss.doubleTime(part), ss.halfTime(part), ss.invert(part), ss.reverse(part), ss.mirror(part) in builtInScripts.ts und client/src/sandbox/ss-api.ts ergänzen.",
+        "Pre-existing CollabSplitView swingAmount-Konflikt sollte vom DrumMachine-Owner gelöst werden (Working-Tree-modified Datei, nicht meine)."
+      ],
+      changed: [
+        "client/src/utils/drumPatternMutator.ts (NEU, Pure-Helper, 0 Runtime-Deps, 141 LOC)",
+        "tests/features/drum-pattern-mutator.test.ts (NEU, 19 Tests, vitest, 157 LOC)"
+      ]
+    },
+    {
+      agent:     "frontend",
+      timestamp: "2026-05-19T23:59:00.000Z",
+      done: [
+        "v3.164 UI-Wiring (orthogonal zu v3.163-Bulk-Bar): Total-Duration der GEFILTERTEN Samples in der SampleBrowser Status-Leiste. Neuer useMemo `filteredDurationInfo` direkt nach `filteredSamples`-useMemo verdrahtet (deps: [filteredSamples]). Mapping: Sample.size → DurationCandidate.sizeBytes (typeof number guard), sampleRate=48000 default. aggregateSampleDuration-Aufruf identisch zur bulkDurationInfo-Logik.",
+        "Status-Leiste-Footer-Render: <span> mit data-testid='sample-browser-status-duration' und text-text-muted (unaufdringlich), nur wenn filteredDurationInfo.knownCount > 0. Format: '· ~M:SS total' (Tilde nur wenn unknownCount > 0, weil dann Estimate über sizeBytes). formatBulkDuration-Alias-Import (existing v3.162) wiederverwendet — lokales formatDuration() für Single-Sample-Card unberührt.",
+        "Beide Duration-Anzeigen koexistieren: bulkDurationInfo (Multi-Select-Bar, sichtbar bei multiSelectIds.size > 0) und filteredDurationInfo (Status-Leiste-Footer, sichtbar bei knownCount > 0). Kein UI-Overlap, separate Locations.",
+        "pnpm check: SampleBrowser.tsx errorfrei (npx tsc Filter nach 'SampleBrowser' liefert 0 Treffer). Pre-existing TS-Errors in CollabSplitView.tsx + DrumMachine.tsx (swingAmount aus paralleler v3.163-Bundle-Arbeit) NICHT angefasst — Stash-Test bestätigt: clean HEAD hat dieselben Errors ohne meine Änderungen.",
+        "KEIN git commit, KEIN package.json bump (User-Vorgabe). Nur 1 Datei berührt: client/src/components/SampleBrowser/SampleBrowser.tsx (+23 LOC, 2 Hunks: useMemo + Status-Leiste-Span)."
+      ],
+      next: [
+        "Playwright-Smoke in tests/web/ für data-testid='sample-browser-status-duration': Filter setzen, Duration-Sichtbarkeit + Format ('M:SS total' bzw. '~M:SS total') assertieren.",
+        "Pre-existing CollabSplitView/DrumMachine swingAmount-Konflikt (vermutlich aus v3.163-Bundle-Parallel-Edit von useDrumMachineStore.ts) sollte vom DrumMachine-Owner gelöst werden — swingAmount/setSwingAmount fehlt aktuell im Store-Type.",
+        "OmniTribeBridge.ts war bei Session-Start bereits modified, NICHT angefasst (User-Vorgabe)."
+      ],
+      changed: [
+        "client/src/components/SampleBrowser/SampleBrowser.tsx (+23 LOC, useMemo filteredDurationInfo + Status-Leiste-Span mit data-testid)"
+      ]
+    },
     {
       agent:     "refactor",
       timestamp: "2026-05-19T23:50:00.000Z",

@@ -149,6 +149,10 @@ function useRemoteDmAdapter(
       toggleStackedPattern: noop,
       clearStackedPatterns: noop,
       stackedPatternIds: [],
+      // v3.164.0: Globaler Swing — Remote-Ansicht zeigt nur den eingefrorenen
+      // Peer-State, kein Editieren möglich (Setter ist no-op).
+      swingAmount: 0,
+      setSwingAmount: noop,
       setPartSourceType: noop,
       setPartGranularParams: noop,
       applyPatchToPart: noop,

@@ -765,6 +765,17 @@ export function SampleBrowser({
     return sortSamples(filtered, sortMode);
   }, [samples, activeCategory, searchQuery, activeTags, tagFilterMode, activePlaylistId, playlists, analysisCache, sortMode]);
 
+  // v3.164: Aggregierte Duration über die GEFILTERTE Sample-Liste für die
+  // Status-Leiste. Orthogonal zu bulkDurationInfo (Multi-Select). Gleicher
+  // Pure-Helper, gleicher 48 kHz Stereo-16bit-Estimate-Fallback.
+  const filteredDurationInfo = useMemo(() => {
+    const candidates: DurationCandidate[] = filteredSamples.map((s) => ({
+      sizeBytes: typeof s.size === "number" ? s.size : undefined,
+      sampleRate: 48000,
+    }));
+    return aggregateSampleDuration(candidates);
+  }, [filteredSamples]);
+
   // ── Verfügbare Tags aller Samples (aus Import + Analyse-Cache) ─────────────
   const availableTags = useMemo(() => {
     // Auch hier mit Analyse-Cache-Tags ergänzen.
@@ -2106,6 +2117,18 @@ export function SampleBrowser({
             : filteredSamples.length < samples.length
             ? `${filteredSamples.length} von ${samples.length} Samples`
             : `${samples.length} Sample${samples.length !== 1 ? "s" : ""}`}
+          {/* v3.164: Total-Duration der GEFILTERTEN Samples — orthogonal zur
+              Bulk-Bar-Duration (Multi-Select, v3.163). Nur sichtbar wenn
+              mindestens ein Sample eine bekannte/estimate-bare Duration hat. */}
+          {filteredDurationInfo.knownCount > 0 && (
+            <span
+              className="ml-2 text-text-muted"
+              data-testid="sample-browser-status-duration"
+            >
+              · {filteredDurationInfo.unknownCount > 0 ? "~" : ""}
+              {formatBulkDuration(filteredDurationInfo.totalSec)} total
+            </span>
+          )}
           {electron.isElectron && (
             <span className="ml-2 text-accent-primary">• Electron</span>
           )}
