@@ -130,7 +130,18 @@ export type MidiLearnTarget =
    * konsumiert es und ruft `AudioEngine.playSliceBuffer(slot.buffer, slot.sampleRate)`.
    * sliceIndex ist 0..15 (entspricht MAX_SLICE_PADS).
    */
-  | { type: "playSlicePad"; sliceIndex: number };
+  | { type: "playSlicePad"; sliceIndex: number }
+  // ── Sub-Mix-Bus (v3.81.0) ─────────────────────────────────────────────────
+  /**
+   * v3.81: MIDI-Learn auf Sub-Mix-Bus-Controls (analog zu Channel-Volume/Pan/
+   * Mute/Solo, aber für Bus-Aggregates aus useSubMixStore). Die Targets feuern
+   * CustomEvents die in App.tsx auf die Store-Setter setBusVolume/Pan/Mute/Solo
+   * gemappt werden. Closes v3.80-Caveat "kein MIDI-Learn auf Bus-Strip".
+   */
+  | { type: "subMixBusVolume"; busId: string; busName?: string }
+  | { type: "subMixBusPan";    busId: string; busName?: string }
+  | { type: "subMixBusMute";   busId: string; busName?: string }
+  | { type: "subMixBusSolo";   busId: string; busName?: string };
 
 /** Ein Schritt in einer Function-Chain (v1.77). */
 export interface ChainStep {
@@ -392,6 +403,10 @@ export function labelForTarget(target: MidiLearnTarget): string {
     case "loopTrigger":     return `Loop ${target.loopIndex + 1} Trigger`;
     case "loopErase":       return `Loop ${target.loopIndex + 1} Erase`;
     case "playSlicePad":    return `Slice-Pad ${target.sliceIndex + 1}`;
+    case "subMixBusVolume": return `Bus Volume: ${target.busName ?? target.busId.slice(0, 8)}`;
+    case "subMixBusPan":    return `Bus Pan: ${target.busName ?? target.busId.slice(0, 8)}`;
+    case "subMixBusMute":   return `Bus Mute: ${target.busName ?? target.busId.slice(0, 8)}`;
+    case "subMixBusSolo":   return `Bus Solo: ${target.busName ?? target.busId.slice(0, 8)}`;
     default:                return "Unbekannt";
   }
 }
@@ -437,6 +452,11 @@ export function targetsMatch(a: MidiLearnTarget, b: MidiLearnTarget): boolean {
       return a.loopIndex === (b as { loopIndex: number }).loopIndex;
     case "playSlicePad":
       return a.sliceIndex === (b as { sliceIndex: number }).sliceIndex;
+    case "subMixBusVolume":
+    case "subMixBusPan":
+    case "subMixBusMute":
+    case "subMixBusSolo":
+      return a.busId === (b as { busId: string }).busId;
     default:
       // Single-target types ohne Param: bpm, playStop, record, tapTempo,
       // bpmUp, bpmDown, masterVolume, partUp, partDown, patternNext,
@@ -1087,6 +1107,26 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
         // v2.91 (TASK-238-FOLLOWUP-1B): Slice-Pad-Trigger. App.tsx liest
         // useSlicePadStore und ruft AudioEngine.playSliceBuffer.
         window.dispatchEvent(new CustomEvent("midi:slicePad", { detail: t.sliceIndex }));
+      } break;
+      // ── Sub-Mix-Bus (v3.81.0) ────────────────────────────────────────────
+      case "subMixBusVolume": {
+        // 0..127 → 0..2 (Bus-Volume-Range, vgl. useSubMixStore clampNum).
+        window.dispatchEvent(new CustomEvent("midi:subMixBusVolume", {
+          detail: { busId: t.busId, value: (value / 127) * 2 },
+        }));
+        break;
+      }
+      case "subMixBusPan": {
+        window.dispatchEvent(new CustomEvent("midi:subMixBusPan", {
+          detail: { busId: t.busId, value: (value / 127) * 2 - 1 },
+        }));
+        break;
+      }
+      case "subMixBusMute": if (on) {
+        window.dispatchEvent(new CustomEvent("midi:subMixBusMute", { detail: t.busId }));
+      } break;
+      case "subMixBusSolo": if (on) {
+        window.dispatchEvent(new CustomEvent("midi:subMixBusSolo", { detail: t.busId }));
       } break;
     }
   }

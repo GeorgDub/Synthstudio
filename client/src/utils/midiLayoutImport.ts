@@ -83,6 +83,8 @@ export const VALID_TARGET_TYPES = new Set<string>([
   "loopTrigger", "loopErase",
   // v2.91 (TASK-238-FOLLOWUP-1B): Sample-Slice-Pad-Trigger
   "playSlicePad",
+  // v3.81.0: Sub-Mix-Bus-Controls (Bus-Volume/Pan/Mute/Solo)
+  "subMixBusVolume", "subMixBusPan", "subMixBusMute", "subMixBusSolo",
 ]);
 
 export interface ParsedMidiLayout {

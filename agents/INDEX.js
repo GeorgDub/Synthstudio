@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.80.0",
+    version: "3.81.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -119,9 +119,29 @@ const INDEX = {
       lastSeen: "2026-05-19T04:45:00.000Z",
       ownedBy:  "backend"
     },
-    "client/src/components/Mixer/SubMixBusStrip.tsx (v3.80.0)": {
-      role:     "v3.80.0 NEU (~210 LOC): Channel-Strip-Variante für einen Sub-Mix-Bus. Closes v3.79.1 UI-Lücke (Store + Engine waren da, aber keine UI). Layout top → bottom: 3px Color-Indicator (boxShadow inset, mit resolveBusColor — 8 OLED-freundliche Defaults + custom-Hex-Validator), editable Bus-Name (Input maxLength=32 mit onBlur/Enter/Escape-Sync zu renameBus), 'Members: N'-Counter, vertikaler Volume-Fader 0..2 (writingMode vertical-lr, accent-accent-primary), dB-Anzeige, Pan-Slider -1..+1 mit C/L/R-Label, Mute/Solo-Buttons (bg-accent-secondary/success), '× Remove' (bei members>0 window.confirm — Channels fallen automatisch zu Master via store.removeBus). Inline-Edit-State via useState + useEffect-Sync auf bus.name. Keine hardcoded Tailwind-Farben — alle Klassen semantisch (bg-bg-panel/bg-bg-elevated/text-text-primary/text-text-dim/text-accent-success/border-accent-danger/etc.). data-testids: sub-mix-bus-strip-/name-/members-/volume-/pan-/mute-/solo-/remove-<id>. v3.80.0-Caveat: kein MIDI-Learn (subMixBus*-Targets sind nicht in der MidiLearnTarget-Union — folgt in v3.81+).",
-      lastSeen: "2026-05-19T05:10:00.000Z",
+    "client/src/components/Mixer/SubMixBusStrip.tsx (v3.81.0 midi-learn + color-picker)": {
+      role:     "v3.81.0 ERWEITERT (+~80 LOC, bestehende v3.80.0 Layout/Edit/Remove bleibt): NEU useMidiLearn-Hook x4 für Volume/Pan/Mute/Solo mit busId+busName-Context. onContextMenu-Handler auf Volume-Slider, Pan-Slider, Mute-Button, Solo-Button. Mapped-Badges: ·CC<n>-Suffix in dB-Anzeige + Pan-Label, kleiner Dot (1.5px) in der Button-Ecke für Mute/Solo wenn gemappt. menu-Render aus useMidiLearn am jeweiligen Container. NEU ChannelColorPicker-Mount im Strip-top-left (absolute top-1 left-1 z-10, stopPropagation auf Click damit Strip nicht selektiert), wired via useCallback handleColorChange → setBusColor (undefined=Reset, store-validiert mit Hex-Regex). testIdPrefix=sub-mix-bus-color-<id>. Imports +useMidiLearn +ChannelColorPicker +setBusColor. JSDoc-Header v3.80→v3.81 angepasst (v3.80-Caveat 'kein MIDI-Learn' entfernt).",
+      lastSeen: "2026-05-19T05:25:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/hooks/useMidi.ts (v3.81.0 sub-mix-bus-targets)": {
+      role:     "v3.81.0 ERWEITERT (+~30 LOC): 4 neue MidiLearnTargets — subMixBusVolume/Pan/Mute/Solo (jeweils busId + optional busName). targetsMatch um die 4 Cases erweitert (Match über busId). labelForTarget liefert 'Bus Volume/Pan/Mute/Solo: <busName-or-id-slice>'. applyMapping: subMixBusVolume → CustomEvent midi:subMixBusVolume mit {busId, value:0..2}, subMixBusPan → midi:subMixBusPan mit {busId, value:-1..1}, subMixBusMute/Solo → midi:subMixBusMute/Solo mit busId (toggle-Semantik via Event-Bridge). Bestehende v1.86 targetsMatch + findMappingForTarget + ChainStep + alles andere bleibt unverändert.",
+      lastSeen: "2026-05-19T05:25:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/hooks/useMidiEventBridge.ts (v3.81.0 sub-mix-bus-handlers)": {
+      role:     "v3.81.0 ERWEITERT (+~50 LOC, bestehende v2.34/v1.92/v1.76 bleibt): 4 neue Handler handleSubMixBusVolume/Pan/Mute/Solo in der MidiBridgeHandlers-Factory. Volume/Pan setzen direkt setBusVolume/setBusPan (defensive NaN-Check via Number.isFinite). Mute/Solo lesen den aktuellen Bus via getBusById und togglen via setBusMute/setBusSolo (no-op bei unbekanntem busId — kein Crash). Window-Event-Listener-Wiring (addEventListener/removeEventListener) ergänzt. JSDoc-Header aktualisiert (v3.81.0). Imports +getBusById +setBusVolume/Pan/Mute/Solo aus useSubMixStore.",
+      lastSeen: "2026-05-19T05:25:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/utils/midiLayoutImport.ts (v3.81.0 sub-mix-bus-valid-types)": {
+      role:     "v3.81.0 ERWEITERT (+1 LOC): VALID_TARGET_TYPES um die 4 neuen subMixBus*-Targets erweitert. Damit gehen subMixBusVolume/Pan/Mute/Solo durch den Layout-Import-Validator durch und können per Layout-JSON exportiert/importiert werden (Round-Trip-Tests in sub-mix-bus-midi.test.ts). Bestehende v1.73/v1.76/v1.77/v1.78/v1.88/v2.1/v2.87/v2.91-Targets unverändert.",
+      lastSeen: "2026-05-19T05:25:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "tests/features/sub-mix-bus-midi.test.ts (v3.81.0)": {
+      role:     "v3.81.0 NEU (~250 LOC, 16 Tests in 6 describes, env:node mit localStorage + minimal-window-EventTarget-Mock). (1) Targets-Match × 4: targetsMatch für gleichen/anderen busId, gleicher/anderer type, findMappingForTarget findet das richtige Mapping über alle 4 Sub-Targets. (2) labelForTarget × 2: busName-Display + busId-Slice-Fallback. (3) VALID_TARGET_TYPES × 2: alle 4 enthalten + Layout-Import-Round-Trip funktioniert. (4) Event-Bridge × 5: subMixBusVolume CC bindet auf Store, Mute/Solo toggeln korrekt, Pan setzt im -1..+1 Range (NaN-defensive), unknown-busId no-op. (5) Color-Picker × 3: valid Hex (lowercase), undefined Reset (color-Feld komplett entfernt), invalider Hex bleibt no-op.",
+      lastSeen: "2026-05-19T05:25:00.000Z",
       ownedBy:  "frontend"
     },
     "client/src/components/Mixer/MixerView.tsx (v3.80.0 sub-mix-ui-wiring)": {
@@ -2267,6 +2287,34 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "frontend",
+      timestamp: "2026-05-19T05:25:00.000Z",
+      done: [
+        "v3.81.0: Bus MIDI-Learn + Color-Picker (closes v3.80.0 Caveats). Der v3.80-SubMixBusStrip hatte zwei dokumentierte Lücken: kein Right-Click-MIDI-Learn auf den Bus-Controls (Volume/Pan/Mute/Solo) und kein Color-Picker (Color konnte nur per Default-Palette gesetzt werden, der Store-Setter setBusColor war ungenutzt). Beides ist jetzt behoben — Bus-Strips haben Feature-Parität mit Channel-Strips (v1.87).",
+        "client/src/hooks/useMidi.ts ERWEITERT (+~30 LOC): 4 neue Targets in der MidiLearnTarget-Union (subMixBusVolume/Pan/Mute/Solo, jeweils mit busId + optional busName). targetsMatch um die 4 Cases erweitert (Match über busId). labelForTarget liefert 'Bus Volume/Pan/Mute/Solo: <busName-or-id-slice>'. applyMapping: subMixBusVolume → CustomEvent midi:subMixBusVolume mit {busId, value:0..2}, subMixBusPan → midi:subMixBusPan mit {busId, value:-1..1}, subMixBusMute/Solo → midi:subMixBusMute/Solo mit busId (toggle-Semantik via Event-Bridge).",
+        "client/src/hooks/useMidiEventBridge.ts ERWEITERT (+~50 LOC): 4 neue Handler handleSubMixBusVolume/Pan/Mute/Solo. Volume/Pan setzen direkt setBusVolume/setBusPan (defensive NaN-Check via Number.isFinite). Mute/Solo lesen den aktuellen Bus via getBusById und togglen via setBusMute/setBusSolo (no-op bei unbekanntem busId — kein Crash). Window-Event-Listener-Wiring (addEventListener/removeEventListener) ergänzt. JSDoc-Header aktualisiert (v3.81.0).",
+        "client/src/utils/midiLayoutImport.ts ERWEITERT (+1 LOC): VALID_TARGET_TYPES um die 4 neuen subMixBus*-Targets erweitert. Damit gehen sie durch den Layout-Import-Validator durch und können per Layout-JSON exportiert/importiert werden.",
+        "client/src/components/Mixer/SubMixBusStrip.tsx ERWEITERT (+~80 LOC, bestehende v3.80.0 bleibt): useMidiLearn-Hook für Volume/Pan/Mute/Solo (jeweils mit busId+busName-Context). onContextMenu-Handler auf Volume-Slider, Pan-Slider, Mute-Button, Solo-Button. Mapped-Badges: ·CC<n>-Suffix in dB-Anzeige + Pan-Label, kleiner Dot (1.5px) in der Button-Ecke für Mute/Solo wenn gemappt. menu-Render für alle 4 Learn-Hooks am jeweiligen Container. NEU ChannelColorPicker-Mount im Strip-top-left (absolute top-1 left-1 z-10, stopPropagation), wired via useCallback handleColorChange → setBusColor. testIdPrefix=sub-mix-bus-color-<id>.",
+        "tests/features/sub-mix-bus-midi.test.ts (NEU, ~250 LOC, 16 Tests in 6 describes, env:node mit localStorage + minimal-window-EventTarget-Mock). (1) Targets-Match × 4: targetsMatch für gleichen/anderen busId, gleicher/anderer type, findMappingForTarget findet das richtige Mapping über alle 4 Sub-Targets. (2) labelForTarget × 2: busName-Display + busId-Slice-Fallback. (3) VALID_TARGET_TYPES × 2: alle 4 enthalten + Layout-Import-Round-Trip funktioniert. (4) Event-Bridge × 5: subMixBusVolume CC bindet auf Store, Mute/Solo toggeln korrekt, Pan setzt im -1..+1 Range (NaN-defensive), unknown-busId no-op. (5) Color-Picker × 3: valid Hex (lowercase), undefined Reset (color-Feld komplett entfernt), invalider Hex bleibt no-op.",
+        "package.json (3.80.0 → 3.81.0). pnpm check clean. pnpm test grün: 227 Test-Files / 5191 Tests passed (16 skipped, +16 vs v3.80.0)."
+      ],
+      next: [
+        "v3.82: Pro-Bus-FX-Insert-Chain UI — SubMixBusFx ist im Store minimal (enabled + postGain). Volle FX-Chain im Bus-Pfad erfordert Refactoring des channel-FX-builders (Backend-Aufgabe).",
+        "v3.82: Drag&Drop-Channel→Bus statt Dropdown (DAW-Standard UX).",
+        "v3.82: Bus-of-Bus-Routing (groupier z.B. 'Drums-Bus' + 'Perc-Bus' in einen 'Beat-Bus' — 2-Layer-Hierarchie, bewusst nicht supported in v3.79).",
+        "v3.82: Auto-Learn-Preset für Sub-Mix-Buses in MidiSettings (analog 'Mixer'-Preset — 4 ATOMs pro Bus × 8 Buses = 32 CCs)."
+      ],
+      changed: [
+        "client/src/hooks/useMidi.ts (+~30 LOC: 4 neue MidiLearnTargets, targetsMatch + labelForTarget + applyMapping)",
+        "client/src/hooks/useMidiEventBridge.ts (+~50 LOC: 4 neue subMixBus*-Handler + Listener-Wiring)",
+        "client/src/utils/midiLayoutImport.ts (+1 LOC: VALID_TARGET_TYPES für subMixBus*)",
+        "client/src/components/Mixer/SubMixBusStrip.tsx (+~80 LOC: useMidiLearn x4 + ChannelColorPicker-Mount + setBusColor-Wiring)",
+        "tests/features/sub-mix-bus-midi.test.ts (NEU, ~250 LOC, 16 Tests in 6 describes)",
+        "package.json (3.80.0 → 3.81.0)",
+        "agents/INDEX.js (version + workLog + files-Einträge)"
+      ]
+    },
     {
       agent:     "frontend",
       timestamp: "2026-05-19T05:15:00.000Z",

@@ -1,5 +1,5 @@
 /**
- * Synthstudio – SubMixBusStrip.tsx (v3.80.0)
+ * Synthstudio – SubMixBusStrip.tsx (v3.81.0)
  *
  * Channel-Strip-Variante für einen Sub-Mix-Bus (Channel-Grouping mit
  * shared Volume/Pan/Mute/Solo). Closes v3.79.1 UI-Lücke: bisher gab es
@@ -19,10 +19,12 @@
  * ChannelStrip (52px), Bus-Strips sitzen rechts neben den regulären
  * Channels und LINKS vom Master.
  *
- * Right-Click-MIDI-Learn ist v3.80.0 nicht supported — Sub-Mix-Bus-IDs
- * sind nicht in der MidiLearnTarget-Union (siehe useMidi.ts). Hinzufügen
- * in v3.81+ möglich, sobald `subMixBusVolume|Pan|Mute|Solo` Targets
- * eingeführt werden.
+ * v3.81.0:
+ *   - Right-Click MIDI-Learn auf Volume/Pan/Mute/Solo via useMidiLearn-Hook
+ *     (Targets: subMixBusVolume/Pan/Mute/Solo, gebridged in useMidiEventBridge).
+ *   - Color-Picker (ChannelColorPicker) im oberen Color-Indicator. Klick auf
+ *     den Indikator öffnet das 8-Swatch+Hex-Popover. Reset → undefined fällt
+ *     auf BUS_COLOR_DEFAULTS-Palette zurück.
  */
 import React, { useCallback, useState } from "react";
 import {
@@ -33,7 +35,10 @@ import {
   setBusPan,
   setBusMute,
   setBusSolo,
+  setBusColor,
 } from "@/store/useSubMixStore";
+import { useMidiLearn } from "@/hooks/useMidiLearn";
+import { ChannelColorPicker } from "@/components/Mixer/ChannelColorPicker";
 
 // ─── Hilfsfunktionen ─────────────────────────────────────────────────────────
 
@@ -88,6 +93,20 @@ export function SubMixBusStrip({ bus, busIndex }: SubMixBusStripProps): React.Re
   const memberCount = bus.channelIds.length;
   const resolvedColor = resolveBusColor(bus.color, busIndex);
 
+  // v3.81.0: Right-Click MIDI-Learn auf Bus-Controls
+  const volumeLearn = useMidiLearn({ type: "subMixBusVolume", busId: bus.id, busName: bus.name });
+  const panLearn    = useMidiLearn({ type: "subMixBusPan",    busId: bus.id, busName: bus.name });
+  const muteLearn   = useMidiLearn({ type: "subMixBusMute",   busId: bus.id, busName: bus.name });
+  const soloLearn   = useMidiLearn({ type: "subMixBusSolo",   busId: bus.id, busName: bus.name });
+
+  // v3.81.0: Color-Picker — onColorChange → setBusColor (undefined = reset).
+  const handleColorChange = useCallback(
+    (color: string | undefined) => {
+      setBusColor(bus.id, color);
+    },
+    [bus.id],
+  );
+
   const handleRemove = useCallback(() => {
     if (memberCount > 0) {
       // Confirm — Browser-native zur Vermeidung von Modal-State + Tests.
@@ -119,6 +138,18 @@ export function SubMixBusStrip({ bus, busIndex }: SubMixBusStripProps): React.Re
         boxShadow: `inset 0 3px 0 0 ${resolvedColor}`,
       }}
     >
+      {/* v3.81.0: Color-Picker — oben links, Klick stoppt Propagation damit
+          der Strip nicht selektiert/expanded wird. */}
+      <div className="absolute top-1 left-1 z-10" onClick={(e) => e.stopPropagation()}>
+        <ChannelColorPicker
+          channelName={bus.name}
+          color={bus.color}
+          index={busIndex}
+          onColorChange={handleColorChange}
+          testIdPrefix={`sub-mix-bus-color-${bus.id}`}
+        />
+      </div>
+
       {/* Bus-Name (editable) */}
       <input
         type="text"
@@ -161,7 +192,7 @@ export function SubMixBusStrip({ bus, busIndex }: SubMixBusStripProps): React.Re
         Members: {memberCount}
       </span>
 
-      {/* Vertical Fader (Volume 0..2) */}
+      {/* Vertical Fader (Volume 0..2) — v3.81: right-click MIDI-Learn */}
       <div className="flex items-end gap-1 h-28">
         <input
           type="range"
@@ -170,6 +201,7 @@ export function SubMixBusStrip({ bus, busIndex }: SubMixBusStripProps): React.Re
           step={0.01}
           value={bus.volume}
           onChange={(e) => setBusVolume(bus.id, parseFloat(e.target.value))}
+          onContextMenu={volumeLearn.onContextMenu}
           data-testid={`sub-mix-bus-volume-${bus.id}`}
           aria-label={`Bus ${bus.name} volume`}
           className="h-28 w-3 accent-accent-primary cursor-pointer"
@@ -178,14 +210,20 @@ export function SubMixBusStrip({ bus, busIndex }: SubMixBusStripProps): React.Re
             direction: "rtl",
             appearance: "slider-vertical" as React.CSSProperties["appearance"],
           }}
-          title={volToDb(bus.volume)}
+          title={`${volToDb(bus.volume)} · Rechtsklick: MIDI-Learn${volumeLearn.isMapped ? ` · CC${volumeLearn.mappedCC}` : ""}`}
         />
+        {volumeLearn.menu}
       </div>
 
-      {/* dB-Anzeige */}
-      <span className="text-[8px] text-text-dim font-mono">{volToDb(bus.volume)}</span>
+      {/* dB-Anzeige + Mapped-Badge */}
+      <span className="text-[8px] text-text-dim font-mono">
+        {volToDb(bus.volume)}
+        {volumeLearn.isMapped && (
+          <span className="ml-1 text-accent-secondary">·CC{volumeLearn.mappedCC}</span>
+        )}
+      </span>
 
-      {/* Pan-Regler */}
+      {/* Pan-Regler — v3.81: right-click MIDI-Learn */}
       <div className="flex flex-col items-center gap-0.5 w-full">
         <span className="text-[8px] text-text-dim uppercase">Pan</span>
         <input
@@ -195,50 +233,71 @@ export function SubMixBusStrip({ bus, busIndex }: SubMixBusStripProps): React.Re
           step={0.01}
           value={bus.pan}
           onChange={(e) => setBusPan(bus.id, parseFloat(e.target.value))}
+          onContextMenu={panLearn.onContextMenu}
           data-testid={`sub-mix-bus-pan-${bus.id}`}
           aria-label={`Bus ${bus.name} pan`}
           className="w-full accent-accent-primary cursor-pointer"
-          title={bus.pan === 0 ? "Center" : bus.pan > 0 ? `R ${Math.round(bus.pan * 100)}` : `L ${Math.round(-bus.pan * 100)}`}
+          title={`${bus.pan === 0 ? "Center" : bus.pan > 0 ? `R ${Math.round(bus.pan * 100)}` : `L ${Math.round(-bus.pan * 100)}`}${panLearn.isMapped ? ` · CC${panLearn.mappedCC}` : ""}`}
         />
         <span className="text-[8px] text-text-dim font-mono">
           {bus.pan === 0 ? "C" : bus.pan > 0 ? `R${Math.round(bus.pan * 100)}` : `L${Math.round(-bus.pan * 100)}`}
+          {panLearn.isMapped && (
+            <span className="ml-1 text-accent-secondary">·CC{panLearn.mappedCC}</span>
+          )}
         </span>
+        {panLearn.menu}
       </div>
 
-      {/* Mute / Solo */}
-      <div className="flex gap-1">
+      {/* Mute / Solo — v3.81: right-click MIDI-Learn */}
+      <div className="flex gap-1 relative">
         <button
           type="button"
           onClick={() => setBusMute(bus.id, !bus.mute)}
+          onContextMenu={muteLearn.onContextMenu}
           data-testid={`sub-mix-bus-mute-${bus.id}`}
           aria-pressed={bus.mute}
           aria-label={`Bus ${bus.name} mute`}
-          title="Mute Bus"
+          title={`Mute Bus · Rechtsklick: MIDI-Learn${muteLearn.isMapped ? ` · CC${muteLearn.mappedCC}` : ""}`}
           className={[
-            "w-6 h-5 rounded text-[8px] font-bold transition-colors duration-100",
+            "w-6 h-5 rounded text-[8px] font-bold transition-colors duration-100 relative",
             bus.mute
               ? "bg-accent-secondary text-bg-base"
               : "bg-bg-elevated text-text-dim hover:bg-bg-elevated hover:text-accent-secondary",
           ].join(" ")}
         >
           M
+          {muteLearn.isMapped && (
+            <span
+              className="absolute -top-1 -right-1 w-1.5 h-1.5 rounded-full bg-accent-secondary"
+              aria-hidden="true"
+            />
+          )}
         </button>
         <button
           type="button"
           onClick={() => setBusSolo(bus.id, !bus.solo)}
+          onContextMenu={soloLearn.onContextMenu}
           data-testid={`sub-mix-bus-solo-${bus.id}`}
           aria-pressed={bus.solo}
           aria-label={`Bus ${bus.name} solo`}
-          title="Solo Bus"
+          title={`Solo Bus · Rechtsklick: MIDI-Learn${soloLearn.isMapped ? ` · CC${soloLearn.mappedCC}` : ""}`}
           className={[
-            "w-6 h-5 rounded text-[8px] font-bold transition-colors duration-100",
+            "w-6 h-5 rounded text-[8px] font-bold transition-colors duration-100 relative",
             bus.solo
               ? "bg-accent-success text-bg-base"
               : "bg-bg-elevated text-text-dim hover:bg-bg-elevated hover:text-accent-success",
           ].join(" ")}
         >
           S
+          {soloLearn.isMapped && (
+            <span
+              className="absolute -top-1 -right-1 w-1.5 h-1.5 rounded-full bg-accent-success"
+              aria-hidden="true"
+            />
+          )}
         </button>
+        {muteLearn.menu}
+        {soloLearn.menu}
       </div>
 
       {/* Remove */}

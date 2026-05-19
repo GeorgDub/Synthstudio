@@ -23,14 +23,25 @@
  *   midi:stop           ∅                            → project.togglePlayStop wenn isPlaying
  *   midi:masterVolume   {value:number} | number      → AudioEngine.setMasterVolume
  *   midi:pattern        number | {index|patternId}    → dm.setActivePattern
+ *   midi:subMixBusVolume {busId, value:0..2}          → store.setBusVolume
+ *   midi:subMixBusPan    {busId, value:-1..1}         → store.setBusPan
+ *   midi:subMixBusMute   busId:string (toggle)        → store.setBusMute
+ *   midi:subMixBusSolo   busId:string (toggle)        → store.setBusSolo
  *
  * Quellen: v1.76 (Volume/Pan/Solo/Fx), v1.92 (Pattern), v2.34 (BPM/PlayStop/
- * Stop/MasterVolume/MuteSet/Pattern-as-String).
+ * Stop/MasterVolume/MuteSet/Pattern-as-String), v3.81.0 (Sub-Mix-Bus-Controls).
  */
 import { useEffect } from "react";
 import type { MutableRefObject } from "react";
 import { AudioEngine } from "@/audio/AudioEngine";
 import type { ChannelFx } from "@/audio/AudioEngine";
+import {
+  getBusById,
+  setBusVolume,
+  setBusPan,
+  setBusMute,
+  setBusSolo,
+} from "@/store/useSubMixStore";
 
 /**
  * Minimal-Interface der DrumMachine-Store-Methoden die diese Bridge braucht.
@@ -73,6 +84,11 @@ export interface MidiBridgeHandlers {
   handleStop: (e: Event) => void;
   handleMasterVolume: (e: Event) => void;
   handlePattern: (e: Event) => void;
+  // v3.81.0: Sub-Mix-Bus-Controls
+  handleSubMixBusVolume: (e: Event) => void;
+  handleSubMixBusPan: (e: Event) => void;
+  handleSubMixBusMute: (e: Event) => void;
+  handleSubMixBusSolo: (e: Event) => void;
 }
 
 /**
@@ -169,11 +185,42 @@ export function makeMidiBridgeHandlers(refs: MidiBridgeRefs): MidiBridgeHandlers
     }
   };
 
+  // v3.81.0: Sub-Mix-Bus-Controls — feuern via useMidi.applyMapping
+  // CustomEvents, hier landen sie auf den useSubMixStore-Settern.
+  const handleSubMixBusVolume = (e: Event) => {
+    const detail = (e as CustomEvent<{ busId: string; value: number }>).detail;
+    if (!detail || typeof detail.busId !== "string" || typeof detail.value !== "number") return;
+    if (!Number.isFinite(detail.value)) return;
+    setBusVolume(detail.busId, detail.value);
+  };
+  const handleSubMixBusPan = (e: Event) => {
+    const detail = (e as CustomEvent<{ busId: string; value: number }>).detail;
+    if (!detail || typeof detail.busId !== "string" || typeof detail.value !== "number") return;
+    if (!Number.isFinite(detail.value)) return;
+    setBusPan(detail.busId, detail.value);
+  };
+  const handleSubMixBusMute = (e: Event) => {
+    const busId = (e as CustomEvent<string>).detail;
+    if (typeof busId !== "string") return;
+    const bus = getBusById(busId);
+    if (!bus) return;
+    setBusMute(busId, !bus.mute);
+  };
+  const handleSubMixBusSolo = (e: Event) => {
+    const busId = (e as CustomEvent<string>).detail;
+    if (typeof busId !== "string") return;
+    const bus = getBusById(busId);
+    if (!bus) return;
+    setBusSolo(busId, !bus.solo);
+  };
+
   return {
     handleVolume, handlePan, handleSolo, handleFxParam,
     handleMute, handleMuteSet,
     handleBpm, handlePlayStop, handleStop, handleMasterVolume,
     handlePattern,
+    handleSubMixBusVolume, handleSubMixBusPan,
+    handleSubMixBusMute, handleSubMixBusSolo,
   };
 }
 
@@ -196,6 +243,10 @@ export function useMidiEventBridge(refs: MidiBridgeRefs): void {
     window.addEventListener("midi:stop", h.handleStop);
     window.addEventListener("midi:masterVolume", h.handleMasterVolume);
     window.addEventListener("midi:pattern", h.handlePattern);
+    window.addEventListener("midi:subMixBusVolume", h.handleSubMixBusVolume);
+    window.addEventListener("midi:subMixBusPan", h.handleSubMixBusPan);
+    window.addEventListener("midi:subMixBusMute", h.handleSubMixBusMute);
+    window.addEventListener("midi:subMixBusSolo", h.handleSubMixBusSolo);
     return () => {
       window.removeEventListener("midi:partVolume", h.handleVolume);
       window.removeEventListener("midi:partPan", h.handlePan);
@@ -208,6 +259,10 @@ export function useMidiEventBridge(refs: MidiBridgeRefs): void {
       window.removeEventListener("midi:stop", h.handleStop);
       window.removeEventListener("midi:masterVolume", h.handleMasterVolume);
       window.removeEventListener("midi:pattern", h.handlePattern);
+      window.removeEventListener("midi:subMixBusVolume", h.handleSubMixBusVolume);
+      window.removeEventListener("midi:subMixBusPan", h.handleSubMixBusPan);
+      window.removeEventListener("midi:subMixBusMute", h.handleSubMixBusMute);
+      window.removeEventListener("midi:subMixBusSolo", h.handleSubMixBusSolo);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
