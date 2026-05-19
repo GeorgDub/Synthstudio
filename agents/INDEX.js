@@ -10531,49 +10531,145 @@ const INDEX = {
     ],
 
   // ─── API / IPC REFERENCE ───────────────────────────────────
+  // v3.143-resync — channels rebuilt from canonical grep of
+  // ipcMain.handle/on in electron/*.ts. Previously listed legacy
+  // names ("file:save-project", "dialog:open", "transport:*",
+  // "collab:*-session", "midi:export") were never registered —
+  // removed. ~70 channels added. Security-critical channels keep
+  // their original validation notes; new entries get brief stubs.
   ipc: {
-    note:     "All IPC calls go through useElectron() hook — never window.electronAPI directly",
+    note: "All IPC calls go through useElectron() hook — never window.electronAPI directly. List is grouped by domain prefix; verify-anchor: grep -rE \"ipcMain\\.(handle|on)\\(\" electron/",
     channels: [
-      "file:save-project", "file:open-project", "file:export-wav",
-      "collab:start-session", "collab:join-session", "collab:leave-session",
-      "midi:export", "dialog:open", "dialog:save",
-      "transport:play", "transport:stop", "transport:bpm",
-      "audio:save-recording", // TASK-234 (v2.86) — schreibt WAV in userData/recordings/, strict path-traversal-guard
-      "electribe:import-file", // TASK-237 (v2.88) — liest .e2pattern/.e2sallpat (max 5 MB, Endung-Whitelist) als Uint8Array → Renderer parsed via parseElectribeBank()
-      "electribe:open-dialog", // TASK-237 (v2.88) — nativer File-Dialog mit Filter "e2pattern, e2sallpat"
-      "korg:import-bank",     // v3.3.0 — liest .esx/.ess/.all (max 100 MB, Endung-Whitelist, path.resolve+access-check) als Uint8Array → Renderer parsed via parseEsxBank()/parseE2sBank().
-      "korg:open-bank-dialog", // v3.3.0 — nativer File-Dialog mit Filter ["esx", "ess", "all"].
-      "korg:get-bank-cap",    // v3.3.0 — liefert KORG_BANK_MAX_BYTES (100 MB) für UI-Hinweise.
-      "korg:save-bank-as",    // v3.4.0 — speichert renderer-side gebauten .all-Buffer (Synthstudio → E2 Sampler). Validation: filename-Whitelist /^[A-Za-z0-9._-]+\\.all$/, 16B-Magic-Sniff "e2s sample all\\x1a\\0", max 256 MB. Pfad kommt aus dialog.showSaveDialog (kein Path-Traversal-Vektor vom Renderer).
-      "korg:get-bank-save-cap", // v3.4.0 — liefert KORG_BANK_SAVE_MAX_BYTES (256 MB) für UI-Hinweise.
-      "electribe:save-pattern", // v3.26.0 — speichert renderer-side gebauten 16640-Byte .e2spat-Buffer (Synthstudio-Pattern → E2 Sampler). Validation: filename-Whitelist /^[A-Za-z0-9._-]+\\.e2spat$/, GENAU 16640 Bytes (hardware-exact), "KORG"/"e2sampler"/"PTST" Markers. Pfad aus dialog.showSaveDialog.
-      "electribe:get-pattern-size", // v3.26.0 — liefert die exakte Hardware-Größe einer .e2spat-Datei (= 16640 Bytes) für UI-Hinweise.
-      "autosave:write",   // v3.56.0 — speichert projekt-version in userData/autosave/<projectId>/<versionId>.synth. projectId-Whitelist /^[A-Za-z0-9_-]{1,64}$/, versionId-Whitelist /^\\d{13,16}$/, max 50 MB JSON, valides JSON, optional label-sidecar.
-      "autosave:list",    // v3.56.0 — listet alle .synth-Versionen in userData/autosave/<projectId>/ + projectName-Sniff aus erstem 4096B Header + label-sidecar-load. DESC nach Timestamp.
-      "autosave:restore", // v3.56.0 — lädt eine Version (projectId/versionId-validiert, path-guard, 50MB size-check) zurück als JSON-String + meta.
-      "autosave:delete",  // v3.56.0 — entfernt eine Version + ihren label-sidecar. Idempotent (no-op wenn nicht vorhanden).
-      "license:read",  // TASK-232 (v2.97) — liest userData/license.json (Path hardcoded, 16 KB-Limit, JSON-Parse-Try-Catch). Returnt {success, data}|{success:false,error}.
-      "license:write", // TASK-232 (v2.97) — schreibt LicenseState nach userData/license.json (Status-Whitelist, finite-number-only trialStartedAt, Längen-Limits, JSON-Size ≤16 KB).
-      "pack:registerRoot", // v3.107.0 — registriert einen Pack-Root in main's Allow-List (validate: absolute Pfad, exists, isDirectory, NUL-Byte-defense, max 4096 chars). In-memory Set<string>, leer bei jedem App-Start. Renderer ruft das vor jedem pack:readFile damit kein arbitraerer Pfad aus dem Renderer durchgereicht wird.
-      "pack:readFile",  // v3.107.0 — liest eine Pack-Sample-Datei. Defense-in-depth: validatePackSamplePath (absolute, NUL-Byte, Endung-Whitelist .wav/.mp3/.ogg/.flac/.aif/.aiff/.m4a, path.resolve + Root-Containment-Check mit path.sep-Boundary), R_OK-access-check, isFile-check, 100 MB Size-Cap. Returnt ArrayBuffer slice. SECURITY: alle Errors generisch ('Lesefehler') — kein Stack-Trace-Leak.
-      "pack:chooseFolder", // v3.108.0 — öffnet nativen dialog.showOpenDialog({properties:['openDirectory']}) und gibt {canceled, filePaths} zurück. SECURITY: User-Selection only — kein arbitrary path vom Renderer. UI nutzt das im SamplePackBrowser-Import-Button (Electron-Pfad).
-      "pack:scanFolder",   // v3.108.0 — rekursiver Scan eines bereits via pack:registerRoot eingetragenen Pack-Roots. Defense-in-depth: Allow-List-Check (registerRoot muss vorher gerufen worden sein), max 5000 files, max 4 sub-folder depth, Audio-Extension-Whitelist (=pack:readFile), NUL-Byte-Defense, kein Symlink-Follow (lstat statt stat), Containment-Boundary mit path.sep, deterministische Sortierung pro Level. Returnt {root, files: Array<{relPath, absolutePath, sizeBytes}>, truncated, depthSkipped}. SECURITY: generic 'Scan-Fehler' bei errors — kein Stack-Trace-Leak.
+      // ─ File I/O / Dialog ────────────────────────────────────
+      "dialog:open-file",                         // native open-file dialog
+      "dialog:save-file",                         // native save-file dialog
+      "dialog:message",                           // native message-box dialog
+      "fs:read-file",                             // read arbitrary file (path-traversal-guarded)
+      "fs:list-directory",                        // directory listing
+      "fs:write-file",                            // write file (path-traversal-guarded)
+      "dragdrop:process-files",                   // resolves dropped-file paths from renderer
 
-      // Performance-Mode Popup-Window (ROADMAP feature, post-v1.23.0):
-      // alle Channels haben narrow-data-only Payloads — keine file paths,
-      // keine shell ops, kein eval. Routing via main process zwischen
-      // mainWindow und perfWindow webContents.
-      "window:open-performance",      // invoke, no payload
-      "window:close-performance",     // invoke, no payload
-      "window:is-performance-open",   // invoke, no payload → boolean
-      "window:perf-set-always-on-top", // invoke (Phase 2) boolean → {success, alwaysOnTop}
-      "window:perf-is-always-on-top",  // invoke (Phase 2) → boolean
-      "perf-sync:state",              // send (main→popup) plain JSON state snapshot
-      "perf-sync:action",             // send (popup→main) plain JSON action object
-                                      // action.type: pad-click | quantize-mode-change | request-state
-                                      //   (Phase 2) set-pad-at | set-pad-color | set-pad-label
-                                      //   (Phase 2) clear-pad | move-pad | move-multiple-pads
-      "perf-window:closed"            // event (main→main-renderer) when popup closes
+      // ─ Export / Import ──────────────────────────────────────
+      "export:wav",                               // export mixdown to WAV
+      "export:wav-stereo",                        // stereo-master WAV export (electron/export-stereo.ts)
+      "export:midi",                              // export pattern to MIDI file
+      "export:project",                           // export .synth project file
+      "export:bundle",                            // bundle export (project + samples)
+      "export:import-project",                    // import a .synth project file
+
+      // ─ App Meta / Updater / Telemetry ───────────────────────
+      "app:get-version",                          // returns package.json version
+      "app:get-platform",                         // win32 | darwin | linux
+      "app:get-path",                             // resolve app.getPath('userData', etc.)
+      "app:get-crash-log-path",                   // path to crash-log dir
+      "notification:show",                        // native OS notification
+      "updater:check",                            // electron-updater check
+      "renderer:crash",                           // renderer→main crash report
+      "renderer:event",                           // renderer→main telemetry event
+
+      // ─ Recent-Project / Store ───────────────────────────────
+      "store:get",                                // read electron-store value
+      "store:set",                                // write electron-store value
+      "store:get-recent",                         // recent-projects list
+      "store:add-recent",                         // push to recents
+      "store:remove-recent",                      // delete one
+      "store:clear-recent",                       // wipe recents
+
+      // ─ Main Window control ──────────────────────────────────
+      "window:new",                               // open new main-window
+      "window:list",                              // enumerate open windows
+      "window:focus",                             // bring window to front
+      "window:update-state",                      // sync window-state to main
+      "window:force-close",                       // close window without prompt
+      "window:get-recent-projects",               // window-scoped recents
+      "window:set-fullscreen",                    // toggle fullscreen
+      "window:is-fullscreen",                     // boolean query
+      "window:minimize",                          // minimize active window
+      "window:maximize",                          // maximize active window
+
+      // ─ Popout Windows (Performance / FX / Mixer / Sample-Browser / Pattern-Gen) ─
+      // All popouts use narrow-data-only payloads — no file paths,
+      // no shell ops, no eval. Routing via main between webContents.
+      "window:open-performance", "window:close-performance", "window:is-performance-open",
+      "window:perf-set-always-on-top", "window:perf-is-always-on-top",
+      "perf-sync:state",                          // send (main→popup) plain JSON state snapshot
+      "perf-sync:action",                         // send (popup→main) plain JSON action object
+      "perf-window:closed",                       // event (main→main-renderer) when popup closes
+      "window:open-fx", "window:close-fx", "window:is-fx-open",
+      "window:fx-set-always-on-top", "window:fx-is-always-on-top",
+      "fx-sync:state", "fx-sync:action",
+      "window:open-mixer", "window:close-mixer", "window:is-mixer-open",
+      "window:mixer-set-always-on-top", "window:mixer-is-always-on-top",
+      "mixer-sync:state", "mixer-sync:action",
+      "window:open-sample-browser", "window:close-sample-browser", "window:is-sample-browser-open",
+      "window:sample-browser-set-always-on-top", "window:sample-browser-is-always-on-top",
+      "sample-browser-sync:state", "sample-browser-sync:action",
+      "window:open-pattern-gen", "window:close-pattern-gen", "window:is-pattern-gen-open",
+      "window:pattern-gen-set-always-on-top", "window:pattern-gen-is-always-on-top",
+      "pattern-gen-sync:action",
+      "popout:theme-changed",                     // main → all popouts: theme switched
+
+      // ─ Audio Recording ──────────────────────────────────────
+      "audio:save-recording",                     // TASK-234 (v2.86) — schreibt WAV in userData/recordings/, strict path-traversal-guard
+
+      // ─ Samples ──────────────────────────────────────────────
+      "samples:import-folder",                    // user-picked folder scan + import
+      "samples:cancel-import",                    // abort in-flight import
+      "samples:import-zip",                       // ZIP-pack import (zip-slip guarded)
+      "samples:cleanup-zip",                      // remove extracted tmp dir
+
+      // ─ Sample Packs (read-only, allow-list) ─────────────────
+      "pack:registerRoot",                        // v3.107.0 — registriert Pack-Root in main's Allow-List (absolute Pfad, exists, isDirectory, NUL-Byte-defense, max 4096 chars).
+      "pack:readFile",                            // v3.107.0 — liest Pack-Sample-Datei. Defense-in-depth: validatePackSamplePath (absolute, NUL-Byte, Endung-Whitelist .wav/.mp3/.ogg/.flac/.aif/.aiff/.m4a, path.resolve + Root-Containment-Check). 100 MB Size-Cap. Errors generisch ('Lesefehler').
+      "pack:chooseFolder",                        // v3.108.0 — User-Selection-only dialog.showOpenDialog({properties:['openDirectory']}).
+      "pack:scanFolder",                          // v3.108.0 — rekursiver Scan eines registrierten Pack-Roots. Max 5000 files, max 4 depth, Endung-Whitelist, kein Symlink-Follow.
+
+      // ─ Waveform Analysis ────────────────────────────────────
+      "waveform:get-metadata",                    // duration/sampleRate/channels
+      "waveform:get-peaks",                       // peak-reduced waveform for UI
+
+      // ─ MIDI Import ──────────────────────────────────────────
+      "midi:import-file",                         // read .mid → Uint8Array
+      "midi:open-dialog",                         // native open-file with .mid filter
+
+      // ─ Electribe / KORG / ESX hardware integration ──────────
+      "electribe:import-file",                    // TASK-237 (v2.88) — liest .e2pattern/.e2sallpat (max 5 MB, Endung-Whitelist) als Uint8Array → Renderer parsed via parseElectribeBank()
+      "electribe:open-dialog",                    // TASK-237 (v2.88) — nativer File-Dialog mit Filter "e2pattern, e2sallpat"
+      "electribe:save-pattern",                   // v3.26.0 — speichert renderer-side gebauten 16640-Byte .e2spat-Buffer. Filename /^[A-Za-z0-9._-]+\.e2spat$/, GENAU 16640 Bytes, "KORG"/"e2sampler"/"PTST" Markers.
+      "electribe:get-pattern-size",               // v3.26.0 — liefert die exakte Hardware-Größe (=16640 B).
+      "korg:import-bank",                         // v3.3.0 — liest .esx/.ess/.all (max 100 MB, Endung-Whitelist, path.resolve+access-check) → Uint8Array.
+      "korg:open-bank-dialog",                    // v3.3.0 — Filter ["esx", "ess", "all"].
+      "korg:get-bank-cap",                        // v3.3.0 — KORG_BANK_MAX_BYTES (100 MB).
+      "korg:save-bank-as",                        // v3.4.0 — schreibt renderer-built .all-Buffer. Filename-Whitelist, 16B-Magic-Sniff "e2s sample all\\x1a\\0", max 256 MB.
+      "korg:get-bank-save-cap",                   // v3.4.0 — KORG_BANK_SAVE_MAX_BYTES (256 MB).
+      "esx:save-bank-as",                         // ESX-1 bank save (.esx)
+      "esx:get-bank-save-cap",                    // ESX save-size cap
+
+      // ─ Autosave (versioned snapshots) ───────────────────────
+      "autosave:write",                           // v3.56.0 — speichert userData/autosave/<projectId>/<versionId>.synth. projectId-Whitelist /^[A-Za-z0-9_-]{1,64}$/, versionId-Whitelist /^\d{13,16}$/, max 50 MB JSON.
+      "autosave:list",                            // v3.56.0 — listet .synth-Versionen + label-sidecar-load. DESC nach Timestamp.
+      "autosave:restore",                         // v3.56.0 — lädt Version zurück (path-guard, 50 MB cap).
+      "autosave:delete",                          // v3.56.0 — entfernt Version + label-sidecar (idempotent).
+
+      // ─ License / Trial ──────────────────────────────────────
+      "license:read",                             // TASK-232 (v2.97) — liest userData/license.json (16 KB-Limit).
+      "license:write",                            // TASK-232 (v2.97) — schreibt LicenseState (Status-Whitelist, finite-number-only trialStartedAt, ≤16 KB).
+
+      // ─ Collab (LAN WebSocket + mDNS) ────────────────────────
+      "collab:start",                             // start in-process WebSocket server
+      "collab:stop",                              // stop server
+      "collab:get-address",                       // returns LAN address + port
+      "collab:announce-start",                    // mDNS announce session
+      "collab:announce-stop",                     // mDNS stop announcing
+      "collab:discovery-start",                   // mDNS scan for peer sessions
+      "collab:discovery-stop",                    // stop scanning
+      "collab:get-discovered",                    // list found sessions
+
+      // ─ OSC (Open Sound Control) ─────────────────────────────
+      "osc:start",                                // bind UDP listener
+      "osc:stop",                                 // unbind
+      "osc:status",                               // port + listening state
+      "osc:send"                                  // send OSC message to target host/port
     ]
   },
 
