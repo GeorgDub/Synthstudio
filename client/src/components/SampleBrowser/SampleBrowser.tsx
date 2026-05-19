@@ -953,6 +953,14 @@ export function SampleBrowser({
   }, [filteredSamples]);
 
   // v3.152: Bulk-Delete-Handler. Asks confirmation, dann removeSample für jede ID.
+  // v3.154: Bulk-Category-Change — wendet Kategorie auf alle ausgewählten Samples.
+  const handleBulkCategory = useCallback((categoryId: string) => {
+    if (multiSelectIds.size === 0 || !onUpdateSampleCategory) return;
+    for (const id of multiSelectIds) {
+      onUpdateSampleCategory(id, categoryId);
+    }
+  }, [multiSelectIds, onUpdateSampleCategory]);
+
   // v3.153: Bulk-Tag-Add — Tag-Input-State + Handler.
   const [bulkTagInputVisible, setBulkTagInputVisible] = useState(false);
   const [bulkTagDraft, setBulkTagDraft] = useState("");
@@ -1684,6 +1692,24 @@ export function SampleBrowser({
                       <span className="text-[11px] font-semibold text-accent-secondary">
                         {multiSelectIds.size} Sample{multiSelectIds.size === 1 ? "" : "s"} ausgewählt
                       </span>
+                      <select
+                        value=""
+                        onChange={(e) => {
+                          if (e.target.value) {
+                            handleBulkCategory(e.target.value);
+                            e.target.value = "";
+                          }
+                        }}
+                        disabled={!onUpdateSampleCategory}
+                        data-testid="sample-browser-bulk-category"
+                        className="ml-auto bg-bg-panel border border-border-color rounded px-1.5 py-0.5 text-[10px] text-text-primary hover:border-accent-primary focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        title="Kategorie für alle ausgewählten Samples setzen"
+                      >
+                        <option value="">Kategorie…</option>
+                        {CATEGORIES.filter((c) => c.id !== "all").map((c) => (
+                          <option key={c.id} value={c.id}>{c.label}</option>
+                        ))}
+                      </select>
                       <button
                         onClick={() => {
                           setBulkTagInputVisible((v) => !v);
@@ -1691,7 +1717,7 @@ export function SampleBrowser({
                         }}
                         disabled={!onAddTagToSample}
                         data-testid="sample-browser-bulk-tag"
-                        className="ml-auto px-2 py-0.5 rounded text-[10px] border border-border-color text-text-primary hover:border-accent-primary hover:text-accent-primary disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        className="px-2 py-0.5 rounded text-[10px] border border-border-color text-text-primary hover:border-accent-primary hover:text-accent-primary disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                         title="Tag zu allen ausgewählten Samples hinzufügen"
                       >
                         + Tag
