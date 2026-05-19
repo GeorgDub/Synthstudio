@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.82.0",
+    version: "3.83.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -89,6 +89,26 @@ const INDEX = {
   // ─── KNOWN FILE INDEX ──────────────────────────────────────
   // Key files agents have analyzed. Add new entries after working on a file.
   files: {
+    "client/src/utils/audioCompressEncoder.ts (v3.83.0)": {
+      role:     "v3.83.0 NEU (~420 LOC, Pure-TS DOM-frei testbar): Compressed Audio-Export via WebCodecs `AudioEncoder` (Opus in OGG-Container) mit transparenter Fallback-Logik. Public-API: encodeAsOgg(buffer, opts?) → Promise<Blob audio/ogg | audio/wav>, encodeCompressed(...) → {blob,format,bitrate,usedFallback}, isWebCodecsOpusSupported() → Promise<boolean>, clampBitrate(v), filenameForFormat(name,fmt). Konstanten DEFAULT_OGG_BITRATE_BPS=192_000 + SUPPORTED_OGG_BITRATES_BPS=[96k,128k,192k,256k,320k] + MIN/MAX_OGG_BITRATE_BPS=32k/510k + OGG_MIME='audio/ogg' + WAV_MIME='audio/wav'. AudioBufferLike-Minimal-Interface (Node-testbar ohne Web-Audio). WebCodecs-Pfad: 20ms-Frames (sampleRate*0.02) → encoder.encode() → chunks gesammelt → packageOggOpus baut RFC 3533 Ogg-Pages mit RFC 7845 OpusHead (19 Bytes) + OpusTags (vendor='Synthstudio') + Audio-Pages mit korrekter CRC32 (0x04C11DB7-Polynom, no input reflection). Bei Fehlen von globalThis.AudioEncoder ODER encoder.error()-Callback ODER opts.forceWav=true → silent WAV-Fallback (44-byte RIFF/WAVE + 16-bit PCM interleaved, max 2 channels). Test-Injection via opts.encoderImpl damit Node-Tests ohne WebCodecs laufen (Mock-Encoder spied lastEncoderConfig.bitrate). Multi-Page-Spanning fehlt (>255 Bytes/Frame würde werfen) — bei 20ms-Opus-Packets praktisch nie ein Problem.",
+      lastSeen: "2026-05-19T05:45:00.000Z",
+      ownedBy:  "backend"
+    },
+    "tests/features/audio-compress-encoder.test.ts (v3.83.0)": {
+      role:     "v3.83.0 NEU (~210 LOC, 14 Tests in 5 describes, env:node mit Mock-AudioEncoder + globalThis.AudioEncoder-Install/Uninstall + lastEncoderConfig-Spy). (1) Pure-Helpers × 4: clampBitrate Edge-Cases (Min/Max/NaN/Infinity/undefined → Default), filenameForFormat (wav↔ogg/ohne Endung/mp3/case-insensitive .WAV), SUPPORTED-Bucket-Array exakt 5 Werte + DEFAULT=192k, MIME-Konstanten OGG_MIME='audio/ogg' + WAV_MIME='audio/wav'. (2) WAV-Fallback × 2: ohne globalThis.AudioEncoder → format='wav' + usedFallback=true + Blob mit RIFF/WAVE-Header, isWebCodecsOpusSupported=false ohne AudioEncoder. (3) WebCodecs-Pfad × 3: Mock-Encoder → audio/ogg Blob, OggS-Magic am Start, encodeCompressed-Metadata-Shape (format='ogg', usedFallback=false, bitrate=128k passed through). (4) Bitrate-Routing × 2: configure() empfängt 256k unverändert, 10M → MAX clamped. (5) Error-Robustheit × 3: AudioBuffer mit 0 channels → throw 'no channels', Mock-Encoder error() → silent WAV-Fallback, forceWav=true skipt WebCodecs trotz vorhandenem AudioEncoder (usedFallback=false weil explicit choice, nicht support-bedingt).",
+      lastSeen: "2026-05-19T05:45:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/utils/wavExporter.ts (v3.83.0 format+bitrate)": {
+      role:     "v3.83.0 ERWEITERT (+~15 LOC, bestehende v1.x Master/Stems-Logik bleibt): ExportOptions um format?:CompressFormat + bitrate?:number erweitert (beides optional, backward-compat — WAV bleibt Default für ältere Caller). Master-Branch: encoding-Stage erkennt opts.format==='ogg' und nutzt encodeAsOgg(rendered, {bitrate}) statt audioBufferToWav(rendered); Filename via filenameForFormat() (.ogg-Endung wenn Blob-MIME='audio/ogg', sonst .wav). Stems-Branch identische Logik pro Part. encodeAsOgg liefert bei fehlendem WebCodecs transparent WAV-Blob zurück — Filename-Endung folgt dem tatsächlichen Blob.type (nicht dem User-Wunsch). Import +encodeAsOgg, filenameForFormat, DEFAULT_OGG_BITRATE_BPS, CompressFormat aus utils/audioCompressEncoder.",
+      lastSeen: "2026-05-19T05:45:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/components/Mixer/ExportPanel.tsx (v3.83.0 format+bitrate-ui)": {
+      role:     "v3.83.0 ERWEITERT (+~40 LOC, bestehende v3.42 insertChains-Pass-Through + TASK-241/v2.94/v2.97 bleibt): NEU 2 useState — format:CompressFormat (default 'wav') + bitrate:number (default DEFAULT_OGG_BITRATE_BPS=192k). NEU Format-Select (WAV/OGG-Opus) immer sichtbar + Bitrate-Select (96/128/192/256/320 kbps) conditional rendered nur bei format==='ogg'. handleExport übergibt {format, bitrate} an exportPattern(). Export-Button-Label dynamisch '⬇ WAV Export' bzw '⬇ OGG Export' je nach Format-Wahl. data-testids export-format-group / export-format-select / export-bitrate-group / export-bitrate-select. Bestehende Bounce-All-Stems-Logik (v2.94) bleibt hardcoded WAV — Folge-Task in v3.84.",
+      lastSeen: "2026-05-19T05:45:00.000Z",
+      ownedBy:  "backend"
+    },
     "client/src/audio/AudioEngine.ts (v3.79.1 sub-mix-engine-wiring)": {
       role:     "v3.79.1 ERWEITERT (+~180 LOC, bestehende v3.78 lufs-tap + v3.77 lookahead+crossfade + v3.76 limiter + v3.75 master-fx + v3.79.0 Store-only bleibt). NEU `_subMixBusNodes: Map<busId, {gain, panner, volume}>` + `_channelSubMixAssignments: Map<partId, busId>` + `SUB_MIX_BUS_RAMP_SEC=0.02`. NEU `_resolveChannelDestination(partId)` Helper (Sub-Mix-Bus assigned → bus.gain, sonst masterGain). NEU 6 public Methods: `applySubMixBus(busId, bus, anyBusSolo)` (idempotent — erzeugt Bus-Nodes nur beim ersten Call, rampt volume/pan/effective-mute mit setTargetAtTime), `removeSubMixBus(busId)` (disconnect Bus-Nodes + Orphan-Reroute zu master), `routeChannelToSubMixBus(partId, busId|null)` (defensive busId-Validation gegen `_subMixBusNodes`, sonst null=master), `syncSubMixState(state)` (Bulk-Sync: Bus-Upsert + Orphan-Cleanup + Assignment-Diff), `getSubMixBusNodes()` (Test-Inspection), `getChannelSubMixAssignment(partId)` (Test-Lookup), `ensureChannelExists(partId)` (Test-Probe — eager-Create der Channel-Nodes). Wiring in `_getOrCreateChannelNodes`: `sidechainGain.connect(this._resolveChannelDestination(partId))` statt `sidechainGain.connect(master)` — Sub-Mix-Bus wird beim ersten Channel-Create automatisch picked up. `routeChannelToBus` (v3.x Bus-Compressor) ruft jetzt `_resolveChannelDestination` als Fallback (Priority: Bus-Compressor > Sub-Mix > master). reinit() entsorgt Bus-Nodes + clear()t die Map (Assignments bleiben → nächster sync rekonstruiert).",
       lastSeen: "2026-05-19T05:00:00.000Z",
@@ -2297,6 +2317,33 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "backend",
+      timestamp: "2026-05-19T05:45:00.000Z",
+      done: [
+        "v3.83.0: OGG-Opus Audio-Export via WebCodecs API (closes v3.82-next 'Compressed Export fehlt → große Stem-Files'). Audio-Export im Mixer (Master + Stems) liefert jetzt optional komprimiertes OGG-Opus statt nur WAV. Vorteil: ~10× kleinere Files bei 192 kbps, transparent für die meisten Listening-Anwendungsfälle. Strategie ist WebCodecs-native (Chrome/Edge/Electron ≥94) mit transparentem WAV-Fallback wenn nicht verfügbar — keine npm-Dependency, Pure-TS, BSD-kompatibel via Opus-Codec.",
+        "client/src/utils/audioCompressEncoder.ts (NEU, ~420 LOC, Pure-TS DOM-frei testbar): Public-API encodeAsOgg(audioBuffer, opts?) → Promise<Blob> + encodeCompressed(...) → {blob,format,bitrate,usedFallback} + isWebCodecsOpusSupported() → Promise<boolean> + clampBitrate(v) + filenameForFormat(name,fmt). Konstanten DEFAULT_OGG_BITRATE_BPS=192_000 + SUPPORTED_OGG_BITRATES_BPS=[96k,128k,192k,256k,320k] + MIN/MAX_OGG_BITRATE_BPS=32k/510k. Architektur: AudioBufferLike-Minimal-Interface (sampleRate/numberOfChannels/length/getChannelData) → 20ms-Frames an WebCodecs AudioEncoder → EncodedAudioChunks gesammelt → in OGG-Container verpackt (RFC 3533 Ogg-Pages + RFC 7845 OpusHead/OpusTags + korrekte CRC32 mit 0x04C11DB7-Polynom). Bei fehlendem globalThis.AudioEncoder ODER encoder.error()-Callback ODER forceWav=true → silent WAV-Fallback (44-byte RIFF/WAVE-Header + 16-bit PCM interleaved). Encoder-Impl ist via opts.encoderImpl injizierbar damit Tests ohne Browser-WebCodecs laufen (lastEncoderConfig-Spy verifiziert die durchgereichte Bitrate).",
+        "client/src/utils/wavExporter.ts ERWEITERT (+~15 LOC): ExportOptions um format?:CompressFormat + bitrate?:number erweitert (beides optional, backward-compat — WAV bleibt Default). Master + Stems-Branches encoden bei format='ogg' via encodeAsOgg() statt audioBufferToWav(), Filename wird via filenameForFormat() auf .ogg gesetzt. Bestehende v2.x WAV-Logik unverändert für format=undefined|'wav'.",
+        "client/src/components/Mixer/ExportPanel.tsx ERWEITERT (+~40 LOC): NEU Format-Select (WAV/OGG-Opus) + Bitrate-Select (96/128/192/256/320 kbps, conditional rendered nur bei format='ogg'). State via useState (default 'wav' + DEFAULT_OGG_BITRATE_BPS). handleExport reicht format+bitrate an exportPattern durch. Button-Label dynamisch '⬇ WAV Export' / '⬇ OGG Export'. data-testids export-format-select / export-bitrate-select / export-format-group / export-bitrate-group.",
+        "tests/features/audio-compress-encoder.test.ts (NEU, ~210 LOC, 14 Tests in 5 describes, env:node mit Mock-AudioEncoder + Vendor-Test-Override). (1) Pure-Helpers × 4: clampBitrate (Default/Min/Max/NaN/Infinity/undefined), filenameForFormat (wav↔ogg, ohne Endung, mp3, case-insensitive), SUPPORTED-Bucket-Array, MIME-Konstanten. (2) WAV-Fallback × 2: ohne globalThis.AudioEncoder → wav-Format mit RIFF/WAVE-Header, isWebCodecsOpusSupported=false. (3) WebCodecs-Pfad × 3: Mock-Encoder → audio/ogg Blob, OggS-Magic-Bytes am Start, encodeCompressed-Metadata (format='ogg', usedFallback=false, bitrate). (4) Bitrate-Routing × 2: configure() empfängt 256_000, Clamp 10M → MAX_OGG_BITRATE_BPS. (5) Error-Robustheit × 3: invalid AudioBuffer (0 channels) → throw, Mock-Encoder error() → silent WAV-Fallback, forceWav=true skipt WebCodecs trotz vorhandenem AudioEncoder.",
+        "package.json (3.82.0 → 3.83.0). pnpm check clean. pnpm test grün: 229 Test-Files / 5220 Tests passed (16 skipped, +1 file +14 vs v3.82.0). Backward-Compat: WAV bleibt Default, alte Caller ohne format/bitrate-Opts laufen unverändert."
+      ],
+      next: [
+        "v3.84: MP3-Encoder als dritte Format-Option (Patent-Schutz seit 2017 abgelaufen, lib z.B. lamejs-headless; alternativ via WebCodecs codec='mp4a.40.2' für AAC).",
+        "v3.84: Per-Channel-Stem-Bounce (channelBounce.ts + handleBounceAllStems) auf OGG-Format umstellen — aktuell nur Master/Stems-Export-Pfad nutzt OGG, Bounce-All-Stems hardcoded WAV.",
+        "v3.84: Bitrate-Quality-Indicator im UI (z.B. '192 kbps = transparent für Musik') als Tooltip.",
+        "v3.84: Real WebCodecs-E2E-Smoke in Playwright (Chromium has WebCodecs) der die produzierte .ogg-Datei via ffprobe validiert.",
+        "v3.84 caveat: bei sehr großen Opus-Packets (>255 Bytes pro Frame * 256 = unwahrscheinlich) müsste die Ogg-Page-Segmentation Multi-Page-Spanning unterstützen — aktuell wirft buildOggPage."
+      ],
+      changed: [
+        "client/src/utils/audioCompressEncoder.ts (NEU, ~420 LOC: WebCodecs-Opus-Encoder + OGG-Container + WAV-Fallback + CRC32 RFC 3533)",
+        "client/src/utils/wavExporter.ts (+~15 LOC: ExportOptions.format/bitrate + Master+Stems-Branches encoden via encodeAsOgg bei ogg)",
+        "client/src/components/Mixer/ExportPanel.tsx (+~40 LOC: Format-Select + Bitrate-Select + dynamisches Button-Label)",
+        "tests/features/audio-compress-encoder.test.ts (NEU, ~210 LOC, 14 Tests in 5 describes)",
+        "package.json (3.82.0 → 3.83.0)",
+        "agents/INDEX.js (version + workLog + files-Einträge)"
+      ]
+    },
     {
       agent:     "frontend",
       timestamp: "2026-05-19T05:35:00.000Z",

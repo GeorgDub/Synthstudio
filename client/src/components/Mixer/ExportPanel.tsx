@@ -5,9 +5,14 @@
  * Rendert das Pattern via OfflineAudioContext und downloadet die Datei.
  */
 import React, { useCallback, useState } from "react";
-import { exportPattern, type ExportOptions, type ExportProgress } from "@/utils/wavExporter";
+import { exportPattern, type ExportProgress } from "@/utils/wavExporter";
 import { downloadMidiBundle } from "@/utils/midiExport";
 import { bounceAllChannels, downloadWavInBrowser, type BounceAllProgress } from "@/utils/channelBounce";
+import {
+  SUPPORTED_OGG_BITRATES_BPS,
+  DEFAULT_OGG_BITRATE_BPS,
+  type CompressFormat,
+} from "@/utils/audioCompressEncoder";
 import { useElectron } from "../../../../electron/useElectron";
 import { toast } from "@/store/useToastStore";
 import { requireProFeature, PRO_FEATURE_STEM_BOUNCE } from "@/utils/proFeatures";
@@ -34,6 +39,9 @@ export function ExportPanel({ pattern, bpm, samples, allPatterns = [], projectNa
   const [mode, setMode]       = useState<"master" | "stems">("master");
   const [bars, setBars]       = useState(4);
   const [sampleRate, setSr]   = useState<44100 | 48000>(44100);
+  // v3.83.0 — Format-Auswahl (wav default backward-compat, ogg = Opus compressed)
+  const [format, setFormat]   = useState<CompressFormat>("wav");
+  const [bitrate, setBitrate] = useState<number>(DEFAULT_OGG_BITRATE_BPS);
   const [progress, setProgress] = useState<ExportProgress | null>(null);
   const [isExporting, setIsExporting] = useState(false);
   // TASK-241 / v2.94.0: Per-Channel Stem-Bounce (mit Pan + Filter + Volume).
@@ -137,9 +145,14 @@ export function ExportPanel({ pattern, bpm, samples, allPatterns = [], projectNa
         })
     );
 
-    await exportPattern(pattern, bufMap, { mode, bars, bpm, sampleRate, bitDepth: 16 }, setProgress);
+    await exportPattern(
+      pattern,
+      bufMap,
+      { mode, bars, bpm, sampleRate, bitDepth: 16, format, bitrate },
+      setProgress,
+    );
     setIsExporting(false);
-  }, [pattern, isExporting, mode, bars, bpm, sampleRate]);
+  }, [pattern, isExporting, mode, bars, bpm, sampleRate, format, bitrate]);
 
   if (!pattern) return null;
 
@@ -179,10 +192,41 @@ export function ExportPanel({ pattern, bpm, samples, allPatterns = [], projectNa
           </select>
         </div>
 
+        {/* v3.83.0 — Format-Selector (WAV / OGG-Opus) */}
+        <div className="flex items-center gap-1" data-testid="export-format-group">
+          <span className="text-[10px] text-text-dim">Format:</span>
+          <select
+            value={format}
+            onChange={(e) => setFormat(e.target.value as CompressFormat)}
+            className="text-[10px] bg-bg-elevated border border-border-color rounded px-1.5 py-0.5 text-text-primary"
+            data-testid="export-format-select"
+          >
+            <option value="wav">WAV</option>
+            <option value="ogg">OGG (Opus)</option>
+          </select>
+        </div>
+
+        {/* v3.83.0 — Bitrate-Slider (nur sichtbar bei ogg) */}
+        {format === "ogg" && (
+          <div className="flex items-center gap-1" data-testid="export-bitrate-group">
+            <span className="text-[10px] text-text-dim">Kbps:</span>
+            <select
+              value={bitrate}
+              onChange={(e) => setBitrate(Number(e.target.value))}
+              className="text-[10px] bg-bg-elevated border border-border-color rounded px-1.5 py-0.5 text-text-primary"
+              data-testid="export-bitrate-select"
+            >
+              {SUPPORTED_OGG_BITRATES_BPS.map((bps) => (
+                <option key={bps} value={bps}>{bps / 1000}</option>
+              ))}
+            </select>
+          </div>
+        )}
+
         {/* Export Buttons */}
         <button onClick={handleExport} disabled={isExporting}
           className="px-3 py-1 text-[10px] rounded bg-accent-primary text-white hover:opacity-80 disabled:opacity-40 font-bold transition-opacity">
-          {isExporting ? "Exportiere…" : "⬇ WAV Export"}
+          {isExporting ? "Exportiere…" : format === "ogg" ? "⬇ OGG Export" : "⬇ WAV Export"}
         </button>
         <button
           onClick={() => downloadMidiBundle(allPatterns.length > 0 ? allPatterns : (pattern ? [pattern] : []), bpm, projectName)}

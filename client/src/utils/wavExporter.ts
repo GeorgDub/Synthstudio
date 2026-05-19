@@ -13,6 +13,12 @@
  */
 
 import type { PatternData } from "@/audio/AudioEngine";
+import {
+  encodeAsOgg,
+  filenameForFormat,
+  DEFAULT_OGG_BITRATE_BPS,
+  type CompressFormat,
+} from "@/utils/audioCompressEncoder";
 
 export interface ExportOptions {
   mode: "master" | "stems";
@@ -20,6 +26,10 @@ export interface ExportOptions {
   bpm: number;
   sampleRate: number;    // 44100 | 48000
   bitDepth: 16 | 24 | 32;
+  /** v3.83.0 — Compressed-Export-Format (wav default, ogg = Opus). */
+  format?: CompressFormat;
+  /** v3.83.0 — Ziel-Bitrate für ogg (bps). Default 192_000. */
+  bitrate?: number;
 }
 
 export interface ExportProgress {
@@ -148,10 +158,13 @@ export async function exportPattern(
       }
 
       const rendered = await ctx.startRendering();
-      onProgress({ phase: "encoding", progress: 0.9, message: "WAV kodieren…" });
-      const blob = audioBufferToWav(rendered);
+      const fmt: CompressFormat = opts.format ?? "wav";
+      onProgress({ phase: "encoding", progress: 0.9, message: fmt === "ogg" ? "OGG/Opus kodieren…" : "WAV kodieren…" });
+      const blob = fmt === "ogg"
+        ? await encodeAsOgg(rendered, { bitrate: opts.bitrate ?? DEFAULT_OGG_BITRATE_BPS })
+        : audioBufferToWav(rendered);
       onProgress({ phase: "downloading", progress: 0.95, message: "Herunterladen…" });
-      downloadBlob(blob, `${pattern.name}.wav`);
+      downloadBlob(blob, filenameForFormat(pattern.name, blob.type === "audio/ogg" ? "ogg" : "wav"));
     }
 
     else {
@@ -179,8 +192,12 @@ export async function exportPattern(
           }
         }
         const rendered = await ctx.startRendering();
-        const blob = audioBufferToWav(rendered);
-        downloadBlob(blob, `${pattern.name}_${part.name}.wav`);
+        const fmt: CompressFormat = opts.format ?? "wav";
+        const blob = fmt === "ogg"
+          ? await encodeAsOgg(rendered, { bitrate: opts.bitrate ?? DEFAULT_OGG_BITRATE_BPS })
+          : audioBufferToWav(rendered);
+        const baseName = `${pattern.name}_${part.name}`;
+        downloadBlob(blob, filenameForFormat(baseName, blob.type === "audio/ogg" ? "ogg" : "wav"));
         onProgress({ phase: "rendering", progress: (pi + 1) / pattern.parts.length, message: `${part.name} exportiert` });
       }
     }
