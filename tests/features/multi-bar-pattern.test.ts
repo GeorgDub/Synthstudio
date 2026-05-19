@@ -137,8 +137,8 @@ describe("v3.39: PatternData mit stepCount=64", () => {
     expect(restored.patterns[0].parts[0].steps).toHaveLength(32);
   });
 
-  it("Schema-Version ist v1.30 (v3.75 Master-FX-Bus; stepCount=64 ist v1.19)", () => {
-    expect(SYNTH_FILE_VERSION).toBe("1.30");
+  it("Schema-Version ist v1.31 (v3.76 Master-Limiter + Mid-Q; stepCount=64 ist v1.19)", () => {
+    expect(SYNTH_FILE_VERSION).toBe("1.31");
   });
 });
 

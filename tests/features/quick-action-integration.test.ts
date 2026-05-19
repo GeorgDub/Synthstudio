@@ -261,7 +261,7 @@ describe("v3.69.0 – Schema v1.25 macros Round-Trip", () => {
       },
     ];
     const result = serializeProject({ ...makeBaseInput(), macros });
-    expect(result.version).toBe("1.30");
+    expect(result.version).toBe("1.31");
     expect(result.macros).toBeDefined();
     expect(result.macros).toHaveLength(1);
     expect(result.macros![0].name).toBe("Test Macro");

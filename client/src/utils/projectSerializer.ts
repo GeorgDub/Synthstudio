@@ -94,6 +94,14 @@
  *     schreiben). Explicit null/non-Object → undefined. Validierung
  *     ist permissiv: sanitizeMasterFx clampt jedes einzelne Feld und
  *     setzt Defaults für Fehlendes ein — verloren geht nichts.
+ *   - "1.31": Master-Limiter + Mid-Band-Q (v3.76.0). Additiv-erweitert auf
+ *     dem masterFx-Subtree:
+ *       - masterFx.limiter {threshold, knee, ratio, release, gain, bypass}
+ *         als brick-wall-Limiter am Ende der Master-Chain.
+ *       - masterFx.eq.midQ (0.3..10) closes v3.75-Caveat (Q-Param exposable).
+ *     Beide Felder additiv-optional. sanitizeMasterFx (im Store) fillt
+ *     fehlende Felder mit Defaults — pre-v1.31-Files laden ohne Crash, die
+ *     fehlenden Limiter/midQ-Werte werden mit den Defaults gefüllt.
  * Dateiendung: .synth
  */
 
@@ -124,7 +132,7 @@ import { isValidChannelColor } from "@/utils/channelColors";
 import type { MasterFxState } from "@/store/useMasterFxStore";
 import { sanitizeMasterFx } from "@/store/useMasterFxStore";
 
-export const SYNTH_FILE_VERSION = "1.30";
+export const SYNTH_FILE_VERSION = "1.31";
 export const SYNTH_LATEST_KEY = "synthstudio:last-project";
 
 // ─── Typen ───────────────────────────────────────────────────────────────────
@@ -280,9 +288,10 @@ export interface SynthProject {
   macros?: QuickActionMacro[];
 
   /**
-   * Master-FX-Bus Konfiguration (v3.75.0). Global Reverb (decay, damping,
-   * preDelay, wet, bypass), Global Delay (time, feedback, wet, bypass),
-   * Master EQ (low/mid/high Gain + low/high Freq + bypass).
+   * Master-FX-Bus Konfiguration (v3.75.0+, v1.30+). Global Reverb (decay,
+   * damping, preDelay, wet, bypass), Global Delay (time, feedback, wet,
+   * bypass), Master EQ (low/mid/high Gain + low/high Freq + midQ + bypass),
+   * v1.31 NEU Master-Limiter (threshold, knee, ratio, release, gain, bypass).
    *
    * Seit v1.30. Pre-v1.30-Files haben das Feld nicht → parseProject lässt
    * masterFx undefined (Signal an Restore: User-localStorage nicht über-

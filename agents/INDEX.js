@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.75.0",
+    version: "3.76.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -89,24 +89,34 @@ const INDEX = {
   // ─── KNOWN FILE INDEX ──────────────────────────────────────
   // Key files agents have analyzed. Add new entries after working on a file.
   files: {
-    "client/src/store/useMasterFxStore.ts (v3.75.0)": {
-      role:     "v3.75.0 NEU (~250 LOC, Custom-Observer-Pattern, KEIN zustand-npm): Store für den Master-FX-Bus (Global Reverb + Delay + EQ). Sub-States: MasterReverbState (decay/damping/preDelay/wet/bypass), MasterDelayState (time/feedback/wet/bypass), MasterEqState (lowGain/midGain/highGain/lowFreq/highFreq/bypass). DEFAULT_MASTER_REVERB/DELAY/EQ spiegeln die alten hart codierten v2.94/v3.74-Werte (Reverb 2.0s/0.5/0ms/0.6, Delay 0.5s/0.35/0.5, EQ 0/0/0 dB / 250Hz / 4000Hz) als bewusster Backward-Compat. Public-API: getMasterFxState/getMasterReverb/getMasterDelay/getMasterEq, setMasterReverb/setMasterDelay/setMasterEq (partial Update + Clamp), setAllMasterFx (Bulk-Restore: undefined=no-op, null/{}=defaults), resetMasterFx, useMasterFxStore (React-Hook), isValidMasterFxSnapshot Type-Guard. Pure-Clamp-Helper clampReverb/clampDelay/clampEq (defensive: NaN/Infinity/non-number → Default, out-of-range → min/max). sanitizeMasterFx ist der primäre Restore-Sanitizer für parseProject. localStorage-Key 'synthstudio:master-fx:v1'. DOM-frei testbar (kein AudioContext-Mock nötig).",
-      lastSeen: "2026-05-19T03:30:00.000Z",
+    "client/src/store/useMasterFxStore.ts (v3.76.0)": {
+      role:     "v3.76.0 ERWEITERT (+~80 LOC, bestehende v3.75-Store bleibt): NEU MasterLimiterState-Interface {threshold(-60..0dB), knee(0..40dB), ratio(1..20), release(0..1s), gain(0..4 makeup linear), bypass}. DEFAULT_MASTER_LIMITER = brick-wall-Preset (threshold=-1, ratio=20, knee=0, release=50ms, gain=1.0, bypass=false). NEU MasterEqState.midQ (0.3..10, default=0.7 backward-compat zur hart-codierten v3.75-Engine) — closes v3.75 'Master-EQ Q-Param für Mid-Band exposable' Caveat. clampLimiter Pure-Helper analog clampReverb/Delay/Eq (defensive NaN/Infinity → Defaults, out-of-range → clamp). clampEq erweitert um midQ. sanitizeMasterFx liefert jetzt zusätzlich limiter-Sub-State. NEU getMasterLimiter() + setMasterLimiter() Public-API. localStorage-Key bleibt synthstudio:master-fx:v1 (additiv-kompatibel: pre-v3.76-Daten ohne limiter/midQ → clamp* fillen Defaults). Bestehende v3.75 API (Reverb/Delay/EQ + setAllMasterFx + resetMasterFx + isValidMasterFxSnapshot) unverändert.",
+      lastSeen: "2026-05-19T03:55:00.000Z",
       ownedBy:  "backend"
     },
-    "client/src/audio/AudioEngine.ts (v3.75.0 master-fx-bus)": {
-      role:     "v3.75.0 ERWEITERT (+~270 LOC, bestehende v3.74/v3.72/v3.71/v3.70/v3.67/v3.63/v3.52 bleibt): Master-FX-Bus mit User-Control. NEU Master-EQ-Chain (3 BiquadFilter: lowshelf/peaking/highshelf) zwischen masterGain und ctx.destination — Routing in init(): masterGain → eqLow @250Hz → eqMid @1000Hz Q=0.7 → eqHigh @4000Hz → destination. NEU _globalReverbPreDelay (DelayNode max 250ms) + _globalReverbDamping (Lowpass-Biquad) vor dem Convolver in der Send-Chain. Channel-Send-Routing geht jetzt durch globalReverbSend → preDelay → damping → convolver → wet (Fallback ohne PreDelay-Node bleibt für Legacy-Setups). 12 NEUE public Setter: setMasterReverbDecay/Damping/PreDelay/Wet/Bypass, setMasterDelayTime/Feedback/Wet/Bypass, setMasterEqLowGain/MidGain/HighGain/LowFreq/HighFreq/Bypass — alle defensive geclampt (decay 0.1..10, damping 0..1, preDelay 0..200ms, wet 0..1, time 0.001..2, feedback 0..0.95 Stabilitätsgrenze gegen Selbst-Erregung, EQ gain ±24dB, EQ low 20..1000Hz / high 1000..20000Hz). _regenerateReverbIr Helper triggert IR-Neugenerierung bei Decay/Damping-Change. _dampingToHz Pure-Helper (exponential 500..20000Hz). Reverb-IR-Generator erweitert um damping-skaliertes ein-Pol-IIR-Lowpass-Filtering auf den Noise + Cache-Key über (decay, damping). Bypass-Implementierung setzt Wet/Gain-Param auf 0 OHNE den Engine-internal-Memory zu verlieren (Restore-fähig). getMasterFxSnapshot read-only Accessor für Tests + UI. reinit() entsorgt die neuen Nodes (_globalReverbPreDelay, _globalReverbDamping, _masterEqLow/Mid/High) sauber.",
-      lastSeen: "2026-05-19T03:30:00.000Z",
+    "client/src/audio/AudioEngine.ts (v3.76.0 master-limiter)": {
+      role:     "v3.76.0 ERWEITERT (+~150 LOC, bestehende v3.75/v3.74/v3.72/v3.71/v3.70/v3.67/v3.63/v3.52 bleibt): NEU _masterLimiter:DynamicsCompressorNode + _masterLimiterGain:GainNode am Ende der Master-Chain. NEUE Routing-Order: masterGain → eqLow @lowFreq → eqMid @1000Hz Q=midQ → eqHigh @highFreq → LIMITER (threshold=-1/ratio=20/knee=0/attack=3ms/release=50ms) → limiterGain (1.0×) → ctx.destination (v3.75 war: → eqHigh → destination direkt). NEU _masterEqMidQ (default 0.7) wird im init() auf den Mid-Biquad.Q geschrieben. 7 NEUE public Setter: setMasterLimiterThreshold(-60..0)/Knee(0..40)/Ratio(1..20)/Release(0..1)/Gain(0..4)/Bypass + setMasterEqMidQ(0.3..10) — alle defensive geclampt. setMasterLimiterBypass realisiert via Routing-Switch (eqHigh.disconnect + reconnect entweder direkt zu destination oder zum Limiter) — Engine-internal-Memory bleibt erhalten. NEU getMasterLimiterReduction() liest DynamicsCompressorNode.reduction (returnt 0 bei bypass oder fehlendem Node). getMasterFxSnapshot erweitert um limiter-Sub-State + eq.midQ. reinit() entsorgt _masterLimiter + _masterLimiterGain sauber.",
+      lastSeen: "2026-05-19T03:55:00.000Z",
       ownedBy:  "backend"
     },
-    "client/src/components/Mixer/MasterFxPanel.tsx (v3.75.0)": {
-      role:     "v3.75.0 NEU (~330 LOC): Tabbed-UI für den Master-FX-Bus. 3 Tabs: Reverb (Decay/Damping/PreDelay/Wet + Bypass) / Delay (Time/Feedback/Wet + Bypass) / EQ (Low/Mid/High Gain + Low/High Freq + Bypass). Interne Sub-Components: SliderRow (Label + range-input + Value-Display, accent-accent-primary), BypassToggle (button mit ACTIVE/BYPASSED-Text, accent-danger bei active). Slider-Format-Funktionen pro Param: Decay 'X.X s', PreDelay 'X ms', Feedback 'XX%', Freq 'X Hz' / 'X.X kHz', dB mit +/- Vorzeichen. Slider-Change ruft Store-Setter (setMasterReverb/Delay/Eq) UND AudioEngine.setMaster*() direkt im selben Tick (kein useEffect-Indirection — Audio-Latency soll < 1 Frame bleiben). KEINE hardcoded Tailwind-Farben — alles über semantische Klassen (bg-bg-panel/text-accent-primary/border-accent-danger). Mount-Position: MixerView unter den Return-Track-Bus-Labels. data-testids: master-fx-panel + -tab-{reverb|delay|eq} + -{reverb|delay|eq}-{decay|damping|...} + -{kategorie}-bypass.",
-      lastSeen: "2026-05-19T03:30:00.000Z",
+    "client/src/components/Mixer/MasterFxPanel.tsx (v3.76.0)": {
+      role:     "v3.76.0 ERWEITERT (+~140 LOC, bestehende v3.75 Reverb/Delay/EQ-Tabs bleiben): NEU 4. Tab 'LIMITER' (Threshold/Knee/Ratio/Release/Make-Up-Gain Slider + Bypass-Toggle + Live-GR-Meter). GR-Meter: setInterval-Poll alle 50ms (≈20fps reicht für Pegelanzeige) via AudioEngine.getMasterLimiterReduction(). Bar-Visualisierung als Prozent-Width (Math.min(100, -reduction*5)) mit bg-accent-danger, Value-Span zeigt 'X.X dB' (oder '0.0 dB' bei <0.05dB GR). Polling läuft nur wenn Limiter-Tab aktiv (useEffect-cleanup räumt setInterval bei Tab-Switch + Unmount). NEU Mid-Q-Slider im EQ-Tab (zwischen Mid-Gain und High-Gain, range 0.3..10, step 0.1, format toFixed(1)). Slider-Format-Funktionen NEU: Threshold/Knee 'X.X dB', Ratio 'X.X:1', Release 'X ms', Make-Up 'X.XXx'. data-testids: master-fx-tab-limiter, master-fx-limiter-{threshold|knee|ratio|release|gain|bypass|gr-row|gr-bar|gr-value}, master-fx-eq-midq.",
+      lastSeen: "2026-05-19T03:55:00.000Z",
       ownedBy:  "frontend"
     },
-    "client/src/utils/projectSerializer.ts (v3.75.0 v1.30)": {
-      role:     "v3.75.0 SCHEMA-BUMP v1.29 → v1.30: SYNTH_FILE_VERSION='1.30' + Header-Doku-Block v1.30 Migration (masterFx?:MasterFxState additiv-optional). NEU masterFx-Feld im SynthProject-Interface (Master-FX-Bus Konfiguration: Reverb + Delay + EQ). parseProject hat NEU masterFx-Block am Ende: undefined → undefined (Restore-Signal: User-localStorage nicht überschreiben), null/non-Object/Array → undefined (defensive delete), Object → sanitizeMasterFx (clampt jedes Feld + setzt Defaults für Fehlendes ein, kein Throw bei korruptem Schema). Imports +MasterFxState + sanitizeMasterFx aus useMasterFxStore. Bestehende v1.29 AudioTrack+LiveInput.color + v1.28 PartData.color + v1.27 loop-Crossfade + alles andere bleibt unverändert.",
-      lastSeen: "2026-05-19T03:30:00.000Z",
+    "client/src/utils/projectSerializer.ts (v3.76.0 v1.31)": {
+      role:     "v3.76.0 SCHEMA-BUMP v1.30 → v1.31: SYNTH_FILE_VERSION='1.31' + Header-Doku-Block v1.31 Migration (masterFx.limiter + masterFx.eq.midQ additiv-optional). Keine Code-Änderung am parseProject-Pfad nötig — sanitizeMasterFx (im Store) clampt die neuen Felder und fillt mit Defaults bei Fehlen. Pre-v1.31-Files mit altem masterFx (ohne limiter/midQ) laden ohne Crash, die fehlenden Felder werden mit Defaults eingesetzt (limiter brick-wall, midQ=0.7). Bestehende v1.30 masterFx + v1.29 AudioTrack/LiveInput.color + v1.28 PartData.color + alles andere bleibt unverändert.",
+      lastSeen: "2026-05-19T03:55:00.000Z",
+      ownedBy:  "backend"
+    },
+    "tests/features/master-limiter.test.ts (v3.76.0)": {
+      role:     "v3.76.0 NEU (~450 LOC, 13 Tests in 6 describes, env:node mit localStorage-Mock + Mock-AudioContext + Mock-DynamicsCompressor mit knee+reduction-Field). (1) Limiter-Store-Defaults+Clamping × 4 (brick-wall-Defaults, threshold/knee/ratio/release/gain Clamp, NaN/Infinity defensive, localStorage Round-Trip via vi.resetModules). (2) Mid-Q-Store × 2 (Default 0.7, Clamp 0.3..10 + NaN fallback). (3) Engine-Setter × 2 (setMasterLimiterThreshold Clamp -60..0, setMasterEqMidQ Clamp 0.3..10 + Snapshot-Verifikation). (4) Routing-Wiring × 5 (createDynamicsCompressor wurde mind. 1× aufgerufen, eqHigh.connect-Spy zeigt connection zum Limiter, setMasterLimiterBypass(true) disconnected eqHigh und re-connectet zu destination direkt, Engine-Memory bleibt nach Bypass+Unbypass, getMasterLimiterReduction reflektiert .reduction-Field + 0 bei bypass). (5) Schema v1.31 Round-Trip × 4 (SYNTH_FILE_VERSION='1.31', Round-Trip preserves limiter + midQ, pre-v1.31-File mit altem masterFx ohne limiter/midQ → Defaults ergänzt, korrupte out-of-range Felder via sanitizeMasterFx gefixt). (6) resetMasterFx × 1 (Limiter + Mid-Q auf Defaults).",
+      lastSeen: "2026-05-19T03:55:00.000Z",
+      ownedBy:  "backend"
+    },
+    "tests/features/master-fx-bus.test.ts (v3.76.0)": {
+      role:     "v3.75.0 NEU + v3.76.0 ERWEITERT (~520 LOC, 27 Tests in 6 describes, env:node mit localStorage-Mock + Mock-AudioContext). v3.76: Schema-Assertions 1.30 → 1.31 (3×). Mock createDynamicsCompressor um knee:makeParam(30) erweitert weil Engine im init() jetzt limiter.knee.value=0 schreibt. Bestehende v3.75-Tests bleiben unverändert.",
+      lastSeen: "2026-05-19T03:55:00.000Z",
       ownedBy:  "backend"
     },
     "client/src/components/Mixer/MixerView.tsx (v3.75.0 master-fx-mount)": {
@@ -2187,6 +2197,63 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "backend",
+      timestamp: "2026-05-19T03:55:00.000Z",
+      done: [
+        "v3.76.0: Master-Limiter + Mid-Band-Q — closes v3.75-Caveats. Bis v3.75 fehlte ein brick-wall-Limiter am Master-Bus (User konnte nicht mastern) und der Master-EQ Mid-Band-Q war hart auf 0.7 codiert (kein Surgical-Cut möglich).",
+        "client/src/store/useMasterFxStore.ts ERWEITERT (+~80 LOC): NEU MasterLimiterState-Interface {threshold(-60..0dB), knee(0..40dB), ratio(1..20), release(0..1s), gain(0..4 makeup), bypass}. DEFAULT_MASTER_LIMITER = brick-wall-Preset (threshold=-1, ratio=20, knee=0, release=50ms, gain=1.0). NEU MasterEqState.midQ (0.3..10, default=0.7 backward-compat). clampLimiter Pure-Helper analog clampReverb/Delay/Eq. clampEq erweitert um midQ. sanitizeMasterFx liefert jetzt zusätzlich limiter-Sub-State. NEU getMasterLimiter() + setMasterLimiter() Public-API. localStorage-Key bleibt synthstudio:master-fx:v1 (additiv-kompatibel: pre-v3.76-Daten ohne limiter/midQ werden via clamp* mit Defaults gefüllt).",
+        "client/src/audio/AudioEngine.ts ERWEITERT (+~150 LOC): NEU _masterLimiter:DynamicsCompressorNode + _masterLimiterGain:GainNode am Ende der Master-Chain. NEUE Routing-Order: masterGain → eqLow → eqMid → eqHigh → LIMITER → limiterGain → ctx.destination (v3.75 war: → eqHigh → destination direkt). NEU _masterEqMidQ (default 0.7) wird im init() auf den Mid-Biquad.Q geschrieben. 7 NEUE public Setter: setMasterLimiterThreshold/Knee/Ratio/Release/Gain/Bypass + setMasterEqMidQ. setMasterLimiterBypass realisiert via Routing-Switch (eqHigh disconnect + reconnect entweder direkt zu destination oder zum Limiter) — Engine-internal-Memory (threshold/ratio/etc.) bleibt erhalten. NEU getMasterLimiterReduction() liest DynamicsCompressorNode.reduction (returnt 0 bei bypass). getMasterFxSnapshot erweitert um limiter-Sub-State + eq.midQ. reinit() entsorgt _masterLimiter + _masterLimiterGain sauber.",
+        "client/src/utils/projectSerializer.ts SCHEMA-BUMP v1.30 → v1.31: SYNTH_FILE_VERSION='1.31' + Header-Doku-Block v1.31 Migration (masterFx.limiter + masterFx.eq.midQ additiv). Keine Code-Änderung am Restore-Pfad nötig — sanitizeMasterFx (im Store) clampt die neuen Felder und fillt mit Defaults bei Fehlen. Pre-v1.31-Files mit altem masterFx (ohne limiter/midQ) laden ohne Crash, die fehlenden Felder werden mit Defaults eingesetzt.",
+        "client/src/components/Mixer/MasterFxPanel.tsx ERWEITERT (+~140 LOC): NEU 4. Tab 'LIMITER' (Threshold/Knee/Ratio/Release/Make-Up-Gain + Bypass-Toggle + GR-Meter). GR-Meter: setInterval-Poll alle 50ms (≈20fps reicht für Pegelanzeige) via AudioEngine.getMasterLimiterReduction(). Bar-Visualisierung als Prozent-Width (Math.min(100, -reduction*5)) mit bg-accent-danger, Value-Span zeigt 'X.X dB' (oder '0.0 dB' bei <0.05dB). NEU Mid-Q-Slider im EQ-Tab (zwischen Mid-Gain und High-Gain, range 0.3..10, format toFixed(1)). data-testids: master-fx-tab-limiter, master-fx-limiter-{threshold|knee|ratio|release|gain|bypass|gr-row|gr-bar|gr-value}, master-fx-eq-midq.",
+        "tests/features/master-limiter.test.ts (NEU, ~450 LOC, 13 Tests in 6 describes): (1) Limiter-Store-Defaults+Clamping × 4 (brick-wall-Defaults, threshold/knee/ratio/release/gain Clamp, NaN/Infinity defensive, localStorage Round-Trip via vi.resetModules). (2) Mid-Q-Store × 2 (Default 0.7, Clamp 0.3..10 + NaN fallback). (3) Engine-Setter × 2 (setMasterLimiterThreshold Clamp -60..0, setMasterEqMidQ Clamp 0.3..10 + Snapshot-Verifikation). (4) Routing-Wiring × 5 (createDynamicsCompressor wurde mind. 1× aufgerufen, eqHigh.connect-Spy zeigt connection zum Limiter, setMasterLimiterBypass(true) disconnected eqHigh und re-connectet zu destination direkt, Engine-Memory bleibt nach Bypass+Unbypass, getMasterLimiterReduction reflektiert .reduction-Field + 0 bei bypass). (5) Schema v1.31 Round-Trip × 4 (SYNTH_FILE_VERSION='1.31', Round-Trip preserves limiter + midQ, pre-v1.31-File mit altem masterFx ohne limiter/midQ → Defaults ergänzt, korrupte out-of-range Felder via sanitizeMasterFx gefixt). (6) resetMasterFx × 1 (Limiter + Mid-Q auf Defaults).",
+        "Mock-Update in 9 Test-Files: createDynamicsCompressor-Mock um knee:makeParam(30) erweitert (master-fx-bus, audio-loop-polish, audio-loop-crossfade, audio-track-timestretch, audio-track-loop, audio-track, audio-track-stretch, solo-cross-store, channel-bounce 2×, macro-lfo-integration) — Engine schreibt jetzt im init() limiter.knee.value=0 und der alte Mock-Compressor hatte das Param-Feld nicht. Zero-impact für die existierenden Test-Logiken.",
+        "Schema-Version-Assertions in 12 Test-Files v1.30 → v1.31 (audio-track-store 2×, audio-track-stretch, audio-track-loop, audio-loop-crossfade 2×, multi-bar-pattern, plugin-host 2×, plugin-multislot, project-serializer 3×, project-id-migration 2×, quick-action-integration, script-store, channel-colors 4×, master-fx-bus 3×). Pre-v1.30-Test-Fixtures bleiben unverändert — sie testen jetzt pre-v1.31-Backward-Compat.",
+        "package.json (3.75.0 → 3.76.0). pnpm check clean. pnpm test grün: 221 Test-Files / 5111 Tests passed (16 skipped, +18 vs. v3.75 5093)."
+      ],
+      next: [
+        "v3.77: Limiter-Lookahead — DynamicsCompressorNode hat keinen native lookahead (Web Audio Spec). Für True-Peak-safe brick-wall müsste man entweder einen DelayNode davor schalten + zukunfts-prediction berechnen oder AudioWorklet-basierten Limiter ersetzen. Pragmatischer Einstieg: 5ms DelayNode vor dem Compressor + Compressor mit attack=0 → quasi-lookahead.",
+        "v3.77: Limiter-Preset-Liste ('Brick-Wall', 'Mastering', 'Loudness', 'Soft-Compression', 'Off') als JSON-Snippets — übernommen aus v3.76 Caveat-next.",
+        "v3.77: True-Peak-Reader am Master-Output (4x-Oversampling für inter-sample peaks). Aktueller Limiter sieht nur sample-peaks, was bei aggressivem Limiting trotzdem >0dBFS Inter-Sample-Peaks erzeugen kann.",
+        "v3.77: K-Weighted LUFS-Meter im Master-FX-Panel (Integrated LUFS + Short-Term + Momentary). Standard fürs Mastering und Streaming-Loudness-Normalization.",
+        "v3.77: Master-FX Routing-Order Toggle (EQ-vor-Compressor vs. EQ-nach-Compressor) — übernommen aus v3.75 Caveat-next, weiter offen."
+      ],
+      changed: [
+        "client/src/store/useMasterFxStore.ts (+~80 LOC: MasterLimiterState + DEFAULT_MASTER_LIMITER + clampLimiter + setMasterLimiter/getMasterLimiter + eq.midQ + clampEq.midQ-Wiring + sanitizeMasterFx limiter-Sub-State)",
+        "client/src/audio/AudioEngine.ts (+~150 LOC: _masterLimiter + _masterLimiterGain + _masterEqMidQ Fields, init()-Wiring eqHigh→limiter→limiterGain→destination, 7 NEUE setMasterLimiter*+setMasterEqMidQ Setter, getMasterLimiterReduction, Snapshot+reinit-Cleanup erweitert)",
+        "client/src/utils/projectSerializer.ts (Schema v1.30 → v1.31: SYNTH_FILE_VERSION + Header-Doku-Block + masterFx-Doku-Comment-Update, keine parseProject-Code-Änderung)",
+        "client/src/components/Mixer/MasterFxPanel.tsx (+~140 LOC: 4. Tab 'LIMITER' mit Threshold/Knee/Ratio/Release/Make-Up-Slidern + Bypass-Toggle + Live-GR-Meter via setInterval@50ms, NEU Mid-Q-Slider im EQ-Tab)",
+        "tests/features/master-limiter.test.ts (NEU, ~450 LOC, 13 Tests in 6 describes)",
+        "tests/features/master-fx-bus.test.ts (Mock-knee + Schema-Assertion 1.30 → 1.31)",
+        "tests/features/audio-loop-polish.test.ts (Mock createDynamicsCompressor +knee)",
+        "tests/features/audio-loop-crossfade.test.ts (Mock +knee + 2× Schema-Assertion 1.30 → 1.31)",
+        "tests/features/audio-track-timestretch.test.ts (Mock +knee)",
+        "tests/features/audio-track-loop.test.ts (Mock +knee + Schema-Assertion 1.30 → 1.31)",
+        "tests/features/audio-track.test.ts (Mock +knee)",
+        "tests/features/audio-track-stretch.test.ts (Mock +knee + Schema-Assertion 1.30 → 1.31)",
+        "tests/features/audio-track-store.test.ts (2× Schema-Assertion 1.30 → 1.31)",
+        "tests/features/multi-bar-pattern.test.ts (Schema-Assertion 1.30 → 1.31)",
+        "tests/features/plugin-host.test.ts (2× Schema-Assertion 1.30 → 1.31)",
+        "tests/features/plugin-multislot.test.ts (Schema-Assertion 1.30 → 1.31)",
+        "tests/features/project-serializer.test.ts (3× Schema-Assertion 1.30 → 1.31)",
+        "tests/features/project-id-migration.test.ts (2× Schema-Assertion 1.30 → 1.31)",
+        "tests/features/quick-action-integration.test.ts (Schema-Assertion 1.30 → 1.31)",
+        "tests/features/script-store.test.ts (Schema-Assertion 1.30 → 1.31)",
+        "tests/features/channel-colors.test.ts (4× Schema-Assertion 1.30 → 1.31)",
+        "tests/features/solo-cross-store.test.ts (Mock +knee)",
+        "tests/features/channel-bounce.test.ts (2. Mock +knee)",
+        "tests/features/macro-lfo-integration.test.ts (Mock +knee)",
+        "package.json (3.75.0 → 3.76.0)"
+      ],
+      caveats: [
+        "Limiter-Lookahead fehlt: DynamicsCompressorNode hat keinen native lookahead (Web Audio API). Bei sehr schnellen Transienten kann der Compressor 1-2ms zu spät reagieren → kurze Spitzen rutschen durch den 'brick-wall'. Workaround in v3.77: 5ms DelayNode vor dem Limiter + attack=0.",
+        "True-Peak: Sample-Peaks ≤ threshold heißt NICHT Inter-Sample-Peaks ≤ threshold. Bei aggressivem Limiting (threshold=-0.1dB) können nach dem D/A-Wandler trotzdem +0.5dB Inter-Sample-Peaks entstehen. Standard-Workaround: threshold mind. -1dB (bei brick-wall) oder True-Peak-Limiter mit 4x-Oversampling (v3.77).",
+        "GR-Meter Update-Rate ist 50ms (20fps) — bei sehr schnellen Transienten ist der Meter ggfs. visuell nicht synchron. RAF-basierte Updates wären 60fps aber teurer. Für reine Pegelanzeige sind 20fps Best-Practice (Logic Pro / Ableton lesen mit ähnlicher Rate).",
+        "Bypass-Implementation: setMasterLimiterBypass disconnected den eqHigh und reconnected entweder direkt zu destination (bypass=true) oder zum Limiter (bypass=false). Es gibt einen ~1-Frame-Audio-Glitch beim Switch (Disconnect-Click). Für glitch-freies Bypass müsste man eine GainNode-Crossfade-Switch nutzen oder einen ParallelPath halten — Komplexität vs. Nutzen-Trade-off.",
+        "Schema-Bump v1.31: Forward-kompatibel (v3.75 liest v3.76-Files ohne Crash, ignoriert masterFx.limiter und masterFx.eq.midQ). Backward-Lücke wie immer: v3.75 öffnet v3.76-File mit Limiter-State, beim Re-Save gehen die Felder verloren.",
+        "Make-Up-Gain ist linear (0..4) als Multiplier hinter dem Limiter — kein dB-Wert. UI zeigt 'X.XXx' statt 'X.X dB'. Mastering-Engineers gewöhnen sich daran, aber eine optionale dB-Anzeige wäre user-freundlicher. Auf der Roadmap für v3.77 (UI-Polish)."
+      ]
+    },
     {
       agent:     "backend",
       timestamp: "2026-05-19T03:30:00.000Z",

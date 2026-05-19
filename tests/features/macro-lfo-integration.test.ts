@@ -66,7 +66,7 @@ class MockAudioContext {
   createConvolver() { return makeConvolverMock(); }
   createDelay(_max?: number) { return makeDelayMock(); }
   createBiquadFilter() { return { ...makeGainMock(), type: "lowpass", frequency: { value: 1000 }, Q: { value: 1 } }; }
-  createDynamicsCompressor() { return { ...makeGainMock(), threshold: { value: -24 }, ratio: { value: 4 }, attack: { value: 0.003 }, release: { value: 0.25 } }; }
+  createDynamicsCompressor() { return { ...makeGainMock(), threshold: { value: -24 }, ratio: { value: 4 }, attack: { value: 0.003 }, release: { value: 0.25 }, knee: { value: 30 } }; }
   createWaveShaper() { return makeGainMock(); }
   createAnalyser() { return { ...makeGainMock(), fftSize: 2048, getByteFrequencyData: vi.fn() }; }
   createBuffer() { return { duration: 1, sampleRate: 44100, numberOfChannels: 1, getChannelData: () => new Float32Array(44100) }; }

@@ -1483,7 +1483,7 @@ describe("bounceAllChannels", () => {
       createDynamicsCompressor() {
         return {
           _kind: "compressor",
-          threshold: { value: -24 }, ratio: { value: 4 }, attack: { value: 0.003 }, release: { value: 0.25 },
+          threshold: { value: -24 }, ratio: { value: 4 }, attack: { value: 0.003 }, release: { value: 0.25 }, knee: { value: 30 },
           connect() {}, disconnect() {},
         };
       }

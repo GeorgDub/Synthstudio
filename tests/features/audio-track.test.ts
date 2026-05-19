@@ -134,6 +134,7 @@ class MockAudioContext {
       ratio: makeParam(4),
       attack: makeParam(0.003),
       release: makeParam(0.25),
+      knee: makeParam(30),
       reduction: 0,
     };
   }

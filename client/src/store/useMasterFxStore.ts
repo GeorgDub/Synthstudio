@@ -1,7 +1,19 @@
 /**
- * Synthstudio – useMasterFxStore.ts (v3.75.0)
+ * Synthstudio – useMasterFxStore.ts (v3.76.0)
  *
- * Master-FX-Bus State: User-Control über die globalen Reverb/Delay/EQ-Busse.
+ * Master-FX-Bus State: User-Control über die globalen Reverb/Delay/EQ-Busse +
+ * brick-wall Master-Limiter.
+ *
+ * v3.76.0 closes v3.75-Caveats:
+ *   - NEU `limiter` Sub-State {threshold, knee, ratio, release, gain, bypass}.
+ *     DynamicsCompressorNode am Ende der Master-Chain (post-EQ, vor
+ *     destination). Default threshold=-1dB, ratio=20, knee=0, release=50ms,
+ *     gain=1.0, bypass=false → brick-wall-Limiter-Preset.
+ *   - NEU `eq.midQ` Slider (closes v3.75 Caveat 'Master-EQ Q-Param für
+ *     Mid-Band exposable'). Default 0.7 (backward-compat zur hart-codierten
+ *     v3.75-Engine), Range 0.3..10.
+ *   - Schema v1.30 → v1.31.
+ *
  * Closes v3.74-Caveat: bis v3.74 war der `_globalReverbBus` (Plate-Reverb,
  * fix decay=2s) und der `_globalDelayBus` (delayTime=0.5s, feedback=0.35) im
  * AudioEngine.init() hart codiert — kein User-Control über Decay, Damping,
@@ -12,18 +24,21 @@
  * Architektur:
  *  - Custom Observer-Pattern (analog useThemeStore + Co), KEIN zustand-npm.
  *  - localStorage-Persist unter `synthstudio:master-fx:v1`.
- *  - Zusätzlich Snapshot-Round-Trip im .synth-Projektformat (Schema v1.30).
- *  - Audio-Wiring (Reverb-IR, Delay-Time/-Feedback, EQ-Bands) übernimmt
- *    AudioEngine. Diese Store-Datei selbst hat KEINE Audio-Side-Effects —
- *    Komponenten (MasterFxPanel) rufen explizit AudioEngine.setMaster*().
+ *  - Zusätzlich Snapshot-Round-Trip im .synth-Projektformat (Schema v1.31).
+ *  - Audio-Wiring (Reverb-IR, Delay-Time/-Feedback, EQ-Bands, Limiter)
+ *    übernimmt AudioEngine. Diese Store-Datei selbst hat KEINE Audio-Side-
+ *    Effects — Komponenten (MasterFxPanel) rufen explizit AudioEngine.setMaster*().
  *
  * Backward-Compat:
  *  - Default-Werte spiegeln die alten hart codierten v2.94/v3.74-Werte wider:
  *    Reverb decay=2.0s, damping=0.5, preDelay=0ms, wet=0.6, bypass=false.
  *    Delay  time=0.5s, feedback=0.35, wet=0.5, bypass=false.
- *    EQ     low/mid/high=0dB, lowFreq=250Hz, highFreq=4000Hz, bypass=false.
+ *    EQ     low/mid/high=0dB, lowFreq=250Hz, midQ=0.7, highFreq=4000Hz, bypass=false.
+ *    Limiter threshold=-1dB, knee=0, ratio=20, release=50ms, gain=1, bypass=false.
  *  - Pre-v3.75 hat keine Persistenz → defaults werden geladen.
- *  - parseProject (v1.30) toleriert fehlendes `masterFx`-Feld (→ defaults).
+ *  - Pre-v3.76-localStorage-Daten ohne midQ/limiter → Defaults werden ergänzt
+ *    (clampEq/clampLimiter fillen fehlende Felder).
+ *  - parseProject (v1.31) toleriert fehlendes `masterFx`-Feld (→ defaults).
  */
 import { useEffect, useReducer } from "react";
 
@@ -64,14 +79,49 @@ export interface MasterEqState {
   lowFreq: number;
   /** High-Shelf Frequenz in Hz (1000..20000). */
   highFreq: number;
+  /**
+   * v3.76.0: Peak Mid-Band Q-Faktor (0.3..10). Default 0.7 (=backward-compat
+   * mit hart-codierter v3.75-Engine). Surgical-Cuts brauchen Q≥5,
+   * gentle-Boost Q<0.5. UI-Slider ist logarithmisch.
+   */
+  midQ: number;
   /** Bypass-Toggle — alle 3 Bands auf 0dB intern. */
   bypass: boolean;
 }
 
+/**
+ * v3.76.0: Master-Limiter (DynamicsCompressorNode) am Ende der Master-Chain.
+ * Routing: masterGain → EQ → Limiter → ctx.destination.
+ *
+ * Defaults bilden ein brick-wall-Limiter-Preset (threshold=-1dB, ratio=20,
+ * knee=0 = hartes Knie, release=50ms = schnelle Erholung).
+ *
+ * `gain` ist ein Make-Up-Gain (linear) hinter dem Limiter — kompensiert die
+ * Pegel-Reduktion bei aggressivem Limiting.
+ */
+export interface MasterLimiterState {
+  /** Threshold in dB (-60..0). Bei welchem Pegel die Kompression einsetzt. */
+  threshold: number;
+  /** Knee-Härte in dB (0..40). 0 = hart (brick-wall), höher = sanfter. */
+  knee: number;
+  /**
+   * Ratio (1..20). Wie stark der Pegel über dem Threshold reduziert wird.
+   * 20 = quasi brick-wall. Web-Audio-Spec erlaubt 1..20.
+   */
+  ratio: number;
+  /** Release in Sekunden (0..1). Wie schnell sich der Limiter erholt. */
+  release: number;
+  /** Make-Up-Gain linear (0..4). Multiplier hinter dem Limiter. */
+  gain: number;
+  /** Bypass-Toggle (Wet=0, Engine-State erhalten). */
+  bypass: boolean;
+}
+
 export interface MasterFxState {
-  reverb: MasterReverbState;
-  delay:  MasterDelayState;
-  eq:     MasterEqState;
+  reverb:  MasterReverbState;
+  delay:   MasterDelayState;
+  eq:      MasterEqState;
+  limiter: MasterLimiterState;
 }
 
 // ─── Defaults ────────────────────────────────────────────────────────────────
@@ -99,14 +149,25 @@ export const DEFAULT_MASTER_EQ: MasterEqState = {
   highGain: 0,
   lowFreq:  250,
   highFreq: 4000,
+  midQ:     0.7,
   bypass:   false,
+};
+
+export const DEFAULT_MASTER_LIMITER: MasterLimiterState = {
+  threshold: -1,
+  knee:      0,
+  ratio:     20,
+  release:   0.05,
+  gain:      1.0,
+  bypass:    false,
 };
 
 export function defaultMasterFxState(): MasterFxState {
   return {
-    reverb: { ...DEFAULT_MASTER_REVERB },
-    delay:  { ...DEFAULT_MASTER_DELAY },
-    eq:     { ...DEFAULT_MASTER_EQ },
+    reverb:  { ...DEFAULT_MASTER_REVERB },
+    delay:   { ...DEFAULT_MASTER_DELAY },
+    eq:      { ...DEFAULT_MASTER_EQ },
+    limiter: { ...DEFAULT_MASTER_LIMITER },
   };
 }
 
@@ -155,7 +216,21 @@ export function clampEq(input: Partial<MasterEqState> | undefined): MasterEqStat
     highGain: clampNum(i.highGain, -24,   24,    d.highGain),
     lowFreq:  clampNum(i.lowFreq,  20,    1000,  d.lowFreq),
     highFreq: clampNum(i.highFreq, 1000,  20000, d.highFreq),
+    midQ:     clampNum(i.midQ,     0.3,   10,    d.midQ),
     bypass:   clampBool(i.bypass, d.bypass),
+  };
+}
+
+export function clampLimiter(input: Partial<MasterLimiterState> | undefined): MasterLimiterState {
+  const d = DEFAULT_MASTER_LIMITER;
+  const i = input ?? {};
+  return {
+    threshold: clampNum(i.threshold, -60,  0,    d.threshold),
+    knee:      clampNum(i.knee,      0,    40,   d.knee),
+    ratio:     clampNum(i.ratio,     1,    20,   d.ratio),
+    release:   clampNum(i.release,   0,    1,    d.release),
+    gain:      clampNum(i.gain,      0,    4,    d.gain),
+    bypass:    clampBool(i.bypass, d.bypass),
   };
 }
 
@@ -163,9 +238,10 @@ export function sanitizeMasterFx(raw: unknown): MasterFxState {
   if (!raw || typeof raw !== "object") return defaultMasterFxState();
   const r = raw as Partial<MasterFxState>;
   return {
-    reverb: clampReverb(r.reverb),
-    delay:  clampDelay(r.delay),
-    eq:     clampEq(r.eq),
+    reverb:  clampReverb(r.reverb),
+    delay:   clampDelay(r.delay),
+    eq:      clampEq(r.eq),
+    limiter: clampLimiter(r.limiter),
   };
 }
 
@@ -216,9 +292,10 @@ export function getMasterFxState(): MasterFxState {
   return _state;
 }
 
-export function getMasterReverb(): MasterReverbState { return _state.reverb; }
-export function getMasterDelay():  MasterDelayState  { return _state.delay;  }
-export function getMasterEq():     MasterEqState     { return _state.eq;     }
+export function getMasterReverb():  MasterReverbState  { return _state.reverb;  }
+export function getMasterDelay():   MasterDelayState   { return _state.delay;   }
+export function getMasterEq():      MasterEqState      { return _state.eq;      }
+export function getMasterLimiter(): MasterLimiterState { return _state.limiter; }
 
 // ─── Public Setters (atomar pro Param) ───────────────────────────────────────
 
@@ -234,9 +311,13 @@ export function setMasterEq(update: Partial<MasterEqState>): void {
   commit({ ..._state, eq: clampEq({ ..._state.eq, ...update }) });
 }
 
+export function setMasterLimiter(update: Partial<MasterLimiterState>): void {
+  commit({ ..._state, limiter: clampLimiter({ ..._state.limiter, ...update }) });
+}
+
 /**
  * Bulk-Set (Project-Restore-Path). Wenn `input` undefined ist, bleibt der
- * State unverändert — Signal "Pre-v1.30-File, User-localStorage nicht
+ * State unverändert — Signal "Pre-v1.30/v1.31-File, User-localStorage nicht
  * überschreiben". Explicit `null` oder `{}` → defaults.
  */
 export function setAllMasterFx(input: unknown): void {
@@ -276,5 +357,5 @@ export function isValidMasterFxSnapshot(raw: unknown): boolean {
   // sehr lax — primary Guard ist sanitizeMasterFx, das defaults bei jedem
   // fehlenden Feld einsetzt. Diese Funktion hilft parseProject ein
   // explizites `masterFx: null` vs. `masterFx: {}` zu unterscheiden.
-  return !!(r.reverb || r.delay || r.eq);
+  return !!(r.reverb || r.delay || r.eq || r.limiter);
 }

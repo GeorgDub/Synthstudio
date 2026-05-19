@@ -160,7 +160,7 @@ class MockAudioContext {
   }
   createWaveShaper(): MockNode { return { ...makeBaseNode(), curve: null, oversample: "4x" }; }
   createDynamicsCompressor(): MockNode {
-    return { ...makeBaseNode(), threshold: makeParam(-24), ratio: makeParam(4), attack: makeParam(0.003), release: makeParam(0.25), reduction: 0 };
+    return { ...makeBaseNode(), threshold: makeParam(-24), ratio: makeParam(4), attack: makeParam(0.003), release: makeParam(0.25), knee: makeParam(30), reduction: 0 };
   }
   createDelay(): MockNode { return { ...makeBaseNode(), delayTime: makeParam(0.25) }; }
   createConvolver(): MockNode { return { ...makeBaseNode(), buffer: null }; }
@@ -524,7 +524,7 @@ describe("v3.72.0 — Schema v1.27 Round-Trip + Backward-Compat", () => {
     const { SYNTH_FILE_VERSION } = await import(
       "../../client/src/utils/projectSerializer"
     );
-    expect(SYNTH_FILE_VERSION).toBe("1.30");
+    expect(SYNTH_FILE_VERSION).toBe("1.31");
   });
 
   it("Round-Trip: loopCrossfadeMs wird in der .synth-Datei preserved", async () => {
@@ -568,7 +568,7 @@ describe("v3.72.0 — Schema v1.27 Round-Trip + Backward-Compat", () => {
     const ser = serializeProject(baseInput as any);
     const json = JSON.stringify(ser);
     const parsed = parseProject(json);
-    expect(parsed.version).toBe("1.30");
+    expect(parsed.version).toBe("1.31");
     expect(parsed.audioTracks).toBeDefined();
     expect(parsed.audioTracks![0].loopCrossfadeMs).toBe(15);
   });

@@ -157,7 +157,7 @@ class MockAudioContext {
   }
   createWaveShaper(): MockNode { return { ...makeBaseNode(), curve: null, oversample: "4x" }; }
   createDynamicsCompressor(): MockNode {
-    return { ...makeBaseNode(), threshold: makeParam(-24), ratio: makeParam(4), attack: makeParam(0.003), release: makeParam(0.25), reduction: 0 };
+    return { ...makeBaseNode(), threshold: makeParam(-24), ratio: makeParam(4), attack: makeParam(0.003), release: makeParam(0.25), knee: makeParam(30), reduction: 0 };
   }
   createDelay(): MockNode { return { ...makeBaseNode(), delayTime: makeParam(0.25) }; }
   createConvolver(): MockNode { return { ...makeBaseNode(), buffer: null }; }

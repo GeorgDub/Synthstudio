@@ -579,6 +579,21 @@ class AudioEngineClass {
   private _masterEqLowGain = 0;
   private _masterEqMidGain = 0;
   private _masterEqHighGain = 0;
+  /** v3.76.0: Peak Mid-Band Q-Faktor (0.3..10), default 0.7. */
+  private _masterEqMidQ = 0.7;
+
+  // ─── Master Limiter (v3.76.0) ──────────────────────────────────────────────
+  /**
+   * DynamicsCompressorNode am Ende der Master-Chain. Routing:
+   *   masterGain → eqLow → eqMid → eqHigh → limiter → limiterGain → destination.
+   * Bypass-Pfad legt parallel an + setzt limiter wet via gain=0. Hier
+   * realisiert via direkter Verbindung eqHigh→destination im Bypass-Fall
+   * (siehe _connectMasterTail / _disconnectMasterTail).
+   */
+  private _masterLimiter: DynamicsCompressorNode | null = null;
+  private _masterLimiterGain: GainNode | null = null;
+  private _masterLimiterBypass = false;
+  private _masterLimiterMakeup = 1.0;
 
   // Scheduling
   private schedulerTimer: ReturnType<typeof setInterval> | null = null;
@@ -690,7 +705,8 @@ class AudioEngineClass {
     this.masterGain.gain.value = 0.85;
 
     // v3.75.0: Master-EQ-Chain zwischen masterGain und destination.
-    // masterGain → eqLow → eqMid → eqHigh → ctx.destination
+    // v3.76.0: NEU Master-Limiter (DynamicsCompressor) am Ende der Chain.
+    // Routing: masterGain → eqLow → eqMid → eqHigh → limiter → limiterGain → destination
     // 3 BiquadFilter (lowshelf / peaking / highshelf). Gain-defaults = 0dB
     // (kein hörbarer Einfluss), Frequenzen aus DEFAULT_MASTER_EQ.
     this._masterEqLow = this.ctx.createBiquadFilter();
@@ -700,16 +716,32 @@ class AudioEngineClass {
     this._masterEqMid = this.ctx.createBiquadFilter();
     this._masterEqMid.type = "peaking";
     this._masterEqMid.frequency.value = 1000;
-    this._masterEqMid.Q.value = 0.7;
+    this._masterEqMid.Q.value = this._masterEqMidQ;
     this._masterEqMid.gain.value = 0;
     this._masterEqHigh = this.ctx.createBiquadFilter();
     this._masterEqHigh.type = "highshelf";
     this._masterEqHigh.frequency.value = 4000;
     this._masterEqHigh.gain.value = 0;
+
+    // v3.76.0: Limiter (brick-wall Preset by default).
+    this._masterLimiter = this.ctx.createDynamicsCompressor();
+    this._masterLimiter.threshold.value = -1;
+    this._masterLimiter.knee.value      = 0;
+    this._masterLimiter.ratio.value     = 20;
+    this._masterLimiter.attack.value    = 0.003; // 3ms, schnell
+    this._masterLimiter.release.value   = 0.05;
+    this._masterLimiterGain = this.ctx.createGain();
+    this._masterLimiterGain.gain.value  = 1.0;
+
     this.masterGain.connect(this._masterEqLow);
     this._masterEqLow.connect(this._masterEqMid);
     this._masterEqMid.connect(this._masterEqHigh);
-    this._masterEqHigh.connect(this.ctx.destination);
+    // EQ-Tail → Limiter → Make-Up → destination. Bypass-Pfad (v3.76): wenn
+    // _masterLimiterBypass=true wird via setMasterLimiterBypass() der Limiter
+    // disconnected und eqHigh direkt mit destination verbunden.
+    this._masterEqHigh.connect(this._masterLimiter);
+    this._masterLimiter.connect(this._masterLimiterGain);
+    this._masterLimiterGain.connect(this.ctx.destination);
 
     // Global Reverb Bus (Plate-ähnlich, default 2s Decay).
     // v3.75.0: PreDelay (DelayNode 0..200ms) + Damping (Lowpass-Biquad) vor
@@ -825,6 +857,8 @@ class AudioEngineClass {
     this._masterEqLow = null;
     this._masterEqMid = null;
     this._masterEqHigh = null;
+    this._masterLimiter = null;
+    this._masterLimiterGain = null;
     this.masterGain = null;
     this._outputAnalyser = null;
     // 5) AudioContext schließen (kein await — close ist robust gegen state).
@@ -2754,13 +2788,105 @@ class AudioEngineClass {
   }
 
   /**
+   * v3.76.0: Master-EQ Mid-Band Q-Faktor (0.3..10). Closes v3.75-Caveat —
+   * der Q-Wert war bis dahin hart auf 0.7 codiert. Surgical-Cuts brauchen
+   * Q≥5, gentle-Boost Q<0.5.
+   */
+  setMasterEqMidQ(q: number): void {
+    const clamped = Math.max(0.3, Math.min(10, q));
+    this._masterEqMidQ = clamped;
+    if (this._masterEqMid && this.ctx) {
+      this._masterEqMid.Q.setTargetAtTime(clamped, this.ctx.currentTime, 0.02);
+    }
+  }
+
+  // ─── Master-Limiter Setter (v3.76.0) ───────────────────────────────────────
+
+  /** Master-Limiter Threshold in dB (-60..0). */
+  setMasterLimiterThreshold(db: number): void {
+    const clamped = Math.max(-60, Math.min(0, db));
+    if (this._masterLimiter && this.ctx) {
+      this._masterLimiter.threshold.setTargetAtTime(clamped, this.ctx.currentTime, 0.02);
+    }
+  }
+
+  /** Master-Limiter Knee in dB (0..40). 0 = brick-wall. */
+  setMasterLimiterKnee(knee: number): void {
+    const clamped = Math.max(0, Math.min(40, knee));
+    if (this._masterLimiter && this.ctx) {
+      this._masterLimiter.knee.setTargetAtTime(clamped, this.ctx.currentTime, 0.02);
+    }
+  }
+
+  /** Master-Limiter Ratio (1..20). 20 = brick-wall. */
+  setMasterLimiterRatio(ratio: number): void {
+    const clamped = Math.max(1, Math.min(20, ratio));
+    if (this._masterLimiter && this.ctx) {
+      this._masterLimiter.ratio.setTargetAtTime(clamped, this.ctx.currentTime, 0.02);
+    }
+  }
+
+  /** Master-Limiter Release in Sekunden (0..1). */
+  setMasterLimiterRelease(sec: number): void {
+    const clamped = Math.max(0, Math.min(1, sec));
+    if (this._masterLimiter && this.ctx) {
+      this._masterLimiter.release.setTargetAtTime(clamped, this.ctx.currentTime, 0.02);
+    }
+  }
+
+  /** Master-Limiter Make-Up-Gain linear (0..4). */
+  setMasterLimiterGain(gain: number): void {
+    const clamped = Math.max(0, Math.min(4, gain));
+    this._masterLimiterMakeup = clamped;
+    if (this._masterLimiterGain && this.ctx) {
+      const target = this._masterLimiterBypass ? clamped : clamped;
+      // Bypass-Pfad ändert Routing nicht den Make-Up-Wert
+      this._masterLimiterGain.gain.setTargetAtTime(target, this.ctx.currentTime, 0.02);
+    }
+  }
+
+  /**
+   * Master-Limiter Bypass. Realisiert via Routing-Switch: bei bypass=true
+   * wird der Limiter ausgehängt (eqHigh→destination direkt), sonst die
+   * Original-Chain wiederhergestellt (eqHigh→limiter→limiterGain→destination).
+   * Engine-internal-Memory (threshold/ratio/etc.) bleibt erhalten.
+   */
+  setMasterLimiterBypass(bypass: boolean): void {
+    this._masterLimiterBypass = bypass;
+    if (!this.ctx || !this._masterEqHigh || !this._masterLimiter || !this._masterLimiterGain) return;
+    try {
+      this._masterEqHigh.disconnect();
+    } catch { /* swallow */ }
+    if (bypass) {
+      // Direct-Path: eqHigh → destination (Limiter umgangen).
+      this._masterEqHigh.connect(this.ctx.destination);
+    } else {
+      // Original-Path: eqHigh → limiter → limiterGain → destination.
+      this._masterEqHigh.connect(this._masterLimiter);
+    }
+  }
+
+  /**
+   * v3.76.0: Liefert die aktuelle Gain-Reduction des Master-Limiters in dB.
+   * Web-Audio-Spec: `DynamicsCompressorNode.reduction` ist ein read-only
+   * float (negativ = es wird komprimiert, 0 = kein GR). Wenn kein Limiter
+   * existiert oder bypassed ist → 0. UI pollt typisch alle ~50ms.
+   */
+  getMasterLimiterReduction(): number {
+    if (!this._masterLimiter || this._masterLimiterBypass) return 0;
+    const r = (this._masterLimiter as DynamicsCompressorNode & { reduction?: number }).reduction;
+    return typeof r === "number" && Number.isFinite(r) ? r : 0;
+  }
+
+  /**
    * Read-only Accessors für Tests + UI. Liefern die aktuell aktiven Engine-
    * Werte unabhängig vom Store (Crash-Recovery / Restore-Verifikation).
    */
   getMasterFxSnapshot(): {
-    reverb: { decay: number; damping: number; wet: number; bypass: boolean };
-    delay:  { time: number; feedback: number; wet: number; bypass: boolean };
-    eq:     { lowGain: number; midGain: number; highGain: number; bypass: boolean };
+    reverb:  { decay: number; damping: number; wet: number; bypass: boolean };
+    delay:   { time: number; feedback: number; wet: number; bypass: boolean };
+    eq:      { lowGain: number; midGain: number; highGain: number; midQ: number; bypass: boolean };
+    limiter: { threshold: number; knee: number; ratio: number; release: number; gain: number; bypass: boolean };
   } {
     return {
       reverb: {
@@ -2779,7 +2905,16 @@ class AudioEngineClass {
         lowGain: this._masterEqLowGain,
         midGain: this._masterEqMidGain,
         highGain: this._masterEqHighGain,
+        midQ: this._masterEqMidQ,
         bypass: this._masterEqBypass,
+      },
+      limiter: {
+        threshold: this._masterLimiter?.threshold.value ?? -1,
+        knee:      this._masterLimiter?.knee.value      ?? 0,
+        ratio:     this._masterLimiter?.ratio.value     ?? 20,
+        release:   this._masterLimiter?.release.value   ?? 0.05,
+        gain:      this._masterLimiterMakeup,
+        bypass:    this._masterLimiterBypass,
       },
     };
   }

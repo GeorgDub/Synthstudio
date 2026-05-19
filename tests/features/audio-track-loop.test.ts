@@ -141,7 +141,7 @@ class MockAudioContext {
   }
   createWaveShaper(): MockNode { return { ...makeBaseNode(), curve: null, oversample: "4x" }; }
   createDynamicsCompressor(): MockNode {
-    return { ...makeBaseNode(), threshold: makeParam(-24), ratio: makeParam(4), attack: makeParam(0.003), release: makeParam(0.25), reduction: 0 };
+    return { ...makeBaseNode(), threshold: makeParam(-24), ratio: makeParam(4), attack: makeParam(0.003), release: makeParam(0.25), knee: makeParam(30), reduction: 0 };
   }
   createDelay(): MockNode { return { ...makeBaseNode(), delayTime: makeParam(0.25) }; }
   createConvolver(): MockNode { return { ...makeBaseNode(), buffer: null }; }
@@ -458,8 +458,8 @@ describe("v3.70.0 – Serializer Round-Trip (v1.26)", () => {
     localStorageMock.clear();
   });
 
-  it("SYNTH_FILE_VERSION wurde auf '1.30' gebumpt (v3.75.0 Master-FX-Bus)", () => {
-    expect(SYNTH_FILE_VERSION).toBe("1.30");
+  it("SYNTH_FILE_VERSION wurde auf '1.31' gebumpt (v3.76.0 Master-Limiter + Mid-Q)", () => {
+    expect(SYNTH_FILE_VERSION).toBe("1.31");
   });
 
   it("Round-Trip erhält loopEnabled + loopStartSample + loopEndSample", () => {

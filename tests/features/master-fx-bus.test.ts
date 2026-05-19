@@ -143,6 +143,7 @@ class MockAudioContext {
       ratio: makeParam(4),
       attack: makeParam(0.003),
       release: makeParam(0.25),
+      knee: makeParam(30),
     };
   }
   createDelay(_max?: number): MockNode {
@@ -442,9 +443,9 @@ describe("AudioEngine — Channel-Send-Wiring", () => {
 
 // ─── (5) Schema v1.30 Round-Trip ─────────────────────────────────────────────
 
-describe("Schema v1.30 — masterFx Round-Trip", () => {
-  it("SYNTH_FILE_VERSION ist '1.30'", () => {
-    expect(serializer.SYNTH_FILE_VERSION).toBe("1.30");
+describe("Schema v1.31 — masterFx Round-Trip", () => {
+  it("SYNTH_FILE_VERSION ist '1.31'", () => {
+    expect(serializer.SYNTH_FILE_VERSION).toBe("1.31");
   });
 
   it("Round-Trip preserves masterFx Reverb/Delay/EQ", () => {
@@ -497,7 +498,7 @@ describe("Schema v1.30 — masterFx Round-Trip", () => {
 
   it("null masterFx → undefined (defensive)", () => {
     const file = {
-      version: "1.30",
+      version: "1.31",
       projectId: "11111111-1111-4111-8111-111111111111",
       projectName: "X",
       savedAt: "2026-05-18T00:00:00.000Z",
@@ -517,7 +518,7 @@ describe("Schema v1.30 — masterFx Round-Trip", () => {
 
   it("Korrupte masterFx (out-of-range Felder) wird via sanitizeMasterFx gefixt", () => {
     const file = {
-      version: "1.30",
+      version: "1.31",
       projectId: "11111111-1111-4111-8111-111111111111",
       projectName: "X",
       savedAt: "2026-05-18T00:00:00.000Z",

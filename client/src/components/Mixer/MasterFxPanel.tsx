@@ -1,32 +1,39 @@
 /**
- * Synthstudio – MasterFxPanel.tsx (v3.75.0)
+ * Synthstudio – MasterFxPanel.tsx (v3.76.0)
  *
  * UI für den Master-FX-Bus: globaler Reverb (decay, damping, preDelay, wet,
  * bypass), Master-Delay (time, feedback, wet, bypass), Master-EQ (3-Band
- * low/mid/high gain + low/high freq + bypass).
+ * low/mid/high gain + low/high freq + midQ + bypass), v3.76 NEU
+ * Master-Limiter (threshold, knee, ratio, release, gain, bypass) mit
+ * Live-GR-Meter.
  *
- * Tabbed-Layout (Reverb / Delay / EQ). Mount-Position: in MixerView als
- * eigener Section unter den Return-Track-Strips (siehe Mixer-Wiring).
+ * Tabbed-Layout (Reverb / Delay / EQ / Limiter). Mount-Position: in MixerView
+ * als eigener Section unter den Return-Track-Strips (siehe Mixer-Wiring).
  *
- * Wiring: Slider-Change → Store-Setter → useEffect-Listener im MixerView
- * (NICHT in dieser Komponente) ruft die zugehörige AudioEngine-Methode
- * auf. Dadurch bleibt diese Komponente DOM-frei testbar (kein
- * AudioContext-Mock im JSDOM-Setup nötig) und der Render-Pfad ist sauber
- * von Audio-Side-Effects getrennt.
+ * Wiring: Slider-Change → Store-Setter → AudioEngine.setMaster*() im
+ * selben Tick (Audio-Latency soll < 1 Frame bleiben).
+ *
+ * GR-Meter: pollt alle 50ms via setInterval die aktuelle Gain-Reduction
+ * (DynamicsCompressorNode.reduction) vom AudioEngine. Animation-Frame-Budget
+ * blieb damit niedrig (≈20 fps reicht für eine reine Pegelanzeige).
  *
  * Alle Farben über semantische Tailwind-Klassen (bg-bg-panel etc.) — keine
  * hardcoded Slates / Cyans.
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   useMasterFxStore,
   setMasterReverb,
   setMasterDelay,
   setMasterEq,
+  setMasterLimiter,
 } from "@/store/useMasterFxStore";
 import { AudioEngine } from "@/audio/AudioEngine";
 
-type Tab = "reverb" | "delay" | "eq";
+type Tab = "reverb" | "delay" | "eq" | "limiter";
+
+/** v3.76.0: GR-Meter Update-Rate (50ms ≈ 20fps). */
+const GR_METER_INTERVAL_MS = 50;
 
 interface SliderRowProps {
   label: string;
@@ -154,11 +161,58 @@ export function MasterFxPanel() {
     setMasterEq({ highFreq: v });
     AudioEngine.setMasterEqHighFreq(v);
   };
+  const onEqMidQ = (v: number) => {
+    setMasterEq({ midQ: v });
+    AudioEngine.setMasterEqMidQ(v);
+  };
   const onEqBypass = () => {
     const next = !state.eq.bypass;
     setMasterEq({ bypass: next });
     AudioEngine.setMasterEqBypass(next);
   };
+
+  // ─── Limiter-Handler (v3.76.0) ─────────────────────────────────────────────
+  const onLimThreshold = (v: number) => {
+    setMasterLimiter({ threshold: v });
+    AudioEngine.setMasterLimiterThreshold(v);
+  };
+  const onLimKnee = (v: number) => {
+    setMasterLimiter({ knee: v });
+    AudioEngine.setMasterLimiterKnee(v);
+  };
+  const onLimRatio = (v: number) => {
+    setMasterLimiter({ ratio: v });
+    AudioEngine.setMasterLimiterRatio(v);
+  };
+  const onLimRelease = (v: number) => {
+    setMasterLimiter({ release: v });
+    AudioEngine.setMasterLimiterRelease(v);
+  };
+  const onLimGain = (v: number) => {
+    setMasterLimiter({ gain: v });
+    AudioEngine.setMasterLimiterGain(v);
+  };
+  const onLimBypass = () => {
+    const next = !state.limiter.bypass;
+    setMasterLimiter({ bypass: next });
+    AudioEngine.setMasterLimiterBypass(next);
+  };
+
+  // ─── Live-GR-Meter (v3.76.0) ───────────────────────────────────────────────
+  // Pollt alle 50ms die aktuelle Gain-Reduction. Nur aktiv solang der
+  // Limiter-Tab sichtbar ist (Bypass-State erlaubt Polling aber liefert 0).
+  const [gainReduction, setGainReduction] = useState(0);
+  useEffect(() => {
+    if (tab !== "limiter") return;
+    const id = setInterval(() => {
+      try {
+        setGainReduction(AudioEngine.getMasterLimiterReduction());
+      } catch {
+        setGainReduction(0);
+      }
+    }, GR_METER_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, [tab]);
 
   return (
     <section
@@ -168,7 +222,7 @@ export function MasterFxPanel() {
       <header className="flex items-center justify-between">
         <h3 className="text-sm font-semibold text-text-primary">Master FX</h3>
         <nav className="flex gap-1" role="tablist">
-          {(["reverb", "delay", "eq"] as Tab[]).map((t) => (
+          {(["reverb", "delay", "eq", "limiter"] as Tab[]).map((t) => (
             <button
               key={t}
               role="tab"
@@ -325,6 +379,17 @@ export function MasterFxPanel() {
             format={(v) => `${v >= 0 ? "+" : ""}${v.toFixed(1)} dB`}
             onChange={onEqMidGain}
           />
+          {/* v3.76.0: Mid-Band Q-Slider (0.3..10), closes v3.75-Caveat. */}
+          <SliderRow
+            label="Mid Q"
+            value={state.eq.midQ}
+            min={0.3}
+            max={10}
+            step={0.1}
+            testId="master-fx-eq-midq"
+            format={(v) => v.toFixed(1)}
+            onChange={onEqMidQ}
+          />
           <SliderRow
             label="High Gain"
             value={state.eq.highGain}
@@ -344,6 +409,92 @@ export function MasterFxPanel() {
             testId="master-fx-eq-highfreq"
             format={(v) => `${(v / 1000).toFixed(1)} kHz`}
             onChange={onEqHighFreq}
+          />
+        </div>
+      )}
+
+      {tab === "limiter" && (
+        <div className="flex flex-col gap-2" role="tabpanel" data-testid="master-fx-limiter">
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-text-muted">Master Limiter (brick-wall)</span>
+            <BypassToggle
+              active={state.limiter.bypass}
+              testId="master-fx-limiter-bypass"
+              onToggle={onLimBypass}
+            />
+          </div>
+          {/* GR-Meter — zeigt aktuelle Gain-Reduction. Negative dB-Werte
+              (z.B. -3dB) bedeuten 3dB Reduktion. Update-Rate 50ms (20fps). */}
+          <div
+            className="flex items-center gap-2 text-xs"
+            data-testid="master-fx-limiter-gr-row"
+          >
+            <span className="w-20 text-text-muted">Gain Reduction</span>
+            <div className="flex-1 h-2 bg-bg-elevated rounded overflow-hidden">
+              <div
+                className="h-full bg-accent-danger transition-all duration-75"
+                style={{
+                  width: `${Math.min(100, Math.max(0, -gainReduction * 5))}%`,
+                }}
+                data-testid="master-fx-limiter-gr-bar"
+              />
+            </div>
+            <span
+              className="w-16 text-right text-text-primary tabular-nums"
+              data-testid="master-fx-limiter-gr-value"
+            >
+              {gainReduction <= -0.05 ? `${gainReduction.toFixed(1)} dB` : "0.0 dB"}
+            </span>
+          </div>
+          <SliderRow
+            label="Threshold"
+            value={state.limiter.threshold}
+            min={-60}
+            max={0}
+            step={0.1}
+            testId="master-fx-limiter-threshold"
+            format={(v) => `${v.toFixed(1)} dB`}
+            onChange={onLimThreshold}
+          />
+          <SliderRow
+            label="Knee"
+            value={state.limiter.knee}
+            min={0}
+            max={40}
+            step={0.5}
+            testId="master-fx-limiter-knee"
+            format={(v) => `${v.toFixed(1)} dB`}
+            onChange={onLimKnee}
+          />
+          <SliderRow
+            label="Ratio"
+            value={state.limiter.ratio}
+            min={1}
+            max={20}
+            step={0.1}
+            testId="master-fx-limiter-ratio"
+            format={(v) => `${v.toFixed(1)}:1`}
+            onChange={onLimRatio}
+          />
+          <SliderRow
+            label="Release"
+            value={state.limiter.release}
+            min={0}
+            max={1}
+            step={0.005}
+            testId="master-fx-limiter-release"
+            format={(v) => `${(v * 1000).toFixed(0)} ms`}
+            onChange={onLimRelease}
+          />
+          <SliderRow
+            label="Make-Up"
+            value={state.limiter.gain}
+            min={0}
+            max={4}
+            step={0.05}
+            testId="master-fx-limiter-gain"
+            format={(v) => `${v.toFixed(2)}x`}
+            onChange={onLimGain}
           />
         </div>
       )}
