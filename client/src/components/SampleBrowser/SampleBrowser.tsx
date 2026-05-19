@@ -75,6 +75,12 @@ export interface SampleBrowserProps {
    * abgelegt (damit das Sample sofort hörbar ist).
    */
   onTransformSample?: (id: string, newBlobUrl: string, newBuffer: AudioBuffer) => void;
+  /**
+   * v3.141: Auto-Slice-Apply — Aufrufer erstellt für jeden Slice ein neues
+   * Sample im Browser. Optional — wenn nicht gesetzt, wird der Apply-Button
+   * im Transform-Dialog ausgeblendet (Slice-Detection bleibt Preview-only).
+   */
+  onAutoSliceSample?: (slices: AudioBuffer[], baseSampleName: string) => void;
 }
 
 // ─── Konstanten ───────────────────────────────────────────────────────────────
@@ -551,6 +557,7 @@ export function SampleBrowser({
   onAddTagToSample,
   onRemoveTagFromSample,
   onTransformSample,
+  onAutoSliceSample,
 }: SampleBrowserProps) {
   // ── Einziger Zugriffspunkt auf Electron-Features ──────────────────────────
   const electron = useElectron();
@@ -1775,6 +1782,7 @@ export function SampleBrowser({
         buffer={transformBuffer}
         onClose={handleTransformClose}
         onApply={handleTransformApply}
+        onAutoSlice={onAutoSliceSample}
       />
 
       {/* ── Status-Leiste ─────────────────────────────────────────────────────── */}

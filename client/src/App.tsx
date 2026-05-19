@@ -36,7 +36,8 @@ import { ChordProgressionPopupApp } from "@/components/Tools/ChordProgressionPop
 import { PatternLibraryPopupApp } from "@/components/PatternLibrary/PatternLibraryPopupApp";
 
 // ── Eigene Stores & Hooks ─────────────────────────────────────────────────────
-import { useProjectStore } from "@/store/useProjectStore";
+import { useProjectStore, type Sample } from "@/store/useProjectStore";
+import { encodeWav } from "@/audio/wavEncoder";
 import { useWindowTitleSync } from "@/store/useWindowTitleSync";
 
 // ── Seiten-Komponenten ────────────────────────────────────────────────────────
@@ -4071,6 +4072,29 @@ export default function App() {
                   if (sample) AudioEngine.invalidateBufferCache(sample.path);
                   AudioEngine.setBufferCache(newBlobUrl, newBuffer);
                   project.updateSample(id, { path: newBlobUrl });
+                }}
+                onAutoSliceSample={(slices, baseName) => {
+                  // v3.141: Slice-Apply — für jeden Slice ein neues Sample anlegen.
+                  // Slice-Buffer in Blob-URL encoden + AudioEngine-Cache befüllen + addSample.
+                  const newSamples = slices.map((sliceBuf, i) => {
+                    const channels = Math.min(2, sliceBuf.numberOfChannels) as 1 | 2;
+                    const wav = encodeWav(
+                      Array.from({ length: channels }, (_, c) => sliceBuf.getChannelData(c)),
+                      { sampleRate: sliceBuf.sampleRate, channels, bitDepth: 16 },
+                    );
+                    const blob = new Blob([wav], { type: "audio/wav" });
+                    const url = URL.createObjectURL(blob);
+                    AudioEngine.setBufferCache(url, sliceBuf);
+                    const idx = String(i + 1).padStart(2, "0");
+                    return {
+                      id: `slice-${Date.now()}-${i}`,
+                      name: `${baseName} – Slice ${idx}`,
+                      path: url,
+                      category: "loops",
+                      tags: ["auto-slice"],
+                    } as Sample;
+                  });
+                  project.addSamples(newSamples);
                 }}
               />
             )}

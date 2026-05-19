@@ -44,7 +44,7 @@ import {
   type TransformPipelineOptions,
 } from "@/utils/sampleTransformPipeline";
 import type { FadeCurve } from "@/utils/sampleFadeReverse";
-import { detectSlicePoints } from "@/utils/sliceAutoDetector";
+import { detectSlicePoints, sliceAtPoints } from "@/utils/sliceAutoDetector";
 import type { AudioBufferLike } from "@/utils/sampleEmbedding";
 
 // ─── Props ───────────────────────────────────────────────────────────────────
@@ -62,6 +62,13 @@ export interface SampleTransformDialogProps {
    * Projekt-dirty markieren).
    */
   onApply: (newBuffer: AudioBuffer, newBlobUrl: string) => void;
+  /**
+   * v3.141: Wird gerufen wenn der User "Slices anwenden" klickt — Aufrufer
+   * erstellt für jeden Slice ein neues Sample im Browser (addSamples mit
+   * benannten Slice-1, Slice-2, ...).  Optional — wenn nicht gesetzt,
+   * bleibt der Apply-Button disabled.
+   */
+  onAutoSlice?: (slices: AudioBuffer[], baseSampleName: string) => void;
 }
 
 // ─── Utility: AudioBufferLike → AudioBuffer (für Pipeline-Output) ───────────
@@ -113,6 +120,7 @@ export function SampleTransformDialog({
   buffer,
   onClose,
   onApply,
+  onAutoSlice,
 }: SampleTransformDialogProps) {
   const [stretchRatio, setStretchRatio] = useState(1.0);
   const [pitchSemitones, setPitchSemitones] = useState(0);
@@ -305,8 +313,8 @@ export function SampleTransformDialog({
     setProgress(0);
   }, []);
 
-  // v3.136: Auto-Slice-Detection (Preview-only — kein Apply).
-  // v3.137-Caveat: onAutoSlice-Callback im SampleBrowser noch nicht verkabelt.
+  // v3.136: Auto-Slice-Detection (Preview).
+  // v3.141: Apply-Pfad via onAutoSlice-Callback (closes v3.136-Caveat).
   const handleDetectSlices = useCallback(() => {
     if (!buffer) {
       setDetectedSliceCount(null);
@@ -318,6 +326,27 @@ export function SampleTransformDialog({
     });
     setDetectedSliceCount(points.length);
   }, [buffer, sliceSensitivity, sliceMinMs]);
+
+  const handleApplySlices = useCallback(() => {
+    if (!buffer || !onAutoSlice) return;
+    const points = detectSlicePoints(buffer as AudioBufferLike, {
+      sensitivity: sliceSensitivity,
+      minSliceMs: sliceMinMs,
+    });
+    if (points.length <= 1) return;
+    const sliceBuffers = sliceAtPoints(buffer as AudioBufferLike, points);
+    // AudioBufferLike → AudioBuffer für Caller (gleiche Helper wie Pipeline).
+    const offCtx = new (window.OfflineAudioContext ||
+      // @ts-expect-error legacy webkit fallback
+      window.webkitOfflineAudioContext)(
+      buffer.numberOfChannels,
+      Math.max(1, buffer.length),
+      buffer.sampleRate,
+    ) as BaseAudioContext;
+    const audioBuffers = sliceBuffers.map((s) => audioBufferLikeToAudioBuffer(offCtx, s));
+    onAutoSlice(audioBuffers, sample?.name ?? "Sample");
+    onClose();
+  }, [buffer, sliceSensitivity, sliceMinMs, onAutoSlice, onClose, sample]);
 
   const handlePreview = useCallback(async () => {
     if (!buffer) return;
@@ -629,7 +658,7 @@ export function SampleTransformDialog({
                 {/* Auto-Slice (Preview-only in v3.136) */}
                 <div className="space-y-1 pt-2 border-t border-border-color">
                   <div className="text-[10px] text-text-dim mb-1">
-                    Auto-Slice (Preview — Apply folgt in v3.137)
+                    Auto-Slice (Preview + Apply)
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
@@ -687,6 +716,17 @@ export function SampleTransformDialog({
                         ? "Noch nicht analysiert"
                         : `Gefunden: ${detectedSliceCount} Slice-Punkte`}
                     </span>
+                    {onAutoSlice && detectedSliceCount !== null && detectedSliceCount > 1 && (
+                      <button
+                        type="button"
+                        onClick={handleApplySlices}
+                        data-testid="sample-transform-slice-apply-btn"
+                        className="ml-auto px-2 py-1 rounded text-[10px] bg-accent-secondary text-bg-base font-semibold hover:bg-accent-secondary/80 transition-colors"
+                        title={`${detectedSliceCount} Slices als neue Samples hinzufügen`}
+                      >
+                        Slices anwenden
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
