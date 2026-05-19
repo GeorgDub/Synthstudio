@@ -1083,6 +1083,25 @@ export function SampleBrowser({
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (document.activeElement?.tagName === "INPUT") return;
+      if (document.activeElement?.tagName === "TEXTAREA") return;
+      // v3.156: Ctrl/Cmd+A → alle (gefilterten) Samples selektieren.
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "a") {
+        e.preventDefault();
+        setMultiSelectIds(selectAll(filteredSamples.map((s) => s.id)));
+        return;
+      }
+      // v3.156: Escape → Multi-Select clearen (Single-Select bleibt).
+      if (e.key === "Escape" && multiSelectIds.size > 0) {
+        e.preventDefault();
+        setMultiSelectIds(clearSelection());
+        return;
+      }
+      // v3.156: Delete/Backspace → Bulk-Delete bei Multi-Select.
+      if ((e.key === "Delete" || e.key === "Backspace") && multiSelectIds.size > 0 && onRemoveSample) {
+        e.preventDefault();
+        void handleBulkDelete();
+        return;
+      }
       if (e.key === "ArrowUp") { e.preventDefault(); handleNavigatePrev(); }
       if (e.key === "ArrowDown") { e.preventDefault(); handleNavigateNext(); }
       if (e.key === " " && selectedSampleId) {
@@ -1097,7 +1116,7 @@ export function SampleBrowser({
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [handleNavigatePrev, handleNavigateNext, handlePreviewToggle, selectedSampleId, selectedSample, onAssignToChannel]);
+  }, [handleNavigatePrev, handleNavigateNext, handlePreviewToggle, selectedSampleId, selectedSample, onAssignToChannel, filteredSamples, multiSelectIds, onRemoveSample, handleBulkDelete]);
 
   // ── Drag-Start (für Drag & Drop auf Kanal-Zeilen + Reordering) ───────────
   const handleDragStart = useCallback((e: React.DragEvent, sample: Sample) => {
@@ -1804,8 +1823,8 @@ export function SampleBrowser({
                   >
                     Alle
                   </button>
-                  <span className="text-[10px] text-text-dim ml-auto">
-                    ↑↓ · Leertaste · Enter=Kanal · Ctrl/⌘+Klick · Shift+Klick
+                  <span className="text-[10px] text-text-dim ml-auto" title="Tastatur-Shortcuts">
+                    ↑↓ · Space · Enter · ⌘A · Esc · Del
                   </span>
                 </div>
 
