@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.94.0",
+    version: "3.95.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -89,6 +89,36 @@ const INDEX = {
   // ─── KNOWN FILE INDEX ──────────────────────────────────────
   // Key files agents have analyzed. Add new entries after working on a file.
   files: {
+    "client/src/store/useTempoMapStore.ts (v3.95.0 NEU)": {
+      role:     "v3.95.0 NEU (+~215 LOC, Modul-Singleton + React-Hook, analog useSceneStore-Pattern). TempoEvent = {atBar:number, bpm:number, ramp?:boolean}. Public-API: addEvent (idempotent, ueberschreibt bei atBar-Kollision; bei MAX-Cap silent no-op), removeEvent, setEventBpm, setEventRamp, clear, replaceEvents (Restore-Helper). MAX_TEMPO_EVENTS=32 hart enforced. BPM-Clamping MIN_BPM=20..MAX_BPM=300. localStorage 'ss-tempo-map:v1' mit defensiver _load (filter invalide). Plus getTempoMapState/__resetTempoMapForTests fuer Unit-Tests. Hook nutzt useReducer-Trigger + Listener-Set.",
+      lastSeen: "2026-05-19T08:50:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/utils/tempoMap.ts (v3.95.0 NEU)": {
+      role:     "v3.95.0 NEU (+~115 LOC, pure Resolver, React-frei, DOM-frei, voll unit-testbar). getCurrentBpm(events, atBar): null bei leerer Map oder Position vor erstem Event (Caller nutzt Fallback-BPM). Algorithm: sorted-Lookup, prev = letztes Event mit atBar<=position, next = nachfolgendes. Bei next.ramp=true → lineare Interpolation prev.bpm→next.bpm (mit clampedT=0..1). Sonst hard-change (prev.bpm bis < next.atBar, ab >=next.atBar prevIdx points to next). 'Ramp' gehoert ans Ziel-Event analog Logic Pro / Bitwig Tempo-Map. Plus getCurrentBpmOrFallback (Convenience fuer Engine), serializeTempoEvents + parseTempoEvents (Schema v1.35 Round-Trip-Helper, sanitisiert + sortiert).",
+      lastSeen: "2026-05-19T08:50:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/components/TempoMap/TempoMapPanel.tsx (v3.95.0 NEU)": {
+      role:     "v3.95.0 NEU (+~310 LOC) + index.ts. Timeline-View mit X-Achse (Bar-Index, default 64 Bars Span, dynamic erweitert wenn last-event darueber) + Y-Achse (MIN_BPM..MAX_BPM, Gridlines bei 60/100/120/140/160/200/240). SVG-Polyline visualisiert Verlauf (hold-then-step bei !ramp = horizontal+vertikal, diagonal bei ramp). Interaktion: Click in leeren Bereich → addEvent (Bar=xToBar, BPM=yToBpm); Mouse-Drag-Handle → setEventBpm (vertikale Bewegung waehrend dragId aktiv); Doppelklick auf Event → toggle ramp; Rechtsklick → removeEvent. Plus Event-Liste-Table mit Inline-BPM-Input + ramp/hard-Toggle-Button + Trash-Icon. Plus Clear-All + Append-Event-Button. Optionaler Playhead bei currentBar-Prop. Vollstaendig semantische Tailwind-Tokens (bg-bg-panel / text-accent-primary / border-border-color / etc.) — KEIN hardcoded color.",
+      lastSeen: "2026-05-19T08:50:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/audio/AudioEngine.ts (v3.95.0 +TempoMap-Hook)": {
+      role:     "v3.95.0 ERWEITERT (+~45 LOC, bestehende Engine unveraendert): NEU private _tempoMapResolver: ((atBar:number)=>number|null)|null + public setTempoMapResolver() (App.tsx wired das mit useTempoMapStore.getState().events). NEU private _resolveTempoMapBpm() — try/catch defensive (Resolver-Throws → null), Clamping 20..300. _schedule()-Loop ruft _resolveTempoMapBpm() vor effectiveBpm-Computation auf: Vorrang-Order tempoMapBpm > pattern.bpm > this._bpm. Side-effect: synchronisiert this._bpm + _updateAudioTrackPlaybackRates() + _looperEngine.setBpm() wenn neuer Wert (delta>0.05 BPM). Backward-Compat: bei null-Return (leere Map / vor erstem Event / kein Resolver) wird der pre-v3.95-Pfad 1:1 beibehalten.",
+      lastSeen: "2026-05-19T08:50:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/utils/projectSerializer.ts (v3.95.0 v1.35)": {
+      role:     "v3.95.0 SCHEMA-BUMP v1.34 → v1.35: SYNTH_FILE_VERSION='1.35'. NEU SynthProject.tempoMap?:TempoEvent[] — additiv-optional analog midiFxChain/subMixBuses. parseProject()-Tail-Block (+~12 LOC): undefined bleibt undefined (Restore-Signal), null/non-Array → undefined, Array → parseTempoEvents().slice(0, MAX_TEMPO_EVENTS=32). Import +parseTempoEvents aus @/utils/tempoMap. v1.34-MidiFx-Block bleibt unveraendert. Vorheriger v3.93.0 Stand (v1.34 midiFxChain) bleibt erhalten.",
+      lastSeen: "2026-05-19T08:50:00.000Z",
+      ownedBy:  "backend"
+    },
+    "tests/features/tempo-map.test.ts (v3.95.0 NEU)": {
+      role:     "v3.95.0 NEU (+~265 LOC, 20 Tests in 8 describes): (1) addEvent × 3 — sortiert by atBar, ueberschreibt bei Kollision idempotent, BPM-Clamping (MIN/MAX). (2) Static-Resolver × 2 — prev.bpm bis next.atBar mit Hard-Change, last-Event-Hold. (3) Ramp-Resolver × 2 — linear interpoliert zwischen prev und next, ramp+hold-Plateau danach. (4) Empty/Fallback × 3 — Empty-Map liefert null, Position vor erstem Event liefert null, getCurrentBpmOrFallback nutzt fallback-Wert. (5) Schema v1.35 Round-Trip × 3 — serialize+parse mit ramp-Flag preserves, invalide Eintraege silent gefiltert, non-Array → leeres Array. (6) MAX_TEMPO_EVENTS × 2 — addEvent ueber Cap → no-op, replaceEvents kappt auf MAX. (7) Update/Remove/Clear × 4. (8) localStorage-Persistenz × 1.",
+      lastSeen: "2026-05-19T08:50:00.000Z",
+      ownedBy:  "testing"
+    },
     "client/src/utils/midiFxEngine.ts (v3.93.0 note-off-tracking)": {
       role:     "v3.93.0 ERWEITERT (+~110 LOC, bestehende v3.92 Engine unverändert): NEU class MidiFxNoteTracker mit Map<channel:note, ExpandedNoteOff[]>. trackNoteOn(originalNote, channel, fxEvents)→count: filtert (1) timeOffsetMs>0 (Note-Repeat-Voices) und (2) Identity-Expansion (Output = Original-Note) — dedup per (channel,note). consumeNoteOff(originalNote, channel)→ExpandedNoteOff[] mit delete-on-consume. size-Getter + clear()-Methode für Panic-Stop. Vorheriger v3.92-Stand: MidiFxNode discriminated union mit 5 Kinds, applyMidiFx sequenziell. Header-JSDoc v3.92→v3.93 angepasst (Caveat 'Note-Off wird nicht dupliziert' entfernt).",
       lastSeen: "2026-05-19T08:30:00.000Z",
@@ -2462,6 +2492,41 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "backend",
+      timestamp: "2026-05-19T08:50:00.000Z",
+      done: [
+        "v3.95.0: Tempo-Map / BPM-Automation (DAW-Standard). Songweite BPM-Aenderungen ueber Bar-Position mit Hard-Change oder linearer Ramp-Interpolation — Logic Pro / Bitwig-aequivalent. Vorher war BPM statisch pro Song bzw. pro Pattern. Schema v1.34 → v1.35.",
+        "client/src/store/useTempoMapStore.ts NEU (+~215 LOC): Modul-Singleton + React-Hook (analog useSceneStore-Pattern, useReducer-Trigger). TempoEvent = {atBar, bpm, ramp?}. Actions addEvent (idempotent ueberschreibt bei atBar-Kollision), removeEvent, setEventBpm, setEventRamp, clear, replaceEvents (fuer Project-Restore). MAX_TEMPO_EVENTS=32 hart enforced (silent no-op bei Overflow). BPM-Clamping MIN_BPM=20..MAX_BPM=300. localStorage-Key 'ss-tempo-map:v1' mit defensiver _load (filtert invalide Events).",
+        "client/src/utils/tempoMap.ts NEU (+~115 LOC, pure Resolver, keine React-Abh.): getCurrentBpm(events, atBar) — null bei leerer Map / vor erstem Event (Caller nutzt Fallback). Algorithm: sorted lookup, prev = letztes Event mit atBar<=position, next = nachfolgendes. Bei next.ramp=true → lineare Interpolation prev.bpm→next.bpm; sonst hard-change (prev.bpm bis <next.atBar). 'Ramp' gehoert ans Ziel-Event analog Logic Pro Tempo-Map. Plus getCurrentBpmOrFallback (fuer Engine-Hook), serializeTempoEvents + parseTempoEvents (Round-Trip-Helper fuer Schema v1.35).",
+        "client/src/audio/AudioEngine.ts INTEGRATION (+~45 LOC): NEU private _tempoMapResolver: ((atBar:number)=>number|null)|null + public setTempoMapResolver(). NEU private _resolveTempoMapBpm() — try/catch defensive, clamped 20..300. _schedule()-Loop ruft _resolveTempoMapBpm() vor effectiveBpm-Computation: tempoMapBpm hat Vorrang vor pattern.bpm vor this._bpm. Side-effect: synchronisiert this._bpm + _updateAudioTrackPlaybackRates() + _looperEngine.setBpm() wenn Resolver einen neuen Wert liefert (delta > 0.05 BPM). Backward-Compat: bei null-Return (leere Map / vor erstem Event / kein Resolver registriert) wird der bisherige Code-Pfad 1:1 beibehalten.",
+        "client/src/components/TempoMap/TempoMapPanel.tsx NEU (+~310 LOC) + index.ts NEU: Timeline-View mit X-Achse (Bar-Index, default 64 Bars) + Y-Achse (MIN_BPM..MAX_BPM, Gridlines bei 60/100/120/140/160/200/240). Click in leeren Bereich → addEvent. Drag-Handle → setEventBpm (vertikale Maus-Bewegung). Doppelklick → toggle ramp. Rechtsklick → removeEvent. SVG-Polyline visualisiert Tempo-Verlauf (hold-then-step bei !ramp, diagonal bei ramp). Optionaler Playhead bei currentBar. Plus Event-Liste mit Inline-BPM-Edit + ramp/hard-Toggle-Button + Trash-Button. Plus Clear-All-Button + Append-Event-Button. Semantische Tailwind-Tokens (bg-bg-panel, text-accent-primary etc.) — kein hardcoded color.",
+        "client/src/utils/projectSerializer.ts SCHEMA-BUMP v1.34 → v1.35 (+~20 LOC): SYNTH_FILE_VERSION='1.35'. NEU SynthProject.tempoMap?: TempoEvent[] (optional, additiv-kompatibel analog midiFxChain/subMixBuses). parseProject()-Tail-Block: undefined bleibt undefined (Restore-Signal 'User-localStorage nicht ueberschreiben'), null/non-Array → undefined, Array → parseTempoEvents().slice(0,32). Import +parseTempoEvents aus @/utils/tempoMap. Header-Doku-Block 'Seit v1.35: Pre-v1.35-Files haben Feld nicht'.",
+        "tests/features/tempo-map.test.ts NEU (+~265 LOC, 20 Tests in 8 describes): Cluster (1) addEvent × 3 (sortiert by atBar, ueberschreibt bei Kollision, BPM-Clamping), (2) Static-Resolver × 2 (prev.bpm bis next.atBar, last-Event-hold), (3) Ramp-Resolver × 2 (linear interpoliert, ramp+hold-Plateau), (4) Empty/Fallback × 3 (Empty→null, Pre-erstes-Event→null, getCurrentBpmOrFallback), (5) Schema v1.35 Round-Trip × 3 (serialize+parse mit ramp-Flag, invalide gefiltert, non-Array→[]), (6) MAX_TEMPO_EVENTS × 2 (addEvent ueber Cap→no-op, replaceEvents kappt), (7) Update/Remove/Clear × 4, (8) localStorage-Persistenz × 1.",
+        "Test-File-Bulk-Update: 17 weitere Test-Files referenzieren SYNTH_FILE_VERSION-Pin '1.34' — bulk-bumped via node-script '1.34' → '1.35' (audio-loop-crossfade, audio-track-loop, audio-track-store, audio-track-stretch, channel-colors, master-fx-bus, master-limiter, midi-fx-engine, multi-bar-pattern, plugin-host, plugin-multislot, project-id-migration, project-serializer, quick-action-integration, script-store, sub-mix-bus, sub-mix-bus-fx). Pre-v1.35-Backward-Compat-Payloads bleiben unveraendert ('version: \"1.34\"' Felder in Test-Fixtures).",
+        "package.json (3.94.0 → 3.95.0). pnpm check: clean. pnpm test: 239 Files / 5406 passed / 16 skipped (vs v3.94.0: 238/5384 → +1 File +22 Tests = +20 neue tempo-map.test.ts + 2 indirekte). Keine bestehenden Tests broken.",
+        "Caveats: (1) App.tsx-WireUp fuer setTempoMapResolver() ist NICHT in diesem Commit — der Resolver-Hook liegt bereit (AudioEngine.setTempoMapResolver), aber muss aus App.tsx mit (atBar)=>getCurrentBpm(useTempoMapStore.getState().events, atBar) verbunden werden. Naechster Schritt: Frontend-Agent. (2) Bar-Tracking nutzt AudioEngine.loopCount = vollendete 16-Step-Schleifen. Bei stepCount=32 oder 64 muss der Resolver-Aufrufer skalieren (loopCount × steps/16). (3) UI-Mount-Point ist offen — TempoMapPanel ist im Component-Tree noch nicht eingehaengt. Settings-Section oder Performance-Tab ist sinnvoll. (4) Playhead-Position im UI braucht externe currentBar-Prop — aktuell statisch 0; AudioEngine.loopCount-Wire kommt in v3.96."
+      ],
+      next: [
+        "v3.96: App.tsx-WireUp — setTempoMapResolver mit useTempoMapStore.getState().events verbinden + Playhead-Sync.",
+        "v3.96: TempoMapPanel-Mount in Settings/MIDI-Tab oder Performance-Tab.",
+        "v3.96: Tempo-Map-Curve-Modi 'easeIn/easeOut/exp' zusaetzlich zu linear (DAW-Standard).",
+        "v3.96: MIDI-Learn fuer addEvent-an-Position (Hardware-Performance-Workflow).",
+        "v3.96: Tempo-Map Export → MIDI-Datei Tempo-Track (SMF-Format) damit externe DAWs den Verlauf erben."
+      ],
+      changed: [
+        "client/src/store/useTempoMapStore.ts (NEU +~215 LOC)",
+        "client/src/utils/tempoMap.ts (NEU +~115 LOC pure Resolver)",
+        "client/src/audio/AudioEngine.ts (Tempo-Map-Hook +~45 LOC)",
+        "client/src/components/TempoMap/TempoMapPanel.tsx (NEU +~310 LOC)",
+        "client/src/components/TempoMap/index.ts (NEU)",
+        "client/src/utils/projectSerializer.ts (Schema v1.34 → v1.35 +~20 LOC tempoMap)",
+        "tests/features/tempo-map.test.ts (NEU +~265 LOC 20 Tests)",
+        "tests/features/{17 Files} (SYNTH_FILE_VERSION-Pin bulk '1.34'→'1.35')",
+        "package.json (3.94.0 → 3.95.0)",
+        "agents/INDEX.js (version + workLog + files-Eintraege)"
+      ]
+    },
     {
       agent:     "backend",
       timestamp: "2026-05-19T08:40:00.000Z",

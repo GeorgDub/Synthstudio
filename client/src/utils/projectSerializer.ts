@@ -163,8 +163,10 @@ import { sanitizeBus, MAX_SUB_MIX_BUSES } from "@/store/useSubMixStore";
 // v1.34 (v3.93.0): MIDI-FX-Chain.
 import type { MidiFxNode } from "@/store/useMidiFxStore";
 import { sanitizeMidiFxState } from "@/store/useMidiFxStore";
+// v1.35 (v3.95.0): Tempo-Map / BPM-Automation.
+import { parseTempoEvents } from "@/utils/tempoMap";
 
-export const SYNTH_FILE_VERSION = "1.34";
+export const SYNTH_FILE_VERSION = "1.35";
 export const SYNTH_LATEST_KEY = "synthstudio:last-project";
 
 // ─── Typen ───────────────────────────────────────────────────────────────────
@@ -362,6 +364,20 @@ export interface SynthProject {
    * Invalide Nodes werden via sanitizeMidiFxState silent gefiltert.
    */
   midiFxChain?: MidiFxNode[];
+
+  /**
+   * Tempo-Map / BPM-Automation (v3.95.0+, v1.35+). Liste an {atBar, bpm, ramp?}
+   * Events. Wenn vorhanden + nicht leer, ueberschreibt sie waehrend Playback
+   * die statische bpm (DAW-Standard: Bar 16 → 130, Bar 32 ramp → 100).
+   *
+   * Seit v1.35. Pre-v1.35-Files haben das Feld nicht → parseProject laesst
+   * tempoMap undefined (Signal an Restore: User-localStorage nicht ueber-
+   * schreiben). Explicit leeres Array [] wird respektiert (User hat alle
+   * Events geloescht und gespeichert). null oder non-Array → undefined.
+   * Cap auf MAX_TEMPO_EVENTS (=32) hart enforced. Invalide Events silent
+   * gefiltert via parseTempoEvents.
+   */
+  tempoMap?: import("../store/useTempoMapStore").TempoEvent[] | undefined;
 }
 
 // ─── v1.18 Sub-Types ─────────────────────────────────────────────────────────
@@ -921,6 +937,20 @@ export function parseProject(json: string): SynthProject {
   } else {
     const sanitized = sanitizeMidiFxState({ chain: rawMidiFx });
     data.midiFxChain = sanitized.chain;
+  }
+
+  // ─── tempoMap (seit v1.35, v3.95.0) ──────────────────────────────────────
+  // Pre-v1.35-Files haben das Feld nicht → undefined bleibt undefined.
+  // Explicit leeres Array → bleibt [] (User-Intent "keine Tempo-Map").
+  // null / non-Array → undefined. Invalide Events silent gefiltert via
+  // parseTempoEvents. Cap auf MAX_TEMPO_EVENTS (=32) hart enforced.
+  const rawTempoMap = (data as { tempoMap?: unknown }).tempoMap;
+  if (rawTempoMap === undefined) {
+    // nothing — bleibt undefined
+  } else if (rawTempoMap === null || !Array.isArray(rawTempoMap)) {
+    delete (data as { tempoMap?: unknown }).tempoMap;
+  } else {
+    data.tempoMap = parseTempoEvents(rawTempoMap).slice(0, 32);
   }
 
   return data;

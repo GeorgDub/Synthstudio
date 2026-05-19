@@ -1144,6 +1144,40 @@ class AudioEngineClass {
     this._looperEngine.setBpm(this._bpm);
   }
 
+  // ─── Tempo-Map / BPM-Automation (v3.95.0) ─────────────────────────────────
+
+  /**
+   * v3.95.0: Resolver-Callback fuer Tempo-Map. Wird vom App.tsx-Wire-Up mit
+   * einem Closure ueber useTempoMapStore.getCurrentBpm + atBar gesetzt.
+   * Liefert null wenn keine Tempo-Map aktiv ist → Engine nutzt static _bpm.
+   *
+   * Defensive: bei leerer Map / null-Return fallt das Sequencer-Verhalten
+   * 1:1 auf den pre-v3.95.0-Pfad zurueck (backward-compat).
+   */
+  private _tempoMapResolver: ((atBar: number) => number | null) | null = null;
+
+  /** v3.95.0: setzt oder loescht den Tempo-Map-Resolver. */
+  setTempoMapResolver(resolver: ((atBar: number) => number | null) | null): void {
+    this._tempoMapResolver = resolver;
+  }
+
+  /**
+   * v3.95.0: Liefert das aktuell von der Tempo-Map aufgeloeste BPM
+   * bei der aktuellen Loop-Position (loopCount = Bar-Index), oder null wenn
+   * keine Map aktiv ist. Wird vom Scheduler vor jedem Step befragt.
+   * Defensive vs. Resolver-Throws: bei Fehler → null (Fallback).
+   */
+  private _resolveTempoMapBpm(): number | null {
+    if (!this._tempoMapResolver) return null;
+    try {
+      const resolved = this._tempoMapResolver(this.loopCount);
+      if (typeof resolved !== "number" || !Number.isFinite(resolved)) return null;
+      return Math.max(20, Math.min(300, resolved));
+    } catch {
+      return null;
+    }
+  }
+
   /**
    * v3.36.0: Sequencer-Position seeken (in Steps, 0..steps-1). Wird vom
    * useMidi-Hook bei `midiclockin:spp`-Events aufgerufen ODER beim
@@ -2441,7 +2475,18 @@ class AudioEngineClass {
 
     while (this._nextStepTime < lookAheadUntil) {
       const pattern = this.patternGetter?.();
-      const effectiveBpm = pattern?.bpm ?? this._bpm;
+      // v3.95.0: Tempo-Map hat Vorrang vor pattern.bpm und this._bpm wenn aktiv.
+      // Backward-Compat: Resolver liefert null bei leerer Map → faellt auf den
+      // bisherigen pattern?.bpm ?? this._bpm Pfad zurueck.
+      const tempoMapBpm = this._resolveTempoMapBpm();
+      const effectiveBpm = tempoMapBpm ?? pattern?.bpm ?? this._bpm;
+      // Side-effect: synchronisiere _bpm wenn die Tempo-Map einen neuen Wert
+      // liefert — damit UI-BPM-Anzeige + Looper + AudioTracks updaten.
+      if (tempoMapBpm !== null && Math.abs(this._bpm - tempoMapBpm) > 0.05) {
+        this._bpm = tempoMapBpm;
+        this._updateAudioTrackPlaybackRates();
+        this._looperEngine.setBpm(this._bpm);
+      }
       const effectiveResolution = pattern?.stepResolution ?? this._stepResolution;
       this._scheduleStep(this._currentStep, this._nextStepTime, pattern);
       // Loop-Count inkrementieren wenn Pattern-Wrap erfolgt
