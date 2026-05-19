@@ -42,6 +42,8 @@ import {
   dispatchTemplateSuggestion,
   loadNeverList,
 } from "@/utils/midiDeviceDetection";
+import { getMidiFxChain } from "@/store/useMidiFxStore";
+import { applyMidiFx, type NoteOn } from "@/utils/midiFxEngine";
 
 // ─── Typen ────────────────────────────────────────────────────────────────────
 
@@ -948,22 +950,59 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
 
     // Note-On
     if (type === 0x90 && byte2 > 0) {
+      // v3.92.0: MIDI-FX Routing — Transform-Layer vor der Engine.
+      // Chord-Expander/Note-Repeat können 1 Event in mehrere expanden;
+      // Scale-Snap/Velocity-Curve/Octave-Shift transformieren in-place.
+      const fxChain = getMidiFxChain();
+      let fxEvents: NoteOn[];
+      if (fxChain.length > 0) {
+        fxEvents = applyMidiFx({ note: byte1, velocity: byte2, channel }, fxChain);
+      } else {
+        fxEvents = [{ note: byte1, velocity: byte2, channel }];
+      }
+
       // Chord Memory: wenn aktiv, für alle Akkord-Noten onNoteOn auslösen
       const chordState = getChordMemoryState();
       if (chordState.enabled) {
-        const chordNotes = buildChordNotes(byte1, chordState);
-        chordNotes.forEach(n => optionsRef.current.onNoteOn?.(n, byte2, channel));
-        // Chord Memory MIDI Out
-        chordNotes.forEach(n => {
-          const out = activeOutputRef.current;
-          if (out && midiOutEnabledRef.current) {
-            const ch2 = Math.max(0, midiOutChannelRef.current - 1) & 0x0f;
-            out.send([0x90 | ch2, n & 0x7f, byte2 & 0x7f]);
+        // Chord Memory wirkt auf das ERSTE FX-Event (typischer Use-Case: Spieler
+        // drückt eine Taste → ChordMem expanded sie). Folge-FX-Events
+        // (Note-Repeat / Chord-Expander) behalten ihre Note.
+        const first = fxEvents[0];
+        const rest = fxEvents.slice(1);
+        const chordNotes = buildChordNotes(first.note, chordState);
+        const scheduleNote = (n: number, v: number, ch: number, offsetMs: number): void => {
+          const dispatch = (): void => {
+            optionsRef.current.onNoteOn?.(n, v, ch);
+            const out = activeOutputRef.current;
+            if (out && midiOutEnabledRef.current) {
+              const ch2 = Math.max(0, midiOutChannelRef.current - 1) & 0x0f;
+              out.send([0x90 | ch2, n & 0x7f, v & 0x7f]);
+            }
+          };
+          if (offsetMs > 0) {
+            setTimeout(dispatch, offsetMs);
+          } else {
+            dispatch();
+          }
+        };
+        chordNotes.forEach(n => scheduleNote(n, first.velocity, first.channel, first.timeOffsetMs ?? 0));
+        rest.forEach(ev => scheduleNote(ev.note, ev.velocity, ev.channel, ev.timeOffsetMs ?? 0));
+      } else {
+        // Direkte Dispatch-Schleife — jedes FX-Event landet bei onNoteOn.
+        // timeOffsetMs (von Note-Repeat) wird via setTimeout angewendet.
+        fxEvents.forEach((ev) => {
+          const offset = ev.timeOffsetMs ?? 0;
+          const dispatch = (): void => {
+            optionsRef.current.onNoteOn?.(ev.note, ev.velocity, ev.channel);
+          };
+          if (offset > 0) {
+            setTimeout(dispatch, offset);
+          } else {
+            dispatch();
           }
         });
-      } else {
-        optionsRef.current.onNoteOn?.(byte1, byte2, channel);
-        // MIDI Step Input Event (nur wenn Step Input Modus aktiv)
+        // MIDI Step Input Event nutzt das Original-Event (Pre-FX), damit
+        // Step-Input-Aufnahme unverändert bleibt.
         window.dispatchEvent(new CustomEvent("stepinput:noteon", { detail: { note: byte1, velocity: byte2 } }));
       }
       // Note-Mapping → applyMapping(target) | Perf-Pad | Part-Trigger

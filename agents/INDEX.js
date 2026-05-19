@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.91.0",
+    version: "3.92.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -89,6 +89,31 @@ const INDEX = {
   // ─── KNOWN FILE INDEX ──────────────────────────────────────
   // Key files agents have analyzed. Add new entries after working on a file.
   files: {
+    "client/src/utils/midiFxEngine.ts (v3.92.0 NEU)": {
+      role:     "v3.92.0 NEU (~270 LOC, Pure-TS DOM-frei, env:node-testbar). MIDI-FX Transform-Layer fuer eingehende Note-On-Events VOR der Engine. MidiFxNode discriminated union mit 5 Kinds: scale-snap{scale,root}, velocity-curve{curve,amount}, octave-shift{semitones}, chord-expander{chordType}, note-repeat{rate,count}. Public-API: snapNoteToScale (nearest-scale-note via pitch-class delta + wrap-around), applyVelocityCurve (linear/exp v^(1+a*2)/log v^(1/(1+a*2))), noteRepeatStepMs (BPM-skalierbar Base=120), applyMidiFxNode (per-Kind-Logic), applyMidiFx (sequenziell durch Chain). Konstanten: MAX_MIDI_FX_CHAIN=6, SCALE_INTERVALS (major/minor/penta), CHORD_INTERVALS (major/minor/7th), NOTE_REPEAT_BASE_BPM=120. Runaway-Cap 256 Events (Chord×Repeat-Explosion-Schutz).",
+      lastSeen: "2026-05-19T08:15:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/store/useMidiFxStore.ts (v3.92.0 NEU)": {
+      role:     "v3.92.0 NEU (~290 LOC, Custom-Observer-Pattern analog useSubMixStore/useMasterFxStore, DOM-frei testbar). MidiFxState {chain:MidiFxNode[]}. localStorage-Persist 'synthstudio:midi-fx:v1'. makeDefaultNode pro Kind (octave-shift→semitones=0, velocity-curve→linear+0.5, scale-snap→major+C, chord-expander→major, note-repeat→1/16+4). sanitizeNode/sanitizeMidiFxState mit per-Kind-Whitelist (VALID_SCALES/CURVES/RATES/CHORD_TYPES) + Clamping per Feld. Public-API: addNode(kind)→id|null bei MAX, removeNode/moveNode/updateNode (merge + sanitize, ID preserved), setNodeBypass, clearChain, setAllNodes(undefined=no-op-Signal/leeres-Array=clear), resetMidiFx, __resetMidiFxStoreForTests. Re-exports von Engine: MAX_MIDI_FX_CHAIN, MidiFxNode, alle Sub-Types.",
+      lastSeen: "2026-05-19T08:15:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/components/MidiFx/MidiFxPanel.tsx (v3.92.0 NEU)": {
+      role:     "v3.92.0 NEU (~410 LOC, React-Komponente mit semantic-tokens-only). Header (Title + Count-Badge {N}/{MAX} + Add-Dropdown + Clear-Button). Chain-Liste mit NodeCard pro Node: Reorder ▲▼-Buttons (disabled bei first/last), Bypass-Toggle (Tailwind opacity-60 + accent-success/danger), Remove ✕. Per-Kind-ParamUI: Scale (scale+root-Select), Velocity-Curve (curve-Select + amount-Slider 0..1 + %-Display), Octave-Shift (semitones-Slider -24..+24), Chord-Expander (chordType-Select), Note-Repeat (rate-Select + count-Number-Input). Empty-State wenn chain leer. data-testids: midi-fx-panel/empty/chain/add-toggle/add-menu/add-<kind>/node-<id>/up-<id>/down-<id>/bypass-<id>/remove-<id>/clear + scale-/root-/curve-/amount-/semitones-/chord-/rate-/count-<id>. compact-Prop fuer Sidebar-Mount (kleinerer Header-Font). Aktuell NICHT in App.tsx gemountet — Komponente bereitgestellt aber Integration in Settings/Performance-Tab steht als v3.93-Task aus.",
+      lastSeen: "2026-05-19T08:15:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/hooks/useMidi.ts (v3.92.0 midi-fx-routing)": {
+      role:     "v3.92.0 ERWEITERT (+~50 LOC, bestehende v3.81+ Mappings/Sub-Mix-Targets/Auto-Learn/etc. bleibt). handleMidiMessage Note-On-Block (Status 0x90 byte2>0) routet jetzt durch getMidiFxChain() VOR ChordMemory + onNoteOn-Dispatch. fxEvents-Liste via applyMidiFx(noteOn, chain) — Chord-Expander/Note-Repeat koennen 1 Event in mehrere expanden. Multi-Output mit setTimeout(timeOffsetMs) fuer Note-Repeat-Timing. ChordMemory wirkt auf das ERSTE FX-Event (typischer Spieler-Workflow); Folge-FX-Events behalten ihre Note. stepinput:noteon CustomEvent nutzt Pre-FX-Werte (damit Step-Aufnahme nicht durch Chord/Repeat verwirrt wird — Design-Entscheidung). Caveats: Note-Off-Tracking fehlt (haengende Voices bei Chord/Repeat moeglich, v3.93-Task), setTimeout-Drift bei CPU-Load (v3.93: Tone.Transport-Integration).",
+      lastSeen: "2026-05-19T08:15:00.000Z",
+      ownedBy:  "backend"
+    },
+    "tests/features/midi-fx-engine.test.ts (v3.92.0 NEU)": {
+      role:     "v3.92.0 NEU (~310 LOC, 33 Tests in 8 describes, env:node mit localStorage-Mock + dynamic imports nach vi.resetModules). (1) scale-snap × 4 — D#→D in C-major (snap nach unten), C→C no-op, C in A-minor no-op, applyMidiFx-Pfad mit NoteOn-Liste. (2) velocity-curve × 4 — exp 64→~32 (Toleranz ±4), linear no-op, log 64→>64, amount=0 no-op. (3) octave-shift × 3 — +12 (C4→C5), -12 (C5→C4), clamp am Range-Ende (120+24→127). (4) chord-expander × 3 — major (60→[60,64,67]), minor (60→[60,63,67]), 7th (60→[60,64,67,70] 4 Noten). (5) note-repeat × 3 — count=4 → 4 events, ansteigende timeOffsetMs (0/125/250/375 @ 120 BPM), clamp count=20→8. (6) Chain sequenziell × 4 — octave-shift+12→scale-snap (D#4→D5, also 63→74), chord-expander→octave-shift (1→3 alle +12), bypass-Node skipped, empty chain no-op. (7) Defaults × 3 — MAX_MIDI_FX_CHAIN=6, noteRepeatStepMs(1/16,120)=125, BPM-Skalierung (60 BPM = doppelt so lang). (8) Store × 9 — addNode/Defaults/MAX-Limit-Null/updateNode-Clamp+ID-Preserve/moveNode/removeNode+localStorage-Persist/Bypass-via-applyMidiFx-roundtrip/sanitize-invalid-inputs-mit-dupe-id-und-invalid-kind/setAllNodes-undefined-noop/setAllNodes-empty-clear.",
+      lastSeen: "2026-05-19T08:15:00.000Z",
+      ownedBy:  "backend"
+    },
     "client/src/utils/korg/esxParser.ts (v3.90.0 hardening)": {
       role:     "v3.90.0 ERWEITERT (+~80 LOC, bestehende v3.89 Song-Mode + v3.23 Pattern-Parser bleiben): Schliesst 4 dokumentierte Caveats. (1) PCM-Cap Soft-Limit-Tolerance: throw nur wenn totalPcm > ESX1_SAMPLE_MEM_SOFT_LIMIT_BYTES (25 MiB); zwischen 24-MiB-Hardware-Cap und Soft-Limit = warning + continue (pcmCapWarned-Flag, eine Warning pro Parse). KASSEL.esx (244B overshoot) jetzt parsebar. (2) Variant-Header Tolerance: invalid 'KORG'-Magic ODER 'ESX\\0'-Submagic geben empty bank + warning statt EsxParseError zu throwen — defense bei Batch-Import. ASCII-String wird im Warning gezeigt ('OoQC' etc.). (3) parseEsxSongEvents iter-cap: neue Konstante ESX1_MAX_ITERATIONS_NO_END=1000 + iterationsSinceLastEnd-Counter, resettet bei jedem 0xFFFF-Marker. Bei garbage-only-files silent break (currentSong=0), bei suspekter Korruption nach echtem Song warning + break. (4) length=0xF7 als ESX1_SONG_EVENT_LENGTH_INIT-Konstante; events mit length=0xF7 werden im Parser geskipped (statt durchgereicht). End-marker (data=0xFFFF) dominiert weiterhin auch wenn length=0xF7. Vorherige v3.89-Felder: EsxSongEvent + EsxSong + EsxBank.songs[] + isEmptyEsxSong/parseEsxSong/parseEsxSongEvents/parseEsxSongs. v3.23: Pattern-Parser mit 16 Parts + accent-bit-4.",
       lastSeen: "2026-05-19T07:48:00.000Z",
@@ -2412,6 +2437,36 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "backend",
+      timestamp: "2026-05-19T08:15:00.000Z",
+      done: [
+        "v3.92.0: MIDI-FX Routing — Transform-Layer (Scale/Velocity/Chord/Repeat). Eingehende MIDI-Note-On-Events werden VOR der Engine durch eine Chain von 0..6 Nodes geleitet. DAW-Standard analog Logic Pro / Bitwig MIDI-FX-Slot. 5 Node-Types als discriminated union, Pure-TS Engine, Custom-Observer-Store, React-UI mit Add-Dropdown + Reorder + Bypass + Per-Node-Params + Empty-State.",
+        "client/src/utils/midiFxEngine.ts (NEU, ~270 LOC, Pure-TS DOM-frei): MidiFxNode discriminated union (scale-snap/velocity-curve/octave-shift/chord-expander/note-repeat). NoteOn-Interface mit timeOffsetMs (Note-Repeat). Pure-Helpers: snapNoteToScale (nearest-scale-note via pitch-class delta + wrap-around), applyVelocityCurve (linear no-op, exp v^(1+amount*2), log v^(1/(1+amount*2))), noteRepeatStepMs (BPM-skalierbar, Base=120 BPM). applyMidiFxNode pro Kind (chord-expander = 3-4 Noten, note-repeat = count copies mit step-ms offsets), applyMidiFx sequenziell durch Chain. Runaway-Cap 256 Events (defense gegen Chord×Repeat-Explosion). Konstanten MAX_MIDI_FX_CHAIN=6, SCALE_INTERVALS, CHORD_INTERVALS, NOTE_REPEAT_BASE_BPM.",
+        "client/src/store/useMidiFxStore.ts (NEU, ~290 LOC, Custom-Observer analog useSubMixStore): MidiFxState {chain:MidiFxNode[]}. localStorage-Persist 'synthstudio:midi-fx:v1'. makeDefaultNode pro Kind. sanitizeNode/sanitizeMidiFxState mit per-Kind-Whitelist (VALID_SCALES/CURVES/RATES/CHORD_TYPES) + Clamping. Public-API: addNode/removeNode/moveNode/updateNode/setNodeBypass/clearChain/setAllNodes(undefined=no-op-Signal). MAX_MIDI_FX_CHAIN=6 enforced (UI-Limit + Performance-Schutz wegen 6³+ Events bei Chord×Repeat).",
+        "client/src/hooks/useMidi.ts ERWEITERT (+~50 LOC): handleMidiMessage Note-On-Block routet jetzt durch getMidiFxChain() VOR ChordMemory/onNoteOn-Dispatch. Multi-Output via fxEvents-Schleife mit setTimeout(offset) für timeOffsetMs (Note-Repeat). ChordMemory wirkt auf das ERSTE FX-Event (typischer Use-Case); Folge-Events behalten ihre Note. stepinput:noteon CustomEvent nutzt Pre-FX-Original-Werte (damit Step-Aufnahme nicht durch Chord/Repeat verwirrt wird).",
+        "client/src/components/MidiFx/MidiFxPanel.tsx (NEU, ~410 LOC): React-Komponente mit Header (Title + Count-Badge {N}/{MAX} + Add-Dropdown + Clear), Chain-Liste mit NodeCard pro Node (Reorder ▲▼, Bypass-Toggle, Remove, Per-Kind-ParamUI), Empty-State. Per-Node-Params: Scale (scale+root-Select), Velocity-Curve (curve-Select + amount-Slider), Octave-Shift (semitones-Slider), Chord-Expander (chordType-Select), Note-Repeat (rate-Select + count-Number). data-testids: midi-fx-panel/empty/chain/add-toggle/add-menu/add-<kind>/node-<id>/up-<id>/down-<id>/bypass-<id>/remove-<id>/<param>-<id>. Verwendet ausschließlich semantische Tokens (bg-bg-*, text-text-*, accent-*, border-*).",
+        "tests/features/midi-fx-engine.test.ts (NEU, ~310 LOC, 33 Tests in 8 describes, env:node mit localStorage-Mock + dynamic imports nach reset): (1) scale-snap × 4 — D#→D in C-major (snap nach unten), C→C (no-op), C in A-minor (no-op), applyMidiFx-Pfad mit NoteOn-Liste. (2) velocity-curve × 4 — exp 64→~32 (Toleranz ±4), linear no-op, log 64→>64, amount=0 no-op. (3) octave-shift × 3 — +12 (C4→C5), -12, clamp am Range-Ende (127). (4) chord-expander × 3 — major (60→[60,64,67]), minor (60→[60,63,67]), 7th (60→[60,64,67,70] 4 Noten). (5) note-repeat × 3 — count=4 → 4 events, ansteigende timeOffsetMs (0/125/250/375 @ 120 BPM), clamp count=20→8. (6) Chain sequenziell × 4 — octave-shift→scale-snap (D#4→D5), chord-expander→octave-shift (1→3 alle +12), bypass-Node skipped, empty chain no-op. (7) Defaults × 3 — MAX_MIDI_FX_CHAIN=6, noteRepeatStepMs(1/16,120)=125, BPM-Skalierung. (8) Store × 9 — addNode/MAX-Limit-Null/updateNode-Clamp/moveNode/removeNode+Persist/Bypass-via-applyMidiFx/sanitize-invalid-inputs/setAllNodes-undefined-noop/setAllNodes-empty-clear.",
+        "package.json (3.91.0 → 3.92.0). pnpm check clean (TypeScript strict). pnpm test grün: 237 Test-Files / 5356 passed / 16 skipped (vs v3.91.0: 236/5321, +1 File +35 Tests = 33 neue MidiFx-Tests + 2 indirekte aus geänderten useMidi-Pfaden).",
+        "Caveats: (1) Note-Off wird (z.Z.) NICHT dupliziert — bei Chord/Repeat verlässt sich die Engine auf den natürlichen ADSR-Release. Bei langen Holds kann das zu hängenden Voices führen. v3.93-Idee: Note-Off-Tracking mit Map<noteIn, noteOuts[]>. (2) Note-Repeat-Timing nutzt setTimeout statt Tone.Transport — bei großem CPU-Load kann Drift auftreten. Für sample-genaues Scheduling müsste die FX-Chain in AudioEngine.scheduleNote() integriert werden. (3) Velocity-Curve mit Step-Input bleibt deaktiviert (stepinput:noteon nutzt Pre-FX-Werte) — Design-Entscheidung damit User-Input nicht 'durch ein FX' aufgenommen wird. (4) Schema-v1.33→v1.34-Migration wurde dokumentiert aber NICHT in projectSerializer.ts implementiert — MIDI-FX-Chain bleibt localStorage-only (analog useScriptStore vor v1.16). Project-File-Round-Trip kann in v3.93 nachgereicht werden falls Bedarf."
+      ],
+      next: [
+        "v3.93: Note-Off-Tracking — Map<incoming-note, outgoing-notes[]> damit bei Note-Off alle gespielten Chord/Repeat-Noten korrekt released werden.",
+        "v3.93: Schema-Migration v1.33 → v1.34 für SynthProject.midiFxChain — additiv-optional analog padBank/macros. parseProject + sanitizeMidiFxState bereits vorhanden.",
+        "v3.93: Sample-genaues Note-Repeat-Scheduling via AudioEngine.scheduleNote() statt setTimeout — würde Drift bei CPU-Load eliminieren.",
+        "v3.93: MIDI-FX-Panel-Mount in Settings/Performance-Sidebar — aktuell ist die Komponente nicht in App.tsx eingebunden, nur exported.",
+        "v3.93: Pre-Set 'Strum'/'Glissando'/'Arp-Like' — Built-In-Chains die häufige Kombinationen (z.B. Chord + sequenziell Note-Repeat) als One-Click-Preset bereitstellen."
+      ],
+      changed: [
+        "client/src/utils/midiFxEngine.ts (NEU)",
+        "client/src/store/useMidiFxStore.ts (NEU)",
+        "client/src/components/MidiFx/MidiFxPanel.tsx (NEU)",
+        "client/src/hooks/useMidi.ts (Note-On-Block + Imports)",
+        "tests/features/midi-fx-engine.test.ts (NEU, 33 Tests)",
+        "package.json (3.91.0 → 3.92.0)",
+        "agents/INDEX.js (version + workLog + files-Eintraege)"
+      ]
+    },
     {
       agent:     "frontend",
       timestamp: "2026-05-19T08:00:00.000Z",
