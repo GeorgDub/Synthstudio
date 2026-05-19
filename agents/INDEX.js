@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.76.0",
+    version: "3.77.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -89,19 +89,24 @@ const INDEX = {
   // ─── KNOWN FILE INDEX ──────────────────────────────────────
   // Key files agents have analyzed. Add new entries after working on a file.
   files: {
-    "client/src/store/useMasterFxStore.ts (v3.76.0)": {
-      role:     "v3.76.0 ERWEITERT (+~80 LOC, bestehende v3.75-Store bleibt): NEU MasterLimiterState-Interface {threshold(-60..0dB), knee(0..40dB), ratio(1..20), release(0..1s), gain(0..4 makeup linear), bypass}. DEFAULT_MASTER_LIMITER = brick-wall-Preset (threshold=-1, ratio=20, knee=0, release=50ms, gain=1.0, bypass=false). NEU MasterEqState.midQ (0.3..10, default=0.7 backward-compat zur hart-codierten v3.75-Engine) — closes v3.75 'Master-EQ Q-Param für Mid-Band exposable' Caveat. clampLimiter Pure-Helper analog clampReverb/Delay/Eq (defensive NaN/Infinity → Defaults, out-of-range → clamp). clampEq erweitert um midQ. sanitizeMasterFx liefert jetzt zusätzlich limiter-Sub-State. NEU getMasterLimiter() + setMasterLimiter() Public-API. localStorage-Key bleibt synthstudio:master-fx:v1 (additiv-kompatibel: pre-v3.76-Daten ohne limiter/midQ → clamp* fillen Defaults). Bestehende v3.75 API (Reverb/Delay/EQ + setAllMasterFx + resetMasterFx + isValidMasterFxSnapshot) unverändert.",
-      lastSeen: "2026-05-19T03:55:00.000Z",
+    "client/src/store/useMasterFxStore.ts (v3.77.0 gain-range)": {
+      role:     "v3.77.0 ERWEITERT (minimal-edit, bestehende v3.76 limiter/midQ-Store bleibt): clampLimiter gain-Range 0..4 → 0..16 (additiv, kein Schema-Bump nötig — Store-Wert bleibt linear-float, UI konvertiert in dB). Pre-v3.77-localStorage-Daten mit gain≤4 laden unverändert. v3.76 brick-wall-Default gain=1.0 (= 0 dB) unverändert. Bestehende clampReverb/Delay/Eq/sanitizeMasterFx + setMasterLimiter/getMasterLimiter/eq.midQ + alle anderen v3.76-API unverändert.",
+      lastSeen: "2026-05-19T04:05:00.000Z",
       ownedBy:  "backend"
     },
-    "client/src/audio/AudioEngine.ts (v3.76.0 master-limiter)": {
-      role:     "v3.76.0 ERWEITERT (+~150 LOC, bestehende v3.75/v3.74/v3.72/v3.71/v3.70/v3.67/v3.63/v3.52 bleibt): NEU _masterLimiter:DynamicsCompressorNode + _masterLimiterGain:GainNode am Ende der Master-Chain. NEUE Routing-Order: masterGain → eqLow @lowFreq → eqMid @1000Hz Q=midQ → eqHigh @highFreq → LIMITER (threshold=-1/ratio=20/knee=0/attack=3ms/release=50ms) → limiterGain (1.0×) → ctx.destination (v3.75 war: → eqHigh → destination direkt). NEU _masterEqMidQ (default 0.7) wird im init() auf den Mid-Biquad.Q geschrieben. 7 NEUE public Setter: setMasterLimiterThreshold(-60..0)/Knee(0..40)/Ratio(1..20)/Release(0..1)/Gain(0..4)/Bypass + setMasterEqMidQ(0.3..10) — alle defensive geclampt. setMasterLimiterBypass realisiert via Routing-Switch (eqHigh.disconnect + reconnect entweder direkt zu destination oder zum Limiter) — Engine-internal-Memory bleibt erhalten. NEU getMasterLimiterReduction() liest DynamicsCompressorNode.reduction (returnt 0 bei bypass oder fehlendem Node). getMasterFxSnapshot erweitert um limiter-Sub-State + eq.midQ. reinit() entsorgt _masterLimiter + _masterLimiterGain sauber.",
-      lastSeen: "2026-05-19T03:55:00.000Z",
+    "tests/features/master-limiter-lookahead.test.ts (v3.77.0)": {
+      role:     "v3.77.0 NEU (~340 LOC, 11 Tests in 3 describes, env:node mit localStorage-Mock + Mock-AudioContext + Mock-DelayNode + setValueCurveAtTime-Spy). (1) Lookahead × 3 — createDelay-Mock-Tracking findet DelayNode mit delayTime≈0.005s, eqHigh.connect-Targets enthält die DelayNode + deren connect-Targets enthalten den Compressor (Audio-Pfad-Verifikation), Compressor-Attack ≤2ms. (2) dB-Conversion × 5 — linearToDb(1)=0 / 2.0=+6.02dB / 0.5=-6.02dB, dbToLinear(0)=1.0 / +12=3.98 / -12=0.25, Round-Trip linear→dB→linear verlustfrei für [0.1,0.5,1,1.5,4,10], Edge-Cases (linear=0 → DB_MIN ohne -Infinity, NaN/Infinity-dB → 1.0/unity), Slider-Range -12..+24dB komplett im Store-Clamp 0..16. (3) Bypass-Crossfade × 3 — setMasterLimiterBypass(true) rampt mind. 2 GainNodes via setValueCurveAtTime ohne disconnect am eqHigh (klick-frei!), mind. ein Curve-Call hat duration=0.02s, Bypass+Unbypass behält Threshold-Engine-Memory.",
+      lastSeen: "2026-05-19T04:05:00.000Z",
       ownedBy:  "backend"
     },
-    "client/src/components/Mixer/MasterFxPanel.tsx (v3.76.0)": {
-      role:     "v3.76.0 ERWEITERT (+~140 LOC, bestehende v3.75 Reverb/Delay/EQ-Tabs bleiben): NEU 4. Tab 'LIMITER' (Threshold/Knee/Ratio/Release/Make-Up-Gain Slider + Bypass-Toggle + Live-GR-Meter). GR-Meter: setInterval-Poll alle 50ms (≈20fps reicht für Pegelanzeige) via AudioEngine.getMasterLimiterReduction(). Bar-Visualisierung als Prozent-Width (Math.min(100, -reduction*5)) mit bg-accent-danger, Value-Span zeigt 'X.X dB' (oder '0.0 dB' bei <0.05dB GR). Polling läuft nur wenn Limiter-Tab aktiv (useEffect-cleanup räumt setInterval bei Tab-Switch + Unmount). NEU Mid-Q-Slider im EQ-Tab (zwischen Mid-Gain und High-Gain, range 0.3..10, step 0.1, format toFixed(1)). Slider-Format-Funktionen NEU: Threshold/Knee 'X.X dB', Ratio 'X.X:1', Release 'X ms', Make-Up 'X.XXx'. data-testids: master-fx-tab-limiter, master-fx-limiter-{threshold|knee|ratio|release|gain|bypass|gr-row|gr-bar|gr-value}, master-fx-eq-midq.",
-      lastSeen: "2026-05-19T03:55:00.000Z",
+    "client/src/audio/AudioEngine.ts (v3.77.0 lookahead+crossfade)": {
+      role:     "v3.77.0 ERWEITERT (+~60 LOC, bestehende v3.76 Master-Limiter + v3.75-v3.52 bleibt): NEU _masterLimiterLookahead:DelayNode (5ms delayTime, max 0.02s Headroom für v3.78-Erhöhung) + _masterLimiterWet:GainNode (1.0) + _masterLimiterDry:GainNode (0.0). NEUE permanent-konnektierte Parallel-Routing-Order: eqHigh → lookahead → limiter → limiterGain → wetGain → destination UND eqHigh → dryGain → destination. Bypass-Toggle ändert NUR die Wet/Dry-Gains — kein disconnect/reconnect mehr. Compressor-Attack 3ms → 1ms (zusammen mit 5ms Lookahead ≈6ms effektive Vor-Reaktion). MASTER_LIMITER_LOOKAHEAD_SEC=0.005 + MASTER_LIMITER_BYPASS_CROSSFADE_SEC=0.02 Konstanten. setMasterLimiterBypass REWRITE: cancelScheduledValues(now) → setValueCurveAtTime([start,target], now, 0.02) auf beiden Gains für no-click 20ms Crossfade; Fallback setTargetAtTime(target, now, xfade/3) für Mock-Contexts ohne Curve-Support. setMasterLimiterGain Clamp 0..4 → 0..16 (= +24dB Headroom). reinit() entsorgt 3 neue Nodes (lookahead/wet/dry).",
+      lastSeen: "2026-05-19T04:05:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/components/Mixer/MasterFxPanel.tsx (v3.77.0 db-makeup)": {
+      role:     "v3.77.0 ERWEITERT (+~30 LOC, bestehende v3.76 4-Tab-Layout/GR-Meter/Mid-Q bleibt): NEU 2 exported Pure-Helpers linearToDb(linear)/dbToLinear(db) mit Edge-Cases (linear≤0 → LIMITER_GAIN_DB_MIN ohne -Infinity, NaN/Infinity dB → 1.0/unity-Fallback). NEU exported LIMITER_GAIN_DB_MIN=-12/LIMITER_GAIN_DB_MAX=24 Konstanten. Make-Up-Slider operiert jetzt in dB-Raum: value={linearToDb(state.limiter.gain)}, min/max -12..+24, step 0.1, format-fn '+X.XX dB' / 'X.XX dB' (vorher 'X.XXx' linear), onChange dbToLinear → onLimGain. Store + Engine bleiben linear (Schema-Compat v1.31). data-testid master-fx-limiter-gain unverändert.",
+      lastSeen: "2026-05-19T04:05:00.000Z",
       ownedBy:  "frontend"
     },
     "client/src/utils/projectSerializer.ts (v3.76.0 v1.31)": {
@@ -2197,6 +2202,35 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "backend",
+      timestamp: "2026-05-19T04:05:00.000Z",
+      done: [
+        "v3.77.0: Lookahead-Limiter + dB-UI + No-Click Bypass — closes v3.76 Caveats. Drei separate kleine Verbesserungen am Master-Limiter: (1) 5ms DelayNode VOR dem Compressor + Attack 3ms → 1ms = quasi-lookahead. (2) Make-Up-Gain UI in dB statt linear-x (Slider-Range -12..+24 dB, Store bleibt linear für Schema-Compat). (3) Bypass via Wet/Dry-Crossfade (20ms setValueCurveAtTime) statt disconnect/reconnect — Click-Artefakt eliminiert.",
+        "client/src/audio/AudioEngine.ts ERWEITERT (+~60 LOC): NEU _masterLimiterLookahead:DelayNode (5ms delayTime, 0.02s max für Headroom). NEU _masterLimiterWet/_masterLimiterDry GainNodes (Wet=1/Dry=0 default). NEUE Routing-Order: eqHigh → lookahead(5ms) → limiter → limiterGain → wetGain → destination PARALLEL eqHigh → dryGain → destination. setMasterLimiterBypass REWRITE: rampt wetParam→0/1 und dryParam→1/0 via setValueCurveAtTime([start,target], now, 0.02s) mit cancelScheduledValues(now) für back-to-back-Toggles. Fallback auf setTargetAtTime(target, now, xfade/3) für Mock-Contexts ohne Curve-Support. MASTER_LIMITER_LOOKAHEAD_SEC/_BYPASS_CROSSFADE_SEC Konstanten neu. Compressor-Attack v3.76 0.003 → v3.77 0.001 (reaktion-zeit minimiert für tight transient handling). reinit() entsorgt 3 neue Nodes. setMasterLimiterGain clamp 0..4 → 0..16 (= +24dB headroom).",
+        "client/src/store/useMasterFxStore.ts: clampLimiter gain-Range 0..4 → 0..16 (additiv, kein Schema-Bump nötig — Store-Wert bleibt linear). Pre-v3.77-Daten mit alten gain≤4 laden unverändert.",
+        "client/src/components/Mixer/MasterFxPanel.tsx: NEU 2 exported Pure-Helpers linearToDb(linear)/dbToLinear(db) mit defensive Edge-Cases (linear≤0 → DB_MIN ohne -Infinity, NaN-dB → 1.0/unity). NEU exported LIMITER_GAIN_DB_MIN=-12/_DB_MAX=24 Konstanten. Make-Up-Slider operiert jetzt in dB-Raum: value={linearToDb(state.limiter.gain)}, min/max -12..+24, step 0.1, format '+X.XX dB' / 'X.XX dB', onChange dbToLinear → onLimGain. Store + Engine bleiben linear.",
+        "tests/features/master-limiter-lookahead.test.ts (NEU, ~340 LOC, 11 Tests in 3 describes): (1) Lookahead × 3 — DelayNode mit delayTime≈0.005s existiert, sitzt zwischen eqHigh und Limiter (eqHigh.connect-Targets enthält die DelayNode, deren connect-Targets den Compressor enthalten), Compressor-Attack ≤2ms. (2) dB-Conversion × 5 — linearToDb(1)=0 / 2.0=+6.02dB / 0.5=-6.02dB, dbToLinear(0)=1.0 / +12=3.98 / -12=0.25, Round-Trip verlustfrei, Edge-Cases (linear=0 → DB_MIN ohne -Inf, NaN/Infinity dB → 1.0), Slider-Range -12..+24dB liegt im Store-Clamp 0..16. (3) Bypass-Crossfade × 3 — setMasterLimiterBypass(true) rampt mind. 2 GainNodes via setValueCurveAtTime ohne disconnect am eqHigh, Curve-Duration=0.02s, Bypass+Unbypass behält Threshold-Memory.",
+        "tests/features/master-limiter.test.ts ANGEPASST (3 Tests): Bypass-Test asserts jetzt 'KEIN disconnect am eqHigh' statt der v3.76 disconnect/reconnect-Assertion. Limiter-Wiring-Test prüft jetzt eqHigh → Lookahead-DelayNode → Limiter (statt direkt eqHigh → Limiter). Gain-Clamp-Test 99 → 16 (war 99 → 4 in v3.76). Andere 15 Tests + die anderen 2 Test-Files (master-fx-bus, master-limiter-lookahead) bleiben unverändert.",
+        "package.json (3.76.0 → 3.77.0). pnpm check clean. pnpm test grün: 222 Test-Files / 5122 Tests passed (16 skipped, +11 vs. v3.76 5111).",
+      ],
+      next: [
+        "v3.78: Echter Sidechain-Split Lookahead — Detection-Path (ungedelayed, eigener DynamicsCompressor mit gain.value als AudioParam-Reader) + Audio-Path (DelayNode 5..20ms) × GainNode (= reduction). Web-Audio-Spec hat keinen sidechain-Eingang am DynamicsCompressorNode; Workaround via 'AudioWorkletNode-basierter Limiter' wäre die saubere Lösung.",
+        "v3.78: True-Peak-Reader am Master-Output (4x-Oversampling für inter-sample peaks). Aktueller Limiter sieht nur sample-peaks.",
+        "v3.78: K-Weighted LUFS-Meter im Master-FX-Panel (Integrated + Short-Term + Momentary).",
+        "v3.78: Limiter-Preset-Liste ('Brick-Wall', 'Mastering', 'Loudness', 'Soft-Compression') als JSON-Snippets.",
+        "v3.78: Master-FX Routing-Order Toggle (EQ-vor-Compressor vs. EQ-nach-Compressor)."
+      ],
+      changed: [
+        "client/src/audio/AudioEngine.ts (+~60 LOC: _masterLimiterLookahead/_masterLimiterWet/_masterLimiterDry-Felder + MASTER_LIMITER_LOOKAHEAD_SEC + MASTER_LIMITER_BYPASS_CROSSFADE_SEC Konstanten + init()-Routing-Rewrite parallel wet/dry + setMasterLimiterBypass-Crossfade-Rewrite + setMasterLimiterGain clamp 0..16 + reinit-Cleanup erweitert)",
+        "client/src/store/useMasterFxStore.ts (clampLimiter gain 0..4 → 0..16)",
+        "client/src/components/Mixer/MasterFxPanel.tsx (+~30 LOC: LIMITER_GAIN_DB_MIN/MAX + linearToDb/dbToLinear Exporte + Make-Up-Slider von linear-x auf dB-Raum)",
+        "tests/features/master-limiter-lookahead.test.ts (NEU, ~340 LOC, 11 Tests)",
+        "tests/features/master-limiter.test.ts (3 Tests angepasst an v3.77: KEIN-disconnect-Bypass, eqHigh→Lookahead→Limiter-Routing, gain-Clamp 99→16)",
+        "package.json (3.76.0 → 3.77.0)",
+        "agents/INDEX.js (version + workLog + files)"
+      ]
+    },
     {
       agent:     "backend",
       timestamp: "2026-05-19T03:55:00.000Z",

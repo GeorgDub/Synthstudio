@@ -35,6 +35,27 @@ type Tab = "reverb" | "delay" | "eq" | "limiter";
 /** v3.76.0: GR-Meter Update-Rate (50ms ≈ 20fps). */
 const GR_METER_INTERVAL_MS = 50;
 
+/**
+ * v3.77.0: Make-Up-Gain Slider-Range in dB. Store-Wert bleibt linear
+ * (0..16) — Schema-Compat. Slider operiert in dB-Raum.
+ *   -12 dB ≙ 0.2512 linear
+ *   +24 dB ≙ 15.849 linear
+ */
+export const LIMITER_GAIN_DB_MIN = -12;
+export const LIMITER_GAIN_DB_MAX = 24;
+
+/** v3.77.0: Linear → dB. Defensive: linear<=0 → DB_MIN (kein -Infinity Display). */
+export function linearToDb(linear: number): number {
+  if (!Number.isFinite(linear) || linear <= 0) return LIMITER_GAIN_DB_MIN;
+  return 20 * Math.log10(linear);
+}
+
+/** v3.77.0: dB → Linear. Defensive: NaN/Inf → 1.0 (Unity). */
+export function dbToLinear(db: number): number {
+  if (!Number.isFinite(db)) return 1.0;
+  return Math.pow(10, db / 20);
+}
+
 interface SliderRowProps {
   label: string;
   value: number;
@@ -486,15 +507,21 @@ export function MasterFxPanel() {
             format={(v) => `${(v * 1000).toFixed(0)} ms`}
             onChange={onLimRelease}
           />
+          {/*
+           * v3.77.0: Make-Up-Gain als dB angezeigt (war bis v3.76 linear "x").
+           * Store-Wert bleibt linear (backward-compat zum .synth-File-Format v1.31).
+           * Slider operiert in dB-Raum (-12..+24 dB) und wandelt für den Store
+           * via 10^(dB/20). Anzeige via 20*log10(linear).
+           */}
           <SliderRow
             label="Make-Up"
-            value={state.limiter.gain}
-            min={0}
-            max={4}
-            step={0.05}
+            value={linearToDb(state.limiter.gain)}
+            min={LIMITER_GAIN_DB_MIN}
+            max={LIMITER_GAIN_DB_MAX}
+            step={0.1}
             testId="master-fx-limiter-gain"
-            format={(v) => `${v.toFixed(2)}x`}
-            onChange={onLimGain}
+            format={(db) => `${db >= 0 ? "+" : ""}${db.toFixed(2)} dB`}
+            onChange={(db) => onLimGain(dbToLinear(db))}
           />
         </div>
       )}

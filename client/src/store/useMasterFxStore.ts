@@ -229,7 +229,9 @@ export function clampLimiter(input: Partial<MasterLimiterState> | undefined): Ma
     knee:      clampNum(i.knee,      0,    40,   d.knee),
     ratio:     clampNum(i.ratio,     1,    20,   d.ratio),
     release:   clampNum(i.release,   0,    1,    d.release),
-    gain:      clampNum(i.gain,      0,    4,    d.gain),
+    // v3.77.0: gain-Range erweitert auf 0..16 linear (≙ ca. -∞..+24 dB).
+    // Vorher 0..4 (≙ -∞..+12 dB). UI zeigt jetzt dB statt linear.
+    gain:      clampNum(i.gain,      0,    16,   d.gain),
     bypass:    clampBool(i.bypass, d.bypass),
   };
 }

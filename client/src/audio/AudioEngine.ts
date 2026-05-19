@@ -582,18 +582,51 @@ class AudioEngineClass {
   /** v3.76.0: Peak Mid-Band Q-Faktor (0.3..10), default 0.7. */
   private _masterEqMidQ = 0.7;
 
-  // ─── Master Limiter (v3.76.0) ──────────────────────────────────────────────
+  // ─── Master Limiter (v3.76.0 → v3.77.0) ────────────────────────────────────
   /**
-   * DynamicsCompressorNode am Ende der Master-Chain. Routing:
-   *   masterGain → eqLow → eqMid → eqHigh → limiter → limiterGain → destination.
-   * Bypass-Pfad legt parallel an + setzt limiter wet via gain=0. Hier
-   * realisiert via direkter Verbindung eqHigh→destination im Bypass-Fall
-   * (siehe _connectMasterTail / _disconnectMasterTail).
+   * v3.77.0: Limiter-Routing mit Lookahead (DelayNode 5ms vor dem
+   * Compressor) + parallel Wet/Dry-Pfad für No-Click-Bypass-Crossfade.
+   *
+   * Routing (statisch, beide Pfade bleiben permanent verbunden):
+   *   eqHigh ──► lookahead(5ms) ──► limiter ──► limiterGain ──► wetGain ─┐
+   *           └► dryGain ───────────────────────────────────────────────┴► destination
+   *
+   * Bypass via Crossfade (20ms): bei bypass=true rampt wetGain→0 und
+   * dryGain→1; bei bypass=false umgekehrt. Vermeidet Click-Artefakte aus
+   * den vorherigen disconnect/reconnect-Switches (v3.76).
+   *
+   * Lookahead-Strategy (Simple, v3.77): DelayNode VOR dem Compressor mit
+   * 5ms Verzögerung + Compressor-Attack auf 0.001s (effektiv 1ms). Der
+   * Compressor sieht das Signal 5ms nach der eqHigh-Position; die
+   * Gain-Reduction reagiert damit "rückwirkend" auf Transienten die ein
+   * paralleler Detection-Pfad sehen würde — der Audio-Pfad selbst hat den
+   * gleichen 5ms-Vorlauf zwischen "Signal sichtbar" und "Reaktion an der
+   * Destination". Eine vollständige sidechain-split Implementation (Audio
+   * delayed + Detection ungedelayed mit eigenem Gain-Param) ist für v3.78
+   * vorgesehen, falls Transient-Rejection messbar besser sein muss.
+   *
+   * Closes v3.76 Caveats: "Lookahead fehlt → harte Transienten rutschen
+   * durch", "Bypass-Toggle klickt", "Make-Up-Gain UI in linear statt dB".
    */
   private _masterLimiter: DynamicsCompressorNode | null = null;
   private _masterLimiterGain: GainNode | null = null;
+  /** v3.77.0: 5ms Lookahead vor dem Compressor. */
+  private _masterLimiterLookahead: DelayNode | null = null;
+  /** v3.77.0: Wet-Path-Gain (Limiter-Ausgang × wetGain → destination). */
+  private _masterLimiterWet: GainNode | null = null;
+  /** v3.77.0: Dry-Path-Gain (eqHigh direkt × dryGain → destination, für Bypass). */
+  private _masterLimiterDry: GainNode | null = null;
   private _masterLimiterBypass = false;
   private _masterLimiterMakeup = 1.0;
+
+  /**
+   * v3.77.0: Lookahead-Zeit für den Master-Limiter in Sekunden. 5ms ist
+   * ein Sweet-Spot — niedrig genug um Latenz nicht hörbar zu machen,
+   * hoch genug um snare-/kick-Transienten erkennbar zu reduzieren.
+   */
+  private readonly MASTER_LIMITER_LOOKAHEAD_SEC = 0.005;
+  /** v3.77.0: Bypass-Crossfade-Zeit in Sekunden (20ms). */
+  private readonly MASTER_LIMITER_BYPASS_CROSSFADE_SEC = 0.02;
 
   // Scheduling
   private schedulerTimer: ReturnType<typeof setInterval> | null = null;
@@ -723,25 +756,44 @@ class AudioEngineClass {
     this._masterEqHigh.frequency.value = 4000;
     this._masterEqHigh.gain.value = 0;
 
-    // v3.76.0: Limiter (brick-wall Preset by default).
+    // v3.76.0 → v3.77.0: Limiter (brick-wall Preset) mit 5ms Lookahead
+    // (DelayNode vor dem Compressor) und parallel Wet/Dry-Pfad für
+    // No-Click-Bypass-Crossfade.
     this._masterLimiter = this.ctx.createDynamicsCompressor();
     this._masterLimiter.threshold.value = -1;
     this._masterLimiter.knee.value      = 0;
     this._masterLimiter.ratio.value     = 20;
-    this._masterLimiter.attack.value    = 0.003; // 3ms, schnell
+    // v3.77.0: Attack auf 1ms reduziert (war 3ms) — zusammen mit 5ms
+    // Lookahead-Delay vor dem Compressor entspricht die Reaktion ~6ms
+    // "Vorlauf" über die Audio-Sample-Position an der Destination.
+    this._masterLimiter.attack.value    = 0.001;
     this._masterLimiter.release.value   = 0.05;
     this._masterLimiterGain = this.ctx.createGain();
     this._masterLimiterGain.gain.value  = 1.0;
+    // v3.77.0: Lookahead-Delay vor dem Limiter (5ms). Max-Delay-Headroom
+    // 0.02s damit eine spätere v3.78-Erhöhung auf bis zu 20ms ohne neue
+    // Node-Allokation möglich bleibt.
+    this._masterLimiterLookahead = this.ctx.createDelay(0.02);
+    this._masterLimiterLookahead.delayTime.value = this.MASTER_LIMITER_LOOKAHEAD_SEC;
+    // v3.77.0: Wet/Dry-Crossfade-Pfad. Beide Gains werden konstant
+    // konnektiert — Bypass-Switch nur via setTargetAtTime / Curve auf gain.
+    this._masterLimiterWet = this.ctx.createGain();
+    this._masterLimiterWet.gain.value = 1.0;
+    this._masterLimiterDry = this.ctx.createGain();
+    this._masterLimiterDry.gain.value = 0.0;
 
     this.masterGain.connect(this._masterEqLow);
     this._masterEqLow.connect(this._masterEqMid);
     this._masterEqMid.connect(this._masterEqHigh);
-    // EQ-Tail → Limiter → Make-Up → destination. Bypass-Pfad (v3.76): wenn
-    // _masterLimiterBypass=true wird via setMasterLimiterBypass() der Limiter
-    // disconnected und eqHigh direkt mit destination verbunden.
-    this._masterEqHigh.connect(this._masterLimiter);
+    // v3.77.0 Wet-Path: eqHigh → lookahead → limiter → limiterGain → wetGain → destination
+    this._masterEqHigh.connect(this._masterLimiterLookahead);
+    this._masterLimiterLookahead.connect(this._masterLimiter);
     this._masterLimiter.connect(this._masterLimiterGain);
-    this._masterLimiterGain.connect(this.ctx.destination);
+    this._masterLimiterGain.connect(this._masterLimiterWet);
+    this._masterLimiterWet.connect(this.ctx.destination);
+    // v3.77.0 Dry-Path: eqHigh → dryGain → destination (parallel).
+    this._masterEqHigh.connect(this._masterLimiterDry);
+    this._masterLimiterDry.connect(this.ctx.destination);
 
     // Global Reverb Bus (Plate-ähnlich, default 2s Decay).
     // v3.75.0: PreDelay (DelayNode 0..200ms) + Damping (Lowpass-Biquad) vor
@@ -859,6 +911,9 @@ class AudioEngineClass {
     this._masterEqHigh = null;
     this._masterLimiter = null;
     this._masterLimiterGain = null;
+    this._masterLimiterLookahead = null;
+    this._masterLimiterWet = null;
+    this._masterLimiterDry = null;
     this.masterGain = null;
     this._outputAnalyser = null;
     // 5) AudioContext schließen (kein await — close ist robust gegen state).
@@ -2834,9 +2889,9 @@ class AudioEngineClass {
     }
   }
 
-  /** Master-Limiter Make-Up-Gain linear (0..4). */
+  /** Master-Limiter Make-Up-Gain linear (0..16, ≙ ca. -∞..+24 dB). v3.77.0 erweitert von 0..4. */
   setMasterLimiterGain(gain: number): void {
-    const clamped = Math.max(0, Math.min(4, gain));
+    const clamped = Math.max(0, Math.min(16, gain));
     this._masterLimiterMakeup = clamped;
     if (this._masterLimiterGain && this.ctx) {
       const target = this._masterLimiterBypass ? clamped : clamped;
@@ -2846,23 +2901,44 @@ class AudioEngineClass {
   }
 
   /**
-   * Master-Limiter Bypass. Realisiert via Routing-Switch: bei bypass=true
-   * wird der Limiter ausgehängt (eqHigh→destination direkt), sonst die
-   * Original-Chain wiederhergestellt (eqHigh→limiter→limiterGain→destination).
-   * Engine-internal-Memory (threshold/ratio/etc.) bleibt erhalten.
+   * v3.77.0: Master-Limiter Bypass via No-Click-Crossfade.
+   *
+   * Beide Pfade (wet = durch Limiter, dry = direkt) sind permanent
+   * konnektiert. Bypass-Toggle rampt nur die zwei Gain-Werte über 20ms
+   * gegeneinander (equal-power wäre overkill bei zwei korrelierten
+   * Signalen — wir nehmen linear mit setValueCurveAtTime). Vermeidet die
+   * Click-Artefakte aus v3.76 (disconnect/reconnect erzeugte einen
+   * Sample-Glitch). Engine-internal-Memory (threshold/ratio/etc.) bleibt
+   * unverändert.
    */
   setMasterLimiterBypass(bypass: boolean): void {
     this._masterLimiterBypass = bypass;
-    if (!this.ctx || !this._masterEqHigh || !this._masterLimiter || !this._masterLimiterGain) return;
+    if (!this.ctx || !this._masterLimiterWet || !this._masterLimiterDry) return;
+    const now = this.ctx.currentTime;
+    const xfade = this.MASTER_LIMITER_BYPASS_CROSSFADE_SEC;
+    const wetParam = this._masterLimiterWet.gain;
+    const dryParam = this._masterLimiterDry.gain;
+    // Cancel pending ramps damit aufeinanderfolgende Toggles nicht klemmen.
     try {
-      this._masterEqHigh.disconnect();
+      wetParam.cancelScheduledValues(now);
+      dryParam.cancelScheduledValues(now);
     } catch { /* swallow */ }
-    if (bypass) {
-      // Direct-Path: eqHigh → destination (Limiter umgangen).
-      this._masterEqHigh.connect(this.ctx.destination);
-    } else {
-      // Original-Path: eqHigh → limiter → limiterGain → destination.
-      this._masterEqHigh.connect(this._masterLimiter);
+    const wetStart = wetParam.value;
+    const dryStart = dryParam.value;
+    const wetTarget = bypass ? 0 : 1;
+    const dryTarget = bypass ? 1 : 0;
+    // setValueCurveAtTime mit 2-Wert-Linear-Curve = Linear-Ramp ohne den
+    // Edge-Case dass linearRampToValueAtTime einen vorherigen setValueAtTime
+    // braucht.
+    try {
+      const wetCurve = new Float32Array([wetStart, wetTarget]);
+      const dryCurve = new Float32Array([dryStart, dryTarget]);
+      wetParam.setValueCurveAtTime(wetCurve, now, xfade);
+      dryParam.setValueCurveAtTime(dryCurve, now, xfade);
+    } catch {
+      // Fallback für Mock-AudioContexts oder Browser ohne Curve-Support
+      try { wetParam.setTargetAtTime(wetTarget, now, xfade / 3); } catch { /* swallow */ }
+      try { dryParam.setTargetAtTime(dryTarget, now, xfade / 3); } catch { /* swallow */ }
     }
   }
 

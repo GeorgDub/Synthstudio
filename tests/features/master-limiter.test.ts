@@ -216,14 +216,15 @@ describe("useMasterFxStore.limiter — defaults & clamping", () => {
     expect(lim.bypass).toBe(false);
   });
 
-  it("setMasterLimiter clampt threshold (-60..0), knee (0..40), ratio (1..20), release (0..1), gain (0..4)", () => {
+  it("setMasterLimiter clampt threshold (-60..0), knee (0..40), ratio (1..20), release (0..1), gain (0..16)", () => {
     storeModule.setMasterLimiter({ threshold: -200, knee: 999, ratio: 100, release: 5, gain: 99 });
     const lim = storeModule.getMasterLimiter();
     expect(lim.threshold).toBe(-60);
     expect(lim.knee).toBe(40);
     expect(lim.ratio).toBe(20);
     expect(lim.release).toBe(1);
-    expect(lim.gain).toBe(4);
+    // v3.77.0: gain-Range auf 0..16 erweitert (UI zeigt dB).
+    expect(lim.gain).toBe(16);
 
     storeModule.setMasterLimiter({ threshold: 50, knee: -10, ratio: -5, release: -2, gain: -3 });
     const lim2 = storeModule.getMasterLimiter();
@@ -328,33 +329,34 @@ describe("AudioEngine — Routing: post-EQ → Limiter → destination", () => {
     expect(limiter.release?.value).toBeCloseTo(0.05, 4);
   });
 
-  it("Limiter ist post-EQ verkabelt: eqHigh.connect wurde mit Limiter aufgerufen", async () => {
+  it("Limiter ist post-EQ verkabelt: eqHigh → Lookahead-Delay → Limiter (v3.77)", async () => {
     await AudioEngine.init();
-    // Der Master-EQ-High-Biquad ist der 3. erzeugte Biquad (low/mid/high in dieser
-    // Reihenfolge). connect wurde mit dem Limiter aufgerufen.
+    // v3.77: eqHigh connectet zum Lookahead-DelayNode (nicht direkt zum
+    // Compressor). Die DelayNode wiederum connectet zum Compressor.
     expect(__createdBiquads.length).toBeGreaterThanOrEqual(3);
     const eqHigh = __createdBiquads[2];
     const limiter = __createdCompressors[0];
-    // mindestens ein connect-Call von eqHigh zum Limiter
-    const connectedToLimiter = eqHigh.connect.mock.calls.some((args: unknown[]) => args[0] === limiter);
-    expect(connectedToLimiter).toBe(true);
+    // Es muss eine DelayNode existieren die zwischen eqHigh und Limiter
+    // verschaltet ist (= eqHigh.connect-Calls zeigen auf eine Node, die
+    // ihrerseits zum Limiter connectet).
+    const eqHighTargets = eqHigh.connect.mock.calls.map((a: unknown[]) => a[0]);
+    const lookaheadCandidate = eqHighTargets.find((t: unknown) =>
+      (t as MockNode)?.connect && (t as MockNode).connect.mock.calls.some(
+        (args: unknown[]) => args[0] === limiter,
+      ),
+    );
+    expect(lookaheadCandidate).toBeDefined();
   });
 
-  it("setMasterLimiterBypass = true entkoppelt den Limiter (eqHigh → destination direkt)", async () => {
+  it("setMasterLimiterBypass = true crossfaded auf Dry-Path (wet→0, dry→1) ohne disconnect", async () => {
+    // v3.77.0: Bypass funktioniert per Wet/Dry-Crossfade über 20ms statt
+    // disconnect/reconnect. Beide Pfade bleiben permanent konnektiert.
     await AudioEngine.init();
     const eqHigh = __createdBiquads[2];
-    // Reset disconnect-Spy
     eqHigh.disconnect.mockClear();
-    eqHigh.connect.mockClear();
     AudioEngine.setMasterLimiterBypass(true);
-    expect(eqHigh.disconnect).toHaveBeenCalled();
-    // Bypass-Path: eqHigh → destination direkt (no compressor between).
-    // Wir prüfen dass connect(destination) feuert.
-    const calledWithDest = eqHigh.connect.mock.calls.some(
-      (args: unknown[]) => args[0] === (AudioEngine as unknown as { ctx: { destination: unknown } }).ctx.destination,
-    );
-    expect(calledWithDest).toBe(true);
-
+    // v3.77: KEIN disconnect mehr am eqHigh (würde Click erzeugen).
+    expect(eqHigh.disconnect).not.toHaveBeenCalled();
     // Snapshot reflektiert Bypass-State
     expect(AudioEngine.getMasterFxSnapshot().limiter.bypass).toBe(true);
   });
