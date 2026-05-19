@@ -39,6 +39,13 @@ import {
 // v3.116.0: Time-Stretch + Pitch-Shift Dialog für Samples.
 import { SampleTransformDialog } from "./SampleTransformDialog";
 import { AudioEngine } from "@/audio/AudioEngine";
+// v3.148: Sample-Sort-Modes.
+import {
+  sortSamples,
+  SAMPLE_SORT_MODES,
+  SAMPLE_SORT_LABELS,
+  type SampleSortMode,
+} from "@/utils/sampleSort";
 
 // ─── Typen ────────────────────────────────────────────────────────────────────
 
@@ -576,6 +583,16 @@ export function SampleBrowser({
   // v3.54.0: Multi-Tag-Filter + AND/OR-Mode (Default OR — DAW-üblich).
   const [activeTags, setActiveTags] = useState<string[]>([]);
   const [tagFilterMode, setTagFilterMode] = useState<FilterMode>("OR");
+  // v3.148: Sort-Mode mit localStorage-Persistenz.
+  const [sortMode, setSortModeState] = useState<SampleSortMode>(() => {
+    if (typeof window === "undefined") return "import";
+    const v = window.localStorage.getItem("synthstudio:sample-sort-mode") as SampleSortMode | null;
+    return v && SAMPLE_SORT_MODES.includes(v) ? v : "import";
+  });
+  const setSortMode = useCallback((m: SampleSortMode) => {
+    setSortModeState(m);
+    try { window.localStorage.setItem("synthstudio:sample-sort-mode", m); } catch { /* ignore */ }
+  }, []);
 
   // ── Reorder-DnD-State ─────────────────────────────────────────────────────
   const [dragOverSampleId, setDragOverSampleId] = useState<string | null>(null);
@@ -696,13 +713,15 @@ export function SampleBrowser({
       return { ...s, tags: merged };
     });
 
-    return applySampleFilters(enriched, {
+    const filtered = applySampleFilters(enriched, {
       category: activeCategory,
       tags: activeTags,
       tagMode: tagFilterMode,
       query: searchQuery,
     });
-  }, [samples, activeCategory, searchQuery, activeTags, tagFilterMode, activePlaylistId, playlists, analysisCache]);
+    // v3.148: Sort nach User-Wahl.
+    return sortSamples(filtered, sortMode);
+  }, [samples, activeCategory, searchQuery, activeTags, tagFilterMode, activePlaylistId, playlists, analysisCache, sortMode]);
 
   // ── Verfügbare Tags aller Samples (aus Import + Analyse-Cache) ─────────────
   const availableTags = useMemo(() => {
@@ -1394,15 +1413,26 @@ export function SampleBrowser({
             </div>
           )}
 
-          {/* Suche */}
-          <div className="px-3 py-2 border-b border-border-color/50">
+          {/* Suche + Sort */}
+          <div className="px-3 py-2 border-b border-border-color/50 flex items-center gap-1.5">
             <input
               type="text"
               placeholder="Samples suchen…"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-bg-panel border border-border-color rounded px-2 py-1 text-xs text-text-primary placeholder:text-text-dim focus:outline-none focus:border-accent-primary transition-colors"
+              className="flex-1 bg-bg-panel border border-border-color rounded px-2 py-1 text-xs text-text-primary placeholder:text-text-dim focus:outline-none focus:border-accent-primary transition-colors"
             />
+            <select
+              value={sortMode}
+              onChange={(e) => setSortMode(e.target.value as SampleSortMode)}
+              className="bg-bg-panel border border-border-color rounded px-1.5 py-1 text-[10px] text-text-muted hover:text-text-primary focus:outline-none focus:border-accent-primary transition-colors"
+              title="Samples sortieren"
+              data-testid="sample-browser-sort"
+            >
+              {SAMPLE_SORT_MODES.map((m) => (
+                <option key={m} value={m}>{SAMPLE_SORT_LABELS[m]}</option>
+              ))}
+            </select>
           </div>
 
           {/* Kategorie-Filter */}
