@@ -99,11 +99,30 @@ export function isBpmExternallyLocked(
 }
 
 
+// ─── v3.161: Pattern-Density-Berechnung über alle Parts ────────────────────────
+import { categorizeDensity, type DensityCategory } from "@/utils/patternDensityAnalyzer";
+import type { PatternData } from "@/audio/AudioEngine";
+
+function computePatternDensityCategory(pattern: PatternData): DensityCategory {
+  let hits = 0;
+  let total = 0;
+  for (const part of pattern.parts) {
+    for (const step of part.steps) {
+      total++;
+      if (step.active) hits++;
+    }
+  }
+  if (total === 0) return "empty";
+  return categorizeDensity(hits / total);
+}
+
 // ─── Pattern-Row mit Right-Click MIDI-Learn (v1.92) ───────────────────────────
 
 interface PatternRowProps {
   pattern: { id: string; name: string; bpm: number | null };
   patternIndex: number;
+  /** v3.161: Density-Kategorie für visuelle Hervorhebung (empty/sparse/medium/dense/full). */
+  densityCategory?: import("@/utils/patternDensityAnalyzer").DensityCategory;
   isActive: boolean;
   isPlaying: boolean;
   isLiveEditing: boolean;
@@ -128,7 +147,7 @@ interface PatternRowProps {
 }
 
 function PatternRow({
-  pattern, patternIndex, isActive, isPlaying, isLiveEditing, showDelete,
+  pattern, patternIndex, densityCategory, isActive, isPlaying, isLiveEditing, showDelete,
   hasPrevPattern, prevPatternId, allPatterns,
   onSelect, onDuplicate, onRemove, onCopySamplesFrom, onReorder, onExportImage, onCompare,
 }: PatternRowProps) {
@@ -205,6 +224,19 @@ function PatternRow({
       >
         {isPlaying && <span className="mr-1.5 text-accent-danger" title="Wird gerade abgespielt">▶</span>}
         {isDraft   && <span className="mr-1.5 text-accent-primary" title="Draft – wird bearbeitet">✏</span>}
+        {densityCategory && densityCategory !== "empty" && (
+          <span
+            className={[
+              "inline-block w-1.5 h-1.5 rounded-full mr-1.5",
+              densityCategory === "sparse" && "bg-accent-success/50",
+              densityCategory === "medium" && "bg-accent-secondary",
+              densityCategory === "dense" && "bg-accent-danger/70",
+              densityCategory === "full" && "bg-accent-danger",
+            ].filter(Boolean).join(" ")}
+            title={`Pattern-Density: ${densityCategory}`}
+            data-testid={`pattern-density-badge-${densityCategory}`}
+          />
+        )}
         {pattern.name}
         {pattern.bpm !== null && (
           <span className="ml-1 text-[9px] text-text-dim">{pattern.bpm} BPM</span>
@@ -1001,6 +1033,7 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
                   key={p.id}
                   pattern={p}
                   patternIndex={idx}
+                  densityCategory={computePatternDensityCategory(p)}
                   isActive={p.id === dm.activePatternId}
                   isPlaying={p.id === dm.playbackPatternId}
                   isLiveEditing={isLiveEditing}
