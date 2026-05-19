@@ -16,6 +16,7 @@ import { DEFAULT_SYNTH_PARAMS } from "../audio/SynthEngine";
 import { euclidean } from "../utils/euclidean";
 import { clampStepLength } from "../utils/polymeter";
 import { quantizeSteps } from "../utils/quantizeGrid";
+import { normalizeChannelColor } from "../utils/channelColors";
 
 // ─── Typen ────────────────────────────────────────────────────────────────────
 
@@ -85,6 +86,12 @@ export interface DrumMachineActions {
   setPartSoloed: (partId: string, soloed: boolean, exclusive?: boolean) => void;
   setPartVolume: (partId: string, volume: number) => void;
   setPartPan: (partId: string, pan: number) => void;
+  /**
+   * v3.73.0: Channel-Strip Color-Coding. Setzt eine Hex-Farbe ("#RRGGBB" oder
+   * "#RGB") oder undefined (= Reset auf Palette-Default). Invalide Werte
+   * werden silent ignoriert (Store-State bleibt unverändert).
+   */
+  setPartColor: (partId: string, color: string | undefined) => void;
   setPartStepResolution: (partId: string, res: StepResolution | undefined) => void;
   /** Polymeter: setzt eine eigene Loop-Länge für den Part (undefined = Pattern-Default). */
   setPartStepLength: (partId: string, length: number | undefined) => void;
@@ -232,6 +239,31 @@ export function applySoloUpdate(
       if (pt.id === partId) return { ...pt, soloed };
       return exclusive ? { ...pt, soloed: false } : pt;
     }),
+  }));
+}
+
+/**
+ * v3.73.0: Pure-Transform für setPartColor — applyiert eine normalisierte
+ * Farbe (oder undefined-Reset) auf alle Patterns. Exportiert damit Tests
+ * die Sanitization ohne React-Renderer verifizieren können.
+ *
+ * Invalide Werte (non-Hex, non-string) → das gesamte Update wird verworfen
+ * (silent no-op) damit der Store nie eine ungültige color trägt. undefined
+ * resettet die Color (Palette-Default greift wieder).
+ */
+export function applyPartColorUpdate(
+  patterns: PatternData[],
+  partId: string,
+  color: string | undefined,
+): PatternData[] {
+  // undefined ist legitim (Reset), valide-string wird lowercased,
+  // alles andere → undefined (=Reset). Caller setPartColor entscheidet ob er
+  // den Reset will; hier ist die Logik immer "valider Wert oder Reset".
+  const normalized: string | undefined =
+    color === undefined ? undefined : normalizeChannelColor(color);
+  return patterns.map(p => ({
+    ...p,
+    parts: p.parts.map(pt => pt.id === partId ? { ...pt, color: normalized } : pt),
   }));
 }
 
@@ -615,6 +647,20 @@ export function useDrumMachineStore(): DrumMachineState & DrumMachineActions {
     updatePatterns(ps => ps.map(p => ({
       ...p,
       parts: p.parts.map(pt => pt.id === partId ? { ...pt, pan } : pt),
+    })), false);
+  }, [updatePatterns]);
+
+  // v3.73.0: Channel-Color-Coding. Invalide Werte → silent no-op (Store
+  // bleibt unverändert). undefined oder explizit-leerer-Hex resettet die
+  // Color (UI fällt auf den Palette-Default zurück).
+  const setPartColor = useCallback((partId: string, color: string | undefined) => {
+    // Validierung in einem Pure-Helper damit Tests die Sanitization direkt
+    // prüfen können. undefined → undefined (clear), valider Hex → lowercase,
+    // invalider Hex → undefined (defensive Reset statt Throw).
+    const normalized: string | undefined = color === undefined ? undefined : normalizeChannelColor(color);
+    updatePatterns(ps => ps.map(p => ({
+      ...p,
+      parts: p.parts.map(pt => pt.id === partId ? { ...pt, color: normalized } : pt),
     })), false);
   }, [updatePatterns]);
 
@@ -1035,7 +1081,7 @@ export function useDrumMachineStore(): DrumMachineState & DrumMachineActions {
     setPatternBpm, setPatternBpmRatio, setPatternBpmTransitionBars, setPatternStepResolution, setPatternFollowAction,
     toggleStackedPattern, clearStackedPatterns,
     addPart, removePart, renamePart, setPartSample,
-    setPartMuted, setPartSoloed, setPartVolume, setPartPan,
+    setPartMuted, setPartSoloed, setPartVolume, setPartPan, setPartColor,
     setPartStepResolution, setPartStepLength, setActivePart, movePart,
     setPartFx, setFxPanelPartId, setPartSourceType, setPartGranularParams, setPartStretchRatio, setPartMicroTiming, applyPatchToPart,
     toggleStep, setPartSteps, setStepVelocity, setStepPitch, setStepProbability, setStepSlide, setStepCondition, setStepReverse, setStepParamLock, setStepLength, setStepChainNext, quantizePartSteps, setPartEuclidean,

@@ -398,6 +398,14 @@ export interface PartData {
    * Negativ = vor dem Beat (anticipated), Positiv = hinter dem Beat (laid back).
    */
   microTiming?: number;
+  /**
+   * v3.73.0: Channel-Strip Color-Coding (Mixer + DrumMachine).
+   * User-defined Hex-Farbe ("#RRGGBB" oder "#RGB"), lowercase. Wenn nicht
+   * gesetzt, fällt die UI auf den zyklischen Palette-Default zurück
+   * (resolveChannelColor in utils/channelColors). Additiv-optional —
+   * Pre-v1.28-Files laden unverändert (color bleibt undefined).
+   */
+  color?: string;
 }
 
 export type FollowActionType = "none" | "next" | "prev" | "random" | "specific";

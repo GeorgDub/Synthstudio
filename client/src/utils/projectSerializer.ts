@@ -70,6 +70,14 @@
  *     Worklet-Pfad mit in-process Sample-Mix (Tail + Head fade).
  *     Backward-Compat: pre-v1.27-Files laden ohne Crash, Feld bleibt
  *     undefined → 0 (hard cut wie vorher).
+ *   - "1.28": PartData.color hinzugefügt (v3.73.0). Channel-Strip
+ *     Color-Coding für Mixer + DrumMachine (DAW-Standard: Drums rot,
+ *     Bass blau etc.). Hex-String ("#RRGGBB" oder "#RGB"), lowercase,
+ *     additiv-optional. Pre-v1.28-Files laden unverändert — color bleibt
+ *     undefined und die UI fällt auf den zyklischen Palette-Default
+ *     zurück (resolveChannelColor in utils/channelColors).
+ *     Validierung: invalide color-Strings werden beim Load via
+ *     sanitizePartColors silent gestrippt (Part bleibt, nur color=undefined).
  * Dateiendung: .synth
  */
 
@@ -96,8 +104,9 @@ import {
 import { ensureProjectId } from "@/utils/projectId";
 import type { QuickActionMacro } from "@/store/useQuickActionStore";
 import { isValidQuickActionMacro } from "@/store/useQuickActionStore";
+import { isValidChannelColor } from "@/utils/channelColors";
 
-export const SYNTH_FILE_VERSION = "1.27";
+export const SYNTH_FILE_VERSION = "1.28";
 export const SYNTH_LATEST_KEY = "synthstudio:last-project";
 
 // ─── Typen ───────────────────────────────────────────────────────────────────
@@ -462,6 +471,38 @@ export function toJson(project: SynthProject): string {
   return JSON.stringify(project, null, 2);
 }
 
+// ─── v1.28 Sanitizer (Channel-Strip Color-Coding) ────────────────────────────
+
+/**
+ * v3.73.0 / v1.28: Strippt invalide `color`-Werte aus PartData (in-place).
+ * Valider Hex bleibt erhalten (lowercased), alles andere wird gelöscht damit
+ * die UI auf den Palette-Default zurückfällt statt mit invalider Color zu
+ * rendern. Pre-v1.28-Parts ohne color-Feld bleiben unverändert.
+ */
+export function sanitizePartColors(patterns: unknown): void {
+  if (!Array.isArray(patterns)) return;
+  for (const p of patterns) {
+    if (!p || typeof p !== "object") continue;
+    const parts = (p as { parts?: unknown }).parts;
+    if (!Array.isArray(parts)) continue;
+    for (const pt of parts) {
+      if (!pt || typeof pt !== "object") continue;
+      const o = pt as Record<string, unknown>;
+      if (!("color" in o)) continue;
+      const raw = o.color;
+      if (raw === undefined || raw === null) {
+        delete o.color;
+        continue;
+      }
+      if (!isValidChannelColor(raw)) {
+        delete o.color;
+        continue;
+      }
+      o.color = (raw as string).toLowerCase();
+    }
+  }
+}
+
 // ─── Deserialisierung ─────────────────────────────────────────────────────────
 
 export function parseProject(json: string): SynthProject {
@@ -486,6 +527,11 @@ export function parseProject(json: string): SynthProject {
       sanitizeSampleTags(s);
     }
   }
+
+  // ─── patterns[].parts[].color Sanitization (seit v1.28, v3.73.0) ─────────
+  // Pre-v1.28-Files: Parts ohne color bleiben unverändert. Invalide color-
+  // Werte werden silent gestrippt (UI fällt auf Palette-Default zurück).
+  sanitizePartColors(data.patterns);
 
   // ─── audioTracks (seit v1.15) ────────────────────────────────────────────
   // Alte v1.14-Dateien: Feld fehlt → defaulte auf [] (KEIN Throw).

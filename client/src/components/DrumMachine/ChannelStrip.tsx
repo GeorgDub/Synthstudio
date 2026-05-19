@@ -11,6 +11,8 @@ import { FxPanel } from "./FxPanel";
 import { velocityColor, stepGroupBorder, getSourceTypeBadge } from "./drumMachineHelpers";
 import { useMidiContext } from "@/context/MidiContext";
 import { findMappingForTarget } from "@/hooks/useMidi";
+import { ChannelColorPicker } from "@/components/Mixer/ChannelColorPicker";
+import { resolveChannelColor } from "@/utils/channelColors";
 
 export interface ChannelStripProps {
   part: PartData;
@@ -60,16 +62,21 @@ export interface ChannelStripProps {
    * noch keine existieren (applySourceTypeChange in useDrumMachineStore).
    */
   onSourceTypeChange?: (type: "sample" | "wavetable" | "fm" | "granular") => void;
+  /**
+   * v3.73.0: Channel-Color-Coding (Color-Picker + Row-Tint). Optional —
+   * wenn nicht gesetzt, wird kein Picker gerendert (z.B. Generator-Preview).
+   */
+  onColorChange?: (color: string | undefined) => void;
 }
 
 export function ChannelStrip({
-  part, stepCount, visibleStepRange, currentStep, isActive,
+  part, partIndex, stepCount, visibleStepRange, currentStep, isActive,
   velocityMode, patternResolution, fxPanelOpen,
   onToggleStep, onSetVelocity,
   onMute, onSolo, onVolumeChange, onPanChange,
   onSampleDrop, onFxChange, onFxToggle, onResolutionChange,
   onClick, onPianoRollOpen, onStepSelect, selectedStepIndex, onGranularOpen,
-  onSourceTypeChange,
+  onSourceTypeChange, onColorChange,
 }: ChannelStripProps) {
   const [isDragOver, setIsDragOver] = useState(false);
   const [dragVelocityStep, setDragVelocityStep] = useState<number | null>(null);
@@ -117,15 +124,27 @@ export function ChannelStrip({
     onSetVelocity(stepIndex, Math.max(1, Math.min(127, Math.round(relY * 127))));
   };
 
+  // v3.73.0: Channel-Color für Row-Tint + Picker. Wenn onColorChange fehlt
+  // (z.B. Preview-Context), wird der Picker nicht gerendert — der Tint
+  // basiert dann nur auf dem Palette-Default für den Index.
+  const resolvedColor = resolveChannelColor(part.color, partIndex);
+
   return (
     <div
       ref={stripRef}
+      data-testid={`drum-channel-strip-${part.id}`}
       className={[
         "flex items-center gap-1 px-2 py-1 border-b border-border-color/50 relative",
         "transition-colors duration-75",
         isActive ? "bg-bg-panel/80" : "hover:bg-bg-panel/40",
         part.muted ? "opacity-50" : "",
       ].join(" ")}
+      style={{
+        // v3.73.0: Subtle left-border-tint (2px) statt full-row-bg damit der
+        // Step-Grid lesbar bleibt. Inset-Shadow für scroll-friendliche
+        // Performance + kein Layout-Shift.
+        boxShadow: `inset 2px 0 0 0 ${resolvedColor}`,
+      }}
       onClick={onClick}
       onDragOver={e => { e.preventDefault(); setIsDragOver(true); }}
       onDragLeave={() => setIsDragOver(false)}
@@ -138,6 +157,19 @@ export function ChannelStrip({
       {/* Kanal-Name + Sample-Anzeige + Source-Type-Badge (v2.51 + v2.54-Switch) */}
       <div className="w-[88px] flex-shrink-0">
         <div className="flex items-center gap-1 leading-tight">
+          {/* v3.73.0: Color-Picker (klein, links vom Namen). Nur wenn der
+              Caller einen onColorChange-Handler bereitstellt. */}
+          {onColorChange && (
+            <div onClick={(e) => e.stopPropagation()} className="flex-shrink-0">
+              <ChannelColorPicker
+                channelName={part.name}
+                color={part.color}
+                index={partIndex}
+                onColorChange={onColorChange}
+                testIdPrefix={`drum-channel-color-${part.id}`}
+              />
+            </div>
+          )}
           <span className="text-[10px] font-medium text-text-primary truncate flex-1 min-w-0">
             {part.name}
           </span>

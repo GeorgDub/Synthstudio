@@ -458,8 +458,8 @@ describe("v3.70.0 – Serializer Round-Trip (v1.26)", () => {
     localStorageMock.clear();
   });
 
-  it("SYNTH_FILE_VERSION wurde auf '1.27' gebumpt (v3.72.0 loop-crossfade)", () => {
-    expect(SYNTH_FILE_VERSION).toBe("1.27");
+  it("SYNTH_FILE_VERSION wurde auf '1.28' gebumpt (v3.73.0 channel-colors)", () => {
+    expect(SYNTH_FILE_VERSION).toBe("1.28");
   });
 
   it("Round-Trip erhält loopEnabled + loopStartSample + loopEndSample", () => {

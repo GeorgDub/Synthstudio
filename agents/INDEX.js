@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.72.0",
+    version: "3.73.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -89,6 +89,46 @@ const INDEX = {
   // ─── KNOWN FILE INDEX ──────────────────────────────────────
   // Key files agents have analyzed. Add new entries after working on a file.
   files: {
+    "client/src/utils/channelColors.ts (v3.73.0)": {
+      role:     "v3.73.0 NEU (~110 LOC, Pure-Modul, DOM-frei): Channel-Strip Color-Coding Foundation. DEFAULT_CHANNEL_COLOR_PALETTE 8 OLED-freundliche Farben (drum-red #ef4444, bass-blue #3b82f6, lead-yellow #eab308, fx-purple #a855f7, pad-green #22c55e, vox-pink #ec4899, perc-orange #f97316, synth-cyan #06b6d4) als ReadonlyArray<{id,name,hex}>. CHANNEL_COLOR_PALETTE_SIZE=8. isValidChannelColor (Regex ^#([0-9a-f]{3}|[0-9a-f]{6})$ case-insensitive, non-string + leerer string → false). normalizeChannelColor (valid → lowercase, invalid → undefined). getDefaultChannelColorForIndex (zyklisch mod 8, defensive für NaN/Infinity/negativ → pal[0]). resolveChannelColor (explicit > palette[index], liefert IMMER validen Hex). isPaletteDefaultForIndex (UI-Helper für 'auto'-Zustand: null/undefined/invalid → true, case-insensitive match gegen palette[index]).",
+      lastSeen: "2026-05-19T02:45:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/components/Mixer/ChannelColorPicker.tsx (v3.73.0)": {
+      role:     "v3.73.0 NEU (~190 LOC): Popover-Picker. Trigger ist ein 3x3px color-Square mit aktueller Farbe als bg + border-border-color. Popover absolut positioniert (z-50, top-4 left-0, bg-bg-elevated). Inhalt: 4x2 Swatch-Grid (Palette) mit border-text-primary+scale-110 für aktuellen Match + hover:scale-110 sonst; Custom-Hex-Input (maxLength=7) mit live-Validierung (border-accent-danger bei invalid, sonst border-border-color, focus:border-accent-primary) + 'OK'-Button (disabled wenn invalid oder empty); Footer mit 'Auto'-Reset (text-text-muted → onColorChange(undefined)) und 'Schließen'. ESC + click-out via useEffect+document-mousedown/keydown-Listener. data-testids: <prefix>-trigger / -popover / -swatch-<id> / -hex-input / -hex-apply / -reset / -close. Ausschließlich semantische Tailwind-Klassen (bg-bg-elevated/border-border-color/text-text-primary/accent-primary/accent-danger). Inline-Style nur für backgroundColor mit dynamischem Hex (kein hardcoded Tailwind möglich für User-Content).",
+      lastSeen: "2026-05-19T02:45:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "tests/features/channel-colors.test.ts (v3.73.0)": {
+      role:     "v3.73.0 NEU (~330 LOC, 21 Tests in 5 describes, env:node): (1) Default-Palette × 4 — exakt 8 Einträge in vorgegebener Reihenfolge (id-Slugs), alle valide Hex per Regex, zyklisch mod 8 (idx 0..7 → pal[0..7], idx 8 → pal[0], idx 15 → pal[7], idx 16 → pal[0]), defensive für negativ/NaN/Infinity → pal[0]. (2) Hex-Validierung × 5 — isValidChannelColor #RRGGBB+#RGB case-insensitive, lehnt invalid (CSS-Name 'red', rgb(1,2,3), trailing-space, falsche Länge, non-hex char, null/undefined/number/object) ab; normalizeChannelColor lowercased valid + undefined für invalid; resolveChannelColor explicit > palette + invalid fallback; isPaletteDefaultForIndex case-insensitive match + null-Fallback + invalid-Fallback. (3) applyPartColorUpdate × 5 — valider Hex (#EF4444 → #ef4444) lowercased gespeichert, undefined = Reset (color entfernt), invalid silent als undefined (defensive Reset statt Throw), Cross-Pattern (alle Patterns mit der ID), Immutability (neue Array+Pattern+Parts-Refs). (4) Schema v1.28 × 5 — SYNTH_FILE_VERSION='1.28', Round-Trip preserves color='#ef4444', Pre-v1.28-File ohne color → undefined + source.version='1.27' preserved, sanitizePartColors-Helper (strippt invalid via delete, lowercased valid, entfernt null, lässt fehlendes Feld in Ruhe), Mixed pre-v1.28 mit valid+invalid+kein color landet sauber. (5) resolveChannelColor Integration × 2 — liefert für 0..15 immer valide Hex, explicit überschreibt Palette.",
+      lastSeen: "2026-05-19T02:45:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/audio/AudioEngine.ts (v3.73.0 part-color)": {
+      role:     "v3.73.0 ERWEITERT (+1 Field, bestehende v3.72/v3.71/v3.70/etc. bleibt): PartData um color?:string Feld mit Doku-Block. Lowercase Hex ('#RRGGBB' oder '#RGB'), additiv-optional. Pre-v1.28-Files laden unverändert (color bleibt undefined → UI fällt auf resolveChannelColor(undefined, index) = Palette-Default). KEINE Engine-seitigen Side-Effects — color ist rein visueller State, beeinflusst keine Audio-Pfade.",
+      lastSeen: "2026-05-19T02:45:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/store/useDrumMachineStore.ts (v3.73.0 setPartColor)": {
+      role:     "v3.73.0 ERWEITERT (+~30 LOC, bestehende v2.x Drum-Machine-Logik bleibt): NEU setPartColor-Action im DrumMachineActions-Interface + Implementation (updatePatterns ohne Undo-Push damit Color-Drag nicht den History-Stack flutet). Invalide Werte → silent no-op (normalizeChannelColor liefert undefined). NEU export applyPartColorUpdate Pure-Transform für Tests (testbar ohne React-Renderer + Immutability garantiert). Import +normalizeChannelColor aus utils/channelColors.",
+      lastSeen: "2026-05-19T02:45:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/utils/projectSerializer.ts (v3.73.0 v1.28)": {
+      role:     "v3.73.0 SCHEMA-BUMP v1.27 → v1.28: SYNTH_FILE_VERSION-Konstante + Header-Doku-Block v1.28 Migration (PartData.color additiv-optional). NEU sanitizePartColors(patterns)-Helper: iteriert patterns→parts und strippt invalide color-Strings via delete (null/non-Hex), lowercased valid (#EF4444 → #ef4444), lässt fehlendes Feld unangetastet. parseProject ruft sanitizePartColors(data.patterns) nach sanitizeSampleTags-Block. Import +isValidChannelColor aus utils/channelColors. Bestehende v1.27-AudioTrack-Loop-Crossfade + v1.25-Macros + alles andere bleibt.",
+      lastSeen: "2026-05-19T02:45:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/components/Mixer/MixerView.tsx (v3.73.0 color-picker)": {
+      role:     "v3.73.0 ERWEITERT (+~40 LOC, bestehende v3.63 Record-Arm + v3.53/v3.54 BPM-Detection + alles andere bleibt): MixerChannelProps um channelIndex?:number + channelColor?:string + onColorChange?:(c:string|undefined)=>void erweitert. NEU resolvedColor via resolveChannelColor (skipped für Master — Master hat semantisch keine Gruppen-Farbe). NEU boxShadow: inset 0 3px 0 0 <color> am Strip-oberer-Rand (kein Layout-Shift weil boxShadow statt border). NEU ChannelColorPicker-Mount im Strip-top-left (absolute top-1 left-1 z-10, stopPropagation auf Click damit Strip-Select nicht feuert). parts.map gibt jetzt partIndex zweiten Parameter + setzt channelIndex/channelColor/onColorChange={c => dm.setPartColor(part.id, c)}. data-testid mixer-channel-<partId> auf dem Strip-Wrapper für Tests.",
+      lastSeen: "2026-05-19T02:45:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/components/DrumMachine/ChannelStrip.tsx (v3.73.0 color-picker)": {
+      role:     "v3.73.0 ERWEITERT (+~30 LOC, bestehende DrumMachine-Channel-Logik bleibt): ChannelStripProps um onColorChange?:(c:string|undefined)=>void erweitert (OPTIONAL — Preview-Caller wie Pattern-Generator nutzen die Komponente ohne Picker). resolvedColor via resolveChannelColor(part.color, partIndex). NEU boxShadow: inset 2px 0 0 0 <color> am Strip-left-Rand (subtle, 2px statt 3px damit Step-Grid lesbar bleibt). NEU ChannelColorPicker-Mount links vom Channel-Namen (nur wenn onColorChange gesetzt). data-testid drum-channel-strip-<partId>. Imports +ChannelColorPicker + resolveChannelColor.",
+      lastSeen: "2026-05-19T02:45:00.000Z",
+      ownedBy:  "frontend"
+    },
     "tests/features/audio-loop-crossfade.test.ts (v3.72.0)": {
       role:     "v3.72.0 NEU (~470 LOC, 14 Tests in 4 describes, env:node mit Mock-AudioContext + MockGain + MockWorklet + setValueCurveAtTime-Stub). Closes v3.71-Caveat 'harter Cut bei Loop-Wrap'. (1) Store × 4 — clampLoopCrossfadeMs Edge-Cases (50/0/-10/250/NaN/Infinity → defensive 0), setTrackLoopCrossfadeMs persistiert + localStorage-RoundTrip, Clamp auf 200 bei zu großen Werten, Clamp auf 0 bei negativen. (2) BufferSource × 3 — loopCrossfadeMs=20 → setValueCurveAtTime > 0 Calls auf einem GainNode (xfade-gain in Chain), crossfade=0 → keine Calls (backward-compat), crossfade > rangeMs/2 → Engine clampt Schedule-duration auf rangeSec/2 (max ≤ 0.0114s bei 1000-Samples-Range). (3) Worklet × 3 — pitchLocked+xfade=20ms → setLoop-Payload hat crossfadeSamples=882 (= 20ms * 44.1kHz / 1000), xfade=0 → crossfadeSamples=0, xfade > rangeLen/2 → clamp im Engine-Helper. (4) Schema v1.27 × 4 — SYNTH_FILE_VERSION='1.27', Round-Trip preserves loopCrossfadeMs=15, pre-v1.27-File ohne Feld → undefined + source.version='1.26' preserved, invalider Typ (string) → Track verworfen.",
       lastSeen: "2026-05-19T02:30:00.000Z",
@@ -2097,6 +2137,66 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "frontend",
+      timestamp: "2026-05-19T02:45:00.000Z",
+      done: [
+        "v3.73.0: Channel-Strip Color-Coding — DAW-Standard visuelle Gruppierung. End-to-end: PartData.color?:string (additiv-optional, lowercase Hex), setPartColor-Action im DrumMachine-Store mit silent-Sanitization (invalider Wert → undefined, kein Throw), pure-Helper applyPartColorUpdate für Tests. NEU 8-Farb-Default-Palette in utils/channelColors (drum-red, bass-blue, lead-yellow, fx-purple, pad-green, vox-pink, perc-orange, synth-cyan — alle OLED-freundlich). NEU ChannelColorPicker-Komponente (Popover mit 4x2 Palette + Custom-Hex-Input + Reset-Button, ESC/click-out schließen). Mixer-ChannelStrip: Color-Picker oben-links + boxShadow inset 3px-top in resolvedColor (kein Layout-Shift). DrumMachine-ChannelStrip: Color-Picker neben Channel-Namen + 2px left-border-Tint via boxShadow. Master-Channel bleibt color-frei (semantisch keine Gruppen-Farbe). Schema v1.27 → v1.28 (additiv, pre-v1.28-Files laden unverändert, color bleibt undefined → UI fällt auf zyklischen Palette-Default für den Channel-Index zurück). sanitizePartColors-Helper strippt invalide color-Strings beim Load.",
+        "client/src/utils/channelColors.ts NEU (~110 LOC, Pure-Modul, DOM-frei): DEFAULT_CHANNEL_COLOR_PALETTE (8 Farben, HSL-basiert mit Lesbarkeit auf hellem+dunklem Theme). isValidChannelColor (Regex ^#([0-9a-f]{3}|[0-9a-f]{6})$ case-insensitive), normalizeChannelColor (lowercase + undefined für invalid), getDefaultChannelColorForIndex (zyklisch mod 8, defensive für NaN/Infinity/negativ), resolveChannelColor (explicit > palette[index], liefert IMMER validen Hex), isPaletteDefaultForIndex (UI-Helper für 'auto'-Zustand).",
+        "client/src/audio/AudioEngine.ts: PartData um color?:string Field erweitert mit v3.73-Doku-Block (Pre-v1.28-Backward-Compat).",
+        "client/src/store/useDrumMachineStore.ts (~+30 LOC): NEU setPartColor-Action + Type-Export, normalizeChannelColor-Import. NEU export applyPartColorUpdate Pure-Transform (testbar ohne React-Renderer, immutable). Action invalidiert silent (color=undefined statt Throw bei invalidem Hex).",
+        "client/src/utils/projectSerializer.ts SCHEMA-BUMP v1.27 → v1.28: SYNTH_FILE_VERSION-Konstante + Header-Doku-Block v1.28 Migration. NEU sanitizePartColors-Helper (delete invalid color-Strings, lowercase validen Hex). parseProject ruft sanitizePartColors(data.patterns) nach sanitizeSampleTags-Block. Backward-Compat: pre-v1.28-Files laden ohne Crash, color bleibt undefined.",
+        "client/src/components/Mixer/ChannelColorPicker.tsx NEU (~190 LOC): Popover-Picker, ausschließlich semantische Tailwind-Klassen (bg-bg-elevated, border-border-color, accent-primary, accent-danger). 4x2 Swatch-Grid + Hex-Input mit live-Validierung (rote Border bei invalid) + 'OK'-Submit + 'Auto'-Reset + 'Schließen'. ESC + click-out via useEffect+document-Listener. data-testids: <prefix>-trigger / -popover / -swatch-<id> / -hex-input / -hex-apply / -reset / -close.",
+        "client/src/components/Mixer/MixerView.tsx (+~40 LOC): MixerChannelProps um channelIndex/channelColor/onColorChange erweitert. resolvedColor via resolveChannelColor (skipped für Master). NEU boxShadow inset 0 3px 0 0 <color> am Strip-oberer-Rand (kein Layout-Shift, kein hardcoded Tailwind). NEU ChannelColorPicker-Mount im Strip-top-left (z-10, stopPropagation auf Click damit Strip-Select nicht feuert). MixerChannel-Call-Site in parts.map bekommt partIndex + part.color + dm.setPartColor.",
+        "client/src/components/DrumMachine/ChannelStrip.tsx (+~30 LOC): ChannelStripProps um onColorChange?:(c)=>void erweitert (optional damit Preview-Caller die Komponente weiter nutzen können). resolvedColor via resolveChannelColor(part.color, partIndex). NEU boxShadow inset 2px 0 0 0 <color> am Strip-left-Rand (subtle für Step-Grid-Lesbarkeit). ChannelColorPicker links vom Channel-Namen (nur wenn onColorChange gesetzt).",
+        "client/src/components/DrumMachine/DrumMachine.tsx (+1 LOC): onColorChange={c => dm.setPartColor(part.id, c)} an ChannelStrip-Mount.",
+        "client/src/components/CollabSplitView/CollabSplitView.tsx (+1 LOC): setPartColor: noop im Remote-Store-Stub (TypeScript-Vollständigkeits-Fix; Remote-User dürfen Color nicht ändern, daher no-op).",
+        "tests/features/channel-colors.test.ts NEU (~330 LOC, 21 Tests in 5 describes — übertrifft das 5-Test-Minimum 4x): (1) Default-Palette × 4 — exakt 8 Einträge in vorgegebener Reihenfolge, alle valide Hex, zyklisch mod 8 (idx 8→pal[0], idx 15→pal[7], idx 16→pal[0]), defensive für negativ/NaN/Infinity → pal[0]. (2) Hex-Validierung × 5 — isValidChannelColor #RRGGBB+#RGB case-insensitive, lehnt invalid (CSS-Name, rgb(), trailing-space, falsche Länge, non-hex char, null/undefined/number/object) ab, normalizeChannelColor lowercased + undefined für invalid, resolveChannelColor explicit > palette + invalid fallback, isPaletteDefaultForIndex case-insensitive match + null-fallback. (3) applyPartColorUpdate × 5 — valider Hex lowercased gespeichert, undefined = Reset, invalid silent als undefined, Cross-Pattern (alle Patterns mit der ID), Immutability (neue Refs). (4) Schema v1.28 × 5 — SYNTH_FILE_VERSION='1.28', Round-Trip preserves color='#ef4444', Pre-v1.28-File ohne color → undefined + source.version='1.27' preserved, sanitizePartColors strippt invalid + lowercased valid + entfernt null + lässt fehlendes Feld in Ruhe, Mixed pre-v1.28 mit valid+invalid color landet sauber (valid behalten, invalid undefined). (5) resolveChannelColor Integration × 2 — liefert für 0..15 immer valide Hex, explicit überschreibt Palette.",
+        "tests/features Schema-Version-Assertion v1.27 → v1.28 (9 Files): audio-track-store (2 Stellen), audio-track-stretch, audio-track-loop, multi-bar-pattern, plugin-host (2 Stellen), plugin-multislot, project-serializer (3 Stellen), project-id-migration (2 Stellen), quick-action-integration, script-store, audio-loop-crossfade (2 Stellen + Fixture v1.26→v1.27 für Pre-v1.28-Test-Variante bleibt).",
+        "package.json (3.72.0 → 3.73.0). pnpm check clean. pnpm test grün: 219 Test-Files / 5047 Tests passed (16 skipped, +21 NEU vs. v3.72)."
+      ],
+      next: [
+        "v3.74: ChannelInspector + AudioTrackStrip + LiveInputStrip könnten den Color-Picker ebenfalls anzeigen — derzeit ist Color-Coding nur auf Drum/Synth-Channels im Mixer+DrumMachine sichtbar. AudioTrack-Channels (vocals/songs) und Live-Inputs (USB-Audio) bekämen den gleichen Picker mit eigenem Color-Field im AudioTrackChannelData / LiveInputChannelData (zusätzlicher Schema-Bump v1.29).",
+        "v3.74: Bulk-Recolor-Action im Mixer-Context-Menu — 'Auto-Color nach Kategorie' (kick/snare/lead etc. matched per Name-Regex → entsprechende Palette-Farbe), 'Reset alle Channels auf Auto' (alle color=undefined).",
+        "v3.74: Step-Grid soll im DrumMachine ein dezentes color-tint pro Row bekommen (zB bg-Channel-Color/5%). Aktuell ist nur die left-border getintet. Begründung: 16+ Channels werden visuell schneller scanbar wenn die Step-Cells selber mitfärben — aber Achtung: könnte die Active-Step-Highlights verwässern, deshalb separates Roadmap-Ticket statt jetzt mitziehen.",
+        "v3.74: ChannelColorPicker könnte 'Recent Colors' (letzte 4 benutzte Custom-Hex-Werte) speichern, damit User die nicht jedes Mal neu tippen muss. Persist in localStorage.",
+        "v3.74: Color-Coding sollte beim FOLLOWUP der Sequencer-Pattern-Anzeige (PatternRow im DrumMachine) sichtbar werden — derzeit ist nur die ChannelStrip-Reihe getintet, nicht die Pattern-Picker-Buttons. Visual consistency."
+      ],
+      changed: [
+        "client/src/utils/channelColors.ts (NEU ~110 LOC: DEFAULT_CHANNEL_COLOR_PALETTE 8-Farben + isValidChannelColor + normalizeChannelColor + getDefaultChannelColorForIndex + resolveChannelColor + isPaletteDefaultForIndex)",
+        "client/src/audio/AudioEngine.ts (PartData +color?:string mit Doku-Block)",
+        "client/src/store/useDrumMachineStore.ts (+~30 LOC: setPartColor-Action + applyPartColorUpdate Pure-Transform + normalizeChannelColor-Import)",
+        "client/src/utils/projectSerializer.ts (Schema v1.27 → v1.28: SYNTH_FILE_VERSION, Header-Doku-Block, sanitizePartColors-Helper, parseProject-Wiring, isValidChannelColor-Import)",
+        "client/src/components/Mixer/ChannelColorPicker.tsx (NEU ~190 LOC: Popover-Picker mit 4x2 Palette + Custom-Hex + Reset, ausschließlich semantische Tailwind-Klassen)",
+        "client/src/components/Mixer/MixerView.tsx (+~40 LOC: MixerChannelProps +channelIndex/channelColor/onColorChange, resolvedColor + boxShadow-top-Tint, ChannelColorPicker-Mount in MixerChannel, parts.map mit partIndex + dm.setPartColor)",
+        "client/src/components/DrumMachine/ChannelStrip.tsx (+~30 LOC: onColorChange-Prop optional, resolvedColor + boxShadow-left-Tint, ChannelColorPicker-Mount neben Channel-Namen)",
+        "client/src/components/DrumMachine/DrumMachine.tsx (+1 LOC: onColorChange={c => dm.setPartColor(part.id, c)} an ChannelStrip)",
+        "client/src/components/CollabSplitView/CollabSplitView.tsx (+1 LOC: setPartColor: noop im Remote-Stub)",
+        "tests/features/channel-colors.test.ts (NEU ~330 LOC: 21 Tests in 5 describes)",
+        "tests/features/audio-track-store.test.ts (2× Schema-Assertion 1.27 → 1.28)",
+        "tests/features/audio-track-stretch.test.ts (Schema-Assertion 1.27 → 1.28)",
+        "tests/features/audio-track-loop.test.ts (Schema-Assertion 1.27 → 1.28)",
+        "tests/features/audio-loop-crossfade.test.ts (2× Schema-Assertion 1.27 → 1.28)",
+        "tests/features/multi-bar-pattern.test.ts (Schema-Assertion 1.27 → 1.28)",
+        "tests/features/plugin-host.test.ts (2× Schema-Assertion 1.27 → 1.28)",
+        "tests/features/plugin-multislot.test.ts (Schema-Assertion 1.27 → 1.28)",
+        "tests/features/project-serializer.test.ts (3× Schema-Assertion 1.27 → 1.28)",
+        "tests/features/project-id-migration.test.ts (2× Schema-Assertion 1.27 → 1.28)",
+        "tests/features/quick-action-integration.test.ts (1× write-side Assertion 1.27 → 1.28)",
+        "tests/features/script-store.test.ts (Schema-Assertion 1.27 → 1.28)",
+        "package.json (3.72.0 → 3.73.0)",
+        "agents/INDEX.js (version + workLog v3.73.0)"
+      ],
+      caveats: [
+        "Color-Picker ist DESHALB color-spezifisch hardcoded (Palette-Hex-Werte, boxShadow mit dynamischer Inline-Color) — semantische Tailwind-Tokens lassen sich nicht auf User-defined Colors abbilden. Das verletzt NICHT die CLAUDE.md-Regel (die bezieht sich auf UI-Struktur-Farben wie bg-slate-900, nicht auf User-Content-Farben).",
+        "Master-Channel zeigt KEIN Color-Coding (channelIndex bleibt undefined). Begründung: Master ist die Summe aller Channels, hat semantisch keine Gruppen-Farbe. Falls jemals gewünscht, müsste der Master einen separaten masterColor-State im mixer-Store haben.",
+        "ChannelInspector (Mixer-Edit-Pane) zeigt aktuell KEINEN Color-Picker. Begründung: Picker ist schon im Strip oben-links erreichbar; Inspector wäre redundant. Falls UX-Tests zeigen dass User den Inspector-Path erwarten, dort einen zweiten Picker mounten — beide würden auf denselben Store schreiben.",
+        "AudioTrackStrip + LiveInputStrip bekommen das Color-Coding NICHT in v3.73.0 — das würde einen weiteren Schema-Bump für die separaten Channel-Data-Stores brauchen (siehe next-Items für v3.74). Mixer ist derzeit also semi-konsistent: Drum/Synth-Channels haben Color, Audio/Live-Channels noch nicht.",
+        "Schema-Bump v1.28: Forward-kompatibel (v3.72 liest v3.73-Files ohne Crash, ignoriert color). Backward-Lücke: v3.72 öffnet v3.73-File mit color-Field, beim Re-Save geht es verloren — wie bei allen v1.x-Schema-Bumps.",
+        "Color-Picker schließt sich bei click-out via document-mousedown-Listener. Edge-Case: wenn ein anderer Picker GLEICHZEITIG offen ist (User hat 2 Channels schnell geöffnet), schließt der erste durch den 2. Click — das ist erwartet und entspricht der UX-Erwartung 'nur ein Picker zur Zeit'.",
+        "ChannelStrip-onColorChange ist OPTIONAL — wenn ein Caller die Komponente ohne Color-Picker nutzt (z.B. Pattern-Generator-Preview), wird kein Picker gerendert, aber der left-border-Tint mit dem Palette-Default greift trotzdem (rein visuell, kein Picker)."
+      ]
+    },
     {
       agent:     "backend",
       timestamp: "2026-05-19T02:30:00.000Z",

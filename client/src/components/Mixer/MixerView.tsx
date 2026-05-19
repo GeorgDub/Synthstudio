@@ -21,6 +21,8 @@ import type { PartData } from "@/audio/AudioEngine";
 import { ExportPanel } from "./ExportPanel";
 import { AudioTrackStrip, computePeaksFromBuffer } from "./AudioTrackStrip";
 import { LiveInputStrip } from "./LiveInputStrip";
+import { ChannelColorPicker } from "./ChannelColorPicker";
+import { resolveChannelColor } from "@/utils/channelColors";
 import {
   useLiveInputStore,
   addLiveInputChannel,
@@ -206,6 +208,12 @@ interface MixerChannelProps {
   recordArmed?: boolean;
   /** v3.63.0: True wenn der Channel gerade tatsächlich aufnimmt (für Blink-Animation). */
   isRecording?: boolean;
+  /** v3.73.0: Index in der Part-Liste (für Palette-Default-Fallback). */
+  channelIndex?: number;
+  /** v3.73.0: Aktuelle Channel-Farbe (undefined = Palette-Default greift). */
+  channelColor?: string;
+  /** v3.73.0: Callback bei Color-Wechsel. undefined = Reset auf Palette-Default. */
+  onColorChange?: (color: string | undefined) => void;
   onSelect?: () => void;
   onVolumeChange: (v: number) => void;
   onPanChange: (v: number) => void;
@@ -220,11 +228,19 @@ interface MixerChannelProps {
 function MixerChannel({
   partId, name, volume, pan, muted, soloed,
   sendReverb, sendDelay, peakLevel,
-  selected, isMaster, recordArmed, isRecording, onSelect,
+  selected, isMaster, recordArmed, isRecording,
+  channelIndex, channelColor, onColorChange,
+  onSelect,
   onVolumeChange, onPanChange, onMuteToggle, onSoloToggle, onSendChange,
   onRecordArmToggle,
 }: MixerChannelProps) {
   const labelColor = muted ? "text-text-dim" : soloed ? "text-accent-success" : "text-text-primary";
+
+  // v3.73.0: Resolved color für die border-top tint. Bei Master wird kein
+  // Color-Coding gemacht (Master hat semantisch keine Gruppen-Farbe).
+  const resolvedColor = !isMaster && channelIndex !== undefined
+    ? resolveChannelColor(channelColor, channelIndex)
+    : null;
 
   // v1.87: Right-click MIDI-Learn auf Volume / Pan / Mute / Solo pro Channel.
   // Für Master-Channel nutzen wir 'masterVolume' statt 'volume', da der
@@ -244,15 +260,34 @@ function MixerChannel({
   return (
     <div
       onClick={onSelect}
+      data-testid={`mixer-channel-${partId}`}
       className={[
-        "flex flex-col items-center gap-1 px-2 py-2 select-none",
+        "flex flex-col items-center gap-1 px-2 py-2 select-none relative",
         "border-r border-border-color last:border-r-0 cursor-pointer",
         isMaster ? "bg-bg-panel/60 border-l border-border-color pl-3" : "",
         selected ? "bg-accent-secondary/15 ring-1 ring-accent-secondary/60 ring-inset" : "",
         muted ? "opacity-50" : "",
       ].join(" ")}
-      style={{ minWidth: isMaster ? "64px" : "52px" }}
+      style={{
+        minWidth: isMaster ? "64px" : "52px",
+        // v3.73.0: Channel-Color als 3px-Strip am oberen Rand. Verwendet
+        // boxShadow inset statt borderTop damit das Layout nicht springt.
+        boxShadow: resolvedColor ? `inset 0 3px 0 0 ${resolvedColor}` : undefined,
+      }}
     >
+      {/* v3.73.0: Channel-Color-Picker (oben links, neben dem Namen). */}
+      {!isMaster && channelIndex !== undefined && onColorChange && (
+        <div className="absolute top-1 left-1 z-10" onClick={(e) => e.stopPropagation()}>
+          <ChannelColorPicker
+            channelName={name}
+            color={channelColor}
+            index={channelIndex}
+            onColorChange={onColorChange}
+            testIdPrefix={`mixer-channel-color-${partId}`}
+          />
+        </div>
+      )}
+
       {/* Kanalname */}
       <span
         className={`text-[9px] font-medium uppercase tracking-wide truncate w-full text-center ${labelColor}`}
@@ -1086,7 +1121,7 @@ export function MixerView({ dm, mixer, samples = [], bpm = 120, projectName = "S
           }}
         >
           <div className="flex h-full items-stretch">
-            {parts.map(part => {
+            {parts.map((part, partIndex) => {
               const ch = mixer.channels[part.id];
               const armed = drumPartArmStore.isArmed(part.id);
               return (
@@ -1104,6 +1139,9 @@ export function MixerView({ dm, mixer, samples = [], bpm = 120, projectName = "S
                   selected={selectedPart?.id === part.id}
                   recordArmed={armed}
                   isRecording={armed && AudioEngine.isRecordingChannel(part.id)}
+                  channelIndex={partIndex}
+                  channelColor={part.color}
+                  onColorChange={(c) => dm.setPartColor(part.id, c)}
                   onSelect={() => mixer.setSelectedChannel(part.id)}
                   onVolumeChange={vol => handleVolumeChange(part.id, vol)}
                   onPanChange={pan => handlePanChange(part.id, pan)}

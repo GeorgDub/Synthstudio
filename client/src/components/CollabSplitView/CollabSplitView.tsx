@@ -160,6 +160,7 @@ function useRemoteDmAdapter(
       setPartSample: noop,
       setPartSoloed: noop,
       setPartPan: noop,
+      setPartColor: noop,
       setPartStepResolution: noop,
       setPartStepLength: noop,
       addPatternData: () => "",

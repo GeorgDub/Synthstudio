@@ -1967,6 +1967,7 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
             selectedStepIndex={selectedStep?.partId === part.id ? selectedStep.stepIndex : null}
             onGranularOpen={() => setGranularPartId(prev => prev === part.id ? null : part.id)}
             onSourceTypeChange={type => dm.setPartSourceType(part.id, type)}
+            onColorChange={color => dm.setPartColor(part.id, color)}
           />
           ));
         })()}
