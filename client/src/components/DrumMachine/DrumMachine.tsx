@@ -63,6 +63,7 @@ import {
   invertPattern,
   reversePattern,
 } from "@/utils/drumPatternMutator";
+import { variatePattern } from "@/utils/patternProbability";
 // Ausgelagerte Sub-Components
 import { FxPanel } from "./FxPanel";
 import { ResizableDrumPanel } from "./ResizableDrumPanel";
@@ -1689,6 +1690,15 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
             className="px-1.5 py-0.5 rounded text-[10px] bg-bg-elevated hover:bg-accent-secondary/30 hover:text-accent-secondary transition-colors"
             title="Invert"
           >¬</button>
+          <button
+            onClick={() => {
+              const seed = Date.now();
+              applyMutator((p) => variatePattern(p, 0.7, 0.05, { seed }));
+            }}
+            data-testid="pattern-mutator-variate"
+            className="px-1.5 py-0.5 rounded text-[10px] bg-bg-elevated hover:bg-accent-secondary/30 hover:text-accent-secondary transition-colors"
+            title="Variate (subtle keep+add) — neue Variation des Patterns"
+          >⚡</button>
         </div>
 
         {/* MIDI-Import */}

@@ -244,6 +244,8 @@ import {
   cacheLastProjectId,
 } from "@/utils/autoSaveController";
 import { AutoSaveStatusIndicator } from "@/components/AutoSave/AutoSaveStatusIndicator";
+// v3.166: Track-Overview-Widget (Pure-Helper aus utils/trackOverview).
+import { computeTrackOverview, formatTrackOverviewSummary } from "@/utils/trackOverview";
 import { VersionHistoryModal } from "@/components/AutoSave/VersionHistoryModal";
 // v3.65.0: Pre-Action AutoBackup.
 import {
@@ -3227,6 +3229,20 @@ export default function App() {
     return pattern.parts.find(p => p.id === partId)?.name;
   }, [dm]);
 
+  // v3.166: Track-Overview-Aggregat für Topbar-Status-Widget.
+  // mixer.channels ist Record<string, MixerChannelState> → Object.values + id-Shim
+  // damit der ChannelLike-Contract des Pure-Helpers passt.
+  const trackOverviewInfo = useMemo(() => {
+    const channelList = Object.values(mixer.channels).map((c) => ({
+      id: c.partId,
+    }));
+    return computeTrackOverview({
+      patterns: dm.patterns,
+      channels: channelList,
+      totalSamples: project.samples.length,
+    });
+  }, [dm.patterns, mixer.channels, project.samples]);
+
   // Kategorie eines Samples aktualisieren
   // v3.54.0: Nutzt jetzt updateSample (statt addSamples, das Duplikate per
   // Path filtert und somit Updates verschluckte).
@@ -4129,6 +4145,15 @@ export default function App() {
                   </span>
                 )}
               </span>
+
+              {/* v3.166.0: Track-Overview-Status-Widget. Tooltip zeigt Detail-Stats. */}
+              <div
+                className="flex items-center gap-1 px-2 py-1 rounded text-[10px] text-text-dim hover:text-text-muted hover:bg-bg-elevated transition-colors cursor-help"
+                title={`Pattern-Bank: ${trackOverviewInfo.patternCount} | Channels: ${trackOverviewInfo.channelCount} (${trackOverviewInfo.mutedChannelCount} muted, ${trackOverviewInfo.soloedChannelCount} solo) | ⌀ Density: ${Math.round(trackOverviewInfo.averageDensity * 100)}% | Active Steps: ${trackOverviewInfo.totalActiveSteps}/${trackOverviewInfo.totalPossibleSteps}`}
+                data-testid="track-overview-widget"
+              >
+                <span data-testid="track-overview-summary">{formatTrackOverviewSummary(trackOverviewInfo)}</span>
+              </div>
 
               {/* v3.57.0: AutoSave-Status — Klick öffnet Versions-History.
                   v3.61.0: projectId-Prop für per-project lastSaveAt-Lookup. */}

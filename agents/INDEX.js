@@ -298,6 +298,17 @@ const INDEX = {
   //     a new bare-path entry while old version-suffixed ones remain
   //     is the explicit transition path.
   files: {
+    // ─── v3.166 Pure-Helpers (refactor) ─────────────────────────
+    "client/src/utils/trackOverview.ts": {
+      role:     "Pure-Helper Track-Overview-Aggregator. computeTrackOverview({patterns, channels, totalSamples?}) → TrackOverviewResult: patternCount, channelCount, muted/soloed/silentChannelCount, totalActiveSteps/Possible, averageDensity, sampleCount. formatTrackOverviewSummary(r) → '{N} Patterns · {M} Channels[ ({K} muted[/{L} solo])] · [~]{D}% Density[ · {S} Samples]'. Defensive Defaults (fehlende parts/steps/Flags → 0/false). ChannelLike-Interface ist strukturell — kein Spezialfall für MixerChannel oder DrumMachine-Parts. Foundation für künftige Project-Dashboard- oder Status-Bar-UI.",
+      lastSeen: "2026-05-20T01:30:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "tests/features/track-overview.test.ts": {
+      role:     "Pure-Coverage für trackOverview.ts. 20 Tests in 6 describes: Empty (3: all-zero, summary, parts-leer), Counts (5: pattern/channel/muted/soloed/silent), Density (3: 2/4, 6/12, all-active), sampleCount (2: input/default), Format (7: muted-info, omits, samples, density, kombi, full-example). Vitest node-env.",
+      lastSeen: "2026-05-20T01:30:00.000Z",
+      ownedBy:  "frontend"
+    },
     // ─── v3.165 Pure-Helpers (refactor) ─────────────────────────
     "client/src/utils/patternGroove.ts": {
       role:     "Pure-Helper Pattern-Groove (Humanize Timing + Velocity). applyGroove(pattern, opts) → GrooveStep[]: timingJitterMs ±0..50, velocityJitter ±0..40, baseVelocity 0..127, seed. Deterministisch via mulberry32 + Box-Muller-Gauss. GROOVE_PRESETS: straight/subtle/loose/drunken. Skipped false-Steps. Defensive (NaN/Infinity → fallback, clamp). Foundation für künftige Groove-UI + AudioEngine-Scheduler-Integration.",
@@ -3437,6 +3448,81 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "refactor",
+      timestamp: "2026-05-20T03:00:00.000Z",
+      done: [
+        "v3.167 Pure-Helper: client/src/utils/patternFillGenerator.ts NEU + tests/features/pattern-fill-generator.test.ts NEU. Drum-Fill-Generator fuer Bar-Uebergaenge (DAW-Auto-Fill-Style).",
+        "API: generateFill(pattern, opts) [additiv/replaceExisting] + generateBuildUp(pattern, opts) [linear ramp 0.5x..1.5x density] + generateRoll(pattern, {fillLength}) [all-true im Fill-Bereich] + clearFillRegion(pattern, fillLength) [Undo-Helper]. Plus FILL_PRESETS (subtle/busy/buildup/roll). Alle Funktionen liefern NEUE Arrays (immutable Input).",
+        "Defensiv: density NaN/<0/>1 → clamp 0..1, default 0.5. fillLength NaN/<0 → floor(length/3), >length → clamp auf length. seed default 1, mulberry32-PRNG fuer Determinismus. Empty pattern → [].",
+        "Test-Suite: 24 Tests in 5 describes — generateFill (9: empty, density=0, density=1, determinismus, seed-diff, pre-region-unchanged, replaceExisting, NaN-defensive, fillLength-clamp), generateBuildUp (4: empty, statistischer ramp 100 trials, length-preservation, pre-region), generateRoll (5: fill-true, rest-unchanged, empty, default-fillLength, immutability), clearFillRegion (4: clear, fillLength=0, empty, clamp), FILL_PRESETS (2). Alle 24 gruen in 8ms.",
+        "pnpm check: GRUEN (tsc --noEmit, keine Fehler). pnpm test tests/features/pattern-fill-generator.test.ts: 24/24 passed in 428ms.",
+        "KEIN git commit, KEIN package.json bump. KEINE anderen Files beruehrt (working tree modified von parallelen v3.167-Agents NICHT angefasst)."
+      ],
+      next: [
+        "v3.167+ UI-Wire: DrumMachine-Toolbar 'Fill'-Button neben Pattern-Mutator. Dropdown mit FILL_PRESETS, klick generiert Fill ueber alle Parts des aktiven Patterns. Auch als Auto-Fill-Toggle moeglich (letzte Bar jedes 4. Patterns automatisch gefilled). Frontend-Owner.",
+        "Optional: Per-Part-Fill (nur aktiven Part fillen statt alle) via Modifier-Klick.",
+        "Optional: Script-Commands ss.fill(part, preset), ss.buildUp(part), ss.roll(part) in client/src/sandbox/ss-api.ts + builtInScripts.ts ergaenzen.",
+        "Optional: generateFill mit replaceExisting=true ist Vorbedingung fuer Undo-Stack — Pattern-Backup vor Fill via clearFillRegion wiederherstellbar."
+      ],
+      changed: [
+        "client/src/utils/patternFillGenerator.ts (NEU, Pure-Helper, 0 Runtime-Deps, 210 LOC)",
+        "tests/features/pattern-fill-generator.test.ts (NEU, 24 Tests, vitest)"
+      ]
+    },
+    {
+      agent:     "frontend",
+      timestamp: "2026-05-20T02:30:00.000Z",
+      done: [
+        "v3.166 trackOverview-Widget verkabelt in client/src/App.tsx-Topbar. Import { computeTrackOverview, formatTrackOverviewSummary } from '@/utils/trackOverview' hinzugefuegt (nach AutoSaveStatusIndicator-Import). Neuer useMemo trackOverviewInfo nach activeChannelName-Memo (deps: dm.patterns, mixer.channels, project.samples). mixer.channels ist Record<string, MixerChannelState> ohne muted/soloed/volume-Felder — Channels werden via Object.values+id-Shim zu ChannelLike-Liste konvertiert (muted/solo-Counts = 0, was korrekt das Mixer-Schema spiegelt; eine spaetere Variante koennte dm.parts statt mixer.channels nutzen).",
+        "Widget zwischen Project-Name-Span und AutoSaveStatusIndicator in der Topbar gerendert. data-testid='track-overview-widget' (Container, cursor-help) + 'track-overview-summary' (Span mit formatTrackOverviewSummary-Output). Detail-Stats im title-Attribut: Pattern-Bank, Channels (muted/solo), Density-Prozent, Active/Possible Steps.",
+        "pnpm check: GRUEN (tsc --noEmit, keine Fehler). Nur App.tsx beruehrt — 3 Edits: 1× Import (Zeile 246-248), 1× useMemo-Hook (nach Zeile ~3228), 1× JSX-Widget vor AutoSaveStatusIndicator (Topbar). OmniTribeBridge.ts NICHT angetastet, kein package.json bump, kein git commit."
+      ],
+      next: [
+        "v3.166 ggf. release-bump + git commit (Release-Agent) — Topbar zeigt jetzt Pattern/Channel/Density-Status. Smoke-Test: Widget sichtbar links neben AutoSave-Indicator, Hover/Title zeigt erweiterte Stats.",
+        "Optional: Playwright-Smoke fuer 'track-overview-widget'-data-testid in tests/web/ (Testing-Agent).",
+        "Refactor-Idee: trackOverview-Channels-Input koennte dm.parts (mit muted/soloed/volume) statt mixer.channels nutzen, damit muted/solo-Counts != 0 sind. Aktuell zeigt Widget korrekt '0 muted/0 solo' weil MixerChannelState diese Felder nicht hat."
+      ],
+      changed: [
+        "client/src/App.tsx (Import trackOverview, useMemo trackOverviewInfo, Topbar-Widget zwischen Project-Name und AutoSaveStatusIndicator)"
+      ]
+    },
+    {
+      agent:     "frontend",
+      timestamp: "2026-05-20T02:00:00.000Z",
+      done: [
+        "v3.166 Variate-Button verkabelt in client/src/components/DrumMachine/DrumMachine.tsx. Import { variatePattern } from '@/utils/patternProbability' hinzugefuegt. Neuer 7ter Button '⚡' in der existing pattern-mutator-toolbar (nach Invert '¬'). data-testid='pattern-mutator-variate'. Nutzt existing applyMutator-Pattern: applyMutator((p) => variatePattern(p, 0.7, 0.05, { seed: Date.now() })). Defaults wie spezifiziert: keep=0.7, add=0.05, fresh seed pro Klick fuer jede neue Variation.",
+        "pnpm check: GRUEN. Nur DrumMachine.tsx beruehrt (2 kleine Edits: 1× Import-Block Zeile 65, 1× Button-Insert Zeile 1691). OmniTribeBridge.ts NICHT angetastet."
+      ],
+      next: [
+        "v3.166 ggf. release-bump + git commit (Release-Agent). Smoke-Test im Web/Electron: Variate-Button klickbar in DrumMachine-Toolbar, generiert sichtbar neue Pattern-Variation (subtle).",
+        "Optional: Playwright-Smoke fuer 'pattern-mutator-variate'-data-testid in tests/web/ (Testing-Agent)."
+      ],
+      changed: [
+        "client/src/components/DrumMachine/DrumMachine.tsx (Import variatePattern + 7ter Variate-Button in pattern-mutator-toolbar)"
+      ]
+    },
+    {
+      agent:     "refactor",
+      timestamp: "2026-05-20T01:30:00.000Z",
+      done: [
+        "v3.166 Pure-Helper: client/src/utils/trackOverview.ts NEU + tests/features/track-overview.test.ts NEU. Aggregiert Project-Statistik (patternCount, channelCount, muted/soloed/silent-counts, totalActiveSteps/Possible, averageDensity, sampleCount) ueber PatternData[] + ChannelLike[].",
+        "API: computeTrackOverview({ patterns, channels, totalSamples? }) → TrackOverviewResult + formatTrackOverviewSummary(result) → string. Defensive: fehlende parts/steps/muted/soloed-Flags → 0/false-Defaults, totalPossibleSteps=0 → averageDensity=0.",
+        "Format-Output: '{N} Patterns · {M} Channels[ ({K} muted[/{L} solo])] · [~]{D}% Density[ · {S} Samples]'. muted/solo-Block inline kombiniert. Density-Rounding via Math.round(d*100). Empty: '0 Patterns · 0 Channels · 0% Density'.",
+        "Test-Suite: 20 Tests in 6 describes — Empty (3: all-zero, summary, parts-leer), Counts (5: pattern/channel/muted/soloed/silent), Density (3: 2/4, 6/12, all-active), sampleCount (2: input/default), Format (7: muted-info, omits, samples, density, kombi, full-example). Alle 20 gruen in 5ms.",
+        "pnpm check: GRUEN (tsc --noEmit, keine Fehler). pnpm test tests/features/track-overview.test.ts: 20/20 passed.",
+        "KEIN git commit, KEIN package.json bump. KEINE anderen Files beruehrt (working tree modified von parallelen v3.166-Agents NICHT angefasst)."
+      ],
+      next: [
+        "v3.166+ UI-Wire: Project-Dashboard- oder Status-Bar-Komponente (z.B. unten in App.tsx oder als Tooltip ueberm Project-Namen) verkabelt computeTrackOverview + formatTrackOverviewSummary mit useDrumMachineStore.patterns, useMixerStore.channels, useSampleStore.samples. Frontend-Owner.",
+        "Optional: ChannelLike-Interface ist absichtlich strukturell. Bei Bedarf koennen MixerChannel + DrumMachine-Parts beide gemappt werden — kein Spezialfall noetig.",
+        "Optional: Erweiterung um BPM-Statistik (min/max/avg over patterns), aber nur sinnvoll wenn UI-Verwendungsfall klar ist."
+      ],
+      changed: [
+        "client/src/utils/trackOverview.ts (NEU, Pure-Helper, 0 Runtime-Deps, 156 LOC)",
+        "tests/features/track-overview.test.ts (NEU, 20 Tests, vitest, 252 LOC)"
+      ]
+    },
     {
       agent:     "refactor",
       timestamp: "2026-05-20T01:05:00.000Z",
