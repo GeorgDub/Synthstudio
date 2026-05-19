@@ -459,7 +459,7 @@ describe("v3.70.0 – Serializer Round-Trip (v1.26)", () => {
   });
 
   it("SYNTH_FILE_VERSION wurde auf '1.32' gebumpt (v3.79.0 Sub-Mix-Buses)", () => {
-    expect(SYNTH_FILE_VERSION).toBe("1.33");
+    expect(SYNTH_FILE_VERSION).toBe("1.34");
   });
 
   it("Round-Trip erhält loopEnabled + loopStartSample + loopEndSample", () => {

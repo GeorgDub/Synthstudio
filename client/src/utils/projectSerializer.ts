@@ -120,6 +120,15 @@
  *     sanitizeBus → clampBusFx ergänzt die fehlenden Felder mit Defaults
  *     (EQ flat 0dB, Compressor disabled, Sends=0). Round-Trip mit erweitertem
  *     FX-Block in v1.33-Files preserves alle Werte.
+ *   - "1.34": midiFxChain hinzugefügt (v3.93.0). MIDI-FX Transform-Layer
+ *     (Scale-Snap/Velocity-Curve/Octave-Shift/Chord-Expander/Note-Repeat).
+ *     Schließt v3.92-Caveat "MIDI-FX-Chain bleibt localStorage-only".
+ *     Backward-Compat: pre-v1.34-Files haben das Feld nicht → parseProject
+ *     lässt midiFxChain undefined (Signal an Restore: User-localStorage
+ *     nicht überschreiben). Explicit [] wird respektiert (User hat alle
+ *     Nodes gelöscht und gespeichert). Invalide Nodes werden via
+ *     sanitizeMidiFxState silent gefiltert (whitelist per Kind +
+ *     Clamping aller Felder). Hart-Cap auf MAX_MIDI_FX_CHAIN (=6).
  * Dateiendung: .synth
  */
 
@@ -151,8 +160,11 @@ import type { MasterFxState } from "@/store/useMasterFxStore";
 import { sanitizeMasterFx } from "@/store/useMasterFxStore";
 import type { SubMixBus } from "@/store/useSubMixStore";
 import { sanitizeBus, MAX_SUB_MIX_BUSES } from "@/store/useSubMixStore";
+// v1.34 (v3.93.0): MIDI-FX-Chain.
+import type { MidiFxNode } from "@/store/useMidiFxStore";
+import { sanitizeMidiFxState } from "@/store/useMidiFxStore";
 
-export const SYNTH_FILE_VERSION = "1.33";
+export const SYNTH_FILE_VERSION = "1.34";
 export const SYNTH_LATEST_KEY = "synthstudio:last-project";
 
 // ─── Typen ───────────────────────────────────────────────────────────────────
@@ -336,6 +348,20 @@ export interface SynthProject {
    * keine Breaking-Change am bestehenden Channel-Routing).
    */
   subMixBuses?: SubMixBus[];
+
+  /**
+   * MIDI-FX-Chain (v3.93.0+, v1.34+). Transform-Layer für eingehende Note-On-
+   * Events VOR der Engine — analog DAW-Standard (Logic Pro / Bitwig MIDI-FX-
+   * Slot). 0..MAX_MIDI_FX_CHAIN (=6) Nodes vom Typ Scale-Snap / Velocity-
+   * Curve / Octave-Shift / Chord-Expander / Note-Repeat (siehe MidiFxNode).
+   *
+   * Seit v1.34. Pre-v1.34-Files haben das Feld nicht → parseProject lässt
+   * midiFxChain undefined (Signal an Restore: User-localStorage nicht
+   * überschreiben). Explicit leeres Array [] wird respektiert (User hat
+   * alle Nodes gelöscht und gespeichert). null oder non-Array → undefined.
+   * Invalide Nodes werden via sanitizeMidiFxState silent gefiltert.
+   */
+  midiFxChain?: MidiFxNode[];
 }
 
 // ─── v1.18 Sub-Types ─────────────────────────────────────────────────────────
@@ -879,6 +905,22 @@ export function parseProject(json: string): SynthProject {
       if (filtered.length >= MAX_SUB_MIX_BUSES) break;
     }
     data.subMixBuses = filtered;
+  }
+
+  // ─── midiFxChain (seit v1.34, v3.93.0) ───────────────────────────────────
+  // Pre-v1.34-Files haben das Feld nicht → undefined bleibt undefined
+  // (Signal an Restore: User-localStorage nicht überschreiben). Explicit
+  // leeres Array → bleibt [] (User-Intent "keine MIDI-FX"). null oder
+  // non-Array → undefined. Invalide Nodes werden via sanitizeMidiFxState
+  // silent gefiltert. Cap auf MAX_MIDI_FX_CHAIN (=6) hart enforced.
+  const rawMidiFx = (data as { midiFxChain?: unknown }).midiFxChain;
+  if (rawMidiFx === undefined) {
+    // nothing — bleibt undefined
+  } else if (rawMidiFx === null || !Array.isArray(rawMidiFx)) {
+    delete (data as { midiFxChain?: unknown }).midiFxChain;
+  } else {
+    const sanitized = sanitizeMidiFxState({ chain: rawMidiFx });
+    data.midiFxChain = sanitized.chain;
   }
 
   return data;

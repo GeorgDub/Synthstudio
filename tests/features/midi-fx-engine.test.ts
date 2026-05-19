@@ -397,3 +397,313 @@ describe("Store: addNode + Defaults", () => {
     expect(store.getMidiFxChain()).toHaveLength(0);
   });
 });
+
+// ─── (9) Note-Off-Tracking (v3.93.0) ─────────────────────────────────────────
+
+describe("MidiFxNoteTracker (v3.93.0 Note-Off-Tracking)", () => {
+  it("chord-expander Note-On → Note-Off räumt alle expanded Notes auf", () => {
+    const tracker = new engine.MidiFxNoteTracker();
+    const chordNode: import("../../client/src/utils/midiFxEngine").MidiFxNode = {
+      id: "c1",
+      kind: "chord-expander",
+      chordType: "major",
+    };
+    const events = engine.applyMidiFx(
+      { note: 60, velocity: 100, channel: 1 },
+      [chordNode],
+    );
+    // Major-Chord: [60, 64, 67]
+    expect(events.map((e) => e.note)).toEqual([60, 64, 67]);
+    const tracked = tracker.trackNoteOn(60, 1, events);
+    expect(tracked).toBe(3);
+    expect(tracker.size).toBe(1);
+    const expanded = tracker.consumeNoteOff(60, 1);
+    expect(expanded).toHaveLength(3);
+    expect(expanded.map((e) => e.note).sort((a, b) => a - b)).toEqual([60, 64, 67]);
+    // Map ist nach Consume leer.
+    expect(tracker.size).toBe(0);
+  });
+
+  it("Note-Off ohne vorheriges trackNoteOn liefert leeres Array (no-op)", () => {
+    const tracker = new engine.MidiFxNoteTracker();
+    const out = tracker.consumeNoteOff(60, 1);
+    expect(out).toEqual([]);
+    expect(tracker.size).toBe(0);
+  });
+
+  it("note-repeat-Voices (timeOffsetMs > 0) werden NICHT getrackt", () => {
+    const tracker = new engine.MidiFxNoteTracker();
+    const repeatNode: import("../../client/src/utils/midiFxEngine").MidiFxNode = {
+      id: "r1",
+      kind: "note-repeat",
+      rate: "1/16",
+      count: 4,
+    };
+    const events = engine.applyMidiFx(
+      { note: 60, velocity: 100, channel: 1 },
+      [repeatNode],
+    );
+    expect(events).toHaveLength(4);
+    const tracked = tracker.trackNoteOn(60, 1, events);
+    // Alle 4 Repeats sind dieselbe Note 60. Erstes Event ist t=0 + identisch
+    // zu Original → kein Tracking (Caller verwendet Original-Note-Off).
+    // Drei spätere Events (t>0) werden ignoriert (Note-Repeat-Spec).
+    expect(tracked).toBe(0);
+    expect(tracker.size).toBe(0);
+  });
+
+  it("Identity-Expansion (FX-Chain = Original-Note) wird NICHT getrackt", () => {
+    const tracker = new engine.MidiFxNoteTracker();
+    // Octave-Shift +0 ist effektiv identity.
+    const shiftNode: import("../../client/src/utils/midiFxEngine").MidiFxNode = {
+      id: "o1",
+      kind: "octave-shift",
+      semitones: 0,
+    };
+    const events = engine.applyMidiFx(
+      { note: 60, velocity: 100, channel: 1 },
+      [shiftNode],
+    );
+    expect(events).toHaveLength(1);
+    expect(events[0].note).toBe(60);
+    const tracked = tracker.trackNoteOn(60, 1, events);
+    expect(tracked).toBe(0);
+    expect(tracker.consumeNoteOff(60, 1)).toEqual([]);
+  });
+
+  it("Octave-Shift +12 expanded zu Pitch-shifted Note → wird getrackt", () => {
+    const tracker = new engine.MidiFxNoteTracker();
+    const shiftNode: import("../../client/src/utils/midiFxEngine").MidiFxNode = {
+      id: "o2",
+      kind: "octave-shift",
+      semitones: 12,
+    };
+    const events = engine.applyMidiFx(
+      { note: 60, velocity: 100, channel: 1 },
+      [shiftNode],
+    );
+    expect(events[0].note).toBe(72);
+    const tracked = tracker.trackNoteOn(60, 1, events);
+    expect(tracked).toBe(1);
+    const off = tracker.consumeNoteOff(60, 1);
+    expect(off).toEqual([{ note: 72, channel: 1 }]);
+  });
+
+  it("Mehrere Original-Notes parallel — Note-Off räumt nur die richtige auf", () => {
+    const tracker = new engine.MidiFxNoteTracker();
+    const chordNode: import("../../client/src/utils/midiFxEngine").MidiFxNode = {
+      id: "c1",
+      kind: "chord-expander",
+      chordType: "major",
+    };
+    const e60 = engine.applyMidiFx({ note: 60, velocity: 100, channel: 1 }, [chordNode]);
+    const e64 = engine.applyMidiFx({ note: 64, velocity: 100, channel: 1 }, [chordNode]);
+    tracker.trackNoteOn(60, 1, e60);
+    tracker.trackNoteOn(64, 1, e64);
+    expect(tracker.size).toBe(2);
+    const off60 = tracker.consumeNoteOff(60, 1);
+    expect(off60.map((o) => o.note).sort((a, b) => a - b)).toEqual([60, 64, 67]);
+    // Note 64-Chord ist noch da.
+    expect(tracker.size).toBe(1);
+    const off64 = tracker.consumeNoteOff(64, 1);
+    expect(off64.map((o) => o.note).sort((a, b) => a - b)).toEqual([64, 68, 71]);
+    expect(tracker.size).toBe(0);
+  });
+
+  it("clear() leert alle aktiven Tracks (Panic-Stop)", () => {
+    const tracker = new engine.MidiFxNoteTracker();
+    const chord: import("../../client/src/utils/midiFxEngine").MidiFxNode = {
+      id: "c1",
+      kind: "chord-expander",
+      chordType: "major",
+    };
+    tracker.trackNoteOn(60, 1, engine.applyMidiFx({ note: 60, velocity: 100, channel: 1 }, [chord]));
+    tracker.trackNoteOn(64, 1, engine.applyMidiFx({ note: 64, velocity: 100, channel: 1 }, [chord]));
+    expect(tracker.size).toBe(2);
+    tracker.clear();
+    expect(tracker.size).toBe(0);
+    expect(tracker.consumeNoteOff(60, 1)).toEqual([]);
+  });
+
+  it("Channel-getrennte Tracks: gleiche Note auf Ch1 und Ch2 unabhängig", () => {
+    const tracker = new engine.MidiFxNoteTracker();
+    const chord: import("../../client/src/utils/midiFxEngine").MidiFxNode = {
+      id: "c1",
+      kind: "chord-expander",
+      chordType: "minor",
+    };
+    tracker.trackNoteOn(60, 1, engine.applyMidiFx({ note: 60, velocity: 100, channel: 1 }, [chord]));
+    tracker.trackNoteOn(60, 2, engine.applyMidiFx({ note: 60, velocity: 100, channel: 2 }, [chord]));
+    expect(tracker.size).toBe(2);
+    const off1 = tracker.consumeNoteOff(60, 1);
+    expect(off1.every((o) => o.channel === 1)).toBe(true);
+    const off2 = tracker.consumeNoteOff(60, 2);
+    expect(off2.every((o) => o.channel === 2)).toBe(true);
+  });
+});
+
+// ─── (10) Schema v1.34 Round-Trip (v3.93.0) ──────────────────────────────────
+
+describe("Schema v1.34 (midiFxChain) Round-Trip", () => {
+  it("SYNTH_FILE_VERSION ist 1.34", async () => {
+    const serializer = await import("../../client/src/utils/projectSerializer");
+    expect(serializer.SYNTH_FILE_VERSION).toBe("1.34");
+  });
+
+  it("Round-Trip: midiFxChain wird serialisiert + reparst", async () => {
+    const serializer = await import("../../client/src/utils/projectSerializer");
+    const chain: import("../../client/src/utils/midiFxEngine").MidiFxNode[] = [
+      { id: "n1", kind: "octave-shift", semitones: 12 },
+      { id: "n2", kind: "scale-snap", scale: "major", root: 0 },
+      { id: "n3", kind: "chord-expander", chordType: "major" },
+    ];
+    const project = serializer.serializeProject({
+      projectName: "Test",
+      bpm: 120,
+      samples: [],
+      patterns: [],
+      activePatternId: "p1",
+      song: { slots: [], songModeActive: false, loopSong: false },
+      mixer: {
+        masterVolume: 0.85,
+        channels: {},
+        returnTracks: {
+          reverb: { id: "reverb", name: "Reverb Return", volume: 0.85, muted: false },
+          delay: { id: "delay", name: "Delay Return", volume: 0.85, muted: false },
+        },
+        insertChains: {},
+        eq16: {},
+        sidechains: {},
+        transientShapers: {},
+      },
+      humanizer: { global: { swing: 0, velocityJitter: 0, timeJitter: 0 } as unknown as never },
+      automation: { lanes: [], stepCount: 16 },
+      midiFxChain: chain,
+    } as unknown as Parameters<typeof serializer.serializeProject>[0]);
+
+    expect(project.version).toBe("1.34");
+    expect(project.midiFxChain).toBeDefined();
+    expect(project.midiFxChain!).toHaveLength(3);
+
+    const json = serializer.toJson(project);
+    const parsed = serializer.parseProject(json);
+    expect(parsed.midiFxChain).toBeDefined();
+    expect(parsed.midiFxChain!).toHaveLength(3);
+    expect(parsed.midiFxChain![0].kind).toBe("octave-shift");
+    if (parsed.midiFxChain![0].kind === "octave-shift") {
+      expect(parsed.midiFxChain![0].semitones).toBe(12);
+    }
+    expect(parsed.midiFxChain![2].kind).toBe("chord-expander");
+  });
+
+  it("Pre-v1.34 File ohne midiFxChain-Feld lädt mit empty/undefined (User-Store nicht überschreiben)", async () => {
+    const serializer = await import("../../client/src/utils/projectSerializer");
+    const oldJson = JSON.stringify({
+      version: "1.33",
+      projectId: "11111111-2222-4333-8444-555555555555",
+      projectName: "Old",
+      savedAt: new Date().toISOString(),
+      bpm: 120,
+      samples: [],
+      patterns: [{ id: "p", name: "P", stepCount: 16, stepResolution: "1/16", bpm: null, parts: [] }],
+      activePatternId: "p",
+      song: { slots: [], songModeActive: false, loopSong: false },
+      mixer: {
+        masterVolume: 0.85,
+        channels: {},
+        returnTracks: {
+          reverb: { id: "reverb", name: "Reverb Return", volume: 0.85, muted: false },
+          delay: { id: "delay", name: "Delay Return", volume: 0.85, muted: false },
+        },
+        insertChains: {},
+        eq16: {},
+        sidechains: {},
+        transientShapers: {},
+      },
+      humanizer: { global: {} },
+      automation: { lanes: [], stepCount: 16 },
+    });
+    const parsed = serializer.parseProject(oldJson);
+    // Signal an Restore: User-localStorage nicht überschreiben.
+    expect(parsed.midiFxChain).toBeUndefined();
+  });
+
+  it("Invalide midiFxChain-Einträge werden silent gefiltert beim parseProject", async () => {
+    const serializer = await import("../../client/src/utils/projectSerializer");
+    const project = {
+      version: "1.34",
+      projectId: "11111111-2222-4333-8444-555555555555",
+      projectName: "Test",
+      savedAt: new Date().toISOString(),
+      bpm: 120,
+      samples: [],
+      patterns: [{ id: "p", name: "P", stepCount: 16, stepResolution: "1/16", bpm: null, parts: [] }],
+      activePatternId: "p",
+      song: { slots: [], songModeActive: false, loopSong: false },
+      mixer: {
+        masterVolume: 0.85,
+        channels: {},
+        returnTracks: {
+          reverb: { id: "reverb", name: "Reverb Return", volume: 0.85, muted: false },
+          delay: { id: "delay", name: "Delay Return", volume: 0.85, muted: false },
+        },
+        insertChains: {},
+        eq16: {},
+        sidechains: {},
+        transientShapers: {},
+      },
+      humanizer: { global: {} },
+      automation: { lanes: [], stepCount: 16 },
+      midiFxChain: [
+        { id: "valid", kind: "octave-shift", semitones: 5 },
+        { id: "bad", kind: "unknown-kind" },
+        null,
+        { id: "valid", kind: "scale-snap" }, // dupe id
+        { id: "ok2", kind: "velocity-curve", curve: "exp", amount: 99 },
+      ],
+    };
+    const parsed = serializer.parseProject(JSON.stringify(project));
+    expect(parsed.midiFxChain).toBeDefined();
+    // Mindestens octave-shift + velocity-curve sollten reinkommen
+    expect(parsed.midiFxChain!.length).toBeGreaterThanOrEqual(2);
+    const vc = parsed.midiFxChain!.find((n) => n.kind === "velocity-curve");
+    expect(vc).toBeDefined();
+    if (vc && vc.kind === "velocity-curve") {
+      // amount clamped to 1 (war 99)
+      expect(vc.amount).toBe(1);
+    }
+  });
+
+  it("Explicit leeres midiFxChain-Array wird respektiert", async () => {
+    const serializer = await import("../../client/src/utils/projectSerializer");
+    const project = {
+      version: "1.34",
+      projectId: "11111111-2222-4333-8444-555555555555",
+      projectName: "Test",
+      savedAt: new Date().toISOString(),
+      bpm: 120,
+      samples: [],
+      patterns: [{ id: "p", name: "P", stepCount: 16, stepResolution: "1/16", bpm: null, parts: [] }],
+      activePatternId: "p",
+      song: { slots: [], songModeActive: false, loopSong: false },
+      mixer: {
+        masterVolume: 0.85,
+        channels: {},
+        returnTracks: {
+          reverb: { id: "reverb", name: "Reverb Return", volume: 0.85, muted: false },
+          delay: { id: "delay", name: "Delay Return", volume: 0.85, muted: false },
+        },
+        insertChains: {},
+        eq16: {},
+        sidechains: {},
+        transientShapers: {},
+      },
+      humanizer: { global: {} },
+      automation: { lanes: [], stepCount: 16 },
+      midiFxChain: [],
+    };
+    const parsed = serializer.parseProject(JSON.stringify(project));
+    expect(parsed.midiFxChain).toBeDefined();
+    expect(parsed.midiFxChain!).toHaveLength(0);
+  });
+});

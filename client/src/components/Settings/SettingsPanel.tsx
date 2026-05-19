@@ -109,6 +109,8 @@ import {
 import { MacroEditor } from "@/components/Macros/MacroEditor";
 // v3.69.0: Test-Button im MacroEditor braucht den globalen Quick-Action-Context.
 import { getRegisteredQuickActionContext } from "@/utils/quickActionContextRegistry";
+// v3.93.0: MIDI-FX Transform-Layer (Scale/Velocity/Chord/Repeat).
+import { MidiFxPanel } from "@/components/MidiFx/MidiFxPanel";
 
 // ─── Sidebar-Abschnitte ───────────────────────────────────────────────────────
 
@@ -125,6 +127,7 @@ type Section =
   | "midi-notes"
   | "midi-chord"
   | "midi-mpe"
+  | "midi-fx"
   | "omnitribe"
   | "osc"
   | "plugins"
@@ -147,6 +150,7 @@ const SECTIONS: Array<{ id: Section; icon: string; label: string; group?: string
   { id: "midi-notes",   icon: "🎵", label: "Note-Zuweisungen",    group: "MIDI" },
   { id: "midi-chord",   icon: "🎼", label: "Chord Memory",        group: "MIDI" },
   { id: "midi-mpe",     icon: "🖐", label: "MPE",                 group: "MIDI" },
+  { id: "midi-fx",      icon: "✨", label: "MIDI FX",              group: "MIDI" },
   { id: "omnitribe",    icon: "🔌", label: "OmniTribe Device",     group: "Hardware" },
   { id: "saving",       icon: "💾", label: "Speichern",           group: "App" },
   { id: "patches",      icon: "🎚", label: "Patch-Library",       group: "App" },
@@ -775,6 +779,27 @@ function MpeSectionSimple() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * v3.93.0: MIDI-FX Section — mountet das MidiFxPanel im Settings-Dialog.
+ * Bietet kurze Beschreibung + delegiert das volle Chain-UI an MidiFxPanel.
+ */
+function MidiFxSection() {
+  return (
+    <div className="space-y-4">
+      <div>
+        <h3 className="text-sm font-bold text-text-primary mb-1">MIDI FX</h3>
+        <p className="text-xs text-text-dim">
+          Transform-Layer für eingehende MIDI-Note-On-Events VOR der Engine.
+          Analog DAW-Standard (Logic Pro / Bitwig MIDI-FX-Slot). Verfügbare
+          Nodes: Scale-Snap, Velocity-Curve, Octave-Shift, Chord-Expander,
+          Note-Repeat. Order matters — Nodes werden sequenziell durchlaufen.
+        </p>
+      </div>
+      <MidiFxPanel />
     </div>
   );
 }
@@ -2330,6 +2355,7 @@ export function SettingsPanel({ isOpen, onClose, midi, parts, initialSection = "
           {active === "midi-notes"   && <MidiNotesSection midi={midi} parts={parts} onOpenAdvancedMidi={onOpenAdvancedMidi} />}
           {active === "midi-chord"   && <ChordMemorySection />}
           {active === "midi-mpe"     && <MpeSectionSimple />}
+          {active === "midi-fx"      && <MidiFxSection />}
           {active === "omnitribe"    && <DeviceConnectionPanel />}
           {active === "saving"        && <SavingSection onOpenVersionHistory={onOpenVersionHistory} />}
           {active === "patches"      && <PatchesSection />}

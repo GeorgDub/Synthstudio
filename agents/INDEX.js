@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.92.0",
+    version: "3.93.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -89,30 +89,40 @@ const INDEX = {
   // ─── KNOWN FILE INDEX ──────────────────────────────────────
   // Key files agents have analyzed. Add new entries after working on a file.
   files: {
-    "client/src/utils/midiFxEngine.ts (v3.92.0 NEU)": {
-      role:     "v3.92.0 NEU (~270 LOC, Pure-TS DOM-frei, env:node-testbar). MIDI-FX Transform-Layer fuer eingehende Note-On-Events VOR der Engine. MidiFxNode discriminated union mit 5 Kinds: scale-snap{scale,root}, velocity-curve{curve,amount}, octave-shift{semitones}, chord-expander{chordType}, note-repeat{rate,count}. Public-API: snapNoteToScale (nearest-scale-note via pitch-class delta + wrap-around), applyVelocityCurve (linear/exp v^(1+a*2)/log v^(1/(1+a*2))), noteRepeatStepMs (BPM-skalierbar Base=120), applyMidiFxNode (per-Kind-Logic), applyMidiFx (sequenziell durch Chain). Konstanten: MAX_MIDI_FX_CHAIN=6, SCALE_INTERVALS (major/minor/penta), CHORD_INTERVALS (major/minor/7th), NOTE_REPEAT_BASE_BPM=120. Runaway-Cap 256 Events (Chord×Repeat-Explosion-Schutz).",
-      lastSeen: "2026-05-19T08:15:00.000Z",
-      ownedBy:  "backend"
+    "client/src/utils/midiFxEngine.ts (v3.93.0 note-off-tracking)": {
+      role:     "v3.93.0 ERWEITERT (+~110 LOC, bestehende v3.92 Engine unverändert): NEU class MidiFxNoteTracker mit Map<channel:note, ExpandedNoteOff[]>. trackNoteOn(originalNote, channel, fxEvents)→count: filtert (1) timeOffsetMs>0 (Note-Repeat-Voices) und (2) Identity-Expansion (Output = Original-Note) — dedup per (channel,note). consumeNoteOff(originalNote, channel)→ExpandedNoteOff[] mit delete-on-consume. size-Getter + clear()-Methode für Panic-Stop. Vorheriger v3.92-Stand: MidiFxNode discriminated union mit 5 Kinds, applyMidiFx sequenziell. Header-JSDoc v3.92→v3.93 angepasst (Caveat 'Note-Off wird nicht dupliziert' entfernt).",
+      lastSeen: "2026-05-19T08:30:00.000Z",
+      ownedBy:  "frontend"
     },
     "client/src/store/useMidiFxStore.ts (v3.92.0 NEU)": {
       role:     "v3.92.0 NEU (~290 LOC, Custom-Observer-Pattern analog useSubMixStore/useMasterFxStore, DOM-frei testbar). MidiFxState {chain:MidiFxNode[]}. localStorage-Persist 'synthstudio:midi-fx:v1'. makeDefaultNode pro Kind (octave-shift→semitones=0, velocity-curve→linear+0.5, scale-snap→major+C, chord-expander→major, note-repeat→1/16+4). sanitizeNode/sanitizeMidiFxState mit per-Kind-Whitelist (VALID_SCALES/CURVES/RATES/CHORD_TYPES) + Clamping per Feld. Public-API: addNode(kind)→id|null bei MAX, removeNode/moveNode/updateNode (merge + sanitize, ID preserved), setNodeBypass, clearChain, setAllNodes(undefined=no-op-Signal/leeres-Array=clear), resetMidiFx, __resetMidiFxStoreForTests. Re-exports von Engine: MAX_MIDI_FX_CHAIN, MidiFxNode, alle Sub-Types.",
       lastSeen: "2026-05-19T08:15:00.000Z",
       ownedBy:  "backend"
     },
-    "client/src/components/MidiFx/MidiFxPanel.tsx (v3.92.0 NEU)": {
+    "client/src/utils/projectSerializer.ts (v3.93.0 v1.34)": {
+      role:     "v3.93.0 SCHEMA-BUMP v1.33 → v1.34: SYNTH_FILE_VERSION='1.34'. Header-Doku-Block v1.34-Migration (midiFxChain). NEU SynthProject.midiFxChain?:MidiFxNode[] — additiv-optional analog padBank/macros/subMixBuses (ausführliche JSDoc-Doku). parseProject() ergänzt midiFxChain-Migration-Block am Ende: undefined bleibt undefined (Signal an Restore: User-localStorage nicht überschreiben), null/non-Array → undefined, Array → sanitizeMidiFxState({chain}) → ergibt sanitized.chain (whitelist per Kind, Clamping, Cap auf MAX_MIDI_FX_CHAIN=6, dedupe per ID). Import +sanitizeMidiFxState +MidiFxNode aus useMidiFxStore. Bestehende v1.33/v1.32/etc. bleibt unverändert.",
+      lastSeen: "2026-05-19T08:30:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/components/Settings/SettingsPanel.tsx (v3.93.0 midi-fx-mount)": {
+      role:     "v3.93.0 ERWEITERT (+~30 LOC, bestehende Sections bleiben): NEU Section-Type-ID 'midi-fx' im Section-Union. NEU Nav-Entry {id:'midi-fx', icon:'✨', label:'MIDI FX', group:'MIDI'} direkt zwischen 'midi-mpe' und 'omnitribe'. NEU MidiFxSection-Komponente (Header-Block mit Title + Beschreibung + delegiert volle Chain-UI an <MidiFxPanel/> ohne compact-Prop). NEU Render-Dispatch {active === 'midi-fx' && <MidiFxSection />}. Import +MidiFxPanel aus @/components/MidiFx/MidiFxPanel. Mount-Position-Entscheidung: Settings → MIDI-Gruppe (passt thematisch zu Chord-Memory/CC-Mappings, wird selten live umgeschaltet → Settings-Dialog statt Performance-Sidebar).",
+      lastSeen: "2026-05-19T08:30:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/components/MidiFx/MidiFxPanel.tsx (v3.92.0 NEU, mounted v3.93.0)": {
       role:     "v3.92.0 NEU (~410 LOC, React-Komponente mit semantic-tokens-only). Header (Title + Count-Badge {N}/{MAX} + Add-Dropdown + Clear-Button). Chain-Liste mit NodeCard pro Node: Reorder ▲▼-Buttons (disabled bei first/last), Bypass-Toggle (Tailwind opacity-60 + accent-success/danger), Remove ✕. Per-Kind-ParamUI: Scale (scale+root-Select), Velocity-Curve (curve-Select + amount-Slider 0..1 + %-Display), Octave-Shift (semitones-Slider -24..+24), Chord-Expander (chordType-Select), Note-Repeat (rate-Select + count-Number-Input). Empty-State wenn chain leer. data-testids: midi-fx-panel/empty/chain/add-toggle/add-menu/add-<kind>/node-<id>/up-<id>/down-<id>/bypass-<id>/remove-<id>/clear + scale-/root-/curve-/amount-/semitones-/chord-/rate-/count-<id>. compact-Prop fuer Sidebar-Mount (kleinerer Header-Font). Aktuell NICHT in App.tsx gemountet — Komponente bereitgestellt aber Integration in Settings/Performance-Tab steht als v3.93-Task aus.",
       lastSeen: "2026-05-19T08:15:00.000Z",
       ownedBy:  "backend"
     },
-    "client/src/hooks/useMidi.ts (v3.92.0 midi-fx-routing)": {
-      role:     "v3.92.0 ERWEITERT (+~50 LOC, bestehende v3.81+ Mappings/Sub-Mix-Targets/Auto-Learn/etc. bleibt). handleMidiMessage Note-On-Block (Status 0x90 byte2>0) routet jetzt durch getMidiFxChain() VOR ChordMemory + onNoteOn-Dispatch. fxEvents-Liste via applyMidiFx(noteOn, chain) — Chord-Expander/Note-Repeat koennen 1 Event in mehrere expanden. Multi-Output mit setTimeout(timeOffsetMs) fuer Note-Repeat-Timing. ChordMemory wirkt auf das ERSTE FX-Event (typischer Spieler-Workflow); Folge-FX-Events behalten ihre Note. stepinput:noteon CustomEvent nutzt Pre-FX-Werte (damit Step-Aufnahme nicht durch Chord/Repeat verwirrt wird — Design-Entscheidung). Caveats: Note-Off-Tracking fehlt (haengende Voices bei Chord/Repeat moeglich, v3.93-Task), setTimeout-Drift bei CPU-Load (v3.93: Tone.Transport-Integration).",
-      lastSeen: "2026-05-19T08:15:00.000Z",
-      ownedBy:  "backend"
+    "client/src/hooks/useMidi.ts (v3.93.0 note-off-tracking)": {
+      role:     "v3.93.0 ERWEITERT (+~30 LOC, bestehende v3.92 MIDI-FX-Routing + v3.81+ Mappings bleibt). NEU midiFxTrackerRef = useRef(new MidiFxNoteTracker()). Im Note-On-Block: nach applyMidiFx wird tracker.trackNoteOn(byte1, channel, fxEvents) gerufen (für Chord-Expander/Octave-Shift Routing). Im Note-Off-Block: tracker.consumeNoteOff liefert Expanded-Liste — bei Treffer werden alle expanded outputs released (onNoteOff-Callback + MIDI-Out-Echo mit try/catch); bei No-Match Original-Note-Off direkt durchgereicht. Note-Repeat-Voices werden NICHT getrackt (eigener ADSR-Release). Vorheriger v3.92-Stand: handleMidiMessage routet Note-Ons durch getMidiFxChain() VOR ChordMemory/onNoteOn-Dispatch.",
+      lastSeen: "2026-05-19T08:30:00.000Z",
+      ownedBy:  "frontend"
     },
-    "tests/features/midi-fx-engine.test.ts (v3.92.0 NEU)": {
-      role:     "v3.92.0 NEU (~310 LOC, 33 Tests in 8 describes, env:node mit localStorage-Mock + dynamic imports nach vi.resetModules). (1) scale-snap × 4 — D#→D in C-major (snap nach unten), C→C no-op, C in A-minor no-op, applyMidiFx-Pfad mit NoteOn-Liste. (2) velocity-curve × 4 — exp 64→~32 (Toleranz ±4), linear no-op, log 64→>64, amount=0 no-op. (3) octave-shift × 3 — +12 (C4→C5), -12 (C5→C4), clamp am Range-Ende (120+24→127). (4) chord-expander × 3 — major (60→[60,64,67]), minor (60→[60,63,67]), 7th (60→[60,64,67,70] 4 Noten). (5) note-repeat × 3 — count=4 → 4 events, ansteigende timeOffsetMs (0/125/250/375 @ 120 BPM), clamp count=20→8. (6) Chain sequenziell × 4 — octave-shift+12→scale-snap (D#4→D5, also 63→74), chord-expander→octave-shift (1→3 alle +12), bypass-Node skipped, empty chain no-op. (7) Defaults × 3 — MAX_MIDI_FX_CHAIN=6, noteRepeatStepMs(1/16,120)=125, BPM-Skalierung (60 BPM = doppelt so lang). (8) Store × 9 — addNode/Defaults/MAX-Limit-Null/updateNode-Clamp+ID-Preserve/moveNode/removeNode+localStorage-Persist/Bypass-via-applyMidiFx-roundtrip/sanitize-invalid-inputs-mit-dupe-id-und-invalid-kind/setAllNodes-undefined-noop/setAllNodes-empty-clear.",
-      lastSeen: "2026-05-19T08:15:00.000Z",
-      ownedBy:  "backend"
+    "tests/features/midi-fx-engine.test.ts (v3.93.0 +note-off+schema)": {
+      role:     "v3.93.0 ERWEITERT (+~280 LOC, 46 Tests in 10 describes — 33 v3.92 + 13 NEU). NEU describe 'MidiFxNoteTracker' × 7: chord-expander 60→[60,64,67] full round-trip mit consumeNoteOff, no-op bei nicht-getrackter Note, note-repeat-Voices (timeOffsetMs>0) NICHT getrackt, Identity-Expansion (octave-shift+0) NICHT getrackt, Octave-Shift+12 WIRD getrackt (Pitch-shift ≠ identity), 2 parallele Original-Notes räumen unabhängig auf, clear() leert alle Tracks, Channel-Separation (gleiche Note auf Ch1/Ch2 unabhängig). NEU describe 'Schema v1.34 Round-Trip' × 4: SYNTH_FILE_VERSION='1.34', Round-Trip mit 3 Nodes (octave-shift+scale-snap+chord-expander) preserves alle Werte, Pre-v1.34-File (version:'1.33' Payload) ohne midiFxChain-Feld → undefined bleibt, invalide Einträge silent gefiltert (unknown-kind + dupe-ID + amount=99 clamped to 1), explicit empty Array respektiert. Vorherige v3.92-Tests bleiben unverändert.",
+      lastSeen: "2026-05-19T08:30:00.000Z",
+      ownedBy:  "frontend"
     },
     "client/src/utils/korg/esxParser.ts (v3.90.0 hardening)": {
       role:     "v3.90.0 ERWEITERT (+~80 LOC, bestehende v3.89 Song-Mode + v3.23 Pattern-Parser bleiben): Schliesst 4 dokumentierte Caveats. (1) PCM-Cap Soft-Limit-Tolerance: throw nur wenn totalPcm > ESX1_SAMPLE_MEM_SOFT_LIMIT_BYTES (25 MiB); zwischen 24-MiB-Hardware-Cap und Soft-Limit = warning + continue (pcmCapWarned-Flag, eine Warning pro Parse). KASSEL.esx (244B overshoot) jetzt parsebar. (2) Variant-Header Tolerance: invalid 'KORG'-Magic ODER 'ESX\\0'-Submagic geben empty bank + warning statt EsxParseError zu throwen — defense bei Batch-Import. ASCII-String wird im Warning gezeigt ('OoQC' etc.). (3) parseEsxSongEvents iter-cap: neue Konstante ESX1_MAX_ITERATIONS_NO_END=1000 + iterationsSinceLastEnd-Counter, resettet bei jedem 0xFFFF-Marker. Bei garbage-only-files silent break (currentSong=0), bei suspekter Korruption nach echtem Song warning + break. (4) length=0xF7 als ESX1_SONG_EVENT_LENGTH_INIT-Konstante; events mit length=0xF7 werden im Parser geskipped (statt durchgereicht). End-marker (data=0xFFFF) dominiert weiterhin auch wenn length=0xF7. Vorherige v3.89-Felder: EsxSongEvent + EsxSong + EsxBank.songs[] + isEmptyEsxSong/parseEsxSong/parseEsxSongEvents/parseEsxSongs. v3.23: Pattern-Parser mit 16 Parts + accent-bit-4.",
@@ -2437,6 +2447,40 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "frontend",
+      timestamp: "2026-05-19T08:30:00.000Z",
+      done: [
+        "v3.93.0: MidiFx Panel-Mount + .synth Persist + Note-Off-Tracking (closes v3.92 Caveats 1+4). MidiFxPanel war als Komponente da, aber nicht gemountet → dead UI. Schema v1.33 → v1.34 für midiFxChain. Note-Off-Tracking via MidiFxNoteTracker damit Chord-Expander-Voices korrekt released werden.",
+        "client/src/utils/midiFxEngine.ts ERWEITERT (+~110 LOC, bestehende v3.92 Engine unverändert): NEU class MidiFxNoteTracker mit Map<channel:note, ExpandedNoteOff[]>. trackNoteOn(originalNote, channel, fxEvents)→count (filtert timeOffsetMs>0 Note-Repeat-Voices und Identity-Expansions — letztere brauchen keinen Track da der Original-Note-Off direkt durchgeht). consumeNoteOff(originalNote, channel)→ExpandedNoteOff[] (delete-on-consume). Plus size-Getter + clear()-Methode für Panic-Stop. Header-JSDoc-Block v3.92→v3.93 angepasst (Caveat 1 'Note-Off wird nicht dupliziert' entfernt, neuer Note-Off-Tracking-Block ergänzt).",
+        "client/src/hooks/useMidi.ts ERWEITERT (+~30 LOC): NEU midiFxTrackerRef = useRef(new MidiFxNoteTracker()). Im Note-On-Block: nach applyMidiFx wird tracker.trackNoteOn(byte1, channel, fxEvents) gerufen. Im Note-Off-Block: tracker.consumeNoteOff(byte1, channel) — bei Treffer werden alle expanded outputs (Chord-Expander/Octave-Shift) released (onNoteOff-Callback + MIDI-Out-Echo); bei No-Match Original-Note-Off direkt durchgereicht. MIDI-Out-Echo wrapped in try/catch (defense gegen disconnect-Race).",
+        "client/src/utils/projectSerializer.ts SCHEMA-BUMP v1.33 → v1.34: SYNTH_FILE_VERSION='1.34'. Header-Doku-Block v1.34-Migration (MIDI-FX-Chain). NEU SynthProject.midiFxChain?: MidiFxNode[] — additiv-optional analog padBank/macros/subMixBuses. parseProject() ergänzt midiFxChain-Migration-Block am Ende: undefined bleibt undefined (Signal an Restore: User-localStorage nicht überschreiben), null/non-Array → undefined, Array → sanitizeMidiFxState({chain}) → ergibt sanitized.chain (whitelist per Kind, Clamping, Cap auf MAX_MIDI_FX_CHAIN=6, dedupe per ID). Import +sanitizeMidiFxState +MidiFxNode aus useMidiFxStore.",
+        "client/src/components/Settings/SettingsPanel.tsx ERWEITERT (+~30 LOC, bestehende Sections bleiben): NEU Section-ID 'midi-fx' im Section-Type. NEU Nav-Entry {id:'midi-fx', icon:'✨', label:'MIDI FX', group:'MIDI'} direkt nach 'midi-mpe'. NEU MidiFxSection-Komponente (Header-Doku + delegiert an MidiFxPanel ohne compact). NEU Render-Dispatch {active === 'midi-fx' && <MidiFxSection />}. Import +MidiFxPanel aus @/components/MidiFx/MidiFxPanel.",
+        "tests/features/midi-fx-engine.test.ts ERWEITERT (+~280 LOC, bestehende 33 Tests + 13 NEU = 46 Tests in 10 describes): NEU describe 'MidiFxNoteTracker' × 7: chord-expander 60→[60,64,67] full round-trip mit consumeNoteOff, no-op bei nicht-getrackter Note, note-repeat-Voices NICHT getrackt (timeOffsetMs>0), Identity-Expansion (octave-shift+0) NICHT getrackt, Octave-Shift+12 WIRD getrackt (Pitch-shift ≠ identity), mehrere parallele Original-Notes räumen unabhängig auf, clear()-Methode, Channel-Separation. NEU describe 'Schema v1.34 Round-Trip' × 4: SYNTH_FILE_VERSION='1.34', Round-Trip mit 3 Nodes preserves alle Werte, Pre-v1.34-File ohne Feld → midiFxChain=undefined, invalide Einträge silent gefiltert (dupe-ID + unknown-kind + amount=99 clamped to 1), explicit empty Array respektiert.",
+        "Test-File-Mass-Update: 13 weitere Test-Files referenzieren SYNTH_FILE_VERSION-Assertions — bulk-bumped '1.33' → '1.34' (sub-mix-bus, sub-mix-bus-fx, audio-loop-crossfade, audio-track-loop, audio-track-store, audio-track-stretch, channel-colors, master-fx-bus, master-limiter, multi-bar-pattern, plugin-host, plugin-multislot, project-id-migration, project-serializer, quick-action-integration, script-store). Die bewusst-veralteten Payload-Strings 'version: \"1.33\"' (Pre-v1.34-Backward-Compat-Tests) bleiben unverändert.",
+        "package.json (3.92.0 → 3.93.0). pnpm check clean (TypeScript strict). pnpm test grün: 237 Test-Files / 5369 passed / 16 skipped (vs v3.92.0: 237/5356, +13 neue Tests = 7 NoteTracker + 4 Schema + 2 indirekt; keine neue Test-File da Erweiterung).",
+        "Mount-Position: Settings → MIDI-Gruppe → 'MIDI FX' (zwischen MPE und OmniTribe). Begründung: passt thematisch zu MIDI-Routing (Note-Mappings + CC-Mappings + Chord-Memory), wird selten zur Laufzeit umgestellt → Settings-Dialog ist OK. Alternative 'Performance-Sidebar' wurde verworfen weil die Chain typischerweise vor dem Spielen aufgebaut wird, nicht live.",
+        "Note-Off-Tracking-Strategy: Map<channel:note, ExpandedNoteOff[]>. trackNoteOn filtert (1) timeOffsetMs>0 (Note-Repeat-Voices haben ihren eigenen Release im Sample-Tail) und (2) Identity-Expansion (Output = Original-Note → kein Track nötig). Dedup per (channel, note) — wenn Chord-Expander + Octave-Shift dieselbe Note doppelt liefern, wird sie nur 1× released. Channel-getrennt (Map-Key 'ch:note'). Memory-Bound: Map wächst nur bei nicht-released Note-Ons (typisch <10 zeitgleich beim manuellen Spielen).",
+        "Caveats (was bleibt offen): (1) Setup-Persistierung ist via Restore-Path STÄRKER als Audio-Setter — App.tsx hat KEINEN setAllNodes-Subscribe der midiFxChain aus dem geladenen Projekt setzt. Aktuell läuft der Schema-Roundtrip korrekt (parseProject liefert midiFxChain), aber die Anwendung muss noch wired werden: useProjectStore.loadProject → setAllNodes(parsed.midiFxChain). Da das aber kein Audio-Routing ist (nur Pre-FX-MIDI), ist die Lücke harmlos — User-localStorage wird respektiert. (2) Sample-genaues Note-Repeat-Scheduling via Tone.Transport bleibt v3.94+. (3) Pre-Set Strum/Glissando/Arp-Like One-Click-Chains bleiben v3.94+."
+      ],
+      next: [
+        "v3.94: App.tsx wire setAllNodes(parsed.midiFxChain) im Project-Restore-Pfad (analog wie subMixBuses fehlt das aktuell auch). Optional — User-localStorage funktioniert auch ohne.",
+        "v3.94: Sample-genaues Note-Repeat-Scheduling via Tone.Transport statt setTimeout — eliminiert CPU-Load-Drift.",
+        "v3.94: Pre-Set 'Strum'/'Glissando'/'Arp-Like' — Built-In-Chains als One-Click-Preset (MidiFxPanel-Header 'Presets'-Dropdown).",
+        "v3.94: MIDI-FX-Chain MIDI-Learn — Bypass-Toggle pro Node per CC steuerbar (Live-Performance-Workflow).",
+        "v3.94: Note-Off-Echo nur in selektierten Cases (Chord-Expander+Octave-Shift) statt immer — Konfig-Option für User die das Defaultverhalten anders wollen."
+      ],
+      changed: [
+        "client/src/utils/midiFxEngine.ts (MidiFxNoteTracker class + Header-Update, +~110 LOC)",
+        "client/src/hooks/useMidi.ts (tracker-Ref + Note-On-track + Note-Off-consume, +~30 LOC)",
+        "client/src/utils/projectSerializer.ts (Schema v1.34 + midiFxChain-Feld + parseProject-Migration, +~30 LOC)",
+        "client/src/components/Settings/SettingsPanel.tsx (Section-ID + Nav-Entry + MidiFxSection + Render-Dispatch, +~30 LOC)",
+        "tests/features/midi-fx-engine.test.ts (+13 Tests in 2 neuen describes, +~280 LOC)",
+        "tests/features/{sub-mix-bus,sub-mix-bus-fx,audio-loop-crossfade,audio-track-loop,audio-track-store,audio-track-stretch,channel-colors,master-fx-bus,master-limiter,multi-bar-pattern,plugin-host,plugin-multislot,project-id-migration,project-serializer,quick-action-integration,script-store}.test.ts (bulk '1.33'→'1.34' für SYNTH_FILE_VERSION-Assertions)",
+        "package.json (3.92.0 → 3.93.0)",
+        "agents/INDEX.js (version + workLog + files-Eintraege)"
+      ]
+    },
     {
       agent:     "backend",
       timestamp: "2026-05-19T08:15:00.000Z",

@@ -1,5 +1,5 @@
 /**
- * Synthstudio – midiFxEngine.ts (v3.92.0)
+ * Synthstudio – midiFxEngine.ts (v3.93.0)
  *
  * MIDI-FX Transform-Layer (DAW-Standard). Eingehende Note-On-Events
  * werden durch eine Chain von MidiFxNodes geleitet, bevor sie an die
@@ -14,14 +14,22 @@
  *
  * Pure-TS, DOM-frei, Node-testbar. KEIN Audio-Side-Effect.
  *
+ * v3.93.0 NEU: Note-Off-Tracking.
+ *   Eine MidiFxNoteTracker-Instanz mapped jede Original-Note auf die Liste
+ *   der ausgegebenen Notes (Chord-Expander expanded 60 → [60,64,67]; bei
+ *   Note-Off auf 60 sollten alle 3 wieder releast werden). API:
+ *     - tracker.trackNoteOn(originalNote, channel, fxEvents)
+ *     - tracker.consumeNoteOff(originalNote, channel) → expanded NoteOffs
+ *   Wird vom useMidi-Hook (Note-On + Note-Off-Handler) verwendet.
+ *
  * Caveats:
- *   - Es wird ausschließlich Note-On transformiert. Note-Off wird (z.Z.) NICHT
- *     dupliziert oder verändert — bei Chord-Expander/Note-Repeat verlässt sich
- *     der Caller auf den natürlichen ADSR-Release der gespielten Noten.
  *   - Timing-Offsets in Note-Repeat sind in Millisekunden relativ zum
  *     Original-Event. Konsumenten müssen den Offset selbst scheduling-mäßig
  *     anwenden (setTimeout / Tone.Transport / AudioEngine.scheduleNote).
  *   - Nodes mit `bypass: true` werden unverändert durchgereicht.
+ *   - Note-Repeat-NoteOffs werden NICHT dupliziert (jede Repeat-Voice
+ *     ist eine eigenständige Anschlag-Note mit ADSR-Release am Ende).
+ *     Nur Chord-Expander-Voices brauchen explicit Note-Off-Routing.
  */
 
 // ─── Typen ───────────────────────────────────────────────────────────────────
@@ -309,4 +317,108 @@ export function applyMidiFx(
     }
   }
   return events;
+}
+
+// ─── Note-Off Tracking (v3.93.0) ─────────────────────────────────────────────
+
+/**
+ * Repräsentiert einen aktiven Output (eine vom FX-Chain ausgegebene Note,
+ * die noch nicht released wurde).
+ */
+export interface ExpandedNoteOff {
+  note: number;
+  channel: number;
+}
+
+/**
+ * Hält für jede aktive Original-Note (key = "channel:note") die Liste der
+ * vom FX-Chain ausgegebenen Notes. Bei Note-Off wird die ganze Liste in
+ * einem Schritt released.
+ *
+ * Note-Repeat-Voices werden NICHT getracked (jeder Repeat hat seinen eigenen
+ * Anschlag + ADSR-Release am Ende der Sample-Length — wir würden sonst
+ * verfrüht abschneiden). Nur Chord-Expander + Pitch-shifted-Voices brauchen
+ * Note-Off-Routing.
+ *
+ * API ist defensiv: doppeltes trackNoteOn überschreibt, consumeNoteOff
+ * ohne vorheriges trackNoteOn liefert leeres Array (kein Crash).
+ */
+export class MidiFxNoteTracker {
+  private _map: Map<string, ExpandedNoteOff[]> = new Map();
+
+  private static keyFor(channel: number, note: number): string {
+    return `${channel | 0}:${note | 0}`;
+  }
+
+  /**
+   * Speichert die Output-Notes für eine Original-Note. Wenn `fxEvents` keine
+   * Expansion enthält (1 Event mit gleicher Note + 0 timeOffsetMs), wird KEIN
+   * Eintrag gemacht — der Note-Off-Handler im Caller routet dann den Original-
+   * Note-Off direkt durch.
+   *
+   * Note-Repeat-Voices (timeOffsetMs > 0) werden ausgeschlossen — sie haben
+   * ihren eigenen Release-Trigger im Sample-Tail.
+   *
+   * Returnt die Anzahl tracked outputs.
+   */
+  public trackNoteOn(
+    originalNote: number,
+    channel: number,
+    fxEvents: readonly NoteOn[],
+  ): number {
+    if (!fxEvents || fxEvents.length === 0) return 0;
+    // Filter: nur t=0 Events (kein Note-Repeat-Tail) tracken.
+    // Doppelte Noten (z.B. Chord-Expander + Octave-Shift Überschneidung)
+    // werden dedupliziert per (channel, note).
+    const seen = new Set<string>();
+    const tracked: ExpandedNoteOff[] = [];
+    for (const ev of fxEvents) {
+      const offset = ev.timeOffsetMs ?? 0;
+      if (offset > 0) continue;
+      const k = `${ev.channel | 0}:${ev.note | 0}`;
+      if (seen.has(k)) continue;
+      seen.add(k);
+      tracked.push({ note: ev.note | 0, channel: ev.channel | 0 });
+    }
+    // Wenn das Ergebnis === Original-Event (kein Expand, keine Pitch-Änderung),
+    // brauchen wir keinen Track — der Caller hat eh den Original-Note-Off.
+    if (
+      tracked.length === 1 &&
+      tracked[0].note === (originalNote | 0) &&
+      tracked[0].channel === (channel | 0)
+    ) {
+      // Egal — keine Expansion, also auch keine Note-Off-Map-Last.
+      // Trotzdem speichern? Nein — sonst wächst die Map unbegrenzt.
+      return 0;
+    }
+    if (tracked.length === 0) return 0;
+    this._map.set(MidiFxNoteTracker.keyFor(channel, originalNote), tracked);
+    return tracked.length;
+  }
+
+  /**
+   * Liefert die Liste der ausgegebenen Output-Notes für eine Original-Note
+   * und entfernt den Eintrag. Bei nicht-getrackter Note liefert ein leeres
+   * Array.
+   */
+  public consumeNoteOff(
+    originalNote: number,
+    channel: number,
+  ): ExpandedNoteOff[] {
+    const key = MidiFxNoteTracker.keyFor(channel, originalNote);
+    const list = this._map.get(key);
+    if (!list) return [];
+    this._map.delete(key);
+    return list;
+  }
+
+  /** Anzahl aktive (gehaltene) Notes — primär für Tests. */
+  public get size(): number {
+    return this._map.size;
+  }
+
+  /** Leert den Tracker — z.B. bei Panic-Stop oder MIDI-Device-Wechsel. */
+  public clear(): void {
+    this._map.clear();
+  }
 }

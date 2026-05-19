@@ -334,7 +334,7 @@ describe("AudioEngine — Sends routen zu global-buses", () => {
 
 describe("Schema v1.33 — FX-Chain Round-Trip", () => {
   it("SYNTH_FILE_VERSION ist '1.33' (Schema-Bump für volle SubMixBus-FX-Chain)", () => {
-    expect(serializer.SYNTH_FILE_VERSION).toBe("1.33");
+    expect(serializer.SYNTH_FILE_VERSION).toBe("1.34");
   });
 
   it("Round-Trip: SubMixBusFx mit eq3 + compressor + sends preserves alle Werte", () => {

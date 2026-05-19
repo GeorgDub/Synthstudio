@@ -197,7 +197,7 @@ describe("useSubMixStore — MAX_SUB_MIX_BUSES enforced", () => {
 
 describe("Schema v1.33 — Project Round-Trip", () => {
   it("SYNTH_FILE_VERSION ist '1.33' (v3.86.0 Bump für SubMixBus volle FX-Chain)", () => {
-    expect(serializer.SYNTH_FILE_VERSION).toBe("1.33");
+    expect(serializer.SYNTH_FILE_VERSION).toBe("1.34");
   });
 
   it("Round-Trip: subMixBuses werden serialisiert + reparst", () => {
@@ -231,7 +231,7 @@ describe("Schema v1.33 — Project Round-Trip", () => {
       subMixBuses: buses,
     } as unknown as Parameters<typeof serializer.serializeProject>[0]);
 
-    expect(project.version).toBe("1.33");
+    expect(project.version).toBe("1.34");
     expect(project.subMixBuses).toBeDefined();
     expect(project.subMixBuses!).toHaveLength(1);
     expect(project.subMixBuses![0].channelIds).toEqual(["kick", "snare"]);

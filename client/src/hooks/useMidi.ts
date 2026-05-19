@@ -43,7 +43,7 @@ import {
   loadNeverList,
 } from "@/utils/midiDeviceDetection";
 import { getMidiFxChain } from "@/store/useMidiFxStore";
-import { applyMidiFx, type NoteOn } from "@/utils/midiFxEngine";
+import { applyMidiFx, MidiFxNoteTracker, type NoteOn } from "@/utils/midiFxEngine";
 
 // ─── Typen ────────────────────────────────────────────────────────────────────
 
@@ -795,6 +795,11 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
   const activeInputRef = useRef<MIDIInput | null>(null);
   const activeOutputRef = useRef<MIDIOutput | null>(null);
   const clockAnalyzer = useRef(new MidiClockAnalyzer());
+  // v3.93.0: MIDI-FX Note-Off-Tracking. Mapped Original-Note → [expanded
+  // outputs] (Chord-Expander/Octave-Shift). Bei Note-Off werden alle
+  // gespeicherten Outputs released. Note-Repeat-Voices werden NICHT
+  // getracked (siehe MidiFxNoteTracker.trackNoteOn-JSDoc).
+  const midiFxTrackerRef = useRef<MidiFxNoteTracker>(new MidiFxNoteTracker());
   const learnRef = useRef<{ isLearning: boolean; target: MidiLearnTarget | null }>({
     isLearning: false,
     target: null,
@@ -953,10 +958,16 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
       // v3.92.0: MIDI-FX Routing — Transform-Layer vor der Engine.
       // Chord-Expander/Note-Repeat können 1 Event in mehrere expanden;
       // Scale-Snap/Velocity-Curve/Octave-Shift transformieren in-place.
+      // v3.93.0: Note-Off-Tracking — Original-Note → [Expanded Outputs] wird
+      // im MidiFxNoteTracker gespeichert damit das spätere Note-Off alle
+      // expandierten Voices released (siehe Note-Off-Block unten).
       const fxChain = getMidiFxChain();
       let fxEvents: NoteOn[];
       if (fxChain.length > 0) {
         fxEvents = applyMidiFx({ note: byte1, velocity: byte2, channel }, fxChain);
+        // Tracker speichert nur t=0-Events ≠ Original (Chord-Expander/Octave-
+        // Shift). Note-Repeat-Tail wird ignoriert (eigener Release).
+        midiFxTrackerRef.current.trackNoteOn(byte1, channel, fxEvents);
       } else {
         fxEvents = [{ note: byte1, velocity: byte2, channel }];
       }
@@ -1033,7 +1044,27 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
 
     // Note-Off
     if (type === 0x80 || (type === 0x90 && byte2 === 0)) {
-      optionsRef.current.onNoteOff?.(byte1, channel);
+      // v3.93.0: Wenn der Tracker eine Expansion für diese Original-Note
+      // gespeichert hat, alle expandierten Outputs released. Sonst Original-
+      // Note-Off direkt durchreichen (kein FX-Match → kein Routing).
+      const expanded = midiFxTrackerRef.current.consumeNoteOff(byte1, channel);
+      if (expanded.length > 0) {
+        for (const off of expanded) {
+          optionsRef.current.onNoteOff?.(off.note, off.channel);
+          // MIDI-Out-Echo für expandierte Off-Events (nur wenn aktiv).
+          const out = activeOutputRef.current;
+          if (out && midiOutEnabledRef.current) {
+            const ch2 = Math.max(0, midiOutChannelRef.current - 1) & 0x0f;
+            try {
+              out.send([0x80 | ch2, off.note & 0x7f, 0]);
+            } catch {
+              /* swallow */
+            }
+          }
+        }
+      } else {
+        optionsRef.current.onNoteOff?.(byte1, channel);
+      }
     }
 
     // CC-Nachrichten

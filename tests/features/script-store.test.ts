@@ -543,7 +543,7 @@ describe("projectSerializer × scripts (v1.16)", () => {
   });
 
   it("SYNTH_FILE_VERSION ist '1.32'", () => {
-    expect(SYNTH_FILE_VERSION).toBe("1.33");
+    expect(SYNTH_FILE_VERSION).toBe("1.34");
   });
 
   it("Round-trip: store (project-scope) → serialize → parse → loadProjectScripts", () => {
