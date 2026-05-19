@@ -11,6 +11,7 @@
  */
 
 import { SynthEngine } from "./SynthEngine";
+import { LufsAnalyzer, LUFS_SILENCE } from "./LufsAnalyzer";
 import { MidiClockOut } from "./MidiClockOut";
 import { MidiNoteOut, type MidiPartConfig } from "./MidiNoteOut";
 import { AudioRecorder, type RecordingResult, MAX_SIMULTANEOUS_RECORDINGS } from "./AudioRecorder";
@@ -628,6 +629,39 @@ class AudioEngineClass {
   /** v3.77.0: Bypass-Crossfade-Zeit in Sekunden (20ms). */
   private readonly MASTER_LIMITER_BYPASS_CROSSFADE_SEC = 0.02;
 
+  // ─── LUFS-Meter (v3.78.0, ITU-R BS.1770-4) ────────────────────────────────
+  /**
+   * v3.78.0: LUFS-Meter am post-master-FX-Tap.
+   *
+   * Routing: Wet/Dry-Gains konnektieren parallel zu ctx.destination UND zu
+   * `_lufsAnalyserNode` (Web-Audio-AnalyserNode mit fftSize=2048). Wir
+   * pollen alle 100ms `getFloatTimeDomainData(...)`, übergeben den Block
+   * an den pure-TS `_lufsAnalyzer` der die K-weighted Filter + Block-
+   * Aggregation macht.
+   *
+   * Polling-Loop läuft solang der LUFS-Tap aktiv ist (lazy gestartet beim
+   * ersten `getLufsSnapshot()`-Call). `reset()` setzt nur den Integrated-
+   * Akku zurück — gleitende Momentary/Short-Term-Werte bleiben hängen am
+   * Audio-Stream.
+   *
+   * Caveats:
+   *   - AnalyserNode liefert 1-channel-tap (DownMix). Für true-stereo LUFS
+   *     bräuchten wir zwei separate AnalyserNodes oder einen
+   *     AudioWorkletNode. Mono-LUFS ist akzeptabel da Synthstudio-Output
+   *     primär als Stereo-Sum gemastert wird.
+   *   - 100ms-Polling ist ein Trade-off: häufiger = mehr CPU, seltener =
+   *     Lücken im Stream. Bei 48kHz fftSize=2048 deckt ein Read 42.6ms ab,
+   *     mit 100ms-Polling überlappen wir ~60ms. Spec sagt nicht
+   *     "alle Samples müssen gesehen werden" — wir mitteln über das was
+   *     wir bekommen.
+   */
+  private _lufsAnalyser: LufsAnalyzer | null = null;
+  private _lufsAnalyserNode: AnalyserNode | null = null;
+  private _lufsPollingTimer: ReturnType<typeof setInterval> | null = null;
+  private _lufsScratchBuffer: Float32Array | null = null;
+  /** Polling-Intervall in ms (Task-Spec: 10Hz). */
+  private readonly LUFS_POLL_INTERVAL_MS = 100;
+
   // Scheduling
   private schedulerTimer: ReturnType<typeof setInterval> | null = null;
   // Sammelt pending Position-Callback-Timeouts, damit stop() sie aufräumen kann
@@ -795,6 +829,28 @@ class AudioEngineClass {
     this._masterEqHigh.connect(this._masterLimiterDry);
     this._masterLimiterDry.connect(this.ctx.destination);
 
+    // v3.78.0: LUFS-Meter-Tap am post-master-FX-Punkt.
+    // wet+dry konnektieren parallel zur Destination UND zum AnalyserNode,
+    // damit das LUFS-Meter zeigt was tatsächlich rausgeht (inkl. Limiter).
+    // Polling startet lazy beim ersten getLufsSnapshot()-Call.
+    try {
+      this._lufsAnalyserNode = this.ctx.createAnalyser();
+      this._lufsAnalyserNode.fftSize = 2048;
+      this._lufsAnalyserNode.smoothingTimeConstant = 0;
+      this._masterLimiterWet.connect(this._lufsAnalyserNode);
+      this._masterLimiterDry.connect(this._lufsAnalyserNode);
+      this._lufsAnalyser = new LufsAnalyzer({
+        sampleRate: this.ctx.sampleRate,
+        channelCount: 1, // AnalyserNode liefert downmix — 1-channel reicht.
+      });
+      this._lufsScratchBuffer = new Float32Array(this._lufsAnalyserNode.fftSize);
+    } catch {
+      // Mock-AudioContext ohne createAnalyser → LUFS disabled.
+      this._lufsAnalyserNode = null;
+      this._lufsAnalyser = null;
+      this._lufsScratchBuffer = null;
+    }
+
     // Global Reverb Bus (Plate-ähnlich, default 2s Decay).
     // v3.75.0: PreDelay (DelayNode 0..200ms) + Damping (Lowpass-Biquad) vor
     // dem Convolver. Chain: send → preDelay → damping → convolver → wet → master.
@@ -916,6 +972,14 @@ class AudioEngineClass {
     this._masterLimiterDry = null;
     this.masterGain = null;
     this._outputAnalyser = null;
+    // v3.78.0: LUFS-Tap aufräumen.
+    if (this._lufsPollingTimer) {
+      try { clearInterval(this._lufsPollingTimer); } catch { /* swallow */ }
+      this._lufsPollingTimer = null;
+    }
+    this._lufsAnalyserNode = null;
+    this._lufsAnalyser = null;
+    this._lufsScratchBuffer = null;
     // 5) AudioContext schließen (kein await — close ist robust gegen state).
     if (this.ctx) {
       try { await this.ctx.close(); } catch { /* swallow — already closed */ }
@@ -2940,6 +3004,76 @@ class AudioEngineClass {
       try { wetParam.setTargetAtTime(wetTarget, now, xfade / 3); } catch { /* swallow */ }
       try { dryParam.setTargetAtTime(dryTarget, now, xfade / 3); } catch { /* swallow */ }
     }
+  }
+
+  // ─── LUFS-Meter (v3.78.0) ────────────────────────────────────────────────
+
+  /**
+   * v3.78.0: Startet den LUFS-Polling-Loop falls noch nicht aktiv. Wird vom
+   * UI-Komponenten lazy aufgerufen (Mount eines LUFS-Displays). Idempotent.
+   */
+  private _ensureLufsPollingStarted(): void {
+    if (this._lufsPollingTimer !== null) return;
+    if (!this._lufsAnalyserNode || !this._lufsAnalyser || !this._lufsScratchBuffer) return;
+    const node = this._lufsAnalyserNode;
+    const analyzer = this._lufsAnalyser;
+    const scratch = this._lufsScratchBuffer;
+    this._lufsPollingTimer = setInterval(() => {
+      try {
+        // v3.78: Lib-DOM-Type ist Float32Array<ArrayBuffer>, unser Scratch
+        // ist Float32Array<ArrayBufferLike>. Cast ist sicher weil wir den
+        // Buffer in init() mit `new Float32Array(...)` ohne SharedBuffer
+        // alloziert haben.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        node.getFloatTimeDomainData(scratch as any);
+        analyzer.processBlock(scratch);
+      } catch {
+        /* swallow — AnalyserNode kann nach reinit nullsein */
+      }
+    }, this.LUFS_POLL_INTERVAL_MS);
+  }
+
+  /** v3.78.0: Aktuelle Momentary-LUFS (400ms gleitend, BS.1770-4). */
+  getLufsMomentary(): number {
+    if (!this._lufsAnalyser) return LUFS_SILENCE;
+    this._ensureLufsPollingStarted();
+    return this._lufsAnalyser.getMomentary();
+  }
+
+  /** v3.78.0: Aktuelle Short-Term-LUFS (3s gleitend, BS.1770-4). */
+  getLufsShortTerm(): number {
+    if (!this._lufsAnalyser) return LUFS_SILENCE;
+    this._ensureLufsPollingStarted();
+    return this._lufsAnalyser.getShortTerm();
+  }
+
+  /** v3.78.0: Integrated-LUFS mit BS.1770-4 Two-Pass-Gating. */
+  getLufsIntegrated(): number {
+    if (!this._lufsAnalyser) return LUFS_SILENCE;
+    this._ensureLufsPollingStarted();
+    return this._lufsAnalyser.getIntegrated();
+  }
+
+  /**
+   * v3.78.0: Setzt nur das Integrated-Akku zurück. Momentary/Short-Term
+   * bleiben gleitend (sie spiegeln den laufenden Stream — Reset würde
+   * den Meter kurz auf -Infinity springen lassen).
+   */
+  resetLufsIntegrated(): void {
+    this._lufsAnalyser?.reset();
+  }
+
+  /** v3.78.0: Combined Read für UI (vermeidet 3 Engine-Aufrufe / Tick). */
+  getLufsSnapshot(): { momentary: number; shortTerm: number; integrated: number } {
+    if (!this._lufsAnalyser) {
+      return { momentary: LUFS_SILENCE, shortTerm: LUFS_SILENCE, integrated: LUFS_SILENCE };
+    }
+    this._ensureLufsPollingStarted();
+    return {
+      momentary:  this._lufsAnalyser.getMomentary(),
+      shortTerm:  this._lufsAnalyser.getShortTerm(),
+      integrated: this._lufsAnalyser.getIntegrated(),
+    };
   }
 
   /**

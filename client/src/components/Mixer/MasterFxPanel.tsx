@@ -36,6 +36,38 @@ type Tab = "reverb" | "delay" | "eq" | "limiter";
 const GR_METER_INTERVAL_MS = 50;
 
 /**
+ * v3.78.0: LUFS-Meter Update-Rate (200ms = 5fps). Integrated bewegt sich
+ * sehr langsam (Block-Size 400ms), 200ms-Refresh reicht für ein flüssiges
+ * Display ohne CPU-Last.
+ */
+const LUFS_METER_INTERVAL_MS = 200;
+
+/**
+ * v3.78.0: LUFS-Zielzonen (Streaming/Broadcast-Standards).
+ *   Integrated > -14 LUFS  → "Spotify-loud" (rot, ungewöhnlich laut)
+ *   -16..-14              → "Borderline" (gelb)
+ *   -23..-16              → "EBU R128 Broadcast" (grün)
+ *   < -23                 → "zu leise" (blau)
+ */
+export const LUFS_TARGET_LOUD = -14;
+export const LUFS_TARGET_BORDER_LOW = -16;
+export const LUFS_TARGET_BROADCAST_LOW = -23;
+
+export function lufsColorClass(integrated: number): string {
+  if (!Number.isFinite(integrated)) return "text-text-muted";
+  if (integrated > LUFS_TARGET_LOUD) return "text-accent-danger";
+  if (integrated >= LUFS_TARGET_BORDER_LOW) return "text-accent-warning";
+  if (integrated >= LUFS_TARGET_BROADCAST_LOW) return "text-accent-success";
+  return "text-accent-secondary";
+}
+
+/** v3.78.0: Formatiert LUFS-Wert: -Infinity → "−∞", sonst "X.X LUFS". */
+export function formatLufs(v: number): string {
+  if (!Number.isFinite(v)) return "−∞ LUFS";
+  return `${v.toFixed(1)} LUFS`;
+}
+
+/**
  * v3.77.0: Make-Up-Gain Slider-Range in dB. Store-Wert bleibt linear
  * (0..16) — Schema-Compat. Slider operiert in dB-Raum.
  *   -12 dB ≙ 0.2512 linear
@@ -235,6 +267,27 @@ export function MasterFxPanel() {
     return () => clearInterval(id);
   }, [tab]);
 
+  // ─── LUFS-Meter (v3.78.0) ──────────────────────────────────────────────────
+  // Always-on Display oberhalb der Tabs. Pollt alle 200ms die drei LUFS-
+  // Werte (Momentary / Short-Term / Integrated).
+  const [lufs, setLufs] = useState<{ momentary: number; shortTerm: number; integrated: number }>(
+    { momentary: -Infinity, shortTerm: -Infinity, integrated: -Infinity },
+  );
+  useEffect(() => {
+    const id = setInterval(() => {
+      try {
+        setLufs(AudioEngine.getLufsSnapshot());
+      } catch {
+        setLufs({ momentary: -Infinity, shortTerm: -Infinity, integrated: -Infinity });
+      }
+    }, LUFS_METER_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, []);
+  const onResetLufs = () => {
+    try { AudioEngine.resetLufsIntegrated(); } catch { /* swallow */ }
+    setLufs((p) => ({ ...p, integrated: -Infinity }));
+  };
+
   return (
     <section
       data-testid="master-fx-panel"
@@ -263,6 +316,48 @@ export function MasterFxPanel() {
           ))}
         </nav>
       </header>
+
+      {/*
+       * v3.78.0: LUFS-Meter (ITU-R BS.1770-4) — Always-on, oberhalb der Tabs.
+       * Drei Displays (M=Momentary 400ms, S=Short-Term 3s, I=Integrated
+       * gated). Color-Coding nach Streaming/Broadcast-Zielzonen.
+       */}
+      <div
+        className="flex items-center gap-3 bg-bg-elevated rounded px-3 py-2 border border-border-subtle"
+        data-testid="master-fx-lufs"
+      >
+        <span className="text-xs text-text-muted font-semibold">LUFS</span>
+        <div className="flex items-baseline gap-1" data-testid="master-fx-lufs-momentary">
+          <span className="text-xs text-text-dim">M</span>
+          <span className="text-xs text-text-primary tabular-nums w-20 text-right">
+            {formatLufs(lufs.momentary)}
+          </span>
+        </div>
+        <div className="flex items-baseline gap-1" data-testid="master-fx-lufs-shortterm">
+          <span className="text-xs text-text-dim">S</span>
+          <span className="text-xs text-text-primary tabular-nums w-20 text-right">
+            {formatLufs(lufs.shortTerm)}
+          </span>
+        </div>
+        <div className="flex items-baseline gap-1 flex-1" data-testid="master-fx-lufs-integrated">
+          <span className="text-xs text-text-dim">I</span>
+          <span
+            className={`text-xs tabular-nums w-20 text-right font-semibold ${lufsColorClass(lufs.integrated)}`}
+            data-testid="master-fx-lufs-integrated-value"
+          >
+            {formatLufs(lufs.integrated)}
+          </span>
+        </div>
+        <button
+          type="button"
+          onClick={onResetLufs}
+          data-testid="master-fx-lufs-reset"
+          className="px-2 py-1 text-xs rounded bg-bg-panel border border-border-color text-text-muted hover:text-text-primary"
+          title="Integrated-Messung neu starten"
+        >
+          Reset I
+        </button>
+      </div>
 
       {tab === "reverb" && (
         <div className="flex flex-col gap-2" role="tabpanel" data-testid="master-fx-reverb">

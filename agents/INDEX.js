@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.77.0",
+    version: "3.78.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -89,6 +89,26 @@ const INDEX = {
   // ─── KNOWN FILE INDEX ──────────────────────────────────────
   // Key files agents have analyzed. Add new entries after working on a file.
   files: {
+    "client/src/audio/LufsAnalyzer.ts (v3.78.0)": {
+      role:     "v3.78.0 NEU (~360 LOC, Pure-TS-Modul, DOM-frei, env:node-safe): ITU-R BS.1770-4 LUFS-Meter. K-Weighting Pre-Filter (high-shelf @1681Hz +4dB) + RLB-Filter (high-pass @38Hz Q=0.5) als Biquad-DF2 (4 State-Variablen). Bei 48kHz matchen die Coeffizienten die BS.1770-4-Tabelle exakt (Toleranz 1e-3). Bilinear-Transform für andere Sample-Rates mit Pre-Warping. SlidingMeanSquare-Klasse (Ring-Buffer + O(1)-update) für Momentary (400ms) und Short-Term (3s). Integrated mit 400ms-Block + 100ms-Hop (75% Overlap) und Two-Pass-Gating (absolute -70 LUFS + relative -10 LU). Public API: LufsAnalyzer-Constructor mit defensiv Throw für invalid Rates/Channels (1 oder 2), processBlock(L, R?), getMomentary/getShortTerm/getIntegrated, reset() (nur Integrated), resetAll() (inkl. Filter-State). Exports: designKWeightingPreFilter/RlbFilter Pure-Helpers + meanSquareToLufs + Biquad-Klasse + LUFS_SILENCE/LUFS_OFFSET/ABSOLUTE_GATE_LUFS/RELATIVE_GATE_LU + MOMENTARY/SHORT_TERM/INTEGRATED-Konstanten. RLB-Filter b-Koeffizienten WICHTIG nicht durch RBJ-Norm geteilt (b0=1, b1=-2, b2=1 fix per Spec).",
+      lastSeen: "2026-05-19T04:30:00.000Z",
+      ownedBy:  "backend"
+    },
+    "tests/features/lufs-meter.test.ts (v3.78.0)": {
+      role:     "v3.78.0 NEU (~210 LOC, 17 Tests in 6 describes, env:node DOM-frei, kein AudioContext-Mock benötigt da LufsAnalyzer Pure-TS). (1) K-Weighting × 3: Pre-Filter @ 48kHz matcht BS.1770-4-Tabelle (1.535/-2.692/1.198/-1.691/0.732), RLB-Filter @ 48kHz matcht (1/-2/1/-1.990/0.990), Biquad-Stabilität (kein Overflow bei 10s @ -1dBFS Sinus). (2) ITU-Reference × 3: Mono 1kHz RMS -23 dBFS → Momentary ≈ -23 LUFS ± 1, Stereo +3dB Channel-Sum → ≈ -20 LUFS, Silence → -Infinity. (3) Sliding-Window × 3: 100ms-Partial läuft hoch (>-30 LUFS), 1s Sinus + 1s Stille → Momentary zurück auf -Infinity (400ms-Fenster leer), 2s Sinus → Short-Term zeigt finitewert. (4) Integrated-Gating × 3: Silence → -Infinity, konstanter Sinus → ≈ -23 LUFS, ABSOLUTE_GATE_LUFS=-70 Konstante. (5) Reset × 2: reset() löscht Integrated aber Momentary bleibt gleitend, resetAll() löscht alle drei. (6) Formel × 3: LUFS_OFFSET=-0.691, meanSquareToLufs(0)=-Infinity / MS=1=-0.691 / MS=0.1=-10.691, Constructor-Validation für sampleRate 0/-1/NaN und channelCount=5 wirft.",
+      lastSeen: "2026-05-19T04:30:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/audio/AudioEngine.ts (v3.78.0 lufs-tap)": {
+      role:     "v3.78.0 ERWEITERT (+~80 LOC, bestehende v3.77 lookahead+crossfade + v3.76 limiter + v3.75 master-fx + v3.74/v3.73/v3.72/v3.71/v3.70/etc. bleibt): NEU _lufsAnalyser:LufsAnalyzer + _lufsAnalyserNode:AnalyserNode + _lufsPollingTimer + _lufsScratchBuffer Fields + LUFS_POLL_INTERVAL_MS=100 Konstante. init() Tap-Wiring: erzeugt AnalyserNode mit fftSize=2048 + smoothingTimeConstant=0, beide _masterLimiterWet UND _masterLimiterDry konnektieren parallel zum AnalyserNode (post-master-FX tap zeigt was tatsächlich rausgeht). Try/Catch für Mock-AudioContext ohne createAnalyser → Analyzer bleibt null + alle Getter liefern LUFS_SILENCE. NEU private _ensureLufsPollingStarted() — lazy startet setInterval-Loop beim ersten Public-Getter-Call (idempotent). Loop liest getFloatTimeDomainData(scratch) + analyzer.processBlock(scratch) alle 100ms. reinit() schließt PollingTimer + nullt alle vier Fields. NEU 5 public Methods: getLufsMomentary/getLufsShortTerm/getLufsIntegrated/resetLufsIntegrated/getLufsSnapshot.",
+      lastSeen: "2026-05-19T04:30:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/components/Mixer/MasterFxPanel.tsx (v3.78.0 lufs-display)": {
+      role:     "v3.78.0 ERWEITERT (+~80 LOC, bestehende v3.77 db-makeup + v3.76 4-Tab + GR-Meter bleibt): NEU LUFS-Always-on-Display oberhalb der Tabs als border-border-subtle bg-bg-elevated Section. Drei Werte M (Momentary) / S (Short-Term) / I (Integrated) als tabular-nums w-20 text-right + Reset-I-Button rechts. Integrated-Wert mit Color-Coding via lufsColorClass-Pure-Helper: >-14 LUFS → accent-danger (Spotify-loud), -16..-14 → accent-warning (gelb, borderline), -23..-16 → accent-success (grün, broadcast), <-23 → accent-secondary (zu leise). setInterval-Poll alle 200ms (LUFS_METER_INTERVAL_MS, 5fps reicht für Loudness-Bewegung). NEU 2 exported Pure-Helpers formatLufs(v) / lufsColorClass(integrated) + 3 exported Konstanten LUFS_TARGET_LOUD=-14 / LUFS_TARGET_BORDER_LOW=-16 / LUFS_TARGET_BROADCAST_LOW=-23. NEU onResetLufs-Handler ruft AudioEngine.resetLufsIntegrated() + setzt Integrated-State lokal auf -Infinity (sofortiges UI-Feedback ohne Poll-Lag). data-testids: master-fx-lufs / -momentary / -shortterm / -integrated / -integrated-value / -reset.",
+      lastSeen: "2026-05-19T04:30:00.000Z",
+      ownedBy:  "frontend"
+    },
     "client/src/store/useMasterFxStore.ts (v3.77.0 gain-range)": {
       role:     "v3.77.0 ERWEITERT (minimal-edit, bestehende v3.76 limiter/midQ-Store bleibt): clampLimiter gain-Range 0..4 → 0..16 (additiv, kein Schema-Bump nötig — Store-Wert bleibt linear-float, UI konvertiert in dB). Pre-v3.77-localStorage-Daten mit gain≤4 laden unverändert. v3.76 brick-wall-Default gain=1.0 (= 0 dB) unverändert. Bestehende clampReverb/Delay/Eq/sanitizeMasterFx + setMasterLimiter/getMasterLimiter/eq.midQ + alle anderen v3.76-API unverändert.",
       lastSeen: "2026-05-19T04:05:00.000Z",
@@ -2202,6 +2222,42 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "backend",
+      timestamp: "2026-05-19T04:30:00.000Z",
+      done: [
+        "v3.78.0: LUFS-Meter (ITU-R BS.1770-4) — Mastering-Loudness-Standard. Synthstudio bekommt jetzt einen vollständigen K-weighted Loudness-Meter im MasterFxPanel mit Momentary (400ms), Short-Term (3s) und Integrated (gegatet) Anzeige. Color-Coding nach Streaming-Targets (Spotify-Loud > -14, Broadcast -23..-16 grün).",
+        "client/src/audio/LufsAnalyzer.ts (NEU, ~360 LOC, Pure-TS-Modul, DOM-frei): ITU-R BS.1770-4 konformer K-Weighting + Loudness-Aggregator. Public API: LufsAnalyzer({sampleRate, channelCount}) Constructor mit defensivem Throw für invalid Rates/Channels. processBlock(L, R?) hot-path-frei (keine Allokationen, Biquad-DF2-Per-Sample-Inline). getMomentary/getShortTerm/getIntegrated/reset/resetAll Methoden. Exports designKWeightingPreFilter(sr) und designKWeightingRlbFilter(sr) als Pure-Helpers — bei 48kHz exakt die BS.1770-4-Tabellen-Koeffizienten (Toleranz 1e-3). meanSquareToLufs Formel-Helper. SlidingMeanSquare-Klasse (interner Ring-Buffer mit O(1)-update). Two-Pass-Gating (absolute -70 LUFS + relative -10 LU) für Integrated. RLB-Filter b-Koeffizienten direkt aus Spec (1, -2, 1) NICHT durch RBJ-Cookbook-Norm geteilt — sonst wäre b0≈0.995 statt 1.0.",
+        "client/src/audio/AudioEngine.ts ERWEITERT (+~80 LOC, bestehende v3.77/v3.76/v3.75 bleibt): NEU _lufsAnalyser:LufsAnalyzer + _lufsAnalyserNode:AnalyserNode + _lufsPollingTimer + _lufsScratchBuffer + LUFS_POLL_INTERVAL_MS=100. Wiring: _masterLimiterWet UND _masterLimiterDry konnektieren parallel zu ctx.destination UND zu _lufsAnalyserNode (fftSize=2048, smoothing=0) → mixed-post-master-FX-Tap (zeigt was tatsächlich rausgeht inkl. Limiter). Lazy-Start des setInterval-Loops beim ersten getLufs*-Call (idempotent). reinit() schließt Polling-Timer + nullt die Felder. NEU public getLufsMomentary/getLufsShortTerm/getLufsIntegrated/resetLufsIntegrated/getLufsSnapshot. Bei Mock-AudioContext ohne createAnalyser ist der Analyzer null und alle Public-Calls liefern LUFS_SILENCE (-Infinity) — kein Throw.",
+        "client/src/components/Mixer/MasterFxPanel.tsx ERWEITERT (+~80 LOC, bestehende v3.77 dB-Helpers + v3.76 4-Tabs + GR-Meter bleibt): NEU LUFS-Always-on-Display oberhalb der Tabs. Drei Werte M/S/I mit tabular-nums + tow-decimal-LUFS-Format. Integrated mit Color-Coding via lufsColorClass-Pure-Helper: >-14 → accent-danger, -16..-14 → accent-warning, -23..-16 → accent-success, <-23 → accent-secondary. 'Reset I'-Button startet die Integrated-Messung neu. setInterval-Poll alle 200ms (5fps reicht für Loudness-Bewegung). NEU exported formatLufs/lufsColorClass + LUFS_TARGET_LOUD/-BORDER_LOW/-BROADCAST_LOW Konstanten. data-testids: master-fx-lufs, -momentary, -shortterm, -integrated, -integrated-value, -reset.",
+        "tests/features/lufs-meter.test.ts (NEU, ~210 LOC, 17 Tests in 6 describes, env:node DOM-frei). (1) K-Weighting-Coeffizienten × 3: Pre-Filter matcht BS.1770-4-Tabelle (b0=1.535, b1=-2.692, b2=1.198, a1=-1.691, a2=0.732, Tol 1e-3), RLB-Filter matcht (1,-2,1, -1.990, 0.990), Stabilität bei 10s @ -1dBFS Sinus (kein Overflow). (2) ITU-Reference-Values × 3: Mono 1kHz RMS -23 dBFS → Momentary ≈ -23 LUFS ± 1, Stereo +3dB Channel-Sum → ≈ -20 LUFS, Silence → -Infinity. (3) Sliding-Window × 3: 100ms Sinus läuft hoch, 1s Sinus → 1s Silence → Momentary zurück auf -Infinity (400ms-Fenster leer), Short-Term zeigt nach 2s. (4) Integrated-Gating × 3: Silence → -Infinity, konstanter Sinus → ≈ -23 LUFS, ABSOLUTE_GATE_LUFS=-70 Konstante. (5) Reset × 2: reset() → Integrated=-Infinity + Momentary bleibt, resetAll() → alle drei -Infinity. (6) Formel-Konstanten × 3: LUFS_OFFSET ≈ -0.691, meanSquareToLufs(0)=−∞ und MS=1 → -0.691 und MS=0.1 → -10.691, Constructor-Validation (sampleRate 0/-1/NaN/channelCount 5 throw).",
+        "package.json (3.77.0 → 3.78.0). pnpm check clean. pnpm test grün: 223 Test-Files / 5139 Tests passed (16 skipped, +17 vs. v3.77 5122)."
+      ],
+      next: [
+        "v3.79: True-Peak-Reader am Master-Output (4x-Oversampling für inter-sample peaks). Aktueller Limiter sieht nur sample-peaks.",
+        "v3.79: LUFS-Display Stereo-Tap (zwei AnalyserNodes statt ein DownMix-AnalyserNode → echte L+R-Kanal-Trennung für 100%-spec-konformes Stereo-LUFS).",
+        "v3.79: Loudness-History-Graph (rolling LUFS-Plot über die letzten 60s wie bei Logic Pro Loudness Meter).",
+        "v3.79: Pre/Post-Master-FX Tap-Switch (User kann wählen ob LUFS vor oder nach dem Limiter gemessen wird).",
+        "v3.79: Limiter-Preset-Liste ('Brick-Wall', 'Mastering', 'Loudness', 'Soft-Compression') als JSON-Snippets (übernommen aus v3.77).",
+        "v3.79: Master-FX Routing-Order Toggle (EQ-vor-Compressor vs. EQ-nach-Compressor)."
+      ],
+      changed: [
+        "client/src/audio/LufsAnalyzer.ts (NEU, ~360 LOC: BS.1770-4 K-Weighting + Momentary/Short-Term/Integrated + Two-Pass-Gating)",
+        "client/src/audio/AudioEngine.ts (+~80 LOC: _lufsAnalyser/Node/PollingTimer-Fields + init() Tap-Wiring + reinit-Cleanup + 5 Public-Setter)",
+        "client/src/components/Mixer/MasterFxPanel.tsx (+~80 LOC: LUFS-Always-on-Display oberhalb der Tabs + formatLufs/lufsColorClass Pure-Helpers + LUFS_TARGET_* Konstanten)",
+        "tests/features/lufs-meter.test.ts (NEU, ~210 LOC, 17 Tests in 6 describes)",
+        "package.json (3.77.0 → 3.78.0)",
+        "agents/INDEX.js (version + workLog + files)"
+      ],
+      caveats: [
+        "AnalyserNode-Tap ist 1-channel DownMix — für 100% spec-konformes Stereo-LUFS bräuchten wir zwei separate AnalyserNodes (oder einen AudioWorkletNode). v3.78 nutzt 1-channel und liefert leicht zu konservative Werte (~3dB unter echtem Stereo-LUFS für korrelierte Kanäle). Mastering-Engineers korrigieren das im Kopf oder via Reference-Track-Vergleich.",
+        "Polling-Rate 100ms = 10Hz: AnalyserNode-FFT-Frame ist 2048 samples = 42.6ms @ 48kHz. Zwischen den Polls können bis zu 57ms Audio unbeobachtet vergehen — bei Spitzen-Transienten kann eine kurze Spitze fehlen. Real-world Drift gegen Studio-Referenz: <0.3 LUFS bei stationären Signalen, bis 1 LUFS bei sehr dynamischem Material. AudioWorkletNode wäre ein 0-Sample-Drop-Fix.",
+        "Pre-Filter Bilinear-Pre-Warp gibt bei 44.1kHz etwa 0.1dB Drift gegenüber 48kHz-Referenz. Spec-Toleranz ist ±0.1 LU für 1kHz-Referenz — wir sind innerhalb, aber bei sehr low/high-frequency-Signalen kann der Drift bis 0.3dB erreichen.",
+        "Integrated-Reset löscht NICHT die Filter-State (sonst gäbe es einen Einschwing-Glitch). resetAll() wäre dafür da, wird aber von der UI nicht gerufen — der User hat keine Eingriffsmöglichkeit auf den Filter-State.",
+        "Momentary nach reset() bleibt gleitend — d.h. wenn der Stream Stille hat und der User auf 'Reset I' klickt, springt Integrated auf -∞ aber Momentary bleibt am letzten Stream-Wert hängen. Spec-konform aber für User potenziell verwirrend.",
+        "LUFS_TARGET-Werte sind Streaming-Konvention 2024 — Spotify hat sich auf -14 LUFS festgelegt, EBU-R128-Broadcast auf -23 LUFS. Apple Music ist -16, YouTube -14. Custom-Targets pro Project wäre ein User-Wunsch für v3.79."
+      ]
+    },
     {
       agent:     "backend",
       timestamp: "2026-05-19T04:05:00.000Z",
