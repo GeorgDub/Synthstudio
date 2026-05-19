@@ -21,6 +21,9 @@ import type { PartData } from "@/audio/AudioEngine";
 import { ExportPanel } from "./ExportPanel";
 import { AudioTrackStrip, computePeaksFromBuffer } from "./AudioTrackStrip";
 import { MasterFxPanel } from "./MasterFxPanel";
+// v3.119.0: Audio-Triggered Sidechain v2 (DAW-grade peak-detect ducking).
+import { AudioSidechainPanel } from "./AudioSidechainPanel";
+import { useAudioSidechainStore } from "@/store/useAudioSidechainStore";
 import { LiveInputStrip } from "./LiveInputStrip";
 import { ChannelColorPicker } from "./ChannelColorPicker";
 import { SubMixBusStrip } from "./SubMixBusStrip";
@@ -678,6 +681,47 @@ export function MixerView({ dm, mixer, samples = [], bpm = 120, projectName = "S
   useEffect(() => {
     AudioEngine.setAudioTracksGetter(() => getAllAudioTracks());
   }, []);
+
+  // v3.119.0: Audio-Sidechain-Store → AudioEngine-Runtime synchronisieren.
+  // Vergleich gegen aktuelle Engine-Instances, fügt neue hinzu, removed stale,
+  // updated config wenn Chain-Defs sich änderten.
+  const audioSidechainStore = useAudioSidechainStore();
+  useEffect(() => {
+    const eng = AudioEngine as unknown as {
+      getActiveAudioSidechainIds?: () => string[];
+      addAudioSidechain?: (
+        id: string,
+        src: string,
+        tgt: string,
+        cfg: import("@/audio/AudioSidechainNode").AudioSidechainConfig,
+        enabled: boolean,
+      ) => boolean;
+      removeAudioSidechain?: (id: string) => void;
+      updateAudioSidechain?: (
+        id: string,
+        u: { config?: Partial<import("@/audio/AudioSidechainNode").AudioSidechainConfig>; enabled?: boolean },
+      ) => void;
+    };
+    if (!eng.addAudioSidechain) return;
+    const wantedIds = new Set(audioSidechainStore.chains.map((c) => c.id));
+    const activeIds = eng.getActiveAudioSidechainIds?.() ?? [];
+    for (const id of activeIds) {
+      if (!wantedIds.has(id)) eng.removeAudioSidechain?.(id);
+    }
+    for (const chain of audioSidechainStore.chains) {
+      if (activeIds.includes(chain.id)) {
+        eng.updateAudioSidechain?.(chain.id, { config: chain.config, enabled: chain.enabled });
+      } else {
+        eng.addAudioSidechain?.(
+          chain.id,
+          chain.sourceChannelId,
+          chain.targetChannelId,
+          chain.config,
+          chain.enabled,
+        );
+      }
+    }
+  }, [audioSidechainStore.chains]);
 
   // Auto-fade Error-Toast
   useEffect(() => {
@@ -1351,6 +1395,13 @@ export function MixerView({ dm, mixer, samples = [], bpm = 120, projectName = "S
       {/* v3.75.0: Master-FX-Bus (Reverb/Delay/EQ Settings) */}
       <div className="px-4 py-2 border-t border-border-color">
         <MasterFxPanel />
+      </div>
+
+      {/* v3.119.0: Audio-Triggered Sidechain v2 (DAW-grade peak-detect ducking) */}
+      <div className="px-4 py-2 border-t border-border-color">
+        <AudioSidechainPanel
+          channels={parts.map((p) => ({ id: p.id, name: p.name }))}
+        />
       </div>
 
       {/* Export Panel */}

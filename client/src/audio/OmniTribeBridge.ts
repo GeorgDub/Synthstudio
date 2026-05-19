@@ -449,6 +449,41 @@ export class OmniTribeBridge {
     return [];
   }
 
+  /**
+   * Sprint-102: Sendet eine raw-MIDI Note-On.
+   *
+   * Geht durch den gleichen Throttle-Pfad wie Sysex damit Bursts nicht
+   * den Sim ueberfluten. Auf realer Hardware sollte das ueber das
+   * Geraete-MIDI-In gehen — fuer den WS-Sim funktioniert die selbe
+   * Out-Pipe.
+   */
+  sendNoteOn(channel: number, note: number, velocity: number = 100): void {
+    if (!this.output && !this.ws) return;
+    const frame = new Uint8Array([
+      0x90 | (channel & 0x0F),
+      note & 0x7F,
+      velocity & 0x7F,
+    ]);
+    this.throttleQueue.push(frame);
+    if (this.throttleTimer === null) {
+      this.throttleTimer = setTimeout(() => this.flushQueue(), 10);
+    }
+  }
+
+  /** Sprint-102: Raw-MIDI Note-Off (oder 0x90 + vel=0 als Aequivalent). */
+  sendNoteOff(channel: number, note: number): void {
+    if (!this.output && !this.ws) return;
+    const frame = new Uint8Array([
+      0x80 | (channel & 0x0F),
+      note & 0x7F,
+      0,
+    ]);
+    this.throttleQueue.push(frame);
+    if (this.throttleTimer === null) {
+      this.throttleTimer = setTimeout(() => this.flushQueue(), 10);
+    }
+  }
+
   // ─── Internal: Sende mit Throttling (max 100/sec) ─────────
 
   private send(cmd: number, sub: number, payload: number[] | Uint8Array): void {

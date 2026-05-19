@@ -11,6 +11,11 @@
  */
 
 import { SynthEngine } from "./SynthEngine";
+// v3.119.0: Audio-triggered Sidechain v2 (DAW-grade peak-detect ducking).
+import {
+  AudioSidechainNode,
+  type AudioSidechainConfig,
+} from "./AudioSidechainNode";
 import {
   LufsAnalyzer,
   LUFS_SILENCE,
@@ -2428,6 +2433,104 @@ class AudioEngineClass {
   /** Gibt den AudioContext zurück (null wenn noch nicht initialisiert). */
   getAudioContext(): AudioContext | null {
     return this.ctx ?? null;
+  }
+
+  // ─── Audio-Triggered Sidechain v2 (v3.119.0) ───────────────────────────────
+  // Klassisches DAW-Pumping: peak-detect auf source-channel → duck target.
+  // Step-triggered Sidechain (Store-Field `sidechains`) bleibt als deterministischer
+  // Bruder bestehen. Beide Pfade können simultan laufen — der step-pfad moduliert
+  // `sidechainGain`, der audio-pfad hier moduliert ebenfalls `sidechainGain` (ein
+  // einzelnes Gain-Element kann nur einen Modulator effektiv führen). Praxis-User
+  // benutzen genau einen Sidechain pro Target.
+  private _audioSidechainNodes = new Map<
+    string,
+    { node: AudioSidechainNode; sourceChannelId: string; targetChannelId: string }
+  >();
+
+  /**
+   * Erzeugt eine neue audio-triggered Sidechain-Verbindung.
+   * Tap auf source.input (post-Insert-FX, da `input` der erste Node ist),
+   * Modulation auf target.sidechainGain.
+   * Liefert sidechainId zurück, oder null wenn Engine/Channels nicht bereit.
+   */
+  addAudioSidechain(
+    sidechainId: string,
+    sourceChannelId: string,
+    targetChannelId: string,
+    config: AudioSidechainConfig,
+    enabled = true,
+  ): boolean {
+    if (!this.ctx) return false;
+    // Idempotent — overwrite wenn bereits vorhanden.
+    this.removeAudioSidechain(sidechainId);
+
+    // Sicherstellen, dass beide Channels existieren.
+    this.ensureChannelExists(sourceChannelId);
+    this.ensureChannelExists(targetChannelId);
+    const source = this.channelNodes.get(sourceChannelId);
+    const target = this.channelNodes.get(targetChannelId);
+    if (!source || !target) return false;
+
+    // Tap-Source: panner (post Pan, vor Master) — repräsentiert das hörbare Signal
+    // des source-Kanals. Modulation auf target.sidechainGain.
+    const node = new AudioSidechainNode(this.ctx, source.panner, target.sidechainGain, config);
+    if (enabled) node.enable();
+    this._audioSidechainNodes.set(sidechainId, {
+      node,
+      sourceChannelId,
+      targetChannelId,
+    });
+    return true;
+  }
+
+  removeAudioSidechain(sidechainId: string): void {
+    const existing = this._audioSidechainNodes.get(sidechainId);
+    if (!existing) return;
+    try {
+      existing.node.dispose();
+    } catch {
+      /* ignore */
+    }
+    this._audioSidechainNodes.delete(sidechainId);
+  }
+
+  updateAudioSidechain(
+    sidechainId: string,
+    update: { config?: Partial<AudioSidechainConfig>; enabled?: boolean },
+  ): void {
+    const existing = this._audioSidechainNodes.get(sidechainId);
+    if (!existing) return;
+    if (update.config) existing.node.configure(update.config);
+    if (update.enabled !== undefined) {
+      if (update.enabled) existing.node.enable();
+      else existing.node.disable();
+    }
+  }
+
+  /** Aktuelle gain-reduction in dB für UI-Meter. 0 falls Chain nicht aktiv. */
+  getAudioSidechainReductionDb(sidechainId: string): number {
+    const existing = this._audioSidechainNodes.get(sidechainId);
+    if (!existing) return 0;
+    return existing.node.getCurrentReductionDb();
+  }
+
+  /** Liefert alle aktiven audio-sidechain-IDs. Reine Inspektion (Tests / UI). */
+  getActiveAudioSidechainIds(): string[] {
+    return Array.from(this._audioSidechainNodes.keys());
+  }
+
+  /**
+   * Disposed alle Chains, die einen bestimmten Channel referenzieren — wird
+   * z.B. aufgerufen wenn ein Channel-Strip removed wird.
+   */
+  removeAudioSidechainsForChannel(channelId: string): void {
+    const toRemove: string[] = [];
+    for (const [id, entry] of this._audioSidechainNodes) {
+      if (entry.sourceChannelId === channelId || entry.targetChannelId === channelId) {
+        toRemove.push(id);
+      }
+    }
+    for (const id of toRemove) this.removeAudioSidechain(id);
   }
 
   // ─── Granular Synthesizer ─────────────────────────────────────────────────

@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.118.0",
+    version: "3.119.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -89,6 +89,26 @@ const INDEX = {
   // ─── KNOWN FILE INDEX ──────────────────────────────────────
   // Key files agents have analyzed. Add new entries after working on a file.
   files: {
+    "client/src/audio/AudioSidechainNode.ts (v3.119.0 NEU)": {
+      role:     "v3.119.0 NEU (~270 LOC). DAW-grade audio-triggered Sidechain v2. Pure-Helpers (testbar ohne AudioContext): detectPeak (max abs Float32Array), gainToDb/dbToGain (MIN_DB=-60 Clamp), applyEnvelope (compressor: inputDb→overThreshold→reductionRaw×(1-1/ratio), attack/release per-frame coef=1-exp(-dt/τ), never-negative), sanitizeAudioSidechainConfig (threshold/ratio/attack/release-Clamp). Class AudioSidechainNode: AnalyserNode-Tap auf source (kein Audio-Pfad-Impact), rAF-Loop tickt envelope, targetGain.gain.linearRampToValueAtTime click-frei. configure/enable/disable/dispose/getCurrentReductionDb/isEnabled. Buffer typed als Float32Array<ArrayBuffer> für TS-strict.",
+      lastSeen: "2026-05-19T14:32:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/store/useAudioSidechainStore.ts (v3.119.0 NEU)": {
+      role:     "v3.119.0 NEU (~180 LOC, Custom-Observer-Pattern). localStorage-Key 'ss-audio-sidechain:v1'. chains[]: {id, sourceChannelId, targetChannelId, enabled, config:AudioSidechainConfig}. Public-API: addChain (returnt Chain mit unique-ID), removeChain, updateChain (sanitized-merge), removeChainsForChannel (für Channel-Cleanup). Load-Sanitize validiert IDs + config-Ranges + dedupes seen-IDs. Synchroner getAudioSidechainState. __resetAudioSidechainStoreForTests. Runtime-Instances liegen separat in AudioEngine.",
+      lastSeen: "2026-05-19T14:32:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/components/Mixer/AudioSidechainPanel.tsx (v3.119.0 NEU)": {
+      role:     "v3.119.0 NEU (~310 LOC). Per-Chain-Row: violetter Source-Chip → 'ducks' → oranger Target-Chip + Enable-Toggle + Delete. 4 Slider (Threshold[-60..0dB] / Ratio[1..20:1] / Attack[0.1..100ms] / Release[10..1000ms]) mit Live-Format-Helpers (formatDb/formatMs/formatRatio). Live-Reduction-Meter (rAF-driven, polls AudioEngine.getAudioSidechainReductionDb, rote Bar 0..24dB width). Add-Form mit Source/Target-Dropdowns (disabled wenn identisch + Inline-Warning) + Default-Config. Empty-State + min-2-channels-Guard. Komplett semantische --ss-*-Tokens.",
+      lastSeen: "2026-05-19T14:32:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "tests/features/audio-sidechain.test.ts (v3.119.0 NEU)": {
+      role:     "v3.119.0 NEU (~290 LOC, 27 Tests in 6 describes). detectPeak × 4 (max-abs, silence=0, single-sample, full-scale), dbToGain/gainToDb × 5 (0dB=1.0, -6dB≈0.501, round-trip, MIN_DB-Clamp, -Infinity→0), applyEnvelope × 9 (below threshold→0, above threshold→positive, ratio 1:1/10:1, attack onset short-vs-long, release decay short-vs-long, smoothing single-step partial, never-negative, dt=0→no-movement), sanitizeAudioSidechainConfig × 4 (clamp threshold/ratio/attack-release, NaN/Infinity→defaults), Store × 8 (empty/add/unique-IDs/remove/no-op-unknown/update/sanitize-on-update/removeChainsForChannel/persistence-guarded). 27/27 grün.",
+      lastSeen: "2026-05-19T14:32:00.000Z",
+      ownedBy:  "backend"
+    },
     "client/src/utils/projectDiff.ts (v3.118.0 NEU)": {
       role:     "v3.118.0 NEU (~420 LOC, pure-helpers, side-effect-frei). Project-Diff-Engine für zwei SynthProject-Snapshots. Public-API: valuesEqual (Float-epsilon 1e-4, NaN==NaN, deep für Arrays/Objects), diffObject(a,b,ignoreKeys,basePath) → FieldDiff[] mit punkt-separierten Pfaden, diffArrays<T>(a,b,idKey,ignoreKeys) → {added,removed,changed-mit-fieldDiffs}, diffProjects(a,b) → ProjectDiff mit 6 Sections: metadata (top-level ohne ignored keys), patterns/samples/channels (added/removed/changed), mixer/macros (fieldDiffs). FLOAT_EPSILON=1e-4 exportiert. formatDiffSummary (eine Zeile UI-Header), formatDiffMarkdown (sektioniert für Clipboard), formatValue (lossy snapshot), isEmptyDiff. METADATA_IGNORE_KEYS skippt savedAt + Sub-Sections. Channels werden über alle Patterns nach Part-ID aggregiert (last-write-wins bei Duplikaten).",
       lastSeen: "2026-05-19T14:20:00.000Z",
@@ -2862,6 +2882,38 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "backend",
+      timestamp: "2026-05-19T14:32:00.000Z",
+      done: [
+        "v3.119.0: Audio-Triggered Sidechain v2 (DAW-grade peak-detect ducking). Parallel zum step-triggered Sidechain (v3.79) — User können jetzt klassisches Pumping (Kick ducks Bass) ohne Pattern-Step-Programmierung erreichen.",
+        "client/src/audio/AudioSidechainNode.ts NEU (~270 LOC). Pure-Helpers: detectPeak (max-abs über Float32Array), gainToDb/dbToGain (mit MIN_DB=-60 Clamp), applyEnvelope (compressor-Envelope: inputDb → overThreshold → reductionRaw × (1-1/ratio), attack/release per-frame coef=1-exp(-dt/τ)), sanitizeAudioSidechainConfig (threshold[-60..0], ratio[1..20], attack[0.1..100ms], release[10..1000ms]). Class AudioSidechainNode: AnalyserNode-Tap auf source (parallel, kein Audio-Pfad-Impact), rAF-Loop tickt peak→envelope→targetGain.gain.linearRampToValueAtTime. configure/enable/disable/dispose-Lifecycle, getCurrentReductionDb() für UI-Meter.",
+        "client/src/store/useAudioSidechainStore.ts NEU (~180 LOC, Custom-Observer-Pattern). localStorage-Key 'ss-audio-sidechain:v1'. chains[]: {id, sourceChannelId, targetChannelId, enabled, config}. addChain/removeChain/updateChain/removeChainsForChannel. Sanitize beim Laden (validiert IDs, config-Ranges, dedupes Chain-IDs). Synchroner getAudioSidechainState() für Event-Handler. __resetAudioSidechainStoreForTests.",
+        "client/src/audio/AudioEngine.ts ERWEITERT: Import AudioSidechainNode + AudioSidechainConfig. Neue Methoden addAudioSidechain(id, src, tgt, cfg, enabled) → tap ChannelNodes.panner, modulate ChannelNodes.sidechainGain — idempotent (overwrite); removeAudioSidechain disposed Node; updateAudioSidechain (config+enabled); getAudioSidechainReductionDb für Meter; getActiveAudioSidechainIds für Sync-Diff; removeAudioSidechainsForChannel(channelId) bei Channel-Cleanup.",
+        "client/src/components/Mixer/AudioSidechainPanel.tsx NEU (~310 LOC). Per-Chain-Row: violetter Source-Chip → 'ducks' → oranger Target-Chip + Enable-Toggle + Delete. 4 Slider (Threshold/Ratio/Attack/Release) mit Live-Format. Live-Reduction-Meter (rAF-driven, polls AudioEngine.getAudioSidechainReductionDb, rote Bar). Add-Form mit Source/Target-Dropdowns (disabled wenn identisch) + Default-Config-Slider. Empty-State + min-2-channels-Guard. Komplett semantische --ss-*-Tokens.",
+        "MixerView.tsx ERWEITERT: Import AudioSidechainPanel + useAudioSidechainStore. Sync-useEffect diff't Store-Chains vs. AudioEngine.getActiveAudioSidechainIds() — added → addAudioSidechain, removed → removeAudioSidechain, updated → updateAudioSidechain. Panel zwischen MasterFxPanel und ExportPanel gerendert, channels-Prop aus parts.map.",
+        "tests/features/audio-sidechain.test.ts NEU (~290 LOC, 27 Tests in 6 describes). detectPeak × 4, dbToGain/gainToDb × 5 (Round-Trip, MIN_DB-Clamp), applyEnvelope × 9 (below/above threshold, ratio 1:1/10:1, attack onset, release decay, smoothing, never-negative, dt=0), sanitizeAudioSidechainConfig × 4 (Clamp + NaN-Defaults), Store × 8 (empty/add/unique-IDs/remove/no-op/update/sanitize-on-update/removeChainsForChannel/persistence). 27/27 grün.",
+        "package.json + INDEX.js: 3.118.0 → 3.119.0. pnpm check: clean. Volltest: 270 Files / 6197 passed / 16 skipped / 0 fail (+52 vs v3.118)."
+      ],
+      next: [
+        "Source-Tap-Refinement: aktuell tappen wir source.panner — könnte konfigurierbar werden (pre-FX vs post-FX vs ext-trigger).",
+        "Ducking-Visualisierung im Channel-Strip: violett-Strich auf Source und orange-Strich auf Target, wenn Channel an einer audio-sidechain teilnimmt (ChannelInspector wire).",
+        "Knee + lookahead-Buffer für sample-accurate envelopes (aktuell per-frame ~16ms approximation — ausreichend für Pumping, zu grob für klassisches Sidechain-Comp-Tonsiteln).",
+        "Project-File-Format-Migration: useAudioSidechainStore persistiert noch nicht im .synth-Format (nur localStorage). v1.18-Schema sollte audioSidechains-Section bekommen.",
+        "Pro-Lock-Badge? Audio-Sidechain könnte als Pro-Feature gegated werden (Konsultation Frontend-Agent für License-Logik).",
+        "Sicherstellen dass removeAudioSidechainsForChannel auch im Store-removeChainsForChannel mitfeuert — derzeit handled der React-Subscriber den Diff, aber bei direkter Engine-Mutation gäbe es Drift."
+      ],
+      changed: [
+        "client/src/audio/AudioSidechainNode.ts (NEU, ~270 LOC, pure-helpers + Class)",
+        "client/src/store/useAudioSidechainStore.ts (NEU, ~180 LOC, Custom-Observer-Store)",
+        "client/src/components/Mixer/AudioSidechainPanel.tsx (NEU, ~310 LOC, UI)",
+        "client/src/audio/AudioEngine.ts (ERWEITERT, addAudioSidechain/remove/update/meter)",
+        "client/src/components/Mixer/MixerView.tsx (ERWEITERT, Panel-Mount + Store→Engine-Sync)",
+        "tests/features/audio-sidechain.test.ts (NEU, ~290 LOC, 27 Tests)",
+        "package.json (3.118.0 → 3.119.0)",
+        "agents/INDEX.js (v3.119.0 + workLog + files)"
+      ]
+    },
     {
       agent:     "frontend",
       timestamp: "2026-05-19T14:20:00.000Z",
