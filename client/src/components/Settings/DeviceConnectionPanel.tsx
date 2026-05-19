@@ -13,10 +13,42 @@
  * Nur semantische Tailwind-Tokens (bg-bg-panel / text-accent-* / etc.).
  */
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   useOmniTribe, DEFAULT_SIM_WS_URL,
 } from "../../hooks/useOmniTribe";
+
+/**
+ * Sprint-99: Live-Stream-Activity-Indicator.
+ *
+ * Zaehlt VU- + Spectrum-CustomEvents in einem rolling-1s-Fenster und
+ * liefert die Rate zurueck. UI rendert "VU 60 fps · Spec 30 fps" damit
+ * der User sieht dass der Stream tatsaechlich flowed.
+ */
+function useStreamActivity(): { vuFps: number; specFps: number } {
+  const [stats, setStats] = useState({ vuFps: 0, specFps: 0 });
+  const vuCount = useRef(0);
+  const specCount = useRef(0);
+
+  useEffect(() => {
+    const onVu = () => { vuCount.current += 1; };
+    const onSpec = () => { specCount.current += 1; };
+    window.addEventListener("omnitribe:vuMeter", onVu);
+    window.addEventListener("omnitribe:spectrum", onSpec);
+    const interval = window.setInterval(() => {
+      setStats({ vuFps: vuCount.current, specFps: specCount.current });
+      vuCount.current = 0;
+      specCount.current = 0;
+    }, 1000);
+    return () => {
+      window.removeEventListener("omnitribe:vuMeter", onVu);
+      window.removeEventListener("omnitribe:spectrum", onSpec);
+      window.clearInterval(interval);
+    };
+  }, []);
+
+  return stats;
+}
 
 export function DeviceConnectionPanel() {
   const {
@@ -32,13 +64,21 @@ export function DeviceConnectionPanel() {
 
   const [simUrl, setSimUrl] = useState<string>(DEFAULT_SIM_WS_URL);
   const [showSim, setShowSim] = useState<boolean>(false);
+  const [monitoringOn, setMonitoringOn] = useState<boolean>(false);
+  const { vuFps, specFps } = useStreamActivity();
 
   const simConnecting = simConnection.state === "connecting";
   const simConnected = simConnection.state === "connected";
   const simError = simConnection.state === "error" ? simConnection.message : null;
 
   const handleConnectSim = async () => {
-    await connectSim(simUrl);
+    const ok = await connectSim(simUrl);
+    if (ok) setMonitoringOn(false);
+  };
+
+  const handleEnableSimMonitoring = () => {
+    enableMonitoring();
+    setMonitoringOn(true);
   };
 
   return (
@@ -181,13 +221,44 @@ export function DeviceConnectionPanel() {
             )}
 
             {simConnected && (
-              <p
-                className="text-[11px] text-accent-success"
-                data-testid="sim-status-connected"
-              >
-                ✓ Sim connected — {simConnection.url}
-                {identity && ` (v${identity.major}.${identity.minor}.${identity.patch})`}
-              </p>
+              <>
+                <p
+                  className="text-[11px] text-accent-success"
+                  data-testid="sim-status-connected"
+                >
+                  ✓ Sim connected — {simConnection.url}
+                  {identity && ` (v${identity.major}.${identity.minor}.${identity.patch})`}
+                </p>
+
+                {/* Sprint-99: Live-Monitoring + Stream-Activity-Indicator */}
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleEnableSimMonitoring}
+                    disabled={monitoringOn}
+                    data-testid="sim-enable-monitoring-btn"
+                    className={[
+                      "flex-1 text-xs px-3 py-1.5 rounded transition-opacity",
+                      monitoringOn
+                        ? "bg-accent-success/30 text-accent-success cursor-default"
+                        : "bg-accent-primary text-text-primary hover:opacity-90",
+                    ].join(" ")}
+                  >
+                    {monitoringOn
+                      ? "✓ Monitoring active"
+                      : "Enable Live Monitoring"}
+                  </button>
+                </div>
+
+                {monitoringOn && (
+                  <p
+                    className="text-[10px] text-text-dim font-mono"
+                    data-testid="sim-stream-activity"
+                  >
+                    VU {vuFps} fps · Spectrum {specFps} fps
+                  </p>
+                )}
+              </>
             )}
 
             {simError && (

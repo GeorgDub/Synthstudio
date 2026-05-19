@@ -22,6 +22,11 @@ import { MidiNoteOut, type MidiPartConfig } from "./MidiNoteOut";
 import { MidiClickOut, type MidiClickConfig } from "./MidiClickOut";
 import { AudioRecorder, type RecordingResult, MAX_SIMULTANEOUS_RECORDINGS } from "./AudioRecorder";
 import { LiveRecorder, type LiveRecordingResult } from "./LiveRecorder";
+import {
+  AudioInputRecorder,
+  type AudioInputRecordingResult,
+  type AudioInputRoute,
+} from "./AudioInputRecorder";
 import { LooperEngine } from "./LooperEngine";
 import type { LoopState } from "./looperUtils";
 // v3.44.0 (TASK-239 Phase 1): AudioWorklet-Plugin-Host. Built-Ins werden in
@@ -5687,6 +5692,116 @@ class AudioEngineClass {
    */
   __getLiveRecorderForTests(): LiveRecorder {
     return this._liveRecorder;
+  }
+
+  // ─── External Audio-Input Recording (v3.113.0) ──────────────────────────────
+  //
+  // Mic / Synth-Line / KORG-Sampler-Out per getUserMedia capturen. Optional
+  // Monitor-Path (Hör-Through) und Routing in den LiveRecorder als zusätzlicher
+  // Track. Single-Stream-Modus (vs. useLiveInputStore = Multi-Channel-Outboard).
+  //
+  // Browser-only — Electron erbt Chromium getUserMedia. Permission-graceful:
+  // bei Denial wirft connect() einen DOMException, caller MUSS try/catch.
+
+  private _audioInputRecorder = new AudioInputRecorder();
+  private _audioInputRoute: AudioInputRoute = "master";
+
+  /**
+   * Öffnet einen Audio-Input-Stream. Throws DOMException bei Permission-Denial.
+   *
+   * @param deviceId Device-ID aus navigator.mediaDevices.enumerateDevices()
+   */
+  async connectAudioInput(deviceId: string): Promise<void> {
+    await this.init();
+    if (!this.ctx) throw new Error("AudioContext not initialised");
+    await this._audioInputRecorder.connect(deviceId, this.ctx);
+    // Bei Route='live-recorder' oder 'both' den tap-Node in den LiveRecorder
+    // hängen (sofern dieser läuft). Bei 'master' nichts extra — der Stream
+    // landet ohnehin am master via Monitor-Path (wenn aktiv).
+    this._wireAudioInputRouting();
+  }
+
+  /** Trennt den Stream + stoppt MediaStream-Tracks (verhindert Zombie-Mic). */
+  disconnectAudioInput(): void {
+    // Falls als LiveRecorder-Track registriert: zuerst entfernen.
+    if (this._liveRecorder.hasTrack("audio-input")) {
+      this._liveRecorder.removeTrack("audio-input");
+    }
+    this._audioInputRecorder.disconnect();
+  }
+
+  /** Monitor-Gain setzen (0 = no hör-through, 1 = unity). */
+  setAudioInputMonitor(gain: number): void {
+    this._audioInputRecorder.setMonitorGain(gain);
+  }
+
+  /** Input-Gain pre-capture (0..2). */
+  setAudioInputGain(gain: number): void {
+    this._audioInputRecorder.setInputGain(gain);
+  }
+
+  /**
+   * Routing-Ziel des Streams:
+   *  - 'master': nur via Monitor-Path zum Master (Default).
+   *  - 'live-recorder': in LiveRecorder als 'audio-input'-Track mixed.
+   *  - 'both': beides parallel.
+   */
+  setAudioInputRoute(target: AudioInputRoute): void {
+    this._audioInputRoute = target;
+    this._wireAudioInputRouting();
+  }
+
+  /** True wenn Stream aktiv ist. */
+  get audioInputConnected(): boolean {
+    return this._audioInputRecorder.isConnected;
+  }
+
+  /** True wenn Capture läuft. */
+  get audioInputRecording(): boolean {
+    return this._audioInputRecorder.isRecording;
+  }
+
+  /** Startet eine Audio-Input-Aufnahme. Returnt false wenn nicht connected. */
+  startAudioInputRecording(): boolean {
+    return this._audioInputRecorder.start();
+  }
+
+  /** Stoppt die Audio-Input-Aufnahme + liefert Float32-Buffer + WAV-Bytes. */
+  stopAudioInputRecording(): AudioInputRecordingResult {
+    return this._audioInputRecorder.stop();
+  }
+
+  /** Aktueller Capture-Dauer in ms (für UI-Timer). */
+  getAudioInputRecordingDurationMs(): number {
+    return this._audioInputRecorder.recordedDurationMs;
+  }
+
+  /** Aktueller Level in dB (für UI-Meter). */
+  getAudioInputLevel(): number {
+    return this._audioInputRecorder.getLevel();
+  }
+
+  /**
+   * Test-Helper — direkter Zugriff. Nicht für Produktiv-Code.
+   */
+  __getAudioInputRecorderForTests(): AudioInputRecorder {
+    return this._audioInputRecorder;
+  }
+
+  private _wireAudioInputRouting(): void {
+    if (!this._audioInputRecorder.isConnected) return;
+    const tap = this._audioInputRecorder.tapNode;
+    if (!tap) return;
+    const route = this._audioInputRoute;
+    const wantsLiveRec = route === "live-recorder" || route === "both";
+    const hasTrack = this._liveRecorder.hasTrack("audio-input");
+    if (wantsLiveRec && !hasTrack) {
+      try {
+        this._liveRecorder.addTrack("audio-input", tap, "channel", 2);
+      } catch { /* defensive */ }
+    } else if (!wantsLiveRec && hasTrack) {
+      this._liveRecorder.removeTrack("audio-input");
+    }
   }
 
   // ─── Live-Looper (TASK-235 / v2.87) ──────────────────────────────────────

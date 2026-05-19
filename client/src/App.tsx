@@ -173,6 +173,7 @@ import {
 } from "@/store/useSongModeStore";
 import { SongModePanel } from "@/components/SongMode/SongModePanel";
 import { LiveRecorderPanel } from "@/components/LiveRecorder";
+import { AudioInputRecorderPanel } from "@/components/AudioInputRecorder";
 import {
   mapElectribeLaneToAutomationTarget,
   scaleMotionPointsToStepCount,
@@ -1450,7 +1451,7 @@ export default function App() {
     setActiveTab(tab);
     localStorage.setItem("ss-layout:active-tab", tab);
   }, []);
-  const [activeTool, setActiveTool] = useState<'prompt' | 'algorithmic' | 'chords' | 'sampler' | 'workbench' | 'library' | 'script' | 'omnitribe' | 'packs' | 'song' | 'liverec'>('prompt');
+  const [activeTool, setActiveTool] = useState<'prompt' | 'algorithmic' | 'chords' | 'sampler' | 'workbench' | 'library' | 'script' | 'omnitribe' | 'packs' | 'song' | 'liverec' | 'audioinput'>('prompt');
 
   // ── Dialog-State ─────────────────────────────────────────────────────────
   const [showMidiSettings, setShowMidiSettings] = useState(false);
@@ -4124,6 +4125,7 @@ export default function App() {
                       { id: "packs",       label: "📦 Packs" },
                       { id: "song",        label: "🎼 Song" },
                       { id: "liverec",     label: "🎙 Live-Rec" },
+                      { id: "audioinput",  label: "🎤 Audio-In" },
                       { id: "script",      label: "⚡ Script" },
                       { id: "omnitribe",   label: "🎛 OmniTribe" },
                     ] as const).map(t => (
@@ -4296,6 +4298,9 @@ export default function App() {
                         }))}
                         className="h-full"
                       />
+                    )}
+                    {activeTool === 'audioinput' && (
+                      <AudioInputRecorderPanel className="h-full" />
                     )}
                   </div>
                 </div>
