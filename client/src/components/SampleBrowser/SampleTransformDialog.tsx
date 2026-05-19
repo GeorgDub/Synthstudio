@@ -46,6 +46,7 @@ import {
 import type { FadeCurve } from "@/utils/sampleFadeReverse";
 import { detectSlicePoints, sliceAtPoints } from "@/utils/sliceAutoDetector";
 import type { AudioBufferLike } from "@/utils/sampleEmbedding";
+import { BEAT_REPEAT_DIVISIONS } from "@/utils/beatRepeat";
 
 // ─── Props ───────────────────────────────────────────────────────────────────
 
@@ -143,6 +144,12 @@ export function SampleTransformDialog({
   const [sliceSensitivity, setSliceSensitivity] = useState(0.5);
   const [sliceMinMs, setSliceMinMs] = useState(50);
   const [detectedSliceCount, setDetectedSliceCount] = useState<number | null>(null);
+  // v3.143: Beat-Repeat-State
+  const [beatRepeatEnabled, setBeatRepeatEnabled] = useState(false);
+  const [beatRepeatBpm, setBeatRepeatBpm] = useState(120);
+  const [beatRepeatDivisionKey, setBeatRepeatDivisionKey] = useState<string>("1/8");
+  const [beatRepeatFeedback, setBeatRepeatFeedback] = useState(0);
+  const [beatRepeatCrossfadeMs, setBeatRepeatCrossfadeMs] = useState(0);
 
   const [isProcessing, setIsProcessing] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -171,6 +178,12 @@ export function SampleTransformDialog({
       setSliceSensitivity(0.5);
       setSliceMinMs(50);
       setDetectedSliceCount(null);
+      // v3.143: reset Beat-Repeat
+      setBeatRepeatEnabled(false);
+      setBeatRepeatBpm(120);
+      setBeatRepeatDivisionKey("1/8");
+      setBeatRepeatFeedback(0);
+      setBeatRepeatCrossfadeMs(0);
     }
     // Cleanup Preview-URL beim Schließen.
     return () => {
@@ -243,7 +256,8 @@ export function SampleTransformDialog({
         reverseEnabled ||
         fadeInMs > 0 ||
         fadeOutMs > 0 ||
-        normalizeEnabled;
+        normalizeEnabled ||
+        beatRepeatEnabled;
       if (!anyActive) {
         return out;
       }
@@ -258,6 +272,11 @@ export function SampleTransformDialog({
         fadeCurve,
         normalize: normalizeEnabled,
         normalizeTargetDbTp,
+        beatRepeat: beatRepeatEnabled,
+        beatRepeatBpm,
+        beatRepeatDivision: BEAT_REPEAT_DIVISIONS[beatRepeatDivisionKey] ?? 0.5,
+        beatRepeatFeedback,
+        beatRepeatCrossfadeMs,
       };
       const piped = applyTransformPipeline(out as AudioBufferLike, pipelineOpts);
 
@@ -652,6 +671,99 @@ export function SampleTransformDialog({
                       className="w-full accent-accent-primary"
                       data-testid="sample-transform-normtarget"
                     />
+                  </div>
+                </div>
+
+                {/* v3.143: Beat-Repeat (Stutter) */}
+                <div className="space-y-1 pt-2 border-t border-border-color">
+                  <label className="flex items-center gap-2 text-xs text-text-muted cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={beatRepeatEnabled}
+                      onChange={(e) => setBeatRepeatEnabled(e.target.checked)}
+                      className="accent-accent-primary"
+                      data-testid="sample-transform-beatrepeat"
+                    />
+                    <span>Beat-Repeat (Stutter)</span>
+                  </label>
+                  <div className="grid grid-cols-2 gap-3 pl-6">
+                    <div>
+                      <div className="flex items-center justify-between mb-0.5">
+                        <label htmlFor="sample-transform-br-bpm" className="text-[10px] text-text-dim">
+                          BPM
+                        </label>
+                        <span className="text-[10px] font-mono text-accent-secondary">
+                          {beatRepeatBpm}
+                        </span>
+                      </div>
+                      <input
+                        id="sample-transform-br-bpm"
+                        type="range"
+                        min={40}
+                        max={240}
+                        step={1}
+                        value={beatRepeatBpm}
+                        onChange={(e) => setBeatRepeatBpm(parseInt(e.target.value, 10))}
+                        disabled={!beatRepeatEnabled}
+                        className="w-full accent-accent-primary"
+                        data-testid="sample-transform-br-bpm"
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="sample-transform-br-rate" className="text-[10px] text-text-dim block mb-0.5">
+                        Rate
+                      </label>
+                      <select
+                        id="sample-transform-br-rate"
+                        value={beatRepeatDivisionKey}
+                        onChange={(e) => setBeatRepeatDivisionKey(e.target.value)}
+                        disabled={!beatRepeatEnabled}
+                        className="w-full bg-bg-panel border border-border-color rounded px-2 py-0.5 text-xs text-text-primary disabled:opacity-50"
+                        data-testid="sample-transform-br-rate"
+                      >
+                        {Object.keys(BEAT_REPEAT_DIVISIONS).map((k) => (
+                          <option key={k} value={k}>{k}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <div className="flex items-center justify-between mb-0.5">
+                        <span className="text-[10px] text-text-dim">Feedback</span>
+                        <span className="text-[10px] font-mono text-accent-secondary">
+                          {beatRepeatFeedback.toFixed(2)}
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min={0}
+                        max={1}
+                        step={0.05}
+                        value={beatRepeatFeedback}
+                        onChange={(e) => setBeatRepeatFeedback(parseFloat(e.target.value))}
+                        disabled={!beatRepeatEnabled}
+                        className="w-full accent-accent-primary"
+                        data-testid="sample-transform-br-feedback"
+                      />
+                    </div>
+                    <div>
+                      <div className="flex items-center justify-between mb-0.5">
+                        <span className="text-[10px] text-text-dim">Crossfade</span>
+                        <span className="text-[10px] font-mono text-accent-secondary">
+                          {beatRepeatCrossfadeMs} ms
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min={0}
+                        max={50}
+                        step={1}
+                        value={beatRepeatCrossfadeMs}
+                        onChange={(e) => setBeatRepeatCrossfadeMs(parseInt(e.target.value, 10))}
+                        disabled={!beatRepeatEnabled}
+                        className="w-full accent-accent-primary"
+                        data-testid="sample-transform-br-crossfade"
+                      />
+                    </div>
                   </div>
                 </div>
 

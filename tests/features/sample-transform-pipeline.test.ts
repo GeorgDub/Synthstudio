@@ -188,3 +188,84 @@ describe("applyTransformPipeline – fade-In only (no normalize)", () => {
     expect(result.normalizeGainDb).toBe(0);
   });
 });
+
+describe("applyTransformPipeline – beat-repeat (v3.143)", () => {
+  it("beatRepeat=true mit 1/8 @ 120 BPM repliziert Sample-Chunks", () => {
+    // 120 BPM, 1/8 = 0.25 sec = 12000 samples @ 48k.
+    // Buffer 48000 samples = 1 sec → 4 Repeats á 12000.
+    const buf = makeTestBuffer(48000, 48000);
+    const result = applyTransformPipeline(buf, {
+      beatRepeat: true,
+      beatRepeatBpm: 120,
+      beatRepeatDivision: 0.5, // 1/8
+    });
+    expect(result.buffer.length).toBe(48000);
+    const out = result.buffer.getChannelData(0);
+    const src = buf.getChannelData(0);
+    // Repeat 1 [12000..23999] sollte gleich Repeat 0 [0..11999] sein (no feedback).
+    expect(out[12000]).toBeCloseTo(src[0], 5);
+    expect(out[12500]).toBeCloseTo(src[500], 5);
+    expect(out[23999]).toBeCloseTo(src[11999], 5);
+  });
+
+  it("beatRepeat=false (default) → keine Wiederholung", () => {
+    const buf = makeTestBuffer(48000, 48000);
+    const result = applyTransformPipeline(buf, { beatRepeat: false });
+    const out = result.buffer.getChannelData(0);
+    const src = buf.getChannelData(0);
+    expect(out[24000]).toBeCloseTo(src[24000], 5);
+  });
+
+  it("beatRepeat + reverse → erst Beat-Repeat, dann Reverse", () => {
+    // Build: signal mit konstantem Wert in den ersten 12000 Samples (Sinus),
+    // dann silence. Mit beatRepeat=true wird der Sinus über den ganzen Buffer
+    // gelooped. Reverse danach kehrt alles um.
+    const sr = 48000;
+    const len = 24000;
+    const data = new Float32Array(len);
+    for (let i = 0; i < 12000; i++) data[i] = Math.sin(2 * Math.PI * 440 * i / sr);
+    // Rest ist 0.
+    const buf: AudioBufferLike = {
+      sampleRate: sr,
+      numberOfChannels: 1,
+      length: len,
+      getChannelData: () => data,
+    };
+    // Ohne BeatRepeat hätte reverse: out[0] = data[23999] = 0 (silence-tail).
+    // Mit BeatRepeat: das gesamte Sample ist nun sinus, also out[0] = -letztes-sample des loops.
+    const result = applyTransformPipeline(buf, {
+      beatRepeat: true,
+      beatRepeatBpm: 120,
+      beatRepeatDivision: 0.5, // 1/8 = 12000 samples
+      reverse: true,
+    });
+    const out = result.buffer.getChannelData(0);
+    // out[0] sollte != 0 sein (weil BeatRepeat den 0..12000 sinus auf 12000..24000 kopiert hat
+    // → nach reverse kommt der gelooped-sinus an Position 0).
+    expect(Math.abs(out[0])).toBeGreaterThan(0.001);
+  });
+
+  it("beatRepeat + feedback=1.0 → Repeat-Lautstärke halbiert pro Iteration", () => {
+    // Konstantes Signal = 1.0
+    const data = new Float32Array(48000);
+    data.fill(1.0);
+    const buf: AudioBufferLike = {
+      sampleRate: 48000,
+      numberOfChannels: 1,
+      length: 48000,
+      getChannelData: () => data,
+    };
+    const result = applyTransformPipeline(buf, {
+      beatRepeat: true,
+      beatRepeatBpm: 120,
+      beatRepeatDivision: 0.5, // 1/8 = 12000 samples
+      beatRepeatFeedback: 1.0,
+    });
+    const out = result.buffer.getChannelData(0);
+    // Repeat 0: 1.0 ; Repeat 1: 0.5 ; Repeat 2: 0.25 ; Repeat 3: 0.125
+    expect(out[0]).toBeCloseTo(1.0, 5);
+    expect(out[12000]).toBeCloseTo(0.5, 5);
+    expect(out[24000]).toBeCloseTo(0.25, 5);
+    expect(out[36000]).toBeCloseTo(0.125, 5);
+  });
+});
