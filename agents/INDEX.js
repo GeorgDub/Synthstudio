@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.116.0",
+    version: "3.117.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -89,6 +89,41 @@ const INDEX = {
   // ─── KNOWN FILE INDEX ──────────────────────────────────────
   // Key files agents have analyzed. Add new entries after working on a file.
   files: {
+    "client/src/utils/songJumpLogic.ts (v3.117.0 NEU)": {
+      role:     "v3.117.0 NEU (~190 LOC, pure-helpers, side-effect-frei). Conditional-Jump-Engine für Song-Mode-Performance. JumpCondition discriminated-union: {kind:'always'} | {kind:'macro-above'|'macro-below', macroIdx 0..7, threshold 0..1} | {kind:'midi-note', note 0..127, channel?:0..15} | {kind:'midi-cc', cc 0..127, valueAbove 0..127}. Jump={id, fromStepId, toStepId, condition, label?}. JumpEvalContext={macros[], lastMidiNote?, lastMidiCc?}. evaluateCondition(cond, ctx): defensiv gegen null/garbage, clamp macroValue 0..1, macroIdx-Range-Check, midi-note Range-Check + optional channel-filter (0..15), midi-cc strict-above (>, nicht ≥). findTriggeredJump(jumps, currentStepId, ctx): erste matching Jump | null (Reihenfolge = Priorität). describeCondition(cond) → UI-Label wie 'Macro 1 > 50%' / 'MIDI Note 60 (ch 1)' / 'MIDI CC 7 > 64' / 'Always'. Konstanten MACRO_COUNT=8, MIDI_NOTE/CC/CHANNEL_MIN/MAX exportiert.",
+      lastSeen: "2026-05-19T14:30:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/store/useSongJumpStore.ts (v3.117.0 NEU)": {
+      role:     "v3.117.0 NEU (~240 LOC, Custom-Observer-Pattern analog useSongModeStore). localStorage 'ss-song-jumps:v1'. State {jumpsBySong: Record<songId, Jump[]>}. sanitizeCondition validiert jedes Kind separat (macro-above/below: idx 0..7 + threshold 0..1, midi-note: note 0..127 + optional channel 0..15, midi-cc: cc + valueAbove 0..127). sanitizeJumps filtert garbage beim Load via Pflichtfelder. Public-API: addJump(songId, omit-id)→id|null (reject on empty fromStepId/toStepId/invalid cond), removeJump (auto-cleanup leerer Song-Entries im Map), updateJump (partial, leeres Label clears via delete updated.label, unknown-id noop), removeJumpsReferencingStep (cleanup wenn Step gelöscht — wird von SongModePanel beim Step-Delete benötigt, derzeit noch nicht verkabelt), getJumpsForSong(songId), getSongJumpState (synchron). __resetSongJumpStoreForTests Test-Helper. Re-exportiert Jump/JumpCondition Types.",
+      lastSeen: "2026-05-19T14:30:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/components/SongMode/SongJumpEditor.tsx (v3.117.0 NEU)": {
+      role:     "v3.117.0 NEU (~360 LOC). Sub-panel von SongModePanel für Jump-Editor. Header mit Add-Jump-Button + Jump-Count ('N jump(s)'). Jump-List (max-h-64 scroll): pro Row '[label] FromStep → ToStep when ConditionLabel' + Edit/Remove-Icons. Inline-Form (kein Modal) für Add/Edit: From/To-Step-Selectors aus song.steps, Kind-Selector (5 Kinds), dynamische Felder per Kind: macro-above/below→Macro-Select 1-8 + Threshold-Number 0..1 + %-Hint, midi-note→Note 0..127 + Channel 1-16 (leer=any), midi-cc→CC 0..127 + ValueAbove 0..127. Optional Label-Field. canSubmit-Guard. EditMode konvertiert Jump zurück zu FormState via conditionToForm. data-testids: song-jump-editor, song-jump-count, song-jump-add-btn, song-jump-row-{id}, song-jump-edit-{id}, song-jump-remove-{id}, song-jump-form, song-jump-form-from/to/kind/macro-idx/threshold/note/channel/cc/value-above/label/submit/cancel. Komplett semantische --ss-* Tokens.",
+      lastSeen: "2026-05-19T14:30:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/components/SongMode/SongModePanel.tsx (v3.117.0 +jump-editor-embed)": {
+      role:     "v3.117.0 ERWEITERT: import SongJumpEditor + useSongJumpStore. NEU jumpCountByStep useMemo aus aktiv-selektiertem Song. NEU pro Step-Row badge '↪{N}' (bg-accent-secondary/20 text-accent-secondary, data-testid song-mode-step-{idx}-jump-badge) wenn Jumps vom Step ausgehen. SongJumpEditor wird unter Footer eingebettet (border-t border-border-color flex-shrink-0). v3.109-Steps-DnD + LoopMode-Toggle + Activate unverändert.",
+      lastSeen: "2026-05-19T14:30:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/store/useSongModeStore.ts (v3.117.0 +jumpToStep+getCurrentStepId)": {
+      role:     "v3.117.0 ERWEITERT: jumpToStep(stepId)→{patternId|null, ok} springt Transport-Cursor direkt auf einen Step (per stepId-Lookup in active-song.steps; Repeat=0+Direction=1 reset). getCurrentStepId()→string|null liefert die stepId des aktuell laufenden Cursor-Steps. Beide werden vom App.tsx-Engine-Wire für Conditional-Jumps benötigt. v3.109-Public-API (advance/addStep/setActiveSong/…) unverändert.",
+      lastSeen: "2026-05-19T14:30:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/App.tsx (v3.117.0 +conditional-jumps engine + midi-tracking)": {
+      role:     "v3.117.0 ERWEITERT: import songJumpLogic (findTriggeredJump, MidiNoteEvent, MidiCcEvent) + getSongJumpState + songModeJumpToStep + getSongModeCurrentStepId. NEU lastMidiNoteRef + lastMidiCcRef (in song-mode-effect). Step==0 Tick-Handler (v3.109): VOR songModeAdvance() ruft findTriggeredJump mit ctx={macros:getMacros().map(m.value), lastMidiNote, lastMidiCc} → wenn match, jumpToStep(target) + setActivePattern(targetPattern) statt advance(). NEU useEffect 'midi:rawmessage' (status 0x90 mit vel>0 = Note-On, 0xB0 = CC): updated lastMidiNote/CC-Refs mit timestamp + immediate findTriggeredJump-Re-Evaluation für midi-note/midi-cc-Conditions (kein wait auf bar-boundary). Macro-driven jumps bleiben bar-aligned um Mid-Loop-Stutter zu vermeiden. v3.115-MIDI-Wire (morphAmount/recallSnapshot) + v3.109-Song-Wire unverändert.",
+      lastSeen: "2026-05-19T14:30:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "tests/features/song-jumps.test.ts (v3.117.0 NEU)": {
+      role:     "v3.117.0 NEU (~390 LOC, 32 Tests in 11 describes, env:jsdom). Cluster: (1) evaluateCondition·always × 1, (2) ·macro-above × 3 (true / false-equals/below / out-of-range-idx), (3) ·macro-below × 2, (4) ·midi-note × 4 (match w/o channel, mismatch, channel-filter match+mismatch, no-note-in-ctx), (5) ·midi-cc × 3 (above / equal+below=false / mismatch-cc), (6) ·defensive × 1 (null-cond, bogus-kind, null-ctx). (7) findTriggeredJump × 5 (empty→null, priority by order = always wins over failed-macro, ignores from-other-step, all-fail→null, empty-currentStepId→null). (8) describeCondition × 1 (alle 5 Kinds + midi-note-w/-channel-Variante). (9) Store CRUD × 8 (addJump persist + reject-empty-fromStepId + reject-malformed-cond, removeJump, updateJump partial+empty-label-clears+unknown-id-noop, removeJumpsReferencingStep). (10) per-Song scoping × 2 (separate keys, cleanup empty entries). (11) persistence × 2 (localStorage roundtrip preserves label+macro-cond, garbage-localStorage graceful). 32/32 grün. Kein Regress: tests/features/song-sequencer.test.ts (v3.109) bleibt 44/44 grün.",
+      lastSeen: "2026-05-19T14:30:00.000Z",
+      ownedBy:  "frontend"
+    },
     "client/src/utils/sampleTransform.ts (v3.116.0 NEU)": {
       role:     "v3.116.0 NEU (~170 LOC). Wrapper-Util für Time-Stretch + Pitch-Shift auf AudioBuffern. Reuse: timeStretchBuffer aus client/src/audio/timeStretchUtils.ts (OLA, kein neuer Phase-Vocoder). Public API: stretchSample(ctx,buf,ratio), pitchShiftSample(ctx,buf,semitones) (via stretch+resample-trick → length erhalten), combinedTransform(ctx,buf,ratio,semitones). Helpers: semitonesToRatio (2^(st/12)), resampleLinear (pure Float32→Float32 mit linearer Interpolation). Konstanten: STRETCH_MIN=0.25, STRETCH_MAX=4.0, PITCH_MIN=-24, PITCH_MAX=+24. Clamps + NaN-Identity-Fallback. Leerer Buffer (length=0) → Error. Immutable (gibt immer neuen AudioBuffer zurück). 33/33 Tests grün.",
       lastSeen: "2026-05-19T14:00:00.000Z",
@@ -2812,6 +2847,41 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "frontend",
+      timestamp: "2026-05-19T14:30:00.000Z",
+      done: [
+        "v3.117.0: Conditional Song-Jumps + Performance-Triggers (extends v3.109 Song-Mode).",
+        "client/src/utils/songJumpLogic.ts NEU (~190 LOC, pure-helpers). JumpCondition discriminated-union: always | macro-above | macro-below | midi-note (optional channel) | midi-cc (value-above). Jump-Type {id, fromStepId, toStepId, condition, label?}. JumpEvalContext {macros[], lastMidiNote?, lastMidiCc?}. evaluateCondition(cond,ctx) → boolean: defensiv gegen null/garbage, clamp macro-values 0..1, macro-idx 0..7-Range-Check, midi-note 0..127, optional channel 0..15, midi-cc strict-above. findTriggeredJump(jumps,currentStepId,ctx) → erste matching Jump | null (Reihenfolge = Priorität). describeCondition(cond) → human-readable Label für UI.",
+        "client/src/store/useSongJumpStore.ts NEU (~240 LOC, Custom-Observer-Pattern analog useSongModeStore). localStorage 'ss-song-jumps:v1'. State {jumpsBySong: Record<songId, Jump[]>}. Defensive sanitizeCondition validiert jeden Kind separat mit Range-Checks. sanitizeJumps filtert garbage beim Load (id/fromStepId/toStepId/condition Pflichtfelder). Public-API: addJump(songId, omit-id)→id|null mit Sanitize+Reject-on-Garbage, removeJump (cleanup empty-entries im Map), updateJump (partial patch mit empty-label-cleared via delete), removeJumpsReferencingStep (cleanup wenn Song-Step gelöscht wird), getJumpsForSong, getSongJumpState. __resetSongJumpStoreForTests.",
+        "client/src/components/SongMode/SongJumpEditor.tsx NEU (~360 LOC). Sub-panel von SongModePanel. Layout: Header mit Add-Jump-Button + Jump-Count; Jump-List mit pro-Row 'From→To when Cond' + Edit/Remove; inline-Form (kein Modal) für Add/Edit mit From/To-Selectors + Kind-Selector + dynamische Felder pro Kind: macro-above/below → Macro-Select + Threshold-Number, midi-note → Note + Channel (1-16, leer=any), midi-cc → CC + ValueAbove. Label optional. data-testids: song-jump-editor / -count / -add-btn / -row-{id} / -edit-{id} / -remove-{id} / -form / -form-from/to/kind/macro-idx/threshold/note/channel/cc/value-above/label/submit/cancel. Komplett semantische --ss-* Tokens.",
+        "client/src/components/SongMode/SongModePanel.tsx ERWEITERT: useSongJumpStore + jumpCountByStep useMemo. NEU pro Step-Row badge '↪{count}' (bg-accent-secondary/20 text-accent-secondary) wenn Jumps vom Step ausgehen. SongJumpEditor unter Footer eingebettet (border-t).",
+        "client/src/store/useSongModeStore.ts ERWEITERT: jumpToStep(stepId)→{patternId,ok} springt Transport-Cursor direkt auf Step (Repeat=0, Direction=1) + getCurrentStepId() liefert aktuell laufenden Step-ID. Beide werden vom App.tsx-Engine-Wire benötigt.",
+        "client/src/App.tsx ERWEITERT: import songJumpLogic + useSongJumpStore + songModeJumpToStep+getSongModeCurrentStepId. NEU lastMidiNoteRef/lastMidiCcRef. Step==0 Tick-Handler: VOR songModeAdvance() prüft findTriggeredJump → wenn match, jumpToStep(target) statt advance(). NEU useEffect listening auf 'midi:rawmessage' (status 0x90 mit vel>0 = Note-On, 0xB0 = CC): updated lastMidiNote/CC-Refs + immediate findTriggeredJump-Re-Evaluation für MIDI-driven Conditions (kein wait auf bar boundary, performance-critical für live use). Macro-driven jumps bleiben bar-aligned (kein Mid-Loop-Stutter).",
+        "tests/features/song-jumps.test.ts NEU (~390 LOC, 32 Tests in 11 describes, env:jsdom). Cluster: (1) evaluateCondition always × 1. (2) macro-above × 3 (true/false/out-of-range). (3) macro-below × 2. (4) midi-note × 4 (match w/o channel, mismatch, channel-filter, no note in ctx). (5) midi-cc × 3 (above, equal/below, mismatch-cc). (6) defensive × 1 (null/bogus/null-ctx). (7) findTriggeredJump × 5 (empty→null, priority by order, ignores other-from, all-fail→null, empty-currentStepId). (8) describeCondition × 1 (alle 5 Kinds + macro-channel-Variante). (9) Store CRUD × 8 (addJump persist, reject empty-fromStepId, reject malformed condition, removeJump, updateJump partial, updateJump empty-label-clears, updateJump unknown-id-noop, removeJumpsReferencingStep). (10) per-Song scoping × 2 (separate keys, cleanup empty-entries). (11) persistence × 2 (localStorage roundtrip + label preserved, garbage-load graceful). 32/32 grün.",
+        "package.json + agents/INDEX.js: 3.116.0 → 3.117.0. pnpm check: clean. song-jumps + song-sequencer tests: 32 + 44 = 76 grün, kein Regress."
+      ],
+      next: [
+        "Velocity-aware midi-note Condition (z.B. 'Note F#3 mit velocity > 100' für hard-hits-only Triggers).",
+        "Probability-Feld pro Jump (z.B. 50%-Wahrscheinlichkeit → 'manchmal zum Break').",
+        "Multi-Condition AND/OR (aktuell ist nur ein Kind pro Jump möglich — User-Kombi wie 'Macro 1 > 50% AND Note F#3').",
+        "MIDI-Event-Aging: aktuell hält lastMidiNote/CC bis zum nächsten Event — bei 'midi-note'-Condition könnte ein Note-Event von vor 10 Sekunden immer noch fälschlich triggern. Sliding-Window mit max-age (z.B. 500ms) wäre robuster.",
+        "Engine-Hook in dmRef.setActivePattern → jump-cleanup falls referenzierter Step manuell gelöscht wird (akt. nur via removeJumpsReferencingStep manuell).",
+        "E2E in tests/web/song-jumps.spec.ts (Editor öffnen, Jump anlegen, Macro hochziehen, Jump fires).",
+        "Visualisierung: in SongModePanel den Jump als Pfeil zwischen Step-Rows zeichnen (SVG-Overlay)."
+      ],
+      changed: [
+        "client/src/utils/songJumpLogic.ts (NEU, ~190 LOC, pure-helpers)",
+        "client/src/store/useSongJumpStore.ts (NEU, ~240 LOC, Custom-Observer-Store)",
+        "client/src/components/SongMode/SongJumpEditor.tsx (NEU, ~360 LOC, inline-Form-Editor)",
+        "client/src/components/SongMode/SongModePanel.tsx (ERWEITERT, jump-badge + embedded editor)",
+        "client/src/store/useSongModeStore.ts (ERWEITERT, jumpToStep + getCurrentStepId)",
+        "client/src/App.tsx (ERWEITERT, conditional-jump evaluation in song-mode tick + midi:rawmessage listener)",
+        "tests/features/song-jumps.test.ts (NEU, ~390 LOC, 32 Tests)",
+        "package.json (3.116.0 → 3.117.0)",
+        "agents/INDEX.js (workLog + files index)"
+      ]
+    },
     {
       agent:     "frontend",
       timestamp: "2026-05-19T14:00:00.000Z",

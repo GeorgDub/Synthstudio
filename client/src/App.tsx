@@ -171,8 +171,17 @@ import {
   advance as songModeAdvance,
   getSongModeState,
   getActiveSong as getActiveSongMode,
+  jumpToStep as songModeJumpToStep,
+  getCurrentStepId as getSongModeCurrentStepId,
 } from "@/store/useSongModeStore";
 import { SongModePanel } from "@/components/SongMode/SongModePanel";
+// v3.117.0: Conditional Song-Jumps + Performance-Triggers
+import { getSongJumpState } from "@/store/useSongJumpStore";
+import {
+  findTriggeredJump,
+  type MidiNoteEvent,
+  type MidiCcEvent,
+} from "@/utils/songJumpLogic";
 import { MacroSnapshotPanel } from "@/components/MacroSnapshot/MacroSnapshotPanel";
 import {
   setMorphAmount as setSnapshotMorphAmount,
@@ -1307,6 +1316,10 @@ export default function App() {
   // Wichtig: der erste step===0 nach Aktivieren wird übersprungen (firstTickRef),
   // damit nicht direkt der initiale Step "doppelt" zählt.
   const songModePrimedRef = useRef(false);
+  // v3.117.0: track last MIDI events for conditional-jump evaluation.
+  const lastMidiNoteRef = useRef<MidiNoteEvent | null>(null);
+  const lastMidiCcRef = useRef<MidiCcEvent | null>(null);
+
   useEffect(() => {
     const unsubscribe = AudioEngine.onPosition(step => {
       if (step !== 0) return;
@@ -1325,6 +1338,29 @@ export default function App() {
       const activeSong = getActiveSongMode();
       if (!activeSong) return;
 
+      // v3.117.0: vor dem normalen Advance evaluieren wir Conditional Jumps,
+      // die vom aktuellen Step ausgehen. Wenn eine Bedingung erfüllt ist,
+      // springen wir direkt zum Ziel-Step (anstatt linear weiterzulaufen).
+      const currentStepId = getSongModeCurrentStepId();
+      if (currentStepId) {
+        const jumps = getSongJumpState().jumpsBySong[activeSong.id] ?? [];
+        if (jumps.length > 0) {
+          const ctx = {
+            macros: getMacros().map(m => m.value ?? 0),
+            lastMidiNote: lastMidiNoteRef.current,
+            lastMidiCc: lastMidiCcRef.current,
+          };
+          const triggered = findTriggeredJump(jumps, currentStepId, ctx);
+          if (triggered) {
+            const r = songModeJumpToStep(triggered.toStepId);
+            if (r.ok && r.patternId && r.patternId !== d.activePatternId) {
+              d.setActivePattern(r.patternId);
+            }
+            return;
+          }
+        }
+      }
+
       const result = songModeAdvance();
       if (result.isFinished || !result.patternId) {
         // Song zu Ende — Playback weiter laufen lassen, aber Song deaktivieren
@@ -1337,6 +1373,74 @@ export default function App() {
       }
     });
     return unsubscribe;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // v3.117.0: track raw MIDI messages for conditional jumps + immediate triggers.
+  // Note-On (status 0x90 + velocity>0) and CC (status 0xB0) are stored in refs;
+  // on incoming MIDI the song-jump store is re-evaluated immediately — so a
+  // performer can pressing a key to instantly switch to e.g. a Break-section.
+  useEffect(() => {
+    const onRaw = (e: Event) => {
+      const ce = e as CustomEvent<{ type: number; channel: number; byte1: number; byte2: number }>;
+      const det = ce.detail;
+      if (!det) return;
+      const now = Date.now();
+      let updated = false;
+      // 0x90 = Note-On, but a Note-On with velocity 0 is treated as Note-Off
+      if (det.type === 0x90 && det.byte2 > 0) {
+        lastMidiNoteRef.current = {
+          note: det.byte1,
+          channel: det.channel,
+          timestamp: now,
+        };
+        updated = true;
+      } else if (det.type === 0xb0) {
+        // 0xB0 = Control Change
+        lastMidiCcRef.current = {
+          cc: det.byte1,
+          value: det.byte2,
+          channel: det.channel,
+          timestamp: now,
+        };
+        updated = true;
+      }
+      if (!updated) return;
+
+      // Immediate evaluation — jumps that match note/cc fire without waiting
+      // for the next bar boundary. This is what makes the feature "live".
+      const songState = getSongModeState();
+      if (!songState.activeSongId) return;
+      const activeSong = getActiveSongMode();
+      if (!activeSong) return;
+      const d = dmRef.current;
+      if (!d) return;
+      const currentStepId = getSongModeCurrentStepId();
+      if (!currentStepId) return;
+      const jumps = getSongJumpState().jumpsBySong[activeSong.id] ?? [];
+      if (jumps.length === 0) return;
+      const ctx = {
+        macros: getMacros().map(m => m.value ?? 0),
+        lastMidiNote: lastMidiNoteRef.current,
+        lastMidiCc: lastMidiCcRef.current,
+      };
+      // Only fire MIDI-driven jumps immediately — macro-driven jumps wait for
+      // the bar boundary so they don't cause mid-loop pattern hiccups.
+      const triggered = findTriggeredJump(jumps, currentStepId, ctx);
+      if (!triggered) return;
+      if (
+        triggered.condition.kind !== "midi-note" &&
+        triggered.condition.kind !== "midi-cc"
+      ) {
+        return;
+      }
+      const r = songModeJumpToStep(triggered.toStepId);
+      if (r.ok && r.patternId && r.patternId !== d.activePatternId) {
+        d.setActivePattern(r.patternId);
+      }
+    };
+    window.addEventListener("midi:rawmessage", onRaw as EventListener);
+    return () => window.removeEventListener("midi:rawmessage", onRaw as EventListener);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

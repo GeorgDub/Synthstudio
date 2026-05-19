@@ -305,6 +305,30 @@ export function resetTransport(): void {
 }
 
 /**
+ * v3.117.0: Springt den Transport-Cursor direkt auf einen Step (per stepId).
+ * Liefert die patternId des Ziels oder null wenn der Step im aktiven Song
+ * nicht existiert. Reset des Repeat-Counters auf 0.
+ */
+export function jumpToStep(stepId: string): { patternId: string | null; ok: boolean } {
+  const song = getActiveSong();
+  if (!song) return { patternId: null, ok: false };
+  const idx = song.steps.findIndex(s => s.id === stepId);
+  if (idx === -1) return { patternId: null, ok: false };
+  _state = { ..._state, currentStepIdx: idx, currentRepeat: 0, direction: 1 };
+  notify();
+  return { patternId: song.steps[idx].patternId, ok: true };
+}
+
+/**
+ * v3.117.0: Liefert die stepId des aktuellen Cursor-Steps (oder null).
+ */
+export function getCurrentStepId(): string | null {
+  const song = getActiveSong();
+  if (!song) return null;
+  return song.steps[_state.currentStepIdx]?.id ?? null;
+}
+
+/**
  * Advances the song by one pattern-loop. Returns the patternId that should
  * play next (and updates the cursor); returns null when the song has
  * finished in "once" mode.

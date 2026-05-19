@@ -35,6 +35,8 @@ import {
   type SongLoopMode,
 } from "@/store/useSongModeStore";
 import { clampRepeatCount } from "@/utils/songSequencer";
+import { SongJumpEditor } from "@/components/SongMode/SongJumpEditor";
+import { useSongJumpStore } from "@/store/useSongJumpStore";
 
 interface SongModePanelProps {
   patterns: PatternData[];
@@ -66,6 +68,18 @@ export function SongModePanel({ patterns, activePatternId, className = "" }: Son
   );
 
   const isActiveSelected = !!selectedSong && selectedSong.id === activeSongId;
+
+  // v3.117.0: track per-step jump counts so we can show a badge next to each step.
+  const jumpsState = useSongJumpStore();
+  const jumpCountByStep = useMemo(() => {
+    const m = new Map<string, number>();
+    if (!selectedSong) return m;
+    const jumps = jumpsState.jumpsBySong[selectedSong.id] ?? [];
+    for (const j of jumps) {
+      m.set(j.fromStepId, (m.get(j.fromStepId) ?? 0) + 1);
+    }
+    return m;
+  }, [jumpsState, selectedSong]);
 
   // Local DnD state — using native DnD events.
   const [dragIdx, setDragIdx] = useState<number | null>(null);
@@ -284,6 +298,16 @@ export function SongModePanel({ patterns, activePatternId, className = "" }: Son
                     {idx + 1}.
                   </span>
 
+                  {jumpCountByStep.get(step.id) ? (
+                    <span
+                      className="px-1 py-0.5 rounded text-[10px] font-mono bg-accent-secondary/20 text-accent-secondary"
+                      title={`${jumpCountByStep.get(step.id)} Jump(s) konfiguriert`}
+                      data-testid={`song-mode-step-${idx}-jump-badge`}
+                    >
+                      ↪{jumpCountByStep.get(step.id)}
+                    </span>
+                  ) : null}
+
                   <select
                     value={step.patternId}
                     onChange={e => setStepPattern(selectedSong.id, step.id, e.target.value)}
@@ -379,6 +403,14 @@ export function SongModePanel({ patterns, activePatternId, className = "" }: Son
             {selectedSong.steps.length} Step{selectedSong.steps.length === 1 ? "" : "s"}
           </span>
         </div>
+      )}
+
+      {/* ── v3.117.0: Conditional Jumps Editor ─────────────────────────── */}
+      {selectedSong && (
+        <SongJumpEditor
+          song={selectedSong}
+          className="border-t border-border-color flex-shrink-0"
+        />
       )}
     </div>
   );
