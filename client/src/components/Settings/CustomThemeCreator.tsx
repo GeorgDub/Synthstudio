@@ -1,6 +1,38 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { X } from 'lucide-react';
-import { addCustomTheme, applyCustomTheme, type CustomTheme } from '@/store/useThemeStore';
+import { addCustomTheme, applyCustomTheme, useThemeStore, type CustomTheme } from '@/store/useThemeStore';
+
+const PREVIEW_STYLE_ID = "synthstudio-theme-preview";
+
+/** Pure-Helper: baut das CSS-Body für ein Custom-Theme (1:1 wie applyCustomTheme). */
+function buildPreviewCss(colors: CustomTheme['colors'], extras: NonNullable<CustomTheme['extras']>): string {
+  const cssVars = Object.entries(colors)
+    .filter(([, v]) => typeof v === "string" && v.length > 0)
+    .map(([k, v]) => `${k}: ${v};`)
+    .join("\n    ");
+  const extraVars: string[] = [];
+  if (extras.fontSize) extraVars.push(`font-size: ${extras.fontSize}px;`);
+  if (extras.borderRadius !== undefined) extraVars.push(`--ss-radius: ${extras.borderRadius}px;`);
+  if (extras.glowIntensity !== undefined && extras.glowIntensity > 0) {
+    const glow = extras.glowIntensity;
+    extraVars.push(`--ss-glow: 0 0 ${Math.round(8 * glow)}px var(--ss-accent-primary), 0 0 ${Math.round(20 * glow)}px var(--ss-accent-primary)60;`);
+  }
+  const glassCss = extras.glassEffect && extras.glassEffect > 0
+    ? `backdrop-filter: blur(${Math.round(extras.glassEffect * 12)}px); -webkit-backdrop-filter: blur(${Math.round(extras.glassEffect * 12)}px);`
+    : "";
+  const radiusCss = extras.borderRadius !== undefined
+    ? `button, input, select, .rounded, .rounded-lg, .rounded-xl { border-radius: ${extras.borderRadius}px !important; }`
+    : "";
+  return `
+:root {
+    ${cssVars}
+    ${extraVars.join("\n    ")}
+}
+${glassCss ? `.bg-bg-panel, .bg-bg-elevated { ${glassCss} }` : ""}
+${radiusCss}
+${extras.customCss ?? ""}
+`;
+}
 
 const defaultColors: CustomTheme['colors'] = {
     '--ss-bg-base': '#ffffff',
@@ -49,6 +81,44 @@ export function CustomThemeCreator({ onClose }: Props) {
     const [glowIntensity, setGlowIntensity] = useState(0);
     const [glassEffect, setGlassEffect] = useState(0);
     const [customCss, setCustomCss] = useState('');
+    const [livePreview, setLivePreview] = useState(true);
+
+    // v3.147: Live-Preview — bei jedem State-Change ein temp <style> injecten.
+    // Beim Unmount/Cancel: temp-style entfernen + Original-Theme restaurieren.
+    const themeStore = useThemeStore();
+    const previousActiveCustomThemeRef = useRef<string | null>(null);
+    const savedRef = useRef(false);
+    useEffect(() => {
+        // Beim Mount: aktuell aktives Custom-Theme merken.
+        previousActiveCustomThemeRef.current = themeStore.activeCustomTheme;
+        return () => {
+            // Cleanup: temp-Style entfernen.
+            const el = document.getElementById(PREVIEW_STYLE_ID);
+            if (el) el.remove();
+            // Wenn nicht via handleSave geschlossen: vorheriges Theme restaurieren.
+            if (!savedRef.current) {
+                applyCustomTheme(previousActiveCustomThemeRef.current);
+            }
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    useEffect(() => {
+        if (!livePreview) {
+            const el = document.getElementById(PREVIEW_STYLE_ID);
+            if (el) el.remove();
+            return;
+        }
+        const extras = { fontSize, borderRadius, glowIntensity, glassEffect, customCss };
+        const css = buildPreviewCss(colors, extras);
+        let el = document.getElementById(PREVIEW_STYLE_ID) as HTMLStyleElement | null;
+        if (!el) {
+            el = document.createElement("style");
+            el.id = PREVIEW_STYLE_ID;
+            document.head.appendChild(el);
+        }
+        el.textContent = css;
+    }, [colors, fontSize, borderRadius, glowIntensity, glassEffect, customCss, livePreview]);
 
     const handleColorChange = (key: keyof CustomTheme['colors'], value: string) => {
         setColors(prev => ({ ...prev, [key]: value }));
@@ -67,6 +137,7 @@ export function CustomThemeCreator({ onClose }: Props) {
           customCss: customCss.trim() || undefined,
         };
         const newId = addCustomTheme({ name, colors, extras });
+        savedRef.current = true; // Cleanup-useEffect soll NICHT zurücksetzen.
         applyCustomTheme(newId);
         setName('');
         setColors(defaultColors);
@@ -77,6 +148,17 @@ export function CustomThemeCreator({ onClose }: Props) {
         <div className="mt-6 border-t border-border-color pt-6">
             <div className="flex items-center justify-between mb-4">
                 <h3 className="text-sm font-bold text-text-primary">Eigenes Design erstellen</h3>
+                <div className="flex items-center gap-3">
+                    <label className="flex items-center gap-1.5 text-[11px] text-text-muted cursor-pointer select-none" title="Theme-Änderungen sofort in der UI anzeigen (vor Speichern)">
+                        <input
+                            type="checkbox"
+                            checked={livePreview}
+                            onChange={(e) => setLivePreview(e.target.checked)}
+                            className="accent-accent-primary"
+                            data-testid="theme-live-preview-toggle"
+                        />
+                        <span>Live-Preview</span>
+                    </label>
                 <button
                     onClick={onClose}
                     className="w-6 h-6 rounded text-text-muted hover:text-text-primary hover:bg-bg-elevated transition-colors flex items-center justify-center"
@@ -85,6 +167,7 @@ export function CustomThemeCreator({ onClose }: Props) {
                 >
                     <X className="w-3.5 h-3.5" aria-hidden="true" />
                 </button>
+                </div>
             </div>
             <div className="grid grid-cols-2 gap-4">
                 <input
