@@ -482,6 +482,31 @@ export class OmniTribeBridge {
   // ─── Internal: Eingehende Frames ───────────────────────────
 
   private handleIncoming(raw: Uint8Array): void {
+    // Sprint-102: Raw-MIDI Note-On/Off (3 Bytes, status 0x80..0x9F).
+    // Sim-Server sendet Chord-Fan-Out-Voices via diesen Pfad. Auf realer
+    // Hardware liefert die Bridge ueber Web-MIDI ohnehin keine Sysex
+    // hier — Note-Events kommen separat — aber unsere WS-Pipe muxt
+    // beides, daher unterscheiden wir.
+    if (raw.length === 3 && (raw[0] & 0xF0) >= 0x80 && (raw[0] & 0xF0) <= 0x90) {
+      const status = raw[0];
+      const channel = status & 0x0F;
+      const note = raw[1] & 0x7F;
+      const velocity = raw[2] & 0x7F;
+      const eventType = status & 0xF0;
+      if (typeof window !== "undefined") {
+        if (eventType === 0x90 && velocity > 0) {
+          window.dispatchEvent(new CustomEvent("omnitribe:noteOn", {
+            detail: { channel, note, velocity },
+          }));
+        } else {
+          window.dispatchEvent(new CustomEvent("omnitribe:noteOff", {
+            detail: { channel, note },
+          }));
+        }
+      }
+      return;
+    }
+
     if (raw[0] !== OTP_SYSEX_START || raw[raw.length - 1] !== OTP_SYSEX_END) return;
     if (raw[1] !== OTP_MFR_ID[0] || raw[2] !== OTP_MFR_ID[1] || raw[3] !== OTP_MFR_ID[2]) return;
     if (raw.length < 10) return;

@@ -62,6 +62,8 @@ import { ScriptRunner } from "@/components/Tools/ScriptRunner";
 import { ChordProgressionPanel } from "@/components/Tools/ChordProgressionPanel";
 import { KeyboardSamplerPanel } from "@/components/Tools/KeyboardSamplerPanel";
 import { AudioWorkbench } from "@/components/AudioWorkbench/AudioWorkbench";
+// v3.118.0: Project-Diff-Compare Tools-Subtab
+import { ProjectDiffPanel } from "@/components/ProjectDiff/ProjectDiffPanel";
 import { getKeyboardSamplerState } from "@/store/useKeyboardSamplerStore";
 import { getEnvelopeFollowerConfigs } from "@/store/useEnvelopeFollowerStore";
 
@@ -1562,7 +1564,7 @@ export default function App() {
     setActiveTab(tab);
     localStorage.setItem("ss-layout:active-tab", tab);
   }, []);
-  const [activeTool, setActiveTool] = useState<'prompt' | 'algorithmic' | 'chords' | 'sampler' | 'workbench' | 'library' | 'script' | 'omnitribe' | 'packs' | 'song' | 'liverec' | 'audioinput' | 'macroSnapshot'>('prompt');
+  const [activeTool, setActiveTool] = useState<'prompt' | 'algorithmic' | 'chords' | 'sampler' | 'workbench' | 'library' | 'script' | 'omnitribe' | 'packs' | 'song' | 'liverec' | 'audioinput' | 'macroSnapshot' | 'diff'>('prompt');
 
   // ── Dialog-State ─────────────────────────────────────────────────────────
   const [showMidiSettings, setShowMidiSettings] = useState(false);
@@ -4279,6 +4281,7 @@ export default function App() {
                       { id: "liverec",     label: "🎙 Live-Rec" },
                       { id: "audioinput",  label: "🎤 Audio-In" },
                       { id: "script",      label: "⚡ Script" },
+                      { id: "diff",        label: "📊 Diff" },
                       { id: "omnitribe",   label: "🎛 OmniTribe" },
                     ] as const).map(t => (
                       <button key={t.id} onClick={() => setActiveTool(t.id)}
@@ -4459,6 +4462,9 @@ export default function App() {
                     )}
                     {activeTool === 'audioinput' && (
                       <AudioInputRecorderPanel className="h-full" />
+                    )}
+                    {activeTool === 'diff' && (
+                      <ProjectDiffPanel />
                     )}
                   </div>
                 </div>

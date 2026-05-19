@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.117.0",
+    version: "3.118.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -89,6 +89,21 @@ const INDEX = {
   // ─── KNOWN FILE INDEX ──────────────────────────────────────
   // Key files agents have analyzed. Add new entries after working on a file.
   files: {
+    "client/src/utils/projectDiff.ts (v3.118.0 NEU)": {
+      role:     "v3.118.0 NEU (~420 LOC, pure-helpers, side-effect-frei). Project-Diff-Engine für zwei SynthProject-Snapshots. Public-API: valuesEqual (Float-epsilon 1e-4, NaN==NaN, deep für Arrays/Objects), diffObject(a,b,ignoreKeys,basePath) → FieldDiff[] mit punkt-separierten Pfaden, diffArrays<T>(a,b,idKey,ignoreKeys) → {added,removed,changed-mit-fieldDiffs}, diffProjects(a,b) → ProjectDiff mit 6 Sections: metadata (top-level ohne ignored keys), patterns/samples/channels (added/removed/changed), mixer/macros (fieldDiffs). FLOAT_EPSILON=1e-4 exportiert. formatDiffSummary (eine Zeile UI-Header), formatDiffMarkdown (sektioniert für Clipboard), formatValue (lossy snapshot), isEmptyDiff. METADATA_IGNORE_KEYS skippt savedAt + Sub-Sections. Channels werden über alle Patterns nach Part-ID aggregiert (last-write-wins bei Duplikaten).",
+      lastSeen: "2026-05-19T14:20:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/store/useProjectDiffStore.ts (v3.118.0 NEU)": {
+      role:     "v3.118.0 NEU (~90 LOC, Custom-Observer-Pattern). Ephemeraler Store für Project-Diff-Compare (KEINE localStorage-Persistenz). State {leftProject, rightProject, currentDiff}. Actions setLeftProject/setRightProject/clearAll → recomputiert diff automatisch via diffProjects. recomputeCurrentDiff Helper falls externe Mutations. Synchroner getProjectDiffState() für Event-Handler. __resetProjectDiffStoreForTests Test-Helper.",
+      lastSeen: "2026-05-19T14:20:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/components/ProjectDiff/ProjectDiffPanel.tsx (v3.118.0 NEU)": {
+      role:     "v3.118.0 NEU (~330 LOC). Tools-Subtab '📊 Diff' Hauptpanel. Two-side FilePickerCard (Click oder Drag-Drop → File-API → parseProject mit graceful error-Display). Header mit Summary + 'Markdown kopieren' (navigator.clipboard mit Blob-Download-Fallback) + 'Project B als Base laden' (optional via onUseAsBase-Prop) + 'Zurücksetzen'-Button. DiffSections: SectionCard mit collapsible ChangedItem-Rows. FieldDiffList rendert path (text-text-muted) / before (text-accent-danger) / → / after (text-accent-success) monospace. data-testids: project-diff-panel/summary/picker-{left|right}/pick-{left|right}/input-{left|right}/error-{left|right}/export-md/use-b/clear/section-{metadata|patterns|channels|samples|mixer|macros}/no-changes. Komplett semantische --ss-*-Tokens.",
+      lastSeen: "2026-05-19T14:20:00.000Z",
+      ownedBy:  "frontend"
+    },
     "client/src/utils/songJumpLogic.ts (v3.117.0 NEU)": {
       role:     "v3.117.0 NEU (~190 LOC, pure-helpers, side-effect-frei). Conditional-Jump-Engine für Song-Mode-Performance. JumpCondition discriminated-union: {kind:'always'} | {kind:'macro-above'|'macro-below', macroIdx 0..7, threshold 0..1} | {kind:'midi-note', note 0..127, channel?:0..15} | {kind:'midi-cc', cc 0..127, valueAbove 0..127}. Jump={id, fromStepId, toStepId, condition, label?}. JumpEvalContext={macros[], lastMidiNote?, lastMidiCc?}. evaluateCondition(cond, ctx): defensiv gegen null/garbage, clamp macroValue 0..1, macroIdx-Range-Check, midi-note Range-Check + optional channel-filter (0..15), midi-cc strict-above (>, nicht ≥). findTriggeredJump(jumps, currentStepId, ctx): erste matching Jump | null (Reihenfolge = Priorität). describeCondition(cond) → UI-Label wie 'Macro 1 > 50%' / 'MIDI Note 60 (ch 1)' / 'MIDI CC 7 > 64' / 'Always'. Konstanten MACRO_COUNT=8, MIDI_NOTE/CC/CHANNEL_MIN/MAX exportiert.",
       lastSeen: "2026-05-19T14:30:00.000Z",
@@ -2847,6 +2862,37 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "frontend",
+      timestamp: "2026-05-19T14:20:00.000Z",
+      done: [
+        "v3.118.0: Project-Diff-Compare — Visual Side-by-Side-Diff zwischen zwei .synth-Files (Tools-Subtab '📊 Diff').",
+        "client/src/utils/projectDiff.ts NEU (~420 LOC, pure-helpers, side-effect-frei). Public-API: valuesEqual (Float-epsilon 1e-4, NaN-safe), diffObject (recursive + ignoreKeys-Set + punkt-separierte Pfade), diffArrays<T> (by idKey → added/removed/changed-Buckets), diffProjects (Top-level orchestrator), formatDiffSummary (eine Zeile: 'BPM: 120→128 · +2 Patterns · -1 Channel'), formatDiffMarkdown (sektioniert für Clipboard/Export), formatValue (lossy snapshot für UI), isEmptyDiff. METADATA_IGNORE_KEYS skippt savedAt + alle großen Sub-Sections (sie werden separat gediff't). ProjectDiff hat 6 Sections: metadata.fieldDiffs, patterns {added/removed/changed}, samples {added/removed/changed}, channels {added/removed/changed} (Parts aggregiert über alle Patterns by id), mixer.fieldDiffs, macros.fieldDiffs.",
+        "client/src/store/useProjectDiffStore.ts NEU (~90 LOC, Custom-Observer-Pattern). Ephemeraler State (KEINE localStorage-Persistenz — Diffs sind Workflow, kein Save-Target). State {leftProject, rightProject, currentDiff}. Actions setLeftProject/setRightProject/clearAll/recomputeCurrentDiff. Synchroner getProjectDiffState() für Event-Handler. __resetProjectDiffStoreForTests.",
+        "client/src/components/ProjectDiff/ProjectDiffPanel.tsx NEU (~330 LOC). Two-side FilePickerCard (Drag-Drop oder Click → File-API → parseProject), Header mit Summary + Markdown-Copy + 'Use B as Base'-Button (optional via onUseAsBase-Prop) + Clear. SectionCard mit collapsible ChangedItem-Rows. FieldDiffList rendert path/before/after monospace mit roter Before + grüner After. Komplett semantische --ss-*-Tokens (accent-primary/secondary/success/danger, bg-bg-*, text-text-*). data-testids: project-diff-panel/summary/picker-left/picker-right/pick-left/pick-right/input-left/input-right/error-left/error-right/export-md/use-b/clear/section-{metadata,patterns,channels,samples,mixer,macros}/no-changes. Markdown-Export via navigator.clipboard mit Blob-Download-Fallback.",
+        "client/src/App.tsx ERWEITERT: import ProjectDiffPanel. activeTool-Union erweitert um 'diff'. Tab '📊 Diff' nach '⚡ Script' in Tools-Tab-Liste. activeTool === 'diff' → <ProjectDiffPanel />.",
+        "tests/features/project-diff.test.ts NEU (~390 LOC, 46 Tests in 10 describes). Cluster: valuesEqual × 6 (primitives, float-epsilon innen/außen, arrays, nested objects, NaN==NaN), diffObject × 7 (identisch, ein-Feld-Diff, ignoreKeys, nested-Pfad, float-epsilon-skip, undefined-fields, null-vs-Wert), diffArrays × 5 (identisch, added, removed, changed-mit-fieldDiffs, ignoreKeys), diffProjects × 12 (identische-Projekte-ignoriert-savedAt, BPM-Diff, name-diff, +Pattern, -Pattern, ~Pattern-stepCount, float-epsilon-BPM, macros-changed, FX-Param-am-Channel, mixer.masterVolume-nested, +Sample, -Sample), formatDiffSummary × 3, formatDiffMarkdown × 2, formatValue × 7, isEmptyDiff × 2, FieldDiff-shape × 1. 46/46 grün, 0 fails, 0 skips.",
+        "package.json + agents/INDEX.js: 3.117.0 → 3.118.0. pnpm check: clean. Volltest: 267 Files / 6145 passed / 16 skipped / 0 fail (+46 vs v3.117)."
+      ],
+      next: [
+        "Project-Diff in Electron-Native Open-Dialog: aktuell nur Browser-File-Picker / Drag-Drop. ipcBridge.openProjectFile sollte als zusätzlicher Pfad angeboten werden, damit native Filesystem-Locations bequemer wählbar sind.",
+        "'Use B as Base'-Callback verkabeln — onUseAsBase ist aktuell NICHT prop-übergeben in App.tsx (nur Component-API). Vollständige Integration mit useProjectStore + restoreProject im nächsten Schritt.",
+        "Granular Step-Diff: aktuell wird PartData.steps[] als Array komplett ersetzt-Diff gerendert. Step-für-Step (welcher Step velocity geändert) wäre für Beat-Pattern-Reviews nützlich.",
+        "Side-by-Side Two-Column-Layout für die Diff-Liste (aktuell single-column mit inline before→after). Wireframe wie GitHub-PR-Diff wäre intuitiver bei vielen Feldern.",
+        "Side-Filter: User toggelt 'nur Mixer' / 'nur Patterns' etc. für Fokus-Reviews.",
+        "Performance: bei sehr großen Projekten (100+ Patterns, embedded slicePads) kann diffObject in O(n) JSON-Vergleich tief gehen — Lazy-Diff per Section wäre robuster.",
+        "E2E in tests/web/project-diff.spec.ts (Drag-Drop zwei Files, Summary erscheint, Markdown-Copy)."
+      ],
+      changed: [
+        "client/src/utils/projectDiff.ts (NEU, ~420 LOC, pure-helpers)",
+        "client/src/store/useProjectDiffStore.ts (NEU, ~90 LOC, Custom-Observer-Store)",
+        "client/src/components/ProjectDiff/ProjectDiffPanel.tsx (NEU, ~330 LOC, side-by-side UI)",
+        "client/src/App.tsx (ERWEITERT, Tools-Tab '📊 Diff' + activeTool-Union)",
+        "tests/features/project-diff.test.ts (NEU, ~390 LOC, 46 Tests)",
+        "package.json (3.117.0 → 3.118.0)",
+        "agents/INDEX.js (workLog + version + files index)"
+      ]
+    },
     {
       agent:     "frontend",
       timestamp: "2026-05-19T14:30:00.000Z",
