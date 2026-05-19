@@ -50,6 +50,8 @@ import {
   deleteUserMidiTemplate,
   renameUserMidiTemplate,
 } from "@/store/useUserMidiTemplatesStore";
+// v3.121.0: Templates Library Dialog
+import { TemplatesLibrary } from "@/components/MidiSettings/TemplatesLibrary";
 import { useSubMixStore, MAX_SUB_MIX_BUSES, type SubMixBus } from "@/store/useSubMixStore";
 // v3.98.0: MIDI-Click-Out — externe Hardware-Sync via Beat-Notes.
 import {
@@ -291,6 +293,8 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
     return defaultLayoutNameForDevice(dev?.name);
   }
   const [activeTab, setActiveTab] = useState<"devices" | "templates" | "cc" | "notes" | "monitor" | "clock">("devices");
+  // v3.121.0: Templates-Library-Dialog (browse Hardware + User + Import/Export)
+  const [templatesLibraryOpen, setTemplatesLibraryOpen] = useState(false);
   const [noteLearnPartId, setNoteLearnPartId] = useState<string | null>(null);
   const [noteLearnChannel, setNoteLearnChannel] = useState(0);
   const [manualNote, setManualNote] = useState(36);
@@ -2625,6 +2629,26 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
         Wähle eine Vorlage für deinen Hardware-Controller. <strong className="text-text-primary">Achtung:</strong> Alle aktuellen Mappings werden überschrieben.
       </div>
 
+      {/* v3.121.0: Templates-Library-Eintrittspunkt — Browse aller Templates
+          inkl. Kategorie-Filter, User-Templates und Import/Export. */}
+      <div className="border border-accent-primary/40 rounded-lg p-3 bg-accent-primary/5 flex items-center justify-between gap-3">
+        <div className="flex-1 min-w-0">
+          <div className="text-xs font-semibold text-text-primary flex items-center gap-2">
+            <span aria-hidden>📚</span> Templates Library
+          </div>
+          <p className="text-[11px] text-text-muted mt-0.5 leading-snug">
+            Durchsuche Hardware-Templates, eigene Setups und importiere Community-Mappings.
+          </p>
+        </div>
+        <button
+          onClick={() => setTemplatesLibraryOpen(true)}
+          className="px-3 py-1.5 bg-accent-primary text-bg-base hover:bg-accent-primary/80 text-xs font-medium rounded flex-shrink-0"
+          data-testid="open-templates-library"
+        >
+          Library oeffnen
+        </button>
+      </div>
+
       {/* v1.96: Aktuelle Mappings als User-Template speichern */}
       {(midi.mappings.length > 0 || midi.noteMappings.length > 0) && (
         <div className="border border-accent-secondary/30 rounded-lg p-3 bg-accent-secondary/10">
@@ -2935,6 +2959,20 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
           </button>
         </div>
       </div>
+
+      {/* v3.121.0: Templates Library Dialog */}
+      {templatesLibraryOpen && (
+        <TemplatesLibrary
+          parts={parts}
+          currentCcMappings={midi.mappings}
+          currentNoteMappings={midi.noteMappings}
+          activeDeviceName={midi.devices.find(d => d.id === midi.activeDeviceId)?.name ?? null}
+          onApplyMappings={(cc, notes) => {
+            midi.loadTemplate(cc, notes);
+          }}
+          onClose={() => setTemplatesLibraryOpen(false)}
+        />
+      )}
     </div>
   );
 }

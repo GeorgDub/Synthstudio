@@ -98,6 +98,7 @@ import { OmniTribeVuMeter } from "@/components/OmniTribe/OmniTribeVuMeter";
 import { OmniTribeSpectrumAnalyzer } from "@/components/OmniTribe/OmniTribeSpectrumAnalyzer";
 import { ChordPanel } from "@/components/OmniTribe/ChordPanel";
 import { PerformancePadGrid } from "@/components/OmniTribe/PerformancePadGrid";
+import { StepSequencerPanel } from "@/components/OmniTribe/StepSequencerPanel";
 import { OmniTribeBrowserSupport } from "@/components/OmniTribe/OmniTribeBrowserSupport";
 import { DeviceConnectionPanel } from "@/components/Settings/DeviceConnectionPanel";
 import { OtaUpdatePanel } from "@/components/Settings/OtaUpdatePanel";
@@ -4435,6 +4436,8 @@ export default function App() {
                           <ChordPanel connected={omniTribeConnected} />
                           <PerformancePadGrid connected={omniTribeConnected} />
                         </div>
+                        {/* Sprint-103: Step-Sequencer */}
+                        <StepSequencerPanel connected={omniTribeConnected} />
                       </div>
                     )}
                     {activeTool === 'packs' && (

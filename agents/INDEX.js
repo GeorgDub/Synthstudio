@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.120.0",
+    version: "3.121.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -2902,6 +2902,36 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "frontend",
+      timestamp: "2026-05-19T14:55:00.000Z",
+      done: [
+        "v3.121.0: MIDI Hardware-Templates Library + Community Import/Export — UI um die 13 bestehenden Hardware-Templates (v1.74-v1.82) browsbar zu machen. Ein Dialog mit drei Tabs (Hardware / My Templates / Import-Export), Kategorie-Filter (pad-grid/controller/sequencer/drum-machine), Recently-Used-Strip (max 5, LIFO + dedupe), JSON-Roundtrip mit Schema-Validation.",
+        "client/src/utils/midiHardwareTemplates.ts NEU (~180 LOC). Re-exportiert MIDI_TEMPLATES aus midiTemplates.ts ohne Duplikation. Fügt Metadata-Overlay pro Template hinzu (category, iconEmoji, tips[]). Public-Helpers: getTemplateById(id), getTemplatesByCategory(cat|'all'), ALL_CATEGORIES, CATEGORY_LABELS. Kategorien: pad-grid (Launchpad, Push, Maschine, MPC, padKONTROL, BeatStep), controller (nanoKONTROL2, MPK Mini, X-Touch Mini), sequencer (Digitakt), drum-machine (Volca, TR-8, Electribe 2).",
+        "client/src/store/useMidiTemplateStore.ts NEU (~230 LOC). Singleton-Observer-Store (kein Zustand-npm). Persistiert nur recentlyUsed[] in localStorage `ss-midi-templates:v1` — User-Templates leben weiter im useUserMidiTemplatesStore. Public-API: markRecentlyUsed (dedupe + LIFO cap 5), getRecentlyUsed, clearRecentlyUsed, exportTemplateToJson, importTemplateFromJson (Schema-Validation mit synthstudioTemplate-Marker, Required-Fields-Check, Category-Fallback auf 'controller' bei Unbekanntem mit Warning). MAX_IMPORT_BYTES=32kB Sicherheitsschranke.",
+        "client/src/components/MidiSettings/TemplatesLibrary.tsx NEU (~520 LOC). Dialog-Component mit drei Tabs. Hardware-Tab: Category-Filter-Chips (mit Counts) + Card-Grid mit Icon-Emoji, Name, Manufacturer, Description, CC/Note-Counts, aufklappbaren Tips. User-Tab: Save-Current-Form + Liste mit Rename/Delete/Load. IO-Tab: Export-aktuelles-Mapping als JSON-Download + Import-File-Picker mit Validation + Preview-Card + Confirm-Save. Community-Link Footer auf github.com/GeorgDub/Synthstudio-templates. Recently-Used-Strip sichtbar über alle Tabs. Semantische Tailwind-Klassen (--ss-* tokens), keine hardcoded Farben. data-testids für E2E.",
+        "client/src/components/MidiSettings/MidiSettings.tsx INTEGRATION: TemplatesLibrary-Import + state (templatesLibraryOpen). Im renderTemplatesTab() oben einen prominenten 'Library oeffnen'-Button hinzugefügt (accent-primary border + button). Bestehender 'Hardware-Templates'-Listing-Block (Inline-Card-Grid + bestehende User-Template-Save-Form) bleibt darunter erhalten — Library ist additive UI, nicht Replacement. Dialog wird im Body als überlagerter Modal gerendert wenn templatesLibraryOpen=true.",
+        "tests/features/midi-template-library.test.ts NEU (~250 LOC, 23 Tests in 3 describes). localStorage-Mock vor Module-Load. midiHardwareTemplates: HARDWARE_TEMPLATES min 13, getTemplateById hit/miss, getTemplatesByCategory hit + 'all', ALL_CATEGORIES + CATEGORY_LABELS-Konsistenz, Pflichtfelder pro Template, Kategorisierungs-Sanity (nanoKONTROL2=controller, Electribe2=drum-machine + Tips). useMidiTemplateStore Import/Export: Export-Marker-Sanity, Round-Trip (Export→Import = identisch), Reject leer/invalid-JSON, Reject fehlender Marker, Reject fehlender required-fields, Reject nicht-Array-ccMappings, Warn-bei-Unknown-Category-Fallback. Recently-Used: Init-empty, LIFO-Order, Dedupe-to-top, Cap-bei-5 (FIFO eviction), Clear, localStorage-Persistenz. 23/23 grün.",
+        "package.json + INDEX.js: 3.120.0 → 3.121.0. pnpm check: clean. pnpm test:features: 235 files / 5526 passed / 16 skipped / 0 fail (+23 vs v3.120)."
+      ],
+      next: [
+        "Thumbnails statt Emoji — `imageUrl?:string` im HardwareTemplate-Schema ist vorbereitet aber leer; ein public/templates/<id>.png Asset-Set würde der Card-Grid mehr visuelle Hierarchie geben.",
+        "Templates-Browser auch im Welcome-Wizard — beim First-Run dem User direkt die Templates-Library zeigen statt nur Theme-Picker. Würde Onboarding für KORG/Akai-User stark verbessern.",
+        "Community-Repo seeden — github.com/GeorgDub/Synthstudio-templates ist im Link referenziert aber existiert nicht. Repo mit README + 3-5 Beispiel-Templates anlegen (.synthtpl.json) damit der Link nicht leer ist.",
+        "Bulk-Export aller User-Templates als ZIP — derzeit ein-Template-pro-Datei. ZIP-Pack-Export würde 'Backup all my MIDI setups' ermöglichen.",
+        "Hardware-Auto-Detection-Integration — die Library kennt die Categorisierung, der Auto-Detect-Code in midiDeviceDetection.ts nicht. Bei Suggestion-Card-Render könnte die Kategorie als zusätzlicher Hinweis erscheinen.",
+        "Search-Input in der Library — bei wachsender Template-Anzahl (Community-Imports) wird Scrolling lästig. Filter-by-Name/Manufacturer wäre nicer als nur Kategorie-Chips."
+      ],
+      changed: [
+        "client/src/utils/midiHardwareTemplates.ts (NEU, ~180 LOC, Re-Export + UI-Metadata)",
+        "client/src/store/useMidiTemplateStore.ts (NEU, ~230 LOC, RecentlyUsed + JSON-Roundtrip)",
+        "client/src/components/MidiSettings/TemplatesLibrary.tsx (NEU, ~520 LOC, 3-Tab-Dialog)",
+        "client/src/components/MidiSettings/MidiSettings.tsx (Library-Integration + Open-Button)",
+        "tests/features/midi-template-library.test.ts (NEU, ~250 LOC, 23 Tests)",
+        "package.json (3.120.0 → 3.121.0)",
+        "agents/INDEX.js (v3.121.0 + workLog + files)"
+      ]
+    },
     {
       agent:     "backend",
       timestamp: "2026-05-19T14:42:00.000Z",
