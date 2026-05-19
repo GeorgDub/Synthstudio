@@ -36,6 +36,12 @@ import {
 } from "@/utils/midiOutput";
 import { NanoKontrolFeedback, type NanoKontrolChannelState } from "@/audio/NanoKontrolFeedback";
 import { MidiClockIn, type MidiClockInStatus } from "@/audio/MidiClockIn";
+// v3.111.0: MidiSyncIn — schlanke KORG-Master-Sync-Façade neben MidiClockIn.
+import { MidiSyncIn } from "@/audio/MidiSyncIn";
+import {
+  getMidiSyncInState,
+  setMidiSyncInDetectedBpm,
+} from "@/store/useMidiSyncInStore";
 import { cycleScene } from "@/store/useSceneStore";
 import {
   detectTemplatesFromDeviceList,
@@ -769,6 +775,52 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
   const clockInEnabledRef = useRef(false);
   useEffect(() => { clockInEnabledRef.current = clockInEnabled; }, [clockInEnabled]);
 
+  // v3.111.0: MidiSyncIn — alternative schlanke Façade (KORG-Master-Sync).
+  // Laeuft parallel zu MidiClockIn: wenn der User Sync-In im Store aktiviert,
+  // werden Clock/Start/Stop/Continue zusaetzlich an MidiSyncIn weitergereicht
+  // und der Callback mappt direkt auf AudioEngine.applyDetectedBpm /
+  // applyExternalStart/Stop/Continue. Echo-Schutz: wenn Sync-In enabled, wird
+  // Clock-Out automatisch unterdrueckt.
+  const midiSyncInRef = useRef<MidiSyncIn>(new MidiSyncIn());
+  // Setup-Callback einmalig: AudioEngine-Bridge.
+  useEffect(() => {
+    const sync = midiSyncInRef.current;
+    sync.onSyncEvent = (event, detail) => {
+      const state = getMidiSyncInState();
+      switch (event) {
+        case "bpm-changed":
+          if (typeof detail?.bpm === "number") {
+            setMidiSyncInDetectedBpm(detail.bpm);
+            if (state.syncTempo) {
+              try { AudioEngine.applyDetectedBpm(detail.bpm); } catch { /* swallow */ }
+            }
+          }
+          break;
+        case "start":
+          if (state.autoStartStop) {
+            try { AudioEngine.applyExternalStart(); } catch { /* swallow */ }
+          }
+          break;
+        case "stop":
+          if (state.autoStartStop) {
+            try { AudioEngine.applyExternalStop(); } catch { /* swallow */ }
+          }
+          break;
+        case "continue":
+          if (state.autoStartStop) {
+            try { AudioEngine.applyExternalContinue(); } catch { /* swallow */ }
+          }
+          break;
+      }
+    };
+    // Register beim Engine fuer Telemetrie / Tests.
+    try { AudioEngine.setMidiSyncIn(sync); } catch { /* swallow */ }
+    return () => {
+      try { AudioEngine.setMidiSyncIn(null); } catch { /* swallow */ }
+      sync.onSyncEvent = null;
+    };
+  }, []);
+
   // v2.84 (TASK-231): LED-Feedback-State + Scene-Mode.
   const [feedbackOutputDeviceId, setFeedbackOutputDeviceIdState] = useState<string | null>(() => loadFeedbackOutputId());
   const [feedbackEnabled, setFeedbackEnabledState] = useState<boolean>(() => loadFeedbackEnabled());
@@ -848,6 +900,41 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
       // sie nicht doppelt verarbeitet werden (z.B. alter clockSync-Pfad).
       if (status === 0xf8 || status === 0xfa || status === 0xfb || status === 0xfc) {
         return;
+      }
+    }
+
+    // v3.111.0: MidiSyncIn — parallele schlanke Façade. Aktiv-Check via Store
+    // damit ohne Re-Render-Bouncing reagiert wird. Filter nach inputDeviceId,
+    // falls gesetzt. Status-Bytes werden hier NICHT konsumiert weil MidiSyncIn
+    // typischerweise alleine genutzt wird (Clock-In + Sync-In gleichzeitig
+    // wuerde nur sinnvoll sein wenn der User bewusst beide will).
+    {
+      const syncInState = getMidiSyncInState();
+      if (syncInState.enabled) {
+        const sync = midiSyncInRef.current;
+        if (!sync.enabled) sync.enabled = true;
+        // Device-Filter:
+        const allowed =
+          !syncInState.inputDeviceId ||
+          (event.target instanceof Object &&
+            (event.target as { id?: string }).id === syncInState.inputDeviceId);
+        if (allowed) {
+          // Web-MIDI event.timeStamp ist relative zur Page-Load; performance.now()
+          // ist konsistent — beides ist monoton und in ms, daher OK.
+          const ts =
+            typeof event.timeStamp === "number" && isFinite(event.timeStamp)
+              ? event.timeStamp
+              : (typeof performance !== "undefined" ? performance.now() : Date.now());
+          sync.handleMessage(data, ts);
+          if (status === 0xf8 || status === 0xfa || status === 0xfb || status === 0xfc) {
+            return;
+          }
+        }
+      } else if (midiSyncInRef.current.enabled) {
+        // Store wurde disabled — Receiver auch disablen + reset.
+        midiSyncInRef.current.enabled = false;
+        midiSyncInRef.current.reset();
+        setMidiSyncInDetectedBpm(null);
       }
     }
 

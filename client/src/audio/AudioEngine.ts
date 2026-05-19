@@ -1238,6 +1238,86 @@ class AudioEngineClass {
     this._looperEngine.setBpm(this._bpm);
   }
 
+  // ─── v3.111.0: MidiSyncIn-Facade (KORG-Master-Sync) ──────────────────────
+  // Schlanke API-Façade fuer den neuen MidiSyncIn-Receiver (alongside MidiClockIn).
+  // Der Hook installiert per `setMidiSyncIn(instance)` den Receiver und kann
+  // dann direkt `applyDetectedBpm/applyExternalStart/Stop/Continue` aufrufen.
+
+  private _midiSyncIn: import("./MidiSyncIn").MidiSyncIn | null = null;
+
+  /**
+   * v3.111.0: Registriert (oder unregistriert) eine MidiSyncIn-Instanz.
+   * NICHT wirklich notwendig — der Hook kann auch direkt applyDetectedBpm()
+   * etc. aufrufen — aber speichert die Instanz fuer Telemetrie / Tests.
+   */
+  setMidiSyncIn(sync: import("./MidiSyncIn").MidiSyncIn | null): void {
+    this._midiSyncIn = sync;
+  }
+
+  /** v3.111.0: Read-only Getter — fuer Tests / UI-Inspect. */
+  get midiSyncIn(): import("./MidiSyncIn").MidiSyncIn | null {
+    return this._midiSyncIn;
+  }
+
+  /**
+   * v3.111.0: Setzt internal _bpm wenn syncTempo aktiv (Caller-Entscheidung).
+   * Aequivalent zu applyExternalBpm — separat benannt damit Sync-In-Pfad
+   * im Stack-Trace klar erkennbar ist.
+   */
+  applyDetectedBpm(bpm: number): void {
+    if (typeof bpm !== "number" || !isFinite(bpm)) return;
+    this.applyExternalBpm(bpm);
+  }
+
+  /**
+   * v3.111.0: Externer Master sendet 0xFA Start. Wenn wir nicht spielen,
+   * starten wir das Pattern; wenn wir bereits laufen, ist es ein Reset
+   * auf Step 0 (Spec-konform). Defensive: keine doppelte Tick-Machine.
+   */
+  applyExternalStart(): void {
+    // Wenn bereits spielend: hart auf Step 0 zurueck.
+    if (this._isPlaying) {
+      this._currentStep = 0;
+      this.positionCallbacks.forEach((cb) => cb(0));
+      return;
+    }
+    // Sonst klassisch starten — wir leiten ueber play(0) um damit der
+    // Scheduler korrekt initialisiert wird.
+    try {
+      // play() ist async — wir feuern fire-and-forget; der externe Master
+      // toleriert ein paar ms Latenz beim ersten Tick.
+      void this.play();
+    } catch {
+      /* swallow — Engine muss bei Sync-In-Fehlern resilient bleiben */
+    }
+  }
+
+  /** v3.111.0: Externer Master sendet 0xFC Stop. */
+  applyExternalStop(): void {
+    if (!this._isPlaying) return;
+    try {
+      this.stop();
+    } catch {
+      /* swallow */
+    }
+  }
+
+  /**
+   * v3.111.0: Externer Master sendet 0xFB Continue. Resume from current
+   * step (kein Position-Reset). Wenn bereits laufend: no-op.
+   */
+  applyExternalContinue(): void {
+    if (this._isPlaying) return;
+    try {
+      // play(fromStep) ohne Argument startet bei _currentStep (oder
+      // pending-Start-Step). Wir uebergeben explizit _currentStep damit
+      // play() nicht auf 0 zurueck-springt.
+      void this.play(this._currentStep);
+    } catch {
+      /* swallow */
+    }
+  }
+
   // ─── Tempo-Map / BPM-Automation (v3.95.0 / v3.104.0 stepCount-aware) ──────
 
   /**

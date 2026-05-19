@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.110.0",
+    version: "3.111.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -89,6 +89,36 @@ const INDEX = {
   // ─── KNOWN FILE INDEX ──────────────────────────────────────
   // Key files agents have analyzed. Add new entries after working on a file.
   files: {
+    "client/src/audio/MidiSyncIn.ts (v3.111.0 NEU)": {
+      role:     "v3.111.0 NEU (+~260 LOC). KORG-Master-Sync / Hardware-Master-Sync — schlanke Façade neben MidiClockIn (v3.37). Closure-Callback statt window-CustomEvent → 100% Node-test-tauglich. Pure-Helpers exported: bpmFromClockIntervalMs(ms)=60000/(ms*24), bpmFromIntervals(arr,windowSize=16) Moving-Average (filtert NaN/Inf, MIN_STABLE_SAMPLES=6), smoothBpm(raw,prev,alpha=0.2) EWMA. Class MidiSyncIn mit enabled-Flag + onSyncEvent-Listener. handleClock(ts): erster Tick nur Zeit gemerkt, Folge-Ticks akkumulieren in Sliding-Window (windowSize-Cap), EWMA-smoothed BPM, threshold-based 'bpm-changed'-Emit (bpmChangeThreshold default 0.1). handleStart/Continue resetten _lastClockTime gegen 0ms-Spike + emit. handleStop emit. handleMessage(bytes,ts) dispatcht per status-byte; 0xFE Active-Sensing + 0xFF System-Reset werden ignoriert. RT_CLOCK/START/CONTINUE/STOP/ACTIVE_SENSING/SYSTEM_RESET als Konstanten exportiert. PPQN=24, MIN_STABLE_SAMPLES=6, SYNC_IN_MIN/MAX_BPM=20/300. Side-effect-frei beim Konstruieren.",
+      lastSeen: "2026-05-19T12:55:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/store/useMidiSyncInStore.ts (v3.111.0 NEU)": {
+      role:     "v3.111.0 NEU (+~155 LOC, Custom-Observer-Pattern analog useMidiClickStore). localStorage 'ss-midi-sync-in:v1' Schema-v1. Persistiert NUR enabled/inputDeviceId/autoStartStop/syncTempo — detectedBpm volatil (immer initial null beim Load). Public API: getMidiSyncInState, setMidiSyncInEnabled (auto-clears detectedBpm on disable damit UI nicht stale-data zeigt), setMidiSyncInInputDevice (normalisiert empty→null), setMidiSyncInAutoStartStop, setMidiSyncInSyncTempo, setMidiSyncInDetectedBpm (0.05 BPM threshold gegen Re-Render-Spam pro Tick), setMidiSyncInPartial Bulk-Setter mit Sanitize, __resetMidiSyncInStoreForTests Test-Helper. Hook useMidiSyncInStore liefert MidiSyncInState. Defaults: enabled=false, inputDeviceId=null, autoStartStop=true, syncTempo=true, detectedBpm=null.",
+      lastSeen: "2026-05-19T12:55:00.000Z",
+      ownedBy:  "backend"
+    },
+    "tests/features/midi-sync-in.test.ts (v3.111.0 NEU)": {
+      role:     "v3.111.0 NEU (+~430 LOC, 42 Tests in 9 describes, jsdom-frei mit localStorage-Mock). (1) bpmFromClockIntervalMs × 4 — 20.83ms→120 BPM, 10.42ms→240 BPM, NaN/0/Inf/negative→null, out-of-range. (2) bpmFromIntervals × 5 — empty→null, <MIN_STABLE_SAMPLES→null, stable 120, window-slicing (last N), mixed valid+invalid filtered. (3) smoothBpm × 6 — prev=null bootstrap, alpha=0/1 edges, alpha=0.1 jump 50 iter > 239 BPM asymptotic, invalid raw fallback, alpha out-of-range clamp. (4) MidiSyncIn handleClock × 5 — akkumuliert Intervalle, disabled-noop, window-cap haelt N Eintraege, stable 120 BPM detection mit smoothAlpha=1, threshold-based emit-throttle. (5) Transport-Handler × 5 — start/stop/continue emit, _lastClockTime reset after start, disabled-noop. (6) reset() × 1 — clears intervals+detectedBpm, enabled bleibt. (7) handleMessage × 7 — 0xF8/0xFA/0xFB/0xFC dispatch, 0xFE/0xFF ignored, empty/null defensive. (8) Store × 6 — defaults, persistence (detectedBpm NICHT persistiert), inputDevice normalize, toggles, threshold-throttle, disable-clears, round-trip via localStorage. (9) Engine-Integration-Smoke × 2 — callback empfaengt bpm-changed mit korrektem Wert, 'start'-Event triggert applyExternalStart-Aequivalent. 42/42 grün, kein Regress.",
+      lastSeen: "2026-05-19T12:55:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/audio/AudioEngine.ts (v3.111.0 +MidiSyncIn-Facade)": {
+      role:     "v3.111.0 ERWEITERT (+~75 LOC, vorher v3.110 LiveRecorder-Block unveraendert). NEU Sektion v3.111 'MidiSyncIn-Facade' nach applyExternalBpm: private _midiSyncIn = null, setMidiSyncIn(instance|null) (Telemetrie/Tests), get midiSyncIn, applyDetectedBpm(bpm) alias zu applyExternalBpm (separater Stack-Trace fuer Sync-In-Pfad-Tracking), applyExternalStart() (wenn _isPlaying: Step→0 reset + positionCallback; sonst void play()), applyExternalStop() (wenn _isPlaying: stop()), applyExternalContinue() (wenn !_isPlaying: void play(_currentStep) resume). Alle try/catch-defensiv damit Sync-Hot-Path nie die Engine crash't.",
+      lastSeen: "2026-05-19T12:55:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/hooks/useMidi.ts (v3.111.0 +MidiSyncIn-Wire)": {
+      role:     "v3.111.0 ERWEITERT (+~70 LOC). NEU import MidiSyncIn + useMidiSyncInStore-Setter. midiSyncInRef = new MidiSyncIn() im Hook-Body neben clockInRef. useEffect (1× beim mount) installiert onSyncEvent-Callback — mappt 'bpm-changed' → setMidiSyncInDetectedBpm + AudioEngine.applyDetectedBpm (wenn syncTempo aktiv), 'start'/'stop'/'continue' → AudioEngine.applyExternalStart/Stop/Continue (wenn autoStartStop aktiv); registriert sync via AudioEngine.setMidiSyncIn. Cleanup unregistriert. In handleMidiMessage neuer Block NACH clockInRef-Handling: liest getMidiSyncInState() (live, kein Re-Render-Bouncing), aktiviert sync.enabled bei Bedarf, filtert via inputDeviceId (event.target.id), ruft sync.handleMessage(data, event.timeStamp). Konsumiert 0xF8/0xFA/0xFB/0xFC nach Verarbeitung. Bei Store-disable: sync.enabled=false + sync.reset() + setMidiSyncInDetectedBpm(null).",
+      lastSeen: "2026-05-19T12:55:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/components/MidiSettings/MidiSettings.tsx (v3.111.0 +Sync-In-Section)": {
+      role:     "v3.111.0 ERWEITERT (+~110 LOC). NEU import useMidiSyncInStore + Setter. NEU midiSyncInState im Component-Body. NEU Section 'MIDI Sync In (KORG-Master-Sync)' in renderClockTab ueber dem bestehenden Clock-In-Block, data-testid='sync-in-section', border-accent-secondary/40-highlighted. Components: Master-Toggle (sync-in-toggle), Echo-Schutz-Warning bei Sync-In + Clock-Out gleichzeitig (sync-in-echo-warning, bg-accent-danger/15), Input-Device-Picker (sync-in-device-select aus midi.devices), Auto-Start/Stop-Toggle (sync-in-autostartstop-toggle, reagiert auf 0xFA/0xFC/0xFB), Sync-Tempo-Toggle (sync-in-synctempo-toggle, override internal _bpm), Detected-BPM-Display (sync-in-bpm-display, 2xl font-mono accent-secondary; 'Warte auf MIDI-Clock-Signal vom Master…' wenn null), Hinweis-Text zu KORG Electribe2 + v3.99-Pre-Roll-Caveat. Nur semantische Tokens (bg-bg-elevated, text-accent-secondary, etc.).",
+      lastSeen: "2026-05-19T12:55:00.000Z",
+      ownedBy:  "backend"
+    },
     "client/src/utils/songSequencer.ts (v3.109.0 NEU)": {
       role:     "v3.109.0 NEU (+~205 LOC, pure helpers). Song-Mode / Pattern-Chain-Sequencer Logik. Types Song={id,name,steps:SongStep[],loopMode:'once'|'loop'|'pingpong'} und SongStep={id,patternId,repeatCount:1..64,label?}. Konstanten MIN_REPEAT=1, MAX_REPEAT=64. clampRepeatCount(n) clampt+integer-rundet, NaN/Infinity → MIN. getNextStep(song, currentStepIdx, currentRepeat, direction) liefert NextStepResult — alle drei loop-modes implementiert (once-finished, loop-wrap, pingpong-reverse), out-of-range/empty → finished, single-step-pingpong stay. expandSong(song, maxLength=256) iteriert sequencer für tests+previews. firstPatternId(song) Convenience. Side-effect-frei.",
       lastSeen: "2026-05-19T12:20:00.000Z",
@@ -2692,6 +2722,39 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "backend",
+      timestamp: "2026-05-19T12:55:00.000Z",
+      done: [
+        "v3.111.0: MIDI-Sync-In + Hardware-Master-Sync (closes v3.99 + KORG-Electribe2-Master-Mode). Schlanke Façade neben dem bestehenden MidiClockIn (v3.37). Closure-basierter onSyncEvent-Callback statt window-CustomEvent — voll Node-testbar. Speziell für KORG Electribe2 als Master + v3.99-Pre-Roll-Caveat (externer Master orchestriert Pre-Roll).",
+        "client/src/audio/MidiSyncIn.ts NEU (+~260 LOC). Pure-Helpers: bpmFromClockIntervalMs(intervalMs) = 60000/(intervalMs*24), bpmFromIntervals(arr, windowSize=16) Moving-Average, smoothBpm(raw, prev, alpha=0.2) EWMA. Class MidiSyncIn mit enabled, onSyncEvent (start|stop|continue|bpm-changed), handleClock/Start/Stop/Continue/Message, getDetectedBpm/SampleCount/LastClockTime, reset. Konstanten PPQN=24, MIN_STABLE_SAMPLES=6, SYNC_IN_MIN/MAX_BPM=20/300. RT-Status-Bytes RT_CLOCK/START/CONTINUE/STOP/ACTIVE_SENSING/SYSTEM_RESET exportiert. handleClock: Sliding-Window-Cap windowSize, EWMA-smoothed BPM, threshold-based emit (bpmChangeThreshold default 0.1). handleStart/Continue resetten _lastClockTime gegen 0ms-Spike. handleMessage dispatched per status-byte; 0xFE/0xFF werden ignoriert.",
+        "client/src/store/useMidiSyncInStore.ts NEU (+~155 LOC, Custom-Observer-Pattern). localStorage 'ss-midi-sync-in:v1' persistiert enabled/inputDeviceId/autoStartStop/syncTempo — detectedBpm volatil. setMidiSyncInEnabled (auto-clears detectedBpm on disable), setMidiSyncInInputDevice (normalisiert empty→null), setMidiSyncInAutoStartStop, setMidiSyncInSyncTempo, setMidiSyncInDetectedBpm (0.05 BPM threshold gegen Re-Render-Spam), setMidiSyncInPartial Bulk-Setter mit Sanitize, __resetMidiSyncInStoreForTests.",
+        "client/src/audio/AudioEngine.ts ERWEITERT (+~75 LOC). NEU Facade-Methoden setMidiSyncIn(instance)/get midiSyncIn (Telemetrie), applyDetectedBpm(bpm) (alias zu applyExternalBpm — separater Stack-Trace), applyExternalStart() (wenn !playing: play(); sonst Step→0 reset), applyExternalStop() (wenn playing: stop()), applyExternalContinue() (resume from _currentStep via play(_currentStep)). Defensive try/catch um nie den Sync-Hot-Path zu crashen.",
+        "client/src/hooks/useMidi.ts ERWEITERT (+~70 LOC). NEU import MidiSyncIn + Store-Setter. midiSyncInRef = new MidiSyncIn() im Hook-Body. useEffect installiert onSyncEvent-Callback der je nach Store-State (autoStartStop/syncTempo) auf AudioEngine.applyDetectedBpm/applyExternalStart/Stop/Continue mappt. setMidiSyncInDetectedBpm(detail.bpm) wird bei jedem bpm-changed-Event aufgerufen. Im handleMidiMessage: nach clockInRef-Block neuer Sync-In-Block — liest Store live, filtert via inputDeviceId, ruft sync.handleMessage(data, event.timeStamp). Konsumiert 0xF8/0xFA/0xFB/0xFC damit nicht doppelt verarbeitet. Bei Store-disable: sync.reset() + detectedBpm=null.",
+        "client/src/components/MidiSettings/MidiSettings.tsx ERWEITERT (+~110 LOC). NEU Sync-In-Section in renderClockTab — über dem bestehenden Clock-In-Block, mit data-testid='sync-in-section'. Master-Toggle, Echo-Schutz-Warning (Sync-In + Clock-Out gleichzeitig), Input-Device-Picker (Devices aus midi.devices), Auto-Start/Stop-Toggle, Sync-Tempo-Toggle, Detected-BPM-Display (live), Hinweis-Text zu KORG Electribe2 + v3.99-Pre-Roll. Nur semantische Tokens.",
+        "tests/features/midi-sync-in.test.ts NEU (+~430 LOC, 42 Tests in 9 describes, jsdom-frei mit localStorage-Mock). (1) bpmFromClockIntervalMs × 4 — 20.83→120, 10.42→240, NaN/0/Inf/negative→null, out-of-range. (2) bpmFromIntervals × 5 — empty→null, <MIN_STABLE_SAMPLES→null, stable 120, window-slicing, mixed valid+invalid filtered. (3) smoothBpm × 6 — prev=null bootstrap, alpha=0/1 edges, alpha=0.1 jump (50 iter > 239 BPM asymptotic), invalid raw fallback, alpha clamp. (4) handleClock × 5 — akkumuliert, disabled-noop, window-cap, stable 120 detection, threshold-throttle. (5) Transport-Handler × 5 — start/stop/continue emit, _lastClockTime reset after start, disabled-noop. (6) reset() × 1 — clears state, enabled bleibt. (7) handleMessage × 7 — 0xF8/0xFA/0xFB/0xFC dispatch, 0xFE/0xFF ignored, empty/null defensive. (8) Store × 6 — defaults, persistence (detectedBpm NICHT persistiert), inputDevice normalize, toggles, threshold-throttle, disable-clears, round-trip. (9) Engine-Integration-Smoke × 2 — callback bpm-changed, start-event. 42/42 grün.",
+        "package.json 3.110.0 → 3.111.0. pnpm check: clean. pnpm test: 257 Files / 5858 passed / 16 skipped / 0 fail (+42 vs v3.110)."
+      ],
+      next: [
+        "Pre-Roll-Bypass beim externen Start: aktuell ruft applyExternalStart() play() ohne Count-In-Suppress. KORG-Workflow: User will häufig OHNE eigenes Pre-Roll starten, weil der Master schon zählt — applyExternalStart sollte temporär _countInEnabled override (passing-flag oder eigene Engine-Methode).",
+        "SPP-Empfang in MidiSyncIn: aktuell nur 0xF8/0xFA/0xFB/0xFC. MidiClockIn (v3.37) hat bereits 0xF2 (Song-Position-Pointer) — MidiSyncIn sollte das nachziehen damit Hardware-Master-Seek funktioniert.",
+        "UI: read-only BPM-Slider während Sync-In aktiv (parallel zu Clock-In-Verhalten). Aktuell ist der Tempo-Slider in der Toolbar weiterhin interaktiv was zu Konflikten mit applyDetectedBpm führt.",
+        "Echo-Protection als HARD-Constraint: aktuell nur Warning im UI. Sollte beim Enable von Sync-In automatisch Clock-Out off togglen (mit Toast 'Clock-Out wurde deaktiviert um MIDI-Loop zu verhindern').",
+        "Device-Filter robuster: aktuell prüft useMidi event.target.id — bei manchen Browser-Implementierungen ist das null. Fallback auf activeInputRef.current.id wenn target null.",
+        "Latenz-Kompensation: KORG-Electribe2 hat ~5ms Hardware-Jitter. EWMA mit alpha=0.2 reagiert noch zu schnell. Kalibrierungs-Mode (z.B. 'Lock to 120/140/170 BPM') als manueller Override.",
+        ".synth-File-Schema v1.18: aktuell ist Sync-In-Config NICHT im Projekt-File (analog Clock-In ist User-Preference). Falls User-Wunsch entsteht, in useProjectStore round-trippen."
+      ],
+      changed: [
+        "client/src/audio/MidiSyncIn.ts (NEU, ~260 LOC, Pure-Helpers + Class)",
+        "client/src/store/useMidiSyncInStore.ts (NEU, ~155 LOC, Custom-Observer)",
+        "client/src/audio/AudioEngine.ts (+~75 LOC, setMidiSyncIn + applyDetectedBpm + applyExternalStart/Stop/Continue)",
+        "client/src/hooks/useMidi.ts (+~70 LOC, MidiSyncIn-Ref + onSyncEvent-Bridge + handleMidiMessage-Hookup)",
+        "client/src/components/MidiSettings/MidiSettings.tsx (+~110 LOC, Sync-In-Section in Clock-Tab)",
+        "tests/features/midi-sync-in.test.ts (NEU, ~430 LOC, 42 Tests)",
+        "package.json (3.110.0 → 3.111.0)",
+        "agents/INDEX.js (workLog + files-Index + version-Bump)"
+      ]
+    },
     {
       agent:     "backend",
       timestamp: "2026-05-19T12:20:00.000Z",

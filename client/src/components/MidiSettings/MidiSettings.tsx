@@ -65,6 +65,14 @@ import {
   setMidiClickCountInEnabled,
   setMidiClickCountInBars,
 } from "@/store/useMidiClickStore";
+// v3.111.0: MIDI Sync In — KORG-Master-Sync / Hardware-Master-Sync.
+import {
+  useMidiSyncInStore,
+  setMidiSyncInEnabled,
+  setMidiSyncInInputDevice,
+  setMidiSyncInAutoStartStop,
+  setMidiSyncInSyncTempo,
+} from "@/store/useMidiSyncInStore";
 
 interface MidiSettingsProps {
   midi: MidiState & MidiActions;
@@ -165,6 +173,8 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
   const [userTplName, setUserTplName] = useState("");
   // v3.98.0: MIDI-Click-Out — Beat-Notes an externe Hardware.
   const midiClickState = useMidiClickStore();
+  // v3.111.0: MIDI-Sync-In (KORG-Master-Sync).
+  const midiSyncInState = useMidiSyncInStore();
 
   // v1.79: Live-MIDI-Activity-Indicator — User sieht ob seine Hardware
   // tatsächlich Events sendet. Hört auf "midi:rawmessage" das in
@@ -1908,6 +1918,131 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
 
   const renderClockTab = () => (
     <div className="space-y-4">
+      {/* ── v3.111.0: MIDI Sync In (KORG-Master-Sync / Hardware-Master-Sync) ─ */}
+      {/* Schlankere Alternative zur Clock-IN-Sektion unten. Speziell fuer
+          KORG Electribe2 / OmniTribe-Master-Setup. Echo-Schutz: wenn Sync-In
+          aktiv und Clock-Out aktiv → Warnung. */}
+      <div className="p-3 bg-bg-elevated rounded-lg border border-accent-secondary/40" data-testid="sync-in-section">
+        <div className="flex items-center justify-between mb-2">
+          <div>
+            <div className="text-sm font-medium text-text-primary">
+              MIDI Sync In <span className="text-[10px] text-text-dim">(v3.111 · KORG-Master-Sync)</span>
+            </div>
+            <div className="text-xs text-text-muted mt-0.5">
+              Synthstudio reagiert auf externe MIDI-Clock (0xF8/0xFA/0xFC/0xFB) und folgt Tempo+Transport.
+            </div>
+          </div>
+          <button
+            data-testid="sync-in-toggle"
+            onClick={() => setMidiSyncInEnabled(!midiSyncInState.enabled)}
+            className={`relative w-10 h-5 rounded-full transition-colors ${
+              midiSyncInState.enabled ? "bg-accent-primary" : "bg-bg-elevated"
+            }`}
+            aria-label="MIDI Sync In an/aus"
+          >
+            <div className={`absolute top-0.5 w-4 h-4 bg-text-primary rounded-full shadow transition-transform ${
+              midiSyncInState.enabled ? "translate-x-5" : "translate-x-0.5"
+            }`} />
+          </button>
+        </div>
+
+        {midiSyncInState.enabled && (
+          <>
+            {/* Echo-Schutz: Sync-In + Clock-Out gleichzeitig waere ein Loop. */}
+            {midi.clockOutEnabled && (
+              <div className="mt-2 p-2 rounded bg-accent-danger/15 border border-accent-danger/40 text-xs text-accent-danger" data-testid="sync-in-echo-warning">
+                Achtung: Sync-In + Clock-Out gleichzeitig aktiv. Das erzeugt einen MIDI-Loop —
+                deaktiviere Clock-Out unten, oder route die Geraete getrennt.
+              </div>
+            )}
+
+            {/* Input-Device-Picker */}
+            <div className="mt-3">
+              <label htmlFor="sync-in-device-select" className="text-xs text-text-muted block mb-1">
+                Input-Device (Master-Source)
+              </label>
+              <select
+                id="sync-in-device-select"
+                data-testid="sync-in-device-select"
+                value={midiSyncInState.inputDeviceId ?? ""}
+                onChange={(e) => setMidiSyncInInputDevice(e.target.value || null)}
+                className="w-full px-2 py-1.5 bg-bg-elevated border border-border-color rounded text-xs text-text-primary focus:outline-none focus:border-accent-primary"
+              >
+                <option value="">(Alle aktiven Inputs)</option>
+                {midi.devices.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.name}{d.manufacturer ? ` — ${d.manufacturer}` : ""}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Auto-Start/Stop-Toggle */}
+            <div className="mt-3 flex items-center justify-between">
+              <div>
+                <div className="text-xs text-text-primary">Auto-Start/Stop</div>
+                <div className="text-[10px] text-text-muted">
+                  Reagiere auf 0xFA / 0xFC / 0xFB (Master Play/Stop/Continue).
+                </div>
+              </div>
+              <button
+                data-testid="sync-in-autostartstop-toggle"
+                onClick={() => setMidiSyncInAutoStartStop(!midiSyncInState.autoStartStop)}
+                className={`relative w-10 h-5 rounded-full transition-colors ${
+                  midiSyncInState.autoStartStop ? "bg-accent-primary" : "bg-bg-elevated"
+                }`}
+                aria-label="Auto-Start/Stop an/aus"
+              >
+                <div className={`absolute top-0.5 w-4 h-4 bg-text-primary rounded-full shadow transition-transform ${
+                  midiSyncInState.autoStartStop ? "translate-x-5" : "translate-x-0.5"
+                }`} />
+              </button>
+            </div>
+
+            {/* Sync-Tempo-Toggle */}
+            <div className="mt-2 flex items-center justify-between">
+              <div>
+                <div className="text-xs text-text-primary">Sync Tempo (override internal BPM)</div>
+                <div className="text-[10px] text-text-muted">
+                  Aus = Transport-only, BPM bleibt manuell.
+                </div>
+              </div>
+              <button
+                data-testid="sync-in-synctempo-toggle"
+                onClick={() => setMidiSyncInSyncTempo(!midiSyncInState.syncTempo)}
+                className={`relative w-10 h-5 rounded-full transition-colors ${
+                  midiSyncInState.syncTempo ? "bg-accent-primary" : "bg-bg-elevated"
+                }`}
+                aria-label="Sync Tempo an/aus"
+              >
+                <div className={`absolute top-0.5 w-4 h-4 bg-text-primary rounded-full shadow transition-transform ${
+                  midiSyncInState.syncTempo ? "translate-x-5" : "translate-x-0.5"
+                }`} />
+              </button>
+            </div>
+
+            {/* Detected-BPM-Display */}
+            <div className="mt-3 p-2 bg-bg-elevated rounded text-center" data-testid="sync-in-bpm-display">
+              {midiSyncInState.detectedBpm !== null ? (
+                <div>
+                  <div className="text-2xl font-mono text-accent-secondary font-bold">
+                    {midiSyncInState.detectedBpm.toFixed(1)}
+                  </div>
+                  <div className="text-xs text-text-muted">BPM (detected)</div>
+                </div>
+              ) : (
+                <div className="text-xs text-text-muted">Warte auf MIDI-Clock-Signal vom Master…</div>
+              )}
+            </div>
+
+            <div className="mt-3 text-[10px] text-text-muted">
+              KORG Electribe2 als Master: setze E2 auf MIDI-Clock-Master und verbinde MIDI-Out → Synthstudio-Input.
+              v3.99-Pre-Roll-Caveat ist hier geloest — der Master orchestriert das Pre-Roll.
+            </div>
+          </>
+        )}
+      </div>
+
       {/* ── Clock-In: BPM von extern übernehmen ───────────────────────────── */}
       <div className="p-3 bg-bg-elevated rounded-lg">
         <div className="flex items-center justify-between mb-2">
