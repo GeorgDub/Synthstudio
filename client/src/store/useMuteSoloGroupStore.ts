@@ -161,6 +161,30 @@ export function getGroupById(id: string): MuteSoloGroup | undefined {
   return _state.groups.find((g) => g.id === id);
 }
 
+/**
+ * v3.127.0: Pure helper für MixerView Channel-Badges.
+ * Liefert alle Groups in denen ein Channel Mitglied ist (preserves insertion-order).
+ *
+ * Standalone export (auch ohne Store-Instance nutzbar — z.B. für Tests).
+ */
+export function getGroupsForChannel(
+  channelId: string,
+  groups: MuteSoloGroup[] = _state.groups,
+): MuteSoloGroup[] {
+  if (!channelId || !Array.isArray(groups)) return [];
+  return groups.filter((g) => g.channelIds.includes(channelId));
+}
+
+/**
+ * v3.127.0: Pure helper für Badge-Label-Truncation.
+ * Default max 8 chars, with ellipsis (…) bei Cutoff.
+ */
+export function truncateGroupLabel(name: string, maxChars = 8): string {
+  if (typeof name !== "string") return "";
+  if (name.length <= maxChars) return name;
+  return name.slice(0, Math.max(1, maxChars - 1)) + "…";
+}
+
 export function addGroup(
   name: string,
   color: string,

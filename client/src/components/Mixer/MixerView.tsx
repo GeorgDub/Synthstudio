@@ -28,6 +28,13 @@ import { LiveInputStrip } from "./LiveInputStrip";
 import { ChannelColorPicker } from "./ChannelColorPicker";
 import { SubMixBusStrip } from "./SubMixBusStrip";
 import { resolveChannelColor } from "@/utils/channelColors";
+// v3.127.0: Group-Membership-Badges in MixerChannel
+import {
+  useMuteSoloGroupStore,
+  getGroupsForChannel,
+  truncateGroupLabel,
+  type MuteSoloGroup,
+} from "@/store/useMuteSoloGroupStore";
 // v3.80.0: Sub-Mix UI — Strip + Channel-Assign-Dropdown.
 import {
   useSubMixStore,
@@ -258,6 +265,13 @@ function MixerChannel({
 }: MixerChannelProps) {
   const labelColor = muted ? "text-text-dim" : soloed ? "text-accent-success" : "text-text-primary";
 
+  // v3.127.0: Subscribe to mute-solo-groups store für Channel-Badges.
+  // Re-render bei Group-Mutationen.
+  const groupStore = useMuteSoloGroupStore();
+  const channelGroups: MuteSoloGroup[] = isMaster
+    ? []
+    : getGroupsForChannel(partId, groupStore.groups);
+
   // v3.73.0: Resolved color für die border-top tint. Bei Master wird kein
   // Color-Coding gemacht (Master hat semantisch keine Gruppen-Farbe).
   const resolvedColor = !isMaster && channelIndex !== undefined
@@ -317,6 +331,30 @@ function MixerChannel({
       >
         {name}
       </span>
+
+      {/* v3.127.0: Mute/Solo Group-Membership-Badges */}
+      {channelGroups.length > 0 && (
+        <div
+          className="flex flex-wrap gap-0.5 justify-center w-full"
+          title={`Groups: ${channelGroups.map(g => g.name).join(", ")}`}
+        >
+          {channelGroups.map((g) => (
+            <span
+              key={g.id}
+              data-testid={`mixer-channel-${partId}-group-badge-${g.id}`}
+              className="text-[8px] px-1 py-px rounded leading-tight"
+              style={{
+                backgroundColor: `${g.color}33`,
+                color: g.color,
+                border: `1px solid ${g.color}88`,
+              }}
+              title={g.name}
+            >
+              {truncateGroupLabel(g.name)}
+            </span>
+          ))}
+        </div>
+      )}
 
       {/* VU-Meter + Fader nebeneinander */}
       <div className="flex items-end gap-1 h-32">
