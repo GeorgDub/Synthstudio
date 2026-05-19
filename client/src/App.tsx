@@ -353,6 +353,22 @@ import {
   framesToFloat32,
   type SerializedSlicePads,
 } from "@/utils/projectSerializer";
+// v3.137.0: Embed-Sample Save/Load-Pipeline-Wire (closes v3.131 Caveat).
+// Auto-Embed transformierter Blob-URL-Samples ins .synth-File beim Save,
+// Auto-Restore aus embeddedData beim Load.  Verhindert silent-data-loss
+// nach Browser-Reload bei Sample-Transform-Workflows.
+import {
+  prepareProjectForSave,
+  restoreEmbeddedSamples,
+  countBlobUrlSamples,
+  estimateProjectEmbedSizeKb,
+} from "@/utils/sampleEmbeddingFlow";
+import {
+  audioBufferToWavBytes,
+  base64WavToAudioBuffer,
+  isBlobUrlPath,
+  type AudioBufferLike,
+} from "@/utils/sampleEmbedding";
 import { loadPadBankSlots, savePadBankSlots } from "@/utils/padBankPersistence";
 // v3.69.0: Quick-Action Macros — Hook-Mount + Context-Wiring + Schema-Persist.
 import {
@@ -900,7 +916,80 @@ export default function App() {
   }, [quickActionContext]);
 
   const doSaveProject = useCallback(async () => {
-    const snapshot = buildProjectSnapshot();
+    let snapshot = buildProjectSnapshot();
+
+    // v3.137.0: Embed Blob-URL-Samples vor Write (closes v3.131-Caveat).
+    // Transformierte Samples (SampleTransformDialog) liegen als Blob-URL vor.
+    // Blob-URLs überleben einen Browser-Reload NICHT — ohne Embed wäre das
+    // Sample beim nächsten Project-Load tot.  Pipeline fetched die Blob-URL,
+    // decodet sie via AudioContext zu AudioBuffer und embedded sie als
+    // Base64-WAV in `samples[].embeddedData`.  Defensive: jeder Pipeline-Fehler
+    // (CORS, decodeAudioData throws, leerer Buffer, …) lässt den Save weiter-
+    // laufen mit dem original-snapshot + zeigt eine Warning.
+    const blobCount = countBlobUrlSamples(
+      snapshot as unknown as Parameters<typeof countBlobUrlSamples>[0],
+    );
+    if (blobCount > 0) {
+      try {
+        const ctx = AudioEngine.getAudioContext();
+        if (!ctx) {
+          // Defensive: AudioContext noch nicht initialisiert (z.B. Save
+          // vor erstem Play).  Embed wird übersprungen — Warning zeigt
+          // den User-Schaden (Blob-URLs gehen nach Reload verloren).
+          toast(
+            `Audio-Engine nicht aktiv — ${blobCount} transformierte Sample(s) konnten nicht eingebettet werden.  Drücke einmal Play und speichere erneut.`,
+            { kind: "warning", duration: 7000 },
+          );
+        } else {
+          const loadAudioBuffer = async (
+            path: string,
+          ): Promise<AudioBufferLike | null> => {
+            try {
+              const resp = await fetch(path);
+              if (!resp.ok) return null;
+              const arr = await resp.arrayBuffer();
+              // decodeAudioData transferiert den ArrayBuffer in einigen
+              // Browsern — daher Kopie für defensive Reuse.
+              const copy = arr.slice(0);
+              const buf = await ctx.decodeAudioData(copy);
+              return buf as unknown as AudioBufferLike;
+            } catch (err) {
+              console.warn("[Save] Embed loadAudioBuffer failed for", path, err);
+              return null;
+            }
+          };
+          // Cast: parseProject's Sample shape (path: string required) ist
+          // strukturell kompatibel mit EmbedSampleLike (path: optional + index-
+          // signature).  TS sieht den Konflikt aber nicht durch die Index-Sig.
+          const prepared = await prepareProjectForSave(
+            snapshot as unknown as Parameters<typeof prepareProjectForSave>[0],
+            {
+              embedTransformed: true,
+              loadAudioBuffer,
+            },
+          );
+          snapshot = prepared as unknown as typeof snapshot;
+          const totalKb = estimateProjectEmbedSizeKb(
+            snapshot as unknown as Parameters<typeof estimateProjectEmbedSizeKb>[0],
+          );
+          if (totalKb > 0) {
+            const mb = (totalKb / 1024).toFixed(1);
+            toast(
+              `${blobCount} transformierte Sample(s) eingebettet (~${mb} MB)`,
+              { kind: "info" },
+            );
+          }
+        }
+      } catch (err) {
+        console.warn("[Save] Embed-Pipeline failed:", err);
+        toast(
+          "Embed der transformierten Samples fehlgeschlagen — Save wird trotzdem ausgeführt (Blob-URLs gehen nach Reload verloren)",
+          { kind: "warning", duration: 7000 },
+        );
+        // snapshot bleibt original — Save geht weiter, kein Crash.
+      }
+    }
+
     cacheProjectLocally(snapshot);
 
     if (electron.isElectron) {
@@ -933,7 +1022,7 @@ export default function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [electron, buildProjectSnapshot]);
 
-  const restoreProject = useCallback((data: ReturnType<typeof parseProject>) => {
+  const restoreProject = useCallback(async (data: ReturnType<typeof parseProject>) => {
     // Projekt-Metadaten
     // v3.58.0: projectId aus dem .synth-File übernehmen — parseProject
     // hat sie bereits validiert/ggf. neu generiert (Pre-v1.24-Migration).
@@ -969,7 +1058,48 @@ export default function App() {
       }
     }
     // Samples
-    project.addSamples(data.samples ?? []);
+    // v3.137.0: Embedded-Samples decoden VOR addSamples (closes v3.131-Caveat).
+    // Pre-v1.36-Files haben kein embeddedData → no-op-Pfad (decode wird
+    // pro Sample geskipt, samples-Array bleibt unverändert).  Defensive:
+    // jeder Decode-Fehler crashed den Restore NICHT — corruptes Sample
+    // bleibt mit altem Path durch + console.warn als Indikator.
+    let samples = data.samples ?? [];
+    try {
+      const ctx = AudioEngine.getAudioContext();
+      if (ctx) {
+        const decodeToBlobUrl = async (b64: string): Promise<string> => {
+          const buf = await base64WavToAudioBuffer(b64, ctx);
+          // AudioBuffer → WAV bytes → Blob → Blob-URL.  audioBufferToWavBytes
+          // ist DOM-frei (akzeptiert AudioBufferLike) — AudioBuffer ist
+          // strukturell kompatibel.
+          const bytes = audioBufferToWavBytes(buf as unknown as AudioBufferLike);
+          const blob = new Blob([bytes as BlobPart], { type: "audio/wav" });
+          return URL.createObjectURL(blob);
+        };
+        const restored = await restoreEmbeddedSamples(
+          { samples } as unknown as Parameters<typeof restoreEmbeddedSamples>[0],
+          {
+            decodeToBlobUrl,
+            onWarning: (id, reason) => {
+              console.warn(
+                `[Load] Embedded sample ${id} corrupt: ${reason}`,
+              );
+            },
+          },
+        );
+        samples = (restored.samples ?? samples) as typeof samples;
+        const restoredCount = samples.filter((s) => isBlobUrlPath(s.path)).length;
+        if (restoredCount > 0) {
+          // Bewusst nicht als Toast — Toast ist für User-Aktionen, hier
+          // ist es ein automatischer Restore-Mechanismus.  console.log
+          // hilft bei Debugging.
+          console.log(`[Load] ${restoredCount} embedded sample(s) restored`);
+        }
+      }
+    } catch (err) {
+      console.warn("[Load] Restore-Embedded failed:", err);
+    }
+    project.addSamples(samples);
     // Patterns in die DM laden
     if (data.patterns?.length) {
       data.patterns.forEach(p => dm.addPatternData(p));
