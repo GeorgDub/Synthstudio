@@ -165,6 +165,13 @@ import {
 import { useResizablePanel } from "@/hooks/useResizablePanel";
 import { ResizablePanelHandle } from "@/components/UI/ResizablePanelHandle";
 import { useAutomationStore } from "@/store/useAutomationStore";
+// v3.109.0 Song-Mode / Pattern-Chain-Sequencer
+import {
+  advance as songModeAdvance,
+  getSongModeState,
+  getActiveSong as getActiveSongMode,
+} from "@/store/useSongModeStore";
+import { SongModePanel } from "@/components/SongMode/SongModePanel";
 import {
   mapElectribeLaneToAutomationTarget,
   scaleMotionPointsToStepCount,
@@ -1283,6 +1290,47 @@ export default function App() {
     // MIDI Out wird nach midi-Hook Initialisierung via useEffect registriert
   });
 
+  // ── v3.109.0: Song-Mode / Pattern-Chain-Sequencer Engine-Wiring ───────────
+  // Treibt den Song-Sequencer aus dem AudioEngine.onPosition()-Callback. Wir
+  // hören auf step===0 (Start eines neuen Bars / Pattern-Loops). Wenn ein Song
+  // aktiv ist und der Sequencer das nächste Pattern liefert, schalten wir um.
+  //
+  // Wichtig: der erste step===0 nach Aktivieren wird übersprungen (firstTickRef),
+  // damit nicht direkt der initiale Step "doppelt" zählt.
+  const songModePrimedRef = useRef(false);
+  useEffect(() => {
+    const unsubscribe = AudioEngine.onPosition(step => {
+      if (step !== 0) return;
+      const songState = getSongModeState();
+      if (!songState.activeSongId) {
+        songModePrimedRef.current = false;
+        return;
+      }
+      // Ersten Tick nach Aktivierung überspringen — das ist die "initiale Wiedergabe"
+      if (!songModePrimedRef.current) {
+        songModePrimedRef.current = true;
+        return;
+      }
+      const d = dmRef.current;
+      if (!d) return;
+      const activeSong = getActiveSongMode();
+      if (!activeSong) return;
+
+      const result = songModeAdvance();
+      if (result.isFinished || !result.patternId) {
+        // Song zu Ende — Playback weiter laufen lassen, aber Song deaktivieren
+        // (alternativ: stop). Wir lassen es laufen, der User entscheidet.
+        songModePrimedRef.current = false;
+        return;
+      }
+      if (result.patternId !== d.activePatternId) {
+        d.setActivePattern(result.patternId);
+      }
+    });
+    return unsubscribe;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // ── Audio-Recording (TASK-234 / v2.86, v3.63.0 extended) ───────────────────
   // Bei transport:play → AudioEngine.startRecordingForChannels(armed[])
   // Bei transport:stop → AudioEngine.finalizeAllRecordings() → für jeden:
@@ -1401,7 +1449,7 @@ export default function App() {
     setActiveTab(tab);
     localStorage.setItem("ss-layout:active-tab", tab);
   }, []);
-  const [activeTool, setActiveTool] = useState<'prompt' | 'algorithmic' | 'chords' | 'sampler' | 'workbench' | 'library' | 'script' | 'omnitribe' | 'packs'>('prompt');
+  const [activeTool, setActiveTool] = useState<'prompt' | 'algorithmic' | 'chords' | 'sampler' | 'workbench' | 'library' | 'script' | 'omnitribe' | 'packs' | 'song'>('prompt');
 
   // ── Dialog-State ─────────────────────────────────────────────────────────
   const [showMidiSettings, setShowMidiSettings] = useState(false);
@@ -4073,6 +4121,7 @@ export default function App() {
                       { id: "workbench",   label: "🎚 Workbench" },
                       { id: "library",     label: "📚 Library" },
                       { id: "packs",       label: "📦 Packs" },
+                      { id: "song",        label: "🎼 Song" },
                       { id: "script",      label: "⚡ Script" },
                       { id: "omnitribe",   label: "🎛 OmniTribe" },
                     ] as const).map(t => (
@@ -4228,6 +4277,13 @@ export default function App() {
                     )}
                     {activeTool === 'packs' && (
                       <SamplePackBrowser className="h-full" />
+                    )}
+                    {activeTool === 'song' && (
+                      <SongModePanel
+                        patterns={dm.patterns}
+                        activePatternId={dm.activePatternId}
+                        className="h-full"
+                      />
                     )}
                   </div>
                 </div>

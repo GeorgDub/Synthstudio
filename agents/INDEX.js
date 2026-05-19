@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.108.0",
+    version: "3.109.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -89,6 +89,31 @@ const INDEX = {
   // ─── KNOWN FILE INDEX ──────────────────────────────────────
   // Key files agents have analyzed. Add new entries after working on a file.
   files: {
+    "client/src/utils/songSequencer.ts (v3.109.0 NEU)": {
+      role:     "v3.109.0 NEU (+~205 LOC, pure helpers). Song-Mode / Pattern-Chain-Sequencer Logik. Types Song={id,name,steps:SongStep[],loopMode:'once'|'loop'|'pingpong'} und SongStep={id,patternId,repeatCount:1..64,label?}. Konstanten MIN_REPEAT=1, MAX_REPEAT=64. clampRepeatCount(n) clampt+integer-rundet, NaN/Infinity → MIN. getNextStep(song, currentStepIdx, currentRepeat, direction) liefert NextStepResult — alle drei loop-modes implementiert (once-finished, loop-wrap, pingpong-reverse), out-of-range/empty → finished, single-step-pingpong stay. expandSong(song, maxLength=256) iteriert sequencer für tests+previews. firstPatternId(song) Convenience. Side-effect-frei.",
+      lastSeen: "2026-05-19T12:20:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/store/useSongModeStore.ts (v3.109.0 NEU)": {
+      role:     "v3.109.0 NEU (+~285 LOC, Custom-Observer-Pattern analog useSceneStore). localStorage 'ss-song-mode:v1' persistiert NUR {songs, activeSongId} — Transport-State (currentStepIdx/currentRepeat/direction) ephemer (Reload startet bei Step 0). sanitizeSongs() filtert Garbage beim Load via Pflicht-Feld-Check (id/name/steps[]); jeder SongStep wird mit clampRepeatCount durchgereicht. Public-API: addSong(name)→id, removeSong, renameSong (empty-ignore), setSongLoopMode; addStep(songId,patternId,repeatCount=1)→stepId|null (null bei empty patternId / ghost songId), removeStep, setStepRepeat (clamp), setStepLabel (empty→clear), setStepPattern (in-place patch), reorderStep (range-defense); setActiveSong(songId|null) resettet Cursor, resetTransport, advance()→{patternId|null,isFinished} treibt Sequencer. Getter getSongModeState/getActiveSong synchron für Event-Handler. __resetSongModeStoreForTests Test-Helper.",
+      lastSeen: "2026-05-19T12:20:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/components/SongMode/SongModePanel.tsx (v3.109.0 NEU)": {
+      role:     "v3.109.0 NEU (+~285 LOC). UI für Song-Mode. Layout: Header mit Song-Picker (<select>), Add/Rename/Delete-Buttons, drei LoopMode-Toggles (once/loop/pingpong mit hint), Activate-Toggle (Power-Icon, bg-accent-success aktiv) + Reset-Transport-Button (RotateCcw). Step-Liste als <ol> mit native HTML5-DnD (kein dnd-kit-Package): draggable=true, onDragStart/onDragEnter/onDragOver/onDrop wireup setDragIdx+setDragOverIdx → reorderStep. Jedes Step: <select patternId>, <input type=number min=1 max=64 repeat>, <input text label>, Trash-Remove. Active-Step highlighted mit border-accent-primary + 'X/Y'-Counter. Footer: Add-Step-Button (übernimmt activePatternId, disabled wenn keine patterns) + Status-Anzeige ('Step X / Y · Mode Z'). Alle Farben via semantic --ss-* tokens — kein hardcoded Tailwind-color. Data-testids für song-mode-picker / add-song / rename-song / delete-song / loop-modes / activate-toggle / reset-transport / steps-list / step-N-(pattern|repeat|label|remove|counter) / add-step / status.",
+      lastSeen: "2026-05-19T12:20:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "tests/features/song-sequencer.test.ts (v3.109.0 NEU)": {
+      role:     "v3.109.0 NEU (+~510 LOC, 44 Tests in 9 describes, env:jsdom). Cluster: (1) clampRepeatCount × 4 — clamp MIN/MAX, integer-round, NaN/Inf-Defense. (2) getNextStep same-step-repeat × 3 — stays bis repeatCount, repeatCount=1 advance, garbage-clamp. (3) getNextStep loopMode × 4 — once-finished, loop-wrap, pingpong-reverse, pingpong-single-step. (4) getNextStep edge × 3 — empty/oor/single-once. (5) expandSong × 4 — A×2 B×3 once = [A,A,B,B,B], looped wrap, pingpong A B C reverse-pattern, empty. (6) firstPatternId × 2. (7) Store Song-CRUD × 5 — addSong empty-fallback ('Untitled Song'), removeSong clears active, renameSong empty-ignore, setSongLoopMode. (8) Store Step-CRUD × 7 — addStep clamp+null-on-empty+null-on-ghost, setStepRepeat clamp MIN/MAX, setStepLabel set+clear, removeStep, reorderStep preserves repeats+labels, reorderStep range-defense. (9) Store Transport × 7 — advance-no-active, A×2 B×3 once sequence [A,B,B,B,null], loop wrap-forever, pingpong A B C reverse, resetTransport, setActiveSong-resets-cursor, setActiveSong null deactivates, removeSong active. (10) Persistence × 3 — songs persist localStorage, transport-state NOT persisted, garbage-localStorage graceful. Alle 44 grün.",
+      lastSeen: "2026-05-19T12:20:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/App.tsx (v3.109.0 +SongMode-Engine-Wiring + Subtab)": {
+      role:     "v3.109.0 ERWEITERT (+~50 LOC, alle v3.108 packs/v3.106 + v3.105 Variation-Panel unverändert). NEU Imports advance/getSongModeState/getActiveSong as getActiveSongMode aus useSongModeStore + SongModePanel aus @/components/SongMode. NEU useEffect mit AudioEngine.onPosition-Listener: bei step===0 (Bar-Start) wenn aktiver Song existiert advance() Song-Sequencer und wechsel via dmRef.current.setActivePattern(nextId). songModePrimedRef (useRef) skipt den ersten Tick nach Aktivierung damit nicht 'doppelt' gezählt wird. ActiveTool-Union um 'song' erweitert. NEU Tool-Subtab '🎼 Song' zwischen 'Packs' und 'Script'. Conditional-Render <SongModePanel patterns={dm.patterns} activePatternId={dm.activePatternId} className='h-full'/>.",
+      lastSeen: "2026-05-19T12:20:00.000Z",
+      ownedBy:  "frontend"
+    },
     "electron/packScanner.ts (v3.108.0 NEU)": {
       role:     "v3.108.0 NEU (+~165 LOC, pure-ish Helper mit Dependency-Injection). walkPackRoot(rootPath, deps, opts) BFS-Walk eines Pack-Roots. Deps-Interface {readdir, lstat} → in-memory FS-Mock-Tests ohne Disk. Filter: PACK_SAMPLE_ALLOWED_EXTENSIONS aus ipcValidators (single source of truth). Hard-Caps: PACK_SCAN_MAX_FILES=5000 + PACK_SCAN_MAX_DEPTH=4. SECURITY: NUL-Byte-Drop pro Entry-Name, Path-Separator-in-Name-Drop, Symlink-Drop (lstat + isSymbolicLink-Check), Containment-Boundary mit path.sep (kein Prefix-Confusion-Bug), kein '..'/'.' Entry, throws bei relative/empty/NUL rootPath. Output: {root, files:Array<{relPath(POSIX-Separator), absolutePath, sizeBytes}>, truncated, depthSkipped}.",
       lastSeen: "2026-05-19T12:05:00.000Z",
@@ -2667,6 +2692,36 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "frontend",
+      timestamp: "2026-05-19T12:20:00.000Z",
+      done: [
+        "v3.109.0: Song-Mode / Pattern-Chain-Sequencer — Big Fresh Feature. User kann mehrere Patterns mit Repeat-Counts zu einem Song verketten (z.B. A×4 → B×2 → C×4 → A×4) und drei Loop-Modes wählen: 'once' (stop), 'loop' (wrap), 'pingpong' (reverse). Klassischer Roland/Korg Workflow für komplette Tracks.",
+        "client/src/utils/songSequencer.ts NEU (+~205 LOC, pure-Helpers). Types Song / SongStep / SongLoopMode + Konstanten MIN_REPEAT=1 / MAX_REPEAT=64. clampRepeatCount(n) clampt + integer-rundet, NaN/Infinity → MIN. getNextStep(song, currentStepIdx, currentRepeat, direction) liefert NextStepResult {nextStepIdx, nextRepeat, patternId|null, isFinished, direction} — pure, alle drei loop-modes implementiert, single-step pingpong stay-on-self, out-of-range / empty → finished. expandSong(song, maxLength=256) iteriert sequencer für tests + previews. firstPatternId(song) Convenience. Vollständig side-effect-frei.",
+        "client/src/store/useSongModeStore.ts NEU (+~285 LOC, Custom-Observer-Pattern analog useSceneStore). localStorage 'ss-song-mode:v1' persistiert nur {songs, activeSongId} — Transport-State (currentStepIdx/currentRepeat/direction) ist ephemer (Reload startet bei Step 0). sanitizeSongs() filtert Garbage beim Load. Public-API: addSong/removeSong/renameSong/setSongLoopMode + addStep/removeStep/setStepRepeat/setStepLabel/setStepPattern/reorderStep + setActiveSong/resetTransport/advance(). advance() liest aktiven Song, ruft getNextStep, updated cursor + emits notify(); liefert {patternId|null, isFinished}. __resetSongModeStoreForTests Test-Helper.",
+        "client/src/components/SongMode/SongModePanel.tsx NEU (+~285 LOC). Layout: Header mit Song-Picker (select), Add/Rename/Delete-Buttons, drei LoopMode-Toggles (once/loop/pingpong mit hint), Activate-Toggle + Reset-Transport-Button. Step-Liste als <ol> mit native HTML5-DnD (kein zusätzliches dnd-kit-Package): jedes Step hat Pattern-<select>, Repeat-<input type=number min=1 max=64>, Label-Input, Trash-Remove. Active-Step highlighted mit border-accent-primary + 'X/Y'-Counter. Footer: Add-Step (übernimmt activePatternId) + Status-Anzeige. Alle Farben via semantic --ss-* Tokens (bg-bg-panel/text-text-primary/border-accent-primary etc.) — kein hardcoded color. Data-testids für alle Interaktiven.",
+        "client/src/App.tsx ERWEITERT (+~50 LOC). NEU Imports useSongModeStore (advance/getSongModeState/getActiveSong) + SongModePanel. NEU useEffect mit AudioEngine.onPosition-Listener: bei step===0 (Bar-Start), wenn aktiver Song existiert, advance() Song-Sequencer und wechsel via dmRef.current.setActivePattern(nextId). songModePrimedRef skip-ed den ersten Tick nach Aktivierung damit nicht 'doppelt' gezählt wird. ActiveTool-Union um 'song' erweitert. NEU Tool-Subtab '🎼 Song' zwischen 'Packs' und 'Script'. Conditional-Render <SongModePanel patterns={dm.patterns} activePatternId={dm.activePatternId} className='h-full'/>.",
+        "tests/features/song-sequencer.test.ts NEU (+~510 LOC, 44 Tests in 9 describes, env:jsdom). (1) clampRepeatCount × 4 — clamp MIN/MAX, integer-round, NaN/Inf-Defense. (2) getNextStep same-step-repeat × 3 — stays bis repeatCount, repeatCount=1 advance, garbage-clamp. (3) getNextStep loopMode × 4 — once-finished, loop-wrap, pingpong-reverse, pingpong-single-step. (4) getNextStep edge × 3 — empty/oor/single-step-once. (5) expandSong × 4 — A×2 B×3 once, looped wrap, pingpong A B C reverse-pattern, empty. (6) firstPatternId × 2. (7) Store Song-CRUD × 5 — addSong empty-fallback, removeSong clears active, renameSong empty-ignore, setSongLoopMode. (8) Store Step-CRUD × 7 — addStep clamp+null-on-empty+null-on-ghost, setStepRepeat clamp MIN/MAX, setStepLabel set+clear, removeStep, reorderStep preserves repeats+labels, reorderStep range-defense. (9) Store Transport × 7 — advance-no-active, A×2 B×3 once sequence [A,B,B,B,null], loop wrap-forever, pingpong A B C reverse, resetTransport, setActiveSong-resets, setActiveSong null, removeSong active. (10) Persistence × 3 — songs persist, transport-state NOT persisted, garbage-localStorage graceful. Alle 44 grün.",
+        "package.json 3.108.0 → 3.109.0. pnpm check: clean. pnpm test: 255 files / 5787 passed / 16 skipped / 0 fail (vs v3.108.0 baseline: +1 file +44 tests, no regression)."
+      ],
+      next: [
+        "Song-Mode-Export als .synth-Projekt-Feld: aktuell separater localStorage-Slot. Für Project-Snapshot wäre Integration in useProjectStore + Versionsbump des .synth-File-Format-Schemas (v1.17 → v1.18) sinnvoll, damit Songs mit dem Projekt geladen/gespeichert werden.",
+        "Hardware-Trigger (MIDI / Pad-Bank) für Song-Activate + Reset: über das bestehende MidiLearnTarget-Union erweitern (z.B. 'songActivate', 'songReset', 'songNextStep'). useMidi.ts applyMapping → dispatch CustomEvent → App.tsx-Listener → setActiveSong/resetTransport.",
+        "Multi-Bar-Pattern-Edge-Case: aktuell advance-Trigger ist step===0 (Bar-Start). Bei Multi-Bar-Patterns (z.B. Pattern mit bar-Schleifen via followAction barsBeforeSwitch>1) würde der Song-Advance an jedem Bar-Start versuchen umzuschalten. Falls user dies möchte sollte man einen Bar-Counter in der Engine direkt im AudioEngine.onPosition exposen (z.B. neuer onBarComplete-Callback).",
+        "Drag-Reorder mit visuellem 'gap-indicator': aktuell zeigen wir nur das hover-Ziel mit border-accent-secondary; eine echte 'insert-line' zwischen den Steps wäre UX-tauglicher (dnd-kit nötig für sortable-Strategy).",
+        "Conflict mit Performance-Mode-Pattern-Queue + bestehender followAction: wenn ein Song aktiv ist UND ein Pattern eine followAction definiert, gewinnen beide um den gleichen Trigger-Step. Aktuell ist die Reihenfolge: followAction wird inside engine im _scheduleStep abgefeuert, Song-Mode-onPosition-Listener wird danach asynchron getriggert. Praxis ist OK aber sollte dokumentiert werden.",
+        "Currently-playing-Indikator pulsen bei aktivem Playback (animate-pulse) — aktuell statisches Highlight."
+      ],
+      changed: [
+        "client/src/utils/songSequencer.ts (NEU, ~205 LOC, pure-Helpers)",
+        "client/src/store/useSongModeStore.ts (NEU, ~285 LOC, Custom-Observer-Store + localStorage)",
+        "client/src/components/SongMode/SongModePanel.tsx (NEU, ~285 LOC, React-Component)",
+        "tests/features/song-sequencer.test.ts (NEU, ~510 LOC, 44 Tests)",
+        "client/src/App.tsx (+~50 LOC, Engine-Wiring + Song-Subtab + SongModePanel-Render)",
+        "package.json (3.108.0 → 3.109.0)",
+        "agents/INDEX.js"
+      ]
+    },
     {
       agent:     "backend",
       timestamp: "2026-05-19T12:05:00.000Z",
