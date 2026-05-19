@@ -298,6 +298,17 @@ const INDEX = {
   //     a new bare-path entry while old version-suffixed ones remain
   //     is the explicit transition path.
   files: {
+    // ─── v3.165 Pure-Helpers (refactor) ─────────────────────────
+    "client/src/utils/patternGroove.ts": {
+      role:     "Pure-Helper Pattern-Groove (Humanize Timing + Velocity). applyGroove(pattern, opts) → GrooveStep[]: timingJitterMs ±0..50, velocityJitter ±0..40, baseVelocity 0..127, seed. Deterministisch via mulberry32 + Box-Muller-Gauss. GROOVE_PRESETS: straight/subtle/loose/drunken. Skipped false-Steps. Defensive (NaN/Infinity → fallback, clamp). Foundation für künftige Groove-UI + AudioEngine-Scheduler-Integration.",
+      lastSeen: "2026-05-20T01:05:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "tests/features/pattern-groove.test.ts": {
+      role:     "Pure-Coverage für patternGroove.ts. 18 Tests in 5 describes: Basis (4: empty, all-false, only-active, straight-noop), Determinismus (2: same-seed + diff-seed), Clamping (4: velocity-range, timingJitter>50, velocityJitter>40, baseVelocity-bounds), Konfiguration (4: custom baseVel, NaN, Infinity, 100-Steps), GROOVE_PRESETS (4: count, ids+names, standard-ids, straight-no-op). Vitest node-env.",
+      lastSeen: "2026-05-20T01:05:00.000Z",
+      ownedBy:  "frontend"
+    },
     // ─── v3.164 Pure-Helpers (refactor) ─────────────────────────
     "client/src/utils/drumPatternMutator.ts": {
       role:     "Pure-Helpers für Drum-Pattern-Mutationen: shiftPattern (wrap-modulo), doubleTimePattern (stretch-pair), halfTimePattern (decimation), invertPattern, reversePattern, mirrorPattern. Alle seiteneffekt-frei, NEUE Arrays, Input unverändert. Foundation für künftige UI-Toolbar-Buttons + Script-Commands.",
@@ -3426,6 +3437,46 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "refactor",
+      timestamp: "2026-05-20T01:05:00.000Z",
+      done: [
+        "v3.165 Pure-Helper: client/src/utils/patternGroove.ts NEU + tests/features/pattern-groove.test.ts NEU. Humanisierung von Patterns via Timing-Jitter (±ms) + Velocity-Jitter, deterministisch über Seed (mulberry32 PRNG + Box-Muller-Gauss).",
+        "API: applyGroove(pattern, { timingJitterMs, velocityJitter, baseVelocity, seed }) → GrooveStep[] (nur aktive Steps). Clamping: timingJitterMs 0..50, velocityJitter 0..40, baseVelocity 0..127. NaN/Infinity → Fallback (0 bzw. 100). GROOVE_PRESETS: 4 Eintraege (straight, subtle, loose, drunken).",
+        "Test-Suite: 18 Tests in 5 describes — Basis (4: empty, all-false, only-active, straight-noop), Determinismus (2: same-seed + diff-seed), Clamping (4: velocity-range, timingJitterMs>50, velocityJitter>40, baseVelocity-bounds), Konfiguration (4: custom baseVel, NaN, Infinity, 100-Steps), GROOVE_PRESETS (4: count, ids+names, standard-ids, straight-no-op). Alle 18 gruen in 9ms.",
+        "pnpm check: GRUEN (tsc --noEmit ohne Fehler). Pre-existing CollabSplitView-Error aus v3.164 ist offenbar geloest worden.",
+        "KEIN git commit, KEIN package.json bump. Working-Tree-modified electron/OmniTribeBridge.ts NICHT angefasst (User-Vorgabe)."
+      ],
+      next: [
+        "v3.166+ UI-Wire: DrumMachine-Toolbar-Button 'Groove' (Popover mit Sliders timingJitterMs + velocityJitter + Preset-Dropdown). Beim Play → applyGroove pro Pattern + ScheduleAhead in AudioEngine den timingOffsetMs auf den Step-Trigger addieren. Frontend-Owner.",
+        "Optional: Velocity-Aware-Synthesis — viele Drum-Parts ignorieren velocity aktuell, muss in setPartFx/AudioEngine.triggerStep verkabelt werden. Backend-Owner.",
+        "Optional: Script-Command ss.groove(part, preset) in client/src/sandbox/ss-api.ts ergaenzen."
+      ],
+      changed: [
+        "client/src/utils/patternGroove.ts (NEU, Pure-Helper, 0 Runtime-Deps, 124 LOC)",
+        "tests/features/pattern-groove.test.ts (NEU, 18 Tests, vitest, 168 LOC)"
+      ]
+    },
+    {
+      agent:     "frontend",
+      timestamp: "2026-05-20T00:30:00.000Z",
+      done: [
+        "v3.164 UI-Wire: Pattern-Mutator-Toolbar in DrumMachine.tsx zwischen Swing-Slider und MIDI-Import. 6 Buttons (Shift Left/Right, 2x Double, ½ Half, ⇄ Reverse, ¬ Invert) wenden Pure-Helpers aus drumPatternMutator.ts auf alle Parts des aktiven Patterns gleichzeitig an.",
+        "applyMutator-Helper als useCallback nach handleMidiImport eingefuegt: liest part.steps[].active → boolean[], ruft mutator, paddet/trimmt auf Original-Step-Anzahl (für halfTime das den Output-Array verkürzt), schreibt via dm.setPartSteps(part.id, newSteps) batched zurück.",
+        "Import-Alias: shiftPattern → shiftPatternBoolArr in DrumMachine.tsx, weil dm.shiftPattern als Store-Method bereits existiert. Konfliktfrei.",
+        "Tailwind-Klassen ausschliesslich semantisch (bg-bg-elevated, hover:bg-accent-secondary/30, text-text-dim, border-border-color). data-testid-Attribute auf allen 6 Buttons + Container für E2E.",
+        "pnpm check: GRUEN. Keine pre-existing CollabSplitView/DrumMachine swingAmount-Errors mehr (paralleler Agent hat in der Zwischenzeit gefixt).",
+        "KEIN git commit, KEIN package.json bump. Nur DrumMachine.tsx editiert — useDrumMachineStore.ts nicht angefasst (setPartSteps existierte bereits)."
+      ],
+      next: [
+        "v3.165: Mutator-Toolbar via Script-Commands (ss.shift, ss.doubleTime, ss.halfTime, ss.invert, ss.reverse, ss.mirror) in client/src/sandbox/ss-api.ts und builtInScripts.ts verkabeln.",
+        "Optional: Mirror-Button hinzufuegen (verdoppelt Pattern-Laenge — braucht Step-Count-Aenderung, daher in v3.164 ausgelassen).",
+        "Optional: Per-Part-Mutator (nur aktiven Part mutieren statt alle) via Modifier-Key (Shift+Klick)."
+      ],
+      changed: [
+        "client/src/components/DrumMachine/DrumMachine.tsx (Import-Block + applyMutator-Callback + Toolbar-JSX)"
+      ]
+    },
     {
       agent:     "refactor",
       timestamp: "2026-05-20T00:05:00.000Z",

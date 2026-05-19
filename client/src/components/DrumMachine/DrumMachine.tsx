@@ -55,6 +55,14 @@ import { DEFAULT_GRANULAR_PARAMS } from "@/audio/GranularEngine";
 import { PolyrhythmVisualizer } from "./PolyrhythmVisualizer";
 import { SampleSliceEditor } from "@/components/SampleEditor/SampleSliceEditor";
 import type { SliceSpec } from "@/utils/sampleSlicing";
+// v3.164.0: Pattern-Mutator Pure-Helpers für Toolbar (shift/double/half/reverse/invert).
+import {
+  shiftPattern as shiftPatternBoolArr,
+  doubleTimePattern,
+  halfTimePattern,
+  invertPattern,
+  reversePattern,
+} from "@/utils/drumPatternMutator";
 // Ausgelagerte Sub-Components
 import { FxPanel } from "./FxPanel";
 import { ResizableDrumPanel } from "./ResizableDrumPanel";
@@ -601,6 +609,28 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
     if (file) handleMidiFile(file);
     e.target.value = "";
   }, [handleMidiFile]);
+
+  /**
+   * v3.164.0: Pattern-Mutator-Toolbar.
+   * Wendet einen Pure-Helper (boolean[] → boolean[]) auf ALLE Parts des
+   * aktiven Patterns gleichzeitig an. Schreibt das Resultat batched via
+   * setPartSteps zurueck. Mutator-Output mit abweichender Laenge (z.B.
+   * halfTime) wird auf die Step-Anzahl der Part-Steps gepaddet/getrimmt.
+   */
+  const applyMutator = useCallback((mutator: (p: boolean[]) => boolean[]) => {
+    if (!pattern) return;
+    for (const part of pattern.parts) {
+      const oldSteps = part.steps.map((s) => s.active);
+      const mutated = mutator(oldSteps);
+      // Pad/trim auf Originallaenge → setPartSteps erwartet exakt n Steps.
+      const n = oldSteps.length;
+      const newSteps: boolean[] = new Array(n).fill(false);
+      for (let i = 0; i < Math.min(n, mutated.length); i++) {
+        newSteps[i] = mutated[i];
+      }
+      dm.setPartSteps(part.id, newSteps);
+    }
+  }, [pattern, dm]);
 
   // v2.12: Drag-Drop für .mid-Files via globales Event (von ElectronDropZone dispatched).
   useEffect(() => {
@@ -1573,6 +1603,52 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
           />
           <span className="font-mono w-8 text-right">{Math.round(dm.swingAmount * 100)}%</span>
         </label>
+
+        {/* v3.164.0: Pattern-Mutator-Toolbar — wendet shift/double/half/reverse/invert
+            auf ALLE Parts des aktiven Patterns gleichzeitig an. */}
+        <div
+          className="flex items-center gap-1 px-2 py-1 border-l border-border-color"
+          data-testid="pattern-mutator-toolbar"
+          title="Pattern-Mutationen (alle Parts gleichzeitig)"
+        >
+          <span className="text-[10px] text-text-dim mr-1">Mutate:</span>
+          <button
+            onClick={() => applyMutator((p) => shiftPatternBoolArr(p, -1))}
+            data-testid="pattern-mutator-shift-left"
+            className="px-1.5 py-0.5 rounded text-[10px] bg-bg-elevated hover:bg-accent-secondary/30 hover:text-accent-secondary transition-colors"
+            title="Shift links"
+          >◀</button>
+          <button
+            onClick={() => applyMutator((p) => shiftPatternBoolArr(p, 1))}
+            data-testid="pattern-mutator-shift-right"
+            className="px-1.5 py-0.5 rounded text-[10px] bg-bg-elevated hover:bg-accent-secondary/30 hover:text-accent-secondary transition-colors"
+            title="Shift rechts"
+          >▶</button>
+          <button
+            onClick={() => applyMutator(doubleTimePattern)}
+            data-testid="pattern-mutator-double"
+            className="px-1.5 py-0.5 rounded text-[10px] bg-bg-elevated hover:bg-accent-secondary/30 hover:text-accent-secondary transition-colors"
+            title="Double-Time"
+          >2×</button>
+          <button
+            onClick={() => applyMutator(halfTimePattern)}
+            data-testid="pattern-mutator-half"
+            className="px-1.5 py-0.5 rounded text-[10px] bg-bg-elevated hover:bg-accent-secondary/30 hover:text-accent-secondary transition-colors"
+            title="Half-Time"
+          >½</button>
+          <button
+            onClick={() => applyMutator(reversePattern)}
+            data-testid="pattern-mutator-reverse"
+            className="px-1.5 py-0.5 rounded text-[10px] bg-bg-elevated hover:bg-accent-secondary/30 hover:text-accent-secondary transition-colors"
+            title="Reverse"
+          >⇄</button>
+          <button
+            onClick={() => applyMutator(invertPattern)}
+            data-testid="pattern-mutator-invert"
+            className="px-1.5 py-0.5 rounded text-[10px] bg-bg-elevated hover:bg-accent-secondary/30 hover:text-accent-secondary transition-colors"
+            title="Invert"
+          >¬</button>
+        </div>
 
         {/* MIDI-Import */}
         <button
