@@ -54,6 +54,12 @@ import {
   setBusReverbSend,
   setBusDelaySend,
 } from "@/store/useSubMixStore";
+import {
+  muteGroup as muteGroupStoreAction,
+  soloGroup as soloGroupStoreAction,
+  clearSoloGroup as clearSoloGroupStoreAction,
+  isGroupSoloed,
+} from "@/store/useMuteSoloGroupStore";
 
 /**
  * Minimal-Interface der DrumMachine-Store-Methoden die diese Bridge braucht.
@@ -109,6 +115,12 @@ export interface MidiBridgeHandlers {
   handleSubMixBusCompRatio: (e: Event) => void;
   handleSubMixBusReverbSend: (e: Event) => void;
   handleSubMixBusDelaySend: (e: Event) => void;
+  // v3.126.0: Mute-Solo Bus Groups
+  handleMuteGroup: (e: Event) => void;
+  handleSoloGroup: (e: Event) => void;
+  handleGroupApplyMute: (e: Event) => void;
+  handleGroupApplySolo: (e: Event) => void;
+  handleGroupApplyClearSolo: (e: Event) => void;
 }
 
 /**
@@ -234,6 +246,54 @@ export function makeMidiBridgeHandlers(refs: MidiBridgeRefs): MidiBridgeHandlers
     setBusSolo(busId, !bus.solo);
   };
 
+  // v3.126.0: Mute-Solo Bus Groups — Right-Click MIDI-Learn dispatcht
+  // midi:muteGroup / midi:soloGroup mit groupId. Hier routen wir das auf
+  // den useMuteSoloGroupStore (DOM-frei) der seinerseits "mute-solo-group:*"
+  // events feuert die wir UNTEN handlen (apply to dm.setPartMuted).
+  const handleMuteGroup = (e: Event) => {
+    const groupId = (e as CustomEvent<string>).detail;
+    if (typeof groupId !== "string" || !groupId) return;
+    muteGroupStoreAction(groupId);
+  };
+  const handleSoloGroup = (e: Event) => {
+    const groupId = (e as CustomEvent<string>).detail;
+    if (typeof groupId !== "string" || !groupId) return;
+    // Toggle-Verhalten: wenn group bereits soloed → clear, sonst solo.
+    if (isGroupSoloed(groupId)) {
+      clearSoloGroupStoreAction(groupId);
+      return;
+    }
+    const pattern = dmRef.current.getActivePattern();
+    if (!pattern) return;
+    const allChannelIds = pattern.parts.map((p) => p.id);
+    const currentMutes: Record<string, boolean> = {};
+    for (const p of pattern.parts) currentMutes[p.id] = p.muted;
+    soloGroupStoreAction(groupId, allChannelIds, currentMutes);
+  };
+
+  // Apply-Handlers: Store-Dispatch → DM.setPartMuted
+  const handleGroupApplyMute = (e: Event) => {
+    const detail = (e as CustomEvent<{ groupId: string; channelIds: string[] }>).detail;
+    if (!detail || !Array.isArray(detail.channelIds)) return;
+    for (const cid of detail.channelIds) {
+      if (typeof cid === "string") dmRef.current.setPartMuted(cid, true);
+    }
+  };
+  const handleGroupApplySolo = (e: Event) => {
+    const detail = (e as CustomEvent<{ groupId: string; target: Array<{ channelId: string; muted: boolean }> }>).detail;
+    if (!detail || !Array.isArray(detail.target)) return;
+    for (const { channelId, muted } of detail.target) {
+      if (typeof channelId === "string") dmRef.current.setPartMuted(channelId, muted);
+    }
+  };
+  const handleGroupApplyClearSolo = (e: Event) => {
+    const detail = (e as CustomEvent<{ groupId: string; target: Array<{ channelId: string; muted: boolean }> }>).detail;
+    if (!detail || !Array.isArray(detail.target)) return;
+    for (const { channelId, muted } of detail.target) {
+      if (typeof channelId === "string") dmRef.current.setPartMuted(channelId, muted);
+    }
+  };
+
   // v3.87.0: Sub-Mix-Bus FX-Params — feuern via useMidi.applyMapping
   // CustomEvents, hier landen sie auf den useSubMixStore-FX-Settern.
   // Generic helper für (busId, value) → Setter mit numerischer Value.
@@ -271,6 +331,8 @@ export function makeMidiBridgeHandlers(refs: MidiBridgeRefs): MidiBridgeHandlers
     handleSubMixBusEqLowGain, handleSubMixBusEqMidGain, handleSubMixBusEqHighGain,
     handleSubMixBusCompThreshold, handleSubMixBusCompRatio,
     handleSubMixBusReverbSend, handleSubMixBusDelaySend,
+    handleMuteGroup, handleSoloGroup,
+    handleGroupApplyMute, handleGroupApplySolo, handleGroupApplyClearSolo,
   };
 }
 
@@ -304,6 +366,11 @@ export function useMidiEventBridge(refs: MidiBridgeRefs): void {
     window.addEventListener("midi:subMixBusCompRatio", h.handleSubMixBusCompRatio);
     window.addEventListener("midi:subMixBusReverbSend", h.handleSubMixBusReverbSend);
     window.addEventListener("midi:subMixBusDelaySend", h.handleSubMixBusDelaySend);
+    window.addEventListener("midi:muteGroup", h.handleMuteGroup);
+    window.addEventListener("midi:soloGroup", h.handleSoloGroup);
+    window.addEventListener("mute-solo-group:muteChannels", h.handleGroupApplyMute);
+    window.addEventListener("mute-solo-group:soloChannels", h.handleGroupApplySolo);
+    window.addEventListener("mute-solo-group:clearSolo", h.handleGroupApplyClearSolo);
     return () => {
       window.removeEventListener("midi:partVolume", h.handleVolume);
       window.removeEventListener("midi:partPan", h.handlePan);
@@ -327,6 +394,11 @@ export function useMidiEventBridge(refs: MidiBridgeRefs): void {
       window.removeEventListener("midi:subMixBusCompRatio", h.handleSubMixBusCompRatio);
       window.removeEventListener("midi:subMixBusReverbSend", h.handleSubMixBusReverbSend);
       window.removeEventListener("midi:subMixBusDelaySend", h.handleSubMixBusDelaySend);
+      window.removeEventListener("midi:muteGroup", h.handleMuteGroup);
+      window.removeEventListener("midi:soloGroup", h.handleSoloGroup);
+      window.removeEventListener("mute-solo-group:muteChannels", h.handleGroupApplyMute);
+      window.removeEventListener("mute-solo-group:soloChannels", h.handleGroupApplySolo);
+      window.removeEventListener("mute-solo-group:clearSolo", h.handleGroupApplyClearSolo);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

@@ -23,6 +23,7 @@ import { PatternMorphPanel } from "@/components/PatternMorph";
 import { PatternVariationPanel } from "@/components/PatternVariation";
 import { applyVariationToPattern } from "@/store/usePatternVariationStore";
 import { MacroPanel } from "@/components/Macro/MacroPanel";
+import { MuteSoloGroupPanel } from "@/components/MuteSoloGroups/MuteSoloGroupPanel";
 import { EnvelopeFollowerPanel } from "./EnvelopeFollowerPanel";
 import { useMidiLearn } from "@/hooks/useMidiLearn";
 import { toast } from "@/store/useToastStore";
@@ -469,6 +470,7 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
   const [showMixAssistant, setShowMixAssistant] = useState(false);
   const [showEnvFollower, setShowEnvFollower] = useState(false);
   const [showMacros, setShowMacros] = useState(false);
+  const [showGroups, setShowGroups] = useState(false);
   const [showPolyrhythm, setShowPolyrhythm] = useState(false);
   // v3.40 — 64-Step Page-Switcher: bei stepCount > 16 wird das Grid in 16er-Pages
   // aufgeteilt. State ist lokal (nicht im Store) damit jedes geöffnete Pattern
@@ -1821,6 +1823,21 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
           M1–8
         </button>
 
+        {/* Mute/Solo Bus Groups (v3.125/v3.126) */}
+        <button
+          data-testid="toggle-groups-panel"
+          onClick={() => setShowGroups(prev => !prev)}
+          title="Mute/Solo Bus-Groups (Drums/Synths/Vocals)"
+          className={[
+            "px-2 py-1 rounded text-[10px] font-bold transition-colors",
+            showGroups
+              ? "bg-accent-success/20 text-accent-success border border-accent-success/40"
+              : "bg-bg-elevated text-text-dim hover:bg-bg-elevated hover:text-text-primary",
+          ].join(" ")}
+        >
+          🎚 Groups
+        </button>
+
         {/* Polyrhythm Visualizer */}
         <button
           onClick={() => setShowPolyrhythm(prev => !prev)}
@@ -1901,6 +1918,19 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
           title="Makros (8 × bindbar)"
           onClose={() => setShowMacros(false)}>
           <MacroPanel parts={pattern.parts} />
+        </ResizableDrumPanel>
+      )}
+
+      {/* ── Mute/Solo Bus Groups (v3.126) ────────────────────────────────── */}
+      {showGroups && (
+        <ResizableDrumPanel storageKey="ss-panel-groups" defaultHeight={260} minHeight={180} maxHeight={500}
+          title="Mute/Solo Bus-Groups"
+          onClose={() => setShowGroups(false)}>
+          <MuteSoloGroupPanel
+            availableChannels={pattern.parts.map(p => ({ id: p.id, name: p.name ?? p.id }))}
+            channelMutes={pattern.parts.reduce<Record<string, boolean>>((acc, p) => { acc[p.id] = p.muted; return acc; }, {})}
+            onClose={() => setShowGroups(false)}
+          />
         </ResizableDrumPanel>
       )}
 
