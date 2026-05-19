@@ -115,7 +115,28 @@ Der Coordinator liefert nach jeder Delegationsrunde eine strukturierte Übersich
 - **Kein direktes Code-Schreiben** — nur Planung und Koordination
 - **Kein Datei-Ownership** — der Coordinator beansprucht keine Dateien
 - Wenn unklar welcher Agent zuständig ist: Testing wählen (sicherster Ausgangspunkt)
-- Wenn Anfrage alle Agenten betrifft: In sequenzielle Tasks aufteilen (Builder zuerst, dann die anderen)
+- Wenn Anfrage mehrere Agenten betrifft: **Parallelisieren statt sequenzialisieren**.
+  Für jeden Task die Write-Pfade deklarieren (`paths[]`), dann via
+  `INDEX.parallelism.canRunInParallel(claimA, claimB)` paarweise prüfen.
+  Alle parallel-sicheren Tasks in EINEM Agent-Tool-Aufruf dispatchen
+  (mehrere tool-use Blöcke in einer Assistant-Turn). Nur konflikt-behaftete
+  Tasks (Pfad-Überlapp, `critical`-Priorität, intra-batch Dependency,
+  `package.json`/lockfile-Änderungen) werden sequenziell ausgeführt.
+  Builder zuerst nur wenn Dependencies/Lockfile betroffen sind.
+
+---
+
+## Parallel-Dispatch-Workflow
+
+1. Anfrage in atomare Tasks zerlegen, je Task `paths[]` (Write-Globs) deklarieren.
+2. Pairwise-Check: `idx.parallelism.canRunInParallel(claim_i, claim_j).safe === true` für alle (i,j).
+3. Reject-Kriterien: ein Task ist `critical` / intra-batch Dependency / `package.json`+lockfile in Batch.
+4. Pro parallel-fähigem Agent: `idx.claim({ agent, taskId, paths })` registrieren — andere Sessions sehen die in-flight Pfade.
+5. Alle parallel-fähigen Tasks via Agent-Tool in EINER Turn dispatchen (mehrere tool-use Blöcke).
+6. Konflikt-Tasks in Dependency-Reihenfolge sequenziell ausführen.
+7. Jeder Agent gibt am Ende seinen Claim frei via `idx.update({ ..., claimReleaseTaskId })`.
+
+Siehe `INDEX.parallelism.dispatchChecklist` für die operative Checkliste und `parallelGroups` für empirisch sichere Agent-Kombis (Quick-Check; die finale Antwort liefert immer `canRunInParallel`).
 
 ---
 

@@ -8,9 +8,18 @@
  *
  * PROTOCOL:
  *   1. At session start: const idx = require('./INDEX.js')
- *   2. Read relevant sections (project, files, lastWork)
- *   3. Do your work
- *   4. Call idx.update({ agent, done, next, changed }) before exit
+ *   2. Read relevant sections (project, files, lastWork, parallelism)
+ *   3. (Optional, for parallel dispatch) idx.claim({ agent, taskId, paths })
+ *      so other agents can see in-flight write-scopes
+ *   4. Do your work
+ *   5. Call idx.update({ agent, done, next, changed, claimReleaseTaskId })
+ *      — claimReleaseTaskId removes your entry from parallelism.activeClaims
+ *
+ * PARALLEL DISPATCH (v3.139.0+):
+ *   Coordinator dispatches multiple specialist agents in one Agent-tool
+ *   message when their write-scopes are disjoint. The check is purely
+ *   path-glob-based — see parallelism.canRunInParallel(claimA, claimB).
+ *   Conflict-rules + agentDomains formalize what "disjoint" means.
  * ============================================================
  */
 
@@ -83,6 +92,170 @@ const INDEX = {
       unit:       "tests/features/",
       e2eElec:    "tests/electron/",
       e2eWeb:     "tests/web/"
+    }
+  },
+
+  // ─── PARALLEL WORK COORDINATION ────────────────────────────
+  // v3.139.0 NEU — enables the Coordinator to dispatch multiple
+  // specialist agents in a single Agent-tool call when their
+  // declared write-scopes don't intersect.
+  //
+  // Model: DECLARATIVE, not runtime.
+  //   - agentDomains  → which path globs each agent OWNS for writes
+  //   - conflictRules → when two tasks can NOT run in parallel
+  //   - parallelGroups → empirically-safe agent combinations
+  //                      (quick-check; authoritative answer is
+  //                      always path-glob intersection)
+  //   - activeClaims  → data field; agents append on start, the
+  //                     session-end update({claimReleaseTaskId})
+  //                     filters them. Persistence is via Edit at
+  //                     session end (same model as workLog) —
+  //                     this is NOT a runtime lock service.
+  //
+  // STALE-CLAIM RULE: a claim with startedAt > 24h is stale and
+  // MUST be ignored by the coordinator (crashed-session safety).
+  parallelism: {
+    agentDomains: {
+      frontend: {
+        writes: [
+          "client/src/components/**",
+          "client/src/store/use*Store.ts",
+          "client/src/hooks/**",
+          "client/src/utils/*.ts",       // UI-facing utilities; shared with backend on a per-file basis
+          "client/src/context/**",
+          "client/src/index.css",
+          "client/src/App.tsx",
+          "client/src/main.tsx"
+        ],
+        reads: ["**"]
+      },
+      backend: {
+        writes: [
+          "electron/**",
+          "client/src/audio/**",
+          "client/src/workers/**",
+          "src/generation/**"
+        ],
+        reads: ["**"]
+      },
+      testing: {
+        writes: [
+          "tests/**"
+        ],
+        reads: ["**"]
+      },
+      builder: {
+        writes: [
+          "package.json",
+          "pnpm-lock.yaml",
+          "vite.config.ts",
+          "tsconfig*.json",
+          "electron-builder.config.js",
+          ".github/workflows/**",
+          "scripts/**"
+        ],
+        reads: ["**"]
+      },
+      database: {
+        writes: [
+          "db/**",
+          "drizzle/**",
+          "shared/schema*.ts"
+        ],
+        reads: ["**"]
+      },
+      security: {
+        writes: [],   // audit-only agent — produces reports, doesn't write code by default
+        reads: ["**"]
+      },
+      refactor: {
+        writes: [
+          "client/src/**",
+          "electron/**"
+        ],
+        reads: ["**"],
+        exclusive: true   // refactor is path-exclusive within its declared paths-per-task
+      }
+    },
+
+    conflictRules: [
+      "Two tasks conflict iff their declared write-paths intersect on at least one file.",
+      "A task with priority:'critical' is exclusive — it pauses ALL parallel work until done.",
+      "Refactor-Agent tasks are exclusive within their declared paths — frontend/backend wait if their target file matches a refactor write-glob.",
+      "Tasks with dependencies (openTasks[].dependencies) must wait until each dep is status:'done'.",
+      "Builder tasks that touch package.json or pnpm-lock.yaml are exclusive — block all other agents from running pnpm install in parallel.",
+      "Security audits run in parallel with anything (read-only); but Backend MUST consult Security BEFORE adding a new IPC channel (= sequence, not conflict).",
+      "client/src/utils/*.ts is shared between frontend and backend — coordinator must resolve per-file ownership via files[path].ownedBy before dispatch.",
+      "Two frontend tasks can run in parallel iff they touch disjoint stores/components — not blocked by agent identity, only by file overlap."
+    ],
+
+    // Empirically-safe agent combinations — coordinator quick-check.
+    // Authoritative answer is always path-glob intersection (canRunInParallel).
+    parallelGroups: [
+      { agents: ["frontend", "testing"], note: "Different trees (client/src vs tests/) — almost always safe." },
+      { agents: ["frontend", "backend"], note: "Safe IF frontend isn't editing client/src/audio (backend territory) and backend isn't editing components." },
+      { agents: ["backend", "testing"], note: "Safe — tests live in tests/, engine lives in client/src/audio + electron." },
+      { agents: ["builder", "security"], note: "Builder writes config, Security only reads — fully parallel." },
+      { agents: ["database", "frontend"], note: "Safe IF frontend doesn't import new schema types until DB task is done." },
+      { agents: ["security", "*"], note: "Security audits parallel-safe with everything (read-only by default)." },
+      { agents: ["frontend", "frontend"], note: "Two frontend tasks parallel-safe iff disjoint stores/components." },
+      { agents: ["backend", "backend"], note: "Two backend tasks parallel-safe iff disjoint (e.g. electron/main.ts vs client/src/audio/SynthEngine.ts)." }
+    ],
+
+    // Coordinator dispatch checklist (apply BEFORE launching parallel agents):
+    //   1. Decompose request into atomic tasks; declare paths[] per task.
+    //   2. For each pair (i,j): canRunInParallel(claim_i, claim_j).safe must be true.
+    //   3. No task in the batch has priority:'critical'.
+    //   4. No task depends on another task in the same batch.
+    //   5. Dispatch ALL safe-pair tasks in a single Agent-tool message
+    //      (multiple tool-use blocks in one assistant turn).
+    //   6. Conflicting tasks → run sequentially in dependency order.
+    dispatchChecklist: [
+      "Decompose request into atomic tasks; declare paths[] per task.",
+      "Pairwise canRunInParallel-check on declared paths.",
+      "Reject batch if any task is priority:'critical'.",
+      "Reject batch if intra-batch dependency exists.",
+      "Dispatch parallel-safe tasks in ONE Agent-tool turn (multiple tool-use blocks).",
+      "Sequence conflicting tasks by dependency order."
+    ],
+
+    // Live in-flight claims. Appended via claim(), filtered via update({claimReleaseTaskId}).
+    // Schema: { agent, taskId, paths[], startedAt, expectedDurationMin? }
+    // Persistence: written to disk by the Edit tool at session boundaries, NOT runtime.
+    // Stale (>24h) claims MUST be ignored.
+    activeClaims: [],
+
+    /**
+     * Pure helper — can two claims coexist?
+     * Returns { safe: boolean, reason: string }.
+     * Path-overlap check is intentionally simple (string prefix on glob roots);
+     * coordinator should rely on declared paths being narrow.
+     */
+    canRunInParallel(claimA, claimB) {
+      if (!claimA || !claimB) return { safe: true, reason: "empty claim" };
+      if (claimA.taskId && claimA.taskId === claimB.taskId) {
+        return { safe: false, reason: "same taskId — cannot dispatch twice" };
+      }
+      const norm = (p) => String(p || "").replace(/\*+$/g, "").replace(/\/\*\*$/, "/");
+      const overlaps = (a, b) => {
+        const na = norm(a), nb = norm(b);
+        if (!na || !nb) return false;
+        if (na === nb) return true;
+        return na.startsWith(nb) || nb.startsWith(na);
+      };
+      const pathsA = Array.isArray(claimA.paths) ? claimA.paths : [];
+      const pathsB = Array.isArray(claimB.paths) ? claimB.paths : [];
+      for (const pa of pathsA) {
+        for (const pb of pathsB) {
+          if (overlaps(pa, pb)) {
+            return {
+              safe: false,
+              reason: `path-overlap: '${pa}' (${claimA.agent}) ∩ '${pb}' (${claimB.agent})`
+            };
+          }
+        }
+      }
+      return { safe: true, reason: "disjoint write-paths" };
     }
   },
 
@@ -10413,12 +10586,45 @@ const INDEX = {
 
   // ─── UPDATE FUNCTION ───────────────────────────────────────
   /**
+   * Call this at the start of an agent session to declare an in-flight
+   * write-scope. Other agents (in parallel sessions, or the coordinator
+   * planning a parallel batch) read parallelism.activeClaims to detect
+   * conflicts via canRunInParallel().
+   *
+   * Persistence: same model as workLog — mutated in-memory here, written
+   * to disk by the Edit tool at session boundaries. This is NOT a runtime
+   * mutex. Stale claims (>24h) are ignored by the coordinator.
+   *
+   * @param {Object} entry
+   * @param {string} entry.agent    - Agent name
+   * @param {string} entry.taskId   - TASK-ID this claim relates to (e.g. "TASK-241")
+   * @param {string[]} entry.paths  - Path globs the agent will write to
+   * @param {number} [entry.expectedDurationMin] - Optional ETA hint
+   */
+  claim(entry) {
+    if (!entry || !entry.agent || !Array.isArray(entry.paths)) {
+      console.warn("[INDEX] claim() ignored — missing agent/paths");
+      return;
+    }
+    this.parallelism.activeClaims.push({
+      agent:                 entry.agent,
+      taskId:                entry.taskId || null,
+      paths:                 entry.paths.slice(),
+      startedAt:             new Date().toISOString(),
+      expectedDurationMin:   typeof entry.expectedDurationMin === "number" ? entry.expectedDurationMin : null
+    });
+    console.log(`[INDEX] ${entry.agent} claimed ${entry.paths.length} path(s) for ${entry.taskId || "<no-task>"}`);
+  },
+
+  /**
    * Call this at the end of every agent session.
    * @param {Object} entry
-   * @param {string} entry.agent    - Agent name (e.g. "frontend", "testing")
-   * @param {string[]} entry.done   - What was completed
-   * @param {string[]} entry.next   - What should happen next
-   * @param {string[]} entry.changed - File paths that were modified
+   * @param {string} entry.agent              - Agent name (e.g. "frontend", "testing")
+   * @param {string[]} entry.done             - What was completed
+   * @param {string[]} entry.next             - What should happen next
+   * @param {string[]} entry.changed          - File paths that were modified
+   * @param {string} [entry.claimReleaseTaskId] - If set, removes the matching claim from
+   *                                            parallelism.activeClaims (paired with claim()).
    */
   update(entry) {
     this.workLog.push({
@@ -10437,6 +10643,18 @@ const INDEX = {
         this.files[f] = { role: "modified by " + entry.agent, lastSeen: new Date().toISOString(), ownedBy: entry.agent };
       }
     });
+
+    // Release this agent's in-flight claim, if any.
+    if (entry.claimReleaseTaskId && this.parallelism && Array.isArray(this.parallelism.activeClaims)) {
+      const before = this.parallelism.activeClaims.length;
+      this.parallelism.activeClaims = this.parallelism.activeClaims.filter(
+        c => !(c.agent === entry.agent && c.taskId === entry.claimReleaseTaskId)
+      );
+      const released = before - this.parallelism.activeClaims.length;
+      if (released > 0) {
+        console.log(`[INDEX] ${entry.agent} released ${released} claim(s) for ${entry.claimReleaseTaskId}`);
+      }
+    }
 
     console.log(`[INDEX] ${entry.agent} logged work at ${new Date().toISOString()}`);
   }
