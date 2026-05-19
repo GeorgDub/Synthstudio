@@ -301,6 +301,8 @@ import {
   setPartMidiOutConfig,
   clearAllPartMidiOutConfigs,
 } from "@/store/useMidiNoteOutStore";
+// v3.98.0: MIDI-Click-Out — sendet Beat-Notes an externe Hardware fuer Sync.
+import { useMidiClickStore } from "@/store/useMidiClickStore";
 import { scriptSandbox } from "@/sandbox/scriptSandboxInstance";
 import {
   startHoldLoop,
@@ -2246,6 +2248,24 @@ export default function App() {
       AudioEngine.setMidiNoteOutPartConfig(partId, cfg);
     }
   }, [midiNoteOutState]);
+
+  // v3.98.0: MIDI-Click-Out — sync useMidiClickStore mit AudioEngine. Bei
+  // jedem State-Change schreiben wir Enable + Config in die Engine. Der
+  // Sender selbst wird im useMidi-Hook gebridged.
+  const midiClickState = useMidiClickStore();
+  useEffect(() => {
+    AudioEngine.setMidiClickOutConfig({
+      outputId: midiClickState.outputDeviceId,
+      channel: midiClickState.channel,
+      accentNote: midiClickState.accentNote,
+      beatNote: midiClickState.beatNote,
+      accentVelocity: midiClickState.velocityAccent,
+      beatVelocity: midiClickState.velocityBeat,
+    });
+    AudioEngine.setMidiClickOutEnabled(
+      midiClickState.enabled && !!midiClickState.outputDeviceId,
+    );
+  }, [midiClickState]);
 
   // v2.90 (TASK-237-FOLLOWUP-1): electribe:motion-lanes — beim Electribe-Import
   // dispatcht electribeImport.ts diesen Event mit den Motion-Sequencer-Lanes.

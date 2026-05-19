@@ -1527,6 +1527,25 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
     };
   }, []);
 
+  // ─── MIDI-Click-Out → AudioEngine wiring (v3.98.0) ──────────────────────
+  // Analog zu MidiNoteOut: Sender bekommt outputId + Bytes, leitet via
+  // midiSendMessage an die Web-MIDI-API weiter. Config (enabled, outputId,
+  // channel, notes, velocities) wird vom App.tsx-Listener aus
+  // useMidiClickStore in die Engine gepusht.
+  useEffect(() => {
+    const sender = (outputId: string, bytes: number[]) => {
+      midiSendMessage(
+        midiAccessRef.current as MidiAccessLike | null,
+        outputId,
+        bytes,
+      );
+    };
+    AudioEngine.setMidiClickOutSender(sender);
+    return () => {
+      AudioEngine.setMidiClickOutSender(null);
+    };
+  }, []);
+
   // ─── TASK-231 (v2.84): LED-Feedback Sender-Wiring ────────────────────────
   // Bei Device/Enable-Wechsel den Sender im NanoKontrolFeedback aktualisieren.
   // Wenn enabled=true und Output verfügbar → sender = midiSendMessage-Lambda.

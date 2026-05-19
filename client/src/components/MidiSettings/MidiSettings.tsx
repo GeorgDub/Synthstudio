@@ -51,6 +51,17 @@ import {
   renameUserMidiTemplate,
 } from "@/store/useUserMidiTemplatesStore";
 import { useSubMixStore, MAX_SUB_MIX_BUSES, type SubMixBus } from "@/store/useSubMixStore";
+// v3.98.0: MIDI-Click-Out — externe Hardware-Sync via Beat-Notes.
+import {
+  useMidiClickStore,
+  setMidiClickEnabled,
+  setMidiClickOutputDevice,
+  setMidiClickChannel,
+  setMidiClickAccentNote,
+  setMidiClickBeatNote,
+  setMidiClickVelocityAccent,
+  setMidiClickVelocityBeat,
+} from "@/store/useMidiClickStore";
 
 interface MidiSettingsProps {
   midi: MidiState & MidiActions;
@@ -149,6 +160,8 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
   // v1.96: User-Templates (gespeicherte Mappings)
   const userTemplates = useUserMidiTemplates();
   const [userTplName, setUserTplName] = useState("");
+  // v3.98.0: MIDI-Click-Out — Beat-Notes an externe Hardware.
+  const midiClickState = useMidiClickStore();
 
   // v1.79: Live-MIDI-Activity-Indicator — User sieht ob seine Hardware
   // tatsächlich Events sendet. Hört auf "midi:rawmessage" das in
@@ -2178,6 +2191,146 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
         )}
       </div>
 
+      {/* ── v3.98.0: MIDI-Click-Track-Out — Metronome via MIDI ─────────────── */}
+      <div className="p-3 bg-bg-elevated rounded-lg" data-testid="click-out-section">
+        <div className="flex items-center justify-between mb-2">
+          <div>
+            <div className="text-sm font-medium text-text-primary">MIDI-Click-Out (Metronom)</div>
+            <div className="text-xs text-text-muted mt-0.5">
+              Sendet Beat-Notes an externe Hardware fuer Sync (KORG Volca, Drum-Machine)
+            </div>
+          </div>
+          <button
+            data-testid="click-out-toggle"
+            onClick={() => setMidiClickEnabled(!midiClickState.enabled)}
+            className={`relative w-10 h-5 rounded-full transition-colors ${
+              midiClickState.enabled ? "bg-accent-primary" : "bg-bg-elevated"
+            }`}
+            aria-label="MIDI-Click-Out an/aus"
+          >
+            <div className={`absolute top-0.5 w-4 h-4 bg-text-primary rounded-full shadow transition-transform ${
+              midiClickState.enabled ? "translate-x-5" : "translate-x-0.5"
+            }`} />
+          </button>
+        </div>
+
+        <div className="mt-3">
+          <label htmlFor="click-out-device-select" className="text-xs text-text-muted block mb-1">
+            Click-Out-Geraet
+          </label>
+          <select
+            id="click-out-device-select"
+            data-testid="click-out-device-select"
+            value={midiClickState.outputDeviceId ?? ""}
+            onChange={(e) => setMidiClickOutputDevice(e.target.value || null)}
+            className="w-full px-2 py-1.5 bg-bg-elevated border border-border-color rounded text-xs text-text-primary focus:outline-none focus:border-accent-primary"
+          >
+            <option value="">(kein Output gewaehlt)</option>
+            {midi.outputDevices.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.name}{d.manufacturer ? ` — ${d.manufacturer}` : ""}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3 mt-3">
+          <div>
+            <label htmlFor="click-channel-input" className="text-xs text-text-muted block mb-1">
+              Channel (1-16)
+            </label>
+            <input
+              id="click-channel-input"
+              data-testid="click-channel-input"
+              type="number"
+              min={1}
+              max={16}
+              value={midiClickState.channel + 1}
+              onChange={(e) => setMidiClickChannel(Number(e.target.value) - 1)}
+              className="w-full px-2 py-1.5 bg-bg-elevated border border-border-color rounded text-xs text-text-primary"
+            />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3 mt-3">
+          <div>
+            <label htmlFor="click-accent-note-input" className="text-xs text-text-muted block mb-1">
+              Accent-Note (Bar 1) — {noteToName(midiClickState.accentNote)}
+            </label>
+            <input
+              id="click-accent-note-input"
+              data-testid="click-accent-note-input"
+              type="number"
+              min={0}
+              max={127}
+              value={midiClickState.accentNote}
+              onChange={(e) => setMidiClickAccentNote(Number(e.target.value))}
+              className="w-full px-2 py-1.5 bg-bg-elevated border border-border-color rounded text-xs text-text-primary"
+            />
+          </div>
+          <div>
+            <label htmlFor="click-beat-note-input" className="text-xs text-text-muted block mb-1">
+              Beat-Note (2/3/4) — {noteToName(midiClickState.beatNote)}
+            </label>
+            <input
+              id="click-beat-note-input"
+              data-testid="click-beat-note-input"
+              type="number"
+              min={0}
+              max={127}
+              value={midiClickState.beatNote}
+              onChange={(e) => setMidiClickBeatNote(Number(e.target.value))}
+              className="w-full px-2 py-1.5 bg-bg-elevated border border-border-color rounded text-xs text-text-primary"
+            />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3 mt-3">
+          <div>
+            <label htmlFor="click-vel-accent-input" className="text-xs text-text-muted block mb-1">
+              Velocity Accent — {midiClickState.velocityAccent}
+            </label>
+            <input
+              id="click-vel-accent-input"
+              data-testid="click-vel-accent-input"
+              type="range"
+              min={0}
+              max={127}
+              value={midiClickState.velocityAccent}
+              onChange={(e) => setMidiClickVelocityAccent(Number(e.target.value))}
+              className="w-full"
+            />
+          </div>
+          <div>
+            <label htmlFor="click-vel-beat-input" className="text-xs text-text-muted block mb-1">
+              Velocity Beat — {midiClickState.velocityBeat}
+            </label>
+            <input
+              id="click-vel-beat-input"
+              data-testid="click-vel-beat-input"
+              type="range"
+              min={0}
+              max={127}
+              value={midiClickState.velocityBeat}
+              onChange={(e) => setMidiClickVelocityBeat(Number(e.target.value))}
+              className="w-full"
+            />
+          </div>
+        </div>
+
+        {midiClickState.enabled && midiClickState.outputDeviceId && (
+          <div className="mt-3 p-2 bg-bg-elevated rounded text-xs text-text-muted">
+            <span className="text-accent-success">●</span> Click-Out aktiv —
+            sendet pro Beat eine MIDI-Note (Accent auf Bar-Start, Beat auf 2/3/4).
+          </div>
+        )}
+        {midiClickState.enabled && !midiClickState.outputDeviceId && (
+          <div className="mt-3 p-2 bg-bg-elevated rounded text-xs text-accent-danger">
+            Kein Output gewaehlt — Click wird nicht gesendet.
+          </div>
+        )}
+      </div>
+
       <div className="p-3 bg-bg-elevated/50 rounded text-xs text-text-muted space-y-1">
         <div className="font-medium text-text-primary mb-1">Hinweise:</div>
         <div>• MIDI-Clock sendet 24 Pulse pro Viertelnote (PPQN)</div>
@@ -2185,6 +2338,7 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
         <div>• Hardware: Roland, Korg, Akai, Arturia MIDI-Controller</div>
         <div>• MIDI-Start (0xFA) und Stop (0xFC) werden als Play/Stop interpretiert</div>
         <div>• Clock-Out drift-frei via AudioContext-Timing (TASK-230 / v2.83)</div>
+        <div>• Click-Out sendet Beat-Notes parallel zum lokalen Metronom (v3.98)</div>
       </div>
     </div>
   );

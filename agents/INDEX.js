@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.97.0",
+    version: "3.98.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -89,6 +89,41 @@ const INDEX = {
   // ─── KNOWN FILE INDEX ──────────────────────────────────────
   // Key files agents have analyzed. Add new entries after working on a file.
   files: {
+    "client/src/audio/MidiClickOut.ts (v3.98.0 NEU)": {
+      role:     "v3.98.0 NEU (+~190 LOC, Dependency-Injection-Sender analog MidiClockOut/MidiNoteOut). Pure-Helpers: clampClickVelocity/Note/Channel (NaN-Defense), buildClickNoteOn/Off (0x90/0x80 | channel), detectClickKind(stepIndex, totalSteps, beatsPerBar) → 'accent'|'beat'|null (closestBeat/representStep-Formel ident zum AudioEngine-Metronom). MidiClickOut-Klasse mit triggerStep(stepIndex, totalSteps, beatsPerBar, noteDurationMs=50) + setEnabled (flusht pending NoteOffs bei disable) + setConfig (partial-update preserves nicht-gesetzte Felder) + setSender. Defaults: Ch 9 (=MIDI 10 Drum), Accent=76, Beat=77, Vel 110/80. Konstanten exportiert: DEFAULT_CLICK_NOTE_DURATION_MS=50, DEFAULT_ACCENT_NOTE=76, DEFAULT_BEAT_NOTE=77, DEFAULT_ACCENT_VELOCITY=110, DEFAULT_BEAT_VELOCITY=80, DEFAULT_CLICK_CHANNEL=9.",
+      lastSeen: "2026-05-19T09:40:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/store/useMidiClickStore.ts (v3.98.0 NEU)": {
+      role:     "v3.98.0 NEU (+~180 LOC, Modul-Singleton + React-Hook analog useMidiNoteOutStore). State {enabled, outputDeviceId, channel, accentNote, beatNote, velocityAccent, velocityBeat}. localStorage-Key 'synthstudio:midi:clickout:v1' (Schema v1 lokal, NICHT .synth-Projekt). Actions: setMidiClickEnabled/OutputDevice/Channel/AccentNote/BeatNote/VelocityAccent/VelocityBeat, Bulk-Setter setMidiClickState fuer Round-Trip-Restore, getMidiClickState Pure-Getter. Alle Setter clampen + idempotent (notify nur bei echtem Change). Schema-Validierung beim Load (Empty/Garbage → Defaults, valides Feld pro Feld). __resetMidiClickStoreForTests fuer Vitest.",
+      lastSeen: "2026-05-19T09:40:00.000Z",
+      ownedBy:  "backend"
+    },
+    "tests/features/midi-click-out.test.ts (v3.98.0 NEU)": {
+      role:     "v3.98.0 NEU (+~280 LOC, 18 Tests in 7 describes, jsdom env). Cluster: (1) detectClickKind × 3 — 16-Step/4-Beat (0=accent, 4/8/12=beat, sonst null), 32-Step-Skalierung (0=accent, 8/16/24=beat), NaN/out-of-range-Defense. (2) Pure Builders × 3 — Note-On/Off Status-Bytes 0x99/0x89, clamps Velocity/Note/Channel inkl NaN→0|DEFAULT_CLICK_CHANNEL. (3) Trigger valid × 3 — accent-Note bei Step 0, beat-Note bei 4/8/12 (alle mit korrekten Bytes), non-beat-Steps (1-3,5-7,9-11,13-15) keine Sends. (4) Trigger disabled/no-config × 3 — disabled=no-send, fehlender outputId=no-send, setEnabled(false) waehrend pending flusht Note-Off sofort + clearTimeout (vi.useFakeTimers + advanceTimersByTime). (5) Store-Persistence × 4 — Default-State, Round-Trip localStorage(clickout:v1), Clamp-Defense beim Setter, idempotent setMidiClickEnabled/OutputDevice. (6) defaultClickConfig + Integration × 2 — Drum-Defaults, partial-update preserves nicht-gesetzte Felder. Alle 18 gruen.",
+      lastSeen: "2026-05-19T09:40:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/audio/AudioEngine.ts (v3.98.0 +MidiClickOut)": {
+      role:     "v3.98.0 ERWEITERT (+~30 LOC). NEU Import MidiClickOut + MidiClickConfig. NEU Feld _midiClickOut = new MidiClickOut(null). Public-API: setMidiClickOutSender (Sender (outputId,bytes)=>void), setMidiClickOutEnabled (bei Disable flusht MidiClickOut intern pending NoteOffs), setMidiClickOutConfig (Partial-Config), getMidiClickOut. Im _scheduleStep direkt nach Metronom-Block: this._midiClickOut.triggerStep(stepIndex, this._steps, this._metronomBeatsPerBar) — kein if-Wrap, MidiClickOut sortiert intern. Im stop(): Disable/Enable-Cycle analog MidiNoteOut. Vorheriger v3.97-Stand: MidiNoteOut/MidiClockOut/Metronom unveraendert.",
+      lastSeen: "2026-05-19T09:40:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/hooks/useMidi.ts (v3.98.0 +click-sender)": {
+      role:     "v3.98.0 ERWEITERT (+~15 LOC, alle bestehenden v3.97 stepRecorder + v3.93 MidiFx unveraendert). NEU useEffect direkt nach MidiNoteOut-Sender-Wiring — Sender (outputId, bytes) => midiSendMessage(midiAccessRef.current, outputId, bytes) wird in AudioEngine.setMidiClickOutSender gepusht. Cleanup setzt Sender null. Empty deps — Sender liest midiAccessRef bei jedem Call (analog Note-Out).",
+      lastSeen: "2026-05-19T09:40:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/App.tsx (v3.98.0 +useMidiClickStore-listener)": {
+      role:     "v3.98.0 ERWEITERT (+~22 LOC, bestehende v3.97 midi:stepRecorder-Listener + v3.94 midiFxChain-restore unveraendert). NEU Import useMidiClickStore. NEU useEffect — bei jedem Store-Change ruft setMidiClickOutConfig({outputId, channel, accentNote, beatNote, accentVelocity, beatVelocity}) und setMidiClickOutEnabled(enabled && !!outputDeviceId) auf der AudioEngine. Effektive Enable-Bedingung schliesst Garbage-State (enabled=true ohne Device gewaehlt) aus.",
+      lastSeen: "2026-05-19T09:40:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/components/MidiSettings/MidiSettings.tsx (v3.98.0 +click-out-section)": {
+      role:     "v3.98.0 ERWEITERT (+~140 LOC + 8 Imports am Datei-Anfang + 1 Hook-Read im Body). NEU Section data-testid='click-out-section' im Clock-Tab (nach LED-Feedback, vor Hinweise-Block). Toggle 'click-out-toggle' fuer enabled, Select 'click-out-device-select' fuer outputDeviceId (mit (kein Output gewaehlt)-Default), Number-Input 'click-channel-input' (UI 1-16, intern 0-15), zwei Note-Inputs 'click-accent-note-input'/'click-beat-note-input' mit Note-Name-Display (noteToName-Helper bereits in der Datei vorhanden), zwei Range-Slider 'click-vel-accent-input'/'click-vel-beat-input' (0-127, Live-Wert-Display). Status-Hint '● Click-Out aktiv' (grün) bei enabled+Device, 'Kein Output gewaehlt' (rot) bei enabled ohne Device. Bestehende Clock-Out + LED-Feedback-Sections unveraendert.",
+      lastSeen: "2026-05-19T09:40:00.000Z",
+      ownedBy:  "backend"
+    },
     "client/src/store/useMidiStepRecorderStore.ts (v3.97.0 NEU)": {
       role:     "v3.97.0 NEU (+~165 LOC, Modul-Singleton + React-Hook, DOM-frei testbar, analog useNoteRepeatStore-Pattern). State {enabled, currentStep, armedPartId, mode:'overwrite'|'overdub'}. Actions: setEnabled (Disable resettet Cursor=0), setArmedPart (Channel-Switch resettet Cursor; idempotent bei gleichem Wert), setMode (Whitelist-Guard auf overwrite/overdub), advanceStep(stepCount) mit Modulo-Wrap + Math.max(1,stepCount)-Defense (gegen NaN/Infinity bei stepCount=0), setCurrentStep (explicit), reset() (full-Defaults), __resetForTests. Pure Getter isMidiStepRecorderEnabled / getMidiStepRecorderState. Listener-Set + useReducer-aequivalenter useState-Trigger im Hook. KEIN localStorage (Reload disarmt automatisch).",
       lastSeen: "2026-05-19T09:25:00.000Z",
@@ -2532,6 +2567,39 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "backend",
+      timestamp: "2026-05-19T09:40:00.000Z",
+      done: [
+        "v3.98.0: MIDI-Click-Track-Output — Metronome via MIDI fuer externe Hardware-Sync. Sendet pro Beat eine MIDI-Note an einen Output (KORG Volca, Drum-Machine etc.). Parallel zum lokalen Click in AudioEngine — User kann den lokalen Click auch aus lassen und nur extern syncen. Accent-Note auf Bar-Start (Step 0), Beat-Note auf 2/3/4 (oder die jeweiligen representative Steps bei nicht-4/4-Taktarten). Beat-Detection-Formel ident zum bestehenden Metronom (closestBeat/representStep) → funktioniert bei 16/32-Step-Patterns und 3/4/4/4/6/8 etc.",
+        "client/src/audio/MidiClickOut.ts NEU (+~190 LOC, Dependency-Injection-Sender analog MidiClockOut/MidiNoteOut). Pure-Helpers: clampClickVelocity/Note/Channel (NaN-Defense → 0 oder DEFAULT_CLICK_CHANNEL=9), buildClickNoteOn/Off (0x90|ch, 0x80|ch), detectClickKind(stepIndex, totalSteps, beatsPerBar) → 'accent'|'beat'|null. MidiClickOut-Klasse mit triggerStep + setEnabled (flush pending NoteOffs bei disable, kein Stuck-Note), setConfig (partial update preserved nicht-gesetzte Felder), Note-Off via setTimeout (default 50ms, max 10s). Defaults: Channel 9 (=MIDI 10 Drum), Accent=76 (High Wood Block), Beat=77 (Low Wood Block), Velocities 110/80.",
+        "client/src/store/useMidiClickStore.ts NEU (+~180 LOC, Modul-Singleton + React-Hook analog useMidiNoteOutStore-Pattern). State {enabled, outputDeviceId, channel, accentNote, beatNote, velocityAccent, velocityBeat}. localStorage-Key 'synthstudio:midi:clickout:v1' (internes Store-Schema v1, NICHT .synth-Project-Schema — analog Clock-Out localStorage-Persist). Actions: setMidiClickEnabled/OutputDevice/Channel/AccentNote/BeatNote/VelocityAccent/VelocityBeat, plus Bulk-Setter setMidiClickState fuer Round-Trip-Restore. Alle Setter clampen via Helpers + sind idempotent (notify nur bei echtem Change). __resetMidiClickStoreForTests.",
+        "client/src/audio/AudioEngine.ts WIRE-UP (+~30 LOC): Import + Feld _midiClickOut = new MidiClickOut(null). Public-API setMidiClickOutSender/Enabled/Config + getMidiClickOut. In _scheduleStep direkt nach Metronom-Block: this._midiClickOut.triggerStep(stepIndex, this._steps, this._metronomBeatsPerBar) — keine if-Wrapping, MidiClickOut sortiert intern bzgl enabled/outputId/Beat-Detection. In stop(): Disable/Enable-Cycle analog MidiNoteOut → flusht pending Note-Offs ohne Config-Verlust.",
+        "client/src/hooks/useMidi.ts WIRE-UP (+~15 LOC): NEU useEffect analog setMidiNoteOutSender — Sender bekommt (outputId, bytes) → midiSendMessage(midiAccessRef, outputId, bytes). Cleanup setzt Sender null.",
+        "client/src/App.tsx WIRE-UP (+~22 LOC): NEU Import useMidiClickStore. NEU useEffect — bei Store-Change push setMidiClickOutConfig + setMidiClickOutEnabled(enabled && outputDeviceId-non-null) in die Engine. Effektive Enable-Bedingung schliesst Garbage-State (enabled=true ohne Device) sauber aus.",
+        "client/src/components/MidiSettings/MidiSettings.tsx UI (+~140 LOC, neue Section am Ende des Clock-Tabs zwischen LED-Feedback und Hinweise-Block). data-testid 'click-out-section'. Toggle 'click-out-toggle' + Device-Picker 'click-out-device-select' + Channel-Input (1-16, UI-Display 1-indexed, intern 0-15) + zwei Note-Inputs mit Note-Name-Anzeige (noteToName Helper aus bestehender Util-Liste) + zwei Velocity-Slider (0-127 mit Live-Wert-Display). Status-Hinweis '● Click-Out aktiv' wenn enabled+Device gewaehlt, oder rote Warning bei enabled ohne Device.",
+        "tests/features/midi-click-out.test.ts NEU (+~280 LOC, 18 Tests in 7 describes, jsdom env): (1) detectClickKind × 3 — 16-Step/4-Beat Verteilung (0=accent, 4/8/12=beat, sonst null), 32-Step-Skalierung, NaN/out-of-range-Defense. (2) Pure Builders × 3 — Note-On/Off Status-Bytes mit Channel-OR, clamps fuer Velocity/Note/Channel inkl NaN. (3) Trigger valid × 3 — accent-Note bei Step 0, beat-Note bei 4/8/12, non-beats keine Sends. (4) Trigger disabled/no-config × 3 — disabled = no send, kein outputId = no send, setEnabled(false) waehrend pending flusht Note-Off sofort + clearTimeout verhindert doppeltes Off. (5) Store-Persistence × 4 — Defaults, Round-Trip via localStorage (clickout:v1), Clamp-Defense, idempotent Setter. (6) defaultClickConfig + Integration × 2 — sinnvolle Drum-Defaults, partial-update preserves Felder. Alle 18 gruen.",
+        "package.json 3.97.0 → 3.98.0. pnpm check: clean. pnpm test: 242 Files / 5455 passed / 16 skipped (vs v3.97.0: 241/5437 → +1 File +18 Tests). Keine bestehenden Tests broken.",
+        "Caveats: (1) Schema-Migration im Task war als v1.35→v1.36 spezifiziert, aber Click-Out ist eine Hardware-Setup-Preference (analog Clock-Out, Feedback-LED, FX-Param-Out) und gehoert NICHT ins .synth-Projekt — sondern in den User-localStorage. Daher: KEINE .synth-Schema-Bump. SYNTH_FILE_VERSION bleibt '1.35'. localStorage-Key trägt eigene v1-Suffix ('clickout:v1'). (2) Pro-Gate (analog MIDI-Note-Out via PRO_FEATURE_MIDI_NOTE_OUT) wurde bewusst NICHT eingebaut — Click ist Hardware-Sync-Basisfeature, kein 'Premium-Sound-Routing'. Kann nachgereicht werden falls UX-Strategie aenderlich. (3) MidiClickOut nutzt globale Beat-Detection (Pattern-Step-Count + globaler beatsPerBar=4) — bei Per-Part polymetric-Patterns wird trotzdem auf den Pattern-Beat geclickt, NICHT auf Part-Polymeter (gewollt: extern soll auf globalen Pattern-Beat hoeren). (4) Note-Duration ist Hard-Coded 50ms (DEFAULT_CLICK_NOTE_DURATION_MS) — ausreichend fuer Volca/Digitakt Trigger-In. Falls User mit Gate-In synthesizern arbeiten will, koennte das in v3.99 als Setting nachgereicht werden. (5) Click-Out beachtet Disable des lokalen Metronom NICHT — User kann lokalen Click stumm halten und trotzdem MIDI-Click rausschicken (gewollt: silent-Studio-Setup mit extern hoerbarem Click)."
+      ],
+      next: [
+        "v3.99: Click-Out Note-Duration als User-Setting (Slider 5-500ms).",
+        "v3.99: Click-Out Pre-Roll/Count-In (z.B. 4 Clicks vor Playback-Start, analog DAW Pre-Record-Count).",
+        "v3.99: Click-Out Subdivision-Sender (zusaetzlich 1/8 oder 1/16 Hihat-Tick als 3. Note).",
+        "v3.99: Click-Out Pro-Gate ggf. wenn UX-Strategie das verlangt."
+      ],
+      changed: [
+        "client/src/audio/MidiClickOut.ts (NEU +~190 LOC Pure-Helpers + MidiClickOut-Klasse)",
+        "client/src/store/useMidiClickStore.ts (NEU +~180 LOC localStorage-Store + Hook)",
+        "client/src/audio/AudioEngine.ts (+~30 LOC Feld + Public-API + _scheduleStep-Trigger + stop()-Flush)",
+        "client/src/hooks/useMidi.ts (+~15 LOC Sender-Wire-Up useEffect)",
+        "client/src/App.tsx (+~22 LOC Store-Listener + Import)",
+        "client/src/components/MidiSettings/MidiSettings.tsx (+~140 LOC UI-Section + 8 Imports)",
+        "tests/features/midi-click-out.test.ts (NEU +~280 LOC 18 Tests)",
+        "package.json (3.97.0 → 3.98.0)",
+        "agents/INDEX.js (project.version + workLog v3.98-Eintrag + files-Entries)"
+      ]
+    },
     {
       agent:     "backend",
       timestamp: "2026-05-19T09:25:00.000Z",

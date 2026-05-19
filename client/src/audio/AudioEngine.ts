@@ -14,6 +14,7 @@ import { SynthEngine } from "./SynthEngine";
 import { LufsAnalyzer, LUFS_SILENCE } from "./LufsAnalyzer";
 import { MidiClockOut } from "./MidiClockOut";
 import { MidiNoteOut, type MidiPartConfig } from "./MidiNoteOut";
+import { MidiClickOut, type MidiClickConfig } from "./MidiClickOut";
 import { AudioRecorder, type RecordingResult, MAX_SIMULTANEOUS_RECORDINGS } from "./AudioRecorder";
 import { LooperEngine } from "./LooperEngine";
 import type { LoopState } from "./looperUtils";
@@ -786,6 +787,13 @@ class AudioEngineClass {
    * `setMidiNoteOutPartConfig()` ein Output/Channel/Note-Mapping gesetzt.
    */
   private _midiNoteOut = new MidiNoteOut(null);
+
+  /**
+   * MIDI-Click-Out (v3.98.0). Sendet pro Beat eine Note an externe Hardware
+   * fuer Metronom-Sync (KORG Volca, Drum-Machine). Sender wird per
+   * `setMidiClickOutSender()` injiziert. Config via `setMidiClickOutConfig()`.
+   */
+  private _midiClickOut = new MidiClickOut(null);
 
   // ─── MIDI-Clock-IN External-Sync (v3.35.0) ────────────────────────────────
   //
@@ -2327,6 +2335,32 @@ class AudioEngineClass {
     return this._midiNoteOut;
   }
 
+  // ─── MIDI-Click-Out (v3.98.0) ────────────────────────────────────────────
+
+  /**
+   * Setzt den Sender fuer MIDI-Click-Out. Bekommt outputId + Bytes
+   * (Note-On / Note-Off) und muss sie an den entsprechenden Web-MIDI-Output
+   * routen. Typischerweise vom useMidi-Hook gebridged.
+   */
+  setMidiClickOutSender(sender: ((outputId: string, bytes: number[]) => void) | null) {
+    this._midiClickOut.setSender(sender);
+  }
+
+  /** Aktiviert/deaktiviert MIDI-Click-Out. Bei Disable: pending Note-Offs werden geflusht. */
+  setMidiClickOutEnabled(enabled: boolean) {
+    this._midiClickOut.setEnabled(enabled);
+  }
+
+  /** Setzt/aktualisiert die Click-Out-Config (Output, Channel, Notes, Velocities). */
+  setMidiClickOutConfig(config: Partial<MidiClickConfig>) {
+    this._midiClickOut.setConfig(config);
+  }
+
+  /** Liefert die laufende MidiClickOut-Instanz (read-only access fuer UI/Tests). */
+  getMidiClickOut(): MidiClickOut {
+    return this._midiClickOut;
+  }
+
   onPosition(cb: PositionCallback) {
     this.positionCallbacks.push(cb);
     return () => { this.positionCallbacks = this.positionCallbacks.filter(c => c !== cb); };
@@ -2376,6 +2410,11 @@ class AudioEngineClass {
     if (this._midiNoteOut.enabled) {
       this._midiNoteOut.setEnabled(false);
       this._midiNoteOut.setEnabled(true);
+    }
+    // v3.98.0: MIDI-Click-Out — pending Note-Offs flushen (gleiches Pattern).
+    if (this._midiClickOut.enabled) {
+      this._midiClickOut.setEnabled(false);
+      this._midiClickOut.setEnabled(true);
     }
     // Pending Position-Callbacks abräumen — sonst feuern sie nach Stop
     this._pendingTimeouts.forEach((id) => clearTimeout(id));
@@ -2620,6 +2659,13 @@ class AudioEngineClass {
         this._playClick(time, vol, freq, isDownbeat);
       }
     }
+
+    // v3.98.0: MIDI-Click-Out parallel zum lokalen Metronom. Unabhaengig von
+    // _metronomEnabled — User kann externe Click-Spur (KORG Volca, Drum-Machine)
+    // ohne lokales Click-Geraeusch laufen lassen. Beat-Detection in MidiClickOut
+    // dupliziert die Formel (closestBeat/representStep) damit der Click-Out
+    // auch bei beliebigen Pattern-Laengen + Taktarten korrekt liegt.
+    this._midiClickOut.triggerStep(stepIndex, this._steps, this._metronomBeatsPerBar);
 
     if (!scheduledPattern && !this.patternGetter) return;
     const pattern = scheduledPattern ?? this.patternGetter!();
