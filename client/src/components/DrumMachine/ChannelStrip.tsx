@@ -5,11 +5,13 @@
  * FX-Toggle, Piano-Roll-Toggle, Granular-Toggle, Step-Grid.
  * Aus DrumMachine.tsx ausgelagert.
  */
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import type { PartData, ChannelFx, StepResolution } from "@/audio/AudioEngine";
+import { AudioEngine } from "@/audio/AudioEngine";
 import { FxPanel } from "./FxPanel";
 import { velocityColor, stepGroupBorder, getSourceTypeBadge } from "./drumMachineHelpers";
 import { getStepCellColor } from "./stepCellColors";
+import { WaveformMini } from "./WaveformMini";
 import { useMidiContext } from "@/context/MidiContext";
 import { findMappingForTarget } from "@/hooks/useMidi";
 import { ChannelColorPicker } from "@/components/Mixer/ChannelColorPicker";
@@ -19,6 +21,12 @@ import {
   parsePackSamplePayload,
 } from "@/components/SamplePackBrowser/dropPayload";
 import { getSampleBlobUrl } from "@/store/useSamplePackStore";
+import {
+  getOrComputeWaveform,
+  invalidateWaveform,
+  WAVEFORM_PREVIEW_DEFAULT_WIDTH,
+} from "@/utils/waveformPreview";
+import { useWaveformPreviewStore } from "@/store/useWaveformPreviewStore";
 
 export interface ChannelStripProps {
   part: PartData;
@@ -89,6 +97,63 @@ export function ChannelStrip({
   // v3.125.0: Hover-Tracking für Color-Coded Step-Grid.
   const [hoveredStep, setHoveredStep] = useState<number | null>(null);
   const stripRef = useRef<HTMLDivElement>(null);
+
+  // v3.130.0: Waveform-in-Step-Grid (visual WOW).
+  // - Setting (localStorage) entscheidet, ob Mini-Bars überhaupt gerendert werden.
+  // - Pro Sample-URL holen wir gecachten Buffer via AudioEngine; wenn er
+  //   noch nicht im Cache ist, triggern wir lazy `loadSample` und re-rendern
+  //   nach Auflösung. Cache (utils/waveformPreview) merkt sich das Envelope.
+  const wfSettings = useWaveformPreviewStore();
+  const [waveform, setWaveform] = useState<number[] | undefined>(() =>
+    part.sampleUrl ? getOrComputeWaveform(part.sampleUrl, null, WAVEFORM_PREVIEW_DEFAULT_WIDTH) : undefined,
+  );
+  useEffect(() => {
+    if (!wfSettings.showStepWaveforms) return;
+    const url = part.sampleUrl;
+    if (!url) {
+      setWaveform(undefined);
+      return;
+    }
+    // Bereits im Waveform-Cache?
+    const cached = getOrComputeWaveform(url, null, WAVEFORM_PREVIEW_DEFAULT_WIDTH);
+    if (cached) {
+      setWaveform(cached);
+      return;
+    }
+    // Buffer-Cache (sync) versuchen.
+    const buf = AudioEngine.getCachedBuffer(url);
+    if (buf) {
+      const env = getOrComputeWaveform(url, buf, WAVEFORM_PREVIEW_DEFAULT_WIDTH);
+      setWaveform(env);
+      return;
+    }
+    // Lazy load — fire-and-forget, signal-guarded.
+    let cancelled = false;
+    AudioEngine.loadSample(url)
+      .then((b) => {
+        if (cancelled || !b) return;
+        const env = getOrComputeWaveform(url, b, WAVEFORM_PREVIEW_DEFAULT_WIDTH);
+        setWaveform(env);
+      })
+      .catch(() => {
+        // Silent — kein Waveform, Cell rendert plain colored Fallback.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [part.sampleUrl, wfSettings.showStepWaveforms]);
+
+  // v3.130.0: invalidate wenn Sample-URL wechselt (Drag-Drop neuer Sample).
+  // Wir prüfen `part.sampleUrl` als Identity — Channel-Color/Volume-Changes
+  // triggern hier nichts.
+  const prevSampleUrlRef = useRef(part.sampleUrl);
+  useEffect(() => {
+    const prev = prevSampleUrlRef.current;
+    if (prev && prev !== part.sampleUrl) {
+      invalidateWaveform(prev);
+    }
+    prevSampleUrlRef.current = part.sampleUrl;
+  }, [part.sampleUrl]);
   // v1.99: MIDI-Learn auf einzelne Steps via Right-Click.
   // useMidiContext liefert direkt midi-State + Actions (kein Prop-Drilling).
   const midi = useMidiContext();

@@ -2953,6 +2953,17 @@ class AudioEngineClass {
   }
 
   /**
+   * v3.130.0: Liefert einen bereits geladenen Buffer aus dem Cache (sync).
+   * Wird vom Waveform-Preview-System (Step-Grid Mini-Bars) gebraucht, um
+   * sofort die Wave-Form anzuzeigen ohne erneut zu decoden. Liefert null
+   * wenn der Buffer noch nicht geladen wurde — Caller kann dann
+   * `loadSample(url)` triggern und beim nächsten Render erneut probieren.
+   */
+  getCachedBuffer(url: string): AudioBuffer | null {
+    return this.bufferCache.get(url) ?? null;
+  }
+
+  /**
    * v3.116.0: Entfernt einen Buffer aus dem Cache (z.B. wenn alte Blob-URL
    * obsolet wird nach Transform). Side-effect-frei wenn URL nicht im Cache.
    */
