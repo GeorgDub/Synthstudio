@@ -10292,6 +10292,25 @@ const INDEX = {
   //     (4) Playwright Round-Trip E2E: tests/web/audio-track-round-trip.spec.ts
   //         mit 4 Tests (save → reopen → relocate). 4/4 grün in 10.6s.
   //     openTasks ist jetzt LEER — v1.23.0 bereit zum Release.
+  //
+  // ─── SCHEMA-LINT (v3.143-drift-audit) ───────────────────
+  // Jeder openTasks-Eintrag MUSS folgendes Schema einhalten:
+  //   - status: "open" | "in_progress" | "done" | "phase-1-done" | "blocked"
+  //   - title, description, agent, priority, type
+  // Bei status="done" (oder "phase-1-done") ZUSÄTZLICH PFLICHT:
+  //   - Versions-Anchor: doneIn ODER closedIn (Format "vX.Y.Z")
+  //   - Timestamp:       doneAt ODER closedAt (ISO 8601)
+  //   - Attribution:     doneBy ODER closedBy (Agent-Name)
+  //   - Optional:        doneNote (Implementierungs-Detail)
+  // Drift-Symptom: Status-Wechsel ohne Versions-Backing erzeugt
+  // unauditierbare "done"-Tasks (siehe Audit DRIFT-TE — TASK-232
+  // war fälschlich open obwohl Code in v2.97 gemerged; TASK-235
+  // hatte status:done ohne irgendein closedIn/doneIn).
+  // Coordinator setzt diese Felder beim Schliessen — die Drift-
+  // Symptome lassen sich per Grep finden:
+  //   grep -E 'status:\s*"done"' agents/INDEX.js -A6 |
+  //     grep -L 'doneIn\|closedIn'
+  // ───────────────────────────────────────────────────────
   openTasks: [
     // STRATEGIE-ROADMAP v2.83+ (KORG-zentrierte Live+Studio-DAW) — coordinator 2026-05-17
         {
@@ -10322,8 +10341,9 @@ const INDEX = {
             priority: "high",
             agent: "backend",
             status: "done",
-            completedAt: "2026-05-17T23:05:00.000Z",
-            completedVersion: "v2.84.0",
+            doneIn: "v2.84.0",
+            doneAt: "2026-05-17T23:05:00.000Z",
+            doneBy: "backend",
             title: "nanoKONTROL2 LED-Feedback + Scene-Mode",
             description: "User hat das Geraet. Out-MIDI an nanoKONTROL2 fuer Solo/Mute-Button-LEDs (note-on/off, Channels 1-8). Marker-Buttons + Track-Buttons werden zu Scene-Launch (useSceneStore) gemappt. LED-Sync bei Pattern-/Scene-Wechsel.",
             acceptance: [
@@ -10352,7 +10372,10 @@ const INDEX = {
             type: "feature",
             priority: "high",
             agent: "backend",
-            status: "open",
+            status: "done",
+            closedIn: "v2.97.0",
+            closedAt: "2026-05-18T00:00:00.000Z",
+            closedBy: "backend",
             title: "Lizenz-Layer + Gumroad-Build (Monetarisierung)",
             description: "Einmal-Lizenz Win-Build ueber Gumroad/Stripe fuer 29 EUR. Lizenz-Schluessel-Check beim ersten Start, gespeichert in Electron app.getPath(userData). Online-Aktivierung (ED25519-Signatur, kein Phone-Home nach Aktivierung).",
             acceptance: [
@@ -10365,7 +10388,8 @@ const INDEX = {
             reviewedBy: [
                 "security",
                 "builder"
-            ]
+            ],
+            doneNote: "v3.143-drift-close: Code (licenseConfig/licenseValidator/useLicenseStore + ActivationModal/ProLockBadge) sowie Tests (tests/features/license.test.ts +18, license-gates.test.ts +11) wurden in commit 5cd414e (feat(LICENSE-LAYER, v2.97.0)) gemerged. TASK-232 blieb seitdem irrtuemlich status:'open' im INDEX. Closed via Drift-Audit (parallel-dispatch testing agent DRIFT-TE)."
         },
         {
             id: "TASK-233",
@@ -10415,6 +10439,9 @@ const INDEX = {
             priority: "high",
             agent: "backend",
             status: "done",
+            doneIn: "v2.87.0",
+            doneAt: "2026-05-18T00:00:00.000Z",
+            doneBy: "backend",
             title: "Live-Looping (Record/Loop/Overdub)",
             description: "Live-Looping-Pedal-Funktionalitaet: MIDI-Footswitch/Pad triggert Record-Loop-Overdub-Cycle. Loops landen als auto-quantized audio-tracks. Erfuellt Live-Performance-Versprechen.",
             acceptance: [
