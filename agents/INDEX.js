@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.90.0",
+    version: "3.91.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -488,6 +488,21 @@ const INDEX = {
       role:     "v3.66.0 NEU (~400 LOC, Pure-Modul): Rendert Patterns als PNG (Canvas) oder SVG (string) für Documentation/Sharing/Social-Media. PatternForExport-Type (reduzierter PatternData ohne FX/Audio) + RenderOpts {width,height,theme,showVelocity,showPartNames,titleText,createCanvas?}. Public-API: renderPatternToCanvas(pattern,opts)→HTMLCanvasElement (Caller-injizierbare createCanvas-Factory für Node/Test), exportPatternAsPng→Promise<Blob> (canvas.toBlob im Browser, toBuffer-Fallback für node-canvas, 4-byte PNG-Magic-Last-Resort), exportPatternAsSvg→string (pure-Vector, kein Canvas nötig). Pure-Helpers: computeLayout (titleBar + footer + partLabel + grid), velocityToAlpha (0..127→0.4..1.0 mit clamp + showVelocity=false→1.0), getStepRect (Pixel-Geometrie), resolveStyle (ID|Object|Fallback default-dark), isPatternImageStyleId Whitelist, sanitizePatternExportFileName (lowercase + non-alphanum→-, cap 60). Konstanten: PATTERN_IMAGE_STYLES Record<id,PatternImageStyle> mit 3 Templates (default-dark Cyan #22d3ee, light-documentation schwarz/weiß, korg-tribute neon-grün #7fff7f mit Glow), PATTERN_IMAGE_SIZES 3 Presets (default 800×600, twitter 1200×675, instagram 1080×1080). XML-Escape für SVG: &, <, >, \", ' werden escaped.",
       lastSeen: "2026-05-19T00:50:00.000Z",
       ownedBy:  "frontend"
+    },
+    "client/src/utils/patternDiff.ts": {
+      role:     "v3.91.0 NEU (~210 LOC): Pure-Utility fuer Pattern-Compare/Diff-Workflow. Exports: diffPatterns(a:PatternData, b:PatternData):PatternDiff — Part-Matching per id (B-Order first, A-only-Parts danach), Step-Vergleich bis max(stepCountA,stepCountB) mit virtual-inactive fuer Out-of-Range. effectiveVelocity() = step.velocity ?? 100 (backwards-compat). Klassifikation: aOn && !bOn = removed, !aOn && bOn = added, both on + differing velocity = changedVelocity. PartDiff hat presence?(added|removed)-Flag wenn Part nur einseitig existiert. summarizeDiff() = total-counts. classifyPartSteps(pd, stepCount) = Array<StepDiffKind|undefined> fuer Step-Index→Color-Lookup im UI. Keine Mutation der Inputs (Tests verifizieren via JSON.stringify-Snapshot).",
+      lastSeen: "2026-05-19T08:00:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/components/PatternCompare/PatternCompareModal.tsx": {
+      role:     "v3.91.0 NEU (~280 LOC): Side-by-Side Pattern-Diff-Modal. Props {isOpen, patterns:ReadonlyArray<PatternData>, initialAId, initialBId?, onClose}. State: aId/bId (gespiegelt via useEffect bei isOpen-Change). pickDefaultB() picked das nachfolgende Pattern (wrap-around). Header: 2 <select>-Picker fuer Slot A + B, Summary 'BPM A: X → B: Y (±d)' / 'Steps: N → M (±d)' / 3 Color-Chips (gruen=removed, rot=added, gelb=changedVel). Body: ComparisonGrid mit Step-Number-Header (highlight alle 4 Steps) + pro Part eine Reihe mit Part-Label (presence-Badge 'A' fuer removed-only, 'B' fuer added-only) + Step-Cells. bgClassFor(): bg-accent-danger (added), bg-accent-success (removed), bg-accent-warning (changedVel), sonst bg-bg-elevated|bg-bg-base. Tooltips pro Cell, data-testid 'pattern-compare-step-<partId>-<i>', data-kind='added|removed|changedVelocity|unchanged'. ESC + Backdrop-Click schliessen. Bei aId==bId: Hinweis 'A und B sind dasselbe Pattern'. Ausschliesslich semantische Tokens.",
+      lastSeen: "2026-05-19T08:00:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "tests/features/pattern-diff.test.ts": {
+      role:     "v3.91.0 NEU (17 Tests, env:node): Pure-Coverage fuer patternDiff.ts. Fixtures: pattern()/part()/step()/makeSteps()-Helpers. Tests: identische Patterns→empty diff, added/removed/changedVelocity einzeln, undefined velocity = Default 100 (kein false-positive), BPM-Delta + StepCount-Delta, BPM-null-Edge (bpmDelta=null), StepCount-Mismatch (A laenger | B laenger), Empty vs Filled Part, Multi-Part (3 Parts mit drei verschiedenen Diff-Typen), Part-nur-in-A (presence=removed), Part-nur-in-B (presence=added), Input-Immutability via JSON.stringify-Snapshot vor+nach diffPatterns. summarizeDiff + classifyPartSteps separat in 3 weiteren Tests.",
+      lastSeen: "2026-05-19T08:00:00.000Z",
+      ownedBy:  "testing"
     },
     "client/src/components/PatternImageExport/PatternImageExportModal.tsx (v3.66.0)": {
       role:     "v3.66.0 NEU (~210 LOC): Modal mit Live-Preview, Style/Size-Picker, Title-Override + Download-PNG/SVG. Props: {isOpen, pattern: PatternForExport|null, onClose}. State: styleId (default 'default-dark'), sizeId (default 'default'), titleOverride (string). Live-Preview useEffect rendert renderPatternToCanvas in Originalgröße → CSS-skaliert auf max-w-560px in den previewRef-Container. ESC + Backdrop-Click schließen. handleDownloadPng baut Blob via exportPatternAsPng + triggert <a download>-Click; handleDownloadSvg analog mit image/svg+xml. data-testids: pattern-image-export-overlay, pattern-image-export-close, pattern-image-style-{id}, pattern-image-size-{id}, pattern-image-title-override, pattern-image-preview, pattern-image-download-png, pattern-image-download-svg, pattern-image-export-cancel. Ausschließlich semantische Tokens (bg-bg-panel, text-text-primary, border-border-color, accent-primary/20 Active-Style, accent-secondary/20 Active-Size, accent-danger Error). Inline-Style nur border-color: var(--ss-border) für die Preview-Canvas (Tailwind-Klasse auf einem ja-DOM-Canvas-Child geht nicht).",
@@ -2397,6 +2412,31 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "frontend",
+      timestamp: "2026-05-19T08:00:00.000Z",
+      done: [
+        "v3.91.0: Pattern Diff/Compare — Side-by-Side Variation-Workflow. Neuer Modal-Dialog zeigt step-fuer-step die Unterschiede zwischen zwei Patterns (z.B. 'Verse A' vs 'Verse B'). Color-Coding via semantische Tokens: bg-accent-success (gruen) = nur in A aktiv (verloren bei B), bg-accent-danger (rot) = nur in B aktiv (neu bei B), bg-accent-warning (gelb) = beidseitig aktiv aber Velocity unterscheidet sich.",
+        "client/src/utils/patternDiff.ts (NEU, +~210 LOC): Pure-Funktion diffPatterns(a,b) → PatternDiff mit bpmDelta/bpmA/bpmB, stepCountDelta/A/B, partDiffs[]. PartDiff hat partId/partName/presence?(added|removed)/addedSteps[]/removedSteps[]/changedVelocity[]. Strategy: Parts werden per ID gematched (B-Reihenfolge first, dann A-only), Steps bis max(stepCountA,stepCountB) verglichen (Out-of-Range = virtual inactive Step). effectiveVelocity() backwards-compat zu undefined velocity (=Default 100). Zusatzhelpers: summarizeDiff() fuer Header-Zaehler + classifyPartSteps() fuer Step-Index→Kind-Lookup im Grid.",
+        "client/src/components/PatternCompare/PatternCompareModal.tsx (NEU, +~280 LOC): Modal mit 2 Pattern-Dropdowns (Slot A + B), Header-Summary 'BPM A: 120 → B: 124 (+4)' / 'Steps: 16 → 32 (+16)' / Legende mit 3 Color-Chips, side-by-side Step-Grid mit semantischen bg-Klassen + Tooltips. ESC + Backdrop-Click schliessen. Bei A==B: Hinweis. Bei presence=removed/added: Badge 'A'/'B' am Part-Label. Verwendet ausschliesslich semantische Tokens (bg-bg-panel, text-text-primary, border-border-color, accent-*).",
+        "client/src/components/DrumMachine/DrumMachine.tsx (EDIT, +~30 LOC): PatternRow erhaelt optionalen onCompare-Callback → neuer 🔀-Button neben dem 🖼-Export-Button (nur wenn allPatterns.length > 1). State compareModalAId + Render von <PatternCompareModal> am Ende der Komponente neben PatternImageExportModal. Wiring im patterns.map() callback: setCompareModalAId(p.id) + setShowPatternMenu(false).",
+        "tests/features/pattern-diff.test.ts (NEU, 17 Tests, alle gruen): identische Patterns liefern empty diff, added/removed/changedVelocity einzeln getestet, BPM+StepCount-Delta inkl. null-BPM-Edge-Case, StepCount-Mismatch (A laenger / B laenger), Empty vs Filled Part, Multi-Part Pattern, Part nur in A/B (presence-Flag), Input-Immutability via JSON.stringify-Snapshot. summarizeDiff + classifyPartSteps separat getestet.",
+        "Version-Bump: 3.90.0 → 3.91.0 in package.json + agents/INDEX.js.",
+        "pnpm check clean. pnpm test: 236 files / 5321 passed / 16 skipped (alle 17 neuen Tests gruen)."
+      ],
+      next: [
+        "Optional: Playwright-Smoke fuer das Modal in tests/web/ — verifiziere dass der 🔀-Button erscheint, der Klick das Modal oeffnet und die Step-Cells die richtigen data-kind-Attribute haben.",
+        "Optional: 'Apply Diff' Workflow — Button im Modal um selektierte Diffs von B nach A (oder umgekehrt) zu mergen. Aktuell ist das Modal read-only."
+      ],
+      changed: [
+        "client/src/utils/patternDiff.ts",
+        "client/src/components/PatternCompare/PatternCompareModal.tsx",
+        "client/src/components/DrumMachine/DrumMachine.tsx",
+        "tests/features/pattern-diff.test.ts",
+        "package.json",
+        "agents/INDEX.js"
+      ]
+    },
     {
       agent:     "backend",
       timestamp: "2026-05-19T07:48:00.000Z",

@@ -28,6 +28,7 @@ import { toast } from "@/store/useToastStore";
 import { getRegisteredAutoBackup } from "@/utils/autoBackupController";
 // v3.66.0: Pattern als PNG/SVG exportieren.
 import { PatternImageExportModal } from "@/components/PatternImageExport/PatternImageExportModal";
+import { PatternCompareModal } from "@/components/PatternCompare/PatternCompareModal";
 import type { PatternForExport } from "@/utils/patternImageExport";
 import { MixAssistantPanel } from "./MixAssistantPanel";
 import type { MixAnalysisInput, MixRecommendation } from "@/utils/mixAnalysis";
@@ -118,12 +119,14 @@ interface PatternRowProps {
   onReorder: (fromIndex: number, toIndex: number) => void;
   /** v3.66.0: Pattern als PNG/SVG exportieren. */
   onExportImage?: () => void;
+  /** v3.91.0: Pattern als Slot A im Compare-Modal öffnen. */
+  onCompare?: () => void;
 }
 
 function PatternRow({
   pattern, patternIndex, isActive, isPlaying, isLiveEditing, showDelete,
   hasPrevPattern, prevPatternId, allPatterns,
-  onSelect, onDuplicate, onRemove, onCopySamplesFrom, onReorder, onExportImage,
+  onSelect, onDuplicate, onRemove, onCopySamplesFrom, onReorder, onExportImage, onCompare,
 }: PatternRowProps) {
   const isDraft  = isLiveEditing && isActive;
   const isLocked = isLiveEditing && isPlaying;
@@ -257,6 +260,15 @@ function PatternRow({
           title="Als Bild exportieren (PNG / SVG)"
           data-testid={`pattern-row-export-image-${patternIndex}`}
         >🖼</button>
+      )}
+      {/* v3.91.0: Pattern-Compare — öffnet Diff-Modal mit dieser Pattern als Slot A. */}
+      {!isLocked && onCompare && allPatterns.length > 1 && (
+        <button
+          onClick={onCompare}
+          className="px-1.5 py-1.5 text-text-dim hover:text-accent-secondary text-xs opacity-0 group-hover:opacity-100"
+          title="Mit anderem Pattern vergleichen (Diff)"
+          data-testid={`pattern-row-compare-${patternIndex}`}
+        >🔀</button>
       )}
       {!isLocked && (
         <button
@@ -453,6 +465,9 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
   } | null>(null);
   // v3.66.0: Pattern-Image-Export-Modal-State.
   const [patternImageExport, setPatternImageExport] = useState<PatternForExport | null>(null);
+  // v3.91.0: Pattern-Compare-Modal-State. Wenn !== null wird das Modal mit
+  // dieser Pattern-ID als Slot A geöffnet; Slot B wird vom Modal selbst gewählt.
+  const [compareModalAId, setCompareModalAId] = useState<string | null>(null);
 
   // MIDI-Import: MIDI-Datei in aktives Pattern übertragen
   /**
@@ -989,6 +1004,11 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
                         steps: pp.steps,
                       })),
                     });
+                    setShowPatternMenu(false);
+                  }}
+                  onCompare={() => {
+                    // v3.91.0: Compare-Modal mit diesem Pattern als Slot A öffnen.
+                    setCompareModalAId(p.id);
                     setShowPatternMenu(false);
                   }}
                 />
@@ -2163,6 +2183,14 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
         isOpen={patternImageExport !== null}
         pattern={patternImageExport}
         onClose={() => setPatternImageExport(null)}
+      />
+
+      {/* ── Pattern Compare/Diff Modal (v3.91.0) ────────────────────────── */}
+      <PatternCompareModal
+        isOpen={compareModalAId !== null}
+        patterns={dm.patterns}
+        initialAId={compareModalAId}
+        onClose={() => setCompareModalAId(null)}
       />
     </div>
   );
