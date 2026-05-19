@@ -241,6 +241,16 @@ interface ElectronAPI {
   // ── Sample-Pack-Read (v3.107.0) ──────────────────────────────────────────
   packRegisterRoot(rootPath: string): Promise<{ success: boolean; root?: string; error?: string }>;
   packReadFile(filePath: string): Promise<{ success: boolean; data?: ArrayBuffer; error?: string }>;
+  // ── Sample-Pack Folder-Dialog + Recursive-Scan (v3.108.0) ──────────────────
+  packChooseFolder(): Promise<{ canceled: boolean; filePaths: string[] }>;
+  packScanFolder(rootPath: string): Promise<{
+    success: boolean;
+    root?: string;
+    files?: Array<{ relPath: string; absolutePath: string; sizeBytes: number }>;
+    truncated?: boolean;
+    depthSkipped?: number;
+    error?: string;
+  }>;
   fileExists(filePath: string): Promise<{ exists: boolean }>;
   getFileStats(filePath: string): Promise<{ success: boolean; stats?: { size: number; mtime: number }; error?: string }>;
 

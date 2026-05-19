@@ -149,9 +149,48 @@ function nowMs(): number {
   return Date.now();
 }
 
+/**
+ * Sprint-97: Virtual-MIDI-Loop via WebSocket-Transport.
+ *
+ * Erlaubt End-to-End-Tests ohne Hardware: SynthStudio verbindet sich zu
+ * tools/sim/sim_ws_server.py, das den LoaderSimulator wrapped. Identisches
+ * Wire-Protokoll wie ueber Web-MIDI — nur der Transport ist anders.
+ *
+ * Auch Fallback fuer Browser ohne Web-MIDI (Firefox/Safari) und Vorbote
+ * der WebUSB-Bruecke (siehe OMNITRIBE_INTEGRATION_ARCHITECTURE.md).
+ */
+export interface WsTransport {
+  send(data: Uint8Array): void;
+  close(): void;
+  onmessage?: ((data: Uint8Array) => void) | null;
+  onclose?: (() => void) | null;
+}
+
+/**
+ * Wrapped einen browser-WebSocket als WsTransport.
+ * Setzt binaryType auf "arraybuffer" damit messages als ArrayBuffer kommen.
+ */
+export function adaptBrowserWebSocket(ws: WebSocket): WsTransport {
+  ws.binaryType = "arraybuffer";
+  const adapter: WsTransport = {
+    send: (data: Uint8Array) => ws.send(data),
+    close: () => ws.close(),
+    onmessage: null,
+    onclose: null,
+  };
+  ws.onmessage = (ev) => {
+    if (adapter.onmessage && ev.data instanceof ArrayBuffer) {
+      adapter.onmessage(new Uint8Array(ev.data));
+    }
+  };
+  ws.onclose = () => { adapter.onclose?.(); };
+  return adapter;
+}
+
 export class OmniTribeBridge {
   private output: MIDIOutput | null = null;
   private input: MIDIInput | null = null;
+  private ws: WsTransport | null = null;
   private connected = false;
   private handlers: Map<number, FrameHandler[]> = new Map();
   /**
@@ -193,10 +232,34 @@ export class OmniTribeBridge {
     return this.connected;
   }
 
+  /**
+   * Sprint-97: Verbindet zu sim_ws_server.py (oder einer kompatiblen
+   * WS-Bridge). Schickt Sysex-Frames als binary WS-Messages.
+   *
+   * Identity-Request wird automatisch gesendet sobald connect aufrufbar
+   * ist — wenn der Server das chord-Modul autoloaded, liefert Identity
+   * sofort `module_count=1` zurueck.
+   */
+  async connectWebSocket(ws: WsTransport): Promise<boolean> {
+    this.ws = ws;
+    ws.onmessage = (data: Uint8Array) => this.handleIncoming(data);
+    ws.onclose = () => {
+      this.ws = null;
+      this.connected = false;
+    };
+    this.connected = true;
+    await this.requestIdentity();
+    return true;
+  }
+
   /** Trennt die Bridge — flusht pending Frames und cleant Listener. */
   disconnect(): void {
     if (this.input) {
       this.input.onmidimessage = null;
+    }
+    if (this.ws) {
+      try { this.ws.close(); } catch { /* ignore */ }
+      this.ws = null;
     }
     this.input = null;
     this.output = null;
@@ -389,7 +452,8 @@ export class OmniTribeBridge {
   // ─── Internal: Sende mit Throttling (max 100/sec) ─────────
 
   private send(cmd: number, sub: number, payload: number[] | Uint8Array): void {
-    if (!this.output) return;
+    // Sprint-97: WS-Transport als gleichwertige Out-Quelle erlauben.
+    if (!this.output && !this.ws) return;
     const frame = buildFrame(cmd, sub, payload);
     this.throttleQueue.push(frame);
     if (this.throttleTimer === null) {
@@ -401,7 +465,12 @@ export class OmniTribeBridge {
     const start = Date.now();
     while (this.throttleQueue.length > 0 && Date.now() - start < 5) {
       const frame = this.throttleQueue.shift()!;
-      this.output?.send(Array.from(frame));
+      // Output bevorzugen wenn Web-MIDI verbunden ist, sonst WS.
+      if (this.output) {
+        this.output.send(Array.from(frame));
+      } else if (this.ws) {
+        this.ws.send(frame);
+      }
     }
     if (this.throttleQueue.length > 0) {
       this.throttleTimer = setTimeout(() => this.flushQueue(), 10);

@@ -71,6 +71,13 @@ export function SamplePackBrowser({ className = "" }: { className?: string }) {
   const [importBusy, setImportBusy] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
 
+  // v3.108.0: Electron-Detection — präferiert nativen Folder-Dialog wenn verfügbar.
+  const isElectron = useMemo(() => {
+    if (typeof window === "undefined") return false;
+    const api = (window as unknown as { electronAPI?: { packChooseFolder?: unknown } }).electronAPI;
+    return !!(api && typeof api.packChooseFolder === "function");
+  }, []);
+
   // Hover-Preview (v3.107.0: echte Audio-Vorschau via AudioContext)
   const previewHandleRef = useRef<PreviewHandle | null>(null);
   const previewTokenRef = useRef(0);
@@ -108,6 +115,82 @@ export function SamplePackBrowser({ className = "" }: { className?: string }) {
       return ai - bi;
     });
   }, [filteredSamples]);
+
+  // ── Import-Handler (Electron-Pfad, v3.108.0) ──
+  //
+  // Flow:
+  //  1. packChooseFolder() → User wählt Ordner via OS-Dialog (oder Cancel).
+  //  2. packRegisterRoot(absPath) — main fügt zur Allow-List hinzu.
+  //  3. packScanFolder(absPath) — main scannt rekursiv (max 5000 files,
+  //     max 4 depth, Audio-Whitelist, kein Symlink-Follow).
+  //  4. scanFolderForSamples(scan.files) → klassifiziert + extrahiert Tags+BPM.
+  //  5. store.addPack(name, root, scanned, { absolutePaths }) — absolutePath
+  //     pro Sample persistiert in localStorage.
+  const handleElectronImport = useCallback(async () => {
+    if (typeof window === "undefined") return;
+    const api = (window as unknown as {
+      electronAPI?: {
+        packChooseFolder?: () => Promise<{ canceled: boolean; filePaths: string[] }>;
+        packRegisterRoot?: (p: string) => Promise<{ success: boolean; root?: string; error?: string }>;
+        packScanFolder?: (p: string) => Promise<{
+          success: boolean;
+          root?: string;
+          files?: Array<{ relPath: string; absolutePath: string; sizeBytes: number }>;
+          truncated?: boolean;
+          error?: string;
+        }>;
+      };
+    }).electronAPI;
+    if (!api || !api.packChooseFolder || !api.packRegisterRoot || !api.packScanFolder) {
+      setImportError("Electron-API nicht verfügbar.");
+      return;
+    }
+    setImportBusy(true);
+    setImportError(null);
+    try {
+      const pick = await api.packChooseFolder();
+      if (pick.canceled || pick.filePaths.length === 0) {
+        return;
+      }
+      const absRoot = pick.filePaths[0];
+      const reg = await api.packRegisterRoot(absRoot);
+      if (!reg.success || !reg.root) {
+        setImportError(reg.error ?? "Root konnte nicht registriert werden.");
+        return;
+      }
+      const scan = await api.packScanFolder(reg.root);
+      if (!scan.success || !scan.files) {
+        setImportError(scan.error ?? "Scan fehlgeschlagen.");
+        return;
+      }
+      // ScanInput[] aus IPC-Files bauen.
+      const inputs = scan.files.map((f) => ({ relPath: f.relPath, sizeBytes: f.sizeBytes }));
+      const scanned = scanFolderForSamples(inputs);
+      if (scanned.length === 0) {
+        setImportError("Keine Audio-Dateien gefunden.");
+        return;
+      }
+      // absolutePath pro scanned.id zuordnen via relPath-Match.
+      const absByRelPath = new Map<string, string>();
+      for (const f of scan.files) absByRelPath.set(f.relPath, f.absolutePath);
+      const absolutePaths = new Map<string, string>();
+      for (const s of scanned) {
+        const abs = absByRelPath.get(s.relPath);
+        if (abs) absolutePaths.set(s.id, abs);
+      }
+      // Pack-Name: letztes Segment des absoluten Pfads.
+      const segs = reg.root.split(/[/\\]/).filter((p) => p.length > 0);
+      const name = segs.length > 0 ? segs[segs.length - 1] : "Pack";
+      store.addPack(name, reg.root, scanned, { absolutePaths });
+      if (scan.truncated) {
+        setImportError("Pack-Limit erreicht — nur die ersten 5000 Dateien wurden importiert.");
+      }
+    } catch (err) {
+      setImportError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setImportBusy(false);
+    }
+  }, [store]);
 
   // ── Import-Handler (Browser-Fallback) ──
   const handleFolderInput = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -227,7 +310,15 @@ export function SamplePackBrowser({ className = "" }: { className?: string }) {
         <div className="p-3 border-b border-border-color flex-shrink-0">
           <button
             type="button"
-            onClick={() => folderInputRef.current?.click()}
+            onClick={() => {
+              // v3.108.0: Electron → nativer Folder-Dialog + main-scan,
+              //           Browser → webkitdirectory File-Input-Fallback.
+              if (isElectron) {
+                void handleElectronImport();
+              } else {
+                folderInputRef.current?.click();
+              }
+            }}
             disabled={importBusy}
             data-testid="pack-import-folder"
             className="w-full px-3 py-2 text-xs font-medium rounded bg-accent-primary/20 border border-accent-primary/40 text-accent-primary hover:bg-accent-primary/30 disabled:opacity-50 disabled:cursor-wait"

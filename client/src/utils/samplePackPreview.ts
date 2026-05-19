@@ -19,19 +19,58 @@ export interface PreviewHandle {
 }
 
 export interface PreviewOptions {
-  /** Auto-Stop nach N ms. Default 1500. Clamp 50..10000. */
+  /**
+   * Optionaler Override für die Auto-Stop-Dauer. Wenn nicht gesetzt, wird die
+   * Dauer aus `AudioBuffer.duration` abgeleitet (siehe v3.108.0):
+   *   effectiveMs = min(SAMPLE_LENGTH_CAP_MS, audioBuffer.duration * 1000)
+   * Kurze One-Shots (Drum-Hits < 3s) spielen also vollständig durch, Loops
+   * werden bei 3s gekappt. Clamp auf 50..10000 ms.
+   */
   durationMs?: number;
   /** Linear-Gain 0..1 für leise Vorschau. Default 0.7. */
   gain?: number;
 }
 
-const DEFAULT_DURATION_MS = 1500;
+/**
+ * v3.108.0: Default-Stop bei spät spielenden Samples / Loops. Vorher fixed
+ * 1500 ms — was Drum-Hits abschnitt und Loops zu kurz preview-te. Jetzt:
+ *   min(SAMPLE_LENGTH_CAP_MS, audioBuffer.duration * 1000).
+ */
+export const SAMPLE_LENGTH_CAP_MS = 3000;
+const FALLBACK_DURATION_MS = 1500;
 const MIN_DURATION_MS = 50;
 const MAX_DURATION_MS = 10_000;
 
-function _clampDuration(ms: number | undefined): number {
-  if (typeof ms !== "number" || !isFinite(ms)) return DEFAULT_DURATION_MS;
+function _clampDuration(ms: number): number {
+  if (typeof ms !== "number" || !isFinite(ms)) return FALLBACK_DURATION_MS;
   return Math.max(MIN_DURATION_MS, Math.min(MAX_DURATION_MS, ms));
+}
+
+/**
+ * v3.108.0: Berechnet die effektive Preview-Dauer in ms.
+ *  - explizites override gewinnt immer (klemmt auf MIN..MAX).
+ *  - sonst: min(SAMPLE_LENGTH_CAP_MS, durationSeconds*1000), aber niemals
+ *    unter MIN_DURATION_MS.
+ *  - bei ungültigem durationSeconds → FALLBACK_DURATION_MS (1500).
+ */
+export function resolvePreviewDurationMs(
+  durationSeconds: number | null | undefined,
+  override?: number,
+): number {
+  if (typeof override === "number" && isFinite(override)) {
+    return _clampDuration(override);
+  }
+  if (
+    typeof durationSeconds !== "number" ||
+    !isFinite(durationSeconds) ||
+    durationSeconds <= 0
+  ) {
+    return FALLBACK_DURATION_MS;
+  }
+  const ms = durationSeconds * 1000;
+  // min(cap, sample-länge) — aber nicht unter MIN_DURATION_MS.
+  const effective = Math.min(SAMPLE_LENGTH_CAP_MS, ms);
+  return Math.max(MIN_DURATION_MS, effective);
 }
 
 /**
@@ -47,7 +86,6 @@ export async function previewSample(
   audioCtx: AudioContext,
   opts: PreviewOptions = {},
 ): Promise<PreviewHandle> {
-  const durationMs = _clampDuration(opts.durationMs);
   const gainValue = typeof opts.gain === "number" && isFinite(opts.gain)
     ? Math.max(0, Math.min(1, opts.gain))
     : 0.7;
@@ -85,6 +123,10 @@ export async function previewSample(
       // stop() called between decode-await and now → bail out.
       return { stop: cleanup, isStopped: () => true };
     }
+    // v3.108.0: Sample-length-aware Preview. Auto-Stop bei min(3s, sample-länge).
+    const durationSec = typeof audioBuffer.duration === "number" ? audioBuffer.duration : null;
+    const durationMs = resolvePreviewDurationMs(durationSec, opts.durationMs);
+
     source = audioCtx.createBufferSource();
     source.buffer = audioBuffer;
     gainNode = audioCtx.createGain();

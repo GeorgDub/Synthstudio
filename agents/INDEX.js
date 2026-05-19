@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.107.0",
+    version: "3.108.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -89,6 +89,41 @@ const INDEX = {
   // ─── KNOWN FILE INDEX ──────────────────────────────────────
   // Key files agents have analyzed. Add new entries after working on a file.
   files: {
+    "electron/packScanner.ts (v3.108.0 NEU)": {
+      role:     "v3.108.0 NEU (+~165 LOC, pure-ish Helper mit Dependency-Injection). walkPackRoot(rootPath, deps, opts) BFS-Walk eines Pack-Roots. Deps-Interface {readdir, lstat} → in-memory FS-Mock-Tests ohne Disk. Filter: PACK_SAMPLE_ALLOWED_EXTENSIONS aus ipcValidators (single source of truth). Hard-Caps: PACK_SCAN_MAX_FILES=5000 + PACK_SCAN_MAX_DEPTH=4. SECURITY: NUL-Byte-Drop pro Entry-Name, Path-Separator-in-Name-Drop, Symlink-Drop (lstat + isSymbolicLink-Check), Containment-Boundary mit path.sep (kein Prefix-Confusion-Bug), kein '..'/'.' Entry, throws bei relative/empty/NUL rootPath. Output: {root, files:Array<{relPath(POSIX-Separator), absolutePath, sizeBytes}>, truncated, depthSkipped}.",
+      lastSeen: "2026-05-19T12:05:00.000Z",
+      ownedBy:  "backend"
+    },
+    "electron/main.ts (v3.108.0 +pack:chooseFolder + pack:scanFolder)": {
+      role:     "v3.108.0 ERWEITERT (+~70 LOC nach v3.107). NEU IPC-Handler pack:chooseFolder (dialog.showOpenDialog properties:['openDirectory'], graceful cancel mit leerem Array). NEU IPC-Handler pack:scanFolder mit dreischichtiger Defense: (1) typeof+length+NUL+absolute, (2) Allow-List-Check gegen packSampleRoots Set (rootPath MUSS vorher via pack:registerRoot eingetragen worden sein), (3) walkPackRoot-Delegation mit fs.promises.readdir(withFileTypes)+lstat. Lazy-require packScanner.ts. Alle Errors generisch ('Scan-Fehler') — kein Stack-Trace-Leak.",
+      lastSeen: "2026-05-19T12:05:00.000Z",
+      ownedBy:  "backend"
+    },
+    "electron/preload.ts (v3.108.0 +packChooseFolder + packScanFolder)": {
+      role:     "v3.108.0 ERWEITERT (+~25 LOC). NEU electronAPI.packChooseFolder() → Promise<{canceled, filePaths:string[]}>. NEU electronAPI.packScanFolder(rootPath) → Promise<{success, root?, files?: Array<{relPath, absolutePath, sizeBytes}>, truncated?, depthSkipped?, error?}>. Strikt-typed return-Shape, contextBridge-exposed in renderer window.electronAPI.",
+      lastSeen: "2026-05-19T12:05:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/utils/samplePackPreview.ts (v3.108.0 sample-length-aware)": {
+      role:     "v3.108.0 ERWEITERT (+~40 LOC nach v3.107). NEU exportierte Konstante SAMPLE_LENGTH_CAP_MS=3000. NEU pure-Helper resolvePreviewDurationMs(durationSeconds, override?) → min(SAMPLE_LENGTH_CAP_MS, durationSeconds*1000), clamp MIN=50..MAX=10000ms, FALLBACK_DURATION_MS=1500 bei ungültig (null/undefined/NaN/<=0). previewSample liest jetzt audioBuffer.duration nach decodeAudioData und nutzt resolvePreviewDurationMs — Drum-Hits spielen voll durch, Loops capped bei 3s. PreviewOptions.durationMs-Override gewinnt immer (Backwards-Compat zu v3.107).",
+      lastSeen: "2026-05-19T12:05:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/store/useSamplePackStore.ts (v3.108.0 +source-Feld)": {
+      role:     "v3.108.0 ERWEITERT (+~25 LOC nach v3.107). NEU exportierter Type SamplePackSource = 'electron-fs' | 'browser-memory'. NEU optional SamplePack.source-Feld via Heuristik (any-sample-has-absolutePath → 'electron-fs', sonst 'browser-memory'). _load validiert source-Wert beim Restore aus localStorage. getSampleData-Pfad unverändert (war schon source-aware via absolutePath-Lookup + window.electronAPI.packReadFile).",
+      lastSeen: "2026-05-19T12:05:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/components/SamplePackBrowser/SamplePackBrowser.tsx (v3.108.0 +Electron-Pfad)": {
+      role:     "v3.108.0 ERWEITERT (+~75 LOC nach v3.107). NEU isElectron-Detection (useMemo, checks window.electronAPI.packChooseFolder ist Function). NEU async handleElectronImport: packChooseFolder → packRegisterRoot → packScanFolder → scanFolderForSamples → store.addPack(name, root, scanned, {absolutePaths}). Pack-Name aus letztem Segment des absoluten Pfads. Bei scan.truncated → User-Warning ('Pack-Limit erreicht — nur die ersten 5000 Dateien'). Button-Click branch: isElectron → handleElectronImport (no input-click), sonst webkitdirectory-Input-Fallback (unverändert).",
+      lastSeen: "2026-05-19T12:05:00.000Z",
+      ownedBy:  "backend"
+    },
+    "tests/features/electron-pack-import.test.ts (v3.108.0 NEU)": {
+      role:     "v3.108.0 NEU (+~330 LOC, 22 Tests in 6 describes). (1) walkPackRoot × 8 mit in-memory-FS-Mock (kein realer Disk): non-audio-Filter, nested-dirs, Symlink-Drop, NUL-Byte-Drop, 5000-File-Cap + truncated-flag, depth-Cap, throws bei relative/empty/NUL, absolutePath-Containment. (2) resolvePreviewDurationMs × 5: 10s → 3s cap, 0.2s → 200ms full play, very short → 50ms clamp, override beats sample, invalid → 1500ms fallback. (3) previewSample × 2 mit fake-timers: 10s → stops at 3s, 0.5s → stops at 500ms. (4) addPack source × 4: electron-fs persist, browser-memory persist, mixed = electron-fs, localStorage-Roundtrip. (5) getSampleData × 2: browser-memory WeakMap-bytes-roundtrip, electron-fs ohne window.electronAPI → null graceful. (6) electronAPI surface × 1: packChooseFolder undefined in browser-env.",
+      lastSeen: "2026-05-19T12:05:00.000Z",
+      ownedBy:  "backend"
+    },
     "client/src/utils/sampleClassifier.ts (v3.106.0 NEU)": {
       role:     "v3.106.0 NEU (+~190 LOC). Pure-Helpers fuer Sample-Pack-Browser. classifyByFilename(name) → SampleCategory (13 Werte: kick/snare/hihat-closed/hihat-open/clap/cymbal/perc/loop/bass/synth/vocal/fx/unknown). Reihenfolge-Sensitiv: hihat-open VOR hihat-closed VOR generic-hihat damit spezifischere Patterns zuerst matchen. Pfad-Extraction (basename), Extension-Strip, alle Trennzeichen (_, -, .) → Space VOR Regex damit \\b zuverlaessig matcht (JS-Regex word-char inkludiert _). extractTags(filename, parentFolder) → string[] dedupliziert mit Stopword-Filter (wav/mp3/vol/...) + Keepword-Whitelist (trap/lofi/808/909/...). extractBpm: zwei Patterns (\\d+bpm | bpm\\d+) mit Range-Guard 40..300. AUDIO_EXTENSIONS Konstante + isAudioFilename Helper. Side-effect-frei.",
       lastSeen: "2026-05-19T11:35:00.000Z",
@@ -2632,6 +2667,41 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "backend",
+      timestamp: "2026-05-19T12:05:00.000Z",
+      done: [
+        "v3.108.0: Electron-Pack-Import-Flow + sample-length-aware Preview (closes v3.107 caveat). User klickt im SamplePackBrowser 'Ordner importieren' → nativer Folder-Dialog → main scannt rekursiv (max 5000 files, max 4 depth, Audio-Whitelist, kein Symlink-Follow) → Renderer baut absolutePath-Map und persistiert sie pro Sample. Browser-Fallback (webkitdirectory) bleibt unverändert. Hover-Preview ist jetzt sample-length-aware: AudioBuffer.duration < 3s spielt voll durch, Loops werden bei 3s gekappt.",
+        "electron/packScanner.ts NEU (+~165 LOC, pure-ish Helper, Dependency-Injection-fähig). walkPackRoot(rootPath, deps, opts) → PackScanResult mit BFS-Walk (deterministische Sortierung pro Level), Containment-Boundary mit path.sep, Audio-Extension-Whitelist (= PACK_SAMPLE_ALLOWED_EXTENSIONS aus ipcValidators — single source of truth), Symlink-Defense (lstat statt stat, isSymbolicLink-Check), NUL-Byte-Defense an jedem Entry-Name, Path-Separator-in-Name-Drop, Hard-Caps (PACK_SCAN_MAX_FILES=5000, PACK_SCAN_MAX_DEPTH=4) mit truncated+depthSkipped-Telemetry. Throws bei invalid rootPath (relative, empty, NUL-Byte). Dependency-Injection erlaubt Tests via in-memory FS-Mock ohne realen Disk-Access.",
+        "electron/main.ts ERWEITERT (+~70 LOC). NEU IPC-Handler 'pack:chooseFolder' (dialog.showOpenDialog mit properties:['openDirectory'], Cancel→leeres Array, kein Stack-Trace-Leak). NEU IPC-Handler 'pack:scanFolder' mit defense-in-depth: typeof+length+NUL-Byte+absolute-check, Allow-List-Check (rootPath muss vorher via pack:registerRoot eingetragen sein — sonst error 'Root nicht registriert'), wrapt walkPackRoot mit fs.promises.readdir(withFileTypes)/lstat. SECURITY: alle Errors generisch ('Scan-Fehler'). Lazy-require von packScanner.ts vermeidet ESM/CJS-Mismatch im electron-dist build.",
+        "electron/preload.ts ERWEITERT (+~25 LOC). NEU electronAPI.packChooseFolder() → {canceled, filePaths}. NEU electronAPI.packScanFolder(rootPath) → {success, root, files: Array<{relPath, absolutePath, sizeBytes}>, truncated, depthSkipped, error}. Strikt typed return-Shape.",
+        "electron/types.d.ts ERWEITERT (+~10 LOC). Interface-Methoden im ElectronAPI-Block.",
+        "client/src/utils/samplePackPreview.ts ERWEITERT (+~40 LOC). NEU exportierte Konstante SAMPLE_LENGTH_CAP_MS=3000. NEU pure-Helper resolvePreviewDurationMs(durationSeconds, override?) → min(3s, sample-länge), clamp 50..10000ms. previewSample nutzt AudioBuffer.duration nach decodeAudioData damit Drum-Hits (<3s) voll spielen und Loops bei 3s capped werden. Override durch PreviewOptions.durationMs gewinnt immer (Backwards-Compat zu v3.107).",
+        "client/src/store/useSamplePackStore.ts ERWEITERT (+~25 LOC). NEU exportierter Type SamplePackSource = 'electron-fs' | 'browser-memory'. NEU optional SamplePack.source-Feld (Heuristik: hasAbsolute → 'electron-fs', sonst 'browser-memory'). _load validates source-Wert aus localStorage. getSampleData-Pfad unverändert (war schon source-aware via absolutePath-Lookup + window.electronAPI.packReadFile).",
+        "client/src/components/SamplePackBrowser/SamplePackBrowser.tsx ERWEITERT (+~75 LOC). NEU isElectron-Detection (window.electronAPI.packChooseFolder ist Function). NEU handleElectronImport: packChooseFolder → packRegisterRoot → packScanFolder → scanFolderForSamples → store.addPack(name, root, scanned, { absolutePaths }). Pack-Name aus letztem Segment des absoluten Pfads. Bei scan.truncated → User-Warning. Button-Click branch: isElectron → handleElectronImport, sonst webkitdirectory-Input-Fallback (unverändert).",
+        "tests/features/electron-pack-import.test.ts NEU (+~330 LOC, 22 Tests in 6 describes). Cluster: (1) walkPackRoot × 8 — filters non-audio extensions, scans nested dirs, rejects symlinks, rejects NUL-byte names, 5000-file cap + truncated-flag, depth-cap (maxDepth=2), throws bei relative/empty/NUL rootPath, absolutePath unter resolvedRoot. (2) resolvePreviewDurationMs × 5 — 10s sample capped at 3s, 0.2s drum-hit plays 200ms, very short clamped to 50ms, explicit override beats sample, invalid duration falls back 1500ms. (3) previewSample-integration × 2 — 10s sample stops at 3s (fake-timers), 0.5s drum-hit plays 500ms (fake-timers). (4) addPack source-field × 4 — electron-fs persist via absolutePaths, browser-memory via fileHandles, gemischter Pack → electron-fs, localStorage-Roundtrip. (5) getSampleData × 2 — browser-memory WeakMap-lookup liefert bytes, electron-fs ohne window.electronAPI graceful null. (6) electronAPI surface × 1 — packChooseFolder undefined im Browser-env. In-Memory-FS-Mock via deps-Injection (kein realer Disk-Access).",
+        "package.json 3.107.0 → 3.108.0. pnpm check: clean. pnpm test electron-pack-import: 22/22 pass. pnpm test sample-pack-drop + sample-classifier: 48/48 pass (no regression). Full suite: 252 files / 5715 passed / 16 skipped / 0 fail (vs v3.107.0 baseline: +1 file +22 tests, no regression)."
+      ],
+      next: [
+        "User-Feedback während Scan: aktuell ist packScanFolder synchron-await ohne Progress-Events. Bei 5000-File-Packs könnte ein samples:import-progress-Event hilfreich sein (siehe bestehende importFolder-Architektur mit importId + progress-events).",
+        "ZIP-Pack-Import: Nutzer-Convenience — zipSampleImport.ts existiert schon für Samples, aber als Pack-Import via SamplePackBrowser noch nicht integriert. Erweiterung: dialog.showOpenDialog({filters:[{name:'ZIP', extensions:['zip']}]}) → samples:import-zip → entzippter Folder → walkPackRoot.",
+        "File System Access API (Browser-Persistence): showDirectoryPicker mit FileSystemDirectoryHandle.requestPermission(). Chrome-only aber würde Browser-Mode-Reload-Limit (Files weg) lösen.",
+        "Pack-Rescan: aktuell wird ein Pack einmal beim Import gescannt. Wenn der User externe Dateien hinzufügt, wäre ein 'Pack rescannen'-Knopf nett — ruft pack:scanFolder mit dem persistierten rootPath, diffed gegen state.samples (added/removed) und merged.",
+        "Tests für packReadFile-Pfad mit gemocktem window.electronAPI: aktuell deckt der electron-pack-import-Test den electron-fs-Fall ohne window.electronAPI ab (null-Fallback). Vollständiger Roundtrip (electron-fs persist → reload → getSampleData → packReadFile-mock → bytes) wäre als jsdom-Test mit gespooftem electronAPI machbar."
+      ],
+      changed: [
+        "electron/packScanner.ts (NEU, ~165 LOC, pure-ish Helper + DI)",
+        "electron/main.ts (+~70 LOC, pack:chooseFolder + pack:scanFolder IPC)",
+        "electron/preload.ts (+~25 LOC, packChooseFolder + packScanFolder)",
+        "electron/types.d.ts (+~10 LOC, ElectronAPI-Interface)",
+        "client/src/utils/samplePackPreview.ts (+~40 LOC, resolvePreviewDurationMs + sample-length-aware previewSample)",
+        "client/src/store/useSamplePackStore.ts (+~25 LOC, SamplePackSource + source-Heuristik)",
+        "client/src/components/SamplePackBrowser/SamplePackBrowser.tsx (+~75 LOC, handleElectronImport + isElectron-Branch)",
+        "tests/features/electron-pack-import.test.ts (NEU, ~330 LOC, 22 Tests)",
+        "package.json (3.107.0 → 3.108.0)",
+        "agents/INDEX.js"
+      ]
+    },
     {
       agent:     "backend",
       timestamp: "2026-05-19T11:38:00.000Z",
@@ -9312,6 +9382,8 @@ const INDEX = {
       "license:write", // TASK-232 (v2.97) — schreibt LicenseState nach userData/license.json (Status-Whitelist, finite-number-only trialStartedAt, Längen-Limits, JSON-Size ≤16 KB).
       "pack:registerRoot", // v3.107.0 — registriert einen Pack-Root in main's Allow-List (validate: absolute Pfad, exists, isDirectory, NUL-Byte-defense, max 4096 chars). In-memory Set<string>, leer bei jedem App-Start. Renderer ruft das vor jedem pack:readFile damit kein arbitraerer Pfad aus dem Renderer durchgereicht wird.
       "pack:readFile",  // v3.107.0 — liest eine Pack-Sample-Datei. Defense-in-depth: validatePackSamplePath (absolute, NUL-Byte, Endung-Whitelist .wav/.mp3/.ogg/.flac/.aif/.aiff/.m4a, path.resolve + Root-Containment-Check mit path.sep-Boundary), R_OK-access-check, isFile-check, 100 MB Size-Cap. Returnt ArrayBuffer slice. SECURITY: alle Errors generisch ('Lesefehler') — kein Stack-Trace-Leak.
+      "pack:chooseFolder", // v3.108.0 — öffnet nativen dialog.showOpenDialog({properties:['openDirectory']}) und gibt {canceled, filePaths} zurück. SECURITY: User-Selection only — kein arbitrary path vom Renderer. UI nutzt das im SamplePackBrowser-Import-Button (Electron-Pfad).
+      "pack:scanFolder",   // v3.108.0 — rekursiver Scan eines bereits via pack:registerRoot eingetragenen Pack-Roots. Defense-in-depth: Allow-List-Check (registerRoot muss vorher gerufen worden sein), max 5000 files, max 4 sub-folder depth, Audio-Extension-Whitelist (=pack:readFile), NUL-Byte-Defense, kein Symlink-Follow (lstat statt stat), Containment-Boundary mit path.sep, deterministische Sortierung pro Level. Returnt {root, files: Array<{relPath, absolutePath, sizeBytes}>, truncated, depthSkipped}. SECURITY: generic 'Scan-Fehler' bei errors — kein Stack-Trace-Leak.
 
       // Performance-Mode Popup-Window (ROADMAP feature, post-v1.23.0):
       // alle Channels haben narrow-data-only Payloads — keine file paths,

@@ -116,6 +116,32 @@ const electronAPI = {
   ): Promise<{ success: boolean; data?: ArrayBuffer; error?: string }> =>
     ipcRenderer.invoke("pack:readFile", filePath),
 
+  // ── Sample-Pack Folder-Dialog + Recursive-Scan (v3.108.0) ───────────────────
+  /**
+   * Öffnet den nativen Folder-Dialog. Returnt `{canceled, filePaths}` —
+   * Cancel = filePaths leer. SECURITY: Pfad kommt aus dem OS-Dialog, nicht
+   * vom Renderer.
+   */
+  packChooseFolder: (): Promise<{ canceled: boolean; filePaths: string[] }> =>
+    ipcRenderer.invoke("pack:chooseFolder"),
+
+  /**
+   * Rekursiver Scan eines bereits via `packRegisterRoot` eingetragenen
+   * Pack-Roots. Main-Side enforced: max 5000 files, max 4 sub-folder depth,
+   * Audio-Extension-Whitelist, kein Symlink-Follow, NUL-Byte-Defense,
+   * Root-Containment-Check.
+   */
+  packScanFolder: (
+    rootPath: string,
+  ): Promise<{
+    success: boolean;
+    root?: string;
+    files?: Array<{ relPath: string; absolutePath: string; sizeBytes: number }>;
+    truncated?: boolean;
+    depthSkipped?: number;
+    error?: string;
+  }> => ipcRenderer.invoke("pack:scanFolder", rootPath),
+
   // ── Audio-Recording-Save (TASK-234 / v2.86) ────────────────────────────────
   /**
    * Schreibt einen WAV-Buffer in userData/recordings/<filename>.

@@ -25,6 +25,10 @@ import {
   parseChordIntervalCsv,
   requestAllChordUserSlots,
 } from "../../utils/omniTribeWiring";
+import {
+  loadChordUserSlotsCache,
+  saveChordUserSlotsCache,
+} from "../../utils/chordUserSlotsCache";
 
 const STAGGER_MAX_MS = 200;
 
@@ -44,12 +48,17 @@ export function ChordPanel({
   const [enabled, setEnabled]         = useState<boolean>(false);
 
   // ── User-Slot lokale Editier-Cache (Intervall-Liste als CSV) ────────────
-  const [userIntervals, setUserIntervals] = useState<Record<number, string>>({
-    11: "0,4,7",   // Default = Major
-    12: "0,3,7",
-    13: "0,4,7,11",
-    14: "0,5,7",
-  });
+  // Sprint-97: laed initial aus localStorage (oder Defaults). Persistenz
+  // ueber Sessions damit User-Editier-Arbeit nicht verloren geht wenn das
+  // Geraet abgesteckt wird oder Browser-Tab neu geladen.
+  const [userIntervals, setUserIntervals] = useState<Record<number, string>>(
+    () => loadChordUserSlotsCache(),
+  );
+
+  // ── localStorage Sync bei jeder Aenderung ──────────────────────────────
+  useEffect(() => {
+    saveChordUserSlotsCache(userIntervals);
+  }, [userIntervals]);
 
   // ── Outbound: Type-Change ───────────────────────────────────────────────
   const handleChordTypeChange = useCallback((id: number) => {

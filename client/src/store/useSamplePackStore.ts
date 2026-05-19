@@ -32,12 +32,22 @@ export interface SamplePackSample {
   absolutePath?: string;
 }
 
+/**
+ * v3.108.0: Quelle der Sample-Bytes. `electron-fs` = absolutePath ist gesetzt
+ * und Bytes werden via packReadFile geladen. `browser-memory` = File-Handles
+ * im In-Memory-Cache; nach Reload verloren. Reines Metadatum für UI-Hints
+ * (z.B. Warnung "Pack wird beim Reload geleert" im Browser-Mode).
+ */
+export type SamplePackSource = "electron-fs" | "browser-memory";
+
 export interface SamplePack {
   id: string;
   name: string;
   rootPath: string;
   samples: SamplePackSample[];
   importedAt: number;
+  /** Optional — v3.108.0+ packs setzen das beim Import. Alte packs: undefined. */
+  source?: SamplePackSource;
 }
 
 export interface SamplePackFilter {
@@ -76,12 +86,14 @@ function _load(): PackState {
         p && typeof p.id === "string" && typeof p.name === "string" &&
         Array.isArray(p.samples)
       ) {
+        const src = (p as { source?: unknown }).source;
         packs.push({
           id: p.id,
           name: p.name,
           rootPath: typeof p.rootPath === "string" ? p.rootPath : "",
           samples: p.samples as SamplePackSample[],
           importedAt: typeof p.importedAt === "number" ? p.importedAt : Date.now(),
+          source: src === "electron-fs" || src === "browser-memory" ? src : undefined,
         });
       }
     }
@@ -247,12 +259,17 @@ export function addPack(
       if (file) _fileHandles.set(s.id, file);
     }
   }
+  // v3.108.0: Source-Heuristik — wenn auch nur EINE absolutePath gesetzt
+  // wurde, ist es ein Electron-FS-Pack (alle Samples kommen aus Disk).
+  const hasAbsolute = samples.some((s) => typeof s.absolutePath === "string" && s.absolutePath.length > 0);
+  const source: SamplePackSource = hasAbsolute ? "electron-fs" : "browser-memory";
   const pack: SamplePack = {
     id: packId,
     name: name.trim() || "Pack",
     rootPath,
     samples,
     importedAt: Date.now(),
+    source,
   };
   _state = { ..._state, packs: [..._state.packs, pack] };
   _persist(_state);

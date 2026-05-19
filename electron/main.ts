@@ -2224,6 +2224,86 @@ function registerIpcHandlers(): void {
     }
   });
 
+  // ── Sample-Pack Folder-Dialog + Recursive-Scan (v3.108.0) ─────────────────
+  //
+  // SECURITY: Diese beiden IPC-Handler vervollständigen den Electron-Pack-
+  // Import-Flow (siehe v3.107 caveat). Defense-in-depth:
+  //  - pack:chooseFolder gibt nur einen vom User explizit gewählten Pfad
+  //    zurück (nativer dialog.showOpenDialog) — kein arbitrary path vom
+  //    Renderer.
+  //  - pack:scanFolder akzeptiert nur Pfade, die vorher via
+  //    pack:registerRoot in die Allow-List eingetragen wurden. Damit kann
+  //    eine kompromittierte Renderer-Origin nicht beliebige Verzeichnisse
+  //    scannen (DoS + Information-Disclosure-Schutz).
+  //  - Hard-Cap: max 5000 Dateien, max 4 Sub-Folder-Tiefe.
+  //  - Audio-Extension-Whitelist (= dieselbe wie pack:readFile).
+  //  - Symlinks werden nicht verfolgt (Schleifen-Schutz).
+  ipcMain.handle("pack:chooseFolder", async () => {
+    try {
+      const win = BrowserWindow.getFocusedWindow() ?? mainWindow;
+      if (!win) {
+        return { canceled: true, filePaths: [] as string[] };
+      }
+      const result = await dialog.showOpenDialog(win, {
+        title: "Sample-Pack-Ordner wählen",
+        properties: ["openDirectory"],
+      });
+      // SECURITY: dialog liefert vom OS validierte absolute Pfade —
+      // kein Renderer-Input.
+      return {
+        canceled: result.canceled,
+        filePaths: result.canceled ? [] : (result.filePaths ?? []),
+      };
+    } catch (err) {
+      console.error("[IPC pack:chooseFolder] error:", err);
+      return { canceled: true, filePaths: [] as string[] };
+    }
+  });
+
+  ipcMain.handle("pack:scanFolder", async (_event, rootPath: unknown) => {
+    try {
+      if (typeof rootPath !== "string" || rootPath.length === 0) {
+        return { success: false as const, error: "Kein Root-Pfad" };
+      }
+      if (rootPath.length > 4096) {
+        return { success: false as const, error: "Pfad zu lang" };
+      }
+      if (rootPath.includes("\0")) {
+        return { success: false as const, error: "Pfad enthält NUL-Byte" };
+      }
+      if (!path.isAbsolute(rootPath)) {
+        return { success: false as const, error: "Nur absolute Pfade erlaubt" };
+      }
+      const resolved = path.resolve(rootPath);
+      // SECURITY: Allow-List-Check — Renderer MUSS pack:registerRoot
+      // vorher gerufen haben, damit hier gescannt werden darf.
+      if (!packSampleRoots.has(resolved)) {
+        return { success: false as const, error: "Root nicht registriert (registerRoot fehlt)" };
+      }
+      // Lazy-load via require: vermeidet ESM/CJS-Mismatch im electron-dist build.
+      const { walkPackRoot, PACK_SCAN_MAX_FILES, PACK_SCAN_MAX_DEPTH } = require("./packScanner");
+      const result = await walkPackRoot(resolved, {
+        readdir: async (dir: string) =>
+          fs.promises.readdir(dir, { withFileTypes: true }) as unknown as Promise<unknown[]>,
+        lstat: async (target: string) => fs.promises.lstat(target),
+      }, {
+        maxFiles: PACK_SCAN_MAX_FILES,
+        maxDepth: PACK_SCAN_MAX_DEPTH,
+      });
+      return {
+        success: true as const,
+        root: result.root,
+        files: result.files,
+        truncated: result.truncated,
+        depthSkipped: result.depthSkipped,
+      };
+    } catch (err) {
+      // SECURITY: Stack-Trace nicht leaken.
+      console.error("[IPC pack:scanFolder] error:", err);
+      return { success: false as const, error: "Scan-Fehler" };
+    }
+  });
+
   // ── Audio-Recording-Save (TASK-234 / v2.86) ─────────────────────────────────
   //
   // Empfängt einen WAV-ArrayBuffer vom Renderer und speichert ihn in
