@@ -37,8 +37,11 @@ export interface WavEncodeOptions {
   sampleRate: number;
   /** Anzahl Kanäle (1=mono, 2=stereo). Default 1. */
   channels?: 1 | 2;
-  /** Bittiefe. Aktuell nur 16 unterstützt (kompakteste mit DAW-weitester Compat). */
-  bitDepth?: 16;
+  /**
+   * Bittiefe. 16 (default, DAW-Standard) oder 24 (v3.150 — höhere Dynamic
+   * Range, ~50% mehr Dateigröße). Beides PCM, signed Little-Endian.
+   */
+  bitDepth?: 16 | 24;
 }
 
 /**
@@ -96,8 +99,8 @@ export function encodeWav(
     throw new Error("encodeWav requires at least one channel buffer");
   }
   const bitDepth = options.bitDepth ?? 16;
-  if (bitDepth !== 16) {
-    throw new Error(`Unsupported bitDepth: ${bitDepth} (only 16 supported)`);
+  if (bitDepth !== 16 && bitDepth !== 24) {
+    throw new Error(`Unsupported bitDepth: ${bitDepth} (only 16 or 24 supported)`);
   }
 
   const length = channelData[0].length;
@@ -130,28 +133,61 @@ export function encodeWav(
   writeAscii(view, offset, WAV_DATA_MAGIC); offset += 4;
   view.setUint32(offset, dataSize, true); offset += 4;
 
-  // PCM-Daten (Float32 → Int16, interleaved bei Stereo)
-  if (channels === 1) {
-    const ch0 = channelData[0];
-    for (let i = 0; i < length; i++) {
-      const s = Math.max(-1, Math.min(1, ch0[i]));
-      view.setInt16(offset, s < 0 ? Math.round(s * 0x8000) : Math.round(s * 0x7fff), true);
-      offset += 2;
+  // PCM-Daten (Float32 → Int16/Int24, interleaved bei Stereo)
+  if (bitDepth === 16) {
+    if (channels === 1) {
+      const ch0 = channelData[0];
+      for (let i = 0; i < length; i++) {
+        const s = Math.max(-1, Math.min(1, ch0[i]));
+        view.setInt16(offset, s < 0 ? Math.round(s * 0x8000) : Math.round(s * 0x7fff), true);
+        offset += 2;
+      }
+    } else {
+      const ch0 = channelData[0];
+      const ch1 = channelData[1] ?? channelData[0];
+      for (let i = 0; i < length; i++) {
+        const l = Math.max(-1, Math.min(1, ch0[i]));
+        const r = Math.max(-1, Math.min(1, ch1[i]));
+        view.setInt16(offset, l < 0 ? Math.round(l * 0x8000) : Math.round(l * 0x7fff), true);
+        offset += 2;
+        view.setInt16(offset, r < 0 ? Math.round(r * 0x8000) : Math.round(r * 0x7fff), true);
+        offset += 2;
+      }
     }
   } else {
-    const ch0 = channelData[0];
-    const ch1 = channelData[1] ?? channelData[0];
-    for (let i = 0; i < length; i++) {
-      const l = Math.max(-1, Math.min(1, ch0[i]));
-      const r = Math.max(-1, Math.min(1, ch1[i]));
-      view.setInt16(offset, l < 0 ? Math.round(l * 0x8000) : Math.round(l * 0x7fff), true);
-      offset += 2;
-      view.setInt16(offset, r < 0 ? Math.round(r * 0x8000) : Math.round(r * 0x7fff), true);
-      offset += 2;
+    // 24-bit PCM: signed integer, 3 bytes per sample, little-endian.
+    // Range: -8388608..8388607 (-0x800000..0x7fffff).
+    if (channels === 1) {
+      const ch0 = channelData[0];
+      for (let i = 0; i < length; i++) {
+        const s = Math.max(-1, Math.min(1, ch0[i]));
+        offset = writeInt24LE(view, offset, s);
+      }
+    } else {
+      const ch0 = channelData[0];
+      const ch1 = channelData[1] ?? channelData[0];
+      for (let i = 0; i < length; i++) {
+        const l = Math.max(-1, Math.min(1, ch0[i]));
+        const r = Math.max(-1, Math.min(1, ch1[i]));
+        offset = writeInt24LE(view, offset, l);
+        offset = writeInt24LE(view, offset, r);
+      }
     }
   }
 
   return buffer;
+}
+
+/** Schreibt 24-bit signed PCM (3 bytes LE) für einen Float-Sample im Bereich [-1, +1]. */
+function writeInt24LE(view: DataView, offset: number, sample: number): number {
+  const n = sample < 0 ? Math.round(sample * 0x800000) : Math.round(sample * 0x7fffff);
+  // n liegt im Bereich -0x800000..0x7fffff. Für Little-Endian-3-Byte-Write:
+  // byte 0 = LSB, byte 1 = mid, byte 2 = MSB (sign-bit im obersten).
+  const u = n & 0xffffff; // 24-bit two's complement (negative wird automatisch).
+  view.setUint8(offset, u & 0xff);
+  view.setUint8(offset + 1, (u >> 8) & 0xff);
+  view.setUint8(offset + 2, (u >> 16) & 0xff);
+  return offset + 3;
 }
 
 /**
