@@ -1540,13 +1540,47 @@ export function SampleBrowser({
           {/* Sample-Liste */}
           <div className="flex-1 overflow-y-auto min-h-0">
             {samples.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-full gap-3 text-text-dim">
-                <div className="text-4xl">🎚️</div>
-                <p className="text-sm">Keine Samples geladen</p>
-                <p className="text-xs text-text-dim text-center px-4">
-                  {electron.isElectron
-                    ? "Dateien hierher ziehen oder über '+ Dateien', '+ Ordner' oder '+ ZIP' importieren"
-                    : "Über '+ Dateien', '+ ZIP' importieren oder per Drag & Drop"}
+              <div
+                className="flex flex-col items-center justify-center h-full gap-4 px-6"
+                data-testid="sample-browser-empty"
+              >
+                <div className="flex flex-col items-center gap-2">
+                  <div className="text-5xl" aria-hidden="true">🎚️</div>
+                  <p className="text-sm font-semibold text-text-primary">Noch keine Samples</p>
+                  <p className="text-[11px] text-text-muted text-center max-w-[28ch] leading-snug">
+                    Drag &amp; Drop hierher, oder importiere via den Buttons:
+                  </p>
+                </div>
+                <div className="flex flex-col gap-1.5 w-full max-w-[200px]">
+                  <button
+                    type="button"
+                    onClick={handleImportFiles}
+                    className="px-3 py-1.5 rounded text-xs bg-accent-primary text-bg-base font-semibold hover:bg-accent-primary/80 transition-colors"
+                    data-testid="sample-browser-empty-files-btn"
+                  >
+                    Dateien wählen
+                  </button>
+                  {electron.isElectron && (
+                    <button
+                      type="button"
+                      onClick={handleImportFolder}
+                      className="px-3 py-1.5 rounded text-xs border border-border-color text-text-primary hover:border-accent-primary hover:text-accent-primary transition-colors"
+                      data-testid="sample-browser-empty-folder-btn"
+                    >
+                      Ordner importieren
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={handleImportZip}
+                    className="px-3 py-1.5 rounded text-xs border border-border-color text-text-primary hover:border-accent-primary hover:text-accent-primary transition-colors"
+                    data-testid="sample-browser-empty-zip-btn"
+                  >
+                    ZIP-Pack importieren
+                  </button>
+                </div>
+                <p className="text-[10px] text-text-dim text-center max-w-[28ch] leading-snug">
+                  Unterstützte Formate: WAV, MP3, OGG, FLAC, AIFF, M4A
                 </p>
               </div>
             ) : filteredSamples.length === 0 ? (
