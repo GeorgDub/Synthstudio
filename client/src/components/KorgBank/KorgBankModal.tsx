@@ -32,10 +32,13 @@ import {
   type EsxBank,
   type EsxPattern,
   type EsxSample,
+  type EsxSong,
 } from "@/utils/korg/esxParser";
 import {
   convertEsxPatternToSynthstudio,
+  convertEsxSongToSynthstudio,
   type SynthstudioPatternImport,
+  type SynthstudioSongArrangement,
 } from "@/utils/korg/esxPatternConvert";
 import {
   parseE2sBank,
@@ -65,6 +68,12 @@ export interface KorgBankModalProps {
    * wendet es auf useDrumMachineStore / useAutomationStore an.
    */
   onAddPattern?: (pattern: SynthstudioPatternImport) => void;
+  /**
+   * v3.89.0 — wird beim Import eines ESX-1 Songs aufgerufen. Liefert das
+   * konvertierte Song-Arrangement (slots[]). Caller faechert das auf
+   * useSongStore.createArrangement (siehe App.tsx-Wiring).
+   */
+  onAddSong?: (song: SynthstudioSongArrangement) => void;
 }
 
 /** Result-Spec, die der Caller in seinen Sample-Store überführen kann. */
@@ -180,17 +189,20 @@ interface ModalState {
   rows: DisplayRow[];
   /** v3.5 — Patterns (nur fuer ESX-1). E2S hat keine Patterns. */
   patterns: EsxPattern[];
+  /** v3.89.0 — Songs (nur fuer ESX-1). E2S hat keine Songs. */
+  songs: EsxSong[];
   bankType: KorgBankType;
   warnings: string[];
   loading: boolean;
   error: string | null;
 }
 
-type ModalTab = "samples" | "patterns";
+type ModalTab = "samples" | "patterns" | "songs";
 
 const INITIAL_STATE: ModalState = {
   rows: [],
   patterns: [],
+  songs: [],
   bankType: "unknown",
   warnings: [],
   loading: false,
@@ -204,6 +216,7 @@ export function KorgBankModal({
   onClose,
   onAddSample,
   onAddPattern,
+  onAddSong,
 }: KorgBankModalProps): React.ReactElement | null {
   const [state, setState] = useState<ModalState>(INITIAL_STATE);
   const [searchQuery, setSearchQuery] = useState<string>("");
@@ -230,6 +243,7 @@ export function KorgBankModal({
             setState({
               rows,
               patterns: bank.patterns,
+              songs: bank.songs,
               bankType: "esx",
               warnings: bank.warnings,
               loading: false,
@@ -241,6 +255,7 @@ export function KorgBankModal({
             setState({
               rows,
               patterns: [],
+              songs: [],
               bankType: "e2s",
               warnings: bank.warnings,
               loading: false,
@@ -390,6 +405,28 @@ export function KorgBankModal({
     toast(`KORG: ${added}/${count} Patterns importiert`, { kind: "success", duration: 3000 });
   }
 
+  // ── Song Handlers (v3.89.0) ────────────────────────────────────────────────
+  function handleImportSong(song: EsxSong): void {
+    if (!onAddSong) {
+      toast("Kein Song-Receiver konfiguriert", { kind: "warning" });
+      return;
+    }
+    try {
+      const conv = convertEsxSongToSynthstudio(song);
+      if (conv.slots.length === 0) {
+        toast(`KORG: Song "${conv.name}" hat keine Events`, { kind: "warning", duration: 2500 });
+        return;
+      }
+      onAddSong(conv);
+      toast(`KORG: Song "${conv.name}" mit ${conv.slots.length} Slots importiert`, {
+        kind: "success",
+        duration: 2500,
+      });
+    } catch (err) {
+      toast(`Song-Import-Fehler: ${String(err)}`, { kind: "error" });
+    }
+  }
+
   if (!file) return null;
 
   return (
@@ -447,10 +484,10 @@ export function KorgBankModal({
             </div>
           )}
 
-          {!state.loading && !state.error && (state.rows.length > 0 || state.patterns.length > 0) && (
+          {!state.loading && !state.error && (state.rows.length > 0 || state.patterns.length > 0 || state.songs.length > 0) && (
             <>
-              {/* Tab-Bar (nur wenn Patterns vorhanden, sonst nur Samples) */}
-              {state.bankType === "esx" && state.patterns.length > 0 && (
+              {/* Tab-Bar (nur wenn Patterns oder Songs vorhanden, sonst nur Samples) */}
+              {state.bankType === "esx" && (state.patterns.length > 0 || state.songs.length > 0) && (
                 <div
                   data-testid="korg-bank-tabs"
                   className="flex items-center gap-1 border-b border-border-color -mt-1 mb-2"
@@ -466,17 +503,32 @@ export function KorgBankModal({
                   >
                     Samples ({state.rows.length})
                   </button>
-                  <button
-                    data-testid="korg-bank-tab-patterns"
-                    onClick={() => setActiveTab("patterns")}
-                    className={`px-3 py-1 text-xs ${
-                      activeTab === "patterns"
-                        ? "text-accent-primary border-b-2 border-accent-primary -mb-px"
-                        : "text-text-muted hover:text-text-primary"
-                    }`}
-                  >
-                    Patterns ({state.patterns.length})
-                  </button>
+                  {state.patterns.length > 0 && (
+                    <button
+                      data-testid="korg-bank-tab-patterns"
+                      onClick={() => setActiveTab("patterns")}
+                      className={`px-3 py-1 text-xs ${
+                        activeTab === "patterns"
+                          ? "text-accent-primary border-b-2 border-accent-primary -mb-px"
+                          : "text-text-muted hover:text-text-primary"
+                      }`}
+                    >
+                      Patterns ({state.patterns.length})
+                    </button>
+                  )}
+                  {state.songs.length > 0 && (
+                    <button
+                      data-testid="korg-bank-tab-songs"
+                      onClick={() => setActiveTab("songs")}
+                      className={`px-3 py-1 text-xs ${
+                        activeTab === "songs"
+                          ? "text-accent-primary border-b-2 border-accent-primary -mb-px"
+                          : "text-text-muted hover:text-text-primary"
+                      }`}
+                    >
+                      Songs ({state.songs.length})
+                    </button>
+                  )}
                 </div>
               )}
 
@@ -633,12 +685,53 @@ export function KorgBankModal({
                   ))}
                 </div>
               )}
+
+              {/* Song-Tabelle (v3.89.0) */}
+              {activeTab === "songs" && state.songs.length > 0 && (
+                <div data-testid="korg-bank-song-list" className="space-y-1">
+                  <p className="text-xs text-text-muted mb-1">
+                    {state.songs.length} non-empty Songs · Event-Mapping Best-Effort (Format reverse-engineered)
+                  </p>
+                  {state.songs.map((song) => (
+                    <div
+                      key={`song-${song.index}`}
+                      data-testid={`korg-bank-song-${song.index}`}
+                      className="flex items-center gap-2 px-2 py-1.5 rounded text-xs bg-bg-elevated border border-transparent hover:border-border-color transition-colors"
+                    >
+                      <span className="font-mono text-text-dim w-12 flex-shrink-0">
+                        S{song.index + 1}
+                      </span>
+                      <span
+                        className="flex-1 truncate text-text-primary"
+                        title={song.name || `(unnamed song ${song.index + 1})`}
+                      >
+                        {song.name || `(unbenannter Song ${song.index + 1})`}
+                      </span>
+                      <span className="text-text-muted w-20 flex-shrink-0 text-right">
+                        {song.bpm} BPM
+                      </span>
+                      <span className="text-text-muted w-20 flex-shrink-0 text-right">
+                        {song.eventCount} Events
+                      </span>
+                      <button
+                        data-testid={`korg-bank-song-add-${song.index}`}
+                        onClick={() => handleImportSong(song)}
+                        disabled={!onAddSong}
+                        className="px-2 py-0.5 rounded text-[10px] bg-bg-base text-text-muted hover:text-accent-success transition-colors disabled:opacity-40"
+                        title="Song importieren (→ useSongStore.createArrangement)"
+                      >
+                        + Song
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </>
           )}
 
-          {!state.loading && !state.error && state.rows.length === 0 && state.patterns.length === 0 && state.bankType !== "unknown" && (
+          {!state.loading && !state.error && state.rows.length === 0 && state.patterns.length === 0 && state.songs.length === 0 && state.bankType !== "unknown" && (
             <p className="text-sm text-text-muted">
-              Bank enthaelt keine Samples oder Patterns.
+              Bank enthaelt keine Samples, Patterns oder Songs.
             </p>
           )}
         </div>

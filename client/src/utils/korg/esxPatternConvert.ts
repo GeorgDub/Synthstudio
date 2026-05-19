@@ -24,7 +24,8 @@
  *   - automationLanes  → useAutomationStore (v3.5: leer)
  */
 
-import type { EsxPattern } from "./esxParser";
+import type { EsxPattern, EsxSong, EsxSongEvent } from "./esxParser";
+import { ESX1_SONG_EVENT_END_MARKER } from "./esxParser";
 import type {
   EsxPatternInput,
   EsxDrumPartInput,
@@ -357,3 +358,104 @@ export function convertSynthstudioPatternToEsx(
     audioInPart,
   };
 }
+
+// ─── v3.89.0: ESX-1 Song → Synthstudio Song-Mode Konverter ───────────────────
+
+/** PatternBank-Banks A..D von useSongStore (mirrors useSongStore.ts). */
+export type SynthstudioPatternBank = "A" | "B" | "C" | "D";
+
+/** Ein Song-Slot wie ihn useSongStore.createArrangement entgegen nimmt. */
+export interface SynthstudioSongSlotInput {
+  /** Pattern-Bank A..D. */
+  bank: SynthstudioPatternBank;
+  /** Repeats 1..16. */
+  repeats: number;
+}
+
+/** Konvertierte Song-Arrangement-Spec. */
+export interface SynthstudioSongArrangement {
+  /** Originalname (8 chars) — informativ, useSongStore hat aktuell kein Song-Name-Feld. */
+  name: string;
+  /** BPM-Hint aus dem ESX-Song-Header. */
+  bpm: number;
+  /** Slots in Reihenfolge — direkt fuer useSongStore.createArrangement nutzbar. */
+  slots: SynthstudioSongSlotInput[];
+}
+
+/**
+ * Mappt ein ESX-1 Pattern-Index (0..255) auf eine Synthstudio Pattern-Bank A..D.
+ *
+ * ESX-1 hat 256 Patterns, gruppiert in vier Pattern-Banks zu je 64. Default-
+ * Mapping:
+ *   0..63   → A
+ *   64..127 → B
+ *   128..191 → C
+ *   192..255 → D
+ *
+ * Out-of-range → A (defensiv).
+ */
+export function esxPatternIndexToBank(patternIndex: number): SynthstudioPatternBank {
+  if (!Number.isFinite(patternIndex) || patternIndex < 0) return "A";
+  if (patternIndex < 64) return "A";
+  if (patternIndex < 128) return "B";
+  if (patternIndex < 192) return "C";
+  if (patternIndex < 256) return "D";
+  return "A";
+}
+
+/**
+ * Defensive: clamp repeats auf 1..16 (useSongStore Range).
+ */
+function clampRepeats(value: number): number {
+  if (!Number.isFinite(value) || value < 1) return 1;
+  if (value > 16) return 16;
+  return Math.floor(value);
+}
+
+/**
+ * Konvertiert einen geparseten ESX-Song zu einem Synthstudio-Song-Arrangement.
+ *
+ * Mapping-Strategie:
+ *   - Pro Song-Event mit gueltigem pattern-Index erzeugt einen Slot.
+ *   - End-Marker-Events (data == 0xFFFF) werden uebersprungen.
+ *   - `length` Feld wird als repeats verwendet, mit defaulting:
+ *       0xF7 (default-empty) → 1 Repeat
+ *       sonst clamp(length, 1..16)
+ *   - Pattern-Index → Bank via {@link esxPatternIndexToBank}.
+ *
+ * Wenn der Song keine non-end-Events hat, wird ein leeres slots[]-Array
+ * zurueckgegeben (Caller darf das User-feedback zeigen).
+ *
+ * @param song      Geparseter EsxSong aus parseEsxSong.
+ * @returns         Arrangement-Spec, direkt mit useSongStore.createArrangement nutzbar.
+ */
+export function convertEsxSongToSynthstudio(
+  song: EsxSong,
+): SynthstudioSongArrangement {
+  const slots: SynthstudioSongSlotInput[] = [];
+
+  for (const ev of song.events) {
+    // Skip end-marker events.
+    if (ev.data === ESX1_SONG_EVENT_END_MARKER) continue;
+    // Skip events whose pattern field equals the marker-byte (0xFF) — those
+    // are likely partial markers from heuristic parsing.
+    if (ev.pattern === 0xff) continue;
+
+    const bank = esxPatternIndexToBank(ev.pattern);
+    // ESX `length` field is the repeat-count for the pattern. Default values
+    // (0xF7 = 247) sind defensive-clamped auf 1 wenn out-of-range.
+    const repeats = ev.length === 0xf7 || ev.length === 0 ? 1 : clampRepeats(ev.length);
+    slots.push({ bank, repeats });
+  }
+
+  return {
+    name: song.name || `SONG_${song.index + 1}`,
+    bpm: song.bpm,
+    slots,
+  };
+}
+
+/**
+ * Convenience: typed exports fuer Caller die EsxSongEvent direkt brauchen.
+ */
+export type { EsxSongEvent };

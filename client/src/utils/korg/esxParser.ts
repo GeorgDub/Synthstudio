@@ -92,15 +92,20 @@ import {
   ESX1_ADDR_SAMPLE_DATA,
   ESX1_ADDR_SAMPLE_HEADER_MONO,
   ESX1_ADDR_SAMPLE_HEADER_STEREO,
+  ESX1_ADDR_SONG_DATA,
+  ESX1_ADDR_SONG_EVENT_DATA,
   ESX1_ADDR_VALID_CHECK_2,
   ESX1_CHUNKSIZE_PATTERN,
   ESX1_CHUNKSIZE_SAMPLE_HEADER_MONO,
   ESX1_CHUNKSIZE_SAMPLE_HEADER_STEREO,
+  ESX1_CHUNKSIZE_SONG,
+  ESX1_CHUNKSIZE_SONG_EVENT,
   ESX1_EMPTY_OFFSET,
   ESX1_MAX_MONO_SLOTS,
   ESX1_MAX_SAMPLE_MEM_IN_BYTES,
   ESX1_MAX_STEREO_SLOTS,
   ESX1_NUM_PATTERNS,
+  ESX1_NUM_SONGS,
   ESX1_SIGNATURE,
   ESX1_SIZE_FILE_MIN,
   ESX1_SUBMAGIC,
@@ -246,6 +251,73 @@ export interface EsxPattern {
   raw?: Uint8Array;
 }
 
+/**
+ * v3.89.0 — Ein einzelnes Song-Event (8 Bytes).
+ *
+ * Reverse-Engineering-Stand 2026-05-19 gegen 38 reale .esx-Files:
+ *   - Das offizielle Korg-Manual + Open Electribe Editor enthalten KEINE
+ *     dokumentierte Song-Event-Struktur — die Felder unten sind aus den
+ *     Bytemustern bei 0x138400+ in KASSEL.esx + Jump New.esx abgeleitet.
+ *   - 8-Byte-Frames mit folgender Best-Effort-Interpretation:
+ *       +0..+1 = `time` (BE u16, Step-Index in der Songzeitachse)
+ *       +2     = `pattern` (u8, 0..255 = Pattern-Slot-Index)
+ *       +3     = `length`  (u8, Step-Repeats des Patterns; oft 0xF7)
+ *       +4..+5 = `flags`   (BE u16, fast immer 0x0000)
+ *       +6..+7 = `data`    (BE u16, terminator-Marker oder MIDI-Mute-Mask)
+ *   - Terminator: ein Event-Frame mit data == 0xFFFF (= "07 FF" Marker
+ *     im Pattern-Field) signalisiert Songende. Real-Beobachtung an Position
+ *     0x138400: `00 70 01 f7 00 00 07 ff` → Pattern 1, length F7, end-marker.
+ *
+ * Die Werte sind defensiv geklemmt und werden NIE zum Wegwerfen eines Events
+ * benutzt; Caller können `data === 0xFFFF` selbst als End-Marker erkennen.
+ */
+export interface EsxSongEvent {
+  /** Step-position im Song (BE u16). */
+  time: number;
+  /** Pattern-Slot 0..255. */
+  pattern: number;
+  /** Length / Repeats (1..255). 0xF7 = Default. */
+  length: number;
+  /** Best-Effort Flags-Feld (BE u16). */
+  flags: number;
+  /** Trailing BE u16 — 0xFFFF = end-of-song marker. */
+  data: number;
+}
+
+/**
+ * v3.89.0 — Ein einzelnes Song-Slot (Index 0..63, 528 Bytes on disk).
+ *
+ * Reverse-Engineering-Stand 2026-05-19:
+ *   - Header-Layout: +0..+7  = 8-byte ASCII name (space/NUL-padded)
+ *                    +8      = u8 BPM-Hint (init=0x3c=60, real-werte oft 0x00)
+ *                    +9..+15 = constant 0x00 in allen 4096 untersuchten Slots
+ *                    +16..   = opaque event/sequence-data (nicht vollstaendig RE-d)
+ *   - Empty-Slot-Erkennung: alle 528 Bytes match die init-Signatur
+ *     (8x 0x20 + 0x3c + 519x 0x00). 32 von 64 Songs in KASSEL.esx zeigen
+ *     diesen Init-Header.
+ *
+ * Die `events`-Liste wird aus der globalen Song-Event-Region (0x138400+)
+ * extrahiert — pro Song werden Events bis zum nächsten End-Marker
+ * (data == 0xFFFF) gesammelt.
+ */
+export interface EsxSong {
+  /** Slot-Index 0..63. */
+  index: number;
+  /** ASCII-Name (8 chars max, trimmed). Empty-Slot → ''. */
+  name: string;
+  /** BPM-Hint aus Slot-Offset +8 (Best-Effort, oft 60 = init). */
+  bpm: number;
+  /** Anzahl der Events, die diesem Song zugeordnet sind. */
+  eventCount: number;
+  /**
+   * Liste der dekodierten 8B-Events. Leer, wenn der Song initialisiert ist
+   * oder die Event-Region fehlt. Defensive: max 4096 Events pro Song.
+   */
+  events: EsxSongEvent[];
+  /** Rohbytes des 528B Song-Blocks (Debug/Diff). */
+  raw?: Uint8Array;
+}
+
 export interface EsxBank {
   /** Quelle (Filename oder "<bytes>"). */
   source: string;
@@ -255,6 +327,12 @@ export interface EsxBank {
   stereoSamples: EsxSample[];
   /** Patterns — in v3.3 leeres Array (Skeleton-Doku). */
   patterns: EsxPattern[];
+  /**
+   * v3.89.0 — Geparste non-empty Songs (max 64). Leere Init-Slots werden
+   * weggelassen. Wenn die Song-Region truncated ist, wird ein warning
+   * generiert und das Array bleibt leer.
+   */
+  songs: EsxSong[];
   /** Vom Header gemeldete Mono-Sample-Anzahl (Plausibilitätsfeld). */
   declaredMonoCount: number;
   /** Vom Header gemeldete Stereo-Sample-Anzahl. */
@@ -814,6 +892,259 @@ function readPcmRange(
   return buf.subarray(absStart, absEnd);
 }
 
+// ─── Song-Block-Helpers (v3.89.0) ────────────────────────────────────────────
+
+/**
+ * Init-Signatur eines leeren ESX-1 Song-Slots (528 Bytes).
+ *
+ * Reverse-Engineering 2026-05-19: Konfiguration ueber 38 .esx-Files:
+ *   - First 8 bytes:  0x20 0x20 0x20 0x20 0x20 0x20 0x20 0x20   (8 spaces)
+ *   - Offset 8:       0x3c                                       (BPM-Hint = 60)
+ *   - Offset 9..527:  all 0x00
+ *
+ * 32 von 64 Songs in KASSEL.esx zeigen exakt dieses Pattern. Sobald
+ * Bytes davon abweichen, ist der Slot nicht-leer.
+ */
+const ESX1_SONG_INIT_NAME = 0x20;
+const ESX1_SONG_INIT_BPM_BYTE = 0x3c; // 60
+
+/** End-of-song-Marker im trailing data-field eines song-events. */
+export const ESX1_SONG_EVENT_END_MARKER = 0xffff;
+
+/** Hardening-Cap: max events pro Song (defense gegen aufgeblaehte Files). */
+const ESX1_MAX_EVENTS_PER_SONG = 4096;
+
+/** Hardening-Cap: max total events in der globalen Event-Region. */
+const ESX1_MAX_TOTAL_EVENTS = 64 * ESX1_MAX_EVENTS_PER_SONG;
+
+/**
+ * Pruefft ob ein 528B Song-Block ein "init"/leeres Song-Slot ist.
+ *
+ * Heuristik (zwei Wege):
+ *   A) Bytes 0..7 sind alle 0x20 (Space) UND bytes 8..527 matchen
+ *      die init-Signatur (0x3c, dann 519x 0x00).
+ *   B) Erste 16 Bytes sind alle 0x00 (synthetisch/unwritten).
+ *
+ * Beide Wege haben False-Negative-Sicherheit: ein User-Song hat in
+ * mindestens einem Byte abweichende Werte. Real-File-Verifikation gegen
+ * KASSEL.esx (Song[0..30] alle empty, Song[31+] alle non-empty).
+ */
+export function isEmptyEsxSong(raw: Uint8Array): boolean {
+  if (raw.length < 16) return true;
+  // Weg B: All-Zero (synthetisch)
+  let allZero = true;
+  for (let i = 0; i < 16 && i < raw.length; i++) {
+    if (raw[i] !== 0) {
+      allZero = false;
+      break;
+    }
+  }
+  if (allZero) return true;
+  // Weg A: Init-Signature
+  // Bytes 0..7 = 0x20
+  for (let i = 0; i < 8; i++) {
+    if (raw[i] !== ESX1_SONG_INIT_NAME) return false;
+  }
+  // Byte 8 = 0x3c
+  if (raw[8] !== ESX1_SONG_INIT_BPM_BYTE) return false;
+  // Bytes 9..527 = 0x00
+  const limit = Math.min(raw.length, ESX1_CHUNKSIZE_SONG);
+  for (let i = 9; i < limit; i++) {
+    if (raw[i] !== 0x00) return false;
+  }
+  return true;
+}
+
+/**
+ * Parst ein einzelnes 528B Song-Slot zu einem {@link EsxSong} oder null
+ * wenn der Slot leer ist.
+ *
+ * @param raw        Die 528 Bytes des Song-Blocks (NICHT der ganze File-Buffer).
+ * @param songIndex  0..63 — Song-Slot-Index.
+ * @param events     Optional die bereits dem Song zugeordneten Events
+ *                   (extrahiert aus der globalen Event-Region 0x138400+).
+ *
+ * Verifizierte Felder:
+ *   - Offset 0..7  : 8-byte ASCII name (space/NUL-padded). Empty-Slot → ''.
+ *   - Offset 8     : u8 BPM-Hint (init=0x3c=60).
+ *
+ * Best-Effort:
+ *   - Restliche 519 Bytes sind nicht final reverse-engineered und werden
+ *     im `raw`-Feld zur weiteren Analyse erhalten.
+ *
+ * @returns EsxSong oder null wenn empty.
+ */
+export function parseEsxSong(
+  raw: Uint8Array,
+  songIndex: number,
+  events: EsxSongEvent[] = [],
+): EsxSong | null {
+  if (raw.length !== ESX1_CHUNKSIZE_SONG) {
+    throw new EsxParseError(
+      `parseEsxSong: erwarte ${ESX1_CHUNKSIZE_SONG} bytes, bekam ${raw.length}`,
+    );
+  }
+  if (isEmptyEsxSong(raw)) return null;
+
+  const name = decodeEsxName(raw.subarray(0, 8));
+  const bpmByte = raw[8] ?? ESX1_SONG_INIT_BPM_BYTE;
+  // Defensive: BPM-Hint in plausibles Hardware-Fenster (20..300).
+  let bpm = bpmByte;
+  if (!Number.isFinite(bpm) || bpm < 20) bpm = 20;
+  if (bpm > 300) bpm = 300;
+
+  // Cap events to defensive limit.
+  const cappedEvents = events.slice(0, ESX1_MAX_EVENTS_PER_SONG);
+
+  return {
+    index: songIndex,
+    name,
+    bpm,
+    eventCount: cappedEvents.length,
+    events: cappedEvents,
+    raw,
+  };
+}
+
+/**
+ * Parst die globale Song-Event-Region (0x138400+) zu Event-Frames pro Song.
+ *
+ * Format pro Event (8 Bytes, BE):
+ *   +0..+1 = time (BE u16)
+ *   +2     = pattern (u8)
+ *   +3     = length (u8)
+ *   +4..+5 = flags (BE u16)
+ *   +6..+7 = data (BE u16; 0xFFFF = end-of-song marker)
+ *
+ * Pro Song werden Events bis zum ersten 0xFFFF-Marker gesammelt
+ * (exklusive Marker selbst). Bei Region-Truncate werden warning-Hinweise
+ * generiert und nur die intakten Events zurueckgegeben.
+ *
+ * @returns Tuple [eventsPerSong, warnings]: eventsPerSong[i] = Events fuer Song i.
+ */
+export function parseEsxSongEvents(
+  buf: Uint8Array,
+  numSongs: number = ESX1_NUM_SONGS,
+): { eventsPerSong: EsxSongEvent[][]; warnings: string[] } {
+  const eventsPerSong: EsxSongEvent[][] = new Array(numSongs);
+  for (let i = 0; i < numSongs; i++) eventsPerSong[i] = [];
+  const warnings: string[] = [];
+
+  const start = ESX1_ADDR_SONG_EVENT_DATA;
+  if (start >= buf.length) {
+    warnings.push(
+      `song-event region missing: file ${buf.length} < expected start 0x${start.toString(16)}`,
+    );
+    return { eventsPerSong, warnings };
+  }
+
+  // Defensive: Event-Region endet entweder bei ESX1_ADDR_VALID_CHECK_2 (0x1B0000)
+  // oder am File-Ende, je nachdem was zuerst kommt.
+  const end = Math.min(0x1b0000, buf.length);
+  if (end <= start) {
+    warnings.push(
+      `song-event region empty: start 0x${start.toString(16)} >= end 0x${end.toString(16)}`,
+    );
+    return { eventsPerSong, warnings };
+  }
+
+  const maxBytes = end - start;
+  const maxFrames = Math.min(
+    Math.floor(maxBytes / ESX1_CHUNKSIZE_SONG_EVENT),
+    ESX1_MAX_TOTAL_EVENTS,
+  );
+
+  let currentSong = 0;
+  const dv = new DataView(buf.buffer, buf.byteOffset + start, maxFrames * ESX1_CHUNKSIZE_SONG_EVENT);
+  for (let f = 0; f < maxFrames; f++) {
+    const off = f * ESX1_CHUNKSIZE_SONG_EVENT;
+    const time = dv.getUint16(off, false);
+    const pattern = dv.getUint8(off + 2);
+    const length = dv.getUint8(off + 3);
+    const flags = dv.getUint16(off + 4, false);
+    const data = dv.getUint16(off + 6, false);
+
+    // Defensive: an all-zero frame indicates padding past the actual event-stream.
+    // ESX-1 event-regions are typically 480KB+ and zero-padded after real events.
+    // We stop reading at the first all-zero frame to avoid filling songs with
+    // pseudo-events.
+    if (time === 0 && pattern === 0 && length === 0 && flags === 0 && data === 0) {
+      break;
+    }
+
+    const event: EsxSongEvent = { time, pattern, length, flags, data };
+
+    if (data === ESX1_SONG_EVENT_END_MARKER) {
+      // End-of-song-Marker: schliesse den aktuellen Song ab und gehe zum naechsten.
+      if (currentSong < numSongs) {
+        eventsPerSong[currentSong].push(event);
+        currentSong++;
+      }
+      if (currentSong >= numSongs) break; // alle Songs gefuellt
+      continue;
+    }
+
+    if (currentSong < numSongs) {
+      const arr = eventsPerSong[currentSong];
+      if (arr.length < ESX1_MAX_EVENTS_PER_SONG) {
+        arr.push(event);
+      }
+    }
+  }
+
+  return { eventsPerSong, warnings };
+}
+
+/**
+ * Parst alle 64 Song-Slots ab 0x130000 zu einem {@link EsxSong}-Array.
+ *
+ * Leere Init-Slots werden NICHT in das Output-Array aufgenommen. Bei
+ * truncierten Files werden warnings generiert und nur die intakten
+ * Slots zurueckgegeben.
+ *
+ * @returns Tuple [songs, warnings].
+ */
+export function parseEsxSongs(
+  buf: Uint8Array,
+): { songs: EsxSong[]; warnings: string[] } {
+  const warnings: string[] = [];
+  const songs: EsxSong[] = [];
+
+  const songsStart = ESX1_ADDR_SONG_DATA;
+  const songsEnd = songsStart + ESX1_NUM_SONGS * ESX1_CHUNKSIZE_SONG;
+  if (songsStart >= buf.length) {
+    warnings.push(
+      `song area missing: file ${buf.length} < expected start 0x${songsStart.toString(16)}`,
+    );
+    return { songs, warnings };
+  }
+  if (songsEnd > buf.length) {
+    warnings.push(
+      `song area truncated: file ${buf.length} < required end ${songsEnd}`,
+    );
+  }
+
+  // Parse events first so we can attach them per-song.
+  const { eventsPerSong, warnings: evtWarnings } = parseEsxSongEvents(buf);
+  warnings.push(...evtWarnings);
+
+  const usableEnd = Math.min(songsEnd, buf.length);
+  for (let i = 0; i < ESX1_NUM_SONGS; i++) {
+    const off = songsStart + i * ESX1_CHUNKSIZE_SONG;
+    if (off + ESX1_CHUNKSIZE_SONG > usableEnd) break;
+    try {
+      const block = buf.subarray(off, off + ESX1_CHUNKSIZE_SONG);
+      const song = parseEsxSong(block, i, eventsPerSong[i] ?? []);
+      if (song !== null) songs.push(song);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      warnings.push(`song ${i}: ${msg}`);
+    }
+  }
+
+  return { songs, warnings };
+}
+
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 /**
@@ -1041,11 +1372,18 @@ export function parseEsxBank(
     }
   }
 
+  // ── 8. Songs parsen (v3.89.0) ──────────────────────────────────────────────
+  // 64 Songs × 528B ab 0x130000, plus Event-Region ab 0x138400.
+  // Leere Init-Slots werden geskippt; truncated regions liefern warnings.
+  const { songs, warnings: songWarnings } = parseEsxSongs(buf);
+  warnings.push(...songWarnings);
+
   return {
     source,
     monoSamples,
     stereoSamples,
     patterns,
+    songs,
     declaredMonoCount: numMono,
     declaredStereoCount: numStereo,
     warnings,

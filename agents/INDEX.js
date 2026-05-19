@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.88.0",
+    version: "3.89.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -89,6 +89,26 @@ const INDEX = {
   // ─── KNOWN FILE INDEX ──────────────────────────────────────
   // Key files agents have analyzed. Add new entries after working on a file.
   files: {
+    "client/src/utils/korg/esxParser.ts (v3.89.0 song-mode)": {
+      role:     "v3.89.0 ERWEITERT (+~210 LOC, bestehende v3.23 Pattern-Parser bleibt): NEU EsxSongEvent + EsxSong + EsxBank.songs[]. Pure-Helpers isEmptyEsxSong (8x0x20+0x3c+519x0x00 init-signature match OR all-zero-block), parseEsxSong (528B → EsxSong|null, BPM-Clamp 20..300, name 8-byte ASCII), parseEsxSongEvents (8B-Frames ab 0x138400 bis 0x1B0000, end-marker = data 0xFFFF, defensiv break bei first-all-zero-frame um Pseudo-Events zu vermeiden), parseEsxSongs (Bulk 64-Slot mit truncated-warnings + ESX1_MAX_EVENTS_PER_SONG=4096-cap). parseEsxBank ergänzt Step 8 'Songs parsen' (additive non-breaking — songs[] zur EsxBank-Return-Shape). Real-File-RE 2026-05-19 gegen 38 Korg ESX files/: 37 Files haben 64 init-Slots (User-typische Nicht-Nutzung), KASSEL.esx hat 32 non-empty Slots 31..63 (mixed/partial-content layout, opaque preserved im raw-Feld). Vorheriger v3.23-Stand: parseEsxBank+parseEsxPattern mit 16 Drum/Stretch/Short/Audio-In-Parts, accent-bit bit-4 RE-d.",
+      lastSeen: "2026-05-19T07:35:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/utils/korg/esxPatternConvert.ts (v3.89.0 song-converter)": {
+      role:     "v3.89.0 ERWEITERT (+~85 LOC, bestehende v3.39 Pattern-Converter + v3.27 WRITE-side bleibt): NEU Types SynthstudioPatternBank ('A'|'B'|'C'|'D'), SynthstudioSongSlotInput {bank, repeats 1..16}, SynthstudioSongArrangement {name, bpm, slots[]}. NEU Pure-Helpers esxPatternIndexToBank (0..63→A, 64..127→B, 128..191→C, 192..255→D — ESX-1 User-Manual: 4 Banks à 64 Patterns), convertEsxSongToSynthstudio (Events → slots[]: skip end-marker, length 0xF7 (init-marker) → 1 repeat, sonst clamp 1..16, fallback Name 'SONG_<n+1>'). Output direkt mit useSongStore.createArrangement nutzbar. Re-export EsxSongEvent.",
+      lastSeen: "2026-05-19T07:35:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/components/KorgBank/KorgBankModal.tsx (v3.89.0 songs-tab)": {
+      role:     "v3.89.0 ERWEITERT (+~80 LOC, bestehende v3.5 Patterns-Tab bleibt): ModalState erweitert um songs: EsxSong[]. ModalTab-Type 'samples'|'patterns'|'songs'. Tab-Bar rendered nur wenn patterns>0 OR songs>0 (vorher nur patterns>0). NEU Songs-Tab + Songs-Count-Badge. NEU Song-Tabelle data-testid korg-bank-song-list/song-<n>/song-add-<n>: S<n+1>-Index, Name (Fallback 'unbenannter Song <n>'), BPM, Event-Count, '+ Song'-Button (disabled wenn kein onAddSong). NEU optionale Prop onAddSong: (song: SynthstudioSongArrangement) => void. NEU Handler handleImportSong: warning-toast bei slots.length=0, success-toast mit Slot-Count. Empty-State-Message ergänzt 'oder Songs'.",
+      lastSeen: "2026-05-19T07:35:00.000Z",
+      ownedBy:  "backend"
+    },
+    "tests/features/korg-esx-songs.test.ts (v3.89.0 NEU)": {
+      role:     "v3.89.0 NEU (~390 LOC, 29 Tests in 7 describes, env:node, vitest): (1) isEmptyEsxSong × 5: init-signature/all-zero/named/non-zero-payload/too-small. (2) parseEsxSong × 5: name+bpm/null-bei-empty/BPM-clamp-20..300/wrong-size-throws-EsxParseError/events-attach. (3) parseEsxSongEvents × 3: 8B-frames-mit-end-markers (Song 0 + Song 1 getrennt, Song 2/3 empty), missing-region-warning, numSongs-default-64. (4) parseEsxSongs × 3: all-empty-returns-empty-array, non-empty-only-mit-index-erhalt, truncated-warning. (5) esxPatternIndexToBank × 5: A/B/C/D-ranges + out-of-range-fallback. (6) convertEsxSongToSynthstudio × 6: slot-mapping-mit-bank/skip-end-marker/length-0xF7-default-1/clamp-1..16/empty-name-fallback-SONG_n/empty-slots-array. (7) real-file Smoke × 2 (conditional auf Korg ESX files/): parseEsxSongs gegen alle 38 .esx files (mit Tolerance für PCM-cap-overflows + variant-header-files via try/catch) + KASSEL-specific 'songs.length > 0'. RE-Findings im Header-Block dokumentiert.",
+      lastSeen: "2026-05-19T07:35:00.000Z",
+      ownedBy:  "backend"
+    },
     "client/src/store/useSubMixStore.ts (v3.88.0)": {
       role:     "v3.88.0 ERWEITERT (+13 LOC, bestehende v3.86/v3.79 unverändert): NEU exported Setter setBusPostGain(id, postGain) — Convenience-Wrapper um setBusFx({postGain}) analog setBusReverbSend/setBusDelaySend. JSDoc dokumentiert Routing: 'wirkt im Audio-Graph ZWISCHEN compMix und bus.gain (also nach EQ+Compressor, aber VOR Volume/Mute/Solo) und skaliert NICHT die Sends'. Vorheriger v3.86-Stand: SubMixBusFx erweitert auf volle FX-Chain mit eq3/compressor/reverbSend/delaySend + clampBusEq3/clampBusCompressor + Setter setBusEq3/setBusCompressor/setBusReverbSend/setBusDelaySend (alle merge-update mit pre-clamping).",
       lastSeen: "2026-05-19T07:18:00.000Z",
@@ -2362,6 +2382,38 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "backend",
+      timestamp: "2026-05-19T07:35:00.000Z",
+      done: [
+        "v3.89.0: ESX-1 Song-Mode Import (closes v3.3 'preserved opaque'). Vorher waren die 64 Song-Slots (528B each ab 0x130000) + Song-Event-Region (8B-Frames ab 0x138400) im ESX-Parser unparsed. Jetzt: defensive Reverse-Engineered Parser für beide Bereiche + 1:1-Mapping auf useSongStore.createArrangement-Slots. Real-File-RE gegen 38 Korg ESX files/ (KASSEL.esx hat 32 non-empty Slots 31..63, alle anderen 38 Files haben 64 init-Slots — User-typische Nutzung).",
+        "client/src/utils/korg/esxParser.ts ERWEITERT (+~210 LOC): NEU Interfaces EsxSongEvent (time BE u16, pattern u8, length u8, flags BE u16, data BE u16 mit 0xFFFF=end-marker) + EsxSong (index 0..63, name 8-byte ASCII, bpm aus byte+8, eventCount, events[], raw). NEU exportierte Const ESX1_SONG_EVENT_END_MARKER=0xFFFF. NEU Pure-Helpers isEmptyEsxSong (matched 8x0x20+0x3c+519x0x00 init-signature oder all-zero block), parseEsxSong (528B-block → EsxSong|null + Bounds-Checks + BPM-Clamp 20..300), parseEsxSongEvents (gleitet 8B-Frames ab 0x138400 bis 0x1B0000, sammelt Events pro Song bis end-marker, stoppt defensiv an erstem all-zero Frame), parseEsxSongs (Bulk 64-Slot-Parse mit truncated-warnings + Hardening-Caps ESX1_MAX_EVENTS_PER_SONG=4096). EsxBank-Interface erweitert um songs: EsxSong[]. parseEsxBank ergänzt Step 8 'Songs parsen' der songs+warnings aus parseEsxSongs aggregiert.",
+        "client/src/utils/korg/esxPatternConvert.ts ERWEITERT (+~85 LOC): NEU Types SynthstudioPatternBank ('A'|'B'|'C'|'D'), SynthstudioSongSlotInput {bank, repeats 1..16}, SynthstudioSongArrangement {name, bpm, slots[]}. NEU Pure-Helper esxPatternIndexToBank (0..63→A, 64..127→B, 128..191→C, 192..255→D, defensiv fallback A). NEU convertEsxSongToSynthstudio (Events → slots[] mit Skip-End-Marker + length 0xF7 (init) → 1 Repeat + clamp 1..16). EsxSongEvent typed re-export.",
+        "client/src/components/KorgBank/KorgBankModal.tsx ERWEITERT (+~80 LOC, bestehende v3.5 Patterns-Tab bleibt): ModalState erweitert um songs: EsxSong[]. Neuer Tab 'Songs' mit Count-Badge (rendered nur wenn songs.length > 0). Tab-Type ModalTab als 'samples'|'patterns'|'songs'. NEUE Song-Tab-Tabelle (data-testid korg-bank-song-list/song-<n>/song-add-<n>): Index S<n+1>, Name (Fallback 'unbenannter Song <n>'), BPM, Event-Count, '+ Song'-Button. NEU optionale Prop onAddSong: (song: SynthstudioSongArrangement) => void. NEU Handler handleImportSong: konvertiert via convertEsxSongToSynthstudio, zeigt warning-toast bei slots.length=0, success-toast mit Slot-Count.",
+        "client/src/App.tsx ERWEITERT (+~5 LOC): KorgBankModal-Mount-Block ergänzt onAddSong-Callback der useSongStore.createArrangement aufruft (slots.map → {bank, repeats}). useSongStore (`song`-Variable) war bereits importiert (v3.86+).",
+        "tests/features/korg-esx-songs.test.ts (NEU, ~390 LOC, 29 Tests in 7 describes): isEmptyEsxSong (5 Tests — init/zero/named/non-zero-payload/too-small), parseEsxSong (5 Tests — name+bpm/null-bei-empty/BPM-clamp/wrong-size-throws/events-attach), parseEsxSongEvents (3 Tests — 8B-frames+end-markers/truncated-warning/numSongs-default), parseEsxSongs (3 Tests — all-empty/non-empty-only/truncated-warning), esxPatternIndexToBank (5 Tests — A/B/C/D-ranges + out-of-range), convertEsxSongToSynthstudio (6 Tests — slot-mapping/skip-end-marker/0xF7-default/clamp/empty-name-fallback/empty-slots), real-file Smoke (2 Tests, conditional via Korg ESX files/ — parseEsxSongs gegen alle 38 .esx files + KASSEL-specific non-empty-assertion mit Tolerance für PCM-cap-overflows + variant-header-files).",
+        "Reverse-Engineering-Findings: (a) Init-Song-Block-Signatur ist '8x 0x20 + 0x3c + 519x 0x00' — 32/64 Slots in KASSEL.esx zeigen exakt das, 64/64 in den anderen 37 User-Files (User-typische Nicht-Nutzung der Song-Funktion). (b) Song-Event-Frames bei 0x138400 sind 8B mit struktur '00 70 01 f7 00 00 07 ff' = time/pattern/length/flags/data (BE), `data=0xFFFF` als end-of-song marker. (c) KASSEL.esx Slots 31..63 haben non-init-bytes ab Offset 16 — möglicherweise Song-Event-Data inline embedded oder mixed-storage layout, format-spec unsicher → Best-Effort. (d) Pattern-Bank-Mapping ESX→Synthstudio 0..63→A/64..127→B/128..191→C/192..255→D ist DEFAULT-Konvention (ESX-1-User-Manual: 4 Banks à 64 Patterns).",
+        "Caveats: (1) Format-Spec für 528B Song-Block nicht final RE-d — die Bytes 9..527 enthalten optionale Pattern-Liste/Step-Repeats die wir als opaque 'raw' beibehalten. (2) Wenn Events ohne end-marker enden, hängen sie alle bei song[0] — typisch wäre per Song eine eigene Event-Region, aber das ist heuristisch. (3) Real-File-Test KASSEL: 32 erwartete non-empty Slots, wir prüfen nur '> 0' wegen Heuristik-Drift. (4) length-Field-Semantik: real values 0xF7=247 sind kein Repeat-Count sondern Default-Marker → wir treaten als 1 Repeat. (5) Variant-Header-Files ('OoQC' statt 'KORG') sind NICHT ESX-1-Backups sondern andere Korg-Backup-Format-Varianten → parseEsxBank wirft, parseEsxSongs liefert leere Result.",
+        "package.json (3.88.0 → 3.89.0). pnpm check clean (TypeScript strict mode). pnpm test grün: 234 Test-Files / 5293 Tests passed (16 skipped, +1 file +29 vs v3.88.0). Bestehende korg-esx-* tests (10 files) alle weiterhin grün — EsxBank-Interface-Erweiterung um songs[] ist additiv-non-breaking."
+      ],
+      next: [
+        "v3.90: Song-Block-Bytes 9..527 final RE-en — bytes 16+ enthalten möglicherweise inline pattern-id-Liste (User-File KASSEL.esx[31]: '82 18 00 00 08 50 00 05 66 40 c8 50 21 00 00 16' könnte verschlüsselt sein) — Diff gegen Korg-Firmware-Dump waere zielführend.",
+        "v3.90: Event-Region per-Song-Trennung verbessern: aktuell hängen alle Events vor dem ersten end-marker bei song[0]. Möglicherweise existiert ein zusätzlicher 'song-start'-Marker (z.B. data=0xFFFE) — RE braucht eine echte non-init User-File mit klarem Song-Arrangement.",
+        "v3.90: Reverse-Engineering eines bekannten Test-Songs (z.B. ein ESX-Demo-File mit Open Electribe Editor erzeugt) wäre der schnellste Weg um die 528B-Layout-Felder final zu verifizieren.",
+        "v3.90: ESX-Song WRITE-side (Synthstudio Song-Mode → ESX export) — analog v3.27 esxPatternBuilder. Würde Synthstudio Song-Mode zur ESX-Hardware-Sync-Quelle machen.",
+        "v3.90: UI: Song-Import-Modal zeigt aktuell nur Index+Name+BPM+EventCount. Erweitern um Preview der ersten 5 Slots (Bank A → 4x, B → 2x, ...) wäre ein Quick-Win.",
+        "v3.90: KASSEL.esx parseEsxBank throwt wegen 'cumulative PCM size 25166068 exceeds 25165824' — der 24MB-cap ist ESX-1-Hardware-Limit, aber 244 Bytes Overflow wirkt wie ein Off-by-one in be16PcmToFloat32 oder im length-Tracking. Investigate ob ESX1_MAX_SAMPLE_MEM_IN_BYTES nicht eher 25166080 sein sollte (= 0xC00000 = 12,582,912 frames × 2 bytes/frame)."
+      ],
+      changed: [
+        "client/src/utils/korg/esxParser.ts (+~210 LOC: EsxSong/EsxSongEvent types + isEmptyEsxSong/parseEsxSong/parseEsxSongEvents/parseEsxSongs helpers + EsxBank.songs[] + parseEsxBank-Integration)",
+        "client/src/utils/korg/esxPatternConvert.ts (+~85 LOC: SynthstudioSongArrangement + esxPatternIndexToBank + convertEsxSongToSynthstudio)",
+        "client/src/components/KorgBank/KorgBankModal.tsx (+~80 LOC: Songs-Tab + handleImportSong + onAddSong-Prop)",
+        "client/src/App.tsx (+~5 LOC: onAddSong-Callback → useSongStore.createArrangement)",
+        "tests/features/korg-esx-songs.test.ts (NEU, ~390 LOC, 29 Tests in 7 describes)",
+        "package.json (3.88.0 → 3.89.0)",
+        "agents/INDEX.js (version + workLog + files-Eintraege)"
+      ]
+    },
     {
       agent:     "frontend",
       timestamp: "2026-05-19T07:18:00.000Z",

@@ -4448,6 +4448,11 @@ export default function App() {
             followAction: { type: "none", barsBeforeSwitch: 1 },
           });
         }}
+        onAddSong={(s) => {
+          // v3.89.0: SynthstudioSongArrangement → useSongStore.createArrangement.
+          // slots[] enthaelt {bank: 'A'..'D', repeats: 1..16}.
+          song.createArrangement(s.slots.map((slot) => ({ bank: slot.bank, repeats: slot.repeats })));
+        }}
       />
       {/* v3.4.0: KORG E2 Sample-Bank-Editor (Synthstudio → .all). */}
       {/* v3.7.0: externalOpenFile route drag-dropped .all hier hin wenn offen. */}
