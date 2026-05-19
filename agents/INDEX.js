@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.111.0",
+    version: "3.112.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -2722,6 +2722,39 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "backend",
+      timestamp: "2026-05-19T13:05:00.000Z",
+      done: [
+        "v3.112.0: MIDI Song Position Pointer (SPP, 0xF2) + MIDI Time Code (MTC, 0xF1 Quarter-Frame + 0xF0 7F XX 01 01 Sysex Full-Frame) — closes v3.111-Caveats. KORG-Electribe2 / DAW-Master kann jetzt nicht nur Tempo+Transport, sondern auch die exakte Position (Bar/Beat oder SMPTE HH:MM:SS:FF) an Synthstudio uebergeben. Opt-in via Store-Flag `syncPosition` (Default false).",
+        "client/src/audio/MidiSyncIn.ts ERWEITERT (+~210 LOC). Neue Pure-Helpers: decodeSpp(lsb,msb) 14-bit decode mit Defensive-Mask, midiBeatsToStep(beats, stepsPerBar) scale-aware (16th-grid * stepsPerBar/16), decodeMtcQuarterFrame(data) returns {type,value} via (data>>4)&0x07/data&0x0F, accumulateMtcQuarterFrames(frames) stitched 8 Quarter-Frame-Slots zu {hh,mm,ss,ff,rate} (Per-Type-Slot mit Null-Init, Pflicht alle 8 present), mtcRateToFps(0..3 → 24/25/29.97/30), mtcPositionToMs(hh,mm,ss,ff,fps). Neue Konstanten SC_MTC_QUARTER_FRAME=0xF1, SC_SONG_POSITION=0xF2, SYSEX_START=0xF0, SYSEX_END=0xF7, SYSEX_UNIV_REALTIME=0x7F, MTC_SUB_ID_1/2=0x01. Erweiterte MidiSyncEvent-Union um 'position-changed' | 'mtc-tick' | 'mtc-locate'. MidiSyncEventDetail erweitert mit midiBeats, hh/mm/ss/ff, rate, fps, positionMs. Neue Klassen-Member: _lastSppMidiBeats, _mtcAccumulator (Array<8>), _mtcAccumulatorCount, _lastMtcPosition + Getters. Neue Handler: handleSongPositionPointer(lsb, msb) decoded → emit 'position-changed'; handleMtcQuarterFrame(data) akkumuliert pro type-slot bis 8 distinct types present → emit 'mtc-tick' + reset accumulator; handleMtcFullFrame(hh, mm, ss, ff, rate) defensive-clamp + emit 'mtc-locate'; handleSysexMessage(bytes) parsed 0xF0 7F XX 01 01 hh mm ss ff 0xF7 header-check + delegate. handleMessage erweitert: dispatch 0xF1/0xF2/0xF0. reset() clear auch Position-State.",
+        "client/src/store/useMidiSyncInStore.ts ERWEITERT (+~60 LOC). State erweitert um syncPosition: boolean (default false, persistiert), lastSppMidiBeats: number|null (volatile), lastMtcPosition: {hh,mm,ss,ff,fps}|null (volatile). Loadable: syncPosition aus JSON, volatile felder IMMER null on load. persistableState explizit omit der drei volatile felder. Neue Setter: setMidiSyncInSyncPosition (clears volatile state bei disable), setMidiSyncInLastSppMidiBeats (no-op bei identical), setMidiSyncInLastMtcPosition (deep-equality-check gegen Re-Render-Spam). setMidiSyncInEnabled(false) clears jetzt auch lastSppMidiBeats + lastMtcPosition. setMidiSyncInPartial erweitert um syncPosition.",
+        "client/src/audio/AudioEngine.ts ERWEITERT (+~55 LOC). Neue applyExternalPosition(midiBeats) — scaled auf _steps via step = Math.round(midiBeats * (steps/16)) → seekToStep (wraparound durch seekToStep). Neue applyMtcLocate(positionMs) — konvertiert ms→step via current _bpm: stepDurMs = 60000/bpm/(steps/4), step = round(positionMs/stepDurMs) mit Modulo. Beide defensive try/catch + Sanity-Checks (NaN/Inf/negative → ignore).",
+        "client/src/hooks/useMidi.ts ERWEITERT (+~55 LOC). Import erweitert um setMidiSyncInLastSppMidiBeats + setMidiSyncInLastMtcPosition. onSyncEvent-Callback erweitert: 'position-changed' → setMidiSyncInLastSppMidiBeats + (wenn syncPosition) AudioEngine.applyExternalPosition. 'mtc-tick' + 'mtc-locate' → setMidiSyncInLastMtcPosition + (wenn syncPosition) AudioEngine.applyMtcLocate(detail.positionMs). handleMidiMessage konsumiert jetzt auch 0xF1/0xF2/0xF0 nach sync.handleMessage damit kein doppeltes Routing. Bei Sync-In disable: position-state in Store gecleared.",
+        "client/src/components/MidiSettings/MidiSettings.tsx ERWEITERT (+~80 LOC). Neuer Sync-Position-Toggle direkt unter Sync-Tempo (data-testid='sync-in-syncposition-toggle'). Conditional Live-Display Grid 2-col (data-testid='sync-in-position-display'): SPP-Card mit 'Beat <n> · Bar <floor/16+1>' + MTC-Card mit 'HH:MM:SS:FF @ <fps>fps' — beide nur sichtbar wenn syncPosition aktiv. Pure semantic tokens, kein hardcoded color.",
+        "tests/features/midi-spp-mtc.test.ts NEU (+~440 LOC, 47 Tests in 12 describes, jsdom-frei mit localStorage-Mock). (1) decodeSpp × 6 — Boundaries, MSB-Shift, Bit-Mask, Defensive. (2) midiBeatsToStep × 5 — 16/32-step grids, NaN/0 defense. (3) decodeMtcQuarterFrame × 3 — type+value extract, mask, null on invalid. (4) accumulateMtcQuarterFrames × 4 — null<8 frames, null on incomplete types, full decode @ 30fps + 01:23:45:15 stitching. (5) mtcRateToFps × 4 — 0/1/2/3 → 24/25/29.97/30. (6) mtcPositionToMs × 5 — 0, 1h, 1m, 0.5s, invalid fps fallback. (7) handleSongPositionPointer × 3 — emit + disabled-noop + handleMessage-dispatch. (8) handleMtcFullFrame × 3 — emit + sysex-parse + bad-header. (9) handleMtcQuarterFrame × 3 — emit nach 8 frames, accumulator-reset, disabled-noop. (10) reset × 1 — clear position-state. (11) AudioEngine logic-smoke × 3 — applyExternalPosition math, 32-step scale, applyMtcLocate math @ 120BPM. (12) Store × 7 — defaults, toggle, setter, equality-throttle, disable-clears, syncPosition=false-clears, persist-roundtrip. 47/47 grün.",
+        "package.json 3.111.0 → 3.112.0. pnpm check: clean. pnpm test: 259 Files / 5913 passed / 16 skipped / 0 fail (+47 vs v3.111)."
+      ],
+      next: [
+        "AudioEngine.applyMtcLocate ist BPM-abhaengig — bei laufender Tempo-Map koennte das Drift erzeugen. Fuer DAW-MTC-Master koennte ein Mode 'lock to MTC-absolute' (Position vorrangig, BPM-sekundaer) sinnvoll sein.",
+        "MTC Quarter-Frame-Stream tickt 8 frames pro frame-time (kontinuierlich). Aktuell emittieren wir 'mtc-tick' pro vollem Cycle (alle 8 quarter-frames = 1/2 frame Latenz). Drop-Frame-Code (29.97fps NTSC) ist nicht unterstuetzt — die meisten Hardware-Master nutzen 24/25/30, daher OK.",
+        "MTC Sysex-Parser ist defensive auf header — Device-ID wird nicht geprueft (sollte 0x7F broadcast oder match user-config). Kann zu Cross-Talk fuehren wenn mehrere MTC-Geraete im Netz sind.",
+        "SPP-Position-Apply: aktuell wird seekToStep mit Modulo gewrappt. Fuer Song-Mode (Sequenz mehrerer Patterns) bedeutet das, dass eine SPP > pattern-length den falschen Pattern auswaehlt — Song-Mode-Aware-Positioning (mit Track-Sequence) waere langfristig sinnvoll.",
+        "UI: SPP/MTC-Live-Display tickt jeden Frame — bei Mobile/Performance koennte requestAnimationFrame-Throttle besser sein als Store-Re-Renders pro Frame. Aktuell macht Store ein deep-equality-check der MTC-Position; SPP throttled noch nicht (jeder SPP-Event triggert Re-Render).",
+        "Locate-During-Playback: applyExternalPosition + applyMtcLocate setzen _currentStep / pendingStartStep, aber wenn die Engine spielt, gibt's keinen Re-Schedule des _nextStepTime — der naechste Tick triggert dann den neuen Step (passt fuer SPP), aber bei MTC-running-Stream kann das zu Step-Pausen fuehren wenn die externe Position einen Sprung macht.",
+        ".synth-File-Schema: syncPosition ist analog zu syncTempo/autoStartStop User-Preference, nicht im Projekt-File. Falls Wunsch, in useProjectStore round-trippen."
+      ],
+      changed: [
+        "client/src/audio/MidiSyncIn.ts (+~210 LOC, 6 Pure-Helpers + 4 Handler + Sysex-Parser + Konstanten + Event-Union erweitert)",
+        "client/src/store/useMidiSyncInStore.ts (+~60 LOC, syncPosition + lastSppMidiBeats + lastMtcPosition + 3 neue Setter)",
+        "client/src/audio/AudioEngine.ts (+~55 LOC, applyExternalPosition + applyMtcLocate)",
+        "client/src/hooks/useMidi.ts (+~55 LOC, position-changed/mtc-tick/mtc-locate Callback-Mapping + consume 0xF1/0xF2/0xF0)",
+        "client/src/components/MidiSettings/MidiSettings.tsx (+~80 LOC, Sync-Position-Toggle + Live-Display SPP+MTC)",
+        "tests/features/midi-spp-mtc.test.ts (NEU, ~440 LOC, 47 Tests)",
+        "package.json (3.111.0 → 3.112.0)",
+        "agents/INDEX.js (project.version + workLog v3.112-Eintrag)"
+      ]
+    },
     {
       agent:     "backend",
       timestamp: "2026-05-19T12:55:00.000Z",

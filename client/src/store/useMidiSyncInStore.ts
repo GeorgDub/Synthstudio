@@ -1,12 +1,16 @@
 /**
- * Synthstudio — useMidiSyncInStore (v3.111.0)
+ * Synthstudio — useMidiSyncInStore (v3.112.0)
  *
  * Custom-Observer-Store fuer MIDI-Sync-In-Config (Hardware-Master-Sync).
  * Pendant zu useMidiClickStore / useMidiNoteOutStore.
  *
  * localStorage-Key: `ss-midi-sync-in:v1` (Schema-v1, plain JSON).
- * Persistiert NUR Konfig-Werte — `detectedBpm` ist read-only state, wird
- * vom Engine-Bridge live ge-pushed (kein Persist, da volatil).
+ * Persistiert NUR Konfig-Werte — `detectedBpm`, `lastSppMidiBeats` und
+ * `lastMtcPosition` sind read-only volatile State, vom Engine-Bridge live
+ * ge-pushed.
+ *
+ * v3.112.0: Position-Sync — opt-in via `syncPosition` (Default false).
+ * Wenn aktiv, applied die Engine SPP/MTC-Position-Updates auf _currentStep.
  *
  * Pattern: Modul-Singleton + Hook (analog useMidiClickStore).
  */
@@ -24,10 +28,23 @@ export interface MidiSyncInState {
   /** Wenn true: detectedBpm wird in den internen `_bpm` der Engine geschrieben. */
   syncTempo: boolean;
   /**
+   * v3.112.0: Wenn true, applied die Engine SPP- und MTC-Position-Updates auf
+   * `_currentStep` — opt-in, weil viele Setups nur Tempo+Transport syncen.
+   */
+  syncPosition: boolean;
+  /**
    * Read-only state — vom Engine/Hook live aktualisiert via `setDetectedBpm()`.
    * Wird NICHT persistiert.
    */
   detectedBpm: number | null;
+  /**
+   * v3.112.0: Letzter empfangener SPP-Wert in MIDI Beats (volatil).
+   */
+  lastSppMidiBeats: number | null;
+  /**
+   * v3.112.0: Letzte vollstaendig decodierte MTC-Position (volatil).
+   */
+  lastMtcPosition: { hh: number; mm: number; ss: number; ff: number; fps: number } | null;
 }
 
 function defaultState(): MidiSyncInState {
@@ -36,7 +53,10 @@ function defaultState(): MidiSyncInState {
     inputDeviceId: null,
     autoStartStop: true,
     syncTempo: true,
+    syncPosition: false,
     detectedBpm: null,
+    lastSppMidiBeats: null,
+    lastMtcPosition: null,
   };
 }
 
@@ -56,20 +76,27 @@ function loadState(): MidiSyncInState {
           : null,
       autoStartStop: parsed.autoStartStop !== false, // default true
       syncTempo: parsed.syncTempo !== false,         // default true
-      // detectedBpm NIE aus Storage lesen — immer initial null.
+      // v3.112.0: syncPosition default false — opt-in.
+      syncPosition: parsed.syncPosition === true,
+      // detectedBpm/lastSppMidiBeats/lastMtcPosition NIE aus Storage lesen.
       detectedBpm: null,
+      lastSppMidiBeats: null,
+      lastMtcPosition: null,
     };
   } catch {
     return defaultState();
   }
 }
 
-function persistableState(state: MidiSyncInState): Omit<MidiSyncInState, "detectedBpm"> {
+function persistableState(
+  state: MidiSyncInState,
+): Omit<MidiSyncInState, "detectedBpm" | "lastSppMidiBeats" | "lastMtcPosition"> {
   return {
     enabled: state.enabled,
     inputDeviceId: state.inputDeviceId,
     autoStartStop: state.autoStartStop,
     syncTempo: state.syncTempo,
+    syncPosition: state.syncPosition,
   };
 }
 
@@ -99,8 +126,8 @@ export function setMidiSyncInEnabled(enabled: boolean): void {
   if (_state.enabled === enabled) return;
   _state = { ..._state, enabled };
   if (!enabled) {
-    // Auf disable: detectedBpm clearen, damit UI nicht stale-data zeigt.
-    _state = { ..._state, detectedBpm: null };
+    // Auf disable: volatile State clearen, damit UI nicht stale-data zeigt.
+    _state = { ..._state, detectedBpm: null, lastSppMidiBeats: null, lastMtcPosition: null };
   }
   saveState(_state);
   notify();
@@ -125,6 +152,48 @@ export function setMidiSyncInSyncTempo(syncTempo: boolean): void {
   if (_state.syncTempo === syncTempo) return;
   _state = { ..._state, syncTempo };
   saveState(_state);
+  notify();
+}
+
+/** v3.112.0: Toggle fuer Position-Sync (SPP/MTC). */
+export function setMidiSyncInSyncPosition(syncPosition: boolean): void {
+  if (_state.syncPosition === syncPosition) return;
+  _state = { ..._state, syncPosition };
+  if (!syncPosition) {
+    // Bei disable: volatile Position-State clearen.
+    _state = { ..._state, lastSppMidiBeats: null, lastMtcPosition: null };
+  }
+  saveState(_state);
+  notify();
+}
+
+/** v3.112.0: Live-State-Push fuer SPP-Position (volatil, nicht persistiert). */
+export function setMidiSyncInLastSppMidiBeats(midiBeats: number | null): void {
+  if (midiBeats === _state.lastSppMidiBeats) return;
+  _state = { ..._state, lastSppMidiBeats: midiBeats };
+  notify();
+}
+
+/** v3.112.0: Live-State-Push fuer MTC-Position (volatil, nicht persistiert). */
+export function setMidiSyncInLastMtcPosition(
+  pos: { hh: number; mm: number; ss: number; ff: number; fps: number } | null,
+): void {
+  const prev = _state.lastMtcPosition;
+  // Frame-level Equality-Check — vermeidet Re-Render-Spam (Quarter-Frame-Stream
+  // tickt nur alle 8 Frames eine vollstaendige Position, aber FF aendert sich).
+  if (prev === pos) return;
+  if (
+    prev !== null &&
+    pos !== null &&
+    prev.hh === pos.hh &&
+    prev.mm === pos.mm &&
+    prev.ss === pos.ss &&
+    prev.ff === pos.ff &&
+    prev.fps === pos.fps
+  ) {
+    return;
+  }
+  _state = { ..._state, lastMtcPosition: pos };
   notify();
 }
 
@@ -161,7 +230,11 @@ export function setMidiSyncInPartial(partial: Partial<MidiSyncInState>): void {
     autoStartStop:
       typeof partial.autoStartStop === "boolean" ? partial.autoStartStop : d.autoStartStop,
     syncTempo: typeof partial.syncTempo === "boolean" ? partial.syncTempo : d.syncTempo,
+    syncPosition:
+      typeof partial.syncPosition === "boolean" ? partial.syncPosition : d.syncPosition,
     detectedBpm: d.detectedBpm,
+    lastSppMidiBeats: d.lastSppMidiBeats,
+    lastMtcPosition: d.lastMtcPosition,
   };
   saveState(_state);
   notify();

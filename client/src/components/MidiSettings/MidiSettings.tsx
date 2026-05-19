@@ -66,12 +66,14 @@ import {
   setMidiClickCountInBars,
 } from "@/store/useMidiClickStore";
 // v3.111.0: MIDI Sync In — KORG-Master-Sync / Hardware-Master-Sync.
+// v3.112.0: + SPP/MTC Position-Sync.
 import {
   useMidiSyncInStore,
   setMidiSyncInEnabled,
   setMidiSyncInInputDevice,
   setMidiSyncInAutoStartStop,
   setMidiSyncInSyncTempo,
+  setMidiSyncInSyncPosition,
 } from "@/store/useMidiSyncInStore";
 
 interface MidiSettingsProps {
@@ -2020,6 +2022,67 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
                 }`} />
               </button>
             </div>
+
+            {/* v3.112.0: Sync-Position-Toggle (SPP + MTC) */}
+            <div className="mt-2 flex items-center justify-between">
+              <div>
+                <div className="text-xs text-text-primary">Sync Position (SPP / MTC)</div>
+                <div className="text-[10px] text-text-muted">
+                  Opt-in: externer Master setzt Pattern-Position via 0xF2 (SPP) oder MTC.
+                </div>
+              </div>
+              <button
+                data-testid="sync-in-syncposition-toggle"
+                onClick={() => setMidiSyncInSyncPosition(!midiSyncInState.syncPosition)}
+                className={`relative w-10 h-5 rounded-full transition-colors ${
+                  midiSyncInState.syncPosition ? "bg-accent-primary" : "bg-bg-elevated"
+                }`}
+                aria-label="Sync Position an/aus"
+              >
+                <div className={`absolute top-0.5 w-4 h-4 bg-text-primary rounded-full shadow transition-transform ${
+                  midiSyncInState.syncPosition ? "translate-x-5" : "translate-x-0.5"
+                }`} />
+              </button>
+            </div>
+
+            {/* v3.112.0: Live-Display SPP / MTC */}
+            {midiSyncInState.syncPosition && (
+              <div className="mt-2 grid grid-cols-2 gap-2" data-testid="sync-in-position-display">
+                {/* SPP-Display */}
+                <div className="p-2 bg-bg-elevated rounded text-center">
+                  {midiSyncInState.lastSppMidiBeats !== null ? (
+                    <>
+                      <div className="text-xs font-mono text-accent-secondary font-bold">
+                        Beat {midiSyncInState.lastSppMidiBeats}
+                      </div>
+                      <div className="text-[10px] text-text-muted">
+                        Bar {Math.floor(midiSyncInState.lastSppMidiBeats / 16) + 1} (SPP)
+                      </div>
+                    </>
+                  ) : (
+                    <div className="text-[10px] text-text-muted">SPP: —</div>
+                  )}
+                </div>
+                {/* MTC-Display */}
+                <div className="p-2 bg-bg-elevated rounded text-center">
+                  {midiSyncInState.lastMtcPosition !== null ? (
+                    <>
+                      <div className="text-xs font-mono text-accent-secondary font-bold">
+                        {String(midiSyncInState.lastMtcPosition.hh).padStart(2, "0")}:
+                        {String(midiSyncInState.lastMtcPosition.mm).padStart(2, "0")}:
+                        {String(midiSyncInState.lastMtcPosition.ss).padStart(2, "0")}:
+                        {String(midiSyncInState.lastMtcPosition.ff).padStart(2, "0")}
+                      </div>
+                      <div className="text-[10px] text-text-muted">
+                        MTC @ {midiSyncInState.lastMtcPosition.fps}fps
+                      </div>
+                    </>
+                  ) : (
+                    <div className="text-[10px] text-text-muted">MTC: —</div>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* Detected-BPM-Display */}
             <div className="mt-3 p-2 bg-bg-elevated rounded text-center" data-testid="sync-in-bpm-display">

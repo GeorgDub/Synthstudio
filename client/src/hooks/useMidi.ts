@@ -41,6 +41,9 @@ import { MidiSyncIn } from "@/audio/MidiSyncIn";
 import {
   getMidiSyncInState,
   setMidiSyncInDetectedBpm,
+  // v3.112.0: SPP/MTC live-state push.
+  setMidiSyncInLastSppMidiBeats,
+  setMidiSyncInLastMtcPosition,
 } from "@/store/useMidiSyncInStore";
 import { cycleScene } from "@/store/useSceneStore";
 import {
@@ -811,6 +814,51 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
             try { AudioEngine.applyExternalContinue(); } catch { /* swallow */ }
           }
           break;
+        // v3.112.0: SPP — Song Position Pointer (0xF2).
+        case "position-changed":
+          if (typeof detail?.midiBeats === "number") {
+            setMidiSyncInLastSppMidiBeats(detail.midiBeats);
+            if (state.syncPosition) {
+              try { AudioEngine.applyExternalPosition(detail.midiBeats); } catch { /* swallow */ }
+            }
+          }
+          break;
+        // v3.112.0: MTC Quarter-Frame Stream — tickt alle 8 Frames eine
+        // vollstaendige Position. Im running-State applien wir das auf die
+        // Engine; Display-State trackt der Store fuer das UI.
+        case "mtc-tick":
+          if (
+            typeof detail?.hh === "number" &&
+            typeof detail?.mm === "number" &&
+            typeof detail?.ss === "number" &&
+            typeof detail?.ff === "number" &&
+            typeof detail?.fps === "number"
+          ) {
+            setMidiSyncInLastMtcPosition({
+              hh: detail.hh, mm: detail.mm, ss: detail.ss, ff: detail.ff, fps: detail.fps,
+            });
+            if (state.syncPosition && typeof detail.positionMs === "number") {
+              try { AudioEngine.applyMtcLocate(detail.positionMs); } catch { /* swallow */ }
+            }
+          }
+          break;
+        // v3.112.0: MTC Full-Frame Sysex — instant locate.
+        case "mtc-locate":
+          if (
+            typeof detail?.hh === "number" &&
+            typeof detail?.mm === "number" &&
+            typeof detail?.ss === "number" &&
+            typeof detail?.ff === "number" &&
+            typeof detail?.fps === "number"
+          ) {
+            setMidiSyncInLastMtcPosition({
+              hh: detail.hh, mm: detail.mm, ss: detail.ss, ff: detail.ff, fps: detail.fps,
+            });
+            if (state.syncPosition && typeof detail.positionMs === "number") {
+              try { AudioEngine.applyMtcLocate(detail.positionMs); } catch { /* swallow */ }
+            }
+          }
+          break;
       }
     };
     // Register beim Engine fuer Telemetrie / Tests.
@@ -926,7 +974,12 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
               ? event.timeStamp
               : (typeof performance !== "undefined" ? performance.now() : Date.now());
           sync.handleMessage(data, ts);
-          if (status === 0xf8 || status === 0xfa || status === 0xfb || status === 0xfc) {
+          // Real-Time-Status-Bytes konsumieren (Clock, Start, Continue, Stop).
+          // v3.112.0: + 0xF1 (MTC Quarter-Frame), 0xF2 (SPP), 0xF0 (Sysex-MTC).
+          if (
+            status === 0xf8 || status === 0xfa || status === 0xfb || status === 0xfc ||
+            status === 0xf1 || status === 0xf2 || status === 0xf0
+          ) {
             return;
           }
         }
@@ -935,6 +988,8 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
         midiSyncInRef.current.enabled = false;
         midiSyncInRef.current.reset();
         setMidiSyncInDetectedBpm(null);
+        setMidiSyncInLastSppMidiBeats(null);
+        setMidiSyncInLastMtcPosition(null);
       }
     }
 

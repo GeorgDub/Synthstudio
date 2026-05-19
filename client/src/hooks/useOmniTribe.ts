@@ -17,13 +17,24 @@
  */
 
 import { useEffect, useState, useCallback, useMemo } from "react";
-import { omniTribeBridge, OtpCmd, StreamFlag } from "../audio/OmniTribeBridge";
+import {
+  omniTribeBridge, OtpCmd, StreamFlag,
+  adaptBrowserWebSocket,
+} from "../audio/OmniTribeBridge";
+
+export const DEFAULT_SIM_WS_URL = "ws://localhost:8744";
 
 export interface OmniTribeIdentity {
   major: number;
   minor: number;
   patch: number;
 }
+
+export type SimConnectionState =
+  | { state: "idle" }
+  | { state: "connecting"; url: string }
+  | { state: "connected"; url: string }
+  | { state: "error"; url: string; message: string };
 
 export interface UseOmniTribeReturn {
   connected: boolean;
@@ -33,11 +44,17 @@ export interface UseOmniTribeReturn {
   setParam: (part: number, ph: number, pl: number, value: number) => void;
   enableMonitoring: () => void;
   identity: OmniTribeIdentity | null;
+  /** Sprint-97: Sim-Loopback via WebSocket statt Web-MIDI. */
+  simConnection: SimConnectionState;
+  connectSim: (url?: string) => Promise<boolean>;
 }
 
 export function useOmniTribe(): UseOmniTribeReturn {
   const [connected, setConnected] = useState(false);
   const [identity, setIdentity] = useState<OmniTribeIdentity | null>(null);
+  const [simConnection, setSimConnection] = useState<SimConnectionState>(
+    { state: "idle" },
+  );
 
   const webMidiSupported = useMemo(() => {
     return typeof navigator !== "undefined"
@@ -98,7 +115,74 @@ export function useOmniTribe(): UseOmniTribeReturn {
     omniTribeBridge.disconnect();
     setConnected(false);
     setIdentity(null);
+    setSimConnection({ state: "idle" });
   }, []);
+
+  /**
+   * Sprint-97: verbindet zur Sim-WS-Bridge (sim_ws_server.py).
+   *
+   * Identisches Wire-Protokoll wie Web-MIDI, anderer Transport — funktioniert
+   * auch in Firefox/Safari (kein Web-MIDI noetig). Default-URL ist die des
+   * lokalen sim_ws_server.py (Port 8744).
+   *
+   * Async aber promise-based — Status zusaetzlich via simConnection state
+   * gespiegelt fuer UI-Live-Updates.
+   */
+  const connectSim = useCallback(
+    async (url: string = DEFAULT_SIM_WS_URL): Promise<boolean> => {
+      // Erst eventuelle frische Verbindung wegklappen (Bridge ist Singleton).
+      if (omniTribeBridge.isConnected) {
+        omniTribeBridge.disconnect();
+        setConnected(false);
+        setIdentity(null);
+      }
+      setSimConnection({ state: "connecting", url });
+      return await new Promise<boolean>((resolve) => {
+        let settled = false;
+        try {
+          const ws = new WebSocket(url);
+          ws.binaryType = "arraybuffer";
+          ws.onopen = async () => {
+            try {
+              const ok = await omniTribeBridge.connectWebSocket(
+                adaptBrowserWebSocket(ws),
+              );
+              setConnected(ok);
+              if (ok) {
+                setSimConnection({ state: "connected", url });
+              } else {
+                setSimConnection({
+                  state: "error", url,
+                  message: "Bridge connectWebSocket returned false",
+                });
+              }
+              if (!settled) { settled = true; resolve(ok); }
+            } catch (err) {
+              setSimConnection({
+                state: "error", url,
+                message: err instanceof Error ? err.message : String(err),
+              });
+              if (!settled) { settled = true; resolve(false); }
+            }
+          };
+          ws.onerror = () => {
+            setSimConnection({
+              state: "error", url,
+              message: `WebSocket connection to ${url} failed`,
+            });
+            if (!settled) { settled = true; resolve(false); }
+          };
+        } catch (err) {
+          setSimConnection({
+            state: "error", url,
+            message: err instanceof Error ? err.message : String(err),
+          });
+          if (!settled) { settled = true; resolve(false); }
+        }
+      });
+    },
+    [],
+  );
 
   const enableMonitoring = useCallback(() => {
     if (!omniTribeBridge.isConnected) return;
@@ -123,5 +207,7 @@ export function useOmniTribe(): UseOmniTribeReturn {
     setParam,
     enableMonitoring,
     identity,
+    simConnection,
+    connectSim,
   };
 }

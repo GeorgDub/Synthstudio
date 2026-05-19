@@ -1318,6 +1318,57 @@ class AudioEngineClass {
     }
   }
 
+  /**
+   * v3.112.0: Externer Master sendet SPP (Song Position Pointer). `midiBeats`
+   * ist 14-bit (0..16383), 1 MIDI Beat = 6 MIDI Clocks = 1/16-note. Wir
+   * skalieren auf den aktuellen `_steps`-Count und delegieren an `seekToStep`.
+   *
+   *   step = midiBeats * (steps / 16)
+   *
+   * Bei 16er-Pattern: 16 MIDI Beats = 1 Bar = 16 Steps → step = midiBeats.
+   * Bei 32er-Pattern: ×2. Wraparound (Modulo) macht `seekToStep` selbst.
+   */
+  applyExternalPosition(midiBeats: number): void {
+    if (typeof midiBeats !== "number" || !isFinite(midiBeats) || midiBeats < 0) return;
+    const totalSteps = Math.max(1, this._steps);
+    const step = Math.round(midiBeats * (totalSteps / 16));
+    try {
+      this.seekToStep(step);
+    } catch {
+      /* swallow — Sync-Hot-Path resilient */
+    }
+  }
+
+  /**
+   * v3.112.0: Externer Master sendet MTC-Locate (HH:MM:SS:FF) — bereits in
+   * ms umgerechnet. Wir konvertieren ms → Step via aktuellem BPM:
+   *
+   *   stepDurMs   = 60_000 / bpm / (steps / 4)     (16 Steps = 4 Beats = 1 Bar)
+   *               = 60_000 / bpm / 4               fuer 16-Steps (16th-note grid)
+   *   stepIndex   = round(positionMs / stepDurMs) % steps
+   *
+   * Hinweis: ist eine grobe Aproximation, weil MTC absolute SMPTE-Zeit ist,
+   * der DAW-Master aber nicht zwangslaeufig Bar-1 = 00:00:00:00 hat. Die
+   * meisten Hardware-Master (Electribe2 etc.) starten Bar-1 = 00:00:00:00,
+   * daher reicht das fuer 99% der Setups.
+   */
+  applyMtcLocate(positionMs: number): void {
+    if (typeof positionMs !== "number" || !isFinite(positionMs) || positionMs < 0) return;
+    const bpm = this._bpm > 0 ? this._bpm : 120;
+    const totalSteps = Math.max(1, this._steps);
+    // 16th-note grid (Steps): bei 16-Pattern = 4 Steps pro Beat = 16 pro Bar.
+    // Dauer pro Step (ms) = 60_000 / bpm / (totalSteps / 4)
+    const stepDurMs = (60_000 / bpm) / (totalSteps / 4);
+    if (stepDurMs <= 0) return;
+    const totalStep = Math.round(positionMs / stepDurMs);
+    const wrapped = ((totalStep % totalSteps) + totalSteps) % totalSteps;
+    try {
+      this.seekToStep(wrapped);
+    } catch {
+      /* swallow */
+    }
+  }
+
   // ─── Tempo-Map / BPM-Automation (v3.95.0 / v3.104.0 stepCount-aware) ──────
 
   /**
