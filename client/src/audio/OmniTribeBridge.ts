@@ -491,6 +491,14 @@ export class OmniTribeBridge {
     this.send(OtpCmd.PATTERN, 0x12, [note & 0x7F]);
   }
 
+  /**
+   * Sprint-104: Setzt die Velocity fuer einen einzelnen Step.
+   * stepIdx: 0..15, velocity: 0..127.
+   */
+  setPatternStepVelocity(stepIdx: number, velocity: number): void {
+    this.send(OtpCmd.PATTERN, 0x13, [stepIdx & 0x0F, velocity & 0x7F]);
+  }
+
   /** Sprint-102: Raw-MIDI Note-Off (oder 0x90 + vel=0 als Aequivalent). */
   sendNoteOff(channel: number, note: number): void {
     if (!this.output && !this.ws) return;
@@ -622,6 +630,15 @@ export class OmniTribeBridge {
       if (typeof window !== "undefined") {
         window.dispatchEvent(new CustomEvent("omnitribe:chord-user-slot", {
           detail: { slotIndex, intervals },
+        }));
+      }
+    }
+    // Sprint-104: Pattern-Step-Notify (CMD 0x04 SUB 0x14, payload=[step_idx])
+    if (cmd === OtpCmd.PATTERN && sub === 0x14) {
+      const stepIdx = (payload[0] ?? 0) & 0x0F;
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("omnitribe:patternStep", {
+          detail: { stepIdx },
         }));
       }
     }

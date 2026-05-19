@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.121.0",
+    version: "3.122.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -89,6 +89,31 @@ const INDEX = {
   // ─── KNOWN FILE INDEX ──────────────────────────────────────
   // Key files agents have analyzed. Add new entries after working on a file.
   files: {
+    "client/src/utils/autoMixSuggestions.ts (v3.122.0 NEU)": {
+      role:     "v3.122.0 NEU (Pure). Helper-Module fuer Smart-Auto-Mix. Exports MixSuggestion (channelId/currentVolumeDb/measuredLufs/targetLufs/suggestedGainDb), computeSuggestion(channelId, currentVolDb, measured, target) → clamped(target - measured), applySuggestions(suggestions, applyMap) → {channelId,newVolDb}[], clampGainSuggestion (MAX 24 dB), volumeLinearToDb / volumeDbToLinear (Round-Trip-getestet). Defensive: measured -Inf / < MIN_MEASURED_LUFS (-70) / NaN → suggested 0. target -Inf → 0. Side-effect-frei, Node-testbar.",
+      lastSeen: "2026-05-19T15:10:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/audio/PerChannelLufsAnalyzer.ts (v3.122.0 NEU)": {
+      role:     "v3.122.0 NEU (~190 LOC). Class-Wrapper fuer Per-Channel LUFS-Tap. Pro channelId eine LufsAnalyzer-Instance (BS.1770-4) + ChannelSplitter + 2x AnalyserNode (fftSize 2048, smoothing 0). enableForChannel(id, sourceNode) verkabelt: source → splitter → analyserL/R (Tap, kein Output zum Master). disableForChannel teardown. getIntegratedLufs(id) | getAllResults() → Map<id, {integrated, momentary, shortTerm}>. resetAll() (integrated-Akku, momentary bleibt gleitend). disposeAll. Polling-Loop intern (100ms setInterval), startet lazy beim ersten enable, stoppt bei size=0. TS-Cast bei getFloatTimeDomainData fuer SharedArrayBuffer<>ArrayBuffer-Narrowing.",
+      lastSeen: "2026-05-19T15:10:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/store/useAutoMixStore.ts (v3.122.0 NEU)": {
+      role:     "v3.122.0 NEU. Custom-Observer-Store (kein Zustand-NPM), localStorage `ss-auto-mix:v1`. State: channelTargets (Record<partId, lufs>), measurementDurationMs (clamped 5_000..120_000, default 20_000), defaultTargetByCategory (Kick:-10, Snare:-12, Hat:-15, Bass:-10, Synth:-14, Clap:-12, Cymbal:-15, Perc:-14, Loop:-12, Vocal:-12, FX:-16, Unknown:-14). Actions: setChannelTarget, clearChannelTarget, setMeasurementDuration (clamp), setDefaultTarget, getChannelTarget (override → category-default → -14), resetAutoMix. Test-Hooks __resetAutoMixStoreForTests + __getAutoMixStateForTests. DrumCategoryLike spiegelt SAMPLE_CATEGORIES (kein Import — vermeidet Circular).",
+      lastSeen: "2026-05-19T15:10:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/components/AutoMix/AutoMixPanel.tsx (v3.122.0 NEU)": {
+      role:     "v3.122.0 NEU (~270 LOC). UI fuer Smart-Auto-Mix. Props: channels (id/name/category/volumeLin), onApplyVolume, isPlaying. useEffect: AudioEngine.enableAutoMixAnalysis(ids) on mount, disable on unmount. Polling-Loop 250ms → setState(snapshot). useMemo Suggestions aus channels+snapshot+store. Apply-Selection-Map (per-channel checkbox). applySelected → applySuggestions → volumeDbToLinear → onApplyVolume. UI: Duration-Slider (5s..120s), Reset-Measurement/Reset-Targets, Channel-Grid (Name/Target-Input/Measured/Suggest/Current/Apply-Checkbox). Tailwind --ss-* tokens (bg-bg-panel, text-accent-success/danger, etc.). Apply-Selected disabled wenn keine Selection. isomorph (Engine-Snapshot leer → '-' in UI).",
+      lastSeen: "2026-05-19T15:10:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/audio/AudioEngine.ts (v3.122.0 +AutoMix-API)": {
+      role:     "v3.122.0 ERWEITERT: +_perChannelLufs (PerChannelLufsAnalyzer | null). +enableAutoMixAnalysis(channelIds) (lazy-instanziiert, Tap auf nodes.sidechainGain — Channel-Output VOR Master-Volume + Sub-Mix-Bus). +disableAutoMixAnalysis (disposeAll). +getAutoMixSnapshot() → Map<channelId, {integrated, momentary, shortTerm}>. +resetAutoMixAnalysis (integrated-Akkus, momentary bleibt gleitend). Idempotent — wiederholtes enable safe. Unknown channelIds (noch nicht erstellte Nodes) werden silent uebersprungen.",
+      lastSeen: "2026-05-19T15:10:00.000Z",
+      ownedBy:  "backend"
+    },
     "client/src/audio/workers/sampleTransform.worker.ts (v3.120.0 NEU)": {
       role:     "v3.120.0 NEU (~270 LOC). Web Worker für offline Time-Stretch + Pitch-Shift auf Sample-Buffern. Closes v3.116-Main-Thread-Blocking-Caveat (Stereo-Loops > 30s @ 48k blockierten UI ~1s). Pure logic (kein AudioContext im Worker — Float32Array in, Float32Array out). Protokoll: inbound {cmd:'transform', requestId, channels:Float32Array[], sampleRate, ratio, semitones}, outbound progress/done/error mit requestId. Exports: transformChannels(input, onProgress?) (pure, side-effect-frei, throws on empty), handleTransformMessage(msg, post) (für Tests + Worker-Bootstrap), TransformWorkerInbound/OutboundMessage types. Identische Math zu combinedTransform: effectiveStretch=ratio*2^(st/12), OLA-Time-Stretch (Hann 2048/512), resampleLinear auf finalLength. Progress alle ~5% per Kanal, Stretch=80% Resample=20% Anteile bei pitch-shift. Self-Bootstrap unten via typeof self-Detect (vermeidet DedicatedWorkerGlobalScope-lib-Konflikt mit tsconfig).",
       lastSeen: "2026-05-19T14:42:00.000Z",
@@ -2902,6 +2927,35 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "backend",
+      timestamp: "2026-05-19T15:10:00.000Z",
+      done: [
+        "v3.122.0: Smart Auto-Mix mit LUFS-driven Gain-Staging-Suggestions. Pro Channel definiert der User ein Target-LUFS, der Engine misst integrated-LUFS pro Channel via Per-Channel-Tap, und der Pure-Helper computeSuggestion schlaegt eine Gain-Anpassung in dB vor (clamped [-24, +24]).",
+        "client/src/utils/autoMixSuggestions.ts NEU (Pure). MixSuggestion-Interface. computeSuggestion(channelId, currentVolDb, measuredLufs, targetLufs) → suggested = clamp(targetLufs - measuredLufs). applySuggestions(suggestions, applyMap) → newVolDb-Liste (Caller setzt Mixer). Defensive: measured -Inf / sub-MIN_MEASURED_LUFS / NaN → suggested 0. volumeLinearToDb / volumeDbToLinear Round-Trip-getestet.",
+        "client/src/audio/PerChannelLufsAnalyzer.ts NEU (~190 LOC). Class-Wrapper: pro channelId eine LufsAnalyzer-Instance + ChannelSplitter + 2x AnalyserNode (fftSize 2048). enableForChannel/disableForChannel/getIntegratedLufs/getAllResults/resetAll/disposeAll. Polling-Loop intern (100ms), startet lazy bei enable, stoppt bei size=0. Reuse LufsAnalyzer (BS.1770-4 K-weighting).",
+        "client/src/store/useAutoMixStore.ts NEU (Custom-Observer, kein Zustand-NPM). localStorage `ss-auto-mix:v1`. channelTargets pro partId, measurementDurationMs (clamped 5_000..120_000), defaultTargetByCategory (Kick:-10, Snare:-12, Hat:-15, Bass:-10, Synth:-14, Clap:-12, Cymbal:-15, Perc:-14, Loop:-12, Vocal:-12, FX:-16). Actions setChannelTarget/clearChannelTarget/setMeasurementDuration/setDefaultTarget/getChannelTarget/resetAutoMix.",
+        "client/src/audio/AudioEngine.ts ERWEITERT: _perChannelLufs-Feld + enableAutoMixAnalysis(channelIds) / disableAutoMixAnalysis() / getAutoMixSnapshot() / resetAutoMixAnalysis(). Tap auf sidechainGain (Channel-Output VOR Master-Volume + Sub-Mix-Bus) — misst was der Channel beitraegt.",
+        "client/src/components/AutoMix/AutoMixPanel.tsx NEU (~270 LOC). Channel-Liste mit Target-Input/Measured/Suggested/Apply-Checkbox + Duration-Slider + Reset-Measurement + Reset-Targets + Apply-Selected. Tailwind --ss-* tokens, isomorph (AudioEngine-Fallback liefert leeren Snapshot).",
+        "tests/features/auto-mix.test.ts NEU (20 Tests in 5 describes): computeSuggestion (target-7/measured-10/-3, +4, clamp >+24/<-24, silence, sub-gate, NaN, target-Inf), clampGainSuggestion, applySuggestions (applyMap-Filter, newVolDb-Math, empty), volumeLinearToDb/volumeDbToLinear Round-Trip + Edge-Cases, Store (Category-Defaults, channelTarget-Override, measurementDuration-Clamp, setDefaultTarget). 20/20 grün.",
+        "package.json + INDEX.js: 3.121.0 → 3.122.0. pnpm check: clean."
+      ],
+      next: [
+        "Sub-Mix-Bus-Support — bislang nur direkte Channels, Bus-LUFS waere die nachhaeltigere Granularitaet.",
+        "Auto-Apply-Mode mit Confirm-Dialog — nach N Sekunden Mess-Window automatisch alle Suggestions queuen.",
+        "Mute-aware-Measurement — gemutete Channels sollen nicht in der Suggestion-Liste auftauchen.",
+        "Category-Auto-Detect aus DrumMachineStore (statt prop-channel.category) damit Panel zero-config funktioniert."
+      ],
+      changed: [
+        "client/src/utils/autoMixSuggestions.ts (NEU, Pure-Helpers + MixSuggestion)",
+        "client/src/audio/PerChannelLufsAnalyzer.ts (NEU, ~190 LOC, Per-Channel Tap)",
+        "client/src/store/useAutoMixStore.ts (NEU, Custom-Observer + localStorage)",
+        "client/src/audio/AudioEngine.ts (+enableAutoMixAnalysis/disable/getSnapshot/reset)",
+        "client/src/components/AutoMix/AutoMixPanel.tsx (NEU, ~270 LOC, UI)",
+        "tests/features/auto-mix.test.ts (NEU, 20 Tests)",
+        "package.json + agents/INDEX.js (3.121.0 → 3.122.0)"
+      ]
+    },
     {
       agent:     "frontend",
       timestamp: "2026-05-19T14:55:00.000Z",

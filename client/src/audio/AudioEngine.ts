@@ -22,6 +22,7 @@ import {
   phaseCorrelation as lufsPhaseCorrelation,
   lrImbalanceDb as lufsLrImbalanceDb,
 } from "./LufsAnalyzer";
+import { PerChannelLufsAnalyzer, type PerChannelLufsResult } from "./PerChannelLufsAnalyzer";
 import { MidiClockOut } from "./MidiClockOut";
 import { MidiNoteOut, type MidiPartConfig } from "./MidiNoteOut";
 import { MidiClickOut, type MidiClickConfig } from "./MidiClickOut";
@@ -727,6 +728,20 @@ class AudioEngineClass {
    *     wir bekommen.
    */
   private _lufsAnalyser: LufsAnalyzer | null = null;
+
+  // ─── v3.122.0: Per-Channel LUFS-Analyzer (Smart Auto-Mix) ─────────────────
+  /**
+   * v3.122.0: Per-Channel LUFS-Tap fuer "Smart Auto-Mix" Gain-Staging.
+   *
+   * Wird lazy beim ersten `enableAutoMixAnalysis(...)` instanziiert. Sammelt
+   * pro Channel-ID eine LufsAnalyzer-Instance + Splitter/Analyser-Nodes.
+   * Polling-Loop laeuft solang mind. ein Channel aktiv ist.
+   *
+   * Routing: Tap auf `sidechainGain` (Channel-Output VOR Master-Volume) —
+   * damit messen wir was der User auf diesem Channel beigetragen hat, nicht
+   * was nach Master-Limiter rauskommt.
+   */
+  private _perChannelLufs: PerChannelLufsAnalyzer | null = null;
   /**
    * v3.78: Mono-AnalyserNode (downmix). Bleibt fuer Mock-AudioContext
    * ohne ChannelSplitter weiterhin als Fallback erhalten.
@@ -4230,6 +4245,60 @@ class AudioEngineClass {
       lra,
       lraHistoryLength: lraLen,
     };
+  }
+
+  // ─── v3.122.0: Smart Auto-Mix — Per-Channel LUFS-API ──────────────────────
+
+  /**
+   * v3.122.0: Aktiviert Per-Channel-LUFS-Messung fuer die uebergebenen
+   * Channel-IDs. Idempotent — wiederholte Aufrufe sind safe.
+   *
+   * Routing: Tap auf `sidechainGain` jedes Channels (Channel-Output VOR
+   * Master-Volume + Sub-Mix-Bus). Damit messen wir "was der Channel selbst
+   * beitraegt", unabhaengig von Master-Limiter / Bus-Compressor.
+   *
+   * Falls ein Channel keine `ChannelNodes` hat (noch nicht erstellt), wird
+   * er silent uebersprungen — Auto-Mix-Panel sieht ihn dann nicht im
+   * Snapshot. Beim naechsten Aufruf nach Channel-Init wirkt das.
+   */
+  enableAutoMixAnalysis(channelIds: readonly string[]): void {
+    if (!this.ctx) return;
+    if (!this._perChannelLufs) {
+      this._perChannelLufs = new PerChannelLufsAnalyzer(this.ctx);
+    }
+    for (const id of channelIds) {
+      const nodes = this.channelNodes.get(id);
+      if (!nodes) continue;
+      // Tap auf sidechainGain (post-FX, pre-master) — siehe v3.79.1-Routing.
+      this._perChannelLufs.enableForChannel(id, nodes.sidechainGain);
+    }
+  }
+
+  /**
+   * v3.122.0: Deaktiviert die Per-Channel-LUFS-Messung komplett (alle
+   * Slots werden teardown'd). Polling stoppt.
+   */
+  disableAutoMixAnalysis(): void {
+    if (!this._perChannelLufs) return;
+    this._perChannelLufs.disposeAll();
+    this._perChannelLufs = null;
+  }
+
+  /**
+   * v3.122.0: Snapshot aller aktuell gemessenen Channels.
+   * Leer wenn `enableAutoMixAnalysis` nie aufgerufen wurde.
+   */
+  getAutoMixSnapshot(): Map<string, PerChannelLufsResult> {
+    if (!this._perChannelLufs) return new Map();
+    return this._perChannelLufs.getAllResults();
+  }
+
+  /**
+   * v3.122.0: Resettet die Integrated-Akkus aller Channels (Mess-Lauf
+   * von vorn). Slots bleiben aktiv — `momentary` bleibt gleitend.
+   */
+  resetAutoMixAnalysis(): void {
+    this._perChannelLufs?.resetAll();
   }
 
   /**

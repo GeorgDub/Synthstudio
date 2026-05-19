@@ -1,58 +1,116 @@
 /**
- * StepSequencerPanel.tsx — Sprint-103 Live-Pattern-Sequencer-UI.
+ * StepSequencerPanel.tsx — Sprint-103/104 Live-Pattern-Sequencer-UI.
  *
  * 16 Step-Buttons, BPM-Slider, Root-Note-Input, Play/Stop.
+ * Sprint-104: Live-Step-Cursor (server pusht current-step-notify),
+ * per-step Velocity (shift+click oder drag), localStorage-Persistence.
+ *
  * Schickt CMD 0x04 (PATTERN) + CMD 0x0E (TRANSPORT) an den Sim. Der Sim
  * feuert Note-Ons im BPM-Raster, chord-Modul-Fan-Out macht aus jeder
  * Root einen Chord. Web-Audio spielt die Triads.
- *
- * Wenn nicht connected, sind alle Controls disabled.
  */
 
-import { useEffect, useState, useCallback, type ReactElement } from "react";
+import { useEffect, useState, useCallback, useRef, type ReactElement } from "react";
 
 import { omniTribeBridge } from "../../audio/OmniTribeBridge";
+import {
+  loadPatternCache, savePatternCache, type PatternState,
+} from "../../utils/patternCache";
 
 export interface StepSequencerPanelProps {
   /** Wenn false, sind alle Controls disabled. */
   connected: boolean;
 }
 
-const DEFAULT_BPM = 120;
-const DEFAULT_ROOT = 60;
+const VEL_MIN = 1;       // 0 = effektiv Note-Off → vermeiden
+const VEL_MAX = 127;
+const VEL_STEP = 8;      // Shift-Click increment
 
 export function StepSequencerPanel({
   connected,
 }: StepSequencerPanelProps): ReactElement {
-  const [steps, setSteps] = useState<boolean[]>(() => Array(16).fill(false));
+  const initial = useRef<PatternState>(loadPatternCache());
+  const [steps, setSteps] = useState<boolean[]>(initial.current.steps);
+  const [velocities, setVelocities] = useState<number[]>(initial.current.velocities);
+  const [bpm, setBpm] = useState<number>(initial.current.bpm);
+  const [root, setRoot] = useState<number>(initial.current.root);
   const [playing, setPlaying] = useState<boolean>(false);
-  const [bpm, setBpm] = useState<number>(DEFAULT_BPM);
-  const [root, setRoot] = useState<number>(DEFAULT_ROOT);
+  const [currentStep, setCurrentStep] = useState<number>(-1);
 
   const stepMask = steps.reduce(
     (m, on, i) => (on ? m | (1 << i) : m),
     0,
   );
 
-  // Sync Pattern-State zum Sim wann immer sich Maske aendert
+  // ─── Persistence ────────────────────────────────────────
+  useEffect(() => {
+    savePatternCache({ steps, velocities, bpm, root });
+  }, [steps, velocities, bpm, root]);
+
+  // ─── Sync Pattern-State zum Sim ─────────────────────────
   useEffect(() => {
     if (!connected) return;
     omniTribeBridge.setPatternStepMask(stepMask);
   }, [stepMask, connected]);
 
-  // Sync BPM
   useEffect(() => {
     if (!connected) return;
     omniTribeBridge.remoteTempo(bpm);
   }, [bpm, connected]);
 
-  // Sync Root-Note
   useEffect(() => {
     if (!connected) return;
     omniTribeBridge.setPatternRootNote(root);
   }, [root, connected]);
 
-  const toggleStep = useCallback((idx: number) => {
+  // Velocity-Sync: pro Step einzeln senden wenn Wert sich aendert
+  // (Vergleich mit Ref damit nicht alle 16 bei jedem Render gepushed werden)
+  const lastSentVels = useRef<number[]>([...velocities]);
+  useEffect(() => {
+    if (!connected) return;
+    for (let i = 0; i < 16; i++) {
+      if (velocities[i] !== lastSentVels.current[i]) {
+        omniTribeBridge.setPatternStepVelocity(i, velocities[i]);
+        lastSentVels.current[i] = velocities[i];
+      }
+    }
+  }, [velocities, connected]);
+
+  // ─── Live-Step-Cursor via Sim-Notify ───────────────────
+  useEffect(() => {
+    const onStep = (e: Event) => {
+      const detail = (e as CustomEvent).detail as { stepIdx: number } | undefined;
+      if (!detail) return;
+      setCurrentStep(detail.stepIdx);
+    };
+    window.addEventListener("omnitribe:patternStep", onStep);
+    return () => window.removeEventListener("omnitribe:patternStep", onStep);
+  }, []);
+
+  // Cursor zuruecksetzen wenn Stop
+  useEffect(() => {
+    if (!playing) setCurrentStep(-1);
+  }, [playing]);
+
+  // ─── Handlers ───────────────────────────────────────────
+  const toggleStep = useCallback((idx: number, ev?: React.MouseEvent) => {
+    // Shift-Click → Velocity erhoehen, Alt-Click → senken (statt Toggle)
+    if (ev?.shiftKey) {
+      setVelocities((v) => {
+        const next = [...v];
+        next[idx] = Math.min(VEL_MAX, next[idx] + VEL_STEP);
+        return next;
+      });
+      return;
+    }
+    if (ev?.altKey) {
+      setVelocities((v) => {
+        const next = [...v];
+        next[idx] = Math.max(VEL_MIN, next[idx] - VEL_STEP);
+        return next;
+      });
+      return;
+    }
     setSteps((prev) => prev.map((on, i) => (i === idx ? !on : on)));
   }, []);
 
@@ -70,12 +128,14 @@ export function StepSequencerPanel({
 
   const handleClear = useCallback(() => {
     setSteps(Array(16).fill(false));
+    setVelocities(Array(16).fill(100));
   }, []);
 
   const handlePreset = useCallback((mask: number) => {
     setSteps(Array.from({ length: 16 }, (_, i) => (mask & (1 << i)) !== 0));
   }, []);
 
+  // ─── Render ─────────────────────────────────────────────
   return (
     <div
       className="bg-bg-panel border border-border-color rounded p-4 space-y-3"
@@ -85,42 +145,64 @@ export function StepSequencerPanel({
         <h3 className="text-sm font-bold text-text-primary">Sim Step-Sequencer</h3>
         <span className="text-[10px] text-text-dim">
           {connected ? "Live → Sim" : "Disconnected"}
+          {playing && currentStep >= 0 && ` · step ${currentStep + 1}`}
         </span>
       </div>
 
-      {/* 16-Step Grid */}
+      {/* 16-Step Grid mit Velocity-Bars + Live-Cursor */}
       <div
-        className="grid grid-cols-16 gap-1"
+        className="grid gap-1"
         style={{ gridTemplateColumns: "repeat(16, minmax(0, 1fr))" }}
         role="group"
         aria-label="Pattern steps"
       >
-        {steps.map((on, i) => (
-          <button
-            key={i}
-            type="button"
-            onClick={() => toggleStep(i)}
-            disabled={!connected}
-            data-testid={`step-${i}`}
-            aria-label={`Step ${i + 1}`}
-            aria-pressed={on}
-            className={[
-              "h-8 rounded border transition-colors text-[10px] font-mono",
-              on
-                ? "bg-accent-primary border-accent-primary text-bg-base"
-                : "bg-bg-elevated border-border-color text-text-dim hover:text-text-muted",
-              !connected && "opacity-40 cursor-not-allowed",
-              // Beat-Highlight (Step 0, 4, 8, 12)
-              i % 4 === 0 && !on && "border-text-dim",
-            ].join(" ")}
-          >
-            {i + 1}
-          </button>
-        ))}
+        {steps.map((on, i) => {
+          const vel = velocities[i];
+          const velPct = Math.round((vel / VEL_MAX) * 100);
+          const isCurrent = currentStep === i && playing;
+          return (
+            <button
+              key={i}
+              type="button"
+              onClick={(e) => toggleStep(i, e)}
+              disabled={!connected}
+              data-testid={`step-${i}`}
+              data-current={isCurrent ? "true" : "false"}
+              aria-label={`Step ${i + 1}${on ? ` velocity ${vel}` : ""}`}
+              aria-pressed={on}
+              title={
+                on
+                  ? `vel ${vel} — shift-click +${VEL_STEP}, alt-click -${VEL_STEP}`
+                  : `off — click to enable`
+              }
+              className={[
+                "h-10 rounded border relative overflow-hidden transition-colors",
+                "text-[10px] font-mono",
+                on
+                  ? "bg-accent-primary/20 border-accent-primary text-text-primary"
+                  : "bg-bg-elevated border-border-color text-text-dim hover:text-text-muted",
+                isCurrent && "ring-2 ring-accent-warning",
+                !connected && "opacity-40 cursor-not-allowed",
+                i % 4 === 0 && !on && "border-text-dim",
+              ].filter(Boolean).join(" ")}
+            >
+              {/* Velocity-Bar als Hintergrund-Hoehe */}
+              {on && (
+                <span
+                  aria-hidden="true"
+                  className="absolute bottom-0 left-0 right-0 bg-accent-primary/40 pointer-events-none"
+                  style={{ height: `${velPct}%` }}
+                  data-testid={`step-${i}-vel-bar`}
+                />
+              )}
+              <span className="relative z-10">{i + 1}</span>
+            </button>
+          );
+        })}
       </div>
 
       {/* Presets */}
-      <div className="flex gap-1 text-[10px]">
+      <div className="flex gap-1 text-[10px] items-center">
         <span className="text-text-dim">Preset:</span>
         <button
           type="button"
@@ -168,6 +250,11 @@ export function StepSequencerPanel({
           clear
         </button>
       </div>
+
+      <p className="text-[10px] text-text-dim leading-snug">
+        Click toggles step · Shift+Click erhoeht Velocity · Alt+Click
+        senkt sie. Bar-Hoehe = aktuelle Velocity.
+      </p>
 
       {/* Transport + BPM + Root */}
       <div className="flex items-center gap-3 pt-2 border-t border-border-color">
@@ -230,12 +317,6 @@ export function StepSequencerPanel({
           />
         </label>
       </div>
-
-      <p className="text-[10px] text-text-dim leading-snug">
-        Steps anklicken, dann Play. Sim feuert Note-On pro aktivem Step im
-        BPM-Raster. Mit aktiviertem chord-Modul (ChordPanel oben) fan-out
-        zu Chord-Voices → Web-Audio.
-      </p>
     </div>
   );
 }
