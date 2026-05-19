@@ -3887,6 +3887,8 @@ class AudioEngineClass {
     truePeakL:        number;
     truePeakR:        number;
     truePeakMax:      number;
+    lra:              number;
+    lraHistoryLength: number;
   } {
     if (!this._lufsAnalyser) {
       return {
@@ -3900,6 +3902,8 @@ class AudioEngineClass {
         truePeakL:        -Infinity,
         truePeakR:        -Infinity,
         truePeakMax:      -Infinity,
+        lra:              0,
+        lraHistoryLength: 0,
       };
     }
     this._ensureLufsPollingStarted();
@@ -3925,6 +3929,15 @@ class AudioEngineClass {
     } catch {
       /* swallow — old LufsAnalyzer ohne TP-API */
     }
+    // v3.103.0: Echte EBU R128 LRA + History-Fuellstand (UI-Indicator).
+    let lra = 0;
+    let lraLen = 0;
+    try {
+      lra = this._lufsAnalyser.getCurrentLra();
+      lraLen = this._lufsAnalyser.getShortTermHistoryLength();
+    } catch {
+      /* swallow — old LufsAnalyzer ohne LRA-API */
+    }
     return {
       momentary:        this._lufsAnalyser.getMomentary(),
       shortTerm:        this._lufsAnalyser.getShortTerm(),
@@ -3936,6 +3949,8 @@ class AudioEngineClass {
       truePeakL:        tpL,
       truePeakR:        tpR,
       truePeakMax:      tpMax,
+      lra,
+      lraHistoryLength: lraLen,
     };
   }
 

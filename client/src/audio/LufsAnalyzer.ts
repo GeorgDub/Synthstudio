@@ -1,8 +1,14 @@
 /**
- * Synthstudio – LufsAnalyzer.ts  (v3.102.0)
+ * Synthstudio – LufsAnalyzer.ts  (v3.103.0)
  *
  * ITU-R BS.1770-4 konformes Loudness-Measurement (Mastering-Standard
  * für Broadcast + Streaming).
+ *
+ * v3.103.0 closes v3.101+v3.102 LRA-Caveat: echtes EBU R128 LRA (Tech 3342)
+ * mit Short-Term-Historie (3s-Window, 100ms-Hop → 10 Hz) + Two-Pass-Gating
+ * (absolute ≥ -70 LUFS, relative ≥ integrated - 20 LU) + Percentile-Distrib
+ * (LU95 - LU10). API: `getCurrentLra()`, `getShortTermHistoryLength()`,
+ * `reset()` clears die History; Pure-Helpers `percentile`, `computeLra`.
  *
  * v3.102.0 ergänzt um optionalen True-Peak-Reader (BS.1770-4 Annex 2):
  * Bei `truePeakOversampling > 1` läuft parallel zum K-weighting ein
@@ -98,6 +104,39 @@ export const LUFS_OFFSET = -0.691;
 
 /** Default-Wert wenn Messung nicht aufgelaufen / Stille. */
 export const LUFS_SILENCE = -Infinity;
+
+// ─── v3.103.0: EBU R128 LRA-Konstanten ───────────────────────────────────────
+
+/**
+ * v3.103.0: Short-Term-History Hop-Size (Tech 3342: 100ms zwischen Samples).
+ * Bei 10 Hz × 60s = 600 Einträge pro Minute.
+ */
+export const LRA_SHORT_TERM_HOP_SEC = 0.1;
+
+/**
+ * v3.103.0: Maximal-Anzahl Einträge im Short-Term-Ringbuffer.
+ * 3600 Einträge × 100ms = 6 Minuten Mess-Historie (typische Master-Length).
+ * Beyond: FIFO-Drop.
+ */
+export const LRA_HISTORY_MAX = 3600;
+
+/**
+ * v3.103.0: EBU R128 LRA absolute gate threshold (LUFS).
+ * Identisch zu BS.1770-4 Absolute-Gate (-70 LUFS).
+ */
+export const LRA_ABSOLUTE_GATE_LUFS = -70.0;
+
+/**
+ * v3.103.0: EBU R128 LRA relative gate offset (LU unterhalb Integrated).
+ * Tech 3342 §3: -20 LU (NICHT -10 wie BS.1770-4 Loudness-Gate!).
+ */
+export const LRA_RELATIVE_GATE_LU = -20.0;
+
+/** v3.103.0: 10%-Percentile fuer LRA-Untergrenze (Tech 3342). */
+export const LRA_PERCENTILE_LOW = 0.1;
+
+/** v3.103.0: 95%-Percentile fuer LRA-Obergrenze (Tech 3342). */
+export const LRA_PERCENTILE_HIGH = 0.95;
 
 // ─── Biquad ──────────────────────────────────────────────────────────────────
 
@@ -269,6 +308,99 @@ export function meanSquareToLufs(meanSquareSum: number): number {
   return LUFS_OFFSET + 10 * Math.log10(meanSquareSum);
 }
 
+// ─── v3.103.0: EBU R128 LRA Pure-Helpers ─────────────────────────────────────
+
+/**
+ * v3.103.0: Linear interpolierter Percentile-Lookup nach Tech 3342.
+ *
+ *   rank = p × (N - 1)   (0-indexed, inclusive both ends)
+ *
+ * Bei rank zwischen zwei Indizes: lineare Interpolation zwischen
+ * `sortedArr[floor(rank)]` und `sortedArr[ceil(rank)]`. Pre-Condition:
+ * `sortedArr` MUSS bereits ascending sortiert sein (kein internes Sort —
+ * Caller-Verantwortung, weil computeLra mehrere Percentile auf demselben
+ * sortierten Array ausliest).
+ *
+ * Edge-Cases:
+ *   - leeres Array → NaN (Caller-Defense erforderlich).
+ *   - p outside [0,1] → clamped auf [0,1].
+ *   - N=1 → einziger Wert wird zurueck-gegeben.
+ *
+ * Tests:
+ *   percentile([10,20,30], 0)    === 10   (Linker Rand)
+ *   percentile([10,20,30], 1)    === 30   (Rechter Rand)
+ *   percentile([10,20,30], 0.5)  === 20   (Median)
+ *   percentile([10,20,30], 0.25) === 15   (Linear-Interp zwischen 10/20)
+ */
+export function percentile(sortedArr: readonly number[], p: number): number {
+  const N = sortedArr.length;
+  if (N === 0) return NaN;
+  if (N === 1) return sortedArr[0];
+  const clampedP = p < 0 ? 0 : p > 1 ? 1 : p;
+  const rank = clampedP * (N - 1);
+  const lo = Math.floor(rank);
+  const hi = Math.ceil(rank);
+  if (lo === hi) return sortedArr[lo];
+  const frac = rank - lo;
+  return sortedArr[lo] + (sortedArr[hi] - sortedArr[lo]) * frac;
+}
+
+/**
+ * v3.103.0: Echter EBU R128 / Tech 3342 LRA-Algorithmus.
+ *
+ * Verarbeitungs-Schritte:
+ *   1. Absolute-Gate: Verwerfe alle ST-Werte < -70 LUFS.
+ *   2. Relative-Gate: Verwerfe alle Werte < (integrated - 20 LU).
+ *      → Bei nicht-endlichem Integrated (-Inf) wird der Relative-Gate
+ *        ausgesetzt — keine sinnvolle Schwelle gibt es vor der ersten
+ *        I-Messung.
+ *   3. Sortiere die gegateten Werte ascending.
+ *   4. LRA = percentile(95%) - percentile(10%).
+ *
+ * Edge-Cases:
+ *   - Leeres `stHistory` → 0.
+ *   - Alle Werte identisch → 0 (LU95 == LU10).
+ *   - Alle Werte unter Absolute-Gate → 0 (keine Verteilung messbar).
+ *   - Nur ein Wert nach Gating → 0 (Single-Point hat keine Spanne).
+ *
+ * Einheit: LU (Loudness Units). Der Wert ist die *Differenz* zweier
+ * LUFS-Werte und hat keine Skala-Basis.
+ *
+ * @param stHistory  Liste der Short-Term-LUFS-Werte (kontinuierlich, channel-summed).
+ * @param integrated Aktueller Integrated-LUFS-Wert (fuer Relative-Gate).
+ *                   -Infinity → Relative-Gate uebersprungen.
+ */
+export function computeLra(
+  stHistory: readonly number[],
+  integrated: number,
+): number {
+  if (stHistory.length === 0) return 0;
+
+  // Step 1+2: Gating (kombiniert in einer Filter-Pass).
+  const useRelative = Number.isFinite(integrated);
+  const relThreshold = useRelative
+    ? integrated + LRA_RELATIVE_GATE_LU
+    : -Infinity;
+  const gated: number[] = [];
+  for (const v of stHistory) {
+    if (!Number.isFinite(v)) continue;
+    if (v < LRA_ABSOLUTE_GATE_LUFS) continue;
+    if (useRelative && v < relThreshold) continue;
+    gated.push(v);
+  }
+  if (gated.length < 2) return 0;
+
+  // Step 3: Sort ascending.
+  gated.sort((a, b) => a - b);
+
+  // Step 4: Percentile-Diff.
+  const lo = percentile(gated, LRA_PERCENTILE_LOW);
+  const hi = percentile(gated, LRA_PERCENTILE_HIGH);
+  if (!Number.isFinite(lo) || !Number.isFinite(hi)) return 0;
+  const lra = hi - lo;
+  return lra < 0 ? 0 : lra;
+}
+
 // ─── LUFS-Analyzer ───────────────────────────────────────────────────────────
 
 export interface LufsAnalyzerOptions {
@@ -324,6 +456,23 @@ export class LufsAnalyzer {
   /** Loudness-Werte (in LUFS) aller 400ms-Blöcke seit dem letzten reset(). */
   private integratedBlockLoudness: number[] = [];
 
+  /**
+   * v3.103.0: Short-Term-Historie (LUFS-Werte, channel-summed) fuer
+   * EBU R128 LRA-Berechnung. Sampled bei jedem ST-Hop (100ms) — also
+   * 10 Hz. Tiefer-FIFO-Bound `LRA_HISTORY_MAX` (=3600 = 6 Minuten).
+   *
+   * Push-Logik:
+   *   - Erst nach `shortTermLen` Samples Anlauf (sonst zeigt SlidingMS
+   *     pre-fill-Werte die nicht der "echte" 3s-Wert sind).
+   *   - In `processBlock` pro Sample inkrementiert; alle 100ms hop
+   *     (`_shortTermHopSamples`) wird der aktuelle ST-Wert gepusht.
+   */
+  private _shortTermHistory: number[] = [];
+  private _shortTermHopSamples: number;
+  private _shortTermSinceHop = 0;
+  private _shortTermAnlaufSamples = 0;
+  private _shortTermFullSamples: number;
+
   constructor(opts: LufsAnalyzerOptions = {}) {
     const sr = opts.sampleRate ?? 48000;
     if (!Number.isFinite(sr) || sr <= 0) {
@@ -354,6 +503,11 @@ export class LufsAnalyzer {
     this.integratedHopSize   = Math.round(INTEGRATED_BLOCK_SEC * (1 - INTEGRATED_OVERLAP) * sr);
     this.integratedBlockL = new Float64Array(this.integratedBlockSize);
     this.integratedBlockR = new Float64Array(this.integratedBlockSize);
+
+    // v3.103.0: Short-Term-Historie fuer LRA.
+    // Hop-Size = 100ms; Anlauf bis ST-Buffer voll = 3s.
+    this._shortTermHopSamples  = Math.max(1, Math.round(LRA_SHORT_TERM_HOP_SEC * sr));
+    this._shortTermFullSamples = Math.max(1, Math.round(SHORT_TERM_WINDOW_SEC * sr));
 
     // v3.102.0: True-Peak-Meter pro Kanal.
     // Defensive: NaN / negativ / non-integer fallen auf default zurueck.
@@ -406,6 +560,29 @@ export class LufsAnalyzer {
       this.msMomentaryR.addSquared(sqR);
       this.msShortTermL.addSquared(sqL);
       this.msShortTermR.addSquared(sqR);
+
+      // v3.103.0: Short-Term-History sampler fuer EBU R128 LRA.
+      // Push erst nach Anlauf von 3s (sonst zeigt SlidingMS noch nicht den
+      // echten ST-Wert). Danach pro Hop einen Snapshot.
+      if (this._shortTermAnlaufSamples < this._shortTermFullSamples) {
+        this._shortTermAnlaufSamples++;
+      } else {
+        this._shortTermSinceHop++;
+        if (this._shortTermSinceHop >= this._shortTermHopSamples) {
+          this._shortTermSinceHop = 0;
+          const msStL = this.msShortTermL.meanSquare();
+          const msStR = isStereo ? this.msShortTermR.meanSquare() : 0;
+          const msStSum = isStereo ? msStL + msStR : msStL;
+          const stLufs = meanSquareToLufs(msStSum);
+          if (Number.isFinite(stLufs)) {
+            // FIFO-Drop bei overflow (max 3600 = 6 Min @ 10Hz).
+            if (this._shortTermHistory.length >= LRA_HISTORY_MAX) {
+              this._shortTermHistory.shift();
+            }
+            this._shortTermHistory.push(stLufs);
+          }
+        }
+      }
 
       // Integrated: fill 400ms block, dann hop.
       this.integratedBlockL[this.integratedWriteIdx] = sqL;
@@ -516,6 +693,33 @@ export class LufsAnalyzer {
   }
 
   /**
+   * v3.103.0: Echte EBU R128 / Tech 3342 LRA (Loudness Range) basierend auf
+   * der internen Short-Term-Historie + aktuellem Integrated-Loudness als
+   * Relative-Gate-Anker.
+   *
+   * Liefert 0 wenn:
+   *   - History noch leer (vor dem ersten 3s-Anlauf bzw. nach reset())
+   *   - Alle Werte gleich (statische Loudness)
+   *   - Alle Werte unter Absolute-Gate
+   *
+   * Einheit: LU (Loudness Units).
+   */
+  getCurrentLra(): number {
+    return computeLra(this._shortTermHistory, this.getIntegrated());
+  }
+
+  /**
+   * v3.103.0: Aktuelle History-Laenge (Anzahl Short-Term-Samples seit
+   * letztem reset()). UI nutzt das fuer "Building history..."-Indicator
+   * waehrend der ersten 30 Sekunden — vorgeschlagen-Threshold: 30 ST-Samples
+   * (= 3 Sekunden post-Anlauf) sind das absolute Minimum fuer eine
+   * sinnvolle LRA-Verteilung.
+   */
+  getShortTermHistoryLength(): number {
+    return this._shortTermHistory.length;
+  }
+
+  /**
    * v3.102.0: Aktueller True-Peak (BS.1770-4 Annex 2) pro Kanal seit dem
    * letzten `reset()` bzw. `resetAll()`. Werte in dBTP.
    *
@@ -561,6 +765,12 @@ export class LufsAnalyzer {
     this.integratedWriteIdx = 0;
     this.integratedSinceHop = 0;
     this.integratedBlockLoudness = [];
+    // v3.103.0: Short-Term-Historie + Hop-Counter + Anlauf-Counter resetten.
+    // Reset() laeuft synchron zum Integrated-Reset — LRA waere ohne neuen
+    // Anlauf-Filter inkonsistent (alte ST-Werte gehen nicht zu neuem I).
+    this._shortTermHistory = [];
+    this._shortTermSinceHop = 0;
+    this._shortTermAnlaufSamples = 0;
     // True-Peak: nur Running-Max zuruecksetzen, nicht den FIR-Ring
     // (s.o.). TruePeakMeter.reset() leert beides — wir wollen aber nur
     // den Peak resetten. Workaround: getPeakLinear() lesen, reset() rufen,
@@ -599,15 +809,18 @@ export class LufsAnalyzer {
  * v3.101.0: Snapshot-Result einer Offline-Analyse.
  *
  * `lra` (Loudness Range) ist die Differenz zwischen 10% und 95%
- * Perzentil der Short-Term-Werte (EBU R128). Wir liefern eine
- * vereinfachte Approximation, die ohne Long-Term-History-Buffer
- * auskommt: max(shortTerm) - min(shortTerm-non-silence).
+ * Perzentil der Short-Term-Werte (EBU R128 / Tech 3342) mit
+ * absolute-gate (-70 LUFS) + relative-gate (integrated - 20 LU).
+ *
+ * v3.103.0: Echter LRA-Algorithmus via interner Short-Term-Historie
+ * (closed v3.101+v3.102-Caveat). Bei Buffern <3s ist die Historie noch
+ * leer und LRA=0.
  */
 export interface LufsStereoResult {
   momentary:  number;
   shortTerm:  number;
   integrated: number;
-  /** v3.101: Loudness Range Approximation in LU. */
+  /** v3.103: True EBU R128 Loudness Range in LU (LU95 - LU10, gated). */
   lra:        number;
   /** v3.101: Per-Channel Momentary fuer Stereo-Imbalance-Check. */
   channels:   { L: number; R: number };
@@ -640,19 +853,12 @@ export function analyzeStereo(
   const a = new LufsAnalyzer({ sampleRate, channelCount: 2 });
   a.processBlock(left, right);
 
-  // LRA-Approximation: Short-Term Wert reflektiert die letzte 3s der Eingabe.
-  // Fuer "echte" LRA muessten wir die ganze Short-Term-Historie sammeln —
-  // das ueberfordert die nicht-streaming-API. Wir liefern stattdessen die
-  // dB-Spanne zwischen ungelateter (passOne) und gegateter (passTwo)
-  // Integrated-Loudness, was ein robuster Proxy fuer Dynamik ist.
+  // v3.103.0: Echte EBU R128 / Tech 3342 LRA aus Short-Term-Historie.
+  // Bei sehr kurzen Buffern (<3s + Hop) bleibt History leer → LRA=0.
   const integrated = a.getIntegrated();
   const shortTerm  = a.getShortTerm();
   const momentary  = a.getMomentary();
-  // LRA-Stub: 0 wenn keine Variation, sonst |shortTerm - integrated|.
-  const lra =
-    Number.isFinite(shortTerm) && Number.isFinite(integrated)
-      ? Math.abs(shortTerm - integrated)
-      : 0;
+  const lra = a.getCurrentLra();
   const stereo = a.getMomentaryStereo();
   return {
     momentary, shortTerm, integrated, lra,

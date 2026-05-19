@@ -326,11 +326,16 @@ export function MasterFxPanel() {
     momentaryL: number; momentaryR: number;
     phaseCorrelation: number; lrImbalanceDb: number;
     truePeakL: number; truePeakR: number; truePeakMax: number;
+    /** v3.103.0: Echte EBU R128 LRA (LU95 - LU10, gated). */
+    lra: number;
+    /** v3.103.0: Anzahl Short-Term-Samples seit reset() — fuer Building-Indicator. */
+    lraHistoryLength: number;
   }>({
     momentary: -Infinity, shortTerm: -Infinity, integrated: -Infinity,
     momentaryL: -Infinity, momentaryR: -Infinity,
     phaseCorrelation: NaN, lrImbalanceDb: 0,
     truePeakL: -Infinity, truePeakR: -Infinity, truePeakMax: -Infinity,
+    lra: 0, lraHistoryLength: 0,
   });
   useEffect(() => {
     const id = setInterval(() => {
@@ -338,7 +343,7 @@ export function MasterFxPanel() {
         // v3.101: Stereo-Snapshot bevorzugt (Engine fallt sauber zurueck).
         // v3.102: Snapshot enthaelt zusaetzlich truePeakL/R/Max.
         const eng = AudioEngine as unknown as {
-          getLufsStereoSnapshot?: () => typeof lufs;
+          getLufsStereoSnapshot?: () => typeof lufs & { lra?: number; lraHistoryLength?: number };
           getLufsSnapshot: () => { momentary: number; shortTerm: number; integrated: number };
         };
         if (typeof eng.getLufsStereoSnapshot === "function") {
@@ -356,6 +361,9 @@ export function MasterFxPanel() {
             truePeakL:        Number.isFinite(snap.truePeakL)   ? snap.truePeakL   : -Infinity,
             truePeakR:        Number.isFinite(snap.truePeakR)   ? snap.truePeakR   : -Infinity,
             truePeakMax:      Number.isFinite(snap.truePeakMax) ? snap.truePeakMax : -Infinity,
+            // v3.103.0: Echte LRA + History-Fuellstand
+            lra:              typeof snap.lra === "number" && Number.isFinite(snap.lra) ? snap.lra : 0,
+            lraHistoryLength: typeof snap.lraHistoryLength === "number" ? snap.lraHistoryLength : 0,
           });
         } else {
           const s = eng.getLufsSnapshot();
@@ -364,6 +372,7 @@ export function MasterFxPanel() {
             momentaryL: s.momentary, momentaryR: s.momentary,
             phaseCorrelation: NaN, lrImbalanceDb: 0,
             truePeakL: -Infinity, truePeakR: -Infinity, truePeakMax: -Infinity,
+            lra: 0, lraHistoryLength: 0,
           });
         }
       } catch {
@@ -372,6 +381,7 @@ export function MasterFxPanel() {
           momentaryL: -Infinity, momentaryR: -Infinity,
           phaseCorrelation: NaN, lrImbalanceDb: 0,
           truePeakL: -Infinity, truePeakR: -Infinity, truePeakMax: -Infinity,
+          lra: 0, lraHistoryLength: 0,
         });
       }
     }, LUFS_METER_INTERVAL_MS);
@@ -433,7 +443,7 @@ export function MasterFxPanel() {
             {formatLufs(lufs.shortTerm)}
           </span>
         </div>
-        <div className="flex items-baseline gap-1 flex-1" data-testid="master-fx-lufs-integrated">
+        <div className="flex items-baseline gap-1" data-testid="master-fx-lufs-integrated">
           <span className="text-xs text-text-dim">I</span>
           <span
             className={`text-xs tabular-nums w-20 text-right font-semibold ${lufsColorClass(lufs.integrated)}`}
@@ -441,6 +451,34 @@ export function MasterFxPanel() {
           >
             {formatLufs(lufs.integrated)}
           </span>
+        </div>
+        {/*
+          v3.103.0: Echte EBU R128 LRA (LU95 - LU10, gated). Vor Anlauf
+          (3s) und in den ersten ~30s zeigen wir einen Build-Progress
+          statt eines unsinnig kleinen Werts.
+          ~30 Samples @ 10 Hz Hop = 3 Sekunden nach Anlauf (= 6s gesamt).
+        */}
+        <div
+          className="flex items-baseline gap-1 flex-1"
+          data-testid="master-fx-lufs-lra"
+          title="EBU R128 LRA (LU95-LU10, gated)"
+        >
+          <span className="text-xs text-text-dim">LRA</span>
+          {lufs.lraHistoryLength < 30 ? (
+            <span
+              className="text-[10px] tabular-nums text-text-muted italic"
+              data-testid="master-fx-lufs-lra-building"
+            >
+              {`Building… ${Math.min(100, Math.round((lufs.lraHistoryLength / 30) * 100))}%`}
+            </span>
+          ) : (
+            <span
+              className="text-xs tabular-nums w-20 text-right text-text-primary font-semibold"
+              data-testid="master-fx-lufs-lra-value"
+            >
+              {`${lufs.lra.toFixed(1)} LU`}
+            </span>
+          )}
         </div>
         <button
           type="button"

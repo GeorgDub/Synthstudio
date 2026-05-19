@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.101.0",
+    version: "3.103.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -399,9 +399,14 @@ const INDEX = {
       lastSeen: "2026-05-19T05:10:00.000Z",
       ownedBy:  "frontend"
     },
-    "client/src/audio/LufsAnalyzer.ts (v3.78.0)": {
-      role:     "v3.78.0 NEU (~360 LOC, Pure-TS-Modul, DOM-frei, env:node-safe): ITU-R BS.1770-4 LUFS-Meter. K-Weighting Pre-Filter (high-shelf @1681Hz +4dB) + RLB-Filter (high-pass @38Hz Q=0.5) als Biquad-DF2 (4 State-Variablen). Bei 48kHz matchen die Coeffizienten die BS.1770-4-Tabelle exakt (Toleranz 1e-3). Bilinear-Transform für andere Sample-Rates mit Pre-Warping. SlidingMeanSquare-Klasse (Ring-Buffer + O(1)-update) für Momentary (400ms) und Short-Term (3s). Integrated mit 400ms-Block + 100ms-Hop (75% Overlap) und Two-Pass-Gating (absolute -70 LUFS + relative -10 LU). Public API: LufsAnalyzer-Constructor mit defensiv Throw für invalid Rates/Channels (1 oder 2), processBlock(L, R?), getMomentary/getShortTerm/getIntegrated, reset() (nur Integrated), resetAll() (inkl. Filter-State). Exports: designKWeightingPreFilter/RlbFilter Pure-Helpers + meanSquareToLufs + Biquad-Klasse + LUFS_SILENCE/LUFS_OFFSET/ABSOLUTE_GATE_LUFS/RELATIVE_GATE_LU + MOMENTARY/SHORT_TERM/INTEGRATED-Konstanten. RLB-Filter b-Koeffizienten WICHTIG nicht durch RBJ-Norm geteilt (b0=1, b1=-2, b2=1 fix per Spec).",
-      lastSeen: "2026-05-19T04:30:00.000Z",
+    "client/src/audio/LufsAnalyzer.ts (v3.103.0 +EBU-R128-LRA)": {
+      role:     "v3.103.0 ERWEITERT (+~150 LOC, baseline v3.102 TruePeakMeter-Wiring + v3.101 Stereo + v3.78 K-weighting unveraendert): NEU Module-Konstanten LRA_SHORT_TERM_HOP_SEC=0.1 / LRA_HISTORY_MAX=3600 / LRA_ABSOLUTE_GATE_LUFS=-70 / LRA_RELATIVE_GATE_LU=-20 / LRA_PERCENTILE_LOW=0.1 / LRA_PERCENTILE_HIGH=0.95. NEU Pure-Helper percentile(sortedArr,p): rank=p*(N-1), linear-interp zwischen floor/ceil, NaN bei empty, single-element-return, p-clamp. NEU Pure-Helper computeLra(stHistory,integrated): two-pass-gating (absolute≥-70, relative≥integrated-20, ausgesetzt bei integrated=-Inf), NaN-skip, sort ascending, percentile95-percentile10, empty/<2-points→0. NEU LufsAnalyzer-Felder _shortTermHistory[], _shortTermHopSamples, _shortTermSinceHop, _shortTermAnlaufSamples, _shortTermFullSamples. processBlock pusht alle 100ms (nach 3s-Anlauf) den aktuellen ST-LUFS in History; FIFO-Drop bei 3600-overflow. NEU Public-API getCurrentLra() / getShortTermHistoryLength(). reset() clears history. analyzeStereo nutzt echte LRA statt approximation. LufsStereoResult.lra-Doc v3.103-aktualisiert.",
+      lastSeen: "2026-05-19T10:50:00.000Z",
+      ownedBy:  "backend"
+    },
+    "tests/features/lra.test.ts (v3.103.0 NEU)": {
+      role:     "v3.103.0 NEU (+~250 LOC, 26 Tests in 3 describes, env:node DOM-frei): (1) percentile() × 8 — first/last-element, Median ([10,20,30,40,50],0.5)=30, lineare Interpolation ([10,20,30],0.25)=15 / ([10,20,30,40,50],0.95)=48, empty→NaN, single-element-return egal welches p, p-Clamp ausserhalb [0,1]. (2) computeLra() × 9 — empty→0, alle-gleich→0, absolute-gate filtert <-70, relative-gate filtert weit unter integrated-20, dynamic>static, exakter Lookup ([-30..-10] 11 Werte integrated=-20) → LU95-LU10=17 LU, integrated=-Inf skip Relative-Gate, NaN silent gefiltert, single-point→0. (3) Analyzer-Integration × 9 — history startet bei 0, fuellt sich nach 3s-Anlauf (4s Sinus → ~10 Eintraege), bleibt 0 fuer <3s, reset() clears, statischer Sinus LRA<2 LU, dynamischer (laut/leise je 3s ueber 12s)>statisch UND >3 LU, Hop=0.1s + Gates -70/-20 + HISTORY_MAX=3600. Alle 26 gruen.",
+      lastSeen: "2026-05-19T10:50:00.000Z",
       ownedBy:  "backend"
     },
     "tests/features/lufs-meter.test.ts (v3.78.0)": {
@@ -2572,6 +2577,32 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "backend",
+      timestamp: "2026-05-19T10:50:00.000Z",
+      done: [
+        "v3.103.0: True EBU R128 LRA mit Short-Term-Historie + gating (closes v3.101+v3.102 LRA-caveat). Bisher: LRA-Approximation |shortTerm - integrated| in analyzeStereo. Echter EBU R128 / Tech 3342 LRA verlangt Short-Term-Historie (3s sliding, 100ms-Hop = 10Hz), Two-Pass-Gating (absolute ≥-70 LUFS, relative ≥ integrated-20 LU), Sort ascending, LU95 - LU10 via linear-interpolated Percentile.",
+        "LufsAnalyzer.ts ERWEITERT (+~150 LOC, baseline v3.102 unveraendert). NEU Module-Konstanten LRA_SHORT_TERM_HOP_SEC=0.1, LRA_HISTORY_MAX=3600, LRA_ABSOLUTE_GATE_LUFS=-70, LRA_RELATIVE_GATE_LU=-20, LRA_PERCENTILE_LOW=0.1, LRA_PERCENTILE_HIGH=0.95. NEU Pure-Helper percentile(sortedArr,p): rank=p*(N-1), linear-interp zwischen floor/ceil, NaN bei empty, single-element-return, p-clamp 0..1. NEU Pure-Helper computeLra(stHistory, integrated): absolute-gate-filter (-70), relative-gate-filter (integrated-20, ausgesetzt bei integrated=-Inf), NaN-skip, sort ascending, percentile(95)-percentile(10), edge-cases empty/<2-points→0, max(0,...) gegen fp-Drift. NEU LufsAnalyzer-Felder _shortTermHistory[], _shortTermHopSamples, _shortTermSinceHop, _shortTermAnlaufSamples, _shortTermFullSamples. processBlock pusht alle 100ms (nach 3s-Anlauf) den aktuellen ST-LUFS in History; FIFO-Drop bei overflow. NEU API getCurrentLra() → computeLra(history, getIntegrated()), getShortTermHistoryLength(). reset() clears history. analyzeStereo nutzt jetzt getCurrentLra statt approximation.",
+        "AudioEngine.ts ERWEITERT (+~15 LOC). getLufsStereoSnapshot ergaenzt um lra + lraHistoryLength Felder (try/catch defensiv). Bei null-Analyzer → 0/0.",
+        "MasterFxPanel.tsx UI ERWEITERT (+~25 LOC). lufs-State erweitert um lra/lraHistoryLength. Polling-Wiring liest Snapshot-Felder mit Number.isFinite-Defense. NEU LRA-Pill zwischen Integrated-Display und Reset-Button: bei history<30 (=3s post-Anlauf = 6s gesamt) zeigt 'Building… <%>%' indicator, sonst '<value> LU' tabular-nums. data-testid='master-fx-lufs-lra' / '-building' / '-value' + title='EBU R128 LRA (LU95-LU10, gated)'. Snapshot-Type-Cast um lra?/lraHistoryLength? erweitert.",
+        "tests/features/lra.test.ts NEU (+~250 LOC, 26 Tests in 3 describes). (1) percentile() × 8: ersten/letzten Element, Median ([10,20,30,40,50],0.5)=30, lineare Interpolation ([10,20,30],0.25)=15 + ([10,20,30,40,50],0.95)=48, empty→NaN, single-element-return-any-p, p-Clamp ausserhalb [0,1]. (2) computeLra() × 9: empty→0, alle-gleich→0, absolute-gate filtert <-70 raus, relative-gate filtert weit unter integrated-20 raus, dynamic > static, exakter Lookup ([-30..-10],11 Werte, integrated=-20) → LU95-LU10=17 LU, integrated=-Inf ueberspringt Relative-Gate, NaN-Werte silent gefiltert, single-point-distribution→0. (3) Analyzer-Integration × 9: history startet bei 0, fuellt sich nach 3s-Anlauf (4s Sinus → ~10 Eintraege), bleibt 0 fuer Buffer <3s, reset() clears history, statischer Sinus → LRA <2 LU, dynamischer Sinus (alternierend laut/leise je 3s ueber 12s) > statisch + >3 LU, Hop-Konstante=0.1s, Gate-Konstanten -70/-20, History-MAX=3600. Alle 26 gruen.",
+        "package.json 3.102.0 → 3.103.0. pnpm check: clean. pnpm test: 247 Files / 5576 passed / 16 skipped (vs v3.102.0: 246/5550 → +1 File +26 Tests, keine Regression — lufs-meter 17/17 + lufs-stereo 26/26 weiterhin gruen)."
+      ],
+      next: [
+        "v3.103.1: LRA-Konvergenz-Threshold im UI: aktuell zeigt 'Building… <%>' bis history>=30. Pruefen ob ein zweistufiges Display 'Building (3s-Anlauf)' → 'Stabilizing (bis 30s)' → 'Final' UX-friendlier ist.",
+        "True-LRA-Streaming-Polling: aktuell sammelt History innerhalb LufsAnalyzer.processBlock; bei 6-Min-FIFO-Bound shift O(N) — bei extrem langen Sessions evtl. ring-buffer mit head/tail-Idx statt Array.shift fuer O(1)-amortized.",
+        "Re-evaluate LRA_PERCENTILE_HIGH=0.95 vs 0.99 (Tech 3342 vergibt 95%; manche Tools wie ffmpeg-ebur128 nutzen 99% — pruefen welcher Industrie-Standard bei Mastering-Engineers heute Pflicht ist).",
+        "Long-Time-Phase-Correlation aus v3.102 next: zusaetzlich zum 2048-Sample-Snapshot ein 3-Sekunden-Average fuer beruhigtes Display."
+      ],
+      changed: [
+        "client/src/audio/LufsAnalyzer.ts (+~150 LOC: percentile + computeLra Pure-Helpers, _shortTermHistory Ringbuffer, History-Push in processBlock mit 3s-Anlauf-Gate + 100ms-Hop + 3600-FIFO-Bound, getCurrentLra + getShortTermHistoryLength + reset wired, analyzeStereo nutzt echte LRA)",
+        "client/src/audio/AudioEngine.ts (+~15 LOC: getLufsStereoSnapshot um lra+lraHistoryLength erweitert)",
+        "client/src/components/Mixer/MasterFxPanel.tsx (+~25 LOC: LRA-Pill mit Building-Indicator zwischen Integrated und Reset-Button)",
+        "tests/features/lra.test.ts (NEU +~250 LOC, 26 Tests)",
+        "package.json (3.102.0 → 3.103.0)",
+        "agents/INDEX.js"
+      ]
+    },
     {
       agent:     "backend",
       timestamp: "2026-05-19T10:35:00.000Z",
