@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.109.0",
+    version: "3.110.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -2692,6 +2692,38 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "backend",
+      timestamp: "2026-05-19T12:20:00.000Z",
+      done: [
+        "v3.110.0: Live Multi-Track Recording — Real-Time Session-Capture. Vs. channelBounce.ts (offline-render, ignoriert live-edits) ist das echte Realtime-Capture: während Playback werden ALLE Live-Tweaks (Knobs/Mute/Solo/Pattern-Switches/Macros) mitgeschrieben, per-Channel + Master gleichzeitig.",
+        "client/src/audio/LiveRecorder.ts NEU (+~340 LOC). Class LiveRecorder mit setContext / start / stop / addTrack / removeTrack / cancel + getters isRunning/trackCount/recordedDurationMs. ScriptProcessorNode-Tap (4096 Frames Buffer = ~85ms @ 48k) für jeden Track — selbe Pipeline wie AudioRecorder aber multi-track-aware: ein Tracks-Map<id, ActiveTrackState>. Memory-Cap LIVE_REC_MAX_FRAMES_PER_TRACK = 600*48000 (~10 min Stereo, ~230MB/track) — bei Überschreitung auto-disconnect + truncated:true. Hard-Cap LIVE_REC_MAX_TRACKS=32. __pushFramesForTest erlaubt Tests ohne realen ScriptProcessor. Pure-Helpers: formatLiveRecordTimestamp (sortbares YYYY-MM-DD_HH-MM-SS), sanitizeChannelToken (filename-safe), buildLiveTrackFileName (live_<ts>_master.wav / live_<ts>_channel_<id>.wav), writeMultiTrackWavs (encodeWavStereo aus wavEncoder.ts reused, gibt Map<filename, Uint8Array>).",
+        "client/src/audio/AudioEngine.ts ERWEITERT (+~80 LOC). NEU _liveRecorder-Instanz, init() ruft setContext, clearCache() ruft cancel(). Public-API: getChannelTapNode(channelId|'master') → AudioNode|null (Master=masterGain, sonst channelNodes[id].panner), startLiveRecording(channels?: string[]) → boolean (Master immer dabei + alle channelNodes wenn channels=undefined sonst nur die explizit angegebenen), stopLiveRecording() → LiveRecordingResult, getter liveRecording, getLiveRecordingTrackCount, getLiveRecordingDurationMs, cancelLiveRecording, __getLiveRecorderForTests.",
+        "client/src/components/LiveRecorder/LiveRecorderPanel.tsx NEU (+~280 LOC). UI mit großem REC-Button (animate-pulse während Recording, ▮/● Icon-Swap), Time-Display MM:SS.cs (50ms-Polling via setInterval auf AudioEngine.getLiveRecordingDurationMs), Auto-Stop-Checkbox (disabled während Recording), Channel-Toggle-Liste mit 'Alle'/'Keine'-Buttons (Master immer eingeschlossen — eigenes pill), Error-Banner (z.B. bei truncated). Nach Stop: Download-Buttons pro Track + 'Alle WAVs'-Button (jeder triggert Blob+URL.createObjectURL+a.download). Semantische Tokens only (bg-accent-danger/bg-bg-panel/text-accent-primary etc.). Data-testids für live-recorder-panel / live-rec-toggle / live-rec-time / live-rec-autostop / live-rec-master-pill / live-rec-channel-<id> / live-rec-arm-all / live-rec-arm-none / live-rec-download-all / live-rec-download-master / live-rec-download-<id> / live-rec-result / live-rec-error.",
+        "client/src/components/LiveRecorder/index.ts NEU — barrel-export LiveRecorderPanel + Types.",
+        "client/src/App.tsx ERWEITERT (+~12 LOC). NEU Import LiveRecorderPanel. ActiveTool-Union um 'liverec' erweitert. NEU Tool-Subtab '🎙 Live-Rec' zwischen 'Song' und 'Script'. Conditional-Render <LiveRecorderPanel channels=... className='h-full'/> — channels werden aus dm.patterns.find(...).parts gemappt (id/name/color). Browser-Fallback ist automatisch via reines Web-Audio (kein Electron-IPC nötig).",
+        "tests/features/live-recorder.test.ts NEU (+~370 LOC, 27 Tests in 11 describes). (1) formatLiveRecordTimestamp × 2 — sortbares Format + Zero-Padding. (2) sanitizeChannelToken × 3 — Special-Char-Replace, empty-fallback, max-60-Length. (3) buildLiveTrackFileName × 3 — master-Pattern, channel-Pattern, Sanitize-mit-Sonderzeichen. (4) LiveRecorder.start/stop × 5 — Empty-Recording graceful, idempotent-start, addTrack/duplicate/Limit-32/empty-ID-reject. (5) Frame-Capture × 2 — Master+Kick mit feedFrames (2×4096) → durationSec=8192/48000 + Sample-Wert-Roundtrip, Mono→Stereo-Downmix (right=left.copy). (6) channels-explicit × 2 — Empty result wenn keine Tracks, Explicit-Channel-ID filtert. (7) recordedDurationMs × 3 — 0 wenn nie gestartet, ≥0 während Recording, fixed nach stop. (8) cancel × 1 — räumt alle Tracks ohne Encode. (9) writeMultiTrackWavs × 5 — N+1 Files (master+channels), valide WAV-Header pro Track (100 Frames Stereo = WAV_HEADER_SIZE+400), only-master, only-channels, Empty-Map. (10) __pushFramesForTest × 1 — Direct-Buffer-Write ohne ScriptProcessor. Alle 27 grün. Mock-AudioContext (MockAudioNode/MockGainNode/MockScriptProcessor/MockAudioBuffer) analog audio-recording.test.ts.",
+        "package.json 3.109.0 → 3.110.0. pnpm check: clean. pnpm test: 256 Files / 5816 passed / 16 skipped / 0 fail (vs v3.109.0 baseline 5787 passed: +27 Tests, kein Regress)."
+      ],
+      next: [
+        "Integration mit useAudioTrackStore.ts / useLiveInputStore.ts: aktuell ist der Channel-Toggle in LiveRecorderPanel ein React-internal Set — sollte mit dem existierenden Record-Arm-Flag (recordArmed) synchronisiert werden, damit Mixer + LiveRecorder ein einheitliches Arm-Konzept teilen.",
+        "Bundle-ZIP für Multi-Track-Download — aktuell triggern wir N separate Blob-Downloads (browser-blockt evtl. ab dem 4. Download). Sollte zu einem ZIP gebündelt werden (JSZip oder via Electron IPC mit yauzl).",
+        "'Import to Sample Library'-Button: nach Stop sollte der User direkt einen Track als neuen Sample im SamplePackBrowser landen (= useSamplePackStore.addPack + WeakMap-Bytes mappen).",
+        "AudioWorklet-Migration: ScriptProcessorNode ist deprecated. Worklet würde glitch-frei capturen und ist on the long-run robuster. Module-URL-Resolution für Vitest-Tests ist die Hürde.",
+        "Auto-Stop-on-Pattern-End: aktuell hört der Panel auf 'live-rec:autostop-tick' aber kein Event-Producer ist verkabelt. AudioEngine.onPosition step===0 sollte dispatchen — analog SongMode-Wiring in App.tsx.",
+        "Memory-Cap-Warning vor Stop: bei >80% Cap-Auslastung sollte das Time-Display orange werden (visual warn statt nur post-Stop-Error)."
+      ],
+      changed: [
+        "client/src/audio/LiveRecorder.ts (NEU, ~340 LOC, Class+Pure-Helpers+WAV-Multi-Track)",
+        "client/src/audio/AudioEngine.ts (+~80 LOC, getChannelTapNode + startLiveRecording + stopLiveRecording + liveRecording getter + cleanup-Wireup)",
+        "client/src/components/LiveRecorder/LiveRecorderPanel.tsx (NEU, ~280 LOC)",
+        "client/src/components/LiveRecorder/index.ts (NEU)",
+        "client/src/App.tsx (+~12 LOC, Live-Rec-Subtab + Channel-Mapping)",
+        "tests/features/live-recorder.test.ts (NEU, ~370 LOC, 27 Tests)",
+        "package.json (3.109.0 → 3.110.0)",
+        "agents/INDEX.js"
+      ]
+    },
     {
       agent:     "frontend",
       timestamp: "2026-05-19T12:20:00.000Z",

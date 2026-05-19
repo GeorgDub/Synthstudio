@@ -64,6 +64,51 @@ const electronAPI = {
     readFile: (filePath) => electron_1.ipcRenderer.invoke("fs:read-file", filePath),
     listDirectory: (dirPath) => electron_1.ipcRenderer.invoke("fs:list-directory", dirPath),
     writeFile: (filePath, data) => electron_1.ipcRenderer.invoke("fs:write-file", filePath, data),
+    // ── Sample-Pack-Read (v3.107.0) ─────────────────────────────────────────────
+    /**
+     * Registriert einen Pack-Root in der Main-Allow-List. Vor jedem
+     * `packReadFile`-Call muss der dazugehörige Root einmal registriert sein
+     * (idempotent). Main validiert: existiert, ist Verzeichnis, absolute path.
+     */
+    packRegisterRoot: (rootPath) => electron_1.ipcRenderer.invoke("pack:registerRoot", rootPath),
+    /**
+     * Liest eine User-importierte Sample-Datei. Main-Side validiert
+     * gegen Path-Traversal: Endung-Whitelist, NUL-Byte-Defense, Root-
+     * Containment (Pfad muss unter einem registrierten Root liegen),
+     * 100 MB Size-Cap.
+     */
+    packReadFile: (filePath) => electron_1.ipcRenderer.invoke("pack:readFile", filePath),
+    // ── Sample-Pack Folder-Dialog + Recursive-Scan (v3.108.0) ───────────────────
+    /**
+     * Öffnet den nativen Folder-Dialog. Returnt `{canceled, filePaths}` —
+     * Cancel = filePaths leer. SECURITY: Pfad kommt aus dem OS-Dialog, nicht
+     * vom Renderer.
+     */
+    packChooseFolder: () => electron_1.ipcRenderer.invoke("pack:chooseFolder"),
+    /**
+     * Rekursiver Scan eines bereits via `packRegisterRoot` eingetragenen
+     * Pack-Roots. Main-Side enforced: max 5000 files, max 4 sub-folder depth,
+     * Audio-Extension-Whitelist, kein Symlink-Follow, NUL-Byte-Defense,
+     * Root-Containment-Check.
+     */
+    packScanFolder: (rootPath) => electron_1.ipcRenderer.invoke("pack:scanFolder", rootPath),
+    // ── Audio-Recording-Save (TASK-234 / v2.86) ────────────────────────────────
+    /**
+     * Schreibt einen WAV-Buffer in userData/recordings/<filename>.
+     * Main-Side validiert strikt (Filename, WAV-Header, Path-Traversal).
+     */
+    saveRecording: (filename, data) => electron_1.ipcRenderer.invoke("audio:save-recording", filename, data),
+    // ── License Persistence (TASK-232 / v2.97) ─────────────────────────────────
+    /**
+     * Liest die persistente Lizenz-State aus userData/license.json.
+     * Bei fehlender Datei: { success: true, data: null }.
+     */
+    readLicense: () => electron_1.ipcRenderer.invoke("license:read"),
+    /**
+     * Schreibt die Lizenz-State nach userData/license.json. Main-Side
+     * validiert das Shape (Whitelist) bevor geschrieben wird.
+     */
+    writeLicense: (state) => electron_1.ipcRenderer.invoke("license:write", state),
     // ── Folder-Import ────────────────────────────────────────────────────────────
     /** Startet einen Folder-Import und gibt die importId zurück */
     importFolder: (folderPath) => electron_1.ipcRenderer.invoke("samples:import-folder", folderPath),
@@ -82,6 +127,64 @@ const electronAPI = {
      * direkt über den IPC-Kanal übertragen werden kann.
      */
     importMidiFile: (filePath) => electron_1.ipcRenderer.invoke("midi:import-file", filePath),
+    // ── KORG Electribe Pattern-Import (TASK-237 / v2.88) ────────────────────────
+    /** Öffnet den nativen Datei-Dialog für .e2pattern/.e2sallpat. */
+    openElectribeDialog: () => electron_1.ipcRenderer.invoke("electribe:open-dialog"),
+    /**
+     * Liest eine .e2pattern/.e2sallpat-Datei und gibt die Bytes als number[]
+     * zurück. Main-Side validiert Endung, Größe (max 5 MB) und Lesbarkeit.
+     */
+    importElectribeFile: (filePath) => electron_1.ipcRenderer.invoke("electribe:import-file", filePath),
+    // ── KORG Sample-Bank-Import (v3.3.0) ─────────────────────────────────────────
+    /** Öffnet den nativen Datei-Dialog für .esx/.ess/.all KORG Sample-Banks. */
+    openKorgBankDialog: () => electron_1.ipcRenderer.invoke("korg:open-bank-dialog"),
+    /**
+     * Liest eine .esx oder .all Sample-Bank von Disk und liefert die Bytes als
+     * number[]. Main-Side validiert Endung (.esx/.ess/.all), Größe (max 100 MB)
+     * und Lesbarkeit. Renderer ruft anschließend parseEsxBank()/parseE2sBank().
+     */
+    importKorgBank: (filePath) => electron_1.ipcRenderer.invoke("korg:import-bank", filePath),
+    /** Liefert das aktuelle Bank-File-Size-Cap (Bytes) für UI-Hinweise. */
+    getKorgBankCap: () => electron_1.ipcRenderer.invoke("korg:get-bank-cap"),
+    // ── KORG Sample-Bank EXPORT (v3.4.0) ────────────────────────────────────────
+    /**
+     * Speichert einen E2S `.all`-Buffer via nativen Save-Dialog. Main-Side
+     * validiert Magic-Bytes + Größen-Cap (256 MB) + Endung. Pfad kommt aus
+     * dem Dialog (nicht vom Renderer) — kein Path-Traversal-Vektor.
+     *
+     * Datenformat: ArrayBuffer wird über IPC als Uint8Array übertragen.
+     */
+    saveKorgBankAs: (suggestedFilename, data) => electron_1.ipcRenderer.invoke("korg:save-bank-as", suggestedFilename, data instanceof Uint8Array ? Array.from(data) : Array.from(new Uint8Array(data))),
+    /** Liefert das Export-Buffer-Cap (Bytes) für UI-Hinweise. */
+    getKorgBankSaveCap: () => electron_1.ipcRenderer.invoke("korg:get-bank-save-cap"),
+    // ── E2 Pattern Export (v3.26.0) ────────────────────────────────────────────
+    /**
+     * Speichert ein gebautes 16640-Byte `.e2spat`-File via nativen Save-Dialog.
+     * Main-Side validiert Magic + Größe (exakt 16640) + PTST-Marker + Endung.
+     * Pfad kommt aus dem Dialog — kein Path-Traversal-Vektor.
+     */
+    saveE2Pattern: (suggestedFilename, data) => electron_1.ipcRenderer.invoke("electribe:save-pattern", suggestedFilename, data instanceof Uint8Array ? Array.from(data) : Array.from(new Uint8Array(data))),
+    /** Liefert die exakte Hardware-Größe einer .e2spat-Datei (= 16640 Bytes). */
+    getE2PatternSize: () => electron_1.ipcRenderer.invoke("electribe:get-pattern-size"),
+    // ── ESX-1 Bank Pattern-Patch Export (v3.29.0) ──────────────────────────────
+    /**
+     * Speichert eine vom Renderer per `patchEsxBankPattern` modifizierte .esx-
+     * Bank via nativen Save-Dialog. Main-Side validiert Magic (KORG@0x00 +
+     * ESX\0@0x08) + Größe (Min 0x00250010..Max 64MB) + Endung (.esx). Pfad kommt
+     * aus dem Dialog — kein Path-Traversal-Vektor.
+     */
+    saveEsxBankAs: (suggestedFilename, data) => electron_1.ipcRenderer.invoke("esx:save-bank-as", suggestedFilename, data instanceof Uint8Array ? Array.from(data) : Array.from(new Uint8Array(data))),
+    /** Liefert das ESX-Bank-Save-Cap (Bytes) für UI-Hinweise. */
+    getEsxBankSaveCap: () => electron_1.ipcRenderer.invoke("esx:get-bank-save-cap"),
+    // ── Project AutoSave (v3.56.0) ─────────────────────────────────────────────
+    /** Schreibt eine Projekt-Version unter userData/autosave/<projectId>/<versionId>.synth */
+    autoSaveWrite: (projectId, versionId, json, label) => electron_1.ipcRenderer.invoke("autosave:write", projectId, versionId, json, label),
+    /** Listet alle Versionen für ein Projekt (DESC nach Timestamp). */
+    autoSaveList: (projectId) => electron_1.ipcRenderer.invoke("autosave:list", projectId),
+    /** Lädt eine Version (JSON-Quelle zurück). */
+    autoSaveRestore: (projectId, versionId) => electron_1.ipcRenderer.invoke("autosave:restore", projectId, versionId),
+    /** Löscht eine Version (idempotent). */
+    autoSaveDelete: (projectId, versionId) => electron_1.ipcRenderer.invoke("autosave:delete", projectId, versionId),
     // Import-Events
     onImportStarted: createEventListener("samples:import-started"),
     onImportProgress: createEventListener("samples:import-progress"),
@@ -402,5 +505,16 @@ const electronAPI = {
     stopCollabDiscovery: () => electron_1.ipcRenderer.invoke("collab:discovery-stop"),
     /** Gibt alle aktuell sichtbaren Sessions im Netzwerk zurück. */
     getDiscoveredSessions: () => electron_1.ipcRenderer.invoke("collab:get-discovered"),
+    // ─── v2.23: Direkter OSC-UDP-Listener ─────────────────────────────────────
+    startOscServer: (options) => electron_1.ipcRenderer.invoke("osc:start", options),
+    stopOscServer: () => electron_1.ipcRenderer.invoke("osc:stop"),
+    getOscServerStatus: () => electron_1.ipcRenderer.invoke("osc:status"),
+    onOscIncoming: (cb) => {
+        const handler = (_e, payload) => cb(payload);
+        electron_1.ipcRenderer.on("osc:incoming", handler);
+        return () => electron_1.ipcRenderer.removeListener("osc:incoming", handler);
+    },
+    // v2.26: OSC-Send-Out
+    sendOscMessage: (options) => electron_1.ipcRenderer.invoke("osc:send", options),
 };
 electron_1.contextBridge.exposeInMainWorld("electronAPI", electronAPI);

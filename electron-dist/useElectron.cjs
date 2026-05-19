@@ -54,6 +54,51 @@ const browserAPI = {
         success: false,
         error: "Nicht in Electron – nutze File System Access API",
     }),
+    // Recording-Save: Browser-Fallback gibt success:false zurück → der Renderer-Code
+    // (recordingStorage.ts) erkennt das und legt stattdessen in IndexedDB ab.
+    saveRecording: async (_filename, _data) => ({
+        success: false,
+        error: "Nicht in Electron – nutze IndexedDB",
+    }),
+    // ── KORG Sample-Bank Export (v3.4.0+, exposed im Hook ab v3.10.0) ───────────
+    // Browser-Fallback signalisiert success:false → KorgBankEditor fällt auf
+    // Blob/<a download> zurück.
+    saveKorgBankAs: async (_suggestedFilename, _data) => ({
+        success: false,
+        error: "Nicht in Electron – nutze Blob-Download-Fallback",
+    }),
+    getKorgBankSaveCap: async () => 256 * 1024 * 1024, // Hard-Cap-Mirror der Main-Side.
+    // ── E2 Pattern EXPORT (v3.26.0) ────────────────────────────────────────────
+    // Browser-Fallback signalisiert success:false → DrumMachine fällt auf
+    // Blob/<a download> zurück.
+    saveE2Pattern: async (_suggestedFilename, _data) => ({
+        success: false,
+        error: "Nicht in Electron – nutze Blob-Download-Fallback",
+    }),
+    getE2PatternSize: async () => 16640, // Hardware-Exact-Size mirror.
+    // ── ESX-1 Bank EXPORT (v3.29.0) ────────────────────────────────────────────
+    // Browser-Fallback signalisiert success:false → KorgBankEditor (ESX mode)
+    // fällt auf Blob-Download zurück.
+    saveEsxBankAs: async (_suggestedFilename, _data) => ({
+        success: false,
+        error: "Nicht in Electron – nutze Blob-Download-Fallback",
+    }),
+    getEsxBankSaveCap: async () => 64 * 1024 * 1024, // 64 MB Cap mirror.
+    // ── Project AutoSave (v3.56.0) ─────────────────────────────────────────────
+    // Browser-Fallback: success:false → AutoSaveEngine fällt auf IndexedDB zurück.
+    autoSaveWrite: async (_projectId, _versionId, _json, _label) => ({
+        success: false,
+        error: "Nicht in Electron – nutze IndexedDB-Fallback",
+    }),
+    autoSaveList: async (_projectId) => ({ success: false, error: "Nicht in Electron – nutze IndexedDB-Fallback" }),
+    autoSaveRestore: async (_projectId, _versionId) => ({
+        success: false,
+        error: "Nicht in Electron – nutze IndexedDB-Fallback",
+    }),
+    autoSaveDelete: async (_projectId, _versionId) => ({
+        success: false,
+        error: "Nicht in Electron – nutze IndexedDB-Fallback",
+    }),
     importFolder: async (_folderPath) => ({ importId: "" }),
     cancelImport: async (_importId) => ({ success: false, error: "Nicht in Electron" }),
     importZip: async (_zipPath) => ({ importId: "" }),
@@ -245,6 +290,19 @@ const browserAPI = {
     storeRemoveRecent: async (_filePath) => ({ success: false, error: "Nicht in Electron" }),
     storeClearRecent: async () => ({ success: false, error: "Nicht in Electron" }),
     onRecentProjectsChanged: noopDataListener(),
+    // v2.23: OSC-UDP-Listener (Browser kann keinen UDP-Socket öffnen)
+    startOscServer: async (_options) => ({ success: false, error: "OSC-UDP-Listener benötigt die Electron-Desktop-App" }),
+    stopOscServer: async () => ({ success: true }),
+    getOscServerStatus: async () => ({
+        listening: false,
+        port: null,
+        bindHost: null,
+        receivedCount: 0,
+        errorCount: 0,
+        lastMessage: null,
+    }),
+    onOscIncoming: noopDataListener(),
+    sendOscMessage: async (_options) => ({ success: false, error: "OSC-Send benötigt die Electron-Desktop-App" }),
 };
 // ─── Haupt-Hook ───────────────────────────────────────────────────────────────
 function useElectron() {
@@ -264,6 +322,21 @@ function useElectron() {
         readFile: api.readFile,
         listDirectory: api.listDirectory,
         writeFile: api.writeFile,
+        saveRecording: api.saveRecording ?? browserAPI.saveRecording,
+        // v3.10.0 — KORG Bank Export
+        saveKorgBankAs: api.saveKorgBankAs ?? browserAPI.saveKorgBankAs,
+        getKorgBankSaveCap: api.getKorgBankSaveCap ?? browserAPI.getKorgBankSaveCap,
+        // v3.26.0 — E2 Pattern Export (.e2spat)
+        saveE2Pattern: api.saveE2Pattern ?? browserAPI.saveE2Pattern,
+        getE2PatternSize: api.getE2PatternSize ?? browserAPI.getE2PatternSize,
+        // v3.29.0 — ESX-1 Bank Export (.esx)
+        saveEsxBankAs: api.saveEsxBankAs ?? browserAPI.saveEsxBankAs,
+        getEsxBankSaveCap: api.getEsxBankSaveCap ?? browserAPI.getEsxBankSaveCap,
+        // v3.56.0 — Project AutoSave
+        autoSaveWrite: api.autoSaveWrite ?? browserAPI.autoSaveWrite,
+        autoSaveList: api.autoSaveList ?? browserAPI.autoSaveList,
+        autoSaveRestore: api.autoSaveRestore ?? browserAPI.autoSaveRestore,
+        autoSaveDelete: api.autoSaveDelete ?? browserAPI.autoSaveDelete,
         importFolder: api.importFolder,
         cancelImport: api.cancelImport,
         importZip: api.importZip,
@@ -444,6 +517,13 @@ function useElectron() {
         onPatternLibraryPopupState: api.onPatternLibraryPopupState,
         onPatternLibraryPopupAction: api.onPatternLibraryPopupAction,
         onPatternLibraryPopupClosed: api.onPatternLibraryPopupClosed,
+        // v2.23: Direkter OSC-UDP-Listener
+        startOscServer: api.startOscServer,
+        stopOscServer: api.stopOscServer,
+        getOscServerStatus: api.getOscServerStatus,
+        onOscIncoming: api.onOscIncoming,
+        // v2.26: OSC-Send-Out
+        sendOscMessage: api.sendOscMessage,
     };
 }
 // ─── Spezialisierte Hooks ─────────────────────────────────────────────────────

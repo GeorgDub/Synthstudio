@@ -21,6 +21,7 @@ import { MidiClockOut } from "./MidiClockOut";
 import { MidiNoteOut, type MidiPartConfig } from "./MidiNoteOut";
 import { MidiClickOut, type MidiClickConfig } from "./MidiClickOut";
 import { AudioRecorder, type RecordingResult, MAX_SIMULTANEOUS_RECORDINGS } from "./AudioRecorder";
+import { LiveRecorder, type LiveRecordingResult } from "./LiveRecorder";
 import { LooperEngine } from "./LooperEngine";
 import type { LoopState } from "./looperUtils";
 // v3.44.0 (TASK-239 Phase 1): AudioWorklet-Plugin-Host. Built-Ins werden in
@@ -1061,6 +1062,11 @@ class AudioEngineClass {
     // Record-Pipeline (TASK-234) — Recorder bekommt den AudioContext, hängt
     // sich aber erst auf explizites startRecording() in die Signal-Pfade.
     this._audioRecorder.setContext(this.ctx);
+
+    // Live-Multi-Track-Recorder (v3.110.0) — Session-Capture. Wird beim
+    // startLiveRecording() scharfgeschaltet, tappt master + alle gewählten
+    // Channel-Panner.
+    this._liveRecorder.setContext(this.ctx);
 
     // Live-Looper (TASK-235) — Loops mischen direkt in masterGain (post-FX,
     // sodass Loop-Playback nicht durch die per-Channel-FX-Chain läuft).
@@ -2666,6 +2672,8 @@ class AudioEngineClass {
     // Aktive Aufnahmen abräumen (TASK-234) — verhindert Zombie-Recorder
     // wenn der Cache während einer aufnahme geleert wird.
     this._audioRecorder.dispose();
+    // Live-Multi-Track-Recorder (v3.110.0) — falls noch eine Session läuft.
+    this._liveRecorder.cancel();
     // Looper (TASK-235): Buffer + Nodes freigeben
     this._looperEngine.dispose();
   }
@@ -5384,6 +5392,7 @@ class AudioEngineClass {
   // armed-Flag lebt im Store (useLiveInputStore / useAudioTrackStore).
 
   private _audioRecorder = new AudioRecorder();
+  private _liveRecorder = new LiveRecorder();
   private _looperEngine = new LooperEngine();
 
   /**
@@ -5472,6 +5481,81 @@ class AudioEngineClass {
   /** Bricht eine Aufnahme ab OHNE Encode (Cleanup-Pfad bei removeChannel). */
   cancelRecording(channelId: string): void {
     this._audioRecorder.cancel(channelId);
+  }
+
+  // ─── Live-Multi-Track-Recording (v3.110.0) ──────────────────────────────
+  //
+  // ECHTE Real-Time-Session-Capture (vs. channelBounce.ts = offline-render).
+  // Während Playback werden ALLE Live-Tweaks (Knobs, Mute/Solo, Pattern-
+  // Switches, Macros) mitgeschnitten. Liefert Master + Per-Channel-WAVs.
+
+  /**
+   * Liefert oder erzeugt einen Tap-Node für einen Channel.
+   * Aktuell = panner (post-FX, pre-master). Master-ID = "master" → masterGain.
+   */
+  getChannelTapNode(channelId: string): AudioNode | null {
+    if (channelId === "master") return this.masterGain;
+    const nodes = this.channelNodes.get(channelId);
+    return nodes?.panner ?? null;
+  }
+
+  /**
+   * Startet ein Live-Multi-Track-Recording. `channels === undefined` = ALLE
+   * registrierten Channels werden getapped (zzgl. Master). Sonst nur die
+   * angegebenen IDs.
+   */
+  startLiveRecording(channels?: string[]): boolean {
+    if (!this.ctx) return false;
+    // Sicherstellen dass keine alte Session noch läuft.
+    if (this._liveRecorder.isRunning) return false;
+    this._liveRecorder.setContext(this.ctx);
+    this._liveRecorder.start(undefined, this.ctx.sampleRate);
+    // Master immer dabei.
+    if (this.masterGain) {
+      this._liveRecorder.addTrack("master", this.masterGain, "master", 2);
+    }
+    // Channels — entweder explizit, oder alle bekannten.
+    const ids = channels && channels.length > 0
+      ? channels.filter(c => c !== "master")
+      : Array.from(this.channelNodes.keys());
+    for (const id of ids) {
+      const tap = this.getChannelTapNode(id);
+      if (tap) this._liveRecorder.addTrack(id, tap, "channel", 2);
+    }
+    return true;
+  }
+
+  /** Stoppt das Live-Recording und liefert das fertige Result. */
+  stopLiveRecording(): LiveRecordingResult {
+    return this._liveRecorder.stop();
+  }
+
+  /** True solange `startLiveRecording` lief. */
+  get liveRecording(): boolean {
+    return this._liveRecorder.isRunning;
+  }
+
+  /** Anzahl aktuell getappter Tracks (Master + Channels). */
+  getLiveRecordingTrackCount(): number {
+    return this._liveRecorder.trackCount;
+  }
+
+  /** Aufnahmedauer in ms (für UI-Timer). */
+  getLiveRecordingDurationMs(): number {
+    return this._liveRecorder.recordedDurationMs;
+  }
+
+  /** Bricht Live-Recording ohne Encode ab (Cleanup). */
+  cancelLiveRecording(): void {
+    this._liveRecorder.cancel();
+  }
+
+  /**
+   * Test-Helper — direkter Zugriff auf den Recorder. Nicht für Produktiv-Code.
+   * Wird in tests/features/live-recorder.test.ts genutzt.
+   */
+  __getLiveRecorderForTests(): LiveRecorder {
+    return this._liveRecorder;
   }
 
   // ─── Live-Looper (TASK-235 / v2.87) ──────────────────────────────────────

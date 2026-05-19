@@ -172,6 +172,7 @@ import {
   getActiveSong as getActiveSongMode,
 } from "@/store/useSongModeStore";
 import { SongModePanel } from "@/components/SongMode/SongModePanel";
+import { LiveRecorderPanel } from "@/components/LiveRecorder";
 import {
   mapElectribeLaneToAutomationTarget,
   scaleMotionPointsToStepCount,
@@ -1449,7 +1450,7 @@ export default function App() {
     setActiveTab(tab);
     localStorage.setItem("ss-layout:active-tab", tab);
   }, []);
-  const [activeTool, setActiveTool] = useState<'prompt' | 'algorithmic' | 'chords' | 'sampler' | 'workbench' | 'library' | 'script' | 'omnitribe' | 'packs' | 'song'>('prompt');
+  const [activeTool, setActiveTool] = useState<'prompt' | 'algorithmic' | 'chords' | 'sampler' | 'workbench' | 'library' | 'script' | 'omnitribe' | 'packs' | 'song' | 'liverec'>('prompt');
 
   // ── Dialog-State ─────────────────────────────────────────────────────────
   const [showMidiSettings, setShowMidiSettings] = useState(false);
@@ -4122,6 +4123,7 @@ export default function App() {
                       { id: "library",     label: "📚 Library" },
                       { id: "packs",       label: "📦 Packs" },
                       { id: "song",        label: "🎼 Song" },
+                      { id: "liverec",     label: "🎙 Live-Rec" },
                       { id: "script",      label: "⚡ Script" },
                       { id: "omnitribe",   label: "🎛 OmniTribe" },
                     ] as const).map(t => (
@@ -4282,6 +4284,16 @@ export default function App() {
                       <SongModePanel
                         patterns={dm.patterns}
                         activePatternId={dm.activePatternId}
+                        className="h-full"
+                      />
+                    )}
+                    {activeTool === 'liverec' && (
+                      <LiveRecorderPanel
+                        channels={(dm.patterns.find(p => p.id === dm.activePatternId)?.parts ?? []).map(p => ({
+                          id: p.id,
+                          name: p.name,
+                          color: p.color,
+                        }))}
                         className="h-full"
                       />
                     )}
