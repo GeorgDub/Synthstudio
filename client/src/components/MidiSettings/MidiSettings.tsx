@@ -50,6 +50,7 @@ import {
   deleteUserMidiTemplate,
   renameUserMidiTemplate,
 } from "@/store/useUserMidiTemplatesStore";
+import { useSubMixStore, MAX_SUB_MIX_BUSES, type SubMixBus } from "@/store/useSubMixStore";
 
 interface MidiSettingsProps {
   midi: MidiState & MidiActions;
@@ -98,11 +99,53 @@ function noteToName(note: number): string {
   return `${names[note % 12]}${octave}`;
 }
 
+/**
+ * v3.82: Pure-Helper — generiert AutoLearn-Einträge für die ersten N Sub-Mix-
+ * Buses (max MAX_SUB_MIX_BUSES=8). Wird vom "Sub-Mix-Buses"-Preset und den
+ * Tests benutzt. Exportiert damit die Tests die Logik ohne React-Render
+ * verifizieren können.
+ *
+ * Pro Bus:
+ *   - 1 CC-Entry für subMixBusVolume (Fader)
+ *   - 1 Note-Entry für subMixBusMute (Toggle-Button) — wenn `withMute=true`
+ *
+ * User dreht erst die N Fader und drückt dann die N Mute-Buttons seines
+ * Controllers — Synthstudio bindet alle automatisch.
+ *
+ * `withMute=false` erzeugt nur die N Volume-CC-Entries (für reine Fader-
+ * Controller wie nanoKONTROL2-Style ohne dedizierte Mute-Buttons).
+ *
+ * Defensive: hart auf MAX_SUB_MIX_BUSES (=8) gecapt, leere Bus-Liste → [].
+ */
+export function buildSubMixBusAutoLearnEntries(
+  buses: ReadonlyArray<{ id: string; name: string }>,
+  withMute = true,
+): AutoLearnEntry[] {
+  const capped = buses.slice(0, MAX_SUB_MIX_BUSES);
+  const volEntries: AutoLearnEntry[] = capped.map((b) => ({
+    kind: "cc" as const,
+    target: { type: "subMixBusVolume" as const, busId: b.id, busName: b.name },
+  }));
+  if (!withMute) return volEntries;
+  const muteEntries: AutoLearnEntry[] = capped.map((b) => ({
+    kind: "note" as const,
+    partId: `sub-mix-bus-${b.id}`,
+    partName: `Bus Mute: ${b.name}`,
+    target: { type: "subMixBusMute" as const, busId: b.id, busName: b.name },
+  }));
+  return [...volEntries, ...muteEntries];
+}
+
 // ─── Komponente ───────────────────────────────────────────────────────────────
 
 export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
   // v1.78: für Script-Run-Targets brauchen wir die Liste aller Scripts
   const { scripts } = useScriptStore();
+  // v3.82: Sub-Mix-Buses für Auto-Learn-Preset "Sub-Mix-Buses".
+  // Wir lesen die Buses reaktiv damit das Preset live disabled/enabled wenn
+  // der User im Mixer einen Bus erstellt/löscht.
+  const subMixState = useSubMixStore();
+  const subMixBuses: ReadonlyArray<SubMixBus> = subMixState.buses;
   // v1.96: User-Templates (gespeicherte Mappings)
   const userTemplates = useUserMidiTemplates();
   const [userTplName, setUserTplName] = useState("");
@@ -699,7 +742,17 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
     setPadBankSlots(sliceAutoConfigureSlots());
   }
 
-  const autoLearnPresets: Array<{ label: string; description: string; build: () => AutoLearnEntry[] }> = [
+  type AutoLearnPreset = {
+    label: string;
+    description: string;
+    build: () => AutoLearnEntry[];
+    /** v3.82: Optional Per-Preset-Disabled (z.B. wenn 0 Sub-Mix-Buses existieren). */
+    disabled?: boolean;
+    /** v3.82: Optional Tooltip (HTML title=) wenn das Preset disabled ist. */
+    tooltip?: string;
+  };
+
+  const autoLearnPresets: AutoLearnPreset[] = [
     {
       label: "Mixer (Volumes + Mutes)",
       description: `${parts.length} CC-Lautstärken + ${parts.length} CC-Mutes`,
@@ -750,6 +803,19 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
       label: "Korg Electribe 2 → Performance-Pads (16)",
       description: "16 Pads des Electribe 2 (oder anderer 16-Pad-Controller) auf das 4×4 Performance-Mode-Grid mappen (v2.78)",
       build: () => perfPadNoteEntries(16),
+    },
+    // v3.82: Sub-Mix-Buses-Preset — schließt v3.81 Caveat (kein Auto-Learn-
+    // Preset für Sub-Mix-Bus-Faders/Mutes).
+    {
+      label: "Sub-Mix-Buses",
+      description: subMixBuses.length === 0
+        ? "Erstelle zuerst Buses im Mixer (max 8)"
+        : `${Math.min(subMixBuses.length, MAX_SUB_MIX_BUSES)} Faders → Bus-Volumes + ${Math.min(subMixBuses.length, MAX_SUB_MIX_BUSES)} Notes → Bus-Mutes`,
+      build: () => buildSubMixBusAutoLearnEntries(subMixBuses, true),
+      disabled: subMixBuses.length === 0,
+      tooltip: subMixBuses.length === 0
+        ? "Erstelle zuerst Sub-Mix-Buses im Mixer (Button '+ New Bus')"
+        : `Lernt ${Math.min(subMixBuses.length, MAX_SUB_MIX_BUSES)} Faders → Bus-Volumes`,
     },
   ];
 
@@ -858,20 +924,25 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
                 </span>
               )}
             </div>
-            {autoLearnPresets.map(({ label, description, build }) => (
-              <button
-                key={label}
-                onClick={() => midi.isEnabled && midi.startAutoLearn(build())}
-                disabled={!midi.isEnabled}
-                className="w-full flex items-center justify-between p-2 rounded text-left text-xs bg-bg-elevated hover:bg-accent-primary/20 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-              >
-                <div>
-                  <div className="text-text-primary font-medium">{label}</div>
-                  <div className="text-text-dim text-[10px] mt-0.5">{description}</div>
-                </div>
-                <span className="text-accent-secondary text-[10px]">▶ Start</span>
-              </button>
-            ))}
+            {autoLearnPresets.map(({ label, description, build, disabled, tooltip }) => {
+              const isDisabled = !midi.isEnabled || disabled === true;
+              return (
+                <button
+                  key={label}
+                  data-testid={`auto-learn-preset-${label}`}
+                  onClick={() => !isDisabled && midi.startAutoLearn(build())}
+                  disabled={isDisabled}
+                  title={tooltip}
+                  className="w-full flex items-center justify-between p-2 rounded text-left text-xs bg-bg-elevated hover:bg-accent-primary/20 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                >
+                  <div>
+                    <div className="text-text-primary font-medium">{label}</div>
+                    <div className="text-text-dim text-[10px] mt-0.5">{description}</div>
+                  </div>
+                  <span className="text-accent-secondary text-[10px]">▶ Start</span>
+                </button>
+              );
+            })}
           </div>
         )}
       </div>

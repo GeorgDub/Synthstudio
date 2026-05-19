@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.81.0",
+    version: "3.82.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -887,6 +887,16 @@ const INDEX = {
     "client/src/components/MidiSettings/MidiSettings.tsx (v3.37.0 formatPatternPosition)": {
       role:     "v3.37.0 ERWEITERT: v3.36 Clock-IN-Section + SPP-Display bleiben + NEU Pattern-Length-aware Display. SPP-Display ruft jetzt formatPatternPosition(midi.clockInSpp, AudioEngine.stepCount) und rendert display.label. Wenn isLooped (positionStep ≥ stepCount): label endet auf ' (loop)' + Sub-Text 'Step N/M · MIDI-Beat N · Loop X' (statt nur 'Step N · MIDI-Beat N'). Imports erweitert um AudioEngine + formatPatternPosition. v3.35 Status-LED + externes BPM-Display + Toggle unverändert. v3.36 Hinweis-Text unverändert.",
       lastSeen: "2026-05-18T18:30:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/components/MidiSettings/MidiSettings.tsx (v3.82.0 sub-mix-auto-learn-preset)": {
+      role:     "v3.82.0 ERWEITERT (+~70 LOC, bestehende v3.37.0/v3.36/v2.79/v2.78/v1.96/v1.81/v1.79/v1.78/v1.76/v1.72/v1.71 bleibt): NEU exportierter Modul-Scope Pure-Helper `buildSubMixBusAutoLearnEntries(buses, withMute=true)`. Generiert pro Bus AutoLearnEntry mit kind:'cc'+target:{type:'subMixBusVolume',busId,busName} und kind:'note'+target:{type:'subMixBusMute',busId,busName} (note.partId='sub-mix-bus-<id>' + note.partName='Bus Mute: <name>' nur für UI-Progress-Display). Hart auf MAX_SUB_MIX_BUSES (=8) gecapt via slice(0,MAX) — defensive auch wenn der Store bereits gecapt ist. `withMute=false` → nur N Volume-CC-Entries (für reine Fader-Controller). NEU useSubMixStore-Subscription in der Komponente (subMixBuses reactive). NEU 'Sub-Mix-Buses'-Eintrag im autoLearnPresets-Array — disabled wenn subMixBuses.length === 0, Tooltip 'Lernt N Faders → Bus-Volumes' bei vorhandenen Buses bzw. 'Erstelle zuerst Sub-Mix-Buses im Mixer' bei 0. NEU AutoLearnPreset-Type-Alias mit optionalem disabled+tooltip. NEU `data-testid=auto-learn-preset-<label>` auf jedem Preset-Button. Render-Logik: `isDisabled = !midi.isEnabled || preset.disabled === true`. Imports +useSubMixStore +MAX_SUB_MIX_BUSES +SubMixBus.",
+      lastSeen: "2026-05-19T05:35:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "tests/features/sub-mix-auto-learn.test.ts (v3.82.0)": {
+      role:     "v3.82.0 NEU (~190 LOC, 15 Tests in 6 describes, env:node — kein jsdom-Render, importiert direkt den exported Pure-Helper aus MidiSettings.tsx). (1) Entry-Generation × 3: 8 Buses → 16 Entries (8 CC + 8 Note), 3 Buses → 6 Entries, Reihenfolge (alle Volumes vor Mutes). (2) Target-Shape × 3: CC-Entry hat subMixBusVolume+busId+busName, Note-Entry hat subMixBusMute+partId='sub-mix-bus-<id>'+partName='Bus Mute: <name>', pro Bus genau 2 Targets mit identischem busId. (3) MAX-Cap × 2: 9 Buses → erste 8 (hart auf MAX_SUB_MIX_BUSES), MAX === 8 Invariante. (4) 0-Buses × 3: empty → empty, empty+withMute=false → empty, UI-Disabled-Spiegel (subMixBuses.length === 0 → preset.disabled). (5) withMute-Toggle × 2: false → nur N Volume-Entries, true (Default) → 2× soviel. (6) Round-Trip × 2: Entries deterministisch (JSON-Stringify-Vergleich) + AutoLearnEntry-Shape-Sanity (discriminated-union 'cc'|'note').",
+      lastSeen: "2026-05-19T05:35:00.000Z",
       ownedBy:  "frontend"
     },
     "client/src/utils/patternPosition.ts (v3.37.0)": {
@@ -2287,6 +2297,29 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "frontend",
+      timestamp: "2026-05-19T05:35:00.000Z",
+      done: [
+        "v3.82.0: Sub-Mix-Bus Auto-Learn-Preset (closes v3.81 Caveat 'Auto-Learn-Preset für Sub-Mix-Buses in MidiSettings'). MidiSettings hatte bisher 6 Auto-Learn-Presets (Mixer/Pads/Komplett/Transport/Pattern-Navigation/Electribe-16-Pads) — keiner für Sub-Mix-Bus-Faders/Mutes. Jetzt: dedicated 'Sub-Mix-Buses'-Preset generiert pro Bus 1× CC-Volume-Entry + 1× Note-Mute-Entry (max MAX_SUB_MIX_BUSES=8). User klickt das Preset, dreht erst die N Fader, drückt dann die N Mute-Buttons seines Controllers — alle 2N Targets gemappt mit einem Workflow.",
+        "client/src/components/MidiSettings/MidiSettings.tsx ERWEITERT (+~70 LOC): NEU Modul-Scope Pure-Helper `buildSubMixBusAutoLearnEntries(buses, withMute=true)` (exportiert für Tests). Generiert für jeden Bus AutoLearnEntry mit kind:'cc'+target:subMixBusVolume und kind:'note'+target:subMixBusMute. Hart auf MAX_SUB_MIX_BUSES (=8) gecapt (defensive gegen State-Drift, auch wenn der Store bereits gecapt ist). NEU useSubMixStore-Subscription im Component (reaktive Bus-Liste). NEU Preset 'Sub-Mix-Buses' in autoLearnPresets-Array — disabled wenn subMixBuses.length === 0 mit Tooltip 'Erstelle zuerst Sub-Mix-Buses im Mixer'. NEU AutoLearnPreset-Type-Alias mit optionalem `disabled` + `tooltip` Feldern. NEU `data-testid=auto-learn-preset-<label>` auf jedem Preset-Button. Render-Logik: `isDisabled = !midi.isEnabled || preset.disabled === true`.",
+        "tests/features/sub-mix-auto-learn.test.ts (NEU, ~190 LOC, 15 Tests in 6 describes, env:node). (1) Entry-Generation × 3: 8 Buses → 16 Entries (8 CC + 8 Note), 3 Buses → 6 Entries, Reihenfolge (alle Volumes vor Mutes). (2) Target-Shape × 3: CC-Entry hat subMixBusVolume mit korrektem busId+busName, Note-Entry hat subMixBusMute + partId='sub-mix-bus-<id>' + partName='Bus Mute: <name>', pro Bus genau 2 Targets mit identischem busId. (3) MAX-Cap × 2: 9 Buses → nur erste 8 (hart auf MAX_SUB_MIX_BUSES), MAX-Konstante === 8. (4) 0-Buses × 3: empty → empty, empty mit withMute=false → empty, UI-Disabled-Spiegel (subMixBuses.length === 0 → preset.disabled). (5) withMute-Toggle × 2: false → nur N Volume-Entries, true (Default) → 2× soviel Entries. (6) Round-Trip × 2: Entries deterministisch + AutoLearnEntry-Shape-Sanity (discriminated-union).",
+        "package.json (3.81.0 → 3.82.0). pnpm check clean. pnpm test grün: 228 Test-Files / 5206 Tests passed (16 skipped, +1 file +15 vs v3.81.0)."
+      ],
+      next: [
+        "v3.83: Auto-Learn-Preset für Bus-Pan + Bus-Solo separat (analog Mixer-Volumes+Mutes ist nur 2 von 4 Bus-Controls — Pan + Solo brauchen aktuell manuelles Right-Click-Learn).",
+        "v3.83: Auto-Learn-Preset-Builder UI (User definiert eigene Preset-Listen wie chainBuilder, statt nur die hardcoded 7 Presets).",
+        "v3.83: Pro-Bus-FX-Insert-Chain UI (v3.81-next übernommen) — SubMixBusFx ist im Store minimal (enabled + postGain). Volle FX-Chain im Bus-Pfad erfordert channel-FX-builder-Refactor (Backend).",
+        "v3.83: Drag&Drop-Channel→Bus statt Dropdown (DAW-Standard UX, v3.81-next übernommen).",
+        "v3.83: Bus-of-Bus-Routing (v3.81-next übernommen)."
+      ],
+      changed: [
+        "client/src/components/MidiSettings/MidiSettings.tsx (+~70 LOC: exported buildSubMixBusAutoLearnEntries-Helper + useSubMixStore-Subscription + neues 'Sub-Mix-Buses'-Preset + Preset-disabled/tooltip-Support + data-testids auf allen Preset-Buttons)",
+        "tests/features/sub-mix-auto-learn.test.ts (NEU, ~190 LOC, 15 Tests in 6 describes)",
+        "package.json (3.81.0 → 3.82.0)",
+        "agents/INDEX.js (version + workLog + files-Eintrag MidiSettings.tsx)"
+      ]
+    },
     {
       agent:     "frontend",
       timestamp: "2026-05-19T05:25:00.000Z",
