@@ -37,6 +37,7 @@ import {
 import { clampRepeatCount } from "@/utils/songSequencer";
 import { SongJumpEditor } from "@/components/SongMode/SongJumpEditor";
 import { useSongJumpStore } from "@/store/useSongJumpStore";
+import { usePatternCrossfadeStore } from "@/store/usePatternCrossfadeStore";
 
 interface SongModePanelProps {
   patterns: PatternData[];
@@ -68,6 +69,9 @@ export function SongModePanel({ patterns, activePatternId, className = "" }: Son
   );
 
   const isActiveSelected = !!selectedSong && selectedSong.id === activeSongId;
+
+  // v3.123.0: Pattern-Crossfade-Konfig (für Header-Indicator).
+  const crossfadeCfg = usePatternCrossfadeStore();
 
   // v3.117.0: track per-step jump counts so we can show a badge next to each step.
   const jumpsState = useSongJumpStore();
@@ -145,6 +149,17 @@ export function SongModePanel({ patterns, activePatternId, className = "" }: Son
       {/* ── Header ─────────────────────────────────────────────────────── */}
       <div className="flex items-center gap-2 px-3 py-2 border-b border-border-color flex-shrink-0">
         <span className="text-sm font-semibold text-text-primary">🎼 Song-Mode</span>
+
+        {/* v3.123.0: Crossfade-Indicator */}
+        {crossfadeCfg.enabled && crossfadeCfg.lengthSteps > 0 && (
+          <span
+            data-testid="song-mode-crossfade-indicator"
+            title={`Pattern-Crossfade: ${crossfadeCfg.lengthSteps} steps · ${crossfadeCfg.curve}`}
+            className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-accent-secondary/20 text-accent-secondary border border-accent-secondary/40"
+          >
+            ⇋ Crossfade: {crossfadeCfg.lengthSteps} step{crossfadeCfg.lengthSteps === 1 ? "" : "s"}
+          </span>
+        )}
 
         <select
           value={effectiveSelectedId ?? ""}

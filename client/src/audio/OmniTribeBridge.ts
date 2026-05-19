@@ -499,6 +499,20 @@ export class OmniTribeBridge {
     this.send(OtpCmd.PATTERN, 0x13, [stepIdx & 0x0F, velocity & 0x7F]);
   }
 
+  /**
+   * Sprint-105: Per-Step Pitch-Offset in Halbtoenen (-64..+63).
+   * Wird als signed two's-complement 7-bit gesendet (Sim spiegelt das zurueck).
+   * stepIdx 0..15, offset -64..+63.
+   */
+  setPatternStepPitchOffset(stepIdx: number, offset: number): void {
+    // Clamp + signed-7bit encode
+    let off = offset;
+    if (off < -64) off = -64;
+    if (off > 63) off = 63;
+    const raw = off < 0 ? (off + 0x80) & 0x7F : off & 0x7F;
+    this.send(OtpCmd.PATTERN, 0x15, [stepIdx & 0x0F, raw]);
+  }
+
   /** Sprint-102: Raw-MIDI Note-Off (oder 0x90 + vel=0 als Aequivalent). */
   sendNoteOff(channel: number, note: number): void {
     if (!this.output && !this.ws) return;

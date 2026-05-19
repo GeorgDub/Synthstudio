@@ -23,6 +23,13 @@ import {
   lrImbalanceDb as lufsLrImbalanceDb,
 } from "./LufsAnalyzer";
 import { PerChannelLufsAnalyzer, type PerChannelLufsResult } from "./PerChannelLufsAnalyzer";
+// v3.123.0 — Pattern Crossfade helpers (pure, side-effect-frei).
+import {
+  type CrossfadeConfig as PatternCrossfadeConfig,
+  sanitizeConfig as sanitizeCrossfadeConfig,
+  getCrossfadeProgress as getCrossfadeProgressFn,
+  crossfadeGain as crossfadeGainFn,
+} from "../utils/patternCrossfade";
 import { MidiClockOut } from "./MidiClockOut";
 import { MidiNoteOut, type MidiPartConfig } from "./MidiNoteOut";
 import { MidiClickOut, type MidiClickConfig } from "./MidiClickOut";
@@ -911,6 +918,23 @@ class AudioEngineClass {
   // Performance Mode – Queued Pattern Switch (Phase 4)
   private queuedPatternId: string | null = null;
   private quantizeMode: "bar" | "beat" | "step" = "bar";
+
+  // v3.123.0 — Pattern Crossfade (Volume-only, pragmatic)
+  // ============================================================
+  // Wenn aktiv, fadet die masterGain während der letzten N steps
+  // herunter und ruft pattern-switch früher auf, sodass die UI
+  // bereits umgeschalten hat während die Hüllkurve fertig fade'd.
+  // Nach dem Switch fade'n wir wieder hoch.
+  // ============================================================
+  private _crossfadeConfig: PatternCrossfadeConfig = {
+    enabled: false,
+    lengthSteps: 4,
+    curve: "equalPower",
+  };
+  /** true wenn aktuell eine Crossfade-Sequenz aktiv ist (innerhalb des Fade-Windows). */
+  private _crossfadeActive = false;
+  /** Original-MasterGain-Wert vor dem Crossfade — wird beim Restore wieder gesetzt. */
+  private _crossfadeBaseGain = 0.85;
 
   // Metronom
   private _metronomEnabled = false;
@@ -2978,6 +3002,109 @@ class AudioEngineClass {
     return () => { this.patternSwitchCallback = null; };
   }
 
+  // ─── v3.123.0 — Pattern Crossfade API ───────────────────────────────────────
+
+  /**
+   * Sets the global pattern-crossfade config. Pragmatic v3.123.0:
+   * volume-only ramp on masterGain at the end of the outgoing pattern,
+   * followed by ramp back up after the switch.
+   */
+  setPatternCrossfade(cfg: PatternCrossfadeConfig): void {
+    this._crossfadeConfig = sanitizeCrossfadeConfig(cfg);
+    // Wenn deaktiviert während aktivem Fade → restore master gain instant.
+    if (!this._crossfadeConfig.enabled && this._crossfadeActive) {
+      this._restoreCrossfadeGain();
+    }
+  }
+
+  /** Returns current crossfade config (for tests/UI). */
+  getPatternCrossfade(): PatternCrossfadeConfig {
+    return { ...this._crossfadeConfig };
+  }
+
+  /** Returns true if crossfade is currently fading (informational, for UI/tests). */
+  isCrossfading(): boolean {
+    return this._crossfadeActive;
+  }
+
+  /**
+   * Per-step Crossfade-Gain-Application. Aufgerufen aus dem Scheduler nach
+   * `_scheduleStep`. Setzt gain.linearRampToValueAtTime auf masterGain wenn
+   * wir uns im Fade-Window befinden und ein Pattern-Switch queued ist.
+   */
+  private _applyCrossfadeGainPerStep(
+    currentStep: number,
+    stepTime: number,
+    effectiveBpm: number,
+    effectiveResolution: StepResolution,
+  ): void {
+    if (!this._crossfadeConfig.enabled) return;
+    if (!this.masterGain) return;
+    if (!this.queuedPatternId) return;
+    if (this.quantizeMode !== "bar") return; // Nur bei bar-quantized switches relevant
+    const fadeLength = this._crossfadeConfig.lengthSteps;
+    if (fadeLength <= 0) return;
+    const totalSteps = this._steps;
+    // currentStep ist 0-based — wir wollen das Fade-Window am Ende vom Pattern.
+    // window start = totalSteps - fadeLength. Beispiel total=16, fade=4 → start=12.
+    // progress an Step 12 = 0, Step 13 = 0.25, ..., Step 15 = 0.75.
+    // Wir nutzen totalSteps als oberen Index (1-past-last), damit progress an
+    // Step 15 = 0.75 statt 1.0 ist (Hard-Switch erfolgt erst beim Boundary).
+    const progress = getCrossfadeProgressFn(currentStep, totalSteps, fadeLength);
+    if (progress === null) return;
+    if (!this._crossfadeActive) {
+      // Snapshot des Base-Gains für späteren Restore
+      this._crossfadeBaseGain = this.masterGain.gain.value;
+      this._crossfadeActive = true;
+    }
+    const { gainA } = crossfadeGainFn(progress, this._crossfadeConfig.curve);
+    const target = this._crossfadeBaseGain * gainA;
+    try {
+      // Ramp zur nächsten Step-Boundary → smooth zwischen den Tick-Calls.
+      const stepDur = this._stepDuration(effectiveResolution, effectiveBpm);
+      this.masterGain.gain.linearRampToValueAtTime(target, stepTime + stepDur);
+    } catch {
+      /* ignore — defensive */
+    }
+  }
+
+  /**
+   * Wird unmittelbar VOR dem patternSwitchCallback aufgerufen wenn
+   * crossfade aktiv ist. Setzt gain instant auf 0 (Ende des Fade-Out),
+   * dann ramp zurück auf base-gain über ein Step.
+   */
+  private _beforePatternSwitch(
+    switchTime: number,
+    effectiveBpm: number,
+    effectiveResolution: StepResolution,
+  ): void {
+    if (!this._crossfadeActive || !this.masterGain) return;
+    try {
+      const stepDur = this._stepDuration(effectiveResolution, effectiveBpm);
+      // Fade-In gainB: 0 → 1 über ein Step (Symmetrie zu gainA-Pfad).
+      this.masterGain.gain.setValueAtTime(0, switchTime);
+      this.masterGain.gain.linearRampToValueAtTime(this._crossfadeBaseGain, switchTime + stepDur);
+    } catch {
+      /* ignore */
+    }
+    this._crossfadeActive = false;
+  }
+
+  /** Hard-restore — wird beim Disable-mid-Fade aufgerufen. */
+  private _restoreCrossfadeGain(): void {
+    if (!this.masterGain || !this.ctx) {
+      this._crossfadeActive = false;
+      return;
+    }
+    try {
+      this.masterGain.gain.cancelScheduledValues(this.ctx.currentTime);
+      this.masterGain.gain.setValueAtTime(this._crossfadeBaseGain, this.ctx.currentTime);
+    } catch {
+      /* ignore */
+    }
+    this._crossfadeActive = false;
+  }
+
   // ─── Private: Step-Dauer ──────────────────────────────────────────────────
 
   private _stepDuration(resolution?: StepResolution, bpm = this._bpm): number {
@@ -3027,6 +3154,10 @@ class AudioEngineClass {
       }
       const effectiveResolution = pattern?.stepResolution ?? this._stepResolution;
       this._scheduleStep(this._currentStep, this._nextStepTime, pattern);
+
+      // v3.123.0 — Crossfade: gain envelope per-step im Fade-Window
+      this._applyCrossfadeGainPerStep(this._currentStep, this._nextStepTime, effectiveBpm, effectiveResolution);
+
       // Loop-Count inkrementieren wenn Pattern-Wrap erfolgt
       if (this._currentStep === this._steps - 1) {
         this.loopCount++;
@@ -3034,6 +3165,7 @@ class AudioEngineClass {
         if (this.queuedPatternId && this.quantizeMode === "bar") {
           const nextId = this.queuedPatternId;
           this.queuedPatternId = null;
+          this._beforePatternSwitch(this._nextStepTime, effectiveBpm, effectiveResolution);
           this.patternSwitchCallback?.(nextId);
         }
       } else if (this._currentStep === 0 && this.queuedPatternId && this.quantizeMode === "beat") {

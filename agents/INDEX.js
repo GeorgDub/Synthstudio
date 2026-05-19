@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.122.0",
+    version: "3.123.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -89,6 +89,36 @@ const INDEX = {
   // ─── KNOWN FILE INDEX ──────────────────────────────────────
   // Key files agents have analyzed. Add new entries after working on a file.
   files: {
+    "client/src/utils/patternCrossfade.ts (v3.123.0 NEU)": {
+      role:     "v3.123.0 NEU (Pure, ~150 LOC). Pattern-Crossfade-Helpers für smooth pattern-transitions. Exports CrossfadeConfig {enabled, lengthSteps 0..16, curve:'linear'|'equalPower'|'sine'}, crossfadeGain(t, curve) → {gainA, gainB}: linear (1-t, t), equalPower (cos(tπ/2), sin(tπ/2), sum-of-squares=1), sine ((1-t)², t²) (softer). getCrossfadeProgress(currentStep, totalSteps, fadeLength) → progress 0..1 wenn im Window (window-start = totalSteps - fadeLength), sonst null. shouldStartCrossfade(currentStep, totalSteps, fadeLength) → bool exakt am Window-Start. clampLength [0,16] + round. sanitizeCurve (invalid → 'linear'). sanitizeConfig defensive (null/garbage → DEFAULT, missing curve → DEFAULT_CONFIG.curve, invalid curve → 'linear'). DEFAULT_CONFIG {enabled:false, lengthSteps:4, curve:'equalPower'}. NaN-safe clamp01 intern.",
+      lastSeen: "2026-05-19T15:40:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/store/usePatternCrossfadeStore.ts (v3.123.0 NEU)": {
+      role:     "v3.123.0 NEU (~100 LOC, Custom-Observer, kein Zustand-NPM). localStorage 'ss-pattern-crossfade:v1'. Single global config (kein per-pattern override für v3.123, pragmatic). Actions setEnabled / setLength (clamp via clampLength) / setCurve (sanitize via sanitizeCurve) / resetCrossfade. Sync-Getter getPatternCrossfadeState für Event-Handler. __resetPatternCrossfadeStoreForTests + Re-Exports CrossfadeConfig + CrossfadeCurve.",
+      lastSeen: "2026-05-19T15:40:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/audio/AudioEngine.ts (v3.123.0 +pattern-crossfade)": {
+      role:     "v3.123.0 ERWEITERT: +_crossfadeConfig (default DEFAULT_CONFIG) + _crossfadeActive (bool) + _crossfadeBaseGain (snapshot). Public: setPatternCrossfade(cfg) sanitize+disable-restore, getPatternCrossfade, isCrossfading. Im _schedule-Loop nach _scheduleStep: _applyCrossfadeGainPerStep(currentStep, stepTime, bpm, resolution) gated auf enabled+lengthSteps>0+queuedPatternId+quantizeMode='bar', snapshots base-gain beim Window-Entry, linearRampToValueAtTime(masterGain.gain, gainA*base, stepTime+stepDur). Beim bar-boundary VOR patternSwitchCallback: _beforePatternSwitch(switchTime, bpm, res) → setValueAtTime(0,t) + linearRampToValueAtTime(base, t+stepDur). _restoreCrossfadeGain bei Disable-mid-Fade: cancelScheduledValues + setValueAtTime(base). Imports sanitizeConfig/getCrossfadeProgress/crossfadeGain aus patternCrossfade.ts (ESM). v3.122-Auto-Mix-API + v3.119-Sidechain + alle prior unverändert.",
+      lastSeen: "2026-05-19T15:40:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/components/PatternCrossfade/PatternCrossfadePanel.tsx (v3.123.0 NEU)": {
+      role:     "v3.123.0 NEU (~230 LOC). UI für Pattern-Crossfade-Konfig. Master-Switch (bg-accent-success aktiv / bg-bg-elevated aus). Length-Slider 0..16 (disabled wenn !enabled, monospace-value-anzeige). Curve-Selector grid-cols-3 (linear/equalPower/sine), aktive button bg-accent-primary, mit title-Tooltips. Canvas-Preview (320×120): zeichnet Grid + gainA (accent-primary) + gainB (accent-secondary) live für die gewählte Kurve. Preview-Button startet 2s rAF-Loop mit vertikalem accent-success play-marker. Legend mit color-dots. Reset-Button. Komplett semantische --ss-*-Tokens via getComputedStyle für Canvas-Farben. data-testids: pattern-crossfade-panel/toggle/length-slider/length-value/curve-{linear|equalPower|sine}/preview-btn/preview-canvas/reset-btn.",
+      lastSeen: "2026-05-19T15:40:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "tests/features/pattern-crossfade.test.ts (v3.123.0 NEU)": {
+      role:     "v3.123.0 NEU (~260 LOC, 41 Tests in 11 describes, @vitest-environment jsdom). crossfadeGain linear × 6 (t=0/0.5/1, clamp <0/>1, NaN-safe). crossfadeGain equalPower × 4 (sum-of-squares=1 für 7 t-Werte, t=0.5≈Math.SQRT1_2, t=0/1). crossfadeGain sine × 4 (t=0/1/0.5=0.25, monotonic). invalid-curve-fallback × 1. getCrossfadeProgress × 7 (outside-before/0/start/inside/null bei fadeLength=0/totalSteps=0/NaN/non-default 32-step-pattern). shouldStartCrossfade × 4 (true bei N-fadeLength, false andere, false fadeLength=0, NaN). clampLength × 3. sanitizeCurve × 2. sanitizeConfig × 4 (garbage→DEFAULT, partial-merge mit missing-curve→DEFAULT.curve, clamp, invalid-curve→linear). Store × 6 (initial=DEFAULT, setEnabled, setLength clamp, setCurve validate, reset, persistence-smoke). 41/41 grün.",
+      lastSeen: "2026-05-19T15:40:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/components/SongMode/SongModePanel.tsx (v3.123.0 +crossfade-indicator)": {
+      role:     "v3.123.0 ERWEITERT: import usePatternCrossfadeStore. crossfadeCfg-Hook im Hauptbody. Im Header (rechts neben '🎼 Song-Mode'-Title) ein bedingter Indicator-Chip mit data-testid 'song-mode-crossfade-indicator' (bg-accent-secondary/20 text-accent-secondary), nur sichtbar wenn enabled && lengthSteps>0. Format: '⇋ Crossfade: N step(s)' + title-Tooltip mit curve. v3.117-Jump-Editor + v3.109-Steps-DnD + LoopMode-Toggle + Activate unverändert.",
+      lastSeen: "2026-05-19T15:40:00.000Z",
+      ownedBy:  "frontend"
+    },
     "client/src/utils/autoMixSuggestions.ts (v3.122.0 NEU)": {
       role:     "v3.122.0 NEU (Pure). Helper-Module fuer Smart-Auto-Mix. Exports MixSuggestion (channelId/currentVolumeDb/measuredLufs/targetLufs/suggestedGainDb), computeSuggestion(channelId, currentVolDb, measured, target) → clamped(target - measured), applySuggestions(suggestions, applyMap) → {channelId,newVolDb}[], clampGainSuggestion (MAX 24 dB), volumeLinearToDb / volumeDbToLinear (Round-Trip-getestet). Defensive: measured -Inf / < MIN_MEASURED_LUFS (-70) / NaN → suggested 0. target -Inf → 0. Side-effect-frei, Node-testbar.",
       lastSeen: "2026-05-19T15:10:00.000Z",
@@ -2927,6 +2957,35 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "backend",
+      timestamp: "2026-05-19T15:40:00.000Z",
+      done: [
+        "v3.123.0: Pattern-Crossfade — smooth transitions zwischen patterns (equal-power/linear/sine curves). Pragmatic volume-only implementation auf masterGain: fadet in den letzten N steps die Hüllkurve runter via linearRampToValueAtTime, schaltet beim bar-boundary auf Pattern B, fadet hoch.",
+        "client/src/utils/patternCrossfade.ts NEU (Pure, ~150 LOC). CrossfadeConfig {enabled, lengthSteps 0..16, curve}. crossfadeGain(t, curve) → {gainA,gainB} mit 3 curves: linear (1-t,t), equalPower (cos/sin, sum-of-squares=1), sine (1-t)²/t² (softer). getCrossfadeProgress(currentStep, totalSteps, fadeLength) → progress|null nur im Window. shouldStartCrossfade. clampLength [0,16] + rounding. sanitizeCurve (invalid → 'linear'). sanitizeConfig defensive (missing curve → DEFAULT_CONFIG.curve, invalid → 'linear').",
+        "client/src/store/usePatternCrossfadeStore.ts NEU (Custom-Observer, kein Zustand-NPM). localStorage 'ss-pattern-crossfade:v1'. setEnabled/setLength/setCurve/resetCrossfade + getPatternCrossfadeState. DEFAULT_CONFIG {enabled:false, lengthSteps:4, curve:'equalPower'}.",
+        "client/src/audio/AudioEngine.ts ERWEITERT: +_crossfadeConfig/Active/BaseGain-Felder. setPatternCrossfade(cfg) / getPatternCrossfade() / isCrossfading(). _applyCrossfadeGainPerStep im Scheduler-Loop (nur bei bar-quantized queuedPatternId + enabled + lengthSteps>0): snapshots base-gain beim Window-Entry, linearRampToValueAtTime auf masterGain.gain mit gainA*base bis next step. _beforePatternSwitch hookt unmittelbar vor patternSwitchCallback: setValueAtTime(0) + ramp zurück auf base über ein step. _restoreCrossfadeGain bei Disable-mid-Fade (cancelScheduledValues + setValueAtTime).",
+        "client/src/components/PatternCrossfade/PatternCrossfadePanel.tsx NEU (~230 LOC). Master-Toggle + Length-Slider 0..16 + Curve-Selector (3 buttons mit Tooltips) + Canvas-Preview (zeichnet gainA+gainB-curves live + animated play-marker bei Preview-Button). Reset-Button. Komplett semantische --ss-*-Tokens. data-testids: pattern-crossfade-panel/toggle/length-slider/length-value/curve-{linear|equalPower|sine}/preview-btn/preview-canvas/reset-btn.",
+        "client/src/components/SongMode/SongModePanel.tsx ERWEITERT: +usePatternCrossfadeStore-Import. Im Header data-testid 'song-mode-crossfade-indicator' chip wenn enabled && lengthSteps>0 ('⇋ Crossfade: N step(s)'). Verbindet v3.109-Song-Mode mit v3.123-Crossfade-Status.",
+        "tests/features/pattern-crossfade.test.ts NEU (41 Tests in 11 describes, @vitest-environment jsdom). crossfadeGain × 6 linear (t=0/1/0.5, clamp <0/>1, NaN-safe), crossfadeGain × 4 equalPower (sum-of-squares=1 für 7 t-Werte, t=0.5≈√½, t=0, t=1), crossfadeGain × 4 sine (t=0/1/0.5=0.25, monotonic), invalid-curve-fallback, getCrossfadeProgress × 7 (outside-before/start/inside/0/NaN/non-default-32-step), shouldStartCrossfade × 4, clampLength × 3 (range, rounding, non-finite), sanitizeCurve × 2, sanitizeConfig × 4, Store × 6 (initial, setEnabled, setLength-clamp, setCurve-validate, reset, persistence). 41/41 grün.",
+        "package.json + INDEX.js: 3.122.0 → 3.123.0. pnpm check + pnpm test (6347 passed, 16 skipped): clean."
+      ],
+      next: [
+        "FX-Snapshot-Crossfade — derzeit nur Volume; FX-Parameter (filter cutoff, reverb wet) bleiben hart. v2 könnte snapshot+interpolate beider Pattern-FX-Setups.",
+        "Dual-pattern-playback statt master-volume-dim: requires 2nd Scheduler/Output-Bus, dafür kein Master-Dip im Mix.",
+        "Per-Song-Step crossfade override im Song-Mode (statt single global config).",
+        "MIDI-Learn-Target für crossfade.length + curve."
+      ],
+      changed: [
+        "client/src/utils/patternCrossfade.ts (NEU, Pure-Helpers + CrossfadeConfig)",
+        "client/src/store/usePatternCrossfadeStore.ts (NEU, Custom-Observer + localStorage)",
+        "client/src/audio/AudioEngine.ts (+setPatternCrossfade/isCrossfading/_applyCrossfadeGainPerStep/_beforePatternSwitch)",
+        "client/src/components/PatternCrossfade/PatternCrossfadePanel.tsx (NEU, ~230 LOC, UI mit Canvas-Preview)",
+        "client/src/components/SongMode/SongModePanel.tsx (+crossfade-indicator chip im Header)",
+        "tests/features/pattern-crossfade.test.ts (NEU, 41 Tests in 11 describes)",
+        "package.json + agents/INDEX.js (3.122.0 → 3.123.0)"
+      ]
+    },
     {
       agent:     "backend",
       timestamp: "2026-05-19T15:10:00.000Z",

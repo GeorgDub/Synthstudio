@@ -32,6 +32,8 @@ export function StepSequencerPanel({
   const initial = useRef<PatternState>(loadPatternCache());
   const [steps, setSteps] = useState<boolean[]>(initial.current.steps);
   const [velocities, setVelocities] = useState<number[]>(initial.current.velocities);
+  // Sprint-105: per-Step pitch-offset in Halbtoenen
+  const [pitchOffsets, setPitchOffsets] = useState<number[]>(initial.current.pitchOffsets);
   const [bpm, setBpm] = useState<number>(initial.current.bpm);
   const [root, setRoot] = useState<number>(initial.current.root);
   const [playing, setPlaying] = useState<boolean>(false);
@@ -44,8 +46,8 @@ export function StepSequencerPanel({
 
   // ─── Persistence ────────────────────────────────────────
   useEffect(() => {
-    savePatternCache({ steps, velocities, bpm, root });
-  }, [steps, velocities, bpm, root]);
+    savePatternCache({ steps, velocities, pitchOffsets, bpm, root });
+  }, [steps, velocities, pitchOffsets, bpm, root]);
 
   // ─── Sync Pattern-State zum Sim ─────────────────────────
   useEffect(() => {
@@ -75,6 +77,18 @@ export function StepSequencerPanel({
       }
     }
   }, [velocities, connected]);
+
+  // Pitch-Sync (Sprint-105): analog Velocity
+  const lastSentPitch = useRef<number[]>([...pitchOffsets]);
+  useEffect(() => {
+    if (!connected) return;
+    for (let i = 0; i < 16; i++) {
+      if (pitchOffsets[i] !== lastSentPitch.current[i]) {
+        omniTribeBridge.setPatternStepPitchOffset(i, pitchOffsets[i]);
+        lastSentPitch.current[i] = pitchOffsets[i];
+      }
+    }
+  }, [pitchOffsets, connected]);
 
   // ─── Live-Step-Cursor via Sim-Notify ───────────────────
   useEffect(() => {
@@ -129,6 +143,13 @@ export function StepSequencerPanel({
   const handleClear = useCallback(() => {
     setSteps(Array(16).fill(false));
     setVelocities(Array(16).fill(100));
+    setPitchOffsets(Array(16).fill(0));
+  }, []);
+
+  // Sprint-105: Pitch-Offset pro Step setzen (clamped auf -24..+24 fuer UI-Sanity)
+  const setPitchForStep = useCallback((idx: number, value: number) => {
+    const clamped = Math.max(-24, Math.min(24, value || 0));
+    setPitchOffsets((p) => p.map((v, i) => (i === idx ? clamped : v)));
   }, []);
 
   const handlePreset = useCallback((mask: number) => {
@@ -201,6 +222,35 @@ export function StepSequencerPanel({
         })}
       </div>
 
+      {/* Sprint-105: Pitch-Row — pro Step Halbton-Offset */}
+      <div
+        className="grid gap-1"
+        style={{ gridTemplateColumns: "repeat(16, minmax(0, 1fr))" }}
+        role="group"
+        aria-label="Pitch offsets"
+      >
+        {pitchOffsets.map((p, i) => (
+          <input
+            key={`pitch-${i}`}
+            type="number"
+            min={-24}
+            max={24}
+            value={p}
+            disabled={!connected}
+            data-testid={`pitch-${i}`}
+            onChange={(e) => setPitchForStep(i, Number(e.target.value))}
+            title={`Step ${i + 1} pitch offset (-24..+24 Halbtoene)`}
+            className={[
+              "h-6 rounded border bg-bg-elevated border-border-color",
+              "text-[9px] font-mono text-text-muted text-center",
+              "px-0 disabled:opacity-40",
+              p !== 0 && "text-accent-secondary border-accent-secondary",
+              steps[i] && "border-accent-primary/40",
+            ].filter(Boolean).join(" ")}
+          />
+        ))}
+      </div>
+
       {/* Presets */}
       <div className="flex gap-1 text-[10px] items-center">
         <span className="text-text-dim">Preset:</span>
@@ -253,7 +303,8 @@ export function StepSequencerPanel({
 
       <p className="text-[10px] text-text-dim leading-snug">
         Click toggles step · Shift+Click erhoeht Velocity · Alt+Click
-        senkt sie. Bar-Hoehe = aktuelle Velocity.
+        senkt sie. Bar-Hoehe = Velocity. Pitch-Inputs unten = Halbton-
+        Offset (Sprint-105 Melodie-Modus).
       </p>
 
       {/* Transport + BPM + Root */}

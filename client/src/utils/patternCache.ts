@@ -13,6 +13,8 @@ const CACHE_KEY = "synthstudio:omnitribe.pattern.v1";
 export interface PatternState {
   steps: boolean[];          // 16 entries
   velocities: number[];      // 16 entries, 0..127
+  /** Sprint-105: Per-Step Pitch-Offset in Halbtoenen, signed (-24..+24 ueblich). */
+  pitchOffsets: number[];    // 16 entries
   bpm: number;               // 40..240
   root: number;              // 0..127
 }
@@ -21,6 +23,7 @@ export function getDefaultPattern(): PatternState {
   return {
     steps: Array(16).fill(false),
     velocities: Array(16).fill(100),
+    pitchOffsets: Array(16).fill(0),
     bpm: 120,
     root: 60,
   };
@@ -43,6 +46,10 @@ export function loadPatternCache(): PatternState {
         ? parsed.velocities.map((v) =>
             Math.max(0, Math.min(127, Number(v) || 0)))
         : def.velocities,
+      pitchOffsets: Array.isArray(parsed.pitchOffsets) && parsed.pitchOffsets.length === 16
+        ? parsed.pitchOffsets.map((p) =>
+            Math.max(-64, Math.min(63, Number(p) || 0)))
+        : def.pitchOffsets,
       bpm: typeof parsed.bpm === "number"
         ? Math.max(40, Math.min(240, parsed.bpm))
         : def.bpm,
