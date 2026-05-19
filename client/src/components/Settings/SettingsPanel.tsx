@@ -113,6 +113,7 @@ import { getRegisteredQuickActionContext } from "@/utils/quickActionContextRegis
 import { MidiFxPanel } from "@/components/MidiFx/MidiFxPanel";
 // v3.96.0: Tempo-Map / BPM-Automation Panel.
 import { TempoMapPanel } from "@/components/TempoMap/TempoMapPanel";
+import { getCurrentBar } from "@/utils/tempoMap";
 
 // ─── Sidebar-Abschnitte ───────────────────────────────────────────────────────
 
@@ -2288,18 +2289,17 @@ function TempoMapSection() {
   const [currentBar, setCurrentBar] = useState(0);
   useEffect(() => {
     const id = setInterval(() => {
-      // v3.96.0: currentStep / stepsPerBar. Wir nutzen die loopCount-basierte
-      // Bar-Position aus der Engine — currentStep ist Step-im-aktuellen-Pattern,
-      // also leiten wir die Bar aus currentStepIndex + Engine-Step-Count ab.
-      // Vereinfachung: currentStep / 16 (Default-Pattern: 16 Steps = 1 Bar).
-      // Reicht fuer das UI — bei groesseren Patterns ist es eine grobe Naeherung.
+      // v3.104.0: stepCount-aware Bar-Position. Default stepsPerBar=16; bei
+      // nicht-Standard-Stepzahl (12 triplet, 32, 64) gilt das Pattern als 1 Bar.
       const step = AudioEngine.currentStepIndex;
-      const bar = Math.floor(step / 16);
+      const stepCount = AudioEngine.stepCount || 16;
+      const stepsPerBar = stepCount === 16 ? 16 : stepCount;
+      const bar = getCurrentBar(step, stepsPerBar);
       setCurrentBar((prev) => (prev === bar ? prev : bar));
     }, 500);
     return () => clearInterval(id);
   }, []);
-  return <TempoMapPanel currentBar={currentBar} />;
+  return <TempoMapPanel currentBar={currentBar} stepsPerBar={AudioEngine.stepCount === 16 ? 16 : AudioEngine.stepCount} />;
 }
 
 interface SettingsPanelProps {

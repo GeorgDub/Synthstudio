@@ -57,6 +57,9 @@ import {
 import {
   getCurrentBpm,
   getCurrentBpmOrFallback,
+  getCurrentBpmFromStep,
+  getCurrentBar,
+  DEFAULT_STEPS_PER_BAR,
   serializeTempoEvents,
   parseTempoEvents,
 } from "../../client/src/utils/tempoMap";
@@ -291,5 +294,118 @@ describe("useTempoMapStore – localStorage Persistenz", () => {
     expect(parsed.events[0].atBar).toBe(8);
     expect(parsed.events[0].bpm).toBe(135);
     expect(parsed.events[0].ramp).toBe(true);
+  });
+});
+
+// ─── v3.104.0: stepCount-aware Resolver ───────────────────────────────────────
+
+describe("tempoMap.getCurrentBar – stepCount-aware (v3.104.0)", () => {
+  it("16-step pattern: step 0..15 = bar 0, step 16..31 = bar 1", () => {
+    expect(getCurrentBar(0, 16)).toBe(0);
+    expect(getCurrentBar(8, 16)).toBe(0);
+    expect(getCurrentBar(15, 16)).toBe(0);
+    expect(getCurrentBar(16, 16)).toBe(1);
+    expect(getCurrentBar(24, 16)).toBe(1);
+    expect(getCurrentBar(31, 16)).toBe(1);
+    expect(getCurrentBar(32, 16)).toBe(2);
+  });
+
+  it("32-step pattern: step 0..31 = bar 0, step 32..63 = bar 1", () => {
+    expect(getCurrentBar(0, 32)).toBe(0);
+    expect(getCurrentBar(16, 32)).toBe(0);
+    expect(getCurrentBar(31, 32)).toBe(0);
+    expect(getCurrentBar(32, 32)).toBe(1);
+    expect(getCurrentBar(48, 32)).toBe(1);
+    expect(getCurrentBar(63, 32)).toBe(1);
+    expect(getCurrentBar(64, 32)).toBe(2);
+  });
+
+  it("12-step triplet: step 0..11 = bar 0, step 12..23 = bar 1", () => {
+    expect(getCurrentBar(0, 12)).toBe(0);
+    expect(getCurrentBar(6, 12)).toBe(0);
+    expect(getCurrentBar(11, 12)).toBe(0);
+    expect(getCurrentBar(12, 12)).toBe(1);
+    expect(getCurrentBar(23, 12)).toBe(1);
+    expect(getCurrentBar(24, 12)).toBe(2);
+  });
+
+  it("Backwards-compat: default stepsPerBar = 16 wenn nicht angegeben", () => {
+    expect(getCurrentBar(0)).toBe(0);
+    expect(getCurrentBar(15)).toBe(0);
+    expect(getCurrentBar(16)).toBe(1);
+    expect(getCurrentBar(32)).toBe(2);
+    expect(DEFAULT_STEPS_PER_BAR).toBe(16);
+  });
+
+  it("Edge: negative step → 0, NaN/Inf → 0", () => {
+    expect(getCurrentBar(-1, 16)).toBe(0);
+    expect(getCurrentBar(-100, 32)).toBe(0);
+    expect(getCurrentBar(NaN, 16)).toBe(0);
+    expect(getCurrentBar(Infinity, 16)).toBe(0);
+  });
+
+  it("Edge: stepsPerBar=0 oder NaN → fallback auf DEFAULT_STEPS_PER_BAR", () => {
+    expect(getCurrentBar(16, 0)).toBe(1);
+    expect(getCurrentBar(32, NaN)).toBe(2);
+    expect(getCurrentBar(48, -1)).toBe(3);
+  });
+
+  it("Edge: step exakt am Pattern-Ende eines 16-step Patterns = bar 1", () => {
+    // step = patternLength bei stepCount=16 entspricht bar 1 (Wrap)
+    expect(getCurrentBar(16, 16)).toBe(1);
+    expect(getCurrentBar(32, 16)).toBe(2);
+  });
+});
+
+describe("tempoMap.getCurrentBpmFromStep – stepsPerBar-aware (v3.104.0)", () => {
+  it("16-step pattern: BPM-change bei bar 1 = step 16", () => {
+    const events: TempoEvent[] = [
+      { atBar: 0, bpm: 120 },
+      { atBar: 1, bpm: 140 },
+    ];
+    expect(getCurrentBpmFromStep(0, 16, events, 100)).toBe(120);
+    expect(getCurrentBpmFromStep(15, 16, events, 100)).toBe(120);
+    expect(getCurrentBpmFromStep(16, 16, events, 100)).toBe(140);
+    expect(getCurrentBpmFromStep(31, 16, events, 100)).toBe(140);
+  });
+
+  it("32-step pattern: BPM-change bei bar 1 = step 32", () => {
+    const events: TempoEvent[] = [
+      { atBar: 0, bpm: 120 },
+      { atBar: 1, bpm: 140 },
+    ];
+    // Bar 0 = step 0..31, Bar 1 = step 32..63
+    expect(getCurrentBpmFromStep(0, 32, events, 100)).toBe(120);
+    expect(getCurrentBpmFromStep(16, 32, events, 100)).toBe(120);
+    expect(getCurrentBpmFromStep(31, 32, events, 100)).toBe(120);
+    expect(getCurrentBpmFromStep(32, 32, events, 100)).toBe(140);
+    expect(getCurrentBpmFromStep(60, 32, events, 100)).toBe(140);
+  });
+
+  it("12-step triplet: BPM-change bei bar 1 = step 12", () => {
+    const events: TempoEvent[] = [
+      { atBar: 0, bpm: 100 },
+      { atBar: 1, bpm: 150 },
+    ];
+    expect(getCurrentBpmFromStep(0, 12, events, 80)).toBe(100);
+    expect(getCurrentBpmFromStep(11, 12, events, 80)).toBe(100);
+    expect(getCurrentBpmFromStep(12, 12, events, 80)).toBe(150);
+    expect(getCurrentBpmFromStep(23, 12, events, 80)).toBe(150);
+  });
+
+  it("Empty map → fallback BPM (alle stepsPerBar-Werte)", () => {
+    expect(getCurrentBpmFromStep(0, 16, [], 120)).toBe(120);
+    expect(getCurrentBpmFromStep(100, 32, [], 130)).toBe(130);
+    expect(getCurrentBpmFromStep(50, 12, [], 110)).toBe(110);
+  });
+
+  it("Backwards-compat: stepsPerBar nicht angegeben → bar via Standard 16", () => {
+    const events: TempoEvent[] = [
+      { atBar: 0, bpm: 120 },
+      { atBar: 1, bpm: 140 },
+    ];
+    // Direct getCurrentBpm bleibt bar-basiert (kein stepsPerBar Param)
+    expect(getCurrentBpm(events, 0)).toBe(120);
+    expect(getCurrentBpm(events, 1)).toBe(140);
   });
 });

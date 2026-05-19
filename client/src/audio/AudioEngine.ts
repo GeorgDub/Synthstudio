@@ -1232,7 +1232,7 @@ class AudioEngineClass {
     this._looperEngine.setBpm(this._bpm);
   }
 
-  // ─── Tempo-Map / BPM-Automation (v3.95.0) ─────────────────────────────────
+  // ─── Tempo-Map / BPM-Automation (v3.95.0 / v3.104.0 stepCount-aware) ──────
 
   /**
    * v3.95.0: Resolver-Callback fuer Tempo-Map. Wird vom App.tsx-Wire-Up mit
@@ -1250,15 +1250,28 @@ class AudioEngineClass {
   }
 
   /**
-   * v3.95.0: Liefert das aktuell von der Tempo-Map aufgeloeste BPM
-   * bei der aktuellen Loop-Position (loopCount = Bar-Index), oder null wenn
-   * keine Map aktiv ist. Wird vom Scheduler vor jedem Step befragt.
+   * v3.104.0: Liefert das aktuell von der Tempo-Map aufgeloeste BPM
+   * bei der aktuellen Bar-Position. Bar = floor(absStep / stepsPerBar).
+   *
+   * stepsPerBar wird aus dem aktuellen Pattern abgeleitet:
+   *  - Default = 16 (16th-note-Resolution, 4/4 Takt, ein 16-step Pattern = 1 Bar).
+   *  - Bei nicht-16-Step-Patterns (12 triplet, 32, 64) wird die Stepzahl der
+   *    Engine herangezogen (das Pattern entspricht dann 1 Bar mit der
+   *    entsprechenden Sub-Resolution).
+   *
    * Defensive vs. Resolver-Throws: bei Fehler → null (Fallback).
    */
   private _resolveTempoMapBpm(): number | null {
     if (!this._tempoMapResolver) return null;
     try {
-      const resolved = this._tempoMapResolver(this.loopCount);
+      // Absolute Step-Position = vollendete Pattern-Loops * Stepzahl + currentStep.
+      const total = Math.max(1, this._steps);
+      const absStep = this.loopCount * total + this._currentStep;
+      // stepsPerBar: bei nicht-Standard-Stepzahl (12/32/64) gilt das Pattern als
+      // 1 Bar mit entsprechend skalierter Sub-Resolution. Standard 16 = 1 Bar.
+      const stepsPerBar = total === 16 ? 16 : total;
+      const bar = Math.floor(absStep / stepsPerBar);
+      const resolved = this._tempoMapResolver(bar);
       if (typeof resolved !== "number" || !Number.isFinite(resolved)) return null;
       return Math.max(20, Math.min(300, resolved));
     } catch {

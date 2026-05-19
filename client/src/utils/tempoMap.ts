@@ -1,5 +1,5 @@
 /**
- * Synthstudio – tempoMap.ts (v3.95.0)
+ * Synthstudio – tempoMap.ts (v3.104.0)
  *
  * Pure-Resolver fuer Tempo-Map / BPM-Automation.
  * Keine React-Abhaengigkeit, voll unit-testbar.
@@ -16,8 +16,36 @@
  *
  * "Ramp" gehoert zum Ziel-Event (next), nicht zum Quell-Event (prev) — wie in
  * Logic Pro / Bitwig Tempo-Map: man markiert das Ziel als ramp.
+ *
+ * v3.104.0: stepCount-aware Resolver.
+ *  - getCurrentBar(step, stepsPerBar) — leitet die Bar-Position aus
+ *    der absoluten Step-Position ab. Default stepsPerBar=16 (backwards-compat).
+ *  - getCurrentBpm akzeptiert optional einen stepsPerBar-Hinweis fuer Caller,
+ *    die step-statt-bar-positions liefern wollen.
+ *  - 32-step Patterns (8th-note-Resolution doubled), 12-step Triplet-Patterns
+ *    und 16-step Standard-Patterns werden jetzt korrekt mit unterschiedlichen
+ *    stepsPerBar-Werten unterstuetzt.
  */
 import type { TempoEvent } from "../store/useTempoMapStore";
+
+/** Default Steps-pro-Bar (entspricht 16th-note-Resolution, 4/4 Takt). */
+export const DEFAULT_STEPS_PER_BAR = 16;
+
+/**
+ * v3.104.0: Step → Bar-Index Konvertierung.
+ *
+ * @param step Absolute Step-Position (kann ueber stepCount hinausgehen,
+ *             wenn die Engine mehrere Pattern-Loops summiert).
+ * @param stepsPerBar Steps pro Bar im aktuellen Pattern (default 16).
+ *                    Typische Werte: 16 (standard), 32 (8th-note doubled),
+ *                    12 (triplet), 8 (half-resolution).
+ * @returns 0-basierte Bar-Position (ganze Zahl, Floor).
+ */
+export function getCurrentBar(step: number, stepsPerBar: number = DEFAULT_STEPS_PER_BAR): number {
+  if (!Number.isFinite(step) || step < 0) return 0;
+  const spb = Number.isFinite(stepsPerBar) && stepsPerBar > 0 ? stepsPerBar : DEFAULT_STEPS_PER_BAR;
+  return Math.floor(step / spb);
+}
 
 /**
  * Liefert das BPM an der gegebenen Bar-Position.
@@ -78,6 +106,30 @@ export function getCurrentBpmOrFallback(
 ): number {
   const resolved = getCurrentBpm(events, atBar);
   return resolved === null ? fallbackBpm : resolved;
+}
+
+/**
+ * v3.104.0: stepCount-aware Resolver. Akzeptiert eine absolute Step-Position
+ * + stepsPerBar-Hinweis und leitet daraus die Bar-Position ab.
+ *
+ * Geschlossen v3.96-Caveat: `Math.floor(step/16)` war nur korrekt bei 16-step
+ * patterns. 32-step (8th-note-Resolution doubled) und 12-step (Triplet)
+ * brauchen explizite stepsPerBar-Angabe.
+ *
+ * @param step Absolute Step-Position.
+ * @param stepsPerBar Steps pro Bar (default 16).
+ * @param events Tempo-Events.
+ * @param fallbackBpm Fallback wenn Map leer oder Position vor erstem Event.
+ * @returns BPM in MIN_BPM..MAX_BPM (gecallback'd durch getCurrentBpmOrFallback).
+ */
+export function getCurrentBpmFromStep(
+  step: number,
+  stepsPerBar: number,
+  events: TempoEvent[],
+  fallbackBpm: number
+): number {
+  const bar = getCurrentBar(step, stepsPerBar);
+  return getCurrentBpmOrFallback(events, bar, fallbackBpm);
 }
 
 /**

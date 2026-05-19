@@ -27,6 +27,12 @@ export interface TempoMapPanelProps {
   currentBar?: number;
   /** Max anzuzeigende Bar-Spanne; defaultet auf max(events.atBar) + 16. */
   maxBar?: number;
+  /**
+   * v3.104.0: Steps pro Bar des aktuellen Patterns (default 16).
+   * Wird benoetigt fuer korrekte X-Achsen-Beschriftung bei 32-step
+   * (8th-note doubled) oder 12-step (triplet) Patterns.
+   */
+  stepsPerBar?: number;
   onClose?: () => void;
 }
 
@@ -34,9 +40,10 @@ const PANEL_HEIGHT = 220;
 const PANEL_PADDING_X = 32;
 const PANEL_PADDING_Y = 16;
 
-export function TempoMapPanel({ currentBar = 0, maxBar, onClose }: TempoMapPanelProps) {
+export function TempoMapPanel({ currentBar = 0, maxBar, stepsPerBar = 16, onClose }: TempoMapPanelProps) {
   const { events, addEvent, removeEvent, setEventBpm, setEventRamp, clear } = useTempoMapStore();
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const effectiveStepsPerBar = stepsPerBar > 0 ? stepsPerBar : 16;
 
   // Default-Span: 64 Bars oder etwas mehr als der letzte Event
   const effectiveMaxBar = useMemo(() => {
@@ -196,6 +203,9 @@ export function TempoMapPanel({ currentBar = 0, maxBar, onClose }: TempoMapPanel
       <div className="text-xs text-text-dim mb-2">
         Klick = Event hinzufuegen, Drag = BPM aendern, Doppelklick = Ramp togglen,
         Rechtsklick = Entfernen. Max {MAX_TEMPO_EVENTS} Events ({events.length} aktiv).
+        {effectiveStepsPerBar !== 16 && (
+          <> · <span className="text-text-muted">Pattern: {effectiveStepsPerBar} steps/bar</span></>
+        )}
       </div>
 
       <div

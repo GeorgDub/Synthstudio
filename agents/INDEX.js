@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.103.0",
+    version: "3.104.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -159,19 +159,19 @@ const INDEX = {
       lastSeen: "2026-05-19T08:50:00.000Z",
       ownedBy:  "backend"
     },
-    "client/src/utils/tempoMap.ts (v3.95.0 NEU)": {
-      role:     "v3.95.0 NEU (+~115 LOC, pure Resolver, React-frei, DOM-frei, voll unit-testbar). getCurrentBpm(events, atBar): null bei leerer Map oder Position vor erstem Event (Caller nutzt Fallback-BPM). Algorithm: sorted-Lookup, prev = letztes Event mit atBar<=position, next = nachfolgendes. Bei next.ramp=true → lineare Interpolation prev.bpm→next.bpm (mit clampedT=0..1). Sonst hard-change (prev.bpm bis < next.atBar, ab >=next.atBar prevIdx points to next). 'Ramp' gehoert ans Ziel-Event analog Logic Pro / Bitwig Tempo-Map. Plus getCurrentBpmOrFallback (Convenience fuer Engine), serializeTempoEvents + parseTempoEvents (Schema v1.35 Round-Trip-Helper, sanitisiert + sortiert).",
-      lastSeen: "2026-05-19T08:50:00.000Z",
+    "client/src/utils/tempoMap.ts (v3.104.0 stepCount-aware)": {
+      role:     "v3.104.0 ERWEITERT (+~45 LOC, baseline v3.95 unveraendert). NEU export const DEFAULT_STEPS_PER_BAR=16. NEU getCurrentBar(step, stepsPerBar=16): pure-Helper, Math.floor(step/spb), defensive NaN/Inf/negativ→0, stepsPerBar<=0|NaN→DEFAULT. NEU getCurrentBpmFromStep(step, stepsPerBar, events, fallback): kombiniert getCurrentBar+getCurrentBpmOrFallback fuer engine-side step→BPM Lookup. Schliesst v3.96-Caveat (Math.floor(step/16) war nur korrekt bei 16-step Patterns). v3.95-Body (getCurrentBpm, getCurrentBpmOrFallback, serializeTempoEvents, parseTempoEvents) unveraendert.",
+      lastSeen: "2026-05-19T10:55:00.000Z",
       ownedBy:  "backend"
     },
-    "client/src/components/TempoMap/TempoMapPanel.tsx (v3.95.0 NEU)": {
-      role:     "v3.95.0 NEU (+~310 LOC) + index.ts. Timeline-View mit X-Achse (Bar-Index, default 64 Bars Span, dynamic erweitert wenn last-event darueber) + Y-Achse (MIN_BPM..MAX_BPM, Gridlines bei 60/100/120/140/160/200/240). SVG-Polyline visualisiert Verlauf (hold-then-step bei !ramp = horizontal+vertikal, diagonal bei ramp). Interaktion: Click in leeren Bereich → addEvent (Bar=xToBar, BPM=yToBpm); Mouse-Drag-Handle → setEventBpm (vertikale Bewegung waehrend dragId aktiv); Doppelklick auf Event → toggle ramp; Rechtsklick → removeEvent. Plus Event-Liste-Table mit Inline-BPM-Input + ramp/hard-Toggle-Button + Trash-Icon. Plus Clear-All + Append-Event-Button. Optionaler Playhead bei currentBar-Prop. Vollstaendig semantische Tailwind-Tokens (bg-bg-panel / text-accent-primary / border-border-color / etc.) — KEIN hardcoded color.",
-      lastSeen: "2026-05-19T08:50:00.000Z",
+    "client/src/components/TempoMap/TempoMapPanel.tsx (v3.104.0 +stepsPerBar)": {
+      role:     "v3.104.0 ERWEITERT (+~10 LOC, baseline v3.95 unveraendert). NEU optional Prop stepsPerBar?:number (default 16) + effectiveStepsPerBar-Guard (>0 sonst 16). Info-Text zeigt 'Pattern: <N> steps/bar' wenn !=16 (Caller-Hinweis bei 12-triplet / 32-doubled / 64). SVG-Render bleibt bar-basiert (keine x-Achse-Aenderung — atBar IST bar-position). v3.95-Body (X/Y-Achse, Polyline-hold-then-step/ramp, Click/Drag/Doppelklick/Rechtsklick-Interaktion, Event-Liste-Table, Append-Button) unveraendert.",
+      lastSeen: "2026-05-19T10:55:00.000Z",
       ownedBy:  "backend"
     },
-    "client/src/audio/AudioEngine.ts (v3.95.0 +TempoMap-Hook)": {
-      role:     "v3.95.0 ERWEITERT (+~45 LOC, bestehende Engine unveraendert): NEU private _tempoMapResolver: ((atBar:number)=>number|null)|null + public setTempoMapResolver() (App.tsx wired das mit useTempoMapStore.getState().events). NEU private _resolveTempoMapBpm() — try/catch defensive (Resolver-Throws → null), Clamping 20..300. _schedule()-Loop ruft _resolveTempoMapBpm() vor effectiveBpm-Computation auf: Vorrang-Order tempoMapBpm > pattern.bpm > this._bpm. Side-effect: synchronisiert this._bpm + _updateAudioTrackPlaybackRates() + _looperEngine.setBpm() wenn neuer Wert (delta>0.05 BPM). Backward-Compat: bei null-Return (leere Map / vor erstem Event / kein Resolver) wird der pre-v3.95-Pfad 1:1 beibehalten.",
-      lastSeen: "2026-05-19T08:50:00.000Z",
+    "client/src/audio/AudioEngine.ts (v3.104.0 stepCount-aware Tempo-Map)": {
+      role:     "v3.104.0 ERWEITERT (+~10 LOC im _resolveTempoMapBpm-Body, alle anderen v3.99/v3.95/v3.97 Bloecke unveraendert). Statt this.loopCount-Pass-Through an den Resolver: absStep = loopCount*_steps + _currentStep, stepsPerBar = _steps===16?16:_steps, bar = floor(absStep/stepsPerBar). Resolver-Callback erhaelt jetzt die korrekt-skalierte Bar-Position auch bei 12-step (triplet) / 32-step (8th-doubled) / 64-step Patterns. Schliesst v3.96-Caveat. JSDoc-Header v3.95→v3.104 angepasst. setTempoMapResolver-API unveraendert. v3.99-Count-In + v3.95-Tempo-Map-Vorrang-Order (tempoMapBpm > pattern.bpm > this._bpm) bleiben unveraendert.",
+      lastSeen: "2026-05-19T10:55:00.000Z",
       ownedBy:  "backend"
     },
     "client/src/utils/projectSerializer.ts (v3.95.0 v1.35)": {
@@ -179,10 +179,10 @@ const INDEX = {
       lastSeen: "2026-05-19T08:50:00.000Z",
       ownedBy:  "backend"
     },
-    "tests/features/tempo-map.test.ts (v3.95.0 NEU)": {
-      role:     "v3.95.0 NEU (+~265 LOC, 20 Tests in 8 describes): (1) addEvent × 3 — sortiert by atBar, ueberschreibt bei Kollision idempotent, BPM-Clamping (MIN/MAX). (2) Static-Resolver × 2 — prev.bpm bis next.atBar mit Hard-Change, last-Event-Hold. (3) Ramp-Resolver × 2 — linear interpoliert zwischen prev und next, ramp+hold-Plateau danach. (4) Empty/Fallback × 3 — Empty-Map liefert null, Position vor erstem Event liefert null, getCurrentBpmOrFallback nutzt fallback-Wert. (5) Schema v1.35 Round-Trip × 3 — serialize+parse mit ramp-Flag preserves, invalide Eintraege silent gefiltert, non-Array → leeres Array. (6) MAX_TEMPO_EVENTS × 2 — addEvent ueber Cap → no-op, replaceEvents kappt auf MAX. (7) Update/Remove/Clear × 4. (8) localStorage-Persistenz × 1.",
-      lastSeen: "2026-05-19T08:50:00.000Z",
-      ownedBy:  "testing"
+    "tests/features/tempo-map.test.ts (v3.104.0 +stepCount-aware)": {
+      role:     "v3.104.0 ERWEITERT (+~115 LOC, 32 Tests in 10 describes — 20 v3.95 baseline + 12 NEU). NEU describe 'getCurrentBar – stepCount-aware' × 6: 16-step (0..15→bar 0, 16..31→bar 1, 32→bar 2), 32-step (0..31→bar 0, 32..63→bar 1, 64→bar 2), 12-step triplet (0..11→bar 0, 12..23→bar 1, 24→bar 2), default stepsPerBar=16 + DEFAULT_STEPS_PER_BAR=16 Konstante, edge negativ/NaN/Infinity→0, edge stepsPerBar=0|NaN|negativ→DEFAULT-fallback, edge step exakt am Pattern-Ende. NEU describe 'getCurrentBpmFromStep – stepsPerBar-aware' × 6: 16-step BPM-change bei step 16, 32-step BPM-change bei step 32, 12-step Triplet BPM-change bei step 12, empty-map→fallback bei allen stepsPerBar-Werten, getCurrentBpm-Direct-API bleibt bar-basiert (backwards-compat). v3.95-Tests (addEvent, Resolver static/ramp, Empty/Fallback, Schema v1.35 Round-Trip, MAX_TEMPO_EVENTS, Update/Remove/Clear, localStorage) bleiben unveraendert.",
+      lastSeen: "2026-05-19T10:55:00.000Z",
+      ownedBy:  "backend"
     },
     "client/src/utils/midiFxEngine.ts (v3.93.0 note-off-tracking)": {
       role:     "v3.93.0 ERWEITERT (+~110 LOC, bestehende v3.92 Engine unverändert): NEU class MidiFxNoteTracker mit Map<channel:note, ExpandedNoteOff[]>. trackNoteOn(originalNote, channel, fxEvents)→count: filtert (1) timeOffsetMs>0 (Note-Repeat-Voices) und (2) Identity-Expansion (Output = Original-Note) — dedup per (channel,note). consumeNoteOff(originalNote, channel)→ExpandedNoteOff[] mit delete-on-consume. size-Getter + clear()-Methode für Panic-Stop. Vorheriger v3.92-Stand: MidiFxNode discriminated union mit 5 Kinds, applyMidiFx sequenziell. Header-JSDoc v3.92→v3.93 angepasst (Caveat 'Note-Off wird nicht dupliziert' entfernt).",
@@ -2577,6 +2577,34 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "backend",
+      timestamp: "2026-05-19T10:55:00.000Z",
+      done: [
+        "v3.104.0: stepCount-aware Tempo-Map currentBar (closes v3.96 caveat). Bisher v3.96: Math.floor(step/16) in SettingsPanel.TempoMapSection + loopCount-Pass-Through in AudioEngine._resolveTempoMapBpm. Korrekt fuer 16-step Patterns, falsch fuer 32-step (8th-doubled) / 12-step (triplet). Logic Pro / Bitwig Konvention: stepsPerBar wird vom aktuellen Pattern abgeleitet — Default 16 (standard 4/4 16th), 32 / 12 / 64 = ganzes Pattern als 1 Bar.",
+        "client/src/utils/tempoMap.ts ERWEITERT (+~45 LOC, baseline v3.95 unveraendert). NEU export const DEFAULT_STEPS_PER_BAR=16. NEU getCurrentBar(step, stepsPerBar=16): pure-Helper, Math.floor(step/spb), defensive NaN/Inf/negativ→0, stepsPerBar<=0|NaN→fallback DEFAULT_STEPS_PER_BAR. NEU getCurrentBpmFromStep(step, stepsPerBar, events, fallback): kombiniert getCurrentBar + getCurrentBpmOrFallback fuer engine-side step→BPM Lookup. JSDoc-Header dokumentiert v3.96-Caveat-Closure. getCurrentBpm + getCurrentBpmOrFallback signature unveraendert (bar-direct, backwards-compat).",
+        "client/src/audio/AudioEngine.ts ERWEITERT (+~10 LOC im _resolveTempoMapBpm-Body). Statt this.loopCount-Pass-Through: absStep = loopCount*_steps + _currentStep, stepsPerBar = _steps===16?16:_steps, bar = floor(absStep/stepsPerBar). Resolver-Callback erhaelt jetzt die korrekt-skalierte Bar-Position auch bei 12/32/64-Step-Patterns. JSDoc-Header v3.95→v3.104 angepasst. setTempoMapResolver-API unveraendert.",
+        "client/src/components/Settings/SettingsPanel.tsx ERWEITERT (+1 Import + ~5 LOC in TempoMapSection). NEU Import getCurrentBar aus @/utils/tempoMap. TempoMapSection nutzt jetzt getCurrentBar(step, stepsPerBar) statt Math.floor(step/16) und reicht stepsPerBar an TempoMapPanel durch.",
+        "client/src/components/TempoMap/TempoMapPanel.tsx ERWEITERT (+~10 LOC). NEU optional Prop stepsPerBar?:number (default 16). Info-Text zeigt 'Pattern: <N> steps/bar' wenn !=16. SVG-Render bleibt bar-basiert.",
+        "tests/features/tempo-map.test.ts ERWEITERT (+~115 LOC, 12 neue Tests in 2 describes — 20 Baseline-Tests bleiben). (1) getCurrentBar × 6: 16-step (0..15→bar 0, 16..31→bar 1, 32→bar 2), 32-step (0..31→bar 0, 32..63→bar 1), 12-step triplet (0..11→bar 0, 12..23→bar 1), default stepsPerBar=16 / DEFAULT_STEPS_PER_BAR-Konstante, edge negativ/NaN/Inf→0, edge stepsPerBar=0|NaN→DEFAULT, edge step exakt am Pattern-Ende. (2) getCurrentBpmFromStep × 6: 16-step BPM-change bei step 16, 32-step BPM-change bei step 32, 12-step Triplet bei step 12, empty-map→fallback bei allen stepsPerBar-Werten, getCurrentBpm-Direct-API bleibt bar-basiert (backwards-compat). Alle 32 Tests gruen (20 alt + 12 neu).",
+        "package.json 3.103.0 → 3.104.0. pnpm check: clean. pnpm vitest tempo-map.test.ts: 32/32 passed in 9ms."
+      ],
+      next: [
+        "Pattern-spezifischer stepsPerBar: aktuell skaliert die Engine bei nicht-16-step Patterns das ganze Pattern als 1 Bar. Bei polyrhythmischen 32-step Patterns (= 2 Bars 4/4) waere ein expliziter pattern.barCount-Field (default 1) sauberer. PatternData um optional barCount:number erweitern + Schema-Migration.",
+        "TempoMapPanel re-render bei live-stepCount-Change: aktuell liest TempoMapSection stepCount nur beim Render-Intervall. Bei Pattern-Switch waehrend Playback wird der x-axis erst beim naechsten 500ms-Tick aktualisiert.",
+        "Bei der absStep-Berechnung in _resolveTempoMapBpm wird loopCount erst bei _currentStep===_steps-1 inkrementiert. Pruefen ob das fuer Mitte-Pattern-Tempo-Map-Events Off-by-one-Effekte produziert.",
+        "True EBU R128 LRA Konvergenz aus v3.103-next bleibt offen."
+      ],
+      changed: [
+        "client/src/utils/tempoMap.ts (+~45 LOC: getCurrentBar + getCurrentBpmFromStep + DEFAULT_STEPS_PER_BAR)",
+        "client/src/audio/AudioEngine.ts (+~10 LOC in _resolveTempoMapBpm: absStep-basiert statt loopCount-direkt)",
+        "client/src/components/Settings/SettingsPanel.tsx (+1 Import + TempoMapSection nutzt getCurrentBar)",
+        "client/src/components/TempoMap/TempoMapPanel.tsx (+~10 LOC: stepsPerBar-Prop + Info-Hint)",
+        "tests/features/tempo-map.test.ts (+~115 LOC, 12 neue Tests)",
+        "package.json (3.103.0 → 3.104.0)",
+        "agents/INDEX.js"
+      ]
+    },
     {
       agent:     "backend",
       timestamp: "2026-05-19T10:50:00.000Z",
