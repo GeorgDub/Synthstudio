@@ -69,6 +69,7 @@ import { getEnvelopeFollowerConfigs } from "@/store/useEnvelopeFollowerStore";
 import { useSongStore } from "@/store/useSongStore";
 import { useHumanizerStore, computeHumanizerTimingOffset, computeHumanizerVelocityMultiplier } from "@/store/useHumanizerStore";
 import { useMetronomeStore } from "@/store/useMetronomeStore";
+import { useSubMixStore } from "@/store/useSubMixStore";
 import { useDrumMachineStore } from "@/store/useDrumMachineStore";
 import { useTransport } from "@/hooks/useTransport";
 import { RecordSettingsPopover } from "@/components/Transport/RecordSettingsPopover";
@@ -616,6 +617,16 @@ export default function App() {
   useEffect(() => {
     void AudioEngine.setCustomClickSound("beat", metronome.customBeatUrl);
   }, [metronome.customBeatUrl]);
+
+  // ── Sub-Mix-Buses ↔ AudioEngine (v3.79.1) ─────────────────────────────────
+  // Bei jeder State-Änderung des Sub-Mix-Stores syncen wir das volle Bus-
+  // Layout in die Engine. `syncSubMixState` ist idempotent — wenn nichts an
+  // den Bus-Nodes geändert werden muss, wird nur der Gain-Param gerampt
+  // (mit 20ms-Smoothing, klick-frei).
+  const subMix = useSubMixStore();
+  useEffect(() => {
+    AudioEngine.syncSubMixState(subMix);
+  }, [subMix]);
 
   // ── Zentraler Projekt-State ────────────────────────────────────────────────────
   const project = useProjectStore();

@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.79.0",
+    version: "3.79.1",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -89,6 +89,21 @@ const INDEX = {
   // ─── KNOWN FILE INDEX ──────────────────────────────────────
   // Key files agents have analyzed. Add new entries after working on a file.
   files: {
+    "client/src/audio/AudioEngine.ts (v3.79.1 sub-mix-engine-wiring)": {
+      role:     "v3.79.1 ERWEITERT (+~180 LOC, bestehende v3.78 lufs-tap + v3.77 lookahead+crossfade + v3.76 limiter + v3.75 master-fx + v3.79.0 Store-only bleibt). NEU `_subMixBusNodes: Map<busId, {gain, panner, volume}>` + `_channelSubMixAssignments: Map<partId, busId>` + `SUB_MIX_BUS_RAMP_SEC=0.02`. NEU `_resolveChannelDestination(partId)` Helper (Sub-Mix-Bus assigned → bus.gain, sonst masterGain). NEU 6 public Methods: `applySubMixBus(busId, bus, anyBusSolo)` (idempotent — erzeugt Bus-Nodes nur beim ersten Call, rampt volume/pan/effective-mute mit setTargetAtTime), `removeSubMixBus(busId)` (disconnect Bus-Nodes + Orphan-Reroute zu master), `routeChannelToSubMixBus(partId, busId|null)` (defensive busId-Validation gegen `_subMixBusNodes`, sonst null=master), `syncSubMixState(state)` (Bulk-Sync: Bus-Upsert + Orphan-Cleanup + Assignment-Diff), `getSubMixBusNodes()` (Test-Inspection), `getChannelSubMixAssignment(partId)` (Test-Lookup), `ensureChannelExists(partId)` (Test-Probe — eager-Create der Channel-Nodes). Wiring in `_getOrCreateChannelNodes`: `sidechainGain.connect(this._resolveChannelDestination(partId))` statt `sidechainGain.connect(master)` — Sub-Mix-Bus wird beim ersten Channel-Create automatisch picked up. `routeChannelToBus` (v3.x Bus-Compressor) ruft jetzt `_resolveChannelDestination` als Fallback (Priority: Bus-Compressor > Sub-Mix > master). reinit() entsorgt Bus-Nodes + clear()t die Map (Assignments bleiben → nächster sync rekonstruiert).",
+      lastSeen: "2026-05-19T05:00:00.000Z",
+      ownedBy:  "backend"
+    },
+    "tests/features/sub-mix-engine.test.ts (v3.79.1)": {
+      role:     "v3.79.1 NEU (~330 LOC, 11 Tests in 6 describes, env:node mit localStorage-Mock + Mock-AudioContext mit Gain/Panner-Tracking + Mock-Biquad/Delay/Convolver + setTargetAtTime-Spy der den Wert direkt schreibt für deterministische Assertions). (1) applySubMixBus × 2: erzeugt 1× Gain + 1× Panner verkabelt zu Master mit korrektem volume/pan-Init via setTargetAtTime, idempotent (zweimaliger Aufruf erzeugt KEINE neuen Nodes, rampt nur Gain+Pan auf neue Werte). (2) routeChannelToSubMixBus × 2: Channel mit busId hat das Assignment in der Map, Channel ohne busId hat null-Assignment (master-Default), null-Reassign no-op crash-frei. (3) Bus-Mute × 1: bus.mute=true → gain.value=0, mute=false → Volume kehrt zurück (state-Memory bleibt). (4) Bus-Solo × 2: anyBusSolo=true + bus.solo=false → gain=0 (Sister-Bus-Ducking), anyBusSolo=false → alle Buses behalten Volume. (5) Channel-Reassign × 1: Drums → FX Reassign ändert die Assignment-Map korrekt. (6) syncSubMixState × 3: Bulk-Sync erzeugt Buses + Assignments aus Store-Snapshot, Orphan-Cleanup (removeBus + sync entfernt Engine-Node), Idempotent (zweimaliger Sync erzeugt keine doppelten Gain-Nodes).",
+      lastSeen: "2026-05-19T05:00:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/App.tsx (v3.79.1 sub-mix-sync-effect)": {
+      role:     "v3.79.1 ERWEITERT (+~12 LOC, bestehende v3.x App.tsx bleibt): NEU `useSubMixStore`-Import + Subscription-useEffect direkt nach Metronome-Custom-Sounds-Block. Bei jeder useSubMixStore-Mutation (Custom-Observer-Pattern liefert neue Object-Ref) wird `AudioEngine.syncSubMixState(subMix)` gerufen. Idempotent — bei identischem State wird nur Gain-Param via setTargetAtTime gerampt (no-click 20ms smoothing).",
+      lastSeen: "2026-05-19T05:00:00.000Z",
+      ownedBy:  "backend"
+    },
     "client/src/store/useSubMixStore.ts (v3.79.0)": {
       role:     "v3.79.0 NEU (~330 LOC, Custom-Observer-Pattern wie useMasterFxStore, DOM-frei testbar): Sub-Mix-Buses-State. MAX_SUB_MIX_BUSES=8 Konstante. SubMixBus + SubMixBusFx + SubMixState Interfaces. defaultSubMixState()/DEFAULT_BUS_FX. Pure-Helpers clampNum/clampBool/clampString/clampBusFx. sanitizeBus(raw)→SubMixBus|null (validate id, clamp name max 32 + name-fallback 'Bus', volume 0..2, pan -1..+1, mute/solo bool, Hex-color-regex-match, defensive). sanitizeSubMixState(raw)→SubMixState (dedupe id, hart cap auf MAX_SUB_MIX_BUSES). localStorage-Persist 'synthstudio:sub-mix:v1'. Public-API: getSubMixState/getBuses/getBusForChannel(partId)/getBusById, createBus(name?)→id|null (returnt null wenn MAX erreicht), removeBus, renameBus, setBusColor (silent-strip invalid Hex via /^#[0-9a-fA-F]{3}([0-9a-fA-F]{3})?$/), setBusVolume/Pan/Mute/Solo, setBusFx, assignChannelToBus(busId, partId) auto-unassign aus anderen Buses (Channel kann nur in einem Bus sein), unassignChannel, anyBusSolo, isBusEffectivelyMuted(busId) Solo-Logik (any-bus-solo → others muted), setAllBuses(input) Project-Restore-Path mit undefined-Signal-Semantik, resetSubMix, __resetSubMixStoreForTests. useSubMixStore() React-Hook.",
       lastSeen: "2026-05-19T04:45:00.000Z",
@@ -2237,6 +2252,41 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "backend",
+      timestamp: "2026-05-19T05:00:00.000Z",
+      done: [
+        "v3.79.1: Sub-Mix Engine-Wiring — closes v3.79.0 dead-store. Audio-Routing für die in v3.79.0 eingeführten Sub-Mix-Buses ist jetzt verkabelt. Routing-Order: channelOutput (sidechainGain) → busGain(volume·soloFactor) → busPanner(pan) → masterGain. Channels ohne Sub-Mix-Bus-Assignment routen weiterhin direkt zu master (backward-compat, additiv). Solo-Logik: anyBusSolo → Sister-Buses bekommen gain=0 (Bus-Mute analog). State-Sync via einzigem useEffect in App.tsx, der `useSubMixStore` subscribet + `AudioEngine.syncSubMixState()` ruft (idempotent, no-click 20ms smoothing).",
+        "client/src/audio/AudioEngine.ts ERWEITERT (+~180 LOC, bestehende v3.79.0/v3.78/v3.77/etc. bleibt): NEU `_subMixBusNodes: Map<busId, {gain, panner, volume}>` + `_channelSubMixAssignments: Map<partId, busId>` + `SUB_MIX_BUS_RAMP_SEC=0.02`. NEU `_resolveChannelDestination(partId)` Helper (priorisiert assigned-Bus, sonst master). NEU 6 public Methods: `applySubMixBus(busId, bus, anyBusSolo)` — erzeugt fehlende Bus-Nodes idempotent + rampt volume/pan/effective-mute; `removeSubMixBus(busId)` — disconnect + Orphan-Channel-Reroute zu master; `routeChannelToSubMixBus(partId, busId|null)` — disconnect+reconnect mit defensive busId-Validation; `syncSubMixState(state)` — Bulk-Sync vom Store (Bus-Upsert + Cleanup + Assignment-Diff); `getSubMixBusNodes()` + `getChannelSubMixAssignment(partId)` Test-Helpers; `ensureChannelExists(partId)` Test-Probe für eager-Channel-Creation. Wiring in `_getOrCreateChannelNodes`: sidechainGain.connect(this._resolveChannelDestination(partId)) ersetzt sidechainGain.connect(master). reinit() entsorgt alle Bus-Nodes + clear()t die Map. Routing-Priorität: Bus-Compressor (v3.x existing) > Sub-Mix-Bus > masterGain (Sub-Mix kommt aus `routeChannelToBus`-existierender Pfad mit aufgerufenem `_resolveChannelDestination`).",
+        "client/src/App.tsx ERWEITERT (+~12 LOC): NEU `useSubMixStore`-Import + Subscription-useEffect. Bei jeder Store-Mutation wird AudioEngine.syncSubMixState() gerufen — der Effect ist abhängig von der `subMix`-State-Snapshot-Referenz (Custom-Observer-Pattern liefert neue Object-Ref bei jeder mutation, deshalb klassische React-useEffect-Dep-Array funktioniert).",
+        "tests/features/sub-mix-engine.test.ts (NEU, ~330 LOC, 11 Tests in 6 describes, env:node mit localStorage-Mock + Mock-AudioContext mit Gain/Panner/Biquad/Delay/Convolver-Tracking). (1) applySubMixBus × 2: erzeugt GainNode+Panner verkabelt zu Master + rampt volume/pan correct, idempotent (zweimaliger Aufruf erzeugt KEINE neuen Nodes). (2) routeChannelToSubMixBus × 2: Channel mit busId hat das Assignment in der Map, Channel ohne busId routes zu master (null assignment). (3) Bus-Mute × 1: bus.mute=true → gain.value=0, mute=false → Volume kehrt zurück. (4) Bus-Solo × 2: anyBusSolo=true + bus.solo=false → gain=0 (Sister-Bus-Ducking), anyBusSolo=false → alle Buses behalten Volume. (5) Channel-Reassign × 1: Bus A → Bus B Reassignment ändert die Assignment-Map. (6) syncSubMixState × 3: Bulk-Sync vom Store erzeugt Buses + Assignments, Orphan-Cleanup (removeBus + sync entfernt Engine-Node), Idempotent (zweimaliger Sync mit identischem State erzeugt keine doppelten Gain-Nodes).",
+        "package.json (3.79.0 → 3.79.1). pnpm check clean. pnpm test grün: 225 Test-Files / 5165 Tests passed (16 skipped, +11 vs v3.79.0 5154)."
+      ],
+      next: [
+        "v3.80: UI-Sub-Mix-Strip im MixerView — neuer Strip-Type mit Bus-Color, Member-Count-Anzeige, '+ New Bus'-Button, Channel-Strip 'Send to Bus'-Dropdown (rechtsklick oder Settings-Cog). Routing-Layer ist jetzt einsatzbereit — UI fehlt noch komplett.",
+        "v3.80: Pro-Bus-FX-Insert-Chain reuse vom channel-FX-graph-builder (makeMixerFxSlot/insertChains) — aktueller SubMixBusFx ist minimal (enabled + postGain), volle FX-Chain im Bus-Pfad erfordert Refactoring des channel-FX-Builders so dass er einen beliebigen Audio-Node-Output statt nur ChannelNodes konsumiert.",
+        "v3.80: True-Peak-Reader am Master-Output (4x-Oversampling für inter-sample peaks, übernommen aus v3.79).",
+        "v3.80: LUFS-Display Stereo-Tap (zwei AnalyserNodes statt 1-channel DownMix, übernommen aus v3.79).",
+        "v3.80: Pre/Post-Master-FX LUFS-Tap-Switch.",
+        "v3.80: Bus-of-Bus-Routing-Modul (groupier z.B. 'Drums-Bus' + 'Perc-Bus' in einen 'Beat-Bus' — wäre echte 2-Layer-Hierarchie, in v3.79 bewusst nicht unterstützt)."
+      ],
+      changed: [
+        "client/src/audio/AudioEngine.ts (+~180 LOC: _subMixBusNodes/_channelSubMixAssignments-Maps + _resolveChannelDestination + applySubMixBus/removeSubMixBus/routeChannelToSubMixBus/syncSubMixState/getSubMixBusNodes/getChannelSubMixAssignment/ensureChannelExists + reinit-Cleanup + _getOrCreateChannelNodes-Routing-Switch)",
+        "client/src/App.tsx (+~12 LOC: useSubMixStore-Import + Subscription-useEffect mit syncSubMixState-Call)",
+        "tests/features/sub-mix-engine.test.ts (NEU, ~330 LOC, 11 Tests in 6 describes, Mock-AudioContext mit Gain+Panner-Tracking)",
+        "package.json (3.79.0 → 3.79.1)",
+        "agents/INDEX.js (version + workLog)"
+      ],
+      caveats: [
+        "Sub-Mix-Bus-FX-Chain ist weiterhin minimal (SubMixBusFx-Struct hat nur enabled + postGain, NICHT verkabelt zu Engine-Nodes). v3.79.1 verdrahtet NUR die volume/pan/mute/solo-Layer. Volle pro-Bus-FX-Insert-Chain wartet auf v3.80 (Reuse vom channel-FX-graph-builder).",
+        "UI fehlt komplett — kein Mixer-Strip für Sub-Mix-Bus, kein 'Send to Bus'-Dropdown am Channel-Strip. v3.79.1 ist NUR der Audio-Layer. Aktuell ist die einzige Möglichkeit zum Erzeugen+Verwalten von Buses programmatisch via `createBus()` aus useSubMixStore + manuelles assignChannelToBus().",
+        "Routing-Priorität bei aktivem Bus-Compressor (v3.x routeChannelToBus): Bus-Compressor wins. Channels die im Sub-Mix-Bus assigned sind UND gleichzeitig den Bus-Compressor-Pfad aktivieren, gehen durch den Bus-Compressor — Sub-Mix wird ignoriert. Für saubere Trennung sollte einer der beiden deaktiviert werden (Bus-Compressor wird typisch für Drum-Bus-Glueing genutzt, Sub-Mix für allgemeine Channel-Grouping).",
+        "Solo-Logik nur Bus-Layer: Channel-Solo (in einem Bus) propagiert NICHT auf den Bus selbst — d.h. wenn der User einen einzelnen Bus-Member solo'd, hört man andere Bus-Members weiter mit. Diese hierarchische Solo-Resolution wäre v3.80.",
+        "Bus-Pan/Volume sind absolute Werte (nicht relativ zum Channel-Pan). Channels behalten ihren eigenen Pan-Wert (am Output-Panner vor sidechainGain), und der Bus-Pan kommt noch dazu. Bei Bus-Pan=0 + Channel-Pan=0 → Center wie erwartet. Aber Bus-Pan=-0.5 + Channel-Pan=+0.5 ergibt typisch links der Mitte, nicht exakt center (StereoPannerNode-Kaskade ist nicht linear).",
+        "Channels die VOR ihrem ersten Audio-Event mit Sub-Mix-Bus assigned sind, kriegen die Routing-Information beim ersten _getOrCreateChannelNodes-Call (via _resolveChannelDestination). Channels die NACH dem Routing erzeugt werden müssen via routeChannelToSubMixBus() oder syncSubMixState() nachträglich angewiesen werden — der App.tsx-useEffect macht das automatisch, aber bei programmatischen Custom-Pfaden ist defensive Aufmerksamkeit nötig.",
+        "reinit() (z.B. nach Audio-Device-Switch) verwirft alle Bus-Nodes. Der nächste useEffect-Tick rekonstruiert sie aus dem Store (idempotent). Während des Re-Inits (kurze Race) sind Channels die assigned waren und vom store NOCH nicht resynced wurden, kurz disconnect — kein Crash, aber kurzes Stille-Fenster."
+      ]
+    },
     {
       agent:     "backend",
       timestamp: "2026-05-19T04:45:00.000Z",

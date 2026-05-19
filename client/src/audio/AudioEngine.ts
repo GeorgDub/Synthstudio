@@ -39,6 +39,10 @@ import {
   updateContextLatency as _perfUpdateContextLatency,
   setSchedulerInterval as _perfSetSchedulerInterval,
 } from "../store/useAudioPerformanceStore";
+// v3.79.1: Sub-Mix-Bus-Routing (Audio-Wiring).
+// Der Store (v3.79.0) liefert die State-Layer, AudioEngine verdrahtet Channels
+// auf Bus-Gain-Nodes statt direkt zum Master.
+import type { SubMixBus, SubMixState } from "../store/useSubMixStore";
 
 // ─── Typen ────────────────────────────────────────────────────────────────────
 
@@ -662,6 +666,34 @@ class AudioEngineClass {
   /** Polling-Intervall in ms (Task-Spec: 10Hz). */
   private readonly LUFS_POLL_INTERVAL_MS = 100;
 
+  // ─── Sub-Mix-Buses (v3.79.1) ──────────────────────────────────────────────
+  /**
+   * v3.79.1: Sub-Mix-Bus Audio-Wiring.
+   *
+   * v3.79.0 hat den State (useSubMixStore) + Schema (v1.32). v3.79.1
+   * verdrahtet das Routing im Audio-Graph:
+   *
+   *   channelOutput (sidechainGain) → busGain(volume·soloFactor) →
+   *     busPanner(pan) → masterGain
+   *
+   * Channels ohne `subMixBusId` routen weiter direkt in `masterGain`
+   * (Default-Verhalten, backward-compat).
+   *
+   * Per Bus halten wir genau zwei Nodes (gain + panner). Eine optionale
+   * Pro-Bus-FX-Chain (postGain etc.) wird in v3.80 ergänzt — aktueller
+   * SubMixBusFx ist im Store noch minimal.
+   *
+   * Solo-Logik: anyBusSolo → andere Buses bekommen gain=0 (Bus-Gain
+   * gemultiplext mit einem effective-mute-Faktor in `applySubMixBus`).
+   * Mute analog: gain.value = 0. Beides ohne disconnect — der Pfad bleibt
+   * permanent verkabelt, nur der Pegel wird auf 0 gerampt.
+   */
+  private _subMixBusNodes = new Map<string, { gain: GainNode; panner: StereoPannerNode; volume: number }>();
+  /** Mapping partId → busId. Channels ohne Eintrag routen direkt in master. */
+  private _channelSubMixAssignments = new Map<string, string>();
+  /** Smoothing-Konstante (ms*1e-3) für Bus-Gain-Rampe (no-click). */
+  private readonly SUB_MIX_BUS_RAMP_SEC = 0.02;
+
   // Scheduling
   private schedulerTimer: ReturnType<typeof setInterval> | null = null;
   // Sammelt pending Position-Callback-Timeouts, damit stop() sie aufräumen kann
@@ -970,6 +1002,15 @@ class AudioEngineClass {
     this._masterLimiterLookahead = null;
     this._masterLimiterWet = null;
     this._masterLimiterDry = null;
+    // v3.79.1: Sub-Mix-Bus-Nodes verwerfen — werden bei nächstem
+    // syncSubMixState() neu erzeugt wenn der Store noch Buses hat.
+    for (const bus of this._subMixBusNodes.values()) {
+      try { bus.panner.disconnect(); } catch { /* ignore */ }
+      try { bus.gain.disconnect(); } catch { /* ignore */ }
+    }
+    this._subMixBusNodes.clear();
+    // Assignments bleiben — sie werden beim nächsten Channel-Get bzw.
+    // syncSubMixState neu angewendet.
     this.masterGain = null;
     this._outputAnalyser = null;
     // v3.78.0: LUFS-Tap aufräumen.
@@ -1664,8 +1705,187 @@ class AudioEngineClass {
     if (toBus && this._busCompressorIn && this._busCompressorEnabled) {
       nodes.sidechainGain.connect(this._busCompressorIn);
     } else {
-      nodes.sidechainGain.connect(this.masterGain);
+      // v3.79.1: Sub-Mix-Bus hat Priorität gegenüber dem direkten Master-
+      // Route — wenn der Channel einem Bus zugewiesen ist, route dorthin.
+      const dest = this._resolveChannelDestination(partId);
+      nodes.sidechainGain.connect(dest);
     }
+  }
+
+  // ─── Sub-Mix-Buses (v3.79.1) ───────────────────────────────────────────────
+
+  /**
+   * v3.79.1: Default-Destination für einen Channel-Output berechnen.
+   * Priorität: Sub-Mix-Bus (assigned) → masterGain.
+   * Der Bus-Compressor (`routeChannelToBus`) wickelt sein Routing selbst ab.
+   */
+  private _resolveChannelDestination(partId: string): AudioNode {
+    const busId = this._channelSubMixAssignments.get(partId);
+    if (busId) {
+      const bus = this._subMixBusNodes.get(busId);
+      if (bus) return bus.gain;
+    }
+    return this.masterGain!;
+  }
+
+  /**
+   * v3.79.1: Erzeugt (falls nicht existent) die Bus-Nodes (gain + panner) und
+   * verbindet sie zum Master. Wendet anschließend volume/pan/mute/solo-Faktor
+   * auf den Gain-Param an (mit 20ms Rampe, no-click).
+   *
+   * Solo-Logik: wenn `anyBusSolo` true ist und dieser Bus selbst nicht solo'd
+   * ist, wird das effective-Volume auf 0 multipliziert (Sister-Bus-Ducking).
+   *
+   * Idempotent — mehrfacher Aufruf mit identischem State ist no-op am Audio-
+   * Graph (rampt nur den Gain auf den selben Wert).
+   */
+  applySubMixBus(busId: string, bus: SubMixBus, anyBusSolo: boolean): void {
+    if (!this.ctx || !this.masterGain) return;
+    let nodeSet = this._subMixBusNodes.get(busId);
+    if (!nodeSet) {
+      const gain = this.ctx.createGain();
+      const panner = this.ctx.createStereoPanner();
+      gain.gain.value = 0; // Start stumm — wird gleich gerampt.
+      panner.pan.value = bus.pan;
+      gain.connect(panner);
+      panner.connect(this.masterGain);
+      nodeSet = { gain, panner, volume: bus.volume };
+      this._subMixBusNodes.set(busId, nodeSet);
+    }
+    // Pan smooth.
+    nodeSet.panner.pan.setTargetAtTime(bus.pan, this.ctx.currentTime, this.SUB_MIX_BUS_RAMP_SEC);
+    // Effective Gain.
+    const muted = bus.mute || (anyBusSolo && !bus.solo);
+    const target = muted ? 0 : bus.volume;
+    nodeSet.volume = bus.volume;
+    nodeSet.gain.gain.setTargetAtTime(target, this.ctx.currentTime, this.SUB_MIX_BUS_RAMP_SEC);
+  }
+
+  /**
+   * v3.79.1: Entfernt einen Bus aus dem Audio-Graph. Alle Channels die noch
+   * darauf zeigten müssen vom Store bereits via assignChannelToBus(null) auf
+   * master umgehängt worden sein — defensive disconnect ohne reroute hier.
+   */
+  removeSubMixBus(busId: string): void {
+    const nodeSet = this._subMixBusNodes.get(busId);
+    if (!nodeSet) return;
+    try { nodeSet.panner.disconnect(); } catch { /* ignore */ }
+    try { nodeSet.gain.disconnect(); } catch { /* ignore */ }
+    this._subMixBusNodes.delete(busId);
+    // Channels die noch auf diesen Bus zeigen → unassign + reroute zu master.
+    const orphans: string[] = [];
+    for (const [pid, bid] of this._channelSubMixAssignments) {
+      if (bid === busId) orphans.push(pid);
+    }
+    for (const pid of orphans) {
+      this._channelSubMixAssignments.delete(pid);
+      this._reconnectChannelOutput(pid);
+    }
+  }
+
+  /**
+   * v3.79.1: Weist einen Channel einem Bus zu (oder null = master direkt).
+   * Disconnected den Channel-Output und re-connected zum neuen Destination.
+   * Klick-Robust durch sidechainGain als Branchpoint (existierender Pattern).
+   */
+  routeChannelToSubMixBus(partId: string, busId: string | null): void {
+    if (busId !== null && !this._subMixBusNodes.has(busId)) {
+      // Unknown Bus → defensive: behandle wie null (=master).
+      busId = null;
+    }
+    if (busId === null) {
+      this._channelSubMixAssignments.delete(partId);
+    } else {
+      this._channelSubMixAssignments.set(partId, busId);
+    }
+    this._reconnectChannelOutput(partId);
+  }
+
+  /**
+   * v3.79.1: Disconnect+Reconnect der channel-Output-Verbindung (sidechainGain)
+   * gemäß aktuellem Sub-Mix-Assignment + Bus-Compressor-Status.
+   * Idempotent — auch wenn der Channel noch nicht existiert (silent no-op).
+   */
+  private _reconnectChannelOutput(partId: string): void {
+    const nodes = this.channelNodes.get(partId);
+    if (!nodes || !this.masterGain) return;
+    try { nodes.sidechainGain.disconnect(); } catch { /* ignore */ }
+    // Bus-Compressor hat höchste Priorität (existierende v3.x-Logik).
+    if (this._busCompressorIn && this._busCompressorEnabled) {
+      nodes.sidechainGain.connect(this._busCompressorIn);
+      return;
+    }
+    const dest = this._resolveChannelDestination(partId);
+    nodes.sidechainGain.connect(dest);
+  }
+
+  /**
+   * v3.79.1: Bulk-Sync vom Store-Snapshot. Erzeugt fehlende Bus-Nodes,
+   * entfernt orphan-Buses, aktualisiert Channel-Assignments. Wird vom React-
+   * useEffect-Subscriber in App.tsx gerufen.
+   *
+   * Defensiv gegen wiederholtes Aufrufen mit identischem State (idempotent).
+   */
+  syncSubMixState(state: SubMixState): void {
+    if (!this.ctx || !this.masterGain) return;
+    const wantedBusIds = new Set<string>();
+    const anyBusSolo = state.buses.some((b) => b.solo);
+    // 1) Anwesende Buses upserten.
+    for (const bus of state.buses) {
+      wantedBusIds.add(bus.id);
+      this.applySubMixBus(bus.id, bus, anyBusSolo);
+    }
+    // 2) Entfernte Buses abräumen.
+    const toRemove: string[] = [];
+    for (const id of this._subMixBusNodes.keys()) {
+      if (!wantedBusIds.has(id)) toRemove.push(id);
+    }
+    for (const id of toRemove) this.removeSubMixBus(id);
+    // 3) Channel-Assignments synchen.
+    const wantedAssign = new Map<string, string>();
+    for (const bus of state.buses) {
+      for (const partId of bus.channelIds) {
+        wantedAssign.set(partId, bus.id);
+      }
+    }
+    // Channels die im Store gelistet sind:
+    const touched = new Set<string>();
+    for (const [partId, busId] of wantedAssign) {
+      touched.add(partId);
+      const current = this._channelSubMixAssignments.get(partId);
+      if (current === busId) continue;
+      this.routeChannelToSubMixBus(partId, busId);
+    }
+    // Channels die intern noch ein Assignment haben, im Store aber nicht
+    // mehr (= un-assigned worden) → zurück zu master.
+    const orphans: string[] = [];
+    for (const [partId] of this._channelSubMixAssignments) {
+      if (!touched.has(partId)) orphans.push(partId);
+    }
+    for (const pid of orphans) {
+      this.routeChannelToSubMixBus(pid, null);
+    }
+  }
+
+  /** v3.79.1: Test-Helper / Inspection — liefert die Bus-Node-Map kopiert. */
+  getSubMixBusNodes(): ReadonlyMap<string, { gain: GainNode; panner: StereoPannerNode; volume: number }> {
+    return this._subMixBusNodes;
+  }
+
+  /** v3.79.1: Test-Helper — Channel-Assignment-Lookup. */
+  getChannelSubMixAssignment(partId: string): string | null {
+    return this._channelSubMixAssignments.get(partId) ?? null;
+  }
+
+  /**
+   * v3.79.1: Eager-Create der Channel-Nodes ohne ein konkretes Audio-
+   * Event abzufeuern. Hauptsächlich für Tests + Sub-Mix-Routing-Probes
+   * verwendet. Idempotent. Liefert true wenn (jetzt) verkabelt.
+   */
+  ensureChannelExists(partId: string): boolean {
+    if (!this.ctx || !this.masterGain) return false;
+    this._getOrCreateChannelNodes(partId, DEFAULT_CHANNEL_FX);
+    return this.channelNodes.has(partId);
   }
 
   /** Liefert den Bus-Kompressor-AnalyserNode für VU-Anzeige. */
@@ -2605,7 +2825,9 @@ class AudioEngineClass {
 
     output.connect(panner);
     panner.connect(sidechainGain);
-    sidechainGain.connect(master);
+    // v3.79.1: Wenn der Channel bereits einem Sub-Mix-Bus zugewiesen ist,
+    // route direkt dorthin statt zu master. Sonst default master.
+    sidechainGain.connect(this._resolveChannelDestination(partId));
 
     // Sends vom Output in globale Buses.
     // v3.75.0: Reverb-Pfad geht jetzt durch den PreDelay-Node, damit der
