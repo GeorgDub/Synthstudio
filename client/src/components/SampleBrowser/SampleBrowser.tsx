@@ -953,6 +953,23 @@ export function SampleBrowser({
   }, [filteredSamples]);
 
   // v3.152: Bulk-Delete-Handler. Asks confirmation, dann removeSample für jede ID.
+  // v3.153: Bulk-Tag-Add — Tag-Input-State + Handler.
+  const [bulkTagInputVisible, setBulkTagInputVisible] = useState(false);
+  const [bulkTagDraft, setBulkTagDraft] = useState("");
+  const handleBulkAddTag = useCallback(() => {
+    if (multiSelectIds.size === 0 || !onAddTagToSample) return;
+    const tag = bulkTagDraft.trim();
+    if (tag.length === 0) {
+      setBulkTagInputVisible(false);
+      return;
+    }
+    for (const id of multiSelectIds) {
+      onAddTagToSample(id, tag);
+    }
+    setBulkTagDraft("");
+    setBulkTagInputVisible(false);
+  }, [bulkTagDraft, multiSelectIds, onAddTagToSample]);
+
   const handleBulkDelete = useCallback(async () => {
     if (multiSelectIds.size === 0 || !onRemoveSample) return;
     const ids = Array.from(multiSelectIds);
@@ -1660,29 +1677,69 @@ export function SampleBrowser({
                 {/* v3.152: Bulk-Action-Bar (nur sichtbar bei multi-select). */}
                 {multiSelectIds.size > 0 && (
                   <div
-                    className="flex items-center gap-2 px-3 py-1.5 border-b border-border-color/50 bg-accent-secondary/10"
+                    className="flex flex-col gap-1.5 px-3 py-1.5 border-b border-border-color/50 bg-accent-secondary/10"
                     data-testid="sample-browser-bulk-bar"
                   >
-                    <span className="text-[11px] font-semibold text-accent-secondary">
-                      {multiSelectIds.size} Sample{multiSelectIds.size === 1 ? "" : "s"} ausgewählt
-                    </span>
-                    <button
-                      onClick={handleBulkDelete}
-                      disabled={!onRemoveSample}
-                      data-testid="sample-browser-bulk-delete"
-                      className="ml-auto px-2 py-0.5 rounded text-[10px] bg-accent-danger text-white hover:bg-accent-danger/80 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                      title="Alle ausgewählten Samples aus dem Projekt entfernen"
-                    >
-                      Löschen
-                    </button>
-                    <button
-                      onClick={() => setMultiSelectIds(clearSelection())}
-                      data-testid="sample-browser-bulk-clear"
-                      className="px-2 py-0.5 rounded text-[10px] border border-border-color text-text-muted hover:text-text-primary transition-colors"
-                      title="Auswahl aufheben"
-                    >
-                      Aufheben
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] font-semibold text-accent-secondary">
+                        {multiSelectIds.size} Sample{multiSelectIds.size === 1 ? "" : "s"} ausgewählt
+                      </span>
+                      <button
+                        onClick={() => {
+                          setBulkTagInputVisible((v) => !v);
+                          setBulkTagDraft("");
+                        }}
+                        disabled={!onAddTagToSample}
+                        data-testid="sample-browser-bulk-tag"
+                        className="ml-auto px-2 py-0.5 rounded text-[10px] border border-border-color text-text-primary hover:border-accent-primary hover:text-accent-primary disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        title="Tag zu allen ausgewählten Samples hinzufügen"
+                      >
+                        + Tag
+                      </button>
+                      <button
+                        onClick={handleBulkDelete}
+                        disabled={!onRemoveSample}
+                        data-testid="sample-browser-bulk-delete"
+                        className="px-2 py-0.5 rounded text-[10px] bg-accent-danger text-white hover:bg-accent-danger/80 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        title="Alle ausgewählten Samples aus dem Projekt entfernen"
+                      >
+                        Löschen
+                      </button>
+                      <button
+                        onClick={() => setMultiSelectIds(clearSelection())}
+                        data-testid="sample-browser-bulk-clear"
+                        className="px-2 py-0.5 rounded text-[10px] border border-border-color text-text-muted hover:text-text-primary transition-colors"
+                        title="Auswahl aufheben"
+                      >
+                        Aufheben
+                      </button>
+                    </div>
+                    {/* v3.153: Bulk-Tag-Input (inline) */}
+                    {bulkTagInputVisible && (
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          type="text"
+                          autoFocus
+                          value={bulkTagDraft}
+                          onChange={(e) => setBulkTagDraft(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") handleBulkAddTag();
+                            if (e.key === "Escape") { setBulkTagInputVisible(false); setBulkTagDraft(""); }
+                          }}
+                          placeholder="Tag eingeben + Enter…"
+                          className="flex-1 bg-bg-panel border border-border-color rounded px-2 py-0.5 text-[11px] text-text-primary placeholder:text-text-dim focus:outline-none focus:border-accent-primary"
+                          data-testid="sample-browser-bulk-tag-input"
+                        />
+                        <button
+                          onClick={handleBulkAddTag}
+                          disabled={bulkTagDraft.trim().length === 0}
+                          className="px-2 py-0.5 rounded text-[10px] bg-accent-primary text-bg-base font-semibold hover:bg-accent-primary/80 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                          data-testid="sample-browser-bulk-tag-apply"
+                        >
+                          Hinzufügen
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
 
