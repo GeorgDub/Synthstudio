@@ -38,6 +38,7 @@ import { clampRepeatCount } from "@/utils/songSequencer";
 import { SongJumpEditor } from "@/components/SongMode/SongJumpEditor";
 import { useSongJumpStore } from "@/store/useSongJumpStore";
 import { usePatternCrossfadeStore } from "@/store/usePatternCrossfadeStore";
+import { useConfirm } from "@/components/common/ConfirmDialog";
 
 interface SongModePanelProps {
   patterns: PatternData[];
@@ -59,6 +60,7 @@ export function SongModePanel({ patterns, activePatternId, className = "" }: Son
   const currentRepeat = state.currentRepeat;
 
   // The "selected song" for editing in the panel. Defaults to the first song.
+  const confirm = useConfirm();
   const [selectedSongId, setSelectedSongId] = useState<string | null>(null);
   const effectiveSelectedId =
     (selectedSongId && songs.find(s => s.id === selectedSongId)?.id) ?? songs[0]?.id ?? null;
@@ -101,9 +103,13 @@ export function SongModePanel({ patterns, activePatternId, className = "" }: Son
     renameSong(selectedSong.id, next);
   }
 
-  function handleDeleteSong() {
+  async function handleDeleteSong() {
     if (!selectedSong) return;
-    const ok = window.confirm(`Song "${selectedSong.name}" wirklich löschen?`);
+    const ok = await confirm({
+      title: `Song "${selectedSong.name}" wirklich löschen?`,
+      confirmLabel: "Löschen",
+      destructive: true,
+    });
     if (!ok) return;
     removeSong(selectedSong.id);
     setSelectedSongId(null);

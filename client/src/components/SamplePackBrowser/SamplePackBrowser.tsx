@@ -31,6 +31,7 @@ import {
   type PreviewHandle,
 } from "@/utils/samplePackPreview";
 import { PACK_SAMPLE_DRAG_MIME } from "@/components/SamplePackBrowser/dropPayload";
+import { useConfirm } from "@/components/common/ConfirmDialog";
 
 // Re-export für Backwards-Compat (alte Imports aus DrumMachine).
 export { PACK_SAMPLE_DRAG_MIME };
@@ -57,6 +58,7 @@ const CATEGORY_ICONS: Record<SampleCategory, string> = {
 
 export function SamplePackBrowser({ className = "" }: { className?: string }) {
   const store = useSamplePackStore();
+  const confirm = useConfirm();
 
   // Filter-State
   const [selectedPackId, setSelectedPackId] = useState<string | null>(null);
@@ -378,8 +380,13 @@ export function SamplePackBrowser({ className = "" }: { className?: string }) {
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  if (window.confirm(`Pack "${p.name}" entfernen?`)) {
+                onClick={async () => {
+                  const ok = await confirm({
+                    title: `Pack "${p.name}" entfernen?`,
+                    confirmLabel: "Entfernen",
+                    destructive: true,
+                  });
+                  if (ok) {
                     store.removePack(p.id);
                     if (selectedPackId === p.id) setSelectedPackId(null);
                   }

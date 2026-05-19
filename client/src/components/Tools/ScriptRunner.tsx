@@ -35,6 +35,7 @@ import { ScriptEditor, SCRIPT_EXAMPLES } from "./ScriptEditor";
 import { AiScriptGeneratorDialog } from "./AiScriptGeneratorDialog";
 import { BUILT_IN_SCRIPTS, groupBuiltInsByCategory, type BuiltInScript } from "@/utils/builtInScripts";
 import { toast } from "@/store/useToastStore";
+import { useConfirm } from "@/components/common/ConfirmDialog";
 
 interface ScriptRunnerProps {
   /** Aktueller BPM-Wert (für Anzeige; Sandbox liest via setBpm-Setter). */
@@ -55,6 +56,7 @@ interface ScriptRunnerProps {
 
 export function ScriptRunner({ bpm, isPlaying }: ScriptRunnerProps) {
   const { scripts, addScript, removeScript, updateScript } = useScriptStore();
+  const confirm = useConfirm();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
   const [logs, setLogs] = useState<SandboxLogEntry[]>([]);
@@ -131,12 +133,17 @@ export function ScriptRunner({ bpm, isPlaying }: ScriptRunnerProps) {
   }, []);
 
   const handleDelete = useCallback(
-    (id: string) => {
-      if (!window.confirm("Skript wirklich löschen?")) return;
+    async (id: string) => {
+      const ok = await confirm({
+        title: "Skript wirklich löschen?",
+        confirmLabel: "Löschen",
+        destructive: true,
+      });
+      if (!ok) return;
       removeScript(id);
       if (selectedId === id) setSelectedId(null);
     },
-    [removeScript, selectedId],
+    [confirm, removeScript, selectedId],
   );
 
   const handleUpdate = useCallback(

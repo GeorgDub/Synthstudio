@@ -53,6 +53,7 @@ import { ZoomableWaveform } from "@/components/AudioTrack/ZoomableWaveform";
 import { ChannelColorPicker } from "@/components/Mixer/ChannelColorPicker";
 import { resolveChannelColor } from "@/utils/channelColors";
 import { useElectron } from "../../../../electron/useElectron";
+import { useConfirm } from "@/components/common/ConfirmDialog";
 
 // ─── Hilfsfunktionen ─────────────────────────────────────────────────────────
 
@@ -108,6 +109,7 @@ export function AudioTrackStrip({
   channelIndex,
 }: AudioTrackStripProps) {
   const electron = useElectron();
+  const confirm = useConfirm();
   const [editingName, setEditingName] = useState(false);
   const [draftName, setDraftName] = useState(track.name);
   const [pos01, setPos01] = useState(0);
@@ -145,11 +147,16 @@ export function AudioTrackStrip({
     setEditingName(false);
   }, [draftName, track.id, track.name]);
 
-  const handleRemove = useCallback(() => {
-    if (!window.confirm(`Audio-Track "${track.name}" entfernen?`)) return;
+  const handleRemove = useCallback(async () => {
+    const ok = await confirm({
+      title: `Audio-Track "${track.name}" entfernen?`,
+      confirmLabel: "Entfernen",
+      destructive: true,
+    });
+    if (!ok) return;
     try { AudioEngine.disposeAudioTrack(track.id); } catch { /* ignore */ }
     removeAudioTrack(track.id);
-  }, [track.id, track.name]);
+  }, [confirm, track.id, track.name]);
 
   // ── Relocate (broken) ──────────────────────────────────────────────────────
   const handleRelocate = useCallback(async () => {
