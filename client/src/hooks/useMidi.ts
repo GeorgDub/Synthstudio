@@ -1015,6 +1015,10 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
         // MIDI Step Input Event nutzt das Original-Event (Pre-FX), damit
         // Step-Input-Aufnahme unverändert bleibt.
         window.dispatchEvent(new CustomEvent("stepinput:noteon", { detail: { note: byte1, velocity: byte2 } }));
+        // v3.97.0: MIDI-Step-Recorder — eigener Event-Pfad für den
+        // Auto-Advance-Recorder (siehe useMidiStepRecorderStore). App.tsx
+        // listet diesen Event und schreibt direkt in den armed Channel.
+        window.dispatchEvent(new CustomEvent("midi:stepRecorder", { detail: { note: byte1, velocity: byte2, channel } }));
       }
       // Note-Mapping → applyMapping(target) | Perf-Pad | Part-Trigger
       // Precedence (v2.79): target > performancePadIndex > partId

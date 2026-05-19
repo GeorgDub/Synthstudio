@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.95.0",
+    version: "3.97.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -89,6 +89,31 @@ const INDEX = {
   // ─── KNOWN FILE INDEX ──────────────────────────────────────
   // Key files agents have analyzed. Add new entries after working on a file.
   files: {
+    "client/src/store/useMidiStepRecorderStore.ts (v3.97.0 NEU)": {
+      role:     "v3.97.0 NEU (+~165 LOC, Modul-Singleton + React-Hook, DOM-frei testbar, analog useNoteRepeatStore-Pattern). State {enabled, currentStep, armedPartId, mode:'overwrite'|'overdub'}. Actions: setEnabled (Disable resettet Cursor=0), setArmedPart (Channel-Switch resettet Cursor; idempotent bei gleichem Wert), setMode (Whitelist-Guard auf overwrite/overdub), advanceStep(stepCount) mit Modulo-Wrap + Math.max(1,stepCount)-Defense (gegen NaN/Infinity bei stepCount=0), setCurrentStep (explicit), reset() (full-Defaults), __resetForTests. Pure Getter isMidiStepRecorderEnabled / getMidiStepRecorderState. Listener-Set + useReducer-aequivalenter useState-Trigger im Hook. KEIN localStorage (Reload disarmt automatisch).",
+      lastSeen: "2026-05-19T09:25:00.000Z",
+      ownedBy:  "backend"
+    },
+    "tests/features/midi-step-recorder.test.ts (v3.97.0 NEU)": {
+      role:     "v3.97.0 NEU (+~290 LOC, 21 Tests in 8 describes, env:node, vitest). Cluster: (1) Defaults × 2 — initial enabled=false/step=0/null/overwrite + Getter-Spiegelung. (2) Store-Actions × 5 — setArmedPart resettet currentStep (idempotent bei gleichem), setMode-Whitelist (garbage→ignored), setEnabled(false)→Cursor=0, reset()→Defaults. (3) advanceStep × 4 — linear, Wrap stepCount=16/32, stepCount=0-Defense. (4) Note-On overwrite × 3 — single-write step+velocity, drei-Hit-Sequenz mit cursor=3, bestehender Step ueberschrieben. (5) Note-On overdub × 2 — additive bei inaktiv, Velocity-Update bei aktiv (mit Cursor-Advance). (6) Disabled=no-op × 3 — enabled=false / armedPartId=null / ghost-id. (7) Velocity-Clamping × 1. (8) Listener-Snapshot × 1. Plus applyNoteOnToPattern-Helper, der App.tsx-Listener 1:1 gegen Minimal-PatternMock simuliert.",
+      lastSeen: "2026-05-19T09:25:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/hooks/useMidi.ts (v3.97.0 +midi:stepRecorder)": {
+      role:     "v3.97.0 ERWEITERT (+3 LOC, bestehende v3.93 MIDI-FX-Note-Off-Tracking + v3.92 MIDI-FX-Routing + v3.81+ Mappings bleibt): Note-On-Pfad dispatched zusaetzlich zu 'stepinput:noteon' jetzt auch 'midi:stepRecorder' CustomEvent mit {note, velocity, channel} — direkt nach dem stepinput-Event. useMidi bleibt Store-agnostisch; App.tsx-Listener routet zur DM-Engine.",
+      lastSeen: "2026-05-19T09:25:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/App.tsx (v3.97.0 +stepRecorder-Listener)": {
+      role:     "v3.97.0 ERWEITERT (+~45 LOC, bestehende v3.96 Tempo-Map-Wire-Up + v3.94 midiFxChain-Restore bleibt). NEU Imports getMidiStepRecorderState + advanceStep as midiStepRecorderAdvanceStep aus useMidiStepRecorderStore. NEU useEffect 'midi:stepRecorder'-Listener: reads getMidiStepRecorderState() bei jedem Event; abort wenn !enabled || !armedPartId. Mode-Logic: overwrite → ggf. clear-via-toggle + toggle-on + Velocity-Set; overdub → toggle-on-if-inactive + Velocity-Set. Cursor-Advance via midiStepRecorderAdvanceStep(pattern.stepCount) am Ende. Velocity-Clamp 1..127.",
+      lastSeen: "2026-05-19T09:25:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/components/DrumMachine/DrumMachine.tsx (v3.97.0 +step-rec-toolbar)": {
+      role:     "v3.97.0 ERWEITERT (+~75 LOC, bestehende v2.x Toolbar bleibt). NEU Import useMidiStepRecorderStore. NEU stepRec-Hook-Call. NEU Auto-Arm-useEffect: enabled+activePartId aendert sich → setArmedPart(activePartId) (no-op-Guard bei gleichem Wert). NEU Esc-Keydown-Handler: disabled Recorder ausser activeElement ist input/textarea/select. NEU Toolbar-Section (zwischen Note-Repeat + Live-Looper Toggle): 📝 Step-Rec-Hauptbutton mit pulsing red LED + 'Step X/N'-Display wenn aktiv (data-testid='toggle-midi-step-recorder' / 'midi-step-recorder-display'); OW/OD-Mode-Toggle-Button neben dem Haupt (data-testid='midi-step-recorder-mode-toggle', rot=overwrite, gruen=overdub); Armed-Channel-Anzeige '▸ <part.name>' wenn enabled+armedPartId. Semantische Tailwind-Tokens (bg-bg-base/text-accent-danger/text-accent-success/border-border-color etc.) — kein hardcoded color.",
+      lastSeen: "2026-05-19T09:25:00.000Z",
+      ownedBy:  "backend"
+    },
     "client/src/store/useTempoMapStore.ts (v3.95.0 NEU)": {
       role:     "v3.95.0 NEU (+~215 LOC, Modul-Singleton + React-Hook, analog useSceneStore-Pattern). TempoEvent = {atBar:number, bpm:number, ramp?:boolean}. Public-API: addEvent (idempotent, ueberschreibt bei atBar-Kollision; bei MAX-Cap silent no-op), removeEvent, setEventBpm, setEventRamp, clear, replaceEvents (Restore-Helper). MAX_TEMPO_EVENTS=32 hart enforced. BPM-Clamping MIN_BPM=20..MAX_BPM=300. localStorage 'ss-tempo-map:v1' mit defensiver _load (filter invalide). Plus getTempoMapState/__resetTempoMapForTests fuer Unit-Tests. Hook nutzt useReducer-Trigger + Listener-Set.",
       lastSeen: "2026-05-19T08:50:00.000Z",
@@ -2507,6 +2532,35 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "backend",
+      timestamp: "2026-05-19T09:25:00.000Z",
+      done: [
+        "v3.97.0: MIDI-Step-Recorder (Logic Pro / Ableton Step Input Style). Live MIDI-Note → schreibt direkt in den aktuellen Step des record-armed Channels + Auto-Advance um 1 Step (modulo stepCount). Funktioniert OHNE Playback (Unterschied zu useLiveStepRecorder, der waehrend Playback overdubbed).",
+        "client/src/store/useMidiStepRecorderStore.ts NEU (+~165 LOC, Modul-Singleton + React-Hook, analog useNoteRepeatStore-Pattern, DOM-frei testbar). State: enabled / currentStep / armedPartId / mode ('overwrite'|'overdub'). Actions: setEnabled (Disable resettet Cursor), setArmedPart (Channel-Switch resettet Cursor), setMode (Whitelist-Guard), advanceStep(stepCount) mit Modulo-Wrap + defensiver stepCount-Clamp auf >=1, setCurrentStep (explicit), reset() (Defaults), __resetForTests(). Plus pure Getter isMidiStepRecorderEnabled / getMidiStepRecorderState. Snapshot-Listener-Set (analog Note-Repeat).",
+        "client/src/hooks/useMidi.ts WIRE-UP (+~3 LOC): Note-On-Pfad dispatched 'midi:stepRecorder' CustomEvent mit {note, velocity, channel} (analog 'stepinput:noteon' und 'midi:perfpad'/'midi:scene'/'midi:loopTrigger'). useMidi bleibt Store-agnostisch — App.tsx routet zur DM-Engine.",
+        "client/src/App.tsx LISTENER (+~40 LOC): NEU useEffect 'midi:stepRecorder'. Reads getMidiStepRecorderState() bei jedem Event. Mode-Logic: overwrite → clear (toggle off if active) + set + Velocity-update; overdub → activate-if-inactive + Velocity-update. Plus midiStepRecorderAdvanceStep(pattern.stepCount) am Ende. NEU Imports getMidiStepRecorderState + advanceStep aus useMidiStepRecorderStore.",
+        "client/src/components/DrumMachine/DrumMachine.tsx UI (+~75 LOC, in Toolbar zwischen Note-Repeat-Toggle und Live-Looper-Toggle): NEU 📝 Step-Rec Button mit roter pulse-LED + 'Step X/N'-Display wenn aktiv. NEU OW/OD-Mode-Toggle (rot/gruen-Indikator) als 2-state-Button neben dem Hauptbutton. NEU Armed-Channel-Anzeige '▸ <part.name>' wenn enabled+armedPartId. NEU Auto-Arm-useEffect: stepRec.enabled && dm.activePartId !== stepRec.armedPartId → stepRec.setArmedPart(dm.activePartId). NEU Esc-Keydown-Handler disabled den Recorder (mit activeElement-Guard fuer input/textarea/select-Felder). data-testid: toggle-midi-step-recorder, midi-step-recorder-display, midi-step-recorder-mode-toggle.",
+        "tests/features/midi-step-recorder.test.ts NEU (+~290 LOC, 21 Tests in 8 describes): Cluster (1) Defaults × 2 — initial state + Getter-Spiegelung. (2) Actions × 5 — setArmedPart resettet currentStep (aber idempotent bei gleichem Wert), setMode-Whitelist-Guard, setEnabled(false) resettet Cursor, reset() leert alles. (3) advanceStep × 4 — linear hochzaehlen, Wrap bei stepCount=16/32, stepCount=0-Defense (clamp auf 1). (4) Overwrite × 3 — Note-On schreibt step+velocity, drei Hits → Steps 0/1/2 mit Cursor=3, bestehender Step wird mit neuer Velocity ueberschrieben. (5) Overdub × 2 — additive bei inaktivem, Velocity-Update bei aktivem (mit Auto-Advance). (6) Disabled = no-op × 3 — enabled=false, armedPartId=null, ghost-armedPartId. (7) Velocity-Clamping × 1 — 0→1, 999→127. (8) Listener-Snapshot × 1 — getMidiStepRecorderState liefert frische Werte. Plus applyNoteOnToPattern-Helper, der den App.tsx-Listener 1:1 simuliert (gegen Minimal-PatternMock).",
+        "package.json 3.96.0 → 3.97.0. pnpm check: clean. pnpm test: 241 Files / 5437 passed / 16 skipped (vs v3.96.0: 240/5416 → +1 File +21 Tests). Keine bestehenden Tests broken.",
+        "Caveats: (1) Per-Channel Click-Arm geht ueber Auto-Sync auf dm.activePartId — kein dedizierter Arm-Button im Channel-Strip (UX-Entscheidung: minimal-invasiv, ChannelStrip-API bleibt unveraendert). User-Workflow: Recorder aktivieren → Channel-Header klicken → Note-On schreibt rein. (2) Cursor wird beim Channel-Switch (setArmedPart) auf 0 zurueckgesetzt — bewusst (vermeidet unexpected Mitte-of-Pattern-Writes). (3) Esc-Handler hat kein Lock auf modal-stack — Modal-Open + Esc disabled BEIDES (Modal schliesst + Recorder stoppt). Akzeptabel, weil getriebenes Verhalten 'Esc = Cancel' konsistent ist. (4) Setting ist nicht persistiert — bewusst (Reload soll Recorder disarmen). Bei Project-Load wird reset() noch NICHT gerufen — Frontend-Agent koennte das in App.tsx restoreProject-Block einhaengen falls noetig."
+      ],
+      next: [
+        "v3.98: Per-Channel Record-Arm-Button im ChannelStrip (dediziertes UI statt Auto-Sync via activePartId).",
+        "v3.98: Project-Load ruft useMidiStepRecorderStore.reset() (im App.tsx restoreProject-Block analog setAllMidiFxNodes).",
+        "v3.98: Quantize-Threshold-Mode 'Auto-Snap': Note-On waehrend Playback snappt zum naechsten Step statt currentStep (DAW 50%-Quantize).",
+        "v3.98: Step-Length-Slider im Step-Recorder fuer Drum-Rolls (mehrere Notes pro Step = Sub-Division-Hits)."
+      ],
+      changed: [
+        "client/src/store/useMidiStepRecorderStore.ts (NEU +~165 LOC Singleton-Store)",
+        "client/src/hooks/useMidi.ts (+~3 LOC midi:stepRecorder CustomEvent-Dispatch)",
+        "client/src/App.tsx (+~45 LOC midi:stepRecorder-Listener + 2 Imports)",
+        "client/src/components/DrumMachine/DrumMachine.tsx (+~75 LOC Toolbar-Button + Auto-Arm-useEffect + Esc-Handler)",
+        "tests/features/midi-step-recorder.test.ts (NEU +~290 LOC 21 Tests)",
+        "package.json (3.96.0 → 3.97.0)",
+        "agents/INDEX.js (project.version + workLog v3.97-Eintrag + files-Entries)"
+      ]
+    },
     {
       agent:     "frontend",
       timestamp: "2026-05-19T09:15:00.000Z",

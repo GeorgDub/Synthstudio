@@ -24,6 +24,7 @@ import { MacroPanel } from "@/components/Macro/MacroPanel";
 import { EnvelopeFollowerPanel } from "./EnvelopeFollowerPanel";
 import { useMidiLearn } from "@/hooks/useMidiLearn";
 import { toast } from "@/store/useToastStore";
+import { useMidiStepRecorderStore } from "@/store/useMidiStepRecorderStore";
 // v3.65.0: Pre-Action AutoBackup via globaler Registry.
 import { getRegisteredAutoBackup } from "@/utils/autoBackupController";
 // v3.66.0: Pattern als PNG/SVG exportieren.
@@ -433,6 +434,33 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
   const [varSlots, setVarSlots] = useState<Record<string, string | null>>({ A: null, B: null, C: null, D: null });
   const [activeVar, setActiveVar] = useState<string>("A");
   const [showNoteRepeat, setShowNoteRepeat] = useState(false);
+  // v3.97.0: MIDI-Step-Recorder (Logic Pro Step Input Style).
+  const stepRec = useMidiStepRecorderStore();
+  // Auto-Arm: wenn Recorder aktiv ist UND ein activePart selektiert ist UND
+  // dieses sich vom armed Part unterscheidet → armed auf activePart updaten.
+  // So kann der User per Click auf einen Channel-Header direkt den Aufnahme-
+  // Channel wählen.
+  useEffect(() => {
+    if (!stepRec.enabled) return;
+    if (!dm.activePartId) return;
+    if (stepRec.armedPartId === dm.activePartId) return;
+    stepRec.setArmedPart(dm.activePartId);
+  }, [stepRec.enabled, dm.activePartId, stepRec.armedPartId, stepRec]);
+  // Esc disabled den Recorder + resetted Cursor (analog Logic Pro "Stop Step Input").
+  useEffect(() => {
+    if (!stepRec.enabled) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        // Nicht resetten wenn ein Modal/Input fokussiert ist — sonst eskaliert das
+        // Verhalten unerwartet. Wir prüfen den activeElement.
+        const tag = (document.activeElement?.tagName ?? "").toLowerCase();
+        if (tag === "input" || tag === "textarea" || tag === "select") return;
+        stepRec.setEnabled(false);
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [stepRec.enabled, stepRec]);
   const [showLooper, setShowLooper] = useState(false);
   const [showMorph, setShowMorph] = useState(false);
   const [showMixAssistant, setShowMixAssistant] = useState(false);
@@ -1677,6 +1705,66 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
         >
           🔁 NR
         </button>
+
+        {/* v3.97.0: MIDI-Step-Recorder Toggle */}
+        <div className="flex items-center gap-1 bg-bg-base rounded border border-border-color px-1 py-0.5">
+          <button
+            data-testid="toggle-midi-step-recorder"
+            onClick={() => stepRec.setEnabled(!stepRec.enabled)}
+            title={
+              stepRec.enabled
+                ? `MIDI-Step-Recorder AKTIV — Step ${stepRec.currentStep + 1}/${pattern?.stepCount ?? 16}${stepRec.armedPartId ? "" : " (kein Channel armed)"}`
+                : "MIDI-Step-Recorder: Note-On schreibt direkt in den aktuellen Step (Logic Pro Style)"
+            }
+            className={[
+              "px-2 py-0.5 rounded text-[10px] font-bold transition-colors flex items-center gap-1",
+              stepRec.enabled
+                ? "bg-accent-danger/30 text-accent-danger border border-accent-danger/60"
+                : "bg-bg-elevated text-text-dim hover:bg-bg-elevated hover:text-text-primary",
+            ].join(" ")}
+          >
+            {/* Rote LED wenn aktiv */}
+            <span
+              className={[
+                "inline-block w-2 h-2 rounded-full",
+                stepRec.enabled ? "bg-accent-danger animate-pulse" : "bg-text-dim/40",
+              ].join(" ")}
+              aria-hidden="true"
+            />
+            <span>📝 Step-Rec</span>
+            {stepRec.enabled && (
+              <span data-testid="midi-step-recorder-display" className="text-text-primary font-mono">
+                {stepRec.currentStep + 1}/{pattern?.stepCount ?? 16}
+              </span>
+            )}
+          </button>
+          {stepRec.enabled && (
+            <button
+              data-testid="midi-step-recorder-mode-toggle"
+              onClick={() =>
+                stepRec.setMode(stepRec.mode === "overwrite" ? "overdub" : "overwrite")
+              }
+              title={
+                stepRec.mode === "overwrite"
+                  ? "Mode: Overwrite — Step wird vor Write geleert"
+                  : "Mode: Overdub — additiv, Velocity-Update wenn bereits aktiv"
+              }
+              className={[
+                "px-1.5 py-0.5 rounded text-[10px] font-bold uppercase transition-colors",
+                stepRec.mode === "overwrite"
+                  ? "bg-accent-danger/20 text-accent-danger"
+                  : "bg-accent-success/20 text-accent-success",
+              ].join(" ")}
+            >
+              {stepRec.mode === "overwrite" ? "OW" : "OD"}
+            </button>
+          )}
+          {stepRec.enabled && stepRec.armedPartId && pattern && (
+            <span className="text-[9px] text-text-muted max-w-[60px] truncate" title="Armed Channel">
+              ▸ {pattern.parts.find((p) => p.id === stepRec.armedPartId)?.name ?? "?"}
+            </span>
+          )}
+        </div>
 
         {/* Live-Looper Toggle (TASK-235 / v2.87) */}
         <button

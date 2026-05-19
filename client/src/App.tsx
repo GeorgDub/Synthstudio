@@ -282,6 +282,10 @@ import { resetNoteRepeat, toggleNoteRepeat, isNoteRepeatEnabled } from "@/store/
 import { resetTranspose } from "@/store/useTransposeStore";
 import { resetMorph, getMorphState, setActive as setMorphActive } from "@/store/useMorphStore";
 import { getSceneState, setActiveScene as sceneStoreSetActiveScene } from "@/store/useSceneStore";
+import {
+  getMidiStepRecorderState,
+  advanceStep as midiStepRecorderAdvanceStep,
+} from "@/store/useMidiStepRecorderStore";
 // v3.96.0: Tempo-Map Wire-Up — Resolver-Callback + Restore-Hook.
 import { getTempoMapState, replaceEvents as setAllTempoEvents } from "@/store/useTempoMapStore";
 import { getCurrentBpm } from "@/utils/tempoMap";
@@ -2111,6 +2115,46 @@ export default function App() {
     };
     window.addEventListener("midi:scene", handleScene);
     return () => window.removeEventListener("midi:scene", handleScene);
+  }, []);
+
+  // v3.97.0: midi:stepRecorder — MIDI-Step-Recorder (Logic Pro-Style Step-Input).
+  // useMidi dispatcht bei jedem Note-On den Event mit {note, velocity, channel}.
+  // Wenn der Recorder aktiv UND ein Channel armed ist, schreiben wir den Step
+  // im aktiven Pattern + advancen den Cursor um 1 (modulo stepCount).
+  // Modi: "overwrite" = clear vor write; "overdub" = additiv (Velocity-Update
+  // wenn bereits aktiv, sonst aktivieren).
+  useEffect(() => {
+    const handleStepRec = (e: Event) => {
+      const detail = (e as CustomEvent<{ note: number; velocity: number; channel: number }>).detail;
+      if (!detail || typeof detail.velocity !== "number") return;
+      const rec = getMidiStepRecorderState();
+      if (!rec.enabled || !rec.armedPartId) return;
+      const pattern = dmRef.current.getActivePattern();
+      if (!pattern) return;
+      const part = pattern.parts.find((p) => p.id === rec.armedPartId);
+      if (!part) return;
+      const stepIndex = rec.currentStep;
+      if (stepIndex < 0 || stepIndex >= pattern.stepCount) return;
+      const isActive = part.steps[stepIndex]?.active === true;
+      if (rec.mode === "overwrite") {
+        // Erst clearen falls aktiv (toggle deaktiviert), dann aktivieren.
+        if (isActive) {
+          dmRef.current.toggleStep(rec.armedPartId, stepIndex);
+        }
+        dmRef.current.toggleStep(rec.armedPartId, stepIndex);
+      } else {
+        // Overdub: nur aktivieren wenn nicht aktiv
+        if (!isActive) {
+          dmRef.current.toggleStep(rec.armedPartId, stepIndex);
+        }
+      }
+      const vel = Math.max(1, Math.min(127, detail.velocity ?? 100));
+      dmRef.current.setStepVelocity(rec.armedPartId, stepIndex, vel);
+      // Auto-Advance Cursor (modulo stepCount).
+      midiStepRecorderAdvanceStep(pattern.stepCount);
+    };
+    window.addEventListener("midi:stepRecorder", handleStepRec);
+    return () => window.removeEventListener("midi:stepRecorder", handleStepRec);
   }, []);
 
   // v2.87 (TASK-235): midi:loopTrigger / midi:loopErase — Live-Looper-Pads.
