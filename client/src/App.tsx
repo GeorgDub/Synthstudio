@@ -3230,18 +3230,24 @@ export default function App() {
   }, [dm]);
 
   // v3.166: Track-Overview-Aggregat für Topbar-Status-Widget.
-  // mixer.channels ist Record<string, MixerChannelState> → Object.values + id-Shim
-  // damit der ChannelLike-Contract des Pure-Helpers passt.
+  // v3.167-fix: Source sind die Parts des aktiven Patterns, da MixerChannelState
+  // keine muted/soloed/volume-Fields hat. PartData liefert diese korrekt → das
+  // Widget zeigt jetzt echte (N muted) / solo-Counts statt 0.
   const trackOverviewInfo = useMemo(() => {
-    const channelList = Object.values(mixer.channels).map((c) => ({
-      id: c.partId,
+    const activePattern = dm.patterns.find((p) => p.id === dm.activePatternId);
+    const channels = (activePattern?.parts ?? []).map((p) => ({
+      id: p.id,
+      name: p.name,
+      muted: p.muted,
+      soloed: p.soloed,
+      volume: p.volume,
     }));
     return computeTrackOverview({
       patterns: dm.patterns,
-      channels: channelList,
+      channels,
       totalSamples: project.samples.length,
     });
-  }, [dm.patterns, mixer.channels, project.samples]);
+  }, [dm.patterns, dm.activePatternId, project.samples]);
 
   // Kategorie eines Samples aktualisieren
   // v3.54.0: Nutzt jetzt updateSample (statt addSamples, das Duplikate per

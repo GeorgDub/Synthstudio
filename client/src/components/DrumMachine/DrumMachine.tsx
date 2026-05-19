@@ -64,6 +64,8 @@ import {
   reversePattern,
 } from "@/utils/drumPatternMutator";
 import { variatePattern } from "@/utils/patternProbability";
+// v3.168.0: Pattern-Fill-Generator Pure-Helpers für Fill-Toolbar.
+import { generateFill, generateBuildUp, generateRoll } from "@/utils/patternFillGenerator";
 // Ausgelagerte Sub-Components
 import { FxPanel } from "./FxPanel";
 import { ResizableDrumPanel } from "./ResizableDrumPanel";
@@ -1699,6 +1701,39 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
             className="px-1.5 py-0.5 rounded text-[10px] bg-bg-elevated hover:bg-accent-secondary/30 hover:text-accent-secondary transition-colors"
             title="Variate (subtle keep+add) — neue Variation des Patterns"
           >⚡</button>
+        </div>
+
+        {/* v3.168: Pattern-Fill-Toolbar (Drum-Fill-Generation pro Pattern-Ende) */}
+        <div
+          className="flex items-center gap-1 px-2 py-1 border-l border-border-color"
+          data-testid="pattern-fill-toolbar"
+          title="Pattern-Fill-Generation (alle Parts gleichzeitig)"
+        >
+          <span className="text-[10px] text-text-dim mr-1">Fill:</span>
+          <button
+            onClick={() => applyMutator((p) => generateFill(p, { density: 0.3, seed: Date.now() }))}
+            data-testid="pattern-fill-subtle"
+            className="px-1.5 py-0.5 rounded text-[10px] bg-bg-elevated hover:bg-accent-primary/30 hover:text-accent-primary transition-colors"
+            title="Subtle Fill — sparse density 0.3 im letzten Drittel"
+          >Subtle</button>
+          <button
+            onClick={() => applyMutator((p) => generateFill(p, { density: 0.7, fillLength: 4, seed: Date.now() }))}
+            data-testid="pattern-fill-busy"
+            className="px-1.5 py-0.5 rounded text-[10px] bg-bg-elevated hover:bg-accent-primary/30 hover:text-accent-primary transition-colors"
+            title="Busy Fill — hohe density 0.7 in den letzten 4 Steps"
+          >Busy</button>
+          <button
+            onClick={() => applyMutator((p) => generateBuildUp(p, { density: 0.5, seed: Date.now() }))}
+            data-testid="pattern-fill-buildup"
+            className="px-1.5 py-0.5 rounded text-[10px] bg-bg-elevated hover:bg-accent-primary/30 hover:text-accent-primary transition-colors"
+            title="Build-Up — dichter werdend zum Pattern-Ende"
+          >Build</button>
+          <button
+            onClick={() => applyMutator((p) => generateRoll(p, { fillLength: 4 }))}
+            data-testid="pattern-fill-roll"
+            className="px-1.5 py-0.5 rounded text-[10px] bg-bg-elevated hover:bg-accent-primary/30 hover:text-accent-primary transition-colors"
+            title="Drum-Roll — alle letzten 4 Steps aktiv"
+          >Roll</button>
         </div>
 
         {/* MIDI-Import */}
