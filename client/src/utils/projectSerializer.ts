@@ -85,6 +85,15 @@
  *     Beide Felder additiv-optional. Pre-v1.29-Files laden unverändert.
  *     Validierung: invalide color-Strings werden beim Load via
  *     sanitizeAudioTrackColors/sanitizeLiveInputColors silent gestrippt.
+ *   - "1.30": masterFx hinzugefügt (v3.75.0). Master-FX-Bus mit globaler
+ *     Reverb/Delay/EQ-Konfiguration (decay, damping, preDelay, wet, time,
+ *     feedback, EQ-Bands). Closes v3.74-Caveat — bis dahin waren die globalen
+ *     Sends (_globalReverbBus, _globalDelayBus) hart codiert ohne User-Control.
+ *     Additiv-optional: pre-v1.30-Files haben das Feld nicht → masterFx
+ *     bleibt undefined (Signal an Restore: User-localStorage nicht über-
+ *     schreiben). Explicit null/non-Object → undefined. Validierung
+ *     ist permissiv: sanitizeMasterFx clampt jedes einzelne Feld und
+ *     setzt Defaults für Fehlendes ein — verloren geht nichts.
  * Dateiendung: .synth
  */
 
@@ -112,8 +121,10 @@ import { ensureProjectId } from "@/utils/projectId";
 import type { QuickActionMacro } from "@/store/useQuickActionStore";
 import { isValidQuickActionMacro } from "@/store/useQuickActionStore";
 import { isValidChannelColor } from "@/utils/channelColors";
+import type { MasterFxState } from "@/store/useMasterFxStore";
+import { sanitizeMasterFx } from "@/store/useMasterFxStore";
 
-export const SYNTH_FILE_VERSION = "1.29";
+export const SYNTH_FILE_VERSION = "1.30";
 export const SYNTH_LATEST_KEY = "synthstudio:last-project";
 
 // ─── Typen ───────────────────────────────────────────────────────────────────
@@ -267,6 +278,18 @@ export interface SynthProject {
    * gefiltert (kein Throw bei korruptem Schema).
    */
   macros?: QuickActionMacro[];
+
+  /**
+   * Master-FX-Bus Konfiguration (v3.75.0). Global Reverb (decay, damping,
+   * preDelay, wet, bypass), Global Delay (time, feedback, wet, bypass),
+   * Master EQ (low/mid/high Gain + low/high Freq + bypass).
+   *
+   * Seit v1.30. Pre-v1.30-Files haben das Feld nicht → parseProject lässt
+   * masterFx undefined (Signal an Restore: User-localStorage nicht über-
+   * schreiben). Explicit null/non-Object → undefined. Sanitizer
+   * sanitizeMasterFx clampt jedes Feld und setzt Defaults für Fehlendes.
+   */
+  masterFx?: MasterFxState;
 }
 
 // ─── v1.18 Sub-Types ─────────────────────────────────────────────────────────
@@ -772,6 +795,20 @@ export function parseProject(json: string): SynthProject {
   } else {
     const filtered = (rawMacros as unknown[]).filter(isValidQuickActionMacro) as QuickActionMacro[];
     data.macros = filtered;
+  }
+
+  // ─── masterFx (seit v1.30, v3.75.0) ──────────────────────────────────────
+  // Pre-v1.30-Files haben das Feld nicht → undefined bleibt undefined
+  // (Signal an Restore: User-localStorage nicht überschreiben).
+  // Null oder non-Object → undefined (kein Vertrauen ins Schema).
+  // Explicit Object → sanitizeMasterFx clampt alle Felder + setzt Defaults.
+  const rawMasterFx = (data as { masterFx?: unknown }).masterFx;
+  if (rawMasterFx === undefined) {
+    // nothing — bleibt undefined
+  } else if (rawMasterFx === null || typeof rawMasterFx !== "object" || Array.isArray(rawMasterFx)) {
+    delete (data as { masterFx?: unknown }).masterFx;
+  } else {
+    data.masterFx = sanitizeMasterFx(rawMasterFx);
   }
 
   return data;

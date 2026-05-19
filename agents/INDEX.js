@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.74.0",
+    version: "3.75.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -89,6 +89,36 @@ const INDEX = {
   // ─── KNOWN FILE INDEX ──────────────────────────────────────
   // Key files agents have analyzed. Add new entries after working on a file.
   files: {
+    "client/src/store/useMasterFxStore.ts (v3.75.0)": {
+      role:     "v3.75.0 NEU (~250 LOC, Custom-Observer-Pattern, KEIN zustand-npm): Store für den Master-FX-Bus (Global Reverb + Delay + EQ). Sub-States: MasterReverbState (decay/damping/preDelay/wet/bypass), MasterDelayState (time/feedback/wet/bypass), MasterEqState (lowGain/midGain/highGain/lowFreq/highFreq/bypass). DEFAULT_MASTER_REVERB/DELAY/EQ spiegeln die alten hart codierten v2.94/v3.74-Werte (Reverb 2.0s/0.5/0ms/0.6, Delay 0.5s/0.35/0.5, EQ 0/0/0 dB / 250Hz / 4000Hz) als bewusster Backward-Compat. Public-API: getMasterFxState/getMasterReverb/getMasterDelay/getMasterEq, setMasterReverb/setMasterDelay/setMasterEq (partial Update + Clamp), setAllMasterFx (Bulk-Restore: undefined=no-op, null/{}=defaults), resetMasterFx, useMasterFxStore (React-Hook), isValidMasterFxSnapshot Type-Guard. Pure-Clamp-Helper clampReverb/clampDelay/clampEq (defensive: NaN/Infinity/non-number → Default, out-of-range → min/max). sanitizeMasterFx ist der primäre Restore-Sanitizer für parseProject. localStorage-Key 'synthstudio:master-fx:v1'. DOM-frei testbar (kein AudioContext-Mock nötig).",
+      lastSeen: "2026-05-19T03:30:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/audio/AudioEngine.ts (v3.75.0 master-fx-bus)": {
+      role:     "v3.75.0 ERWEITERT (+~270 LOC, bestehende v3.74/v3.72/v3.71/v3.70/v3.67/v3.63/v3.52 bleibt): Master-FX-Bus mit User-Control. NEU Master-EQ-Chain (3 BiquadFilter: lowshelf/peaking/highshelf) zwischen masterGain und ctx.destination — Routing in init(): masterGain → eqLow @250Hz → eqMid @1000Hz Q=0.7 → eqHigh @4000Hz → destination. NEU _globalReverbPreDelay (DelayNode max 250ms) + _globalReverbDamping (Lowpass-Biquad) vor dem Convolver in der Send-Chain. Channel-Send-Routing geht jetzt durch globalReverbSend → preDelay → damping → convolver → wet (Fallback ohne PreDelay-Node bleibt für Legacy-Setups). 12 NEUE public Setter: setMasterReverbDecay/Damping/PreDelay/Wet/Bypass, setMasterDelayTime/Feedback/Wet/Bypass, setMasterEqLowGain/MidGain/HighGain/LowFreq/HighFreq/Bypass — alle defensive geclampt (decay 0.1..10, damping 0..1, preDelay 0..200ms, wet 0..1, time 0.001..2, feedback 0..0.95 Stabilitätsgrenze gegen Selbst-Erregung, EQ gain ±24dB, EQ low 20..1000Hz / high 1000..20000Hz). _regenerateReverbIr Helper triggert IR-Neugenerierung bei Decay/Damping-Change. _dampingToHz Pure-Helper (exponential 500..20000Hz). Reverb-IR-Generator erweitert um damping-skaliertes ein-Pol-IIR-Lowpass-Filtering auf den Noise + Cache-Key über (decay, damping). Bypass-Implementierung setzt Wet/Gain-Param auf 0 OHNE den Engine-internal-Memory zu verlieren (Restore-fähig). getMasterFxSnapshot read-only Accessor für Tests + UI. reinit() entsorgt die neuen Nodes (_globalReverbPreDelay, _globalReverbDamping, _masterEqLow/Mid/High) sauber.",
+      lastSeen: "2026-05-19T03:30:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/components/Mixer/MasterFxPanel.tsx (v3.75.0)": {
+      role:     "v3.75.0 NEU (~330 LOC): Tabbed-UI für den Master-FX-Bus. 3 Tabs: Reverb (Decay/Damping/PreDelay/Wet + Bypass) / Delay (Time/Feedback/Wet + Bypass) / EQ (Low/Mid/High Gain + Low/High Freq + Bypass). Interne Sub-Components: SliderRow (Label + range-input + Value-Display, accent-accent-primary), BypassToggle (button mit ACTIVE/BYPASSED-Text, accent-danger bei active). Slider-Format-Funktionen pro Param: Decay 'X.X s', PreDelay 'X ms', Feedback 'XX%', Freq 'X Hz' / 'X.X kHz', dB mit +/- Vorzeichen. Slider-Change ruft Store-Setter (setMasterReverb/Delay/Eq) UND AudioEngine.setMaster*() direkt im selben Tick (kein useEffect-Indirection — Audio-Latency soll < 1 Frame bleiben). KEINE hardcoded Tailwind-Farben — alles über semantische Klassen (bg-bg-panel/text-accent-primary/border-accent-danger). Mount-Position: MixerView unter den Return-Track-Bus-Labels. data-testids: master-fx-panel + -tab-{reverb|delay|eq} + -{reverb|delay|eq}-{decay|damping|...} + -{kategorie}-bypass.",
+      lastSeen: "2026-05-19T03:30:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/utils/projectSerializer.ts (v3.75.0 v1.30)": {
+      role:     "v3.75.0 SCHEMA-BUMP v1.29 → v1.30: SYNTH_FILE_VERSION='1.30' + Header-Doku-Block v1.30 Migration (masterFx?:MasterFxState additiv-optional). NEU masterFx-Feld im SynthProject-Interface (Master-FX-Bus Konfiguration: Reverb + Delay + EQ). parseProject hat NEU masterFx-Block am Ende: undefined → undefined (Restore-Signal: User-localStorage nicht überschreiben), null/non-Object/Array → undefined (defensive delete), Object → sanitizeMasterFx (clampt jedes Feld + setzt Defaults für Fehlendes ein, kein Throw bei korruptem Schema). Imports +MasterFxState + sanitizeMasterFx aus useMasterFxStore. Bestehende v1.29 AudioTrack+LiveInput.color + v1.28 PartData.color + v1.27 loop-Crossfade + alles andere bleibt unverändert.",
+      lastSeen: "2026-05-19T03:30:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/components/Mixer/MixerView.tsx (v3.75.0 master-fx-mount)": {
+      role:     "v3.75.0 ERWEITERT (+~5 LOC): MasterFxPanel-Import + Mount unter den Bus-Labels (zwischen Return-Tracks und ExportPanel) als eigener Section mit border-t border-border-color und px-4 py-2 Padding. Bestehende v3.74 audio+live-color-wiring + v3.63 Record-Arm + v3.53/v3.54 BPM-Detection + alles andere bleibt unverändert.",
+      lastSeen: "2026-05-19T03:30:00.000Z",
+      ownedBy:  "backend"
+    },
+    "tests/features/master-fx-bus.test.ts (v3.75.0)": {
+      role:     "v3.75.0 NEU (~520 LOC, 27 Tests in 6 describes, env:node mit localStorage-Mock + Mock-AudioContext + Mock-Biquad/Gain/Delay/Convolver-Tracking). (1) Store Defaults + Clamping × 7: Default-Werte aus DEFAULT_MASTER_REVERB/DELAY/EQ, Reverb decay clamp 0.1..10 + localStorage-Persist-Verifikation, Delay feedback clamp 0..0.95 (Stabilitätsgrenze), EQ Gain ±24dB, NaN/Infinity/non-bool defensive Fallback, EQ Freq low 20..1000 / high 1000..20000 Clamping, resetMasterFx kehrt auf Defaults zurück. (2) localStorage Round-Trip × 3: Re-Mount via vi.resetModules() lädt persistierte Werte, korrupte JSON → defaults (kein Crash), partielle Daten → defaults für fehlende Felder. (3) AudioEngine Setter × 7: setMasterReverbDecay regeneriert IR + clampt, setMasterReverbBypass setzt Wet=0 ohne wet-Wert zu verlieren, Master-Delay feedback 0..0.95, Master-Delay-Bus existiert (createDelay-Tracking) + delayTime-Param wird gesetzt, EQ 3-Band wirkt + mind. 3 Biquads erzeugt, EQ-Bypass behält Engine-internal-Memory, PreDelay clampt 0..200ms via Store. (4) Channel-Send-Wiring × 2: Convolver + Delay-Bus + Master-EQ-Biquads im init() erzeugt (Mock-Tracking-Arrays), setChannelSend für reverb+delay-Bus kein Throw. (5) Schema v1.30 Round-Trip × 5: SYNTH_FILE_VERSION='1.30', Round-Trip preserves Reverb/Delay/EQ-Felder, Pre-v1.30-File (version='1.29') → masterFx=undefined, null masterFx → undefined, korrupte out-of-range Felder via sanitizeMasterFx gefixt. (6) setAllMasterFx Restore × 3: undefined=no-op (User-localStorage nicht überschreiben), valid Snapshot ersetzt State, null/{} = defaults.",
+      lastSeen: "2026-05-19T03:30:00.000Z",
+      ownedBy:  "backend"
+    },
     "client/src/utils/channelColors.ts (v3.73.0)": {
       role:     "v3.73.0 NEU (~110 LOC, Pure-Modul, DOM-frei): Channel-Strip Color-Coding Foundation. DEFAULT_CHANNEL_COLOR_PALETTE 8 OLED-freundliche Farben (drum-red #ef4444, bass-blue #3b82f6, lead-yellow #eab308, fx-purple #a855f7, pad-green #22c55e, vox-pink #ec4899, perc-orange #f97316, synth-cyan #06b6d4) als ReadonlyArray<{id,name,hex}>. CHANNEL_COLOR_PALETTE_SIZE=8. isValidChannelColor (Regex ^#([0-9a-f]{3}|[0-9a-f]{6})$ case-insensitive, non-string + leerer string → false). normalizeChannelColor (valid → lowercase, invalid → undefined). getDefaultChannelColorForIndex (zyklisch mod 8, defensive für NaN/Infinity/negativ → pal[0]). resolveChannelColor (explicit > palette[index], liefert IMMER validen Hex). isPaletteDefaultForIndex (UI-Helper für 'auto'-Zustand: null/undefined/invalid → true, case-insensitive match gegen palette[index]).",
       lastSeen: "2026-05-19T02:45:00.000Z",
@@ -2157,6 +2187,49 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "backend",
+      timestamp: "2026-05-19T03:30:00.000Z",
+      done: [
+        "v3.75.0: Master-FX-Bus (Reverb+Delay+EQ als global Send) — closes v3.74-Caveat. Bis v3.74 waren die globalen Sends (_globalReverbBus, _globalDelayBus) im AudioEngine hart codiert (decay=2s, delay=0.5s, feedback=0.35) ohne User-Control. v3.75 ergänzt einen vollständigen Master-FX-Bus mit User-konfigurierbarem Reverb (Decay, Damping, PreDelay, Wet), Delay (Time, Feedback, Wet) und 3-Band-Master-EQ (Low/Mid/High Gain + Low/High Freq), jeweils mit Bypass-Toggle.",
+        "client/src/store/useMasterFxStore.ts (~250 LOC, NEU): Custom Observer-Pattern Store für Master-FX-State (Reverb/Delay/EQ Sub-States). DEFAULT_MASTER_REVERB/DELAY/EQ spiegeln die alten hart codierten v2.94/v3.74-Werte (Reverb decay=2.0/damping=0.5/preDelay=0/wet=0.6, Delay time=0.5/feedback=0.35/wet=0.5, EQ alle Gains=0dB/lowFreq=250/highFreq=4000). localStorage-Persistenz unter synthstudio:master-fx:v1 + Project-File-Round-Trip (Schema v1.30). clampReverb/clampDelay/clampEq Pure-Helper (defensive: NaN/Infinity/non-number → Default, out-of-range → clamped). setAllMasterFx Bulk-Restore-Pfad: undefined=no-op (User-localStorage nicht überschreiben), null/{}=defaults.",
+        "client/src/audio/AudioEngine.ts ERWEITERT (+~270 LOC): Master-EQ-Chain (lowshelf @250Hz + peaking @1000Hz Q=0.7 + highshelf @4000Hz) zwischen masterGain und ctx.destination eingebaut (Chain: masterGain → eqLow → eqMid → eqHigh → destination). Global-Reverb-Bus erweitert um PreDelay (DelayNode max 250ms Headroom) + Damping (Lowpass-Biquad). Channel-Send-Routing geht jetzt durch globalReverbSend → preDelay → damping → convolver → wet (Fallback ohne Pre-Delay-Node bleibt erhalten für Legacy-Setups). 12 NEUE public Setter (setMasterReverbDecay/Damping/PreDelay/Wet/Bypass, setMasterDelayTime/Feedback/Wet/Bypass, setMasterEqLowGain/MidGain/HighGain/LowFreq/HighFreq/Bypass) — alle defensive geclampt (decay 0.1..10, damping 0..1, preDelay 0..200, wet 0..1, time 0.001..2, feedback 0..0.95 als Stabilitätsgrenze gegen Selbst-Erregung, EQ gain ±24dB). Reverb-IR-Generator erweitert um damping-skaliertes ein-Pol-IIR-Lowpass-Filtering auf den Noise (damping=0 hell, damping=1 sehr dark). Cache-Key über (decay, damping). Bypass-Implementierung: setzt jeweiligen Wet/Gain-Param auf 0 OHNE den Store-Wert zu verlieren (Restore-fähig). getMasterFxSnapshot read-only Accessor für Tests + UI. reinit() entsorgt die neuen Nodes sauber.",
+        "client/src/utils/projectSerializer.ts SCHEMA-BUMP v1.29 → v1.30: SYNTH_FILE_VERSION-Konstante + Header-Doku-Block v1.30 Migration (masterFx?:MasterFxState additiv-optional). parseProject hat NEU masterFx-Block am Ende: undefined → undefined (Restore-Signal: User-localStorage nicht überschreiben), null/non-Object → undefined (defensive), Object → sanitizeMasterFx (clampt jedes Feld + setzt Defaults für Fehlendes ein, kein Throw bei korruptem Schema). Imports +MasterFxState + sanitizeMasterFx.",
+        "client/src/components/Mixer/MasterFxPanel.tsx (~330 LOC, NEU): Tabbed-UI mit 3 Tabs (Reverb/Delay/EQ). Pro Tab: Bypass-Toggle (ACTIVE/BYPASSED) + die jeweiligen Slider mit live-Value-Display. SliderRow + BypassToggle interne Sub-Components. Slider-Format-Funktionen (Decay 'X.X s', PreDelay 'X ms', Feedback 'XX%', Freq 'X.X kHz' für >=1000Hz, dB mit +/- Vorzeichen). Slider-Change ruft Store-Setter + AudioEngine.setMaster*() direkt (kein useEffect-Indirection — Audio-Latency soll <16ms bleiben). KEINE hardcoded Tailwind-Farben (bg-bg-panel, text-accent-primary, accent-accent-primary). data-testids: master-fx-panel + -tab-{reverb|delay|eq} + -{reverb|delay|eq}-{decay|damping|...} für jeden Slider + -{kategorie}-bypass für jeden Toggle.",
+        "client/src/components/Mixer/MixerView.tsx (+~5 LOC): MasterFxPanel-Import + Mount unter den Bus-Labels (zwischen Return-Tracks und ExportPanel) als eigener Section mit border-t und px-4 py-2 Padding.",
+        "tests/features/master-fx-bus.test.ts (NEU, ~520 LOC, 27 Tests in 6 describes, env:node mit localStorage-Mock + Mock-AudioContext): (1) Store Defaults + Clamping × 7 (Default-Werte, Reverb decay clamp 0.1..10 + localStorage-Persist, Delay feedback clamp 0..0.95, EQ Gain ±24dB, NaN/Infinity defensive, EQ Freq low 20..1000 / high 1000..20000, resetMasterFx). (2) localStorage Round-Trip × 3 (Re-Mount lädt persistierte Werte, korrupte JSON → defaults, partielle Daten → defaults für fehlende Felder). (3) AudioEngine Setter × 7 (setMasterReverbDecay regeneriert IR + clampt, setMasterReverbBypass setzt Wet=0 ohne wet-Wert zu verlieren, Master-Delay feedback 0..0.95 Stabilität, Master-Delay-Bus existiert + delayTime-Param wird gesetzt, EQ 3-Band wirkt + mind. 3 Biquads erzeugt, EQ-Bypass behält Engine-internal-Memory, PreDelay clampt 0..200ms). (4) Channel-Send-Wiring × 2 (Convolver + Delay-Bus + Master-EQ-Biquads im init() erzeugt, setChannelSend kein Throw). (5) Schema v1.30 Round-Trip × 5 (SYNTH_FILE_VERSION='1.30', Round-Trip preserves Reverb/Delay/EQ-Felder, Pre-v1.30-File → masterFx=undefined, null/non-Object → undefined, korrupte out-of-range Felder via sanitizeMasterFx gefixt). (6) setAllMasterFx Restore × 3 (undefined=no-op, valid Snapshot ersetzt State, null/{} = defaults).",
+        "Schema-Version-Assertions in 11 Test-Files v1.29 → v1.30 (audio-track-store, audio-track-stretch, audio-track-loop, audio-loop-crossfade, multi-bar-pattern, plugin-host, plugin-multislot, project-serializer 3×, project-id-migration 2×, quick-action-integration, script-store, channel-colors 4×). Pre-v1.29-Test-Fixtures (manuelle file-Objects mit version='1.29' oder kleiner) bleiben unverändert — sie testen jetzt pre-v1.30-Backward-Compat.",
+        "package.json (3.74.0 → 3.75.0). pnpm check clean. pnpm test grün: 220 Test-Files / 5093 Tests passed (16 skipped, +29 NEU vs. v3.74)."
+      ],
+      next: [
+        "v3.76: Master-FX-Bus Routing-Order anpassbar — derzeit ist die Reihenfolge fest (channel → masterGain → eqLow → eqMid → eqHigh → destination). Mastering-Engineers wollen oft EQ-vor-Compressor vs. EQ-nach-Compressor wählen können. Idee: einfacher 2-Stufen-Toggle, kein generisches FX-Slot-System (Komplexitäts-Falle).",
+        "v3.76: Master-Compressor / Limiter — fehlt komplett. Brick-wall-Limiter wäre Standard für Master-Bus (Truepeak < -0.1dBFS), ein einfacher DynamicsCompressor mit threshold=-0.5dB + ratio=20+ wäre der pragmatische Einstieg.",
+        "v3.76: Spectrum-Analyzer am Master-Output (Pre-FX vs. Post-FX-Toggle). SpectrumAnalyzer.ts kann das, fehlt nur die UI-Integration im MasterFxPanel.",
+        "v3.76: Preset-Liste für Master-FX (z.B. 'Tape', 'Vinyl', 'Radio', 'Club') als JSON-Snippets in client/src/utils/masterFxPresets.ts.",
+        "v3.76: Master-EQ Q-Param für Mid-Band exposable (derzeit hart Q=0.7). Für Surgical-Cuts brauchen Engineers Q=5+, für gentle-Boost Q<0.5."
+      ],
+      changed: [
+        "client/src/store/useMasterFxStore.ts (NEU, ~250 LOC)",
+        "client/src/audio/AudioEngine.ts (+~270 LOC: Master-EQ-Chain im init(), Reverb PreDelay+Damping, 12 NEUE setMaster*-Setter, _regenerateReverbIr Helper, _dampingToHz Pure-Helper, getMasterFxSnapshot, reinit-Cleanup)",
+        "client/src/utils/projectSerializer.ts (Schema v1.29 → v1.30: SYNTH_FILE_VERSION, Header-Doku-Block, masterFx-Feld in SynthProject, parseProject-Wiring am Ende mit sanitizeMasterFx)",
+        "client/src/components/Mixer/MasterFxPanel.tsx (NEU, ~330 LOC: Tabbed-UI Reverb/Delay/EQ, SliderRow + BypassToggle Sub-Components, semantische Tailwind-Klassen only)",
+        "client/src/components/Mixer/MixerView.tsx (+~5 LOC: MasterFxPanel-Import + Mount unter Bus-Labels)",
+        "tests/features/master-fx-bus.test.ts (NEU, ~520 LOC, 27 Tests in 6 describes)",
+        "tests/features/audio-track-store.test.ts (2× Schema-Assertion 1.29 → 1.30)",
+        "tests/features/audio-track-stretch.test.ts (Schema-Assertion 1.29 → 1.30)",
+        "tests/features/audio-track-loop.test.ts (Schema-Assertion 1.29 → 1.30)",
+        "tests/features/audio-loop-crossfade.test.ts (2× Schema-Assertion 1.29 → 1.30)",
+        "tests/features/multi-bar-pattern.test.ts (Schema-Assertion 1.29 → 1.30)",
+        "tests/features/plugin-host.test.ts (2× Schema-Assertion 1.29 → 1.30)",
+        "tests/features/plugin-multislot.test.ts (Schema-Assertion 1.29 → 1.30)",
+        "tests/features/project-serializer.test.ts (3× Schema-Assertion 1.29 → 1.30)",
+        "tests/features/project-id-migration.test.ts (2× Schema-Assertion 1.29 → 1.30)",
+        "tests/features/quick-action-integration.test.ts (Schema-Assertion 1.29 → 1.30)",
+        "tests/features/script-store.test.ts (Schema-Assertion 1.29 → 1.30)",
+        "tests/features/channel-colors.test.ts (4× Schema-Assertion 1.29 → 1.30 + Doku-Update für v3.75-Kontext)",
+        "package.json (3.74.0 → 3.75.0)"
+      ]
+    },
     {
       agent:     "frontend",
       timestamp: "2026-05-19T03:05:00.000Z",

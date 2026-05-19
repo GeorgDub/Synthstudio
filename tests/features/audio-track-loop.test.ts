@@ -458,8 +458,8 @@ describe("v3.70.0 – Serializer Round-Trip (v1.26)", () => {
     localStorageMock.clear();
   });
 
-  it("SYNTH_FILE_VERSION wurde auf '1.29' gebumpt (v3.74.0 AudioTrack+LiveInput colors)", () => {
-    expect(SYNTH_FILE_VERSION).toBe("1.29");
+  it("SYNTH_FILE_VERSION wurde auf '1.30' gebumpt (v3.75.0 Master-FX-Bus)", () => {
+    expect(SYNTH_FILE_VERSION).toBe("1.30");
   });
 
   it("Round-Trip erhält loopEnabled + loopStartSample + loopEndSample", () => {

@@ -20,6 +20,7 @@ import type { PartData } from "@/audio/AudioEngine";
 // ChannelInspector verschoben (siehe components/Mixer/ChannelInspector.tsx).
 import { ExportPanel } from "./ExportPanel";
 import { AudioTrackStrip, computePeaksFromBuffer } from "./AudioTrackStrip";
+import { MasterFxPanel } from "./MasterFxPanel";
 import { LiveInputStrip } from "./LiveInputStrip";
 import { ChannelColorPicker } from "./ChannelColorPicker";
 import { resolveChannelColor } from "@/utils/channelColors";
@@ -1225,6 +1226,11 @@ export function MixerView({ dm, mixer, samples = [], bpm = 120, projectName = "S
             </div>
           );
         })}
+      </div>
+
+      {/* v3.75.0: Master-FX-Bus (Reverb/Delay/EQ Settings) */}
+      <div className="px-4 py-2 border-t border-border-color">
+        <MasterFxPanel />
       </div>
 
       {/* Export Panel */}

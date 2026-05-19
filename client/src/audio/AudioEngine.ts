@@ -555,9 +555,30 @@ class AudioEngineClass {
   // Global Send Buses
   private _globalReverbBus: ConvolverNode | null = null;
   private _globalReverbWet: GainNode | null = null;
+  /** v3.75.0: Pre-Delay (DelayNode) vor dem Convolver — User-konfigurierbar 0..200ms. */
+  private _globalReverbPreDelay: DelayNode | null = null;
+  /** v3.75.0: Damping (Lowpass-Biquad) zwischen Pre-Delay und Convolver. */
+  private _globalReverbDamping: BiquadFilterNode | null = null;
+  /** v3.75.0: Aktuelle Reverb-Settings (für IR-Regeneration bei decay/damping-Change). */
+  private _globalReverbDecay = 2.0;
+  private _globalReverbDamping01 = 0.5;
+  private _globalReverbBypass = false;
+  private _globalReverbWetLevel = 0.6;
   private _globalDelayBus: DelayNode | null = null;
   private _globalDelayFeedback: GainNode | null = null;
   private _globalDelayWet: GainNode | null = null;
+  /** v3.75.0: Aktueller Delay-Bypass-Flag. */
+  private _globalDelayBypass = false;
+  private _globalDelayWetLevel = 0.5;
+  // ─── Master EQ (v3.75.0) ───────────────────────────────────────────────────
+  /** Master-EQ: Low-Shelf → Peak-Mid → High-Shelf zwischen masterGain und destination. */
+  private _masterEqLow: BiquadFilterNode | null = null;
+  private _masterEqMid: BiquadFilterNode | null = null;
+  private _masterEqHigh: BiquadFilterNode | null = null;
+  private _masterEqBypass = false;
+  private _masterEqLowGain = 0;
+  private _masterEqMidGain = 0;
+  private _masterEqHighGain = 0;
 
   // Scheduling
   private schedulerTimer: ReturnType<typeof setInterval> | null = null;
@@ -667,15 +688,45 @@ class AudioEngineClass {
     }
     this.masterGain = this.ctx.createGain();
     this.masterGain.gain.value = 0.85;
-    this.masterGain.connect(this.ctx.destination);
 
-    // Global Reverb Bus (Plate-ähnlich, 2s Decay)
+    // v3.75.0: Master-EQ-Chain zwischen masterGain und destination.
+    // masterGain → eqLow → eqMid → eqHigh → ctx.destination
+    // 3 BiquadFilter (lowshelf / peaking / highshelf). Gain-defaults = 0dB
+    // (kein hörbarer Einfluss), Frequenzen aus DEFAULT_MASTER_EQ.
+    this._masterEqLow = this.ctx.createBiquadFilter();
+    this._masterEqLow.type = "lowshelf";
+    this._masterEqLow.frequency.value = 250;
+    this._masterEqLow.gain.value = 0;
+    this._masterEqMid = this.ctx.createBiquadFilter();
+    this._masterEqMid.type = "peaking";
+    this._masterEqMid.frequency.value = 1000;
+    this._masterEqMid.Q.value = 0.7;
+    this._masterEqMid.gain.value = 0;
+    this._masterEqHigh = this.ctx.createBiquadFilter();
+    this._masterEqHigh.type = "highshelf";
+    this._masterEqHigh.frequency.value = 4000;
+    this._masterEqHigh.gain.value = 0;
+    this.masterGain.connect(this._masterEqLow);
+    this._masterEqLow.connect(this._masterEqMid);
+    this._masterEqMid.connect(this._masterEqHigh);
+    this._masterEqHigh.connect(this.ctx.destination);
+
+    // Global Reverb Bus (Plate-ähnlich, default 2s Decay).
+    // v3.75.0: PreDelay (DelayNode 0..200ms) + Damping (Lowpass-Biquad) vor
+    // dem Convolver. Chain: send → preDelay → damping → convolver → wet → master.
+    this._globalReverbPreDelay = this.ctx.createDelay(0.25); // max 250ms Headroom
+    this._globalReverbPreDelay.delayTime.value = 0;
+    this._globalReverbDamping = this.ctx.createBiquadFilter();
+    this._globalReverbDamping.type = "lowpass";
+    // damping=0.5 default → cutoff ≈ 8kHz (siehe _dampingToHz).
+    this._globalReverbDamping.frequency.value = this._dampingToHz(0.5);
+    this._globalReverbDamping.Q.value = 0.7;
     this._globalReverbBus = this.ctx.createConvolver();
     this._globalReverbWet = this.ctx.createGain();
     this._globalReverbWet.gain.value = 0.6;
-    this._getOrCreateReverbBuffer(2.0).then(buf => {
-      if (buf && this._globalReverbBus) this._globalReverbBus.buffer = buf;
-    });
+    this._regenerateReverbIr();
+    this._globalReverbPreDelay.connect(this._globalReverbDamping);
+    this._globalReverbDamping.connect(this._globalReverbBus);
     this._globalReverbBus.connect(this._globalReverbWet);
     this._globalReverbWet.connect(this.masterGain);
 
@@ -766,9 +817,14 @@ class AudioEngineClass {
     this.reverbBuffers.clear();
     this._globalReverbBus = null;
     this._globalReverbWet = null;
+    this._globalReverbPreDelay = null;
+    this._globalReverbDamping = null;
     this._globalDelayBus = null;
     this._globalDelayFeedback = null;
     this._globalDelayWet = null;
+    this._masterEqLow = null;
+    this._masterEqMid = null;
+    this._masterEqHigh = null;
     this.masterGain = null;
     this._outputAnalyser = null;
     // 5) AudioContext schließen (kein await — close ist robust gegen state).
@@ -2398,9 +2454,18 @@ class AudioEngineClass {
     panner.connect(sidechainGain);
     sidechainGain.connect(master);
 
-    // Sends vom Output in globale Buses
-    if (this._globalReverbBus) output.connect(globalReverbSend);
-    if (this._globalReverbBus) globalReverbSend.connect(this._globalReverbBus);
+    // Sends vom Output in globale Buses.
+    // v3.75.0: Reverb-Pfad geht jetzt durch den PreDelay-Node, damit der
+    // User Pre-Delay live einstellen kann. Wenn _globalReverbPreDelay
+    // existiert: send → preDelay → damping → convolver → wet. Sonst Fallback
+    // (sehr alte Engine ohne v3.75-init): direkt in den Convolver.
+    if (this._globalReverbPreDelay) {
+      output.connect(globalReverbSend);
+      globalReverbSend.connect(this._globalReverbPreDelay);
+    } else if (this._globalReverbBus) {
+      output.connect(globalReverbSend);
+      globalReverbSend.connect(this._globalReverbBus);
+    }
     if (this._globalDelayBus) output.connect(globalDelaySend);
     if (this._globalDelayBus) globalDelaySend.connect(this._globalDelayBus);
 
@@ -2482,26 +2547,241 @@ class AudioEngineClass {
     return curve;
   }
 
-  private async _getOrCreateReverbBuffer(decay: number): Promise<AudioBuffer | null> {
+  private async _getOrCreateReverbBuffer(decay: number, damping = 0.5): Promise<AudioBuffer | null> {
     if (!this.ctx) return null;
-    const key = decay.toFixed(1);
+    // Cache-Key über Decay + Damping (Damping beeinflusst IR-Tiefpass am
+    // Sample, nicht nur den Bus-Filter — bei extremen damping-Werten
+    // klingt das deutlich anders).
+    const key = `${decay.toFixed(1)}_${damping.toFixed(2)}`;
     const cached = this.reverbBuffers.get(key);
     if (cached) return cached;
 
-    // Synthetischen Reverb-IR generieren
+    // Synthetischen Reverb-IR generieren mit damping-skaliertem
+    // Smoothing-Faktor. damping=0 → fast kein Smoothing (heller IR),
+    // damping=1 → starkes Smoothing (dunkler IR).
     const sampleRate = this.ctx.sampleRate;
-    const length = Math.floor(sampleRate * decay);
+    const length = Math.floor(sampleRate * Math.max(0.1, Math.min(10, decay)));
     const buf = this.ctx.createBuffer(2, length, sampleRate);
+    const dampClamped = Math.max(0, Math.min(1, damping));
+    // smoothing-coefficient: 0..0.95 ; ein-Pol-IIR Lowpass auf den Noise.
+    const a = dampClamped * 0.95;
 
     for (let ch = 0; ch < 2; ch++) {
       const data = buf.getChannelData(ch);
+      let prev = 0;
       for (let i = 0; i < length; i++) {
-        data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / length, 2);
+        const noise = (Math.random() * 2 - 1);
+        // exponential decay envelope
+        const env = Math.pow(1 - i / length, 2);
+        // smooth noise with one-pole filter for damping
+        prev = a * prev + (1 - a) * noise;
+        data[i] = prev * env;
       }
     }
 
     this.reverbBuffers.set(key, buf);
     return buf;
+  }
+
+  /**
+   * v3.75.0: Konvertiert damping (0..1) auf den Lowpass-Cutoff am Reverb-Bus.
+   * damping=0 → 20kHz (offen, kein Tiefpass), damping=1 → 500Hz (sehr dark).
+   * Exponentiell skaliert, weil Filterwahrnehmung logarithmisch ist.
+   */
+  private _dampingToHz(damping: number): number {
+    const d = Math.max(0, Math.min(1, damping));
+    // 1 - d ∈ [0,1]; min=500, max=20000 → logarithmisch
+    const minHz = 500;
+    const maxHz = 20000;
+    return minHz * Math.pow(maxHz / minHz, 1 - d);
+  }
+
+  /**
+   * v3.75.0: IR-Regeneration für den globalen Reverb-Bus. Wird bei
+   * decay/damping-Changes und in init() aufgerufen. Idempotent: wenn kein
+   * Convolver vorhanden ist (z.B. Engine nicht initialisiert), no-op.
+   */
+  private _regenerateReverbIr(): void {
+    if (!this._globalReverbBus) return;
+    void this._getOrCreateReverbBuffer(this._globalReverbDecay, this._globalReverbDamping01).then(buf => {
+      if (buf && this._globalReverbBus) this._globalReverbBus.buffer = buf;
+    });
+  }
+
+  // ─── Master-FX Public Setter (v3.75.0) ─────────────────────────────────────
+
+  /** Master-Reverb Decay (0.1..10 Sekunden). Triggert IR-Neugenerierung. */
+  setMasterReverbDecay(decay: number): void {
+    const clamped = Math.max(0.1, Math.min(10, decay));
+    this._globalReverbDecay = clamped;
+    this._regenerateReverbIr();
+  }
+
+  /** Master-Reverb Damping (0..1). Setzt Lowpass-Cutoff + Re-generiert IR. */
+  setMasterReverbDamping(damping: number): void {
+    const clamped = Math.max(0, Math.min(1, damping));
+    this._globalReverbDamping01 = clamped;
+    if (this._globalReverbDamping && this.ctx) {
+      this._globalReverbDamping.frequency.setTargetAtTime(
+        this._dampingToHz(clamped), this.ctx.currentTime, 0.05,
+      );
+    }
+    this._regenerateReverbIr();
+  }
+
+  /** Master-Reverb PreDelay (0..200ms). */
+  setMasterReverbPreDelay(ms: number): void {
+    const clamped = Math.max(0, Math.min(200, ms));
+    if (this._globalReverbPreDelay && this.ctx) {
+      this._globalReverbPreDelay.delayTime.setTargetAtTime(
+        clamped / 1000, this.ctx.currentTime, 0.01,
+      );
+    }
+  }
+
+  /** Master-Reverb Wet-Level (0..1). */
+  setMasterReverbWet(wet: number): void {
+    const clamped = Math.max(0, Math.min(1, wet));
+    this._globalReverbWetLevel = clamped;
+    if (this._globalReverbWet && this.ctx) {
+      const target = this._globalReverbBypass ? 0 : clamped;
+      this._globalReverbWet.gain.setTargetAtTime(target, this.ctx.currentTime, 0.01);
+    }
+  }
+
+  /** Master-Reverb Bypass. Setzt Wet-Gain auf 0 ohne den State zu verlieren. */
+  setMasterReverbBypass(bypass: boolean): void {
+    this._globalReverbBypass = bypass;
+    if (this._globalReverbWet && this.ctx) {
+      const target = bypass ? 0 : this._globalReverbWetLevel;
+      this._globalReverbWet.gain.setTargetAtTime(target, this.ctx.currentTime, 0.01);
+    }
+  }
+
+  /** Master-Delay Time (0.001..2 Sekunden). */
+  setMasterDelayTime(timeSec: number): void {
+    const clamped = Math.max(0.001, Math.min(2.0, timeSec));
+    if (this._globalDelayBus && this.ctx) {
+      this._globalDelayBus.delayTime.setTargetAtTime(clamped, this.ctx.currentTime, 0.02);
+    }
+  }
+
+  /**
+   * Master-Delay Feedback (0..0.95). Engine clampt hart auf 0.95 als
+   * Stabilitätsgrenze — höhere Werte führen zu monotonem Anschwellen
+   * (Feedback-Loop-Selbsterregung).
+   */
+  setMasterDelayFeedback(feedback: number): void {
+    const clamped = Math.max(0, Math.min(0.95, feedback));
+    if (this._globalDelayFeedback && this.ctx) {
+      this._globalDelayFeedback.gain.setTargetAtTime(clamped, this.ctx.currentTime, 0.02);
+    }
+  }
+
+  /** Master-Delay Wet-Level (0..1). */
+  setMasterDelayWet(wet: number): void {
+    const clamped = Math.max(0, Math.min(1, wet));
+    this._globalDelayWetLevel = clamped;
+    if (this._globalDelayWet && this.ctx) {
+      const target = this._globalDelayBypass ? 0 : clamped;
+      this._globalDelayWet.gain.setTargetAtTime(target, this.ctx.currentTime, 0.01);
+    }
+  }
+
+  /** Master-Delay Bypass. */
+  setMasterDelayBypass(bypass: boolean): void {
+    this._globalDelayBypass = bypass;
+    if (this._globalDelayWet && this.ctx) {
+      const target = bypass ? 0 : this._globalDelayWetLevel;
+      this._globalDelayWet.gain.setTargetAtTime(target, this.ctx.currentTime, 0.01);
+    }
+  }
+
+  /** Master-EQ Low-Shelf Gain (-24..+24 dB). */
+  setMasterEqLowGain(db: number): void {
+    const clamped = Math.max(-24, Math.min(24, db));
+    this._masterEqLowGain = clamped;
+    if (this._masterEqLow && this.ctx) {
+      const target = this._masterEqBypass ? 0 : clamped;
+      this._masterEqLow.gain.setTargetAtTime(target, this.ctx.currentTime, 0.02);
+    }
+  }
+
+  /** Master-EQ Mid-Peak Gain (-24..+24 dB). */
+  setMasterEqMidGain(db: number): void {
+    const clamped = Math.max(-24, Math.min(24, db));
+    this._masterEqMidGain = clamped;
+    if (this._masterEqMid && this.ctx) {
+      const target = this._masterEqBypass ? 0 : clamped;
+      this._masterEqMid.gain.setTargetAtTime(target, this.ctx.currentTime, 0.02);
+    }
+  }
+
+  /** Master-EQ High-Shelf Gain (-24..+24 dB). */
+  setMasterEqHighGain(db: number): void {
+    const clamped = Math.max(-24, Math.min(24, db));
+    this._masterEqHighGain = clamped;
+    if (this._masterEqHigh && this.ctx) {
+      const target = this._masterEqBypass ? 0 : clamped;
+      this._masterEqHigh.gain.setTargetAtTime(target, this.ctx.currentTime, 0.02);
+    }
+  }
+
+  /** Master-EQ Low-Shelf Frequenz (20..1000 Hz). */
+  setMasterEqLowFreq(hz: number): void {
+    const clamped = Math.max(20, Math.min(1000, hz));
+    if (this._masterEqLow && this.ctx) {
+      this._masterEqLow.frequency.setTargetAtTime(clamped, this.ctx.currentTime, 0.02);
+    }
+  }
+
+  /** Master-EQ High-Shelf Frequenz (1000..20000 Hz). */
+  setMasterEqHighFreq(hz: number): void {
+    const clamped = Math.max(1000, Math.min(20000, hz));
+    if (this._masterEqHigh && this.ctx) {
+      this._masterEqHigh.frequency.setTargetAtTime(clamped, this.ctx.currentTime, 0.02);
+    }
+  }
+
+  /** Master-EQ Bypass (alle Bands auf 0dB). */
+  setMasterEqBypass(bypass: boolean): void {
+    this._masterEqBypass = bypass;
+    if (!this.ctx) return;
+    const now = this.ctx.currentTime;
+    if (this._masterEqLow)  this._masterEqLow.gain.setTargetAtTime(bypass ? 0 : this._masterEqLowGain,  now, 0.02);
+    if (this._masterEqMid)  this._masterEqMid.gain.setTargetAtTime(bypass ? 0 : this._masterEqMidGain,  now, 0.02);
+    if (this._masterEqHigh) this._masterEqHigh.gain.setTargetAtTime(bypass ? 0 : this._masterEqHighGain, now, 0.02);
+  }
+
+  /**
+   * Read-only Accessors für Tests + UI. Liefern die aktuell aktiven Engine-
+   * Werte unabhängig vom Store (Crash-Recovery / Restore-Verifikation).
+   */
+  getMasterFxSnapshot(): {
+    reverb: { decay: number; damping: number; wet: number; bypass: boolean };
+    delay:  { time: number; feedback: number; wet: number; bypass: boolean };
+    eq:     { lowGain: number; midGain: number; highGain: number; bypass: boolean };
+  } {
+    return {
+      reverb: {
+        decay: this._globalReverbDecay,
+        damping: this._globalReverbDamping01,
+        wet: this._globalReverbWetLevel,
+        bypass: this._globalReverbBypass,
+      },
+      delay: {
+        time: this._globalDelayBus?.delayTime.value ?? 0.5,
+        feedback: this._globalDelayFeedback?.gain.value ?? 0.35,
+        wet: this._globalDelayWetLevel,
+        bypass: this._globalDelayBypass,
+      },
+      eq: {
+        lowGain: this._masterEqLowGain,
+        midGain: this._masterEqMidGain,
+        highGain: this._masterEqHighGain,
+        bypass: this._masterEqBypass,
+      },
+    };
   }
 
   private async _loadBuffer(url: string): Promise<AudioBuffer | null> {
