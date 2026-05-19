@@ -542,6 +542,11 @@ const INDEX = {
       lastSeen: "2026-05-19T15:40:00.000Z",
       ownedBy:  "backend"
     },
+    "client/src/utils/patternSwing.ts (v3.162.0 NEU)": {
+      role:     "v3.162.0 NEU (Pure, ~110 LOC, 0 Runtime-Deps). Swing-Quantization-Foundation für MPC-Style off-beat shift. Exports SwingAmount (0..1, 0=straight, 0.5=max shuffle), SwungStep {stepIndex, swingDeltaMs}, swingOffsetForStep(stepIndex, swingAmount, stepDurationSec, resolution:8|16|32) → Sekunden-Offset (odd-index only, swing*stepDur*0.5), buildSwingMap(pattern, swing, stepDur, resolution) → SwungStep[] nur für aktive Steps. Constants SWING_NONE=0, SWING_LIGHT=0.15, SWING_MEDIUM=0.33, SWING_HEAVY=0.5. Defensive: NaN/Infinity/negative→0, swing>1 clamp auf 1, stepDurationSec<=0 → 0 oder []. Resolution-Parameter ist Public-API (heute identisches odd-index-Verhalten für 8/16/32; Erweiterung 32stel-Shuffle ohne Breaking-Change möglich). NOCH KEINE Integration in AudioEngine.scheduleStep — Pure-Helper-Foundation für v3.163 UI+Scheduler-Wire.",
+      lastSeen: "2026-05-19T22:40:00.000Z",
+      ownedBy:  "backend"
+    },
     "client/src/store/usePatternCrossfadeStore.ts (v3.123.0 NEU)": {
       role:     "v3.123.0 NEU (~100 LOC, Custom-Observer, kein Zustand-NPM). localStorage 'ss-pattern-crossfade:v1'. Single global config (kein per-pattern override für v3.123, pragmatic). Actions setEnabled / setLength (clamp via clampLength) / setCurve (sanitize via sanitizeCurve) / resetCrossfade. Sync-Getter getPatternCrossfadeState für Event-Handler. __resetPatternCrossfadeStoreForTests + Re-Exports CrossfadeConfig + CrossfadeCurve.",
       lastSeen: "2026-05-19T15:40:00.000Z",
@@ -3410,6 +3415,66 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "refactor",
+      timestamp: "2026-05-19T22:40:00.000Z",
+      done: [
+        "v3.162 Pure-Helper: client/src/utils/patternSwing.ts NEU + tests/features/pattern-swing.test.ts NEU. Swing-Quantization-Foundation für künftige UI-Wires (MPC-Style off-beat shift). Parallel-Lieferung zur v3.162-Sample-Duration-Aggregation desselben Slots.",
+        "patternSwing.ts API: swingOffsetForStep(stepIndex, swingAmount, stepDurationSec, resolution) → Sekunden-Offset (0 für even-index oder swing=0). buildSwingMap(pattern, swing, stepDur, resolution) → SwungStep[] {stepIndex, swingDeltaMs} nur für aktive Steps. Constants SWING_NONE=0, SWING_LIGHT=0.15, SWING_MEDIUM=0.33, SWING_HEAVY=0.5. Resolution-Type 8|16|32 (heute identisches odd-index-Off-Beat-Verhalten, Parameter bewusst Teil der Public-API für künftige 32stel-Shuffle-Varianten).",
+        "Defensive: NaN/Infinity/negative inputs → 0. swingAmount > 1 wird auf 1 geclampt, < 0 auf 0. stepDurationSec <= 0 → 0 / [] (buildSwingMap). Pattern-Mutation ausgeschlossen (neue Array-Instanz, readonly-Input-Type).",
+        "Test-Suite: 14 Tests in 3 describes — swingOffsetForStep (6: even-zero, swing=0, classic 0.025-Case, NaN-Defense, clamp>1, 8/16/32-Parity), buildSwingMap (7: empty, all-straight, T-T-T-T-classic, sparse-active-only, invalid-stepDur, clamp, immutability), Constants (1: aufsteigend). Alle 14 grün.",
+        "pnpm check: clean (gen:sandbox up-to-date, tsc --noEmit ohne errors). pnpm test target: 14/14 grün in 6ms. KEIN git commit, KEIN package.json bump (User-Vorgabe)."
+      ],
+      next: [
+        "v3.163 UI-Wire: SwingControl-Slider in DrumMachine-Toolbar oder PerformanceMode. useSwingStore (singleton, localStorage 'ss-swing:v1' mit amount + resolution). AudioEngine.scheduleStep müsste buildSwingMap konsumieren — heute schedulet sie straight; benötigt Integration in AudioEngine.ts (backend-Owner).",
+        "v3.162-Caveat: KEIN scheduler-Integration in dieser Session — der Helper ist pure und nicht mit AudioEngine.ts verdrahtet. Frontend/Backend-Folgesession muss schedule-Path anpassen damit Swing hörbar wird.",
+        "OmniTribeBridge.ts NICHT anfassen (User-Hinweis weiterhin gültig)."
+      ],
+      changed: [
+        "client/src/utils/patternSwing.ts (NEU, Pure-Helper, 0 Runtime-Deps, ~110 LOC)",
+        "tests/features/pattern-swing.test.ts (NEU, 14 Tests, vitest-environment node)"
+      ]
+    },
+    {
+      agent:     "refactor",
+      timestamp: "2026-05-19T20:50:00.000Z",
+      done: [
+        "v3.162 Sample-Duration-Aggregation Pure-Helper. Neue Datei client/src/utils/sampleDurationAggregator.ts mit aggregateSampleDuration(samples) → DurationAggregateResult { totalSec, knownCount, unknownCount } + formatDuration(sec) → 'M:SS' bzw. 'H:MM:SS'. Foundation für v3.155-Caveat: Duration-Display in der Sample-Browser Bulk-Bar ('5 Samples · 1:23 total').",
+        "Resolution-Reihenfolge pro DurationCandidate: (1) durationSec wenn finite & >=0, (2) buffer.length/buffer.sampleRate wenn beide >0 & finite, (3) sizeBytes-Fallback: (sizeBytes - 44 Header) / (sampleRate * 4) — Default-sampleRate 48000, Stereo 16-bit. Math.max(0,…) clamped sizeBytes<44. (4) sonst unknown (knownCount++ nicht). Negative durationSec → unknown. durationSec=0 ist valid.",
+        "formatDuration: NaN/Infinity/negative → '0:00'. Math.floor(sec). <3600 → 'M:SS' (minutes unpadded außer seconds, 90→'1:30', 5→'0:05'). >=3600 → 'H:MM:SS' (3661→'1:01:01', 7325→'2:02:05'). Konsistente pad2-Helper für seconds (immer) und minutes (nur bei Stunden).",
+        "Tests: tests/features/sample-duration-aggregator.test.ts mit 23 Tests (12 aggregateSampleDuration + 11 formatDuration). 23/23 grün in 5ms. Coverage: empty-array, priority durationSec>buffer>sizeBytes, buffer-Berechnung, sizeBytes mit custom + default sampleRate, unknown, NaN-durationSec → unknown, negative durationSec → unknown, durationSec=0 valid, sizeBytes<44 → 0s aber known. format: 0, 90, 3661, NaN, Infinity, negative, floor, padding-Edge-Cases, exactly-1h.",
+        "pnpm check: clean (gen:sandbox up-to-date, tsc --noEmit ohne errors). Kein git commit, kein package.json bump, kein anderer File berührt (insb. OmniTribeBridge.ts unberührt)."
+      ],
+      next: [
+        "v3.162 UI-Wiring (frontend-Owner): aggregateSampleDuration + formatDuration in Sample-Browser-Bulk-Bar verwenden. UX: nach Multi-Select-Auswahl 'N Samples · X:XX total' anzeigen. Quellen-Felder im Sample-Objekt prüfen — falls durationSec nicht vorhanden, aus buffer ableiten oder sizeBytes-Fallback nutzen.",
+        "Möglich: aggregateSampleDuration auch im Pack-Browser (KorgBankModal) für 'Bank-Total-Length' nach Import-Selection.",
+        "OmniTribeBridge.ts weiterhin nicht anfassen."
+      ],
+      changed: [
+        "client/src/utils/sampleDurationAggregator.ts (NEW, ~140 LOC, pure helper)",
+        "tests/features/sample-duration-aggregator.test.ts (NEW, 23 tests)"
+      ]
+    },
+    {
+      agent:     "refactor",
+      timestamp: "2026-05-19T20:36:00.000Z",
+      done: [
+        "v3.162 Multi-Pattern Density-Aggregation Pure-Helper. Neue Datei client/src/utils/patternBankDensity.ts mit analyzePatternBank(patterns) → PatternBankDensityReport. Iteriert alle PatternData.parts.steps[].active = true / total, baut auf categorizeDensity aus patternDensityAnalyzer.ts (v3.159) auf.",
+        "Public API: PatternDensityEntry { patternId, patternName, hits, total, density, category } + PatternBankDensityReport { perPattern, totalHits, totalSteps, averageDensity, dominantCategory }. averageDensity ist gewichtet nach Pattern-Größe (totalHits / totalSteps), NICHT mean of densities.",
+        "dominantCategory: häufigste Category in perPattern; bei Tie gewinnt die fülligere (full > dense > medium > sparse > empty) via CATEGORY_RANK-Lookup. Empty-Array → { perPattern: [], totalHits: 0, totalSteps: 0, averageDensity: 0, dominantCategory: 'empty' }.",
+        "Tests: tests/features/pattern-bank-density.test.ts mit 9 Tests (empty-array, single-empty, single-full, 3-pattern-aggregate, 2-sparse+1-dense → sparse, Tie 1-dense+1-sparse → dense, gewichtete averageDensity 58/116, perPattern-Felder, multi-part). Alle 9 grün, 5ms.",
+        "pnpm check: clean (gen:sandbox up-to-date, tsc --noEmit ohne errors). Kein git commit, kein package.json bump, kein anderer File berührt."
+      ],
+      next: [
+        "v3.162 UI-Wiring: analyzePatternBank in BankBrowser / SongMode-Overview verwenden um Density-Heatmap pro Pattern anzuzeigen. dominantCategory könnte als Bank-Tag in der Sidebar erscheinen.",
+        "Möglich: averageDensity-Threshold für Auto-Mix-Hints ('Bank zu sparse — Pattern-Fill-Vorschlag').",
+        "OmniTribeBridge.ts weiterhin nicht anfassen."
+      ],
+      changed: [
+        "client/src/utils/patternBankDensity.ts (NEW, ~135 LOC, pure helper)",
+        "tests/features/pattern-bank-density.test.ts (NEW, 9 tests)"
+      ]
+    },
     {
       agent:     "refactor",
       timestamp: "2026-05-19T21:00:00.000Z",
