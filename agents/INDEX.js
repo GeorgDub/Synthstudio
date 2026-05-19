@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.83.0",
+    version: "3.84.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -104,9 +104,24 @@ const INDEX = {
       lastSeen: "2026-05-19T05:45:00.000Z",
       ownedBy:  "backend"
     },
-    "client/src/components/Mixer/ExportPanel.tsx (v3.83.0 format+bitrate-ui)": {
-      role:     "v3.83.0 ERWEITERT (+~40 LOC, bestehende v3.42 insertChains-Pass-Through + TASK-241/v2.94/v2.97 bleibt): NEU 2 useState — format:CompressFormat (default 'wav') + bitrate:number (default DEFAULT_OGG_BITRATE_BPS=192k). NEU Format-Select (WAV/OGG-Opus) immer sichtbar + Bitrate-Select (96/128/192/256/320 kbps) conditional rendered nur bei format==='ogg'. handleExport übergibt {format, bitrate} an exportPattern(). Export-Button-Label dynamisch '⬇ WAV Export' bzw '⬇ OGG Export' je nach Format-Wahl. data-testids export-format-group / export-format-select / export-bitrate-group / export-bitrate-select. Bestehende Bounce-All-Stems-Logik (v2.94) bleibt hardcoded WAV — Folge-Task in v3.84.",
-      lastSeen: "2026-05-19T05:45:00.000Z",
+    "client/src/components/Mixer/ExportPanel.tsx (v3.84.0 bounce-stems-format)": {
+      role:     "v3.84.0 ERWEITERT (~7 LOC-Delta, bestehende v3.83.0 Format/Bitrate-UI + v3.42 insertChains + v2.94/v2.97 bleibt): handleBounceAllStems reicht jetzt die existierenden format+bitrate-State-Variablen an bounceAllChannels durch (format==='ogg' → BounceFormat 'ogg-opus', sonst 'wav'). Save-Loop nutzt r.data + r.mimeType statt r.wav + hardcoded 'audio/wav'. Button-Title + Label dynamisch ('🎬 Bounce All Stems' bzw '🎬 Bounce All Stems (OGG)'). useCallback-Deps um format+bitrate erweitert. Import downloadAudioInBrowser statt downloadWavInBrowser. Master/Stems-Export-Pfad (v3.83.0) bleibt unverändert.",
+      lastSeen: "2026-05-19T06:00:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/utils/channelBounce.ts (v3.84.0 format-options)": {
+      role:     "v3.84.0 ERWEITERT (+~115 LOC, bestehende v2.94/v2.95/v2.96/v3.41/v3.42 bleibt): NEU Type-Alias BounceFormat='wav'|'ogg-opus' + ChannelBounceFormatOptions extends ChannelBounceRenderOptions mit format?:BounceFormat + bitrate?:number + ChannelBounceFormatResult {data, actualFormat, extension, mimeType}. NEU Public-API bounceChannelToBuffer(part, pattern, opts, OfflineCtxCtor?): bei 'wav' → encodeWav identisch zur Legacy; bei 'ogg-opus' → encodeAsOgg via audioCompressEncoder mit Bitrate-Pass-Through; Blob.type bestimmt das actualFormat (silent WAV-Fallback bei fehlendem WebCodecs). bounceChannelToWavBuffer bleibt unverändert WAV-only (backward-compat). bounceAllChannels: opts.format+opts.bitrate durchgereicht zu bounceChannelToBuffer pro Channel; Filename folgt actualFormat via filenameForFormat(). NEU BounceAllOptions extends Omit<ChannelBounceRenderOptions,'sampleBuffer'> mit format+bitrate. BounceAllResult erweitert: data:ArrayBuffer + actualFormat + mimeType; bestehendes wav-Feld bleibt als deprecated-Alias auf identische Bytes (same-ref). NEU downloadAudioInBrowser(data, filename, mimeType) als format-aware Generalisierung; alter downloadWavInBrowser bleibt als Wrapper.",
+      lastSeen: "2026-05-19T06:00:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/components/Mixer/ChannelInspector.tsx (v3.84.0 bounce-format-ui)": {
+      role:     "v3.84.0 ERWEITERT (+~50 LOC, bestehende TASK-241/v2.94/v2.97/v3.42 PartBounceSection bleibt): NEU State format:BounceFormat (default 'wav') + bitrate:number (default DEFAULT_OGG_BITRATE_BPS=192k). Section-Toggle-Label dynamisch '🎬 Bounce to WAV' bzw 'OGG'. NEU Format-Select (WAV/OGG-Opus) + Bitrate-Select (96/128/192/256/320 kbps, conditional rendered bei ogg-opus) als eigene UI-Row zwischen Hz/Stereo und Filename-Input. data-testids: channel-bounce-format-group / channel-bounce-format-select / channel-bounce-bitrate-group / channel-bounce-bitrate-select. handleBounce ruft bounceChannelToBuffer statt bounceChannelToWavBuffer + nutzt out.actualFormat für Filename-Endung-Adjustment (silent-Fallback: User schreibt .ogg obwohl encoder fehlt → Filename auf .wav korrigiert). formatDefault-Helper ersetzt naked defaultFilename im placeholder. Bounce-Button-Label '⬇ Bounce WAV' bzw 'OGG' dynamisch.",
+      lastSeen: "2026-05-19T06:00:00.000Z",
+      ownedBy:  "backend"
+    },
+    "tests/features/bounce-format-options.test.ts (v3.84.0)": {
+      role:     "v3.84.0 NEU (~400 LOC, 12 Tests in 3 describes, env:node mit Mock-OfflineAudioContext + globalThis.AudioEncoder-Mock-Install/Uninstall + lastEncoderConfig-Spy). (1) bounceChannelToBuffer × 6: Default-Format=wav backward-compat (RIFF/WAVE-Header), explizit format='wav' identisch, format='ogg-opus' mit Mock-Encoder → OggS-Magic + audio/ogg mime, format='ogg-opus' OHNE Encoder → silent WAV-Fallback (actualFormat='wav' folgt der Realität), Bitrate-Pass-Through (256k → configure().bitrate=256k), Bitrate-Clamping (10M → MAX_OGG_BITRATE_BPS). (2) bounceAllChannels × 5: Default (kein format) → alle .wav-Filenames (3 Parts), format='ogg-opus' mit Mock → alle .ogg + audio/ogg, format='ogg-opus' OHNE Encoder → silent Fallback alle .wav, Bitrate (320k) pro Channel durchgereicht, .wav-Alias zeigt auf identische Bytes wie .data (same-ref). (3) bounceChannelToWavBuffer × 1: legacy API liefert IMMER WAV (RIFF/WAVE) selbst mit installiertem Mock-Encoder.",
+      lastSeen: "2026-05-19T06:00:00.000Z",
       ownedBy:  "backend"
     },
     "client/src/audio/AudioEngine.ts (v3.79.1 sub-mix-engine-wiring)": {
@@ -2317,6 +2332,32 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "backend",
+      timestamp: "2026-05-19T06:00:00.000Z",
+      done: [
+        "v3.84.0: Bounce-All-Stems OGG-Format-Option (closes v3.83 Caveat 'Per-Channel-Stem-Bounce hardcoded WAV'). channelBounce.ts war seit v2.94/v2.95/v2.96 WAV-only; v3.83 hat zwar Master/Stems-Export auf OGG-Opus gehoben, aber der Per-Channel-Stem-Bounce-Pfad (ChannelInspector + ExportPanel.Bounce-All-Stems) blieb hardcoded WAV. Jetzt: format='wav'|'ogg-opus' + bitrate-Option in beiden Single-Channel- und Bulk-Bounce-APIs. WAV bleibt Default für Backward-Compat. Bei silent-WAV-Fallback (kein WebCodecs) wird `actualFormat` realitätsbasiert auf 'wav' gesetzt — User bekommt .wav-Endung statt missleading .ogg.",
+        "client/src/utils/channelBounce.ts ERWEITERT (+~115 LOC, bestehende v2.94/v2.95/v2.96/v3.41/v3.42-Logik bleibt): NEU Type-Alias `BounceFormat = 'wav' | 'ogg-opus'` + `ChannelBounceFormatOptions extends ChannelBounceRenderOptions` mit format+bitrate-Feldern + `ChannelBounceFormatResult { data, actualFormat, extension, mimeType }`. NEU Public-API `bounceChannelToBuffer(part, pattern, opts, OfflineCtxCtor?)` — format-aware Convenience-Wrapper: bei 'wav' → encodeWav (16-bit PCM, identisch zur Legacy bounceChannelToWavBuffer); bei 'ogg-opus' → encodeAsOgg via audioCompressEncoder mit Bitrate-Pass-Through. Blob.type bestimmt das tatsächliche actualFormat (silent WAV-Fallback wenn WebCodecs fehlt). `bounceChannelToWavBuffer` bleibt unverändert WAV-only (backward-compat). `bounceAllChannels` erweitert: `opts.format` + `opts.bitrate` durchgereicht zu bounceChannelToBuffer pro Channel, Filename folgt dem `actualFormat` via filenameForFormat() — alle Channels in einem Bulk-Bounce nutzen dasselbe Format. NEU `BounceAllOptions extends Omit<ChannelBounceRenderOptions, sampleBuffer>` mit format+bitrate. `BounceAllResult` erweitert: `data: ArrayBuffer` + `actualFormat: BounceFormat` + `mimeType: 'audio/wav'|'audio/ogg'`; bestehendes `wav`-Feld bleibt als deprecated-Alias auf identische Bytes (kein Copy — same-ref backward-compat). NEU `downloadAudioInBrowser(data, filename, mimeType)` als format-aware Generalisierung von `downloadWavInBrowser`; alter Helper bleibt als Convenience-Wrapper erhalten.",
+        "client/src/components/Mixer/ExportPanel.tsx ERWEITERT (~7 LOC-Delta, bestehende v3.83.0 Format-UI bleibt): Bounce-All-Stems-Pfad liest jetzt format+bitrate aus den existierenden v3.83-State-Variablen und reicht sie an bounceAllChannels durch (format='ogg' → 'ogg-opus'-Wert, format='wav' → 'wav'). Save-Loop nutzt r.data + r.mimeType statt r.wav + hardcoded 'audio/wav'. Button-Title + Label dynamisch ('🎬 Bounce All Stems' bzw '🎬 Bounce All Stems (OGG)'). useCallback-Deps um format+bitrate erweitert. Import von downloadAudioInBrowser statt downloadWavInBrowser.",
+        "client/src/components/Mixer/ChannelInspector.tsx ERWEITERT (+~50 LOC): PartBounceSection State um format+bitrate (default 'wav' + DEFAULT_OGG_BITRATE_BPS). Section-Toggle-Label dynamisch '🎬 Bounce to WAV' bzw 'OGG'. NEU Format-Select (WAV/OGG-Opus) + Bitrate-Select (96/128/192/256/320 kbps, conditional rendered bei ogg-opus) als eigene UI-Row zwischen Hz/Stereo und Filename-Input. data-testids: channel-bounce-format-group / channel-bounce-format-select / channel-bounce-bitrate-group / channel-bounce-bitrate-select. handleBounce ruft bounceChannelToBuffer statt bounceChannelToWavBuffer + nutzt actualFormat für Filename-Endung-Adjustment (silent-Fallback: User schreibt .ogg obwohl encoder fehlt → Filename auf .wav korrigiert). formatDefault als Pure-Helper-Ableitung aus defaultStemFilename ersetzt naked defaultFilename im placeholder.",
+        "tests/features/bounce-format-options.test.ts (NEU, ~400 LOC, 12 Tests in 3 describes, env:node mit Mock-OfflineAudioContext + globalThis.AudioEncoder-Mock-Install/Uninstall + lastEncoderConfig-Spy). (1) bounceChannelToBuffer × 6: Default-Format=wav backward-compat (RIFF/WAVE-Header), explizit format='wav' identisch, format='ogg-opus' mit Mock-Encoder → OggS-Magic + audio/ogg mime, format='ogg-opus' OHNE Encoder → silent WAV-Fallback (actualFormat='wav' folgt der Realität), Bitrate-Pass-Through (256k → configure().bitrate=256k), Bitrate-Clamping (10M → MAX_OGG_BITRATE_BPS). (2) bounceAllChannels × 5: Default (kein format) → alle .wav-Filenames (3 Parts), format='ogg-opus' mit Mock → alle .ogg + mime audio/ogg, format='ogg-opus' OHNE Encoder → silent Fallback alle .wav, Bitrate (320k) per Channel durchgereicht, .wav-Alias zeigt auf identische Bytes wie .data (same-ref). (3) bounceChannelToWavBuffer × 1: legacy API liefert IMMER WAV (RIFF/WAVE) selbst mit installiertem Mock-Encoder — backward-compat sauber abgesichert.",
+        "package.json (3.83.0 → 3.84.0). pnpm check clean. pnpm test grün: 230 Test-Files / 5232 Tests passed (16 skipped, +1 file +12 vs v3.83.0). Backward-Compat: bounceChannelToWavBuffer unverändert WAV-only, BounceAllResult.wav-Alias erhalten."
+      ],
+      next: [
+        "v3.85: ZIP-Output bei Bulk-Bounce (aktuell N einzelne Browser-Downloads bzw N IPC-Calls — bei 16 Stems nervig). Wäre via JSZip oder via Electron-IPC mit Multi-File-Container-Mode.",
+        "v3.85: Mp3 als dritte Format-Option im Channel-Bounce (Bibliothek z.B. lamejs).",
+        "v3.85: Playwright-E2E im Browser-Chromium das echte WebCodecs nutzt + die produzierten .ogg-Stems via ffprobe validiert (Stem-Round-Trip).",
+        "v3.85: Bitrate-Quality-Indicator-Tooltip im UI ('192 kbps = transparent für gemischte Musik')."
+      ],
+      changed: [
+        "client/src/utils/channelBounce.ts (+~115 LOC: BounceFormat + bounceChannelToBuffer + bounceAllChannels.format/bitrate + BounceAllResult.data+actualFormat+mimeType + downloadAudioInBrowser)",
+        "client/src/components/Mixer/ExportPanel.tsx (~7 LOC-Delta: format/bitrate pass-through + downloadAudioInBrowser + Button-Label)",
+        "client/src/components/Mixer/ChannelInspector.tsx (+~50 LOC: PartBounceSection format+bitrate-State + UI-Row + bounceChannelToBuffer-Wiring + Filename-Adjustment via actualFormat)",
+        "tests/features/bounce-format-options.test.ts (NEU, ~400 LOC, 12 Tests in 3 describes)",
+        "package.json (3.83.0 → 3.84.0)",
+        "agents/INDEX.js (version + workLog + files-Einträge)"
+      ]
+    },
     {
       agent:     "backend",
       timestamp: "2026-05-19T05:45:00.000Z",

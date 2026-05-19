@@ -7,7 +7,7 @@
 import React, { useCallback, useState } from "react";
 import { exportPattern, type ExportProgress } from "@/utils/wavExporter";
 import { downloadMidiBundle } from "@/utils/midiExport";
-import { bounceAllChannels, downloadWavInBrowser, type BounceAllProgress } from "@/utils/channelBounce";
+import { bounceAllChannels, downloadAudioInBrowser, type BounceAllProgress } from "@/utils/channelBounce";
 import {
   SUPPORTED_OGG_BITRATES_BPS,
   DEFAULT_OGG_BITRATE_BPS,
@@ -85,6 +85,9 @@ export function ExportPanel({ pattern, bpm, samples, allPatterns = [], projectNa
           bpm,
           sampleRate,
           channels: 2,
+          // v3.84.0: Format-Option (WAV oder OGG-Opus) durchreichen.
+          format: format === "ogg" ? "ogg-opus" : "wav",
+          bitrate,
         },
         projectName,
         (p: BounceAllProgress) => {
@@ -106,10 +109,11 @@ export function ExportPanel({ pattern, bpm, samples, allPatterns = [], projectNa
       for (const r of results) {
         if (electron.isElectron) {
           const safe = r.filename.replace(/[^A-Za-z0-9._-]/g, "_");
-          const res = await electron.saveRecording(safe, r.wav);
+          const res = await electron.saveRecording(safe, r.data);
           if (res.success) savedCount++;
         } else {
-          downloadWavInBrowser(r.wav, r.filename);
+          // v3.84.0: Format-aware Download — nutzt r.mimeType statt hardcoded audio/wav.
+          downloadAudioInBrowser(r.data, r.filename, r.mimeType);
           savedCount++;
         }
       }
@@ -122,7 +126,7 @@ export function ExportPanel({ pattern, bpm, samples, allPatterns = [], projectNa
     } finally {
       setIsBouncingAll(false);
     }
-  }, [pattern, bars, bpm, sampleRate, projectName, electron, isBouncingAll, insertChains]);
+  }, [pattern, bars, bpm, sampleRate, projectName, electron, isBouncingAll, insertChains, format, bitrate]);
 
   const handleExport = useCallback(async () => {
     if (!pattern || isExporting) return;
@@ -241,10 +245,10 @@ export function ExportPanel({ pattern, bpm, samples, allPatterns = [], projectNa
           onClick={handleBounceAllStems}
           disabled={!pattern || isBouncingAll}
           className="relative px-3 py-1 text-[10px] rounded border border-accent-primary/40 text-accent-primary hover:bg-accent-primary/10 disabled:opacity-40 font-bold transition-colors inline-flex items-center gap-1.5"
-          title="Per-Channel Stem-Bounce: jeden Channel separat als WAV (inkl. Pan, Volume, Filter)"
+          title={`Per-Channel Stem-Bounce: jeden Channel separat als ${format === "ogg" ? "OGG" : "WAV"} (inkl. Pan, Volume, Filter)`}
           data-testid="export-bounce-all-stems"
         >
-          {isBouncingAll ? "Bouncing…" : "🎬 Bounce All Stems"}
+          {isBouncingAll ? "Bouncing…" : `🎬 Bounce All Stems${format === "ogg" ? " (OGG)" : ""}`}
           <ProLockBadge feature={PRO_FEATURE_STEM_BOUNCE} />
         </button>
       </div>

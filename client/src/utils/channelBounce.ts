@@ -52,6 +52,13 @@ import {
   isGranularPart,
 } from "@/utils/synthOfflineRender";
 import type { MixerFxSlot } from "@/utils/mixerFx";
+import {
+  encodeAsOgg,
+  filenameForFormat,
+  DEFAULT_OGG_BITRATE_BPS,
+  type CompressFormat,
+  type AudioBufferLike,
+} from "@/utils/audioCompressEncoder";
 
 // ─── Längen-Optionen ─────────────────────────────────────────────────────────
 
@@ -1153,8 +1160,32 @@ function _renderBypassFx(
 // ─── WAV-Encode ──────────────────────────────────────────────────────────────
 
 /**
+ * v3.84.0: Format-Option für Channel-Bounce.
+ *
+ * 'wav'      → 16-bit PCM RIFF (default, backward-compat).
+ * 'ogg-opus' → Opus in OGG-Container via WebCodecs. Bei fehlendem WebCodecs
+ *              fällt encodeAsOgg transparent auf WAV zurück — der Caller
+ *              sieht das am tatsächlichen Blob.type (audio/wav statt audio/ogg).
+ */
+export type BounceFormat = "wav" | "ogg-opus";
+
+/**
+ * Optionen für die formatbewusste Bounce-Variante (`bounceChannelToBuffer`).
+ * Erweitert ChannelBounceRenderOptions um Output-Format + Bitrate.
+ */
+export interface ChannelBounceFormatOptions extends ChannelBounceRenderOptions {
+  /** Output-Format. Default 'wav' (backward-compat). */
+  format?: BounceFormat;
+  /** Opus-Bitrate in bps (nur relevant bei ogg-opus). Default 192_000. */
+  bitrate?: number;
+}
+
+/**
  * Rendert einen Channel und kodiert das Ergebnis als WAV-ArrayBuffer.
  * Convenience-Wrapper über `renderChannelToBuffer` + `encodeWav`.
+ *
+ * Backward-Compat: liefert IMMER WAV. Für Format-Selection nutze
+ * `bounceChannelToBuffer`.
  */
 export async function bounceChannelToWavBuffer(
   part: PartData,
@@ -1168,6 +1199,82 @@ export async function bounceChannelToWavBuffer(
     channelData.push(buffer.getChannelData(ch));
   }
   return encodeWav(channelData, { sampleRate, channels, bitDepth: 16 });
+}
+
+/**
+ * v3.84.0 Format-aware Bounce-Result. Liefert sowohl die Bytes als auch das
+ * tatsächlich verwendete Format + die korrekte Dateiendung. Bei Fallback
+ * (kein WebCodecs vorhanden) wird `actualFormat='wav'` und `extension='.wav'`
+ * gesetzt — der Caller muss die Filename-Endung am Result-Feld festmachen,
+ * nicht am Wunsch-Format.
+ */
+export interface ChannelBounceFormatResult {
+  /** Encoded Audio-Bytes (WAV oder OGG). */
+  data: ArrayBuffer;
+  /** Tatsächlich verwendetes Format (kann von opts.format abweichen bei Fallback). */
+  actualFormat: BounceFormat;
+  /** Datei-Endung passend zum actualFormat ('.wav' oder '.ogg'). */
+  extension: ".wav" | ".ogg";
+  /** MIME-Typ passend zum actualFormat. */
+  mimeType: "audio/wav" | "audio/ogg";
+}
+
+/**
+ * v3.84.0 — Format-aware Convenience-Wrapper.
+ *
+ * Rendert einen Channel und kodiert ihn entweder als WAV oder OGG-Opus.
+ * Bei 'ogg-opus' wird WebCodecs versucht; ohne WebCodecs liefert
+ * `encodeAsOgg` transparent ein WAV-Blob zurück (sichtbar an Blob.type) —
+ * `actualFormat` wird entsprechend auf 'wav' gesetzt.
+ *
+ * @returns ChannelBounceFormatResult mit Bytes + tatsächlichem Format.
+ */
+export async function bounceChannelToBuffer(
+  part: PartData,
+  pattern: PatternData,
+  opts: ChannelBounceFormatOptions,
+  OfflineCtxCtor?: OfflineAudioContextCtor,
+): Promise<ChannelBounceFormatResult> {
+  const format: BounceFormat = opts.format ?? "wav";
+  const { buffer, sampleRate, channels } = await renderChannelToBuffer(part, pattern, opts, OfflineCtxCtor);
+
+  if (format === "wav") {
+    const channelData: Float32Array[] = [];
+    for (let ch = 0; ch < channels; ch++) {
+      channelData.push(buffer.getChannelData(ch));
+    }
+    const data = encodeWav(channelData, { sampleRate, channels, bitDepth: 16 });
+    return {
+      data,
+      actualFormat: "wav",
+      extension: ".wav",
+      mimeType: "audio/wav",
+    };
+  }
+
+  // ogg-opus: encode via WebCodecs, mit transparentem WAV-Fallback.
+  // `buffer` ist ein AudioBuffer (online) oder MockAudioBuffer (tests) — beide
+  // implementieren das AudioBufferLike-Interface.
+  const bufferLike: AudioBufferLike = {
+    sampleRate,
+    numberOfChannels: channels,
+    length: buffer.length,
+    getChannelData: (ch: number) => buffer.getChannelData(ch),
+  };
+  const bitrate = typeof opts.bitrate === "number" && Number.isFinite(opts.bitrate)
+    ? opts.bitrate
+    : DEFAULT_OGG_BITRATE_BPS;
+  const blob = await encodeAsOgg(bufferLike, { bitrate });
+  const data = await blob.arrayBuffer();
+  // encodeAsOgg liefert bei fehlendem WebCodecs einen WAV-Blob zurück.
+  // Wir folgen dem tatsächlichen Blob.type (nicht dem User-Wunsch).
+  const isOgg = blob.type === "audio/ogg";
+  return {
+    data,
+    actualFormat: isOgg ? "ogg-opus" : "wav",
+    extension: isOgg ? ".ogg" : ".wav",
+    mimeType: isOgg ? "audio/ogg" : "audio/wav",
+  };
 }
 
 // ─── Multi-Channel Bounce ────────────────────────────────────────────────────
@@ -1187,8 +1294,34 @@ export interface BounceAllProgress {
 export interface BounceAllResult {
   channelId: string;
   channelName: string;
+  /**
+   * Dateiname inklusive Endung. Bei format='wav' immer '.wav', bei
+   * format='ogg-opus' '.ogg' wenn WebCodecs verfügbar war, sonst '.wav'
+   * (silent-Fallback).
+   */
   filename: string;
+  /**
+   * Encoded Audio-Bytes. Backward-compat-Alias für `data` — beide Felder
+   * zeigen auf denselben ArrayBuffer (kein Copy).
+   * @deprecated Verwende `data` für format-bewussten Code.
+   */
   wav: ArrayBuffer;
+  /** v3.84.0: Encoded Audio-Bytes (WAV oder OGG). */
+  data: ArrayBuffer;
+  /** v3.84.0: Tatsächlich verwendetes Format. */
+  actualFormat: BounceFormat;
+  /** v3.84.0: MIME-Typ passend zum actualFormat. */
+  mimeType: "audio/wav" | "audio/ogg";
+}
+
+/**
+ * v3.84.0 — Erweiterte Options für `bounceAllChannels` mit Format-Support.
+ */
+export interface BounceAllOptions extends Omit<ChannelBounceRenderOptions, "sampleBuffer"> {
+  /** Output-Format pro Channel. Default 'wav' (backward-compat). */
+  format?: BounceFormat;
+  /** Opus-Bitrate in bps (nur bei format='ogg-opus'). Default 192_000. */
+  bitrate?: number;
 }
 
 /**
@@ -1199,12 +1332,16 @@ export interface BounceAllResult {
  * Sequentiell (nicht parallel) um Memory nicht zu sprengen — ein 4-bar-Bounce
  * @ 48k Stereo = ~1.5 MB raw, parallel über 16 Channels wären 24 MB
  * gleichzeitig im RAM. Sequenziell hält Peak-RAM klein.
+ *
+ * v3.84.0: `opts.format = 'ogg-opus'` aktiviert Opus-Encoding. Default ist
+ * weiterhin 'wav' (backward-compat). Filenames folgen `actualFormat` —
+ * bei silent-WAV-Fallback bekommt der User '.wav' obwohl er OGG wollte.
  */
 export async function bounceAllChannels(
   parts: PartData[],
   pattern: PatternData,
   sampleBuffers: Map<string, AudioBuffer>,
-  opts: Omit<ChannelBounceRenderOptions, "sampleBuffer">,
+  opts: BounceAllOptions,
   projectName: string,
   onProgress?: (p: BounceAllProgress) => void,
   OfflineCtxCtor?: OfflineAudioContextCtor,
@@ -1216,6 +1353,8 @@ export async function bounceAllChannels(
     if (partInsertChains instanceof Map) return partInsertChains.get(id);
     return partInsertChains[id];
   };
+  const format: BounceFormat = opts.format ?? "wav";
+  const bitrate = opts.bitrate ?? DEFAULT_OGG_BITRATE_BPS;
   const results: BounceAllResult[] = [];
   for (let i = 0; i < parts.length; i++) {
     const part = parts[i];
@@ -1228,14 +1367,24 @@ export async function bounceAllChannels(
     try {
       const sampleBuffer = part.sampleUrl ? sampleBuffers.get(part.sampleUrl) ?? null : null;
       const insertChain = getChain(part.id) ?? null;
-      const wav = await bounceChannelToWavBuffer(
+      const out = await bounceChannelToBuffer(
         part,
         pattern,
-        { ...opts, sampleBuffer, insertChain },
+        { ...opts, sampleBuffer, insertChain, format, bitrate },
         OfflineCtxCtor,
       );
-      const filename = defaultStemFilename(projectName, part.name);
-      results.push({ channelId: part.id, channelName: part.name, filename, wav });
+      // Filename folgt dem actualFormat (Fallback wird respektiert).
+      const baseName = defaultStemFilename(projectName, part.name);
+      const filename = filenameForFormat(baseName, out.actualFormat === "ogg-opus" ? "ogg" : "wav");
+      results.push({
+        channelId: part.id,
+        channelName: part.name,
+        filename,
+        wav: out.data,
+        data: out.data,
+        actualFormat: out.actualFormat,
+        mimeType: out.mimeType,
+      });
     } catch (err) {
       onProgress?.({
         current: i,
@@ -1268,8 +1417,29 @@ export async function bounceAllChannels(
  * No-op wenn nicht im DOM-Kontext (z.B. Node.js-Tests).
  */
 export function downloadWavInBrowser(wav: ArrayBuffer, filename: string): void {
+  downloadAudioInBrowser(wav, filename, "audio/wav");
+}
+
+/**
+ * v3.84.0 — Format-aware Browser-Download.
+ *
+ * Speichert beliebige Encoded-Audio-Bytes mit beliebigem MIME-Typ als
+ * Browser-Download. Generalisierung von `downloadWavInBrowser` — alter
+ * Helper bleibt als Convenience-Wrapper erhalten (backward-compat).
+ *
+ * @param data     Encoded Audio (WAV oder OGG).
+ * @param filename Pflicht — wird vom Browser-Save-Dialog übernommen.
+ * @param mimeType MIME-Typ (audio/wav oder audio/ogg).
+ *
+ * No-op wenn nicht im DOM-Kontext (z.B. Node.js-Tests).
+ */
+export function downloadAudioInBrowser(
+  data: ArrayBuffer,
+  filename: string,
+  mimeType: "audio/wav" | "audio/ogg" = "audio/wav",
+): void {
   if (typeof document === "undefined" || typeof URL === "undefined") return;
-  const blob = new Blob([wav], { type: "audio/wav" });
+  const blob = new Blob([data], { type: mimeType });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;

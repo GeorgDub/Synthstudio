@@ -52,14 +52,19 @@ import {
 } from "@/audio/MidiNoteOut";
 import { ELECTRIBE_2_DRUM_MAP } from "@/utils/midiTemplates";
 import {
-  bounceChannelToWavBuffer,
+  bounceChannelToBuffer,
   computeBounceDurationSec,
   defaultStemFilename,
   resolveBounceBars,
   BOUNCE_WARN_DURATION_SEC,
-  downloadWavInBrowser,
+  downloadAudioInBrowser,
   type BounceLengthMode,
+  type BounceFormat,
 } from "@/utils/channelBounce";
+import {
+  SUPPORTED_OGG_BITRATES_BPS,
+  DEFAULT_OGG_BITRATE_BPS,
+} from "@/utils/audioCompressEncoder";
 import { useElectron } from "../../../../electron/useElectron";
 
 export interface ChannelInspectorProps {
@@ -606,6 +611,9 @@ function PartBounceSection({
   const [filenameStem, setFilenameStem] = useState("");
   const [isBouncing, setIsBouncing] = useState(false);
   const [bounceMsg, setBounceMsg] = useState<string | null>(null);
+  // v3.84.0 — Format + Bitrate (WAV default, OGG-Opus optional).
+  const [format, setFormat] = useState<BounceFormat>("wav");
+  const [bitrate, setBitrate] = useState<number>(DEFAULT_OGG_BITRATE_BPS);
 
   // Vorausschau-Dauer berechnen
   const resolved = resolveBounceBars({ mode, bars });
@@ -613,9 +621,18 @@ function PartBounceSection({
   const previewDuration = computeBounceDurationSec(resolved, pattern.stepCount, effectiveBpm, 0.5);
 
   const defaultFilename = defaultStemFilename(projectName, part.name);
-  const finalFilename = filenameStem
-    ? (filenameStem.endsWith(".wav") ? filenameStem : `${filenameStem}.wav`)
+  // v3.84.0: Filename-Default folgt dem gewählten Format. Bei explizitem
+  // User-Stem ohne Endung wird sie aus dem Format abgeleitet; mit Endung
+  // bleibt der User-Wunsch unverändert (Edge-Case: User schreibt ".wav"
+  // obwohl Format='ogg' gewählt — wir respektieren das, der Save-Pfad
+  // gleicht es ggf. an actualFormat-Endung an).
+  const formatExt: ".wav" | ".ogg" = format === "ogg-opus" ? ".ogg" : ".wav";
+  const formatDefault = format === "ogg-opus"
+    ? defaultFilename.replace(/\.wav$/i, ".ogg")
     : defaultFilename;
+  const finalFilename = filenameStem
+    ? (/\.(wav|ogg)$/i.test(filenameStem) ? filenameStem : `${filenameStem}${formatExt}`)
+    : formatDefault;
 
   const handleBounce = useCallback(async () => {
     if (isBouncing) return;
@@ -647,22 +664,36 @@ function PartBounceSection({
       setBounceMsg("Rendere Channel…");
       // v3.42: User-konfigurierte Insert-Chain durchreichen (Bitcrusher/
       // RingMod/Transient-Shaper). Closes v3.41-Caveat.
-      const wav = await bounceChannelToWavBuffer(part, pattern, {
+      // v3.84.0: Format-aware Bounce (WAV oder OGG-Opus via WebCodecs).
+      const out = await bounceChannelToBuffer(part, pattern, {
         length: { mode, bars },
         bpm,
         sampleRate,
         channels: stereo ? 2 : 1,
         sampleBuffer,
         insertChain: insertChain ?? null,
+        format,
+        bitrate,
       });
 
-      setBounceMsg("Speichere WAV…");
+      // Filename an actualFormat anpassen (z.B. silent-Fallback OGG→WAV).
+      const adjustedFilename = (() => {
+        if (out.actualFormat === "ogg-opus" && !/\.ogg$/i.test(finalFilename)) {
+          return finalFilename.replace(/\.wav$/i, "") + ".ogg";
+        }
+        if (out.actualFormat === "wav" && !/\.wav$/i.test(finalFilename)) {
+          return finalFilename.replace(/\.ogg$/i, "") + ".wav";
+        }
+        return finalFilename;
+      })();
+
+      setBounceMsg(`Speichere ${out.actualFormat === "ogg-opus" ? "OGG" : "WAV"}…`);
       if (electron.isElectron) {
         // Electron-Save: nutzt den existierenden audio:save-recording IPC.
         // Filename wird nochmals gesäubert weil das IPC streng nur
-        // [A-Za-z0-9._-]+.wav akzeptiert.
-        const safeFilename = finalFilename.replace(/[^A-Za-z0-9._-]/g, "_");
-        const result = await electron.saveRecording(safeFilename, wav);
+        // [A-Za-z0-9._-]+ akzeptiert.
+        const safeFilename = adjustedFilename.replace(/[^A-Za-z0-9._-]/g, "_");
+        const result = await electron.saveRecording(safeFilename, out.data);
         if (result.success) {
           toast(`Stem gespeichert: ${result.filePath ?? safeFilename}`, { kind: "success" });
           setBounceMsg(null);
@@ -672,9 +703,9 @@ function PartBounceSection({
           setBounceMsg(`Fehler: ${result.error ?? "unbekannt"}`);
         }
       } else {
-        // Browser: Blob-Download
-        downloadWavInBrowser(wav, finalFilename);
-        toast(`Stem heruntergeladen: ${finalFilename}`, { kind: "success" });
+        // Browser: Blob-Download mit korrektem MIME-Typ
+        downloadAudioInBrowser(out.data, adjustedFilename, out.mimeType);
+        toast(`Stem heruntergeladen: ${adjustedFilename}`, { kind: "success" });
         setBounceMsg(null);
         setOpen(false);
       }
@@ -685,7 +716,7 @@ function PartBounceSection({
     } finally {
       setIsBouncing(false);
     }
-  }, [part, pattern, mode, bars, bpm, sampleRate, stereo, finalFilename, isBouncing, previewDuration, electron, insertChain]);
+  }, [part, pattern, mode, bars, bpm, sampleRate, stereo, finalFilename, isBouncing, previewDuration, electron, insertChain, format, bitrate]);
 
   return (
     <section className="border-t border-border-color p-3" data-testid="channel-inspector-bounce-section">
@@ -695,7 +726,7 @@ function PartBounceSection({
         className={`w-full text-left text-[10px] uppercase tracking-widest ${open ? "text-accent-primary" : "text-text-dim hover:text-text-primary"} mb-2`}
         data-testid="channel-bounce-toggle"
       >
-        🎬 Bounce to WAV {open ? "▾" : "▸"}
+        🎬 Bounce to {format === "ogg-opus" ? "OGG" : "WAV"} {open ? "▾" : "▸"}
       </button>
       {open && (
         <div className="space-y-2">
@@ -757,11 +788,42 @@ function PartBounceSection({
             </label>
           </div>
 
+          {/* v3.84.0 — Format-Selector (WAV / OGG-Opus) */}
+          <div className="flex items-center gap-2 text-[10px] text-text-dim" data-testid="channel-bounce-format-group">
+            <label className="flex items-center gap-1">
+              <span>Format:</span>
+              <select
+                value={format}
+                onChange={e => setFormat(e.target.value as BounceFormat)}
+                className="bg-bg-elevated border border-border-color rounded px-1.5 py-0.5 text-text-primary"
+                data-testid="channel-bounce-format-select"
+              >
+                <option value="wav">WAV</option>
+                <option value="ogg-opus">OGG (Opus)</option>
+              </select>
+            </label>
+            {format === "ogg-opus" && (
+              <label className="flex items-center gap-1" data-testid="channel-bounce-bitrate-group">
+                <span>Kbps:</span>
+                <select
+                  value={bitrate}
+                  onChange={e => setBitrate(Number(e.target.value))}
+                  className="bg-bg-elevated border border-border-color rounded px-1.5 py-0.5 text-text-primary"
+                  data-testid="channel-bounce-bitrate-select"
+                >
+                  {SUPPORTED_OGG_BITRATES_BPS.map(bps => (
+                    <option key={bps} value={bps}>{bps / 1000}</option>
+                  ))}
+                </select>
+              </label>
+            )}
+          </div>
+
           <input
             type="text"
             value={filenameStem}
             onChange={e => setFilenameStem(e.target.value)}
-            placeholder={defaultFilename}
+            placeholder={formatDefault}
             className="w-full bg-bg-base border border-border-color rounded px-2 py-1 text-[10px] text-text-primary placeholder:text-text-dim"
             data-testid="channel-bounce-filename"
           />
@@ -780,7 +842,7 @@ function PartBounceSection({
             className="w-full px-3 py-1.5 text-[11px] rounded bg-accent-primary text-white hover:opacity-80 disabled:opacity-40 font-bold transition-opacity"
             data-testid="channel-bounce-start"
           >
-            {isBouncing ? "Bouncing…" : "⬇ Bounce"}
+            {isBouncing ? "Bouncing…" : `⬇ Bounce ${format === "ogg-opus" ? "OGG" : "WAV"}`}
           </button>
 
           {bounceMsg && (
