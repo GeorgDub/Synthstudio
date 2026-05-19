@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.114.0",
+    version: "3.115.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -89,6 +89,36 @@ const INDEX = {
   // ─── KNOWN FILE INDEX ──────────────────────────────────────
   // Key files agents have analyzed. Add new entries after working on a file.
   files: {
+    "client/src/utils/macroMorph.ts (v3.115.0 NEU)": {
+      role:     "v3.115.0 NEU (~65 LOC, pure-helpers). Macro-Snapshot Morphing Math. MACRO_VALUES_LENGTH=8 (muss mit useMacroStore.MACRO_COUNT übereinstimmen). morphValues(a,b,amount): liefert Array von 8 Werten 0..1 via linear-interp result[i] = a[i] + (b[i]-a[i])*amount. amount auf 0..1 geclampt (NaN→0). normalizeMacroValues(arr) als reused helper: pad/truncate auf 8, NaN/Infinity→0, clamp 0..1. side-effect-frei, jsdom-frei. Defensive null/undefined/garbage-input handling. Pure import-able in Node.",
+      lastSeen: "2026-05-19T13:45:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/store/useMacroSnapshotStore.ts (v3.115.0 NEU)": {
+      role:     "v3.115.0 NEU (~270 LOC, Custom-Observer-Pattern analog useSceneStore). localStorage 'ss-macro-snapshots:v1'. State {snapshots:MacroSnapshot[], morphA:string|null, morphB:string|null, morphAmount:0..1}. Persistiert komplett (kein ephemerer Slot — User soll Live-Setups beim Reload behalten). sanitizeSnapshot defensiv: filtert garbage beim Load via Pflicht-Feld-Check (id/name) + normalizeMacroValues für values + Fallback-Color. Ghost-Pointer in morphA/B werden auf null geresetet wenn referenzierte Snapshot-ID nicht existiert. Public API: addSnapshot(name,values)→id (Fallback 'Snapshot N', auto-Color per Index), updateSnapshot(id,partial) (empty-name-ignore, ghost-noop), removeSnapshot(id) cleared morphA/B falls referenziert + no-op bei unbekannter ID, setMorphA/B(id|null) ignored ghost-IDs, setMorphAmount(0..1+NaN→0+threshold 0.001 gegen Re-Render-Spam außer 0/1-Edges), getCurrentMorphedValues() null wenn weder A noch B gesetzt (Fallback: current macros bleiben), recallSnapshot(id)→A=B=id+amount=0+notify (true bei Success, false bei ghost), __resetMacroSnapshotStoreForTests-Helper, getMacroSnapshotState synchroner Getter für Event-Handler, useMacroSnapshotStore Hook. Re-exportiert MACRO_VALUES_LENGTH + MACRO_SNAPSHOT_COLORS.",
+      lastSeen: "2026-05-19T13:45:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/components/MacroSnapshot/MacroSnapshotPanel.tsx (v3.115.0 NEU)": {
+      role:     "v3.115.0 NEU (~320 LOC). UI für Macro-Snapshot Morphing. Header mit 'Capture Current'-Button (snapshot von aktuellen Macros via getMacros()+addSnapshot, erster→A, zweiter→B auto). Morph-Section highlighted (border-accent-secondary/30 bg-bg-panel): A/B-Dropdowns, großer Morph-Slider (h-3, step 0.001), onChange triggert onMorphAmount = setSnapshotMorphAmount + setMacroValue-Loop für alle 8 Macros (feeds existing macro:change Pipeline). Live Current-Values-Preview (MacroPreviewBars 8 vertikale bars). Snapshot-Grid (grid-cols 1/2/3 responsive): SnapshotCard pro Snapshot mit color-dot, name, MacroPreviewBars, Recall/A/B/Edit/Delete-Buttons. Active-A/B-Buttons mit accent-primary/secondary highlighted. Right-Click MIDI-Learn: Morph-Slider→{type:morphAmount}, Card→{type:recallSnapshot,snapshotId,snapshotName}, CC-Badge angezeigt wenn mapped. EditModal: rename+recolor (MACRO_SNAPSHOT_COLORS palette). Nur semantische --ss-* tokens (bg-bg-elevated, text-accent-secondary, accent-primary, border-border-color, ...). Data-testids: macro-snapshot-panel, snapshot-capture, snapshot-morph-section, morph-a-select, morph-b-select, morph-amount-slider, morph-amount-value, morph-amount-cc, morph-current-preview, snapshot-list, snapshot-card-{id}, snapshot-preview-{id}, snapshot-recall/set-a/set-b/edit/delete-{id}, snapshot-cc-{id}, snapshot-edit-modal/name/save/cancel/color-{c}.",
+      lastSeen: "2026-05-19T13:45:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/hooks/useMidi.ts (v3.115.0 +Morph-MIDI-Targets)": {
+      role:     "v3.115.0 ERWEITERT: 2 neue MidiLearnTarget-Varianten {type:morphAmount} und {type:recallSnapshot,snapshotId,snapshotName?}. labelForTarget-Cases + targetsMatch (recallSnapshot vergleicht snapshotId, morphAmount via default true) + applyMapping-Cases: morphAmount→CustomEvent 'midi:morphAmount' detail=value/127 (always-on, kein Threshold), recallSnapshot→CustomEvent 'midi:recallSnapshot' detail=snapshotId (nur bei on=value>63 oder Note-On). Backwards-Compat: alle bestehenden Targets unverändert.",
+      lastSeen: "2026-05-19T13:45:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/App.tsx (v3.115.0 +MacroSnapshot-Tab+MIDI-Wire)": {
+      role:     "v3.115.0 ERWEITERT: import MacroSnapshotPanel + 3 Store-Helpers (setMorphAmount as setSnapshotMorphAmount, recallSnapshot as recallSnapshotInStore, getCurrentMorphedValues as getCurrentMorphedSnapshotValues). activeTool union um 'macroSnapshot' erweitert. Tab-Button '🎚 Snapshots' zwischen Song und Live-Rec. Conditional-Render <MacroSnapshotPanel className='h-full'/>. NEU useEffect (empty-deps) wired auf window-events 'midi:morphAmount' und 'midi:recallSnapshot'. midi:morphAmount → setSnapshotMorphAmount(detail) + applyMorphedToMacros (loop setMacroValue für alle 8 → triggert macro:change → existing applyMacroBindings Pipeline). midi:recallSnapshot → recallSnapshotInStore(detail) + applyMorphedToMacros. NaN/empty-string defensiv gefiltert.",
+      lastSeen: "2026-05-19T13:45:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "tests/features/macro-snapshot-morph.test.ts (v3.115.0 NEU)": {
+      role:     "v3.115.0 NEU (~310 LOC, 30 Tests in 10 describes, jsdom-frei mit LocalStorageMock-globalThis-Inject). Cluster: (1) normalizeMacroValues × 4 (pad mit 0 wenn shorter, truncate wenn longer, clamp+NaN/Infinity→0, null/undefined→8 nullen). (2) morphValues × 8 (amount=0→A, =1→B, =0.5→midpoint, >1→clamp→B, <0→clamp→A, NaN→0→A, unterschiedliche Längen mit Pad, immer 0..1 geclampt selbst bei illegal input). (3) addSnapshot × 3 (normalize+ID, empty-name-fallback 'Snapshot N', persistence-Roundtrip). (4) updateSnapshot × 3 (partial name/color/values, empty-name-ignore Datenverlust-Prevention, ghost-ID noop). (5) removeSnapshot × 3 (cleared morphA wenn referenziert, beide Slots wenn beide referenziert, ghost-noop). (6) Morph-Slots × 2 (setMorphA valid+ghost+null, setMorphAmount clamp 0..1+NaN→0). (7) getCurrentMorphedValues × 4 (A=B identical, both-null→null Fallback, nur A→A, nur B→B, both-amount=0.5→midpoint). (8) recallSnapshot × 2 (A=B=id+amount=0 + output=values, ghost→false+no state change). (9) Persistence × 1 (garbage-localStorage → defaults graceful). Alle 30 grün.",
+      lastSeen: "2026-05-19T13:45:00.000Z",
+      ownedBy:  "frontend"
+    },
     "client/public/worklets/recorder-worklet.js (v3.114.0 NEU)": {
       role:     "v3.114.0 NEU (~160 LOC plain JS, kein TS-Compile). AudioWorkletProcessor 'recorder-processor' für LiveRecorder + AudioInputRecorder. Läuft im Audio-Rendering-Thread (off main). Protokoll port.onmessage: {cmd:'start'} reset+running, {cmd:'stop'} flush+'done', {cmd:'getBuffer'} flush+'chunks', {cmd:'setMaxFrames',value:n} Memory-Cap setter. Outgoing-Messages: {type:'chunks',left,right,frameCount} alle ~85ms (FLUSH_FRAMES=4*128), {type:'limit',frameCount} bei Memory-Cap-Hit, {type:'done',left,right,frameCount,truncated} final concat-Float32. process(inputs) Pflicht-Copy der Input-Arrays (audio-thread reuse-Schutz). DEFAULT_MAX_FRAMES=600*48000 (~10min @ 48k). registerProcessor()-Call am Ende. Mono/Stereo auto-detection per inputs[0]-channel-count.",
       lastSeen: "2026-05-19T13:35:00.000Z",
@@ -2772,6 +2802,38 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "frontend",
+      timestamp: "2026-05-19T13:45:00.000Z",
+      done: [
+        "v3.115.0: Macro-Snapshot Morphing — Performance Live-Killer. User definiert mehrere 'Looks' (8-Macro-Konfigurationen) und morpht live zwischen ihnen mit großem Slider (A→B amount=0..1). Linear-Interp via pure-Helper. MIDI-Learn auf Morph-Slider (CC) + Recall-Buttons (Note-On/CC>63).",
+        "client/src/utils/macroMorph.ts NEU (~65 LOC, pure-helpers). morphValues(a,b,amount): liefert immer Array von MACRO_VALUES_LENGTH=8 Einträgen 0..1. Edge-Cases: NaN→0, amount<0→0, amount>1→1, kürzere Arrays gepaddet, längere truncated. normalizeMacroValues(arr) als reused helper. side-effect-frei, jsdom-frei.",
+        "client/src/store/useMacroSnapshotStore.ts NEU (~270 LOC, Custom-Observer). localStorage 'ss-macro-snapshots:v1' persistiert {snapshots, morphA, morphB, morphAmount}. Public API: addSnapshot(name,values)→id (fallback-name 'Snapshot N'), updateSnapshot(id,partial), removeSnapshot(id) cleared morphA/B falls referenziert, setMorphA/B(id|null) ignored ghost-IDs, setMorphAmount(0..1, NaN→0, threshold 0.001), getCurrentMorphedValues() liefert null wenn weder A noch B gesetzt (Fallback: current macros bleiben), recallSnapshot(id) → A=B=id+amount=0, __resetMacroSnapshotStoreForTests-Helper. sanitizeSnapshot defensiv gegen garbage-localStorage.",
+        "client/src/components/MacroSnapshot/MacroSnapshotPanel.tsx NEU (~320 LOC). Header mit Capture-Current-Button (snapshot von aktuellen Macros). Morph-Section (highlighted border-accent-secondary/30): A/B Dropdowns, großer Morph-Slider mit Live-Apply via setMacroValue für alle 8 Macros, Current-Values-Preview (8 bars). Snapshot-Grid: Card pro Snapshot mit name+color-dot, 8-bar Macro-Preview-Vis (MacroPreviewBars), Recall/A/B/Edit/Delete buttons. EditModal für rename+recolor (MACRO_SNAPSHOT_COLORS palette). MIDI-Learn: morph-Slider (type:morphAmount), Card-Right-Click (type:recallSnapshot,snapshotId). Nur semantische --ss-* tokens. data-testids für alle Sub-Elements.",
+        "client/src/hooks/useMidi.ts ERWEITERT: 2 neue MidiLearnTarget-Varianten (morphAmount + recallSnapshot:{snapshotId,snapshotName?}). labelForTarget + targetsMatch + applyMapping-Cases hinzugefügt. CustomEvents 'midi:morphAmount' (0..1) + 'midi:recallSnapshot' (snapshotId-string).",
+        "client/src/App.tsx ERWEITERT: import MacroSnapshotPanel + Store-Helpers. activeTool union erweitert um 'macroSnapshot'. Tab-Button '🎚 Snapshots' zwischen Song und Live-Rec. Conditional-Render <MacroSnapshotPanel className='h-full'/>. NEU useEffect: midi:morphAmount → setSnapshotMorphAmount + applyMorphedToMacros (setMacroValue für alle 8 Macros — feeds existing macro:change Pipeline für FX-/Bindings-Apply); midi:recallSnapshot → recallSnapshotInStore + applyMorphedToMacros.",
+        "tests/features/macro-snapshot-morph.test.ts NEU (~310 LOC, 30 Tests in 10 describes). Cluster: normalizeMacroValues × 4 (pad/truncate/clamp+NaN/null-undefined), morphValues × 8 (amount=0|1|0.5|>1|<0|NaN, unterschiedliche Längen, immer 0..1 geclampt), addSnapshot × 3 (normalize-values, empty-name-fallback, persistence), updateSnapshot × 3 (partial-patch, empty-name-ignore, ghost-noop), removeSnapshot × 3 (clears morph-refs, both-slots, ghost-noop), Morph-Slots × 2 (valid/ghost/null, clamp-amount), getCurrentMorphedValues × 4 (A=B identical, both-null=null, only-A, only-B, midpoint), recallSnapshot × 2 (set A=B+amount=0, ghost-false), Persistence × 1 (garbage→defaults). Alle 30 grün.",
+        "package.json 3.114.0 → 3.115.0. pnpm check: clean. pnpm test: 262 Files / 6001 passed / 16 skipped / 0 fail (+30 vs v3.114)."
+      ],
+      next: [
+        "AudioEngine.applyMorphedMacros() als first-class API statt Loop in App.tsx — leichteres Mocking + zentraler Trace-Point.",
+        "Per-Snapshot Toggle 'capture include lfo-rate/depth' damit nicht jeder Macro mitgespeichert wird (Filter-Mask).",
+        "Snapshot-Export/Import als JSON (Performance-Setups teilen).",
+        "Smooth-Morph mit ramp-time ms (statt sofortigem setMacroValue → setTargetAtTime auf AudioParams für klick-frei).",
+        "MIDI-Note-Learn-Workflow im UI sichtbar machen (zur Zeit nutzt user useMidiLearn-Standardweg, müsste eventuell explizit als 'Note lernen' beworben werden in Tooltip).",
+        "Morph-Interpolation für discrete Macros (button-mode) → currently linear macht keinen Sinn für non-knob; sollte gefiltert werden."
+      ],
+      changed: [
+        "client/src/utils/macroMorph.ts (NEU, ~65 LOC, pure-helpers morphValues + normalizeMacroValues)",
+        "client/src/store/useMacroSnapshotStore.ts (NEU, ~270 LOC, Custom-Observer-Store + localStorage)",
+        "client/src/components/MacroSnapshot/MacroSnapshotPanel.tsx (NEU, ~320 LOC, UI mit Morph-Slider + Snapshot-Grid + Edit-Modal)",
+        "client/src/hooks/useMidi.ts (ERWEITERT, +2 MidiLearnTarget-Varianten morphAmount/recallSnapshot, labelForTarget + targetsMatch + applyMapping-Cases)",
+        "client/src/App.tsx (ERWEITERT, Tab-Button '🎚 Snapshots' + Panel-Render + MIDI-Event-Wire für midi:morphAmount/midi:recallSnapshot)",
+        "tests/features/macro-snapshot-morph.test.ts (NEU, ~310 LOC, 30 Tests)",
+        "package.json (version 3.114.0 → 3.115.0)",
+        "agents/INDEX.js (version + workLog + files)"
+      ]
+    },
     {
       agent:     "backend",
       timestamp: "2026-05-19T13:35:00.000Z",

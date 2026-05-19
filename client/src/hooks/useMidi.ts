@@ -104,6 +104,18 @@ export type MidiLearnTarget =
   | { type: "openSettings" }
   // ── Macro (v1.88) — direkt einen Makro-Wert per CC steuern ───────────────
   | { type: "macro"; index: number; label?: string }
+  // ── Macro-Snapshot Morphing (v3.115.0) ───────────────────────────────────
+  /**
+   * Steuert den Morph-Slider 0..1 zwischen morphA und morphB im
+   * useMacroSnapshotStore. CC>0 → store.setMorphAmount(value/127).
+   */
+  | { type: "morphAmount" }
+  /**
+   * Note-On / CC>63 → useMacroSnapshotStore.recallSnapshot(snapshotId).
+   * snapshotId ist die Store-ID (string). App.tsx hört "midi:recallSnapshot"
+   * und ruft recallSnapshot + applyMorphedMacros.
+   */
+  | { type: "recallSnapshot"; snapshotId: string; snapshotName?: string }
   // ── Run-Script (v1.78) ─────────────────────────────────────────────────────
   /**
    * Triggert ein User-Script aus dem useScriptStore. Bei CC>63 oder Note-On
@@ -422,6 +434,8 @@ export function labelForTarget(target: MidiLearnTarget): string {
     case "scenelaunch":     return `Scene ${target.sceneIndex + 1}`;
     case "openSettings":    return "Einstellungen öffnen";
     case "macro":           return `Macro ${target.index + 1}${target.label ? `: ${target.label}` : ""}`;
+    case "morphAmount":     return "Macro-Snapshot Morph";
+    case "recallSnapshot":  return `Recall: ${target.snapshotName ?? target.snapshotId.slice(0, 8)}`;
     case "runScript":       return `Script: ${target.scriptName ?? target.scriptId.slice(0, 8)}`;
     case "chain":           return `Chain: ${target.label} (${target.steps.length} Schritte)`;
     case "loopTrigger":     return `Loop ${target.loopIndex + 1} Trigger`;
@@ -476,6 +490,10 @@ export function targetsMatch(a: MidiLearnTarget, b: MidiLearnTarget): boolean {
       return a.scriptId === (b as { scriptId: string }).scriptId;
     case "macro":
       return a.index === (b as { index: number }).index;
+    case "recallSnapshot":
+      return a.snapshotId === (b as { snapshotId: string }).snapshotId;
+    case "morphAmount":
+      return true;
     case "chain":
       return a.label === (b as { label: string }).label;
     case "loopTrigger":
@@ -1318,6 +1336,20 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
         }));
         break;
       }
+      case "morphAmount": {
+        // v3.115.0: Macro-Snapshot Morph-Slider via CC. App.tsx hört
+        // "midi:morphAmount" und ruft setMorphAmount + applyMorphedMacros.
+        window.dispatchEvent(new CustomEvent("midi:morphAmount", {
+          detail: value / 127,
+        }));
+        break;
+      }
+      case "recallSnapshot": if (on) {
+        // v3.115.0: Snapshot-Recall via MIDI-Note oder CC>63.
+        window.dispatchEvent(new CustomEvent("midi:recallSnapshot", {
+          detail: t.snapshotId,
+        }));
+      } break;
       case "runScript": if (on) {
         // v1.78: User-Script auf MIDI-Trigger ausführen. App.tsx hört und
         // ruft scriptSandbox.run() auf. ScriptId wird im detail mitgegeben.

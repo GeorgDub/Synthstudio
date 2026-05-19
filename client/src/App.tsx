@@ -172,6 +172,12 @@ import {
   getActiveSong as getActiveSongMode,
 } from "@/store/useSongModeStore";
 import { SongModePanel } from "@/components/SongMode/SongModePanel";
+import { MacroSnapshotPanel } from "@/components/MacroSnapshot/MacroSnapshotPanel";
+import {
+  setMorphAmount as setSnapshotMorphAmount,
+  recallSnapshot as recallSnapshotInStore,
+  getCurrentMorphedValues as getCurrentMorphedSnapshotValues,
+} from "@/store/useMacroSnapshotStore";
 import { LiveRecorderPanel } from "@/components/LiveRecorder";
 import { AudioInputRecorderPanel } from "@/components/AudioInputRecorder";
 import {
@@ -1451,7 +1457,7 @@ export default function App() {
     setActiveTab(tab);
     localStorage.setItem("ss-layout:active-tab", tab);
   }, []);
-  const [activeTool, setActiveTool] = useState<'prompt' | 'algorithmic' | 'chords' | 'sampler' | 'workbench' | 'library' | 'script' | 'omnitribe' | 'packs' | 'song' | 'liverec' | 'audioinput'>('prompt');
+  const [activeTool, setActiveTool] = useState<'prompt' | 'algorithmic' | 'chords' | 'sampler' | 'workbench' | 'library' | 'script' | 'omnitribe' | 'packs' | 'song' | 'liverec' | 'audioinput' | 'macroSnapshot'>('prompt');
 
   // ── Dialog-State ─────────────────────────────────────────────────────────
   const [showMidiSettings, setShowMidiSettings] = useState(false);
@@ -2711,6 +2717,37 @@ export default function App() {
     window.addEventListener("macro:change", handler);
     return () => window.removeEventListener("macro:change", handler);
   // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── v3.115.0: Macro-Snapshot Morph + Recall via MIDI ───────────────────
+  // morphAmount: CC → setSnapshotMorphAmount + apply morphed values
+  // recallSnapshot: Note-On/CC>63 → recallSnapshotInStore + apply
+  useEffect(() => {
+    const applyMorphedToMacros = () => {
+      const out = getCurrentMorphedSnapshotValues();
+      if (!out) return;
+      for (let i = 0; i < out.length; i++) {
+        setMacroValue(i, out[i]);
+      }
+    };
+    const onMorphAmount = (e: Event) => {
+      const v = (e as CustomEvent<number>).detail;
+      if (typeof v !== "number" || !Number.isFinite(v)) return;
+      setSnapshotMorphAmount(v);
+      applyMorphedToMacros();
+    };
+    const onRecall = (e: Event) => {
+      const id = (e as CustomEvent<string>).detail;
+      if (typeof id !== "string" || !id) return;
+      if (!recallSnapshotInStore(id)) return;
+      applyMorphedToMacros();
+    };
+    window.addEventListener("midi:morphAmount", onMorphAmount);
+    window.addEventListener("midi:recallSnapshot", onRecall);
+    return () => {
+      window.removeEventListener("midi:morphAmount", onMorphAmount);
+      window.removeEventListener("midi:recallSnapshot", onRecall);
+    };
   }, []);
 
   // ── Eingehende Collab-Nachrichten (Chat) ─────────────────────────────────
@@ -4124,6 +4161,7 @@ export default function App() {
                       { id: "library",     label: "📚 Library" },
                       { id: "packs",       label: "📦 Packs" },
                       { id: "song",        label: "🎼 Song" },
+                      { id: "macroSnapshot", label: "🎚 Snapshots" },
                       { id: "liverec",     label: "🎙 Live-Rec" },
                       { id: "audioinput",  label: "🎤 Audio-In" },
                       { id: "script",      label: "⚡ Script" },
@@ -4288,6 +4326,9 @@ export default function App() {
                         activePatternId={dm.activePatternId}
                         className="h-full"
                       />
+                    )}
+                    {activeTool === 'macroSnapshot' && (
+                      <MacroSnapshotPanel className="h-full" />
                     )}
                     {activeTool === 'liverec' && (
                       <LiveRecorderPanel
