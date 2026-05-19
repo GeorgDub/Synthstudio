@@ -39,12 +39,62 @@ export function normalizeMacroValues(arr: readonly number[] | undefined | null):
 }
 
 /**
+ * v3.128.0: Morph-Curve Shapes für Macro-Snapshot-Morphing.
+ *
+ *  - linear: y = t              (gradient = const)
+ *  - exp:    y = t²             (slow start, fast end — accelerating)
+ *  - log:    y = √t             (fast start, slow end — decelerating)
+ *  - sigmoid: y = 1/(1+e^(-k(t-0.5)))  (S-curve, smooth start+end, k=8)
+ */
+export type MorphCurve = "linear" | "exp" | "log" | "sigmoid";
+
+export const MORPH_CURVES: readonly MorphCurve[] = ["linear", "exp", "log", "sigmoid"];
+
+const SIGMOID_K = 8;
+
+/**
+ * Curve-Shape-Funktion: maps t∈[0,1] auf y∈[0,1] entsprechend der Curve.
+ * Pure. Defensive: NaN/out-of-range → linear-Fallback.
+ */
+export function shapeMorphCurve(t: number, curve: MorphCurve = "linear"): number {
+  const tt = clamp01(t);
+  switch (curve) {
+    case "exp":
+      return clamp01(tt * tt);
+    case "log":
+      return clamp01(Math.sqrt(tt));
+    case "sigmoid": {
+      // Normalized so f(0)=0 and f(1)=1 exact, via subtract+scale.
+      const s = (x: number) => 1 / (1 + Math.exp(-SIGMOID_K * (x - 0.5)));
+      const s0 = s(0);
+      const s1 = s(1);
+      const y = (s(tt) - s0) / (s1 - s0);
+      return clamp01(y);
+    }
+    case "linear":
+    default:
+      return tt;
+  }
+}
+
+/**
+ * v3.128.0: Validiert + sanitizes eine Curve-Eingabe.
+ * Invalid → "linear" fallback.
+ */
+export function sanitizeMorphCurve(value: unknown): MorphCurve {
+  if (typeof value !== "string") return "linear";
+  return MORPH_CURVES.includes(value as MorphCurve) ? (value as MorphCurve) : "linear";
+}
+
+/**
  * Lineare Interpolation zweier Macro-Values-Arrays.
  *
- * result[i] = a[i] + (b[i] - a[i]) * amount
+ * result[i] = a[i] + (b[i] - a[i]) * shapeMorphCurve(amount, curve)
  *
  * `amount` wird auf 0..1 geclampt (NaN→0). Arrays werden via
  * normalizeMacroValues auf MACRO_VALUES_LENGTH normalisiert.
+ *
+ * v3.128.0: Curve-Parameter (default "linear" für backwards-compat).
  *
  * @returns immer ein Array mit MACRO_VALUES_LENGTH Einträgen, jeder 0..1
  */
@@ -52,10 +102,11 @@ export function morphValues(
   a: readonly number[] | undefined | null,
   b: readonly number[] | undefined | null,
   amount: number,
+  curve: MorphCurve = "linear",
 ): number[] {
   const aa = normalizeMacroValues(a);
   const bb = normalizeMacroValues(b);
-  const t = clamp01(amount);
+  const t = shapeMorphCurve(amount, curve);
   const out: number[] = new Array(MACRO_VALUES_LENGTH);
   for (let i = 0; i < MACRO_VALUES_LENGTH; i++) {
     const av = aa[i];

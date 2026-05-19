@@ -16,7 +16,13 @@
  *   useMacroSnapshotStore (Hook)
  */
 import { useEffect, useReducer } from "react";
-import { MACRO_VALUES_LENGTH, morphValues, normalizeMacroValues } from "@/utils/macroMorph";
+import {
+  MACRO_VALUES_LENGTH,
+  morphValues,
+  normalizeMacroValues,
+  sanitizeMorphCurve,
+  type MorphCurve,
+} from "@/utils/macroMorph";
 
 const STORAGE_KEY = "ss-macro-snapshots:v1";
 
@@ -41,6 +47,8 @@ export interface MacroSnapshotState {
   morphB: string | null;
   /** 0..1 — Anteil B im Mix. 0 = pure A, 1 = pure B. */
   morphAmount: number;
+  /** v3.128.0: Morph-Curve-Shape. Default "linear" (backwards-compat). */
+  morphCurve: MorphCurve;
 }
 
 type Listener = () => void;
@@ -59,7 +67,7 @@ function clamp01(v: number): number {
 }
 
 function defaultState(): MacroSnapshotState {
-  return { snapshots: [], morphA: null, morphB: null, morphAmount: 0 };
+  return { snapshots: [], morphA: null, morphB: null, morphAmount: 0, morphCurve: "linear" };
 }
 
 function sanitizeSnapshot(raw: unknown): MacroSnapshot | null {
@@ -97,7 +105,8 @@ function load(): MacroSnapshotState {
     const morphB = typeof p.morphB === "string" && ids.has(p.morphB) ? p.morphB : null;
     const morphAmount =
       typeof p.morphAmount === "number" ? clamp01(p.morphAmount) : 0;
-    return { snapshots, morphA, morphB, morphAmount };
+    const morphCurve = sanitizeMorphCurve(p.morphCurve);
+    return { snapshots, morphA, morphB, morphAmount, morphCurve };
   } catch {
     return defaultState();
   }
@@ -232,6 +241,18 @@ export function setMorphAmount(amount: number): void {
 }
 
 /**
+ * v3.128.0: Setzt die Morph-Curve (linear|exp|log|sigmoid).
+ * Invalid input → "linear" Fallback via sanitizeMorphCurve.
+ */
+export function setMorphCurve(curve: MorphCurve | string): void {
+  const next = sanitizeMorphCurve(curve);
+  if (_state.morphCurve === next) return;
+  _state = { ..._state, morphCurve: next };
+  persist(_state);
+  notify();
+}
+
+/**
  * Liefert die aktuellen morphed-Values (8 Werte 0..1) basierend auf
  * morphA/morphB/morphAmount.
  *
@@ -251,7 +272,7 @@ export function getCurrentMorphedValues(): number[] | null {
   if (!a && !b) return null;
   if (a && !b) return normalizeMacroValues(a.values);
   if (b && !a) return normalizeMacroValues(b.values);
-  return morphValues(a!.values, b!.values, _state.morphAmount);
+  return morphValues(a!.values, b!.values, _state.morphAmount, _state.morphCurve);
 }
 
 /**
