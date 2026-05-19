@@ -86,10 +86,39 @@ export function MuteSoloGroupPanel({
 
       {store.groups.length === 0 && (
         <div
-          className="text-xs text-text-dim py-4 text-center"
+          className="flex flex-col items-center gap-2 py-6 px-3 bg-bg-elevated/50 border border-dashed border-border-color rounded"
           data-testid="mute-solo-group-empty"
         >
-          Keine Groups. Klick "+ Add Group" um eine zu erstellen.
+          <div className="flex gap-1.5" aria-hidden="true">
+            <span
+              className="w-4 h-4 rounded-full"
+              style={{ backgroundColor: DEFAULT_GROUP_COLOR }}
+            />
+            <span
+              className="w-4 h-4 rounded-full opacity-60"
+              style={{ backgroundColor: DEFAULT_CHANNEL_COLOR_PALETTE[2]?.hex ?? "#94a3b8" }}
+            />
+            <span
+              className="w-4 h-4 rounded-full opacity-30"
+              style={{ backgroundColor: DEFAULT_CHANNEL_COLOR_PALETTE[4]?.hex ?? "#475569" }}
+            />
+          </div>
+          <div className="text-xs text-text-primary font-medium text-center">
+            Noch keine Bus-Groups
+          </div>
+          <p className="text-[11px] text-text-muted text-center leading-snug max-w-[26ch]">
+            Fasse mehrere Channels zu einer Group zusammen und mute oder soloe sie
+            live mit nur einem Klick — perfekt für Drums, Bass-Stems oder
+            Lead-Sections.
+          </p>
+          <button
+            type="button"
+            onClick={() => setAddOpen(true)}
+            className="mt-1 px-3 py-1.5 rounded text-xs bg-accent-primary text-white hover:bg-accent-secondary transition-colors"
+            data-testid="mute-solo-group-empty-cta"
+          >
+            + Erste Group anlegen
+          </button>
         </div>
       )}
 
