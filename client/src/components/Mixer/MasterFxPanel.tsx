@@ -29,6 +29,11 @@ import {
   setMasterLimiter,
 } from "@/store/useMasterFxStore";
 import { AudioEngine } from "@/audio/AudioEngine";
+import {
+  truePeakColorClass,
+  formatTruePeak,
+  isTruePeakRisky,
+} from "@/audio/TruePeakMeter";
 
 type Tab = "reverb" | "delay" | "eq" | "limiter";
 
@@ -320,27 +325,45 @@ export function MasterFxPanel() {
     momentary: number; shortTerm: number; integrated: number;
     momentaryL: number; momentaryR: number;
     phaseCorrelation: number; lrImbalanceDb: number;
+    truePeakL: number; truePeakR: number; truePeakMax: number;
   }>({
     momentary: -Infinity, shortTerm: -Infinity, integrated: -Infinity,
     momentaryL: -Infinity, momentaryR: -Infinity,
     phaseCorrelation: NaN, lrImbalanceDb: 0,
+    truePeakL: -Infinity, truePeakR: -Infinity, truePeakMax: -Infinity,
   });
   useEffect(() => {
     const id = setInterval(() => {
       try {
         // v3.101: Stereo-Snapshot bevorzugt (Engine fallt sauber zurueck).
+        // v3.102: Snapshot enthaelt zusaetzlich truePeakL/R/Max.
         const eng = AudioEngine as unknown as {
           getLufsStereoSnapshot?: () => typeof lufs;
           getLufsSnapshot: () => { momentary: number; shortTerm: number; integrated: number };
         };
         if (typeof eng.getLufsStereoSnapshot === "function") {
-          setLufs(eng.getLufsStereoSnapshot());
+          const snap = eng.getLufsStereoSnapshot();
+          // Backwards-Compat: aeltere Engine ohne TP-Felder liefert die
+          // erst spaeter — wir ueberschreiben mit -Infinity als Default.
+          setLufs({
+            momentary:        snap.momentary,
+            shortTerm:        snap.shortTerm,
+            integrated:       snap.integrated,
+            momentaryL:       snap.momentaryL,
+            momentaryR:       snap.momentaryR,
+            phaseCorrelation: snap.phaseCorrelation,
+            lrImbalanceDb:    snap.lrImbalanceDb,
+            truePeakL:        Number.isFinite(snap.truePeakL)   ? snap.truePeakL   : -Infinity,
+            truePeakR:        Number.isFinite(snap.truePeakR)   ? snap.truePeakR   : -Infinity,
+            truePeakMax:      Number.isFinite(snap.truePeakMax) ? snap.truePeakMax : -Infinity,
+          });
         } else {
           const s = eng.getLufsSnapshot();
           setLufs({
             ...s,
             momentaryL: s.momentary, momentaryR: s.momentary,
             phaseCorrelation: NaN, lrImbalanceDb: 0,
+            truePeakL: -Infinity, truePeakR: -Infinity, truePeakMax: -Infinity,
           });
         }
       } catch {
@@ -348,6 +371,7 @@ export function MasterFxPanel() {
           momentary: -Infinity, shortTerm: -Infinity, integrated: -Infinity,
           momentaryL: -Infinity, momentaryR: -Infinity,
           phaseCorrelation: NaN, lrImbalanceDb: 0,
+          truePeakL: -Infinity, truePeakR: -Infinity, truePeakMax: -Infinity,
         });
       }
     }, LUFS_METER_INTERVAL_MS);
@@ -503,6 +527,70 @@ export function MasterFxPanel() {
           >
             {formatLrImbalance(lufs.lrImbalanceDb)}
           </span>
+        </div>
+      </div>
+
+      {/*
+       * v3.102.0: True-Peak-Meter (ITU-R BS.1770-4 Annex 2).
+       * Inter-Sample-Peaks via 4x-Polyphase-FIR. Streaming-Plattformen
+       * (Spotify -1dBTP, Apple Music -1dBTP) verlangen TP-Compliance.
+       * Sample-Peaks reichen nicht — bei resampling/DA-Conversion
+       * entstehen Inter-Sample-Spitzen ueber 0dBFS.
+       *
+       * Color-Coding:
+       *   ≥ -1 dBTP → rot   (Streaming-Limit verletzt)
+       *   ≥ -3 dBTP → gelb  (knapp)
+       *   < -3 dBTP → gruen (sicher)
+       */}
+      <div
+        className="flex items-center gap-3 bg-bg-elevated rounded px-3 py-2 border border-border-subtle"
+        data-testid="master-fx-truepeak"
+      >
+        <span
+          className="text-xs text-text-muted font-semibold"
+          title="True-Peak (ITU-R BS.1770-4 Annex 2) — 4x-Oversampled Inter-Sample-Peak"
+        >
+          TP
+        </span>
+        <div className="flex items-baseline gap-1" data-testid="master-fx-truepeak-l">
+          <span className="text-xs text-text-dim">L</span>
+          <span
+            className={`text-xs tabular-nums w-20 text-right ${truePeakColorClass(lufs.truePeakL)}`}
+            data-testid="master-fx-truepeak-l-value"
+          >
+            {formatTruePeak(lufs.truePeakL)}
+          </span>
+        </div>
+        <div className="flex items-baseline gap-1" data-testid="master-fx-truepeak-r">
+          <span className="text-xs text-text-dim">R</span>
+          <span
+            className={`text-xs tabular-nums w-20 text-right ${truePeakColorClass(lufs.truePeakR)}`}
+            data-testid="master-fx-truepeak-r-value"
+          >
+            {formatTruePeak(lufs.truePeakR)}
+          </span>
+        </div>
+        <div
+          className="flex items-baseline gap-1 flex-1"
+          data-testid="master-fx-truepeak-max"
+          title="True-Peak max(L, R) — der Wert an dem Streaming-Limits greifen"
+        >
+          <span className="text-xs text-text-dim">max</span>
+          <span
+            className={`text-xs tabular-nums w-20 text-right font-semibold ${truePeakColorClass(lufs.truePeakMax)}`}
+            data-testid="master-fx-truepeak-max-value"
+          >
+            {formatTruePeak(lufs.truePeakMax)}
+          </span>
+          {isTruePeakRisky(lufs.truePeakMax) && (
+            <span
+              className="text-xs text-accent-danger font-semibold ml-1"
+              data-testid="master-fx-truepeak-warning"
+              title="True-Peak ≥ -1 dBTP — Streaming-Plattformen reduzieren die Lautheit automatisch"
+            >
+              ⚠ STREAM
+            </span>
+          )}
         </div>
       </div>
 

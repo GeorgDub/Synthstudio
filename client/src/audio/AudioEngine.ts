@@ -3864,12 +3864,17 @@ class AudioEngineClass {
    * v3.101.0: Erweitertes UI-Snapshot mit Stereo-Info, Phase-Correlation
    * und L/R-Imbalance.
    *
+   * v3.102.0 ergänzt um True-Peak (BS.1770-4 Annex 2):
+   *   truePeakL/truePeakR/truePeakMax in dBTP (Inter-Sample-Peaks via
+   *   4x-Polyphase-FIR im LufsAnalyzer).
+   *
    *   momentary/shortTerm/integrated: channel-summed wie v3.78.
    *   momentaryL/momentaryR:          per-Channel-LUFS (nur dieser Kanal).
    *   phaseCorrelation:               -1..+1 (siehe LufsAnalyzer.phaseCorrelation).
    *                                    NaN-Sentinel: NaN wenn noch keine Bloecke
    *                                    gepolt wurden (Polling-Lazy-Start).
    *   lrImbalanceDb:                  RMS-Diff in dB (positiv = rechts lauter).
+   *   truePeakL/R/Max:                v3.102 True-Peak in dBTP (-Inf bei Silence).
    */
   getLufsStereoSnapshot(): {
     momentary:        number;
@@ -3879,6 +3884,9 @@ class AudioEngineClass {
     momentaryR:       number;
     phaseCorrelation: number;
     lrImbalanceDb:    number;
+    truePeakL:        number;
+    truePeakR:        number;
+    truePeakMax:      number;
   } {
     if (!this._lufsAnalyser) {
       return {
@@ -3889,6 +3897,9 @@ class AudioEngineClass {
         momentaryR:       LUFS_SILENCE,
         phaseCorrelation: NaN,
         lrImbalanceDb:    0,
+        truePeakL:        -Infinity,
+        truePeakR:        -Infinity,
+        truePeakMax:      -Infinity,
       };
     }
     this._ensureLufsPollingStarted();
@@ -3904,6 +3915,16 @@ class AudioEngineClass {
         imb   = 0;
       }
     }
+    // v3.102.0: True-Peak-Reader (vom LufsAnalyzer-internen TruePeakMeter).
+    let tpL = -Infinity, tpR = -Infinity, tpMax = -Infinity;
+    try {
+      const tp = this._lufsAnalyser.getCurrentTruePeak();
+      tpL = tp.leftDb;
+      tpR = tp.rightDb;
+      tpMax = tp.maxDb;
+    } catch {
+      /* swallow — old LufsAnalyzer ohne TP-API */
+    }
     return {
       momentary:        this._lufsAnalyser.getMomentary(),
       shortTerm:        this._lufsAnalyser.getShortTerm(),
@@ -3912,6 +3933,9 @@ class AudioEngineClass {
       momentaryR:       stereo.R,
       phaseCorrelation: phase,
       lrImbalanceDb:    imb,
+      truePeakL:        tpL,
+      truePeakR:        tpR,
+      truePeakMax:      tpMax,
     };
   }
 

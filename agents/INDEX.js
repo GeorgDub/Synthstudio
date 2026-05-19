@@ -2574,6 +2574,34 @@ const INDEX = {
   workLog: [
     {
       agent:     "backend",
+      timestamp: "2026-05-19T10:35:00.000Z",
+      done: [
+        "v3.102.0: True-Peak-Meter (ITU-R BS.1770-4 Annex 2) — closes v3.101-Caveat. Bisher: nur LUFS Stereo, kein True-Peak. Sample-Peaks reichen nicht — bei Resampling/DA-Conversion entstehen Inter-Sample-Peaks ueber 0dBFS. Streaming-Plattformen (Spotify, Apple Music, YouTube) verlangen -1 dBTP True-Peak-Compliance.",
+        "TruePeakMeter.ts NEU (+~290 LOC, +5 Public-Exporte). Polyphase-FIR: 12 Taps × 4 Phasen = 48 Taps gesamt (Spec-Minimum). designPolyphaseFIR(phases=4, tapsPerPhase=12) erzeugt erst eine voll-rate windowed-sinc Impulse-Response (sinc((πn)/L) · Hann ueber totalTaps), zerlegt in L Phasen via fullIR[p + k*L], dann normalisiert JEDE Phase auf sum=1 → DC-Input=1 → Output=1 pro Phase (kein DC-Offset). Module-Const DEFAULT_FILTERS bei Modul-Load berechnet (kein per-call Allocation). Pure-Helper truePeak(samples, oversampling=4) → dBTP fuer Offline. Stateful Klasse TruePeakMeter mit processBlock/getPeakDb/getPeakLinear/reset, Running-Max + FIR-Ring-Buffer fuer Streaming-Continuity. Convolution: y[p] = Σ_k h_p[k] · x[t-k], ring[(writeIdx-1-k+N)%N] = x[t-k]. Fast-Path oversampling=1 ueberspringt FIR komplett (reiner Sample-Peak). UI-Helpers truePeakColorClass (≥-1=danger, ≥-3=warning, sonst success), formatTruePeak (mit eigenem Minus '−'), isTruePeakRisky(db, threshold=-1).",
+        "LufsAnalyzer.ts ERWEITERT (+~55 LOC). Imports: TruePeakMeter. Neue Option truePeakOversampling (default 4, 0=disabled). Neue Felder truePeakL/R (TruePeakMeter-Instanzen), truePeakEnabled flag. Constructor instanziiert beide Meter mit dem oversampling-Faktor. processBlock() laesst die RAW (nicht-K-weighted!) Samples parallel zur K-weighting durch die TruePeak-Meter — dBTP soll die echte Peak-Amplitude reflektieren, nicht loudness-gewichtet. NEU getCurrentTruePeak() → {leftDb, rightDb, maxDb} (Mono: R spiegelt L). reset() / resetAll() leeren beide Meter (Doc erklaert warum: 12-sample-FIR-Latenz ist akzeptabel, neuer Mess-Lauf will fresh state).",
+        "AudioEngine.ts ERWEITERT (~25 LOC in getLufsStereoSnapshot). Snapshot um truePeakL/truePeakR/truePeakMax erweitert. Defensive try/catch (alter LufsAnalyzer ohne TP-API). Wenn _lufsAnalyser=null (Mock-AudioContext): alle drei TP-Felder -Infinity.",
+        "MasterFxPanel.tsx UI ERWEITERT (+~85 LOC). Import truePeakColorClass/formatTruePeak/isTruePeakRisky. lufs-State um truePeakL/R/Max erweitert. NEU Section master-fx-truepeak unter master-fx-lufs-stereo: 'TP' Label + L-Display + R-Display + max-Display, alle mit color-coded text (formatTruePeak), max-Display zeigt ⚠ STREAM-Warnung wenn isTruePeakRisky. data-testid master-fx-truepeak, -l/-r/-max + -l-value/-r-value/-max-value + -warning.",
+        "tests/features/true-peak.test.ts NEU (+~340 LOC, 23 Tests in 5 describes). (1) Stateless truePeak() × 9: DC=0dBTP (Gibbs-Toleranz +1.5dB), stationaere DC nach Filter-Einschwingen, silence=-Inf, empty=-Inf, moderate sine ≈0dBTP, intersample-peak bei sr/4-sine mit Phase π/4 (TP > sample-peak), tiefe Freq (100Hz) ohne starke Verfaelschung, oversampling=1 fast-path = pure-sample-peak, oversampling=4 > oversampling=1 bei nyquist-near sine, invalid args throw. (2) Stateful TruePeakMeter × 6: Running-Max akkumuliert ueber Blocks, reset() leert beides, empty-block no-op, oversampling=1 sample-peak-tracking, Continuity ueber Block-Boundaries (kein Spike), invalid args throw. (3) designPolyphaseFIR × 4: Default 4 Phasen × 12 Taps, Custom 8×8, jede Phase summiert auf ≈1, invalid throws. (4) LufsAnalyzer-Integration × 7: getrennte L+R TruePeaks, silence=-Inf, mono spiegelt R=L, reset löscht TP, truePeakOversampling=0 deaktiviert (TP=-Inf trotz Signal), 4x>1x bei nyquist-near, LUFS unveraendert durch TP-Erweiterung (Backwards-Compat). (5) UI-Helpers × 3: truePeakColorClass, formatTruePeak, isTruePeakRisky.",
+        "package.json 3.101.0 → 3.102.0. pnpm check: clean. pnpm test: 246 Files / 5550 passed / 16 skipped (vs v3.101.0: 245/5520 → +1 File +30 Tests, wobei +1 DC-Stationaer-Edge-Case bei Implementierung dazukam). Keine bestehenden Tests broken — lufs-stereo.test.ts 26/26 weiterhin gruen."
+      ],
+      next: [
+        "v3.102.1: Engine-LUFS-Tap nutzt aktuell den AnalyserNode (1-channel-downmix bei Mock-AudioContext). True-Peak wuerde im Browser bei realem ChannelSplitter pro Kanal sauber arbeiten — aber das Mock-Audio-Setup im Test bleibt auf channelCount=2 Analyzer auch ohne Splitter. Pruefen ob die FIR-Latenz von 12 Samples beim Streaming-Polling sichtbare TP-Verzoegerung verursacht (bei 100ms-Polling sollte sie unter Wahrnehmungsschwelle liegen).",
+        "True-LRA (v3.101.1 carry-over): vollstaendige EBU-R128 LRA implementieren via Short-Term-Historie-Buffer ueber die Mess-Periode (95%-10% Perzentil-Spanne gegen die aktuelle |shortTerm-integrated|-Approximation).",
+        "Long-Time-Phase-Correlation: zusaetzlich zum 2048-Sample-Snapshot ein 3-Sekunden-Average fuer beruhigtes Display.",
+        "Brick-wall-Optimization-Vorschlag im UI: wenn TruePeakMax >-1dBTP und LUFS-Integrated im EBU-Bereich, vorschlagen 'Reduziere Master-Limiter-Threshold um <delta>dB → -1dBTP-konform'."
+      ],
+      changed: [
+        "client/src/audio/TruePeakMeter.ts (NEU +~290 LOC: designPolyphaseFIR, truePeak pure-helper, TruePeakMeter Klasse, UI-Helpers truePeakColorClass/formatTruePeak/isTruePeakRisky)",
+        "client/src/audio/LufsAnalyzer.ts (+~55 LOC: TruePeakMeter-Felder, truePeakOversampling Option, processBlock pre-K-weighting tap, getCurrentTruePeak, reset/resetAll erweitert)",
+        "client/src/audio/AudioEngine.ts (+~25 LOC: getLufsStereoSnapshot erweitert um truePeakL/R/Max)",
+        "client/src/components/Mixer/MasterFxPanel.tsx (+~85 LOC: TP-Display-Section unter LUFS-Stereo-Section, L/R/max mit color-coding + Streaming-Warnung)",
+        "tests/features/true-peak.test.ts (NEU +~340 LOC, 23 Tests)",
+        "package.json (3.101.0 → 3.102.0)",
+        "agents/INDEX.js"
+      ]
+    },
+    {
+      agent:     "backend",
       timestamp: "2026-05-19T10:20:00.000Z",
       done: [
         "v3.101.0: LUFS true Stereo + Phase-Correlation + L/R-Imbalance (closes v3.78 mono-downmix-Caveat). v3.78 LufsAnalyzer war intern bereits per-channel (zwei Biquad-Paare L+R), aber AudioEngine-Tap war ein einziger AnalyserNode (downmix → channelCount=1 weil L=R). v3.101: ChannelSplitter(2) → zwei separate AnalyserNodes (Ch0/Ch1) → analyzer.processBlock(L, R) mit channelCount=2 → echtes BS.1770-4 Stereo-K-weighting.",

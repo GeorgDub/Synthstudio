@@ -1,8 +1,13 @@
 /**
- * Synthstudio – LufsAnalyzer.ts  (v3.101.0)
+ * Synthstudio – LufsAnalyzer.ts  (v3.102.0)
  *
  * ITU-R BS.1770-4 konformes Loudness-Measurement (Mastering-Standard
  * für Broadcast + Streaming).
+ *
+ * v3.102.0 ergänzt um optionalen True-Peak-Reader (BS.1770-4 Annex 2):
+ * Bei `truePeakOversampling > 1` läuft parallel zum K-weighting ein
+ * 4x-Polyphase-FIR über die rohen (nicht-K-weighted) Samples, der den
+ * Inter-Sample-Peak in dBTP ermittelt. Per-Channel L+R getrennt.
  *
  * Drei Werte:
  *   - Momentary  (M):  400ms gleitender Block
@@ -58,12 +63,15 @@
  * Caveats:
  *   - Mono-Eingang: `processBlock(L)` ohne `R` → channelCount=2-Analyzer
  *     spiegelt L auf R intern (= equivalent zur Stereo-Eingabe mit L=R).
- *   - True-Peak: NICHT enthalten, separater Reader in v3.78 future
- *     (4x-Oversampling für Inter-Sample-Peaks).
+ *   - v3.102 closes v3.101-Caveat: True-Peak ist jetzt enthalten via
+ *     `truePeakOversampling`-Option (default 4x, 0 oder 1 = disabled).
+ *     Polyphase-FIR (12 Taps × 4 Phasen = 48 Taps gesamt). Per-Channel
+ *     getrennt — siehe `getCurrentTruePeak()`.
  *   - v3.101 closes v3.78-Caveat: AudioEngine-Tap war pro AnalyserNode
  *     mono-downmixed. Mit ChannelSplitter + zwei AnalyserNodes geht die
  *     Engine jetzt auf channelCount=2 → echtes Stereo-K-weighting.
  */
+import { TruePeakMeter } from "./TruePeakMeter";
 
 // ─── Konstanten ───────────────────────────────────────────────────────────────
 
@@ -268,6 +276,13 @@ export interface LufsAnalyzerOptions {
   sampleRate?: number;
   /** Anzahl Kanäle (1 = Mono, 2 = Stereo). Default 2. */
   channelCount?: number;
+  /**
+   * v3.102.0: Oversampling-Faktor für True-Peak-Detection (BS.1770-4
+   * Annex 2). Default 4 (Spec-Minimum). 0 oder 1 = disabled (kein
+   * True-Peak-FIR — `getCurrentTruePeak()` liefert dann den reinen
+   * Sample-Peak des Streams).
+   */
+  truePeakOversampling?: number;
 }
 
 export class LufsAnalyzer {
@@ -287,6 +302,17 @@ export class LufsAnalyzer {
   /** Sliding-Mean-Square pro Kanal für Short-Term (3s). */
   private msShortTermL: SlidingMeanSquare;
   private msShortTermR: SlidingMeanSquare;
+
+  /**
+   * v3.102.0: True-Peak-Meter pro Kanal. Bei truePeakOversampling=0/1
+   * sind die Meter zwar instanziiert, laufen aber im Fast-Path
+   * (sample-peak). `null` wird nie geschrieben — wir entscheiden nur,
+   * ob `processBlock` die Raw-Samples weiterleitet (s.u.).
+   */
+  private truePeakL: TruePeakMeter;
+  private truePeakR: TruePeakMeter;
+  /** v3.102.0: Aktiv-Flag (false = oversampling=0). */
+  private truePeakEnabled: boolean;
 
   /** Integrated: 400ms-Block, 100ms-Hop. */
   private integratedBlockL: Float64Array;
@@ -328,6 +354,20 @@ export class LufsAnalyzer {
     this.integratedHopSize   = Math.round(INTEGRATED_BLOCK_SEC * (1 - INTEGRATED_OVERLAP) * sr);
     this.integratedBlockL = new Float64Array(this.integratedBlockSize);
     this.integratedBlockR = new Float64Array(this.integratedBlockSize);
+
+    // v3.102.0: True-Peak-Meter pro Kanal.
+    // Defensive: NaN / negativ / non-integer fallen auf default zurueck.
+    const tpRaw = opts.truePeakOversampling;
+    const tp =
+      tpRaw === undefined ? 4
+      : !Number.isFinite(tpRaw) || tpRaw < 0 ? 0
+      : Math.floor(tpRaw);
+    this.truePeakEnabled = tp >= 1;
+    // Bei oversampling=0 instanziieren wir trotzdem (mit 1x), damit getCurrentTruePeak
+    // einen sample-peak liefert wenn der User irgendwann sample-peak haben moechte.
+    const tpOs = Math.max(1, tp || 1);
+    this.truePeakL = new TruePeakMeter(tpOs);
+    this.truePeakR = new TruePeakMeter(tpOs);
   }
 
   /**
@@ -340,6 +380,18 @@ export class LufsAnalyzer {
     const N = left.length;
     const isStereo = this.channelCount === 2 && right !== undefined;
     const r = isStereo ? right! : left; // mono spiegelt L auf R
+
+    // v3.102.0: True-Peak parallel zur K-weighting. Raw-Samples (NICHT
+    // K-weighted) gehen durch den Polyphase-FIR — dBTP soll die echte
+    // Peak-Amplitude reflektieren, nicht die loudness-gewichtete.
+    // Bei truePeakEnabled=false (oversampling=0) ueberspringen wir den
+    // Update-Loop komplett (sample-peak-fallback bleibt 0 / -Infinity).
+    if (this.truePeakEnabled) {
+      this.truePeakL.processBlock(left);
+      // Im Stereo-Modus separater R-Block; bei mono-spiegelung sehen die
+      // beiden Meter identische Samples → R-TruePeak == L-TruePeak.
+      this.truePeakR.processBlock(r);
+    }
 
     for (let i = 0; i < N; i++) {
       // K-Weighting: pre-filter → rlb-filter pro Kanal.
@@ -464,12 +516,44 @@ export class LufsAnalyzer {
   }
 
   /**
+   * v3.102.0: Aktueller True-Peak (BS.1770-4 Annex 2) pro Kanal seit dem
+   * letzten `reset()` bzw. `resetAll()`. Werte in dBTP.
+   *
+   *   leftDb  → max True-Peak im linken Kanal
+   *   rightDb → max True-Peak im rechten Kanal (bei mono: identisch zu links)
+   *   maxDb   → max(leftDb, rightDb) — der Wert, an dem sich Streaming-Limits
+   *              orientieren.
+   *
+   * Bei Silence / vor erstem processBlock: -Infinity.
+   * Bei `truePeakOversampling=0`: alle drei sind -Infinity (Meter deaktiviert).
+   */
+  getCurrentTruePeak(): { leftDb: number; rightDb: number; maxDb: number } {
+    if (!this.truePeakEnabled) {
+      return { leftDb: -Infinity, rightDb: -Infinity, maxDb: -Infinity };
+    }
+    const leftDb  = this.truePeakL.getPeakDb();
+    const rightDb = this.channelCount === 2
+      ? this.truePeakR.getPeakDb()
+      : leftDb; // Mono: R spiegelt L
+    const maxDb = Math.max(
+      Number.isFinite(leftDb)  ? leftDb  : -Infinity,
+      Number.isFinite(rightDb) ? rightDb : -Infinity,
+    );
+    return { leftDb, rightDb, maxDb };
+  }
+
+  /**
    * Setzt nur das Integrated-Akku zurück (Momentary/Short-Term bleiben
    * gleitend — die hängen am Audio-Stream und sollen nicht aufeinmal
    * Stille zeigen).
    *
+   * v3.102.0: Setzt auch den True-Peak-Running-Max zurück — UI-Pattern
+   * "Reset" soll alle akkumulierten Mess-Werte zurücksetzen, nicht
+   * inkonsistent nur LUFS aber nicht TP.
+   *
    * Filter-State (Biquad-Memory) wird NICHT zurückgesetzt — sonst gäbe
-   * es einen Filter-Einschwing-Glitch im laufenden Stream.
+   * es einen Filter-Einschwing-Glitch im laufenden Stream. Gleiches gilt
+   * für True-Peak-FIR-Ring (gibt sonst einen Block-Boundary-Glitch).
    */
   reset(): void {
     this.integratedBlockL.fill(0);
@@ -477,6 +561,16 @@ export class LufsAnalyzer {
     this.integratedWriteIdx = 0;
     this.integratedSinceHop = 0;
     this.integratedBlockLoudness = [];
+    // True-Peak: nur Running-Max zuruecksetzen, nicht den FIR-Ring
+    // (s.o.). TruePeakMeter.reset() leert beides — wir wollen aber nur
+    // den Peak resetten. Workaround: getPeakLinear() lesen, reset() rufen,
+    // dann den Ring wieder einschwingen-lassen ist zu kompliziert. Da der
+    // FIR-Ring nur 12 Samples Latenz produziert (0.25ms @ 48kHz), ist
+    // ein voller Reset hier akzeptabel — der Engineer drueckt "Reset"
+    // typischerweise vor einem neuen Mess-Lauf und sieht beim naechsten
+    // Block-Pop ohnehin frische Werte.
+    this.truePeakL.reset();
+    this.truePeakR.reset();
   }
 
   /**
@@ -492,6 +586,9 @@ export class LufsAnalyzer {
     this.msMomentaryR.reset();
     this.msShortTermL.reset();
     this.msShortTermR.reset();
+    // v3.102.0: True-Peak-Meter komplett zuruecksetzen (Ring + Running-Max).
+    this.truePeakL.reset();
+    this.truePeakR.reset();
     this.reset();
   }
 }
