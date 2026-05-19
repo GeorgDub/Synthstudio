@@ -11,7 +11,12 @@
  */
 
 import { SynthEngine } from "./SynthEngine";
-import { LufsAnalyzer, LUFS_SILENCE } from "./LufsAnalyzer";
+import {
+  LufsAnalyzer,
+  LUFS_SILENCE,
+  phaseCorrelation as lufsPhaseCorrelation,
+  lrImbalanceDb as lufsLrImbalanceDb,
+} from "./LufsAnalyzer";
 import { MidiClockOut } from "./MidiClockOut";
 import { MidiNoteOut, type MidiPartConfig } from "./MidiNoteOut";
 import { MidiClickOut, type MidiClickConfig } from "./MidiClickOut";
@@ -711,7 +716,21 @@ class AudioEngineClass {
    *     wir bekommen.
    */
   private _lufsAnalyser: LufsAnalyzer | null = null;
+  /**
+   * v3.78: Mono-AnalyserNode (downmix). Bleibt fuer Mock-AudioContext
+   * ohne ChannelSplitter weiterhin als Fallback erhalten.
+   */
   private _lufsAnalyserNode: AnalyserNode | null = null;
+  /**
+   * v3.101.0: True-Stereo-Tap via ChannelSplitter — zwei AnalyserNodes
+   * (links + rechts). Wenn beide gesetzt sind, hat der Polling-Loop
+   * Vorrang vor dem Mono-Fallback und ruft `processBlock(L, R)` mit
+   * separaten L/R-Buffers (echtes BS.1770-4 Stereo-K-weighting).
+   */
+  private _lufsSplitter: ChannelSplitterNode | null = null;
+  private _lufsAnalyserNodeL: AnalyserNode | null = null;
+  private _lufsAnalyserNodeR: AnalyserNode | null = null;
+  private _lufsScratchBufferR: Float32Array | null = null;
   private _lufsPollingTimer: ReturnType<typeof setInterval> | null = null;
   private _lufsScratchBuffer: Float32Array | null = null;
   /** Polling-Intervall in ms (Task-Spec: 10Hz). */
@@ -955,26 +974,57 @@ class AudioEngineClass {
     this._masterEqHigh.connect(this._masterLimiterDry);
     this._masterLimiterDry.connect(this.ctx.destination);
 
-    // v3.78.0: LUFS-Meter-Tap am post-master-FX-Punkt.
-    // wet+dry konnektieren parallel zur Destination UND zum AnalyserNode,
-    // damit das LUFS-Meter zeigt was tatsächlich rausgeht (inkl. Limiter).
-    // Polling startet lazy beim ersten getLufsSnapshot()-Call.
+    // v3.78.0 → v3.101.0: LUFS-Meter-Tap am post-master-FX-Punkt.
+    // v3.101.0: TRUE STEREO. wet+dry → ChannelSplitter → 2x AnalyserNode
+    // (L=Ch0, R=Ch1). Polling-Loop liest L+R separat und ruft
+    // `analyzer.processBlock(L, R)` → BS.1770-4 K-weighting pro Kanal.
+    // Mono-Fallback bleibt fuer Mock-AudioContext ohne createChannelSplitter
+    // bestehen (kein Behavior-Change in Tests / Headless-Builds).
     try {
-      this._lufsAnalyserNode = this.ctx.createAnalyser();
-      this._lufsAnalyserNode.fftSize = 2048;
-      this._lufsAnalyserNode.smoothingTimeConstant = 0;
-      this._masterLimiterWet.connect(this._lufsAnalyserNode);
-      this._masterLimiterDry.connect(this._lufsAnalyserNode);
-      this._lufsAnalyser = new LufsAnalyzer({
-        sampleRate: this.ctx.sampleRate,
-        channelCount: 1, // AnalyserNode liefert downmix — 1-channel reicht.
-      });
-      this._lufsScratchBuffer = new Float32Array(this._lufsAnalyserNode.fftSize);
+      // Stereo-Pfad zuerst versuchen.
+      const splitter = this.ctx.createChannelSplitter
+        ? this.ctx.createChannelSplitter(2)
+        : null;
+      if (splitter) {
+        this._lufsSplitter = splitter;
+        this._lufsAnalyserNodeL = this.ctx.createAnalyser();
+        this._lufsAnalyserNodeR = this.ctx.createAnalyser();
+        this._lufsAnalyserNodeL.fftSize = 2048;
+        this._lufsAnalyserNodeR.fftSize = 2048;
+        this._lufsAnalyserNodeL.smoothingTimeConstant = 0;
+        this._lufsAnalyserNodeR.smoothingTimeConstant = 0;
+        this._masterLimiterWet.connect(splitter);
+        this._masterLimiterDry.connect(splitter);
+        splitter.connect(this._lufsAnalyserNodeL, 0);
+        splitter.connect(this._lufsAnalyserNodeR, 1);
+        this._lufsScratchBuffer  = new Float32Array(this._lufsAnalyserNodeL.fftSize);
+        this._lufsScratchBufferR = new Float32Array(this._lufsAnalyserNodeR.fftSize);
+        this._lufsAnalyser = new LufsAnalyzer({
+          sampleRate: this.ctx.sampleRate,
+          channelCount: 2, // v3.101: echtes Stereo!
+        });
+      } else {
+        // Fallback: Mono-AnalyserNode (v3.78-Verhalten).
+        this._lufsAnalyserNode = this.ctx.createAnalyser();
+        this._lufsAnalyserNode.fftSize = 2048;
+        this._lufsAnalyserNode.smoothingTimeConstant = 0;
+        this._masterLimiterWet.connect(this._lufsAnalyserNode);
+        this._masterLimiterDry.connect(this._lufsAnalyserNode);
+        this._lufsAnalyser = new LufsAnalyzer({
+          sampleRate: this.ctx.sampleRate,
+          channelCount: 1,
+        });
+        this._lufsScratchBuffer = new Float32Array(this._lufsAnalyserNode.fftSize);
+      }
     } catch {
-      // Mock-AudioContext ohne createAnalyser → LUFS disabled.
-      this._lufsAnalyserNode = null;
-      this._lufsAnalyser = null;
-      this._lufsScratchBuffer = null;
+      // Mock-AudioContext ohne createAnalyser/createChannelSplitter → LUFS disabled.
+      this._lufsAnalyserNode  = null;
+      this._lufsAnalyserNodeL = null;
+      this._lufsAnalyserNodeR = null;
+      this._lufsSplitter      = null;
+      this._lufsAnalyser      = null;
+      this._lufsScratchBuffer  = null;
+      this._lufsScratchBufferR = null;
     }
 
     // Global Reverb Bus (Plate-ähnlich, default 2s Decay).
@@ -1126,8 +1176,12 @@ class AudioEngineClass {
       this._lufsPollingTimer = null;
     }
     this._lufsAnalyserNode = null;
-    this._lufsAnalyser = null;
-    this._lufsScratchBuffer = null;
+    this._lufsAnalyserNodeL = null;
+    this._lufsAnalyserNodeR = null;
+    this._lufsSplitter      = null;
+    this._lufsAnalyser      = null;
+    this._lufsScratchBuffer  = null;
+    this._lufsScratchBufferR = null;
     // 5) AudioContext schließen (kein await — close ist robust gegen state).
     if (this.ctx) {
       try { await this.ctx.close(); } catch { /* swallow — already closed */ }
@@ -3709,16 +3763,42 @@ class AudioEngineClass {
    */
   private _ensureLufsPollingStarted(): void {
     if (this._lufsPollingTimer !== null) return;
-    if (!this._lufsAnalyserNode || !this._lufsAnalyser || !this._lufsScratchBuffer) return;
-    const node = this._lufsAnalyserNode;
+    if (!this._lufsAnalyser) return;
+
     const analyzer = this._lufsAnalyser;
+
+    // v3.101.0: Stereo-Pfad bevorzugt wenn Splitter+2 AnalyserNodes vorhanden.
+    if (
+      this._lufsAnalyserNodeL && this._lufsAnalyserNodeR &&
+      this._lufsScratchBuffer  && this._lufsScratchBufferR
+    ) {
+      const nodeL    = this._lufsAnalyserNodeL;
+      const nodeR    = this._lufsAnalyserNodeR;
+      const scratchL = this._lufsScratchBuffer;
+      const scratchR = this._lufsScratchBufferR;
+      this._lufsPollingTimer = setInterval(() => {
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          nodeL.getFloatTimeDomainData(scratchL as any);
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          nodeR.getFloatTimeDomainData(scratchR as any);
+          analyzer.processBlock(scratchL, scratchR);
+          // v3.101: snapshot fuer phase/imbalance-Reader.
+          this._lastLufsBlockL = scratchL;
+          this._lastLufsBlockR = scratchR;
+        } catch {
+          /* swallow — AnalyserNode kann nach reinit nullsein */
+        }
+      }, this.LUFS_POLL_INTERVAL_MS);
+      return;
+    }
+
+    // v3.78-Fallback: Mono-AnalyserNode.
+    if (!this._lufsAnalyserNode || !this._lufsScratchBuffer) return;
+    const node = this._lufsAnalyserNode;
     const scratch = this._lufsScratchBuffer;
     this._lufsPollingTimer = setInterval(() => {
       try {
-        // v3.78: Lib-DOM-Type ist Float32Array<ArrayBuffer>, unser Scratch
-        // ist Float32Array<ArrayBufferLike>. Cast ist sicher weil wir den
-        // Buffer in init() mit `new Float32Array(...)` ohne SharedBuffer
-        // alloziert haben.
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         node.getFloatTimeDomainData(scratch as any);
         analyzer.processBlock(scratch);
@@ -3727,6 +3807,15 @@ class AudioEngineClass {
       }
     }, this.LUFS_POLL_INTERVAL_MS);
   }
+
+  /**
+   * v3.101.0: Letzte gepolte L/R-Bloecke — fuer Phase-Correlation +
+   * L/R-Imbalance-Reader. Werden im Polling-Loop aktualisiert; UI ruft
+   * `getPhaseCorrelation()` / `getLrImbalanceDb()` und bekommt den
+   * 2048-Sample-Snapshot (≈ 42ms @ 48kHz).
+   */
+  private _lastLufsBlockL: Float32Array | null = null;
+  private _lastLufsBlockR: Float32Array | null = null;
 
   /** v3.78.0: Aktuelle Momentary-LUFS (400ms gleitend, BS.1770-4). */
   getLufsMomentary(): number {
@@ -3768,6 +3857,61 @@ class AudioEngineClass {
       momentary:  this._lufsAnalyser.getMomentary(),
       shortTerm:  this._lufsAnalyser.getShortTerm(),
       integrated: this._lufsAnalyser.getIntegrated(),
+    };
+  }
+
+  /**
+   * v3.101.0: Erweitertes UI-Snapshot mit Stereo-Info, Phase-Correlation
+   * und L/R-Imbalance.
+   *
+   *   momentary/shortTerm/integrated: channel-summed wie v3.78.
+   *   momentaryL/momentaryR:          per-Channel-LUFS (nur dieser Kanal).
+   *   phaseCorrelation:               -1..+1 (siehe LufsAnalyzer.phaseCorrelation).
+   *                                    NaN-Sentinel: NaN wenn noch keine Bloecke
+   *                                    gepolt wurden (Polling-Lazy-Start).
+   *   lrImbalanceDb:                  RMS-Diff in dB (positiv = rechts lauter).
+   */
+  getLufsStereoSnapshot(): {
+    momentary:        number;
+    shortTerm:        number;
+    integrated:       number;
+    momentaryL:       number;
+    momentaryR:       number;
+    phaseCorrelation: number;
+    lrImbalanceDb:    number;
+  } {
+    if (!this._lufsAnalyser) {
+      return {
+        momentary:        LUFS_SILENCE,
+        shortTerm:        LUFS_SILENCE,
+        integrated:       LUFS_SILENCE,
+        momentaryL:       LUFS_SILENCE,
+        momentaryR:       LUFS_SILENCE,
+        phaseCorrelation: NaN,
+        lrImbalanceDb:    0,
+      };
+    }
+    this._ensureLufsPollingStarted();
+    const stereo = this._lufsAnalyser.getMomentaryStereo();
+    let phase = NaN;
+    let imb   = 0;
+    if (this._lastLufsBlockL && this._lastLufsBlockR) {
+      try {
+        phase = lufsPhaseCorrelation(this._lastLufsBlockL, this._lastLufsBlockR);
+        imb   = lufsLrImbalanceDb(this._lastLufsBlockL, this._lastLufsBlockR);
+      } catch {
+        phase = NaN;
+        imb   = 0;
+      }
+    }
+    return {
+      momentary:        this._lufsAnalyser.getMomentary(),
+      shortTerm:        this._lufsAnalyser.getShortTerm(),
+      integrated:       this._lufsAnalyser.getIntegrated(),
+      momentaryL:       stereo.L,
+      momentaryR:       stereo.R,
+      phaseCorrelation: phase,
+      lrImbalanceDb:    imb,
     };
   }
 

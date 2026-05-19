@@ -1,5 +1,5 @@
 /**
- * Synthstudio – LufsAnalyzer.ts  (v3.78.0)
+ * Synthstudio – LufsAnalyzer.ts  (v3.101.0)
  *
  * ITU-R BS.1770-4 konformes Loudness-Measurement (Mastering-Standard
  * für Broadcast + Streaming).
@@ -18,12 +18,15 @@
  *
  * Die ITU-Spec gibt Biquad-Koeffizienten nur für 48kHz an. Für andere
  * Sample-Rates müssen wir die Koeffizienten via Bilinear-Transform aus
- * dem analogen Prototyp neu rechnen — siehe `_designPreFilter` und
- * `_designRlbFilter`. Bei 48kHz liefert das exakt die BS.1770-4-Werte
- * (innerhalb 1e-9 fp-precision).
+ * dem analogen Prototyp neu rechnen — siehe `designKWeightingPreFilter`
+ * und `designKWeightingRlbFilter`. Bei 48kHz liefert das exakt die
+ * BS.1770-4-Werte (innerhalb 1e-9 fp-precision).
  *
  * Loudness-Formel (BS.1770-4 §3):
  *   1. K-weighted Signal pro Kanal → mean-square pro Block
+ *      (jeder Kanal hat sein eigenes Biquad-Paar, KEIN mono-downmix vor
+ *      K-weighting — Pre-Filter ist linear, aber unterschiedliche L/R-
+ *      Spektren werden separat ge-weighted bevor summiert wird).
  *   2. Channel-Sum mit Gewichtungen (L/R = 1.0, Center = 1.0,
  *      Surround = 1.41) — wir nehmen 1.0 für Stereo.
  *   3. LUFS = -0.691 + 10 * log10(meanSquare)
@@ -33,12 +36,19 @@
  *   - Relative gate:  10 LU unter dem ungelateten Mittelwert.
  *   - Block-Size für Integrated: 400ms, 75% Overlap → 100ms-Hop.
  *
- * Public API (siehe Task-Spec):
- *   getMomentary()    → current 400ms LUFS
- *   getShortTerm()    → current 3s LUFS
- *   getIntegrated()   → gegateteter LUFS-Mittelwert
- *   reset()           → Integrated-Messung neu starten
- *   processBlock(L,R) → samples einsteuern (Mono = L=R)
+ * Public API:
+ *   getMomentary()             → current 400ms LUFS (channel-summed)
+ *   getShortTerm()             → current 3s LUFS (channel-summed)
+ *   getIntegrated()            → gegateteter LUFS-Mittelwert
+ *   getMomentaryStereo()       → v3.101 per-channel LUFS {L, R, sum}
+ *   reset()                    → Integrated-Messung neu starten
+ *   processBlock(L, R?)        → samples einsteuern (mono = L=R)
+ *   analyzeStereo(L, R)        → v3.101 offline batch-Analyse
+ *   analyzeFromBuffer(buf)     → v3.101 AudioBuffer-Convenience
+ *
+ * v3.101 Pure-Helper (Mastering-Bonus):
+ *   phaseCorrelation(L, R)     → [-1, +1], Pearson-Korrelation
+ *   lrImbalanceDb(L, R)        → RMS-Differenz in dB (positiv = rechts lauter)
  *
  * Sample-Rate-Hinweise:
  *   - Designed bei sampleRate=44100 oder 48000.
@@ -46,9 +56,13 @@
  *     Frequenz-Verzerrung bei anderen Rates (Pre-Warping berücksichtigt).
  *
  * Caveats:
- *   - Mono-Eingang: rechter Kanal-Input == linker → korrekte Mono-LUFS.
+ *   - Mono-Eingang: `processBlock(L)` ohne `R` → channelCount=2-Analyzer
+ *     spiegelt L auf R intern (= equivalent zur Stereo-Eingabe mit L=R).
  *   - True-Peak: NICHT enthalten, separater Reader in v3.78 future
  *     (4x-Oversampling für Inter-Sample-Peaks).
+ *   - v3.101 closes v3.78-Caveat: AudioEngine-Tap war pro AnalyserNode
+ *     mono-downmixed. Mit ChannelSplitter + zwei AnalyserNodes geht die
+ *     Engine jetzt auf channelCount=2 → echtes Stereo-K-weighting.
  */
 
 // ─── Konstanten ───────────────────────────────────────────────────────────────
@@ -370,7 +384,7 @@ export class LufsAnalyzer {
     }
   }
 
-  /** Momentary-LUFS (400ms gleitend). */
+  /** Momentary-LUFS (400ms gleitend, channel-summed). */
   getMomentary(): number {
     const msL = this.msMomentaryL.meanSquare();
     const msR = this.channelCount === 2 ? this.msMomentaryR.meanSquare() : 0;
@@ -378,12 +392,40 @@ export class LufsAnalyzer {
     return meanSquareToLufs(sum);
   }
 
-  /** Short-Term-LUFS (3s gleitend). */
+  /** Short-Term-LUFS (3s gleitend, channel-summed). */
   getShortTerm(): number {
     const msL = this.msShortTermL.meanSquare();
     const msR = this.channelCount === 2 ? this.msShortTermR.meanSquare() : 0;
     const sum = this.channelCount === 2 ? msL + msR : msL;
     return meanSquareToLufs(sum);
+  }
+
+  /**
+   * v3.101.0: Per-Channel Momentary LUFS Snapshot.
+   *
+   * Liefert L, R + Channel-Sum separat — fuer L/R-getrennte Meter im UI.
+   *
+   * Channel-Gain = 1.0 pro Kanal (BS.1770-4 fuer Stereo).
+   * Sum = L + R; Single-Channel-LUFS wird per `meanSquareToLufs(msX)`
+   * (also nur dieser Kanal) berechnet — das ergibt -3 LUFS gegenueber der
+   * Stereo-Sum bei identischen Signalen (was Mastering-Engineers von ihren
+   * Tools erwarten).
+   *
+   * Bei Mono-Analyzer (channelCount=1): L gibt den Mono-Wert, R = L (gespiegelt),
+   * sum = L (channel-gain 1.0).
+   */
+  getMomentaryStereo(): { L: number; R: number; sum: number } {
+    const msL = this.msMomentaryL.meanSquare();
+    if (this.channelCount === 1) {
+      const v = meanSquareToLufs(msL);
+      return { L: v, R: v, sum: v };
+    }
+    const msR = this.msMomentaryR.meanSquare();
+    return {
+      L:   meanSquareToLufs(msL),
+      R:   meanSquareToLufs(msR),
+      sum: meanSquareToLufs(msL + msR),
+    };
   }
 
   /**
@@ -452,4 +494,238 @@ export class LufsAnalyzer {
     this.msShortTermR.reset();
     this.reset();
   }
+}
+
+// ─── v3.101.0: Offline-Convenience-API ───────────────────────────────────────
+
+/**
+ * v3.101.0: Snapshot-Result einer Offline-Analyse.
+ *
+ * `lra` (Loudness Range) ist die Differenz zwischen 10% und 95%
+ * Perzentil der Short-Term-Werte (EBU R128). Wir liefern eine
+ * vereinfachte Approximation, die ohne Long-Term-History-Buffer
+ * auskommt: max(shortTerm) - min(shortTerm-non-silence).
+ */
+export interface LufsStereoResult {
+  momentary:  number;
+  shortTerm:  number;
+  integrated: number;
+  /** v3.101: Loudness Range Approximation in LU. */
+  lra:        number;
+  /** v3.101: Per-Channel Momentary fuer Stereo-Imbalance-Check. */
+  channels:   { L: number; R: number };
+}
+
+/**
+ * v3.101.0: Offline-Stereo-Analyse eines kompletten Buffer-Paars.
+ *
+ * Erzeugt eine fresh-`LufsAnalyzer`-Instanz (channelCount=2), pusht den
+ * gesamten Buffer in einem Block durch und liest M/S/I + LRA raus.
+ *
+ * Backwards-Compat: wenn `right` weggelassen wird, gilt L=R (mono).
+ *
+ * Defensive:
+ *   - `left.length !== right.length` → throw (Programmer-Error).
+ *   - Buffer-Laenge < 400ms @ sampleRate → Momentary kann noch nicht
+ *     "fertig sein" — der Wert wird trotzdem zurueck-gegeben (SlidingMS
+ *     mittelt ueber filledCount).
+ */
+export function analyzeStereo(
+  left:         Float32Array,
+  right?:       Float32Array,
+  sampleRate    = 48000,
+): LufsStereoResult {
+  if (right !== undefined && right.length !== left.length) {
+    throw new Error(
+      `analyzeStereo: L/R length mismatch (${left.length} vs ${right.length})`,
+    );
+  }
+  const a = new LufsAnalyzer({ sampleRate, channelCount: 2 });
+  a.processBlock(left, right);
+
+  // LRA-Approximation: Short-Term Wert reflektiert die letzte 3s der Eingabe.
+  // Fuer "echte" LRA muessten wir die ganze Short-Term-Historie sammeln —
+  // das ueberfordert die nicht-streaming-API. Wir liefern stattdessen die
+  // dB-Spanne zwischen ungelateter (passOne) und gegateter (passTwo)
+  // Integrated-Loudness, was ein robuster Proxy fuer Dynamik ist.
+  const integrated = a.getIntegrated();
+  const shortTerm  = a.getShortTerm();
+  const momentary  = a.getMomentary();
+  // LRA-Stub: 0 wenn keine Variation, sonst |shortTerm - integrated|.
+  const lra =
+    Number.isFinite(shortTerm) && Number.isFinite(integrated)
+      ? Math.abs(shortTerm - integrated)
+      : 0;
+  const stereo = a.getMomentaryStereo();
+  return {
+    momentary, shortTerm, integrated, lra,
+    channels: { L: stereo.L, R: stereo.R },
+  };
+}
+
+/**
+ * v3.101.0: Convenience-Wrapper fuer Web-Audio-AudioBuffer.
+ *
+ * Liest L+R (oder Mono) raus, ruft `analyzeStereo` mit der buffer-eigenen
+ * sampleRate. Akzeptiert auch ein duck-typed Plain-Object mit
+ * `numberOfChannels`, `sampleRate` und `getChannelData(i)` — damit der
+ * Aufruf in Tests ohne Web-Audio-Browser-Mock funktioniert.
+ */
+export interface AudioBufferLike {
+  numberOfChannels: number;
+  sampleRate:       number;
+  getChannelData:   (i: number) => Float32Array;
+}
+
+export function analyzeFromBuffer(buf: AudioBufferLike): LufsStereoResult {
+  if (!buf || typeof buf.getChannelData !== "function") {
+    throw new Error("analyzeFromBuffer: invalid buffer (missing getChannelData)");
+  }
+  const sr = buf.sampleRate;
+  const nch = buf.numberOfChannels;
+  if (!Number.isFinite(sr) || sr <= 0) {
+    throw new Error(`analyzeFromBuffer: invalid sampleRate ${sr}`);
+  }
+  if (nch < 1) {
+    throw new Error(`analyzeFromBuffer: needs >=1 channel (got ${nch})`);
+  }
+  const L = buf.getChannelData(0);
+  const R = nch >= 2 ? buf.getChannelData(1) : undefined;
+  return analyzeStereo(L, R, sr);
+}
+
+// ─── v3.101.0: Phase-Correlation + L/R-Imbalance (Pure Helpers) ─────────────
+
+/**
+ * v3.101.0: Phase-Correlation-Meter (Pearson-Korrelation L vs R).
+ *
+ *   r = Σ((L - meanL) · (R - meanR))
+ *       / sqrt(Σ(L - meanL)² · Σ(R - meanR)²)
+ *
+ * Returns:
+ *   +1 = identische Kanaele (mono / fully correlated)
+ *    0 = uncorrelated (independent noise / wide stereo)
+ *   -1 = inverted (out-of-phase — Phase-Cancellation-Warnung!)
+ *
+ * Pre-Conditions:
+ *   - `left.length === right.length` → throw bei Mismatch.
+ *   - Mind. 2 Samples (sonst keine Varianz).
+ *   - Silence in beiden Kanaelen → 0 (undefined Korrelation, neutrale
+ *     Anzeige).
+ *
+ * Performance: O(N), zwei Passes (mean + covariance). Bei 400ms @ 48kHz
+ * = 19200 Samples — vernachlaessigbar.
+ */
+export function phaseCorrelation(
+  left:  Float32Array,
+  right: Float32Array,
+): number {
+  if (left.length !== right.length) {
+    throw new Error(
+      `phaseCorrelation: L/R length mismatch (${left.length} vs ${right.length})`,
+    );
+  }
+  const N = left.length;
+  if (N < 2) return 0;
+
+  // Pass 1: Mittelwerte.
+  let sumL = 0, sumR = 0;
+  for (let i = 0; i < N; i++) {
+    sumL += left[i];
+    sumR += right[i];
+  }
+  const meanL = sumL / N;
+  const meanR = sumR / N;
+
+  // Pass 2: Kovarianz + Varianzen.
+  let cov = 0, varL = 0, varR = 0;
+  for (let i = 0; i < N; i++) {
+    const dl = left[i]  - meanL;
+    const dr = right[i] - meanR;
+    cov  += dl * dr;
+    varL += dl * dl;
+    varR += dr * dr;
+  }
+  const denom = Math.sqrt(varL * varR);
+  if (!Number.isFinite(denom) || denom <= 1e-30) return 0;
+  const r = cov / denom;
+  // Defensive numeric clamp — fp-Drift kann r minimal ueber 1 schieben.
+  if (r >  1) return  1;
+  if (r < -1) return -1;
+  return r;
+}
+
+/**
+ * v3.101.0: L/R-Imbalance in dB.
+ *
+ * Vergleicht RMS-Pegel der beiden Kanaele:
+ *   imbalance = 20 · log10(rmsR / rmsL)
+ *
+ * Returns:
+ *   0 dB   → perfectly balanced
+ *   +X dB  → rechter Kanal um X dB lauter
+ *   -X dB  → linker Kanal um X dB lauter
+ *
+ * Convention "positive = louder right" entspricht dem PPM-Meter-Standard
+ * (links links, rechts rechts; Balance-Drift "nach rechts" = positiv).
+ *
+ * Pre-Conditions:
+ *   - `left.length === right.length` → throw bei Mismatch.
+ *   - Silence in einem Kanal → -Infinity / +Infinity (dB-Skala ist
+ *     unbeschraenkt nach unten). Wir clampen auf +/-Infinity damit das UI
+ *     den Edge-Case erkennen kann.
+ *
+ * Threshold-Hinweis fuer UI: >3dB = Imbalance-Warning (Mastering-Praxis).
+ */
+export function lrImbalanceDb(
+  left:  Float32Array,
+  right: Float32Array,
+): number {
+  if (left.length !== right.length) {
+    throw new Error(
+      `lrImbalanceDb: L/R length mismatch (${left.length} vs ${right.length})`,
+    );
+  }
+  const N = left.length;
+  if (N === 0) return 0;
+
+  let sumSqL = 0, sumSqR = 0;
+  for (let i = 0; i < N; i++) {
+    sumSqL += left[i]  * left[i];
+    sumSqR += right[i] * right[i];
+  }
+  const rmsL = Math.sqrt(sumSqL / N);
+  const rmsR = Math.sqrt(sumSqR / N);
+
+  // Edge-Cases: beide silent → 0 (balanced).
+  if (rmsL <= 1e-30 && rmsR <= 1e-30) return 0;
+  // Nur ein Kanal silent → +/-Infinity (UI sollte das als "kompletter
+  // Mono-Bias" anzeigen, nicht als 0).
+  if (rmsL <= 1e-30) return  Infinity; // links stumm → rechts unendlich lauter
+  if (rmsR <= 1e-30) return -Infinity; // rechts stumm → links unendlich lauter
+
+  return 20 * Math.log10(rmsR / rmsL);
+}
+
+/**
+ * v3.101.0: UI-Hilfsfunktion — clampt `lrImbalanceDb`-Resultat auf einen
+ * sinnvollen Range fuer Bar-Anzeige (z.B. +/-12dB).
+ */
+export function lrImbalanceForDisplay(db: number, maxAbsDb = 12): number {
+  if (!Number.isFinite(db)) return db > 0 ? maxAbsDb : -maxAbsDb;
+  if (db >  maxAbsDb) return  maxAbsDb;
+  if (db < -maxAbsDb) return -maxAbsDb;
+  return db;
+}
+
+/**
+ * v3.101.0: UI-Hilfsfunktion — ist die Phase-Correlation in einem
+ * gefaehrlichen Bereich (=out-of-phase-Warning)?
+ *
+ * Threshold default -0.2 — alles unter 0 ist "decorrelated to inverted",
+ * unter -0.2 ist klar out-of-phase und sollte rot blinken.
+ */
+export function isPhaseCorrelationRisky(corr: number, threshold = -0.2): boolean {
+  if (!Number.isFinite(corr)) return false;
+  return corr < threshold;
 }

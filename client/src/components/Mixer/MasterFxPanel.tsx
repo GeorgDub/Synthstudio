@@ -67,6 +67,51 @@ export function formatLufs(v: number): string {
   return `${v.toFixed(1)} LUFS`;
 }
 
+/** v3.101.0: Compact LUFS-Display ohne Einheit (fuer L/R Sub-Displays). */
+export function formatLufsCompact(v: number): string {
+  if (!Number.isFinite(v)) return "−∞";
+  return v.toFixed(1);
+}
+
+/** v3.101.0: Phase-Correlation [-1..+1] → Prozent-Position auf einer Bar (0..100). */
+export function phaseCorrToBarPercent(corr: number): number {
+  if (!Number.isFinite(corr)) return 50;
+  const c = Math.max(-1, Math.min(1, corr));
+  return ((c + 1) / 2) * 100;
+}
+
+/** v3.101.0: Format L/R-Imbalance in dB: "+3.2 dB", "−1.4 dB", "0.0 dB". */
+export function formatLrImbalance(db: number): string {
+  if (!Number.isFinite(db)) return db > 0 ? ">+∞ dB" : "<−∞ dB";
+  const sign = db > 0 ? "+" : db < 0 ? "−" : "";
+  const abs  = Math.abs(db);
+  return `${sign}${abs.toFixed(1)} dB`;
+}
+
+/**
+ * v3.101.0: Color-Coding fuer Phase-Correlation.
+ *   < -0.2  → danger (out-of-phase)
+ *   < 0.2   → warning (uncorrelated / wide stereo)
+ *   sonst   → success (in-phase)
+ */
+export function phaseCorrColorClass(corr: number): string {
+  if (!Number.isFinite(corr)) return "text-text-muted";
+  if (corr < -0.2) return "text-accent-danger";
+  if (corr <  0.2) return "text-accent-warning";
+  return "text-accent-success";
+}
+
+/**
+ * v3.101.0: Color-Coding fuer L/R-Imbalance.
+ *   |db| > 3 → warning ("merklich aus dem Lot")
+ *   sonst    → muted
+ */
+export function lrImbalanceColorClass(db: number): string {
+  if (!Number.isFinite(db)) return "text-accent-danger";
+  if (Math.abs(db) > 3) return "text-accent-warning";
+  return "text-text-muted";
+}
+
 /**
  * v3.77.0: Make-Up-Gain Slider-Range in dB. Store-Wert bleibt linear
  * (0..16) — Schema-Compat. Slider operiert in dB-Raum.
@@ -267,18 +312,43 @@ export function MasterFxPanel() {
     return () => clearInterval(id);
   }, [tab]);
 
-  // ─── LUFS-Meter (v3.78.0) ──────────────────────────────────────────────────
+  // ─── LUFS-Meter (v3.78.0 → v3.101.0 true Stereo + Phase + Imbalance) ─────
   // Always-on Display oberhalb der Tabs. Pollt alle 200ms die drei LUFS-
-  // Werte (Momentary / Short-Term / Integrated).
-  const [lufs, setLufs] = useState<{ momentary: number; shortTerm: number; integrated: number }>(
-    { momentary: -Infinity, shortTerm: -Infinity, integrated: -Infinity },
-  );
+  // Werte (Momentary / Short-Term / Integrated) PLUS per-Channel L/R LUFS
+  // + Phase-Correlation + L/R-Imbalance.
+  const [lufs, setLufs] = useState<{
+    momentary: number; shortTerm: number; integrated: number;
+    momentaryL: number; momentaryR: number;
+    phaseCorrelation: number; lrImbalanceDb: number;
+  }>({
+    momentary: -Infinity, shortTerm: -Infinity, integrated: -Infinity,
+    momentaryL: -Infinity, momentaryR: -Infinity,
+    phaseCorrelation: NaN, lrImbalanceDb: 0,
+  });
   useEffect(() => {
     const id = setInterval(() => {
       try {
-        setLufs(AudioEngine.getLufsSnapshot());
+        // v3.101: Stereo-Snapshot bevorzugt (Engine fallt sauber zurueck).
+        const eng = AudioEngine as unknown as {
+          getLufsStereoSnapshot?: () => typeof lufs;
+          getLufsSnapshot: () => { momentary: number; shortTerm: number; integrated: number };
+        };
+        if (typeof eng.getLufsStereoSnapshot === "function") {
+          setLufs(eng.getLufsStereoSnapshot());
+        } else {
+          const s = eng.getLufsSnapshot();
+          setLufs({
+            ...s,
+            momentaryL: s.momentary, momentaryR: s.momentary,
+            phaseCorrelation: NaN, lrImbalanceDb: 0,
+          });
+        }
       } catch {
-        setLufs({ momentary: -Infinity, shortTerm: -Infinity, integrated: -Infinity });
+        setLufs({
+          momentary: -Infinity, shortTerm: -Infinity, integrated: -Infinity,
+          momentaryL: -Infinity, momentaryR: -Infinity,
+          phaseCorrelation: NaN, lrImbalanceDb: 0,
+        });
       }
     }, LUFS_METER_INTERVAL_MS);
     return () => clearInterval(id);
@@ -357,6 +427,83 @@ export function MasterFxPanel() {
         >
           Reset I
         </button>
+      </div>
+
+      {/*
+       * v3.101.0: True-Stereo-Erweiterung — L/R-LUFS, Phase-Correlation,
+       * L/R-Imbalance. Closed-Caveat von v3.78 (mono-downmix-Tap).
+       */}
+      <div
+        className="flex items-center gap-4 bg-bg-elevated rounded px-3 py-2 border border-border-subtle"
+        data-testid="master-fx-lufs-stereo"
+      >
+        {/* L/R LUFS-Displays */}
+        <div className="flex items-baseline gap-1" data-testid="master-fx-lufs-l">
+          <span className="text-xs text-text-dim">L</span>
+          <span className="text-xs text-text-primary tabular-nums w-10 text-right">
+            {formatLufsCompact(lufs.momentaryL)}
+          </span>
+        </div>
+        <div className="flex items-baseline gap-1" data-testid="master-fx-lufs-r">
+          <span className="text-xs text-text-dim">R</span>
+          <span className="text-xs text-text-primary tabular-nums w-10 text-right">
+            {formatLufsCompact(lufs.momentaryR)}
+          </span>
+        </div>
+
+        {/* Phase-Correlation Bar (-1..+1) */}
+        <div
+          className="flex-1 flex items-center gap-2"
+          data-testid="master-fx-phase-correlation"
+        >
+          <span className="text-xs text-text-dim">φ</span>
+          <div
+            className="relative h-2 bg-bg-base rounded flex-1 overflow-hidden border border-border-subtle"
+            title="Phase-Correlation: +1=mono, 0=uncorrelated, -1=out-of-phase"
+          >
+            {/* Rot-Zone unter 0 = out-of-phase Warnung. */}
+            <div
+              className="absolute top-0 bottom-0 left-0 w-1/2 bg-accent-danger opacity-20"
+              aria-hidden="true"
+            />
+            {/* Mittel-Tick (0). */}
+            <div
+              className="absolute top-0 bottom-0 left-1/2 w-px bg-border-color"
+              aria-hidden="true"
+            />
+            {/* Indikator-Dot. */}
+            <div
+              className="absolute top-0 bottom-0 w-1.5 bg-accent-primary rounded"
+              style={{
+                left: `calc(${phaseCorrToBarPercent(lufs.phaseCorrelation)}% - 3px)`,
+              }}
+              data-testid="master-fx-phase-indicator"
+            />
+          </div>
+          <span
+            className={`text-xs tabular-nums w-10 text-right ${phaseCorrColorClass(lufs.phaseCorrelation)}`}
+            data-testid="master-fx-phase-value"
+          >
+            {Number.isFinite(lufs.phaseCorrelation)
+              ? lufs.phaseCorrelation.toFixed(2)
+              : "—"}
+          </span>
+        </div>
+
+        {/* L/R-Imbalance Display */}
+        <div
+          className="flex items-center gap-1"
+          data-testid="master-fx-lr-imbalance"
+          title="L/R-Imbalance — positiv = rechts lauter (Pegel-RMS-Diff)"
+        >
+          <span className="text-xs text-text-dim">L↔R</span>
+          <span
+            className={`text-xs tabular-nums w-16 text-right ${lrImbalanceColorClass(lufs.lrImbalanceDb)}`}
+            data-testid="master-fx-lr-imbalance-value"
+          >
+            {formatLrImbalance(lufs.lrImbalanceDb)}
+          </span>
+        </div>
       </div>
 
       {tab === "reverb" && (

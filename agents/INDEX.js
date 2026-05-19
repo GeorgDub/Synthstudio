@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.99.0",
+    version: "3.101.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -2572,6 +2572,33 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "backend",
+      timestamp: "2026-05-19T10:20:00.000Z",
+      done: [
+        "v3.101.0: LUFS true Stereo + Phase-Correlation + L/R-Imbalance (closes v3.78 mono-downmix-Caveat). v3.78 LufsAnalyzer war intern bereits per-channel (zwei Biquad-Paare L+R), aber AudioEngine-Tap war ein einziger AnalyserNode (downmix → channelCount=1 weil L=R). v3.101: ChannelSplitter(2) → zwei separate AnalyserNodes (Ch0/Ch1) → analyzer.processBlock(L, R) mit channelCount=2 → echtes BS.1770-4 Stereo-K-weighting.",
+        "LufsAnalyzer.ts ERWEITERT (+~210 LOC, baseline v3.78 unveraendert): Doc-Header ueberarbeitet (v3.78-Caveat als gefixed markiert). NEU getMomentaryStereo() → {L, R, sum} fuer per-channel UI-Anzeige (sum bei mono = L). NEU export analyzeStereo(L, R?, sr) → Offline-Convenience mit LufsStereoResult {momentary, shortTerm, integrated, lra, channels:{L,R}}. NEU export analyzeFromBuffer(AudioBufferLike) — duck-typed Wrapper fuer AudioBuffer ohne Web-Audio-Mock. NEU Pure-Helpers phaseCorrelation(L,R) — Pearson-Korrelation in [-1..+1] via 2-pass mean+covariance, defensiv clamp gegen fp-drift, throw bei length-mismatch. NEU lrImbalanceDb(L,R) — 20*log10(rmsR/rmsL), Edge-Case beide-silent→0, ein-silent→±Infinity. NEU UI-Helpers isPhaseCorrelationRisky(corr, threshold=-0.2), lrImbalanceForDisplay(db, maxAbs=12) — Clamp fuer Bar-Anzeige.",
+        "AudioEngine.ts ERWEITERT (+~85 LOC LUFS-Stereo-Tap): Imports erweitert um phaseCorrelation/lrImbalanceDb. Neue Felder _lufsSplitter, _lufsAnalyserNodeL/R, _lufsScratchBufferR, _lastLufsBlockL/R. init()-Block fuer LUFS: Stereo-Pfad via createChannelSplitter(2) → 2x AnalyserNode (Ch0/Ch1) → analyzer mit channelCount=2. Fallback (Mock-AudioContext ohne createChannelSplitter): bisheriger Mono-Pfad mit channelCount=1 — Tests gruen ohne Behavior-Change. _ensureLufsPollingStarted dispatched: Stereo-Pfad ruft `analyzer.processBlock(scratchL, scratchR)` + cached die Bloecke fuer Phase/Imbalance-Reader; Mono-Pfad unveraendert. NEU getLufsStereoSnapshot() → {momentary, shortTerm, integrated, momentaryL, momentaryR, phaseCorrelation, lrImbalanceDb}. resetAndReinit/teardown nullifizieren auch die neuen Felder.",
+        "MasterFxPanel.tsx UI ERWEITERT (+~90 LOC, +5 Helper-Exporte): formatLufsCompact, phaseCorrToBarPercent, formatLrImbalance, phaseCorrColorClass, lrImbalanceColorClass. lufs-State erweitert um momentaryL/R, phaseCorrelation, lrImbalanceDb. Polling-Effect ruft getLufsStereoSnapshot mit graceful fallback auf v3.78-getLufsSnapshot. NEU master-fx-lufs-stereo Section unter master-fx-lufs: L+R LUFS-Displays, Phase-Correlation Bar (-1..+1) mit rot-zone unter 0 + Mittel-Tick + Indikator-Dot, L/R-Imbalance Display mit Color-Coding (>3dB warn). data-testid: master-fx-lufs-l/r, master-fx-phase-correlation/indicator/value, master-fx-lr-imbalance/value.",
+        "tests/features/lufs-stereo.test.ts NEU (+~280 LOC, 26 Tests in 5 describes): (1) True-Stereo K-weighting × 4 — identische L+R ergeben +10log10(2) ueber mono (BS.1770-4 channel-sum), R 6dB lauter zeigt 6dB-Differenz in getMomentaryStereo, mono-Analyzer L==R==sum, stereo-Analyzer ohne R spiegelt L→R. (2) phaseCorrelation × 6 — identisch=+1, invertiert=-1, uncorrelated-Noise=~0 (|r|<0.15 bei N=4096), Skalen-Invariant (gleiche Phase 0.3x leiser=+1), length-mismatch throws, isPhaseCorrelationRisky threshold. (3) lrImbalanceDb × 8 — equal=0dB, +6dB rechts=+6, -6dB rechts=-6, L silent=+Inf, R silent=-Inf, beide silent=0, length-mismatch throws, lrImbalanceForDisplay clamp ±12. (4) analyzeStereo + analyzeFromBuffer × 6 — identisch L/R finite, mismatch throws, mono-fallback (R=undefined), Stereo-Buffer, Mono-Buffer, invalid-Buffer throws. (5) Backwards-Compat × 2 — v3.78-API unveraendert, silence weiterhin LUFS_SILENCE. Alle 26 Tests gruen.",
+        "Biquad-Coefs Source: bestehende designKWeightingPreFilter (high-shelf, fc=1681.97Hz, +4dB, RBJ-Cookbook-Bilinear mit Pre-Warping) + designKWeightingRlbFilter (high-pass, fc=38.135Hz, Q=0.5003, Spec-konventionelles b={1,-2,1}). Beide unveraendert seit v3.78 — sie waren bereits BS.1770-4 Annex 1 exakt @48kHz. Stereo-Erweiterung ist ein reines Wiring + API-Add, KEIN Math-Refactor.",
+        "package.json 3.100.0 → 3.101.0. pnpm check: clean. pnpm test: 245 Files / 5520 passed / 16 skipped (vs v3.100.0: 244/5494 → +1 File +26 Tests). Keine bestehenden Tests broken (lufs-meter.test.ts 17/17 gruen)."
+      ],
+      next: [
+        "v3.101.1: True-LRA-Implementation (sammelt Short-Term-Historie ueber gesamte Messung statt aktuelle approximation |shortTerm - integrated|). Gating-konformer Loudness-Range nach EBU R128 (95% - 10% Perzentil der gated Short-Term-Bloecke).",
+        "v3.102: True-Peak-Detection mit 4x-Oversampling (separater Reader, polynomial-interpolated peaks ueber Inter-Sample-Maxima — wichtig fuer Loudness-Normalization in Streaming-Targets).",
+        "Phase-Correlation: separate Long-Time-Average (z.B. 3s wie Short-Term-LUFS) zusaetzlich zum aktuellen 2048-Sample-Snapshot — beruhigt das Display.",
+        "L/R-Imbalance: optional kompensierender Master-Pan-Trim-Vorschlag im UI (User-Click → masterPan setzen)."
+      ],
+      changed: [
+        "client/src/audio/LufsAnalyzer.ts (+~210 LOC getMomentaryStereo + analyzeStereo + analyzeFromBuffer + phaseCorrelation + lrImbalanceDb + UI-Helpers + Doc-Header-Update)",
+        "client/src/audio/AudioEngine.ts (+~85 LOC ChannelSplitter-Wiring + Stereo-Polling + getLufsStereoSnapshot + Phase/Imbalance-Reader)",
+        "client/src/components/Mixer/MasterFxPanel.tsx (+~90 LOC L/R-LUFS + Phase-Bar + Imbalance-Display + 5 neue exportierte Format-Helper)",
+        "tests/features/lufs-stereo.test.ts (NEU +~280 LOC 26 Tests)",
+        "package.json (3.100.0 → 3.101.0)",
+        "agents/INDEX.js"
+      ]
+    },
     {
       agent:     "backend",
       timestamp: "2026-05-19T10:05:00.000Z",
