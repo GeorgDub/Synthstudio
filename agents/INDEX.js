@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.105.0",
+    version: "3.106.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -89,6 +89,36 @@ const INDEX = {
   // ─── KNOWN FILE INDEX ──────────────────────────────────────
   // Key files agents have analyzed. Add new entries after working on a file.
   files: {
+    "client/src/utils/sampleClassifier.ts (v3.106.0 NEU)": {
+      role:     "v3.106.0 NEU (+~190 LOC). Pure-Helpers fuer Sample-Pack-Browser. classifyByFilename(name) → SampleCategory (13 Werte: kick/snare/hihat-closed/hihat-open/clap/cymbal/perc/loop/bass/synth/vocal/fx/unknown). Reihenfolge-Sensitiv: hihat-open VOR hihat-closed VOR generic-hihat damit spezifischere Patterns zuerst matchen. Pfad-Extraction (basename), Extension-Strip, alle Trennzeichen (_, -, .) → Space VOR Regex damit \\b zuverlaessig matcht (JS-Regex word-char inkludiert _). extractTags(filename, parentFolder) → string[] dedupliziert mit Stopword-Filter (wav/mp3/vol/...) + Keepword-Whitelist (trap/lofi/808/909/...). extractBpm: zwei Patterns (\\d+bpm | bpm\\d+) mit Range-Guard 40..300. AUDIO_EXTENSIONS Konstante + isAudioFilename Helper. Side-effect-frei.",
+      lastSeen: "2026-05-19T11:35:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/components/SamplePackBrowser/importLogic.ts (v3.106.0 NEU)": {
+      role:     "v3.106.0 NEU (+~110 LOC, pure). scanFolderForSamples(ScanInput[]) → ScannedSample[]: nur audio extensions, dedup by relPath, Klassifikation via classifyByFilename + extractTags + extractBpm. fileListToScanInputs(FileList) Browser-Fallback nutzt webkitRelativePath fuer Subfolder-Pfade. Pfad-Extraction-Helpers (basename, parentFolder). _makeId-Counter fuer eindeutige IDs auch in seed-deterministic Tests.",
+      lastSeen: "2026-05-19T11:35:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/store/useSamplePackStore.ts (v3.106.0 NEU)": {
+      role:     "v3.106.0 NEU (+~210 LOC, Custom-Observer-Pattern analog useSceneStore). localStorage 'ss-sample-packs:v1' (metadata-only, kein Audio). State {packs:SamplePack[]}. Public API: addPack(name, rootPath, scanned[]) → packId, removePack, renamePack, updateSampleDuration, getAllSamples (flach), getAllTags (unique sorted), filterSamples({category, tags (AND), bpmMin, bpmMax, query, packId}). Hook useSamplePackStore liefert {packs, addPack, removePack, renamePack, filterSamples, getAllTags, getAllSamples, updateSampleDuration}. __resetSamplePackStoreForTests fuer DOM-frei testbar. Defensive load() validiert pack-shape (rejects garbage).",
+      lastSeen: "2026-05-19T11:35:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/components/SamplePackBrowser/SamplePackBrowser.tsx (v3.106.0 NEU)": {
+      role:     "v3.106.0 NEU (+~330 LOC). Splice-style UI. Layout: Sidebar (256px, Pack-Liste mit 'Alle Packs' Toggle + remove-X im hover, Search-Input, Category-Select, BPM-Range-Inputs min/max, Tag-Chips bis 30 Tags mit AND-Filter + Reset-Button) | Main (category-gruppierte Sample-Liste, Icons pro Kat., BPM-Badge wenn !=null, Tag-Chips bis 3 sichtbar). Jedes Sample <li draggable> mit dataTransfer-MIME 'application/x-synthstudio-pack-sample' (Payload {sampleId,packId,filename,relPath} + 'text/plain' fuer Browser-Compat). Hover-State zeigt ring-1 ring-accent-secondary als visual-preview-indicator. Browser-Fallback: <input type=file webkitdirectory multiple> fuer Folder-Pick. CATEGORY_ICONS Mapping (emojis). Exportiert PACK_SAMPLE_DRAG_MIME Konstante fuer DrumMachine-Drop-Handler-Wireup. Nur semantische Tailwind-Tokens.",
+      lastSeen: "2026-05-19T11:35:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "tests/features/sample-classifier.test.ts (v3.106.0 NEU)": {
+      role:     "v3.106.0 NEU (+~290 LOC, 30 Tests in 7 describes). Cluster: (1) classifyByFilename × 6 — kick variants (BD/808/kik/bass drum), snare variants (SD/snr/rimshot), hihat-open vs hihat-closed Disambiguation, claps/cymbal/perc, loops/bass/vocals/fx/synth, unknown fallback, full-path basename extraction. (2) extractTags × 5 — folder-token-extraction, 808 tag preserved, stopword-filter (wav/mp3/vol), dedup overlap zwischen folder und filename, empty-input. (3) extractBpm × 5 — 120bpm/120 bpm/bpm120 styles, null-fallback no-bpm, out-of-range nullification. (4) isAudioFilename × 2. (5) scanFolderForSamples × 4 — filter non-audio (.md, .jpg), classify+tag in Subfolders mit sizeBytes-Preservation, dedup by relPath, invalid-input silent ignore. (6) useSamplePackStore × 8 — addPack persist, filter by category, by BPM-range, by tag intersection (AND-Modus), by query (filename+tag substring), getAllTags sorted+unique, localStorage Roundtrip. localStorage-Mock + beforeEach __resetSamplePackStoreForTests. Alle 30 gruen.",
+      lastSeen: "2026-05-19T11:35:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/App.tsx (v3.106.0 +packs-tab)": {
+      role:     "v3.106.0 ERWEITERT (+3 LOC, alle bisherigen v3.x Bloecke unveraendert). activeTool-Union-Type um 'packs' erweitert. NEU Tool-Tab-Eintrag '📦 Packs' zwischen 'Library' und 'Script' im Tools-Subtab-Render-Array. NEU Conditional-Render <SamplePackBrowser className='h-full'/> wenn activeTool==='packs'. Import gruppiert zu OmniTribe-Imports.",
+      lastSeen: "2026-05-19T11:35:00.000Z",
+      ownedBy:  "frontend"
+    },
     "client/src/utils/patternVariations.ts (v3.105.0 NEU)": {
       role:     "v3.105.0 NEU (+~330 LOC). Pattern-Variation-Generator — 8 pure Algorithmen die ein StepData[][] Grid (parts × steps) nehmen und ein neues Grid produzieren, ohne Mutation. Kinds: humanize (Velocity ±intensity·30 auf aktive Steps), addGhostNotes (low-vel 10..30 auf leere Steps, Wahrscheinlichkeit=intensity), addFill (letzte 4 Steps verdichten — klassisches Drum-Fill), varySwing (Velocity-Asymmetrie even/odd), increaseDensity (intensity=1.0 → alle leeren aktiv mit 60..100 vel), decreaseDensity (intensity=1.0 → alle aktiven leer), shuffleVelocity (Fisher-Yates Permutation der Velocities, Multiset-erhaltend), rhythmicDisplacement (±1 step shift probabilistisch). makeRng(seed) mulberry32 PRNG, NaN/Infinity-Fallback auf Math.random. ALL_VARIATION_KINDS + VARIATION_KIND_LABELS + VariationConfig + applyVariation Dispatch + gridFromParts/partsWithGrid Conversion-Helpers.",
       lastSeen: "2026-05-19T11:08:00.000Z",
@@ -2602,6 +2632,38 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "frontend",
+      timestamp: "2026-05-19T11:35:00.000Z",
+      done: [
+        "v3.106.0: Sample-Pack-Browser — Splice-like lokaler Sample-Pack-Manager mit Auto-Classification, Tag-Filter, BPM-Range, Drag-to-Pad. Frisches user-facing Feature: User importiert lokale Pack-Ordner (mit Sub-Folders), Browser klassifiziert jede Datei (kick/snare/hihat/clap/cymbal/perc/loop/bass/synth/vocal/fx/unknown), extrahiert Tags aus Folder+Filename, parsed BPM-Hints aus Filename — und stellt alles in einer gefilterten Sample-Liste dar.",
+        "client/src/utils/sampleClassifier.ts NEU (+~190 LOC). Pure-Helpers: classifyByFilename (13 Kategorien, Regex/Keyword-Liste pro Kat. mit Spezifitaets-Reihenfolge — hihat-open VOR hihat-closed VOR generic-hihat). Normalisierung: alle Trennzeichen (_, -, .) zu Space VOR Regex damit \\b zuverlaessig matcht (sonst Issue mit JS-Regex word-char \\w === [a-zA-Z0-9_]). extractTags(filename, parentFolder): split auf [\\\\/\\s_-]+, mit Stopword-Filter (wav/mp3/vol/...) + Keepword-Whitelist (trap/lofi/808/909/etc.) — dedupliziert. extractBpm: zwei Patterns (\\d+bpm / bpm\\d+) mit Range-Guard 40..300 → null sonst. isAudioFilename Check fuer wav/mp3/flac/ogg/aif/aiff/m4a.",
+        "client/src/components/SamplePackBrowser/importLogic.ts NEU (+~110 LOC). Pure-Helper scanFolderForSamples(ScanInput[]) → ScannedSample[] mit Filter (nur audio), Deduplikation, Klassifikation. fileListToScanInputs(FileList) Browser-Fallback nutzt webkitRelativePath fuer Subfolder-Pfade. Side-effect-frei → unit-testbar in env:node.",
+        "client/src/store/useSamplePackStore.ts NEU (+~210 LOC, Custom-Observer-Pattern analog useSceneStore). localStorage 'ss-sample-packs:v1' — speichert NUR Metadaten (kein Audio). State {packs:SamplePack[]}. Public API: addPack/removePack/renamePack/updateSampleDuration/getAllSamples/getAllTags/filterSamples (Kombi: category/tags/bpmMin/bpmMax/query/packId). Hook usSamplePackStore liefert {packs, addPack, ...filterSamples, ...}. __resetSamplePackStoreForTests fuer DOM-frei testbar.",
+        "client/src/components/SamplePackBrowser/SamplePackBrowser.tsx NEU (+~330 LOC). Layout: Sidebar (Pack-Liste + Search + Category-Select + BPM-Range-Inputs + Tag-Chips mit AND-Filter) | Main (category-gruppierte Sample-Liste, jedes Sample draggable mit dataTransfer 'application/x-synthstudio-pack-sample' Payload {sampleId,packId,filename,relPath}). Browser-Fallback per <input type=file webkitdirectory> fuer Folder-Import. Hover-State (ring-1 ring-accent-secondary) fuer visual preview-indicator. CATEGORY_ICONS Mapping. PACK_SAMPLE_DRAG_MIME Konstante exportiert fuer Drop-Targets. Nur semantische Tailwind-Tokens — kein hardcoded slate/cyan/gray.",
+        "client/src/App.tsx ERWEITERT (+3 LOC). activeTool-Union um 'packs' erweitert, neuer Tab-Eintrag '📦 Packs' (zwischen 'Library' und 'Script'), Conditional-Render <SamplePackBrowser> wenn activeTool==='packs'. Import-Statement zu vorhandenen OmniTribe-Imports gruppiert.",
+        "tests/features/sample-classifier.test.ts NEU (+~290 LOC, 30 Tests in 7 describes). Cluster: (1) classifyByFilename × 6 — kick (BD/808/kik), snare (SD/snr/rimshot), hihat-open vs hihat-closed, claps/cymbal/perc, loops/bass/vocals/fx/synth, unknown-fallback, full-path-basename-extraction. (2) extractTags × 5 — folder-token, 808 Tag, stopword-filter, dedup, empty-input. (3) extractBpm × 5 — 120bpm/120 bpm/bpm120 variants, null-fallback, out-of-range null. (4) isAudioFilename × 2. (5) scanFolderForSamples × 4 — filter non-audio, classify+tag in subfolders, dedup by relPath, invalid-input. (6) useSamplePackStore × 8 — addPack, filter-by-category/bpm/tags/query, getAllTags sorted+unique, localStorage-Persistenz. Alle 30 gruen.",
+        "package.json 3.105.0 → 3.106.0. pnpm check: clean. pnpm test (sample-classifier.test.ts): 30/30 pass."
+      ],
+      next: [
+        "Drop-Target in DrumMachine-Pads: dataTransfer-Listener fuer 'application/x-synthstudio-pack-sample' → lookup im useSamplePackStore → load sample via existing useProjectStore.setPartSample. Aktuell nur Drag-Quelle implementiert.",
+        "Audio-Preview on Hover: aktuell nur visual ring-indicator. Echte Preview braucht entweder Electron-FS-Access (rootPath + relPath → readFile) oder File-Handle-Persistence (File System Access API im Browser).",
+        "Duration-Probe nach Import: aktuell duration=null. Optional: AudioContext.decodeAudioData beim ersten Hover → updateSampleDuration. Spaeter — Performance-Cost ist bei 10k-Sample-Packs nicht trivial.",
+        "Multi-Pack-Import: aktuell ein <input webkitdirectory> Klick = ein Pack. Erweiterung: ZIP-Import (existing zipSampleImport.ts nutzen) + Multi-Folder-Drop.",
+        "Sort-Order in der Sample-Liste: aktuell Reihenfolge ist scan-order. Optionen: A-Z, BPM aufsteigend, Datum.",
+        "Tag-Cloud > 30: aktuell Sidebar zeigt top 30 Tags. Suchfeld fuer Tag-Filter sinnvoll bei groesseren Libraries."
+      ],
+      changed: [
+        "client/src/utils/sampleClassifier.ts (NEU, ~190 LOC)",
+        "client/src/components/SamplePackBrowser/importLogic.ts (NEU, ~110 LOC, pure)",
+        "client/src/store/useSamplePackStore.ts (NEU, ~210 LOC, Observer-Store + localStorage)",
+        "client/src/components/SamplePackBrowser/SamplePackBrowser.tsx (NEU, ~330 LOC, Sidebar+Main+Drag)",
+        "client/src/App.tsx (+3 LOC: 'packs' Tool-Tab + Import)",
+        "tests/features/sample-classifier.test.ts (NEU, ~290 LOC, 30 Tests)",
+        "package.json (3.105.0 → 3.106.0)",
+        "agents/INDEX.js"
+      ]
+    },
     {
       agent:     "frontend",
       timestamp: "2026-05-19T11:08:00.000Z",

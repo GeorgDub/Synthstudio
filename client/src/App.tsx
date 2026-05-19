@@ -98,6 +98,7 @@ import { ChordPanel } from "@/components/OmniTribe/ChordPanel";
 import { PerformancePadGrid } from "@/components/OmniTribe/PerformancePadGrid";
 import { OmniTribeBrowserSupport } from "@/components/OmniTribe/OmniTribeBrowserSupport";
 import { DeviceConnectionPanel } from "@/components/Settings/DeviceConnectionPanel";
+import { SamplePackBrowser } from "@/components/SamplePackBrowser/SamplePackBrowser";
 import {
   setOmniTribeVuLevels,
   setOmniTribeSpectrumBins,
@@ -1400,7 +1401,7 @@ export default function App() {
     setActiveTab(tab);
     localStorage.setItem("ss-layout:active-tab", tab);
   }, []);
-  const [activeTool, setActiveTool] = useState<'prompt' | 'algorithmic' | 'chords' | 'sampler' | 'workbench' | 'library' | 'script' | 'omnitribe'>('prompt');
+  const [activeTool, setActiveTool] = useState<'prompt' | 'algorithmic' | 'chords' | 'sampler' | 'workbench' | 'library' | 'script' | 'omnitribe' | 'packs'>('prompt');
 
   // ── Dialog-State ─────────────────────────────────────────────────────────
   const [showMidiSettings, setShowMidiSettings] = useState(false);
@@ -4071,6 +4072,7 @@ export default function App() {
                       { id: "sampler",     label: "🎹 Sampler" },
                       { id: "workbench",   label: "🎚 Workbench" },
                       { id: "library",     label: "📚 Library" },
+                      { id: "packs",       label: "📦 Packs" },
                       { id: "script",      label: "⚡ Script" },
                       { id: "omnitribe",   label: "🎛 OmniTribe" },
                     ] as const).map(t => (
@@ -4223,6 +4225,9 @@ export default function App() {
                           <PerformancePadGrid connected={omniTribeConnected} />
                         </div>
                       </div>
+                    )}
+                    {activeTool === 'packs' && (
+                      <SamplePackBrowser className="h-full" />
                     )}
                   </div>
                 </div>
