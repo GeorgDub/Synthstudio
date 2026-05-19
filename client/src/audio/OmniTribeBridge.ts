@@ -22,7 +22,11 @@ export const OtpCmd = {
   IDENTITY:       0x01,
   PARAM:          0x02,
   STATE_DUMP:     0x03,
-  PATTERN:        0x04,
+  // Sprint-109 collision fix: 0x04 ist im C-Loader OTP_CMD_IRQ_VEC.
+  // PATTERN-Sequencer auf 0x0F (vorher unused). Stock-FW + Hacktribe ignorieren
+  // unknown CMDs — daher safe gegen Mismatched-Versionen.
+  PATTERN:        0x0F,
+  IRQ_VEC:        0x04,
   SAMPLE:         0x05,
   WAVETABLE:      0x06,
   SONG:           0x07,
@@ -56,6 +60,34 @@ export interface VuMeterEvent {
 
 export interface SpectrumEvent {
   bins: number[];     // 64 × 0..127
+}
+
+// ─── Sprint-112.2: Firmware-Info (CMD 0x09) ─────────────────
+// Feature-flag bit assignments (mirrors FW_FLAG_* in generate_build_info.py
+// and otp_codec.py). Decoders must ignore unknown bits (reserved = 0).
+export const FwFlag = {
+  GRANULAR:    1 << 0,
+  WAVETABLE:   1 << 1,
+  MODMATRIX:   1 << 2,
+  ARP:         1 << 3,
+  EUCLIDEAN:   1 << 4,
+  CHORD:       1 << 5,
+  VOICE_STEAL: 1 << 6,
+  CLOCK_PLL:   1 << 7,
+  MPE_VOICE:   1 << 8,
+  IRQ_TX_RING: 1 << 9,
+  CLOCK_SYNC:  1 << 10,
+  CLOCK_OUT:   1 << 11,  // Sprint-114 MIDI-Clock-Out
+  SPP:         1 << 12,  // Sprint-115 Song-Position-Pointer
+} as const;
+
+export interface FirmwareInfoEvent {
+  verMajor: number;
+  verMinor: number;
+  verPatch: number;
+  gitHash: bigint;       // u64 truncated SHA (BigInt — avoids 53-bit precision loss)
+  moduleIds: number[];   // compile-time module ID list
+  featureFlags: number;  // u32 bitmask (FwFlag.*)
 }
 
 // ─── Helper: 7-bit Encoding (8-bit → MIDI-safe) ──────────────
@@ -94,6 +126,21 @@ function xorChecksum(payload: number[] | Uint8Array): number {
   let chk = 0;
   for (let i = 0; i < payload.length; i++) chk ^= payload[i];
   return chk & 0x7F;
+}
+
+/**
+ * Sprint-112.2: Unpack 5-byte pack32_7bit encoding back to a 32-bit number.
+ * Mirrors _unpack32_7bit in otp_codec.py and unpack32_7bit in loader_simulator.py.
+ * b[0] = header nibble (MSBs of the 4 data bytes), b[1..4] = 7-bit data.
+ */
+function unpack32_7bit(b: Uint8Array | number[], offset = 0): number {
+  let result = 0;
+  for (let k = 0; k < 4; k++) {
+    let v = b[offset + 1 + k] & 0x7F;
+    if (b[offset] & (1 << k)) v |= 0x80;
+    result = (result | (v << (24 - k * 8))) >>> 0;
+  }
+  return result;
 }
 
 /** Klammert einen Integer auf [lo..hi] und floort. NaN/Infinity → lo. */
@@ -212,13 +259,40 @@ export class OmniTribeBridge {
   private throttleQueue: Uint8Array[] = [];
   private throttleTimer: ReturnType<typeof setTimeout> | null = null;
 
-  /** Verbindet zu OmniTribe via Web-MIDI. Liefert true bei Erfolg. */
+  /** Verbindet zu OmniTribe via Web-MIDI. Liefert true bei Erfolg.
+   *
+   * v3.166 Bug-Fix: Match-Filter erweitert. Bisher matched nur "omnitribe"
+   * im MIDI-Devicename — KORG-Hardware mit Custom-FW identifiziert sich
+   * via OS aber meist als "Electribe SX", "KORG ESX-1", "ES-1", "ES-2"
+   * usw. (USB-Devicename kommt aus der USB-Descriptor-Hardware, nicht aus
+   * der Firmware). Daher zusätzlich electribe / korg / esx / es-{1,2,9}
+   * matchen. Diagnostic-Log listet alle verfügbaren Devices wenn kein
+   * Match — User sieht in DevTools-Konsole was angeschlossen ist.
+   */
   async connect(midiAccess: MIDIAccess): Promise<boolean> {
+    const matches = (name: string | null | undefined): boolean => {
+      const n = (name ?? "").toLowerCase();
+      if (n.length === 0) return false;
+      return (
+        n.includes("omnitribe") ||
+        n.includes("electribe") ||
+        n.includes("korg") ||
+        n.includes("esx") ||
+        n.includes("es-1") ||
+        n.includes("es-2") ||
+        n.includes("es-9") ||
+        n.includes("nu:tekt")
+      );
+    };
+    const allOutputs: string[] = [];
+    const allInputs: string[] = [];
     for (const o of midiAccess.outputs.values()) {
-      if (o.name?.toLowerCase().includes("omnitribe")) this.output = o;
+      allOutputs.push(o.name ?? "(unnamed)");
+      if (!this.output && matches(o.name)) this.output = o;
     }
     for (const i of midiAccess.inputs.values()) {
-      if (i.name?.toLowerCase().includes("omnitribe")) {
+      allInputs.push(i.name ?? "(unnamed)");
+      if (!this.input && matches(i.name)) {
         this.input = i;
         this.input.onmidimessage = (e: MIDIMessageEvent) => {
           if (e.data) this.handleIncoming(e.data);
@@ -227,7 +301,17 @@ export class OmniTribeBridge {
     }
     this.connected = !!(this.output && this.input);
     if (this.connected) {
+      // eslint-disable-next-line no-console
+      console.log(
+        `[OmniTribe] Connected — output: "${this.output?.name}", input: "${this.input?.name}"`,
+      );
       await this.requestIdentity();
+    } else {
+      // eslint-disable-next-line no-console
+      console.warn(
+        "[OmniTribe] No matching device found. Available MIDI devices:",
+        { outputs: allOutputs, inputs: allInputs },
+      );
     }
     return this.connected;
   }
@@ -278,6 +362,18 @@ export class OmniTribeBridge {
   /** CMD 0x01 0x00: Identity Request — Antwort kommt via `on(OtpCmd.IDENTITY, ...)`. */
   async requestIdentity(): Promise<void> {
     this.send(OtpCmd.IDENTITY, 0x00, []);
+  }
+
+  /**
+   * Sprint-112.2: CMD 0x09 0x00 — Firmware-Info Request.
+   *
+   * Response (CMD 0x09 0x01) is dispatched as CustomEvent "omnitribe:firmwareInfo"
+   * and also forwarded to any on(OtpCmd.FIRMWARE_INFO, ...) handlers.
+   *
+   * TODO: auto-gen will overwrite this when TASK-112.3 TS-bindings drift lands.
+   */
+  requestFirmwareInfo(): void {
+    this.send(OtpCmd.FIRMWARE_INFO, 0x00, []);
   }
 
   /** CMD 0x02 0x00: Parameter setzen mit Echo-Vermeidung. */
@@ -414,9 +510,106 @@ export class OmniTribeBridge {
   remotePlay():   void { this.send(OtpCmd.TRANSPORT, 0x00, []); }
   remoteStop():   void { this.send(OtpCmd.TRANSPORT, 0x01, []); }
   remoteRecord(): void { this.send(OtpCmd.TRANSPORT, 0x02, []); }
+  /**
+   * Sprint-111: 21-bit-BPM-Encoding (3x7-bit) ersetzt das alte 14-bit-Encoding.
+   * Wire-Range: bpm_x100 max 2_097_151 (~20971 BPM); Firmware clamped auf 20..300 BPM.
+   * Decoder ist len-dispatched, alte 2-Byte-Frames werden weiterhin akzeptiert.
+   */
   remoteTempo(bpm: number): void {
-    const bpm100 = Math.round(bpm * 100) & 0x3FFF;
-    this.send(OtpCmd.TRANSPORT, 0x03, [(bpm100 >> 7) & 0x7F, bpm100 & 0x7F]);
+    const bpm100 = clampInt(Math.round(bpm * 100), 0, 0x1FFFFF);
+    this.send(OtpCmd.TRANSPORT, 0x03, [
+      (bpm100 >> 14) & 0x7F,
+      (bpm100 >> 7)  & 0x7F,
+       bpm100        & 0x7F,
+    ]);
+  }
+
+  /**
+   * Sprint-111: Pattern-Sequencer BPM (CMD 0x0F SUB 0x11).
+   * Spiegelt remoteTempo() fuer den Pattern-Engine-Slot statt Transport-Slot.
+   * Beide Pfade nutzen jetzt 21-bit-Encoding (vorher 14-bit, stille Korruption ab BPM 164).
+   */
+  setPatternBpm(bpm: number): void {
+    const bpm100 = clampInt(Math.round(bpm * 100), 0, 0x1FFFFF);
+    this.send(OtpCmd.PATTERN, 0x11, [
+      (bpm100 >> 14) & 0x7F,
+      (bpm100 >> 7)  & 0x7F,
+       bpm100        & 0x7F,
+    ]);
+  }
+
+  // ─── Sprint-113: MIDI-Clock-In Sync ─────────────────────────
+
+  /**
+   * Setzt den Clock-Sync-Modus (CMD 0x0E SUB 0x04).
+   * mode: 0=INTERNAL (default), 1=EXTERNAL, 2=AUTO
+   * Device antwortet mit ACK + Status-Notify (SUB 0x06).
+   */
+  setClockSyncMode(mode: 0 | 1 | 2): void {
+    this.send(OtpCmd.TRANSPORT, 0x04, [mode & 0x7F]);
+  }
+
+  /**
+   * Fragt den aktuellen Clock-Status ab (CMD 0x0E SUB 0x05).
+   * Device antwortet mit Status-Notify (SUB 0x06):
+   *   [mode u8][locked u8][bpm_hi 7b][bpm_mid 7b][bpm_lo 7b]
+   */
+  queryClockStatus(): void {
+    this.send(OtpCmd.TRANSPORT, 0x05, []);
+  }
+
+  // ─── Sprint-114: MIDI-Clock-Out ──────────────────────────────
+
+  /**
+   * Setzt den Clock-Out-Enable-State (CMD 0x0E SUB 0x07).
+   * enable: true=ON, false=OFF (Default nach Reset: false).
+   * Device antwortet mit ACK + Clock-Out-Status (SUB 0x08).
+   *
+   * Warnhinweis: Nur aktivieren wenn ein externer Slave angeschlossen ist.
+   * Versehentliches Aktivieren auf einem leeren MIDI-Bus ist harmlos (Bus
+   * ist idle), aber kann Fremdslavees ueberraschend starten.
+   */
+  setClockOutEnable(enable: boolean): void {
+    this.send(OtpCmd.TRANSPORT, 0x07, [enable ? 1 : 0]);
+  }
+
+  /**
+   * Fragt den aktuellen Clock-Out-Status ab (CMD 0x0E SUB 0x08).
+   * Device antwortet mit:
+   *   [enable u8][effective_mode u8]
+   *   effective_mode: 0=OFF, 1=MASTER, 2=PASSTHROUGH
+   * Antwort wird als CustomEvent "omnitribe:clockOutStatus" dispatched.
+   */
+  queryClockOutStatus(): void {
+    this.send(OtpCmd.TRANSPORT, 0x08, []);
+  }
+
+  // ─── Sprint-115: Song-Position-Pointer (SPP) ─────────────────
+
+  /**
+   * Fragt die aktuelle Pattern-Position ab (CMD 0x0E SUB 0x09).
+   * Device antwortet mit Position-Notify (SUB 0x09):
+   *   [playing u8][step u8][bank u8][spp_lo 7b][spp_mid 7b][spp_hi 7b]
+   * Antwort wird als CustomEvent "omnitribe:positionChange" dispatched.
+   */
+  queryPosition(): void {
+    this.send(OtpCmd.TRANSPORT, 0x09, []);
+  }
+
+  /**
+   * Setzt die Pattern-Position (CMD 0x0E SUB 0x0A).
+   * beats: 21-bit MIDI-Beat-Position (0..2097151).
+   * Device setzt pattern_step_index = beats % 16.
+   * Falls clock_out_enable=1 und MASTER: sendet F2(beats & 0x3FFF) auf MIDI-Out.
+   * Antwort wird als CustomEvent "omnitribe:positionChange" dispatched.
+   */
+  setPosition(beats: number): void {
+    const v = Math.max(0, Math.min(0x1FFFFF, Math.floor(beats)));
+    this.send(OtpCmd.TRANSPORT, 0x0A, [
+      (v >> 14) & 0x7F,
+      (v >> 7)  & 0x7F,
+       v        & 0x7F,
+    ]);
   }
 
   /** Event-Listener: pro CMD ein oder mehrere Handler. */
@@ -654,6 +847,86 @@ export class OmniTribeBridge {
         window.dispatchEvent(new CustomEvent("omnitribe:patternStep", {
           detail: { stepIdx },
         }));
+      }
+    }
+    // Sprint-113: Clock-Status-Notify (CMD 0x0E SUB 0x06)
+    // Payload: [mode u8][locked u8][bpm_hi 7b][bpm_mid 7b][bpm_lo 7b]
+    if (cmd === OtpCmd.TRANSPORT && sub === 0x06 && payload.length >= 5) {
+      const mode   = payload[0] & 0x7F;
+      const locked = !!(payload[1] & 0x7F);
+      const bpmX100 = ((payload[2] & 0x7F) << 14)
+                    | ((payload[3] & 0x7F) << 7)
+                    |  (payload[4] & 0x7F);
+      const bpm = bpmX100 / 100;
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("omnitribe:clockStatus", {
+          detail: { mode, locked, bpm, bpmX100 },
+        }));
+      }
+    }
+    // Sprint-114: Clock-Out-Status (CMD 0x0E SUB 0x08)
+    // Payload: [enable u8][effective_mode u8]
+    //   effective_mode: 0=OFF, 1=MASTER, 2=PASSTHROUGH
+    if (cmd === OtpCmd.TRANSPORT && sub === 0x08 && payload.length >= 2) {
+      const enable        = !!(payload[0] & 0x7F);
+      const effectiveMode = payload[1] & 0x7F;
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("omnitribe:clockOutStatus", {
+          detail: { enable, effectiveMode },
+        }));
+      }
+    }
+    // Sprint-115: Position-Notify (CMD 0x0E SUB 0x09 response or SUB 0x0B async notify)
+    // Payload: [playing u8][step u8][bank u8][spp_lo 7b][spp_mid 7b][spp_hi 7b]
+    if (cmd === OtpCmd.TRANSPORT
+        && (sub === 0x09 || sub === 0x0B)
+        && payload.length >= 6) {
+      const playing  = !!(payload[0] & 0x7F);
+      const step     = payload[1] & 0x0F;
+      const bank     = payload[2] & 0x7F;
+      const sppBeats = ((payload[3] & 0x7F) << 14)
+                     | ((payload[4] & 0x7F) << 7)
+                     |  (payload[5] & 0x7F);
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("omnitribe:positionChange", {
+          detail: { playing, step, bank, sppBeats },
+        }));
+      }
+    }
+    // Sprint-112.2: Firmware-Info Response (CMD 0x09 SUB 0x01)
+    // Payload: [ver_maj][ver_min][ver_patch][git_hash 10B][module_count][ids...][flags 5B]
+    // Minimum safe length: 3 + 10 + 1 + 5 = 19 bytes (zero modules).
+    if (cmd === OtpCmd.FIRMWARE_INFO && sub === 0x01 && payload.length >= 19) {
+      let pos = 0;
+      const verMajor = payload[pos++] & 0x7F;
+      const verMinor = payload[pos++] & 0x7F;
+      const verPatch = payload[pos++] & 0x7F;
+
+      // git_hash: 10 encoded bytes (2 blocks of 7+1) → decode7Bit → 8 raw bytes → BigInt LE
+      const gitEnc = payload.slice(pos, pos + 10);
+      const gitRaw = decode7Bit(gitEnc);   // decode7Bit already defined above
+      let gitHash = BigInt(0);
+      for (let i = 0; i < Math.min(gitRaw.length, 8); i++) {
+        gitHash |= BigInt(gitRaw[i]) << BigInt(8 * i);
+      }
+      pos += 10;
+
+      const moduleCount = payload[pos++] & 0x7F;
+      const moduleIds: number[] = [];
+      for (let i = 0; i < moduleCount && pos < payload.length; i++) {
+        moduleIds.push(payload[pos++] & 0x7F);
+      }
+
+      let featureFlags = 0;
+      if (pos + 5 <= payload.length) {
+        featureFlags = unpack32_7bit(payload, pos);
+      }
+
+      const detail: FirmwareInfoEvent = {
+        verMajor, verMinor, verPatch, gitHash, moduleIds, featureFlags,
+      };
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("omnitribe:firmwareInfo", { detail }));
       }
     }
     if (cmd === OtpCmd.STREAM && sub === 0x02) {

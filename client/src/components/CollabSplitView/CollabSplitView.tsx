@@ -153,6 +153,11 @@ function useRemoteDmAdapter(
       // Peer-State, kein Editieren möglich (Setter ist no-op).
       swingAmount: 0,
       setSwingAmount: noop,
+      // v3.166.0: Globaler Groove — Mock-Stub (Read-Only-View).
+      grooveAmount: 0,
+      setGrooveAmount: noop,
+      grooveSeed: 1,
+      setGrooveSeed: noop,
       setPartSourceType: noop,
       setPartGranularParams: noop,
       applyPatchToPart: noop,
