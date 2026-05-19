@@ -141,7 +141,20 @@ export type MidiLearnTarget =
   | { type: "subMixBusVolume"; busId: string; busName?: string }
   | { type: "subMixBusPan";    busId: string; busName?: string }
   | { type: "subMixBusMute";   busId: string; busName?: string }
-  | { type: "subMixBusSolo";   busId: string; busName?: string };
+  | { type: "subMixBusSolo";   busId: string; busName?: string }
+  // ── Sub-Mix-Bus FX (v3.87.0) ─────────────────────────────────────────────
+  /**
+   * v3.87: MIDI-Learn auf Sub-Mix-Bus FX-Params (EQ-3 Bands + Compressor
+   * Threshold/Ratio + Reverb/Delay-Send). Closes v3.86-Caveat
+   * "Bus FX-Chain ohne MIDI-Learn". Events: midi:subMixBusEqLowGain etc.
+   */
+  | { type: "subMixBusEqLowGain";    busId: string; busName?: string }
+  | { type: "subMixBusEqMidGain";    busId: string; busName?: string }
+  | { type: "subMixBusEqHighGain";   busId: string; busName?: string }
+  | { type: "subMixBusCompThreshold"; busId: string; busName?: string }
+  | { type: "subMixBusCompRatio";    busId: string; busName?: string }
+  | { type: "subMixBusReverbSend";   busId: string; busName?: string }
+  | { type: "subMixBusDelaySend";    busId: string; busName?: string };
 
 /** Ein Schritt in einer Function-Chain (v1.77). */
 export interface ChainStep {
@@ -407,6 +420,13 @@ export function labelForTarget(target: MidiLearnTarget): string {
     case "subMixBusPan":    return `Bus Pan: ${target.busName ?? target.busId.slice(0, 8)}`;
     case "subMixBusMute":   return `Bus Mute: ${target.busName ?? target.busId.slice(0, 8)}`;
     case "subMixBusSolo":   return `Bus Solo: ${target.busName ?? target.busId.slice(0, 8)}`;
+    case "subMixBusEqLowGain":     return `Bus EQ Low: ${target.busName ?? target.busId.slice(0, 8)}`;
+    case "subMixBusEqMidGain":     return `Bus EQ Mid: ${target.busName ?? target.busId.slice(0, 8)}`;
+    case "subMixBusEqHighGain":    return `Bus EQ High: ${target.busName ?? target.busId.slice(0, 8)}`;
+    case "subMixBusCompThreshold": return `Bus Comp Threshold: ${target.busName ?? target.busId.slice(0, 8)}`;
+    case "subMixBusCompRatio":     return `Bus Comp Ratio: ${target.busName ?? target.busId.slice(0, 8)}`;
+    case "subMixBusReverbSend":    return `Bus Reverb Send: ${target.busName ?? target.busId.slice(0, 8)}`;
+    case "subMixBusDelaySend":     return `Bus Delay Send: ${target.busName ?? target.busId.slice(0, 8)}`;
     default:                return "Unbekannt";
   }
 }
@@ -456,6 +476,13 @@ export function targetsMatch(a: MidiLearnTarget, b: MidiLearnTarget): boolean {
     case "subMixBusPan":
     case "subMixBusMute":
     case "subMixBusSolo":
+    case "subMixBusEqLowGain":
+    case "subMixBusEqMidGain":
+    case "subMixBusEqHighGain":
+    case "subMixBusCompThreshold":
+    case "subMixBusCompRatio":
+    case "subMixBusReverbSend":
+    case "subMixBusDelaySend":
       return a.busId === (b as { busId: string }).busId;
     default:
       // Single-target types ohne Param: bpm, playStop, record, tapTempo,
@@ -1128,6 +1155,53 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
       case "subMixBusSolo": if (on) {
         window.dispatchEvent(new CustomEvent("midi:subMixBusSolo", { detail: t.busId }));
       } break;
+      // ── Sub-Mix-Bus FX (v3.87.0) ─────────────────────────────────────────
+      case "subMixBusEqLowGain": {
+        // 0..127 → -24..+24 dB (linear)
+        window.dispatchEvent(new CustomEvent("midi:subMixBusEqLowGain", {
+          detail: { busId: t.busId, value: (value / 127) * 48 - 24 },
+        }));
+        break;
+      }
+      case "subMixBusEqMidGain": {
+        window.dispatchEvent(new CustomEvent("midi:subMixBusEqMidGain", {
+          detail: { busId: t.busId, value: (value / 127) * 48 - 24 },
+        }));
+        break;
+      }
+      case "subMixBusEqHighGain": {
+        window.dispatchEvent(new CustomEvent("midi:subMixBusEqHighGain", {
+          detail: { busId: t.busId, value: (value / 127) * 48 - 24 },
+        }));
+        break;
+      }
+      case "subMixBusCompThreshold": {
+        // 0..127 → -60..0 dB
+        window.dispatchEvent(new CustomEvent("midi:subMixBusCompThreshold", {
+          detail: { busId: t.busId, value: (value / 127) * 60 - 60 },
+        }));
+        break;
+      }
+      case "subMixBusCompRatio": {
+        // 0..127 → 1..20
+        window.dispatchEvent(new CustomEvent("midi:subMixBusCompRatio", {
+          detail: { busId: t.busId, value: 1 + (value / 127) * 19 },
+        }));
+        break;
+      }
+      case "subMixBusReverbSend": {
+        // 0..127 → 0..1
+        window.dispatchEvent(new CustomEvent("midi:subMixBusReverbSend", {
+          detail: { busId: t.busId, value: value / 127 },
+        }));
+        break;
+      }
+      case "subMixBusDelaySend": {
+        window.dispatchEvent(new CustomEvent("midi:subMixBusDelaySend", {
+          detail: { busId: t.busId, value: value / 127 },
+        }));
+        break;
+      }
     }
   }
 

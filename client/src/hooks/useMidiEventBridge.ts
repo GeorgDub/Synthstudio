@@ -27,9 +27,17 @@
  *   midi:subMixBusPan    {busId, value:-1..1}         → store.setBusPan
  *   midi:subMixBusMute   busId:string (toggle)        → store.setBusMute
  *   midi:subMixBusSolo   busId:string (toggle)        → store.setBusSolo
+ *   midi:subMixBusEqLowGain    {busId, value:-24..24}   → store.setBusEq3
+ *   midi:subMixBusEqMidGain    {busId, value:-24..24}   → store.setBusEq3
+ *   midi:subMixBusEqHighGain   {busId, value:-24..24}   → store.setBusEq3
+ *   midi:subMixBusCompThreshold{busId, value:-60..0}    → store.setBusCompressor
+ *   midi:subMixBusCompRatio    {busId, value:1..20}     → store.setBusCompressor
+ *   midi:subMixBusReverbSend   {busId, value:0..1}      → store.setBusReverbSend
+ *   midi:subMixBusDelaySend    {busId, value:0..1}      → store.setBusDelaySend
  *
  * Quellen: v1.76 (Volume/Pan/Solo/Fx), v1.92 (Pattern), v2.34 (BPM/PlayStop/
- * Stop/MasterVolume/MuteSet/Pattern-as-String), v3.81.0 (Sub-Mix-Bus-Controls).
+ * Stop/MasterVolume/MuteSet/Pattern-as-String), v3.81.0 (Sub-Mix-Bus-Controls),
+ * v3.87.0 (Sub-Mix-Bus-FX-Params: EQ-3 + Compressor + Sends).
  */
 import { useEffect } from "react";
 import type { MutableRefObject } from "react";
@@ -41,6 +49,10 @@ import {
   setBusPan,
   setBusMute,
   setBusSolo,
+  setBusEq3,
+  setBusCompressor,
+  setBusReverbSend,
+  setBusDelaySend,
 } from "@/store/useSubMixStore";
 
 /**
@@ -89,6 +101,14 @@ export interface MidiBridgeHandlers {
   handleSubMixBusPan: (e: Event) => void;
   handleSubMixBusMute: (e: Event) => void;
   handleSubMixBusSolo: (e: Event) => void;
+  // v3.87.0: Sub-Mix-Bus-FX-Params
+  handleSubMixBusEqLowGain: (e: Event) => void;
+  handleSubMixBusEqMidGain: (e: Event) => void;
+  handleSubMixBusEqHighGain: (e: Event) => void;
+  handleSubMixBusCompThreshold: (e: Event) => void;
+  handleSubMixBusCompRatio: (e: Event) => void;
+  handleSubMixBusReverbSend: (e: Event) => void;
+  handleSubMixBusDelaySend: (e: Event) => void;
 }
 
 /**
@@ -214,6 +234,33 @@ export function makeMidiBridgeHandlers(refs: MidiBridgeRefs): MidiBridgeHandlers
     setBusSolo(busId, !bus.solo);
   };
 
+  // v3.87.0: Sub-Mix-Bus FX-Params — feuern via useMidi.applyMapping
+  // CustomEvents, hier landen sie auf den useSubMixStore-FX-Settern.
+  // Generic helper für (busId, value) → Setter mit numerischer Value.
+  const dispatchBusFxValue = (
+    e: Event,
+    apply: (busId: string, value: number) => void,
+  ): void => {
+    const detail = (e as CustomEvent<{ busId: string; value: number }>).detail;
+    if (!detail || typeof detail.busId !== "string" || typeof detail.value !== "number") return;
+    if (!Number.isFinite(detail.value)) return;
+    apply(detail.busId, detail.value);
+  };
+  const handleSubMixBusEqLowGain = (e: Event) =>
+    dispatchBusFxValue(e, (id, v) => setBusEq3(id, { lowGain: v }));
+  const handleSubMixBusEqMidGain = (e: Event) =>
+    dispatchBusFxValue(e, (id, v) => setBusEq3(id, { midGain: v }));
+  const handleSubMixBusEqHighGain = (e: Event) =>
+    dispatchBusFxValue(e, (id, v) => setBusEq3(id, { highGain: v }));
+  const handleSubMixBusCompThreshold = (e: Event) =>
+    dispatchBusFxValue(e, (id, v) => setBusCompressor(id, { threshold: v }));
+  const handleSubMixBusCompRatio = (e: Event) =>
+    dispatchBusFxValue(e, (id, v) => setBusCompressor(id, { ratio: v }));
+  const handleSubMixBusReverbSend = (e: Event) =>
+    dispatchBusFxValue(e, (id, v) => setBusReverbSend(id, v));
+  const handleSubMixBusDelaySend = (e: Event) =>
+    dispatchBusFxValue(e, (id, v) => setBusDelaySend(id, v));
+
   return {
     handleVolume, handlePan, handleSolo, handleFxParam,
     handleMute, handleMuteSet,
@@ -221,6 +268,9 @@ export function makeMidiBridgeHandlers(refs: MidiBridgeRefs): MidiBridgeHandlers
     handlePattern,
     handleSubMixBusVolume, handleSubMixBusPan,
     handleSubMixBusMute, handleSubMixBusSolo,
+    handleSubMixBusEqLowGain, handleSubMixBusEqMidGain, handleSubMixBusEqHighGain,
+    handleSubMixBusCompThreshold, handleSubMixBusCompRatio,
+    handleSubMixBusReverbSend, handleSubMixBusDelaySend,
   };
 }
 
@@ -247,6 +297,13 @@ export function useMidiEventBridge(refs: MidiBridgeRefs): void {
     window.addEventListener("midi:subMixBusPan", h.handleSubMixBusPan);
     window.addEventListener("midi:subMixBusMute", h.handleSubMixBusMute);
     window.addEventListener("midi:subMixBusSolo", h.handleSubMixBusSolo);
+    window.addEventListener("midi:subMixBusEqLowGain", h.handleSubMixBusEqLowGain);
+    window.addEventListener("midi:subMixBusEqMidGain", h.handleSubMixBusEqMidGain);
+    window.addEventListener("midi:subMixBusEqHighGain", h.handleSubMixBusEqHighGain);
+    window.addEventListener("midi:subMixBusCompThreshold", h.handleSubMixBusCompThreshold);
+    window.addEventListener("midi:subMixBusCompRatio", h.handleSubMixBusCompRatio);
+    window.addEventListener("midi:subMixBusReverbSend", h.handleSubMixBusReverbSend);
+    window.addEventListener("midi:subMixBusDelaySend", h.handleSubMixBusDelaySend);
     return () => {
       window.removeEventListener("midi:partVolume", h.handleVolume);
       window.removeEventListener("midi:partPan", h.handlePan);
@@ -263,6 +320,13 @@ export function useMidiEventBridge(refs: MidiBridgeRefs): void {
       window.removeEventListener("midi:subMixBusPan", h.handleSubMixBusPan);
       window.removeEventListener("midi:subMixBusMute", h.handleSubMixBusMute);
       window.removeEventListener("midi:subMixBusSolo", h.handleSubMixBusSolo);
+      window.removeEventListener("midi:subMixBusEqLowGain", h.handleSubMixBusEqLowGain);
+      window.removeEventListener("midi:subMixBusEqMidGain", h.handleSubMixBusEqMidGain);
+      window.removeEventListener("midi:subMixBusEqHighGain", h.handleSubMixBusEqHighGain);
+      window.removeEventListener("midi:subMixBusCompThreshold", h.handleSubMixBusCompThreshold);
+      window.removeEventListener("midi:subMixBusCompRatio", h.handleSubMixBusCompRatio);
+      window.removeEventListener("midi:subMixBusReverbSend", h.handleSubMixBusReverbSend);
+      window.removeEventListener("midi:subMixBusDelaySend", h.handleSubMixBusDelaySend);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

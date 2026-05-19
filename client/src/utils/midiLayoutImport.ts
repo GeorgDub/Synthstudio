@@ -85,6 +85,10 @@ export const VALID_TARGET_TYPES = new Set<string>([
   "playSlicePad",
   // v3.81.0: Sub-Mix-Bus-Controls (Bus-Volume/Pan/Mute/Solo)
   "subMixBusVolume", "subMixBusPan", "subMixBusMute", "subMixBusSolo",
+  // v3.87.0: Sub-Mix-Bus FX-Params
+  "subMixBusEqLowGain", "subMixBusEqMidGain", "subMixBusEqHighGain",
+  "subMixBusCompThreshold", "subMixBusCompRatio",
+  "subMixBusReverbSend", "subMixBusDelaySend",
 ]);
 
 export interface ParsedMidiLayout {
