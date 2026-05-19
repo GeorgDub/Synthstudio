@@ -150,16 +150,16 @@ describe("v3.58.0 – projectId.ts Pure-fn", () => {
 // ─── (2) projectSerializer Schema v1.24 ──────────────────────────────────────
 
 describe("v3.58.0 – projectSerializer Schema v1.24", () => {
-  it("SYNTH_FILE_VERSION = '1.28'", () => {
-    // v3.73.0 bumped to 1.28 (Channel-Strip Color-Coding). v1.24/…/1.27-Files laden weiterhin.
-    expect(SYNTH_FILE_VERSION).toBe("1.28");
+  it("SYNTH_FILE_VERSION = '1.29'", () => {
+    // v3.74.0 bumped to 1.29 (AudioTrack + LiveInput Color-Coding). v1.24/…/1.28-Files laden weiterhin.
+    expect(SYNTH_FILE_VERSION).toBe("1.29");
   });
 
   it("serializeProject übernimmt mitgegebene projectId", () => {
     const id = generateProjectId();
     const result = serializeProject({ ...makeBaseInput(), projectId: id });
     expect(result.projectId).toBe(id);
-    expect(result.version).toBe("1.28");
+    expect(result.version).toBe("1.29");
   });
 
   it("serializeProject auto-generiert projectId wenn fehlt", () => {

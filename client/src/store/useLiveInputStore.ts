@@ -17,6 +17,7 @@
 
 import { useEffect, useReducer } from "react";
 import { nanoid } from "nanoid";
+import { normalizeChannelColor } from "@/utils/channelColors";
 
 // ─── Typen ───────────────────────────────────────────────────────────────────
 
@@ -54,6 +55,13 @@ export interface LiveInputChannelData {
    * Default `false` — alle Channels sind anfangs disarmed.
    */
   recordArmed?: boolean;
+  /**
+   * v3.74.0: Channel-Strip Color-Coding (closes v3.73-Caveat). User-defined
+   * Hex-Farbe ("#RRGGBB" oder "#RGB"), lowercase. Wenn nicht gesetzt, fällt
+   * die UI auf den zyklischen Palette-Default zurück. Additiv-optional —
+   * Pre-v1.29-Files laden unverändert (color bleibt undefined).
+   */
+  color?: string;
 }
 
 // ─── Konstanten ──────────────────────────────────────────────────────────────
@@ -116,6 +124,9 @@ export function isValidChannel(x: unknown): x is LiveInputChannelData {
   if (typeof o.latencyCompensationMs !== "number") return false;
   // recordArmed ist optional (älter Schema-Migration friendly).
   if (o.recordArmed !== undefined && typeof o.recordArmed !== "boolean") return false;
+  // v3.74.0: color (optional). Bei falschem Typ → Channel verwerfen.
+  // Validierung des Hex-Formats passiert nicht hier (defensive: nur Typ-Check).
+  if (o.color !== undefined && typeof o.color !== "string") return false;
   const sends = o.sends as { reverb?: unknown; delay?: unknown } | undefined;
   if (!sends || typeof sends !== "object") return false;
   if (typeof sends.reverb !== "number") return false;
@@ -182,6 +193,31 @@ export function setLiveInputRecordArm(id: string, armed: boolean): void {
 /** Liefert alle Channel-IDs die armed=true sind (für Transport-Play). */
 export function getArmedLiveInputChannelIds(): string[] {
   return _channels.filter((c) => c.recordArmed).map((c) => c.id);
+}
+
+/**
+ * v3.74.0: Setzt die Color eines Live-Input-Channels (closes v3.73-Caveat).
+ * - Valider Hex (#RRGGBB oder #RGB) → lowercase gespeichert
+ * - undefined → Reset auf Palette-Default (color-Feld wird entfernt)
+ * - Invalider Wert → silent als undefined behandelt (defensive Reset,
+ *   keine Exception damit Drag-Updates nicht crashen)
+ *
+ * No-op wenn Channel-ID unbekannt.
+ */
+export function setLiveInputColor(id: string, color: string | undefined): void {
+  const idx = _channels.findIndex((c) => c.id === id);
+  if (idx < 0) return;
+  const existing = _channels[idx];
+  const normalized = color === undefined ? undefined : normalizeChannelColor(color);
+  // Idempotent: wenn der Wert bereits identisch, no-op (kein notify, kein persist).
+  if ((existing.color ?? undefined) === normalized) return;
+  const { color: _omit, ...rest } = existing;
+  void _omit;
+  const next: LiveInputChannelData =
+    normalized === undefined ? (rest as LiveInputChannelData) : { ...rest, color: normalized } as LiveInputChannelData;
+  _channels = [..._channels.slice(0, idx), next, ..._channels.slice(idx + 1)];
+  persist();
+  notify();
 }
 
 /**

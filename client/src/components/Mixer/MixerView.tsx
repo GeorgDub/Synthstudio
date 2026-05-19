@@ -1154,18 +1154,26 @@ export function MixerView({ dm, mixer, samples = [], bpm = 120, projectName = "S
             })}
 
             {/* Audio-Track Channel-Strips (Vocals/Songs) */}
-            {audioTracks.map(track => (
+            {audioTracks.map((track, audioTrackIndex) => (
               <AudioTrackStrip
                 key={track.id}
                 track={track}
                 runtime={getRuntimeState(track.id)}
                 isPlaying={AudioEngine.isPlaying}
+                // v3.74.0: Channel-Color-Index hängt an Mixer-Reihenfolge nach
+                // drum-parts dran (parts.length + audioTrackIndex).
+                channelIndex={parts.length + audioTrackIndex}
               />
             ))}
 
             {/* Live-Input-Channel-Strips (USB-Audio von KORG etc., TASK-233) */}
-            {liveInputChannels.map(ch => (
-              <LiveInputStrip key={ch.id} channel={ch} />
+            {liveInputChannels.map((ch, liveInputIndex) => (
+              <LiveInputStrip
+                key={ch.id}
+                channel={ch}
+                // v3.74.0: Channel-Color-Index nach drum-parts + audio-tracks.
+                channelIndex={parts.length + audioTracks.length + liveInputIndex}
+              />
             ))}
 
             {/* Master-Kanal */}

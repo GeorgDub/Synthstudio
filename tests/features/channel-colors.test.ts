@@ -1,15 +1,39 @@
 /**
- * Synthstudio – channel-colors.test.ts (v3.73.0)
+ * Synthstudio – channel-colors.test.ts (v3.73.0, erweitert in v3.74.0)
  *
- * Tests für das Channel-Strip Color-Coding (Mixer + DrumMachine).
+ * Tests für das Channel-Strip Color-Coding (Mixer + DrumMachine + AudioTrack + LiveInput).
  * Drei Ebenen:
  *   1. Pure Color-Helpers (Palette, Validierung, Normalisierung, Default-Index)
  *   2. Pure Store-Transform applyPartColorUpdate (Sanitization + Immutability)
- *   3. Serializer Round-Trip (Schema v1.28 + Pre-v1.28 Backward-Compat)
- *
- * Mind. 5 Tests gemäß Task. Tatsächlich: 16 Tests in 5 describes.
+ *   3. Serializer Round-Trip (Schema v1.29 + Pre-v1.29 Backward-Compat)
+ *   4. v3.74.0: AudioTrack-Color-Action + LiveInput-Color-Action + Serializer-
+ *      Round-Trip mit color-Feld pro Strip-Typ.
  */
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach } from "vitest";
+
+// ─── localStorage Mock (für Audio-Track/Live-Input-Stores) ──────────────────
+function createLocalStorageMock() {
+  let store: Record<string, string> = {};
+  return {
+    getItem: (k: string): string | null => store[k] ?? null,
+    setItem: (k: string, v: string): void => { store[k] = v; },
+    removeItem: (k: string): void => { delete store[k]; },
+    clear: (): void => { store = {}; },
+  };
+}
+const localStorageMock = createLocalStorageMock();
+Object.defineProperty(globalThis, "localStorage", {
+  value: localStorageMock,
+  writable: true,
+  configurable: true,
+});
+if (typeof (globalThis as { window?: unknown }).window === "undefined") {
+  Object.defineProperty(globalThis, "window", {
+    value: { localStorage: localStorageMock },
+    writable: true,
+    configurable: true,
+  });
+}
 import {
   DEFAULT_CHANNEL_COLOR_PALETTE,
   CHANNEL_COLOR_PALETTE_SIZE,
@@ -27,7 +51,21 @@ import {
   parseProject,
   toJson,
   sanitizePartColors,
+  sanitizeAudioTrackColors,
+  sanitizeLiveInputColors,
 } from "../../client/src/utils/projectSerializer";
+import {
+  setAudioTrackColor,
+  addAudioTrack,
+  getAudioTrack,
+  __resetForTests as resetAudioTrackStore,
+} from "../../client/src/store/useAudioTrackStore";
+import {
+  setLiveInputColor,
+  addLiveInputChannel,
+  getLiveInputChannel,
+  __resetForTests as resetLiveInputStore,
+} from "../../client/src/store/useLiveInputStore";
 
 // ─── Test-Fixtures ───────────────────────────────────────────────────────────
 
@@ -245,11 +283,11 @@ describe("v3.73.0 — applyPartColorUpdate (Pure-Transform)", () => {
 // ─── 4. Schema v1.28 Round-Trip ──────────────────────────────────────────────
 
 describe("v3.73.0 — Schema v1.28 Round-Trip + Backward-Compat", () => {
-  it("SYNTH_FILE_VERSION ist '1.28'", () => {
-    expect(SYNTH_FILE_VERSION).toBe("1.28");
+  it("SYNTH_FILE_VERSION ist '1.29'", () => {
+    expect(SYNTH_FILE_VERSION).toBe("1.29");
   });
 
-  it("Schema v1.28 Round-Trip: PartData.color wird preserved", () => {
+  it("Schema v1.29 Round-Trip: PartData.color wird preserved", () => {
     const input = makeBaseInput();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (input.patterns[0].parts[0] as any).color = "#ef4444";
@@ -257,7 +295,7 @@ describe("v3.73.0 — Schema v1.28 Round-Trip + Backward-Compat", () => {
     const ser = serializeProject(input as any);
     const json = toJson(ser);
     const parsed = parseProject(json);
-    expect(parsed.version).toBe("1.28");
+    expect(parsed.version).toBe("1.29");
     expect(parsed.patterns[0].parts[0].color).toBe("#ef4444");
   });
 
@@ -383,5 +421,311 @@ describe("v3.73.0 — resolveChannelColor liefert IMMER einen validen Hex", () =
     expect(resolveChannelColor("#abcdef", 0)).toBe("#abcdef");
     // Index 0 = drum-red, aber user setzt cyan → cyan gewinnt
     expect(resolveChannelColor("#06b6d4", 0)).toBe("#06b6d4");
+  });
+});
+
+// ─── 6. v3.74.0 — AudioTrack Color (closes v3.73-Caveat) ─────────────────────
+
+describe("v3.74.0 — AudioTrack color persist", () => {
+  beforeEach(() => {
+    resetAudioTrackStore();
+    localStorageMock.clear();
+  });
+
+  function makeTrackBase() {
+    return {
+      name: "Vox",
+      filePath: "/data/vox.wav",
+      fileName: "vox.wav",
+      volume: 1.0,
+      pan: 0,
+      muted: false,
+      soloed: false,
+      sends: { reverb: 0, delay: 0 },
+    };
+  }
+
+  it("setAudioTrackColor: valider Hex (uppercase) wird lowercased gespeichert", () => {
+    const id = addAudioTrack(makeTrackBase());
+    setAudioTrackColor(id, "#EF4444");
+    const tr = getAudioTrack(id);
+    expect(tr?.color).toBe("#ef4444");
+  });
+
+  it("setAudioTrackColor: undefined = Reset → color-Feld entfernt", () => {
+    const id = addAudioTrack({ ...makeTrackBase(), color: "#3b82f6" });
+    expect(getAudioTrack(id)?.color).toBe("#3b82f6");
+    setAudioTrackColor(id, undefined);
+    expect(getAudioTrack(id)?.color).toBeUndefined();
+  });
+
+  it("setAudioTrackColor: invalider Hex → silent als undefined (defensive)", () => {
+    const id = addAudioTrack({ ...makeTrackBase(), color: "#ef4444" });
+    setAudioTrackColor(id, "not-a-hex");
+    // Defensive: invalid normalisiert zu undefined → color wird entfernt
+    expect(getAudioTrack(id)?.color).toBeUndefined();
+  });
+
+  it("setAudioTrackColor: unknown ID → no-op (kein crash)", () => {
+    expect(() => setAudioTrackColor("audiotrack:bogus", "#ef4444")).not.toThrow();
+  });
+
+  it("Persistenz: setAudioTrackColor schreibt in localStorage", () => {
+    const id = addAudioTrack(makeTrackBase());
+    setAudioTrackColor(id, "#22c55e");
+    const raw = localStorageMock.getItem("synthstudio:audiotracks:v1");
+    expect(raw).toBeTruthy();
+    const parsed = JSON.parse(raw!);
+    expect(Array.isArray(parsed)).toBe(true);
+    expect(parsed[0].color).toBe("#22c55e");
+  });
+});
+
+// ─── 7. v3.74.0 — LiveInput Color (closes v3.73-Caveat) ──────────────────────
+
+describe("v3.74.0 — LiveInput color persist", () => {
+  beforeEach(() => {
+    resetLiveInputStore();
+    localStorageMock.clear();
+  });
+
+  it("setLiveInputColor: valider Hex wird lowercased gespeichert", () => {
+    const id = addLiveInputChannel({ name: "Mic In" });
+    setLiveInputColor(id, "#EAB308");
+    const ch = getLiveInputChannel(id);
+    expect(ch?.color).toBe("#eab308");
+  });
+
+  it("setLiveInputColor: undefined = Reset → color-Feld entfernt", () => {
+    const id = addLiveInputChannel({ name: "Mic In" });
+    setLiveInputColor(id, "#a855f7");
+    expect(getLiveInputChannel(id)?.color).toBe("#a855f7");
+    setLiveInputColor(id, undefined);
+    expect(getLiveInputChannel(id)?.color).toBeUndefined();
+  });
+
+  it("setLiveInputColor: invalider Hex → silent als undefined", () => {
+    const id = addLiveInputChannel({ name: "Mic In" });
+    setLiveInputColor(id, "#ef4444");
+    setLiveInputColor(id, "garbage");
+    expect(getLiveInputChannel(id)?.color).toBeUndefined();
+  });
+
+  it("setLiveInputColor: unknown ID → no-op", () => {
+    expect(() => setLiveInputColor("liveinput:bogus", "#ef4444")).not.toThrow();
+  });
+
+  it("Persistenz: setLiveInputColor schreibt in localStorage", () => {
+    const id = addLiveInputChannel({ name: "Mic In" });
+    setLiveInputColor(id, "#06b6d4");
+    const raw = localStorageMock.getItem("synthstudio:liveinputs:v1");
+    expect(raw).toBeTruthy();
+    const parsed = JSON.parse(raw!);
+    expect(parsed[0].color).toBe("#06b6d4");
+  });
+});
+
+// ─── 8. v3.74.0 — Schema v1.29 Round-Trip ────────────────────────────────────
+
+describe("v3.74.0 — Schema v1.29 Round-Trip + Backward-Compat", () => {
+  it("SYNTH_FILE_VERSION ist '1.29' (v3.74 AudioTrack+LiveInput color)", () => {
+    expect(SYNTH_FILE_VERSION).toBe("1.29");
+  });
+
+  it("Round-Trip: AudioTrack.color wird preserved", () => {
+    const input = {
+      projectName: "v1.29 Round-Trip",
+      bpm: 120,
+      samples: [],
+      patterns: [makePattern("p1", [makePart("part-1")])],
+      activePatternId: "p1",
+      song: { slots: [], songModeActive: false, loopSong: false },
+      mixer: {
+        masterVolume: 0.85,
+        channels: {},
+        returnTracks: {},
+        insertChains: {},
+        eq16: {},
+        sidechains: {},
+        transientShapers: {},
+      },
+      humanizer: { global: {} },
+      automation: { lanes: [], stepCount: 16 as const },
+      audioTracks: [{
+        id: "audiotrack:rt-color",
+        name: "Vox",
+        filePath: "/data/vox.wav",
+        fileName: "vox.wav",
+        volume: 1, pan: 0, muted: false, soloed: false,
+        sends: { reverb: 0, delay: 0 },
+        color: "#a855f7",
+      }],
+    };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const ser = serializeProject(input as any);
+    const json = toJson(ser);
+    const parsed = parseProject(json);
+    expect(parsed.version).toBe("1.29");
+    expect(parsed.audioTracks).toBeDefined();
+    expect(parsed.audioTracks![0].color).toBe("#a855f7");
+  });
+
+  it("Round-Trip: LiveInput.color wird preserved", () => {
+    const file = {
+      version: "1.29",
+      projectId: "00000000-0000-4000-8000-000000000001",
+      savedAt: new Date().toISOString(),
+      projectName: "Live-Color",
+      bpm: 120,
+      samples: [],
+      patterns: [{
+        id: "p1",
+        name: "P",
+        parts: [],
+        stepCount: 16,
+        stepResolution: "1/16",
+      }],
+      activePatternId: "p1",
+      song: { slots: [], songModeActive: false, loopSong: false },
+      mixer: {
+        masterVolume: 0.85,
+        channels: {},
+        returnTracks: {},
+        insertChains: {},
+        eq16: {},
+        sidechains: {},
+        transientShapers: {},
+      },
+      humanizer: { global: {} },
+      automation: { lanes: [], stepCount: 16 },
+      liveInputs: [{
+        id: "liveinput:rt-color",
+        name: "Mic In",
+        deviceId: null,
+        volume: 0.5,
+        pan: 0,
+        muted: false,
+        soloed: false,
+        sends: { reverb: 0, delay: 0 },
+        latencyCompensationMs: 0,
+        color: "#22c55e",
+      }],
+    };
+    const parsed = parseProject(JSON.stringify(file));
+    expect(parsed.liveInputs).toBeDefined();
+    expect(parsed.liveInputs![0].color).toBe("#22c55e");
+  });
+
+  it("Pre-v1.29-File ohne color: Tracks/LiveInputs laden, color bleibt undefined", () => {
+    const preV129 = {
+      version: "1.28",
+      projectId: "00000000-0000-4000-8000-000000000002",
+      savedAt: new Date().toISOString(),
+      projectName: "Pre-v1.29",
+      bpm: 120,
+      samples: [],
+      patterns: [{
+        id: "p1", name: "P", parts: [], stepCount: 16, stepResolution: "1/16",
+      }],
+      activePatternId: "p1",
+      song: { slots: [], songModeActive: false, loopSong: false },
+      mixer: {
+        masterVolume: 0.85,
+        channels: {}, returnTracks: {}, insertChains: {},
+        eq16: {}, sidechains: {}, transientShapers: {},
+      },
+      humanizer: { global: {} },
+      automation: { lanes: [], stepCount: 16 },
+      audioTracks: [{
+        id: "audiotrack:legacy",
+        name: "Legacy", filePath: "/data/x.wav", fileName: "x.wav",
+        volume: 1, pan: 0, muted: false, soloed: false,
+        sends: { reverb: 0, delay: 0 },
+        // KEIN color-Feld (pre-v1.29)
+      }],
+      liveInputs: [{
+        id: "liveinput:legacy",
+        name: "Legacy", deviceId: null,
+        volume: 0.5, pan: 0, muted: false, soloed: false,
+        sends: { reverb: 0, delay: 0 },
+        latencyCompensationMs: 0,
+        // KEIN color-Feld (pre-v1.29)
+      }],
+    };
+    const parsed = parseProject(JSON.stringify(preV129));
+    expect(parsed.version).toBe("1.28"); // source version preserved
+    expect(parsed.audioTracks![0].color).toBeUndefined();
+    expect(parsed.liveInputs![0].color).toBeUndefined();
+  });
+
+  it("sanitizeAudioTrackColors: invalider color-String wird gestrippt + valid lowercased", () => {
+    const tracks = [
+      { id: "audiotrack:a", color: "not-a-hex" },
+      { id: "audiotrack:b", color: "#EF4444" },
+      { id: "audiotrack:c", color: null },
+      { id: "audiotrack:d" }, // kein color-Feld
+    ];
+    sanitizeAudioTrackColors(tracks);
+    expect("color" in tracks[0]).toBe(false);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((tracks[1] as any).color).toBe("#ef4444");
+    expect("color" in tracks[2]).toBe(false);
+    expect("color" in tracks[3]).toBe(false);
+  });
+
+  it("sanitizeLiveInputColors: invalider color-String wird gestrippt + valid lowercased", () => {
+    const channels = [
+      { id: "liveinput:a", color: "rgb(1,2,3)" },
+      { id: "liveinput:b", color: "#3B82F6" },
+      { id: "liveinput:c", color: null },
+    ];
+    sanitizeLiveInputColors(channels);
+    expect("color" in channels[0]).toBe(false);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((channels[1] as any).color).toBe("#3b82f6");
+    expect("color" in channels[2]).toBe(false);
+  });
+
+  it("Mixed pre-v1.29 mit valid+invalid color: invalid wird gestrippt, valid bleibt", () => {
+    const file = {
+      version: "1.28",
+      projectId: "00000000-0000-4000-8000-000000000003",
+      savedAt: new Date().toISOString(),
+      projectName: "Mixed-Colors",
+      bpm: 120,
+      samples: [],
+      patterns: [{
+        id: "p1", name: "P", parts: [], stepCount: 16, stepResolution: "1/16",
+      }],
+      activePatternId: "p1",
+      song: { slots: [], songModeActive: false, loopSong: false },
+      mixer: {
+        masterVolume: 0.85,
+        channels: {}, returnTracks: {}, insertChains: {},
+        eq16: {}, sidechains: {}, transientShapers: {},
+      },
+      humanizer: { global: {} },
+      automation: { lanes: [], stepCount: 16 },
+      audioTracks: [
+        {
+          id: "audiotrack:good",
+          name: "G", filePath: "/g.wav", fileName: "g.wav",
+          volume: 1, pan: 0, muted: false, soloed: false,
+          sends: { reverb: 0, delay: 0 },
+          color: "#06B6D4", // valid uppercase → lowercased
+        },
+        {
+          id: "audiotrack:bad",
+          name: "B", filePath: "/b.wav", fileName: "b.wav",
+          volume: 1, pan: 0, muted: false, soloed: false,
+          sends: { reverb: 0, delay: 0 },
+          color: "garbage-value", // invalid → stripped (Track bleibt geladen)
+        },
+      ],
+    };
+    const parsed = parseProject(JSON.stringify(file));
+    expect(parsed.audioTracks).toHaveLength(2);
+    expect(parsed.audioTracks![0].color).toBe("#06b6d4");
+    expect(parsed.audioTracks![1].color).toBeUndefined();
   });
 });

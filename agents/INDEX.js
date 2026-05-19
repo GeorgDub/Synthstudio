@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.73.0",
+    version: "3.74.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -99,14 +99,24 @@ const INDEX = {
       lastSeen: "2026-05-19T02:45:00.000Z",
       ownedBy:  "frontend"
     },
-    "tests/features/channel-colors.test.ts (v3.73.0)": {
-      role:     "v3.73.0 NEU (~330 LOC, 21 Tests in 5 describes, env:node): (1) Default-Palette × 4 — exakt 8 Einträge in vorgegebener Reihenfolge (id-Slugs), alle valide Hex per Regex, zyklisch mod 8 (idx 0..7 → pal[0..7], idx 8 → pal[0], idx 15 → pal[7], idx 16 → pal[0]), defensive für negativ/NaN/Infinity → pal[0]. (2) Hex-Validierung × 5 — isValidChannelColor #RRGGBB+#RGB case-insensitive, lehnt invalid (CSS-Name 'red', rgb(1,2,3), trailing-space, falsche Länge, non-hex char, null/undefined/number/object) ab; normalizeChannelColor lowercased valid + undefined für invalid; resolveChannelColor explicit > palette + invalid fallback; isPaletteDefaultForIndex case-insensitive match + null-Fallback + invalid-Fallback. (3) applyPartColorUpdate × 5 — valider Hex (#EF4444 → #ef4444) lowercased gespeichert, undefined = Reset (color entfernt), invalid silent als undefined (defensive Reset statt Throw), Cross-Pattern (alle Patterns mit der ID), Immutability (neue Array+Pattern+Parts-Refs). (4) Schema v1.28 × 5 — SYNTH_FILE_VERSION='1.28', Round-Trip preserves color='#ef4444', Pre-v1.28-File ohne color → undefined + source.version='1.27' preserved, sanitizePartColors-Helper (strippt invalid via delete, lowercased valid, entfernt null, lässt fehlendes Feld in Ruhe), Mixed pre-v1.28 mit valid+invalid+kein color landet sauber. (5) resolveChannelColor Integration × 2 — liefert für 0..15 immer valide Hex, explicit überschreibt Palette.",
-      lastSeen: "2026-05-19T02:45:00.000Z",
+    "tests/features/channel-colors.test.ts (v3.74.0 erweitert)": {
+      role:     "v3.73.0 NEU + v3.74.0 ERWEITERT (~+300 LOC, 21 → 38 Tests in 8 describes, env:node mit localStorage-Mock am Datei-Anfang). v3.73-Bestand (Default-Palette × 4 + Hex-Validierung × 5 + applyPartColorUpdate × 5 + Schema v1.28 × 5 + resolveChannelColor-Integration × 2) bleibt unverändert (v1.28-Assertions → v1.29). NEU v3.74 in 3 describes (×17): (6) AudioTrack color persist × 5 — setAudioTrackColor Hex-lowercased speichern, undefined=Reset (color-Feld komplett entfernt), invalider Hex silent als undefined, unknown ID no-op, localStorage-Persistenz via synthstudio:audiotracks:v1. (7) LiveInput color persist × 5 — selbes Pattern für synthstudio:liveinputs:v1. (8) Schema v1.29 Round-Trip × 7 — SYNTH_FILE_VERSION='1.29', Round-Trip preserves AudioTrack.color (#a855f7) + LiveInput.color (#22c55e), Pre-v1.29-File ohne color → undefined + source.version='1.28' preserved, sanitizeAudioTrackColors/sanitizeLiveInputColors strippen invalid + lowercase valid + lassen fehlendes Feld in Ruhe, Mixed pre-v1.29 mit valid+invalid color landet sauber (Track bleibt geladen mit color=undefined, nicht verworfen).",
+      lastSeen: "2026-05-19T03:05:00.000Z",
       ownedBy:  "frontend"
     },
-    "client/src/audio/AudioEngine.ts (v3.73.0 part-color)": {
-      role:     "v3.73.0 ERWEITERT (+1 Field, bestehende v3.72/v3.71/v3.70/etc. bleibt): PartData um color?:string Feld mit Doku-Block. Lowercase Hex ('#RRGGBB' oder '#RGB'), additiv-optional. Pre-v1.28-Files laden unverändert (color bleibt undefined → UI fällt auf resolveChannelColor(undefined, index) = Palette-Default). KEINE Engine-seitigen Side-Effects — color ist rein visueller State, beeinflusst keine Audio-Pfade.",
-      lastSeen: "2026-05-19T02:45:00.000Z",
+    "client/src/audio/AudioEngine.ts (v3.74.0 part+audiotrack-color)": {
+      role:     "v3.74.0 ERWEITERT (+1 Field auf AudioTrackChannelData, bestehende v3.73 PartData.color + v3.72/v3.71/v3.70/etc. bleibt): AudioTrackChannelData um color?:string Feld erweitert mit v3.74-Doku-Block. Lowercase Hex, additiv-optional, KEINE Engine-Side-Effects (rein visueller State, beeinflusst keinen Audio-Pfad). Pre-v1.29-Files laden unverändert.",
+      lastSeen: "2026-05-19T03:05:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/store/useAudioTrackStore.ts (v3.74.0 setAudioTrackColor)": {
+      role:     "v3.74.0 ERWEITERT (~+35 LOC): NEU setAudioTrackColor(id, color) Action — idempotent (no-op wenn State identisch), silent-sanitize via normalizeChannelColor (invalider Hex → undefined als defensive Reset, kein Throw). Reset löscht das color-Feld komplett (via destructure-omit) damit die UI auf Palette-Default zurückfällt. isValidTrack um color-Typ-Check (string|undefined) erweitert. Import +normalizeChannelColor. Bestehende v3.72 loop-crossfade + v3.70 loop + v3.52 stretch + v1.18 AudioTrack-Persistenz bleibt unverändert.",
+      lastSeen: "2026-05-19T03:05:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/store/useLiveInputStore.ts (v3.74.0 setLiveInputColor)": {
+      role:     "v3.74.0 ERWEITERT (~+35 LOC): LiveInputChannelData um color?:string Feld erweitert (v3.74-Doku-Block). NEU setLiveInputColor(id, color)-Action analog zu setAudioTrackColor (idempotent + silent-sanitize). isValidChannel um color-Typ-Check erweitert. Import +normalizeChannelColor. localStorage-Persistenz automatisch via persist() im Action-Body. Bestehende TASK-233 Live-Input-Logik + TASK-234 Record-Arm + v3.62 setAllRecordArm bleibt.",
+      lastSeen: "2026-05-19T03:05:00.000Z",
       ownedBy:  "frontend"
     },
     "client/src/store/useDrumMachineStore.ts (v3.73.0 setPartColor)": {
@@ -114,14 +124,24 @@ const INDEX = {
       lastSeen: "2026-05-19T02:45:00.000Z",
       ownedBy:  "frontend"
     },
-    "client/src/utils/projectSerializer.ts (v3.73.0 v1.28)": {
-      role:     "v3.73.0 SCHEMA-BUMP v1.27 → v1.28: SYNTH_FILE_VERSION-Konstante + Header-Doku-Block v1.28 Migration (PartData.color additiv-optional). NEU sanitizePartColors(patterns)-Helper: iteriert patterns→parts und strippt invalide color-Strings via delete (null/non-Hex), lowercased valid (#EF4444 → #ef4444), lässt fehlendes Feld unangetastet. parseProject ruft sanitizePartColors(data.patterns) nach sanitizeSampleTags-Block. Import +isValidChannelColor aus utils/channelColors. Bestehende v1.27-AudioTrack-Loop-Crossfade + v1.25-Macros + alles andere bleibt.",
-      lastSeen: "2026-05-19T02:45:00.000Z",
+    "client/src/utils/projectSerializer.ts (v3.74.0 v1.29)": {
+      role:     "v3.74.0 SCHEMA-BUMP v1.28 → v1.29: SYNTH_FILE_VERSION='1.29' + Header-Doku-Block v1.29 Migration (AudioTrackChannelData.color + LiveInputChannelData.color additiv-optional). NEU sanitizeAudioTrackColors(tracks)-Helper + sanitizeLiveInputColors(channels)-Helper (analog sanitizePartColors): iterieren über Array von rohen Track/Channel-Objekten, delete invalide color-Strings (null/non-Hex), lowercased valid Hex, lassen fehlendes Feld unangetastet. WICHTIG: laufen VOR der isValidAudioTrackEntry/isValidLiveInputChannel-Validierung damit invalider color-String den Track/Channel nicht komplett verwirft. parseProject ruft beide Sanitizer am Anfang des audioTracks/liveInputs-Blocks. Bestehende v1.28 PartData.color-Sanitization + v1.27 loop-Crossfade + alles andere bleibt.",
+      lastSeen: "2026-05-19T03:05:00.000Z",
       ownedBy:  "frontend"
     },
-    "client/src/components/Mixer/MixerView.tsx (v3.73.0 color-picker)": {
-      role:     "v3.73.0 ERWEITERT (+~40 LOC, bestehende v3.63 Record-Arm + v3.53/v3.54 BPM-Detection + alles andere bleibt): MixerChannelProps um channelIndex?:number + channelColor?:string + onColorChange?:(c:string|undefined)=>void erweitert. NEU resolvedColor via resolveChannelColor (skipped für Master — Master hat semantisch keine Gruppen-Farbe). NEU boxShadow: inset 0 3px 0 0 <color> am Strip-oberer-Rand (kein Layout-Shift weil boxShadow statt border). NEU ChannelColorPicker-Mount im Strip-top-left (absolute top-1 left-1 z-10, stopPropagation auf Click damit Strip-Select nicht feuert). parts.map gibt jetzt partIndex zweiten Parameter + setzt channelIndex/channelColor/onColorChange={c => dm.setPartColor(part.id, c)}. data-testid mixer-channel-<partId> auf dem Strip-Wrapper für Tests.",
-      lastSeen: "2026-05-19T02:45:00.000Z",
+    "client/src/components/Mixer/AudioTrackStrip.tsx (v3.74.0 color-picker)": {
+      role:     "v3.74.0 ERWEITERT (+~40 LOC, bestehende v3.72/v3.71/v3.67 + v3.63 Record-Arm + v3.52 Stretch + alles andere bleibt): AudioTrackStripProps um channelIndex?:number Prop erweitert (optional damit Standalone-Caller die Komponente weiter mounten können). resolvedColor via resolveChannelColor(track.color, channelIndex) — skipped wenn channelIndex undefined (kein Mixer-Kontext). NEU boxShadow inset 0 3px 0 0 <color> am Strip-oberer-Rand (kein Layout-Shift, kein hardcoded Tailwind). NEU ChannelColorPicker-Mount im Strip-top-left (absolute top-1 left-1 z-10, stopPropagation auf Click damit Strip-Select nicht feuert). position:relative am Wrapper-Div ergänzt. Imports +ChannelColorPicker + resolveChannelColor + setAudioTrackColor aus useAudioTrackStore. data-testid audio-track-color-<trackId> + …-trigger/-popover/-swatch-<id>/-hex-input/-hex-apply/-reset/-close.",
+      lastSeen: "2026-05-19T03:05:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/components/Mixer/LiveInputStrip.tsx (v3.74.0 color-picker)": {
+      role:     "v3.74.0 ERWEITERT (+~35 LOC, bestehende TASK-233 Live-Input-Logik + TASK-234 Record-Arm bleibt): LiveInputStripProps um channelIndex?:number Prop erweitert (optional). resolvedColor via resolveChannelColor(channel.color, channelIndex) — skipped wenn channelIndex undefined. NEU boxShadow inset 0 3px 0 0 <color> am Strip-oberer-Rand. NEU position:relative am Wrapper. NEU ChannelColorPicker-Mount im Strip-top-left (absolute top-1 left-1 z-10, stopPropagation). Imports +ChannelColorPicker + resolveChannelColor + setLiveInputColor aus useLiveInputStore. data-testid liveinput-color-<chId>-{trigger,popover,…}. ACHTUNG: LiveInput-Strip ist 78px breit — Picker oben-links überlappt potenziell mit Channel-Name; visuelle Tests werden zeigen ob Padding nachgezogen werden muss.",
+      lastSeen: "2026-05-19T03:05:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/components/Mixer/MixerView.tsx (v3.74.0 audio+live-color-wiring)": {
+      role:     "v3.74.0 ERWEITERT (+~8 LOC, bestehende v3.73 color-picker + v3.63 Record-Arm + v3.53/v3.54 BPM-Detection + alles andere bleibt): audioTracks.map liefert jetzt audioTrackIndex als zweiten Parameter + setzt channelIndex={parts.length + audioTrackIndex} an AudioTrackStrip. liveInputChannels.map liefert liveInputIndex + setzt channelIndex={parts.length + audioTracks.length + liveInputIndex} an LiveInputStrip. Mixer-weite Palette-Reihenfolge wird damit kontinuierlich zyklisch durch alle Channel-Typen (drum-parts → audio-tracks → live-inputs). MixerChannel-Channel-Color-Wiring für drum-parts (v3.73) bleibt unverändert.",
+      lastSeen: "2026-05-19T03:05:00.000Z",
       ownedBy:  "frontend"
     },
     "client/src/components/DrumMachine/ChannelStrip.tsx (v3.73.0 color-picker)": {
@@ -2137,6 +2157,60 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "frontend",
+      timestamp: "2026-05-19T03:05:00.000Z",
+      done: [
+        "v3.74.0: AudioTrack + LiveInput Color-Coding — closes v3.73-Caveat. AudioTrack-Strips (Vocals/Songs) und LiveInput-Strips (USB-Audio von KORG etc.) bekommen jetzt denselben ChannelColorPicker den Drum/Synth-Channels in v3.73 erhalten haben. Color-Coding ist jetzt durchgängig konsistent über alle Mixer-Channel-Typen außer Master (Master bleibt color-frei, semantisch keine Gruppen-Farbe).",
+        "client/src/audio/AudioEngine.ts: AudioTrackChannelData um color?:string Field erweitert (additiv-optional, lowercase Hex). v3.74-Doku-Block: KEINE Engine-seitigen Side-Effects, rein visueller State. Pre-v1.29-Tracks ohne Feld laden unverändert.",
+        "client/src/store/useAudioTrackStore.ts (+~35 LOC): NEU setAudioTrackColor(id, color)-Action (idempotent, silent-sanitize via normalizeChannelColor — invalider Hex → undefined als defensive Reset, kein Throw). isValidTrack um color-Typ-Check (string|undefined) erweitert. localStorage-Persistenz automatisch via persist() im Action-Body.",
+        "client/src/store/useLiveInputStore.ts (+~35 LOC): NEU setLiveInputColor(id, color)-Action analog. LiveInputChannelData um color?:string Field. isValidChannel um color-Typ-Check erweitert. v3.74-Doku-Block.",
+        "client/src/utils/projectSerializer.ts SCHEMA-BUMP v1.28 → v1.29: SYNTH_FILE_VERSION-Konstante + Header-Doku-Block v1.29 Migration (AudioTrack.color + LiveInput.color additiv-optional). NEU sanitizeAudioTrackColors(tracks)-Helper + sanitizeLiveInputColors(channels)-Helper: laufen VOR der Track/Channel-Validierung damit invalider color-String den Track nicht komplett verwirft (delete invalid, lowercased valid). parseProject ruft beide Sanitizer am Anfang des audioTracks/liveInputs-Blocks. Pre-v1.29-Files laden unverändert.",
+        "client/src/components/Mixer/AudioTrackStrip.tsx (+~40 LOC): NEU channelIndex?:number Prop (für Palette-Default-Fallback). resolvedColor via resolveChannelColor (skipped wenn channelIndex undefined). NEU boxShadow inset 0 3px 0 0 <color> am Strip-oberer-Rand (kein Layout-Shift, kein hardcoded Tailwind). NEU ChannelColorPicker-Mount im Strip-top-left (absolute top-1 left-1 z-10, stopPropagation auf Click). Imports +ChannelColorPicker + resolveChannelColor + setAudioTrackColor. data-testid audio-track-color-<trackId>.",
+        "client/src/components/Mixer/LiveInputStrip.tsx (+~35 LOC): analog AudioTrackStrip — channelIndex-Prop, resolvedColor, boxShadow-Top-Tint, ChannelColorPicker-Mount. Imports +ChannelColorPicker + resolveChannelColor + setLiveInputColor. data-testid liveinput-color-<chId>. position: relative am Strip-Wrapper (für absolute Picker-Position).",
+        "client/src/components/Mixer/MixerView.tsx (+~8 LOC): audioTracks.map und liveInputChannels.map liefern jetzt channelIndex an Strip-Komponenten. AudioTrack-Index = parts.length + audioTrackIndex; LiveInput-Index = parts.length + audioTracks.length + liveInputIndex. Mixer-weite Palette-Reihenfolge wird damit kontinuierlich zyklisch durch alle Channel-Typen.",
+        "tests/features/channel-colors.test.ts ERWEITERT (~+300 LOC, 21 → 38 Tests; +17 NEU für v3.74): NEU localStorage-Mock am Datei-Anfang (Stores brauchen Persistenz). NEU describe 'AudioTrack color persist' × 5 — Hex-lowercased speichern, undefined=Reset (color-Feld entfernt), invalider Hex silent als undefined, unknown ID no-op, localStorage-Persistenz. NEU describe 'LiveInput color persist' × 5 — selbes Pattern für Live-Inputs. NEU describe 'Schema v1.29 Round-Trip' × 7 — SYNTH_FILE_VERSION='1.29', Round-Trip preserves AudioTrack.color + LiveInput.color, Pre-v1.29 ohne color → undefined (source-version preserved), sanitizeAudioTrackColors/sanitizeLiveInputColors strippen invalid + lowercase valid + lassen kein-color-Feld in Ruhe, Mixed valid+invalid landet sauber (Track bleibt geladen, nur invalider color gestrippt).",
+        "Schema-Version-Assertions in 11 Test-Files v1.28 → v1.29 (audio-track-store, audio-track-stretch, audio-track-loop, audio-loop-crossfade, multi-bar-pattern, plugin-host, plugin-multislot, project-serializer 3×, project-id-migration 2×, quick-action-integration, script-store, channel-colors 2×). Pre-v1.28-Test-Fixtures in channel-colors.test.ts bleiben unverändert (sie testen jetzt pre-v1.29-Backward-Compat denn v1.28-Files können wie v1.27-Files geladen werden).",
+        "package.json (3.73.0 → 3.74.0). pnpm check clean. pnpm test grün: 219 Test-Files / 5064 Tests passed (16 skipped, +17 NEU vs. v3.73)."
+      ],
+      next: [
+        "v3.75: Mixer-Reihenfolge editierbar (drag-and-drop) — derzeit ist die Channel-Reihenfolge starr (parts → audioTracks → liveInputs). User möchten typischerweise Vocals neben Drums platzieren statt am Ende. Wenn Reorder kommt: channelIndex-Berechnung muss eine globale orderIndex-Persistenz bekommen statt arrayIndex-derived.",
+        "v3.75: ChannelInspector (Mixer-Edit-Pane) und Songmode-Track-Header (Arrangement-View) sollten den Color-Picker ebenfalls anzeigen — vollständige Konsistenz über alle Sichten.",
+        "v3.75: 'Master-Color' als optionales Feature im mixer-Store (für User die explizit eine Master-Bus-Farbe wollen, z.B. Mastering-Vorlagen).",
+        "v3.75: Bulk-Recolor 'Auto-Color nach Kategorie' (kick/snare/lead/vocal-Name-Regex → Palette-Farbe) — übernommen von v3.74 next, weiter offen.",
+        "v3.75: Recent-Colors-Memory im ChannelColorPicker (localStorage, max 4) — übernommen von v3.74 next, weiter offen."
+      ],
+      changed: [
+        "client/src/audio/AudioEngine.ts (AudioTrackChannelData +color?:string mit v3.74-Doku-Block)",
+        "client/src/store/useAudioTrackStore.ts (+~35 LOC: setAudioTrackColor-Action + normalizeChannelColor-Import + isValidTrack color-Typ-Check)",
+        "client/src/store/useLiveInputStore.ts (+~35 LOC: LiveInputChannelData +color, setLiveInputColor-Action, isValidChannel color-Typ-Check, normalizeChannelColor-Import)",
+        "client/src/utils/projectSerializer.ts (Schema v1.28 → v1.29: SYNTH_FILE_VERSION, Header-Doku-Block, sanitizeAudioTrackColors + sanitizeLiveInputColors Helper, parseProject-Wiring vor audioTracks/liveInputs-Block)",
+        "client/src/components/Mixer/AudioTrackStrip.tsx (+~40 LOC: channelIndex-Prop, resolvedColor + boxShadow-top-Tint, ChannelColorPicker-Mount, Imports)",
+        "client/src/components/Mixer/LiveInputStrip.tsx (+~35 LOC: channelIndex-Prop, resolvedColor + boxShadow-top-Tint, ChannelColorPicker-Mount, position:relative am Wrapper)",
+        "client/src/components/Mixer/MixerView.tsx (audioTracks.map/liveInputChannels.map liefern channelIndex an Strips)",
+        "tests/features/channel-colors.test.ts (+~300 LOC, +17 Tests in 3 NEUEN describes: AudioTrack/LiveInput/Schema-v1.29; localStorage-Mock am Anfang)",
+        "tests/features/audio-track-store.test.ts (2× Schema-Assertion 1.28 → 1.29)",
+        "tests/features/audio-track-stretch.test.ts (Schema-Assertion 1.28 → 1.29)",
+        "tests/features/audio-track-loop.test.ts (Schema-Assertion 1.28 → 1.29)",
+        "tests/features/audio-loop-crossfade.test.ts (2× Schema-Assertion 1.28 → 1.29)",
+        "tests/features/multi-bar-pattern.test.ts (Schema-Assertion 1.28 → 1.29)",
+        "tests/features/plugin-host.test.ts (2× Schema-Assertion 1.28 → 1.29)",
+        "tests/features/plugin-multislot.test.ts (Schema-Assertion 1.28 → 1.29)",
+        "tests/features/project-serializer.test.ts (3× Schema-Assertion 1.28 → 1.29)",
+        "tests/features/project-id-migration.test.ts (2× Schema-Assertion 1.28 → 1.29)",
+        "tests/features/quick-action-integration.test.ts (1× write-side Assertion 1.28 → 1.29)",
+        "tests/features/script-store.test.ts (Schema-Assertion 1.28 → 1.29)",
+        "package.json (3.73.0 → 3.74.0)",
+        "agents/INDEX.js (version + workLog v3.74.0)"
+      ],
+      caveats: [
+        "channelIndex-Berechnung in MixerView ist arrayIndex-derived (parts.length + audioTrackIndex etc.). Wenn User Tracks/Inputs hinzufügt oder entfernt, springen ggfs. Palette-Defaults in den darüberliegenden Strips. Stabil bleibt nur die User-explicit gewählte Farbe (track.color/channel.color). Wenn v3.75 drag-and-drop-Reorder bringt, sollte ein persistenter orderIndex-State her.",
+        "ChannelColorPicker-Trigger sitzt oben links bei absoluter Position (top-1 left-1) — überlappt potenziell mit dem ersten Char des Channel-Namens bei sehr schmalen Strips (LiveInput-Strip ist 78px breit). Visuelle Tests im Browser werden zeigen ob Padding nachgezogen werden muss.",
+        "Schema-Bump v1.29: Forward-kompatibel (v3.73 liest v3.74-Files ohne Crash, ignoriert AudioTrack/LiveInput.color). Backward-Lücke wie immer: v3.73 öffnet v3.74-File mit color-Field, beim Re-Save geht es verloren.",
+        "setAudioTrackColor und setLiveInputColor sind beide idempotent (no-op wenn State bereits identisch). Edge-Case: wenn ein User schnell zwischen demselben Hex und 'Auto' hin-und-her toggled, wird trotzdem jedes Mal ein notify-Call gefeuert weil sich der State zwischen den Calls effektiv ändert. Kein Issue, nur Doku.",
+        "AudioTrackStrip.channelIndex und LiveInputStrip.channelIndex sind OPTIONAL — wenn ein Test-Renderer oder ein anderer Caller die Komponente ohne Mixer-Kontext mountet, bleibt der Picker unsichtbar (kein crash). Bewusste API-Wahl damit die Strips standalone testbar bleiben."
+      ]
+    },
     {
       agent:     "frontend",
       timestamp: "2026-05-19T02:45:00.000Z",

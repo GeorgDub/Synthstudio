@@ -37,6 +37,7 @@ import {
   setTrackLoopCrossfadeMs,
   clampLoopCrossfadeMs,
   LOOP_CROSSFADE_MAX_MS,
+  setAudioTrackColor,
   getAudioTrack,
   autoWarpToBpm,
   clampStretchRatio,
@@ -49,6 +50,8 @@ import {
 } from "@/store/useAudioTrackStore";
 import { WaveformDisplay } from "@/components/WaveformDisplay/WaveformDisplay";
 import { ZoomableWaveform } from "@/components/AudioTrack/ZoomableWaveform";
+import { ChannelColorPicker } from "@/components/Mixer/ChannelColorPicker";
+import { resolveChannelColor } from "@/utils/channelColors";
 import { useElectron } from "../../../../electron/useElectron";
 
 // ─── Hilfsfunktionen ─────────────────────────────────────────────────────────
@@ -86,6 +89,12 @@ export interface AudioTrackStripProps {
   isPlaying?: boolean;
   selected?: boolean;
   onSelect?: () => void;
+  /**
+   * v3.74.0: Index für den Palette-Default-Fallback der Channel-Color
+   * (Color-Coding). Optional — wenn nicht gesetzt, wird kein Picker und
+   * kein color-Tint gerendert (z.B. für Sub-Components ohne Mixer-Kontext).
+   */
+  channelIndex?: number;
 }
 
 // ─── Komponente ──────────────────────────────────────────────────────────────
@@ -96,6 +105,7 @@ export function AudioTrackStrip({
   isPlaying = false,
   selected,
   onSelect,
+  channelIndex,
 }: AudioTrackStripProps) {
   const electron = useElectron();
   const [editingName, setEditingName] = useState(false);
@@ -420,20 +430,46 @@ export function AudioTrackStrip({
         ? "text-accent-primary"
         : "text-text-primary";
 
+  // v3.74.0: Channel-Color-Coding für AudioTrack-Strips (closes v3.73-Caveat).
+  // Bei undefined channelIndex (z.B. Tests ohne Mixer) wird kein Color-Tint
+  // gerendert und kein Picker eingeblendet.
+  const resolvedColor =
+    channelIndex !== undefined ? resolveChannelColor(track.color, channelIndex) : null;
+
   return (
     <div
       data-testid="audio-track-strip"
       data-track-id={track.id}
       onClick={onSelect}
       className={[
-        "flex flex-col gap-1 px-2 py-2 select-none",
+        "flex flex-col gap-1 px-2 py-2 select-none relative",
         "border-r border-border-color last:border-r-0 cursor-pointer",
         "bg-bg-panel/40",
         selected ? "ring-1 ring-accent-secondary/60 ring-inset" : "",
         track.muted ? "opacity-60" : "",
       ].join(" ")}
-      style={{ minWidth: "140px", maxWidth: "180px" }}
+      style={{
+        minWidth: "140px",
+        maxWidth: "180px",
+        // v3.74.0: 3px-Tint am oberen Strip-Rand via boxShadow (kein Layout-Shift).
+        boxShadow: resolvedColor ? `inset 0 3px 0 0 ${resolvedColor}` : undefined,
+      }}
     >
+      {/* v3.74.0: Channel-Color-Picker (oben links, neben dem Namen). */}
+      {channelIndex !== undefined && (
+        <div
+          className="absolute top-1 left-1 z-10"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <ChannelColorPicker
+            channelName={track.name}
+            color={track.color}
+            index={channelIndex}
+            onColorChange={(c) => setAudioTrackColor(track.id, c)}
+            testIdPrefix={`audio-track-color-${track.id}`}
+          />
+        </div>
+      )}
       {/* ── Title-Row ──────────────────────────────────────────────────────── */}
       <div className="flex items-center gap-1">
         {editingName ? (

@@ -363,6 +363,18 @@ export interface AudioTrackChannelData {
    * loopRange / 2 für diesen einen Track (defensive — kein Double-Wrap).
    */
   loopCrossfadeMs?: number;
+  /**
+   * v3.74.0: Channel-Strip Color-Coding (closes v3.73-Caveat —
+   * AudioTrack-Strips fehlte Color-Coding). User-defined Hex-Farbe
+   * ("#RRGGBB" oder "#RGB"), lowercase. Wenn nicht gesetzt, fällt die
+   * UI auf den zyklischen Palette-Default zurück (resolveChannelColor
+   * in utils/channelColors). Additiv-optional — Pre-v1.29-Files laden
+   * unverändert (color bleibt undefined).
+   *
+   * KEINE Engine-seitigen Side-Effects — color ist rein visueller State,
+   * beeinflusst keine Audio-Pfade.
+   */
+  color?: string;
 }
 
 export interface PartData {

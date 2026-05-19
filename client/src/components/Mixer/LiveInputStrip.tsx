@@ -24,8 +24,11 @@ import {
   removeLiveInputChannel,
   setLiveInputSoloed,
   setLiveInputRecordArm,
+  setLiveInputColor,
   type LiveInputChannelData,
 } from "@/store/useLiveInputStore";
+import { ChannelColorPicker } from "@/components/Mixer/ChannelColorPicker";
+import { resolveChannelColor } from "@/utils/channelColors";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -44,9 +47,15 @@ interface AudioInputDeviceOption {
 
 export interface LiveInputStripProps {
   channel: LiveInputChannelData;
+  /**
+   * v3.74.0: Index für den Palette-Default-Fallback der Channel-Color
+   * (Color-Coding). Optional — wenn nicht gesetzt, wird kein Picker und
+   * kein Tint gerendert.
+   */
+  channelIndex?: number;
 }
 
-export function LiveInputStrip({ channel }: LiveInputStripProps) {
+export function LiveInputStrip({ channel, channelIndex }: LiveInputStripProps) {
   const [devices, setDevices] = useState<AudioInputDeviceOption[]>([]);
   const [attached, setAttached] = useState<boolean>(() => AudioEngine.isLiveInputAttached(channel.id));
   const [permError, setPermError] = useState<string | null>(null);
@@ -180,13 +189,36 @@ export function LiveInputStrip({ channel }: LiveInputStripProps) {
 
   const labelColor = channel.muted ? "text-text-dim" : channel.soloed ? "text-accent-success" : "text-text-primary";
 
+  // v3.74.0: Channel-Color-Coding für Live-Input-Strips (closes v3.73-Caveat).
+  const resolvedColor =
+    channelIndex !== undefined ? resolveChannelColor(channel.color, channelIndex) : null;
+
   return (
     <div
       data-testid={`liveinput-strip-${channel.id}`}
       data-live-input-channel-id={channel.id}
-      className="flex flex-col items-center gap-1 px-2 py-2 select-none border-r border-border-color last:border-r-0"
-      style={{ minWidth: "78px" }}
+      className="flex flex-col items-center gap-1 px-2 py-2 select-none border-r border-border-color last:border-r-0 relative"
+      style={{
+        minWidth: "78px",
+        // v3.74.0: 3px-Tint am oberen Strip-Rand via boxShadow (kein Layout-Shift).
+        boxShadow: resolvedColor ? `inset 0 3px 0 0 ${resolvedColor}` : undefined,
+      }}
     >
+      {/* v3.74.0: Channel-Color-Picker (oben links). */}
+      {channelIndex !== undefined && (
+        <div
+          className="absolute top-1 left-1 z-10"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <ChannelColorPicker
+            channelName={channel.name}
+            color={channel.color}
+            index={channelIndex}
+            onColorChange={(c) => setLiveInputColor(channel.id, c)}
+            testIdPrefix={`liveinput-color-${channel.id}`}
+          />
+        </div>
+      )}
       {/* Type-Indicator + Name */}
       <div className="flex items-center gap-1 w-full">
         <span

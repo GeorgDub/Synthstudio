@@ -25,6 +25,7 @@
 import { useEffect, useReducer } from "react";
 import { nanoid } from "nanoid";
 import type { AudioTrackChannelData } from "@/audio/AudioEngine";
+import { normalizeChannelColor } from "@/utils/channelColors";
 
 // ─── Typen ───────────────────────────────────────────────────────────────────
 
@@ -134,6 +135,9 @@ function isValidTrack(t: unknown): t is AudioTrackChannelData {
   // v3.72.0 (v1.27): Loop-Crossfade-Länge (ms). Optional, bei falschem Typ
   // → Track verwerfen.
   if (o.loopCrossfadeMs !== undefined && typeof o.loopCrossfadeMs !== "number") return false;
+  // v3.74.0 (v1.29): Channel-Strip Color (Hex). Optional, bei falschem Typ
+  // → Track verwerfen. Hex-Validierung (Format) passiert nicht hier.
+  if (o.color !== undefined && typeof o.color !== "string") return false;
   return (
     typeof o.id === "string" &&
     o.id.startsWith(ID_PREFIX) &&
@@ -301,6 +305,37 @@ export function clampLoopCrossfadeMs(v: number): number {
 export function setTrackLoopCrossfadeMs(id: string, ms: number): void {
   const safe = clampLoopCrossfadeMs(ms);
   updateAudioTrack(id, { loopCrossfadeMs: safe });
+}
+
+// ─── v3.74.0: Channel-Strip Color (closes v3.73-Caveat) ──────────────────────
+
+/**
+ * v3.74.0: Setzt die Color eines Audio-Tracks. closes v3.73-Caveat — vorher
+ * konnten nur Drum/Synth-Parts colorized werden, AudioTrack-Strips fehlte
+ * der Picker.
+ *
+ * - Valider Hex (#RRGGBB oder #RGB) → lowercase gespeichert
+ * - undefined → Reset auf Palette-Default (color-Feld wird entfernt)
+ * - Invalider Wert → silent als undefined behandelt (defensive Reset,
+ *   keine Exception)
+ *
+ * No-op wenn Track-ID unbekannt oder identischer State.
+ */
+export function setAudioTrackColor(id: string, color: string | undefined): void {
+  const idx = _tracks.findIndex((t) => t.id === id);
+  if (idx < 0) return;
+  const existing = _tracks[idx];
+  const normalized = color === undefined ? undefined : normalizeChannelColor(color);
+  if ((existing.color ?? undefined) === normalized) return;
+  const { color: _omit, ...rest } = existing;
+  void _omit;
+  const next: AudioTrackChannelData =
+    normalized === undefined
+      ? (rest as AudioTrackChannelData)
+      : ({ ...rest, color: normalized } as AudioTrackChannelData);
+  _tracks = [..._tracks.slice(0, idx), next, ..._tracks.slice(idx + 1)];
+  persist();
+  notify();
 }
 
 /**

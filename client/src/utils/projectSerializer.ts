@@ -78,6 +78,13 @@
  *     zurück (resolveChannelColor in utils/channelColors).
  *     Validierung: invalide color-Strings werden beim Load via
  *     sanitizePartColors silent gestrippt (Part bleibt, nur color=undefined).
+ *   - "1.29": AudioTrackChannelData.color + LiveInputChannelData.color
+ *     hinzugefügt (v3.74.0). Closes v3.73-Caveat — Color-Coding war nur auf
+ *     Drum/Synth-Channels sichtbar. AudioTracks (Vocals/Songs) und
+ *     LiveInputs (USB-Audio) bekommen den gleichen ChannelColorPicker.
+ *     Beide Felder additiv-optional. Pre-v1.29-Files laden unverändert.
+ *     Validierung: invalide color-Strings werden beim Load via
+ *     sanitizeAudioTrackColors/sanitizeLiveInputColors silent gestrippt.
  * Dateiendung: .synth
  */
 
@@ -106,7 +113,7 @@ import type { QuickActionMacro } from "@/store/useQuickActionStore";
 import { isValidQuickActionMacro } from "@/store/useQuickActionStore";
 import { isValidChannelColor } from "@/utils/channelColors";
 
-export const SYNTH_FILE_VERSION = "1.28";
+export const SYNTH_FILE_VERSION = "1.29";
 export const SYNTH_LATEST_KEY = "synthstudio:last-project";
 
 // ─── Typen ───────────────────────────────────────────────────────────────────
@@ -503,6 +510,60 @@ export function sanitizePartColors(patterns: unknown): void {
   }
 }
 
+// ─── v1.29 Sanitizer (AudioTrack + LiveInput Color-Coding) ───────────────────
+
+/**
+ * v3.74.0 / v1.29: Strippt invalide `color`-Werte aus AudioTrack-Einträgen
+ * (in-place). Valider Hex bleibt erhalten (lowercased), alles andere wird
+ * gelöscht damit die UI auf den Palette-Default zurückfällt. Pre-v1.29-Tracks
+ * ohne color-Feld bleiben unverändert.
+ *
+ * WICHTIG: arbeitet auf einem rohen unknown-Array (vor isValidAudioTrackEntry),
+ * damit invalide color-Strings nicht zum kompletten Verwerfen des Tracks
+ * führen — der Track soll geladen werden, nur die Color wird gestrippt.
+ */
+export function sanitizeAudioTrackColors(tracks: unknown): void {
+  if (!Array.isArray(tracks)) return;
+  for (const t of tracks) {
+    if (!t || typeof t !== "object") continue;
+    const o = t as Record<string, unknown>;
+    if (!("color" in o)) continue;
+    const raw = o.color;
+    if (raw === undefined || raw === null) {
+      delete o.color;
+      continue;
+    }
+    if (!isValidChannelColor(raw)) {
+      delete o.color;
+      continue;
+    }
+    o.color = (raw as string).toLowerCase();
+  }
+}
+
+/**
+ * v3.74.0 / v1.29: Strippt invalide `color`-Werte aus LiveInput-Channel-
+ * Einträgen (in-place). Selbe Semantik wie sanitizeAudioTrackColors.
+ */
+export function sanitizeLiveInputColors(channels: unknown): void {
+  if (!Array.isArray(channels)) return;
+  for (const c of channels) {
+    if (!c || typeof c !== "object") continue;
+    const o = c as Record<string, unknown>;
+    if (!("color" in o)) continue;
+    const raw = o.color;
+    if (raw === undefined || raw === null) {
+      delete o.color;
+      continue;
+    }
+    if (!isValidChannelColor(raw)) {
+      delete o.color;
+      continue;
+    }
+    o.color = (raw as string).toLowerCase();
+  }
+}
+
 // ─── Deserialisierung ─────────────────────────────────────────────────────────
 
 export function parseProject(json: string): SynthProject {
@@ -536,7 +597,12 @@ export function parseProject(json: string): SynthProject {
   // ─── audioTracks (seit v1.15) ────────────────────────────────────────────
   // Alte v1.14-Dateien: Feld fehlt → defaulte auf [] (KEIN Throw).
   // Invalid: Array filtern (silent + warn), Nicht-Array: hart auf [] mappen.
+  //
+  // v1.29 (v3.74.0): Color-Sanitization VOR der Validierung — damit ein
+  // invalider color-String nicht den ganzen Track verwirft, sondern nur die
+  // Color gestrippt wird (Track bleibt sonst intakt).
   const rawTracks = (data as { audioTracks?: unknown }).audioTracks;
+  sanitizeAudioTrackColors(rawTracks);
   if (rawTracks === undefined || rawTracks === null) {
     data.audioTracks = [];
   } else if (!Array.isArray(rawTracks)) {
@@ -575,7 +641,11 @@ export function parseProject(json: string): SynthProject {
   // Pre-v1.18-Files haben das Feld nicht → undefined bleibt undefined
   // (Signal an Loader: User-localStorage nicht überschreiben). null oder
   // non-Array → undefined. Explizites Array → invalid Items silent filtern.
+  //
+  // v1.29 (v3.74.0): Color-Sanitization VOR der Validierung — invalider
+  // color-String soll nur gestrippt werden, nicht den Channel verwerfen.
   const rawLive = (data as { liveInputs?: unknown }).liveInputs;
+  sanitizeLiveInputColors(rawLive);
   if (rawLive === undefined) {
     // nothing — bleibt undefined
   } else if (rawLive === null || !Array.isArray(rawLive)) {
