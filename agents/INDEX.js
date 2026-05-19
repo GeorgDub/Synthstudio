@@ -3417,6 +3417,48 @@ const INDEX = {
   workLog: [
     {
       agent:     "refactor",
+      timestamp: "2026-05-19T23:50:00.000Z",
+      done: [
+        "v3.163 Pure-Helper: client/src/utils/patternCompare.ts NEU + tests/features/pattern-compare.test.ts NEU. Foundation für ein künftiges Pattern-Compare-Modal (A/B-Switch, 'Was hat sich geändert?'-Highlights).",
+        "patternCompare.ts API: comparePatterns(a, b) → PatternCompareResult { diffs: StepDiff[], addedCount, removedCount, identical, patternAOnlyPartIds, patternBOnlyPartIds }. Parts werden per id gematched. Step-by-Step compare bis max(a.steps.length, b.steps.length); a.active=false∧b.active=true → added; a.active=true∧b.active=false → removed. Length-Mismatch: überstehende aktive Steps in B = added, in A = removed. Unilateral-Parts: alle aktiven Steps als added/removed gelistet. Diffs nach partId+stepIndex aufsteigend sortiert (stable).",
+        "formatCompareSummary(result) → string: 'identisch' wenn identical; sonst '+X steps, -Y steps' plus optional ', N neuer Part / N neue Parts' und ', M entfernter Part / M entfernte Parts' (Singular/Plural-Logik bei count===1).",
+        "Bewusste Abgrenzung zu vorhandenem patternDiff.ts (v3.91): patternDiff trackt Velocity-Changes + BPM/StepCount-Deltas + 'changedVelocity'-Bucket; patternCompare ist die kompakte added/removed-only Variante für simples A/B-Diff-UI ohne Velocity-Semantik. Beide nebeneinander.",
+        "Test-Suite: 17 Tests in 6 describes — identical (2), single-step-diffs (2), different-patterns (2), part add/remove (2), step-length-mismatch (2), ordering (2), formatCompareSummary (5). Alle 17 grün in 6ms.",
+        "pnpm check: clean (gen:sandbox up-to-date, tsc --noEmit ohne Output). KEIN git commit, KEIN package.json bump (User-Vorgabe).",
+        "OmniTribeBridge.ts NICHT angefasst (war pre-existing dirty, User-Vorgabe gehalten). Andere pre-existing dirty Files (DrumMachine.tsx v3.162-Pattern-Bank-Footer, SampleBrowser.tsx formatDuration-Konflikt) ebenfalls unverändert."
+      ],
+      next: [
+        "v3.164 UI-Wire: Pattern-Compare-Modal in DrumMachine (Pattern-Picker Right-Click oder dedicated Dialog). useState für Pattern-A-ID + Pattern-B-ID; comparePatterns aufrufen; result.diffs als highlight-Overlay über das Step-Grid (grün=added, rot=removed). formatCompareSummary in Modal-Header. Frontend-Owner.",
+        "patternDiff.ts und patternCompare.ts könnten künftig konsolidiert werden — Refactor-Slot wenn beide UI-konsumiert sind und sich die finalen API-Bedürfnisse zeigen. Heute bewusst zwei separate Module mit unterschiedlichen API-Granularitäten.",
+        "OmniTribeBridge.ts NICHT anfassen (User-Hinweis weiterhin gültig)."
+      ],
+      changed: [
+        "client/src/utils/patternCompare.ts (NEU, Pure-Helper, 0 Runtime-Deps, ~185 LOC)",
+        "tests/features/pattern-compare.test.ts (NEU, 17 Tests, vitest-environment node, ~295 LOC)"
+      ]
+    },
+    {
+      agent:     "frontend",
+      timestamp: "2026-05-19T23:15:00.000Z",
+      done: [
+        "v3.162 UI-Wiring: analyzePatternBank Pure-Helper aus client/src/utils/patternBankDensity.ts ins DrumMachine Pattern-Picker-Dropdown verdrahtet. Bank-Summary-Footer unterhalb der gemappten PatternRows (innerhalb des Dropdown-Containers, oberhalb der Follow-Action-Section).",
+        "Footer zeigt: Bank-Pattern-Count, durchschnittliche Density in % (gewichtet via averageDensity = totalHits/totalSteps), Color-Dot für dominantCategory (empty/sparse/medium/dense/full → semantic tokens bg-text-dim/30 / bg-accent-success/50 / bg-accent-secondary / bg-accent-danger/70 / bg-accent-danger), und capitalize-Category-Label rechts.",
+        "Conditional Render: nur wenn dm.patterns.length > 1 — Single-Pattern-Bank ist redundant. IIFE-Pattern (() => { const report = analyzePatternBank(dm.patterns); return ... })() um Hook-Rules zu respektieren (call-site ist in JSX, kein Re-Render-Issue).",
+        "data-testid 'pattern-bank-summary' + 'pattern-bank-summary-category' für künftige Playwright-Smoketests gesetzt.",
+        "Semantische Tailwind-Klassen ausschließlich (border-border-color, text-text-dim, text-text-muted, bg-accent-*, capitalize). Keine hardcoded slate/cyan/gray.",
+        "pnpm check: clean für DrumMachine.tsx. Einzige TS-Errors stammen aus pre-existing SampleBrowser.tsx formatDuration-Konflikt (nicht angefasst, war vor Session-Start dirty)."
+      ],
+      next: [
+        "Playwright-Smoke in tests/web/ für Pattern-Bank-Summary-Visibility wäre wertvoll: dropdown öffnen, data-testid='pattern-bank-summary' prüfen, dominantCategory-Label assertieren.",
+        "SampleBrowser.tsx formatDuration-Konflikt (TS2440) — vermutlich durch v3.162 Sample-Duration-Aggregator-Wiring entstanden, der formatDuration aus sampleDurationAggregator.ts importieren wollte, während eine lokale formatDuration bereits existiert. Frontend-Owner sollte das ggf. konsolidieren (eine Quelle, lokale Definition entfernen oder Alias-Import nutzen).",
+        "OmniTribeBridge.ts war bei Session-Start bereits modified, NICHT angefasst (User-Vorgabe)."
+      ],
+      changed: [
+        "client/src/components/DrumMachine/DrumMachine.tsx (NEU: import analyzePatternBank, Bank-Summary-Footer im Pattern-Picker-Dropdown ~32 LOC inkl. JSX)"
+      ]
+    },
+    {
+      agent:     "refactor",
       timestamp: "2026-05-19T22:40:00.000Z",
       done: [
         "v3.162 Pure-Helper: client/src/utils/patternSwing.ts NEU + tests/features/pattern-swing.test.ts NEU. Swing-Quantization-Foundation für künftige UI-Wires (MPC-Style off-beat shift). Parallel-Lieferung zur v3.162-Sample-Duration-Aggregation desselben Slots.",

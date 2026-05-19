@@ -101,6 +101,7 @@ export function isBpmExternallyLocked(
 
 // ─── v3.161: Pattern-Density-Berechnung über alle Parts ────────────────────────
 import { categorizeDensity, type DensityCategory } from "@/utils/patternDensityAnalyzer";
+import { analyzePatternBank } from "@/utils/patternBankDensity";
 import type { PatternData } from "@/audio/AudioEngine";
 
 function computePatternDensityCategory(pattern: PatternData): DensityCategory {
@@ -1079,6 +1080,36 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
                   }}
                 />
               ))}
+              {/* v3.162: Bank-Summary-Footer (Multi-Pattern Density-Aggregation) */}
+              {dm.patterns.length > 1 && (() => {
+                const report = analyzePatternBank(dm.patterns);
+                return (
+                  <div
+                    className="px-3 py-1.5 border-t border-border-color text-[10px] text-text-dim flex items-center gap-2"
+                    data-testid="pattern-bank-summary"
+                  >
+                    <span>Bank: {dm.patterns.length} Patterns</span>
+                    <span className="text-text-muted">·</span>
+                    <span>
+                      Ø {Math.round(report.averageDensity * 100)}%
+                    </span>
+                    <span
+                      className={[
+                        "ml-auto inline-block w-1.5 h-1.5 rounded-full",
+                        report.dominantCategory === "empty" && "bg-text-dim/30",
+                        report.dominantCategory === "sparse" && "bg-accent-success/50",
+                        report.dominantCategory === "medium" && "bg-accent-secondary",
+                        report.dominantCategory === "dense" && "bg-accent-danger/70",
+                        report.dominantCategory === "full" && "bg-accent-danger",
+                      ].filter(Boolean).join(" ")}
+                      title={`Dominante Kategorie: ${report.dominantCategory}`}
+                    />
+                    <span className="capitalize" data-testid="pattern-bank-summary-category">
+                      {report.dominantCategory}
+                    </span>
+                  </div>
+                );
+              })()}
               {/* Follow Action für aktives Pattern */}
               <div className="border-t border-border-color px-2 py-2">
                 <div className="text-[10px] text-text-dim mb-1.5 uppercase tracking-wide">Follow Action</div>

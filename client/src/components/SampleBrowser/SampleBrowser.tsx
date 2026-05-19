@@ -55,6 +55,14 @@ import {
   invertSelection,
   selectAll,
 } from "@/utils/sampleMultiSelect";
+// v3.162: Pure-Helper für Duration-Aggregation in der Bulk-Bar.
+// formatDuration wird als formatBulkDuration aliasiert — ein lokales
+// formatDuration() für Single-Sample-Anzeige existiert bereits in dieser Datei.
+import {
+  aggregateSampleDuration,
+  formatDuration as formatBulkDuration,
+  type DurationCandidate,
+} from "@/utils/sampleDurationAggregator";
 import { useConfirm } from "@/components/common/ConfirmDialog";
 
 // ─── Typen ────────────────────────────────────────────────────────────────────
@@ -620,6 +628,23 @@ export function SampleBrowser({
   // mehrfach-markierte Samples für Bulk-Operationen.
   const [multiSelectIds, setMultiSelectIds] = useState<Set<string>>(() => new Set());
   const lastClickedIdRef = useRef<string | null>(null);
+
+  // v3.162: Aggregierte Duration für die Bulk-Bar.
+  // size (bytes) → grober Estimate via sampleDurationAggregator. Sample.size
+  // ist optional — fehlende Werte landen im unknownCount und werden via
+  // "~" + "(N unbekannt)" gekennzeichnet.
+  const bulkDurationInfo = useMemo(() => {
+    if (multiSelectIds.size === 0) return null;
+    const candidates: DurationCandidate[] = [];
+    for (const s of samples) {
+      if (!multiSelectIds.has(s.id)) continue;
+      candidates.push({
+        sizeBytes: typeof s.size === "number" ? s.size : undefined,
+        sampleRate: 48000,
+      });
+    }
+    return aggregateSampleDuration(candidates);
+  }, [multiSelectIds, samples]);
   const [isPreviewPlaying, setIsPreviewPlaying] = useState(false);
   const [playbackPosition, setPlaybackPosition] = useState(0);
   const audioPreviewRef = useRef<HTMLAudioElement | null>(null);
@@ -1712,6 +1737,17 @@ export function SampleBrowser({
                     <div className="flex items-center gap-2">
                       <span className="text-[11px] font-semibold text-accent-secondary">
                         {multiSelectIds.size} Sample{multiSelectIds.size === 1 ? "" : "s"} ausgewählt
+                        {bulkDurationInfo && bulkDurationInfo.knownCount > 0 && (
+                          <span
+                            className="ml-2 font-normal text-text-muted"
+                            data-testid="sample-browser-bulk-duration"
+                          >
+                            · {bulkDurationInfo.unknownCount > 0 ? "~" : ""}
+                            {formatBulkDuration(bulkDurationInfo.totalSec)} total
+                            {bulkDurationInfo.unknownCount > 0 &&
+                              ` (${bulkDurationInfo.unknownCount} unbekannt)`}
+                          </span>
+                        )}
                       </span>
                       <select
                         value=""
