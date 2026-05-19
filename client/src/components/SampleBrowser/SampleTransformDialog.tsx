@@ -20,7 +20,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 
 import type { Sample } from "@/store/useProjectStore";
 import {
-  combinedTransform,
+  combinedTransformAsync,
   STRETCH_MIN,
   STRETCH_MAX,
   PITCH_MIN,
@@ -81,6 +81,8 @@ export function SampleTransformDialog({
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [isPreviewPlaying, setIsPreviewPlaying] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  // v3.120: AbortController für Worker-Cancel
+  const abortRef = useRef<AbortController | null>(null);
 
   // Reset State wenn Dialog neu geöffnet wird.
   useEffect(() => {
@@ -122,49 +124,77 @@ export function SampleTransformDialog({
     }
   }, []);
 
-  const runTransform = useCallback((): AudioBuffer | null => {
+  // v3.120: Async-Variante mit Worker — Live-Progress aus dem Worker, Cancel
+  // via AbortController. Bei !useWorker oder Worker-Spawn-Fail fällt
+  // combinedTransformAsync silent auf den Sync-Pfad zurück.
+  const runTransformAsync = useCallback(async (): Promise<AudioBuffer | null> => {
     if (!buffer) return null;
+    // Vorherigen Run cancelen (falls noch ein Preview-Worker lebt)
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     setIsProcessing(true);
-    setProgress(10);
+    setProgress(0);
     try {
-      // Pseudo-Progress: timeStretchBuffer ist synchron — wir geben dem
-      // User aber visuelles Feedback in 3 Schritten.
-      setProgress(30);
-      // Offscreen AudioContext bauen (BaseAudioContext-kompatibel).
       const offCtx = new (window.OfflineAudioContext ||
         // @ts-expect-error legacy webkit fallback
         window.webkitOfflineAudioContext)(
         buffer.numberOfChannels,
-        // Länge ist egal, wir nutzen den ctx nur als createBuffer-Factory.
         Math.max(1, buffer.length),
         buffer.sampleRate,
       ) as BaseAudioContext;
-      setProgress(50);
-      const out = combinedTransform(offCtx, buffer, effectiveStretch, pitchSemitones);
-      setProgress(90);
+      const out = await combinedTransformAsync(
+        offCtx,
+        buffer,
+        effectiveStretch,
+        pitchSemitones,
+        {
+          signal: controller.signal,
+          onProgress: (p) => setProgress(p),
+        },
+      );
       return out;
+    } catch (err) {
+      // AbortError → stiller Cancel (nicht log-spam)
+      const isAbort =
+        (err instanceof Error && err.name === "AbortError") ||
+        (typeof DOMException !== "undefined" && err instanceof DOMException && err.name === "AbortError");
+      if (!isAbort) {
+        // eslint-disable-next-line no-console
+        console.warn("SampleTransform failed:", err);
+      }
+      return null;
     } finally {
-      setProgress(100);
+      if (abortRef.current === controller) {
+        abortRef.current = null;
+      }
       setIsProcessing(false);
     }
   }, [buffer, effectiveStretch, pitchSemitones]);
 
-  const handlePreview = useCallback(() => {
+  const handleCancel = useCallback(() => {
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setIsProcessing(false);
+    setProgress(0);
+  }, []);
+
+  const handlePreview = useCallback(async () => {
     if (!buffer) return;
-    // Stop currently playing preview.
     if (audioRef.current) {
       audioRef.current.pause();
       audioRef.current.currentTime = 0;
     }
     if (previewUrl) {
       URL.revokeObjectURL(previewUrl);
+      setPreviewUrl(null);
     }
-    const transformed = runTransform();
+    const transformed = await runTransformAsync();
     if (!transformed) return;
     const url = bufferToBlobUrl(transformed);
     setPreviewUrl(url);
     setIsPreviewPlaying(true);
-    // Audio-Element auf nächsten Tick spielen (nachdem src gesetzt wurde).
     setTimeout(() => {
       if (audioRef.current) {
         audioRef.current.play().catch(() => {
@@ -172,16 +202,24 @@ export function SampleTransformDialog({
         });
       }
     }, 0);
-  }, [buffer, runTransform, previewUrl]);
+  }, [buffer, runTransformAsync, previewUrl]);
 
-  const handleApply = useCallback(() => {
+  const handleApply = useCallback(async () => {
     if (!buffer) return;
-    const transformed = runTransform();
+    const transformed = await runTransformAsync();
     if (!transformed) return;
     const url = bufferToBlobUrl(transformed);
     onApply(transformed, url);
     onClose();
-  }, [buffer, runTransform, onApply, onClose]);
+  }, [buffer, runTransformAsync, onApply, onClose]);
+
+  // Cleanup running worker beim Unmount.
+  useEffect(() => {
+    return () => {
+      abortRef.current?.abort();
+      abortRef.current = null;
+    };
+  }, []);
 
   if (!isOpen) return null;
 
@@ -294,18 +332,29 @@ export function SampleTransformDialog({
               </span>
             </label>
 
-            {/* Progress-Bar */}
+            {/* Progress-Bar (v3.120: live aus Worker + Cancel-Button) */}
             {isProcessing && (
-              <div>
+              <div data-testid="sample-transform-progress">
                 <div className="h-1.5 w-full bg-bg-elevated rounded overflow-hidden">
                   <div
                     className="h-full bg-accent-primary transition-all"
                     style={{ width: `${progress}%` }}
                   />
                 </div>
-                <p className="text-[10px] text-text-dim mt-1">
-                  Verarbeite… {progress}%
-                </p>
+                <div className="flex items-center justify-between mt-1">
+                  <p className="text-[10px] text-text-dim">
+                    Verarbeite… {progress}%
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleCancel}
+                    data-testid="sample-transform-cancel"
+                    className="text-[10px] text-accent-danger hover:underline"
+                    title="Verarbeitung abbrechen"
+                  >
+                    Abbrechen
+                  </button>
+                </div>
               </div>
             )}
 

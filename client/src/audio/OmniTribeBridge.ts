@@ -470,6 +470,27 @@ export class OmniTribeBridge {
     }
   }
 
+  /**
+   * Sprint-103: Setzt die 16 Step-Mask-Bits des Sim-Pattern-Sequencers.
+   * Bit n = 1 → Step n aktiv. Wir encoden 16-bit als 3×7-bit (2+7+7).
+   */
+  setPatternStepMask(mask: number): void {
+    const m = mask & 0xFFFF;
+    this.send(OtpCmd.PATTERN, 0x10, [
+      (m >> 14) & 0x03,
+      (m >> 7) & 0x7F,
+      m & 0x7F,
+    ]);
+  }
+
+  /**
+   * Sprint-103: Setzt die Root-Note des Sequencers (MIDI 0..127).
+   * Default 60 = C4.
+   */
+  setPatternRootNote(note: number): void {
+    this.send(OtpCmd.PATTERN, 0x12, [note & 0x7F]);
+  }
+
   /** Sprint-102: Raw-MIDI Note-Off (oder 0x90 + vel=0 als Aequivalent). */
   sendNoteOff(channel: number, note: number): void {
     if (!this.output && !this.ws) return;

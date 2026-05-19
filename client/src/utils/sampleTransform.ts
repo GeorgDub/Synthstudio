@@ -1,34 +1,28 @@
 /**
- * Synthstudio – sampleTransform.ts (v3.116.0)
+ * Synthstudio – sampleTransform.ts (v3.120.0)
  *
  * Zentraler Wrapper-Util für Time-Stretch + Pitch-Shift auf AudioBuffern.
  * Wird vom Sample-Manager (SampleBrowser → SampleTransformDialog) genutzt,
  * um DAW-übliche Transformationen offline auf einen Sample-Buffer anzuwenden.
  *
+ * ─── v3.120.0 Web Worker ───────────────────────────────────────────────────
+ * Closes v3.116-Caveat: bei langen Stereo-Loops (>30s @ 48k) blockierte
+ * combinedTransform den Main-Thread ~1s. Neue Public-API:
+ *   - combinedTransformAsync(ctx, buf, ratio, st, {useWorker, onProgress, signal})
+ *   - stretchSampleAsync / pitchShiftSampleAsync
+ * Default useWorker=true. Sync-API bleibt UNVERÄNDERT (Tests, Legacy-Code).
+ *
  * ─── Reuse ──────────────────────────────────────────────────────────────────
- * Die Time-Stretch-Engine (OLA, Pitch-erhaltend) existiert bereits in
- * `client/src/audio/timeStretchUtils.ts` (`timeStretchBuffer`). Sie wird hier
- * NICHT neu implementiert — nur gewrappt + um Pitch-Shift erweitert.
+ * Time-Stretch-Engine (OLA, Pitch-erhaltend) existiert in
+ * `client/src/audio/timeStretchUtils.ts` (`timeStretchBuffer`).
  *
  * ─── Pitch-Shift-Strategie ──────────────────────────────────────────────────
- * Wir verwenden den klassischen "Phase-Vocoder + Resample"-Trick:
+ * Phase-Vocoder + Resample-Trick:
  *   1. Time-stretch um Faktor 2^(semitones/12) — Buffer wird länger oder
  *      kürzer, Pitch bleibt unverändert.
  *   2. Anschließend mit linearer Resampling-Interpolation auf die Original-
  *      Länge zurück → die Pitch verändert sich um die gewünschten Semitones,
  *      die Länge bleibt erhalten.
- *
- * Mathematisch:
- *   semitoneRatio = 2^(semitones/12)
- *   - +12 (Oktave hoch) → semitoneRatio = 2.0 → wir stretchen erst um 2× (Buffer
- *     wird doppelt so lang, gleiche Pitch), dann resamplen wir um Faktor 0.5
- *     (jede zweite Sample-Position interpoliert) → halbe Länge zurück = Original-
- *     Länge, aber Pitch eine Oktave höher.
- *
- * ─── Combined Transform ────────────────────────────────────────────────────
- * `combinedTransform(buffer, ratio, semitones)` führt Stretch + Pitch in
- * EINEM Schritt aus (effizienter als zwei separate Aufrufe, weil das
- * Zwischenresult nicht materialisiert wird).
  *
  * ─── Defensive Defaults ─────────────────────────────────────────────────────
  * - ratio wird auf [STRETCH_MIN, STRETCH_MAX] geclampt (0.25–4.0)
@@ -38,6 +32,10 @@
  */
 
 import { timeStretchBuffer } from "@/audio/timeStretchUtils";
+import type {
+  TransformWorkerInboundMessage,
+  TransformWorkerOutboundMessage,
+} from "@/audio/workers/sampleTransform.worker";
 
 // ─── Konstanten ──────────────────────────────────────────────────────────────
 
@@ -101,7 +99,7 @@ export function semitonesToRatio(semitones: number): number {
   return Math.pow(2, semitones / 12);
 }
 
-// ─── Public API ──────────────────────────────────────────────────────────────
+// ─── Public Sync API (unverändert seit v3.116) ──────────────────────────────
 
 /**
  * Streckt einen AudioBuffer zeitlich, OHNE die Tonhöhe zu verändern.
@@ -156,7 +154,7 @@ export function pitchShiftSample(
 }
 
 /**
- * Kombinierter Stretch + Pitch-Shift in EINEM Schritt.
+ * Kombinierter Stretch + Pitch-Shift in EINEM Schritt (synchron).
  *
  * Algorithmus:
  *   1. effectiveStretch = ratio * 2^(semitones/12)
@@ -214,6 +212,236 @@ export function combinedTransform(
     outData.set(resampleLinear(inData, finalLength));
   }
   return out;
+}
+
+// ─── v3.120.0 Async-API mit Worker ───────────────────────────────────────────
+
+export interface TransformAsyncOptions {
+  /** Wenn true (default) und Worker verfügbar: läuft im Worker.  False = Sync-Pfad. */
+  useWorker?: boolean;
+  /** Wird in 0..100 Schritten gerufen.  Im Sync-Pfad nur 0/100. */
+  onProgress?: (percent: number) => void;
+  /** AbortSignal für Cancel.  Bei Abort: Worker.terminate() → Promise rejects mit DOMException('Aborted'). */
+  signal?: AbortSignal;
+}
+
+/**
+ * Test-Hook: Erlaubt Tests, eine Worker-Factory zu injizieren statt der echten.
+ * Wenn gesetzt, wird stattdessen die Factory verwendet.
+ */
+let _workerFactoryOverride: (() => Worker) | null = null;
+export function __setTransformWorkerFactoryForTests(factory: (() => Worker) | null): void {
+  _workerFactoryOverride = factory;
+}
+
+function createTransformWorker(): Worker | null {
+  if (_workerFactoryOverride) {
+    try {
+      return _workerFactoryOverride();
+    } catch {
+      return null;
+    }
+  }
+  if (typeof Worker === "undefined") return null;
+  try {
+    return new Worker(
+      new URL("../audio/workers/sampleTransform.worker.ts", import.meta.url),
+      { type: "module" },
+    );
+  } catch {
+    return null;
+  }
+}
+
+function extractChannels(buffer: AudioBuffer): Float32Array[] {
+  const out: Float32Array[] = [];
+  for (let c = 0; c < buffer.numberOfChannels; c++) {
+    // .slice() kopiert — wir wollen kein shared backing storage
+    out.push(buffer.getChannelData(c).slice());
+  }
+  return out;
+}
+
+function channelsToBuffer(
+  ctx: BaseAudioContext,
+  channels: Float32Array[],
+  sampleRate: number,
+): AudioBuffer {
+  const length = channels[0]?.length ?? 1;
+  const buf = ctx.createBuffer(channels.length, length, sampleRate);
+  for (let c = 0; c < channels.length; c++) {
+    // copyToChannel ist optimaler als getChannelData().set, aber nicht
+    // in allen Mock-Implementierungen verfügbar. Fallback:
+    if (typeof buf.copyToChannel === "function") {
+      // Cast: TS strict typeguard für Float32Array<ArrayBuffer> vs ArrayBufferLike.
+      // Wir wissen dass die Channels nicht aus SharedArrayBuffer kommen
+      // (Worker-Transferable). Safe cast.
+      buf.copyToChannel(channels[c] as Float32Array<ArrayBuffer>, c);
+    } else {
+      buf.getChannelData(c).set(channels[c]);
+    }
+  }
+  return buf;
+}
+
+/**
+ * Asynchrone Variante von combinedTransform.  Läuft im Web Worker (default)
+ * oder fällt auf den Sync-Pfad zurück (kein Worker-Global oder useWorker=false).
+ *
+ * @returns Promise<AudioBuffer> — neuer Buffer mit Länge = round(buffer.length * ratio).
+ */
+export function combinedTransformAsync(
+  ctx: BaseAudioContext,
+  buffer: AudioBuffer,
+  ratio: number,
+  semitones: number,
+  opts: TransformAsyncOptions = {},
+): Promise<AudioBuffer> {
+  if (buffer.length === 0) {
+    return Promise.reject(new Error("combinedTransformAsync: buffer has length 0"));
+  }
+
+  const useWorker = opts.useWorker !== false;
+
+  // Sync-Fallback Pfad
+  if (!useWorker) {
+    return new Promise((resolve, reject) => {
+      try {
+        opts.onProgress?.(0);
+        const result = combinedTransform(ctx, buffer, ratio, semitones);
+        opts.onProgress?.(100);
+        resolve(result);
+      } catch (err) {
+        reject(err);
+      }
+    });
+  }
+
+  const worker = createTransformWorker();
+  if (worker === null) {
+    // Graceful fallback wenn Worker-Spawn fehlschlägt (Tests, OldBrowser)
+    return new Promise((resolve, reject) => {
+      try {
+        opts.onProgress?.(0);
+        const result = combinedTransform(ctx, buffer, ratio, semitones);
+        opts.onProgress?.(100);
+        resolve(result);
+      } catch (err) {
+        reject(err);
+      }
+    });
+  }
+
+  const requestId = `transform_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
+  return new Promise<AudioBuffer>((resolve, reject) => {
+    let settled = false;
+
+    const cleanup = () => {
+      try {
+        worker.terminate();
+      } catch {
+        // ignore
+      }
+    };
+
+    const onAbort = () => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      const err =
+        typeof DOMException !== "undefined"
+          ? new DOMException("Aborted", "AbortError")
+          : new Error("Aborted");
+      reject(err);
+    };
+
+    if (opts.signal) {
+      if (opts.signal.aborted) {
+        onAbort();
+        return;
+      }
+      opts.signal.addEventListener("abort", onAbort, { once: true });
+    }
+
+    worker.onmessage = (event: MessageEvent<TransformWorkerOutboundMessage>) => {
+      if (settled) return;
+      const msg = event.data;
+      if (msg.requestId !== requestId) return;
+
+      if (msg.type === "progress") {
+        opts.onProgress?.(msg.percent);
+      } else if (msg.type === "done") {
+        settled = true;
+        cleanup();
+        try {
+          const out = channelsToBuffer(ctx, msg.channels, msg.sampleRate);
+          opts.onProgress?.(100);
+          resolve(out);
+        } catch (err) {
+          reject(err);
+        }
+      } else if (msg.type === "error") {
+        settled = true;
+        cleanup();
+        reject(new Error(msg.message));
+      }
+    };
+
+    worker.onerror = (ev: ErrorEvent | Event) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      const message =
+        ev instanceof ErrorEvent && ev.message ? ev.message : "Worker error";
+      reject(new Error(message));
+    };
+
+    const channels = extractChannels(buffer);
+    const transferables: ArrayBufferLike[] = channels.map((c) => c.buffer);
+
+    const msg: TransformWorkerInboundMessage = {
+      cmd: "transform",
+      requestId,
+      channels,
+      sampleRate: buffer.sampleRate,
+      ratio,
+      semitones,
+    };
+
+    try {
+      worker.postMessage(msg, transferables);
+    } catch (err) {
+      settled = true;
+      cleanup();
+      reject(err instanceof Error ? err : new Error(String(err)));
+    }
+  });
+}
+
+/**
+ * Async-Wrapper für reine Stretches.  Delegiert auf combinedTransformAsync
+ * (Pitch=0).
+ */
+export function stretchSampleAsync(
+  ctx: BaseAudioContext,
+  buffer: AudioBuffer,
+  ratio: number,
+  opts: TransformAsyncOptions = {},
+): Promise<AudioBuffer> {
+  return combinedTransformAsync(ctx, buffer, ratio, 0, opts);
+}
+
+/**
+ * Async-Wrapper für reinen Pitch-Shift (length-erhaltend).
+ */
+export function pitchShiftSampleAsync(
+  ctx: BaseAudioContext,
+  buffer: AudioBuffer,
+  semitones: number,
+  opts: TransformAsyncOptions = {},
+): Promise<AudioBuffer> {
+  return combinedTransformAsync(ctx, buffer, 1.0, semitones, opts);
 }
 
 // ─── Internal ───────────────────────────────────────────────────────────────

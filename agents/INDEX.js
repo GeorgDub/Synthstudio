@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.119.0",
+    version: "3.120.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -89,6 +89,26 @@ const INDEX = {
   // ─── KNOWN FILE INDEX ──────────────────────────────────────
   // Key files agents have analyzed. Add new entries after working on a file.
   files: {
+    "client/src/audio/workers/sampleTransform.worker.ts (v3.120.0 NEU)": {
+      role:     "v3.120.0 NEU (~270 LOC). Web Worker für offline Time-Stretch + Pitch-Shift auf Sample-Buffern. Closes v3.116-Main-Thread-Blocking-Caveat (Stereo-Loops > 30s @ 48k blockierten UI ~1s). Pure logic (kein AudioContext im Worker — Float32Array in, Float32Array out). Protokoll: inbound {cmd:'transform', requestId, channels:Float32Array[], sampleRate, ratio, semitones}, outbound progress/done/error mit requestId. Exports: transformChannels(input, onProgress?) (pure, side-effect-frei, throws on empty), handleTransformMessage(msg, post) (für Tests + Worker-Bootstrap), TransformWorkerInbound/OutboundMessage types. Identische Math zu combinedTransform: effectiveStretch=ratio*2^(st/12), OLA-Time-Stretch (Hann 2048/512), resampleLinear auf finalLength. Progress alle ~5% per Kanal, Stretch=80% Resample=20% Anteile bei pitch-shift. Self-Bootstrap unten via typeof self-Detect (vermeidet DedicatedWorkerGlobalScope-lib-Konflikt mit tsconfig).",
+      lastSeen: "2026-05-19T14:42:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/utils/sampleTransform.ts (v3.120.0 +Async-API+Worker)": {
+      role:     "v3.120.0 ERWEITERT: behält Sync-API (stretchSample/pitchShiftSample/combinedTransform) UNVERÄNDERT (Tests + Legacy bleiben grün). NEU Async-API: combinedTransformAsync(ctx, buf, ratio, st, {useWorker, onProgress, signal}) → Promise<AudioBuffer>, stretchSampleAsync, pitchShiftSampleAsync. Default useWorker=true, default signal=undefined. Worker-Spawn via createTransformWorker() (Vite-URL-pattern new Worker(new URL('../audio/workers/sampleTransform.worker.ts', import.meta.url), {type:'module'})), spawn-per-call (kein Worker-Pool — pragmatic). Float32Array extracted via getChannelData(c).slice() (kopiert, kein shared backing). Result wird via channelsToBuffer(ctx, channels, sampleRate) zu AudioBuffer reconstituiert (copyToChannel preferred, getChannelData().set Fallback für Mock-AudioBuffers). Cancel: AbortSignal → worker.terminate() + reject(DOMException('Aborted')). Fallback wenn Worker-Spawn fail oder useWorker=false → Sync-Pfad (combinedTransform). Test-Hook __setTransformWorkerFactoryForTests injiziert Mock-Worker.",
+      lastSeen: "2026-05-19T14:42:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/components/SampleBrowser/SampleTransformDialog.tsx (v3.120.0 +Worker)": {
+      role:     "v3.120.0 ERWEITERT: combinedTransform → combinedTransformAsync. runTransform → runTransformAsync (async). NEU abortRef:useRef<AbortController|null> pro Dialog-Instance. handleCancel: abortRef.abort() + reset isProcessing/progress. handlePreview + handleApply jetzt async, awaiten runTransformAsync. Progress-Bar liest jetzt LIVE-Werte aus dem Worker (kein Pseudo-30/50/90 mehr). NEU Cancel-Button im Progress-Bar (data-testid sample-transform-cancel, rote text-accent-danger, klein neben Verarbeite…%). AbortError wird stille gefiltert (kein console.warn). Cleanup-useEffect (empty deps) abort()ed verwaisten Worker beim Unmount. Public API onApply unverändert.",
+      lastSeen: "2026-05-19T14:42:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "tests/features/sample-transform-worker.test.ts (v3.120.0 NEU)": {
+      role:     "v3.120.0 NEU (~340 LOC, 21 Tests in 5 describes, node-env). MockAudioBuffer + MockAudioContext (eigene, mit copyToChannel set-Implementierung). MockWorker: setTimeout(0) ruft handleTransformMessage direkt → emuliert echtes async-Verhalten. Test-Factory-Inject via __setTransformWorkerFactoryForTests. Cluster: (1) transformChannels pure × 5 (identity-copy mit Float32-closeTo, throws-on-empty, stretch-doubles-length, progress-emitted, multi-channel-preserved). (2) handleTransformMessage × 3 (done-message, error-on-bad-cmd, error-on-empty-channels). (3) combinedTransformAsync worker-path × 8 (happy-path, progress-callback, cancel-via-AbortSignal-mit-terminate, already-aborted-rejects-immediate, worker-error-rejects, concurrent-requests-disambiguated, stretchAsync delegates st=0, pitchAsync delegates ratio=1). (4) Fallback × 3 (useWorker:false skips spawn, factory-throws-falls-back-to-sync, empty-buffer-rejects). (5) Transferable × 2 (result is new AudioBuffer not input, worker receives Float32Array channels). 21/21 grün.",
+      lastSeen: "2026-05-19T14:42:00.000Z",
+      ownedBy:  "backend"
+    },
     "client/src/audio/AudioSidechainNode.ts (v3.119.0 NEU)": {
       role:     "v3.119.0 NEU (~270 LOC). DAW-grade audio-triggered Sidechain v2. Pure-Helpers (testbar ohne AudioContext): detectPeak (max abs Float32Array), gainToDb/dbToGain (MIN_DB=-60 Clamp), applyEnvelope (compressor: inputDb→overThreshold→reductionRaw×(1-1/ratio), attack/release per-frame coef=1-exp(-dt/τ), never-negative), sanitizeAudioSidechainConfig (threshold/ratio/attack/release-Clamp). Class AudioSidechainNode: AnalyserNode-Tap auf source (kein Audio-Pfad-Impact), rAF-Loop tickt envelope, targetGain.gain.linearRampToValueAtTime click-frei. configure/enable/disable/dispose/getCurrentReductionDb/isEnabled. Buffer typed als Float32Array<ArrayBuffer> für TS-strict.",
       lastSeen: "2026-05-19T14:32:00.000Z",
@@ -2882,6 +2902,34 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "backend",
+      timestamp: "2026-05-19T14:42:00.000Z",
+      done: [
+        "v3.120.0: Sample-Transform Web Worker — closes v3.116 main-thread-blocking caveat. Bei Stereo-Loops > 30s @ 48k blockierte combinedTransform den UI-Thread ~1s. Jetzt läuft die OLA-Stretch + Resample-Pitch-Shift im Web Worker (off main), mit Live-Progress und Cancel-Support.",
+        "client/src/audio/workers/sampleTransform.worker.ts NEU (~270 LOC). Pure logic identisch zu combinedTransform (effectiveStretch=ratio*2^(st/12), OLA Hann 2048/512, resampleLinear auf finalLength). Message-Protokoll: inbound {cmd:'transform', requestId, channels:Float32Array[], sampleRate, ratio, semitones}; outbound progress/done/error mit requestId-Discriminator. Progress alle ~5% per Kanal. Transferable: alle output-buffers zero-copy zurück via .buffer-Array. Exports auch transformChannels + handleTransformMessage für Unit-Tests (Worker-Code direkt importierbar).",
+        "client/src/utils/sampleTransform.ts ERWEITERT: Sync-API stretchSample/pitchShiftSample/combinedTransform UNVERÄNDERT (33 bestehende Tests grün). NEU Async-API combinedTransformAsync(ctx, buf, ratio, st, {useWorker?:true, onProgress?, signal?}) → Promise<AudioBuffer>, plus stretchSampleAsync + pitchShiftSampleAsync. Worker-Spawn via Vite-Pattern new Worker(new URL(..., import.meta.url), {type:'module'}), spawn-per-call (kein Lifecycle-Mgmt nötig). Float32Array extracted via getChannelData(c).slice(), Result via copyToChannel (mit getChannelData().set Fallback) zu AudioBuffer reconstituiert. AbortSignal → worker.terminate() + reject(DOMException('Aborted')). Fallback wenn Worker-Spawn fail oder useWorker=false → Sync-Pfad. Test-Hook __setTransformWorkerFactoryForTests.",
+        "client/src/components/SampleBrowser/SampleTransformDialog.tsx ERWEITERT: Worker-Integration. runTransform → runTransformAsync (async, awaitet combinedTransformAsync). abortRef:useRef<AbortController|null>. handleCancel: abortRef.abort() + reset. NEU Cancel-Button im Progress-Bar (rote accent-danger, data-testid sample-transform-cancel). Progress-Bar zeigt jetzt LIVE-Werte (worker.onmessage type:'progress'), keine Pseudo-30/50/90-Steps mehr. Cleanup-useEffect aborted Worker beim Unmount. AbortError wird stille gefiltert (kein console-spam).",
+        "tests/features/sample-transform-worker.test.ts NEU (~340 LOC, 21 Tests in 5 describes). MockWorker mit setTimeout(0)→handleTransformMessage emuliert echte async-Roundtrips. Cluster: transformChannels pure × 5 (identity-copy mit closeTo, throws-on-empty, stretch-doubles, progress, multi-channel), handleTransformMessage × 3 (done, error-bad-cmd, error-empty), combinedTransformAsync worker-path × 8 (happy, progress, cancel-AbortSignal-mit-terminate, already-aborted-immediate, worker-error-rejects, concurrent-requestId, stretchAsync-delegates-st0, pitchAsync-delegates-ratio1), Fallback × 3 (useWorker:false skips spawn, factory-throws→sync, empty-rejects), Transferable × 2 (result-new-buffer, channels-are-Float32Array). 21/21 grün.",
+        "package.json + INDEX.js: 3.119.0 → 3.120.0. pnpm check: clean. Volltest: 271 Files / 6218 passed / 16 skipped / 0 fail (+21 vs v3.119)."
+      ],
+      next: [
+        "Worker-Pool: aktuell spawn-per-call → bei rapid-fire Preview-Klicks könnten N Worker parallel laufen (terminated by AbortController, aber Spawn-Cost addiert). Persistent Singleton-Worker mit Pending-Map (analog bpmWorkerClient.ts) wäre effizienter — wir nutzen pragmatic spawn-per-call.",
+        "Realer Browser-Worker-Test: tests/web/ Playwright-Smoke der ein 30s-Stereo-Loop im echten Worker transformiert + UI-Thread responsive bleibt während Verarbeitung.",
+        "Knee-Smoothing für die OLA-Grain-Boundary: bei großen Ratios entstehen audible Phase-Artefakte. WSOLA mit Cross-Correlation-Lag-Suche wäre next-level — derzeit nur einfaches OLA.",
+        "Worker-Reuse über mehrere SampleTransformDialog-Sessions: useEffect Singleton-Worker in einem Hook useTransformWorker(), spart Spawn-Cost (~50ms pro Klick).",
+        "Drum-Buffer-Pitch-Shift Pipeline (AudioEngine.ts pitchedPlayback) könnte ebenfalls Worker-Path nutzen, derzeit Tone.PitchShift mit OfflineContext on main-thread.",
+        "Vite-Worker-Build prüfen: bei `pnpm build` muss der Worker als separater Chunk emittiert werden (Manifest-Eintrag). Falls Issues → public/workers/ statisches Copy als Fallback-Plan."
+      ],
+      changed: [
+        "client/src/audio/workers/sampleTransform.worker.ts (NEU, ~270 LOC, Worker + Pure-Helpers)",
+        "client/src/utils/sampleTransform.ts (ERWEITERT, +Async-API mit Worker-Roundtrip)",
+        "client/src/components/SampleBrowser/SampleTransformDialog.tsx (ERWEITERT, Async + Cancel-Button)",
+        "tests/features/sample-transform-worker.test.ts (NEU, ~340 LOC, 21 Tests)",
+        "package.json (3.119.0 → 3.120.0)",
+        "agents/INDEX.js (v3.120.0 + workLog + files)"
+      ]
+    },
     {
       agent:     "backend",
       timestamp: "2026-05-19T14:32:00.000Z",
