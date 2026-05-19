@@ -385,8 +385,8 @@ describe("AudioEngine — Routing: post-EQ → Limiter → destination", () => {
 // ─── (5) Schema v1.31 Round-Trip ─────────────────────────────────────────────
 
 describe("Schema v1.31 — limiter + midQ Round-Trip", () => {
-  it("SYNTH_FILE_VERSION ist '1.31'", () => {
-    expect(serializer.SYNTH_FILE_VERSION).toBe("1.31");
+  it("SYNTH_FILE_VERSION ist '1.32'", () => {
+    expect(serializer.SYNTH_FILE_VERSION).toBe("1.32");
   });
 
   it("Round-Trip preserves masterFx.limiter + masterFx.eq.midQ", () => {

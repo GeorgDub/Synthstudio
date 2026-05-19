@@ -102,6 +102,14 @@
  *     Beide Felder additiv-optional. sanitizeMasterFx (im Store) fillt
  *     fehlende Felder mit Defaults — pre-v1.31-Files laden ohne Crash, die
  *     fehlenden Limiter/midQ-Werte werden mit den Defaults gefüllt.
+ *   - "1.32": Sub-Mix-Buses (v3.79.0, 100. Release). Channel-Grouping mit
+ *     shared FX (DAW-Standard). Max 8 Buses pro Projekt; jeder Bus hat
+ *     id/name/color/volume/pan/mute/solo/channelIds[] + optional fx. Channels
+ *     ohne Bus default zu master (kein Eintrag in irgendeinem Bus).
+ *     Additiv-optional: pre-v1.32-Files haben das Feld nicht → subMixBuses
+ *     bleibt undefined (Signal an Restore: User-localStorage nicht über-
+ *     schreiben). Explicit `null`/non-Array → undefined. Invalide Bus-Einträge
+ *     werden via sanitizeBus silent gefiltert (Cap auf 8 hart enforced).
  * Dateiendung: .synth
  */
 
@@ -131,8 +139,10 @@ import { isValidQuickActionMacro } from "@/store/useQuickActionStore";
 import { isValidChannelColor } from "@/utils/channelColors";
 import type { MasterFxState } from "@/store/useMasterFxStore";
 import { sanitizeMasterFx } from "@/store/useMasterFxStore";
+import type { SubMixBus } from "@/store/useSubMixStore";
+import { sanitizeBus, MAX_SUB_MIX_BUSES } from "@/store/useSubMixStore";
 
-export const SYNTH_FILE_VERSION = "1.31";
+export const SYNTH_FILE_VERSION = "1.32";
 export const SYNTH_LATEST_KEY = "synthstudio:last-project";
 
 // ─── Typen ───────────────────────────────────────────────────────────────────
@@ -299,6 +309,23 @@ export interface SynthProject {
    * sanitizeMasterFx clampt jedes Feld und setzt Defaults für Fehlendes.
    */
   masterFx?: MasterFxState;
+
+  /**
+   * Sub-Mix-Buses (v3.79.0+, v1.32+). Channel-Grouping mit shared FX (DAW-
+   * Standard: gruppier alle Drums in einen Bus, apply Reverb/Compressor
+   * einmal auf Group, send to Master). Pro Bus: id/name/color/volume/pan/
+   * mute/solo/channelIds[] + optional fx-Snapshot. Max 8 Buses pro Projekt.
+   *
+   * Seit v1.32. Pre-v1.32-Files haben das Feld nicht → parseProject lässt
+   * subMixBuses undefined (Signal an Restore: User-localStorage nicht über-
+   * schreiben — der User hat sein Bus-Setup lokal weiterlaufen). Explicit
+   * leeres Array [] wird respektiert (User hat alle Buses gelöscht und
+   * gespeichert). null oder non-Array → undefined.
+   *
+   * Channels ohne Bus-Membership routen direkt zu master (additiv-Feature,
+   * keine Breaking-Change am bestehenden Channel-Routing).
+   */
+  subMixBuses?: SubMixBus[];
 }
 
 // ─── v1.18 Sub-Types ─────────────────────────────────────────────────────────
@@ -818,6 +845,30 @@ export function parseProject(json: string): SynthProject {
     delete (data as { masterFx?: unknown }).masterFx;
   } else {
     data.masterFx = sanitizeMasterFx(rawMasterFx);
+  }
+
+  // ─── subMixBuses (seit v1.32, v3.79.0) ───────────────────────────────────
+  // Pre-v1.32-Files haben das Feld nicht → undefined bleibt undefined
+  // (Signal an Restore: User-localStorage nicht überschreiben). Explicit
+  // leeres Array → bleibt [] (User-Intent "keine Buses"). null oder
+  // non-Array → undefined. Invalide Bus-Einträge werden via sanitizeBus
+  // silent gefiltert. Cap auf MAX_SUB_MIX_BUSES (=8) hart enforced.
+  const rawBuses = (data as { subMixBuses?: unknown }).subMixBuses;
+  if (rawBuses === undefined) {
+    // nothing — bleibt undefined
+  } else if (rawBuses === null || !Array.isArray(rawBuses)) {
+    delete (data as { subMixBuses?: unknown }).subMixBuses;
+  } else {
+    const seenIds = new Set<string>();
+    const filtered: SubMixBus[] = [];
+    for (const raw of rawBuses) {
+      const b = sanitizeBus(raw);
+      if (!b || seenIds.has(b.id)) continue;
+      seenIds.add(b.id);
+      filtered.push(b);
+      if (filtered.length >= MAX_SUB_MIX_BUSES) break;
+    }
+    data.subMixBuses = filtered;
   }
 
   return data;

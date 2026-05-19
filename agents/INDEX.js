@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.78.0",
+    version: "3.79.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -89,6 +89,21 @@ const INDEX = {
   // ─── KNOWN FILE INDEX ──────────────────────────────────────
   // Key files agents have analyzed. Add new entries after working on a file.
   files: {
+    "client/src/store/useSubMixStore.ts (v3.79.0)": {
+      role:     "v3.79.0 NEU (~330 LOC, Custom-Observer-Pattern wie useMasterFxStore, DOM-frei testbar): Sub-Mix-Buses-State. MAX_SUB_MIX_BUSES=8 Konstante. SubMixBus + SubMixBusFx + SubMixState Interfaces. defaultSubMixState()/DEFAULT_BUS_FX. Pure-Helpers clampNum/clampBool/clampString/clampBusFx. sanitizeBus(raw)→SubMixBus|null (validate id, clamp name max 32 + name-fallback 'Bus', volume 0..2, pan -1..+1, mute/solo bool, Hex-color-regex-match, defensive). sanitizeSubMixState(raw)→SubMixState (dedupe id, hart cap auf MAX_SUB_MIX_BUSES). localStorage-Persist 'synthstudio:sub-mix:v1'. Public-API: getSubMixState/getBuses/getBusForChannel(partId)/getBusById, createBus(name?)→id|null (returnt null wenn MAX erreicht), removeBus, renameBus, setBusColor (silent-strip invalid Hex via /^#[0-9a-fA-F]{3}([0-9a-fA-F]{3})?$/), setBusVolume/Pan/Mute/Solo, setBusFx, assignChannelToBus(busId, partId) auto-unassign aus anderen Buses (Channel kann nur in einem Bus sein), unassignChannel, anyBusSolo, isBusEffectivelyMuted(busId) Solo-Logik (any-bus-solo → others muted), setAllBuses(input) Project-Restore-Path mit undefined-Signal-Semantik, resetSubMix, __resetSubMixStoreForTests. useSubMixStore() React-Hook.",
+      lastSeen: "2026-05-19T04:45:00.000Z",
+      ownedBy:  "backend"
+    },
+    "tests/features/sub-mix-bus.test.ts (v3.79.0)": {
+      role:     "v3.79.0 NEU (~280 LOC, 15 Tests in 6 describes, env:node mit localStorage-Mock). (1) Store-Defaults × 2: createBus returnt ID + Bus mit Defaults, renameBus+setBusVolume+setBusPan clampen + persistieren. (2) Channel-Assignment × 3: assignChannelToBus fügt partId, Re-Assignment entfernt auto aus altem Bus, unassignChannel entfernt aus allen Buses. (3) Volume/Mute/Solo Helpers × 2: Bus-Mute setzt isBusEffectivelyMuted=true, Bus-Solo macht andere effektiv stumm. (4) MAX_SUB_MIX_BUSES × 2: max 8 Buses (9. createBus → null), removeBus erlaubt wieder neue Buses. (5) Schema v1.32 × 4: SYNTH_FILE_VERSION='1.32', Round-Trip preserves channelIds/name/volume, pre-v1.32-File ohne subMixBuses → undefined bleibt, invalide Einträge silent gefiltert (clamping wirkt: volume 999 → 2, pan 99 → 1, mute 'yes' → false). (6) Channel ohne Bus default zu master × 2: getBusForChannel returnt undefined für nicht-assigned + localStorage-Reload-Round-Trip via vi.resetModules.",
+      lastSeen: "2026-05-19T04:45:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/utils/projectSerializer.ts (v3.79.0 v1.32)": {
+      role:     "v3.79.0 SCHEMA-BUMP v1.31 → v1.32: SYNTH_FILE_VERSION='1.32' + Header-Doku-Block v1.32-Migration (Sub-Mix-Buses additiv-optional). NEU subMixBuses?:SubMixBus[] Feld auf SynthProject mit ausführlichem JSDoc. parseProject() ergänzt subMixBuses-Migration-Block am Ende: undefined bleibt undefined (Signal an Restore: User-localStorage nicht überschreiben), null/non-Array → undefined, Array → sanitizeBus-Filter + Set-dedupe auf id + hart Cap auf MAX_SUB_MIX_BUSES. Import +sanitizeBus +MAX_SUB_MIX_BUSES +SubMixBus aus useSubMixStore. Bestehende v1.31/v1.30/v1.29/etc. bleibt unverändert.",
+      lastSeen: "2026-05-19T04:45:00.000Z",
+      ownedBy:  "backend"
+    },
     "client/src/audio/LufsAnalyzer.ts (v3.78.0)": {
       role:     "v3.78.0 NEU (~360 LOC, Pure-TS-Modul, DOM-frei, env:node-safe): ITU-R BS.1770-4 LUFS-Meter. K-Weighting Pre-Filter (high-shelf @1681Hz +4dB) + RLB-Filter (high-pass @38Hz Q=0.5) als Biquad-DF2 (4 State-Variablen). Bei 48kHz matchen die Coeffizienten die BS.1770-4-Tabelle exakt (Toleranz 1e-3). Bilinear-Transform für andere Sample-Rates mit Pre-Warping. SlidingMeanSquare-Klasse (Ring-Buffer + O(1)-update) für Momentary (400ms) und Short-Term (3s). Integrated mit 400ms-Block + 100ms-Hop (75% Overlap) und Two-Pass-Gating (absolute -70 LUFS + relative -10 LU). Public API: LufsAnalyzer-Constructor mit defensiv Throw für invalid Rates/Channels (1 oder 2), processBlock(L, R?), getMomentary/getShortTerm/getIntegrated, reset() (nur Integrated), resetAll() (inkl. Filter-State). Exports: designKWeightingPreFilter/RlbFilter Pure-Helpers + meanSquareToLufs + Biquad-Klasse + LUFS_SILENCE/LUFS_OFFSET/ABSOLUTE_GATE_LUFS/RELATIVE_GATE_LU + MOMENTARY/SHORT_TERM/INTEGRATED-Konstanten. RLB-Filter b-Koeffizienten WICHTIG nicht durch RBJ-Norm geteilt (b0=1, b1=-2, b2=1 fix per Spec).",
       lastSeen: "2026-05-19T04:30:00.000Z",
@@ -2222,6 +2237,40 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "backend",
+      timestamp: "2026-05-19T04:45:00.000Z",
+      done: [
+        "v3.79.0: Sub-Mix-Buses — 100. Release! Channel-Grouping mit shared FX (DAW-Standard). Bis zu MAX_SUB_MIX_BUSES=8 pro Projekt; jeder Bus hat id/name/color/volume/pan/mute/solo/channelIds[] + optional fx-Snapshot. Channels ohne Bus default zu master (additiv, kein Breaking-Change). Im Sub-Mix-Store Audio-frei (analog useMasterFxStore — Components rufen explizit Engine-Setter, hier Store-only).",
+        "client/src/store/useSubMixStore.ts (NEU, ~330 LOC, Custom-Observer-Pattern wie useMasterFxStore, DOM-frei testbar): MAX_SUB_MIX_BUSES=8 Konstante. SubMixBus + SubMixBusFx + SubMixState Interfaces. defaultSubMixState() / DEFAULT_BUS_FX. clampNum/clampBool/clampString Pure-Helpers. sanitizeBus(raw) → SubMixBus | null (validate id, clamp name/volume/pan/mute/solo, parse Hex-color, defensive). sanitizeSubMixState(raw) → SubMixState (dedupe id, hart cap auf MAX). localStorage-Persist unter 'synthstudio:sub-mix:v1'. Public-API: getSubMixState/getBuses/getBusForChannel/getBusById, createBus(name?)→id|null (caps bei 8), removeBus, renameBus, setBusColor (silent-strip invalid Hex), setBusVolume/Pan/Mute/Solo, setBusFx, assignChannelToBus (auto-unassign aus anderen Buses!), unassignChannel, anyBusSolo, isBusEffectivelyMuted (Solo-Logik: any-bus-solo → others muted), setAllBuses (Project-Restore-Path mit undefined-Signal-Semantik), resetSubMix, __resetSubMixStoreForTests. useSubMixStore() React-Hook.",
+        "client/src/utils/projectSerializer.ts SCHEMA-BUMP v1.31 → v1.32: SYNTH_FILE_VERSION='1.32' + Header-Doku-Block v1.32-Migration. NEU subMixBuses?:SubMixBus[] Feld auf SynthProject-Type (additiv-optional). parseProject() ergänzt subMixBuses-Migration-Block: undefined bleibt undefined (Signal: User-localStorage nicht überschreiben), null/non-Array → undefined, Array → sanitizeBus-Filter + dedupe + MAX-Cap. Import +sanitizeBus +MAX_SUB_MIX_BUSES +SubMixBus aus useSubMixStore. Bestehende v1.31/v1.30/etc. bleibt unverändert.",
+        "tests/features/sub-mix-bus.test.ts (NEU, ~280 LOC, 15 Tests in 6 describes, env:node mit localStorage-Mock). (1) createBus + Defaults × 2: ID + Default-Werte + Clamping (Vol 0..2, Pan -1..+1) + persistiert in synthstudio:sub-mix:v1. (2) Channel-Assignment × 3: assign fügt partId hinzu, Re-Assign zwischen Buses entfernt automatisch aus altem Bus, unassignChannel entfernt aus allen. (3) Bus-Mute/Solo × 2: Bus-Mute set + isBusEffectivelyMuted, Bus-Solo macht andere stumm (Logik konsistent mit Channel-Solo). (4) MAX_SUB_MIX_BUSES × 2: 9. Bus returnt null, removeBus erlaubt wieder neue Buses bis Limit. (5) Schema v1.32 Round-Trip × 4: SYNTH_FILE_VERSION='1.32', Round-Trip preserves volume/channelIds/name, pre-v1.32-File ohne subMixBuses → undefined bleibt, invalide Einträge silent gefiltert + Clamping wirkt. (6) Channel ohne Bus default zu master × 2: getBusForChannel undefined für nicht-assigned + localStorage-Reload-Round-Trip.",
+        "Test-Cleanup: 14 bestehende Test-Files mit version-string-Assertions auf '1.31' nach '1.32' aktualisiert (audio-loop-crossfade, audio-track-loop/-store/-stretch, channel-colors, master-fx-bus, master-limiter, multi-bar-pattern, plugin-host/-multislot, project-id-migration, project-serializer, quick-action-integration, script-store). Pre-Version-Backward-Compat-Test-Daten (version:'1.30'/'1.31' als input) bleiben unverändert da diese Migration-Pfade testen.",
+        "package.json (3.78.0 → 3.79.0). pnpm check clean. pnpm test grün: 224 Test-Files / 5154 Tests passed (16 skipped, +15 vs. v3.78 5139)."
+      ],
+      next: [
+        "v3.79 FOLLOWUP: AudioEngine Sub-Mix-Routing-Wiring — pro bus → GainNode(volume) + StereoPannerNode(pan), Channel-Output disconnect+reconnect wenn part.subMixBusId gesetzt → busGain statt direct masterGain. Aktuelle v3.79 ist Store + Schema + Tests; UI/Engine-Mount kommt in v3.79.1.",
+        "v3.79 FOLLOWUP: UI-Sub-Mix-Strip im MixerView — neuer Strip-Type mit gruppen-color, 'Members'-Anzeige (Channel-Count), '+ New Bus'-Button in MixerView-Toolbar, Channel-Strip dropdown 'Send to Bus'.",
+        "v3.79 FOLLOWUP: Pro-Bus-FX-Chain reuse vom channel-FX-graph-builder wenn applicable — aktueller SubMixBusFx ist minimal (postGain + enabled), volle FX-Insert-Chain wäre ein größeres v3.80 Re-Use von makeMixerFxSlot.",
+        "v3.79 FOLLOWUP: Routing-Order finalize: channels → bus-input → (optional bus-fx) → bus-volume → master-EQ → ... → destination. Aktuell ist nur die State-Schicht da; Engine-Wiring + Side-Chain-Routing kommt in v3.79.1.",
+        "v3.79 FOLLOWUP: Bus-Solo-Engine-Anwendung — anyBusSolo+isBusEffectivelyMuted-Helpers liefern den State, Engine muss die Bus-GainNodes entsprechend ducken (kein Auto-Apply von Channel-Solo auf Bus-Members; Solo-Logik ist hierarchisch).",
+        "v3.80: True-Peak-Reader am Master-Output (4x-Oversampling für inter-sample peaks). Aktueller Limiter sieht nur sample-peaks (Roll-over aus v3.78)."
+      ],
+      changed: [
+        "client/src/store/useSubMixStore.ts (NEU, ~330 LOC: Custom-Observer-Store + sanitizeBus/sanitizeSubMixState Pure-Helpers + 14 Public-Setter + React-Hook)",
+        "client/src/utils/projectSerializer.ts (Schema v1.31 → v1.32: SYNTH_FILE_VERSION + Header-Doku + subMixBuses-Feld + parseProject-Migration-Block)",
+        "tests/features/sub-mix-bus.test.ts (NEU, ~280 LOC, 15 Tests in 6 describes)",
+        "package.json (3.78.0 → 3.79.0)",
+        "tests/features/{audio-loop-crossfade,audio-track-loop,audio-track-store,audio-track-stretch,channel-colors,master-fx-bus,master-limiter,multi-bar-pattern,plugin-host,plugin-multislot,project-id-migration,project-serializer,quick-action-integration,script-store}.test.ts (version-string-Bumps '1.31' → '1.32')",
+        "agents/INDEX.js (version + workLog)"
+      ],
+      caveats: [
+        "v3.79 ist Store + Schema + Tests only — AudioEngine-Wiring + UI-Sub-Mix-Strip + Channel-Strip 'Send to Bus'-Dropdown sind explizit für v3.79.1 reserviert (Scope-Splitting damit die 100. Release das stabile State-Layer kriegt; Audio-Routing erfordert deutlich mehr Engine-Refactoring auf den existierenden _getOrCreateChannelNodes-Pfad und braucht ein eigenes Test-Cluster mit Mock-AudioContext).",
+        "SubMixBusFx ist minimal (enabled + postGain). Volle pro-Bus-FX-Insert-Chain wäre ein deutlich größeres Reuse vom channel-FX-graph-builder (makeMixerFxSlot/insertChains) und wartet auf v3.80.",
+        "Bus-of-Bus-Routing wird bewusst NICHT unterstützt in v3.79 — Channel→Bus→Master ist 1-Layer-Grouping (klassischer DAW-Workflow). Bei größeren Setups (5+ Sub-Mix-Hierarchien) wäre das ein eigenes v4.0 Routing-Modul.",
+        "Solo-Logik liefert isBusEffectivelyMuted-Hint, aber Engine-Side-Effect (Bus-Mute, Solo) wartet auf v3.79.1-Wiring. State-Layer ist konsistent."
+      ]
+    },
     {
       agent:     "backend",
       timestamp: "2026-05-19T04:30:00.000Z",

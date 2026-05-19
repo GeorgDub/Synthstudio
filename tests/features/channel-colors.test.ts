@@ -283,11 +283,11 @@ describe("v3.73.0 — applyPartColorUpdate (Pure-Transform)", () => {
 // ─── 4. Schema v1.28 Round-Trip ──────────────────────────────────────────────
 
 describe("v3.73.0 — Schema v1.28 Round-Trip + Backward-Compat", () => {
-  it("SYNTH_FILE_VERSION ist '1.31'", () => {
-    expect(SYNTH_FILE_VERSION).toBe("1.31");
+  it("SYNTH_FILE_VERSION ist '1.32'", () => {
+    expect(SYNTH_FILE_VERSION).toBe("1.32");
   });
 
-  it("Schema v1.31 Round-Trip: PartData.color wird preserved", () => {
+  it("Schema v1.32 Round-Trip: PartData.color wird preserved", () => {
     const input = makeBaseInput();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (input.patterns[0].parts[0] as any).color = "#ef4444";
@@ -295,7 +295,7 @@ describe("v3.73.0 — Schema v1.28 Round-Trip + Backward-Compat", () => {
     const ser = serializeProject(input as any);
     const json = toJson(ser);
     const parsed = parseProject(json);
-    expect(parsed.version).toBe("1.31");
+    expect(parsed.version).toBe("1.32");
     expect(parsed.patterns[0].parts[0].color).toBe("#ef4444");
   });
 
@@ -528,8 +528,8 @@ describe("v3.74.0 — LiveInput color persist", () => {
 // ─── 8. v3.74.0 — Schema v1.29 Round-Trip ────────────────────────────────────
 
 describe("v3.74.0 — Schema v1.29 Round-Trip + Backward-Compat", () => {
-  it("SYNTH_FILE_VERSION ist '1.31' (v3.76 Master-Limiter + Mid-Q)", () => {
-    expect(SYNTH_FILE_VERSION).toBe("1.31");
+  it("SYNTH_FILE_VERSION ist '1.32' (v3.79 Sub-Mix-Buses)", () => {
+    expect(SYNTH_FILE_VERSION).toBe("1.32");
   });
 
   it("Round-Trip: AudioTrack.color wird preserved", () => {
@@ -565,7 +565,7 @@ describe("v3.74.0 — Schema v1.29 Round-Trip + Backward-Compat", () => {
     const ser = serializeProject(input as any);
     const json = toJson(ser);
     const parsed = parseProject(json);
-    expect(parsed.version).toBe("1.31");
+    expect(parsed.version).toBe("1.32");
     expect(parsed.audioTracks).toBeDefined();
     expect(parsed.audioTracks![0].color).toBe("#a855f7");
   });
