@@ -2,7 +2,9 @@
  * OmniTribeBridge.ts — SynthStudio ↔ OmniTribe Bridge.
  *
  * SoT: G:/IdeaProjects/Omnitribe/host/synthstudio/OmniTribeBridge.ts
- * (v3.16.0 / Sprint Tag 1-2 — drop-in port from sibling repo)
+ * (v3.43.0 — Sprint-95 sync mit SynthStudio-Improvements:
+ *  clampInt, disconnect(), Map-basierte pendingSets mit lazy GC,
+ *  Chord User-Slot Upload/Download, Test-Hooks)
  *
  * Spec: docs/midi/otp_protocol.md (im Omnitribe-Repo)
  * Mirror in Python: tools/midi/otp_codec.py (im Omnitribe-Repo)
@@ -381,10 +383,6 @@ export class OmniTribeBridge {
 
   /** Test-Hook: liefert zuletzt gesendete Frames (für Vitest). */
   __testGetSentFrames(): Uint8Array[] {
-    // Wir können nicht direkt rausziehen ohne FakeOutput; Tests greifen
-    // stattdessen über das FakeMidiOutput.sent-Array zu. Helper bleibt
-    // hier als Anker, falls die Bridge-Klasse später eigene Sniffing-
-    // Unterstützung will.
     return [];
   }
 

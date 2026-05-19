@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.104.0",
+    version: "3.105.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -89,6 +89,31 @@ const INDEX = {
   // ─── KNOWN FILE INDEX ──────────────────────────────────────
   // Key files agents have analyzed. Add new entries after working on a file.
   files: {
+    "client/src/utils/patternVariations.ts (v3.105.0 NEU)": {
+      role:     "v3.105.0 NEU (+~330 LOC). Pattern-Variation-Generator — 8 pure Algorithmen die ein StepData[][] Grid (parts × steps) nehmen und ein neues Grid produzieren, ohne Mutation. Kinds: humanize (Velocity ±intensity·30 auf aktive Steps), addGhostNotes (low-vel 10..30 auf leere Steps, Wahrscheinlichkeit=intensity), addFill (letzte 4 Steps verdichten — klassisches Drum-Fill), varySwing (Velocity-Asymmetrie even/odd), increaseDensity (intensity=1.0 → alle leeren aktiv mit 60..100 vel), decreaseDensity (intensity=1.0 → alle aktiven leer), shuffleVelocity (Fisher-Yates Permutation der Velocities, Multiset-erhaltend), rhythmicDisplacement (±1 step shift probabilistisch). makeRng(seed) mulberry32 PRNG, NaN/Infinity-Fallback auf Math.random. ALL_VARIATION_KINDS + VARIATION_KIND_LABELS + VariationConfig + applyVariation Dispatch + gridFromParts/partsWithGrid Conversion-Helpers.",
+      lastSeen: "2026-05-19T11:08:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/store/usePatternVariationStore.ts (v3.105.0 NEU)": {
+      role:     "v3.105.0 NEU (+~145 LOC, Custom-Observer-Pattern analog useMorphStore). Separater Store vom usePatternVariationsStore (Plural — A/B/C/D-Slots fuer ein Pattern). localStorage 'ss-pattern-variation-gen:v1' mit clamp-on-load fuer intensity. State {lastUsedConfig:VariationConfig}. Public API: setLastUsedConfig (persistiert + notifies), previewVariation (pure, deterministic mit seed), generateBatch(configs[], duplicateAndApply-Callback) → string[] der neuen Pattern-IDs, applyVariationToPattern(source, config, newName?) → NEUE PatternData (kein Mutation). __resetPatternVariationGenForTests fuer DOM-frei testbar. Hook usePatternVariationStore liefert {lastUsedConfig, setLastUsedConfig, previewVariation, generateBatch, applyVariationToPattern}.",
+      lastSeen: "2026-05-19T11:08:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/components/PatternVariation/PatternVariationPanel.tsx (v3.105.0 NEU)": {
+      role:     "v3.105.0 NEU (+~245 LOC). UI fuer Pattern-Variation-Generator. Props: pattern (current selected), onApplyVariation (Dependency-Injection: source → newId), onSwitchToPattern, onClose. Sections: Kind-Dropdown (8 Optionen), Intensity-Slider (0-100% mit %-Display), Seed-Input (numeric only) + Random-Button (🎲), Mini-Preview-Grid (4 parts × 8 steps, opacity-coded velocity), Action-Bar mit 'Generate 1' + 'Generate Batch (4)' (bei Batch: seed += i pro Variante). Nur semantische Tailwind-Tokens (bg-bg-panel, text-accent-primary, border-border-color). Data-testids fuer alle Interactives.",
+      lastSeen: "2026-05-19T11:08:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "tests/features/pattern-variations.test.ts (v3.105.0 NEU)": {
+      role:     "v3.105.0 NEU (+~365 LOC, 42 Tests in 14 describes). (1) humanize × 4 — Anzahl-aktive Steps Invariant, seed-deterministic Round-Trip, intensity=0 no-op, pure-non-mutating. (2) addGhostNotes × 3 — nur leere Steps werden Ghost, intensity=1.0 fuellt alle, intensity=0 keine Aenderung. (3) addFill × 3 — letzte 4 Steps zwingend aktiv, density-Comparison, Velocity-Bumps. (4) varySwing × 3 — even/odd Velocity-Diff, intensity=0 no-op, seed-deterministic. (5) increaseDensity × 3 — intensity=1 alle leeren gefuellt, intensity=0 no-op, seed-deterministic. (6) decreaseDensity × 3 — intensity=1 alle geleert, intensity=0 no-op, seed-deterministic. (7) shuffleVelocity × 3 — same multiset (sorted equal), Position-Invariant (active-bleibt-aktiv), seed-deterministic. (8) rhythmicDisplacement × 3 — max ±1 step in Window, intensity=0 no-op, seed-deterministic. (9) applyVariation × 3 — alle 8 Kinds gueltig, preview-pure, no-seed kein Throw. (10) makeRng × 4 — seeded-deterministic, different seeds different sequences, no-seed Math.random fallback, NaN/Infinity fallback. (11) Store previewVariation × 2. (12) Store generateBatch × 3 — N pattern-IDs zurueck, empty configs → empty, leere ID-Filter. (13) Store applyVariationToPattern × 3. (14) Store setLastUsedConfig × 2. Alle 42 gruen.",
+      lastSeen: "2026-05-19T11:08:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/components/DrumMachine/DrumMachine.tsx (v3.105.0 +Variation-Panel-Wire)": {
+      role:     "v3.105.0 ERWEITERT (+~30 LOC, alle vorherigen Bloecke v3.97 step-recorder + v2.x Toolbar unveraendert). NEU Imports PatternVariationPanel aus @/components/PatternVariation + applyVariationToPattern aus @/store/usePatternVariationStore. NEU useState showVariation (false default). NEU Toolbar-Button '✨ Variation' (data-testid='toggle-pattern-variation') direkt nach Morph-Button — gleiche Stil-Konvention (bg-accent-primary/20 active). NEU ResizableDrumPanel-Block (storageKey='ss-panel-variation', defaultHeight 280, min 200, max 420) hostet das Panel; wireing: onApplyVariation → applyVariationToPattern(source, cfg, name) + dm.addPatternData → newId, onSwitchToPattern → dm.setActivePattern.",
+      lastSeen: "2026-05-19T11:08:00.000Z",
+      ownedBy:  "frontend"
+    },
     "client/src/audio/MidiClickOut.ts (v3.99.0 +clampNoteDurationMs/clampCountInBars)": {
       role:     "v3.99.0 ERWEITERT (+~50 LOC, baseline v3.98 unverändert): NEU Pure-Helpers clampNoteDurationMs(ms)→10..500, clampCountInBars(bars)→1..4. NEU Konstanten MIN/MAX_CLICK_NOTE_DURATION_MS (10/500), MIN/MAX_COUNT_IN_BARS (1/4), DEFAULT_COUNT_IN_BARS (1). triggerStep akzeptiert noteDurationMs-Param weiterhin (default 50, intern clamp 1..10000ms); jetzt vom AudioEngine durchgereicht statt hardcoded. v3.98-Body (Dependency-Injection-Sender, buildClickNoteOn/Off, detectClickKind, MidiClickOut-Klasse) unveraendert.",
       lastSeen: "2026-05-19T09:48:00.000Z",
@@ -2577,6 +2602,37 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "frontend",
+      timestamp: "2026-05-19T11:08:00.000Z",
+      done: [
+        "v3.105.0: Pattern-Variation-Generator (8 kinds, seeded random, preview + batch). Frischer user-facing Feature: aus aktuellem Pattern → N Variationen mit unterschiedlichen Algorithmen — Humanize, Ghost-Notes, Add-Fill, Swing-Vary, Density-Up, Density-Down, Shuffle-Velocity, Rhythmic-Displacement.",
+        "client/src/utils/patternVariations.ts NEU (+~330 LOC). Pure-Helper-First: 8 Variation-Funktionen + applyVariation-Dispatch, makeRng(seed)-Helper (mulberry32 PRNG, NaN/Infinity-Fallback auf Math.random), gridFromParts/partsWithGrid Conversion-Helpers. VariationConfig {kind, intensity:0..1, seed?:number}. Alle Funktionen pure (kein Mutation), deterministic mit Seed. ALL_VARIATION_KINDS + VARIATION_KIND_LABELS Records fuer UI.",
+        "client/src/store/usePatternVariationStore.ts NEU (+~145 LOC, Custom-Observer-Pattern analog useMorphStore). localStorage 'ss-pattern-variation-gen:v1' (separate vom existing 'ss-pattern-variations:v1' usePatternVariationsStore fuer A/B/C/D-Slots!). State {lastUsedConfig}. Public API: setLastUsedConfig, previewVariation (pure, deterministic mit seed), generateBatch (Dependency-Injection per duplicateAndApply-Callback), applyVariationToPattern (clones PatternData + applies grid). __resetPatternVariationGenForTests fuer DOM-frei testbar.",
+        "client/src/components/PatternVariation/PatternVariationPanel.tsx NEU (+~245 LOC). Kind-Dropdown (8 Optionen), Intensity-Slider (0-100%), Seed-Input + Random-Button (🎲), Mini-Preview-Grid (4 parts × 8 steps, velocity-opacity-coded), Generate 1 / Generate Batch (4) Buttons. Bei Batch: seed += i pro Variante damit jede Variante anders ist. Nur semantische Tailwind-Tokens (bg-bg-panel, text-accent-primary, border-border-color etc.) — kein hardcoded slate/cyan/gray. Closes auto bei Apply via onSwitchToPattern-Callback.",
+        "client/src/components/PatternVariation/index.ts NEU (Barrel-Export).",
+        "client/src/components/DrumMachine/DrumMachine.tsx ERWEITERT (+~30 LOC). Imports PatternVariationPanel + applyVariationToPattern. NEU showVariation-useState. NEU Toolbar-Button '✨ Variation' (data-testid='toggle-pattern-variation') direkt nach Morph-Button — gleiche Stil-Konvention (bg-accent-primary/20 active). NEU ResizableDrumPanel-Block (storageKey='ss-panel-variation', defaultHeight 280) der das Panel hostet; wireing: onApplyVariation → applyVariationToPattern + dm.addPatternData, onSwitchToPattern → dm.setActivePattern.",
+        "tests/features/pattern-variations.test.ts NEU (+~365 LOC, 42 Tests in 14 describes). Cluster: (1) humanize × 4 — Anzahl-Invariant, seed-deterministic, intensity=0 no-op, pure-non-mutating. (2) addGhostNotes × 3 — nur leere Steps, intensity=1 fuellt alle, intensity=0 keine Aenderung. (3) addFill × 3 — letzte 4 steps active, density-comparison, velocity-bumps. (4) varySwing × 3 — even/odd Velocity-Diff, intensity=0 no-op, seed-deterministic. (5) increaseDensity × 3 — intensity=1 alle leeren gefuellt, intensity=0 no-op, seed-deterministic. (6) decreaseDensity × 3 — intensity=1 alle geleert, intensity=0 no-op, seed-deterministic. (7) shuffleVelocity × 3 — same multiset, Position-Invariant, seed-deterministic. (8) rhythmicDisplacement × 3 — max ±1 step, intensity=0 no-op, seed-deterministic. (9) applyVariation Dispatch × 3 — alle 8 Kinds gueltig, preview-pure, no-seed kein Throw. (10) makeRng × 4 — seeded-deterministic, different seeds, no-seed Math.random fallback, NaN/Infinity fallback. (11) Store previewVariation × 2. (12) Store generateBatch × 3 — N pattern-IDs, empty configs, leere ID-Filter. (13) Store applyVariationToPattern × 3 — neues PatternData, optional Name, pure non-mutating. (14) Store setLastUsedConfig × 2 — localStorage Roundtrip, clamp on load. Alle 42 gruen.",
+        "package.json 3.104.0 → 3.105.0. pnpm check: clean. pnpm test: 248 Files / 5632 passed / 16 skipped (vs v3.104.0: 247/5576 — +1 File +56 Tests, keine Regression. Mein direkter Beitrag: +1 File +42 Tests, restliche +14 Tests stammen aus dazwischenliegenden Commits)."
+      ],
+      next: [
+        "Microtiming pro Step: aktuell encoden humanize+varySwing nur Velocity-Variation, da StepData kein eigenes microtiming-Feld hat (PartData hat microTiming, aber das ist part-level). Echtes pro-Step Microtiming-Offset waere ein additives Schema-Bump (StepData.timingOffset?:number in ms).",
+        "rhythmicDisplacement collision-handling: aktuell ueberschreibt der Target-Step wenn 2 Source-Steps auf denselben Target zeigen. Variante mit explicit merge (max velocity wins) waere intuitiver.",
+        "Batch-Mode mit verschiedenen Kinds: aktuell verwendet 'Generate Batch (4)' viermal dieselbe Kind. Erweiterung: 4 verschiedene Kinds in einem Batch (z.B. Humanize / Ghost / Fill / Density) per Multi-Select.",
+        "Preview-Grid zeigt nur erste 4 Parts × 8 Steps. Bei sehr breiten Patterns (16+ Parts) waere Pagination/Scroll sinnvoll.",
+        "MIDI-Learn-Binding fuer Variation-Apply-Action: Pad → Pattern-Variation triggern. Wuerde fuer Live-Use cases (Stage-Patterns vs Studio-Patterns) Sinn machen."
+      ],
+      changed: [
+        "client/src/utils/patternVariations.ts (NEU, ~330 LOC, 8 pure variation algorithms + dispatch)",
+        "client/src/store/usePatternVariationStore.ts (NEU, ~145 LOC, Observer-Store + dependency-injected generateBatch)",
+        "client/src/components/PatternVariation/PatternVariationPanel.tsx (NEU, ~245 LOC, UI mit Preview-Grid + Generate-Buttons)",
+        "client/src/components/PatternVariation/index.ts (NEU, Barrel)",
+        "client/src/components/DrumMachine/DrumMachine.tsx (+~30 LOC: Variation-Toolbar-Button + Panel-Mount)",
+        "tests/features/pattern-variations.test.ts (NEU +~365 LOC, 42 Tests)",
+        "package.json (3.104.0 → 3.105.0)",
+        "agents/INDEX.js"
+      ]
+    },
     {
       agent:     "backend",
       timestamp: "2026-05-19T10:55:00.000Z",

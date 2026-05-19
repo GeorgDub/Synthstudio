@@ -20,6 +20,8 @@ import { NoteRepeatPanel } from "@/components/PerformanceMode/NoteRepeatPanel";
 import { LooperPanel } from "@/components/PerformanceMode/LooperPanel";
 import { TransposeControl } from "@/components/PianoRoll/TransposeControl";
 import { PatternMorphPanel } from "@/components/PatternMorph";
+import { PatternVariationPanel } from "@/components/PatternVariation";
+import { applyVariationToPattern } from "@/store/usePatternVariationStore";
 import { MacroPanel } from "@/components/Macro/MacroPanel";
 import { EnvelopeFollowerPanel } from "./EnvelopeFollowerPanel";
 import { useMidiLearn } from "@/hooks/useMidiLearn";
@@ -463,6 +465,7 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
   }, [stepRec.enabled, stepRec]);
   const [showLooper, setShowLooper] = useState(false);
   const [showMorph, setShowMorph] = useState(false);
+  const [showVariation, setShowVariation] = useState(false);
   const [showMixAssistant, setShowMixAssistant] = useState(false);
   const [showEnvFollower, setShowEnvFollower] = useState(false);
   const [showMacros, setShowMacros] = useState(false);
@@ -1672,6 +1675,21 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
           ⟷ Morph
         </button>
 
+        {/* Pattern Variation (v3.105.0) */}
+        <button
+          onClick={() => setShowVariation(prev => !prev)}
+          title="Pattern-Variation-Generator"
+          data-testid="toggle-pattern-variation"
+          className={[
+            "px-2 py-1 rounded text-[10px] font-bold transition-colors",
+            showVariation
+              ? "bg-accent-primary/20 text-accent-primary border border-accent-primary/50"
+              : "bg-bg-elevated text-text-dim hover:bg-bg-elevated hover:text-text-primary",
+          ].join(" ")}
+        >
+          ✨ Variation
+        </button>
+
         {/* Envelope Follower Toggle */}
         <button
           onClick={() => setShowEnvFollower(prev => !prev)}
@@ -1919,6 +1937,25 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
               dm.setActivePattern(id);
               setShowMorph(false);
             }}
+          />
+        </ResizableDrumPanel>
+      )}
+
+      {/* ── Pattern Variation Panel (v3.105.0) ────────────────────────────── */}
+      {showVariation && (
+        <ResizableDrumPanel storageKey="ss-panel-variation" defaultHeight={280} minHeight={200} maxHeight={420}
+          onClose={() => setShowVariation(false)}>
+          <PatternVariationPanel
+            pattern={pattern}
+            onApplyVariation={(source, config, suggestedName) => {
+              const varied = applyVariationToPattern(source, config, suggestedName);
+              const newId = dm.addPatternData(varied);
+              return newId;
+            }}
+            onSwitchToPattern={(id) => {
+              dm.setActivePattern(id);
+            }}
+            onClose={() => setShowVariation(false)}
           />
         </ResizableDrumPanel>
       )}

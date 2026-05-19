@@ -448,6 +448,62 @@ notifies SynthStudio-Agent via Commit-Message + Update an `nrpn_spec.md`.
 
 ---
 
+## 15.5 Sprint-95: Chord User-Slot Upload/Download (v3.43.0)
+
+Die Bridge unterstuetzt seit v3.43.0 zwei neue Sub-Commands fuer das
+chord-Modul (NRPN MSB 0x1E, 4 User-Slots a 8 Intervalle).
+
+### CMD 0x02 SUB 0x04 — Chord User-Slot Upload (Host → Device)
+
+Payload-Layout: `[slot u8 0..3] [count u8 0..16] [N × interval u8 signed-7bit]`
+- `slot`: User-Chord-Index 0..3 (= chord_type 11..14)
+- `count`: Anzahl folgender Intervalle (max 16, hardware nutzt nur 8)
+- `interval`: Halbtoene relativ Root als signed-7bit two's-complement
+  (-64..+63). Negative oder >63 werden device-seitig als END-Marker
+  interpretiert (= "Slot leer ab hier").
+
+TS-Bridge-API:
+```ts
+omniTribeBridge.uploadChordUserSlot(slotIndex, intervals);
+// z.B. major-7th-add9 in User-Slot 0:
+omniTribeBridge.uploadChordUserSlot(0, [0, 4, 7, 11, 14]);
+```
+
+### CMD 0x02 SUB 0x05 — Chord User-Slot Download (Host → Device → Host)
+
+Request-Payload: `[slot u8 0..3]`
+Reply-Payload: identisch zur Upload-Payload-Form
+(`[slot, count, N×interval]`)
+
+TS-Bridge-API:
+```ts
+// einzelnen Slot anfordern (kein await — Reply via CustomEvent)
+omniTribeBridge.requestChordUserSlot(2);
+
+// alle 4 Slots sequentiell (10ms throttled)
+await omniTribeBridge.requestAllChordUserSlots();
+
+// Reply abfangen
+window.addEventListener("omnitribe:chord-user-slot", (ev) => {
+  const { slotIndex, intervals } = ev.detail;
+  // ... UI aktualisieren
+});
+```
+
+**Loader-v1-Stub-Hinweis:** Der C-Loader liefert aktuell auf SUB 0x05
+einen Stub-Reply mit `count=0` (= "Slot leer"). Echte Readback der
+chord-Modul-State folgt in Sprint-96 via Mailbox-Reverse-Channel.
+Bis dahin muss SynthStudio die User-Slot-Definitionen lokal cachen
+(z.B. in localStorage) statt vom Device zu pollen.
+
+### Echo-Schutz beim Upload
+
+Im Gegensatz zu CMD 0x02 SUB 0x00 (Param-Set) liegt CMD 0x02 SUB 0x04
+ausserhalb des `pendingSets`-Echo-Fensters — chord-Slots werden nicht
+notified, weshalb es keine Echo-Quelle gibt. Bridge sendet roh.
+
+---
+
 ## 16. Definition of Done
 
 Die Integration ist fertig wenn:
