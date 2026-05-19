@@ -1,6 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
+import { ConfirmDialogProvider } from "./components/common/ConfirmDialog";
 import "./index.css";
 
 // MIG-1A + DIAG-2: globale Renderer-Crash-Handler.
@@ -63,7 +64,9 @@ if (isDockviewPopout) {
 } else {
   ReactDOM.createRoot(document.getElementById("root")!).render(
     <React.StrictMode>
-      <App />
+      <ConfirmDialogProvider>
+        <App />
+      </ConfirmDialogProvider>
     </React.StrictMode>
   );
 }

@@ -19,6 +19,7 @@ import {
 } from "@/store/useMuteSoloGroupStore";
 import { DEFAULT_CHANNEL_COLOR_PALETTE } from "@/utils/channelColors";
 import { useMidiLearn } from "@/hooks/useMidiLearn";
+import { useConfirm } from "@/components/common/ConfirmDialog";
 
 export interface MuteSoloGroupPanelProps {
   /** Verfügbare Channels (für Multi-Select). id + name. */
@@ -35,6 +36,7 @@ export function MuteSoloGroupPanel({
   onClose,
 }: MuteSoloGroupPanelProps): React.ReactElement {
   const store = useMuteSoloGroupStore();
+  const confirm = useConfirm();
   const [addOpen, setAddOpen] = useState(false);
   const [editGroupId, setEditGroupId] = useState<string | null>(null);
 
@@ -131,16 +133,15 @@ export function MuteSoloGroupPanel({
             onMute={() => handleMute(group.id)}
             onSolo={() => handleSolo(group.id)}
             onEdit={() => setEditGroupId(group.id)}
-            onDelete={() => {
-              // v3.129.0: Confirm-Dialog vor destructive Delete (closes v3.127 polish-caveat)
-              if (
-                typeof window !== "undefined" &&
-                window.confirm(
-                  `Group "${group.name}" löschen?\nChannels bleiben unverändert — nur die Group-Zuordnung wird entfernt.`,
-                )
-              ) {
-                store.removeGroup(group.id);
-              }
+            onDelete={async () => {
+              // v3.144: Radix-AlertDialog via useConfirm (replaces native window.confirm).
+              const ok = await confirm({
+                title: `Group "${group.name}" löschen?`,
+                message: "Channels bleiben unverändert — nur die Group-Zuordnung wird entfernt.",
+                confirmLabel: "Löschen",
+                destructive: true,
+              });
+              if (ok) store.removeGroup(group.id);
             }}
           />
         ))}
