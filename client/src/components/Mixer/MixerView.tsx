@@ -23,7 +23,18 @@ import { AudioTrackStrip, computePeaksFromBuffer } from "./AudioTrackStrip";
 import { MasterFxPanel } from "./MasterFxPanel";
 import { LiveInputStrip } from "./LiveInputStrip";
 import { ChannelColorPicker } from "./ChannelColorPicker";
+import { SubMixBusStrip } from "./SubMixBusStrip";
 import { resolveChannelColor } from "@/utils/channelColors";
+// v3.80.0: Sub-Mix UI — Strip + Channel-Assign-Dropdown.
+import {
+  useSubMixStore,
+  createBus,
+  assignChannelToBus,
+  unassignChannel,
+  getBusForChannel,
+  MAX_SUB_MIX_BUSES,
+  type SubMixBus,
+} from "@/store/useSubMixStore";
 import {
   useLiveInputStore,
   addLiveInputChannel,
@@ -224,6 +235,12 @@ interface MixerChannelProps {
   onSendChange: (bus: "reverb" | "delay", v: number) => void;
   /** v3.63.0: Toggle Record-Arm. Optional — bei Master nicht gerendert. */
   onRecordArmToggle?: () => void;
+  /** v3.80.0: Liste verfügbarer Sub-Mix-Buses (für Dropdown). Default leer. */
+  subMixBuses?: SubMixBus[];
+  /** v3.80.0: Aktuell zugewiesener Bus (oder undefined = Master). */
+  assignedBusId?: string | null;
+  /** v3.80.0: Callback bei Bus-Wechsel (null = Master/unassign). */
+  onAssignBus?: (busId: string | null) => void;
 }
 
 function MixerChannel({
@@ -234,6 +251,7 @@ function MixerChannel({
   onSelect,
   onVolumeChange, onPanChange, onMuteToggle, onSoloToggle, onSendChange,
   onRecordArmToggle,
+  subMixBuses, assignedBusId, onAssignBus,
 }: MixerChannelProps) {
   const labelColor = muted ? "text-text-dim" : soloed ? "text-accent-success" : "text-text-primary";
 
@@ -451,6 +469,54 @@ function MixerChannel({
           </div>
         </div>
       )}
+
+      {/* v3.80.0: "Send to Bus"-Dropdown. Nur sichtbar wenn mind. ein Bus
+          existiert UND der Channel kein Master ist. Master + Buses ohne
+          Definitions-Liste wird übersprungen. */}
+      {!isMaster && onAssignBus && subMixBuses && subMixBuses.length > 0 && (
+        <div className="flex flex-col items-center gap-0.5 w-full mt-1">
+          <span className="text-[7px] text-text-dim uppercase">→ Bus</span>
+          <select
+            value={assignedBusId ?? ""}
+            onChange={(e) => {
+              const v = e.target.value;
+              onAssignBus(v === "" ? null : v);
+            }}
+            data-testid={`mixer-channel-bus-select-${partId}`}
+            aria-label={`Channel ${name}: Bus-Zuweisung`}
+            title={assignedBusId
+              ? `Routet zu Bus "${subMixBuses.find((b) => b.id === assignedBusId)?.name ?? "?"}"`
+              : "Routet direkt zu Master"}
+            className="w-full text-[8px] bg-bg-elevated text-text-primary border border-border-color rounded px-0.5 py-0.5 focus:outline-none focus:border-accent-primary"
+          >
+            <option value="">Master</option>
+            {subMixBuses.map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.name}
+              </option>
+            ))}
+          </select>
+          {assignedBusId && (() => {
+            const b = subMixBuses.find((x) => x.id === assignedBusId);
+            if (!b) return null;
+            const color = b.color && /^#[0-9a-fA-F]{3,6}$/.test(b.color) ? b.color : "var(--ss-accent-secondary)";
+            return (
+              <span
+                data-testid={`mixer-channel-bus-tag-${partId}`}
+                className="text-[7px] font-mono rounded px-1"
+                style={{
+                  backgroundColor: `${color}33`, // ~20% alpha (hex hack)
+                  color,
+                  border: `1px solid ${color}66`,
+                }}
+                title={`Aktuelle Bus-Zuweisung: ${b.name}`}
+              >
+                {b.name}
+              </span>
+            );
+          })()}
+        </div>
+      )}
     </div>
   );
 }
@@ -598,6 +664,9 @@ export function MixerView({ dm, mixer, samples = [], bpm = 120, projectName = "S
   const liveInputChannels = liveInputStore.channels;
   // v3.63.0: Record-Arm-Store für Drum/Synth-Channels (Mixer-Strip-Button).
   const drumPartArmStore = useDrumPartRecordArmStore();
+  // v3.80.0: Sub-Mix-Bus-Store für UI (Strip + Channel-Assign-Dropdown).
+  const subMixStore = useSubMixStore();
+  const subMixBuses = subMixStore.buses;
   const electron = useElectron();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [addError, setAddError] = useState<string | null>(null);
@@ -816,6 +885,23 @@ export function MixerView({ dm, mixer, samples = [], bpm = 120, projectName = "S
     AudioEngine.setMasterVolume(vol);
   }, [mixer]);
 
+  // v3.80.0: Channel ↔ Sub-Mix-Bus-Assignment.
+  // null = unassign (zurück zu Master), string = assign zum Bus.
+  const handleAssignBus = useCallback((partId: string, busId: string | null) => {
+    if (busId === null) {
+      unassignChannel(partId);
+    } else {
+      assignChannelToBus(busId, partId);
+    }
+    // Engine-Sync läuft automatisch via App.tsx-useEffect-Subscription.
+  }, []);
+
+  // v3.80.0: "+ New Bus" Click — erzeugt einen neuen Bus mit Default-Name.
+  const handleCreateBus = useCallback(() => {
+    if (subMixBuses.length >= MAX_SUB_MIX_BUSES) return;
+    createBus();
+  }, [subMixBuses.length]);
+
   // Sidechain-Einstellungen an AudioEngine weitergeben wenn sie sich ändern
   useEffect(() => {
     Object.entries(mixer.sidechains).forEach(([partId, sc]) => {
@@ -931,6 +1017,26 @@ export function MixerView({ dm, mixer, samples = [], bpm = 120, projectName = "S
             ({liveInputChannels.length}/{MAX_LIVE_INPUT_CHANNELS})
           </span>
           <ProLockBadge feature={PRO_FEATURE_USB_AUDIO_IN} />
+        </button>
+
+        {/* v3.80.0: + New Bus — Sub-Mix-Bus erzeugen (Channel-Grouping). */}
+        <button
+          type="button"
+          onClick={handleCreateBus}
+          disabled={subMixBuses.length >= MAX_SUB_MIX_BUSES}
+          data-testid="mixer-add-sub-mix-bus"
+          aria-label="Sub-Mix-Bus hinzufügen"
+          title={
+            subMixBuses.length >= MAX_SUB_MIX_BUSES
+              ? `Max ${MAX_SUB_MIX_BUSES} Sub-Mix-Buses erreicht`
+              : "Neuen Sub-Mix-Bus erzeugen (Channel-Grouping mit shared Volume/Pan/Mute/Solo)"
+          }
+          className="px-2 py-0.5 text-[10px] rounded border border-accent-success/50 text-accent-success bg-accent-success/10 hover:bg-accent-success/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          + New Bus
+          <span className="ml-1 text-text-dim">
+            ({subMixBuses.length}/{MAX_SUB_MIX_BUSES})
+          </span>
         </button>
 
         {/* v3.62.0: Multi-Track Recording — Arm-All-Button + armed-Counter.
@@ -1125,6 +1231,7 @@ export function MixerView({ dm, mixer, samples = [], bpm = 120, projectName = "S
             {parts.map((part, partIndex) => {
               const ch = mixer.channels[part.id];
               const armed = drumPartArmStore.isArmed(part.id);
+              const assignedBus = getBusForChannel(part.id);
               return (
                 <MixerChannel
                   key={part.id}
@@ -1150,6 +1257,9 @@ export function MixerView({ dm, mixer, samples = [], bpm = 120, projectName = "S
                   onSoloToggle={(e) => dm.setPartSoloed(part.id, !part.soloed, !e.shiftKey)}
                   onSendChange={(bus, level) => handleSendChange(part.id, bus, level)}
                   onRecordArmToggle={() => drumPartArmStore.setRecordArm(part.id, !armed)}
+                  subMixBuses={subMixBuses}
+                  assignedBusId={assignedBus?.id ?? null}
+                  onAssignBus={(busId) => handleAssignBus(part.id, busId)}
                 />
               );
             })}
@@ -1174,6 +1284,16 @@ export function MixerView({ dm, mixer, samples = [], bpm = 120, projectName = "S
                 channel={ch}
                 // v3.74.0: Channel-Color-Index nach drum-parts + audio-tracks.
                 channelIndex={parts.length + audioTracks.length + liveInputIndex}
+              />
+            ))}
+
+            {/* v3.80.0: Sub-Mix-Bus-Strips (rechts neben Channels, links vom Master).
+                Wenn keine Buses existieren, wird die "column" einfach übersprungen. */}
+            {subMixBuses.map((bus, busIndex) => (
+              <SubMixBusStrip
+                key={bus.id}
+                bus={bus}
+                busIndex={busIndex}
               />
             ))}
 

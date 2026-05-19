@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.79.1",
+    version: "3.80.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -118,6 +118,21 @@ const INDEX = {
       role:     "v3.79.0 SCHEMA-BUMP v1.31 → v1.32: SYNTH_FILE_VERSION='1.32' + Header-Doku-Block v1.32-Migration (Sub-Mix-Buses additiv-optional). NEU subMixBuses?:SubMixBus[] Feld auf SynthProject mit ausführlichem JSDoc. parseProject() ergänzt subMixBuses-Migration-Block am Ende: undefined bleibt undefined (Signal an Restore: User-localStorage nicht überschreiben), null/non-Array → undefined, Array → sanitizeBus-Filter + Set-dedupe auf id + hart Cap auf MAX_SUB_MIX_BUSES. Import +sanitizeBus +MAX_SUB_MIX_BUSES +SubMixBus aus useSubMixStore. Bestehende v1.31/v1.30/v1.29/etc. bleibt unverändert.",
       lastSeen: "2026-05-19T04:45:00.000Z",
       ownedBy:  "backend"
+    },
+    "client/src/components/Mixer/SubMixBusStrip.tsx (v3.80.0)": {
+      role:     "v3.80.0 NEU (~210 LOC): Channel-Strip-Variante für einen Sub-Mix-Bus. Closes v3.79.1 UI-Lücke (Store + Engine waren da, aber keine UI). Layout top → bottom: 3px Color-Indicator (boxShadow inset, mit resolveBusColor — 8 OLED-freundliche Defaults + custom-Hex-Validator), editable Bus-Name (Input maxLength=32 mit onBlur/Enter/Escape-Sync zu renameBus), 'Members: N'-Counter, vertikaler Volume-Fader 0..2 (writingMode vertical-lr, accent-accent-primary), dB-Anzeige, Pan-Slider -1..+1 mit C/L/R-Label, Mute/Solo-Buttons (bg-accent-secondary/success), '× Remove' (bei members>0 window.confirm — Channels fallen automatisch zu Master via store.removeBus). Inline-Edit-State via useState + useEffect-Sync auf bus.name. Keine hardcoded Tailwind-Farben — alle Klassen semantisch (bg-bg-panel/bg-bg-elevated/text-text-primary/text-text-dim/text-accent-success/border-accent-danger/etc.). data-testids: sub-mix-bus-strip-/name-/members-/volume-/pan-/mute-/solo-/remove-<id>. v3.80.0-Caveat: kein MIDI-Learn (subMixBus*-Targets sind nicht in der MidiLearnTarget-Union — folgt in v3.81+).",
+      lastSeen: "2026-05-19T05:10:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/components/Mixer/MixerView.tsx (v3.80.0 sub-mix-ui-wiring)": {
+      role:     "v3.80.0 ERWEITERT (+~85 LOC, bestehende v3.79+v3.78+v3.74+v3.73+v3.63+v3.54+v3.53+v2.98 etc. bleibt): NEU `+ New Bus`-Button neben '+ Live Input' (border-accent-success/50, disabled wenn MAX_SUB_MIX_BUSES erreicht, Counter {N}/{MAX}, data-testid=mixer-add-sub-mix-bus). NEU `Send to Bus`-Dropdown im MixerChannel (rendered nur für non-Master + wenn subMixBuses.length > 0): <select> mit 'Master'-Default-Option + bus.name-Optionen, kleiner Color-Tag unterhalb mit bus.color (20% Alpha-bg + 40% Border) der den aktuell zugewiesenen Bus visualisiert, data-testid=mixer-channel-bus-select-<partId> + mixer-channel-bus-tag-<partId>. NEU `SubMixBusStrip` gerendert rechts neben Channel-Strips (parts + audioTracks + liveInputs), links vom Master — wenn 0 Buses keine extra column. NEU `useSubMixStore`-Hook-Subscription + handleAssignBus/handleCreateBus useCallbacks. MixerChannelProps um subMixBuses?/assignedBusId?/onAssignBus? erweitert (alle optional damit Master-Channel + Web-Mode-Stubs nicht crashen). Engine-Sync läuft automatisch via App.tsx v3.79.1-useEffect — die UI-Schicht ruft nur Store-Setter.",
+      lastSeen: "2026-05-19T05:10:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "tests/features/sub-mix-ui.test.ts (v3.80.0)": {
+      role:     "v3.80.0 NEU (~190 LOC, 8 Tests in 5 describes, env:node mit localStorage-Mock + window.confirm-Mock). Pure Store-Action-Tests die die UI-Komponenten-Pfade nachstellen (kein jsdom-Render — die Komponenten reichen onClick/onChange 1:1 an Store-Setter durch). (1) New-Bus-Button × 2: createBus erzeugt Bus mit Default-Namen 'Bus 1', 9. createBus → null (MAX-Limit-Guard analog disabled-Attribut). (2) Channel-Dropdown-Liste × 1: Dropdown-Options entsprechen exakt subMixBuses + 'Master'-Default — getestet als Array-Map-Spiegel. (3) onAssignBus × 2: assignChannelToBus + unassignChannel updaten den Store (Engine-Sync via App.tsx-useEffect ist via sub-mix-engine.test.ts bereits gedeckt), Re-Assignment Bus A → Bus B entfernt auto aus altem Bus. (4) Remove-Bus × 2: ohne members entfernt direkt (kein Confirm), mit members → window.confirm-Mock (false=keine Mutation, true=removeBus + Members verlieren Bus-Membership). (5) Bus-Strip-Controls × 1: setBusVolume/Pan/Mute/Solo mutieren Store + Solo-Sister-Bus-Stummschaltung via isBusEffectivelyMuted.",
+      lastSeen: "2026-05-19T05:10:00.000Z",
+      ownedBy:  "frontend"
     },
     "client/src/audio/LufsAnalyzer.ts (v3.78.0)": {
       role:     "v3.78.0 NEU (~360 LOC, Pure-TS-Modul, DOM-frei, env:node-safe): ITU-R BS.1770-4 LUFS-Meter. K-Weighting Pre-Filter (high-shelf @1681Hz +4dB) + RLB-Filter (high-pass @38Hz Q=0.5) als Biquad-DF2 (4 State-Variablen). Bei 48kHz matchen die Coeffizienten die BS.1770-4-Tabelle exakt (Toleranz 1e-3). Bilinear-Transform für andere Sample-Rates mit Pre-Warping. SlidingMeanSquare-Klasse (Ring-Buffer + O(1)-update) für Momentary (400ms) und Short-Term (3s). Integrated mit 400ms-Block + 100ms-Hop (75% Overlap) und Two-Pass-Gating (absolute -70 LUFS + relative -10 LU). Public API: LufsAnalyzer-Constructor mit defensiv Throw für invalid Rates/Channels (1 oder 2), processBlock(L, R?), getMomentary/getShortTerm/getIntegrated, reset() (nur Integrated), resetAll() (inkl. Filter-State). Exports: designKWeightingPreFilter/RlbFilter Pure-Helpers + meanSquareToLufs + Biquad-Klasse + LUFS_SILENCE/LUFS_OFFSET/ABSOLUTE_GATE_LUFS/RELATIVE_GATE_LU + MOMENTARY/SHORT_TERM/INTEGRATED-Konstanten. RLB-Filter b-Koeffizienten WICHTIG nicht durch RBJ-Norm geteilt (b0=1, b1=-2, b2=1 fix per Spec).",
@@ -2252,6 +2267,31 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "frontend",
+      timestamp: "2026-05-19T05:15:00.000Z",
+      done: [
+        "v3.80.0: Sub-Mix UI (closes v3.79.1 dead-UI) — der Sub-Mix-Stack (Store v3.79.0 + Engine v3.79.1) hat jetzt eine vollständige UI im MixerView. Damit ist die seit v3.78 angekündigte Channel-Grouping-Feature komplett: User können Buses erzeugen, Channels per Dropdown zuweisen, Bus-Volume/Pan/Mute/Solo bedienen und Buses löschen. Layout: Bus-Strips sitzen rechts neben Channels (parts + audioTracks + liveInputs), links vom Master — wenn 0 Buses, gibt es keine extra column.",
+        "client/src/components/Mixer/SubMixBusStrip.tsx (NEU, ~210 LOC): SubMixBusStrip-Komponente. Layout: 3px Color-Indicator (8 OLED-freundliche Defaults + custom-Hex-Validator), editable Bus-Name (Input maxLength=32 mit onBlur/Enter/Escape-Sync zu renameBus), 'Members: N'-Counter, vertikaler Volume-Fader 0..2 mit dB-Anzeige, Pan-Slider -1..+1 mit C/L/R-Label, Mute/Solo-Buttons, '× Remove' mit window.confirm bei members>0. Inline-Edit-State via useState + useEffect-Sync. Keine hardcoded Tailwind-Farben — alle semantisch (bg-bg-panel/bg-bg-elevated/text-text-primary/text-accent-success/border-accent-danger/etc.). data-testids sub-mix-bus-strip-/name-/members-/volume-/pan-/mute-/solo-/remove-<id>.",
+        "client/src/components/Mixer/MixerView.tsx (ERWEITERT, +~85 LOC): NEU `+ New Bus`-Button neben '+ Live Input' (border-accent-success/50, disabled wenn MAX_SUB_MIX_BUSES erreicht, Counter {N}/{MAX}). NEU `Send to Bus`-Dropdown im MixerChannel: <select> mit 'Master'-Default-Option + bus.name-Optionen, kleiner Color-Tag unterhalb der den aktuell zugewiesenen Bus visualisiert. NEU SubMixBusStrip-Rendering zwischen Live-Inputs und Master. NEU useSubMixStore-Hook + handleAssignBus/handleCreateBus useCallbacks. MixerChannelProps um subMixBuses?/assignedBusId?/onAssignBus? erweitert (alle optional damit Master-Channel nicht crasht). Engine-Sync läuft automatisch via App.tsx-useEffect aus v3.79.1.",
+        "tests/features/sub-mix-ui.test.ts (NEU, ~190 LOC, 8 Tests in 5 describes, env:node mit localStorage-Mock + window.confirm-Mock). Pure Store-Action-Tests die die UI-Komponenten-Pfade nachstellen (kein jsdom-Render — die Komponenten reichen onClick/onChange 1:1 an Store-Setter durch). (1) New-Bus-Button × 2: createBus + MAX-Limit-Guard. (2) Channel-Dropdown-Liste × 1. (3) onAssignBus × 2: assign + unassign + Re-Assignment auto-unassign. (4) Remove-Bus × 2: ohne/mit members + Confirm-Mock. (5) Bus-Strip-Controls × 1: Volume/Pan/Mute/Solo + Sister-Bus-Stummschaltung.",
+        "package.json (3.79.1 → 3.80.0). pnpm check clean. pnpm test grün: 226 Test-Files / 5175 Tests passed (16 skipped, +1 file +10 vs v3.79.1)."
+      ],
+      next: [
+        "v3.81: Sub-Mix-Bus MIDI-Learn — neue Targets `subMixBusVolume|Pan|Mute|Solo` in der MidiLearnTarget-Union + Right-Click-Menu auf den Bus-Strip-Controls (analog zu Channel-Strips v1.87).",
+        "v3.81: Bus-Color-Picker im SubMixBusStrip — aktuell wird die Color nur per Default-Palette gesetzt, der Store hat setBusColor() aber kein UI-Picker (ChannelColorPicker reusen?).",
+        "v3.81: Pro-Bus-FX-Insert-Chain UI — SubMixBusFx ist im Store minimal (enabled + postGain). Volle FX-Chain im Bus-Pfad erfordert Refactoring des channel-FX-Builders so dass er einen beliebigen Audio-Node-Output statt nur ChannelNodes konsumiert (Backend-Aufgabe, v3.79.1-next).",
+        "v3.81: Drag&Drop-Channel→Bus statt Dropdown (DAW-Standard, optionaler UX-Boost).",
+        "v3.81: Bus-of-Bus-Routing (groupier z.B. 'Drums-Bus' + 'Perc-Bus' in einen 'Beat-Bus' — 2-Layer-Hierarchie, in v3.79 bewusst nicht supported)."
+      ],
+      changed: [
+        "client/src/components/Mixer/SubMixBusStrip.tsx (NEU, ~210 LOC)",
+        "client/src/components/Mixer/MixerView.tsx (+~85 LOC: +New-Bus-Button + Send-to-Bus-Dropdown + SubMixBusStrip-Rendering + useSubMixStore-Subscription)",
+        "tests/features/sub-mix-ui.test.ts (NEU, ~190 LOC, 8 Tests in 5 describes)",
+        "package.json (3.79.1 → 3.80.0)",
+        "agents/INDEX.js (version + workLog + 3 files-Einträge)"
+      ]
+    },
     {
       agent:     "backend",
       timestamp: "2026-05-19T05:00:00.000Z",
