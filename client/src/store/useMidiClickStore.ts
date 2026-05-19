@@ -16,11 +16,15 @@ import {
   clampClickChannel,
   clampClickNote,
   clampClickVelocity,
+  clampNoteDurationMs,
+  clampCountInBars,
   DEFAULT_ACCENT_NOTE,
   DEFAULT_ACCENT_VELOCITY,
   DEFAULT_BEAT_NOTE,
   DEFAULT_BEAT_VELOCITY,
   DEFAULT_CLICK_CHANNEL,
+  DEFAULT_CLICK_NOTE_DURATION_MS,
+  DEFAULT_COUNT_IN_BARS,
 } from "../audio/MidiClickOut";
 
 const STORAGE_KEY = "synthstudio:midi:clickout:v1";
@@ -33,6 +37,10 @@ export interface MidiClickStoreState {
   beatNote: number;         // 0..127 (default 77 = Low Wood Block)
   velocityAccent: number;   // 0..127
   velocityBeat: number;     // 0..127
+  // v3.99.0:
+  noteDurationMs: number;   // 10..500 (default 50)
+  countInEnabled: boolean;  // pre-roll Click-Bars vor Play
+  countInBars: number;      // 1..4 (default 1)
 }
 
 function defaultState(): MidiClickStoreState {
@@ -44,6 +52,9 @@ function defaultState(): MidiClickStoreState {
     beatNote: DEFAULT_BEAT_NOTE,
     velocityAccent: DEFAULT_ACCENT_VELOCITY,
     velocityBeat: DEFAULT_BEAT_VELOCITY,
+    noteDurationMs: DEFAULT_CLICK_NOTE_DURATION_MS,
+    countInEnabled: false,
+    countInBars: DEFAULT_COUNT_IN_BARS,
   };
 }
 
@@ -65,6 +76,9 @@ function loadState(): MidiClickStoreState {
       beatNote: typeof parsed.beatNote === "number" ? clampClickNote(parsed.beatNote) : d.beatNote,
       velocityAccent: typeof parsed.velocityAccent === "number" ? clampClickVelocity(parsed.velocityAccent) : d.velocityAccent,
       velocityBeat: typeof parsed.velocityBeat === "number" ? clampClickVelocity(parsed.velocityBeat) : d.velocityBeat,
+      noteDurationMs: typeof parsed.noteDurationMs === "number" ? clampNoteDurationMs(parsed.noteDurationMs) : d.noteDurationMs,
+      countInEnabled: parsed.countInEnabled === true,
+      countInBars: typeof parsed.countInBars === "number" ? clampCountInBars(parsed.countInBars) : d.countInBars,
     };
   } catch {
     return defaultState();
@@ -148,6 +162,32 @@ export function setMidiClickVelocityBeat(velocity: number): void {
   notify();
 }
 
+/** v3.99.0: Note-Duration (ms) — 10..500 (default 50). */
+export function setMidiClickNoteDurationMs(ms: number): void {
+  const next = clampNoteDurationMs(ms);
+  if (_state.noteDurationMs === next) return;
+  _state = { ..._state, noteDurationMs: next };
+  saveState(_state);
+  notify();
+}
+
+/** v3.99.0: Count-In aktivieren / deaktivieren. */
+export function setMidiClickCountInEnabled(enabled: boolean): void {
+  if (_state.countInEnabled === enabled) return;
+  _state = { ..._state, countInEnabled: enabled };
+  saveState(_state);
+  notify();
+}
+
+/** v3.99.0: Anzahl Pre-Roll-Bars (1..4). */
+export function setMidiClickCountInBars(bars: number): void {
+  const next = clampCountInBars(bars);
+  if (_state.countInBars === next) return;
+  _state = { ..._state, countInBars: next };
+  saveState(_state);
+  notify();
+}
+
 /**
  * Bulk-Setter — z.B. fuer Schema-Round-Trip-Restore. Validiert/clampt jedes
  * Feld, fehlende Felder bleiben beim aktuellen Wert.
@@ -166,6 +206,9 @@ export function setMidiClickState(partial: Partial<MidiClickStoreState>): void {
     beatNote: typeof partial.beatNote === "number" ? clampClickNote(partial.beatNote) : d.beatNote,
     velocityAccent: typeof partial.velocityAccent === "number" ? clampClickVelocity(partial.velocityAccent) : d.velocityAccent,
     velocityBeat: typeof partial.velocityBeat === "number" ? clampClickVelocity(partial.velocityBeat) : d.velocityBeat,
+    noteDurationMs: typeof partial.noteDurationMs === "number" ? clampNoteDurationMs(partial.noteDurationMs) : d.noteDurationMs,
+    countInEnabled: typeof partial.countInEnabled === "boolean" ? partial.countInEnabled : d.countInEnabled,
+    countInBars: typeof partial.countInBars === "number" ? clampCountInBars(partial.countInBars) : d.countInBars,
   };
   saveState(_state);
   notify();

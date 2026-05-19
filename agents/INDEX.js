@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.98.0",
+    version: "3.99.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -89,14 +89,19 @@ const INDEX = {
   // ─── KNOWN FILE INDEX ──────────────────────────────────────
   // Key files agents have analyzed. Add new entries after working on a file.
   files: {
-    "client/src/audio/MidiClickOut.ts (v3.98.0 NEU)": {
-      role:     "v3.98.0 NEU (+~190 LOC, Dependency-Injection-Sender analog MidiClockOut/MidiNoteOut). Pure-Helpers: clampClickVelocity/Note/Channel (NaN-Defense), buildClickNoteOn/Off (0x90/0x80 | channel), detectClickKind(stepIndex, totalSteps, beatsPerBar) → 'accent'|'beat'|null (closestBeat/representStep-Formel ident zum AudioEngine-Metronom). MidiClickOut-Klasse mit triggerStep(stepIndex, totalSteps, beatsPerBar, noteDurationMs=50) + setEnabled (flusht pending NoteOffs bei disable) + setConfig (partial-update preserves nicht-gesetzte Felder) + setSender. Defaults: Ch 9 (=MIDI 10 Drum), Accent=76, Beat=77, Vel 110/80. Konstanten exportiert: DEFAULT_CLICK_NOTE_DURATION_MS=50, DEFAULT_ACCENT_NOTE=76, DEFAULT_BEAT_NOTE=77, DEFAULT_ACCENT_VELOCITY=110, DEFAULT_BEAT_VELOCITY=80, DEFAULT_CLICK_CHANNEL=9.",
-      lastSeen: "2026-05-19T09:40:00.000Z",
+    "client/src/audio/MidiClickOut.ts (v3.99.0 +clampNoteDurationMs/clampCountInBars)": {
+      role:     "v3.99.0 ERWEITERT (+~50 LOC, baseline v3.98 unverändert): NEU Pure-Helpers clampNoteDurationMs(ms)→10..500, clampCountInBars(bars)→1..4. NEU Konstanten MIN/MAX_CLICK_NOTE_DURATION_MS (10/500), MIN/MAX_COUNT_IN_BARS (1/4), DEFAULT_COUNT_IN_BARS (1). triggerStep akzeptiert noteDurationMs-Param weiterhin (default 50, intern clamp 1..10000ms); jetzt vom AudioEngine durchgereicht statt hardcoded. v3.98-Body (Dependency-Injection-Sender, buildClickNoteOn/Off, detectClickKind, MidiClickOut-Klasse) unveraendert.",
+      lastSeen: "2026-05-19T09:48:00.000Z",
       ownedBy:  "backend"
     },
-    "client/src/store/useMidiClickStore.ts (v3.98.0 NEU)": {
-      role:     "v3.98.0 NEU (+~180 LOC, Modul-Singleton + React-Hook analog useMidiNoteOutStore). State {enabled, outputDeviceId, channel, accentNote, beatNote, velocityAccent, velocityBeat}. localStorage-Key 'synthstudio:midi:clickout:v1' (Schema v1 lokal, NICHT .synth-Projekt). Actions: setMidiClickEnabled/OutputDevice/Channel/AccentNote/BeatNote/VelocityAccent/VelocityBeat, Bulk-Setter setMidiClickState fuer Round-Trip-Restore, getMidiClickState Pure-Getter. Alle Setter clampen + idempotent (notify nur bei echtem Change). Schema-Validierung beim Load (Empty/Garbage → Defaults, valides Feld pro Feld). __resetMidiClickStoreForTests fuer Vitest.",
-      lastSeen: "2026-05-19T09:40:00.000Z",
+    "client/src/store/useMidiClickStore.ts (v3.99.0 +noteDurationMs/countIn)": {
+      role:     "v3.99.0 ERWEITERT (+~55 LOC, baseline v3.98 unverändert): NEU State-Felder noteDurationMs (10..500, default 50), countInEnabled (boolean, default false), countInBars (1..4, default 1). NEU Setter setMidiClickNoteDurationMs/CountInEnabled/CountInBars — clampen + idempotent. loadState parsed neue Felder mit clampNoteDurationMs/clampCountInBars-Defense gegen Garbage. setMidiClickState Bulk-Setter restored alle drei Felder. defaultState initialisiert mit Defaults. Schema-Backwards-Kompatibel — alte localStorage-Werte ohne diese Felder bekommen Defaults. v3.98-Body (Singleton+Hook, alle bestehenden Setter, __resetForTests) unveraendert.",
+      lastSeen: "2026-05-19T09:48:00.000Z",
+      ownedBy:  "backend"
+    },
+    "tests/features/click-duration-countin.test.ts (v3.99.0 NEU)": {
+      role:     "v3.99.0 NEU (+~265 LOC, 21 Tests in 7 describes, jsdom env). Cluster: (1) clampNoteDurationMs × 2 — Range 10..500 + Integer-Rund, NaN/Inf→DEFAULT (50), out-of-range→MIN/MAX. (2) clampCountInBars × 2 — Range 1..4 + NaN→DEFAULT (1). (3) Store noteDurationMs × 4 — Default-State (50), Persist Slider-Werte+localStorage, Clamp-Defense, idempotent (Identity-Check ref1===ref2). (4) Store Count-In × 3 — Persist enabled+bars in localStorage, Clamp out-of-range, Bulk-Setter setMidiClickState restored alle Felder. (5) MidiClickOut.triggerStep noteDurationMs × 3 — Default 50ms Note-Off-Timing (vi.useFakeTimers), Custom 200ms-Override, intern-Clamp auf 1ms-min. (6) Count-In Pre-Roll Algorithm × 5 — totalBeats=bars*beatsPerBar (4/4=4/8/16, 3/4=3/6, 6/8=6), disabled→instant-play, floor-Fallback bei bars=0, Beat-Duration skaliert mit BPM. (7) localStorage Round-Trip × 2 — alle v3.99-Felder persisted, Garbage-Defense in setMidiClickState. Alle 21 Tests gruen.",
+      lastSeen: "2026-05-19T09:48:00.000Z",
       ownedBy:  "backend"
     },
     "tests/features/midi-click-out.test.ts (v3.98.0 NEU)": {
@@ -104,9 +109,9 @@ const INDEX = {
       lastSeen: "2026-05-19T09:40:00.000Z",
       ownedBy:  "backend"
     },
-    "client/src/audio/AudioEngine.ts (v3.98.0 +MidiClickOut)": {
-      role:     "v3.98.0 ERWEITERT (+~30 LOC). NEU Import MidiClickOut + MidiClickConfig. NEU Feld _midiClickOut = new MidiClickOut(null). Public-API: setMidiClickOutSender (Sender (outputId,bytes)=>void), setMidiClickOutEnabled (bei Disable flusht MidiClickOut intern pending NoteOffs), setMidiClickOutConfig (Partial-Config), getMidiClickOut. Im _scheduleStep direkt nach Metronom-Block: this._midiClickOut.triggerStep(stepIndex, this._steps, this._metronomBeatsPerBar) — kein if-Wrap, MidiClickOut sortiert intern. Im stop(): Disable/Enable-Cycle analog MidiNoteOut. Vorheriger v3.97-Stand: MidiNoteOut/MidiClockOut/Metronom unveraendert.",
-      lastSeen: "2026-05-19T09:40:00.000Z",
+    "client/src/audio/AudioEngine.ts (v3.99.0 +CountIn/NoteDuration)": {
+      role:     "v3.99.0 ERWEITERT (+~115 LOC, baseline v3.98 MidiClickOut + v3.97 unveraendert): NEU Felder _midiClickNoteDurationMs (50), _countInEnabled, _countInBars (1), _preRollTimeouts (Set), _preRollActive. NEU Public-API setMidiClickNoteDurationMs/setCountInEnabled/setCountInBars/isPreRollActive. play() refactored: bei _countInEnabled ruft _startWithCountIn(fromStep), sonst direkt _startPattern(fromStep) (extrahierter vorheriger play-Body). _startWithCountIn: totalBeats = max(1, countInBars * beatsPerBar), pro Beat ein setTimeout (lokal _playClick + MIDI _midiClickOut.triggerStep mit fakeStep=0 fuer accent / stepsPerBeat fuer beat), dispatcht 'countin:tick' CustomEvent ({phase,remaining,total}); nach Pre-Roll-Ende _startPattern. stop() leert _preRollTimeouts + setzt _preRollActive=false + dispatcht end-Event. _scheduleStep.triggerStep-Call gibt _midiClickNoteDurationMs durch (statt hardcoded).",
+      lastSeen: "2026-05-19T09:48:00.000Z",
       ownedBy:  "backend"
     },
     "client/src/hooks/useMidi.ts (v3.98.0 +click-sender)": {
@@ -114,14 +119,14 @@ const INDEX = {
       lastSeen: "2026-05-19T09:40:00.000Z",
       ownedBy:  "backend"
     },
-    "client/src/App.tsx (v3.98.0 +useMidiClickStore-listener)": {
-      role:     "v3.98.0 ERWEITERT (+~22 LOC, bestehende v3.97 midi:stepRecorder-Listener + v3.94 midiFxChain-restore unveraendert). NEU Import useMidiClickStore. NEU useEffect — bei jedem Store-Change ruft setMidiClickOutConfig({outputId, channel, accentNote, beatNote, accentVelocity, beatVelocity}) und setMidiClickOutEnabled(enabled && !!outputDeviceId) auf der AudioEngine. Effektive Enable-Bedingung schliesst Garbage-State (enabled=true ohne Device gewaehlt) aus.",
-      lastSeen: "2026-05-19T09:40:00.000Z",
+    "client/src/App.tsx (v3.99.0 +CountIn-Overlay+Engine-Wiring)": {
+      role:     "v3.99.0 ERWEITERT (+~25 LOC, baseline v3.98 useMidiClickStore-Listener unveraendert): useMidiClickStore-useEffect zieht jetzt zusaetzlich setMidiClickNoteDurationMs/setCountInEnabled/setCountInBars in die Engine. NEU countInState (remaining/total | null) + 'countin:tick'-Event-Listener (setCountInState bei start/tick, null bei end). NEU Count-In-Overlay-JSX (fixed top-3 center pill, role=status, data-testid='count-in-overlay') mit '⏱ Count-In: <remaining>' wenn countInState !== null. Semantische Tailwind-Tokens (bg-accent-primary / text-text-primary).",
+      lastSeen: "2026-05-19T09:48:00.000Z",
       ownedBy:  "backend"
     },
-    "client/src/components/MidiSettings/MidiSettings.tsx (v3.98.0 +click-out-section)": {
-      role:     "v3.98.0 ERWEITERT (+~140 LOC + 8 Imports am Datei-Anfang + 1 Hook-Read im Body). NEU Section data-testid='click-out-section' im Clock-Tab (nach LED-Feedback, vor Hinweise-Block). Toggle 'click-out-toggle' fuer enabled, Select 'click-out-device-select' fuer outputDeviceId (mit (kein Output gewaehlt)-Default), Number-Input 'click-channel-input' (UI 1-16, intern 0-15), zwei Note-Inputs 'click-accent-note-input'/'click-beat-note-input' mit Note-Name-Display (noteToName-Helper bereits in der Datei vorhanden), zwei Range-Slider 'click-vel-accent-input'/'click-vel-beat-input' (0-127, Live-Wert-Display). Status-Hint '● Click-Out aktiv' (grün) bei enabled+Device, 'Kein Output gewaehlt' (rot) bei enabled ohne Device. Bestehende Clock-Out + LED-Feedback-Sections unveraendert.",
-      lastSeen: "2026-05-19T09:40:00.000Z",
+    "client/src/components/MidiSettings/MidiSettings.tsx (v3.99.0 +NoteDuration/CountIn)": {
+      role:     "v3.99.0 ERWEITERT (+~75 LOC + 3 Imports, baseline v3.98 Click-Out-Section unveraendert): NEU Note-Duration-Slider 'click-note-duration-input' (type=range, min=10/max=500/step=5) mit '<value>ms'-Live-Display + Hinweis-Text zu Trigger-In-Recognition. NEU Count-In-Subsection (pt-3 border-t border-border-subtle Trenner) mit Header+Description + Toggle 'count-in-toggle' (gleicher Stil wie click-out-toggle) + Bars-Select 'count-in-bars-input' (1-4, disabled bei !countInEnabled). v3.98-Body (click-out-section komplett) unveraendert.",
+      lastSeen: "2026-05-19T09:48:00.000Z",
       ownedBy:  "backend"
     },
     "client/src/store/useMidiStepRecorderStore.ts (v3.97.0 NEU)": {
@@ -2567,6 +2572,36 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "backend",
+      timestamp: "2026-05-19T09:48:00.000Z",
+      done: [
+        "v3.99.0: Click-Note-Duration Setting + Pre-Click Count-In (closes v3.98 follow-ups + adds DAW-Standard Count-In).",
+        "MidiClickOut Pure-Helpers ERWEITERT (+~50 LOC): clampNoteDurationMs(ms)→10..500 mit NaN→DEFAULT (50). clampCountInBars(bars)→1..4 mit NaN→DEFAULT_COUNT_IN_BARS (1). Neue Konstanten: MIN/MAX_CLICK_NOTE_DURATION_MS, MIN/MAX_COUNT_IN_BARS, DEFAULT_COUNT_IN_BARS. triggerStep akzeptierte bereits noteDurationMs-Param (default 50) — wird jetzt vom AudioEngine durchgereicht statt hardcoded zu sein.",
+        "useMidiClickStore ERWEITERT (+~55 LOC): State um noteDurationMs/countInEnabled/countInBars erweitert. Setter setMidiClickNoteDurationMs/CountInEnabled/CountInBars mit Clamp + Idempotenz. loadState parsed neue Felder mit clampNoteDurationMs/clampCountInBars-Defense gegen Garbage. setMidiClickState Bulk-Setter restored alle drei Felder. defaultState() initialisiert mit Defaults (50ms / disabled / 1 Bar). Schema-Backwards-Kompatibel — alte localStorage-Werte ohne diese Felder bekommen Defaults.",
+        "AudioEngine ERWEITERT (+~115 LOC): Neue Felder _midiClickNoteDurationMs (default 50), _countInEnabled, _countInBars, _preRollTimeouts (Set<timeoutId>), _preRollActive. Public-API: setMidiClickNoteDurationMs/setCountInEnabled/setCountInBars/isPreRollActive. play() refactored: bei _countInEnabled ruft _startWithCountIn(fromStep), sonst direkt _startPattern(fromStep) (extrahierte vorherige play-Body). _startWithCountIn berechnet totalBeats = max(1, countInBars * beatsPerBar), plant pro Beat ein setTimeout (Click-Sound via _playClick + MIDI-Click via _midiClickOut.triggerStep mit fakeStep=0 fuer accent / stepsPerBeat fuer beat), dispatcht 'countin:tick' CustomEvent ({phase, remaining, total}). Nach Pre-Roll-Ende: _startPattern(fromStep). stop() leert _preRollTimeouts + setzt _preRollActive=false + dispatch end-Event. _scheduleStep.triggerStep-Call gibt jetzt _midiClickNoteDurationMs mit.",
+        "App.tsx ERWEITERT (+~25 LOC): useMidiClickStore-useEffect zieht jetzt zusaetzlich setMidiClickNoteDurationMs/setCountInEnabled/setCountInBars in die Engine. NEU Count-In-Overlay-State + 'countin:tick' Event-Listener (setCountInState bei start/tick, null bei end). NEU Count-In-Overlay-JSX: fixed top-3 center pill mit '⏱ Count-In: <remaining>' wenn countInState !== null. Semantische Tailwind-Tokens (bg-accent-primary / text-text-primary) — kein hardcoded color.",
+        "MidiSettings.tsx UI ERWEITERT (+~75 LOC, +3 Store-Imports): Note-Duration-Slider 'click-note-duration-input' (range 10-500, step 5) mit Live-Display + Hinweis-Text. Count-In-Subsection mit pt-3 border-t border-border-subtle Trennlinie: Header + Description + Toggle 'count-in-toggle' (gleicher Stil wie click-out-toggle) + Bars-Select 'count-in-bars-input' (1-4, disabled bei !countInEnabled).",
+        "tests/features/click-duration-countin.test.ts NEU (+~265 LOC, 21 Tests in 7 describes, jsdom env). Cluster: (1) clampNoteDurationMs × 2 — Range 10..500 + Integer-Rund, NaN/Inf→DEFAULT, out-of-range→MIN/MAX. (2) clampCountInBars × 2 — Range 1..4 + NaN→DEFAULT. (3) Store noteDurationMs × 4 — Default-State, Persist (Slider-Werte+localStorage), Clamp-Defense, idempotent. (4) Store Count-In × 3 — Persist (enabled+bars), Clamp, Bulk-Setter. (5) MidiClickOut.triggerStep noteDurationMs × 3 — Default 50ms Note-Off-Timing, Custom 200ms-Override, intern-Clamp auf 1ms-min. (6) Count-In Pre-Roll Algorithm × 5 — totalBeats=bars*beatsPerBar (4/4, 3/4, 6/8), disabled → instant-play floor-Fallback bei bars=0, Beat-Duration skaliert mit BPM (60s/BPM). (7) localStorage Round-Trip × 2 — alle v3.99-Felder persisted, Garbage-Defense in setMidiClickState. Alle 21 Tests gruen.",
+        "package.json 3.98.0 → 3.99.0. pnpm check: clean. pnpm test: 243 Files / 5476 passed / 16 skipped (vs v3.98.0: 242/5455 → +1 File +21 Tests). Keine bestehenden Tests broken."
+      ],
+      next: [
+        "v4.0.0 Roadmap: Click-Out Subdivision-Sender (zusaetzliche 1/8 oder 1/16 Hihat-Tick als 3. Note neben accent/beat).",
+        "Count-In: optional auch lokales Audio-Click ohne Metronom-Toggle anbieten (aktuell wird _playClick unconditional waehrend Pre-Roll gespielt — Future: Setting 'Count-In Audio Click On/Off').",
+        "Count-In: optional Count-In auch beim externen MIDI-Clock-Out Start dispatchen (aktuell startet 0xFA erst beim Pattern-Start nach Pre-Roll — Hardware bekommt also keinen Pre-Roll-Sync).",
+        "E2E-Playwright-Smoke fuer Count-In-Overlay sichtbar/verschwindet beim Play/Stop."
+      ],
+      changed: [
+        "client/src/audio/MidiClickOut.ts (+~50 LOC clampNoteDurationMs/clampCountInBars + Konstanten)",
+        "client/src/store/useMidiClickStore.ts (+~55 LOC noteDurationMs/countInEnabled/countInBars + Setter + Load-Parse)",
+        "client/src/audio/AudioEngine.ts (+~115 LOC _startWithCountIn + _startPattern-Refactor + Pre-Roll-Timeouts + Public-API)",
+        "client/src/App.tsx (+~25 LOC Count-In-Overlay + countin:tick-Listener + zusaetzliche Engine-Setter-Calls)",
+        "client/src/components/MidiSettings/MidiSettings.tsx (+~75 LOC Note-Duration-Slider + Count-In-Toggle/Bars-Select)",
+        "tests/features/click-duration-countin.test.ts (NEU +~265 LOC 21 Tests)",
+        "package.json (3.98.0 → 3.99.0)",
+        "agents/INDEX.js"
+      ]
+    },
     {
       agent:     "backend",
       timestamp: "2026-05-19T09:40:00.000Z",

@@ -795,6 +795,32 @@ class AudioEngineClass {
    */
   private _midiClickOut = new MidiClickOut(null);
 
+  /**
+   * v3.99.0: Note-Duration fuer MIDI-Click-Out (ms). Wird beim triggerStep
+   * an _midiClickOut.triggerStep(..., noteDurationMs) durchgereicht. Default 50.
+   */
+  private _midiClickNoteDurationMs = 50;
+
+  /**
+   * v3.99.0: Count-In Pre-Roll Konfiguration.
+   *
+   * Wenn `_countInEnabled === true` und `play()` aufgerufen wird, wird vor
+   * dem eigentlichen Pattern-Start ein "stiller" Pre-Roll von N Bars
+   * geschaltet — nur Click-Triggers (lokal + MIDI-Click-Out), kein
+   * Pattern-Audio. UI bekommt pro Beat ein `countin:tick` CustomEvent
+   * (remaining-Beats), sodass DAW-Style Countdown angezeigt werden kann.
+   *
+   * Strategie: `play()` plant pro Pre-Roll-Beat ein setTimeout (Click +
+   * UI-Event); nach dem letzten Beat startet die normale Scheduler-Schleife.
+   * Bei `stop()` waehrend Pre-Roll werden alle Pre-Roll-Timeouts gecleart.
+   */
+  private _countInEnabled = false;
+  private _countInBars = 1;
+  /** Pending setTimeout-IDs des Pre-Rolls — wird in stop() abgeraeumt. */
+  private _preRollTimeouts: Set<ReturnType<typeof setTimeout>> = new Set();
+  /** True solange Pre-Roll laeuft (zwischen play()-Call und erstem Pattern-Step). */
+  private _preRollActive = false;
+
   // ─── MIDI-Clock-IN External-Sync (v3.35.0) ────────────────────────────────
   //
   // Wenn `_externalSyncActive === true`, akzeptiert die Engine externe
@@ -2361,6 +2387,33 @@ class AudioEngineClass {
     return this._midiClickOut;
   }
 
+  /**
+   * v3.99.0: Setzt die Note-Duration fuer MIDI-Click-Out (ms). Wird bei jedem
+   * Trigger an MidiClickOut.triggerStep durchgereicht. Wert wird intern auf
+   * 1..10_000ms geclamped (siehe MidiClickOut.triggerStep), Store-Layer
+   * begrenzt zusaetzlich auf 10..500ms (clampNoteDurationMs).
+   */
+  setMidiClickNoteDurationMs(ms: number) {
+    if (!Number.isFinite(ms)) return;
+    this._midiClickNoteDurationMs = Math.max(1, Math.min(10_000, Math.round(ms)));
+  }
+
+  /** v3.99.0: Aktiviert/deaktiviert den Count-In Pre-Roll bei play(). */
+  setCountInEnabled(enabled: boolean) {
+    this._countInEnabled = !!enabled;
+  }
+
+  /** v3.99.0: Setzt die Anzahl Pre-Roll-Bars (1..4). */
+  setCountInBars(bars: number) {
+    if (!Number.isFinite(bars)) return;
+    this._countInBars = Math.max(1, Math.min(4, Math.round(bars)));
+  }
+
+  /** v3.99.0: Status-Getter fuer Tests/UI — laeuft gerade Pre-Roll? */
+  isPreRollActive(): boolean {
+    return this._preRollActive;
+  }
+
   onPosition(cb: PositionCallback) {
     this.positionCallbacks.push(cb);
     return () => { this.positionCallbacks = this.positionCallbacks.filter(c => c !== cb); };
@@ -2369,8 +2422,25 @@ class AudioEngineClass {
   async play(fromStep = 0) {
     await this.init();
     await this.resume();
-    if (this._isPlaying) this.stop();
+    if (this._isPlaying || this._preRollActive) this.stop();
 
+    // v3.99.0: Count-In Pre-Roll — wenn aktiv, schedule N Bars Click vor
+    // dem eigentlichen Pattern-Start. Bei Disable: direkter Start.
+    if (this._countInEnabled) {
+      await this._startWithCountIn(fromStep);
+      return;
+    }
+
+    this._startPattern(fromStep);
+  }
+
+  /**
+   * v3.99.0: Eigentlicher Pattern-Start ohne Pre-Roll. Wird direkt aus
+   * play() (bei deaktiviertem Count-In) oder am Ende des Pre-Roll-Loops
+   * aufgerufen.
+   */
+  private _startPattern(fromStep: number) {
+    if (!this.ctx) return;
     this._isPlaying = true;
     // v3.37.0: Race-Fix — wenn explizit fromStep=0 übergeben wurde (Default
     // Call vom Transport-Hook) UND ein pendingStartStep gesetzt ist (vorher
@@ -2379,7 +2449,7 @@ class AudioEngineClass {
     const pending = this._pendingStartStep;
     this._pendingStartStep = null;
     this._currentStep = (fromStep === 0 && pending !== null) ? pending : fromStep;
-    this._nextStepTime = this.ctx!.currentTime + 0.05;
+    this._nextStepTime = this.ctx.currentTime + 0.05;
 
     // Looper (TASK-235): Transport-Anchor für Bar-Boundary-Quantisierung.
     this._looperEngine.setTransportAnchor(this._nextStepTime);
@@ -2394,7 +2464,89 @@ class AudioEngineClass {
     this.playAllRegisteredAudioTracks();
   }
 
+  /**
+   * v3.99.0: Pre-Roll Count-In. Plant pro Beat (im aktuellen Pattern-BPM +
+   * Beats-per-Bar) einen Click-Trigger (lokales Metronom + MIDI-Click-Out)
+   * und dispatched ein `countin:tick`-CustomEvent fuer die UI. Nach dem
+   * letzten Beat wird _startPattern(fromStep) gerufen.
+   *
+   * Total-Beats = countInBars * metronomBeatsPerBar.
+   * Beat-Duration = 60 / effectiveBpm.
+   */
+  private async _startWithCountIn(fromStep: number): Promise<void> {
+    if (!this.ctx) return;
+    this._preRollActive = true;
+    const beatsPerBar = this._metronomBeatsPerBar;
+    const totalBeats = Math.max(1, this._countInBars * beatsPerBar);
+    const pattern = this.patternGetter?.();
+    const bpm = pattern?.bpm ?? this._bpm;
+    const beatDur = 60 / Math.max(20, Math.min(300, bpm));
+    const startTime = this.ctx.currentTime + 0.05;
+
+    // Dispatch initial countdown-event
+    this._dispatchCountInEvent("start", totalBeats, totalBeats);
+
+    for (let i = 0; i < totalBeats; i++) {
+      const isAccent = (i % beatsPerBar) === 0;
+      const beatTime = startTime + i * beatDur;
+      const delayMs = Math.max(0, (beatTime - this.ctx.currentTime) * 1000);
+      const remaining = totalBeats - i;
+      const tid = setTimeout(() => {
+        this._preRollTimeouts.delete(tid);
+        if (!this._preRollActive) return;
+        // Lokales Click-Geraeusch (wenn Metronom enabled oder immer? — wir
+        // spielen es immer waehrend Count-In, damit der User die Zaehlung hoert).
+        if (this.ctx && this.masterGain) {
+          const freq = isAccent ? this._metronomDownbeatFreq : this._metronomBeatFreq;
+          const vol = isAccent ? Math.max(0.2, this._metronomAccent) : 0.5;
+          try { this._playClick(this.ctx.currentTime, vol, freq, isAccent); } catch { /* ignore */ }
+        }
+        // MIDI-Click-Out: stepIndex 0 fuer accent, anderen Beat fuer beat. Wir
+        // koennen direkt detectClickKind umgehen und manuell triggern.
+        if (this._midiClickOut.enabled) {
+          // Hack: triggerStep mit stepIndex=0 fuer accent, anderen Index fuer beat.
+          // Sauberer: einfach stepIndex=0 (accent) bzw. stepIndex=1*stepsPerBeat (beat)
+          // im stepRaster fuer den Beat-Detect Algorithmus. Wir nutzen die
+          // bestehende Logik mit einem temporaeren stepIndex.
+          const stepsPerBeat = Math.max(1, Math.round(this._steps / beatsPerBar));
+          const fakeStep = isAccent ? 0 : stepsPerBeat;
+          this._midiClickOut.triggerStep(fakeStep, this._steps, beatsPerBar, this._midiClickNoteDurationMs);
+        }
+        this._dispatchCountInEvent("tick", remaining, totalBeats);
+      }, delayMs);
+      this._preRollTimeouts.add(tid);
+    }
+
+    // Nach dem letzten Beat: tatsaechlicher Pattern-Start.
+    const totalDurMs = Math.max(0, (startTime + totalBeats * beatDur - this.ctx.currentTime) * 1000);
+    const startTid = setTimeout(() => {
+      this._preRollTimeouts.delete(startTid);
+      if (!this._preRollActive) return;
+      this._preRollActive = false;
+      this._dispatchCountInEvent("end", 0, totalBeats);
+      this._startPattern(fromStep);
+    }, totalDurMs);
+    this._preRollTimeouts.add(startTid);
+  }
+
+  /** v3.99.0: Dispatcht ein 'countin:tick'-Event (UI hoert via window listener). */
+  private _dispatchCountInEvent(phase: "start" | "tick" | "end", remaining: number, total: number) {
+    if (typeof window === "undefined" || typeof CustomEvent === "undefined") return;
+    try {
+      window.dispatchEvent(new CustomEvent("countin:tick", {
+        detail: { phase, remaining, total },
+      }));
+    } catch { /* ignore */ }
+  }
+
   stop() {
+    // v3.99.0: Pre-Roll-Timeouts canceln, falls Count-In gerade laeuft.
+    if (this._preRollActive || this._preRollTimeouts.size > 0) {
+      this._preRollTimeouts.forEach((id) => clearTimeout(id));
+      this._preRollTimeouts.clear();
+      this._preRollActive = false;
+      this._dispatchCountInEvent("end", 0, 0);
+    }
     // Audio-Tracks (Vocals/Songs) zuerst stoppen, solange ctx noch verfügbar ist.
     this.stopAllAudioTracks();
     this._isPlaying = false;
@@ -2665,7 +2817,7 @@ class AudioEngineClass {
     // ohne lokales Click-Geraeusch laufen lassen. Beat-Detection in MidiClickOut
     // dupliziert die Formel (closestBeat/representStep) damit der Click-Out
     // auch bei beliebigen Pattern-Laengen + Taktarten korrekt liegt.
-    this._midiClickOut.triggerStep(stepIndex, this._steps, this._metronomBeatsPerBar);
+    this._midiClickOut.triggerStep(stepIndex, this._steps, this._metronomBeatsPerBar, this._midiClickNoteDurationMs);
 
     if (!scheduledPattern && !this.patternGetter) return;
     const pattern = scheduledPattern ?? this.patternGetter!();

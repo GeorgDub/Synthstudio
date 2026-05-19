@@ -2265,7 +2265,28 @@ export default function App() {
     AudioEngine.setMidiClickOutEnabled(
       midiClickState.enabled && !!midiClickState.outputDeviceId,
     );
+    // v3.99.0: Note-Duration + Count-In an Engine durchreichen.
+    AudioEngine.setMidiClickNoteDurationMs(midiClickState.noteDurationMs);
+    AudioEngine.setCountInEnabled(midiClickState.countInEnabled);
+    AudioEngine.setCountInBars(midiClickState.countInBars);
   }, [midiClickState]);
+
+  // v3.99.0: Count-In Countdown-Overlay — listen to `countin:tick` Events
+  // und zeige verbleibende Beats als floating Status-Pill an.
+  const [countInState, setCountInState] = useState<{ remaining: number; total: number } | null>(null);
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<{ phase: "start" | "tick" | "end"; remaining: number; total: number }>).detail;
+      if (!detail) return;
+      if (detail.phase === "end") {
+        setCountInState(null);
+      } else {
+        setCountInState({ remaining: detail.remaining, total: detail.total });
+      }
+    };
+    window.addEventListener("countin:tick", handler);
+    return () => window.removeEventListener("countin:tick", handler);
+  }, []);
 
   // v2.90 (TASK-237-FOLLOWUP-1): electribe:motion-lanes — beim Electribe-Import
   // dispatcht electribeImport.ts diesen Event mit den Motion-Sequencer-Lanes.
@@ -3639,6 +3660,19 @@ export default function App() {
     >
       <MidiProvider value={midi}>
       <div className="flex flex-col h-screen bg-bg-base text-text-primary overflow-hidden">
+
+        {/* v3.99.0: Count-In Countdown-Overlay (DAW-Standard). Fixed-Position
+            Pill in der Top-Center; visible nur waehrend Pre-Roll. */}
+        {countInState !== null && (
+          <div
+            data-testid="count-in-overlay"
+            className="fixed top-3 left-1/2 -translate-x-1/2 z-[60] px-4 py-2 rounded-full bg-accent-primary text-text-primary shadow-2xl text-sm font-medium pointer-events-none"
+            role="status"
+            aria-live="polite"
+          >
+            <span aria-hidden>⏱ </span>Count-In: {countInState.remaining}
+          </div>
+        )}
 
         {/*
           ElectronTitleBar wurde post-v1.25.0 entfernt — main window nutzt

@@ -61,6 +61,9 @@ import {
   setMidiClickBeatNote,
   setMidiClickVelocityAccent,
   setMidiClickVelocityBeat,
+  setMidiClickNoteDurationMs,
+  setMidiClickCountInEnabled,
+  setMidiClickCountInBars,
 } from "@/store/useMidiClickStore";
 
 interface MidiSettingsProps {
@@ -2315,6 +2318,69 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
               onChange={(e) => setMidiClickVelocityBeat(Number(e.target.value))}
               className="w-full"
             />
+          </div>
+        </div>
+
+        {/* v3.99.0: Note-Duration-Slider (10..500ms, default 50) */}
+        <div className="mt-3">
+          <label htmlFor="click-note-duration-input" className="text-xs text-text-muted block mb-1">
+            Note-Duration — {midiClickState.noteDurationMs} ms
+          </label>
+          <input
+            id="click-note-duration-input"
+            data-testid="click-note-duration-input"
+            type="range"
+            min={10}
+            max={500}
+            step={5}
+            value={midiClickState.noteDurationMs}
+            onChange={(e) => setMidiClickNoteDurationMs(Number(e.target.value))}
+            className="w-full"
+          />
+          <div className="text-[10px] text-text-dim mt-1">
+            Laenge der gesendeten MIDI-Note. Zu kurz (&lt; 10ms) → Trigger-In erkennt nicht. Zu lang &gt; halber Beat → ueberlappt.
+          </div>
+        </div>
+
+        {/* v3.99.0: Pre-Click Count-In (DAW-Standard) */}
+        <div className="mt-4 pt-3 border-t border-border-subtle">
+          <div className="flex items-center justify-between mb-2">
+            <div>
+              <div className="text-xs font-medium text-text-primary">Count-In (Pre-Roll)</div>
+              <div className="text-[10px] text-text-muted mt-0.5">
+                Spielt N Bars Click vor Pattern-Start (Tempo-Lock fuer Recording)
+              </div>
+            </div>
+            <button
+              data-testid="count-in-toggle"
+              onClick={() => setMidiClickCountInEnabled(!midiClickState.countInEnabled)}
+              className={`relative w-10 h-5 rounded-full transition-colors ${
+                midiClickState.countInEnabled ? "bg-accent-primary" : "bg-bg-elevated"
+              }`}
+              aria-label="Count-In an/aus"
+            >
+              <div className={`absolute top-0.5 w-4 h-4 bg-text-primary rounded-full shadow transition-transform ${
+                midiClickState.countInEnabled ? "translate-x-5" : "translate-x-0.5"
+              }`} />
+            </button>
+          </div>
+          <div>
+            <label htmlFor="count-in-bars-input" className="text-xs text-text-muted block mb-1">
+              Pre-Roll-Bars — {midiClickState.countInBars}
+            </label>
+            <select
+              id="count-in-bars-input"
+              data-testid="count-in-bars-input"
+              value={midiClickState.countInBars}
+              onChange={(e) => setMidiClickCountInBars(Number(e.target.value))}
+              disabled={!midiClickState.countInEnabled}
+              className="w-full px-2 py-1.5 bg-bg-elevated border border-border-color rounded text-xs text-text-primary focus:outline-none focus:border-accent-primary disabled:opacity-50"
+            >
+              <option value={1}>1 Bar</option>
+              <option value={2}>2 Bars</option>
+              <option value={3}>3 Bars</option>
+              <option value={4}>4 Bars</option>
+            </select>
           </div>
         </div>
 

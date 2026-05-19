@@ -37,6 +37,12 @@ export const DEFAULT_BEAT_NOTE = 77;     // GM: Low Wood Block
 export const DEFAULT_ACCENT_VELOCITY = 110;
 export const DEFAULT_BEAT_VELOCITY = 80;
 export const DEFAULT_CLICK_CHANNEL = 9;  // MIDI Channel 10 = Drum-Channel (0-indexed)
+// v3.99.0: Pre-Click Count-In Defaults + Limits.
+export const MIN_CLICK_NOTE_DURATION_MS = 10;
+export const MAX_CLICK_NOTE_DURATION_MS = 500;
+export const MIN_COUNT_IN_BARS = 1;
+export const MAX_COUNT_IN_BARS = 4;
+export const DEFAULT_COUNT_IN_BARS = 1;
 
 /** Clamp MIDI-Velocity auf 0..127. NaN → 0. */
 export function clampClickVelocity(v: number): number {
@@ -54,6 +60,26 @@ export function clampClickChannel(ch: number): number {
 export function clampClickNote(n: number): number {
   if (!Number.isFinite(n)) return 0;
   return Math.max(0, Math.min(127, Math.round(n)));
+}
+
+/**
+ * v3.99.0: Clamp Click-Note-Duration (ms) auf MIN..MAX. NaN/Garbage → Default.
+ * Praktisch: zu kurz (< 10 ms) wird von vielen Hardware-Trigger-Ins nicht
+ * erkannt, zu lang (> 500 ms) ueberlappt bei schnellem BPM mit dem naechsten
+ * Beat.
+ */
+export function clampNoteDurationMs(ms: number): number {
+  if (!Number.isFinite(ms)) return DEFAULT_CLICK_NOTE_DURATION_MS;
+  return Math.max(MIN_CLICK_NOTE_DURATION_MS, Math.min(MAX_CLICK_NOTE_DURATION_MS, Math.round(ms)));
+}
+
+/**
+ * v3.99.0: Clamp Count-In-Bars auf MIN..MAX (1..4). NaN/Garbage → Default.
+ * 0 oder negative Werte → DEFAULT_COUNT_IN_BARS=1 (kein "stiller" Count-In).
+ */
+export function clampCountInBars(bars: number): number {
+  if (!Number.isFinite(bars)) return DEFAULT_COUNT_IN_BARS;
+  return Math.max(MIN_COUNT_IN_BARS, Math.min(MAX_COUNT_IN_BARS, Math.round(bars)));
 }
 
 /** Erzeugt ein Note-On Status-Byte: 0x90 | channel (0..15). */
