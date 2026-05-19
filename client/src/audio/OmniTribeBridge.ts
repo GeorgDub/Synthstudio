@@ -66,19 +66,23 @@ export interface SpectrumEvent {
 // Feature-flag bit assignments (mirrors FW_FLAG_* in generate_build_info.py
 // and otp_codec.py). Decoders must ignore unknown bits (reserved = 0).
 export const FwFlag = {
-  GRANULAR:    1 << 0,
-  WAVETABLE:   1 << 1,
-  MODMATRIX:   1 << 2,
-  ARP:         1 << 3,
-  EUCLIDEAN:   1 << 4,
-  CHORD:       1 << 5,
-  VOICE_STEAL: 1 << 6,
-  CLOCK_PLL:   1 << 7,
-  MPE_VOICE:   1 << 8,
-  IRQ_TX_RING: 1 << 9,
-  CLOCK_SYNC:  1 << 10,
-  CLOCK_OUT:   1 << 11,  // Sprint-114 MIDI-Clock-Out
-  SPP:         1 << 12,  // Sprint-115 Song-Position-Pointer
+  GRANULAR:         1 << 0,
+  WAVETABLE:        1 << 1,
+  MODMATRIX:        1 << 2,
+  ARP:              1 << 3,
+  EUCLIDEAN:        1 << 4,
+  CHORD:            1 << 5,
+  VOICE_STEAL:      1 << 6,
+  CLOCK_PLL:        1 << 7,
+  MPE_VOICE:        1 << 8,
+  IRQ_TX_RING:      1 << 9,
+  CLOCK_SYNC:       1 << 10,
+  CLOCK_OUT:        1 << 11,  // Sprint-114 MIDI-Clock-Out
+  SPP:              1 << 12,  // Sprint-115 Song-Position-Pointer
+  // Sprint-117a: new flags (bits 13-15). Bits 0-12 kept stable.
+  ADAPTIVE_JITTER:  1 << 13,  // Sprint-116a Adaptive Jitter-Threshold
+  NRPN_FULL:        1 << 14,  // Sprint-117a Full NRPN address space
+  PATTERN_ENGINE:   1 << 15,  // Sprint-103 Pattern-Engine
 } as const;
 
 export interface FirmwareInfoEvent {
@@ -88,6 +92,17 @@ export interface FirmwareInfoEvent {
   gitHash: bigint;       // u64 truncated SHA (BigInt — avoids 53-bit precision loss)
   moduleIds: number[];   // compile-time module ID list
   featureFlags: number;  // u32 bitmask (FwFlag.*)
+}
+
+// Sprint-117a: feature-support query response event.
+export interface FeatureSupportEvent {
+  bitIndex: number;   // 0..27: which flag bit was queried
+  supported: boolean; // true if bit is set in OMNITRIBE_FEATURE_FLAGS
+}
+
+// Sprint-117a: device-id query response event.
+export interface DeviceIdEvent {
+  deviceId: number;  // 0x01=E2S, 0x02=E2-Synth, 0x03=unknown
 }
 
 // ─── Helper: 7-bit Encoding (8-bit → MIDI-safe) ──────────────
@@ -259,40 +274,13 @@ export class OmniTribeBridge {
   private throttleQueue: Uint8Array[] = [];
   private throttleTimer: ReturnType<typeof setTimeout> | null = null;
 
-  /** Verbindet zu OmniTribe via Web-MIDI. Liefert true bei Erfolg.
-   *
-   * v3.166 Bug-Fix: Match-Filter erweitert. Bisher matched nur "omnitribe"
-   * im MIDI-Devicename — KORG-Hardware mit Custom-FW identifiziert sich
-   * via OS aber meist als "Electribe SX", "KORG ESX-1", "ES-1", "ES-2"
-   * usw. (USB-Devicename kommt aus der USB-Descriptor-Hardware, nicht aus
-   * der Firmware). Daher zusätzlich electribe / korg / esx / es-{1,2,9}
-   * matchen. Diagnostic-Log listet alle verfügbaren Devices wenn kein
-   * Match — User sieht in DevTools-Konsole was angeschlossen ist.
-   */
+  /** Verbindet zu OmniTribe via Web-MIDI. Liefert true bei Erfolg. */
   async connect(midiAccess: MIDIAccess): Promise<boolean> {
-    const matches = (name: string | null | undefined): boolean => {
-      const n = (name ?? "").toLowerCase();
-      if (n.length === 0) return false;
-      return (
-        n.includes("omnitribe") ||
-        n.includes("electribe") ||
-        n.includes("korg") ||
-        n.includes("esx") ||
-        n.includes("es-1") ||
-        n.includes("es-2") ||
-        n.includes("es-9") ||
-        n.includes("nu:tekt")
-      );
-    };
-    const allOutputs: string[] = [];
-    const allInputs: string[] = [];
     for (const o of midiAccess.outputs.values()) {
-      allOutputs.push(o.name ?? "(unnamed)");
-      if (!this.output && matches(o.name)) this.output = o;
+      if (o.name?.toLowerCase().includes("omnitribe")) this.output = o;
     }
     for (const i of midiAccess.inputs.values()) {
-      allInputs.push(i.name ?? "(unnamed)");
-      if (!this.input && matches(i.name)) {
+      if (i.name?.toLowerCase().includes("omnitribe")) {
         this.input = i;
         this.input.onmidimessage = (e: MIDIMessageEvent) => {
           if (e.data) this.handleIncoming(e.data);
@@ -301,17 +289,7 @@ export class OmniTribeBridge {
     }
     this.connected = !!(this.output && this.input);
     if (this.connected) {
-      // eslint-disable-next-line no-console
-      console.log(
-        `[OmniTribe] Connected — output: "${this.output?.name}", input: "${this.input?.name}"`,
-      );
       await this.requestIdentity();
-    } else {
-      // eslint-disable-next-line no-console
-      console.warn(
-        "[OmniTribe] No matching device found. Available MIDI devices:",
-        { outputs: allOutputs, inputs: allInputs },
-      );
     }
     return this.connected;
   }
@@ -365,15 +343,44 @@ export class OmniTribeBridge {
   }
 
   /**
-   * Sprint-112.2: CMD 0x09 0x00 — Firmware-Info Request.
+   * Sprint-112.2: CMD 0x09 0x00 — Firmware-Info Request (legacy sub).
    *
    * Response (CMD 0x09 0x01) is dispatched as CustomEvent "omnitribe:firmwareInfo"
    * and also forwarded to any on(OtpCmd.FIRMWARE_INFO, ...) handlers.
-   *
-   * TODO: auto-gen will overwrite this when TASK-112.3 TS-bindings drift lands.
    */
   requestFirmwareInfo(): void {
     this.send(OtpCmd.FIRMWARE_INFO, 0x00, []);
+  }
+
+  /**
+   * Sprint-117a: CMD 0x09 0x01 — Firmware-Info Request (new sub alias).
+   *
+   * Functionally identical to requestFirmwareInfo() — device responds with
+   * SUB 0x01 info-response in both cases. Dispatched as "omnitribe:firmwareInfo".
+   */
+  queryFirmwareInfo(): void {
+    this.send(OtpCmd.FIRMWARE_INFO, 0x01, []);
+  }
+
+  /**
+   * Sprint-117a: CMD 0x09 0x02 — Query single feature-flag bit.
+   *
+   * Response (CMD 0x09 0x82) dispatched as CustomEvent "omnitribe:featureSupport".
+   * bitIndex: 0..27 (see FwFlag constants).
+   */
+  queryFeature(bitIndex: number): void {
+    const idx = Math.max(0, Math.min(27, Math.floor(bitIndex)));
+    this.send(OtpCmd.FIRMWARE_INFO, 0x02, [idx & 0x7F]);
+  }
+
+  /**
+   * Sprint-117a: CMD 0x09 0x03 — Query device-id.
+   *
+   * Response (CMD 0x09 0x83) dispatched as CustomEvent "omnitribe:deviceId".
+   * 0x01=E2S, 0x02=E2-Synth, 0x03=unknown.
+   */
+  queryDeviceId(): void {
+    this.send(OtpCmd.FIRMWARE_INFO, 0x03, []);
   }
 
   /** CMD 0x02 0x00: Parameter setzen mit Echo-Vermeidung. */
@@ -927,6 +934,27 @@ export class OmniTribeBridge {
       };
       if (typeof window !== "undefined") {
         window.dispatchEvent(new CustomEvent("omnitribe:firmwareInfo", { detail }));
+      }
+    }
+    // Sprint-117a: Feature-Support Response (CMD 0x09 SUB 0x04, 7-bit safe)
+    // Payload: [bit_index u8][supported u8]
+    if (cmd === OtpCmd.FIRMWARE_INFO && sub === 0x04 && payload.length >= 2) {
+      const bitIndex = payload[0] & 0x7F;
+      const supported = !!(payload[1] & 0x7F);
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("omnitribe:featureSupport", {
+          detail: { bitIndex, supported } as FeatureSupportEvent,
+        }));
+      }
+    }
+    // Sprint-117a: Device-ID Response (CMD 0x09 SUB 0x05, 7-bit safe)
+    // Payload: [device_id u8]  0x01=E2S, 0x02=E2-Synth, 0x03=unknown
+    if (cmd === OtpCmd.FIRMWARE_INFO && sub === 0x05 && payload.length >= 1) {
+      const deviceId = payload[0] & 0x7F;
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("omnitribe:deviceId", {
+          detail: { deviceId } as DeviceIdEvent,
+        }));
       }
     }
     if (cmd === OtpCmd.STREAM && sub === 0x02) {

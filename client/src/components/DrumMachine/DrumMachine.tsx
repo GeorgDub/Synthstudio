@@ -34,6 +34,9 @@ import { getRegisteredAutoBackup } from "@/utils/autoBackupController";
 import { PatternImageExportModal } from "@/components/PatternImageExport/PatternImageExportModal";
 import { PatternCompareModal } from "@/components/PatternCompare/PatternCompareModal";
 import type { PatternForExport } from "@/utils/patternImageExport";
+// v3.169.0: Clipboard-Copy/Paste für Patterns (Magic-Header-JSON).
+import { serializePattern, parsePattern } from "@/utils/patternSerializer";
+import { DEFAULT_CHANNEL_FX } from "@/audio/AudioEngine";
 import { MixAssistantPanel } from "./MixAssistantPanel";
 import type { MixAnalysisInput, MixRecommendation } from "@/utils/mixAnalysis";
 import { parseMidiFile } from "../../../../src/utils/midiParser.js";
@@ -159,12 +162,14 @@ interface PatternRowProps {
   onExportImage?: () => void;
   /** v3.91.0: Pattern als Slot A im Compare-Modal öffnen. */
   onCompare?: () => void;
+  /** v3.169.0: Pattern als JSON-Envelope ins Clipboard kopieren. */
+  onCopy?: () => void;
 }
 
 function PatternRow({
   pattern, patternIndex, densityCategory, isActive, isPlaying, isLiveEditing, showDelete,
   hasPrevPattern, prevPatternId, allPatterns,
-  onSelect, onDuplicate, onRemove, onCopySamplesFrom, onReorder, onExportImage, onCompare,
+  onSelect, onDuplicate, onRemove, onCopySamplesFrom, onReorder, onExportImage, onCompare, onCopy,
 }: PatternRowProps) {
   const isDraft  = isLiveEditing && isActive;
   const isLocked = isLiveEditing && isPlaying;
@@ -320,6 +325,15 @@ function PatternRow({
           title="Mit anderem Pattern vergleichen (Diff)"
           data-testid={`pattern-row-compare-${patternIndex}`}
         >🔀</button>
+      )}
+      {/* v3.169.0: Pattern als JSON-Envelope ins Clipboard kopieren. */}
+      {!isLocked && onCopy && (
+        <button
+          onClick={onCopy}
+          className="px-1.5 py-1.5 text-text-dim hover:text-accent-primary text-xs opacity-0 group-hover:opacity-100"
+          title="Pattern als JSON ins Clipboard kopieren"
+          data-testid={`pattern-copy-${pattern.id}`}
+        >📋</button>
       )}
       {!isLocked && (
         <button
@@ -920,6 +934,75 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
     setSliceEditor(null);
   }, [sliceEditor]);
 
+  // ── v3.169.0: Pattern Clipboard-Copy/Paste ─────────────────────────────────
+  // Serialisiert ein PatternData via patternSerializer in einen Magic-Header-
+  // JSON-String und legt ihn ins System-Clipboard. Browser-Permission-fail wird
+  // freundlich gemeldet (kein Throw).
+  const handleCopyPattern = useCallback(async (p: PatternData) => {
+    try {
+      const json = serializePattern(p);
+      await navigator.clipboard.writeText(json);
+      toast(`Pattern "${p.name}" kopiert (JSON)`, { kind: "success" });
+    } catch (err) {
+      console.warn("[Pattern-Copy] failed:", err);
+      toast("Copy fehlgeschlagen — Clipboard-Permission?", { kind: "error" });
+    }
+  }, []);
+
+  // Liest den Clipboard-Inhalt, validiert via parsePattern (Magic + Schema
+  // strikt), rekonstruiert ein vollwertiges PatternData (mit frischen IDs +
+  // Default-FX/Steps damit AudioEngine/Store-Invarianten gewahrt bleiben) und
+  // legt es per dm.addPatternData() ans Ende der Pattern-Liste.
+  const handlePastePattern = useCallback(async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (!text || text.trim().length === 0) {
+        toast("Clipboard ist leer", { kind: "warning" });
+        return;
+      }
+      const parsed = parsePattern(text);
+      if (!parsed) {
+        toast("Clipboard enthält kein gültiges Synthstudio-Pattern", { kind: "error" });
+        return;
+      }
+      const newId = `pasted-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      // stepCount ist in PatternData auf 16|32|64 eng-typisiert. Wenn der
+      // Clipboard-String einen anderen Step-Count trägt (sollte parsePattern
+      // schon ausgrenzen, aber defensiv), runden wir auf den nächsten validen
+      // Wert. Sonst nehmen wir den Wert direkt.
+      const sc = parsed.stepCount;
+      const safeStepCount: 16 | 32 | 64 =
+        sc === 16 || sc === 32 || sc === 64 ? sc : sc <= 16 ? 16 : sc <= 32 ? 32 : 64;
+      const newPattern: PatternData = {
+        id: newId,
+        name: `${parsed.name} (Pasted)`,
+        stepCount: safeStepCount,
+        stepResolution: "1/16",
+        bpm: parsed.bpm,
+        parts: parsed.parts.map((pp, i) => ({
+          id: `${newId}-p${i}`,
+          name: pp.name,
+          muted: pp.muted,
+          soloed: pp.soloed,
+          volume: pp.volume,
+          pan: pp.pan,
+          steps: pp.steps.map((s) =>
+            typeof s.velocity === "number"
+              ? { active: s.active, velocity: s.velocity }
+              : { active: s.active },
+          ),
+          fx: { ...DEFAULT_CHANNEL_FX },
+        })),
+      };
+      dm.addPatternData(newPattern);
+      toast(`Pattern eingefügt: "${newPattern.name}"`, { kind: "success" });
+      setShowPatternMenu(false);
+    } catch (err) {
+      console.warn("[Pattern-Paste] failed:", err);
+      toast("Paste fehlgeschlagen", { kind: "error" });
+    }
+  }, [dm]);
+
   // Drag-Drop fuer .e2pattern/.e2sallpat (Browser-Fallback).
   useEffect(() => {
     const handler = (e: Event) => {
@@ -1125,6 +1208,10 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
                     setCompareModalAId(p.id);
                     setShowPatternMenu(false);
                   }}
+                  onCopy={() => {
+                    // v3.169.0: Pattern als JSON-Envelope ins Clipboard kopieren.
+                    void handleCopyPattern(p);
+                  }}
                 />
               ))}
               {/* v3.162: Bank-Summary-Footer (Multi-Pattern Density-Aggregation) */}
@@ -1248,6 +1335,16 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
                     className="w-full text-left px-2 py-1 text-xs text-text-dim hover:text-text-primary hover:bg-bg-panel rounded"
                   >
                     + Neues Pattern
+                  </button>
+                  {/* v3.169.0: Pattern aus Clipboard einfügen. */}
+                  <button
+                    type="button"
+                    onClick={handlePastePattern}
+                    data-testid="pattern-paste"
+                    className="w-full text-left px-2 py-1 text-xs text-text-dim hover:text-accent-primary hover:bg-bg-panel rounded"
+                    title="Pattern aus Clipboard einfügen (JSON)"
+                  >
+                    📋 Paste Pattern
                   </button>
                 </div>
               )}

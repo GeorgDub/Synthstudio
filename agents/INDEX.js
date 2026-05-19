@@ -298,6 +298,17 @@ const INDEX = {
   //     a new bare-path entry while old version-suffixed ones remain
   //     is the explicit transition path.
   files: {
+    // ─── v3.171 Pure-Helpers (refactor) ─────────────────────────
+    "client/src/utils/sampleNormalizeBatch.ts": {
+      role:     "Pure-Helper Batch-Sample-Normalization. batchNormalizeSamples(inputs, opts) → BatchNormalizeResult mit entries (id/originalDbTp/gainAppliedDb/buffer), loudestOriginalDbTp, quietestOriginalDbTp, effectiveTargetDbTp, cappedCount. Drei Modi: 'uniform-peak' (alle auf Target, default -1 dBTP), 'match-loudest' (alle auf Niveau des lautesten), 'relative-mix' (Relations bleiben, lautestes auf Target). maxBoostDb cap (default +24 dB) schuetzt vor exzessivem Boost. Silente Samples (peak nicht endlich) werden durchgereicht. All-silent-Edge defensiv (kein +Infinity-Disaster bei match-loudest/relative-mix). Per-Sample-Gain lokal berechnet (nicht via computeNormalizeGain), damit user-supplied maxBoostDb < 24 dB sauber wirkt + cappedCount korrekt. Foundation fuer Sample-Browser Multi-Select Normalize-Action.",
+      lastSeen: "2026-05-19T22:21:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "tests/features/sample-normalize-batch.test.ts": {
+      role:     "Pure-Coverage fuer sampleNormalizeBatch.ts. 21 Tests in 9 describes: empty (2), uniform-peak (3), match-loudest (2), relative-mix (2), maxBoostDb cap (3), silent inputs (4), loudest/quietest reporting (1), defensive (3: NaN-target/Infinity-target/invalid-mode), immutability (1). Verwendet Sinus-Buffer 512 samples fuer deterministisches True-Peak-FIR-Verhalten (4x Oversampling-Default), 1 dB Toleranz auf End-Peaks. Vitest node-env.",
+      lastSeen: "2026-05-19T22:21:00.000Z",
+      ownedBy:  "frontend"
+    },
     // ─── v3.166 Pure-Helpers (refactor) ─────────────────────────
     "client/src/utils/trackOverview.ts": {
       role:     "Pure-Helper Track-Overview-Aggregator. computeTrackOverview({patterns, channels, totalSamples?}) → TrackOverviewResult: patternCount, channelCount, muted/soloed/silentChannelCount, totalActiveSteps/Possible, averageDensity, sampleCount. formatTrackOverviewSummary(r) → '{N} Patterns · {M} Channels[ ({K} muted[/{L} solo])] · [~]{D}% Density[ · {S} Samples]'. Defensive Defaults (fehlende parts/steps/Flags → 0/false). ChannelLike-Interface ist strukturell — kein Spezialfall für MixerChannel oder DrumMachine-Parts. Foundation für künftige Project-Dashboard- oder Status-Bar-UI.",
@@ -3448,6 +3459,49 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "refactor",
+      timestamp: "2026-05-19T22:21:00.000Z",
+      done: [
+        "v3.171 Pure-Helper: client/src/utils/sampleNormalizeBatch.ts NEU (229 LOC, 0 Runtime-Deps ausser sampleAutoNormalize) + tests/features/sample-normalize-batch.test.ts NEU (21 Tests). Batch-Sample-Normalization fuer Multi-Select Sample-Browser-Action.",
+        "API: batchNormalizeSamples(inputs, options?) → BatchNormalizeResult. Drei Modi: 'uniform-peak' (alle auf Target dBTP, default -1), 'match-loudest' (alle auf Niveau des lautesten Samples), 'relative-mix' (Relations beibehalten, lautestes Sample auf Target). maxBoostDb cap (default +24 dB) verhindert exzessiven Boost bei sehr leisen Samples, cappedCount im Result.",
+        "Defensiv: empty inputs → entries=[], loudest=-Infinity, quietest=Infinity. Silente Samples (peak nicht endlich) werden durchgereicht ohne Gain. All-silent-Edge bei match-loudest + relative-mix (kein +Infinity-Disaster). targetDbTp NaN/Infinity → fallback -1. maxBoostDb < 0 → clamp 0. mode invalid → 'uniform-peak'. Per-Sample-Gain-Math lokal (nicht via computeNormalizeGain, weil dessen interner +24 dB Cap user-supplied maxBoostDb < 24 sonst ueberschreibt).",
+        "Tests: 21 Tests in 9 describes — empty (2), uniform-peak (3), match-loudest (2), relative-mix (2), maxBoostDb cap (3), silent inputs (4), loudest/quietest reporting (1), defensive (3), immutability (1). Sinus-Buffer mit 512 Samples fuer deterministisches True-Peak-FIR-Verhalten (4x Oversampling-Default), 1 dB Toleranz auf End-Peaks. Alle gruen in 11 ms.",
+        "pnpm check: GRUEN (tsc --noEmit, keine Fehler). pnpm test tests/features/sample-normalize-batch.test.ts: 21/21 passed in 502 ms. KEIN git commit, KEIN package.json bump. KEINE anderen Files beruehrt (OmniTribeBridge.ts NICHT angetastet)."
+      ],
+      next: [
+        "v3.171+ UI-Wire: SampleBrowser Multi-Select-Toolbar 'Normalize'-Button. Mode-Dropdown (uniform-peak/match-loudest/relative-mix), Target-dBTP-Slider (-30..0), maxBoostDb-Slider (0..48). Bei cappedCount > 0 Tooltip 'N Samples wurden auf +X dB gecappt'. Frontend-Owner.",
+        "Optional: AudioBuffer (DOM) → AudioBufferLike Konvertierung im UI-Layer + applyGainToBuffer-Output zurueck zu Blob-URL via wavExporter (Web) oder Filesystem-Write (Electron).",
+        "Optional: Script-Command ss.batchNormalize(ids, opts) fuer AI-Scripts + builtInScripts.ts-Preset 'Pack auf -1 dBTP angleichen'.",
+        "Optional: Erweiterung um Loudness-Modus (LUFS statt dBTP) fuer Streaming-konforme Master-Normalisierung (wuerde ITU-R BS.1770-Integrierten Loudness-Calc erfordern — neuer Pure-Helper sampleLoudness.ts)."
+      ],
+      changed: [
+        "client/src/utils/sampleNormalizeBatch.ts (NEU, Pure-Helper, 229 LOC, depends on sampleAutoNormalize)",
+        "tests/features/sample-normalize-batch.test.ts (NEU, 21 Tests, vitest)"
+      ]
+    },
+    {
+      agent:     "frontend",
+      timestamp: "2026-05-19T19:30:00.000Z",
+      done: [
+        "v3.169 UI-Wire: client/src/components/DrumMachine/DrumMachine.tsx — Clipboard-Copy/Paste fuer Patterns ueber patternSerializer.ts (v3.169 Pure-Helper).",
+        "Imports: serializePattern + parsePattern aus @/utils/patternSerializer, DEFAULT_CHANNEL_FX aus @/audio/AudioEngine.",
+        "PatternRow: neues optionales onCopy?:() => void Prop + Copy-Button (📋, data-testid=pattern-copy-{p.id}) zwischen Compare und Duplicate. Style analog Quick-Action-Buttons (text-text-dim hover:text-accent-primary, opacity-0 group-hover:opacity-100).",
+        "Parent-Wire: onCopy={() => void handleCopyPattern(p)} in PatternRow-map. handleCopyPattern(p) ruft navigator.clipboard.writeText(serializePattern(p)) — Permission-Fail wird via toast(kind:error) freundlich gemeldet, kein Throw.",
+        "Paste-Button (📋 Paste Pattern, data-testid=pattern-paste) unter '+ Neues Pattern' im showPatternMenu, gegated mit !isLiveEditing (vermeidet Konflikt mit Draft-Editing). handlePastePattern() liest Clipboard, validiert via parsePattern (Magic + Schema strikt), baut neue PatternData mit frischen IDs (newId=pasted-{Date.now()}-{rand}, {newId}-p{i} pro Part), Default-FX (DEFAULT_CHANNEL_FX) pro Part, stepResolution='1/16'. stepCount defensiv auf 16|32|64 geclamped. Velocity nur kopiert wenn explizit gesetzt. Empty Clipboard → toast(kind:warning), Invalides JSON → toast(kind:error).",
+        "Aufruf von dm.addPatternData(newPattern) (vs. dm.addPattern() ohne data) — Store kloned + setzt activePatternId. Erfolgreicher Paste schliesst showPatternMenu.",
+        "pnpm check: GRUEN (tsc --noEmit, keine Fehler). KEIN git commit, KEIN package.json bump. NUR DrumMachine.tsx editiert (OmniTribeBridge.ts NICHT angefasst)."
+      ],
+      next: [
+        "v3.169+ Tests: tests/web/ Playwright-Smoke fuer pattern-copy + pattern-paste (round-trip: copy Pattern A → paste → neues Pattern (Pasted) existiert mit gleicher Step-Anzahl/Parts). Testing-Agent.",
+        "v3.170+ Optional: Keyboard-Shortcut Ctrl+C/Ctrl+V im DrumMachine-Context fuer aktives Pattern (useKeyboardBindingsStore).",
+        "Optional: Multi-Select + Batch-Copy (mehrere Patterns als JSON-Array in Clipboard).",
+        "Optional: Drag-and-Drop von .synth-pattern.json Dateien ins DrumMachine analog .e2pattern-Flow (File-Reader + parsePattern)."
+      ],
+      changed: [
+        "client/src/components/DrumMachine/DrumMachine.tsx (Imports serializePattern/parsePattern/DEFAULT_CHANNEL_FX, PatternRowProps.onCopy, PatternRow Copy-Button, handleCopyPattern + handlePastePattern useCallbacks, Paste-Button im showPatternMenu)"
+      ]
+    },
     {
       agent:     "frontend",
       timestamp: "2026-05-19T18:00:00.000Z",
