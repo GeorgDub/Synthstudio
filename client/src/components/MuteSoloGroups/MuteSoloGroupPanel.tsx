@@ -102,7 +102,17 @@ export function MuteSoloGroupPanel({
             onMute={() => handleMute(group.id)}
             onSolo={() => handleSolo(group.id)}
             onEdit={() => setEditGroupId(group.id)}
-            onDelete={() => store.removeGroup(group.id)}
+            onDelete={() => {
+              // v3.129.0: Confirm-Dialog vor destructive Delete (closes v3.127 polish-caveat)
+              if (
+                typeof window !== "undefined" &&
+                window.confirm(
+                  `Group "${group.name}" löschen?\nChannels bleiben unverändert — nur die Group-Zuordnung wird entfernt.`,
+                )
+              ) {
+                store.removeGroup(group.id);
+              }
+            }}
           />
         ))}
       </div>

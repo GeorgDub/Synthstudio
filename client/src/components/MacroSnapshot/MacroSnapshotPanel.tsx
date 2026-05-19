@@ -21,12 +21,14 @@ import {
   setMorphA,
   setMorphB,
   setMorphAmount,
+  setMorphCurve,
   recallSnapshot,
   getCurrentMorphedValues,
   MACRO_SNAPSHOT_COLORS,
   MACRO_VALUES_LENGTH,
   type MacroSnapshot,
 } from "@/store/useMacroSnapshotStore";
+import { MORPH_CURVES, type MorphCurve } from "@/utils/macroMorph";
 import { getMacros, setMacroValue } from "@/store/useMacroStore";
 import { useMidiLearn } from "@/hooks/useMidiLearn";
 
@@ -408,6 +410,35 @@ export function MacroSnapshotPanel({ className }: MacroSnapshotPanelProps) {
             <span>B</span>
           </div>
           {morphLearn.menu}
+        </div>
+
+        {/* v3.129.0: Curve-Selector */}
+        <div className="flex items-center gap-1 mt-1" data-testid="morph-curve-selector">
+          <span className="text-[10px] text-text-dim whitespace-nowrap">Curve:</span>
+          {MORPH_CURVES.map((c: MorphCurve) => {
+            const active = state.morphCurve === c;
+            return (
+              <button
+                key={c}
+                onClick={() => setMorphCurve(c)}
+                data-testid={`morph-curve-${c}`}
+                title={
+                  c === "linear" ? "Linear (gleichmäßig)" :
+                  c === "exp"    ? "Exp (slow→fast)" :
+                  c === "log"    ? "Log (fast→slow)" :
+                                   "Sigmoid (S-curve)"
+                }
+                className={[
+                  "px-2 py-0.5 rounded text-[9px] font-bold uppercase transition-colors",
+                  active
+                    ? "bg-accent-secondary/30 text-accent-secondary border border-accent-secondary/60"
+                    : "bg-bg-elevated text-text-dim hover:text-text-primary border border-transparent",
+                ].join(" ")}
+              >
+                {c}
+              </button>
+            );
+          })}
         </div>
 
         {/* Current Morphed Preview */}
