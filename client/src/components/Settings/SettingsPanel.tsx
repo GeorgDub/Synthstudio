@@ -27,9 +27,11 @@ import {
   setActiveProvider,
   setProviderKey,
   setProviderModel,
+  setEmbedBehavior,
   AI_PROVIDERS,
   AVAILABLE_MODELS,
   type AiProvider,
+  type EmbedBehavior,
 } from "@/store/useApiSettingsStore";
 import { useWorkspaceMode, setWorkspaceMode } from "@/store/useWorkspaceMode";
 import {
@@ -1160,6 +1162,48 @@ function SavingSection({ onOpenVersionHistory }: { onOpenVersionHistory?: () => 
             </span>
           </div>
         )}
+      </div>
+
+      {/* v3.138: Embed-Verhalten beim Project-Save */}
+      <div className="rounded-lg border border-border-color p-4 space-y-3" data-testid="embed-behavior-section">
+        <div>
+          <div className="text-xs font-semibold text-text-primary">Embed-Verhalten beim Speichern</div>
+          <div className="text-[10px] text-text-dim mt-0.5">
+            Steuert ob/wann Samples ins <code>.synth</code>-File eingebettet werden.
+            Transformierte Samples (Blob-URLs) gehen nach einem Browser-Reload verloren,
+            wenn sie nicht eingebettet sind.
+          </div>
+        </div>
+        <div className="flex flex-col gap-2 mt-2">
+          {(["auto", "always", "never"] as const).map((b: EmbedBehavior) => (
+            <label
+              key={b}
+              className="flex items-start gap-2 text-xs cursor-pointer hover:text-text-primary"
+            >
+              <input
+                type="radio"
+                name="embed-behavior"
+                value={b}
+                checked={api.embedBehavior === b}
+                onChange={() => setEmbedBehavior(b)}
+                className="accent-accent-primary mt-0.5"
+                data-testid={`embed-behavior-${b}`}
+              />
+              <span className="flex flex-col gap-0.5">
+                <span className={api.embedBehavior === b ? "text-accent-primary font-semibold" : "text-text-muted"}>
+                  {b === "auto" && "Auto — nur transformierte Samples einbetten (empfohlen)"}
+                  {b === "always" && "Immer — alle Samples einbetten (sicherer Round-Trip)"}
+                  {b === "never" && "Nie — kompakte Files (Daten-Verlust-Risiko bei Blob-URLs)"}
+                </span>
+                <span className="text-[10px] text-text-dim">
+                  {b === "auto" && "Default-Verhalten — Blob-URL-Samples (z.B. nach Sample-Transform) werden eingebettet."}
+                  {b === "always" && "Alle Samples werden eingebettet — die .synth-Datei ist vollständig self-contained, größere Dateien."}
+                  {b === "never" && "Keine Einbettung — kleinere Dateien, aber transformierte Samples gehen nach Reload verloren."}
+                </span>
+              </span>
+            </label>
+          ))}
+        </div>
       </div>
 
       {/* Version Snapshots */}

@@ -20,6 +20,20 @@ export type AiProvider = "anthropic" | "openai";
 
 export const AI_PROVIDERS: ReadonlyArray<AiProvider> = ["anthropic", "openai"];
 
+/**
+ * Embed-Verhalten bei Project-Save (v3.138).
+ * - "auto":   nur Blob-URL-Samples (transformierte) einbetten — Default.
+ * - "always": ALLE Samples einbetten (auch File-Path-Samples).
+ * - "never":  KEIN Embed (kompakte .synth-Files, Data-Loss-Risiko bei Blob-URLs).
+ */
+export type EmbedBehavior = "auto" | "always" | "never";
+
+export const EMBED_BEHAVIORS: ReadonlyArray<EmbedBehavior> = ["auto", "always", "never"];
+
+function isEmbedBehavior(v: unknown): v is EmbedBehavior {
+  return v === "auto" || v === "always" || v === "never";
+}
+
 /** Default-Modell pro Provider. */
 export const DEFAULT_MODELS: Record<AiProvider, string> = {
   anthropic: "claude-haiku-4-5-20251001",
@@ -71,6 +85,15 @@ interface ApiSettings {
   snapshotsEnabled: boolean;
   /** Auto-Save-Intervall in Minuten */
   autoSaveIntervalMin: number;
+
+  /**
+   * Embed-Verhalten bei Project-Save (v3.138). Steuert ob/wann Samples in das
+   * .synth-File eingebettet werden.
+   *  - "auto"   (default): nur Blob-URL-Samples einbetten (v3.137-Verhalten).
+   *  - "always": ALLE Samples einbetten (Sicherer Round-Trip).
+   *  - "never":  Keine Einbettung (kompakte Files, Data-Loss-Risiko bei Blob-URLs).
+   */
+  embedBehavior: EmbedBehavior;
 }
 
 type Listener = () => void;
@@ -89,6 +112,7 @@ function defaults(): ApiSettings {
     autoSaveEnabled: true,
     snapshotsEnabled: true,
     autoSaveIntervalMin: 3,
+    embedBehavior: "auto",
   });
 }
 
@@ -142,6 +166,7 @@ function migrateFromLegacy(raw: Record<string, unknown>): ApiSettings {
         typeof raw.autoSaveIntervalMin === "number"
           ? Math.max(1, Math.min(60, raw.autoSaveIntervalMin))
           : base.autoSaveIntervalMin,
+      embedBehavior: isEmbedBehavior(raw.embedBehavior) ? raw.embedBehavior : base.embedBehavior,
     });
   }
 
@@ -162,6 +187,7 @@ function migrateFromLegacy(raw: Record<string, unknown>): ApiSettings {
       typeof raw.autoSaveIntervalMin === "number"
         ? Math.max(1, Math.min(60, raw.autoSaveIntervalMin))
         : base.autoSaveIntervalMin,
+    embedBehavior: isEmbedBehavior(raw.embedBehavior) ? raw.embedBehavior : base.embedBehavior,
   });
 }
 
@@ -182,6 +208,7 @@ function persist(s: ApiSettings) {
       autoSaveEnabled: s.autoSaveEnabled,
       snapshotsEnabled: s.snapshotsEnabled,
       autoSaveIntervalMin: s.autoSaveIntervalMin,
+      embedBehavior: s.embedBehavior,
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
   } catch { /* ignore */ }
@@ -257,6 +284,17 @@ export function setAutoSaveInterval(minutes: number): void {
     ..._state,
     autoSaveIntervalMin: Math.max(1, Math.min(60, minutes)),
   });
+  persist(_state);
+  notify();
+}
+
+/**
+ * Setzt das Embed-Verhalten beim Project-Save (v3.138).  Invalid-Inputs werden
+ * silent ignoriert (keine State-Mutation), defensive gegen accidental cast.
+ */
+export function setEmbedBehavior(behavior: EmbedBehavior): void {
+  if (!isEmbedBehavior(behavior)) return;
+  _state = withDerivedFields({ ..._state, embedBehavior: behavior });
   persist(_state);
   notify();
 }

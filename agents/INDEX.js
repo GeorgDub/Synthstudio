@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.136.0",
+    version: "3.138.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -89,6 +89,36 @@ const INDEX = {
   // ─── KNOWN FILE INDEX ──────────────────────────────────────
   // Key files agents have analyzed. Add new entries after working on a file.
   files: {
+    "client/src/store/useApiSettingsStore.ts (v3.138.0 +embedBehavior)": {
+      role:     "v3.138.0 ERWEITERT: ApiSettings interface +embedBehavior: 'auto'|'always'|'never' (default 'auto'). NEU EmbedBehavior-Type-Export + EMBED_BEHAVIORS readonly-Array + isEmbedBehavior-Type-Guard + setEmbedBehavior(b) setter (silently ignores invalid). defaults() liefert embedBehavior='auto'. persist()-Payload erweitert um embedBehavior. migrateFromLegacy BEIDE Branches (new-schema mit providers-Feld + Legacy mit anthropicApiKey direkt) lesen raw.embedBehavior via isEmbedBehavior-Guard, fallback base.embedBehavior='auto'. Migration-safe: pre-v3.138-Files ohne Feld → 'auto'.",
+      lastSeen: "2026-05-19T18:15:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/utils/sampleEmbeddingFlow.ts (v3.138.0 +embedAll)": {
+      role:     "v3.138.0 ERWEITERT: PrepareForSaveOptions +embedAll?: boolean (default false). prepareProjectForSave-Loop refactored: (1) bereits embeddedData → durchreichen (Idempotenz, unverändert), (2) NEW: !embedAll && !isBlobUrlPath(s.path) → durchreichen (Default-Verhalten unverändert), (3) NEW: typeof s.path !== 'string' || empty → durchreichen (loadAudioBuffer braucht Identifier), (4) sonst: load + encode + Cap-Check. Bestehende v3.131-Tests bleiben grün. v3.138 +5 Tests in sample-embedding-flow.test.ts verifizieren embedAll-Pfade (File-Path embedded bei embedAll=true, Idempotenz, empty-Path-skip, Total-Size-Cap).",
+      lastSeen: "2026-05-19T18:15:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/App.tsx (v3.138.0 +embedBehavior-gate)": {
+      role:     "v3.138.0 ERWEITERT: import getApiSettings hinzu. doSaveProject prüft embedBehavior=getApiSettings().embedBehavior. shouldEmbed-Gate: 'never' → skip (zusätzliche Warning wenn blob-URLs vorhanden, 'gehen nach Reload verloren'), 'auto' → blobCount>0, 'always' → totalSamples>0. prepareProjectForSave-Call jetzt mit {embedTransformed:true, embedAll, loadAudioBuffer}. Toast-Wording unterscheidet 'X Sample(s) (Modus „Immer“)' vs 'X transformierte Sample(s)'. AudioContext-null-Path zeigt total-Count (embedAll? totalSamples:blobCount).",
+      lastSeen: "2026-05-19T18:15:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/components/Settings/SettingsPanel.tsx (v3.138.0 +embed-behavior-radio)": {
+      role:     "v3.138.0 ERWEITERT: SavingSection bekommt neuen Radio-Block (data-testid embed-behavior-section) VOR 'Version-Snapshots'. 3 Radio-Optionen (data-testid embed-behavior-{auto|always|never}) mit Heading+Sub-Erklärung pro Option. Importiert setEmbedBehavior + EmbedBehavior-Type aus useApiSettingsStore. Aktive Option wird in text-accent-primary font-semibold hervorgehoben, inaktiv text-text-muted. Komplett semantische --ss-* Tokens (text-text-primary/muted/dim, border-border-color, accent-accent-primary). useApiSettingsStore-Hook-Output (api-variable) liefert embedBehavior für checked-Prop.",
+      lastSeen: "2026-05-19T18:15:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "tests/features/api-settings-embed-behavior.test.ts (v3.138.0 NEU)": {
+      role:     "v3.138.0 NEU (10 Tests in 3 describes, Node-env mit localStorage-Mock + vi.resetModules+dynamic-import für Migration-Tests). Cluster: 'Default & Setter' × 5 (default='auto', setEmbedBehavior 'always'/'never' persistiert in localStorage, invalid Wert no-op, Round-Trip auto→always→never→auto). 'Migration' × 4 (new-schema-Payload ohne embedBehavior → 'auto' + andere Felder erhalten, Legacy-Payload kein providers-Feld → 'auto', corrupt-string-Wert → 'auto'-fallback, valid 'always' → preserved). 'EMBED_BEHAVIORS-Constant' × 1 (assert toEqual ['auto','always','never']). 10/10 grün.",
+      lastSeen: "2026-05-19T18:15:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "tests/features/sample-embedding-flow.test.ts (v3.138.0 +embedAll)": {
+      role:     "v3.138.0 ERWEITERT (+5 Tests in 'v3.138 prepareProjectForSave embedAll'-describe, jetzt 28 Tests total): embedAll=false (default) → File-Path-Samples bleiben unverändert + loadAudioBuffer NICHT gerufen, embedAll=true → File-Path embedded UND blob:URL embedded (gemischter Case), embedAll=true skipt Samples mit bereits gesetztem embeddedData (Idempotenz), embedAll=true skipt Samples ohne path / empty-path-Guard, embedAll=true respektiert Total-Size-Cap (rejects mit Error). Bestehende 23 v3.131-Tests bleiben grün.",
+      lastSeen: "2026-05-19T18:15:00.000Z",
+      ownedBy:  "frontend"
+    },
     "client/src/components/DrumMachine/stepCellColors.ts (v3.125.0 NEU)": {
       role:     "v3.125.0 NEU (Pure, ~140 LOC). Color-Coded Step-Grid Helpers. parseHexColor(#RGB/#RRGGBB → {r,g,b}|undefined, uppercase-safe, RegExp HEX_RE), withAlpha(hex, alpha) → rgba-String (clamp01) oder fallback CSS-Var bei invalid, lightenHex(hex, amount 0..1) → lerp-toward-white-hex, getStepCellColor(channelColor, isActive, isHover) → CSS-String: active→rgb()/active+hover→lightenHex+12%/inactive→rgba 0.05/inactive+hover→rgba 0.12/invalid→var(--ss-accent-primary). getStepCellBgStyle wrappt in React-Style-Object. DOM-frei, Node-testbar.",
       lastSeen: "2026-05-19T15:55:00.000Z",
@@ -3012,6 +3042,57 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "frontend",
+      timestamp: "2026-05-19T18:15:00.000Z",
+      done: [
+        "v3.138.0: Embed-Behavior Setting (auto/always/never) — closes v3.137-next-Caveat. User kann jetzt steuern ob/wann Samples ins .synth-File eingebettet werden. Verhindert silent data-loss bei externen Sample-Files die nach Rechner-Wechsel fehlen.",
+        "useApiSettingsStore.ts ERWEITERT: ApiSettings +embedBehavior: 'auto'|'always'|'never' (default 'auto'). EmbedBehavior-Type + EMBED_BEHAVIORS-Constant + isEmbedBehavior-Guard + setEmbedBehavior-Setter. Persistierung in localStorage 'ss-api-settings:v1' (payload-Pick erweitert). Migration BEIDE Branches (new-schema + legacy) lesen embedBehavior defensive mit isEmbedBehavior-Validate, fallback 'auto'.",
+        "sampleEmbeddingFlow.ts ERWEITERT: PrepareForSaveOptions +embedAll?: boolean (default false). Loop-Logic: erste Skip-Stufe = idempotency (embeddedData gesetzt → durchreichen), zweite Stufe = !embedAll && !isBlobUrlPath → durchreichen, dritte Stufe = empty-path-guard → durchreichen. Total-Size-Cap weiter aktiv. Bestehende v3.131-Tests bleiben grün (Default-Verhalten unverändert).",
+        "App.tsx doSaveProject ERWEITERT: import getApiSettings hinzu. const embedBehavior = getApiSettings().embedBehavior. shouldEmbed-Gate: 'never' → skip + Warning (wenn blob-URLs vorhanden), 'auto' → blobCount>0, 'always' → totalSamples>0. prepareProjectForSave-Call jetzt mit {embedTransformed:true, embedAll, loadAudioBuffer}. Toast unterscheidet 'always'-vs-'auto'-Wording.",
+        "SettingsPanel.tsx SavingSection ERWEITERT: import setEmbedBehavior + EmbedBehavior-Type. Neuer Radio-Block VOR 'Version-Snapshots' mit data-testid=embed-behavior-section. 3 Radios (data-testid embed-behavior-{auto|always|never}) inkl. Beschreibungs-Text pro Option (Hauptzeile + Sub-Erklärung). Komplett semantische --ss-* Tokens (text-text-primary/muted/dim, bg-bg-elevated, accent-accent-primary, border-border-color).",
+        "tests/features/sample-embedding-flow.test.ts ERWEITERT (+5 Tests in 'v3.138 prepareProjectForSave embedAll'-describe): embedAll=false (default)→File-Path-Samples unverändert, embedAll=true→File-Path embedded UND blob:URL embedded (gemischter Case), embedAll=true skipt bereits embeddedData (Idempotenz), embedAll=true skipt Samples ohne Pfad, embedAll=true respektiert Total-Size-Cap (throws).",
+        "tests/features/api-settings-embed-behavior.test.ts NEU (10 Tests in 3 describes, vi.resetModules+dynamic-import für Migration-Tests). Default-Tests × 5 (default='auto', setEmbedBehavior persistiert für 'always'/'never', invalid-input no-op, Round-Trip). Migration-Tests × 4 (new-schema ohne embedBehavior→auto, legacy-schema→auto, corrupt-string→auto-fallback, valid 'always'→preserved). EMBED_BEHAVIORS-Constant × 1.",
+        "package.json + INDEX.js: 3.137.0 → 3.138.0. pnpm check: clean. pnpm test (target): 38/38 grün. Full-Suite: 295 files / 6674 passed / 16 skipped / 0 fail (+15 vs v3.137, 0 regressions). Inkludiert ausstehendes v3.137-Frontend-Agent INDEX.js-Update."
+      ],
+      next: [
+        "v3.139: Sample-Embed-Auto-on-Apply (v3.137-Caveat). Direkt nach SampleTransformDialog.Apply embedded cachen statt erst beim Save. Spart Save-Zeit bei großen Projekten + macht 'never'-Modus weniger gefährlich (cache überlebt Reload via IDB).",
+        "v3.138-Caveat: 'always'-Modus loop-sequentially → bei 100 Samples × 5 MB blockiert UI ~3-5s. Worker-Variante (parallel loadAudioBuffer + Base64-Encode) wäre sinnvoll.",
+        "v3.138-Caveat: SettingsPanel hat KEIN 'Embed-Size-Preview' (User sieht nicht im Voraus wie groß die .synth-Datei wird). estimateProjectEmbedSizeKb existiert — könnte als Live-Anzeige neben dem Radio-Block dargestellt werden.",
+        "v3.137-Next übertragen: onAutoSlice-Callback im SampleBrowser. Slice-Detection ist Preview-only."
+      ],
+      changed: [
+        "client/src/store/useApiSettingsStore.ts (+EmbedBehavior-Type + EMBED_BEHAVIORS + isEmbedBehavior + setter + defaults + persist + migration BEIDE Branches)",
+        "client/src/utils/sampleEmbeddingFlow.ts (+embedAll-Option + refactored skip-Logic)",
+        "client/src/App.tsx (doSaveProject mit embedBehavior-Gate + getApiSettings-Import + 'always'/'never'-Wording in Toasts)",
+        "client/src/components/Settings/SettingsPanel.tsx (Radio-Block in SavingSection + setEmbedBehavior-Import)",
+        "tests/features/sample-embedding-flow.test.ts (+5 Tests für embedAll)",
+        "tests/features/api-settings-embed-behavior.test.ts (NEU, 10 Tests)",
+        "package.json + agents/INDEX.js (3.137.0 → 3.138.0)"
+      ]
+    },
+    {
+      agent:     "frontend",
+      timestamp: "2026-05-19T18:00:00.000Z",
+      done: [
+        "v3.137.0: Embed-Sample Save/Load-Pipeline-Wire in App.tsx (closes v3.131-Caveat). Auto-Embed transformierter Blob-URL-Samples ins .synth-File beim Save, Auto-Restore beim Load. Verhindert silent data-loss nach Browser-Reload bei Sample-Transform-Workflows.",
+        "App.tsx doSaveProject: countBlobUrlSamples-Check → wenn blob-URLs vorhanden: AudioContext.getAudioContext null-guard → loadAudioBuffer-Adapter (fetch+decodeAudioData) → prepareProjectForSave → snapshot mit embeddedData. Toast zeigt Anzahl + KB. AudioContext-null-Path zeigt actionable Warning (User soll Play drücken).",
+        "App.tsx restoreProject: jetzt async. base64WavToAudioBuffer + audioBufferToWavBytes + URL.createObjectURL → decodeToBlobUrl-DI. restoreEmbeddedSamples ersetzt path durch fresh Blob-URL VOR addSamples. Call-Sites (cache-restore, doLoadProject, VersionHistoryModal-Restore) ignorieren das Promise korrekt — JS-Standard, kein Crash.",
+        "Defensive: alle Pipeline-Fehler werden gefangen, Save/Load crashed nie. AudioContext-null = skip + warning. Decode-Fehler pro Sample = console.warn, Sample bleibt mit altem Path (kein partial-restore-Crash).",
+        "tests/features/sample-embed-app-wiring.test.ts NEU (3 Integration-Smoke-Tests): prepareForSave-Integration (Blob-URL + loadAudioBuffer → embeddedData gesetzt + Original-Felder erhalten), restoreEmbeddedSamples-Round-Trip (prepare→restore liefert frische Blob-URL + Original-Felder), No-Op-Path (disk+pack-Samples → kein loadAudioBuffer-Call, samples-Inhalt unverändert).",
+        "package.json + INDEX.js: 3.136.0 → 3.137.0. pnpm check: clean. pnpm test (3 neue + 52 verwandte Embed-Tests): 55/55 grün. Full-Suite: 6659/6675 passed (16 skipped, 0 fail, 0 regressions vs v3.136). Commit e521104, Tag v3.137.0, push erfolgreich."
+      ],
+      next: [
+        "v3.138: Settings-Toggle 'Embed-Behavior' (auto/always/never/ask). Aktuell ist Embed hard-on bei Blob-URLs — User kann nicht opt-out. Idee: useApiSettingsStore + SettingsPanel-Checkbox 'Transformierte Samples beim Speichern einbetten' (default true).",
+        "v3.137-Next: onAutoSlice-Callback im SampleBrowser (übertragen aus v3.136-next). Slice-Detection ist Preview-only.",
+        "v3.137-Next: Sample-Embed-Auto-on-Apply — direkt nach SampleTransformDialog.Apply embed cachen, spart Save-Zeit bei großen Projekten."
+      ],
+      changed: [
+        "client/src/App.tsx (+~85 LOC: 2 import-Blöcke, doSaveProject Embed-Pipeline, restoreProject async + Restore-Pipeline)",
+        "tests/features/sample-embed-app-wiring.test.ts (NEU, 3 Integration-Smoke-Tests)",
+        "package.json + agents/INDEX.js (3.136.0 → 3.137.0)"
+      ]
+    },
     {
       agent:     "frontend",
       timestamp: "2026-05-19T17:50:00.000Z",

@@ -266,6 +266,103 @@ describe("v3.131 restoreEmbeddedSamples", () => {
   });
 });
 
+describe("v3.138 prepareProjectForSave embedAll", () => {
+  it("embedAll=false (default): File-Path-Samples bleiben unverändert", async () => {
+    let loadCalled = false;
+    const project: EmbedProjectLike = {
+      samples: [
+        { id: "s1", path: "/disk/kick.wav" }, // kein Blob-URL
+        { id: "s2", path: "/disk/snare.wav" },
+      ],
+    };
+    const result = await prepareProjectForSave(project, {
+      // embedAll explicitly false
+      embedAll: false,
+      loadAudioBuffer: async () => {
+        loadCalled = true;
+        return makeMockBuffer(0.01);
+      },
+    });
+    expect(loadCalled).toBe(false);
+    expect(result.samples?.[0].embeddedData).toBeUndefined();
+    expect(result.samples?.[1].embeddedData).toBeUndefined();
+  });
+
+  it("embedAll=true: File-Path-Samples WERDEN eingebettet", async () => {
+    const loadedPaths: string[] = [];
+    const project: EmbedProjectLike = {
+      samples: [
+        { id: "s1", path: "/disk/kick.wav" },
+        { id: "s2", path: "blob:transformed-snare" },
+      ],
+    };
+    const result = await prepareProjectForSave(project, {
+      embedAll: true,
+      loadAudioBuffer: async (path: string) => {
+        loadedPaths.push(path);
+        return makeMockBuffer(0.01);
+      },
+    });
+    expect(loadedPaths).toContain("/disk/kick.wav");
+    expect(loadedPaths).toContain("blob:transformed-snare");
+    expect(typeof result.samples?.[0].embeddedData).toBe("string");
+    expect(result.samples?.[0].embeddedData!.length).toBeGreaterThan(0);
+    expect(typeof result.samples?.[1].embeddedData).toBe("string");
+    expect(result.samples?.[1].embeddedData!.length).toBeGreaterThan(0);
+  });
+
+  it("embedAll=true skippt Samples mit bereits gesetztem embeddedData (Idempotenz)", async () => {
+    let loadCalled = false;
+    const project: EmbedProjectLike = {
+      samples: [
+        { id: "s1", path: "/disk/kick.wav", embeddedData: "existing-b64-data" },
+      ],
+    };
+    const result = await prepareProjectForSave(project, {
+      embedAll: true,
+      loadAudioBuffer: async () => {
+        loadCalled = true;
+        return makeMockBuffer(0.01);
+      },
+    });
+    expect(loadCalled).toBe(false);
+    expect(result.samples?.[0].embeddedData).toBe("existing-b64-data");
+  });
+
+  it("embedAll=true skippt Samples ohne Pfad (kein loadAudioBuffer-Identifier)", async () => {
+    let loadCalled = false;
+    const project: EmbedProjectLike = {
+      samples: [
+        { id: "s1" }, // kein path
+        { id: "s2", path: "" }, // leerer path
+      ],
+    };
+    const result = await prepareProjectForSave(project, {
+      embedAll: true,
+      loadAudioBuffer: async () => {
+        loadCalled = true;
+        return makeMockBuffer(0.01);
+      },
+    });
+    expect(loadCalled).toBe(false);
+    expect(result.samples?.[0].embeddedData).toBeUndefined();
+    expect(result.samples?.[1].embeddedData).toBeUndefined();
+  });
+
+  it("embedAll=true respektiert Total-Size-Cap", async () => {
+    const project: EmbedProjectLike = {
+      samples: [{ id: "s1", path: "/disk/big.wav" }],
+    };
+    await expect(
+      prepareProjectForSave(project, {
+        embedAll: true,
+        loadAudioBuffer: async () => makeMockBuffer(10, 48000, 2),
+        maxTotalSizeKb: 1,
+      }),
+    ).rejects.toThrow(/total embed size would exceed cap/);
+  });
+});
+
 describe("v3.131 Round-Trip prepare → restore", () => {
   it("preserves IDs + andere Felder", async () => {
     const project: EmbedProjectLike = {

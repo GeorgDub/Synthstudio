@@ -214,7 +214,7 @@ import { AudioEngine, DEFAULT_CHANNEL_FX } from "@/audio/AudioEngine";
 import { CollabChat } from "@/components/CollabSession/CollabChat";
 import { addChatMessage } from "@/store/useCollabChatStore";
 import { saveSnapshot } from "@/store/useVersionSnapshotStore";
-import { useApiSettingsStore } from "@/store/useApiSettingsStore";
+import { useApiSettingsStore, getApiSettings } from "@/store/useApiSettingsStore";
 import { VersionSnapshotPanel } from "@/components/ProjectManager/VersionSnapshotPanel";
 import { SettingsPanel } from "@/components/Settings/SettingsPanel";
 // v3.57.0: AutoSave UI-Wiring (Trigger + Topbar-Indicator + Versions-Modal).
@@ -918,26 +918,38 @@ export default function App() {
   const doSaveProject = useCallback(async () => {
     let snapshot = buildProjectSnapshot();
 
-    // v3.137.0: Embed Blob-URL-Samples vor Write (closes v3.131-Caveat).
+    // v3.137.0 / v3.138.0: Embed Samples vor Write (Setting "embedBehavior").
     // Transformierte Samples (SampleTransformDialog) liegen als Blob-URL vor.
     // Blob-URLs überleben einen Browser-Reload NICHT — ohne Embed wäre das
-    // Sample beim nächsten Project-Load tot.  Pipeline fetched die Blob-URL,
+    // Sample beim nächsten Project-Load tot.  Pipeline fetched die URL/Path,
     // decodet sie via AudioContext zu AudioBuffer und embedded sie als
     // Base64-WAV in `samples[].embeddedData`.  Defensive: jeder Pipeline-Fehler
     // (CORS, decodeAudioData throws, leerer Buffer, …) lässt den Save weiter-
     // laufen mit dem original-snapshot + zeigt eine Warning.
+    //
+    // v3.138: User-Setting `embedBehavior`:
+    //  - "auto"   (default): aktuelles Verhalten — nur Blob-URLs.
+    //  - "always": ALLE Samples einbetten (sicherer Round-Trip zwischen Rechnern).
+    //  - "never":  Embed skippen (kompakte .synth-Files, Data-Loss-Risiko).
+    const embedBehavior = getApiSettings().embedBehavior;
     const blobCount = countBlobUrlSamples(
       snapshot as unknown as Parameters<typeof countBlobUrlSamples>[0],
     );
-    if (blobCount > 0) {
+    const embedAll = embedBehavior === "always";
+    const totalSamples = Array.isArray(snapshot.samples) ? snapshot.samples.length : 0;
+    const shouldEmbed =
+      embedBehavior !== "never" && (embedAll ? totalSamples > 0 : blobCount > 0);
+
+    if (shouldEmbed) {
       try {
         const ctx = AudioEngine.getAudioContext();
         if (!ctx) {
           // Defensive: AudioContext noch nicht initialisiert (z.B. Save
           // vor erstem Play).  Embed wird übersprungen — Warning zeigt
           // den User-Schaden (Blob-URLs gehen nach Reload verloren).
+          const skipCount = embedAll ? totalSamples : blobCount;
           toast(
-            `Audio-Engine nicht aktiv — ${blobCount} transformierte Sample(s) konnten nicht eingebettet werden.  Drücke einmal Play und speichere erneut.`,
+            `Audio-Engine nicht aktiv — ${skipCount} Sample(s) konnten nicht eingebettet werden.  Drücke einmal Play und speichere erneut.`,
             { kind: "warning", duration: 7000 },
           );
         } else {
@@ -965,6 +977,7 @@ export default function App() {
             snapshot as unknown as Parameters<typeof prepareProjectForSave>[0],
             {
               embedTransformed: true,
+              embedAll,
               loadAudioBuffer,
             },
           );
@@ -974,20 +987,26 @@ export default function App() {
           );
           if (totalKb > 0) {
             const mb = (totalKb / 1024).toFixed(1);
-            toast(
-              `${blobCount} transformierte Sample(s) eingebettet (~${mb} MB)`,
-              { kind: "info" },
-            );
+            const noun = embedAll
+              ? `${totalSamples} Sample(s) (Modus „Immer“)`
+              : `${blobCount} transformierte Sample(s)`;
+            toast(`${noun} eingebettet (~${mb} MB)`, { kind: "info" });
           }
         }
       } catch (err) {
         console.warn("[Save] Embed-Pipeline failed:", err);
         toast(
-          "Embed der transformierten Samples fehlgeschlagen — Save wird trotzdem ausgeführt (Blob-URLs gehen nach Reload verloren)",
+          "Embed der Samples fehlgeschlagen — Save wird trotzdem ausgeführt (Blob-URLs gehen nach Reload verloren)",
           { kind: "warning", duration: 7000 },
         );
         // snapshot bleibt original — Save geht weiter, kein Crash.
       }
+    } else if (embedBehavior === "never" && blobCount > 0) {
+      // User hat "never" gewählt, hat aber Blob-URLs → einmaliger Hinweis.
+      toast(
+        `Embed-Modus „Nie“ aktiv — ${blobCount} transformierte Sample(s) werden NICHT eingebettet (gehen nach Reload verloren).`,
+        { kind: "warning", duration: 5000 },
+      );
     }
 
     cacheProjectLocally(snapshot);

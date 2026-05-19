@@ -56,6 +56,14 @@ export interface EmbedProjectLike {
 export interface PrepareForSaveOptions {
   /** Default true — wenn false werden Blob-URLs NICHT embedded. */
   embedTransformed?: boolean;
+  /**
+   * Default false (v3.138). Wenn true: ALLE Samples werden eingebettet — auch
+   * solche mit File-Path / Pack-Ref (nicht nur Blob-URLs). Setting `"always"`
+   * im SettingsPanel mappt darauf. Vermeidet silent data-loss wenn .synth-Files
+   * zwischen Rechnern ausgetauscht werden und externe Sample-Dateien fehlen.
+   * Skipped weiterhin Samples mit bereits gesetztem embeddedData (Idempotenz).
+   */
+  embedAll?: boolean;
   /** Default 50× MAX_EMBED_SIZE_KB = 500 MB Total-Cap.  Wenn überschritten → throws. */
   maxTotalSizeKb?: number;
   /**
@@ -132,6 +140,7 @@ export async function prepareProjectForSave(
   options: PrepareForSaveOptions = {},
 ): Promise<EmbedProjectLike> {
   const embedTransformed = options.embedTransformed !== false; // default true
+  const embedAll = options.embedAll === true; // default false (v3.138)
   const maxTotal = options.maxTotalSizeKb ?? MAX_EMBED_SIZE_KB * 50;
   const samples = Array.isArray(project.samples) ? project.samples : [];
 
@@ -148,14 +157,28 @@ export async function prepareProjectForSave(
     i++;
     options.onProgress?.(i / total);
 
-    // Skip wenn bereits embeddedData, oder kein Blob-URL.
-    if (s.embeddedData || !isBlobUrlPath(s.path)) {
+    // Idempotenz: bereits embedded → unverändert durchreichen.
+    if (s.embeddedData) {
+      newSamples.push(s);
+      continue;
+    }
+
+    // v3.138: Im Default-Pfad (embedAll=false) bleibt das v3.131-Verhalten
+    // erhalten — nur Blob-URLs werden embedded. Bei embedAll=true werden auch
+    // File-Path-Samples geladen (sicherer Round-Trip zwischen Rechnern).
+    if (!embedAll && !isBlobUrlPath(s.path)) {
+      newSamples.push(s);
+      continue;
+    }
+
+    // Skip wenn kein Path vorhanden — loadAudioBuffer braucht einen Identifier.
+    if (typeof s.path !== "string" || s.path.length === 0) {
       newSamples.push(s);
       continue;
     }
 
     // Try to load buffer.
-    const buffer = await options.loadAudioBuffer(s.path as string);
+    const buffer = await options.loadAudioBuffer(s.path);
     if (!buffer) {
       newSamples.push(s);
       continue;
