@@ -282,6 +282,9 @@ import { resetNoteRepeat, toggleNoteRepeat, isNoteRepeatEnabled } from "@/store/
 import { resetTranspose } from "@/store/useTransposeStore";
 import { resetMorph, getMorphState, setActive as setMorphActive } from "@/store/useMorphStore";
 import { getSceneState, setActiveScene as sceneStoreSetActiveScene } from "@/store/useSceneStore";
+// v3.96.0: Tempo-Map Wire-Up — Resolver-Callback + Restore-Hook.
+import { getTempoMapState, replaceEvents as setAllTempoEvents } from "@/store/useTempoMapStore";
+import { getCurrentBpm } from "@/utils/tempoMap";
 // v2.87 (TASK-235): Live-Looper Store-Bridge — Module-Funktionen, kein Hook.
 import { getLoopSlot, setLoopState, setLoopLength } from "@/store/useLooperStore";
 // v2.92 (TASK-240): MIDI-Note-Out Bridge — pro Part-Config in die AudioEngine syncen.
@@ -629,6 +632,22 @@ export default function App() {
   useEffect(() => {
     AudioEngine.syncSubMixState(subMix);
   }, [subMix]);
+
+  // ── Tempo-Map ↔ AudioEngine Bridge (v3.96.0) ──────────────────────────────
+  // Setzt den Resolver-Callback in der AudioEngine. Der Scheduler ruft ihn
+  // vor jedem Step mit der aktuellen Bar-Position (loopCount) auf und nutzt
+  // das Ergebnis als effective BPM. Bei leerer Tempo-Map liefert
+  // getCurrentBpm() null → Engine faellt auf den static-BPM-Pfad zurueck.
+  // Wird einmalig beim Mount gesetzt; der Callback liest live aus dem
+  // Singleton-Store (kein React-Closure-Stale-State-Risiko).
+  useEffect(() => {
+    AudioEngine.setTempoMapResolver((atBar: number) =>
+      getCurrentBpm(getTempoMapState().events, atBar)
+    );
+    return () => {
+      AudioEngine.setTempoMapResolver(null);
+    };
+  }, []);
 
   // ── Zentraler Projekt-State ────────────────────────────────────────────────────
   const project = useProjectStore();
@@ -995,6 +1014,17 @@ export default function App() {
     } catch (err) {
       // Defensive: invalid Chain darf den Restore NICHT crashen.
       console.warn("[restoreProject] midiFxChain restore failed:", err);
+    }
+
+    // v3.96.0 (v1.35): Tempo-Map aus dem .synth-File übernehmen.
+    // Pre-v1.35-Files haben tempoMap=undefined → User-localStorage NICHT
+    // ueberschreiben. Explicit [] respektieren (= User hat bewusst geleert).
+    try {
+      if (data.tempoMap !== undefined) {
+        setAllTempoEvents(data.tempoMap);
+      }
+    } catch (err) {
+      console.warn("[restoreProject] tempoMap restore failed:", err);
     }
 
     // ── Relocate-Probe: Prüfe ob Datei-Pfad noch existiert ────────────────

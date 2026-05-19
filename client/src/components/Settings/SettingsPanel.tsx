@@ -111,6 +111,8 @@ import { MacroEditor } from "@/components/Macros/MacroEditor";
 import { getRegisteredQuickActionContext } from "@/utils/quickActionContextRegistry";
 // v3.93.0: MIDI-FX Transform-Layer (Scale/Velocity/Chord/Repeat).
 import { MidiFxPanel } from "@/components/MidiFx/MidiFxPanel";
+// v3.96.0: Tempo-Map / BPM-Automation Panel.
+import { TempoMapPanel } from "@/components/TempoMap/TempoMapPanel";
 
 // ─── Sidebar-Abschnitte ───────────────────────────────────────────────────────
 
@@ -122,6 +124,7 @@ type Section =
   | "metronome"
   | "audio-engine"
   | "performance"
+  | "tempo-map"
   | "midi-devices"
   | "midi-cc"
   | "midi-notes"
@@ -145,6 +148,7 @@ const SECTIONS: Array<{ id: Section; icon: string; label: string; group?: string
   { id: "metronome",    icon: "🥁", label: "Metronom",            group: "Audio" },
   { id: "audio-engine", icon: "⚡", label: "Audio Engine",         group: "Audio" },
   { id: "performance",  icon: "📊", label: "Performance",         group: "Audio" },
+  { id: "tempo-map",    icon: "🎚", label: "Tempo-Map",           group: "Audio" },
   { id: "midi-devices", icon: "🎹", label: "MIDI Geräte",         group: "MIDI" },
   { id: "midi-cc",      icon: "🎛",  label: "CC-Zuweisungen",      group: "MIDI" },
   { id: "midi-notes",   icon: "🎵", label: "Note-Zuweisungen",    group: "MIDI" },
@@ -2273,6 +2277,31 @@ function AboutSection() {
 
 // ─── Haupt-Komponente ─────────────────────────────────────────────────────────
 
+// ─── Tempo-Map Section (v3.96.0) ─────────────────────────────────────────────
+/**
+ * Wrapper-Section, die das TempoMapPanel mountet + den Live-Playhead aus der
+ * AudioEngine (currentStep) als currentBar-Prop nachzieht. Update-Rate 500ms,
+ * was bei 120 BPM/16 Steps ungefaehr 1 Bar pro Sekunde entspricht — ausreichend
+ * fluessig fuer eine BPM-Automation-View (Beat-Genauigkeit nicht noetig).
+ */
+function TempoMapSection() {
+  const [currentBar, setCurrentBar] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => {
+      // v3.96.0: currentStep / stepsPerBar. Wir nutzen die loopCount-basierte
+      // Bar-Position aus der Engine — currentStep ist Step-im-aktuellen-Pattern,
+      // also leiten wir die Bar aus currentStepIndex + Engine-Step-Count ab.
+      // Vereinfachung: currentStep / 16 (Default-Pattern: 16 Steps = 1 Bar).
+      // Reicht fuer das UI — bei groesseren Patterns ist es eine grobe Naeherung.
+      const step = AudioEngine.currentStepIndex;
+      const bar = Math.floor(step / 16);
+      setCurrentBar((prev) => (prev === bar ? prev : bar));
+    }, 500);
+    return () => clearInterval(id);
+  }, []);
+  return <TempoMapPanel currentBar={currentBar} />;
+}
+
 interface SettingsPanelProps {
   isOpen: boolean;
   onClose: () => void;
@@ -2350,6 +2379,7 @@ export function SettingsPanel({ isOpen, onClose, midi, parts, initialSection = "
           {active === "metronome"    && <MetronomeSection />}
           {active === "audio-engine" && <AudioEngineSection />}
           {active === "performance"  && <PerformanceMonitor mode="expanded" />}
+          {active === "tempo-map"    && <TempoMapSection />}
           {active === "midi-devices" && <MidiDevicesSection midi={midi} onOpenAdvancedMidi={onOpenAdvancedMidi} />}
           {active === "midi-cc"      && <MidiCcSection midi={midi} parts={parts} onOpenAdvancedMidi={onOpenAdvancedMidi} />}
           {active === "midi-notes"   && <MidiNotesSection midi={midi} parts={parts} onOpenAdvancedMidi={onOpenAdvancedMidi} />}

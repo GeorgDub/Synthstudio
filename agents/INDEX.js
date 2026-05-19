@@ -1810,9 +1810,24 @@ const INDEX = {
       ownedBy:  "frontend"
     },
     "client/src/App.tsx": {
-      role:     "Root component, tab routing (F1-F6), AudioEngine.onPosition() automation callback. v1.22.0 (TASK-117): Macro-Setter-Bag um setLfoRate/setLfoDepth erweitert — onUnhandled-Warn-Spezialfall entfernt (jetzt generisch).",
-      lastSeen: "2026-05-12T23:00:00.000Z",
+      role:     "Root component, tab routing (F1-F6), AudioEngine.onPosition() automation callback. v1.22.0 (TASK-117): Macro-Setter-Bag um setLfoRate/setLfoDepth erweitert — onUnhandled-Warn-Spezialfall entfernt (jetzt generisch). v3.96.0: NEU Tempo-Map Wire-Up — useEffect mountet AudioEngine.setTempoMapResolver((atBar) => getCurrentBpm(getTempoMapState().events, atBar)); restoreProject lädt data.tempoMap via setAllTempoEvents wenn !== undefined (Pre-v1.35-Compat).",
+      lastSeen: "2026-05-19T09:15:00.000Z",
       ownedBy:  "frontend"
+    },
+    "client/src/components/Settings/SettingsPanel.tsx": {
+      role:     "Zentrale Settings-Oberflaeche mit Sidebar-Navigation. v3.96.0: NEU 'tempo-map'-Section + TempoMapSection-Wrapper-Komponente (setInterval(500ms) leitet currentBar = floor(AudioEngine.currentStepIndex/16) ab, useState-Prev-Check verhindert spurious Re-Renders bei gleicher Bar). Section eingegliedert in Audio-Gruppe zwischen 'Performance' und 'MIDI Geräte'.",
+      lastSeen: "2026-05-19T09:15:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/components/TempoMap/TempoMapPanel.tsx": {
+      role:     "v3.95.0 NEU (~310 LOC): Tempo-Map-Timeline-View mit SVG-Polyline (X=Bar 0..64, Y=BPM 20..300, Gridlines 60/100/120/140/160/200/240). Click=addEvent, Drag=BPM, Doppelklick=Ramp-Toggle, Rechtsklick=remove. Event-Liste mit Inline-BPM-Edit, Ramp/Hard-Toggle, Trash. Clear-All + Append-Event-Button. Optionaler currentBar-Prop fuer Playhead-Line. v3.96.0 gemountet in SettingsPanel (Audio-Gruppe).",
+      lastSeen: "2026-05-19T09:15:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "tests/features/tempo-map-integration.test.ts": {
+      role:     "v3.96.0 NEU (+~165 LOC, 10 Tests in 3 describes, env:node, vitest): (1) setTempoMapResolver-Callback × 4 (Resolver liefert korrekte BPM, null bei leerer Map, folgt Live-Updates, ramp-Interpolation). (2) restoreProject × 3 (replaceEvents-Pfad, Pre-v1.35-undefined-Pfad, explicit []). (3) currentBar Update-Mechanism × 3 (floor(step/16), prev-Vergleich verhindert spurious updates, Bar-Wechsel + Resolver-Reading-Reihenfolge).",
+      lastSeen: "2026-05-19T09:15:00.000Z",
+      ownedBy:  "testing"
     },
     "client/src/store/useThemeStore.ts": {
       role:     "Theme state + persistence. WARNING: circular import risk if refactoring (imports from ThemeSettings.tsx)",
@@ -2492,6 +2507,31 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "frontend",
+      timestamp: "2026-05-19T09:15:00.000Z",
+      done: [
+        "v3.96.0: Tempo-Map Wire-Up + UI-Mount + Live-Playhead. Schliesst die 4 v3.95-Caveats: (1) App.tsx setTempoMapResolver-Bridge, (2) restoreProject-Pfad fuer data.tempoMap, (3) TempoMapPanel-Mount als SettingsPanel-Section, (4) currentBar-Sync vom AudioEngine.currentStepIndex.",
+        "client/src/App.tsx WIRE-UP (+~30 LOC): NEU Imports getTempoMapState + replaceEvents (als setAllTempoEvents) aus useTempoMapStore + getCurrentBpm aus utils/tempoMap. NEU useEffect-Bridge bei Mount: AudioEngine.setTempoMapResolver((atBar) => getCurrentBpm(getTempoMapState().events, atBar)). Cleanup setzt resolver auf null beim Unmount. NEU restoreProject-Block (nach midiFxChain): try/catch um setAllTempoEvents(data.tempoMap) wenn data.tempoMap !== undefined — explicit [] respektiert (User-Intent leere Map), undefined laesst User-localStorage in Ruhe (Pre-v1.35-Backward-Compat).",
+        "client/src/components/Settings/SettingsPanel.tsx UI-MOUNT (+~30 LOC): NEU Section-ID 'tempo-map' + Sidebar-Eintrag {icon:'🎚', label:'Tempo-Map', group:'Audio'} zwischen 'performance' und 'midi-devices'. NEU TempoMapPanel-Import. NEU lokale TempoMapSection-Wrapper-Komponente: setInterval(500ms) liest AudioEngine.currentStepIndex, leitet currentBar = floor(step/16) ab, useState((prev) => prev === bar ? prev : bar) verhindert spurious Re-Renders bei gleicher Bar. Mount-Punkt {active === 'tempo-map' && <TempoMapSection />}.",
+        "tests/features/tempo-map-integration.test.ts NEU (+~165 LOC, 10 Tests in 3 describes): (1) setTempoMapResolver-Callback × 4 — Resolver liefert korrekte BPM aus Store, null bei leerer Map, folgt Live-Updates (Store-Mutation reflektiert sofort), ramp-Interpolation linear. (2) restoreProject × 3 — replaceEvents ueberschreibt komplette Map analog setAllMidiFxNodes, Pre-v1.35-Pfad mit undefined laesst localStorage intakt, explicit [] respektiert. (3) currentBar Update-Mechanism × 3 — floor(step/16) korrekt, prev-Vergleich verhindert spurious updates (32 Steps = 2 Updates), Bar-Wechsel + Resolver-Reading liefert richtige BPM-Reihenfolge.",
+        "package.json 3.95.0 → 3.96.0. pnpm check: clean. pnpm test: 240 Files / 5416 passed / 16 skipped (vs v3.95.0: 239/5406 → +1 File +10 Tests). Keine bestehenden Tests broken.",
+        "Caveats: (1) currentBar = floor(currentStep/16) ist eine grobe Naeherung — bei stepCount=32 oder 64 zeigt der Playhead halb so schnell wie erwartet. Bessere Loesung: AudioEngine.loopCount-Getter exportieren (loopCount = vollendete 16-Step-Schleifen = Bars bei stepCount=16) oder einen 'currentBar'-Getter mit step/stepCount-Beruecksichtigung anlegen. (2) Update-Rate 500ms ist bewusst grob (UI-friendly, keine 60fps-Last) — fuer hochpraezisen Playhead bei langsamen Tempos koennte 100-200ms besser sein. (3) Resolver-Closure ruft getTempoMapState() bei jedem Step auf — Singleton-Read ist O(1), aber bei sehr vielen Events koennte das sorted-lookup von getCurrentBpm zum Bottleneck werden (sehr unwahrscheinlich bei MAX_TEMPO_EVENTS=32). (4) TempoMapSection currentBar-Wrapper nutzt setInterval statt rAF — Setting-Panel ist meistens geschlossen, also setInterval reicht; bei Dauer-Offen koennte rAF energie-effizienter sein."
+      ],
+      next: [
+        "v3.97: AudioEngine.currentBar-Getter (loopCount + stepCount-aware) statt currentStep/16-Naeherung.",
+        "v3.97: Tempo-Map MIDI-Learn-Target 'addTempoEvent' fuer Live-Performance.",
+        "v3.97: Tempo-Map → MIDI-File Tempo-Track Export (SMF Tempo Meta-Events).",
+        "v3.97: TempoMapPanel rAF-Update-Loop statt setInterval (Energy-Saving wenn permanent geoeffnet)."
+      ],
+      changed: [
+        "client/src/App.tsx (+~30 LOC Resolver-Wire-Up + restoreProject-Block)",
+        "client/src/components/Settings/SettingsPanel.tsx (+~30 LOC tempo-map-Section + TempoMapSection-Wrapper)",
+        "tests/features/tempo-map-integration.test.ts (NEU +~165 LOC 11 Tests)",
+        "package.json (3.95.0 → 3.96.0)",
+        "agents/INDEX.js (workLog v3.96-Eintrag)"
+      ]
+    },
     {
       agent:     "backend",
       timestamp: "2026-05-19T08:50:00.000Z",
