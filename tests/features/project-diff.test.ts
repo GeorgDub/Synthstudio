@@ -27,7 +27,7 @@ import type { SynthProject } from "@/utils/projectSerializer";
 
 function makeProject(overrides: Partial<SynthProject> = {}): SynthProject {
   return {
-    version: "1.35",
+    version: "1.36",
     projectId: "11111111-1111-4111-8111-111111111111",
     projectName: "Test-Projekt",
     savedAt: "2026-05-19T10:00:00.000Z",

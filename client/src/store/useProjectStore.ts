@@ -29,6 +29,20 @@ export interface Sample {
   size?: number;
   /** Auto-Tags aus Dateiname (kick, snare, loop, …) */
   tags?: string[];
+  /**
+   * v3.124.0 (Schema v1.36): Base64-encoded WAV bytes für embed-in-Project-File
+   * Persistenz von transformed Samples deren `path` eine Blob-URL ist (welche
+   * beim Reload ungültig wird).  Beim Project-Save schreibt
+   * serializeProjectForSave dieses Feld für Blob-URL-Samples, beim Load
+   * restored deserializeProject einen frischen AudioBuffer + neue Blob-URL.
+   *
+   * Disk-Pfad-Samples (Electron, file://, C:\\…) lassen dieses Feld leer —
+   * sie laden über filePath beim nächsten Start sowieso korrekt.
+   *
+   * Pack-Ref-Samples (pack:readFile) lassen dieses Feld ebenfalls leer —
+   * der Pack-Reload-Pfad ist unabhängig.
+   */
+  embeddedData?: string;
 }
 
 export interface ProjectState {

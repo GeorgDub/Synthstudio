@@ -1,20 +1,18 @@
 /**
- * StepSequencerPanel.tsx — Sprint-103/104 Live-Pattern-Sequencer-UI.
+ * StepSequencerPanel.tsx — Sprint-103..107 Live-Pattern-Sequencer-UI.
  *
- * 16 Step-Buttons, BPM-Slider, Root-Note-Input, Play/Stop.
- * Sprint-104: Live-Step-Cursor (server pusht current-step-notify),
- * per-step Velocity (shift+click oder drag), localStorage-Persistence.
- *
- * Schickt CMD 0x04 (PATTERN) + CMD 0x0E (TRANSPORT) an den Sim. Der Sim
- * feuert Note-Ons im BPM-Raster, chord-Modul-Fan-Out macht aus jeder
- * Root einen Chord. Web-Audio spielt die Triads.
+ * Sprint-103: 16-Step + BPM + Play/Stop.
+ * Sprint-104: Live-Cursor + per-Step Velocity + localStorage.
+ * Sprint-105: per-Step Pitch-Offset.
+ * Sprint-107: Pattern-Bank mit 8 Slots, Click switcht aktiven Slot.
  */
 
 import { useEffect, useState, useCallback, useRef, type ReactElement } from "react";
 
 import { omniTribeBridge } from "../../audio/OmniTribeBridge";
 import {
-  loadPatternCache, savePatternCache, type PatternState,
+  loadPatternBank, savePatternBank, getDefaultPattern,
+  PATTERN_BANK_SIZE, type PatternBank, type PatternState,
 } from "../../utils/patternCache";
 
 export interface StepSequencerPanelProps {
@@ -22,73 +20,70 @@ export interface StepSequencerPanelProps {
   connected: boolean;
 }
 
-const VEL_MIN = 1;       // 0 = effektiv Note-Off → vermeiden
+const VEL_MIN = 1;
 const VEL_MAX = 127;
-const VEL_STEP = 8;      // Shift-Click increment
+const VEL_STEP = 8;
 
 export function StepSequencerPanel({
   connected,
 }: StepSequencerPanelProps): ReactElement {
-  const initial = useRef<PatternState>(loadPatternCache());
-  const [steps, setSteps] = useState<boolean[]>(initial.current.steps);
-  const [velocities, setVelocities] = useState<number[]>(initial.current.velocities);
-  // Sprint-105: per-Step pitch-offset in Halbtoenen
-  const [pitchOffsets, setPitchOffsets] = useState<number[]>(initial.current.pitchOffsets);
-  const [bpm, setBpm] = useState<number>(initial.current.bpm);
-  const [root, setRoot] = useState<number>(initial.current.root);
+  // Sprint-107: Bank-State + activeSlot
+  const [bank, setBank] = useState<PatternBank>(() => loadPatternBank());
+  const active = bank.patterns[bank.activeSlot] ?? getDefaultPattern();
   const [playing, setPlaying] = useState<boolean>(false);
   const [currentStep, setCurrentStep] = useState<number>(-1);
 
-  const stepMask = steps.reduce(
+  const stepMask = active.steps.reduce(
     (m, on, i) => (on ? m | (1 << i) : m),
     0,
   );
 
-  // ─── Persistence ────────────────────────────────────────
+  // ─── Persistence (gesamte Bank) ─────────────────────────
   useEffect(() => {
-    savePatternCache({ steps, velocities, pitchOffsets, bpm, root });
-  }, [steps, velocities, pitchOffsets, bpm, root]);
+    savePatternBank(bank);
+  }, [bank]);
 
-  // ─── Sync Pattern-State zum Sim ─────────────────────────
-  useEffect(() => {
-    if (!connected) return;
-    omniTribeBridge.setPatternStepMask(stepMask);
-  }, [stepMask, connected]);
+  // ─── Sync zum Sim (alle Felder pushen wenn aktive Pattern oder Slot wechselt) ─
+  // Tracked-Refs damit wir nur DIFFS pushen.
+  const lastSent = useRef<PatternState>(getDefaultPattern());
 
   useEffect(() => {
-    if (!connected) return;
-    omniTribeBridge.remoteTempo(bpm);
-  }, [bpm, connected]);
-
-  useEffect(() => {
-    if (!connected) return;
-    omniTribeBridge.setPatternRootNote(root);
-  }, [root, connected]);
-
-  // Velocity-Sync: pro Step einzeln senden wenn Wert sich aendert
-  // (Vergleich mit Ref damit nicht alle 16 bei jedem Render gepushed werden)
-  const lastSentVels = useRef<number[]>([...velocities]);
-  useEffect(() => {
-    if (!connected) return;
+    if (!connected) {
+      lastSent.current = { ...active };
+      return;
+    }
+    // step-mask
+    if (
+      !active.steps.every((s, i) => s === lastSent.current.steps[i])
+    ) {
+      omniTribeBridge.setPatternStepMask(stepMask);
+    }
+    // velocity (pro Step)
     for (let i = 0; i < 16; i++) {
-      if (velocities[i] !== lastSentVels.current[i]) {
-        omniTribeBridge.setPatternStepVelocity(i, velocities[i]);
-        lastSentVels.current[i] = velocities[i];
+      if (active.velocities[i] !== lastSent.current.velocities[i]) {
+        omniTribeBridge.setPatternStepVelocity(i, active.velocities[i]);
       }
     }
-  }, [velocities, connected]);
-
-  // Pitch-Sync (Sprint-105): analog Velocity
-  const lastSentPitch = useRef<number[]>([...pitchOffsets]);
-  useEffect(() => {
-    if (!connected) return;
+    // pitch (pro Step)
     for (let i = 0; i < 16; i++) {
-      if (pitchOffsets[i] !== lastSentPitch.current[i]) {
-        omniTribeBridge.setPatternStepPitchOffset(i, pitchOffsets[i]);
-        lastSentPitch.current[i] = pitchOffsets[i];
+      if (active.pitchOffsets[i] !== lastSent.current.pitchOffsets[i]) {
+        omniTribeBridge.setPatternStepPitchOffset(i, active.pitchOffsets[i]);
       }
     }
-  }, [pitchOffsets, connected]);
+    // BPM + Root
+    if (active.bpm !== lastSent.current.bpm) {
+      omniTribeBridge.remoteTempo(active.bpm);
+    }
+    if (active.root !== lastSent.current.root) {
+      omniTribeBridge.setPatternRootNote(active.root);
+    }
+    lastSent.current = {
+      ...active,
+      steps: [...active.steps],
+      velocities: [...active.velocities],
+      pitchOffsets: [...active.pitchOffsets],
+    };
+  }, [active, connected, stepMask]);
 
   // ─── Live-Step-Cursor via Sim-Notify ───────────────────
   useEffect(() => {
@@ -101,32 +96,55 @@ export function StepSequencerPanel({
     return () => window.removeEventListener("omnitribe:patternStep", onStep);
   }, []);
 
-  // Cursor zuruecksetzen wenn Stop
   useEffect(() => {
     if (!playing) setCurrentStep(-1);
   }, [playing]);
 
-  // ─── Handlers ───────────────────────────────────────────
-  const toggleStep = useCallback((idx: number, ev?: React.MouseEvent) => {
-    // Shift-Click → Velocity erhoehen, Alt-Click → senken (statt Toggle)
-    if (ev?.shiftKey) {
-      setVelocities((v) => {
-        const next = [...v];
-        next[idx] = Math.min(VEL_MAX, next[idx] + VEL_STEP);
-        return next;
+  // ─── Pattern-Update Helpers ─────────────────────────────
+  const updateActive = useCallback(
+    (mut: (p: PatternState) => PatternState) => {
+      setBank((b) => {
+        const updated = b.patterns.map((p, i) =>
+          i === b.activeSlot ? mut(p) : p,
+        );
+        return { ...b, patterns: updated };
       });
+    },
+    [],
+  );
+
+  const toggleStep = useCallback((idx: number, ev?: React.MouseEvent) => {
+    if (ev?.shiftKey) {
+      updateActive((p) => ({
+        ...p,
+        velocities: p.velocities.map((v, i) =>
+          i === idx ? Math.min(VEL_MAX, v + VEL_STEP) : v,
+        ),
+      }));
       return;
     }
     if (ev?.altKey) {
-      setVelocities((v) => {
-        const next = [...v];
-        next[idx] = Math.max(VEL_MIN, next[idx] - VEL_STEP);
-        return next;
-      });
+      updateActive((p) => ({
+        ...p,
+        velocities: p.velocities.map((v, i) =>
+          i === idx ? Math.max(VEL_MIN, v - VEL_STEP) : v,
+        ),
+      }));
       return;
     }
-    setSteps((prev) => prev.map((on, i) => (i === idx ? !on : on)));
-  }, []);
+    updateActive((p) => ({
+      ...p,
+      steps: p.steps.map((on, i) => (i === idx ? !on : on)),
+    }));
+  }, [updateActive]);
+
+  const setPitchForStep = useCallback((idx: number, value: number) => {
+    const clamped = Math.max(-24, Math.min(24, value || 0));
+    updateActive((p) => ({
+      ...p,
+      pitchOffsets: p.pitchOffsets.map((v, i) => (i === idx ? clamped : v)),
+    }));
+  }, [updateActive]);
 
   const handlePlay = useCallback(() => {
     if (!connected) return;
@@ -141,19 +159,22 @@ export function StepSequencerPanel({
   }, [connected]);
 
   const handleClear = useCallback(() => {
-    setSteps(Array(16).fill(false));
-    setVelocities(Array(16).fill(100));
-    setPitchOffsets(Array(16).fill(0));
-  }, []);
-
-  // Sprint-105: Pitch-Offset pro Step setzen (clamped auf -24..+24 fuer UI-Sanity)
-  const setPitchForStep = useCallback((idx: number, value: number) => {
-    const clamped = Math.max(-24, Math.min(24, value || 0));
-    setPitchOffsets((p) => p.map((v, i) => (i === idx ? clamped : v)));
-  }, []);
+    updateActive(() => getDefaultPattern());
+  }, [updateActive]);
 
   const handlePreset = useCallback((mask: number) => {
-    setSteps(Array.from({ length: 16 }, (_, i) => (mask & (1 << i)) !== 0));
+    updateActive((p) => ({
+      ...p,
+      steps: Array.from({ length: 16 }, (_, i) => (mask & (1 << i)) !== 0),
+    }));
+  }, [updateActive]);
+
+  // Sprint-107: Slot-Wechsel.
+  // Beim Switch ist die aktuelle Edit-Phase bereits in bank.patterns[activeSlot]
+  // gespeichert (auto via updateActive). Wir setzen einfach activeSlot um.
+  // Bridge-Push erfolgt via useEffect [active] — pushed alle 16 Steps neu.
+  const handleSelectSlot = useCallback((slot: number) => {
+    setBank((b) => ({ ...b, activeSlot: slot }));
   }, []);
 
   // ─── Render ─────────────────────────────────────────────
@@ -170,6 +191,47 @@ export function StepSequencerPanel({
         </span>
       </div>
 
+      {/* Sprint-107: Pattern-Bank-Selector */}
+      <div className="flex items-center gap-1">
+        <span className="text-[10px] uppercase tracking-wide text-text-dim mr-1">
+          Pattern
+        </span>
+        <div
+          className="flex gap-1 flex-1"
+          role="radiogroup"
+          aria-label="Pattern bank slot"
+        >
+          {Array.from({ length: PATTERN_BANK_SIZE }, (_, i) => {
+            const isActive = bank.activeSlot === i;
+            const slotPattern = bank.patterns[i];
+            // Slot-Indikator: Punkt wenn Steps vorhanden
+            const hasContent = slotPattern.steps.some((s) => s);
+            return (
+              <button
+                key={i}
+                type="button"
+                role="radio"
+                aria-checked={isActive}
+                onClick={() => handleSelectSlot(i)}
+                data-testid={`bank-slot-${i}`}
+                title={`Pattern ${i + 1}${hasContent ? " (has steps)" : " (empty)"}`}
+                className={[
+                  "flex-1 px-2 py-1 rounded text-[10px] font-mono border transition-colors",
+                  isActive
+                    ? "bg-accent-primary text-bg-base border-accent-primary"
+                    : "bg-bg-elevated border-border-color text-text-muted hover:text-text-primary",
+                ].join(" ")}
+              >
+                {String.fromCharCode(65 + i)}
+                {hasContent && !isActive && (
+                  <span className="ml-1 text-accent-primary">•</span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       {/* 16-Step Grid mit Velocity-Bars + Live-Cursor */}
       <div
         className="grid gap-1"
@@ -177,8 +239,8 @@ export function StepSequencerPanel({
         role="group"
         aria-label="Pattern steps"
       >
-        {steps.map((on, i) => {
-          const vel = velocities[i];
+        {active.steps.map((on, i) => {
+          const vel = active.velocities[i];
           const velPct = Math.round((vel / VEL_MAX) * 100);
           const isCurrent = currentStep === i && playing;
           return (
@@ -207,7 +269,6 @@ export function StepSequencerPanel({
                 i % 4 === 0 && !on && "border-text-dim",
               ].filter(Boolean).join(" ")}
             >
-              {/* Velocity-Bar als Hintergrund-Hoehe */}
               {on && (
                 <span
                   aria-hidden="true"
@@ -222,14 +283,14 @@ export function StepSequencerPanel({
         })}
       </div>
 
-      {/* Sprint-105: Pitch-Row — pro Step Halbton-Offset */}
+      {/* Pitch-Row */}
       <div
         className="grid gap-1"
         style={{ gridTemplateColumns: "repeat(16, minmax(0, 1fr))" }}
         role="group"
         aria-label="Pitch offsets"
       >
-        {pitchOffsets.map((p, i) => (
+        {active.pitchOffsets.map((p, i) => (
           <input
             key={`pitch-${i}`}
             type="number"
@@ -245,7 +306,7 @@ export function StepSequencerPanel({
               "text-[9px] font-mono text-text-muted text-center",
               "px-0 disabled:opacity-40",
               p !== 0 && "text-accent-secondary border-accent-secondary",
-              steps[i] && "border-accent-primary/40",
+              active.steps[i] && "border-accent-primary/40",
             ].filter(Boolean).join(" ")}
           />
         ))}
@@ -303,8 +364,8 @@ export function StepSequencerPanel({
 
       <p className="text-[10px] text-text-dim leading-snug">
         Click toggles step · Shift+Click erhoeht Velocity · Alt+Click
-        senkt sie. Bar-Hoehe = Velocity. Pitch-Inputs unten = Halbton-
-        Offset (Sprint-105 Melodie-Modus).
+        senkt sie. Bar-Hoehe = Velocity. Pitch-Inputs = Halbton-Offset.
+        Pattern A-H = Bank-Slots (Sprint-107).
       </p>
 
       {/* Transport + BPM + Root */}
@@ -340,8 +401,9 @@ export function StepSequencerPanel({
             type="range"
             min={40}
             max={240}
-            value={bpm}
-            onChange={(e) => setBpm(Number(e.target.value))}
+            value={active.bpm}
+            onChange={(e) =>
+              updateActive((p) => ({ ...p, bpm: Number(e.target.value) }))}
             disabled={!connected}
             data-testid="seq-bpm-slider"
             className="flex-1"
@@ -350,7 +412,7 @@ export function StepSequencerPanel({
             className="text-[10px] text-text-muted font-mono w-8 text-right"
             data-testid="seq-bpm-display"
           >
-            {bpm}
+            {active.bpm}
           </span>
         </label>
         <label className="flex items-center gap-1">
@@ -359,9 +421,12 @@ export function StepSequencerPanel({
             type="number"
             min={0}
             max={127}
-            value={root}
+            value={active.root}
             onChange={(e) =>
-              setRoot(Math.max(0, Math.min(127, Number(e.target.value) || 0)))}
+              updateActive((p) => ({
+                ...p,
+                root: Math.max(0, Math.min(127, Number(e.target.value) || 0)),
+              }))}
             disabled={!connected}
             data-testid="seq-root-input"
             className="w-12 bg-bg-elevated border border-border-color rounded px-1 text-[10px] text-text-primary font-mono"

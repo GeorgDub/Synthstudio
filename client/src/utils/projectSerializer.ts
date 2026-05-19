@@ -129,6 +129,14 @@
  *     Nodes gelöscht und gespeichert). Invalide Nodes werden via
  *     sanitizeMidiFxState silent gefiltert (whitelist per Kind +
  *     Clamping aller Felder). Hart-Cap auf MAX_MIDI_FX_CHAIN (=6).
+ *   - "1.36": samples[].embeddedData hinzugefügt (v3.124.0). Base64-encoded
+ *     WAV-Bytes für Persistenz von transformed Samples deren `path` eine
+ *     Blob-URL ist (welche beim Reload ungültig wird). Closes v3.116
+ *     Sample-Transform Blob-URL-Loss-Caveat. Additiv-optional pro Sample-
+ *     Eintrag. Pre-v1.36-Files laden unverändert (embeddedData=undefined).
+ *     Sanitizer entfernt non-string / leere / über-cap Werte; Base64-Format
+ *     wird beim Load NICHT validiert (Decode-Throw wird vom Caller gefangen
+ *     mit Silent-Buffer-Fallback).
  * Dateiendung: .synth
  */
 
@@ -166,8 +174,16 @@ import { sanitizeMidiFxState } from "@/store/useMidiFxStore";
 // v1.35 (v3.95.0): Tempo-Map / BPM-Automation.
 import { parseTempoEvents } from "@/utils/tempoMap";
 
-export const SYNTH_FILE_VERSION = "1.35";
+export const SYNTH_FILE_VERSION = "1.36";
 export const SYNTH_LATEST_KEY = "synthstudio:last-project";
+
+/**
+ * v1.36 (v3.124.0): Hard-Cap für embedded WAV-base64 Strings pro Sample.
+ * Über diesem Wert wird das Feld beim Save NICHT geschrieben (UI warnt) und
+ * beim Load defensive gestrippt (kein OOM-Risiko bei korruptem Schema).
+ * 50 MB Base64 ≈ 37 MB WAV ≈ 100 Sekunden Stereo @ 48k 16-bit.
+ */
+export const MAX_EMBEDDED_DATA_BYTES = 50 * 1024 * 1024;
 
 // ─── Typen ───────────────────────────────────────────────────────────────────
 
@@ -476,6 +492,43 @@ function isValidAudioTrackEntry(t: unknown): t is AudioTrackChannelData {
   );
 }
 
+// ─── v1.36 Sample-Embed-Data Sanitizer ───────────────────────────────────────
+
+/**
+ * v1.36 (v3.124.0): Sanitiziert die `embeddedData`-Property eines Sample-
+ * Eintrags (Base64-encoded WAV-Bytes).
+ *
+ * Regeln:
+ *  - Feld fehlt (pre-v1.36-Files)         → unverändert (undefined bleibt)
+ *  - embeddedData === null / non-string   → Feld wird entfernt
+ *  - String länger als MAX_EMBEDDED_DATA_BYTES → Feld wird entfernt (Defense
+ *    gegen korruptes Schema oder DoS-Vektor — wir wollen kein OOM beim Load).
+ *  - Base64-Format wird NICHT validiert. Wenn Base64 korrupt ist, fällt der
+ *    Decode beim Load (base64WavToAudioBuffer) — Caller fängt ab und liefert
+ *    einen silent buffer + Warning.
+ *
+ * Mutiert das Sample-Objekt in-place und gibt es zurück.
+ */
+export function sanitizeSampleEmbeddedData(sample: unknown): unknown {
+  if (!sample || typeof sample !== "object") return sample;
+  const s = sample as Record<string, unknown>;
+  if (!("embeddedData" in s)) return sample;
+  const raw = s.embeddedData;
+  if (raw === undefined) return sample;
+  if (raw === null || typeof raw !== "string" || raw.length === 0) {
+    delete s.embeddedData;
+    return sample;
+  }
+  if (raw.length > MAX_EMBEDDED_DATA_BYTES) {
+    console.warn(
+      `[Serializer] embeddedData exceeds MAX_EMBEDDED_DATA_BYTES (${raw.length} > ${MAX_EMBEDDED_DATA_BYTES}) — dropping field.`,
+    );
+    delete s.embeddedData;
+    return sample;
+  }
+  return sample;
+}
+
 // ─── v1.23 Sample-Tags Sanitizer ─────────────────────────────────────────────
 
 /**
@@ -690,13 +743,18 @@ export function parseProject(json: string): SynthProject {
   // Defensive: nie crashen, immer eine valide projectId returnieren.
   data.projectId = ensureProjectId((data as { projectId?: unknown }).projectId);
 
-  // ─── samples[].tags Sanitization (seit v1.23) ────────────────────────────
+  // ─── samples[].tags + .embeddedData Sanitization (v1.23 + v1.36) ─────────
   // Pre-v1.23-Files: Samples haben kein tags-Feld → bleibt unverändert.
   // v1.23+: tags muss string[] sein. Non-string Entries silent filtern,
   // non-Array → tags-Property entfernen.
+  // v1.36+: embeddedData muss string sein (Base64 WAV). non-string oder
+  // über MAX_EMBEDDED_DATA_BYTES → Feld wird entfernt.  Base64-Format
+  // wird beim Load NICHT validiert — Decode-Failure wird vom Caller
+  // gefangen (Silent-Buffer-Fallback).
   if (Array.isArray(data.samples)) {
     for (const s of data.samples) {
       sanitizeSampleTags(s);
+      sanitizeSampleEmbeddedData(s);
     }
   }
 

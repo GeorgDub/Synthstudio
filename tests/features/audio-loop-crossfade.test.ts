@@ -524,7 +524,7 @@ describe("v3.72.0 — Schema v1.27 Round-Trip + Backward-Compat", () => {
     const { SYNTH_FILE_VERSION } = await import(
       "../../client/src/utils/projectSerializer"
     );
-    expect(SYNTH_FILE_VERSION).toBe("1.35");
+    expect(SYNTH_FILE_VERSION).toBe("1.36");
   });
 
   it("Round-Trip: loopCrossfadeMs wird in der .synth-Datei preserved", async () => {
@@ -568,7 +568,7 @@ describe("v3.72.0 — Schema v1.27 Round-Trip + Backward-Compat", () => {
     const ser = serializeProject(baseInput as any);
     const json = JSON.stringify(ser);
     const parsed = parseProject(json);
-    expect(parsed.version).toBe("1.35");
+    expect(parsed.version).toBe("1.36");
     expect(parsed.audioTracks).toBeDefined();
     expect(parsed.audioTracks![0].loopCrossfadeMs).toBe(15);
   });

@@ -30,6 +30,19 @@ class FakeOscillator {
   stop = vi.fn();
 }
 
+class FakeBiquadFilter {
+  type = "lowpass";
+  frequency = { value: 22000, setValueAtTime: vi.fn(), linearRampToValueAtTime: vi.fn() };
+  Q = { value: 1, setValueAtTime: vi.fn(), linearRampToValueAtTime: vi.fn() };
+  gain = { value: 0, setValueAtTime: vi.fn(), linearRampToValueAtTime: vi.fn() };
+  connect = vi.fn();
+}
+
+class FakeDelayNode {
+  delayTime = { value: 0, setValueAtTime: vi.fn(), linearRampToValueAtTime: vi.fn() };
+  connect = vi.fn();
+}
+
 class FakeAudioContext {
   state: "running" | "suspended" | "closed" = "running";
   currentTime = 0;
@@ -38,6 +51,8 @@ class FakeAudioContext {
   close = vi.fn().mockResolvedValue(undefined);
   createGain(): FakeGainNode { return new FakeGainNode(); }
   createOscillator(): FakeOscillator { return new FakeOscillator(); }
+  createBiquadFilter(): FakeBiquadFilter { return new FakeBiquadFilter(); }
+  createDelay(_maxDelayTime?: number): FakeDelayNode { return new FakeDelayNode(); }
 }
 
 describe("SimAudioEngine (Sprint-102)", () => {

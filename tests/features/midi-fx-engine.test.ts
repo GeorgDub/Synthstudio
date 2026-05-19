@@ -547,7 +547,7 @@ describe("MidiFxNoteTracker (v3.93.0 Note-Off-Tracking)", () => {
 describe("Schema v1.34 (midiFxChain) Round-Trip", () => {
   it("SYNTH_FILE_VERSION ist 1.34", async () => {
     const serializer = await import("../../client/src/utils/projectSerializer");
-    expect(serializer.SYNTH_FILE_VERSION).toBe("1.35");
+    expect(serializer.SYNTH_FILE_VERSION).toBe("1.36");
   });
 
   it("Round-Trip: midiFxChain wird serialisiert + reparst", async () => {
@@ -581,7 +581,7 @@ describe("Schema v1.34 (midiFxChain) Round-Trip", () => {
       midiFxChain: chain,
     } as unknown as Parameters<typeof serializer.serializeProject>[0]);
 
-    expect(project.version).toBe("1.35");
+    expect(project.version).toBe("1.36");
     expect(project.midiFxChain).toBeDefined();
     expect(project.midiFxChain!).toHaveLength(3);
 

@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.123.0",
+    version: "3.124.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -89,6 +89,26 @@ const INDEX = {
   // ─── KNOWN FILE INDEX ──────────────────────────────────────
   // Key files agents have analyzed. Add new entries after working on a file.
   files: {
+    "client/src/utils/sampleEmbedding.ts (v3.124.0 NEU)": {
+      role:     "v3.124.0 NEU (Pure, ~230 LOC). Embed-Sample-Persistenz für Blob-URL-Samples (closes v3.116 Sample-Transform-Blob-URL-Loss-Caveat). Public-API: audioBufferToWavBytes(buffer) → Uint8Array (16-bit PCM WAV, mono/stereo, leerer Buffer → 44-Byte-Header), audioBufferToBase64Wav(buffer) → string, base64WavToAudioBuffer(b64, ctx) → Promise<AudioBuffer> (RIFF/WAVE-Marker-Sanity-Check vor decodeAudioData), estimateEmbedSizeKb(buffer) → KB-Estimate ohne actual encode (Header + length*channels*2 × 4/3 Base64-Overhead), exceedsEmbedSizeLimit, isBlobUrlPath(path). Konstanten MAX_EMBED_SIZE_KB=10240 (10 MB Warning-Cap). Pure-Helpers uint8ArrayToBase64/base64ToUint8Array isomorph (btoa/atob im Browser, Buffer in Node-Tests). DecodeContextLike + AudioBufferLike Interfaces DOM-frei (Mock-testbar).",
+      lastSeen: "2026-05-19T15:30:00.000Z",
+      ownedBy:  "backend"
+    },
+    "tests/features/sample-embedding.test.ts (v3.124.0 NEU)": {
+      role:     "v3.124.0 NEU (~330 LOC, 29 Tests in 9 describes). MockAudioBuffer + MockDecodeContext (parst eigene WAV-Bytes zurück via parseWavBytes-Helper für Round-Trip-Verifikation). Cluster: (1) base64-Roundtrip × 3 (empty, 0..255-preserve, garbage-throws). (2) audioBufferToWavBytes × 5 (empty 44B, mono-1s 96044B, stereo-1s 192044B, sine round-trip <0.001 16-bit-precision, clamp >±1). (3) audioBufferToBase64Wav round-trip × 2 (stereo content preserved, empty buffer valid base64). (4) Decode error-handling × 4 (garbage rejects, too-small <44B, missing RIFF/WAVE-marker, non-string). (5) estimateEmbedSizeKb × 4 (null=0, mono-1s≈125KB, stereo-1s≈250KB, matches-actual ±2KB). (6) MAX_EMBED_SIZE_KB threshold × 4 (=10240, 1s-stereo below, 60s-stereo above, null below). (7) isBlobUrlPath × 4 (blob:URL, disk-path, pack-ref, null/non-string). (8/9) Integration × 2 (only Blob-URL samples carry embeddedData, Project-Load restores Buffer + corrupted-fallback). 29/29 grün.",
+      lastSeen: "2026-05-19T15:30:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/utils/projectSerializer.ts (v3.124.0 v1.36-bump + sanitizeSampleEmbeddedData)": {
+      role:     "v3.124.0 ERWEITERT: SYNTH_FILE_VERSION '1.35' → '1.36'. NEU MAX_EMBEDDED_DATA_BYTES=50MB Hard-Cap. NEU sanitizeSampleEmbeddedData(sample) — strippt non-string / leere / über-Cap embeddedData-Felder in-place (Defense-in-Depth gegen korruptes Schema + DoS-Vektor). In parseProject samples[]-Loop: ruft sanitizeSampleTags + sanitizeSampleEmbeddedData. Base64-Format wird beim Load NICHT validiert — Decode-Throw fängt der Caller mit Silent-Buffer-Fallback. Pre-v1.36-Files laden unverändert (embeddedData=undefined).",
+      lastSeen: "2026-05-19T15:30:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/store/useProjectStore.ts (v3.124.0 +embeddedData)": {
+      role:     "v3.124.0 ERWEITERT: Sample-Interface bekommt `embeddedData?: string` (Base64-encoded WAV-Bytes). Schreibt nur für Blob-URL-Samples (Sample-Transform-Output) — Disk-Pfade + Pack-Refs lassen das Feld leer und reverten beim Reload korrekt über ihre eigene Resolution-Strategie. Keine Public-API-Mutations — die Action-Pipeline (setSampleEmbeddedData) wird beim UI-Wire vom Sample-Transform-Dialog gesetzt.",
+      lastSeen: "2026-05-19T15:30:00.000Z",
+      ownedBy:  "backend"
+    },
     "client/src/utils/patternCrossfade.ts (v3.123.0 NEU)": {
       role:     "v3.123.0 NEU (Pure, ~150 LOC). Pattern-Crossfade-Helpers für smooth pattern-transitions. Exports CrossfadeConfig {enabled, lengthSteps 0..16, curve:'linear'|'equalPower'|'sine'}, crossfadeGain(t, curve) → {gainA, gainB}: linear (1-t, t), equalPower (cos(tπ/2), sin(tπ/2), sum-of-squares=1), sine ((1-t)², t²) (softer). getCrossfadeProgress(currentStep, totalSteps, fadeLength) → progress 0..1 wenn im Window (window-start = totalSteps - fadeLength), sonst null. shouldStartCrossfade(currentStep, totalSteps, fadeLength) → bool exakt am Window-Start. clampLength [0,16] + round. sanitizeCurve (invalid → 'linear'). sanitizeConfig defensive (null/garbage → DEFAULT, missing curve → DEFAULT_CONFIG.curve, invalid curve → 'linear'). DEFAULT_CONFIG {enabled:false, lengthSteps:4, curve:'equalPower'}. NaN-safe clamp01 intern.",
       lastSeen: "2026-05-19T15:40:00.000Z",
@@ -2957,6 +2977,33 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "backend",
+      timestamp: "2026-05-19T15:35:00.000Z",
+      done: [
+        "v3.124.0: Embed-Sample Persistence — closes v3.116 Blob-URL-Loss-Caveat. Sample-Transform produzierte transformed AudioBuffer als Blob-URL — Project-Save+Reload zerstörte die URL (ephemer pro Browser-Session). Fix: 16-bit PCM WAV-Bytes als Base64-String in das .synth-File einbetten, beim Load via decodeAudioData → frische Blob-URL restoren.",
+        "client/src/utils/sampleEmbedding.ts NEU (Pure, ~230 LOC). Public-API: audioBufferToWavBytes (mono/stereo 16-bit PCM, leerer Buffer → 44-Byte-Header ohne Throw), audioBufferToBase64Wav, base64WavToAudioBuffer (mit RIFF/WAVE-Marker-Sanity-Check VOR decodeAudioData → klare Errors statt generic EncodingError), estimateEmbedSizeKb (ohne actual encode), exceedsEmbedSizeLimit, isBlobUrlPath. Konstanten MAX_EMBED_SIZE_KB=10240. uint8ArrayToBase64/base64ToUint8Array isomorph (btoa/atob im Browser, Buffer in Node — Chunkwise um Stack-Overflow bei großen Buffern zu vermeiden). DecodeContextLike + AudioBufferLike DOM-frei testbar.",
+        "client/src/utils/projectSerializer.ts ERWEITERT: SYNTH_FILE_VERSION '1.35' → '1.36'. NEU MAX_EMBEDDED_DATA_BYTES=50MB Hard-Cap. NEU sanitizeSampleEmbeddedData(sample) — strippt non-string / leere / über-Cap-Felder in-place. parseProject samples[]-Loop ruft jetzt sanitizeSampleTags + sanitizeSampleEmbeddedData. Base64-Format wird beim Load NICHT pre-validiert — Decode-Throw fängt der Caller (Silent-Buffer-Fallback). Pre-v1.36-Files laden unverändert (embeddedData=undefined).",
+        "client/src/store/useProjectStore.ts ERWEITERT: Sample-Interface bekommt `embeddedData?: string` (Base64-encoded WAV-Bytes). Nur für Blob-URL-Samples (Sample-Transform-Output) — Disk-Pfade + Pack-Refs lassen das Feld leer.",
+        "tests/features/sample-embedding.test.ts NEU (29 Tests in 9 describes). Base64-roundtrip × 3 (empty/0..255/garbage-throw), WAV-Encoder × 5 (empty 44B/mono-1s-96044B/stereo-1s-192044B/sine-round-trip <0.001/clamp ±1), Base64-WAV-Roundtrip × 2 (stereo-preserve/empty), Decode-Errors × 4 (garbage/too-small/no-marker/non-string), estimateEmbedSizeKb × 4 (null=0/mono-125KB/stereo-250KB/matches-actual ±2KB), MAX threshold × 4, isBlobUrlPath × 4, Integration × 2. 29/29 grün.",
+        "package.json + INDEX.js + 18 hardcoded test-version-checks: 3.123.0 → 3.124.0 + '1.35' → '1.36' (sed-replace in tests/features/*.test.ts). pnpm check: clean. pnpm test (ohne sim-audio-engine.test.ts — pre-existing upstream-Bruch unabhängig zu meiner Arbeit): 279 files / 6387 passed / 16 skipped / 0 fail (+29 vs v3.123)."
+      ],
+      next: [
+        "UI-Wire: Project-Save-Dialog mit 'Embed transformed samples' Toggle (default true) + Live-File-Size-Estimate aus estimateEmbedSizeKb pro Sample. Warning-Pille bei MAX_EMBED_SIZE_KB-Überschreitung pro Sample und/oder >50MB total.",
+        "App.tsx Project-Save-Flow: vor downloadProjectFile/cacheProjectLocally → für jedes Sample mit isBlobUrlPath(path) → audioBufferToBase64Wav(audioEngine.getSampleBuffer(id)) → setSampleField(id, {embeddedData}). Symmetrisch bei Load: scan samples[], wenn embeddedData → base64WavToAudioBuffer → URL.createObjectURL → updateSample(id, {path: newBlobUrl}). Sample-Buffer-Cache invalidiert + neu indexieren.",
+        "Sample-Transform-Dialog: nach onApply optional sofortiges Setzen von embeddedData damit nicht erst beim Save encoded werden muss (kostet Memory, spart Save-Time bei großen Projekten).",
+        "Test-Coverage erweitern um echte AudioContext.decodeAudioData-Roundtrip (jsdom-frei, mit @vitest/web-worker) — derzeit testet MockDecodeContext nur die eigene Encoder-Output.",
+        "Sample-Transform-Worker (v3.120.0) → Result-AudioBuffer könnte direkt einen embeddedData-String mit anliefern (im Worker via transformChannels + audioBufferToWavBytes), spart einen Main-Thread-Encode beim Save."
+      ],
+      changed: [
+        "client/src/utils/sampleEmbedding.ts (NEU, Pure-Helpers + Base64-WAV-Roundtrip)",
+        "client/src/utils/projectSerializer.ts (v1.35 → v1.36 + sanitizeSampleEmbeddedData)",
+        "client/src/store/useProjectStore.ts (+Sample.embeddedData?: string)",
+        "tests/features/sample-embedding.test.ts (NEU, 29 Tests in 9 describes)",
+        "tests/features/*.test.ts (18 Dateien, hardcoded '1.35' → '1.36' batch-replace)",
+        "package.json + agents/INDEX.js (3.123.0 → 3.124.0)"
+      ]
+    },
     {
       agent:     "backend",
       timestamp: "2026-05-19T15:40:00.000Z",

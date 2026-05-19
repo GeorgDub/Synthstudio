@@ -272,7 +272,7 @@ describe("parseProject — v1.20 single-slot → v1.21 multi-slot migration", ()
     const { SYNTH_FILE_VERSION } = await import(
       "../../client/src/utils/projectSerializer"
     );
-    expect(SYNTH_FILE_VERSION).toBe("1.35");
+    expect(SYNTH_FILE_VERSION).toBe("1.36");
   });
 
   it("migriert v1.20 single-slot Objects automatisch zu [slot]-Arrays", async () => {

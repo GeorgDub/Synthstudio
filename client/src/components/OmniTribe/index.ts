@@ -4,3 +4,4 @@ export { ChordPanel } from "./ChordPanel";
 export { PerformancePadGrid } from "./PerformancePadGrid";
 export { OmniTribeBrowserSupport, isWebMidiSupported } from "./OmniTribeBrowserSupport";
 export { StepSequencerPanel } from "./StepSequencerPanel";
+export { AudioFxPanel } from "./AudioFxPanel";

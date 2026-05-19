@@ -11,6 +11,7 @@ import {
 } from "../../client/src/utils/patternCache";
 
 const CACHE_KEY = "synthstudio:omnitribe.pattern.v1";
+const CACHE_KEY_V2 = "synthstudio:omnitribe.patternBank.v2";
 
 describe("patternCache", () => {
   beforeEach(() => {
@@ -81,9 +82,11 @@ describe("patternCache", () => {
   });
 
   it("clearPatternCache loescht den Eintrag", () => {
+    // Sprint-107: savePatternCache schreibt jetzt in v2-Bank (CACHE_KEY_V2)
     savePatternCache(getDefaultPattern());
-    expect(window.localStorage.getItem(CACHE_KEY)).toBeTruthy();
+    expect(window.localStorage.getItem(CACHE_KEY_V2)).toBeTruthy();
     clearPatternCache();
+    expect(window.localStorage.getItem(CACHE_KEY_V2)).toBeNull();
     expect(window.localStorage.getItem(CACHE_KEY)).toBeNull();
   });
 
