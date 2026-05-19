@@ -69,6 +69,21 @@ export function selectAll(orderedIds: readonly string[]): Set<string> {
 }
 
 /**
+ * v3.155: Auswahl invertieren. Liefert einen Set der alle IDs aus orderedIds
+ * enthält die NICHT in selected sind.
+ */
+export function invertSelection(
+  orderedIds: readonly string[],
+  selected: ReadonlySet<string>,
+): Set<string> {
+  const next = new Set<string>();
+  for (const id of orderedIds) {
+    if (!selected.has(id)) next.add(id);
+  }
+  return next;
+}
+
+/**
  * Filtert ein Set auf nur die IDs, die noch im allIds-Array existieren.
  * Nützlich nach Sample-Delete um aus dem Selection-Set verschwundene IDs
  * zu entfernen.

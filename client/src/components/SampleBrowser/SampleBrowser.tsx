@@ -52,6 +52,8 @@ import {
   rangeSelect,
   clearSelection,
   filterSelected,
+  invertSelection,
+  selectAll,
 } from "@/utils/sampleMultiSelect";
 import { useConfirm } from "@/components/common/ConfirmDialog";
 
@@ -1732,6 +1734,14 @@ export function SampleBrowser({
                         Löschen
                       </button>
                       <button
+                        onClick={() => setMultiSelectIds(invertSelection(filteredSamples.map((s) => s.id), multiSelectIds))}
+                        data-testid="sample-browser-bulk-invert"
+                        className="px-2 py-0.5 rounded text-[10px] border border-border-color text-text-muted hover:text-text-primary transition-colors"
+                        title="Auswahl invertieren (von gefilterten Samples)"
+                      >
+                        Invertieren
+                      </button>
+                      <button
                         onClick={() => setMultiSelectIds(clearSelection())}
                         data-testid="sample-browser-bulk-clear"
                         className="px-2 py-0.5 rounded text-[10px] border border-border-color text-text-muted hover:text-text-primary transition-colors"
@@ -1786,6 +1796,14 @@ export function SampleBrowser({
                       {selectedIndex + 1} / {filteredSamples.length}
                     </span>
                   )}
+                  <button
+                    onClick={() => setMultiSelectIds(selectAll(filteredSamples.map((s) => s.id)))}
+                    className="text-[10px] text-text-dim hover:text-accent-secondary transition-colors px-1"
+                    title="Alle gefilterten Samples auswählen (Multi-Select)"
+                    data-testid="sample-browser-select-all"
+                  >
+                    Alle
+                  </button>
                   <span className="text-[10px] text-text-dim ml-auto">
                     ↑↓ · Leertaste · Enter=Kanal · Ctrl/⌘+Klick · Shift+Klick
                   </span>

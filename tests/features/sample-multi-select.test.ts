@@ -9,6 +9,7 @@ import {
   clearSelection,
   selectAll,
   filterSelected,
+  invertSelection,
 } from "@/utils/sampleMultiSelect";
 
 describe("sampleMultiSelect", () => {
@@ -87,6 +88,27 @@ describe("sampleMultiSelect", () => {
       const result = selectAll(ids);
       expect(result.size).toBe(3);
       expect(result.has("b")).toBe(true);
+    });
+  });
+
+  describe("invertSelection", () => {
+    it("liefert IDs die NICHT in der Selection sind", () => {
+      const all = ["a", "b", "c", "d"];
+      const selected = new Set(["a", "c"]);
+      const result = invertSelection(all, selected);
+      expect(Array.from(result).sort()).toEqual(["b", "d"]);
+    });
+
+    it("leere Selection → alle IDs", () => {
+      const all = ["a", "b"];
+      const result = invertSelection(all, new Set());
+      expect(Array.from(result).sort()).toEqual(["a", "b"]);
+    });
+
+    it("alle ausgewählt → leerer Set", () => {
+      const all = ["a", "b"];
+      const result = invertSelection(all, new Set(all));
+      expect(result.size).toBe(0);
     });
   });
 
