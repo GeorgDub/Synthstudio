@@ -87,17 +87,15 @@ describe("MIDI-FX Presets — Definitions", () => {
     }
   });
 
-  it("PRESET_GLISSANDO hat scale-snap + chord-expander(7th) + note-repeat", () => {
+  it("PRESET_GLISSANDO (v3.100.0) hat pitch-sweep + scale-snap", () => {
     const chain = presets.loadPreset("glissando");
-    expect(chain).toHaveLength(3);
-    expect(chain[0].kind).toBe("scale-snap");
-    expect(chain[1].kind).toBe("chord-expander");
-    expect(chain[2].kind).toBe("note-repeat");
-    if (chain[1].kind === "chord-expander") {
-      expect(chain[1].chordType).toBe("7th");
-    }
-    if (chain[2].kind === "note-repeat") {
-      expect(chain[2].count).toBe(8);
+    expect(chain).toHaveLength(2);
+    expect(chain[0].kind).toBe("pitch-sweep");
+    expect(chain[1].kind).toBe("scale-snap");
+    if (chain[0].kind === "pitch-sweep") {
+      expect(chain[0].semitones).toBe(12);
+      expect(chain[0].steps).toBe(8);
+      expect(chain[0].direction).toBe("up");
     }
   });
 
@@ -134,7 +132,7 @@ describe("MIDI-FX Presets — Definitions", () => {
 // ─── (2) Glissando-Expansion ──────────────────────────────────────────────────
 
 describe("MIDI-FX Presets — Engine-Interplay", () => {
-  it("PRESET_GLISSANDO transformiert 1 note → N events (>1)", () => {
+  it("PRESET_GLISSANDO (v3.100.0) transformiert 1 note → 8 sweep-events", () => {
     const chain = presets.loadPreset("glissando");
     const input: { note: number; velocity: number; channel: number } = {
       note: 60,
@@ -142,9 +140,12 @@ describe("MIDI-FX Presets — Engine-Interplay", () => {
       channel: 1,
     };
     const out = engine.applyMidiFx(input, chain);
-    // 7th-Chord = 4 Voices × 8 Repeats = 32 Events
-    expect(out.length).toBeGreaterThan(1);
-    expect(out.length).toBe(4 * 8);
+    // pitch-sweep: 8 steps (monophon, mit Pitch-Interpolation)
+    expect(out.length).toBe(8);
+    // Erste Note = Original (offset 0); letzte Note = +12 (scale-snapped)
+    expect(out[0].note).toBe(60);
+    // C-Major scale-snap auf 72 (C eine Oktave drüber) bleibt 72
+    expect(out[out.length - 1].note).toBe(72);
   });
 
   it("PRESET_STRUM produziert 3 × 4 = 12 Events", () => {
@@ -204,14 +205,13 @@ describe("MIDI-FX Presets — Restore-Wiring", () => {
     expect(store.getMidiFxState().chain).toHaveLength(0);
   });
 
-  it("Round-Trip: Preset laden → Store enthält dieselben kinds", () => {
+  it("Round-Trip: Preset laden → Store enthält dieselben kinds (v3.100.0)", () => {
     const chain = presets.loadPreset("glissando");
     store.setAllNodes(chain);
     const restored = store.getMidiFxState().chain;
     expect(restored.map((n) => n.kind)).toEqual([
+      "pitch-sweep",
       "scale-snap",
-      "chord-expander",
-      "note-repeat",
     ]);
   });
 });

@@ -28,6 +28,9 @@ import {
   type VelocityCurveShape,
   type NoteRepeatRate,
   type ChordExpanderType,
+  type PitchSweepDirection,
+  type PitchSweepCurve,
+  type PitchSweepStepRate,
 } from "@/utils/midiFxEngine";
 
 export { MAX_MIDI_FX_CHAIN };
@@ -37,6 +40,9 @@ export type {
   VelocityCurveShape,
   NoteRepeatRate,
   ChordExpanderType,
+  PitchSweepDirection,
+  PitchSweepCurve,
+  PitchSweepStepRate,
 };
 
 // ─── State-Typen ─────────────────────────────────────────────────────────────
@@ -84,6 +90,16 @@ export function makeDefaultNode(kind: MidiFxKind): MidiFxNode {
       return { id, kind: "chord-expander", chordType: "major" };
     case "note-repeat":
       return { id, kind: "note-repeat", rate: "1/16", count: 4 };
+    case "pitch-sweep":
+      return {
+        id,
+        kind: "pitch-sweep",
+        semitones: 12,
+        steps: 8,
+        direction: "up",
+        curve: "linear",
+        stepRate: "1/32",
+      };
     default: {
       const _exhaustive: never = kind;
       void _exhaustive;
@@ -114,6 +130,9 @@ const VALID_SCALES: readonly MidiScaleName[] = ["major", "minor", "penta"];
 const VALID_VELOCITY_CURVES: readonly VelocityCurveShape[] = ["linear", "exp", "log"];
 const VALID_REPEAT_RATES: readonly NoteRepeatRate[] = ["1/8", "1/16", "1/32"];
 const VALID_CHORD_TYPES: readonly ChordExpanderType[] = ["major", "minor", "7th"];
+const VALID_SWEEP_DIRECTIONS: readonly PitchSweepDirection[] = ["up", "down", "updown"];
+const VALID_SWEEP_CURVES: readonly PitchSweepCurve[] = ["linear", "exp", "log"];
+const VALID_SWEEP_RATES: readonly PitchSweepStepRate[] = ["1/8", "1/16", "1/32"];
 
 function sanitizeNode(raw: unknown): MidiFxNode | null {
   if (!raw || typeof raw !== "object") return null;
@@ -156,6 +175,36 @@ function sanitizeNode(raw: unknown): MidiFxNode | null {
         : "1/16";
       const count = Math.round(clampNum(rr.count, 2, 8, 4));
       return { id, kind: "note-repeat", bypass, rate, count };
+    }
+    case "pitch-sweep": {
+      const rr = raw as {
+        semitones?: unknown;
+        steps?: unknown;
+        direction?: unknown;
+        curve?: unknown;
+        stepRate?: unknown;
+      };
+      const semitones = Math.round(clampNum(rr.semitones, -24, 24, 12));
+      const steps = Math.round(clampNum(rr.steps, 4, 32, 8));
+      const direction = VALID_SWEEP_DIRECTIONS.includes(rr.direction as PitchSweepDirection)
+        ? (rr.direction as PitchSweepDirection)
+        : "up";
+      const curve = VALID_SWEEP_CURVES.includes(rr.curve as PitchSweepCurve)
+        ? (rr.curve as PitchSweepCurve)
+        : "linear";
+      const stepRate = VALID_SWEEP_RATES.includes(rr.stepRate as PitchSweepStepRate)
+        ? (rr.stepRate as PitchSweepStepRate)
+        : "1/32";
+      return {
+        id,
+        kind: "pitch-sweep",
+        bypass,
+        semitones,
+        steps,
+        direction,
+        curve,
+        stepRate,
+      };
     }
     default:
       return null;

@@ -2574,6 +2574,36 @@ const INDEX = {
   workLog: [
     {
       agent:     "backend",
+      timestamp: "2026-05-19T10:05:00.000Z",
+      done: [
+        "v3.100.0: Pitch-Sweep MidiFx-Node (closes v3.94 Glissando-Approximation). Echter monophone Glissando-Effekt: 1 Note-On → N Events mit interpolierter Pitch ueber semitones-Range, mit direction (up/down/updown) + curve (linear/exp/log) + stepRate (1/8|1/16|1/32). Bisher musste Glissando als Chord-Expander+Note-Repeat angenaehert werden (polyphone 32-Voice-Wolke statt monophoner Lauf) — jetzt ist es ein DAW-typischer Pitch-Sweep mit interpolierter Tonhoehe.",
+        "midiFxEngine.ts ERWEITERT (+~110 LOC): MidiFxNode union neu um {kind:'pitch-sweep', semitones:-24..24, steps:4..32, direction, curve, stepRate}. Neue Pure-Helpers: pitchSweepStepMs(rate, bpm) — analog noteRepeatStepMs. pitchSweepOffsetAt(i, steps, totalSemitones, direction, curve) — pure Funktion, returnt Pitch-Offset in Halbtoenen. applyCurveShape(t, curve): linear=t, exp=t² (accelerating), log=√t (decelerating). Updown-Direction: Dreieck-Verlauf (1. Haelfte hoch, 2. Haelfte zurueck). applyMidiFxNode-Switch: pitch-sweep case erzeugt `steps` Events mit timeOffsetMs = i*stepMs und note = clamp(base + pitchSweepOffsetAt(i,...), 0, 127). Monophon — eine Voice pro Step (kein Chord-Expand).",
+        "useMidiFxStore.ts ERWEITERT (+~60 LOC): Neue type-Exporte PitchSweepDirection/Curve/StepRate. makeDefaultNode('pitch-sweep') liefert {semitones:12, steps:8, direction:'up', curve:'linear', stepRate:'1/32'}. sanitizeNode 'pitch-sweep'-case validiert semitones (clamp -24..24, Round), steps (4..32), direction (Whitelist up/down/updown), curve (linear/exp/log), stepRate (1/8|1/16|1/32) — alle invaliden Werte fallback auf Defaults.",
+        "midiFxPresets.ts UPDATE: PRESET_GLISSANDO komplett neu — statt scale-snap+chord-expander(7th)+note-repeat(8x) jetzt pitch-sweep(12st,8 steps,up,linear,1/32) + scale-snap(C-major). Order: sweep generiert die Events, scale-snap quantisiert jede generierte Note auf die naechste C-Major-Stufe. Resultat: monophone Sequenz von 8 Noten 60→72 in C-Major-Tonleiter statt 32-Voice-Wolke.",
+        "MidiFxPanel.tsx UI ERWEITERT (+~135 LOC, 1 neue NodeParams-Komponente): NODE_TYPE_LABELS/ICONS um 'Pitch-Sweep' / '～' erweitert. AddNodeButton-kinds-Liste um 'pitch-sweep' erweitert. NodeParams-Switch ruft PitchSweepParams. PitchSweepParams-Komponente: Range-Slider (-24..+24 st), Steps-Number-Input (4..32), StepRate-Select (1/8|1/16|1/32), Direction-Toggle (3 Buttons ↑/↓/↕ mit aktiv-Styling), Curve-Select (Linear/Exp/Log). Live-Preview: applyMidiFx({note:60,vel:100,ch:1}, [node]) zeigt generierte Notes als '60 → 61 → ... → 72' am Bottom (max 16 visible). useMemo memoized das auf alle Param-Aenderungen.",
+        "tests/features/midi-fx-pitch-sweep.test.ts NEU (+~280 LOC, 18 Tests in 6 describes). Cluster: (1) Linear-Curve × 3 — equal-distributed Pitches 60→63→66→69→72, monoton steigend, pitchSweepOffsetAt-Mitte = halbe Range. (2) Direction × 3 — up steigend, down fallend, up vs down spiegelbildlich um Origin (out_up[i]+out_down[i]=2*origin). (3) Exp/Log-Curve × 3 — exp accelerating (lastDelta > firstDelta), log decelerating (firstDelta > lastDelta), offset bei t=0.5 exp=3 statt linear=6. (4) Updown × 2 — Peak in der Mitte, Start=Ende=Origin, Symmetrie out[0]==out[N-1] / out[1]==out[N-2]. (5) Glissando-Preset × 3 — kinds enthaelt pitch-sweep aber NICHT chord-expander/note-repeat, genau 8 Events (monophon), timing-offsets monoton steigend. (6) Timing + Defensive × 3 — offsets monoton steigend, note-bounds 0..127 bei start=120 + sweep=+24, sanitizeMidiFxState defaults bei invaliden Werten, makeDefaultNode liefert Defaults.",
+        "tests/features/midi-fx-presets.test.ts ANGEPASST: Glissando-Test erwartet jetzt 2 Nodes (pitch-sweep + scale-snap) statt 3 (scale-snap + chord + repeat). Engine-Interplay-Test erwartet 8 Events (statt 4*8=32). Round-Trip-Test erwartet kinds=[pitch-sweep, scale-snap].",
+        "package.json 3.99.0 → 3.100.0. pnpm check: clean. pnpm test: 244 Files / 5494 passed / 16 skipped (vs v3.99.0: 243/5476 → +1 File +18 Tests). Keine bestehenden Tests broken."
+      ],
+      next: [
+        "v3.100.1: ScaleSnap-vor-Sweep statt nach — falls User die Sweep-Events bereits in Tonart haben will (statt rauschende Halbton-Sweeps).",
+        "Pitch-Sweep: Velocity-Curve-Variante (Velocity steigt/faellt parallel zur Pitch — fuer expressive Sweeps).",
+        "Pitch-Sweep: Per-Step Note-Off (aktuell triggert jeder Step einen neuen Note-On — bei langen Samples ueberlagern sich die Voices; ggf optional 'mono'-Modus, der den vorherigen Step abschneidet).",
+        "Glissando-Preset: Variante 'Glissando Down' fuer absteigenden Lauf als separates Preset (id 'glissando-down')."
+      ],
+      changed: [
+        "client/src/utils/midiFxEngine.ts (+~110 LOC pitch-sweep Node-Type + pitchSweepOffsetAt + pitchSweepStepMs + applyMidiFxNode-Case)",
+        "client/src/store/useMidiFxStore.ts (+~60 LOC PitchSweep* type-Re-Exports + makeDefaultNode + sanitizeNode-Case + VALID_SWEEP_* Whitelists)",
+        "client/src/utils/midiFxPresets.ts (PRESET_GLISSANDO rewrite + description-Update)",
+        "client/src/components/MidiFx/MidiFxPanel.tsx (+~135 LOC PitchSweepParams + Labels/Icons/Add-Liste + Live-Preview)",
+        "tests/features/midi-fx-pitch-sweep.test.ts (NEU +~280 LOC 18 Tests)",
+        "tests/features/midi-fx-presets.test.ts (Glissando-Tests angepasst auf neue 2-Node-Chain + 8-Event-Output)",
+        "package.json (3.99.0 → 3.100.0)",
+        "agents/INDEX.js"
+      ]
+    },
+    {
+      agent:     "backend",
       timestamp: "2026-05-19T09:48:00.000Z",
       done: [
         "v3.99.0: Click-Note-Duration Setting + Pre-Click Count-In (closes v3.98 follow-ups + adds DAW-Standard Count-In).",

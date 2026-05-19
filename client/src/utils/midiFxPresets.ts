@@ -1,5 +1,5 @@
 /**
- * Synthstudio – midiFxPresets.ts (v3.94.0)
+ * Synthstudio – midiFxPresets.ts (v3.100.0)
  *
  * Built-In MIDI-FX Chain-Presets. Jedes Preset ist ein factory-Helper, der
  * eine fertig konfigurierte Node-Liste (mit frischen IDs) liefert. Konsumenten
@@ -22,10 +22,9 @@
  *     hoher Repeat-Count + Chord-Größe kann die Event-Explosion das
  *     256-Event-Limit im Engine erreichen. Wir bleiben mit count=4 und
  *     Triad-Chord sicher unter dem Limit.
- *   - PRESET_GLISSANDO ist eine vereinfachte Approximation — ein echtes
- *     Glissando bräuchte einen separaten Pitch-Sweep-Node, den die Engine
- *     (noch) nicht hat. Wir kombinieren Scale-Snap + 7th-Chord + 8 Repeats
- *     um den auf- und absteigenden Effekt anzunähern.
+ *   - PRESET_GLISSANDO nutzt seit v3.100.0 den echten `pitch-sweep`-Node
+ *     statt der Chord+Repeat-Approximation. Resultat: monophone Sequence
+ *     mit interpolierter Pitch über 12 Halbtöne, scale-snap-quantisiert.
  */
 
 import {
@@ -61,7 +60,7 @@ export const MIDI_FX_PRESETS: readonly MidiFxPresetMeta[] = [
     id: "glissando",
     label: "Glissando",
     description:
-      "C-Major-Snap + 7th-Chord + 8× Note-Repeat — fließender Lauf über die Tonleiter.",
+      "Echter Pitch-Sweep über 12 Halbtöne aufwärts, scale-snap-quantisiert (C-Major).",
   },
   {
     id: "arp-up",
@@ -124,19 +123,23 @@ function buildStrum(): MidiFxNode[] {
 }
 
 function buildGlissando(): MidiFxNode[] {
+  // v3.100.0: echter Pitch-Sweep statt Chord+Repeat-Approximation.
+  // Order: pitch-sweep generiert die Sweep-Events; scale-snap quantisiert
+  // jede generierte Note auf die nächste Stufe der C-Major-Tonleiter.
+  const sweep = makeDefaultNode("pitch-sweep");
+  if (sweep.kind === "pitch-sweep") {
+    sweep.semitones = 12;
+    sweep.steps = 8;
+    sweep.direction = "up";
+    sweep.curve = "linear";
+    sweep.stepRate = "1/32";
+  }
   const snap = makeDefaultNode("scale-snap");
   if (snap.kind === "scale-snap") {
     snap.scale = "major";
     snap.root = 0; // C
   }
-  const chord = makeDefaultNode("chord-expander");
-  if (chord.kind === "chord-expander") chord.chordType = "7th";
-  const repeat = makeDefaultNode("note-repeat");
-  if (repeat.kind === "note-repeat") {
-    repeat.rate = "1/32";
-    repeat.count = 8;
-  }
-  return [snap, chord, repeat];
+  return [sweep, snap];
 }
 
 function buildArpUp(): MidiFxNode[] {

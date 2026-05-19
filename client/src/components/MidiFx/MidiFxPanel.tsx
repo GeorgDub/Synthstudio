@@ -30,7 +30,11 @@ import {
   type VelocityCurveShape,
   type NoteRepeatRate,
   type ChordExpanderType,
+  type PitchSweepDirection,
+  type PitchSweepCurve,
+  type PitchSweepStepRate,
 } from "@/store/useMidiFxStore";
+import { applyMidiFx } from "@/utils/midiFxEngine";
 // v3.94.0: Built-In Preset-Chains (Strum, Glissando, Arp-Up, ...).
 import {
   MIDI_FX_PRESETS,
@@ -44,6 +48,7 @@ const NODE_TYPE_LABELS: Record<MidiFxKind, string> = {
   "octave-shift":   "Octave-Shift",
   "chord-expander": "Chord-Expander",
   "note-repeat":    "Note-Repeat",
+  "pitch-sweep":    "Pitch-Sweep",
 };
 
 const NODE_TYPE_ICONS: Record<MidiFxKind, string> = {
@@ -52,6 +57,7 @@ const NODE_TYPE_ICONS: Record<MidiFxKind, string> = {
   "octave-shift":   "⇅",
   "chord-expander": "♫",
   "note-repeat":    "↻",
+  "pitch-sweep":    "～",
 };
 
 const ROOT_LABELS = [
@@ -174,7 +180,14 @@ function AddNodeButton({
   onToggle: (next: boolean) => void;
 }): React.ReactElement {
   const kinds = useMemo<MidiFxKind[]>(
-    () => ["scale-snap", "velocity-curve", "octave-shift", "chord-expander", "note-repeat"],
+    () => [
+      "scale-snap",
+      "velocity-curve",
+      "octave-shift",
+      "chord-expander",
+      "note-repeat",
+      "pitch-sweep",
+    ],
     [],
   );
   return (
@@ -321,6 +334,8 @@ function NodeParams({ node }: { node: MidiFxNode }): React.ReactElement | null {
       return <ChordExpanderParams node={node} />;
     case "note-repeat":
       return <NoteRepeatParams node={node} />;
+    case "pitch-sweep":
+      return <PitchSweepParams node={node} />;
     default:
       return null;
   }
@@ -473,6 +488,139 @@ function NoteRepeatParams({
         className="text-xs w-14 bg-bg-base border border-border-subtle rounded px-1.5 py-0.5 text-text-primary"
         data-testid={`midi-fx-count-${node.id}`}
       />
+    </div>
+  );
+}
+
+function PitchSweepParams({
+  node,
+}: {
+  node: Extract<MidiFxNode, { kind: "pitch-sweep" }>;
+}): React.ReactElement {
+  // Live-Preview: generierte Event-Liste auf C4 (60) berechnen.
+  const preview = useMemo(() => {
+    const events = applyMidiFx(
+      { note: 60, velocity: 100, channel: 1 },
+      [node],
+    );
+    return events;
+  }, [
+    node.semitones,
+    node.steps,
+    node.direction,
+    node.curve,
+    node.stepRate,
+    node.bypass,
+  ]);
+
+  return (
+    <div className="flex flex-col gap-2">
+      {/* Semitones */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <label className="text-xs text-text-muted">Range</label>
+        <input
+          type="range"
+          min={-24}
+          max={24}
+          step={1}
+          value={node.semitones}
+          onChange={(e) =>
+            updateNode(node.id, { semitones: Number(e.target.value) } as Partial<MidiFxNode>)
+          }
+          className="flex-1 min-w-[100px]"
+          data-testid={`midi-fx-sweep-semitones-${node.id}`}
+        />
+        <span className="text-xs text-text-dim tabular-nums w-12 text-right">
+          {node.semitones > 0 ? `+${node.semitones}` : `${node.semitones}`} st
+        </span>
+      </div>
+
+      {/* Steps */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <label className="text-xs text-text-muted">Steps</label>
+        <input
+          type="number"
+          min={4}
+          max={32}
+          step={1}
+          value={node.steps}
+          onChange={(e) =>
+            updateNode(node.id, { steps: Number(e.target.value) } as Partial<MidiFxNode>)
+          }
+          className="text-xs w-14 bg-bg-base border border-border-subtle rounded px-1.5 py-0.5 text-text-primary"
+          data-testid={`midi-fx-sweep-steps-${node.id}`}
+        />
+        <label className="text-xs text-text-muted ml-2">Rate</label>
+        <select
+          value={node.stepRate}
+          onChange={(e) =>
+            updateNode(node.id, {
+              stepRate: e.target.value as PitchSweepStepRate,
+            } as Partial<MidiFxNode>)
+          }
+          className="text-xs bg-bg-base border border-border-subtle rounded px-1.5 py-0.5 text-text-primary"
+          data-testid={`midi-fx-sweep-rate-${node.id}`}
+        >
+          <option value="1/8">1/8</option>
+          <option value="1/16">1/16</option>
+          <option value="1/32">1/32</option>
+        </select>
+      </div>
+
+      {/* Direction + Curve */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <label className="text-xs text-text-muted">Dir</label>
+        <div className="flex items-center gap-0.5" data-testid={`midi-fx-sweep-direction-${node.id}`}>
+          {(["up", "down", "updown"] as PitchSweepDirection[]).map((d) => (
+            <button
+              key={d}
+              type="button"
+              onClick={() =>
+                updateNode(node.id, { direction: d } as Partial<MidiFxNode>)
+              }
+              className={
+                "text-xs px-2 py-0.5 rounded border transition-colors " +
+                (node.direction === d
+                  ? "border-accent-primary text-accent-primary bg-accent-primary/10"
+                  : "border-border-subtle text-text-muted hover:bg-bg-panel")
+              }
+              data-testid={`midi-fx-sweep-dir-${d}-${node.id}`}
+            >
+              {d === "up" ? "↑" : d === "down" ? "↓" : "↕"}
+            </button>
+          ))}
+        </div>
+        <label className="text-xs text-text-muted ml-2">Curve</label>
+        <select
+          value={node.curve}
+          onChange={(e) =>
+            updateNode(node.id, { curve: e.target.value as PitchSweepCurve } as Partial<MidiFxNode>)
+          }
+          className="text-xs bg-bg-base border border-border-subtle rounded px-1.5 py-0.5 text-text-primary"
+          data-testid={`midi-fx-sweep-curve-${node.id}`}
+        >
+          <option value="linear">Linear</option>
+          <option value="exp">Exp</option>
+          <option value="log">Log</option>
+        </select>
+      </div>
+
+      {/* Live-Preview: Event-List */}
+      <div
+        className="text-[10px] text-text-dim font-mono leading-tight border-t border-border-subtle pt-1 mt-1"
+        data-testid={`midi-fx-sweep-preview-${node.id}`}
+      >
+        <span className="text-text-muted">Preview (C4 = 60):</span>{" "}
+        <span className="tabular-nums">
+          {preview.slice(0, 16).map((ev, i) => (
+            <span key={i}>
+              {i > 0 ? " → " : ""}
+              {ev.note}
+            </span>
+          ))}
+          {preview.length > 16 ? ` … (+${preview.length - 16})` : ""}
+        </span>
+      </div>
     </div>
   );
 }

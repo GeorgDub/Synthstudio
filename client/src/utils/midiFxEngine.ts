@@ -1,5 +1,5 @@
 /**
- * Synthstudio – midiFxEngine.ts (v3.93.0)
+ * Synthstudio – midiFxEngine.ts (v3.100.0)
  *
  * MIDI-FX Transform-Layer (DAW-Standard). Eingehende Note-On-Events
  * werden durch eine Chain von MidiFxNodes geleitet, bevor sie an die
@@ -11,6 +11,8 @@
  *   - Octave-Shift      — transponiert das Pitch in Halbtonschritten.
  *   - Chord-Expander    — erzeugt aus 1 Note einen 3-Note-Akkord (Root + 3rd + 5th).
  *   - Note-Repeat       — vervielfältigt 1 Event in N Events mit Timing-Offset.
+ *   - Pitch-Sweep       — Glissando: 1 Note → N Events mit interpolierter Pitch
+ *                          (semitones-Range, direction, curve, stepRate).
  *
  * Pure-TS, DOM-frei, Node-testbar. KEIN Audio-Side-Effect.
  *
@@ -41,6 +43,12 @@ export type VelocityCurveShape = "linear" | "exp" | "log";
 export type NoteRepeatRate = "1/8" | "1/16" | "1/32";
 
 export type ChordExpanderType = "major" | "minor" | "7th";
+
+export type PitchSweepDirection = "up" | "down" | "updown";
+
+export type PitchSweepCurve = "linear" | "exp" | "log";
+
+export type PitchSweepStepRate = "1/8" | "1/16" | "1/32";
 
 /**
  * Discriminated Union — jeder MidiFx-Node-Typ.
@@ -86,6 +94,21 @@ export type MidiFxNode =
       rate: NoteRepeatRate;
       /** Anzahl Repeats 2..8. */
       count: number;
+    }
+  | {
+      id: string;
+      kind: "pitch-sweep";
+      bypass?: boolean;
+      /** Sweep-Range in Halbtönen -24..+24. Vorzeichen abhängig von direction. */
+      semitones: number;
+      /** Anzahl der Sweep-Steps 4..32. */
+      steps: number;
+      /** Sweep-Richtung: aufwärts, abwärts oder U-Form. */
+      direction: PitchSweepDirection;
+      /** Zeitliche Interpolations-Kurve. */
+      curve: PitchSweepCurve;
+      /** Step-Rate (Notenwert pro Sweep-Step). */
+      stepRate: PitchSweepStepRate;
     };
 
 /**
@@ -137,6 +160,86 @@ const NOTE_REPEAT_BASE_MS: Record<NoteRepeatRate, number> = {
   "1/16": 125,
   "1/32": 62.5,
 };
+
+/**
+ * Pitch-Sweep Step-Rate → ms bei 120 BPM. Identisch zu NoteRepeat-Mapping.
+ */
+const PITCH_SWEEP_BASE_MS: Record<PitchSweepStepRate, number> = {
+  "1/8":  250,
+  "1/16": 125,
+  "1/32": 62.5,
+};
+
+/** Liefert den Step-ms-Wert für ein gegebenes BPM (pitch-sweep). */
+export function pitchSweepStepMs(rate: PitchSweepStepRate, bpm: number): number {
+  const safeBpm = clamp(bpm, 20, 300, NOTE_REPEAT_BASE_BPM);
+  return (PITCH_SWEEP_BASE_MS[rate] * NOTE_REPEAT_BASE_BPM) / safeBpm;
+}
+
+// ─── Pitch-Sweep Helpers ─────────────────────────────────────────────────────
+
+/**
+ * Liefert den Pitch-Offset für Step `i` von `steps` Schritten bei einem
+ * Sweep über `totalSemitones` Halbtöne.
+ *
+ * Curves (normalisiert t = i/(steps-1) ∈ [0,1]):
+ *   - linear: offset = totalSemitones × t
+ *   - exp:    offset = totalSemitones × t² (accelerating — am Anfang langsam)
+ *   - log:    offset = totalSemitones × √t (decelerating — am Anfang schnell)
+ *
+ * Direction:
+ *   - up:     offset positiv von 0 → +totalSemitones
+ *   - down:   offset negativ von 0 → -totalSemitones (totalSemitones wird invertiert)
+ *   - updown: U-Form (geht hoch, dann zurück) — erste Hälfte hoch, zweite zurück auf 0
+ */
+export function pitchSweepOffsetAt(
+  i: number,
+  steps: number,
+  totalSemitones: number,
+  direction: PitchSweepDirection,
+  curve: PitchSweepCurve,
+): number {
+  const safeSteps = Math.max(2, Math.round(steps));
+  const idx = clamp(i, 0, safeSteps - 1, 0);
+  // Normalize t to [0,1]
+  const t = safeSteps > 1 ? idx / (safeSteps - 1) : 0;
+
+  // Effektive Range basierend auf Direction
+  let effRange = Math.abs(totalSemitones);
+  if (direction === "down") effRange = -effRange;
+  if (direction === "up") effRange = Math.abs(totalSemitones);
+
+  if (direction === "updown") {
+    // U-Form: 0 → range → 0 (Dreieck) mit Curve-Anwendung
+    // Zerteile in zwei Hälften: 0..0.5 hoch, 0.5..1 runter
+    const halfT = t < 0.5 ? t * 2 : (1 - t) * 2;
+    const shaped = applyCurveShape(halfT, curve);
+    return Math.abs(totalSemitones) * shaped;
+  }
+
+  const shaped = applyCurveShape(t, curve);
+  return effRange * shaped;
+}
+
+/** Pure Kurven-Shape auf t ∈ [0,1]. */
+function applyCurveShape(t: number, curve: PitchSweepCurve): number {
+  const clamped = clamp(t, 0, 1, 0);
+  switch (curve) {
+    case "linear":
+      return clamped;
+    case "exp":
+      // accelerating: am Anfang langsam, am Ende schnell
+      return clamped * clamped;
+    case "log":
+      // decelerating: am Anfang schnell, am Ende langsam
+      return Math.sqrt(clamped);
+    default: {
+      const _e: never = curve;
+      void _e;
+      return clamped;
+    }
+  }
+}
 
 // ─── Pure Helpers ────────────────────────────────────────────────────────────
 
@@ -276,6 +379,37 @@ export function applyMidiFxNode(
         const baseOffset = e.timeOffsetMs ?? 0;
         for (let i = 0; i < count; i++) {
           out.push({ ...e, timeOffsetMs: baseOffset + i * stepMs });
+        }
+      }
+      return out;
+    }
+
+    case "pitch-sweep": {
+      const semitones = clamp(node.semitones, -24, 24, 0);
+      const steps = Math.round(clamp(node.steps, 4, 32, 8));
+      const stepMs = pitchSweepStepMs(node.stepRate, NOTE_REPEAT_BASE_BPM);
+      const out: NoteOn[] = [];
+      for (const e of events) {
+        const baseOffset = e.timeOffsetMs ?? 0;
+        for (let i = 0; i < steps; i++) {
+          const offset = pitchSweepOffsetAt(
+            i,
+            steps,
+            semitones,
+            node.direction,
+            node.curve,
+          );
+          const targetNote = clamp(
+            Math.round(e.note + offset),
+            0,
+            127,
+            e.note,
+          );
+          out.push({
+            ...e,
+            note: targetNote,
+            timeOffsetMs: baseOffset + i * stepMs,
+          });
         }
       }
       return out;
