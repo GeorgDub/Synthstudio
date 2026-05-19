@@ -13,6 +13,7 @@ import React, { useCallback, useRef, useState } from "react";
 
 import { useElectron } from "../../../../electron/useElectron";
 import { importProjectFile, importResultToPatterns, ImportError, type ImportedMelodicPart } from "@/utils/imports";
+import { useConfirm } from "@/components/common/ConfirmDialog";
 
 // ─── Typen ────────────────────────────────────────────────────────────────────
 
@@ -49,6 +50,8 @@ export function ProjectManager({
 }: ProjectManagerProps) {
   // ── Einziger Zugriffspunkt auf Electron-Features ──────────────────────────
   const electron = useElectron();
+  // v3.144+ — Promise-based Confirm-Dialog (replaces window.confirm())
+  const confirm = useConfirm();
 
   const [isSaving, setIsSaving] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
@@ -122,15 +125,18 @@ export function ProjectManager({
           await handleSave();
         }
       } else {
-        // Browser-Fallback: window.confirm
-        const confirmed = window.confirm(
-          `"${projectName}" hat ungespeicherte Änderungen. Verwerfen?`
-        );
+        // Browser-Fallback: Promise-based Confirm-Dialog
+        const confirmed = await confirm({
+          title: "Ungespeicherte Änderungen verwerfen?",
+          message: `"${projectName}" hat ungespeicherte Änderungen.`,
+          confirmLabel: "Verwerfen",
+          destructive: true,
+        });
         if (!confirmed) return;
       }
     }
     onNew();
-  }, [electron, isDirty, projectName, onNew, handleSave]);
+  }, [electron, isDirty, projectName, onNew, handleSave, confirm]);
 
   // ── Exportieren ───────────────────────────────────────────────────────────
 

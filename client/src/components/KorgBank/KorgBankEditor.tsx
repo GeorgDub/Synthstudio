@@ -142,6 +142,7 @@ import {
   requireProFeature,
 } from "@/utils/proFeatures";
 import { ProLockBadge } from "@/components/License/ProLockBadge";
+import { useConfirm } from "@/components/common/ConfirmDialog";
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
@@ -222,6 +223,7 @@ export function KorgBankEditor({
   const samples = project.samples;
   // v3.10.0 — Isomorpher Zugriff über useElectron() statt window.electronAPI.
   const electron = useElectron();
+  const confirm = useConfirm();
 
   // Mode
   const [mode, setMode] = useState<EditorMode>("new");
@@ -515,7 +517,7 @@ export function KorgBankEditor({
 
   // ─── Mode Switching ────────────────────────────────────────────────────────
 
-  function tryChangeMode(next: EditorMode): void {
+  async function tryChangeMode(next: EditorMode): Promise<void> {
     if (mode === next) return;
     // Detect "dirty" state in the *outgoing* mode and prompt before discarding.
     let hasChanges = false;
@@ -531,9 +533,11 @@ export function KorgBankEditor({
         esxBankBuffer !== null;
     }
     if (hasChanges) {
-      const ok = window.confirm(
-        "Ungespeicherte Änderungen gehen verloren. Trotzdem Modus wechseln?",
-      );
+      const ok = await confirm({
+        title: "Ungespeicherte Änderungen gehen verloren. Trotzdem Modus wechseln?",
+        confirmLabel: "Wechseln",
+        destructive: true,
+      });
       if (!ok) return;
     }
     // Clear the outgoing mode's state so re-entering starts fresh.
@@ -923,11 +927,13 @@ export function KorgBankEditor({
     if (sampleCount > 0) summaryParts.push(`${sampleCount} Mono-Sample-Slot(s)`);
     if (stereoSampleCount > 0)
       summaryParts.push(`${stereoSampleCount} Stereo-Sample-Slot(s)`);
-    const ok = window.confirm(
-      `${summaryParts.join(" + ")} wurden geändert.\n` +
+    const ok = await confirm({
+      title: `${summaryParts.join(" + ")} wurden geändert.`,
+      message:
         `Alle anderen Slots, Sample-Daten und Song-Daten bleiben bit-exakt erhalten.\n\n` +
         `Bank speichern?`,
-    );
+      confirmLabel: "Speichern",
+    });
     if (!ok) return;
     setBusy(true);
     setResultMsg("Schreibe ESX-Bank...");
@@ -1312,12 +1318,14 @@ export function KorgBankEditor({
       return;
     }
     const mb = (report.orphanBytes / 1024 / 1024).toFixed(2);
-    const ok = window.confirm(
-      `Compact spart ${report.orphanBytes.toLocaleString()} Bytes (~${mb} MB).\n\n` +
+    const ok = await confirm({
+      title: `Compact spart ${report.orphanBytes.toLocaleString()} Bytes (~${mb} MB).`,
+      message:
         "Alle Patterns, Globals und Song-Daten bleiben bit-exakt erhalten. " +
         "Bereits-gestagte (aber noch nicht gespeicherte) Sample-Patches gehen verloren.\n\n" +
         "Bank compactieren?",
-    );
+      confirmLabel: "Compactieren",
+    });
     if (!ok) return;
     // v3.65.0: Pre-Action AutoBackup vor irreversiblem Compact.
     // Non-blocking — wir warten ab (fire-and-forget hier sicher, da

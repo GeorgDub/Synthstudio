@@ -60,6 +60,7 @@ import {
 } from "@/store/useSubMixStore";
 import { useMidiLearn } from "@/hooks/useMidiLearn";
 import { ChannelColorPicker } from "@/components/Mixer/ChannelColorPicker";
+import { useConfirm } from "@/components/common/ConfirmDialog";
 
 // ─── Hilfsfunktionen ─────────────────────────────────────────────────────────
 
@@ -140,6 +141,8 @@ export function SubMixBusStrip({ bus, busIndex }: SubMixBusStripProps): React.Re
   const muteLearn   = useMidiLearn({ type: "subMixBusMute",   busId: bus.id, busName: bus.name });
   const soloLearn   = useMidiLearn({ type: "subMixBusSolo",   busId: bus.id, busName: bus.name });
 
+  const confirm = useConfirm();
+
   // v3.81.0: Color-Picker — onColorChange → setBusColor (undefined = reset).
   const handleColorChange = useCallback(
     (color: string | undefined) => {
@@ -148,19 +151,18 @@ export function SubMixBusStrip({ bus, busIndex }: SubMixBusStripProps): React.Re
     [bus.id],
   );
 
-  const handleRemove = useCallback(() => {
+  const handleRemove = useCallback(async () => {
     if (memberCount > 0) {
-      // Confirm — Browser-native zur Vermeidung von Modal-State + Tests.
-      const ok = typeof window !== "undefined" && typeof window.confirm === "function"
-        ? window.confirm(
-            `Bus "${bus.name}" hat ${memberCount} Mitglied${memberCount === 1 ? "" : "er"}. ` +
-              `Channels fallen auf Master zurück. Trotzdem entfernen?`,
-          )
-        : true;
+      const ok = await confirm({
+        title: `Bus "${bus.name}" hat ${memberCount} Mitglied${memberCount === 1 ? "" : "er"}.`,
+        message: "Channels fallen auf Master zurück. Trotzdem entfernen?",
+        confirmLabel: "Entfernen",
+        destructive: true,
+      });
       if (!ok) return;
     }
     removeBus(bus.id);
-  }, [bus.id, bus.name, memberCount]);
+  }, [bus.id, bus.name, memberCount, confirm]);
 
   const labelColor = bus.mute ? "text-text-dim" : bus.solo ? "text-accent-success" : "text-text-primary";
 

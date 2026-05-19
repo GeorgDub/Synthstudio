@@ -2544,13 +2544,18 @@ const INDEX = {
       ownedBy:  "frontend"
     },
     "client/src/App.tsx": {
-      role:     "Root component, tab routing (F1-F6), AudioEngine.onPosition() automation callback. v1.22.0 (TASK-117): Macro-Setter-Bag um setLfoRate/setLfoDepth erweitert — onUnhandled-Warn-Spezialfall entfernt (jetzt generisch). v3.96.0: NEU Tempo-Map Wire-Up — useEffect mountet AudioEngine.setTempoMapResolver((atBar) => getCurrentBpm(getTempoMapState().events, atBar)); restoreProject lädt data.tempoMap via setAllTempoEvents wenn !== undefined (Pre-v1.35-Compat).",
-      lastSeen: "2026-05-19T09:15:00.000Z",
+      role:     "Root component, tab routing (F1-F6), AudioEngine.onPosition() automation callback. v1.22.0 (TASK-117): Macro-Setter-Bag um setLfoRate/setLfoDepth erweitert — onUnhandled-Warn-Spezialfall entfernt (jetzt generisch). v3.96.0: NEU Tempo-Map Wire-Up — useEffect mountet AudioEngine.setTempoMapResolver((atBar) => getCurrentBpm(getTempoMapState().events, atBar)); restoreProject lädt data.tempoMap via setAllTempoEvents wenn !== undefined (Pre-v1.35-Compat). v3.144+: useConfirm-Migration — KorgTemplatePicker-onSelect verwendet useConfirm() statt window.confirm() für destructiven Template-Override.",
+      lastSeen: "2026-05-19T21:00:00.000Z",
       ownedBy:  "frontend"
     },
     "client/src/components/Settings/SettingsPanel.tsx": {
-      role:     "Zentrale Settings-Oberflaeche mit Sidebar-Navigation. v3.96.0: NEU 'tempo-map'-Section + TempoMapSection-Wrapper-Komponente (setInterval(500ms) leitet currentBar = floor(AudioEngine.currentStepIndex/16) ab, useState-Prev-Check verhindert spurious Re-Renders bei gleicher Bar). Section eingegliedert in Audio-Gruppe zwischen 'Performance' und 'MIDI Geräte'.",
-      lastSeen: "2026-05-19T09:15:00.000Z",
+      role:     "Zentrale Settings-Oberflaeche mit Sidebar-Navigation. v3.96.0: NEU 'tempo-map'-Section + TempoMapSection-Wrapper-Komponente (setInterval(500ms) leitet currentBar = floor(AudioEngine.currentStepIndex/16) ab, useState-Prev-Check verhindert spurious Re-Renders bei gleicher Bar). Section eingegliedert in Audio-Gruppe zwischen 'Performance' und 'MIDI Geräte'. v3.144+: useConfirm-Migration in SavingSection (handleDeleteAll) + LicenseSection (handleDeactivate).",
+      lastSeen: "2026-05-19T21:00:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/components/ProjectManager/ProjectManager.tsx": {
+      role:     "Project-Manager Toolbar (Save/Load/New/Export). Hat Electron-native Path (showMessageDialog) + Browser-Fallback. v3.144+: useConfirm-Migration im Browser-Fallback von handleNew — async confirm({ title, message, confirmLabel: 'Verwerfen', destructive: true }) statt window.confirm().",
+      lastSeen: "2026-05-19T21:00:00.000Z",
       ownedBy:  "frontend"
     },
     "client/src/components/TempoMap/TempoMapPanel.tsx": {
@@ -3241,6 +3246,64 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "refactor",
+      timestamp: "2026-05-19T21:00:00.000Z",
+      done: [
+        "v3.144 useConfirm-Migration (Teil 4/N): window.confirm() → useConfirm() in 3 Files (App.tsx, SettingsPanel.tsx, ProjectManager.tsx). Pattern aus v3.144-Vorgängern (MuteSoloGroupPanel, SubMixBusStrip, ChannelInspector, KorgBankModal, KorgBankEditor) konsistent angewendet.",
+        "App.tsx: import { useConfirm } nach AudioInputRecorderPanel-Import. const confirm = useConfirm() nach useElectron() (Zeile ~575). 1 confirm migriert: KorgTemplatePicker onSelect — Arrow-Callback (id) => {} → async (id) => {}, typeof-window-Guard entfernt, confirm({ title: 'Template überschreibt deine aktuellen Pads + Scenes + Parts. Fortfahren?', confirmLabel: 'Fortfahren', destructive: true }).",
+        "SettingsPanel.tsx: import { useConfirm } am Ende des Import-Blocks. (a) SavingSection: const confirm = useConfirm() nach useState. handleDeleteAll war bereits async, typeof-window-Guard entfernt, confirm({ title: 'Alle AutoSave-Versionen für ALLE Projekte unwiderruflich löschen?', confirmLabel: 'Löschen', destructive: true }). useCallback-deps von [] → [confirm]. (b) LicenseSection: const confirm = useConfirm() nach useState(setShowActivation). handleDeactivate: () => {} → async () => {}, confirm({ title: 'Pro-Lizenz wirklich entfernen?', message: 'Pro-Features werden gesperrt.', confirmLabel: 'Entfernen', destructive: true }).",
+        "ProjectManager.tsx: import { useConfirm } nach utils/imports-Import. const confirm = useConfirm() nach useElectron(). 1 confirm im Browser-Fallback-Branch von handleNew (war bereits async): confirm({ title: 'Ungespeicherte Änderungen verwerfen?', message: '\"projectName\" hat ungespeicherte Änderungen.', confirmLabel: 'Verwerfen', destructive: true }). useCallback-deps += confirm.",
+        "pnpm check: clean (gen:sandbox up-to-date, tsc --noEmit ohne errors). Grep window.confirm in allen 3 Files: 0 echte Treffer (nur die v3.144-Kommentar-Strings, die das Pattern dokumentieren). Texte 1:1 übernommen, kein Wording verändert."
+      ],
+      next: [
+        "v3.144 useConfirm-Migration weiter: Grep 'window\\.confirm' über client/src — weitere Kandidaten finden. Bisher migriert: MuteSoloGroupPanel, SubMixBusStrip, ChannelInspector/PartBounceSection, KorgBankModal, KorgBankEditor, App.tsx, SettingsPanel (SavingSection+LicenseSection), ProjectManager.",
+        "Wahrscheinlich noch offen: Sample-Browser-Delete, Pattern-Delete, ScriptRunner-Delete-Script, ThemeSettings-Delete-Custom-Theme, MIDI-Layout-Reset, SongModePanel, VersionHistoryModal, SamplePackBrowser, AudioTrackStrip (alle haben useConfirm bereits importiert laut frühem Grep, evtl. nur teilweise migriert).",
+        "OmniTribeBridge.ts NICHT anfassen (User-Hinweis)."
+      ],
+      changed: [
+        "client/src/App.tsx (+useConfirm-Import, +useConfirm-Hook nach useElectron, KorgTemplatePicker-onSelect → async, 1 confirm migriert)",
+        "client/src/components/Settings/SettingsPanel.tsx (+useConfirm-Import, +useConfirm-Hook in SavingSection + LicenseSection, 2 confirms migriert, handleDeactivate → async)",
+        "client/src/components/ProjectManager/ProjectManager.tsx (+useConfirm-Import, +useConfirm-Hook nach useElectron, 1 confirm migriert)"
+      ]
+    },
+    {
+      agent:     "refactor",
+      timestamp: "2026-05-19T20:15:00.000Z",
+      done: [
+        "v3.144 useConfirm-Migration (Teil 3/N): window.confirm() → useConfirm() in 2 KorgBank-Komponenten. Pattern aus v3.144-Vorgängern (MuteSoloGroupPanel, SubMixBusStrip, ChannelInspector) konsistent angewendet.",
+        "KorgBankModal.tsx: import { useConfirm } nach toast-Import. const confirm = useConfirm() nach den 4 useState-Hooks. handleImportAll → async (Sample-Library-Bulk-Add): typeof-window-Guard entfernt, confirm({ title: 'N Sample(s) zur Sample-Library hinzufuegen?', confirmLabel: 'Hinzufuegen' }). handleImportAllPatterns → async (Pattern-Bulk-Import): confirm({ title: 'N Pattern(s) importieren?', confirmLabel: 'Importieren' }). Beide Funktionen waren vorher sync void, jetzt async Promise<void> — Aufrufer sind onClick-Handler, ignorieren Promise korrekt.",
+        "KorgBankEditor.tsx: import { useConfirm } nach ProLockBadge-Import. const confirm = useConfirm() nach useElectron(). 3 confirms migriert: (a) tryChangeMode (mode-switch dirty-prompt): function → async Promise<void>, confirm({ title: 'Ungespeicherte Änderungen gehen verloren. Trotzdem Modus wechseln?', confirmLabel: 'Wechseln', destructive: true }). Caller-onClicks ignorieren Promise. (b) handleEsxSaveBank (war schon async): confirm({ title: 'X wurden geändert.', message: 'Alle anderen Slots…\\n\\nBank speichern?', confirmLabel: 'Speichern' }) — Title/Message-Split am ersten \\n. (c) handleEsxCompactBank (war schon async): confirm({ title: 'Compact spart X Bytes…', message: 'Alle Patterns…\\n\\nBank compactieren?', confirmLabel: 'Compactieren' }).",
+        "pnpm check: clean (exit 0, gen:sandbox up-to-date, tsc --noEmit ohne errors). Grep window.confirm in beiden Files: 0 Treffer. Texte 1:1 übernommen (keine Wording-Änderungen)."
+      ],
+      next: [
+        "v3.144 useConfirm-Migration weiter: weitere Kandidaten via Grep 'window\\.confirm' suchen. Bereits migriert: MuteSoloGroupPanel, SubMixBusStrip, ChannelInspector/PartBounceSection, KorgBankModal, KorgBankEditor. Wahrscheinliche Restkandidaten: Sample-Browser, Pattern-Delete, Project-Discard, ScriptRunner, ThemeSettings, MIDI-Layout-Reset.",
+        "OmniTribeBridge.ts NICHT anfassen (User-Hinweis).",
+        "KorgBankEditor.tsx weiterhin sehr groß (~1700 Zeilen) — Split-Kandidat (ESX-Tab vs E2S-Tab in eigene Sub-Komponenten). Nicht Teil dieser Migration."
+      ],
+      changed: [
+        "client/src/components/KorgBank/KorgBankModal.tsx (+useConfirm-Hook, 2 confirms migriert, handleImportAll/handleImportAllPatterns → async)",
+        "client/src/components/KorgBank/KorgBankEditor.tsx (+useConfirm-Hook nach useElectron, 3 confirms migriert, tryChangeMode → async)"
+      ]
+    },
+    {
+      agent:     "refactor",
+      timestamp: "2026-05-19T19:30:00.000Z",
+      done: [
+        "v3.144 useConfirm-Migration (Teil 2/N): window.confirm() → useConfirm() in 2 Mixer-Komponenten. Pattern aus MuteSoloGroupPanel (v3.144) konsistent angewendet.",
+        "SubMixBusStrip.tsx: import { useConfirm } + const confirm = useConfirm() nach useMidiLearn-Hooks. handleRemove: useCallback(() => …) → useCallback(async () => …), typeof-window/typeof-window.confirm-Guard entfernt. Confirm-Block ersetzt durch confirm({ title, message, confirmLabel: 'Entfernen', destructive: true }). Original-Text Split an . (Punkt-Boundary nach Mitglieder-Count): title = Bus-Name + Member-Count, message = 'Channels fallen auf Master zurück. Trotzdem entfernen?'. useCallback-deps += confirm.",
+        "ChannelInspector.tsx (PartBounceSection): import { useConfirm } + const confirm = useConfirm() nach useElectron. handleBounce ist bereits async (existing) — nur Confirm-Block ersetzt. typeof-window-Guard entfernt. confirm({ title: 'Lange Render-Dauer (Xs). Fortfahren?', confirmLabel: 'Fortfahren' }) — kein destructive (Bounce-Operation, kein Datenverlust). useCallback-deps += confirm.",
+        "pnpm check: clean. Grep window.confirm in beiden Files: 0 Treffer. Texte 1:1 übernommen (keine Re-Words)."
+      ],
+      next: [
+        "v3.144 useConfirm-Migration weiter: andere Komponenten mit window.confirm-Calls suchen (Grep über client/src) — Kandidaten: Sample-Browser-Delete, Pattern-Delete, Project-Discard, ScriptRunner-Delete-Script, ThemeSettings-Delete-Custom-Theme. Pattern ist jetzt erprobt + konsistent.",
+        "OmniTribeBridge.ts NICHT anfassen (User-Hinweis bei Session-Start)."
+      ],
+      changed: [
+        "client/src/components/Mixer/SubMixBusStrip.tsx (+useConfirm-Hook, handleRemove → async, Guard entfernt)",
+        "client/src/components/Mixer/ChannelInspector.tsx (+useConfirm-Hook in PartBounceSection, handleBounce-Confirm migriert, useCallback-deps erweitert)"
+      ]
+    },
     {
       agent:     "frontend",
       timestamp: "2026-05-19T18:15:00.000Z",

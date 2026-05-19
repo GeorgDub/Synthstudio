@@ -33,6 +33,7 @@ import {
   setLastSaveAt,
 } from "@/store/useAutoSaveStore";
 import { toast } from "@/store/useToastStore";
+import { useConfirm } from "@/components/common/ConfirmDialog";
 
 export interface VersionHistoryModalProps {
   isOpen: boolean;
@@ -54,6 +55,7 @@ export function VersionHistoryModal({
   const [now, setNow] = useState<number>(() => Date.now());
   // v3.65.0: Filter-Toggle. Default false (alle Versionen zeigen).
   const [onlyLabeled, setOnlyLabeled] = useState(false);
+  const confirm = useConfirm();
 
   const filteredVersions = useMemo(() => {
     if (!onlyLabeled) return versions;
@@ -113,12 +115,12 @@ export function VersionHistoryModal({
 
   const handleRestore = useCallback(
     async (versionId: string) => {
-      const ok =
-        typeof window !== "undefined"
-          ? window.confirm(
-              "Aktuelles Projekt überschreiben? Ungespeicherte Änderungen gehen verloren.",
-            )
-          : true;
+      const ok = await confirm({
+        title: "Aktuelles Projekt überschreiben?",
+        message: "Ungespeicherte Änderungen gehen verloren.",
+        confirmLabel: "Wiederherstellen",
+        destructive: true,
+      });
       if (!ok) return;
       try {
         const res = await restoreAutoSaveVersion(projectId, versionId);
@@ -136,15 +138,16 @@ export function VersionHistoryModal({
         toast(`Restore-Fehler: ${String(err)}`, { kind: "error", duration: 5000 });
       }
     },
-    [projectId, onRestore, onClose],
+    [projectId, onRestore, onClose, confirm],
   );
 
   const handleDelete = useCallback(
     async (versionId: string) => {
-      const ok =
-        typeof window !== "undefined"
-          ? window.confirm("Diese Version unwiderruflich löschen?")
-          : true;
+      const ok = await confirm({
+        title: "Diese Version unwiderruflich löschen?",
+        confirmLabel: "Löschen",
+        destructive: true,
+      });
       if (!ok) return;
       try {
         const res = await deleteAutoSaveVersion(projectId, versionId);
@@ -160,7 +163,7 @@ export function VersionHistoryModal({
         toast(`Lösch-Fehler: ${String(err)}`, { kind: "error" });
       }
     },
-    [projectId, reload],
+    [projectId, reload, confirm],
   );
 
   if (!isOpen) return null;

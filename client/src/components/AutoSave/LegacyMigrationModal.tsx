@@ -25,6 +25,7 @@ import {
   deleteAllVersions,
 } from "@/utils/autoSaveEngine";
 import { toast } from "@/store/useToastStore";
+import { useConfirm } from "@/components/common/ConfirmDialog";
 
 export interface LegacyMigrationModalProps {
   isOpen: boolean;
@@ -53,6 +54,7 @@ export function LegacyMigrationModal({
   const [phase, setPhase] = useState<Phase>("idle");
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [errorText, setErrorText] = useState<string | null>(null);
+  const confirm = useConfirm();
 
   // Reset interner State beim Öffnen
   useEffect(() => {
@@ -107,12 +109,11 @@ export function LegacyMigrationModal({
   }, [legacySlug, newProjectId, legacyCount, onComplete, onClose]);
 
   const handleDiscard = useCallback(async () => {
-    const ok =
-      typeof window !== "undefined"
-        ? window.confirm(
-            `${legacyCount} alte Version${legacyCount === 1 ? "" : "en"} unwiderruflich löschen?`,
-          )
-        : true;
+    const ok = await confirm({
+      title: `${legacyCount} alte Version${legacyCount === 1 ? "" : "en"} unwiderruflich löschen?`,
+      confirmLabel: "Löschen",
+      destructive: true,
+    });
     if (!ok) return;
     setPhase("running");
     setErrorText(null);
@@ -133,7 +134,7 @@ export function LegacyMigrationModal({
       setPhase("error");
       toast("Löschen fehlgeschlagen", { kind: "error", duration: 5000 });
     }
-  }, [legacySlug, legacyCount, onComplete, onClose]);
+  }, [legacySlug, legacyCount, onComplete, onClose, confirm]);
 
   const handleLater = useCallback(() => {
     onComplete?.("later");

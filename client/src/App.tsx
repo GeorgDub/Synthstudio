@@ -195,6 +195,7 @@ import {
 } from "@/store/useMacroSnapshotStore";
 import { LiveRecorderPanel } from "@/components/LiveRecorder";
 import { AudioInputRecorderPanel } from "@/components/AudioInputRecorder";
+import { useConfirm } from "@/components/common/ConfirmDialog";
 import {
   mapElectribeLaneToAutomationTarget,
   scaleMotionPointsToStepCount,
@@ -571,6 +572,8 @@ export default function App() {
 
   // ── Electron-Hook (einziger Zugriffspunkt auf Electron-Features) ────────────
   const electron = useElectron();
+  // v3.144+ — Promise-based Confirm-Dialog (replaces window.confirm())
+  const confirm = useConfirm();
   // v2.26: OSC-Out-Config (BPM-Sync etc.) — Custom-Observer-Hook
   const oscOutConfig = useOscOutConfig();
   // v2.28: Reactive macro values für OSC-Out (separate vom getMacros()-Pull-Pfad)
@@ -4817,7 +4820,7 @@ export default function App() {
       <KorgTemplatePicker
         isOpen={showKorgTemplatePicker}
         onClose={() => setShowKorgTemplatePicker(false)}
-        onSelect={(id) => {
+        onSelect={async (id) => {
           // v3.50: destructive guard
           const activePattern = dm.getActivePattern();
           const existingPartCount = activePattern?.parts.length ?? 0;
@@ -4826,11 +4829,11 @@ export default function App() {
             defaultPartCount: 9,
           });
           if (isDestructive) {
-            const ok = typeof window !== "undefined"
-              ? window.confirm(
-                  "Template überschreibt deine aktuellen Pads + Scenes + Parts. Fortfahren?",
-                )
-              : true;
+            const ok = await confirm({
+              title: "Template überschreibt deine aktuellen Pads + Scenes + Parts. Fortfahren?",
+              confirmLabel: "Fortfahren",
+              destructive: true,
+            });
             if (!ok) {
               setShowKorgTemplatePicker(false);
               return;

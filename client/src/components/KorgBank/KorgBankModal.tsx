@@ -47,6 +47,7 @@ import {
 } from "@/utils/korg/e2sBankReader";
 import { detectKorgBankType, type KorgBankType } from "@/utils/korg/bankDetect";
 import { toast } from "@/store/useToastStore";
+import { useConfirm } from "@/components/common/ConfirmDialog";
 
 // ─── Public Props ─────────────────────────────────────────────────────────────
 
@@ -222,6 +223,7 @@ export function KorgBankModal({
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [previewSlot, setPreviewSlot] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<ModalTab>("samples");
+  const confirm = useConfirm();
 
   useEffect(() => {
     if (!file) {
@@ -344,16 +346,17 @@ export function KorgBankModal({
     }
   }
 
-  function handleImportAll(): void {
+  async function handleImportAll(): Promise<void> {
     if (!onAddSample) {
       toast("Kein Sample-Receiver konfiguriert", { kind: "warning" });
       return;
     }
     const count = filteredRows.length;
     if (count === 0) return;
-    const ok = typeof window !== "undefined" && window.confirm
-      ? window.confirm(`${count} Sample(s) zur Sample-Library hinzufuegen?`)
-      : true;
+    const ok = await confirm({
+      title: `${count} Sample(s) zur Sample-Library hinzufuegen?`,
+      confirmLabel: "Hinzufuegen",
+    });
     if (!ok) return;
     let added = 0;
     for (const row of filteredRows) {
@@ -382,16 +385,17 @@ export function KorgBankModal({
     }
   }
 
-  function handleImportAllPatterns(): void {
+  async function handleImportAllPatterns(): Promise<void> {
     if (!onAddPattern) {
       toast("Kein Pattern-Receiver konfiguriert", { kind: "warning" });
       return;
     }
     const count = state.patterns.length;
     if (count === 0) return;
-    const ok = typeof window !== "undefined" && window.confirm
-      ? window.confirm(`${count} Pattern(s) importieren?`)
-      : true;
+    const ok = await confirm({
+      title: `${count} Pattern(s) importieren?`,
+      confirmLabel: "Importieren",
+    });
     if (!ok) return;
     let added = 0;
     for (const pat of state.patterns) {

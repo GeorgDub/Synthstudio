@@ -116,6 +116,7 @@ import { MidiFxPanel } from "@/components/MidiFx/MidiFxPanel";
 // v3.96.0: Tempo-Map / BPM-Automation Panel.
 import { TempoMapPanel } from "@/components/TempoMap/TempoMapPanel";
 import { getCurrentBar } from "@/utils/tempoMap";
+import { useConfirm } from "@/components/common/ConfirmDialog";
 
 // ─── Sidebar-Abschnitte ───────────────────────────────────────────────────────
 
@@ -1029,12 +1030,15 @@ function SavingSection({ onOpenVersionHistory }: { onOpenVersionHistory?: () => 
   // v3.57.0: AutoSave-Settings (projekt-bezogen, separater Store).
   const autoSave = useAutoSaveStore();
   const [deleting, setDeleting] = useState(false);
+  // v3.144+ — Promise-based Confirm-Dialog (replaces window.confirm())
+  const confirm = useConfirm();
 
   const handleDeleteAll = useCallback(async () => {
-    if (typeof window === "undefined") return;
-    const ok = window.confirm(
-      "Alle AutoSave-Versionen für ALLE Projekte unwiderruflich löschen?",
-    );
+    const ok = await confirm({
+      title: "Alle AutoSave-Versionen für ALLE Projekte unwiderruflich löschen?",
+      confirmLabel: "Löschen",
+      destructive: true,
+    });
     if (!ok) return;
     setDeleting(true);
     try {
@@ -1052,7 +1056,7 @@ function SavingSection({ onOpenVersionHistory }: { onOpenVersionHistory?: () => 
     } finally {
       setDeleting(false);
     }
-  }, []);
+  }, [confirm]);
 
   return (
     <div className="space-y-5">
@@ -1950,6 +1954,8 @@ function PluginsSection() {
 function LicenseSection() {
   const state = useLicenseStore();
   const [showActivation, setShowActivation] = useState(false);
+  // v3.144+ — Promise-based Confirm-Dialog (replaces window.confirm())
+  const confirm = useConfirm();
 
   const pro = isPro();
   const days = daysRemainingInTrial();
@@ -1975,8 +1981,14 @@ function LicenseSection() {
     return { label: "Free", color: "text-text-muted", desc: "Du nutzt die kostenlose Variante." };
   })();
 
-  const handleDeactivate = () => {
-    if (!window.confirm("Pro-Lizenz wirklich entfernen? Pro-Features werden gesperrt.")) return;
+  const handleDeactivate = async () => {
+    const ok = await confirm({
+      title: "Pro-Lizenz wirklich entfernen?",
+      message: "Pro-Features werden gesperrt.",
+      confirmLabel: "Entfernen",
+      destructive: true,
+    });
+    if (!ok) return;
     clearLicense();
     toast("Lizenz entfernt — Pro-Features gesperrt.", { kind: "info", duration: 4000 });
   };

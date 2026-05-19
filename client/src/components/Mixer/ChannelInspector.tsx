@@ -66,6 +66,7 @@ import {
   DEFAULT_OGG_BITRATE_BPS,
 } from "@/utils/audioCompressEncoder";
 import { useElectron } from "../../../../electron/useElectron";
+import { useConfirm } from "@/components/common/ConfirmDialog";
 
 export interface ChannelInspectorProps {
   part: PartData | undefined;
@@ -603,6 +604,7 @@ function PartBounceSection({
   insertChain?: import("@/utils/mixerFx").MixerFxSlot[];
 }) {
   const electron = useElectron();
+  const confirm = useConfirm();
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<BounceLengthMode>("currentPattern");
   const [bars, setBars] = useState(4);
@@ -637,9 +639,10 @@ function PartBounceSection({
   const handleBounce = useCallback(async () => {
     if (isBouncing) return;
     if (previewDuration > BOUNCE_WARN_DURATION_SEC) {
-      const ok = typeof window !== "undefined"
-        ? window.confirm(`Lange Render-Dauer (${Math.round(previewDuration)}s). Fortfahren?`)
-        : true;
+      const ok = await confirm({
+        title: `Lange Render-Dauer (${Math.round(previewDuration)}s). Fortfahren?`,
+        confirmLabel: "Fortfahren",
+      });
       if (!ok) return;
     }
     setIsBouncing(true);
@@ -716,7 +719,7 @@ function PartBounceSection({
     } finally {
       setIsBouncing(false);
     }
-  }, [part, pattern, mode, bars, bpm, sampleRate, stereo, finalFilename, isBouncing, previewDuration, electron, insertChain, format, bitrate]);
+  }, [part, pattern, mode, bars, bpm, sampleRate, stereo, finalFilename, isBouncing, previewDuration, electron, insertChain, format, bitrate, confirm]);
 
   return (
     <section className="border-t border-border-color p-3" data-testid="channel-inspector-bounce-section">
