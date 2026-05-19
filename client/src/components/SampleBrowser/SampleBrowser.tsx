@@ -46,6 +46,14 @@ import {
   SAMPLE_SORT_LABELS,
   type SampleSortMode,
 } from "@/utils/sampleSort";
+// v3.152: Multi-Select Pure-Helpers.
+import {
+  toggleInSet,
+  rangeSelect,
+  clearSelection,
+  filterSelected,
+} from "@/utils/sampleMultiSelect";
+import { useConfirm } from "@/components/common/ConfirmDialog";
 
 // ─── Typen ────────────────────────────────────────────────────────────────────
 
@@ -569,6 +577,8 @@ export function SampleBrowser({
   // ── Einziger Zugriffspunkt auf Electron-Features ──────────────────────────
   const electron = useElectron();
   const { analyzeFile, isAnalyzing } = useAudioAnalysis();
+  // v3.152: Confirm-Hook für Bulk-Delete-Bestätigung.
+  const confirm = useConfirm();
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
@@ -603,6 +613,11 @@ export function SampleBrowser({
 
   // ── Sample-Navigation und Selektion ──────────────────────────────────────
   const [selectedSampleId, setSelectedSampleId] = useState<string | null>(null);
+  // v3.152: Multi-Select via Ctrl/Shift+Click. selectedSampleId bleibt der
+  // "Single-Select"-Anker (Preview-Sample). multiSelectIds = zusätzlich
+  // mehrfach-markierte Samples für Bulk-Operationen.
+  const [multiSelectIds, setMultiSelectIds] = useState<Set<string>>(() => new Set());
+  const lastClickedIdRef = useRef<string | null>(null);
   const [isPreviewPlaying, setIsPreviewPlaying] = useState(false);
   const [playbackPosition, setPlaybackPosition] = useState(0);
   const audioPreviewRef = useRef<HTMLAudioElement | null>(null);
@@ -908,7 +923,26 @@ export function SampleBrowser({
   }, [isPreviewPlaying]);
 
   // ── Sample-Selektion ──────────────────────────────────────────────────────
-  const handleSelectSample = useCallback((sample: Sample) => {
+  const handleSelectSample = useCallback((sample: Sample, event?: React.MouseEvent) => {
+    // v3.152: Ctrl/Cmd+Click toggle, Shift+Click range. Sonst single-select.
+    const isCtrl = !!event && (event.ctrlKey || event.metaKey);
+    const isShift = !!event && event.shiftKey;
+    if (isCtrl) {
+      setMultiSelectIds((prev) => toggleInSet(prev, sample.id));
+      lastClickedIdRef.current = sample.id;
+      setSelectedSampleId(sample.id);
+      return;
+    }
+    if (isShift && lastClickedIdRef.current) {
+      setMultiSelectIds((prev) =>
+        rangeSelect(filteredSamples.map((s) => s.id), lastClickedIdRef.current!, sample.id, prev),
+      );
+      setSelectedSampleId(sample.id);
+      return;
+    }
+    // Single-select: clear multi.
+    setMultiSelectIds(clearSelection());
+    lastClickedIdRef.current = sample.id;
     setSelectedSampleId(sample.id);
     if (audioPreviewRef.current) {
       audioPreviewRef.current.pause();
@@ -916,7 +950,35 @@ export function SampleBrowser({
       setIsPreviewPlaying(false);
       setPlaybackPosition(0);
     }
-  }, []);
+  }, [filteredSamples]);
+
+  // v3.152: Bulk-Delete-Handler. Asks confirmation, dann removeSample für jede ID.
+  const handleBulkDelete = useCallback(async () => {
+    if (multiSelectIds.size === 0 || !onRemoveSample) return;
+    const ids = Array.from(multiSelectIds);
+    const ok = await confirm({
+      title: `${ids.length} Sample(s) wirklich löschen?`,
+      message: "Diese Aktion entfernt die Samples aus dem Projekt. Originaldateien bleiben unverändert.",
+      confirmLabel: "Löschen",
+      destructive: true,
+    });
+    if (!ok) return;
+    for (const id of ids) {
+      onRemoveSample(id);
+    }
+    setMultiSelectIds(clearSelection());
+    setSelectedSampleId(null);
+  }, [multiSelectIds, onRemoveSample, confirm]);
+
+  // v3.152: Wenn Samples aus dem Projekt verschwinden (extern gelöscht),
+  // multi-select-Set defensiv auf Existenz-Filter laufen lassen.
+  useEffect(() => {
+    setMultiSelectIds((prev) => {
+      if (prev.size === 0) return prev;
+      const filtered = filterSelected(samples.map((s) => s.id), prev);
+      return filtered.size === prev.size ? prev : filtered;
+    });
+  }, [samples]);
 
   // ── Doppelklick → Sample auf aktiven Kanal legen ──────────────────────────
   const handleDoubleClickSample = useCallback((sample: Sample) => {
@@ -1595,6 +1657,35 @@ export function SampleBrowser({
               </div>
             ) : (
               <>
+                {/* v3.152: Bulk-Action-Bar (nur sichtbar bei multi-select). */}
+                {multiSelectIds.size > 0 && (
+                  <div
+                    className="flex items-center gap-2 px-3 py-1.5 border-b border-border-color/50 bg-accent-secondary/10"
+                    data-testid="sample-browser-bulk-bar"
+                  >
+                    <span className="text-[11px] font-semibold text-accent-secondary">
+                      {multiSelectIds.size} Sample{multiSelectIds.size === 1 ? "" : "s"} ausgewählt
+                    </span>
+                    <button
+                      onClick={handleBulkDelete}
+                      disabled={!onRemoveSample}
+                      data-testid="sample-browser-bulk-delete"
+                      className="ml-auto px-2 py-0.5 rounded text-[10px] bg-accent-danger text-white hover:bg-accent-danger/80 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      title="Alle ausgewählten Samples aus dem Projekt entfernen"
+                    >
+                      Löschen
+                    </button>
+                    <button
+                      onClick={() => setMultiSelectIds(clearSelection())}
+                      data-testid="sample-browser-bulk-clear"
+                      className="px-2 py-0.5 rounded text-[10px] border border-border-color text-text-muted hover:text-text-primary transition-colors"
+                      title="Auswahl aufheben"
+                    >
+                      Aufheben
+                    </button>
+                  </div>
+                )}
+
                 {/* Navigation-Leiste */}
                 <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border-color/50 bg-bg-panel/50">
                   <button
@@ -1613,7 +1704,7 @@ export function SampleBrowser({
                     </span>
                   )}
                   <span className="text-[10px] text-text-dim ml-auto">
-                    ↑↓ · Leertaste · Enter=Kanal
+                    ↑↓ · Leertaste · Enter=Kanal · Ctrl/⌘+Klick · Shift+Klick
                   </span>
                 </div>
 
@@ -1638,7 +1729,7 @@ export function SampleBrowser({
                         onDragOver={(e) => handleDragOverSample(e, sample.id)}
                         onDrop={(e) => handleDropOnSample(e, sample.id)}
                         onDragLeave={handleDragLeaveSample}
-                        onClick={() => handleSelectSample(sample)}
+                        onClick={(e) => handleSelectSample(sample, e)}
                         onDoubleClick={() => handleDoubleClickSample(sample)}
                         onContextMenu={(e) => {
                           e.preventDefault();
@@ -1652,11 +1743,13 @@ export function SampleBrowser({
                         className={[
                           "flex items-center gap-2 px-3 py-1.5 group cursor-pointer",
                           isDragTarget ? "border-t-2 border-accent-secondary bg-accent-primary/10" : "border-t border-border-color/50",
-                          isSelected
-                            ? "bg-accent-primary/20 border-l-2 border-accent-primary"
-                            : "hover:bg-bg-elevated/30 border-l-2 border-transparent",
+                          multiSelectIds.has(sample.id)
+                            ? "bg-accent-secondary/15 border-l-2 border-accent-secondary"
+                            : isSelected
+                              ? "bg-accent-primary/20 border-l-2 border-accent-primary"
+                              : "hover:bg-bg-elevated/30 border-l-2 border-transparent",
                         ].join(" ")}
-                        title={onAssignToChannel ? "Doppelklick: auf aktiven Kanal legen | Ziehen: auf Kanal-Zeile oder zum Umsortieren" : "Klick: auswählen | Ziehen: umsortieren oder auf Kanal"}
+                        title={onAssignToChannel ? "Doppelklick: auf aktiven Kanal | Ctrl/Cmd+Klick: Multi-Select | Shift+Klick: Range-Select" : "Klick: auswählen | Ctrl/Cmd+Klick: Multi-Select"}
                       >
                         {/* Kategorie-Badge (Rechtsklick zum Ändern) */}
                         <span
