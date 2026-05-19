@@ -287,7 +287,171 @@ const INDEX = {
 
   // ─── KNOWN FILE INDEX ──────────────────────────────────────
   // Key files agents have analyzed. Add new entries after working on a file.
+  //
+  // KEY-CONVENTION (v3.143):
+  //   - PREFERRED: bare canonical path, e.g. "client/src/App.tsx".
+  //     Use this for new entries; updates overwrite the same key.
+  //   - LEGACY: version-suffixed keys like
+  //     "client/src/App.tsx (v3.138.0 +embedBehavior-gate)" are an
+  //     append-only changelog accumulated across releases. They are
+  //     NOT normalized in this pass — both forms coexist. Inserting
+  //     a new bare-path entry while old version-suffixed ones remain
+  //     is the explicit transition path.
   files: {
+    // ─── v3.143-canonical-store-backfill (frontend drift fix) ─
+    // Per parallel-dispatch DRIFT-FE: 30 Stores auf Disk hatten
+    // bisher keinen canonical-Eintrag. Roles aus Source-Signal
+    // extrahiert (storageKey + exportFns + types).
+    "client/src/store/useAiCostStore.ts": {
+      role:     "Anthropic-API Kosten-Tracking pro Provider + Monatscap (recordAiCall/setMonthlyCap/maybeRollMonth/resetMonth). Custom-Observer-Store.",
+      lastSeen: "2026-05-19T16:55:48.843Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/store/useArpStore.ts": {
+      role:     "Arpeggiator-Settings (setArpEnabled/Mode/Octaves/Notes/StepCount + getArpSteps). Custom-Observer, in-memory (kein localStorage).",
+      lastSeen: "2026-05-19T16:55:48.843Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/store/useAutomationStore.ts": {
+      role:     "Step-basierte Automation-Lanes für BPM + Volume (AutomationTarget/Lane/State/Actions). AudioEngine.onPosition liest Lanes pro Step. In-memory.",
+      lastSeen: "2026-05-19T16:55:48.843Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/store/useChordMemoryStore.ts": {
+      role:     "Chord-Memory-Layer: 1 Note → Chord (buildChordNotes/setChordType/Voicing/Spread). ChordType-Union.",
+      lastSeen: "2026-05-19T16:55:48.843Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/store/useCollabChatStore.ts": {
+      role:     "In-Session-Chat für Collab-LAN (addChatMessage/clearChat/getChatMessages). In-memory, kein Persist.",
+      lastSeen: "2026-05-19T16:55:48.843Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/store/useEnvelopeFollowerStore.ts": {
+      role:     "Envelope-Follower Routings (Source → Target via EnvelopeTarget). add/remove/updateEnvelopeFollower.",
+      lastSeen: "2026-05-19T16:55:48.843Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/store/useHumanizerStore.ts": {
+      role:     "Humanizer/Groove-Presets: Timing-Jitter + Velocity-Multiplier-Berechnung (computeHumanizerTimingOffset/VelocityMultiplier). In-memory.",
+      lastSeen: "2026-05-19T16:55:48.843Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/store/useInspectorFloatStore.ts": {
+      role:     "Floating-Inspector Open/Closed-State (open/close/toggle). Persist v1.",
+      lastSeen: "2026-05-19T16:55:48.843Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/store/useKeyboardBindingsStore.ts": {
+      role:     "Hardware-unabhängige Keyboard-Action-Bindings (setBinding/clearBinding/getBinding/getAllBindings). Persist v1.",
+      lastSeen: "2026-05-19T16:55:48.843Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/store/useKeyboardSamplerStore.ts": {
+      role:     "Sample-Zone-Mapping für Computer-Keyboard (SampleZone[] + zonePlaybackRate/findZones). Persist v1.",
+      lastSeen: "2026-05-19T16:55:48.843Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/store/useMelodicPartStore.ts": {
+      role:     "Melodic-Part-Patterns (PitchStep[] mit Note+Velocity, Scale-Lock, BaseNote). Persist ss-melodic-patterns. ~340 LOC.",
+      lastSeen: "2026-05-19T16:55:48.843Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/store/useMetronomeStore.ts": {
+      role:     "Metronome-Settings + Custom-Sound-Upload (updateMetronome/uploadCustomMetronomeSound/clearCustomMetronomeSound). Persist v2.",
+      lastSeen: "2026-05-19T16:55:48.843Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/store/useMidiTemplateStore.ts": {
+      role:     "Recently-Used + JSON-Export/Import von MIDI-Layout-Templates (markRecentlyUsed/exportTemplateToJson/importTemplateFromJson). Persist v1.",
+      lastSeen: "2026-05-19T16:55:48.843Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/store/useMorphStore.ts": {
+      role:     "Pattern-Morph A↔B mit Amount-Slider (setAmount/setPatternA/B/setActive/toggleAutoMorph). Persist ss-morph.",
+      lastSeen: "2026-05-19T16:55:48.843Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/store/useNoteRepeatStore.ts": {
+      role:     "Note-Repeat Rate-Toggle + Enable-State (toggleNoteRepeat/setNoteRepeatRate). Persist (kompakter Key).",
+      lastSeen: "2026-05-19T16:55:48.843Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/store/useOscOutStore.ts": {
+      role:     "OSC-Out Endpoint-Config (host/port/path). getOscOutConfig/setOscOutConfig. Persist v1.",
+      lastSeen: "2026-05-19T16:55:48.843Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/store/usePatchStore.ts": {
+      role:     "Synth-Patch-Library mit save/delete/rename + export/import. Persist v1.",
+      lastSeen: "2026-05-19T16:55:48.843Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/store/usePatternLibraryStore.ts": {
+      role:     "Drum-Pattern-Library mit Tags+Search (savePatternToLibrary/searchLibrary/exportLibrary/importLibrary). Persist v1.",
+      lastSeen: "2026-05-19T16:55:48.843Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/store/usePatternVariationsStore.ts": {
+      role:     "A/B/C/D Pattern-Variations-Slots pro Pattern (createVariationSet/updateVariationSlot/setActiveVariation). Persist v1.",
+      lastSeen: "2026-05-19T16:55:48.843Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/store/useRemotePeerStore.ts": {
+      role:     "Spiegelt Collab-Partner-State (activePattern/bpm/isPlaying/mutes/volumes) für Split-View-Display. In-memory.",
+      lastSeen: "2026-05-19T16:55:48.843Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/store/useSampleSlicerStore.ts": {
+      role:     "Sample-Slice-Regionen für Slice-Editor (SliceRegion[]). In-memory.",
+      lastSeen: "2026-05-19T16:55:48.843Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/store/useScriptStore.ts": {
+      role:     "User-Scripts mit ss.*-API + Keyboard-Combo/Macro-Bindings (addScript/findScriptByKeyCombo/findScriptByMacroIndex). Persist v1. ~420 LOC.",
+      lastSeen: "2026-05-19T16:55:48.843Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/store/useSessionRecordingStore.ts": {
+      role:     "Performance-Recording: zeichnet UI-Events während Transport (startRecording/recordEvent/startPlayback). In-memory.",
+      lastSeen: "2026-05-19T16:55:48.843Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/store/useSessionStore.ts": {
+      role:     "Collab-LAN Session-State (status/code/wsUrl/participants/role). Persist nur userName-Key.",
+      lastSeen: "2026-05-19T16:55:48.843Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/store/useSongStore.ts": {
+      role:     "Song-Mode: Pattern-Banks + SongSlots für lineare Pattern-Abspielung. AudioEngine triggert via onPosition. In-memory.",
+      lastSeen: "2026-05-19T16:55:48.843Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/store/useToastStore.ts": {
+      role:     "Globale Toast-Notifications (toast/dismissToast/clearAllToasts). ToastKind-Union + ToastAction. In-memory.",
+      lastSeen: "2026-05-19T16:55:48.843Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/store/useTransposeStore.ts": {
+      role:     "Global-Transpose in Halbtönen (getSemitones/setSemitones/incSemitones). Persist ss-global-transpose.",
+      lastSeen: "2026-05-19T16:55:48.843Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/store/useUserMidiTemplatesStore.ts": {
+      role:     "User-eigene MIDI-Layouts (saveUserMidiTemplate/deleteUserMidiTemplate/renameUserMidiTemplate). Persist synthstudio:user-midi-templates:v1.",
+      lastSeen: "2026-05-19T16:55:48.843Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/store/useVersionSnapshotStore.ts": {
+      role:     "Version-Snapshots eines Projekts (saveSnapshot/deleteSnapshot/getSnapshot). Persist v1.",
+      lastSeen: "2026-05-19T16:55:48.843Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/store/useWaveformPreviewStore.ts": {
+      role:     "Step-Grid Waveform-Preview Toggle (setShowStepWaveforms/toggleShowStepWaveforms). Persist v1.",
+      lastSeen: "2026-05-19T16:55:48.843Z",
+      ownedBy:  "frontend"
+    },
     "client/src/store/useApiSettingsStore.ts (v3.138.0 +embedBehavior)": {
       role:     "v3.138.0 ERWEITERT: ApiSettings interface +embedBehavior: 'auto'|'always'|'never' (default 'auto'). NEU EmbedBehavior-Type-Export + EMBED_BEHAVIORS readonly-Array + isEmbedBehavior-Type-Guard + setEmbedBehavior(b) setter (silently ignores invalid). defaults() liefert embedBehavior='auto'. persist()-Payload erweitert um embedBehavior. migrateFromLegacy BEIDE Branches (new-schema mit providers-Feld + Legacy mit anthropicApiKey direkt) lesen raw.embedBehavior via isEmbedBehavior-Guard, fallback base.embedBehavior='auto'. Migration-safe: pre-v3.138-Files ohne Feld → 'auto'.",
       lastSeen: "2026-05-19T18:15:00.000Z",
