@@ -177,7 +177,17 @@ export type MidiLearnTarget =
   | { type: "subMixBusCompThreshold"; busId: string; busName?: string }
   | { type: "subMixBusCompRatio";    busId: string; busName?: string }
   | { type: "subMixBusReverbSend";   busId: string; busName?: string }
-  | { type: "subMixBusDelaySend";    busId: string; busName?: string };
+  | { type: "subMixBusDelaySend";    busId: string; busName?: string }
+  // ── Mute/Solo Bus-Groups (v3.125.0) ─────────────────────────────────────
+  /**
+   * v3.125: MIDI-Learn auf Mute-Solo-Bus-Groups (one-click group-mute/solo).
+   * Trigger ist Note-On / CC>63 (Toggle-Style). Events:
+   *   midi:muteGroup → useMuteSoloGroupStore.muteGroup(groupId)
+   *   midi:soloGroup → toggle solo (clear wenn aktiv, sonst soloGroup)
+   * Erlaubt Performance-Mode-Bindings wie "MIDI-Note → mute alle Drums".
+   */
+  | { type: "muteGroup"; groupId: string; groupName?: string }
+  | { type: "soloGroup"; groupId: string; groupName?: string };
 
 /** Ein Schritt in einer Function-Chain (v1.77). */
 export interface ChainStep {
@@ -452,6 +462,8 @@ export function labelForTarget(target: MidiLearnTarget): string {
     case "subMixBusCompRatio":     return `Bus Comp Ratio: ${target.busName ?? target.busId.slice(0, 8)}`;
     case "subMixBusReverbSend":    return `Bus Reverb Send: ${target.busName ?? target.busId.slice(0, 8)}`;
     case "subMixBusDelaySend":     return `Bus Delay Send: ${target.busName ?? target.busId.slice(0, 8)}`;
+    case "muteGroup":              return `Mute-Group: ${target.groupName ?? target.groupId.slice(0, 8)}`;
+    case "soloGroup":              return `Solo-Group: ${target.groupName ?? target.groupId.slice(0, 8)}`;
     default:                return "Unbekannt";
   }
 }
@@ -513,6 +525,9 @@ export function targetsMatch(a: MidiLearnTarget, b: MidiLearnTarget): boolean {
     case "subMixBusReverbSend":
     case "subMixBusDelaySend":
       return a.busId === (b as { busId: string }).busId;
+    case "muteGroup":
+    case "soloGroup":
+      return a.groupId === (b as { groupId: string }).groupId;
     default:
       // Single-target types ohne Param: bpm, playStop, record, tapTempo,
       // bpmUp, bpmDown, masterVolume, partUp, partDown, patternNext,
@@ -1450,6 +1465,13 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
         }));
         break;
       }
+      // ── Mute/Solo Bus-Groups (v3.125.0) ─────────────────────────────────
+      case "muteGroup": if (on) {
+        window.dispatchEvent(new CustomEvent("midi:muteGroup", { detail: t.groupId }));
+      } break;
+      case "soloGroup": if (on) {
+        window.dispatchEvent(new CustomEvent("midi:soloGroup", { detail: t.groupId }));
+      } break;
     }
   }
 

@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.124.0",
+    version: "3.125.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -89,6 +89,41 @@ const INDEX = {
   // ─── KNOWN FILE INDEX ──────────────────────────────────────
   // Key files agents have analyzed. Add new entries after working on a file.
   files: {
+    "client/src/components/DrumMachine/stepCellColors.ts (v3.125.0 NEU)": {
+      role:     "v3.125.0 NEU (Pure, ~140 LOC). Color-Coded Step-Grid Helpers. parseHexColor(#RGB/#RRGGBB → {r,g,b}|undefined, uppercase-safe, RegExp HEX_RE), withAlpha(hex, alpha) → rgba-String (clamp01) oder fallback CSS-Var bei invalid, lightenHex(hex, amount 0..1) → lerp-toward-white-hex, getStepCellColor(channelColor, isActive, isHover) → CSS-String: active→rgb()/active+hover→lightenHex+12%/inactive→rgba 0.05/inactive+hover→rgba 0.12/invalid→var(--ss-accent-primary). getStepCellBgStyle wrappt in React-Style-Object. DOM-frei, Node-testbar.",
+      lastSeen: "2026-05-19T15:55:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "tests/features/step-grid-colors.test.ts (v3.125.0 NEU)": {
+      role:     "v3.125.0 NEU (15 Tests in 5 describes). parseHexColor × 4 (RRGGBB/short-RGB-expansion/invalid-types/uppercase), withAlpha × 2 (clamp+rgba-format/fallback-CSS-Var), lightenHex × 2 (lerp-toward-white/invalid-undefined), getStepCellColor × 7 (active=rgb-full/inactive=rgba-0.05/hover-active=lightened-hex/hover-inactive=rgba-0.12/fallback × 4 cases/uppercase/getStepCellBgStyle-wrapper). 15/15 grün.",
+      lastSeen: "2026-05-19T15:55:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/store/useMuteSoloGroupStore.ts (v3.125.0 NEU)": {
+      role:     "v3.125.0 NEU (~340 LOC, Custom-Observer-Pattern, kein Zustand-NPM). localStorage `ss-mute-solo-groups:v1`. MuteSoloGroup {id, name, color, channelIds[]}. State: groups + soloSnapshots (NICHT persistiert — Live-Only). Actions addGroup/removeGroup/renameGroup/setGroupColor/addChannelToGroup (idempotent)/removeChannelFromGroup/removeChannelFromAllGroups/muteGroup/soloGroup (args: allChannelIds + currentMutes für DOM-frei-Snapshot)/clearSoloGroup/isGroupSoloed/getGroupById. CustomEvents: `mute-solo-group:muteChannels` ({groupId, channelIds[]}), `:soloChannels` ({groupId, target:[{channelId,muted}]}), `:clearSolo` (target-array restored). DEFAULT_GROUP_COLOR=#22c55e (pad-green). Empty-Group + Unknown-ID = silent no-op. Hex-RegExp HEX_RE für Color-Validierung, invalid→DEFAULT.",
+      lastSeen: "2026-05-19T15:55:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "tests/features/mute-solo-groups.test.ts (v3.125.0 NEU)": {
+      role:     "v3.125.0 NEU (@vitest-environment jsdom, 27 Tests in 10 describes). captureEvents-Helper via addEventListener/CustomEvent. addGroup × 5 (persistence/invalid-color-fallback/empty-name-default/dedupe-channelIds/unique-IDs), removeGroup × 3 (cleanup+persistence/unknown-noop/snapshot-cleanup), addChannelToGroup × 3 (idempotent/insertion-order/empty-ignored), removeChannelFromGroup × 2, muteGroup × 3 (event-fires/empty-noop/unknown-noop), soloGroup × 3 (event-target-correct/snapshot/empty-noop), clearSoloGroup × 2 (restore/no-snapshot-noop), renameGroup × 2, setGroupColor × 2, removeChannelFromAllGroups × 1, Persistence-Reload × 1 (soloSnapshots NICHT in storage). 27/27 grün.",
+      lastSeen: "2026-05-19T15:55:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/components/MuteSoloGroups/MuteSoloGroupPanel.tsx (v3.125.0 NEU)": {
+      role:     "v3.125.0 NEU (~330 LOC). UI für Mute-Solo-Bus-Groups (Performance Live-UX). Header: Group-Count + Add-Button + optional Close-X. Empty-State 'Keine Groups'. GroupRow pro Group: Color-Chip (3×3) + Name + member-count + Big-Mute-Button (bg-accent-danger/80 M) + Big-Solo-Button (toggle: bg-accent-success/30→full S) + Edit + Delete. soloGroup-Toggle via isGroupSoloed (1st-click=solo, 2nd=clearSolo). GroupModal (mode='add'|'edit'): Name-Input (autoFocus), 8-Palette-Color-Picker (scale-110 selected), Channel-Multi-Select-List (max-h-48 overflow-y-auto, Checkbox+Color-Dot+Name). Edit-Modal diff-applied (addChannelToGroup/removeChannelFromGroup). useMidiLearn pro Mute+Solo (targets muteGroup/soloGroup). Mapped-Indikator-Dot (bg-accent-secondary 1.5px). Komplett semantische --ss-* Tokens. data-testids: mute-solo-group-{panel|add-btn|empty|row-<id>|mute-<id>|solo-<id>|edit-<id>|delete-<id>|modal|modal-name|modal-color-<paletteId>|modal-channel-<id>|modal-cancel|modal-save}.",
+      lastSeen: "2026-05-19T15:55:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/hooks/useMidi.ts (v3.125.0 +muteGroup/soloGroup)": {
+      role:     "v3.125.0 ERWEITERT: MidiLearnTarget Union +muteGroup/soloGroup {groupId, groupName?}. targetsMatch case `groupId === groupId`. applyMapping on>63 dispatcht CustomEvents midi:muteGroup + midi:soloGroup mit detail=groupId. getMidiLearnTargetLabel +2 cases (`Mute-Group: <name>` / `Solo-Group: <name>`). v1.86-Right-Click-MIDI-Learn-Foundation + v3.81-subMixBus-Targets + v1.99-Step-Target unverändert.",
+      lastSeen: "2026-05-19T15:55:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/components/DrumMachine/ChannelStrip.tsx (v3.125.0 +Color-Coded Step-Grid)": {
+      role:     "v3.125.0 ERWEITERT: import getStepCellColor aus stepCellColors.ts. +hoveredStep useState<number|null>. Pro Step-Button: backgroundColor inline aus getStepCellColor(resolvedColor, isActiveStep, hoveredStep===i). onMouseEnter setHoveredStep(i)+optional dragVelocity-Drag, onMouseLeave clears wenn match. velocityColor() bleibt als Fallback-Class. v3.73-Channel-Color (resolvedColor) wandert jetzt INS Step-Grid statt nur als left-border. Active=full opacity, Inactive=5%, Hover-Active=+12% lightened, Hover-Inactive=12% opacity. Alle Overlays (current-step-ring, selected-step-ring, velocity-mode-bar, probability-dot, condition-rhombus, slide-glyph) unverändert.",
+      lastSeen: "2026-05-19T15:55:00.000Z",
+      ownedBy:  "frontend"
+    },
     "client/src/utils/sampleEmbedding.ts (v3.124.0 NEU)": {
       role:     "v3.124.0 NEU (Pure, ~230 LOC). Embed-Sample-Persistenz für Blob-URL-Samples (closes v3.116 Sample-Transform-Blob-URL-Loss-Caveat). Public-API: audioBufferToWavBytes(buffer) → Uint8Array (16-bit PCM WAV, mono/stereo, leerer Buffer → 44-Byte-Header), audioBufferToBase64Wav(buffer) → string, base64WavToAudioBuffer(b64, ctx) → Promise<AudioBuffer> (RIFF/WAVE-Marker-Sanity-Check vor decodeAudioData), estimateEmbedSizeKb(buffer) → KB-Estimate ohne actual encode (Header + length*channels*2 × 4/3 Base64-Overhead), exceedsEmbedSizeLimit, isBlobUrlPath(path). Konstanten MAX_EMBED_SIZE_KB=10240 (10 MB Warning-Cap). Pure-Helpers uint8ArrayToBase64/base64ToUint8Array isomorph (btoa/atob im Browser, Buffer in Node-Tests). DecodeContextLike + AudioBufferLike Interfaces DOM-frei (Mock-testbar).",
       lastSeen: "2026-05-19T15:30:00.000Z",
@@ -2977,6 +3012,39 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "frontend",
+      timestamp: "2026-05-19T15:55:00.000Z",
+      done: [
+        "v3.125.0: Color-Coded Step-Grid + Mute-Solo Bus Groups (Performance Live-UX). Closes 2 v3.124-Caveats: Step-Grid war monochrome (channel-color v3.73 nur als 2px left-border), und kein one-click group-mute/solo für Live-Performance ('mute alle Drums', 'solo nur Lead').",
+        "client/src/components/DrumMachine/stepCellColors.ts NEU (Pure, ~140 LOC). Public-API: parseHexColor (#RGB/#RRGGBB → {r,g,b}|undefined, uppercase-safe, RegExp-validated), withAlpha (rgba-String mit clamp01, fallback CSS-Var bei invalid), lightenHex (lerp toward white, returns hex), getStepCellColor(channelColor, isActive, isHover) → CSS-String: active→rgb(channel), inactive→rgba(channel, 0.05), hover-active→lightened-hex (+12%), hover-inactive→rgba(channel, 0.12), fallback→var(--ss-accent-primary). DOM-frei, Node-testbar. Konstanten STEP_CELL_OPACITY_INACTIVE=0.05/HOVER_INACTIVE=0.12/HOVER_LIGHTEN=0.12.",
+        "tests/features/step-grid-colors.test.ts NEU (15 Tests in 5 describes). parseHexColor × 4 (RRGGBB/RGB-short/invalid/uppercase), withAlpha × 2 (clamp+rgba/fallback), lightenHex × 2 (toward-white/invalid), getStepCellColor × 7 (active-full/inactive-low-opacity/hover-active-brighter/hover-inactive-medium/fallback × 4/uppercase/getStepCellBgStyle-wrapper). 15/15 grün.",
+        "client/src/store/useMuteSoloGroupStore.ts NEU (~340 LOC, Custom-Observer-Pattern, kein Zustand-NPM). localStorage `ss-mute-solo-groups:v1`. MuteSoloGroup {id, name, color, channelIds[]}. Actions: addGroup/removeGroup/renameGroup/setGroupColor/addChannelToGroup (idempotent — no duplicates)/removeChannelFromGroup/removeChannelFromAllGroups (Channel-Delete-Cleanup)/muteGroup/soloGroup/clearSoloGroup/isGroupSoloed. soloGroup nimmt allChannelIds+currentMutes als Args (DOM-frei), snapshottet pre-solo-state in _state.soloSnapshots (NICHT persistiert — Live-Only), dispatcht CustomEvent `mute-solo-group:soloChannels` mit target-array [{channelId,muted}]. clearSoloGroup restored aus Snapshot via `:clearSolo`-Event. muteGroup dispatcht `:muteChannels` mit channelIds[]. Empty-Group + Unknown-ID = no-op (kein Throw, kein Event). DEFAULT_GROUP_COLOR=#22c55e (pad-green aus v3.73-Palette). Hex-Validierung via HEX_RE, invalid→Default-Color.",
+        "tests/features/mute-solo-groups.test.ts NEU (@vitest-environment jsdom, 27 Tests in 10 describes). captureEvents-Helper via addEventListener/CustomEvent. Cluster: addGroup × 5 (persistence/invalid-color-fallback/empty-name-default/dedupe/unique-IDs), removeGroup × 3 (cleanup+persistence/unknown-noop/snapshot-cleanup), addChannelToGroup × 3 (idempotent/insertion-order/empty-ignored), removeChannelFromGroup × 2 (correct/non-member-noop), muteGroup × 3 (event-with-channels/empty-noop/unknown-noop), soloGroup × 3 (event-target-correct-mute-states/snapshot/empty-noop), clearSoloGroup × 2 (restore-prev-state/no-snapshot-noop), renameGroup × 2 (persistence/empty-ignored), setGroupColor × 2 (persistence/invalid-fallback), removeChannelFromAllGroups × 1 (cleans group+snapshot), Persistence-Reload × 1 (groups survive localStorage, soloSnapshots NICHT). 27/27 grün.",
+        "client/src/components/MuteSoloGroups/MuteSoloGroupPanel.tsx NEU (~330 LOC). Header mit Group-Count + Add-Button + optional Close-X. Empty-State 'Keine Groups'. Pro Group ein GroupRow: Color-Chip (3×3px) + Name + member-count + Big-Mute-Button (bg-accent-danger/80, M-Label) + Big-Solo-Button (bg-accent-success wenn aktiv/30 sonst, S-Label) + Edit + Delete (✕). Solo-Toggle: erster Klick → soloGroup, zweiter Klick → clearSoloGroup (über isGroupSoloed-Check). GroupModal (Add+Edit): Name-Input, Color-Picker (8-Palette aus channelColors.ts, scale-110 wenn ausgewählt), Channel-Multi-Select (max-h-48 overflow-y-auto, Checkbox+Color-Dot+Name). Validation: !name.trim() disabled Save. Edit-Modal diff-applied addChannelToGroup/removeChannelFromGroup. Komplett semantische --ss-* Tokens. data-testids: mute-solo-group-{panel|add-btn|empty|row-<id>|mute-<id>|solo-<id>|edit-<id>|delete-<id>|modal|modal-name|modal-color-<id>|modal-channel-<id>|modal-cancel|modal-save}.",
+        "client/src/hooks/useMidi.ts ERWEITERT: MidiLearnTarget Union +muteGroup/+soloGroup {groupId, groupName?}. targetsMatch case `groupId === groupId`. applyMapping on>63 → dispatcht CustomEvents `midi:muteGroup`+`midi:soloGroup` mit detail=groupId. getMidiLearnTargetLabel +2 cases. Damit ist Performance-Pad → Bus-Group-Mute/Solo bindbar.",
+        "MuteSoloGroupPanel useMidiLearn() integration: pro GroupRow ein muteLearn-Hook + soloLearn-Hook. onContextMenu auf Mute/Solo-Buttons → MIDI-Learn-Modal. Mapped-Indikator als kleiner Dot (bg-accent-secondary 1.5×1.5px) oben rechts auf gemappten Buttons. Title-Tooltip enthält CC# wenn gemappt, sonst 'Rechtsklick: MIDI-Learn'.",
+        "client/src/components/DrumMachine/ChannelStrip.tsx ERWEITERT: +hoveredStep useState. +import getStepCellColor. Step-Cell-Render: backgroundColor inline aus getStepCellColor(resolvedColor, isActiveStep, hoveredStep===i). velocityColor-Klasse als Fallback-Layer behalten (für den unwahrscheinlichen Fall resolvedColor=undefined — resolveChannelColor returnt aber immer hex). onMouseEnter/Leave setHoveredStep. velocityColor + isCurrentStep + selectedStepIndex-rings + box-shadow bleiben unverändert. velocity-mode/probability/condition/slide-Overlays unverändert.",
+        "package.json + INDEX.js: 3.124.0 → 3.125.0. pnpm check: clean. pnpm test (full): 284 files / 6460 passed / 16 skipped (+42 vs v3.124, 0 regressions)."
+      ],
+      next: [
+        "DrumMachine.tsx Integration: MuteSoloGroupPanel als ResizableDrumPanel einbinden (Toolbar-Toggle-Button neben Mix-Assistant), availableChannels aus pattern.parts + channelMutes aus pattern.parts[].muted aufbauen. CustomEvent-Bridge in App.tsx (analog zu useMidiEventBridge subMixBusMute): mute-solo-group:muteChannels → forEach dm.setPartMuted(id, true); soloChannels/clearSolo → forEach dm.setPartMuted(id, target.muted).",
+        "MixerView channel-strip Group-Badge: zeige kleine pills mit Group-Color je Group, in die der Channel gehört. Quick 'Add to Group'-Submenu im channel-context-menu (rechtsklick auf strip-name).",
+        "ProjectSerializer: aktuell NICHT persistiert in .synth — nur in localStorage. Sinnvoll wäre per-Project-Embedding (Optionen-Toggle 'Bus-Groups in .synth speichern') damit Projekte zwischen Geräten/Browser portabel sind.",
+        "Step-Cell Velocity-Tinting v2: derzeit ignoriert getStepCellColor die Velocity (active=full). Velocity-Mode setzt einen separaten unteren Overlay (bg-accent-secondary/40). Idee: opacity der inline-color aus velocity ableiten (0.4..1.0) wenn !velocityMode, damit auch ohne Velocity-Overlay-Toggle die Velocity visuell lesbar wird.",
+        "Bus-Groups-Defaults: Quick-Create-Buttons 'Drums (auto-detect by category)' / 'Pitched (synth+bass+lead)' im Add-Modal damit User nicht jede Group manuell zusammenklicken muss. Verwendet useDrumMachineStore.parts[].category oder name-basiertes heuristic-mapping."
+      ],
+      changed: [
+        "client/src/components/DrumMachine/stepCellColors.ts (NEU, Pure-Helpers)",
+        "tests/features/step-grid-colors.test.ts (NEU, 15 Tests)",
+        "client/src/store/useMuteSoloGroupStore.ts (NEU, Custom-Observer + Event-Bridge)",
+        "tests/features/mute-solo-groups.test.ts (NEU, 27 Tests, jsdom)",
+        "client/src/components/MuteSoloGroups/MuteSoloGroupPanel.tsx (NEU, mit useMidiLearn-Integration)",
+        "client/src/hooks/useMidi.ts (+muteGroup/soloGroup MidiLearnTarget + applyMapping + targetsMatch + labels)",
+        "client/src/components/DrumMachine/ChannelStrip.tsx (Step-Cell backgroundColor inline aus getStepCellColor + hoveredStep-State)",
+        "package.json + agents/INDEX.js (3.124.0 → 3.125.0)"
+      ]
+    },
     {
       agent:     "backend",
       timestamp: "2026-05-19T15:35:00.000Z",

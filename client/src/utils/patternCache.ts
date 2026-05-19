@@ -21,9 +21,20 @@ export interface PatternState {
   root: number;              // 0..127
 }
 
+/** Sprint-108: ein Song-Schritt = welcher Bank-Slot + wie oft loopt er. */
+export interface SongStep {
+  slot: number;        // 0..BANK_SIZE-1
+  repeats: number;     // 1..32
+}
+
 export interface PatternBank {
   patterns: PatternState[];   // BANK_SIZE entries
   activeSlot: number;          // 0..BANK_SIZE-1
+  /** Sprint-108: Song-Mode. Wenn songMode=true und songSequence nicht leer
+   * ist, advanced der Sequencer nach jedem Pattern-Loop-Wrap zum naechsten
+   * SongStep (cyclic). */
+  songMode: boolean;
+  songSequence: SongStep[];
 }
 
 export function getDefaultPattern(): PatternState {
@@ -40,7 +51,18 @@ export function getDefaultBank(): PatternBank {
   return {
     patterns: Array.from({ length: BANK_SIZE }, () => getDefaultPattern()),
     activeSlot: 0,
+    songMode: false,
+    songSequence: [],
   };
+}
+
+function parseSongStep(raw: unknown): SongStep | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const s = raw as Partial<SongStep>;
+  const slot = clampNum(s.slot, 0, BANK_SIZE - 1, -1);
+  if (slot < 0) return null;
+  const repeats = Math.floor(clampNum(s.repeats, 1, 32, 1));
+  return { slot: Math.floor(slot), repeats };
 }
 
 // ─── Defensive Parsers ───────────────────────────────────
@@ -85,7 +107,17 @@ export function loadPatternBank(): PatternBank {
         ? parsed.patterns.map(parsePattern)
         : getDefaultBank().patterns;
       const activeSlot = clampNum(parsed.activeSlot, 0, BANK_SIZE - 1, 0);
-      return { patterns, activeSlot: Math.floor(activeSlot) };
+      // Sprint-108: Song-Mode optional (Forward-Compat)
+      const songMode = typeof parsed.songMode === "boolean" ? parsed.songMode : false;
+      const songSequence = Array.isArray(parsed.songSequence)
+        ? (parsed.songSequence
+            .map(parseSongStep)
+            .filter((s): s is SongStep => s !== null))
+        : [];
+      return {
+        patterns, activeSlot: Math.floor(activeSlot),
+        songMode, songSequence,
+      };
     }
     // v1-Migration
     const rawV1 = window.localStorage.getItem(CACHE_KEY_V1);

@@ -13,6 +13,7 @@ import { omniTribeBridge } from "../../audio/OmniTribeBridge";
 import {
   loadPatternBank, savePatternBank, getDefaultPattern,
   PATTERN_BANK_SIZE, type PatternBank, type PatternState,
+  type SongStep,
 } from "../../utils/patternCache";
 
 export interface StepSequencerPanelProps {
@@ -86,19 +87,62 @@ export function StepSequencerPanel({
   }, [active, connected, stepMask]);
 
   // ─── Live-Step-Cursor via Sim-Notify ───────────────────
+  // Sprint-108: zusaetzlich Song-Advancement bei step-wrap.
+  const songStepIdxRef = useRef<number>(0);
+  const songRepeatCountRef = useRef<number>(0);
+  const prevStepRef = useRef<number>(-1);
+
   useEffect(() => {
     const onStep = (e: Event) => {
       const detail = (e as CustomEvent).detail as { stepIdx: number } | undefined;
       if (!detail) return;
-      setCurrentStep(detail.stepIdx);
+      const newStep = detail.stepIdx;
+      const prev = prevStepRef.current;
+      // Wrap detected: vorher 15 → jetzt 0
+      if (prev > 0 && newStep === 0 && bank.songMode &&
+          bank.songSequence.length > 0 && playing) {
+        songRepeatCountRef.current += 1;
+        const songIdx = songStepIdxRef.current;
+        const currentSongStep = bank.songSequence[songIdx];
+        if (currentSongStep &&
+            songRepeatCountRef.current >= currentSongStep.repeats) {
+          // Advance zu naechstem SongStep (cyclic)
+          songRepeatCountRef.current = 0;
+          songStepIdxRef.current = (songIdx + 1) % bank.songSequence.length;
+          const nextSongStep = bank.songSequence[songStepIdxRef.current];
+          if (nextSongStep && nextSongStep.slot !== bank.activeSlot) {
+            setBank((b) => ({ ...b, activeSlot: nextSongStep.slot }));
+          }
+        }
+      }
+      prevStepRef.current = newStep;
+      setCurrentStep(newStep);
     };
     window.addEventListener("omnitribe:patternStep", onStep);
     return () => window.removeEventListener("omnitribe:patternStep", onStep);
-  }, []);
+  }, [bank.songMode, bank.songSequence, bank.activeSlot, playing]);
 
   useEffect(() => {
-    if (!playing) setCurrentStep(-1);
+    if (!playing) {
+      setCurrentStep(-1);
+      // Bei Stop: Song-Counter resetten damit naechste Play von vorn beginnt
+      songStepIdxRef.current = 0;
+      songRepeatCountRef.current = 0;
+      prevStepRef.current = -1;
+    }
   }, [playing]);
+
+  // Beim Start in Song-Mode: zum ersten Song-Slot springen
+  useEffect(() => {
+    if (playing && bank.songMode && bank.songSequence.length > 0) {
+      const firstSlot = bank.songSequence[0].slot;
+      if (firstSlot !== bank.activeSlot) {
+        setBank((b) => ({ ...b, activeSlot: firstSlot }));
+      }
+    }
+    // Intentionally only on play-transition + songMode flip
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [playing, bank.songMode]);
 
   // ─── Pattern-Update Helpers ─────────────────────────────
   const updateActive = useCallback(
@@ -177,6 +221,49 @@ export function StepSequencerPanel({
     setBank((b) => ({ ...b, activeSlot: slot }));
   }, []);
 
+  // Sprint-108: Song-Mode + Sequence-Editor
+  const toggleSongMode = useCallback(() => {
+    setBank((b) => ({ ...b, songMode: !b.songMode }));
+  }, []);
+
+  const addSongStep = useCallback((slot: number) => {
+    setBank((b) => ({
+      ...b,
+      songSequence: [...b.songSequence, { slot, repeats: 1 }],
+    }));
+  }, []);
+
+  const updateSongStepRepeats = useCallback((idx: number, repeats: number) => {
+    setBank((b) => ({
+      ...b,
+      songSequence: b.songSequence.map((s, i) =>
+        i === idx
+          ? { ...s, repeats: Math.max(1, Math.min(32, repeats)) }
+          : s,
+      ),
+    }));
+  }, []);
+
+  const updateSongStepSlot = useCallback((idx: number, slot: number) => {
+    setBank((b) => ({
+      ...b,
+      songSequence: b.songSequence.map((s, i) =>
+        i === idx ? { ...s, slot } : s,
+      ),
+    }));
+  }, []);
+
+  const removeSongStep = useCallback((idx: number) => {
+    setBank((b) => ({
+      ...b,
+      songSequence: b.songSequence.filter((_, i) => i !== idx),
+    }));
+  }, []);
+
+  const clearSongSequence = useCallback(() => {
+    setBank((b) => ({ ...b, songSequence: [] }));
+  }, []);
+
   // ─── Render ─────────────────────────────────────────────
   return (
     <div
@@ -230,6 +317,103 @@ export function StepSequencerPanel({
             );
           })}
         </div>
+      </div>
+
+      {/* Sprint-108: Song-Mode-Editor */}
+      <div
+        className="border-t border-border-color pt-2 space-y-2"
+        data-testid="song-editor"
+      >
+        <div className="flex items-center justify-between">
+          <label className="flex items-center gap-2 text-[11px] text-text-muted">
+            <input
+              type="checkbox"
+              checked={bank.songMode}
+              onChange={toggleSongMode}
+              data-testid="song-mode-toggle"
+              className="accent-accent-primary"
+            />
+            <span>Song-Mode (Auto-Slot-Switch)</span>
+          </label>
+          <div className="flex gap-1">
+            <button
+              type="button"
+              onClick={() => addSongStep(bank.activeSlot)}
+              data-testid="song-add-step"
+              className="text-[10px] px-2 py-0.5 rounded bg-bg-elevated border border-border-color text-text-muted hover:text-text-primary"
+              title="Aktuellen Slot als Song-Step anhaengen"
+            >
+              + Step
+            </button>
+            <button
+              type="button"
+              onClick={clearSongSequence}
+              data-testid="song-clear"
+              disabled={bank.songSequence.length === 0}
+              className="text-[10px] px-2 py-0.5 rounded bg-bg-elevated border border-border-color text-text-muted hover:text-accent-danger disabled:opacity-40"
+            >
+              Clear
+            </button>
+          </div>
+        </div>
+
+        {bank.songSequence.length > 0 ? (
+          <div
+            className="flex flex-wrap gap-1"
+            data-testid="song-sequence"
+            role="list"
+            aria-label="Song sequence"
+          >
+            {bank.songSequence.map((step, i) => (
+              <div
+                key={i}
+                role="listitem"
+                data-testid={`song-step-${i}`}
+                className="flex items-center gap-1 bg-bg-elevated border border-border-color rounded px-1 py-0.5"
+              >
+                <span className="text-[10px] text-text-dim font-mono">#{i + 1}</span>
+                <select
+                  value={step.slot}
+                  onChange={(e) =>
+                    updateSongStepSlot(i, Number(e.target.value))}
+                  data-testid={`song-step-${i}-slot`}
+                  className="bg-bg-base text-[10px] text-text-primary font-mono border-0 rounded"
+                >
+                  {Array.from({ length: PATTERN_BANK_SIZE }, (_, j) => (
+                    <option key={j} value={j}>
+                      {String.fromCharCode(65 + j)}
+                    </option>
+                  ))}
+                </select>
+                <span className="text-[10px] text-text-dim">×</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={32}
+                  value={step.repeats}
+                  onChange={(e) =>
+                    updateSongStepRepeats(i, Number(e.target.value) || 1)}
+                  data-testid={`song-step-${i}-repeats`}
+                  className="w-10 bg-bg-base text-[10px] text-text-primary font-mono border-0 rounded text-center"
+                />
+                <button
+                  type="button"
+                  onClick={() => removeSongStep(i)}
+                  data-testid={`song-step-${i}-remove`}
+                  className="text-[10px] text-text-dim hover:text-accent-danger px-0.5"
+                  aria-label={`Remove song step ${i + 1}`}
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-[10px] text-text-dim italic">
+            Keine Song-Steps. "+ Step" haengt den aktuellen Slot mit
+            ×1-Wiederholung an die Sequenz.
+          </p>
+        )}
       </div>
 
       {/* 16-Step Grid mit Velocity-Bars + Live-Cursor */}

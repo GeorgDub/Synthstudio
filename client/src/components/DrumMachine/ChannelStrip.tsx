@@ -9,6 +9,7 @@ import React, { useState, useRef } from "react";
 import type { PartData, ChannelFx, StepResolution } from "@/audio/AudioEngine";
 import { FxPanel } from "./FxPanel";
 import { velocityColor, stepGroupBorder, getSourceTypeBadge } from "./drumMachineHelpers";
+import { getStepCellColor } from "./stepCellColors";
 import { useMidiContext } from "@/context/MidiContext";
 import { findMappingForTarget } from "@/hooks/useMidi";
 import { ChannelColorPicker } from "@/components/Mixer/ChannelColorPicker";
@@ -85,6 +86,8 @@ export function ChannelStrip({
 }: ChannelStripProps) {
   const [isDragOver, setIsDragOver] = useState(false);
   const [dragVelocityStep, setDragVelocityStep] = useState<number | null>(null);
+  // v3.125.0: Hover-Tracking für Color-Coded Step-Grid.
+  const [hoveredStep, setHoveredStep] = useState<number | null>(null);
   const stripRef = useRef<HTMLDivElement>(null);
   // v1.99: MIDI-Learn auf einzelne Steps via Right-Click.
   // useMidiContext liefert direkt midi-State + Actions (kein Prop-Drilling).
@@ -359,7 +362,6 @@ export function ChannelStrip({
               key={i}
               onMouseDown={e => handleStepMouseDown(i, e)}
               onMouseMove={e => dragVelocityStep !== null && handleMouseMove(e, i)}
-              onMouseEnter={e => dragVelocityStep !== null && handleMouseMove(e, i)}
               onContextMenu={e => handleStepContextMenu(e, i)}
               onTouchStart={e => {
                 e.preventDefault();
@@ -372,13 +374,30 @@ export function ChannelStrip({
               className={[
                 "flex-1 h-7 rounded-sm transition-colors duration-75 relative select-none",
                 stepGroupBorder(idx, renderedCount),
+                // v3.125.0: velocityColor liefert nur noch Fallback-Klassen
+                // (für den seltenen Fall dass resolvedColor undefined wäre);
+                // die finale backgroundColor wird inline gesetzt damit der
+                // channel-color (v3.73) ins Step-Grid wandert.
                 velocityColor(velocity, isActiveStep),
                 isCurrentStep ? "ring-2 ring-accent-secondary" : "",
                 selectedStepIndex === i ? "ring-2 ring-accent-primary ring-offset-1" : "",
               ].join(" ")}
+              onMouseEnter={e => {
+                setHoveredStep(i);
+                if (dragVelocityStep !== null) handleMouseMove(e, i);
+              }}
+              onMouseLeave={() => setHoveredStep(prev => (prev === i ? null : prev))}
               style={{
                 touchAction: "none",
                 userSelect: "none",
+                // v3.125.0: Color-Coded Step-Grid. Aktive Cell = channel-color
+                // (full opacity). Inactive = channel-color (5% opacity).
+                // Hover = brightened/medium-opacity variant.
+                backgroundColor: getStepCellColor(
+                  resolvedColor,
+                  isActiveStep,
+                  hoveredStep === i,
+                ),
                 boxShadow: isCurrentStep ? "inset 0 0 0 2px var(--ss-accent-secondary)" : undefined,
               }}
               aria-label={`Step ${i + 1}: ${isActiveStep ? "aktiv" : "inaktiv"}, Velocity ${velocity}${step?.slide ? ", slide" : ""}`}
