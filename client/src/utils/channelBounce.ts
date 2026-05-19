@@ -1406,6 +1406,204 @@ export async function bounceAllChannels(
   return results;
 }
 
+// ─── ZIP-Bundler (v3.85.0) ───────────────────────────────────────────────────
+
+/**
+ * v3.85.0 — Manifest-Eintrag pro Channel-Stem.
+ */
+export interface StemManifestChannel {
+  name: string;
+  file: string;
+  color?: string;
+}
+
+/**
+ * v3.85.0 — Top-Level Manifest-Format, serialisiert als `manifest.json` im ZIP.
+ *
+ * Felder:
+ *  - generated:  ISO-Timestamp der Bundle-Erzeugung.
+ *  - project:    Projekt-Name (unsanitisiert, für Anzeige).
+ *  - format:     'wav' oder 'ogg-opus' (das vom User gewählte Format).
+ *  - sampleRate: Render-Samplerate in Hz (44100|48000).
+ *  - bitrate?:   Opus-Bitrate in bps (nur bei format='ogg-opus').
+ *  - channels:   Liste der Stem-Dateien.
+ */
+export interface StemBundleManifest {
+  generated: string;
+  project: string;
+  format: BounceFormat;
+  sampleRate: number;
+  bitrate?: number;
+  channels: StemManifestChannel[];
+}
+
+/**
+ * v3.85.0 — Sanitisiert einen Projekt-Namen für die Verwendung im ZIP-Filename.
+ * Reuses `sanitizeStemFilenameStem` mit "synthstudio" als Default-Fallback.
+ */
+export function sanitizeProjectNameForZip(projectName: string): string {
+  if (!projectName || projectName.trim().length === 0) return "synthstudio";
+  return sanitizeStemFilenameStem(projectName);
+}
+
+/**
+ * v3.85.0 — Erzeugt einen ZIP-Filename für ein Stem-Bundle.
+ * Pattern: `<projectName>-Stems-<timestamp>.zip`
+ *
+ * @param projectName  Projekt-Name (wird sanitisiert).
+ * @param timestamp    ISO-String (z.B. new Date().toISOString()). Wird auf
+ *                     "YYYYMMDD-HHmmss" verkürzt — keine Doppelpunkte/Punkte
+ *                     im Filename (cross-platform-sicher).
+ */
+export function stemBundleZipFilename(projectName: string, timestamp: string): string {
+  const proj = sanitizeProjectNameForZip(projectName);
+  // ISO "2026-05-19T12:34:56.789Z" → "20260519-123456"
+  const compact = timestamp.replace(/[-:T.Z]/g, "").slice(0, 15);
+  // compact ist jetzt "20260519123456" oder "20260519T123456" je nach Input;
+  // wir splitten auf 8+6 mit Bindestrich für Lesbarkeit.
+  const date = compact.slice(0, 8);
+  const time = compact.slice(8, 14);
+  return `${proj}-Stems-${date}-${time}.zip`;
+}
+
+/**
+ * v3.85.0 — Erzeugt das Manifest-Objekt aus den Bounce-Ergebnissen.
+ *
+ * Pure-Function — kein DOM, kein I/O. Akzeptiert eine optionale Color-Map
+ * (partId → CSS color) damit Channel-Colors im Manifest landen.
+ */
+export function buildStemManifest(
+  results: BounceAllResult[],
+  opts: {
+    projectName: string;
+    format: BounceFormat;
+    sampleRate: number;
+    bitrate?: number;
+    generated?: string;
+    colors?: Record<string, string> | Map<string, string>;
+  },
+): StemBundleManifest {
+  const getColor = (id: string): string | undefined => {
+    if (!opts.colors) return undefined;
+    if (opts.colors instanceof Map) return opts.colors.get(id);
+    return opts.colors[id];
+  };
+  const channels: StemManifestChannel[] = results.map((r) => {
+    const color = getColor(r.channelId);
+    return color
+      ? { name: r.channelName, file: r.filename, color }
+      : { name: r.channelName, file: r.filename };
+  });
+  const manifest: StemBundleManifest = {
+    generated: opts.generated ?? new Date().toISOString(),
+    project: opts.projectName,
+    format: opts.format,
+    sampleRate: opts.sampleRate,
+    channels,
+  };
+  if (opts.format === "ogg-opus" && typeof opts.bitrate === "number") {
+    manifest.bitrate = opts.bitrate;
+  }
+  return manifest;
+}
+
+/**
+ * v3.85.0 — JSZip-Loader Signatur (für Test-Injection).
+ *
+ * Production nutzt dynamic import (`(await import("jszip")).default`),
+ * Tests injecten einen Mock damit Node-Coverage ohne echte Pack-Roundtrips
+ * läuft.
+ */
+export type JSZipCtor = new () => {
+  file(name: string, data: ArrayBuffer | Uint8Array | string): void;
+  generateAsync(opts: { type: "blob" | "arraybuffer" | "uint8array" }): Promise<Blob | ArrayBuffer | Uint8Array>;
+};
+
+/**
+ * v3.85.0 — Ergebnis von `bundleStemResultsToZip`.
+ */
+export interface StemBundleResult {
+  /** ZIP-Bytes (immer ArrayBuffer für einheitliche Persistenz). */
+  zip: ArrayBuffer;
+  /** Filename für den Download. */
+  filename: string;
+  /** Anzahl Stems im ZIP. */
+  stemCount: number;
+  /** Serialisiertes Manifest (referenzkopie zum Inspizieren in Tests/UI). */
+  manifest: StemBundleManifest;
+  /** Größe in Bytes (= zip.byteLength) — für Toast-Anzeige. */
+  byteSize: number;
+}
+
+/**
+ * v3.85.0 — Bundelt eine Liste von BounceAllResult-Stems in ein einziges ZIP
+ * mit `manifest.json`. Pure mit dynamic JSZip-Import (oder injected Ctor).
+ *
+ * Reihenfolge im Archiv: identisch zur Eingabe-Reihenfolge (manifest.channels
+ * folgt ebenso der Eingabe).
+ *
+ * @param results       Bounce-Ergebnisse von `bounceAllChannels`.
+ * @param opts          projectName/format/sampleRate/bitrate für Manifest +
+ *                      Filename. `generated` defaults to now.
+ * @param JSZipImpl     Optional injizierte JSZip-Klasse für Tests.
+ */
+export async function bundleStemResultsToZip(
+  results: BounceAllResult[],
+  opts: {
+    projectName: string;
+    format: BounceFormat;
+    sampleRate: number;
+    bitrate?: number;
+    generated?: string;
+    colors?: Record<string, string> | Map<string, string>;
+  },
+  JSZipImpl?: JSZipCtor,
+): Promise<StemBundleResult> {
+  const generated = opts.generated ?? new Date().toISOString();
+  const manifest = buildStemManifest(results, { ...opts, generated });
+
+  let Ctor: JSZipCtor;
+  if (JSZipImpl) {
+    Ctor = JSZipImpl;
+  } else {
+    const mod = await import("jszip");
+    Ctor = (mod.default ?? (mod as unknown as { default: JSZipCtor })) as unknown as JSZipCtor;
+  }
+  const zip = new Ctor();
+  // Stems
+  for (const r of results) {
+    zip.file(r.filename, r.data);
+  }
+  // Manifest
+  zip.file("manifest.json", JSON.stringify(manifest, null, 2));
+
+  const generatedZip = await zip.generateAsync({ type: "arraybuffer" });
+  // Verschiedene Returns je nach Test-Mock — normalisieren.
+  let zipBytes: ArrayBuffer;
+  if (generatedZip instanceof ArrayBuffer) {
+    zipBytes = generatedZip;
+  } else if (ArrayBuffer.isView(generatedZip as unknown as ArrayBufferView)) {
+    const view = generatedZip as unknown as Uint8Array;
+    // Copy in einen neuen ArrayBuffer damit kein Slice eines anderen Buffers
+    // dangling bleibt.
+    const copy = new Uint8Array(view.byteLength);
+    copy.set(view);
+    zipBytes = copy.buffer;
+  } else if ((generatedZip as Blob).arrayBuffer) {
+    zipBytes = await (generatedZip as Blob).arrayBuffer();
+  } else {
+    throw new Error("bundleStemResultsToZip: unsupported JSZip output type");
+  }
+
+  return {
+    zip: zipBytes,
+    filename: stemBundleZipFilename(opts.projectName, generated),
+    stemCount: results.length,
+    manifest,
+    byteSize: zipBytes.byteLength,
+  };
+}
+
 // ─── Browser-Download-Fallback ───────────────────────────────────────────────
 
 /**
@@ -1436,7 +1634,7 @@ export function downloadWavInBrowser(wav: ArrayBuffer, filename: string): void {
 export function downloadAudioInBrowser(
   data: ArrayBuffer,
   filename: string,
-  mimeType: "audio/wav" | "audio/ogg" = "audio/wav",
+  mimeType: "audio/wav" | "audio/ogg" | "application/zip" = "audio/wav",
 ): void {
   if (typeof document === "undefined" || typeof URL === "undefined") return;
   const blob = new Blob([data], { type: mimeType });

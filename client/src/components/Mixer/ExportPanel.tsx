@@ -7,7 +7,12 @@
 import React, { useCallback, useState } from "react";
 import { exportPattern, type ExportProgress } from "@/utils/wavExporter";
 import { downloadMidiBundle } from "@/utils/midiExport";
-import { bounceAllChannels, downloadAudioInBrowser, type BounceAllProgress } from "@/utils/channelBounce";
+import {
+  bounceAllChannels,
+  bundleStemResultsToZip,
+  downloadAudioInBrowser,
+  type BounceAllProgress,
+} from "@/utils/channelBounce";
 import {
   SUPPORTED_OGG_BITRATES_BPS,
   DEFAULT_OGG_BITRATE_BPS,
@@ -48,6 +53,8 @@ export function ExportPanel({ pattern, bpm, samples, allPatterns = [], projectNa
   const electron = useElectron();
   const [isBouncingAll, setIsBouncingAll] = useState(false);
   const [bounceAllMsg, setBounceAllMsg] = useState<string | null>(null);
+  // v3.85.0: ZIP-Bundle vs. Einzeldownloads. Default = ZIP für bessere UX.
+  const [bundleAsZip, setBundleAsZip] = useState(true);
 
   const handleBounceAllStems = useCallback(async () => {
     if (!pattern || isBouncingAll) return;
@@ -104,20 +111,44 @@ export function ExportPanel({ pattern, bpm, samples, allPatterns = [], projectNa
         insertChains ?? null,
       );
 
-      // Save
-      let savedCount = 0;
-      for (const r of results) {
+      // v3.85.0: Optional ZIP-Bundle aller Stems statt N Einzeldownloads.
+      if (bundleAsZip && results.length > 0) {
+        setBounceAllMsg("Bundle ZIP…");
+        const bundle = await bundleStemResultsToZip(results, {
+          projectName,
+          format: format === "ogg" ? "ogg-opus" : "wav",
+          sampleRate,
+          bitrate: format === "ogg" ? bitrate : undefined,
+        });
+        const mb = (bundle.byteSize / (1024 * 1024)).toFixed(1);
         if (electron.isElectron) {
-          const safe = r.filename.replace(/[^A-Za-z0-9._-]/g, "_");
-          const res = await electron.saveRecording(safe, r.data);
-          if (res.success) savedCount++;
+          const safe = bundle.filename.replace(/[^A-Za-z0-9._-]/g, "_");
+          const res = await electron.saveRecording(safe, bundle.zip);
+          if (res.success) {
+            toast(`ZIP mit ${bundle.stemCount} Stems gespeichert (${mb} MB)`, { kind: "success" });
+          } else {
+            toast("ZIP-Speicherung fehlgeschlagen", { kind: "error" });
+          }
         } else {
-          // v3.84.0: Format-aware Download — nutzt r.mimeType statt hardcoded audio/wav.
-          downloadAudioInBrowser(r.data, r.filename, r.mimeType);
-          savedCount++;
+          downloadAudioInBrowser(bundle.zip, bundle.filename, "application/zip");
+          toast(`ZIP mit ${bundle.stemCount} Stems erstellt (${mb} MB)`, { kind: "success" });
         }
+      } else {
+        // Legacy-Pfad: Einzeldownloads pro Channel.
+        let savedCount = 0;
+        for (const r of results) {
+          if (electron.isElectron) {
+            const safe = r.filename.replace(/[^A-Za-z0-9._-]/g, "_");
+            const res = await electron.saveRecording(safe, r.data);
+            if (res.success) savedCount++;
+          } else {
+            // v3.84.0: Format-aware Download — nutzt r.mimeType statt hardcoded audio/wav.
+            downloadAudioInBrowser(r.data, r.filename, r.mimeType);
+            savedCount++;
+          }
+        }
+        toast(`${savedCount}/${results.length} Stems gespeichert`, { kind: "success" });
       }
-      toast(`${savedCount}/${results.length} Stems gespeichert`, { kind: "success" });
       setBounceAllMsg(null);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -126,7 +157,7 @@ export function ExportPanel({ pattern, bpm, samples, allPatterns = [], projectNa
     } finally {
       setIsBouncingAll(false);
     }
-  }, [pattern, bars, bpm, sampleRate, projectName, electron, isBouncingAll, insertChains, format, bitrate]);
+  }, [pattern, bars, bpm, sampleRate, projectName, electron, isBouncingAll, insertChains, format, bitrate, bundleAsZip]);
 
   const handleExport = useCallback(async () => {
     if (!pattern || isExporting) return;
@@ -240,15 +271,50 @@ export function ExportPanel({ pattern, bpm, samples, allPatterns = [], projectNa
         >
           🎵 MIDI Export
         </button>
+        {/* v3.85.0 — Bundle-Modus Toggle: ZIP (default) oder Single-Files */}
+        <div className="flex items-center gap-1" data-testid="export-bundle-mode-group">
+          <span className="text-[10px] text-text-dim">Pack:</span>
+          <div className="flex gap-1">
+            <button
+              type="button"
+              onClick={() => setBundleAsZip(true)}
+              className={`px-2 py-0.5 text-[10px] rounded border transition-colors ${
+                bundleAsZip
+                  ? "border-accent-primary text-accent-primary bg-accent-primary/10"
+                  : "border-border-color text-text-dim hover:text-text-primary"
+              }`}
+              data-testid="export-bundle-zip"
+              title="Alle Stems in einer ZIP-Datei bundeln (mit manifest.json)"
+            >
+              ZIP-Bundle
+            </button>
+            <button
+              type="button"
+              onClick={() => setBundleAsZip(false)}
+              className={`px-2 py-0.5 text-[10px] rounded border transition-colors ${
+                !bundleAsZip
+                  ? "border-accent-primary text-accent-primary bg-accent-primary/10"
+                  : "border-border-color text-text-dim hover:text-text-primary"
+              }`}
+              data-testid="export-bundle-single"
+              title="Jeden Channel als separate Datei herunterladen"
+            >
+              Einzeldateien
+            </button>
+          </div>
+        </div>
+
         {/* TASK-241 / v2.94.0: Per-Channel Stems mit Pan + Filter */}
         <button
           onClick={handleBounceAllStems}
           disabled={!pattern || isBouncingAll}
           className="relative px-3 py-1 text-[10px] rounded border border-accent-primary/40 text-accent-primary hover:bg-accent-primary/10 disabled:opacity-40 font-bold transition-colors inline-flex items-center gap-1.5"
-          title={`Per-Channel Stem-Bounce: jeden Channel separat als ${format === "ogg" ? "OGG" : "WAV"} (inkl. Pan, Volume, Filter)`}
+          title={`Per-Channel Stem-Bounce: jeden Channel separat als ${format === "ogg" ? "OGG" : "WAV"} (inkl. Pan, Volume, Filter)${bundleAsZip ? " — als ZIP-Bundle" : ""}`}
           data-testid="export-bounce-all-stems"
         >
-          {isBouncingAll ? "Bouncing…" : `🎬 Bounce All Stems${format === "ogg" ? " (OGG)" : ""}`}
+          {isBouncingAll
+            ? "Bouncing…"
+            : `🎬 Bounce All Stems${format === "ogg" ? " (OGG)" : ""}${bundleAsZip ? " → ZIP" : ""}`}
           <ProLockBadge feature={PRO_FEATURE_STEM_BOUNCE} />
         </button>
       </div>

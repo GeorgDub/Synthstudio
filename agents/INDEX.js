@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.84.0",
+    version: "3.85.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -2335,6 +2335,30 @@ const INDEX = {
     {
       agent:     "backend",
       timestamp: "2026-05-19T06:00:00.000Z",
+      done: [
+        "v3.85.0: Bulk-Bounce ZIP-Bundle (closes v3.84 Caveat 'N einzelne Downloads bei Bulk-Bounce'). Vorher: Bounce-All-Stems hat pro Channel einen separaten Download/IPC-Save ausgelöst — bei 16 Channels 16 Browser-Save-Dialoge bzw 16 .ogg-Files. Jetzt: alle Stems werden in ein einziges ZIP gebundelt mit einem `manifest.json` (Channel-Metadata) als zentralem Inhalt. Reuses existing `jszip` dep (^3.10.1, bereits via zipSampleImport.ts genutzt). Default-UX: bundleAsZip=true.",
+        "client/src/utils/channelBounce.ts ERWEITERT (+~180 LOC, bestehende v3.84/v3.42/v2.95/etc. unverändert). NEU Public-API `bundleStemResultsToZip(results, opts, JSZipImpl?)` → Promise<StemBundleResult>: nimmt eine BounceAllResult[]-Liste, baut ZIP mit allen Stem-Files + manifest.json, liefert {zip:ArrayBuffer, filename, stemCount, manifest, byteSize}. JSZip wird dynamisch importiert (`(await import('jszip')).default`) — kein neuer Top-Level-Import, kein Bundle-Bloat. Test-Injection-Hook via optionalem JSZipImpl-Parameter damit Node-Tests ohne echte ZIP-Roundtrip laufen. NEU Pure-Helper `buildStemManifest(results, opts)` → StemBundleManifest (generated, project, format, sampleRate, bitrate?, channels[{name,file,color?}]). Bitrate landet im Manifest nur wenn format='ogg-opus' UND bitrate definiert. NEU Pure-Helper `stemBundleZipFilename(projectName, isoTimestamp)` → `<sanitized>-Stems-YYYYMMDD-HHmmss.zip` (Doppelpunkte/Punkte gestrippt für cross-platform-sichere Filenames, sanitizeProjectNameForZip mit 'synthstudio'-Fallback bei leer). NEU Pure-Helper `sanitizeProjectNameForZip(name)` — Wrapper um sanitizeStemFilenameStem mit projektspezifischem Default. NEU exportierte Interfaces StemManifestChannel + StemBundleManifest + StemBundleResult + JSZipCtor (Test-Hook). `downloadAudioInBrowser` MIME-Typ-Parameter um 'application/zip' erweitert (Type-Union, kein Behavior-Change für bestehende Calls).",
+        "client/src/components/Mixer/ExportPanel.tsx ERWEITERT (+~50 LOC, bestehende v3.84-Format-UI bleibt). NEU State `bundleAsZip:boolean` (default=true, bessere UX). NEU Pack-Mode-Toggle-Group im Toolbar (ZIP-Bundle | Einzeldateien) — gleicher Tab-Style wie Master/Stems-Modus, data-testid=export-bundle-mode-group + -bundle-zip + -bundle-single. Bounce-All-Stems-Pfad: wenn bundleAsZip=true → bundleStemResultsToZip(results, {projectName, format, sampleRate, bitrate}) + downloadAudioInBrowser(zip, filename, 'application/zip') bzw electron.saveRecording. Toast zeigt 'ZIP mit N Stems erstellt (XX.X MB)' statt N-fach 'X/Y Stems gespeichert'. Sonst: Legacy-Pfad mit Einzeldownloads bleibt erhalten. Button-Title + Label dynamisch (z.B. '🎬 Bounce All Stems → ZIP' bzw '🎬 Bounce All Stems (OGG)'). useCallback-Deps um bundleAsZip erweitert. Import von bundleStemResultsToZip ergänzt.",
+        "tests/features/bulk-bounce-zip.test.ts (NEU, ~250 LOC, 10 Tests in 5 describes, env:node mit Mock-JSZip-Ctor + lastInstance-Spy). (1) Happy-Path × 1: bundleStemResultsToZip(2 Stems) → ArrayBuffer mit byteSize>0, stemCount=2, Filename matcht Pattern. (2) ZIP-Inhalt × 2: 3 Stems → 4 files im Archiv (3 Stems + 1 manifest.json), manifest.json ist gültiges JSON mit project/format/sampleRate/bitrate/generated/channels[] inkl. color-Pass-Through aus Colors-Map. (3) buildStemManifest × 2: bitrate nur bei format='ogg-opus' mit definiertem bitrate (wav-Format ignoriert mitgegebenen Wert), colors als Map UND als Plain-Object akzeptiert, undefined-Color lässt Feld komplett weg. (4) Filename × 3: stemBundleZipFilename-Pattern '<proj>-Stems-YYYYMMDD-HHmmss.zip', Sonderzeichen-Sanitization + 'synthstudio'-Fallback bei leerem/whitespace-Namen, sanitizeProjectNameForZip-Edge-Cases. (5) Empty/edge × 2: leere Result-Liste → ZIP nur mit manifest.json (channels:[]) + stemCount=0, Compact-Timestamp-Pattern stabil.",
+        "package.json (3.84.0 → 3.85.0). pnpm check clean. pnpm test grün: 231 Test-Files / 5242 Tests passed (16 skipped, +1 file +10 vs v3.84.0). Backward-Compat: bundleAsZip=true ist neuer Default — User die explizit Einzelfiles wollen toggeln im UI auf 'Einzeldateien'."
+      ],
+      next: [
+        "v3.86: Per-Stem-Subfolders im ZIP (z.B. 'stems/Kick.wav') statt flach — wäre saubere Container-Struktur für DAW-Re-Import.",
+        "v3.86: ZIP-Mode mit Progress-Indikator während generateAsync (große Bundles mit 16+ Stems @ WAV können >100MB werden und brauchen Zeit).",
+        "v3.86: Manifest erweitern um per-stem BPM/Bars/Sample-Rate fingerprint damit Re-Import in DAW Auto-Sync auslösen kann.",
+        "v3.86: Optional README.txt im ZIP mit Re-Import-Anleitung für Ableton/FL/Logic."
+      ],
+      changed: [
+        "client/src/utils/channelBounce.ts (+~180 LOC: bundleStemResultsToZip + buildStemManifest + stemBundleZipFilename + sanitizeProjectNameForZip + 4 neue Interfaces + downloadAudioInBrowser application/zip)",
+        "client/src/components/Mixer/ExportPanel.tsx (+~50 LOC: bundleAsZip-State + Toggle-UI + ZIP-Path + Toast-Update)",
+        "tests/features/bulk-bounce-zip.test.ts (NEU, ~250 LOC, 10 Tests in 5 describes)",
+        "package.json (3.84.0 → 3.85.0)",
+        "agents/INDEX.js (version + workLog)"
+      ]
+    },
+    {
+      agent:     "backend",
+      timestamp: "2026-05-19T05:55:00.000Z",
       done: [
         "v3.84.0: Bounce-All-Stems OGG-Format-Option (closes v3.83 Caveat 'Per-Channel-Stem-Bounce hardcoded WAV'). channelBounce.ts war seit v2.94/v2.95/v2.96 WAV-only; v3.83 hat zwar Master/Stems-Export auf OGG-Opus gehoben, aber der Per-Channel-Stem-Bounce-Pfad (ChannelInspector + ExportPanel.Bounce-All-Stems) blieb hardcoded WAV. Jetzt: format='wav'|'ogg-opus' + bitrate-Option in beiden Single-Channel- und Bulk-Bounce-APIs. WAV bleibt Default für Backward-Compat. Bei silent-WAV-Fallback (kein WebCodecs) wird `actualFormat` realitätsbasiert auf 'wav' gesetzt — User bekommt .wav-Endung statt missleading .ogg.",
         "client/src/utils/channelBounce.ts ERWEITERT (+~115 LOC, bestehende v2.94/v2.95/v2.96/v3.41/v3.42-Logik bleibt): NEU Type-Alias `BounceFormat = 'wav' | 'ogg-opus'` + `ChannelBounceFormatOptions extends ChannelBounceRenderOptions` mit format+bitrate-Feldern + `ChannelBounceFormatResult { data, actualFormat, extension, mimeType }`. NEU Public-API `bounceChannelToBuffer(part, pattern, opts, OfflineCtxCtor?)` — format-aware Convenience-Wrapper: bei 'wav' → encodeWav (16-bit PCM, identisch zur Legacy bounceChannelToWavBuffer); bei 'ogg-opus' → encodeAsOgg via audioCompressEncoder mit Bitrate-Pass-Through. Blob.type bestimmt das tatsächliche actualFormat (silent WAV-Fallback wenn WebCodecs fehlt). `bounceChannelToWavBuffer` bleibt unverändert WAV-only (backward-compat). `bounceAllChannels` erweitert: `opts.format` + `opts.bitrate` durchgereicht zu bounceChannelToBuffer pro Channel, Filename folgt dem `actualFormat` via filenameForFormat() — alle Channels in einem Bulk-Bounce nutzen dasselbe Format. NEU `BounceAllOptions extends Omit<ChannelBounceRenderOptions, sampleBuffer>` mit format+bitrate. `BounceAllResult` erweitert: `data: ArrayBuffer` + `actualFormat: BounceFormat` + `mimeType: 'audio/wav'|'audio/ogg'`; bestehendes `wav`-Feld bleibt als deprecated-Alias auf identische Bytes (kein Copy — same-ref backward-compat). NEU `downloadAudioInBrowser(data, filename, mimeType)` als format-aware Generalisierung von `downloadWavInBrowser`; alter Helper bleibt als Convenience-Wrapper erhalten.",
