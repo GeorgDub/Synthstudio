@@ -1,5 +1,5 @@
 /**
- * Synthstudio – SampleTransformDialog (v3.116.0)
+ * Synthstudio – SampleTransformDialog (v3.136.0)
  *
  * DAW-übliches Transform-Dialog für ein Sample im Sample-Manager.
  * Bietet Time-Stretch + Pitch-Shift mit Preview + Apply-Workflow.
@@ -11,6 +11,18 @@
  *   wavEncoder.encodeWav → Blob → URL) und spielt sie via <audio>
  * - Apply ruft `onApply(buffer, ratio, semitones, newUrl)` zurück — der
  *   Sample-Browser kümmert sich um Project-Store-Update + Engine-Cache
+ *
+ * v3.136: zusätzliche Transformationen via applyTransformPipeline (Pure-Helper
+ * in utils/sampleTransformPipeline.ts):
+ *  - Trim-Silence + Threshold-Slider
+ *  - Reverse-Sample
+ *  - Fade-In + Fade-Out + Curve (linear/exp/equal-power)
+ *  - Auto-Normalize + Target-dBTP
+ *  - Auto-Slice-Detection (Preview-only, kein Apply in v3.136 — Caveat für v3.137)
+ *
+ * Pipeline-Reihenfolge (deterministisch):
+ *   combinedTransformAsync (Stretch + Pitch) → applyTransformPipeline
+ *   (trim → reverse → fadeIn → fadeOut → normalize)
  *
  * Alle Klassen verwenden semantische Tailwind-Tokens (bg-bg-*, text-text-*,
  * border-border-color, accent-*). Keine hardcoded Slate/Cyan/etc.
@@ -27,6 +39,13 @@ import {
   PITCH_MAX,
 } from "@/utils/sampleTransform";
 import { encodeWav } from "@/audio/wavEncoder";
+import {
+  applyTransformPipeline,
+  type TransformPipelineOptions,
+} from "@/utils/sampleTransformPipeline";
+import type { FadeCurve } from "@/utils/sampleFadeReverse";
+import { detectSlicePoints } from "@/utils/sliceAutoDetector";
+import type { AudioBufferLike } from "@/utils/sampleEmbedding";
 
 // ─── Props ───────────────────────────────────────────────────────────────────
 
@@ -43,6 +62,34 @@ export interface SampleTransformDialogProps {
    * Projekt-dirty markieren).
    */
   onApply: (newBuffer: AudioBuffer, newBlobUrl: string) => void;
+}
+
+// ─── Utility: AudioBufferLike → AudioBuffer (für Pipeline-Output) ───────────
+
+/**
+ * Konvertiert ein pure-AudioBufferLike (z.B. Output von applyTransformPipeline)
+ * zurück in einen echten Web-Audio-AudioBuffer.  Verwendet copyToChannel auf
+ * einem frisch via ctx.createBuffer erzeugten Buffer.
+ */
+function audioBufferLikeToAudioBuffer(
+  ctx: BaseAudioContext,
+  like: AudioBufferLike,
+): AudioBuffer {
+  const buf = ctx.createBuffer(
+    Math.max(1, like.numberOfChannels),
+    Math.max(1, like.length),
+    like.sampleRate,
+  );
+  for (let c = 0; c < like.numberOfChannels; c++) {
+    const src = like.getChannelData(c);
+    // copyToChannel erwartet Float32Array<ArrayBuffer>; getChannelData liefert
+    // strukturell Float32Array<ArrayBufferLike>.  Kopie in frisches ArrayBuffer
+    // (vermeidet TS-Strict-Mismatch + entkoppelt vom Pipeline-Buffer).
+    const copy = new Float32Array(src.length);
+    copy.set(src);
+    buf.copyToChannel(copy, c, 0);
+  }
+  return buf;
 }
 
 // ─── Utility: AudioBuffer → Blob-URL ────────────────────────────────────────
@@ -76,6 +123,19 @@ export function SampleTransformDialog({
   // Wenn der User aktiv den Stretch-Slider bewegt UND preserveLength an ist,
   // wird preserveLength automatisch deaktiviert (User hat Vorrang).
 
+  // v3.136: Pipeline-Options-State (Trim, Reverse, Fade, Normalize, Slice).
+  const [trimEnabled, setTrimEnabled] = useState(false);
+  const [trimThresholdDb, setTrimThresholdDb] = useState(-60);
+  const [reverseEnabled, setReverseEnabled] = useState(false);
+  const [fadeInMs, setFadeInMs] = useState(0);
+  const [fadeOutMs, setFadeOutMs] = useState(0);
+  const [fadeCurve, setFadeCurve] = useState<FadeCurve>("linear");
+  const [normalizeEnabled, setNormalizeEnabled] = useState(false);
+  const [normalizeTargetDbTp, setNormalizeTargetDbTp] = useState(-1);
+  const [sliceSensitivity, setSliceSensitivity] = useState(0.5);
+  const [sliceMinMs, setSliceMinMs] = useState(50);
+  const [detectedSliceCount, setDetectedSliceCount] = useState<number | null>(null);
+
   const [isProcessing, setIsProcessing] = useState(false);
   const [progress, setProgress] = useState(0);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -91,6 +151,18 @@ export function SampleTransformDialog({
       setPitchSemitones(0);
       setPreserveLength(false);
       setProgress(0);
+      // v3.136: reset Pipeline-Options
+      setTrimEnabled(false);
+      setTrimThresholdDb(-60);
+      setReverseEnabled(false);
+      setFadeInMs(0);
+      setFadeOutMs(0);
+      setFadeCurve("linear");
+      setNormalizeEnabled(false);
+      setNormalizeTargetDbTp(-1);
+      setSliceSensitivity(0.5);
+      setSliceMinMs(50);
+      setDetectedSliceCount(null);
     }
     // Cleanup Preview-URL beim Schließen.
     return () => {
@@ -154,7 +226,48 @@ export function SampleTransformDialog({
           onProgress: (p) => setProgress(p),
         },
       );
-      return out;
+
+      // v3.136: applyTransformPipeline nach Stretch+Pitch.  Reihenfolge:
+      //   trim → reverse → fadeIn → fadeOut → normalize.
+      // AudioBuffer satisfies AudioBufferLike structurally (same fields/method).
+      const anyActive =
+        trimEnabled ||
+        reverseEnabled ||
+        fadeInMs > 0 ||
+        fadeOutMs > 0 ||
+        normalizeEnabled;
+      if (!anyActive) {
+        return out;
+      }
+
+      const pipelineOpts: TransformPipelineOptions = {
+        trimSilence: trimEnabled,
+        // dB → linear amplitude threshold: 10^(dB/20)
+        trimThreshold: Math.pow(10, trimThresholdDb / 20),
+        reverse: reverseEnabled,
+        fadeInMs,
+        fadeOutMs,
+        fadeCurve,
+        normalize: normalizeEnabled,
+        normalizeTargetDbTp,
+      };
+      const piped = applyTransformPipeline(out as AudioBufferLike, pipelineOpts);
+
+      // Wenn der Pipeline-Output exakt die gleiche Shape hat UND keine
+      // Length-Änderung passierte UND der Original-Buffer als out=anyActive
+      // verändert wurde → konvertiere zurück zu echtem AudioBuffer.  trim
+      // kann die Länge verringern, daher new OfflineAudioContext für correct
+      // length.  Falls trim einen 0-length Buffer liefert (pure silence),
+      // garantiert audioBufferLikeToAudioBuffer mindestens length=1.
+      const convCtx = new (window.OfflineAudioContext ||
+        // @ts-expect-error legacy webkit fallback
+        window.webkitOfflineAudioContext)(
+        Math.max(1, piped.buffer.numberOfChannels),
+        Math.max(1, piped.buffer.length),
+        piped.buffer.sampleRate,
+      ) as BaseAudioContext;
+      const finalBuf = audioBufferLikeToAudioBuffer(convCtx, piped.buffer);
+      return finalBuf;
     } catch (err) {
       // AbortError → stiller Cancel (nicht log-spam)
       const isAbort =
@@ -171,7 +284,19 @@ export function SampleTransformDialog({
       }
       setIsProcessing(false);
     }
-  }, [buffer, effectiveStretch, pitchSemitones]);
+  }, [
+    buffer,
+    effectiveStretch,
+    pitchSemitones,
+    trimEnabled,
+    trimThresholdDb,
+    reverseEnabled,
+    fadeInMs,
+    fadeOutMs,
+    fadeCurve,
+    normalizeEnabled,
+    normalizeTargetDbTp,
+  ]);
 
   const handleCancel = useCallback(() => {
     abortRef.current?.abort();
@@ -179,6 +304,20 @@ export function SampleTransformDialog({
     setIsProcessing(false);
     setProgress(0);
   }, []);
+
+  // v3.136: Auto-Slice-Detection (Preview-only — kein Apply).
+  // v3.137-Caveat: onAutoSlice-Callback im SampleBrowser noch nicht verkabelt.
+  const handleDetectSlices = useCallback(() => {
+    if (!buffer) {
+      setDetectedSliceCount(null);
+      return;
+    }
+    const points = detectSlicePoints(buffer as AudioBufferLike, {
+      sensitivity: sliceSensitivity,
+      minSliceMs: sliceMinMs,
+    });
+    setDetectedSliceCount(points.length);
+  }, [buffer, sliceSensitivity, sliceMinMs]);
 
   const handlePreview = useCallback(async () => {
     if (!buffer) return;
@@ -229,7 +368,7 @@ export function SampleTransformDialog({
         <Dialog.Overlay className="fixed inset-0 z-50 bg-bg-base/80 backdrop-blur-sm" />
         <Dialog.Content
           data-testid="sample-transform-dialog"
-          className="fixed left-1/2 top-1/2 z-50 w-[480px] max-w-[92vw] -translate-x-1/2 -translate-y-1/2 rounded-lg border border-border-color bg-bg-panel shadow-2xl"
+          className="fixed left-1/2 top-1/2 z-50 w-[520px] max-w-[94vw] max-h-[92vh] -translate-x-1/2 -translate-y-1/2 rounded-lg border border-border-color bg-bg-panel shadow-2xl flex flex-col"
         >
           <div className="flex items-center justify-between px-4 py-3 border-b border-border-color">
             <Dialog.Title className="text-sm font-semibold text-accent-primary tracking-wide">
@@ -246,7 +385,7 @@ export function SampleTransformDialog({
             </Dialog.Close>
           </div>
 
-          <div className="px-4 py-4 space-y-4">
+          <div className="px-4 py-4 space-y-4 overflow-y-auto flex-1 min-h-0">
             <div className="text-xs text-text-dim truncate" title={sample?.name}>
               <span className="text-text-muted">Sample:</span>{" "}
               <span className="text-text-primary">{sample?.name}</span>
@@ -331,6 +470,227 @@ export function SampleTransformDialog({
                 Länge beibehalten bei Pitch-Shift (sperrt Stretch auf 1×)
               </span>
             </label>
+
+            {/* v3.136: Erweiterte Transformationen (collapsable). */}
+            <details className="rounded border border-border-color bg-bg-elevated/40">
+              <summary className="cursor-pointer select-none px-3 py-2 text-xs font-semibold text-accent-secondary hover:text-accent-primary transition-colors">
+                Erweiterte Transformationen
+              </summary>
+              <div className="px-3 py-3 space-y-3 border-t border-border-color">
+                {/* Trim-Silence */}
+                <div className="space-y-1">
+                  <label className="flex items-center gap-2 text-xs text-text-muted cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={trimEnabled}
+                      onChange={(e) => setTrimEnabled(e.target.checked)}
+                      className="accent-accent-primary"
+                      data-testid="sample-transform-trim"
+                    />
+                    <span>Trim Silence (Anfang + Ende)</span>
+                  </label>
+                  <div className="pl-6">
+                    <div className="flex items-center justify-between mb-0.5">
+                      <span className="text-[10px] text-text-dim">Threshold</span>
+                      <span className="text-[10px] font-mono text-accent-secondary">
+                        {trimThresholdDb} dB
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min={-90}
+                      max={-20}
+                      step={1}
+                      value={trimThresholdDb}
+                      onChange={(e) => setTrimThresholdDb(parseInt(e.target.value, 10))}
+                      disabled={!trimEnabled}
+                      className="w-full accent-accent-primary"
+                      data-testid="sample-transform-trim-threshold"
+                    />
+                  </div>
+                </div>
+
+                {/* Reverse */}
+                <label className="flex items-center gap-2 text-xs text-text-muted cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={reverseEnabled}
+                    onChange={(e) => setReverseEnabled(e.target.checked)}
+                    className="accent-accent-primary"
+                    data-testid="sample-transform-reverse"
+                  />
+                  <span>Reverse Sample</span>
+                </label>
+
+                {/* Fade-In / Fade-Out */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <div className="flex items-center justify-between mb-0.5">
+                      <label
+                        htmlFor="sample-transform-fadein"
+                        className="text-[10px] text-text-muted"
+                      >
+                        Fade-In
+                      </label>
+                      <span className="text-[10px] font-mono text-accent-secondary">
+                        {fadeInMs} ms
+                      </span>
+                    </div>
+                    <input
+                      id="sample-transform-fadein"
+                      type="range"
+                      min={0}
+                      max={500}
+                      step={5}
+                      value={fadeInMs}
+                      onChange={(e) => setFadeInMs(parseInt(e.target.value, 10))}
+                      className="w-full accent-accent-primary"
+                      data-testid="sample-transform-fadein"
+                    />
+                  </div>
+                  <div>
+                    <div className="flex items-center justify-between mb-0.5">
+                      <label
+                        htmlFor="sample-transform-fadeout"
+                        className="text-[10px] text-text-muted"
+                      >
+                        Fade-Out
+                      </label>
+                      <span className="text-[10px] font-mono text-accent-secondary">
+                        {fadeOutMs} ms
+                      </span>
+                    </div>
+                    <input
+                      id="sample-transform-fadeout"
+                      type="range"
+                      min={0}
+                      max={500}
+                      step={5}
+                      value={fadeOutMs}
+                      onChange={(e) => setFadeOutMs(parseInt(e.target.value, 10))}
+                      className="w-full accent-accent-primary"
+                      data-testid="sample-transform-fadeout"
+                    />
+                  </div>
+                </div>
+
+                {/* Fade-Curve */}
+                <div className="flex items-center gap-2 text-xs">
+                  <label htmlFor="sample-transform-fadecurve" className="text-text-muted">
+                    Curve:
+                  </label>
+                  <select
+                    id="sample-transform-fadecurve"
+                    value={fadeCurve}
+                    onChange={(e) => setFadeCurve(e.target.value as FadeCurve)}
+                    disabled={fadeInMs === 0 && fadeOutMs === 0}
+                    className="bg-bg-panel border border-border-color rounded px-2 py-0.5 text-xs text-text-primary disabled:opacity-50"
+                    data-testid="sample-transform-fadecurve"
+                  >
+                    <option value="linear">linear</option>
+                    <option value="exp">exp</option>
+                    <option value="equal-power">equal-power</option>
+                  </select>
+                </div>
+
+                {/* Auto-Normalize */}
+                <div className="space-y-1">
+                  <label className="flex items-center gap-2 text-xs text-text-muted cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={normalizeEnabled}
+                      onChange={(e) => setNormalizeEnabled(e.target.checked)}
+                      className="accent-accent-primary"
+                      data-testid="sample-transform-normalize"
+                    />
+                    <span>Auto-Normalize (True-Peak)</span>
+                  </label>
+                  <div className="pl-6">
+                    <div className="flex items-center justify-between mb-0.5">
+                      <span className="text-[10px] text-text-dim">Target</span>
+                      <span className="text-[10px] font-mono text-accent-secondary">
+                        {normalizeTargetDbTp} dBTP
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min={-6}
+                      max={0}
+                      step={0.1}
+                      value={normalizeTargetDbTp}
+                      onChange={(e) => setNormalizeTargetDbTp(parseFloat(e.target.value))}
+                      disabled={!normalizeEnabled}
+                      className="w-full accent-accent-primary"
+                      data-testid="sample-transform-normtarget"
+                    />
+                  </div>
+                </div>
+
+                {/* Auto-Slice (Preview-only in v3.136) */}
+                <div className="space-y-1 pt-2 border-t border-border-color">
+                  <div className="text-[10px] text-text-dim mb-1">
+                    Auto-Slice (Preview — Apply folgt in v3.137)
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <div className="flex items-center justify-between mb-0.5">
+                        <span className="text-[10px] text-text-muted">Sensitivity</span>
+                        <span className="text-[10px] font-mono text-accent-secondary">
+                          {sliceSensitivity.toFixed(2)}
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min={0}
+                        max={1}
+                        step={0.05}
+                        value={sliceSensitivity}
+                        onChange={(e) => setSliceSensitivity(parseFloat(e.target.value))}
+                        className="w-full accent-accent-primary"
+                        data-testid="sample-transform-slice-sens"
+                      />
+                    </div>
+                    <div>
+                      <div className="flex items-center justify-between mb-0.5">
+                        <span className="text-[10px] text-text-muted">Min</span>
+                        <span className="text-[10px] font-mono text-accent-secondary">
+                          {sliceMinMs} ms
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min={20}
+                        max={500}
+                        step={5}
+                        value={sliceMinMs}
+                        onChange={(e) => setSliceMinMs(parseInt(e.target.value, 10))}
+                        className="w-full accent-accent-primary"
+                        data-testid="sample-transform-slice-min"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 mt-1">
+                    <button
+                      type="button"
+                      onClick={handleDetectSlices}
+                      data-testid="sample-transform-slice-detect-btn"
+                      className="px-2 py-1 rounded text-[10px] border border-border-color text-text-primary hover:border-accent-secondary hover:text-accent-secondary transition-colors"
+                      title="Slice-Points im Original-Sample analysieren"
+                    >
+                      Slice Points zählen
+                    </button>
+                    <span
+                      data-testid="sample-transform-slice-count"
+                      className="text-[10px] text-text-muted"
+                    >
+                      {detectedSliceCount === null
+                        ? "Noch nicht analysiert"
+                        : `Gefunden: ${detectedSliceCount} Slice-Punkte`}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </details>
 
             {/* Progress-Bar (v3.120: live aus Worker + Cancel-Button) */}
             {isProcessing && (

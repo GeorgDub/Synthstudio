@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.125.0",
+    version: "3.136.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -3012,6 +3012,49 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "frontend",
+      timestamp: "2026-05-19T17:50:00.000Z",
+      done: [
+        "v3.136.0: SampleTransformDialog UI-Wiring für die Pure-Helpers aus v3.132 + v3.133 + v3.135. Closes 3 v3.135-Caveats (Auto-Normalize + Reverse + Fade + Trim + Slice-Detect waren als Pure-Helpers implementiert aber im Dialog nicht verkabelt).",
+        "client/src/utils/sampleTransformPipeline.ts NEU (Pure, ~120 LOC). Public-API: applyTransformPipeline(buffer, options) → {buffer, normalizeGainDb}. Pipeline-Reihenfolge (deterministisch): trimSilence → reverseSample → fadeInSample → fadeOutSample → autoNormalizeSample. Nur aktive Ops modifizieren den Buffer; bei options={} (alle off) ist der Buffer-Inhalt identisch. TransformPipelineOptions-Interface (trimSilence/trimThreshold/reverse/fadeInMs/fadeOutMs/fadeCurve/normalize/normalizeTargetDbTp). Defensive Defaults (trimThreshold=0.001, fadeCurve='linear', normalizeTargetDbTp=-1).",
+        "client/src/components/SampleBrowser/SampleTransformDialog.tsx ERWEITERT: +11 useState-Hooks für Pipeline-Options + Slice-Detection-State. +audioBufferLikeToAudioBuffer(ctx, like)-Helper (kopiert via copyToChannel + frisches Float32Array für TS-strict-mode). Container 480→520px, Body scrollbar (max-h-92vh + flex-col). Neuer <details>-Block 'Erweiterte Transformationen': Trim-Toggle + Threshold-Slider (-90..-20 dB), Reverse-Toggle, FadeIn/FadeOut-Slider (0..500ms), Curve-Select (linear/exp/equal-power), Normalize-Toggle + Target-Slider (-6..0 dBTP), Slice-Detection (Sensitivity/MinMs-Slider + Analyze-Button + Count-Display). data-testids: sample-transform-{trim/trim-threshold/reverse/fadein/fadeout/fadecurve/normalize/normtarget/slice-sens/slice-min/slice-detect-btn/slice-count}. Komplett semantische --ss-* Tokens.",
+        "runTransformAsync-Integration: nach combinedTransformAsync (Stretch+Pitch) prüft anyActive-Flag (skip pipeline wenn alle off → exakt unveränderter Buffer-Return-Pfad). Sonst: applyTransformPipeline mit dB→linear-conversion (Math.pow(10, trimThresholdDb/20)) + audioBufferLikeToAudioBuffer via neuer OfflineAudioContext (max(1, length) für 0-length-Silence-Fallback).",
+        "tests/features/sample-transform-pipeline.test.ts NEU (6 Tests in 6 describes): identity (all-off shape unchanged), reverse (erstes Sample = altes letztes), order matters (trim greift vor reverse: leading+trailing silence test), fadeIn+normalize (sine-440Hz peak ≈ 10^(-1/20)), all-off identity (100-sample channelData-Vergleich), fadeIn-only (erstes Sample = 0, last unverändert). 6/6 grün.",
+        "tests/features/sample-transform-dialog-wiring.test.ts NEU (5 Tests in 3 describes): Pipeline-all-off-identity, Normalize-sine-peak (target -1 dBTP), dB→linear-conversion × 3 (-60dB ≈ 0.001, -20dB ≈ 0.1, 0dB ≈ 1.0). 5/5 grün.",
+        "package.json + INDEX.js: 3.135.0 → 3.136.0. pnpm check: clean. pnpm test (full): 293 files / 6656 passed / 16 skipped / 0 fail (+11 vs v3.135, 0 regressions)."
+      ],
+      next: [
+        "v3.137: onAutoSlice-Callback im SampleBrowser verkabeln — Slice-Detection ist in v3.136 nur Preview (zeigt Anzahl gefundener Slice-Points), aber Apply (Multi-Add ins Sample-Library / Pad-Assign) fehlt noch. Idee: neuer 'Slices anwenden'-Button im Dialog → onAutoSlice?(slices, namePrefix) → SampleBrowser ruft addSample für jeden slice mit '<original>_slice_<n>.wav'.",
+        "Playwright-Smoke (tests/web/sample-transform-extended.spec.ts): öffnen Dialog → toggle trim/reverse/fadeIn → Apply → verify Sample-Buffer-Replacement in Library. Manuell schon testbar aber CI-Coverage fehlt.",
+        "Pipeline-Worker: aktuell läuft applyTransformPipeline im Main-Thread (Trim auf 4800 samples nano-fast, aber bei 1-minute-Stereo-Buffern wird's spürbar). Idee: Worker-Variante analog zu sampleTransformWorker.ts.",
+        "Sample-Embed-Auto: nach Apply den embeddedData direkt setzen (closes v3.124-next-Caveat). Spart Save-Time bei großen Projekten."
+      ],
+      changed: [
+        "client/src/utils/sampleTransformPipeline.ts (NEU, Pure-Pipeline-Helper)",
+        "client/src/components/SampleBrowser/SampleTransformDialog.tsx (+11 State-Hooks + Pipeline-Integration + audioBufferLikeToAudioBuffer + UI-Block)",
+        "tests/features/sample-transform-pipeline.test.ts (NEU, 6 Tests)",
+        "tests/features/sample-transform-dialog-wiring.test.ts (NEU, 5 Tests)",
+        "package.json + agents/INDEX.js (3.135.0 → 3.136.0)"
+      ]
+    },
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-19T15:34:30.000Z",
+      done: [
+        "v3.136 SPEC-READY: Task-Spec für SampleTransformDialog-UI-Wiring erstellt. Pure-Helpers verifiziert: sampleAutoNormalize.ts (v3.132, analyzeSamplePeak/computeNormalizeGain/applyGainToBuffer/autoNormalizeSample), sampleFadeReverse.ts (v3.133, reverseSample/fadeInSample/fadeOutSample/trimSilence/fadeCurveAt), sliceAutoDetector.ts (v3.135, detectSlicePoints/sliceAtPoints/sliceFrameRms/sliceDownmixMono) — alle pure, AudioBufferLike-typed, Node-testbar.",
+        "Existierender Dialog client/src/components/SampleBrowser/SampleTransformDialog.tsx (410 LOC) bestätigt: hat Stretch+Pitch+PreserveLength+Worker+AbortController. NEU einzubauen: Auto-Normalize-Toggle+Info, Reverse-Toggle, FadeIn ms+Curve, FadeOut ms+Curve, Trim-Toggle, Auto-Slice-Sensitivity+MinMs+Detect-Button+Count-Display. Pipeline post-Worker: trim → reverse → fadeIn → fadeOut → normalize.",
+        "Empfohlen: Pipeline in eigenen Pure-Helper client/src/utils/sampleTransformPipeline.ts extrahieren (Node-testbar) + tests/features/sample-transform-dialog-wiring.test.ts (>=8 Tests) + tests/web/sample-transform-extended.spec.ts Playwright-Smoke.",
+        "CAVEAT: onAutoSlice-Callback im SampleBrowser noch nicht verkabelt — Slices werden detected aber nicht in Library/Pads abgelegt → v3.137 Follow-up. AudioBufferLike→AudioBuffer-Konvertierung erfordert OfflineAudioContext (Node-Tests skippen diesen Pfad)."
+      ],
+      next: [
+        "frontend-Agent in nachfolgender Session: spec-konformen Code schreiben gemäß TASK-v3136 (status=pending, owner=frontend). IMMER Read vor Edit (Write-Pitfall, siehe Memory). Pipeline-Helper extrahieren, Tests grün, pnpm check + pnpm test, version-bump 3.135→3.136, commit + tag + push.",
+        "KEIN Sub-Release zusätzlich starten — nur v3.136 abschließen pro User-Anweisung."
+      ],
+      changed: [
+        "agents/INDEX.js (coordinator workLog entry only — no code changes)"
+      ]
+    },
     {
       agent:     "frontend",
       timestamp: "2026-05-19T15:55:00.000Z",
