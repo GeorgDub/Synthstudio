@@ -619,6 +619,83 @@ export function validateAutoSaveLabel(input: unknown): AutoSaveLabelCheck {
   return { ok: true, value: input };
 }
 
+// ─── PACK-SAMPLE READ (v3.107.0) ─────────────────────────────────────────────
+//
+// SECURITY: `pack:readFile` IPC liest user-importierte Sample-Files anhand
+// eines absoluten Pfads. Wir verlangen, dass der Pfad innerhalb einer
+// vorher als Pack-Root registrierten Wurzel liegt (siehe Allow-List in
+// main.ts), damit eine kompromittierte Renderer-Origin (XSS) nicht
+// beliebige Dateien aus dem Dateisystem lesen kann.
+
+/** Audio-Endungen, die `pack:readFile` ausliefern darf. */
+export const PACK_SAMPLE_ALLOWED_EXTENSIONS = new Set([
+  ".wav", ".mp3", ".ogg", ".flac", ".aif", ".aiff", ".m4a",
+]);
+
+/** Hard-Cap pro Sample-File. 100 MB ist großzügig (Loops/Stems). */
+export const PACK_SAMPLE_MAX_BYTES = 100 * 1024 * 1024;
+
+export type PackSamplePathCheck =
+  | { ok: true; ext: string; resolved: string }
+  | { ok: false; error: string };
+
+/**
+ * Validiert + resolved einen Pfad und prüft, dass er unter mindestens einem
+ * der `allowedRoots` (= Pack-Roots) liegt. Defense-in-depth:
+ *  - typeof + length-check (kein nicht-String, kein zu langer Pfad)
+ *  - NUL-Byte verboten
+ *  - Endung muss eine bekannte Audio-Endung sein (Whitelist)
+ *  - `path.resolve` normalisiert `..`-Sequenzen
+ *  - resolved muss unter mind. einem normalisierten Root liegen
+ *    (mit path.sep als Boundary damit `/foo` ≠ `/foobar`)
+ */
+export function validatePackSamplePath(
+  input: unknown,
+  allowedRoots: readonly string[],
+): PackSamplePathCheck {
+  if (typeof input !== "string" || input.length === 0) {
+    return { ok: false, error: "Kein Dateipfad" };
+  }
+  if (input.length > 4096) {
+    return { ok: false, error: "Dateipfad zu lang" };
+  }
+  if (input.includes("\0")) {
+    return { ok: false, error: "Pfad enthält NUL-Byte" };
+  }
+  if (!path.isAbsolute(input)) {
+    return { ok: false, error: "Nur absolute Pfade erlaubt" };
+  }
+  const ext = path.extname(input).toLowerCase();
+  if (!PACK_SAMPLE_ALLOWED_EXTENSIONS.has(ext)) {
+    return { ok: false, error: "Nicht-Audio-Dateityp" };
+  }
+  const resolved = path.resolve(input);
+  if (!Array.isArray(allowedRoots) || allowedRoots.length === 0) {
+    return { ok: false, error: "Keine Pack-Roots registriert" };
+  }
+  for (const root of allowedRoots) {
+    if (typeof root !== "string" || root.length === 0) continue;
+    const resolvedRoot = path.resolve(root);
+    // Erlaubt: gleicher Pfad ODER unter Root (mit path.sep als Boundary).
+    if (resolved === resolvedRoot) return { ok: true, ext, resolved };
+    const prefix = resolvedRoot.endsWith(path.sep) ? resolvedRoot : resolvedRoot + path.sep;
+    if (resolved.startsWith(prefix)) return { ok: true, ext, resolved };
+  }
+  return { ok: false, error: "Pfad ausserhalb registrierter Pack-Roots" };
+}
+
+export function validatePackSampleFileSize(
+  byteSize: number,
+): { ok: true } | { ok: false; error: string } {
+  if (!Number.isFinite(byteSize) || byteSize < 0) {
+    return { ok: false, error: "Ungültige Dateigröße" };
+  }
+  if (byteSize > PACK_SAMPLE_MAX_BYTES) {
+    return { ok: false, error: `Datei zu gross (>${PACK_SAMPLE_MAX_BYTES} Bytes)` };
+  }
+  return { ok: true };
+}
+
 /**
  * Defense-in-depth path-guard für `userData/autosave/<projectId>/<versionId>.synth`.
  * baseDir = autosaveRoot (z.B. `userData/autosave`).

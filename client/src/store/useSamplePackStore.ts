@@ -24,6 +24,12 @@ export interface SamplePackSample {
   bpm: number | null;
   duration: number | null;
   sizeBytes: number | null;
+  /**
+   * v3.107.0: absoluter Pfad (Electron-Pfad) — wird via `pack:readFile`
+   * gelesen wenn vorhanden. Browser-Mode lässt dieses Feld undefined
+   * und nutzt stattdessen den In-Memory File-Handle (siehe `_fileHandles`).
+   */
+  absolutePath?: string;
 }
 
 export interface SamplePack {
@@ -103,6 +109,90 @@ function _makePackId(): string {
   return `pack-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
 }
 
+// ─── File-Handles (Browser-Mode) ─────────────────────────────────────────────
+//
+// Browser-Mode: We keep File-Objekte im memory damit getSampleFile() einen
+// Blob/ArrayBuffer ausliefern kann. Bei Reload sind die File-Handles weg —
+// User muss neu importieren. Acceptable Limitation.
+//
+// Electron-Mode: bevorzugt absolutePath via pack:readFile (kein Memory-Holder).
+const _fileHandles = new Map<string, File>();
+
+/** Trägt einen File-Handle in den In-Memory-Cache ein. */
+export function registerSampleFile(sampleId: string, file: File): void {
+  _fileHandles.set(sampleId, file);
+}
+
+/** Liefert true wenn ein File-Handle (Browser) für sampleId vorhanden ist. */
+export function hasInMemoryFile(sampleId: string): boolean {
+  return _fileHandles.has(sampleId);
+}
+
+/**
+ * Liefert die ArrayBuffer-Bytes eines Samples — egal ob Browser-Memory
+ * oder Electron-Pfad. Bei Electron wird `window.electronAPI.packReadFile`
+ * aufgerufen (der Renderer-side import erfolgt dynamisch). Bei Browser
+ * wird der File-Handle gelesen.
+ *
+ * Returns null wenn weder absoluter Pfad noch File-Handle bekannt ist.
+ */
+export async function getSampleData(sampleId: string): Promise<ArrayBuffer | null> {
+  const sample = _findSample(sampleId);
+  if (!sample) return null;
+  // Browser-Memory-Pfad
+  const file = _fileHandles.get(sampleId);
+  if (file) {
+    try {
+      return await file.arrayBuffer();
+    } catch {
+      return null;
+    }
+  }
+  // Electron-Pfad
+  if (
+    sample.absolutePath &&
+    typeof window !== "undefined" &&
+    (window as unknown as { electronAPI?: { packReadFile?: (p: string) => Promise<{ success: boolean; data?: ArrayBuffer; error?: string }> } }).electronAPI?.packReadFile
+  ) {
+    try {
+      const api = (window as unknown as { electronAPI: { packReadFile: (p: string) => Promise<{ success: boolean; data?: ArrayBuffer; error?: string }> } }).electronAPI;
+      const res = await api.packReadFile(sample.absolutePath);
+      if (res.success && res.data) return res.data;
+      return null;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+/**
+ * Liefert eine Object-URL (Blob URL) für das Sample — kompatibel mit dem
+ * bestehenden `setPartSample(url, name)` Pfad in DrumMachine. Caller MUSS
+ * `URL.revokeObjectURL` aufrufen wenn die URL nicht mehr benötigt wird.
+ *
+ * Returns null wenn keine Daten verfügbar.
+ */
+export async function getSampleBlobUrl(sampleId: string): Promise<string | null> {
+  const data = await getSampleData(sampleId);
+  if (!data) return null;
+  try {
+    const blob = new Blob([data]);
+    return URL.createObjectURL(blob);
+  } catch {
+    return null;
+  }
+}
+
+function _findSample(sampleId: string): SamplePackSample | null {
+  for (const p of _state.packs) {
+    for (const s of p.samples) {
+      if (s.id === sampleId) return s;
+    }
+  }
+  return null;
+}
+
 // ─── Public API ──────────────────────────────────────────────────────────────
 
 export function getSamplePackState(): PackState {
@@ -112,25 +202,51 @@ export function getSamplePackState(): PackState {
 /**
  * Fügt einen neuen Pack hinzu. Liefert die Pack-ID zurück.
  * Samples werden mit packId verknüpft (überschreibt evtl. existierende packId).
+ *
+ * v3.107.0:
+ *  - optional `fileHandles`: Map<scanned.id, File> für Browser-Memory-Preview
+ *    (keine localStorage-Persistierung — Files leben nur im Speicher).
+ *  - optional `absolutePaths`: Map<scanned.id, absPath> für Electron-Pfad.
+ *    Diese werden persistiert (Teil von SamplePackSample.absolutePath).
  */
 export function addPack(
   name: string,
   rootPath: string,
   scanned: ScannedSample[],
+  options?: {
+    fileHandles?: Map<string, File>;
+    absolutePaths?: Map<string, string>;
+  },
 ): string {
   const packId = _makePackId();
-  const samples: SamplePackSample[] = scanned.map((s) => ({
-    id: s.id,
-    packId,
-    filename: s.filename,
-    relPath: s.relPath,
-    parentFolder: s.parentFolder,
-    category: s.category,
-    tags: s.tags,
-    bpm: s.bpm,
-    duration: null,
-    sizeBytes: s.sizeBytes,
-  }));
+  const fileHandles = options?.fileHandles;
+  const absolutePaths = options?.absolutePaths;
+  const samples: SamplePackSample[] = scanned.map((s) => {
+    const sample: SamplePackSample = {
+      id: s.id,
+      packId,
+      filename: s.filename,
+      relPath: s.relPath,
+      parentFolder: s.parentFolder,
+      category: s.category,
+      tags: s.tags,
+      bpm: s.bpm,
+      duration: null,
+      sizeBytes: s.sizeBytes,
+    };
+    const abs = absolutePaths?.get(s.id);
+    if (typeof abs === "string" && abs.length > 0) {
+      sample.absolutePath = abs;
+    }
+    return sample;
+  });
+  // Browser-Memory: File-Handles in den lokalen Cache aufnehmen.
+  if (fileHandles) {
+    for (const s of scanned) {
+      const file = fileHandles.get(s.id);
+      if (file) _fileHandles.set(s.id, file);
+    }
+  }
   const pack: SamplePack = {
     id: packId,
     name: name.trim() || "Pack",
@@ -145,6 +261,11 @@ export function addPack(
 }
 
 export function removePack(packId: string): void {
+  // Browser-Memory-Cache aufräumen — sonst leaken File-Handles.
+  const removed = _state.packs.find((p) => p.id === packId);
+  if (removed) {
+    for (const s of removed.samples) _fileHandles.delete(s.id);
+  }
   _state = { ..._state, packs: _state.packs.filter((p) => p.id !== packId) };
   _persist(_state);
   _notify();
@@ -253,6 +374,9 @@ export function useSamplePackStore(): {
   getAllTags: typeof getAllTags;
   getAllSamples: typeof getAllSamples;
   updateSampleDuration: typeof updateSampleDuration;
+  getSampleData: typeof getSampleData;
+  getSampleBlobUrl: typeof getSampleBlobUrl;
+  hasInMemoryFile: typeof hasInMemoryFile;
 } {
   const [, rerender] = useReducer((x: number) => x + 1, 0);
   useEffect(() => {
@@ -268,6 +392,9 @@ export function useSamplePackStore(): {
     getAllTags,
     getAllSamples,
     updateSampleDuration,
+    getSampleData,
+    getSampleBlobUrl,
+    hasInMemoryFile,
   };
 }
 
@@ -275,6 +402,7 @@ export function useSamplePackStore(): {
 
 export function __resetSamplePackStoreForTests(): void {
   _state = { packs: [] };
+  _fileHandles.clear();
   try {
     if (typeof localStorage !== "undefined") {
       localStorage.removeItem(STORAGE_KEY);

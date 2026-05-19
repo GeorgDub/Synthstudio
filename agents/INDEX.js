@@ -19,7 +19,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.106.0",
+    version: "3.107.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -2632,6 +2632,44 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "backend",
+      timestamp: "2026-05-19T11:38:00.000Z",
+      done: [
+        "v3.107.0: Pack-Browser Drag-to-Pad Wiring + Audio-Preview-on-Hover (closes v3.106 caveat). Pack-Browser-Samples sind jetzt droppable auf DrumMachine-Pads, Hover-Preview spielt 1.5s Audio via shared AudioContext. Browser-Mode haelt File-Handles im memory (verschwinden bei Reload — acceptable), Electron-Mode hat den IPC-Channel pack:readFile + pack:registerRoot vorbereitet (Renderer ruft pack:registerRoot vor jedem Read; Allow-List in main.ts).",
+        "electron/ipcValidators.ts ERWEITERT (+~75 LOC): NEU validatePackSamplePath(input, allowedRoots) — absolute-path-check, NUL-Byte-Defense, Audio-Endung-Whitelist (.wav/.mp3/.ogg/.flac/.aif/.aiff/.m4a), path.resolve + Root-Containment-Check mit path.sep als Boundary (kein Prefix-Confusion-Bug: '/foo' vs '/foobar'). NEU validatePackSampleFileSize (100 MB Cap). PACK_SAMPLE_ALLOWED_EXTENSIONS + PACK_SAMPLE_MAX_BYTES Konstanten.",
+        "electron/main.ts ERWEITERT (+~85 LOC): NEU packSampleRoots Set<string> als Allow-List der registrierten Pack-Roots (in-memory, leer bei jedem App-Start). NEU IPC-Handler 'pack:registerRoot' (validiert absolut+existiert+isDirectory, fuegt resolved Pfad zur Allow-List). NEU IPC-Handler 'pack:readFile' mit dreischichtiger Defense (Path-Validation, R_OK-Access-Check, Size-Cap), transferiert ArrayBuffer slice an Renderer. Stack-Trace nicht an Renderer geleakt. SECURITY-Kommentare inline.",
+        "electron/preload.ts ERWEITERT (+~22 LOC): NEU electronAPI.packRegisterRoot(rootPath) + packReadFile(filePath). Strikt typed return-Shape mit success/data/error.",
+        "electron/types.d.ts ERWEITERT (+~3 LOC): Interface-Methoden im ElectronAPI-Block hinzugefuegt.",
+        "client/src/utils/samplePackPreview.ts NEU (+~135 LOC, pure-ish Helper, Test-mockbar). previewSample(data, ctx, opts) → PreviewHandle {stop, isStopped}. decodeAudioData → BufferSource → GainNode → destination → start + setTimeout(durationMs) auto-stop. stop() idempotent (set stopped-Flag, clearTimeout, source.stop+disconnect, gainNode.disconnect). Decode-Race-Guard (stopped-Check zwischen await und start). Decode-Error → silent stop. getSharedPreviewContext() Singleton-AudioContext (Browser-Limit 6 Contexts) mit Test-Reset-Helper. Clamp durationMs 50..10000ms, gain 0..1.",
+        "client/src/store/useSamplePackStore.ts ERWEITERT (+~95 LOC, baseline v3.106 unveraendert). NEU optional Feld SamplePackSample.absolutePath (Electron). NEU _fileHandles Map<sampleId, File> (Browser-Memory, kein localStorage). NEU registerSampleFile / hasInMemoryFile / getSampleData(sampleId) → Promise<ArrayBuffer|null> (Browser-Memory ODER Electron-pack:readFile-Pfad, dynamic window.electronAPI-Lookup). NEU getSampleBlobUrl(sampleId) erzeugt Object-URL fuer drop-target-Compatibility mit existing setPartSample(url, name). addPack akzeptiert options {fileHandles?, absolutePaths?}. removePack raeumt File-Handle-Cache mit. __resetSamplePackStoreForTests clear-t auch _fileHandles. Hook exportiert getSampleData/getSampleBlobUrl/hasInMemoryFile.",
+        "client/src/components/SamplePackBrowser/dropPayload.ts NEU (+~45 LOC, pure-Helper). PackSampleDragPayload Interface, PACK_SAMPLE_DRAG_MIME-Konstante (single source of truth), parsePackSamplePayload(raw) → PackSampleDragPayload | null mit defensiver JSON-Parse + Pflicht-Feld-Check (sampleId/packId/filename/relPath nicht-leer).",
+        "client/src/components/SamplePackBrowser/SamplePackBrowser.tsx ERWEITERT: Hover-Preview-Pfad ersetzt durch echte Audio-Wiedergabe via previewSample + getSharedPreviewContext. previewTokenRef + previewHandleRef cancel-pending (neuer Hover bricht alten ab). handleFolderInput baut Map<sampleId, File> via webkitRelativePath → scanned.id, ruft store.addPack(name, root, scanned, {fileHandles}). PACK_SAMPLE_DRAG_MIME aus dropPayload.ts re-exportiert (backwards-compat).",
+        "client/src/components/DrumMachine/ChannelStrip.tsx ERWEITERT (+~25 LOC). handleDrop check'et 'application/x-synthstudio-pack-sample' MIME mit Vorrang, parsed Payload, ruft store.getSampleBlobUrl(sampleId) → onSampleDrop(url, filename) → existing dm.setPartSample. handleDragOver checkt MIME-Types fuer dropEffect='copy'.",
+        "tests/features/sample-pack-drop.test.ts NEU (+~210 LOC, 18 Tests in 4 describes). (1) parsePackSamplePayload × 5 — valid JSON, invalid JSON, missing fields, empty relPath ok, MIME-Konstante. (2) samplePackPreview × 2 — stop() idempotent + disconnect-Spy, decodeAudioData-Error → silent stop. (3) useSamplePackStore.getSampleData × 2 — null fuer unknown ID, null wenn weder File-Handle noch absolutePath. (4) validatePackSamplePath × 9 — Pfad unter Root ok, '../../etc/passwd.wav' rejected (path.resolve + containment), NUL-Byte rejected, .exe-Endung rejected, relative Pfad rejected, leere allowedRoots rejected, Prefix-Confusion-Bug ('/foo' vs '/foo2') rejected, size-cap. AudioContext + AudioBufferSourceNode gemockt (vitest jsdom hat keine echte audio).",
+        "package.json 3.106.0 → 3.107.0. pnpm check: clean. pnpm test sample-pack-drop: 18/18 pass. sample-classifier: 30/30 pass (unchanged). security-ipc: 42/42 pass (unchanged)."
+      ],
+      next: [
+        "Electron-Side Pack-Import-Flow: aktuell Browser-Pfad funktioniert (File-Memory), aber im Electron-Modus geht der webkitdirectory-Input gleichermassen nur File-Objekte zurueck (kein absolutePath). Erweiterung: dialog.showOpenDialog({properties:['openDirectory']}) → main scannt rekursiv, sendet absolute Pfade an Renderer, Renderer ruft pack:registerRoot + addPack mit absolutePaths-Map.",
+        "Persistenz von File-Handles ueber Reloads: aktuell verschwinden Browser-Files bei Reload (acceptable Limitation laut Spec). Optionale Erweiterung: File System Access API (showDirectoryPicker mit permission.persist), aber Chrome-only und Permission-Dance noetig.",
+        "Hover-Preview Sample-Length-Aware: aktuell durationMs=1500 fixed, koennte AudioBuffer.duration nutzen damit kurze One-Shots vollstaendig spielen.",
+        "Pack-Persistence-Roundtrip-Test: Pack mit absolutePath -> localStorage -> load -> getSampleData prueft electronAPI.packReadFile-Pfad. Aktuell nicht testbar weil window.electronAPI im jsdom nicht existiert — entweder vitest-mock setzen oder e2e."
+      ],
+      changed: [
+        "electron/ipcValidators.ts (+~75 LOC, validatePackSamplePath + validatePackSampleFileSize)",
+        "electron/main.ts (+~85 LOC, pack:registerRoot + pack:readFile IPC + Allow-List)",
+        "electron/preload.ts (+~22 LOC, packRegisterRoot + packReadFile)",
+        "electron/types.d.ts (+~3 LOC, ElectronAPI-Interface)",
+        "client/src/utils/samplePackPreview.ts (NEU, ~135 LOC)",
+        "client/src/store/useSamplePackStore.ts (+~95 LOC, getSampleData + File-Handles + absolutePath)",
+        "client/src/components/SamplePackBrowser/dropPayload.ts (NEU, ~45 LOC, pure-Helper)",
+        "client/src/components/SamplePackBrowser/SamplePackBrowser.tsx (echte Audio-Preview + File-Handle-Mapping)",
+        "client/src/components/DrumMachine/ChannelStrip.tsx (Pack-Drop-Wire)",
+        "tests/features/sample-pack-drop.test.ts (NEU, ~210 LOC, 18 Tests)",
+        "package.json (3.106.0 → 3.107.0)",
+        "agents/INDEX.js"
+      ]
+    },
     {
       agent:     "frontend",
       timestamp: "2026-05-19T11:35:00.000Z",
@@ -9272,6 +9310,8 @@ const INDEX = {
       "autosave:delete",  // v3.56.0 — entfernt eine Version + ihren label-sidecar. Idempotent (no-op wenn nicht vorhanden).
       "license:read",  // TASK-232 (v2.97) — liest userData/license.json (Path hardcoded, 16 KB-Limit, JSON-Parse-Try-Catch). Returnt {success, data}|{success:false,error}.
       "license:write", // TASK-232 (v2.97) — schreibt LicenseState nach userData/license.json (Status-Whitelist, finite-number-only trialStartedAt, Längen-Limits, JSON-Size ≤16 KB).
+      "pack:registerRoot", // v3.107.0 — registriert einen Pack-Root in main's Allow-List (validate: absolute Pfad, exists, isDirectory, NUL-Byte-defense, max 4096 chars). In-memory Set<string>, leer bei jedem App-Start. Renderer ruft das vor jedem pack:readFile damit kein arbitraerer Pfad aus dem Renderer durchgereicht wird.
+      "pack:readFile",  // v3.107.0 — liest eine Pack-Sample-Datei. Defense-in-depth: validatePackSamplePath (absolute, NUL-Byte, Endung-Whitelist .wav/.mp3/.ogg/.flac/.aif/.aiff/.m4a, path.resolve + Root-Containment-Check mit path.sep-Boundary), R_OK-access-check, isFile-check, 100 MB Size-Cap. Returnt ArrayBuffer slice. SECURITY: alle Errors generisch ('Lesefehler') — kein Stack-Trace-Leak.
 
       // Performance-Mode Popup-Window (ROADMAP feature, post-v1.23.0):
       // alle Channels haben narrow-data-only Payloads — keine file paths,

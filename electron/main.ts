@@ -82,6 +82,8 @@ import {
   guardAutoSavePath,
   AUTOSAVE_MAX_JSON_BYTES,
   AUTOSAVE_VERSION_ID_REGEX,
+  validatePackSamplePath,
+  validatePackSampleFileSize,
 } from "./ipcValidators";
 import {
   startCollabServer,
@@ -2146,6 +2148,79 @@ function registerIpcHandlers(): void {
       return { success: true };
     } catch (err) {
       return { success: false, error: String(err) };
+    }
+  });
+
+  // ── Sample-Pack-Read (v3.107.0) ────────────────────────────────────────────
+  //
+  // SECURITY: Liest eine User-importierte Sample-Datei aus dem Disk. Defense-
+  // in-depth gegen Path-Traversal:
+  //  (1) Renderer registriert vor jedem Read seine bekannten Pack-Roots
+  //      via `pack:registerRoot` — main hält die Allow-List in
+  //      `packSampleRoots`. Eine kompromittierte Renderer-Origin kann
+  //      damit höchstens Dateien aus bereits importierten Pack-Verzeichnissen
+  //      lesen, nicht aber arbiträre Pfade.
+  //  (2) `validatePackSamplePath` resolved den Pfad, prüft NUL-Bytes,
+  //      Audio-Endung-Whitelist und Root-Containment (mit path.sep als
+  //      Boundary, damit `/foo/bar` ≠ `/foo/bar2`).
+  //  (3) Stat-Check + 100 MB Size-Cap (Disk-IO-DoS-Schutz).
+  //
+  // Zweck: Audio-Preview-on-Hover im SamplePackBrowser + Drag-to-Pad.
+  // SECURITY: Niemals readFile auf einen vom Renderer kommenden Pfad ohne
+  // diesen Guard. Allow-List wird beim App-Restart geleert (Renderer
+  // re-registriert seine Pack-Roots bei Pack-Load).
+  const packSampleRoots = new Set<string>();
+
+  ipcMain.handle("pack:registerRoot", async (_event, rootPath: unknown) => {
+    if (typeof rootPath !== "string" || rootPath.length === 0) {
+      return { success: false, error: "Kein Root-Pfad" };
+    }
+    if (rootPath.length > 4096) return { success: false, error: "Pfad zu lang" };
+    if (rootPath.includes("\0")) return { success: false, error: "Pfad enthält NUL-Byte" };
+    if (!path.isAbsolute(rootPath)) return { success: false, error: "Nur absolute Pfade erlaubt" };
+    try {
+      const resolved = path.resolve(rootPath);
+      // Stat-Check: Root muss existieren und ein Verzeichnis sein.
+      const stat = await fs.promises.stat(resolved);
+      if (!stat.isDirectory()) {
+        return { success: false, error: "Root ist kein Verzeichnis" };
+      }
+      packSampleRoots.add(resolved);
+      return { success: true, root: resolved };
+    } catch {
+      return { success: false, error: "Root-Pfad nicht gefunden" };
+    }
+  });
+
+  ipcMain.handle("pack:readFile", async (_event, filePath: unknown) => {
+    try {
+      // SECURITY: Path-Validation + Root-Allowlist-Check VOR jedem File-Access.
+      const allowed = Array.from(packSampleRoots);
+      const check = validatePackSamplePath(filePath, allowed);
+      if (!check.ok) return { success: false as const, error: check.error };
+      try {
+        await fs.promises.access(check.resolved, fs.constants.R_OK);
+      } catch {
+        return { success: false as const, error: "Datei nicht lesbar" };
+      }
+      const stat = await fs.promises.stat(check.resolved);
+      if (!stat.isFile()) {
+        return { success: false as const, error: "Pfad ist keine Datei" };
+      }
+      const sizeCheck = validatePackSampleFileSize(stat.size);
+      if (!sizeCheck.ok) return { success: false as const, error: sizeCheck.error };
+      const buffer = await fs.promises.readFile(check.resolved);
+      // SECURITY: Transfer als number[] (langsam aber sicher) — kein
+      // ArrayBuffer-Sharing zwischen Main/Renderer.
+      const data = buffer.buffer.slice(
+        buffer.byteOffset,
+        buffer.byteOffset + buffer.byteLength,
+      );
+      return { success: true as const, data };
+    } catch (err) {
+      // SECURITY: Stack-Trace nicht an Renderer leaken.
+      console.error("[IPC pack:readFile] error:", err);
+      return { success: false as const, error: "Lesefehler" };
     }
   });
 

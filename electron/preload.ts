@@ -94,6 +94,28 @@ const electronAPI = {
   ): Promise<{ success: boolean; error?: string }> =>
     ipcRenderer.invoke("fs:write-file", filePath, data),
 
+  // ── Sample-Pack-Read (v3.107.0) ─────────────────────────────────────────────
+  /**
+   * Registriert einen Pack-Root in der Main-Allow-List. Vor jedem
+   * `packReadFile`-Call muss der dazugehörige Root einmal registriert sein
+   * (idempotent). Main validiert: existiert, ist Verzeichnis, absolute path.
+   */
+  packRegisterRoot: (
+    rootPath: string,
+  ): Promise<{ success: boolean; root?: string; error?: string }> =>
+    ipcRenderer.invoke("pack:registerRoot", rootPath),
+
+  /**
+   * Liest eine User-importierte Sample-Datei. Main-Side validiert
+   * gegen Path-Traversal: Endung-Whitelist, NUL-Byte-Defense, Root-
+   * Containment (Pfad muss unter einem registrierten Root liegen),
+   * 100 MB Size-Cap.
+   */
+  packReadFile: (
+    filePath: string,
+  ): Promise<{ success: boolean; data?: ArrayBuffer; error?: string }> =>
+    ipcRenderer.invoke("pack:readFile", filePath),
+
   // ── Audio-Recording-Save (TASK-234 / v2.86) ────────────────────────────────
   /**
    * Schreibt einen WAV-Buffer in userData/recordings/<filename>.

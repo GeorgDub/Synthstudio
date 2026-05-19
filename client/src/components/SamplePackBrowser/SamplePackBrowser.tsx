@@ -25,6 +25,15 @@ import {
   scanFolderForSamples,
   fileListToScanInputs,
 } from "@/components/SamplePackBrowser/importLogic";
+import {
+  previewSample,
+  getSharedPreviewContext,
+  type PreviewHandle,
+} from "@/utils/samplePackPreview";
+import { PACK_SAMPLE_DRAG_MIME } from "@/components/SamplePackBrowser/dropPayload";
+
+// Re-export für Backwards-Compat (alte Imports aus DrumMachine).
+export { PACK_SAMPLE_DRAG_MIME };
 
 // ─── Icons (text-only — bleibt theme-konform) ────────────────────────────────
 
@@ -44,10 +53,6 @@ const CATEGORY_ICONS: Record<SampleCategory, string> = {
   unknown: "❓",
 };
 
-// ─── Drag-Payload-MIME ───────────────────────────────────────────────────────
-
-export const PACK_SAMPLE_DRAG_MIME = "application/x-synthstudio-pack-sample";
-
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function SamplePackBrowser({ className = "" }: { className?: string }) {
@@ -66,8 +71,9 @@ export function SamplePackBrowser({ className = "" }: { className?: string }) {
   const [importBusy, setImportBusy] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
 
-  // Hover-Preview
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+  // Hover-Preview (v3.107.0: echte Audio-Vorschau via AudioContext)
+  const previewHandleRef = useRef<PreviewHandle | null>(null);
+  const previewTokenRef = useRef(0);
   const [previewId, setPreviewId] = useState<string | null>(null);
 
   // ── Filter-Resultat ──
@@ -110,16 +116,29 @@ export function SamplePackBrowser({ className = "" }: { className?: string }) {
     setImportBusy(true);
     setImportError(null);
     try {
-      const inputs = fileListToScanInputs(files);
+      const filesArr = Array.from(files);
+      const inputs = fileListToScanInputs(filesArr);
       const scanned = scanFolderForSamples(inputs);
       if (scanned.length === 0) {
         setImportError("Keine Audio-Dateien gefunden.");
         return;
       }
       // Pack-Name: erstes Verzeichnis-Segment vom relativen Pfad
-      const first = files[0] as unknown as { webkitRelativePath?: string };
+      const first = filesArr[0] as unknown as { webkitRelativePath?: string };
       const rootPath = first.webkitRelativePath?.split(/[/\\]/)[0] ?? "Pack";
-      store.addPack(rootPath, rootPath, scanned);
+      // v3.107.0: Browser-Memory File-Handles via relPath → scanned.id matchen,
+      // damit getSampleData() später blob-bytes ausliefern kann.
+      const fileHandles = new Map<string, File>();
+      const byRelPath = new Map<string, File>();
+      for (const f of filesArr) {
+        const rel = (f as unknown as { webkitRelativePath?: string }).webkitRelativePath ?? f.name;
+        byRelPath.set(rel, f);
+      }
+      for (const s of scanned) {
+        const file = byRelPath.get(s.relPath);
+        if (file) fileHandles.set(s.id, file);
+      }
+      store.addPack(rootPath, rootPath, scanned, { fileHandles });
     } catch (err) {
       setImportError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -128,29 +147,52 @@ export function SamplePackBrowser({ className = "" }: { className?: string }) {
     }
   }, [store]);
 
-  // ── Hover-Preview ──
-  const handleMouseEnter = useCallback((sample: SamplePackSample) => {
-    // Preview funktioniert nur wenn wir ein File-Handle haben — hier nicht
-    // umsetzbar ohne Electron-FS-Access. UI bleibt aber sichtbar.
-    setPreviewId(sample.id);
+  // ── Hover-Preview (v3.107.0 — echte Audio-Vorschau) ──
+  const stopActivePreview = useCallback(() => {
+    if (previewHandleRef.current) {
+      try { previewHandleRef.current.stop(); } catch { /* ignore */ }
+      previewHandleRef.current = null;
+    }
   }, []);
+
+  const handleMouseEnter = useCallback((sample: SamplePackSample) => {
+    setPreviewId(sample.id);
+    // Vorherige Preview cancellen.
+    stopActivePreview();
+    const token = ++previewTokenRef.current;
+    void (async () => {
+      const data = await store.getSampleData(sample.id);
+      if (!data) return; // kein Handle/Pfad → silent.
+      const ctx = getSharedPreviewContext();
+      if (!ctx) return;
+      // Wenn währenddessen ein neuer Hover startete, abbrechen.
+      if (previewTokenRef.current !== token) return;
+      // AudioContext braucht User-Gesture — resume() ist no-op wenn schon running.
+      try { await ctx.resume(); } catch { /* ignore */ }
+      if (previewTokenRef.current !== token) return;
+      const handle = await previewSample(data, ctx, { durationMs: 1500, gain: 0.7 });
+      // Neue Preview während decode gestartet? → diese sofort stoppen.
+      if (previewTokenRef.current !== token) {
+        handle.stop();
+        return;
+      }
+      previewHandleRef.current = handle;
+    })();
+  }, [store, stopActivePreview]);
 
   const handleMouseLeave = useCallback(() => {
     setPreviewId(null);
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current.currentTime = 0;
-    }
-  }, []);
+    previewTokenRef.current++;
+    stopActivePreview();
+  }, [stopActivePreview]);
 
   // Cleanup Audio on unmount
   useEffect(() => {
     return () => {
-      if (audioRef.current) {
-        audioRef.current.pause();
-      }
+      previewTokenRef.current++;
+      stopActivePreview();
     };
-  }, []);
+  }, [stopActivePreview]);
 
   // ── Drag-Start ──
   const handleDragStart = useCallback((e: React.DragEvent, sample: SamplePackSample) => {
@@ -431,8 +473,6 @@ export function SamplePackBrowser({ className = "" }: { className?: string }) {
           </section>
         ))}
 
-        {/* Hidden audio element for previews */}
-        <audio ref={audioRef} className="hidden" aria-hidden="true" />
       </main>
     </div>
   );

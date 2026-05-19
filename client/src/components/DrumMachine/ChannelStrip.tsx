@@ -13,6 +13,11 @@ import { useMidiContext } from "@/context/MidiContext";
 import { findMappingForTarget } from "@/hooks/useMidi";
 import { ChannelColorPicker } from "@/components/Mixer/ChannelColorPicker";
 import { resolveChannelColor } from "@/utils/channelColors";
+import {
+  PACK_SAMPLE_DRAG_MIME,
+  parsePackSamplePayload,
+} from "@/components/SamplePackBrowser/dropPayload";
+import { getSampleBlobUrl } from "@/store/useSamplePackStore";
 
 export interface ChannelStripProps {
   part: PartData;
@@ -97,9 +102,36 @@ export function ChannelStrip({
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragOver(false);
+    // v3.107.0: Pack-Browser-Drop hat Vorrang vor klassischem
+    // "sampleUrl"-Drop (Library-Drag). Payload ist JSON, wir holen die
+    // Bytes via getSampleBlobUrl (Browser-Memory ODER Electron-FS).
+    const packRaw = e.dataTransfer.getData(PACK_SAMPLE_DRAG_MIME);
+    if (packRaw) {
+      const payload = parsePackSamplePayload(packRaw);
+      if (payload) {
+        void (async () => {
+          const url = await getSampleBlobUrl(payload.sampleId);
+          if (url) onSampleDrop(url, payload.filename);
+        })();
+        return;
+      }
+    }
     const sampleUrl = e.dataTransfer.getData("sampleUrl");
     const sampleName = e.dataTransfer.getData("sampleName");
     if (sampleUrl) onSampleDrop(sampleUrl, sampleName || "Sample");
+  };
+  // v3.107.0: dragOver muss preventDefault aufrufen und auf den neuen MIME
+  // matchen — sonst akzeptiert der Browser den Drop nicht.
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    if (
+      e.dataTransfer.types.includes(PACK_SAMPLE_DRAG_MIME) ||
+      e.dataTransfer.types.includes("sampleUrl") ||
+      e.dataTransfer.types.includes("Files")
+    ) {
+      e.dataTransfer.dropEffect = "copy";
+    }
+    setIsDragOver(true);
   };
 
   const handleStepMouseDown = (stepIndex: number, e: React.MouseEvent) => {
@@ -146,7 +178,7 @@ export function ChannelStrip({
         boxShadow: `inset 2px 0 0 0 ${resolvedColor}`,
       }}
       onClick={onClick}
-      onDragOver={e => { e.preventDefault(); setIsDragOver(true); }}
+      onDragOver={handleDragOver}
       onDragLeave={() => setIsDragOver(false)}
       onDrop={handleDrop}
     >
