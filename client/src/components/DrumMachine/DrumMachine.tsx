@@ -192,6 +192,9 @@ import { computeMotion } from "@/utils/patternMotion";
 // v3.223: Pattern-Row Groove-Feel-Badge — Swing/Push/Laidback Klassifikation
 // aus aktiven Off-Beat-Steps (Pure-Helper v3.222).
 import { perceiveGroove } from "@/utils/patternGroovePerception";
+// v3.224: Pattern-Row KickSnare-Style-Badge — backbeat/kick-heavy/snare-heavy/
+// broken Klassifikation aus Kick/Snare-Step-Platzierung (Pure-Helper v3.223).
+import { analyzeKickSnare } from "@/utils/patternKickSnareDetect";
 import type { PatternData } from "@/audio/AudioEngine";
 
 // ─── v3.205: Pattern-Flatten-Helper (module-level Cache via Closure) ───────────
@@ -508,6 +511,17 @@ function PatternRow({
     }
     return perceiveGroove(flat);
   }, [pattern]);
+  // v3.224: KickSnare-Style — analyzeKickSnare auf pattern.parts. Liefert
+  // groovePattern ∈ {backbeat, kick-heavy, snare-heavy, broken, sparse,
+  // unknown}. Badge nur sichtbar wenn ≠ "unknown" und ≠ "sparse"
+  // (informativer Mehrwert).
+  const kickSnare = useMemo(() => {
+    const parts = pattern.parts.map((p) => ({
+      name: p.name,
+      steps: p.steps.map((s) => ({ active: s.active })),
+    }));
+    return analyzeKickSnare(parts);
+  }, [pattern]);
   // v2.5: Submenu zum Auswählen welcher Pattern als Source dient
   const [pickerOpen, setPickerOpen] = useState(false);
   // v2.8: Drag-Drop-Reorder State (drop-indicator: above|below|null)
@@ -769,6 +783,21 @@ function PatternRow({
           >
             {groove.feel === "push" ? "⇡" : groove.feel === "laidback" ? "⇣" : "⇋"}{" "}
             {groove.feel.toUpperCase()}
+          </span>
+        )}
+        {/* v3.224: KickSnare-Style-Badge — backbeat / kick-heavy / snare-heavy /
+            broken. "sparse" und "unknown" werden ausgeblendet (kein Mehrwert). */}
+        {kickSnare.groovePattern !== "unknown" && kickSnare.groovePattern !== "sparse" && (
+          <span
+            className="ml-1 px-1 py-0.5 rounded text-[9px] bg-bg-elevated text-text-muted border border-border-color"
+            title={`Style: ${kickSnare.groovePattern}, kickOnStrong=${Math.round(kickSnare.kickOnStrong * 100)}%, snareOnWeak=${Math.round(kickSnare.snareOnWeak * 100)}%`}
+            data-testid={`pattern-row-kicksnare-${pattern.id}`}
+          >
+            {kickSnare.groovePattern === "backbeat"    ? "🥁" :
+             kickSnare.groovePattern === "kick-heavy"  ? "🦶" :
+             kickSnare.groovePattern === "snare-heavy" ? "🥁" :
+             kickSnare.groovePattern === "broken"      ? "💥" :
+             ""}
           </span>
         )}
         {learn.isMapped && (
