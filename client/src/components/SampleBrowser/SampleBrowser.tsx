@@ -165,6 +165,8 @@ import { applyBitcrush } from "@/utils/sampleBitcrush";
 import { applyHaas } from "@/utils/sampleHaas";
 // v3.225: Bulk-Exciter (Aural-Exciter / HP+tanh-Saturation, amount 0..1, freq 500..8000) für selektierte Samples.
 import { applyExciter } from "@/utils/sampleExciter";
+// v3.226: Bulk-FreqShift (cos-Carrier-Multiplikation, shiftHz -500..500) für selektierte Samples.
+import { applyFreqShift } from "@/utils/sampleFreqShift";
 
 // ─── Typen ────────────────────────────────────────────────────────────────────
 
@@ -3078,6 +3080,8 @@ export function SampleBrowser({
   // v3.225: Bulk-Exciter — amount (0..1, default 0.3) + freq (500..8000 Hz, default 3000).
   const [bulkExciterAmount, setBulkExciterAmount] = useState<number>(0.3);
   const [bulkExciterFreq, setBulkExciterFreq] = useState<number>(3000);
+  // v3.226: Bulk-FreqShift — shiftHz (-500..500, default 50). 0 = Identity.
+  const [bulkFreqShift, setBulkFreqShift] = useState<number>(50);
 
   const handleBulkNoiseReduce = useCallback(async () => {
     if (multiSelectIds.size === 0 || !onTransformSample) return;
@@ -3375,6 +3379,67 @@ export function SampleBrowser({
     onTransformSample,
     bulkExciterAmount,
     bulkExciterFreq,
+  ]);
+
+  // v3.226: Bulk-FreqShift — applyFreqShift (cos-Carrier-Multiplikation,
+  // shiftHz 0 = Identity).
+  const handleBulkFreqShift = useCallback(async () => {
+    if (multiSelectIds.size === 0 || !onTransformSample) return;
+    if (bulkFreqShift === 0) return;
+    let applied = 0;
+    for (const id of multiSelectIds) {
+      const sample = samples.find((s) => s.id === id);
+      if (!sample) continue;
+      try {
+        const buf = await AudioEngine.loadSample(sample.path);
+        if (!buf) continue;
+        const out = applyFreqShift(buf as unknown as AudioBufferLike, {
+          shiftHz: bulkFreqShift,
+        });
+        if (out.numberOfChannels === 0 || out.length === 0) continue;
+        const channels = Math.min(2, out.numberOfChannels) as 1 | 2;
+        const wav = encodeWav(
+          Array.from({ length: channels }, (_, c) =>
+            out.getChannelData(c) as Float32Array,
+          ),
+          { sampleRate: out.sampleRate, channels, bitDepth: 16 },
+        );
+        const blob = new Blob([wav], { type: "audio/wav" });
+        const newUrl = URL.createObjectURL(blob);
+        const Ctor = (window.OfflineAudioContext ||
+          // @ts-expect-error legacy webkit fallback
+          window.webkitOfflineAudioContext) as typeof OfflineAudioContext;
+        const ctx = new Ctor(
+          Math.max(1, out.numberOfChannels),
+          Math.max(1, out.length),
+          out.sampleRate,
+        ) as BaseAudioContext;
+        const audioBuf = ctx.createBuffer(
+          Math.max(1, out.numberOfChannels),
+          Math.max(1, out.length),
+          out.sampleRate,
+        );
+        for (let c = 0; c < out.numberOfChannels; c++) {
+          const src = out.getChannelData(c);
+          const copy = new Float32Array(src.length);
+          copy.set(src);
+          audioBuf.copyToChannel(copy, c, 0);
+        }
+        onTransformSample(id, newUrl, audioBuf);
+        applied++;
+      } catch {
+        /* skip */
+      }
+    }
+    toast(
+      `FreqShift ${bulkFreqShift}Hz: ${applied} Samples`,
+      { kind: "success" },
+    );
+  }, [
+    multiSelectIds,
+    samples,
+    onTransformSample,
+    bulkFreqShift,
   ]);
 
   // v3.152: Wenn Samples aus dem Projekt verschwinden (extern gelöscht),
@@ -5088,6 +5153,30 @@ export function SampleBrowser({
                         title="Exciter (Aural-Exciter / HP + tanh-Saturation, additiv zum Dry) auf alle ausgewählten Samples"
                       >
                         EXC
+                      </button>
+                      {/* v3.226: Bulk-FreqShift — shiftHz-Slider + Apply-Button (cos-Carrier-Multiplikation, 0 = Identity). */}
+                      <input
+                        type="range"
+                        min={-500}
+                        max={500}
+                        step={10}
+                        value={bulkFreqShift}
+                        onChange={(e) => setBulkFreqShift(parseInt(e.target.value, 10))}
+                        className="w-20 accent-accent-secondary"
+                        data-testid="sample-browser-bulk-freqshift"
+                        title="FreqShift in Hz (-500..500, default 50, 0 = Identity; cos-Carrier-Approximation, +n/-n liefern identischen Output)"
+                      />
+                      <span className="text-[10px] font-mono text-text-muted w-12 text-right">
+                        {bulkFreqShift}Hz
+                      </span>
+                      <button
+                        onClick={handleBulkFreqShift}
+                        disabled={!onTransformSample || bulkFreqShift === 0}
+                        data-testid="sample-browser-bulk-freqshift-apply"
+                        className="px-2 py-0.5 rounded text-[10px] border border-border-color text-text-primary hover:border-accent-secondary hover:text-accent-secondary disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        title="FreqShift (cos-Carrier-Multiplikation, shiftHz 0 = Identity) auf alle ausgewählten Samples"
+                      >
+                        FSH
                       </button>
                       <button
                         onClick={handleBulkDelete}

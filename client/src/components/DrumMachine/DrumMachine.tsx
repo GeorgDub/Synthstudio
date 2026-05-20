@@ -195,6 +195,7 @@ import { perceiveGroove } from "@/utils/patternGroovePerception";
 // v3.224: Pattern-Row KickSnare-Style-Badge — backbeat/kick-heavy/snare-heavy/
 // broken Klassifikation aus Kick/Snare-Step-Platzierung (Pure-Helper v3.223).
 import { analyzeKickSnare } from "@/utils/patternKickSnareDetect";
+import { analyzeHihat } from "@/utils/patternHihatDetect";
 import type { PatternData } from "@/audio/AudioEngine";
 
 // ─── v3.205: Pattern-Flatten-Helper (module-level Cache via Closure) ───────────
@@ -522,6 +523,16 @@ function PatternRow({
     }));
     return analyzeKickSnare(parts);
   }, [pattern]);
+  // v3.226: Hihat-Style — analyzeHihat auf pattern.parts. Liefert
+  // hatStyle ∈ {off-beat, all-16, all-8, syncopated, sparse, none}.
+  // Badge sichtbar wenn hatStyle ≠ "none" (alle anderen Styles informativ).
+  const hihat = useMemo(() => {
+    const parts = pattern.parts.map((p) => ({
+      name: p.name,
+      steps: p.steps.map((s) => ({ active: s.active })),
+    }));
+    return analyzeHihat(parts);
+  }, [pattern]);
   // v2.5: Submenu zum Auswählen welcher Pattern als Source dient
   const [pickerOpen, setPickerOpen] = useState(false);
   // v2.8: Drag-Drop-Reorder State (drop-indicator: above|below|null)
@@ -797,6 +808,22 @@ function PatternRow({
              kickSnare.groovePattern === "kick-heavy"  ? "🦶" :
              kickSnare.groovePattern === "snare-heavy" ? "🥁" :
              kickSnare.groovePattern === "broken"      ? "💥" :
+             ""}
+          </span>
+        )}
+        {/* v3.226: Hihat-Style-Badge — off-beat / all-16 / all-8 / syncopated /
+            sparse. "none" wird ausgeblendet (kein Hihat-Part vorhanden). */}
+        {hihat.hatStyle !== "none" && (
+          <span
+            className="ml-1 px-1 py-0.5 rounded text-[9px] font-mono bg-bg-elevated text-text-muted border border-border-color"
+            title={`HH: ${hihat.hatStyle}, consistency=${Math.round(hihat.consistencyScore * 100)}%`}
+            data-testid={`pattern-row-hihat-${pattern.id}`}
+          >
+            {hihat.hatStyle === "all-16"     ? "⌷⌷⌷⌷" :
+             hihat.hatStyle === "all-8"      ? "⌷⌷" :
+             hihat.hatStyle === "off-beat"   ? "⌷·⌷·" :
+             hihat.hatStyle === "syncopated" ? "~" :
+             hihat.hatStyle === "sparse"     ? "·" :
              ""}
           </span>
         )}
