@@ -180,6 +180,8 @@ import { complexityIndex } from "@/utils/patternEntropy";
 import { computeTension } from "@/utils/patternTension";
 // v3.212: Pattern-Row Energy-Curve — Mini-Spark-Line aus computeEnergyCurve.
 import { computeEnergyCurve } from "@/utils/patternEnergyCurve";
+// v3.214: Pattern-Row Flow-Direction-Badge — detectFlowDirection.
+import { detectFlowDirection } from "@/utils/patternFlowDirection";
 import type { PatternData } from "@/audio/AudioEngine";
 
 // ─── v3.205: Pattern-Flatten-Helper (module-level Cache via Closure) ───────────
@@ -398,6 +400,20 @@ function PatternRow({
     }
     return computeEnergyCurve(flat, 4);
   }, [pattern]);
+  // v3.214: Flow-Direction — grobe Struktur der Step-Aktivitaet entlang der
+  // Zeit-Achse (forward/backward/center-out/edges-in/uniform). OR-aggregiert
+  // alle Parts auf flat boolean[], limit 32 Steps (analog energyCurve).
+  const flowDirection = useMemo(() => {
+    const stepCount = Math.min(pattern.stepCount, 32);
+    const flat: boolean[] = new Array(stepCount).fill(false);
+    for (const part of pattern.parts) {
+      const len = Math.min(part.steps.length, stepCount);
+      for (let i = 0; i < len; i++) {
+        if (part.steps[i].active) flat[i] = true;
+      }
+    }
+    return detectFlowDirection(flat);
+  }, [pattern]);
   // v2.5: Submenu zum Auswählen welcher Pattern als Source dient
   const [pickerOpen, setPickerOpen] = useState(false);
   // v2.8: Drag-Drop-Reorder State (drop-indicator: above|below|null)
@@ -601,6 +617,20 @@ function PatternRow({
                 strokeWidth="0.1"
               />
             </svg>
+          </span>
+        )}
+        {/* v3.214: Flow-Direction-Badge — Pfeil/Icon je nach detectFlowDirection. */}
+        {flowDirection.direction !== "uniform" && flowDirection.confidence > 0.15 && (
+          <span
+            className="ml-1 px-1 py-0.5 rounded text-[9px] font-mono bg-bg-elevated text-text-muted"
+            title={`Flow: ${flowDirection.direction} (${Math.round(flowDirection.confidence * 100)}% confidence)`}
+            data-testid={`pattern-row-flow-${pattern.id}`}
+          >
+            {flowDirection.direction === "forward"    ? "→"   :
+             flowDirection.direction === "backward"   ? "←"   :
+             flowDirection.direction === "center-out" ? "←·→" :
+             flowDirection.direction === "edges-in"   ? "→·←" :
+             ""}
           </span>
         )}
         {learn.isMapped && (

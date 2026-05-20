@@ -147,6 +147,8 @@ import { applyAutoPan } from "@/utils/sampleAutoPan";
 import { applyStutterBuffer } from "@/utils/sampleStutterBuffer";
 // v3.213: Bulk-ADSR (Gain-Envelope, attackMs 0..2000 / releaseMs 0..5000) für selektierte Samples.
 import { applyAdsr } from "@/utils/sampleGainEnvelope";
+// v3.214: Bulk-RingMod (Ring-Modulation, carrierHz 50..3000 / mix 0..1) für selektierte Samples.
+import { applyRingMod } from "@/utils/sampleRingMod";
 
 // ─── Typen ────────────────────────────────────────────────────────────────────
 
@@ -2779,6 +2781,73 @@ export function SampleBrowser({
     bulkAdsrRelease,
   ]);
 
+  // v3.214 — Bulk-RingMod (Ring-Modulation) für selektierte Samples.
+  // applyRingMod ist pure; resultierender Buffer (gleiche Länge wie Input) wird
+  // als WAV encodet und via onTransformSample zurück ins Projekt geschrieben
+  // (+ AudioBuffer für AudioEngine-Cache). Default: bell-Preset (880Hz, mix 0.8).
+  const [bulkRingModCarrier, setBulkRingModCarrier] = useState<number>(880);
+  const [bulkRingModMix, setBulkRingModMix] = useState<number>(0.8);
+
+  const handleBulkRingMod = useCallback(async () => {
+    if (multiSelectIds.size === 0 || !onTransformSample) return;
+    let applied = 0;
+    for (const id of multiSelectIds) {
+      const sample = samples.find((s) => s.id === id);
+      if (!sample) continue;
+      try {
+        const buf = await AudioEngine.loadSample(sample.path);
+        if (!buf) continue;
+        const out = applyRingMod(buf as unknown as AudioBufferLike, {
+          carrierHz: bulkRingModCarrier,
+          mix: bulkRingModMix,
+        });
+        if (out.numberOfChannels === 0 || out.length === 0) continue;
+        const channels = Math.min(2, out.numberOfChannels) as 1 | 2;
+        const wav = encodeWav(
+          Array.from({ length: channels }, (_, c) =>
+            out.getChannelData(c) as Float32Array,
+          ),
+          { sampleRate: out.sampleRate, channels, bitDepth: 16 },
+        );
+        const blob = new Blob([wav], { type: "audio/wav" });
+        const newUrl = URL.createObjectURL(blob);
+        const Ctor = (window.OfflineAudioContext ||
+          // @ts-expect-error legacy webkit fallback
+          window.webkitOfflineAudioContext) as typeof OfflineAudioContext;
+        const ctx = new Ctor(
+          Math.max(1, out.numberOfChannels),
+          Math.max(1, out.length),
+          out.sampleRate,
+        ) as BaseAudioContext;
+        const audioBuf = ctx.createBuffer(
+          Math.max(1, out.numberOfChannels),
+          Math.max(1, out.length),
+          out.sampleRate,
+        );
+        for (let c = 0; c < out.numberOfChannels; c++) {
+          const src = out.getChannelData(c);
+          const copy = new Float32Array(src.length);
+          copy.set(src);
+          audioBuf.copyToChannel(copy, c, 0);
+        }
+        onTransformSample(id, newUrl, audioBuf);
+        applied++;
+      } catch {
+        /* skip */
+      }
+    }
+    toast(
+      `RingMod ${bulkRingModCarrier}Hz mix=${bulkRingModMix}: ${applied} Samples`,
+      { kind: "success" },
+    );
+  }, [
+    multiSelectIds,
+    samples,
+    onTransformSample,
+    bulkRingModCarrier,
+    bulkRingModMix,
+  ]);
+
   // v3.152: Wenn Samples aus dem Projekt verschwinden (extern gelöscht),
   // multi-select-Set defensiv auf Existenz-Filter laufen lassen.
   useEffect(() => {
@@ -4209,6 +4278,43 @@ export function SampleBrowser({
                         title="ADSR Gain-Envelope (Attack + Release) auf alle ausgewählten Samples"
                       >
                         ADSR
+                      </button>
+                      <input
+                        type="range"
+                        min={50}
+                        max={3000}
+                        step={10}
+                        value={bulkRingModCarrier}
+                        onChange={(e) => setBulkRingModCarrier(parseFloat(e.target.value))}
+                        data-testid="sample-browser-bulk-ringmod-carrier"
+                        className="w-20 accent-accent-secondary"
+                        title="RingMod Carrier 50..3000 Hz (100 = bass, 600 = metallic, 880 = bell, 1500 = alien)"
+                      />
+                      <span className="text-[10px] font-mono text-text-muted w-14 text-center">
+                        {bulkRingModCarrier}Hz
+                      </span>
+                      <input
+                        type="range"
+                        min={0}
+                        max={1}
+                        step={0.05}
+                        value={bulkRingModMix}
+                        onChange={(e) => setBulkRingModMix(parseFloat(e.target.value))}
+                        data-testid="sample-browser-bulk-ringmod-mix"
+                        className="w-20 accent-accent-secondary"
+                        title="RingMod Dry/Wet-Mix 0..1 (0 = dry, 0.5 = balanced, 0.8 = bell-default, 1 = full ring mod)"
+                      />
+                      <span className="text-[10px] font-mono text-text-muted w-12 text-center">
+                        ×{bulkRingModMix.toFixed(2)}
+                      </span>
+                      <button
+                        onClick={handleBulkRingMod}
+                        disabled={!onTransformSample || bulkRingModMix === 0}
+                        data-testid="sample-browser-bulk-ringmod"
+                        className="px-2 py-0.5 rounded text-[10px] border border-border-color text-text-primary hover:border-accent-secondary hover:text-accent-secondary disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        title="Ring-Modulation (Signal × Sine-Carrier) auf alle ausgewählten Samples — bell/alien/metallic/bass-Klänge"
+                      >
+                        RM
                       </button>
                       <button
                         onClick={handleBulkDelete}
