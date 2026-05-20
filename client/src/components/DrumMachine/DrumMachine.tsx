@@ -21,6 +21,7 @@ import { LooperPanel } from "@/components/PerformanceMode/LooperPanel";
 import { TransposeControl } from "@/components/PianoRoll/TransposeControl";
 import { PatternMorphPanel } from "@/components/PatternMorph";
 import { PatternVariationPanel } from "@/components/PatternVariation";
+import { ChordSuggestionPanel } from "@/components/ChordSuggestion/ChordSuggestionPanel";
 import { applyVariationToPattern } from "@/store/usePatternVariationStore";
 import { MacroPanel } from "@/components/Macro/MacroPanel";
 import { MuteSoloGroupPanel } from "@/components/MuteSoloGroups/MuteSoloGroupPanel";
@@ -589,6 +590,8 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
   const [showMacros, setShowMacros] = useState(false);
   const [showGroups, setShowGroups] = useState(false);
   const [showPolyrhythm, setShowPolyrhythm] = useState(false);
+  // v3.176.0: Chord-Suggestion-Panel als Floating-Overlay (Toggle via Toolbar-Button).
+  const [showChordPanel, setShowChordPanel] = useState(false);
   // v3.40 — 64-Step Page-Switcher: bei stepCount > 16 wird das Grid in 16er-Pages
   // aufgeteilt. State ist lokal (nicht im Store) damit jedes geöffnete Pattern
   // mit Page-0 startet; Auto-Follow während Playback synchronisiert die Page mit
@@ -1879,6 +1882,17 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
           <span className="font-mono w-8 text-right">{Math.round(dm.swingAmount * 100)}%</span>
         </label>
 
+        {/* v3.176.0: Chord-Suggestion-Panel Toggle (Floating-Overlay). */}
+        <button
+          type="button"
+          onClick={() => setShowChordPanel((v) => !v)}
+          data-testid="chord-panel-toggle"
+          className={`px-2 py-0.5 rounded text-[10px] border border-border-color transition-colors ${showChordPanel ? "bg-accent-secondary/30 text-accent-secondary" : "bg-bg-elevated text-text-muted hover:text-text-primary"}`}
+          title="Chord-Suggestions ein/ausblenden"
+        >
+          🎵 Chords
+        </button>
+
         {/* v3.166.0: Groove-Amount-Slider + Preset-Picker. Engine-Wire pending v3.167+. */}
         <label
           className="flex items-center gap-1.5 text-[10px] text-text-muted"
@@ -2919,6 +2933,23 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
         initialAId={compareModalAId}
         onClose={() => setCompareModalAId(null)}
       />
+
+      {/* ── Chord-Suggestion Floating-Panel (v3.176.0) ──────────────────── */}
+      {showChordPanel && (
+        <div
+          className="fixed bottom-4 right-4 z-40 w-80 shadow-2xl"
+          data-testid="chord-panel-floating"
+        >
+          <ChordSuggestionPanel visible={true} count={4} initialMood="happy" />
+          <button
+            type="button"
+            onClick={() => setShowChordPanel(false)}
+            className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-accent-danger text-white text-xs shadow-lg hover:scale-110 transition-transform"
+            title="Schließen"
+            data-testid="chord-panel-close"
+          >×</button>
+        </div>
+      )}
     </div>
   );
 }

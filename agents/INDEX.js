@@ -298,6 +298,17 @@ const INDEX = {
   //     a new bare-path entry while old version-suffixed ones remain
   //     is the explicit transition path.
   files: {
+    // ─── v3.177 Pure-Helpers (refactor) ─────────────────────────
+    "client/src/utils/sampleSpectralCentroid.ts": {
+      role:     "Pure-Helper Spectral-Centroid + Brightness-Kategorisierung fuer Audio-Samples. Public API: computeSpectralCentroid(buffer, opts?) -> CentroidResult {centroidHz, spreadHz, brightness}, categorizeBrightness(hz) -> 5-Stufen-Union ('dark' <500, 'warm' <1500, 'neutral' <3500, 'bright' <7000, 'harsh' >=7000), hannWindow(n, length). Konstanten: DEFAULT_FFT_SIZE=1024, BRIGHTNESS_THRESHOLDS. Algorithmus: Channel-Auswahl (mix/left/right; mix = arith. Mittelwert) -> Window-Cache (hann/hamming/rect) -> 50%-Overlap-Frames -> naive O(n^2)-DFT (ABSICHTLICH statt FFT-Lib, tests-friendly + deterministisch) -> Magnitude -> centroid = sum(f*mag)/sum(mag), spread = sqrt(sum((f-centroid)^2 * mag)/sum(mag)) -> Average ueber alle nicht-leeren Frames. Defensive: empty/silent -> {0, 0, 'dark'}, Sample < fftSize -> zero-padded Single-Frame, NaN/Infinity in categorizeBrightness -> 'dark'. Foundation fuer Sample-Browser 'Brightness'-Spalte/Filter + Auto-Sortierung. Production-Caveat: fuer Live-Browser sollte fft.js / AnalyserNode-FFT statt naive-DFT genutzt werden — Brightness-Mapping-Schicht bleibt wiederverwendbar.",
+      lastSeen: "2026-05-20T10:00:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "tests/features/sample-spectral-centroid.test.ts": {
+      role:     "Pure-Coverage fuer sampleSpectralCentroid.ts. 31 Tests in 3 describes: computeSpectralCentroid 13 (empty/silent->{0,0,dark}, 200Hz-sine->dark, 5000Hz-sine->bright, white-noise->mittel, spread broadband > sine, Stereo-Mix-Downmix kombiniert L+R, channelMode L vs R liefert getrennte centroids, Sample kuerzer als fftSize nicht throw, DEFAULT_FFT_SIZE-Konstante=1024, rect+hamming Sanity). categorizeBrightness 13 (alle 5 Boundaries 0/499/500/1499/1500/3500/6999/7000/20000, NaN/Infinity/negativ defensive -> dark, BRIGHTNESS_THRESHOLDS-Export). hannWindow 5 (linker/rechter Rand ~0, mittlere Position ~1, length=1 Edge=1, Symmetrie-Invariante ueber alle n). Determ. Test-Helpers makeSineBuffer/makeSilentBuffer/makeEmptyBuffer/makeNoiseBuffer (mulberry32 seed=42)/makeStereoSineBuffer. Vitest node-env, DOM-frei.",
+      lastSeen: "2026-05-20T10:00:00.000Z",
+      ownedBy:  "frontend"
+    },
     // ─── v3.176 UI-Components (frontend) ────────────────────────
     "client/src/components/ChordSuggestion/ChordSuggestionPanel.tsx": {
       role:     "Standalone-UI-Wrapper um v3.175 randomChordGenerator-Pure-Helper. Props: initialMood (default 'happy'), initialRootMidi (default 60), count (default 4), onChordSelected (optional callback), visible (default true). Lokaler React-State via useState fuer mood/rootMidi/seed. useMemo-Cache fuer generateRandomChords({mood, rootMidi, seed, count}). Reroll-Button setzt seed = Date.now() fuer neue Voicings. Mood-Dropdown aus Object.keys(MOOD_PRESETS) (5 Optionen happy/sad/tense/dreamy/dark). Root-Range 48..72 mit live-midiNoteToName-Display. Chord-Cards: Klick triggert onChordSelected(chord), disabled wenn kein Callback (+ Hint 'Klick-Apply pending — onChordSelected-Wire ist v3.177-Caveat'). KEINE hardcoded Tailwind-Farben — ausschliesslich semantische Klassen (bg-bg-panel/elevated, border-border-color, text-text-primary/muted/dim, accent-accent-secondary, hover:bg-accent-primary/30, hover:border-accent-primary). data-testid an allen interaktiven Elementen fuer kuenftige Playwright-Tests. Wire-Up in DrumMachine/PerformanceMode/PianoRoll ist v3.177-Caveat.",
@@ -3496,6 +3507,44 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "refactor",
+      timestamp: "2026-05-20T10:00:00.000Z",
+      done: [
+        "v3.177 sampleSpectralCentroid.ts (NEU, 325 LOC): Pure-Helper fuer Spectral-Centroid-Computation eines Audio-Samples. Public API: computeSpectralCentroid(buffer, options?) -> CentroidResult {centroidHz, spreadHz, brightness}, categorizeBrightness(hz) -> 5-Stufen-Union 'dark'|'warm'|'neutral'|'bright'|'harsh', hannWindow(n, length) -> number. Constants: DEFAULT_FFT_SIZE = 1024, BRIGHTNESS_THRESHOLDS = {dark:500, warm:1500, neutral:3500, bright:7000}.",
+        "Algorithmus: 1) Channel-Auswahl via channelMode 'mix'|'left'|'right' (mix = arithmetischer Mittelwert aller Kanaele). 2) Window-Function-Cache (hann/hamming/rect) pro fftSize. 3) Frame-Loop mit 50%-Overlap, hop = fftSize/2. 4) Naive O(n^2)-DFT (ABSICHTLICH statt FFT-Lib — tests-friendly, deterministisch, kein Lib-Import). 5) Magnitude-Spectrum -> centroid = sum(f*mag)/sum(mag), spread = sqrt(sum((f-centroid)^2 * mag)/sum(mag)). 6) Average ueber alle nicht-leeren Frames (skip wenn sum(mag) <= 0). Defensive: empty buffer / silent buffer -> {0, 0, 'dark'}, Sample < fftSize -> zero-padded Single-Frame, NaN/Infinity in categorizeBrightness -> 'dark'.",
+        "tests/features/sample-spectral-centroid.test.ts (NEU, 319 LOC, 31 Tests in 3 describes): computeSpectralCentroid 13 Tests (empty, silent, 200Hz-sine->dark, 5000Hz-sine->bright, white-noise->mittel, spread broadband vs sine, Stereo-Mix-Downmix, channelMode L/R-Trennung, kuerzer-als-fftSize, DEFAULT_FFT_SIZE-Konstante, rect+hamming Sanity). categorizeBrightness 13 Tests (alle 5 Boundaries genau, NaN, Infinity, negativ, BRIGHTNESS_THRESHOLDS-Export). hannWindow 5 Tests (linker/rechter Rand, mittlere Position, length=1 Edge, Symmetrie-Invariante). Determ. Test-Helpers: makeSineBuffer, makeSilentBuffer, makeEmptyBuffer, makeNoiseBuffer (mulberry32 seed=42), makeStereoSineBuffer.",
+        "pnpm check: GRUEN (tsc --noEmit, kein neuer Error eingefuehrt). pnpm test tests/features/sample-spectral-centroid.test.ts: 31/31 passed in 633ms. KEIN git commit, KEIN package.json bump. KEINE anderen Files beruehrt (parallele working-tree-modifications + andere Agenten unangetastet — git status zeigt nur die zwei neuen ?? Files plus die bereits vorhandenen M-modifikationen)."
+      ],
+      next: [
+        "v3.178+ Wire-Up (frontend-Owner): computeSpectralCentroid in Sample-Browser als 'Brightness'-Spalte / Filter-Chip ('nur bright/harsh anzeigen'). useSampleLibraryStore koennte den centroidHz + brightness pro Sample memoizieren (compute on first decode, persist in store-meta). Cache-Key: sample-hash + fftSize.",
+        "v3.178+ Wire-Up (frontend-Owner): Auto-Sortierung 'nach Brightness' im Sample-Browser-Dropdown. Lexicographic ordering 'dark < warm < neutral < bright < harsh' liefert intuitive Reihenfolge ohne numerische Konversion.",
+        "v3.178+ Performance-Wiring (backend-Owner): fuer Live-Browser-Scrolling sollte ein echter FFT (z.B. via fft.js oder Web Audio API's AnalyserNode-FFT) den naive-DFT-Pfad ersetzen. Brightness-Mapping-Schicht (categorizeBrightness) bleibt wiederverwendbar — nur die Magnitude-Berechnung wird ausgetauscht. Naive-DFT ist ABSICHTLICH eingebaut um die Pure-Tests deterministisch zu halten."
+      ],
+      changed: [
+        "client/src/utils/sampleSpectralCentroid.ts (NEU, 325 LOC, Pure-Helper Spectral-Centroid + Brightness-Kategorisierung + Hann-Window)",
+        "tests/features/sample-spectral-centroid.test.ts (NEU, 319 LOC, 31 Tests in 3 describes)",
+        "agents/INDEX.js (workLog-Entry + files-Index)"
+      ]
+    },
+    {
+      agent:     "frontend",
+      timestamp: "2026-05-20T09:30:00.000Z",
+      done: [
+        "v3.176 ChordSuggestionPanel UI-Wire in DrumMachine als Floating-Overlay. NUR DrumMachine.tsx editiert (4 chirurgische Edits): (1) Import ChordSuggestionPanel aus @/components/ChordSuggestion/ChordSuggestionPanel neben PatternMorphPanel/PatternVariationPanel. (2) Neuer State const [showChordPanel, setShowChordPanel] = useState(false) neben den anderen show*-States (showPolyrhythm). (3) Toggle-Button '🎵 Chords' neben drum-machine-swing-slider in der Top-Toolbar mit data-testid='chord-panel-toggle', conditional bg-accent-secondary/30 wenn aktiv. (4) Floating-Overlay direkt vor dem Container-Closing-Div mit data-testid='chord-panel-floating', fixed bottom-4 right-4 z-40 w-80, ChordSuggestionPanel mit visible={true} count={4} initialMood='happy', plus Schliessen-Button (data-testid='chord-panel-close') als bg-accent-danger Kreis oben-rechts.",
+        "Theme-Konformitaet: ausschliesslich semantische Tailwind-Klassen (border-border-color, bg-bg-elevated, text-text-muted, text-text-primary, bg-accent-secondary/30, text-accent-secondary, bg-accent-danger). KEINE hardcoded slate/cyan/gray-Klassen.",
+        "pnpm check: GRUEN (tsc --noEmit, kein neuer Error). KEIN git commit, KEIN package.json bump. NUR DrumMachine.tsx + agents/INDEX.js editiert. onChordSelected NICHT gesetzt — bleibt v3.178-Caveat wie in v3.176 ChordSuggestionPanel-Quelldatei dokumentiert (Cards zeigen Hint 'Klick-Apply pending')."
+      ],
+      next: [
+        "v3.178+ Wire-Up: onChordSelected-Callback an ein Piano-Roll- oder MIDI-Step-Target binden. Mögliche Quellen: useMidiStepRecorderStore (Step-Inject) oder PianoRollModal (Bulk-Note-Add).",
+        "v3.178+ Optional: Position des Floating-Panels draggable machen (z.B. via react-rnd oder eigener mousedown/move-Handler). Aktuell hart bottom-4 right-4.",
+        "v3.178+ Optional: Playwright-Smoke chord-panel-toggle Click -> chord-panel-floating sichtbar -> chord-panel-close Click -> floating verschwunden."
+      ],
+      changed: [
+        "client/src/components/DrumMachine/DrumMachine.tsx (Import ChordSuggestionPanel + showChordPanel-State + Toggle-Button neben Swing + Floating-Overlay mit Close-Button)",
+        "agents/INDEX.js (workLog-Entry)"
+      ]
+    },
     {
       agent:     "refactor",
       timestamp: "2026-05-20T09:00:00.000Z",
