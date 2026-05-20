@@ -298,6 +298,28 @@ const INDEX = {
   //     a new bare-path entry while old version-suffixed ones remain
   //     is the explicit transition path.
   files: {
+    // ─── v3.194 Pure-Helpers (refactor) — Pattern-Syncopation ───
+    "client/src/utils/patternSyncopation.ts": {
+      role:     "Pure-Helper fuer Pattern-Syncopation-Score (advanced, beyond simple stdDev). Foundation fuer Pattern-Analyse-Suite (Style-Klassifikation, Auto-Tagging, 'musikalischer Charakter'-Mutator). Public API: analyzeSyncopation(pattern: readonly boolean[], options?: SyncopationOptions) -> SyncopationResult {score 0..1, offBeatHits, downBeatHits}. SyncopationOptions {stepsPerBeat? default 4, beatsPerBar? default 4}. Metric-Hierarchy (Longuet-Higgins / Lerdahl-style) pro step-index i mit barLength = stepsPerBeat*beatsPerBar: i%barLength===0 -> weight 0 (downbeat, strongest); i%stepsPerBeat===0 -> weight 1 (other beats); i%(stepsPerBeat/2)===0 -> weight 2 (off-beats &); sonst -> weight 3 (sub-divisions e/a). Score = sum(weight pro active step) / (activeCount * MAX_WEIGHT=3). downBeatHits = strict count active at step 0 (NICHT alle bar-downbeats — multi-bar [0,16,32,...] zaehlt nur step 0). offBeatHits = count active where i%stepsPerBeat !== 0. Defensive: empty/all-false -> {score:0, hits:0}. stepsPerBeat <=0/NaN/Infinity -> fallback 4 via resolveStepsPerBeat (+ Math.floor). beatsPerBar <=0/NaN -> fallback 4 via resolveBeatsPerBar. Input pattern wird nicht mutiert. Pure & DOM-frei. 143 LOC.",
+      lastSeen: "2026-05-20T12:15:00.000Z",
+      ownedBy:  "backend"
+    },
+    "tests/features/pattern-syncopation.test.ts": {
+      role:     "Pure-Coverage fuer patternSyncopation.ts. 18 Tests in 9 describe-Bloecken: basics 3 (empty -> 0 + all hits 0; all-false -> 0 + all hits 0; single hit step 0 -> score=0 + downBeatHits=1 + offBeatHits=0). 4-on-the-floor 1 ([0,4,8,12] -> score < 0.3 AND closeTo 0.25 via (0+1+1+1)/(4*3); downBeatHits=1; offBeatHits=0 weil 4%4=0 etc). off-beats 1 ([2,6,10,14] -> score >= 0.5 AND closeTo 8/12; offBeatHits=4). sub-divisions 1 ([1,3,5,7,9,11,13,15] -> score closeTo 1.0; offBeatHits=8). hit counts 2 (mixed [0,4,6,11] -> downBeatHits=1 + offBeatHits=2 + score closeTo 0.5; strict-step-0 semantic auf 32-step [0,16] -> downBeatHits=1 nur fuer step 0 obwohl 16 auch bar-downbeat). custom options 2 (stepsPerBeat=8 32-step [0,8,4,2] -> closeTo 0.5; beatsPerBar=2 [0,8] -> 0 weil beide downbeats). bounds 2 (8 random-ish patterns alle in [0,1]; all-true 16-step -> closeTo 35/48 ~= 0.729 + downBeatHits=1 + offBeatHits=12). defensive defaults 4 (stepsPerBeat<=0 fallback identisch zu default; stepsPerBeat NaN/Infinity -> default; beatsPerBar<=0/Neg/NaN -> default; immutability via [...snapshot]). result shape 2 (typeof checks + Options-Type compile mit 4 Varianten). Test-Helpers: mkPattern(activeIdx, length=16) baut boolean[] aus active step-indices. Vitest node-env. 18/18 passed in 5ms. Gesamt-Suite nach Add: 352 files passed + 1 failed unrelated (sample-pitch-shift.test.ts ist leere Stub-Datei nur Wort 'init' — pre-existing pseudo-failure, NICHT durch v3.194 verursacht). 7856 tests passed + 16 skipped (+18 vs v3.193-baseline 7838). 210 LOC.",
+      lastSeen: "2026-05-20T12:15:00.000Z",
+      ownedBy:  "testing"
+    },
+    // ─── v3.194 Pure-Helpers (refactor) — Sample-Pitch-Shift ────
+    "client/src/utils/samplePitchShift.ts": {
+      role:     "Pure-Helper fuer Resample-based Sample-Pitch-Shift (NO time stretch). Public API: applyPitchShift(buffer: AudioBufferLike, options: { semitones }) -> AudioBufferLike (frische Float32Array-Buffer pro Channel, Eingabe immutabel); pitchShiftedLength(inputLength, semitones) -> number (UI-Preview-Helper); MAX_SEMITONES = 24 const. Algorithmus: ratio = 2^(semitones/12); outputLength = floor(inputLength / ratio); pro Output-Sample i in [0, outputLength): src_idx = i*ratio, lo=floor, hi=min(lo+1, inLen-1), frac=src_idx-lo, out[i] = in[lo]*(1-frac) + in[hi]*frac. Pitch-up (+semitones) -> ratio>1 -> kuerzere Output-Laenge. Pitch-down (-semitones) -> ratio<1 -> laengere Output-Laenge. Sample-Rate + numberOfChannels bleiben erhalten. Edge-Cases: leerer/null Buffer -> empty (numberOfChannels=0, length=0); semitones=0 -> identity copy mit FRESHEN Float32Arrays (kein Aliasing zu Input); NaN semitones -> 0 (identity); +Infinity -> +MAX_SEMITONES; -Infinity -> -MAX_SEMITONES; |semitones|>MAX_SEMITONES -> clamp. Bounds-Guard: hi = lo+1 < inLen ? lo+1 : inLen-1 (vermeidet Out-of-Range-Read am End-Sample). Abgrenzung: KEIN Time-Stretch (Laenge aendert sich proportional zur ratio, NICHT laengen-konstant). Foundation fuer Sample-Tune-Aktionen (Bulk-Detune, Drag-and-Drop-Pitch-Preview, Stretch-aware Slicing-Targets, OmniTribe-Sample-Detune). Pure & DOM-frei. 178 LOC.",
+      lastSeen: "2026-05-20T10:15:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "tests/features/sample-pitch-shift.test.ts": {
+      role:     "Pure-Coverage fuer samplePitchShift.ts. 22 Tests in 6 describes: applyPitchShift basics 5 (empty buffer -> empty {len=0, numCh=0}; semitones=0 identity copy mit gleichen Werten in fresh-Float32Array; semitones=0 FRESH-Array kein Aliasing via mutate-test result[0]=99 ohne Original-Aenderung; +12 oktav-up 100 -> 50 samples; -12 oktav-down 100 -> 200 samples). multi-channel + sampleRate 3 (stereo 8-samples L=positiv R=negativ -> +12 -> 4 samples mit signs erhalten; sampleRate=44100 preserved bei +7 semitones; original-buffer values unveraendert nach +12). linear interpolation 2 (known ramp [0,1,2,3] @ -12 -> 8 samples [0,0.5,1,1.5,2,2.5,3,3] mit hi-clamp am Ende; +12 picks-every-second [1,99,2,99,3,99,4,99] -> [1,2,3,4]). defensive clamps 4 (>+24 clamp via length-vergleich mit +24-ref; <-24 clamp; NaN -> identity length=5 + gleiche Werte; +Infinity -> +24 -> ratio 2^2=4 -> 1000/4=250). pitchShiftedLength 7 (inputLength<=0 -> 0 incl negativ; semitones=0 floor(101.7)=101; +12 half; -12 double; +24 1000->250 quarter; -24 100->400 4x; NaN -> identity 100, +Infinity matched MAX_SEMITONES-Ergebnis). constants 1 (MAX_SEMITONES=24). Test-Helpers makeMono/makeStereo/makeEmpty. Vitest node-env. 22/22 passed in 5ms. Vollsuite-Status nach Add: 353 files / 7878 passed / 16 skipped (+22 eigene Tests; total inkl. paralleler Refactor-Sessions +40 vs. v3.193-Baseline 7838). 243 LOC.",
+      lastSeen: "2026-05-20T10:15:00.000Z",
+      ownedBy:  "frontend"
+    },
     // ─── v3.193 Pure-Helpers (refactor) — Pattern-Harmonizer ────
     "client/src/utils/patternHarmonizer.ts": {
       role:     "Pure-Helper fuer Pattern-Harmonizer (Melodic-Note + Scale -> harmonisch sinnvolle Begleit-Notes). Public API: harmonizeNote(rootMidi, options?: HarmonizeOptions) -> HarmonizedNote {rootMidi, harmonies:[{midi, interval}] sorted ascending}; harmonizeNotes(rootNotes: readonly number[], options?) -> HarmonizedNote[]; HARMONY_INTERVAL_SEMITONES: Record<HarmonyInterval, number> mit chromatischen Naeherungswerten {third:4, fifth:7, octave-up:12, octave-down:-12, tenth:16, twelfth:19}. Public Types: HarmonyInterval = 'third'|'fifth'|'octave-up'|'octave-down'|'tenth'|'twelfth'; HarmonizeOptions {scale? default 'major', scaleRoot? 0..11 default 0, intervals? default ['third','fifth']}. Verhalten: 1) third/fifth scale-aware via SCALE_INTERVALS aus randomChordGenerator (degreeIndex+2 oder +4 mit octave-wrap via shiftByScaleDegree). 2) octave-up/-down fix-chromatisch +/-12. 3) tenth = +12 + scale-aware-3rd (musikalisch korrekt). 4) twelfth = +19 fix-chromatisch (Oktav + perfect-5th). 5) findScaleDegree round-down fuer non-scale-Roots (z.B. C# in C-major -> faellt auf C-Degree zurueck, baseMidi = root - diff). 6) Alle Outputs clamp 0..127. Defensive Defaults: rootMidi NaN/<0/>127 -> 60; scale unbekannt -> 'major'; scaleRoot NaN/<0/>11 -> 0; intervals undef/leer/alle-invalid -> ['third','fifth'] (filtert ungueltige via VALID_INTERVALS Set). Eingaben werden NICHT mutiert. Pure & DOM-frei. Foundation fuer Performance-Mode 'Harmonize Selection', Piano-Roll Auto-Doubling, OmniTribe-Chord-Slot-Filler. 249 LOC.",
@@ -3685,6 +3707,78 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "refactor",
+      timestamp: "2026-05-20T10:15:00.000Z",
+      done: [
+        "v3.194 Pure-Helper client/src/utils/samplePitchShift.ts (178 LOC inkl. JSDoc) angelegt — Resample-based Sample-Pitch-Shift (NO time stretch). Foundation fuer kuenftige Sample-Tune-Aktionen (Bulk-Detune, Drag-and-Drop-Pitch-Preview, Stretch-aware Slicing-Targets, OmniTribe-Sample-Detune). Hinweis: parallele Refactor-Session lief gleichzeitig auf v3.194 (patternSyncopation, 12:15 UTC Timestamp) — beide Helpers koexistieren, kein Konflikt.",
+        "Public API: applyPitchShift(buffer: AudioBufferLike, options: { semitones }) -> AudioBufferLike; pitchShiftedLength(inputLength, semitones) -> number (UI-Preview-Helper); MAX_SEMITONES = 24 const. PitchShiftOptions { semitones: number }. Algorithmus: ratio = 2^(semitones/12); outputLength = floor(inputLength / ratio); pro Output-Sample i in [0, outputLength): src_idx = i*ratio, lo=floor, hi = lo+1 < inLen ? lo+1 : inLen-1, frac = src_idx - lo, out[i] = in[lo]*(1-frac) + in[hi]*frac (lineare Interpolation).",
+        "Verhalten: pitch-up (+semitones) -> ratio>1 -> kuerzere Output-Laenge; pitch-down (-semitones) -> ratio<1 -> laengere Output-Laenge; +12 = oktav-up -> half length; -12 = oktav-down -> double length; +24 = +2 Oktaven -> quarter length; -24 = -2 Oktaven -> 4x length. sampleRate + numberOfChannels bleiben erhalten. KEIN Time-Stretch (Laenge aendert sich proportional zur ratio — Abgrenzung explizit in JSDoc dokumentiert).",
+        "Edge-Cases via sanitizeSemitones: non-number/NaN -> 0 (identity); +Infinity -> +MAX_SEMITONES; -Infinity -> -MAX_SEMITONES; |semitones|>MAX_SEMITONES -> clamp. Wichtig: Number.isFinite waere fuer Infinity-Handling falsch (haette zu identity statt clamp gefuehrt) — daher Number.isNaN-Check + symmetrische >=/<= Clamps gegen +/-MAX_SEMITONES. leerer/null Buffer (length=0 || numberOfChannels=0) -> empty AudioBufferLike (numberOfChannels=0, length=0). semitones=0 -> identity copy mit FRESHEN Float32Arrays (kein Aliasing zu Input — via dst.set(src) auf neue Float32Array(inLen)). Bounds-Guard fuer hi=ceil verhindert Out-of-Range-Read am End-Sample.",
+        "Test-Suite tests/features/sample-pitch-shift.test.ts (243 LOC, 22 Tests in 6 describe-Bloecken): basics 5 (empty buffer / semitones=0 identity / FRESH-Array no-aliasing / +12 half / -12 double), multi-channel + sampleRate 3 (stereo signs preserved / sampleRate=44100 / original immutable), linear interpolation 2 (known ramp [0,1,2,3] @ -12 mit erwarteten midpoints inkl hi-clamp am Ende / +12 picks-every-second integer-reads), defensive clamps 4 (>+24 + <-24 length-equivalence / NaN identity / +Infinity -> 250 via +24-Clamp), pitchShiftedLength 7 (inputLength<=0 / semitones=0 floor / +/-12 / +/-24 / NaN+Infinity safety), constants 1 (MAX_SEMITONES=24).",
+        "Erste pnpm test Run zeigte 2 Failures (Infinity-Handling: meine erste Implementation nutzte !Number.isFinite -> Infinity -> 0 statt clamp). Fix in sanitizeSemitones umgestellt auf Number.isNaN-Check + >=/<= Vergleiche. Re-run: 22/22 passed in 5ms.",
+        "pnpm check GRUEN (tsc --noEmit 0 errors). pnpm test GRUEN: 353 files / 7878 passed / 16 skipped (+22 eigene + 18 patternSyncopation = +40 vs. v3.193-Baseline 7838). KEIN Commit, KEIN package.json-Bump (User-Vorgabe Refactor-Pattern v3.188+).",
+        "Resolution Notice zum parallelen patternSyncopation-Eintrag: dessen 'pre-existing pseudo-failure sample-pitch-shift.test.ts (leere Stub-Datei nur Wort init)' stammte aus meiner Seed-Phase (touch + printf 'init' als Edit-Tool-Workaround). Datei ist nun voll und 22/22 grün — Gesamt-Suite hat keine Failures mehr."
+      ],
+      next: [
+        "v3.195+ Frontend-Owner: SampleBrowser Bulk-Bar — neuer 'Pitch'-Button + Semitone-Slider (-24..+24) der applyPitchShift auf selektierte Samples ruft + via encodeWav + OfflineAudioContext-Reconstruction in onTransformSample(id, blobURL, audioBuf) speichert (analog Bulk-Sidechain v3.192-Pattern in SampleBrowser.tsx).",
+        "v3.195+ Frontend-Owner: SampleTransformDialog — neuer Tab 'Pitch' mit Slider + Real-Time-Preview-Player. Anzeige der erwarteten Output-Laenge via pitchShiftedLength fuer UX-Klarheit (Sample wird kuerzer/laenger).",
+        "v3.195+ Frontend-Owner: Drag-and-Drop-Pitch-Preview im Piano-Roll-Sample-Drop — beim Hover ueber Note Sample-Pitch entsprechend MIDI-Distance zum Reference-Note vorbereitend renderen.",
+        "v3.195+ Backend-Owner: Phase-Vocoder fuer LENGTH-CONSTANT Pitch-Shift (samplePhaseVocoder.ts) — Time-Stretch-erhaltende Variante mit STFT + Phase-Locking. Aktueller samplePitchShift veraendert Laenge proportional (resample only).",
+        "v3.195+ Backend-Owner: Script-Sandbox ss.sample.pitchShift(buffer, semitones) und ss.sample.pitchShiftBatch(buffers, semitones[]) exposen — analog bestehende ss.sample-Helpers.",
+        "v3.195+ Testing-Owner: Playwright-Smoke tests/web/sample-bulk-pitch-shift.spec.ts — 2-3 Samples selektieren, Semitone-Slider auf +12, Button Pitch klicken, Toast verifizieren, Sample-URL geaendert + Sample-Laenge halbiert (DOM-Anzeige)."
+      ],
+      changed: [
+        "client/src/utils/samplePitchShift.ts (NEW, 178 LOC — applyPitchShift + pitchShiftedLength + MAX_SEMITONES + Types; ownedBy frontend, da Pure-Helper im Sample-Transform-Layer der Frontend-Pipeline)",
+        "tests/features/sample-pitch-shift.test.ts (NEW, 243 LOC, 22 Tests; ownedBy frontend)",
+        "agents/INDEX.js (workLog-Entry v3.194 refactor — Sample-Pitch-Shift Pure-Helper, parallel zu v3.194-patternSyncopation; files-Index erweitert um beide neuen Files)"
+      ]
+    },
+    {
+      agent:     "refactor",
+      timestamp: "2026-05-20T12:15:00.000Z",
+      done: [
+        "v3.194 Pure-Helper client/src/utils/patternSyncopation.ts (143 LOC inkl. JSDoc) angelegt — advanced Syncopation-Score basierend auf Longuet-Higgins / Lerdahl-style metrical hierarchy. Foundation fuer Pattern-Analyse-Suite (Style-Klassifikation, Auto-Tagging, 'musikalischer Charakter'-Mutator). Geht ueber simple stdDev (patternComplexity.syncopationScore) hinaus.",
+        "Public API: analyzeSyncopation(pattern, options?) -> SyncopationResult { score 0..1, offBeatHits, downBeatHits }. SyncopationOptions { stepsPerBeat? (default 4), beatsPerBar? (default 4) }. Metric-Hierarchy pro step-index: barLength = stepsPerBeat*beatsPerBar; i%barLength===0 -> weight 0 (downbeat); i%stepsPerBeat===0 -> weight 1 (other beats); i%(stepsPerBeat/2)===0 -> weight 2 (off-beats &); sonst -> weight 3 (sub-divisions e/a). Score = sum(weight pro active step) / (activeCount * MAX_WEIGHT=3). downBeatHits = strict count active at step 0 (NICHT alle bar-downbeats). offBeatHits = count active where i%stepsPerBeat !== 0.",
+        "Defensive: empty/all-false -> {score:0, hits:0}. stepsPerBeat <=0/NaN/Infinity -> fallback 4 via resolveStepsPerBeat. beatsPerBar <=0/NaN -> fallback 4 via resolveBeatsPerBar. Math.floor fuer non-integer. Input pattern wird nicht mutiert (read-only iteration).",
+        "Sanity-Checks: 4-on-the-floor [0,4,8,12] -> score ~0.25 (weights 0+1+1+1)/12; all-off-beats [2,6,10,14] -> 8/12 = 0.667; all-sub-divisions [1,3,5,7,9,11,13,15] -> 24/24 = 1.0 (max); all-true 16-step -> 35/48 ~= 0.729; single hit step 0 -> 0.",
+        "Test-Suite tests/features/pattern-syncopation.test.ts (210 LOC, 18 Tests in 9 describe-Bloecken): basics (empty/all-false/single-downbeat-hit), 4-on-the-floor (low syncopation), off-beats (>=0.5), sub-divisions (max=1), hit counts (mixed pattern + strict step-0 downBeat semantic vs 32-step), custom options (stepsPerBeat=8 32-step + beatsPerBar=2 zweiter downbeat), bounds (8 random-ish patterns in [0,1] + all-true mixed), defensive defaults (stepsPerBeat<=0/NaN/Infinity + beatsPerBar<=0/Neg/NaN + immutability), result shape (typeof checks + Options-Type compile).",
+        "pnpm check GRUEN (tsc --noEmit 0 errors). pnpm vitest run pattern-syncopation: 18/18 passed in 5ms. Gesamt-Suite Status: 352 files passed + 1 failed unrelated (sample-pitch-shift.test.ts ist leere Stub-Datei nur mit Wort 'init' — pre-existing pseudo-failure, NICHT durch v3.194 verursacht). 7856 tests passed + 16 skipped (+18 vs. v3.193-baseline).",
+        "KEIN Commit, KEIN package.json-Bump (User-Vorgabe Refactor-Pattern v3.188+)."
+      ],
+      next: [
+        "v3.195+ Frontend-Owner: Pattern-Analyse-Panel — neuer Tab/Sidebar mit Live-Score-Display (analyzeSyncopation Score-Balken + Hit-Counts + simple Klassifikation 'Straight / Funky / Broken'). Liest aktive Pattern-Steps eines selected Parts.",
+        "v3.195+ Frontend-Owner: SongModeView Pattern-Cards — Syncopation-Score als kleine 0..1-Bar neben Density anzeigen. Pattern-Picker bekommt Such-/Sortier-Filter 'most syncopated' / 'straightest'.",
+        "v3.195+ Backend-Owner: Script-Sandbox ss.pattern.syncopationScore(stepArray, opts?) -> number exposen — analog ss.pattern.density. Built-In-Script 'Print Syncopation' fuer User-Feedback.",
+        "v3.195+ Backend-Owner: patternComplexity.ts -> optional second syncopation-Variante 'lhl' (Longuet-Higgins-Lerdahl) als Replacement fuer simple stdDev, wenn analyzeSyncopation reift. Hinter Feature-Flag halten bis cross-validated.",
+        "v3.196+ Testing-Owner: Playwright-Smoke tests/web/pattern-syncopation.spec.ts — Pattern setzen [0,2,6,10], Analyse-Panel oeffnen, Score >0.5 verifizieren.",
+        "Cleanup: tests/features/sample-pitch-shift.test.ts ist eine kaputte Stub-Datei (nur 'init' enthalten) — Backend/Refactor-Owner-Aufgabe, entweder vollwertig fuellen oder it.skip-Stub mit Begruendung anlegen (TESTING.md-Regel: niemals loeschen)."
+      ],
+      changed: [
+        "client/src/utils/patternSyncopation.ts (NEW, 143 LOC — analyzeSyncopation + SyncopationOptions + SyncopationResult + Metric-Hierarchy-Helper; ownedBy backend, da Pure-Helper-Logik im Pattern-/Music-Theory-Analyse-Layer)",
+        "tests/features/pattern-syncopation.test.ts (NEW, 210 LOC, 18 Tests; ownedBy testing)",
+        "agents/INDEX.js (workLog-Entry v3.194 refactor — Pattern-Syncopation Pure-Helper)"
+      ]
+    },
+    {
+      agent:     "frontend",
+      timestamp: "2026-05-20T12:00:00.000Z",
+      done: [
+        "v3.193 Wire-Up patternHarmonizer als Generate-Action im DrumMachine.tsx Picker-Menu. Neuer Block 'Harmonize Preview' (data-testid=pattern-harmonize-block) direkt nach pattern-br-live-block: Button (data-testid=pattern-harmonize-preview) triggert handleHarmonizePreview Demo-Action.",
+        "Handler handleHarmonizePreview (useCallback, deps=[]) ruft harmonizeNote(72, {scale:'major', scaleRoot:0, intervals:['third','fifth','octave-up']}) und zeigt 5s-Toast 'Harmonize C5 → <midi>(<interval>), …'. C5=MIDI72, erwartete Harmonien: 76(third=E5), 79(fifth=G5), 84(octave-up=C6) — sorted ascending durch harmonizeNote.",
+        "Import: harmonizeNote aus @/utils/patternHarmonizer (v3.193.0 Pure-Helper vom backend-Refactor). Platziert nach inferPatternBpm-Import (Zeile 105).",
+        "Styling streng semantisch: bg-bg-elevated/text-text-primary/hover:bg-accent-primary/20/hover:text-accent-primary/border-border-color — keine hardcoded Tailwind-Farben.",
+        "pnpm check GRUEN (tsc --noEmit 0 errors). NUR DrumMachine.tsx editiert. KEIN package.json-Bump, KEIN commit (frontend-wiring-only)."
+      ],
+      next: [
+        "v3.194+ Frontend-Owner: Echte Harmonize-Action auf Piano-Roll-Selection (statt Demo-Toast). UI mit Intervals-Multiselect + Scale-Picker + Scale-Root-Picker. Selected Notes -> harmonizeNotes -> neue Notes additiv (gleiche stepIndex/duration, frische uuid).",
+        "v3.194+ Frontend-Owner: MIDI-Bindings 'harmonizeSelection' + 'harmonizeWithOctave' MidiLearnTarget + Auto-Learn-Entry in MidiSettings.",
+        "v3.194+ Testing-Owner: Playwright-Smoke tests/web/pattern-harmonize-preview.spec.ts — Picker-Menu öffnen, Harmonize-Button click, Toast 'Harmonize C5 → …' enthält 76(third), 79(fifth), 84(octave-up) verifizieren."
+      ],
+      changed: [
+        "client/src/components/DrumMachine/DrumMachine.tsx (Import harmonizeNote + handleHarmonizePreview useCallback + Harmonize-Preview UI-Block im Picker-Menu nach Beat-Repeat-Live)"
+      ]
+    },
     {
       agent:     "refactor",
       timestamp: "2026-05-20T11:30:00.000Z",

@@ -102,6 +102,9 @@ import {
 import { resolveFollowAction } from "@/utils/patternFollowActionChain";
 
 import { inferPatternBpm } from "@/utils/patternBpmInfer";
+
+// v3.193.0: Pattern-Harmonizer (scale-aware Harmonie-Generator).
+import { harmonizeNote } from "@/utils/patternHarmonizer";
 // Ausgelagerte Sub-Components
 import { FxPanel } from "./FxPanel";
 import { ResizableDrumPanel } from "./ResizableDrumPanel";
@@ -1371,6 +1374,18 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
     toast("Beat-Repeat: released", { kind: "info", duration: 1500 });
   }, []);
 
+  // v3.193.0: Harmonize Preview — demo-Action, generiert Harmonies fuer C5
+  // in C-major Scale via patternHarmonizer pure helper.
+  const handleHarmonizePreview = useCallback(() => {
+    const result = harmonizeNote(72, {
+      scale: "major",
+      scaleRoot: 0,
+      intervals: ["third", "fifth", "octave-up"],
+    });
+    const noteStr = result.harmonies.map((h) => `${h.midi}(${h.interval})`).join(", ");
+    toast(`Harmonize C5 → ${noteStr}`, { kind: "info", duration: 5000 });
+  }, []);
+
   // Drag-Drop fuer .e2pattern/.e2sallpat (Browser-Fallback).
   useEffect(() => {
     const handler = (e: Event) => {
@@ -1922,6 +1937,17 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
                 <div className="text-[10px] text-text-dim italic">
                   Audio-Engine-Wire: pending. UI demonstriert State-Machine.
                 </div>
+              </div>
+
+              {/* v3.193.0: Harmonize Preview — demo-Action via patternHarmonizer. */}
+              <div className="px-3 py-2 border-t border-border-color" data-testid="pattern-harmonize-block">
+                <button
+                  onClick={handleHarmonizePreview}
+                  data-testid="pattern-harmonize-preview"
+                  className="w-full px-2 py-1 rounded text-[11px] bg-bg-elevated text-text-primary hover:bg-accent-primary/20 hover:text-accent-primary transition-colors"
+                >
+                  🎵 Harmonize Preview (C5 major)
+                </button>
               </div>
 
               {!isLiveEditing && (
