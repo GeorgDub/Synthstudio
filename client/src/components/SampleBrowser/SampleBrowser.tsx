@@ -155,6 +155,8 @@ import { removeClicks } from "@/utils/sampleClickRemover";
 import { applyPhaser } from "@/utils/samplePhaser";
 // v3.218: Bulk-Granulize (Granular-Synthesis, grainSizeMs 5..200 / grainCount 1..200) für selektierte Samples.
 import { applyGranulize } from "@/utils/sampleGranulize";
+// v3.219: Bulk-NoiseReduce (Spectral-Subtraction-Imitation, reduction 0..1) für selektierte Samples.
+import { reduceNoise } from "@/utils/sampleNoiseReduction";
 
 // ─── Typen ────────────────────────────────────────────────────────────────────
 
@@ -3056,6 +3058,68 @@ export function SampleBrowser({
     bulkGrainCount,
   ]);
 
+  // v3.219: Bulk-NoiseReduce (Spectral-Subtraction-Imitation, reduction 0..1) für selektierte Samples.
+  // reduceNoise ist pure; resultierender Buffer hat gleiche Länge / Channel-Anzahl wie Input.
+  const [bulkNoiseReduction, setBulkNoiseReduction] = useState<number>(0.7);
+
+  const handleBulkNoiseReduce = useCallback(async () => {
+    if (multiSelectIds.size === 0 || !onTransformSample) return;
+    let applied = 0;
+    for (const id of multiSelectIds) {
+      const sample = samples.find((s) => s.id === id);
+      if (!sample) continue;
+      try {
+        const buf = await AudioEngine.loadSample(sample.path);
+        if (!buf) continue;
+        const out = reduceNoise(buf as unknown as AudioBufferLike, {
+          reduction: bulkNoiseReduction,
+        });
+        if (out.numberOfChannels === 0 || out.length === 0) continue;
+        const channels = Math.min(2, out.numberOfChannels) as 1 | 2;
+        const wav = encodeWav(
+          Array.from({ length: channels }, (_, c) =>
+            out.getChannelData(c) as Float32Array,
+          ),
+          { sampleRate: out.sampleRate, channels, bitDepth: 16 },
+        );
+        const blob = new Blob([wav], { type: "audio/wav" });
+        const newUrl = URL.createObjectURL(blob);
+        const Ctor = (window.OfflineAudioContext ||
+          // @ts-expect-error legacy webkit fallback
+          window.webkitOfflineAudioContext) as typeof OfflineAudioContext;
+        const ctx = new Ctor(
+          Math.max(1, out.numberOfChannels),
+          Math.max(1, out.length),
+          out.sampleRate,
+        ) as BaseAudioContext;
+        const audioBuf = ctx.createBuffer(
+          Math.max(1, out.numberOfChannels),
+          Math.max(1, out.length),
+          out.sampleRate,
+        );
+        for (let c = 0; c < out.numberOfChannels; c++) {
+          const src = out.getChannelData(c);
+          const copy = new Float32Array(src.length);
+          copy.set(src);
+          audioBuf.copyToChannel(copy, c, 0);
+        }
+        onTransformSample(id, newUrl, audioBuf);
+        applied++;
+      } catch {
+        /* skip */
+      }
+    }
+    toast(
+      `NoiseReduce ${bulkNoiseReduction.toFixed(2)}: ${applied} Samples`,
+      { kind: "success" },
+    );
+  }, [
+    multiSelectIds,
+    samples,
+    onTransformSample,
+    bulkNoiseReduction,
+  ]);
+
   // v3.152: Wenn Samples aus dem Projekt verschwinden (extern gelöscht),
   // multi-select-Set defensiv auf Existenz-Filter laufen lassen.
   useEffect(() => {
@@ -4620,6 +4684,29 @@ export function SampleBrowser({
                         title="Granulize (Granular-Synthesis: grainCount kurze Grains aus zufälligen Quell-Positionen back-to-back arrangiert) auf alle ausgewählten Samples"
                       >
                         GRN
+                      </button>
+                      <input
+                        type="range"
+                        min={0}
+                        max={1}
+                        step={0.05}
+                        value={bulkNoiseReduction}
+                        onChange={(e) => setBulkNoiseReduction(parseFloat(e.target.value))}
+                        data-testid="sample-browser-bulk-noisereduce-amount"
+                        className="w-20 accent-accent-secondary"
+                        title="NoiseReduce Amount 0..1 (0.7 = default, höher = aggressiveres Gating, 0 = kein Effekt / Button disabled)"
+                      />
+                      <span className="text-[10px] font-mono text-text-muted w-12 text-center">
+                        nr{bulkNoiseReduction.toFixed(2)}
+                      </span>
+                      <button
+                        onClick={handleBulkNoiseReduce}
+                        disabled={!onTransformSample || bulkNoiseReduction === 0}
+                        data-testid="sample-browser-bulk-noisereduce"
+                        className="px-2 py-0.5 rounded text-[10px] border border-border-color text-text-primary hover:border-accent-secondary hover:text-accent-secondary disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        title="NoiseReduce (Spectral-Subtraction-Imitation: lernt Noise-Floor aus ersten 100ms, gated block-weise auf reduction-Amount) auf alle ausgewählten Samples"
+                      >
+                        NR
                       </button>
                       <button
                         onClick={handleBulkDelete}
