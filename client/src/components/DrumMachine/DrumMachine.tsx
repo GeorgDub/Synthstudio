@@ -196,6 +196,9 @@ import { perceiveGroove } from "@/utils/patternGroovePerception";
 // broken Klassifikation aus Kick/Snare-Step-Platzierung (Pure-Helper v3.223).
 import { analyzeKickSnare } from "@/utils/patternKickSnareDetect";
 import { analyzeHihat } from "@/utils/patternHihatDetect";
+// v3.227: Pattern-Row Fill/Transition-Badge — detectFillTransitions identifiziert
+// Last-Bar-Fills + multi-fill-regions in Step-Patterns (Pure-Helper v3.226).
+import { detectFillTransitions } from "@/utils/patternFillTransition";
 import type { PatternData } from "@/audio/AudioEngine";
 
 // ─── v3.205: Pattern-Flatten-Helper (module-level Cache via Closure) ───────────
@@ -533,6 +536,30 @@ function PatternRow({
     }));
     return analyzeHihat(parts);
   }, [pattern]);
+  // v3.227: Fill/Transition-Detection — kombiniere alle Parts per OR zu flat
+  // boolean[], limit auf 32 Steps (Pattern-Row-List rendert pro Render N Rows).
+  // detectFillTransitions liefert { fillRegions, lastBarIsFill, fillIntensity,
+  // baselineDensity }. Badge sichtbar wenn lastBarIsFill || fillRegions.length>0.
+  const fillTransition = useMemo(() => {
+    const maxLen = 32;
+    let len = 0;
+    for (const p of pattern.parts) {
+      if (p.steps.length > len) len = p.steps.length;
+    }
+    if (len > maxLen) len = maxLen;
+    const flat: { active: boolean }[] = new Array(len);
+    for (let i = 0; i < len; i++) {
+      let active = false;
+      for (const p of pattern.parts) {
+        if (p.steps[i]?.active) {
+          active = true;
+          break;
+        }
+      }
+      flat[i] = { active };
+    }
+    return detectFillTransitions(flat);
+  }, [pattern]);
   // v2.5: Submenu zum Auswählen welcher Pattern als Source dient
   const [pickerOpen, setPickerOpen] = useState(false);
   // v2.8: Drag-Drop-Reorder State (drop-indicator: above|below|null)
@@ -825,6 +852,18 @@ function PatternRow({
              hihat.hatStyle === "syncopated" ? "~" :
              hihat.hatStyle === "sparse"     ? "·" :
              ""}
+          </span>
+        )}
+        {/* v3.227: Fill/Transition-Badge — sichtbar wenn lastBarIsFill (typischer
+            Last-Bar-Fill, Anzeige "FILL") oder mehrere fillRegions (Anzeige
+            "F<n>"). Tooltip zeigt fillIntensity + baselineDensity. */}
+        {(fillTransition.lastBarIsFill || fillTransition.fillRegions.length > 0) && (
+          <span
+            className="ml-1 px-1 py-0.5 rounded text-[9px] font-mono bg-accent-success/20 text-accent-success"
+            title={`Fill: ${fillTransition.fillRegions.length} region(s), lastBar=${fillTransition.lastBarIsFill}, intensity=${Math.round(fillTransition.fillIntensity * 100)}%`}
+            data-testid={`pattern-row-fill-${pattern.id}`}
+          >
+            {fillTransition.lastBarIsFill ? "FILL" : `F${fillTransition.fillRegions.length}`}
           </span>
         )}
         {learn.isMapped && (
