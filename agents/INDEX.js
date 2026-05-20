@@ -342,6 +342,17 @@ const INDEX = {
       lastSeen: "2026-05-20T07:41:00.000Z",
       ownedBy:  "frontend"
     },
+    // ─── v3.185 Pure-Helpers (refactor) ─────────────────────────
+    "client/src/utils/sampleConvolutionReverb.ts": {
+      role:     "Pure-Helper fuer direct (FFT-free) Convolution-Reverb. Public API: applyConvolutionReverb(dry, ir, options?:{wet?,outputGain?}) -> AudioBufferLike (mono, length == dry.length, IR-Tail wird abgeschnitten), generateSyntheticIR(durationMs, sampleRate, decay=4.0) -> AudioBufferLike (procedural exponential-decay weighted white-noise mit ~3ms pre-delay), REVERB_PRESETS readonly Tupel-Array {id,name,durationMs,decay} mit 4 Klassikern (room/hall/cathedral/plate). Algorithmus: 1) Downmix dry+ir zu mono via arithmetisches Mittel. 2) Direct convolution O(n*m): out[n] = sum_{k=0..min(n,irLen-1)} dry[n-k]*ir[k]. 3) Mix: output[n] = dry[n]*(1-wet) + out[n] * wet * outputGain. Pre-Computed oneMinusWet + wetGain im outer loop. Defensive: empty dry -> empty, empty IR -> mono copy of dry, wet NaN/undefined -> 0.5, wet<0 -> 0, wet>1 -> 1, outputGain NaN -> 0.8, outputGain<0 -> 0. generateSyntheticIR: durationMs<=0 oder NaN -> 100ms fallback, sampleRate<=0 -> 48000, decay NaN -> 4.0, Pre-delay = floor(0.003*sr) Samples Silence. Foundation fuer Sample-FX-Reverb (Wire-Up v3.186+ in SampleTransformDialog), kuenftige FFT-Convolution (overlap-save bei IRs > ~12000 Samples), Stereo-IR-Support. Pure & DOM-frei, einzige Abhaengigkeit AudioBufferLike-Type aus sampleEmbedding.ts.",
+      lastSeen: "2026-05-20T11:30:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "tests/features/sample-convolution-reverb.test.ts": {
+      role:     "Pure-Coverage fuer sampleConvolutionReverb.ts. 24 Tests in 4 describes: applyConvolutionReverb 9 (empty dry -> empty output, empty IR -> mono copy of dry, wet=0 -> output == dry, wet=1+identity-IR+gain=1 -> output == dry, identity impulse mit wet=0.5+gain=1 -> output == dry [Math-Identitaet dry*0.5+dry*0.5=dry], non-trivial IR [1.0,0.5] delta-impulse Faltung -> [1.0, 0.5, 0, 0], output length == dry length, Stereo L=1/R=0 downmix -> 0.5, outputGain=0.5 wirkt nur auf wet-Anteil -> out[0]=0.5), generateSyntheticIR 5 (non-empty, length 100ms@48k=4800, length 200ms@44100=8820, erste 144 Samples=0 pre-delay, decay-RMS-Test rmsStart>rmsEnd via 480-Sample-Frames), REVERB_PRESETS 3 (>=4 entries, alle Felder typed/positiv, room/hall/cathedral/plate IDs vorhanden), defensive 7 (wet NaN -> 0.5 fallback, outputGain NaN -> 0.8 fallback, wet>1 clamp to 1, wet<0 clamp to 0, durationMs=0 -> 100ms fallback, durationMs=NaN -> 100ms, sampleRate=0 -> 48000). Test-Helpers: makeBuffer (mono Float32), makeStereoBuffer (separate L/R Float32), makeEmptyBuffer (numberOfChannels=0). Vitest node-env. 24/24 passed in 9ms (393ms total inkl. Bootstrap).",
+      lastSeen: "2026-05-20T11:30:00.000Z",
+      ownedBy:  "frontend"
+    },
     // ─── v3.178 Pure-Helpers (refactor) ─────────────────────────
     "client/src/utils/sampleRmsEnvelope.ts": {
       role:     "Pure-Helper fuer frame-weise RMS-Envelope (Huellkurve) eines Audio-Samples. Public API: computeRmsEnvelope(buffer, options?) -> RmsEnvelopeResult {envelope (Float32Array linear amplitude 0..1), samplePositions (Int32Array, i*hopSize), peakRms, meanRms, frameSize, hopSize}, findFadeOutPoint(envelope, threshold=0.1) -> sample-index (rueckwaerts ab Ende: erster Frame >= threshold*peak) | -1, findOnsetPoint(envelope, threshold=0.1) -> sample-index (vorwaerts: erster Frame >= threshold*peak) | -1. Konstanten: DEFAULT_FRAME_SIZE=1024 (~21ms bei 48k), DEFAULT_HOP_SIZE=512 (50% Overlap), MIN_FRAME_SIZE=64, DEFAULT_THRESHOLD=0.1. Algorithmus: 1) Channel-Auswahl mix/left/right (mix = arith. Mittelwert). 2) Frame-Count = n<frameSize ? 1 : 1+floor((n-frameSize)/hopSize). 3) Pro Frame: rms = sqrt(sum(x^2)/frameSize) — IMMER durch frameSize (auch bei zero-padded Tail-Frames) damit Skalierung konsistent ist. 4) peakRms = max, meanRms = sum/count. Defensive: empty buffer -> leerer Output, frameSize<64 -> 64, hopSize<1 -> 1, threshold NaN/<0/>1 -> 0.1 via sanitizeThreshold-Helper. findFadeOutPoint/findOnsetPoint: empty envelope oder peakRms<=0 -> -1. Foundation fuer Waveform-Display (energy-bars statt Peak-bars), Auto-Trim-Silence (head+tail via findOnset/findFadeOut), Envelope-Follower-Visualisierung, Adaptive Slice-Detection mit RMS-Energy. Pure & DOM-frei.",
@@ -3572,6 +3583,48 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "refactor",
+      timestamp: "2026-05-20T11:30:00.000Z",
+      done: [
+        "v3.185 NEU sampleConvolutionReverb.ts (Pure-Helper, ~210 LOC): direct (FFT-free) Convolution-Reverb. Public API: applyConvolutionReverb(dry, ir, options?) -> AudioBufferLike (mono, length == dry.length, Tail abgeschnitten), generateSyntheticIR(durationMs, sampleRate, decay=4.0) -> AudioBufferLike (procedural exponential-decay weighted white-noise mit ~3ms pre-delay), REVERB_PRESETS readonly Tupel-Array mit 4 Klassikern (Small Room 100ms/decay6, Concert Hall 300ms/decay3, Cathedral 600ms/decay1.5, Plate 200ms/decay5). ReverbOptions: wet?:number (0..1, default 0.5), outputGain?:number (default 0.8).",
+        "Algorithmus direct convolution mit zwei Optimierungen: (1) Multi-Channel-Input wird zu mono downmixed (arithmetisches Mittel) BEVOR convolution beginnt — spart ch*n*m Multiplikationen. (2) Inner Loop laeuft nur ueber gueltige k=0..min(n,irLen-1) — spart die n-k>=0-Pruefung pro Iteration. Mix-Formel: out[n] = dry[n]*(1-wet) + sum(dry[n-k]*ir[k]) * wet * outputGain. Pre-Computed oneMinusWet + wetGain im outer-loop fuer minimale FLOPs.",
+        "Defensive Defaults via 2 Helper-Funktionen: sanitizeWet(NaN/undefined -> 0.5, <0 -> 0, >1 -> 1) und sanitizeOutputGain(NaN/undefined -> 0.8, <0 -> 0). generateSyntheticIR: durationMs <=0 oder NaN -> 100ms fallback (FALLBACK_IR_DURATION_MS), sampleRate <=0 oder NaN -> 48000, decay NaN -> 4.0. Pre-delay = floor(0.003 * sampleRate) Samples Silence am Anfang, geclamped auf durationSamples.",
+        "tests/features/sample-convolution-reverb.test.ts (~245 LOC, 24 Tests in 4 describe-Blocks): applyConvolutionReverb 9 (empty dry, empty IR, wet=0, wet=1 identity IR, mix wet=0.5 identity IR, non-trivial IR delta-impulse Faltung, output-length == dry length, Stereo downmix L=1/R=0 -> 0.5, outputGain wirkt nur auf wet-Anteil), generateSyntheticIR 5 (non-empty, length 100ms@48k=4800, length 200ms@44100=8820, erste 144 Samples=0 pre-delay, decay-Test rmsStart>rmsEnd via 480-Sample-Frames), REVERB_PRESETS 3 (>=4 entries, alle Felder typed, room/hall/cathedral/plate IDs), defensive 7 (wet NaN, outputGain NaN, wet>1, wet<0, durationMs=0, durationMs=NaN, sampleRate=0).",
+        "pnpm check GRUEN (tsc --noEmit, 0 Errors). pnpm test tests/features/sample-convolution-reverb.test.ts -> 24/24 passed (9ms, 393ms total inkl. Bootstrap). KEIN git commit, KEIN package.json bump (User-Vorgabe). NUR 2 neue Files: client/src/utils/sampleConvolutionReverb.ts + tests/features/sample-convolution-reverb.test.ts, plus INDEX.js (workLog + files-Index)."
+      ],
+      next: [
+        "v3.186+ Wire-Up (frontend-Owner): SampleTransformDialog 'Add Reverb'-Action. UI: Preset-Dropdown gespeist aus REVERB_PRESETS, Wet-Slider 0..1, OutputGain-Slider 0..1.5. Preview-Mode: nimm 0.5s Buffer-Ausschnitt + applyConvolutionReverb mit generateSyntheticIR(preset). Apply: full-Buffer-Convolution + autoNormalizeSample anschliessend, da wet-mix gerne ueber 0 dBFS schiebt.",
+        "v3.186+ (frontend-Owner): Performance-Warnung in UI bei IRs > 12000 Samples (~250ms @ 48k) oder dry > 480000 (~10s @ 48k): direct O(n*m) wird zaeh. Threshold-Check vor applyConvolutionReverb; UI-Toast 'Use shorter IR / split sample' bis FFT-Convolution-Pfad existiert.",
+        "v3.186+ (refactor-Owner): FFT-Convolution-Pfad via overlap-save. Public-API kompatibel haltbar -- applyConvolutionReverb dispatcht intern an direct- oder fft-Pfad basierend auf len*irLen-Schwelle. Foundation: lazy-Loaded fft-Helper (z.B. Math.fft.js Port) in client/src/utils/fft.ts, dann sampleConvolutionReverb importiert + nutzt es. Tests muessen beide Pfade vergleichen (same input -> equal output within float-precision).",
+        "v3.186+ (refactor-Owner): Stereo-IR-Support. Aktuell downmixt applyConvolutionReverb dry+IR zu mono, output ist mono -- aber Hall-IRs sind im echten Leben stereo (L/R-Kanal-Verzoegerung = spatial). API-Erweiterung: ReverbOptions.outputChannels?:'mono'|'stereo'; bei 'stereo' Faltet linke-dry-Kanal mit linke-IR + rechte-dry mit rechte-IR (oder mono-dry mit beiden IR-Kanaelen, wenn dry mono ist).",
+        "v3.186+ (testing-Owner): generateSyntheticIR ist non-deterministisch (Math.random). Property-based-Tests koennten via seeded-RNG-Injection (optional rng-param) deterministisch werden. Aktuell schauen Tests nur Laenge + RMS-Decay-Trend an -- exakte Sample-Werte sind nicht reproduzierbar."
+      ],
+      changed: [
+        "client/src/utils/sampleConvolutionReverb.ts (NEU, Pure-Helper direct-Convolution-Reverb, 210 LOC)",
+        "tests/features/sample-convolution-reverb.test.ts (NEU, 24 Tests)",
+        "agents/INDEX.js (workLog-Entry + files-Index)"
+      ]
+    },
+    {
+      agent:     "frontend",
+      timestamp: "2026-05-20T10:30:00.000Z",
+      done: [
+        "v3.184 DrumMachine.tsx Wire-Up: applyHalfStutter aus '@/utils/patternStutter' als 'Stutter Last Half'-Action in die existing pattern-mutator-toolbar (Grep data-testid='pattern-mutator-toolbar') eingehaengt. Import: import { applyHalfStutter } from '@/utils/patternStutter'.",
+        "Neuer Button data-testid='pattern-mutator-stutter' direkt nach dem 'Variate'-Button: onClick={() => applyMutator((p) => applyHalfStutter(p, 2))}, Label '⋯', Title 'Stutter — letzte Hälfte als 2-Step-Roll'. Klasse identisch zu den anderen Mutator-Buttons (px-1.5 py-0.5 rounded text-[10px] bg-bg-elevated hover:bg-accent-secondary/30 hover:text-accent-secondary transition-colors) — semantische Tokens, kein hardcoded color.",
+        "pnpm check: GRUEN (tsc --noEmit, 0 Errors). KEIN git commit, KEIN package.json bump (User-Vorgabe). NUR DrumMachine.tsx editiert."
+      ],
+      next: [
+        "v3.185+ Stutter-Count-Selector (frontend-Owner): Statt fix stutterCount=2 ein Dropdown via STUTTER_PRESETS aus patternStutter.ts (1-Step/Roll, 2-Step, 4-Step, 8-Step/Half). User waehlt Roll-Speed-Feeling. data-testid='pattern-mutator-stutter-count'.",
+        "v3.185+ Stutter-Start-Index (frontend-Owner): UI-Toggle zwischen 'Half' (start=length/2) und 'Quarter' (start=length*3/4) — last-quarter-stutter ist typisch fuer Pattern-Fill-Endings.",
+        "v3.185+ Per-Part-Stutter (refactor-Owner): Aktuell wird applyMutator angewendet (alle Parts mit demselben Stutter). Selektiv-Mode: nur Kicks/Snares/Hi-Hats stuttern (basierend auf partType). Generalisierungs-Helper applyStutterToParts(parts, partTypes) in patternStutter.ts.",
+        "v3.185+ Stutter-Probability-Decay (refactor-Owner): applyStutter mit optionalem decay-Parameter — spaetere Repeat-Bloecke nehmen in Probability/Velocity ab, sodass es klanglich 'ausrollt' statt hart loopt. Wuerde Velocity-aware-Operationen brauchen (siehe v3.183-next melodic-seq velocity API)."
+      ],
+      changed: [
+        "client/src/components/DrumMachine/DrumMachine.tsx (+1 Import +1 Button)",
+        "agents/INDEX.js (workLog-Entry)"
+      ]
+    },
     {
       agent:     "refactor",
       timestamp: "2026-05-20T08:16:00.000Z",

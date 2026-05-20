@@ -82,6 +82,8 @@ import { applyLockMode, type LockMode } from "@/utils/patternStepProbability";
 import { morphPatterns, MORPH_STRATEGY_LABELS, type MorphStrategy } from "@/utils/patternMorphInterpolate";
 // v3.182.0: Pattern-Branch-Variations Pure-Helper (N deterministische Variationen).
 import { generateBranchVariations } from "@/utils/patternBranchVariations";
+// v3.184.0: Pattern-Stutter Pure-Helper (Stutter Last Half-Action in Mutator-Toolbar).
+import { applyHalfStutter } from "@/utils/patternStutter";
 // v3.183.0: Melodic Sequence Pure-Helper (Rhythm + Scale + Strategy → MIDI-Notes).
 import { generateMelodicSequence, MELODIC_STRATEGY_LABELS, type MelodicStrategy } from "@/utils/patternMelodicSeq";
 
@@ -2231,6 +2233,12 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
             className="px-1.5 py-0.5 rounded text-[10px] bg-bg-elevated hover:bg-accent-secondary/30 hover:text-accent-secondary transition-colors"
             title="Variate (subtle keep+add) — neue Variation des Patterns"
           >⚡</button>
+          <button
+            onClick={() => applyMutator((p) => applyHalfStutter(p, 2))}
+            data-testid="pattern-mutator-stutter"
+            className="px-1.5 py-0.5 rounded text-[10px] bg-bg-elevated hover:bg-accent-secondary/30 hover:text-accent-secondary transition-colors"
+            title="Stutter — letzte Hälfte als 2-Step-Roll"
+          >⋯</button>
         </div>
 
         {/* v3.168: Pattern-Fill-Toolbar (Drum-Fill-Generation pro Pattern-Ende) */}

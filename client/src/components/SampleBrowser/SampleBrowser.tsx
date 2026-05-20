@@ -82,6 +82,8 @@ import { computeSpectralCentroid } from "@/utils/sampleSpectralCentroid";
 import { detectOnsets } from "@/utils/onsetDetector";
 // v3.182: Bulk-LUFS-Analyse für selektierte Samples (BS.1770 simplified).
 import { computeLufsApprox } from "@/utils/sampleLufsApprox";
+// v3.184: Bulk-Stereo-Width-Analyse (M/S-Decomposition) für selektierte Samples.
+import { analyzeStereoWidth } from "@/utils/sampleStereoWidth";
 
 // ─── Typen ────────────────────────────────────────────────────────────────────
 
@@ -1275,6 +1277,46 @@ export function SampleBrowser({
     console.log("[LUFS-Analyze]", { analyzed, avg, minLufs, maxLufs });
   }, [multiSelectIds, samples]);
 
+  // v3.184 — Bulk-Stereo-Width-Analyse der selektierten Samples:
+  // Lädt für jede selected Sample-ID den AudioBuffer und berechnet via
+  // analyzeStereoWidth (M/S-Decomposition) die Width-Kategorie.
+  // Toast zeigt die Verteilung der Kategorien (mono/narrow/balanced/wide/extreme).
+  const handleBulkWidth = useCallback(async () => {
+    if (multiSelectIds.size === 0) return;
+    const histogram: Record<
+      "mono" | "narrow" | "balanced" | "wide" | "extreme",
+      number
+    > = { mono: 0, narrow: 0, balanced: 0, wide: 0, extreme: 0 };
+    let analyzed = 0;
+    for (const id of multiSelectIds) {
+      const sample = samples.find((s) => s.id === id);
+      if (!sample) continue;
+      try {
+        const buf = await AudioEngine.loadSample(sample.path);
+        if (!buf) continue;
+        const r = analyzeStereoWidth(
+          buf as unknown as AudioBufferLike,
+        );
+        histogram[r.width]++;
+        analyzed++;
+      } catch {
+        /* skip unloadable */
+      }
+    }
+    if (analyzed === 0) {
+      toast("Keine ladbaren Sample-Buffer", { kind: "warning" });
+      return;
+    }
+    const parts = Object.entries(histogram)
+      .filter(([, c]) => c > 0)
+      .map(([k, c]) => `${k}: ${c}`);
+    toast(`Stereo-Width: ${parts.join(", ")}`, {
+      kind: "info",
+      duration: 6000,
+    });
+    console.log("[Width-Analyze]", { analyzed, histogram });
+  }, [multiSelectIds, samples]);
+
   // v3.152: Wenn Samples aus dem Projekt verschwinden (extern gelöscht),
   // multi-select-Set defensiv auf Existenz-Filter laufen lassen.
   useEffect(() => {
@@ -2084,6 +2126,14 @@ export function SampleBrowser({
                         title="LUFS-Loudness analysieren (BS.1770 simplified)"
                       >
                         LUFS
+                      </button>
+                      <button
+                        onClick={handleBulkWidth}
+                        data-testid="sample-browser-bulk-width"
+                        className="px-2 py-0.5 rounded text-[10px] border border-border-color text-text-primary hover:border-accent-secondary hover:text-accent-secondary transition-colors"
+                        title="Stereo-Width-Verteilung (M/S)"
+                      >
+                        Width
                       </button>
                       <button
                         onClick={handleBulkDelete}
