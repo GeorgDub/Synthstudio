@@ -78,6 +78,8 @@ import { generateFill, generateBuildUp, generateRoll } from "@/utils/patternFill
 import { humanizePattern, type HumanizeIntensity } from "@/utils/patternHumanize";
 // v3.175.0: Step-Probability Lock-Mode Preview (store-prob-API pending v3.176+).
 import { applyLockMode, type LockMode } from "@/utils/patternStepProbability";
+// v3.181.0: Pattern-Morph-Interpolate Pure-Helper (smooth Blend zwischen 2 Patterns).
+import { morphPatterns, MORPH_STRATEGY_LABELS, type MorphStrategy } from "@/utils/patternMorphInterpolate";
 
 import { inferPatternBpm } from "@/utils/patternBpmInfer";
 // Ausgelagerte Sub-Components
@@ -534,6 +536,10 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
   // v3.26.0 — Electron-Bridge für E2 Pattern Export
   const electron = useElectron();
   const [showPatternMenu, setShowPatternMenu] = useState(false);
+  // v3.181.0: Pattern-Morph-Interpolate State (Target-Pattern, t-Faktor, Strategy).
+  const [morphTargetId, setMorphTargetId] = useState<string | null>(null);
+  const [morphT, setMorphT] = useState(0.5);
+  const [morphStrategy, setMorphStrategy] = useState<MorphStrategy>("probability");
   const [metronomOn, setMetronomOn] = useState(false);
   const [metronomGain, setMetronomGain] = useState(0.5);
   const [metronomAccent, setMetronomAccent] = useState(1.0);
@@ -1171,6 +1177,24 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
     }
   }, [dm]);
 
+  // v3.181.0: Pattern-Morph anwenden — schreibt morphed boolean[] pro Part zurück.
+  const handleApplyMorph = useCallback(() => {
+    const activePattern = dm.patterns.find((p) => p.id === dm.activePatternId);
+    const targetPattern = dm.patterns.find((p) => p.id === morphTargetId);
+    if (!activePattern || !targetPattern) return;
+    // Morph each part separately (Part-ID-Match; missing Parts werden uebersprungen).
+    const seed = Date.now();
+    for (const partA of activePattern.parts) {
+      const partB = targetPattern.parts.find((p) => p.id === partA.id);
+      if (!partB) continue;
+      const aSteps = partA.steps.map((s) => s.active);
+      const bSteps = partB.steps.map((s) => s.active);
+      const morphed = morphPatterns(aSteps, bSteps, morphT, { strategy: morphStrategy, seed });
+      dm.setPartSteps(partA.id, morphed.slice(0, partA.steps.length));
+    }
+    toast(`Morph applied: t=${morphT.toFixed(2)} (${morphStrategy})`, { kind: "success" });
+  }, [dm, morphTargetId, morphT, morphStrategy]);
+
   // Drag-Drop fuer .e2pattern/.e2sallpat (Browser-Fallback).
   useEffect(() => {
     const handler = (e: Event) => {
@@ -1504,6 +1528,60 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
                   <span className="text-[10px] text-text-dim">Bars (0 = sofort)</span>
                 </div>
               </div>
+
+              {/* v3.181.0: Pattern-Morph-Interpolate — Slider 0..1 morpht active->target. */}
+              {dm.patterns.length >= 2 && (
+                <div
+                  className="px-3 py-2 border-t border-border-color space-y-1.5"
+                  data-testid="pattern-morph-block"
+                >
+                  <div className="text-[10px] text-text-dim font-semibold">Morph from active to:</div>
+                  <select
+                    value={morphTargetId ?? ""}
+                    onChange={(e) => setMorphTargetId(e.target.value || null)}
+                    className="w-full bg-bg-panel border border-border-color rounded px-2 py-0.5 text-[11px] text-text-primary focus:outline-none"
+                    data-testid="pattern-morph-target"
+                  >
+                    <option value="">— Target wählen —</option>
+                    {dm.patterns.filter((p) => p.id !== dm.activePatternId).map((p) => (
+                      <option key={p.id} value={p.id}>{p.name}</option>
+                    ))}
+                  </select>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] text-text-dim">t:</span>
+                    <input
+                      type="range"
+                      min={0}
+                      max={1}
+                      step={0.05}
+                      value={morphT}
+                      onChange={(e) => setMorphT(parseFloat(e.target.value))}
+                      className="flex-1 accent-accent-secondary"
+                      data-testid="pattern-morph-slider"
+                    />
+                    <span className="font-mono text-[10px] text-text-muted w-8">{morphT.toFixed(2)}</span>
+                  </div>
+                  <select
+                    value={morphStrategy}
+                    onChange={(e) => setMorphStrategy(e.target.value as MorphStrategy)}
+                    className="w-full bg-bg-panel border border-border-color rounded px-2 py-0.5 text-[10px] text-text-muted"
+                    data-testid="pattern-morph-strategy"
+                  >
+                    {Object.entries(MORPH_STRATEGY_LABELS).map(([id, label]) => (
+                      <option key={id} value={id}>{label}</option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={handleApplyMorph}
+                    disabled={!morphTargetId}
+                    data-testid="pattern-morph-apply"
+                    className="w-full px-2 py-1 rounded text-[11px] bg-accent-secondary text-bg-base font-semibold hover:bg-accent-secondary/80 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    Apply Morph
+                  </button>
+                </div>
+              )}
 
               {!isLiveEditing && (
                 <div className="border-t border-border-color p-1">
