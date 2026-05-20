@@ -82,6 +82,8 @@ import { applyLockMode, type LockMode } from "@/utils/patternStepProbability";
 import { morphPatterns, MORPH_STRATEGY_LABELS, type MorphStrategy } from "@/utils/patternMorphInterpolate";
 // v3.182.0: Pattern-Branch-Variations Pure-Helper (N deterministische Variationen).
 import { generateBranchVariations } from "@/utils/patternBranchVariations";
+// v3.183.0: Melodic Sequence Pure-Helper (Rhythm + Scale + Strategy → MIDI-Notes).
+import { generateMelodicSequence, MELODIC_STRATEGY_LABELS, type MelodicStrategy } from "@/utils/patternMelodicSeq";
 
 import { inferPatternBpm } from "@/utils/patternBpmInfer";
 // Ausgelagerte Sub-Components
@@ -545,6 +547,8 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
   // v3.182.0: Pattern-Branch-Variations — N Variations + Intensity.
   const [branchCount, setBranchCount] = useState(3);
   const [branchIntensity, setBranchIntensity] = useState(0.4);
+  // v3.183.0: Melodic Sequence Generator — Strategy-Auswahl für "Generate Preview".
+  const [melodicStrategy, setMelodicStrategy] = useState<MelodicStrategy>("ascending");
   const [metronomOn, setMetronomOn] = useState(false);
   const [metronomGain, setMetronomGain] = useState(0.5);
   const [metronomAccent, setMetronomAccent] = useState(1.0);
@@ -1241,6 +1245,29 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
     toast(`${variations.length} Pattern-Variationen erstellt (intensity ${branchIntensity.toFixed(2)})`, { kind: "success" });
   }, [dm, branchCount, branchIntensity]);
 
+  // v3.183.0: Melodic Sequence Preview — generiert aus Rhythmus von parts[0]
+  // eine melodische Sequenz und zeigt Notes als Toast + console.log.
+  const handleGenerateMelodic = useCallback(() => {
+    const activePattern = dm.patterns.find((p) => p.id === dm.activePatternId);
+    if (!activePattern || activePattern.parts.length === 0) return;
+    const rhythm = activePattern.parts[0].steps.map((s) => s.active);
+    const notes = generateMelodicSequence({
+      rhythmPattern: rhythm,
+      scale: "minor-natural",
+      rootMidi: 60,
+      strategy: melodicStrategy,
+      octaveRange: 1,
+      seed: Date.now(),
+    });
+    if (notes.length === 0) {
+      toast("Keine aktiven Steps im activePattern", { kind: "warning" });
+      return;
+    }
+    const noteStr = notes.map((n) => `${n.midi}@${n.stepIndex}`).join(", ");
+    toast(`Melodic Sequence (${melodicStrategy}): ${notes.length} Notes — ${noteStr.slice(0, 100)}...`, { kind: "info", duration: 6000 });
+    console.log("[Melodic-Seq]", notes);
+  }, [dm, melodicStrategy]);
+
   // Drag-Drop fuer .e2pattern/.e2sallpat (Browser-Fallback).
   useEffect(() => {
     const handler = (e: Event) => {
@@ -1670,6 +1697,32 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
                   className="w-full px-2 py-1 rounded text-[11px] bg-accent-primary text-bg-base font-semibold hover:bg-accent-primary/80 transition-colors"
                 >
                   🌿 Branch out
+                </button>
+              </div>
+
+              {/* v3.183.0: Melodic Sequence Generator — Rhythm-of-parts[0] + Scale + Strategy → Preview. */}
+              <div
+                className="px-3 py-2 border-t border-border-color space-y-1.5"
+                data-testid="pattern-melodic-block"
+              >
+                <div className="text-[10px] text-text-dim font-semibold">Melodic Sequence:</div>
+                <select
+                  value={melodicStrategy}
+                  onChange={(e) => setMelodicStrategy(e.target.value as MelodicStrategy)}
+                  className="w-full bg-bg-panel border border-border-color rounded px-2 py-0.5 text-[10px] text-text-muted"
+                  data-testid="pattern-melodic-strategy"
+                >
+                  {Object.entries(MELODIC_STRATEGY_LABELS).map(([id, label]) => (
+                    <option key={id} value={id}>{label}</option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={handleGenerateMelodic}
+                  data-testid="pattern-melodic-generate"
+                  className="w-full px-2 py-1 rounded text-[11px] bg-bg-elevated text-text-primary hover:bg-accent-primary/20 hover:text-accent-primary transition-colors"
+                >
+                  🎼 Generate Preview
                 </button>
               </div>
 
