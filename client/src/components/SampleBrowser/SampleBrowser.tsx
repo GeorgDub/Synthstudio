@@ -149,6 +149,8 @@ import { applyStutterBuffer } from "@/utils/sampleStutterBuffer";
 import { applyAdsr } from "@/utils/sampleGainEnvelope";
 // v3.214: Bulk-RingMod (Ring-Modulation, carrierHz 50..3000 / mix 0..1) für selektierte Samples.
 import { applyRingMod } from "@/utils/sampleRingMod";
+// v3.215: Bulk-Declick (Click/Pop-Detection + lineares Smoothing, threshold 0.05..1) für selektierte Samples.
+import { removeClicks } from "@/utils/sampleClickRemover";
 
 // ─── Typen ────────────────────────────────────────────────────────────────────
 
@@ -2848,6 +2850,73 @@ export function SampleBrowser({
     bulkRingModMix,
   ]);
 
+  // v3.215 — Bulk-Declick (Click/Pop-Removal) für selektierte Samples.
+  // removeClicks ist pure; resultierender Buffer (gleiche Länge wie Input) wird
+  // als WAV encodet und via onTransformSample zurück ins Projekt geschrieben
+  // (+ AudioBuffer für AudioEngine-Cache). Default: threshold 0.3.
+  const [bulkClickThreshold, setBulkClickThreshold] = useState<number>(0.3);
+
+  const handleBulkClickRemove = useCallback(async () => {
+    if (multiSelectIds.size === 0 || !onTransformSample) return;
+    let applied = 0;
+    let totalClicks = 0;
+    for (const id of multiSelectIds) {
+      const sample = samples.find((s) => s.id === id);
+      if (!sample) continue;
+      try {
+        const buf = await AudioEngine.loadSample(sample.path);
+        if (!buf) continue;
+        const result = removeClicks(buf as unknown as AudioBufferLike, {
+          threshold: bulkClickThreshold,
+        });
+        const out = result.buffer;
+        if (out.numberOfChannels === 0 || out.length === 0) continue;
+        const channels = Math.min(2, out.numberOfChannels) as 1 | 2;
+        const wav = encodeWav(
+          Array.from({ length: channels }, (_, c) =>
+            out.getChannelData(c) as Float32Array,
+          ),
+          { sampleRate: out.sampleRate, channels, bitDepth: 16 },
+        );
+        const blob = new Blob([wav], { type: "audio/wav" });
+        const newUrl = URL.createObjectURL(blob);
+        const Ctor = (window.OfflineAudioContext ||
+          // @ts-expect-error legacy webkit fallback
+          window.webkitOfflineAudioContext) as typeof OfflineAudioContext;
+        const ctx = new Ctor(
+          Math.max(1, out.numberOfChannels),
+          Math.max(1, out.length),
+          out.sampleRate,
+        ) as BaseAudioContext;
+        const audioBuf = ctx.createBuffer(
+          Math.max(1, out.numberOfChannels),
+          Math.max(1, out.length),
+          out.sampleRate,
+        );
+        for (let c = 0; c < out.numberOfChannels; c++) {
+          const src = out.getChannelData(c);
+          const copy = new Float32Array(src.length);
+          copy.set(src);
+          audioBuf.copyToChannel(copy, c, 0);
+        }
+        onTransformSample(id, newUrl, audioBuf);
+        totalClicks += result.clicksDetected;
+        applied++;
+      } catch {
+        /* skip */
+      }
+    }
+    toast(
+      `Declick: ${totalClicks} clicks bei ${applied} Samples`,
+      { kind: "success" },
+    );
+  }, [
+    multiSelectIds,
+    samples,
+    onTransformSample,
+    bulkClickThreshold,
+  ]);
+
   // v3.152: Wenn Samples aus dem Projekt verschwinden (extern gelöscht),
   // multi-select-Set defensiv auf Existenz-Filter laufen lassen.
   useEffect(() => {
@@ -4315,6 +4384,29 @@ export function SampleBrowser({
                         title="Ring-Modulation (Signal × Sine-Carrier) auf alle ausgewählten Samples — bell/alien/metallic/bass-Klänge"
                       >
                         RM
+                      </button>
+                      <input
+                        type="range"
+                        min={0.05}
+                        max={1}
+                        step={0.05}
+                        value={bulkClickThreshold}
+                        onChange={(e) => setBulkClickThreshold(parseFloat(e.target.value))}
+                        data-testid="sample-browser-bulk-clickremove-threshold"
+                        className="w-20 accent-accent-secondary"
+                        title="Declick Threshold 0.05..1 (0.3 = default, niedriger = aggressiver, höher = nur grobe Clicks)"
+                      />
+                      <span className="text-[10px] font-mono text-text-muted w-12 text-center">
+                        th{bulkClickThreshold.toFixed(2)}
+                      </span>
+                      <button
+                        onClick={handleBulkClickRemove}
+                        disabled={!onTransformSample}
+                        data-testid="sample-browser-bulk-clickremove"
+                        className="px-2 py-0.5 rounded text-[10px] border border-border-color text-text-primary hover:border-accent-secondary hover:text-accent-secondary disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        title="Click/Pop-Removal (Detection + lineare Glättung) auf alle ausgewählten Samples"
+                      >
+                        DECLICK
                       </button>
                       <button
                         onClick={handleBulkDelete}
