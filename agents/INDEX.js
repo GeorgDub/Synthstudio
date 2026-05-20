@@ -3797,6 +3797,77 @@ const INDEX = {
   workLog: [
     {
       agent:     "refactor",
+      timestamp: "2026-05-20T17:15:00.000Z",
+      done: [
+        "v3.203 NEU Pure-Helper client/src/utils/sampleAllPass.ts (~221 LOC inkl. JSDoc) — Biquad-All-Pass-Filter (RBJ Audio EQ Cookbook). DSP: omega0 = 2pi*fc/fs, alpha = sin(omega0)/(2q); Koeffizienten b0=1-alpha, b1=-2cos(omega0), b2=1+alpha, a0=1+alpha, a1=-2cos(omega0), a2=1-alpha. Differenzgleichung y[n] = (b0/a0)x[n] + (b1/a0)x[n-1] + (b2/a0)x[n-2] - (a1/a0)y[n-1] - (a2/a0)y[n-2]. Magnitude-preserving |H(omega)|=1, aber frequenzabhaengige Phasenverschiebung. Foundation fuer Phaser-FX, Stereo-Widening, Drum-Phase-Alignment.",
+        "Public API: applyAllPass(buffer, options?) -> AudioBufferLike. AllPassOptions {centerHz?: number = 1000, q?: number = 0.707, stages?: number = 1}. Konstanten DEFAULT_CENTER_HZ=1000, DEFAULT_Q=0.707, DEFAULT_STAGES=1 als public exports. ALLPASS_PRESETS als plain object literal (HIGHPASS_PRESETS-Konvention statt LOWPASS-Array): subtle{800/0.5/1}, phaser{1000/1.5/4}, deep{400/2/6}, resonant{2000/5/2}.",
+        "Stages-Cascade-Architektur (advisor-konsultiert vor Impl): inline cascade — pro Channel 4 State-Arrays (x1, x2, y1, y2) als Float64Array(stages), jedes Sample durchlaeuft stages-mal die Biquad-Section vor dem Schreiben in dst. Single-pass, single-output, kein Temp-Buffer pro Stage. Per-Channel + per-Stage frischer State (0-init) — kein Cross-Channel/Cross-Stage-Coupling beim Init.",
+        "Defensive Sanitizers: centerHz NaN/Infinity/<=0/undef -> 1000Hz default; > Nyquist -> Nyquist-Clamp. q NaN/0/negative/undef -> 0.707 (explizit q<=0 vor MIN_Q-Check, weil sin(omega)/2q sonst Inf liefert); <0.1 -> 0.1; >10 -> 10. stages NaN/<1/undef -> 1; >8 -> 8 (Performance-Cap); non-integer floored via Math.floor. Empty-Buffer-Shortcut returnt {numCh=0, length=0, fallback sampleRate=48000}.",
+        "Test-Suite tests/features/sample-all-pass.test.ts (~440 LOC, 30 Tests in 7 describes): basics 5 (empty/defaults/undefined-equiv/length-preserve/all-finite). magnitude-preserving 4 (RMS at centerHz innerhalb 10%, RMS above centerHz, RMS below centerHz, RMS for stages=4 mit 15%-Toleranz). phase-shift 3 (single-stage -180 inversion-residual < identity-residual ueber letzte 1000 Samples; output != input; stages=1 vs stages=4 sumSqDiff > 1.0). multi-channel 3 (Ch0-silent + Ch1-sine no-leak, RangeError out-of-range, immutability mit precision=5). defensive 9 (NaN/Inf/-Inf/0/neg centerHz, > Nyquist clamp, q NaN/0/neg/100, stages NaN/0/neg/100/non-integer-floor). sampleRate-edge 3 (8000/96000/zero-length). presets 3 (existence/values/magnitude-preserve per preset).",
+        "Advisor-Konsultation vor Test-Design hat 3 Fallen vermieden: (1) Magnitude-Test braucht ~100 sample Transient-Skip + 10% Tolerance (Biquad startup state init 0). (2) Phase-Inversion-Test: bei centerHz ist single-stage Phase = -180deg, also output ~= -input, nicht 'arbitrary different' — Residual-Vergleich (out+in)^2 vs (out-in)^2. (3) Cascade-Test: stages=2 phase = -360 = identity (wrap-around) AT centerHz — also lieber stages=1 vs stages=4 sample-wise sumSqDiff > 1.0 statt deviation-at-frequency.",
+        "Implementation-Coefficient-Note: b2n = (1+alpha)/(1+alpha) = 1.0 numerisch reduzierbar, aber Code haelt das explizit fuer Klarheit + future-proofing. Pre-Normalisierung durch /a0 vor Loop.",
+        "pnpm check GRUEN (tsc --noEmit 0 errors). Test-Result: 30/30 tests passed in 56ms beim ERSTEN Run (kein Iteration). pnpm test:features GRUEN: 326 Test-Files / 7456 passed / 16 skipped (full-suite 33.65s, +30 Tests delta). KEIN Commit, KEIN package.json-Bump (Refactor-Pattern v3.188+). Nur 2 Files touched: NEU sampleAllPass.ts + NEU sample-all-pass.test.ts.",
+        "Coexistence-Note: Parallele Refactor-Session hat ebenfalls v3.202 fuer patternDensityHeatmap (frontend pattern-analysis) und parallele Frontend-Session fuer SampleBrowser Bulk-BandPass beansprucht. Beide Tasks disjoint zu sampleAllPass.ts; KEINE Datei-Konflikte. v3.203 ist diese Session, v3.204 sollte naechste bekommen."
+      ],
+      next: [
+        "v3.204+ Frontend-Owner: AllPass-FX-Karte im SampleTransformDialog mit centerHz/q/stages-Slidern + Preset-Dropdown (subtle/phaser/deep/resonant). Phaser-Preset-Hervorhebung mit LFO-Sweep-Animation (centerHz live-moduliert).",
+        "v3.204+ Backend-Owner: ss.sample.allPass(buffer, opts) Script-Sandbox-API exposen (analog ss.sample.lowPass/highPass/bandPass aus v3.198-v3.201). Preset-Konstanten als ss.sample.allPassPresets exportieren.",
+        "v3.204+ Frontend-Owner: Phaser-FX-Live-Modul — applyAllPass mit LFO-modulierter centerHz (z.B. 200..2000Hz sweep 0.5Hz Rate) als Phaser-FX-Channel-Insert. Foundation existiert; benoetigt FX-Chain-Wiring im AudioEngine.",
+        "v3.204+ Refactor-Owner: Symmetrie LOWPASS_PRESETS (Array<{id,name,...}>) vs HIGHPASS_PRESETS / BANDPASS_PRESETS / ALLPASS_PRESETS (Object-Literal) — fuer einheitliche UI-Wiring-Patterns sollte LOWPASS_PRESETS optional auf Object-Stil migriert werden (Array bleibt fuer order-preserve)."
+      ],
+      changed: [
+        "client/src/utils/sampleAllPass.ts (NEU, ~221 LOC — applyAllPass + ALLPASS_PRESETS + DEFAULT_CENTER_HZ/DEFAULT_Q/DEFAULT_STAGES Exports; RBJ-Biquad-All-Pass mit inline-stages-cascade)",
+        "tests/features/sample-all-pass.test.ts (NEU, ~440 LOC, 30 Tests in 7 describe-Bloecken)",
+        "agents/INDEX.js (workLog-Eintrag refactor v3.203 — sampleAllPass Pure-Helper)"
+      ]
+    },
+    {
+      agent:     "refactor",
+      timestamp: "2026-05-20T17:00:00.000Z",
+      done: [
+        "v3.202 NEU Pure-Helper patternDensityHeatmap (client/src/utils/patternDensityHeatmap.ts, ~190 LOC inkl. JSDoc) — 2D-Heatmap-Daten fuer Multi-Part-Pattern. Komplementaer zu patternDensity.ts (dense DensityMap) und patternDensityAnalyzer.ts (global density-Score). Foundation fuer Heatmap-Visualisierung (Canvas/SVG) mit value-getoenten Farben, Hotspot-Highlighting im MultiTrack-Step-Grid, Pattern-Statistik-Badges (avgDensity, maxValue).",
+        "Public API: buildHeatmap(parts) -> HeatmapData {cells, partCount, stepCount, maxValue, avgDensity}; columnDensity(parts, stepIndex) -> 0..1; rowDensity(part) -> 0..1; findHotspot(heatmap) -> {partIndex, stepIndex, value} | null. Types: PatternRowLike {partId?, partName?, steps:{active, velocity?}[]}, HeatmapCell {partIndex, stepIndex, value:0..1}, HeatmapData mit sparse cells (nur active Steps).",
+        "Design-Entscheidungen: (1) SPARSE storage — cells.length === Summe aktiver Steps, nicht parts*steps. Effizient fuer Pattern mit niedriger Density (16-Step / 4-Parts / 4 Hits => 4 Cells statt 64). (2) stepCount = max(parts[i].steps.length) — kuerzere Parts sind implizit padded (out-of-range fuer columnDensity == inaktiv). (3) findHotspot deterministisch: bei ties wird FIRST in cells[]-Iteration zurueckgegeben (entspricht Part-then-Step Reihenfolge). (4) avgDensity = activeCount / (partCount*stepCount), 0 bei total==0.",
+        "Defensive Sanitizers: velocity NaN/Infinity/neg/>1 -> 1 (default), undefined -> 1, valid 0..1 kept. !Array.isArray(parts) || empty -> alle Zaehler 0. part ohne .steps oder null -> skip. columnDensity: stepIndex NaN/neg/Infinity/out-of-bounds -> 0; verwendet Math.floor fuer non-integer. findHotspot: !heatmap.cells || empty -> null.",
+        "Test-Suite tests/features/pattern-density-heatmap.test.ts (~280 LOC, 29 Tests in 4 describes): buildHeatmap 13 (empty, single active, 4x16 four-on-the-floor, half-full avgDensity, full=1.0, maxValue varying velocities, sparse storage assertion, velocity NaN/neg/>1 -> 1, undefined -> 1, mixed step lengths -> max, missing partId, Infinity -> 1, empty part counted in partCount); columnDensity 7 (all inactive, all active, partial=0.5, out-of-bounds, NaN, empty parts, mixed step-lengths); rowDensity 4 (empty, full, half, all inactive); findHotspot 5 (empty, all inactive, single cell, varying velocities -> highest wins, tie -> first wins). Erster Run: 29/29 passed in 6ms.",
+        "pnpm check GRUEN (tsc --noEmit 0 errors). pnpm test:features GRUEN: 325 Test-Files / 7426 passed / 16 skipped (preexisting) (32.12s). KEIN Commit, KEIN package.json-Bump (User-Vorgabe Refactor-Pattern v3.188+). Nur 2 Files touched: NEU patternDensityHeatmap.ts + NEU pattern-density-heatmap.test.ts.",
+        "Write-Tool-Pitfall vermieden: Test-File via printf-Stub + Edit-Tool angelegt (cat-heredoc waere wegen Spezialzeichen Token-Kollision riskant gewesen — siehe v3.199-Vorfall im workLog). Implementations-File via Heredoc ging einmal sauber (kein em-dash-Block).",
+        "Coexistence-Note: Parallele Frontend-Session hat ebenfalls v3.202 fuer Bulk-BandPass-Wire-Up (SampleBrowser.tsx) beansprucht (timestamp 18:00). Beide v3.202-Entries koexistieren als separate Tasks; KEINE Datei-Konflikte (SampleBrowser.tsx ist frontend-territory, patternDensityHeatmap.ts ist neuer Pure-Helper, disjoint). v3.203 sollte naechste Session bekommen."
+      ],
+      next: [
+        "v3.203+ Frontend-Owner: Heatmap-Visualisierung im Pattern-Analytics-Panel (Canvas/SVG-Grid mit value-getoenten Farben — z.B. hsl(120, 100%, value*50%) fuer green->white-Skala). HeatmapCell-iteration ist sparse-friendly, performant.",
+        "v3.203+ Frontend-Owner: Hotspot-Badge im DrumMachine PatternRow (analog density/complexity/fitness/pulse) — 'Hot' indicator wenn findHotspot.value > 0.8, mit Tooltip 'Hotspot @ Part {N}, Step {M}'.",
+        "v3.203+ Backend-Owner: Script-Sandbox ss.pattern.heatmap(parts) + ss.pattern.hotspot(parts) exposen — Pure + deterministisch macht es script-sicher.",
+        "v3.203+ Refactor-Followup: Dense-Mode-Variante buildHeatmapDense(parts) -> { cells: number[][] } (analog patternDensity.ts) falls Visualisierungs-Backend dense-2D-Array bevorzugt (z.B. Recharts Heatmap-Plot). Aktuelle Sparse-Variante deckt Highlight + Statistik ab.",
+        "v3.203+ Refactor-Followup: findHotspot Tie-Breaking konfigurierbar (FIRST | LAST | RANDOM) — aktuell hardcoded FIRST."
+      ],
+      changed: [
+        "client/src/utils/patternDensityHeatmap.ts (NEU, ~190 LOC — buildHeatmap + columnDensity + rowDensity + findHotspot + PatternRowLike + HeatmapCell + HeatmapData; ownedBy frontend, da Pure-Helper im Pattern-Analyse-Layer analog patternDensity.ts/patternDensityAnalyzer.ts/patternDensityPulse.ts)",
+        "tests/features/pattern-density-heatmap.test.ts (NEU, ~280 LOC, 29 Tests in 4 describes; ownedBy testing)",
+        "agents/INDEX.js (workLog-Eintrag refactor v3.202 — patternDensityHeatmap Pure-Helper)"
+      ]
+    },
+    {
+      agent:     "frontend",
+      timestamp: "2026-05-20T18:00:00.000Z",
+      done: [
+        "v3.202 UI-Wiring sampleBandPass (applyBandPass) als Bulk-Apply im SampleBrowser Multi-Select-Bar — Center-Slider (min=100 max=10000 step=100, default=1500 = 'telephone' preset center) + Width-Slider (min=100 max=5000 step=100, default=2000 = 'telephone' preset width) + 'BP'-Button direkt rechts neben HP-Button v3.201. data-testids: 'sample-browser-bulk-bandpass-center' + 'sample-browser-bulk-bandpass-width' + 'sample-browser-bulk-bandpass'. Pattern 1:1 symmetrisch zu Bulk-LowPass/HighPass v3.199/v3.201: AudioEngine.loadSample -> applyBandPass(buf, {centerHz, bandwidthHz}) -> encodeWav(channels=min(2,n)) -> URL.createObjectURL-Blob -> OfflineAudioContext.createBuffer+copyToChannel -> onTransformSample(id, blobURL, audioBuf). Toast 'Band-Pass <center>Hz ±<width>Hz: N Samples' (kind:success).",
+        "Import: import { applyBandPass } from '@/utils/sampleBandPass' direkt nach applyHighPass-Import. State: bulkBandPassCenter (useState<number>(1500)) + bulkBandPassWidth (useState<number>(2000)) = telephone-Preset Defaults. Handler handleBulkBandPass via useCallback mit deps [multiSelectIds, samples, onTransformSample, bulkBandPassCenter, bulkBandPassWidth]. UI: 2x input range + 2x span + button im selben Multi-Select-Bar-Flex-Container, accent-accent-secondary fuer Slider, border-border-color + hover:border-accent-secondary fuer Button (semantic tokens only).",
+        "pnpm check GRUEN (tsc --noEmit 0 errors). KEIN Commit, KEIN package.json-Bump (User-Vorgabe). Nur SampleBrowser.tsx + agents/INDEX.js touched."
+      ],
+      next: [
+        "v3.203+ Testing-Owner: Playwright-Smoke tests/web/sample-bulk-bandpass.spec.ts — Sample-Set selektieren, Center+Width-Slider auf telephone/vocalPresence/bass/resonant Preset-Werte setzen, BP-Klick, Toast verifizieren, getChannelData vor/nach unterschiedlich.",
+        "v3.203+ Frontend-Owner: BANDPASS_PRESETS-Dropdown in der Bulk-Bar (telephone/vocalPresence/bass/resonant) statt nur freier Center+Width-Slider — Click setzt beide States gleichzeitig. Aktuell nur freie Slider gewired.",
+        "v3.203+ Frontend-Owner: Resonance-Slider in der Bulk-Bar (0..1) — applyBandPass-Options.resonance ist verfuegbar aber noch nicht gewired (aktuell hardcoded 0). Optionaler dritter Slider mit accent-Highlight wenn >0.",
+        "v3.203+ Frontend-Owner: Bulk-Bar wird voll — vermutlich brauchen Bulk-FX-Aktionen bald ein eigenes Sub-Menu/Popover oder ein Tab-Layout ('Filter / Dynamics / Stereo / Sample')."
+      ],
+      changed: [
+        "client/src/components/SampleBrowser/SampleBrowser.tsx (Bulk-BandPass-State + Handler + UI direkt rechts neben Bulk-HighPass v3.201; +applyBandPass-Import)",
+        "agents/INDEX.js (workLog-Eintrag frontend v3.202 — Bulk-BandPass-Wire-Up)"
+      ]
+    },
+    {
+      agent:     "refactor",
       timestamp: "2026-05-20T12:30:00.000Z",
       done: [
         "v3.201 NEU Pure-Helper sampleBandPass — Pendant zu sampleLowPass (v3.198) und sampleHighPass (v3.199). Realisiert als Cascade applyHighPass(buffer, {cutoffHz: centerHz - bandwidthHz/2}) -> applyLowPass(result, {cutoffHz: centerHz + bandwidthHz/2}). Optional Resonance-Boost (0..1) als skalarer Gain auf das Band, +6dB max. Vier Presets: telephone (1500Hz/2000Hz), vocalPresence (3000Hz/2000Hz), bass (200Hz/200Hz), resonant (800Hz/100Hz).",

@@ -125,6 +125,8 @@ import { applyStereoEnhance } from "@/utils/sampleStereoEnhancer";
 import { applyLowPass } from "@/utils/sampleLowPass";
 // v3.201: Bulk-HighPass (one-pole, cutoff slider 50..800 Hz) für selektierte Samples.
 import { applyHighPass } from "@/utils/sampleHighPass";
+// v3.202: Bulk-BandPass (HP+LP-Cascade, center 100..10000 Hz / width 100..5000 Hz) für selektierte Samples.
+import { applyBandPass } from "@/utils/sampleBandPass";
 
 // ─── Typen ────────────────────────────────────────────────────────────────────
 
@@ -2014,6 +2016,74 @@ export function SampleBrowser({
     toast(`High-Pass ${bulkHighPassCutoff}Hz: ${applied} Samples`, { kind: "success" });
   }, [multiSelectIds, samples, onTransformSample, bulkHighPassCutoff]);
 
+  // v3.202 — Bulk-Band-Pass für selektierte Samples. Center 100..10000 Hz
+  // (default 1500 = "telephone" preset), Width 100..5000 Hz (default 2000).
+  // applyBandPass cascadiert HighPass→LowPass pure, der neue Buffer wird als
+  // WAV encodet und via onTransformSample zurück ins Projekt geschrieben
+  // (+ AudioBuffer für AudioEngine-Cache).
+  const [bulkBandPassCenter, setBulkBandPassCenter] = useState<number>(1500);
+  const [bulkBandPassWidth, setBulkBandPassWidth] = useState<number>(2000);
+
+  const handleBulkBandPass = useCallback(async () => {
+    if (multiSelectIds.size === 0 || !onTransformSample) return;
+    let applied = 0;
+    for (const id of multiSelectIds) {
+      const sample = samples.find((s) => s.id === id);
+      if (!sample) continue;
+      try {
+        const buf = await AudioEngine.loadSample(sample.path);
+        if (!buf) continue;
+        const out = applyBandPass(buf as unknown as AudioBufferLike, {
+          centerHz: bulkBandPassCenter,
+          bandwidthHz: bulkBandPassWidth,
+        });
+        if (out.numberOfChannels === 0 || out.length === 0) continue;
+        const channels = Math.min(2, out.numberOfChannels) as 1 | 2;
+        const wav = encodeWav(
+          Array.from({ length: channels }, (_, c) =>
+            out.getChannelData(c) as Float32Array,
+          ),
+          { sampleRate: out.sampleRate, channels, bitDepth: 16 },
+        );
+        const blob = new Blob([wav], { type: "audio/wav" });
+        const newUrl = URL.createObjectURL(blob);
+        const Ctor = (window.OfflineAudioContext ||
+          // @ts-expect-error legacy webkit fallback
+          window.webkitOfflineAudioContext) as typeof OfflineAudioContext;
+        const ctx = new Ctor(
+          Math.max(1, out.numberOfChannels),
+          Math.max(1, out.length),
+          out.sampleRate,
+        ) as BaseAudioContext;
+        const audioBuf = ctx.createBuffer(
+          Math.max(1, out.numberOfChannels),
+          Math.max(1, out.length),
+          out.sampleRate,
+        );
+        for (let c = 0; c < out.numberOfChannels; c++) {
+          const src = out.getChannelData(c);
+          const copy = new Float32Array(src.length);
+          copy.set(src);
+          audioBuf.copyToChannel(copy, c, 0);
+        }
+        onTransformSample(id, newUrl, audioBuf);
+        applied++;
+      } catch {
+        /* skip */
+      }
+    }
+    toast(
+      `Band-Pass ${bulkBandPassCenter}Hz ±${bulkBandPassWidth}Hz: ${applied} Samples`,
+      { kind: "success" },
+    );
+  }, [
+    multiSelectIds,
+    samples,
+    onTransformSample,
+    bulkBandPassCenter,
+    bulkBandPassWidth,
+  ]);
+
   // v3.152: Wenn Samples aus dem Projekt verschwinden (extern gelöscht),
   // multi-select-Set defensiv auf Existenz-Filter laufen lassen.
   useEffect(() => {
@@ -3051,6 +3121,43 @@ export function SampleBrowser({
                         title="High-Pass Filter auf alle ausgewählten Samples"
                       >
                         HP
+                      </button>
+                      <input
+                        type="range"
+                        min={100}
+                        max={10000}
+                        step={100}
+                        value={bulkBandPassCenter}
+                        onChange={(e) => setBulkBandPassCenter(parseInt(e.target.value, 10))}
+                        data-testid="sample-browser-bulk-bandpass-center"
+                        className="w-20 accent-accent-secondary"
+                        title="Band-Pass Center 100..10000 Hz"
+                      />
+                      <span className="text-[10px] font-mono text-text-muted w-12 text-center">
+                        {bulkBandPassCenter}Hz
+                      </span>
+                      <input
+                        type="range"
+                        min={100}
+                        max={5000}
+                        step={100}
+                        value={bulkBandPassWidth}
+                        onChange={(e) => setBulkBandPassWidth(parseInt(e.target.value, 10))}
+                        data-testid="sample-browser-bulk-bandpass-width"
+                        className="w-20 accent-accent-secondary"
+                        title="Band-Pass Width 100..5000 Hz"
+                      />
+                      <span className="text-[10px] font-mono text-text-muted w-12 text-center">
+                        ±{bulkBandPassWidth}Hz
+                      </span>
+                      <button
+                        onClick={handleBulkBandPass}
+                        disabled={!onTransformSample}
+                        data-testid="sample-browser-bulk-bandpass"
+                        className="px-2 py-0.5 rounded text-[10px] border border-border-color text-text-primary hover:border-accent-secondary hover:text-accent-secondary disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        title="Band-Pass Filter (HP+LP Cascade) auf alle ausgewählten Samples"
+                      >
+                        BP
                       </button>
                       <button
                         onClick={handleBulkDelete}
