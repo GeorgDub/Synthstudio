@@ -184,6 +184,8 @@ import { computeEnergyCurve } from "@/utils/patternEnergyCurve";
 import { detectFlowDirection } from "@/utils/patternFlowDirection";
 // v3.216: Pattern-Row Repetition-Badge — computeRepetitionScore.
 import { computeRepetitionScore } from "@/utils/patternRepetitionScore";
+// v3.218: Pattern-Row Symmetry-Badge — symmetryScore (Palindrome + Mirror-Axis).
+import { symmetryScore } from "@/utils/patternSymmetryScore";
 import type { PatternData } from "@/audio/AudioEngine";
 
 // ─── v3.205: Pattern-Flatten-Helper (module-level Cache via Closure) ───────────
@@ -430,6 +432,21 @@ function PatternRow({
     }
     return computeRepetitionScore(flat);
   }, [pattern]);
+  // v3.218: Symmetry-Score — Palindrome- + Mirror-Axis-Detection auf der
+  // OR-aggregierten Step-Sequenz. Limit 32 Steps (analog repetition /
+  // flowDirection / energyCurve). Badge zeigt isPalindrome ODER
+  // halfMirrorScore > 0.7 (deutliche Spiegel-Symmetrie).
+  const symmetry = useMemo(() => {
+    const stepCount = Math.min(pattern.stepCount, 32);
+    const flat: boolean[] = new Array(stepCount).fill(false);
+    for (const part of pattern.parts) {
+      const len = Math.min(part.steps.length, stepCount);
+      for (let i = 0; i < len; i++) {
+        if (part.steps[i].active) flat[i] = true;
+      }
+    }
+    return symmetryScore(flat);
+  }, [pattern]);
   // v2.5: Submenu zum Auswählen welcher Pattern als Source dient
   const [pickerOpen, setPickerOpen] = useState(false);
   // v2.8: Drag-Drop-Reorder State (drop-indicator: above|below|null)
@@ -657,6 +674,17 @@ function PatternRow({
             data-testid={`pattern-row-repetition-${pattern.id}`}
           >
             R{Math.round(repetition.repetitionScore * 100)}
+          </span>
+        )}
+        {/* v3.218: Symmetry-Badge — Palindrome (⟷) oder Mirror-Symmetry (◐). */}
+        {(symmetry.isPalindrome || symmetry.halfMirrorScore > 0.7) && (
+          <span
+            className="ml-1 px-1 py-0.5 rounded text-[9px] font-mono bg-accent-success/20 text-accent-success"
+            title={`Symmetry: palindrome=${Math.round(symmetry.palindromeScore * 100)}%, mirror=${Math.round(symmetry.halfMirrorScore * 100)}%@axis${symmetry.mirrorAxis}`}
+            data-testid={`pattern-row-symmetry-${pattern.id}`}
+          >
+            {symmetry.isPalindrome ? "⟷" : "◐"}
+            {Math.round((symmetry.isPalindrome ? symmetry.palindromeScore : symmetry.halfMirrorScore) * 100)}
           </span>
         )}
         {learn.isMapped && (

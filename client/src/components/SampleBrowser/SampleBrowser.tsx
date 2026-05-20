@@ -153,6 +153,8 @@ import { applyRingMod } from "@/utils/sampleRingMod";
 import { removeClicks } from "@/utils/sampleClickRemover";
 // v3.216: Bulk-Phaser (kaskadierte modulierte All-Pass-Stages, rateHz 0.05..5 / depth 0..1) für selektierte Samples.
 import { applyPhaser } from "@/utils/samplePhaser";
+// v3.218: Bulk-Granulize (Granular-Synthesis, grainSizeMs 5..200 / grainCount 1..200) für selektierte Samples.
+import { applyGranulize } from "@/utils/sampleGranulize";
 
 // ─── Typen ────────────────────────────────────────────────────────────────────
 
@@ -2986,6 +2988,74 @@ export function SampleBrowser({
     bulkPhaserDepth,
   ]);
 
+  // v3.218 — Bulk-Granulize (Granular-Synthesis: schneidet grainCount kurze Grains
+  // aus verschiedenen Quell-Positionen heraus und arrangiert sie back-to-back).
+  // applyGranulize ist pure; resultierender Buffer hat Länge (grainCount * grainSamples)
+  // — NICHT input.length. Defaults aus GRANULIZE_PRESETS.cloud.
+  const [bulkGrainSize, setBulkGrainSize] = useState<number>(50);
+  const [bulkGrainCount, setBulkGrainCount] = useState<number>(64);
+
+  const handleBulkGranulize = useCallback(async () => {
+    if (multiSelectIds.size === 0 || !onTransformSample) return;
+    let applied = 0;
+    for (const id of multiSelectIds) {
+      const sample = samples.find((s) => s.id === id);
+      if (!sample) continue;
+      try {
+        const buf = await AudioEngine.loadSample(sample.path);
+        if (!buf) continue;
+        const out = applyGranulize(buf as unknown as AudioBufferLike, {
+          grainSizeMs: bulkGrainSize,
+          grainCount: bulkGrainCount,
+          randomSeed: Date.now(),
+        });
+        if (out.numberOfChannels === 0 || out.length === 0) continue;
+        const channels = Math.min(2, out.numberOfChannels) as 1 | 2;
+        const wav = encodeWav(
+          Array.from({ length: channels }, (_, c) =>
+            out.getChannelData(c) as Float32Array,
+          ),
+          { sampleRate: out.sampleRate, channels, bitDepth: 16 },
+        );
+        const blob = new Blob([wav], { type: "audio/wav" });
+        const newUrl = URL.createObjectURL(blob);
+        const Ctor = (window.OfflineAudioContext ||
+          // @ts-expect-error legacy webkit fallback
+          window.webkitOfflineAudioContext) as typeof OfflineAudioContext;
+        const ctx = new Ctor(
+          Math.max(1, out.numberOfChannels),
+          Math.max(1, out.length),
+          out.sampleRate,
+        ) as BaseAudioContext;
+        const audioBuf = ctx.createBuffer(
+          Math.max(1, out.numberOfChannels),
+          Math.max(1, out.length),
+          out.sampleRate,
+        );
+        for (let c = 0; c < out.numberOfChannels; c++) {
+          const src = out.getChannelData(c);
+          const copy = new Float32Array(src.length);
+          copy.set(src);
+          audioBuf.copyToChannel(copy, c, 0);
+        }
+        onTransformSample(id, newUrl, audioBuf);
+        applied++;
+      } catch {
+        /* skip */
+      }
+    }
+    toast(
+      `Granulize ${bulkGrainSize}ms ×${bulkGrainCount}: ${applied} Samples`,
+      { kind: "success" },
+    );
+  }, [
+    multiSelectIds,
+    samples,
+    onTransformSample,
+    bulkGrainSize,
+    bulkGrainCount,
+  ]);
+
   // v3.152: Wenn Samples aus dem Projekt verschwinden (extern gelöscht),
   // multi-select-Set defensiv auf Existenz-Filter laufen lassen.
   useEffect(() => {
@@ -4513,6 +4583,43 @@ export function SampleBrowser({
                         title="Phaser (kaskadierte modulierte All-Pass-Stages mit LFO-Sweep) auf alle ausgewählten Samples"
                       >
                         PHA
+                      </button>
+                      <input
+                        type="range"
+                        min={5}
+                        max={200}
+                        step={5}
+                        value={bulkGrainSize}
+                        onChange={(e) => setBulkGrainSize(parseFloat(e.target.value))}
+                        data-testid="sample-browser-bulk-granulize-size"
+                        className="w-20 accent-accent-secondary"
+                        title="Granulize Grain-Size 5..200ms (50 = cloud-default, klein = feine Textur, gross = freeze-artige Grains)"
+                      />
+                      <span className="text-[10px] font-mono text-text-muted w-12 text-center">
+                        g{bulkGrainSize}ms
+                      </span>
+                      <input
+                        type="range"
+                        min={1}
+                        max={200}
+                        step={1}
+                        value={bulkGrainCount}
+                        onChange={(e) => setBulkGrainCount(parseFloat(e.target.value))}
+                        data-testid="sample-browser-bulk-granulize-count"
+                        className="w-20 accent-accent-secondary"
+                        title="Granulize Grain-Count 1..200 (64 = cloud-default, viele = dichte Cloud, wenige = sparse / freeze-artig)"
+                      />
+                      <span className="text-[10px] font-mono text-text-muted w-12 text-center">
+                        ×{bulkGrainCount}
+                      </span>
+                      <button
+                        onClick={handleBulkGranulize}
+                        disabled={!onTransformSample}
+                        data-testid="sample-browser-bulk-granulize"
+                        className="px-2 py-0.5 rounded text-[10px] border border-border-color text-text-primary hover:border-accent-secondary hover:text-accent-secondary disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        title="Granulize (Granular-Synthesis: grainCount kurze Grains aus zufälligen Quell-Positionen back-to-back arrangiert) auf alle ausgewählten Samples"
+                      >
+                        GRN
                       </button>
                       <button
                         onClick={handleBulkDelete}
