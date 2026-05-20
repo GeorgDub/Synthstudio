@@ -170,6 +170,8 @@ import {
 // v3.201: Pattern-Row Pulse-Count Badge — Burst-Detection via Sliding-Window
 // auf OR-aggregierten Steps (alle Parts kombiniert).
 import { detectDensityPulses } from "@/utils/patternDensityPulse";
+// v3.203: Pattern-Row Mini-Heatmap — sparse 2D-Density-Viz pro Pattern.
+import { buildHeatmap, findHotspot } from "@/utils/patternDensityHeatmap";
 import type { PatternData } from "@/audio/AudioEngine";
 
 function computePatternDensityCategory(pattern: PatternData): DensityCategory {
@@ -265,6 +267,21 @@ function PatternRow({
     }
     return detectDensityPulses(flat).length;
   }, [pattern]);
+  // v3.203: Mini-Heatmap-Daten (sparse) — limited auf 16 parts x 32 steps
+  // für SVG-Performance. velocity wird von 0-127 → 0-1 normalisiert,
+  // damit sanitizeVelocity nicht alles auf 1 clampt.
+  const heatmapData = useMemo(() => {
+    const parts = pattern.parts.slice(0, 16).map(p => ({
+      partId: p.id,
+      partName: p.name,
+      steps: p.steps.slice(0, 32).map(s => ({
+        active: s.active,
+        velocity: typeof s.velocity === "number" ? s.velocity / 127 : undefined,
+      })),
+    }));
+    return buildHeatmap(parts);
+  }, [pattern]);
+  const heatmapHotspot = useMemo(() => findHotspot(heatmapData), [heatmapData]);
   // v2.5: Submenu zum Auswählen welcher Pattern als Source dient
   const [pickerOpen, setPickerOpen] = useState(false);
   // v2.8: Drag-Drop-Reorder State (drop-indicator: above|below|null)
@@ -385,6 +402,34 @@ function PatternRow({
             data-testid={`pattern-row-pulse-${pattern.id}`}
           >
             ~{pulseCount}
+          </span>
+        )}
+        {/* v3.203: Mini-Heatmap-Visualisierung pro Pattern-Row (32x16 SVG). */}
+        {heatmapData.partCount > 0 && heatmapData.stepCount > 0 && (
+          <span
+            className="inline-block ml-1 align-middle border border-border-color rounded text-accent-secondary"
+            title={`Heatmap: avgDensity=${(heatmapData.avgDensity * 100).toFixed(0)}%, hotspot at part ${heatmapHotspot?.partIndex ?? "-"}`}
+            data-testid={`pattern-row-heatmap-${pattern.id}`}
+          >
+            <svg
+              width={32}
+              height={16}
+              viewBox={`0 0 ${heatmapData.stepCount} ${heatmapData.partCount}`}
+              preserveAspectRatio="none"
+              aria-hidden="true"
+            >
+              {heatmapData.cells.map((cell, i) => (
+                <rect
+                  key={i}
+                  x={cell.stepIndex}
+                  y={cell.partIndex}
+                  width={1}
+                  height={1}
+                  fill="currentColor"
+                  opacity={cell.value}
+                />
+              ))}
+            </svg>
           </span>
         )}
         {learn.isMapped && (

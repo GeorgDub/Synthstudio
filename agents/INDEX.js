@@ -397,6 +397,17 @@ const INDEX = {
       lastSeen: "2026-05-20T12:15:00.000Z",
       ownedBy:  "testing"
     },
+    // ─── v3.203 Pure-Helpers (refactor) — Sample-Resampler ────
+    "client/src/utils/sampleResampler.ts": {
+      role:     "Pure-Helper fuer Linear-Interpolation-Sample-Rate-Konversion (endpoint-inklusiv). Public API: resampleBuffer(buffer: AudioBufferLike, opts?: ResampleOptions) -> AudioBufferLike; changeSpeedRatio(buffer, ratio: number) -> AudioBufferLike. ResampleOptions {targetSampleRate?, targetLengthSamples?, preservePitch?}. Vorrang: targetLengthSamples > targetSampleRate-Berechnung. output.sampleRate = targetSampleRate ?? source. Algorithmus: srcPos = i*(srcLen-1)/(outLen-1); lo=floor; frac=srcPos-lo; hi=min(lo+1, srcLen-1); out[i] = src[lo] + frac*(src[hi]-src[lo]). Endpoint-erhaltend: out[0]=src[0], out[outLen-1]=src[srcLen-1]. Beispiel [0,1] outLen=3 -> [0, 0.5, 1]. Abgrenzung zu samplePitchShift.ts (srcPos=i*ratio decimation-style): hier endpoint-inklusiv fuer SR-Konversion-Use-Case. preservePitch=true v3.203-STUB (identische Linear-Interp; echtes Time-Stretch folgt). changeSpeedRatio delegiert via targetLengthSamples=floor(inLen/ratio); SR bleibt unveraendert. Defensive: empty/null Buffer -> empty mit fallback sampleRate=48000; targetSampleRate NaN/Inf/<=0/undef -> source; targetLengthSamples NaN/Inf/<0 -> fallback; =0 -> empty; non-integer floored. ratio NaN/Inf/<=0 -> 1 (identity). Per-Channel fresh Float32Array, input nie mutiert. RangeError bei out-of-range Channel-Access. Foundation fuer SR-Konversion (44.1<->48kHz), Variable-Speed-Playback, Sample-Length-Konformierung. Pure & DOM-frei. ~250 LOC.",
+      lastSeen: "2026-05-20T19:30:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "tests/features/sample-resampler.test.ts": {
+      role:     "Pure-Coverage fuer sampleResampler.ts. 35 Tests in 10 describes: identity/shape 5 (identity bit-exact mit targetSampleRate==source, opts undef -> identity, AudioBufferLike-conformance check, [0,1] outLen=3 -> [0,0.5,1] Linear-Interp, last-sample no-out-of-range mit isFinite-check). empty/null 3 (empty buffer + targetSR=48000 -> empty mit sampleRate=48000, empty + opts undef -> sampleRate=22050 source-fallback, targetLengthSamples=0 -> empty mit targetSR=22050 erhalten). targetSampleRate 3 (Upsample 48000->96000 -> doppelte Laenge, Downsample 48000->24000 -> halbe Laenge, 44100->48000 Resample-Math floor(441*48000/44100)=480). targetLengthSamples Override 3 (Vorrang vor targetSampleRate fuer Laenge, ohne targetSR -> source SR, non-integer 5.9 -> 5 floor). defensive sanitizers 7 (targetSR NaN/Inf/-1000/0 -> identity, targetLen NaN/Inf/-5 -> Fallback auf SR-Berechnung). multi-channel 3 (L==R identische Outputs, L!=R endpoint-erhaltend, out-of-range channel -> RangeError). immutability 2 (input snapshot after-resample equals, wiederholte Aufrufe identische Werte). changeSpeedRatio basics 3 (ratio=1 identity, =2 half length, =0.5 double length). changeSpeedRatio defensive 5 (NaN/Inf/0/-2 identity, empty buffer + ratio=2 -> empty). preservePitch stub 1 (true == false in v3.203). Test-Helpers makeMono/makeStereo/makeEmpty. Vitest node-env. 35/35 passed in 7ms. Vollsuite-Status nach Add: 327 files / 7491 passed / 16 skipped (+35 eigene Tests). ~370 LOC.",
+      lastSeen: "2026-05-20T19:30:00.000Z",
+      ownedBy:  "testing"
+    },
     // ─── v3.194 Pure-Helpers (refactor) — Sample-Pitch-Shift ────
     "client/src/utils/samplePitchShift.ts": {
       role:     "Pure-Helper fuer Resample-based Sample-Pitch-Shift (NO time stretch). Public API: applyPitchShift(buffer: AudioBufferLike, options: { semitones }) -> AudioBufferLike (frische Float32Array-Buffer pro Channel, Eingabe immutabel); pitchShiftedLength(inputLength, semitones) -> number (UI-Preview-Helper); MAX_SEMITONES = 24 const. Algorithmus: ratio = 2^(semitones/12); outputLength = floor(inputLength / ratio); pro Output-Sample i in [0, outputLength): src_idx = i*ratio, lo=floor, hi=min(lo+1, inLen-1), frac=src_idx-lo, out[i] = in[lo]*(1-frac) + in[hi]*frac. Pitch-up (+semitones) -> ratio>1 -> kuerzere Output-Laenge. Pitch-down (-semitones) -> ratio<1 -> laengere Output-Laenge. Sample-Rate + numberOfChannels bleiben erhalten. Edge-Cases: leerer/null Buffer -> empty (numberOfChannels=0, length=0); semitones=0 -> identity copy mit FRESHEN Float32Arrays (kein Aliasing zu Input); NaN semitones -> 0 (identity); +Infinity -> +MAX_SEMITONES; -Infinity -> -MAX_SEMITONES; |semitones|>MAX_SEMITONES -> clamp. Bounds-Guard: hi = lo+1 < inLen ? lo+1 : inLen-1 (vermeidet Out-of-Range-Read am End-Sample). Abgrenzung: KEIN Time-Stretch (Laenge aendert sich proportional zur ratio, NICHT laengen-konstant). Foundation fuer Sample-Tune-Aktionen (Bulk-Detune, Drag-and-Drop-Pitch-Preview, Stretch-aware Slicing-Targets, OmniTribe-Sample-Detune). Pure & DOM-frei. 178 LOC.",
@@ -1295,6 +1306,11 @@ const INDEX = {
     "tests/features/pattern-variations.test.ts (v3.105.0 NEU)": {
       role:     "v3.105.0 NEU (+~365 LOC, 42 Tests in 14 describes). (1) humanize × 4 — Anzahl-aktive Steps Invariant, seed-deterministic Round-Trip, intensity=0 no-op, pure-non-mutating. (2) addGhostNotes × 3 — nur leere Steps werden Ghost, intensity=1.0 fuellt alle, intensity=0 keine Aenderung. (3) addFill × 3 — letzte 4 Steps zwingend aktiv, density-Comparison, Velocity-Bumps. (4) varySwing × 3 — even/odd Velocity-Diff, intensity=0 no-op, seed-deterministic. (5) increaseDensity × 3 — intensity=1 alle leeren gefuellt, intensity=0 no-op, seed-deterministic. (6) decreaseDensity × 3 — intensity=1 alle geleert, intensity=0 no-op, seed-deterministic. (7) shuffleVelocity × 3 — same multiset (sorted equal), Position-Invariant (active-bleibt-aktiv), seed-deterministic. (8) rhythmicDisplacement × 3 — max ±1 step in Window, intensity=0 no-op, seed-deterministic. (9) applyVariation × 3 — alle 8 Kinds gueltig, preview-pure, no-seed kein Throw. (10) makeRng × 4 — seeded-deterministic, different seeds different sequences, no-seed Math.random fallback, NaN/Infinity fallback. (11) Store previewVariation × 2. (12) Store generateBatch × 3 — N pattern-IDs zurueck, empty configs → empty, leere ID-Filter. (13) Store applyVariationToPattern × 3. (14) Store setLastUsedConfig × 2. Alle 42 gruen.",
       lastSeen: "2026-05-19T11:08:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/components/DrumMachine/DrumMachine.tsx (v3.203 +PatternRow-Heatmap-Mini-Viz)": {
+      role:     "v3.203 ERWEITERT (+~35 LOC, alle vorherigen Bloecke v3.201 pulseCount + v3.105 Variation + v3.97 step-recorder + v2.x Toolbar unveraendert). NEU Imports buildHeatmap + findHotspot aus '@/utils/patternDensityHeatmap' direkt nach detectDensityPulses-Import (Pattern-Density-Pulse-Block). NEU 2 useMemos in PatternRow-Component direkt nach pulseCount-useMemo (v3.201): heatmapData ruft buildHeatmap mit normalisierten parts auf (velocity/127 fuer korrekte 0-1-Heatmap-Werte; slice auf 16 parts × 32 steps Perf-Cap). heatmapHotspot = findHotspot(heatmapData). NEU 32x16-px-SVG-Block direkt nach Density-Pulse-Count-Badge v3.201: viewBox='0 0 stepCount partCount' + preserveAspectRatio='none' (Cells skalieren via viewBox), Container 'inline-block ml-1 align-middle border border-border-color rounded text-accent-secondary', rect width=1 height=1 fill='currentColor' opacity={cell.value}, title='Heatmap: avgDensity=N%, hotspot at part X', data-testid='pattern-row-heatmap-{pattern.id}'. Fallback: partCount=0 || stepCount=0 → null. Semantic tokens only.",
+      lastSeen: "2026-05-20T19:15:00.000Z",
       ownedBy:  "frontend"
     },
     "client/src/components/DrumMachine/DrumMachine.tsx (v3.105.0 +Variation-Panel-Wire)": {
@@ -3795,6 +3811,70 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "refactor",
+      timestamp: "2026-05-20T19:30:00.000Z",
+      done: [
+        "v3.203 NEU Pure-Helper client/src/utils/sampleResampler.ts (~250 LOC inkl. JSDoc) — Linear-Interpolation-Sample-Rate-Konversion (endpoint-inklusiv). Foundation fuer SR-Konversion (44.1<->48kHz), Variable-Speed-Playback (Vinyl-Style-Speed-Knob), Sample-Length-Konformierung (z.B. 'alle Slices auf gleiche Laenge bringen'). Pure & DOM-frei, operiert auf AudioBufferLike (sampleEmbedding-Interface).",
+        "Public API: resampleBuffer(buffer, opts?) -> AudioBufferLike + changeSpeedRatio(buffer, ratio) -> AudioBufferLike. ResampleOptions {targetSampleRate?, targetLengthSamples?, preservePitch?}. Vorrang-Reihenfolge: targetLengthSamples > targetSampleRate-basierte Laengenberechnung. output.sampleRate = targetSampleRate ?? source.sampleRate.",
+        "Endpoint-inklusiver Linear-Interp-Algorithmus (advisor-konsultiert vor Impl): srcPos = i*(srcLen-1)/(outLen-1), out[0]=src[0], out[outLen-1]=src[srcLen-1]. Damit ist der spec-Test 'src=[0,1], outLen=3 -> [0, 0.5, 1]' erfuellt. Abgrenzung zu samplePitchShift.ts (srcPos = i*ratio = decimation-style fuer Pitch-Shift): hier endpoint-erhaltend fuer SR-Konversion-Use-Case. JSDoc dokumentiert die Abgrenzung explizit.",
+        "preservePitch=true ist v3.203-STUB: identische Linear-Interpolation, Pitch aendert sich tatsaechlich mit. JSDoc markiert das als Approximation; echtes Phase-Vocoder-Time-Stretch folgt in spaeterer Iteration. Test verifiziert dass a/b mit preservePitch toggle identische Werte liefern (Stub-Konsistenz).",
+        "changeSpeedRatio delegiert an resampleBuffer({targetLengthSamples: floor(inLen/ratio)}). Sample-Rate bleibt unveraendert; nur Laenge aendert sich (= Vinyl-Speed-Knob ohne Pitch-Lock). ratio NaN/Inf/<=0 -> 1 (identity).",
+        "Defensive Sanitizers: empty/null Buffer -> empty Output mit numCh=0 + fallback sampleRate. targetSampleRate NaN/Inf/<=0/undef -> source sampleRate (identity). targetLengthSamples NaN/Inf/<0 -> Fallback auf SR-basierte Laenge. targetLengthSamples = 0 -> empty Output (sampleRate erhalten). targetLengthSamples non-integer -> Math.floor. Input wird nie mutiert; pro Channel fresh Float32Array.",
+        "Per-Channel-Interpolation via interpolateChannel-Helper. Sonderfaelle: srcLen=0 -> Silence-Fill, srcLen=1 -> alle dst[i]=src[0], outLen=1 -> dst[0]=src[0], outLen=0 -> empty Float32Array. RangeError bei out-of-range Channel-Access (negativ + >= numCh).",
+        "Test-Suite tests/features/sample-resampler.test.ts (~370 LOC, 35 Tests in 10 describes): identity/shape 5 (identity, opts undef, AudioBufferLike-conformance, [0,1]->len3->[0,0.5,1], last-sample no-out-of-range), empty/null 3 (empty mit targetSR, empty ohne opts, targetLen=0), targetSampleRate 3 (Upsample 2x, Downsample 0.5x, 44100->48000), targetLengthSamples Override 3 (Vorrang vor targetSR, ohne targetSR, non-integer floor), sanitizer 7 (targetSR NaN/Inf/neg/0 + targetLen NaN/Inf/neg), multi-channel 3 (identische L/R, unterschiedliche L/R, RangeError out-of-range), immutability 2 (input not mutated, repeated calls identisch), changeSpeedRatio basics 3 (ratio=1/2/0.5), changeSpeedRatio defensive 5 (NaN/Inf/0/neg + empty buffer), preservePitch stub 1 (true == false in v3.203). 35/35 GRUEN beim ERSTEN Run (kein Iteration), 7ms.",
+        "Advisor-Konsultation vor Impl hat algorithmische Falle vermieden: spec-Text 'src/target Ratio' vs spec-Test '[0,1] len3 -> [0,0.5,1]' implizieren UNTERSCHIEDLICHE Formeln. Endpoint-inklusiv (i*(srcLen-1)/(outLen-1)) matched den Test; reine i*ratio-Formel haette out[1]=2/3 statt 0.5 ergeben. Beide Algorithmen sind valide fuer verschiedene Use-Cases (Decimation vs SR-Konversion), und die Wahl wurde explizit dokumentiert.",
+        "pnpm check GRUEN (tsc --noEmit 0 errors). pnpm test:features GRUEN: 327 Test-Files / 7491 passed / 16 skipped (preexisting, +35 Tests delta gegenueber 7456 baseline; +1 Test-File von 326 auf 327; full-suite 32.08s). KEIN Commit, KEIN package.json-Bump (Refactor-Pattern v3.188+). Nur 2 Files touched: NEU sampleResampler.ts + NEU sample-resampler.test.ts.",
+        "Coexistence-Note: Mehrere parallele Sessions haben v3.203 beansprucht — sampleAllPass.ts (refactor 17:15), SampleBrowser Bulk-AllPass (frontend 18:30), DrumMachine Heatmap-Mini-Viz (frontend 19:15), und jetzt sampleResampler.ts (refactor 19:30). Alle Tasks disjoint, KEINE Datei-Konflikte. v3.204 fuer naechste Session — bei nachstem package.json-Bump sollten die separaten v3.203-Tasks ggf. zu disjoint Commits aufgesplittet werden."
+      ],
+      next: [
+        "v3.204+ Frontend-Owner: Resampler-FX-Karte im SampleTransformDialog mit targetSampleRate-Dropdown (8000/22050/44100/48000/96000) + changeSpeedRatio-Slider (0.25..4.0, log-scale). preservePitch-Checkbox (mit Hinweis 'STUB in v3.203, identisch zu false').",
+        "v3.204+ Backend-Owner: ss.sample.resample(buffer, opts) + ss.sample.changeSpeed(buffer, ratio) Script-Sandbox-API exposen (analog zu ss.sample.lowPass/highPass/bandPass/allPass aus v3.198-v3.203).",
+        "v3.204+ Refactor-Owner: Echte Time-Stretch-Implementierung in sampleTimeStretch.ts (Phase-Vocoder oder OLA). Aktueller preservePitch-Stub als Marker fuer kuenftige Migration.",
+        "v3.204+ Frontend-Owner: Sample-Length-Match-Aktion im SampleBrowser ('alle Slices auf laengstes Slice strecken' bzw. 'alle auf gleiche Laenge bringen') via changeSpeedRatio oder targetLengthSamples-Override."
+      ],
+      changed: [
+        "client/src/utils/sampleResampler.ts (NEU, ~250 LOC — resampleBuffer + changeSpeedRatio + ResampleOptions; endpoint-inklusive Linear-Interp; ownedBy frontend, da Pure-Helper im Sample-Layer analog samplePitchShift.ts/sampleLowPass.ts/sampleHighPass.ts)",
+        "tests/features/sample-resampler.test.ts (NEU, ~370 LOC, 35 Tests in 10 describes; ownedBy testing)",
+        "agents/INDEX.js (workLog-Eintrag refactor v3.203 — sampleResampler Pure-Helper)"
+      ]
+    },
+    {
+      agent:     "frontend",
+      timestamp: "2026-05-20T19:15:00.000Z",
+      done: [
+        "v3.203 Wire-Up patternDensityHeatmap als Mini-SVG-Visualisierung pro Pattern-Row in DrumMachine.tsx (~35 LOC). NEU Imports: buildHeatmap + findHotspot aus '@/utils/patternDensityHeatmap'. NEU 2 useMemo-Hooks in PatternRow-Component (direkt nach pulseCount-useMemo v3.201): heatmapData ruft buildHeatmap mit parts={partId,partName,steps:{active,velocity/127}} auf (slice auf max 16 parts × 32 steps Performance-Limit; velocity-Normalisierung 0-127 → 0-1 weil sanitizeVelocity sonst alles ueber 1 auf 1 clampt und Hotspot-Tiebreak verfaelscht). heatmapHotspot ruft findHotspot(heatmapData) auf.",
+        "SVG-Mini-Viz direkt nach Density-Pulse-Count-Badge v3.201: 32x16 px Container, viewBox='0 0 stepCount partCount' + preserveAspectRatio='none' (Cells auto-skalieren via viewBox-Stretch, kein manuelles cellW/cellH-Math notwendig). Container-className 'inline-block ml-1 align-middle border border-border-color rounded text-accent-secondary'. Cells: rect width=1 height=1 fill='currentColor' opacity={cell.value}. title='Heatmap: avgDensity=N%, hotspot at part X' (oder '-' bei null). data-testid='pattern-row-heatmap-{pattern.id}'. Fallback: bei partCount=0 || stepCount=0 wird nichts gerendert.",
+        "pnpm check GRUEN (tsc --noEmit 0 errors). KEIN Commit, KEIN package.json-Bump (User-Vorgabe). Nur DrumMachine.tsx + agents/INDEX.js touched. Semantic Tokens only (border-border-color, text-accent-secondary, currentColor) — keine hardcoded Tailwind-Farben.",
+        "Coexistence-Hinweis: Parallele Frontend-Session hat ebenfalls v3.203 für SampleBrowser Bulk-AllPass beansprucht (oben). Versionslabel kollidieren in workLog; beide Tasks disjoint (SampleBrowser.tsx vs DrumMachine.tsx). Bei naechstem package.json-Bump sollte zur Disambiguierung v3.204 (SampleBrowser Bulk-AllPass) UND v3.205 (DrumMachine Heatmap-Mini-Viz) als getrennte Commits abgelegt werden, oder beide unter v3.204 zusammengefuehrt werden."
+      ],
+      next: [
+        "v3.204+ Backend-Owner: ss.pattern.heatmap(pattern) → HeatmapData Script-Sandbox-API exposen (analog ss.sample.allPass). Foundation existiert (buildHeatmap pure helper).",
+        "v3.204+ Frontend-Owner: Heatmap-Hotspot-Highlighting im StepGrid — wenn heatmapHotspot != null, partIndex × stepIndex Step-Cell pulsing/glow (analog zu density-pulse-highlight)."
+      ],
+      changed: [
+        "client/src/components/DrumMachine/DrumMachine.tsx (NEU buildHeatmap+findHotspot Imports, NEU heatmapData+heatmapHotspot useMemos in PatternRow, NEU 32x16 SVG-Block direkt nach pulseCount-Badge; ~35 LOC, semantic tokens only)",
+        "agents/INDEX.js (workLog-Eintrag frontend v3.203 — Pattern-Row Heatmap-Mini-Viz Wire-Up)"
+      ]
+    },
+    {
+      agent:     "frontend",
+      timestamp: "2026-05-20T18:30:00.000Z",
+      done: [
+        "v3.203 UI-Wiring sampleAllPass (applyAllPass) als Bulk-Apply im SampleBrowser Multi-Select-Bar — Center-Slider (min=100 max=5000 step=100, default=1000 = 'phaser' preset center) + Stages-Slider (min=1 max=8 step=1, default=4 = 'phaser' preset stages) + 'AP'-Button direkt rechts neben BP-Button v3.202. data-testids: 'sample-browser-bulk-allpass-center' + 'sample-browser-bulk-allpass-stages' + 'sample-browser-bulk-allpass'. Pattern 1:1 symmetrisch zu Bulk-BandPass v3.202: AudioEngine.loadSample -> applyAllPass(buf, {centerHz, stages}) -> encodeWav(channels=min(2,n)) -> URL.createObjectURL-Blob -> OfflineAudioContext.createBuffer+copyToChannel -> onTransformSample(id, blobURL, audioBuf). Toast 'All-Pass <center>Hz ×<stages>: N Samples' (kind:success).",
+        "Import: import { applyAllPass } from '@/utils/sampleAllPass' direkt nach applyBandPass-Import. State: bulkAllPassCenter (useState<number>(1000)) + bulkAllPassStages (useState<number>(4)) = phaser-Preset Defaults. Handler handleBulkAllPass via useCallback mit deps [multiSelectIds, samples, onTransformSample, bulkAllPassCenter, bulkAllPassStages]. UI: 2x input range + 2x span + button im selben Multi-Select-Bar-Flex-Container, accent-accent-secondary fuer Slider, border-border-color + hover:border-accent-secondary fuer Button (semantic tokens only — keine hardcoded Farben).",
+        "pnpm check GRUEN (tsc --noEmit 0 errors). KEIN Commit, KEIN package.json-Bump (User-Vorgabe). Nur SampleBrowser.tsx + agents/INDEX.js touched."
+      ],
+      next: [
+        "v3.204+ Backend-Owner: ss.sample.allPass(buffer, opts) Script-Sandbox-API exposen (analog ss.sample.bandPass aus v3.202).",
+        "v3.204+ Frontend-Owner: AllPass-Preset-Dropdown (subtle/phaser/deep/resonant) im SampleBrowser-Bulk-Bar oder im SampleTransformDialog mit q-Slider (aktuell hardcoded default 0.707).",
+        "v3.204+ Frontend-Owner: Phaser-FX-Live-Channel-Insert mit LFO-modulierter centerHz (200..2000Hz sweep 0.5Hz) — applyAllPass-Foundation existiert, benoetigt AudioEngine-FX-Chain-Wiring."
+      ],
+      changed: [
+        "client/src/components/SampleBrowser/SampleBrowser.tsx (applyAllPass-Import + State bulkAllPassCenter/Stages + handleBulkAllPass useCallback + UI 2x range-input + 2x span + AP-Button direkt nach BP-Button v3.202; semantic tokens only)",
+        "agents/INDEX.js (workLog-Eintrag frontend v3.203 — Bulk-AllPass-Wire-Up im SampleBrowser)"
+      ]
+    },
     {
       agent:     "refactor",
       timestamp: "2026-05-20T17:15:00.000Z",
