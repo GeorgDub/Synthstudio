@@ -78,6 +78,8 @@ import {
 } from "@/utils/drumKitDistribution";
 // v3.177: Spectral-Centroid → Brightness-Verteilung der selektierten Samples.
 import { computeSpectralCentroid } from "@/utils/sampleSpectralCentroid";
+// v3.177: Onset-Detection-Bulk-Action für selektierte Samples.
+import { detectOnsets } from "@/utils/onsetDetector";
 
 // ─── Typen ────────────────────────────────────────────────────────────────────
 
@@ -1196,6 +1198,38 @@ export function SampleBrowser({
     console.log("[Brightness-Analyze]", histogram);
   }, [multiSelectIds, samples]);
 
+  // v3.177 — Onset-Analyse der selektierten Samples:
+  // Lädt für jede selected Sample-ID den AudioBuffer und detektiert via
+  // detectOnsets (Pure-Helper) die Anzahl Onsets/Transients.
+  // Anschließend Toast mit total + Durchschnitt pro Sample.
+  const handleBulkOnsets = useCallback(async () => {
+    if (multiSelectIds.size === 0) return;
+    let totalOnsets = 0;
+    let analyzed = 0;
+    for (const id of multiSelectIds) {
+      const sample = samples.find((s) => s.id === id);
+      if (!sample) continue;
+      try {
+        const buf = await AudioEngine.loadSample(sample.path);
+        if (!buf) continue;
+        const onsets = detectOnsets(buf as unknown as AudioBufferLike);
+        totalOnsets += onsets.length;
+        analyzed++;
+      } catch {
+        /* skip unloadable */
+      }
+    }
+    if (analyzed === 0) {
+      toast("Keine ladbaren Sample-Buffer", { kind: "warning" });
+      return;
+    }
+    toast(
+      `${analyzed} Samples analysiert: ${totalOnsets} Onsets gefunden (Ø ${(totalOnsets / analyzed).toFixed(1)}/sample)`,
+      { kind: "info", duration: 6000 },
+    );
+    console.log("[Onset-Analyze]", { analyzed, totalOnsets });
+  }, [multiSelectIds, samples]);
+
   // v3.152: Wenn Samples aus dem Projekt verschwinden (extern gelöscht),
   // multi-select-Set defensiv auf Existenz-Filter laufen lassen.
   useEffect(() => {
@@ -1989,6 +2023,14 @@ export function SampleBrowser({
                         title="Brightness-Verteilung analysieren (FFT-basiert)"
                       >
                         Brightness
+                      </button>
+                      <button
+                        onClick={handleBulkOnsets}
+                        data-testid="sample-browser-bulk-onsets"
+                        className="px-2 py-0.5 rounded text-[10px] border border-border-color text-text-primary hover:border-accent-secondary hover:text-accent-secondary transition-colors"
+                        title="Onset/Transient-Count pro Sample"
+                      >
+                        Onsets
                       </button>
                       <button
                         onClick={handleBulkDelete}
