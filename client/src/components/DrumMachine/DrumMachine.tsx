@@ -189,6 +189,9 @@ import { symmetryScore } from "@/utils/patternSymmetryScore";
 // v3.222: Pattern-Row Motion-Badge — Step-to-Step Energy-Vektoren mit
 // overall/net/acceleration (Pure-Helper v3.221).
 import { computeMotion } from "@/utils/patternMotion";
+// v3.223: Pattern-Row Groove-Feel-Badge — Swing/Push/Laidback Klassifikation
+// aus aktiven Off-Beat-Steps (Pure-Helper v3.222).
+import { perceiveGroove } from "@/utils/patternGroovePerception";
 import type { PatternData } from "@/audio/AudioEngine";
 
 // ─── v3.205: Pattern-Flatten-Helper (module-level Cache via Closure) ───────────
@@ -477,6 +480,34 @@ function PatternRow({
     }
     return computeMotion(flat);
   }, [pattern]);
+  // v3.223: Groove-Feel — perceiveGroove auf OR-aggregierten Steps
+  // (active + velocity; timing existiert nicht im Step-Modell, Helper
+  // sanitized undefined → 0). feel ∈ {tight, push, laidback, loose}.
+  const groove = useMemo(() => {
+    const stepCount = Math.min(pattern.stepCount, 32);
+    const flat: { active: boolean; velocity?: number; timing?: number }[] =
+      new Array(stepCount);
+    for (let i = 0; i < stepCount; i++) {
+      flat[i] = { active: false };
+    }
+    for (const part of pattern.parts) {
+      const len = Math.min(part.steps.length, stepCount);
+      for (let i = 0; i < len; i++) {
+        const s = part.steps[i];
+        if (!s.active) continue;
+        const v = s.velocity;
+        if (!flat[i].active) {
+          flat[i] = { active: true, velocity: v };
+        } else {
+          const prev = flat[i].velocity;
+          if (typeof v === "number" && (typeof prev !== "number" || v > prev)) {
+            flat[i] = { active: true, velocity: v };
+          }
+        }
+      }
+    }
+    return perceiveGroove(flat);
+  }, [pattern]);
   // v2.5: Submenu zum Auswählen welcher Pattern als Source dient
   const [pickerOpen, setPickerOpen] = useState(false);
   // v2.8: Drag-Drop-Reorder State (drop-indicator: above|below|null)
@@ -726,6 +757,18 @@ function PatternRow({
           >
             {motion.netDirection > 0.05 ? "↗" : motion.netDirection < -0.05 ? "↘" : "↔"}
             M{Math.round(motion.overallMotion * 100)}
+          </span>
+        )}
+        {/* v3.223: Groove-Feel-Badge — Swing/Push/Laidback aus Off-Beat-Timing.
+            Nur sichtbar wenn feel !== "tight" (tight = neutral, kein Mehrwert). */}
+        {groove.feel !== "tight" && (
+          <span
+            className="ml-1 px-1 py-0.5 rounded text-[9px] font-mono bg-accent-secondary/20 text-accent-secondary"
+            title={`Groove: ${groove.feel} (swing ${Math.round(groove.swingPercent)}%, push=${groove.microPushScore.toFixed(2)})`}
+            data-testid={`pattern-row-groove-${pattern.id}`}
+          >
+            {groove.feel === "push" ? "⇡" : groove.feel === "laidback" ? "⇣" : "⇋"}{" "}
+            {groove.feel.toUpperCase()}
           </span>
         )}
         {learn.isMapped && (
