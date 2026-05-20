@@ -3797,6 +3797,66 @@ const INDEX = {
   workLog: [
     {
       agent:     "refactor",
+      timestamp: "2026-05-20T12:30:00.000Z",
+      done: [
+        "v3.201 NEU Pure-Helper sampleBandPass — Pendant zu sampleLowPass (v3.198) und sampleHighPass (v3.199). Realisiert als Cascade applyHighPass(buffer, {cutoffHz: centerHz - bandwidthHz/2}) -> applyLowPass(result, {cutoffHz: centerHz + bandwidthHz/2}). Optional Resonance-Boost (0..1) als skalarer Gain auf das Band, +6dB max. Vier Presets: telephone (1500Hz/2000Hz), vocalPresence (3000Hz/2000Hz), bass (200Hz/200Hz), resonant (800Hz/100Hz).",
+        "Defensive Sanitizers: centerHz NaN/Infinity/<=0 -> 1000Hz default; centerHz > Nyquist -> Nyquist clamp; bandwidthHz NaN/Infinity/<=0 -> 500Hz default; bandwidthHz < 10 -> 10Hz min; bandwidthHz > Nyquist -> Nyquist clamp; resonance NaN/neg -> 0, >1 -> 1. Per-Channel frischer State via Cascade-Funktion (kein Cross-Channel-Coupling). Input wird nie mutiert.",
+        "33 Tests in tests/features/sample-band-pass.test.ts (Empty/Identity/DC-Kill/High-Freq-Kill/Pass-Band/Resonance-Boost/Multi-Channel-Symmetry/Immutability/Sanitizer-Edge-Cases/SampleRate-Edge-Cases/Preset-Validierung). RangeError-Check bei Out-of-Range Channel-Access. Cross-Channel-Symmetry-Test (identische Channels -> identische Outputs).",
+        "pnpm check GRUEN (0 errors). pnpm vitest run sample-band-pass.test.ts: 33/33 passed in 87ms. pnpm test:features: 324 files, 7397 passed, 16 skipped (preexisting). KEIN Commit, KEIN package.json-Bump. Nur 2 Files touched: NEU sampleBandPass.ts + NEU sample-band-pass.test.ts."
+      ],
+      next: [
+        "v3.202+ Frontend-Owner: BandPass-FX-Karte im SampleTransformDialog mit centerHz/bandwidthHz/resonance-Slidern + Preset-Dropdown (telephone/vocalPresence/bass/resonant), analog zu LowPass/HighPass-Karten. Visuelles Highlight bei resonance>0.",
+        "v3.202+ Backend-Owner: ss.sample.bandPass(buffer, opts) Script-Sandbox-API exposen (analog ss.sample.lowPass/highPass aus v3.198/v3.199). Preset-Konstanten als ss.sample.bandPassPresets exportieren.",
+        "v3.202+ DSP-Verbesserung: echter biquad-BandPass mit Q-Faktor (statt LP+HP-Cascade) — die aktuelle Implementierung hat 12dB/Oct Slopes (zwei 6dB Stages cascadiert) was fuer breite Baender ausreicht, aber bei schmalen Baendern (bandwidth<50Hz) Phase-Probleme zeigt. Cascade ist als minimaler Pure-Helper bewusst gewaehlt; eine Biquad-Variante koennte parallel als applyBandPass2 hinzukommen.",
+        "v3.202+ Tests-Owner: Phase-Coherence-Test fuer breite Baender (bandwidthHz=1000 mit center=1000 -> 1kHz-Sine sollte erkennbar Energie behalten, nicht nur >0.05 wie aktuell sondern z.B. >0.3)."
+      ],
+      changed: [
+        "client/src/utils/sampleBandPass.ts (NEU; applyBandPass + BANDPASS_PRESETS + DEFAULT_CENTER_HZ/DEFAULT_BANDWIDTH_HZ/DEFAULT_RESONANCE Exports; importiert applyHighPass + applyLowPass aus existierenden Helpers)",
+        "tests/features/sample-band-pass.test.ts (NEU; 33 Tests in 7 describe-Bloecken)",
+        "agents/INDEX.js (workLog-Eintrag refactor v3.201 — sampleBandPass Pure-Helper)"
+      ]
+    },
+    {
+      agent:     "frontend",
+      timestamp: "2026-05-20T16:30:00.000Z",
+      done: [
+        "v3.201 Wire-Up patternDensityPulse (detectDensityPulses) als 4ten Pattern-Row-Badge in DrumMachine.tsx — zeigt Pulse-Count (~N) Burst-Detection neben den existierenden density/complexity/fitness-Badges. Badge erscheint nur wenn count > 0, data-testid='pattern-row-pulse-{patternId}', className='ml-1 px-1 py-0.5 rounded text-[9px] font-mono bg-accent-secondary/20 text-accent-secondary', title='{count} Density-Pulse(s) detected'. Platziert direkt nach dem fitness-Badge, vor dem learn.isMapped-CC-Hinweis.",
+        "Implementations-Pattern: useMemo INSIDE PatternRow mit dep [pattern] (statt useMemo im .map()-callsite, was Rules-of-Hooks verletzen wuerde). Build-Step: pattern.parts -> flat boolean[stepCount] via OR (alle Parts kombiniert) -> detectDensityPulses(flat).length. Math.min(part.steps.length, stepCount) gegen out-of-range Defensive (Part-Override-Edge-Case).",
+        "Prop-Type-Widening: PatternRowProps.pattern: {id,name,bpm} -> PatternData. Safe weil call site (line ~1599) bereits das volle PatternData via dm.patterns.map((p,idx)) durchreicht — bisherige Consumer (pattern.id/name/bpm in 16 Stellen) bleiben kompatibel. JSDoc-Kommentar dokumentiert die Begruendung.",
+        "Import: import { detectDensityPulses } from '@/utils/patternDensityPulse' direkt nach computeFitnessScore-Import. useMemo war bereits in den Top-Imports vorhanden (Line 14).",
+        "pnpm check GRUEN (tsc --noEmit 0 errors). KEIN Commit, KEIN package.json-Bump (User-Vorgabe). Nur DrumMachine.tsx + agents/INDEX.js touched."
+      ],
+      next: [
+        "v3.202+ Testing-Owner: Playwright-Smoke tests/web/pattern-row-pulse-badge.spec.ts — Burst-Pattern aktivieren (e.g. 4-on-the-floor + 4 zusaetzliche Hits im letzten Quarter), Pattern-Menu oeffnen, data-testid='pattern-row-pulse-{patternId}' verifizieren + Textinhalt '~N' matching count > 0.",
+        "v3.202+ Frontend-Owner: Energy-Map-Overlay im Step-Grid selbst (nicht nur Badge im Pattern-Menu) — analog density/complexity-Heatmap-Spalte. detectDensityPulses pro Part-Lane statt OR-aggregiert.",
+        "v3.202+ Frontend-Owner: PulseCount-Badge-Threshold konfigurierbar (User-Setting 'show pulse badge if count >= N'); aktuell hardcoded count > 0. Analog zu density/complexity wo 'empty'/'minimal' nicht angezeigt werden.",
+        "v3.202+ Backend-Owner: Script-Sandbox ss.pattern.pulseCount(patternId) Convenience-Wrapper, der das OR-Aggregations-Boilerplate kapselt (sonst muessten Scripts pattern.parts.flatMap durchgehen)."
+      ],
+      changed: [
+        "client/src/components/DrumMachine/DrumMachine.tsx (Pulse-Count-Badge in PatternRow; +detectDensityPulses-Import; PatternRowProps.pattern widened auf PatternData; useMemo-Block mit OR-Aggregation; Badge-Span nach fitness-Badge eingefuegt)",
+        "agents/INDEX.js (workLog-Eintrag frontend v3.201 — Pulse-Count-Badge-Wire-Up)"
+      ]
+    },
+    {
+      agent:     "frontend",
+      timestamp: "2026-05-20T16:00:00.000Z",
+      done: [
+        "v3.201 UI-Wiring sampleHighPass (applyHighPass) als Bulk-Apply im SampleBrowser Multi-Select-Bar — Cutoff-Slider (min=50 max=800 step=10, default=80 = 'rumble' preset) + 'HP'-Button direkt rechts neben LP-Button v3.199. data-testid='sample-browser-bulk-highpass-slider' + data-testid='sample-browser-bulk-highpass'. Button disabled wenn !onTransformSample. Pattern 1:1 symmetrisch zu Bulk-LowPass v3.199: AudioEngine.loadSample -> applyHighPass(buf, {cutoffHz: bulkHighPassCutoff}) -> encodeWav(channels=min(2,n)) -> URL.createObjectURL-Blob -> OfflineAudioContext.createBuffer+copyToChannel -> onTransformSample(id, blobURL, audioBuf). Toast 'High-Pass NHz: N Samples' (kind:success).",
+        "Import: import { applyHighPass } from '@/utils/sampleHighPass' direkt nach applyLowPass-Import. State: bulkHighPassCutoff (useState<number>(80) = rumble-Preset). Handler handleBulkHighPass via useCallback mit [multiSelectIds, samples, onTransformSample, bulkHighPassCutoff]. UI: input range + span + button im selben Multi-Select-Bar-Flex-Container, accent-accent-secondary fuer Slider, border-border-color + hover:border-accent-secondary fuer Button (semantic tokens only).",
+        "pnpm check GRUEN (tsc --noEmit 0 errors). KEIN Commit, KEIN package.json-Bump (User-Vorgabe). Nur SampleBrowser.tsx + agents/INDEX.js touched."
+      ],
+      next: [
+        "v3.202+ Testing-Owner: Playwright-Smoke tests/web/sample-bulk-highpass.spec.ts — Sample-Set selektieren, Slider auf 80/300/600 setzen, HP-Klick, Toast verifizieren, getChannelData vor/nach unterschiedlich.",
+        "v3.202+ Refactor-Owner: HIGHPASS_PRESETS / LOWPASS_PRESETS Symmetrie aus v3.199 Refactor-Note — entweder beide Object-Map oder beide Array<{id,name,cutoffHz}>. Aktuelles Wiring nutzt nur bulkHighPassCutoff (number), Presets-Dropdown noch offen.",
+        "v3.202+ Frontend-Owner: HIGHPASS_PRESETS-Dropdown in der Bulk-Bar (rumble/vocal/thin/airy) statt nur freier Slider — analog LOWPASS_PRESETS-Wiring falls v3.200 das macht. Aktuell ist nur der freie Slider gewired."
+      ],
+      changed: [
+        "client/src/components/SampleBrowser/SampleBrowser.tsx (Bulk-HighPass-State + Handler + UI direkt rechts neben Bulk-LowPass v3.199; +applyHighPass-Import)",
+        "agents/INDEX.js (workLog-Eintrag frontend v3.201 — Bulk-HighPass-Wire-Up)"
+      ]
+    },
+    {
+      agent:     "refactor",
       timestamp: "2026-05-20T15:45:00.000Z",
       done: [
         "v3.199 Pure-Helper client/src/utils/patternDensityPulse.ts (~245 LOC inkl. JSDoc) angelegt — Sliding-Window-basierte Density-Pulse-Detection: findet zusammenhaengende Bursts hoher Hit-Dichte in boolean-Patterns. Foundation fuer Pattern-Visualisierung (Energy-Map), Auto-Fill-Trigger und Live-Performance-Pattern-Highlighting. Komplement zu patternDensityAnalyzer.ts (global density-Score) und patternDensity.ts (multi-part DensityMap).",

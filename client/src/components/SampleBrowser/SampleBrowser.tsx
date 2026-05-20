@@ -123,6 +123,8 @@ import {
 import { applyStereoEnhance } from "@/utils/sampleStereoEnhancer";
 // v3.199: Bulk-LowPass (one-pole, cutoff slider 500..10000 Hz) für selektierte Samples.
 import { applyLowPass } from "@/utils/sampleLowPass";
+// v3.201: Bulk-HighPass (one-pole, cutoff slider 50..800 Hz) für selektierte Samples.
+import { applyHighPass } from "@/utils/sampleHighPass";
 
 // ─── Typen ────────────────────────────────────────────────────────────────────
 
@@ -1956,6 +1958,62 @@ export function SampleBrowser({
     toast(`Low-Pass ${bulkLowPassCutoff}Hz: ${applied} Samples`, { kind: "success" });
   }, [multiSelectIds, samples, onTransformSample, bulkLowPassCutoff]);
 
+  // v3.201 — Bulk-High-Pass-Filter für selektierte Samples. cutoffHz-Slider
+  // 50..800 Hz (default 80 = "rumble" preset). applyHighPass rendert pure,
+  // der neue Buffer wird als WAV encodet und via onTransformSample zurück ins
+  // Projekt geschrieben (+ AudioBuffer für AudioEngine-Cache).
+  const [bulkHighPassCutoff, setBulkHighPassCutoff] = useState<number>(80);
+
+  const handleBulkHighPass = useCallback(async () => {
+    if (multiSelectIds.size === 0 || !onTransformSample) return;
+    let applied = 0;
+    for (const id of multiSelectIds) {
+      const sample = samples.find((s) => s.id === id);
+      if (!sample) continue;
+      try {
+        const buf = await AudioEngine.loadSample(sample.path);
+        if (!buf) continue;
+        const out = applyHighPass(buf as unknown as AudioBufferLike, {
+          cutoffHz: bulkHighPassCutoff,
+        });
+        if (out.numberOfChannels === 0 || out.length === 0) continue;
+        const channels = Math.min(2, out.numberOfChannels) as 1 | 2;
+        const wav = encodeWav(
+          Array.from({ length: channels }, (_, c) =>
+            out.getChannelData(c) as Float32Array,
+          ),
+          { sampleRate: out.sampleRate, channels, bitDepth: 16 },
+        );
+        const blob = new Blob([wav], { type: "audio/wav" });
+        const newUrl = URL.createObjectURL(blob);
+        const Ctor = (window.OfflineAudioContext ||
+          // @ts-expect-error legacy webkit fallback
+          window.webkitOfflineAudioContext) as typeof OfflineAudioContext;
+        const ctx = new Ctor(
+          Math.max(1, out.numberOfChannels),
+          Math.max(1, out.length),
+          out.sampleRate,
+        ) as BaseAudioContext;
+        const audioBuf = ctx.createBuffer(
+          Math.max(1, out.numberOfChannels),
+          Math.max(1, out.length),
+          out.sampleRate,
+        );
+        for (let c = 0; c < out.numberOfChannels; c++) {
+          const src = out.getChannelData(c);
+          const copy = new Float32Array(src.length);
+          copy.set(src);
+          audioBuf.copyToChannel(copy, c, 0);
+        }
+        onTransformSample(id, newUrl, audioBuf);
+        applied++;
+      } catch {
+        /* skip */
+      }
+    }
+    toast(`High-Pass ${bulkHighPassCutoff}Hz: ${applied} Samples`, { kind: "success" });
+  }, [multiSelectIds, samples, onTransformSample, bulkHighPassCutoff]);
+
   // v3.152: Wenn Samples aus dem Projekt verschwinden (extern gelöscht),
   // multi-select-Set defensiv auf Existenz-Filter laufen lassen.
   useEffect(() => {
@@ -2970,6 +3028,29 @@ export function SampleBrowser({
                         title="Low-Pass Filter auf alle ausgewählten Samples"
                       >
                         LP
+                      </button>
+                      <input
+                        type="range"
+                        min={50}
+                        max={800}
+                        step={10}
+                        value={bulkHighPassCutoff}
+                        onChange={(e) => setBulkHighPassCutoff(parseInt(e.target.value, 10))}
+                        data-testid="sample-browser-bulk-highpass-slider"
+                        className="w-20 accent-accent-secondary"
+                        title="High-Pass Cutoff 50..800 Hz"
+                      />
+                      <span className="text-[10px] font-mono text-text-muted w-12 text-center">
+                        {bulkHighPassCutoff}Hz
+                      </span>
+                      <button
+                        onClick={handleBulkHighPass}
+                        disabled={!onTransformSample}
+                        data-testid="sample-browser-bulk-highpass"
+                        className="px-2 py-0.5 rounded text-[10px] border border-border-color text-text-primary hover:border-accent-secondary hover:text-accent-secondary disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        title="High-Pass Filter auf alle ausgewählten Samples"
+                      >
+                        HP
                       </button>
                       <button
                         onClick={handleBulkDelete}

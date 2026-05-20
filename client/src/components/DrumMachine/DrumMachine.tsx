@@ -167,6 +167,9 @@ import {
   computeFitnessScore,
   type FitnessScoreResult,
 } from "@/utils/patternFitnessScore";
+// v3.201: Pattern-Row Pulse-Count Badge — Burst-Detection via Sliding-Window
+// auf OR-aggregierten Steps (alle Parts kombiniert).
+import { detectDensityPulses } from "@/utils/patternDensityPulse";
 import type { PatternData } from "@/audio/AudioEngine";
 
 function computePatternDensityCategory(pattern: PatternData): DensityCategory {
@@ -197,7 +200,13 @@ function computePatternFitnessLabel(pattern: PatternData): FitnessScoreResult["l
 // ─── Pattern-Row mit Right-Click MIDI-Learn (v1.92) ───────────────────────────
 
 interface PatternRowProps {
-  pattern: { id: string; name: string; bpm: number | null };
+  /**
+   * v3.201: widened from {id,name,bpm} to PatternData — call site (line ~1599)
+   * already passes the full PatternData, and the new pulse-count badge needs
+   * access to stepCount + parts.steps. Existing consumers only read
+   * .id/.name/.bpm, so this is a safe widening.
+   */
+  pattern: PatternData;
   patternIndex: number;
   /** v3.161: Density-Kategorie für visuelle Hervorhebung (empty/sparse/medium/dense/full). */
   densityCategory?: import("@/utils/patternDensityAnalyzer").DensityCategory;
@@ -243,6 +252,19 @@ function PatternRow({
   const isLocked = isLiveEditing && isPlaying;
   // v1.92: jede Pattern-Zeile ist via Rechtsklick MIDI-bindbar
   const learn = useMidiLearn({ type: "pattern", patternIndex });
+  // v3.201: Pulse-Count über alle Parts kombiniert (OR-Aggregation der Steps).
+  // useMemo verhindert Re-Computation pro Render — Recompute nur bei pattern-Change.
+  const pulseCount = useMemo(() => {
+    const stepCount = pattern.stepCount;
+    const flat = new Array<boolean>(stepCount).fill(false);
+    for (const part of pattern.parts) {
+      const len = Math.min(part.steps.length, stepCount);
+      for (let i = 0; i < len; i++) {
+        if (part.steps[i].active) flat[i] = true;
+      }
+    }
+    return detectDensityPulses(flat).length;
+  }, [pattern]);
   // v2.5: Submenu zum Auswählen welcher Pattern als Source dient
   const [pickerOpen, setPickerOpen] = useState(false);
   // v2.8: Drag-Drop-Reorder State (drop-indicator: above|below|null)
@@ -354,6 +376,16 @@ function PatternRow({
             title={`Fitness: ${fitnessLabel}`}
             data-testid={`pattern-fitness-badge-${fitnessLabel}`}
           />
+        )}
+        {/* v3.201: Density-Pulse-Count Badge — Bursts hoher Hit-Dichte. */}
+        {pulseCount > 0 && (
+          <span
+            className="ml-1 px-1 py-0.5 rounded text-[9px] font-mono bg-accent-secondary/20 text-accent-secondary"
+            title={`${pulseCount} Density-Pulse(s) detected`}
+            data-testid={`pattern-row-pulse-${pattern.id}`}
+          >
+            ~{pulseCount}
+          </span>
         )}
         {learn.isMapped && (
           <span className="ml-1.5 text-[9px] font-mono text-accent-secondary">CC{learn.mappedCC}</span>
