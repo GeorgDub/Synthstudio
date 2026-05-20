@@ -145,6 +145,8 @@ import { applyVibrato } from "@/utils/sampleVibrato";
 import { applyAutoPan } from "@/utils/sampleAutoPan";
 // v3.212: Bulk-Stutter-Buffer (Slice-Repeat sliceMs 5..500 / repeats 1..32) für selektierte Samples.
 import { applyStutterBuffer } from "@/utils/sampleStutterBuffer";
+// v3.213: Bulk-ADSR (Gain-Envelope, attackMs 0..2000 / releaseMs 0..5000) für selektierte Samples.
+import { applyAdsr } from "@/utils/sampleGainEnvelope";
 
 // ─── Typen ────────────────────────────────────────────────────────────────────
 
@@ -2709,6 +2711,74 @@ export function SampleBrowser({
     bulkStutterRepeats,
   ]);
 
+  // v3.213 — Bulk-ADSR (Gain-Envelope) für selektierte Samples.
+  // applyAdsr ist pure; resultierender Buffer (gleiche Länge wie Input) wird
+  // als WAV encodet und via onTransformSample zurück ins Projekt geschrieben
+  // (+ AudioBuffer für AudioEngine-Cache). Vereinfacht: nur Attack + Release
+  // exposed; Decay (100ms) + Sustain (0.7) bleiben Helper-Defaults.
+  const [bulkAdsrAttack, setBulkAdsrAttack] = useState<number>(10);
+  const [bulkAdsrRelease, setBulkAdsrRelease] = useState<number>(200);
+
+  const handleBulkAdsr = useCallback(async () => {
+    if (multiSelectIds.size === 0 || !onTransformSample) return;
+    let applied = 0;
+    for (const id of multiSelectIds) {
+      const sample = samples.find((s) => s.id === id);
+      if (!sample) continue;
+      try {
+        const buf = await AudioEngine.loadSample(sample.path);
+        if (!buf) continue;
+        const out = applyAdsr(buf as unknown as AudioBufferLike, {
+          attackMs: bulkAdsrAttack,
+          releaseMs: bulkAdsrRelease,
+        });
+        if (out.numberOfChannels === 0 || out.length === 0) continue;
+        const channels = Math.min(2, out.numberOfChannels) as 1 | 2;
+        const wav = encodeWav(
+          Array.from({ length: channels }, (_, c) =>
+            out.getChannelData(c) as Float32Array,
+          ),
+          { sampleRate: out.sampleRate, channels, bitDepth: 16 },
+        );
+        const blob = new Blob([wav], { type: "audio/wav" });
+        const newUrl = URL.createObjectURL(blob);
+        const Ctor = (window.OfflineAudioContext ||
+          // @ts-expect-error legacy webkit fallback
+          window.webkitOfflineAudioContext) as typeof OfflineAudioContext;
+        const ctx = new Ctor(
+          Math.max(1, out.numberOfChannels),
+          Math.max(1, out.length),
+          out.sampleRate,
+        ) as BaseAudioContext;
+        const audioBuf = ctx.createBuffer(
+          Math.max(1, out.numberOfChannels),
+          Math.max(1, out.length),
+          out.sampleRate,
+        );
+        for (let c = 0; c < out.numberOfChannels; c++) {
+          const src = out.getChannelData(c);
+          const copy = new Float32Array(src.length);
+          copy.set(src);
+          audioBuf.copyToChannel(copy, c, 0);
+        }
+        onTransformSample(id, newUrl, audioBuf);
+        applied++;
+      } catch {
+        /* skip */
+      }
+    }
+    toast(
+      `ADSR A=${bulkAdsrAttack}ms R=${bulkAdsrRelease}ms: ${applied} Samples`,
+      { kind: "success" },
+    );
+  }, [
+    multiSelectIds,
+    samples,
+    onTransformSample,
+    bulkAdsrAttack,
+    bulkAdsrRelease,
+  ]);
+
   // v3.152: Wenn Samples aus dem Projekt verschwinden (extern gelöscht),
   // multi-select-Set defensiv auf Existenz-Filter laufen lassen.
   useEffect(() => {
@@ -4102,6 +4172,43 @@ export function SampleBrowser({
                         title="Stutter-Buffer (Slice-Repeat) auf alle ausgewählten Samples — Output-Länge = sliceMs × repeats"
                       >
                         STR
+                      </button>
+                      <input
+                        type="range"
+                        min={0}
+                        max={2000}
+                        step={10}
+                        value={bulkAdsrAttack}
+                        onChange={(e) => setBulkAdsrAttack(parseFloat(e.target.value))}
+                        data-testid="sample-browser-bulk-adsr-attack"
+                        className="w-20 accent-accent-secondary"
+                        title="ADSR Attack 0..2000 ms (10 = stab, 100 = soft, 500 = pad, 2000 = drone)"
+                      />
+                      <span className="text-[10px] font-mono text-text-muted w-12 text-center">
+                        A{bulkAdsrAttack}ms
+                      </span>
+                      <input
+                        type="range"
+                        min={0}
+                        max={5000}
+                        step={50}
+                        value={bulkAdsrRelease}
+                        onChange={(e) => setBulkAdsrRelease(parseFloat(e.target.value))}
+                        data-testid="sample-browser-bulk-adsr-release"
+                        className="w-20 accent-accent-secondary"
+                        title="ADSR Release 0..5000 ms (200 = default, 1000 = pad, 2000 = drone)"
+                      />
+                      <span className="text-[10px] font-mono text-text-muted w-12 text-center">
+                        R{bulkAdsrRelease}ms
+                      </span>
+                      <button
+                        onClick={handleBulkAdsr}
+                        disabled={!onTransformSample}
+                        data-testid="sample-browser-bulk-adsr"
+                        className="px-2 py-0.5 rounded text-[10px] border border-border-color text-text-primary hover:border-accent-secondary hover:text-accent-secondary disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        title="ADSR Gain-Envelope (Attack + Release) auf alle ausgewählten Samples"
+                      >
+                        ADSR
                       </button>
                       <button
                         onClick={handleBulkDelete}
