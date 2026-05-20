@@ -84,6 +84,12 @@ import { detectOnsets } from "@/utils/onsetDetector";
 import { computeLufsApprox } from "@/utils/sampleLufsApprox";
 // v3.184: Bulk-Stereo-Width-Analyse (M/S-Decomposition) für selektierte Samples.
 import { analyzeStereoWidth } from "@/utils/sampleStereoWidth";
+// v3.185: Bulk-Convolution-Reverb für selektierte Samples (Preset-IRs).
+import {
+  applyConvolutionReverb,
+  generateSyntheticIR,
+  REVERB_PRESETS,
+} from "@/utils/sampleConvolutionReverb";
 
 // ─── Typen ────────────────────────────────────────────────────────────────────
 
@@ -1317,6 +1323,73 @@ export function SampleBrowser({
     console.log("[Width-Analyze]", { analyzed, histogram });
   }, [multiSelectIds, samples]);
 
+  // v3.185 — Bulk-Convolution-Reverb für selektierte Samples:
+  // Generiert eine synthetische IR via REVERB_PRESETS-Konfiguration, faltet
+  // jeden geladenen Sample-Buffer (applyConvolutionReverb mono-out), encodet
+  // das Ergebnis als WAV und schreibt via onTransformSample zurück ins Projekt
+  // (+ rekonstruierter AudioBuffer für AudioEngine-Cache).
+  const [bulkReverbPresetId, setBulkReverbPresetId] = useState<string>("room");
+
+  const handleBulkReverb = useCallback(async () => {
+    if (multiSelectIds.size === 0 || !onTransformSample) return;
+    const preset = REVERB_PRESETS.find((p) => p.id === bulkReverbPresetId);
+    if (!preset) return;
+    let applied = 0;
+    for (const id of multiSelectIds) {
+      const sample = samples.find((s) => s.id === id);
+      if (!sample) continue;
+      try {
+        const buf = await AudioEngine.loadSample(sample.path);
+        if (!buf) continue;
+        const sr = buf.sampleRate;
+        const ir = generateSyntheticIR(preset.durationMs, sr, preset.decay);
+        const wet = applyConvolutionReverb(
+          buf as unknown as AudioBufferLike,
+          ir,
+          { wet: 0.4 },
+        );
+        if (wet.numberOfChannels === 0 || wet.length === 0) continue;
+        // wet ist mono → encodeWav mit channels=1 (oder 2 wenn vorhanden).
+        const channels = Math.min(2, wet.numberOfChannels) as 1 | 2;
+        const wav = encodeWav(
+          Array.from({ length: channels }, (_, c) =>
+            wet.getChannelData(c) as Float32Array,
+          ),
+          { sampleRate: wet.sampleRate, channels, bitDepth: 16 },
+        );
+        const blob = new Blob([wav], { type: "audio/wav" });
+        const newUrl = URL.createObjectURL(blob);
+        // AudioBufferLike → echter AudioBuffer für AudioEngine-Cache.
+        const Ctor = (window.OfflineAudioContext ||
+          // @ts-expect-error legacy webkit fallback
+          window.webkitOfflineAudioContext) as typeof OfflineAudioContext;
+        const ctx = new Ctor(
+          Math.max(1, wet.numberOfChannels),
+          Math.max(1, wet.length),
+          wet.sampleRate,
+        ) as BaseAudioContext;
+        const audioBuf = ctx.createBuffer(
+          Math.max(1, wet.numberOfChannels),
+          Math.max(1, wet.length),
+          wet.sampleRate,
+        );
+        for (let c = 0; c < wet.numberOfChannels; c++) {
+          const src = wet.getChannelData(c);
+          const copy = new Float32Array(src.length);
+          copy.set(src);
+          audioBuf.copyToChannel(copy, c, 0);
+        }
+        onTransformSample(id, newUrl, audioBuf);
+        applied++;
+      } catch {
+        /* skip */
+      }
+    }
+    toast(`Reverb "${preset.name}" angewandt: ${applied} Samples`, {
+      kind: "success",
+    });
+  }, [multiSelectIds, samples, onTransformSample, bulkReverbPresetId]);
+
   // v3.152: Wenn Samples aus dem Projekt verschwinden (extern gelöscht),
   // multi-select-Set defensiv auf Existenz-Filter laufen lassen.
   useEffect(() => {
@@ -2134,6 +2207,26 @@ export function SampleBrowser({
                         title="Stereo-Width-Verteilung (M/S)"
                       >
                         Width
+                      </button>
+                      <select
+                        value={bulkReverbPresetId}
+                        onChange={(e) => setBulkReverbPresetId(e.target.value)}
+                        data-testid="sample-browser-bulk-reverb-preset"
+                        className="bg-bg-panel border border-border-color rounded px-1.5 py-0.5 text-[10px] text-text-muted hover:border-accent-primary focus:outline-none transition-colors"
+                        title="Reverb-Preset"
+                      >
+                        {REVERB_PRESETS.map((p) => (
+                          <option key={p.id} value={p.id}>{p.name}</option>
+                        ))}
+                      </select>
+                      <button
+                        onClick={handleBulkReverb}
+                        disabled={!onTransformSample}
+                        data-testid="sample-browser-bulk-reverb"
+                        className="px-2 py-0.5 rounded text-[10px] border border-border-color text-text-primary hover:border-accent-secondary hover:text-accent-secondary disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        title="Reverb auf alle ausgewählten Samples"
+                      >
+                        Reverb
                       </button>
                       <button
                         onClick={handleBulkDelete}
