@@ -73,6 +73,8 @@ import { variatePattern } from "@/utils/patternProbability";
 import { generateFill, generateBuildUp, generateRoll } from "@/utils/patternFillGenerator";
 // v3.169.0: Pattern-Humanize Pure-Helper für Humanize-Toolbar.
 import { humanizePattern, type HumanizeIntensity } from "@/utils/patternHumanize";
+// v3.175.0: Step-Probability Lock-Mode Preview (store-prob-API pending v3.176+).
+import { applyLockMode, type LockMode } from "@/utils/patternStepProbability";
 // Ausgelagerte Sub-Components
 import { FxPanel } from "./FxPanel";
 import { ResizableDrumPanel } from "./ResizableDrumPanel";
@@ -702,6 +704,35 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
       return humanized.map((h) => h.active);
     });
   }, [applyMutator, humanizeIntensity]);
+
+  // v3.175.0: Step-Probability Lock-Mode Preview.
+  // CAVEAT: applyLockMode SETZT probability-Felder auf Steps. Die aktuelle
+  // dm.setPartSteps API nimmt nur boolean[] (active-Felder) — Step-Probability
+  // wäre eine separate Store-Extension (geplant für v3.176+). Diese Toolbar
+  // visualisiert nur das Preset (Ø-Probability + active-Step-Count) per Toast,
+  // analog zur v3.174 Distribute-Preview.
+  const [lockMode, setLockMode] = useState<LockMode>("all");
+  const handleShowLockMode = useCallback(() => {
+    const activePattern = dm.patterns.find((p) => p.id === dm.activePatternId);
+    if (!activePattern) return;
+    let totalActive = 0;
+    let lockedSum = 0;
+    for (const part of activePattern.parts) {
+      const stepsWithProb = part.steps.map((s) => ({ active: s.active }));
+      const locked = applyLockMode(stepsWithProb, lockMode);
+      for (const l of locked) {
+        if (l.active) {
+          totalActive++;
+          lockedSum += l.probability ?? 1;
+        }
+      }
+    }
+    const avgProb = totalActive > 0 ? lockedSum / totalActive : 0;
+    toast(
+      `Lock "${lockMode}": ${totalActive} aktive Steps, Ø ${Math.round(avgProb * 100)}% probability`,
+      { kind: "info", duration: 4000 },
+    );
+  }, [dm.patterns, dm.activePatternId, lockMode]);
 
   // v2.12: Drag-Drop für .mid-Files via globales Event (von ElectronDropZone dispatched).
   useEffect(() => {
@@ -1942,6 +1973,34 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
             title="Pattern humanisieren (kleine Probability-Drops je nach Intensity)"
           >
             Apply
+          </button>
+        </div>
+
+        {/* v3.175: Step-Probability Lock-Toolbar (Preview-only, store-step-prob-API pending) */}
+        <div
+          className="flex items-center gap-1 px-2 py-1 border-l border-border-color"
+          data-testid="pattern-lock-toolbar"
+          title="Per-Step Probability-Locks (Display-Preview, store-probability-API pending v3.176+)"
+        >
+          <span className="text-[10px] text-text-dim mr-1">Lock:</span>
+          <select
+            value={lockMode}
+            onChange={(e) => setLockMode(e.target.value as LockMode)}
+            data-testid="pattern-lock-mode"
+            className="bg-bg-panel border border-border-color rounded px-1 py-0.5 text-[10px] text-text-muted hover:text-text-primary focus:outline-none"
+          >
+            <option value="all">all (75%)</option>
+            <option value="downbeats">downbeats (1.0/0.5)</option>
+            <option value="offbeats">offbeats (0.7/1.0)</option>
+            <option value="fills">fills (last quarter 0.6)</option>
+          </select>
+          <button
+            onClick={handleShowLockMode}
+            data-testid="pattern-lock-preview"
+            className="px-1.5 py-0.5 rounded text-[10px] bg-bg-elevated hover:bg-accent-warning/30 hover:text-accent-warning transition-colors"
+            title="Lock-Mode auf aktives Pattern visualisieren (toast preview)"
+          >
+            Preview
           </button>
         </div>
 

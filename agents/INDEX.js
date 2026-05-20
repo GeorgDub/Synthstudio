@@ -298,6 +298,17 @@ const INDEX = {
   //     a new bare-path entry while old version-suffixed ones remain
   //     is the explicit transition path.
   files: {
+    // ─── v3.175 Pure-Helpers (refactor) ─────────────────────────
+    "client/src/utils/midiFileEncoder.ts": {
+      role:     "Pure-Helper SMF-Binary-Encoder (Standard MIDI File Format 0, single track). encodeMidiFile(notes, options?) → Uint8Array. Closes v3.174 'Echtes .mid statt JSON'-Caveat. Header-Chunk (MThd + len 6 + format 0 + 1 track + ppqn uint16-BE). Track-Chunk (MTrk + uint32-BE length + data). Track-Events: Track-Name Meta (FF 03), Tempo Meta (FF 51 03 uint24-BE us-per-quarter), Time-Signature Meta (FF 58 04 num pow2denom 24 8), Note-On (0x90|ch) + Note-Off (0x80|ch) mit VLQ delta-times (off-vor-on bei gleichem Tick), End-of-Track (FF 2F 00). Defensive: empty notes → Track mit nur Meta-Events. Default channel 9 (GM-Drum), ppqn 480, bpm 120, trackName 'Synthstudio Pattern', timeSig 4/4. Auch exportiert: encodeVLQ (variable-length quantity, [0x00] für 0), encodeUint32BE (4 bytes big-endian). Foundation für UI 'Export .mid'-Button in DrumMachine/PianoRoll und potentielle Migration von midiExport.ts auf einheitlichen Encoder.",
+      lastSeen: "2026-05-20T06:40:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "tests/features/midi-file-encoder.test.ts": {
+      role:     "Pure-Coverage für midiFileEncoder.ts. 20 Tests in 3 describes: encodeVLQ x5 (0/127/128/0x1FFFFF + bonus 8192), encodeUint32BE x2 (0 + 0x12345678), encodeMidiFile x13 (empty-SMF-valid, MThd-magic-detail, MTrk-magic-position-14, Note-On/Off-byte-detection, Channel-9-default 0x99, Tempo FF 51 03 + uint24-verification 500000 für 120 BPM, Time-Sig FF 58 04 + 4/2/24/8 bytes, EoT FF 2F 00 als letzte 3 bytes, MTrk-length-uint32-BE exact match zu actual track-data-bytes, bonus ppqn-960-propagation, bonus custom-channel-0 (0x90/0x80), bonus UTF-8 trackname FF 03 04 K i c k, bonus bytesToHex diagnostic). Vitest node-env, keine DOM-/Audio-Side-Effects.",
+      lastSeen: "2026-05-20T06:40:00.000Z",
+      ownedBy:  "frontend"
+    },
     // ─── v3.171 Pure-Helpers (refactor) ─────────────────────────
     "client/src/utils/sampleNormalizeBatch.ts": {
       role:     "Pure-Helper Batch-Sample-Normalization. batchNormalizeSamples(inputs, opts) → BatchNormalizeResult mit entries (id/originalDbTp/gainAppliedDb/buffer), loudestOriginalDbTp, quietestOriginalDbTp, effectiveTargetDbTp, cappedCount. Drei Modi: 'uniform-peak' (alle auf Target, default -1 dBTP), 'match-loudest' (alle auf Niveau des lautesten), 'relative-mix' (Relations bleiben, lautestes auf Target). maxBoostDb cap (default +24 dB) schuetzt vor exzessivem Boost. Silente Samples (peak nicht endlich) werden durchgereicht. All-silent-Edge defensiv (kein +Infinity-Disaster bei match-loudest/relative-mix). Per-Sample-Gain lokal berechnet (nicht via computeNormalizeGain), damit user-supplied maxBoostDb < 24 dB sauber wirkt + cappedCount korrekt. Foundation fuer Sample-Browser Multi-Select Normalize-Action.",
@@ -3469,6 +3480,68 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "refactor",
+      timestamp: "2026-05-20T06:40:00.000Z",
+      done: [
+        "v3.175 SMF-Binary-Encoder Pure-Helper: client/src/utils/midiFileEncoder.ts (NEU, 256 LOC) erstellt. Closes v3.174 MIDI-Export-Caveat ('Echtes .mid-Binary statt JSON'). Public API: encodeMidiFile(notes, options?) -> Uint8Array (SMF Format 0, single track), encodeVLQ(value) -> Uint8Array, encodeUint32BE(value) -> Uint8Array. Types: MidiNote {tickPos/tickDuration/note/velocity/channel?}, MidiFileOptions {ppqn?/bpm?/trackName?/timeSignature?}.",
+        "SMF-Layout: Header-Chunk (14 Bytes: MThd magic + length 6 + format 0 + 1 track + ppqn). Track-Chunk (MTrk magic + uint32-BE length + track-data). Track-Data: Track-Name Meta (FF 03), Tempo Meta (FF 51 03 uint24-BE us-per-quarter), Time-Signature Meta (FF 58 04 num pow2denom 24 8), pro Note: Note-On (0x90|ch) + Note-Off (0x80|ch) mit VLQ delta-times, End-of-Track (FF 2F 00). Off-vor-On bei gleichem Tick verhindert haengende Notes.",
+        "VLQ: emittiert LSB-Byte ohne Continuation-Flag immer (auch bei value 0 -> [0x00]). Verifiziert mit Spec-Beispielen 0/127/128/8192/0x1FFFFF. Defensive: negativ -> 0, float -> floor. Channel default 9 (GM-Drum). Velocity-clamp 1..127. Empty notes -> valid SMF mit nur Meta-Events + EoT.",
+        "tests/features/midi-file-encoder.test.ts (NEU, 207 LOC, 20 Tests in 3 describe-Bloecken). Coverage: encodeVLQ x5 (4 spec + 1 bonus 8192), encodeUint32BE x2 (0 + 0x12345678), encodeMidiFile x13 (alle 9 spec-tests + 4 Bonus: ppqn-propagation/custom-channel/utf8-trackname/bytesToHex-helper). Test 15 parsed MTrk-Length-Field als uint32 BE + vergleicht mit actual track-data byte-count -> off-by-one safe.",
+        "pnpm check: GRUEN (tsc --noEmit). pnpm vitest run tests/features/midi-file-encoder.test.ts: 20/20 GRUEN in 6ms (Duration 422ms). KEIN git commit, KEIN package.json bump. KEINE anderen Files beruehrt - parallele v3.175-Agenten unangetastet (Files randomChordGenerator/ClockSyncPanel/FirmwareInfoViewer/PositionDisplay etc bleiben deren Owner).",
+        "Pre-existing test-failure tests/features/omnitribe-bridge-mirror-drift.test.ts (OmniTribeBridge.ts SoT-Sync drift) ist NICHT durch diese Aenderung verursacht - separate Sprint-120b.3 mirror drift."
+      ],
+      next: [
+        "v3.176 UI-Wiring: 'Export .mid'-Button in DrumMachine oder PianoRoll. Note-Konvertierung: Pattern-Steps -> MidiNote[] (tickPos = step * ticksPerStep, tickDuration = ticksPerStep * 0.9, note = GM-Map-Lookup wie in midiExport.ts, channel = 9). Download via Blob([encodeMidiFile(notes)], {type: 'audio/midi'}) + a.click().",
+        "v3.176 Optional: Migration von midiExport.ts (Format 1, multi-track) auf midiFileEncoder. Aktueller midiExport hat eigenes writeVarLen/writeUint32BE/writeUint16BE - waere DRY-Verbesserung, aber Format 1 vs Format 0 unterschiedlich. Entscheidung: midiExport.ts bleibt fuer Multi-Pattern-Bundles, midiFileEncoder.ts fuer einzelne Pattern/Region-Exports.",
+        "Optional: encodeMidiFile-Erweiterung um MIDI Format 1 (multi-track) wenn ueber-Track-Granularitaet noetig wird (z.B. pro-Part-Track). Aktuell single-track Format 0 reicht fuer Pattern-Export-Use-Case."
+      ],
+      changed: [
+        "client/src/utils/midiFileEncoder.ts (NEU, 256 LOC, encodeMidiFile + encodeVLQ + encodeUint32BE Pure-Helpers + private encodeUint16BE/tempoBytes/denomPow2)",
+        "tests/features/midi-file-encoder.test.ts (NEU, 207 LOC, 20 Tests)"
+      ]
+    },
+    {
+      agent:     "refactor",
+      timestamp: "2026-05-20T06:35:00.000Z",
+      done: [
+        "v3.175 Random-Chord-Generator Pure-Helper: client/src/utils/randomChordGenerator.ts (NEU, 250 LOC) erstellt. Public API: generateRandomChords(options) -> GeneratedChord[], midiNoteToName(midi) -> string, CHORD_INTERVALS (10 Qualities: major/minor/diminished/augmented/sus2/sus4/7/maj7/m7/9), SCALE_INTERVALS (7 Scales: major/minor-natural/minor-harmonic/dorian/phrygian/lydian/mixolydian), MOOD_PRESETS (5 Moods: happy/sad/tense/dreamy/dark mit scale + qualities-Filter).",
+        "Types: ChordQuality, ScaleType, MoodPreset, RandomChordOptions {rootMidi/scale/seed/count/mood}, GeneratedChord {notes/rootNote/quality/name}. Inline mulberry32-PRNG (kein patternProbability-Import -> vermeidet zirkulaere Imports).",
+        "Behavior: rootMidi-Default 60 (C4), scale-Default 'major', count-Default 4, seed-Default 1. mood ueberschreibt scale wenn gesetzt + filtert Qualities. Pro chord: degreeRoll waehlt scale-degree, qualityRoll waehlt quality aus mood.qualities oder ALL_QUALITIES. Notes = chordRoot + CHORD_INTERVALS[quality], clamp 0..127, sortiert ascending. Name = noteLetter (C-B mit #) + QUALITY_SUFFIX (z.B. 'Cm7', 'F#maj7', 'A9').",
+        "Defensive: rootMidi NaN/<0/>127 -> 60, scale invalid -> 'major', mood invalid -> ignored, count<=0 -> [], count>64 -> 64 clamp. midiNoteToName(NaN) -> 'C4', sonst NOTE_NAMES[midi%12] + (Math.floor(midi/12)-1) (z.B. 60->'C4', 0->'C-1', 127->'G9').",
+        "tests/features/random-chord-generator.test.ts (NEU, 184 LOC, 21 Tests in 7 describe-Bloecken: generateRandomChords x5 (default/determinismus/different-seeds/count0/mood-filter), CHORD_INTERVALS x2, SCALE_INTERVALS x1, MOOD_PRESETS x1, midiNoteToName x3, defensive x7 (rootMidi-NaN/negativ/oversized + invalide scale + invalide mood + count-clamp + midiNoteToName-NaN), GeneratedChord-shape x2 (sortiert+range + name-pattern)). Determinismus via Seed verifiziert.",
+        "pnpm check: GRUEN (tsc --noEmit). pnpm test tests/features/random-chord-generator.test.ts: 21/21 GRUEN in 9ms (Duration 390ms total). KEIN git commit, KEIN package.json bump. KEINE anderen Files beruehrt — parallele v3.175-Agenten-Arbeit unangetastet."
+      ],
+      next: [
+        "v3.175+ UI-Wiring: 'Random Chord'-Button in PianoRoll oder DrumMachine PerformanceMode. RandomChordOptions als kleines Modal (Mood-Dropdown + Root-Note-Picker + Count-Stepper). Generierte GeneratedChord[] dann via dm.triggerChordNotes(notes, velocity) oder Score-Lane-Insert.",
+        "OmniTribe-Chord-Slot-Filler: nutzt generateRandomChords({seed: bar, count: 16}) um pro Bar einen Chord-Slot zu fuellen. mood pro Pattern persistiert.",
+        "Optional: 7. Scale-Type 'pentatonic-minor' fuer Blues / Hip-Hop-Vibes. Optional: ChordQuality '11', '13' fuer Jazz-Voicings. Optional: voicing-Mode (close/spread/drop2) als zusaetzliche RandomChordOption."
+      ],
+      changed: [
+        "client/src/utils/randomChordGenerator.ts (NEU, 250 LOC, Pure-Helper + 3 Constants + midiNoteToName)",
+        "tests/features/random-chord-generator.test.ts (NEU, 184 LOC, 21 Tests)"
+      ]
+    },
+    {
+      agent:     "frontend",
+      timestamp: "2026-05-20T07:00:00.000Z",
+      done: [
+        "v3.175 Wire-Through: patternStepProbability.ts (Pure-Helper aus v3.174) als Lock-Mode-Toolbar im DrumMachine.tsx integriert. Neue Toolbar (data-testid=pattern-lock-toolbar) direkt nach der v3.169 Humanize-Toolbar in der Drum-Machine-Hauptzeile.",
+        "UI: Label 'Lock:', <select> mit 4 Lock-Modi (data-testid=pattern-lock-mode: all 75% / downbeats 1.0/0.5 / offbeats 0.7/1.0 / fills last quarter 0.6) + 'Preview'-Button (data-testid=pattern-lock-preview, hover:bg-accent-warning/30). KEIN direct-apply auf store.",
+        "State: const [lockMode, setLockMode] = useState<LockMode>('all'). Handler handleShowLockMode useCallback: iteriert über dm.patterns.find(activePatternId).parts, ruft applyLockMode(stepsWithProb, lockMode) pro Part, akkumuliert totalActive + lockedSum, computes avgProb. Toast: 'Lock \"<mode>\": <N> aktive Steps, Ø <X>% probability' (kind=info, duration=4000ms).",
+        "CAVEAT-Kommentar im Code: applyLockMode SETZT probability-Felder. Aktuelle dm.setPartSteps API nimmt nur boolean[] — Step-Probability wäre separate Store-Extension (geplant v3.176+). Analog zu v3.174 Distribute-Preview ist diese Toolbar Preview-only.",
+        "Imports: applyLockMode + type LockMode aus '@/utils/patternStepProbability'. Verwendete Tailwind-Klassen ausschliesslich semantisch (bg-bg-panel, border-border-color, text-text-dim, text-text-muted, text-text-primary, bg-bg-elevated, bg-accent-warning/30, text-accent-warning).",
+        "pnpm check: GRUEN (tsc --noEmit). NUR DrumMachine.tsx editiert (+44 LOC: Import +2, State+Handler +24, Toolbar-Block +28). KEIN git commit, KEIN package.json bump. Working tree andere v3.175-Agenten-Files unangetastet."
+      ],
+      next: [
+        "v3.176+ Store-Extension: dm.setPartSteps API erweitern, sodass per-Step-Probability persistiert wird (statt boolean[] => StepWithProbability[]-aequivalent). Dann Apply-Button neben Preview einfuegen, der applyLockMode-Result direkt in den Store schreibt.",
+        "v3.176+ Visualization: opacity-modulierter Step-Hintergrund proportional zu probability (subtler Channel-Strip-Hint). Right-Click-Popover am Step mit Slider 0..1.",
+        "Optional: Playwright-Smoke tests/web/drum-machine-lock-toolbar.spec.ts: select 'downbeats' -> Preview-click -> Toast-Assert 'Lock \"downbeats\":'."
+      ],
+      changed: [
+        "client/src/components/DrumMachine/DrumMachine.tsx (+44 LOC: applyLockMode-Import + LockMode-Type, lockMode useState, handleShowLockMode useCallback, Lock-Mode-Toolbar zwischen Humanize-Toolbar und MIDI-Import)"
+      ]
+    },
     {
       agent:     "refactor",
       timestamp: "2026-05-20T06:30:00.000Z",
