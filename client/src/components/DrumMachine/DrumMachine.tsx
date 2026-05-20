@@ -87,6 +87,8 @@ import { applyHalfStutter } from "@/utils/patternStutter";
 // v3.183.0: Melodic Sequence Pure-Helper (Rhythm + Scale + Strategy → MIDI-Notes).
 import { generateMelodicSequence, MELODIC_STRATEGY_LABELS, type MelodicStrategy } from "@/utils/patternMelodicSeq";
 
+import { resolveFollowAction } from "@/utils/patternFollowActionChain";
+
 import { inferPatternBpm } from "@/utils/patternBpmInfer";
 // Ausgelagerte Sub-Components
 import { FxPanel } from "./FxPanel";
@@ -1270,6 +1272,24 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
     console.log("[Melodic-Seq]", notes);
   }, [dm, melodicStrategy]);
 
+  // v3.186.0: Chain-Simulator — fuehrt resolveFollowAction 10x mit "next"-Action
+  // aus und zeigt die besuchten Pattern-Namen als Toast. Reine Preview-Hilfe.
+  const handleSimulateChain = useCallback(() => {
+    if (dm.patterns.length === 0 || !dm.activePatternId) return;
+    let state = { currentPatternId: dm.activePatternId, currentRepeats: 0, chainPosition: 0 };
+    const visited: string[] = [state.currentPatternId];
+    // Simulate 10 steps with "next" action as demo
+    const action = { type: "next" as const };
+    for (let i = 0; i < 10; i++) {
+      const res = resolveFollowAction(dm.patterns, action, state, i);
+      state = res.nextState;
+      state.currentPatternId = res.nextPatternId;
+      const p = dm.patterns.find((pp) => pp.id === res.nextPatternId);
+      visited.push(p?.name ?? res.nextPatternId);
+    }
+    toast(`Chain-Preview (10 steps, "next"): ${visited.join(" → ")}`, { kind: "info", duration: 8000 });
+  }, [dm]);
+
   // Drag-Drop fuer .e2pattern/.e2sallpat (Browser-Fallback).
   useEffect(() => {
     const handler = (e: Event) => {
@@ -1727,6 +1747,21 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
                   🎼 Generate Preview
                 </button>
               </div>
+
+              {/* v3.186.0: Chain-Simulator — simuliert 10 "next"-Steps via
+                  resolveFollowAction und zeigt die Reihenfolge als Toast. */}
+              {dm.patterns.length >= 2 && (
+                <div className="px-3 py-2 border-t border-border-color" data-testid="pattern-chain-sim-block">
+                  <button
+                    type="button"
+                    onClick={handleSimulateChain}
+                    data-testid="pattern-chain-sim-button"
+                    className="w-full px-2 py-1 rounded text-[11px] bg-bg-elevated text-text-primary hover:bg-accent-secondary/20 hover:text-accent-secondary transition-colors"
+                  >
+                    🔗 Simulate Chain (10 steps next)
+                  </button>
+                </div>
+              )}
 
               {!isLiveEditing && (
                 <div className="border-t border-border-color p-1">

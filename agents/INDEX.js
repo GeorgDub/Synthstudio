@@ -343,6 +343,16 @@ const INDEX = {
       ownedBy:  "frontend"
     },
     // ─── v3.187 Pure-Helpers (refactor) ─────────────────────────
+    "client/src/utils/sampleAutoTune.ts": {
+      role:     "Pure-Helper Sample-AutoTune via Autocorrelation + Snap-to-Scale. Public API: analyzeAutoTune(buffer:AudioBufferLike, options?:{scale?:ScaleType, rootMidi?:number, minFreq?:number, maxFreq?:number}) -> AutoTuneResult {detectedHz, detectedMidi, targetMidi, semitoneShift, confidence}, detectPitchAutocorrelation(samples:Float32Array, sampleRate, minFreq?, maxFreq?) -> {hz, confidence}, hzToMidi(hz) -> midi (69+12*log2(hz/440)), snapToScale(detectedMidi, rootMidi, scale:ScaleType) -> midi-int. Konstanten DEFAULT_MIN_FREQ=80, DEFAULT_MAX_FREQ=1000, DEFAULT_ROOT_MIDI=60, DEFAULT_SCALE='major'. Types AutoTuneOptions, AutoTuneResult. Algorithmus: (1) Mono-Downmix Channel 0. (2) Autocorrelation r(tau) = sum s[i]*s[i+tau] fuer tau in [minLag..maxLag] mit minLag=floor(sr/maxFreq), maxLag=ceil(sr/minFreq). (3) Peak-Suche -> hz = sr/peakLag. (4) confidence = peakR/r(0) clamped [0,1]. (5) Sentinel detectedHz=-1 / detectedMidi=-1 / semitoneShift=0 / targetMidi=rootMidi bei empty/silent/zu-kurz (samples<maxLag+1) / r(0)=0 / no positive peak. (6) snapToScale: octaveOffset = floor((detectedMidi-rootMidi)/12), pruefe pro SCALE_INTERVAL drei Kandidaten (octaveOffset selber, -1, +1), nimm minimal-distance — Octave-Wrap-Aware (detected B bei Mixolydian-Scale ohne interval 11 snappt zur next-Oct-Root, nicht zur far interval 10). Defensive: scale nicht in SCALE_INTERVALS -> 'major', rootMidi NaN/out-of-range -> 60, minFreq<=0||!isFinite -> 80, maxFreq dito -> 1000. Foundation fuer Sample-Browser AutoTune-Spalte, Tune-to-Scale-Bulk-Action analog zu Reverb/Gate, Per-Sample Pitch-Inspector, Performance-Mode AutoTune-Pad. NUR Analysis — kein Pitch-Shift (Caller-Aufgabe via semitoneShift + sampleTransform). Pure & DOM-frei. Imports: AudioBufferLike (sampleEmbedding.ts), SCALE_INTERVALS + ScaleType (randomChordGenerator.ts).",
+      lastSeen: "2026-05-20T11:00:00.000Z",
+      ownedBy:  "backend"
+    },
+    "tests/features/sample-auto-tune.test.ts": {
+      role:     "Pure-Coverage fuer sampleAutoTune.ts. 29 Tests in 5 describes: analyzeAutoTune 12 (empty -> -1/-1/0/rootMidi/0; silent 4800 zeros -> dito; 440Hz Sine 0.2s -> detectedHz [430..450], detectedMidi [68.5..69.5], confidence>0.5; 220Hz -> [215..225], midi [56.5..57.5]; 554.37Hz (~C#5) bei major/rootMidi=60 -> targetMidi in {72,74} [Tie C5/D5]; 261.63Hz (~C4) bei minor-natural/rootMidi=60 -> targetMidi=60 [Root in Scale]; confidence in [0,1]; semitoneShift == target-detected; minFreq=300 maxFreq=1000 mit 200Hz Sine -> entweder -1 ODER hz in [300..1000] und !=200+/-20; ungueltige scale 'totally-not-a-scale' -> major-fallback, 440Hz -> targetMidi=69; rootMidi=NaN -> 60; rootMidi=999 -> 60). detectPitchAutocorrelation 5 (empty -> -1; silent 4800 zeros -> -1 [r(0)=0]; zu kurz 100 samples -> -1 [< maxLag+1=601]; 440Hz Sine 0.2s -> hz [430..450] confidence in [0.5..1]; min/max negative+0 -> defaults greifen 80..1000). hzToMidi 5 (440->69; 220->57; 880->81; 0->-1; -100->-1). snapToScale 4 (60 major root=60 -> 60; 61 (C#) major root=60 -> {60,62} [Tie]; -1 -> rootMidi; 71 mixolydian root=60 -> {70,72} [Tie Bb/C-next-oct]). Constants 3 (DEFAULT_MIN_FREQ=80, DEFAULT_MAX_FREQ=1000, DEFAULT_ROOT_MIDI=60). Test-Helpers: makeSineBuffer(freq, durationSec, sr=48000), makeSilentBuffer(length), makeEmptyBuffer(). Vitest node-env. 29/29 passed in 63ms.",
+      lastSeen: "2026-05-20T11:00:00.000Z",
+      ownedBy:  "testing"
+    },
     "client/src/utils/patternFollowActionChain.ts": {
       role:     "Pure-Helper Pattern-Follow-Action-Chain-Resolver fuer kuenftige Song-Mode/Arrangement-Logik (Ableton-Live 'Follow Actions' / Elektron 'Pattern Chain'-Style). Public API: resolveFollowAction(patterns:readonly{id:string}[], action:FollowActionDef, state:FollowState, seed?:number) -> {nextPatternId:string, nextState:FollowState}, FOLLOW_ACTION_LABELS Record<FollowActionType,string> (7 Eintraege: none/next/prev/random/specific/chain/weighted). Types: FollowActionType (union), FollowActionDef {type, targetId?, chainIds?:readonly string[], weights?:readonly{id:string,weight:number}[], repeatCount?:number}, FollowState {currentPatternId, currentRepeats, chainPosition}. Algorithmus: 1) empty patterns -> stay + repeats++. 2) sanitizeRepeatCount (NaN/<1 -> 1). 3) Stay-Logik: if currentRepeats < repeatCount-1 -> stay + repeats++. 4) Action greift -> resolve switch + reset repeats=0. none -> currentId; next/prev mit modulo-wrap (currentId nicht in patterns: next->patterns[0], prev->letzter); random via inline mulberry32(seed??1); specific: valid targetId -> targetId, sonst currentId; chain: chainIds[pos%len] mit Position-Advance um +1 (candidate nicht in patterns -> currentId, Position trotzdem advance); weighted: cumulative-distribution mit Filter weight>0 + Finite, total=0/leer -> currentId, chosen nicht in patterns -> currentId. Defensive: NUR repeatCount sanitized (chainPosition/currentRepeats caller-managed). Eingaben werden NIEMALS mutiert. Inline mulberry32-PRNG (identisch zu patternMelodicSeq.ts). Foundation fuer Song-Mode-View, Per-Pattern Follow-Action-Config in PatternStore, kuenftige ConditionalChain / Probability-Per-Action / Look-Ahead-Pattern-Switching. Pure & DOM-frei, keine Util-Cross-Imports.",
       lastSeen: "2026-05-20T08:46:30.000Z",
@@ -3605,6 +3615,63 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "refactor",
+      timestamp: "2026-05-20T11:00:00.000Z",
+      done: [
+        "v3.187 NEU sampleAutoTune.ts (Pure-Helper, ~245 LOC) + sample-auto-tune.test.ts (~290 LOC, 29 Tests in 5 describes). Pure-Helper fuer Sample-AutoTune via Autocorrelation + Snap-to-Scale. Public API: analyzeAutoTune(buffer, options?) -> AutoTuneResult, detectPitchAutocorrelation(samples, sampleRate, minFreq?, maxFreq?) -> {hz, confidence}, hzToMidi(hz) -> midi, snapToScale(detectedMidi, rootMidi, scale) -> midi. Konstanten DEFAULT_MIN_FREQ=80 / DEFAULT_MAX_FREQ=1000 / DEFAULT_ROOT_MIDI=60 / DEFAULT_SCALE='major'. Types AutoTuneOptions, AutoTuneResult.",
+        "Algorithmus: (1) Mono-Downmix via buffer.getChannelData(0). (2) Autocorrelation r(tau)=sum s[i]*s[i+tau] fuer tau in [floor(sr/maxFreq), ceil(sr/minFreq)]. (3) Peak-Suche -> hz=sr/peakLag. (4) confidence=peakR/r(0) clamped [0,1]. (5) hzToMidi via 69 + 12*log2(hz/440). (6) snapToScale: octaveOffset = floor((detectedMidi-rootMidi)/12), pruefe pro Interval drei Kandidaten (octaveOffset, -1, +1) und nimm minimal-distance. Sentinel detectedHz=-1 / detectedMidi=-1 / semitoneShift=0 / targetMidi=rootMidi bei empty/silent/zu-kurz.",
+        "Advisor-Guidelines befolgt: (a) confidence Cauchy-Schwarz-clamp [0,1] mit r(0)===0 -> -1, (b) Lag-Range floor(sr/maxFreq)..ceil(sr/minFreq), samples<maxLag+1 -> -1, (c) detectedMidi=-1 Sentinel + semitoneShift=0 + targetMidi=rootMidi konsistent, (d) snapToScale-Octave-Wrap mit pro-Interval drei Kandidaten gegen Mixolydian-B-Bug, (e) Test #5 C#5->C5||D5 als Tie akzeptiert ([72,74]).contains(), (f) Sine-Buffer 0.2s @ 48k = 9600 samples (genug fuer 80Hz-Floor mit 600 Samples Lag), (g) Test #9 freq-filter mit ODER-Assertion (-1 oder klar nicht 200Hz), (h) strict Defensive: minFreq<=0||!isFinite -> 80, maxFreq dito -> 1000, scale nicht in SCALE_INTERVALS -> 'major', rootMidi NaN/out-of-range -> 60.",
+        "Workflow: File-Bootstrap via node -e fs.writeFileSync 'placeholder' (Bash-Heredoc auf Windows wiederholt unexpected-EOF fehlgeschlagen — pattern bekannt aus v3.186/v3.187 patternFollowActionChain-Workflow). Edit-Tool ueberschreibt komplett. pnpm check GRUEN (tsc --noEmit, 0 Errors). pnpm vitest run tests/features/sample-auto-tune.test.ts -> 29/29 passed (63ms). Volle Suite: 343 files, 7672 passed + 16 skipped (vorher 342/7643+16). KEIN git commit, KEIN package.json bump (User-Vorgabe). NUR 2 neue Files + INDEX.js."
+      ],
+      next: [
+        "v3.188+ Wire-Up (frontend-Owner): SampleBrowser 'AutoTune'-Spalte (detected note + confidence) + Tune-to-Scale-Bulk-Action analog zu Reverb/Gate (scale + rootMidi UI, ruft analyzeAutoTune pro Sample, schreibt detectedHz in Sample-Metadata, optional ruft sampleTransform mit semitoneShift fuer echte Pitch-Manipulation).",
+        "v3.188+ Per-Sample Pitch-Inspector (frontend-Owner): Sample-Detail-Panel zeigt detectedHz/Midi/note-name + targetMidi (scale-selector live) + Apply-Pitch-Shift-Button (semitoneShift via sampleTransform).",
+        "v3.188+ Pitch-Detection-Quality-Upgrade (refactor-Owner): YIN/MPM Algorithm statt naive Autocorrelation fuer bessere Octave-Error-Robustness (Autocorrelation tendiert zu Octave-down-Errors bei harmonisch-reichen Sounds). API-additiv: detectPitchYIN(samples, sr, threshold?) parallel zu detectPitchAutocorrelation, analyzeAutoTune erhaelt options.algorithm:'autocorr'|'yin' (default 'autocorr' fuer Backward-Compat).",
+        "v3.188+ Tests-Erweiterung (testing-Owner): Property-based mit fc-check 'detected ~ true freq fuer Sine [80..1000Hz]' 1000 random freqs. Octave-Error-Test mit harmonischen Signalen (Sine 440 + Sine 880) -> robuster Detect bei beiden Pitch-Detection-Algos. Snapshot mit fixiertem Drum-Sample (Test-WAV-fixture)."
+      ],
+      changed: [
+        "client/src/utils/sampleAutoTune.ts (NEU, Pure-Helper AutoTune + Pitch-Detection + Snap-to-Scale, ~245 LOC)",
+        "tests/features/sample-auto-tune.test.ts (NEU, 29 Tests in 5 describes)",
+        "agents/INDEX.js (workLog-Entry + files-Index fuer beide neuen Files)"
+      ]
+    },
+    {
+      agent:     "frontend",
+      timestamp: "2026-05-20T10:15:00.000Z",
+      done: [
+        "v3.186 sampleNoiseGate Bulk-Wire-Up im SampleBrowser.tsx (analog zu Reverb-Bulk-UI): Import { applyNoiseGate, NOISE_GATE_PRESETS } from '@/utils/sampleNoiseGate' direkt nach sampleConvolutionReverb-Import.",
+        "useState<string>('vocal') bulkGatePresetId + handleBulkNoiseGate useCallback (deps [multiSelectIds, samples, onTransformSample, bulkGatePresetId]) iteriert multiSelectIds, laedt buffer via AudioEngine.loadSample, ruft applyNoiseGate(buf, {thresholdDb/attackMs/releaseMs}), encodet als WAV (channels=min(2,gated.numberOfChannels), bitDepth 16), Blob -> URL.createObjectURL, rekonstruierter AudioBuffer via OfflineAudioContext fuer AudioEngine-Cache, onTransformSample(id, newUrl, audioBuf). Toast 'NoiseGate \"name\": N Samples' (kind:success). try/catch skip per sample.",
+        "UI in der Bulk-Bar nach sample-browser-bulk-reverb: <select data-testid=sample-browser-bulk-gate-preset> (NOISE_GATE_PRESETS map: Vocal/Drums/Ambient/Tight) + <button data-testid=sample-browser-bulk-gate disabled={!onTransformSample}> 'Gate'. Styling identisch zu Reverb-Pattern (bg-bg-panel/border-border-color/text-text-muted/hover:border-accent-primary).",
+        "pnpm check GRUEN (tsc --noEmit, 0 Errors). KEIN git commit, KEIN package.json bump (User-Vorgabe). NUR SampleBrowser.tsx editiert + INDEX.js."
+      ],
+      next: [
+        "v3.186+ Per-Sample Noise-Gate-Inspector (frontend): Statt nur Bulk auch im Sample-Detail-Panel ein Gate-Preset-Picker + apply-button mit Live-Preview (Before/After waveform overlay)?",
+        "v3.186+ Custom-Gate-Parameter UI (frontend): manual thresholdDb/attackMs/releaseMs Slider als 'Custom'-Preset zusaetzlich zu den 4 vorhandenen, mit Persistence im Project-Store."
+      ],
+      changed: [
+        "client/src/components/SampleBrowser/SampleBrowser.tsx (Import sampleNoiseGate + bulkGatePresetId useState + handleBulkNoiseGate useCallback + UI-Select+Button mit testids sample-browser-bulk-gate-preset / sample-browser-bulk-gate)",
+        "agents/INDEX.js (workLog-Entry)"
+      ]
+    },
+    {
+      agent:     "frontend",
+      timestamp: "2026-05-20T09:05:00.000Z",
+      done: [
+        "v3.186 Wire-Up: patternFollowActionChain.resolveFollowAction als 'Simulate Chain (10 steps next)'-Action im DrumMachine.tsx-Picker eingebunden. Block sitzt direkt nach pattern-melodic-block, data-testid pattern-chain-sim-block + pattern-chain-sim-button. Visible nur bei dm.patterns.length >= 2 (sonst kein sinnvoller Chain).",
+        "handleSimulateChain useCallback: initialer State = {currentPatternId: dm.activePatternId, currentRepeats: 0, chainPosition: 0}, iteriert 10x mit action={type:'next'} und seed=i, sammelt visited-Names aus dm.patterns.find(p.id===nextPatternId)?.name fallback id, Toast 'Chain-Preview (10 steps, \"next\"): name1 -> name2 -> ...' mit duration: 8000. deps [dm].",
+        "Import 'resolveFollowAction' aus '@/utils/patternFollowActionChain' direkt nach patternMelodicSeq-Import. pnpm check GRUEN (tsc --noEmit, 0 Errors). KEIN git commit, KEIN package.json bump (User-Vorgabe). NUR DrumMachine.tsx editiert + INDEX.js."
+      ],
+      next: [
+        "v3.188+ Per-Pattern FollowAction-Config (frontend): activePattern.followAction Persistence im PatternStore + Form (Dropdown FOLLOW_ACTION_LABELS + Sub-Inputs targetId/chainIds/weights/repeatCount), Loop-Player ruft resolveFollowAction(patterns, pattern.followAction, currentFollowState) bei pattern-end und setActivePattern(nextPatternId).",
+        "v3.188+ Action-Type-Picker (frontend): Statt fest 'next' Picker fuer alle 7 Types (none/next/prev/random/specific/chain/weighted). Bei 'random' RNG-Seed-Input (default now()), bei 'specific' Pattern-Dropdown, bei 'chain' Reorder-List der pattern-IDs, bei 'weighted' Grid Pattern x weight.",
+        "v3.188+ Chain-Visualizer (frontend): horizontale Pill-Chain anstatt Toast-Text. Aktuelle Position via highlight markieren wenn Loop-Player aktiv."
+      ],
+      changed: [
+        "client/src/components/DrumMachine/DrumMachine.tsx (Import + handleSimulateChain useCallback + Chain-Simulator-Button-Block nach pattern-melodic-block)",
+        "agents/INDEX.js (workLog-Entry)"
+      ]
+    },
     {
       agent:     "refactor",
       timestamp: "2026-05-20T08:46:30.000Z",

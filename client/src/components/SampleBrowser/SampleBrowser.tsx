@@ -90,6 +90,11 @@ import {
   generateSyntheticIR,
   REVERB_PRESETS,
 } from "@/utils/sampleConvolutionReverb";
+// v3.186: Bulk-Noise-Gate für selektierte Samples (Preset-Parameter).
+import {
+  applyNoiseGate,
+  NOISE_GATE_PRESETS,
+} from "@/utils/sampleNoiseGate";
 
 // ─── Typen ────────────────────────────────────────────────────────────────────
 
@@ -1390,6 +1395,67 @@ export function SampleBrowser({
     });
   }, [multiSelectIds, samples, onTransformSample, bulkReverbPresetId]);
 
+  // v3.186 — Bulk-Noise-Gate für selektierte Samples:
+  // Ein in NOISE_GATE_PRESETS definiertes Preset bestimmt thresholdDb,
+  // attackMs und releaseMs. Jeder geladene Buffer wird gepasst, als WAV
+  // encodet und via onTransformSample zurück ins Projekt geschrieben
+  // (+ rekonstruierter AudioBuffer für AudioEngine-Cache).
+  const [bulkGatePresetId, setBulkGatePresetId] = useState<string>("vocal");
+
+  const handleBulkNoiseGate = useCallback(async () => {
+    if (multiSelectIds.size === 0 || !onTransformSample) return;
+    const preset = NOISE_GATE_PRESETS.find((p) => p.id === bulkGatePresetId);
+    if (!preset) return;
+    let applied = 0;
+    for (const id of multiSelectIds) {
+      const sample = samples.find((s) => s.id === id);
+      if (!sample) continue;
+      try {
+        const buf = await AudioEngine.loadSample(sample.path);
+        if (!buf) continue;
+        const gated = applyNoiseGate(buf as unknown as AudioBufferLike, {
+          thresholdDb: preset.thresholdDb,
+          attackMs: preset.attackMs,
+          releaseMs: preset.releaseMs,
+        });
+        if (gated.numberOfChannels === 0 || gated.length === 0) continue;
+        const channels = Math.min(2, gated.numberOfChannels) as 1 | 2;
+        const wav = encodeWav(
+          Array.from({ length: channels }, (_, c) =>
+            gated.getChannelData(c) as Float32Array,
+          ),
+          { sampleRate: gated.sampleRate, channels, bitDepth: 16 },
+        );
+        const blob = new Blob([wav], { type: "audio/wav" });
+        const newUrl = URL.createObjectURL(blob);
+        const Ctor = (window.OfflineAudioContext ||
+          // @ts-expect-error legacy webkit fallback
+          window.webkitOfflineAudioContext) as typeof OfflineAudioContext;
+        const ctx = new Ctor(
+          Math.max(1, gated.numberOfChannels),
+          Math.max(1, gated.length),
+          gated.sampleRate,
+        ) as BaseAudioContext;
+        const audioBuf = ctx.createBuffer(
+          Math.max(1, gated.numberOfChannels),
+          Math.max(1, gated.length),
+          gated.sampleRate,
+        );
+        for (let c = 0; c < gated.numberOfChannels; c++) {
+          const src = gated.getChannelData(c);
+          const copy = new Float32Array(src.length);
+          copy.set(src);
+          audioBuf.copyToChannel(copy, c, 0);
+        }
+        onTransformSample(id, newUrl, audioBuf);
+        applied++;
+      } catch {
+        /* skip */
+      }
+    }
+    toast(`NoiseGate "${preset.name}": ${applied} Samples`, { kind: "success" });
+  }, [multiSelectIds, samples, onTransformSample, bulkGatePresetId]);
+
   // v3.152: Wenn Samples aus dem Projekt verschwinden (extern gelöscht),
   // multi-select-Set defensiv auf Existenz-Filter laufen lassen.
   useEffect(() => {
@@ -2227,6 +2293,26 @@ export function SampleBrowser({
                         title="Reverb auf alle ausgewählten Samples"
                       >
                         Reverb
+                      </button>
+                      <select
+                        value={bulkGatePresetId}
+                        onChange={(e) => setBulkGatePresetId(e.target.value)}
+                        data-testid="sample-browser-bulk-gate-preset"
+                        className="bg-bg-panel border border-border-color rounded px-1.5 py-0.5 text-[10px] text-text-muted hover:border-accent-primary focus:outline-none transition-colors"
+                        title="Noise-Gate-Preset"
+                      >
+                        {NOISE_GATE_PRESETS.map((p) => (
+                          <option key={p.id} value={p.id}>{p.name}</option>
+                        ))}
+                      </select>
+                      <button
+                        onClick={handleBulkNoiseGate}
+                        disabled={!onTransformSample}
+                        data-testid="sample-browser-bulk-gate"
+                        className="px-2 py-0.5 rounded text-[10px] border border-border-color text-text-primary hover:border-accent-secondary hover:text-accent-secondary disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        title="Noise-Gate auf alle ausgewählten Samples"
+                      >
+                        Gate
                       </button>
                       <button
                         onClick={handleBulkDelete}
