@@ -78,6 +78,8 @@ import { generateFill, generateBuildUp, generateRoll } from "@/utils/patternFill
 import { humanizePattern, type HumanizeIntensity } from "@/utils/patternHumanize";
 // v3.175.0: Step-Probability Lock-Mode Preview (store-prob-API pending v3.176+).
 import { applyLockMode, type LockMode } from "@/utils/patternStepProbability";
+
+import { inferPatternBpm } from "@/utils/patternBpmInfer";
 // Ausgelagerte Sub-Components
 import { FxPanel } from "./FxPanel";
 import { ResizableDrumPanel } from "./ResizableDrumPanel";
@@ -750,6 +752,17 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
       { kind: "info", duration: 4000 },
     );
   }, [dm.patterns, dm.activePatternId, lockMode]);
+
+  // v3.179.0: Pattern-BPM-Infer-Action — Density+Syncopation-Heuristik → toast.
+  const handleInferBpm = useCallback(() => {
+    const activePattern = dm.patterns.find((p) => p.id === dm.activePatternId);
+    if (!activePattern) return;
+    const result = inferPatternBpm(activePattern);
+    toast(
+      `BPM-Vorschlag: ${result.suggestedBpm} (${result.genreHint}, ${Math.round(result.confidence * 100)}% confidence). ${result.reasoning}`,
+      { kind: "info", duration: 6000 },
+    );
+  }, [dm.patterns, dm.activePatternId]);
 
   // v2.12: Drag-Drop für .mid-Files via globales Event (von ElectronDropZone dispatched).
   useEffect(() => {
@@ -1881,6 +1894,17 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
           />
           <span className="font-mono w-8 text-right">{Math.round(dm.swingAmount * 100)}%</span>
         </label>
+
+        {/* v3.179.0: Infer-BPM — Density+Syncopation-Heuristik → toast. */}
+        <button
+          type="button"
+          onClick={handleInferBpm}
+          data-testid="drum-machine-infer-bpm"
+          className="px-2 py-0.5 rounded text-[10px] bg-bg-elevated text-text-muted hover:text-accent-secondary hover:bg-accent-secondary/20 transition-colors"
+          title="BPM-Vorschlag basierend auf Pattern-Density+Syncopation"
+        >
+          🎯 BPM
+        </button>
 
         {/* v3.176.0: Chord-Suggestion-Panel Toggle (Floating-Overlay). */}
         <button
