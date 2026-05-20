@@ -76,6 +76,8 @@ import {
   distributeDrumKit,
   type SampleCandidate,
 } from "@/utils/drumKitDistribution";
+// v3.177: Spectral-Centroid → Brightness-Verteilung der selektierten Samples.
+import { computeSpectralCentroid } from "@/utils/sampleSpectralCentroid";
 
 // ─── Typen ────────────────────────────────────────────────────────────────────
 
@@ -1157,6 +1159,43 @@ export function SampleBrowser({
     console.log("[Auto-Distribute v3.174 Preview]", result);
   }, [multiSelectIds, samples]);
 
+  // v3.177 — Brightness-Verteilung der selektierten Samples:
+  // Lädt für jede selected Sample-ID den AudioBuffer und berechnet via
+  // computeSpectralCentroid (Pure-Helper) die Brightness-Kategorie.
+  // Anschließend Toast mit Histogram der 5 Kategorien.
+  const handleBulkBrightness = useCallback(async () => {
+    if (multiSelectIds.size === 0) return;
+    const histogram = { dark: 0, warm: 0, neutral: 0, bright: 0, harsh: 0 };
+    let analyzed = 0;
+    for (const id of multiSelectIds) {
+      const sample = samples.find((s) => s.id === id);
+      if (!sample) continue;
+      try {
+        const buf = await AudioEngine.loadSample(sample.path);
+        if (!buf) continue;
+        const result = computeSpectralCentroid(
+          buf as unknown as AudioBufferLike,
+        );
+        histogram[result.brightness]++;
+        analyzed++;
+      } catch {
+        /* skip unloadable */
+      }
+    }
+    if (analyzed === 0) {
+      toast("Keine ladbaren Sample-Buffer", { kind: "warning" });
+      return;
+    }
+    const parts = Object.entries(histogram)
+      .filter(([, c]) => c > 0)
+      .map(([k, c]) => `${k}: ${c}`);
+    toast(
+      `Brightness von ${analyzed} Samples: ${parts.join(", ")}`,
+      { kind: "info", duration: 6000 },
+    );
+    console.log("[Brightness-Analyze]", histogram);
+  }, [multiSelectIds, samples]);
+
   // v3.152: Wenn Samples aus dem Projekt verschwinden (extern gelöscht),
   // multi-select-Set defensiv auf Existenz-Filter laufen lassen.
   useEffect(() => {
@@ -1942,6 +1981,14 @@ export function SampleBrowser({
                         title="Distribute-Plan zeigen (auf 16 Drum-Parts mappen via Name/Tag-Matching)"
                       >
                         Distribute
+                      </button>
+                      <button
+                        onClick={handleBulkBrightness}
+                        data-testid="sample-browser-bulk-brightness"
+                        className="px-2 py-0.5 rounded text-[10px] border border-border-color text-text-primary hover:border-accent-secondary hover:text-accent-secondary transition-colors"
+                        title="Brightness-Verteilung analysieren (FFT-basiert)"
+                      >
+                        Brightness
                       </button>
                       <button
                         onClick={handleBulkDelete}

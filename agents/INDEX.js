@@ -298,6 +298,27 @@ const INDEX = {
   //     a new bare-path entry while old version-suffixed ones remain
   //     is the explicit transition path.
   files: {
+    // ─── v3.178 Pure-Helpers (refactor) ─────────────────────────
+    "client/src/utils/sampleRmsEnvelope.ts": {
+      role:     "Pure-Helper fuer frame-weise RMS-Envelope (Huellkurve) eines Audio-Samples. Public API: computeRmsEnvelope(buffer, options?) -> RmsEnvelopeResult {envelope (Float32Array linear amplitude 0..1), samplePositions (Int32Array, i*hopSize), peakRms, meanRms, frameSize, hopSize}, findFadeOutPoint(envelope, threshold=0.1) -> sample-index (rueckwaerts ab Ende: erster Frame >= threshold*peak) | -1, findOnsetPoint(envelope, threshold=0.1) -> sample-index (vorwaerts: erster Frame >= threshold*peak) | -1. Konstanten: DEFAULT_FRAME_SIZE=1024 (~21ms bei 48k), DEFAULT_HOP_SIZE=512 (50% Overlap), MIN_FRAME_SIZE=64, DEFAULT_THRESHOLD=0.1. Algorithmus: 1) Channel-Auswahl mix/left/right (mix = arith. Mittelwert). 2) Frame-Count = n<frameSize ? 1 : 1+floor((n-frameSize)/hopSize). 3) Pro Frame: rms = sqrt(sum(x^2)/frameSize) — IMMER durch frameSize (auch bei zero-padded Tail-Frames) damit Skalierung konsistent ist. 4) peakRms = max, meanRms = sum/count. Defensive: empty buffer -> leerer Output, frameSize<64 -> 64, hopSize<1 -> 1, threshold NaN/<0/>1 -> 0.1 via sanitizeThreshold-Helper. findFadeOutPoint/findOnsetPoint: empty envelope oder peakRms<=0 -> -1. Foundation fuer Waveform-Display (energy-bars statt Peak-bars), Auto-Trim-Silence (head+tail via findOnset/findFadeOut), Envelope-Follower-Visualisierung, Adaptive Slice-Detection mit RMS-Energy. Pure & DOM-frei.",
+      lastSeen: "2026-05-20T07:35:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "tests/features/sample-rms-envelope.test.ts": {
+      role:     "Pure-Coverage fuer sampleRmsEnvelope.ts. 12 Tests in 4 describes: computeRmsEnvelope 5 (empty buffer -> {empty, 0, 0, DEFAULT_FRAME_SIZE, DEFAULT_HOP_SIZE}, constant 0.5 -> envelope ~ 0.5 DC-Test, silence 4096 samples -> all zeros, ramp 1.0->0.0 -> envelope monoton fallend mit 0.02-Toleranz fuer Sinus-Phase + Float32-Precision-Toleranz fuer peakRms vs envelope[0], Stereo mix-Mode aus L=0.8/R=0.2 -> 0.5 + channelMode 'left' -> 0.8 + 'right' -> 0.2). findFadeOutPoint 2 (ramp threshold=0.5 -> Punkt 0..8192 + default 0.1 liefert spaeteren oder gleichen Punkt da niedriger Threshold, all-silence -> -1). findOnsetPoint 2 (silence(4096)+tone(4096) -> onset > 0 und >= silenceLen-frameSize und < 8192, empty -> -1). defensive 3 (threshold NaN/-0.5/1.5 alle == default 0.1, frameSize=8 clamped auf MIN_FRAME_SIZE=64 + hopSize bleibt 4, hopSize=0 -> 1 mit envelope.length == length-frameSize+1). Test-Helpers: makeEmptyBuffer, makeSilentBuffer, makeConstantBuffer (DC-Wert via fill), makeRampBuffer (Sinus 440Hz amp-modulated), makeStereoBuffer (separate L/R channels), makeSilenceThenToneBuffer. Vitest node-env. 12/12 passed in 9ms.",
+      lastSeen: "2026-05-20T07:35:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/utils/patternHarmonicAnalysis.ts": {
+      role:     "Pure-Helper Chord-Root + Quality Inference aus MIDI-Note-Liste via Pitch-Class-Profile-Matching. Public API: analyzeHarmony(midiNotes) -> HarmonicAnalysisResult {rootPitchClass (0..11), quality (ChordQuality-Union aus randomChordGenerator), confidence (0..1), pitchClasses (sorted unique)}, formatHarmonyResult(result) -> human-readable String wie 'Cmaj7 (87%)' / 'Am (80%)' / 'G7 (45%)' / 'C (100%)', PITCH_CLASS_NAMES (readonly 12-Entry-Array C, C#, D, D#, E, F, F#, G, G#, A, A#, B). Algorithmus: 1) non-finite Notes filtern + Math.trunc + ((n%12)+12)%12 fuer korrekte negative-MIDI-Handling. 2) Set unique pitch-classes (sortiert). 3) Brute-Force-Loop: 12 Roots x 9 CHORD_TEMPLATES (major[0,4,7], minor[0,3,7], 7[0,4,7,10], maj7[0,4,7,11], m7[0,3,7,10], sus2[0,2,7], sus4[0,5,7], diminished[0,3,6], augmented[0,4,8]) -> score = matched_intervals/template.length. 4) Tie-Break-Hierarchie: confidence > matched (absolute count, prefers RICHER chord wie maj7 over major bei 4-Note-Match) > priority (simpler quality first bei gleichem matched). Defensive: empty / non-array / all-NaN -> {root:0, major, conf:0, pitchClasses:[]}. ChordQuality-Type importiert aus randomChordGenerator (keine Duplikation). formatHarmonyResult: PITCH_CLASS_NAMES[rootPitchClass] + QUALITY_SHORT-Map (major->'', minor->'m', dim/aug-Suffixe, sus2/sus4/7/maj7/m7/9) + Confidence-Clamp [0,1] *100 rounded. Foundation fuer PianoRoll-Selection-Panel 'Erkannt: Cmaj7 (87%)', DrumMachine-Pattern-Inspector bei melodic-Parts, Chord-Progression-Erkennung via Window-Slices. Erweiterungen v3.179+: Inversions-Detection (Bass-Note), Property-based Round-Trip-Test gegen randomChordGenerator.",
+      lastSeen: "2026-05-20T07:30:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "tests/features/pattern-harmonic-analysis.test.ts": {
+      role:     "Pure-Coverage fuer patternHarmonicAnalysis.ts. 24 Tests in 3 describes: analyzeHarmony 15 (empty defaults, C-major [60,64,67] -> root=0/major/conf=1, A-minor [69,72,76] -> root=9/minor/conf=1, C-maj7 [60,64,67,71] -> maj7 (validiert Tie-Break absolute-matches over priority — sonst wuerde major gewinnen!), partial [60,64] -> major mit 0.5 < conf < 1, ambiguous [60,67] root+fifth -> 0 < conf < 1, sus2 [60,62,67] -> sus2 conf=1, diminished [60,63,66] -> dim conf=1, negative-MIDI [-5] -> pitch-class 7, non-finite NaN/Infinity gefiltert, all-non-finite -> defaults, tie-break-simpler [60] -> major (priority 0), non-array null -> defaults defensive, pitchClasses sorted ascending, duplicate-collapse). formatHarmonyResult 6 (C/Am/G7/Fmaj7 -> '(100%)/(80%)/(45%)/(62%)', clamp conf>1 -> '(100%)', clamp conf<0 -> '(0%)'). PITCH_CLASS_NAMES 3 (12 entries, C..B Boundary, full-Array-Equality). Vitest node-env. 24/24 passed in 6ms.",
+      lastSeen: "2026-05-20T07:30:00.000Z",
+      ownedBy:  "frontend"
+    },
     // ─── v3.177 Pure-Helpers (refactor) ─────────────────────────
     "client/src/utils/sampleSpectralCentroid.ts": {
       role:     "Pure-Helper Spectral-Centroid + Brightness-Kategorisierung fuer Audio-Samples. Public API: computeSpectralCentroid(buffer, opts?) -> CentroidResult {centroidHz, spreadHz, brightness}, categorizeBrightness(hz) -> 5-Stufen-Union ('dark' <500, 'warm' <1500, 'neutral' <3500, 'bright' <7000, 'harsh' >=7000), hannWindow(n, length). Konstanten: DEFAULT_FFT_SIZE=1024, BRIGHTNESS_THRESHOLDS. Algorithmus: Channel-Auswahl (mix/left/right; mix = arith. Mittelwert) -> Window-Cache (hann/hamming/rect) -> 50%-Overlap-Frames -> naive O(n^2)-DFT (ABSICHTLICH statt FFT-Lib, tests-friendly + deterministisch) -> Magnitude -> centroid = sum(f*mag)/sum(mag), spread = sqrt(sum((f-centroid)^2 * mag)/sum(mag)) -> Average ueber alle nicht-leeren Frames. Defensive: empty/silent -> {0, 0, 'dark'}, Sample < fftSize -> zero-padded Single-Frame, NaN/Infinity in categorizeBrightness -> 'dark'. Foundation fuer Sample-Browser 'Brightness'-Spalte/Filter + Auto-Sortierung. Production-Caveat: fuer Live-Browser sollte fft.js / AnalyserNode-FFT statt naive-DFT genutzt werden — Brightness-Mapping-Schicht bleibt wiederverwendbar.",
@@ -1760,8 +1781,8 @@ const INDEX = {
       ownedBy:  "frontend"
     },
     "client/src/components/SampleBrowser/SampleBrowser.tsx (v3.55.0)": {
-      role:     "v3.171 ERWEITERT: Bulk-Normalize-Action in Multi-Select-Bar. Neuer 'Normalize'-Button + Mode-Select ('uniform-peak' | 'match-loudest' | 'relative-mix', default uniform-peak) zwischen '+ Tag' und 'Loeschen'. handleBulkNormalize laedt AudioBuffer fuer jede selected ID via AudioEngine.loadSample, ruft batchNormalizeSamples (pure), encodiert pro Result mit encodeWav -> Blob -> ObjectURL und konvertiert AudioBufferLike via OfflineAudioContext.createBuffer + copyToChannel zurueck zu echtem AudioBuffer (analog SampleTransformDialog-Helper) bevor onTransformSample(id, newUrl, audioBuf) aufgerufen wird. Skip bei gainAppliedDb===0 oder 0-channel/0-length Buffer. Toast 'X Sample(s) normalisiert (Y gecappt)' bei applied>0, 'Keine Aenderung noetig' bei applied=0, 'Keine ladbaren Sample-Buffer in der Auswahl' bei inputs.length=0. State bulkNormalizeMode. data-testids sample-browser-bulk-normalize + sample-browser-bulk-normalize-mode. Beide disabled wenn onTransformSample undefined. Imports: batchNormalizeSamples + BatchNormalizeMode (sampleNormalizeBatch), AudioBufferLike (sampleEmbedding), encodeWav (wavEncoder), toast (useToastStore). Bestehende v3.55-v3.170 Funktionalitaet (Multi-Tag-Filter, Tag-Editor, Bulk-Bar, Sort-Modes, Multi-Select, Transform-Dialog, Duration-Aggregator) unveraendert.",
-      lastSeen: "2026-05-20T03:00:00.000Z",
+      role:     "v3.177 ERWEITERT: Brightness-Bulk-Action in Multi-Select-Bar. Neuer 'Brightness'-Button zwischen 'Distribute' und 'Loeschen' (data-testid='sample-browser-bulk-brightness', semantic Tailwind border-border-color/text-text-primary/hover:accent-secondary). handleBulkBrightness laedt fuer jede selected Sample-ID den AudioBuffer via AudioEngine.loadSample, ruft computeSpectralCentroid (Pure-Helper v3.177) und akkumuliert die brightness-Kategorie ('dark'|'warm'|'neutral'|'bright'|'harsh') in einem Histogramm. Toast 'Brightness von N Samples: dark X, warm Y, ...' (kind:info, duration 6s) bei analyzed>0, 'Keine ladbaren Sample-Buffer' (kind:warning) sonst. Plus console.log mit vollem Histogramm. Import computeSpectralCentroid aus @/utils/sampleSpectralCentroid, AudioBufferLike-Cast via 'as unknown as AudioBufferLike' (analog handleBulkNormalize). Bestehende v3.55-v3.176 Funktionalitaet (Multi-Tag-Filter, Tag-Editor, Bulk-Bar, Sort-Modes, Multi-Select, Transform-Dialog, Duration-Aggregator, Bulk-Normalize-Action mit Mode-Select 'uniform-peak'|'match-loudest'|'relative-mix', Auto-Distribute Preview) unveraendert.",
+      lastSeen: "2026-05-20T11:15:00.000Z",
       ownedBy:  "frontend"
     },
     "client/src/store/useProjectStore.ts (v3.60.0)": {
@@ -3507,6 +3528,69 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "refactor",
+      timestamp: "2026-05-20T07:35:00.000Z",
+      done: [
+        "v3.178 sampleRmsEnvelope.ts (NEU, 261 LOC): Pure-Helper fuer frame-weise RMS-Envelope (Huellkurve) eines Audio-Samples. Public API: computeRmsEnvelope(buffer, options?) -> RmsEnvelopeResult {envelope (Float32Array linear amplitude 0..1), samplePositions (Int32Array, i*hopSize), peakRms, meanRms, frameSize, hopSize}, findFadeOutPoint(envelope, threshold=0.1) -> sample-index (rueckwaerts: erster Frame >= threshold*peak) | -1, findOnsetPoint(envelope, threshold=0.1) -> sample-index (vorwaerts: erster Frame >= threshold*peak) | -1. Konstanten: DEFAULT_FRAME_SIZE=1024, DEFAULT_HOP_SIZE=512 (50% Overlap), MIN_FRAME_SIZE=64, DEFAULT_THRESHOLD=0.1.",
+        "Algorithmus: 1) Channel-Auswahl 'mix'|'left'|'right' (mix = arith. Mittelwert aller Kanaele). 2) Frame-Count = (n<frameSize ? 1 : 1+floor((n-frameSize)/hopSize)). 3) Pro Frame: rms = sqrt(sum(x[start..start+frameSize]^2) / frameSize) — wir teilen IMMER durch frameSize (auch bei zero-padded Tail-Frames) damit Skalierung konsistent ist. 4) peakRms = max(envelope), meanRms = sum/count. Defensive: empty buffer -> leerer Output {envelope:empty, peakRms:0, meanRms:0, frameSize, hopSize}, frameSize<64 -> 64, hopSize<1 -> 1, threshold NaN/<0/>1 -> 0.1 (sanitizeThreshold-Helper). findFadeOutPoint/findOnsetPoint: empty envelope oder peakRms<=0 -> -1.",
+        "tests/features/sample-rms-envelope.test.ts (NEU, 252 LOC, 12 Tests in 4 describes): computeRmsEnvelope 5 (empty -> {0,0,DEFAULT_FRAME_SIZE,DEFAULT_HOP_SIZE}, constant 0.5 -> envelope ~ 0.5 (DC-Test, RMS(const)=const), silence -> all zeros, decreasing ramp 1.0->0.0 -> envelope monoton fallend mit 0.02-Toleranz fuer Sinus-Phase, Stereo mix=0.5 (von L=0.8,R=0.2) + channelMode left=0.8 + right=0.2). findFadeOutPoint 2 (ramp threshold=0.5 -> Punkt<8192 + default 0.1 liefert spaeteren Punkt, all-silence -> -1). findOnsetPoint 2 (silence-then-tone -> onset>0 und >= silenceLen-frameSize, empty -> -1). defensive 3 (threshold NaN/<0/>1 == default 0.1, frameSize<MIN clamped auf MIN_FRAME_SIZE+ hopSize-erhalten, hopSize=0 -> 1+envelope.length=length-frameSize+1).",
+        "Float32-Precision-Caveat: peakRms wird waehrend Loop als 64-bit JS-Nummer aufgebaut, envelope[i] wird in Float32Array geschrieben (= 32-bit truncated). Bei strict equality test 'expect(peakRms).toBe(envelope[0])' bricht das. Fix: toBeCloseTo(envelope[0], 5) + Sanity-Check peakRms>=envelope[0] (peakRms behaelt mehr Precision).",
+        "pnpm check: GRUEN (tsc --noEmit, kein neuer Error). pnpm test tests/features/sample-rms-envelope.test.ts: 12/12 passed in 9ms. KEIN git commit, KEIN package.json bump (User-Vorgabe). KEINE anderen Files beruehrt — andere modifizierte Files im working tree (von parallelen Agenten/Sessions) unangetastet."
+      ],
+      next: [
+        "v3.179+ Wire-Up (frontend-Owner): Waveform-Display in SampleBrowser / SampleTransformDialog mit RMS-Energy-Bars statt Peak min/max-Bars — perceptually genauer, glatter, weniger Spike-Artefakte. computeRmsEnvelope mit frameSize=1024/hopSize=512 ist live OK; Canvas-Width-Mapping via samplePositions[i] / buffer.length.",
+        "v3.179+ Wire-Up (frontend-Owner): Auto-Trim-Silence-Action ('Trim head/tail silence' im Bulk-Menu): findOnsetPoint(env) + findFadeOutPoint(env) liefern Cut-Punkte; mit sampleFadeReverse-Helpers (oder einem neuen sampleTrim.ts) -> trimmed Buffer.",
+        "v3.179+ Wire-Up (frontend-Owner): Envelope-Follower-Visualisierung im Slice-Detection-UI — RMS-Envelope-Curve als Overlay auf Waveform zeigen, plus Threshold-Linie + erkannte Slice-Punkte. Foundation bereits da (v3.135 RMS-Energy-Slice-Auto-Detect koennte intern computeRmsEnvelope nutzen statt eigene Energy-Berechnung).",
+        "v3.179+ Refactor-Opportunity (refactor-Owner): sampleSlicing.ts hat eine eigene RMS-Berechnung — koennte computeRmsEnvelope wiederverwenden (DRY). Erfordert vorsichtige Migration weil sampleSlicing.ts viele bestehende Tests hat; vermutlich neue computeRmsEnvelope unter den existing Slice-API durchschleifen."
+      ],
+      changed: [
+        "client/src/utils/sampleRmsEnvelope.ts (NEU, 261 LOC)",
+        "tests/features/sample-rms-envelope.test.ts (NEU, 252 LOC, 12 Tests)",
+        "agents/INDEX.js (workLog-Entry + files-Index)"
+      ]
+    },
+    {
+      agent:     "refactor",
+      timestamp: "2026-05-20T07:30:00.000Z",
+      done: [
+        "v3.178 patternHarmonicAnalysis.ts (NEU, 173 LOC): Pure-Helper fuer Chord-Root + Quality Inference aus MIDI-Note-Liste via Pitch-Class-Profile-Matching. Public API: analyzeHarmony(midiNotes) -> HarmonicAnalysisResult {rootPitchClass, quality, confidence, pitchClasses}, formatHarmonyResult(result) -> 'Cmaj7 (87%)'-Style String, PITCH_CLASS_NAMES (readonly 12-Entry-Array C..B). Importiert ChordQuality-Type aus @/utils/randomChordGenerator (keine Code-Duplikation).",
+        "Algorithmus: 1) Filter non-finite + normalize negative MIDI via ((n%12)+12)%12. 2) Unique-Set aller Pitch-Classes, sortiert. 3) Für jeden Root (0..11) und jedes der 9 CHORD_TEMPLATES (major/minor/diminished/augmented/sus2/sus4/7/maj7/m7): score = matched / template.length. 4) Tie-Break: confidence > matched (absolut) > priority (simpler quality first). So gewinnt z.B. maj7 bei [60,64,67,71] obwohl auch major 100% scored (mehr absolute matches). Defensive: empty/all-NaN/non-array -> {root:0, major, conf:0, pitchClasses:[]}.",
+        "formatHarmonyResult: rootName aus PITCH_CLASS_NAMES, suffix via QUALITY_SHORT-Map (major->'', minor->'m', 7->'7', maj7->'maj7', m7->'m7', dim, aug, sus2, sus4, 9), Confidence-Clamp auf [0,1] und *100-rounded. Beispiele: 'C (100%)', 'Am (80%)', 'G7 (45%)', 'Fmaj7 (62%)'.",
+        "tests/features/pattern-harmonic-analysis.test.ts (NEU, 204 LOC, 24 Tests in 3 describes): analyzeHarmony 15 Tests (empty defaults, C-maj/A-min/C-maj7/sus2/diminished exact-match, partial [60,64] conf<1>0.5, ambiguous [60,67], negative-MIDI -5->pc7, NaN/Infinity filtered, all-non-finite defaults, tie-break-simpler-quality bei [60], non-array defensive, pitchClasses sorted, duplicates collapse). formatHarmonyResult 6 Tests (C/Am/G7/Fmaj7 Strings, clamp conf>1->100%, clamp conf<0->0%). PITCH_CLASS_NAMES 3 Tests (12 entries, C..B Bounds, full-Array-Equality).",
+        "pnpm check: GRUEN (tsc --noEmit). pnpm test tests/features/pattern-harmonic-analysis.test.ts: 24/24 passed in 6ms. KEIN git commit, KEIN package.json bump (User-Vorgabe). KEINE anderen Files beruehrt — andere modifizierte Files im working tree (von parallelen Agenten/Sessions) unangetastet."
+      ],
+      next: [
+        "v3.179+ Wire-Up (frontend-Owner): analyzeHarmony in PianoRoll-Selection-Panel anzeigen ('Erkannt: Cmaj7 (87%)') — Echtzeit-Analyse der selected/visible notes. Optional in DrumMachine Pattern-Inspector wenn melodic-Parts existieren.",
+        "v3.179+ Erweiterung (refactor- oder backend-Owner): Inversions-Detection — wenn z.B. [64,67,72] (E-G-C, C-major mit E im Bass) erkannt wird, soll die Inversion ('C/E') ausgegeben werden. Erfordert Bass-Note-Tracking (lowest MIDI note) + 'inversion'-Feld im Result.",
+        "v3.179+ Erweiterung: Chord-Progression-Erkennung — analyzeHarmony auf Window-Slices eines Pattern-Streams anwenden -> Chord-Reihenfolge ueber Zeit. Foundation fuer 'Suggest next chord'-Feature im KI-Layer.",
+        "v3.179+ Optional (testing-Owner): Property-based Test mit fast-check: für jeden generierten Chord aus randomChordGenerator.ts (Round-Trip-Property) sollte analyzeHarmony den gleichen Root+Quality zurückliefern. Würde Symmetrie zwischen Generator und Analyzer empirisch absichern."
+      ],
+      changed: [
+        "client/src/utils/patternHarmonicAnalysis.ts (NEU, 173 LOC)",
+        "tests/features/pattern-harmonic-analysis.test.ts (NEU, 204 LOC, 24 Tests)",
+        "agents/INDEX.js (workLog-Entry + files-Index)"
+      ]
+    },
+    {
+      agent:     "frontend",
+      timestamp: "2026-05-20T11:15:00.000Z",
+      done: [
+        "v3.177 sampleSpectralCentroid Wire-Up: 'Brightness'-Bulk-Action in SampleBrowser-Multi-Select-Bar gewired. NUR SampleBrowser.tsx editiert (3 chirurgische Hunks): (1) Import computeSpectralCentroid aus @/utils/sampleSpectralCentroid neben den bestehenden distributeDrumKit-Imports. (2) handleBulkBrightness-useCallback (~30 LOC) direkt nach handleAutoDistribute: iteriert ueber multiSelectIds, laedt AudioBuffer via AudioEngine.loadSample(sample.path), Pure-Compute via computeSpectralCentroid (Cast as unknown as AudioBufferLike — analog handleBulkNormalize-Pattern), akkumuliert Histogram {dark, warm, neutral, bright, harsh}. (3) UI-Button (data-testid='sample-browser-bulk-brightness') zwischen Distribute und Bulk-Delete in der Bulk-Bar, ausschliesslich semantische Tailwind-Klassen (border-border-color, text-text-primary, hover:border-accent-secondary, hover:text-accent-secondary).",
+        "Behavior: Toast 'Brightness von N Samples: dark X, warm Y, ...' (kind:info, duration 6000) nur fuer Kategorien mit count>0 (Object.entries filter). Fallback-Toast 'Keine ladbaren Sample-Buffer' (kind:warning) wenn analyzed===0. console.log mit vollem Histogramm fuer Debug. try/catch um loadSample (skip unloadable). Early-Return bei multiSelectIds.size===0. Dependencies: [multiSelectIds, samples] — keine onTransformSample-Abhaengigkeit (read-only Action, kein Project-Mutate).",
+        "pnpm check: GRUEN (tsc --noEmit, kein neuer Error eingefuehrt — bestaetigt durch tsc --noEmit Output ohne Errors). KEIN git commit, KEIN package.json bump (User-Vorgabe). KEINE anderen Files beruehrt — andere modifizierte Files im working tree (von parallelen Agenten) unangetastet."
+      ],
+      next: [
+        "v3.178+ Persistence (frontend-Owner): centroidHz + brightness pro Sample in useSampleLibraryStore memoizieren (compute on first decode, persist in store-meta). Cache-Key: sample-hash + fftSize. Spart Recompute bei jedem Brightness-Klick.",
+        "v3.178+ UI-Erweiterung (frontend-Owner): Brightness-Spalte / Filter-Chip ('nur bright/harsh anzeigen') in SampleBrowser-Filter-Bar. Auto-Sortierung 'nach Brightness' im Sample-Browser-Dropdown (lexicographic dark<warm<neutral<bright<harsh).",
+        "v3.178+ Performance (backend-Owner): fuer Live-Browser-Scrolling sollte ein echter FFT (z.B. via fft.js oder Web Audio API's AnalyserNode-FFT) den naive-DFT-Pfad in sampleSpectralCentroid.ts ersetzen. Aktuell O(n^2) DFT — bei 100+ Samples spuerbar langsam.",
+        "v3.178+ Optional Test (testing-Owner): Playwright-Smoke 'sample-browser-bulk-brightness' Click bei 3+ selected Samples -> Toast assertieren ('Brightness von 3 Samples')."
+      ],
+      changed: [
+        "client/src/components/SampleBrowser/SampleBrowser.tsx (+~40 LOC: computeSpectralCentroid-Import + handleBulkBrightness-useCallback + Brightness-Button mit data-testid in Bulk-Bar)",
+        "agents/INDEX.js (workLog-Entry + files-Index lastSeen/role Update)"
+      ]
+    },
     {
       agent:     "refactor",
       timestamp: "2026-05-20T10:00:00.000Z",
