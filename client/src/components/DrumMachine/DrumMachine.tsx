@@ -105,6 +105,8 @@ import { inferPatternBpm } from "@/utils/patternBpmInfer";
 
 // v3.193.0: Pattern-Harmonizer (scale-aware Harmonie-Generator).
 import { harmonizeNote } from "@/utils/patternHarmonizer";
+// v3.196.0: Pattern-Emphasis (Velocity-Akzentuierung per Step).
+import { generateEmphasis, EMPHASIS_PRESET_LABELS, type EmphasisPreset } from "@/utils/patternEmphasis";
 // Ausgelagerte Sub-Components
 import { FxPanel } from "./FxPanel";
 import { ResizableDrumPanel } from "./ResizableDrumPanel";
@@ -1381,6 +1383,9 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
   // armed/released-State + befuellt Buffer via union ueber Parts ab Step 0.
   const [brState, setBrState] = useState<BeatRepeatState>(() => createBeatRepeatState(4));
 
+  // v3.196.0: Emphasis-Preset-Auswahl fuer Velocity-Akzentuierung Preview.
+  const [emphasisPreset, setEmphasisPreset] = useState<EmphasisPreset>("natural");
+
   const handleTriggerBR = useCallback(() => {
     const activePattern = dm.patterns.find((p) => p.id === dm.activePatternId);
     if (!activePattern) return;
@@ -1411,6 +1416,24 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
     const noteStr = result.harmonies.map((h) => `${h.midi}(${h.interval})`).join(", ");
     toast(`Harmonize C5 → ${noteStr}`, { kind: "info", duration: 5000 });
   }, []);
+
+  // v3.196.0: Emphasis Preview — generiert Velocity-Akzente fuer den ersten
+  // Part des aktiven Patterns via patternEmphasis pure helper.
+  const handleEmphasisPreview = useCallback(() => {
+    const activePattern = dm.patterns.find((p) => p.id === dm.activePatternId);
+    if (!activePattern || activePattern.parts.length === 0) return;
+    const rhythm = activePattern.parts[0].steps.map((s) => s.active);
+    const emp = generateEmphasis(rhythm, { preset: emphasisPreset });
+    if (emp.length === 0) {
+      toast("Keine aktiven Steps", { kind: "warning" });
+      return;
+    }
+    const avgVel = emp.reduce((sum, e) => sum + e.velocity, 0) / emp.length;
+    toast(
+      `Emphasis "${emphasisPreset}": ${emp.length} steps, Ø velocity ${avgVel.toFixed(0)}`,
+      { kind: "info", duration: 5000 },
+    );
+  }, [dm, emphasisPreset]);
 
   // Drag-Drop fuer .e2pattern/.e2sallpat (Browser-Fallback).
   useEffect(() => {
@@ -1974,6 +1997,28 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
                   className="w-full px-2 py-1 rounded text-[11px] bg-bg-elevated text-text-primary hover:bg-accent-primary/20 hover:text-accent-primary transition-colors"
                 >
                   🎵 Harmonize Preview (C5 major)
+                </button>
+              </div>
+
+              {/* v3.196.0: Emphasis Preview — demo-Action via patternEmphasis. */}
+              <div className="px-3 py-2 border-t border-border-color space-y-1.5" data-testid="pattern-emphasis-block">
+                <div className="text-[10px] text-text-dim font-semibold">Emphasis:</div>
+                <select
+                  value={emphasisPreset}
+                  onChange={(e) => setEmphasisPreset(e.target.value as EmphasisPreset)}
+                  data-testid="pattern-emphasis-preset"
+                  className="w-full bg-bg-panel border border-border-color rounded px-2 py-0.5 text-[10px] text-text-muted"
+                >
+                  {Object.entries(EMPHASIS_PRESET_LABELS).map(([id, label]) => (
+                    <option key={id} value={id}>{label}</option>
+                  ))}
+                </select>
+                <button
+                  onClick={handleEmphasisPreview}
+                  data-testid="pattern-emphasis-preview"
+                  className="w-full px-2 py-1 rounded text-[11px] bg-bg-elevated text-text-primary hover:bg-accent-primary/20 hover:text-accent-primary transition-colors"
+                >
+                  🎚 Preview Emphasis
                 </button>
               </div>
 
