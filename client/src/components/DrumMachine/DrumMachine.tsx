@@ -186,6 +186,9 @@ import { detectFlowDirection } from "@/utils/patternFlowDirection";
 import { computeRepetitionScore } from "@/utils/patternRepetitionScore";
 // v3.218: Pattern-Row Symmetry-Badge — symmetryScore (Palindrome + Mirror-Axis).
 import { symmetryScore } from "@/utils/patternSymmetryScore";
+// v3.222: Pattern-Row Motion-Badge — Step-to-Step Energy-Vektoren mit
+// overall/net/acceleration (Pure-Helper v3.221).
+import { computeMotion } from "@/utils/patternMotion";
 import type { PatternData } from "@/audio/AudioEngine";
 
 // ─── v3.205: Pattern-Flatten-Helper (module-level Cache via Closure) ───────────
@@ -447,6 +450,33 @@ function PatternRow({
     }
     return symmetryScore(flat);
   }, [pattern]);
+  // v3.222: Motion — Step-zu-Step Energie-Vektoren aus OR-aggregierten
+  // {active, velocity?}-Steps (max velocity wenn mehrere Parts an einem
+  // Step aktiv), limit 32. Badge zeigt nur wenn overallMotion > 0.3.
+  const motion = useMemo(() => {
+    const stepCount = Math.min(pattern.stepCount, 32);
+    const flat: { active: boolean; velocity?: number }[] = new Array(stepCount);
+    for (let i = 0; i < stepCount; i++) {
+      flat[i] = { active: false };
+    }
+    for (const part of pattern.parts) {
+      const len = Math.min(part.steps.length, stepCount);
+      for (let i = 0; i < len; i++) {
+        const s = part.steps[i];
+        if (!s.active) continue;
+        const v = s.velocity;
+        if (!flat[i].active) {
+          flat[i] = { active: true, velocity: v };
+        } else {
+          const prev = flat[i].velocity;
+          if (typeof v === "number" && (typeof prev !== "number" || v > prev)) {
+            flat[i] = { active: true, velocity: v };
+          }
+        }
+      }
+    }
+    return computeMotion(flat);
+  }, [pattern]);
   // v2.5: Submenu zum Auswählen welcher Pattern als Source dient
   const [pickerOpen, setPickerOpen] = useState(false);
   // v2.8: Drag-Drop-Reorder State (drop-indicator: above|below|null)
@@ -685,6 +715,17 @@ function PatternRow({
           >
             {symmetry.isPalindrome ? "⟷" : "◐"}
             {Math.round((symmetry.isPalindrome ? symmetry.palindromeScore : symmetry.halfMirrorScore) * 100)}
+          </span>
+        )}
+        {/* v3.222: Motion-Badge — Step-zu-Step Energy-Vektoren (Arrow + M-Score). */}
+        {motion.overallMotion > 0.3 && (
+          <span
+            className="ml-1 px-1 py-0.5 rounded text-[9px] font-mono bg-bg-elevated text-text-muted border border-border-color"
+            title={`Motion: ${Math.round(motion.overallMotion * 100)}%, net=${motion.netDirection.toFixed(2)}, accel=${motion.acceleration.toFixed(2)}`}
+            data-testid={`pattern-row-motion-${pattern.id}`}
+          >
+            {motion.netDirection > 0.05 ? "↗" : motion.netDirection < -0.05 ? "↘" : "↔"}
+            M{Math.round(motion.overallMotion * 100)}
           </span>
         )}
         {learn.isMapped && (

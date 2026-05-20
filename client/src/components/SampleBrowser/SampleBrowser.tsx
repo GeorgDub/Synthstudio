@@ -159,6 +159,8 @@ import { applyGranulize } from "@/utils/sampleGranulize";
 import { reduceNoise } from "@/utils/sampleNoiseReduction";
 // v3.221: Bulk-TimeStretch (OLA, stretchFactor 0.25..4) für selektierte Samples.
 import { applyTimeStretch } from "@/utils/sampleTimeStretch";
+// v3.222: Bulk-Bitcrush (Combined: drive → SRR → bit-depth → wet/dry-Mix) für selektierte Samples.
+import { applyBitcrush } from "@/utils/sampleBitcrush";
 
 // ─── Typen ────────────────────────────────────────────────────────────────────
 
@@ -3064,6 +3066,9 @@ export function SampleBrowser({
   // reduceNoise ist pure; resultierender Buffer hat gleiche Länge / Channel-Anzahl wie Input.
   const [bulkNoiseReduction, setBulkNoiseReduction] = useState<number>(0.7);
   const [bulkStretchFactor, setBulkStretchFactor] = useState<number>(1);
+  // v3.222: Bulk-Bitcrush — bits (1..16) + sampleRateReduction (1..16). Defaults = classic-Preset.
+  const [bulkBitcrushBits, setBulkBitcrushBits] = useState<number>(8);
+  const [bulkBitcrushSrr, setBulkBitcrushSrr] = useState<number>(4);
 
   const handleBulkNoiseReduce = useCallback(async () => {
     if (multiSelectIds.size === 0 || !onTransformSample) return;
@@ -3176,6 +3181,69 @@ export function SampleBrowser({
     samples,
     onTransformSample,
     bulkStretchFactor,
+  ]);
+
+  // v3.222: Bulk-Bitcrush — drive=2 + mix=0.7 (classic-Preset defaults), bits + srr UI-konfigurierbar.
+  const handleBulkBitcrush = useCallback(async () => {
+    if (multiSelectIds.size === 0 || !onTransformSample) return;
+    let applied = 0;
+    for (const id of multiSelectIds) {
+      const sample = samples.find((s) => s.id === id);
+      if (!sample) continue;
+      try {
+        const buf = await AudioEngine.loadSample(sample.path);
+        if (!buf) continue;
+        const out = applyBitcrush(buf as unknown as AudioBufferLike, {
+          bitDepth: bulkBitcrushBits,
+          sampleRateReduction: bulkBitcrushSrr,
+          drive: 2,
+          mix: 0.7,
+        });
+        if (out.numberOfChannels === 0 || out.length === 0) continue;
+        const channels = Math.min(2, out.numberOfChannels) as 1 | 2;
+        const wav = encodeWav(
+          Array.from({ length: channels }, (_, c) =>
+            out.getChannelData(c) as Float32Array,
+          ),
+          { sampleRate: out.sampleRate, channels, bitDepth: 16 },
+        );
+        const blob = new Blob([wav], { type: "audio/wav" });
+        const newUrl = URL.createObjectURL(blob);
+        const Ctor = (window.OfflineAudioContext ||
+          // @ts-expect-error legacy webkit fallback
+          window.webkitOfflineAudioContext) as typeof OfflineAudioContext;
+        const ctx = new Ctor(
+          Math.max(1, out.numberOfChannels),
+          Math.max(1, out.length),
+          out.sampleRate,
+        ) as BaseAudioContext;
+        const audioBuf = ctx.createBuffer(
+          Math.max(1, out.numberOfChannels),
+          Math.max(1, out.length),
+          out.sampleRate,
+        );
+        for (let c = 0; c < out.numberOfChannels; c++) {
+          const src = out.getChannelData(c);
+          const copy = new Float32Array(src.length);
+          copy.set(src);
+          audioBuf.copyToChannel(copy, c, 0);
+        }
+        onTransformSample(id, newUrl, audioBuf);
+        applied++;
+      } catch {
+        /* skip */
+      }
+    }
+    toast(
+      `Bitcrush bd=${bulkBitcrushBits} srr=${bulkBitcrushSrr}: ${applied} Samples`,
+      { kind: "success" },
+    );
+  }, [
+    multiSelectIds,
+    samples,
+    onTransformSample,
+    bulkBitcrushBits,
+    bulkBitcrushSrr,
   ]);
 
   // v3.152: Wenn Samples aus dem Projekt verschwinden (extern gelöscht),
@@ -4789,6 +4857,44 @@ export function SampleBrowser({
                         title="TimeStretch (OLA Overlap-Add, ohne pitch-Änderung) auf alle ausgewählten Samples"
                       >
                         TS
+                      </button>
+                      {/* v3.222: Bulk-Bitcrush — bits + srr Slider, fester drive=2 / mix=0.7 (classic-Preset). */}
+                      <input
+                        type="range"
+                        min={1}
+                        max={16}
+                        step={1}
+                        value={bulkBitcrushBits}
+                        onChange={(e) => setBulkBitcrushBits(parseInt(e.target.value, 10))}
+                        className="w-16 accent-accent-secondary"
+                        data-testid="sample-browser-bulk-bitcrush-bits"
+                        title="Bitcrush Bit-Depth (1..16, niedrig = aggressive Quantisierung)"
+                      />
+                      <span className="text-[10px] font-mono text-text-muted w-6 text-right">
+                        {bulkBitcrushBits}b
+                      </span>
+                      <input
+                        type="range"
+                        min={1}
+                        max={16}
+                        step={1}
+                        value={bulkBitcrushSrr}
+                        onChange={(e) => setBulkBitcrushSrr(parseInt(e.target.value, 10))}
+                        className="w-16 accent-accent-secondary"
+                        data-testid="sample-browser-bulk-bitcrush-srr"
+                        title="Bitcrush Sample-Rate-Reduction (1..16, hoch = stärkeres sample-and-hold)"
+                      />
+                      <span className="text-[10px] font-mono text-text-muted w-8 text-right">
+                        /{bulkBitcrushSrr}
+                      </span>
+                      <button
+                        onClick={handleBulkBitcrush}
+                        disabled={!onTransformSample}
+                        data-testid="sample-browser-bulk-bitcrush"
+                        className="px-2 py-0.5 rounded text-[10px] border border-border-color text-text-primary hover:border-accent-secondary hover:text-accent-secondary disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        title="Bitcrush (drive=2 → SRR → bit-depth-quantize → mix=0.7) auf alle ausgewählten Samples"
+                      >
+                        BC
                       </button>
                       <button
                         onClick={handleBulkDelete}
