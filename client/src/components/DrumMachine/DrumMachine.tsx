@@ -36,6 +36,8 @@ import { PatternCompareModal } from "@/components/PatternCompare/PatternCompareM
 import type { PatternForExport } from "@/utils/patternImageExport";
 // v3.169.0: Clipboard-Copy/Paste für Patterns (Magic-Header-JSON).
 import { serializePattern, parsePattern } from "@/utils/patternSerializer";
+// v3.173.0: Pattern → MIDI-Events JSON-Export (Pure-Helper).
+import { patternToMidiEvents } from "@/utils/patternMidiExport";
 import { DEFAULT_CHANNEL_FX } from "@/audio/AudioEngine";
 import { MixAssistantPanel } from "./MixAssistantPanel";
 import type { MixAnalysisInput, MixRecommendation } from "@/utils/mixAnalysis";
@@ -177,12 +179,14 @@ interface PatternRowProps {
   onCompare?: () => void;
   /** v3.169.0: Pattern als JSON-Envelope ins Clipboard kopieren. */
   onCopy?: () => void;
+  /** v3.173.0: Pattern → MIDI-Events als JSON exportieren (Quick-Action). */
+  onExportMidiEvents?: () => void;
 }
 
 function PatternRow({
   pattern, patternIndex, densityCategory, complexityCategory, isActive, isPlaying, isLiveEditing, showDelete,
   hasPrevPattern, prevPatternId, allPatterns,
-  onSelect, onDuplicate, onRemove, onCopySamplesFrom, onReorder, onExportImage, onCompare, onCopy,
+  onSelect, onDuplicate, onRemove, onCopySamplesFrom, onReorder, onExportImage, onCompare, onCopy, onExportMidiEvents,
 }: PatternRowProps) {
   const isDraft  = isLiveEditing && isActive;
   const isLocked = isLiveEditing && isPlaying;
@@ -360,6 +364,16 @@ function PatternRow({
           title="Pattern als JSON ins Clipboard kopieren"
           data-testid={`pattern-copy-${pattern.id}`}
         >📋</button>
+      )}
+      {/* v3.173.0: Pattern → MIDI-Events als JSON exportieren (Quick-Action). */}
+      {!isLocked && onExportMidiEvents && (
+        <button
+          type="button"
+          onClick={onExportMidiEvents}
+          data-testid={`pattern-export-midi-${pattern.id}`}
+          className="px-1.5 py-1.5 text-text-dim hover:text-accent-secondary text-xs opacity-0 group-hover:opacity-100 transition-opacity"
+          title="MIDI-Events exportieren (JSON)"
+        >🎹</button>
       )}
       {!isLocked && (
         <button
@@ -975,6 +989,32 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
     }
   }, []);
 
+  // ── v3.173.0: Pattern → MIDI-Events JSON-Export ────────────────────────────
+  // patternToMidiEvents liefert eine sortierte Event-Liste (KEIN .mid-Binary).
+  // Wir serialisieren als JSON und triggern einen Browser-Download via Blob-URL
+  // + anchor-Click. Funktioniert in Web- und Electron-Renderer gleichermassen.
+  const handleExportMidiEvents = useCallback((p: PatternData) => {
+    try {
+      const result = patternToMidiEvents(p);
+      const safeName = p.name.replace(/[^a-z0-9-_]+/gi, "-").slice(0, 64) || "pattern";
+      const filename = `${safeName}.midi-events.json`;
+      const json = JSON.stringify(result, null, 2);
+      const blob = new Blob([json], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      toast(`MIDI-Events exportiert: ${filename}`, { kind: "success" });
+    } catch (err) {
+      console.warn("[Export-MIDI] failed:", err);
+      toast("MIDI-Export fehlgeschlagen", { kind: "error" });
+    }
+  }, []);
+
   // Liest den Clipboard-Inhalt, validiert via parsePattern (Magic + Schema
   // strikt), rekonstruiert ein vollwertiges PatternData (mit frischen IDs +
   // Default-FX/Steps damit AudioEngine/Store-Invarianten gewahrt bleiben) und
@@ -1238,6 +1278,10 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
                   onCopy={() => {
                     // v3.169.0: Pattern als JSON-Envelope ins Clipboard kopieren.
                     void handleCopyPattern(p);
+                  }}
+                  onExportMidiEvents={() => {
+                    // v3.173.0: Pattern → MIDI-Events JSON-Download.
+                    handleExportMidiEvents(p);
                   }}
                 />
               ))}

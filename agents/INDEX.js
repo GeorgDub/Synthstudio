@@ -3470,6 +3470,45 @@ const INDEX = {
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
     {
+      agent:     "refactor",
+      timestamp: "2026-05-20T06:30:00.000Z",
+      done: [
+        "v3.174 Per-Step-Probability-Locks Pure-Helper: client/src/utils/patternStepProbability.ts (NEU, ~215 LOC) erstellt. Public API: resolveStepProbabilities(steps, {seed}) -> boolean[], expectedDensity(steps), generateRandomLocks(steps, {seed}), applyLockMode(steps, mode), LOCK_PRESETS (readonly), Types StepWithProbability/ResolveOptions/LockMode/LockPreset.",
+        "Inline mulberry32-PRNG (NICHT createSeededRng aus patternProbability importiert -> vermeidet zirkulaere Imports). sanitizeProbability: undefined->1, NaN/non-finite->0, <=0 -> 0, >=1 -> 1, sonst passthrough.",
+        "applyLockMode: 'all'->0.75, 'downbeats'->1.0@(0,4,8,12)+0.5 else, 'offbeats'->0.7@odd+1.0@even, 'fills'->0.6@(idx>=12)+1.0 else. Inactive Steps bleiben unveraendert {active:false} ohne probability.",
+        "tests/features/pattern-step-probability.test.ts (NEU, 20 Tests in 6 describe-Bloecken: resolveStepProbabilities x6, expectedDensity x4, generateRandomLocks x2, applyLockMode x4, LOCK_PRESETS x1, defensive x3). Determinismus per Seed verifiziert.",
+        "pnpm check: GRUEN (tsc --noEmit). pnpm test tests/features/pattern-step-probability.test.ts: 20/20 GRUEN in 7ms. KEIN git commit, KEIN package.json bump. KEINE anderen Files beruehrt — parallele v3.174-Agenten-Arbeit unangetastet."
+      ],
+      next: [
+        "v3.175+ UI-Wiring: Per-Step-Probability in DrumMachine-Pattern-Datenmodell integrieren (steps: StepWithProbability[] statt boolean[]). AudioEngine-Trigger-Logik muss resolveStepProbabilities pro Bar aufrufen (oder pro Step). Seed-Quelle: position.bar oder running counter fuer pseudo-zufaellig-aber-deterministisch.",
+        "UI: rechte-Maus-Klick auf Step im Sequencer -> Popover mit Slider 0..1 fuer probability. Default-Wert 1.0 (volle Sicherheit). Visueller Indikator: opacity-modulierter Step-Hintergrund proportional zu probability.",
+        "Preset-Toolbar in Pattern-Editor: 4 Buttons fuer LOCK_PRESETS + 'Random Locks'-Button (generateRandomLocks). 'Clear Locks'-Button setzt alle probabilities zurueck auf undefined."
+      ],
+      changed: [
+        "client/src/utils/patternStepProbability.ts (NEU, ~215 LOC, Pure-Helper + Types + LOCK_PRESETS)",
+        "tests/features/pattern-step-probability.test.ts (NEU, ~210 LOC, 20 Tests)"
+      ]
+    },
+    {
+      agent:     "frontend",
+      timestamp: "2026-05-20T05:00:00.000Z",
+      done: [
+        "v3.174 Wire-Through: drumKitDistribution.ts (Pure-Helper aus v3.173) als 'Distribute'-Button in SampleBrowser-Bulk-Bar integriert. Neben Normalize-Button, vor Bulk-Delete. data-testid sample-browser-bulk-distribute.",
+        "handleAutoDistribute useCallback: multiSelectIds -> SampleCandidate[] (id/name/tags/category aus Sample-Store), distributeDrumKit aufrufen, Toast 'Distribute-Plan: X/Y zugeordnet (Z unzugeordnet). Apply: per-part Drag&Drop manuell — onAssignToPart-Wire pending.' (kind=info, duration=6000ms). Zusatz console.log('[Auto-Distribute v3.174 Preview]', result) für Debug.",
+        "Preview-only Modus: KEIN direct-apply. onAssignToChannel ist single-active-channel — Direct-Apply braucht neuen Per-Part-Prop (onAssignToPartIndex). Caveat dokumentiert in Code-Kommentar.",
+        "Imports: distributeDrumKit + SampleCandidate (type) aus @/utils/drumKitDistribution. KEINE neuen Props eingeführt — Button immer enabled (deaktiviert sich faktisch via early-return wenn multiSelectIds.size===0, aber Button bleibt grundsätzlich sichtbar/klickbar).",
+        "pnpm check: GRUEN (tsc --noEmit). NUR SampleBrowser.tsx editiert (+39 LOC inkl. Import + Handler + Button). KEIN git commit, KEIN package.json bump. Working tree: OmniTribe + andere v3.174-Agenten-Files unangetastet."
+      ],
+      next: [
+        "v3.175+ Direct-Apply: Neuen onAssignToPartIndex?: (sampleUrl, sampleName, partIndex) => void Prop in SampleBrowserProps einführen. In DrumMachine.tsx-Aufrufstelle wiren: dm.setPartSampleByIndex(partIndex, sampleUrl, sampleName) oder equivalent. Im handleAutoDistribute dann after-toast einen sekundären 'Apply'-Pfad: für jedes assignment.sampleId !== null -> samples.find -> onAssignToPartIndex(sample.path, sample.name, partIndex). Confirm-Dialog vor Apply (überschreibt 16 Parts!).",
+        "Optional: Distribute-Mode-Select analog Normalize-Mode (z.B. 'gm-drumkit' | 'electribe-2-pads' | 'custom'). Pro Mode unterschiedliche slotPreferences an distributeDrumKit übergeben.",
+        "Optional: Playwright-Smoke in tests/web/sample-browser.spec.ts: 5 Samples mit kick/snare/hh-Namen multi-selecten, Distribute klicken, Toast assertieren."
+      ],
+      changed: [
+        "client/src/components/SampleBrowser/SampleBrowser.tsx (+39 LOC: distributeDrumKit-Import + SampleCandidate-Type-Import, handleAutoDistribute-useCallback, Distribute-Button in Bulk-Bar zwischen Normalize und Bulk-Delete)"
+      ]
+    },
+    {
       agent:     "frontend",
       timestamp: "2026-05-20T04:00:00.000Z",
       done: [

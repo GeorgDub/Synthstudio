@@ -72,6 +72,10 @@ import {
 import type { AudioBufferLike } from "@/utils/sampleEmbedding";
 import { encodeWav } from "@/audio/wavEncoder";
 import { toast } from "@/store/useToastStore";
+import {
+  distributeDrumKit,
+  type SampleCandidate,
+} from "@/utils/drumKitDistribution";
 
 // ─── Typen ────────────────────────────────────────────────────────────────────
 
@@ -1122,6 +1126,37 @@ export function SampleBrowser({
     }
   }, [multiSelectIds, samples, onTransformSample, bulkNormalizeMode]);
 
+  // v3.174 — Auto-Distribute Preview:
+  // Mapped selected Samples auf das 16-Slot-GM-Drum-Layout via
+  // distributeDrumKit (Pure-Helper aus utils/drumKitDistribution.ts).
+  // Preview-only: zeigt Plan via Toast + console.log. Direct-Apply
+  // benötigt eine neue Per-Part-Assign-API (z.B. onAssignToPartIndex),
+  // die aktuell noch nicht durchgewired ist — Caveat für v3.175+.
+  const handleAutoDistribute = useCallback(() => {
+    if (multiSelectIds.size === 0) return;
+    const candidates: SampleCandidate[] = [];
+    for (const s of samples) {
+      if (!multiSelectIds.has(s.id)) continue;
+      candidates.push({
+        id: s.id,
+        name: s.name,
+        tags: s.tags,
+        category: s.category,
+      });
+    }
+    if (candidates.length === 0) return;
+    const result = distributeDrumKit(candidates);
+    const assigned = result.partAssignments.filter(
+      (p) => p.sampleId !== null,
+    ).length;
+    const total = candidates.length;
+    toast(
+      `Distribute-Plan: ${assigned}/${total} zugeordnet (${result.unassignedSamples.length} unzugeordnet). Apply: per-part Drag&Drop manuell — onAssignToPart-Wire pending.`,
+      { kind: "info", duration: 6000 },
+    );
+    console.log("[Auto-Distribute v3.174 Preview]", result);
+  }, [multiSelectIds, samples]);
+
   // v3.152: Wenn Samples aus dem Projekt verschwinden (extern gelöscht),
   // multi-select-Set defensiv auf Existenz-Filter laufen lassen.
   useEffect(() => {
@@ -1899,6 +1934,14 @@ export function SampleBrowser({
                         title="Alle ausgewählten Samples normalisieren (Mode aus Select)"
                       >
                         Normalize
+                      </button>
+                      <button
+                        onClick={handleAutoDistribute}
+                        data-testid="sample-browser-bulk-distribute"
+                        className="px-2 py-0.5 rounded text-[10px] border border-border-color text-text-primary hover:border-accent-secondary hover:text-accent-secondary transition-colors"
+                        title="Distribute-Plan zeigen (auf 16 Drum-Parts mappen via Name/Tag-Matching)"
+                      >
+                        Distribute
                       </button>
                       <button
                         onClick={handleBulkDelete}
