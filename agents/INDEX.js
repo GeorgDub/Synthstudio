@@ -1532,8 +1532,8 @@ const INDEX = {
       ownedBy:  "frontend"
     },
     "client/src/components/PatternCompare/PatternCompareModal.tsx": {
-      role:     "v3.91.0 NEU (~280 LOC): Side-by-Side Pattern-Diff-Modal. Props {isOpen, patterns:ReadonlyArray<PatternData>, initialAId, initialBId?, onClose}. State: aId/bId (gespiegelt via useEffect bei isOpen-Change). pickDefaultB() picked das nachfolgende Pattern (wrap-around). Header: 2 <select>-Picker fuer Slot A + B, Summary 'BPM A: X → B: Y (±d)' / 'Steps: N → M (±d)' / 3 Color-Chips (gruen=removed, rot=added, gelb=changedVel). Body: ComparisonGrid mit Step-Number-Header (highlight alle 4 Steps) + pro Part eine Reihe mit Part-Label (presence-Badge 'A' fuer removed-only, 'B' fuer added-only) + Step-Cells. bgClassFor(): bg-accent-danger (added), bg-accent-success (removed), bg-accent-warning (changedVel), sonst bg-bg-elevated|bg-bg-base. Tooltips pro Cell, data-testid 'pattern-compare-step-<partId>-<i>', data-kind='added|removed|changedVelocity|unchanged'. ESC + Backdrop-Click schliessen. Bei aId==bId: Hinweis 'A und B sind dasselbe Pattern'. Ausschliesslich semantische Tokens.",
-      lastSeen: "2026-05-19T08:00:00.000Z",
+      role:     "v3.91.0 NEU (~280 LOC) + v3.172.0 Merge-Footer (~+65 LOC): Side-by-Side Pattern-Diff-Modal. Props {isOpen, patterns:ReadonlyArray<PatternData>, initialAId, initialBId?, onClose, onMerge?:(merged:PatternData)=>void}. State: aId/bId (gespiegelt via useEffect bei isOpen-Change) + mergeStrategy:MergeStrategy (default 'union'). pickDefaultB() picked das nachfolgende Pattern (wrap-around). Header: 2 <select>-Picker fuer Slot A + B, Summary 'BPM A: X → B: Y (±d)' / 'Steps: N → M (±d)' / 3 Color-Chips (gruen=removed, rot=added, gelb=changedVel). Body: ComparisonGrid mit Step-Number-Header (highlight alle 4 Steps) + pro Part eine Reihe mit Part-Label (presence-Badge 'A' fuer removed-only, 'B' fuer added-only) + Step-Cells. bgClassFor(): bg-accent-danger (added), bg-accent-success (removed), bg-accent-warning (changedVel), sonst bg-bg-elevated|bg-bg-base. Tooltips pro Cell, data-testid 'pattern-compare-step-<partId>-<i>', data-kind='added|removed|changedVelocity|unchanged'. ESC + Backdrop-Click schliessen. Bei aId==bId: Hinweis 'A und B sind dasselbe Pattern'. v3.172 Footer (nur wenn onMerge gesetzt): Merge-Block (data-testid=pattern-compare-merge-block) mit Strategy-Dropdown (data-testid=pattern-compare-merge-strategy, alle 5 MERGE_STRATEGY_LABELS) + 'Merge As New'-Button (data-testid=pattern-compare-merge-apply, bg-accent-secondary). handleMerge: pro PartId in Union(aParts,bParts) Step-Arrays via mergePatterns(aSteps,bSteps,{strategy}) kombinieren, neue Part-IDs mergedId-pN, finale PatternData spread aus patternA + Override id/name/parts. onMerge(merged) wird aufgerufen — Modal selbst schliesst nicht. Ausschliesslich semantische Tokens.",
+      lastSeen: "2026-05-20T04:00:00.000Z",
       ownedBy:  "frontend"
     },
     "tests/features/pattern-diff.test.ts": {
@@ -3469,6 +3469,24 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "frontend",
+      timestamp: "2026-05-20T04:00:00.000Z",
+      done: [
+        "v3.172 Wire-Through: patternMerge.ts in PatternCompareModal als 'Merge'-Footer-Action integriert. Neue OPTIONAL Prop onMerge?: (mergedPattern: PatternData) => void — wenn nicht gesetzt, ist der gesamte Merge-Block plus Footer-Container hidden (kein Visual-Drift in bestehenden Aufrufstellen).",
+        "Imports: mergePatterns + MERGE_STRATEGY_LABELS + type MergeStrategy aus '@/utils/patternMerge'. State: mergeStrategy useState<MergeStrategy>('union'). handleMerge useCallback: aPartMap+bPartMap via Map.from-parts, allPartIds Set-Union, pro PartId Steps via aPart?.steps.map(s=>s.active===true) extrahieren, mergePatterns(aSteps,bSteps,{strategy:mergeStrategy}), neue Part-IDs mergedId-pN, steps.map(active=>({active})), filter null. Final PatternData spreaded aus patternA (preserve bpmRatio/followAction/etc.) + id/name/stepCount/stepResolution/bpm/parts override. mergedId-Pattern: merged-<timestamp>-<rnd>.",
+        "UI Footer: neuer flex-row Container mit border-t border-border-color px-5 py-3. Links Merge-Block (data-testid=pattern-compare-merge-block) mit mr-auto: Label 'Merge:' + Strategy-Select (data-testid=pattern-compare-merge-strategy, alle 5 MERGE_STRATEGY_LABELS-Entries) + 'Merge As New'-Button (data-testid=pattern-compare-merge-apply, bg-accent-secondary, disabled wenn !patternA || !patternB || aId===bId). Rechts zusaetzlicher 'Schliessen'-Button (data-testid=pattern-compare-footer-close).",
+        "pnpm check: GRUEN (tsc --noEmit). KEIN git commit, KEIN package.json bump. NUR PatternCompareModal.tsx editiert (+65 LOC). OmniTribeBridge.ts NICHT angetastet. Aufrufstelle DrumMachine.tsx:2754 setzt onMerge (noch) nicht — Merge-Block bleibt dort hidden, kein Bestandsbruch."
+      ],
+      next: [
+        "v3.172+ DrumMachine.tsx PatternCompareModal-Aufrufstelle (~Line 2754) um onMerge-Prop erweitern: setzt dm.addPatternData(merged) bzw. equivalent (Store-API pruefen), aktiviert dann automatisch den Footer. Falls dm keine direkte add-API hat -> useProjectStore-Patch / useDrumMachineStore-Erweiterung.",
+        "Optional: Toast-Confirmation 'Pattern <name> erstellt' nach onMerge. Optional: onClose() automatisch nach Merge.",
+        "Optional: Test in tests/web/ Playwright-Smoke: Modal oeffnen, Strategy waehlen, Button klicken, neuer Pattern-Eintrag sichtbar."
+      ],
+      changed: [
+        "client/src/components/PatternCompare/PatternCompareModal.tsx (+65 LOC: useCallback-Import, patternMerge-Import, Props.onMerge optional, mergeStrategy-State, handleMerge-Callback, Footer-Block mit Merge-Block + Schliessen-Button)"
+      ]
+    },
     {
       agent:     "frontend",
       timestamp: "2026-05-20T03:00:00.000Z",

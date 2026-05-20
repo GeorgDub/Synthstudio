@@ -12,7 +12,7 @@
  * Farben. ESC schließt das Modal. Click auf Backdrop ebenfalls.
  */
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import type { PatternData } from "@/audio/AudioEngine";
 import {
   diffPatterns,
@@ -22,6 +22,11 @@ import {
   type StepDiffKind,
 } from "@/utils/patternDiff";
 import { comparePatterns, formatCompareSummary } from "@/utils/patternCompare";
+import {
+  mergePatterns,
+  MERGE_STRATEGY_LABELS,
+  type MergeStrategy,
+} from "@/utils/patternMerge";
 
 interface Props {
   isOpen: boolean;
@@ -34,6 +39,11 @@ interface Props {
    *  None wenn nur 1 existiert) vorgewählt. */
   initialBId?: string | null;
   onClose: () => void;
+  /**
+   * v3.172: Optional-Callback der ein gemergtes Pattern aus A+B akzeptiert.
+   * Wenn nicht gesetzt, wird der Merge-Block im Footer ausgeblendet.
+   */
+  onMerge?: (mergedPattern: PatternData) => void;
 }
 
 function pickDefaultB(patterns: ReadonlyArray<PatternData>, aId: string | null): string | null {
@@ -71,11 +81,14 @@ export function PatternCompareModal({
   initialAId,
   initialBId = null,
   onClose,
+  onMerge,
 }: Props) {
   const [aId, setAId] = useState<string | null>(initialAId);
   const [bId, setBId] = useState<string | null>(
     initialBId ?? pickDefaultB(patterns, initialAId),
   );
+  // v3.172: gewählte Merge-Strategie für den Merge-Button im Footer.
+  const [mergeStrategy, setMergeStrategy] = useState<MergeStrategy>("union");
 
   // Wenn die Modal-Props sich beim Re-Open ändern, refreshe die Picker.
   useEffect(() => {
@@ -115,6 +128,55 @@ export function PatternCompareModal({
     if (!patternA || !patternB) return null;
     return formatCompareSummary(comparePatterns(patternA, patternB));
   }, [patternA, patternB]);
+
+  // v3.172: Merge-Action. Baut ein neues PatternData aus A+B nach der
+  // gewählten Strategie und reicht es an den onMerge-Callback weiter.
+  // Pro Part:
+  //   - Wenn Part in beiden vorhanden -> Step-Arrays nach Strategie mergen.
+  //   - Wenn Part nur in A oder nur in B -> die andere Seite wird als leeres
+  //     Array behandelt (= alle false), Output via mergePatterns.
+  // Steps werden auf das längere Original-Step-Array gestreckt; sourcePart
+  // (existierender Part — bevorzugt A) liefert sample/volume/pan/etc.
+  const handleMerge = useCallback(() => {
+    if (!patternA || !patternB || !onMerge) return;
+    const aPartMap = new Map(patternA.parts.map((p) => [p.id, p]));
+    const bPartMap = new Map(patternB.parts.map((p) => [p.id, p]));
+    const allPartIds = Array.from(
+      new Set<string>([...aPartMap.keys(), ...bPartMap.keys()]),
+    );
+    const mergedId = `merged-${Date.now()}-${Math.random()
+      .toString(36)
+      .slice(2, 6)}`;
+    const mergedParts = allPartIds
+      .map((partId, idx) => {
+        const aPart = aPartMap.get(partId);
+        const bPart = bPartMap.get(partId);
+        const sourcePart = aPart ?? bPart;
+        if (!sourcePart) return null;
+        const aSteps = (aPart?.steps ?? []).map((s) => s.active === true);
+        const bSteps = (bPart?.steps ?? []).map((s) => s.active === true);
+        const mergedSteps = mergePatterns(aSteps, bSteps, {
+          strategy: mergeStrategy,
+        });
+        return {
+          ...sourcePart,
+          id: `${mergedId}-p${idx}`,
+          steps: mergedSteps.map((active) => ({ active })),
+        };
+      })
+      .filter((p): p is NonNullable<typeof p> => p !== null);
+
+    const merged: PatternData = {
+      ...patternA,
+      id: mergedId,
+      name: `${patternA.name} ${mergeStrategy} ${patternB.name}`,
+      stepCount: patternA.stepCount,
+      stepResolution: patternA.stepResolution,
+      bpm: patternA.bpm,
+      parts: mergedParts as PatternData["parts"],
+    };
+    onMerge(merged);
+  }, [patternA, patternB, mergeStrategy, onMerge]);
 
   if (!isOpen) return null;
 
@@ -253,6 +315,50 @@ export function PatternCompareModal({
             />
           ) : null}
         </div>
+
+        {/* ── Footer (v3.172 Merge-Action) ────────────────────────────── */}
+        {onMerge && (
+          <div className="px-5 py-3 border-t border-border-color flex items-center gap-2">
+            <div
+              className="flex items-center gap-2 mr-auto"
+              data-testid="pattern-compare-merge-block"
+            >
+              <span className="text-[11px] text-text-muted">Merge:</span>
+              <select
+                value={mergeStrategy}
+                onChange={(e) =>
+                  setMergeStrategy(e.target.value as MergeStrategy)
+                }
+                data-testid="pattern-compare-merge-strategy"
+                className="bg-bg-panel border border-border-color rounded px-1.5 py-0.5 text-[11px] text-text-muted hover:text-text-primary focus:outline-none transition-colors"
+              >
+                {Object.entries(MERGE_STRATEGY_LABELS).map(([id, label]) => (
+                  <option key={id} value={id}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={handleMerge}
+                disabled={!patternA || !patternB || aId === bId}
+                data-testid="pattern-compare-merge-apply"
+                className="px-3 py-1.5 rounded text-xs bg-accent-secondary text-bg-base font-semibold hover:bg-accent-secondary/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Merged Pattern als neues Pattern erstellen"
+              >
+                Merge As New
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-3 py-1.5 rounded text-xs bg-bg-elevated border border-border-color text-text-primary hover:bg-bg-panel transition-colors"
+              data-testid="pattern-compare-footer-close"
+            >
+              Schließen
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
