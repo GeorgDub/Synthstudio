@@ -586,6 +586,16 @@ const INDEX = {
       lastSeen: "2026-05-19T15:40:00.000Z",
       ownedBy:  "backend"
     },
+    "client/src/utils/patternMerge.ts (v3.172.0 NEU)": {
+      role:     "v3.172.0 NEU (Pure, 179 LOC, 0 Runtime-Deps). Pattern-Merge-Helpers kombinieren 2 boolean[]-Patterns via 5 Strategies. Exports MergeStrategy='union'|'intersection'|'xor'|'a-minus-b'|'alternate', MergeOptions{strategy?, outputLength?, padWithLast?}, mergePatterns(a,b,opts?) -> boolean[] (per-Step: union=a||b, intersection=a&&b, xor=a!==b, a-minus-b=a&&!b, alternate=(i%2===0?a:b)), 5 Convenience-Aliases unionPatterns/intersectionPatterns/xorPatterns/aMinusBPatterns/alternatePatterns, MERGE_STRATEGY_LABELS-Record fuer UI. Length-Handling: explicit outputLength (>=0, Math.floor) wins, sonst max(a.length,b.length). Out-of-range: false (default) oder letzter gueltiger Wert (padWithLast=true). Defensive: empty+empty -> [], invalid strategy -> fallback 'union'. Foundation fuer kuenftige 'Combine Patterns'-UI-Action im Pattern-Picker.",
+      lastSeen: "2026-05-20T02:00:00.000Z",
+      ownedBy:  "backend"
+    },
+    "tests/features/pattern-merge.test.ts (v3.172.0 NEU)": {
+      role:     "v3.172.0 NEU (210 LOC, 22 Tests in 9 describes). Unit-Tests fuer pattern-merge Pure-Helpers. Coverage: union (2), intersection (2; anything ∩ empty = all-false der vollen Seite), xor (2; self-XOR-self=all-false), a-minus-b (2), alternate (2; gerade=A/ungerade=B + invertierter Reverse-Fall), length-handling (2; explicit outputLength + padWithLast), defaults/defensive (4; empty+empty, invalid strategy, missing options, out-of-range=false), Labels (1; alle 5 Strategien non-empty + exakt 5 Keys), Convenience-Functions (5; jede delegiert exakt an mergePatterns). 22/22 passed in 6 ms.",
+      lastSeen: "2026-05-20T02:00:00.000Z",
+      ownedBy:  "backend"
+    },
     "client/src/utils/patternSwing.ts (v3.162.0 NEU)": {
       role:     "v3.162.0 NEU (Pure, ~110 LOC, 0 Runtime-Deps). Swing-Quantization-Foundation für MPC-Style off-beat shift. Exports SwingAmount (0..1, 0=straight, 0.5=max shuffle), SwungStep {stepIndex, swingDeltaMs}, swingOffsetForStep(stepIndex, swingAmount, stepDurationSec, resolution:8|16|32) → Sekunden-Offset (odd-index only, swing*stepDur*0.5), buildSwingMap(pattern, swing, stepDur, resolution) → SwungStep[] nur für aktive Steps. Constants SWING_NONE=0, SWING_LIGHT=0.15, SWING_MEDIUM=0.33, SWING_HEAVY=0.5. Defensive: NaN/Infinity/negative→0, swing>1 clamp auf 1, stepDurationSec<=0 → 0 oder []. Resolution-Parameter ist Public-API (heute identisches odd-index-Verhalten für 8/16/32; Erweiterung 32stel-Shuffle ohne Breaking-Change möglich). NOCH KEINE Integration in AudioEngine.scheduleStep — Pure-Helper-Foundation für v3.163 UI+Scheduler-Wire.",
       lastSeen: "2026-05-19T22:40:00.000Z",
@@ -1712,8 +1722,8 @@ const INDEX = {
       ownedBy:  "frontend"
     },
     "client/src/components/SampleBrowser/SampleBrowser.tsx (v3.55.0)": {
-      role:     "v3.55.0 ERWEITERT: v3.54-Multi-Tag-Filter bleibt + NEU per-Sample Tag-Editor (Tag-Chips + Add-Button + Inline-Input). Neue Props onAddTagToSample(id,tag) + onRemoveTagFromSample(id,tag). Pro Sample-Row unter dem Namen: Container mit Tag-Chips (#tag-Pills mit ×-Remove-Button, testid sample-tag-chip-<id>-<tag> / sample-tag-remove-<id>-<tag>), '+ Tag'-Button (sample-tag-add-<id>) öffnet Inline-Input (sample-tag-input-<id>) mit HTML-datalist-Autocomplete aus getTopTagSuggestions, Enter committet / Escape canceln / Blur committet. Container nur sichtbar wenn Tags existieren ODER Editor offen ODER Sample selektiert (UI-Clutter-Vermeidung). tagEditorOpenFor:string|null + tagDraft:string lokaler State. e.stopPropagation auf Container damit Sample-Row-onClick nicht feuert. Bestehende v3.54-Multi-Tag-Filter-Bar + v4-Architektur (Tabs, Waveform, Preview, Category-Menu) unverändert.",
-      lastSeen: "2026-05-18T22:50:00.000Z",
+      role:     "v3.171 ERWEITERT: Bulk-Normalize-Action in Multi-Select-Bar. Neuer 'Normalize'-Button + Mode-Select ('uniform-peak' | 'match-loudest' | 'relative-mix', default uniform-peak) zwischen '+ Tag' und 'Loeschen'. handleBulkNormalize laedt AudioBuffer fuer jede selected ID via AudioEngine.loadSample, ruft batchNormalizeSamples (pure), encodiert pro Result mit encodeWav -> Blob -> ObjectURL und konvertiert AudioBufferLike via OfflineAudioContext.createBuffer + copyToChannel zurueck zu echtem AudioBuffer (analog SampleTransformDialog-Helper) bevor onTransformSample(id, newUrl, audioBuf) aufgerufen wird. Skip bei gainAppliedDb===0 oder 0-channel/0-length Buffer. Toast 'X Sample(s) normalisiert (Y gecappt)' bei applied>0, 'Keine Aenderung noetig' bei applied=0, 'Keine ladbaren Sample-Buffer in der Auswahl' bei inputs.length=0. State bulkNormalizeMode. data-testids sample-browser-bulk-normalize + sample-browser-bulk-normalize-mode. Beide disabled wenn onTransformSample undefined. Imports: batchNormalizeSamples + BatchNormalizeMode (sampleNormalizeBatch), AudioBufferLike (sampleEmbedding), encodeWav (wavEncoder), toast (useToastStore). Bestehende v3.55-v3.170 Funktionalitaet (Multi-Tag-Filter, Tag-Editor, Bulk-Bar, Sort-Modes, Multi-Select, Transform-Dialog, Duration-Aggregator) unveraendert.",
+      lastSeen: "2026-05-20T03:00:00.000Z",
       ownedBy:  "frontend"
     },
     "client/src/store/useProjectStore.ts (v3.60.0)": {
@@ -3459,6 +3469,67 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "frontend",
+      timestamp: "2026-05-20T03:00:00.000Z",
+      done: [
+        "v3.171 Wire-Through: batchNormalizeSamples Bulk-Action in SampleBrowser-Multi-Select-Bar. Neuer 'Normalize'-Button + Mode-Select ('uniform-peak' | 'match-loudest' | 'relative-mix') zwischen '+ Tag' und 'Loeschen'.",
+        "Imports: batchNormalizeSamples + BatchNormalizeMode (sampleNormalizeBatch), AudioBufferLike (sampleEmbedding), encodeWav (wavEncoder), toast (useToastStore). State: bulkNormalizeMode (default 'uniform-peak').",
+        "handleBulkNormalize: Phase 1 lade AudioBuffer fuer jede selected Sample-ID via AudioEngine.loadSample (gleiche Pattern wie handleOpenTransform). Phase 2 batchNormalizeSamples (pure). Phase 3 pro Result: encodeWav -> Blob -> ObjectURL -> OfflineAudioContext.createBuffer + copyToChannel (mit Float32Array-Strict-Workaround analog SampleTransformDialog.audioBufferLikeToAudioBuffer) -> onTransformSample(id, newUrl, audioBuf). gainAppliedDb===0 oder 0-channel/0-length Buffer wird uebersprungen. Toast 'X Sample(s) normalisiert (Y gecappt)' bei applied>0, 'Keine Aenderung noetig' bei applied=0, 'Keine ladbaren Sample-Buffer in der Auswahl' bei inputs.length=0.",
+        "data-testids: sample-browser-bulk-normalize + sample-browser-bulk-normalize-mode. Beide disabled wenn onTransformSample undefined.",
+        "pnpm check: GRUEN (Erstdurchgang Float32Array<ArrayBufferLike>-vs-<ArrayBuffer>-Mismatch bei copyToChannel -> Fix via copy.set(src) analog SampleTransformDialog). NUR SampleBrowser.tsx editiert (110 Lines added). OmniTribeBridge.ts NICHT angetastet (war bei Session-Start ohnehin clean). KEIN git commit, KEIN version bump."
+      ],
+      next: [
+        "Optional: Confirm-Dialog vor Bulk-Normalize falls multiSelectIds.size > 50 (Schutz vor accidentaler Multi-Minuten-Operation).",
+        "Optional: Progress-Indikator (toast mit ID + dismissToast nach Abschluss) — aktuell ist die gesamte Operation async ohne Feedback, koennte bei 100+ Samples > 2s dauern.",
+        "Optional: Custom targetDbTp + maxBoostDb UI-Inputs (aktuell nur Defaults -1 dBTP / +24 dB). Pure-Helper unterstuetzt bereits beide Options."
+      ],
+      changed: [
+        "client/src/components/SampleBrowser/SampleBrowser.tsx (+110 LOC: Imports, State, handleBulkNormalize-Handler, UI Mode-Select + Normalize-Button in Bulk-Bar)"
+      ]
+    },
+    {
+      agent:     "refactor",
+      timestamp: "2026-05-20T02:00:00.000Z",
+      done: [
+        "v3.172 Pure-Helper: client/src/utils/patternMerge.ts NEU (179 LOC, 0 Runtime-Deps) + tests/features/pattern-merge.test.ts NEU (210 LOC, 22 Tests). Kombiniert 2 boolean[]-Patterns via 5 Strategies (union/intersection/xor/a-minus-b/alternate). Foundation fuer kuenftige 'Combine Patterns'-UI-Action.",
+        "API: mergePatterns(a, b, options?) -> boolean[]. MergeOptions: strategy (default 'union'), outputLength (default max(a.length,b.length)), padWithLast (default false; bei true replizieren out-of-range Indices den letzten gueltigen Wert der kuerzeren Seite). 5 Convenience-Aliases: unionPatterns/intersectionPatterns/xorPatterns/aMinusBPatterns/alternatePatterns. MERGE_STRATEGY_LABELS-Record mit i18n-ready Deutsch-Labels fuer UI-Display.",
+        "Per-Step-Logic: union=a||b, intersection=a&&b, xor=a!==b, a-minus-b=a&&!b, alternate=(i%2===0?a:b). Invalid strategy -> fallback 'union'. outputLength negativ/NaN/Infinity -> clamp >=0 + Math.floor. length=0 -> early-return []. readStep-Helper kapselt out-of-range-Logic + padWithLast in einer Funktion.",
+        "Tests: 22 Tests in 9 describes — union (2), intersection (2; anything ∩ empty = all-false der vollen Seite, NICHT [], analog zur spezifizierten 'false-bei-intersection-wenn-leer'-Regel), xor (2; self-XOR-self = all-false), a-minus-b (2), alternate (2), length-handling (2; explicit outputLength + padWithLast), defaults/defensive (4; empty+empty, invalid strategy, missing options, out-of-range=false), Labels (1; alle 5 Strategien non-empty + exakt 5 Keys), Convenience-Functions (5; jede delegiert exakt an mergePatterns).",
+        "pnpm check: GRUEN (tsc --noEmit, keine Fehler). pnpm test tests/features/pattern-merge.test.ts: 22/22 passed in 6 ms (401 ms total). KEIN git commit, KEIN package.json bump. KEINE anderen Files beruehrt (parallele v3.172 Agents nicht gestoert)."
+      ],
+      next: [
+        "v3.172+ UI-Wire (frontend-Owner): DrumMachine Pattern-Picker Kontextmenu 'Mit Pattern X kombinieren...' -> Modal mit B-Pattern-Auswahl + Strategy-Dropdown (MERGE_STRATEGY_LABELS) + 'als neues Pattern speichern'-Toggle. Per Default outputLength = activePattern.length, padWithLast=false.",
+        "Optional: Script-Command ss.mergePatterns(idA, idB, strategy) fuer AI-Scripts + builtInScripts.ts-Preset 'Kick+Snare Union' / 'A ohne B'.",
+        "Optional: Erweiterung um 6. Strategy 'weighted' (per-Step-Wahrscheinlichkeit) — wuerde RNG-Seed-Parameter erfordern, Foundation in patternProbability.ts vorhanden."
+      ],
+      changed: [
+        "client/src/utils/patternMerge.ts (NEU, 179 LOC)",
+        "tests/features/pattern-merge.test.ts (NEU, 210 LOC, 22 Tests)"
+      ]
+    },
+    {
+      agent:     "frontend",
+      timestamp: "2026-05-20T00:00:00.000Z",
+      done: [
+        "v3.172 UI-Wire: client/src/components/DrumMachine/DrumMachine.tsx — Complexity-Badge im Pattern-Picker analog zum v3.161 Density-Badge.",
+        "Import: computePatternComplexity + categorizeComplexity + ComplexityCategory aus @/utils/patternComplexity (v3.171 Pure-Helper, 0 Runtime-Deps).",
+        "Helper: computePatternComplexityCategory(pattern: PatternData): ComplexityCategory — duenne Wrapper-Func neben computePatternDensityCategory (gleiches Modul, gleicher Stil). Ruft computePatternComplexity(pattern) + categorizeComplexity(score.total).",
+        "PatternRowProps: optionales complexityCategory?: ComplexityCategory hinzugefuegt (analog densityCategory).",
+        "PatternRow-Destructuring: complexityCategory zwischen densityCategory und isActive eingefuegt.",
+        "JSX-Badge: nach pattern.name + BPM-Display, vor learn.isMapped-CC-Badge — w-1.5 h-1.5 rounded-full ml-1, vier Farbstufen (simple=accent-success/40, balanced=accent-primary, complex=accent-secondary, chaotic=accent-warning). 'minimal' wird geskipped (kein Visual). data-testid=pattern-complexity-badge-{category} fuer Playwright.",
+        "Caller in dm.patterns.map: complexityCategory={computePatternComplexityCategory(p)} direkt nach densityCategory-Prop.",
+        "Density-Badge bleibt unveraendert vor pattern.name (mr-1.5), Complexity-Badge sitzt rechts daneben (ml-1) — beide Badges koexistieren wie spezifiziert.",
+        "pnpm check: GRUEN (tsc --noEmit, keine Fehler). NUR DrumMachine.tsx editiert. KEIN git commit, KEIN package.json bump. OmniTribeBridge.ts NICHT angetastet. accent-warning Token existiert in allen 10 Themes (index.css verifiziert)."
+      ],
+      next: [
+        "v3.172 Tests: tests/web/pattern-complexity-badge.test.ts Playwright-Smoke — drei Patterns mit unterschiedlicher Complexity erstellen, Badge-Sichtbarkeit + data-testid pro Kategorie verifizieren.",
+        "Optional: Hover-Tooltip mit Sub-Score-Breakdown (density/syncopation/partVariation/velocityVariation) statt nur Kategorie-Name — wuerde computePatternComplexity-Return-Objekt im PatternRow halten statt nur Kategorie."
+      ],
+      changed: [
+        "client/src/components/DrumMachine/DrumMachine.tsx (Import + Helper + Props-Erweiterung + JSX-Badge + Caller, ca. 25 LOC)"
+      ]
+    },
     {
       agent:     "refactor",
       timestamp: "2026-05-19T22:21:00.000Z",

@@ -64,6 +64,14 @@ import {
   type DurationCandidate,
 } from "@/utils/sampleDurationAggregator";
 import { useConfirm } from "@/components/common/ConfirmDialog";
+// v3.171: Bulk-Normalize-Action.
+import {
+  batchNormalizeSamples,
+  type BatchNormalizeMode,
+} from "@/utils/sampleNormalizeBatch";
+import type { AudioBufferLike } from "@/utils/sampleEmbedding";
+import { encodeWav } from "@/audio/wavEncoder";
+import { toast } from "@/store/useToastStore";
 
 // ─── Typen ────────────────────────────────────────────────────────────────────
 
@@ -1033,6 +1041,87 @@ export function SampleBrowser({
     setSelectedSampleId(null);
   }, [multiSelectIds, onRemoveSample, confirm]);
 
+  // v3.171: Bulk-Normalize — alle ausgewählten Samples auf gemeinsames
+  // Loudness-Target. Wird via sampleNormalizeBatch (pure) berechnet, dann
+  // pro Result als WAV-Blob enkodiert und via onTransformSample zurück ins
+  // Projekt geschrieben (+ AudioEngine-Cache via neuem AudioBuffer).
+  const [bulkNormalizeMode, setBulkNormalizeMode] =
+    useState<BatchNormalizeMode>("uniform-peak");
+
+  const handleBulkNormalize = useCallback(async () => {
+    if (multiSelectIds.size === 0 || !onTransformSample) return;
+    const ids = Array.from(multiSelectIds);
+    // Phase 1: AudioBuffer laden für jede selected Sample-ID.
+    const inputs: Array<{ id: string; buffer: AudioBufferLike }> = [];
+    for (const id of ids) {
+      const sample = samples.find((s) => s.id === id);
+      if (!sample) continue;
+      try {
+        const buf = await AudioEngine.loadSample(sample.path);
+        if (buf) inputs.push({ id, buffer: buf as unknown as AudioBufferLike });
+      } catch {
+        /* skip unloadable */
+      }
+    }
+    if (inputs.length === 0) {
+      toast("Keine ladbaren Sample-Buffer in der Auswahl", { kind: "warning" });
+      return;
+    }
+    // Phase 2: Pure Batch-Normalize.
+    const result = batchNormalizeSamples(inputs, { mode: bulkNormalizeMode });
+    // Phase 3: pro Result WAV encodieren + AudioBuffer rekonstruieren +
+    // onTransformSample aufrufen.
+    let applied = 0;
+    for (const entry of result.entries) {
+      if (entry.gainAppliedDb === 0) continue; // no-op
+      const buf = entry.buffer;
+      // Defensiv: 0-channel oder 0-length Buffers überspringen.
+      if (buf.numberOfChannels === 0 || buf.length === 0) continue;
+      const channels = (Math.min(2, buf.numberOfChannels) as 1 | 2);
+      const wav = encodeWav(
+        Array.from({ length: channels }, (_, c) =>
+          buf.getChannelData(c) as Float32Array,
+        ),
+        { sampleRate: buf.sampleRate, channels, bitDepth: 16 },
+      );
+      const blob = new Blob([wav], { type: "audio/wav" });
+      const newUrl = URL.createObjectURL(blob);
+      // AudioBufferLike → echter AudioBuffer via OfflineAudioContext (für
+      // AudioEngine-Cache). Selbe Pattern wie SampleTransformDialog.
+      const Ctor = (window.OfflineAudioContext ||
+        // @ts-expect-error legacy webkit fallback
+        window.webkitOfflineAudioContext) as typeof OfflineAudioContext;
+      const ctx = new Ctor(
+        Math.max(1, buf.numberOfChannels),
+        Math.max(1, buf.length),
+        buf.sampleRate,
+      ) as BaseAudioContext;
+      const audioBuf = ctx.createBuffer(
+        Math.max(1, buf.numberOfChannels),
+        Math.max(1, buf.length),
+        buf.sampleRate,
+      );
+      for (let c = 0; c < buf.numberOfChannels; c++) {
+        // copyToChannel erwartet Float32Array<ArrayBuffer>; getChannelData liefert
+        // strukturell Float32Array<ArrayBufferLike>. Kopie in frisches ArrayBuffer
+        // (vermeidet TS-Strict-Mismatch + entkoppelt vom Pipeline-Buffer).
+        const src = buf.getChannelData(c);
+        const copy = new Float32Array(src.length);
+        copy.set(src);
+        audioBuf.copyToChannel(copy, c, 0);
+      }
+      onTransformSample(entry.id, newUrl, audioBuf);
+      applied++;
+    }
+    const cappedMsg =
+      result.cappedCount > 0 ? ` (${result.cappedCount} gecappt)` : "";
+    if (applied === 0) {
+      toast(`Keine Änderung nötig${cappedMsg}`, { kind: "info" });
+    } else {
+      toast(`${applied} Sample(s) normalisiert${cappedMsg}`, { kind: "success" });
+    }
+  }, [multiSelectIds, samples, onTransformSample, bulkNormalizeMode]);
+
   // v3.152: Wenn Samples aus dem Projekt verschwinden (extern gelöscht),
   // multi-select-Set defensiv auf Existenz-Filter laufen lassen.
   useEffect(() => {
@@ -1789,6 +1878,27 @@ export function SampleBrowser({
                         title="Tag zu allen ausgewählten Samples hinzufügen"
                       >
                         + Tag
+                      </button>
+                      <select
+                        value={bulkNormalizeMode}
+                        onChange={(e) => setBulkNormalizeMode(e.target.value as BatchNormalizeMode)}
+                        disabled={!onTransformSample}
+                        data-testid="sample-browser-bulk-normalize-mode"
+                        className="bg-bg-panel border border-border-color rounded px-1.5 py-0.5 text-[10px] text-text-muted hover:border-accent-primary focus:outline-none disabled:opacity-50 transition-colors"
+                        title="Normalize-Modus"
+                      >
+                        <option value="uniform-peak">Uniform Peak</option>
+                        <option value="match-loudest">Match Loudest</option>
+                        <option value="relative-mix">Relative Mix</option>
+                      </select>
+                      <button
+                        onClick={handleBulkNormalize}
+                        disabled={!onTransformSample}
+                        data-testid="sample-browser-bulk-normalize"
+                        className="px-2 py-0.5 rounded text-[10px] border border-border-color text-text-primary hover:border-accent-primary hover:text-accent-primary disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        title="Alle ausgewählten Samples normalisieren (Mode aus Select)"
+                      >
+                        Normalize
                       </button>
                       <button
                         onClick={handleBulkDelete}

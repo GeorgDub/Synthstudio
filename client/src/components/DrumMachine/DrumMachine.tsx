@@ -119,6 +119,11 @@ export function isBpmExternallyLocked(
 // ─── v3.161: Pattern-Density-Berechnung über alle Parts ────────────────────────
 import { categorizeDensity, type DensityCategory } from "@/utils/patternDensityAnalyzer";
 import { analyzePatternBank } from "@/utils/patternBankDensity";
+import {
+  computePatternComplexity,
+  categorizeComplexity,
+  type ComplexityCategory,
+} from "@/utils/patternComplexity";
 import type { PatternData } from "@/audio/AudioEngine";
 
 function computePatternDensityCategory(pattern: PatternData): DensityCategory {
@@ -134,6 +139,12 @@ function computePatternDensityCategory(pattern: PatternData): DensityCategory {
   return categorizeDensity(hits / total);
 }
 
+// ─── v3.172: Pattern-Complexity-Berechnung über alle Parts ─────────────────────
+function computePatternComplexityCategory(pattern: PatternData): ComplexityCategory {
+  const score = computePatternComplexity(pattern);
+  return categorizeComplexity(score.total);
+}
+
 // ─── Pattern-Row mit Right-Click MIDI-Learn (v1.92) ───────────────────────────
 
 interface PatternRowProps {
@@ -141,6 +152,8 @@ interface PatternRowProps {
   patternIndex: number;
   /** v3.161: Density-Kategorie für visuelle Hervorhebung (empty/sparse/medium/dense/full). */
   densityCategory?: import("@/utils/patternDensityAnalyzer").DensityCategory;
+  /** v3.172: Complexity-Kategorie für visuelle Hervorhebung (minimal/simple/balanced/complex/chaotic). */
+  complexityCategory?: ComplexityCategory;
   isActive: boolean;
   isPlaying: boolean;
   isLiveEditing: boolean;
@@ -167,7 +180,7 @@ interface PatternRowProps {
 }
 
 function PatternRow({
-  pattern, patternIndex, densityCategory, isActive, isPlaying, isLiveEditing, showDelete,
+  pattern, patternIndex, densityCategory, complexityCategory, isActive, isPlaying, isLiveEditing, showDelete,
   hasPrevPattern, prevPatternId, allPatterns,
   onSelect, onDuplicate, onRemove, onCopySamplesFrom, onReorder, onExportImage, onCompare, onCopy,
 }: PatternRowProps) {
@@ -260,6 +273,19 @@ function PatternRow({
         {pattern.name}
         {pattern.bpm !== null && (
           <span className="ml-1 text-[9px] text-text-dim">{pattern.bpm} BPM</span>
+        )}
+        {complexityCategory && complexityCategory !== "minimal" && (
+          <span
+            className={[
+              "ml-1 inline-block w-1.5 h-1.5 rounded-full",
+              complexityCategory === "simple" && "bg-accent-success/40",
+              complexityCategory === "balanced" && "bg-accent-primary",
+              complexityCategory === "complex" && "bg-accent-secondary",
+              complexityCategory === "chaotic" && "bg-accent-warning",
+            ].filter(Boolean).join(" ")}
+            title={`Complexity: ${complexityCategory}`}
+            data-testid={`pattern-complexity-badge-${complexityCategory}`}
+          />
         )}
         {learn.isMapped && (
           <span className="ml-1.5 text-[9px] font-mono text-accent-secondary">CC{learn.mappedCC}</span>
@@ -1165,6 +1191,7 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
                   pattern={p}
                   patternIndex={idx}
                   densityCategory={computePatternDensityCategory(p)}
+                  complexityCategory={computePatternComplexityCategory(p)}
                   isActive={p.id === dm.activePatternId}
                   isPlaying={p.id === dm.playbackPatternId}
                   isLiveEditing={isLiveEditing}
