@@ -199,6 +199,9 @@ import { analyzeHihat } from "@/utils/patternHihatDetect";
 // v3.227: Pattern-Row Fill/Transition-Badge — detectFillTransitions identifiziert
 // Last-Bar-Fills + multi-fill-regions in Step-Patterns (Pure-Helper v3.226).
 import { detectFillTransitions } from "@/utils/patternFillTransition";
+// v3.228: Pattern-Row Mood-Badge — classifyMood mappt {energy, tension, warmth,
+// complexity, flow} auf ein dominantes Mood-Label (Pure-Helper v3.227).
+import { classifyMood } from "@/utils/patternMoodVector";
 import type { PatternData } from "@/audio/AudioEngine";
 
 // ─── v3.205: Pattern-Flatten-Helper (module-level Cache via Closure) ───────────
@@ -560,6 +563,17 @@ function PatternRow({
     }
     return detectFillTransitions(flat);
   }, [pattern]);
+  // v3.228: Mood-Classification — classifyMood auf pattern.parts mapped zu
+  // {name, steps:{active,velocity}}. Liefert primary ∈ {calm, energetic,
+  // aggressive, tense, playful, minimal, chaotic} + confidence (0..1).
+  // Badge sichtbar wenn confidence > 0.2 (kein Mehrwert für Fallback-Werte).
+  const mood = useMemo(() => {
+    const parts = pattern.parts.map((p) => ({
+      name: p.name,
+      steps: p.steps.map((s) => ({ active: s.active, velocity: s.velocity })),
+    }));
+    return classifyMood(parts);
+  }, [pattern]);
   // v2.5: Submenu zum Auswählen welcher Pattern als Source dient
   const [pickerOpen, setPickerOpen] = useState(false);
   // v2.8: Drag-Drop-Reorder State (drop-indicator: above|below|null)
@@ -864,6 +878,25 @@ function PatternRow({
             data-testid={`pattern-row-fill-${pattern.id}`}
           >
             {fillTransition.lastBarIsFill ? "FILL" : `F${fillTransition.fillRegions.length}`}
+          </span>
+        )}
+        {/* v3.228: Mood-Badge — calm / energetic / aggressive / tense / playful /
+            minimal / chaotic. Sichtbar wenn confidence > 0.2 (filtert fallback). */}
+        {mood.confidence > 0.2 && (
+          <span
+            className="ml-1 px-1 py-0.5 rounded text-[9px] font-mono bg-accent-primary/20 text-accent-primary"
+            title={`Mood: ${mood.primary} (${Math.round(mood.confidence * 100)}% confidence)`}
+            data-testid={`pattern-row-mood-${pattern.id}`}
+          >
+            {mood.primary === "calm"       ? "🧘" :
+             mood.primary === "energetic"  ? "⚡" :
+             mood.primary === "aggressive" ? "💥" :
+             mood.primary === "tense"      ? "😬" :
+             mood.primary === "playful"    ? "🎯" :
+             mood.primary === "minimal"    ? "·" :
+             mood.primary === "chaotic"    ? "🌪" :
+             ""}
+            {mood.primary.slice(0, 3).toUpperCase()}
           </span>
         )}
         {learn.isMapped && (

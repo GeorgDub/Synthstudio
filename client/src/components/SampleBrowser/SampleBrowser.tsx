@@ -167,6 +167,8 @@ import { applyHaas } from "@/utils/sampleHaas";
 import { applyExciter } from "@/utils/sampleExciter";
 // v3.226: Bulk-FreqShift (cos-Carrier-Multiplikation, shiftHz -500..500) für selektierte Samples.
 import { applyFreqShift } from "@/utils/sampleFreqShift";
+// v3.228: Bulk-Deesser (HP -> tanh -> envelope-follower -> subtract sibilant, threshold 0..1) für selektierte Samples.
+import { applyDeesser } from "@/utils/sampleDeesser";
 
 // ─── Typen ────────────────────────────────────────────────────────────────────
 
@@ -3082,6 +3084,8 @@ export function SampleBrowser({
   const [bulkExciterFreq, setBulkExciterFreq] = useState<number>(3000);
   // v3.226: Bulk-FreqShift — shiftHz (-500..500, default 50). 0 = Identity.
   const [bulkFreqShift, setBulkFreqShift] = useState<number>(50);
+  // v3.228: Bulk-Deesser — threshold (0..1, default 0.3). Niedriger = aggressivere Sibilant-Reduktion.
+  const [bulkDeesserThreshold, setBulkDeesserThreshold] = useState<number>(0.3);
 
   const handleBulkNoiseReduce = useCallback(async () => {
     if (multiSelectIds.size === 0 || !onTransformSample) return;
@@ -3440,6 +3444,66 @@ export function SampleBrowser({
     samples,
     onTransformSample,
     bulkFreqShift,
+  ]);
+
+  // v3.228: Bulk-Deesser — applyDeesser (HP -> tanh -> envelope-follower
+  // -> subtract sibilant, threshold 0..1; niedriger = aggressiver).
+  const handleBulkDeesser = useCallback(async () => {
+    if (multiSelectIds.size === 0 || !onTransformSample) return;
+    let applied = 0;
+    for (const id of multiSelectIds) {
+      const sample = samples.find((s) => s.id === id);
+      if (!sample) continue;
+      try {
+        const buf = await AudioEngine.loadSample(sample.path);
+        if (!buf) continue;
+        const out = applyDeesser(buf as unknown as AudioBufferLike, {
+          threshold: bulkDeesserThreshold,
+        });
+        if (out.numberOfChannels === 0 || out.length === 0) continue;
+        const channels = Math.min(2, out.numberOfChannels) as 1 | 2;
+        const wav = encodeWav(
+          Array.from({ length: channels }, (_, c) =>
+            out.getChannelData(c) as Float32Array,
+          ),
+          { sampleRate: out.sampleRate, channels, bitDepth: 16 },
+        );
+        const blob = new Blob([wav], { type: "audio/wav" });
+        const newUrl = URL.createObjectURL(blob);
+        const Ctor = (window.OfflineAudioContext ||
+          // @ts-expect-error legacy webkit fallback
+          window.webkitOfflineAudioContext) as typeof OfflineAudioContext;
+        const ctx = new Ctor(
+          Math.max(1, out.numberOfChannels),
+          Math.max(1, out.length),
+          out.sampleRate,
+        ) as BaseAudioContext;
+        const audioBuf = ctx.createBuffer(
+          Math.max(1, out.numberOfChannels),
+          Math.max(1, out.length),
+          out.sampleRate,
+        );
+        for (let c = 0; c < out.numberOfChannels; c++) {
+          const src = out.getChannelData(c);
+          const copy = new Float32Array(src.length);
+          copy.set(src);
+          audioBuf.copyToChannel(copy, c, 0);
+        }
+        onTransformSample(id, newUrl, audioBuf);
+        applied++;
+      } catch {
+        /* skip */
+      }
+    }
+    toast(
+      `Deesser threshold=${bulkDeesserThreshold}: ${applied} Samples`,
+      { kind: "success" },
+    );
+  }, [
+    multiSelectIds,
+    samples,
+    onTransformSample,
+    bulkDeesserThreshold,
   ]);
 
   // v3.152: Wenn Samples aus dem Projekt verschwinden (extern gelöscht),
@@ -5177,6 +5241,30 @@ export function SampleBrowser({
                         title="FreqShift (cos-Carrier-Multiplikation, shiftHz 0 = Identity) auf alle ausgewählten Samples"
                       >
                         FSH
+                      </button>
+                      {/* v3.228: Bulk-Deesser — threshold-Slider + Apply-Button (HP -> tanh -> envelope -> subtract sibilant). */}
+                      <input
+                        type="range"
+                        min={0}
+                        max={1}
+                        step={0.05}
+                        value={bulkDeesserThreshold}
+                        onChange={(e) => setBulkDeesserThreshold(parseFloat(e.target.value))}
+                        className="w-20 accent-accent-secondary"
+                        data-testid="sample-browser-bulk-deesser-threshold"
+                        title="Deesser-Threshold (0..1, default 0.3; niedriger = aggressivere Sibilant-Reduktion)"
+                      />
+                      <span className="text-[10px] font-mono text-text-muted w-10 text-right">
+                        {bulkDeesserThreshold.toFixed(2)}
+                      </span>
+                      <button
+                        onClick={handleBulkDeesser}
+                        disabled={!onTransformSample}
+                        data-testid="sample-browser-bulk-deesser"
+                        className="px-2 py-0.5 rounded text-[10px] border border-border-color text-text-primary hover:border-accent-secondary hover:text-accent-secondary disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        title="De-Esser (HP -> tanh -> envelope-follower -> subtract sibilant) auf alle ausgewählten Samples"
+                      >
+                        DE-S
                       </button>
                       <button
                         onClick={handleBulkDelete}
