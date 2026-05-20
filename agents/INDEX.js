@@ -298,6 +298,17 @@ const INDEX = {
   //     a new bare-path entry while old version-suffixed ones remain
   //     is the explicit transition path.
   files: {
+    // ─── v3.193 Pure-Helpers (refactor) — Pattern-Harmonizer ────
+    "client/src/utils/patternHarmonizer.ts": {
+      role:     "Pure-Helper fuer Pattern-Harmonizer (Melodic-Note + Scale -> harmonisch sinnvolle Begleit-Notes). Public API: harmonizeNote(rootMidi, options?: HarmonizeOptions) -> HarmonizedNote {rootMidi, harmonies:[{midi, interval}] sorted ascending}; harmonizeNotes(rootNotes: readonly number[], options?) -> HarmonizedNote[]; HARMONY_INTERVAL_SEMITONES: Record<HarmonyInterval, number> mit chromatischen Naeherungswerten {third:4, fifth:7, octave-up:12, octave-down:-12, tenth:16, twelfth:19}. Public Types: HarmonyInterval = 'third'|'fifth'|'octave-up'|'octave-down'|'tenth'|'twelfth'; HarmonizeOptions {scale? default 'major', scaleRoot? 0..11 default 0, intervals? default ['third','fifth']}. Verhalten: 1) third/fifth scale-aware via SCALE_INTERVALS aus randomChordGenerator (degreeIndex+2 oder +4 mit octave-wrap via shiftByScaleDegree). 2) octave-up/-down fix-chromatisch +/-12. 3) tenth = +12 + scale-aware-3rd (musikalisch korrekt). 4) twelfth = +19 fix-chromatisch (Oktav + perfect-5th). 5) findScaleDegree round-down fuer non-scale-Roots (z.B. C# in C-major -> faellt auf C-Degree zurueck, baseMidi = root - diff). 6) Alle Outputs clamp 0..127. Defensive Defaults: rootMidi NaN/<0/>127 -> 60; scale unbekannt -> 'major'; scaleRoot NaN/<0/>11 -> 0; intervals undef/leer/alle-invalid -> ['third','fifth'] (filtert ungueltige via VALID_INTERVALS Set). Eingaben werden NICHT mutiert. Pure & DOM-frei. Foundation fuer Performance-Mode 'Harmonize Selection', Piano-Roll Auto-Doubling, OmniTribe-Chord-Slot-Filler. 249 LOC.",
+      lastSeen: "2026-05-20T11:30:00.000Z",
+      ownedBy:  "backend"
+    },
+    "tests/features/pattern-harmonizer.test.ts": {
+      role:     "Pure-Coverage fuer patternHarmonizer.ts. 31 Tests in 13 describes: defaults 1 (C4 default -> third 64 + fifth 67 sorted ascending). scale-aware third/fifth 4 (major C4 -> 64/67, minor-natural C4 -> 63/67, phrygian C4 -> 63, lydian C4 -> 64). octaves 3 (octave-up +12 -> 72, octave-down -12 -> 48, combined sorted ascending [48, 72]). tenth/twelfth 3 (tenth major C4 = 76, tenth minor-natural C4 = 75, twelfth = 79). clamping 3 (octave-up @120 -> 127, octave-down @5 -> 0, twelfth @115 -> 127). defensive 6 (NaN rootMidi -> 60, oob rootMidi -> 60, invalid scale -> major, empty intervals -> [third,fifth], all-invalid intervals -> defaults, scaleRoot oob -> 0). multi-interval combo 1 (alle 6 intervals -> sorted [48,64,67,72,76,79]). non-scale-note root 1 (C# in C-major round-down zu C-degree -> baseMidi=60, third=64, fifth=67, rootMidi bleibt 61). scaleRoot offset 1 (D-major scaleRoot=2, rootMidi=62 -> 3rd=F#4(66), 5th=A4(69)). HARMONY_INTERVAL_SEMITONES 2 (6 Eintraege, exakte Semitone-Werte). harmonizeNotes batch 3 (3 notes C/D/E -> major-3rds [64,65,67], empty -> [], minor-natural batch behaelt Options). immutability 2 (intervals-Array nicht mutiert, rootNotes-Array nicht mutiert via JSON.stringify). return shape 1 (typeof-Checks fuer rootMidi number, harmonies array, midi number, interval string). Vitest node-env. 31/31 passed in 8ms. Gesamt-Suite nach Add: 351 files / 7838 passed / 16 skipped. 325 LOC.",
+      lastSeen: "2026-05-20T11:30:00.000Z",
+      ownedBy:  "backend"
+    },
     // ─── v3.191 Pure-Helpers (refactor) ─────────────────────────
     "client/src/utils/patternMicroTiming.ts": {
       role:     "Pure-Helper fuer Pattern Micro-Timing (Humanize-Style Timing-Offsets). Public API: generateMicroTiming(pattern: readonly boolean[], options?: MicroTimingOptions) -> MicroTimedStep[] {stepIndex, timingOffsetMs}, MICRO_TIMING_PRESETS Record<MicroTimingPreset, {jitterMs, biasMs}>. Public Types: MicroTimingPreset = 'tight'|'subtle'|'loose'|'behind-the-beat'|'rushed', MicroTimingOptions {preset?, jitterMs? (overrides preset.jitterMs), biasMs? (overrides preset.biasMs), seed?}. Presets: tight (jitter=1, bias=0), subtle (jitter=4, bias=0), loose (jitter=12, bias=0), behind-the-beat (jitter=6, bias=+8 -> Steps spaeter), rushed (jitter=6, bias=-8 -> Steps frueher). Algorithmus: 1) empty/non-array pattern -> []. 2) sanitizePreset (Fallback subtle bei invalid). 3) sanitizeNumber fuer jitter/bias mit Preset-Default-Fallback. 4) pro AKTIVEN Step: gauss-noise * jitterMs * 0.5 + biasMs -> offset. 5) inactive Steps werden uebersprungen (Output ist KEIN positions-stabiler Array — anders als patternHumanize). 6) finite-Guard auf offset. Inline mulberry32-PRNG + Box-Muller-Gauss (KEIN externer RNG-Import, vermeidet zirkulaere Imports mit patternHumanize/patternProbability). Foundation fuer Humanize-Engine-Integration in AudioEngine._schedule() oder MIDI-Export Per-Step-Latenz-Korrektur. Pure & DOM-frei. 142 LOC.",
@@ -3674,6 +3685,68 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "refactor",
+      timestamp: "2026-05-20T11:30:00.000Z",
+      done: [
+        "v3.193 Pure-Helper client/src/utils/patternHarmonizer.ts (249 LOC inkl. JSDoc) angelegt — Pattern-Harmonizer fuer Melodic-Note + Scale -> harmonisch sinnvolle Begleit-Notes (3rd/5th/octave-up/-down/10th/12th). Foundation fuer kuenftige Performance-Mode 'Harmonize Selection'-Action, Piano-Roll Auto-Doubling und OmniTribe-Chord-Slot-Filler. Hinweis: parallele Refactor-Session lief gleichzeitig auf v3.193 (patternRhythmRotate) — beide Helpers koexistieren, kein Konflikt.",
+        "Public API: harmonizeNote(rootMidi, options?) -> HarmonizedNote { rootMidi, harmonies:[{midi,interval}] sortiert ascending }; harmonizeNotes(rootNotes[], options?) -> HarmonizedNote[]; HARMONY_INTERVAL_SEMITONES Record<HarmonyInterval, number> mit chromatischen Naeherungswerten { third:4, fifth:7, octave-up:12, octave-down:-12, tenth:16, twelfth:19 }. HarmonyInterval = third|fifth|octave-up|octave-down|tenth|twelfth. HarmonizeOptions { scale? (default 'major'), scaleRoot? 0..11 (default 0), intervals? readonly[] (default ['third','fifth']) }.",
+        "Verhalten: third/fifth scale-aware via SCALE_INTERVALS aus randomChordGenerator (degreeIndex+2 oder +4 mit octave-wrap). octave-up/-down fix-chromatisch +/-12. tenth = +12 + scale-aware-3rd (musikalisch korrekt). twelfth = +19 fix-chromatisch (Oktav + perfect-5th). findScaleDegree round-down fuer non-scale-Roots (z.B. C# in C-major -> faellt auf C-Degree zurueck, baseMidi shift). Alle Outputs clamp 0..127.",
+        "Defensive Defaults via sanitizeRoot/sanitizeScale/sanitizeScaleRoot/sanitizeIntervals: rootMidi NaN/<0/>127 -> 60; scale unbekannt -> 'major'; scaleRoot NaN/<0/>11 -> 0; intervals undef/leer/alle-invalid -> ['third','fifth'] (filtert ungueltige raus, behaelt nur VALID_INTERVALS-Member). Eingaben werden NICHT mutiert (immutable durch Array.map / push in lokales out-Array).",
+        "Test-Suite tests/features/pattern-harmonizer.test.ts (325 LOC, 31 Tests in 13 describe-Bloecken): defaults / scale-aware third+fifth (major/minor-natural/phrygian/lydian) / octaves (up/down/combined-sorting) / tenth+twelfth (major/minor-natural) / clamping (oben/unten/twelfth) / defensive (NaN/range/invalid-scale/empty-intervals/all-invalid/scaleRoot-oob) / multi-interval combos (alle 6 sorted) / non-scale-note root (C# -> C-degree) / scaleRoot offset (D-major) / HARMONY_INTERVAL_SEMITONES shape / harmonizeNotes batch (3 notes / empty / minor-natural shared options) / immutability (intervals + rootNotes-array) / return shape typeof-checks.",
+        "pnpm check GRUEN (tsc --noEmit 0 errors). pnpm test GRUEN: pattern-harmonizer 31/31 passed in 8ms; Gesamt-Suite 351 files / 7838 passed / 16 skipped (+31 vs. v3.193-patternRhythmRotate-baseline 7807). KEIN Commit, KEIN package.json-Bump (User-Vorgabe Refactor-Pattern v3.188+)."
+      ],
+      next: [
+        "v3.194+ Frontend-Owner: Piano-Roll-Selection 'Harmonize'-Action mit Dropdown fuer Intervals-Multiselect + Scale-Picker + Scale-Root-Picker. Selected Notes -> harmonizeNotes -> neue Notes additiv in Sequenz inserten (gleiche stepIndex/duration, frische uuid).",
+        "v3.194+ Frontend-Owner: MIDI-Bindings — neue MidiLearnTarget 'harmonizeSelection' (laeuft auf aktuell selected Notes mit default-intervals ['third','fifth']) + 'harmonizeWithOctave' (intervals=['octave-up']) — Auto-Learn-Entry in MidiSettings.",
+        "v3.194+ Backend-Owner: Script-Sandbox ss.melody.harmonize(midi, intervals?, scale?) und ss.melody.harmonizeAll(midiArray, ...) exposen — analog bestehende randomChord-Sandbox-Helpers. Built-In-Script-Library 'Add 3rds+5ths to Selection' im ScriptRunner.",
+        "v3.194+ Backend-Owner: OmniTribe-Chord-Slot-Filler — harmonizeNote auf Chord-Slot-Root anwenden um 3-Note-Voicings fuer ESX-Chord-Pads zu fuellen (ScaleRoot aus aktivem Pattern-Key).",
+        "v3.194+ Testing-Owner: Playwright-Smoke tests/web/pattern-harmonizer.spec.ts — Piano-Roll Note setzen -> Harmonize-Button -> assert 3 Notes (root + 3rd + 5th) im Pattern sichtbar."
+      ],
+      changed: [
+        "client/src/utils/patternHarmonizer.ts (NEW, 249 LOC — harmonizeNote + harmonizeNotes + HARMONY_INTERVAL_SEMITONES + Types; ownedBy backend, da Pure-Helper-Logik im Pattern-/Music-Theory-Layer)",
+        "tests/features/pattern-harmonizer.test.ts (NEW, 325 LOC, 31 Tests; ownedBy backend)",
+        "agents/INDEX.js (workLog-Entry v3.193 refactor — Pattern-Harmonizer Pure-Helper, parallel zu v3.193-patternRhythmRotate)"
+      ]
+    },
+    {
+      agent:     "frontend",
+      timestamp: "2026-05-20T11:00:00.000Z",
+      done: [
+        "v3.192 Wire-Up sampleSidechain (Bulk-Pump) in SampleBrowser.tsx Bulk-Bar — neue Controls neben Delay-Button: Preset-Select (data-testid=sample-browser-bulk-sidechain-preset) mit den 4 SIDECHAIN_PRESETS-Einträgen (Subtle Pump/EDM Pump/Heavy Duck/Ambient) und Pump-Button (data-testid=sample-browser-bulk-sidechain).",
+        "Trigger-Pattern fest auf 4-on-the-floor (16-step, true an Step 0/4/8/12, false sonst) mit BPM=120, stepsPerBeat=4. Per selektiertem Sample: AudioEngine.loadSample → applySidechain(buf, {triggerPattern, bpm, stepsPerBeat, duckDb, attackMs, releaseMs}) → encodeWav (1/2-Ch, 16-bit) → Blob-URL + rekonstruierter AudioBuffer via OfflineAudioContext.createBuffer + copyToChannel → onTransformSample(id, newUrl, audioBuf). Toast 'Sidechain \"<Preset>\" (4-on-floor): N Samples' am Ende.",
+        "useState<string>('subtle-pump') als Default-Preset. useCallback-Deps: [multiSelectIds, samples, onTransformSample, bulkSidechainPresetId]. Try/Catch pro Sample-Load — defekte Samples werden übersprungen, applied-Counter erhöht sich nur bei Erfolg. Defensive ducked.numberOfChannels===0 || ducked.length===0 Check übersprungen.",
+        "Import: applySidechain + SIDECHAIN_PRESETS aus @/utils/sampleSidechain. Buffer-Cast 'as unknown as AudioBufferLike' analog Delay-Bulk-Pattern (sonst Type-Mismatch zwischen AudioBuffer und AudioBufferLike-Interface). OfflineAudioContext-Constructor mit webkitOfflineAudioContext-Fallback (// @ts-expect-error legacy).",
+        "Styling 1:1 wie umliegende Bulk-Buttons (Comp/Delay): Select bg-bg-panel/border-border-color/text-text-muted/hover:border-accent-primary, Button border-border-color/hover:border-accent-secondary/hover:text-accent-secondary/disabled:opacity-50. Keine hardcoded Tailwind-Farben.",
+        "pnpm check GRUEN (tsc --noEmit 0 errors). KEIN git commit, KEIN package.json-Bump (per User-Vorgabe). NUR SampleBrowser.tsx editiert."
+      ],
+      next: [
+        "v3.193+ Testing-Owner: Playwright-Smoke tests/web/sample-bulk-sidechain.spec.ts — 2-3 Samples selektieren, Preset wählen, Pump klicken, Toast verifizieren, Sample-URL geändert.",
+        "v3.193+ Frontend-Owner: Optional User-konfigurierbares Trigger-Pattern (eigene 16-Step-UI) statt hartkodiertem 4-on-the-floor — z.B. zusätzliche Preset-Patterns 'Off-beat', '2-on-3', 'Half-time' im SidechainPresets-Array.",
+        "v3.193+ Frontend-Owner: BPM-Sync mit aktuellem Projekt-BPM (useProjectStore.tempo) statt fixem 120 — beim Pump-Render aktuelle Projekt-BPM lesen und an applySidechain.bpm übergeben."
+      ],
+      changed: [
+        "client/src/components/SampleBrowser/SampleBrowser.tsx (Import applySidechain+SIDECHAIN_PRESETS, neuer State bulkSidechainPresetId + handleBulkSidechain useCallback, 2 neue UI-Controls in Bulk-Bar mit data-testid sample-browser-bulk-sidechain-preset / sample-browser-bulk-sidechain)"
+      ]
+    },
+    {
+      agent:     "frontend",
+      timestamp: "2026-05-20T10:30:00.000Z",
+      done: [
+        "v3.192 Wire-Up patternRhythmRotate in DrumMachine.tsx pattern-mutator-toolbar — neue Buttons '+B' (data-testid=pattern-mutator-beat-fwd, rotate +1 Beat = 4 steps right) und '-B' (data-testid=pattern-mutator-beat-bwd, rotate -1 Beat = 4 steps left), platziert direkt nach Stutter-Button (⋯).",
+        "Import 'rotatePatternByBeats' aus @/utils/patternRhythmRotate (v3.192-Refactor-Foundation, parallel zu v3.193-Pure-Helper). onClick ruft applyMutator((p) => rotatePatternByBeats(p, { stepsPerBeat: 4, beats: ±1 })) — wendet die Beat-Shift auf ALLE Parts des aktiven Patterns gleichzeitig an (analog shift-left/shift-right Mutator).",
+        "Styling: identische Tailwind-Klassen wie umliegende Mutator-Buttons (px-1.5 py-0.5 rounded text-[10px] bg-bg-elevated hover:bg-accent-secondary/30 hover:text-accent-secondary transition-colors), title-Tooltips '+1 Beat shift' / '-1 Beat shift'. Keine hardcoded Tailwind-Farben.",
+        "pnpm check GRUEN (tsc --noEmit 0 errors). KEIN git commit, KEIN package.json-Bump (per User-Vorgabe)."
+      ],
+      next: [
+        "v3.193+ Frontend-Owner: zweite Mutator-Toolbar-Wave fuer rotateWithinBeats — Button 'WB' fuer Within-Beat-Rotation analog +B/-B.",
+        "v3.193+ Frontend-Owner: MIDI-Bindings — neue MidiLearnTarget Eintraege 'patternBeatShiftFwd' / 'patternBeatShiftBwd' in useMidi.ts + applyMapping ruft rotatePatternByBeats.",
+        "v3.194+ Testing-Owner: Playwright-Smoke tests/web/pattern-beat-shift.spec.ts — Pattern setzen, +B Button klicken, Hit-Position um 4 Steps verschoben verifizieren."
+      ],
+      changed: [
+        "client/src/components/DrumMachine/DrumMachine.tsx (Import rotatePatternByBeats + 2 neue Toolbar-Buttons +B/-B mit data-testid pattern-mutator-beat-fwd / pattern-mutator-beat-bwd)"
+      ]
+    },
     {
       agent:     "refactor",
       timestamp: "2026-05-20T10:05:00.000Z",

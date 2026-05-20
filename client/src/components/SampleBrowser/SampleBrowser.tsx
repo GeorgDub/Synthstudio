@@ -107,6 +107,11 @@ import {
   applyDelay,
   DELAY_PRESETS,
 } from "@/utils/sampleDelay";
+// v3.192: Bulk-Sidechain (Pump) für selektierte Samples mit 4-on-the-floor Trigger.
+import {
+  applySidechain,
+  SIDECHAIN_PRESETS,
+} from "@/utils/sampleSidechain";
 
 // ─── Typen ────────────────────────────────────────────────────────────────────
 
@@ -1638,6 +1643,77 @@ export function SampleBrowser({
     toast(`Delay "${preset.name}": ${applied} Samples`, { kind: "success" });
   }, [multiSelectIds, samples, onTransformSample, bulkDelayPresetId]);
 
+  // v3.192 — Bulk-Sidechain (Pump) für selektierte Samples:
+  // 4-on-the-floor Trigger-Pattern (16-step) und ein SIDECHAIN_PRESETS-Eintrag
+  // bestimmen Duck-Tiefe + Attack/Release. applySidechain rendert offline,
+  // der gepumpte Buffer wird als WAV encodet und via onTransformSample
+  // zurück ins Projekt geschrieben (+ AudioBuffer für AudioEngine-Cache).
+  const [bulkSidechainPresetId, setBulkSidechainPresetId] = useState<string>("subtle-pump");
+
+  const handleBulkSidechain = useCallback(async () => {
+    if (multiSelectIds.size === 0 || !onTransformSample) return;
+    const preset = SIDECHAIN_PRESETS.find((p) => p.id === bulkSidechainPresetId);
+    if (!preset) return;
+    // 4-on-the-floor trigger pattern (16-step)
+    const triggerPattern = [
+      true, false, false, false,
+      true, false, false, false,
+      true, false, false, false,
+      true, false, false, false,
+    ];
+    let applied = 0;
+    for (const id of multiSelectIds) {
+      const sample = samples.find((s) => s.id === id);
+      if (!sample) continue;
+      try {
+        const buf = await AudioEngine.loadSample(sample.path);
+        if (!buf) continue;
+        const ducked = applySidechain(buf as unknown as AudioBufferLike, {
+          triggerPattern,
+          bpm: 120,
+          stepsPerBeat: 4,
+          duckDb: preset.duckDb,
+          attackMs: preset.attackMs,
+          releaseMs: preset.releaseMs,
+        });
+        if (ducked.numberOfChannels === 0 || ducked.length === 0) continue;
+        const channels = Math.min(2, ducked.numberOfChannels) as 1 | 2;
+        const wav = encodeWav(
+          Array.from({ length: channels }, (_, c) =>
+            ducked.getChannelData(c) as Float32Array,
+          ),
+          { sampleRate: ducked.sampleRate, channels, bitDepth: 16 },
+        );
+        const blob = new Blob([wav], { type: "audio/wav" });
+        const newUrl = URL.createObjectURL(blob);
+        const Ctor = (window.OfflineAudioContext ||
+          // @ts-expect-error legacy webkit fallback
+          window.webkitOfflineAudioContext) as typeof OfflineAudioContext;
+        const ctx = new Ctor(
+          Math.max(1, ducked.numberOfChannels),
+          Math.max(1, ducked.length),
+          ducked.sampleRate,
+        ) as BaseAudioContext;
+        const audioBuf = ctx.createBuffer(
+          Math.max(1, ducked.numberOfChannels),
+          Math.max(1, ducked.length),
+          ducked.sampleRate,
+        );
+        for (let c = 0; c < ducked.numberOfChannels; c++) {
+          const src = ducked.getChannelData(c);
+          const copy = new Float32Array(src.length);
+          copy.set(src);
+          audioBuf.copyToChannel(copy, c, 0);
+        }
+        onTransformSample(id, newUrl, audioBuf);
+        applied++;
+      } catch {
+        /* skip */
+      }
+    }
+    toast(`Sidechain "${preset.name}" (4-on-floor): ${applied} Samples`, { kind: "success" });
+  }, [multiSelectIds, samples, onTransformSample, bulkSidechainPresetId]);
+
   // v3.152: Wenn Samples aus dem Projekt verschwinden (extern gelöscht),
   // multi-select-Set defensiv auf Existenz-Filter laufen lassen.
   useEffect(() => {
@@ -2543,6 +2619,26 @@ export function SampleBrowser({
                         title="Delay auf alle ausgewählten Samples"
                       >
                         Delay
+                      </button>
+                      <select
+                        value={bulkSidechainPresetId}
+                        onChange={(e) => setBulkSidechainPresetId(e.target.value)}
+                        data-testid="sample-browser-bulk-sidechain-preset"
+                        className="bg-bg-panel border border-border-color rounded px-1.5 py-0.5 text-[10px] text-text-muted hover:border-accent-primary focus:outline-none transition-colors"
+                        title="Sidechain-Preset (4-on-the-floor Trigger)"
+                      >
+                        {SIDECHAIN_PRESETS.map((p) => (
+                          <option key={p.id} value={p.id}>{p.name}</option>
+                        ))}
+                      </select>
+                      <button
+                        onClick={handleBulkSidechain}
+                        disabled={!onTransformSample}
+                        data-testid="sample-browser-bulk-sidechain"
+                        className="px-2 py-0.5 rounded text-[10px] border border-border-color text-text-primary hover:border-accent-secondary hover:text-accent-secondary disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        title="Sidechain-Pump (4-on-the-floor) auf alle ausgewählten Samples"
+                      >
+                        Pump
                       </button>
                       <button
                         onClick={handleBulkDelete}
