@@ -157,6 +157,8 @@ import { applyPhaser } from "@/utils/samplePhaser";
 import { applyGranulize } from "@/utils/sampleGranulize";
 // v3.219: Bulk-NoiseReduce (Spectral-Subtraction-Imitation, reduction 0..1) für selektierte Samples.
 import { reduceNoise } from "@/utils/sampleNoiseReduction";
+// v3.221: Bulk-TimeStretch (OLA, stretchFactor 0.25..4) für selektierte Samples.
+import { applyTimeStretch } from "@/utils/sampleTimeStretch";
 
 // ─── Typen ────────────────────────────────────────────────────────────────────
 
@@ -3061,6 +3063,7 @@ export function SampleBrowser({
   // v3.219: Bulk-NoiseReduce (Spectral-Subtraction-Imitation, reduction 0..1) für selektierte Samples.
   // reduceNoise ist pure; resultierender Buffer hat gleiche Länge / Channel-Anzahl wie Input.
   const [bulkNoiseReduction, setBulkNoiseReduction] = useState<number>(0.7);
+  const [bulkStretchFactor, setBulkStretchFactor] = useState<number>(1);
 
   const handleBulkNoiseReduce = useCallback(async () => {
     if (multiSelectIds.size === 0 || !onTransformSample) return;
@@ -3113,11 +3116,66 @@ export function SampleBrowser({
       `NoiseReduce ${bulkNoiseReduction.toFixed(2)}: ${applied} Samples`,
       { kind: "success" },
     );
+  }, [multiSelectIds, samples, onTransformSample, bulkNoiseReduction]);
+
+  // v3.221: Bulk-TimeStretch — OLA time-stretching ohne pitch-Änderung.
+  const handleBulkTimeStretch = useCallback(async () => {
+    if (multiSelectIds.size === 0 || !onTransformSample) return;
+    if (bulkStretchFactor === 1) return;
+    let applied = 0;
+    for (const id of multiSelectIds) {
+      const sample = samples.find((s) => s.id === id);
+      if (!sample) continue;
+      try {
+        const buf = await AudioEngine.loadSample(sample.path);
+        if (!buf) continue;
+        const out = applyTimeStretch(buf as unknown as AudioBufferLike, {
+          stretchFactor: bulkStretchFactor,
+        });
+        if (out.numberOfChannels === 0 || out.length === 0) continue;
+        const channels = Math.min(2, out.numberOfChannels) as 1 | 2;
+        const wav = encodeWav(
+          Array.from({ length: channels }, (_, c) =>
+            out.getChannelData(c) as Float32Array,
+          ),
+          { sampleRate: out.sampleRate, channels, bitDepth: 16 },
+        );
+        const blob = new Blob([wav], { type: "audio/wav" });
+        const newUrl = URL.createObjectURL(blob);
+        const Ctor = (window.OfflineAudioContext ||
+          // @ts-expect-error legacy webkit fallback
+          window.webkitOfflineAudioContext) as typeof OfflineAudioContext;
+        const ctx = new Ctor(
+          Math.max(1, out.numberOfChannels),
+          Math.max(1, out.length),
+          out.sampleRate,
+        ) as BaseAudioContext;
+        const audioBuf = ctx.createBuffer(
+          Math.max(1, out.numberOfChannels),
+          Math.max(1, out.length),
+          out.sampleRate,
+        );
+        for (let c = 0; c < out.numberOfChannels; c++) {
+          const src = out.getChannelData(c);
+          const copy = new Float32Array(src.length);
+          copy.set(src);
+          audioBuf.copyToChannel(copy, c, 0);
+        }
+        onTransformSample(id, newUrl, audioBuf);
+        applied++;
+      } catch {
+        /* skip */
+      }
+    }
+    toast(
+      `TimeStretch ${bulkStretchFactor.toFixed(2)}x: ${applied} Samples`,
+      { kind: "success" },
+    );
   }, [
     multiSelectIds,
     samples,
     onTransformSample,
-    bulkNoiseReduction,
+    bulkStretchFactor,
   ]);
 
   // v3.152: Wenn Samples aus dem Projekt verschwinden (extern gelöscht),
@@ -4707,6 +4765,30 @@ export function SampleBrowser({
                         title="NoiseReduce (Spectral-Subtraction-Imitation: lernt Noise-Floor aus ersten 100ms, gated block-weise auf reduction-Amount) auf alle ausgewählten Samples"
                       >
                         NR
+                      </button>
+                      {/* v3.221: Bulk-TimeStretch */}
+                      <input
+                        type="range"
+                        min={0.25}
+                        max={4}
+                        step={0.05}
+                        value={bulkStretchFactor}
+                        onChange={(e) => setBulkStretchFactor(parseFloat(e.target.value))}
+                        className="w-20 accent-accent-secondary"
+                        data-testid="sample-browser-bulk-timestretch-factor"
+                        title="TimeStretch-Factor (1=identity, 2=langsamer/länger, 0.5=schneller/kürzer)"
+                      />
+                      <span className="text-[10px] font-mono text-text-muted w-12 text-right">
+                        {bulkStretchFactor.toFixed(2)}x
+                      </span>
+                      <button
+                        onClick={handleBulkTimeStretch}
+                        disabled={!onTransformSample || bulkStretchFactor === 1}
+                        data-testid="sample-browser-bulk-timestretch"
+                        className="px-2 py-0.5 rounded text-[10px] border border-border-color text-text-primary hover:border-accent-secondary hover:text-accent-secondary disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        title="TimeStretch (OLA Overlap-Add, ohne pitch-Änderung) auf alle ausgewählten Samples"
+                      >
+                        TS
                       </button>
                       <button
                         onClick={handleBulkDelete}
