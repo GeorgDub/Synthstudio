@@ -163,6 +163,8 @@ import { applyTimeStretch } from "@/utils/sampleTimeStretch";
 import { applyBitcrush } from "@/utils/sampleBitcrush";
 // v3.224: Bulk-Haas (Stereo-Widening via L/R-Delay, delayMs 1..40) für selektierte Samples.
 import { applyHaas } from "@/utils/sampleHaas";
+// v3.225: Bulk-Exciter (Aural-Exciter / HP+tanh-Saturation, amount 0..1, freq 500..8000) für selektierte Samples.
+import { applyExciter } from "@/utils/sampleExciter";
 
 // ─── Typen ────────────────────────────────────────────────────────────────────
 
@@ -3073,6 +3075,9 @@ export function SampleBrowser({
   const [bulkBitcrushSrr, setBulkBitcrushSrr] = useState<number>(4);
   // v3.224: Bulk-Haas — delayMs (1..40, default 15 = classic-Preset, side="right" implicit default).
   const [bulkHaasDelay, setBulkHaasDelay] = useState<number>(15);
+  // v3.225: Bulk-Exciter — amount (0..1, default 0.3) + freq (500..8000 Hz, default 3000).
+  const [bulkExciterAmount, setBulkExciterAmount] = useState<number>(0.3);
+  const [bulkExciterFreq, setBulkExciterFreq] = useState<number>(3000);
 
   const handleBulkNoiseReduce = useCallback(async () => {
     if (multiSelectIds.size === 0 || !onTransformSample) return;
@@ -3307,6 +3312,69 @@ export function SampleBrowser({
     samples,
     onTransformSample,
     bulkHaasDelay,
+  ]);
+
+  // v3.225: Bulk-Exciter — applyExciter (Aural-Exciter / HP+tanh-Saturation,
+  // additiv zum Dry, amount=0 = Bypass-Identity).
+  const handleBulkExciter = useCallback(async () => {
+    if (multiSelectIds.size === 0 || !onTransformSample) return;
+    if (bulkExciterAmount === 0) return;
+    let applied = 0;
+    for (const id of multiSelectIds) {
+      const sample = samples.find((s) => s.id === id);
+      if (!sample) continue;
+      try {
+        const buf = await AudioEngine.loadSample(sample.path);
+        if (!buf) continue;
+        const out = applyExciter(buf as unknown as AudioBufferLike, {
+          amount: bulkExciterAmount,
+          freq: bulkExciterFreq,
+        });
+        if (out.numberOfChannels === 0 || out.length === 0) continue;
+        const channels = Math.min(2, out.numberOfChannels) as 1 | 2;
+        const wav = encodeWav(
+          Array.from({ length: channels }, (_, c) =>
+            out.getChannelData(c) as Float32Array,
+          ),
+          { sampleRate: out.sampleRate, channels, bitDepth: 16 },
+        );
+        const blob = new Blob([wav], { type: "audio/wav" });
+        const newUrl = URL.createObjectURL(blob);
+        const Ctor = (window.OfflineAudioContext ||
+          // @ts-expect-error legacy webkit fallback
+          window.webkitOfflineAudioContext) as typeof OfflineAudioContext;
+        const ctx = new Ctor(
+          Math.max(1, out.numberOfChannels),
+          Math.max(1, out.length),
+          out.sampleRate,
+        ) as BaseAudioContext;
+        const audioBuf = ctx.createBuffer(
+          Math.max(1, out.numberOfChannels),
+          Math.max(1, out.length),
+          out.sampleRate,
+        );
+        for (let c = 0; c < out.numberOfChannels; c++) {
+          const src = out.getChannelData(c);
+          const copy = new Float32Array(src.length);
+          copy.set(src);
+          audioBuf.copyToChannel(copy, c, 0);
+        }
+        onTransformSample(id, newUrl, audioBuf);
+        applied++;
+      } catch {
+        /* skip */
+      }
+    }
+    toast(
+      `Exciter amt=${bulkExciterAmount.toFixed(2)} freq=${bulkExciterFreq}Hz: ${applied} Samples`,
+      { kind: "success" },
+    );
+  }, [
+    multiSelectIds,
+    samples,
+    onTransformSample,
+    bulkExciterAmount,
+    bulkExciterFreq,
   ]);
 
   // v3.152: Wenn Samples aus dem Projekt verschwinden (extern gelöscht),
@@ -4982,6 +5050,44 @@ export function SampleBrowser({
                         title="Haas (Stereo-Widening via L/R-Delay, side=right) auf alle ausgewählten Samples"
                       >
                         HAAS
+                      </button>
+                      {/* v3.225: Bulk-Exciter — amount-Slider + freq-Slider + Apply-Button (HP + tanh-Saturation, additiv zum Dry). */}
+                      <input
+                        type="range"
+                        min={0}
+                        max={1}
+                        step={0.05}
+                        value={bulkExciterAmount}
+                        onChange={(e) => setBulkExciterAmount(parseFloat(e.target.value))}
+                        className="w-16 accent-accent-secondary"
+                        data-testid="sample-browser-bulk-exciter-amount"
+                        title="Exciter Amount (0..1, default 0.3, additiv zum Dry-Signal; 0 = Bypass)"
+                      />
+                      <span className="text-[10px] font-mono text-text-muted w-10 text-right">
+                        {bulkExciterAmount.toFixed(2)}
+                      </span>
+                      <input
+                        type="range"
+                        min={500}
+                        max={8000}
+                        step={100}
+                        value={bulkExciterFreq}
+                        onChange={(e) => setBulkExciterFreq(parseInt(e.target.value, 10))}
+                        className="w-16 accent-accent-secondary"
+                        data-testid="sample-browser-bulk-exciter-freq"
+                        title="Exciter High-Pass-Cutoff in Hz (500..8000, default 3000 = klassischer Air-Bereich)"
+                      />
+                      <span className="text-[10px] font-mono text-text-muted w-12 text-right">
+                        {bulkExciterFreq}Hz
+                      </span>
+                      <button
+                        onClick={handleBulkExciter}
+                        disabled={!onTransformSample || bulkExciterAmount === 0}
+                        data-testid="sample-browser-bulk-exciter"
+                        className="px-2 py-0.5 rounded text-[10px] border border-border-color text-text-primary hover:border-accent-secondary hover:text-accent-secondary disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        title="Exciter (Aural-Exciter / HP + tanh-Saturation, additiv zum Dry) auf alle ausgewählten Samples"
+                      >
+                        EXC
                       </button>
                       <button
                         onClick={handleBulkDelete}
