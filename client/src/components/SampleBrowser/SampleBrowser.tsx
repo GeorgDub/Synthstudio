@@ -734,6 +734,12 @@ export function SampleBrowser({
   // "Single-Select"-Anker (Preview-Sample). multiSelectIds = zusätzlich
   // mehrfach-markierte Samples für Bulk-Operationen.
   const [multiSelectIds, setMultiSelectIds] = useState<Set<string>>(() => new Set());
+  // v3.231 ext-16: Bulk-Action-Progress-Indicator. Wird per
+  // runBulkWithProgress-Helper gesetzt und am Ende auf null zurückgesetzt.
+  // null = kein Bulk-Job aktiv → Floating-Progress-Bar unsichtbar.
+  const [bulkProgress, setBulkProgress] = useState<
+    { current: number; total: number; label: string } | null
+  >(null);
   const lastClickedIdRef = useRef<string | null>(null);
 
   // v3.162: Aggregierte Duration für die Bulk-Bar.
@@ -1097,6 +1103,37 @@ export function SampleBrowser({
     }
   }, [filteredSamples]);
 
+  // v3.231 ext-16: Generic Progress-wrapper für Bulk-Actions. Iteriert eine
+  // Set<string> von Sample-IDs, ruft worker(id) für jede ID auf, aktualisiert
+  // den bulkProgress-State + gibt jeden 3. Schritt die Kontrolle ans
+  // UI-Thread zurück (await setTimeout(0)) damit React den Progress-Bar
+  // re-rendern kann. Liefert applied-Counter zurück. Internal-only.
+  const runBulkWithProgress = useCallback(
+    async (
+      label: string,
+      ids: Set<string>,
+      worker: (id: string) => Promise<boolean>,
+    ): Promise<number> => {
+      const total = ids.size;
+      let current = 0;
+      let applied = 0;
+      setBulkProgress({ current, total, label });
+      for (const id of ids) {
+        current++;
+        setBulkProgress({ current, total, label });
+        // yield to UI thread every batch
+        if (current % 3 === 0) {
+          await new Promise((r) => setTimeout(r, 0));
+        }
+        const ok = await worker(id);
+        if (ok) applied++;
+      }
+      setBulkProgress(null);
+      return applied;
+    },
+    [],
+  );
+
   // v3.152: Bulk-Delete-Handler. Asks confirmation, dann removeSample für jede ID.
   // v3.154: Bulk-Category-Change — wendet Kategorie auf alle ausgewählten Samples.
   const handleBulkCategory = useCallback((categoryId: string) => {
@@ -1109,6 +1146,10 @@ export function SampleBrowser({
   // v3.153: Bulk-Tag-Add — Tag-Input-State + Handler.
   const [bulkTagInputVisible, setBulkTagInputVisible] = useState(false);
   const [bulkTagDraft, setBulkTagDraft] = useState("");
+  // v3.231: Bulk-FX-Kategorien — collapsible category-dropdown statt 25 inline-Buttons.
+  const [bulkCategoryExpanded, setBulkCategoryExpanded] = useState<
+    "filter" | "mod" | "glitch" | "cleanup" | "creative" | null
+  >(null);
   const handleBulkAddTag = useCallback(() => {
     if (multiSelectIds.size === 0 || !onAddTagToSample) return;
     const tag = bulkTagDraft.trim();
@@ -1954,55 +1995,60 @@ export function SampleBrowser({
   // Projekt geschrieben (+ AudioBuffer für AudioEngine-Cache).
   const [bulkLowPassCutoff, setBulkLowPassCutoff] = useState<number>(5000);
 
+  // v3.231 ext-16: migriert auf runBulkWithProgress — yieldet pro 3 Samples
+  // ans UI-Thread + zeigt Floating-Progress-Bar.
   const handleBulkLowPass = useCallback(async () => {
     if (multiSelectIds.size === 0 || !onTransformSample) return;
-    let applied = 0;
-    for (const id of multiSelectIds) {
-      const sample = samples.find((s) => s.id === id);
-      if (!sample) continue;
-      try {
-        const buf = await AudioEngine.loadSample(sample.path);
-        if (!buf) continue;
-        const out = applyLowPass(buf as unknown as AudioBufferLike, {
-          cutoffHz: bulkLowPassCutoff,
-        });
-        if (out.numberOfChannels === 0 || out.length === 0) continue;
-        const channels = Math.min(2, out.numberOfChannels) as 1 | 2;
-        const wav = encodeWav(
-          Array.from({ length: channels }, (_, c) =>
-            out.getChannelData(c) as Float32Array,
-          ),
-          { sampleRate: out.sampleRate, channels, bitDepth: 16 },
-        );
-        const blob = new Blob([wav], { type: "audio/wav" });
-        const newUrl = URL.createObjectURL(blob);
-        const Ctor = (window.OfflineAudioContext ||
-          // @ts-expect-error legacy webkit fallback
-          window.webkitOfflineAudioContext) as typeof OfflineAudioContext;
-        const ctx = new Ctor(
-          Math.max(1, out.numberOfChannels),
-          Math.max(1, out.length),
-          out.sampleRate,
-        ) as BaseAudioContext;
-        const audioBuf = ctx.createBuffer(
-          Math.max(1, out.numberOfChannels),
-          Math.max(1, out.length),
-          out.sampleRate,
-        );
-        for (let c = 0; c < out.numberOfChannels; c++) {
-          const src = out.getChannelData(c);
-          const copy = new Float32Array(src.length);
-          copy.set(src);
-          audioBuf.copyToChannel(copy, c, 0);
+    const applied = await runBulkWithProgress(
+      `Low-Pass ${bulkLowPassCutoff}Hz`,
+      multiSelectIds,
+      async (id) => {
+        const sample = samples.find((s) => s.id === id);
+        if (!sample) return false;
+        try {
+          const buf = await AudioEngine.loadSample(sample.path);
+          if (!buf) return false;
+          const out = applyLowPass(buf as unknown as AudioBufferLike, {
+            cutoffHz: bulkLowPassCutoff,
+          });
+          if (out.numberOfChannels === 0 || out.length === 0) return false;
+          const channels = Math.min(2, out.numberOfChannels) as 1 | 2;
+          const wav = encodeWav(
+            Array.from({ length: channels }, (_, c) =>
+              out.getChannelData(c) as Float32Array,
+            ),
+            { sampleRate: out.sampleRate, channels, bitDepth: 16 },
+          );
+          const blob = new Blob([wav], { type: "audio/wav" });
+          const newUrl = URL.createObjectURL(blob);
+          const Ctor = (window.OfflineAudioContext ||
+            // @ts-expect-error legacy webkit fallback
+            window.webkitOfflineAudioContext) as typeof OfflineAudioContext;
+          const ctx = new Ctor(
+            Math.max(1, out.numberOfChannels),
+            Math.max(1, out.length),
+            out.sampleRate,
+          ) as BaseAudioContext;
+          const audioBuf = ctx.createBuffer(
+            Math.max(1, out.numberOfChannels),
+            Math.max(1, out.length),
+            out.sampleRate,
+          );
+          for (let c = 0; c < out.numberOfChannels; c++) {
+            const src = out.getChannelData(c);
+            const copy = new Float32Array(src.length);
+            copy.set(src);
+            audioBuf.copyToChannel(copy, c, 0);
+          }
+          onTransformSample(id, newUrl, audioBuf);
+          return true;
+        } catch {
+          return false;
         }
-        onTransformSample(id, newUrl, audioBuf);
-        applied++;
-      } catch {
-        /* skip */
-      }
-    }
+      },
+    );
     toast(`Low-Pass ${bulkLowPassCutoff}Hz: ${applied} Samples`, { kind: "success" });
-  }, [multiSelectIds, samples, onTransformSample, bulkLowPassCutoff]);
+  }, [multiSelectIds, samples, onTransformSample, bulkLowPassCutoff, runBulkWithProgress]);
 
   // v3.201 — Bulk-High-Pass-Filter für selektierte Samples. cutoffHz-Slider
   // 50..800 Hz (default 80 = "rumble" preset). applyHighPass rendert pure,
@@ -2010,55 +2056,59 @@ export function SampleBrowser({
   // Projekt geschrieben (+ AudioBuffer für AudioEngine-Cache).
   const [bulkHighPassCutoff, setBulkHighPassCutoff] = useState<number>(80);
 
+  // v3.231 ext-16: migriert auf runBulkWithProgress (Pattern-Demo #2).
   const handleBulkHighPass = useCallback(async () => {
     if (multiSelectIds.size === 0 || !onTransformSample) return;
-    let applied = 0;
-    for (const id of multiSelectIds) {
-      const sample = samples.find((s) => s.id === id);
-      if (!sample) continue;
-      try {
-        const buf = await AudioEngine.loadSample(sample.path);
-        if (!buf) continue;
-        const out = applyHighPass(buf as unknown as AudioBufferLike, {
-          cutoffHz: bulkHighPassCutoff,
-        });
-        if (out.numberOfChannels === 0 || out.length === 0) continue;
-        const channels = Math.min(2, out.numberOfChannels) as 1 | 2;
-        const wav = encodeWav(
-          Array.from({ length: channels }, (_, c) =>
-            out.getChannelData(c) as Float32Array,
-          ),
-          { sampleRate: out.sampleRate, channels, bitDepth: 16 },
-        );
-        const blob = new Blob([wav], { type: "audio/wav" });
-        const newUrl = URL.createObjectURL(blob);
-        const Ctor = (window.OfflineAudioContext ||
-          // @ts-expect-error legacy webkit fallback
-          window.webkitOfflineAudioContext) as typeof OfflineAudioContext;
-        const ctx = new Ctor(
-          Math.max(1, out.numberOfChannels),
-          Math.max(1, out.length),
-          out.sampleRate,
-        ) as BaseAudioContext;
-        const audioBuf = ctx.createBuffer(
-          Math.max(1, out.numberOfChannels),
-          Math.max(1, out.length),
-          out.sampleRate,
-        );
-        for (let c = 0; c < out.numberOfChannels; c++) {
-          const src = out.getChannelData(c);
-          const copy = new Float32Array(src.length);
-          copy.set(src);
-          audioBuf.copyToChannel(copy, c, 0);
+    const applied = await runBulkWithProgress(
+      `High-Pass ${bulkHighPassCutoff}Hz`,
+      multiSelectIds,
+      async (id) => {
+        const sample = samples.find((s) => s.id === id);
+        if (!sample) return false;
+        try {
+          const buf = await AudioEngine.loadSample(sample.path);
+          if (!buf) return false;
+          const out = applyHighPass(buf as unknown as AudioBufferLike, {
+            cutoffHz: bulkHighPassCutoff,
+          });
+          if (out.numberOfChannels === 0 || out.length === 0) return false;
+          const channels = Math.min(2, out.numberOfChannels) as 1 | 2;
+          const wav = encodeWav(
+            Array.from({ length: channels }, (_, c) =>
+              out.getChannelData(c) as Float32Array,
+            ),
+            { sampleRate: out.sampleRate, channels, bitDepth: 16 },
+          );
+          const blob = new Blob([wav], { type: "audio/wav" });
+          const newUrl = URL.createObjectURL(blob);
+          const Ctor = (window.OfflineAudioContext ||
+            // @ts-expect-error legacy webkit fallback
+            window.webkitOfflineAudioContext) as typeof OfflineAudioContext;
+          const ctx = new Ctor(
+            Math.max(1, out.numberOfChannels),
+            Math.max(1, out.length),
+            out.sampleRate,
+          ) as BaseAudioContext;
+          const audioBuf = ctx.createBuffer(
+            Math.max(1, out.numberOfChannels),
+            Math.max(1, out.length),
+            out.sampleRate,
+          );
+          for (let c = 0; c < out.numberOfChannels; c++) {
+            const src = out.getChannelData(c);
+            const copy = new Float32Array(src.length);
+            copy.set(src);
+            audioBuf.copyToChannel(copy, c, 0);
+          }
+          onTransformSample(id, newUrl, audioBuf);
+          return true;
+        } catch {
+          return false;
         }
-        onTransformSample(id, newUrl, audioBuf);
-        applied++;
-      } catch {
-        /* skip */
-      }
-    }
+      },
+    );
     toast(`High-Pass ${bulkHighPassCutoff}Hz: ${applied} Samples`, { kind: "success" });
-  }, [multiSelectIds, samples, onTransformSample, bulkHighPassCutoff]);
+  }, [multiSelectIds, samples, onTransformSample, bulkHighPassCutoff, runBulkWithProgress]);
 
   // v3.202 — Bulk-Band-Pass für selektierte Samples. Center 100..10000 Hz
   // (default 1500 = "telephone" preset), Width 100..5000 Hz (default 2000).
@@ -3970,6 +4020,29 @@ export function SampleBrowser({
           currentFile={importProgress.currentFile}
           onCancel={handleCancelImport}
         />
+      )}
+
+      {/* v3.231 ext-16: Bulk-Action Floating Progress Bar */}
+      {bulkProgress && (
+        <div
+          data-testid="sample-browser-bulk-progress"
+          className="absolute bottom-2 right-2 bg-bg-panel border border-border-color rounded px-3 py-1.5 shadow z-10"
+        >
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] text-text-primary">{bulkProgress.label}</span>
+            <span className="text-[10px] font-mono text-text-muted">
+              {bulkProgress.current}/{bulkProgress.total}
+            </span>
+            <div className="w-24 h-1.5 bg-bg-elevated rounded overflow-hidden">
+              <div
+                className="h-full bg-accent-secondary transition-all"
+                style={{
+                  width: `${(bulkProgress.current / Math.max(1, bulkProgress.total)) * 100}%`,
+                }}
+              />
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Kategorie-Kontextmenü */}

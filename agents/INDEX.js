@@ -4200,6 +4200,22 @@ const INDEX = {
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
     {
+      agent:     "frontend",
+      timestamp: "2026-05-20T20:05:00.000Z",
+      done: [
+        "v3.231 ext-16 Bulk-Action-Progress-Indicator im SampleBrowser. NEU state bulkProgress: { current: number; total: number; label: string } | null direkt nach multiSelectIds (Zeile ~737). NEU Helper-Function runBulkWithProgress(label, ids, worker): Promise<number> vor handleBulkCategory (Zeile ~1108). API: iteriert ids-Set, ruft worker(id) pro ID (worker liefert boolean ok), aktualisiert setBulkProgress({current, total, label}) vor jedem Schritt, yieldet pro 3. Schritt via await setTimeout(0) damit React den Progress-Bar re-rendern kann, setzt setBulkProgress(null) am Ende, gibt applied-Counter (Summe der true-returns vom worker) zurueck. Internal-only (kein Export). NEU Floating Progress-Bar JSX nach Import-Progress-Overlay (Zeile ~3975): data-testid='sample-browser-bulk-progress', absolute bottom-2 right-2, semantic-tokens (bg-bg-panel, border-border-color, text-text-primary, text-text-muted, bg-bg-elevated, bg-accent-secondary), 24-w x 1.5-h Bar mit width-style aus current/total. Container ist bereits 'relative' (Zeile 3961). MIGRATION: handleBulkLowPass + handleBulkHighPass auf runBulkWithProgress umgestellt - return-true bei erfolgreichem onTransformSample, return-false bei skip (sample not found / load failure / 0-channel buffer / catch). Beide Handler haben jetzt die gleiche Form: applied = await runBulkWithProgress(label, multiSelectIds, async (id) => {...}) + Toast. Beide deps-Arrays + runBulkWithProgress ergaenzt. 23 weitere Bulk-Handler bleiben unmigriert als Pattern-Demo NICHT-Vollmigration. AKZEPTANZ: pnpm check GRUEN (precheck gen:sandbox up-to-date, tsc --noEmit 0 errors). Files touched: client/src/components/SampleBrowser/SampleBrowser.tsx + agents/INDEX.js (workLog). KEIN Commit, KEIN package.json-Bump. Migrated handlers: handleBulkLowPass + handleBulkHighPass. Helper-API nicht exportiert (internal-only)."
+      ],
+      next: [
+        "v3.231+ Migration der verbleibenden 23 handleBulkXxx-Handler auf runBulkWithProgress: handleBulkNormalize (spezialfall - batchNormalizeSamples ist EIN one-shot Call ueber array, nicht per-id - braucht Refactor zu per-id-Loop oder Wrap mit fake-single-step), handleBulkBrightness/Onsets/Lufs/Width/Reverb/NoiseGate/AutoTune/Compressor/Delay/Sidechain/PitchShift/Saturator/Stereo/BandPass/AllPass/Speed/SrReduce + weitere. Form ist immer identisch zu LowPass/HighPass Pattern-Demo.",
+        "v3.231+ Bulk-Cancel-Button: runBulkWithProgress um cancelToken erweitern, im Progress-Bar UI ein X-Button rendern der setBulkProgress-state-flag toggelt; in der for-Schleife nach jedem await(worker) cancelToken pruefen + break. Wichtig fuer User die versehentlich 500 Samples selektiert haben.",
+        "v3.231+ Testing-Owner: Playwright-Smoke fuer Bulk-Progress-Bar - select 5 samples + click bulk-low-pass + assert data-testid='sample-browser-bulk-progress' wird sichtbar UND nach Abschluss wieder unsichtbar. Vitest-Unit nicht moeglich da runBulkWithProgress innerhalb der Component eingeschlossen (kein Pure-Helper-Export)."
+      ],
+      changed: [
+        "client/src/components/SampleBrowser/SampleBrowser.tsx (state bulkProgress + helper runBulkWithProgress + Floating-Progress-Bar JSX + Migration handleBulkLowPass + handleBulkHighPass auf runBulkWithProgress)",
+        "agents/INDEX.js (workLog-Eintrag frontend v3.231 ext-16)"
+      ]
+    },
+    {
       agent:     "refactor",
       timestamp: "2026-05-20T19:50:00.000Z",
       done: [

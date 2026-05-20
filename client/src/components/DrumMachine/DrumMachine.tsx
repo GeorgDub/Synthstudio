@@ -303,6 +303,14 @@ interface PatternRowProps {
    * Rows weitergereicht — vermeidet O(N) Recompute pro Row.
    */
   activePatternFlat?: boolean[];
+  /**
+   * v3.231 ext-2: User-Toggle "Analytics-Badges anzeigen". Gated alle
+   * analytics-Badges (pulse, heatmap, similarity, entropy, tension,
+   * energycurve, flow, repetition, symmetry, motion, groove, kicksnare,
+   * hihat, fill, mood). MIDI-Learn-CC-Badge + density/complexity/fitness-
+   * Dots bleiben sichtbar. Default true.
+   */
+  showAnalyticsBadges?: boolean;
 }
 
 function PatternRow({
@@ -310,6 +318,7 @@ function PatternRow({
   hasPrevPattern, prevPatternId, allPatterns,
   onSelect, onDuplicate, onRemove, onCopySamplesFrom, onReorder, onExportImage, onCompare, onCopy, onExportMidiEvents, onExportMidiBinary,
   activePatternId, activePatternFlat,
+  showAnalyticsBadges = true,
 }: PatternRowProps) {
   const isDraft  = isLiveEditing && isActive;
   const isLocked = isLiveEditing && isPlaying;
@@ -687,7 +696,7 @@ function PatternRow({
           />
         )}
         {/* v3.201: Density-Pulse-Count Badge — Bursts hoher Hit-Dichte. */}
-        {pulseCount > 0 && (
+        {showAnalyticsBadges && pulseCount > 0 && (
           <span
             className="ml-1 px-1 py-0.5 rounded text-[9px] font-mono bg-accent-secondary/20 text-accent-secondary"
             title={`${pulseCount} Density-Pulse(s) detected`}
@@ -697,7 +706,7 @@ function PatternRow({
           </span>
         )}
         {/* v3.203: Mini-Heatmap-Visualisierung pro Pattern-Row (32x16 SVG). */}
-        {heatmapData.partCount > 0 && heatmapData.stepCount > 0 && (
+        {showAnalyticsBadges && heatmapData.partCount > 0 && heatmapData.stepCount > 0 && (
           <span
             className="inline-block ml-1 align-middle border border-border-color rounded text-accent-secondary"
             title={`Heatmap: avgDensity=${(heatmapData.avgDensity * 100).toFixed(0)}%, hotspot at part ${heatmapHotspot?.partIndex ?? "-"}`}
@@ -725,7 +734,7 @@ function PatternRow({
           </span>
         )}
         {/* v3.205: Similarity-Badge "vs active" — nur wenn nicht self UND >=50%. */}
-        {pattern.id !== activePatternId && similarityToActive >= 0.5 && (
+        {showAnalyticsBadges && pattern.id !== activePatternId && similarityToActive >= 0.5 && (
           <span
             className="ml-1 px-1 py-0.5 rounded text-[9px] font-mono bg-accent-success/20 text-accent-success"
             title={`${Math.round(similarityToActive * 100)}% similar zum aktiven Pattern`}
@@ -735,7 +744,7 @@ function PatternRow({
           </span>
         )}
         {/* v3.207: Complexity-Badge — Shannon-Entropy (analog pulse-badge). */}
-        {entropy > 0.3 && (
+        {showAnalyticsBadges && entropy > 0.3 && (
           <span
             className="ml-1 px-1 py-0.5 rounded text-[9px] font-mono bg-accent-primary/20 text-accent-primary"
             title={`Komplexität: ${Math.round(entropy * 100)}% (Shannon-Entropy)`}
@@ -745,7 +754,7 @@ function PatternRow({
           </span>
         )}
         {/* v3.209: Tension-Badge — Off-Beat + Velocity-Variance + Syncopation. */}
-        {tension.overallTension > 0.4 && (
+        {showAnalyticsBadges && tension.overallTension > 0.4 && (
           <span
             className="ml-1 px-1 py-0.5 rounded text-[9px] font-mono bg-accent-danger/20 text-accent-danger"
             title={`Tension: ${Math.round(tension.overallTension * 100)}% (off-beat ${Math.round(tension.offBeatScore * 100)}%, sync ${Math.round(tension.syncopationScore * 100)}%)`}
@@ -755,7 +764,7 @@ function PatternRow({
           </span>
         )}
         {/* v3.212: Energy-Curve Spark-Line — Sliding-Window-Energy ueber Step-Achse. */}
-        {energyCurve.points.length >= 2 && (
+        {showAnalyticsBadges && energyCurve.points.length >= 2 && (
           <span
             className="inline-block ml-1 align-middle border border-border-color rounded text-accent-primary"
             title={`Energy: avg=${Math.round(energyCurve.averageEnergy * 100)}% peak@step${energyCurve.peakStepIndex}, trend: ${energyCurve.trend}`}
@@ -780,7 +789,7 @@ function PatternRow({
           </span>
         )}
         {/* v3.214: Flow-Direction-Badge — Pfeil/Icon je nach detectFlowDirection. */}
-        {flowDirection.direction !== "uniform" && flowDirection.confidence > 0.15 && (
+        {showAnalyticsBadges && flowDirection.direction !== "uniform" && flowDirection.confidence > 0.15 && (
           <span
             className="ml-1 px-1 py-0.5 rounded text-[9px] font-mono bg-bg-elevated text-text-muted"
             title={`Flow: ${flowDirection.direction} (${Math.round(flowDirection.confidence * 100)}% confidence)`}
@@ -794,7 +803,7 @@ function PatternRow({
           </span>
         )}
         {/* v3.216: Repetition-Badge — selbst-aehnliche Sub-Patterns (ABAB, AAAA, ...). */}
-        {repetition.repetitionScore > 0.4 && (
+        {showAnalyticsBadges && repetition.repetitionScore > 0.4 && (
           <span
             className="ml-1 px-1 py-0.5 rounded text-[9px] font-mono bg-bg-elevated text-text-primary border border-border-color"
             title={`Repetition: ${Math.round(repetition.repetitionScore * 100)}%, ${repetition.uniqueRegions} unique regions`}
@@ -804,7 +813,7 @@ function PatternRow({
           </span>
         )}
         {/* v3.218: Symmetry-Badge — Palindrome (⟷) oder Mirror-Symmetry (◐). */}
-        {(symmetry.isPalindrome || symmetry.halfMirrorScore > 0.7) && (
+        {showAnalyticsBadges && (symmetry.isPalindrome || symmetry.halfMirrorScore > 0.7) && (
           <span
             className="ml-1 px-1 py-0.5 rounded text-[9px] font-mono bg-accent-success/20 text-accent-success"
             title={`Symmetry: palindrome=${Math.round(symmetry.palindromeScore * 100)}%, mirror=${Math.round(symmetry.halfMirrorScore * 100)}%@axis${symmetry.mirrorAxis}`}
@@ -815,7 +824,7 @@ function PatternRow({
           </span>
         )}
         {/* v3.222: Motion-Badge — Step-zu-Step Energy-Vektoren (Arrow + M-Score). */}
-        {motion.overallMotion > 0.3 && (
+        {showAnalyticsBadges && motion.overallMotion > 0.3 && (
           <span
             className="ml-1 px-1 py-0.5 rounded text-[9px] font-mono bg-bg-elevated text-text-muted border border-border-color"
             title={`Motion: ${Math.round(motion.overallMotion * 100)}%, net=${motion.netDirection.toFixed(2)}, accel=${motion.acceleration.toFixed(2)}`}
