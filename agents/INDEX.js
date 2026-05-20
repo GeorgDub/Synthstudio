@@ -342,6 +342,17 @@ const INDEX = {
       lastSeen: "2026-05-20T14:30:00.000Z",
       ownedBy:  "testing"
     },
+    // ─── v3.205 Pure-Helpers (refactor) — Sample-Chorus ──────────
+    "client/src/utils/sampleChorus.ts": {
+      role:     "Pure-Helper fuer single-voice Chorus-Effekt via modulierten Delay-Line (kein Feedback, kein FFT, kein externes DSP). Foundation fuer Sample-FX-Chorus-Tab im SampleTransformDialog (v3.206+ Wire-Up) und kuenftige Live-Chorus-Channel-Insert in AudioEngine (Web-Audio DelayNode + AudioParam-LFO oder AudioWorklet). Public API: applyChorus(buffer, opts?:{rateHz?,depthMs?,delayMs?,mix?}) -> AudioBufferLike (identische Channel-Anzahl + Laenge wie Input, KEIN Tail anders als sampleDelay). CHORUS_PRESETS as const Object {subtle: {rate 0.5, depth 2, mix 0.3}, classic: {1.0, 5, 0.5}, lush: {0.8, 8, 0.7}, shimmer: {3.0, 3, 0.4}}. DSP pro Channel: 1) ring-buffer Float32Array(ceil((delayMs+depthMs/2)*sr/1000)+2) als Delay-Line. 2) Pro Sample: WRITE dry[i] at writeIdx; LFO t=i/sr, lfo=(sin(2*pi*rate*t)+1)/2*depthMs in [0,depthMs], modDelayMs=delayMs+(lfo-depthMs/2) zentriert um delayMs (Spec-Parenthese 'centered around delayMs/2' war Druckfehler — Formel ist eindeutig delayMs-zentriert). delaySamplesT=max(1, modDelayMs*sr/1000). Linear-Interpolation a+(b-a)*frac ueber ring-modulo. out[i]=mix*delayed+(1-mix)*dry. writeIdx++. LFO-Phase SHARED ueber alle Channels (single-voice Konvention) — identischer L=R-Input liefert identischen L=R-Output. Defensive Sanitizers: rateHz NaN/non-finite/<0.05 -> 1, >20 -> 20. depthMs NaN/<0.1 -> 5, >50 -> 50. delayMs NaN/<1 -> 15, >100 -> 100. mix NaN -> 0.5, <0 -> 0, >1 -> 1. Empty buffer -> empty AudioBufferLike mit fallback sampleRate=48000. Input wird NIE mutiert. Erste delaySamples Samples (vor i=delaySamples) lesen aus zero-prefilled Delay-Buffer — bei mix=1 also NICHT identitaet zu dry[0], sondern 0 (per Design dokumentiert). Pure & DOM-frei. ~230 LOC. Pattern angelehnt an sampleDelay.ts (v3.191) aber ohne Feedback und ohne Tail.",
+      lastSeen: "2026-05-20T21:20:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "tests/features/sample-chorus.test.ts": {
+      role:     "Pure-Coverage fuer sampleChorus.ts. 26 Tests in 2 describes (applyChorus 21 + CHORUS_PRESETS 5). applyChorus: empty buffer 2 (basic + sampleRate-fallback @ 44100); mix=0 identity 1 (Array-elementwise toBeCloseTo 6 — Float32-Precision-Falle bei (.., 10) wurde von v3.204-Eintrag gemeldet); mix=1 pure-delay zero-prefill 1 (sr=1000, delayMs=2 -> Lookup bei i=0,1 aus zero-prefilled delay-buf liefert 0, bei i=2 erscheint dry[0]=1 wieder); length-preservation 1 (output.length === input.length, NICHT input.length+tail wie sampleDelay); multi-channel shared-LFO 1 (identische L=R-Input -> per-element identischer L=R-Output via toBeCloseTo); multi-channel isolation 1 (L=impulse / R=silence -> R bleibt komplett 0); defaults 1 (ohne opts-Objekt, alle Defaults greifen, finite output); immutability 1 (Array.from-Snapshot VOR Call vs. NACH Call); sampleRate-Vielfalt 3 (8000/44100/96000 mit makeSine 100Hz/440Hz/440Hz); sanitizer rateHz 3 (NaN, neg=-3, > 20 -> alle finite); sanitizer depthMs 1 (Infinity -> clamp 50, finite output); sanitizer mix 2 (neg=-5 -> identity / >1=99 -> pure wet zero-prefill); sanitizer delayMs 2 (=0 -> default 15ms / >100 -> clamp 100); finiteness 1 (rateHz=20 + depthMs=50 + delayMs=100 + mix=1 extreme inputs auf 1000Hz-Sine -> alle Werte finite, kein NaN/Inf). CHORUS_PRESETS: Existenz aller 4; Werte-shape plausibel (rateHz>0, depthMs>0, mix in [0,1]); classic matched Spec-Defaults 1.0/5/0.5; shimmer hat schnellsten LFO (>classic, >subtle, >lush); preset direkt als ChorusOptions anwendbar via applyChorus(buf, CHORUS_PRESETS.classic). Sample-Rate-Trick sr=1000 + delayMs=2 fuer exakt-integer Lookup ohne Float-Wackler. Test-Helpers: makeBuffer / makeStereoBuffer / makeEmptyBuffer / makeSine. Vitest node-env. 26/26 passed in 48ms. Suite-Status nach Add: 330 files / 7584 passed / 16 skipped. ~275 LOC.",
+      lastSeen: "2026-05-20T21:20:00.000Z",
+      ownedBy:  "testing"
+    },
     // ─── v3.197 Pure-Helpers (refactor) — Sample-Stereo-Enhancer ─
     "client/src/utils/sampleStereoEnhancer.ts": {
       role:     "Pure-Helper fuer Stereo-Enhancement via Mid/Side (M/S) processing. Foundation fuer Stereo-Width-Slider im SampleTransformDialog + Bulk-Width-Workflow im SampleBrowser. Analyse-Pendant ist analyzeStereoWidth() aus sampleStereoWidth.ts (RMS-basiert, gleiche M/S-Math). Public API: applyStereoEnhance(buffer: AudioBufferLike, options?: StereoEnhanceOptions) -> AudioBufferLike. StereoEnhanceOptions {width?: number}. Konstanten DEFAULT_WIDTH=1, MIN_WIDTH=0, MAX_WIDTH=2. Math: M = (L+R)/2, S = (L-R)/2, L_out = M + S*width, R_out = M - S*width. Pro width-Wert: width=0 -> L_out=R_out=M (mono collapse, side info erased); width=1 -> L_out=L, R_out=R (identity, lossless); width=2 -> L_out=(3L-R)/2, R_out=(3R-L)/2 (extreme wide, kann |out|>1 erzeugen, kein internes Clipping — Caller-Kontrolle). Defensive: empty/null buffer (length<=0 || numberOfChannels<=0) -> empty AudioBufferLike mit fallback sampleRate=48000; Mono-Buffer (numberOfChannels===1) -> identity COPY (fresh Float32Array, NICHT aliased zum Original); >2 Channels -> Ch 0/1 M/S-prozessiert, Ch 2+ als fresh Copy durchgereicht (kein Reference-Sharing); width undefined/NaN/non-number -> DEFAULT_WIDTH (1); width Infinity / > MAX_WIDTH -> 2; width < MIN_WIDTH -> 0. NaN-Check VOR Clamp (sonst propagiert NaN durch Math.min/max). Original-Buffer wird NIE mutiert. Pure & DOM-frei. 165 LOC.",
@@ -3822,6 +3833,54 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "refactor",
+      timestamp: "2026-05-20T21:20:00.000Z",
+      done: [
+        "v3.205 NEU Pure-Helper client/src/utils/sampleChorus.ts (~230 LOC inkl. JSDoc) — single-voice Chorus-Effekt via modulierten Delay-Line (kein Feedback, kein FFT, kein externes DSP). Pure & DOM-frei, operiert auf AudioBufferLike (sampleEmbedding-Interface).",
+        "Public API: applyChorus(buffer, opts?:{rateHz?,depthMs?,delayMs?,mix?}) -> AudioBufferLike (identische Channel-Anzahl & Laenge wie Input, KEIN Tail anders als sampleDelay). CHORUS_PRESETS as const Object mit 4 Eintraegen: subtle (rate 0.5/depth 2/mix 0.3), classic (1.0/5/0.5), lush (0.8/8/0.7), shimmer (3.0/3/0.4).",
+        "DSP-Algorithmus pro Channel: 1) ring-buffer Float32Array(ceil((delayMs+depthMs/2)*sr/1000)+2) als Delay-Line (Guard fuer linear-interp). 2) Pro Sample: WRITE dry[i] at writeIdx; compute LFO: t=i/sr, lfoRaw=sin(2*pi*rate*t), lfo=(lfoRaw+1)/2*depthMs in [0,depthMs], modDelayMs=delayMs+(lfo-depthMs/2) in [delayMs-h, delayMs+h] (zentriert um delayMs, NICHT um delayMs/2 — Spec-Parenthese war ungenau, Formel ist unzweideutig). delaySamplesT=max(1, modDelayMs*sr/1000). Lookup mit linear-Interpolation (a + (b-a)*frac) ueber ring-modulo. out[i]=mix*delayed+(1-mix)*dry. writeIdx++.",
+        "LFO-Phase ist SHARED ueber alle Channels (single-voice Chorus-Konvention) — pro-Channel-Delay-Buffer aber gleicher LFO-State pro Sample-Index. Damit ergibt Stereo-Input mit identischen Channels auch identischen Output (im Test gepinnt).",
+        "Defensive Sanitizers: rateHz NaN/non-finite/<0.05 -> 1, >20 -> 20. depthMs NaN/non-finite/<0.1 -> 5, >50 -> 50. delayMs NaN/non-finite/<1 -> 15, >100 -> 100. mix NaN/non-finite -> 0.5, <0 -> 0, >1 -> 1. Empty buffer (length=0||numberOfChannels=0) -> empty output mit fallback sampleRate=48000. Input wird nie mutiert (pro Channel fresh Float32). Reading bei i<delaySamplesT liefert 0 (delay-buffer initial zero-prefilled) — bei mix=1 also NICHT identitaet zu dry[0]; per Design dokumentiert im JSDoc.",
+        "Pre-Impl-Advisor: LFO-Centering disambiguated (Formel ergibt zentriert um delayMs, Comment 'centered around delayMs/2' war Druckfehler), shared-LFO-Phase als idiomatic gewaehlt + im JSDoc explizit, delayBuffer-Sizing maxDelaySamples=ceil((delayMs+depthMs/2)*sr/1000)+2 (+2 als linear-interp-Guard), mix=1-at-i=0 Edge-Case gepinnt, Float32-Precision toBeCloseTo(_, 6) statt 10, ownedBy:frontend gewaehlt (sample-FX-layer Pattern wie sampleSaturator/sampleStereoEnhancer/sampleSampleRateReduce).",
+        "Test-Suite tests/features/sample-chorus.test.ts (~275 LOC, 26 Tests in 2 describes): applyChorus 21 (empty 2, mix=0 identity, mix=1 pure-delay zero-prefill, length-preservation 1, multi-channel shared-LFO identical-channels, multi-channel L-impulse/R-silence isolation, defaults ohne opts, immutability via Array.from-snapshot, sampleRate 8000/44100/96000, sanitizer rateHz NaN/-3/>20, sanitizer depthMs Inf, sanitizer mix neg/>1, sanitizer delayMs=0/>100, finiteness bei extremen Inputs), CHORUS_PRESETS 5 (Existenz alle 4, Werte-shape plausibel, classic matched 1.0/5/0.5, shimmer hat schnellsten LFO, preset direkt als ChorusOptions anwendbar via applyChorus(buf, CHORUS_PRESETS.classic)).",
+        "Sample-Rate-Trick: viele Tests nutzen sr=1000 + delayMs=2 -> delaySamples=2 (exakt integer bei t=0 da sin(0)=0 -> lfo=depthMs/2 -> modDelayMs=delayMs) so dass Lookup-Position deterministisch ohne Float-Wackler ist. Sine-Generator-Helper makeSine fuer finiteness-Tests mit realistischer Wellenform.",
+        "pnpm check GRUEN (tsc --noEmit 0 errors). pnpm test:features GRUEN: 330 Test-Files / 7584 passed / 16 skipped (Suite-Duration 32.25s). 26/26 sample-chorus-Tests in 48ms. KEIN Commit, KEIN package.json-Bump (User-Vorgabe). Nur 2 Files touched: NEU sampleChorus.ts + NEU sample-chorus.test.ts (+ INDEX.js workLog-Eintrag).",
+        "Coexistence-Hinweis: Parallele Frontend-Session v3.205 (Bulk-LoFi-Wire-Up von sampleSampleRateReduce v3.204) lief disjoint im SampleBrowser.tsx — KEIN Datei-Konflikt. Sample-FX-Layer (utils/sample*.ts) und SampleBrowser-Bulk-Bar sind orthogonale Bereiche. Beide v3.205-Tasks koexistieren als getrennte Eintraege; package.json-Bump-Strategie: ggf. v3.205 fuer Bulk-LoFi und v3.206 fuer sampleChorus aufsplitten."
+      ],
+      next: [
+        "v3.206+ Frontend-Owner: Chorus-FX-Karte im SampleTransformDialog mit 4 Slidern (rateHz log 0.05-20 / depthMs log 0.1-50 / delayMs log 1-100 / mix linear 0-1) + Preset-Dropdown subtle/classic/lush/shimmer. Live-Preview waveform side-by-side.",
+        "v3.206+ Frontend-Owner: Bulk-Apply 'CHO'-Button im SampleBrowser Multi-Select-Bar (symmetrisch zu LoFi v3.205, SPD v3.204, AP v3.203, BP v3.202). 1 Preset-Dropdown statt 4-Slider-Wall (UX-Vereinfachung fuer Bulk). Toast 'Chorus <preset>: N Samples'.",
+        "v3.206+ Backend-Owner: ss.sample.chorus(buffer, opts) + ss.sample.chorusPreset(name) Script-Sandbox-API exposen (analog ss.sample.lowPass/highPass/bandPass/allPass/sampleRateReduce). CHORUS_PRESETS-Werte als ss.sample.chorusPresets exportieren.",
+        "v3.206+ Audio-Engine-Owner: Live-Chorus-Channel-Insert als FX-Chain-Node mit den 4 Params. Pure-Helper-Foundation existiert; benoetigt AudioEngine-FX-Chain-Wiring + AudioWorklet- oder Web-Audio-DelayNode+LFO-Wrapper.",
+        "v3.206+ Refactor-Owner: Multi-Voice-Variant (numVoices?:2|3|4 mit detuned LFO-Phases pro Voice) als naechste Stufe fuer fettere/breitere Chorus-Klaenge. Default bleibt single-voice."
+      ],
+      changed: [
+        "client/src/utils/sampleChorus.ts (NEU, ~230 LOC — applyChorus + CHORUS_PRESETS + ChorusOptions + interne Konstanten DEFAULT/MIN/MAX_RATE_HZ/DEPTH_MS/DELAY_MS; ownedBy frontend wie sample-FX-Layer-Pattern v3.195+)",
+        "tests/features/sample-chorus.test.ts (NEU, ~275 LOC, 26 Tests in 2 describes, ownedBy testing)",
+        "agents/INDEX.js (workLog-Eintrag refactor v3.205 — sampleChorus Pure-Helper)"
+      ]
+    },
+    {
+      agent:     "frontend",
+      timestamp: "2026-05-20T21:00:00.000Z",
+      done: [
+        "v3.205 Wire-Up applySampleRateReduce (v3.204 sampleSampleRateReduce.ts) als Bulk-Action im SampleBrowser Multi-Select-Bar — 2 Slider (Factor 1..16 step=1, BitDepth 2..16 step=1) + 'LoFi'-Button direkt rechts neben SPD-Button v3.204. data-testids: 'sample-browser-bulk-srreduce-factor', 'sample-browser-bulk-srreduce-bitdepth', 'sample-browser-bulk-srreduce'. Pattern 1:1 symmetrisch zu Bulk-Speed v3.204 / Bulk-AllPass v3.203: AudioEngine.loadSample -> applySampleRateReduce(buf, {reductionFactor, bitDepth}) -> encodeWav(channels=min(2,n)) -> URL.createObjectURL-Blob -> OfflineAudioContext.createBuffer+copyToChannel -> onTransformSample(id, blobURL, audioBuf). Toast 'LoFi factor=<f> bits=<b>: N Samples' (kind:success).",
+        "Import: import { applySampleRateReduce } from '@/utils/sampleSampleRateReduce' direkt nach changeSpeedRatio-Import. State: bulkSrFactor (useState<number>(4)) + bulkSrBitDepth (useState<number>(12)) = lofi-Preset-Default. Handler handleBulkSrReduce via useCallback mit deps [multiSelectIds, samples, onTransformSample, bulkSrFactor, bulkSrBitDepth]. UI: 2x input range (parseInt fuer step=1 — analog AP-stages) + 2x span (w-10 fuer '÷4', w-12 fuer '12b') + button 'LoFi' im selben Multi-Select-Bar-Flex-Container, accent-accent-secondary fuer Slider, border-border-color + hover:border-accent-secondary fuer Button (semantic tokens only — keine hardcoded Farben).",
+        "Disabled-Logik '(bulkSrFactor === 1 && bulkSrBitDepth === 16)' weil das die identity-Kombination ist (factor=1 + bit-depth=16 entspricht max BitDepth-Cap = effektiv kein Quantize, da MAX_BIT_DEPTH=16 in der Helper-Konstante; Helper liefert dann Float32-Identity). Defensive check 'out.numberOfChannels === 0 || out.length === 0' bleibt erhalten weil applySampleRateReduce bei empty buffer empty AudioBufferLike liefert.",
+        "pnpm check GRUEN (tsc --noEmit 0 errors). KEIN Commit, KEIN package.json-Bump (User-Vorgabe). Nur SampleBrowser.tsx + agents/INDEX.js touched."
+      ],
+      next: [
+        "v3.206+ Frontend-Owner: SampleTransformDialog SampleRateReduce-FX-Karte mit Preset-Dropdown (subtle/lofi/crunch/destroy via SR_REDUCE_PRESETS) + Live-Preview Waveform side-by-side.",
+        "v3.206+ Backend-Owner: ss.sample.sampleRateReduce(buffer, opts) + ss.sample.bitcrushPreset(name) Script-Sandbox-API exposen (analog ss.sample.changeSpeed v3.205+).",
+        "v3.206+ Audio-Engine-Owner: Live-Bitcrush-Channel-Insert mit modulierbarem reductionFactor (LFO 1-32x sweep) als FX-Chain-Node. Pure-Helper-Foundation existiert; benoetigt AudioWorklet-Wrapper.",
+        "v3.206+ Refactor-Owner: Optional dithering?: 'none'|'rpdf'|'tpdf' fuer bitDepth-Quantize zur Reduktion der Quantisierungs-Distortion bei 8/12-bit-Output."
+      ],
+      changed: [
+        "client/src/components/SampleBrowser/SampleBrowser.tsx (NEU applySampleRateReduce-Import, NEU bulkSrFactor + bulkSrBitDepth State + handleBulkSrReduce useCallback, NEU 2 Range-Sliders + 2 Display-Spans + LoFi-Button in Multi-Select-Bar; ~90 LOC, semantic tokens only)",
+        "agents/INDEX.js (workLog-Eintrag frontend v3.205 — SampleBrowser Bulk-SampleRateReduce Wire-Up)"
+      ]
+    },
     {
       agent:     "refactor",
       timestamp: "2026-05-20T20:30:00.000Z",
@@ -12790,6 +12849,28 @@ const INDEX = {
             "tests/features/pattern-micro-timing.test.ts (NEU)",
             "agents/INDEX.js (workLog)"
         ]
+    }
+  ,
+    {
+      agent:     "frontend",
+      timestamp: "2026-05-20T10:15:00.000Z",
+      done: [
+        "v3.205 Wire-Up: patternSimilarity-Badge in PatternRow (DrumMachine.tsx). Zeigt fuer jede Pattern-Row die OR-aggregierte boolean-Sequence-Similarity zur aktuellen active pattern (0..1), gegated auf >=50% UND nicht-self.",
+        "Modul-level Helper flattenPatternForSimilarity(p: PatternData): boolean[] — OR-Aggregation aller part.steps.active, hartes Limit auf max 16 Steps (Performance — Pattern-Row-List rendert N Patterns pro Render).",
+        "Parent (DrumMachine) berechnet activePatternFlat per useMemo([dm.activePatternId, dm.patterns]) EINMAL und gibt es als Prop an alle Rows weiter — vermeidet O(N) Recompute pro Row.",
+        "PatternRow useMemo([pattern, activePatternId, activePatternFlat]) ruft patternSimilarity(activePatternFlat, rowFlat). Self-Match (pattern.id === activePatternId) liefert 1, wird aber per Render-Guard ausgeblendet.",
+        "Badge-Format: ~XX% via Math.round(sim*100), className=ml-1 px-1 py-0.5 rounded text-[9px] font-mono bg-accent-success/20 text-accent-success, data-testid=pattern-row-similarity-${pattern.id}, title=`${pct}% similar zum aktiven Pattern`. Platzierung direkt nach Mini-Heatmap, vor learn.isMapped-CC-Indikator.",
+        "Nur 2 Dateien geaendert (DrumMachine.tsx +62 LOC, agents/INDEX.js). KEIN package.json bump, KEIN commit. pnpm check exit=0 (gruen)."
+      ],
+      next: [
+        "Optional Tests: tests/features/ koennte einen Test ergaenzen, der flattenPatternForSimilarity exportierte Pendants prueft — derzeit module-private. Falls Backend/Refactor das brauchen, Helper exportieren oder in client/src/utils/ verschieben.",
+        "Backend/Audio-Owner koennte patternSimilarity nutzen, um aehnliche Patterns automatisch zu Chains zu gruppieren (Pattern-Bank-Analyzer).",
+        "Tests/Playwright-Smoke fuer Badge-Sichtbarkeit (data-testid=pattern-row-similarity-*) sinnvoll — Testing-Agent."
+      ],
+      changed: [
+        "client/src/components/DrumMachine/DrumMachine.tsx",
+        "agents/INDEX.js"
+      ]
     }
   ],
 

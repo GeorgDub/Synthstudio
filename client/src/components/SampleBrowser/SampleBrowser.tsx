@@ -131,6 +131,8 @@ import { applyBandPass } from "@/utils/sampleBandPass";
 import { applyAllPass } from "@/utils/sampleAllPass";
 // v3.204: Bulk-Speed (changeSpeedRatio, ratio 0.25..4) für selektierte Samples.
 import { changeSpeedRatio } from "@/utils/sampleResampler";
+// v3.205: Bulk-SampleRateReduce (LoFi/Bitcrush, factor 1..16 / bitDepth 2..16) für selektierte Samples.
+import { applySampleRateReduce } from "@/utils/sampleSampleRateReduce";
 
 // ─── Typen ────────────────────────────────────────────────────────────────────
 
@@ -2217,6 +2219,75 @@ export function SampleBrowser({
     bulkSpeedRatio,
   ]);
 
+  // v3.205 — Bulk-SampleRateReduce (LoFi/Bitcrush) für selektierte Samples.
+  // factor=1 + bitDepth=16 = identity (=disabled). Sample-and-Hold + optional
+  // Bit-Depth-Quantize → digitale Aliasing-Aesthetik. applySampleRateReduce ist
+  // pure; resultierender Buffer wird als WAV encodet und via onTransformSample
+  // zurück ins Projekt geschrieben (+ AudioBuffer für AudioEngine-Cache).
+  // Default-Preset: lofi (factor=4, bitDepth=12).
+  const [bulkSrFactor, setBulkSrFactor] = useState<number>(4);
+  const [bulkSrBitDepth, setBulkSrBitDepth] = useState<number>(12);
+
+  const handleBulkSrReduce = useCallback(async () => {
+    if (multiSelectIds.size === 0 || !onTransformSample) return;
+    let applied = 0;
+    for (const id of multiSelectIds) {
+      const sample = samples.find((s) => s.id === id);
+      if (!sample) continue;
+      try {
+        const buf = await AudioEngine.loadSample(sample.path);
+        if (!buf) continue;
+        const out = applySampleRateReduce(buf as unknown as AudioBufferLike, {
+          reductionFactor: bulkSrFactor,
+          bitDepth: bulkSrBitDepth,
+        });
+        if (out.numberOfChannels === 0 || out.length === 0) continue;
+        const channels = Math.min(2, out.numberOfChannels) as 1 | 2;
+        const wav = encodeWav(
+          Array.from({ length: channels }, (_, c) =>
+            out.getChannelData(c) as Float32Array,
+          ),
+          { sampleRate: out.sampleRate, channels, bitDepth: 16 },
+        );
+        const blob = new Blob([wav], { type: "audio/wav" });
+        const newUrl = URL.createObjectURL(blob);
+        const Ctor = (window.OfflineAudioContext ||
+          // @ts-expect-error legacy webkit fallback
+          window.webkitOfflineAudioContext) as typeof OfflineAudioContext;
+        const ctx = new Ctor(
+          Math.max(1, out.numberOfChannels),
+          Math.max(1, out.length),
+          out.sampleRate,
+        ) as BaseAudioContext;
+        const audioBuf = ctx.createBuffer(
+          Math.max(1, out.numberOfChannels),
+          Math.max(1, out.length),
+          out.sampleRate,
+        );
+        for (let c = 0; c < out.numberOfChannels; c++) {
+          const src = out.getChannelData(c);
+          const copy = new Float32Array(src.length);
+          copy.set(src);
+          audioBuf.copyToChannel(copy, c, 0);
+        }
+        onTransformSample(id, newUrl, audioBuf);
+        applied++;
+      } catch {
+        /* skip */
+      }
+    }
+    toast(
+      `LoFi factor=${bulkSrFactor} bits=${bulkSrBitDepth}: ${applied} Samples`,
+      { kind: "success" },
+    );
+  }, [
+    multiSelectIds,
+    samples,
+    onTransformSample,
+    bulkSrFactor,
+    bulkSrBitDepth,
+  ]);
+
   // v3.152: Wenn Samples aus dem Projekt verschwinden (extern gelöscht),
   // multi-select-Set defensiv auf Existenz-Filter laufen lassen.
   useEffect(() => {
@@ -3351,6 +3422,43 @@ export function SampleBrowser({
                         title="Speed (Resample, Pitch ändert sich mit) auf alle ausgewählten Samples"
                       >
                         SPD
+                      </button>
+                      <input
+                        type="range"
+                        min={1}
+                        max={16}
+                        step={1}
+                        value={bulkSrFactor}
+                        onChange={(e) => setBulkSrFactor(parseInt(e.target.value, 10))}
+                        data-testid="sample-browser-bulk-srreduce-factor"
+                        className="w-20 accent-accent-secondary"
+                        title="SampleRate-Reduce Factor 1..16 (1 = identity, 4 = lofi, 8 = crunch, 16 = destroy)"
+                      />
+                      <span className="text-[10px] font-mono text-text-muted w-10 text-center">
+                        ÷{bulkSrFactor}
+                      </span>
+                      <input
+                        type="range"
+                        min={2}
+                        max={16}
+                        step={1}
+                        value={bulkSrBitDepth}
+                        onChange={(e) => setBulkSrBitDepth(parseInt(e.target.value, 10))}
+                        data-testid="sample-browser-bulk-srreduce-bitdepth"
+                        className="w-20 accent-accent-secondary"
+                        title="BitDepth 2..16 (16 = aus / kein Quantize, 12 = lofi, 8 = crunch, 4 = destroy)"
+                      />
+                      <span className="text-[10px] font-mono text-text-muted w-12 text-center">
+                        {bulkSrBitDepth}b
+                      </span>
+                      <button
+                        onClick={handleBulkSrReduce}
+                        disabled={!onTransformSample || (bulkSrFactor === 1 && bulkSrBitDepth === 16)}
+                        data-testid="sample-browser-bulk-srreduce"
+                        className="px-2 py-0.5 rounded text-[10px] border border-border-color text-text-primary hover:border-accent-secondary hover:text-accent-secondary disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        title="LoFi / Bitcrush (Sample-and-Hold + Bit-Depth-Quantize) auf alle ausgewählten Samples"
+                      >
+                        LoFi
                       </button>
                       <button
                         onClick={handleBulkDelete}

@@ -172,7 +172,27 @@ import {
 import { detectDensityPulses } from "@/utils/patternDensityPulse";
 // v3.203: Pattern-Row Mini-Heatmap — sparse 2D-Density-Viz pro Pattern.
 import { buildHeatmap, findHotspot } from "@/utils/patternDensityHeatmap";
+// v3.205: Pattern-Row Similarity-Badge ("vs current active pattern").
+import { patternSimilarity } from "@/utils/patternSequenceCorrelation";
 import type { PatternData } from "@/audio/AudioEngine";
+
+// ─── v3.205: Pattern-Flatten-Helper (module-level Cache via Closure) ───────────
+// Flacht alle Parts eines Patterns per OR-Aggregation der active-Flags zu einem
+// boolean[] ab. Hartes Limit auf 16 Steps (Performance — Pattern-Row-List
+// rendert pro Render N Patterns; jeder Pattern fließt durch dieses Helper).
+// Pure: gleiches Input → gleiches Output (kein Date.now/Math.random).
+function flattenPatternForSimilarity(p: PatternData): boolean[] {
+  const n = Math.min(p.stepCount, 16);
+  if (n <= 0) return [];
+  const flat = new Array<boolean>(n).fill(false);
+  for (const part of p.parts) {
+    const len = Math.min(part.steps.length, n);
+    for (let i = 0; i < len; i++) {
+      if (part.steps[i].active) flat[i] = true;
+    }
+  }
+  return flat;
+}
 
 function computePatternDensityCategory(pattern: PatternData): DensityCategory {
   let hits = 0;
@@ -243,12 +263,25 @@ interface PatternRowProps {
   onExportMidiEvents?: () => void;
   /** v3.175.0: Pattern → echtes .mid-Binary (SMF Format 0) exportieren. */
   onExportMidiBinary?: () => void;
+  /**
+   * v3.205: ID des aktuell aktiven Patterns (zum Vergleich für die
+   * Similarity-Badge). Falls null/undefined oder identisch mit pattern.id
+   * wird keine Badge gerendert.
+   */
+  activePatternId?: string | null;
+  /**
+   * v3.205: Flatten der active-Steps (OR über alle Parts, max 16 Steps) des
+   * aktuell aktiven Patterns. Wird vom Parent EINMAL berechnet und an alle
+   * Rows weitergereicht — vermeidet O(N) Recompute pro Row.
+   */
+  activePatternFlat?: boolean[];
 }
 
 function PatternRow({
   pattern, patternIndex, densityCategory, complexityCategory, fitnessLabel, isActive, isPlaying, isLiveEditing, showDelete,
   hasPrevPattern, prevPatternId, allPatterns,
   onSelect, onDuplicate, onRemove, onCopySamplesFrom, onReorder, onExportImage, onCompare, onCopy, onExportMidiEvents, onExportMidiBinary,
+  activePatternId, activePatternFlat,
 }: PatternRowProps) {
   const isDraft  = isLiveEditing && isActive;
   const isLocked = isLiveEditing && isPlaying;
@@ -282,6 +315,15 @@ function PatternRow({
     return buildHeatmap(parts);
   }, [pattern]);
   const heatmapHotspot = useMemo(() => findHotspot(heatmapData), [heatmapData]);
+  // v3.205: Similarity zum aktuellen aktiven Pattern (0..1).
+  // Berechnet nur wenn aktive Pattern bekannt UND nicht identisch — sonst 0.
+  // dep includes activePatternFlat so theme-renders ohne State-Change skippen.
+  const similarityToActive = useMemo(() => {
+    if (!activePatternId || !activePatternFlat || activePatternFlat.length === 0) return 0;
+    if (pattern.id === activePatternId) return 1; // self — wird unten gegated
+    const rowFlat = flattenPatternForSimilarity(pattern);
+    return patternSimilarity(activePatternFlat, rowFlat);
+  }, [pattern, activePatternId, activePatternFlat]);
   // v2.5: Submenu zum Auswählen welcher Pattern als Source dient
   const [pickerOpen, setPickerOpen] = useState(false);
   // v2.8: Drag-Drop-Reorder State (drop-indicator: above|below|null)
@@ -430,6 +472,16 @@ function PatternRow({
                 />
               ))}
             </svg>
+          </span>
+        )}
+        {/* v3.205: Similarity-Badge "vs active" — nur wenn nicht self UND >=50%. */}
+        {pattern.id !== activePatternId && similarityToActive >= 0.5 && (
+          <span
+            className="ml-1 px-1 py-0.5 rounded text-[9px] font-mono bg-accent-success/20 text-accent-success"
+            title={`${Math.round(similarityToActive * 100)}% similar zum aktiven Pattern`}
+            data-testid={`pattern-row-similarity-${pattern.id}`}
+          >
+            ~{Math.round(similarityToActive * 100)}%
           </span>
         )}
         {learn.isMapped && (
@@ -856,6 +908,14 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
       dm.setPartSteps(part.id, newSteps);
     }
   }, [pattern, dm]);
+
+  // v3.205: Active-Pattern-Flatten (max 16 Steps) für Similarity-Badges in
+  // PatternRow. EINMAL pro Render der Pattern-Liste berechnet, an alle Rows
+  // weitergereicht — vermeidet O(N) Recompute pro Row.
+  const activePatternFlat = useMemo(() => {
+    const active = dm.patterns.find((p) => p.id === dm.activePatternId);
+    return active ? flattenPatternForSimilarity(active) : [];
+  }, [dm.activePatternId, dm.patterns]);
 
   // v3.169.0: Pattern-Humanize-Toolbar State + Handler.
   const [humanizeIntensity, setHumanizeIntensity] = useState<HumanizeIntensity>("subtle");
@@ -1733,6 +1793,8 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
                     // v3.175.0: Pattern → echtes .mid-Binary-Download.
                     handleExportMidiBinary(p);
                   }}
+                  activePatternId={dm.activePatternId}
+                  activePatternFlat={activePatternFlat}
                 />
               ))}
               {/* v3.162: Bank-Summary-Footer (Multi-Pattern Density-Aggregation) */}
