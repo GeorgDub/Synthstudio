@@ -298,6 +298,17 @@ const INDEX = {
   //     a new bare-path entry while old version-suffixed ones remain
   //     is the explicit transition path.
   files: {
+    // ─── v3.191 Pure-Helpers (refactor) ─────────────────────────
+    "client/src/utils/patternMicroTiming.ts": {
+      role:     "Pure-Helper fuer Pattern Micro-Timing (Humanize-Style Timing-Offsets). Public API: generateMicroTiming(pattern: readonly boolean[], options?: MicroTimingOptions) -> MicroTimedStep[] {stepIndex, timingOffsetMs}, MICRO_TIMING_PRESETS Record<MicroTimingPreset, {jitterMs, biasMs}>. Public Types: MicroTimingPreset = 'tight'|'subtle'|'loose'|'behind-the-beat'|'rushed', MicroTimingOptions {preset?, jitterMs? (overrides preset.jitterMs), biasMs? (overrides preset.biasMs), seed?}. Presets: tight (jitter=1, bias=0), subtle (jitter=4, bias=0), loose (jitter=12, bias=0), behind-the-beat (jitter=6, bias=+8 -> Steps spaeter), rushed (jitter=6, bias=-8 -> Steps frueher). Algorithmus: 1) empty/non-array pattern -> []. 2) sanitizePreset (Fallback subtle bei invalid). 3) sanitizeNumber fuer jitter/bias mit Preset-Default-Fallback. 4) pro AKTIVEN Step: gauss-noise * jitterMs * 0.5 + biasMs -> offset. 5) inactive Steps werden uebersprungen (Output ist KEIN positions-stabiler Array — anders als patternHumanize). 6) finite-Guard auf offset. Inline mulberry32-PRNG + Box-Muller-Gauss (KEIN externer RNG-Import, vermeidet zirkulaere Imports mit patternHumanize/patternProbability). Foundation fuer Humanize-Engine-Integration in AudioEngine._schedule() oder MIDI-Export Per-Step-Latenz-Korrektur. Pure & DOM-frei. 142 LOC.",
+      lastSeen: "2026-05-20T09:39:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "tests/features/pattern-micro-timing.test.ts": {
+      role:     "Pure-Coverage fuer patternMicroTiming.ts. 20 Tests in 6 describes: Basis 4 (empty -> [], non-array null/undefined -> [], nur aktive Steps gemappt (8-Step Pattern mit 4 active -> result.length=4 + stepIndex korrekt erhalten [0,2,5,7]), all-false -> []). Preset-Range 2 (tight maxAbsOffset < loose maxAbsOffset @200 Steps, loose maxAbsOffset > tight*3 @300 Steps — Verifikation der jitter-Skalierung). Bias-Effekt 3 (behind-the-beat bias=+8 -> meanOffset>5 @200 Steps, rushed bias=-8 -> meanOffset<-5 @200 Steps, subtle bias=0 -> |meanOffset|<1.5 @500 Steps statistisch). Determinismus 2 (gleicher seed -> identical via toEqual, unterschiedlicher seed -> mind. 1 Wert differs). Custom-Overrides 3 (custom jitterMs=50 vs preset tight jitter=1 -> overridden maxAbs > preset*5, custom biasMs=20 ueberschreibt subtle bias=0 -> meanOffset>15, negative custom biasMs=-10 ueberschreibt behind-the-beat bias=+8 -> meanOffset<-5). Defensive 5 (invalid preset 'bogus' -> fallback subtle identical via toEqual, NaN jitterMs -> fallback preset.jitterMs, NaN biasMs -> fallback preset.biasMs, alle offsets finite, seed fehlt -> default 1 deterministisch). MICRO_TIMING_PRESETS 1 (5 Eintraege mit exakten jitter/bias-Werten). Test-Helpers: ALL_TRUE(n), meanOffset(steps), maxAbsOffset(steps). Vitest node-env. 20/20 passed in 8ms. Vollsuite-Status nach Add: 7753/7769 passed (+20 vs baseline 7733). 220 LOC.",
+      lastSeen: "2026-05-20T09:39:00.000Z",
+      ownedBy:  "frontend"
+    },
     // ─── v3.189 Pure-Helpers (refactor) ─────────────────────────
     "client/src/utils/patternBeatRepeatLive.ts": {
       role:     "Pure State-Machine fuer Live-Beat-Repeat im Performance-Mode (Real-Time, boolean[]-Step-Patterns). Abgrenzung vs. v3.142 client/src/utils/beatRepeat.ts (OFFLINE auf AudioBufferLike). Public API: createBeatRepeatState(bufferSteps?=4, clamp 1..64) -> BeatRepeatState {active:false, buffer:false[len], bufferLength, currentRepeats:0, capturedAtStep:0}; triggerBeatRepeat(state, currentPattern, currentStep) -> capturedAtStep=safeStep(currentStep), buffer[i]=currentPattern[((step+i)%pLen+pLen)%pLen] (wrap-around), active=true, currentRepeats=0; releaseBeatRepeat(state) -> {...state, active:false, currentRepeats:0} (Buffer bleibt erhalten fuer Re-Trigger-Inspektion); nextStep(state, normalPattern, step, options?{bufferSteps?, maxRepeats?=Infinity}) -> {active:boolean, newState:BeatRepeatState}. Public Types: BeatRepeatLiveOptions, BeatRepeatState. Counting-Semantik (Option A, strict >): pro Cycle-Boundary (delta>0 && delta%bufLen===0) wird currentRepeats inkrementiert; bei nextRepeats>maxRepeats -> auto-release, return-active fallback auf normalPattern[step%length]. Default Infinity = nie auto-release. WICHTIG: return.active = STEP-VALUE (on/off), nicht state.active (engaged-flag) - in JSDoc dokumentiert. Defensive: empty currentPattern beim trigger -> active:false; empty normalPattern bei nextStep -> active:false + state unveraendert (gleiche-Referenz); NaN/Infinity step -> safeStep(0); negative step -> positive Modulo ((s%L+L)%L); bufferSteps NaN/Infinity -> Default 4; bufferSteps<1 -> 1; >64 -> 64. State-Immutabilitaet: inactive read gibt state-by-reference zurueck (newState === state); active read ohne Counter-Aenderung dito; active read mit Counter-Aenderung -> {...state, currentRepeats: nextRepeats} (neue Referenz). Pure & DOM-frei. Foundation fuer Performance-Mode Trigger-Buttons (1/2/4/8 Step Buffer) + Release-Button in DrumMachine, MIDI-Learn-Targets beatRepeatTrigger/Release fuer Pad-Bindings (Note-On=trigger, Note-Off=release).",
@@ -410,6 +421,17 @@ const INDEX = {
       role:     "Pure-Coverage fuer sampleNoiseGate.ts. 14 Tests in 6 describes: basics 5 (empty -> empty, all-loud 0.5 -> identity [coeff=1 via smart-init], all-silent 0.0001 -> all zeros [gate nie geoeffnet], mixed 500loud+500silent mit releaseMs=1 -> head identity + tail zero ab Sample 900, thresholdDb=0+amp=0.99 -> all zeros [strict-greater: 0.99 < reopenLinear ~1.995]), ramps 2 (attack monoton steigend bei 100zero+500loud Transit mit attackMs=20 @ 48k = 960 samples — verifiziert data[110]<data[200]<data[300]<data[400], release monoton fallend bei 100loud+500tiny mit releaseMs=20 — non-zero tail 0.0001 multipliziert mit fallendem coeff zeigt monotonic decay), hysteresis 1 (200loud+10quiet+200loud mit releaseMs=50/attackMs=0.1 -> postDip[215] > 0.45 verifiziert coeff im 10-Sample-Dip nur ~0.004 verloren), multi-channel 2 (2-ch shape preserved + RangeError out-of-range -1/2), presets 1 (4 entries, alle id/name strings, alle attackMs>0/releaseMs>0/thresholdDb finite, vocal/drums/ambient/tight IDs vorhanden), defensive 3 (NaN-options -> alle defaults greifen + data[50]≈0.5 weil amp 0.5 > -40dB threshold, attackMs=0/releaseMs=-5 -> 1ms fallback ohne Throw/NaN-Output, DEFAULT_THRESHOLD_DB=-40 / DEFAULT_ATTACK_MS=5 / DEFAULT_RELEASE_MS=50 / DEFAULT_HYSTERESIS_DB=6). Test-Helpers: makeBuffer (mono Float32Array aus number[]), makeConstantBuffer (mono fill), makeMultiChannelBuffer (separate Float32-Arrays pro Channel), makeEmptyBuffer (numberOfChannels=0). Vitest node-env. 14/14 passed in 28ms (413ms total inkl. Bootstrap).",
       lastSeen: "2026-05-20T08:43:00.000Z",
       ownedBy:  "frontend"
+    },
+    // ─── v3.191 Pure-Helpers (refactor) ─────────────────────────
+    "client/src/utils/sampleDelay.ts": {
+      role:     "Pure-Helper fuer klassischen Echo/Delay-Effekt mit Feedback (circular-buffer Delay-Line, kein FFT). Public API: applyDelay(buffer, options?:{delayMs?,feedback?,wet?,tailMs?}) -> AudioBufferLike (selbe numberOfChannels wie input, length = dry.length + tailSamples), DELAY_PRESETS readonly[] mit 4 Eintraegen (slap 80/0.2/0.3, echo 250/0.4/0.4, long 500/0.55/0.5, dub 350/0.7/0.45). Algorithmus pro Channel: 1) Allociere Float32Array(delaySamples) als Ringpuffer + Float32Array(outputLength) als Output. 2) Pro i in 0..outputLength: drySample = i<dryLen ? dry[i] : 0; delayedSample = buf[i%delaySamples] (READ FIRST); feedbackOut = clip(drySample + delayedSample*feedback, ±1); buf[i%delaySamples] = feedbackOut (WRITE AFTER); out[i] = drySample*(1-wet) + delayedSample*wet. Read-vor-Write kritisch (Write-First wuerde Delay auf 0 kollabieren). Clip ±1.0 nur auf feedback-Path (verhindert Runaway), Output darf ueber ±1 — Caller normalisiert spaeter. Defensive: delayMs NaN/<=0 -> 250, feedback NaN -> 0.4 + clamp [0, 0.95], wet NaN -> 0.4 + clamp [0,1], tailMs NaN/<0 -> 1000. Empty buffer -> empty output (numberOfChannels=0). Foundation fuer Sample-FX-Delay-Tab im SampleTransformDialog (v3.192+ Wire-Up), AudioEngine FX-Chain Echtzeit-Slot (v3.193+ via DelayNode). Pure & DOM-frei. Pattern angelehnt an sampleConvolutionReverb.ts (v3.185), aber multi-channel preserved (kein Mono-Downmix). Einzige Abhaengigkeit: AudioBufferLike-Type aus sampleEmbedding.ts.",
+      lastSeen: "2026-05-20T09:42:00.000Z",
+      ownedBy:  "backend"
+    },
+    "tests/features/sample-delay.test.ts": {
+      role:     "Pure-Coverage fuer sampleDelay.ts. 17 Tests in 2 describes: applyDelay 14 (empty -> empty output, wet=0+tailMs=0 -> identity, wet=1 only-echo dry-Position=0, feedback=0 single-echo no-repeat [Echo bei i=2 wert 0.5, i=4 wert 0], feedback=0.5 decaying echos [1.0/0.5/0.25 bei 2/4/6 sr=1000 delayMs=2], tail extends output length [3+10], multi-channel L=impulse/R=silence kein Cross-Talk, defensive NaN -> defaults [delayMs=250+tailMs=1000+wet=0.4: out[0]=0.3], feedback>0.95 clamp -> 1.0 unverandert, delayMs<=0 -> 250 fallback [Echo bei i=250], delayMs negativ -> fallback, wet >1/<0 clamp, no-options -> tailMs=1000 default), DELAY_PRESETS 3 (genau 4 entries, slap/echo/long/dub IDs, shape+Werte plausibel feedback in [0,0.95] wet in [0,1], echo-Preset matched Spec-Defaults 250/0.4/0.4). Test-Helpers: makeBuffer mono Float32, makeStereoBuffer separate L/R, makeEmptyBuffer numberOfChannels=0. Vitest node-env. 17/17 passed in 15ms. Sample-Rate-Trick: sr=1000 wird genutzt damit delayMs=2 exakt delaySamples=2 ergibt (round(2*1000/1000)=2), so dass Echo-Positionen exakt deterministisch sind ohne Float-Wackler.",
+      lastSeen: "2026-05-20T09:42:00.000Z",
+      ownedBy:  "backend"
     },
     // ─── v3.185 Pure-Helpers (refactor) ─────────────────────────
     "client/src/utils/sampleConvolutionReverb.ts": {
@@ -3652,6 +3674,50 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "refactor",
+      timestamp: "2026-05-20T09:42:00.000Z",
+      done: [
+        "v3.191 Pure-Helper client/src/utils/sampleDelay.ts (~190 LOC) angelegt — klassischer Echo/Delay-Effekt mit circular-buffer Feedback-Loop. Pure & DOM-frei auf AudioBufferLike (aus sampleEmbedding). Pattern angelehnt an sampleConvolutionReverb.ts (v3.185).",
+        "Public API: applyDelay(buffer, options?) -> AudioBufferLike; DELAY_PRESETS readonly[] mit 4 Eintraegen (slap/echo/long/dub). DelayOptions: delayMs (default 250), feedback (default 0.4, clamp 0..0.95), wet (default 0.4, clamp 0..1), tailMs (default 1000).",
+        "Modell: pro Channel eigenes Float32Array(delaySamples) als Ringpuffer. Loop laeuft outputLength = dryLen + tailSamples. READ-vor-WRITE-Ordnung kritisch (sonst kollabiert Delay auf 0). Clip ±1.0 wirkt nur auf feedback-Path (Buffer-Write), NICHT auf Output — Caller normalisiert spaeter. Multi-Channel preserved (kein Mono-Downmix wie bei Convolution-Reverb).",
+        "Defensive: NaN/<=0 delayMs -> 250, NaN feedback -> 0.4 clamp [0, 0.95], NaN wet -> 0.4 clamp [0,1], NaN/<0 tailMs -> 1000. Empty buffer -> empty output (numberOfChannels=0).",
+        "Test-Suite tests/features/sample-delay.test.ts (~250 LOC, 17 Tests) — alle 10 Spec-Punkte + 7 Edge-Cases: empty, wet=0 identity (tailMs=0), wet=1 only-echo, feedback=0 single-echo no-repeat, feedback>0 decaying echos (1.0/0.5/0.25), tail-extension, multi-channel no-cross-talk, defaults NaN, feedback>0.95 clamp, delayMs<=0 fallback, delayMs negativ fallback, wet clamp [0,1], no-options-Throw, DELAY_PRESETS count/IDs/shape/echo-defaults.",
+        "pnpm check GRUEN (tsc --noEmit 0 errors). pnpm test GRUEN: sample-delay 17/17 passed, Gesamt-Suite 7770 passed (+25 vs. v3.190 baseline 7745) / 16 skipped / 348 files."
+      ],
+      next: [
+        "v3.192+ Frontend-Owner: SampleTransformDialog Wire-Up — neuer Delay-Tab mit 3 Slider (delayMs/feedback/wet) + DELAY_PRESETS-Dropdown. analog Reverb-Tab aus v3.186. Output durch sampleAutoNormalize pipen wegen Clip-Verhalten.",
+        "v3.192+ Frontend-Owner: SampleTransformPipeline (sampleTransformPipeline.ts) — applyDelay als Stage in der composable Chain registrieren. UI-Reorder via drag erlauben.",
+        "v3.193+ Backend-Owner: AudioEngine.ts FX-Chain bekommt 'delay'-Slot pro Channel (echtzeit-faehig via DelayNode/BiquadFilter). Pure-Helper bleibt fuer Offline-Bake erhalten.",
+        "v3.193+ Testing-Owner: Playwright-Smoke tests/web/sample-delay.spec.ts mit Sample-Loader -> Delay-Tab oeffnen -> Preset 'echo' -> assert WAV-Resultat-Laenge groesser dry.length (Tail vorhanden)."
+      ],
+      changed: [
+        "client/src/utils/sampleDelay.ts (NEW, 191 LOC — applyDelay + DELAY_PRESETS + DelayOptions; ownedBy backend)",
+        "tests/features/sample-delay.test.ts (NEW, 250 LOC, 17 Tests; ownedBy backend)",
+        "agents/INDEX.js (workLog-Entry v3.191 refactor + files-Index)"
+      ]
+    },
+    {
+      agent:     "frontend",
+      timestamp: "2026-05-20T10:05:00.000Z",
+      done: [
+        "v3.189 Wire-Up patternBeatRepeatLive in DrumMachine.tsx als Live-Trigger-Block (Performance-Mode-Style). Audio-Engine-Wire ist Caveat (asynchron zum Step-Playback) — UI demonstriert State-Machine-Verhalten.",
+        "Imports: createBeatRepeatState, triggerBeatRepeat, releaseBeatRepeat, type BeatRepeatState aus @/utils/patternBeatRepeatLive. State: brState useState<BeatRepeatState> init createBeatRepeatState(4) (4-Step-Buffer-Default). Handler handleTriggerBR useCallback liest activePattern via dm.patterns.find, baut union-steps boolean[] aus allen parts (OR-Logik analog handleEvolve), ruft triggerBeatRepeat(s, unionSteps, 0). Toast 'Beat-Repeat: armed (capture buffer)' kind:info. Handler handleReleaseBR useCallback ruft releaseBeatRepeat(s). Toast 'Beat-Repeat: released' kind:info.",
+        "UI-Block data-testid=pattern-br-live-block direkt nach pattern-evolve-block im Pattern-Picker. Status-Badge data-testid=pattern-br-live-status zeigt 'ACTIVE' (bg-accent-danger/30 text-accent-danger) vs 'off' (bg-bg-elevated text-text-dim). Buttons: data-testid=pattern-br-live-trigger (bg-accent-danger/20 hover bg-accent-danger/40) und data-testid=pattern-br-live-release (bg-bg-elevated, disabled={!brState.active} mit opacity-50 + cursor-not-allowed). Caveat-Hinweis 'Audio-Engine-Wire: pending. UI demonstriert State-Machine.' als italic text-text-dim am Block-Ende.",
+        "Ausschliesslich semantische Tailwind-Klassen (border-border-color, text-text-dim, text-text-muted, text-text-primary, bg-bg-elevated, accent-danger/20|30|40, bg-accent-danger/20, font-mono). Keine hardcodierten slate-/gray-/cyan-Farben. pnpm check GRUEN (tsc --noEmit, 0 Errors). KEIN git commit, KEIN package.json bump (User-Vorgabe). NUR client/src/components/DrumMachine/DrumMachine.tsx editiert."
+      ],
+      next: [
+        "v3.190+ Backend-Owner: AudioEngine.onPosition()-Hook konsumiert brState pro Step via nextStep(s, unionPattern, step) — return-active fuer playStep()-Decision. Aktuell laeuft Buffer ungewired, weil Sequencer den State-Hook nicht referenziert.",
+        "v3.190+ Frontend-Owner: Buffer-Length-Slider (1/2/4/8 Steps) im pattern-br-live-block; aktuell hartcoded 4 via createBeatRepeatState(4).",
+        "v3.190+ Frontend-Owner: maxRepeats-Slider (Infinity vs N) damit Auto-Release konfigurierbar wird; UI-Status sollte 'cycles n/m' anzeigen.",
+        "v3.190+ Frontend-Owner: MIDI-Learn-Targets 'beatRepeatTrigger' / 'beatRepeatRelease' (Note-On=trigger, Note-Off=release) analog noteRepeat-Bindings.",
+        "v3.191+ Testing-Owner: Playwright-Smoke tests/web/pattern-br-live.spec.ts mit Picker oeffnen -> Trigger klick -> assert pattern-br-live-status text='ACTIVE' + Release klick -> assert text='off'."
+      ],
+      changed: [
+        "client/src/components/DrumMachine/DrumMachine.tsx (Wire-Up patternBeatRepeatLive: Import + useState brState + 2 useCallback handler + UI-Block nach pattern-evolve-block, 4 data-testid: block/status/trigger/release)",
+        "agents/INDEX.js (workLog-Entry v3.189 frontend-Wire-Up)"
+      ]
+    },
     {
       agent:     "refactor",
       timestamp: "2026-05-20T09:25:00.000Z",
@@ -11803,6 +11869,28 @@ const INDEX = {
             "client/src/components/MidiSettings/MidiSettings.tsx (Clock-Out-UI)",
             "package.json (2.83.0)",
             "agents/INDEX.js"
+        ]
+    }
+  ,
+    {
+        agent: "refactor",
+        timestamp: "2026-05-20T09:39:00.000Z",
+        done: [
+            "v3.191 Pure-Helper: client/src/utils/patternMicroTiming.ts (142 LOC) — generateMicroTiming(pattern, options) erzeugt deterministische Micro-Timing-Offsets (jitter + bias in ms) pro AKTIVEN Step. Inactive Steps werden weggelassen.",
+            "5 Presets: tight (jitter=1, bias=0) / subtle (jitter=4, bias=0) / loose (jitter=12, bias=0) / behind-the-beat (jitter=6, bias=+8) / rushed (jitter=6, bias=-8). Custom-Override via options.jitterMs/biasMs.",
+            "Deterministisch via inline mulberry32 PRNG + Box-Muller-Gauss. Bewusst KEIN Import von patternHumanize/patternProbability, um zirkulaere Imports zu vermeiden (siehe Header-Doc).",
+            "tests/features/pattern-micro-timing.test.ts (220 LOC, 20 Tests in 6 Suites) — empty/non-array, alle 5 Presets, Bias-Mean-Shift, Determinismus, Custom-Overrides, Defensive (invalid preset, NaN jitter/bias, finite-Guard), MICRO_TIMING_PRESETS-Struktur. Alle 20 gruen.",
+            "pnpm check pass. Vollsuite: 7753 Tests gruen, 16 skipped. 1 pre-existing Failure (tests/features/sample-delay.test.ts, untracked + leer) ist NICHT von dieser Session — Hinweis fuer naechsten Agent."
+        ],
+        next: [
+            "Foundation fuer Humanize-Engine-Integration in AudioEngine — Backend-Agent kann generateMicroTiming() in AudioEngine._schedule() einbinden, um Per-Step-Timing-Offsets auf scheduledTime zu addieren.",
+            "Optional UI in DrumMachine: Micro-Timing-Preset-Dropdown + biasMs-Slider — Frontend-Owner.",
+            "tests/features/sample-delay.test.ts (244 LOC, untracked) hat 'No test suite found' Error — Owner unklar, vermutlich abgebrochene Session. Kandidat fuer Cleanup oder ordentlichen Test-Body."
+        ],
+        changed: [
+            "client/src/utils/patternMicroTiming.ts (NEU)",
+            "tests/features/pattern-micro-timing.test.ts (NEU)",
+            "agents/INDEX.js (workLog)"
         ]
     }
   ],

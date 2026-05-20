@@ -88,6 +88,14 @@ import { applyHalfStutter } from "@/utils/patternStutter";
 import { generateMelodicSequence, MELODIC_STRATEGY_LABELS, type MelodicStrategy } from "@/utils/patternMelodicSeq";
 // v3.188.0: Pattern-Evolve Pure-Helper (genetic-algorithm-style crossover + mutation).
 import { evolvePattern } from "@/utils/patternEvolve";
+// v3.189.0: Live Beat-Repeat State-Machine (UI demonstriert State,
+// Audio-Engine-Wire ist offen — siehe data-testid pattern-br-live-*).
+import {
+  createBeatRepeatState,
+  triggerBeatRepeat,
+  releaseBeatRepeat,
+  type BeatRepeatState,
+} from "@/utils/patternBeatRepeatLive";
 
 import { resolveFollowAction } from "@/utils/patternFollowActionChain";
 
@@ -1337,6 +1345,30 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
     toast(`Evolution: ${created} Patterns nach ${result.generation} Generations`, { kind: "success" });
   }, [dm, evolveGens, evolvePopSize]);
 
+  // v3.189.0: Beat-Repeat-Live — State-Machine + Trigger/Release Demo.
+  // Sequencer-Wire ist Caveat (asynchron zum Playback). UI demonstriert
+  // armed/released-State + befuellt Buffer via union ueber Parts ab Step 0.
+  const [brState, setBrState] = useState<BeatRepeatState>(() => createBeatRepeatState(4));
+
+  const handleTriggerBR = useCallback(() => {
+    const activePattern = dm.patterns.find((p) => p.id === dm.activePatternId);
+    if (!activePattern) return;
+    const len = activePattern.parts[0]?.steps.length ?? 16;
+    const unionSteps = new Array<boolean>(len).fill(false);
+    for (const part of activePattern.parts) {
+      for (let i = 0; i < Math.min(len, part.steps.length); i++) {
+        if (part.steps[i].active) unionSteps[i] = true;
+      }
+    }
+    setBrState((s) => triggerBeatRepeat(s, unionSteps, 0));
+    toast("Beat-Repeat: armed (capture buffer)", { kind: "info", duration: 2000 });
+  }, [dm.patterns, dm.activePatternId]);
+
+  const handleReleaseBR = useCallback(() => {
+    setBrState((s) => releaseBeatRepeat(s));
+    toast("Beat-Repeat: released", { kind: "info", duration: 1500 });
+  }, []);
+
   // Drag-Drop fuer .e2pattern/.e2sallpat (Browser-Fallback).
   useEffect(() => {
     const handler = (e: Event) => {
@@ -1850,6 +1882,44 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
                 >
                   🧬 Evolve
                 </button>
+              </div>
+
+              {/* v3.189.0: Beat-Repeat Live — State-Machine-Demo. Trigger
+                  capturt Buffer ab Step 0 (union ueber Parts), Release
+                  setzt active=false. Audio-Engine-Wire ist Caveat. */}
+              <div className="px-3 py-2 border-t border-border-color space-y-1.5" data-testid="pattern-br-live-block">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] text-text-dim font-semibold">⏯ Beat-Repeat Live</span>
+                  <span
+                    className={[
+                      "text-[10px] font-mono px-1.5 py-0.5 rounded",
+                      brState.active ? "bg-accent-danger/30 text-accent-danger" : "bg-bg-elevated text-text-dim",
+                    ].join(" ")}
+                    data-testid="pattern-br-live-status"
+                  >
+                    {brState.active ? "ACTIVE" : "off"}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleTriggerBR}
+                    data-testid="pattern-br-live-trigger"
+                    className="flex-1 px-2 py-1 rounded text-[11px] bg-accent-danger/20 text-accent-danger hover:bg-accent-danger/40 transition-colors"
+                  >
+                    Trigger
+                  </button>
+                  <button
+                    onClick={handleReleaseBR}
+                    disabled={!brState.active}
+                    data-testid="pattern-br-live-release"
+                    className="flex-1 px-2 py-1 rounded text-[11px] bg-bg-elevated text-text-muted hover:text-text-primary disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    Release
+                  </button>
+                </div>
+                <div className="text-[10px] text-text-dim italic">
+                  Audio-Engine-Wire: pending. UI demonstriert State-Machine.
+                </div>
               </div>
 
               {!isLiveEditing && (
