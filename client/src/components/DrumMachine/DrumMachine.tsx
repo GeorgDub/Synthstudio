@@ -176,6 +176,8 @@ import { buildHeatmap, findHotspot } from "@/utils/patternDensityHeatmap";
 import { patternSimilarity } from "@/utils/patternSequenceCorrelation";
 // v3.207: Pattern-Row Complexity-Badge — Shannon-Entropy (Bit + Bigram).
 import { complexityIndex } from "@/utils/patternEntropy";
+// v3.209: Pattern-Row Tension-Badge — Off-Beat + Velocity-Variance + Syncopation.
+import { computeTension } from "@/utils/patternTension";
 import type { PatternData } from "@/audio/AudioEngine";
 
 // ─── v3.205: Pattern-Flatten-Helper (module-level Cache via Closure) ───────────
@@ -339,6 +341,33 @@ function PatternRow({
       }
     }
     return complexityIndex(flat);
+  }, [pattern]);
+  // v3.209: Tension-Score (off-beat + velocity-variance + syncopation) auf
+  // OR-aggregierten Steps. Velocity: max über alle aktiven Parts an dem Step.
+  // 4 = 16th-Note-Grid (typisches Drum-Pattern).
+  const tension = useMemo(() => {
+    const stepCount = pattern.stepCount;
+    const flat: { active: boolean; velocity?: number }[] = new Array(stepCount);
+    for (let i = 0; i < stepCount; i++) {
+      flat[i] = { active: false };
+    }
+    for (const part of pattern.parts) {
+      const len = Math.min(part.steps.length, stepCount);
+      for (let i = 0; i < len; i++) {
+        const s = part.steps[i];
+        if (!s.active) continue;
+        const v = s.velocity;
+        if (!flat[i].active) {
+          flat[i] = { active: true, velocity: v };
+        } else {
+          const prev = flat[i].velocity;
+          if (typeof v === "number" && (typeof prev !== "number" || v > prev)) {
+            flat[i] = { active: true, velocity: v };
+          }
+        }
+      }
+    }
+    return computeTension(flat, 4);
   }, [pattern]);
   // v2.5: Submenu zum Auswählen welcher Pattern als Source dient
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -508,6 +537,16 @@ function PatternRow({
             data-testid={`pattern-row-entropy-${pattern.id}`}
           >
             H{Math.round(entropy * 100)}
+          </span>
+        )}
+        {/* v3.209: Tension-Badge — Off-Beat + Velocity-Variance + Syncopation. */}
+        {tension.overallTension > 0.4 && (
+          <span
+            className="ml-1 px-1 py-0.5 rounded text-[9px] font-mono bg-accent-danger/20 text-accent-danger"
+            title={`Tension: ${Math.round(tension.overallTension * 100)}% (off-beat ${Math.round(tension.offBeatScore * 100)}%, sync ${Math.round(tension.syncopationScore * 100)}%)`}
+            data-testid={`pattern-row-tension-${pattern.id}`}
+          >
+            T{Math.round(tension.overallTension * 100)}
           </span>
         )}
         {learn.isMapped && (

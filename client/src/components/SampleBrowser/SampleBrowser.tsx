@@ -139,6 +139,8 @@ import { applyChorus } from "@/utils/sampleChorus";
 import { applyFlanger } from "@/utils/sampleFlanger";
 // v3.208: Bulk-Tremolo (Amplitude-Modulation via LFO, rateHz 0.1..20 / depth 0..1) für selektierte Samples.
 import { applyTremolo } from "@/utils/sampleTremolo";
+// v3.209: Bulk-Vibrato (Pitch-Modulation via LFO, rateHz 0.1..20 / depthCents 0..100) für selektierte Samples.
+import { applyVibrato } from "@/utils/sampleVibrato";
 
 // ─── Typen ────────────────────────────────────────────────────────────────────
 
@@ -2498,6 +2500,74 @@ export function SampleBrowser({
     bulkTremoloDepth,
   ]);
 
+  // v3.209 — Bulk-Vibrato (Pitch-Modulation via LFO) für selektierte
+  // Samples. depthCents=0 = identity (=disabled). applyVibrato ist pure;
+  // resultierender Buffer wird als WAV encodet und via onTransformSample
+  // zurück ins Projekt geschrieben (+ AudioBuffer für AudioEngine-Cache).
+  // Default-Preset: classic (rateHz=5, depthCents=20).
+  const [bulkVibratoRate, setBulkVibratoRate] = useState<number>(5);
+  const [bulkVibratoDepth, setBulkVibratoDepth] = useState<number>(20);
+
+  const handleBulkVibrato = useCallback(async () => {
+    if (multiSelectIds.size === 0 || !onTransformSample) return;
+    let applied = 0;
+    for (const id of multiSelectIds) {
+      const sample = samples.find((s) => s.id === id);
+      if (!sample) continue;
+      try {
+        const buf = await AudioEngine.loadSample(sample.path);
+        if (!buf) continue;
+        const out = applyVibrato(buf as unknown as AudioBufferLike, {
+          rateHz: bulkVibratoRate,
+          depthCents: bulkVibratoDepth,
+        });
+        if (out.numberOfChannels === 0 || out.length === 0) continue;
+        const channels = Math.min(2, out.numberOfChannels) as 1 | 2;
+        const wav = encodeWav(
+          Array.from({ length: channels }, (_, c) =>
+            out.getChannelData(c) as Float32Array,
+          ),
+          { sampleRate: out.sampleRate, channels, bitDepth: 16 },
+        );
+        const blob = new Blob([wav], { type: "audio/wav" });
+        const newUrl = URL.createObjectURL(blob);
+        const Ctor = (window.OfflineAudioContext ||
+          // @ts-expect-error legacy webkit fallback
+          window.webkitOfflineAudioContext) as typeof OfflineAudioContext;
+        const ctx = new Ctor(
+          Math.max(1, out.numberOfChannels),
+          Math.max(1, out.length),
+          out.sampleRate,
+        ) as BaseAudioContext;
+        const audioBuf = ctx.createBuffer(
+          Math.max(1, out.numberOfChannels),
+          Math.max(1, out.length),
+          out.sampleRate,
+        );
+        for (let c = 0; c < out.numberOfChannels; c++) {
+          const src = out.getChannelData(c);
+          const copy = new Float32Array(src.length);
+          copy.set(src);
+          audioBuf.copyToChannel(copy, c, 0);
+        }
+        onTransformSample(id, newUrl, audioBuf);
+        applied++;
+      } catch {
+        /* skip */
+      }
+    }
+    toast(
+      `Vibrato rate=${bulkVibratoRate.toFixed(1)}Hz depth=${bulkVibratoDepth.toFixed(0)}c: ${applied} Samples`,
+      { kind: "success" },
+    );
+  }, [
+    multiSelectIds,
+    samples,
+    onTransformSample,
+    bulkVibratoRate,
+    bulkVibratoDepth,
+  ]);
+
   // v3.152: Wenn Samples aus dem Projekt verschwinden (extern gelöscht),
   // multi-select-Set defensiv auf Existenz-Filter laufen lassen.
   useEffect(() => {
@@ -3780,6 +3850,43 @@ export function SampleBrowser({
                         title="Tremolo (Amplitude-Modulation via LFO) auf alle ausgewählten Samples"
                       >
                         TRM
+                      </button>
+                      <input
+                        type="range"
+                        min={0.1}
+                        max={20}
+                        step={0.1}
+                        value={bulkVibratoRate}
+                        onChange={(e) => setBulkVibratoRate(parseFloat(e.target.value))}
+                        data-testid="sample-browser-bulk-vibrato-rate"
+                        className="w-20 accent-accent-secondary"
+                        title="Vibrato LFO-Rate 0.1..20 Hz (5 = classic, 4 = subtle, 6 = expressive, 8 = warble)"
+                      />
+                      <span className="text-[10px] font-mono text-text-muted w-12 text-center">
+                        {bulkVibratoRate.toFixed(1)}Hz
+                      </span>
+                      <input
+                        type="range"
+                        min={0}
+                        max={100}
+                        step={1}
+                        value={bulkVibratoDepth}
+                        onChange={(e) => setBulkVibratoDepth(parseFloat(e.target.value))}
+                        data-testid="sample-browser-bulk-vibrato-depth"
+                        className="w-20 accent-accent-secondary"
+                        title="Vibrato Depth 0..100 cents (0 = aus, 10 = subtle, 20 = classic, 35 = expressive, 60 = warble)"
+                      />
+                      <span className="text-[10px] font-mono text-text-muted w-10 text-center">
+                        {bulkVibratoDepth.toFixed(0)}c
+                      </span>
+                      <button
+                        onClick={handleBulkVibrato}
+                        disabled={!onTransformSample || bulkVibratoDepth === 0}
+                        data-testid="sample-browser-bulk-vibrato"
+                        className="px-2 py-0.5 rounded text-[10px] border border-border-color text-text-primary hover:border-accent-secondary hover:text-accent-secondary disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        title="Vibrato (Pitch-Modulation via LFO) auf alle ausgewählten Samples"
+                      >
+                        VIB
                       </button>
                       <button
                         onClick={handleBulkDelete}
