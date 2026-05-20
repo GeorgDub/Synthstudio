@@ -129,6 +129,8 @@ import { applyHighPass } from "@/utils/sampleHighPass";
 import { applyBandPass } from "@/utils/sampleBandPass";
 // v3.203: Bulk-AllPass (Biquad-Phaser, center 100..5000 Hz / stages 1..8) für selektierte Samples.
 import { applyAllPass } from "@/utils/sampleAllPass";
+// v3.204: Bulk-Speed (changeSpeedRatio, ratio 0.25..4) für selektierte Samples.
+import { changeSpeedRatio } from "@/utils/sampleResampler";
 
 // ─── Typen ────────────────────────────────────────────────────────────────────
 
@@ -2153,6 +2155,68 @@ export function SampleBrowser({
     bulkAllPassStages,
   ]);
 
+  // v3.204 — Bulk-Speed (changeSpeedRatio) für selektierte Samples.
+  // ratio=1 identity (=disabled), >1 schneller+höher pitch, <1 langsamer+tiefer pitch.
+  // changeSpeedRatio ist pure; resultierender Buffer wird als WAV encodet und via
+  // onTransformSample zurück ins Projekt geschrieben (+ AudioBuffer für AudioEngine-Cache).
+  const [bulkSpeedRatio, setBulkSpeedRatio] = useState<number>(1);
+
+  const handleBulkSpeed = useCallback(async () => {
+    if (multiSelectIds.size === 0 || !onTransformSample) return;
+    let applied = 0;
+    for (const id of multiSelectIds) {
+      const sample = samples.find((s) => s.id === id);
+      if (!sample) continue;
+      try {
+        const buf = await AudioEngine.loadSample(sample.path);
+        if (!buf) continue;
+        const out = changeSpeedRatio(buf as unknown as AudioBufferLike, bulkSpeedRatio);
+        if (out.numberOfChannels === 0 || out.length === 0) continue;
+        const channels = Math.min(2, out.numberOfChannels) as 1 | 2;
+        const wav = encodeWav(
+          Array.from({ length: channels }, (_, c) =>
+            out.getChannelData(c) as Float32Array,
+          ),
+          { sampleRate: out.sampleRate, channels, bitDepth: 16 },
+        );
+        const blob = new Blob([wav], { type: "audio/wav" });
+        const newUrl = URL.createObjectURL(blob);
+        const Ctor = (window.OfflineAudioContext ||
+          // @ts-expect-error legacy webkit fallback
+          window.webkitOfflineAudioContext) as typeof OfflineAudioContext;
+        const ctx = new Ctor(
+          Math.max(1, out.numberOfChannels),
+          Math.max(1, out.length),
+          out.sampleRate,
+        ) as BaseAudioContext;
+        const audioBuf = ctx.createBuffer(
+          Math.max(1, out.numberOfChannels),
+          Math.max(1, out.length),
+          out.sampleRate,
+        );
+        for (let c = 0; c < out.numberOfChannels; c++) {
+          const src = out.getChannelData(c);
+          const copy = new Float32Array(src.length);
+          copy.set(src);
+          audioBuf.copyToChannel(copy, c, 0);
+        }
+        onTransformSample(id, newUrl, audioBuf);
+        applied++;
+      } catch {
+        /* skip */
+      }
+    }
+    toast(
+      `Speed ${bulkSpeedRatio.toFixed(2)}x: ${applied} Samples`,
+      { kind: "success" },
+    );
+  }, [
+    multiSelectIds,
+    samples,
+    onTransformSample,
+    bulkSpeedRatio,
+  ]);
+
   // v3.152: Wenn Samples aus dem Projekt verschwinden (extern gelöscht),
   // multi-select-Set defensiv auf Existenz-Filter laufen lassen.
   useEffect(() => {
@@ -3264,6 +3328,29 @@ export function SampleBrowser({
                         title="All-Pass Filter (Phaser-Like) auf alle ausgewählten Samples"
                       >
                         AP
+                      </button>
+                      <input
+                        type="range"
+                        min={0.25}
+                        max={4}
+                        step={0.05}
+                        value={bulkSpeedRatio}
+                        onChange={(e) => setBulkSpeedRatio(parseFloat(e.target.value))}
+                        data-testid="sample-browser-bulk-speed-slider"
+                        className="w-20 accent-accent-secondary"
+                        title="Speed-Ratio 0.25..4x (1 = identity, >1 schneller+höher, <1 langsamer+tiefer)"
+                      />
+                      <span className="text-[10px] font-mono text-text-muted w-14 text-center">
+                        {bulkSpeedRatio.toFixed(2)}x
+                      </span>
+                      <button
+                        onClick={handleBulkSpeed}
+                        disabled={!onTransformSample || bulkSpeedRatio === 1}
+                        data-testid="sample-browser-bulk-speed"
+                        className="px-2 py-0.5 rounded text-[10px] border border-border-color text-text-primary hover:border-accent-secondary hover:text-accent-secondary disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        title="Speed (Resample, Pitch ändert sich mit) auf alle ausgewählten Samples"
+                      >
+                        SPD
                       </button>
                       <button
                         onClick={handleBulkDelete}
