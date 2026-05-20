@@ -182,6 +182,8 @@ import { computeTension } from "@/utils/patternTension";
 import { computeEnergyCurve } from "@/utils/patternEnergyCurve";
 // v3.214: Pattern-Row Flow-Direction-Badge — detectFlowDirection.
 import { detectFlowDirection } from "@/utils/patternFlowDirection";
+// v3.216: Pattern-Row Repetition-Badge — computeRepetitionScore.
+import { computeRepetitionScore } from "@/utils/patternRepetitionScore";
 import type { PatternData } from "@/audio/AudioEngine";
 
 // ─── v3.205: Pattern-Flatten-Helper (module-level Cache via Closure) ───────────
@@ -414,6 +416,20 @@ function PatternRow({
     }
     return detectFlowDirection(flat);
   }, [pattern]);
+  // v3.216: Repetition-Score — selbst-aehnliche Sub-Patterns innerhalb der
+  // OR-aggregierten Step-Sequenz. Limit 32 Steps (analog flowDirection /
+  // energyCurve). Badge zeigt nur an wenn Score > 0.4 (strong repetition).
+  const repetition = useMemo(() => {
+    const stepCount = Math.min(pattern.stepCount, 32);
+    const flat: boolean[] = new Array(stepCount).fill(false);
+    for (const part of pattern.parts) {
+      const len = Math.min(part.steps.length, stepCount);
+      for (let i = 0; i < len; i++) {
+        if (part.steps[i].active) flat[i] = true;
+      }
+    }
+    return computeRepetitionScore(flat);
+  }, [pattern]);
   // v2.5: Submenu zum Auswählen welcher Pattern als Source dient
   const [pickerOpen, setPickerOpen] = useState(false);
   // v2.8: Drag-Drop-Reorder State (drop-indicator: above|below|null)
@@ -631,6 +647,16 @@ function PatternRow({
              flowDirection.direction === "center-out" ? "←·→" :
              flowDirection.direction === "edges-in"   ? "→·←" :
              ""}
+          </span>
+        )}
+        {/* v3.216: Repetition-Badge — selbst-aehnliche Sub-Patterns (ABAB, AAAA, ...). */}
+        {repetition.repetitionScore > 0.4 && (
+          <span
+            className="ml-1 px-1 py-0.5 rounded text-[9px] font-mono bg-bg-elevated text-text-primary border border-border-color"
+            title={`Repetition: ${Math.round(repetition.repetitionScore * 100)}%, ${repetition.uniqueRegions} unique regions`}
+            data-testid={`pattern-row-repetition-${pattern.id}`}
+          >
+            R{Math.round(repetition.repetitionScore * 100)}
           </span>
         )}
         {learn.isMapped && (

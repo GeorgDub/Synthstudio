@@ -151,6 +151,8 @@ import { applyAdsr } from "@/utils/sampleGainEnvelope";
 import { applyRingMod } from "@/utils/sampleRingMod";
 // v3.215: Bulk-Declick (Click/Pop-Detection + lineares Smoothing, threshold 0.05..1) für selektierte Samples.
 import { removeClicks } from "@/utils/sampleClickRemover";
+// v3.216: Bulk-Phaser (kaskadierte modulierte All-Pass-Stages, rateHz 0.05..5 / depth 0..1) für selektierte Samples.
+import { applyPhaser } from "@/utils/samplePhaser";
 
 // ─── Typen ────────────────────────────────────────────────────────────────────
 
@@ -2917,6 +2919,73 @@ export function SampleBrowser({
     bulkClickThreshold,
   ]);
 
+  // v3.216 — Bulk-Phaser (kaskadierte modulierte All-Pass-Stages) für selektierte
+  // Samples. applyPhaser ist pure; resultierender Buffer (gleiche Länge wie Input)
+  // wird als WAV encodet und via onTransformSample zurück ins Projekt geschrieben
+  // (+ AudioBuffer für AudioEngine-Cache). Defaults aus PHASER_PRESETS.classic.
+  const [bulkPhaserRate, setBulkPhaserRate] = useState<number>(0.5);
+  const [bulkPhaserDepth, setBulkPhaserDepth] = useState<number>(0.6);
+
+  const handleBulkPhaser = useCallback(async () => {
+    if (multiSelectIds.size === 0 || !onTransformSample) return;
+    let applied = 0;
+    for (const id of multiSelectIds) {
+      const sample = samples.find((s) => s.id === id);
+      if (!sample) continue;
+      try {
+        const buf = await AudioEngine.loadSample(sample.path);
+        if (!buf) continue;
+        const out = applyPhaser(buf as unknown as AudioBufferLike, {
+          rateHz: bulkPhaserRate,
+          depth: bulkPhaserDepth,
+        });
+        if (out.numberOfChannels === 0 || out.length === 0) continue;
+        const channels = Math.min(2, out.numberOfChannels) as 1 | 2;
+        const wav = encodeWav(
+          Array.from({ length: channels }, (_, c) =>
+            out.getChannelData(c) as Float32Array,
+          ),
+          { sampleRate: out.sampleRate, channels, bitDepth: 16 },
+        );
+        const blob = new Blob([wav], { type: "audio/wav" });
+        const newUrl = URL.createObjectURL(blob);
+        const Ctor = (window.OfflineAudioContext ||
+          // @ts-expect-error legacy webkit fallback
+          window.webkitOfflineAudioContext) as typeof OfflineAudioContext;
+        const ctx = new Ctor(
+          Math.max(1, out.numberOfChannels),
+          Math.max(1, out.length),
+          out.sampleRate,
+        ) as BaseAudioContext;
+        const audioBuf = ctx.createBuffer(
+          Math.max(1, out.numberOfChannels),
+          Math.max(1, out.length),
+          out.sampleRate,
+        );
+        for (let c = 0; c < out.numberOfChannels; c++) {
+          const src = out.getChannelData(c);
+          const copy = new Float32Array(src.length);
+          copy.set(src);
+          audioBuf.copyToChannel(copy, c, 0);
+        }
+        onTransformSample(id, newUrl, audioBuf);
+        applied++;
+      } catch {
+        /* skip */
+      }
+    }
+    toast(
+      `Phaser rate=${bulkPhaserRate}Hz depth=${bulkPhaserDepth}: ${applied} Samples`,
+      { kind: "success" },
+    );
+  }, [
+    multiSelectIds,
+    samples,
+    onTransformSample,
+    bulkPhaserRate,
+    bulkPhaserDepth,
+  ]);
+
   // v3.152: Wenn Samples aus dem Projekt verschwinden (extern gelöscht),
   // multi-select-Set defensiv auf Existenz-Filter laufen lassen.
   useEffect(() => {
@@ -4407,6 +4476,43 @@ export function SampleBrowser({
                         title="Click/Pop-Removal (Detection + lineare Glättung) auf alle ausgewählten Samples"
                       >
                         DECLICK
+                      </button>
+                      <input
+                        type="range"
+                        min={0.05}
+                        max={5}
+                        step={0.05}
+                        value={bulkPhaserRate}
+                        onChange={(e) => setBulkPhaserRate(parseFloat(e.target.value))}
+                        data-testid="sample-browser-bulk-phaser-rate"
+                        className="w-20 accent-accent-secondary"
+                        title="Phaser LFO-Rate 0.05..5 Hz (0.5 = classic default, langsam = subtile Bewegung, schnell = jet-Effekt)"
+                      />
+                      <span className="text-[10px] font-mono text-text-muted w-12 text-center">
+                        {bulkPhaserRate.toFixed(2)}Hz
+                      </span>
+                      <input
+                        type="range"
+                        min={0}
+                        max={1}
+                        step={0.05}
+                        value={bulkPhaserDepth}
+                        onChange={(e) => setBulkPhaserDepth(parseFloat(e.target.value))}
+                        data-testid="sample-browser-bulk-phaser-depth"
+                        className="w-20 accent-accent-secondary"
+                        title="Phaser Modulations-Tiefe 0..1 (0.6 = classic default, höher = breitere Sweep-Range)"
+                      />
+                      <span className="text-[10px] font-mono text-text-muted w-12 text-center">
+                        d{bulkPhaserDepth.toFixed(2)}
+                      </span>
+                      <button
+                        onClick={handleBulkPhaser}
+                        disabled={!onTransformSample}
+                        data-testid="sample-browser-bulk-phaser"
+                        className="px-2 py-0.5 rounded text-[10px] border border-border-color text-text-primary hover:border-accent-secondary hover:text-accent-secondary disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        title="Phaser (kaskadierte modulierte All-Pass-Stages mit LFO-Sweep) auf alle ausgewählten Samples"
+                      >
+                        PHA
                       </button>
                       <button
                         onClick={handleBulkDelete}
