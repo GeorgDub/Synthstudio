@@ -143,6 +143,8 @@ import { applyTremolo } from "@/utils/sampleTremolo";
 import { applyVibrato } from "@/utils/sampleVibrato";
 // v3.211: Bulk-AutoPan (Stereo-Pan-Modulation via LFO, rateHz 0.05..10 / depth 0..1) für selektierte Samples.
 import { applyAutoPan } from "@/utils/sampleAutoPan";
+// v3.212: Bulk-Stutter-Buffer (Slice-Repeat sliceMs 5..500 / repeats 1..32) für selektierte Samples.
+import { applyStutterBuffer } from "@/utils/sampleStutterBuffer";
 
 // ─── Typen ────────────────────────────────────────────────────────────────────
 
@@ -2638,6 +2640,75 @@ export function SampleBrowser({
     bulkAutoPanDepth,
   ]);
 
+  // v3.212 — Bulk-Stutter-Buffer (Slice-Repeat) für selektierte Samples.
+  // Extrahiert eine Slice (sliceMs ab 0) und wiederholt sie `repeats` mal.
+  // applyStutterBuffer ist pure; resultierender Buffer (Länge =
+  // repeats * sliceSamples, NICHT input.length) wird als WAV encodet und
+  // via onTransformSample zurück ins Projekt geschrieben (+ AudioBuffer
+  // für AudioEngine-Cache). Default-Preset: classic (sliceMs=50, repeats=4).
+  const [bulkStutterSlice, setBulkStutterSlice] = useState<number>(50);
+  const [bulkStutterRepeats, setBulkStutterRepeats] = useState<number>(4);
+
+  const handleBulkStutter = useCallback(async () => {
+    if (multiSelectIds.size === 0 || !onTransformSample) return;
+    let applied = 0;
+    for (const id of multiSelectIds) {
+      const sample = samples.find((s) => s.id === id);
+      if (!sample) continue;
+      try {
+        const buf = await AudioEngine.loadSample(sample.path);
+        if (!buf) continue;
+        const out = applyStutterBuffer(buf as unknown as AudioBufferLike, {
+          sliceMs: bulkStutterSlice,
+          repeats: bulkStutterRepeats,
+        });
+        if (out.numberOfChannels === 0 || out.length === 0) continue;
+        const channels = Math.min(2, out.numberOfChannels) as 1 | 2;
+        const wav = encodeWav(
+          Array.from({ length: channels }, (_, c) =>
+            out.getChannelData(c) as Float32Array,
+          ),
+          { sampleRate: out.sampleRate, channels, bitDepth: 16 },
+        );
+        const blob = new Blob([wav], { type: "audio/wav" });
+        const newUrl = URL.createObjectURL(blob);
+        const Ctor = (window.OfflineAudioContext ||
+          // @ts-expect-error legacy webkit fallback
+          window.webkitOfflineAudioContext) as typeof OfflineAudioContext;
+        const ctx = new Ctor(
+          Math.max(1, out.numberOfChannels),
+          Math.max(1, out.length),
+          out.sampleRate,
+        ) as BaseAudioContext;
+        const audioBuf = ctx.createBuffer(
+          Math.max(1, out.numberOfChannels),
+          Math.max(1, out.length),
+          out.sampleRate,
+        );
+        for (let c = 0; c < out.numberOfChannels; c++) {
+          const src = out.getChannelData(c);
+          const copy = new Float32Array(src.length);
+          copy.set(src);
+          audioBuf.copyToChannel(copy, c, 0);
+        }
+        onTransformSample(id, newUrl, audioBuf);
+        applied++;
+      } catch {
+        /* skip */
+      }
+    }
+    toast(
+      `Stutter ${bulkStutterSlice}ms ×${bulkStutterRepeats}: ${applied} Samples`,
+      { kind: "success" },
+    );
+  }, [
+    multiSelectIds,
+    samples,
+    onTransformSample,
+    bulkStutterSlice,
+    bulkStutterRepeats,
+  ]);
+
   // v3.152: Wenn Samples aus dem Projekt verschwinden (extern gelöscht),
   // multi-select-Set defensiv auf Existenz-Filter laufen lassen.
   useEffect(() => {
@@ -3994,6 +4065,43 @@ export function SampleBrowser({
                         title="AutoPan (Stereo-Pan-Modulation via LFO) auf alle ausgewählten Samples"
                       >
                         PAN
+                      </button>
+                      <input
+                        type="range"
+                        min={5}
+                        max={500}
+                        step={5}
+                        value={bulkStutterSlice}
+                        onChange={(e) => setBulkStutterSlice(parseFloat(e.target.value))}
+                        data-testid="sample-browser-bulk-stutter-slice"
+                        className="w-20 accent-accent-secondary"
+                        title="Stutter Slice-Länge 5..500 ms (50 = classic, 30 = short, 20 = glitch, 100 = fade)"
+                      />
+                      <span className="text-[10px] font-mono text-text-muted w-12 text-center">
+                        {bulkStutterSlice}ms
+                      </span>
+                      <input
+                        type="range"
+                        min={1}
+                        max={32}
+                        step={1}
+                        value={bulkStutterRepeats}
+                        onChange={(e) => setBulkStutterRepeats(parseFloat(e.target.value))}
+                        data-testid="sample-browser-bulk-stutter-repeats"
+                        className="w-20 accent-accent-secondary"
+                        title="Stutter Repeats 1..32 (4 = classic, 8 = short, 16 = glitch, 6 = fade)"
+                      />
+                      <span className="text-[10px] font-mono text-text-muted w-10 text-center">
+                        ×{bulkStutterRepeats}
+                      </span>
+                      <button
+                        onClick={handleBulkStutter}
+                        disabled={!onTransformSample}
+                        data-testid="sample-browser-bulk-stutter"
+                        className="px-2 py-0.5 rounded text-[10px] border border-border-color text-text-primary hover:border-accent-secondary hover:text-accent-secondary disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        title="Stutter-Buffer (Slice-Repeat) auf alle ausgewählten Samples — Output-Länge = sliceMs × repeats"
+                      >
+                        STR
                       </button>
                       <button
                         onClick={handleBulkDelete}

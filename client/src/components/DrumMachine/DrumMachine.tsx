@@ -178,6 +178,8 @@ import { patternSimilarity } from "@/utils/patternSequenceCorrelation";
 import { complexityIndex } from "@/utils/patternEntropy";
 // v3.209: Pattern-Row Tension-Badge — Off-Beat + Velocity-Variance + Syncopation.
 import { computeTension } from "@/utils/patternTension";
+// v3.212: Pattern-Row Energy-Curve — Mini-Spark-Line aus computeEnergyCurve.
+import { computeEnergyCurve } from "@/utils/patternEnergyCurve";
 import type { PatternData } from "@/audio/AudioEngine";
 
 // ─── v3.205: Pattern-Flatten-Helper (module-level Cache via Closure) ───────────
@@ -369,6 +371,33 @@ function PatternRow({
     }
     return computeTension(flat, 4);
   }, [pattern]);
+  // v3.212: Energy-Curve — Mini-Spark-Line pro Pattern-Row.
+  // OR-aggregierte Steps (max velocity wenn mehrere Parts an einem Step aktiv),
+  // limit 32 steps. windowSize=4 (typischer 16th-Note-Trailing-Smoother).
+  const energyCurve = useMemo(() => {
+    const stepCount = Math.min(pattern.stepCount, 32);
+    const flat: { active: boolean; velocity?: number }[] = new Array(stepCount);
+    for (let i = 0; i < stepCount; i++) {
+      flat[i] = { active: false };
+    }
+    for (const part of pattern.parts) {
+      const len = Math.min(part.steps.length, stepCount);
+      for (let i = 0; i < len; i++) {
+        const s = part.steps[i];
+        if (!s.active) continue;
+        const v = s.velocity;
+        if (!flat[i].active) {
+          flat[i] = { active: true, velocity: v };
+        } else {
+          const prev = flat[i].velocity;
+          if (typeof v === "number" && (typeof prev !== "number" || v > prev)) {
+            flat[i] = { active: true, velocity: v };
+          }
+        }
+      }
+    }
+    return computeEnergyCurve(flat, 4);
+  }, [pattern]);
   // v2.5: Submenu zum Auswählen welcher Pattern als Source dient
   const [pickerOpen, setPickerOpen] = useState(false);
   // v2.8: Drag-Drop-Reorder State (drop-indicator: above|below|null)
@@ -547,6 +576,31 @@ function PatternRow({
             data-testid={`pattern-row-tension-${pattern.id}`}
           >
             T{Math.round(tension.overallTension * 100)}
+          </span>
+        )}
+        {/* v3.212: Energy-Curve Spark-Line — Sliding-Window-Energy ueber Step-Achse. */}
+        {energyCurve.points.length >= 2 && (
+          <span
+            className="inline-block ml-1 align-middle border border-border-color rounded text-accent-primary"
+            title={`Energy: avg=${Math.round(energyCurve.averageEnergy * 100)}% peak@step${energyCurve.peakStepIndex}, trend: ${energyCurve.trend}`}
+            data-testid={`pattern-row-energycurve-${pattern.id}`}
+          >
+            <svg
+              width={32}
+              height={10}
+              viewBox={`0 0 ${energyCurve.points.length} 1`}
+              preserveAspectRatio="none"
+              aria-hidden="true"
+            >
+              <polyline
+                points={energyCurve.points
+                  .map((p) => `${p.stepIndex},${1 - p.energy}`)
+                  .join(" ")}
+                stroke="currentColor"
+                fill="none"
+                strokeWidth="0.1"
+              />
+            </svg>
           </span>
         )}
         {learn.isMapped && (
