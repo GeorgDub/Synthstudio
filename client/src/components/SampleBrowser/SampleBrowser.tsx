@@ -169,6 +169,8 @@ import { applyExciter } from "@/utils/sampleExciter";
 import { applyFreqShift } from "@/utils/sampleFreqShift";
 // v3.228: Bulk-Deesser (HP -> tanh -> envelope-follower -> subtract sibilant, threshold 0..1) für selektierte Samples.
 import { applyDeesser } from "@/utils/sampleDeesser";
+// v3.229: Bulk-Gate (hard noise-gate mit linearen open/close-Thresholds, klick-frei via attack/release-Ramps) für selektierte Samples.
+import { applyGate } from "@/utils/sampleGate";
 
 // ─── Typen ────────────────────────────────────────────────────────────────────
 
@@ -3086,6 +3088,9 @@ export function SampleBrowser({
   const [bulkFreqShift, setBulkFreqShift] = useState<number>(50);
   // v3.228: Bulk-Deesser — threshold (0..1, default 0.3). Niedriger = aggressivere Sibilant-Reduktion.
   const [bulkDeesserThreshold, setBulkDeesserThreshold] = useState<number>(0.3);
+  // v3.229: Bulk-Gate — openThreshold (0..1, default 0.1) + closeThreshold (0..1, default 0.05).
+  const [bulkGateOpen, setBulkGateOpen] = useState<number>(0.1);
+  const [bulkGateClose, setBulkGateClose] = useState<number>(0.05);
 
   const handleBulkNoiseReduce = useCallback(async () => {
     if (multiSelectIds.size === 0 || !onTransformSample) return;
@@ -3504,6 +3509,68 @@ export function SampleBrowser({
     samples,
     onTransformSample,
     bulkDeesserThreshold,
+  ]);
+
+  // v3.229: Bulk-Gate — applyGate (hard noise-gate, lineare open/close-
+  // Thresholds 0..1, klick-frei via attack/release-Ramps).
+  const handleBulkGate = useCallback(async () => {
+    if (multiSelectIds.size === 0 || !onTransformSample) return;
+    let applied = 0;
+    for (const id of multiSelectIds) {
+      const sample = samples.find((s) => s.id === id);
+      if (!sample) continue;
+      try {
+        const buf = await AudioEngine.loadSample(sample.path);
+        if (!buf) continue;
+        const out = applyGate(buf as unknown as AudioBufferLike, {
+          openThreshold: bulkGateOpen,
+          closeThreshold: bulkGateClose,
+        });
+        if (out.numberOfChannels === 0 || out.length === 0) continue;
+        const channels = Math.min(2, out.numberOfChannels) as 1 | 2;
+        const wav = encodeWav(
+          Array.from({ length: channels }, (_, c) =>
+            out.getChannelData(c) as Float32Array,
+          ),
+          { sampleRate: out.sampleRate, channels, bitDepth: 16 },
+        );
+        const blob = new Blob([wav], { type: "audio/wav" });
+        const newUrl = URL.createObjectURL(blob);
+        const Ctor = (window.OfflineAudioContext ||
+          // @ts-expect-error legacy webkit fallback
+          window.webkitOfflineAudioContext) as typeof OfflineAudioContext;
+        const ctx = new Ctor(
+          Math.max(1, out.numberOfChannels),
+          Math.max(1, out.length),
+          out.sampleRate,
+        ) as BaseAudioContext;
+        const audioBuf = ctx.createBuffer(
+          Math.max(1, out.numberOfChannels),
+          Math.max(1, out.length),
+          out.sampleRate,
+        );
+        for (let c = 0; c < out.numberOfChannels; c++) {
+          const src = out.getChannelData(c);
+          const copy = new Float32Array(src.length);
+          copy.set(src);
+          audioBuf.copyToChannel(copy, c, 0);
+        }
+        onTransformSample(id, newUrl, audioBuf);
+        applied++;
+      } catch {
+        /* skip */
+      }
+    }
+    toast(
+      `Gate open=${bulkGateOpen} close=${bulkGateClose}: ${applied} Samples`,
+      { kind: "success" },
+    );
+  }, [
+    multiSelectIds,
+    samples,
+    onTransformSample,
+    bulkGateOpen,
+    bulkGateClose,
   ]);
 
   // v3.152: Wenn Samples aus dem Projekt verschwinden (extern gelöscht),
@@ -5265,6 +5332,44 @@ export function SampleBrowser({
                         title="De-Esser (HP -> tanh -> envelope-follower -> subtract sibilant) auf alle ausgewählten Samples"
                       >
                         DE-S
+                      </button>
+                      {/* v3.229: Bulk-Gate — open/close-Threshold-Slider + Apply-Button (hard noise-gate, klick-frei via attack/release-Ramps). */}
+                      <input
+                        type="range"
+                        min={0}
+                        max={1}
+                        step={0.01}
+                        value={bulkGateOpen}
+                        onChange={(e) => setBulkGateOpen(parseFloat(e.target.value))}
+                        className="w-20 accent-accent-secondary"
+                        data-testid="sample-browser-bulk-gate-open"
+                        title="Gate-Open-Threshold (0..1, default 0.1; höher = strenger geschlossen)"
+                      />
+                      <span className="text-[10px] font-mono text-text-muted w-10 text-right">
+                        {bulkGateOpen.toFixed(2)}
+                      </span>
+                      <input
+                        type="range"
+                        min={0}
+                        max={1}
+                        step={0.01}
+                        value={bulkGateClose}
+                        onChange={(e) => setBulkGateClose(parseFloat(e.target.value))}
+                        className="w-20 accent-accent-secondary"
+                        data-testid="sample-browser-bulk-gate-close"
+                        title="Gate-Close-Threshold (0..1, default 0.05; Hysteresis-Schwelle zum Schließen)"
+                      />
+                      <span className="text-[10px] font-mono text-text-muted w-10 text-right">
+                        {bulkGateClose.toFixed(2)}
+                      </span>
+                      <button
+                        onClick={handleBulkGate}
+                        disabled={!onTransformSample}
+                        data-testid="sample-browser-bulk-gate"
+                        className="px-2 py-0.5 rounded text-[10px] border border-border-color text-text-primary hover:border-accent-secondary hover:text-accent-secondary disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        title="Hard Noise-Gate (lineare open/close-Thresholds, klick-frei) auf alle ausgewählten Samples"
+                      >
+                        GATE
                       </button>
                       <button
                         onClick={handleBulkDelete}
