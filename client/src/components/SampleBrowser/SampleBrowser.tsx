@@ -141,6 +141,8 @@ import { applyFlanger } from "@/utils/sampleFlanger";
 import { applyTremolo } from "@/utils/sampleTremolo";
 // v3.209: Bulk-Vibrato (Pitch-Modulation via LFO, rateHz 0.1..20 / depthCents 0..100) für selektierte Samples.
 import { applyVibrato } from "@/utils/sampleVibrato";
+// v3.211: Bulk-AutoPan (Stereo-Pan-Modulation via LFO, rateHz 0.05..10 / depth 0..1) für selektierte Samples.
+import { applyAutoPan } from "@/utils/sampleAutoPan";
 
 // ─── Typen ────────────────────────────────────────────────────────────────────
 
@@ -2568,6 +2570,74 @@ export function SampleBrowser({
     bulkVibratoDepth,
   ]);
 
+  // v3.211 — Bulk-AutoPan (Stereo-Pan-Modulation via LFO) für selektierte
+  // Samples. depth=0 = equal-power center (L==R). applyAutoPan ist pure;
+  // resultierender Buffer wird als WAV encodet und via onTransformSample
+  // zurück ins Projekt geschrieben (+ AudioBuffer für AudioEngine-Cache).
+  // Default-Preset: classic (rateHz=0.5, depth=0.7).
+  const [bulkAutoPanRate, setBulkAutoPanRate] = useState<number>(0.5);
+  const [bulkAutoPanDepth, setBulkAutoPanDepth] = useState<number>(0.7);
+
+  const handleBulkAutoPan = useCallback(async () => {
+    if (multiSelectIds.size === 0 || !onTransformSample) return;
+    let applied = 0;
+    for (const id of multiSelectIds) {
+      const sample = samples.find((s) => s.id === id);
+      if (!sample) continue;
+      try {
+        const buf = await AudioEngine.loadSample(sample.path);
+        if (!buf) continue;
+        const out = applyAutoPan(buf as unknown as AudioBufferLike, {
+          rateHz: bulkAutoPanRate,
+          depth: bulkAutoPanDepth,
+        });
+        if (out.numberOfChannels === 0 || out.length === 0) continue;
+        const channels = Math.min(2, out.numberOfChannels) as 1 | 2;
+        const wav = encodeWav(
+          Array.from({ length: channels }, (_, c) =>
+            out.getChannelData(c) as Float32Array,
+          ),
+          { sampleRate: out.sampleRate, channels, bitDepth: 16 },
+        );
+        const blob = new Blob([wav], { type: "audio/wav" });
+        const newUrl = URL.createObjectURL(blob);
+        const Ctor = (window.OfflineAudioContext ||
+          // @ts-expect-error legacy webkit fallback
+          window.webkitOfflineAudioContext) as typeof OfflineAudioContext;
+        const ctx = new Ctor(
+          Math.max(1, out.numberOfChannels),
+          Math.max(1, out.length),
+          out.sampleRate,
+        ) as BaseAudioContext;
+        const audioBuf = ctx.createBuffer(
+          Math.max(1, out.numberOfChannels),
+          Math.max(1, out.length),
+          out.sampleRate,
+        );
+        for (let c = 0; c < out.numberOfChannels; c++) {
+          const src = out.getChannelData(c);
+          const copy = new Float32Array(src.length);
+          copy.set(src);
+          audioBuf.copyToChannel(copy, c, 0);
+        }
+        onTransformSample(id, newUrl, audioBuf);
+        applied++;
+      } catch {
+        /* skip */
+      }
+    }
+    toast(
+      `AutoPan rate=${bulkAutoPanRate.toFixed(2)}Hz depth=${bulkAutoPanDepth.toFixed(2)}: ${applied} Samples`,
+      { kind: "success" },
+    );
+  }, [
+    multiSelectIds,
+    samples,
+    onTransformSample,
+    bulkAutoPanRate,
+    bulkAutoPanDepth,
+  ]);
+
   // v3.152: Wenn Samples aus dem Projekt verschwinden (extern gelöscht),
   // multi-select-Set defensiv auf Existenz-Filter laufen lassen.
   useEffect(() => {
@@ -3887,6 +3957,43 @@ export function SampleBrowser({
                         title="Vibrato (Pitch-Modulation via LFO) auf alle ausgewählten Samples"
                       >
                         VIB
+                      </button>
+                      <input
+                        type="range"
+                        min={0.05}
+                        max={10}
+                        step={0.05}
+                        value={bulkAutoPanRate}
+                        onChange={(e) => setBulkAutoPanRate(parseFloat(e.target.value))}
+                        data-testid="sample-browser-bulk-autopan-rate"
+                        className="w-20 accent-accent-secondary"
+                        title="AutoPan LFO-Rate 0.05..10 Hz (0.5 = classic, 0.2 = subtle, 2 = fast)"
+                      />
+                      <span className="text-[10px] font-mono text-text-muted w-12 text-center">
+                        {bulkAutoPanRate.toFixed(2)}Hz
+                      </span>
+                      <input
+                        type="range"
+                        min={0}
+                        max={1}
+                        step={0.05}
+                        value={bulkAutoPanDepth}
+                        onChange={(e) => setBulkAutoPanDepth(parseFloat(e.target.value))}
+                        data-testid="sample-browser-bulk-autopan-depth"
+                        className="w-20 accent-accent-secondary"
+                        title="AutoPan Depth 0..1 (0 = center, 0.4 = subtle, 0.7 = classic, 1 = full L-R)"
+                      />
+                      <span className="text-[10px] font-mono text-text-muted w-10 text-center">
+                        {bulkAutoPanDepth.toFixed(2)}
+                      </span>
+                      <button
+                        onClick={handleBulkAutoPan}
+                        disabled={!onTransformSample}
+                        data-testid="sample-browser-bulk-autopan"
+                        className="px-2 py-0.5 rounded text-[10px] border border-border-color text-text-primary hover:border-accent-secondary hover:text-accent-secondary disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        title="AutoPan (Stereo-Pan-Modulation via LFO) auf alle ausgewählten Samples"
+                      >
+                        PAN
                       </button>
                       <button
                         onClick={handleBulkDelete}
