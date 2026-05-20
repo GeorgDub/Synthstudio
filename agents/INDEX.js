@@ -3676,6 +3676,71 @@ const INDEX = {
   workLog: [
     {
       agent:     "refactor",
+      timestamp: "2026-05-20T10:05:00.000Z",
+      done: [
+        "v3.193 Pure-Helper client/src/utils/patternRhythmRotate.ts (~120 LOC) angelegt — Pattern-Rotation in musikalischen Beats statt rohen Steps. Foundation fuer kuenftige Shift-by-Beat-Action / Pattern-Tools / Script-Commands. Hinweis: Parallel-Session v3.192 (sampleSidechain) lief gleichzeitig — meine Versionsnummer auf v3.193 erhoeht.",
+        "Public API: rotatePatternByBeats(pattern, options?) -> boolean[] (rotiert gesamtes Pattern um beats*stepsPerBeat Steps via positiver modulo, wraps); rotateWithinBeats(pattern, options?) -> boolean[] (rotiert nur INNERHALB jeder Beat-Group, Group-Reihenfolge bleibt unangetastet — z.B. [a,b,c,d,e,f,g,h,...] -> [d,a,b,c,h,e,f,g,...]); ROTATE_PRESETS readonly[] mit 4 Eintraegen (one-beat-fwd/one-beat-bwd/half-bar/within-beat).",
+        "RhythmRotateOptions: stepsPerBeat (default 4, 1/16-Pattern), beats (default 1, kann negativ). Defensive: stepsPerBeat <= 0/Infinity/NaN -> Fallback 4 via resolveStepsPerBeat; beats NaN -> Fallback 1 via resolveBeats (Math.trunc fuer non-integer). Trailing partial group im within-beat-Modus wird mod ihrer eigenen Laenge rotiert (6 Steps mit stepsPerBeat=4 -> Group1=4steps + Group2=2steps). Beide Funktionen liefern NEUE Arrays, lassen Input unveraendert (immutability via expect(out).not.toBe(input) geprueft).",
+        "Test-Suite tests/features/pattern-rhythm-rotate.test.ts (~280 LOC, 23 Tests in 3 describe-Bloecken): rotatePatternByBeats (10 Tests — empty, default symmetric identity, asymmetric right shift, negative left shift, overflow wraps mod length, immutability, defensive stepsPerBeat<=0/Infinity/NaN, custom stepsPerBeat=2), rotateWithinBeats (8 Tests — empty, canonical 16-step, group-order preservation, negative beats, trailing partial group, immutability, defensive NaN/<=0), ROTATE_PRESETS (5 Tests — count=4, unique IDs, contains all 4 IDs, all stepsPerBeat=4, +1 Beat preset rotates correctly).",
+        "pnpm check GRUEN (tsc --noEmit 0 errors). pnpm test GRUEN: pattern-rhythm-rotate 23/23 passed in 7ms; Gesamt-Suite 350 files / 7807 passed / 16 skipped (inkl. parallele v3.192-Session). KEIN Commit, KEIN package.json-Bump (User-Vorgabe analog Refactor-Pattern v3.188-v3.191)."
+      ],
+      next: [
+        "v3.193+ Frontend-Owner: DrumMachine-Toolbar / PerformanceMode Action-Buttons 'Shift +1 Beat' und 'Shift -1 Beat' an rotatePatternByBeats wiren (analog v3.164 shiftPattern Wire-Up). Within-Beat-Shift als zusaetzlicher Mutation-Button im Pattern-Tools-Panel sinnvoll.",
+        "v3.193+ Frontend-Owner: MIDI-Bindings — neue MidiLearnTarget Eintraege 'patternBeatShiftFwd' / 'patternBeatShiftBwd' / 'patternWithinBeatShift' in useMidi.ts hinzufuegen + applyMapping rufen rotatePatternByBeats mit aktuellem activePattern auf.",
+        "v3.194+ Backend-Owner: Script-Sandbox ss.pattern.rotateByBeats(beats, stepsPerBeat?) und ss.pattern.rotateWithinBeats(beats, stepsPerBeat?) exposen — analog bestehender Pattern-Mutator-Helpers. Built-In-Script-Library um 'Rotate +1 Beat' und 'Within-Beat Shake' erweitern (utils/builtInScripts.ts).",
+        "v3.194+ Testing-Owner: Playwright-Smoke tests/web/pattern-beat-shift.spec.ts — Pattern setzen, +1 Beat Button klicken, Hit-Position um stepsPerBeat verschoben verifizieren."
+      ],
+      changed: [
+        "client/src/utils/patternRhythmRotate.ts (NEW, ~120 LOC — rotatePatternByBeats + rotateWithinBeats + ROTATE_PRESETS + RhythmRotateOptions; ownedBy backend, da Pure-Helper-Logik im Audio-/Pattern-Layer)",
+        "tests/features/pattern-rhythm-rotate.test.ts (NEW, ~280 LOC, 23 Tests; ownedBy backend)",
+        "agents/INDEX.js (workLog-Entry v3.193 refactor — Pattern-Rhythm-Rotate Pure-Helper, parallel zu v3.192 sampleSidechain)"
+      ]
+    },
+    {
+      agent:     "refactor",
+      timestamp: "2026-05-20T09:55:00.000Z",
+      done: [
+        "v3.192 Pure-Helper client/src/utils/sampleSidechain.ts (~260 LOC inkl. JSDoc) angelegt — offline pre-rendered Sidechain-Pump-Effekt. Pure & DOM-frei auf AudioBufferLike (aus sampleEmbedding). Pattern angelehnt an sampleCompressor.ts (v3.188) + sampleDelay.ts (v3.191).",
+        "Public API: applySidechain(buffer, options) -> AudioBufferLike; SIDECHAIN_PRESETS readonly[] mit 4 Eintraegen (subtle-pump -6/5/250, edm-pump -18/1/180, heavy -24/0.5/120, ambient -3/20/400). SidechainOptions: triggerPattern readonly boolean[] (required), bpm? (default 120), stepsPerBeat? (default 4), duckDb? (default -12), attackMs? (default 1), releaseMs? (default 200). Exports DEFAULT_BPM/STEPS_PER_BEAT/DUCK_DB/ATTACK_MS/RELEASE_MS Konstanten.",
+        "Modell: pro Sample stepDurationSamples = (60/bpm/stepsPerBeat)*sampleRate, currentStep = floor(i/stepDurationSamples) % patternLen. targetGain = triggered ? 10^(duckDb/20) : 1.0. Per-channel envelope-Tracker mit einpoliger Glaettung — coef = (target<env) ? attackCoef : releaseCoef. Envelope startet bei 1.0 ('offen'). Linear-gain-domain (KEIN dB-tracking wie bei Compressor), bewusst — die Sidechain-Sprache uebersetzt direkt: 'kurzes Attack' = scharfes Sinken, 'langes Release' = sanftes Pumpen.",
+        "Defensive: empty buffer -> empty (makeEmptyLike). missing/empty triggerPattern -> Identity-Copy (copyBuffer). NaN bpm/stepsPerBeat -> defaults via sanitizePositive (verhindert div-by-zero / Infinity step-duration). NaN duckDb -> -12. NaN/<=0 attackMs/releaseMs -> 0.001 (kein div-by-zero im exp-Koeffizienten). out-of-range channel -> RangeError analog sampleCompressor.",
+        "Test-Suite tests/features/sample-sidechain.test.ts (~230 LOC, 14 Tests) — alle 10 Spec-Punkte + 4 Bonus: empty buffer / empty triggerPattern / all-false (identity) / all-true (steady-state ducked ~10^(-12/20)=0.2512) / on-off-Pattern alternating duck/open / duckDb=0 no-effect / higher-attackMs slower-onset / multi-channel shape+independent ducking / out-of-range RangeError / SIDECHAIN_PRESETS 4 entries shape+ids / preset values match spec / NaN defaults finite output / bpm/stepsPerBeat<=0 defaults / default-constants export.",
+        "pnpm check GRUEN (tsc --noEmit 0 errors). pnpm test GRUEN: sample-sidechain 14/14 passed, Gesamt-Suite 350 files / 7807 passed / 16 skipped (+37 vs. v3.191 baseline 7770)."
+      ],
+      next: [
+        "v3.193+ Frontend-Owner: SampleTransformDialog Wire-Up — neuer Sidechain-Tab mit triggerPattern-Step-Grid (16 boolean toggles), 3 Slider (duckDb/attackMs/releaseMs), bpm/stepsPerBeat liest aus useDrumMachineStore. SIDECHAIN_PRESETS-Dropdown analog Reverb/Delay-Tabs. Optional Auto-Normalize-Pipe nach Sidechain (Output bleibt eigentlich im Range, aber Konsistenz).",
+        "v3.193+ Frontend-Owner: SampleBrowser Bulk-Apply Sidechain analog v3.191-Delay-Wire-Up — Preset-Dropdown + Button data-testid=sample-browser-bulk-sidechain. Pattern aus aktivem Drum-Pattern lesen (z.B. Kick-Spur eines selected Channels als trigger).",
+        "v3.193+ Frontend-Owner: SampleTransformPipeline.ts — applySidechain als Stage in composable Chain registrieren mit serialisierter Pattern-Persistenz (boolean[] -> base64 oder bit-mask).",
+        "v3.194+ Backend-Owner: AudioEngine FX-Chain bekommt echten 'sidechain'-Slot pro Channel (echtzeit-faehig via GainNode + ScriptProcessor oder AudioWorklet). Pure-Helper bleibt fuer Offline-Bake erhalten.",
+        "v3.194+ Testing-Owner: Playwright-Smoke tests/web/sample-sidechain.spec.ts mit Sample-Loader -> Sidechain-Tab oeffnen -> Pattern setzen [true,false,true,false] -> Preset 'edm-pump' -> assert WAV-Resultat-Amplitude pumpt alternierend."
+      ],
+      changed: [
+        "client/src/utils/sampleSidechain.ts (NEW, 260 LOC — applySidechain + SIDECHAIN_PRESETS + SidechainOptions + Defaults; ownedBy backend)",
+        "tests/features/sample-sidechain.test.ts (NEW, 230 LOC, 14 Tests; ownedBy backend)",
+        "agents/INDEX.js (workLog-Entry v3.192 refactor)"
+      ]
+    },
+    {
+      agent:     "frontend",
+      timestamp: "2026-05-20T15:25:00.000Z",
+      done: [
+        "v3.191 Wire-Up sampleDelay im SampleBrowser (Bulk-Apply analog Reverb/Gate/Compressor). Import { applyDelay, DELAY_PRESETS } from @/utils/sampleDelay (4 Presets: slap/echo/long/dub).",
+        "Neuer State bulkDelayPresetId useState<string>('echo'). Neuer Handler handleBulkDelay useCallback (deps: multiSelectIds, samples, onTransformSample, bulkDelayPresetId) iteriert multiSelectIds: AudioEngine.loadSample -> applyDelay(buf as AudioBufferLike, { delayMs, feedback, wet }) -> encodeWav(channels<=2, sampleRate, 16bit) -> Blob -> createObjectURL -> OfflineAudioContext.createBuffer + copyToChannel -> onTransformSample(id, newUrl, audioBuf). try/catch pro Sample (skip on error). Toast 'Delay \"<name>\": <n> Samples' kind:success.",
+        "UI direkt nach sample-browser-bulk-comp-Button eingefuegt: <select data-testid=sample-browser-bulk-delay-preset> rendert DELAY_PRESETS.map (id/name) + <button data-testid=sample-browser-bulk-delay> Label 'Delay', disabled={!onTransformSample}. Ausschliesslich semantische Tailwind-Klassen (bg-bg-panel, border-border-color, hover:border-accent-secondary, text-text-primary, disabled:opacity-50) — keine hardcodierten Farben.",
+        "pnpm check GRUEN (tsc --noEmit, 0 Errors). KEIN git commit, KEIN package.json bump (User-Vorgabe). NUR client/src/components/SampleBrowser/SampleBrowser.tsx editiert (Import + State + Handler + UI). Pattern symmetrisch zu v3.188 sampleCompressor Wire-Up."
+      ],
+      next: [
+        "v3.192+ Frontend-Owner: SampleTransformDialog Delay-Tab mit 3 Slider (delayMs/feedback/wet) + DELAY_PRESETS-Dropdown analog Reverb-Tab. Output-Length steigt um tailMs — UI muss Waveform-Display erweitern. Optional Auto-Normalize-Pipe nach Delay (Output kann ueber ±1 gehen).",
+        "v3.192+ Testing-Owner: Playwright-Smoke tests/web/sample-browser-bulk-delay.spec.ts mit multi-select + click sample-browser-bulk-delay -> Toast-Assertion 'Delay \"...\": N Samples' + AudioBuffer-Aenderung verifizieren (neue Laenge > original wegen Tail).",
+        "v3.193+ Backend-Owner: AudioEngine FX-Chain bekommt 'delay'-Slot pro Channel via Web Audio DelayNode (echtzeit-faehig). Pure-Helper applyDelay bleibt fuer Offline-Bake erhalten."
+      ],
+      changed: [
+        "client/src/components/SampleBrowser/SampleBrowser.tsx (Wire-Up sampleDelay: Import + bulkDelayPresetId useState + handleBulkDelay useCallback + UI-Select+Button nach Comp-Button, 2 data-testid: sample-browser-bulk-delay-preset / sample-browser-bulk-delay)",
+        "agents/INDEX.js (workLog-Entry v3.191 frontend-Wire-Up)"
+      ]
+    },
+    {
+      agent:     "refactor",
       timestamp: "2026-05-20T09:42:00.000Z",
       done: [
         "v3.191 Pure-Helper client/src/utils/sampleDelay.ts (~190 LOC) angelegt — klassischer Echo/Delay-Effekt mit circular-buffer Feedback-Loop. Pure & DOM-frei auf AudioBufferLike (aus sampleEmbedding). Pattern angelehnt an sampleConvolutionReverb.ts (v3.185).",

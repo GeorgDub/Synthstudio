@@ -102,6 +102,11 @@ import {
   applyCompressor,
   COMPRESSOR_PRESETS,
 } from "@/utils/sampleCompressor";
+// v3.191: Bulk-Delay (Slapback/Echo/Long/Dub-Preset).
+import {
+  applyDelay,
+  DELAY_PRESETS,
+} from "@/utils/sampleDelay";
 
 // ─── Typen ────────────────────────────────────────────────────────────────────
 
@@ -1572,6 +1577,67 @@ export function SampleBrowser({
     toast(`Compressor "${preset.name}": ${applied} Samples`, { kind: "success" });
   }, [multiSelectIds, samples, onTransformSample, bulkCompPresetId]);
 
+  // v3.191 — Bulk-Delay für selektierte Samples:
+  // Ein in DELAY_PRESETS definiertes Preset bestimmt delayMs, feedback und wet.
+  // Jeder geladene Buffer wird mit applyDelay (Circular-Buffer-Delay-Line)
+  // verarbeitet, als WAV encodet und via onTransformSample zurück ins Projekt
+  // geschrieben (+ rekonstruierter AudioBuffer für AudioEngine-Cache).
+  const [bulkDelayPresetId, setBulkDelayPresetId] = useState<string>("echo");
+
+  const handleBulkDelay = useCallback(async () => {
+    if (multiSelectIds.size === 0 || !onTransformSample) return;
+    const preset = DELAY_PRESETS.find((p) => p.id === bulkDelayPresetId);
+    if (!preset) return;
+    let applied = 0;
+    for (const id of multiSelectIds) {
+      const sample = samples.find((s) => s.id === id);
+      if (!sample) continue;
+      try {
+        const buf = await AudioEngine.loadSample(sample.path);
+        if (!buf) continue;
+        const delayed = applyDelay(buf as unknown as AudioBufferLike, {
+          delayMs: preset.delayMs,
+          feedback: preset.feedback,
+          wet: preset.wet,
+        });
+        if (delayed.numberOfChannels === 0 || delayed.length === 0) continue;
+        const channels = Math.min(2, delayed.numberOfChannels) as 1 | 2;
+        const wav = encodeWav(
+          Array.from({ length: channels }, (_, c) =>
+            delayed.getChannelData(c) as Float32Array,
+          ),
+          { sampleRate: delayed.sampleRate, channels, bitDepth: 16 },
+        );
+        const blob = new Blob([wav], { type: "audio/wav" });
+        const newUrl = URL.createObjectURL(blob);
+        const Ctor = (window.OfflineAudioContext ||
+          // @ts-expect-error legacy webkit fallback
+          window.webkitOfflineAudioContext) as typeof OfflineAudioContext;
+        const ctx = new Ctor(
+          Math.max(1, delayed.numberOfChannels),
+          Math.max(1, delayed.length),
+          delayed.sampleRate,
+        ) as BaseAudioContext;
+        const audioBuf = ctx.createBuffer(
+          Math.max(1, delayed.numberOfChannels),
+          Math.max(1, delayed.length),
+          delayed.sampleRate,
+        );
+        for (let c = 0; c < delayed.numberOfChannels; c++) {
+          const src = delayed.getChannelData(c);
+          const copy = new Float32Array(src.length);
+          copy.set(src);
+          audioBuf.copyToChannel(copy, c, 0);
+        }
+        onTransformSample(id, newUrl, audioBuf);
+        applied++;
+      } catch {
+        /* skip */
+      }
+    }
+    toast(`Delay "${preset.name}": ${applied} Samples`, { kind: "success" });
+  }, [multiSelectIds, samples, onTransformSample, bulkDelayPresetId]);
+
   // v3.152: Wenn Samples aus dem Projekt verschwinden (extern gelöscht),
   // multi-select-Set defensiv auf Existenz-Filter laufen lassen.
   useEffect(() => {
@@ -2457,6 +2523,26 @@ export function SampleBrowser({
                         title="Compressor auf alle ausgewählten Samples"
                       >
                         Comp
+                      </button>
+                      <select
+                        value={bulkDelayPresetId}
+                        onChange={(e) => setBulkDelayPresetId(e.target.value)}
+                        data-testid="sample-browser-bulk-delay-preset"
+                        className="bg-bg-panel border border-border-color rounded px-1.5 py-0.5 text-[10px] text-text-muted hover:border-accent-primary focus:outline-none transition-colors"
+                        title="Delay-Preset"
+                      >
+                        {DELAY_PRESETS.map((p) => (
+                          <option key={p.id} value={p.id}>{p.name}</option>
+                        ))}
+                      </select>
+                      <button
+                        onClick={handleBulkDelay}
+                        disabled={!onTransformSample}
+                        data-testid="sample-browser-bulk-delay"
+                        className="px-2 py-0.5 rounded text-[10px] border border-border-color text-text-primary hover:border-accent-secondary hover:text-accent-secondary disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        title="Delay auf alle ausgewählten Samples"
+                      >
+                        Delay
                       </button>
                       <button
                         onClick={handleBulkDelete}
