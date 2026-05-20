@@ -95,6 +95,8 @@ import {
   applyNoiseGate,
   NOISE_GATE_PRESETS,
 } from "@/utils/sampleNoiseGate";
+// v3.187: Bulk-AutoTune-Analyse (Pitch-Detect + Scale-Snap, Preview-only).
+import { analyzeAutoTune } from "@/utils/sampleAutoTune";
 
 // ─── Typen ────────────────────────────────────────────────────────────────────
 
@@ -1456,6 +1458,48 @@ export function SampleBrowser({
     toast(`NoiseGate "${preset.name}": ${applied} Samples`, { kind: "success" });
   }, [multiSelectIds, samples, onTransformSample, bulkGatePresetId]);
 
+  // v3.187 — Bulk-AutoTune-Analyse: Pitch-Detect via Autocorrelation +
+  // Snap-to-Scale (C-Dur, rootMidi 60). Liefert nur Preview/Analysis,
+  // KEIN tatsächlicher pitch-shift des Audios. Statistik (Anzahl pitched
+  // Samples + Ø |semitoneShift|) als Toast; detected MIDI-Noten zusätzlich
+  // in der Konsole für Drill-Down.
+  const handleBulkAutoTune = useCallback(async () => {
+    if (multiSelectIds.size === 0) return;
+    let totalShift = 0;
+    let analyzed = 0;
+    const detectedNotes: number[] = [];
+    for (const id of multiSelectIds) {
+      const sample = samples.find((s) => s.id === id);
+      if (!sample) continue;
+      try {
+        const buf = await AudioEngine.loadSample(sample.path);
+        if (!buf) continue;
+        const result = analyzeAutoTune(buf as unknown as AudioBufferLike, {
+          scale: "major",
+          rootMidi: 60,
+        });
+        if (result.confidence > 0.3 && result.detectedMidi > 0) {
+          totalShift += Math.abs(result.semitoneShift);
+          detectedNotes.push(result.detectedMidi);
+          analyzed++;
+        }
+      } catch {
+        /* skip */
+      }
+    }
+    if (analyzed === 0) {
+      toast("Keine pitch-detect-bare Samples", { kind: "warning" });
+      return;
+    }
+    const avgShift = totalShift / analyzed;
+    toast(
+      `AutoTune-Analyse: ${analyzed} pitched Samples · Ø Shift ${avgShift.toFixed(1)} semitones`,
+      { kind: "info", duration: 6000 },
+    );
+    // eslint-disable-next-line no-console
+    console.log("[AutoTune-Analyze]", detectedNotes);
+  }, [multiSelectIds, samples]);
+
   // v3.152: Wenn Samples aus dem Projekt verschwinden (extern gelöscht),
   // multi-select-Set defensiv auf Existenz-Filter laufen lassen.
   useEffect(() => {
@@ -2313,6 +2357,14 @@ export function SampleBrowser({
                         title="Noise-Gate auf alle ausgewählten Samples"
                       >
                         Gate
+                      </button>
+                      <button
+                        onClick={handleBulkAutoTune}
+                        data-testid="sample-browser-bulk-autotune"
+                        className="px-2 py-0.5 rounded text-[10px] border border-border-color text-text-primary hover:border-accent-secondary hover:text-accent-secondary transition-colors"
+                        title="Pitch-Detect + Scale-Snap Analyse"
+                      >
+                        AutoTune
                       </button>
                       <button
                         onClick={handleBulkDelete}
