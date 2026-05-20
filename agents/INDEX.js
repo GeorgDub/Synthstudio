@@ -3857,6 +3857,76 @@ const INDEX = {
   workLog: [
     {
       agent:     "refactor",
+      timestamp: "2026-05-20T22:55:00.000Z",
+      done: [
+        "v3.207 NEU Pure-Helper client/src/utils/sampleTremolo.ts (~175 LOC inkl. JSDoc) — Tremolo-Effekt via Amplitude-Modulation per unipolarem LFO (sine/triangle/square). Im Gegensatz zu Chorus (v3.205) und Flanger (v3.206) KEINE modulierte Delay-Line, sondern reine Gain-Multiplikation pro Sample. Pure & DOM-frei, operiert auf AudioBufferLike (sampleEmbedding-Interface). Foundation fuer Bulk-Tremolo-Action im SampleBrowser + Sample-FX-Karte im SampleTransformDialog + Live-Tremolo-Channel-Insert.",
+        "Public API: applyTremolo(buffer, opts?:{rateHz?,depth?,waveform?}) -> AudioBufferLike (identische Channel-Anzahl & Laenge wie Input, KEIN Tail). TREMOLO_PRESETS as const Object mit 4 Eintraegen: subtle (3Hz/0.3/sine), classic (5Hz/0.5/sine = Spec-Defaults), pulse (8Hz/0.8/square), vintage (6Hz/0.7/triangle). TremoloWaveform-Typ-Union exportiert.",
+        "DSP-Algorithmus: 1) Pre-compute gain envelope (Float32Array(len)) einmal — shared across all channels (kein pro-Channel-State, kein Delay-Buffer). Pro Sample: t=i/sr, lfo=waveformFn(t,rate) in [0,1] unipolar, gain[i]=(1-depth)+depth*lfo in [1-depth, 1]. 2) Pro Channel: out[i]=dry[i]*gain[i]. Sub-Unity-Gain (immer <=1) verhindert Clipping garantiert. 3) Waveforms (alle unipolar [0,1], Periode 1/rate, Mittelwert 0.5): sine = (sin(2pi*rate*t)+1)/2, triangle = phase<0.5 ? 2*phase : 2-2*phase (linear up/down 0..1..0), square = phase<0.5 ? 1 : 0 (hard step).",
+        "Wichtige Unterschiede zu Flanger/Chorus: a) Keine Delay-Line, kein Feedback-Loop, kein Linear-Interpolation. b) LFO unipolar [0,1] statt bipolar [-1,1] (Spec-Formel: gain=1-depth+depth*lfo schreibt das vor). c) Pre-compute gain envelope EINMAL ueber alle Channels (Optimierung — shared LFO ohne State-Sharing). d) Output finite ohne Stability-Cap (keine IIR-Stabilitaets-Problematik weil reiner Multiply-Operator). e) MAX_RATE_HZ=50 statt 10 (Tremolo geht hoeher hoerbar als Flanger-Sweep).",
+        "Defensive Sanitizers: rateHz NaN/non-finite/<=0 -> default 5, >50 -> clamp 50 (sanitizeRate). depth undefined -> default 0.5, NaN/non-finite/<0 -> 0, >1 -> 1 (sanitizeDepth — wichtig: bei NaN gilt Spec 'NaN/<0 -> 0' NICHT Default-Konvention, damit depth=NaN identity ergibt statt halben Effekt). waveform unknown / nicht aus Union -> default 'sine' (sanitizeWaveform). Empty buffer (length=0||numberOfChannels=0) -> empty output mit fallback sampleRate=48000. Input wird nie mutiert (pro Channel fresh Float32). lfoValue-Switch ist exhaustive (sine/triangle/square) — TS-strict garantiert keine 'undefined return'.",
+        "Test-Suite tests/features/sample-tremolo.test.ts (~480 LOC, 34 Tests in 2 describes): applyTremolo 27 (empty buffer 2, depth=0 identity, depth=1 sine-Modulation sr=200/rate=50 = period-4-samples deterministisch [0.5, 1.0, 0.5, 0.0], sine smooth modulation (kein abrupter Sprung), square step modulation (nur 2 distinkte Gain-Werte 1 und 1-depth, sr=400/rate=50 = period-8-samples), triangle linear ramps (sr=400/rate=50 = period-8-samples [0, 0.25, 0.5, 0.75, 1.0, 0.75, 0.5, 0.25, 0]), length-preservation, multi-channel symmetry (shared LFO), multi-channel isolation (L-impulse/R-silence), defaults ohne opts (depth=0.5 -> gain in [0.5,1]), immutability, sampleRate 8000/44100/96000, sanitizer rateHz NaN/<=0/-3/>50, sanitizer depth NaN->0/<0->0/>1->clamp, sanitizer waveform unknown/undefined -> sine, sanitizer all-Inf -> finite, sub-unity gain (|out|<=|in|), zero-input -> zero-output, alle 3 Waveforms bei depth=0 -> identity). TREMOLO_PRESETS 7 (Existenz aller 4, Werte-shape plausibel, classic matched 5/0.5/sine, pulse nutzt square + hoechste depth, vintage nutzt triangle, preset anwendbar via applyTremolo(buf, preset), alle 4 Presets liefern finite output bei sine-Input).",
+        "Sample-Rate-Trick: deterministische LFO-Tests nutzen sr * rate so dass MAX_RATE_HZ=50 nicht ueberschritten wird — period_samples = sr / rate. period=4 -> sr=200/rate=50. period=8 -> sr=400/rate=50. Bug in ersten Test-Draft: ich hatte sr=1000/rate=250 (wie Flanger v3.206), aber rate=250 wird zu 50 geclampt; Iteration nach erstem Fail-Lauf hat das Sample-Rate-Trick korrigiert.",
+        "pnpm check GRUEN (tsc --noEmit 0 errors). pnpm vitest run sample-tremolo.test.ts: 34/34 in 59ms. Volle pnpm test:features GRUEN: 333 Test-Files / 7680 passed / 16 skipped (Suite-Duration 32.09s, +1 File / +34 Tests gegenueber v3.206-State). KEIN Commit, KEIN package.json-Bump (User-Vorgabe). Nur 2 Files touched: NEU sampleTremolo.ts + NEU sample-tremolo.test.ts (+ INDEX.js workLog-Eintrag).",
+        "Koexistenz: parallele v3.207-Sessions Frontend (Bulk-Flanger-Wire-Up in SampleBrowser, Eintrag direkt unter diesem) und Refactor (Tremolo Pure-Helper) — disjoint, keine Datei-Konflikte. Wenn package.json-Bump kommt: ggf. v3.207.0 (Bulk-Flanger) + v3.208.0 (Tremolo-Helper) split, oder ein gemeinsamer Bump mit beiden im Changelog.",
+      ],
+      next: [
+        "v3.208+ Frontend-Owner: Tremolo-FX-Karte im SampleTransformDialog mit 3 Controls (rateHz Slider 0.1-50 Hz log oder linear, depth Slider 0-1 linear, waveform Dropdown sine/triangle/square) + Preset-Dropdown TREMOLO_PRESETS (subtle/classic/pulse/vintage). Live-Preview Waveform side-by-side (Tremolo sehr visuell — Envelope-Shape sichtbar).",
+        "v3.208+ Frontend-Owner: Bulk-Apply 'TRM'-Button im SampleBrowser Multi-Select-Bar (symmetrisch zu FLG v3.207, CHO v3.206, LoFi v3.205). UX-Vereinfachung: 1 Preset-Dropdown ODER 2 Slider (rate + depth) statt 3-Slider-Wall. Toast 'Tremolo rate=<r>Hz depth=<d>: N Samples'.",
+        "v3.208+ Backend-Owner: ss.sample.tremolo(buffer, opts) + ss.sample.tremoloPreset(name) Script-Sandbox-API exposen (analog ss.sample.chorus/flanger/lowPass). TREMOLO_PRESETS-Werte als ss.sample.tremoloPresets exportieren.",
+        "v3.208+ Audio-Engine-Owner: Live-Tremolo-Channel-Insert als FX-Chain-Node mit den 3 Params. Pure-Helper-Foundation existiert; benoetigt AudioEngine-FX-Chain-Wiring + Web-Audio-GainNode mit LFO-Modulation (OscillatorNode -> GainNode-gain.AudioParam). Bei square-Waveform kann SquareOscillatorNode genutzt werden, bei triangle PeriodicWave.",
+        "v3.208+ Refactor-Owner: Sister-Effekt Phaser (4-stage All-Pass-Filter-Chain modulated) als naechster Modulations-FX nach Chorus/Flanger/Tremolo. Foundation samplePhaser.ts. Alternative: Auto-Pan (Tremolo + Stereo-Pan-Modulation, nur fuer Stereo-Samples sinnvoll).",
+      ],
+      changed: [
+        "client/src/utils/sampleTremolo.ts (NEU, ~175 LOC — applyTremolo + TREMOLO_PRESETS + TremoloOptions + TremoloWaveform-Typ-Union + interne sanitizeRate/Depth/Waveform/lfoValue/wrapBuffer; ownedBy frontend wie sample-FX-Layer-Pattern v3.195+)",
+        "tests/features/sample-tremolo.test.ts (NEU, ~480 LOC, 34 Tests in 2 describes, ownedBy testing)",
+        "agents/INDEX.js (workLog-Eintrag refactor v3.207 — sampleTremolo Pure-Helper)",
+      ],
+    },
+    {
+      agent:     "frontend",
+      timestamp: "2026-05-20T22:35:00.000Z",
+      done: [
+        "v3.207 Wire-Up applyFlanger (v3.206 sampleFlanger.ts Pure-Helper) als Bulk-Action im SampleBrowser Multi-Select-Bar — 2 Slider (Rate 0.05..5 Hz step=0.05, Feedback -0.95..+0.95 step=0.05) + 'FLG'-Button direkt rechts neben CHO-Button v3.206. data-testids: 'sample-browser-bulk-flanger-rate', 'sample-browser-bulk-flanger-feedback', 'sample-browser-bulk-flanger'. Pattern 1:1 symmetrisch zu Bulk-Chorus v3.206 / Bulk-LoFi v3.205 / Bulk-Speed v3.204: AudioEngine.loadSample -> applyFlanger(buf, {rateHz, feedback}) -> encodeWav(channels=min(2,n)) -> URL.createObjectURL-Blob -> OfflineAudioContext.createBuffer+copyToChannel -> onTransformSample(id, blobURL, audioBuf). Toast 'Flanger rate=<r>Hz fb=<fb>: N Samples' (kind:success).",
+        "Import: import { applyFlanger } from '@/utils/sampleFlanger' direkt nach applyChorus-Import (v3.206). State: bulkFlangerRate (useState<number>(0.5)) + bulkFlangerFeedback (useState<number>(0.5)) = classic-Preset-Default (rateHz=0.5, feedback=0.5). Handler handleBulkFlanger via useCallback mit deps [multiSelectIds, samples, onTransformSample, bulkFlangerRate, bulkFlangerFeedback]. UI: 2x input range (parseFloat) + 2x span (w-12 'Hz', w-10 fb-float) + button 'FLG' im selben Multi-Select-Bar-Flex-Container, accent-accent-secondary fuer Slider, border-border-color + hover:border-accent-secondary fuer Button (semantic tokens only — keine hardcoded Farben).",
+        "Disabled-Logik: nur !onTransformSample (KEIN identity-Cutoff wie bei Chorus mit mix===0). Bei Flanger gibt es keine triviale identity-Kombination der zwei Slider — selbst feedback=0 erzeugt noch einen modulierten Delay-Effekt durch Helper-Defaults mix=0.5. depthMs+delayMs+mix bleiben auf Helper-Defaults (depthMs=2, delayMs=3, mix=0.5) — symmetrisch zu Bulk-Chorus-Vereinfachung: 2 wichtigste Params via UI, Rest via Helper-Defaults. Defensive check 'out.numberOfChannels === 0 || out.length === 0' bleibt erhalten weil applyFlanger bei empty buffer empty AudioBufferLike liefert.",
+        "Range-Mapping aus Helper: rateHz MIN=0.01/MAX=10, hier UI 0.05..5 (klein genug fuer haengende metallic, gross genug fuer aggressive jet). feedback MIN=-0.95/MAX=+0.95 (stability-cap), UI 1:1 = -0.95..+0.95 mit step=0.05 — Zentrum bei 0 (kein Resonanz-Feedback) per Slider erreichbar. classic-Preset-Werte aus FLANGER_PRESETS.classic = {rateHz:0.5, depthMs:2, feedback:0.5, mix:0.5} entsprechen exakt den Helper-Defaults.",
+        "pnpm check GRUEN (tsc --noEmit 0 errors, precheck gen:sandbox up-to-date). KEIN Commit, KEIN package.json-Bump (User-Vorgabe). Nur 2 Files touched: client/src/components/SampleBrowser/SampleBrowser.tsx + agents/INDEX.js workLog. Parallele v3.207-Session (Frontend, DrumMachine-Entropy-Badge) lief disjoint — kein File-Konflikt."
+      ],
+      next: [
+        "v3.208+ Frontend-Owner: Flanger-FX-Karte im SampleTransformDialog mit 5 Slidern (rateHz log 0.01-10 / depthMs log 0.1-20 / delayMs log 0.1-20 / feedback linear -0.95..+0.95 mit Center-Marker bei 0 / mix linear 0-1) + Preset-Dropdown FLANGER_PRESETS (subtle/classic/jet/metallic). Live-Preview Waveform side-by-side.",
+        "v3.208+ Frontend-Owner: Bulk-Preset-Dropdown statt 2-Slider-UI im SampleBrowser (FLG -> subtle/classic/jet/metallic als 4 Buttons oder 1 Select). UX-Vereinfachung wie vom v3.206-refactor-next-Eintrag vorgeschlagen.",
+        "v3.208+ Backend-Owner: ss.sample.flanger(buffer, opts) + ss.sample.flangerPreset(name) Script-Sandbox-API exposen (analog ss.sample.chorus). FLANGER_PRESETS-Werte als ss.sample.flangerPresets exportieren.",
+        "v3.208+ Audio-Engine-Owner: Live-Flanger-Channel-Insert als FX-Chain-Node mit den 5 Params + Feedback-Loop. Pure-Helper-Foundation v3.206 existiert; benoetigt AudioEngine-FX-Chain-Wiring + AudioWorklet- oder Web-Audio-DelayNode+LFO+Feedback-Wrapper.",
+        "v3.208+ UX-Hinweis: Multi-Select-Bar wird langsam ueberladen (SPD, AP, LoFi, CHO, FLG = 5 Bulk-FX). Coordinator-Frage: Bulk-FX-Menue (Dropdown 'FX anwenden...' + Modal mit allen Optionen) statt inline-Buttons? Refactor-Kandidat."
+      ],
+      changed: [
+        "client/src/components/SampleBrowser/SampleBrowser.tsx (NEU applyFlanger-Import, NEU bulkFlangerRate + bulkFlangerFeedback State + handleBulkFlanger useCallback, NEU 2 Range-Sliders + 2 Display-Spans + FLG-Button in Multi-Select-Bar; ~85 LOC, semantic tokens only)",
+        "agents/INDEX.js (workLog-Eintrag frontend v3.207 — SampleBrowser Bulk-Flanger Wire-Up)"
+      ]
+    },
+    {
+      agent:     "frontend",
+      timestamp: "2026-05-20T22:30:00.000Z",
+      done: [
+        "v3.207 Wire-Up: complexityIndex (v3.206 patternEntropy.ts Shannon-Helper) als zusaetzlicher Badge pro Pattern-Row im DrumMachine — analog zum v3.201 pulse-badge. Foundation aus refactor v3.206 ist Pure-Helper-Only; diese Session integriert ihn UI-seitig.",
+        "Import: `import { complexityIndex } from \"@/utils/patternEntropy\";` direkt nach patternSequenceCorrelation-Import (v3.205) bei Zeile 176/177 platziert — kanonische Reihenfolge entropy nach similarity matched die Badge-Reihenfolge im DOM.",
+        "useMemo `entropy` in PatternRow, dep `[pattern]`, platziert direkt nach `similarityToActive`-useMemo: OR-aggregiert alle parts.steps zu flat boolean[stepCount], ruft complexityIndex(flat) -> number in 0..1. Identisches OR-Aggregations-Pattern wie pulseCount-useMemo (v3.201) — visuelle Konsistenz + Speed (Re-Compute nur bei pattern-Change, nicht bei Theme/Render).",
+        "Badge-JSX direkt nach similarity-Badge (v3.205), vor learn.isMapped CC-Badge: condition `entropy > 0.3`, Format `H${Math.round(entropy*100)}`, className `ml-1 px-1 py-0.5 rounded text-[9px] font-mono bg-accent-primary/20 text-accent-primary` (semantic tokens, KEINE hardcoded Tailwind-Colors), title `Komplexitaet: ${Math.round(entropy*100)}% (Shannon-Entropy)`, data-testid `pattern-row-entropy-${pattern.id}`. Gating-Threshold 0.3 verhindert Badge-Spam bei einfachen 4-on-floor-Patterns (deren complexityIndex liegt typischerweise <0.3).",
+        "pnpm check GRUEN (tsc --noEmit 0 errors, precheck gen:sandbox up-to-date). KEIN Commit, KEIN package.json-Bump (User-Vorgabe). Nur 2 Files touched: client/src/components/DrumMachine/DrumMachine.tsx + agents/INDEX.js workLog."
+      ],
+      next: [
+        "v3.208+ Frontend-Owner: bigrams[] Top-5 Tooltip-Erweiterung — beim Hover ueber den H-Badge nicht nur 'Komplexitaet X%' sondern auch die top-3 Bigrams als kleine Liste anzeigen ('Top-Bigrams: 11 (8x), 10 (5x), 01 (3x)'). Bigrams sind bereits in bigramEntropy(steps).bigrams verfuegbar — entropy useMemo muesste auf das volle EntropyResult statt nur complexityIndex switchen.",
+        "v3.208+ Frontend-Owner: Pattern-Library-Filter 'mind. complexityIndex >=' (Range-Slider) im PatternListPanel — analog zum next-Eintrag von refactor v3.206. Filter ist bereits trivial mit der jetzigen useMemo umsetzbar.",
+        "v3.208+ Frontend-Owner: complexityIndex-Anzeige im DrumMachine-Header pro Part (nicht nur als Pattern-aggregated Badge, sondern PRO Part-Row im Step-Grid). Live-Update on step-toggle.",
+        "v3.208+ Audio-Engine-Owner: complexityIndex-basierte Adaptive-Pattern-Variation — bei Live-Edit Vorschlag 'Pattern wirkt zu predictable (H<30) — randomize 2 zufaellige Steps?'."
+      ],
+      changed: [
+        "client/src/components/DrumMachine/DrumMachine.tsx (3 Hunks: +1 Import-Zeile, +1 useMemo-Block ~12 Zeilen mit JSDoc, +1 JSX-Badge ~10 Zeilen — alle Hunks isoliert, KEINE Anderung an pulse/heatmap/similarity-Logik)",
+        "agents/INDEX.js (workLog-Eintrag frontend v3.207 — complexityIndex Wire-Up)"
+      ]
+    },
+    {
+      agent:     "refactor",
       timestamp: "2026-05-20T22:10:00.000Z",
       done: [
         "v3.206 NEU Pure-Helper client/src/utils/sampleFlanger.ts (~225 LOC inkl. JSDoc) — Flanger-Effekt via kurze modulierte Delay-Line MIT Feedback-Loop (im Gegensatz zu Chorus v3.205, der KEIN Feedback hat). Pure & DOM-frei, operiert auf AudioBufferLike (sampleEmbedding-Interface). Foundation fuer Live-Flanger-Channel-Insert + Bulk-FX im SampleBrowser + Sample-FX-Karte im SampleTransformDialog.",

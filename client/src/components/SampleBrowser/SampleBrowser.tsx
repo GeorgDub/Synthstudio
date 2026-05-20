@@ -135,6 +135,8 @@ import { changeSpeedRatio } from "@/utils/sampleResampler";
 import { applySampleRateReduce } from "@/utils/sampleSampleRateReduce";
 // v3.206: Bulk-Chorus (single-voice, rateHz 0.1..10 / mix 0..1) für selektierte Samples.
 import { applyChorus } from "@/utils/sampleChorus";
+// v3.207: Bulk-Flanger (modulierte Delay-Line + Feedback, rateHz 0.05..5 / feedback -0.95..+0.95) für selektierte Samples.
+import { applyFlanger } from "@/utils/sampleFlanger";
 
 // ─── Typen ────────────────────────────────────────────────────────────────────
 
@@ -2358,6 +2360,74 @@ export function SampleBrowser({
     bulkChorusMix,
   ]);
 
+  // v3.207 — Bulk-Flanger (modulierte Delay-Line + Feedback-Loop) für
+  // selektierte Samples. applyFlanger ist pure; resultierender Buffer wird
+  // als WAV encodet und via onTransformSample zurück ins Projekt geschrieben
+  // (+ AudioBuffer für AudioEngine-Cache). Default-Preset: classic
+  // (rateHz=0.5, feedback=0.5). depthMs+delayMs bleiben auf Helper-Defaults.
+  const [bulkFlangerRate, setBulkFlangerRate] = useState<number>(0.5);
+  const [bulkFlangerFeedback, setBulkFlangerFeedback] = useState<number>(0.5);
+
+  const handleBulkFlanger = useCallback(async () => {
+    if (multiSelectIds.size === 0 || !onTransformSample) return;
+    let applied = 0;
+    for (const id of multiSelectIds) {
+      const sample = samples.find((s) => s.id === id);
+      if (!sample) continue;
+      try {
+        const buf = await AudioEngine.loadSample(sample.path);
+        if (!buf) continue;
+        const out = applyFlanger(buf as unknown as AudioBufferLike, {
+          rateHz: bulkFlangerRate,
+          feedback: bulkFlangerFeedback,
+        });
+        if (out.numberOfChannels === 0 || out.length === 0) continue;
+        const channels = Math.min(2, out.numberOfChannels) as 1 | 2;
+        const wav = encodeWav(
+          Array.from({ length: channels }, (_, c) =>
+            out.getChannelData(c) as Float32Array,
+          ),
+          { sampleRate: out.sampleRate, channels, bitDepth: 16 },
+        );
+        const blob = new Blob([wav], { type: "audio/wav" });
+        const newUrl = URL.createObjectURL(blob);
+        const Ctor = (window.OfflineAudioContext ||
+          // @ts-expect-error legacy webkit fallback
+          window.webkitOfflineAudioContext) as typeof OfflineAudioContext;
+        const ctx = new Ctor(
+          Math.max(1, out.numberOfChannels),
+          Math.max(1, out.length),
+          out.sampleRate,
+        ) as BaseAudioContext;
+        const audioBuf = ctx.createBuffer(
+          Math.max(1, out.numberOfChannels),
+          Math.max(1, out.length),
+          out.sampleRate,
+        );
+        for (let c = 0; c < out.numberOfChannels; c++) {
+          const src = out.getChannelData(c);
+          const copy = new Float32Array(src.length);
+          copy.set(src);
+          audioBuf.copyToChannel(copy, c, 0);
+        }
+        onTransformSample(id, newUrl, audioBuf);
+        applied++;
+      } catch {
+        /* skip */
+      }
+    }
+    toast(
+      `Flanger rate=${bulkFlangerRate.toFixed(2)}Hz fb=${bulkFlangerFeedback.toFixed(2)}: ${applied} Samples`,
+      { kind: "success" },
+    );
+  }, [
+    multiSelectIds,
+    samples,
+    onTransformSample,
+    bulkFlangerRate,
+    bulkFlangerFeedback,
+  ]);
+
   // v3.152: Wenn Samples aus dem Projekt verschwinden (extern gelöscht),
   // multi-select-Set defensiv auf Existenz-Filter laufen lassen.
   useEffect(() => {
@@ -3566,6 +3636,43 @@ export function SampleBrowser({
                         title="Chorus (single-voice, modulierte Delay-Line) auf alle ausgewählten Samples"
                       >
                         CHO
+                      </button>
+                      <input
+                        type="range"
+                        min={0.05}
+                        max={5}
+                        step={0.05}
+                        value={bulkFlangerRate}
+                        onChange={(e) => setBulkFlangerRate(parseFloat(e.target.value))}
+                        data-testid="sample-browser-bulk-flanger-rate"
+                        className="w-20 accent-accent-secondary"
+                        title="Flanger LFO-Rate 0.05..5 Hz (0.5 = classic, 0.3 = subtle, 1.0 = jet, 0.2 = metallic)"
+                      />
+                      <span className="text-[10px] font-mono text-text-muted w-12 text-center">
+                        {bulkFlangerRate.toFixed(2)}Hz
+                      </span>
+                      <input
+                        type="range"
+                        min={-0.95}
+                        max={0.95}
+                        step={0.05}
+                        value={bulkFlangerFeedback}
+                        onChange={(e) => setBulkFlangerFeedback(parseFloat(e.target.value))}
+                        data-testid="sample-browser-bulk-flanger-feedback"
+                        className="w-20 accent-accent-secondary"
+                        title="Flanger Feedback -0.95..+0.95 (0.5 = classic, 0.7 = jet, 0.85 = metallic; negative = invertierte Resonanz)"
+                      />
+                      <span className="text-[10px] font-mono text-text-muted w-10 text-center">
+                        {bulkFlangerFeedback.toFixed(2)}
+                      </span>
+                      <button
+                        onClick={handleBulkFlanger}
+                        disabled={!onTransformSample}
+                        data-testid="sample-browser-bulk-flanger"
+                        className="px-2 py-0.5 rounded text-[10px] border border-border-color text-text-primary hover:border-accent-secondary hover:text-accent-secondary disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        title="Flanger (modulierte Delay-Line + Feedback-Loop) auf alle ausgewählten Samples"
+                      >
+                        FLG
                       </button>
                       <button
                         onClick={handleBulkDelete}

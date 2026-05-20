@@ -174,6 +174,8 @@ import { detectDensityPulses } from "@/utils/patternDensityPulse";
 import { buildHeatmap, findHotspot } from "@/utils/patternDensityHeatmap";
 // v3.205: Pattern-Row Similarity-Badge ("vs current active pattern").
 import { patternSimilarity } from "@/utils/patternSequenceCorrelation";
+// v3.207: Pattern-Row Complexity-Badge — Shannon-Entropy (Bit + Bigram).
+import { complexityIndex } from "@/utils/patternEntropy";
 import type { PatternData } from "@/audio/AudioEngine";
 
 // ─── v3.205: Pattern-Flatten-Helper (module-level Cache via Closure) ───────────
@@ -324,6 +326,20 @@ function PatternRow({
     const rowFlat = flattenPatternForSimilarity(pattern);
     return patternSimilarity(activePatternFlat, rowFlat);
   }, [pattern, activePatternId, activePatternFlat]);
+  // v3.207: Shannon-Entropy basierter Komplexitäts-Index (0..1) über
+  // OR-aggregierte Steps aller Parts. Dep [pattern] — Recompute nur bei
+  // Pattern-Change, nicht bei Theme/Render.
+  const entropy = useMemo(() => {
+    const stepCount = pattern.stepCount;
+    const flat = new Array<boolean>(stepCount).fill(false);
+    for (const part of pattern.parts) {
+      const len = Math.min(part.steps.length, stepCount);
+      for (let i = 0; i < len; i++) {
+        if (part.steps[i].active) flat[i] = true;
+      }
+    }
+    return complexityIndex(flat);
+  }, [pattern]);
   // v2.5: Submenu zum Auswählen welcher Pattern als Source dient
   const [pickerOpen, setPickerOpen] = useState(false);
   // v2.8: Drag-Drop-Reorder State (drop-indicator: above|below|null)
@@ -482,6 +498,16 @@ function PatternRow({
             data-testid={`pattern-row-similarity-${pattern.id}`}
           >
             ~{Math.round(similarityToActive * 100)}%
+          </span>
+        )}
+        {/* v3.207: Complexity-Badge — Shannon-Entropy (analog pulse-badge). */}
+        {entropy > 0.3 && (
+          <span
+            className="ml-1 px-1 py-0.5 rounded text-[9px] font-mono bg-accent-primary/20 text-accent-primary"
+            title={`Komplexität: ${Math.round(entropy * 100)}% (Shannon-Entropy)`}
+            data-testid={`pattern-row-entropy-${pattern.id}`}
+          >
+            H{Math.round(entropy * 100)}
           </span>
         )}
         {learn.isMapped && (
