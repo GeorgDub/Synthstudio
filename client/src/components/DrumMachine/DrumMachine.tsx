@@ -38,6 +38,8 @@ import type { PatternForExport } from "@/utils/patternImageExport";
 import { serializePattern, parsePattern } from "@/utils/patternSerializer";
 // v3.173.0: Pattern → MIDI-Events JSON-Export (Pure-Helper).
 import { patternToMidiEvents } from "@/utils/patternMidiExport";
+// v3.175.0: Pattern → echtes .mid-Binary (SMF Format 0) Pure-Helper.
+import { encodeMidiFile, type MidiNote } from "@/utils/midiFileEncoder";
 import { DEFAULT_CHANNEL_FX } from "@/audio/AudioEngine";
 import { MixAssistantPanel } from "./MixAssistantPanel";
 import type { MixAnalysisInput, MixRecommendation } from "@/utils/mixAnalysis";
@@ -183,12 +185,14 @@ interface PatternRowProps {
   onCopy?: () => void;
   /** v3.173.0: Pattern → MIDI-Events als JSON exportieren (Quick-Action). */
   onExportMidiEvents?: () => void;
+  /** v3.175.0: Pattern → echtes .mid-Binary (SMF Format 0) exportieren. */
+  onExportMidiBinary?: () => void;
 }
 
 function PatternRow({
   pattern, patternIndex, densityCategory, complexityCategory, isActive, isPlaying, isLiveEditing, showDelete,
   hasPrevPattern, prevPatternId, allPatterns,
-  onSelect, onDuplicate, onRemove, onCopySamplesFrom, onReorder, onExportImage, onCompare, onCopy, onExportMidiEvents,
+  onSelect, onDuplicate, onRemove, onCopySamplesFrom, onReorder, onExportImage, onCompare, onCopy, onExportMidiEvents, onExportMidiBinary,
 }: PatternRowProps) {
   const isDraft  = isLiveEditing && isActive;
   const isLocked = isLiveEditing && isPlaying;
@@ -376,6 +380,16 @@ function PatternRow({
           className="px-1.5 py-1.5 text-text-dim hover:text-accent-secondary text-xs opacity-0 group-hover:opacity-100 transition-opacity"
           title="MIDI-Events exportieren (JSON)"
         >🎹</button>
+      )}
+      {/* v3.175.0: Pattern → echtes .mid-Binary (SMF Format 0) für DAW-Import. */}
+      {!isLocked && onExportMidiBinary && (
+        <button
+          type="button"
+          onClick={onExportMidiBinary}
+          data-testid={`pattern-export-mid-${pattern.id}`}
+          className="text-text-dim hover:text-accent-primary text-xs p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+          title="MIDI-Datei (.mid) exportieren — echtes Binary für DAWs"
+        >💾</button>
       )}
       {!isLocked && (
         <button
@@ -1046,6 +1060,47 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
     }
   }, []);
 
+  // ── v3.175.0: Pattern → echtes .mid-Binary (SMF Format 0) ──────────────────
+  // Schließt das v3.174-Caveat: patternToMidiEvents liefert nur abstrakte Events,
+  // hier mappen wir auf MidiNote (mit channel 9 = GM-Drum) und encodieren via
+  // midiFileEncoder zu einem standard-konformen SMF-Binary. Download analog zur
+  // JSON-Variante via Blob-URL.
+  const handleExportMidiBinary = useCallback((p: PatternData) => {
+    try {
+      const result = patternToMidiEvents(p);
+      // MidiNoteEvent (ohne channel) → MidiNote (mit channel 9 = GM-Drum).
+      const notes: MidiNote[] = result.events.map((e) => ({
+        tickPos: e.tickPos,
+        tickDuration: e.tickDuration,
+        note: e.note,
+        velocity: e.velocity,
+        channel: 9,
+      }));
+      const ppqn = result.ppqn;
+      const bin = encodeMidiFile(notes, {
+        ppqn,
+        bpm: p.bpm ?? 120,
+        trackName: p.name,
+        timeSignature: { numerator: 4, denominator: 4 },
+      });
+      const filename = `${p.name.replace(/[^a-z0-9-_]+/gi, "-").slice(0, 64) || "pattern"}.mid`;
+      // TS5+ Uint8Array<ArrayBufferLike>: explicit ArrayBuffer-cast für BlobPart.
+      const blob = new Blob([bin.buffer as ArrayBuffer], { type: "audio/midi" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      toast(`MIDI-Datei exportiert: ${filename}`, { kind: "success" });
+    } catch (err) {
+      console.warn("[Export-MIDI-Binary] failed:", err);
+      toast("MIDI-Export fehlgeschlagen", { kind: "error" });
+    }
+  }, []);
+
   // Liest den Clipboard-Inhalt, validiert via parsePattern (Magic + Schema
   // strikt), rekonstruiert ein vollwertiges PatternData (mit frischen IDs +
   // Default-FX/Steps damit AudioEngine/Store-Invarianten gewahrt bleiben) und
@@ -1313,6 +1368,10 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
                   onExportMidiEvents={() => {
                     // v3.173.0: Pattern → MIDI-Events JSON-Download.
                     handleExportMidiEvents(p);
+                  }}
+                  onExportMidiBinary={() => {
+                    // v3.175.0: Pattern → echtes .mid-Binary-Download.
+                    handleExportMidiBinary(p);
                   }}
                 />
               ))}

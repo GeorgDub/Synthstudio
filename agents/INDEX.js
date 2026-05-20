@@ -298,6 +298,12 @@ const INDEX = {
   //     a new bare-path entry while old version-suffixed ones remain
   //     is the explicit transition path.
   files: {
+    // ─── v3.176 UI-Components (frontend) ────────────────────────
+    "client/src/components/ChordSuggestion/ChordSuggestionPanel.tsx": {
+      role:     "Standalone-UI-Wrapper um v3.175 randomChordGenerator-Pure-Helper. Props: initialMood (default 'happy'), initialRootMidi (default 60), count (default 4), onChordSelected (optional callback), visible (default true). Lokaler React-State via useState fuer mood/rootMidi/seed. useMemo-Cache fuer generateRandomChords({mood, rootMidi, seed, count}). Reroll-Button setzt seed = Date.now() fuer neue Voicings. Mood-Dropdown aus Object.keys(MOOD_PRESETS) (5 Optionen happy/sad/tense/dreamy/dark). Root-Range 48..72 mit live-midiNoteToName-Display. Chord-Cards: Klick triggert onChordSelected(chord), disabled wenn kein Callback (+ Hint 'Klick-Apply pending — onChordSelected-Wire ist v3.177-Caveat'). KEINE hardcoded Tailwind-Farben — ausschliesslich semantische Klassen (bg-bg-panel/elevated, border-border-color, text-text-primary/muted/dim, accent-accent-secondary, hover:bg-accent-primary/30, hover:border-accent-primary). data-testid an allen interaktiven Elementen fuer kuenftige Playwright-Tests. Wire-Up in DrumMachine/PerformanceMode/PianoRoll ist v3.177-Caveat.",
+      lastSeen: "2026-05-20T08:00:00.000Z",
+      ownedBy:  "frontend"
+    },
     // ─── v3.175 Pure-Helpers (refactor) ─────────────────────────
     "client/src/utils/midiFileEncoder.ts": {
       role:     "Pure-Helper SMF-Binary-Encoder (Standard MIDI File Format 0, single track). encodeMidiFile(notes, options?) → Uint8Array. Closes v3.174 'Echtes .mid statt JSON'-Caveat. Header-Chunk (MThd + len 6 + format 0 + 1 track + ppqn uint16-BE). Track-Chunk (MTrk + uint32-BE length + data). Track-Events: Track-Name Meta (FF 03), Tempo Meta (FF 51 03 uint24-BE us-per-quarter), Time-Signature Meta (FF 58 04 num pow2denom 24 8), Note-On (0x90|ch) + Note-Off (0x80|ch) mit VLQ delta-times (off-vor-on bei gleichem Tick), End-of-Track (FF 2F 00). Defensive: empty notes → Track mit nur Meta-Events. Default channel 9 (GM-Drum), ppqn 480, bpm 120, trackName 'Synthstudio Pattern', timeSig 4/4. Auch exportiert: encodeVLQ (variable-length quantity, [0x00] für 0), encodeUint32BE (4 bytes big-endian). Foundation für UI 'Export .mid'-Button in DrumMachine/PianoRoll und potentielle Migration von midiExport.ts auf einheitlichen Encoder.",
@@ -606,6 +612,16 @@ const INDEX = {
       role:     "v3.172.0 NEU (210 LOC, 22 Tests in 9 describes). Unit-Tests fuer pattern-merge Pure-Helpers. Coverage: union (2), intersection (2; anything ∩ empty = all-false der vollen Seite), xor (2; self-XOR-self=all-false), a-minus-b (2), alternate (2; gerade=A/ungerade=B + invertierter Reverse-Fall), length-handling (2; explicit outputLength + padWithLast), defaults/defensive (4; empty+empty, invalid strategy, missing options, out-of-range=false), Labels (1; alle 5 Strategien non-empty + exakt 5 Keys), Convenience-Functions (5; jede delegiert exakt an mergePatterns). 22/22 passed in 6 ms.",
       lastSeen: "2026-05-20T02:00:00.000Z",
       ownedBy:  "backend"
+    },
+    "client/src/utils/patternScaleQuantize.ts (v3.176.0 NEU)": {
+      role:     "v3.176.0 NEU (Pure, 189 LOC, 1 Dep: SCALE_INTERVALS+ScaleType aus randomChordGenerator). Pitch-zu-Scale-Quantize-Helpers. Exports SnapDirection='nearest'|'up'|'down', QuantizeOptions{scaleRoot?:0..11, scale?:ScaleType, snapDirection?}, quantizeNoteToScale(note, opts?) -> MIDI 0..127 (NaN/<0->0, >127->127, bereits-in-Scale unchanged, sonst snap+clamp), quantizeNotesToScale(notes, opts?) -> immutable number[] (empty->[]), isNoteInScale(note, {scaleRoot?, scale?}) -> bool (out-of-range false), generateScaleNotes(scaleRoot, scale) -> number[] ascending aller MIDI 0..127 mit PC in allowed-Set. Algorithmus: relPC = (note - scaleRoot + 12) % 12, allowed = Set(SCALE_INTERVALS[scale]). findSnapDelta iteriert d=1..12 (up/down) bzw. d=1..6 symmetric (nearest, prefer-up bei tie). Defensive: invalid scale -> 'major', scaleRoot NaN/<0/>11 -> 0, snapDirection invalid -> 'nearest'. Foundation fuer PianoRoll 'Snap to Scale'-Bulk-Action + Keyboard-Highlighting.",
+      lastSeen: "2026-05-20T09:00:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "tests/features/pattern-scale-quantize.test.ts (v3.176.0 NEU)": {
+      role:     "v3.176.0 NEU (106 LOC, 13 Tests in 5 describes). Unit-Tests fuer pattern-scale-quantize Pure-Helpers. Coverage: quantizeNoteToScale (6: bereits-in-scale unchanged, C# nearest=62 prefer-up, up=62, down=60, D-Dur scaleRoot=2 note 60->61, NaN->0), quantizeNotesToScale (2: batch [60,61,62]->[60,62,62] immutable Identitaets-Check, empty->[]), isNoteInScale (2: C true, C# false), generateScaleNotes (2: C-Dur exakt 75 Notes (5x11+2x10), enthaelt 60+62 nicht 61, ascending-Invariante), defensive (1: invalid snapDirection -> nearest). 13/13 passed in 5ms.",
+      lastSeen: "2026-05-20T09:00:00.000Z",
+      ownedBy:  "frontend"
     },
     "client/src/utils/patternSwing.ts (v3.162.0 NEU)": {
       role:     "v3.162.0 NEU (Pure, ~110 LOC, 0 Runtime-Deps). Swing-Quantization-Foundation für MPC-Style off-beat shift. Exports SwingAmount (0..1, 0=straight, 0.5=max shuffle), SwungStep {stepIndex, swingDeltaMs}, swingOffsetForStep(stepIndex, swingAmount, stepDurationSec, resolution:8|16|32) → Sekunden-Offset (odd-index only, swing*stepDur*0.5), buildSwingMap(pattern, swing, stepDur, resolution) → SwungStep[] nur für aktive Steps. Constants SWING_NONE=0, SWING_LIGHT=0.15, SWING_MEDIUM=0.33, SWING_HEAVY=0.5. Defensive: NaN/Infinity/negative→0, swing>1 clamp auf 1, stepDurationSec<=0 → 0 oder []. Resolution-Parameter ist Public-API (heute identisches odd-index-Verhalten für 8/16/32; Erweiterung 32stel-Shuffle ohne Breaking-Change möglich). NOCH KEINE Integration in AudioEngine.scheduleStep — Pure-Helper-Foundation für v3.163 UI+Scheduler-Wire.",
@@ -3480,6 +3496,64 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "refactor",
+      timestamp: "2026-05-20T09:00:00.000Z",
+      done: [
+        "v3.176 patternScaleQuantize.ts (NEU, 189 LOC): Pure-Helper fuer Pitch-zu-Scale-Quantize. Public API: quantizeNoteToScale(note, opts) | quantizeNotesToScale(notes, opts) | isNoteInScale(note, opts) | generateScaleNotes(scaleRoot, scale). Importiert SCALE_INTERVALS + ScaleType aus @/utils/randomChordGenerator (kein Duplizieren der Scale-Spec).",
+        "Algorithmus: relPitchClass via (note - scaleRoot + 12) % 12, allowed-Set aus SCALE_INTERVALS[scale]. findSnapDelta() iteriert d=1..12 fuer up/down, d=1..6 (symmetric up-first) fuer nearest (prefer up bei tie). Defensive: NaN/<0 -> 0, >127 -> 127, invalid scaleRoot/scale/direction -> Defaults (0, 'major', 'nearest'). Early-Return wenn Note bereits in Scale liegt — unabhaengig von Direction.",
+        "tests/features/pattern-scale-quantize.test.ts (NEU, 106 LOC, 13 Tests): deterministische erwartete Werte (kein 'X oder Y') — C# in C-Dur nearest -> 62 (prefer up), D-Dur scaleRoot=2 note 60 nearest -> 61, C-Dur generateScaleNotes -> exakt 75 (5x11+2x10 manuell verifiziert), Batch immutable (Identitaets-Check), Sortier-Invariante.",
+        "pnpm check: GRUEN (tsc --noEmit, kein neuer Error eingefuehrt). pnpm test tests/features/pattern-scale-quantize.test.ts: 13/13 passed in 5ms. KEIN git commit, KEIN package.json bump. KEINE anderen Files beruehrt (parallele v3.176-Agenten unangetastet)."
+      ],
+      next: [
+        "v3.177+ Wire-Up (frontend-Owner): quantizeNotesToScale in PianoRoll-Editor als Bulk-Action 'Snap to Scale' anbieten. Scale-Root + Scale-Type aus useProjectStore (Pattern-Tonart). Snap-Direction-Default 'nearest' im UI als Radio-Group.",
+        "v3.177+ Wire-Up (frontend-Owner): generateScaleNotes(root, scale) als Pre-Computed Set in PianoRoll fuer Tasten-Highlighting (zur Scale gehoerende Keys staerker einfaerben).",
+        "v3.177+ Optional (refactor): Aristoteles-Mode — Caching der allowed-Sets fuer repetitive Aufrufe (gleicher Scale+Root). Aktuell wird in jedem quantizeNoteToScale-Call neu allokiert; bei 1000+ Note-Batches relevant. Memoize-LRU-Wrapper koennte 80% Allokationen sparen."
+      ],
+      changed: [
+        "client/src/utils/patternScaleQuantize.ts (NEU, 189 LOC, Pure-Helper)",
+        "tests/features/pattern-scale-quantize.test.ts (NEU, 106 LOC, 13 Tests)",
+        "agents/INDEX.js (workLog-Entry + files-Index)"
+      ]
+    },
+    {
+      agent:     "frontend",
+      timestamp: "2026-05-20T08:15:00.000Z",
+      done: [
+        "v3.175 UI-Wiring (closes v3.176-next-Hinweis aus refactor-Eintrag): zweiter Export-Button in DrumMachine PatternRow fuer echtes .mid-Binary (SMF Format 0) NEBEN dem bereits existierenden JSON-Events-Button. Schliesst das v3.174-Caveat 'Echtes .mid-Binary statt JSON' produktiv im UI.",
+        "client/src/components/DrumMachine/DrumMachine.tsx: (1) Import encodeMidiFile + type MidiNote aus @/utils/midiFileEncoder. (2) Neuer handleExportMidiBinary(p) useCallback (~40 LOC): patternToMidiEvents(p) -> MidiNoteEvent[] map zu MidiNote[] mit channel 9 (GM-Drum) -> encodeMidiFile mit ppqn aus result, bpm = p.bpm ?? 120, trackName = p.name, timeSignature 4/4 -> Blob([bin.buffer as ArrayBuffer], {type:'audio/midi'}) -> anchor.click() -> URL.revokeObjectURL nach 1s -> toast success/error. Sanitized filename '<safe>.mid'. (3) PatternRowProps.onExportMidiBinary?: () => void hinzugefuegt. (4) PatternRow-Destructuring um onExportMidiBinary erweitert. (5) Neuer 💾-Button mit data-testid pattern-export-mid-${pattern.id} direkt nach dem 🎹-JSON-Button, opacity-0 group-hover:opacity-100 wie Nachbarn, hover:text-accent-primary (semantische theme-tokens). (6) Picker-Loop-Wiring: onExportMidiBinary={() => handleExportMidiBinary(p)} unter onExportMidiEvents.",
+        "TS-Klarstellung: der :1087 Blob-Type-Error, den der parallele frontend-Agent (08:00 ChordSuggestionPanel-Eintrag) als 'pre-existing' notierte, stammt aus meinem ersten Edit-Versuch — habe ihn im selben Sprint via 'bin.buffer as ArrayBuffer' geloest (konvergent mit Konvention in client/src/utils/audioCompressEncoder.ts:401). Inline-Kommentar dokumentiert Grund. KEIN echter pre-existing Fehler.",
+        "pnpm check: GRUEN (tsc --noEmit) verifiziert nach der Korrektur. KEIN git commit, KEIN package.json bump. NUR DrumMachine.tsx + agents/INDEX.js editiert. Theme-Konformitaet: ausschliesslich semantische Tailwind-Klassen (text-text-dim, hover:text-accent-primary, text-xs, p-1, opacity-0 group-hover:opacity-100, transition-opacity). KEINE hardcoded slate/cyan/gray-Klassen."
+      ],
+      next: [
+        "v3.176+ Optional: Playwright-Smoke fuer pattern-export-mid-{id}-Button (Download-Trigger + Filename-Pattern). data-testid steht bereit. Browser-Download-Validierung via downloads-API in Playwright.",
+        "v3.176+ Optional: PianoRoll-MIDI-Export — analog patternToMidiEvents existiert noch nicht fuer PianoRollModal-Note-Liste. Pure-Helper pianoRollToMidiNotes(notes, ppqn) -> MidiNote[] waere DRY-Schritt, dann encodeMidiFile-Wiederverwendung.",
+        "v3.176+ Optional: bpm-Quelle. Aktuell handleExportMidiBinary nutzt p.bpm ?? 120. Wenn globalBPM (App.tsx-State) das Pattern abspielt waehrend p.bpm null ist, sollte globalBPM in der .mid-Datei stehen. Aktuell pragmatisch fallback 120."
+      ],
+      changed: [
+        "client/src/components/DrumMachine/DrumMachine.tsx (Import + handleExportMidiBinary + PatternRowProps.onExportMidiBinary + Destructuring + 💾-Button mit data-testid pattern-export-mid-{id} + Wiring im Picker-Loop)",
+        "agents/INDEX.js (workLog-Entry)"
+      ]
+    },
+    {
+      agent:     "frontend",
+      timestamp: "2026-05-20T08:00:00.000Z",
+      done: [
+        "v3.176 ChordSuggestionPanel.tsx (NEU, 130 LOC): visueller Standalone-Wrapper um v3.175 randomChordGenerator-Pure-Helper. Public API: ChordSuggestionPanel({initialMood?, initialRootMidi?, count?, onChordSelected?, visible?}) -> ReactElement | null. Lokaler State via useState (mood/rootMidi/seed) + useMemo(generateRandomChords). Reroll-Button setzt seed=Date.now(). Mood-Select aus Object.keys(MOOD_PRESETS), Root-Range 48..72 mit live-midiNoteToName-Display.",
+        "Theme-konform: ausschliesslich semantische Tailwind-Klassen (bg-bg-panel, border-border-color, text-text-primary/muted/dim, bg-bg-elevated, hover:bg-accent-primary/30, hover:border-accent-primary, accent-accent-secondary). KEINE hardcoded Farben. data-testid an allen interaktiven Elementen (chord-suggestion-panel/reroll/mood/root/list/card-N) fuer kuenftige Playwright-Tests.",
+        "onChordSelected ist optional — wenn nicht uebergeben, sind Cards disabled + Hint 'Klick-Apply pending - onChordSelected-Wire ist v3.177-Caveat' wird angezeigt. visible-Prop default true (parent-kontrolliert).",
+        "pnpm check Status: pre-existing tsc-Error in DrumMachine.tsx:1087 (Uint8Array<ArrayBufferLike> nicht assignable an BlobPart) - NICHT durch diese Aenderung verursacht (DrumMachine.tsx war bereits in working-tree als modified von paralleler v3.175-Arbeit). Mein neues File produziert ZERO tsc-Errors (verifiziert via grep -i chord auf check-output: keine Treffer).",
+        "KEIN git commit, KEIN package.json bump, KEINE anderen Files beruehrt (parallele v3.175-Agenten + working-tree modifications unangetastet). NUR NEUE Datei erstellt."
+      ],
+      next: [
+        "v3.177 Wire-Up: ChordSuggestionPanel in DrumMachine PerformanceMode oder PianoRoll embedden. onChordSelected-Handler: chord.notes via dm.triggerChordNotes(notes, velocity) abspielen oder in PianoRoll als Score-Lane-Insert ablegen.",
+        "v3.177 OmniTribe-Slot-Filler: ChordSuggestionPanel mit count=16 pro Bar fuer Chord-Slot-Auto-Fill. mood-State pro Pattern persistieren (useProjectStore).",
+        "Pre-existing DrumMachine.tsx:1087 Blob-TypeError SOLLTE im naechsten Sprint vom Owner gefixt werden: const blob = new Blob([bin as BlobPart], ...) oder new Blob([new Uint8Array(bin.buffer.slice(...))], ...). NICHT meine Verantwortung (Wire-Caveat v3.176 expliziert)."
+      ],
+      changed: [
+        "client/src/components/ChordSuggestion/ChordSuggestionPanel.tsx (NEU, 130 LOC, Standalone-UI-Wrapper um randomChordGenerator + Header-Comment v3.176.0)"
+      ]
+    },
     {
       agent:     "refactor",
       timestamp: "2026-05-20T06:40:00.000Z",
