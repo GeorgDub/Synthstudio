@@ -86,6 +86,8 @@ import { generateBranchVariations } from "@/utils/patternBranchVariations";
 import { applyHalfStutter } from "@/utils/patternStutter";
 // v3.192.0: Pattern-Rhythm-Rotate Pure-Helper (Beat-Shift Buttons in Mutator-Toolbar).
 import { rotatePatternByBeats } from "@/utils/patternRhythmRotate";
+// v3.197.0: Random Mutation-Chain Pure-Helper (Random-Button in Mutator-Toolbar).
+import { randomMutate } from "@/utils/patternMutateRandom";
 // v3.183.0: Melodic Sequence Pure-Helper (Rhythm + Scale + Strategy → MIDI-Notes).
 import { generateMelodicSequence, MELODIC_STRATEGY_LABELS, type MelodicStrategy } from "@/utils/patternMelodicSeq";
 // v3.188.0: Pattern-Evolve Pure-Helper (genetic-algorithm-style crossover + mutation).
@@ -2549,6 +2551,15 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
             title="-1 Beat shift"
           >
             -B
+          </button>
+          {/* v3.197.0: Random Mutation-Chain Button (3 ops chained, intensity 0.5). */}
+          <button
+            onClick={() => applyMutator((p) => randomMutate(p, { intensity: 0.5, maxOps: 3, seed: Date.now() }).pattern)}
+            data-testid="pattern-mutator-random"
+            className="px-1.5 py-0.5 rounded text-[10px] bg-bg-elevated hover:bg-accent-secondary/30 hover:text-accent-secondary transition-colors"
+            title="Random mutation chain (3 ops, intensity 0.5)"
+          >
+            🎲
           </button>
         </div>
 

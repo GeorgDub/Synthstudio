@@ -298,6 +298,17 @@ const INDEX = {
   //     a new bare-path entry while old version-suffixed ones remain
   //     is the explicit transition path.
   files: {
+    // ─── v3.198 Pure-Helpers (refactor) — Sample-LowPass ─────────
+    "client/src/utils/sampleLowPass.ts": {
+      role:     "Pure-Helper fuer One-Pole-Lowpass-Filter. Foundation fuer Tone-Knob im SampleTransformDialog + dunkle/helle Pad-FX im SampleBrowser. Public API: applyLowPass(buffer: AudioBufferLike, options?: LowPassOptions) -> AudioBufferLike. LowPassOptions {cutoffHz? default 2000, resonance? 0..1 default 0}. Konstanten DEFAULT_CUTOFF_HZ=2000, DEFAULT_RESONANCE=0 + LOWPASS_PRESETS readonly Array mit 4 Eintraegen (muffled/500, warm/1500, bright/5000, open/10000) alle resonance=0. Math: alpha = 1 - exp(-2*PI*cutoffHz/sampleRate); y[n] = alpha*x[n] + (1-alpha)*y[n-1]. Klassischer Single-Pole-IIR-Tiefpass mit -6 dB/Oct. Per-Channel frischer y[n-1]=0 (kein Cross-Channel-Coupling, analog sampleNoiseGate). Optional Resonance-Boost als simple parallel band-emphasis: boostLinear=Math.pow(10, resonance*6/20), boostMix=resonance; dst[i] = y + (x-y)*(boostLinear-1)*boostMix. Bei resonance=0 ist boost-Term identisch 0 (kein numerisches Drift). Defensive: empty/null buffer -> empty AudioBufferLike mit fallback sampleRate=48000; cutoffHz undefined/null/non-number/NaN/Infinity/<=0 -> 2000; finite > Nyquist -> sampleRate/2; resonance undefined/null/NaN -> 0; negative -> 0; > 1 -> 1 (Soft-Cap +6dB). Input-Immutability: getChannelData nur gelesen, alle Writes in fresh Float32Arrays. Pure & DOM-frei. ~155 LOC. Einzige Abhaengigkeit: AudioBufferLike-Type aus sampleEmbedding.ts.",
+      lastSeen: "2026-05-20T14:30:00.000Z",
+      ownedBy:  "backend"
+    },
+    "tests/features/sample-low-pass.test.ts": {
+      role:     "Pure-Coverage fuer sampleLowPass.ts. 22 Tests in 5 describes: basics 4 (empty -> empty + sampleRate=48000 fallback; empty options -> finite output mit DEFAULT_CUTOFF_HZ=2000; undefined options deep-equal empty options; length+numCh+sampleRate preserved bei sampleRate=44100). filter behaviour 5 (low-cutoff 200Hz auf Nyquist-Square (+/-1 alternating, 512 samples) -> rms<0.1 vs rmsIn=1.0; high-cutoff 24000Hz vs low-cutoff 50Hz -> hi-cut deviation-sum < lo-cut deviation-sum gegen input; DC 0.5 mit cutoffHz=1000 settles to 0.5 @ samples 1500/1999 toBeCloseTo(0.5,3); step-response 50zero+500ones mit cutoffHz=500 monotonic-rising no-overshoot bis idx 250 + closeTo(1,3) @ 549; resonance=1 vs resonance=0 bei 1kHz sine @ 48k mit cutoffHz=1000 -> tail RMS r1>r0). multi-channel 3 (Ch0 high-freq alternating + Ch1 DC=0.5 unabhaengig gefiltert mit cutoffHz=200 -> Ch0 rms<0.1, Ch1[250] closeTo(0.5,2) [200Hz @ 48k braucht laenger als 250 samples fuer 3-Stellen]; out-of-range channel -1/2 wirft RangeError; input buffer nicht mutiert nach applyLowPass mit cutoffHz=500/resonance=0.5 [Float32-Praezision precision=5 erforderlich wegen Number->Float32-Roundtrip 0.1->0.10000000149]). defensive 7 (NaN cutoff -> default 2000; <=0 cutoff -> default + extra 0-case; > Nyquist 100000 @ 48k -> Nyquist-Clamp 24000; NaN/neg resonance -> 0 (no boost) deep-equal; >1 resonance huge=100 clamps to 1 deep-equal max=1; Infinity cutoff -> default 2000; DEFAULT_CUTOFF_HZ=2000 + DEFAULT_RESONANCE=0 exports). presets 3 (4 entries shape id/name strings + cutoffHz>0 finite + resonance 0..1; cutoff Werte match spec 500/1500/5000/10000; monotonic-increasing muffled<warm<bright<open). Test-Helpers makeBuffer/makeMultiChannelBuffer/makeEmptyBuffer/makeNyquistSquare/rms. Vitest node-env. 22/22 passed in 10ms. Full-Suite nach Add: 359 files / 8024 passed / 16 skipped. ~315 LOC.",
+      lastSeen: "2026-05-20T14:30:00.000Z",
+      ownedBy:  "testing"
+    },
     // ─── v3.197 Pure-Helpers (refactor) — Sample-Stereo-Enhancer ─
     "client/src/utils/sampleStereoEnhancer.ts": {
       role:     "Pure-Helper fuer Stereo-Enhancement via Mid/Side (M/S) processing. Foundation fuer Stereo-Width-Slider im SampleTransformDialog + Bulk-Width-Workflow im SampleBrowser. Analyse-Pendant ist analyzeStereoWidth() aus sampleStereoWidth.ts (RMS-basiert, gleiche M/S-Math). Public API: applyStereoEnhance(buffer: AudioBufferLike, options?: StereoEnhanceOptions) -> AudioBufferLike. StereoEnhanceOptions {width?: number}. Konstanten DEFAULT_WIDTH=1, MIN_WIDTH=0, MAX_WIDTH=2. Math: M = (L+R)/2, S = (L-R)/2, L_out = M + S*width, R_out = M - S*width. Pro width-Wert: width=0 -> L_out=R_out=M (mono collapse, side info erased); width=1 -> L_out=L, R_out=R (identity, lossless); width=2 -> L_out=(3L-R)/2, R_out=(3R-L)/2 (extreme wide, kann |out|>1 erzeugen, kein internes Clipping — Caller-Kontrolle). Defensive: empty/null buffer (length<=0 || numberOfChannels<=0) -> empty AudioBufferLike mit fallback sampleRate=48000; Mono-Buffer (numberOfChannels===1) -> identity COPY (fresh Float32Array, NICHT aliased zum Original); >2 Channels -> Ch 0/1 M/S-prozessiert, Ch 2+ als fresh Copy durchgereicht (kein Reference-Sharing); width undefined/NaN/non-number -> DEFAULT_WIDTH (1); width Infinity / > MAX_WIDTH -> 2; width < MIN_WIDTH -> 0. NaN-Check VOR Clamp (sonst propagiert NaN durch Math.min/max). Original-Buffer wird NIE mutiert. Pure & DOM-frei. 165 LOC.",
@@ -2015,8 +2026,8 @@ const INDEX = {
       ownedBy:  "frontend"
     },
     "client/src/components/SampleBrowser/SampleBrowser.tsx (v3.55.0)": {
-      role:     "v3.194 ERWEITERT: Bulk-Pitch-Shift-Action in Multi-Select-Bar (zwischen Sidechain-Pump und Loeschen). Neuer Semitones-Slider data-testid='sample-browser-bulk-pitch-slider' (min=-12, max=+12, step=1, default 0, w-20 accent-accent-secondary) + Anzeige '+/-Nst' (font-mono w-8) + 'Pitch'-Button data-testid='sample-browser-bulk-pitch'. State bulkPitchSemitones useState<number>(0). handleBulkPitchShift useCallback (deps: multiSelectIds/samples/onTransformSample/bulkPitchSemitones): Early-Return wenn semitones===0 → fuer jede selected Sample-ID AudioEngine.loadSample → applyPitchShift(buf, {semitones: bulkPitchSemitones}) → encodeWav(channels=min(2,n)) → URL.createObjectURL-Blob → OfflineAudioContext.createBuffer+copyToChannel → onTransformSample. Toast 'Pitch-Shift +/-Nst: N Samples' (kind:success). Import { applyPitchShift } aus @/utils/samplePitchShift. v3.188-v3.193 Bulk-Compressor/Delay/Sidechain und alle vorhergehenden Funktionalitaeten unveraendert.",
-      lastSeen: "2026-05-20T15:30:00.000Z",
+      role:     "v3.197 ERWEITERT: Bulk-Stereo-Width-Action in Multi-Select-Bar (direkt nach Sat-Button). Neuer Width-Slider data-testid='sample-browser-bulk-width-slider' (min=0, max=2, step=0.1, default 1, w-20 accent-accent-secondary) + Anzeige 'X.X' (font-mono w-8) + 'Stereo'-Button data-testid='sample-browser-bulk-stereo'. State bulkWidth useState<number>(1) — Identity-Default, Button disabled bis User Slider bewegt. handleBulkStereo useCallback (deps: multiSelectIds/samples/onTransformSample/bulkWidth): Early-Return wenn width===1 (No-Op) → fuer jede selected Sample-ID AudioEngine.loadSample → applyStereoEnhance(buf, {width: bulkWidth}) → encodeWav(channels=min(2,n)) → URL.createObjectURL-Blob → OfflineAudioContext.createBuffer+copyToChannel → onTransformSample. Toast 'Stereo-Width X.XX: N Samples' (kind:success). Import { applyStereoEnhance } aus @/utils/sampleStereoEnhancer. v3.194 Bulk-Pitch-Shift + v3.195 Bulk-Saturator + v3.188-v3.193 Bulk-Compressor/Delay/Sidechain und alle vorhergehenden Funktionalitaeten unveraendert.",
+      lastSeen: "2026-05-20T14:10:00.000Z",
       ownedBy:  "frontend"
     },
     "client/src/store/useProjectStore.ts (v3.60.0)": {
@@ -3762,6 +3773,69 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "refactor",
+      timestamp: "2026-05-20T14:30:00.000Z",
+      done: [
+        "v3.198 Pure-Helper client/src/utils/sampleLowPass.ts (~155 LOC inkl. JSDoc) angelegt — One-Pole-Lowpass-Filter (alpha = 1 - exp(-2π·fc/fs); y[n] = alpha·x[n] + (1-alpha)·y[n-1]). Foundation fuer Tone-Knob im SampleTransformDialog + dunkle/helle Pad-FX im SampleBrowser. Analyse-Pendant existiert nicht direkt (spectral-centroid in sampleSpectralCentroid.ts deckt Helligkeits-Analyse anders ab).",
+        "Public API: applyLowPass(buffer: AudioBufferLike, options?: LowPassOptions) -> AudioBufferLike. LowPassOptions { cutoffHz?: number (default 2000), resonance?: number 0..1 (default 0) }. Konstanten DEFAULT_CUTOFF_HZ=2000, DEFAULT_RESONANCE=0 als public exports. LOWPASS_PRESETS readonly Array von 4 Eintraegen (muffled/500, warm/1500, bright/5000, open/10000) — alle resonance=0 weil typische Use-Cases sauber gefiltertes Audio wollen.",
+        "Design-Entscheidungen: (1) Resonance-Boost als simple parallel band-emphasis Math.pow(10, resonance*6/20) skaliert auf (x - y)*mix — kein echter biquad/SVF, sondern peak-aehnliche Energie nahe Cutoff ohne komplexe State-Filter. Bei resonance=0 ist boost-Term identisch 0 (kein numerisches Drift). (2) Per-Channel frischer y[n-1]=0 zu Beginn — kein Cross-Channel-Coupling, gleiche Konvention wie sampleNoiseGate. (3) Sanitization-Reihenfolge: undefined/null/non-number/NaN/Infinity/<=0 -> default; finite > Nyquist -> Nyquist-Clamp. resonance: undefined/null/NaN -> 0; negative -> 0; > 1 -> 1 (Soft-Cap @ +6dB). (4) Empty-Buffer-Shortcut returnt {numCh=0, length=0, fallback sampleRate=48000}. (5) Input-Immutability: getChannelData wird nur gelesen, alle Writes in fresh Float32Arrays.",
+        "Test-Suite tests/features/sample-low-pass.test.ts (~315 LOC, 22 Tests in 5 describes): basics 4 (empty -> empty + sampleRate=48000 fallback; empty options -> finite output; undefined vs empty options deep-equal; length+numCh+sampleRate preserved bei 44100). filter behaviour 5 (low-cutoff 200Hz auf Nyquist-Square reduziert rms<0.1 vs rmsIn=1.0; high-cutoff naeher an Identity als low-cutoff via abs-deviation-sum; DC settles to value @ 1500/1999; step-response monotonic-rising no-overshoot; resonance=1 > resonance=0 RMS am Cutoff). multi-channel 3 (Ch0 high-freq + Ch1 DC unabhaengig gefiltert; out-of-range RangeError; input-not-mutated). defensive 7 (NaN cutoff -> default; <=0 -> default + extra 0-case; > Nyquist -> Nyquist-Clamp; NaN/neg resonance -> 0; >1 resonance clamps to 1; Infinity cutoff -> default; DEFAULT-Konstanten-Werte). presets 3 (4 entries shape; cutoffs match spec 500/1500/5000/10000; monotonic-increasing).",
+        "Tests erster Versuch: 20/22 passed, 2 fails — (1) Multi-channel DC-settle: bei cutoffHz=200 Hz @ 48k braucht der Filter laenger als 250 samples fuer 3-Stellen-Praezision (toBeCloseTo(0.5, 3)); fix auf toBeCloseTo(0.5, 2). (2) input-not-mutated: Float32Array(0.1) speichert als 0.10000000149... (Float32-Epsilon ~1.2e-7); precision=10 zu strikt fuer Number->Float32-Roundtrip; fix auf precision=5. Re-run: 22/22 passed in 10ms.",
+        "pnpm check GRUEN (tsc --noEmit 0 errors). pnpm test GRUEN: 359 Test-Files / 8024 passed / 16 skipped (full-suite 33.55s). KEIN Commit, KEIN package.json-Bump (User-Vorgabe Refactor-Pattern v3.188+).",
+        "Verifikation der vorherigen sample-stereo-enhancer-Float32-Issue (in v3.197-Sibling-Entry erwaehnt): erscheint nicht mehr in full-suite — wurde im Sibling-Owner-Bereich zwischenzeitlich gefixt. Kein blocker."
+      ],
+      next: [
+        "v3.199+ Frontend-Owner: SampleTransformDialog 'Tone'-Knob — applyLowPass mit cutoffHz=preset.cutoffHz auf aktives Sample anwenden + LOWPASS_PRESETS als Dropdown rendern. Resonance-Slider 0..1 fuer expressive Pad-FX.",
+        "v3.199+ Frontend-Owner: SampleBrowser Bulk-LowPass-Action — Multi-Select-Aware applyLowPass-Loop, aehnlich zu existierender Bulk-Normalize/Saturator/Stereo-Workflow. Foundation existiert (Pure-Helper); UI-Wiring offen.",
+        "v3.199+ Backend-Owner: Script-Sandbox ss.sample.lowPass(buffer, options?) -> AudioBufferLike exposen — analog ss.sample.normalize / ss.sample.reverse. Pure + deterministisch macht es script-sicher.",
+        "v3.199+ Audio-Engine-Owner: optional ein 2-Pole biquad-LowPass anbieten als premium-Variante — der aktuelle one-pole hat -6 dB/Oct (sanft); fuer tighter Filtering waere Butterworth oder SVF wuenschenswert. Aktueller Pure-Helper bleibt Foundation, biquad wuerde additiv daneben leben.",
+        "v3.199+ Testing-Owner: Playwright-Smoke tests/web/sample-low-pass.spec.ts — Sample importieren, 'Tone'-Knob auf muffled, hoerbare Veraenderung verifizieren via getChannelData-Snapshot vor/nach."
+      ],
+      changed: [
+        "client/src/utils/sampleLowPass.ts (NEW, ~155 LOC — applyLowPass + LowPassOptions + LOWPASS_PRESETS + DEFAULT_CUTOFF_HZ/DEFAULT_RESONANCE; ownedBy backend, da Pure-Helper im Sample-DSP-Layer analog sampleNoiseGate/sampleCompressor/sampleStereoEnhancer)",
+        "tests/features/sample-low-pass.test.ts (NEW, ~315 LOC, 22 Tests in 5 describes; ownedBy testing)",
+        "agents/INDEX.js (workLog-Entry refactor v3.198 — One-Pole-Lowpass Pure-Helper)"
+      ]
+    },
+    {
+      agent:     "frontend",
+      timestamp: "2026-05-20T14:10:00.000Z",
+      done: [
+        "v3.197 UI-Wiring sampleStereoEnhancer (applyStereoEnhance) als Bulk-Apply im SampleBrowser Multi-Select-Bar — Width-Slider (0..2, step=0.1, default=1) + 'Stereo'-Button direkt nach Sat-Button. data-testid='sample-browser-bulk-width-slider' + data-testid='sample-browser-bulk-stereo'. Button disabled wenn !onTransformSample oder bulkWidth===1 (Identity-No-Op). Pattern symmetrisch zu Bulk-Pitch v3.194 / Bulk-Saturator v3.195: AudioEngine.loadSample → applyStereoEnhance(buf, {width: bulkWidth}) → encodeWav(channels=min(2,n)) → URL.createObjectURL-Blob → OfflineAudioContext.createBuffer+copyToChannel → onTransformSample(id, blobURL, audioBuf). Toast 'Stereo-Width X.XX: N Samples' (kind:success).",
+        "State bulkWidth via useState<number>(1) (Identity-Default — Button disabled bis User Slider bewegt). handleBulkStereo useCallback (deps: multiSelectIds/samples/onTransformSample/bulkWidth). Import { applyStereoEnhance } aus @/utils/sampleStereoEnhancer nach SATURATOR-Import-Block. UI-Marker: Slider visualisiert via toFixed(1) (0.0 mono, 1.0 identity, 2.0 extreme).",
+        "pnpm check GRUEN (tsc --noEmit 0 errors). KEIN Commit, KEIN package.json-Bump (User-Vorgabe Refactor-Pattern v3.188+). NUR client/src/components/SampleBrowser/SampleBrowser.tsx editiert. Akzeptanzkriterien erfuellt: beide data-testid vorhanden (sample-browser-bulk-stereo + sample-browser-bulk-width-slider), Single-File-Edit, semantische Tailwind-Klassen (kein bg-slate/text-cyan), TypeScript-strict-compliant."
+      ],
+      next: [
+        "v3.198+ Frontend: SampleTransformDialog 'Stereo Width'-Tab — Single-Sample Preview + Width-Slider mit Real-Time-Audio-Preview (Loop-Play), M/S-Spectrum-Vis (Mid vs Side Energy-Anzeige analog v3.196+ Spectral-Centroid).",
+        "v3.198+ Frontend: Mono-Sample Edge-Case-Warnung im Bulk-Bar — Tooltip oder Disabled-State wenn alle selektierten Samples mono sind (applyStereoEnhance liefert dann nur Identity-Copy). Erfordert sample.channels-Metadata-Lookup.",
+        "v3.198+ Backend: Script-Sandbox ss.sample.stereoWidth(buffer, opts?) + ss.sample.stereoWidthBatch(buffers, opts) exposen — analog ss.sample.saturate / ss.sample.pitchShift.",
+        "v3.198+ Refactor: Shared resolveWidth/resolveDrive/resolveOutputGain-Sanitizer-Familie aus 4+ Helpers (sampleCompressor/samplePitchShift/sampleSaturator/sampleStereoEnhancer) in client/src/utils/audioSanitizers.ts auslagern — siehe Refactor-Followup-Eintrag v3.197 (Zeile 3811).",
+        "v3.198+ Testing: Playwright-Smoke tests/web/sample-bulk-stereo.spec.ts — 2-3 Samples selektieren, Slider auf 0 (mono-collapse), Button-Klick, Toast verifizieren, anschliessend Slider auf 2 (extreme wide) und nochmal apply — Sample-URL muss sich aendern."
+      ],
+      changed: [
+        "client/src/components/SampleBrowser/SampleBrowser.tsx (Import applyStereoEnhance + State bulkWidth + handleBulkStereo useCallback + UI Slider/Span/Button mit 2 data-testid nach Sat-Button; ~+65 LOC)",
+        "agents/INDEX.js (workLog-Eintrag + files-Index Update SampleBrowser.tsx v3.197 Stereo-Width)"
+      ]
+    },
+    {
+      agent:     "frontend",
+      timestamp: "2026-05-20T12:05:00.000Z",
+      done: [
+        "v3.197 UI-Wiring randomMutate (patternMutateRandom.ts) als 'Random Mutate'-Button in pattern-mutator-toolbar im DrumMachine — data-testid='pattern-mutator-random', 🎲-Icon, applyMutator((p) => randomMutate(p, { intensity: 0.5, maxOps: 3, seed: Date.now() }).pattern). Toolbar-Styling konsistent zu nachbar-Buttons: px-1.5 py-0.5 rounded text-[10px] bg-bg-elevated hover:bg-accent-secondary/30 hover:text-accent-secondary transition-colors. Button platziert nach pattern-mutator-beat-bwd (-B) am Ende der pattern-mutator-toolbar.",
+        "Import-Block ergaenzt: 'import { randomMutate } from \"@/utils/patternMutateRandom\";' nach rotatePatternByBeats (Zeile ~88). Re-uses bestehenden applyMutator-Helper — kein neuer Store-State, keine neuen Props. Klick liefert Toast-frei sofortige Mutation auf alle Parts (applyMutator iteriert intern alle parts).",
+        "pnpm check GRUEN (tsc --noEmit 0 errors). NUR DrumMachine.tsx editiert. Akzeptanzkriterien erfuellt: data-testid='pattern-mutator-random' vorhanden, Single-File-Edit, semantische Tailwind-Klassen (kein bg-slate/text-cyan), TypeScript-strict-compliant."
+      ],
+      next: [
+        "v3.198+ Frontend: Random Mutate-Toast — useToast import + Toast-Notification mit operationsApplied: 'Applied: shift -> decay -> reverse'. Aktuell wird operationsApplied verworfen (.pattern destructured), UI zeigt keine Op-Sequenz an. Refactor-Workflow-Vorschlag aus v3.197-Refactor-Entry (Zeile 3778).",
+        "v3.198+ Frontend: Intensity-Slider neben 🎲-Button — analog HumanizeIntensity-Pattern (subtle/moderate/heavy). Aktuell hardcoded intensity=0.5/maxOps=3 — keine User-Kontrolle.",
+        "v3.198+ Frontend: PerformanceMode Macro-Knopf 'Mutate' — randomMutate({intensity: macroValue, maxOps: 4, seed: Date.now()}) auf gewaehlte Pattern (siehe Refactor-Entry next-Eintrag 3779).",
+        "v3.198+ Testing: Playwright-Smoke tests/web/pattern-random-mutate.spec.ts — Button-Klick + Pattern-Diff vor/nach (siehe Refactor-Entry 3781)."
+      ],
+      changed: [
+        "client/src/components/DrumMachine/DrumMachine.tsx (Import randomMutate ergaenzt + 🎲-Button in pattern-mutator-toolbar nach -B-Button; ownedBy frontend)"
+      ]
+    },
     {
       agent:     "refactor",
       timestamp: "2026-05-20T11:50:00.000Z",

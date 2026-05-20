@@ -119,6 +119,8 @@ import {
   applySaturator,
   SATURATOR_PRESETS,
 } from "@/utils/sampleSaturator";
+// v3.197: Bulk-Stereo-Enhancer (M/S Width-Slider 0..2) für selektierte Samples.
+import { applyStereoEnhance } from "@/utils/sampleStereoEnhancer";
 
 // ─── Typen ────────────────────────────────────────────────────────────────────
 
@@ -1840,6 +1842,62 @@ export function SampleBrowser({
     toast(`Saturator "${preset.name}": ${applied} Samples`, { kind: "success" });
   }, [multiSelectIds, samples, onTransformSample, bulkSatPresetId]);
 
+  // v3.197 — Bulk-Stereo-Enhancer (M/S Width-Slider) für selektierte Samples.
+  // width = 0 (mono collapse), 1 (identity, no-op), 2 (extreme wide). applyStereoEnhance
+  // rendert pure, der neue Buffer wird als WAV encodet und via onTransformSample zurück
+  // ins Projekt geschrieben (+ AudioBuffer für AudioEngine-Cache).
+  const [bulkWidth, setBulkWidth] = useState<number>(1);
+
+  const handleBulkStereo = useCallback(async () => {
+    if (multiSelectIds.size === 0 || !onTransformSample || bulkWidth === 1) return;
+    let applied = 0;
+    for (const id of multiSelectIds) {
+      const sample = samples.find((s) => s.id === id);
+      if (!sample) continue;
+      try {
+        const buf = await AudioEngine.loadSample(sample.path);
+        if (!buf) continue;
+        const out = applyStereoEnhance(buf as unknown as AudioBufferLike, {
+          width: bulkWidth,
+        });
+        if (out.numberOfChannels === 0 || out.length === 0) continue;
+        const channels = Math.min(2, out.numberOfChannels) as 1 | 2;
+        const wav = encodeWav(
+          Array.from({ length: channels }, (_, c) =>
+            out.getChannelData(c) as Float32Array,
+          ),
+          { sampleRate: out.sampleRate, channels, bitDepth: 16 },
+        );
+        const blob = new Blob([wav], { type: "audio/wav" });
+        const newUrl = URL.createObjectURL(blob);
+        const Ctor = (window.OfflineAudioContext ||
+          // @ts-expect-error legacy webkit fallback
+          window.webkitOfflineAudioContext) as typeof OfflineAudioContext;
+        const ctx = new Ctor(
+          Math.max(1, out.numberOfChannels),
+          Math.max(1, out.length),
+          out.sampleRate,
+        ) as BaseAudioContext;
+        const audioBuf = ctx.createBuffer(
+          Math.max(1, out.numberOfChannels),
+          Math.max(1, out.length),
+          out.sampleRate,
+        );
+        for (let c = 0; c < out.numberOfChannels; c++) {
+          const src = out.getChannelData(c);
+          const copy = new Float32Array(src.length);
+          copy.set(src);
+          audioBuf.copyToChannel(copy, c, 0);
+        }
+        onTransformSample(id, newUrl, audioBuf);
+        applied++;
+      } catch {
+        /* skip */
+      }
+    }
+    toast(`Stereo-Width ${bulkWidth.toFixed(2)}: ${applied} Samples`, { kind: "success" });
+  }, [multiSelectIds, samples, onTransformSample, bulkWidth]);
+
   // v3.152: Wenn Samples aus dem Projekt verschwinden (extern gelöscht),
   // multi-select-Set defensiv auf Existenz-Filter laufen lassen.
   useEffect(() => {
@@ -2808,6 +2866,29 @@ export function SampleBrowser({
                         title="Saturator (analog warmth) auf alle ausgewählten Samples"
                       >
                         Sat
+                      </button>
+                      <input
+                        type="range"
+                        min={0}
+                        max={2}
+                        step={0.1}
+                        value={bulkWidth}
+                        onChange={(e) => setBulkWidth(parseFloat(e.target.value))}
+                        data-testid="sample-browser-bulk-width-slider"
+                        className="w-20 accent-accent-secondary"
+                        title="Stereo-Width 0=mono 1=identity 2=extreme"
+                      />
+                      <span className="text-[10px] font-mono text-text-muted w-8 text-center">
+                        {bulkWidth.toFixed(1)}
+                      </span>
+                      <button
+                        onClick={handleBulkStereo}
+                        disabled={!onTransformSample || bulkWidth === 1}
+                        data-testid="sample-browser-bulk-stereo"
+                        className="px-2 py-0.5 rounded text-[10px] border border-border-color text-text-primary hover:border-accent-secondary hover:text-accent-secondary disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        title="Stereo-Width (M/S Enhancer) auf alle ausgewählten Samples"
+                      >
+                        Stereo
                       </button>
                       <button
                         onClick={handleBulkDelete}
