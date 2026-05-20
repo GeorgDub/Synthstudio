@@ -137,6 +137,8 @@ import { applySampleRateReduce } from "@/utils/sampleSampleRateReduce";
 import { applyChorus } from "@/utils/sampleChorus";
 // v3.207: Bulk-Flanger (modulierte Delay-Line + Feedback, rateHz 0.05..5 / feedback -0.95..+0.95) für selektierte Samples.
 import { applyFlanger } from "@/utils/sampleFlanger";
+// v3.208: Bulk-Tremolo (Amplitude-Modulation via LFO, rateHz 0.1..20 / depth 0..1) für selektierte Samples.
+import { applyTremolo } from "@/utils/sampleTremolo";
 
 // ─── Typen ────────────────────────────────────────────────────────────────────
 
@@ -2428,6 +2430,74 @@ export function SampleBrowser({
     bulkFlangerFeedback,
   ]);
 
+  // v3.208 — Bulk-Tremolo (Amplitude-Modulation via LFO) für selektierte
+  // Samples. depth=0 = identity (=disabled). applyTremolo ist pure;
+  // resultierender Buffer wird als WAV encodet und via onTransformSample
+  // zurück ins Projekt geschrieben (+ AudioBuffer für AudioEngine-Cache).
+  // Default-Preset: classic (rateHz=5, depth=0.5).
+  const [bulkTremoloRate, setBulkTremoloRate] = useState<number>(5);
+  const [bulkTremoloDepth, setBulkTremoloDepth] = useState<number>(0.5);
+
+  const handleBulkTremolo = useCallback(async () => {
+    if (multiSelectIds.size === 0 || !onTransformSample) return;
+    let applied = 0;
+    for (const id of multiSelectIds) {
+      const sample = samples.find((s) => s.id === id);
+      if (!sample) continue;
+      try {
+        const buf = await AudioEngine.loadSample(sample.path);
+        if (!buf) continue;
+        const out = applyTremolo(buf as unknown as AudioBufferLike, {
+          rateHz: bulkTremoloRate,
+          depth: bulkTremoloDepth,
+        });
+        if (out.numberOfChannels === 0 || out.length === 0) continue;
+        const channels = Math.min(2, out.numberOfChannels) as 1 | 2;
+        const wav = encodeWav(
+          Array.from({ length: channels }, (_, c) =>
+            out.getChannelData(c) as Float32Array,
+          ),
+          { sampleRate: out.sampleRate, channels, bitDepth: 16 },
+        );
+        const blob = new Blob([wav], { type: "audio/wav" });
+        const newUrl = URL.createObjectURL(blob);
+        const Ctor = (window.OfflineAudioContext ||
+          // @ts-expect-error legacy webkit fallback
+          window.webkitOfflineAudioContext) as typeof OfflineAudioContext;
+        const ctx = new Ctor(
+          Math.max(1, out.numberOfChannels),
+          Math.max(1, out.length),
+          out.sampleRate,
+        ) as BaseAudioContext;
+        const audioBuf = ctx.createBuffer(
+          Math.max(1, out.numberOfChannels),
+          Math.max(1, out.length),
+          out.sampleRate,
+        );
+        for (let c = 0; c < out.numberOfChannels; c++) {
+          const src = out.getChannelData(c);
+          const copy = new Float32Array(src.length);
+          copy.set(src);
+          audioBuf.copyToChannel(copy, c, 0);
+        }
+        onTransformSample(id, newUrl, audioBuf);
+        applied++;
+      } catch {
+        /* skip */
+      }
+    }
+    toast(
+      `Tremolo rate=${bulkTremoloRate.toFixed(2)}Hz depth=${bulkTremoloDepth.toFixed(2)}: ${applied} Samples`,
+      { kind: "success" },
+    );
+  }, [
+    multiSelectIds,
+    samples,
+    onTransformSample,
+    bulkTremoloRate,
+    bulkTremoloDepth,
+  ]);
+
   // v3.152: Wenn Samples aus dem Projekt verschwinden (extern gelöscht),
   // multi-select-Set defensiv auf Existenz-Filter laufen lassen.
   useEffect(() => {
@@ -3673,6 +3743,43 @@ export function SampleBrowser({
                         title="Flanger (modulierte Delay-Line + Feedback-Loop) auf alle ausgewählten Samples"
                       >
                         FLG
+                      </button>
+                      <input
+                        type="range"
+                        min={0.1}
+                        max={20}
+                        step={0.1}
+                        value={bulkTremoloRate}
+                        onChange={(e) => setBulkTremoloRate(parseFloat(e.target.value))}
+                        data-testid="sample-browser-bulk-tremolo-rate"
+                        className="w-20 accent-accent-secondary"
+                        title="Tremolo LFO-Rate 0.1..20 Hz (5 = classic, 3 = subtle, 8 = pulse, 6 = vintage)"
+                      />
+                      <span className="text-[10px] font-mono text-text-muted w-12 text-center">
+                        {bulkTremoloRate.toFixed(1)}Hz
+                      </span>
+                      <input
+                        type="range"
+                        min={0}
+                        max={1}
+                        step={0.05}
+                        value={bulkTremoloDepth}
+                        onChange={(e) => setBulkTremoloDepth(parseFloat(e.target.value))}
+                        data-testid="sample-browser-bulk-tremolo-depth"
+                        className="w-20 accent-accent-secondary"
+                        title="Tremolo Depth 0..1 (0 = aus, 0.3 = subtle, 0.5 = classic, 0.8 = pulse)"
+                      />
+                      <span className="text-[10px] font-mono text-text-muted w-10 text-center">
+                        {bulkTremoloDepth.toFixed(2)}
+                      </span>
+                      <button
+                        onClick={handleBulkTremolo}
+                        disabled={!onTransformSample || bulkTremoloDepth === 0}
+                        data-testid="sample-browser-bulk-tremolo"
+                        className="px-2 py-0.5 rounded text-[10px] border border-border-color text-text-primary hover:border-accent-secondary hover:text-accent-secondary disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        title="Tremolo (Amplitude-Modulation via LFO) auf alle ausgewählten Samples"
+                      >
+                        TRM
                       </button>
                       <button
                         onClick={handleBulkDelete}
