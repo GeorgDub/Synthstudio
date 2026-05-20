@@ -86,6 +86,8 @@ import { generateBranchVariations } from "@/utils/patternBranchVariations";
 import { applyHalfStutter } from "@/utils/patternStutter";
 // v3.183.0: Melodic Sequence Pure-Helper (Rhythm + Scale + Strategy → MIDI-Notes).
 import { generateMelodicSequence, MELODIC_STRATEGY_LABELS, type MelodicStrategy } from "@/utils/patternMelodicSeq";
+// v3.188.0: Pattern-Evolve Pure-Helper (genetic-algorithm-style crossover + mutation).
+import { evolvePattern } from "@/utils/patternEvolve";
 
 import { resolveFollowAction } from "@/utils/patternFollowActionChain";
 
@@ -553,6 +555,9 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
   const [branchIntensity, setBranchIntensity] = useState(0.4);
   // v3.183.0: Melodic Sequence Generator — Strategy-Auswahl für "Generate Preview".
   const [melodicStrategy, setMelodicStrategy] = useState<MelodicStrategy>("ascending");
+  // v3.188.0: Pattern-Evolve UI-State (Generations + Pop-Size Slider).
+  const [evolveGens, setEvolveGens] = useState(2);
+  const [evolvePopSize, setEvolvePopSize] = useState(4);
   const [metronomOn, setMetronomOn] = useState(false);
   const [metronomGain, setMetronomGain] = useState(0.5);
   const [metronomAccent, setMetronomAccent] = useState(1.0);
@@ -1290,6 +1295,48 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
     toast(`Chain-Preview (10 steps, "next"): ${visited.join(" → ")}`, { kind: "info", duration: 8000 });
   }, [dm]);
 
+  // v3.188.0: Pattern-Evolve — genetic-algorithm-style Variationen aus dem
+  // aktiven Pattern (Union aller Parts → boolean[]). Generiert pop-size
+  // evolved Patterns nach N Generations und legt sie via addPatternData ab.
+  const handleEvolve = useCallback(() => {
+    const activePattern = dm.patterns.find((p) => p.id === dm.activePatternId);
+    if (!activePattern) return;
+    const len = activePattern.parts[0]?.steps.length ?? 16;
+    const unionSteps = new Array<boolean>(len).fill(false);
+    for (const part of activePattern.parts) {
+      for (let i = 0; i < Math.min(len, part.steps.length); i++) {
+        if (part.steps[i].active) unionSteps[i] = true;
+      }
+    }
+    const result = evolvePattern(unionSteps, {
+      generations: evolveGens,
+      populationSize: evolvePopSize,
+      seed: Date.now(),
+    });
+    let created = 0;
+    for (let vi = 0; vi < result.population.length; vi++) {
+      const evolved = result.population[vi];
+      if (!evolved || evolved.length === 0) continue;
+      const newId = `evolved-${Date.now()}-${vi}`;
+      const newPattern = {
+        ...activePattern,
+        id: newId,
+        name: `${activePattern.name} evo${vi + 1}`,
+        parts: activePattern.parts.map((p, i) => ({
+          ...p,
+          id: `${newId}-p${i}`,
+          steps: p.steps.map((s, si) => ({
+            ...s,
+            active: si < evolved.length ? evolved[si] : false,
+          })),
+        })),
+      };
+      dm.addPatternData(newPattern as Parameters<typeof dm.addPatternData>[0]);
+      created++;
+    }
+    toast(`Evolution: ${created} Patterns nach ${result.generation} Generations`, { kind: "success" });
+  }, [dm, evolveGens, evolvePopSize]);
+
   // Drag-Drop fuer .e2pattern/.e2sallpat (Browser-Fallback).
   useEffect(() => {
     const handler = (e: Event) => {
@@ -1762,6 +1809,48 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
                   </button>
                 </div>
               )}
+
+              {/* v3.188.0: Evolve N Patterns — genetic-algorithm-style Variationen
+                  des aktiven Patterns (Union aller Parts). Generations + Pop-Size
+                  via Slider, Apply legt evolved Patterns via addPatternData ab. */}
+              <div className="px-3 py-2 border-t border-border-color space-y-1.5" data-testid="pattern-evolve-block">
+                <div className="text-[10px] text-text-dim font-semibold">🧬 Evolve:</div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] text-text-dim">Gens:</span>
+                  <input
+                    type="range"
+                    min={1}
+                    max={8}
+                    step={1}
+                    value={evolveGens}
+                    onChange={(e) => setEvolveGens(parseInt(e.target.value, 10))}
+                    className="flex-1 accent-accent-primary"
+                    data-testid="pattern-evolve-gens"
+                  />
+                  <span className="font-mono text-[10px] text-text-muted w-6">{evolveGens}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] text-text-dim">Pop:</span>
+                  <input
+                    type="range"
+                    min={4}
+                    max={16}
+                    step={2}
+                    value={evolvePopSize}
+                    onChange={(e) => setEvolvePopSize(parseInt(e.target.value, 10))}
+                    className="flex-1 accent-accent-primary"
+                    data-testid="pattern-evolve-pop"
+                  />
+                  <span className="font-mono text-[10px] text-text-muted w-6">{evolvePopSize}</span>
+                </div>
+                <button
+                  onClick={handleEvolve}
+                  data-testid="pattern-evolve-apply"
+                  className="w-full px-2 py-1 rounded text-[11px] bg-accent-secondary text-bg-base font-semibold hover:bg-accent-secondary/80 transition-colors"
+                >
+                  🧬 Evolve
+                </button>
+              </div>
 
               {!isLiveEditing && (
                 <div className="border-t border-border-color p-1">

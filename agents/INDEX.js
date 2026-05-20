@@ -298,6 +298,17 @@ const INDEX = {
   //     a new bare-path entry while old version-suffixed ones remain
   //     is the explicit transition path.
   files: {
+    // ─── v3.189 Pure-Helpers (refactor) ─────────────────────────
+    "client/src/utils/patternBeatRepeatLive.ts": {
+      role:     "Pure State-Machine fuer Live-Beat-Repeat im Performance-Mode (Real-Time, boolean[]-Step-Patterns). Abgrenzung vs. v3.142 client/src/utils/beatRepeat.ts (OFFLINE auf AudioBufferLike). Public API: createBeatRepeatState(bufferSteps?=4, clamp 1..64) -> BeatRepeatState {active:false, buffer:false[len], bufferLength, currentRepeats:0, capturedAtStep:0}; triggerBeatRepeat(state, currentPattern, currentStep) -> capturedAtStep=safeStep(currentStep), buffer[i]=currentPattern[((step+i)%pLen+pLen)%pLen] (wrap-around), active=true, currentRepeats=0; releaseBeatRepeat(state) -> {...state, active:false, currentRepeats:0} (Buffer bleibt erhalten fuer Re-Trigger-Inspektion); nextStep(state, normalPattern, step, options?{bufferSteps?, maxRepeats?=Infinity}) -> {active:boolean, newState:BeatRepeatState}. Public Types: BeatRepeatLiveOptions, BeatRepeatState. Counting-Semantik (Option A, strict >): pro Cycle-Boundary (delta>0 && delta%bufLen===0) wird currentRepeats inkrementiert; bei nextRepeats>maxRepeats -> auto-release, return-active fallback auf normalPattern[step%length]. Default Infinity = nie auto-release. WICHTIG: return.active = STEP-VALUE (on/off), nicht state.active (engaged-flag) - in JSDoc dokumentiert. Defensive: empty currentPattern beim trigger -> active:false; empty normalPattern bei nextStep -> active:false + state unveraendert (gleiche-Referenz); NaN/Infinity step -> safeStep(0); negative step -> positive Modulo ((s%L+L)%L); bufferSteps NaN/Infinity -> Default 4; bufferSteps<1 -> 1; >64 -> 64. State-Immutabilitaet: inactive read gibt state-by-reference zurueck (newState === state); active read ohne Counter-Aenderung dito; active read mit Counter-Aenderung -> {...state, currentRepeats: nextRepeats} (neue Referenz). Pure & DOM-frei. Foundation fuer Performance-Mode Trigger-Buttons (1/2/4/8 Step Buffer) + Release-Button in DrumMachine, MIDI-Learn-Targets beatRepeatTrigger/Release fuer Pad-Bindings (Note-On=trigger, Note-Off=release).",
+      lastSeen: "2026-05-20T09:25:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "tests/features/pattern-beat-repeat-live.test.ts": {
+      role:     "Pure-Coverage fuer patternBeatRepeatLive.ts. 23 Tests in 9 describes: createBeatRepeatState defaults+clamp 3 (default bufferSteps=4 + active:false + buffer[F,F,F,F] + currentRepeats:0 + capturedAtStep:0, clamp bufferSteps 0/-5/999/8 -> 1/1/64/8, NaN+Infinity bufferSteps -> Default 4). triggerBeatRepeat captures buffer 4 (captures bufferLength steps ab currentStep: pattern[T,F,F,T,T,F,T,F]@step2 bufLen4 -> [F,T,T,F], wrap-around bei Endbereich: 16-step pattern mit Hits an 14/15/0/1 + trigger@14 bufLen4 -> [T,T,T,T] + capturedAtStep=14, empty pattern -> active:false + capturedAtStep gesetzt, NaN currentStep -> safeStep 0 + buffer korrekt). nextStep inactive 3 (liest normalPattern modulo, state-Referenz unveraendert via toBe, empty normalPattern -> active:false + state unveraendert). nextStep active reads from buffer 2 (alle 8 delta-Werte 0..7 lesen buffer[T,F,T,F] modulo bufLen=4 korrekt, currentRepeats-Increment bei Cycle-Boundary: delta=0->0, delta=4->1, delta=8->1 weil gleiche s1-Quelle). releaseBeatRepeat reset 2 (active:false + currentRepeats:0 + buffer bleibt erhalten via toEqual, nach release liest nextStep wieder normalPattern). nextStep maxRepeats auto-release 2 (maxRepeats=2 mit 4-step buffer: delta=0->repeats=0+active, delta=4->repeats=1+active, delta=8->repeats=2+active, delta=12->release+repeats=0+fallback auf normal[0]=F; default Infinity -> 1000 Steps + 250 Cycles ohne Release). capturedAtStep tracking 2 (trigger setzt capturedAtStep=7, delta relativ zu capturedAtStep nicht zu 0: bufLen=2+capturedAt=6 -> step6=T+step7=F+step8=T (neuer Cycle)). defensive NaN+negative inputs 3 (NaN step -> safeStep 0 -> normal[0]=T, -1 step -> ((-1%4)+4)%4=3 -> normal[3]=F, Infinity step -> safeStep 0 -> T). multiple trigger/release cycles 2 (re-trigger nach release captured neuen Buffer + capturedAtStep aktualisiert, trigger waehrend bereits active = frischer Capture mit currentRepeats=0 reset). Vitest node-env. 23/23 passed in 6ms. Gesamt-Suite nach Add: 7733/7749 (+23 vs baseline 7710).",
+      lastSeen: "2026-05-20T09:25:00.000Z",
+      ownedBy:  "testing"
+    },
     // ─── v3.182 Pure-Helpers (refactor) ─────────────────────────
     "client/src/utils/sampleLufsApprox.ts": {
       role:     "Pure-Helper fuer LUFS (Loudness Units Full-Scale) Integrated Loudness Approximation nach EBU R128 / ITU BS.1770-4 (simplified). Public API: computeLufsApprox(buffer, options?) -> LufsResult {integratedLufs (-Inf bei silence), passedBlocks, totalBlocks, truePeakDbFS}, getKWeightingCoeffs(sampleRate) -> KWeightingCoeffs {preFilter {b,a}, rlbFilter {b,a}}. Konstanten: DEFAULT_BLOCK_SIZE_SEC=0.4 (EBU R128 400ms), DEFAULT_OVERLAP=0.75, DEFAULT_ABSOLUTE_GATE_DB=-70, DEFAULT_RELATIVE_GATE_DB=-10. Algorithmus: 1) Mono-Downmix (arith. Mittelwert). 2) K-Weighting via Biquad-Cascade Direct-Form-I: pre-filter (high-shelf ≈1681Hz +4dB) -> rlb-filter (high-pass ≈38Hz). BS.1770-4 Koeffizienten fuer 48k (Approximation, alle sampleRates erhalten gleiche Koeffizienten — bilineare Transformation out-of-scope). 3) Block-Loop: blockSize=sampleRate*blockSizeSec, hop=blockSize*(1-overlap); pro Block meanSquare=sum(x^2)/blockSize. 4) Absolute-Gating: blockLufs>=-70 LUFS. 5) Ungated-Mean von meanSquares -> ungatedLufs=-0.691+10*log10(mean). 6) Relative-Gating: blockLufs>=ungatedLufs+relativeGateDb. 7) integratedLufs=-0.691+10*log10(mean of MS passed). 8) truePeak=20*log10(max|x|) auf ORIGINAL (vor K-Weighting). WICHTIG: Integrated ist mean-of-MS dann log, NICHT mean-of-block-LUFS — haeufige BS.1770 Bug-Falle. Defensive: empty/invalid buffer (length<=0, numCh<=0, !finite sampleRate) -> {-Inf, 0, 0, -Inf}; blockSizeSec NaN/<=0 -> 0.4; overlap NaN -> 0.75, clamp [0..0.99] (verhindert infinite-loop bei overlap=1.0); absoluteGate NaN -> -70; relativeGate NaN -> -10, -Infinity erlaubt (effektiv kein Relative-Gate); length<blockSize -> {-Inf, 0, 0, truePeak}; ms<=0 wird vor log10 ausgefiltert. Pure & DOM-frei. Foundation fuer UI-LUFS-Anzeige im SampleBrowser, Loudness-basierte Auto-Normalize (LUFS-Ziel statt Peak), Bulk-Loudness-Vergleich. Nicht broadcast-compliant — fuer UI/Workflow OK.",
@@ -1894,8 +1905,8 @@ const INDEX = {
       ownedBy:  "frontend"
     },
     "client/src/components/SampleBrowser/SampleBrowser.tsx (v3.55.0)": {
-      role:     "v3.185 ERWEITERT: Bulk-Convolution-Reverb-Action in Multi-Select-Bar. Neuer Preset-Selector + 'Reverb'-Button NACH dem 'Width'-Button (data-testid='sample-browser-bulk-reverb-preset' + data-testid='sample-browser-bulk-reverb', semantic Tailwind border-border-color/text-text-primary/hover:border-accent-secondary, title 'Reverb auf alle ausgewählten Samples'). State bulkReverbPresetId (default 'room'). handleBulkReverb useCallback: REVERB_PRESETS.find via bulkReverbPresetId → für jede selected Sample-ID AudioEngine.loadSample(sample.path) → generateSyntheticIR(preset.durationMs, sr, preset.decay) → applyConvolutionReverb(buf, ir, {wet:0.4}) → encodeWav(channels=Math.min(2, wet.numberOfChannels) as 1|2) → URL.createObjectURL-Blob → OfflineAudioContext-Rekonstruktion mit copy.set(src)+copyToChannel → onTransformSample(id, newUrl, audioBuf). Toast 'Reverb \"<Preset>\" angewandt: N Samples' (kind:success). Import applyConvolutionReverb/generateSyntheticIR/REVERB_PRESETS aus @/utils/sampleConvolutionReverb. v3.182 (LUFS-Bulk), v3.184 (Width-Bulk), v3.177 (Brightness+Onsets-Bulk) unveraendert. Bestehende v3.55-v3.184 Funktionalitaet (Multi-Tag-Filter, Tag-Editor, Bulk-Bar, Sort-Modes, Multi-Select, Transform-Dialog, Duration-Aggregator, Bulk-Normalize-Action mit Mode-Select, Auto-Distribute Preview) unveraendert.",
-      lastSeen: "2026-05-20T12:15:00.000Z",
+      role:     "v3.188 ERWEITERT: Bulk-Compressor-Action in Multi-Select-Bar (neben AutoTune-Button). Neuer Preset-Selector data-testid='sample-browser-bulk-comp-preset' (COMPRESSOR_PRESETS: soft 'Soft Glue'/vocal/drum-bus/limiter, default 'vocal') + 'Comp'-Button data-testid='sample-browser-bulk-comp'. State bulkCompPresetId useState<string>('vocal'). handleBulkCompressor useCallback (deps: multiSelectIds/samples/onTransformSample/bulkCompPresetId): COMPRESSOR_PRESETS.find via Id → fuer jede selected Sample-ID AudioEngine.loadSample → applyCompressor(buf, {thresholdDb,ratio,attackMs,releaseMs,kneeDb,makeupGainDb}) → encodeWav(channels=min(2,n)) → URL.createObjectURL-Blob → OfflineAudioContext.createBuffer+copyToChannel → onTransformSample. Toast 'Compressor \"<Preset>\": N Samples' (kind:success). Import { applyCompressor, COMPRESSOR_PRESETS } aus @/utils/sampleCompressor. v3.185 Reverb-Bulk, v3.186 Gate-Bulk, v3.187 AutoTune-Bulk und alle vorhergehenden Funktionalitaeten unveraendert.",
+      lastSeen: "2026-05-20T14:45:00.000Z",
       ownedBy:  "frontend"
     },
     "client/src/store/useProjectStore.ts (v3.60.0)": {
@@ -3641,6 +3652,68 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "refactor",
+      timestamp: "2026-05-20T09:25:00.000Z",
+      done: [
+        "v3.189 Pure-Helper client/src/utils/patternBeatRepeatLive.ts (205 LOC) angelegt — Live-Beat-Repeat State-Machine fuer Performance-Mode auf boolean[]-Step-Patterns. Abgrenzung vs. v3.142 client/src/utils/beatRepeat.ts: beatRepeat.ts = OFFLINE auf AudioBufferLike (sample-Bytes), patternBeatRepeatLive.ts = REAL-TIME auf step-Patterns.",
+        "Public API: createBeatRepeatState(bufferSteps?), triggerBeatRepeat(state, currentPattern, currentStep), releaseBeatRepeat(state), nextStep(state, normalPattern, step, options?) -> { active, newState }. Types: BeatRepeatLiveOptions { bufferSteps?, maxRepeats? }, BeatRepeatState { active, buffer, bufferLength, currentRepeats, capturedAtStep }.",
+        "Counting-Semantik: Option A (strict) — currentRepeats inkrementiert pro Cycle-Boundary (delta>0 && delta%bufLen===0). Auto-Release wenn nextRepeats > maxRepeats (strict). Default maxRepeats=Infinity = manuelles Release-only. maxRepeats=N -> erlaubt N volle Cycles, released auf (N+1)ter Boundary mit Fallback auf normalPattern[step%length].",
+        "Defensive Guards: bufferSteps clamp 1..64 (Default 4), NaN/Infinity step -> safeStep(0), empty currentPattern bei trigger -> active:false, empty normalPattern bei nextStep -> active:false & state unveraendert, negative step -> positive Modulo, wrap-around bei trigger via ((step+i)%pLen+pLen)%pLen.",
+        "Test-Suite tests/features/pattern-beat-repeat-live.test.ts (282 LOC, 23 Tests) — alle Spec-Punkte abgedeckt: defaults/clamp, captures buffer, wrap-around, inactive-read, active-modulo, cycle-boundary counting, release-reset, maxRepeats auto-release mit konkretem maxRepeats=2-Szenario (4 steps), Infinity-no-release, capturedAtStep tracking, defensive NaN/-1/Infinity, re-trigger cycles, trigger waehrend active = frischer Capture.",
+        "pnpm check GRUEN (tsc --noEmit 0 errors). pnpm test GRUEN: pattern-beat-repeat-live einzeln 23/23 passed, Gesamt-Suite 7733 passed (+23 vs. baseline 7710) / 16 skipped / 346 files."
+      ],
+      next: [
+        "v3.190+ Frontend-Owner: Wire-Up patternBeatRepeatLive in DrumMachine.tsx — Performance-Mode-Panel mit Trigger-Buttons (1/2/4/8 Step Buffer) + Release-Button. State-Machine pro DM-Instanz halten, in onPosition()-Callback nextStep() konsultieren, return-active in playStep()-Decision integrieren.",
+        "v3.190+ Frontend-Owner: MIDI-Learn-Target 'beatRepeatTrigger' + 'beatRepeatRelease' fuer Pad-Bindings (Note-On = trigger, Note-Off = release). Analog zu noteRepeat-Bindings.",
+        "v3.191+ Testing-Owner: Playwright-Smoke beat-repeat-live mit Pad-Click + 4 Steps Spielen + assert Buffer-Inhalt klingt (via AudioCtx-Mock).",
+        "v3.191+ Backend-Owner: AudioEngine.scheduleStepWithBeatRepeat() Hilfsmethode falls Live-Latency-Issue beim Switch zwischen normal/buffered im scheduler-tick."
+      ],
+      changed: [
+        "client/src/utils/patternBeatRepeatLive.ts (NEU — 205 LOC, Pure-Helper)",
+        "tests/features/pattern-beat-repeat-live.test.ts (NEU — 282 LOC, 23 Tests)",
+        "agents/INDEX.js (workLog-Entry v3.189 + files-Eintraege)"
+      ]
+    },
+    {
+      agent:     "frontend",
+      timestamp: "2026-05-20T14:45:00.000Z",
+      done: [
+        "v3.188 Wire-Up sampleCompressor im SampleBrowser (Bulk-Apply analog Reverb/Gate). Import { applyCompressor, COMPRESSOR_PRESETS } from @/utils/sampleCompressor (4 Presets: soft 'Soft Glue', vocal, drum-bus, limiter — entspricht v3.189 refactor-Datei trotz Versions-Kollision).",
+        "Neuer State bulkCompPresetId useState<string>('vocal'). Neuer Handler handleBulkCompressor useCallback (deps: multiSelectIds, samples, onTransformSample, bulkCompPresetId) iteriert multiSelectIds: AudioEngine.loadSample -> applyCompressor(buf as AudioBufferLike, preset-Params: threshold/ratio/attack/release/knee/makeup) -> encodeWav(channels<=2, sampleRate, 16bit) -> Blob -> createObjectURL -> OfflineAudioContext.createBuffer + copyToChannel -> onTransformSample(id, newUrl, audioBuf). try/catch pro Sample (skip on error). Toast 'Compressor \"<name>\": <n> Samples' kind:success.",
+        "UI direkt nach sample-browser-bulk-autotune-Button eingefuegt: <select data-testid=sample-browser-bulk-comp-preset> rendert COMPRESSOR_PRESETS.map (id/name) + <button data-testid=sample-browser-bulk-comp> Label 'Comp', disabled={!onTransformSample}. Ausschliesslich semantische Tailwind-Klassen (bg-bg-panel, border-border-color, hover:border-accent-secondary, text-text-primary, disabled:opacity-50) — keine hardcodierten Farben.",
+        "pnpm check GRUEN (tsc --noEmit, 0 Errors). KEIN git commit, KEIN package.json bump (User-Vorgabe). NUR client/src/components/SampleBrowser/SampleBrowser.tsx editiert (Import + State + Handler + UI)."
+      ],
+      next: [
+        "v3.189+ Frontend-Owner: Per-Sample Compressor-Inspector mit Custom-Sliders (threshold/ratio/attack/release/knee/makeup) + Live-Preview (Before/After Waveform-Overlay + RMS-Meter). Persistence im Project-Store wie Reverb-Custom.",
+        "v3.189+ Testing-Owner: Playwright-Smoke tests/web/sample-browser-bulk-comp.spec.ts mit multi-select + click sample-browser-bulk-comp -> Toast-Assertion 'Compressor \"...\": N Samples' + AudioBuffer-Aenderung verifizieren.",
+        "v3.189+ Testing-Owner: Bulk-Comp-Performance-Test mit 50 Samples (laut Spec applyCompressor pure, sollte <2s sein in Node-Bench).",
+        "v3.190+ Frontend-Owner: Combined Bulk-Chain (Gate -> Comp -> Reverb in einer Aktion) als 'Mastering Chain'-Preset."
+      ],
+      changed: [
+        "client/src/components/SampleBrowser/SampleBrowser.tsx (+ Import sampleCompressor, + useState bulkCompPresetId='vocal', + useCallback handleBulkCompressor, + UI select/button neben AutoTune)",
+        "agents/INDEX.js (workLog-Entry v3.188 SampleBrowser-Wire-Up)"
+      ]
+    },
+    {
+      agent:     "frontend",
+      timestamp: "2026-05-20T14:05:00.000Z",
+      done: [
+        "v3.188 Wire-Up: 'Evolve N Patterns'-Action im DrumMachine Pattern-Picker. Neuer Block (data-testid=pattern-evolve-block) direkt nach pattern-chain-sim-block mit Generations-Slider (1-8), Pop-Size-Slider (4-16, step 2) und Apply-Button.",
+        "handleEvolve useCallback: liest activePattern via dm.patterns.find, baut union-steps boolean[] aus allen parts (OR-Logik), ruft evolvePattern(union, { generations, populationSize, seed: Date.now() }) und legt fuer jede evolved population ein neues Pattern via dm.addPatternData ab (Name '<orig> evoN', steps via si<evolved.length?evolved[si]:false). Toast 'Evolution: N Patterns nach M Generations' bei Erfolg.",
+        "Imports: evolvePattern aus @/utils/patternEvolve. State: evolveGens (2 default), evolvePopSize (4 default) — neben melodicStrategy-State eingefuegt. Alle CSS-Klassen semantisch (bg-bg-elevated, text-text-dim, bg-accent-secondary, text-bg-base, border-border-color, accent-accent-primary) — keine hardcodierten Farben.",
+        "pnpm check GRUEN (tsc --noEmit, 0 Errors). KEIN git commit, KEIN package.json bump. NUR client/src/components/DrumMachine/DrumMachine.tsx editiert (Imports + State + Callback + UI-Block)."
+      ],
+      next: [
+        "v3.189+ Testing-Owner: Playwright-Smoke fuer pattern-evolve-block — Picker oeffnen, Slider-Werte aendern, Apply klicken, assert dm.patterns.length > vorher + Toast erscheint.",
+        "v3.190+ Frontend-Owner: Erweiterte Evolve-UI mit mutationRate + crossoverRate Slidern (aktuell defaults aus patternEvolve.ts: 0.05 / 0.7).",
+        "v3.190+ Frontend-Owner: 'Evolve until interesting'-Loop mit Stop-Button und Fitness-Feedback (sobald patternEvolve fitness-API bekommt)."
+      ],
+      changed: [
+        "client/src/components/DrumMachine/DrumMachine.tsx (Wire-Up patternEvolve: Import + 2 useState + handleEvolve useCallback + UI-Block nach pattern-chain-sim-block)",
+        "agents/INDEX.js (workLog-Entry)"
+      ]
+    },
     {
       agent:     "refactor",
       timestamp: "2026-05-20T09:11:00.000Z",

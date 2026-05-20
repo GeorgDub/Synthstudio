@@ -97,6 +97,11 @@ import {
 } from "@/utils/sampleNoiseGate";
 // v3.187: Bulk-AutoTune-Analyse (Pitch-Detect + Scale-Snap, Preview-only).
 import { analyzeAutoTune } from "@/utils/sampleAutoTune";
+// v3.188: Bulk-Compressor (Threshold/Ratio/Attack/Release/Knee/Makeup Preset).
+import {
+  applyCompressor,
+  COMPRESSOR_PRESETS,
+} from "@/utils/sampleCompressor";
 
 // ─── Typen ────────────────────────────────────────────────────────────────────
 
@@ -1500,6 +1505,73 @@ export function SampleBrowser({
     console.log("[AutoTune-Analyze]", detectedNotes);
   }, [multiSelectIds, samples]);
 
+  // v3.188 — Bulk-Compressor für selektierte Samples:
+  // Ein in COMPRESSOR_PRESETS definiertes Preset bestimmt thresholdDb, ratio,
+  // attackMs, releaseMs, kneeDb und makeupGainDb. Jeder geladene Buffer wird
+  // komprimiert, als WAV encodet und via onTransformSample zurück ins Projekt
+  // geschrieben (+ rekonstruierter AudioBuffer für AudioEngine-Cache).
+  const [bulkCompPresetId, setBulkCompPresetId] = useState<string>("vocal");
+
+  const handleBulkCompressor = useCallback(async () => {
+    if (multiSelectIds.size === 0 || !onTransformSample) return;
+    const preset = COMPRESSOR_PRESETS.find((p) => p.id === bulkCompPresetId);
+    if (!preset) return;
+    let applied = 0;
+    for (const id of multiSelectIds) {
+      const sample = samples.find((s) => s.id === id);
+      if (!sample) continue;
+      try {
+        const buf = await AudioEngine.loadSample(sample.path);
+        if (!buf) continue;
+        const compressed = applyCompressor(
+          buf as unknown as AudioBufferLike,
+          {
+            thresholdDb: preset.thresholdDb,
+            ratio: preset.ratio,
+            attackMs: preset.attackMs,
+            releaseMs: preset.releaseMs,
+            kneeDb: preset.kneeDb,
+            makeupGainDb: preset.makeupGainDb,
+          },
+        );
+        if (compressed.numberOfChannels === 0 || compressed.length === 0) continue;
+        const channels = Math.min(2, compressed.numberOfChannels) as 1 | 2;
+        const wav = encodeWav(
+          Array.from({ length: channels }, (_, c) =>
+            compressed.getChannelData(c) as Float32Array,
+          ),
+          { sampleRate: compressed.sampleRate, channels, bitDepth: 16 },
+        );
+        const blob = new Blob([wav], { type: "audio/wav" });
+        const newUrl = URL.createObjectURL(blob);
+        const Ctor = (window.OfflineAudioContext ||
+          // @ts-expect-error legacy webkit fallback
+          window.webkitOfflineAudioContext) as typeof OfflineAudioContext;
+        const ctx = new Ctor(
+          Math.max(1, compressed.numberOfChannels),
+          Math.max(1, compressed.length),
+          compressed.sampleRate,
+        ) as BaseAudioContext;
+        const audioBuf = ctx.createBuffer(
+          Math.max(1, compressed.numberOfChannels),
+          Math.max(1, compressed.length),
+          compressed.sampleRate,
+        );
+        for (let c = 0; c < compressed.numberOfChannels; c++) {
+          const src = compressed.getChannelData(c);
+          const copy = new Float32Array(src.length);
+          copy.set(src);
+          audioBuf.copyToChannel(copy, c, 0);
+        }
+        onTransformSample(id, newUrl, audioBuf);
+        applied++;
+      } catch {
+        /* skip */
+      }
+    }
+    toast(`Compressor "${preset.name}": ${applied} Samples`, { kind: "success" });
+  }, [multiSelectIds, samples, onTransformSample, bulkCompPresetId]);
+
   // v3.152: Wenn Samples aus dem Projekt verschwinden (extern gelöscht),
   // multi-select-Set defensiv auf Existenz-Filter laufen lassen.
   useEffect(() => {
@@ -2365,6 +2437,26 @@ export function SampleBrowser({
                         title="Pitch-Detect + Scale-Snap Analyse"
                       >
                         AutoTune
+                      </button>
+                      <select
+                        value={bulkCompPresetId}
+                        onChange={(e) => setBulkCompPresetId(e.target.value)}
+                        data-testid="sample-browser-bulk-comp-preset"
+                        className="bg-bg-panel border border-border-color rounded px-1.5 py-0.5 text-[10px] text-text-muted hover:border-accent-primary focus:outline-none transition-colors"
+                        title="Compressor-Preset"
+                      >
+                        {COMPRESSOR_PRESETS.map((p) => (
+                          <option key={p.id} value={p.id}>{p.name}</option>
+                        ))}
+                      </select>
+                      <button
+                        onClick={handleBulkCompressor}
+                        disabled={!onTransformSample}
+                        data-testid="sample-browser-bulk-comp"
+                        className="px-2 py-0.5 rounded text-[10px] border border-border-color text-text-primary hover:border-accent-secondary hover:text-accent-secondary disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        title="Compressor auf alle ausgewählten Samples"
+                      >
+                        Comp
                       </button>
                       <button
                         onClick={handleBulkDelete}
