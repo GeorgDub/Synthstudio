@@ -112,6 +112,8 @@ import {
   applySidechain,
   SIDECHAIN_PRESETS,
 } from "@/utils/sampleSidechain";
+// v3.194: Bulk-Pitch-Shift (Resample) für selektierte Samples.
+import { applyPitchShift } from "@/utils/samplePitchShift";
 
 // ─── Typen ────────────────────────────────────────────────────────────────────
 
@@ -1714,6 +1716,65 @@ export function SampleBrowser({
     toast(`Sidechain "${preset.name}" (4-on-floor): ${applied} Samples`, { kind: "success" });
   }, [multiSelectIds, samples, onTransformSample, bulkSidechainPresetId]);
 
+  // v3.194 — Bulk-Pitch-Shift (Resample) für selektierte Samples. Semitones-Slider
+  // im Bulk-Bar steuert die Verschiebung (±12 st). applyPitchShift rendert pure,
+  // der neue Buffer wird als WAV encodet und via onTransformSample zurück ins
+  // Projekt geschrieben (+ AudioBuffer für AudioEngine-Cache).
+  const [bulkPitchSemitones, setBulkPitchSemitones] = useState<number>(0);
+
+  const handleBulkPitchShift = useCallback(async () => {
+    if (multiSelectIds.size === 0 || !onTransformSample || bulkPitchSemitones === 0) return;
+    let applied = 0;
+    for (const id of multiSelectIds) {
+      const sample = samples.find((s) => s.id === id);
+      if (!sample) continue;
+      try {
+        const buf = await AudioEngine.loadSample(sample.path);
+        if (!buf) continue;
+        const shifted = applyPitchShift(buf as unknown as AudioBufferLike, {
+          semitones: bulkPitchSemitones,
+        });
+        if (shifted.numberOfChannels === 0 || shifted.length === 0) continue;
+        const channels = Math.min(2, shifted.numberOfChannels) as 1 | 2;
+        const wav = encodeWav(
+          Array.from({ length: channels }, (_, c) =>
+            shifted.getChannelData(c) as Float32Array,
+          ),
+          { sampleRate: shifted.sampleRate, channels, bitDepth: 16 },
+        );
+        const blob = new Blob([wav], { type: "audio/wav" });
+        const newUrl = URL.createObjectURL(blob);
+        const Ctor = (window.OfflineAudioContext ||
+          // @ts-expect-error legacy webkit fallback
+          window.webkitOfflineAudioContext) as typeof OfflineAudioContext;
+        const ctx = new Ctor(
+          Math.max(1, shifted.numberOfChannels),
+          Math.max(1, shifted.length),
+          shifted.sampleRate,
+        ) as BaseAudioContext;
+        const audioBuf = ctx.createBuffer(
+          Math.max(1, shifted.numberOfChannels),
+          Math.max(1, shifted.length),
+          shifted.sampleRate,
+        );
+        for (let c = 0; c < shifted.numberOfChannels; c++) {
+          const src = shifted.getChannelData(c);
+          const copy = new Float32Array(src.length);
+          copy.set(src);
+          audioBuf.copyToChannel(copy, c, 0);
+        }
+        onTransformSample(id, newUrl, audioBuf);
+        applied++;
+      } catch {
+        /* skip */
+      }
+    }
+    toast(
+      `Pitch-Shift ${bulkPitchSemitones > 0 ? "+" : ""}${bulkPitchSemitones} st: ${applied} Samples`,
+      { kind: "success" },
+    );
+  }, [multiSelectIds, samples, onTransformSample, bulkPitchSemitones]);
+
   // v3.152: Wenn Samples aus dem Projekt verschwinden (extern gelöscht),
   // multi-select-Set defensiv auf Existenz-Filter laufen lassen.
   useEffect(() => {
@@ -2639,6 +2700,29 @@ export function SampleBrowser({
                         title="Sidechain-Pump (4-on-the-floor) auf alle ausgewählten Samples"
                       >
                         Pump
+                      </button>
+                      <input
+                        type="range"
+                        min={-12}
+                        max={12}
+                        step={1}
+                        value={bulkPitchSemitones}
+                        onChange={(e) => setBulkPitchSemitones(parseInt(e.target.value, 10))}
+                        data-testid="sample-browser-bulk-pitch-slider"
+                        className="w-20 accent-accent-secondary"
+                        title="Pitch ±12 semitones"
+                      />
+                      <span className="text-[10px] font-mono text-text-muted w-8 text-center">
+                        {bulkPitchSemitones > 0 ? "+" : ""}{bulkPitchSemitones}st
+                      </span>
+                      <button
+                        onClick={handleBulkPitchShift}
+                        disabled={!onTransformSample || bulkPitchSemitones === 0}
+                        data-testid="sample-browser-bulk-pitch"
+                        className="px-2 py-0.5 rounded text-[10px] border border-border-color text-text-primary hover:border-accent-secondary hover:text-accent-secondary disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        title="Pitch-Shift auf alle ausgewählten Samples"
+                      >
+                        Pitch
                       </button>
                       <button
                         onClick={handleBulkDelete}
