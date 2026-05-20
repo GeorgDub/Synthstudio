@@ -80,6 +80,8 @@ import {
 import { computeSpectralCentroid } from "@/utils/sampleSpectralCentroid";
 // v3.177: Onset-Detection-Bulk-Action für selektierte Samples.
 import { detectOnsets } from "@/utils/onsetDetector";
+// v3.182: Bulk-LUFS-Analyse für selektierte Samples (BS.1770 simplified).
+import { computeLufsApprox } from "@/utils/sampleLufsApprox";
 
 // ─── Typen ────────────────────────────────────────────────────────────────────
 
@@ -1230,6 +1232,49 @@ export function SampleBrowser({
     console.log("[Onset-Analyze]", { analyzed, totalOnsets });
   }, [multiSelectIds, samples]);
 
+  // v3.182 — LUFS-Bulk-Analyse der selektierten Samples:
+  // Lädt für jede selected Sample-ID den AudioBuffer und berechnet via
+  // computeLufsApprox (BS.1770 simplified) die Integrated Loudness.
+  // Toast zeigt Anzahl analysierter Samples + Ø/Min/Max LUFS.
+  const handleBulkLufs = useCallback(async () => {
+    if (multiSelectIds.size === 0) return;
+    let totalLufs = 0;
+    let analyzed = 0;
+    let minLufs = Infinity;
+    let maxLufs = -Infinity;
+    for (const id of multiSelectIds) {
+      const sample = samples.find((s) => s.id === id);
+      if (!sample) continue;
+      try {
+        const buf = await AudioEngine.loadSample(sample.path);
+        if (!buf) continue;
+        const result = computeLufsApprox(
+          buf as unknown as AudioBufferLike,
+        );
+        if (Number.isFinite(result.integratedLufs)) {
+          totalLufs += result.integratedLufs;
+          if (result.integratedLufs < minLufs) minLufs = result.integratedLufs;
+          if (result.integratedLufs > maxLufs) maxLufs = result.integratedLufs;
+          analyzed++;
+        }
+      } catch {
+        /* skip unloadable */
+      }
+    }
+    if (analyzed === 0) {
+      toast("Keine ladbaren Sample-Buffer mit messbarem LUFS", {
+        kind: "warning",
+      });
+      return;
+    }
+    const avg = totalLufs / analyzed;
+    toast(
+      `LUFS-Analyse: ${analyzed} Samples · Ø ${avg.toFixed(1)} · Min ${minLufs.toFixed(1)} · Max ${maxLufs.toFixed(1)} LUFS`,
+      { kind: "info", duration: 6000 },
+    );
+    console.log("[LUFS-Analyze]", { analyzed, avg, minLufs, maxLufs });
+  }, [multiSelectIds, samples]);
+
   // v3.152: Wenn Samples aus dem Projekt verschwinden (extern gelöscht),
   // multi-select-Set defensiv auf Existenz-Filter laufen lassen.
   useEffect(() => {
@@ -2031,6 +2076,14 @@ export function SampleBrowser({
                         title="Onset/Transient-Count pro Sample"
                       >
                         Onsets
+                      </button>
+                      <button
+                        onClick={handleBulkLufs}
+                        data-testid="sample-browser-bulk-lufs"
+                        className="px-2 py-0.5 rounded text-[10px] border border-border-color text-text-primary hover:border-accent-secondary hover:text-accent-secondary transition-colors"
+                        title="LUFS-Loudness analysieren (BS.1770 simplified)"
+                      >
+                        LUFS
                       </button>
                       <button
                         onClick={handleBulkDelete}

@@ -1825,8 +1825,8 @@ const INDEX = {
       ownedBy:  "frontend"
     },
     "client/src/components/SampleBrowser/SampleBrowser.tsx (v3.55.0)": {
-      role:     "v3.177 ERWEITERT: Brightness-Bulk-Action in Multi-Select-Bar. Neuer 'Brightness'-Button zwischen 'Distribute' und 'Loeschen' (data-testid='sample-browser-bulk-brightness', semantic Tailwind border-border-color/text-text-primary/hover:accent-secondary). handleBulkBrightness laedt fuer jede selected Sample-ID den AudioBuffer via AudioEngine.loadSample, ruft computeSpectralCentroid (Pure-Helper v3.177) und akkumuliert die brightness-Kategorie ('dark'|'warm'|'neutral'|'bright'|'harsh') in einem Histogramm. Toast 'Brightness von N Samples: dark X, warm Y, ...' (kind:info, duration 6s) bei analyzed>0, 'Keine ladbaren Sample-Buffer' (kind:warning) sonst. Plus console.log mit vollem Histogramm. Import computeSpectralCentroid aus @/utils/sampleSpectralCentroid, AudioBufferLike-Cast via 'as unknown as AudioBufferLike' (analog handleBulkNormalize). Bestehende v3.55-v3.176 Funktionalitaet (Multi-Tag-Filter, Tag-Editor, Bulk-Bar, Sort-Modes, Multi-Select, Transform-Dialog, Duration-Aggregator, Bulk-Normalize-Action mit Mode-Select 'uniform-peak'|'match-loudest'|'relative-mix', Auto-Distribute Preview) unveraendert.",
-      lastSeen: "2026-05-20T11:15:00.000Z",
+      role:     "v3.182 ERWEITERT: Bulk-LUFS-Analyse-Action in Multi-Select-Bar. Neuer 'LUFS'-Button zwischen 'Onsets' und 'Delete' (data-testid='sample-browser-bulk-lufs', semantic Tailwind border-border-color/text-text-primary/hover:border-accent-secondary, title 'LUFS-Loudness analysieren (BS.1770 simplified)'). handleBulkLufs useCallback laedt fuer jede selected Sample-ID den AudioBuffer via AudioEngine.loadSample, ruft computeLufsApprox(buf as unknown as AudioBufferLike) (Pure-Helper v3.182, BS.1770-4 simplified) und akkumuliert nur wenn Number.isFinite(result.integratedLufs): totalLufs/analyzed + min/max-Tracking. Toast 'LUFS-Analyse: N Samples · Ø X.X · Min X.X · Max X.X LUFS' (kind:info, duration 6000ms) bei analyzed>0, 'Keine ladbaren Sample-Buffer mit messbarem LUFS' (kind:warning) sonst. Plus console.log {analyzed, avg, minLufs, maxLufs}. Import computeLufsApprox aus @/utils/sampleLufsApprox. v3.177 (Brightness + Onsets-Bulk-Actions) unveraendert. Bestehende v3.55-v3.181 Funktionalitaet (Multi-Tag-Filter, Tag-Editor, Bulk-Bar, Sort-Modes, Multi-Select, Transform-Dialog, Duration-Aggregator, Bulk-Normalize-Action mit Mode-Select, Auto-Distribute Preview) unveraendert.",
+      lastSeen: "2026-05-20T08:30:00.000Z",
       ownedBy:  "frontend"
     },
     "client/src/store/useProjectStore.ts (v3.60.0)": {
@@ -3572,6 +3572,66 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "refactor",
+      timestamp: "2026-05-20T08:16:00.000Z",
+      done: [
+        "v3.183 NEU patternMelodicSeq.ts (Pure-Helper, ~260 LOC): Melodic Sequence Generator – nimmt rhythmPattern (boolean[]) + Scale + Strategy + rootMidi + octaveRange + seed und liefert MelodicNote[] mit {stepIndex, midi, velocity}. Strategien: 'ascending' (degree=i%totalDegrees), 'descending' (totalDegrees-1-i), 'alternating' (UpDown via half-Index), 'random' (mulberry32 PRNG), 'stepwise' (±1/±2 vom vorigen degree, reflect-in-bounds), 'arpeggio' (zyklisch durch ARPEGGIO_DEGREES [0,2,4] = Root-3rd-5th).",
+        "MelodicSeqOptions vollstaendig defensive: rhythmPattern default [1,0,0,0]x4=16 steps; scale default 'major'; rootMidi NaN/<0/>127 → 60 (Math.floor); strategy invalid → 'ascending'; octaveRange NaN/<1 → 1, >3 → 3 (clamp); seed default 1. degreeToMidi-Helper rechnet Octave-Shift mit Math.floor(degree/scaleLen)*12 ein, sodass z.B. degree 7 in 7-noten-Scale eine Oktave hoeher liegt. SCALE_INTERVALS-Import von '@/utils/randomChordGenerator' (kein duplizierter Tabellen-Wert).",
+        "MELODIC_STRATEGY_LABELS Record<MelodicStrategy,string> mit 6 Eintraegen (Ascending, Descending, Alternating (UpDown), Random, Stepwise, Arpeggio (Root-3rd-5th)) fuer kuenftige Dropdown-UIs. PRNG inline (mulberry32, dieselbe Impl wie randomChordGenerator) – kein Cross-Util-Import um Zirkulär-Risiko zu vermeiden. Eingaben werden nie mutiert.",
+        "tests/features/pattern-melodic-seq.test.ts (~330 LOC, 21 Tests in 13 describe-Blocks): empty-pattern (2), ascending (2), descending (1), random-Determinismus (2), arpeggio (1), rootMidi-bounds (1), octaveRange (2 inkl. Clamp >3 → 3), velocity 1..127 (1), stepIndex-mapping (1), defensive (4: invalid-strategy/NaN-root/out-of-range-root/NaN-octaveRange), MELODIC_STRATEGY_LABELS (2), defaults (1), alternating (1).",
+        "pnpm check GRUEN (tsc --noEmit, 0 Errors). pnpm test tests/features/pattern-melodic-seq.test.ts → 21/21 passed (7ms). KEIN git commit, KEIN package.json bump (User-Vorgabe). NUR 2 neue Files: client/src/utils/patternMelodicSeq.ts + tests/features/pattern-melodic-seq.test.ts."
+      ],
+      next: [
+        "v3.184+ DrumMachine.tsx Wire-Up (frontend-Owner): 'Generate Melody'-Action im Pattern-Picker. Nimmt aktiven Pattern als rhythmPattern (Union-of-Parts ODER User-gewaehlter Part), oeffnet Strategy-Dropdown (MELODIC_STRATEGY_LABELS), Root-Note-Selector (rootMidi), Scale-Selector (ScaleType), Octave-Range-Slider (1..3). Output: neuer melodischer Part (MIDI-Notes ueber Step-Velocity statt boolean active).",
+        "v3.184+ (frontend-Owner): MelodicSeq-Preview-Mode: erzeugte MIDI-Sequenz als Piano-Roll-ahnliche Mini-Vorschau renderen (16-step Grid mit color-coded Heights je MIDI-Wert) bevor User 'Apply' klickt. Re-render on strategy/seed/intensity change.",
+        "v3.184+ Pure-Helper-Erweiterung (refactor-Owner): MelodicSeqOptions.humanize:number (0..1, default 0.2) als externer Toggle statt fix ±10. velocity-Range optional steuerbar (minVelocity/maxVelocity). swing-Parameter fuer subtile groove-Verschiebung (offset Step-Subdivision).",
+        "v3.184+ Tests-Erweiterung (testing-Owner): Snapshot-Test fuer alle 6 Strategien mit fixiertem Seed + 16-step-Pattern (regression-Schutz bei Refactors der PRNG-Konstanten). Property-based-Test: alle generierten midi-Werte liegen immer in [0,127], velocity immer in [1,127]."
+      ],
+      changed: [
+        "client/src/utils/patternMelodicSeq.ts (NEU, Pure-Helper Melodic Sequence Generator)",
+        "tests/features/pattern-melodic-seq.test.ts (NEU, 21 Tests)",
+        "agents/INDEX.js (workLog-Entry)"
+      ]
+    },
+    {
+      agent:     "frontend",
+      timestamp: "2026-05-20T09:15:00.000Z",
+      done: [
+        "v3.182 DrumMachine.tsx Wire-Up: patternBranchVariations-Helper als 'Branch out N'-Action im Pattern-Picker. Import generateBranchVariations from '@/utils/patternBranchVariations'. Neue States branchCount (default 3, range 1..8 step 1) + branchIntensity (default 0.4, range 0..1 step 0.05). Neuer useCallback handleBranchOut: 1) findet activePattern via dm.patterns.find(p.id===dm.activePatternId), early-return bei !activePattern. 2) Union-of-parts als source — len=parts[0].steps.length ?? 16, OR-Reduce ueber alle parts ergibt einen repraesentativen boolean[]-Quell-Vektor. 3) generateBranchVariations(unionSteps, {count:branchCount, baseSeed:Date.now(), intensity:branchIntensity}) liefert BranchVariation[]. 4) Pro Variation: clone activePattern, neue id 'branch-${Date.now()}-${vi}', name '${activePattern.name} v${vi+1}', parts werden gemapped (eigene part-id '${newId}-p${i}'), pro Step active=v.pattern[si] (Truncation auf v.pattern.length, Rest false). 5) dm.addPatternData(newPattern as Parameters<typeof dm.addPatternData>[0]) fuer jede Variation. 6) Toast mit Anzahl + Intensity.",
+        "UI-Block nach dem v3.181-Pattern-Morph-Block (px-3 py-2 border-t border-border-color space-y-1.5), data-testid='pattern-branch-block'. Zwei Range-Slider: data-testid='pattern-branch-count' (N: 1..8 step 1, accent-accent-primary) + data-testid='pattern-branch-intensity' (Intensity: 0..1 step 0.05, %-Display via Math.round*100). Apply-Button data-testid='pattern-branch-apply', bg-accent-primary text-bg-base hover:bg-accent-primary/80, Label '🌿 Branch out'. KEIN disabled-State (laeuft immer auch ohne sekundaeres Target — anders als Pattern-Morph).",
+        "Pragmatic-Approach: alle Parts kriegen dieselben branched-Steps (Union-of-Parts als Source liefert den dichtesten Quell-Vektor fuer Operations-Wirkung). Pro-Part-individuelle-Variation = v3.183+ Refactor (siehe next). Theme-Konformitaet: ausschliesslich semantische Klassen (text-text-dim, text-text-muted, bg-accent-primary, bg-bg-base, accent-accent-primary, border-border-color, bg-bg-panel) — KEINE hardcoded slate/cyan/gray/zinc.",
+        "pnpm check: GRUEN (tsc --noEmit, kein neuer Error). KEIN git commit, KEIN package.json bump (User-Vorgabe). NUR DrumMachine.tsx + agents/INDEX.js editiert."
+      ],
+      next: [
+        "v3.183+ Per-Part-Variation (frontend/refactor-Owner): Jeder Part bekommt seine EIGENE branched Variation (statt Union-of-Parts dieselben Steps fuer alle). API-Variante: pro Part generateBranchVariations(part.steps.map(s=>s.active), {count:1, baseSeed:Date.now()+partIndex*13, intensity}). Liefert reichere Pattern-Varianten — Kicks/Snares/HiHats divergieren unabhaengig. UI-Toggle 'Per-Part / Union' im Branch-Block.",
+        "v3.183+ Preview-Mode (frontend-Owner): Vor dem 'Apply'-Klick eine Mini-Vorschau (Step-Grid in der UI) der ersten Variation rendern — User sieht was generiert wird, kann Intensity-Slider feinjustieren ohne N Patterns anzulegen. Re-render on branchIntensity/branchCount change.",
+        "v3.183+ Branch-Naming-Customization (frontend-Owner): Statt '${name} v${vi+1}' optional eine Templating-Syntax: 'v${vi+1}-i${Math.round(intensity*100)}' oder '${name}-branch${vi}'. localStorage-Setting im Settings-Panel.",
+        "v3.183+ Velocity/Probability-Branch (refactor-Owner): patternBranchVariations arbeitet auf boolean[]. Generalisierung auf {active:boolean, velocity:number}[] (mit velocity-Jitter pro Variation) waere reichhaltiger. Helper koennte einen weiteren Parameter velocityJitter:number (0..1) nehmen.",
+        "v3.183+ Undo-Aware Branch (frontend-Owner): N neue Patterns auf einmal koennten als ein Undo-Schritt gegroupt werden (useProjectStore-Undo-Stack). Aktuell wird jede addPatternData als eigener Undo-Step gezaehlt — fuer N=8 muesste User 8x undo."
+      ],
+      changed: [
+        "client/src/components/DrumMachine/DrumMachine.tsx (Import generateBranchVariations + branchCount/branchIntensity-States + handleBranchOut useCallback + Branch-Variations-UI-Block mit 4 data-testids)",
+        "agents/INDEX.js (workLog-Entry)"
+      ]
+    },
+    {
+      agent:     "frontend",
+      timestamp: "2026-05-20T08:30:00.000Z",
+      done: [
+        "v3.182 Wire-Up: Bulk-LUFS-Action im SampleBrowser. handleBulkLufs useCallback iteriert ueber multiSelectIds, laedt jeden AudioBuffer via AudioEngine.loadSample(sample.path), ruft computeLufsApprox(buf as unknown as AudioBufferLike) auf, aggregiert integratedLufs nur wenn Number.isFinite (filtert -Infinity bei silence/zu-kurz). Akkumuliert totalLufs/analyzed + tracked minLufs/maxLufs. Defensive: multiSelectIds.size==0 -> early return; try/catch pro Sample -> skip unloadable; analyzed==0 -> warning-Toast 'Keine ladbaren Sample-Buffer mit messbarem LUFS'.",
+        "Toast-Output: 'LUFS-Analyse: N Samples · Ø X.X · Min X.X · Max X.X LUFS' (kind:info, duration 6000ms, ±1 Dezimalstelle). console.log fuer Dev-Debugging mit {analyzed, avg, minLufs, maxLufs}. Button-Position: zwischen 'Onsets' und 'Delete' in der Bulk-Action-Bar, semantische Klassen border-border-color/text-text-primary/hover:border-accent-secondary (KEINE hardcoded Tailwind-Farben). data-testid='sample-browser-bulk-lufs' fuer Playwright-Tests.",
+        "pnpm check: GRUEN (tsc --noEmit, kein Error). Pattern symmetrisch zu handleBulkBrightness/handleBulkOnsets (v3.177). KEIN git commit, KEIN package.json bump (User-Vorgabe). NUR SampleBrowser.tsx editiert (Import + Handler + Button)."
+      ],
+      next: [
+        "v3.183+ (frontend-Owner): Pro-Sample LUFS-Anzeige im SampleBrowser-Detail-View - integratedLufs + truePeakDbFS als Inline-Badge '-14.2 LUFS / -0.8 dBTP'. Cachen pro Sample beim ersten Decode (kein Re-Compute bei jedem Render). UI-Hinweis 'zu kurz fuer LUFS' bei buffer<400ms (totalBlocks==0).",
+        "v3.183+ (frontend-Owner): LUFS-Sort-Mode im SAMPLE_SORT_MODES - 'loudness-asc' / 'loudness-desc'. Voraussetzung: LUFS-Cache pro Sample (sonst on-each-sort heavy compute). Kombinierbar mit Filter 'Show only samples loud enough for X LUFS Master' (Streaming -14, Broadcast -23).",
+        "v3.183+ (frontend-Owner): Loudness-basierte Auto-Normalize-Action additiv zu v3.132 Peak-Normalize. User-LUFS-Ziel-Slider (default -14 Streaming), gainLinear = 10^((target-integrated)/20), apply via sampleAutoNormalize-Pfad. True-Peak-Clipping-Check: truePeakDbFS + gainDb darf 0 nicht ueberschreiten - sonst Warning oder Limiter-Suggestion."
+      ],
+      changed: [
+        "client/src/components/SampleBrowser/SampleBrowser.tsx (Import computeLufsApprox + handleBulkLufs useCallback + Bulk-Button mit data-testid)"
+      ]
+    },
     {
       agent:     "refactor",
       timestamp: "2026-05-20T08:06:00.000Z",

@@ -80,6 +80,8 @@ import { humanizePattern, type HumanizeIntensity } from "@/utils/patternHumanize
 import { applyLockMode, type LockMode } from "@/utils/patternStepProbability";
 // v3.181.0: Pattern-Morph-Interpolate Pure-Helper (smooth Blend zwischen 2 Patterns).
 import { morphPatterns, MORPH_STRATEGY_LABELS, type MorphStrategy } from "@/utils/patternMorphInterpolate";
+// v3.182.0: Pattern-Branch-Variations Pure-Helper (N deterministische Variationen).
+import { generateBranchVariations } from "@/utils/patternBranchVariations";
 
 import { inferPatternBpm } from "@/utils/patternBpmInfer";
 // Ausgelagerte Sub-Components
@@ -540,6 +542,9 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
   const [morphTargetId, setMorphTargetId] = useState<string | null>(null);
   const [morphT, setMorphT] = useState(0.5);
   const [morphStrategy, setMorphStrategy] = useState<MorphStrategy>("probability");
+  // v3.182.0: Pattern-Branch-Variations — N Variations + Intensity.
+  const [branchCount, setBranchCount] = useState(3);
+  const [branchIntensity, setBranchIntensity] = useState(0.4);
   const [metronomOn, setMetronomOn] = useState(false);
   const [metronomGain, setMetronomGain] = useState(0.5);
   const [metronomAccent, setMetronomAccent] = useState(1.0);
@@ -1195,6 +1200,47 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
     toast(`Morph applied: t=${morphT.toFixed(2)} (${morphStrategy})`, { kind: "success" });
   }, [dm, morphTargetId, morphT, morphStrategy]);
 
+  // v3.182.0: Branch-Variations — erstellt N neue Patterns als branched-Variationen
+  // des active Pattern. Union-of-parts wird als Source genutzt; jede Variation kriegt
+  // dieselben branched-Steps auf allen Parts (Pragmatic-Approach).
+  const handleBranchOut = useCallback(() => {
+    const activePattern = dm.patterns.find((p) => p.id === dm.activePatternId);
+    if (!activePattern) return;
+    // Union der parts als source.
+    const len = activePattern.parts[0]?.steps.length ?? 16;
+    const unionSteps = new Array<boolean>(len).fill(false);
+    for (const part of activePattern.parts) {
+      for (let i = 0; i < Math.min(len, part.steps.length); i++) {
+        if (part.steps[i].active) unionSteps[i] = true;
+      }
+    }
+    const variations = generateBranchVariations(unionSteps, {
+      count: branchCount,
+      baseSeed: Date.now(),
+      intensity: branchIntensity,
+    });
+    // Für jede Variation: erstelle neues Pattern als clone von activePattern.
+    for (let vi = 0; vi < variations.length; vi++) {
+      const v = variations[vi];
+      const newId = `branch-${Date.now()}-${vi}`;
+      const newPattern = {
+        ...activePattern,
+        id: newId,
+        name: `${activePattern.name} v${vi + 1}`,
+        parts: activePattern.parts.map((p, i) => ({
+          ...p,
+          id: `${newId}-p${i}`,
+          steps: p.steps.map((s, si) => ({
+            ...s,
+            active: si < v.pattern.length ? v.pattern[si] : false,
+          })),
+        })),
+      };
+      dm.addPatternData(newPattern as Parameters<typeof dm.addPatternData>[0]);
+    }
+    toast(`${variations.length} Pattern-Variationen erstellt (intensity ${branchIntensity.toFixed(2)})`, { kind: "success" });
+  }, [dm, branchCount, branchIntensity]);
+
   // Drag-Drop fuer .e2pattern/.e2sallpat (Browser-Fallback).
   useEffect(() => {
     const handler = (e: Event) => {
@@ -1582,6 +1628,50 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
                   </button>
                 </div>
               )}
+
+              {/* v3.182.0: Pattern-Branch-Variations — erstellt N neue Patterns als branched Variationen. */}
+              <div
+                className="px-3 py-2 border-t border-border-color space-y-1.5"
+                data-testid="pattern-branch-block"
+              >
+                <div className="text-[10px] text-text-dim font-semibold">Branch Variations:</div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] text-text-dim">N:</span>
+                  <input
+                    type="range"
+                    min={1}
+                    max={8}
+                    step={1}
+                    value={branchCount}
+                    onChange={(e) => setBranchCount(parseInt(e.target.value, 10))}
+                    className="flex-1 accent-accent-primary"
+                    data-testid="pattern-branch-count"
+                  />
+                  <span className="font-mono text-[10px] text-text-muted w-6">{branchCount}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] text-text-dim">Intensity:</span>
+                  <input
+                    type="range"
+                    min={0}
+                    max={1}
+                    step={0.05}
+                    value={branchIntensity}
+                    onChange={(e) => setBranchIntensity(parseFloat(e.target.value))}
+                    className="flex-1 accent-accent-primary"
+                    data-testid="pattern-branch-intensity"
+                  />
+                  <span className="font-mono text-[10px] text-text-muted w-8">{Math.round(branchIntensity * 100)}%</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleBranchOut}
+                  data-testid="pattern-branch-apply"
+                  className="w-full px-2 py-1 rounded text-[11px] bg-accent-primary text-bg-base font-semibold hover:bg-accent-primary/80 transition-colors"
+                >
+                  🌿 Branch out
+                </button>
+              </div>
 
               {!isLiveEditing && (
                 <div className="border-t border-border-color p-1">
