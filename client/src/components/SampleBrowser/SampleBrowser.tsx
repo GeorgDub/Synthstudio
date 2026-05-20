@@ -133,6 +133,8 @@ import { applyAllPass } from "@/utils/sampleAllPass";
 import { changeSpeedRatio } from "@/utils/sampleResampler";
 // v3.205: Bulk-SampleRateReduce (LoFi/Bitcrush, factor 1..16 / bitDepth 2..16) für selektierte Samples.
 import { applySampleRateReduce } from "@/utils/sampleSampleRateReduce";
+// v3.206: Bulk-Chorus (single-voice, rateHz 0.1..10 / mix 0..1) für selektierte Samples.
+import { applyChorus } from "@/utils/sampleChorus";
 
 // ─── Typen ────────────────────────────────────────────────────────────────────
 
@@ -2288,6 +2290,74 @@ export function SampleBrowser({
     bulkSrBitDepth,
   ]);
 
+  // v3.206 — Bulk-Chorus (single-voice, modulierte Delay-Line) für selektierte
+  // Samples. mix=0 = identity (=disabled). applyChorus ist pure; resultierender
+  // Buffer wird als WAV encodet und via onTransformSample zurück ins Projekt
+  // geschrieben (+ AudioBuffer für AudioEngine-Cache). Default-Preset: classic
+  // (rateHz=1, mix=0.5).
+  const [bulkChorusRate, setBulkChorusRate] = useState<number>(1);
+  const [bulkChorusMix, setBulkChorusMix] = useState<number>(0.5);
+
+  const handleBulkChorus = useCallback(async () => {
+    if (multiSelectIds.size === 0 || !onTransformSample) return;
+    let applied = 0;
+    for (const id of multiSelectIds) {
+      const sample = samples.find((s) => s.id === id);
+      if (!sample) continue;
+      try {
+        const buf = await AudioEngine.loadSample(sample.path);
+        if (!buf) continue;
+        const out = applyChorus(buf as unknown as AudioBufferLike, {
+          rateHz: bulkChorusRate,
+          mix: bulkChorusMix,
+        });
+        if (out.numberOfChannels === 0 || out.length === 0) continue;
+        const channels = Math.min(2, out.numberOfChannels) as 1 | 2;
+        const wav = encodeWav(
+          Array.from({ length: channels }, (_, c) =>
+            out.getChannelData(c) as Float32Array,
+          ),
+          { sampleRate: out.sampleRate, channels, bitDepth: 16 },
+        );
+        const blob = new Blob([wav], { type: "audio/wav" });
+        const newUrl = URL.createObjectURL(blob);
+        const Ctor = (window.OfflineAudioContext ||
+          // @ts-expect-error legacy webkit fallback
+          window.webkitOfflineAudioContext) as typeof OfflineAudioContext;
+        const ctx = new Ctor(
+          Math.max(1, out.numberOfChannels),
+          Math.max(1, out.length),
+          out.sampleRate,
+        ) as BaseAudioContext;
+        const audioBuf = ctx.createBuffer(
+          Math.max(1, out.numberOfChannels),
+          Math.max(1, out.length),
+          out.sampleRate,
+        );
+        for (let c = 0; c < out.numberOfChannels; c++) {
+          const src = out.getChannelData(c);
+          const copy = new Float32Array(src.length);
+          copy.set(src);
+          audioBuf.copyToChannel(copy, c, 0);
+        }
+        onTransformSample(id, newUrl, audioBuf);
+        applied++;
+      } catch {
+        /* skip */
+      }
+    }
+    toast(
+      `Chorus rate=${bulkChorusRate.toFixed(2)}Hz mix=${bulkChorusMix.toFixed(2)}: ${applied} Samples`,
+      { kind: "success" },
+    );
+  }, [
+    multiSelectIds,
+    samples,
+    onTransformSample,
+    bulkChorusRate,
+    bulkChorusMix,
+  ]);
+
   // v3.152: Wenn Samples aus dem Projekt verschwinden (extern gelöscht),
   // multi-select-Set defensiv auf Existenz-Filter laufen lassen.
   useEffect(() => {
@@ -3459,6 +3529,43 @@ export function SampleBrowser({
                         title="LoFi / Bitcrush (Sample-and-Hold + Bit-Depth-Quantize) auf alle ausgewählten Samples"
                       >
                         LoFi
+                      </button>
+                      <input
+                        type="range"
+                        min={0.1}
+                        max={10}
+                        step={0.1}
+                        value={bulkChorusRate}
+                        onChange={(e) => setBulkChorusRate(parseFloat(e.target.value))}
+                        data-testid="sample-browser-bulk-chorus-rate"
+                        className="w-20 accent-accent-secondary"
+                        title="Chorus LFO-Rate 0.1..10 Hz (1 = classic, 0.5 = subtle, 3 = shimmer)"
+                      />
+                      <span className="text-[10px] font-mono text-text-muted w-12 text-center">
+                        {bulkChorusRate.toFixed(1)}Hz
+                      </span>
+                      <input
+                        type="range"
+                        min={0}
+                        max={1}
+                        step={0.05}
+                        value={bulkChorusMix}
+                        onChange={(e) => setBulkChorusMix(parseFloat(e.target.value))}
+                        data-testid="sample-browser-bulk-chorus-mix"
+                        className="w-20 accent-accent-secondary"
+                        title="Chorus Wet/Dry-Mix 0..1 (0 = aus, 0.5 = classic, 0.7 = lush)"
+                      />
+                      <span className="text-[10px] font-mono text-text-muted w-10 text-center">
+                        {bulkChorusMix.toFixed(2)}
+                      </span>
+                      <button
+                        onClick={handleBulkChorus}
+                        disabled={!onTransformSample || bulkChorusMix === 0}
+                        data-testid="sample-browser-bulk-chorus"
+                        className="px-2 py-0.5 rounded text-[10px] border border-border-color text-text-primary hover:border-accent-secondary hover:text-accent-secondary disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        title="Chorus (single-voice, modulierte Delay-Line) auf alle ausgewählten Samples"
+                      >
+                        CHO
                       </button>
                       <button
                         onClick={handleBulkDelete}
