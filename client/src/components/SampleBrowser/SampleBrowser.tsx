@@ -114,6 +114,11 @@ import {
 } from "@/utils/sampleSidechain";
 // v3.194: Bulk-Pitch-Shift (Resample) für selektierte Samples.
 import { applyPitchShift } from "@/utils/samplePitchShift";
+// v3.195: Bulk-Saturator (tanh/soft-clip/tube/tape) für selektierte Samples.
+import {
+  applySaturator,
+  SATURATOR_PRESETS,
+} from "@/utils/sampleSaturator";
 
 // ─── Typen ────────────────────────────────────────────────────────────────────
 
@@ -1775,6 +1780,66 @@ export function SampleBrowser({
     );
   }, [multiSelectIds, samples, onTransformSample, bulkPitchSemitones]);
 
+  // v3.195 — Bulk-Saturator für selektierte Samples. Preset (subtle / tube / tape /
+  // hard-clip) steuert type+drive+outputGain.  applySaturator rendert pure, der
+  // neue Buffer wird als WAV encodet und via onTransformSample zurück ins Projekt
+  // geschrieben (+ AudioBuffer für AudioEngine-Cache).
+  const [bulkSatPresetId, setBulkSatPresetId] = useState<string>("subtle");
+
+  const handleBulkSaturator = useCallback(async () => {
+    if (multiSelectIds.size === 0 || !onTransformSample) return;
+    const preset = SATURATOR_PRESETS.find((p) => p.id === bulkSatPresetId);
+    if (!preset) return;
+    let applied = 0;
+    for (const id of multiSelectIds) {
+      const sample = samples.find((s) => s.id === id);
+      if (!sample) continue;
+      try {
+        const buf = await AudioEngine.loadSample(sample.path);
+        if (!buf) continue;
+        const sat = applySaturator(buf as unknown as AudioBufferLike, {
+          type: preset.type,
+          drive: preset.drive,
+          outputGain: preset.outputGain,
+        });
+        if (sat.numberOfChannels === 0 || sat.length === 0) continue;
+        const channels = Math.min(2, sat.numberOfChannels) as 1 | 2;
+        const wav = encodeWav(
+          Array.from({ length: channels }, (_, c) =>
+            sat.getChannelData(c) as Float32Array,
+          ),
+          { sampleRate: sat.sampleRate, channels, bitDepth: 16 },
+        );
+        const blob = new Blob([wav], { type: "audio/wav" });
+        const newUrl = URL.createObjectURL(blob);
+        const Ctor = (window.OfflineAudioContext ||
+          // @ts-expect-error legacy webkit fallback
+          window.webkitOfflineAudioContext) as typeof OfflineAudioContext;
+        const ctx = new Ctor(
+          Math.max(1, sat.numberOfChannels),
+          Math.max(1, sat.length),
+          sat.sampleRate,
+        ) as BaseAudioContext;
+        const audioBuf = ctx.createBuffer(
+          Math.max(1, sat.numberOfChannels),
+          Math.max(1, sat.length),
+          sat.sampleRate,
+        );
+        for (let c = 0; c < sat.numberOfChannels; c++) {
+          const src = sat.getChannelData(c);
+          const copy = new Float32Array(src.length);
+          copy.set(src);
+          audioBuf.copyToChannel(copy, c, 0);
+        }
+        onTransformSample(id, newUrl, audioBuf);
+        applied++;
+      } catch {
+        /* skip */
+      }
+    }
+    toast(`Saturator "${preset.name}": ${applied} Samples`, { kind: "success" });
+  }, [multiSelectIds, samples, onTransformSample, bulkSatPresetId]);
+
   // v3.152: Wenn Samples aus dem Projekt verschwinden (extern gelöscht),
   // multi-select-Set defensiv auf Existenz-Filter laufen lassen.
   useEffect(() => {
@@ -2723,6 +2788,26 @@ export function SampleBrowser({
                         title="Pitch-Shift auf alle ausgewählten Samples"
                       >
                         Pitch
+                      </button>
+                      <select
+                        value={bulkSatPresetId}
+                        onChange={(e) => setBulkSatPresetId(e.target.value)}
+                        data-testid="sample-browser-bulk-sat-preset"
+                        className="bg-bg-panel border border-border-color rounded px-1.5 py-0.5 text-[10px] text-text-muted hover:border-accent-primary focus:outline-none transition-colors"
+                        title="Saturator-Preset"
+                      >
+                        {SATURATOR_PRESETS.map((p) => (
+                          <option key={p.id} value={p.id}>{p.name}</option>
+                        ))}
+                      </select>
+                      <button
+                        onClick={handleBulkSaturator}
+                        disabled={!onTransformSample}
+                        data-testid="sample-browser-bulk-sat"
+                        className="px-2 py-0.5 rounded text-[10px] border border-border-color text-text-primary hover:border-accent-secondary hover:text-accent-secondary disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        title="Saturator (analog warmth) auf alle ausgewählten Samples"
+                      >
+                        Sat
                       </button>
                       <button
                         onClick={handleBulkDelete}

@@ -158,6 +158,11 @@ import {
   categorizeComplexity,
   type ComplexityCategory,
 } from "@/utils/patternComplexity";
+// v3.195: Pattern-Fitness-Score Badge (interestingness-Heuristik).
+import {
+  computeFitnessScore,
+  type FitnessScoreResult,
+} from "@/utils/patternFitnessScore";
 import type { PatternData } from "@/audio/AudioEngine";
 
 function computePatternDensityCategory(pattern: PatternData): DensityCategory {
@@ -179,6 +184,12 @@ function computePatternComplexityCategory(pattern: PatternData): ComplexityCateg
   return categorizeComplexity(score.total);
 }
 
+// ─── v3.195: Pattern-Fitness-Berechnung (interestingness-Heuristik) ────────────
+function computePatternFitnessLabel(pattern: PatternData): FitnessScoreResult["label"] {
+  const result = computeFitnessScore(pattern);
+  return result.label;
+}
+
 // ─── Pattern-Row mit Right-Click MIDI-Learn (v1.92) ───────────────────────────
 
 interface PatternRowProps {
@@ -188,6 +199,8 @@ interface PatternRowProps {
   densityCategory?: import("@/utils/patternDensityAnalyzer").DensityCategory;
   /** v3.172: Complexity-Kategorie für visuelle Hervorhebung (minimal/simple/balanced/complex/chaotic). */
   complexityCategory?: ComplexityCategory;
+  /** v3.195: Fitness-Label für visuelle Hervorhebung (boring/minimal/balanced/interesting/chaotic). */
+  fitnessLabel?: FitnessScoreResult["label"];
   isActive: boolean;
   isPlaying: boolean;
   isLiveEditing: boolean;
@@ -218,7 +231,7 @@ interface PatternRowProps {
 }
 
 function PatternRow({
-  pattern, patternIndex, densityCategory, complexityCategory, isActive, isPlaying, isLiveEditing, showDelete,
+  pattern, patternIndex, densityCategory, complexityCategory, fitnessLabel, isActive, isPlaying, isLiveEditing, showDelete,
   hasPrevPattern, prevPatternId, allPatterns,
   onSelect, onDuplicate, onRemove, onCopySamplesFrom, onReorder, onExportImage, onCompare, onCopy, onExportMidiEvents, onExportMidiBinary,
 }: PatternRowProps) {
@@ -323,6 +336,19 @@ function PatternRow({
             ].filter(Boolean).join(" ")}
             title={`Complexity: ${complexityCategory}`}
             data-testid={`pattern-complexity-badge-${complexityCategory}`}
+          />
+        )}
+        {fitnessLabel && fitnessLabel !== "boring" && (
+          <span
+            className={[
+              "ml-1 inline-block w-1.5 h-1.5 rounded-full",
+              fitnessLabel === "minimal" && "bg-text-dim/40",
+              fitnessLabel === "balanced" && "bg-accent-success",
+              fitnessLabel === "interesting" && "bg-accent-primary",
+              fitnessLabel === "chaotic" && "bg-accent-warning",
+            ].filter(Boolean).join(" ")}
+            title={`Fitness: ${fitnessLabel}`}
+            data-testid={`pattern-fitness-badge-${fitnessLabel}`}
           />
         )}
         {learn.isMapped && (
@@ -1549,6 +1575,7 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
                   patternIndex={idx}
                   densityCategory={computePatternDensityCategory(p)}
                   complexityCategory={computePatternComplexityCategory(p)}
+                  fitnessLabel={computePatternFitnessLabel(p)}
                   isActive={p.id === dm.activePatternId}
                   isPlaying={p.id === dm.playbackPatternId}
                   isLiveEditing={isLiveEditing}
