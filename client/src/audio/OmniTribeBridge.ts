@@ -522,7 +522,7 @@ export class OmniTribeBridge {
    * Wire-Range: bpm_x100 max 2_097_151 (~20971 BPM); Firmware clamped auf 20..300 BPM.
    * Decoder ist len-dispatched, alte 2-Byte-Frames werden weiterhin akzeptiert.
    */
-  remoteTempo(bpm: number): void {
+ /** remoteTempo(bpm: number): void {
     const bpm100 = clampInt(Math.round(bpm * 100), 0, 0x1FFFFF);
     this.send(OtpCmd.TRANSPORT, 0x03, [
       (bpm100 >> 14) & 0x7F,
@@ -530,7 +530,15 @@ export class OmniTribeBridge {
        bpm100        & 0x7F,
     ]);
   }
+**/
+  remoteTempo(bpm: number): void {
+  if (!this.isConnected) return;
 
+  const bpm100 = Math.max(0, Math.min(0x3fff, Math.round(bpm * 100)));
+  const payload = [(bpm100 >> 7) & 0x7f, bpm100 & 0x7f];
+
+  this.enqueueFrame(buildFrame(OtpCmd.TRANSPORT, 0x03, payload));
+}
   /**
    * Sprint-111: Pattern-Sequencer BPM (CMD 0x0F SUB 0x11).
    * Spiegelt remoteTempo() fuer den Pattern-Engine-Slot statt Transport-Slot.
