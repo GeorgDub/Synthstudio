@@ -3489,16 +3489,17 @@ function installCspHeaders(): void {
  * Auto-grant der `media`-Permission für unsere eigene Renderer-Origin
  * (TASK-233 / v2.85 — Live-Input-Mixer-Channels).
  *
- * Chromium würde sonst bei jedem getUserMedia({audio:...})-Call einen
- * nativen Permission-Dialog poppen — der in einer Electron-App keinen
- * Sinn macht weil der User die App bewusst installiert hat. Wir erlauben
- * NUR `media` (Mikrofon/Kamera) — alles andere (geolocation, notifications,
- * usb, hid, bluetooth) wird weiterhin abgelehnt. Renderer-Code muss trotzdem
+ * Chromium würde sonst bei jedem getUserMedia({audio:...})-Call und bei
+ * navigator.requestMIDIAccess() einen nativen Permission-Dialog poppen —
+ * der in einer Electron-App keinen Sinn macht weil der User die App bewusst
+ * installiert hat. Wir erlauben `media` (Mikrofon/Kamera) und `midi`
+ * (Web MIDI API) — alles andere (geolocation, notifications, usb, hid,
+ * bluetooth) wird weiterhin abgelehnt. Renderer-Code muss trotzdem
  * `enumerateDevices()` + Device-Picker zeigen damit User die Quelle wählt.
  */
 function installPermissionHandlers(): void {
-  // Whitelist: nur media erlauben (Mikrofon-Input für Outboard-FX-Modus).
-  const ALLOWED = new Set(["media", "mediaKeySystem"]);
+  // Whitelist: media (Mikrofon-Input) + midi (Web MIDI API für MIDI-Geräte).
+  const ALLOWED = new Set(["media", "mediaKeySystem", "midi"]);
   session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => {
     callback(ALLOWED.has(permission));
   });
@@ -3507,7 +3508,7 @@ function installPermissionHandlers(): void {
   session.defaultSession.setPermissionCheckHandler((_wc, permission) => {
     return ALLOWED.has(permission);
   });
-  console.log("[Permission] media auto-granted, all others denied.");
+  console.log("[Permission] media + midi auto-granted, all others denied.");
 }
 
 // ─── Globale Keyboard-Shortcuts ──────────────────────────────────────────────
