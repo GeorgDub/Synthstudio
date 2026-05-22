@@ -1,6 +1,6 @@
 {
   "name": "synthstudio",
-  "version": "3.231.0",
+  "version": "3.232.0",
   "type": "module",
   "license": "MIT",
   "main": "electron-dist/main.cjs",

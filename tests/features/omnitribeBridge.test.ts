@@ -349,7 +349,11 @@ describe("OmniTribeBridge", () => {
     }
   });
 
-  it("Remote-Transport: remoteTempo encodes BPM*100 as 14-bit", async () => {
+  // Sprint-111: 14-bit encoding replaced by 21-bit (3×7-bit).
+  // Old 14-bit format used 2 payload bytes; new format uses 3 (hi, mid, lo).
+  // Frame layout: F0 7D 01 02 cmd sub lenH lenL [payload...] chk F7
+  //   → payload starts at index 8.
+  it("Remote-Transport: remoteTempo encodes BPM*100 as 21-bit (3×7-bit)", async () => {
     const out = new FakeMidiOutput();
     const inp = new FakeMidiInput();
     const bridge = new OmniTribeBridge();
@@ -361,9 +365,69 @@ describe("OmniTribeBridge", () => {
 
     const f = out.sent.find(fr => fr[4] === OtpCmd.TRANSPORT && fr[5] === 0x03);
     expect(f).toBeDefined();
+    // 120.5 BPM → bpm100 = 12050
+    // 21-bit: hi=(12050>>14)&0x7F=0, mid=(12050>>7)&0x7F=94, lo=12050&0x7F=18
     const bpm100 = 12050;
-    expect(f![8]).toBe((bpm100 >> 7) & 0x7F);
-    expect(f![9]).toBe(bpm100 & 0x7F);
+    expect(f!.length).toBe(13); // F0(1)+mfr(3)+cmd+sub+lenH+lenL+hi+mid+lo+chk+F7 = 13
+    expect(f![8]).toBe((bpm100 >> 14) & 0x7F); // hi = 0
+    expect(f![9]).toBe((bpm100 >> 7)  & 0x7F); // mid = 94
+    expect(f![10]).toBe(bpm100        & 0x7F); // lo = 18
+  });
+
+  it("Remote-Transport: remoteTempo 50 BPM encodes as 21-bit (hi=0, pre-bit-14 range)", async () => {
+    const out = new FakeMidiOutput();
+    const inp = new FakeMidiInput();
+    const bridge = new OmniTribeBridge();
+    await bridge.connect(makeAccess(out, inp));
+    out.sent.length = 0;
+
+    bridge.remoteTempo(50);
+    flushAll();
+
+    const f = out.sent.find(fr => fr[4] === OtpCmd.TRANSPORT && fr[5] === 0x03);
+    expect(f).toBeDefined();
+    // 50 BPM → bpm100=5000: hi=0, mid=39, lo=8
+    expect(f![8]).toBe(0);  // hi byte is zero — no overflow
+    expect(f![9]).toBe(39);
+    expect(f![10]).toBe(8);
+  });
+
+  it("Remote-Transport: remoteTempo 200 BPM encodes hi byte non-zero (Sprint-111 regression guard)", async () => {
+    // 200 BPM = bpm100 20000, which is > 16383 (0x3FFF) — the old 14-bit encoder
+    // silently overflowed here. The 21-bit encoder must produce hi=1.
+    const out = new FakeMidiOutput();
+    const inp = new FakeMidiInput();
+    const bridge = new OmniTribeBridge();
+    await bridge.connect(makeAccess(out, inp));
+    out.sent.length = 0;
+
+    bridge.remoteTempo(200);
+    flushAll();
+
+    const f = out.sent.find(fr => fr[4] === OtpCmd.TRANSPORT && fr[5] === 0x03);
+    expect(f).toBeDefined();
+    // 200 BPM → bpm100=20000: hi=1, mid=28, lo=32
+    expect(f![8]).toBe(1);  // hi byte MUST be non-zero
+    expect(f![9]).toBe(28);
+    expect(f![10]).toBe(32);
+  });
+
+  it("Remote-Transport: remoteTempo 300 BPM encodes as 21-bit (firmware upper-clamp boundary)", async () => {
+    const out = new FakeMidiOutput();
+    const inp = new FakeMidiInput();
+    const bridge = new OmniTribeBridge();
+    await bridge.connect(makeAccess(out, inp));
+    out.sent.length = 0;
+
+    bridge.remoteTempo(300);
+    flushAll();
+
+    const f = out.sent.find(fr => fr[4] === OtpCmd.TRANSPORT && fr[5] === 0x03);
+    expect(f).toBeDefined();
+    // 300 BPM → bpm100=30000: hi=1, mid=106, lo=48
+    expect(f![8]).toBe(1);
+    expect(f![9]).toBe(106);
+    expect(f![10]).toBe(48);
   });
 
   it("on() returns an unbind function that removes the handler", async () => {

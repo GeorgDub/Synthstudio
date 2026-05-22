@@ -87,13 +87,18 @@ describe("Bridge Pattern API (Sprint-103)", () => {
     expect(findFrame(OtpCmd.TRANSPORT, 0x01)).toBeDefined();
   });
 
-  it("remoteTempo encodet BPM ×100 als 14-bit", () => {
+  // Sprint-111: 14-bit encoding replaced by 21-bit (3×7-bit).
+  it("remoteTempo encodet BPM ×100 als 21-bit (3×7-bit)", () => {
     bridge.remoteTempo(120);   // bpm_x100 = 12000
     vi.advanceTimersByTime(20);
     const frame = findFrame(OtpCmd.TRANSPORT, 0x03);
     expect(frame).toBeDefined();
     if (frame) {
-      const bpm_x100 = (frame[8] << 7) | frame[9];
+      // 21-bit reconstruction: (hi << 14) | (mid << 7) | lo
+      // 12000: hi=(12000>>14)&0x7F=0, mid=(12000>>7)&0x7F=93, lo=12000&0x7F=96
+      const bpm_x100 = ((frame[8] & 0x7F) << 14)
+                     | ((frame[9] & 0x7F) << 7)
+                     |  (frame[10] & 0x7F);
       expect(bpm_x100).toBe(12000);
     }
   });
