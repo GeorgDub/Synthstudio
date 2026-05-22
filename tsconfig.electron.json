@@ -20,7 +20,6 @@
     "dist-electron",
     "client",
     "server",
-    "shared",
     "electron/assets/create-icons.ts",
     "electron/assets/icon-generator.ts",
     "electron/components/**"
