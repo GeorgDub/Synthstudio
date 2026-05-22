@@ -15091,9 +15091,12 @@ const INDEX = {
             type: "build",
             priority: "low",
             agent: "builder",
-            status: "open",
+            status: "done",
             createdAt: "2026-05-22T13:00:57.636Z",
             createdBy: "coordinator",
+            completedAt: "2026-05-22T21:08:00.000Z",
+            completedBy: "main",
+            doneIn: "v3.235.0",
             title: "Pre-build cleanup gegen Defender-File-Lock",
             description: "v3.231 zeigte 1x Build-Failure mit makensis Cant-open-output-file (Defender lockte signierte EXE). Re-Run nach Delete lief durch. Praevention: scripts/clean-release.cjs entfernt release/Synthstudio Setup VERSION.exe + .__uninstaller.exe VOR electron-builder. Hook: package.json prebuild:electron:win.",
             acceptance: [
@@ -15102,7 +15105,8 @@ const INDEX = {
                 "2 aufeinanderfolgende Builds gleicher Version ohne manuellen Delete"
             ],
             estimateHours: 0.5,
-            note: "Defender-Exclusion waere echte Loesung, aber nicht code-automatisierbar. Workaround-Skript ist portable Alternative."
+            note: "Defender-Exclusion waere echte Loesung, aber nicht code-automatisierbar. Workaround-Skript ist portable Alternative.",
+            result: "scripts/clean-release.cjs (123 LOC): liest version aus package.json, loescht EXE+blockmap+__uninstaller-NSIS-*+.__uninstaller.exe der aktuellen Version, EBUSY-retry mit 200ms Atomics.wait. Hook in package.json:prebuild:electron:win. tests/features/clean-release-script.test.ts: 10 Tests gruen (current-only delete, blockmap, NSIS-wildcard, idempotenz, missing-dir-toleranz, version-substring-discrimination 3.23.0 vs 3.234.0)."
         }
     ],
 

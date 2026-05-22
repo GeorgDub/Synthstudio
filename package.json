@@ -1,6 +1,6 @@
 {
   "name": "synthstudio",
-  "version": "3.234.0",
+  "version": "3.235.0",
   "type": "module",
   "license": "MIT",
   "main": "electron-dist/main.cjs",
@@ -14,6 +14,7 @@
     "dev:electron": "concurrently \"cross-env VITE_DEV_SERVER_URL=http://localhost:5173 pnpm dev\" \"wait-on http://localhost:5173 && electron .\"",
     "build": "vite build",
     "build:electron": "vite build && electron-builder",
+    "prebuild:electron:win": "node scripts/clean-release.cjs",
     "build:electron:win": "vite build && pnpm compile:electron && electron-builder --win",
     "build:electron:mac": "vite build && pnpm compile:electron && electron-builder --mac",
     "build:electron:linux": "vite build && pnpm compile:electron && electron-builder --linux",
