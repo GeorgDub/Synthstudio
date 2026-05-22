@@ -304,6 +304,12 @@ const INDEX = {
       lastSeen: "2026-05-20T19:45:00.000Z",
       ownedBy:  "frontend"
     },
+    // ─── v3.232 Regression-Test (TASK-243) — Electron Permission Handlers ──
+    "tests/features/electron-permission-handlers.test.ts": {
+      role:     "TASK-243 Regression-Test fuer electron/permissions.ts (schuetzt TASK-242 + KORG-Vision-SysEx-Integration). 36 Tests in 4 describe-Bloecken. ALLOWED_PERMISSIONS-Block (7 Tests): harte Size-Assertion expect(size).toBe(4) als Trip-Wire gegen Whitelist-Aufblaehung, jede der 4 erlaubten Permissions einzeln (media/mediaKeySystem/midi/midiSysex) mit Rationale-Kommentar, Combined-Test midi+midiSysex (KORG-Vision-Invariante: Web MIDI API verlangt SysEx separat, sonst keine OmniTribe-NRPN/OTP), sortierter Vollabgleich gegen EXPECTED_ALLOWED-Konstante (Diff-Lesbarkeit ohne Snapshot), ReadonlySet-Laufzeit-Form-Check. isPermissionAllowed-Block (21 Tests): 4 Happy-Path-Cases (alle 4 erlaubten via for-loop), 17 Deny-Cases (geolocation, notifications, camera, microphone, usb, hid, bluetooth, serial, clipboard-read, clipboard-write, idle-detection, background-sync, persistent-storage, fullscreen, openExternal, pointerLock, display-capture). Edge-Cases-Block (5 Tests): leerer String -> false; freie Strings ('not-a-real-permission', 'foo', 'admin'); Case-Sensitivity (MIDI/Midi/MIDISYSEX/MidiSysex/Media alle false - Chromium-Strings sind case-sensitive); whitespace-padded (' midi'/'midi '/' midiSysex ' alle false - keine Trim-Toleranz); Anti-Substring-Match ('midi-extra'/'midiextra'/'media-stream'/'sysex'/'midiSysexExt' alle false - Verifikation dass Impl Set.has() nutzt statt startsWith/includes). Konsistenz-Block (2 Tests): Helper-Output vs Set.has() fuer alle Whitelist-Eintraege via for-of-Loop + Negativ-Sample mit EXPECTED_DENIED + '' + 'random-string-xyz' - schuetzt vor Refactor auf andere Datenquelle (Array/ENV/etc). Vitest node-env via vitest.config.ts (electron-Pfad-Import direkt). 36/36 passed in 8ms (Duration 501ms inkl. setup). pnpm check GRUEN. Test ist mockfrei - permissions.ts importiert KEINE Electron-Runtime. Acceptance erfuellt: min 10 Cases (=36), pnpm test:features gruen, Test rot bei Whitelist-Aenderung (Size-toBe(4) + EXPECTED_ALLOWED.toEqual). ~191 LOC inkl. ausfuehrlicher JSDoc mit Anti-Regression-Strategie + Rationale pro EXPECTED_DENIED-Eintrag.",
+      lastSeen: "2026-05-22T15:15:00.000Z",
+      ownedBy:  "testing"
+    },
     "tests/features/pattern-comparable.test.ts": {
       role:     "Pure-Coverage fuer patternComparable.ts. 40 Tests in 11 describes: empty-inputs 3 (both-empty -> all zeros + classification 'different'; one-side empty beide Richtungen; non-array null/undefined defensiv). identical-vs-different 2 (identical 4-on-floor n=16 -> overall=1.0 + bestAlignment=0 + 'identical'; opposite all-on vs all-off n=8 -> structural=0 + density=0 + flow=1.0 [beide flat] -> overall=0.2 -> 'different'). shifted-patterns 2 (shift-by-2 n=8 -> bestAlignment=2 + structural=1; shift-by-1 4-on-floor n=16 -> structural=1 + bestAlignment=3 wegen Periode-4-Symmetrie + Tie-Break-strict>-kleinstes-k Pin #8, dokumentiert in Test-Kommentar mit Math-Trace). same-density-diff-positions 1 (a={0,2,4,6} vs b={0,3,4,7} n=8 -> densitySimilarity=1 + structuralSimilarity<1). different-lengths 2 (a longer truncates to b.length; b longer truncates to a.length). structuralCompare standalone 5 (both empty -> 0; identical -> 1; shifted-by-2 best-shift -> 1; opposite -> 0; non-array -> 0). densityCompare standalone 5 (both empty -> 0; identical density -> 1; max-diff -> 0; 0.25-vs-0.75 -> 0.5; non-array -> 0). classification-boundaries 3 (identical overall=1.0 -> 'identical'; mid-density case -> one-of-4-labels; strict>= boundary check via identical reaches 'identical'). overallSimilarity-range it.each 5 cases -> alle 4 Felder in [0,1]. flowSimilarity 5 (both-rising; both-falling; both-flat-equal-density; opposite rising-vs-falling; one-flat-one-rising). degenerate-n=1 2 (single-true-vs-true -> structural=1+density=1+flow=1.0; single-true-vs-false -> structural=0+density=0+flow=1.0 - Pin #6 sanity check). velocity-ignored 1 (Pin #2: same active flags + different velocity -> overall=1.0 + 'identical'). immutability 3 (comparePatterns/structuralCompare/densityCompare via JSON-snapshot vor/nach). determinism 1 (comparePatterns deterministisch via 2x-Call expect.toEqual). Test-Helpers: steps(flags:boolean[]) -> CompareStepLike[]; stepsFromIdx(len, hits) -> CompareStepLike[]; rotateRight(arr, k) -> rotated CompareStepLike[] mit (i-k+n)%n Konvention (identisch zu Impl). Vitest node-env via vitest.config.ts (@-alias). 40/40 passed in 9ms (Duration 415ms inkl. setup). Volle pnpm test:features GRUEN: 365 files / 8974 passed / 16 skipped (34.69s). ~391 LOC. Initial-Run hatte EINEN Fix-Cycle: shift-by-1-Test erwartete bestAlignment=1 - tatsaechlich liefert die Right-Rotation rotated[i]=b[(i-k+n)%n] mit b=rechts-shift-1 von a die Bedingung (i-k-1+n)%n==i, also -k-1 mod periode=4 = 0 -> k in {3,7,11,15}, Tie-Break-strict> waehlt k=3. Test-Erwartung korrigiert auf 3 mit Math-Trace-Kommentar (kein Algorithmus-Bug, nur Test-Off-by-Konvention). Advisor-Pre-Check hat alle 5 Spec-Ambiguities VOR Impl identifiziert + pinned: structuralCompare-Return-Shape (Pin #1), Step-Match-Scope (Pin #2 velocity ignored), flowSimilarity-Formel (Pin #3 sign-pair), Different-Lengths-Strategie (Pin #4 truncate), Empty-Input-Result (Pin #5).",
       lastSeen: "2026-05-20T19:45:00.000Z",
@@ -3542,8 +3548,13 @@ const INDEX = {
       ownedBy:  "backend"
     },
     "electron/main.ts": {
-      role:     "Window lifecycle, menus, global shortcuts, native dialogs",
-      lastSeen: null,
+      role:     "Window lifecycle, menus, global shortcuts, native dialogs. v3.232 (TASK-242): installPermissionHandlers nutzt isPermissionAllowed aus electron/permissions.ts, whitelistet midi+midiSysex zusaetzlich zu media+mediaKeySystem.",
+      lastSeen: "2026-05-22T15:10:00.000Z",
+      ownedBy:  "backend"
+    },
+    "electron/permissions.ts": {
+      role:     "TASK-242 (v3.232): Whitelist-Logik fuer Chromium Permission-Handler. Exportiert ALLOWED_PERMISSIONS (media, mediaKeySystem, midi, midiSysex) + pure isPermissionAllowed(p) Helper. Reines Modul ohne Electron-Importe -> isolierte Vitest-Coverage in TASK-243.",
+      lastSeen: "2026-05-22T15:10:00.000Z",
       ownedBy:  "backend"
     },
     "electron/preload.ts": {
@@ -4199,6 +4210,72 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "testing",
+      timestamp: "2026-05-22T15:15:00.000Z",
+      done: [
+        "TASK-243 umgesetzt: Regression-Test tests/features/electron-permission-handlers.test.ts geschrieben (191 LOC, 36 Tests in 4 describe-Bloecken).",
+        "ALLOWED_PERMISSIONS-Block: harte Size-Assertion toBe(4) als Trip-Wire gegen Whitelist-Aufblaehung, jede der 4 erlaubten Permissions einzeln getestet (media+mediaKeySystem+midi+midiSysex), expliziter Combined-Test fuer midi+midiSysex (KORG-Vision-Invariante), sortierter Vollabgleich gegen EXPECTED_ALLOWED-Konstante, ReadonlySet-Laufzeit-Form.",
+        "isPermissionAllowed-Block: 4 Happy-Path-Cases (alle erlaubten), 17 Negative-Cases (geolocation/notifications/camera/microphone/usb/hid/bluetooth/serial/clipboard-read+write/idle-detection/background-sync/persistent-storage/fullscreen/openExternal/pointerLock/display-capture).",
+        "Edge-Cases: leerer String, freie Strings, Case-Sensitivity (MIDI/Midi/MIDISYSEX/MidiSysex/Media), whitespace-padded (' midi', 'midi ', ' midiSysex '), Anti-Substring-Match ('midi-extra', 'midiextra', 'media-stream', 'sysex', 'midiSysexExt').",
+        "Konsistenz-Block: Helper-Output vs Set.has() fuer alle Whitelist-Eintraege + Negativ-Sample - schuetzt vor Refactor auf andere Datenquelle.",
+        "Acceptance-Kriterien erfuellt: min 10 Cases (=36), pnpm test:features gruen (1 suite / 36 tests passed, 8ms), Test wird rot bei Whitelist-Aenderung ohne Test-Update (Size-Assertion + EXPECTED_ALLOWED.toEqual).",
+        "pnpm check GRUEN, pnpm test target-File GRUEN."
+      ],
+      next: [
+        "TASK-244 (builder): prebuild-Hook scripts/clean-release.cjs gegen Defender-Lock bleibt offen.",
+        "Optional: E2E-Test via Playwright/Electron, der real Web MIDI API requestAccess({sysex:true}) auf installiertem Build aufruft - dauert deutlich laenger, nicht zwingend fuer Whitelist-Drift-Protection."
+      ],
+      changed: [
+        "tests/features/electron-permission-handlers.test.ts (NEU, 191 LOC, 36 Tests)",
+        "agents/INDEX.js (TASK-243 status open->done + workLog + files-Entry)"
+      ]
+    },
+    {
+      agent:     "coordinator",
+      timestamp: "2026-05-22T13:00:57.636Z",
+      done: [
+        "v3.231 Session-Start: gelesen INDEX.js, COORDINATOR.md, PROTOCOL.md.",
+        "User-Anfrage: 2 Probleme - Build + MIDI-Permissions.",
+        "Build: tsc+vite+signtool gruen, NSIS scheiterte 1x mit Cant-open-output-file (Defender-Lock). Re-Run nach Delete: SUCCESS, 97.3 MB Installer.",
+        "MIDI: electron/main.ts:3501 ALLOWED-Set hat nur [media,mediaKeySystem], midi+midiSysex fehlen -> Chromium-Default deny. v3.17-Hypothese widerlegt.",
+        "Renderer: client/src/hooks/useMidi.ts:1639 nutzt sysex:false, useOmniTribe.ts:100 nutzt sysex:true -> Drift.",
+        "TASK-242 (backend high) + TASK-243 (testing med) + TASK-244 (builder low) in openTasks angelegt."
+      ],
+      next: [
+        "TASK-242: ALLOWED erweitern um midi+midiSysex, useMidi.ts sysex:true. SECURITY-Konsult.",
+        "TASK-243: Regression-Test tests/features/electron-permission-handlers.test.ts.",
+        "TASK-244: prebuild-Hook scripts/clean-release.cjs gegen Defender-Lock."
+      ],
+      changed: [
+        "agents/INDEX.js (workLog + openTasks)",
+        "release/Synthstudio Setup 3.231.0.exe (re-built, signiert)"
+      ]
+    },
+    {
+      agent:     "backend",
+      timestamp: "2026-05-22T15:10:00.000Z",
+      done: [
+        "TASK-242 umgesetzt: Electron-MIDI-Permissions + SysEx-Support gegranted.",
+        "NEU electron/permissions.ts - exports ALLOWED_PERMISSIONS Set + pure isPermissionAllowed(p) Helper. Isoliertes Modul ohne app/BrowserWindow-Importe -> trivial mockfrei testbar (TASK-243).",
+        "electron/main.ts:38 +import { isPermissionAllowed } from './permissions'.",
+        "electron/main.ts:3499-3511 installPermissionHandlers nutzt jetzt isPermissionAllowed() statt inline-Set. Whitelist um midi+midiSysex erweitert. Log-Message angepasst.",
+        "client/src/hooks/useMidi.ts:1639 sysex:false -> sysex:true (Drift gegen useOmniTribe.ts:100 behoben, OmniTribe/KORG-Hardware funktioniert jetzt im Main-MIDI-Hook). try/catch oben handled Browser-Denial weiterhin via Toast - kein Code-Aenderung noetig.",
+        "Security-Konsult via advisor (Task-Spawn-Tool nicht im Backend-Toolset verfuegbar): GREEN LIGHT. defaultSession deckt alle BrowserWindow-Instanzen ab, contextIsolation+nodeIntegration:false bleiben Renderer-Sandbox, CSP haerten Remote-Content, SysEx ist Pflicht fuer OmniTribe-Vision. Residualrisiko: XSS+SysEx -> Hardware. Mitigation per CSP existiert, Future-Hardening (origin-check) als Note dokumentiert in permissions.ts.",
+        "pnpm check GRUEN (tsc --noEmit fehlerfrei).",
+        "pnpm test: 9700 passed / 16 skipped. 2 Suite-Failures sind PRE-EXISTING leere Stub-Files (sample-highpass-biquad.test.ts + sample-lowpass-biquad.test.ts, 0 LOC, untracked in git status) - nicht durch TASK-242 verursacht."
+      ],
+      next: [
+        "TASK-243 (testing): Regression-Test tests/features/electron-permission-handlers.test.ts gegen exportiertes electron/permissions.ts schreiben. Min 10 Cases: media+mediaKeySystem+midi+midiSysex granted, geolocation+notifications+usb+hid+bluetooth+camera+microphone-display denied, leerer/null-input deny, Case-Sensitivity-Check. Set-Aufblaehung-Trip-Test via expect(ALLOWED_PERMISSIONS.size).toBe(4).",
+        "Manueller Verify-Step durch User: pnpm dev:electron, OmniTribe-Connect testen, KORG-Pad testen. Erwartet: kein nativer Permission-Dialog mehr, SysEx-Events sichtbar im Monitor-Tab.",
+        "TASK-244 (builder): prebuild-Hook gegen Defender-Lock bleibt offen."
+      ],
+      changed: [
+        "electron/permissions.ts (NEU - 38 LOC pure-helper modul)",
+        "electron/main.ts (+1 import, installPermissionHandlers refactor)",
+        "client/src/hooks/useMidi.ts (sysex:false -> sysex:true + Kommentar)"
+      ]
+    },
     {
       agent:     "frontend",
       timestamp: "2026-05-20T20:05:00.000Z",
@@ -14937,6 +15014,69 @@ const INDEX = {
             ],
             estimateHours: 6,
             doneNote: "MidiNoteOut.ts mit (outputId,bytes)→void Sender-Signatur (damit unterschiedliche Parts auf unterschiedliche Geräte routen können), Retrigger-Policy (sofortiges Note-Off bei Re-Trigger gleicher Note, kein Overlap), setEnabled(false)-Flush gegen Stuck-Notes, internal Map<partId, MidiPartConfig>, internal Pending-Off-Map mit setTimeout-Cleanup, clampMidiChannel/Note/Velocity/Duration als pure-Helper. AudioEngine: _midiNoteOut-Instanz + 5 Public-API (setSender/setEnabled/setPartConfig/clearPartConfig/getMidiNoteOut), Wire-Up im _scheduleStep direkt nach stepCallbacks (also vor MIDI-Clock-Pulse + lokalem Trigger), Local-Sound-Gate via shouldPlayLocalSound (Backwards-Compat: ohne Config IMMER local), Auto-Flush in stop() (disable+enable-Cycle leert pending Note-Offs). useMidi.ts: Sender-Effect injiziert midiSendMessage-Lambda (Web-MIDI durch outputId-Resolve). useMidiNoteOutStore.ts: Custom-Observer-Pattern (localStorage 'synthstudio:midi:noteout:v1' + Enable-Key), API setMidiNoteOutEnabled/setPartMidiOutConfig/clearPartMidiOutConfig/clearAll/applyElectribeDrumMap (GM-Drum-Map auf Ch10 für die ersten 8 Parts). App.tsx: Diff-Sync-Effect spiegelt Store→Engine bei jedem Store-Change. ChannelInspector.tsx: neue Section 'MIDI-Note-Out' mit Global-Enable-Checkbox, Output-Device-Select (zeigt useMidiContext.outputDevices), Channel-Select (1-16, Drum-Label auf 10), Note-Range-Slider mit Note-Name-Display (noteNameFromNumber), Duration-Slider (10-2000ms), Local-Sound-Toggle, Per-Part-Clear-Button + Electribe-Template-Button. midiTemplates.ts: neues NoteOutTemplate-Interface + ELECTRIBE_2_DRUM_MAP-Constant (8 Mappings GM-Drum-Map). 24 Unit-Tests in tests/features/midi-note-out.test.ts (pure Helpers + setPartConfig/clearPartConfig/triggerNote/Retrigger-Policy/setEnabled-Flush/Sender-Exception-Swallow). pnpm check clean, pnpm test 3326 passed / 15 skipped. CAVEATS: (a) MIDI-Send läuft NICHT through Web-Audio-Scheduling — JS-setTimeout-Genauigkeit ist ~1-2ms Jitter ggü. AudioContext-Scheduling, was für MIDI-Devices akzeptabel ist (Hardware-MIDI-Latenz oft schon ≥1ms). (b) Polyphony pro Part = 1: bei Retrigger derselben Note wird die alte sofort beendet. Für Polyphony-Spiel an einem Sample-Modul müsste man je Step eine andere Note senden (z.B. Performance-Mode). (c) Note-Stealing am externen Gerät ist Geräte-eigene Logik — wir senden korrekt Note-On + Note-Off, der Rest ist Electribe-Sache. (d) Output-ID kann bei Hardware-Reconnect wechseln — useMidi enumeriert beim devicechange-Event neu. Wenn die alte ID nicht mehr existiert, ist der Send no-op (silent fail), config bleibt im Store für Reconnect."
+        },
+        {
+            id: "TASK-242",
+            type: "bugfix",
+            priority: "high",
+            agent: "backend",
+            status: "done",
+            createdAt: "2026-05-22T13:00:57.636Z",
+            createdBy: "coordinator",
+            closedAt: "2026-05-22T15:10:00.000Z",
+            closedBy: "backend",
+            title: "Electron-Permission-Whitelist: midi + midiSysex auto-grant",
+            description: "User-Report v3.231: MIDI funktioniert in der Electron-App nicht ohne Browser-Prompt. Root-Cause: installPermissionHandlers in electron/main.ts:3499-3511 hat ALLOWED nur [media,mediaKeySystem]. Chromium-Default fuer alles andere ist deny. v3.17-Hypothese midiSysex-default-allowed widerlegt. Fix: ALLOWED um midi und midiSysex erweitern. Zusaetzlich client/src/hooks/useMidi.ts:1639 von sysex:false auf sysex:true (Konsistenz mit useOmniTribe.ts:100, KORG/OmniTribe-Vision).",
+            acceptance: [
+                "electron/main.ts:3501 ALLOWED enthaelt midi und midiSysex",
+                "client/src/hooks/useMidi.ts:1639 nutzt sysex:true",
+                "Browser-Fallback unangetastet",
+                "SECURITY-Konsultation dokumentiert",
+                "Manuelle Verifikation in Electron 40 ohne Dialog"
+            ],
+            dependsOn: [],
+            reviewedBy: ["security"],
+            estimateHours: 1,
+            doneNote: "NEU electron/permissions.ts (38 LOC) - ALLOWED_PERMISSIONS Set + isPermissionAllowed(p) Pure-Helper. electron/main.ts:38 +import, :3499-3511 installPermissionHandlers nutzt jetzt isPermissionAllowed(). client/src/hooks/useMidi.ts:1639 sysex:false -> sysex:true (try/catch oben bleibt fuer Browser-Pfad). Security-Konsult via advisor (Task-Tool nicht im Backend-Toolset): GREEN LIGHT - defaultSession deckt alle BrowserWindow-Instanzen, contextIsolation+nodeIntegration:false bleiben, CSP haerten Remote-Content, SysEx ist Pflicht fuer OmniTribe-Vision. Residualrisiko XSS+SysEx mitigated per CSP, Origin-Check als Future-Hardening dokumentiert. pnpm check GRUEN. pnpm test: 9700 passed / 16 skipped, 2 Suite-Fails sind PRE-EXISTING leere Stub-Files (sample-highpass/lowpass-biquad.test.ts, 0 LOC, untracked) - nicht durch TASK-242 verursacht. Helper isoliert fuer TASK-243 mockfrei testbar."
+        },
+        {
+            id: "TASK-243",
+            type: "test",
+            priority: "medium",
+            agent: "testing",
+            status: "done",
+            createdAt: "2026-05-22T13:00:57.636Z",
+            createdBy: "coordinator",
+            completedAt: "2026-05-22T15:15:00.000Z",
+            completedBy: "testing",
+            title: "Regression-Test fuer Electron-Permission-Whitelist",
+            description: "Schuetzt vor Whitelist-Drift. Test mockt setPermissionRequestHandler-Callback und verifiziert callback(true) fuer [midi,midiSysex,media,mediaKeySystem] und callback(false) fuer [geolocation,notifications,usb,hid,bluetooth,serial,clipboard-read,clipboard-write,idle-detection]. ALLOWED ist aktuell function-local - darf nach electron/permissions.ts extrahiert werden.",
+            acceptance: [
+                "tests/features/electron-permission-handlers.test.ts mit min 10 Cases",
+                "pnpm test:features gruen",
+                "Test scheitert wenn ALLOWED ohne Test-Update aufgeblasen wird"
+            ],
+            dependsOn: ["TASK-242"],
+            estimateHours: 2,
+            result: "tests/features/electron-permission-handlers.test.ts: 36 Tests gruen. Hard size assertion (toBe(4)), explizite Allow-Liste (media+mediaKeySystem+midi+midiSysex), 17 Deny-Permissions (geolocation, notifications, camera, microphone, usb, hid, bluetooth, serial, clipboard-read/write, idle-detection, background-sync, persistent-storage, fullscreen, openExternal, pointerLock, display-capture), Edge Cases (leerer String, case-sensitivity, whitespace-padded, prefix/substring no-match), Helper<->Set Konsistenz-Check. pnpm check gruen."
+        },
+        {
+            id: "TASK-244",
+            type: "build",
+            priority: "low",
+            agent: "builder",
+            status: "open",
+            createdAt: "2026-05-22T13:00:57.636Z",
+            createdBy: "coordinator",
+            title: "Pre-build cleanup gegen Defender-File-Lock",
+            description: "v3.231 zeigte 1x Build-Failure mit makensis Cant-open-output-file (Defender lockte signierte EXE). Re-Run nach Delete lief durch. Praevention: scripts/clean-release.cjs entfernt release/Synthstudio Setup VERSION.exe + .__uninstaller.exe VOR electron-builder. Hook: package.json prebuild:electron:win.",
+            acceptance: [
+                "Skript entfernt nur EXE der AKTUELLEN Version (nicht alte Releases)",
+                "package.json prebuild-Hook",
+                "2 aufeinanderfolgende Builds gleicher Version ohne manuellen Delete"
+            ],
+            estimateHours: 0.5,
+            note: "Defender-Exclusion waere echte Loesung, aber nicht code-automatisierbar. Workaround-Skript ist portable Alternative."
         }
     ],
 
