@@ -102,6 +102,10 @@ import { PerformancePadGrid } from "@/components/OmniTribe/PerformancePadGrid";
 import { StepSequencerPanel } from "@/components/OmniTribe/StepSequencerPanel";
 import { AudioFxPanel } from "@/components/OmniTribe/AudioFxPanel";
 import { OmniTribeBrowserSupport } from "@/components/OmniTribe/OmniTribeBrowserSupport";
+// Sprint-119c: Clock-Sync + Position + Firmware-Info panels
+import { ClockSyncPanel } from "@/components/OmniTribe/ClockSyncPanel";
+import { PositionDisplay } from "@/components/OmniTribe/PositionDisplay";
+import { FirmwareInfoViewer } from "@/components/OmniTribe/FirmwareInfoViewer";
 import { DeviceConnectionPanel } from "@/components/Settings/DeviceConnectionPanel";
 import { OtaUpdatePanel } from "@/components/Settings/OtaUpdatePanel";
 import { SamplePackBrowser } from "@/components/SamplePackBrowser/SamplePackBrowser";
@@ -4648,6 +4652,20 @@ export default function App() {
                         <StepSequencerPanel connected={omniTribeConnected} />
                         {/* Sprint-106: Audio-FX-Panel */}
                         <AudioFxPanel />
+
+                        {/* Sprint-119c: OmniTribe Sync — Clock + Position + Firmware */}
+                        <div className="bg-bg-panel border border-border-color rounded p-3">
+                          <h3 className="text-sm font-semibold text-text-primary mb-3">
+                            OmniTribe Sync
+                          </h3>
+                          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                            <ClockSyncPanel connected={omniTribeConnected} />
+                            <PositionDisplay connected={omniTribeConnected} />
+                          </div>
+                          <div className="mt-4">
+                            <FirmwareInfoViewer connected={omniTribeConnected} />
+                          </div>
+                        </div>
                       </div>
                     )}
                     {activeTool === 'packs' && (

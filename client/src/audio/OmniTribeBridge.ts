@@ -39,6 +39,24 @@ export const OtpCmd = {
   TRANSPORT:      0x0E,
 } as const;
 
+// ─── CMD 0x03 STATE_DUMP Sub-Commands (Sprint-120a) ─────────
+// 3-source sync: same values in C otp_protocol.h and Python otp_codec.py.
+export const StateDumpSub = {
+  REQUEST:  0x01,
+  CHUNK:    0x02,
+  COMPLETE: 0x03,
+} as const;
+
+// Sections-mask bits (mirrors OTP_DUMP_SECTION_* in otp_protocol.h)
+export const DumpSection = {
+  PATTERN: 1 << 0,
+  SONG:    1 << 1,
+  MODULE:  1 << 2,
+  CLOCK:   1 << 3,
+  OTA:     1 << 4,
+  ALL:     0x1F,
+} as const;
+
 export const StreamFlag = {
   VU_METER:      1 << 0,
   SPECTRUM:      1 << 1,
@@ -972,6 +990,133 @@ export class OmniTribeBridge {
         }));
       }
     }
+    // Sprint-120a: STATE_DUMP Chunk (CMD 0x03 SUB 0x02) and Complete (SUB 0x03)
+    if (cmd === OtpCmd.STATE_DUMP && sub === StateDumpSub.CHUNK) {
+      this._handleStateDumpChunk(payload);
+    }
+    if (cmd === OtpCmd.STATE_DUMP && sub === StateDumpSub.COMPLETE) {
+      this._handleStateDumpComplete();
+    }
+  }
+
+  // ─── Sprint-120a: STATE_DUMP internal state ───────────────
+  private _stateDumpChunks: Array<{ idx: number; total: number; raw: Uint8Array; hasCrc32: boolean; crc32Full: number }> = [];
+  private _stateDumpResolve: ((bytes: Uint8Array) => void) | null = null;
+  private _stateDumpReject: ((err: Error) => void) | null = null;
+  private _stateDumpTimer: ReturnType<typeof setTimeout> | null = null;
+
+  private _handleStateDumpChunk(payload: Uint8Array): void {
+    if (payload.length < 4) return;
+    const chunkIdx   = payload[0] & 0x7F;
+    const totalChunks = payload[1] & 0x7F;
+    const encLen = ((payload[2] & 0x7F) << 7) | (payload[3] & 0x7F);
+    if (payload.length < 4 + encLen) return;
+    const encodedData = payload.slice(4, 4 + encLen);
+    const rawBytes = decode7Bit(encodedData);
+
+    // Check for pack32_7bit CRC32 trailer (5 bytes on last chunk)
+    let hasCrc32 = false;
+    let crc32Full = 0;
+    const remaining = payload.slice(4 + encLen);
+    if (remaining.length >= 5) {
+      const msb = remaining[0] & 0x7F;
+      for (let k = 0; k < 4; k++) {
+        let b = remaining[1 + k] & 0x7F;
+        if (msb & (1 << k)) b |= 0x80;
+        crc32Full |= (b << (k * 8));
+      }
+      crc32Full = crc32Full >>> 0; // force unsigned
+      hasCrc32 = true;
+    }
+    this._stateDumpChunks.push({ idx: chunkIdx, total: totalChunks, raw: rawBytes, hasCrc32, crc32Full });
+  }
+
+  private _handleStateDumpComplete(): void {
+    if (!this._stateDumpResolve) {
+      this._stateDumpChunks = [];
+      return;
+    }
+    if (this._stateDumpTimer !== null) {
+      clearTimeout(this._stateDumpTimer);
+      this._stateDumpTimer = null;
+    }
+
+    const chunks = this._stateDumpChunks.sort((a, b) => a.idx - b.idx);
+    this._stateDumpChunks = [];
+    const resolve = this._stateDumpResolve;
+    const reject  = this._stateDumpReject;
+    this._stateDumpResolve = null;
+    this._stateDumpReject  = null;
+
+    if (chunks.length === 0) {
+      reject?.(new Error("STATE_DUMP complete ohne Chunks"));
+      return;
+    }
+
+    // Assemble
+    const totalBytes = chunks.reduce((acc, c) => acc + c.raw.length, 0);
+    const assembled = new Uint8Array(totalBytes);
+    let pos = 0;
+    for (const c of chunks) {
+      assembled.set(c.raw, pos);
+      pos += c.raw.length;
+    }
+
+    // Determine sections present from OTSD TLV (section_ids after 16-byte header)
+    const sectionsPresent: number[] = [];
+    let tlvPos = 16;
+    while (tlvPos + 5 < assembled.length - 4) {
+      const sectionId = assembled[tlvPos];
+      const secLen = assembled[tlvPos + 1]
+                   | (assembled[tlvPos + 2] << 8)
+                   | (assembled[tlvPos + 3] << 16)
+                   | (assembled[tlvPos + 4] << 24);
+      sectionsPresent.push(sectionId);
+      tlvPos += 5 + secLen;
+    }
+
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("omnitribe:stateDump", {
+        detail: { bytes: assembled, sectionsPresent },
+      }));
+    }
+    resolve(assembled);
+  }
+
+  /**
+   * Sprint-120a: Request a full STATE_DUMP from the device.
+   *
+   * Sends CMD 0x03 SUB 0x01, collects all SUB 0x02 chunks, assembles and
+   * validates the OTSD binary, then resolves with the raw bytes.
+   *
+   * sections: optional bitmask of DumpSection.* (default = ALL = 0x1F).
+   * Rejects if all chunks are not received within 1 second.
+   *
+   * Also fires CustomEvent "omnitribe:stateDump" with { bytes, sectionsPresent }.
+   */
+  async requestStateDump(sections: number = DumpSection.ALL): Promise<Uint8Array> {
+    // Clear any pending state from a previous request
+    this._stateDumpChunks = [];
+    if (this._stateDumpTimer !== null) {
+      clearTimeout(this._stateDumpTimer);
+      this._stateDumpTimer = null;
+    }
+
+    const promise = new Promise<Uint8Array>((resolve, reject) => {
+      this._stateDumpResolve = resolve;
+      this._stateDumpReject  = reject;
+      this._stateDumpTimer = setTimeout(() => {
+        this._stateDumpChunks = [];
+        this._stateDumpResolve = null;
+        this._stateDumpReject  = null;
+        this._stateDumpTimer   = null;
+        reject(new Error("STATE_DUMP timeout: keine vollstaendige Antwort in 1 s"));
+      }, 1000);
+    });
+
+    const mask = (sections & DumpSection.ALL) || DumpSection.ALL;
+    this.send(OtpCmd.STATE_DUMP, StateDumpSub.REQUEST, [mask & 0x7F]);
+    return promise;
   }
 }
 
