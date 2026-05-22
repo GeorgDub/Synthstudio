@@ -349,7 +349,7 @@ describe("OmniTribeBridge", () => {
     }
   });
 
-  it("Remote-Transport: remoteTempo encodes BPM*100 as 14-bit", async () => {
+  it("Remote-Transport: remoteTempo encodes BPM*100 as 21-bit (Sprint-111)", async () => {
     const out = new FakeMidiOutput();
     const inp = new FakeMidiInput();
     const bridge = new OmniTribeBridge();
@@ -362,8 +362,9 @@ describe("OmniTribeBridge", () => {
     const f = out.sent.find(fr => fr[4] === OtpCmd.TRANSPORT && fr[5] === 0x03);
     expect(f).toBeDefined();
     const bpm100 = 12050;
-    expect(f![8]).toBe((bpm100 >> 7) & 0x7F);
-    expect(f![9]).toBe(bpm100 & 0x7F);
+    expect(f![8]).toBe((bpm100 >> 14) & 0x7F);
+    expect(f![9]).toBe((bpm100 >> 7)  & 0x7F);
+    expect(f![10]).toBe(bpm100        & 0x7F);
   });
 
   it("on() returns an unbind function that removes the handler", async () => {
