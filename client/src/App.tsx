@@ -217,6 +217,7 @@ import {
 import { AutomationView } from "@/components/Automation/AutomationView";
 import { SceneLaunchPad } from "@/components/Scene/SceneLaunchPad";
 import { AudioEngine, DEFAULT_CHANNEL_FX } from "@/audio/AudioEngine";
+import { syncE2sPattern } from "@/audio/E2sPatternSyncSender";
 import { CollabChat } from "@/components/CollabSession/CollabChat";
 import { addChatMessage } from "@/store/useCollabChatStore";
 import { saveSnapshot } from "@/store/useVersionSnapshotStore";
@@ -2363,6 +2364,20 @@ export default function App() {
     // String-Equality bestimmt wird, statt via Array-Reference (immer neu).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [drumMuteSoloSnapshot, midi.feedbackEnabled, midi.feedbackOutputDeviceId]);
+
+  // ── v3.232 — E2S Pattern Sync (Out) ────────────────────────────────────
+  // Sendet bei jedem Pattern-Wechsel CC32 (Bank-LSB) + Program Change an die
+  // KORG Electribe 2/2S. Workaround fuer Stock-FW-Limitation (E2/E2S sendet
+  // bei lokalem Pattern-Wechsel NICHTS auf MIDI-Out — nur diese Richtung
+  // funktioniert). Settings-Toggle + Output + Channel in MidiSettings.tsx.
+  // Index-Quelle: numerische Position in der Pattern-Bank.
+  // Dedup-Guard sitzt im Sender (lastSentIndex).
+  useEffect(() => {
+    const idx = dm.patterns.findIndex(p => p.id === dm.activePatternId);
+    if (idx < 0) return;
+    void syncE2sPattern(idx);
+  }, [dm.activePatternId, dm.patterns]);
+
 
   // ── Live Step Recording (MPC-Overdub-Style, post-v1.30.0; Welle 2 v1.31+) ─
   // Wenn isRecording + isPlaying aktiv sind, werden MIDI-Note-Hits direkt als

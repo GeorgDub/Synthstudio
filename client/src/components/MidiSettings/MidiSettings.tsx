@@ -77,6 +77,13 @@ import {
   setMidiSyncInSyncTempo,
   setMidiSyncInSyncPosition,
 } from "@/store/useMidiSyncInStore";
+// v3.232: E2S Pattern Sync (Out) — Synthstudio -> KORG Electribe 2/2S Pattern-Wechsel.
+import {
+  useE2sPatternSyncStore,
+  setE2sPatternSyncEnabled,
+  setE2sPatternSyncOutputPort,
+  setE2sPatternSyncChannel,
+} from "@/store/useE2sPatternSyncStore";
 
 interface MidiSettingsProps {
   midi: MidiState & MidiActions;
@@ -179,6 +186,7 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
   const midiClickState = useMidiClickStore();
   // v3.111.0: MIDI-Sync-In (KORG-Master-Sync).
   const midiSyncInState = useMidiSyncInStore();
+  const e2sPatternSyncState = useE2sPatternSyncStore();
 
   // v1.79: Live-MIDI-Activity-Indicator — User sieht ob seine Hardware
   // tatsächlich Events sendet. Hört auf "midi:rawmessage" das in
@@ -2395,6 +2403,77 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
           </div>
         )}
       </div>
+      {/* ── v3.232: E2S Pattern Sync (Out) — Synthstudio -> KORG Electribe 2/2S ─ */}
+      <div className="p-3 bg-bg-elevated rounded-lg" data-testid="e2s-pattern-sync-section">
+        <div className="flex items-center justify-between mb-2">
+          <div>
+            <div className="text-sm font-medium text-text-primary">E2S Pattern Sync (Out)</div>
+            <div className="text-xs text-text-muted mt-0.5">
+              Schaltet Pattern auf der KORG Electribe 2/2S um wenn du in Synthstudio das Pattern wechselst.
+            </div>
+          </div>
+          <button
+            data-testid="e2s-pattern-sync-toggle"
+            onClick={() => setE2sPatternSyncEnabled(!e2sPatternSyncState.enabled)}
+            className={`relative w-10 h-5 rounded-full transition-colors ${
+              e2sPatternSyncState.enabled ? "bg-accent-primary" : "bg-bg-elevated"
+            }`}
+            aria-label="E2S Pattern Sync an/aus"
+          >
+            <div className={`absolute top-0.5 w-4 h-4 bg-text-primary rounded-full shadow transition-transform ${
+              e2sPatternSyncState.enabled ? "translate-x-5" : "translate-x-0.5"
+            }`} />
+          </button>
+        </div>
+
+        <div className="mt-3">
+          <label htmlFor="e2s-pattern-sync-device-select" className="text-xs text-text-muted block mb-1">
+            MIDI-Output (zum E2S)
+          </label>
+          <select
+            id="e2s-pattern-sync-device-select"
+            data-testid="e2s-pattern-sync-device-select"
+            value={e2sPatternSyncState.outputPortId ?? ""}
+            onChange={(e) => setE2sPatternSyncOutputPort(e.target.value || null)}
+            className="w-full px-2 py-1.5 bg-bg-elevated border border-border-color rounded text-xs text-text-primary focus:outline-none focus:border-accent-primary"
+          >
+            <option value="">(kein Output gewaehlt)</option>
+            {midi.outputDevices.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.name}{d.manufacturer ? ` — ${d.manufacturer}` : ""}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3 mt-3">
+          <div>
+            <label htmlFor="e2s-pattern-sync-channel-input" className="text-xs text-text-muted block mb-1">
+              Channel (1-16) — Global-MIDI-Ch des E2S
+            </label>
+            <input
+              id="e2s-pattern-sync-channel-input"
+              data-testid="e2s-pattern-sync-channel-input"
+              type="number"
+              min={1}
+              max={16}
+              value={e2sPatternSyncState.channel + 1}
+              onChange={(e) => setE2sPatternSyncChannel(Number(e.target.value) - 1)}
+              className="w-full px-2 py-1.5 bg-bg-elevated border border-border-color rounded text-xs text-text-primary"
+            />
+          </div>
+        </div>
+
+        <div className="mt-3 p-2 bg-bg-elevated rounded text-xs text-text-muted">
+          <span className="text-accent-secondary">Hinweis:</span> Sendet CC 32 (Bank-LSB) + Program Change
+          fuer 250 Patterns (Bank 0 = P.001–P.128, Bank 1 = P.129–P.250).
+          <br />
+          <span className="text-accent-danger">Hardware-Limitation:</span> die andere Richtung
+          (E2/E2S → Synthstudio) ist auf Stock-Firmware <strong>nicht moeglich</strong> — KORG sendet beim
+          lokalen Pattern-Wechsel nichts auf MIDI-Out.
+        </div>
+      </div>
+
 
       {/* ── v3.98.0: MIDI-Click-Track-Out — Metronome via MIDI ─────────────── */}
       <div className="p-3 bg-bg-elevated rounded-lg" data-testid="click-out-section">
