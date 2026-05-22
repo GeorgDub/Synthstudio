@@ -1636,7 +1636,11 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
       return;
     }
     try {
-      const access = await navigator.requestMIDIAccess({ sysex: false });
+      // v3.232 (TASK-242): sysex:true — Electron-Whitelist granted, Browser
+      // promptet User. Notwendig für OmniTribe/KORG-SysEx (NRPN+OTP-Protokoll).
+      // useOmniTribe.ts:100 nutzt das gleiche Pattern. Bei Browser-Denial fängt
+      // der try/catch unten den Fehler ab und zeigt eine Toast-Notification.
+      const access = await navigator.requestMIDIAccess({ sysex: true });
       midiAccessRef.current = access;
       access.onstatechange = () => refreshDevices();
       setIsEnabled(true);

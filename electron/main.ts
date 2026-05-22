@@ -36,6 +36,7 @@ import * as fs from "fs";
 
 // ─── Electron-Module ─────────────────────────────────────────────────────────
 import { buildCspForMode } from "./csp";
+import { isPermissionAllowed } from "./permissions";
 import { setupDragDrop } from "./dragdrop";
 import { registerWaveformHandlers } from "./waveform";
 import { WindowManager, registerWindowHandlers } from "./windows";
@@ -3498,17 +3499,17 @@ function installCspHeaders(): void {
  * `enumerateDevices()` + Device-Picker zeigen damit User die Quelle wählt.
  */
 function installPermissionHandlers(): void {
-  // Whitelist: media (Mikrofon-Input) + midi (Web MIDI API für MIDI-Geräte).
-  const ALLOWED = new Set(["media", "mediaKeySystem", "midi"]);
+  // Whitelist (TASK-242): media + midi/midiSysex erlauben, alles andere deny.
+  // Quelle der Wahrheit + isolierte Tests: electron/permissions.ts
   session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => {
-    callback(ALLOWED.has(permission));
+    callback(isPermissionAllowed(permission));
   });
   // Synchroner Check-Pfad (Chromium ruft den vor setPermissionRequestHandler
   // auf manchen Code-Pfaden — z.B. autoplay-related media-checks).
   session.defaultSession.setPermissionCheckHandler((_wc, permission) => {
-    return ALLOWED.has(permission);
+    return isPermissionAllowed(permission);
   });
-  console.log("[Permission] media + midi auto-granted, all others denied.");
+  console.log("[Permission] media + midi + midiSysex auto-granted, all others denied.");
 }
 
 // ─── Globale Keyboard-Shortcuts ──────────────────────────────────────────────
