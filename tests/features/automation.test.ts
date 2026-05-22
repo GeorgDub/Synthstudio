@@ -1,16 +1,18 @@
+// @vitest-environment jsdom
 /**
  * tests/features/automation.test.ts
  *
- * Unit-Tests fuer useAutomationStore.
+ * Unit-Tests fuer useAutomationStore + interpolate-Pure-Helper.
  *
- * HINWEIS: useAutomationStore() ist ein React-Hook der useState/useCallback
- * intern verwendet. In einer Node-Umgebung ohne DOM/Renderer (kein jsdom,
- * kein @testing-library/react im Projekt) lassen sich die Action-Callbacks
- * nicht direkt ausfuehren. Daher werden hier die Hook-Action-Tests mit
- * it.skip markiert und stattdessen die exportierten Typen / der API-Vertrag
- * geprueft.
+ * Setup-History:
+ *   v1.x: 4 Hook-Tests waren `it.skip`, weil Node-only Vitest keinen React-
+ *   Renderer hatte. Mit jsdom + @testing-library/react (verfuegbar seit
+ *   Sprint-119c / TASK-242) sind sie reaktiviert via `renderHook`.
+ *   Plus: `interpolate()` ist jetzt exportiert und kann isoliert pure-getestet
+ *   werden — das deckt die `getValueAt`-Logik unabhaengig vom Hook ab.
  */
 import { describe, it, expect, beforeEach } from "vitest";
+import { renderHook, act } from "@testing-library/react";
 
 // ─── localStorage Mock ────────────────────────────────────────────────────────
 
@@ -39,13 +41,14 @@ Object.defineProperty(globalThis, "localStorage", {
 
 import {
   useAutomationStore,
+  interpolate,
   type AutomationTarget,
   type AutomationLane,
   type AutomationState,
   type AutomationActions,
 } from "../../client/src/store/useAutomationStore";
 
-describe("useAutomationStore – Modul-Exports", () => {
+describe("useAutomationStore - Modul-Exports", () => {
   beforeEach(() => {
     localStorageMock.clear();
   });
@@ -55,7 +58,6 @@ describe("useAutomationStore – Modul-Exports", () => {
   });
 
   it("AutomationTarget akzeptiert die bekannten String-Literal-Typen", () => {
-    // Compile-Time-Check ueber Variablen-Zuweisungen
     const a: AutomationTarget = "bpm";
     const b: AutomationTarget = "master-vol";
     const c: AutomationTarget = "vol:kick";
@@ -93,7 +95,6 @@ describe("useAutomationStore – Modul-Exports", () => {
   });
 
   it("AutomationActions deklariert alle erwarteten Methoden (Typcheck)", () => {
-    // Nur Compile-Time: muss alle erwarteten Methoden-Namen aufzaehlen
     const required: (keyof AutomationActions)[] = [
       "addLane",
       "removeLane",
@@ -107,26 +108,200 @@ describe("useAutomationStore – Modul-Exports", () => {
     ];
     expect(required).toHaveLength(9);
   });
+});
 
-  // ─── Hook-basierte Tests (skip in Node ohne Renderer) ───────────────────────
+// ─── Pure Interpolate-Tests (kein Hook, kein Renderer) ─────────────────────
 
-  it.skip("addLane fuegt neue Lane hinzu", () => {
-    // Skip-Grund: useAutomationStore ist ein React-Hook und benoetigt einen
-    // React-Renderer (z.B. @testing-library/react + jsdom) der hier nicht
-    // verfuegbar ist. Diese Funktionalitaet ist via E2E/Komponententests
-    // (Playwright) abgedeckt.
+describe("interpolate (pure helper)", () => {
+  it("leeres Points-Objekt liefert null", () => {
+    expect(interpolate({}, 5, 16)).toBeNull();
   });
 
-  it.skip("removeLane entfernt Lane anhand der ID", () => {
-    // Skip-Grund: siehe addLane (React-Hook benoetigt Renderer).
+  it("exakter Treffer liefert den hinterlegten Wert", () => {
+    expect(interpolate({ 4: 100 }, 4, 16)).toBe(100);
   });
 
-  it.skip("setPoint setzt einen Punkt und klemmt auf min/max", () => {
-    // Skip-Grund: siehe addLane.
+  it("vor dem ersten Punkt liefert den ersten Punkt (clamp links)", () => {
+    expect(interpolate({ 8: 0.5 }, 0, 16)).toBe(0.5);
   });
 
-  it.skip("getValueAt liefert linear interpolierten Wert zwischen Punkten", () => {
-    // Skip-Grund: siehe addLane. Die interpolate()-Funktion ist nicht
-    // exportiert und kann nicht isoliert getestet werden.
+  it("nach dem letzten Punkt liefert den letzten Punkt (clamp rechts)", () => {
+    expect(interpolate({ 4: 0.5 }, 15, 16)).toBe(0.5);
+  });
+
+  it("linear interpoliert in der Mitte zwischen zwei Punkten", () => {
+    expect(interpolate({ 0: 0, 8: 100 }, 4, 16)).toBe(50);
+  });
+
+  it("interpoliert asymmetrische Punkt-Abstaende korrekt", () => {
+    // points 2: 10, 10: 90, step 4 -> (4-2)/(10-2)=0.25 -> 10 + 0.25*80 = 30
+    expect(interpolate({ 2: 10, 10: 90 }, 4, 16)).toBe(30);
+  });
+
+  it("akzeptiert negative Werte (Pan-Lane)", () => {
+    expect(interpolate({ 0: -1, 8: 1 }, 4, 16)).toBe(0);
+  });
+
+  it("liefert exakten Wert wenn step === existierender key (kein Floating-Point-Drift)", () => {
+    expect(interpolate({ 7: 0.42 }, 7, 16)).toBe(0.42);
+  });
+});
+
+// ─── Hook-Tests (via @testing-library/react renderHook) ─────────────────────
+
+describe("useAutomationStore Actions", () => {
+  beforeEach(() => {
+    localStorageMock.clear();
+  });
+
+  it("addLane fuegt neue Lane hinzu und liefert deren ID", () => {
+    const { result } = renderHook(() => useAutomationStore());
+    expect(result.current.lanes).toEqual([]);
+
+    let newId = "";
+    act(() => {
+      newId = result.current.addLane("bpm", "Tempo");
+    });
+    expect(newId).toBeTruthy();
+    expect(result.current.lanes).toHaveLength(1);
+    expect(result.current.lanes[0].target).toBe("bpm");
+    expect(result.current.lanes[0].label).toBe("Tempo");
+    expect(result.current.lanes[0].id).toBe(newId);
+    expect(result.current.lanes[0].enabled).toBe(true);
+  });
+
+  it("addLane mit leerem Label nutzt targetDefaults-Label", () => {
+    const { result } = renderHook(() => useAutomationStore());
+    let id = "";
+    act(() => { id = result.current.addLane("bpm", ""); });
+    const lane = result.current.lanes.find(l => l.id === id);
+    expect(lane?.label).toBe("BPM");
+  });
+
+  it("removeLane entfernt Lane anhand der ID", () => {
+    const { result } = renderHook(() => useAutomationStore());
+    let idA = "", idB = "";
+    act(() => {
+      idA = result.current.addLane("bpm", "A");
+      idB = result.current.addLane("master-vol", "B");
+    });
+    expect(result.current.lanes).toHaveLength(2);
+    act(() => { result.current.removeLane(idA); });
+    expect(result.current.lanes).toHaveLength(1);
+    expect(result.current.lanes[0].id).toBe(idB);
+  });
+
+  it("setPoint setzt einen Punkt und klemmt auf min/max", () => {
+    const { result } = renderHook(() => useAutomationStore());
+    let id = "";
+    act(() => { id = result.current.addLane("bpm", "Tempo"); });
+    // Im default: bpm min=60, max=200
+    act(() => { result.current.setPoint(id, 4, 150); });
+    expect(result.current.lanes[0].points[4]).toBe(150);
+
+    // ueber max -> clamp auf 200
+    act(() => { result.current.setPoint(id, 5, 999); });
+    expect(result.current.lanes[0].points[5]).toBe(200);
+
+    // unter min -> clamp auf 60
+    act(() => { result.current.setPoint(id, 6, -10); });
+    expect(result.current.lanes[0].points[6]).toBe(60);
+  });
+
+  it("clearPoint entfernt nur den angegebenen Step", () => {
+    const { result } = renderHook(() => useAutomationStore());
+    let id = "";
+    act(() => {
+      id = result.current.addLane("bpm", "T");
+      result.current.setPoint(id, 0, 120);
+      result.current.setPoint(id, 8, 140);
+    });
+    act(() => { result.current.clearPoint(id, 0); });
+    expect(result.current.lanes[0].points[0]).toBeUndefined();
+    expect(result.current.lanes[0].points[8]).toBe(140);
+  });
+
+  it("clearLane leert alle Punkte einer Lane", () => {
+    const { result } = renderHook(() => useAutomationStore());
+    let id = "";
+    act(() => {
+      id = result.current.addLane("bpm", "T");
+      result.current.setPoint(id, 0, 120);
+      result.current.setPoint(id, 8, 140);
+    });
+    act(() => { result.current.clearLane(id); });
+    expect(result.current.lanes[0].points).toEqual({});
+  });
+
+  it("setLaneEnabled wechselt den enabled-Flag", () => {
+    const { result } = renderHook(() => useAutomationStore());
+    let id = "";
+    act(() => { id = result.current.addLane("bpm", "T"); });
+    expect(result.current.lanes[0].enabled).toBe(true);
+    act(() => { result.current.setLaneEnabled(id, false); });
+    expect(result.current.lanes[0].enabled).toBe(false);
+  });
+
+  it("setStepCount aktualisiert die globale Step-Anzahl", () => {
+    const { result } = renderHook(() => useAutomationStore());
+    expect(result.current.stepCount).toBe(16);
+    act(() => { result.current.setStepCount(32); });
+    expect(result.current.stepCount).toBe(32);
+    act(() => { result.current.setStepCount(64); });
+    expect(result.current.stepCount).toBe(64);
+  });
+
+  it("setRecording wechselt den recording-Flag", () => {
+    const { result } = renderHook(() => useAutomationStore());
+    expect(result.current.recording).toBe(false);
+    act(() => { result.current.setRecording(true); });
+    expect(result.current.recording).toBe(true);
+  });
+
+  it("getValueAt liefert linear interpolierten Wert zwischen Punkten", () => {
+    const { result } = renderHook(() => useAutomationStore());
+    let id = "";
+    act(() => {
+      id = result.current.addLane("bpm", "T");
+      result.current.setPoint(id, 0, 100);
+      result.current.setPoint(id, 8, 140);
+    });
+    // bei step 4 sollte (100+140)/2 = 120 sein
+    expect(result.current.getValueAt("bpm", 4)).toBe(120);
+    // exakter Treffer
+    expect(result.current.getValueAt("bpm", 0)).toBe(100);
+    expect(result.current.getValueAt("bpm", 8)).toBe(140);
+    // unused id-Variable suppress
+    expect(id).toBeTruthy();
+  });
+
+  it("getValueAt liefert null wenn keine Lane fuer das Target existiert", () => {
+    const { result } = renderHook(() => useAutomationStore());
+    expect(result.current.getValueAt("bpm", 5)).toBeNull();
+  });
+
+  it("getValueAt ignoriert disabled Lanes", () => {
+    const { result } = renderHook(() => useAutomationStore());
+    let id = "";
+    act(() => {
+      id = result.current.addLane("bpm", "T");
+      result.current.setPoint(id, 0, 100);
+      result.current.setLaneEnabled(id, false);
+    });
+    expect(result.current.getValueAt("bpm", 0)).toBeNull();
+  });
+
+  it("resetAutomation laesst State auf Defaults zurueck", () => {
+    const { result } = renderHook(() => useAutomationStore());
+    act(() => {
+      result.current.addLane("bpm", "T");
+      result.current.setStepCount(64);
+      result.current.setRecording(true);
+    });
+    expect(result.current.lanes.length).toBeGreaterThan(0);
+    act(() => { result.current.resetAutomation(); });
+    expect(result.current.lanes).toEqual([]);
+    expect(result.current.stepCount).toBe(16);
+    expect(result.current.recording).toBe(false);
   });
 });

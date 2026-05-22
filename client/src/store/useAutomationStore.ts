@@ -73,8 +73,13 @@ function targetDefaults(target: AutomationTarget): { min: number; max: number; d
   return { min: 0, max: 1, defaultValue: 0, label: target };
 }
 
-/** Lineares Interpolieren zwischen benachbarten Punkten */
-function interpolate(points: Record<number, number>, step: number, stepCount: number): number | null {
+/**
+ * Lineares Interpolieren zwischen benachbarten Punkten.
+ * Exportiert fuer isolierte Unit-Tests (siehe tests/features/automation.test.ts).
+ * stepCount-Parameter ist reserviert fuer kuenftige Wrap-around-Modi und wird
+ * in der aktuellen linearen Variante nicht ausgewertet.
+ */
+export function interpolate(points: Record<number, number>, step: number, _stepCount: number): number | null {
   const keys = Object.keys(points).map(Number).sort((a, b) => a - b);
   if (keys.length === 0) return null;
 
