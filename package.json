@@ -1,6 +1,6 @@
 {
   "name": "synthstudio",
-  "version": "3.235.0",
+  "version": "3.236.0",
   "type": "module",
   "license": "MIT",
   "main": "electron-dist/main.cjs",
@@ -79,7 +79,7 @@
     "date-fns": "^4.2.1",
     "dockview-react": "^6.4.0",
     "dotenv": "^17.4.2",
-    "drizzle-orm": "^0.44.7",
+    "drizzle-orm": "^0.45.2",
     "embla-carousel-react": "^8.6.0",
     "express": "^4.22.2",
     "framer-motion": "^12.40.0",
