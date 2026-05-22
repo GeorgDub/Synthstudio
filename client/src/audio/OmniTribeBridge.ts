@@ -522,7 +522,7 @@ export class OmniTribeBridge {
    * Wire-Range: bpm_x100 max 2_097_151 (~20971 BPM); Firmware clamped auf 20..300 BPM.
    * Decoder ist len-dispatched, alte 2-Byte-Frames werden weiterhin akzeptiert.
    */
- /** remoteTempo(bpm: number): void {
+  remoteTempo(bpm: number): void {
     const bpm100 = clampInt(Math.round(bpm * 100), 0, 0x1FFFFF);
     this.send(OtpCmd.TRANSPORT, 0x03, [
       (bpm100 >> 14) & 0x7F,
@@ -530,31 +530,6 @@ export class OmniTribeBridge {
        bpm100        & 0x7F,
     ]);
   }
-
-  remoteTempo(bpm: number): void {
-  if (!this.isConnected) return;
-
-  const bpm100 = Math.max(0, Math.min(0x3fff, Math.round(bpm * 100)));
-  const payload = [(bpm100 >> 7) & 0x7f, bpm100 & 0x7f];
-
-  this.enqueueFrame(buildFrame(OtpCmd.TRANSPORT, 0x03, payload));
-}
-**/
-  // Suche die bestehende remoteTempo-Methode und ersetze sie durch diese Version:
-remoteTempo(bpm: number): void {
-  // Verwende den bereits im File üblichen Connection-Guard
-  if (!this.isConnected) return;
-
-  // BPM in Centi-BPM (BPM * 100), dann auf 14-bit begrenzen
-  const bpm100 = Math.max(0, Math.min(0x3fff, Math.round(bpm * 100)));
-
-  // 14-bit in 2x 7-bit splitten (MS7, LS7)
-  const hi = (bpm100 >> 7) & 0x7f;
-  const lo = bpm100 & 0x7f;
-
-  // Gleiches Sende-Schema wie bei den anderen Transport-Kommandos beibehalten
-  this.send(OtpCmd.TRANSPORT, 0x03, [hi, lo]);
-}
   /**
    * Sprint-111: Pattern-Sequencer BPM (CMD 0x0F SUB 0x11).
    * Spiegelt remoteTempo() fuer den Pattern-Engine-Slot statt Transport-Slot.
