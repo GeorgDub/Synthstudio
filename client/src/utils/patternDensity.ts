@@ -1,3 +1,35 @@
+/**
+ * Synthstudio – patternDensity.ts (Multi-Part Density-Map)
+ *
+ * Operates on `PartData[]` (Drum-Machine Multi-Track-State) and produces
+ * eine 2D-Density-Map mit Velocity- und Probability-Gewichtung pro Step.
+ * Zielanwendung: Mix-Assistant + Pattern-Visualization-Heatmap im MixerView.
+ *
+ * Public API:
+ *  - computeDensityMap(parts: PartData[]) → DensityMap
+ *  - detectFlashingPairs(parts: PartData[], threshold?) → Pair-Array
+ *
+ * Pure & Node-testbar.  Tests: tests/features/pattern-density.test.ts +
+ * tests/mix-analytics.test.ts.
+ *
+ * ─── Verhältnis zu `patternDensityAnalyzer.ts` (v3.159+) ──────────────────
+ *
+ * Diese Datei (`patternDensity.ts`)        : MULTI-Part-Aggregat über
+ *   `PartData[]`. Liefert weighted DensityMap mit stepDensity, partDensity,
+ *   totalDensity. Gewichtet via velocity (0..127) und probability (0..100).
+ *   Konsumiert von `useMixAnalytics` (Mix-Heatmap, Flashing-Detection).
+ *
+ * `patternDensityAnalyzer.ts`              : SINGLE-Pattern-Analyse über
+ *   `readonly boolean[]`. Liefert hits/total ratio + categorical
+ *   Einordnung (empty / sparse / medium / dense / full), consecutive runs,
+ *   hit-distances, syncopation-score. Konsumiert von DrumMachine-Header
+ *   (Density-Badge), Pattern-Bank Density-Filter, Auto-Mix-Hints.
+ *
+ * Beide arbeiten auf unterschiedlichen Datenformen (PartData[] vs boolean[])
+ * und unterschiedlichen Granularitäten (multi-part-weighted vs single-bool).
+ * Sie sind KEINE Duplikate — sondern komplementäre Pure-Helper-Layer.
+ */
+
 import type { PartData } from "../audio/AudioEngine";
 
 // ─── Public types ─────────────────────────────────────────────────────────────

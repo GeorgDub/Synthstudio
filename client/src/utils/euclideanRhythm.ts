@@ -7,10 +7,29 @@
  *
  * Public API:
  *  - euclideanPattern(hits, steps, rotation?) → boolean[]
- *  - euclideanPatternBjorklund(hits, steps) → boolean[] (internal, pure)
- *  - EUCLIDEAN_PRESETS: Liste populärer Beispiele
+ *  - euclideanPatternBjorklund(hits, steps) → boolean[] (Bresenham, pure)
+ *  - rotatePattern(pattern, rotation) → boolean[]
+ *  - countHits(pattern) → number
+ *  - EUCLIDEAN_PRESETS: Liste populärer Beispiele (Tresillo, Cinquillo, …)
  *
  * Pure & Node-testbar.  Tests: tests/features/euclidean-rhythm.test.ts
+ *
+ * ─── Verhältnis zu `euclidean.ts` (legacy) ────────────────────────────────
+ *
+ * `euclidean.ts` (älter, v1.x) exportiert NUR `euclidean(hits, steps, rotation)`
+ * via Bjorklund-Bucket-Algorithmus.  Dieses Modul (`euclideanRhythm.ts`,
+ * v3.157+) ist die erweiterte Variante mit Bresenham-Floor-Increment-Check
+ * (mathematisch äquivalent zur Bucket-Form), zusätzlich:
+ *   - Rotation als separat aufrufbare Funktion (rotatePattern)
+ *   - Hit-Zähler (countHits)
+ *   - EUCLIDEAN_PRESETS Liste für UX (Tresillo, Cinquillo, Bossa, Techno …)
+ *
+ * Beide Module koexistieren bewusst:
+ *   - DrumMachine-Audio-Loop nutzt `euclidean.ts` (etablierter Code-Path).
+ *   - Preset-Picker + Rhythm-Library-UX nutzen `euclideanRhythm.ts`.
+ *
+ * Wer ein simples Pattern braucht → `euclidean()` aus `euclidean.ts`.
+ * Wer Presets, Rotation-Separation, oder countHits braucht → dieses Modul.
  */
 
 // ─── Public Types ────────────────────────────────────────────────────────────

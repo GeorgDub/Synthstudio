@@ -1,9 +1,14 @@
 /**
  * Synthstudio – patternDensityAnalyzer.ts (v3.159.0)
  *
- * Pure-Helpers für Pattern-Analyse: density (hits/total ratio), consecutive
- * runs, average distance between hits, syncopation score, sparse/medium/dense
- * categorization.  Foundation für Pattern-Suggestion UX und Auto-Mix-Hints.
+ * Pure-Helpers für SINGLE-PATTERN-Analyse: density (hits/total ratio),
+ * consecutive runs, average distance between hits, syncopation score,
+ * sparse/medium/dense categorization.  Foundation für Pattern-Suggestion UX,
+ * Pattern-Bank Density-Filter und Auto-Mix-Hints.
+ *
+ * Operiert auf `readonly boolean[]` (ein einzelnes Pattern als Step-Array).
+ * Nicht zu verwechseln mit der multi-part-aggregierten DensityMap aus
+ * `patternDensity.ts` — siehe Abschnitt unten.
  *
  * Public API:
  *  - calculateDensity(pattern) → DensityResult
@@ -12,7 +17,25 @@
  *  - syncopationScore(pattern) → number 0..1
  *  - categorizeDensity(density) → "empty" | "sparse" | "medium" | "dense" | "full"
  *
- * Pure & Node-testbar.  Tests: tests/features/pattern-density.test.ts
+ * Pure & Node-testbar.  Tests: tests/features/pattern-density-analyzer.test.ts
+ *
+ * ─── Verhältnis zu `patternDensity.ts` (Multi-Part) ───────────────────────
+ *
+ * Diese Datei (`patternDensityAnalyzer.ts`) : SINGLE-Pattern-Analyse,
+ *   Input = `readonly boolean[]`.  Liefert Density-Kategorie + Statistiken
+ *   (runs, distances, syncopation). Konsumiert in DrumMachine.tsx
+ *   (Density-Badge im Header), `patternBankDensity.ts` (Bank-Filter).
+ *
+ * `patternDensity.ts`                       : MULTI-Part-Density-Map,
+ *   Input = `PartData[]` (Drum-Machine Multi-Track-State).  Liefert
+ *   gewichtetes 2D-Cells-Array + per-step + per-part Aggregate.
+ *   Konsumiert in `useMixAnalytics` (Mix-Heatmap, Flashing-Pair-Detection).
+ *
+ * Beide Module sind KEINE Duplikate — sie bedienen unterschiedliche
+ * Granularitäten und Datenshapes. Sie koexistieren bewusst.
+ *
+ * Wer ein einzelnes Pattern bewerten will (Step-Array) → diese Datei.
+ * Wer ein Multi-Track-Set analysieren will (PartData[]) → `patternDensity.ts`.
  */
 
 // ─── Public Types ────────────────────────────────────────────────────────────
