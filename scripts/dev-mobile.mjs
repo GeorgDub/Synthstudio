@@ -5,6 +5,10 @@
 //
 // Nutzung: pnpm dev:mobile  (HTTP per default ist nicht aktiviert — wir
 // brauchen HTTPS, damit WebMIDI/Mikro auch über LAN-IPs funktionieren).
+//
+// In GitHub Codespaces wird HTTPS automatisch deaktiviert (der Codespaces-
+// Proxy terminiert HTTPS selbst) und stattdessen die öffentliche
+// Codespace-URL inkl. QR-Code ausgegeben.
 
 import os from "node:os";
 import path from "node:path";
@@ -37,7 +41,20 @@ export function buildMobileUrls(addresses, { protocol, port }) {
   }));
 }
 
-function printBanner(localUrl, lanUrls) {
+export function detectCodespace(env = process.env) {
+  if (env.CODESPACES !== "true") return null;
+  const name = env.CODESPACE_NAME;
+  const domain = env.GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN;
+  if (!name || !domain) return null;
+  return { name, domain };
+}
+
+export function buildCodespaceUrl({ name, domain }, port) {
+  return `https://${name}-${port}.${domain}`;
+}
+
+
+function printLanBanner(localUrl, lanUrls) {
   const lines = [
     "",
     "  📱  Synthstudio Mobile Dev Server",
@@ -62,36 +79,63 @@ function printBanner(localUrl, lanUrls) {
   console.log(lines.join("\n"));
 }
 
-function printQrCodes(lanUrls) {
-  if (lanUrls.length === 0) return;
-  for (const { iface, url } of lanUrls) {
-    console.log(`  QR für ${iface}  →  ${url}`);
+function printCodespaceBanner(publicUrl) {
+  console.log(
+    [
+      "",
+      "  📱  Synthstudio Mobile Dev Server (GitHub Codespaces)",
+      "  ─────────────────────────────────────────────",
+      `  Public: ${publicUrl}`,
+      "",
+      "  💡  Port 5173 muss in der Codespaces-Port-Sichtbarkeit auf",
+      "      'Public' stehen, sonst lädt das Handy die Login-Seite.",
+      "      HTTPS wird vom Codespaces-Proxy terminiert — der Server",
+      "      selbst läuft HTTP, deshalb kein basicSsl-Plugin hier.",
+      "",
+    ].join("\n")
+  );
+}
+
+function printQrCodes(entries) {
+  if (entries.length === 0) return;
+  for (const { label, url } of entries) {
+    console.log(`  QR für ${label}  →  ${url}`);
     qrcode.generate(url, { small: true });
   }
 }
 
 async function main() {
+  const codespace = detectCodespace();
+  const useHttps = !codespace;
+
   const server = await createServer({
     configFile: path.join(PROJECT_ROOT, "vite.config.ts"),
     mode: "development",
-    plugins: [basicSsl()],
+    plugins: useHttps ? [basicSsl()] : [],
     server: {
       host: true,
-      https: {},
+      ...(useHttps ? { https: {} } : {}),
     },
   });
 
   await server.listen();
 
   const port = server.config.server.port ?? 5173;
+
+  if (codespace) {
+    const publicUrl = buildCodespaceUrl(codespace, port);
+    printCodespaceBanner(publicUrl);
+    printQrCodes([{ label: "Codespace", url: publicUrl }]);
+    return;
+  }
+
   const localUrl = `https://localhost:${port}`;
   const lanUrls = buildMobileUrls(getLanAddresses(), {
     protocol: "https:",
     port,
   });
-
-  printBanner(localUrl, lanUrls);
-  printQrCodes(lanUrls);
+  printLanBanner(localUrl, lanUrls);
+  printQrCodes(lanUrls.map(({ iface, url }) => ({ label: iface, url })));
 }
 
 main().catch((err) => {
