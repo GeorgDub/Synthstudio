@@ -317,6 +317,7 @@ import {
   setBaseNote as setMelodicBaseNote,
 } from "@/store/useMelodicPartStore";
 import { routeMelodicPartsToPatterns } from "@/utils/imports";
+import { collectSampleNames, matchSamplesByBasename } from "@/utils/imports/flpSampleLoader";
 import { resetNoteRepeat, toggleNoteRepeat, isNoteRepeatEnabled } from "@/store/useNoteRepeatStore";
 import { resetTranspose } from "@/store/useTransposeStore";
 import { resetMorph, getMorphState, setActive as setMorphActive } from "@/store/useMorphStore";
@@ -720,6 +721,62 @@ export default function App() {
   const dmRef = useRef(dm);
   dmRef.current = dm;
   const mixer = useMixerStore();
+
+  // FLP-SAMPLES (Stage 3): löst die Sample-Referenzen eines FLP-Imports gegen
+  // einen vom User gewählten Ordner auf und legt die echten .wav auf die Parts.
+  // Electron-only (OS-Ordner-Dialog + fs:read-file). Die Audio-Engine lädt die
+  // absoluten Pfade lazy beim Abspielen (gleicher Pfad → bufferCache dedupt).
+  const loadFlpSamplesFromFolder = useCallback(async (
+    importedPatterns: Array<{ parts: Array<{ sampleName?: string }> }>,
+    patternIds: string[],
+  ) => {
+    const names = collectSampleNames(importedPatterns);
+    if (names.length === 0) return;
+    const api = (window as unknown as {
+      electronAPI?: {
+        packChooseFolder?: () => Promise<{ canceled: boolean; filePaths: string[] }>;
+        packRegisterRoot?: (p: string) => Promise<{ success: boolean; root?: string; error?: string }>;
+        packScanFolder?: (p: string) => Promise<{ success: boolean; root?: string; files?: Array<{ absolutePath: string }>; truncated?: boolean; error?: string }>;
+      };
+    }).electronAPI;
+    if (!api?.packChooseFolder || !api.packRegisterRoot || !api.packScanFolder) return;
+
+    const ok = await confirm({
+      title: `${names.length} Sample-Referenzen importiert — jetzt die echten Sample-Dateien laden?`,
+      message: "Wähle im nächsten Dialog den Ordner mit den Samples (i.d.R. der Ordner der .flp-Datei).",
+      confirmLabel: "Ordner wählen",
+    });
+    if (!ok) return;
+
+    try {
+      const pick = await api.packChooseFolder();
+      if (pick.canceled || pick.filePaths.length === 0) return;
+      const reg = await api.packRegisterRoot(pick.filePaths[0]);
+      if (!reg.success || !reg.root) {
+        toast(reg.error ?? "Ordner konnte nicht registriert werden", { kind: "error" });
+        return;
+      }
+      const scan = await api.packScanFolder(reg.root);
+      if (!scan.success || !scan.files) {
+        toast(scan.error ?? "Ordner-Scan fehlgeschlagen", { kind: "error" });
+        return;
+      }
+      const { matched, missing } = matchSamplesByBasename(names, scan.files);
+      const matchedCount = Object.keys(matched).length;
+      if (matchedCount === 0) {
+        toast(`Keine der ${names.length} Samples in diesem Ordner gefunden`, { kind: "warning", duration: 6000 });
+        return;
+      }
+      dm.applyImportedSamples(patternIds, matched);
+      toast(
+        `${matchedCount}/${names.length} Samples zugewiesen${missing.length > 0 ? ` — ${missing.length} nicht im Ordner gefunden` : ""}${scan.truncated ? " (Ordner-Scan abgeschnitten)" : ""}`,
+        { kind: "success", duration: 7000 },
+      );
+    } catch (err) {
+      toast(`Sample-Laden fehlgeschlagen: ${err instanceof Error ? err.message : String(err)}`, { kind: "error", duration: 6000 });
+    }
+  }, [confirm, dm]);
+
   // v2.46: Inspector als pinnable Floating-Panel zusätzlich zur Dock-Slot-Position
   const inspectorFloat = useInspectorFloatStore();
   const automation = useAutomationStore();
@@ -4292,9 +4349,15 @@ export default function App() {
                   // Batch-Insert (ein State-Update statt N) — wichtig bei FLP-Imports
                   // mit hunderten Patterns; setzt aktives Pattern auf das erste und
                   // BEWAHRT die Part-IDs, damit das Melodic-Routing unten passt.
-                  dm.addPatternsData(patterns as Parameters<typeof dm.addPatternsData>[0]);
+                  const newPatternIds = dm.addPatternsData(patterns as Parameters<typeof dm.addPatternsData>[0]);
                   if (patterns.length > 0 && patterns[0].bpm) {
                     project.setBpm(patterns[0].bpm);
+                  }
+                  // FLP-SAMPLES (Stage 3, Electron-only): Sample-Referenzen gegen
+                  // einen vom User gewählten Ordner auflösen + auf die importierten
+                  // Parts legen. Fire-and-forget (interaktiver Ordner-Dialog).
+                  if (sourceFormat === "flp" && electron.isElectron) {
+                    void loadFlpSamplesFromFolder(patterns, newPatternIds);
                   }
                   // FLP-MELODIC-ROUTE Phase 2 (v1.66): melodische Channels in den
                   // useMelodicPartStore einspeisen. v1.69: zusätzlich baseNote

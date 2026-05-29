@@ -165,6 +165,7 @@ function useRemoteDmAdapter(
       setPartStepLength: noop,
       addPatternData: () => "",
       addPatternsData: () => [],
+      applyImportedSamples: noop,
       movePart: noop,
       setPartFx: (_partId: string, _fx: Partial<ChannelFx>) => { /* no-op */ },
       setPartSteps: noop,

@@ -46,6 +46,12 @@ export interface DrumMachineActions {
    * aktive Pattern auf das ERSTE importierte. Gibt die zugewiesenen IDs zurück.
    */
   addPatternsData: (patterns: PatternData[]) => string[];
+  /**
+   * Weist Sample-URLs per sampleName-Match zu — NUR in den angegebenen Patterns
+   * (z.B. den gerade FLP-importierten). Scoping verhindert, dass fremde Parts mit
+   * gleichem Namen überschrieben werden. Ein State-Update.
+   */
+  applyImportedSamples: (patternIds: string[], samplesByName: Record<string, string>) => void;
   removePattern: (id: string) => void;
   renamePattern: (id: string, name: string) => void;
   setActivePattern: (id: string) => void;
@@ -381,6 +387,21 @@ export function useDrumMachineStore(): DrumMachineState & DrumMachineActions {
     }));
     return prepared.map(p => p.id);
   }, []);
+
+  const applyImportedSamples = useCallback((patternIds: string[], samplesByName: Record<string, string>) => {
+    if (patternIds.length === 0 || Object.keys(samplesByName).length === 0) return;
+    const idSet = new Set(patternIds);
+    updatePatterns(ps => ps.map(p => {
+      if (!idSet.has(p.id)) return p;
+      return {
+        ...p,
+        parts: p.parts.map(pt => {
+          const url = pt.sampleName ? samplesByName[pt.sampleName] : undefined;
+          return url ? { ...pt, sampleUrl: url } : pt;
+        }),
+      };
+    }));
+  }, [updatePatterns]);
 
   const removePattern = useCallback((id: string) => {
     setState(prev => {
@@ -1104,7 +1125,7 @@ export function useDrumMachineStore(): DrumMachineState & DrumMachineActions {
 
   return {
     ...state,
-    addPattern, addPatternData, addPatternsData, removePattern, renamePattern, setActivePattern, duplicatePattern,
+    addPattern, addPatternData, addPatternsData, applyImportedSamples, removePattern, renamePattern, setActivePattern, duplicatePattern,
     copySamplesFromPattern,
     reorderPatterns,
     startLivePatternEdit, commitLivePatternEdit, cancelLivePatternEdit, scheduleCommit,
