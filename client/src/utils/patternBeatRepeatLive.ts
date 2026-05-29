@@ -189,6 +189,34 @@ export function nextStep(
   };
 }
 
+/**
+ * Sequencer-Read-Remap für Live-Beat-Repeat (v3.240).
+ *
+ * Liefert für einen laufenden Sequencer-Step den EFFEKTIVEN Step-Index, aus dem
+ * das (live) Pattern gelesen werden soll. Im Gegensatz zu nextStep() friert dies
+ * keinen Buffer ein, sondern bildet ein N-Step-Fenster ab und loopt es:
+ *
+ *   readIndex(S) = capturedAtStep + ((S - capturedAtStep) mod bufferLength)
+ *
+ * Der Aufrufer (AudioEngine) wrappt das Ergebnis anschließend modulo der
+ * Pattern-Länge, sodass das Fenster im Playback-Order über das Pattern wandert.
+ *
+ * Inaktiv oder Step vor dem Capture → Identität (normaler Pattern-Read).
+ */
+export function beatRepeatReadIndex(
+  state: Pick<BeatRepeatState, "active" | "capturedAtStep" | "bufferLength">,
+  stepIndex: number,
+): number {
+  const s = safeStep(stepIndex);
+  if (!state.active) return s;
+  const len = Math.floor(state.bufferLength);
+  const bufLen = Number.isFinite(len) && len >= MIN_BUFFER_STEPS ? len : DEFAULT_BUFFER_STEPS;
+  const captured = safeStep(state.capturedAtStep);
+  const delta = s - captured;
+  if (delta < 0) return s; // Step liegt vor dem Trigger → normales Pattern.
+  return captured + (delta % bufLen);
+}
+
 // ─── Internal helpers ────────────────────────────────────────────────────────
 
 function clampBufferSteps(v: number | undefined): number {

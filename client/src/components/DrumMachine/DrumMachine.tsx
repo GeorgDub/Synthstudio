@@ -92,12 +92,13 @@ import { randomMutate } from "@/utils/patternMutateRandom";
 import { generateMelodicSequence, MELODIC_STRATEGY_LABELS, type MelodicStrategy } from "@/utils/patternMelodicSeq";
 // v3.188.0: Pattern-Evolve Pure-Helper (genetic-algorithm-style crossover + mutation).
 import { evolvePattern } from "@/utils/patternEvolve";
-// v3.189.0: Live Beat-Repeat State-Machine (UI demonstriert State,
-// Audio-Engine-Wire ist offen — siehe data-testid pattern-br-live-*).
+// v3.189.0: Live Beat-Repeat State-Machine. v3.240: Audio-Engine-Wire über
+// beatRepeatReadIndex → __synthstudio_beatrepeat__ Singleton (Read-Remap).
 import {
   createBeatRepeatState,
   triggerBeatRepeat,
   releaseBeatRepeat,
+  beatRepeatReadIndex,
   type BeatRepeatState,
 } from "@/utils/patternBeatRepeatLive";
 
@@ -1941,27 +1942,42 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
     toast(`Evolution: ${created} Patterns nach ${result.generation} Generations`, { kind: "success" });
   }, [dm, evolveGens, evolvePopSize]);
 
-  // v3.189.0: Beat-Repeat-Live — State-Machine + Trigger/Release Demo.
-  // Sequencer-Wire ist Caveat (asynchron zum Playback). UI demonstriert
-  // armed/released-State + befuellt Buffer via union ueber Parts ab Step 0.
+  // v3.189.0: Beat-Repeat-Live — State-Machine. v3.240: am Sequencer verkabelt.
+  // Trigger friert ein N-Step-Fenster ab dem aktuellen Playhead-Step ein; die
+  // AudioEngine loopt dieses Fenster über das __synthstudio_beatrepeat__-Singleton.
+  const [brBufferSteps, setBrBufferSteps] = useState(4);
   const [brState, setBrState] = useState<BeatRepeatState>(() => createBeatRepeatState(4));
 
   // v3.196.0: Emphasis-Preset-Auswahl fuer Velocity-Akzentuierung Preview.
   const [emphasisPreset, setEmphasisPreset] = useState<EmphasisPreset>("natural");
 
+  // Beat-Repeat ↔ AudioEngine Bridge: spiegelt brState in den Singleton-Slot,
+  // den _scheduleStep pro Step ausliest. Identität solange !active.
+  useEffect(() => {
+    (globalThis as Record<string, unknown>)["__synthstudio_beatrepeat__"] = {
+      readIndex: (i: number) => beatRepeatReadIndex(brState, i),
+    };
+    return () => {
+      delete (globalThis as Record<string, unknown>)["__synthstudio_beatrepeat__"];
+    };
+  }, [brState]);
+
   const handleTriggerBR = useCallback(() => {
     const activePattern = dm.patterns.find((p) => p.id === dm.activePatternId);
     if (!activePattern) return;
     const len = activePattern.parts[0]?.steps.length ?? 16;
+    // Buffer (für State/Anzeige) als Union über Parts ab dem aktuellen Playhead.
+    const start = dm.currentStep ?? 0;
     const unionSteps = new Array<boolean>(len).fill(false);
     for (const part of activePattern.parts) {
       for (let i = 0; i < Math.min(len, part.steps.length); i++) {
         if (part.steps[i].active) unionSteps[i] = true;
       }
     }
-    setBrState((s) => triggerBeatRepeat(s, unionSteps, 0));
-    toast("Beat-Repeat: armed (capture buffer)", { kind: "info", duration: 2000 });
-  }, [dm.patterns, dm.activePatternId]);
+    const fresh = createBeatRepeatState(brBufferSteps);
+    setBrState(triggerBeatRepeat(fresh, unionSteps, start));
+    toast(`Beat-Repeat: ${brBufferSteps}-Step-Fenster ab Step ${start + 1}`, { kind: "info", duration: 1500 });
+  }, [dm.patterns, dm.activePatternId, dm.currentStep, brBufferSteps]);
 
   const handleReleaseBR = useCallback(() => {
     setBrState((s) => releaseBeatRepeat(s));
@@ -2516,9 +2532,9 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
                 </button>
               </div>
 
-              {/* v3.189.0: Beat-Repeat Live — State-Machine-Demo. Trigger
-                  capturt Buffer ab Step 0 (union ueber Parts), Release
-                  setzt active=false. Audio-Engine-Wire ist Caveat. */}
+              {/* v3.189.0: Beat-Repeat Live. v3.240: am Sequencer verkabelt —
+                  Trigger loopt ein N-Step-Fenster ab dem Playhead, Release
+                  kehrt zum normalen Pattern zurück. */}
               <div className="px-3 py-2 border-t border-border-color space-y-1.5" data-testid="pattern-br-live-block">
                 <div className="flex items-center justify-between">
                   <span className="text-[10px] text-text-dim font-semibold">⏯ Beat-Repeat Live</span>
@@ -2549,8 +2565,27 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
                     Release
                   </button>
                 </div>
+                <div className="flex items-center gap-1" data-testid="pattern-br-live-rates">
+                  <span className="text-[10px] text-text-dim">Fenster:</span>
+                  {[1, 2, 4, 8].map((n) => (
+                    <button
+                      key={n}
+                      onClick={() => setBrBufferSteps(n)}
+                      data-testid={`pattern-br-live-rate-${n}`}
+                      className={[
+                        "px-1.5 py-0.5 rounded text-[10px] font-mono transition-colors",
+                        brBufferSteps === n
+                          ? "bg-accent-secondary/30 text-accent-secondary"
+                          : "bg-bg-elevated text-text-dim hover:text-text-primary",
+                      ].join(" ")}
+                    >
+                      {n}
+                    </button>
+                  ))}
+                  <span className="text-[10px] text-text-dim ml-auto">Steps</span>
+                </div>
                 <div className="text-[10px] text-text-dim italic">
-                  Audio-Engine-Wire: pending. UI demonstriert State-Machine.
+                  Loopt ein {brBufferSteps}-Step-Fenster ab dem Playhead, bis Release.
                 </div>
               </div>
 

@@ -9,6 +9,7 @@ import {
   triggerBeatRepeat,
   releaseBeatRepeat,
   nextStep,
+  beatRepeatReadIndex,
 } from "@/utils/patternBeatRepeatLive";
 
 const T = true;
@@ -278,5 +279,67 @@ describe("multiple trigger/release cycles", () => {
     expect(st.capturedAtStep).toBe(3);
     expect(st.currentRepeats).toBe(0);
     expect(st.active).toBe(true);
+  });
+});
+
+// ─── v3.240: beatRepeatReadIndex (Sequencer-Read-Remap) ───────────────────────
+
+describe("beatRepeatReadIndex – Sequencer-Read-Remap", () => {
+  it("inaktiv → Identität für beliebige Steps", () => {
+    const st = createBeatRepeatState(4); // active:false
+    for (const s of [0, 1, 7, 15, 31]) {
+      expect(beatRepeatReadIndex(st, s)).toBe(s);
+    }
+  });
+
+  it("aktiv, capturedAtStep=0, bufferLength=4 → loopt 0..3", () => {
+    const st = { active: true, capturedAtStep: 0, bufferLength: 4 };
+    expect([0, 1, 2, 3, 4, 5, 6, 7, 8].map((s) => beatRepeatReadIndex(st, s)))
+      .toEqual([0, 1, 2, 3, 0, 1, 2, 3, 0]);
+  });
+
+  it("aktiv, capturedAtStep=4, bufferLength=4 → Fenster 4..7 loopt", () => {
+    const st = { active: true, capturedAtStep: 4, bufferLength: 4 };
+    expect([4, 5, 6, 7, 8, 9].map((s) => beatRepeatReadIndex(st, s)))
+      .toEqual([4, 5, 6, 7, 4, 5]);
+  });
+
+  it("Step vor dem Capture → Identität (kein Rückwärts-Loop)", () => {
+    const st = { active: true, capturedAtStep: 8, bufferLength: 4 };
+    expect(beatRepeatReadIndex(st, 3)).toBe(3);
+    expect(beatRepeatReadIndex(st, 7)).toBe(7);
+    expect(beatRepeatReadIndex(st, 8)).toBe(8);
+  });
+
+  it("bufferLength=1 → friert auf einen Step ein", () => {
+    const st = { active: true, capturedAtStep: 5, bufferLength: 1 };
+    expect([5, 6, 7, 8].map((s) => beatRepeatReadIndex(st, s))).toEqual([5, 5, 5, 5]);
+  });
+
+  it("ungültige bufferLength (0/NaN/Infinity) → Default 4", () => {
+    for (const bad of [0, NaN, Infinity]) {
+      const st = { active: true, capturedAtStep: 0, bufferLength: bad as number };
+      expect(beatRepeatReadIndex(st, 4)).toBe(0); // wie bufferLength 4
+      expect(beatRepeatReadIndex(st, 5)).toBe(1);
+    }
+  });
+
+  it("NaN stepIndex → 0", () => {
+    const st = { active: true, capturedAtStep: 0, bufferLength: 4 };
+    expect(beatRepeatReadIndex(st, NaN)).toBe(0);
+  });
+
+  it("Komposition mit Pattern-Wrap (%length): Fenster am Pattern-Ende wandert in den Loop", () => {
+    // captured=14, L=4 in einem 16-Step-Pattern → Read-Order 14,15,0,1 (gewollt).
+    const st = { active: true, capturedAtStep: 14, bufferLength: 4 };
+    const wrapped = [14, 15, 16, 17, 18, 19, 20, 21].map((s) => beatRepeatReadIndex(st, s) % 16);
+    expect(wrapped).toEqual([14, 15, 0, 1, 14, 15, 0, 1]);
+  });
+
+  it("releaseBeatRepeat → readIndex wieder Identität", () => {
+    let st = triggerBeatRepeat(createBeatRepeatState(4), [T, F, T, F, T, F, T, F], 0);
+    expect(beatRepeatReadIndex(st, 5)).toBe(1); // aktiv
+    st = releaseBeatRepeat(st);
+    expect(beatRepeatReadIndex(st, 5)).toBe(5); // identisch
   });
 });

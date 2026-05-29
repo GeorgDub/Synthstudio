@@ -3319,14 +3319,30 @@ class AudioEngineClass {
     const anyAudioSolo = this.audioTracksGetter?.().some(t => t.soloed) ?? false;
     const anySolo = anyDrumSolo || anyAudioSolo;
 
+    // Live-Beat-Repeat: optionales Read-Remapping. Loopt ein N-Step-Fenster, indem
+    // der Pattern-Read-Index umgebogen wird (Identität wenn kein Repeat aktiv).
+    // Singleton-Slot analog zum Humanizer — hält AudioEngine store-agnostisch.
+    let readStep = stepIndex;
+    try {
+      const br = (globalThis as Record<string, unknown>)["__synthstudio_beatrepeat__"] as
+        | { readIndex: (i: number) => number }
+        | undefined;
+      if (br) readStep = br.readIndex(stepIndex);
+    } catch { /* ignore */ }
+
     pattern.parts.forEach((part, partIndex) => {
       if (part.muted) return;
       if (anySolo && !part.soloed) return;
 
-      // Polymeter: bei eigener stepLength wrappt der Part modular
+      // Polymeter: bei eigener stepLength wrappt der Part modular.
+      // readStep statt stepIndex → Beat-Repeat-Fenster greift. Das %steps.length
+      // ist NUR bei aktivem Repeat nötig (readStep kann die Pattern-Länge
+      // überschreiten); inaktiv bleibt es byte-genau beim Original `stepIndex`,
+      // damit Parts mit kürzerem steps-Array weiterhin auf Overflow-Steps schweigen.
+      const remapped = readStep !== stepIndex; // Beat-Repeat tatsächlich aktiv
       const effIdx = part.stepLength && part.stepLength > 0
-        ? stepIndex % part.stepLength
-        : stepIndex;
+        ? readStep % part.stepLength
+        : (remapped ? readStep % Math.max(1, part.steps.length) : stepIndex);
       const step = part.steps[effIdx];
       if (!step || !this.shouldTriggerStep(step, part.id, effIdx)) return;
 
