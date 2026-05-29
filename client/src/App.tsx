@@ -768,10 +768,29 @@ export default function App() {
         return;
       }
       dm.applyImportedSamples(patternIds, matched);
+      // Samples JETZT vorab dekodieren + in den AudioEngine-Cache laden (statt
+      // lazy beim ersten Trigger). Das garantiert hörbare Wiedergabe (kein
+      // Timing-Miss im Scheduler) UND liefert die ECHTE abspielbare Anzahl —
+      // der Match-Count oben sagt nur, dass die Datei existiert, nicht dass sie
+      // dekodierbar ist (z.B. MP3-in-WAV scheitert hier).
+      let playable = 0;
+      const failed: string[] = [];
+      await Promise.all(Object.entries(matched).map(async ([name, absPath]) => {
+        try {
+          const buf = await AudioEngine.loadSample(absPath);
+          if (buf) playable++; else failed.push(name);
+        } catch { failed.push(name); }
+      }));
+      const notFound = missing.length;
       toast(
-        `${matchedCount}/${names.length} Samples zugewiesen${missing.length > 0 ? ` — ${missing.length} nicht im Ordner gefunden` : ""}${scan.truncated ? " (Ordner-Scan abgeschnitten)" : ""}`,
-        { kind: "success", duration: 7000 },
+        `${playable}/${names.length} Samples abspielbar geladen` +
+        (failed.length > 0 ? ` · ${failed.length} nicht dekodierbar` : "") +
+        (notFound > 0 ? ` · ${notFound} nicht im Ordner` : ""),
+        { kind: playable > 0 ? "success" : "warning", duration: 8000 },
       );
+      if (failed.length > 0) {
+        console.warn("[FLP-Samples] nicht dekodierbar:", failed.join(", "));
+      }
     } catch (err) {
       toast(`Sample-Laden fehlgeschlagen: ${err instanceof Error ? err.message : String(err)}`, { kind: "error", duration: 6000 });
     }
