@@ -129,7 +129,7 @@ export interface DrumMachineActions {
   applyPatchToPart: (partId: string, patch: import("@/utils/patchSerialize").Patch, options?: { replaceFx?: boolean }) => void;
 
   toggleStep: (partId: string, stepIndex: number) => void;
-  setPartSteps: (partId: string, steps: boolean[], velocities?: number[]) => void;
+  setPartSteps: (partId: string, steps: boolean[], velocities?: number[], pitches?: number[]) => void;
   setStepVelocity: (partId: string, stepIndex: number, velocity: number) => void;
   setStepPitch: (partId: string, stepIndex: number, pitch: number) => void;
   setStepProbability: (partId: string, stepIndex: number, probability: number) => void;
@@ -817,7 +817,7 @@ export function useDrumMachineStore(): DrumMachineState & DrumMachineActions {
     })));
   }, [updatePatterns]);
 
-  const setPartSteps = useCallback((partId: string, newActive: boolean[], velocities?: number[]) => {
+  const setPartSteps = useCallback((partId: string, newActive: boolean[], velocities?: number[], pitches?: number[]) => {
     updatePatterns(ps => ps.map(p => ({
       ...p,
       parts: p.parts.map(pt => {
@@ -826,6 +826,7 @@ export function useDrumMachineStore(): DrumMachineState & DrumMachineActions {
           ...pt.steps[i],
           active,
           ...(velocities?.[i] !== undefined ? { velocity: velocities[i] } : {}),
+          ...(pitches?.[i] !== undefined ? { pitch: pitches[i] } : {}),
         }));
         return { ...pt, steps };
       }),

@@ -89,7 +89,7 @@ import { rotatePatternByBeats } from "@/utils/patternRhythmRotate";
 // v3.197.0: Random Mutation-Chain Pure-Helper (Random-Button in Mutator-Toolbar).
 import { randomMutate } from "@/utils/patternMutateRandom";
 // v3.183.0: Melodic Sequence Pure-Helper (Rhythm + Scale + Strategy → MIDI-Notes).
-import { generateMelodicSequence, MELODIC_STRATEGY_LABELS, type MelodicStrategy } from "@/utils/patternMelodicSeq";
+import { generateMelodicSequence, applyMelodicPitches, MELODIC_STRATEGY_LABELS, type MelodicStrategy } from "@/utils/patternMelodicSeq";
 // v3.188.0: Pattern-Evolve Pure-Helper (genetic-algorithm-style crossover + mutation).
 import { evolvePattern } from "@/utils/patternEvolve";
 // v3.189.0: Live Beat-Repeat State-Machine. v3.240: Audio-Engine-Wire über
@@ -1859,27 +1859,35 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
     toast(`${variations.length} Pattern-Variationen erstellt (intensity ${branchIntensity.toFixed(2)})`, { kind: "success" });
   }, [dm, branchCount, branchIntensity]);
 
-  // v3.183.0: Melodic Sequence Preview — generiert aus Rhythmus von parts[0]
-  // eine melodische Sequenz und zeigt Notes als Toast + console.log.
-  const handleGenerateMelodic = useCallback(() => {
+  // v3.183.0/v3.242.0: Melodic Sequence — generiert aus dem Rhythmus des aktiven
+  // Parts eine melodische Sequenz (minor-natural) und WENDET die Pitches als
+  // Halbton-Offsets an (vorher reine Toast/console.log-Vorschau).
+  const MELODIC_ROOT_MIDI = 60;
+  const handleApplyMelodic = useCallback(() => {
     const activePattern = dm.patterns.find((p) => p.id === dm.activePatternId);
     if (!activePattern || activePattern.parts.length === 0) return;
-    const rhythm = activePattern.parts[0].steps.map((s) => s.active);
+    const part = activePattern.parts.find((p) => p.id === dm.activePartId) ?? activePattern.parts[0];
+    const rhythm = part.steps.map((s) => s.active);
     const notes = generateMelodicSequence({
       rhythmPattern: rhythm,
       scale: "minor-natural",
-      rootMidi: 60,
+      rootMidi: MELODIC_ROOT_MIDI,
       strategy: melodicStrategy,
       octaveRange: 1,
       seed: Date.now(),
     });
     if (notes.length === 0) {
-      toast("Keine aktiven Steps im activePattern", { kind: "warning" });
+      toast("Keine aktiven Steps für eine Melodie", { kind: "warning" });
       return;
     }
-    const noteStr = notes.map((n) => `${n.midi}@${n.stepIndex}`).join(", ");
-    toast(`Melodic Sequence (${melodicStrategy}): ${notes.length} Notes — ${noteStr.slice(0, 100)}...`, { kind: "info", duration: 6000 });
-    console.log("[Melodic-Seq]", notes);
+    const newPitches = applyMelodicPitches(
+      part.steps.length,
+      notes,
+      MELODIC_ROOT_MIDI,
+      part.steps.map((s) => s.pitch ?? 0),
+    );
+    dm.setPartSteps(part.id, rhythm, undefined, newPitches);
+    toast(`Melodie "${melodicStrategy}": ${notes.length} Pitches angewendet`, { kind: "success", duration: 2500 });
   }, [dm, melodicStrategy]);
 
   // v3.186.0: Chain-Simulator — fuehrt resolveFollowAction 10x mit "next"-Action
@@ -2470,11 +2478,11 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
                 </select>
                 <button
                   type="button"
-                  onClick={handleGenerateMelodic}
-                  data-testid="pattern-melodic-generate"
+                  onClick={handleApplyMelodic}
+                  data-testid="pattern-melodic-apply"
                   className="w-full px-2 py-1 rounded text-[11px] bg-bg-elevated text-text-primary hover:bg-accent-primary/20 hover:text-accent-primary transition-colors"
                 >
-                  🎼 Generate Preview
+                  🎼 Apply Melodic
                 </button>
               </div>
 

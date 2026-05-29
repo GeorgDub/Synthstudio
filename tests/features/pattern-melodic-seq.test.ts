@@ -8,6 +8,7 @@
 import { describe, it, expect } from "vitest";
 import {
   generateMelodicSequence,
+  applyMelodicPitches,
   MELODIC_STRATEGY_LABELS,
   type MelodicNote,
 } from "../../client/src/utils/patternMelodicSeq";
@@ -329,5 +330,65 @@ describe("generateMelodicSequence – alternating", () => {
     expect(result[0].midi).toBe(60);
     // i=1 → half=0, i%2!=0 → degree=totalDegrees-1=6 → halftone 11 → 71
     expect(result[1].midi).toBe(71);
+  });
+});
+
+// ─── v3.242: applyMelodicPitches (MIDI-Noten → Step-Pitch-Offsets) ────────────
+
+describe("applyMelodicPitches", () => {
+  it("setzt (midi - rootMidi) als Halbton-Offset für Noten-Steps", () => {
+    const notes: MelodicNote[] = [
+      { stepIndex: 0, midi: 60, velocity: 100 }, // root → 0
+      { stepIndex: 2, midi: 67, velocity: 100 }, // +7
+      { stepIndex: 3, midi: 55, velocity: 100 }, // -5
+    ];
+    const out = applyMelodicPitches(4, notes, 60, [0, 0, 0, 0]);
+    expect(out).toEqual([0, 0, 7, -5]);
+  });
+
+  it("Steps ohne Note behalten ihren aktuellen Pitch (Fallback 0)", () => {
+    const out = applyMelodicPitches(4, [{ stepIndex: 1, midi: 62, velocity: 100 }], 60, [3, 99, 5]);
+    expect(out).toEqual([3, 2, 5, 0]);
+  });
+
+  it("anderer rootMidi verschiebt die Offsets", () => {
+    const out = applyMelodicPitches(2, [{ stepIndex: 0, midi: 60, velocity: 100 }], 48, []);
+    expect(out[0]).toBe(12); // 60 - 48
+  });
+
+  it("stepCount 0/negativ/NaN → leeres Array", () => {
+    expect(applyMelodicPitches(0, [{ stepIndex: 0, midi: 60, velocity: 100 }], 60, [])).toEqual([]);
+    expect(applyMelodicPitches(-2, [], 60, [])).toEqual([]);
+    expect(applyMelodicPitches(NaN, [], 60, [])).toEqual([]);
+  });
+
+  it("nicht-finite midi/rootMidi/currentPitch werden defensiv behandelt", () => {
+    const out = applyMelodicPitches(
+      3,
+      [{ stepIndex: 0, midi: NaN, velocity: 100 }],
+      Infinity, // → root 60
+      [NaN, 4, Infinity],
+    );
+    // Step 0: midi NaN → keine Note gesetzt → currentPitch NaN → 0
+    // Step 1: 4, Step 2: Infinity → 0
+    expect(out).toEqual([0, 4, 0]);
+  });
+
+  it("Round-Trip: generateMelodicSequence → applyMelodicPitches nur auf aktive Steps", () => {
+    const rhythm = [true, false, true, false];
+    const notes = generateMelodicSequence({
+      rhythmPattern: rhythm,
+      scale: "minor-natural",
+      rootMidi: 60,
+      strategy: "ascending",
+      octaveRange: 1,
+      seed: 42,
+    });
+    const out = applyMelodicPitches(4, notes, 60, [9, 9, 9, 9]);
+    // inaktive Steps (1,3) behalten 9; aktive (0,2) sind Offsets aus der Skala
+    expect(out[1]).toBe(9);
+    expect(out[3]).toBe(9);
+    expect(out[0]).not.toBe(9);
+    expect(out[2]).not.toBe(9);
   });
 });

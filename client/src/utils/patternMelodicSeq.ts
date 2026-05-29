@@ -259,3 +259,39 @@ export function generateMelodicSequence(
 
   return out;
 }
+
+/**
+ * Wandelt eine Melodic-Sequence in ein Step-Pitch-Array um (v3.242).
+ *
+ * StepData.pitch ist ein Halbton-OFFSET relativ zur Basis-Note des Parts.
+ * Daher wird pro Note (midi - rootMidi) als Offset gesetzt; Steps ohne Note
+ * behalten ihren aktuellen Pitch (Fallback 0).
+ *
+ * Liefert ein vollständiges Array der Länge `stepCount` — geeignet für
+ * setPartSteps(partId, active, undefined, pitches). Pure & Node-testbar.
+ */
+export function applyMelodicPitches(
+  stepCount: number,
+  notes: readonly MelodicNote[],
+  rootMidi: number,
+  currentPitches: readonly number[],
+): number[] {
+  const count = Number.isFinite(stepCount) && stepCount > 0 ? Math.floor(stepCount) : 0;
+  const root = Number.isFinite(rootMidi) ? Math.floor(rootMidi) : 60;
+  const byStep = new Map<number, number>();
+  for (const n of notes) {
+    if (Number.isFinite(n.midi)) byStep.set(n.stepIndex, Math.round(n.midi) - root);
+  }
+
+  const out: number[] = new Array(count);
+  for (let i = 0; i < count; i++) {
+    const offset = byStep.get(i);
+    if (offset !== undefined) {
+      out[i] = offset;
+    } else {
+      const cur = currentPitches[i];
+      out[i] = Number.isFinite(cur) ? Math.round(cur) : 0;
+    }
+  }
+  return out;
+}
