@@ -40,6 +40,12 @@ export interface DrumMachineActions {
   addPattern: (name?: string) => void;
   /** Fügt ein vollständiges Pattern-Objekt hinzu (z.B. Morph-Resultat). Gibt die zugewiesene ID zurück. */
   addPatternData: (pattern: PatternData) => string;
+  /**
+   * Fügt mehrere Patterns in EINEM State-Update hinzu (Batch-Import, z.B. FLP
+   * mit hunderten Patterns). Vermeidet N einzelne setState-Aufrufe und setzt das
+   * aktive Pattern auf das ERSTE importierte. Gibt die zugewiesenen IDs zurück.
+   */
+  addPatternsData: (patterns: PatternData[]) => string[];
   removePattern: (id: string) => void;
   renamePattern: (id: string, name: string) => void;
   setActivePattern: (id: string) => void;
@@ -352,6 +358,28 @@ export function useDrumMachineStore(): DrumMachineState & DrumMachineActions {
       activePartId: newPattern.parts[0]?.id ?? null,
     }));
     return id;
+  }, []);
+
+  const addPatternsData = useCallback((incoming: PatternData[]): string[] => {
+    if (incoming.length === 0) return [];
+    // IDs werden BEWAHRT (nicht wie in clonePatternForInsert regeneriert): die
+    // Import-Pipeline (importResultToPatterns) vergibt bereits eindeutige Part-/
+    // Pattern-IDs, und das Melodic-Routing referenziert exakt diese IDs. Würden
+    // wir sie hier neu erzeugen, fänden die in den useMelodicPartStore
+    // geschriebenen Notes ihren Drum-Part nicht wieder. Fehlende IDs werden
+    // ergänzt; das aktive Pattern wird auf das ERSTE importierte gesetzt.
+    const prepared = incoming.map(p => ({
+      ...p,
+      id: p.id || makeId(),
+      parts: p.parts.map(pt => ({ ...pt, id: pt.id || makeId() })),
+    }));
+    setState(prev => ({
+      ...prev,
+      patterns: [...prev.patterns, ...prepared],
+      activePatternId: prepared[0].id,
+      activePartId: prepared[0].parts[0]?.id ?? null,
+    }));
+    return prepared.map(p => p.id);
   }, []);
 
   const removePattern = useCallback((id: string) => {
@@ -1076,7 +1104,7 @@ export function useDrumMachineStore(): DrumMachineState & DrumMachineActions {
 
   return {
     ...state,
-    addPattern, addPatternData, removePattern, renamePattern, setActivePattern, duplicatePattern,
+    addPattern, addPatternData, addPatternsData, removePattern, renamePattern, setActivePattern, duplicatePattern,
     copySamplesFromPattern,
     reorderPatterns,
     startLivePatternEdit, commitLivePatternEdit, cancelLivePatternEdit, scheduleCommit,

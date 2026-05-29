@@ -4289,10 +4289,10 @@ export default function App() {
                 onNew={handleNewProject}
                 onExport={project.exportProject}
                 onImportPatterns={(patterns, sourceFormat, melodicParts) => {
-                  // Importierte Patterns als zusätzliche Patterns in DrumMachine hinzufügen
-                  patterns.forEach(p => {
-                    dm.addPatternData(p as Parameters<typeof dm.addPatternData>[0]);
-                  });
+                  // Batch-Insert (ein State-Update statt N) — wichtig bei FLP-Imports
+                  // mit hunderten Patterns; setzt aktives Pattern auf das erste und
+                  // BEWAHRT die Part-IDs, damit das Melodic-Routing unten passt.
+                  dm.addPatternsData(patterns as Parameters<typeof dm.addPatternsData>[0]);
                   if (patterns.length > 0 && patterns[0].bpm) {
                     project.setBpm(patterns[0].bpm);
                   }

@@ -78,13 +78,20 @@ export interface FlpParsed {
   header: FlpHeader;
   patterns: FlpPattern[];
   /**
-   * Pro FL-Channel-Index der extrahierte Anzeigename aus dem 0xC3
-   * TEXT_CHANNEL_NAME (alias TEXT_DEFPLUGNAME)-Event. Ein Channel ohne
-   * Name-Event taucht hier nicht auf. Hilft beim Mapping
-   * FL-Channel → Synthstudio-Drum-Part / Melodic-Part-Anzeigename
-   * (FLP-CHANNEL-NAMES Phase 3, v1.68).
+   * Pro FL-Channel-Index der extrahierte Anzeigename aus dem 0xC0
+   * TEXT_ChanName-Event (FLP_Text). Ein Channel ohne Name-Event taucht hier
+   * nicht auf. Hilft beim Mapping FL-Channel → Synthstudio-Part-Anzeigename.
+   * (Vorher fälschlich 0xC3 — existiert in echten FLPs nicht; verifiziert
+   * gegen reale Datei: Channel-Namen liegen unter 0xC0, einer pro nChannels.)
    */
   channelNames: Map<number, string>;
+  /**
+   * Pro FL-Channel-Index der Sample-Dateiname (Basename, ohne Pfad) aus dem
+   * 0xC4 TEXT_SampleFileName-Event. Die im FLP gespeicherten Pfade zeigen oft
+   * auf temporäre/fremde Orte (gepackte Projekte) und existieren lokal nicht;
+   * der Basename erlaubt aber Auflösung gegen den .flp-Geschwisterordner.
+   */
+  sampleNames: Map<number, string>;
   /**
    * Pro FL-Pattern-Index der Anzeigename aus dem 0xC1 TEXT_PATTERN_NAME-Event
    * (FLP-PATTERN-NAMES v1.70). Ein Pattern ohne Namen-Event taucht hier nicht
@@ -92,6 +99,12 @@ export interface FlpParsed {
    * generischer "filename bar N"-Labels.
    */
   patternNames: Map<number, string>;
+}
+
+/** Basename eines Datei-Pfads (Windows- oder POSIX-Trenner). */
+export function flpSampleBasename(path: string): string {
+  const parts = path.split(/[\\/]/);
+  return parts[parts.length - 1] ?? path;
 }
 
 // ─── Reader-Helper ────────────────────────────────────────────────────────────
@@ -255,6 +268,7 @@ export function parseFlp(buffer: ArrayBuffer): FlpParsed {
   // ── Event-Loop ────────────────────────────────────────────────────────────
   const patternsByIndex = new Map<number, FlpPattern>();
   const channelNames = new Map<number, string>();
+  const sampleNames = new Map<number, string>();
   const patternNames = new Map<number, string>();
   let currentPatternIndex = 0; // FL state — "currently selected" pattern
   let currentChannel = -1;     // FL state — "currently selected" channel (gesetzt durch 0x40 NewChannel)
@@ -310,12 +324,23 @@ export function parseFlp(buffer: ArrayBuffer): FlpParsed {
           patternsByIndex.set(idx, pattern);
         }
         pattern.notes.push(...notes);
-      } else if (eventId === 0xC3 && currentChannel >= 0) {
-        // TEXT_CHANNEL_NAME (alias TEXT_DEFPLUGNAME) — Anzeigename des aktuell
-        // selektierten FL-Channels (FLP-CHANNEL-NAMES v1.68).
+      } else if ((eventId === 0xC0 || eventId === 0xC3) && currentChannel >= 0) {
+        // TEXT_ChanName (0xC0 = FLP_Text) — Anzeigename des aktuell selektierten
+        // FL-Channels. 0xC3 als Fallback für abweichende FL-Varianten. Verifiziert
+        // gegen reale Datei: Namen liegen unter 0xC0 (einer pro nChannels).
+        // Erst-gewinnt, damit ein evtl. späteres 0xC3 einen echten 0xC0-Namen
+        // nicht überschreibt.
         const name = decodeFlpText(data);
-        if (name.length > 0) {
+        if (name.length > 0 && !channelNames.has(currentChannel)) {
           channelNames.set(currentChannel, name);
+        }
+      } else if (eventId === 0xC4 && currentChannel >= 0) {
+        // TEXT_SampleFileName (0xC4) — Pfad der Sample-Datei des Channels. Wir
+        // speichern nur den Basename; der absolute Pfad zeigt oft auf einen
+        // temporären/fremden Ort und ist lokal nicht auflösbar.
+        const path = decodeFlpText(data);
+        if (path.length > 0 && !sampleNames.has(currentChannel)) {
+          sampleNames.set(currentChannel, flpSampleBasename(path));
         }
       } else if (eventId === 0xC1 && currentPatternIndex > 0) {
         // TEXT_PATTERN_NAME — Anzeigename des aktuell selektierten Patterns
@@ -329,7 +354,7 @@ export function parseFlp(buffer: ArrayBuffer): FlpParsed {
   }
 
   const patterns = Array.from(patternsByIndex.values()).sort((a, b) => a.index - b.index);
-  return { header, patterns, channelNames, patternNames };
+  return { header, patterns, channelNames, sampleNames, patternNames };
 }
 
 // ─── Synthstudio-Pattern-Konvertierung ───────────────────────────────────────

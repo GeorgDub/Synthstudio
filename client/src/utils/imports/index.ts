@@ -167,13 +167,22 @@ export function routeMelodicPartsToPatterns(
   let conflicts = 0;
 
   for (const part of melodicParts) {
-    const partIdx = ((part.sourceChannel % partCount) + partCount) % partCount;
+    // FLP-PER-CHANNEL: wenn der Importer jedem FL-Channel pro Pattern einen
+    // eigenen Part zugewiesen hat, trägt der Part den aufgelösten Ziel-Index.
+    // Nur ohne diesen gilt das alte 8-Part-Modulo-Mapping.
+    const partIdx = part.targetPartIndex ??
+      ((part.sourceChannel % partCount) + partCount) % partCount;
     for (const note of part.notes) {
-      const bar = Math.floor(note.startStep / stepsPerBar);
-      if (bar < 0 || bar >= patterns.length) { droppedOutOfRange++; continue; }
-      const stepIdx = Math.round(note.startStep) - bar * stepsPerBar;
+      // Neuer Pfad: Note trägt konkrete (patternIndex, step-im-Pattern)-Koordinaten.
+      // Alter Pfad: globales startStep → bar = floor(startStep/stepsPerBar).
+      const usesExplicit = note.patternIndex !== undefined;
+      const patIdx = usesExplicit ? note.patternIndex! : Math.floor(note.startStep / stepsPerBar);
+      if (patIdx < 0 || patIdx >= patterns.length) { droppedOutOfRange++; continue; }
+      const stepIdx = usesExplicit
+        ? Math.round(note.startStep)
+        : Math.round(note.startStep) - patIdx * stepsPerBar;
       if (stepIdx < 0 || stepIdx >= stepsPerBar) { droppedOutOfRange++; continue; }
-      const targetPart = patterns[bar].parts[partIdx];
+      const targetPart = patterns[patIdx].parts[partIdx];
       if (!targetPart) { droppedOutOfRange++; continue; }
 
       const key = `${targetPart.id}#${stepIdx}`;

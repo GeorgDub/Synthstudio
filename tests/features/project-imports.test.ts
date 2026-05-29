@@ -159,16 +159,15 @@ describe("FLP Import — Melodic-Channel-Warnung (post-v1.63.0)", () => {
     return total.buffer;
   }
 
-  it("emittet Warning für melodischen Channel, KEINE Warning für drum-Channel", async () => {
+  it("emittet aggregierte Warning für melodischen Channel-Count", async () => {
+    // v-FLP-PER-CHANNEL: bei potenziell vielen Channels wird die Melodic-
+    // Detektion zu EINER Count-Warnung aggregiert statt pro Channel eine Zeile.
     const result = await importFlp(makeFile("mixed.flp", buildFlpWithMixedChannels()));
     const melodicWarnings = result.warnings.filter(w => w.includes("melodisch"));
     expect(melodicWarnings).toHaveLength(1);
-    expect(melodicWarnings[0]).toContain("Channel 1");
-    expect(melodicWarnings[0]).toContain("2 Tonhöhen"); // 60 + 64
-    expect(melodicWarnings[0]).toContain("C4"); // 60
-    expect(melodicWarnings[0]).toContain("E4"); // 64
-    // Channel 0 ist drum-like (alle key=36) → keine Warning
-    expect(melodicWarnings.some(w => w.includes("Channel 0"))).toBe(false);
+    // genau 1 melodischer Channel (ch1); ch0 ist drum-like (alle key=36)
+    expect(melodicWarnings[0]).toContain("1 melodische");
+    expect(melodicWarnings[0]).toContain("Piano Roll");
   });
 
   it("Pitch wird auf ImportedStep mitgeführt", async () => {
@@ -428,6 +427,108 @@ describe("parseFlp — Multi-Pattern-Trennung (Regression 0x41 NewPattern)", () 
     // Gesamtzahl bleibt erhalten (kein Drop, kein Overwrite)
     const totalNotes = parsed.patterns.reduce((s, p) => s + p.notes.length, 0);
     expect(totalNotes).toBe(5);
+  });
+});
+
+// ─── importFlp Per-Channel-Parts + Multi-Pattern + Samples + BPM ──────────────
+//
+// FLP-PER-CHANNEL: jeder genutzte FL-Channel wird ein eigener Part (kein
+// modulo-Folding auf 8), Channel-Namen (0xC0) + Sample-Namen (0xC4) werden
+// übernommen, alle nicht-leeren Patterns importiert, Tempo aus 0x9C (DWORD).
+describe("importFlp — Per-Channel-Parts / Multi-Pattern / Samples / BPM", () => {
+  // Minimal-Builder (UTF-16LE TEXT wie FL ab v6, varlen DATA)
+  function wEvt(id: number, val: number) { return new Uint8Array([id, val & 0xff, (val >> 8) & 0xff]); }
+  function dwEvt(id: number, val: number) { const b = new Uint8Array(5); new DataView(b.buffer).setUint32(1, val, true); b[0] = id; return b; }
+  function varlen(n: number): number[] { const o: number[] = []; do { let b = n & 0x7f; n >>= 7; if (n > 0) b |= 0x80; o.push(b); } while (n > 0); return o; }
+  function dataEvt(id: number, payload: Uint8Array) { const len = varlen(payload.length); const o = new Uint8Array(1 + len.length + payload.length); o[0] = id; o.set(len, 1); o.set(payload, 1 + len.length); return o; }
+  function textEvt(id: number, s: string) { const u = new Uint8Array(s.length * 2 + 2); for (let i = 0; i < s.length; i++) { u[i*2] = s.charCodeAt(i) & 0xff; u[i*2+1] = (s.charCodeAt(i) >> 8) & 0xff; } return dataEvt(id, u); }
+  function note(pos: number, ch: number, key: number, vel = 100) { const b = new Uint8Array(24); const v = new DataView(b.buffer); v.setUint32(0, pos, true); v.setUint16(6, ch, true); v.setUint32(8, 24, true); v.setUint8(12, key); v.setUint8(18, vel); return b; }
+  function notesEvt(notes: Uint8Array[]) { const payload = new Uint8Array(notes.length * 24); notes.forEach((n, i) => payload.set(n, i * 24)); return dataEvt(0xE0, payload); }
+  function concat(arrs: Uint8Array[]) { const t = arrs.reduce((s, a) => s + a.length, 0); const o = new Uint8Array(t); let off = 0; for (const a of arrs) { o.set(a, off); off += a.length; } return o; }
+
+  function buildFlp(events: Uint8Array[], nChannels = 8, ppq = 96): ArrayBuffer {
+    const header = new Uint8Array(14); const hv = new DataView(header.buffer);
+    header.set([0x46, 0x4c, 0x68, 0x64], 0); hv.setUint32(4, 6, true);
+    hv.setUint16(8, 0, true); hv.setUint16(10, nChannels, true); hv.setUint16(12, ppq, true);
+    const blob = concat(events);
+    const dh = new Uint8Array(8); dh.set([0x46, 0x4c, 0x64, 0x74], 0); new DataView(dh.buffer).setUint32(4, blob.length, true);
+    const out = new Uint8Array(header.length + dh.length + blob.length);
+    out.set(header, 0); out.set(dh, header.length); out.set(blob, header.length + dh.length);
+    return out.buffer;
+  }
+
+  // ch0 "Kick"+kick.wav (drum), ch1 "Bass"+bass.wav (melodisch), ch5 "Hat" (kein Sample).
+  // Pattern 1: ch0 + ch1(melodisch)  → Channels {0,1} → Bass an Index 1
+  // Pattern 3: ch1(melodisch) + ch5  → Channels {1,5} → Bass an Index 0 (!)
+  // So beweist der Test, dass der Part-Index PRO Pattern aufgelöst wird.
+  function buildProject(): ArrayBuffer {
+    return buildFlp([
+      dwEvt(0x9C, 174000),                          // FineTempo → 174 BPM
+      wEvt(0x40, 0), textEvt(0xC0, "Kick"), textEvt(0xC4, "C:\\smp\\kick.wav"),
+      wEvt(0x40, 1), textEvt(0xC0, "Bass"), textEvt(0xC4, "bass.wav"),
+      wEvt(0x40, 5), textEvt(0xC0, "Hat"),
+      wEvt(0x41, 1), notesEvt([note(0, 0, 36), note(48, 0, 36), note(24, 1, 60), note(72, 1, 64)]),
+      wEvt(0x41, 3), notesEvt([note(0, 5, 42), note(0, 1, 60), note(24, 1, 67)]),
+    ]);
+  }
+
+  it("liest Tempo aus 0x9C DWORD (BPM×1000)", async () => {
+    const r = await importFlp(makeFile("p.flp", buildProject()));
+    expect(r.bpm).toBe(174);
+  });
+
+  it("importiert ALLE nicht-leeren Patterns (nicht nur das erste)", async () => {
+    const r = await importFlp(makeFile("p.flp", buildProject()));
+    expect(r.patterns.length).toBe(2); // Pattern 1 (1 bar) + Pattern 3 (1 bar)
+    expect(r.patterns.map(p => p.name)).toEqual(["Pattern 1", "Pattern 3"]);
+  });
+
+  it("legt pro Pattern nur dessen genutzte Channels als Parts an", async () => {
+    const r = await importFlp(makeFile("p.flp", buildProject()));
+    // Pattern 1 nutzt {0,1}, Pattern 3 nutzt {1,5} — KEIN 3-Part-Rack überall
+    expect(r.patterns[0].parts.map(pt => pt.name)).toEqual(["Kick", "Bass"]);
+    expect(r.patterns[1].parts.map(pt => pt.name)).toEqual(["Bass", "Hat"]);
+  });
+
+  it("übernimmt Sample-Namen (0xC4 Basename) auf den korrekten Part", async () => {
+    const r = await importFlp(makeFile("p.flp", buildProject()));
+    expect(r.patterns[0].parts[0].sampleName).toBe("kick.wav"); // ch0
+    expect(r.patterns[0].parts[1].sampleName).toBe("bass.wav"); // ch1
+    expect(r.patterns[1].parts[0].sampleName).toBe("bass.wav"); // ch1 erneut
+    expect(r.patterns[1].parts[1].sampleName).toBeUndefined();  // ch5 Hat ohne Sample
+  });
+
+  it("platziert Notes auf dem korrekten Channel-Part (kein modulo-Folding)", async () => {
+    const r = await importFlp(makeFile("p.flp", buildProject()));
+    const p1 = r.patterns[0];
+    expect(p1.parts[0].steps.filter(s => s.active).length).toBe(2); // Kick 2 Notes
+    expect(p1.parts[1].steps.filter(s => s.active).length).toBe(2); // Bass 2 Notes
+    const p3 = r.patterns[1];
+    expect(p3.parts[0].steps.filter(s => s.active).length).toBe(2); // Bass 2 Notes
+    expect(p3.parts[1].steps.filter(s => s.active).length).toBe(1); // Hat 1 Note
+  });
+
+  it("melodischer Channel bekommt PRO Pattern den korrekten targetPartIndex", async () => {
+    const r = await importFlp(makeFile("p.flp", buildProject()));
+    expect(r.melodicParts).toBeDefined();
+    // ch1 ist in beiden Patterns melodisch → zwei Melodic-Parts mit
+    // unterschiedlichem targetPartIndex (1 in Pattern 1, 0 in Pattern 3)
+    const bassParts = r.melodicParts!.filter(m => m.sourceChannel === 1);
+    expect(bassParts).toHaveLength(2);
+    expect(bassParts.map(m => m.targetPartIndex).sort()).toEqual([0, 1]);
+  });
+
+  it("routeMelodicPartsToPatterns trifft den Bass-Part in JEDEM Pattern korrekt", async () => {
+    const r = await importFlp(makeFile("p.flp", buildProject()));
+    const converted = importResultToPatterns(r);
+    const { mappings } = routeMelodicPartsToPatterns(r.melodicParts, converted, 16, 8);
+    expect(mappings.length).toBeGreaterThan(0);
+    // Bass ist Pattern 1 → parts[1], Pattern 3 → parts[0]. Alle Mappings müssen
+    // exakt auf eine dieser beiden Part-IDs zeigen (nicht z.B. auf Hat/Kick).
+    const bassIds = new Set([converted[0].parts[1].id, converted[1].parts[0].id]);
+    expect(mappings.every(m => bassIds.has(m.partId))).toBe(true);
+    // und beide Patterns sind abgedeckt
+    expect(new Set(mappings.map(m => m.partId))).toEqual(bassIds);
   });
 });
 

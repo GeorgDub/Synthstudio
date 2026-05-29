@@ -36,24 +36,6 @@ import {
   type FlpNote,
 } from "../flpImport";
 
-// ─── Event-IDs (Auszug aus der inoffiziellen FLP-Doku) ───────────────────────
-
-const FLP_EVENT = {
-  // 1-Byte
-  CHANNEL_TYPE:       0x15, // Instrument type
-  // 2-Byte
-  TEMPO:              0x9C, // BPM × 1000
-  PATTERN_NEW:        0x40, // New pattern (pattern-id)
-  // 4-Byte
-  TEMPO_FINE:         0xA9,
-  PPQ:                0x86,
-  // Variable
-  TEXT_CHANNEL_NAME:  0xC3,
-  TEXT_PATTERN_NAME:  0xC1,
-  TEXT_TITLE:         0xC2,
-  TEXT_VERSION:       0xC7,
-};
-
 // ─── Reader ──────────────────────────────────────────────────────────────────
 
 class FlpReader {
@@ -126,44 +108,88 @@ class FlpReader {
 
 // ─── Hauptfunktion ────────────────────────────────────────────────────────────
 
-/** Default: 8 Drum-Parts, Channel mapped per modulo. */
-const DEFAULT_PART_COUNT = 8;
 const STEP_COUNT = 16;
-const MAX_BARS = 16;
+/** Max. Bars die EIN FL-Pattern erzeugen darf (lange Arrangement-Patterns). */
+const MAX_BARS = 64;
+/** Sicherheits-Obergrenze für die Gesamtzahl erzeugter Synthstudio-Patterns.
+ *  Großzügig, da pro Pattern nur dessen genutzte Channels als Parts entstehen
+ *  (≈4 KB/Pattern) — reale große Projekte (~360 Patterns) passen vollständig. */
+const MAX_TOTAL_PATTERNS = 512;
+/** Fallback-Part-Anzahl nur für den degenerierten "keine Notes"-Fall. */
+const DEFAULT_PART_COUNT = 8;
 
-function emptyPart(name: string, stepCount: number): ImportedPart {
-  const steps: ImportedStep[] = [];
-  for (let i = 0; i < stepCount; i++) steps.push({ active: false, velocity: 100 });
-  return { name, steps };
+interface ChannelPartMeta {
+  name: string;
+  sampleName?: string;
 }
 
+function emptyPart(name: string, stepCount: number, sampleName?: string): ImportedPart {
+  const steps: ImportedStep[] = [];
+  for (let i = 0; i < stepCount; i++) steps.push({ active: false, velocity: 100 });
+  return sampleName ? { name, sampleName, steps } : { name, steps };
+}
+
+/**
+ * Baut die Parts EINES Bars. Jeder genutzte FL-Channel bekommt einen eigenen
+ * Part in einer über alle Patterns konsistenten Reihenfolge (channelOrder),
+ * damit Layout + Part-Index stabil sind und das Melodic-Routing exakt denselben
+ * Index verwenden kann (kein modulo-Folding mehr auf 8 Parts). Notes werden
+ * direkt per channelToPartIndex platziert.
+ */
 function buildPartsForBar(
   barNotes: FlpNote[],
   ppq: number,
-  partCount: number,
-  drumChannelNames: Map<number, string> = new Map(),
+  channelOrder: number[],
+  channelToPartIndex: Map<number, number>,
+  channelMeta: Map<number, ChannelPartMeta>,
 ): ImportedPart[] {
-  // Pre-compute partIdx → ChannelName (first-wins bei Kollision, deterministisch
-  // wegen Map-Iteration in Insertion-Order). Nur drum-like Channels werden
-  // berücksichtigt; melodische Channels gehen in melodicParts und sollen nicht
-  // den Drum-Part-Namen überschreiben (FLP-CHANNEL-NAMES v1.68).
-  const partNames = new Map<number, string>();
-  for (const [channel, name] of drumChannelNames) {
-    const partIdx = ((channel % partCount) + partCount) % partCount;
-    if (!partNames.has(partIdx)) partNames.set(partIdx, name);
-  }
-  const parts: ImportedPart[] = [];
-  for (let i = 0; i < partCount; i++) {
-    parts.push(emptyPart(partNames.get(i) ?? `Part ${i + 1}`, STEP_COUNT));
-  }
+  const parts: ImportedPart[] = channelOrder.map(ch => {
+    const meta = channelMeta.get(ch);
+    return emptyPart(meta?.name ?? `Ch ${ch}`, STEP_COUNT, meta?.sampleName);
+  });
   for (const note of barNotes) {
+    const partIdx = channelToPartIndex.get(note.channel);
+    if (partIdx === undefined) continue;
     const step = flpPositionToStep(note.position, ppq) % STEP_COUNT;
-    const partIdx = note.channel % partCount;
-    // pitch wird mitgeführt — Drum-Machine ignoriert es, aber zukünftige
-    // Konsumenten (MelodicPart-Routing, MIDI-Export) können es nutzen.
+    // pitch wird mitgeführt (Drum-Machine ignoriert es, Piano-Roll/MIDI nutzen es).
     parts[partIdx].steps[step] = { active: true, velocity: note.velocity, pitch: note.key };
   }
   return parts;
+}
+
+/**
+ * Liest das initiale Projekt-Tempo. FL 11+ speichert es als FineTempo-Event
+ * 0x9C (FLP_Int+28, DWORD = BPM × 1000); das alte WORD-Tempo 0x42 dient als
+ * Fallback. Vorher wurde 0x9C fälschlich im WORD-Zweig geprüft und nie
+ * getroffen → bpm blieb undefined (verifiziert: reale Datei liefert 190000 → 190).
+ */
+function readFlpTempo(arrayBuffer: ArrayBuffer): number | undefined {
+  const reader = new FlpReader(arrayBuffer);
+  reader.readString(4); reader.readU32();              // FLhd + size
+  reader.readU16(); reader.readU16(); reader.readU16(); // format, nChannels, ppq
+  reader.readString(4); reader.readU32();              // FLdt + size
+  const plausible = (v: number) => (v >= 10 && v <= 999 ? v : undefined);
+  let bpm: number | undefined;
+  let wordTempo: number | undefined;
+  while (reader.remaining > 0) {
+    const eventId = reader.readU8();
+    if (eventId < 0x40) {
+      reader.readU8();
+    } else if (eventId < 0x80) {
+      const d = reader.readU16();
+      if (eventId === 0x42 && wordTempo === undefined) wordTempo = d; // alt-FL WORD-Tempo
+    } else if (eventId < 0xC0) {
+      const d = reader.readU32();
+      if (eventId === 0x9C && bpm === undefined) {
+        bpm = plausible(d > 1000 ? d / 1000 : d);
+      }
+    } else {
+      const len = reader.readVarLen();
+      if (len > reader.remaining) break;
+      reader.skip(len);
+    }
+  }
+  return bpm ?? (wordTempo !== undefined ? plausible(wordTempo > 1000 ? wordTempo / 1000 : wordTempo) : undefined);
 }
 
 /**
@@ -182,12 +208,6 @@ export function detectChannelPitches(notes: FlpNote[]): Map<number, Set<number>>
     set.add(n.key);
   }
   return map;
-}
-
-function keyToNoteName(key: number): string {
-  const names = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
-  const octave = Math.floor(key / 12) - 1;
-  return `${names[key % 12]}${octave}`;
 }
 
 /**
@@ -251,7 +271,7 @@ export async function importFlp(file: File): Promise<ImportResult> {
   const arrayBuffer = await file.arrayBuffer();
 
   // FLP-IMPORT v1.62: nutzt den vollwertigen Parser aus utils/flpImport.ts
-  // (Headers + NotesEvents 0xE0/0xE7 + multi-bar grouping).
+  // (Headers + NotesEvents 0xE0/0xE7 + Channel-Namen 0xC0 + Sample-Namen 0xC4).
   let parsed;
   try {
     parsed = parseFlpFull(arrayBuffer);
@@ -260,44 +280,20 @@ export async function importFlp(file: File): Promise<ImportResult> {
   }
 
   const warnings: string[] = [];
+  const bpm = readFlpTempo(arrayBuffer);
+  const ppq = parsed.header.ppq;
+  const filenameStem = file.name.replace(/\.flp$/i, "");
 
-  // BPM aus separatem Event-Pfad gewinnen (nicht im vollen Parser-Output enthalten,
-  // da der nur Notes extrahiert). Wir lesen via FlpReader explizit für TEMPO_FINE.
-  const reader = new FlpReader(arrayBuffer);
-  reader.readString(4); reader.readU32();
-  reader.readU16(); reader.readU16(); reader.readU16();
-  reader.readString(4); reader.readU32();
-  let bpm: number | undefined;
-  while (reader.remaining > 0) {
-    const eventId = reader.readU8();
-    if (eventId < 0x40) reader.readU8();
-    else if (eventId < 0x80) {
-      const d = reader.readU16();
-      if (eventId === FLP_EVENT.TEMPO) { bpm = d > 1000 ? d / 1000 : d; }
-    } else if (eventId < 0xC0) {
-      const d = reader.readU32();
-      if (eventId === FLP_EVENT.TEMPO_FINE) {
-        bpm = d > 1_000_000 ? d / 1000 : d;
-        if (bpm > 999) bpm = bpm / 1000;
-      }
-      void d;
-    } else {
-      const len = reader.readVarLen();
-      if (len > reader.remaining) break;
-      reader.skip(len);
-    }
-  }
+  const nonEmptyPatterns = parsed.patterns.filter(p => p.notes.length > 0);
 
-  // Notes auf Bars aufteilen
-  const firstPattern = parsed.patterns[0];
-  if (!firstPattern || !firstPattern.notes.length) {
+  if (nonEmptyPatterns.length === 0) {
     warnings.push("Keine Notes im FLP gefunden — FL Studio Versionen vor 11 oder leere Projekte werden nicht unterstützt.");
     return {
       sourceFormat: "flp",
       fileName: file.name,
       bpm,
       patterns: [{
-        name: file.name.replace(/\.flp$/i, ""),
+        name: filenameStem,
         stepCount: STEP_COUNT,
         bpm,
         parts: Array.from({ length: DEFAULT_PART_COUNT }, (_, i) => emptyPart(`Part ${i + 1}`, STEP_COUNT)),
@@ -306,63 +302,107 @@ export async function importFlp(file: File): Promise<ImportResult> {
     };
   }
 
-  const ppq = parsed.header.ppq;
-  const totalBars = Math.min(MAX_BARS, calculateBarCount(firstPattern.notes, ppq, STEP_COUNT));
-  const byBar = groupNotesByBar(firstPattern.notes, ppq, STEP_COUNT);
+  // ── Channel-Metadaten (Name 0xC0 + Sample 0xC4) global pro FL-Channel ────────
+  const channelMeta = new Map<number, ChannelPartMeta>();
+  const channelMetaFor = (ch: number): ChannelPartMeta => {
+    let meta = channelMeta.get(ch);
+    if (!meta) {
+      const name = parsed.channelNames.get(ch);
+      const sampleName = parsed.sampleNames.get(ch);
+      meta = { name: name && name.length > 0 ? name : (sampleName ?? `Ch ${ch}`), sampleName };
+      channelMeta.set(ch, meta);
+    }
+    return meta;
+  };
 
-  // Melodische Channels erkennen: Pitch-Varianz ≥2 → der Channel triggert echte
-  // Notes, kein Drum-Sample. Die Drum-Machine ignoriert Pitch, daher warnen wir.
-  const pitchesByChannel = detectChannelPitches(firstPattern.notes);
-  for (const [channel, pitches] of pitchesByChannel) {
-    if (pitches.size < 2) continue;
-    const sorted = [...pitches].sort((a, b) => a - b);
-    const lo = keyToNoteName(sorted[0]);
-    const hi = keyToNoteName(sorted[sorted.length - 1]);
-    warnings.push(
-      `Channel ${channel}: melodischer Inhalt (${pitches.size} Tonhöhen, ${lo}..${hi}) — als Melodic-Part in den Piano Roll geroutet (16-Step-Grid-quantisiert).`,
-    );
-  }
+  // ── Pro FL-Pattern: NUR die in DIESEM Pattern genutzten Channels werden zu
+  // eigenen Parts (FL-treu: jedes Pattern bekommt seine echten Channels, kein
+  // 70-Part-Rack in jedem Pattern → ~10× kleinere Projektgröße). Der Part-Index
+  // ist innerhalb eines FL-Patterns konstant; Melodic-Notes werden auf konkrete
+  // (patternIndex, partIndex, step-im-Bar)-Koordinaten aufgelöst. ────────────────
+  const patternsList: ImportedPattern[] = [];
+  const melodicParts: ImportedMelodicPart[] = [];
+  const melodicChannels = new Set<number>();
+  const allUsedChannels = new Set<number>();
+  let droppedBeyondBars = 0;
+  let truncated = false;
 
-  // FLP-CHANNEL-NAMES v1.68: Channel-Namen aus 0xC3-Events nutzen, getrennt nach
-  // drum-like vs melodisch, damit melodische Namen nicht die Drum-Part-Namen
-  // überschreiben (und umgekehrt).
-  const channelNames = parsed.channelNames;
-  const drumChannelNames = new Map<number, string>();
-  for (const [channel, name] of channelNames) {
-    const pitches = pitchesByChannel.get(channel);
-    if (!pitches || pitches.size < 2) {
-      drumChannelNames.set(channel, name);
+  for (const flPattern of nonEmptyPatterns) {
+    if (patternsList.length >= MAX_TOTAL_PATTERNS) { truncated = true; break; }
+
+    // Channel-Set dieses FL-Patterns (sortiert → stabiler Part-Index pro Pattern)
+    const patChannels = [...new Set(flPattern.notes.map(n => n.channel))].sort((a, b) => a - b);
+    const channelToPartIndex = new Map<number, number>(patChannels.map((ch, i) => [ch, i]));
+    for (const ch of patChannels) {
+      allUsedChannels.add(ch);
+      channelMetaFor(ch); // Metadaten cachen
+    }
+
+    const totalBars = Math.min(MAX_BARS, calculateBarCount(flPattern.notes, ppq, STEP_COUNT));
+    const byBar = groupNotesByBar(flPattern.notes, ppq, STEP_COUNT);
+
+    const parsedName = parsed.patternNames.get(flPattern.index);
+    const baseName = parsedName && parsedName.length > 0
+      ? parsedName
+      : (nonEmptyPatterns.length === 1 ? filenameStem : `Pattern ${flPattern.index}`);
+
+    const firstBarPatternIndex = patternsList.length;
+    let imported = 0;
+    let barsCreated = 0;
+    for (let bar = 0; bar < totalBars; bar++) {
+      if (patternsList.length >= MAX_TOTAL_PATTERNS) { truncated = true; break; }
+      const barNotes = byBar.get(bar) ?? [];
+      imported += barNotes.length;
+      patternsList.push({
+        name: totalBars === 1 ? baseName : `${baseName} bar ${bar + 1}`,
+        stepCount: STEP_COUNT,
+        bpm,
+        parts: buildPartsForBar(barNotes, ppq, patChannels, channelToPartIndex, channelMeta),
+      });
+      barsCreated++;
+    }
+    droppedBeyondBars += flPattern.notes.length - imported;
+
+    // Melodische Parts dieses FL-Patterns (Pitch-Varianz ≥2) → konkrete
+    // (patternIndex, partIndex, step-im-Bar)-Auflösung. Notes außerhalb der
+    // tatsächlich erzeugten Bars werden verworfen (kein Cross-Pattern-Bleed).
+    const mp = buildMelodicParts(flPattern.notes, ppq, parsed.channelNames);
+    for (const part of mp) {
+      melodicChannels.add(part.sourceChannel);
+      const partIdx = channelToPartIndex.get(part.sourceChannel);
+      if (partIdx === undefined) continue;
+      const resolved = part.notes
+        .map(n => {
+          const bar = Math.floor(n.startStep / STEP_COUNT);
+          return { ...n, patternIndex: firstBarPatternIndex + bar, startStep: n.startStep - bar * STEP_COUNT };
+        })
+        .filter(n => n.patternIndex < firstBarPatternIndex + barsCreated);
+      if (resolved.length === 0) continue;
+      melodicParts.push({ ...part, targetPartIndex: partIdx, notes: resolved });
     }
   }
 
-  // FLP-PATTERN-NAMES v1.70: bevorzugt den 0xC1 TEXT_PATTERN_NAME-Wert
-  // aus dem FLP, sonst Dateiname (ohne .flp-Endung) als Fallback.
-  const filenameStem = file.name.replace(/\.flp$/i, "");
-  const parsedPatternName = parsed.patternNames.get(firstPattern.index);
-  const baseName = parsedPatternName && parsedPatternName.length > 0
-    ? parsedPatternName
-    : filenameStem;
-  const patternsList: ImportedPattern[] = [];
-  let imported = 0;
-  for (let bar = 0; bar < totalBars; bar++) {
-    const barNotes = byBar.get(bar) ?? [];
-    imported += barNotes.length;
-    patternsList.push({
-      name: totalBars === 1 ? baseName : `${baseName} bar ${bar + 1}`,
-      stepCount: STEP_COUNT,
-      bpm,
-      parts: buildPartsForBar(barNotes, ppq, DEFAULT_PART_COUNT, drumChannelNames),
-    });
+  // ── Warnungen / Hinweise ─────────────────────────────────────────────────────
+  const distinctWithSample = [...allUsedChannels].filter(ch => channelMeta.get(ch)?.sampleName).length;
+  warnings.push(
+    `${nonEmptyPatterns.length} FL-Pattern(s) → ${patternsList.length} Pattern(s); ` +
+    `${allUsedChannels.size} genutzte FL-Channel(s) als Parts angelegt (pro Pattern nur dessen eigene Channels).`,
+  );
+  if (distinctWithSample > 0) {
+    warnings.push(
+      `${distinctWithSample}/${allUsedChannels.size} Channel(s) tragen eine Sample-Referenz (Name übernommen). ` +
+      `Die .flp enthält kein Audio — die Sample-Dateien werden, falls vorhanden, aus dem Projektordner nachgeladen.`,
+    );
   }
-
-  const droppedNotes = firstPattern.notes.length - imported;
-  if (droppedNotes > 0) {
-    warnings.push(`${droppedNotes} Notes jenseits ${MAX_BARS} Bars wurden ignoriert (Multi-Bar-Limit).`);
+  if (melodicChannels.size > 0) {
+    warnings.push(`${melodicChannels.size} melodische Channel(s) zusätzlich in den Piano Roll geroutet (16-Step-quantisiert).`);
   }
-
-  // Phase 1 (v1.65): melodische Parts extrahieren. v1.68 nutzt jetzt
-  // Channel-Namen aus dem FLP statt generischer "Channel N"-Labels.
-  const melodicParts = buildMelodicParts(firstPattern.notes, ppq, channelNames);
+  if (droppedBeyondBars > 0) {
+    warnings.push(`${droppedBeyondBars} Note(s) jenseits ${MAX_BARS} Bars pro Pattern ignoriert.`);
+  }
+  if (truncated) {
+    warnings.push(`Pattern-Limit ${MAX_TOTAL_PATTERNS} erreicht — weitere Patterns nicht importiert.`);
+  }
 
   return {
     sourceFormat: "flp",

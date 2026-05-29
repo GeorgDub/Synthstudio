@@ -36,8 +36,19 @@ export interface ImportedPattern {
  * Information und ist nicht an ein festes Step-Raster gebunden.
  */
 export interface ImportedMelodicNote {
-  /** Position in Steps (1/16) ab Pattern-Start. Float erlaubt für off-grid Notes. */
+  /**
+   * Position in Steps (1/16). Ohne `patternIndex` ist dies die Position ab
+   * Pattern-Start (altes globales Mapping). Mit gesetztem `patternIndex` ist es
+   * die Position INNERHALB des Ziel-Patterns (0..stepCount-1).
+   */
   startStep: number;
+  /**
+   * Index des Ziel-Patterns in der flachen Patterns-Liste (vom FLP-Importer
+   * gesetzt, wenn jeder Channel pro Pattern aufgelöst wird). Ist er gesetzt,
+   * routet `routeMelodicPartsToPatterns` direkt zu patterns[patternIndex] statt
+   * `bar = floor(startStep/stepsPerBar)` zu rechnen.
+   */
+  patternIndex?: number;
   /** Länge in Steps (1/16). */
   durationSteps: number;
   /** MIDI-Key (0-127). */
@@ -58,6 +69,14 @@ export interface ImportedMelodicPart {
   name: string;
   /** Notes mit voller Pitch+Duration-Info. */
   notes: ImportedMelodicNote[];
+  /**
+   * Aufgelöster Ziel-Part-Index in der (dichten) Part-Liste der importierten
+   * Patterns. Wird beim FLP-Import gesetzt, wenn jeder genutzte FL-Channel
+   * einen eigenen Part bekommt — dann darf der Konsument NICHT mehr
+   * `sourceChannel % partCount` rechnen (das gilt nur für das alte
+   * 8-Part-Modulo-Mapping). `routeMelodicPartsToPatterns` bevorzugt diesen Wert.
+   */
+  targetPartIndex?: number;
   /**
    * Empfohlener Grundton (MIDI-Pitch). Ab v1.69 vom Importer gesetzt als
    * Median der Note-Pitches, damit der Piano-Roll-View beim Öffnen direkt

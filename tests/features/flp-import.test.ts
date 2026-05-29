@@ -154,7 +154,7 @@ describe("parseFlp — Header", () => {
 describe("parseFlp — Pattern extraction", () => {
   it("extrahiert Pattern-Index aus NewPattern-Event", () => {
     const flp = buildFlp({
-      events: [wordEvent(0x4f, 3)],
+      events: [wordEvent(0x41, 3)],
     });
     const parsed = parseFlp(flp);
     expect(parsed.patterns).toHaveLength(1);
@@ -168,7 +168,7 @@ describe("parseFlp — Pattern extraction", () => {
     const notesPayload = concatBytes([note1, note2]);
     const flp = buildFlp({
       events: [
-        wordEvent(0x4f, 1),         // NewPattern 1
+        wordEvent(0x41, 1),         // NewPattern 1
         dataEvent(0xe7, notesPayload),
       ],
     });
@@ -186,9 +186,9 @@ describe("parseFlp — Pattern extraction", () => {
     const noteB = buildNote({ position: 0, channel: 0, duration: 96, key: 38, velocity: 80 });
     const flp = buildFlp({
       events: [
-        wordEvent(0x4f, 1),
+        wordEvent(0x41, 1),
         dataEvent(0xe7, noteA),
-        wordEvent(0x4f, 2),
+        wordEvent(0x41, 2),
         dataEvent(0xe7, noteB),
       ],
     });
@@ -205,7 +205,7 @@ describe("parseFlp — Pattern extraction", () => {
       events: [
         byteEvent(0x10, 42),
         wordEvent(0x50, 1234),
-        wordEvent(0x4f, 1),
+        wordEvent(0x41, 1),
       ],
     });
     const parsed = parseFlp(flp);
@@ -384,7 +384,7 @@ describe("Integration: end-to-end mini-FLP", () => {
     const flp = buildFlp({
       ppq: 96,
       events: [
-        wordEvent(0x4f, 1),
+        wordEvent(0x41, 1),
         dataEvent(0xe7, concatBytes(notes)),
       ],
     });
@@ -525,7 +525,7 @@ describe("parseFlp — patternNames (FLP-PATTERN-NAMES v1.70)", () => {
   it("0xC1 nach 0x4F NewPattern → patternNames-Eintrag", () => {
     const flp = buildFlp({
       events: [
-        wordEvent(0x4F, 1),
+        wordEvent(0x41, 1),
         dataEvent(0xC1, asciiBytes("Verse")),
       ],
     });
@@ -546,11 +546,11 @@ describe("parseFlp — patternNames (FLP-PATTERN-NAMES v1.70)", () => {
   it("mehrere Patterns mit Namen werden korrekt zugeordnet", () => {
     const flp = buildFlp({
       events: [
-        wordEvent(0x4F, 1),
+        wordEvent(0x41, 1),
         dataEvent(0xC1, asciiBytes("Intro")),
-        wordEvent(0x4F, 2),
+        wordEvent(0x41, 2),
         dataEvent(0xC1, asciiBytes("Verse")),
-        wordEvent(0x4F, 3),
+        wordEvent(0x41, 3),
         dataEvent(0xC1, asciiBytes("Chorus")),
       ],
     });
@@ -563,7 +563,7 @@ describe("parseFlp — patternNames (FLP-PATTERN-NAMES v1.70)", () => {
   it("Channel-Name 0xC3 wird NICHT in patternNames aufgenommen (Cross-Contamination-Check)", () => {
     const flp = buildFlp({
       events: [
-        wordEvent(0x4F, 1),
+        wordEvent(0x41, 1),
         wordEvent(0x40, 0),
         dataEvent(0xC3, asciiBytes("Kick")),
       ],
