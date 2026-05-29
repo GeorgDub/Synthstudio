@@ -4353,6 +4353,17 @@ export default function App() {
                   if (patterns.length > 0 && patterns[0].bpm) {
                     project.setBpm(patterns[0].bpm);
                   }
+                  // Aktives Pattern auf das INHALTSREICHSTE setzen statt auf das
+                  // evtl. dünne erste (z.B. FLP-Arrangement-Pattern) — sonst landet
+                  // der User nach dem Import auf einem fast leeren Grid.
+                  if (newPatternIds.length > 1) {
+                    let bestIdx = 0, bestActive = -1;
+                    patterns.forEach((p, i) => {
+                      const active = p.parts.reduce((a, pt) => a + pt.steps.filter(s => s.active).length, 0);
+                      if (active > bestActive) { bestActive = active; bestIdx = i; }
+                    });
+                    if (newPatternIds[bestIdx]) dm.setActivePattern(newPatternIds[bestIdx]);
+                  }
                   // FLP-SAMPLES (Stage 3, Electron-only): Sample-Referenzen gegen
                   // einen vom User gewählten Ordner auflösen + auf die importierten
                   // Parts legen. Fire-and-forget (interaktiver Ordner-Dialog).

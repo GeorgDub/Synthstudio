@@ -31,7 +31,6 @@ import { ImportError } from "./types";
 import {
   parseFlp as parseFlpFull,
   calculateBarCount,
-  groupNotesByBar,
   flpPositionToStep,
   type FlpNote,
 } from "../flpImport";
@@ -129,28 +128,35 @@ function emptyPart(name: string, stepCount: number, sampleName?: string): Import
   return sampleName ? { name, sampleName, steps } : { name, steps };
 }
 
+/** Kleinste unterstützte stepCount (16/32/64), die `bars` Bars fasst (1/2/≥3→4). */
+export function stepCountForBars(bars: number): 16 | 32 | 64 {
+  if (bars <= 1) return 16;
+  if (bars <= 2) return 32;
+  return 64;
+}
+
 /**
- * Baut die Parts EINES Bars. Jeder genutzte FL-Channel bekommt einen eigenen
- * Part in einer über alle Patterns konsistenten Reihenfolge (channelOrder),
- * damit Layout + Part-Index stabil sind und das Melodic-Routing exakt denselben
- * Index verwenden kann (kein modulo-Folding mehr auf 8 Parts). Notes werden
- * direkt per channelToPartIndex platziert.
+ * Baut die Parts EINES Patterns (Chunk). Jeder genutzte FL-Channel bekommt einen
+ * eigenen Part in stabiler Reihenfolge (channelOrder) — kein modulo-Folding auf 8.
+ * `chunkNotes` haben chunk-relative Positionen; `stepCount` ist 16/32/64.
  */
-function buildPartsForBar(
-  barNotes: FlpNote[],
+function buildPartsForChunk(
+  chunkNotes: FlpNote[],
   ppq: number,
   channelOrder: number[],
   channelToPartIndex: Map<number, number>,
   channelMeta: Map<number, ChannelPartMeta>,
+  stepCount: number,
 ): ImportedPart[] {
   const parts: ImportedPart[] = channelOrder.map(ch => {
     const meta = channelMeta.get(ch);
-    return emptyPart(meta?.name ?? `Ch ${ch}`, STEP_COUNT, meta?.sampleName);
+    return emptyPart(meta?.name ?? `Ch ${ch}`, stepCount, meta?.sampleName);
   });
-  for (const note of barNotes) {
+  for (const note of chunkNotes) {
     const partIdx = channelToPartIndex.get(note.channel);
     if (partIdx === undefined) continue;
-    const step = flpPositionToStep(note.position, ppq) % STEP_COUNT;
+    const step = flpPositionToStep(note.position, ppq);
+    if (step < 0 || step >= stepCount) continue;
     // pitch wird mitgeführt (Drum-Machine ignoriert es, Piano-Roll/MIDI nutzen es).
     parts[partIdx].steps[step] = { active: true, velocity: note.velocity, pitch: note.key };
   }
@@ -338,34 +344,50 @@ export async function importFlp(file: File): Promise<ImportResult> {
       channelMetaFor(ch); // Metadaten cachen
     }
 
+    // EIN Synthstudio-Pattern pro FL-Pattern (statt pro Bar): stepCount 16/32/64
+    // je nach Bar-Anzahl; nur Patterns > 4 Bars werden in 4-Bar-Chunks (64 Steps)
+    // gesplittet. Das gibt dichte, an FL angelehnte Patterns statt vieler dünner.
     const totalBars = Math.min(MAX_BARS, calculateBarCount(flPattern.notes, ppq, STEP_COUNT));
-    const byBar = groupNotesByBar(flPattern.notes, ppq, STEP_COUNT);
+    const chunkBars = totalBars <= 4 ? totalBars : 4;
+    const stepsPerPattern = stepCountForBars(chunkBars); // 16 | 32 | 64
+    const numChunks = Math.ceil(totalBars / chunkBars);
+    const ticksPerChunk = stepsPerPattern * (ppq / 4);
+
+    // Notes nach Chunk gruppieren (chunk-relative Positionen).
+    const byChunk = new Map<number, FlpNote[]>();
+    for (const note of flPattern.notes) {
+      const chunk = ticksPerChunk > 0 ? Math.floor(note.position / ticksPerChunk) : 0;
+      if (chunk < 0 || chunk >= numChunks) continue; // jenseits MAX_BARS-Cap
+      const rel: FlpNote = { ...note, position: note.position - chunk * ticksPerChunk };
+      const arr = byChunk.get(chunk);
+      if (arr) arr.push(rel); else byChunk.set(chunk, [rel]);
+    }
 
     const parsedName = parsed.patternNames.get(flPattern.index);
     const baseName = parsedName && parsedName.length > 0
       ? parsedName
       : (nonEmptyPatterns.length === 1 ? filenameStem : `Pattern ${flPattern.index}`);
 
-    const firstBarPatternIndex = patternsList.length;
+    const firstChunkPatternIndex = patternsList.length;
     let imported = 0;
-    let barsCreated = 0;
-    for (let bar = 0; bar < totalBars; bar++) {
+    let chunksCreated = 0;
+    for (let chunk = 0; chunk < numChunks; chunk++) {
       if (patternsList.length >= MAX_TOTAL_PATTERNS) { truncated = true; break; }
-      const barNotes = byBar.get(bar) ?? [];
-      imported += barNotes.length;
+      const chunkNotes = byChunk.get(chunk) ?? [];
+      imported += chunkNotes.length;
       patternsList.push({
-        name: totalBars === 1 ? baseName : `${baseName} bar ${bar + 1}`,
-        stepCount: STEP_COUNT,
+        name: numChunks === 1 ? baseName : `${baseName} ${chunk + 1}`,
+        stepCount: stepsPerPattern,
         bpm,
-        parts: buildPartsForBar(barNotes, ppq, patChannels, channelToPartIndex, channelMeta),
+        parts: buildPartsForChunk(chunkNotes, ppq, patChannels, channelToPartIndex, channelMeta, stepsPerPattern),
       });
-      barsCreated++;
+      chunksCreated++;
     }
     droppedBeyondBars += flPattern.notes.length - imported;
 
-    // Melodische Parts dieses FL-Patterns (Pitch-Varianz ≥2) → konkrete
-    // (patternIndex, partIndex, step-im-Bar)-Auflösung. Notes außerhalb der
-    // tatsächlich erzeugten Bars werden verworfen (kein Cross-Pattern-Bleed).
+    // Melodische Parts (Pitch-Varianz ≥2) → konkrete (patternIndex, partIndex,
+    // step-im-Pattern)-Auflösung. startStep aus buildMelodicParts ist in 16tel-
+    // Steps ab FL-Pattern-Start; Chunk = floor(startStep / stepsPerPattern).
     const mp = buildMelodicParts(flPattern.notes, ppq, parsed.channelNames);
     for (const part of mp) {
       melodicChannels.add(part.sourceChannel);
@@ -373,10 +395,10 @@ export async function importFlp(file: File): Promise<ImportResult> {
       if (partIdx === undefined) continue;
       const resolved = part.notes
         .map(n => {
-          const bar = Math.floor(n.startStep / STEP_COUNT);
-          return { ...n, patternIndex: firstBarPatternIndex + bar, startStep: n.startStep - bar * STEP_COUNT };
+          const chunk = Math.floor(n.startStep / stepsPerPattern);
+          return { ...n, patternIndex: firstChunkPatternIndex + chunk, startStep: n.startStep - chunk * stepsPerPattern };
         })
-        .filter(n => n.patternIndex < firstBarPatternIndex + barsCreated);
+        .filter(n => n.patternIndex < firstChunkPatternIndex + chunksCreated && n.startStep >= 0 && n.startStep < stepsPerPattern);
       if (resolved.length === 0) continue;
       melodicParts.push({ ...part, targetPartIndex: partIdx, notes: resolved });
     }

@@ -69,7 +69,7 @@ export function importResultToPatterns(result: ImportResult): Array<{
   return result.patterns.map(p => ({
     id: makeId("pat"),
     name: p.name,
-    stepCount: (p.stepCount === 32 ? 32 : 16) as 16 | 32,
+    stepCount: (p.stepCount === 64 ? 64 : p.stepCount === 32 ? 32 : 16) as 16 | 32 | 64,
     stepResolution: "1/16",
     bpm: p.bpm ?? null,
     parts: p.parts.map(part => ({
@@ -119,7 +119,7 @@ export interface MelodicBaseNoteMapping {
 }
 
 interface RouteablePart { id: string }
-interface RouteablePattern { parts: RouteablePart[] }
+interface RouteablePattern { parts: RouteablePart[]; stepCount?: number }
 
 /**
  * Phase 2 von FLP-MELODIC-ROUTE (v1.66): nimmt die in Phase 1 extrahierten
@@ -181,7 +181,10 @@ export function routeMelodicPartsToPatterns(
       const stepIdx = usesExplicit
         ? Math.round(note.startStep)
         : Math.round(note.startStep) - patIdx * stepsPerBar;
-      if (stepIdx < 0 || stepIdx >= stepsPerBar) { droppedOutOfRange++; continue; }
+      // Im expliziten Pfad kann das Ziel-Pattern 16/32/64 Steps haben — gegen
+      // dessen echte stepCount prüfen, nicht gegen das feste stepsPerBar.
+      const stepLimit = usesExplicit ? (patterns[patIdx].stepCount ?? stepsPerBar) : stepsPerBar;
+      if (stepIdx < 0 || stepIdx >= stepLimit) { droppedOutOfRange++; continue; }
       const targetPart = patterns[patIdx].parts[partIdx];
       if (!targetPart) { droppedOutOfRange++; continue; }
 

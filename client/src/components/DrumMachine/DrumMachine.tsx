@@ -1139,6 +1139,8 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
   // v3.38.0 — BPM-Slider lock-state when external MIDI Clock-IN sync is active.
   const bpmLocked = isBpmExternallyLocked(externalSyncEnabled, externalSyncStatus);
   const pattern = dm.getActivePattern();
+  // Index des aktiven Patterns für Prev/Next-Navigation (−1 falls nicht gefunden).
+  const patternNavIndex = dm.patterns.findIndex(p => p.id === dm.activePatternId);
   // v3.26.0 — Electron-Bridge für E2 Pattern Export
   const electron = useElectron();
   const [showPatternMenu, setShowPatternMenu] = useState(false);
@@ -2164,22 +2166,37 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
       {/* ── Toolbar ─────────────────────────────────────────────────────── */}
       <div className="flex items-center gap-2 px-3 py-2 bg-bg-panel border-b border-border-color flex-wrap">
 
-        {/* Pattern-Auswahl */}
-        <div className="relative">
+        {/* Pattern-Auswahl mit Prev/Next-Navigation */}
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => { if (patternNavIndex > 0) dm.setActivePattern(dm.patterns[patternNavIndex - 1].id); }}
+            disabled={patternNavIndex <= 0}
+            title="Vorheriges Pattern"
+            aria-label="Vorheriges Pattern"
+            className="px-1.5 py-1.5 bg-bg-elevated rounded text-xs text-text-muted hover:text-text-primary disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+          >
+            ◀
+          </button>
+          <div className="relative">
           <button
             onClick={() => setShowPatternMenu(prev => !prev)}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-bg-elevated hover:bg-bg-elevated rounded text-xs font-medium transition-colors"
           >
             <span>{pattern.name}</span>
+            {dm.patterns.length > 1 && (
+              <span className="text-text-dim text-[10px]">{patternNavIndex + 1}/{dm.patterns.length}</span>
+            )}
             <span className="text-text-dim">▾</span>
           </button>
           {showPatternMenu && (
-            <div className="absolute top-full left-0 mt-1 bg-bg-elevated border border-border-color rounded-lg shadow-xl z-50 min-w-[220px]">
+            <div className="absolute top-full left-0 mt-1 bg-bg-elevated border border-border-color rounded-lg shadow-xl z-50 min-w-[220px] max-h-[70vh] flex flex-col">
               {isLiveEditing && (
                 <div className="px-3 py-1.5 border-b border-border-color text-[10px] text-text-dim">
                   Live-Edit aktiv: nur der Draft ist bearbeitbar
                 </div>
               )}
+              {/* Scroll-Bereich nur für die Pattern-Zeilen — Footer bleiben sichtbar */}
+              <div className="overflow-y-auto">
               {dm.patterns.map((p, idx) => (
                 <PatternRow
                   key={p.id}
@@ -2247,6 +2264,7 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
                   activePatternFlat={activePatternFlat}
                 />
               ))}
+              </div>
               {/* v3.162: Bank-Summary-Footer (Multi-Pattern Density-Aggregation) */}
               {dm.patterns.length > 1 && (() => {
                 const report = analyzePatternBank(dm.patterns);
@@ -2655,6 +2673,16 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
               )}
             </div>
           )}
+          </div>
+          <button
+            onClick={() => { if (patternNavIndex >= 0 && patternNavIndex < dm.patterns.length - 1) dm.setActivePattern(dm.patterns[patternNavIndex + 1].id); }}
+            disabled={patternNavIndex < 0 || patternNavIndex >= dm.patterns.length - 1}
+            title="Nächstes Pattern"
+            aria-label="Nächstes Pattern"
+            className="px-1.5 py-1.5 bg-bg-elevated rounded text-xs text-text-muted hover:text-text-primary disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+          >
+            ▶
+          </button>
         </div>
 
         {/* Step-Auflösung (Pattern-Global) */}

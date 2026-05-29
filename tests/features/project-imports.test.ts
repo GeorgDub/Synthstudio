@@ -947,12 +947,15 @@ describe("importResultToPatterns", () => {
     expect(converted[0].parts[0].fx).toBeDefined();
   });
 
-  it("clampt stepCount auf 16 oder 32", () => {
-    const result: ImportResult = {
+  it("erlaubt stepCount 16/32/64 (64 für konsolidierte 3-4-Bar-Patterns)", () => {
+    const mk = (sc: number) => importResultToPatterns({
       sourceFormat: "flp", fileName: "x", bpm: 120, warnings: [],
-      patterns: [{ name: "X", stepCount: 64 as 16, bpm: 120, parts: [] }],
-    };
-    const converted = importResultToPatterns(result);
-    expect([16, 32]).toContain(converted[0].stepCount);
+      patterns: [{ name: "X", stepCount: sc, bpm: 120, parts: [] }],
+    })[0].stepCount;
+    expect(mk(16)).toBe(16);
+    expect(mk(32)).toBe(32);
+    expect(mk(64)).toBe(64);
+    // Unbekannte Werte fallen auf 16 zurück
+    expect(mk(48)).toBe(16);
   });
 });
