@@ -234,6 +234,9 @@ export default defineConfig({
       ".manusvm.computer",
       "localhost",
       "127.0.0.1",
+      // Remote-Preview-Tunnel (Dev-only): Cloudflare Quick Tunnel + localtunnel
+      ".trycloudflare.com",
+      ".loca.lt",
     ],
     fs: {
       strict: true,

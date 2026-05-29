@@ -46,21 +46,23 @@ export const LICENSE_PUBLIC_KEY_HEX =
 export const LICENSE_PRODUCT_ID = "synthstudio-pro-1";
 
 /**
- * ⚠️ TEMPORÄRER DEV-MASTER-KEY — vor Release ENTFERNEN!
+ * ⚠️ TEMPORÄRER DEV-MASTER-KEY — NUR im Dev-/Test-Build aktiv.
  *
  * Schaltet die Vollversion (Pro) ohne Ed25519-Signatur-Validierung frei.
  * Nur für die Entwicklungsphase gedacht, solange noch kein echter Public-Key /
- * Gumroad-Flow existiert. `activate()` prüft diesen Key VOR der normalen
- * Validierung und vergibt bei Treffer direkt 'pro'-Status.
+ * Gumroad-Flow existiert.
  *
- * TODO(release): Diese Konstante + den Branch in useLicenseStore.activate()
- * entfernen, sobald LICENSE_PUBLIC_KEY_HEX ein echter Key ist.
+ * WICHTIG: Der Check ist hinter `import.meta.env.PROD` gegated, damit der Key
+ * NIEMALS in einen Production-Build (z.B. öffentliches Vercel-Deploy) gelangt —
+ * sonst wäre der Pro-Bypass für jeden im JS-Bundle lesbar. Im Prod-Build wird
+ * der frühe `return false` zu totem Code danach → das Literal wird wegoptimiert.
+ *
+ * TODO(release): Sobald LICENSE_PUBLIC_KEY_HEX ein echter Key ist, diese
+ * Funktion + den Branch in useLicenseStore.activate() ganz entfernen.
  */
-export const MASTER_LICENSE_KEY = "137924568";
-
-/** True, wenn `key` (getrimmt) dem temporären Dev-Master-Key entspricht. */
 export function isMasterLicenseKey(key: string): boolean {
-  return key.trim() === MASTER_LICENSE_KEY;
+  if (import.meta.env.PROD) return false; // im Prod-Build deaktiviert (Key nicht öffentlich)
+  return key.trim() === "137924568";
 }
 
 /** Trial duration in days. v2.97 ships with 30-day default. */

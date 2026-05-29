@@ -1,0 +1,9 @@
+[build]
+  command = "pnpm build"
+  publish = "dist/public"
+
+# SPA-Fallback: unbekannte Pfade → index.html (vorhandene Dateien/Assets gehen vor)
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
