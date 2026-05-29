@@ -207,3 +207,36 @@ export function generateEmphasis(
 
   return result;
 }
+
+/**
+ * Wendet ein Emphasis-Ergebnis auf eine Velocity-Spur an (v3.241).
+ *
+ * Liefert ein vollständiges Velocity-Array der Länge `stepCount`:
+ *  - Steps, die in `emphasized` vorkommen (= aktive Steps), erhalten die
+ *    akzentuierte Velocity (geclamped 1..127).
+ *  - Alle anderen Steps behalten ihre aktuelle Velocity (Fallback 100).
+ *
+ * Pure & Node-testbar — die UI reicht das Ergebnis an setPartSteps weiter,
+ * sodass Pitch/Probability/etc. der Steps unberührt bleiben.
+ */
+export function applyEmphasisVelocities(
+  stepCount: number,
+  emphasized: readonly EmphasizedStep[],
+  currentVelocities: readonly number[],
+): number[] {
+  const count = Number.isFinite(stepCount) && stepCount > 0 ? Math.floor(stepCount) : 0;
+  const byStep = new Map<number, number>();
+  for (const e of emphasized) byStep.set(e.stepIndex, clampVelocity(e.velocity));
+
+  const out: number[] = new Array(count);
+  for (let i = 0; i < count; i++) {
+    const emph = byStep.get(i);
+    if (emph !== undefined) {
+      out[i] = emph;
+    } else {
+      const cur = currentVelocities[i];
+      out[i] = Number.isFinite(cur) ? clampVelocity(cur) : 100;
+    }
+  }
+  return out;
+}

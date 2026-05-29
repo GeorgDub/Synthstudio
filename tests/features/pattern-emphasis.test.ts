@@ -9,6 +9,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import {
   generateEmphasis,
+  applyEmphasisVelocities,
   EMPHASIS_PRESET_LABELS,
   type EmphasisPreset,
   type EmphasizedStep,
@@ -267,5 +268,55 @@ describe("EMPHASIS_PRESET_LABELS", () => {
     expect(Object.keys(EMPHASIS_PRESET_LABELS).sort()).toEqual(
       ["ghost-heavy", "linear", "loose", "natural", "robotic"],
     );
+  });
+});
+
+// ─── v3.241: applyEmphasisVelocities (Apply auf Velocity-Spur) ────────────────
+
+describe("applyEmphasisVelocities", () => {
+  it("akzentuierte Steps bekommen die Emphasis-Velocity, Rest bleibt unverändert", () => {
+    const emphasized: EmphasizedStep[] = [
+      { stepIndex: 0, velocity: 120 },
+      { stepIndex: 4, velocity: 90 },
+    ];
+    const current = [100, 100, 100, 100, 100, 100, 100, 100];
+    const out = applyEmphasisVelocities(8, emphasized, current);
+    expect(out).toEqual([120, 100, 100, 100, 90, 100, 100, 100]);
+  });
+
+  it("inaktive Steps ohne aktuelle Velocity → Fallback 100", () => {
+    const out = applyEmphasisVelocities(4, [{ stepIndex: 1, velocity: 80 }], []);
+    expect(out).toEqual([100, 80, 100, 100]);
+  });
+
+  it("clamped Emphasis- und Current-Velocities auf 1..127", () => {
+    const out = applyEmphasisVelocities(
+      3,
+      [{ stepIndex: 0, velocity: 200 }, { stepIndex: 1, velocity: -5 }],
+      [0, 0, 999],
+    );
+    expect(out).toEqual([127, 1, 127]);
+  });
+
+  it("stepCount 0 / negativ / NaN → leeres Array", () => {
+    expect(applyEmphasisVelocities(0, [{ stepIndex: 0, velocity: 100 }], [])).toEqual([]);
+    expect(applyEmphasisVelocities(-3, [], [])).toEqual([]);
+    expect(applyEmphasisVelocities(NaN, [], [])).toEqual([]);
+  });
+
+  it("Emphasis-Steps außerhalb der stepCount werden ignoriert", () => {
+    const out = applyEmphasisVelocities(2, [{ stepIndex: 5, velocity: 120 }], [100, 100]);
+    expect(out).toEqual([100, 100]);
+  });
+
+  it("Round-Trip: generateEmphasis → applyEmphasisVelocities setzt nur aktive Steps", () => {
+    const rhythm = [true, false, true, false];
+    const emp = generateEmphasis(rhythm, { preset: "natural" });
+    const out = applyEmphasisVelocities(4, emp, [70, 70, 70, 70]);
+    // Aktive Steps (0,2) verändert; inaktive (1,3) bleiben 70.
+    expect(out[1]).toBe(70);
+    expect(out[3]).toBe(70);
+    expect(out[0]).not.toBe(70);
+    expect(out[2]).not.toBe(70);
   });
 });
