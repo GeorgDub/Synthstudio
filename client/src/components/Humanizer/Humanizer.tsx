@@ -153,7 +153,8 @@ export function Humanizer({ humanizer, className = "" }: HumanizerProps) {
                   title={preset.description}
                   className={[
                     "px-2 py-0.5 rounded text-[10px] transition-colors",
-                    settings.preset === preset.name
+                    // Nicht highlighten, wenn eine gleichnamige Groove-Vorlage aktiv ist
+                    settings.preset === preset.name && !settings.grooveTemplateId
                       ? "bg-accent-primary/70 text-bg-base"
                       : "bg-bg-elevated text-text-dim hover:bg-bg-elevated hover:text-text-primary",
                   ].join(" ")}
@@ -171,14 +172,11 @@ export function Humanizer({ humanizer, className = "" }: HumanizerProps) {
               {GROOVE_TEMPLATES.map(tmpl => (
                 <button
                   key={tmpl.id}
-                  onClick={() => {
-                    const sw = (templateSwingPercent(tmpl) - 50) / 100;
-                    humanizer.updateGlobal({ swing: Math.max(0, Math.min(0.5, sw)), preset: tmpl.name });
-                  }}
+                  onClick={() => humanizer.loadGrooveTemplate(tmpl.id)}
                   title={`${tmpl.description} (${tmpl.bpm} BPM Referenz, ${templateSwingPercent(tmpl)}% Swing)`}
                   className={[
                     "px-2 py-0.5 rounded text-[10px] transition-colors border",
-                    settings.preset === tmpl.name
+                    settings.grooveTemplateId === tmpl.id
                       ? "border-accent-secondary bg-accent-secondary/20 text-accent-secondary"
                       : "border-border-color text-text-dim hover:text-text-primary",
                   ].join(" ")}
@@ -187,6 +185,23 @@ export function Humanizer({ humanizer, className = "" }: HumanizerProps) {
                 </button>
               ))}
             </div>
+
+            {/* Groove-Intensität — nur sichtbar wenn eine Vorlage aktiv ist */}
+            {settings.grooveTemplateId && (
+              <div className="mt-2">
+                <HumanizerSlider
+                  label="Groove-Intensität"
+                  value={settings.grooveAmount ?? 1}
+                  min={0}
+                  max={1}
+                  step={0.05}
+                  onChange={(v) => humanizer.setGrooveAmount(v)}
+                  formatValue={(v) => `${Math.round(v * 100)}%`}
+                  accent="secondary"
+                  disabled={!settings.enabled}
+                />
+              </div>
+            )}
           </div>
 
           {/* Slider */}

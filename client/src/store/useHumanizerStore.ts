@@ -13,6 +13,7 @@
  * Isomorph: Funktioniert im Browser und in Electron.
  */
 import { useState, useCallback, useEffect } from "react";
+import { GROOVE_TEMPLATES, type GrooveTemplate } from "@/utils/grooveEngine";
 
 // ─── Typen ────────────────────────────────────────────────────────────────────
 
@@ -29,6 +30,15 @@ export interface HumanizerSettings {
   swingOnEvenSteps: boolean;
   /** Groove-Preset Name (null = Custom) */
   preset: string | null;
+  /**
+   * Aktive Groove-Engine-Vorlage (GROOVE_TEMPLATES[].id). Wenn gesetzt, wendet
+   * der Sequencer das Per-Step-Timing+Velocity-Profil der Vorlage an statt des
+   * einfachen Even-Step-Swings. null/undefined = kein Template (manueller Swing).
+   * Optional für Rückwärtskompatibilität mit persistierten Alt-Settings.
+   */
+  grooveTemplateId?: string | null;
+  /** Groove-Intensität 0..1 (0 = aus, 1 = Vorlage voll). Default 1. */
+  grooveAmount?: number;
 }
 
 export interface GroovePreset {
@@ -57,6 +67,14 @@ export interface HumanizerActions {
   resetPart: (partIndex: number) => void;
   /** Preset laden */
   loadPreset: (presetName: string) => void;
+  /**
+   * Groove-Engine-Vorlage aktivieren (GROOVE_TEMPLATES[].id). Aktiviert den
+   * Humanizer, setzt den manuellen Swing auf 0 (die Vorlage besitzt das Timing)
+   * und merkt sich den Anzeigenamen als preset.
+   */
+  loadGrooveTemplate: (templateId: string) => void;
+  /** Groove-Intensität setzen (0..1) ohne die aktive Vorlage zu verwerfen. */
+  setGrooveAmount: (amount: number) => void;
   /** Humanizer ein/ausschalten */
   toggleEnabled: () => void;
   /** Alle Einstellungen zurücksetzen */
@@ -67,10 +85,10 @@ export interface HumanizerActions {
    */
   getTimingOffset: (stepIndex: number, partIndex?: number) => number;
   /**
-   * Velocity-Multiplikator für einen Step berechnen (0.5–1.5).
+   * Velocity-Multiplikator für einen Step berechnen (0.1–2.0).
    * Wird vom Sequencer aufgerufen.
    */
-  getVelocityMultiplier: (partIndex?: number) => number;
+  getVelocityMultiplier: (stepIndex: number, partIndex?: number) => number;
 }
 
 // ─── Groove-Presets ───────────────────────────────────────────────────────────
@@ -136,22 +154,22 @@ const DEFAULT_SETTINGS: HumanizerSettings = {
   enabled: false,
   swingOnEvenSteps: true,
   preset: null,
+  grooveTemplateId: null,
+  grooveAmount: 1.0,
 };
 
-// ─── Hilfsfunktionen ──────────────────────────────────────────────────────────
+// ─── Groove-Engine-Template Helpers ───────────────────────────────────────────
 
-/** Seeded Pseudo-Zufallszahl (deterministisch für reproduzierbare Grooves) */
-function seededRandom(seed: number): number {
-  const x = Math.sin(seed + 1) * 10000;
-  return x - Math.floor(x);
+/** Schlägt eine Groove-Template anhand ihrer ID nach (null = keine/unbekannt). */
+function resolveGrooveTemplate(id: string | null | undefined): GrooveTemplate | null {
+  if (!id) return null;
+  return GROOVE_TEMPLATES.find((t) => t.id === id) ?? null;
 }
 
-/** Gaußsche Zufallszahl (Box-Muller-Transformation) */
-function gaussianRandom(mean: number, stdDev: number): number {
-  const u1 = Math.random();
-  const u2 = Math.random();
-  const z = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
-  return mean + z * stdDev;
+/** Clamp der Groove-Intensität auf [0,1] (NaN → 1). */
+function clampGrooveAmount(amount: number | undefined): number {
+  if (typeof amount !== "number" || !Number.isFinite(amount)) return 1.0;
+  return Math.max(0, Math.min(1, amount));
 }
 
 // ─── Singleton-State (für nicht-React Konsumenten wie AudioEngine) ───────────
@@ -180,7 +198,15 @@ export function computeHumanizerTimingOffset(
   if (!settings.enabled) return 0;
 
   let offset = 0;
-  if (settings.swing > 0 && settings.swingOnEvenSteps && stepIndex % 2 === 1) {
+  const template = resolveGrooveTemplate(settings.grooveTemplateId);
+  if (template) {
+    // Groove-Engine-Vorlage aktiv: Per-Step-Timing aus dem Template (in ms,
+    // relativ zum quantisierten Step) — das ist die eigentliche Groove-Signatur.
+    // Ersetzt den einfachen Even-Step-Swing (das Template kodiert ihn bereits).
+    const amount = clampGrooveAmount(settings.grooveAmount);
+    const tMs = template.timing[stepIndex % template.timing.length] ?? 0;
+    offset += tMs * 0.001 * amount;
+  } else if (settings.swing > 0 && settings.swingOnEvenSteps && stepIndex % 2 === 1) {
     // Swing-Offset relativ zur tatsächlichen Step-Dauer (BPM-unabhängig).
     offset += settings.swing * stepDurationSec * 0.5;
   }
@@ -193,16 +219,36 @@ export function computeHumanizerTimingOffset(
   return offset;
 }
 
-/** Berechnet einen Velocity-Multiplikator (0.5..1.5) – nicht-deterministisch. */
-export function computeHumanizerVelocityMultiplier(partIndex?: number): number {
+/**
+ * Berechnet einen Velocity-Multiplikator (0.1..2.0).
+ *
+ * Kombiniert die Per-Step-Velocity-Kurve einer aktiven Groove-Vorlage
+ * (deterministisch) mit dem optionalen Velocity-Jitter (nicht-deterministisch).
+ */
+export function computeHumanizerVelocityMultiplier(stepIndex: number, partIndex?: number): number {
   const s = _singletonState;
   const settings = partIndex !== undefined && s.perPart[partIndex]
     ? { ...s.global, ...s.perPart[partIndex] } : s.global;
-  if (!settings.enabled || settings.velocityJitter === 0) return 1.0;
-  const u1 = Math.random();
-  const u2 = Math.random();
-  const z = Math.sqrt(-2 * Math.log(Math.max(1e-9, u1))) * Math.cos(2 * Math.PI * u2);
-  const multiplier = 1.0 + z * settings.velocityJitter * 0.3;
+  if (!settings.enabled) return 1.0;
+
+  let multiplier = 1.0;
+
+  // Groove-Vorlage: Per-Step-Velocity-Kurve (z.B. Ghost-Notes bei "Funk Ghost").
+  const template = resolveGrooveTemplate(settings.grooveTemplateId);
+  if (template) {
+    const amount = clampGrooveAmount(settings.grooveAmount);
+    const tVel = template.velocity[stepIndex % template.velocity.length] ?? 1.0;
+    multiplier *= 1 + (tVel - 1) * amount;
+  }
+
+  // Velocity-Jitter: gaußsche Streuung um den aktuellen Multiplikator.
+  if (settings.velocityJitter > 0) {
+    const u1 = Math.random();
+    const u2 = Math.random();
+    const z = Math.sqrt(-2 * Math.log(Math.max(1e-9, u1))) * Math.cos(2 * Math.PI * u2);
+    multiplier *= 1.0 + z * settings.velocityJitter * 0.3;
+  }
+
   return Math.max(0.1, Math.min(2.0, multiplier));
 }
 
@@ -219,7 +265,15 @@ export function useHumanizerStore(): HumanizerState & HumanizerActions {
   const updateGlobal = useCallback((changes: Partial<HumanizerSettings>) => {
     setState((prev) => ({
       ...prev,
-      global: { ...prev.global, ...changes, preset: null },
+      // Manuelle Slider-Änderung verlässt den Preset-/Template-Modus, sofern die
+      // Änderung nicht selbst die Vorlage/Intensität betrifft.
+      global: {
+        ...prev.global,
+        ...changes,
+        preset: changes.preset ?? null,
+        grooveTemplateId:
+          "grooveTemplateId" in changes ? (changes.grooveTemplateId ?? null) : null,
+      },
     }));
   }, []);
 
@@ -257,9 +311,37 @@ export function useHumanizerStore(): HumanizerState & HumanizerActions {
           timingJitter: preset.timingJitter,
           enabled: true,
           preset: presetName,
+          // Jitter-Preset hat Vorrang vor einer evtl. aktiven Groove-Vorlage.
+          grooveTemplateId: null,
         },
       };
     });
+  }, []);
+
+  const loadGrooveTemplate = useCallback((templateId: string) => {
+    setState((prev) => {
+      const template = resolveGrooveTemplate(templateId);
+      if (!template) return prev;
+      return {
+        ...prev,
+        global: {
+          ...prev.global,
+          grooveTemplateId: template.id,
+          // Die Vorlage besitzt das Timing — manueller Even-Step-Swing aus.
+          swing: 0,
+          enabled: true,
+          preset: template.name,
+        },
+      };
+    });
+  }, []);
+
+  const setGrooveAmount = useCallback((amount: number) => {
+    const clamped = clampGrooveAmount(amount);
+    setState((prev) => ({
+      ...prev,
+      global: { ...prev.global, grooveAmount: clamped },
+    }));
   }, []);
 
   const toggleEnabled = useCallback(() => {
@@ -282,57 +364,18 @@ export function useHumanizerStore(): HumanizerState & HumanizerActions {
    * Positiv = Step wird später gespielt, Negativ = früher.
    * Einheit: Sekunden
    */
+  // Delegieren an die Modul-Funktionen (gleiche Logik wie der Sequencer-Pfad).
+  // Standard-Step-Dauer 120 BPM / 16tel; der Sequencer übergibt den echten Wert.
   const getTimingOffset = useCallback(
-    (stepIndex: number, partIndex?: number): number => {
-      const settings =
-        partIndex !== undefined && state.perPart[partIndex]
-          ? { ...state.global, ...state.perPart[partIndex] }
-          : state.global;
-
-      if (!settings.enabled) return 0;
-
-      let offset = 0;
-
-      // Swing: Jeder zweite Step wird verzögert
-      if (settings.swing > 0 && settings.swingOnEvenSteps) {
-        const isSwingStep = stepIndex % 2 === 1; // Ungerade Steps (0-basiert)
-        if (isSwingStep) {
-          // Swing-Offset: 0 = 50% (gerade), 0.5 = 75% (maximaler Swing)
-          // Bei 120 BPM: 1 Step = 125ms, Swing-Offset = swing * 125ms
-          const stepDurationMs = 60000 / 120 / 4; // Wird vom Sequencer überschrieben
-          offset += settings.swing * stepDurationMs * 0.001; // In Sekunden
-        }
-      }
-
-      // Timing-Jitter: Gaußsche Verteilung um 0
-      if (settings.timingJitter > 0) {
-        const jitterMs = gaussianRandom(0, settings.timingJitter * 0.5);
-        offset += jitterMs * 0.001; // In Sekunden
-      }
-
-      return offset;
-    },
-    [state.global, state.perPart]
+    (stepIndex: number, partIndex?: number): number =>
+      computeHumanizerTimingOffset(stepIndex, 60000 / 120 / 4 * 0.001, partIndex),
+    []
   );
 
-  /**
-   * Velocity-Multiplikator berechnen.
-   * 1.0 = keine Änderung, < 1 = leiser, > 1 = lauter
-   */
   const getVelocityMultiplier = useCallback(
-    (partIndex?: number): number => {
-      const settings =
-        partIndex !== undefined && state.perPart[partIndex]
-          ? { ...state.global, ...state.perPart[partIndex] }
-          : state.global;
-
-      if (!settings.enabled || settings.velocityJitter === 0) return 1.0;
-
-      // Gaußsche Verteilung um 1.0
-      const multiplier = gaussianRandom(1.0, settings.velocityJitter * 0.3);
-      return Math.max(0.1, Math.min(2.0, multiplier));
-    },
-    [state.global, state.perPart]
+    (stepIndex: number, partIndex?: number): number =>
+      computeHumanizerVelocityMultiplier(stepIndex, partIndex),
+    []
   );
 
   return {
@@ -341,6 +384,8 @@ export function useHumanizerStore(): HumanizerState & HumanizerActions {
     updatePart,
     resetPart,
     loadPreset,
+    loadGrooveTemplate,
+    setGrooveAmount,
     toggleEnabled,
     reset,
     getTimingOffset,

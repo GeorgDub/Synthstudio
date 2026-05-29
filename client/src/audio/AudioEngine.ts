@@ -3339,11 +3339,11 @@ class AudioEngineClass {
       try {
         // Lazy require um Zirkular-Imports zu vermeiden
         const hum = (globalThis as Record<string, unknown>)["__synthstudio_humanizer__"] as
-          | { timing: (i: number, d: number, p?: number) => number; velocity: (p?: number) => number }
+          | { timing: (i: number, d: number, p?: number) => number; velocity: (i: number, p?: number) => number }
           | undefined;
         if (hum) {
           humanizerTimingOffset = hum.timing(effIdx, this._stepDuration(), partIndex);
-          humanizerVelocityMult = hum.velocity(partIndex);
+          humanizerVelocityMult = hum.velocity(effIdx, partIndex);
         }
       } catch { /* ignore */ }
 
