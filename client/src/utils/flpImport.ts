@@ -32,7 +32,7 @@
  *   varlen: MIDI-style 7-bit groups, high bit = continuation.
  *
  *   Wichtige Event-IDs:
- *     0x4F (79)  NewPattern         WORD pattern-index (1-based)
+ *     0x41 (65)  NewPattern         WORD pattern-index (1-based) — FLP_NewPat (FLP_Word+1)
  *     0xC1 (193) PatternName        TEXT (null-terminated UTF-16LE? oder ANSI?)
  *     0xE7 (231) NotesEvent         DATA array of 24-byte note records
  *
@@ -268,8 +268,13 @@ export function parseFlp(buffer: ArrayBuffer): FlpParsed {
     } else if (eventId < 0x80) {
       // WORD event (2-byte LE)
       const w = reader.readU16LE();
-      if (eventId === 0x4F) {
-        // NewPattern — set current
+      if (eventId === 0x41) {
+        // NewPattern (FLP_NewPat = FLP_Word+1 = 65) — set current pattern index.
+        // WICHTIG: vorher stand hier fälschlich 0x4F (79); dieses Event existiert
+        // in echten FLPs nicht, wodurch currentPatternIndex auf 0 hängenblieb und
+        // ALLE Notes-Events in ein einziges Fallback-Pattern kollabierten (nur das
+        // letzte überlebte). Verifiziert gegen reale FL-Datei: das letzte 0x41 vor
+        // jedem 0xE0-Notes-Event liefert exakt die FL-Pattern-Nummern.
         currentPatternIndex = w;
         if (!patternsByIndex.has(w)) {
           patternsByIndex.set(w, { index: w, notes: [] });

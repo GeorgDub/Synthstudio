@@ -184,7 +184,7 @@ describe("FLP-Import realistic synthetic FL-Studio output", () => {
         dwordEvent(0xbe, 0xffff00),
 
         // ─── Pattern 1: "Beat 1" — 4-on-the-floor + Hi-Hats ─────────────────
-        wordEvent(0x4f, 1),                       // NewPattern index=1
+        wordEvent(0x41, 1),                       // NewPattern index=1
         textEvent(0xc1, "Beat 1"),                // PatternName
         dataEvent(0xc8, new Uint8Array([0x00, 0x88, 0xff, 0x00])), // Pattern color (DATA, 4-byte payload)
         dataEvent(0xe7, concatBytes([
@@ -208,7 +208,7 @@ describe("FLP-Import realistic synthetic FL-Studio output", () => {
         ])),
 
         // ─── Pattern 2: "Beat 2" — synkopiert ───────────────────────────────
-        wordEvent(0x4f, 2),
+        wordEvent(0x41, 2),
         textEvent(0xc1, "Beat 2"),
         dataEvent(0xc8, new Uint8Array([0xff, 0xdd, 0x00, 0x00])),
         dataEvent(0xe7, concatBytes([
@@ -222,7 +222,7 @@ describe("FLP-Import realistic synthetic FL-Studio output", () => {
         ])),
 
         // ─── Pattern 3: leer (sollte trotzdem erkannt werden) ──────────────
-        wordEvent(0x4f, 3),
+        wordEvent(0x41, 3),
         textEvent(0xc1, "Empty"),
 
         // Random unbekannte Events am Ende
@@ -352,7 +352,7 @@ describe("FLP-Import realistic synthetic FL-Studio output", () => {
     }
     const flp = buildFlp({
       events: [
-        wordEvent(0x4f, 1),
+        wordEvent(0x41, 1),
         dataEvent(0xe7, concatBytes(notes)),
       ],
     });
@@ -364,7 +364,7 @@ describe("FLP-Import realistic synthetic FL-Studio output", () => {
     const flp = buildFlp({
       ppq: 192,
       events: [
-        wordEvent(0x4f, 1),
+        wordEvent(0x41, 1),
         dataEvent(0xe7, concatBytes([
           buildNote({ position: 0,   channel: 0, duration: 48, key: 36, velocity: 100 }),
           buildNote({ position: 48,  channel: 0, duration: 48, key: 36, velocity: 100 }),
@@ -393,7 +393,7 @@ describe("FLP-Import realistic synthetic FL-Studio output", () => {
     }
     const flp = buildFlp({
       events: [
-        wordEvent(0x4f, 1),
+        wordEvent(0x41, 1),
         dataEvent(0xe7, concatBytes(notes)),
       ],
     });

@@ -6,6 +6,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { importFlp, detectChannelPitches, buildMelodicParts, pitchMedian } from "../../client/src/utils/imports/flpImport";
+import { parseFlp } from "../../client/src/utils/flpImport";
 import { importElectribe } from "../../client/src/utils/imports/electribeImport";
 import {
   importProjectFile,
@@ -138,7 +139,7 @@ describe("FLP Import — Melodic-Channel-Warnung (post-v1.63.0)", () => {
     payload.set(melNote2, 72);
 
     // NewPattern + NotesEvent
-    const newPattern = new Uint8Array([0x4f, 0x01, 0x00]); // WORD: pattern 1
+    const newPattern = new Uint8Array([0x41, 0x01, 0x00]); // WORD 0x41 FLP_NewPat: pattern 1
     // DATA event 0xe7 with varlen size 96 (= 0x60, single byte)
     const eventHeader = new Uint8Array([0xe7, 96]);
     const dataChunk = new Uint8Array(newPattern.length + eventHeader.length + payload.length);
@@ -220,7 +221,7 @@ describe("FLP Import — Melodic-Channel-Warnung (post-v1.63.0)", () => {
     const payload = new Uint8Array(48);
     payload.set(noteBuf(0), 0);
     payload.set(noteBuf(96), 24);
-    const newPattern = new Uint8Array([0x4f, 0x01, 0x00]);
+    const newPattern = new Uint8Array([0x41, 0x01, 0x00]);
     const eventHdr = new Uint8Array([0xe7, 48]);
     const chunk = new Uint8Array(newPattern.length + eventHdr.length + payload.length);
     chunk.set(newPattern, 0);
@@ -257,8 +258,8 @@ describe("FLP Import — Pattern-Name aus 0xC1 (v1.70)", () => {
     hv.setUint16(12, 96, true); // ppq
 
     // ── Events ──
-    // NewPattern (WORD 0x4F = pattern 1)
-    const newPattern = new Uint8Array([0x4f, 0x01, 0x00]);
+    // NewPattern (WORD 0x41 FLP_NewPat = pattern 1)
+    const newPattern = new Uint8Array([0x41, 0x01, 0x00]);
 
     // PatternName (TEXT 0xC1, ASCII null-terminated)
     const nameBytes = new Uint8Array(patternName.length + 1);
@@ -321,7 +322,7 @@ describe("FLP Import — Pattern-Name aus 0xC1 (v1.70)", () => {
     hv.setUint16(8, 0, true);
     hv.setUint16(10, 1, true);
     hv.setUint16(12, 96, true);
-    const newPattern = new Uint8Array([0x4f, 0x01, 0x00]);
+    const newPattern = new Uint8Array([0x41, 0x01, 0x00]);
     const noteBuf = new Uint8Array(24);
     const nv = new DataView(noteBuf.buffer);
     nv.setUint32(0, 0, true);
@@ -342,6 +343,91 @@ describe("FLP Import — Pattern-Name aus 0xC1 (v1.70)", () => {
 
     const result = await importFlp(makeFile("OnlyFilename.flp", total.buffer));
     expect(result.patterns[0].name).toBe("OnlyFilename");
+  });
+});
+
+// ─── parseFlp Multi-Pattern (Regression: NewPattern-Event-ID 0x41) ────────────
+//
+// Schützt vor dem 0x4F→0x41-Bug: ein FLP mit MEHREREN Patterns (jeweils eigenem
+// 0x41 FLP_NewPat-Marker) muss seine Notes in die jeweils RICHTIGEN Patterns
+// trennen. Mit der alten falschen ID (0x4F, existiert real nicht) blieb
+// currentPatternIndex=0 hängen und ALLE Notes kollabierten in ein einziges
+// Pattern — am Ende überlebte nur das letzte Notes-Event (1 Note). Verifiziert
+// gegen eine reale 106-Pattern-FL-Datei (BiS ZuR BeWuStLoSiGkEi_175_Bpm.flp).
+describe("parseFlp — Multi-Pattern-Trennung (Regression 0x41 NewPattern)", () => {
+  function note(position: number, channel: number, key: number): Uint8Array {
+    const b = new Uint8Array(24);
+    const v = new DataView(b.buffer);
+    v.setUint32(0, position, true);
+    v.setUint16(6, channel, true);
+    v.setUint32(8, 24, true);
+    v.setUint8(12, key);
+    v.setUint8(18, 100);
+    return b;
+  }
+  function notesEvent(notes: Uint8Array[]): Uint8Array {
+    const size = notes.length * 24;
+    // varlen size: für unsere Test-Größen (<128) ein Byte
+    const out = new Uint8Array(2 + size);
+    out[0] = 0xe0; // FL 20+ Notes-Event
+    out[1] = size;
+    let off = 2;
+    for (const n of notes) { out.set(n, off); off += 24; }
+    return out;
+  }
+  function newPat(idx: number): Uint8Array {
+    return new Uint8Array([0x41, idx & 0xff, (idx >> 8) & 0xff]);
+  }
+
+  function buildMultiPatternFlp(): ArrayBuffer {
+    const header = new Uint8Array(14);
+    const hv = new DataView(header.buffer);
+    header.set([0x46, 0x4c, 0x68, 0x64], 0); // FLhd
+    hv.setUint32(4, 6, true);
+    hv.setUint16(8, 0, true);   // format
+    hv.setUint16(10, 2, true);  // nChannels
+    hv.setUint16(12, 96, true); // ppq
+
+    // Pattern 1: 2 Notes auf Channel 0; Pattern 5: 3 Notes auf Channel 1.
+    // Bewusst nicht aufeinanderfolgende Indizes (1, 5) wie in der realen Datei.
+    const chunks = [
+      newPat(1),
+      notesEvent([note(0, 0, 36), note(24, 0, 36)]),
+      newPat(5),
+      notesEvent([note(0, 1, 38), note(24, 1, 38), note(48, 1, 38)]),
+    ];
+    const total = chunks.reduce((s, c) => s + c.length, 0);
+    const events = new Uint8Array(total);
+    let off = 0;
+    for (const c of chunks) { events.set(c, off); off += c.length; }
+
+    const dataHdr = new Uint8Array(8);
+    dataHdr.set([0x46, 0x4c, 0x64, 0x74], 0); // FLdt
+    new DataView(dataHdr.buffer).setUint32(4, events.length, true);
+
+    const out = new Uint8Array(header.length + dataHdr.length + events.length);
+    out.set(header, 0);
+    out.set(dataHdr, header.length);
+    out.set(events, header.length + dataHdr.length);
+    return out.buffer;
+  }
+
+  it("trennt Notes in die richtigen Patterns statt sie zu kollabieren", () => {
+    const parsed = parseFlp(buildMultiPatternFlp());
+    const byIndex = new Map(parsed.patterns.map(p => [p.index, p]));
+
+    const p1 = byIndex.get(1);
+    const p5 = byIndex.get(5);
+    expect(p1).toBeDefined();
+    expect(p5).toBeDefined();
+    expect(p1!.notes).toHaveLength(2);
+    expect(p5!.notes).toHaveLength(3);
+    // Keine Vermischung: Pattern 1 nur Channel 0, Pattern 5 nur Channel 1
+    expect(new Set(p1!.notes.map(n => n.channel))).toEqual(new Set([0]));
+    expect(new Set(p5!.notes.map(n => n.channel))).toEqual(new Set([1]));
+    // Gesamtzahl bleibt erhalten (kein Drop, kein Overwrite)
+    const totalNotes = parsed.patterns.reduce((s, p) => s + p.notes.length, 0);
+    expect(totalNotes).toBe(5);
   });
 });
 
