@@ -138,6 +138,7 @@ import { useSessionStore } from "@/store/useSessionStore";
 import { CollabSplitView } from "@/components/CollabSplitView";
 import { ThemeSettings, initTheme } from "@/components/Settings";
 import { MixerView } from "@/components/Mixer";
+import { PatternManager } from "@/components/PatternManager/PatternManager";
 import { ChannelInspector } from "@/components/Mixer/ChannelInspector";
 import { WorkspaceShell } from "@/components/Workspace/WorkspaceShell";
 import { WorkspaceProvider } from "@/components/Workspace/WorkspaceContext";
@@ -1792,7 +1793,7 @@ export default function App() {
   }, [sidebarWidth]);
 
   // Tab-State mit localStorage-Persistenz
-  const [activeTab, setActiveTab] = useState<"sequencer" | "mixer" | "song" | "humanizer" | "tools" | "kollaboration">(() => {
+  const [activeTab, setActiveTab] = useState<"sequencer" | "mixer" | "patterns" | "song" | "humanizer" | "tools" | "kollaboration">(() => {
     const saved = localStorage.getItem("ss-layout:active-tab");
     const valid = ["sequencer", "mixer", "song", "humanizer", "tools", "kollaboration"];
     return (saved && valid.includes(saved) ? saved : "sequencer") as "sequencer";
@@ -3296,7 +3297,7 @@ export default function App() {
     onTabChange: (tabId) => {
       // Whitelist-Check damit kein invaliderer Tab-Wert die App breakt
       if (
-        tabId === "sequencer" || tabId === "mixer" || tabId === "song" ||
+        tabId === "sequencer" || tabId === "mixer" || tabId === "patterns" || tabId === "song" ||
         tabId === "humanizer" || tabId === "tools" || tabId === "kollaboration"
       ) {
         handleSetActiveTab(tabId);
@@ -4418,6 +4419,7 @@ export default function App() {
               {([
                 { id: "sequencer",    label: "Sequencer" },
                 { id: "mixer",        label: "Mixer" },
+                { id: "patterns",     label: "Patterns" },
                 { id: "song",         label: "Song-Modus" },
                 { id: "humanizer",    label: "Humanizer" },
                 { id: "tools",        label: "Tools" },
@@ -4569,6 +4571,12 @@ export default function App() {
                     />
                   </div>
                 )
+              )}
+
+              {activeTab === "patterns" && (
+                <div className="h-full overflow-hidden">
+                  <PatternManager />
+                </div>
               )}
 
               {activeTab === "song" && (
