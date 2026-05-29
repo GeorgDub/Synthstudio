@@ -4332,6 +4332,7 @@ export default function App() {
               ] as const).map((tab) => (
                 <button
                   key={tab.id}
+                  id={`tab-${tab.id}`}
                   onClick={() => handleSetActiveTab(tab.id)}
                   role="tab"
                   aria-selected={activeTab === tab.id}
@@ -4372,7 +4373,13 @@ export default function App() {
               </button>
             </div>
 
-            <div className="flex-1 overflow-hidden">
+            <div
+              className="flex-1 overflow-hidden"
+              role="tabpanel"
+              id={`panel-${activeTab}`}
+              aria-labelledby={`tab-${activeTab}`}
+              tabIndex={0}
+            >
 
               {activeTab === "sequencer" && (
                 <DrumMachine

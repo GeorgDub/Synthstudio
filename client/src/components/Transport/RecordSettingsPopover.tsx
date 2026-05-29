@@ -36,15 +36,20 @@ export function RecordSettingsPopover({
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
-  // Click-outside closes the popover
+  // Click-outside + Escape schließen das Popover
   useEffect(() => {
     if (!open) return;
-    const handler = (e: MouseEvent) => {
+    const onClick = (e: MouseEvent) => {
       if (!containerRef.current) return;
       if (!containerRef.current.contains(e.target as Node)) setOpen(false);
     };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("mousedown", onClick);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onClick);
+      document.removeEventListener("keydown", onKey);
+    };
   }, [open]);
 
   const hasPunch = punchInStep !== null || punchOutStep !== null;
