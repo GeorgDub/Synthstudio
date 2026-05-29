@@ -27,6 +27,7 @@ import {
   LICENSE_PUBLIC_KEY_HEX,
   TRIAL_DURATION_DAYS,
   DAY_MS,
+  isMasterLicenseKey,
 } from "@/utils/licenseConfig";
 
 export type LicenseStatus = "unknown" | "trial" | "pro" | "expired" | "invalid";
@@ -235,6 +236,20 @@ export function startTrial(now: number = Date.now()): boolean {
  * status → 'invalid'.
  */
 export async function activate(key: string, _email?: string, now: number = Date.now()): Promise<boolean> {
+  // ⚠️ TEMPORÄRER DEV-MASTER-KEY (vor Release entfernen, siehe licenseConfig.ts):
+  // schaltet Pro direkt frei, ohne Signatur-Validierung.
+  if (isMasterLicenseKey(key)) {
+    _state = {
+      ..._state,
+      status: "pro",
+      licenseKey: key.trim(),
+      activatedEmail: "dev-master@synthstudio.local",
+    };
+    void persist();
+    notify();
+    return true;
+  }
+
   const result = await validateLicenseKey(key.trim(), LICENSE_PUBLIC_KEY_HEX, now);
   if (!result.valid) {
     if (_state.status === "unknown") {

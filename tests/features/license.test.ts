@@ -216,6 +216,27 @@ describe("isFeatureUnlocked / activate", () => {
     expect(getLicenseState().status).not.toBe("pro");
   });
 
+  it("Master-Key (Dev) → Pro ohne Signatur-Validierung", async () => {
+    const ok = await activate("137924568");
+    expect(ok).toBe(true);
+    expect(getLicenseState().status).toBe("pro");
+    expect(getLicenseState().licenseKey).toBe("137924568");
+    expect(isPro()).toBe(true);
+  });
+
+  it("Master-Key mit umgebenden Leerzeichen wird getrimmt akzeptiert", async () => {
+    const ok = await activate("  137924568  ");
+    expect(ok).toBe(true);
+    expect(getLicenseState().status).toBe("pro");
+    expect(getLicenseState().licenseKey).toBe("137924568");
+  });
+
+  it("Fast-Master-Key (eine Ziffer daneben) → false, kein Pro", async () => {
+    const ok = await activate("137924569");
+    expect(ok).toBe(false);
+    expect(getLicenseState().status).not.toBe("pro");
+  });
+
   it("isFeatureUnlocked für unbekanntes Feature default=false", async () => {
     startTrial(Date.now());
     const { isFeatureUnlocked } = await import("../../client/src/utils/proFeatures");
