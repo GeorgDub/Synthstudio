@@ -116,7 +116,6 @@ import { ResizableDrumPanel } from "./ResizableDrumPanel";
 import { StepInspector } from "./StepInspector";
 import { ChannelStrip } from "./ChannelStrip";
 import { stepGroupBorder, getPageCount, getPageStepRange, getPageForStep, getPageRangeLabel } from "./drumMachineHelpers";
-import { GROOVE_PRESETS } from "@/utils/patternGroove";
 
 // ─── Typen ────────────────────────────────────────────────────────────────────
 
@@ -3005,25 +3004,6 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
         </div>
         {bpmLearn.menu}
 
-        {/* v3.164.0: Globaler Swing-Slider. Engine-Wire pending v3.165+. */}
-        <label
-          className="flex items-center gap-1.5 text-[10px] text-text-muted"
-          title="Swing-Quantization (0=straight, 0.5=max shuffle). Audio-Engine-Wire pending v3.165+."
-        >
-          <span>Swing</span>
-          <input
-            type="range"
-            min={0}
-            max={0.5}
-            step={0.05}
-            value={dm.swingAmount}
-            onChange={(e) => dm.setSwingAmount(parseFloat(e.target.value))}
-            className="w-16 accent-accent-primary"
-            data-testid="drum-machine-swing-slider"
-          />
-          <span className="font-mono w-8 text-right">{Math.round(dm.swingAmount * 100)}%</span>
-        </label>
-
         {/* v3.179.0: Infer-BPM — Density+Syncopation-Heuristik → toast. */}
         <button
           type="button"
@@ -3045,46 +3025,6 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
         >
           🎵 Chords
         </button>
-
-        {/* v3.166.0: Groove-Amount-Slider + Preset-Picker. Engine-Wire pending v3.167+. */}
-        <label
-          className="flex items-center gap-1.5 text-[10px] text-text-muted"
-          title="Pattern-Groove (Humanize Timing+Velocity). Audio-Engine-Wire pending v3.167+."
-        >
-          <span>Groove</span>
-          <input
-            type="range"
-            min={0}
-            max={1}
-            step={0.05}
-            value={dm.grooveAmount}
-            onChange={(e) => dm.setGrooveAmount(parseFloat(e.target.value))}
-            className="w-16 accent-accent-secondary"
-            data-testid="drum-machine-groove-slider"
-          />
-          <span className="font-mono w-8 text-right">{Math.round(dm.grooveAmount * 100)}%</span>
-          <select
-            value={(() => {
-              // Match closest preset: 0 → straight, 0.25 → subtle, 0.5 → loose, 0.75+ → drunken
-              const g = dm.grooveAmount;
-              if (g < 0.1) return "straight";
-              if (g < 0.4) return "subtle";
-              if (g < 0.7) return "loose";
-              return "drunken";
-            })()}
-            onChange={(e) => {
-              const map: Record<string, number> = { straight: 0, subtle: 0.25, loose: 0.55, drunken: 0.85 };
-              dm.setGrooveAmount(map[e.target.value] ?? 0);
-            }}
-            className="bg-bg-panel border border-border-color rounded px-1 py-0.5 text-[10px] text-text-muted"
-            title="Groove-Preset"
-            data-testid="drum-machine-groove-preset"
-          >
-            {GROOVE_PRESETS.map((p) => (
-              <option key={p.id} value={p.id}>{p.name}</option>
-            ))}
-          </select>
-        </label>
 
         {/* v3.164.0: Pattern-Mutator-Toolbar — wendet shift/double/half/reverse/invert
             auf ALLE Parts des aktiven Patterns gleichzeitig an. */}

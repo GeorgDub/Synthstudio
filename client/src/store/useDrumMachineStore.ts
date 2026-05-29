@@ -34,23 +34,6 @@ export interface DrumMachineState {
   commitPending: boolean;
   /** Pattern-IDs die zusätzlich zum aktiven Pattern abgespielt werden */
   stackedPatternIds: string[];
-  /**
-   * v3.164.0: Globaler Swing-Amount (0..1, Default 0 = straight).
-   * Wird via `setSwingAmount()` gesetzt. Engine-Wire pending v3.165+
-   * (Pure-Helper `patternSwing.ts` ist seit v3.162 verfügbar).
-   */
-  swingAmount: number;
-  /**
-   * v3.166.0: Globaler Groove-Amount (0..1, Default 0 = no humanize).
-   * Maps zu GROOVE_PRESETS aus `utils/patternGroove.ts`. Engine-Wire
-   * pending v3.167+ (Pure-Helper `patternGroove.ts` existiert seit v3.165).
-   */
-  grooveAmount: number;
-  /**
-   * v3.166.0: PRNG-Seed für deterministischen Groove (Default 1). Integer,
-   * finite — invalide Werte werden auf 1 gemappt. Engine-Wire pending v3.167+.
-   */
-  grooveSeed: number;
 }
 
 export interface DrumMachineActions {
@@ -153,21 +136,6 @@ export interface DrumMachineActions {
   setCurrentStep: (step: number) => void;
   setVelocityMode: (active: boolean) => void;
   setPitchMode: (active: boolean) => void;
-  /**
-   * v3.164.0: Setzt den globalen Swing-Amount (0..1, Werte außerhalb des
-   * Bereichs werden geclamped, NaN/Infinity → 0). Engine-Wire pending v3.165+.
-   */
-  setSwingAmount: (amount: number) => void;
-  /**
-   * v3.166.0: Setzt den globalen Groove-Amount (0..1, geclamped,
-   * NaN/Infinity → 0). Engine-Wire pending v3.167+.
-   */
-  setGrooveAmount: (amount: number) => void;
-  /**
-   * v3.166.0: Setzt den PRNG-Seed für deterministischen Groove. Wird auf
-   * Integer gerundet; NaN/Infinity → 1 (Default-Seed).
-   */
-  setGrooveSeed: (seed: number) => void;
 
   undo: () => void;
   redo: () => void;
@@ -332,9 +300,6 @@ export function useDrumMachineStore(): DrumMachineState & DrumMachineActions {
     fxPanelPartId: null,
     commitPending: false,
     stackedPatternIds: [],
-    swingAmount: 0,
-    grooveAmount: 0,
-    grooveSeed: 1,
   });
 
   const undoStack = useRef<PatternData[][]>([]);
@@ -999,9 +964,6 @@ export function useDrumMachineStore(): DrumMachineState & DrumMachineActions {
       fxPanelPartId: null,
       commitPending: false,
       stackedPatternIds: [],
-      swingAmount: 0,
-      grooveAmount: 0,
-      grooveSeed: 1,
     });
     // Undo-History leeren damit User keinen Restore zum alten Projekt machen kann
     undoStack.current = [];
@@ -1077,28 +1039,6 @@ export function useDrumMachineStore(): DrumMachineState & DrumMachineActions {
     setState(prev => ({ ...prev, pitchMode: active, velocityMode: active ? false : prev.velocityMode }));
   }, []);
 
-  // v3.164.0: Globaler Swing-Amount. Clamping in [0..1], NaN/Infinity → 0.
-  // Engine-Wire pending v3.165+ (Pure-Helper patternSwing.ts existiert seit v3.162).
-  const setSwingAmount = useCallback((amount: number) => {
-    const safe = Number.isFinite(amount) ? amount : 0;
-    const clamped = Math.max(0, Math.min(1, safe));
-    setState(prev => prev.swingAmount === clamped ? prev : { ...prev, swingAmount: clamped });
-  }, []);
-
-  // v3.166.0: Globaler Groove-Amount. Clamping in [0..1], NaN/Infinity → 0.
-  // Engine-Wire pending v3.167+ (Pure-Helper patternGroove.ts existiert seit v3.165).
-  const setGrooveAmount = useCallback((amount: number) => {
-    const safe = Number.isFinite(amount) ? amount : 0;
-    const clamped = Math.max(0, Math.min(1, safe));
-    setState(prev => prev.grooveAmount === clamped ? prev : { ...prev, grooveAmount: clamped });
-  }, []);
-
-  // v3.166.0: PRNG-Seed für deterministischen Groove. Integer, finite —
-  // NaN/Infinity → 1. Engine-Wire pending v3.167+.
-  const setGrooveSeed = useCallback((seed: number) => {
-    const safe = Number.isFinite(seed) ? Math.trunc(seed) : 1;
-    setState(prev => prev.grooveSeed === safe ? prev : { ...prev, grooveSeed: safe });
-  }, []);
 
   // ── Undo/Redo ─────────────────────────────────────────────────────────────
 
@@ -1150,8 +1090,6 @@ export function useDrumMachineStore(): DrumMachineState & DrumMachineActions {
     clearPattern, resetAll, fillPattern, randomizePattern, shiftPattern,
     setStepCount, setCurrentStep,
     setVelocityMode, setPitchMode,
-    setSwingAmount,
-    setGrooveAmount, setGrooveSeed,
     undo, redo, canUndo, canRedo,
     getActivePattern, getPlaybackPattern,
   };
