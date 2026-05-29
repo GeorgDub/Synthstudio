@@ -2189,14 +2189,15 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
             <span className="text-text-dim">▾</span>
           </button>
           {showPatternMenu && (
-            <div className="absolute top-full left-0 mt-1 bg-bg-elevated border border-border-color rounded-lg shadow-xl z-50 min-w-[220px] max-h-[70vh] flex flex-col">
+            <div className="absolute top-full left-0 mt-1 bg-bg-elevated border border-border-color rounded-lg shadow-xl z-50 min-w-[220px] max-h-[80vh] overflow-y-auto">
               {isLiveEditing && (
                 <div className="px-3 py-1.5 border-b border-border-color text-[10px] text-text-dim">
                   Live-Edit aktiv: nur der Draft ist bearbeitbar
                 </div>
               )}
-              {/* Scroll-Bereich nur für die Pattern-Zeilen — Footer bleiben sichtbar */}
-              <div className="overflow-y-auto">
+              {/* Pattern-Zeilen scrollen mit dem gesamten Dropdown (max-h-80vh).
+                  Bei sehr vielen Patterns: der dedizierte Pattern-Manager-Tab. */}
+              <div className="max-h-[55vh] overflow-y-auto border-b border-border-color">
               {dm.patterns.map((p, idx) => (
                 <PatternRow
                   key={p.id}

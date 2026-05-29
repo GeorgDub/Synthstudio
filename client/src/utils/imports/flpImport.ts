@@ -344,18 +344,30 @@ export async function importFlp(file: File): Promise<ImportResult> {
       channelMetaFor(ch); // Metadaten cachen
     }
 
-    // EIN Synthstudio-Pattern pro FL-Pattern (statt pro Bar): stepCount 16/32/64
-    // je nach Bar-Anzahl; nur Patterns > 4 Bars werden in 4-Bar-Chunks (64 Steps)
-    // gesplittet. Das gibt dichte, an FL angelehnte Patterns statt vieler dünner.
-    const totalBars = Math.min(MAX_BARS, calculateBarCount(flPattern.notes, ppq, STEP_COUNT));
+    // Leading-Empty-Trim (FLP-TRIM): führende leere Bars entfernen, damit der
+    // Inhalt bei Step 0 beginnt statt "erst ab Step 33". Verschiebung in GANZEN
+    // Bars über das ganze FL-Pattern (nicht pro Chunk → kein zerrissener Beat);
+    // derselbe Shift gilt für Drum-Steps UND melodische Notes.
+    const ticksPerStep = ppq / 4;
+    const ticksPerBar = ticksPerStep * STEP_COUNT;
+    const minPos = flPattern.notes.reduce((m, n) => Math.min(m, n.position), Infinity);
+    const shiftTicks = ticksPerBar > 0 && Number.isFinite(minPos)
+      ? Math.floor(minPos / ticksPerBar) * ticksPerBar : 0;
+    const shiftedNotes: FlpNote[] = shiftTicks > 0
+      ? flPattern.notes.map(n => ({ ...n, position: n.position - shiftTicks }))
+      : flPattern.notes;
+
+    // EIN Synthstudio-Pattern pro FL-Pattern: stepCount 16/32/64 nach Bar-Anzahl;
+    // nur Patterns > 4 Bars werden in 4-Bar-Chunks (64 Steps) gesplittet.
+    const totalBars = Math.min(MAX_BARS, calculateBarCount(shiftedNotes, ppq, STEP_COUNT));
     const chunkBars = totalBars <= 4 ? totalBars : 4;
     const stepsPerPattern = stepCountForBars(chunkBars); // 16 | 32 | 64
     const numChunks = Math.ceil(totalBars / chunkBars);
-    const ticksPerChunk = stepsPerPattern * (ppq / 4);
+    const ticksPerChunk = stepsPerPattern * ticksPerStep;
 
     // Notes nach Chunk gruppieren (chunk-relative Positionen).
     const byChunk = new Map<number, FlpNote[]>();
-    for (const note of flPattern.notes) {
+    for (const note of shiftedNotes) {
       const chunk = ticksPerChunk > 0 ? Math.floor(note.position / ticksPerChunk) : 0;
       if (chunk < 0 || chunk >= numChunks) continue; // jenseits MAX_BARS-Cap
       const rel: FlpNote = { ...note, position: note.position - chunk * ticksPerChunk };
@@ -388,7 +400,7 @@ export async function importFlp(file: File): Promise<ImportResult> {
     // Melodische Parts (Pitch-Varianz ≥2) → konkrete (patternIndex, partIndex,
     // step-im-Pattern)-Auflösung. startStep aus buildMelodicParts ist in 16tel-
     // Steps ab FL-Pattern-Start; Chunk = floor(startStep / stepsPerPattern).
-    const mp = buildMelodicParts(flPattern.notes, ppq, parsed.channelNames);
+    const mp = buildMelodicParts(shiftedNotes, ppq, parsed.channelNames);
     for (const part of mp) {
       melodicChannels.add(part.sourceChannel);
       const partIdx = channelToPartIndex.get(part.sourceChannel);
