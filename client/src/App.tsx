@@ -679,6 +679,36 @@ export default function App() {
     };
   }, []);
 
+  // ── Diagnose: uncaught Errors + [AudioEngine]/[Transport]-Logs als Toast ──────
+  // Desktop-Build hat keine DevTools-Console standardmäßig sichtbar; hiermit
+  // werden Laufzeitfehler (z.B. Audio-Graph/Load-Fehler) für den User sichtbar.
+  useEffect(() => {
+    const seen = new Map<string, number>();
+    const report = (label: string, msg: string) => {
+      if (!msg) return;
+      const key = label + msg;
+      const now = Date.now();
+      if (now - (seen.get(key) ?? -1e9) < 4000) return; // gleiche Meldung throtteln
+      seen.set(key, now);
+      toast(`${label}: ${msg}`.slice(0, 220), { kind: "error", duration: 9000 });
+    };
+    const onError = (e: ErrorEvent) => report("Fehler", e.message || String((e as ErrorEvent).error ?? ""));
+    const onRej = (e: PromiseRejectionEvent) => report("Promise-Fehler", String((e.reason && (e.reason.message ?? e.reason)) ?? ""));
+    window.addEventListener("error", onError);
+    window.addEventListener("unhandledrejection", onRej);
+    const origErr = console.error.bind(console);
+    const origWarn = console.warn.bind(console);
+    const sniff = (s: string) => { if (/\[AudioEngine\]|\[Transport\]|\[FLP/.test(s)) report("Audio", s); };
+    console.error = (...a: unknown[]) => { origErr(...a); sniff(a.map(x => typeof x === "string" ? x : String((x as { message?: string })?.message ?? x)).join(" ")); };
+    console.warn = (...a: unknown[]) => { origWarn(...a); sniff(a.map(x => typeof x === "string" ? x : String((x as { message?: string })?.message ?? x)).join(" ")); };
+    return () => {
+      window.removeEventListener("error", onError);
+      window.removeEventListener("unhandledrejection", onRej);
+      console.error = origErr;
+      console.warn = origWarn;
+    };
+  }, []);
+
   // ── Metronome Custom-Sounds ↔ AudioEngine ─────────────────────────────────
   const metronome = useMetronomeStore();
   useEffect(() => {

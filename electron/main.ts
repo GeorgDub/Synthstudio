@@ -1758,7 +1758,7 @@ function buildMenu(): void {
         { type: "separator" as const },
         { role: "reload" as const },
         { role: "forceReload" as const },
-        ...(isDev ? [{ role: "toggleDevTools" as const }] : []),
+        { role: "toggleDevTools" as const }, // immer verfügbar (Strg+Shift+I) für Diagnose
         { type: "separator" as const },
         { role: "resetZoom" as const },
         { role: "zoomIn" as const },
