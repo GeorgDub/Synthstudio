@@ -31,6 +31,28 @@ def slice_s(x, start, dur):
     a = int(start * SR); b = a + int(dur * SR)
     return x[a:b].copy()
 
+def synth_sine(freq, dur, decay, drop_from=None, sat=0.0):
+    """Synthetischer Sine-Ton (stereo) mit exp-Decay + optionalem Pitch-Drop.
+    Für Sub-Kick-Layer + Sub-Bass. sat>0 = Saturation (Oberwellen → hörbar
+    auf kleinen Boxen)."""
+    n = int(dur * SR)
+    t = np.arange(n) / SR
+    if drop_from:
+        # Pitch-Envelope: drop_from -> freq über die ersten ~35ms
+        k = np.exp(-t / 0.012)
+        finst = freq + (drop_from - freq) * k
+    else:
+        finst = np.full(n, float(freq))
+    phase = np.cumsum(2 * np.pi * finst / SR)
+    x = np.sin(phase) * np.exp(-t / decay)
+    if sat > 0:
+        x = np.tanh(x * (1 + sat * 3)) / np.tanh(1 + sat * 3)
+    x = np.stack([x, x], axis=1).astype(np.float32)
+    return x
+
+# F-Noten (Hz) für tonale Sub-Layer
+F1, F2 = 43.65, 87.31
+
 def load(rel):
     r = read_wav(os.path.join(BILLX, rel))
     if r is None:
@@ -50,9 +72,20 @@ def build_kit():
     os.makedirs(KIT, exist_ok=True)
     kit = {}
 
+    # Fetter Kick: Punch/Click vom KIK-Shot + synth Sub-Thump drunter (Pitch-Drop
+    # 130->55 Hz). Das gibt den Brust-Knock den der reine Shot nicht hat.
     kick = load("KIK Shot/BXKIK SHOT 1.wav")
-    kick = saturate(kick, 1.4); kick = soft_clip(kick, 0.92)
-    kick = fade(kick, SR, 0.001, 0.04); kick = normalize(kick, 0.97)
+    kick = saturate(kick, 1.6); kick = soft_clip(kick, 0.92)
+    kick = fade(kick, SR, 0.001, 0.04)
+    sub_thump = synth_sine(55, 0.34, 0.11, drop_from=130, sat=0.4)
+    L = max(len(kick), len(sub_thump))
+    def padto(a, L):
+        if len(a) < L:
+            a = np.vstack([a, np.zeros((L - len(a), 2), np.float32)])
+        return a[:L]
+    kick = padto(kick, L) * 1.0 + padto(sub_thump, L) * 0.95
+    kick = np.tanh(kick * 1.2) * 0.97
+    kick = normalize(kick, 0.99)
     kit["kick"] = ("HT_Kick.wav", kick)
 
     snare = load("Snare/BXSnare_03.wav")
@@ -66,10 +99,19 @@ def build_kit():
     ho = slice_s(hh, 0.158, 0.18); ho = butter(ho, SR, 500, "high"); ho = fade(ho, SR, 0.0005, 0.06); ho = normalize(ho, 0.62)
     kit["hat_open"] = ("HT_HatOpen.wav", ho)
 
+    # Fetter, verzerrter Acid-Bass: härtere Saturation für Oberwellen (cuttet
+    # auf kleinen Boxen) + leicht länger für mehr Druck.
     bass = load("BassShot/Bx BassShoot ACID F.wav")
-    bass = slice_s(bass, 0.0, 0.32); bass = saturate(bass, 1.5)
-    bass = fade(bass, SR, 0.002, 0.06); bass = normalize(bass, 0.95)
+    bass = slice_s(bass, 0.0, 0.40); bass = saturate(bass, 2.4)
+    bass = soft_clip(bass, 0.95)
+    bass = fade(bass, SR, 0.002, 0.07); bass = normalize(bass, 0.97)
     kit["bass"] = ("HT_AcidBass_F.wav", bass)
+
+    # Dedizierte Sub-Bass-Spur: sauberer F2-Sine mit Decay, leicht gesättigt →
+    # das eigentliche Tiefton-Fundament unter dem Acid-Bass.
+    subb = synth_sine(F2, 0.30, 0.22, sat=0.5)
+    subb = fade(subb, SR, 0.003, 0.05); subb = normalize(subb, 0.97)
+    kit["subbass"] = ("HT_SubBass_F.wav", subb)
 
     lead = load("Synth/BxSynth 190 1 F.wav")
     lead = slice_s(lead, 0.0, 0.42); lead = fade(lead, SR, 0.002, 0.08); lead = normalize(lead, 0.85)
@@ -99,10 +141,13 @@ def build_kit():
 def L(steps, pitch=0):
     return {s: pitch for s in steps}
 
+# Bass + subbass laufen auf den Offbeats (zwischen den Kicks) → tight, kein
+# Matsch. subbass folgt dem bass für volles Fundament.
 PATTERNS = {
     "HT150 Main": {
         "kick":       L([0, 4, 8, 12]),
         "bass":       {2: 0, 6: 0, 10: 0, 14: 3},
+        "subbass":    {2: 0, 6: 0, 10: 0, 14: 3},
         "snare":      L([4, 12]),
         "hat_closed": L([1, 3, 5, 7, 9, 11, 13, 15]),
         "hat_open":   L([2, 6, 10, 14]),
@@ -111,21 +156,26 @@ PATTERNS = {
     "HT150 Drop": {
         "kick":       L([0, 4, 8, 12]),
         "bass":       {2: 0, 3: 0, 6: 0, 7: 5, 10: 0, 11: 0, 14: 3, 15: 7},
+        "subbass":    {2: 0, 3: 0, 6: 0, 7: 5, 10: 0, 11: 0, 14: 3, 15: 7},
         "snare":      {4: 0, 12: 0, 7: 0, 15: 0},
         "hat_closed": L([1, 3, 5, 7, 9, 11, 13, 15]),
         "hat_open":   L([2, 6, 10, 14]),
         "lead":       {0: 0, 8: 5},
+        "growl":      L([8]),
         "sub":        L([0]),
     },
     "HT150 Intro": {
         "kick":       L([0, 4, 8, 12]),
+        "subbass":    {2: 0, 6: 0, 10: 0, 14: 0},
         "hat_open":   L([2, 6, 10, 14]),
         "fx":         L([0]),
     },
 }
 
-GAINS = {"kick": 1.0, "snare": 0.8, "hat_closed": 0.5, "hat_open": 0.55,
-         "bass": 0.9, "lead": 0.7, "growl": 0.75, "fx": 0.6, "sub": 0.9}
+# Kick + Bass dominieren — mehr Druck.
+GAINS = {"kick": 1.0, "snare": 0.7, "hat_closed": 0.42, "hat_open": 0.48,
+         "bass": 0.95, "subbass": 1.0, "lead": 0.62, "growl": 0.7,
+         "fx": 0.55, "sub": 0.95}
 
 # ── Demo rendern ─────────────────────────────────────────────────────────────
 def render_demo(paths):
@@ -153,9 +203,11 @@ def render_demo(paths):
                         mix[pos:pos+n] += s[:n] * g
         bar += nbars
 
-    # Master: sanfter Limiter + Normalisierung
-    mix = np.tanh(mix * 1.1) * 0.95
-    mix = normalize(mix, 0.97)
+    # Master: Bus-Drive (Glue + Lautheit) + Limiter + Normalisierung. Härter
+    # als v1 → knallt mehr.
+    mix = np.tanh(mix * 1.35) * 0.97
+    mix = soft_clip(mix, 0.98)
+    mix = normalize(mix, 0.985)
     demo = os.path.join(OUT, "Hardtek150_DEMO.wav")
     write_wav(demo, mix, SR)
     return demo, total_bars
