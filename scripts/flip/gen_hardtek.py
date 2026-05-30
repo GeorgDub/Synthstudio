@@ -82,14 +82,15 @@ def build_kit():
     kick = fade(kick, SR, 0.001, 0.04)
     sub_thump = synth_sine(48, 0.42, 0.18, drop_from=150, sat=0.6)
     mid_punch = synth_sine(100, 0.10, 0.045, drop_from=180, sat=0.3)
-    # 4) Rumble-Tail: DREI verstimmte tiefe Sines (breiteres Beating) + harte
-    # Sättigung auf die Summe → Intermodulation = growlende Oberwellen, nicht nur
-    # boomender Sub. Langer Decay (0.55s) über 0.95s → rollt über ~2 Kicks.
-    rumble_a = synth_sine(45.5, 0.95, 0.55, drop_from=78)
-    rumble_b = synth_sine(46.4, 0.95, 0.55)
-    rumble_c = synth_sine(47.3, 0.95, 0.55)
-    rumble = (rumble_a + rumble_b + rumble_c) / 3.0
-    rumble = np.tanh(rumble * 3.2) / np.tanh(3.2)   # Growl-Distortion
+    # 4) Rumble-Tail TONAL IN F: Grundton F1 (43.65 Hz) + F2-Oktave (87.31) für
+    # Fülle, nur minimal verstimmt für Bewegung. Growl kommt aus der Distortion
+    # (Oberwellen), nicht aus breitem Detune → bleibt klar in F, lockt mit dem
+    # Acid-Bass (F). Langer Decay (0.55s) über 0.95s → rollt über ~2 Kicks.
+    rumble_f1  = synth_sine(F1, 0.95, 0.55, drop_from=66)        # F1 Grundton
+    rumble_f1b = synth_sine(F1 + 0.4, 0.95, 0.55)               # leicht verstimmt
+    rumble_f2  = synth_sine(F2, 0.95, 0.50)                      # F2 Oktave
+    rumble = rumble_f1 * 0.5 + rumble_f1b * 0.5 + rumble_f2 * 0.35
+    rumble = np.tanh(rumble * 3.0) / np.tanh(3.0)   # Growl-Distortion
     L = max(len(kick), len(sub_thump), len(mid_punch), len(rumble))
     def padto(a, L):
         if len(a) < L:
