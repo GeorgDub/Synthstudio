@@ -8,7 +8,7 @@
  * Liest/schreibt direkt über useDrumMachineStore — kein Prop-Drilling.
  */
 import { useMemo, useState, useCallback } from "react";
-import { useDrumMachineStore } from "@/store/useDrumMachineStore";
+import type { DrumMachineState, DrumMachineActions } from "@/store/useDrumMachineStore";
 import { toast } from "@/store/useToastStore";
 import {
   patternMatchesQuery,
@@ -40,8 +40,7 @@ function StepPreview({ steps }: { steps: { active: boolean }[] }) {
   );
 }
 
-export function PatternManager() {
-  const dm = useDrumMachineStore();
+export function PatternManager({ dm }: { dm: DrumMachineState & DrumMachineActions }) {
   const [query, setQuery] = useState("");
   const [sortKey, setSortKey] = useState<PatternSortKey>("original");
   const [editingId, setEditingId] = useState<string | null>(null);

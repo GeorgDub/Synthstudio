@@ -4605,7 +4605,7 @@ export default function App() {
 
               {activeTab === "patterns" && (
                 <div className="h-full overflow-hidden">
-                  <PatternManager />
+                  <PatternManager dm={dm} />
                 </div>
               )}
 
