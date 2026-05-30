@@ -102,6 +102,25 @@ def build_kit():
     bass=normalize(saw_bass(A1,0.30),0.95); kit["bass"]=("SZ_Bass_A.wav",bass)
     sb=sine(A1,0.28,0.20,sat=0.5); sb=fade(sb,SR,0.003,0.05); kit["subbass"]=("SZ_Sub_A.wav",normalize(sb,0.97))
 
+    # Drückend-dumpfer 4x4-Kick: tiefer Sine-Body, Pitch-Drop, KEIN Click
+    # (weicher Attack), Lowpass ~160 Hz = dumpf, harte Saturation = Druck.
+    kd=sine(A1,0.34,0.24,drop=95,sat=0.2); kd=butter(kd,SR,160,"low")
+    kd=np.tanh(kd*2.2)/np.tanh(2.2); kd=fade(kd,SR,0.005,0.05); kd=normalize(kd,0.97)
+    kit["kick_dull"]=("SZ_KickDull.wav",kd)
+
+    # Andere Sampler: Clap vom Drive
+    try:
+        cl=load("Clap-3  -MONO-194-ESXextracted.wav", DR+"melos"); cl=slc(cl,0,0.3)
+        cl=fade(cl,SR,0.001,0.05); cl=normalize(cl,0.85); kit["clap"]=("SZ_Clap.wav",cl)
+    except Exception as e: print("clap skip:",e)
+
+    # 2. reale Melo (A MeLo, transponiert nach A) — andere Farbe als Cosmo-Ki
+    try:
+        m2=load("A MeLo.wav", DR+"MeLo_PacK"); m2=slc(m2,0,0.8)
+        m2=pitch(m2, detect_root_offset_to_A(m2)); m2=fade(m2,SR,0.003,0.08); m2=normalize(m2,0.82)
+        kit["melo2"]=("SZ_Melo2_A.wav",m2)
+    except Exception as e: print("melo2 skip:",e)
+
     # Reale Melo-Stab (Cosmo-Ki, transponiert nach A) — echtes "Klingeln"
     try:
         ml=load("Cosmo Ki-MONO-050-ESXextracted.wav", DR+"melos"); ml=slc(ml,0,0.5)
@@ -111,7 +130,8 @@ def build_kit():
 
     # 4 echte Vocal-Shouts vom Drive (WhatsApp), als Stabs verarbeitet
     voxmap={"vox1":"ey halt die fresse mann.wav","vox2":"weil du ein lappen bist man2.wav",
-            "vox3":"handgranate.wav","vox4":"du spasst mann.wav"}
+            "vox3":"handgranate.wav","vox4":"du spasst mann.wav",
+            "vox5":"was geht aaap.wav","vox6":"terrosiert.wav"}
     for role,fn in voxmap.items():
         try:
             v=load(fn,WA); v=slc(v,0,min(len(v)/SR,1.6)); v=saturate(v,1.25)
@@ -149,14 +169,25 @@ PATTERNS = {
               "melo":{0:0,4:3,8:5,12:7},"vox2":{0:0},"vox3":{8:0}},
  "SZ Build": {"kick":Lr([0,4,8,12]),"snare":{8:0,10:0,12:0,13:0,14:0,15:0},
               "fx":{0:0},"lead":RIFFUP,"subbass":{0:0}},
+ # Drückend-dumpfer 4x4-Kick — dunkel/hypnotisch
+ "SZ Dumpf": {"kick_dull":Lr([0,4,8,12]),"subbass":Lr([0,4,8,12]),"hat_closed":Lr([2,6,10,14]),
+              "melo2":{0:0,8:7},"vox5":{0:0}},
+ "SZ Dumpf Roll":{"kick_dull":Lr([0,4,8,12]),"subbass":Lr([0,4,8,12]),
+              "bass":{2:0,6:7,10:0,14:7},"hat_closed":Lr([2,6,10,14]),"clap":Lr([4,12]),
+              "lead":{0:0,8:7},"melo2":{8:0},"vox6":{0:0}},
+ # Andere Sampler/Combo: Clap statt nur Snare, 2. Melo, anderes Vocal
+ "SZ Main C": {"kick":Lr([0,4,8,12]),"snare":Lr([4,12]),"clap":Lr([4,12]),"hat_closed":Lr([2,6,10,14]),
+              "bass":Lr([0,4,8,12]),"subbass":Lr([0,4,8,12]),"lead":RIFF1,
+              "melo2":{2:0,10:3},"vox5":{0:0}},
 }
-GAINS={"kick":1.0,"snare":0.72,"hat_closed":0.45,"hat_open":0.5,"bass":0.85,"subbass":0.95,
-       "lead":0.6,"melo":0.62,"vox1":0.85,"vox2":0.85,"vox3":0.85,"vox4":0.85,"fx":0.55}
+GAINS={"kick":1.0,"kick_dull":1.0,"snare":0.72,"clap":0.6,"hat_closed":0.45,"hat_open":0.5,
+       "bass":0.85,"subbass":0.95,"lead":0.6,"melo":0.62,"melo2":0.6,
+       "vox1":0.85,"vox2":0.85,"vox3":0.85,"vox4":0.85,"vox5":0.85,"vox6":0.85,"fx":0.55}
 
 def render(paths):
     sd=60.0/BPM/4.0; bd=sd*16
-    arr=[("SZ Intro",2),("SZ Main A",4),("SZ Main B",4),("SZ Drop A",4),
-         ("SZ Break",2),("SZ Build",1),("SZ Drop B",4),("SZ Main A",2)]
+    arr=[("SZ Intro",2),("SZ Dumpf",4),("SZ Main A",4),("SZ Main C",4),("SZ Dumpf Roll",4),
+         ("SZ Drop A",4),("SZ Break",2),("SZ Build",1),("SZ Drop B",4)]
     tot=int(sum(n for _,n in arr)*bd*SR)+SR*6
     mix=np.zeros((tot,2),np.float32); bar=0
     for name,nb in arr:
@@ -176,7 +207,8 @@ def render(paths):
 def main():
     os.makedirs(OUT,exist_ok=True)
     paths=build_kit(); demo,bars=render(paths)
-    order=["SZ Intro","SZ Main A","SZ Main B","SZ Drop A","SZ Drop B","SZ Break","SZ Build"]
+    order=["SZ Intro","SZ Main A","SZ Main B","SZ Main C","SZ Dumpf","SZ Dumpf Roll",
+           "SZ Drop A","SZ Drop B","SZ Break","SZ Build"]
     manifest={"bpm":BPM,"projectName":"Schizo 150",
               "kit":{r:{"file":v["file"],"path":v["path"]} for r,v in paths.items()},
               "gains":GAINS,
