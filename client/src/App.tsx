@@ -319,6 +319,7 @@ import {
 } from "@/store/useMelodicPartStore";
 import { routeMelodicPartsToPatterns } from "@/utils/imports";
 import { collectSampleNames, matchSamplesByBasename } from "@/utils/imports/flpSampleLoader";
+import { getPatternGroupState, setPlayingGroup } from "@/store/usePatternGroupStore";
 import { resetNoteRepeat, toggleNoteRepeat, isNoteRepeatEnabled } from "@/store/useNoteRepeatStore";
 import { resetTranspose } from "@/store/useTransposeStore";
 import { resetMorph, getMorphState, setActive as setMorphActive } from "@/store/useMorphStore";
@@ -751,7 +752,36 @@ export default function App() {
   const dm = useDrumMachineStore();
   const dmRef = useRef(dm);
   dmRef.current = dm;
+
+  // Pattern-Gruppen-Sequenz (Pattern-Manager Phase 2): wenn eine Gruppe als
+  // Playlist abgespielt wird, am Loop-Ende (Step 0) zum nächsten gültigen
+  // Pattern der Gruppe wechseln (mit Wrap). Nur aktiv wenn eine Gruppe läuft.
+  useEffect(() => {
+    let lastStep = -1;
+    const unsub = AudioEngine.onPosition((step: number) => {
+      const gs = getPatternGroupState();
+      if (gs.playingGroupId && step === 0 && lastStep > 0) {
+        const g = gs.groups.find(x => x.id === gs.playingGroupId);
+        const d = dmRef.current;
+        if (g) {
+          const validIds = g.patternIds.filter(pid => d.patterns.some(p => p.id === pid));
+          if (validIds.length > 0) {
+            const nextIdx = (validIds.indexOf(d.activePatternId) + 1) % validIds.length;
+            d.setActivePattern(validIds[nextIdx]);
+          }
+        }
+      }
+      lastStep = step;
+    });
+    return unsub;
+  }, []);
+
   const mixer = useMixerStore();
+
+  // Stoppt die Gruppen-Sequenz, sobald der Transport stoppt.
+  useEffect(() => {
+    if (!project.isPlaying) setPlayingGroup(null);
+  }, [project.isPlaying]);
 
   // FLP-SAMPLES (Stage 3): löst die Sample-Referenzen eines FLP-Imports gegen
   // einen vom User gewählten Ordner auf und legt die echten .wav auf die Parts.
@@ -4605,7 +4635,10 @@ export default function App() {
 
               {activeTab === "patterns" && (
                 <div className="h-full overflow-hidden">
-                  <PatternManager dm={dm} />
+                  <PatternManager
+                    dm={dm}
+                    onPlayGroup={() => { if (!project.isPlaying) project.togglePlayStop(); }}
+                  />
                 </div>
               )}
 
