@@ -829,6 +829,9 @@ export default function App() {
         return;
       }
       dm.applyImportedSamples(patternIds, matched);
+      // #2: die gefundenen Sample-Dateien zusätzlich in die Sample-Library
+      // aufnehmen, damit sie im Sample-Browser auftauchen (dedupliziert per Pfad).
+      project.importSamplesFromPaths(Object.values(matched));
       // Samples JETZT vorab dekodieren + in den AudioEngine-Cache laden (statt
       // lazy beim ersten Trigger). Das garantiert hörbare Wiedergabe (kein
       // Timing-Miss im Scheduler) UND liefert die ECHTE abspielbare Anzahl —
@@ -844,7 +847,7 @@ export default function App() {
       }));
       const notFound = missing.length;
       toast(
-        `${playable}/${names.length} Samples abspielbar geladen` +
+        `${playable}/${names.length} Samples abspielbar geladen (auch im Sample-Browser)` +
         (failed.length > 0 ? ` · ${failed.length} nicht dekodierbar` : "") +
         (notFound > 0 ? ` · ${notFound} nicht im Ordner` : ""),
         { kind: playable > 0 ? "success" : "warning", duration: 8000 },
@@ -855,7 +858,7 @@ export default function App() {
     } catch (err) {
       toast(`Sample-Laden fehlgeschlagen: ${err instanceof Error ? err.message : String(err)}`, { kind: "error", duration: 6000 });
     }
-  }, [confirm, dm]);
+  }, [confirm, dm, project]);
 
   // v2.46: Inspector als pinnable Floating-Panel zusätzlich zur Dock-Slot-Position
   const inspectorFloat = useInspectorFloatStore();
