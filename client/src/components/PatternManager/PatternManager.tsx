@@ -13,7 +13,7 @@ import { useMemo, useState, useCallback } from "react";
 import type { DrumMachineState, DrumMachineActions } from "@/store/useDrumMachineStore";
 import { toast } from "@/store/useToastStore";
 import {
-  usePatternGroupStore, addGroup, renameGroup, removeGroup,
+  usePatternGroupStore, addGroup, renameGroup, removeGroup, setGroupRepeats,
   addPatternToGroup, removePatternFromGroup, moveInGroup, purgePattern, setPlayingGroup,
 } from "@/store/usePatternGroupStore";
 import {
@@ -130,6 +130,15 @@ export function PatternManager({ dm, onPlayGroup }: Props) {
                       <span className="text-text-dim ml-1">({g.patternIds.length})</span>
                     </button>
                   )}
+                  <span className="text-[9px] text-text-dim" title="Wiederholungen pro Pattern">×</span>
+                  <input
+                    type="number" min={1} max={64} value={g.repeats}
+                    onChange={e => setGroupRepeats(g.id, Number(e.target.value))}
+                    onClick={e => e.stopPropagation()}
+                    title="Loops pro Pattern, bevor weitergeschaltet wird"
+                    className="w-8 bg-bg-base border border-border-color rounded px-0.5 py-0.5 text-[10px] text-center focus:outline-none focus:border-accent-primary"
+                    data-testid={`pm-group-repeats-${g.id}`}
+                  />
                   <button onClick={() => playGroup(g.id)} title="Als Sequenz abspielen" className="px-1 text-text-dim hover:text-accent-success text-[11px]" data-testid={`pm-play-group-${g.id}`}>▶</button>
                   <button onClick={() => { setEditingGroupId(g.id); setGroupNameDraft(g.name); }} title="Umbenennen" className="px-1 text-text-dim hover:text-accent-primary text-[11px]">✎</button>
                   <button onClick={() => { removeGroup(g.id); if (selectedGroupId === g.id) setSelectedGroupId(null); }} title="Gruppe löschen" className="px-1 text-text-dim hover:text-accent-danger text-[11px]">🗑</button>

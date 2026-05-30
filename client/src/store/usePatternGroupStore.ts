@@ -23,6 +23,8 @@ export interface PatternGroup {
   color: string;
   /** Geordnete Pattern-IDs. */
   patternIds: string[];
+  /** Wie oft jedes Pattern loopt, bevor zum nächsten gewechselt wird (≥1). */
+  repeats: number;
 }
 
 interface GroupState {
@@ -40,7 +42,11 @@ function load(): GroupState {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
-      return { groups: parsed.groups ?? [], playingGroupId: null };
+      const groups: PatternGroup[] = (parsed.groups ?? []).map((g: Partial<PatternGroup>) => ({
+        id: g.id!, name: g.name ?? "Gruppe", color: g.color ?? GROUP_COLORS[0],
+        patternIds: g.patternIds ?? [], repeats: Math.max(1, g.repeats ?? 1),
+      }));
+      return { groups, playingGroupId: null };
     }
   } catch { /* ignore */ }
   return { groups: [], playingGroupId: null };
@@ -98,13 +104,20 @@ export function purgePatternPure(groups: PatternGroup[], patternId: string): Pat
 export function addGroup(name: string): string {
   const id = makeId();
   const color = GROUP_COLORS[_state.groups.length % GROUP_COLORS.length];
-  _state = { ..._state, groups: [..._state.groups, { id, name, color, patternIds: [] }] };
+  _state = { ..._state, groups: [..._state.groups, { id, name, color, patternIds: [], repeats: 1 }] };
   persist(_state); notify();
   return id;
 }
 
 export function renameGroup(id: string, name: string): void {
   _state = { ..._state, groups: _state.groups.map(g => g.id === id ? { ...g, name } : g) };
+  persist(_state); notify();
+}
+
+/** Wiederholungen pro Pattern (1..64) für die Sequenz-Wiedergabe der Gruppe. */
+export function setGroupRepeats(id: string, repeats: number): void {
+  const r = Math.max(1, Math.min(64, Math.round(repeats) || 1));
+  _state = { ..._state, groups: _state.groups.map(g => g.id === id ? { ...g, repeats: r } : g) };
   persist(_state); notify();
 }
 

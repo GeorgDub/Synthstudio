@@ -758,12 +758,17 @@ export default function App() {
   // Pattern der Gruppe wechseln (mit Wrap). Nur aktiv wenn eine Gruppe läuft.
   useEffect(() => {
     let lastStep = -1;
+    let loops = 0; // gespielte Loops des aktuellen Gruppen-Patterns
     const unsub = AudioEngine.onPosition((step: number) => {
       const gs = getPatternGroupState();
-      if (gs.playingGroupId && step === 0 && lastStep > 0) {
+      if (!gs.playingGroupId) { lastStep = step; loops = 0; return; }
+      if (step === 0 && lastStep > 0) {
+        loops++;
         const g = gs.groups.find(x => x.id === gs.playingGroupId);
-        const d = dmRef.current;
-        if (g) {
+        const repeats = Math.max(1, Math.round(g?.repeats ?? 1));
+        if (g && loops >= repeats) {
+          loops = 0;
+          const d = dmRef.current;
           const validIds = g.patternIds.filter(pid => d.patterns.some(p => p.id === pid));
           if (validIds.length > 0) {
             const nextIdx = (validIds.indexOf(d.activePatternId) + 1) % validIds.length;

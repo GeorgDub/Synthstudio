@@ -11,6 +11,7 @@ import {
   addPatternToGroup,
   moveInGroup,
   removeGroup,
+  setGroupRepeats,
   getPatternGroupState,
   __resetPatternGroupStoreForTests,
   type PatternGroup,
@@ -72,5 +73,16 @@ describe("Gruppen-Store (Singleton + Persistenz)", () => {
     expect(getPatternGroupState().groups[0].patternIds).toEqual(["b", "a"]);
     removeGroup(id);
     expect(getPatternGroupState().groups).toHaveLength(0);
+  });
+
+  it("repeats: Default 1, setGroupRepeats clamped auf 1..64", () => {
+    const id = addGroup("R");
+    expect(getPatternGroupState().groups[0].repeats).toBe(1);
+    setGroupRepeats(id, 4);
+    expect(getPatternGroupState().groups[0].repeats).toBe(4);
+    setGroupRepeats(id, 0);   // → 1
+    expect(getPatternGroupState().groups[0].repeats).toBe(1);
+    setGroupRepeats(id, 999); // → 64
+    expect(getPatternGroupState().groups[0].repeats).toBe(64);
   });
 });
