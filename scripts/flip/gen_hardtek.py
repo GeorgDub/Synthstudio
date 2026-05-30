@@ -148,8 +148,9 @@ def L(steps, pitch=0):
 PATTERNS = {
     "HT150 Main": {
         "kick":       L([0, 4, 8, 12]),
-        # busy 16tel-Acid-Roll auf den Nicht-Kick-Steps, mit Tonhöhenbewegung
-        "bass":       {2: 0, 3: 0, 6: 0, 7: 3, 10: 0, 11: 0, 14: 5, 15: 7},
+        # voller 16tel-Acid-Roll (alle Nicht-Kick-Steps), groovige Tonhöhen
+        "bass":       {1: 0, 2: 0, 3: 0, 5: 0, 6: 0, 7: 3, 9: 0, 10: 0, 11: 0,
+                       13: 0, 14: 5, 15: 7},
         # Sub bleibt sauber/sparsam auf den Offbeats → tighter Tiefton
         "subbass":    {2: 0, 6: 0, 10: 0, 14: 0},
         "snare":      L([4, 12]),
