@@ -72,20 +72,24 @@ def build_kit():
     os.makedirs(KIT, exist_ok=True)
     kit = {}
 
-    # Fetter Kick: Punch/Click vom KIK-Shot + synth Sub-Thump drunter (Pitch-Drop
-    # 130->55 Hz). Das gibt den Brust-Knock den der reine Shot nicht hat.
+    # FETTER Kick aus 3 Schichten:
+    #  1) KIK-Shot = Attack/Click (Transient, Höhen).
+    #  2) Sub-Thump = tiefer Pitch-Drop-Sine (150->48 Hz), langer Decay = Gewicht.
+    #  3) Mid-Punch = kurzer ~100-Hz-Sine = Brust-"Knock" zwischen Click und Sub.
+    # Danach harte Bus-Saturation für Grit + Lautheit.
     kick = load("KIK Shot/BXKIK SHOT 1.wav")
-    kick = saturate(kick, 1.6); kick = soft_clip(kick, 0.92)
+    kick = saturate(kick, 1.8); kick = soft_clip(kick, 0.92)
     kick = fade(kick, SR, 0.001, 0.04)
-    sub_thump = synth_sine(55, 0.34, 0.11, drop_from=130, sat=0.4)
-    L = max(len(kick), len(sub_thump))
+    sub_thump = synth_sine(48, 0.42, 0.18, drop_from=150, sat=0.6)
+    mid_punch = synth_sine(100, 0.10, 0.045, drop_from=180, sat=0.3)
+    L = max(len(kick), len(sub_thump), len(mid_punch))
     def padto(a, L):
         if len(a) < L:
             a = np.vstack([a, np.zeros((L - len(a), 2), np.float32)])
         return a[:L]
-    kick = padto(kick, L) * 1.0 + padto(sub_thump, L) * 0.95
-    kick = np.tanh(kick * 1.2) * 0.97
-    kick = normalize(kick, 0.99)
+    kick = padto(kick, L) * 1.0 + padto(sub_thump, L) * 1.1 + padto(mid_punch, L) * 0.55
+    kick = np.tanh(kick * 1.4) * 0.97          # Bus-Drive: Grit + Glue
+    kick = fade(kick, SR, 0.0, 0.05); kick = normalize(kick, 0.99)
     kit["kick"] = ("HT_Kick.wav", kick)
 
     snare = load("Snare/BXSnare_03.wav")
