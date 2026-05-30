@@ -129,11 +129,11 @@ export function ChordSuggestionPanel({
         ))}
       </div>
 
-      {!onChordSelected && (
-        <div className="text-[10px] text-text-dim italic">
-          Klick-Apply pending — onChordSelected-Wire ist v3.177-Caveat.
-        </div>
-      )}
+      <div className="text-[10px] text-text-dim italic">
+        {onChordSelected
+          ? "Klick auf einen Chord = als Arpeggio auf den aktiven Part anwenden."
+          : "Klick-Apply nicht verfügbar (kein Ziel-Part)."}
+      </div>
     </div>
   );
 }

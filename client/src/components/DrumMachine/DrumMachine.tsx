@@ -4094,7 +4094,29 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
           className="fixed bottom-4 right-4 z-40 w-80 shadow-2xl"
           data-testid="chord-panel-floating"
         >
-          <ChordSuggestionPanel visible={true} count={4} initialMood="happy" />
+          <ChordSuggestionPanel
+            visible={true}
+            count={4}
+            initialMood="happy"
+            onChordSelected={(chord) => {
+              // Apply: Chord als Arpeggio auf die ersten Steps des aktiven Parts
+              // legen (Steps sind monophon → eine Note pro Step). Pitch relativ zu
+              // C4 (MIDI 60), wie die AudioEngine Sample-Pitch erwartet. Restliche
+              // Steps bleiben erhalten.
+              const pat = dm.getActivePattern();
+              const part = pat?.parts.find(p => p.id === dm.activePartId) ?? pat?.parts[0];
+              if (!part) { toast("Kein Part aktiv — Chord nicht angewendet", { kind: "warning" }); return; }
+              const active = part.steps.map(s => s.active);
+              const velocities = part.steps.map(s => s.velocity ?? 100);
+              const pitches = part.steps.map(s => s.pitch ?? 0);
+              let placed = 0;
+              chord.notes.forEach((note, i) => {
+                if (i < active.length) { active[i] = true; pitches[i] = note - 60; velocities[i] = 100; placed++; }
+              });
+              dm.setPartSteps(part.id, active, velocities, pitches);
+              toast(`Akkord ${chord.name} als Arpeggio (${placed} Steps) auf „${part.name}" gelegt`, { kind: "success", duration: 2800 });
+            }}
+          />
           <button
             type="button"
             onClick={() => setShowChordPanel(false)}
