@@ -573,6 +573,8 @@ class AudioEngineClass {
    *  + Konsolen-Spam (z.B. nicht-dekodierbare WAV-Formate bei jedem Step-Trigger). */
   private _failedUrls = new Set<string>();
   private channelNodes = new Map<string, ChannelNodes>();
+  /** v3.262.0 Diagnose: höchster je erreichter live-Channel-Count dieser Session. */
+  private _channelHighWater = 0;
   /** targetPartId → SidechainSettings */
   private _sidechainSettings = new Map<string, { enabled: boolean; sourcePartId: string | null; amount: number; attack: number; release: number }>();
   /** Aktive Granular Engines pro Part */
@@ -1194,6 +1196,7 @@ class AudioEngineClass {
     } catch { /* swallow */ }
     // 4) Caches leeren — sonst hängen Nodes am alten Context.
     this.channelNodes.clear();
+    this._channelHighWater = 0;
     this.reverbBuffers.clear();
     this._globalReverbBus = null;
     this._globalReverbWet = null;
@@ -2987,6 +2990,7 @@ class AudioEngineClass {
     this.loadingPromises.clear();
     this._failedUrls.clear();
     this.channelNodes.clear();
+    this._channelHighWater = 0;
     this.reverbBuffers.clear();
     // Aktive Aufnahmen abräumen (TASK-234) — verhindert Zombie-Recorder
     // wenn der Cache während einer aufnahme geleert wird.
@@ -3538,6 +3542,11 @@ class AudioEngineClass {
     nodes.panner.pan.value = Math.max(-1, Math.min(1, pan));
 
     source.connect(nodes.input);
+    // v3.262.0: Fertige Source-Nodes explizit abklemmen. Ohne onended-Disconnect
+    // bleiben abgespielte BufferSources am Channel-Input hängen bis der GC sie
+    // holt → Graph-Bloat + GC-Pausen über lange Sessions (die anderen Trigger-
+    // Pfade machen das bereits, dieser nicht). Spiegelt _triggerSampleAt.
+    source.onended = () => { try { source.disconnect(); } catch { /* ignore */ } };
     source.start(Math.max(time, this.ctx.currentTime));
   }
 
@@ -3754,6 +3763,20 @@ class AudioEngineClass {
     const ctx = this.ctx!;
     const master = this.masterGain!;
 
+    // v3.262.0 Diagnose: High-Water-Mark der live Channel-FX-Ketten loggen.
+    // Jede Kette = ~20 Audio-Nodes (steter CPU-Anteil). Wenn der Wert nahe
+    // MAX_CHANNEL_NODES kriecht, ist "Engine hakt nach langer Session" durch
+    // akkumulierte Idle-Ketten erklärt. console.warn([AudioEngine]…) wird vom
+    // App.tsx-Interceptor (v3.253) als Toast gespiegelt → User kann die Zahl
+    // melden. Nur bei Schwellen-Überschreitung, throttled (kein Spam).
+    const willBe = this.channelNodes.size + 1;
+    if (willBe > this._channelHighWater &&
+        (willBe === 16 || willBe === 32 || willBe === 48 || willBe === 64 ||
+         willBe === 80 || willBe === 96)) {
+      this._channelHighWater = willBe;
+      console.warn(`[AudioEngine] live Channel-FX-Ketten: ${willBe}/${MAX_CHANNEL_NODES}`);
+    }
+
     // Input-Gain
     const input = ctx.createGain();
 
@@ -3780,7 +3803,8 @@ class AudioEngineClass {
     // Distortion
     const distortion = ctx.createWaveShaper();
     distortion.curve = this._makeDistortionCurve(0);
-    distortion.oversample = "4x";
+    // Default "none" — _applyFxToNodes schaltet auf "4x" sobald Distortion aktiv.
+    distortion.oversample = "none";
 
     // Compressor
     const compressor = ctx.createDynamicsCompressor();
@@ -3904,6 +3928,13 @@ class AudioEngineClass {
     nodes.distortion.curve = fx.distortionEnabled
       ? this._makeDistortionCurve(fx.distortionAmount)
       : this._makeDistortionCurve(0);
+    // v3.262.0: Oversampling NUR wenn Distortion aktiv. Ein WaveShaper mit
+    // oversample="4x" rechnet 4×-Resampling pro Channel — auch mit Identity-
+    // Curve. Bei bis zu MAX_CHANNEL_NODES gehaltenen Channels summiert sich das
+    // zu konstanter CPU-Last → Audio-Thread verhungert über lange Sessions →
+    // Haken. "none" bei Bypass ist klanglich identisch (Identity-Curve), spart
+    // aber den 4×-Overhead. Hauptursache des "Engine-hakt-nach-langer-Session".
+    nodes.distortion.oversample = fx.distortionEnabled ? "4x" : "none";
 
     // Compressor
     if (fx.compressorEnabled) {
