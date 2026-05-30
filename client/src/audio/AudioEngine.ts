@@ -563,6 +563,9 @@ class AudioEngineClass {
   private _outputAnalyser: AnalyserNode | null = null;
   private bufferCache = new Map<string, AudioBuffer>();
   private loadingPromises = new Map<string, Promise<AudioBuffer | null>>();
+  /** URLs, deren Laden/Dekodieren fehlschlug — Negativ-Cache gegen Endlos-Retry
+   *  + Konsolen-Spam (z.B. nicht-dekodierbare WAV-Formate bei jedem Step-Trigger). */
+  private _failedUrls = new Set<string>();
   private channelNodes = new Map<string, ChannelNodes>();
   /** targetPartId → SidechainSettings */
   private _sidechainSettings = new Map<string, { enabled: boolean; sourcePartId: string | null; amount: number; attack: number; release: number }>();
@@ -2950,6 +2953,7 @@ class AudioEngineClass {
    */
   setBufferCache(url: string, buffer: AudioBuffer): void {
     this.bufferCache.set(url, buffer);
+    this._failedUrls.delete(url); // erfolgreicher Buffer → Negativ-Cache löschen
   }
 
   /**
@@ -2969,11 +2973,13 @@ class AudioEngineClass {
    */
   invalidateBufferCache(url: string): void {
     this.bufferCache.delete(url);
+    this._failedUrls.delete(url);
   }
 
   clearCache() {
     this.bufferCache.clear();
     this.loadingPromises.clear();
+    this._failedUrls.clear();
     this.channelNodes.clear();
     this.reverbBuffers.clear();
     // Aktive Aufnahmen abräumen (TASK-234) — verhindert Zombie-Recorder
@@ -4517,6 +4523,9 @@ class AudioEngineClass {
     if (!this.ctx) return null;
     const cached = this.bufferCache.get(url);
     if (cached) return cached;
+    // Negativ-Cache: bereits gescheiterte URL nicht bei jedem Trigger erneut
+    // laden/dekodieren (sonst Hunderte Retries + Spam pro nicht-dekodierbarem Sample).
+    if (this._failedUrls.has(url)) return null;
     const pending = this.loadingPromises.get(url);
     if (pending) return pending;
 
@@ -4542,8 +4551,9 @@ class AudioEngineClass {
         this.loadingPromises.delete(url);
         return audioBuffer;
       } catch (err) {
-        console.warn("[AudioEngine] Fehler beim Laden:", url, err);
+        console.warn("[AudioEngine] Fehler beim Laden (wird nicht erneut versucht):", url, err);
         this.loadingPromises.delete(url);
+        this._failedUrls.add(url); // Negativ-Cache → kein Endlos-Retry
         return null;
       }
     })();
