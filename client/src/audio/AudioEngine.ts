@@ -575,6 +575,15 @@ class AudioEngineClass {
   private channelNodes = new Map<string, ChannelNodes>();
   /** v3.262.0 Diagnose: höchster je erreichter live-Channel-Count dieser Session. */
   private _channelHighWater = 0;
+  /**
+   * v3.263.0: Aktive Sample-Voices (BufferSource + eigener Voice-Gain für
+   * click-freies Abschneiden). Wird bei Stop + bei Pattern-Wechsel (ohne
+   * Crossfade) hart ausgefadet, damit lange Tails (z.B. Rumble-Kicks) sich
+   * nicht über den Wechsel hinweg überlappen.
+   */
+  private _activeVoices = new Set<{ src: AudioBufferSourceNode; gain: GainNode }>();
+  /** v3.263.0: zuletzt im Scheduler gesehene Pattern-ID (Wechsel-Erkennung). */
+  private _lastSchedPatternId: string | null = null;
   /** targetPartId → SidechainSettings */
   private _sidechainSettings = new Map<string, { enabled: boolean; sourcePartId: string | null; amount: number; attack: number; release: number }>();
   /** Aktive Granular Engines pro Part */
@@ -2912,6 +2921,11 @@ class AudioEngineClass {
     }
     // Audio-Tracks (Vocals/Songs) zuerst stoppen, solange ctx noch verfügbar ist.
     this.stopAllAudioTracks();
+    // v3.263.0: Klingende Sample-Voices abschneiden → kein Nachklingen langer
+    // Tails (Rumble-Kick, Bass) nach Stop. _lastSchedPatternId resetten, damit
+    // der nächste Play-Start nicht fälschlich als Wechsel gilt.
+    this.stopActiveVoices();
+    this._lastSchedPatternId = null;
     this._isPlaying = false;
     if (this.schedulerTimer !== null) {
       clearInterval(this.schedulerTimer);
@@ -3180,6 +3194,20 @@ class AudioEngineClass {
         this._looperEngine.setBpm(this._bpm);
       }
       const effectiveResolution = pattern?.stepResolution ?? this._stepResolution;
+
+      // v3.263.0: Pattern-Wechsel-Erkennung VOR dem Scheduling des neuen Steps —
+      // klingende Voices des alten Patterns abschneiden, damit lange Tails sich
+      // nicht überlappen. Nur wenn kein Crossfade aktiv (Crossfade will blenden).
+      // Reihenfolge: erst cutten, dann _scheduleStep → die neue Voice ist noch
+      // nicht registriert und wird NICHT mitgeschnitten.
+      const pid = pattern?.id ?? null;
+      if (pid !== this._lastSchedPatternId) {
+        if (this._lastSchedPatternId !== null && !this._crossfadeConfig.enabled) {
+          this.stopActiveVoices();
+        }
+        this._lastSchedPatternId = pid;
+      }
+
       this._scheduleStep(this._currentStep, this._nextStepTime, pattern);
 
       // v3.123.0 — Crossfade: gain envelope per-step im Fade-Window
@@ -3541,12 +3569,13 @@ class AudioEngineClass {
     nodes.input.gain.value = Math.max(0, Math.min(2, volume));
     nodes.panner.pan.value = Math.max(-1, Math.min(1, pan));
 
-    source.connect(nodes.input);
-    // v3.262.0: Fertige Source-Nodes explizit abklemmen. Ohne onended-Disconnect
-    // bleiben abgespielte BufferSources am Channel-Input hängen bis der GC sie
-    // holt → Graph-Bloat + GC-Pausen über lange Sessions (die anderen Trigger-
-    // Pfade machen das bereits, dieser nicht). Spiegelt _triggerSampleAt.
-    source.onended = () => { try { source.disconnect(); } catch { /* ignore */ } };
+    // v3.263.0: Voice-Gain zwischen Source und Channel-Input → erlaubt click-
+    // freies Abschneiden bei Stop/Pattern-Wechsel. _registerVoice räumt beide
+    // bei `ended` ab (ersetzt den v3.262-onended-Disconnect, gleiche Hygiene).
+    const voiceGain = this.ctx.createGain();
+    source.connect(voiceGain);
+    voiceGain.connect(nodes.input);
+    this._registerVoice(source, voiceGain);
     source.start(Math.max(time, this.ctx.currentTime));
   }
 
@@ -3695,7 +3724,11 @@ class AudioEngineClass {
     const nodes = this._getOrCreateChannelNodes(part.id, part.fx);
     nodes.input.gain.value = Math.max(0, Math.min(2, volume));
     nodes.panner.pan.value = Math.max(-1, Math.min(1, pan));
-    source.connect(nodes.input);
+    // v3.263.0: Voice-Gain für click-freies Cutoff bei Stop/Pattern-Wechsel.
+    const voiceGain = this.ctx.createGain();
+    source.connect(voiceGain);
+    voiceGain.connect(nodes.input);
+    this._registerVoice(source, voiceGain);
     const startTime = Math.max(time, this.ctx.currentTime);
     const offset = options?.sliceStart ?? 0;
     const duration = options?.sliceEnd != null ? options.sliceEnd - offset : undefined;
@@ -3718,6 +3751,40 @@ class AudioEngineClass {
     gain.connect(panner);
     panner.connect(this.masterGain);
     source.start(Math.max(time, this.ctx.currentTime));
+  }
+
+  // ─── v3.263.0: Aktive Voices (Stop/Pattern-Wechsel-Cutoff) ───────────────
+
+  /**
+   * Registriert eine Sample-Voice (Source + Voice-Gain) für späteres
+   * Abschneiden und räumt sie bei `ended` automatisch wieder ab.
+   */
+  private _registerVoice(src: AudioBufferSourceNode, gain: GainNode): void {
+    const entry = { src, gain };
+    this._activeVoices.add(entry);
+    src.addEventListener("ended", () => {
+      this._activeVoices.delete(entry);
+      try { src.disconnect(); } catch { /* ignore */ }
+      try { gain.disconnect(); } catch { /* ignore */ }
+    });
+  }
+
+  /**
+   * Faded alle aktiven Sample-Voices schnell aus und stoppt sie. Für Stop +
+   * Pattern-Wechsel — verhindert überlappende Tails. Kurzer Ramp (default 20ms)
+   * vermeidet Klicks bei tiefen Tönen (Rumble-Kick).
+   */
+  stopActiveVoices(fadeSec = 0.02): void {
+    if (!this.ctx) return;
+    const now = this.ctx.currentTime;
+    for (const { src, gain } of this._activeVoices) {
+      try {
+        gain.gain.cancelScheduledValues(now);
+        gain.gain.setValueAtTime(gain.gain.value, now);
+        gain.gain.linearRampToValueAtTime(0.0001, now + fadeSec);
+        src.stop(now + fadeSec + 0.005);
+      } catch { /* Voice schon gestoppt/beendet */ }
+    }
   }
 
   // ─── Private: Kanal-Knoten verwalten ─────────────────────────────────────
