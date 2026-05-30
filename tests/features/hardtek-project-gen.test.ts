@@ -138,17 +138,19 @@ describe("Hardtek-Projekt-Generator", () => {
     expect(kick.fx).toBeDefined();
   });
 
-  it("[GEN] schreibt echte .synth aus E:\\…\\manifest.json (nur bei GEN_HARDTEK=1)", () => {
+  it("[GEN] schreibt echte .synth aus <GEN_DIR>/manifest.json (nur bei GEN_HARDTEK=1)", () => {
     if (process.env.GEN_HARDTEK !== "1") return;
     // dynamische Imports, damit der normale Lauf node:fs nicht braucht
     const fs = require("node:fs");
     const path = require("node:path");
-    const root = "E:\\KOPFCHAOT SCHÄTZE\\Hardtek150_Projekt";
+    // GEN_DIR überschreibt den Default (Hardtek). So nutzt derselbe Harness das
+    // Schizo-Projekt: GEN_DIR="E:\\…\\Schizo150_Projekt" GEN_HARDTEK=1.
+    const root = process.env.GEN_DIR || "E:\\KOPFCHAOT SCHÄTZE\\Hardtek150_Projekt";
     const mani: Manifest = JSON.parse(fs.readFileSync(path.join(root, "manifest.json"), "utf-8"));
     const proj = buildProject(mani);
     const json = toJson(proj);
     parseProject(json); // validiert vor dem Schreiben
-    const out = path.join(root, "Hardtek 150.synth");
+    const out = path.join(root, `${mani.projectName}.synth`);
     fs.writeFileSync(out, json, "utf-8");
     expect(fs.existsSync(out)).toBe(true);
   });
