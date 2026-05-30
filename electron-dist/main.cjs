@@ -56,6 +56,7 @@ const path = __importStar(require("path"));
 const fs = __importStar(require("fs"));
 // ─── Electron-Module ─────────────────────────────────────────────────────────
 const csp_1 = require("./csp.cjs");
+const permissions_1 = require("./permissions.cjs");
 const dragdrop_1 = require("./dragdrop.cjs");
 const waveform_1 = require("./waveform.cjs");
 const windows_1 = require("./windows.cjs");
@@ -1591,7 +1592,7 @@ function buildMenu() {
                 { type: "separator" },
                 { role: "reload" },
                 { role: "forceReload" },
-                ...(isDev ? [{ role: "toggleDevTools" }] : []),
+                { role: "toggleDevTools" }, // immer verfügbar (Strg+Shift+I) für Diagnose
                 { type: "separator" },
                 { role: "resetZoom" },
                 { role: "zoomIn" },
@@ -3181,25 +3182,26 @@ function installCspHeaders() {
  * Auto-grant der `media`-Permission für unsere eigene Renderer-Origin
  * (TASK-233 / v2.85 — Live-Input-Mixer-Channels).
  *
- * Chromium würde sonst bei jedem getUserMedia({audio:...})-Call einen
- * nativen Permission-Dialog poppen — der in einer Electron-App keinen
- * Sinn macht weil der User die App bewusst installiert hat. Wir erlauben
- * NUR `media` (Mikrofon/Kamera) — alles andere (geolocation, notifications,
- * usb, hid, bluetooth) wird weiterhin abgelehnt. Renderer-Code muss trotzdem
+ * Chromium würde sonst bei jedem getUserMedia({audio:...})-Call und bei
+ * navigator.requestMIDIAccess() einen nativen Permission-Dialog poppen —
+ * der in einer Electron-App keinen Sinn macht weil der User die App bewusst
+ * installiert hat. Wir erlauben `media` (Mikrofon/Kamera) und `midi`
+ * (Web MIDI API) — alles andere (geolocation, notifications, usb, hid,
+ * bluetooth) wird weiterhin abgelehnt. Renderer-Code muss trotzdem
  * `enumerateDevices()` + Device-Picker zeigen damit User die Quelle wählt.
  */
 function installPermissionHandlers() {
-    // Whitelist: nur media erlauben (Mikrofon-Input für Outboard-FX-Modus).
-    const ALLOWED = new Set(["media", "mediaKeySystem"]);
+    // Whitelist (TASK-242): media + midi/midiSysex erlauben, alles andere deny.
+    // Quelle der Wahrheit + isolierte Tests: electron/permissions.ts
     electron_1.session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => {
-        callback(ALLOWED.has(permission));
+        callback((0, permissions_1.isPermissionAllowed)(permission));
     });
     // Synchroner Check-Pfad (Chromium ruft den vor setPermissionRequestHandler
     // auf manchen Code-Pfaden — z.B. autoplay-related media-checks).
     electron_1.session.defaultSession.setPermissionCheckHandler((_wc, permission) => {
-        return ALLOWED.has(permission);
+        return (0, permissions_1.isPermissionAllowed)(permission);
     });
-    console.log("[Permission] media auto-granted, all others denied.");
+    console.log("[Permission] media + midi + midiSysex auto-granted, all others denied.");
 }
 // ─── Globale Keyboard-Shortcuts ──────────────────────────────────────────────
 function registerGlobalShortcuts() {

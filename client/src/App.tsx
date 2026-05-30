@@ -319,7 +319,7 @@ import {
 } from "@/store/useMelodicPartStore";
 import { routeMelodicPartsToPatterns } from "@/utils/imports";
 import { collectSampleNames, matchSamplesByBasename } from "@/utils/imports/flpSampleLoader";
-import { getPatternGroupState, setPlayingGroup } from "@/store/usePatternGroupStore";
+import { getPatternGroupState, setPlayingGroup, usePatternGroupStore } from "@/store/usePatternGroupStore";
 import { resetNoteRepeat, toggleNoteRepeat, isNoteRepeatEnabled } from "@/store/useNoteRepeatStore";
 import { resetTranspose } from "@/store/useTransposeStore";
 import { resetMorph, getMorphState, setActive as setMorphActive } from "@/store/useMorphStore";
@@ -782,6 +782,18 @@ export default function App() {
   }, []);
 
   const mixer = useMixerStore();
+  const patternGroups = usePatternGroupStore();
+
+  // Startet eine Gruppe als Sequenz (Performance-Pad / Pattern-Manager): erstes
+  // gültiges Pattern aktiv setzen, Gruppe als spielend markieren, Transport starten.
+  const launchPatternGroup = useCallback((groupId: string) => {
+    const g = getPatternGroupState().groups.find(x => x.id === groupId);
+    const first = g?.patternIds.find(pid => dmRef.current.patterns.some(p => p.id === pid));
+    if (!first) { showToast("Gruppe hat keine gültigen Patterns", { kind: "warning" }); return; }
+    setPlayingGroup(groupId);
+    dmRef.current.setActivePattern(first);
+    if (!project.isPlaying) project.togglePlayStop();
+  }, [project]);
 
   // Stoppt die Gruppen-Sequenz, sobald der Transport stoppt.
   useEffect(() => {
@@ -5206,6 +5218,9 @@ export default function App() {
         <PatternLaunchPad
           pads={performance.pads}
           patterns={dm.patterns.map((p) => ({ id: p.id, name: p.name }))}
+          groups={patternGroups.groups.map((g) => ({ id: g.id, name: g.name }))}
+          onGroupLaunch={launchPatternGroup}
+          playingGroupId={patternGroups.playingGroupId}
           activePatternId={dm.activePatternId ?? ""}
           queuedPatternId={performance.queuedPatternId}
           quantizeMode={performance.quantizeMode}

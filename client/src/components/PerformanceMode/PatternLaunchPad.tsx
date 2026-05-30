@@ -56,6 +56,7 @@ import {
   PAD_COUNT,
   PAD_COLOR_VAR_NAMES,
   type PerformancePad,
+  type PadKind,
   type QuantizeMode,
 } from "@/store/usePerformanceStore";
 
@@ -91,6 +92,12 @@ interface PatternLaunchPadProps {
   pads: Array<PerformancePad | null>;
   /** Alle verfügbaren Patterns aus der DrumMachine. */
   patterns: PatternRef[];
+  /** Alle verfügbaren Pattern-Gruppen (für Gruppen-Pads). */
+  groups?: PatternRef[];
+  /** Wird gerufen wenn ein Gruppen-Pad getriggert wird (startet die Gruppen-Sequenz). */
+  onGroupLaunch?: (groupId: string) => void;
+  /** Aktuell als Sequenz laufende Gruppe (für Pad-Highlight). */
+  playingGroupId?: string | null;
   activePatternId: string;
   queuedPatternId: string | null;
   quantizeMode: QuantizeMode;
@@ -339,6 +346,9 @@ function moveFocus(current: number, key: string): number {
 export function PatternLaunchPad({
   pads,
   patterns,
+  groups = [],
+  onGroupLaunch,
+  playingGroupId = null,
   activePatternId,
   queuedPatternId,
   quantizeMode,
@@ -498,10 +508,15 @@ export function PatternLaunchPad({
     }
   }, []);
 
+  const launchPad = useCallback((pad: PerformancePad) => {
+    if (pad.kind === "group" && pad.groupId) onGroupLaunch?.(pad.groupId);
+    else if (pad.patternId) onPadClick(pad.patternId);
+  }, [onPadClick, onGroupLaunch]);
+
   const handlePadActivate = useCallback((index: number) => {
     const pad = pads[index];
     if (mode === "play") {
-      if (pad) onPadClick(pad.patternId);
+      if (pad) launchPad(pad);
       return;
     }
     if (mode === "edit") {
@@ -741,7 +756,7 @@ export function PatternLaunchPad({
       e.preventDefault();
       const pad = pads[focusedIndex];
       if (mode === "play") {
-        if (pad) onPadClick(pad.patternId);
+        if (pad) launchPad(pad);
         return;
       }
       if (mode === "edit") {
@@ -944,9 +959,10 @@ export function PatternLaunchPad({
                 pad={pad}
                 fallbackColor={fallbackColor}
                 patterns={patterns}
+                groups={groups}
                 mode={mode}
-                isActive={!!pad && pad.patternId === activePatternId}
-                isQueued={!!pad && pad.patternId === queuedPatternId}
+                isActive={!!pad && (pad.kind === "group" ? pad.groupId === playingGroupId : pad.patternId === activePatternId)}
+                isQueued={!!pad && pad.kind !== "group" && pad.patternId === queuedPatternId}
                 isDragOver={dragOver === i}
                 isDragging={dragSrc === i || (multiSelect.has(i) && dragSrc !== null && multiSelect.has(dragSrc))}
                 isFocused={focusedIndex === i}
@@ -990,6 +1006,7 @@ export function PatternLaunchPad({
           index={editingIndex}
           pad={pads[editingIndex] ?? null}
           patterns={patterns}
+          groups={groups}
           fallbackColor={getPadDefaultColor(editingIndex)}
           actions={actions}
           onClose={() => setEditingIndex(null)}
@@ -1060,6 +1077,7 @@ interface PadProps {
   pad: PerformancePad | null;
   fallbackColor: string;
   patterns: PatternRef[];
+  groups: PatternRef[];
   mode: Mode;
   isActive: boolean;
   isQueued: boolean;
@@ -1092,6 +1110,7 @@ function Pad({
   pad,
   fallbackColor,
   patterns,
+  groups,
   mode,
   isActive,
   isQueued,
@@ -1110,8 +1129,13 @@ function Pad({
   multiDragCount,
 }: PadPropsWithRef) {
   const color = pad?.color ?? fallbackColor;
-  const patternFromList = pad ? patterns.find(p => p.id === pad.patternId) : null;
-  const displayLabel = pad?.label ?? patternFromList?.name ?? (pad ? `P${index + 1}` : "");
+  const isGroupPad = pad?.kind === "group";
+  const patternFromList = pad && !isGroupPad ? patterns.find(p => p.id === pad.patternId) : null;
+  const groupFromList = pad && isGroupPad ? groups.find(g => g.id === pad.groupId) : null;
+  const displayLabel = pad?.label
+    ?? patternFromList?.name
+    ?? (groupFromList ? `▤ ${groupFromList.name}` : null)
+    ?? (pad ? `P${index + 1}` : "");
 
   // In reorder mode every slot (incl. empty) is draggable + drop-target
   const draggable = mode === "reorder";
@@ -1253,16 +1277,19 @@ interface PadEditorProps {
   index: number;
   pad: PerformancePad | null;
   patterns: PatternRef[];
+  groups: PatternRef[];
   fallbackColor: string;
   /** Store-Actions vom Parent (injizierbar — siehe ROADMAP Phase 2). */
   actions: PerformanceStoreActions;
   onClose: () => void;
 }
 
-function PadEditor({ index, pad, patterns, fallbackColor, actions, onClose }: PadEditorProps) {
+function PadEditor({ index, pad, patterns, groups, fallbackColor, actions, onClose }: PadEditorProps) {
   const [labelDraft, setLabelDraft] = useState(pad?.label ?? "");
   const [colorDraft, setColorDraft] = useState(pad?.color ?? fallbackColor);
+  const [kindDraft, setKindDraft] = useState<PadKind>(pad?.kind === "group" ? "group" : "pattern");
   const [patternDraft, setPatternDraft] = useState(pad?.patternId ?? "");
+  const [groupDraft, setGroupDraft] = useState(pad?.groupId ?? "");
 
   // Theme-aware Default-Swatches: 8 Farben aus den aktuell aktiven --ss-pad-1..8 Tokens.
   // Liest live aus document.documentElement bei Mount/index-Wechsel.
@@ -1276,16 +1303,19 @@ function PadEditor({ index, pad, patterns, fallbackColor, actions, onClose }: Pa
   useEffect(() => {
     setLabelDraft(pad?.label ?? "");
     setColorDraft(pad?.color ?? fallbackColor);
+    setKindDraft(pad?.kind === "group" ? "group" : "pattern");
     setPatternDraft(pad?.patternId ?? "");
+    setGroupDraft(pad?.groupId ?? "");
   }, [index, pad, fallbackColor]);
 
+  const canSave = kindDraft === "group" ? !!groupDraft : !!patternDraft;
+
   const handleSave = () => {
-    if (!patternDraft) return;
-    actions.setPadAt(index, {
-      patternId: patternDraft,
-      color: colorDraft,
-      label: labelDraft.trim() || undefined,
-    });
+    if (!canSave) return;
+    const base = { color: colorDraft, label: labelDraft.trim() || undefined };
+    actions.setPadAt(index, kindDraft === "group"
+      ? { kind: "group", groupId: groupDraft, ...base }
+      : { kind: "pattern", patternId: patternDraft, ...base });
     onClose();
   };
 
@@ -1328,21 +1358,54 @@ function PadEditor({ index, pad, patterns, fallbackColor, actions, onClose }: Pa
           </button>
         </div>
 
-        {/* Pattern-Auswahl */}
-        <label className="block mb-3">
-          <span className="block text-xs uppercase text-text-dim mb-1">Pattern</span>
-          <select
-            value={patternDraft}
-            onChange={(e) => setPatternDraft(e.target.value)}
-            aria-label="Pattern auswählen"
-            className="w-full bg-bg-elevated text-text-primary border border-border-color rounded px-2 py-1.5 text-sm"
-          >
-            <option value="">— wählen —</option>
-            {patterns.map((p) => (
-              <option key={p.id} value={p.id}>{p.name}</option>
-            ))}
-          </select>
-        </label>
+        {/* Aktionstyp: Pattern oder Gruppe */}
+        <div className="flex gap-1 mb-3">
+          {(["pattern", "group"] as PadKind[]).map((k) => (
+            <button
+              key={k}
+              type="button"
+              onClick={() => setKindDraft(k)}
+              className={`flex-1 px-2 py-1 rounded text-xs font-bold uppercase tracking-wide transition-colors ${
+                kindDraft === k ? "bg-accent-secondary text-bg-base" : "bg-bg-elevated text-text-muted hover:text-text-primary"
+              }`}
+              data-testid={`perf-pad-kind-${k}`}
+            >
+              {k === "pattern" ? "Pattern" : "Gruppe ▤"}
+            </button>
+          ))}
+        </div>
+
+        {/* Pattern- oder Gruppen-Auswahl */}
+        {kindDraft === "pattern" ? (
+          <label className="block mb-3">
+            <span className="block text-xs uppercase text-text-dim mb-1">Pattern</span>
+            <select
+              value={patternDraft}
+              onChange={(e) => setPatternDraft(e.target.value)}
+              aria-label="Pattern auswählen"
+              className="w-full bg-bg-elevated text-text-primary border border-border-color rounded px-2 py-1.5 text-sm"
+            >
+              <option value="">— wählen —</option>
+              {patterns.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+          </label>
+        ) : (
+          <label className="block mb-3">
+            <span className="block text-xs uppercase text-text-dim mb-1">Gruppe (Playlist)</span>
+            <select
+              value={groupDraft}
+              onChange={(e) => setGroupDraft(e.target.value)}
+              aria-label="Gruppe auswählen"
+              className="w-full bg-bg-elevated text-text-primary border border-border-color rounded px-2 py-1.5 text-sm"
+            >
+              <option value="">— wählen —</option>
+              {groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+            </select>
+            {groups.length === 0 && (
+              <span className="block text-[10px] text-text-dim mt-1">Noch keine Gruppen — im Patterns-Tab anlegen.</span>
+            )}
+          </label>
+        )}
 
         {/* Label */}
         <label className="block mb-3">
@@ -1393,7 +1456,7 @@ function PadEditor({ index, pad, patterns, fallbackColor, actions, onClose }: Pa
           <button
             type="button"
             onClick={handleSave}
-            disabled={!patternDraft}
+            disabled={!canSave}
             className="px-3 py-1.5 rounded text-xs font-bold bg-accent-primary text-bg-base hover:brightness-110 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
           >
             {pad ? "Aktualisieren" : "Hinzufügen"}

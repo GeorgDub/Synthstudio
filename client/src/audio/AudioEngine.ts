@@ -483,6 +483,12 @@ export interface PatternData {
 
 // ─── Audio-Knoten pro Kanal ───────────────────────────────────────────────────
 
+/** Obergrenze für gleichzeitig gehaltene Channel-FX-Ketten (~20 Audio-Nodes je
+ *  Channel). Verhindert unbegrenztes Wachstum, wenn viele Patterns mit je eigenen
+ *  Part-IDs getriggert werden (z.B. FLP-Import mit 100+ Patterns → sonst tausende
+ *  Nodes → AudioContext-Crash). LRU-Eviction in _getOrCreateChannelNodes. */
+const MAX_CHANNEL_NODES = 96;
+
 interface ChannelNodes {
   input: GainNode;
   eq: { low: BiquadFilterNode; mid: BiquadFilterNode; high: BiquadFilterNode };
@@ -3707,9 +3713,43 @@ class AudioEngineClass {
 
   // ─── Private: Kanal-Knoten verwalten ─────────────────────────────────────
 
+  /**
+   * Trennt alle Audio-Nodes einer Channel-FX-Kette und entfernt sie + zugehörigen
+   * Per-Channel-State (Sidechain, Granular). Für LRU-Eviction + clearCache.
+   */
+  private _disposeChannelNodes(partId: string): void {
+    const n = this.channelNodes.get(partId);
+    this.channelNodes.delete(partId);
+    if (n) {
+      const all: AudioNode[] = [
+        n.input, n.eq.low, n.eq.mid, n.eq.high, n.filter, n.distortion, n.compressor,
+        n.delayNode, n.delayFeedback, n.delayDry, n.delayWet,
+        n.reverbConvolver, n.reverbDry, n.reverbWet, n.output, n.panner,
+        n.sidechainGain, n.globalReverbSend, n.globalDelaySend,
+      ];
+      for (const node of all) { try { node.disconnect(); } catch { /* ignore */ } }
+    }
+    this._sidechainSettings.delete(partId);
+    try { this._granularEngines.get(partId)?.stop(); } catch { /* ignore */ }
+    this._granularEngines.delete(partId);
+  }
+
   private _getOrCreateChannelNodes(partId: string, fx: ChannelFx): ChannelNodes {
     const existing = this.channelNodes.get(partId);
-    if (existing) return existing;
+    if (existing) {
+      // LRU: an das Map-Ende verschieben (zuletzt genutzt) — keys().next() bleibt
+      // damit der am längsten nicht genutzte Channel = Eviction-Kandidat.
+      this.channelNodes.delete(partId);
+      this.channelNodes.set(partId, existing);
+      return existing;
+    }
+    // Eviction: über dem Cap → älteste (am längsten nicht genutzte) Channels
+    // disconnecten + entfernen, bevor ein neuer angelegt wird.
+    while (this.channelNodes.size >= MAX_CHANNEL_NODES) {
+      const lru = this.channelNodes.keys().next().value;
+      if (lru === undefined || lru === partId) break;
+      this._disposeChannelNodes(lru);
+    }
 
     const ctx = this.ctx!;
     const master = this.masterGain!;

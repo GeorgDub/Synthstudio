@@ -2162,6 +2162,9 @@ var require_utils2 = __commonJS({
     function stringify(obj, { EOL = "\n", finalEOL = true, replacer = null, spaces } = {}) {
       const EOF = finalEOL ? EOL : "";
       const str = JSON.stringify(obj, replacer, spaces);
+      if (str === void 0) {
+        throw new TypeError(`Converting ${typeof obj} value to JSON is not supported`);
+      }
       return str.replace(/\n/g, EOL) + EOF;
     }
     function stripBom(content) {
@@ -4310,9 +4313,13 @@ var require_sax = __commonJS({
         clearBuffers(parser);
         parser.q = parser.c = "";
         parser.bufferCheckPosition = sax.MAX_BUFFER_LENGTH;
+        parser.encoding = null;
         parser.opt = opt || {};
         parser.opt.lowercase = parser.opt.lowercase || parser.opt.lowercasetags;
         parser.looseCase = parser.opt.lowercase ? "toLowerCase" : "toUpperCase";
+        parser.opt.maxEntityCount = parser.opt.maxEntityCount || 512;
+        parser.opt.maxEntityDepth = parser.opt.maxEntityDepth || 4;
+        parser.entityCount = parser.entityDepth = 0;
         parser.tags = [];
         parser.closed = parser.closedRoot = parser.sawRoot = false;
         parser.tag = parser.error = null;
@@ -4424,6 +4431,29 @@ var require_sax = __commonJS({
       function createStream(strict, opt) {
         return new SAXStream(strict, opt);
       }
+      function determineBufferEncoding(data, isEnd) {
+        if (data.length >= 2) {
+          if (data[0] === 255 && data[1] === 254) {
+            return "utf-16le";
+          }
+          if (data[0] === 254 && data[1] === 255) {
+            return "utf-16be";
+          }
+        }
+        if (data.length >= 3 && data[0] === 239 && data[1] === 187 && data[2] === 191) {
+          return "utf8";
+        }
+        if (data.length >= 4) {
+          if (data[0] === 60 && data[1] === 0 && data[2] === 63 && data[3] === 0) {
+            return "utf-16le";
+          }
+          if (data[0] === 0 && data[1] === 60 && data[2] === 0 && data[3] === 63) {
+            return "utf-16be";
+          }
+          return "utf8";
+        }
+        return isEnd ? "utf8" : null;
+      }
       function SAXStream(strict, opt) {
         if (!(this instanceof SAXStream)) {
           return new SAXStream(strict, opt);
@@ -4441,6 +4471,7 @@ var require_sax = __commonJS({
           me._parser.error = null;
         };
         this._decoder = null;
+        this._decoderBuffer = null;
         streamWraps.forEach(function(ev) {
           Object.defineProperty(me, "on" + ev, {
             get: function() {
@@ -4464,12 +4495,31 @@ var require_sax = __commonJS({
           value: SAXStream
         }
       });
+      SAXStream.prototype._decodeBuffer = function(data, isEnd) {
+        if (this._decoderBuffer) {
+          data = Buffer.concat([this._decoderBuffer, data]);
+          this._decoderBuffer = null;
+        }
+        if (!this._decoder) {
+          var encoding = determineBufferEncoding(data, isEnd);
+          if (!encoding) {
+            this._decoderBuffer = data;
+            return "";
+          }
+          this._parser.encoding = encoding;
+          this._decoder = new TextDecoder(encoding);
+        }
+        return this._decoder.decode(data, { stream: !isEnd });
+      };
       SAXStream.prototype.write = function(data) {
         if (typeof Buffer === "function" && typeof Buffer.isBuffer === "function" && Buffer.isBuffer(data)) {
-          if (!this._decoder) {
-            this._decoder = new TextDecoder("utf8");
+          data = this._decodeBuffer(data, false);
+        } else if (this._decoderBuffer) {
+          var remaining = this._decodeBuffer(Buffer.alloc(0), true);
+          if (remaining) {
+            this._parser.write(remaining);
+            this.emit("data", remaining);
           }
-          data = this._decoder.decode(data, { stream: true });
         }
         this._parser.write(data.toString());
         this.emit("data", data);
@@ -4479,7 +4529,13 @@ var require_sax = __commonJS({
         if (chunk && chunk.length) {
           this.write(chunk);
         }
-        if (this._decoder) {
+        if (this._decoderBuffer) {
+          var finalChunk = this._decodeBuffer(Buffer.alloc(0), true);
+          if (finalChunk) {
+            this._parser.write(finalChunk);
+            this.emit("data", finalChunk);
+          }
+        } else if (this._decoder) {
           var remaining = this._decoder.decode();
           if (remaining) {
             this._parser.write(remaining);
@@ -4872,6 +4928,39 @@ var require_sax = __commonJS({
       S = sax.STATE;
       function emit(parser, event, data) {
         parser[event] && parser[event](data);
+      }
+      function getDeclaredEncoding(body) {
+        var match = body && body.match(/(?:^|\s)encoding\s*=\s*(['"])([^'"]+)\1/i);
+        return match ? match[2] : null;
+      }
+      function normalizeEncodingName(encoding) {
+        if (!encoding) {
+          return null;
+        }
+        return encoding.toLowerCase().replace(/[^a-z0-9]/g, "");
+      }
+      function encodingsMatch(detectedEncoding, declaredEncoding) {
+        const detected = normalizeEncodingName(detectedEncoding);
+        const declared = normalizeEncodingName(declaredEncoding);
+        if (!detected || !declared) {
+          return true;
+        }
+        if (declared === "utf16") {
+          return detected === "utf16le" || detected === "utf16be";
+        }
+        return detected === declared;
+      }
+      function validateXmlDeclarationEncoding(parser, data) {
+        if (!parser.strict || !parser.encoding || !data || data.name !== "xml") {
+          return;
+        }
+        var declaredEncoding = getDeclaredEncoding(data.body);
+        if (declaredEncoding && !encodingsMatch(parser.encoding, declaredEncoding)) {
+          strictFail(
+            parser,
+            "XML declaration encoding " + declaredEncoding + " does not match detected stream encoding " + parser.encoding.toUpperCase()
+          );
+        }
       }
       function emitNode(parser, nodeType, data) {
         if (parser.textNode) closeText(parser);
@@ -5450,10 +5539,12 @@ var require_sax = __commonJS({
               continue;
             case S.PROC_INST_ENDING:
               if (c === ">") {
-                emitNode(parser, "onprocessinginstruction", {
+                const procInstEndData = {
                   name: parser.procInstName,
                   body: parser.procInstBody
-                });
+                };
+                validateXmlDeclarationEncoding(parser, procInstEndData);
+                emitNode(parser, "onprocessinginstruction", procInstEndData);
                 parser.procInstName = parser.procInstBody = "";
                 parser.state = S.TEXT;
               } else {
@@ -5666,9 +5757,22 @@ var require_sax = __commonJS({
               if (c === ";") {
                 var parsedEntity = parseEntity(parser);
                 if (parser.opt.unparsedEntities && !Object.values(sax.XML_ENTITIES).includes(parsedEntity)) {
+                  if ((parser.entityCount += 1) > parser.opt.maxEntityCount) {
+                    error(
+                      parser,
+                      "Parsed entity count exceeds max entity count"
+                    );
+                  }
+                  if ((parser.entityDepth += 1) > parser.opt.maxEntityDepth) {
+                    error(
+                      parser,
+                      "Parsed entity depth exceeds max entity depth"
+                    );
+                  }
                   parser.entity = "";
                   parser.state = returnState;
                   parser.write(parsedEntity);
+                  parser.entityDepth -= 1;
                 } else {
                   parser[buffer] += parsedEntity;
                   parser.entity = "";

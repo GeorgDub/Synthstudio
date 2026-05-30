@@ -53,9 +53,29 @@ import {
   queuePattern,
   clearQueue,
   setQuantizeMode,
+  migratePad,
   __resetPerformanceStoreForTests,
   type PerformancePad,
 } from "../../client/src/store/usePerformanceStore";
+
+describe("migratePad — Pattern/Gruppen-Pad-Migration", () => {
+  it("Legacy-Pad (nur patternId, kein kind) → kind:'pattern'", () => {
+    expect(migratePad({ patternId: "p1", color: "#abc", label: "X" }))
+      .toEqual({ kind: "pattern", patternId: "p1", color: "#abc", label: "X" });
+  });
+  it("Gruppen-Pad bleibt erhalten", () => {
+    expect(migratePad({ kind: "group", groupId: "g1", color: "#def" }))
+      .toEqual({ kind: "group", groupId: "g1", color: "#def" });
+  });
+  it("Gruppen-Pad ohne groupId → null", () => {
+    expect(migratePad({ kind: "group" })).toBeNull();
+  });
+  it("Pad ohne patternId und ohne group → null", () => {
+    expect(migratePad({ color: "#000" })).toBeNull();
+    expect(migratePad(null)).toBeNull();
+    expect(migratePad({ patternId: "" })).toBeNull();
+  });
+});
 
 beforeEach(() => {
   localStorageMock.clear();

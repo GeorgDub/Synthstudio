@@ -44,11 +44,19 @@ export const PAD_COLOR_VAR_NAMES: readonly string[] = [
   "--ss-pad-8",
 ];
 
+/** Aktionstyp eines Pads. Fehlt (legacy) = "pattern". */
+export type PadKind = "pattern" | "group";
+
 export interface PerformancePad {
-  patternId: string;
+  /** Aktionstyp. Undefined = "pattern" (Migration alter Pads). */
+  kind?: PadKind;
+  /** Bei kind="pattern" (oder undefined): das zu triggernde Pattern. */
+  patternId?: string;
+  /** Bei kind="group": die als Sequenz zu startende Gruppe (usePatternGroupStore). */
+  groupId?: string;
   /** CSS-Farbe (z.B. "#22d3ee"). User-defined oder Default-Palette-Fallback im UI. */
   color?: string;
-  /** Vom User vergebener Anzeigename. Fällt sonst auf Pattern-Name aus DrumMachine zurück. */
+  /** Vom User vergebener Anzeigename. Fällt sonst auf Pattern-/Gruppen-Name zurück. */
   label?: string;
 }
 
@@ -75,14 +83,22 @@ function isValidQuantizeMode(v: unknown): v is QuantizeMode {
   return v === "bar" || v === "beat" || v === "step";
 }
 
-function migratePad(raw: unknown): PerformancePad | null {
+/** Exportiert für Tests: migriert/validiert ein gespeichertes Pad-Objekt. */
+export function migratePad(raw: unknown): PerformancePad | null {
   if (!raw || typeof raw !== "object") return null;
   const p = raw as Partial<PerformancePad> & Record<string, unknown>;
-  if (typeof p.patternId !== "string" || p.patternId.length === 0) return null;
-  const pad: PerformancePad = { patternId: p.patternId };
-  if (typeof p.color === "string") pad.color = p.color;
-  if (typeof p.label === "string") pad.label = p.label;
-  return pad;
+  const common: { color?: string; label?: string } = {};
+  if (typeof p.color === "string") common.color = p.color;
+  if (typeof p.label === "string") common.label = p.label;
+  // Gruppen-Pad
+  if (p.kind === "group" && typeof p.groupId === "string" && p.groupId.length > 0) {
+    return { kind: "group", groupId: p.groupId, ...common };
+  }
+  // Pattern-Pad (inkl. Legacy ohne kind)
+  if (typeof p.patternId === "string" && p.patternId.length > 0) {
+    return { kind: "pattern", patternId: p.patternId, ...common };
+  }
+  return null;
 }
 
 function loadPersisted(): PersistedState {
