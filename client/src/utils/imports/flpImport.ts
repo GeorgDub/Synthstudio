@@ -108,6 +108,9 @@ class FlpReader {
 // ─── Hauptfunktion ────────────────────────────────────────────────────────────
 
 const STEP_COUNT = 16;
+/** FL-Default-/Natur-Note (MIDI 60 = C4): step.pitch wird relativ dazu gespeichert,
+ *  damit ein Sample auf der Default-Note ohne Pitch-Shift (natürlich) spielt. */
+const FLP_ROOT_NOTE = 60;
 /** Max. Bars die EIN FL-Pattern erzeugen darf (lange Arrangement-Patterns). */
 const MAX_BARS = 64;
 /** Sicherheits-Obergrenze für die Gesamtzahl erzeugter Synthstudio-Patterns.
@@ -157,8 +160,10 @@ function buildPartsForChunk(
     if (partIdx === undefined) continue;
     const step = flpPositionToStep(note.position, ppq);
     if (step < 0 || step >= stepCount) continue;
-    // pitch wird mitgeführt (Drum-Machine ignoriert es, Piano-Roll/MIDI nutzen es).
-    parts[partIdx].steps[step] = { active: true, velocity: note.velocity, pitch: note.key };
+    // pitch RELATIV zu C4 (MIDI 60 = FL-Default-Note): die AudioEngine nutzt
+    // step.pitch als Halbton-Shift (2^(pitch/12)). Würde man die absolute MIDI-
+    // Note (z.B. 60) nehmen, spielte das Sample 32× zu schnell = unhörbar.
+    parts[partIdx].steps[step] = { active: true, velocity: note.velocity, pitch: note.key - FLP_ROOT_NOTE };
   }
   return parts;
 }
@@ -327,7 +332,6 @@ export async function importFlp(file: File): Promise<ImportResult> {
   // ist innerhalb eines FL-Patterns konstant; Melodic-Notes werden auf konkrete
   // (patternIndex, partIndex, step-im-Bar)-Koordinaten aufgelöst. ────────────────
   const patternsList: ImportedPattern[] = [];
-  const melodicParts: ImportedMelodicPart[] = [];
   const melodicChannels = new Set<number>();
   const allUsedChannels = new Set<number>();
   let droppedBeyondBars = 0;
@@ -380,8 +384,6 @@ export async function importFlp(file: File): Promise<ImportResult> {
       ? parsedName
       : (nonEmptyPatterns.length === 1 ? filenameStem : `Pattern ${flPattern.index}`);
 
-    const firstChunkPatternIndex = patternsList.length;
-    const chunkStepCounts: number[] = []; // pro Chunk die gewählte stepCount (für Melodic-Bound)
     let imported = 0;
     let chunksCreated = 0;
     for (let chunk = 0; chunk < numChunks; chunk++) {
@@ -393,7 +395,6 @@ export async function importFlp(file: File): Promise<ImportResult> {
       for (const n of chunkNotes) { const s = flpPositionToStep(n.position, ppq); if (s > maxStep) maxStep = s; }
       const contentBars = maxStep < 0 ? 1 : Math.floor(maxStep / STEP_COUNT) + 1;
       const sc = stepCountForBars(contentBars);
-      chunkStepCounts.push(sc);
       patternsList.push({
         name: numChunks === 1 ? baseName : `${baseName} ${chunk + 1}`,
         stepCount: sc,
@@ -404,24 +405,13 @@ export async function importFlp(file: File): Promise<ImportResult> {
     }
     droppedBeyondBars += flPattern.notes.length - imported;
 
-    // Melodische Parts (Pitch-Varianz ≥2) → konkrete (patternIndex, partIndex,
-    // step-im-Pattern)-Auflösung. Chunk-Index via festem CHUNK_STEPS; der
-    // Within-Chunk-Step muss in die (variabel dimensionierte) stepCount passen.
-    const mp = buildMelodicParts(shiftedNotes, ppq, parsed.channelNames);
-    for (const part of mp) {
+    // Melodische Channels (Pitch-Varianz ≥2) NUR für die Hinweis-Statistik
+    // zählen. Sie werden NICHT in den Piano-Roll-Synth geroutet — der spielte für
+    // Parts ohne synthParams nur einen kurzen Triangle-Beep statt des Samples.
+    // Stattdessen sind die Noten gepitchte Drum-Steps (relativ zu C4), und das
+    // Sample spielt voll durch (#5/#6).
+    for (const part of buildMelodicParts(shiftedNotes, ppq, parsed.channelNames)) {
       melodicChannels.add(part.sourceChannel);
-      const partIdx = channelToPartIndex.get(part.sourceChannel);
-      if (partIdx === undefined) continue;
-      const resolved: typeof part.notes = [];
-      for (const n of part.notes) {
-        const chunk = Math.floor(n.startStep / CHUNK_STEPS);
-        if (chunk < 0 || chunk >= chunksCreated) continue;
-        const within = n.startStep - chunk * CHUNK_STEPS;
-        if (within < 0 || within >= (chunkStepCounts[chunk] ?? 0)) continue;
-        resolved.push({ ...n, patternIndex: firstChunkPatternIndex + chunk, startStep: within });
-      }
-      if (resolved.length === 0) continue;
-      melodicParts.push({ ...part, targetPartIndex: partIdx, notes: resolved });
     }
   }
 
@@ -438,7 +428,7 @@ export async function importFlp(file: File): Promise<ImportResult> {
     );
   }
   if (melodicChannels.size > 0) {
-    warnings.push(`${melodicChannels.size} melodische Channel(s) zusätzlich in den Piano Roll geroutet (16-Step-quantisiert).`);
+    warnings.push(`${melodicChannels.size} melodische Channel(s) als gepitchte Steps importiert (relativ zu C4; das Sample spielt voll durch).`);
   }
   if (droppedBeyondBars > 0) {
     warnings.push(`${droppedBeyondBars} Note(s) jenseits ${MAX_BARS} Bars pro Pattern ignoriert.`);
@@ -452,7 +442,7 @@ export async function importFlp(file: File): Promise<ImportResult> {
     fileName: file.name,
     bpm,
     patterns: patternsList,
-    melodicParts: melodicParts.length > 0 ? melodicParts : undefined,
+    melodicParts: undefined, // FLP-Melodien sind gepitchte Steps, kein Piano-Roll-Routing
     warnings,
   };
 }

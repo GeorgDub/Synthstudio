@@ -167,35 +167,30 @@ describe("FLP Import — Melodic-Channel-Warnung (post-v1.63.0)", () => {
     expect(melodicWarnings).toHaveLength(1);
     // genau 1 melodischer Channel (ch1); ch0 ist drum-like (alle key=36)
     expect(melodicWarnings[0]).toContain("1 melodische");
-    expect(melodicWarnings[0]).toContain("Piano Roll");
+    expect(melodicWarnings[0]).toContain("gepitchte");
   });
 
-  it("Pitch wird auf ImportedStep mitgeführt", async () => {
+  it("Pitch wird RELATIV zu C4 (MIDI 60) auf ImportedStep mitgeführt", async () => {
     const result = await importFlp(makeFile("mixed.flp", buildFlpWithMixedChannels()));
     const allSteps = result.patterns.flatMap(p => p.parts.flatMap(part => part.steps));
     const activeStepsWithPitch = allSteps.filter(s => s.active && s.pitch !== undefined);
     expect(activeStepsWithPitch.length).toBeGreaterThan(0);
-    // Mindestens eine Note hat pitch=60 (C4 vom melodischen Channel)
-    expect(activeStepsWithPitch.some(s => s.pitch === 60)).toBe(true);
-    expect(activeStepsWithPitch.some(s => s.pitch === 36)).toBe(true);
+    // key 60 (C4) → pitch 0 (Natur-Tonhöhe, kein Shift), key 36 → -24.
+    // (Absolut wäre 60 = 32× Speed = unhörbar — genau der gefixte Bug.)
+    expect(activeStepsWithPitch.some(s => s.pitch === 0)).toBe(true);
+    expect(activeStepsWithPitch.some(s => s.pitch === -24)).toBe(true);
   });
 
-  it("ImportResult enthält melodicParts mit voller Note-Info (v1.65)", async () => {
+  it("FLP-Melodien sind gepitchte Steps statt Piano-Roll-Routing (#5/#6)", async () => {
     const result = await importFlp(makeFile("mixed.flp", buildFlpWithMixedChannels()));
-    expect(result.melodicParts).toBeDefined();
-    expect(result.melodicParts).toHaveLength(1); // nur Channel 1 ist melodisch
-    const part = result.melodicParts![0];
-    expect(part.sourceChannel).toBe(1);
-    expect(part.notes).toHaveLength(2);
-    // Notes sind nach startStep sortiert
-    expect(part.notes[0].startStep).toBeLessThan(part.notes[1].startStep);
-    // Erste Note: C4 (60) bei position=24 (1 step bei PPQ=96)
-    expect(part.notes[0].pitch).toBe(60);
-    expect(part.notes[0].startStep).toBe(1);
-    expect(part.notes[0].velocity).toBe(100);
-    // Zweite Note: E4 (64) bei position=48 (2 steps)
-    expect(part.notes[1].pitch).toBe(64);
-    expect(part.notes[1].startStep).toBe(2);
+    // KEIN melodicParts — Melodien werden als gepitchte Drum-Steps importiert,
+    // damit das Sample voll durchspielt statt eines kurzen Synth-Beeps.
+    expect(result.melodicParts).toBeUndefined();
+    // ch1 (keys 60/64) → Part mit Steps, Pitch relativ zu C4 (0 und +4)
+    const ch1Part = result.patterns[0].parts[1]; // Channels {0,1} sortiert → parts[1] = ch1
+    const pitched = ch1Part.steps.filter(s => s.active).map(s => s.pitch);
+    expect(pitched).toContain(0);  // key 60 → 0
+    expect(pitched).toContain(4);  // key 64 → +4
   });
 
   it("ImportResult.melodicParts ist undefined wenn keine melodischen Channels", async () => {
@@ -508,27 +503,23 @@ describe("importFlp — Per-Channel-Parts / Multi-Pattern / Samples / BPM", () =
     expect(p3.parts[1].steps.filter(s => s.active).length).toBe(1); // Hat 1 Note
   });
 
-  it("melodischer Channel bekommt PRO Pattern den korrekten targetPartIndex", async () => {
+  it("melodische Noten werden gepitchte Steps (relativ zu C4) statt Piano-Roll", async () => {
     const r = await importFlp(makeFile("p.flp", buildProject()));
-    expect(r.melodicParts).toBeDefined();
-    // ch1 ist in beiden Patterns melodisch → zwei Melodic-Parts mit
-    // unterschiedlichem targetPartIndex (1 in Pattern 1, 0 in Pattern 3)
-    const bassParts = r.melodicParts!.filter(m => m.sourceChannel === 1);
-    expect(bassParts).toHaveLength(2);
-    expect(bassParts.map(m => m.targetPartIndex).sort()).toEqual([0, 1]);
+    expect(r.melodicParts).toBeUndefined();
+    // Pattern 1: Bass = parts[1] (Channels {0,1}) → keys 60/64 → Pitch 0 / +4
+    const p1bass = r.patterns[0].parts[1];
+    expect(p1bass.steps.filter(s => s.active).map(s => s.pitch).sort((a, b) => a - b)).toEqual([0, 4]);
+    // Pattern 3: Bass = parts[0] (Channels {1,5}) → keys 60/67 → Pitch 0 / +7
+    const p3bass = r.patterns[1].parts[0];
+    expect(p3bass.steps.filter(s => s.active).map(s => s.pitch).sort((a, b) => a - b)).toEqual([0, 7]);
   });
 
-  it("routeMelodicPartsToPatterns trifft den Bass-Part in JEDEM Pattern korrekt", async () => {
+  it("Drum-Noten (key 36) bekommen relativen Pitch -24 (key - 60)", async () => {
     const r = await importFlp(makeFile("p.flp", buildProject()));
-    const converted = importResultToPatterns(r);
-    const { mappings } = routeMelodicPartsToPatterns(r.melodicParts, converted, 16, 8);
-    expect(mappings.length).toBeGreaterThan(0);
-    // Bass ist Pattern 1 → parts[1], Pattern 3 → parts[0]. Alle Mappings müssen
-    // exakt auf eine dieser beiden Part-IDs zeigen (nicht z.B. auf Hat/Kick).
-    const bassIds = new Set([converted[0].parts[1].id, converted[1].parts[0].id]);
-    expect(mappings.every(m => bassIds.has(m.partId))).toBe(true);
-    // und beide Patterns sind abgedeckt
-    expect(new Set(mappings.map(m => m.partId))).toEqual(bassIds);
+    const kick = r.patterns[0].parts[0]; // ch0 Kick, key 36
+    const pitches = kick.steps.filter(s => s.active).map(s => s.pitch);
+    expect(pitches.length).toBeGreaterThan(0);
+    expect(pitches.every(p => p === -24)).toBe(true); // 36 - 60
   });
 });
 
