@@ -82,18 +82,21 @@ def build_kit():
     kick = fade(kick, SR, 0.001, 0.04)
     sub_thump = synth_sine(48, 0.42, 0.18, drop_from=150, sat=0.6)
     mid_punch = synth_sine(100, 0.10, 0.045, drop_from=180, sat=0.3)
-    # 4) Rumble-Tail: zwei leicht verstimmte tiefe Sines (Beating = "Growl"),
-    # langer Decay (0.55s) → klingt bis zum nächsten Kick durch = rollt.
-    rumble_a = synth_sine(46.0, 0.60, 0.34, drop_from=72, sat=0.5)
-    rumble_b = synth_sine(46.5, 0.60, 0.34, sat=0.5)
-    rumble = (rumble_a + rumble_b) * 0.5
+    # 4) Rumble-Tail: DREI verstimmte tiefe Sines (breiteres Beating) + harte
+    # Sättigung auf die Summe → Intermodulation = growlende Oberwellen, nicht nur
+    # boomender Sub. Langer Decay (0.55s) über 0.95s → rollt über ~2 Kicks.
+    rumble_a = synth_sine(45.5, 0.95, 0.55, drop_from=78)
+    rumble_b = synth_sine(46.4, 0.95, 0.55)
+    rumble_c = synth_sine(47.3, 0.95, 0.55)
+    rumble = (rumble_a + rumble_b + rumble_c) / 3.0
+    rumble = np.tanh(rumble * 3.2) / np.tanh(3.2)   # Growl-Distortion
     L = max(len(kick), len(sub_thump), len(mid_punch), len(rumble))
     def padto(a, L):
         if len(a) < L:
             a = np.vstack([a, np.zeros((L - len(a), 2), np.float32)])
         return a[:L]
     kick = (padto(kick, L) * 1.0 + padto(sub_thump, L) * 1.1
-            + padto(mid_punch, L) * 0.55 + padto(rumble, L) * 0.5)
+            + padto(mid_punch, L) * 0.55 + padto(rumble, L) * 0.6)
     kick = np.tanh(kick * 1.4) * 0.97          # Bus-Drive: Grit + Glue
     kick = fade(kick, SR, 0.0, 0.06); kick = normalize(kick, 0.99)
     kit["kick"] = ("HT_Kick.wav", kick)
