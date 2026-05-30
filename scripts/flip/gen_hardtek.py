@@ -99,12 +99,14 @@ def build_kit():
     ho = slice_s(hh, 0.158, 0.18); ho = butter(ho, SR, 500, "high"); ho = fade(ho, SR, 0.0005, 0.06); ho = normalize(ho, 0.62)
     kit["hat_open"] = ("HT_HatOpen.wav", ho)
 
-    # Fetter, verzerrter Acid-Bass: härtere Saturation für Oberwellen (cuttet
-    # auf kleinen Boxen) + leicht länger für mehr Druck.
+    # Acid-Bass: KURZ + HART verzerrt für busy 16tel-Rolls. Highpass ~110 Hz →
+    # sitzt als Mid-Bass ÜBER dem Sub-Bass (kein Matsch wenn busy). Foldback-
+    # Saturation (tanh hoher Drive) + Soft-Clip für aggressive Oberwellen.
     bass = load("BassShot/Bx BassShoot ACID F.wav")
-    bass = slice_s(bass, 0.0, 0.40); bass = saturate(bass, 2.4)
-    bass = soft_clip(bass, 0.95)
-    bass = fade(bass, SR, 0.002, 0.07); bass = normalize(bass, 0.97)
+    bass = slice_s(bass, 0.0, 0.15)
+    bass = saturate(bass, 3.6); bass = soft_clip(bass, 0.88)
+    bass = butter(bass, SR, 110, "high")
+    bass = fade(bass, SR, 0.002, 0.025); bass = normalize(bass, 0.97)
     kit["bass"] = ("HT_AcidBass_F.wav", bass)
 
     # Dedizierte Sub-Bass-Spur: sauberer F2-Sine mit Decay, leicht gesättigt →
@@ -146,8 +148,10 @@ def L(steps, pitch=0):
 PATTERNS = {
     "HT150 Main": {
         "kick":       L([0, 4, 8, 12]),
-        "bass":       {2: 0, 6: 0, 10: 0, 14: 3},
-        "subbass":    {2: 0, 6: 0, 10: 0, 14: 3},
+        # busy 16tel-Acid-Roll auf den Nicht-Kick-Steps, mit Tonhöhenbewegung
+        "bass":       {2: 0, 3: 0, 6: 0, 7: 3, 10: 0, 11: 0, 14: 5, 15: 7},
+        # Sub bleibt sauber/sparsam auf den Offbeats → tighter Tiefton
+        "subbass":    {2: 0, 6: 0, 10: 0, 14: 0},
         "snare":      L([4, 12]),
         "hat_closed": L([1, 3, 5, 7, 9, 11, 13, 15]),
         "hat_open":   L([2, 6, 10, 14]),
@@ -155,8 +159,10 @@ PATTERNS = {
     },
     "HT150 Drop": {
         "kick":       L([0, 4, 8, 12]),
-        "bass":       {2: 0, 3: 0, 6: 0, 7: 5, 10: 0, 11: 0, 14: 3, 15: 7},
-        "subbass":    {2: 0, 3: 0, 6: 0, 7: 5, 10: 0, 11: 0, 14: 3, 15: 7},
+        # voller 16tel-Roll (alle Nicht-Kick-Steps) — aggressiver Acid-Lauf
+        "bass":       {1: 0, 2: 0, 3: 0, 5: 0, 6: 3, 7: 0, 9: 0, 10: 0, 11: 5,
+                       13: 0, 14: 7, 15: 3},
+        "subbass":    {2: 0, 6: 0, 10: 0, 14: 0},
         "snare":      {4: 0, 12: 0, 7: 0, 15: 0},
         "hat_closed": L([1, 3, 5, 7, 9, 11, 13, 15]),
         "hat_open":   L([2, 6, 10, 14]),
