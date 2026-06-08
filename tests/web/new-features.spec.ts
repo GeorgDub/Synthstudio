@@ -12,8 +12,10 @@
  * NICHT die Audio-Korrektheit (wäre nur in echten Browsern mit AudioContext testbar).
  */
 import { test, expect } from "@playwright/test";
+import { seedActivation } from "./_seedApp";
 
 test.beforeEach(async ({ page }) => {
+  await seedActivation(page);
   await page.goto("/");
   // Warten bis die Haupt-Tabbar gerendert ist
   await page.waitForSelector('[role="tablist"]', { timeout: 15_000 });

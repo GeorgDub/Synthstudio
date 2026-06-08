@@ -30,6 +30,7 @@
  * Browser-only: läuft via pnpm test:web gegen Vite-Dev-Server.
  */
 import { test, expect, type Page } from "@playwright/test";
+import { seedActivation } from "./_seedApp";
 
 const MACRO_INDEX = 0;
 const SCRIPT_ID = "test-hold-script";
@@ -79,6 +80,7 @@ async function seedStorage(page: Page) {
 }
 
 async function openMacroPanel(page: Page) {
+  await seedActivation(page);
   await page.goto("/");
   await page.waitForSelector('[role="tablist"]', { timeout: 15_000 });
   // DrumMachine ist Default-Tab — der Macro-Toggle ist direkt sichtbar.

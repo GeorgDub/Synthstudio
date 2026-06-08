@@ -13,8 +13,10 @@
  *   3. Die App nach dem Klick noch interaktiv ist
  */
 import { test, expect } from "@playwright/test";
+import { seedActivation } from "./_seedApp";
 
 test.beforeEach(async ({ page }) => {
+  await seedActivation(page);
   await page.goto("/");
   await page.waitForSelector('[role="tablist"]', { timeout: 15_000 });
   await page.getByRole("tab", { name: "Sequencer" }).click();

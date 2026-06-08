@@ -22,6 +22,7 @@
  * Browser-only — Pure-Web-Flow (kein Electron).
  */
 import { test, expect, type Page } from "@playwright/test";
+import { seedActivation } from "./_seedApp";
 
 const TRACK_NAME_STEM = "round-trip-vocals";
 
@@ -45,6 +46,7 @@ function tinyWavBuffer(): Buffer {
 }
 
 async function gotoMixer(page: Page) {
+  await seedActivation(page);
   await page.goto("/");
   await page.waitForSelector('[role="tablist"]', { timeout: 15_000 });
   await page.getByRole("tab", { name: "Mixer" }).click();
@@ -57,6 +59,7 @@ async function gotoMixer(page: Page) {
  * und damit die Phase-2-Persistenz-Verifikation zunichte machen.
  */
 async function clearAudioTrackStorageOnce(page: Page) {
+  await seedActivation(page);
   await page.goto("/");
   await page.evaluate(() => {
     try {

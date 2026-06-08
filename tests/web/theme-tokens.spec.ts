@@ -23,6 +23,7 @@
  * Vergleiche sind deterministisch.
  */
 import { test, expect, type Page } from "@playwright/test";
+import { seedActivation } from "./_seedApp";
 
 const THEMES = [
   "dark",
@@ -90,6 +91,7 @@ async function getCssVar(page: Page, varName: string): Promise<string> {
  * Liefert: themeId → { tokenName → cssValue }
  */
 async function snapshotAllThemes(page: Page): Promise<Record<string, Record<string, string>>> {
+  await seedActivation(page);
   await page.goto("/");
   await page.waitForSelector('[role="tablist"]', { timeout: 15_000 });
   const result: Record<string, Record<string, string>> = {};
@@ -140,6 +142,7 @@ test.describe("Theme-Token Integrity (TASK-122 Welle 2)", () => {
   });
 
   test("Theme-Wechsel ist live: data-theme-Attribute-Switch ändert die Computed-Variable", async ({ page }) => {
+    await seedActivation(page);
     await page.goto("/");
     await page.waitForSelector('[role="tablist"]', { timeout: 15_000 });
 

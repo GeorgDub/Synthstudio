@@ -15,8 +15,10 @@
  * Browser-only: läuft via pnpm test:web gegen Vite-Dev-Server.
  */
 import { test, expect, type Page } from "@playwright/test";
+import { seedActivation } from "./_seedApp";
 
 async function gotoScriptTool(page: Page) {
+  await seedActivation(page);
   await page.goto("/");
   await page.waitForSelector('[role="tablist"]', { timeout: 15_000 });
   // Tools-Tab anklicken (Tab "Tools")

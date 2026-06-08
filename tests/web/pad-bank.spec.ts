@@ -27,6 +27,7 @@
  * Browser-only: läuft via pnpm test:web gegen den Vite-Dev-Server.
  */
 import { test, expect, type Page } from "@playwright/test";
+import { seedActivation } from "./_seedApp";
 
 const PAD_BANK_STORAGE_KEY = "ss-pad-bank:v1";
 
@@ -55,6 +56,7 @@ async function clearPadBankStorage(page: Page) {
  * "Advanced-MIDI-Banner"-Öffnen-Button zur vollen MidiSettings-Modal.
  */
 async function openPadBankBuilder(page: Page) {
+  await seedActivation(page);
   await page.goto("/");
   await page.waitForSelector('[role="tablist"]', { timeout: 15_000 });
 

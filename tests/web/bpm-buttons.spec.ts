@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { seedActivation } from "./_seedApp";
 
 /**
  * Regression for BUG-002 — BPM +/- buttons UX
@@ -14,6 +15,7 @@ import { test, expect } from "@playwright/test";
  */
 test.describe("BPM +/- buttons (BUG-002)", () => {
   test.beforeEach(async ({ page }) => {
+    await seedActivation(page);
     await page.goto("/");
     await page.waitForSelector('button[aria-label="BPM verringern"]', { timeout: 10_000 });
   });

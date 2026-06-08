@@ -17,6 +17,7 @@
  *   - DrumMachine ist Default-Tab, der Toggle-Button ist direkt klickbar.
  */
 import { test, expect, type Page } from "@playwright/test";
+import { seedActivation } from "./_seedApp";
 
 const LIVE_INPUT_SEED = [
   {
@@ -59,6 +60,7 @@ async function seedLiveInputs(page: Page) {
 }
 
 async function openLooperPanel(page: Page) {
+  await seedActivation(page);
   await page.goto("/");
   await page.waitForSelector('[role="tablist"]', { timeout: 15_000 });
   const toggle = page.getByTestId("toggle-looper-panel");

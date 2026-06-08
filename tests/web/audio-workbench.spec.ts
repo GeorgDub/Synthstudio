@@ -19,6 +19,7 @@
  * aber gültigen 44.1kHz 16-bit Mono Buffer mit ~512 Samples (Stille).
  */
 import { test, expect, type Page } from "@playwright/test";
+import { seedActivation } from "./_seedApp";
 
 /** Erzeugt eine gültige 44.1kHz 16-bit Mono WAV-Datei (512 Samples, Stille). */
 function silentWavBuffer(): Buffer {
@@ -48,6 +49,7 @@ function silentWavBuffer(): Buffer {
 }
 
 async function gotoWorkbench(page: Page) {
+  await seedActivation(page);
   await page.goto("/");
   await page.waitForSelector('[role="tablist"]', { timeout: 15_000 });
   await page.getByRole("tab", { name: "Tools" }).click();

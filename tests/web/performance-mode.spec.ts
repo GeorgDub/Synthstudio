@@ -8,10 +8,12 @@
  * (sauberer Start-State), damit die Pads-Liste deterministisch beginnt.
  */
 import { test, expect, type Page } from "@playwright/test";
+import { seedActivation } from "./_seedApp";
 
 const PERF_KEY = "ss-performance:v1";
 
 async function openPerformanceMode(page: Page) {
+  await seedActivation(page);
   await page.goto("/");
   await page.waitForSelector('[role="tablist"]', { timeout: 15_000 });
   // localStorage frisch
@@ -176,6 +178,7 @@ test.describe("Performance Mode (TASK-111)", () => {
 // ─── TASK-114: a11y Keyboard-Reorder + Multi-Select ─────────────────────────
 
 async function seedPadsAndOpen(page: Page) {
+  await seedActivation(page);
   await page.goto("/");
   await page.waitForSelector('[role="tablist"]', { timeout: 15_000 });
   await page.evaluate((key) => {
@@ -377,6 +380,7 @@ async function getCssVar(page: Page, varName: string): Promise<string> {
 
 test.describe("Performance Mode — Theme-aware Default-Pad-Farben (TASK-119)", () => {
   test("--ss-pad-1 .. --ss-pad-8 sind im default-theme (dark) definiert", async ({ page }) => {
+    await seedActivation(page);
     await page.goto("/");
     await page.waitForSelector('[role="tablist"]', { timeout: 15_000 });
     for (let i = 1; i <= 8; i++) {
@@ -388,6 +392,7 @@ test.describe("Performance Mode — Theme-aware Default-Pad-Farben (TASK-119)", 
   });
 
   test("Theme-Wechsel ändert die --ss-pad-* CSS-Variablen", async ({ page }) => {
+    await seedActivation(page);
     await page.goto("/");
     await page.waitForSelector('[role="tablist"]', { timeout: 15_000 });
 
@@ -411,6 +416,7 @@ test.describe("Performance Mode — Theme-aware Default-Pad-Farben (TASK-119)", 
 
   test("Default-Pad-Farbe folgt dem aktiven Theme (visuelle Verifikation via backgroundColor)", async ({ page }) => {
     // Seed einen Pad OHNE explizite color → fällt auf Theme-Default zurück
+    await seedActivation(page);
     await page.goto("/");
     await page.waitForSelector('[role="tablist"]', { timeout: 15_000 });
     await page.evaluate((key) => {
@@ -456,6 +462,7 @@ test.describe("Performance Mode — Theme-aware Default-Pad-Farben (TASK-119)", 
   });
 
   test("User-defined pad.color hat Vorrang vor Theme-Default (TASK-119 Invariant)", async ({ page }) => {
+    await seedActivation(page);
     await page.goto("/");
     await page.waitForSelector('[role="tablist"]', { timeout: 15_000 });
     await page.evaluate((key) => {

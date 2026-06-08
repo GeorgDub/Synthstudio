@@ -17,6 +17,7 @@
  * leben in `tests/features/audio-track.test.ts`.
  */
 import { test, expect, type Page } from "@playwright/test";
+import { seedActivation } from "./_seedApp";
 import path from "path";
 
 // Pfad zu einer kleinen Test-Audio-Datei (falls vorhanden), sonst inline WAV-Header
@@ -44,6 +45,7 @@ function tinyWavBuffer(): Buffer {
 }
 
 async function gotoMixer(page: Page) {
+  await seedActivation(page);
   await page.goto("/");
   await page.waitForSelector('[role="tablist"]', { timeout: 15_000 });
   await page.getByRole("tab", { name: "Mixer" }).click();
@@ -122,12 +124,13 @@ test.describe("Audio-Track Mixer-UI (TASK-102 / F3)", () => {
     const strip = page.locator('[data-testid="audio-track-strip"]').first();
     await expect(strip).toBeVisible({ timeout: 10_000 });
 
-    // Confirm-Dialog akzeptieren bevor Click
-    page.once("dialog", (d) => d.accept());
-
     const closeBtn = strip.getByRole("button", { name: "Close" });
     await expect(closeBtn).toBeVisible();
     await closeBtn.click();
+
+    // v3.144: Remove nutzt den CUSTOM ConfirmDialog (useConfirm), KEIN natives
+    // window.confirm → im Modal auf "Entfernen" klicken (nicht page.once("dialog")).
+    await page.getByTestId("confirm-dialog-confirm").click();
 
     // Strip verschwindet
     await expect(page.locator('[data-testid="audio-track-strip"]')).toHaveCount(0, { timeout: 5000 });
