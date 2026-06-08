@@ -2967,6 +2967,10 @@ class AudioEngineClass {
     this.stopActiveVoices();
     this._lastSchedPatternId = null;
     this._isPlaying = false;
+    // v3.269: Queued (quantisierten) Pattern-Switch beim Stop verwerfen — sonst
+    // feuert er überraschend beim nächsten Play. Mid-Fade-Master-Gain restoren.
+    this.queuedPatternId = null;
+    if (this._crossfadeActive) this._restoreCrossfadeGain();
     if (this.schedulerTimer !== null) {
       clearInterval(this.schedulerTimer);
       this.schedulerTimer = null;

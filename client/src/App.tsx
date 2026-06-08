@@ -160,10 +160,12 @@ import { PatternLaunchPad } from "@/components/PerformanceMode/PatternLaunchPad"
 import { AutoMixPanel } from "@/components/AutoMix/AutoMixPanel";
 import { categorizeDrumName } from "@/utils/drumCategory";
 import { PatternVariationsBar } from "@/components/PatternVariation/PatternVariationsBar";
+import { shouldQuantizeSwitch } from "@/utils/patternSwitch";
 import {
   usePerformanceStore,
   queuePattern as queuePerformancePattern,
   setQuantizeMode as setPerformanceQuantizeMode,
+  getQuantizeMode as getPerformanceQuantizeMode,
   getPads as getPerformancePads,
   // Phase 2 popup-window-sync: edit + reorder actions
   setPadAt as setPerformancePadAt,
@@ -755,6 +757,24 @@ export default function App() {
   const dm = useDrumMachineStore();
   const dmRef = useRef(dm);
   dmRef.current = dm;
+
+  // Performance-Pad-Pattern-Switch (v3.269): zentral, weil 3 Call-Sites
+  // (On-Screen-Pad, Macro/Hardware-Bridge, Popup). Bei laufendem Transport +
+  // Quantize≠step läuft der Switch über die Engine-Queue → quantisierter Wechsel
+  // am Bar/Beat-Boundary (+ optionaler Crossfade). Sonst sofort (alt-Verhalten).
+  // Stabil (deps []): liest Live-State über AudioEngine.isPlaying + getQuantizeMode
+  // + dmRef → kein stale Closure (auch aus dem []-Event-Listener nutzbar).
+  // NUR Performance-Pads — Song-Mode/Gruppen schalten weiterhin sofort.
+  const performPatternSwitch = useCallback((patternId: string) => {
+    const q = getPerformanceQuantizeMode();
+    if (shouldQuantizeSwitch(AudioEngine.isPlaying, q)) {
+      AudioEngine.setQueuedPattern(patternId, q);
+      queuePerformancePattern(patternId); // Display: Pad als "queued" markieren
+    } else {
+      dmRef.current.setActivePattern(patternId);
+      queuePerformancePattern(patternId);
+    }
+  }, []);
 
   // Pattern-Gruppen-Sequenz (Pattern-Manager Phase 2): wenn eine Gruppe als
   // Playlist abgespielt wird, am Loop-Ende (Step 0) zum nächsten gültigen
@@ -2077,8 +2097,7 @@ export default function App() {
       const pads = getPerformancePads();
       const pad = pads[padIndex];
       if (!pad || !pad.patternId) return;
-      dmRef.current.setActivePattern(pad.patternId);
-      queuePerformancePattern(pad.patternId);
+      performPatternSwitch(pad.patternId); // quantisiert während Playback (s.o.)
     };
 
     const onTrigger = (e: Event) => {
@@ -3788,8 +3807,7 @@ export default function App() {
       switch (action.type) {
         case "pad-click":
           if (typeof action.patternId === "string" && action.patternId.length > 0) {
-            dmRef.current.setActivePattern(action.patternId);
-            queuePerformancePattern(action.patternId);
+            performPatternSwitch(action.patternId); // quantisiert während Playback (s.o.)
           }
           break;
         case "quantize-mode-change":
@@ -5250,10 +5268,7 @@ export default function App() {
           quantizeMode={performance.quantizeMode}
           bpm={project.bpm}
           currentStep={dm.currentStep}
-          onPadClick={(patternId) => {
-            dm.setActivePattern(patternId);
-            queuePerformancePattern(patternId);
-          }}
+          onPadClick={performPatternSwitch}
           onQuantizeModeChange={setPerformanceQuantizeMode}
           onClose={() => setPerformanceActive(false)}
           onOpenInWindow={electron.isElectron ? handleOpenPerformanceWindow : undefined}

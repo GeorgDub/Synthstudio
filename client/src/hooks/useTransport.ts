@@ -16,6 +16,7 @@ import { getPattern } from "@/store/useMelodicPartStore";
 import { useTransposeStore } from "@/store/useTransposeStore";
 import { getArpState, getArpSteps } from "@/store/useArpStore";
 import { usePatternCrossfadeStore } from "@/store/usePatternCrossfadeStore";
+import { clearQueue as clearPerformanceQueue } from "@/store/usePerformanceStore";
 
 interface UseTransportOptions {
   isPlaying: boolean;
@@ -126,6 +127,18 @@ export function useTransport({
   dmRef2.current = dm;
   const bpmRef = useRef(bpm);
   bpmRef.current = bpm;
+
+  // patternSwitchCallback (v3.269): Wenn der Engine-Scheduler einen queued
+  // (quantisierten) Pattern-Switch am Boundary konsumiert, führen wir hier den
+  // tatsächlichen Wechsel aus + leeren die Performance-Display-Queue. Ref-basiert
+  // (dmRef2) → kein stale Closure. Vorher war diese Engine-Capability tot.
+  useEffect(() => {
+    const unsub = AudioEngine.onPatternSwitch((nextId: string) => {
+      dmRef2.current.setActivePattern(nextId);
+      clearPerformanceQueue();
+    });
+    return unsub;
+  }, []);
 
   useEffect(() => {
     if (bpm === prevBpm.current) return;
