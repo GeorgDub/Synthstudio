@@ -123,6 +123,15 @@ async function setViewport(page: Page, w: number, h: number) {
 }
 
 async function gotoApp(page: Page) {
+  // License + Welcome seeden, sonst deckt das Activation/Welcome-Modal die Tabs
+  // ab und jeder tab.click() läuft in einen Timeout (Spec war ohne diesen Seed
+  // pre-existing kaputt — nicht in pnpm test, daher unbemerkt).
+  await page.addInitScript(() => {
+    try {
+      window.localStorage.setItem("synthstudio:license:v1", JSON.stringify({ status: "pro", trialStartedAt: Date.now(), licenseKey: "PLAY", activatedEmail: "e2e@test.local" }));
+      window.localStorage.setItem("synthstudio:welcome:v1", JSON.stringify({ seen: true, dismissed: true, seenAt: Date.now() }));
+    } catch { /* */ }
+  });
   await page.goto("/");
   await page.waitForSelector('[role="tablist"]', { timeout: 15_000 });
 }
