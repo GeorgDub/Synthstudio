@@ -59,6 +59,14 @@ export const DEFAULT_SYNTH_PARAMS: SynthParams = {
   glide: 0,
 };
 
+// LFO→Filter (v3.269): Der Synth-Voice-Pfad hat regulär KEINEN Filter. Wenn der
+// LFO auf "filter" routet, fügen wir per Voice einen Lowpass ein und sweepen
+// dessen Cutoff. Es gibt (noch) keinen Cutoff/Q-Knopf — daher feste, musikalisch
+// sinnvolle Werte: Basis-Cutoff + moderate Resonanz, Hub skaliert mit lfoDepth.
+const FILTER_LFO_BASE_HZ = 1500;   // Basis-Cutoff (Mitte des Sweeps)
+const FILTER_LFO_Q = 4;            // hörbare, nicht schrille Resonanz
+const FILTER_LFO_RANGE_HZ = 1200;  // ±Hz-Hub bei lfoDepth = 100
+
 // ─── BPM-Sync Berechnung ──────────────────────────────────────────────────────
 
 export const LFO_BPM_RATES: Record<LfoBpmRate, number> = {
@@ -264,12 +272,26 @@ export class SynthEngine {
       ? this._triggerFm(frequency, params, now, releaseEnd, prevFreq)
       : this._triggerWavetable(frequency, params, now, releaseEnd, prevFreq);
 
-    // LFO
-    if (params.lfoEnabled) {
-      this._attachLfo(params, now, releaseEnd, ampEnv, oscOut.detuneTarget ?? null);
+    // LFO→Filter: nur bei lfoTarget==="filter" einen Lowpass in den Voice-Pfad
+    // einfügen (osc → filter → ampEnv). pitch/volume-Voices bleiben byte-identisch.
+    let ampInput: AudioNode = oscOut.node;
+    let filterFreqTarget: AudioParam | null = null;
+    if (params.lfoEnabled && params.lfoTarget === "filter") {
+      const filter = ctx.createBiquadFilter();
+      filter.type = "lowpass";
+      filter.frequency.setValueAtTime(FILTER_LFO_BASE_HZ, now);
+      filter.Q.value = FILTER_LFO_Q;
+      oscOut.node.connect(filter);
+      ampInput = filter;
+      filterFreqTarget = filter.frequency;
     }
 
-    oscOut.node.connect(ampEnv);
+    // LFO
+    if (params.lfoEnabled) {
+      this._attachLfo(params, now, releaseEnd, ampEnv, oscOut.detuneTarget ?? null, filterFreqTarget);
+    }
+
+    ampInput.connect(ampEnv);
     ampEnv.connect(destination ?? this.destination);
     return ampEnv;
   }
@@ -340,6 +362,7 @@ export class SynthEngine {
     stopTime: number,
     ampEnv: GainNode,
     detuneTarget: AudioParam | null,
+    filterFreqTarget: AudioParam | null = null,
   ) {
     const ctx = this.ctx;
 
@@ -350,7 +373,7 @@ export class SynthEngine {
 
     if (params.lfoWaveform === "random" || params.lfoWaveform === "sh") {
       // Sample & Hold / Random: regelmäßige zufällige Gain-Sprünge via setValueAtTime
-      this._attachRandomLfo(params, rate, startTime, stopTime, ampEnv, detuneTarget);
+      this._attachRandomLfo(params, rate, startTime, stopTime, ampEnv, detuneTarget, filterFreqTarget);
       return;
     }
 
@@ -364,15 +387,19 @@ export class SynthEngine {
     lfo.frequency.value = rate;
 
     const lfoGain = ctx.createGain();
-    lfoGain.gain.value = Math.max(0, params.lfoDepth);
+    // Filter-Target braucht einen Hz-Hub, nicht den Cents/Gain-Wert von lfoDepth.
+    lfoGain.gain.value = params.lfoTarget === "filter"
+      ? (params.lfoDepth / 100) * FILTER_LFO_RANGE_HZ
+      : Math.max(0, params.lfoDepth);
     lfo.connect(lfoGain);
 
     if (params.lfoTarget === "pitch" && detuneTarget) {
       lfoGain.connect(detuneTarget);
     } else if (params.lfoTarget === "volume") {
       lfoGain.connect(ampEnv.gain);
+    } else if (params.lfoTarget === "filter" && filterFreqTarget) {
+      lfoGain.connect(filterFreqTarget);
     }
-    // filter: TODO - connect to filter frequency in a future sprint
 
     lfo.start(startTime);
     lfo.stop(stopTime);
@@ -385,9 +412,23 @@ export class SynthEngine {
     stopTime: number,
     ampEnv: GainNode,
     detuneTarget: AudioParam | null,
+    filterFreqTarget: AudioParam | null = null,
   ) {
     const ctx = this.ctx;
     const intervalSec = 1 / Math.max(0.5, rate);
+
+    // Filter-Target: absolute Cutoff-Sprünge um den Basis-Cutoff (Hz-Hub).
+    if (params.lfoTarget === "filter" && filterFreqTarget) {
+      const depthHz = (params.lfoDepth / 100) * FILTER_LFO_RANGE_HZ;
+      let t = startTime;
+      while (t < stopTime) {
+        const value = Math.max(20, FILTER_LFO_BASE_HZ + (Math.random() * 2 - 1) * depthHz);
+        filterFreqTarget.setValueAtTime(value, t);
+        t += intervalSec;
+      }
+      return;
+    }
+
     const depth = Math.max(0, params.lfoDepth);
     const target = params.lfoTarget === "volume"
       ? ampEnv.gain
