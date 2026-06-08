@@ -582,6 +582,13 @@ class AudioEngineClass {
    * nicht über den Wechsel hinweg überlappen.
    */
   private _activeVoices = new Set<{ src: AudioBufferSourceNode; gain: GainNode }>();
+  /**
+   * v3.267.0: Obergrenze gleichzeitiger Sample-Voices. Verhindert, dass
+   * schnelles Re-Triggern vieler langer Samples die Voices unbegrenzt
+   * anstaut (→ CPU-Flut + Lags). Großzügig gewählt, greift nur bei echtem
+   * Overload; dann wird die ÄLTESTE Voice schnell ausgefadet (kein Stop-All).
+   */
+  private readonly MAX_ACTIVE_VOICES = 64;
   /** v3.263.0: zuletzt im Scheduler gesehene Pattern-ID (Wechsel-Erkennung). */
   private _lastSchedPatternId: string | null = null;
   /** targetPartId → SidechainSettings */
@@ -3760,6 +3767,21 @@ class AudioEngineClass {
    * Abschneiden und räumt sie bei `ended` automatisch wieder ab.
    */
   private _registerVoice(src: AudioBufferSourceNode, gain: GainNode): void {
+    // v3.267.0: Voice-Cap — bei Überlauf die älteste Voice schnell ausfaden +
+    // stoppen (Set-Iteration ist insertion-order → erstes Element = ältestes).
+    if (this._activeVoices.size >= this.MAX_ACTIVE_VOICES && this.ctx) {
+      const oldest = this._activeVoices.values().next().value;
+      if (oldest) {
+        const now = this.ctx.currentTime;
+        try {
+          oldest.gain.gain.cancelScheduledValues(now);
+          oldest.gain.gain.setValueAtTime(oldest.gain.gain.value, now);
+          oldest.gain.gain.linearRampToValueAtTime(0.0001, now + 0.005);
+          oldest.src.stop(now + 0.01);
+        } catch { /* Voice schon beendet */ }
+        this._activeVoices.delete(oldest);
+      }
+    }
     const entry = { src, gain };
     this._activeVoices.add(entry);
     src.addEventListener("ended", () => {
@@ -4025,7 +4047,11 @@ class AudioEngineClass {
     nodes.reverbDry.gain.value = 1.0;
     if (fx.reverbEnabled) {
       this._getOrCreateReverbBuffer(fx.reverbDecay).then(buf => {
-        if (buf) nodes.reverbConvolver.buffer = buf;
+        // v3.267.0: Try-Catch gegen Async-Race — der Channel kann zwischen
+        // Promise-Start und -Resolve via LRU disposed worden sein.
+        try {
+          if (buf && nodes.reverbConvolver) nodes.reverbConvolver.buffer = buf;
+        } catch { /* Node bereits disposed */ }
       });
     }
   }
