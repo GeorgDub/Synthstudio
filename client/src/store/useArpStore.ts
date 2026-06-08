@@ -49,8 +49,23 @@ export function getArpSteps(): ArpStep[] {
   });
 }
 
+const DEFAULT_ARP_STATE: ArpState = {
+  enabled: false, mode: "up", octaves: 1, notes: [60, 64, 67],
+  stepCount: 16, velocityPattern: "flat", outputMode: "synth", targetPartId: null,
+};
+
+/**
+ * Produktions-Reset (v3.270): setzt den Arp auf Defaults zurück, OHNE Listener
+ * zu entfernen — gemounteten Komponenten re-rendern. Wird von "Neues Projekt"
+ * (doFullProjectReset) aufgerufen; vorher leckte der Arp-State ins neue Projekt.
+ */
+export function resetArp(): void {
+  _state = { ...DEFAULT_ARP_STATE };
+  notify();
+}
+
 export function __resetArpForTests(): void {
-  _state = { enabled: false, mode: "up", octaves: 1, notes: [60, 64, 67], stepCount: 16, velocityPattern: "flat", outputMode: "synth", targetPartId: null };
+  _state = { ...DEFAULT_ARP_STATE };
   _listeners.clear();
 }
 

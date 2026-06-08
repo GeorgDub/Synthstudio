@@ -24,6 +24,8 @@ import { PatternVariationPanel } from "@/components/PatternVariation";
 import { ChordSuggestionPanel } from "@/components/ChordSuggestion/ChordSuggestionPanel";
 import { applyVariationToPattern } from "@/store/usePatternVariationStore";
 import { MacroPanel } from "@/components/Macro/MacroPanel";
+import { ArpeggiatorPanel } from "@/components/Arpeggiator/ArpeggiatorPanel";
+import { useArpStore, setArpEnabled } from "@/store/useArpStore";
 import { MuteSoloGroupPanel } from "@/components/MuteSoloGroups/MuteSoloGroupPanel";
 import { EnvelopeFollowerPanel } from "./EnvelopeFollowerPanel";
 import { useMidiLearn } from "@/hooks/useMidiLearn";
@@ -1166,6 +1168,10 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
   const [metronomSubdivision, setMetronomSubdivision] = useState<"beat" | "eighth" | "sixteenth">("beat");
   const [showMetronomPanel, setShowMetronomPanel] = useState(false);
   const metronomPanelRef = useRef<HTMLDivElement>(null);
+  // Arpeggiator-Toolbar (v3.270): kompaktes Cluster neben dem Metronom.
+  const arp = useArpStore();
+  const [showArpPanel, setShowArpPanel] = useState(false);
+  const arpPanelRef = useRef<HTMLDivElement>(null);
   const [masterVolume, setMasterVolume] = useState(0.85);
   const [bpmInput, setBpmInput] = useState(String(bpm));
   // v1.86: Right-Click-MIDI-Learn auf BPM + Play/Stop
@@ -2102,6 +2108,18 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
     return () => document.removeEventListener("mousedown", handler);
   }, [showMetronomPanel]);
 
+  // Arp-Panel schließen bei Klick außerhalb (analog Metronom)
+  useEffect(() => {
+    if (!showArpPanel) return;
+    const handler = (e: MouseEvent) => {
+      if (!arpPanelRef.current?.contains(e.target as Node)) {
+        setShowArpPanel(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [showArpPanel]);
+
   // Metronom-Sync
   useEffect(() => {
     const downbeatFreq = 800 + metronomTone * 1200;
@@ -2840,6 +2858,37 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
             ))}
           </div>
         )}
+
+        {/* Arpeggiator (neben Metronom) — v3.270 */}
+        <div ref={arpPanelRef} className="relative">
+          <div className="flex items-center gap-0.5 px-1.5 py-1 rounded bg-bg-panel border border-border-color">
+            <button
+              onClick={() => setArpEnabled(!arp.enabled)}
+              data-testid="arp-toolbar-toggle"
+              aria-pressed={arp.enabled}
+              className={[
+                "px-2 py-0.5 rounded text-[10px] font-bold transition-colors",
+                arp.enabled ? "bg-accent-primary text-bg-base" : "bg-bg-elevated text-text-dim hover:text-text-primary",
+              ].join(" ")}
+              title={arp.enabled ? "Arpeggiator aus" : "Arpeggiator ein"}
+            >ARP</button>
+            <button
+              onClick={() => setShowArpPanel(prev => !prev)}
+              data-testid="arp-toolbar-settings"
+              className={[
+                "px-1.5 py-0.5 rounded text-[10px] transition-colors",
+                showArpPanel ? "bg-bg-elevated text-white" : "text-text-dim hover:text-text-primary",
+              ].join(" ")}
+              title="Arpeggiator-Einstellungen"
+            >⚙</button>
+          </div>
+
+          {showArpPanel && (
+            <div className="absolute top-full right-0 z-50 mt-1 w-72 max-h-[75vh] overflow-y-auto" data-testid="arp-toolbar-panel">
+              <ArpeggiatorPanel />
+            </div>
+          )}
+        </div>
 
         {/* Metronom */}
         <div ref={metronomPanelRef} className="relative">

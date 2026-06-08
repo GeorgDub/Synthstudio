@@ -55,7 +55,6 @@ import { Humanizer } from "@/components/Humanizer";
 import { DrumMachine } from "@/components/DrumMachine";
 import { SessionPanel } from "@/components/CollabSession";
 import { PatternGeneratorPanel } from "@/components/PatternGenerator";
-import { ArpeggiatorPanel } from "@/components/Arpeggiator";
 import GeneratorView from "@/components/generator/GeneratorView.jsx"; // *** NEUER IMPORT ***
 import { PatternLibrary } from "@/components/PatternLibrary/PatternLibrary";
 import { savePatternToLibrary } from "@/store/usePatternLibraryStore";
@@ -328,6 +327,7 @@ import { getPatternGroupState, setPlayingGroup, usePatternGroupStore } from "@/s
 import { resetNoteRepeat, toggleNoteRepeat, isNoteRepeatEnabled } from "@/store/useNoteRepeatStore";
 import { resetTranspose } from "@/store/useTransposeStore";
 import { resetMorph, getMorphState, setActive as setMorphActive } from "@/store/useMorphStore";
+import { resetArp } from "@/store/useArpStore";
 import { getSceneState, setActiveScene as sceneStoreSetActiveScene } from "@/store/useSceneStore";
 import {
   getMidiStepRecorderState,
@@ -3351,6 +3351,7 @@ export default function App() {
     resetNoteRepeat();
     resetTranspose();
     resetMorph();
+    resetArp();
     // React-Hook-State Sub-Stores
     mixer.resetMixer();
     automation.resetAutomation();
@@ -4752,9 +4753,8 @@ export default function App() {
                             </div>
                           </div>
                         ) : (
-                          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 max-w-4xl">
+                          <div className="max-w-2xl">
                             <PatternGeneratorPanel />
-                            <ArpeggiatorPanel />
                           </div>
                         )}
                       </div>

@@ -16,6 +16,7 @@ import {
   setArpMode,
   setArpNotes,
   setArpVelocityPattern,
+  resetArp,
   getArpSteps,
   __resetArpForTests,
 } from "@/store/useArpStore";
@@ -87,6 +88,20 @@ describe("useArpStore – Hook-Layer (jsdom)", () => {
     setArpVelocityPattern("crescendo");
     const cres = getArpSteps().filter((s) => s.active).map((s) => s.velocity);
     expect(new Set(cres).size).toBeGreaterThan(1);
+  });
+
+  it("resetArp re-rendert gemountete Hooks (Listener bleiben aktiv — Neues Projekt)", () => {
+    const { result } = renderHook(() => useArpStore());
+    act(() => {
+      setArpEnabled(true);
+      setArpMode("down");
+    });
+    expect(result.current.enabled).toBe(true);
+    expect(result.current.mode).toBe("down");
+    // resetArp (Produktions-Reset) → Hook MUSS re-rendern auf Defaults.
+    act(() => { resetArp(); });
+    expect(result.current.enabled).toBe(false);
+    expect(result.current.mode).toBe("up");
   });
 
   it("Unmount entfernt Listener — keine Re-Renders nach Cleanup", () => {

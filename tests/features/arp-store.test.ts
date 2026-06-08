@@ -13,6 +13,7 @@ import {
   setArpStepCount,
   setArpOutputMode,
   setArpTargetPartId,
+  resetArp,
   getArpSteps,
   getArpState,
   __resetArpForTests,
@@ -159,6 +160,36 @@ describe("useArpStore – Output-Modus (v3.268)", () => {
     expect(getArpState().targetPartId).toBe("part-7");
     setArpTargetPartId(null);
     expect(getArpState().targetPartId).toBeNull();
+  });
+});
+
+describe("useArpStore – resetArp (Neues Projekt, v3.270)", () => {
+  beforeEach(() => __resetArpForTests());
+
+  it("setzt ALLE Felder auf Defaults zurück (vorher leckte State ins neue Projekt)", () => {
+    setArpEnabled(true);
+    setArpMode("down");
+    setArpOctaves(3);
+    setArpNotes([1, 2, 3]);
+    setArpStepCount(8);
+    setArpOutputMode("midi");
+    setArpTargetPartId("part-x");
+    resetArp();
+    const s = getArpState();
+    expect(s.enabled).toBe(false);
+    expect(s.mode).toBe("up");
+    expect(s.octaves).toBe(1);
+    expect(s.notes).toEqual([60, 64, 67]);
+    expect(s.stepCount).toBe(16);
+    expect(s.outputMode).toBe("synth");
+    expect(s.targetPartId).toBeNull();
+  });
+
+  it("ist idempotent / safe auch wenn bereits auf Defaults", () => {
+    resetArp();
+    resetArp();
+    expect(getArpState().enabled).toBe(false);
+    expect(getArpState().notes).toEqual([60, 64, 67]);
   });
 });
 
