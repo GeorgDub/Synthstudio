@@ -63,6 +63,7 @@ import { DEFAULT_GRANULAR_PARAMS } from "@/audio/GranularEngine";
 import { PolyrhythmVisualizer } from "./PolyrhythmVisualizer";
 import { SampleSliceEditor } from "@/components/SampleEditor/SampleSliceEditor";
 import type { SliceSpec } from "@/utils/sampleSlicing";
+import { encodeWavMono } from "@/audio/wavEncoder";
 // v3.164.0: Pattern-Mutator Pure-Helpers für Toolbar (shift/double/half/reverse/invert).
 import {
   shiftPattern as shiftPatternBoolArr,
@@ -1642,28 +1643,45 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
   }, [handleSliceFile]);
 
   const handleSlicesApply = useCallback((slices: Float32Array[], _specs: SliceSpec[]) => {
-    // MVP: kein direktes Pad-Slot-Wiring (Performance-Pads halten patternId, nicht
-    // Sample-Buffer). Wir reichen die Slices als CustomEvent durch — App-Level kann
-    // sie spaeter konsumieren (z.B. KeyboardSampler-Zonen oder ein neuer
-    // Slice-Pad-Store). Heute: Toast + Console-Log + Modal schliessen.
+    const sampleRate = sliceEditor?.sampleRate ?? 44100;
+    const baseName = sliceEditor?.sampleName ?? "Slice";
+
+    // v3.266: Direct-Assign — jeden Slice als WAV-Blob-URL encoden und der Reihe
+    // nach auf die Drum-Kanäle des aktiven Patterns legen (setPartSample). So
+    // sind die Slices sofort sequenzierbar. Überzählige Slices (mehr als Kanäle)
+    // gehen zusätzlich an die Performance-Slice-Pads via CustomEvent.
+    let assigned = 0;
+    const parts = dm.getActivePattern()?.parts ?? [];
+    for (let i = 0; i < slices.length && i < parts.length; i++) {
+      try {
+        const wav = encodeWavMono(slices[i], sampleRate);
+        const url = URL.createObjectURL(new Blob([wav], { type: "audio/wav" }));
+        dm.setPartSample(parts[i].id, url, `${baseName} ${i + 1}`);
+        assigned++;
+      } catch (err) {
+        console.warn("[SampleSlicer] slice→part assign failed", err);
+      }
+    }
+
+    // Slice-Pad-System (Performance-Pads) weiterhin füttern — auch für Slices,
+    // die über die Kanal-Anzahl hinausgehen.
     try {
       window.dispatchEvent(new CustomEvent("sample-slicer:apply", {
-        detail: {
-          sampleName: sliceEditor?.sampleName ?? "sample",
-          sampleRate: sliceEditor?.sampleRate ?? 44100,
-          slices,
-        },
+        detail: { sampleName: baseName, sampleRate, slices },
       }));
     } catch (err) {
       console.warn("[SampleSlicer] CustomEvent dispatch failed", err);
     }
-    const padCount = Math.min(slices.length, 16);
+
+    const extra = slices.length - assigned;
     toast(
-      `${padCount} Slice(s) erstellt — Direct-Assign in Pad-Slots noch nicht implementiert. Slice-Buffer via 'sample-slicer:apply'-Event verfuegbar.`,
-      { kind: "info", duration: 4500 },
+      assigned > 0
+        ? `${assigned} Slice(s) auf Drum-Kanäle gelegt${extra > 0 ? ` (+${extra} auf Slice-Pads)` : ""}`
+        : `${Math.min(slices.length, 16)} Slice(s) auf Slice-Pads gelegt`,
+      { kind: "success", duration: 4000 },
     );
     setSliceEditor(null);
-  }, [sliceEditor]);
+  }, [sliceEditor, dm]);
 
   // ── v3.169.0: Pattern Clipboard-Copy/Paste ─────────────────────────────────
   // Serialisiert ein PatternData via patternSerializer in einen Magic-Header-

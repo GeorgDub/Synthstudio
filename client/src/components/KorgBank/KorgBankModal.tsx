@@ -591,9 +591,25 @@ export function KorgBankModal({
                     disabled={!onAddSample || filteredRows.length === 0}
                     className="px-3 py-1 rounded text-xs bg-accent-primary text-bg-base hover:opacity-90 transition-opacity disabled:opacity-40"
                   >
-                    Alle importieren ({filteredRows.length})
+                    Alle Samples importieren ({filteredRows.length})
                   </button>
                 </div>
+              )}
+
+              {/* v3.266: Hinweis — Samples ≠ Patterns. Erklärt warum "Import"
+                  hier nur die Sampler holt und die Steps separat liegen. */}
+              {activeTab === "samples" && state.patterns.length > 0 && (
+                <p className="text-[11px] text-text-dim -mt-1" data-testid="korg-bank-samples-hint">
+                  Hier werden nur die <span className="text-text-muted">Sampler</span> importiert.
+                  Die Pattern mit Steps liegen im Tab{" "}
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab("patterns")}
+                    className="text-accent-primary hover:underline font-medium"
+                  >
+                    „Patterns ({state.patterns.length})"
+                  </button>.
+                </p>
               )}
 
               {activeTab === "patterns" && state.patterns.length > 0 && (
