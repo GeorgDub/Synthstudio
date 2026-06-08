@@ -37,7 +37,7 @@ export function CollabStatus({
         className={`flex items-center gap-1.5 px-2 py-1 rounded text-xs transition-colors ${
           isActive
             ? "bg-accent-success/30 hover:bg-accent-success/40 text-accent-success"
-            : "bg-bg-elevated hover:bg-bg-elevated text-text-muted"
+            : "bg-bg-elevated hover:text-text-primary text-text-muted"
         }`}
       >
         <div className={`w-2 h-2 rounded-full ${isActive ? "bg-accent-success animate-pulse" : "bg-bg-elevated"}`} />
@@ -104,7 +104,7 @@ export function CollabStatus({
               }
             }}
             disabled={isConnecting || joinCode.length !== 6 || !joinName.trim()}
-            className="w-full bg-bg-elevated hover:bg-bg-elevated disabled:opacity-40 rounded py-1.5"
+            className="w-full bg-bg-elevated hover:text-text-primary disabled:opacity-40 rounded py-1.5"
           >
             Beitreten
           </button>

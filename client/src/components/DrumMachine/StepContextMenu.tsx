@@ -87,7 +87,7 @@ export function StepContextMenu({
                   className={`text-left px-2 py-1 rounded text-xs transition-colors ${
                     condition.type === opt.value.type
                       ? "bg-accent-primary/70 text-white"
-                      : "bg-bg-elevated hover:bg-bg-elevated text-text-primary"
+                      : "bg-bg-elevated hover:brightness-125 text-text-primary"
                   }`}
                 >
                   {opt.label}
@@ -115,7 +115,7 @@ export function StepContextMenu({
                 />
                 <button
                   onClick={() => onConditionChange({ type: "every", n: everyN, of: everyOf })}
-                  className="bg-bg-elevated hover:bg-bg-elevated px-1.5 py-0.5 rounded text-xs"
+                  className="bg-bg-elevated hover:text-text-primary px-1.5 py-0.5 rounded text-xs"
                 >
                   OK
                 </button>

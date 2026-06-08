@@ -392,7 +392,7 @@ function WaveformPanel({
               "w-7 h-7 rounded flex items-center justify-center text-xs transition-all duration-100 flex-shrink-0",
               isPlaying
                 ? "bg-accent-secondary text-bg-base"
-                : "bg-bg-elevated text-text-primary hover:bg-bg-elevated hover:text-text-primary",
+                : "bg-bg-elevated text-text-primary hover:brightness-125 ",
             ].join(" ")}
             title={isPlaying ? "Preview stoppen (Leertaste)" : "Preview abspielen (Leertaste)"}
           >
@@ -5504,12 +5504,12 @@ export function SampleBrowser({
                   <button
                     onClick={handleNavigatePrev}
                     title="Vorheriges Sample (Pfeil hoch)"
-                    className="w-6 h-6 rounded bg-bg-elevated text-text-muted hover:bg-bg-elevated hover:text-text-primary transition-colors text-xs"
+                    className="w-6 h-6 rounded bg-bg-elevated text-text-muted hover:text-text-primary transition-colors text-xs"
                   >▲</button>
                   <button
                     onClick={handleNavigateNext}
                     title="Nächstes Sample (Pfeil runter)"
-                    className="w-6 h-6 rounded bg-bg-elevated text-text-muted hover:bg-bg-elevated hover:text-text-primary transition-colors text-xs"
+                    className="w-6 h-6 rounded bg-bg-elevated text-text-muted hover:text-text-primary transition-colors text-xs"
                   >▼</button>
                   {selectedIndex >= 0 && (
                     <span className="text-[10px] text-text-dim">
@@ -5712,7 +5712,7 @@ export function SampleBrowser({
                             "w-6 h-6 rounded flex items-center justify-center text-[10px] transition-all duration-100",
                             isThisPlaying
                               ? "bg-accent-primary text-bg-base opacity-100"
-                              : "opacity-0 group-hover:opacity-100 bg-bg-elevated text-text-muted hover:bg-bg-elevated hover:text-text-primary",
+                              : "opacity-0 group-hover:opacity-100 bg-bg-elevated text-text-muted hover:text-text-primary ",
                           ].join(" ")}
                         >
                           {isThisPlaying ? "■" : "▶"}

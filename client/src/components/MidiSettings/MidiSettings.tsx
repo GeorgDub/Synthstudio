@@ -634,7 +634,7 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
                   className={`w-full flex items-center justify-between p-3 rounded-lg text-left transition-colors ${
                     midi.activeDeviceId === device.id
                       ? "bg-accent-primary/20 border border-accent-primary"
-                      : "bg-bg-elevated hover:bg-bg-elevated border border-transparent"
+                      : "bg-bg-elevated hover:text-text-primary border border-transparent"
                   }`}
                 >
                   <div>
@@ -1046,7 +1046,7 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
             <div className="flex gap-2">
               <button
                 onClick={midi.skipAutoLearnTarget}
-                className="px-3 py-1 bg-bg-elevated hover:bg-bg-elevated text-text-primary text-xs rounded"
+                className="px-3 py-1 bg-bg-elevated hover:brightness-125 text-text-primary text-xs rounded"
               >
                 Skip
               </button>
@@ -1131,7 +1131,7 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
             </div>
             <button
               onClick={midi.cancelLearn}
-              className="px-3 py-1 bg-bg-elevated hover:bg-bg-elevated text-text-primary text-xs rounded"
+              className="px-3 py-1 bg-bg-elevated hover:brightness-125 text-text-primary text-xs rounded"
             >
               Abbrechen
             </button>
@@ -1154,7 +1154,7 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
                   className={`flex items-center justify-between p-2 rounded text-left text-xs transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
                     existing
                       ? "bg-accent-primary/40 border border-accent-primary/50 hover:bg-accent-primary/60"
-                      : "bg-bg-elevated hover:bg-bg-elevated"
+                      : "bg-bg-elevated hover:text-text-primary"
                   }`}
                 >
                   <span className="text-text-primary">{label}</span>
@@ -1218,7 +1218,7 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
                     className={`flex items-center justify-between p-2 rounded text-left text-xs transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
                       existing
                         ? "bg-accent-primary/40 border border-accent-primary/50 hover:bg-accent-primary/60"
-                        : "bg-bg-elevated hover:bg-bg-elevated"
+                        : "bg-bg-elevated hover:text-text-primary"
                     }`}
                   >
                     <span className="text-text-primary">{r.label}</span>
@@ -1260,7 +1260,7 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
                   className={`w-full flex items-center justify-between p-2 rounded text-left text-xs transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
                     existing
                       ? "bg-accent-primary/40 border border-accent-primary/50 hover:bg-accent-primary/60"
-                      : "bg-bg-elevated hover:bg-bg-elevated"
+                      : "bg-bg-elevated hover:text-text-primary"
                   }`}
                 >
                   <div>
@@ -1669,7 +1669,7 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
                   className={`w-full flex items-center justify-between p-2 rounded text-left text-xs transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
                     existing
                       ? "bg-accent-primary/40 border border-accent-primary/50 hover:bg-accent-primary/60"
-                      : "bg-bg-elevated hover:bg-bg-elevated"
+                      : "bg-bg-elevated hover:text-text-primary"
                   }`}
                 >
                   <div>
@@ -2008,7 +2008,7 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
           className={`px-3 py-1 text-xs rounded font-medium transition-colors ${
             monitorPaused
               ? "bg-accent-secondary/30 text-accent-secondary hover:bg-accent-secondary/50"
-              : "bg-bg-elevated text-text-primary hover:bg-bg-elevated"
+              : "bg-bg-elevated text-text-primary hover:brightness-125"
           }`}
           data-testid="midi-monitor-pause"
         >
@@ -3160,7 +3160,7 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
         <div className="flex justify-end px-5 py-3 border-t border-border-color">
           <button
             onClick={onClose}
-            className="px-4 py-1.5 bg-bg-elevated hover:bg-bg-elevated text-text-primary text-sm rounded"
+            className="px-4 py-1.5 bg-bg-elevated hover:brightness-125 text-text-primary text-sm rounded"
           >
             Schließen
           </button>

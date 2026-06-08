@@ -258,7 +258,7 @@ function PartnerSampleBrowser({
               "text-[9px] px-1.5 py-0.5 rounded transition-colors",
               category === cat
                 ? "text-black"
-                : "bg-bg-elevated text-text-dim hover:bg-bg-elevated",
+                : "bg-bg-elevated text-text-dim hover:text-text-primary",
             ].join(" ")}
             style={category === cat ? { background: accent, color: "#000" } : {}}
           >

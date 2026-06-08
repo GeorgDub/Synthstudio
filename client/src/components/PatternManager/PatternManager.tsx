@@ -202,7 +202,7 @@ export function PatternManager({ dm, onPlayGroup }: Props) {
             const inSelGroup = selectedGroup?.patternIds.includes(p.id) ?? false;
             return (
               <div key={p.id} onClick={() => dm.setActivePattern(p.id)}
-                className={`group rounded border px-3 py-2 cursor-pointer transition-colors ${isActive ? "border-accent-primary bg-bg-elevated" : "border-border-color bg-bg-panel hover:bg-bg-elevated"}`}
+                className={`group rounded border px-3 py-2 cursor-pointer transition-colors ${isActive ? "border-accent-primary bg-bg-elevated" : "border-border-color bg-bg-panel hover:text-text-primary"}`}
                 data-testid={`pattern-manager-row-${p.id}`}>
                 <div className="flex items-center gap-2">
                   {isPlaying && <span className="text-accent-danger text-[10px]" title="Spielt gerade">▶</span>}

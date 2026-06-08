@@ -288,7 +288,7 @@ export function SongTimeline({ song, isPlaying, className = "" }: SongTimelinePr
             "px-2 py-0.5 rounded text-[10px] font-bold transition-colors",
             song.songModeActive
               ? "bg-accent-primary text-bg-base"
-              : "bg-bg-elevated text-text-muted hover:bg-bg-elevated",
+              : "bg-bg-elevated text-text-muted hover:text-text-primary",
           ].join(" ")}
           title="Song-Modus ein/ausschalten"
         >
@@ -302,7 +302,7 @@ export function SongTimeline({ song, isPlaying, className = "" }: SongTimelinePr
             "px-2 py-0.5 rounded text-[10px] transition-colors",
             song.loopSong
               ? "bg-accent-secondary text-bg-base"
-              : "bg-bg-elevated text-text-muted hover:bg-bg-elevated",
+              : "bg-bg-elevated text-text-muted hover:text-text-primary",
           ].join(" ")}
           title="Song-Loop ein/ausschalten"
         >
@@ -320,7 +320,7 @@ export function SongTimeline({ song, isPlaying, className = "" }: SongTimelinePr
             <button
               key={arr.label}
               onClick={() => song.createArrangement(arr.pattern)}
-              className="px-2 py-0.5 rounded text-[10px] bg-bg-elevated text-text-dim hover:bg-bg-elevated hover:text-text-primary transition-colors"
+              className="px-2 py-0.5 rounded text-[10px] bg-bg-elevated text-text-dim hover:text-text-primary transition-colors"
               title={`${arr.label}-Arrangement laden`}
             >
               {arr.label}

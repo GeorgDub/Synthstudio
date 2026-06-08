@@ -362,7 +362,7 @@ export function ThemeSettings({ isOpen, onClose }: Props) {
         </div>
 
         <div className="px-5 py-3 border-t border-border-color flex justify-end mt-auto">
-          <button onClick={onClose} className="px-4 py-1.5 text-xs rounded bg-bg-elevated text-text-muted hover:bg-bg-elevated hover:text-text-primary transition-colors">
+          <button onClick={onClose} className="px-4 py-1.5 text-xs rounded bg-bg-elevated text-text-muted hover:text-text-primary transition-colors">
             Schließen
           </button>
         </div>

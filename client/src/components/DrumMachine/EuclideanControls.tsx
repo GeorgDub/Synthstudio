@@ -46,7 +46,7 @@ export function EuclideanControls({ partId, partIndex = 0, stepCount, onApply }:
       <Popover.Trigger asChild>
         <button
           title="Euclidean Rhythm Generator"
-          className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-bg-elevated hover:bg-bg-elevated text-text-muted hover:text-accent-secondary transition-colors border border-border-color"
+          className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-bg-elevated hover:text-text-primary text-text-muted hover:text-accent-secondary transition-colors border border-border-color"
         >
           E:{hits}/{steps}
         </button>

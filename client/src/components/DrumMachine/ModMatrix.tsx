@@ -50,7 +50,7 @@ export function ModMatrix({ entries, partIds, onAddEntry, onRemoveEntry, onUpdat
         <div className="flex items-center gap-1">
           <button
             onClick={handleAdd}
-            className="text-xs bg-bg-elevated hover:bg-bg-elevated px-2 py-0.5 rounded"
+            className="text-xs bg-bg-elevated hover:text-text-primary px-2 py-0.5 rounded"
           >
             + Route
           </button>

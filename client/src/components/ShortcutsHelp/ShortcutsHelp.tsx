@@ -113,7 +113,7 @@ export function ShortcutsHelp({ onClose }: ShortcutsHelpProps) {
              tab === "ss-api"     ? "Scripte laufen sandboxed im Web-Worker — keine Browser-API, kein Netzzugriff" :
                                     "Rechtsklick auf jedes Element → MIDI-Learn · Templates-Tab für Hardware-Presets"}
           </span>
-          <button onClick={onClose} className="px-4 py-1.5 bg-bg-elevated hover:bg-bg-elevated text-text-primary text-sm rounded">
+          <button onClick={onClose} className="px-4 py-1.5 bg-bg-elevated hover:brightness-125 text-text-primary text-sm rounded">
             Schließen
           </button>
         </div>

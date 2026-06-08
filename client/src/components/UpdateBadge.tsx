@@ -49,7 +49,7 @@ export function UpdateBadge() {
         <span title="Auf Updates prüfen">↻</span>,
         checkForUpdates,
         "Auf Updates prüfen",
-        "bg-bg-elevated text-text-dim hover:bg-bg-elevated hover:text-text-primary"
+        "bg-bg-elevated text-text-dim hover:text-text-primary "
       );
 
     case "checking":
@@ -119,7 +119,7 @@ export function UpdateBadge() {
         <span className="w-1.5 h-1.5 rounded-full bg-accent-danger flex-shrink-0" />,
         checkForUpdates,
         `Update-Fehler: ${state.errorMessage ?? "unbekannt"} – Klicken zum Wiederholen`,
-        "bg-bg-elevated text-text-dim hover:bg-bg-elevated"
+        "bg-bg-elevated text-text-dim hover:text-text-primary"
       );
 
     default:

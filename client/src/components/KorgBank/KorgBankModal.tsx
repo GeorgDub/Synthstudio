@@ -502,7 +502,7 @@ export function KorgBankModal({
           <button
             data-testid="korg-bank-close"
             onClick={onClose}
-            className="px-2 py-1 text-xs rounded bg-bg-elevated text-text-muted hover:text-text-primary hover:bg-bg-elevated transition-colors"
+            className="px-2 py-1 text-xs rounded bg-bg-elevated text-text-muted hover:text-text-primary transition-colors"
             title="Schliessen"
           >
             ✕

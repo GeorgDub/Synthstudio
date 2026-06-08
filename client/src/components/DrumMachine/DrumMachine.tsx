@@ -2198,7 +2198,7 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
           <div className="relative">
           <button
             onClick={() => setShowPatternMenu(prev => !prev)}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-bg-elevated hover:bg-bg-elevated rounded text-xs font-medium transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-bg-elevated hover:text-text-primary rounded text-xs font-medium transition-colors"
           >
             <span>{pattern.name}</span>
             {dm.patterns.length > 1 && (
@@ -2715,7 +2715,7 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
                 "px-2 py-0.5 rounded text-[10px] font-mono transition-colors",
                 pattern.stepResolution === res
                   ? "bg-accent-primary/70 text-white"
-                  : "bg-bg-elevated text-text-muted hover:bg-bg-elevated",
+                  : "bg-bg-elevated text-text-muted hover:text-text-primary",
               ].join(" ")}
             >
               {res}
@@ -2735,7 +2735,7 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
                 "px-2 py-0.5 rounded text-[10px] font-mono transition-colors",
                 pattern.stepCount === n
                   ? "bg-bg-elevated text-white"
-                  : "bg-bg-elevated text-text-dim hover:bg-bg-elevated",
+                  : "bg-bg-elevated text-text-dim hover:text-text-primary",
               ].join(" ")}
             >
               {n}
@@ -2762,7 +2762,7 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
             title={pattern.bpm === null ? "Eigenes BPM setzen" : "Globales BPM verwenden"}
             className={[
               "px-2 py-0.5 rounded text-[9px] transition-colors",
-              pattern.bpm !== null ? "bg-accent-secondary text-bg-base" : "bg-bg-elevated text-text-dim hover:bg-bg-elevated",
+              pattern.bpm !== null ? "bg-accent-secondary text-bg-base" : "bg-bg-elevated text-text-dim hover:text-text-primary",
             ].join(" ")}
           >
             {pattern.bpm !== null ? "Eigenes" : "Global"}
@@ -2782,7 +2782,7 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
           onClick={() => dm.setVelocityMode(!dm.velocityMode)}
           className={[
             "px-2 py-1 rounded text-[10px] font-medium transition-colors",
-            dm.velocityMode ? "bg-accent-secondary text-bg-base" : "bg-bg-elevated text-text-dim hover:bg-bg-elevated",
+            dm.velocityMode ? "bg-accent-secondary text-bg-base" : "bg-bg-elevated text-text-dim hover:text-text-primary",
           ].join(" ")}
           title="Velocity-Modus"
         >VEL</button>
@@ -2818,7 +2818,7 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
           onClick={() => dm.setPitchMode(!dm.pitchMode)}
           className={[
             "px-2 py-1 rounded text-[10px] font-medium transition-colors",
-            dm.pitchMode ? "bg-accent-secondary text-bg-base" : "bg-bg-elevated text-text-dim hover:bg-bg-elevated",
+            dm.pitchMode ? "bg-accent-secondary text-bg-base" : "bg-bg-elevated text-text-dim hover:text-text-primary",
           ].join(" ")}
           title="Pitch-Modus (Rechtsklick auf Step)"
         >PITCH</button>
@@ -2844,7 +2844,7 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
               onClick={() => setMetronomOn(prev => !prev)}
               className={[
                 "px-2 py-0.5 rounded text-[10px] transition-colors",
-                metronomOn ? "bg-bg-elevated text-white" : "bg-bg-elevated text-text-dim hover:bg-bg-elevated",
+                metronomOn ? "bg-bg-elevated text-white" : "bg-bg-elevated text-text-dim hover:text-text-primary",
               ].join(" ")}
               title={metronomOn ? "Metronom aus" : "Metronom ein"}
             >♩</button>
@@ -2902,7 +2902,7 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
                         "flex-1 py-0.5 rounded text-[10px] font-mono transition-colors",
                         metronomBeatsPerBar === n
                           ? "bg-accent-primary/70 text-white"
-                          : "bg-bg-elevated text-text-dim hover:bg-bg-elevated",
+                          : "bg-bg-elevated text-text-dim hover:text-text-primary",
                       ].join(" ")}>{n}</button>
                   ))}
                 </div>
@@ -2918,7 +2918,7 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
                         "flex-1 py-0.5 rounded text-[10px] transition-colors",
                         metronomSubdivision === sub
                           ? "bg-accent-primary/70 text-white"
-                          : "bg-bg-elevated text-text-dim hover:bg-bg-elevated",
+                          : "bg-bg-elevated text-text-dim hover:text-text-primary",
                       ].join(" ")}>
                       {sub === "beat" ? "1/4" : sub === "eighth" ? "1/8" : "1/16"}
                     </button>
@@ -2936,7 +2936,7 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
                         "flex-1 py-0.5 rounded text-[10px] transition-colors",
                         metronomOscType === type
                           ? "bg-accent-secondary text-bg-base"
-                          : "bg-bg-elevated text-text-dim hover:bg-bg-elevated",
+                          : "bg-bg-elevated text-text-dim hover:text-text-primary",
                       ].join(" ")}>
                       {type === "sine" ? "Sinus" : type === "square" ? "Rechteck" : "Dreieck"}
                     </button>
@@ -2976,10 +2976,10 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
 
         {/* Undo/Redo */}
         <button onClick={dm.undo} disabled={!dm.canUndo}
-          className="w-6 h-6 rounded text-xs bg-bg-elevated text-text-dim hover:bg-bg-elevated disabled:opacity-30 transition-colors"
+          className="w-6 h-6 rounded text-xs bg-bg-elevated text-text-dim hover:text-text-primary disabled:opacity-30 transition-colors"
           title="Rückgängig (Ctrl+Z)">↩</button>
         <button onClick={dm.redo} disabled={!dm.canRedo}
-          className="w-6 h-6 rounded text-xs bg-bg-elevated text-text-dim hover:bg-bg-elevated disabled:opacity-30 transition-colors"
+          className="w-6 h-6 rounded text-xs bg-bg-elevated text-text-dim hover:text-text-primary disabled:opacity-30 transition-colors"
           title="Wiederholen (Ctrl+Y)">↪</button>
 
         {/* Play/Stop — v1.86: right-click für MIDI-Learn */}
@@ -3262,7 +3262,7 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
         <button
           onClick={() => midiImportRef.current?.click()}
           title="MIDI-Datei importieren"
-          className="px-2 py-1 rounded text-[10px] bg-bg-elevated text-text-dim hover:bg-bg-elevated hover:text-text-primary transition-colors"
+          className="px-2 py-1 rounded text-[10px] bg-bg-elevated text-text-dim hover:text-text-primary transition-colors"
         >
           ♪ MIDI
         </button>
@@ -3278,7 +3278,7 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
         <button
           onClick={() => flpImportRef.current?.click()}
           title="FL-Studio Projekt importieren (erstes Pattern)"
-          className="px-2 py-1 rounded text-[10px] bg-bg-elevated text-text-dim hover:bg-bg-elevated hover:text-text-primary transition-colors"
+          className="px-2 py-1 rounded text-[10px] bg-bg-elevated text-text-dim hover:text-text-primary transition-colors"
           data-testid="flp-import"
         >
           🎛 FLP
@@ -3295,7 +3295,7 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
         <button
           onClick={() => electribeImportRef.current?.click()}
           title="KORG Electribe Pattern importieren (.e2pattern, .e2spat oder .e2sallpat — Multi-Pattern-Bank mit 250 Slots)"
-          className="px-2 py-1 rounded text-[10px] bg-bg-elevated text-text-dim hover:bg-bg-elevated hover:text-text-primary transition-colors inline-flex items-center gap-1"
+          className="px-2 py-1 rounded text-[10px] bg-bg-elevated text-text-dim hover:text-text-primary transition-colors inline-flex items-center gap-1"
           data-testid="electribe-import"
         >
           🎚 Electribe
@@ -3314,7 +3314,7 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
         <button
           onClick={() => korgBankImportRef.current?.click()}
           title="KORG Sample-Bank importieren (.esx ESX-1 oder .all E2S)"
-          className="px-2 py-1 rounded text-[10px] bg-bg-elevated text-text-dim hover:bg-bg-elevated hover:text-text-primary transition-colors inline-flex items-center gap-1"
+          className="px-2 py-1 rounded text-[10px] bg-bg-elevated text-text-dim hover:text-text-primary transition-colors inline-flex items-center gap-1"
           data-testid="korg-bank-import"
         >
           📦 KORG Bank
@@ -3354,7 +3354,7 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
             }
           }}
           title="Sample-Bank für KORG Electribe 2 Sampler exportieren (.all)"
-          className="px-2 py-1 rounded text-[10px] bg-bg-elevated text-text-dim hover:bg-bg-elevated hover:text-text-primary transition-colors inline-flex items-center gap-1"
+          className="px-2 py-1 rounded text-[10px] bg-bg-elevated text-text-dim hover:text-text-primary transition-colors inline-flex items-center gap-1"
           data-testid="korg-bank-export"
         >
           📤 KORG Export
@@ -3405,7 +3405,7 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
             }
           }}
           title="Aktuelles Pattern für KORG Electribe 2 Sampler exportieren (.e2spat)"
-          className="px-2 py-1 rounded text-[10px] bg-bg-elevated text-text-dim hover:bg-bg-elevated hover:text-text-primary transition-colors inline-flex items-center gap-1"
+          className="px-2 py-1 rounded text-[10px] bg-bg-elevated text-text-dim hover:text-text-primary transition-colors inline-flex items-center gap-1"
           data-testid="e2-pattern-export"
         >
           📤 E2 Pattern
@@ -3416,7 +3416,7 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
         <button
           onClick={() => sliceImportRef.current?.click()}
           title="Sample slicen / choppen (WAV/MP3/OGG → 16 Performance-Pads)"
-          className="px-2 py-1 rounded text-[10px] bg-bg-elevated text-text-dim hover:bg-bg-elevated hover:text-text-primary transition-colors"
+          className="px-2 py-1 rounded text-[10px] bg-bg-elevated text-text-dim hover:text-text-primary transition-colors"
           data-testid="slice-sample"
         >
           ✂ Slice Sample
@@ -3438,7 +3438,7 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
             "px-2 py-1 rounded text-[10px] font-bold transition-colors",
             showMorph
               ? "bg-accent-secondary/20 text-accent-secondary border border-accent-secondary/50"
-              : "bg-bg-elevated text-text-dim hover:bg-bg-elevated hover:text-text-primary",
+              : "bg-bg-elevated text-text-dim hover:text-text-primary ",
           ].join(" ")}
         >
           ⟷ Morph
@@ -3453,7 +3453,7 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
             "px-2 py-1 rounded text-[10px] font-bold transition-colors",
             showVariation
               ? "bg-accent-primary/20 text-accent-primary border border-accent-primary/50"
-              : "bg-bg-elevated text-text-dim hover:bg-bg-elevated hover:text-text-primary",
+              : "bg-bg-elevated text-text-dim hover:text-text-primary ",
           ].join(" ")}
         >
           ✨ Variation
@@ -3467,7 +3467,7 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
             "px-2 py-1 rounded text-[10px] font-bold transition-colors",
             showEnvFollower
               ? "bg-accent-success/20 text-accent-success border border-accent-success/50"
-              : "bg-bg-elevated text-text-dim hover:bg-bg-elevated hover:text-text-primary",
+              : "bg-bg-elevated text-text-dim hover:text-text-primary ",
           ].join(" ")}
         >
           ∿ EF
@@ -3487,7 +3487,7 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
             "px-2 py-1 rounded text-[10px] font-bold transition-colors",
             showNoteRepeat
               ? "bg-accent-primary/70 text-white"
-              : "bg-bg-elevated text-text-dim hover:bg-bg-elevated",
+              : "bg-bg-elevated text-text-dim hover:text-text-primary",
           ].join(" ")}
         >
           🔁 NR
@@ -3507,7 +3507,7 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
               "px-2 py-0.5 rounded text-[10px] font-bold transition-colors flex items-center gap-1",
               stepRec.enabled
                 ? "bg-accent-danger/30 text-accent-danger border border-accent-danger/60"
-                : "bg-bg-elevated text-text-dim hover:bg-bg-elevated hover:text-text-primary",
+                : "bg-bg-elevated text-text-dim hover:text-text-primary ",
             ].join(" ")}
           >
             {/* Rote LED wenn aktiv */}
@@ -3562,7 +3562,7 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
             "px-2 py-1 rounded text-[10px] font-bold transition-colors",
             showLooper
               ? "bg-accent-success/20 text-accent-success border border-accent-success/50"
-              : "bg-bg-elevated text-text-dim hover:bg-bg-elevated hover:text-text-primary",
+              : "bg-bg-elevated text-text-dim hover:text-text-primary ",
           ].join(" ")}
         >
           ⟲ Loop
@@ -3571,7 +3571,7 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
         {/* Kanal hinzufügen */}
         <button
           onClick={() => dm.addPart()}
-          className="px-2 py-1 rounded text-[10px] bg-bg-elevated text-text-dim hover:bg-bg-elevated transition-colors"
+          className="px-2 py-1 rounded text-[10px] bg-bg-elevated text-text-dim hover:text-text-primary transition-colors"
           title="Kanal hinzufügen"
         >+ Kanal</button>
 
@@ -3584,7 +3584,7 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
             "px-2 py-1 rounded text-[10px] font-bold transition-colors",
             showMacros
               ? "bg-accent-primary/20 text-accent-primary border border-accent-primary/40"
-              : "bg-bg-elevated text-text-dim hover:bg-bg-elevated hover:text-text-primary",
+              : "bg-bg-elevated text-text-dim hover:text-text-primary ",
           ].join(" ")}
         >
           M1–8
@@ -3599,7 +3599,7 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
             "px-2 py-1 rounded text-[10px] font-bold transition-colors",
             showGroups
               ? "bg-accent-success/20 text-accent-success border border-accent-success/40"
-              : "bg-bg-elevated text-text-dim hover:bg-bg-elevated hover:text-text-primary",
+              : "bg-bg-elevated text-text-dim hover:text-text-primary ",
           ].join(" ")}
         >
           🎚 Groups
@@ -3613,7 +3613,7 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
             "px-2 py-1 rounded text-[10px] font-bold transition-colors",
             showPolyrhythm
               ? "bg-accent-secondary/20 text-accent-secondary border border-accent-secondary/40"
-              : "bg-bg-elevated text-text-dim hover:bg-bg-elevated hover:text-text-primary",
+              : "bg-bg-elevated text-text-dim hover:text-text-primary ",
           ].join(" ")}
         >
           ⬡ Poly
@@ -3627,7 +3627,7 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
             "px-2 py-1 rounded text-[10px] font-bold transition-colors",
             showMixAssistant
               ? "bg-accent-success/20 text-accent-success border border-accent-success/40"
-              : "bg-bg-elevated text-text-dim hover:bg-bg-elevated hover:text-text-primary",
+              : "bg-bg-elevated text-text-dim hover:text-text-primary ",
           ].join(" ")}
         >
           🧠 Mix
@@ -3791,7 +3791,7 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
                       "px-2 py-0.5 rounded text-[10px] font-mono transition-colors relative",
                       isActive
                         ? "bg-accent-primary text-white"
-                        : "bg-bg-elevated text-text-dim hover:bg-bg-elevated hover:text-text-primary",
+                        : "bg-bg-elevated text-text-dim hover:text-text-primary ",
                     ].join(" ")}
                   >
                     {getPageRangeLabel(p, pattern.stepCount)}
@@ -3814,7 +3814,7 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
                 "px-2 py-0.5 rounded text-[9px] font-mono transition-colors",
                 autoPageFollow
                   ? "bg-accent-secondary/30 text-accent-secondary"
-                  : "bg-bg-elevated text-text-dim hover:bg-bg-elevated",
+                  : "bg-bg-elevated text-text-dim hover:text-text-primary",
               ].join(" ")}
             >
               {autoPageFollow ? "Auto-Follow: AN" : "Auto-Follow: AUS"}

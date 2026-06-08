@@ -156,7 +156,7 @@ export function Humanizer({ humanizer, className = "" }: HumanizerProps) {
                     // Nicht highlighten, wenn eine gleichnamige Groove-Vorlage aktiv ist
                     settings.preset === preset.name && !settings.grooveTemplateId
                       ? "bg-accent-primary/70 text-bg-base"
-                      : "bg-bg-elevated text-text-dim hover:bg-bg-elevated hover:text-text-primary",
+                      : "bg-bg-elevated text-text-dim hover:text-text-primary ",
                   ].join(" ")}
                 >
                   {preset.name}

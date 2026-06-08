@@ -203,7 +203,7 @@ export function NewProjectDialog({ isOpen, onClose, onCreateProject }: NewProjec
         <div className="flex items-center justify-end gap-3 px-5 py-4 border-t border-border-color bg-bg-panel">
           <button
             onClick={onClose}
-            className="px-4 py-2 text-sm rounded-lg bg-bg-elevated text-text-muted border border-border-color hover:bg-bg-elevated hover:text-text-primary transition-colors"
+            className="px-4 py-2 text-sm rounded-lg bg-bg-elevated text-text-muted border border-border-color hover:text-text-primary transition-colors"
           >
             Abbrechen
           </button>

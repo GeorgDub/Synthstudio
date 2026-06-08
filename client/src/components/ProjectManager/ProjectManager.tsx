@@ -169,7 +169,7 @@ export function ProjectManager({
       <button
         onClick={handleNew}
         title="Neues Projekt (Ctrl+N)"
-        className="px-2 py-1 text-xs rounded bg-bg-elevated text-text-muted border border-border-color hover:bg-bg-elevated hover:text-text-primary transition-colors duration-100"
+        className="px-2 py-1 text-xs rounded bg-bg-elevated text-text-muted border border-border-color hover:text-text-primary transition-colors duration-100"
       >
         Neu
       </button>
@@ -178,7 +178,7 @@ export function ProjectManager({
       <button
         onClick={onLoad}
         title={electron.isElectron ? "Projekt öffnen – nativer Dialog (Ctrl+O)" : "Projekt öffnen (Ctrl+O)"}
-        className="px-2 py-1 text-xs rounded bg-bg-elevated text-text-muted border border-border-color hover:bg-bg-elevated hover:text-text-primary transition-colors duration-100"
+        className="px-2 py-1 text-xs rounded bg-bg-elevated text-text-muted border border-border-color hover:text-text-primary transition-colors duration-100"
       >
         Öffnen
       </button>
@@ -199,7 +199,7 @@ export function ProjectManager({
         onClick={() => importInputRef.current?.click()}
         disabled={isImporting}
         title="FL Studio (.flp) / Ableton (.als) / KORG Electribe (.esx/.elst) importieren"
-        className="px-2 py-1 text-xs rounded bg-bg-elevated text-text-muted border border-border-color hover:bg-bg-elevated hover:text-text-primary transition-colors duration-100 disabled:opacity-50"
+        className="px-2 py-1 text-xs rounded bg-bg-elevated text-text-muted border border-border-color hover:text-text-primary transition-colors duration-100 disabled:opacity-50"
       >
         {isImporting ? "Importiere…" : "Import…"}
       </button>
@@ -213,7 +213,7 @@ export function ProjectManager({
           "px-2 py-1 text-xs rounded border transition-colors duration-100",
           isDirty
             ? "bg-accent-primary/40 text-accent-secondary border-accent-primary hover:bg-accent-primary/60 hover:text-accent-secondary"
-            : "bg-bg-elevated text-text-muted border-border-color hover:bg-bg-elevated hover:text-text-primary",
+            : "bg-bg-elevated text-text-muted border-border-color hover:text-text-primary ",
           isSaving ? "opacity-50 cursor-not-allowed" : "",
         ].join(" ")}
       >
@@ -224,7 +224,7 @@ export function ProjectManager({
       <button
         onClick={handleExport}
         title={electron.isElectron ? "Projekt exportieren – nativer Dialog (Ctrl+E)" : "Projekt exportieren (Ctrl+E)"}
-        className="px-2 py-1 text-xs rounded bg-bg-elevated text-text-muted border border-border-color hover:bg-bg-elevated hover:text-text-primary transition-colors duration-100"
+        className="px-2 py-1 text-xs rounded bg-bg-elevated text-text-muted border border-border-color hover:text-text-primary transition-colors duration-100"
       >
         Export
       </button>

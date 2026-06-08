@@ -305,7 +305,7 @@ export function SubMixBusStrip({ bus, busIndex }: SubMixBusStripProps): React.Re
             "w-6 h-5 rounded text-[8px] font-bold transition-colors duration-100 relative",
             bus.mute
               ? "bg-accent-secondary text-bg-base"
-              : "bg-bg-elevated text-text-dim hover:bg-bg-elevated hover:text-accent-secondary",
+              : "bg-bg-elevated text-text-dim hover:text-text-primary hover:text-accent-secondary",
           ].join(" ")}
         >
           M
@@ -328,7 +328,7 @@ export function SubMixBusStrip({ bus, busIndex }: SubMixBusStripProps): React.Re
             "w-6 h-5 rounded text-[8px] font-bold transition-colors duration-100 relative",
             bus.solo
               ? "bg-accent-success text-bg-base"
-              : "bg-bg-elevated text-text-dim hover:bg-bg-elevated hover:text-accent-success",
+              : "bg-bg-elevated text-text-dim hover:text-text-primary hover:text-accent-success",
           ].join(" ")}
         >
           S

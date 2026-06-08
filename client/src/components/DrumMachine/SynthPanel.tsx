@@ -79,7 +79,7 @@ export function SynthPanel({ partId, params, onChange, onClose }: SynthPanelProp
               className={`flex-1 py-0.5 rounded text-xs font-mono uppercase transition-colors ${
                 params.mode === mode
                   ? "bg-accent-primary/70 text-white"
-                  : "bg-bg-elevated hover:bg-bg-elevated text-text-muted"
+                  : "bg-bg-elevated hover:text-text-primary text-text-muted"
               }`}
             >
               {mode}
