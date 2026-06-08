@@ -12,6 +12,7 @@
 import { useState, useCallback, useRef } from "react";
 import type { PatternData, PartData, StepData, StepResolution, ChannelFx, StepCondition } from "../audio/AudioEngine";
 import { DEFAULT_CHANNEL_FX } from "../audio/AudioEngine";
+import { resizeSteps } from "../components/DrumMachine/drumMachineHelpers";
 import { DEFAULT_SYNTH_PARAMS } from "../audio/SynthEngine";
 import { euclidean } from "../utils/euclidean";
 import { clampStepLength } from "../utils/polymeter";
@@ -145,6 +146,8 @@ export interface DrumMachineActions {
   shiftPattern: (partId: string, direction: "left" | "right") => void;
 
   setStepCount: (count: 16 | 32 | 64) => void;
+  /** v3.264: Setzt die Step-Anzahl projektweit auf ALLE Patterns (höhere Ebene). */
+  applyStepCountToAllPatterns: (count: 16 | 32 | 64) => void;
   setCurrentStep: (step: number) => void;
   setVelocityMode: (active: boolean) => void;
   setPitchMode: (active: boolean) => void;
@@ -1076,6 +1079,20 @@ export function useDrumMachineStore(): DrumMachineState & DrumMachineActions {
     }));
   }, [updatePatterns, state.activePatternId]);
 
+  // v3.264: projektweite Step-Anzahl — auf ALLE Patterns anwenden (kein
+  // activePatternId-Guard). Erfüllt den Synth.md-Wunsch nach einer "höheren
+  // Ebene", die man nicht pro Pattern nachziehen muss.
+  const applyStepCountToAllPatterns = useCallback((count: 16 | 32 | 64) => {
+    updatePatterns(ps => ps.map(p => ({
+      ...p,
+      stepCount: count,
+      parts: p.parts.map(pt => ({
+        ...pt,
+        steps: resizeSteps(pt.steps, count, () => ({ active: false, velocity: 100, pitch: 0 })),
+      })),
+    })));
+  }, [updatePatterns]);
+
   const setCurrentStep = useCallback((step: number) => {
     setState(prev => ({ ...prev, currentStep: step }));
   }, []);
@@ -1137,7 +1154,7 @@ export function useDrumMachineStore(): DrumMachineState & DrumMachineActions {
     setPartFx, setFxPanelPartId, setPartSourceType, setPartGranularParams, setPartStretchRatio, setPartMicroTiming, applyPatchToPart,
     toggleStep, setPartSteps, setStepVelocity, setStepPitch, setStepProbability, setStepSlide, setStepCondition, setStepReverse, setStepParamLock, setStepLength, setStepChainNext, quantizePartSteps, setPartEuclidean,
     clearPattern, resetAll, fillPattern, randomizePattern, shiftPattern,
-    setStepCount, setCurrentStep,
+    setStepCount, applyStepCountToAllPatterns, setCurrentStep,
     setVelocityMode, setPitchMode,
     undo, redo, canUndo, canRedo,
     getActivePattern, getPlaybackPattern,

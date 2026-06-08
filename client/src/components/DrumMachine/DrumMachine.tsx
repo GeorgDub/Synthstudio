@@ -2723,6 +2723,15 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
               {n}
             </button>
           ))}
+          {/* v3.264: aktuelle Step-Anzahl projektweit auf alle Patterns anwenden. */}
+          <button
+            onClick={() => dm.applyStepCountToAllPatterns(pattern.stepCount)}
+            data-testid="dm-step-count-apply-all"
+            title={`${pattern.stepCount} Steps auf ALLE Patterns anwenden (projektweit)`}
+            className="px-1.5 py-0.5 rounded text-[10px] font-mono text-text-dim hover:text-accent-primary hover:bg-bg-elevated transition-colors border border-border-color"
+          >
+            →&nbsp;alle
+          </button>
         </div>
 
         <div className="flex-1" />

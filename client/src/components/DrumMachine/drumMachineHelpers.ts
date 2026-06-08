@@ -22,6 +22,27 @@ export function stepGroupBorder(index: number, total: number): string {
   return index % 8 === 0 ? "ml-1.5" : index % 4 === 0 ? "ml-0.5" : "";
 }
 
+// ─── v3.264 Globaler Step-Count (für-alle-Patterns) ────────────────────────
+//
+// Synth.md-Wunsch: eine projektweite Step-Anzahl statt pro Pattern. Pure-Helper
+// fürs Resizing eines Step-Arrays (pad mit Default oder truncate), damit die
+// "auf alle Patterns anwenden"-Logik testbar bleibt.
+
+/**
+ * Bringt ein Step-Array auf `count` Steps:
+ *  - gleich lang  → unverändert (gleiche Referenz)
+ *  - länger nötig → mit `makeStep()` aufgefüllt
+ *  - kürzer nötig → hinten abgeschnitten
+ */
+export function resizeSteps<T>(steps: T[], count: number, makeStep: () => T): T[] {
+  if (count < 0) return steps;
+  if (steps.length === count) return steps;
+  if (count > steps.length) {
+    return [...steps, ...Array.from({ length: count - steps.length }, makeStep)];
+  }
+  return steps.slice(0, count);
+}
+
 // ─── v3.40 64-Step Page-Switcher Helpers ───────────────────────────────────
 //
 // Bei stepCount > 16 wird das Step-Grid in 16er-Pages aufgeteilt damit Cells

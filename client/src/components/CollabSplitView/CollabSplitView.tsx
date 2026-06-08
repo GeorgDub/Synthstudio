@@ -181,6 +181,7 @@ function useRemoteDmAdapter(
       randomizePattern: noop,
       shiftPattern: noop,
       setStepCount: noop,
+      applyStepCountToAllPatterns: noop,
       setCurrentStep: noop,
     } as DrumMachineState & DrumMachineActions;
     // Memoize auf remote-State + lokale Adapter-State
