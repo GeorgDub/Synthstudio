@@ -5,6 +5,7 @@ import {
   setArpMode,
   setArpOctaves,
   setArpNotes,
+  setArpVelocityPattern,
   getArpSteps,
 } from "../../store/useArpStore";
 
@@ -13,7 +14,7 @@ const ARP_MODES = Object.keys(ARP_MODE_LABELS) as ArpMode[];
 const OCTAVE_BASE = 60; // C4
 
 export function ArpeggiatorPanel() {
-  const { enabled, mode, octaves, notes, stepCount } = useArpStore();
+  const { enabled, mode, octaves, notes, stepCount, velocityPattern } = useArpStore();
   const steps = getArpSteps();
 
   const toggleNote = (midi: number) => {
@@ -76,12 +77,16 @@ export function ArpeggiatorPanel() {
       <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
         <span style={{ fontSize: 11, color: "var(--ss-text-muted)" }}>Velocity-Muster</span>
         <div style={{ display: "flex", gap: 3, flexWrap: "wrap" }}>
-          {(Object.keys(ARP_VELOCITY_LABELS) as ArpVelocityPattern[]).map(vp => (
-            <button key={vp} onClick={() => {}} title={ARP_VELOCITY_LABELS[vp]}
-              style={{ background: "var(--ss-bg-elevated)", border: "1px solid var(--ss-border)", borderRadius: 4, padding: "3px 8px", color: "var(--ss-text-muted)", cursor: "pointer", fontSize: 10 }}>
-              {ARP_VELOCITY_LABELS[vp]}
-            </button>
-          ))}
+          {(Object.keys(ARP_VELOCITY_LABELS) as ArpVelocityPattern[]).map(vp => {
+            const active = velocityPattern === vp;
+            return (
+              <button key={vp} onClick={() => setArpVelocityPattern(vp)} title={ARP_VELOCITY_LABELS[vp]}
+                aria-pressed={active}
+                style={{ background: active ? "var(--ss-accent-secondary)" : "var(--ss-bg-elevated)", border: "1px solid " + (active ? "var(--ss-accent-secondary)" : "var(--ss-border)"), borderRadius: 4, padding: "3px 8px", color: active ? "#fff" : "var(--ss-text-muted)", cursor: "pointer", fontSize: 10 }}>
+                {ARP_VELOCITY_LABELS[vp]}
+              </button>
+            );
+          })}
         </div>
       </div>
 

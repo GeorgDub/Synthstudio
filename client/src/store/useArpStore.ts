@@ -1,5 +1,5 @@
 import { useEffect, useReducer } from "react";
-import { type ArpMode, type ArpOctaves, type ArpStep, applyArp } from "../utils/arpeggiator";
+import { type ArpMode, type ArpOctaves, type ArpStep, type ArpVelocityPattern, applyArp } from "../utils/arpeggiator";
 
 interface ArpState {
   enabled: boolean;
@@ -7,6 +7,7 @@ interface ArpState {
   octaves: ArpOctaves;
   notes: number[];
   stepCount: number;
+  velocityPattern: ArpVelocityPattern;
 }
 
 type Listener = () => void;
@@ -17,6 +18,7 @@ let _state: ArpState = {
   octaves: 1,
   notes: [60, 64, 67],
   stepCount: 16,
+  velocityPattern: "flat",
 };
 
 const _listeners = new Set<Listener>();
@@ -27,6 +29,7 @@ export function setArpMode(mode: ArpMode): void { _state = { ..._state, mode }; 
 export function setArpOctaves(octaves: ArpOctaves): void { _state = { ..._state, octaves }; notify(); }
 export function setArpNotes(notes: number[]): void { _state = { ..._state, notes }; notify(); }
 export function setArpStepCount(stepCount: number): void { _state = { ..._state, stepCount }; notify(); }
+export function setArpVelocityPattern(velocityPattern: ArpVelocityPattern): void { _state = { ..._state, velocityPattern }; notify(); }
 
 export function getArpSteps(): ArpStep[] {
   return applyArp({
@@ -34,11 +37,12 @@ export function getArpSteps(): ArpStep[] {
     mode: _state.mode,
     octaves: _state.octaves,
     stepCount: _state.stepCount,
+    velocityPattern: _state.velocityPattern,
   });
 }
 
 export function __resetArpForTests(): void {
-  _state = { enabled: false, mode: "up", octaves: 1, notes: [60, 64, 67], stepCount: 16 };
+  _state = { enabled: false, mode: "up", octaves: 1, notes: [60, 64, 67], stepCount: 16, velocityPattern: "flat" };
   _listeners.clear();
 }
 

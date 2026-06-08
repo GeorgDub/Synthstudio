@@ -15,6 +15,8 @@ import {
   setArpEnabled,
   setArpMode,
   setArpNotes,
+  setArpVelocityPattern,
+  getArpSteps,
   __resetArpForTests,
 } from "@/store/useArpStore";
 
@@ -64,6 +66,27 @@ describe("useArpStore – Hook-Layer (jsdom)", () => {
     });
     expect(a.result.current.mode).toBe("random");
     expect(b.result.current.mode).toBe("random");
+  });
+
+  it("velocityPattern: Default 'flat', setArpVelocityPattern re-rendert", () => {
+    const { result } = renderHook(() => useArpStore());
+    expect(result.current.velocityPattern).toBe("flat");
+    act(() => {
+      setArpVelocityPattern("accent24");
+    });
+    expect(result.current.velocityPattern).toBe("accent24");
+  });
+
+  it("velocityPattern wirkt auf getArpSteps (vorher tot: UI-Buttons waren no-op)", () => {
+    // 'flat' → alle aktiven Steps gleiche Velocity.
+    setArpVelocityPattern("flat");
+    const flat = getArpSteps().filter((s) => s.active).map((s) => s.velocity);
+    expect(new Set(flat).size).toBe(1);
+
+    // 'crescendo' → ansteigende Velocity, also mehrere verschiedene Werte.
+    setArpVelocityPattern("crescendo");
+    const cres = getArpSteps().filter((s) => s.active).map((s) => s.velocity);
+    expect(new Set(cres).size).toBeGreaterThan(1);
   });
 
   it("Unmount entfernt Listener — keine Re-Renders nach Cleanup", () => {
