@@ -23,6 +23,9 @@ import { AudioTrackStrip, computePeaksFromBuffer } from "./AudioTrackStrip";
 import { MasterFxPanel } from "./MasterFxPanel";
 // v3.119.0: Audio-Triggered Sidechain v2 (DAW-grade peak-detect ducking).
 import { AudioSidechainPanel } from "./AudioSidechainPanel";
+// v3.264: Master-FX + Sidechain in freischwebende Panels auslagern, damit sie
+// den Mixer nicht mehr vertikal verdrängen (Synth.md-Feedback).
+import { FloatingPanel } from "@/components/UI/FloatingPanel";
 import { useAudioSidechainStore } from "@/store/useAudioSidechainStore";
 import { LiveInputStrip } from "./LiveInputStrip";
 import { ChannelColorPicker } from "./ChannelColorPicker";
@@ -1002,6 +1005,9 @@ export function MixerView({ dm, mixer, samples = [], bpm = 120, projectName = "S
   }, [mixer]);
 
   const [showSpectrum, setShowSpectrum] = useState(true);
+  // v3.264: Master-FX + Sidechain als aufklappbare Floating-Panels (Default zu).
+  const [showMasterFx, setShowMasterFx] = useState(false);
+  const [showSidechain, setShowSidechain] = useState(false);
   const [busCompEnabled, setBusCompEnabled] = useState(false);
   const [busCompSettings, setBusCompSettings] = useState({
     threshold: -18, ratio: 4, attack: 0.005, release: 0.1, makeup: 0,
@@ -1225,6 +1231,25 @@ export function MixerView({ dm, mixer, samples = [], bpm = 120, projectName = "S
           🗜 Bus Comp
         </button>
 
+        {/* v3.264: Master-FX + Sidechain als Floating-Panel öffnen (verdrängen
+            den Mixer nicht mehr). */}
+        <button
+          onClick={() => setShowMasterFx(p => !p)}
+          data-testid="mixer-toggle-master-fx"
+          className={`px-2 py-0.5 text-[10px] rounded border transition-colors ${showMasterFx ? "border-accent-primary text-accent-primary bg-accent-primary/10" : "border-border-color text-text-dim hover:text-text-primary"}`}
+          title="Master-FX-Bus in eigenem Fenster öffnen"
+        >
+          🎛 Master FX
+        </button>
+        <button
+          onClick={() => setShowSidechain(p => !p)}
+          data-testid="mixer-toggle-sidechain"
+          className={`px-2 py-0.5 text-[10px] rounded border transition-colors ${showSidechain ? "border-accent-primary text-accent-primary bg-accent-primary/10" : "border-border-color text-text-dim hover:text-text-primary"}`}
+          title="Audio-Sidechain in eigenem Fenster öffnen"
+        >
+          ⛓ Sidechain
+        </button>
+
         <button
           onClick={() => setShowSpectrum(p => !p)}
           className={`ml-auto px-2 py-0.5 text-[10px] rounded border transition-colors ${showSpectrum ? "border-accent-secondary text-accent-secondary" : "border-border-color text-text-dim hover:text-text-primary"}`}
@@ -1430,17 +1455,41 @@ export function MixerView({ dm, mixer, samples = [], bpm = 120, projectName = "S
         })}
       </div>
 
-      {/* v3.75.0: Master-FX-Bus (Reverb/Delay/EQ Settings) */}
-      <div className="px-4 py-2 border-t border-border-color">
-        <MasterFxPanel />
-      </div>
+      {/* v3.264: Master-FX-Bus + Audio-Sidechain als freischwebende Panels —
+          per Toolbar-Button aufklappbar, verdrängen den Mixer nicht mehr. */}
+      {showMasterFx && (
+        <FloatingPanel
+          storageKey="ss-floating:master-fx"
+          title="Master FX"
+          defaultPosition={{ x: 160, y: 100, w: 460, h: 520 }}
+          minWidth={360}
+          minHeight={300}
+          onClose={() => setShowMasterFx(false)}
+          testId="floating-master-fx"
+        >
+          <div className="p-3">
+            <MasterFxPanel />
+          </div>
+        </FloatingPanel>
+      )}
 
-      {/* v3.119.0: Audio-Triggered Sidechain v2 (DAW-grade peak-detect ducking) */}
-      <div className="px-4 py-2 border-t border-border-color">
-        <AudioSidechainPanel
-          channels={parts.map((p) => ({ id: p.id, name: p.name }))}
-        />
-      </div>
+      {showSidechain && (
+        <FloatingPanel
+          storageKey="ss-floating:sidechain"
+          title="Audio Sidechain"
+          defaultPosition={{ x: 220, y: 140, w: 460, h: 460 }}
+          minWidth={360}
+          minHeight={260}
+          onClose={() => setShowSidechain(false)}
+          testId="floating-sidechain"
+        >
+          <div className="p-3">
+            <AudioSidechainPanel
+              channels={parts.map((p) => ({ id: p.id, name: p.name }))}
+            />
+          </div>
+        </FloatingPanel>
+      )}
 
       {/* Export Panel */}
       {/* v3.42: insertChains wird durchgereicht damit Stem-Bounce die User-Inserts nutzt. */}

@@ -80,15 +80,30 @@ interface ToggleProps {
 }
 
 function Toggle({ label, value, onChange }: ToggleProps) {
+  // Klar als ON/OFF-Schalter erkennbar (Status-Punkt + ON/OFF-Text), damit der
+  // User sieht, dass jeder FX-Block einzeln aktiviert werden muss. FX-Knöpfe
+  // wirken erst hörbar, wenn der zugehörige Block hier auf ON steht.
   return (
     <button
       onClick={() => onChange(!value)}
+      role="switch"
+      aria-checked={value}
+      title={`${label} ${value ? "an" : "aus"} — klicken zum Ein-/Ausschalten`}
       className={[
-        "px-2 py-0.5 rounded text-[10px] font-medium transition-colors",
-        value ? "bg-accent-primary text-white" : "bg-bg-elevated text-text-muted hover:bg-bg-elevated",
+        "inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-medium border transition-colors",
+        value
+          ? "bg-accent-primary/20 border-accent-primary text-accent-primary"
+          : "bg-bg-elevated border-border-color text-text-muted hover:text-text-primary",
       ].join(" ")}
     >
-      {label}
+      <span
+        className={[
+          "inline-block w-2 h-2 rounded-full transition-colors",
+          value ? "bg-accent-success" : "bg-text-dim",
+        ].join(" ")}
+      />
+      <span>{label}</span>
+      <span className="font-bold tracking-wide opacity-80">{value ? "ON" : "OFF"}</span>
     </button>
   );
 }

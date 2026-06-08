@@ -60,6 +60,7 @@ export function DeviceConnectionPanel() {
     disconnect,
     enableMonitoring,
     identity,
+    connectStatus,
     simConnection,
     connectSim,
   } = useOmniTribe();
@@ -171,6 +172,14 @@ export function DeviceConnectionPanel() {
           >
             Connect to OmniTribe
           </button>
+          {connectStatus && !connectStatus.ok && (
+            <p
+              className="text-[11px] text-accent-danger leading-snug"
+              data-testid="connect-error"
+            >
+              ⚠ {connectStatus.message}
+            </p>
+          )}
         </div>
       )}
 

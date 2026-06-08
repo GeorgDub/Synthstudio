@@ -36,6 +36,7 @@ import {
   type EmbedBehavior,
   type WavBitDepth,
 } from "@/store/useApiSettingsStore";
+import { testApiKey, type ApiKeyTestResult } from "@/utils/aiScriptGenerator";
 import { useWorkspaceMode, setWorkspaceMode } from "@/store/useWorkspaceMode";
 import {
   useMetronomeStore,
@@ -319,16 +320,30 @@ function KiSection() {
   // Lokales Draft-State pro provider damit der Save-Button auch beim Wechsel
   // sinnvoll funktioniert. useState-Init wird beim Provider-Wechsel via key gerefresht.
   const [keyDraft, setKeyDraft] = useState(providerCfg.apiKey);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<ApiKeyTestResult | null>(null);
   const meta = PROVIDER_META[provider];
 
   // Wenn der User den aktiven Provider wechselt, das Draft auf den Key des
   // neuen Providers setzen.
   useEffect(() => {
     setKeyDraft(providerCfg.apiKey);
+    setTestResult(null);
   }, [provider, providerCfg.apiKey]);
 
   const handleSave = () => {
     setProviderKey(provider, keyDraft);
+  };
+
+  // Testet den eingegebenen Key gegen den Provider-Endpoint und speichert ihn
+  // bei Erfolg gleich mit (so muss der User nicht separat "Speichern" klicken).
+  const handleTest = async () => {
+    setTesting(true);
+    setTestResult(null);
+    const result = await testApiKey(provider, keyDraft, providerCfg.model);
+    if (result.ok) setProviderKey(provider, keyDraft);
+    setTestResult(result);
+    setTesting(false);
   };
 
   return (
@@ -379,9 +394,28 @@ function KiSection() {
           >
             Speichern
           </button>
+          <button
+            onClick={handleTest}
+            disabled={testing || keyDraft.trim().length === 0}
+            data-testid={`ki-api-key-test-${provider}`}
+            className="px-3 py-1.5 text-xs rounded bg-bg-elevated border border-border-color text-text-muted hover:text-text-primary transition-colors disabled:opacity-40"
+          >
+            {testing ? "Teste…" : "Test"}
+          </button>
         </div>
-        {providerCfg.apiKey && (
-          <p className="text-[10px] text-accent-success mt-1.5">✓ API Key aktiv – KI-Generierung verfügbar</p>
+        {testResult && (
+          <p
+            data-testid={`ki-api-key-test-result-${provider}`}
+            className={[
+              "text-[10px] mt-1.5",
+              testResult.ok ? "text-accent-success" : "text-accent-danger",
+            ].join(" ")}
+          >
+            {testResult.message}
+          </p>
+        )}
+        {!testResult && providerCfg.apiKey && (
+          <p className="text-[10px] text-accent-success mt-1.5">✓ API Key gespeichert – mit „Test" Gültigkeit prüfen</p>
         )}
       </div>
 

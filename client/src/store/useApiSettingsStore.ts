@@ -58,7 +58,7 @@ export const AVAILABLE_MODELS: Record<AiProvider, Array<{ id: string; label: str
   anthropic: [
     { id: "claude-haiku-4-5-20251001", label: "Claude Haiku 4.5 — schnell & günstig" },
     { id: "claude-sonnet-4-6", label: "Claude Sonnet 4.6 — kreativ & ausgewogen" },
-    { id: "claude-opus-4-7", label: "Claude Opus 4.7 — maximal kreativ" },
+    { id: "claude-opus-4-8", label: "Claude Opus 4.8 — maximal kreativ" },
   ],
   openai: [
     { id: "gpt-4o-mini", label: "GPT-4o Mini — schnell & günstig" },

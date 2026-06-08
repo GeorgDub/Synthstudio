@@ -4,7 +4,7 @@
  * Lokale Pattern-Bibliothek: Patterns speichern, suchen, laden, exportieren.
  * Wird als Panel im Tools-Tab oder als Modal geöffnet.
  */
-import React, { useCallback, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   usePatternLibraryStore,
   savePatternToLibrary,
@@ -15,7 +15,11 @@ import {
   importLibrary,
   type PatternLibraryEntry,
 } from "@/store/usePatternLibraryStore";
-import type { PatternData } from "@/audio/AudioEngine";
+import { AudioEngine, type PatternData } from "@/audio/AudioEngine";
+import {
+  computePatternPreviewHits,
+  previewDurationMs,
+} from "@/utils/patternPreview";
 
 const GENRES = ["Techno", "House", "Hip-Hop", "Trap", "DnB", "Reggaeton", "Ambient", "Experimental", "Unbekannt"];
 const STARS = [1, 2, 3, 4, 5];
@@ -40,16 +44,48 @@ function StarRating({ rating, onChange }: { rating: number; onChange?: (r: numbe
   );
 }
 
-function EntryCard({ entry, onLoad, onDelete, onRate }: {
+function EntryCard({ entry, isPreviewing, onLoad, onDelete, onRate, onPreview, onRename }: {
   entry: PatternLibraryEntry;
+  isPreviewing: boolean;
   onLoad: () => void;
   onDelete: () => void;
   onRate: (r: number) => void;
+  onPreview: () => void;
+  onRename: (name: string) => void;
 }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(entry.name);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (editing) { setDraft(entry.name); inputRef.current?.focus(); inputRef.current?.select(); }
+  }, [editing, entry.name]);
+
+  const commit = () => {
+    const next = draft.trim();
+    if (next && next !== entry.name) onRename(next);
+    setEditing(false);
+  };
+
   return (
     <div className="flex items-center gap-3 px-3 py-2 rounded border border-border-color bg-bg-elevated hover:border-accent-primary/40 transition-colors group">
+      <button onClick={onPreview} title={isPreviewing ? "Vorschau stoppen" : "Pattern anhören"}
+        data-testid={`pattern-preview-${entry.id}`}
+        className={`text-sm flex-shrink-0 transition-colors ${isPreviewing ? "text-accent-success" : "text-text-dim hover:text-accent-primary"}`}>
+        {isPreviewing ? "■" : "▶"}
+      </button>
       <div className="flex-1 min-w-0">
-        <div className="text-xs font-medium text-text-primary truncate">{entry.name}</div>
+        {editing ? (
+          <input ref={inputRef} value={draft} onChange={e => setDraft(e.target.value)}
+            onBlur={commit}
+            onKeyDown={e => { if (e.key === "Enter") commit(); if (e.key === "Escape") setEditing(false); }}
+            data-testid={`pattern-rename-input-${entry.id}`}
+            className="w-full text-xs font-medium bg-bg-base border border-accent-primary rounded px-1 py-0.5 text-text-primary outline-none" />
+        ) : (
+          <div className="text-xs font-medium text-text-primary truncate" onDoubleClick={() => setEditing(true)} title="Doppelklick zum Umbenennen">
+            {entry.name}
+          </div>
+        )}
         <div className="flex items-center gap-2 mt-0.5">
           <span className="text-[10px] text-text-dim">{entry.genre}</span>
           <span className="text-[10px] text-text-dim">·</span>
@@ -59,6 +95,11 @@ function EntryCard({ entry, onLoad, onDelete, onRate }: {
         </div>
       </div>
       <StarRating rating={entry.rating} onChange={onRate} />
+      <button onClick={() => setEditing(true)} title="Umbenennen"
+        data-testid={`pattern-rename-${entry.id}`}
+        className="text-text-dim hover:text-accent-primary text-xs opacity-0 group-hover:opacity-100 transition-colors flex-shrink-0">
+        ✎
+      </button>
       <button onClick={onLoad}
         className="px-2 py-0.5 text-[10px] rounded bg-accent-primary/20 text-accent-primary hover:bg-accent-primary/30 transition-colors opacity-0 group-hover:opacity-100 flex-shrink-0">
         Laden
@@ -79,9 +120,44 @@ export function PatternLibrary({ currentPattern, globalBpm, onLoadPattern }: Pat
   const [saveGenre, setSaveGenre] = useState("Unbekannt");
   const [saveTags, setSaveTags] = useState("");
   const [showSaveForm, setShowSaveForm] = useState(false);
+  const [previewingId, setPreviewingId] = useState<string | null>(null);
   const importRef = useRef<HTMLInputElement>(null);
+  const previewTimers = useRef<number[]>([]);
 
   const filtered = searchLibrary(query, filterGenre || undefined);
+
+  const stopPreview = useCallback(() => {
+    previewTimers.current.forEach(id => clearTimeout(id));
+    previewTimers.current = [];
+    setPreviewingId(null);
+  }, []);
+
+  // Vorschau via previewSample — stört den laufenden Transport NICHT.
+  const handlePreview = useCallback((entry: PatternLibraryEntry) => {
+    const wasPreviewing = previewingId === entry.id;
+    stopPreview();
+    if (wasPreviewing) return; // Toggle: zweiter Klick stoppt.
+    let pattern: PatternData;
+    try { pattern = JSON.parse(entry.patternJson); } catch { return; }
+    const opts = { bpm: entry.bpm || globalBpm };
+    const hits = computePatternPreviewHits(pattern, opts);
+    if (hits.length === 0) {
+      alert("Dieses Pattern hat keine Sample-Spuren zum Vorhören.");
+      return;
+    }
+    setPreviewingId(entry.id);
+    for (const hit of hits) {
+      const t = window.setTimeout(() => {
+        void AudioEngine.previewSample(hit.sampleUrl, hit.volume);
+      }, hit.timeMs);
+      previewTimers.current.push(t);
+    }
+    const end = window.setTimeout(stopPreview, previewDurationMs(pattern, opts) + 250);
+    previewTimers.current.push(end);
+  }, [previewingId, globalBpm, stopPreview]);
+
+  // Beim Unmount alle laufenden Vorschau-Timer abräumen.
+  useEffect(() => () => stopPreview(), [stopPreview]);
 
   const handleSave = useCallback(() => {
     if (!currentPattern) return;
@@ -179,9 +255,12 @@ export function PatternLibrary({ currentPattern, globalBpm, onLoadPattern }: Pat
           </div>
         ) : filtered.map(entry => (
           <EntryCard key={entry.id} entry={entry}
+            isPreviewing={previewingId === entry.id}
             onLoad={() => handleLoad(entry)}
-            onDelete={() => deleteLibraryEntry(entry.id)}
+            onDelete={() => { if (previewingId === entry.id) stopPreview(); deleteLibraryEntry(entry.id); }}
             onRate={r => updateLibraryEntry(entry.id, { rating: r })}
+            onPreview={() => handlePreview(entry)}
+            onRename={name => updateLibraryEntry(entry.id, { name })}
           />
         ))}
       </div>

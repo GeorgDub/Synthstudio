@@ -40,6 +40,7 @@ import {
   type SynthstudioPatternImport,
   type SynthstudioSongArrangement,
 } from "@/utils/korg/esxPatternConvert";
+import { buildSlotIndexMap } from "@/utils/korg/esxSampleLink";
 import {
   parseE2sBank,
   type E2sBank,
@@ -371,15 +372,52 @@ export function KorgBankModal({
   }
 
   // ── Pattern Handlers (v3.5) ────────────────────────────────────────────────
+
+  /**
+   * v3.264: Reichert die konvertierten drumParts mit Blob-URLs der Bank-Samples
+   * an (sampleId → Slot-Lookup). Ohne sampleUrl bleibt das importierte Pattern
+   * beim Play stumm — genau der Synth.md-Bug. Blob-URLs werden pro sampleId
+   * gecacht (mehrere Parts können dasselbe Sample referenzieren).
+   */
+  function enrichPatternWithSampleUrls(
+    conv: SynthstudioPatternImport,
+  ): SynthstudioPatternImport {
+    const slotMap = buildSlotIndexMap(state.rows);
+    const urlCache = new Map<number, string>();
+    const drumParts = conv.drumParts.map((dp) => {
+      // Nur Parts mit aktiven Steps verlinken. Unassigned-Parts kollabiert der
+      // Parser auf sampleId 0 (Sentinel 0x8000 → 0); ohne diesen Guard würden
+      // leere Parts fälschlich Mono-Slot 0 zugeordnet (Advisor-Hinweis).
+      if (!dp.steps.some((active) => active)) return dp;
+      const arrayIdx = slotMap.get(dp.sampleId);
+      if (arrayIdx === undefined) return dp;
+      let url = urlCache.get(dp.sampleId);
+      if (!url) {
+        try {
+          url = buildSample(state.rows[arrayIdx]).url;
+          urlCache.set(dp.sampleId, url);
+        } catch {
+          return dp; // Encode-Fehler → Part bleibt ohne URL (kein Crash).
+        }
+      }
+      return { ...dp, sampleUrl: url };
+    });
+    return { ...conv, drumParts };
+  }
+
   function handleImportPattern(pat: EsxPattern): void {
     if (!onAddPattern) {
       toast("Kein Pattern-Receiver konfiguriert", { kind: "warning" });
       return;
     }
     try {
-      const conv = convertEsxPatternToSynthstudio(pat);
+      const conv = enrichPatternWithSampleUrls(convertEsxPatternToSynthstudio(pat));
+      const linked = conv.drumParts.filter((d) => d.sampleUrl).length;
       onAddPattern(conv);
-      toast(`KORG: Pattern "${conv.name}" importiert`, { kind: "success", duration: 2000 });
+      toast(
+        `KORG: Pattern "${conv.name}" importiert (${linked} Spur(en) mit Sample)`,
+        { kind: "success", duration: 2500 },
+      );
     } catch (err) {
       toast(`Pattern-Import-Fehler: ${String(err)}`, { kind: "error" });
     }
@@ -400,7 +438,7 @@ export function KorgBankModal({
     let added = 0;
     for (const pat of state.patterns) {
       try {
-        onAddPattern(convertEsxPatternToSynthstudio(pat));
+        onAddPattern(enrichPatternWithSampleUrls(convertEsxPatternToSynthstudio(pat)));
         added++;
       } catch {
         /* skip errored */

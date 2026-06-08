@@ -45,24 +45,58 @@ export const LICENSE_PUBLIC_KEY_HEX =
 /** Stable product identifier embedded in the signed payload. */
 export const LICENSE_PRODUCT_ID = "synthstudio-pro-1";
 
+/** Der Demo-/Master-Key, der die Vollversion ohne Signatur freischaltet. */
+export const MASTER_LICENSE_KEY = "137924568";
+
 /**
- * ⚠️ TEMPORÄRER DEV-MASTER-KEY — NUR im Dev-/Test-Build aktiv.
- *
- * Schaltet die Vollversion (Pro) ohne Ed25519-Signatur-Validierung frei.
- * Nur für die Entwicklungsphase gedacht, solange noch kein echter Public-Key /
+ * Build-Umgebung, die entscheidet ob der Master-Key akzeptiert wird.
+ * Wird in Tests explizit übergeben (deterministisch), zur Laufzeit via
+ * {@link detectMasterKeyEnv} aus `import.meta.env` + `window.electronAPI`.
+ */
+export interface MasterKeyEnv {
+  /** true im Production-Bundle (`import.meta.env.PROD`). */
+  isProd: boolean;
+  /** true wenn die App in der gepackten Electron-Desktop-App läuft. */
+  isElectron: boolean;
+}
+
+/** Ermittelt die Master-Key-Umgebung zur Laufzeit. */
+export function detectMasterKeyEnv(): MasterKeyEnv {
+  const isProd = Boolean(import.meta.env.PROD);
+  const isElectron =
+    typeof window !== "undefined" &&
+    Boolean(
+      (window as unknown as { electronAPI?: { isElectron?: boolean } })
+        .electronAPI?.isElectron,
+    );
+  return { isProd, isElectron };
+}
+
+/**
+ * ⚠️ TEMPORÄRER DEMO-/MASTER-KEY — schaltet die Vollversion (Pro) ohne
+ * Ed25519-Signatur-Validierung frei. Gedacht für die Entwicklungsphase +
+ * die ausgelieferte Desktop-App, solange noch kein echter Public-Key /
  * Gumroad-Flow existiert.
  *
- * WICHTIG: Der Check ist hinter `import.meta.env.PROD` gegated, damit der Key
- * NIEMALS in einen Production-Build (z.B. öffentliches Vercel-Deploy) gelangt —
- * sonst wäre der Pro-Bypass für jeden im JS-Bundle lesbar. Im Prod-Build wird
- * der frühe `return false` zu totem Code danach → das Literal wird wegoptimiert.
+ * AKZEPTIERT in:
+ *   - Dev-/Test-Build (`!isProd`) — lokale Entwicklung & Vitest.
+ *   - Gepackter Electron-Desktop-App (`isElectron`) — das ausgelieferte
+ *     Produkt (Win/Mac/Linux). Der Demo-Key soll dort funktionieren.
+ *
+ * BLOCKIERT in:
+ *   - Öffentlichem Web-Prod-Build (Vercel: `isProd && !isElectron`), damit der
+ *     Pro-Bypass NICHT im public JS-Bundle für jeden lesbar ist.
  *
  * TODO(release): Sobald LICENSE_PUBLIC_KEY_HEX ein echter Key ist, diese
  * Funktion + den Branch in useLicenseStore.activate() ganz entfernen.
  */
-export function isMasterLicenseKey(key: string): boolean {
-  if (import.meta.env.PROD) return false; // im Prod-Build deaktiviert (Key nicht öffentlich)
-  return key.trim() === "137924568";
+export function isMasterLicenseKey(
+  key: string,
+  env: MasterKeyEnv = detectMasterKeyEnv(),
+): boolean {
+  // Nur im öffentlichen Web-Prod-Build deaktiviert (Key dort öffentlich lesbar).
+  if (env.isProd && !env.isElectron) return false;
+  return key.trim() === MASTER_LICENSE_KEY;
 }
 
 /** Trial duration in days. v2.97 ships with 30-day default. */

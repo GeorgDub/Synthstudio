@@ -273,7 +273,7 @@ export function ThemeSettings({ isOpen, onClose }: Props) {
               >
                 <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5 (schnell, günstig)</option>
                 <option value="claude-sonnet-4-6">Claude Sonnet 4.6 (kreativ, ausgewogen)</option>
-                <option value="claude-opus-4-7">Claude Opus 4.7 (maximal kreativ)</option>
+                <option value="claude-opus-4-8">Claude Opus 4.8 (maximal kreativ)</option>
               </select>
               <p className="text-[10px] text-text-dim mt-1">Haiku empfohlen für schnelle Pattern-Generierung.</p>
             </div>

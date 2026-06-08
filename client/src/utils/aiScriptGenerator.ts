@@ -279,3 +279,89 @@ async function callOpenAi(apiKey: string, model: string, userMessage: string): P
   }
   return data?.choices?.[0]?.message?.content ?? "";
 }
+
+// ─── API-Key-Test (Synth.md: "api key wird nicht akzeptiert") ─────────────────
+
+export interface ApiKeyTestResult {
+  ok: boolean;
+  /** User-taugliche deutsche Statusmeldung. */
+  message: string;
+}
+
+/**
+ * Übersetzt eine HTTP-Antwort des Provider-Endpoints in eine verständliche
+ * Gültigkeits-Aussage. Pure + testbar — die eigentliche fetch-Logik (testApiKey)
+ * ruft das nur mit (status, body) auf.
+ *
+ * Der User-Beschwerde "der api key wird nicht akzeptiert" liegt fast immer eine
+ * dieser Ursachen zugrunde: 401 (Key falsch), 403 (kein Zugriff/Region),
+ * 404/400 (Modell-ID ungültig), 429 (Rate-Limit/Quota). Ohne diese Übersetzung
+ * sieht der User nur einen rohen API-Fehler und denkt, sein Key sei kaputt.
+ */
+export function interpretApiTestResponse(
+  status: number,
+  bodyText: string = "",
+): ApiKeyTestResult {
+  if (status >= 200 && status < 300) {
+    return { ok: true, message: "✓ API-Key gültig — KI-Generierung einsatzbereit." };
+  }
+  const snippet = bodyText.trim().slice(0, 160);
+  switch (status) {
+    case 401:
+      return { ok: false, message: "✗ API-Key abgelehnt (401). Key prüfen oder neu erstellen." };
+    case 403:
+      return { ok: false, message: "✗ Kein Zugriff (403). Key gültig, aber ohne Berechtigung/Guthaben für dieses Modell." };
+    case 404:
+      return { ok: false, message: "✗ Modell nicht gefunden (404). Anderes Modell wählen." };
+    case 400:
+      return {
+        ok: false,
+        message: "✗ Anfrage abgelehnt (400)." + (snippet ? ` ${snippet}` : " Modell-ID prüfen."),
+      };
+    case 429:
+      return { ok: false, message: "✗ Rate-Limit/Quota (429). Key gültig, aber aktuell kein Kontingent." };
+    default:
+      if (status >= 500) {
+        return { ok: false, message: `✗ Provider-Serverfehler (${status}). Später erneut versuchen.` };
+      }
+      return { ok: false, message: `✗ Unerwarteter Status ${status}.` + (snippet ? ` ${snippet}` : "") };
+  }
+}
+
+/**
+ * Macht einen minimalen API-Call (max_tokens=1), um zu prüfen ob Key + Modell
+ * akzeptiert werden. Liefert eine verständliche Statusmeldung fürs Settings-UI.
+ */
+export async function testApiKey(
+  provider: AiProvider,
+  apiKey: string,
+  model: string,
+): Promise<ApiKeyTestResult> {
+  if (!apiKey || apiKey.trim().length === 0) {
+    return { ok: false, message: "Kein API-Key eingegeben." };
+  }
+  const key = apiKey.trim();
+  try {
+    const response = provider === "openai"
+      ? await fetch(OPENAI_API_URL, {
+          method: "POST",
+          headers: { "Authorization": `Bearer ${key}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ model, max_tokens: 1, messages: [{ role: "user", content: "ping" }] }),
+        })
+      : await fetch(ANTHROPIC_API_URL, {
+          method: "POST",
+          headers: {
+            "x-api-key": key,
+            "anthropic-version": "2023-06-01",
+            "content-type": "application/json",
+            "anthropic-dangerous-direct-browser-access": "true",
+          },
+          body: JSON.stringify({ model, max_tokens: 1, messages: [{ role: "user", content: "ping" }] }),
+        });
+    const bodyText = response.ok ? "" : await response.text().catch(() => "");
+    return interpretApiTestResponse(response.status, bodyText);
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return { ok: false, message: `✗ Netzwerkfehler — Provider nicht erreichbar. ${msg.slice(0, 120)}` };
+  }
+}

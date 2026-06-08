@@ -37,10 +37,17 @@ import type {
 export interface SynthstudioDrumPartImport {
   /** 0..15. */
   partIndex: number;
-  /** Original ESX-1 Sample-Slot (informativ — kein Auto-Loading in v3.5). */
+  /** Original ESX-1 Sample-Slot — referenziert einen Bank-Sample-Slot. */
   sampleId: number;
   /** Label fuer die UI (z.B. "ESX Drum 1", "ESX Synth 9"). */
   sampleHint: string;
+  /**
+   * v3.264: Blob-URL des zugeordneten Bank-Samples. Wird vom Caller
+   * (KorgBankModal) per sampleId→Slot-Lookup nachgereicht, damit der
+   * Sequencer das Pattern hörbar abspielt (vorher fehlte die URL → stumm).
+   * Undefined wenn kein passender Slot in der Bank existiert.
+   */
+  sampleUrl?: string;
   /** 0..1. */
   volume: number;
   /** -1..+1 (0 = center). */

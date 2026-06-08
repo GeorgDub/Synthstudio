@@ -5261,6 +5261,9 @@ export default function App() {
               id: "",
               name: dp.sampleHint,
               sampleName: dp.sampleHint,
+              // v3.264: Sample-URL aus der Bank verlinken → Pattern ist hörbar.
+              sampleUrl: dp.sampleUrl,
+              sourceType: "sample" as const,
               muted: false,
               soloed: false,
               volume: dp.volume,

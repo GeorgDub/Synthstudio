@@ -21,6 +21,10 @@ import {
   omniTribeBridge, OtpCmd, StreamFlag,
   adaptBrowserWebSocket,
 } from "../audio/OmniTribeBridge";
+import {
+  describeOmniTribeConnect,
+  type OmniTribeConnectStatus,
+} from "../utils/omnitribeConnect";
 
 export const DEFAULT_SIM_WS_URL = "ws://localhost:8744";
 
@@ -44,6 +48,8 @@ export interface UseOmniTribeReturn {
   setParam: (part: number, ph: number, pl: number, value: number) => void;
   enableMonitoring: () => void;
   identity: OmniTribeIdentity | null;
+  /** Sichtbares Connect-Feedback (null = noch kein Versuch). */
+  connectStatus: OmniTribeConnectStatus | null;
   /** Sprint-97: Sim-Loopback via WebSocket statt Web-MIDI. */
   simConnection: SimConnectionState;
   connectSim: (url?: string) => Promise<boolean>;
@@ -52,6 +58,8 @@ export interface UseOmniTribeReturn {
 export function useOmniTribe(): UseOmniTribeReturn {
   const [connected, setConnected] = useState(false);
   const [identity, setIdentity] = useState<OmniTribeIdentity | null>(null);
+  const [connectStatus, setConnectStatus] =
+    useState<OmniTribeConnectStatus | null>(null);
   const [simConnection, setSimConnection] = useState<SimConnectionState>(
     { state: "idle" },
   );
@@ -93,20 +101,35 @@ export function useOmniTribe(): UseOmniTribeReturn {
 
   const connect = useCallback(async (): Promise<boolean> => {
     if (!webMidiSupported) {
-      console.warn("[useOmniTribe] Web-MIDI nicht verfügbar (Firefox/Safari?)");
+      const status = describeOmniTribeConnect({
+        webMidiSupported: false, connected: false,
+        inputNames: [], outputNames: [],
+      });
+      console.warn("[useOmniTribe]", status.message);
+      setConnectStatus(status);
       return false;
     }
     try {
       const access = await navigator.requestMIDIAccess({ sysex: true });
       const ok = await omniTribeBridge.connect(access);
       setConnected(ok);
-      if (!ok) {
-        console.warn("[useOmniTribe] Kein OmniTribe-Gerät im MIDIAccess gefunden.");
-      }
+      const inputNames = Array.from(access.inputs.values()).map(p => p.name ?? "");
+      const outputNames = Array.from(access.outputs.values()).map(p => p.name ?? "");
+      const status = describeOmniTribeConnect({
+        webMidiSupported: true, connected: ok, inputNames, outputNames,
+      });
+      setConnectStatus(status);
+      if (!ok) console.warn("[useOmniTribe]", status.message);
       return ok;
     } catch (err) {
       console.error("[useOmniTribe] connect failed:", err);
       setConnected(false);
+      // requestMIDIAccess wirft v.a. bei verweigerter Sysex-Permission.
+      const status = describeOmniTribeConnect({
+        webMidiSupported: true, permissionDenied: true, connected: false,
+        inputNames: [], outputNames: [],
+      });
+      setConnectStatus(status);
       return false;
     }
   }, [webMidiSupported]);
@@ -115,6 +138,7 @@ export function useOmniTribe(): UseOmniTribeReturn {
     omniTribeBridge.disconnect();
     setConnected(false);
     setIdentity(null);
+    setConnectStatus(null);
     setSimConnection({ state: "idle" });
   }, []);
 
@@ -207,6 +231,7 @@ export function useOmniTribe(): UseOmniTribeReturn {
     setParam,
     enableMonitoring,
     identity,
+    connectStatus,
     simConnection,
     connectSim,
   };
