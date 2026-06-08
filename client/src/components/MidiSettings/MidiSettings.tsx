@@ -10,7 +10,7 @@
  * - MIDI-Clock-Sync
  */
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { X } from "lucide-react";
 import type { MidiState, MidiActions, MidiLearnTarget, MidiNoteMapping, AutoLearnEntry } from "@/hooks/useMidi";
 import { GM_DRUM_DEFAULTS } from "@/hooks/useMidi";
@@ -55,6 +55,11 @@ import { TemplatesLibrary } from "@/components/MidiSettings/TemplatesLibrary";
 import { useSubMixStore, MAX_SUB_MIX_BUSES, type SubMixBus } from "@/store/useSubMixStore";
 import { useElectron } from "../../../../electron/useElectron";
 import { useMidiBackendStore } from "@/store/useMidiBackendStore";
+import {
+  describeNativeMidiStatus,
+  type NativeMidiStatusSummary,
+} from "@/utils/nativeMidiAccess";
+import { MidiActivityIndicator } from "@/components/MidiSettings/MidiActivityIndicator";
 // v3.98.0: MIDI-Click-Out — externe Hardware-Sync via Beat-Notes.
 import {
   useMidiClickStore,
@@ -191,6 +196,35 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
     if (midi.isEnabled) midi.disable();
     setMidiBackend(next);
   };
+  // #11: Live-Diagnose des nativen MIDI-Layers (verfügbar? wie viele Ports?
+  // wie viele offen?). Macht die "lädt aber liefert nichts"-Falle sichtbar.
+  const [nativeStatus, setNativeStatus] = useState<NativeMidiStatusSummary | null>(null);
+  const [nativeScanning, setNativeScanning] = useState(false);
+  const refreshNativeStatus = useCallback(async () => {
+    if (!electron.isElectron) return;
+    setNativeScanning(true);
+    try {
+      const [status, ports] = await Promise.all([
+        electron.getMidiStatus(),
+        electron.listMidiPorts(),
+      ]);
+      setNativeStatus(describeNativeMidiStatus(
+        status,
+        ports.success ? { inputs: ports.inputs, outputs: ports.outputs } : null,
+      ));
+    } catch {
+      setNativeStatus(describeNativeMidiStatus(null, null));
+    } finally {
+      setNativeScanning(false);
+    }
+  }, [electron]);
+  useEffect(() => {
+    if (midiBackend === "native" && electron.isElectron) {
+      void refreshNativeStatus();
+    } else {
+      setNativeStatus(null);
+    }
+  }, [midiBackend, electron.isElectron, refreshNativeStatus]);
   // v1.96: User-Templates (gespeicherte Mappings)
   const userTemplates = useUserMidiTemplates();
   const [userTplName, setUserTplName] = useState("");
@@ -524,11 +558,58 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
             </div>
           </div>
           {midiBackend === "native" && (
-            <div className="text-xs text-accent-secondary">
-              ⚠ Nativ unterstützt kein Hotplug — Gerät vor dem Aktivieren anschließen.
-              Bei Problemen zurück auf Web-MIDI schalten.
+            <div className="space-y-2" data-testid="native-midi-status">
+              <div className="text-xs text-accent-secondary">
+                ⚠ Nativ unterstützt kein Hotplug — Gerät vor dem Aktivieren anschließen.
+                Bei Problemen zurück auf Web-MIDI schalten.
+              </div>
+              {nativeStatus && (
+                <div
+                  className={`rounded p-2 text-xs border ${
+                    nativeStatus.level === "ok"
+                      ? "border-accent-success/40 bg-accent-success/10"
+                      : nativeStatus.level === "warn"
+                        ? "border-accent-secondary/40 bg-accent-secondary/10"
+                        : "border-accent-danger/40 bg-accent-danger/10"
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span
+                      className="font-medium text-text-primary"
+                      data-testid="native-midi-headline"
+                    >
+                      {nativeStatus.headline}
+                    </span>
+                    <button
+                      onClick={() => void refreshNativeStatus()}
+                      disabled={nativeScanning}
+                      data-testid="native-midi-rescan"
+                      className="px-2 py-0.5 rounded bg-bg-panel hover:bg-bg-base text-text-muted disabled:opacity-50"
+                    >
+                      {nativeScanning ? "…" : "Neu scannen"}
+                    </button>
+                  </div>
+                  <div className="mt-1 text-text-muted">
+                    Offen: {nativeStatus.openInputs} In / {nativeStatus.openOutputs} Out
+                  </div>
+                  {nativeStatus.notes.map((n, i) => (
+                    <div key={i} className="mt-1 text-text-dim">• {n}</div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
+        </div>
+      )}
+
+      {/* #11: Live-Signal-Anzeige — zeigt sofort, ob ein Controller/die KORG
+          tatsächlich MIDI sendet (beide Backends). */}
+      {midi.isEnabled && (
+        <div>
+          <label className="block text-xs font-medium text-text-muted mb-2 uppercase tracking-wider">
+            MIDI-Eingangssignal
+          </label>
+          <MidiActivityIndicator />
         </div>
       )}
 

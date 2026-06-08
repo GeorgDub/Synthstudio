@@ -117,6 +117,7 @@ import { MacroEditor } from "@/components/Macros/MacroEditor";
 import { getRegisteredQuickActionContext } from "@/utils/quickActionContextRegistry";
 // v3.93.0: MIDI-FX Transform-Layer (Scale/Velocity/Chord/Repeat).
 import { MidiFxPanel } from "@/components/MidiFx/MidiFxPanel";
+import { MidiActivityIndicator } from "@/components/MidiSettings/MidiActivityIndicator";
 // v3.96.0: Tempo-Map / BPM-Automation Panel.
 import { TempoMapPanel } from "@/components/TempoMap/TempoMapPanel";
 import { getCurrentBar } from "@/utils/tempoMap";
@@ -622,6 +623,10 @@ function MidiDevicesSection({ midi, onOpenAdvancedMidi }: { midi: MidiState & Mi
               <option value="">Alle Geräte</option>
               {midi.devices.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
             </select>
+            {/* #11: Live-Signal-Anzeige — sofort sehen, ob das Gerät MIDI sendet. */}
+            <div className="mt-2">
+              <MidiActivityIndicator />
+            </div>
           </div>
 
           {/* MIDI Ausgang */}

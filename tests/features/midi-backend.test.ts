@@ -31,6 +31,7 @@ import {
   NativeMidiManager,
   createNativeMidiAccess,
   connectOmniTribeNative,
+  describeNativeMidiStatus,
   OMNITRIBE_PORT_PATTERNS,
   type NativeMidiBridge,
   type NativeMidiMessage,
@@ -298,5 +299,46 @@ describe("connectOmniTribeNative", () => {
     expect(OMNITRIBE_PORT_PATTERNS).toContain("omnitribe");
     expect(OMNITRIBE_PORT_PATTERNS).toContain("electribe");
     expect(OMNITRIBE_PORT_PATTERNS).toContain("korg");
+  });
+});
+
+// ─── describeNativeMidiStatus ──────────────────────────────────────────────────
+
+describe("describeNativeMidiStatus", () => {
+  it("nicht verfügbar → error", () => {
+    const s = describeNativeMidiStatus(null, null);
+    expect(s.level).toBe("error");
+    expect(s.headline).toMatch(/nicht verfügbar/i);
+  });
+
+  it("verfügbar mit In+Out → ok", () => {
+    const s = describeNativeMidiStatus(
+      { available: true, openInputs: 1, openOutputs: 1, virtualPortsSupported: false },
+      { inputs: [{ index: 0, name: "Keystep" }], outputs: [{ index: 0, name: "Synth" }] },
+    );
+    expect(s.level).toBe("ok");
+    expect(s.inputCount).toBe(1);
+    expect(s.outputCount).toBe(1);
+    expect(s.headline).toMatch(/1 In \/ 1 Out/);
+    // Windows-Hinweis zu virtuellen Ports ist informativ, kein warn.
+    expect(s.notes.some(n => /[Vv]irtuelle/.test(n))).toBe(true);
+  });
+
+  it("verfügbar aber 0 Eingänge → warn + Stille-Hinweis (Advisor-Falle)", () => {
+    const s = describeNativeMidiStatus(
+      { available: true, openInputs: 0, openOutputs: 1, virtualPortsSupported: false },
+      { inputs: [], outputs: [{ index: 0, name: "GS Synth" }] },
+    );
+    expect(s.level).toBe("warn");
+    expect(s.notes.some(n => /Eingänge/.test(n))).toBe(true);
+  });
+
+  it("zählt offene Handles durch", () => {
+    const s = describeNativeMidiStatus(
+      { available: true, openInputs: 2, openOutputs: 3, virtualPortsSupported: true },
+      { inputs: [{ index: 0, name: "a" }, { index: 1, name: "b" }], outputs: [{ index: 0, name: "c" }] },
+    );
+    expect(s.openInputs).toBe(2);
+    expect(s.openOutputs).toBe(3);
   });
 });

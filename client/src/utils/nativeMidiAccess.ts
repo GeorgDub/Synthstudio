@@ -228,6 +228,76 @@ export async function createNativeMidiAccess(
   return { inputs, outputs, onstatechange: null, __manager: manager };
 }
 
+// ─── Status-Summary (für UI-Diagnose) ───────────────────────────────────────
+
+export interface NativeMidiStatusInput {
+  available: boolean;
+  openInputs: number;
+  openOutputs: number;
+  virtualPortsSupported: boolean;
+}
+
+export interface NativeMidiStatusSummary {
+  /** Kurz-Headline für die UI. */
+  headline: string;
+  /** Ampel: ok = nutzbar, warn = verfügbar aber auffällig, error = nicht da. */
+  level: "ok" | "warn" | "error";
+  inputCount: number;
+  outputCount: number;
+  openInputs: number;
+  openOutputs: number;
+  /** Diagnose-Hinweise (z.B. "keine Eingänge" — häufigste Stille-Ursache). */
+  notes: string[];
+}
+
+/**
+ * Verdichtet `getMidiStatus()` + `listMidiPorts()` zu einer UI-tauglichen
+ * Diagnose. Pure → unit-testbar.
+ *
+ * Wichtigster Fall (Advisor): nativ geladen, aber 0 Eingänge → das ist die
+ * stille "lädt aber liefert nichts"-Falle. Das muss der User SEHEN können,
+ * bevor er minutenlang rätselt warum sein Controller nichts tut.
+ */
+export function describeNativeMidiStatus(
+  status: NativeMidiStatusInput | null,
+  ports: { inputs?: NativeMidiPort[]; outputs?: NativeMidiPort[] } | null,
+): NativeMidiStatusSummary {
+  const inputCount = ports?.inputs?.length ?? 0;
+  const outputCount = ports?.outputs?.length ?? 0;
+  const openInputs = status?.openInputs ?? 0;
+  const openOutputs = status?.openOutputs ?? 0;
+
+  if (!status || !status.available) {
+    return {
+      headline: "Nativer MIDI-Layer nicht verfügbar",
+      level: "error",
+      inputCount, outputCount, openInputs, openOutputs,
+      notes: ["Nur in der Desktop-App; fällt sonst auf Web-MIDI zurück."],
+    };
+  }
+
+  const notes: string[] = [];
+  let level: "ok" | "warn" = "ok";
+  if (inputCount === 0) {
+    notes.push("Keine MIDI-Eingänge erkannt — eingehende Noten/CC/SysEx kommen nicht an. Gerät anschließen + Neu scannen.");
+    level = "warn";
+  }
+  if (outputCount === 0) {
+    notes.push("Keine MIDI-Ausgänge erkannt — kein Senden an Hardware möglich.");
+    level = "warn";
+  }
+  if (!status.virtualPortsSupported) {
+    notes.push("Virtuelle Ports auf dieser Plattform nicht unterstützt (Windows).");
+  }
+
+  return {
+    headline: `Nativer MIDI-Layer aktiv — ${inputCount} In / ${outputCount} Out`,
+    level,
+    inputCount, outputCount, openInputs, openOutputs,
+    notes,
+  };
+}
+
 // ─── D1: OmniTribe nativer WsTransport-Adapter ──────────────────────────────
 
 /**
