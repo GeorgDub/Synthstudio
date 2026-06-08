@@ -65,4 +65,17 @@ test("AutoMix misst endliche LUFS für eine hörbare Channel", async ({ page }) 
   const txt = (await measured.textContent())?.trim() ?? "";
   console.log("AutoMix measured LUFS for", partId, "=", txt);
   expect(Number.isFinite(Number(txt))).toBe(true);
+
+  // Apply-Pfad (der eigentliche Zweck): Suggestion auswählen → "Apply Selected"
+  // → onApplyVolume muss die Channel-Lautstärke ändern (dm.setPartVolume +
+  // AudioEngine.setChannelVolume). Belegt über die "Current dB"-Anzeige.
+  const checkbox = page.getByTestId(`automix-apply-check-${partId}`);
+  await expect(checkbox).toBeEnabled({ timeout: 5_000 }); // nonzero Suggestion ⇒ klickbar
+  const currentBefore = (await page.getByTestId(`automix-current-${partId}`).textContent())?.trim() ?? "";
+  await checkbox.check();
+  await page.getByTestId("automix-apply").click();
+  // Current dB ändert sich (Volume round-tripped durch dm → Parts-Prop → Anzeige).
+  await expect(page.getByTestId(`automix-current-${partId}`)).not.toHaveText(currentBefore, { timeout: 5_000 });
+  const currentAfter = (await page.getByTestId(`automix-current-${partId}`).textContent())?.trim() ?? "";
+  console.log("AutoMix Current dB:", currentBefore, "→", currentAfter);
 });

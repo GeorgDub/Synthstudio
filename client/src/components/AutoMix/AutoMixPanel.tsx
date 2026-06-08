@@ -246,12 +246,13 @@ export function AutoMixPanel(props: AutoMixPanelProps) {
               >
                 {sign}{s.suggestedGainDb.toFixed(1)}
               </span>
-              <span className="text-text-muted tabular-nums">{currentDbDisplay}</span>
+              <span className="text-text-muted tabular-nums" data-testid={`automix-current-${ch.id}`}>{currentDbDisplay}</span>
               <input
                 type="checkbox"
                 checked={isSelected}
                 onChange={() => toggleApply(ch.id)}
                 disabled={s.suggestedGainDb === 0}
+                data-testid={`automix-apply-check-${ch.id}`}
                 className="accent-accent-primary"
               />
             </div>
