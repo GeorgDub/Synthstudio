@@ -33,6 +33,7 @@ vi.mock("@/audio/AudioEngine", () => {
       setPatternGetter:       vi.fn(),
       setMelodicGetter:       vi.fn(),
       setArpGetter:           vi.fn(),
+      setPatternCrossfade:    vi.fn(),
       setBpm:                 vi.fn(),
       setSteps:               vi.fn(),
       play:                   vi.fn(() => Promise.resolve()),
@@ -93,6 +94,16 @@ describe("useTransport – Mount-Verhalten", () => {
     renderHook(() => useTransport({ isPlaying: false, bpm: 120, dm: fakeDm() }));
     expect(AudioEngine.setPatternGetter).toHaveBeenCalledTimes(1);
     expect(AudioEngine.setMelodicGetter).toHaveBeenCalledTimes(1);
+  });
+
+  it("bridged Pattern-Crossfade-Config in die Engine (v3.269)", () => {
+    // Vorher gab es KEINEN Aufrufer von setPatternCrossfade → Engine-Logik tot.
+    renderHook(() => useTransport({ isPlaying: false, bpm: 120, dm: fakeDm() }));
+    expect(AudioEngine.setPatternCrossfade).toHaveBeenCalled();
+    const cfg = (AudioEngine.setPatternCrossfade as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[0];
+    expect(cfg).toHaveProperty("enabled");
+    expect(cfg).toHaveProperty("lengthSteps");
+    expect(cfg).toHaveProperty("curve");
   });
 
   it("registriert Position-Handler beim Mount", () => {

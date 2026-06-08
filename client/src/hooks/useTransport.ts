@@ -15,6 +15,7 @@ import type { DrumMachineState, DrumMachineActions } from "@/store/useDrumMachin
 import { getPattern } from "@/store/useMelodicPartStore";
 import { useTransposeStore } from "@/store/useTransposeStore";
 import { getArpState, getArpSteps } from "@/store/useArpStore";
+import { usePatternCrossfadeStore } from "@/store/usePatternCrossfadeStore";
 
 interface UseTransportOptions {
   isPlaying: boolean;
@@ -82,6 +83,14 @@ export function useTransport({
   useEffect(() => {
     AudioEngine.setGlobalTranspose(transposeSemitones);
   }, [transposeSemitones]);
+
+  // Pattern-Crossfade-Config (v3.269): Store → Engine. Bisher gab es KEINEN
+  // Aufrufer von setPatternCrossfade — die Engine-Logik lief nie an. Wirkt nur
+  // bei bar-quantisierten (queued) Pattern-Switches im Performance-Mode.
+  const crossfadeCfg = usePatternCrossfadeStore();
+  useEffect(() => {
+    AudioEngine.setPatternCrossfade(crossfadeCfg);
+  }, [crossfadeCfg]);
 
   // Pattern-Getter registrieren (immer aktuell durch Ref)
   const patternRef = useRef(dm.getPlaybackPattern);

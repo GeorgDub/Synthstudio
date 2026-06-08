@@ -59,6 +59,13 @@ import {
   type PadKind,
   type QuantizeMode,
 } from "@/store/usePerformanceStore";
+import {
+  usePatternCrossfadeStore,
+  setEnabled as setCrossfadeEnabled,
+  setLength as setCrossfadeLength,
+  setCurve as setCrossfadeCurve,
+  type CrossfadeCurve,
+} from "@/store/usePatternCrossfadeStore";
 
 type Mode = "play" | "edit" | "reorder";
 
@@ -372,6 +379,9 @@ export function PatternLaunchPad({
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [dragSrc, setDragSrc] = useState<number | null>(null);
   const [dragOver, setDragOver] = useState<number | null>(null);
+
+  // Pattern-Crossfade-Config (globaler Singleton-Store, kein Prop-Drilling).
+  const crossfade = usePatternCrossfadeStore();
 
   // a11y: Roving Tabindex – welcher Pad ist gerade tab-fokussierbar?
   const [focusedIndex, setFocusedIndex] = useState<number>(0);
@@ -884,6 +894,50 @@ export function PatternLaunchPad({
                 </button>
               );
             })}
+          </div>
+
+          {/* Pattern-Crossfade (v3.269): Gain-Fade beim bar-quantisierten
+              Pattern-Switch. Nur bei Quantize=Bar wirksam — sonst kein Fade. */}
+          <div className="flex items-center gap-1 ml-2" data-testid="crossfade-control">
+            <button
+              onClick={() => setCrossfadeEnabled(!crossfade.enabled)}
+              aria-pressed={crossfade.enabled}
+              data-testid="crossfade-toggle"
+              title="Pattern-Crossfade beim Pattern-Wechsel (nur bei Quantize=Bar)"
+              className={`px-2 py-1 rounded text-xs font-mono uppercase transition-colors active:scale-95 ${
+                crossfade.enabled
+                  ? "bg-accent-secondary text-bg-base"
+                  : "bg-bg-elevated text-text-muted hover:bg-bg-base hover:text-text-primary"
+              }`}
+            >
+              XFade
+            </button>
+            {crossfade.enabled && (
+              <>
+                <input
+                  type="range"
+                  min={1}
+                  max={16}
+                  value={crossfade.lengthSteps}
+                  onChange={(e) => setCrossfadeLength(Number(e.target.value))}
+                  data-testid="crossfade-length"
+                  title={`Fade-Länge: ${crossfade.lengthSteps} Steps`}
+                  className="w-16 accent-accent-secondary"
+                />
+                <span className="text-text-dim text-xs font-mono w-4">{crossfade.lengthSteps}</span>
+                <select
+                  value={crossfade.curve}
+                  onChange={(e) => setCrossfadeCurve(e.target.value as CrossfadeCurve)}
+                  data-testid="crossfade-curve"
+                  title="Fade-Kurve"
+                  className="bg-bg-elevated text-text-muted text-xs rounded px-1 py-0.5"
+                >
+                  {(["linear", "equalPower", "sine"] as CrossfadeCurve[]).map((c) => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
+              </>
+            )}
           </div>
 
           {/* Multi-Select-Indikator (nur Reorder-Mode wenn >0 selected) */}
