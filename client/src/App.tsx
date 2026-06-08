@@ -159,6 +159,7 @@ import { configureSandboxBridge } from "@/sandbox/scriptSandboxInstance";
 import { PatternLaunchPad } from "@/components/PerformanceMode/PatternLaunchPad";
 import { AutoMixPanel } from "@/components/AutoMix/AutoMixPanel";
 import { categorizeDrumName } from "@/utils/drumCategory";
+import { PatternVariationsBar } from "@/components/PatternVariation/PatternVariationsBar";
 import {
   usePerformanceStore,
   queuePattern as queuePerformancePattern,
@@ -4656,11 +4657,14 @@ export default function App() {
               )}
 
               {activeTab === "patterns" && (
-                <div className="h-full overflow-hidden">
-                  <PatternManager
-                    dm={dm}
-                    onPlayGroup={() => { if (!project.isPlaying) project.togglePlayStop(); }}
-                  />
+                <div className="h-full overflow-hidden flex flex-col">
+                  <PatternVariationsBar dm={dm} />
+                  <div className="flex-1 overflow-hidden">
+                    <PatternManager
+                      dm={dm}
+                      onPlayGroup={() => { if (!project.isPlaying) project.togglePlayStop(); }}
+                    />
+                  </div>
                 </div>
               )}
 

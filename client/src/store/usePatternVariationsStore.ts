@@ -83,6 +83,29 @@ export function getVariationSet(baseId: string): PatternVariationSet | undefined
   return _sets.find(s => s.basePatternId === baseId);
 }
 
+/**
+ * Findet das Variation-Set, zu dem ein Pattern gehört — egal ob es die Basis
+ * ist ODER in einem der Slots A/B/C/D liegt. Pure (für UI + Tests): so weiß die
+ * UI auch nach einem Slot-Wechsel (aktives Pattern = Slot-Pattern ≠ Basis),
+ * welche Variation-Gruppe gerade aktiv ist.
+ */
+export function findSetContainingPattern(
+  sets: PatternVariationSet[],
+  patternId: string,
+): PatternVariationSet | undefined {
+  return sets.find(s =>
+    s.basePatternId === patternId ||
+    (Object.values(s.slots) as (string | null)[]).includes(patternId),
+  );
+}
+
+/** Test-Helper: setzt den Store-State zurück (inkl. localStorage). */
+export function __resetPatternVariationsForTests(): void {
+  _sets = [];
+  try { localStorage.removeItem(STORAGE_KEY); } catch { /* ignore */ }
+  notify();
+}
+
 export function usePatternVariationsStore(): { sets: PatternVariationSet[] } {
   const [, rerender] = useReducer((x: number) => x + 1, 0);
   useEffect(() => {

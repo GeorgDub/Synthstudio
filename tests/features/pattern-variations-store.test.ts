@@ -29,6 +29,9 @@ import {
   setActiveVariation,
   removeVariationSet,
   getVariationSet,
+  findSetContainingPattern,
+  __resetPatternVariationsForTests,
+  type PatternVariationSet,
 } from "@/store/usePatternVariationsStore";
 
 const STORAGE_KEY = "ss-pattern-variations:v1";
@@ -164,5 +167,41 @@ describe("usePatternVariationsStore – Full-Slot-Cycle", () => {
     expect(slots.B).toBe("patB");
     expect(slots.C).toBe("patC");
     expect(slots.D).toBe("patD");
+  });
+});
+
+describe("usePatternVariationsStore – findSetContainingPattern (v3.269)", () => {
+  beforeEach(() => __resetPatternVariationsForTests());
+
+  function mkSet(): PatternVariationSet {
+    createVariationSet("base", "Set", "patA");
+    updateVariationSlot("base", "B", "patB");
+    updateVariationSlot("base", "D", "patD");
+    return getVariationSet("base")!;
+  }
+
+  it("findet das Set über die Basis-ID", () => {
+    mkSet();
+    expect(findSetContainingPattern([getVariationSet("base")!], "base")?.basePatternId).toBe("base");
+  });
+
+  it("findet das Set über ein Slot-Pattern (nach Slot-Wechsel)", () => {
+    mkSet();
+    const sets = [getVariationSet("base")!];
+    expect(findSetContainingPattern(sets, "patB")?.basePatternId).toBe("base");
+    expect(findSetContainingPattern(sets, "patD")?.basePatternId).toBe("base");
+  });
+
+  it("leere/unbekannte Pattern-ID → undefined", () => {
+    mkSet();
+    expect(findSetContainingPattern([getVariationSet("base")!], "fremd")).toBeUndefined();
+    expect(findSetContainingPattern([], "base")).toBeUndefined();
+  });
+
+  it("ignoriert null-Slots (C ist leer → matcht nicht auf null)", () => {
+    mkSet();
+    // C wurde nie gesetzt → null. Suche nach einem 'null'-artigen Wert darf nicht matchen.
+    const sets = [getVariationSet("base")!];
+    expect(findSetContainingPattern(sets, "patC")).toBeUndefined();
   });
 });
