@@ -1212,6 +1212,10 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
   const [showVariation, setShowVariation] = useState(false);
   const [showMixAssistant, setShowMixAssistant] = useState(false);
   const [showEnvFollower, setShowEnvFollower] = useState(false);
+  // v3.268: selten genutzte Import/Export-Buttons hinter ein aufklappbares
+  // "I/O"-Cluster legen (Toolbar beruhigen). Hidden-File-Inputs bleiben immer
+  // im DOM (Refs für Drag-&-Drop valide), nur die Buttons werden eingeklappt.
+  const [ioExpanded, setIoExpanded] = useState(false);
   const [showMacros, setShowMacros] = useState(false);
   const [showGroups, setShowGroups] = useState(false);
   const [showPolyrhythm, setShowPolyrhythm] = useState(false);
@@ -3258,6 +3262,23 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
           </button>
         </div>
 
+        {/* v3.268: Import/Export-Cluster — einklappbar (Toolbar beruhigen). */}
+        <div className="flex items-center gap-1 px-2 border-l border-border-color">
+          <button
+            onClick={() => setIoExpanded(v => !v)}
+            data-testid="io-cluster-toggle"
+            aria-expanded={ioExpanded}
+            title="Import / Export (MIDI, FLP, KORG, Slice …)"
+            className={[
+              "px-2 py-1 rounded text-[10px] font-medium transition-colors inline-flex items-center gap-1",
+              ioExpanded ? "bg-accent-primary/20 text-accent-primary" : "bg-bg-elevated text-text-dim hover:text-text-primary",
+            ].join(" ")}
+          >
+            📁 I/O
+            <span className={`inline-block transition-transform ${ioExpanded ? "" : "-rotate-90"}`}>▾</span>
+          </button>
+          <div className={ioExpanded ? "flex items-center gap-1 flex-wrap" : "hidden"}>
+
         {/* MIDI-Import */}
         <button
           onClick={() => midiImportRef.current?.click()}
@@ -3429,6 +3450,8 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
           onChange={handleSliceImport}
           data-testid="slice-sample-input"
         />
+          </div>
+        </div>
 
         {/* Pattern Morph */}
         <button

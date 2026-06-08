@@ -17,9 +17,21 @@
 import { test, expect } from "@playwright/test";
 
 test.describe("Sample-Slicing UI (TASK-238)", () => {
+  // Lizenz/Welcome seeden, sonst fängt das ActivationModal-Overlay Klicks ab.
+  test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() => {
+      try {
+        window.localStorage.setItem("synthstudio:license:v1", JSON.stringify({ status: "pro", trialStartedAt: Date.now(), licenseKey: "PLAY", activatedEmail: "e2e@test.local" }));
+        window.localStorage.setItem("synthstudio:welcome:v1", JSON.stringify({ seen: true, dismissed: true, seenAt: Date.now() }));
+      } catch { /* */ }
+    });
+  });
+
   test("Toolbar-Button 'Slice Sample' ist sichtbar und klickbar", async ({ page }) => {
     await page.goto("/");
     // Default-Tab ist DrumMachine — der Button sitzt in deren Toolbar.
+    // v3.268: Import/Export-Cluster ist standardmäßig eingeklappt — erst öffnen.
+    await page.getByTestId("io-cluster-toggle").click();
     const btn = page.getByTestId("slice-sample");
     await expect(btn).toBeVisible();
 
