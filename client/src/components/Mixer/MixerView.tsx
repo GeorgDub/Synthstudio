@@ -417,7 +417,7 @@ function MixerChannel({
               "relative w-6 h-5 rounded text-[8px] font-bold transition-colors duration-100",
               muted
                 ? "bg-accent-secondary text-bg-base"
-                : "bg-bg-elevated text-text-dim hover:bg-bg-elevated hover:text-accent-secondary",
+                : "bg-bg-elevated text-text-dim hover:text-accent-secondary",
             ].join(" ")}
           >
             M
@@ -433,7 +433,7 @@ function MixerChannel({
               "relative w-6 h-5 rounded text-[8px] font-bold transition-colors duration-100",
               soloed
                 ? "bg-accent-success text-bg-base"
-                : "bg-bg-elevated text-text-dim hover:bg-bg-elevated hover:text-accent-success",
+                : "bg-bg-elevated text-text-dim hover:text-accent-success",
             ].join(" ")}
           >
             S
@@ -471,7 +471,7 @@ function MixerChannel({
               ? isRecording
                 ? "bg-accent-danger text-bg-base animate-pulse"
                 : "bg-accent-danger text-bg-base"
-              : "bg-bg-elevated text-text-dim hover:bg-bg-elevated hover:text-accent-danger border border-accent-danger/30",
+              : "bg-bg-elevated text-text-dim hover:text-accent-danger border border-accent-danger/30",
           ].join(" ")}
         >
           ●
