@@ -77,7 +77,7 @@ export function MidiFxPanel({ compact = false }: MidiFxPanelProps): React.ReactE
 
   return (
     <div
-      className="flex flex-col gap-3 p-3 bg-bg-panel border border-border-color rounded-md"
+      className="flex flex-col gap-3 p-3 bg-bg-panel border border-border-color rounded"
       data-testid="midi-fx-panel"
     >
       {/* Header */}
@@ -97,7 +97,7 @@ export function MidiFxPanel({ compact = false }: MidiFxPanelProps): React.ReactE
             <button
               type="button"
               onClick={() => clearChain()}
-              className="text-xs px-2 py-1 rounded-md border border-border-subtle text-text-muted hover:bg-bg-elevated hover:text-text-primary transition-colors"
+              className="text-xs px-2 py-1 rounded border border-border-subtle text-text-muted hover:bg-bg-elevated hover:text-text-primary transition-colors"
               data-testid="midi-fx-clear"
               title="Chain leeren"
             >
@@ -110,7 +110,7 @@ export function MidiFxPanel({ compact = false }: MidiFxPanelProps): React.ReactE
       {/* Chain */}
       {state.chain.length === 0 ? (
         <div
-          className="px-3 py-6 text-center text-sm text-text-dim border border-dashed border-border-subtle rounded-md"
+          className="px-3 py-6 text-center text-sm text-text-dim border border-dashed border-border-subtle rounded"
           data-testid="midi-fx-empty"
         >
           Noch keine MIDI-FX. Klick „+ Add" um anzufangen.
@@ -152,7 +152,7 @@ function PresetDropdown(): React.ReactElement {
         // erneut anwählen kann (z.B. nach manueller Bearbeitung).
         e.target.value = "";
       }}
-      className="text-xs px-2 py-1 rounded-md border border-border-subtle bg-bg-elevated text-text-primary hover:border-accent-primary transition-colors"
+      className="text-xs px-2 py-1 rounded border border-border-subtle bg-bg-elevated text-text-primary hover:border-accent-primary transition-colors"
       data-testid="midi-fx-preset-select"
       title="Built-In Preset laden (ersetzt aktuelle Chain)"
     >
@@ -197,7 +197,7 @@ function AddNodeButton({
         disabled={disabled}
         onClick={() => onToggle(!open)}
         className={
-          "text-xs px-2 py-1 rounded-md border transition-colors " +
+          "text-xs px-2 py-1 rounded border transition-colors " +
           (disabled
             ? "border-border-subtle text-text-dim cursor-not-allowed"
             : "border-accent-success/50 text-accent-success hover:bg-accent-success/10")
@@ -209,7 +209,7 @@ function AddNodeButton({
       </button>
       {open && !disabled && (
         <div
-          className="absolute right-0 top-full mt-1 bg-bg-elevated border border-border-color rounded-md shadow-lg z-10 min-w-[180px]"
+          className="absolute right-0 top-full mt-1 bg-bg-elevated border border-border-color rounded shadow-lg z-10 min-w-[180px]"
           data-testid="midi-fx-add-menu"
         >
           {kinds.map((k) => (
@@ -250,7 +250,7 @@ function NodeCard({
   return (
     <div
       className={
-        "rounded-md border p-2 flex flex-col gap-2 transition-opacity " +
+        "rounded border p-2 flex flex-col gap-2 transition-opacity " +
         (bypassed
           ? "border-border-subtle bg-bg-base opacity-60"
           : "border-border-color bg-bg-elevated")

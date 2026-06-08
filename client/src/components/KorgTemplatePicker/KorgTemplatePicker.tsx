@@ -82,7 +82,7 @@ export default function KorgTemplatePicker({
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-md text-text-muted hover:text-text-primary hover:bg-bg-elevated transition-colors"
+            className="p-1.5 rounded text-text-muted hover:text-text-primary hover:bg-bg-elevated transition-colors"
             aria-label="Schließen"
           >
             <X className="w-5 h-5" />
@@ -130,7 +130,7 @@ function KorgTemplateCard({
   return (
     <div className="flex flex-col p-4 rounded-lg border border-border-color bg-bg-elevated/40 hover:border-accent-primary/50 hover:bg-bg-elevated/60 transition-all">
       <div className="flex items-start gap-3 mb-2">
-        <div className="p-2 rounded-md bg-accent-primary/15 text-accent-primary flex-shrink-0">
+        <div className="p-2 rounded bg-accent-primary/15 text-accent-primary flex-shrink-0">
           <Icon className="w-5 h-5" />
         </div>
         <div className="flex-1 min-w-0">
@@ -158,7 +158,7 @@ function KorgTemplateCard({
 
       <button
         onClick={onUse}
-        className="mt-auto px-3 py-2 rounded-md bg-accent-primary text-bg-base font-semibold text-xs hover:opacity-90 transition-opacity"
+        className="mt-auto px-3 py-2 rounded bg-accent-primary text-bg-base font-semibold text-xs hover:opacity-90 transition-opacity"
       >
         Use Template
       </button>

@@ -220,7 +220,7 @@ function MacroButton({
         onTouchEnd={handleUp}
         disabled={disabled}
         aria-label={`Trigger ${macro.label}${isHoldMode ? " (Hold-Mode)" : ""}`}
-        className="relative h-20 w-14 rounded-md flex items-center justify-center text-[10px] font-bold border transition-all select-none disabled:opacity-50 disabled:cursor-not-allowed border-border-color"
+        className="relative h-20 w-14 rounded flex items-center justify-center text-[10px] font-bold border transition-all select-none disabled:opacity-50 disabled:cursor-not-allowed border-border-color"
         style={{
           // User-definierte Farbe (Pad oder Macro) darf inline gestyled werden (domain palette, kein Token-Mapping)
           backgroundColor: disabled ? "transparent" : effectiveColor,

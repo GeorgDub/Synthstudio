@@ -306,7 +306,7 @@ export function ChannelStrip({
         title="Mute"
         className={[
           "w-5 h-5 rounded text-[9px] font-bold flex-shrink-0 transition-colors",
-          part.muted ? "bg-accent-secondary text-bg-base" : "bg-bg-elevated text-text-dim hover:bg-bg-elevated",
+          part.muted ? "bg-accent-secondary text-bg-base" : "bg-bg-elevated text-text-dim hover:text-text-primary",
         ].join(" ")}
       >M</button>
       <button
@@ -314,7 +314,7 @@ export function ChannelStrip({
         title="Solo (Shift+Click = additiv)"
         className={[
           "w-5 h-5 rounded text-[9px] font-bold flex-shrink-0 transition-colors",
-          part.soloed ? "bg-accent-success text-bg-base" : "bg-bg-elevated text-text-dim hover:bg-bg-elevated",
+          part.soloed ? "bg-accent-success text-bg-base" : "bg-bg-elevated text-text-dim hover:text-text-primary",
         ].join(" ")}
       >S</button>
 
@@ -359,7 +359,7 @@ export function ChannelStrip({
         title="Effekte"
         className={[
           "w-6 h-5 rounded text-[9px] flex-shrink-0 transition-colors font-medium",
-          hasActiveFx ? "bg-accent-primary text-white" : "bg-bg-elevated text-text-dim hover:bg-bg-elevated",
+          hasActiveFx ? "bg-accent-primary text-white" : "bg-bg-elevated text-text-dim hover:text-text-primary",
           fxPanelOpen ? "ring-1 ring-accent-primary" : "",
         ].join(" ")}
       >FX</button>
@@ -379,7 +379,7 @@ export function ChannelStrip({
           "w-6 h-5 rounded text-[9px] flex-shrink-0 transition-colors font-medium",
           part.sourceType === "granular"
             ? "bg-accent-secondary/30 text-accent-secondary ring-1 ring-accent-secondary"
-            : "bg-bg-elevated text-text-dim hover:bg-bg-elevated hover:text-accent-secondary",
+            : "bg-bg-elevated text-text-dim hover:text-accent-secondary",
         ].join(" ")}
       >GR</button>
 

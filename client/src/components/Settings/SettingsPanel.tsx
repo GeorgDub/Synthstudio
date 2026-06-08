@@ -2476,7 +2476,7 @@ export function SettingsPanel({ isOpen, onClose, midi, parts, initialSection = "
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-sm"
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="w-full max-w-4xl max-h-[90vh] bg-bg-panel border border-border-color rounded-2xl shadow-2xl flex overflow-hidden">
+      <div className="w-full max-w-4xl max-h-[90vh] bg-bg-panel border border-border-color rounded-xl shadow-2xl flex overflow-hidden">
 
         {/* ── Sidebar ────────────────────────────────────────────────────── */}
         <nav className="w-48 flex-shrink-0 bg-bg-base border-r border-border-color flex flex-col py-4 overflow-y-auto">

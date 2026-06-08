@@ -161,7 +161,7 @@ export function PatternCrossfadePanel({ className = "" }: PatternCrossfadePanelP
         <button
           data-testid="pattern-crossfade-toggle"
           onClick={() => setEnabled(!cfg.enabled)}
-          className={`rounded-md px-3 py-1.5 text-xs font-semibold transition ${
+          className={`rounded px-3 py-1.5 text-xs font-semibold transition ${
             cfg.enabled
               ? "bg-accent-success text-bg-base"
               : "bg-bg-elevated text-text-muted hover:text-text-primary"
@@ -206,7 +206,7 @@ export function PatternCrossfadePanel({ className = "" }: PatternCrossfadePanelP
                 onClick={() => setCurve(opt.id)}
                 disabled={!cfg.enabled}
                 title={opt.hint}
-                className={`rounded-md px-2 py-1.5 text-xs font-medium transition ${
+                className={`rounded px-2 py-1.5 text-xs font-medium transition ${
                   active
                     ? "bg-accent-primary text-bg-base"
                     : "bg-bg-elevated text-text-muted hover:text-text-primary disabled:opacity-50"
@@ -227,7 +227,7 @@ export function PatternCrossfadePanel({ className = "" }: PatternCrossfadePanelP
             data-testid="pattern-crossfade-preview-btn"
             onClick={() => setAnimating(true)}
             disabled={!cfg.enabled || animating}
-            className="rounded-md bg-bg-elevated px-2 py-1 text-xs text-text-muted hover:text-text-primary disabled:opacity-50"
+            className="rounded bg-bg-elevated px-2 py-1 text-xs text-text-muted hover:text-text-primary disabled:opacity-50"
           >
             ▶ Preview
           </button>

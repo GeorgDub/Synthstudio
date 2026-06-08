@@ -226,7 +226,7 @@ function LooperPad({ index, name, state, sourceChannelId }: LooperPadProps) {
       onPointerUp={handlePointerUp}
       onPointerLeave={handlePointerLeave}
       onPointerCancel={handlePointerLeave}
-      className={`relative aspect-square rounded-md border-2 px-2 py-1 text-xs font-semibold transition-transform active:scale-95 ${info.bg} ${info.pulse ? "animate-pulse" : ""}`}
+      className={`relative aspect-square rounded border-2 px-2 py-1 text-xs font-semibold transition-transform active:scale-95 ${info.bg} ${info.pulse ? "animate-pulse" : ""}`}
       style={{
         borderColor: "var(--ss-border)",
         color: "var(--ss-text-primary)",
