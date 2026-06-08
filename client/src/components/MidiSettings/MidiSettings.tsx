@@ -53,6 +53,8 @@ import {
 // v3.121.0: Templates Library Dialog
 import { TemplatesLibrary } from "@/components/MidiSettings/TemplatesLibrary";
 import { useSubMixStore, MAX_SUB_MIX_BUSES, type SubMixBus } from "@/store/useSubMixStore";
+import { useElectron } from "../../../../electron/useElectron";
+import { useMidiBackendStore } from "@/store/useMidiBackendStore";
 // v3.98.0: MIDI-Click-Out — externe Hardware-Sync via Beat-Notes.
 import {
   useMidiClickStore,
@@ -179,6 +181,16 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
   // der User im Mixer einen Bus erstellt/löscht.
   const subMixState = useSubMixStore();
   const subMixBuses: ReadonlyArray<SubMixBus> = subMixState.buses;
+  // #11: MIDI-Backend-Opt-in (Web-MIDI vs. nativer RtMidi-Layer).
+  const electron = useElectron();
+  const { backend: midiBackend, setBackend: setMidiBackend } = useMidiBackendStore();
+  const switchMidiBackend = (next: "web" | "native") => {
+    if (next === midiBackend) return;
+    // Backend-Wechsel: erst sauber teardown, dann umschalten — der User
+    // klickt danach erneut "Aktivieren" auf dem neuen Pfad.
+    if (midi.isEnabled) midi.disable();
+    setMidiBackend(next);
+  };
   // v1.96: User-Templates (gespeicherte Mappings)
   const userTemplates = useUserMidiTemplates();
   const [userTplName, setUserTplName] = useState("");
@@ -484,6 +496,41 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
           {midi.isEnabled ? "Deaktivieren" : "Aktivieren"}
         </button>
       </div>
+
+      {/* #11: MIDI-Backend (Opt-in nativer Layer) — nur in der Desktop-App. */}
+      {electron.isElectron && (
+        <div className="p-3 bg-bg-elevated rounded-lg space-y-2">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-sm font-medium text-text-primary">MIDI-Backend</div>
+              <div className="text-xs text-text-muted mt-0.5">
+                Nativer Layer = robusteres SysEx für KORG/OmniTribe (experimentell)
+              </div>
+            </div>
+            <div className="flex rounded overflow-hidden border border-border-color">
+              {(["web", "native"] as const).map((b) => (
+                <button
+                  key={b}
+                  onClick={() => switchMidiBackend(b)}
+                  className={`px-3 py-1.5 text-xs font-medium transition-colors ${
+                    midiBackend === b
+                      ? "bg-accent-primary text-bg-base"
+                      : "bg-bg-panel hover:bg-bg-elevated text-text-muted"
+                  }`}
+                >
+                  {b === "web" ? "Web-MIDI" : "Nativ"}
+                </button>
+              ))}
+            </div>
+          </div>
+          {midiBackend === "native" && (
+            <div className="text-xs text-accent-secondary">
+              ⚠ Nativ unterstützt kein Hotplug — Gerät vor dem Aktivieren anschließen.
+              Bei Problemen zurück auf Web-MIDI schalten.
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Gerät auswählen */}
       {midi.isEnabled && (

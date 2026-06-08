@@ -516,5 +516,17 @@ const electronAPI = {
     },
     // v2.26: OSC-Send-Out
     sendOscMessage: (options) => electron_1.ipcRenderer.invoke("osc:send", options),
+    // ─── #11: Nativer MIDI-Layer (robustes SysEx; Web-MIDI bleibt Fallback) ────
+    listMidiPorts: () => electron_1.ipcRenderer.invoke("midi:listPorts"),
+    getMidiStatus: () => electron_1.ipcRenderer.invoke("midi:status"),
+    openMidiInput: (portIndex) => electron_1.ipcRenderer.invoke("midi:openInput", portIndex),
+    openMidiOutput: (portIndex) => electron_1.ipcRenderer.invoke("midi:openOutput", portIndex),
+    sendMidi: (handle, bytes) => electron_1.ipcRenderer.invoke("midi:send", handle, bytes),
+    closeMidiPort: (handle) => electron_1.ipcRenderer.invoke("midi:closePort", handle),
+    onMidiMessage: (cb) => {
+        const handler = (_e, payload) => cb(payload);
+        electron_1.ipcRenderer.on("midi:message", handler);
+        return () => electron_1.ipcRenderer.removeListener("midi:message", handler);
+    },
 };
 electron_1.contextBridge.exposeInMainWorld("electronAPI", electronAPI);

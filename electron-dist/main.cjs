@@ -64,9 +64,12 @@ const export_1 = require("./export.cjs");
 const updater_1 = require("./updater.cjs");
 const store_1 = require("./store.cjs");
 const osc_server_1 = require("./osc-server.cjs");
+// #11: nativer MIDI-Layer (robustes SysEx; Web-MIDI bleibt Browser-Fallback).
+const midi_native_1 = require("./midi-native.cjs");
+const ipcValidators_1 = require("./ipcValidators.cjs");
 const crashLog_1 = require("./crashLog.cjs");
 const zip_import_1 = require("./zip-import.cjs");
-const ipcValidators_1 = require("./ipcValidators.cjs");
+const ipcValidators_2 = require("./ipcValidators.cjs");
 const collab_server_1 = require("./collab-server.cjs");
 const collab_discovery_1 = require("./collab-discovery.cjs");
 const windowManager = new windows_1.WindowManager();
@@ -2000,7 +2003,7 @@ function registerIpcHandlers() {
         try {
             // SECURITY: Path-Validation + Root-Allowlist-Check VOR jedem File-Access.
             const allowed = Array.from(packSampleRoots);
-            const check = (0, ipcValidators_1.validatePackSamplePath)(filePath, allowed);
+            const check = (0, ipcValidators_2.validatePackSamplePath)(filePath, allowed);
             if (!check.ok)
                 return { success: false, error: check.error };
             try {
@@ -2013,7 +2016,7 @@ function registerIpcHandlers() {
             if (!stat.isFile()) {
                 return { success: false, error: "Pfad ist keine Datei" };
             }
-            const sizeCheck = (0, ipcValidators_1.validatePackSampleFileSize)(stat.size);
+            const sizeCheck = (0, ipcValidators_2.validatePackSampleFileSize)(stat.size);
             if (!sizeCheck.ok)
                 return { success: false, error: sizeCheck.error };
             const buffer = await fs.promises.readFile(check.resolved);
@@ -2124,7 +2127,7 @@ function registerIpcHandlers() {
     electron_1.ipcMain.handle("audio:save-recording", async (_event, filename, data) => {
         try {
             // ── Input-Validation (Pure-Validators v2.99) ─────────────────────────
-            const nameCheck = (0, ipcValidators_1.validateRecordingFilename)(filename);
+            const nameCheck = (0, ipcValidators_2.validateRecordingFilename)(filename);
             if (!nameCheck.ok)
                 return { success: false, error: nameCheck.error };
             if (!data)
@@ -2135,13 +2138,13 @@ function registerIpcHandlers() {
                 : Buffer.from(data);
             // WAV-Magic + Größen-Limit (max 500 MB, Disk-Fill-Schutz)
             const prefix = buf.subarray(0, Math.min(12, buf.byteLength)).toString("ascii");
-            const wavCheck = (0, ipcValidators_1.validateWavBuffer)(buf.byteLength, prefix);
+            const wavCheck = (0, ipcValidators_2.validateWavBuffer)(buf.byteLength, prefix);
             if (!wavCheck.ok)
                 return { success: false, error: wavCheck.error };
             // ── Path-Resolution + Traversal-Guard ────────────────────────────────
             const recordingsDir = path.resolve(path.join(electron_1.app.getPath("userData"), "recordings"));
             await fs.promises.mkdir(recordingsDir, { recursive: true });
-            const pathCheck = (0, ipcValidators_1.guardRecordingPath)(recordingsDir, nameCheck.filename);
+            const pathCheck = (0, ipcValidators_2.guardRecordingPath)(recordingsDir, nameCheck.filename);
             if (!pathCheck.ok)
                 return { success: false, error: pathCheck.error };
             await fs.promises.writeFile(pathCheck.resolved, buf);
@@ -2182,7 +2185,7 @@ function registerIpcHandlers() {
             }
             if (!stat.isFile())
                 return { success: false, error: "license.json ist keine Datei" };
-            if (stat.size > ipcValidators_1.LICENSE_FILE_MAX_BYTES) {
+            if (stat.size > ipcValidators_2.LICENSE_FILE_MAX_BYTES) {
                 return { success: false, error: "license.json zu groß" };
             }
             const text = await fs.promises.readFile(filePath, "utf-8");
@@ -2208,9 +2211,9 @@ function registerIpcHandlers() {
             // Whitelist-Sanitization (Pure-Validator v2.99): unbekannte Keys werden
             // verworfen, invalid types fallen auf Defaults. Niemals direkt
             // user-input persistieren.
-            const safe = (0, ipcValidators_1.sanitizeLicenseState)(state);
+            const safe = (0, ipcValidators_2.sanitizeLicenseState)(state);
             const json = JSON.stringify(safe);
-            if (json.length > ipcValidators_1.LICENSE_FILE_MAX_BYTES) {
+            if (json.length > ipcValidators_2.LICENSE_FILE_MAX_BYTES) {
                 return { success: false, error: "Payload zu groß" };
             }
             const filePath = licenseFilePath();
@@ -2685,7 +2688,7 @@ function registerIpcHandlers() {
     // Renderer ruft anschliessend parseEsxBank()/parseE2sBank().
     electron_1.ipcMain.handle("korg:import-bank", async (_event, filePath) => {
         try {
-            const pathCheck = (0, ipcValidators_1.validateKorgBankPath)(filePath);
+            const pathCheck = (0, ipcValidators_2.validateKorgBankPath)(filePath);
             if (!pathCheck.ok)
                 return { success: false, error: pathCheck.error };
             const resolvedPath = path.resolve(filePath);
@@ -2696,7 +2699,7 @@ function registerIpcHandlers() {
                 return { success: false, error: "Datei nicht lesbar" };
             }
             const stat = await fs.promises.stat(resolvedPath);
-            const sizeCheck = (0, ipcValidators_1.validateKorgBankFileSize)(stat.size);
+            const sizeCheck = (0, ipcValidators_2.validateKorgBankFileSize)(stat.size);
             if (!sizeCheck.ok)
                 return { success: false, error: sizeCheck.error };
             const buffer = await fs.promises.readFile(resolvedPath);
@@ -2724,7 +2727,7 @@ function registerIpcHandlers() {
         return result;
     });
     // Surface the max-size cap so the renderer can show a friendly hint.
-    electron_1.ipcMain.handle("korg:get-bank-cap", () => ipcValidators_1.KORG_BANK_MAX_BYTES);
+    electron_1.ipcMain.handle("korg:get-bank-cap", () => ipcValidators_2.KORG_BANK_MAX_BYTES);
     // ── E2S Sample-Bank WRITE (v3.4.0) ────────────────────────────────────────
     //
     // Speichert eine vom Renderer-Side gebaute .all-Datei via nativen Save-Dialog.
@@ -2738,7 +2741,7 @@ function registerIpcHandlers() {
     electron_1.ipcMain.handle("korg:save-bank-as", async (_event, suggestedFilename, data) => {
         try {
             // ── 1. Filename-Validation (defensiv, auch wenn nur als Suggestion) ───
-            const nameCheck = (0, ipcValidators_1.validateKorgBankSaveFilename)(suggestedFilename);
+            const nameCheck = (0, ipcValidators_2.validateKorgBankSaveFilename)(suggestedFilename);
             if (!nameCheck.ok)
                 return { success: false, error: nameCheck.error };
             if (!data)
@@ -2756,7 +2759,7 @@ function registerIpcHandlers() {
             }
             // ── 2. Buffer-Validation (Magic + Size-Caps) ──────────────────────────
             const prefix = new Uint8Array(buf.subarray(0, Math.min(16, buf.byteLength)));
-            const bufCheck = (0, ipcValidators_1.validateKorgBankBuffer)(buf.byteLength, prefix);
+            const bufCheck = (0, ipcValidators_2.validateKorgBankBuffer)(buf.byteLength, prefix);
             if (!bufCheck.ok)
                 return { success: false, error: bufCheck.error };
             // ── 3. User-Save-Dialog (Pfad kommt NICHT vom Renderer) ───────────────
@@ -2785,7 +2788,7 @@ function registerIpcHandlers() {
             return { success: false, error: "Schreibfehler" };
         }
     });
-    electron_1.ipcMain.handle("korg:get-bank-save-cap", () => ipcValidators_1.KORG_BANK_SAVE_MAX_BYTES);
+    electron_1.ipcMain.handle("korg:get-bank-save-cap", () => ipcValidators_2.KORG_BANK_SAVE_MAX_BYTES);
     // ── E2 Pattern WRITE (.e2spat) — v3.26.0 ─────────────────────────────────
     //
     // Persistiert ein vom Renderer gebautes 16640-Byte `.e2spat`-File via
@@ -2797,7 +2800,7 @@ function registerIpcHandlers() {
     //  - Final-Sanity: gespeicherter Pfad MUSS auf .e2spat enden.
     electron_1.ipcMain.handle("electribe:save-pattern", async (_event, suggestedFilename, data) => {
         try {
-            const nameCheck = (0, ipcValidators_1.validateE2PatternFilename)(suggestedFilename);
+            const nameCheck = (0, ipcValidators_2.validateE2PatternFilename)(suggestedFilename);
             if (!nameCheck.ok)
                 return { success: false, error: nameCheck.error };
             if (!data)
@@ -2816,7 +2819,7 @@ function registerIpcHandlers() {
             // Slice the prefix used by the validator (must reach 0x103 inclusive
             // for the PTST marker). 260 = 0x104.
             const prefix = new Uint8Array(buf.subarray(0, 0x104));
-            const bufCheck = (0, ipcValidators_1.validateE2PatternBuffer)(buf.byteLength, prefix);
+            const bufCheck = (0, ipcValidators_2.validateE2PatternBuffer)(buf.byteLength, prefix);
             if (!bufCheck.ok)
                 return { success: false, error: bufCheck.error };
             const result = await electron_1.dialog.showSaveDialog({
@@ -2843,7 +2846,7 @@ function registerIpcHandlers() {
             return { success: false, error: "Schreibfehler" };
         }
     });
-    electron_1.ipcMain.handle("electribe:get-pattern-size", () => ipcValidators_1.E2_PATTERN_FILE_SIZE_EXACT);
+    electron_1.ipcMain.handle("electribe:get-pattern-size", () => ipcValidators_2.E2_PATTERN_FILE_SIZE_EXACT);
     // ── Project AutoSave (v3.56.0) ─────────────────────────────────────────────
     //
     // Speichert Projekt-Versionen unter:
@@ -2864,21 +2867,21 @@ function registerIpcHandlers() {
     }
     electron_1.ipcMain.handle("autosave:write", async (_event, projectId, versionId, json, label) => {
         try {
-            const idCheck = (0, ipcValidators_1.validateAutoSaveProjectId)(projectId);
+            const idCheck = (0, ipcValidators_2.validateAutoSaveProjectId)(projectId);
             if (!idCheck.ok)
                 return { success: false, error: idCheck.error };
-            const verCheck = (0, ipcValidators_1.validateAutoSaveVersionId)(versionId);
+            const verCheck = (0, ipcValidators_2.validateAutoSaveVersionId)(versionId);
             if (!verCheck.ok)
                 return { success: false, error: verCheck.error };
-            const jsonCheck = (0, ipcValidators_1.validateAutoSaveJson)(json);
+            const jsonCheck = (0, ipcValidators_2.validateAutoSaveJson)(json);
             if (!jsonCheck.ok)
                 return { success: false, error: jsonCheck.error };
-            const labelCheck = (0, ipcValidators_1.validateAutoSaveLabel)(label);
+            const labelCheck = (0, ipcValidators_2.validateAutoSaveLabel)(label);
             if (!labelCheck.ok)
                 return { success: false, error: labelCheck.error };
             const root = getAutoSaveRoot();
             const filename = `${verCheck.value}.synth`;
-            const pathCheck = (0, ipcValidators_1.guardAutoSavePath)(root, idCheck.value, filename);
+            const pathCheck = (0, ipcValidators_2.guardAutoSavePath)(root, idCheck.value, filename);
             if (!pathCheck.ok)
                 return { success: false, error: pathCheck.error };
             const projectDir = path.join(root, idCheck.value);
@@ -2906,7 +2909,7 @@ function registerIpcHandlers() {
     });
     electron_1.ipcMain.handle("autosave:list", async (_event, projectId) => {
         try {
-            const idCheck = (0, ipcValidators_1.validateAutoSaveProjectId)(projectId);
+            const idCheck = (0, ipcValidators_2.validateAutoSaveProjectId)(projectId);
             if (!idCheck.ok)
                 return { success: false, error: idCheck.error };
             const projectDir = path.join(getAutoSaveRoot(), idCheck.value);
@@ -2922,7 +2925,7 @@ function registerIpcHandlers() {
                 if (!entry.endsWith(".synth"))
                     continue;
                 const verId = entry.slice(0, -".synth".length);
-                if (!ipcValidators_1.AUTOSAVE_VERSION_ID_REGEX.test(verId))
+                if (!ipcValidators_2.AUTOSAVE_VERSION_ID_REGEX.test(verId))
                     continue;
                 const filePath = path.join(projectDir, entry);
                 try {
@@ -2973,15 +2976,15 @@ function registerIpcHandlers() {
     });
     electron_1.ipcMain.handle("autosave:restore", async (_event, projectId, versionId) => {
         try {
-            const idCheck = (0, ipcValidators_1.validateAutoSaveProjectId)(projectId);
+            const idCheck = (0, ipcValidators_2.validateAutoSaveProjectId)(projectId);
             if (!idCheck.ok)
                 return { success: false, error: idCheck.error };
-            const verCheck = (0, ipcValidators_1.validateAutoSaveVersionId)(versionId);
+            const verCheck = (0, ipcValidators_2.validateAutoSaveVersionId)(versionId);
             if (!verCheck.ok)
                 return { success: false, error: verCheck.error };
             const root = getAutoSaveRoot();
             const filename = `${verCheck.value}.synth`;
-            const pathCheck = (0, ipcValidators_1.guardAutoSavePath)(root, idCheck.value, filename);
+            const pathCheck = (0, ipcValidators_2.guardAutoSavePath)(root, idCheck.value, filename);
             if (!pathCheck.ok)
                 return { success: false, error: pathCheck.error };
             try {
@@ -2991,7 +2994,7 @@ function registerIpcHandlers() {
                 return { success: false, error: "Version nicht gefunden" };
             }
             const stat = await fs.promises.stat(pathCheck.resolved);
-            if (stat.size > ipcValidators_1.AUTOSAVE_MAX_JSON_BYTES) {
+            if (stat.size > ipcValidators_2.AUTOSAVE_MAX_JSON_BYTES) {
                 return { success: false, error: "Datei zu groß" };
             }
             const json = await fs.promises.readFile(pathCheck.resolved, "utf8");
@@ -3012,15 +3015,15 @@ function registerIpcHandlers() {
     });
     electron_1.ipcMain.handle("autosave:delete", async (_event, projectId, versionId) => {
         try {
-            const idCheck = (0, ipcValidators_1.validateAutoSaveProjectId)(projectId);
+            const idCheck = (0, ipcValidators_2.validateAutoSaveProjectId)(projectId);
             if (!idCheck.ok)
                 return { success: false, error: idCheck.error };
-            const verCheck = (0, ipcValidators_1.validateAutoSaveVersionId)(versionId);
+            const verCheck = (0, ipcValidators_2.validateAutoSaveVersionId)(versionId);
             if (!verCheck.ok)
                 return { success: false, error: verCheck.error };
             const root = getAutoSaveRoot();
             const filename = `${verCheck.value}.synth`;
-            const pathCheck = (0, ipcValidators_1.guardAutoSavePath)(root, idCheck.value, filename);
+            const pathCheck = (0, ipcValidators_2.guardAutoSavePath)(root, idCheck.value, filename);
             if (!pathCheck.ok)
                 return { success: false, error: pathCheck.error };
             await fs.promises.unlink(pathCheck.resolved).catch(() => {
@@ -3054,7 +3057,7 @@ function registerIpcHandlers() {
     //  - Final-Sanity: saved path MUST end on .esx
     electron_1.ipcMain.handle("esx:save-bank-as", async (_event, suggestedFilename, data) => {
         try {
-            const nameCheck = (0, ipcValidators_1.validateEsxBankSaveFilename)(suggestedFilename);
+            const nameCheck = (0, ipcValidators_2.validateEsxBankSaveFilename)(suggestedFilename);
             if (!nameCheck.ok)
                 return { success: false, error: nameCheck.error };
             if (!data)
@@ -3072,7 +3075,7 @@ function registerIpcHandlers() {
             }
             // Buffer-Validation (Size + Magic)
             const prefix = new Uint8Array(buf.subarray(0, Math.min(16, buf.byteLength)));
-            const bufCheck = (0, ipcValidators_1.validateEsxBankBuffer)(buf.byteLength, prefix);
+            const bufCheck = (0, ipcValidators_2.validateEsxBankBuffer)(buf.byteLength, prefix);
             if (!bufCheck.ok)
                 return { success: false, error: bufCheck.error };
             // User-Save-Dialog (path comes from dialog, NOT from renderer)
@@ -3100,7 +3103,7 @@ function registerIpcHandlers() {
             return { success: false, error: "Schreibfehler" };
         }
     });
-    electron_1.ipcMain.handle("esx:get-bank-save-cap", () => ipcValidators_1.ESX_BANK_SAVE_MAX_BYTES);
+    electron_1.ipcMain.handle("esx:get-bank-save-cap", () => ipcValidators_2.ESX_BANK_SAVE_MAX_BYTES);
     // ── Kollaborations-Server ─────────────────────────────────────────────────────
     electron_1.ipcMain.handle("collab:start", async () => {
         try {
@@ -3266,6 +3269,38 @@ electron_1.app.whenReady().then(() => {
     electron_1.ipcMain.handle("osc:status", () => (0, osc_server_1.getOscStatus)());
     // v2.26: OSC-Out
     electron_1.ipcMain.handle("osc:send", (_e, options) => (0, osc_server_1.sendOscMessage)(options));
+    // #11: Nativer MIDI-Layer. Eingehende Messages → Renderer via Emitter.
+    // Jede Payload wird VOR dem nativen Call validiert (Renderer untrusted).
+    (0, midi_native_1.setMidiEmitter)((channel, payload) => mainWindow?.webContents.send(channel, payload));
+    electron_1.ipcMain.handle("midi:listPorts", () => (0, midi_native_1.listMidiPorts)());
+    electron_1.ipcMain.handle("midi:status", () => (0, midi_native_1.getMidiStatus)());
+    electron_1.ipcMain.handle("midi:openInput", (_e, portIndex) => {
+        const v = (0, ipcValidators_1.validateMidiPortIndex)(portIndex);
+        if (!v.ok)
+            return { success: false, error: v.error };
+        return (0, midi_native_1.openMidiInput)(v.index);
+    });
+    electron_1.ipcMain.handle("midi:openOutput", (_e, portIndex) => {
+        const v = (0, ipcValidators_1.validateMidiPortIndex)(portIndex);
+        if (!v.ok)
+            return { success: false, error: v.error };
+        return (0, midi_native_1.openMidiOutput)(v.index);
+    });
+    electron_1.ipcMain.handle("midi:send", (_e, handle, bytes) => {
+        const h = (0, ipcValidators_1.validateMidiHandle)(handle);
+        if (!h.ok)
+            return { success: false, error: h.error };
+        const b = (0, ipcValidators_1.validateMidiBytes)(bytes);
+        if (!b.ok)
+            return { success: false, error: b.error };
+        return (0, midi_native_1.sendMidi)(h.handle, b.bytes);
+    });
+    electron_1.ipcMain.handle("midi:closePort", (_e, handle) => {
+        const h = (0, ipcValidators_1.validateMidiHandle)(handle);
+        if (!h.ok)
+            return { success: false, error: h.error };
+        return (0, midi_native_1.closeMidiPort)(h.handle);
+    });
     createTray();
     registerGlobalShortcuts();
     // Drag & Drop für das Hauptfenster einrichten
@@ -3316,6 +3351,8 @@ electron_1.app.on("before-quit", (event) => {
     // v2.23: OSC-Listener sauber schließen (kein Socket-Leak bei nächstem Start)
     (0, osc_server_1.stopOscServer)();
     (0, osc_server_1.closeOscOutSocket)();
+    // #11: native MIDI-Ports schließen (kein Port-Leak / Device-Lock).
+    (0, midi_native_1.closeAllMidi)();
     // BUG-018 v1.29.0 follow-up: nukleare Quit-Sperre.
     if (!userInitiatedQuit && mainWindow && !mainWindow.isDestroyed()) {
         event.preventDefault();

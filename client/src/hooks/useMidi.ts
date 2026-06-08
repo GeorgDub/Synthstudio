@@ -34,6 +34,13 @@ import {
   NANO_KONTROL2,
   type MidiAccessLike,
 } from "@/utils/midiOutput";
+import { useElectron } from "../../../electron/useElectron";
+import { isNativeMidiBackend } from "@/store/useMidiBackendStore";
+import {
+  createNativeMidiAccess,
+  type NativeMidiAccess,
+  type NativeMidiBridge,
+} from "@/utils/nativeMidiAccess";
 import { NanoKontrolFeedback, type NanoKontrolChannelState } from "@/audio/NanoKontrolFeedback";
 import { MidiClockIn, type MidiClockInStatus } from "@/audio/MidiClockIn";
 // v3.111.0: MidiSyncIn — schlanke KORG-Master-Sync-Façade neben MidiClockIn.
@@ -925,6 +932,9 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
   const [noteMappings, setNoteMappings] = useState<MidiNoteMapping[]>(savedMappings.notes);
 
   const midiAccessRef = useRef<MIDIAccess | null>(null);
+  // #11: aktiver nativer Access-Shim (für Teardown). null = Web-MIDI-Pfad.
+  const nativeAccessRef = useRef<NativeMidiAccess | null>(null);
+  const electron = useElectron();
   const activeInputRef = useRef<MIDIInput | null>(null);
   const activeOutputRef = useRef<MIDIOutput | null>(null);
   const clockAnalyzer = useRef(new MidiClockAnalyzer());
@@ -1630,6 +1640,44 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
   // ─── MIDI aktivieren ─────────────────────────────────────────────────────
 
   const enable = useCallback(async () => {
+    // #11: Opt-in nativer Pfad (Electron-Desktop + Backend=native). Liefert
+    // ein MIDIAccess-ähnliches Shim über dem RtMidi-Layer. Bei jedem Misserfolg
+    // → sauberer Fallback auf den verifizierten Web-MIDI-Pfad unten.
+    if (isNativeMidiBackend() && electron.isElectron) {
+      try {
+        const status = await electron.getMidiStatus();
+        if (status.available) {
+          const bridge: NativeMidiBridge = {
+            listMidiPorts: () => electron.listMidiPorts(),
+            openMidiInput: (i) => electron.openMidiInput(i),
+            openMidiOutput: (i) => electron.openMidiOutput(i),
+            sendMidi: (h, b) => electron.sendMidi(h, b),
+            closeMidiPort: (h) => electron.closeMidiPort(h),
+            onMidiMessage: (cb) => electron.onMidiMessage(cb),
+          };
+          const access = await createNativeMidiAccess(bridge);
+          if (access) {
+            nativeAccessRef.current = access;
+            midiAccessRef.current = access as unknown as MIDIAccess;
+            // Kein Hotplug bei RtMidi — onstatechange bleibt ungenutzt.
+            setIsEnabled(true);
+            setIsAvailable(true);
+            refreshDevices();
+            toast(
+              `MIDI aktiviert (nativ): ${access.inputs.size} In / ${access.outputs.size} Out`,
+              { kind: "success" },
+            );
+            return;
+          }
+        }
+        toast(
+          "Nativer MIDI-Layer nicht verfügbar — fällt auf Web-MIDI zurück",
+          { kind: "info", duration: 4000 },
+        );
+      } catch (err) {
+        console.warn("[MIDI] Nativer Pfad fehlgeschlagen, Web-MIDI-Fallback:", err);
+      }
+    }
     if (!navigator.requestMIDIAccess) {
       console.warn("[MIDI] Web MIDI API nicht verfügbar");
       toast("Web MIDI API nicht verfügbar — Chrome/Edge empfohlen", { kind: "error", duration: 5000 });
@@ -1653,7 +1701,7 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
       const msg = err instanceof Error ? err.message : String(err);
       toast(`MIDI-Zugriff verweigert: ${msg}`, { kind: "error", duration: 5000 });
     }
-  }, [refreshDevices]);
+  }, [refreshDevices, electron]);
 
   // ─── MIDI deaktivieren ───────────────────────────────────────────────────
 
@@ -1661,6 +1709,12 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
     if (activeInputRef.current) {
       activeInputRef.current.onmidimessage = null;
       activeInputRef.current = null;
+    }
+    // #11: native Handles freigeben (Windows-MIDI-Inputs sind exklusiv —
+    // geleakte Handles blockieren den nächsten enable()).
+    if (nativeAccessRef.current) {
+      void nativeAccessRef.current.__manager.closeAll();
+      nativeAccessRef.current = null;
     }
     midiAccessRef.current = null;
     setIsEnabled(false);

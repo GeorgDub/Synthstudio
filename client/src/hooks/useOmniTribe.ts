@@ -16,7 +16,7 @@
  *   - Electron mit Web-MIDI → funktioniert via Chromium-Backend
  */
 
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import {
   omniTribeBridge, OtpCmd, StreamFlag,
   adaptBrowserWebSocket,
@@ -25,6 +25,13 @@ import {
   describeOmniTribeConnect,
   type OmniTribeConnectStatus,
 } from "../utils/omnitribeConnect";
+import { useElectron } from "../../../electron/useElectron";
+import { isNativeMidiBackend } from "../store/useMidiBackendStore";
+import {
+  connectOmniTribeNative,
+  type NativeMidiBridge,
+  type OmniTribeNativeConnection,
+} from "../utils/nativeMidiAccess";
 
 export const DEFAULT_SIM_WS_URL = "ws://localhost:8744";
 
@@ -63,6 +70,9 @@ export function useOmniTribe(): UseOmniTribeReturn {
   const [simConnection, setSimConnection] = useState<SimConnectionState>(
     { state: "idle" },
   );
+  const electron = useElectron();
+  // #11: aktive native Verbindung (für Teardown). Web-MIDI bleibt Default.
+  const nativeConnRef = useRef<OmniTribeNativeConnection | null>(null);
 
   const webMidiSupported = useMemo(() => {
     return typeof navigator !== "undefined"
@@ -100,6 +110,46 @@ export function useOmniTribe(): UseOmniTribeReturn {
   }, [connected]);
 
   const connect = useCallback(async (): Promise<boolean> => {
+    // #11: Opt-in nativer Pfad (Electron-Desktop + Backend=native). Bei jedem
+    // Misserfolg (nicht verfügbar, kein KORG/OmniTribe-Match) fällt der Code
+    // sauber auf den verifizierten Web-MIDI-Pfad unten zurück.
+    if (isNativeMidiBackend() && electron.isElectron) {
+      try {
+        const status = await electron.getMidiStatus();
+        if (status.available) {
+          const bridge: NativeMidiBridge = {
+            listMidiPorts: () => electron.listMidiPorts(),
+            openMidiInput: (i) => electron.openMidiInput(i),
+            openMidiOutput: (i) => electron.openMidiOutput(i),
+            sendMidi: (h, b) => electron.sendMidi(h, b),
+            closeMidiPort: (h) => electron.closeMidiPort(h),
+            onMidiMessage: (cb) => electron.onMidiMessage(cb),
+          };
+          const conn = await connectOmniTribeNative(bridge);
+          if (conn) {
+            nativeConnRef.current = conn;
+            const ok = await omniTribeBridge.connectWebSocket(conn.transport);
+            setConnected(ok);
+            const status2 = describeOmniTribeConnect({
+              webMidiSupported: true, connected: ok,
+              inputNames: [conn.inName], outputNames: [conn.outName],
+            });
+            setConnectStatus(status2);
+            // eslint-disable-next-line no-console
+            console.log(
+              `[useOmniTribe] Nativer MIDI-Pfad: ${conn.inName} ↔ ${conn.outName}`,
+            );
+            if (ok) return true;
+            // connectWebSocket false → native Handles wieder freigeben.
+            await conn.manager.closeAll();
+            nativeConnRef.current = null;
+          }
+          // kein Match → Web-MIDI-Fallback unten.
+        }
+      } catch (err) {
+        console.warn("[useOmniTribe] Nativer Pfad fehlgeschlagen, Web-MIDI-Fallback:", err);
+      }
+    }
     if (!webMidiSupported) {
       const status = describeOmniTribeConnect({
         webMidiSupported: false, connected: false,
@@ -132,10 +182,17 @@ export function useOmniTribe(): UseOmniTribeReturn {
       setConnectStatus(status);
       return false;
     }
-  }, [webMidiSupported]);
+  }, [webMidiSupported, electron]);
 
   const disconnect = useCallback(() => {
     omniTribeBridge.disconnect();
+    // #11: native Handles freigeben (Windows-MIDI-Inputs sind exklusiv).
+    // omniTribeBridge.disconnect() ruft transport.close()→closeAll(), aber falls
+    // connectWebSocket nie erfolgreich war, hängt die Verbindung noch hier.
+    if (nativeConnRef.current) {
+      void nativeConnRef.current.manager.closeAll();
+      nativeConnRef.current = null;
+    }
     setConnected(false);
     setIdentity(null);
     setConnectStatus(null);
