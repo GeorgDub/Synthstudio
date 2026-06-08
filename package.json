@@ -52,7 +52,8 @@
     "tailwind-merge": "^3.6.0",
     "tone": "^15.1.22",
     "ws": "^8.21.0",
-    "zod": "^4.4.3"
+    "zod": "^4.4.3",
+    "@julusian/midi": "^3.6.1"
   },
   "devDependencies": {
     "@builder.io/vite-plugin-jsx-loc": "^0.1.1",
@@ -97,7 +98,8 @@
     "onlyBuiltDependencies": [
       "esbuild",
       "electron",
-      "@tailwindcss/oxide"
+      "@tailwindcss/oxide",
+      "@julusian/midi"
     ]
   },
   "build": {
@@ -253,7 +255,9 @@
         ]
       },
       "!node_modules/**/*",
-      "!**/node_modules/**/*"
+      "!**/node_modules/**/*",
+      "node_modules/@julusian/**/*",
+      "node_modules/pkg-prebuilds/**/*"
     ],
     "buildVersion": "1.7.0"
   },

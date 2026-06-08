@@ -720,3 +720,74 @@ export function guardAutoSavePath(
   }
   return { ok: true, resolved: resolvedFile };
 }
+
+// ─── Native MIDI (#11) ───────────────────────────────────────────────────────
+//
+// Renderer ist nicht vertrauenswürdig: portIndex/bytes/handle erreichen native
+// RtMidi-Calls. Defensive Bounds gegen Buffer-Flooding + fremde Port-Adressierung.
+
+/** Max. Bytes pro MIDI-Message. SysEx (Bank-Dump) kann groß sein, aber 64 KB
+ *  ist eine großzügige, Flooding-sichere Obergrenze. */
+export const MIDI_MAX_MESSAGE_BYTES = 65536;
+/** Max. plausibler Port-Index (RtMidi liefert kleine Indizes; 0..511 reicht). */
+export const MIDI_MAX_PORT_INDEX = 511;
+/** Handle-Format: "in:<n>" oder "out:<n>". */
+export const MIDI_HANDLE_REGEX = /^(in|out):\d{1,4}$/;
+
+export type MidiPortIndexCheck =
+  | { ok: true; index: number }
+  | { ok: false; error: string };
+
+export function validateMidiPortIndex(input: unknown): MidiPortIndexCheck {
+  if (typeof input !== "number" || !Number.isInteger(input)) {
+    return { ok: false, error: "portIndex muss eine Ganzzahl sein" };
+  }
+  if (input < 0 || input > MIDI_MAX_PORT_INDEX) {
+    return { ok: false, error: `portIndex außerhalb 0..${MIDI_MAX_PORT_INDEX}` };
+  }
+  return { ok: true, index: input };
+}
+
+export type MidiBytesCheck =
+  | { ok: true; bytes: number[] }
+  | { ok: false; error: string };
+
+export function validateMidiBytes(input: unknown): MidiBytesCheck {
+  // WICHTIG: Längen-Cap VOR `Array.from`, sonst kann eine bösartige
+  // Renderer-Origin (XSS) ein riesiges Uint8Array schicken, das beim Konvertieren
+  // zu einem JS-Array (8 Byte/Element) den Main-Prozess OOM-killt.
+  const rawLen =
+    input instanceof Uint8Array
+      ? input.length
+      : Array.isArray(input)
+        ? input.length
+        : -1;
+  if (rawLen < 0) {
+    return { ok: false, error: "bytes muss ein Array sein" };
+  }
+  if (rawLen === 0) {
+    return { ok: false, error: "bytes ist leer" };
+  }
+  if (rawLen > MIDI_MAX_MESSAGE_BYTES) {
+    return { ok: false, error: `bytes überschreitet ${MIDI_MAX_MESSAGE_BYTES}` };
+  }
+  const arr = input instanceof Uint8Array ? Array.from(input) : (input as unknown[]);
+  for (let i = 0; i < arr.length; i++) {
+    const b = arr[i];
+    if (typeof b !== "number" || !Number.isInteger(b) || b < 0 || b > 255) {
+      return { ok: false, error: `bytes[${i}] ist kein Byte (0..255)` };
+    }
+  }
+  return { ok: true, bytes: arr as number[] };
+}
+
+export type MidiHandleCheck =
+  | { ok: true; handle: string }
+  | { ok: false; error: string };
+
+export function validateMidiHandle(input: unknown): MidiHandleCheck {
+  if (typeof input !== "string" || !MIDI_HANDLE_REGEX.test(input)) {
+    return { ok: false, error: "Ungültiges MIDI-Handle" };
+  }
+  return { ok: true, handle: input };
+}

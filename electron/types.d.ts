@@ -590,6 +590,15 @@ interface ElectronAPI {
 
   // v2.26: OSC-Send-Out
   sendOscMessage(options: { host: string; port: number; address: string; args: Array<number | string> }): Promise<{ success: boolean; error?: string }>;
+
+  // #11: Nativer MIDI-Layer (robustes SysEx; Web-MIDI bleibt Browser-Fallback)
+  listMidiPorts(): Promise<{ success: boolean; error?: string; inputs?: Array<{ index: number; name: string }>; outputs?: Array<{ index: number; name: string }> }>;
+  getMidiStatus(): Promise<{ available: boolean; injected: boolean; openInputs: number; openOutputs: number; virtualPortsSupported: boolean }>;
+  openMidiInput(portIndex: number): Promise<{ success: boolean; error?: string; handle?: string }>;
+  openMidiOutput(portIndex: number): Promise<{ success: boolean; error?: string; handle?: string }>;
+  sendMidi(handle: string, bytes: number[]): Promise<{ success: boolean; error?: string }>;
+  closeMidiPort(handle: string): Promise<{ success: boolean; error?: string }>;
+  onMidiMessage(callback: (msg: { handle: string; bytes: number[]; deltaTime: number }) => void): ElectronCleanup;
 }
 
 // ─── Window-Erweiterung ──────────────────────────────────────────────────────

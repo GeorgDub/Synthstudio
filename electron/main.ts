@@ -44,6 +44,12 @@ import { registerExportHandlers } from "./export";
 import { setupAutoUpdater, checkForUpdatesManually } from "./updater";
 import { initStore, registerStoreHandlers, type AppStore, type PopupWindowLayout } from "./store";
 import { startOscServer, stopOscServer, getOscStatus, sendOscMessage, closeOscOutSocket, type OscStartOptions, type OscSendOptions } from "./osc-server";
+// #11: nativer MIDI-Layer (robustes SysEx; Web-MIDI bleibt Browser-Fallback).
+import {
+  listMidiPorts, getMidiStatus, openMidiInput, openMidiOutput,
+  sendMidi, closeMidiPort, closeAllMidi, setMidiEmitter,
+} from "./midi-native";
+import { validateMidiPortIndex, validateMidiBytes, validateMidiHandle } from "./ipcValidators";
 import {
   initCrashLog,
   installMainProcessCrashHandlers,
@@ -3590,6 +3596,34 @@ app.whenReady().then(() => {
   // v2.26: OSC-Out
   ipcMain.handle("osc:send", (_e, options: OscSendOptions) => sendOscMessage(options));
 
+  // #11: Nativer MIDI-Layer. Eingehende Messages → Renderer via Emitter.
+  // Jede Payload wird VOR dem nativen Call validiert (Renderer untrusted).
+  setMidiEmitter((channel, payload) => mainWindow?.webContents.send(channel, payload));
+  ipcMain.handle("midi:listPorts", () => listMidiPorts());
+  ipcMain.handle("midi:status", () => getMidiStatus());
+  ipcMain.handle("midi:openInput", (_e, portIndex: unknown) => {
+    const v = validateMidiPortIndex(portIndex);
+    if (!v.ok) return { success: false, error: v.error };
+    return openMidiInput(v.index);
+  });
+  ipcMain.handle("midi:openOutput", (_e, portIndex: unknown) => {
+    const v = validateMidiPortIndex(portIndex);
+    if (!v.ok) return { success: false, error: v.error };
+    return openMidiOutput(v.index);
+  });
+  ipcMain.handle("midi:send", (_e, handle: unknown, bytes: unknown) => {
+    const h = validateMidiHandle(handle);
+    if (!h.ok) return { success: false, error: h.error };
+    const b = validateMidiBytes(bytes);
+    if (!b.ok) return { success: false, error: b.error };
+    return sendMidi(h.handle, b.bytes);
+  });
+  ipcMain.handle("midi:closePort", (_e, handle: unknown) => {
+    const h = validateMidiHandle(handle);
+    if (!h.ok) return { success: false, error: h.error };
+    return closeMidiPort(h.handle);
+  });
+
   createTray();
   registerGlobalShortcuts();
 
@@ -3647,6 +3681,8 @@ app.on("before-quit", (event) => {
   // v2.23: OSC-Listener sauber schließen (kein Socket-Leak bei nächstem Start)
   stopOscServer();
   closeOscOutSocket();
+  // #11: native MIDI-Ports schließen (kein Port-Leak / Device-Lock).
+  closeAllMidi();
 
   // BUG-018 v1.29.0 follow-up: nukleare Quit-Sperre.
   if (!userInitiatedQuit && mainWindow && !mainWindow.isDestroyed()) {

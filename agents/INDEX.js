@@ -4211,6 +4211,30 @@ const INDEX = {
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
     {
+      agent:     "security",
+      timestamp: "2026-06-08T00:00:00.000Z",
+      done: [
+        "SECURITY-AUDIT Native-MIDI (#11): @julusian/midi dep + electron/midi-native.ts + 6 IPC-Handler (midi:listPorts/status/openInput/openOutput/send/closePort) + 3 Validatoren. VERDICT: PASS, kein critical/high.",
+        "A) Alle midi:* Handler validieren VOR nativem Call (main.ts:3604-3625): openInput/openOutput->validateMidiPortIndex, send->validateMidiHandle+validateMidiBytes, closePort->validateMidiHandle. listPorts/status nehmen keine Args. Kein Bypass-Pfad. Renderer haelt nur Opaque-String-Handles, Port-Objekte bleiben im Main.",
+        "B) Validatoren ausreichend: bytes 0..255 Integer + Cap 65536 ok; portIndex 0..511 Integer-Bounds ok (zweite Bounds-Pruefung gegen getPortCount() in midi-native.ts:149/173); handle-Regex /^(in|out):\\d{1,4}/ verhindert Injection/Traversal; Handle adressiert nur Eintraege der _ports-Map -> manipuliertes Handle trifft nur nicht-existent (sauber abgewiesen), nie fremden Port.",
+        "C) sendMidi/SysEx: NICHT neues Risiko. permissions.ts:28-29 grantet midi+midiSysex -> Web-MIDI sendet bereits frei SysEx. Native Pfad = selbe Capability, anderer Transport. Eingeordnet als bestehend.",
+        "D) Native-Module: lazy require in try/catch (midi-native.ts:59-67), available:false->Web-MIDI-Fallback, KEIN Crash bei fehlender Binary. Lockfile pinnt @julusian/midi@3.6.1 mit integrity-sha512. asar:false -> Binary liegt direkt im FS, kein asarUnpack noetig.",
+        "E) Resource: before-quit ruft closeAllMidi() (main.ts:3685); closePort delete sauber. Kein unbounded-open-DoS: Handles deterministisch per (kind,index), _ports.has() short-circuit + getPortCount()-Gate -> max offene Ports <= physische Ports x2. Hard-Cap waere nice-to-have, keine Luecke.",
+        "F) midi:message-Flood: ENTSCHAERFT -> ignoreTypes(false,true,true) gesetzt (Clock+Active-Sensing jetzt ignoriert, SysEx weiter durch). War vorher (false,false,false) = Clock-Flood-Surface.",
+        "G) Exposure sauber via contextBridge.exposeInMainWorld (preload.ts:1071), keine direkte ipcRenderer-Leak. Kein Channel fehlt im Allowlist-Mechanismus.",
+        "HARDENING angewandt: (1) ipcValidators.ts validateMidiBytes - Laengen-Cap VOR Array.from (Memory-Amplification-Fix: 500MB-Uint8Array haette Main-OOM ausgeloest). (2) midi-native.ts ignoreTypes(false,true,true). (3) midi-native.ts openMidiInput/Output - native Instanz bei Out-of-Range sofort closePort() statt GC-Finalizer (Handle-Leak-Fix). pnpm check (tsconfig.electron) GRUEN."
+      ],
+      next: [
+        "OPTIONAL Hardening (Defense-in-depth, keine offene Luecke): Hard-Cap fuer gleichzeitig offene Ports (z.B. 16) falls je virtuelle Ports auf mac/linux dazukommen.",
+        "OPTIONAL: Rate-Limit/Coalescing fuer midi:message falls spaeter Clock-Sync-Consumer im Renderer gebraucht wird (dann ignoreTypes(false,false,...) noetig + Throttle).",
+        "OPTIONAL: pnpm audit periodisch gegen @julusian/midi + transitive node-addon-api CVEs."
+      ],
+      changed: [
+        "electron/ipcValidators.ts (validateMidiBytes: Laengen-Cap vor Array.from)",
+        "electron/midi-native.ts (ignoreTypes Clock/Sensing-Ignore + Out-of-Range closePort)"
+      ]
+    },
+    {
       agent:     "coordinator",
       timestamp: "2026-05-22T19:42:00.000Z",
       done: [

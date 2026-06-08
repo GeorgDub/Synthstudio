@@ -1040,6 +1040,32 @@ const electronAPI = {
   sendOscMessage: (options: { host: string; port: number; address: string; args: Array<number | string> }): Promise<{ success: boolean; error?: string }> =>
     ipcRenderer.invoke("osc:send", options),
 
+  // ─── #11: Nativer MIDI-Layer (robustes SysEx; Web-MIDI bleibt Fallback) ────
+
+  listMidiPorts: (): Promise<{ success: boolean; error?: string; inputs?: Array<{ index: number; name: string }>; outputs?: Array<{ index: number; name: string }> }> =>
+    ipcRenderer.invoke("midi:listPorts"),
+
+  getMidiStatus: (): Promise<{ available: boolean; injected: boolean; openInputs: number; openOutputs: number; virtualPortsSupported: boolean }> =>
+    ipcRenderer.invoke("midi:status"),
+
+  openMidiInput: (portIndex: number): Promise<{ success: boolean; error?: string; handle?: string }> =>
+    ipcRenderer.invoke("midi:openInput", portIndex),
+
+  openMidiOutput: (portIndex: number): Promise<{ success: boolean; error?: string; handle?: string }> =>
+    ipcRenderer.invoke("midi:openOutput", portIndex),
+
+  sendMidi: (handle: string, bytes: number[]): Promise<{ success: boolean; error?: string }> =>
+    ipcRenderer.invoke("midi:send", handle, bytes),
+
+  closeMidiPort: (handle: string): Promise<{ success: boolean; error?: string }> =>
+    ipcRenderer.invoke("midi:closePort", handle),
+
+  onMidiMessage: (cb: (msg: { handle: string; bytes: number[]; deltaTime: number }) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, payload: { handle: string; bytes: number[]; deltaTime: number }) => cb(payload);
+    ipcRenderer.on("midi:message", handler);
+    return () => ipcRenderer.removeListener("midi:message", handler);
+  },
+
 };
 
 contextBridge.exposeInMainWorld("electronAPI", electronAPI);

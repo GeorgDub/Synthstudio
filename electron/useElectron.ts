@@ -375,6 +375,15 @@ const browserAPI = {
   onOscIncoming: noopDataListener<{ address: string; args: Array<number | string | boolean | null>; source: string; at: number }>(),
   sendOscMessage: async (_options: { host: string; port: number; address: string; args: Array<number | string> }) =>
     ({ success: false, error: "OSC-Send benötigt die Electron-Desktop-App" }),
+
+  // #11: Nativer MIDI-Layer — im Browser kein nativer Pfad → Web-MIDI-Fallback.
+  listMidiPorts: async () => ({ success: false, error: "Nativer MIDI-Layer benötigt die Electron-Desktop-App" }),
+  getMidiStatus: async () => ({ available: false, injected: false, openInputs: 0, openOutputs: 0, virtualPortsSupported: false }),
+  openMidiInput: async (_portIndex: number) => ({ success: false, error: "Nativer MIDI-Layer benötigt die Electron-Desktop-App" }),
+  openMidiOutput: async (_portIndex: number) => ({ success: false, error: "Nativer MIDI-Layer benötigt die Electron-Desktop-App" }),
+  sendMidi: async (_handle: string, _bytes: number[]) => ({ success: false, error: "Nativer MIDI-Layer benötigt die Electron-Desktop-App" }),
+  closeMidiPort: async (_handle: string) => ({ success: true }),
+  onMidiMessage: noopDataListener<{ handle: string; bytes: number[]; deltaTime: number }>(),
 };
 
 // ─── Haupt-Hook ───────────────────────────────────────────────────────────────
@@ -609,6 +618,14 @@ export function useElectron() {
     onOscIncoming: api.onOscIncoming,
     // v2.26: OSC-Send-Out
     sendOscMessage: api.sendOscMessage,
+    // #11: Nativer MIDI-Layer
+    listMidiPorts: api.listMidiPorts,
+    getMidiStatus: api.getMidiStatus,
+    openMidiInput: api.openMidiInput,
+    openMidiOutput: api.openMidiOutput,
+    sendMidi: api.sendMidi,
+    closeMidiPort: api.closeMidiPort,
+    onMidiMessage: api.onMidiMessage,
   };
 }
 
