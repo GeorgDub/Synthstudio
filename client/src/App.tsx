@@ -157,6 +157,8 @@ import { useGlobalKeyBindings, KB_ACTION_EVENT } from "@/hooks/useGlobalKeyBindi
 import { useScriptKeyBindings } from "@/hooks/useScriptKeyBindings";
 import { configureSandboxBridge } from "@/sandbox/scriptSandboxInstance";
 import { PatternLaunchPad } from "@/components/PerformanceMode/PatternLaunchPad";
+import { AutoMixPanel } from "@/components/AutoMix/AutoMixPanel";
+import { categorizeDrumName } from "@/utils/drumCategory";
 import {
   usePerformanceStore,
   queuePattern as queuePerformancePattern,
@@ -1883,7 +1885,7 @@ export default function App() {
     setActiveTab(tab);
     localStorage.setItem("ss-layout:active-tab", tab);
   }, []);
-  const [activeTool, setActiveTool] = useState<'prompt' | 'algorithmic' | 'chords' | 'sampler' | 'workbench' | 'library' | 'script' | 'omnitribe' | 'packs' | 'song' | 'liverec' | 'audioinput' | 'macroSnapshot' | 'diff'>('prompt');
+  const [activeTool, setActiveTool] = useState<'prompt' | 'algorithmic' | 'chords' | 'sampler' | 'workbench' | 'automix' | 'library' | 'script' | 'omnitribe' | 'packs' | 'song' | 'liverec' | 'audioinput' | 'macroSnapshot' | 'diff'>('prompt');
 
   // ── Dialog-State ─────────────────────────────────────────────────────────
   const [showMidiSettings, setShowMidiSettings] = useState(false);
@@ -4693,6 +4695,7 @@ export default function App() {
                       { id: "chords",      label: "🎼 Akkorde" },
                       { id: "sampler",     label: "🎹 Sampler" },
                       { id: "workbench",   label: "🎚 Workbench" },
+                      { id: "automix",     label: "🎚 Auto-Mix" },
                       { id: "library",     label: "📚 Library" },
                       { id: "packs",       label: "📦 Packs" },
                       { id: "song",        label: "🎼 Song" },
@@ -4778,6 +4781,23 @@ export default function App() {
                     {activeTool === 'workbench' && (
                       <div className="h-full overflow-y-auto">
                         <AudioWorkbench onSamplesAdded={(s) => project.addSamples(s)} />
+                      </div>
+                    )}
+                    {activeTool === 'automix' && (
+                      <div className="h-full overflow-y-auto p-4 max-w-3xl">
+                        <AutoMixPanel
+                          channels={(dm.getActivePattern()?.parts ?? []).map(p => ({
+                            id: p.id,
+                            name: p.name,
+                            category: categorizeDrumName(p.name),
+                            volumeLin: p.volume ?? 1.0,
+                          }))}
+                          isPlaying={project.isPlaying}
+                          onApplyVolume={(channelId, newVolumeLin) => {
+                            dm.setPartVolume(channelId, newVolumeLin);
+                            AudioEngine.setChannelVolume(channelId, newVolumeLin);
+                          }}
+                        />
                       </div>
                     )}
                     {activeTool === 'library' && (

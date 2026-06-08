@@ -148,7 +148,7 @@ export function AutoMixPanel(props: AutoMixPanelProps) {
   }, [applyMap]);
 
   return (
-    <div className="flex flex-col gap-3 p-3 bg-bg-panel border border-border-color rounded">
+    <div className="flex flex-col gap-3 p-3 bg-bg-panel border border-border-color rounded" data-testid="automix-panel">
       <header className="flex items-center justify-between">
         <h2 className="text-text-primary text-sm font-semibold">
           Smart Auto-Mix
@@ -234,7 +234,7 @@ export function AutoMixPanel(props: AutoMixPanelProps) {
                 onChange={e => handleTargetChange(ch.id, e.target.value)}
                 className="bg-bg-base text-text-primary border border-border-color rounded px-1 py-0.5 w-full tabular-nums"
               />
-              <span className="text-text-muted tabular-nums">{measuredDisplay}</span>
+              <span className="text-text-muted tabular-nums" data-testid={`automix-measured-${ch.id}`}>{measuredDisplay}</span>
               <span
                 className={
                   s.suggestedGainDb === 0
@@ -266,6 +266,7 @@ export function AutoMixPanel(props: AutoMixPanelProps) {
         <button
           onClick={applySelected}
           disabled={!anySelected}
+          data-testid="automix-apply"
           className="px-3 py-1 bg-accent-primary hover:bg-accent-secondary text-bg-base font-medium rounded disabled:opacity-40 disabled:cursor-not-allowed"
         >
           Apply Selected
