@@ -21,6 +21,8 @@
 
 import type { ImportResult, ImportedPattern, ImportedPart } from "./types";
 import { ImportError } from "./types";
+import { parseEsxBank, type EsxBank } from "../korg/esxParser";
+import { convertEsxPatternsToSynthstudio } from "../korg/esxPatternConvert";
 
 // ─── Datei-Endung → Variante ──────────────────────────────────────────────────
 
@@ -66,6 +68,65 @@ function findBpm(view: DataView): number | undefined {
   return undefined;
 }
 
+// ─── Echter ESX-1-Bank-Pfad (Steps werden dekodiert, nicht geraten) ──────────
+
+/**
+ * Bridge: geparste ESX-1-Bank → ImportResult mit ECHTEN Step-Daten.
+ *
+ * Synth.md-Fix: der alte heuristische Pfad (unten) erzeugte nur leere
+ * Step-Templates ("Steps musst du manuell rekonstruieren") — beim Import über
+ * den ProjectManager sah man deshalb nur Part-Slots, aber keine Steps. Diese
+ * Bridge nutzt stattdessen den vollständigen KORG-Parser (`parseEsxBank` →
+ * `convertEsxPatternsToSynthstudio`), der die Trigger pro Step real dekodiert —
+ * exakt wie der KORG-Bank-Modal-Pfad. Pure Funktion (kein Binär-Parsing) →
+ * direkt unit-testbar mit handgebauten EsxBank-Objekten.
+ *
+ * Hinweis: Sample-Audio (Blob-URLs) wird hier NICHT verlinkt — das ImportResult-
+ * Format trägt nur `sampleName`. Für hörbare Samples ist der KORG-Bank-Modal-
+ * Pfad zuständig (`enrichPatternWithSampleUrls`). Eine Warnung weist darauf hin.
+ */
+export function esxBankToImportResult(bank: EsxBank, fileName: string): ImportResult {
+  const converted = convertEsxPatternsToSynthstudio(bank.patterns);
+
+  const patterns: ImportedPattern[] = converted.map((pat): ImportedPattern => ({
+    name: pat.name,
+    stepCount: pat.stepCount,
+    bpm: pat.bpm,
+    parts: pat.drumParts.map((dp): ImportedPart => ({
+      name: dp.sampleHint,
+      sampleName: dp.sampleHint,
+      volume: dp.volume,
+      pan: dp.pan,
+      steps: dp.steps.map((active, i) => ({
+        active,
+        velocity: dp.velocities[i] ?? 100,
+      })),
+    })),
+  }));
+
+  const warnings: string[] = [];
+  const sampleCount = bank.monoSamples.length + bank.stereoSamples.length;
+  warnings.push(
+    `ESX-1-Bank dekodiert: ${patterns.length} Pattern(s) mit echten Steps, ` +
+    `${sampleCount} Sample(s) erkannt.`,
+  );
+  if (sampleCount > 0) {
+    warnings.push(
+      "Sample-Audio wird über diesen Import-Pfad NICHT verlinkt — für hörbare " +
+      "Slots die Datei stattdessen über die KORG-Bank öffnen (Samples + Pattern + Audio).",
+    );
+  }
+  warnings.push(...bank.warnings);
+
+  return {
+    sourceFormat: "esx",
+    fileName,
+    bpm: patterns[0]?.bpm,
+    patterns,
+    warnings,
+  };
+}
+
 // ─── Hauptfunktion ────────────────────────────────────────────────────────────
 
 export async function importElectribe(file: File): Promise<ImportResult> {
@@ -76,6 +137,21 @@ export async function importElectribe(file: File): Promise<ImportResult> {
 
   if (buffer.length < 16) {
     throw new ImportError("Datei zu klein für Electribe-Format", variant);
+  }
+
+  // Echter ESX-1-Pfad: den vollständigen KORG-Parser versuchen, der die
+  // Step-Trigger real dekodiert. Nur wenn er Patterns findet, nutzen wir ihn;
+  // sonst (E2S/.elst, leere Bank, unbekanntes Layout) fällt der Code auf den
+  // heuristischen Pfad unten zurück.
+  if (variant === "esx") {
+    try {
+      const bank = parseEsxBank(buffer, file.name);
+      if (bank.patterns.length > 0) {
+        return esxBankToImportResult(bank, file.name);
+      }
+    } catch {
+      // Parser-Fehler → heuristischer Fallback unten.
+    }
   }
 
   // Magic-Validierung (KORG-Header oder ZIP-Container)
