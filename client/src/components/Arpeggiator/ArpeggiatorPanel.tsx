@@ -1,4 +1,4 @@
-import { ARP_MODE_LABELS, ARP_VELOCITY_LABELS, type ArpMode, type ArpOctaves, type ArpVelocityPattern } from "../../utils/arpeggiator";
+import { ARP_MODE_LABELS, ARP_OUTPUT_MODE_LABELS, ARP_VELOCITY_LABELS, type ArpMode, type ArpOctaves, type ArpOutputMode, type ArpVelocityPattern } from "../../utils/arpeggiator";
 import {
   useArpStore,
   setArpEnabled,
@@ -6,16 +6,23 @@ import {
   setArpOctaves,
   setArpNotes,
   setArpVelocityPattern,
+  setArpOutputMode,
+  setArpTargetPartId,
   getArpSteps,
 } from "../../store/useArpStore";
+import { useDrumMachineStore } from "../../store/useDrumMachineStore";
 
 const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"] as const;
 const ARP_MODES = Object.keys(ARP_MODE_LABELS) as ArpMode[];
 const OCTAVE_BASE = 60; // C4
 
+const ARP_OUTPUT_MODES = Object.keys(ARP_OUTPUT_MODE_LABELS) as ArpOutputMode[];
+
 export function ArpeggiatorPanel() {
-  const { enabled, mode, octaves, notes, stepCount, velocityPattern } = useArpStore();
+  const { enabled, mode, octaves, notes, stepCount, velocityPattern, outputMode, targetPartId } = useArpStore();
   const steps = getArpSteps();
+  const dm = useDrumMachineStore();
+  const parts = dm.getActivePattern()?.parts ?? [];
 
   const toggleNote = (midi: number) => {
     const next = notes.includes(midi)
@@ -89,6 +96,53 @@ export function ArpeggiatorPanel() {
           })}
         </div>
       </div>
+
+      {/* Output-Modus: wohin die Arp-Noten gehen */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        <span style={{ fontSize: 11, color: "var(--ss-text-muted)" }}>Ausgang</span>
+        <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }} data-testid="arp-output-mode">
+          {ARP_OUTPUT_MODES.map((om) => {
+            const active = outputMode === om;
+            return (
+              <button
+                key={om}
+                onClick={() => setArpOutputMode(om)}
+                aria-pressed={active}
+                data-testid={"arp-output-" + om}
+                style={{ background: active ? "var(--ss-accent-primary)" : "var(--ss-bg-elevated)", border: "1px solid " + (active ? "var(--ss-accent-primary)" : "var(--ss-border)"), borderRadius: 5, padding: "4px 10px", color: active ? "#fff" : "var(--ss-text-muted)", cursor: "pointer", fontSize: 11, fontWeight: 600 }}
+              >
+                {ARP_OUTPUT_MODE_LABELS[om]}
+              </button>
+            );
+          })}
+        </div>
+        {outputMode === "midi" && (
+          <span style={{ fontSize: 10, color: "var(--ss-text-dim)" }}>
+            ⚠ Benötigt einen aktiven MIDI-Ausgang (Hardware).
+          </span>
+        )}
+      </div>
+
+      {/* Ziel-Channel (nur im channel-Modus) */}
+      {outputMode === "channel" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <span style={{ fontSize: 11, color: "var(--ss-text-muted)" }}>Ziel-Channel</span>
+          <select
+            value={targetPartId ?? ""}
+            onChange={(e) => setArpTargetPartId(e.target.value || null)}
+            data-testid="arp-target-part"
+            style={{ background: "var(--ss-bg-elevated)", border: "1px solid var(--ss-border)", borderRadius: 5, padding: "5px 8px", color: "var(--ss-text-primary)", fontSize: 11, cursor: "pointer" }}
+          >
+            <option value="">— Channel wählen —</option>
+            {parts.map((p) => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
+          {!targetPartId && (
+            <span style={{ fontSize: 10, color: "var(--ss-text-dim)" }}>Kein Channel gewählt → stumm.</span>
+          )}
+        </div>
+      )}
 
       {/* Piano Note Selector C4-B4 */}
       <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>

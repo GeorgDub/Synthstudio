@@ -11,6 +11,8 @@ import {
   setArpOctaves,
   setArpNotes,
   setArpStepCount,
+  setArpOutputMode,
+  setArpTargetPartId,
   getArpSteps,
   getArpState,
   __resetArpForTests,
@@ -131,6 +133,35 @@ describe("useArpStore – getArpSteps (Integration mit applyArp)", () => {
   });
 });
 
+describe("useArpStore – Output-Modus (v3.268)", () => {
+  beforeEach(() => __resetArpForTests());
+
+  it("Default outputMode ist 'synth'", () => {
+    expect(getArpState().outputMode).toBe("synth");
+  });
+
+  it("Default targetPartId ist null", () => {
+    expect(getArpState().targetPartId).toBeNull();
+  });
+
+  it("setArpOutputMode wechselt auf 'channel'", () => {
+    setArpOutputMode("channel");
+    expect(getArpState().outputMode).toBe("channel");
+  });
+
+  it("setArpOutputMode wechselt auf 'midi'", () => {
+    setArpOutputMode("midi");
+    expect(getArpState().outputMode).toBe("midi");
+  });
+
+  it("setArpTargetPartId setzt + leert (null)", () => {
+    setArpTargetPartId("part-7");
+    expect(getArpState().targetPartId).toBe("part-7");
+    setArpTargetPartId(null);
+    expect(getArpState().targetPartId).toBeNull();
+  });
+});
+
 describe("useArpStore – __resetArpForTests", () => {
   it("setzt alle Felder auf Defaults zurück", () => {
     setArpEnabled(true);
@@ -138,6 +169,8 @@ describe("useArpStore – __resetArpForTests", () => {
     setArpOctaves(3);
     setArpNotes([1, 2, 3]);
     setArpStepCount(32);
+    setArpOutputMode("midi");
+    setArpTargetPartId("part-x");
     __resetArpForTests();
     const s = getArpState();
     expect(s.enabled).toBe(false);
@@ -145,5 +178,7 @@ describe("useArpStore – __resetArpForTests", () => {
     expect(s.octaves).toBe(1);
     expect(s.notes).toEqual([60, 64, 67]);
     expect(s.stepCount).toBe(16);
+    expect(s.outputMode).toBe("synth");
+    expect(s.targetPartId).toBeNull();
   });
 });

@@ -30,6 +30,7 @@ import {
   getCrossfadeProgress as getCrossfadeProgressFn,
   crossfadeGain as crossfadeGainFn,
 } from "../utils/patternCrossfade";
+import { type ArpOutputMode, type ArpStep, arpStepAt, arpMidiToFreq } from "../utils/arpeggiator";
 import { MidiClockOut } from "./MidiClockOut";
 import { MidiNoteOut, type MidiPartConfig } from "./MidiNoteOut";
 import { MidiClickOut, type MidiClickConfig } from "./MidiClickOut";
@@ -116,6 +117,19 @@ export interface ScheduledStep {
 
 export type StepCallback = (step: ScheduledStep) => void;
 export type PositionCallback = (currentStep: number) => void;
+
+/**
+ * Snapshot der Arpeggiator-Config für den Engine-Scheduler (v3.268).
+ * Wird pro Step vom injizierten `_arpGetter` geliefert — die Engine bleibt
+ * dadurch store-agnostisch (kein Import von useArpStore → kein Zirkular-Import).
+ */
+export interface ArpPlaybackConfig {
+  enabled: boolean;
+  outputMode: ArpOutputMode;
+  targetPartId: string | null;
+  /** Vorberechnete Arp-Steps (aus applyArp). Engine wrappt modular per Step. */
+  steps: ArpStep[];
+}
 
 /** Effekt-Parameter für einen Kanal */
 export interface ChannelFx {
@@ -1719,6 +1733,25 @@ class AudioEngineClass {
   /** Melodic getter: liefert PitchSteps für eine Part-ID aus dem useMelodicPartStore */
   setMelodicGetter(getter: (partId: string) => { active: boolean; note: number; velocity: number }[] | undefined) {
     this.melodicGetter = getter;
+  }
+
+  // ─── Arpeggiator-Playback (v3.268) ────────────────────────────────────────
+  // Der Arp ist ein globaler Overlay: er feuert pro Sequencer-Step seine eigene
+  // Note (unabhängig von den programmierten Part-Steps). Der Getter liefert
+  // einen Snapshot der Arp-Config aus useArpStore (kein Import → kein
+  // Zirkular-Import-Risiko); der Engine-Scheduler dispatcht je nach outputMode.
+  private _arpGetter: (() => ArpPlaybackConfig | null) | null = null;
+  /** Roh-MIDI-Sender für outputMode="midi": bekommt fertige Bytes (Note-On/Off). */
+  private _arpMidiSender: ((bytes: number[]) => void) | null = null;
+
+  /** Registriert den Arp-Config-Getter (aus useTransport, liest useArpStore). */
+  setArpGetter(getter: (() => ArpPlaybackConfig | null) | null) {
+    this._arpGetter = getter;
+  }
+
+  /** Registriert den Roh-MIDI-Sender (Bytes) für den Arp-MIDI-Modus. */
+  setArpMidiSender(sender: ((bytes: number[]) => void) | null) {
+    this._arpMidiSender = sender;
   }
 
   private _midiOutCallback: ((note: number, velocity: number, partId: string) => void) | null = null;
@@ -3370,6 +3403,14 @@ class AudioEngineClass {
     const anyAudioSolo = this.audioTracksGetter?.().some(t => t.soloed) ?? false;
     const anySolo = anyDrumSolo || anyAudioSolo;
 
+    // Arpeggiator-Snapshot (v3.268): einmal pro Step lesen — für Step-Suppression
+    // (channel-Modus übernimmt den Ziel-Part) UND fürs Arp-Trigger weiter unten.
+    const arpCfg = this._arpGetter?.() ?? null;
+    const arpActive = !!arpCfg?.enabled && arpCfg.steps.length > 0;
+    // Im channel-Modus treibt der Arp den Ziel-Part allein — dessen eigene
+    // programmierte Steps werden unterdrückt (sonst Layering auf demselben Sound).
+    const arpSuppressedPartId = arpActive && arpCfg!.outputMode === "channel" ? arpCfg!.targetPartId : null;
+
     // Live-Beat-Repeat: optionales Read-Remapping. Loopt ein N-Step-Fenster, indem
     // der Pattern-Read-Index umgebogen wird (Identität wenn kein Repeat aktiv).
     // Singleton-Slot analog zum Humanizer — hält AudioEngine store-agnostisch.
@@ -3384,6 +3425,7 @@ class AudioEngineClass {
     pattern.parts.forEach((part, partIndex) => {
       if (part.muted) return;
       if (anySolo && !part.soloed) return;
+      if (arpSuppressedPartId && part.id === arpSuppressedPartId) return; // Arp treibt diesen Part
 
       // Polymeter: bei eigener stepLength wrappt der Part modular.
       // readStep statt stepIndex → Beat-Repeat-Fenster greift. Das %steps.length
@@ -3532,9 +3574,80 @@ class AudioEngineClass {
       });
     }
 
+    // ─── Arpeggiator-Overlay (v3.268) ────────────────────────────────────────
+    if (arpActive) this._scheduleArp(arpCfg!, stepIndex, time, pattern);
+
     // ─── Gestapelte Patterns ─────────────────────────────────────────────────
     if (this._stackedPatternIds.size > 0) {
       window.dispatchEvent(new CustomEvent("audio:stackedStep", { detail: { stepIndex, time } }));
+    }
+  }
+
+  /**
+   * Arpeggiator-Note für den aktuellen Step planen (v3.268). Läuft nur während
+   * Transport (wird ausschließlich aus dem Scheduler aufgerufen). Dispatcht je
+   * nach outputMode an interne Synth-Stimme, einen Ziel-Channel oder MIDI-Out.
+   *
+   * Feuert IMMER ein `audio:arpNote`-CustomEvent (analog zu audio:stackedStep) —
+   * doppelt als Runtime-Observability-Seam UND als UI-Signal (aktiver Step).
+   */
+  private _scheduleArp(cfg: ArpPlaybackConfig, stepIndex: number, time: number, pattern: PatternData): void {
+    const ev = arpStepAt(cfg.steps, stepIndex);
+    if (!ev) return; // inaktiver / übersprungener Step
+
+    const velocity = Math.max(1, Math.min(127, Math.round(ev.velocity)));
+    const gateSec = Math.max(0.02, (ev.length ?? 1) * this._stepDuration());
+
+    // Observability + UI-Signal — vor dem Trigger, damit es auch dann feuert,
+    // wenn ein Modus (z.B. fehlender Ziel-Part) keinen Ton erzeugt.
+    try {
+      window.dispatchEvent(new CustomEvent("audio:arpNote", {
+        detail: { stepIndex, note: ev.note, velocity, mode: cfg.outputMode, time },
+      }));
+    } catch { /* SSR/Test-Umgebung ohne window */ }
+
+    if (cfg.outputMode === "synth") {
+      // Interne Synth-Stimme: kein Part → Triangle-Oszillator-Fallback (lokal hörbar).
+      const freq = arpMidiToFreq(ev.note);
+      this._triggerMelodicNote(time, freq, velocity / 127, 0);
+      return;
+    }
+
+    if (cfg.outputMode === "channel") {
+      const part = cfg.targetPartId ? pattern.parts.find(p => p.id === cfg.targetPartId) : undefined;
+      if (!part) return; // kein Ziel gewählt → still (Event ist trotzdem geflogen)
+      const vol = (velocity / 127) * (part.volume ?? 1.0);
+      const pan = part.pan ?? 0;
+      const isSynthPart = !!part.synthParams && (part.sourceType === "wavetable" || part.sourceType === "fm");
+      if (isSynthPart) {
+        const freq = arpMidiToFreq(ev.note);
+        this._triggerSynthOnChannel(time, freq, vol, pan, part);
+      } else if (part.sampleUrl) {
+        // Sample-Part: Arp-Note relativ zu C4 (60) als Halbton-Pitch auf den Sample.
+        const pitch = ev.note - 60;
+        const partRef = part;
+        (async () => {
+          const buf = await this._loadBuffer(partRef.sampleUrl!);
+          if (!buf || !this.ctx) return;
+          this._triggerBufferWithFx(buf, time, vol, pan, pitch, partRef, ev.length ?? 1);
+        })();
+      }
+      return;
+    }
+
+    if (cfg.outputMode === "midi") {
+      // PENDING HARDWARE: ohne MIDI-Ausgang nicht verifizierbar. Sender bekommt
+      // fertige Bytes; Timing + Note-Off-Gate hier (analog zum Clock-Pulse).
+      const sender = this._arpMidiSender;
+      if (!sender) return;
+      const note = ev.note & 0x7f;
+      const onDelayMs = Math.max(0, (time - (this.ctx?.currentTime ?? 0)) * 1000);
+      const offDelayMs = onDelayMs + gateSec * 1000;
+      // Note-On/Off NICHT in _pendingTimeouts tracken: das Note-Off MUSS auch
+      // nach stop() feuern, sonst hängt die externe Note (klassischer Stuck-Note).
+      setTimeout(() => sender([0x90, note, velocity]), onDelayMs);
+      setTimeout(() => sender([0x80, note, 0]), offDelayMs);
+      return;
     }
   }
 

@@ -1,5 +1,5 @@
 import { useEffect, useReducer } from "react";
-import { type ArpMode, type ArpOctaves, type ArpStep, type ArpVelocityPattern, applyArp } from "../utils/arpeggiator";
+import { type ArpMode, type ArpOctaves, type ArpOutputMode, type ArpStep, type ArpVelocityPattern, applyArp } from "../utils/arpeggiator";
 
 interface ArpState {
   enabled: boolean;
@@ -8,6 +8,10 @@ interface ArpState {
   notes: number[];
   stepCount: number;
   velocityPattern: ArpVelocityPattern;
+  /** Wohin die Arp-Noten gehen (interner Synth / Channel / MIDI-Out). */
+  outputMode: ArpOutputMode;
+  /** Ziel-Part-ID für outputMode="channel" (null = noch keiner gewählt). */
+  targetPartId: string | null;
 }
 
 type Listener = () => void;
@@ -19,6 +23,8 @@ let _state: ArpState = {
   notes: [60, 64, 67],
   stepCount: 16,
   velocityPattern: "flat",
+  outputMode: "synth",
+  targetPartId: null,
 };
 
 const _listeners = new Set<Listener>();
@@ -30,6 +36,8 @@ export function setArpOctaves(octaves: ArpOctaves): void { _state = { ..._state,
 export function setArpNotes(notes: number[]): void { _state = { ..._state, notes }; notify(); }
 export function setArpStepCount(stepCount: number): void { _state = { ..._state, stepCount }; notify(); }
 export function setArpVelocityPattern(velocityPattern: ArpVelocityPattern): void { _state = { ..._state, velocityPattern }; notify(); }
+export function setArpOutputMode(outputMode: ArpOutputMode): void { _state = { ..._state, outputMode }; notify(); }
+export function setArpTargetPartId(targetPartId: string | null): void { _state = { ..._state, targetPartId }; notify(); }
 
 export function getArpSteps(): ArpStep[] {
   return applyArp({
@@ -42,7 +50,7 @@ export function getArpSteps(): ArpStep[] {
 }
 
 export function __resetArpForTests(): void {
-  _state = { enabled: false, mode: "up", octaves: 1, notes: [60, 64, 67], stepCount: 16, velocityPattern: "flat" };
+  _state = { enabled: false, mode: "up", octaves: 1, notes: [60, 64, 67], stepCount: 16, velocityPattern: "flat", outputMode: "synth", targetPartId: null };
   _listeners.clear();
 }
 

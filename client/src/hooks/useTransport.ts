@@ -14,6 +14,7 @@ import type { FollowAction } from "../audio/AudioEngine";
 import type { DrumMachineState, DrumMachineActions } from "@/store/useDrumMachineStore";
 import { getPattern } from "@/store/useMelodicPartStore";
 import { useTransposeStore } from "@/store/useTransposeStore";
+import { getArpState, getArpSteps } from "@/store/useArpStore";
 
 interface UseTransportOptions {
   isPlaying: boolean;
@@ -96,6 +97,18 @@ export function useTransport({
     AudioEngine.setMelodicGetter((partId: string) => {
       const pattern = getPattern(partId);
       return pattern?.steps;
+    });
+    // Arp getter (v3.268): Snapshot der Arp-Config pro Step. Liest direkt aus
+    // useArpStore-Singleton → kein Zirkular-Import, immer aktuell.
+    AudioEngine.setArpGetter(() => {
+      const s = getArpState();
+      if (!s.enabled) return null;
+      return {
+        enabled: true,
+        outputMode: s.outputMode,
+        targetPartId: s.targetPartId,
+        steps: getArpSteps(),
+      };
     });
   }, []);
 

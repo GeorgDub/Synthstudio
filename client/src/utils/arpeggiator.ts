@@ -5,6 +5,20 @@ export type ArpMode = "up" | "down" | "upDown" | "random" | "chord" | "converge"
 export type ArpOctaves = 1 | 2 | 3;
 export type ArpVelocityPattern = "flat" | "accent24" | "accent13" | "crescendo" | "decrescendo" | "random";
 
+/**
+ * Wohin der Arpeggiator seine Noten schickt:
+ *  - "synth":   interne Synth-Stimme (lokal hörbar, kein Part nötig)
+ *  - "channel": treibt einen ausgewählten Channel/Part (dessen Sample/Synth)
+ *  - "midi":    sendet Note-On/Off an einen externen MIDI-Ausgang
+ */
+export type ArpOutputMode = "synth" | "channel" | "midi";
+
+export const ARP_OUTPUT_MODE_LABELS: Record<ArpOutputMode, string> = {
+  synth:   'Interner Synth',
+  channel: 'Channel treiben',
+  midi:    'MIDI-Ausgang',
+};
+
 export interface ArpOptions {
   notes: number[];
   mode: ArpMode;
@@ -143,4 +157,23 @@ export function applyArp(options: ArpOptions): ArpStep[] {
     noteIndex++;
     return step;
   });
+}
+
+/**
+ * Wählt den Arp-Step für einen absoluten Sequencer-Step (wrappt modular über
+ * die Arp-Step-Liste). Liefert nur aktive Steps zurück — inaktive (Skip / leere
+ * Noten) ergeben `null`, damit der Aufrufer einfach `if (!ev) return` schreiben
+ * kann. Pure: kein State, kein Side-Effect (für Engine-Playback + Tests).
+ */
+export function arpStepAt(steps: ArpStep[], absoluteStep: number): ArpStep | null {
+  if (steps.length === 0) return null;
+  const len = steps.length;
+  const idx = ((absoluteStep % len) + len) % len; // sichere Modulo für negative Indizes
+  const s = steps[idx];
+  return s && s.active ? s : null;
+}
+
+/** MIDI-Notennummer → Frequenz in Hz (A4 = 69 = 440 Hz). */
+export function arpMidiToFreq(midi: number): number {
+  return 440 * Math.pow(2, (midi - 69) / 12);
 }

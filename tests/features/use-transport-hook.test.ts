@@ -32,6 +32,7 @@ vi.mock("@/audio/AudioEngine", () => {
       setGlobalTranspose:     vi.fn(),
       setPatternGetter:       vi.fn(),
       setMelodicGetter:       vi.fn(),
+      setArpGetter:           vi.fn(),
       setBpm:                 vi.fn(),
       setSteps:               vi.fn(),
       play:                   vi.fn(() => Promise.resolve()),

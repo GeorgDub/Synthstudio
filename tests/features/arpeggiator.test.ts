@@ -11,9 +11,13 @@
 import { describe, it, expect } from "vitest";
 import {
   applyArp,
+  arpStepAt,
+  arpMidiToFreq,
   ARP_MODE_LABELS,
+  ARP_OUTPUT_MODE_LABELS,
   ARP_VELOCITY_LABELS,
   type ArpMode,
+  type ArpOutputMode,
   type ArpVelocityPattern,
 } from "@/utils/arpeggiator";
 
@@ -33,6 +37,54 @@ describe("Arpeggiator – Label-Maps", () => {
     for (const p of patterns) {
       expect(ARP_VELOCITY_LABELS[p]).toBeTruthy();
     }
+  });
+
+  it("ARP_OUTPUT_MODE_LABELS deckt alle 3 Output-Modi ab", () => {
+    const modes: ArpOutputMode[] = ["synth", "channel", "midi"];
+    for (const m of modes) {
+      expect(ARP_OUTPUT_MODE_LABELS[m]).toBeTruthy();
+      expect(typeof ARP_OUTPUT_MODE_LABELS[m]).toBe("string");
+    }
+  });
+});
+
+describe("Arpeggiator – arpStepAt (Playback-Selektion)", () => {
+  const steps = applyArp({ notes: C_MAJOR_TRIAD, mode: "up", octaves: 1, stepCount: 4 });
+
+  it("Step 0 liefert die erste aktive Note (60)", () => {
+    expect(arpStepAt(steps, 0)?.note).toBe(60);
+  });
+
+  it("wrappt modular über die Step-Liste (absStep 4 == Step 0)", () => {
+    expect(arpStepAt(steps, 4)?.note).toBe(arpStepAt(steps, 0)?.note);
+    expect(arpStepAt(steps, 5)?.note).toBe(arpStepAt(steps, 1)?.note);
+  });
+
+  it("negative Indizes wrappen sicher (kein Crash / undefined)", () => {
+    expect(arpStepAt(steps, -1)?.note).toBe(arpStepAt(steps, 3)?.note);
+  });
+
+  it("leere Step-Liste → null", () => {
+    expect(arpStepAt([], 0)).toBeNull();
+  });
+
+  it("inaktiver Step → null (z.B. keine Noten)", () => {
+    const silent = applyArp({ notes: [], mode: "up", octaves: 1, stepCount: 4 });
+    expect(arpStepAt(silent, 0)).toBeNull();
+  });
+});
+
+describe("Arpeggiator – arpMidiToFreq", () => {
+  it("A4 (69) == 440 Hz", () => {
+    expect(arpMidiToFreq(69)).toBeCloseTo(440, 5);
+  });
+
+  it("Oktave höher verdoppelt die Frequenz (81 == 880 Hz)", () => {
+    expect(arpMidiToFreq(81)).toBeCloseTo(880, 5);
+  });
+
+  it("C4 (60) ≈ 261.63 Hz", () => {
+    expect(arpMidiToFreq(60)).toBeCloseTo(261.63, 1);
   });
 });
 

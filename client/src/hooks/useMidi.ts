@@ -1781,6 +1781,22 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
     };
   }, []);
 
+  // ─── Arp-MIDI-Out → AudioEngine wiring (v3.268) ─────────────────────────
+  // Im Arp-Modus "MIDI-Ausgang" schickt die Engine fertige Note-On/Off-Bytes;
+  // wir routen sie an das aktive MIDI-Ausgangsgerät. PENDING HARDWARE: ohne
+  // angeschlossenen MIDI-Out nicht verifizierbar.
+  useEffect(() => {
+    const sender = (bytes: number[]) => {
+      const out = activeOutputDeviceId;
+      if (!out) return;
+      midiSendMessage(midiAccessRef.current as MidiAccessLike | null, out, bytes);
+    };
+    AudioEngine.setArpMidiSender(sender);
+    return () => {
+      AudioEngine.setArpMidiSender(null);
+    };
+  }, [activeOutputDeviceId]);
+
   // ─── MIDI-Click-Out → AudioEngine wiring (v3.98.0) ──────────────────────
   // Analog zu MidiNoteOut: Sender bekommt outputId + Bytes, leitet via
   // midiSendMessage an die Web-MIDI-API weiter. Config (enabled, outputId,
