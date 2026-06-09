@@ -23,6 +23,13 @@ import { PatternMorphPanel } from "@/components/PatternMorph";
 import { PatternVariationPanel } from "@/components/PatternVariation";
 import { ChordSuggestionPanel } from "@/components/ChordSuggestion/ChordSuggestionPanel";
 import { applyVariationToPattern } from "@/store/usePatternVariationStore";
+import {
+  usePatternVariationsStore,
+  createVariationSet,
+  updateVariationSlot,
+  setActiveVariation,
+  findSetContainingPattern,
+} from "@/store/usePatternVariationsStore";
 import { MacroPanel } from "@/components/Macro/MacroPanel";
 import { ArpeggiatorPanel } from "@/components/Arpeggiator/ArpeggiatorPanel";
 import { useArpStore, setArpEnabled } from "@/store/useArpStore";
@@ -1183,8 +1190,10 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
   const [abSlotB, setAbSlotB] = useState<string | null>(null);
   const [abActive, setAbActive] = useState<"A" | "B">("A");
   // Pattern Variations A/B/C/D
-  const [varSlots, setVarSlots] = useState<Record<string, string | null>>({ A: null, B: null, C: null, D: null });
-  const [activeVar, setActiveVar] = useState<string>("A");
+  // Pattern-Variations A/B/C/D: verknüpft mit dem persistierten Store
+  // (usePatternVariationsStore) — dieselben Slots wie die Variations-Bar im
+  // Patterns-Tab, geteilt + projekt-übergreifend gespeichert (v3.270).
+  const { sets: variationSets } = usePatternVariationsStore();
   const [showNoteRepeat, setShowNoteRepeat] = useState(false);
   // v3.97.0: MIDI-Step-Recorder (Logic Pro Step Input Style).
   const stepRec = useMidiStepRecorderStore();
@@ -3705,25 +3714,43 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
           🧠 Mix
         </button>
 
-        {/* Pattern Variations A/B/C/D */}
-        <div className="flex items-center gap-0 bg-bg-base rounded border border-border-color" title="Pattern Variations — Variationen speichern & wechseln">
+        {/* Pattern Variations A/B/C/D — verknüpft mit usePatternVariationsStore */}
+        <div className="flex items-center gap-0 bg-bg-base rounded border border-border-color" title="Pattern Variations — Variationen speichern & wechseln (geteilt mit Patterns-Tab)">
           {(["A","B","C","D"] as const).map((v, i) => {
-            const isActive = activeVar === v && varSlots[v] !== null;
-            const hasSaved = varSlots[v] !== null;
+            const varSet = pattern ? findSetContainingPattern(variationSets, pattern.id) : undefined;
+            const slotId = varSet?.slots[v] ?? null;
+            const hasSaved = slotId !== null;
+            const isActive = !!varSet && varSet.activeSlot === v && hasSaved && pattern?.id === slotId;
             const corners = i === 0 ? "rounded-l" : i === 3 ? "rounded-r" : "";
             return (
               <button key={v}
+                data-testid={`seq-var-slot-${v}`}
+                aria-pressed={isActive}
                 onClick={() => {
-                  if (!hasSaved) {
-                    // Aktuelles Pattern in Slot klonen
-                    // Klon des aktuellen Patterns erstellen
-                    const cloneId = dm.patterns.length > 0
-                      ? (() => { const id = dm.addPatternData({ ...pattern, name: `${pattern.name} [${v}]` }); return id; })()
-                      : null;
-                    if (cloneId) setVarSlots(prev => ({ ...prev, [v]: cloneId }));
+                  if (!pattern) return;
+                  if (!varSet) {
+                    // Erste Nutzung: Variation-Set für das aktuelle Pattern anlegen
+                    // (Slot A = aktuelles Pattern).
+                    const created = createVariationSet(pattern.id, pattern.name, pattern.id);
+                    if (v !== "A") {
+                      // Direkt in den geklickten Slot kopieren + aktivieren.
+                      const newId = dm.addPatternData({ ...pattern, name: `${pattern.name} [${v}]` });
+                      updateVariationSlot(created.basePatternId, v, newId);
+                      setActiveVariation(created.basePatternId, v);
+                      dm.setActivePattern(newId);
+                    }
+                    return;
+                  }
+                  if (slotId) {
+                    // Gefüllter Slot → Live-Switch.
+                    setActiveVariation(varSet.basePatternId, v);
+                    dm.setActivePattern(slotId);
                   } else {
-                    const targetId = varSlots[v];
-                    if (targetId) { dm.setActivePattern(targetId); setActiveVar(v); }
+                    // Leerer Slot → aktuelles Pattern hineinkopieren + aktivieren.
+                    const newId = dm.addPatternData({ ...pattern, name: `${pattern.name} [${v}]` });
+                    updateVariationSlot(varSet.basePatternId, v, newId);
+                    setActiveVariation(varSet.basePatternId, v);
+                    dm.setActivePattern(newId);
                   }
                 }}
                 className={[
