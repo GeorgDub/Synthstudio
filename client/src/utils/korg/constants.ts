@@ -121,10 +121,21 @@ export const KORG_SUBCHUNK_BODY_SIZE = 1180;
 /** "esli" sub-magic am Anfang des korg-bodies. */
 export const KORG_BODY_SUBMAGIC = new Uint8Array([0x65, 0x73, 0x6c, 0x69]);
 export const KORG_BODY_DECLARED_SIZE = 0x0494; // 1172
+/**
+ * @deprecated v3.271: war fälschlich als "version" bei esli +0x08 geschrieben.
+ * Laut Oe2sSLE-Struktur (e2s_sample_all.RIFF_korg_esli) ist +0x08 das Feld
+ * `OSC_0index` = die vom Gerät angezeigte Sample-Nummer (NICHT konstant). Der
+ * Wert 0x01F4=500 war nur die Nummer des Referenz-Samples, aus dem die
+ * Konstante abgeleitet wurde. Nicht mehr beim Bauen schreiben.
+ */
 export const KORG_BODY_VERSION_WORD = 0x01f4;
 
 // Field offsets WITHIN the 1180-byte korg body (start = 'esli'). Lead-in:
-// 'esli'(4) + declared_size LE32(4) + version LE16(2) = 10 bytes.
+// 'esli'(4) + declared_size LE32(4) = 8 bytes, dann OSC_0index.
+// v3.271 (Oe2sSLE-verifiziert): die Sample-Nummer steht DOPPELT — bei +0x08
+// (OSC_0index) UND +0x56 (OSC_0index1), identisch + aufsteigend. Das Gerät
+// liest +0x08; ohne korrektes +0x08 zeigt es alle Samples unter derselben Nr.
+export const ESLI_OSC_INDEX_OFFSET = 0x08; // u16 LE — OSC_0index (Sample-Nummer)
 export const ESLI_NAME_OFFSET = 0x0a; // 16-byte ASCII
 export const ESLI_NAME_LEN = 16;
 export const ESLI_CATEGORY_OFFSET = 0x1a; // u16 LE
@@ -137,11 +148,10 @@ export const ESLI_USE_CHAN1_OFFSET = 0x49; // u8 bool (stereo)
 export const ESLI_PLUS12DB_OFFSET = 0x4a; // u8 bool
 export const ESLI_SAMPLING_FREQ_OFFSET = 0x50; // u32 LE
 export const ESLI_SAMPLE_TUNE_OFFSET = 0x55; // i8
-// v3.271: Sample-Nummer wie vom Gerät angezeigt (u16 LE). Verifiziert gegen
-// Factory-Bank sampler_full.all (+0x56 läuft 18,19,20,… aufsteigend pro Slot).
-// Die TS/Python-Parser rekonstruieren die Nummer aus der Offset-Tabellen-Position,
-// das Gerät liest aber dieses Feld → muss beim Bauen gesetzt werden.
-export const ESLI_SAMPLE_INDEX_OFFSET = 0x56; // u16 LE
+// v3.271 (Oe2sSLE: OSC_0index1): zweite Kopie der Sample-Nummer (u16 LE).
+// Muss identisch zu OSC_0index @ +0x08 sein — echte .all-Files haben beide
+// gleich + aufsteigend (z.B. spul.all: 501,502,…). Verifiziert gegen Real-Files.
+export const ESLI_SAMPLE_INDEX_OFFSET = 0x56; // u16 LE — OSC_0index1 (Duplikat)
 export const ESLI_SLICES_OFFSET = 0x58; // 64×16B = 1024B
 export const ESLI_SLICES_COUNT = 64;
 export const ESLI_SLICE_STRUCT_SIZE = 16; // 4 × LE32 (start, length, attack, amplitude)

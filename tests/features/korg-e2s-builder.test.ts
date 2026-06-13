@@ -52,7 +52,6 @@ import {
   ESLI_SLICES_COUNT,
   ESLI_SLICES_OFFSET,
   KORG_BODY_SUBMAGIC,
-  KORG_BODY_VERSION_WORD,
   KORG_SUBCHUNK_BODY_SIZE,
   KORG_SUBCHUNK_ID,
 } from "@/utils/korg/constants";
@@ -336,12 +335,12 @@ describe("e2sBankBuilder — produced file structure", () => {
     expect(size).toBe(1180);
   });
 
-  it("ESLI sub-magic and version word are correct", () => {
+  it("ESLI sub-magic, declared-size and OSC_0index (@+0x08) are correct", () => {
     const result = buildE2sBank([
-      { slotIndex: 0, name: "Y", pcmData: new Float32Array(10), sampleRate: 44100, channels: 1 },
+      { slotIndex: 7, sampleNumber: 501, name: "Y", pcmData: new Float32Array(10), sampleRate: 44100, channels: 1 },
     ]);
     const view = new Uint8Array(result.buffer);
-    // Find 'korg' header, then check body at +8
+    // Find 'korg' header, then check body fields.
     let korgAt = -1;
     for (let i = E2S_ALL_SAMPLE_AREA_START; i < view.length - 8; i++) {
       if (
@@ -361,9 +360,8 @@ describe("e2sBankBuilder — produced file structure", () => {
     // declared-size LE32 at body+4
     const dv = new DataView(result.buffer);
     expect(dv.getUint32(bodyStart + 4, true)).toBe(0x0494);
-    // version LE16 at body+8
-    expect(dv.getUint16(bodyStart + 8, true)).toBe(KORG_BODY_VERSION_WORD);
-    expect(dv.getUint16(bodyStart + 8, true)).toBe(0x01f4);
+    // v3.271: body+0x08 is OSC_0index (sample number), NOT a constant "version".
+    expect(dv.getUint16(bodyStart + 0x08, true)).toBe(501);
   });
 
   it("ESLI name is 16 bytes ASCII, NUL-padded", () => {
@@ -906,43 +904,43 @@ describe("v3.8.0 ESLI Slice serialization", () => {
     expect(dv.getUint32(s2 + 12, true)).toBe(0);
   });
 
-  it("Sample-Nummer wird pro Slot bei esli +0x56 geschrieben (v3.271 Fix)", () => {
-    // Walk the offset table → each slot's RIFF → korg/esli body → read +0x56.
-    const readSampleNumberAt = (buf: ArrayBuffer, slotPos: number): number => {
+  it("Sample-Nummer wird pro Slot in BEIDE esli-Felder geschrieben (+0x08 & +0x56, v3.271)", () => {
+    // Walk the offset table → each slot's RIFF → korg/esli body → read a field.
+    const readAt = (buf: ArrayBuffer, slotPos: number, off: number): number => {
       const dv = new DataView(buf);
       const riffOff = dv.getUint32(E2S_ALL_OFFSET_TABLE_START + slotPos * 4, true);
-      // RIFF(4) size(4) WAVE(4), then subchunks; find 'korg'.
       let p = riffOff + 12;
       const end = riffOff + 8 + dv.getUint32(riffOff + 4, true);
       while (p + 8 <= end) {
         const id = String.fromCharCode(...new Uint8Array(buf, p, 4));
         const sz = dv.getUint32(p + 4, true);
-        if (id === "korg") {
-          const body = p + 8; // esli magic
-          return dv.getUint16(body + 0x56, true);
-        }
+        if (id === "korg") return dv.getUint16(p + 8 + off, true);
         p += 8 + sz + (sz & 1);
       }
       return -1;
     };
+    const num = (buf: ArrayBuffer, pos: number) => ({
+      osc0: readAt(buf, pos, 0x08), // OSC_0index
+      osc1: readAt(buf, pos, 0x56), // OSC_0index1
+    });
 
-    // Explicit sampleNumber → written verbatim (e.g. user samples at 501+).
+    // Explicit sampleNumber → written verbatim to BOTH fields (user samples 501+).
     const withNumbers = buildE2sBank([
       { slotIndex: 0, sampleNumber: 501, name: "A", pcmData: new Float32Array(2000), sampleRate: 44100, channels: 1 },
       { slotIndex: 1, sampleNumber: 502, name: "B", pcmData: new Float32Array(2000), sampleRate: 44100, channels: 1 },
       { slotIndex: 2, sampleNumber: 666, name: "C", pcmData: new Float32Array(2000), sampleRate: 44100, channels: 1 },
     ]);
-    expect(readSampleNumberAt(withNumbers.buffer, 0)).toBe(501);
-    expect(readSampleNumberAt(withNumbers.buffer, 1)).toBe(502);
-    expect(readSampleNumberAt(withNumbers.buffer, 2)).toBe(666);
+    expect(num(withNumbers.buffer, 0)).toEqual({ osc0: 501, osc1: 501 });
+    expect(num(withNumbers.buffer, 1)).toEqual({ osc0: 502, osc1: 502 });
+    expect(num(withNumbers.buffer, 2)).toEqual({ osc0: 666, osc1: 666 });
 
-    // Default (no sampleNumber) → falls back to slotIndex, still ascending/distinct.
+    // Default (no sampleNumber) → falls back to slotIndex in both fields.
     const defaulted = buildE2sBank([
       { slotIndex: 3, name: "D", pcmData: new Float32Array(2000), sampleRate: 44100, channels: 1 },
       { slotIndex: 9, name: "E", pcmData: new Float32Array(2000), sampleRate: 44100, channels: 1 },
     ]);
-    expect(readSampleNumberAt(defaulted.buffer, 3)).toBe(3);
-    expect(readSampleNumberAt(defaulted.buffer, 9)).toBe(9);
+    expect(num(defaulted.buffer, 3)).toEqual({ osc0: 3, osc1: 3 });
+    expect(num(defaulted.buffer, 9)).toEqual({ osc0: 9, osc1: 9 });
   });
 
   it("Read → Edit Slices → Write → Read produziert identische Slices", () => {

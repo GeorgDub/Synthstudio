@@ -72,7 +72,7 @@ import {
   ESLI_USE_CHAN1_OFFSET,
   KORG_BODY_DECLARED_SIZE,
   KORG_BODY_SUBMAGIC,
-  KORG_BODY_VERSION_WORD,
+  ESLI_OSC_INDEX_OFFSET,
   KORG_SUBCHUNK_BODY_SIZE,
   KORG_SUBCHUNK_ID,
   LOOP_TYPE_FORWARD,
@@ -498,10 +498,19 @@ function buildKorgSubchunk(
   // body starts at chunk[8]
   const bodyOffset = 8;
 
-  // 'esli' magic + declared-size LE32 + version LE16
+  // 'esli' magic + declared-size LE32
   chunk.set(KORG_BODY_SUBMAGIC, bodyOffset + 0);
   dv.setUint32(bodyOffset + 4, KORG_BODY_DECLARED_SIZE, true);
-  dv.setUint16(bodyOffset + 8, KORG_BODY_VERSION_WORD, true);
+
+  // OSC_0index @ +0x08 (u16 LE) — die vom Gerät angezeigte Sample-Nummer.
+  // v3.271-Fix: früher stand hier die Konstante 0x01F4 (500) → das Gerät zeigte
+  // ALLE Samples als 501. Echte .all (Oe2sSLE-verifiziert) schreibt die Nummer
+  // hier UND bei +0x56 (OSC_0index1), identisch + aufsteigend. Default = slotIndex.
+  const sampleNumber =
+    typeof slot.sampleNumber === "number" && Number.isFinite(slot.sampleNumber)
+      ? Math.max(0, Math.min(0xffff, Math.floor(slot.sampleNumber)))
+      : Math.max(0, Math.min(0xffff, Math.floor(slot.slotIndex)));
+  dv.setUint16(bodyOffset + ESLI_OSC_INDEX_OFFSET, sampleNumber, true);
 
   // Name @ 0x0A (16B ASCII, NUL-padded)
   const sanitized = sanitizeE2sSlotName(slot.name ?? "", ESLI_NAME_LEN);
@@ -553,14 +562,9 @@ function buildKorgSubchunk(
   // i8 sign-conversion
   chunk[bodyOffset + ESLI_SAMPLE_TUNE_OFFSET] = tune < 0 ? tune + 256 : tune;
 
-  // Sample-Nummer @ 0x56 (u16 LE) — die vom Gerät angezeigte Nummer. v3.271:
-  // ohne dies blieben alle Samples auf 0 → Gerät zeigte alle gleich (501).
-  // Default = slotIndex; explizit setzbar via slot.sampleNumber (z.B. 501+).
-  const sampleNumber =
-    typeof slot.sampleNumber === "number" && Number.isFinite(slot.sampleNumber)
-      ? slot.sampleNumber
-      : slot.slotIndex;
-  dv.setUint16(bodyOffset + ESLI_SAMPLE_INDEX_OFFSET, Math.max(0, Math.min(0xffff, Math.floor(sampleNumber))), true);
+  // OSC_0index1 @ +0x56 (u16 LE) — zweite Kopie der Sample-Nummer, identisch
+  // zu OSC_0index @ +0x08 (siehe oben). Echte .all halten beide gleich.
+  dv.setUint16(bodyOffset + ESLI_SAMPLE_INDEX_OFFSET, sampleNumber, true);
 
   // Slices @ 0x58 (64 × 16B)
   const slices = slot.slices ?? [];
