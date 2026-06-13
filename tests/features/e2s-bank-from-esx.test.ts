@@ -75,8 +75,26 @@ const runner = ESX_AVAILABLE ? describe : describe.skip;
 runner("BOTTROP.ESX → matching .e2sallpat + .all (samples at 501+) + manual", () => {
   const esx = parseEsxBank(new Uint8Array(fs.readFileSync(ESX_PATH)), "BOTTROP.ESX");
 
-  // ── Samples: map every mono sample → .all slot j → hardware number 501+j ───
-  const monos = esx.monoSamples.slice(0, 250);
+  // ── Patterns: select non-empty ─────────────────────────────────────────────
+  const nonEmpty = esx.patterns.filter(
+    (p) =>
+      (p.name && p.name.trim().length > 0) ||
+      p.parts.some((pt) => pt.steps.some((s) => s.active)),
+  );
+  const selected = nonEmpty.slice(0, 250);
+
+  // ── Samples: ONLY those actually triggered by a pattern part (parts with at
+  // least one active step). The full 166-sample set is ~275s of mono audio and
+  // overflows the E2S sample RAM (~270s) → import error. Restricting to used
+  // samples keeps the bank well within memory. ─────────────────────────────────
+  const usedEsxIndices = new Set<number>();
+  for (const p of selected) {
+    for (const part of p.parts) {
+      if (part.steps.some((s) => s.active)) usedEsxIndices.add(part.sampleId);
+    }
+  }
+  const monos = esx.monoSamples.filter((s) => usedEsxIndices.has(s.index)).slice(0, 250);
+
   /** esxSampleIndex → { allSlot, hwNumber, name } */
   const sampleMap = new Map<number, { allSlot: number; hwNumber: number; name: string }>();
   const slots: E2sSlotInput[] = monos.map((s: EsxSample, j) => {
@@ -94,14 +112,6 @@ runner("BOTTROP.ESX → matching .e2sallpat + .all (samples at 501+) + manual", 
       channels: 1,
     };
   });
-
-  // ── Patterns: select non-empty, repoint each part to its imported sample ───
-  const nonEmpty = esx.patterns.filter(
-    (p) =>
-      (p.name && p.name.trim().length > 0) ||
-      p.parts.some((pt) => pt.steps.some((s) => s.active)),
-  );
-  const selected = nonEmpty.slice(0, 250);
 
   function esxToE2(p: EsxPattern): E2PatternInput {
     const stepLength: 16 | 32 | 64 =
@@ -129,6 +139,10 @@ runner("BOTTROP.ESX → matching .e2sallpat + .all (samples at 501+) + manual", 
   const allpat = new Uint8Array(buildE2AllPatFile(e2Inputs));
   const bankResult = buildE2sBank(slots);
   const allBank = new Uint8Array(bankResult.buffer);
+
+  // Small diagnostic bank: first 8 samples only — to test whether a *small*
+  // mono .all imports without error (isolates "format/mono" from "memory full").
+  const smallBank = new Uint8Array(buildE2sBank(slots.slice(0, 8)).buffer);
 
   it("logs the BOTTROP contents + sample-rate histogram", () => {
     const rates: Record<number, number> = {};
@@ -217,6 +231,7 @@ runner("BOTTROP.ESX → matching .e2sallpat + .all (samples at 501+) + manual", 
     fs.mkdirSync(EXAMPLE_DIR, { recursive: true });
     fs.writeFileSync(path.join(EXAMPLE_DIR, "bottrop-test.e2sallpat"), allpat);
     fs.writeFileSync(path.join(EXAMPLE_DIR, "bottrop-samples.all"), allBank);
+    fs.writeFileSync(path.join(EXAMPLE_DIR, "bottrop-samples-small.all"), smallBank);
     fs.writeFileSync(path.join(EXAMPLE_DIR, "bottrop-mapping.md"), manual);
 
     try {
