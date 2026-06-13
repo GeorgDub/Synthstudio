@@ -943,6 +943,32 @@ describe("v3.8.0 ESLI Slice serialization", () => {
     expect(num(defaulted.buffer, 9)).toEqual({ osc0: 9, osc1: 9 });
   });
 
+  it("WAV_dataSize (@0x44) + end address (@0x38) werden gesetzt (v3.271 'lädt nicht'-Fix)", () => {
+    const frames = 5000;
+    const result = buildE2sBank([
+      { slotIndex: 0, name: "Snd", pcmData: new Float32Array(frames), sampleRate: 44100, channels: 1 },
+    ]);
+    const dv = new DataView(result.buffer);
+    const riffOff = dv.getUint32(E2S_ALL_OFFSET_TABLE_START, true);
+    let p = riffOff + 12;
+    const end = riffOff + 8 + dv.getUint32(riffOff + 4, true);
+    let dataSize = -1, bodyOff = -1;
+    while (p + 8 <= end) {
+      const id = String.fromCharCode(...new Uint8Array(result.buffer, p, 4));
+      const sz = dv.getUint32(p + 4, true);
+      if (id === "data") dataSize = sz;
+      if (id === "korg") bodyOff = p + 8;
+      p += 8 + sz + (sz & 1);
+    }
+    const pcmBytes = frames * 2; // 16-bit mono
+    expect(dataSize).toBe(pcmBytes);
+    // WAV_dataSize must equal the data byte count (else device sees empty sample).
+    expect(dv.getUint32(bodyOff + 0x44, true)).toBe(pcmBytes);
+    // EndPoint = last-frame address = dataSize - frameBytes.
+    expect(dv.getUint32(bodyOff + 0x38, true)).toBe(pcmBytes - 2);
+    expect(dv.getUint32(bodyOff + 0x30, true)).toBe(0); // StartPoint
+  });
+
   it("Read → Edit Slices → Write → Read produziert identische Slices", () => {
     const inputSlices = [
       { start: 0, length: 4000, attackLength: 0, amplitude: 0 },

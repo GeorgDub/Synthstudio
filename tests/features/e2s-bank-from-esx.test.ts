@@ -86,7 +86,8 @@ runner("BOTTROP.ESX → matching .e2sallpat + .all (samples at 501+) + manual", 
     sampleMap.set(s.index, { allSlot: j, hwNumber: USER_SAMPLE_BASE + j, name });
     return {
       slotIndex: j,
-      sampleNumber: USER_SAMPLE_BASE + j, // device-displayed number (esli +0x56)
+      sampleNumber: USER_SAMPLE_BASE + j, // device-displayed number (esli +0x08/+0x56)
+      category: 17, // "User" — wie echte User-Sample-Bänke
       name,
       pcmData: pcm,
       sampleRate: targetRate,

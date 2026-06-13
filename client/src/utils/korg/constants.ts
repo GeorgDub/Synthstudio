@@ -140,8 +140,12 @@ export const ESLI_NAME_OFFSET = 0x0a; // 16-byte ASCII
 export const ESLI_NAME_LEN = 16;
 export const ESLI_CATEGORY_OFFSET = 0x1a; // u16 LE
 export const ESLI_PLAY_VOLUME_OFFSET = 0x2c; // u16 LE
-export const ESLI_LOOP_START_OFFSET = 0x34; // u32 LE (loop start in bytes)
-export const ESLI_END_OFFSET = 0x38; // u32 LE (sample end in bytes)
+export const ESLI_START_POINT_OFFSET = 0x30; // u32 LE (OSC_StartPoint_address, bytes; 0 = start)
+export const ESLI_LOOP_START_OFFSET = 0x34; // u32 LE (OSC_LoopStartPoint_offset, bytes)
+export const ESLI_END_OFFSET = 0x38; // u32 LE (OSC_EndPoint_offset = last-frame addr, bytes)
+// v3.271 (Oe2sSLE: WAV_dataSize): die Sample-Daten-Bytegröße. OHNE dieses Feld
+// behandelt das Gerät das Sample als leer → "importiert, aber nichts geladen".
+export const ESLI_WAV_DATA_SIZE_OFFSET = 0x44; // u32 LE (= 'data'-Chunk-Größe)
 export const ESLI_ONESHOT_OFFSET = 0x3c; // u8 bool
 export const ESLI_USE_CHAN0_OFFSET = 0x48; // u8
 export const ESLI_USE_CHAN1_OFFSET = 0x49; // u8 bool (stereo)

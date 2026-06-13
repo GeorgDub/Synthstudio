@@ -73,6 +73,8 @@ import {
   KORG_BODY_DECLARED_SIZE,
   KORG_BODY_SUBMAGIC,
   ESLI_OSC_INDEX_OFFSET,
+  ESLI_START_POINT_OFFSET,
+  ESLI_WAV_DATA_SIZE_OFFSET,
   KORG_SUBCHUNK_BODY_SIZE,
   KORG_SUBCHUNK_ID,
   LOOP_TYPE_FORWARD,
@@ -529,17 +531,34 @@ function buildKorgSubchunk(
   dv.setUint16(bodyOffset + ESLI_CATEGORY_OFFSET, cat, true);
 
   // PlayVolume @ 0x2C (u16 LE) — scale level [0..127] → [0..0xFFFF]
-  const rawLevel = typeof slot.level === "number" ? slot.level : 100;
+  const rawLevel = typeof slot.level === "number" ? slot.level : 127;
   const level = Math.max(0, Math.min(127, Math.floor(rawLevel)));
   const playVolume = Math.floor((level * 0xffff) / 127);
   dv.setUint16(bodyOffset + ESLI_PLAY_VOLUME_OFFSET, playVolume, true);
 
-  // Loop-Start @ 0x34 (u32 LE) — bytes
-  // Loop-End @ 0x38 (u32 LE) — bytes (default = full sample)
-  const loopStartBytes = clampU32(slot.loopStartBytes ?? 0);
-  const loopEndBytes = clampU32(slot.loopEndBytes ?? pcmByteLen);
+  // Sample address points + data size (bytes). v3.271-Fix (Oe2sSLE-verifiziert
+  // gegen echte spul.all): one-shots haben StartPoint=0,
+  // LoopStartPoint=EndPoint=Adresse des LETZTEN Frames (= dataSize - frameBytes),
+  // und WAV_dataSize @0x44 = volle Daten-Bytegröße. OHNE WAV_dataSize lädt das
+  // Gerät das Sample nicht (importiert, aber "keine Änderung").
+  const frameBytes = (slot.channels === 2 ? 2 : 1) * 2; // 16-bit output
+  const endAddr = Math.max(0, pcmByteLen - frameBytes);
+  const loopStartBytes =
+    slot.loopStartBytes != null ? clampU32(slot.loopStartBytes) : endAddr;
+  const endBytes =
+    slot.loopEndBytes != null ? Math.max(0, clampU32(slot.loopEndBytes) - frameBytes) : endAddr;
+  dv.setUint32(bodyOffset + ESLI_START_POINT_OFFSET, 0, true);
   dv.setUint32(bodyOffset + ESLI_LOOP_START_OFFSET, loopStartBytes, true);
-  dv.setUint32(bodyOffset + ESLI_END_OFFSET, loopEndBytes, true);
+  dv.setUint32(bodyOffset + ESLI_END_OFFSET, endBytes, true);
+  dv.setUint32(bodyOffset + ESLI_WAV_DATA_SIZE_OFFSET, clampU32(pcmByteLen), true);
+
+  // Fixed-value fields the device expects (Oe2sSLE "_UFix"; verified constant
+  // across real factory/user banks). Oe2sSLE warns if these differ → set them.
+  chunk[bodyOffset + 0x1d] = 0x02;
+  chunk[bodyOffset + 0x21] = 0x7f;
+  chunk[bodyOffset + 0x23] = 0x01;
+  chunk[bodyOffset + 0x4b] = 0x01;
+  dv.setUint16(bodyOffset + 0x4c, 0x04b0, true);
 
   // Oneshot @ 0x3C — 0 für Forward-Loop, 1 für oneshot (default oneshot)
   const loopType = slot.loopType ?? 1; // 1 = oneshot default
