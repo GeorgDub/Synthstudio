@@ -70,9 +70,16 @@ const ESX_AVAILABLE = (() => {
   }
 })();
 
-const runner = ESX_AVAILABLE ? describe : describe.skip;
+describe("BOTTROP.ESX → matching .e2sallpat + .all (samples at 501+) + manual", () => {
+  // The ESX file is user-private and absent on CI / fresh clones. Guard BEFORE
+  // any fs read — a top-level read in the describe body runs even under
+  // describe.skip and would crash collection. Register a skipped placeholder
+  // and return early when the file isn't present.
+  if (!ESX_AVAILABLE) {
+    it.skip("requires E:/esx/BOTTROP.ESX (user-private, not in repo)", () => {});
+    return;
+  }
 
-runner("BOTTROP.ESX → matching .e2sallpat + .all (samples at 501+) + manual", () => {
   const esx = parseEsxBank(new Uint8Array(fs.readFileSync(ESX_PATH)), "BOTTROP.ESX");
 
   // ── Patterns: select non-empty ─────────────────────────────────────────────
