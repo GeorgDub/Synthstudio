@@ -4821,6 +4821,12 @@ class AudioEngineClass {
             throw new Error(result.error || "fs:read-file fehlgeschlagen");
           }
           arrayBuffer = result.data;
+        } else if (url.startsWith("blob:") || url.startsWith("data:")) {
+          // In Electron läuft der Renderer von file://; `fetch()` einer
+          // blob:file:///… URL schlägt mit "Failed to fetch" fehl (Chromium
+          // blockiert blob-fetch bei file://-Origin). XHR lädt sie zuverlässig
+          // in BEIDEN Builds. Betrifft v.a. in-memory-Samples (KORG-Import).
+          arrayBuffer = await this._xhrArrayBuffer(url);
         } else {
           const response = await fetch(url);
           if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -4841,6 +4847,33 @@ class AudioEngineClass {
 
     this.loadingPromises.set(url, promise);
     return promise;
+  }
+
+  /**
+   * Lädt eine URL als ArrayBuffer via XMLHttpRequest. Workaround für Electron:
+   * `fetch()` einer `blob:file:///…`-URL wirft "Failed to fetch" (Chromium
+   * blockt blob-fetch bei file://-Origin), XHR funktioniert. Akzeptiert
+   * status 0 (lokale blob:/file:-Responses haben keinen HTTP-Status).
+   */
+  private _xhrArrayBuffer(url: string): Promise<ArrayBuffer> {
+    return new Promise((resolve, reject) => {
+      try {
+        const xhr = new XMLHttpRequest();
+        xhr.open("GET", url, true);
+        xhr.responseType = "arraybuffer";
+        xhr.onload = () => {
+          if ((xhr.status === 200 || xhr.status === 0) && xhr.response) {
+            resolve(xhr.response as ArrayBuffer);
+          } else {
+            reject(new Error(`XHR HTTP ${xhr.status}`));
+          }
+        };
+        xhr.onerror = () => reject(new Error("XHR-Ladefehler"));
+        xhr.send();
+      } catch (err) {
+        reject(err instanceof Error ? err : new Error(String(err)));
+      }
+    });
   }
 
   private _toLocalFilePath(url: string): string | null {
