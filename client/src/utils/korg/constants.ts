@@ -139,6 +139,12 @@ export const ESLI_OSC_INDEX_OFFSET = 0x08; // u16 LE — OSC_0index (Sample-Numm
 export const ESLI_NAME_OFFSET = 0x0a; // 16-byte ASCII
 export const ESLI_NAME_LEN = 16;
 export const ESLI_CATEGORY_OFFSET = 0x1a; // u16 LE
+// v3.271 (Oe2sSLE: OSC_importNum): in echten Bänken stets = OSC_0index + 50.
+export const ESLI_IMPORT_NUM_OFFSET = 0x1c; // u16 LE
+// v3.271 (Oe2sSLE: playLogPeriod): frequenzabhängige Abspielrate/Tonhöhe.
+// 22050→18808, 44100→15736, 48000→15360 (halbe Frequenz = +3072 → log-Period).
+// OHNE dies hat das Sample keine definierte Rate → Gerät spielt/lädt es nicht.
+export const ESLI_PLAY_LOG_PERIOD_OFFSET = 0x2a; // u16 LE
 export const ESLI_PLAY_VOLUME_OFFSET = 0x2c; // u16 LE
 export const ESLI_START_POINT_OFFSET = 0x30; // u32 LE (OSC_StartPoint_address, bytes; 0 = start)
 export const ESLI_LOOP_START_OFFSET = 0x34; // u32 LE (OSC_LoopStartPoint_offset, bytes)

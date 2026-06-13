@@ -73,6 +73,8 @@ import {
   KORG_BODY_DECLARED_SIZE,
   KORG_BODY_SUBMAGIC,
   ESLI_OSC_INDEX_OFFSET,
+  ESLI_IMPORT_NUM_OFFSET,
+  ESLI_PLAY_LOG_PERIOD_OFFSET,
   ESLI_START_POINT_OFFSET,
   ESLI_WAV_DATA_SIZE_OFFSET,
   KORG_SUBCHUNK_BODY_SIZE,
@@ -530,6 +532,13 @@ function buildKorgSubchunk(
   const cat = Math.max(0, Math.min(17, Math.floor(rawCat)));
   dv.setUint16(bodyOffset + ESLI_CATEGORY_OFFSET, cat, true);
 
+  // OSC_importNum @ 0x1C (u16 LE) — in echten Bänken stets sampleNumber + 50.
+  dv.setUint16(bodyOffset + ESLI_IMPORT_NUM_OFFSET, Math.min(0xffff, sampleNumber + 50), true);
+
+  // playLogPeriod @ 0x2A (u16 LE) — frequenzabhängige Abspielrate. Ohne dies
+  // hat das Sample keine definierte Rate → Gerät spielt/lädt es nicht.
+  dv.setUint16(bodyOffset + ESLI_PLAY_LOG_PERIOD_OFFSET, playLogPeriodForRate(slot.sampleRate), true);
+
   // PlayVolume @ 0x2C (u16 LE) — scale level [0..127] → [0..0xFFFF]
   const rawLevel = typeof slot.level === "number" ? slot.level : 127;
   const level = Math.max(0, Math.min(127, Math.floor(rawLevel)));
@@ -628,6 +637,18 @@ function clampU8(n: number): number {
   if (v < 0) return 0;
   if (v > 255) return 255;
   return v;
+}
+
+/**
+ * playLogPeriod (esli +0x2A) aus der Sample-Rate. Verifiziert gegen echte .all:
+ *   22050→18808, 44100→15736, 48000→15360 (halbe Frequenz = +3072 = log2-Period).
+ * Der Builder gibt nur 44100/48000 aus → exakte Lookup-Werte; sonst log-Formel.
+ */
+function playLogPeriodForRate(sampleRate: number): number {
+  if (sampleRate === 44100) return 15736;
+  if (sampleRate === 48000) return 15360;
+  const sr = sampleRate > 0 ? sampleRate : 44100;
+  return Math.max(0, Math.min(0xffff, Math.round(63132.68 - 3072 * Math.log2(sr))));
 }
 
 function clampU32(n: number): number {

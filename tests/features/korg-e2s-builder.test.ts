@@ -967,6 +967,33 @@ describe("v3.8.0 ESLI Slice serialization", () => {
     // EndPoint = last-frame address = dataSize - frameBytes.
     expect(dv.getUint32(bodyOff + 0x38, true)).toBe(pcmBytes - 2);
     expect(dv.getUint32(bodyOff + 0x30, true)).toBe(0); // StartPoint
+    // playLogPeriod @0x2A — frequency-derived (44100 → 15736). Without it the
+    // device has no playback rate → sample won't load/play.
+    expect(dv.getUint16(bodyOff + 0x2a, true)).toBe(15736);
+  });
+
+  it("playLogPeriod (@0x2A) + importNum (@0x1C) match real-file formulas", () => {
+    const mk = (sr: number, num: number) =>
+      buildE2sBank([
+        { slotIndex: 0, sampleNumber: num, name: "X", pcmData: new Float32Array(100), sampleRate: sr, channels: 1 },
+      ]);
+    const read = (buf: ArrayBuffer, off: number) => {
+      const dv = new DataView(buf);
+      const riffOff = dv.getUint32(E2S_ALL_OFFSET_TABLE_START, true);
+      let p = riffOff + 12;
+      const end = riffOff + 8 + dv.getUint32(riffOff + 4, true);
+      while (p + 8 <= end) {
+        const id = String.fromCharCode(...new Uint8Array(buf, p, 4));
+        const sz = dv.getUint32(p + 4, true);
+        if (id === "korg") return dv.getUint16(p + 8 + off, true);
+        p += 8 + sz + (sz & 1);
+      }
+      return -1;
+    };
+    expect(read(mk(44100, 501).buffer, 0x2a)).toBe(15736); // playLogPeriod 44.1k
+    expect(read(mk(48000, 501).buffer, 0x2a)).toBe(15360); // playLogPeriod 48k
+    expect(read(mk(44100, 501).buffer, 0x1c)).toBe(551); // importNum = num + 50
+    expect(read(mk(44100, 666).buffer, 0x1c)).toBe(716);
   });
 
   it("Read → Edit Slices → Write → Read produziert identische Slices", () => {
