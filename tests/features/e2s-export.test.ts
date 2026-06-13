@@ -282,6 +282,24 @@ describe("e2sExport — round-trip through parseElectribeAllPatBank", () => {
     // untouched slots parse as the factory init pattern
     expect(bank.patterns[2].name).toBe(TEMPLATE_NAME);
   });
+
+  it("per-part sampleId written at +0x08 round-trips through the parser (v3.271 fix)", () => {
+    const parts = emptyParts();
+    parts[0] = { sampleId: 501, steps: [{ active: true }] };
+    parts[5] = { sampleId: 666, steps: [] };
+    const p: E2PatternInput = { name: "SampleRef", bpm: 120, stepLength: 16, parts };
+
+    // Direct byte check: u16 LE @ part+0x08.
+    const body = buildE2PatternBody(p);
+    const partOff = (i: number) => 0x800 + i * 816 + 0x08;
+    expect(body[partOff(0)] | (body[partOff(0) + 1] << 8)).toBe(501);
+    expect(body[partOff(5)] | (body[partOff(5) + 1] << 8)).toBe(666);
+
+    // Parser reads it back from +0x08 (was +0x04 before the fix).
+    const bank = parseElectribeAllPatBank(new Uint8Array(buildE2AllPatFile([p])));
+    expect(bank.patterns[0].parts[0].sampleId).toBe(501);
+    expect(bank.patterns[0].parts[5].sampleId).toBe(666);
+  });
 });
 
 // ─── 2. Real-file ground truth (conditional skip) ───────────────────────────

@@ -716,10 +716,13 @@ function parseRealPartBlock(view: DataView, partOffset: number, partIndex: numbe
     off >= 0 && off + 1 < haveBytes ? view.getUint16(partOffset + off, true) : 0;
 
   // Part-Header: v3.13.0 — Volume + Pan jetzt decodiert via histogram-RE.
-  // SampleId-Offset 0x04 ist Best-Effort (varies aber semantisch unverified).
+  // SampleId @ +0x08 (u16 LE): v3.271 verifiziert gegen alle 16×250 Parts der
+  // e2s-2016-Stock-Bank — Werte 1..~500 (Factory-Sample-Nummern), 0 = keins.
+  // (Vor v3.271 wurde faelschlich +0x04 gelesen, was ~immer 0 ist; siehe
+  // e2sExport.ts PART_SAMPLE_OFF + die Repoint-Logik.)
   // Pitch + FxSend bleiben Hardware-Defaults (keine signed-distribution oder
   // klares default-byte in der 4000-sample-bank gefunden).
-  const sampleId = safeU16LE(4); // Best-Effort — observed varies between parts
+  const sampleId = safeU16LE(8);
 
   // Volume @ +0x15: 0..127. Defensive clamp gegen out-of-range (sollte nie
   // > 127 sein laut bank-histogram, aber defensiv parsen).
