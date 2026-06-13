@@ -86,6 +86,10 @@ const BPM_OFF = 0x22;
 const STEPLEN_OFF = 0x25;
 const PARTS_OFF = 0x800;
 const PART_STRIDE = 816; // 0x330
+/** Per-part sample reference (u16 LE). Verified against 4000 real-bank parts:
+ *  values span 1..~500 (factory sample numbers), 0 = no/empty sample.
+ *  (The read-side parser historically guessed +0x04, which is almost always 0.) */
+const PART_SAMPLE_OFF = 0x08;
 const PART_VOLUME_OFF = 0x15;
 const PART_PAN_OFF = 0x22;
 const PART_STEPS_OFF = 0x30;
@@ -199,6 +203,12 @@ export function buildE2PatternBody(input: E2PatternInput): Uint8Array {
     }
     if (typeof part.pan === "number") {
       body[partStart + PART_PAN_OFF] = clampInt(part.pan, 0, 127, 64);
+    }
+    // Per-part sample reference @ +0x08 (u16 LE). Only written when the caller
+    // provides one (e.g. repointing parts to imported user samples at 501+);
+    // otherwise the template's factory sample assignment is preserved.
+    if (typeof part.sampleId === "number" && Number.isFinite(part.sampleId)) {
+      view.setUint16(partStart + PART_SAMPLE_OFF, clampInt(part.sampleId, 0, 0xffff, 0), true);
     }
 
     const steps = Array.isArray(part.steps) ? part.steps : [];

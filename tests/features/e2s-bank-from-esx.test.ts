@@ -1,18 +1,26 @@
 /**
  * tests/features/e2s-bank-from-esx.test.ts
  *
- * One-shot generator: ports the patterns from a real ESX-1 backup
- * (E:\esx\BOTTROP.ESX) into a KORG Electribe 2 Sampler .e2sallpat bank, so the
- * exported bank mirrors the structure of the ESX file (same pattern names, BPM,
- * step triggers, per-part volume/pan/pitch).
+ * One-shot generator: ports a real ESX-1 backup (E:\esx\BOTTROP.ESX) to the
+ * KORG Electribe 2 Sampler, producing THREE matching artifacts in examples/e2s/
+ * (+ convenience copies next to the user's real files):
  *
- * ESX-1 and E2 Sampler are DIFFERENT hardware/formats — this is a cross-format
- * port of the *sequencer* content. Samples are NOT carried over (separate path);
- * patterns trigger whatever samples the destination E2S has in those part slots.
+ *   1. bottrop-test.e2sallpat  — the patterns (BPM, step triggers, vol/pan),
+ *      with each part's sample reference REPOINTED to the imported user samples.
+ *   2. bottrop-samples.all     — the part samples, placed in .all slots 0..N-1,
+ *      which appear on the E2S as user-sample numbers 501..501+N-1.
+ *   3. bottrop-mapping.md       — the manual: which .all slot / hardware number /
+ *      ESX sample name, and which patterns/parts trigger each.
  *
- * Conditional: skips if the ESX file isn't present (so it's harmless elsewhere).
- * Writes examples/e2s/bottrop-test.e2sallpat + a convenience copy next to the
- * user's real files.
+ * Sample-reference offset: the per-part sample number lives at part+0x08 (u16 LE).
+ * Verified empirically against all 16×250 parts of e2s-2016.e2sallpat — values
+ * span 1..~500 (factory numbers); 0 = none. (The read-side parser historically
+ * guessed +0x04, which is ~always 0.)
+ *
+ * "501" = E2S user-sample numbering (factory 1..~500, user 501+). This is a
+ * documented ASSUMPTION about the device's .all import base — verify on hardware.
+ *
+ * Conditional: skips if the ESX file isn't present.
  */
 
 import { describe, it, expect } from "vitest";
@@ -20,45 +28,38 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 
 import { parseEsxBank } from "../../client/src/utils/korg/esxParser";
-import type { EsxPattern } from "../../client/src/utils/korg/esxParser";
+import type { EsxPattern, EsxSample } from "../../client/src/utils/korg/esxParser";
+import { buildE2sBank, type E2sSlotInput } from "../../client/src/utils/korg/e2sBankBuilder";
+import { parseE2sBank } from "../../client/src/utils/korg/e2sBankReader";
 import { buildE2AllPatFile, E2S_ALLPAT_FILE_SIZE } from "../../client/src/utils/e2sExport";
 import type { E2PatternInput } from "../../client/src/utils/electribePatternBuilder";
-import { parseElectribeAllPatBank } from "../../client/src/utils/electribeImport";
 
 const ESX_PATH = "E:/esx/BOTTROP.ESX";
 const EXAMPLE_DIR = path.resolve(process.cwd(), "examples", "e2s");
-const EXAMPLE_FILE = path.join(EXAMPLE_DIR, "bottrop-test.e2sallpat");
-const CONVENIENCE_FILE = path.resolve(process.cwd(), "Korg e2s files", "bottrop-test.e2sallpat");
+const KORG_DIR = path.resolve(process.cwd(), "Korg e2s files");
 
-const E2_BASE_NOTE = 0x48; // C5 = "no pitch shift"
+const E2_BASE_NOTE = 0x48; // C5
+const USER_SAMPLE_BASE = 501; // E2S user-sample numbering start (assumption)
+const PART_SAMPLE_OFF = 0x08; // per-part sample ref, u16 LE (verified)
+const PARTS_OFF = 0x800;
+const PART_STRIDE = 816;
+const ALLPAT_FIRST_SLOT = 0x10100;
+const BODY_SIZE = 0x4000;
 
-/** Map one ESX-1 pattern → E2PatternInput (sequencer content only). */
-function esxToE2(p: EsxPattern): E2PatternInput {
-  const stepLength: 16 | 32 | 64 =
-    p.lengthSteps === 32 ? 32 : p.lengthSteps === 64 ? 64 : 16;
-
-  const parts = p.parts.map((part) => {
-    // ESX pitch is per-part; E2 note is per-step → apply the same note to all steps.
-    const note = Math.max(0, Math.min(127, E2_BASE_NOTE + (part.pitch ?? 0)));
-    const steps = part.steps.map((s) => ({
-      active: !!s.active,
-      velocity: typeof s.velocity === "number" ? s.velocity : undefined,
-      accent: !!s.accent,
-      note,
-    }));
-    return {
-      volume: part.volume, // already 0..127 on both formats
-      pan: part.pan, // already 0..127, 64 = center
-      steps,
-    };
-  });
-
-  return {
-    name: p.name || "ESX Pattern",
-    bpm: p.bpm,
-    stepLength,
-    parts,
-  };
+/** Simple linear resampler for a flat mono Float32 buffer. */
+function resampleMono(pcm: Float32Array, fromRate: number, toRate: number): Float32Array {
+  if (fromRate === toRate || pcm.length === 0) return pcm;
+  const ratio = toRate / fromRate;
+  const outLen = Math.max(1, Math.round(pcm.length * ratio));
+  const out = new Float32Array(outLen);
+  for (let i = 0; i < outLen; i++) {
+    const src = i / ratio;
+    const i0 = Math.floor(src);
+    const i1 = Math.min(pcm.length - 1, i0 + 1);
+    const frac = src - i0;
+    out[i] = pcm[i0] * (1 - frac) + pcm[i1] * frac;
+  }
+  return out;
 }
 
 const ESX_AVAILABLE = (() => {
@@ -71,88 +72,161 @@ const ESX_AVAILABLE = (() => {
 
 const runner = ESX_AVAILABLE ? describe : describe.skip;
 
-runner("e2sExport — port BOTTROP.ESX patterns into a .e2sallpat bank", () => {
+runner("BOTTROP.ESX → matching .e2sallpat + .all (samples at 501+) + manual", () => {
   const esx = parseEsxBank(new Uint8Array(fs.readFileSync(ESX_PATH)), "BOTTROP.ESX");
 
-  // Keep all non-empty patterns (a name OR at least one active step), cap at 250.
+  // ── Samples: map every mono sample → .all slot j → hardware number 501+j ───
+  const monos = esx.monoSamples.slice(0, 250);
+  /** esxSampleIndex → { allSlot, hwNumber, name } */
+  const sampleMap = new Map<number, { allSlot: number; hwNumber: number; name: string }>();
+  const slots: E2sSlotInput[] = monos.map((s: EsxSample, j) => {
+    const targetRate = s.sampleRate === 48000 ? 48000 : 44100;
+    const pcm = resampleMono(s.pcmData, s.sampleRate, targetRate);
+    const name = (s.name && s.name.trim()) || `BOTTROP ${s.index}`;
+    sampleMap.set(s.index, { allSlot: j, hwNumber: USER_SAMPLE_BASE + j, name });
+    return {
+      slotIndex: j,
+      name,
+      pcmData: pcm,
+      sampleRate: targetRate,
+      channels: 1,
+    };
+  });
+
+  // ── Patterns: select non-empty, repoint each part to its imported sample ───
   const nonEmpty = esx.patterns.filter(
     (p) =>
       (p.name && p.name.trim().length > 0) ||
       p.parts.some((pt) => pt.steps.some((s) => s.active)),
   );
   const selected = nonEmpty.slice(0, 250);
+
+  function esxToE2(p: EsxPattern): E2PatternInput {
+    const stepLength: 16 | 32 | 64 =
+      p.lengthSteps === 32 ? 32 : p.lengthSteps === 64 ? 64 : 16;
+    const parts = p.parts.map((part) => {
+      const note = Math.max(0, Math.min(127, E2_BASE_NOTE + (part.pitch ?? 0)));
+      const mapped = sampleMap.get(part.sampleId);
+      const steps = part.steps.map((s) => ({
+        active: !!s.active,
+        velocity: typeof s.velocity === "number" ? s.velocity : undefined,
+        accent: !!s.accent,
+        note,
+      }));
+      return {
+        volume: part.volume,
+        pan: part.pan,
+        sampleId: mapped ? mapped.hwNumber : undefined, // repoint to 501+ user sample
+        steps,
+      };
+    });
+    return { name: p.name || "ESX Pattern", bpm: p.bpm, stepLength, parts };
+  }
+
   const e2Inputs = selected.map(esxToE2);
-  const buffer = buildE2AllPatFile(e2Inputs);
-  const bytes = new Uint8Array(buffer);
+  const allpat = new Uint8Array(buildE2AllPatFile(e2Inputs));
+  const bankResult = buildE2sBank(slots);
+  const allBank = new Uint8Array(bankResult.buffer);
 
-  it("logs what was parsed from BOTTROP.ESX", () => {
+  it("logs the BOTTROP contents + sample-rate histogram", () => {
+    const rates: Record<number, number> = {};
+    esx.monoSamples.forEach((s) => (rates[s.sampleRate] = (rates[s.sampleRate] ?? 0) + 1));
     // eslint-disable-next-line no-console
     console.log(
-      `[BOTTROP.ESX] total patterns=${esx.patterns.length}, non-empty=${nonEmpty.length}, ` +
-        `mono samples=${esx.monoSamples.length}, stereo=${esx.stereoSamples.length}, ` +
-        `warnings=${esx.warnings.length}`,
+      `[BOTTROP] patterns=${esx.patterns.length} non-empty=${selected.length}  ` +
+        `mono samples=${esx.monoSamples.length} (using ${slots.length})  ` +
+        `rates=${JSON.stringify(rates)}  warnings=${esx.warnings.length}`,
     );
-    // eslint-disable-next-line no-console
-    console.log(
-      "[BOTTROP.ESX] first patterns: " +
-        selected
-          .slice(0, 12)
-          .map((p, i) => {
-            const hits = p.parts.reduce(
-              (n, pt) => n + pt.steps.filter((s) => s.active).length,
-              0,
-            );
-            return `#${i}"${p.name || "(unnamed)"}"(${p.bpm}bpm,${p.lengthSteps}st,${hits}hits)`;
-          })
-          .join("  "),
+    expect(slots.length).toBeGreaterThan(0);
+  });
+
+  it("builds a valid .all sample bank that round-trips", () => {
+    expect(bankResult.slotCount).toBe(slots.length);
+    const reparsed = parseE2sBank(allBank, "bottrop-samples.all");
+    const nonEmptySlots = reparsed.slots.filter((s) => s && s.pcmData && s.pcmData.length > 0);
+    expect(nonEmptySlots.length).toBe(slots.length);
+  });
+
+  it("builds a valid, exact-size .e2sallpat with repointed sample refs", () => {
+    expect(allpat.byteLength).toBe(E2S_ALLPAT_FILE_SIZE);
+    expect([...allpat.slice(0, 4)]).toEqual([0x4b, 0x4f, 0x52, 0x47]); // KORG
+
+    // Verify the per-part sample number @ +0x08 matches the repoint map for at
+    // least one well-populated pattern.
+    const readPartSample = (patIdx: number, partIdx: number): number => {
+      const o = ALLPAT_FIRST_SLOT + patIdx * BODY_SIZE + PARTS_OFF + partIdx * PART_STRIDE;
+      return allpat[o + PART_SAMPLE_OFF] | (allpat[o + PART_SAMPLE_OFF + 1] << 8);
+    };
+    let checked = 0;
+    selected.forEach((src, i) => {
+      src.parts.forEach((part, p) => {
+        const mapped = sampleMap.get(part.sampleId);
+        if (mapped) {
+          expect(readPartSample(i, p)).toBe(mapped.hwNumber);
+          expect(mapped.hwNumber).toBeGreaterThanOrEqual(USER_SAMPLE_BASE);
+          checked++;
+        }
+      });
+    });
+    expect(checked).toBeGreaterThan(0);
+  });
+
+  it("writes the three artifacts to disk", () => {
+    // ── Manual ────────────────────────────────────────────────────────────────
+    const lines: string[] = [];
+    lines.push("# BOTTROP → KORG Electribe 2 Sampler — Import-Anleitung");
+    lines.push("");
+    lines.push("Generiert aus `BOTTROP.ESX` (ESX-1) für die Electribe 2 Sampler.");
+    lines.push("");
+    lines.push("## Dateien");
+    lines.push("- `bottrop-samples.all` → auf SD-Karte als `e2sSample.all`, am Gerät importieren.");
+    lines.push("- `bottrop-test.e2sallpat` → Pattern-Bank importieren.");
+    lines.push("");
+    lines.push("## Annahme zur Sample-Nummerierung");
+    lines.push(
+      "Die User-Samples beginnen am Gerät bei **501**. `.all`-Slot 0 → Sample **501**, " +
+        "Slot 1 → **502**, usw. Die Pattern-Parts referenzieren diese Nummern bereits. " +
+        "Falls dein Gerät User-Samples woanders einsortiert, verschiebt sich alles um denselben Offset.",
     );
-    expect(esx.patterns.length).toBeGreaterThan(0);
-  });
-
-  it("builds a valid, exact-size bank", () => {
-    expect(bytes.byteLength).toBe(E2S_ALLPAT_FILE_SIZE);
-    expect([...bytes.slice(0, 4)]).toEqual([0x4b, 0x4f, 0x52, 0x47]); // KORG
-    expect([...bytes.slice(0x100, 0x104)]).toEqual([0x47, 0x4c, 0x53, 0x54]); // GLST
-    expect([...bytes.slice(0x10100, 0x10104)]).toEqual([0x50, 0x54, 0x53, 0x54]); // PTST
-  });
-
-  it("round-trips the ported patterns through parseElectribeAllPatBank", () => {
-    const bank = parseElectribeAllPatBank(bytes);
-    expect(bank.patterns.length).toBe(250);
-
-    // Names + BPM + step-length survive for every ported pattern.
+    lines.push("");
+    lines.push("## Sample-Liste (.all-Slot → Geräte-Nummer → Name → ESX-Quelle)");
+    lines.push("");
+    lines.push("| .all-Slot | Geräte-# | Name | ESX-Sample-Index |");
+    lines.push("|---:|---:|---|---:|");
+    for (const [esxIdx, m] of [...sampleMap.entries()].sort((a, b) => a[1].allSlot - b[1].allSlot)) {
+      lines.push(`| ${m.allSlot} | ${m.hwNumber} | ${m.name} | ${esxIdx} |`);
+    }
+    lines.push("");
+    lines.push("## Pattern → Part → Sample");
+    lines.push("");
     selected.forEach((src, i) => {
-      const parsed = bank.patterns[i];
-      // E2 names are max 16 ASCII; ESX names are max 8 → always fit.
-      expect(parsed.name).toBe((src.name || "ESX Pattern").slice(0, 16));
-      expect(parsed.bpm).toBeCloseTo(src.bpm, 1);
+      const used = src.parts
+        .map((part, p) => {
+          const m = sampleMap.get(part.sampleId);
+          const hits = part.steps.filter((s) => s.active).length;
+          if (!m || hits === 0) return null;
+          return `P${p}=#${m.hwNumber}(${m.name}, ${hits} Steps)`;
+        })
+        .filter(Boolean);
+      lines.push(`- **Pattern ${i + 1}** "${src.name || "(unbenannt)"}" — ${used.join(", ") || "—"}`);
     });
+    const manual = lines.join("\n") + "\n";
 
-    // Trigger fidelity: total active-step count per pattern matches the source.
-    selected.forEach((src, i) => {
-      const srcHits = src.parts.reduce(
-        (n, pt) => n + pt.steps.slice(0, src.lengthSteps).filter((s) => s.active).length,
-        0,
-      );
-      const parsed = bank.patterns[i];
-      const dstHits = parsed.parts.reduce(
-        (n, pt) => n + pt.steps.slice(0, src.lengthSteps).filter((s) => s.active).length,
-        0,
-      );
-      expect(dstHits).toBe(srcHits);
-    });
-  });
-
-  it("writes the bank to disk", () => {
     fs.mkdirSync(EXAMPLE_DIR, { recursive: true });
-    fs.writeFileSync(EXAMPLE_FILE, bytes);
-    expect(fs.statSync(EXAMPLE_FILE).size).toBe(E2S_ALLPAT_FILE_SIZE);
+    fs.writeFileSync(path.join(EXAMPLE_DIR, "bottrop-test.e2sallpat"), allpat);
+    fs.writeFileSync(path.join(EXAMPLE_DIR, "bottrop-samples.all"), allBank);
+    fs.writeFileSync(path.join(EXAMPLE_DIR, "bottrop-mapping.md"), manual);
+
     try {
-      if (fs.existsSync(path.dirname(CONVENIENCE_FILE))) {
-        fs.writeFileSync(CONVENIENCE_FILE, bytes);
+      if (fs.existsSync(KORG_DIR)) {
+        fs.writeFileSync(path.join(KORG_DIR, "bottrop-test.e2sallpat"), allpat);
+        fs.writeFileSync(path.join(KORG_DIR, "bottrop-samples.all"), allBank);
+        fs.writeFileSync(path.join(KORG_DIR, "bottrop-mapping.md"), manual);
       }
     } catch {
       /* non-fatal */
     }
+
+    expect(fs.existsSync(path.join(EXAMPLE_DIR, "bottrop-samples.all"))).toBe(true);
   });
 });
