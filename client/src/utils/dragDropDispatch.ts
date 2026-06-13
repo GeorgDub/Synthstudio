@@ -158,6 +158,25 @@ export function detectFileType(name: string): FileType {
   return "unknown";
 }
 
+/**
+ * v3.273: Erkennt einen KOMBINIERTEN Electribe-Pattern + .all-Sample-Bank-Drop.
+ * True, wenn die Sammlung mindestens eine Electribe-Pattern-Datei
+ * (.e2sallpat/.e2spat/.e2pattern) UND mindestens eine .all-Sample-Bank enthält.
+ * Dann sollen beide als EIN verknüpfter Import (Samples auf Kanälen) behandelt
+ * werden statt getrennt geroutet — siehe ElectronDropZone + DrumMachine.
+ */
+export function isCombinedElectribeSampleDrop(
+  files: ReadonlyArray<{ name: string }>,
+): boolean {
+  let hasPattern = false;
+  let hasSampleBank = false;
+  for (const f of files) {
+    if (detectFileType(f.name) === "electribe") hasPattern = true;
+    if (getFileExtension(f.name) === ".all") hasSampleBank = true;
+  }
+  return hasPattern && hasSampleBank;
+}
+
 /** Auch der DataTransferItemList-Geschmack: bewahrt die Erst-Datei-Heuristik. */
 export function detectFileTypeFromFiles(files: ReadonlyArray<{ name: string }>): FileType {
   if (!files || files.length === 0) return "unknown";

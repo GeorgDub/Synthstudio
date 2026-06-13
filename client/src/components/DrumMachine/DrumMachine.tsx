@@ -1742,13 +1742,12 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
     reader.readAsArrayBuffer(file);
   }, [pattern, importElectribePatternIntoActive]);
 
-  // v3.272: akzeptiert MEHRERE Dateien — eine Pattern-Bank (.e2sallpat/.e2spat)
+  // v3.272: verarbeitet MEHRERE Dateien — eine Pattern-Bank (.e2sallpat/.e2spat)
   // und optional die zugehörige .all-Sample-Bank. Ist die .all dabei, werden die
   // Pattern-Parts über die Geräte-Sample-Nummer (501+) mit den Samples verlinkt
-  // → in der Software abspielbar (analog zum ESX-Import).
-  const handleElectribeImport = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files ?? []);
-    e.target.value = "";
+  // → in der Software abspielbar (analog zum ESX-Import). Geteilt von File-Picker
+  // (handleElectribeImport) und Drag-Drop (electribe:filesImport).
+  const processElectribeFiles = useCallback(async (files: File[]) => {
     if (files.length === 0) return;
 
     const sampleFile = files.find((f) => /\.all$/i.test(f.name));
@@ -1772,11 +1771,17 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
       handleElectribeFile(patternFile, resolveSample);
     } else if (sampleFile) {
       toast(
-        "Nur eine .all-Sample-Bank gewählt — wähle zusätzlich eine .e2sallpat/.e2spat-Pattern-Datei (Mehrfachauswahl).",
+        "Nur eine .all-Sample-Bank gewählt — wähle/droppe zusätzlich eine .e2sallpat/.e2spat-Pattern-Datei.",
         { kind: "warning", duration: 5000 },
       );
     }
   }, [handleElectribeFile]);
+
+  const handleElectribeImport = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
+    e.target.value = "";
+    void processElectribeFiles(files);
+  }, [processElectribeFiles]);
 
   // ── Sample-Slicing (TASK-238 / v2.89) ──────────────────────────────────────
   // File-Picker → decodeAudioData → channelData (Kanal 0) → Modal-Open.
@@ -2224,7 +2229,7 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
     toast(`Emphasis "${emphasisPreset}" auf ${emp.length} Steps angewendet`, { kind: "success", duration: 2500 });
   }, [dm, emphasisPreset]);
 
-  // Drag-Drop fuer .e2pattern/.e2sallpat (Browser-Fallback).
+  // Drag-Drop fuer .e2pattern/.e2sallpat (Browser-Fallback, eine Datei).
   useEffect(() => {
     const handler = (e: Event) => {
       const file = (e as CustomEvent<File>).detail;
@@ -2233,6 +2238,17 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
     window.addEventListener("electribe:fileImport", handler);
     return () => window.removeEventListener("electribe:fileImport", handler);
   }, [handleElectribeFile]);
+
+  // v3.273: kombinierter Drag-Drop von .e2sallpat + .all (Pattern-Bank + Samples)
+  // → verknüpfter Import. ElectronDropZone bündelt beide Dateien in dieses Event.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const files = (e as CustomEvent<File[]>).detail;
+      if (Array.isArray(files) && files.length > 0) void processElectribeFiles(files);
+    };
+    window.addEventListener("electribe:filesImport", handler);
+    return () => window.removeEventListener("electribe:filesImport", handler);
+  }, [processElectribeFiles]);
 
   // Keyboard-Shortcuts werden zentral durch useKeyboardShortcuts in App.tsx gehandhabt
 

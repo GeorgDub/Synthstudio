@@ -77,6 +77,7 @@ import {
   dispatchFileDrop,
   dispatchAllFiles,
   getFileExtension,
+  isCombinedElectribeSampleDrop,
   AUDIO_EXTENSIONS,
   PROJECT_EXTENSIONS,
   ZIP_EXTENSIONS,
@@ -84,6 +85,20 @@ import {
   ELECTRIBE_EXTENSIONS,
   KORG_BANK_EXTENSIONS,
 } from "../../client/src/utils/dragDropDispatch";
+
+describe("isCombinedElectribeSampleDrop (v3.273)", () => {
+  it("true only when an Electribe pattern file AND a .all sample bank are present", () => {
+    expect(isCombinedElectribeSampleDrop([{ name: "bank.e2sallpat" }, { name: "s.all" }])).toBe(true);
+    expect(isCombinedElectribeSampleDrop([{ name: "p.e2spat" }, { name: "e2sSample.all" }])).toBe(true);
+    // only a pattern → not combined (single-file path handles it)
+    expect(isCombinedElectribeSampleDrop([{ name: "bank.e2sallpat" }])).toBe(false);
+    // only a sample bank → not combined (opens KorgBankModal)
+    expect(isCombinedElectribeSampleDrop([{ name: "s.all" }])).toBe(false);
+    // unrelated files
+    expect(isCombinedElectribeSampleDrop([{ name: "a.wav" }, { name: "b.mid" }])).toBe(false);
+    expect(isCombinedElectribeSampleDrop([])).toBe(false);
+  });
+});
 
 // ─── getFileExtension ─────────────────────────────────────────────────────────
 

@@ -22,6 +22,7 @@ import {
   ELECTRIBE_EXTENSIONS as DD_ELECTRIBE,
   KORG_BANK_EXTENSIONS as DD_KORG_BANK,
   getFileExtension as ddGetExt,
+  isCombinedElectribeSampleDrop,
 } from "@/utils/dragDropDispatch";
 import { toast } from "@/store/useToastStore";
 import { DragDropOverlay } from "@/components/DragDropOverlay/DragDropOverlay";
@@ -200,11 +201,26 @@ export function ElectronDropZone({
       const files = Array.from(e.dataTransfer.files);
       if (files.length === 0) return;
 
+      // v3.273: Werden eine Electribe-Pattern-Bank (.e2sallpat/.e2spat) UND eine
+      // .all-Sample-Bank zusammen gedroppt, als EINEN verknüpften Import
+      // behandeln (Samples auf Kanälen) statt getrennt zu routen. Der
+      // DrumMachine-Listener 'electribe:filesImport' übernimmt das Bündel.
+      const isElectribe = (f: File) => ELECTRIBE_EXTENSIONS.has(getFileExtension(f.name));
+      const isAll = (f: File) => getFileExtension(f.name) === ".all";
+      let remaining = files;
+      if (isCombinedElectribeSampleDrop(files)) {
+        const combined = files.filter((f) => isElectribe(f) || isAll(f));
+        try {
+          window.dispatchEvent(new CustomEvent<File[]>("electribe:filesImport", { detail: combined }));
+        } catch { /* ignore */ }
+        remaining = files.filter((f) => !combined.includes(f));
+      }
+
       const audioFiles: string[] = [];
       const audioFileObjects: File[] = [];
       const unknownExts: string[] = [];
 
-      for (const file of files) {
+      for (const file of remaining) {
         const ext = getFileExtension(file.name);
         if (ZIP_EXTENSIONS.has(ext)) {
           onZipFile?.(file);
