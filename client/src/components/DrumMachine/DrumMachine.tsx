@@ -1039,10 +1039,12 @@ function PatternRow({
 interface ElectribePickerModalProps {
   picker: { fileName: string; patterns: ParsedPattern[] };
   onSelect: (p: ParsedPattern) => void;
+  /** v3.272: importiert die aktuell sichtbaren Patterns als NEUE Patterns (Bank). */
+  onSelectAll: (patterns: ParsedPattern[]) => void;
   onClose: () => void;
 }
 
-function ElectribePickerModal({ picker, onSelect, onClose }: ElectribePickerModalProps) {
+function ElectribePickerModal({ picker, onSelect, onSelectAll, onClose }: ElectribePickerModalProps) {
   const [search, setSearch] = useState("");
   // Default: bei grossen Banks (>50 Patterns, also .e2sallpat) Init-Slots ausblenden.
   const [hideInit, setHideInit] = useState(picker.patterns.length > 50);
@@ -1132,14 +1134,27 @@ function ElectribePickerModal({ picker, onSelect, onClose }: ElectribePickerModa
             ))
           )}
         </div>
-        <div className="px-4 py-2 border-t border-border-color flex justify-end">
-          <button
-            onClick={onClose}
-            className="px-3 py-1 rounded text-xs bg-bg-elevated text-text-muted hover:text-text-primary transition-colors"
-            data-testid="electribe-picker-cancel"
-          >
-            Abbrechen
-          </button>
+        <div className="px-4 py-2 border-t border-border-color flex justify-between items-center gap-2">
+          <span className="text-[10px] text-text-dim">
+            Klick = einzeln (überschreibt aktives Pattern) · „Alle" = als neue Patterns
+          </span>
+          <div className="flex gap-2">
+            <button
+              onClick={onClose}
+              className="px-3 py-1 rounded text-xs bg-bg-elevated text-text-muted hover:text-text-primary transition-colors"
+              data-testid="electribe-picker-cancel"
+            >
+              Abbrechen
+            </button>
+            <button
+              onClick={() => onSelectAll(visible.map((v) => v.pattern))}
+              disabled={filteredCount === 0}
+              className="px-3 py-1 rounded text-xs bg-accent-primary text-bg-base font-medium hover:opacity-90 disabled:opacity-40 transition-opacity"
+              data-testid="electribe-picker-import-all"
+            >
+              Alle ({filteredCount}) importieren
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -1641,6 +1656,57 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
       }
     }
   }, [pattern, dm]);
+
+  // v3.272: Ganze Bank → mehrere NEUE Patterns (statt eines ins aktive Pattern).
+  // Jedes Pattern wird zu PatternData gemappt; ist ein Sample-Resolver da, werden
+  // Parts mit aktiven Steps per Geräte-Nummer (501+) mit Samples verlinkt.
+  const importElectribeBankAsPatterns = useCallback((
+    patterns: ParsedPattern[],
+    fileName: string,
+    resolveSample?: (sampleId: number) => { url: string; name: string } | null,
+  ) => {
+    if (patterns.length === 0) return;
+    let totalLinked = 0;
+    const patternDatas: PatternData[] = patterns.map((parsed) => {
+      const conv = convertParsedPatternToSynthstudio(parsed);
+      return {
+        id: "",
+        name: conv.name,
+        stepCount: conv.stepCount,
+        stepResolution: "1/16" as const,
+        bpm: conv.bpm,
+        parts: conv.drumParts.map((dp) => {
+          const active = dp.steps.some((a) => a);
+          const linked = resolveSample && active ? resolveSample(dp.sampleId) : null;
+          if (linked) totalLinked++;
+          return {
+            id: "",
+            name: dp.sampleHint,
+            sampleName: linked?.name ?? dp.sampleHint,
+            sampleUrl: linked?.url,
+            sourceType: "sample" as const,
+            muted: false,
+            soloed: false,
+            volume: dp.volume,
+            pan: dp.pan,
+            steps: dp.steps.map((act, i) => ({
+              active: act,
+              velocity: dp.velocities[i] ?? 100,
+              pitch: dp.pitchSemitones,
+            })),
+            fx: { ...DEFAULT_CHANNEL_FX },
+          };
+        }),
+        followAction: { type: "none" as const, barsBeforeSwitch: 1 },
+      };
+    });
+    const ids = dm.addPatternsData(patternDatas);
+    const sampleInfo = resolveSample ? `, ${totalLinked} Spur(en) mit Sample` : "";
+    toast(
+      `Electribe-Bank importiert: ${fileName} → ${ids.length} Pattern(s)${sampleInfo}`,
+      { kind: "success", duration: 3500 },
+    );
+  }, [dm]);
 
   // Pure-File-Variante (fuer Drag-Drop + File-Picker). v3.272: optionaler
   // Sample-Resolver aus einer mitgeladenen .all-Bank verlinkt Parts mit Samples.
@@ -4333,6 +4399,10 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
           picker={electribePicker}
           onSelect={(p) => {
             importElectribePatternIntoActive(p, electribePicker.fileName, electribePicker.resolveSample);
+            setElectribePicker(null);
+          }}
+          onSelectAll={(pats) => {
+            importElectribeBankAsPatterns(pats, electribePicker.fileName, electribePicker.resolveSample);
             setElectribePicker(null);
           }}
           onClose={() => setElectribePicker(null)}
