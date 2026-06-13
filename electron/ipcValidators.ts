@@ -528,6 +528,108 @@ export function validateE2PatternBuffer(
   return { ok: true };
 }
 
+// ─── E2 ALL-PATTERN BANK WRITE (.e2sallpat) — v3.271.0 ───────────────────────
+
+/**
+ * Filename-Whitelist beim Save-As .e2sallpat (Synthstudio → KORG E2 Sampler
+ * Pattern-Bank, 250 Slots). ASCII-alnum + . _ - und MUSS auf .e2sallpat enden.
+ */
+export const E2_ALLPAT_FILENAME_MAX_LEN = 120;
+export const E2_ALLPAT_FILENAME_REGEX = /^[A-Za-z0-9._-]+\.e2sallpat$/;
+
+/** Exakte Hardware-Größe einer .e2sallpat-Bank = 4 161 792 Bytes. */
+export const E2_ALLPAT_FILE_SIZE_EXACT = 4_161_792;
+
+export type E2AllPatFilenameCheck =
+  | { ok: true; filename: string }
+  | { ok: false; error: string };
+
+/** Strict filename validator for .e2sallpat writes (mirror of .e2spat). */
+export function validateE2AllPatFilename(input: unknown): E2AllPatFilenameCheck {
+  if (typeof input !== "string" || input.length === 0) {
+    return { ok: false, error: "Ungültiger Dateiname" };
+  }
+  if (input.length > E2_ALLPAT_FILENAME_MAX_LEN) {
+    return { ok: false, error: "Dateiname zu lang" };
+  }
+  if (
+    input.includes("\0") ||
+    input.includes("/") ||
+    input.includes("\\") ||
+    input.includes("..")
+  ) {
+    return { ok: false, error: "Dateiname enthält unzulässige Zeichen" };
+  }
+  if (!E2_ALLPAT_FILENAME_REGEX.test(input)) {
+    return { ok: false, error: "Nur alphanumerische .e2sallpat-Dateinamen erlaubt" };
+  }
+  return { ok: true, filename: input };
+}
+
+export type E2AllPatBufferCheck = { ok: true } | { ok: false; error: string };
+
+/**
+ * Strict buffer validator for .e2sallpat writes. Verifies:
+ *   - Exact size 4 161 792 bytes (KORG hardware-spec: prefix + 250 × 16384)
+ *   - "KORG" magic @ 0x00, "e2sampler" identifier @ 0x10
+ *   - "GLST" bank-global marker @ 0x100
+ *   - "PTST" pattern marker @ first slot (0x10100)
+ *
+ * `prefixBytes` must contain at least the first 0x10104 bytes (to reach the
+ * first slot's PTST marker). main.ts slices accordingly.
+ */
+export function validateE2AllPatBuffer(
+  byteLength: number,
+  prefixBytes: Uint8Array,
+): E2AllPatBufferCheck {
+  if (byteLength !== E2_ALLPAT_FILE_SIZE_EXACT) {
+    return {
+      ok: false,
+      error: `Ungültige Dateigröße (${byteLength} Bytes, erwartet 4161792)`,
+    };
+  }
+  if (!prefixBytes || prefixBytes.length < 0x10104) {
+    return { ok: false, error: "Prefix kürzer als 0x10104 Bytes" };
+  }
+  // "KORG" @ 0x00
+  if (
+    prefixBytes[0] !== 0x4b ||
+    prefixBytes[1] !== 0x4f ||
+    prefixBytes[2] !== 0x52 ||
+    prefixBytes[3] !== 0x47
+  ) {
+    return { ok: false, error: "Ungültige KORG-Signatur" };
+  }
+  // "e2sa" @ 0x10
+  if (
+    prefixBytes[0x10] !== 0x65 ||
+    prefixBytes[0x11] !== 0x32 ||
+    prefixBytes[0x12] !== 0x73 ||
+    prefixBytes[0x13] !== 0x61
+  ) {
+    return { ok: false, error: "Ungültige e2sampler-Signatur" };
+  }
+  // "GLST" @ 0x100
+  if (
+    prefixBytes[0x100] !== 0x47 ||
+    prefixBytes[0x101] !== 0x4c ||
+    prefixBytes[0x102] !== 0x53 ||
+    prefixBytes[0x103] !== 0x54
+  ) {
+    return { ok: false, error: "Ungültiger GLST-Marker" };
+  }
+  // "PTST" @ first slot (0x10100)
+  if (
+    prefixBytes[0x10100] !== 0x50 ||
+    prefixBytes[0x10101] !== 0x54 ||
+    prefixBytes[0x10102] !== 0x53 ||
+    prefixBytes[0x10103] !== 0x54
+  ) {
+    return { ok: false, error: "Ungültiger PTST-Marker (Slot 0)" };
+  }
+  return { ok: true };
+}
+
 // ─── PROJECT AUTOSAVE (v3.56.0) ──────────────────────────────────────────────
 
 /**

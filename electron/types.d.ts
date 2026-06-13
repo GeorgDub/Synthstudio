@@ -271,6 +271,13 @@ interface ElectronAPI {
   ): Promise<{ success: boolean; filePath?: string; bytesWritten?: number; error?: string }>;
   getE2PatternSize(): Promise<number>;
 
+  // ── E2 All-Pattern Bank EXPORT (.e2sallpat) — v3.271.0 ──────────────────────
+  saveE2AllPat(
+    suggestedFilename: string,
+    data: ArrayBuffer | Uint8Array,
+  ): Promise<{ success: boolean; filePath?: string; bytesWritten?: number; error?: string }>;
+  getE2AllPatSize(): Promise<number>;
+
   // ── ESX-1 Bank EXPORT (v3.29.0) ─────────────────────────────────────────────
   saveEsxBankAs(
     suggestedFilename: string,

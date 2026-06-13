@@ -17,6 +17,9 @@ import {
   sanitizeLicenseState,
   validateElectribePath,
   validateElectribeFileSize,
+  validateE2AllPatFilename,
+  validateE2AllPatBuffer,
+  E2_ALLPAT_FILE_SIZE_EXACT,
   RECORDING_MAX_BYTES,
   ELECTRIBE_MAX_BYTES,
   LICENSE_VALID_STATUS,
@@ -259,5 +262,68 @@ describe("validateElectribeFileSize", () => {
 
   it("lehnt NaN ab", () => {
     expect(validateElectribeFileSize(NaN).ok).toBe(false);
+  });
+});
+
+describe("validateE2AllPatFilename (.e2sallpat — v3.271.0)", () => {
+  it("akzeptiert gültigen .e2sallpat-Namen", () => {
+    const r = validateE2AllPatFilename("synthstudio-bank.e2sallpat");
+    expect(r.ok).toBe(true);
+  });
+
+  it("lehnt falsche Endung ab", () => {
+    expect(validateE2AllPatFilename("bank.e2spat").ok).toBe(false);
+    expect(validateE2AllPatFilename("bank.exe").ok).toBe(false);
+  });
+
+  it("lehnt Path-Traversal / Separatoren / NUL ab", () => {
+    expect(validateE2AllPatFilename("../bank.e2sallpat").ok).toBe(false);
+    expect(validateE2AllPatFilename("a/b.e2sallpat").ok).toBe(false);
+    expect(validateE2AllPatFilename("a\\b.e2sallpat").ok).toBe(false);
+    expect(validateE2AllPatFilename("a\0.e2sallpat").ok).toBe(false);
+  });
+
+  it("lehnt leere / zu lange Namen ab", () => {
+    expect(validateE2AllPatFilename("").ok).toBe(false);
+    expect(validateE2AllPatFilename("x".repeat(200) + ".e2sallpat").ok).toBe(false);
+  });
+});
+
+describe("validateE2AllPatBuffer (.e2sallpat — v3.271.0)", () => {
+  /** Build a minimal valid prefix (0x10104 bytes) with the required markers. */
+  function validPrefix(): Uint8Array {
+    const p = new Uint8Array(0x10104);
+    p.set([0x4b, 0x4f, 0x52, 0x47], 0); // KORG
+    p.set([0x65, 0x32, 0x73, 0x61], 0x10); // e2sa
+    p.set([0x47, 0x4c, 0x53, 0x54], 0x100); // GLST
+    p.set([0x50, 0x54, 0x53, 0x54], 0x10100); // PTST
+    return p;
+  }
+
+  it("akzeptiert exakte Größe + alle Marker", () => {
+    expect(validateE2AllPatBuffer(E2_ALLPAT_FILE_SIZE_EXACT, validPrefix()).ok).toBe(true);
+  });
+
+  it("lehnt falsche Größe ab", () => {
+    expect(validateE2AllPatBuffer(E2_ALLPAT_FILE_SIZE_EXACT - 1, validPrefix()).ok).toBe(false);
+    expect(validateE2AllPatBuffer(16640, validPrefix()).ok).toBe(false);
+  });
+
+  it("lehnt fehlende KORG/e2sampler/GLST/PTST-Marker ab", () => {
+    const noKorg = validPrefix();
+    noKorg[0] = 0;
+    expect(validateE2AllPatBuffer(E2_ALLPAT_FILE_SIZE_EXACT, noKorg).ok).toBe(false);
+
+    const noGlst = validPrefix();
+    noGlst[0x100] = 0;
+    expect(validateE2AllPatBuffer(E2_ALLPAT_FILE_SIZE_EXACT, noGlst).ok).toBe(false);
+
+    const noPtst = validPrefix();
+    noPtst[0x10100] = 0;
+    expect(validateE2AllPatBuffer(E2_ALLPAT_FILE_SIZE_EXACT, noPtst).ok).toBe(false);
+  });
+
+  it("lehnt zu kurzen Prefix ab", () => {
+    expect(validateE2AllPatBuffer(E2_ALLPAT_FILE_SIZE_EXACT, new Uint8Array(0x200)).ok).toBe(false);
   });
 });

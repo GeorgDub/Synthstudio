@@ -282,6 +282,26 @@ const electronAPI = {
   getE2PatternSize: (): Promise<number> =>
     ipcRenderer.invoke("electribe:get-pattern-size"),
 
+  // ── E2 All-Pattern Bank Export (.e2sallpat) — v3.271.0 ──────────────────────
+  /**
+   * Speichert eine gebaute 4_161_792-Byte `.e2sallpat`-Bank (250 Slots) via
+   * nativen Save-Dialog. Main-Side validiert Magic + Größe + GLST/PTST-Marker
+   * + Endung. Pfad kommt aus dem Dialog — kein Path-Traversal-Vektor.
+   */
+  saveE2AllPat: (
+    suggestedFilename: string,
+    data: ArrayBuffer | Uint8Array,
+  ): Promise<{ success: boolean; filePath?: string; bytesWritten?: number; error?: string }> =>
+    ipcRenderer.invoke(
+      "electribe:save-allpat",
+      suggestedFilename,
+      data instanceof Uint8Array ? Array.from(data) : Array.from(new Uint8Array(data)),
+    ),
+
+  /** Liefert die exakte Hardware-Größe einer .e2sallpat-Bank (= 4_161_792 Bytes). */
+  getE2AllPatSize: (): Promise<number> =>
+    ipcRenderer.invoke("electribe:get-allpat-size"),
+
   // ── ESX-1 Bank Pattern-Patch Export (v3.29.0) ──────────────────────────────
   /**
    * Speichert eine vom Renderer per `patchEsxBankPattern` modifizierte .esx-

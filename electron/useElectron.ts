@@ -109,6 +109,18 @@ const browserAPI = {
   }),
   getE2PatternSize: async (): Promise<number> => 16640, // Hardware-Exact-Size mirror.
 
+  // ── E2 All-Pattern Bank EXPORT (.e2sallpat) — v3.271.0 ──────────────────────
+  // Browser-Fallback signalisiert success:false → DrumMachine fällt auf
+  // Blob/<a download> zurück.
+  saveE2AllPat: async (
+    _suggestedFilename: string,
+    _data: ArrayBuffer | Uint8Array,
+  ): Promise<{ success: boolean; filePath?: string; bytesWritten?: number; error?: string }> => ({
+    success: false,
+    error: "Nicht in Electron – nutze Blob-Download-Fallback",
+  }),
+  getE2AllPatSize: async (): Promise<number> => 4_161_792, // Hardware-Exact-Size mirror.
+
   // ── ESX-1 Bank EXPORT (v3.29.0) ────────────────────────────────────────────
   // Browser-Fallback signalisiert success:false → KorgBankEditor (ESX mode)
   // fällt auf Blob-Download zurück.
@@ -414,6 +426,9 @@ export function useElectron() {
     // v3.26.0 — E2 Pattern Export (.e2spat)
     saveE2Pattern: api.saveE2Pattern ?? browserAPI.saveE2Pattern,
     getE2PatternSize: api.getE2PatternSize ?? browserAPI.getE2PatternSize,
+    // v3.271.0 — E2 All-Pattern Bank Export (.e2sallpat)
+    saveE2AllPat: api.saveE2AllPat ?? browserAPI.saveE2AllPat,
+    getE2AllPatSize: api.getE2AllPatSize ?? browserAPI.getE2AllPatSize,
     // v3.29.0 — ESX-1 Bank Export (.esx)
     saveEsxBankAs: api.saveEsxBankAs ?? browserAPI.saveEsxBankAs,
     getEsxBankSaveCap: api.getEsxBankSaveCap ?? browserAPI.getEsxBankSaveCap,

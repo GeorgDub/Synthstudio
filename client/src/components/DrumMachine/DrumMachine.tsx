@@ -63,7 +63,7 @@ import {
   type SynthstudioPatternImport,
 } from "@/utils/electribeImport";
 import { requireProFeature, PRO_FEATURE_ELECTRIBE_IMPORT, PRO_FEATURE_KORG_BANK_IMPORT, PRO_FEATURE_KORG_BANK_WRITE, PRO_FEATURE_E2_PATTERN_EXPORT } from "@/utils/proFeatures";
-import { buildE2PatternFile } from "@/utils/electribePatternBuilder";
+import { buildE2PatternFileV2, buildE2AllPatFile } from "@/utils/e2sExport";
 import { convertSynthstudioPatternToE2 } from "@/utils/electribePatternConvert";
 import { useElectron } from "../../../../electron/useElectron";
 import { ProLockBadge } from "@/components/License/ProLockBadge";
@@ -3451,7 +3451,7 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
             }
             try {
               const e2Input = convertSynthstudioPatternToE2(currentPattern, { globalBpm: bpm });
-              const buffer = buildE2PatternFile(e2Input);
+              const buffer = buildE2PatternFileV2(e2Input);
               // Sanitize name for filename — only ASCII alnum + _ - .
               const safeName = (currentPattern.name || "pattern")
                 .replace(/[^A-Za-z0-9._-]+/g, "_")
@@ -3488,6 +3488,62 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
           data-testid="e2-pattern-export"
         >
           📤 E2 Pattern
+          <ProLockBadge feature={PRO_FEATURE_E2_PATTERN_EXPORT} />
+        </button>
+
+        {/* KORG E2 ALL-Pattern Bank EXPORT (v3.271.0) — alle Projekt-Patterns → .e2sallpat */}
+        <button
+          onClick={async () => {
+            if (!requireProFeature(PRO_FEATURE_E2_PATTERN_EXPORT)) return;
+            const allPatterns = dm.patterns ?? [];
+            if (allPatterns.length === 0) {
+              toast("Keine Patterns im Projekt", { kind: "warning" });
+              return;
+            }
+            try {
+              const e2Inputs = allPatterns
+                .slice(0, 250)
+                .map((p) => convertSynthstudioPatternToE2(p, { globalBpm: bpm }));
+              const buffer = buildE2AllPatFile(e2Inputs);
+              const dropped = allPatterns.length > 250 ? allPatterns.length - 250 : 0;
+
+              const filename = "synthstudio-bank.e2sallpat";
+
+              if (electron.isElectron) {
+                const result = await electron.saveE2AllPat(filename, buffer);
+                if (result.success) {
+                  toast(
+                    `E2 Pattern-Bank gespeichert (${e2Inputs.length} Patterns${dropped ? `, ${dropped} übersprungen` : ""}): ${result.filePath}`,
+                    { kind: "success" },
+                  );
+                } else if (result.error && result.error !== "canceled") {
+                  toast(`Speichern fehlgeschlagen: ${result.error}`, { kind: "error" });
+                }
+              } else {
+                const blob = new Blob([buffer], { type: "application/octet-stream" });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                toast(
+                  `E2 Pattern-Bank heruntergeladen (${e2Inputs.length} Patterns${dropped ? `, ${dropped} übersprungen` : ""}): ${filename}`,
+                  { kind: "success" },
+                );
+              }
+            } catch (err) {
+              console.error("[E2 AllPat Export] error:", err);
+              toast(`Export-Fehler: ${(err as Error)?.message ?? "unbekannt"}`, { kind: "error" });
+            }
+          }}
+          title="Alle Projekt-Patterns als KORG Electribe 2 Sampler Pattern-Bank exportieren (.e2sallpat, max. 250)"
+          className="px-2 py-1 rounded text-[10px] bg-bg-elevated text-text-dim hover:text-text-primary transition-colors inline-flex items-center gap-1"
+          data-testid="e2-allpat-export"
+        >
+          📦 E2 Bank
           <ProLockBadge feature={PRO_FEATURE_E2_PATTERN_EXPORT} />
         </button>
 

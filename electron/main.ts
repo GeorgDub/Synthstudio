@@ -78,6 +78,9 @@ import {
   validateE2PatternFilename,
   validateE2PatternBuffer,
   E2_PATTERN_FILE_SIZE_EXACT,
+  validateE2AllPatFilename,
+  validateE2AllPatBuffer,
+  E2_ALLPAT_FILE_SIZE_EXACT,
   validateEsxBankSaveFilename,
   validateEsxBankBuffer,
   ESX_BANK_SAVE_MAX_BYTES,
@@ -3126,6 +3129,66 @@ function registerIpcHandlers(): void {
   });
 
   ipcMain.handle("electribe:get-pattern-size", () => E2_PATTERN_FILE_SIZE_EXACT);
+
+  // ── E2 All-Pattern Bank WRITE (.e2sallpat) — v3.271.0 ────────────────────
+  //
+  // Persistiert eine vom Renderer gebaute 4_161_792-Byte `.e2sallpat`-Bank
+  // (250 Pattern-Slots) via native Save-Dialog. Strikte Validierung:
+  //  - filename whitelist (.e2sallpat, ASCII alnum + . _ -, max 120 Zeichen)
+  //  - buffer GENAU 4_161_792 Bytes (KORG hardware-spec)
+  //  - "KORG"/"e2sampler"/"GLST"@0x100/"PTST"@0x10100 Marker müssen vorhanden sein
+  //  - Output-Pfad ist user-chosen (showSaveDialog) → kein Path-Traversal
+  ipcMain.handle("electribe:save-allpat", async (
+    _event,
+    suggestedFilename: string,
+    data: ArrayBuffer | Uint8Array | number[],
+  ) => {
+    try {
+      const nameCheck = validateE2AllPatFilename(suggestedFilename);
+      if (!nameCheck.ok) return { success: false as const, error: nameCheck.error };
+      if (!data) return { success: false as const, error: "Keine Daten erhalten" };
+
+      let buf: Buffer;
+      if (Array.isArray(data)) {
+        buf = Buffer.from(data);
+      } else if (data instanceof Uint8Array) {
+        buf = Buffer.from(data);
+      } else {
+        buf = Buffer.from(new Uint8Array(data));
+      }
+
+      // Slice the prefix the validator needs (must reach the first slot's PTST
+      // marker at 0x10103 inclusive → 0x10104 bytes).
+      const prefix = new Uint8Array(buf.subarray(0, 0x10104));
+      const bufCheck = validateE2AllPatBuffer(buf.byteLength, prefix);
+      if (!bufCheck.ok) return { success: false as const, error: bufCheck.error };
+
+      const result = await dialog.showSaveDialog({
+        title: "KORG E2 Pattern-Bank speichern (.e2sallpat)",
+        defaultPath: nameCheck.filename,
+        filters: [{ name: "KORG E2 Pattern-Bank", extensions: ["e2sallpat"] }],
+      });
+      if (result.canceled || !result.filePath) {
+        return { success: false as const, error: "canceled" };
+      }
+      const resolvedPath = path.resolve(result.filePath);
+      if (path.extname(resolvedPath).toLowerCase() !== ".e2sallpat") {
+        return { success: false as const, error: "Nur .e2sallpat-Endung erlaubt" };
+      }
+
+      await fs.promises.writeFile(resolvedPath, buf);
+      return {
+        success: true as const,
+        filePath: resolvedPath,
+        bytesWritten: buf.byteLength,
+      };
+    } catch (err) {
+      console.error("[IPC electribe:save-allpat] error:", err);
+      return { success: false as const, error: "Schreibfehler" };
+    }
+  });
+
+  ipcMain.handle("electribe:get-allpat-size", () => E2_ALLPAT_FILE_SIZE_EXACT);
 
   // ── Project AutoSave (v3.56.0) ─────────────────────────────────────────────
   //
