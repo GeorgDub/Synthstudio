@@ -62,6 +62,9 @@ import {
   type ParsedPattern,
   type SynthstudioPatternImport,
 } from "@/utils/electribeImport";
+import { parseE2sBank } from "@/utils/korg/e2sBankReader";
+import { buildE2sSampleMap } from "@/utils/korg/e2sPatternSampleLink";
+import { encodeWavStereo } from "@/audio/wavEncoder";
 import { requireProFeature, PRO_FEATURE_ELECTRIBE_IMPORT, PRO_FEATURE_KORG_BANK_IMPORT, PRO_FEATURE_KORG_BANK_WRITE, PRO_FEATURE_E2_PATTERN_EXPORT } from "@/utils/proFeatures";
 import { buildE2PatternFileV2, buildE2AllPatFile } from "@/utils/e2sExport";
 import { convertSynthstudioPatternToE2 } from "@/utils/electribePatternConvert";
@@ -1143,6 +1146,44 @@ function ElectribePickerModal({ picker, onSelect, onClose }: ElectribePickerModa
   );
 }
 
+// ─── E2-Sample-Bank → Part-Sample-Resolver (v3.272) ───────────────────────────
+
+/**
+ * Baut aus einer geparsten .all-Sample-Bank einen Resolver, der eine
+ * Geräte-Sample-Nummer (Pattern-Part-Ref +0x08, z.B. 501+) auf eine abspielbare
+ * WAV-Blob-URL + Namen abbildet. Encoding via shared wavEncoder; Blob-URLs
+ * werden pro Nummer gecacht. Match per OSC_0index (value-based, robust).
+ */
+function makeE2sSampleResolver(
+  bank: ReturnType<typeof parseE2sBank>,
+): (sampleId: number) => { url: string; name: string } | null {
+  const map = buildE2sSampleMap(bank);
+  const cache = new Map<number, { url: string; name: string }>();
+  return (sampleId: number) => {
+    const hit = cache.get(sampleId);
+    if (hit) return hit;
+    const slot = map.get(sampleId);
+    if (!slot) return null;
+    let wav: ArrayBuffer;
+    if (slot.channels === 2) {
+      const n = (slot.pcmData.length / 2) | 0;
+      const left = new Float32Array(n);
+      const right = new Float32Array(n);
+      for (let i = 0; i < n; i++) {
+        left[i] = slot.pcmData[i * 2];
+        right[i] = slot.pcmData[i * 2 + 1];
+      }
+      wav = encodeWavStereo(left, right, slot.sampleRate);
+    } else {
+      wav = encodeWavMono(slot.pcmData, slot.sampleRate);
+    }
+    const url = URL.createObjectURL(new Blob([wav], { type: "audio/wav" }));
+    const res = { url, name: slot.name || `Sample ${sampleId}` };
+    cache.set(sampleId, res);
+    return res;
+  };
+}
+
 // ─── Haupt-Komponente ─────────────────────────────────────────────────────────
 
 export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChange, className = "", externalSyncEnabled, externalSyncStatus }: Props) {
@@ -1253,6 +1294,9 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
   const [electribePicker, setElectribePicker] = useState<{
     fileName: string;
     patterns: ParsedPattern[];
+    /** v3.272: optionaler Sample-Resolver aus einer mitgeladenen .all-Bank.
+     *  sampleId (Geräte-Nr. 501+) → Blob-URL + Name, sonst null. */
+    resolveSample?: (sampleId: number) => { url: string; name: string } | null;
   } | null>(null);
   // TASK-238 (v2.89): Sample-Slice-Editor-State. channelData ist mono (Kanal 0).
   const [sliceEditor, setSliceEditor] = useState<{
@@ -1533,7 +1577,11 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
   //   - Motion-Slots werden derzeit verworfen mit Console-Info — Mapping auf
   //     useAutomationStore braucht App-Level-Wiring (Drum-Part-IDs unbekannt
   //     auf Util-Ebene). Follow-up via App.tsx-Bridge.
-  const importElectribePatternIntoActive = useCallback((parsed: ParsedPattern, fileName: string) => {
+  const importElectribePatternIntoActive = useCallback((
+    parsed: ParsedPattern,
+    fileName: string,
+    resolveSample?: (sampleId: number) => { url: string; name: string } | null,
+  ) => {
     if (!pattern) return;
     const conv: SynthstudioPatternImport = convertParsedPatternToSynthstudio(parsed);
 
@@ -1543,6 +1591,7 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
 
     // Per-Part Steps + Volume + Pan (so viele Parts wie im aktiven Pattern existieren).
     const partLimit = Math.min(conv.drumParts.length, pattern.parts.length);
+    let linked = 0;
     for (let i = 0; i < partLimit; i++) {
       const part = pattern.parts[i];
       const src  = conv.drumParts[i];
@@ -1558,13 +1607,25 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
       dm.setPartSteps(part.id, steps, vels);
       dm.setPartVolume(part.id, src.volume);
       dm.setPartPan(part.id, src.pan);
+
+      // v3.272: Sample aus mitgeladener .all-Bank verlinken (Part-Ref +0x08
+      // 501+ → OSC_0index). Nur Parts mit aktiven Steps; ohne Treffer bleibt der
+      // Part unverändert (kein Mislink, kein Crash) — analog zum ESX-Pfad.
+      if (resolveSample && steps.some((a) => a)) {
+        const s = resolveSample(src.sampleId);
+        if (s) {
+          dm.setPartSample(part.id, s.url, s.name);
+          linked++;
+        }
+      }
     }
 
     const motionInfo = conv.automationLanes.length > 0
       ? ` + ${conv.automationLanes.length} Motion-Lane(s)`
       : "";
+    const sampleInfo = resolveSample ? `, ${linked} Spur(en) mit Sample` : "";
     toast(
-      `Electribe importiert: ${fileName} → ${conv.name} (${partLimit}/16 Parts${motionInfo})`,
+      `Electribe importiert: ${fileName} → ${conv.name} (${partLimit}/16 Parts${motionInfo}${sampleInfo})`,
       { kind: "success" }
     );
 
@@ -1581,8 +1642,12 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
     }
   }, [pattern, dm]);
 
-  // Pure-File-Variante (fuer Drag-Drop + File-Picker).
-  const handleElectribeFile = useCallback((file: File) => {
+  // Pure-File-Variante (fuer Drag-Drop + File-Picker). v3.272: optionaler
+  // Sample-Resolver aus einer mitgeladenen .all-Bank verlinkt Parts mit Samples.
+  const handleElectribeFile = useCallback((
+    file: File,
+    resolveSample?: (sampleId: number) => { url: string; name: string } | null,
+  ) => {
     if (!pattern) return;
     // TASK-232 (v2.97): Electribe-Import ist ein Pro-Feature.
     if (!requireProFeature(PRO_FEATURE_ELECTRIBE_IMPORT)) return;
@@ -1597,10 +1662,10 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
         }
         if (bank.patterns.length === 1) {
           // Single-Pattern → direkt importieren.
-          importElectribePatternIntoActive(bank.patterns[0], file.name);
+          importElectribePatternIntoActive(bank.patterns[0], file.name, resolveSample);
         } else {
           // Bank → Picker-Dialog oeffnen.
-          setElectribePicker({ fileName: file.name, patterns: bank.patterns });
+          setElectribePicker({ fileName: file.name, patterns: bank.patterns, resolveSample });
         }
       } catch (err) {
         console.error("[Electribe Import]", err);
@@ -1611,10 +1676,40 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
     reader.readAsArrayBuffer(file);
   }, [pattern, importElectribePatternIntoActive]);
 
-  const handleElectribeImport = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) handleElectribeFile(file);
+  // v3.272: akzeptiert MEHRERE Dateien — eine Pattern-Bank (.e2sallpat/.e2spat)
+  // und optional die zugehörige .all-Sample-Bank. Ist die .all dabei, werden die
+  // Pattern-Parts über die Geräte-Sample-Nummer (501+) mit den Samples verlinkt
+  // → in der Software abspielbar (analog zum ESX-Import).
+  const handleElectribeImport = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
     e.target.value = "";
+    if (files.length === 0) return;
+
+    const sampleFile = files.find((f) => /\.all$/i.test(f.name));
+    const patternFile =
+      files.find((f) => /\.(e2sallpat|e2spat|e2pattern)$/i.test(f.name)) ??
+      (sampleFile ? undefined : files[0]);
+
+    let resolveSample: ((sampleId: number) => { url: string; name: string } | null) | undefined;
+    if (sampleFile) {
+      try {
+        const buf = await sampleFile.arrayBuffer();
+        const bank = parseE2sBank(new Uint8Array(buf), sampleFile.name);
+        resolveSample = makeE2sSampleResolver(bank);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        toast(`Sample-Bank "${sampleFile.name}" nicht lesbar: ${msg}`, { kind: "warning", duration: 4000 });
+      }
+    }
+
+    if (patternFile) {
+      handleElectribeFile(patternFile, resolveSample);
+    } else if (sampleFile) {
+      toast(
+        "Nur eine .all-Sample-Bank gewählt — wähle zusätzlich eine .e2sallpat/.e2spat-Pattern-Datei (Mehrfachauswahl).",
+        { kind: "warning", duration: 5000 },
+      );
+    }
   }, [handleElectribeFile]);
 
   // ── Sample-Slicing (TASK-238 / v2.89) ──────────────────────────────────────
@@ -3373,7 +3468,7 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
         {/* KORG Electribe Pattern-Import (TASK-237) */}
         <button
           onClick={() => electribeImportRef.current?.click()}
-          title="KORG Electribe Pattern importieren (.e2pattern, .e2spat oder .e2sallpat — Multi-Pattern-Bank mit 250 Slots)"
+          title="KORG Electribe Pattern importieren (.e2pattern/.e2spat/.e2sallpat). Tipp: zusätzlich die .all-Sample-Bank mit auswählen (Mehrfachauswahl) → Samples werden den Kanälen zugewiesen und sind abspielbar."
           className="px-2 py-1 rounded text-[10px] bg-bg-elevated text-text-dim hover:text-text-primary transition-colors inline-flex items-center gap-1"
           data-testid="electribe-import"
         >
@@ -3383,7 +3478,8 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
         <input
           ref={electribeImportRef}
           type="file"
-          accept=".e2pattern,.e2sallpat,.e2spat"
+          accept=".e2pattern,.e2sallpat,.e2spat,.all"
+          multiple
           className="hidden"
           onChange={handleElectribeImport}
           data-testid="electribe-import-input"
@@ -4236,7 +4332,7 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
         <ElectribePickerModal
           picker={electribePicker}
           onSelect={(p) => {
-            importElectribePatternIntoActive(p, electribePicker.fileName);
+            importElectribePatternIntoActive(p, electribePicker.fileName, electribePicker.resolveSample);
             setElectribePicker(null);
           }}
           onClose={() => setElectribePicker(null)}

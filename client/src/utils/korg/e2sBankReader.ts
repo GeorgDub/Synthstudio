@@ -35,6 +35,7 @@ import {
   E2S_MAX_SLOTS,
   E2S_MAX_TOTAL_PCM_BYTES,
   ESLI_CATEGORY_OFFSET,
+  ESLI_OSC_INDEX_OFFSET,
   ESLI_END_OFFSET,
   ESLI_LOOP_START_OFFSET,
   ESLI_NAME_LEN,
@@ -81,6 +82,9 @@ export interface E2sSlice {
 export interface E2sSlot {
   /** Index in der 250-Entry-Offset-Table. */
   index: number;
+  /** OSC_0index (esli +0x08) — vom Gerät angezeigte Sample-Nummer (z.B. 501+).
+   *  Link-Key für E2-Pattern-Part-Refs (die ebenfalls diese Nummer tragen). */
+  sampleNumber: number;
   /** Decoded Name (max 16 Chars from on-disk korg-body). */
   name: string;
   /** Category ID (0..17), map via e2sCategoryName(). */
@@ -270,6 +274,8 @@ function parseFmt(fmtBody: Uint8Array | null, slotIndex: number): FmtFields {
 }
 
 interface KorgMeta {
+  /** OSC_0index (esli +0x08) — die vom Gerät angezeigte Sample-Nummer (z.B. 501+). */
+  sampleNumber: number;
   name: string;
   category: number;
   level: number;
@@ -286,6 +292,7 @@ interface KorgMeta {
 
 function defaultKorgMeta(): KorgMeta {
   return {
+    sampleNumber: 0,
     name: "",
     category: 0,
     level: 100,
@@ -321,6 +328,12 @@ function parseKorgBody(
   }
 
   const dv = new DataView(body.buffer, body.byteOffset, body.byteLength);
+
+  // OSC_0index @ +0x08 — vom Gerät angezeigte Sample-Nummer. Verknüpft E2-Pattern-
+  // Part-Refs (+0x08, 501+) mit dem Sample, das diese Nummer trägt.
+  if (body.length >= ESLI_OSC_INDEX_OFFSET + 2) {
+    meta.sampleNumber = dv.getUint16(ESLI_OSC_INDEX_OFFSET, true);
+  }
 
   if (body.length >= ESLI_CATEGORY_OFFSET + 2) {
     let cat = dv.getUint16(ESLI_CATEGORY_OFFSET, true);
@@ -493,6 +506,7 @@ function parseSlot(
     parsed: {
       slot: {
         index: slotIndex,
+        sampleNumber: meta.sampleNumber,
         name: meta.name,
         category: meta.category,
         categoryName: e2sCategoryName(meta.category),
