@@ -57,6 +57,7 @@ import {
   ESLI_ONESHOT_OFFSET,
   ESLI_PLAY_VOLUME_OFFSET,
   ESLI_PLUS12DB_OFFSET,
+  ESLI_SAMPLE_INDEX_OFFSET,
   ESLI_SAMPLE_TUNE_OFFSET,
   ESLI_SAMPLING_FREQ_OFFSET,
   ESLI_SLICE_STEPS_LEN,
@@ -86,6 +87,15 @@ import { floatToInt16LeBytes, sanitizeE2sSlotName } from "./audioProcessor";
 export interface E2sSlotInput {
   /** Slot-Index in der 250-Entry-Offset-Table (0..249). */
   slotIndex: number;
+  /**
+   * Sample-Nummer, wie sie das Gerät anzeigt (esli-Body @ +0x56, u16 LE).
+   * v3.271: Ohne dieses Feld blieb +0x56 = 0 → das Gerät zeigte ALLE Samples
+   * unter derselben Nummer (z.B. 501) statt aufsteigend. Verifiziert gegen
+   * Factory-Bank `sampler_full.all` (+0x56 läuft 18,19,20,… pro Slot).
+   * Default = `slotIndex` (numeriert Samples nach Position). Für User-Sample-
+   * Banken ab Geräte-Nr. 501 hier 501,502,… setzen.
+   */
+  sampleNumber?: number;
   /** Sample-Name. Wird ASCII-gefiltert und auf 16 chars getrimmt. */
   name: string;
   /** Kategorie 0..17 (siehe E2S_CATEGORY_NAMES). Default 0 (Analog). */
@@ -542,6 +552,15 @@ function buildKorgSubchunk(
   if (tune < -99) tune = -99;
   // i8 sign-conversion
   chunk[bodyOffset + ESLI_SAMPLE_TUNE_OFFSET] = tune < 0 ? tune + 256 : tune;
+
+  // Sample-Nummer @ 0x56 (u16 LE) — die vom Gerät angezeigte Nummer. v3.271:
+  // ohne dies blieben alle Samples auf 0 → Gerät zeigte alle gleich (501).
+  // Default = slotIndex; explizit setzbar via slot.sampleNumber (z.B. 501+).
+  const sampleNumber =
+    typeof slot.sampleNumber === "number" && Number.isFinite(slot.sampleNumber)
+      ? slot.sampleNumber
+      : slot.slotIndex;
+  dv.setUint16(bodyOffset + ESLI_SAMPLE_INDEX_OFFSET, Math.max(0, Math.min(0xffff, Math.floor(sampleNumber))), true);
 
   // Slices @ 0x58 (64 × 16B)
   const slices = slot.slices ?? [];

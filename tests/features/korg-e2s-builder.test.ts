@@ -906,6 +906,45 @@ describe("v3.8.0 ESLI Slice serialization", () => {
     expect(dv.getUint32(s2 + 12, true)).toBe(0);
   });
 
+  it("Sample-Nummer wird pro Slot bei esli +0x56 geschrieben (v3.271 Fix)", () => {
+    // Walk the offset table → each slot's RIFF → korg/esli body → read +0x56.
+    const readSampleNumberAt = (buf: ArrayBuffer, slotPos: number): number => {
+      const dv = new DataView(buf);
+      const riffOff = dv.getUint32(E2S_ALL_OFFSET_TABLE_START + slotPos * 4, true);
+      // RIFF(4) size(4) WAVE(4), then subchunks; find 'korg'.
+      let p = riffOff + 12;
+      const end = riffOff + 8 + dv.getUint32(riffOff + 4, true);
+      while (p + 8 <= end) {
+        const id = String.fromCharCode(...new Uint8Array(buf, p, 4));
+        const sz = dv.getUint32(p + 4, true);
+        if (id === "korg") {
+          const body = p + 8; // esli magic
+          return dv.getUint16(body + 0x56, true);
+        }
+        p += 8 + sz + (sz & 1);
+      }
+      return -1;
+    };
+
+    // Explicit sampleNumber → written verbatim (e.g. user samples at 501+).
+    const withNumbers = buildE2sBank([
+      { slotIndex: 0, sampleNumber: 501, name: "A", pcmData: new Float32Array(2000), sampleRate: 44100, channels: 1 },
+      { slotIndex: 1, sampleNumber: 502, name: "B", pcmData: new Float32Array(2000), sampleRate: 44100, channels: 1 },
+      { slotIndex: 2, sampleNumber: 666, name: "C", pcmData: new Float32Array(2000), sampleRate: 44100, channels: 1 },
+    ]);
+    expect(readSampleNumberAt(withNumbers.buffer, 0)).toBe(501);
+    expect(readSampleNumberAt(withNumbers.buffer, 1)).toBe(502);
+    expect(readSampleNumberAt(withNumbers.buffer, 2)).toBe(666);
+
+    // Default (no sampleNumber) → falls back to slotIndex, still ascending/distinct.
+    const defaulted = buildE2sBank([
+      { slotIndex: 3, name: "D", pcmData: new Float32Array(2000), sampleRate: 44100, channels: 1 },
+      { slotIndex: 9, name: "E", pcmData: new Float32Array(2000), sampleRate: 44100, channels: 1 },
+    ]);
+    expect(readSampleNumberAt(defaulted.buffer, 3)).toBe(3);
+    expect(readSampleNumberAt(defaulted.buffer, 9)).toBe(9);
+  });
+
   it("Read → Edit Slices → Write → Read produziert identische Slices", () => {
     const inputSlices = [
       { start: 0, length: 4000, attackLength: 0, amplitude: 0 },

@@ -137,6 +137,11 @@ export const ESLI_USE_CHAN1_OFFSET = 0x49; // u8 bool (stereo)
 export const ESLI_PLUS12DB_OFFSET = 0x4a; // u8 bool
 export const ESLI_SAMPLING_FREQ_OFFSET = 0x50; // u32 LE
 export const ESLI_SAMPLE_TUNE_OFFSET = 0x55; // i8
+// v3.271: Sample-Nummer wie vom Gerät angezeigt (u16 LE). Verifiziert gegen
+// Factory-Bank sampler_full.all (+0x56 läuft 18,19,20,… aufsteigend pro Slot).
+// Die TS/Python-Parser rekonstruieren die Nummer aus der Offset-Tabellen-Position,
+// das Gerät liest aber dieses Feld → muss beim Bauen gesetzt werden.
+export const ESLI_SAMPLE_INDEX_OFFSET = 0x56; // u16 LE
 export const ESLI_SLICES_OFFSET = 0x58; // 64×16B = 1024B
 export const ESLI_SLICES_COUNT = 64;
 export const ESLI_SLICE_STRUCT_SIZE = 16; // 4 × LE32 (start, length, attack, amplitude)
