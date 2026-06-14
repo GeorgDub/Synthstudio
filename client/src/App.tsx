@@ -67,6 +67,8 @@ import { ProjectDiffPanel } from "@/components/ProjectDiff/ProjectDiffPanel";
 import { EsxToE2sConverter } from "@/components/Tools/EsxToE2sConverter";
 import { getKeyboardSamplerState } from "@/store/useKeyboardSamplerStore";
 import { getEnvelopeFollowerConfigs } from "@/store/useEnvelopeFollowerStore";
+import { getActiveModRoutes, type ModTargetParam } from "@/store/useLfoModStore";
+import { evaluateLfo, applyBipolarMod } from "@/utils/lfo";
 
 // ── Stores für neue Features ──────────────────────────────────────────────────
 import { useSongStore } from "@/store/useSongStore";
@@ -2391,6 +2393,102 @@ export default function App() {
     };
     rafId = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(rafId);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── LFO-Routing / Modulations-Matrix (TASK-257) ──────────────────────────
+  // Liest per rAF aktive Mod-Routes + ihre LFOs und wendet die bipolare
+  // Modulation um den Mixer-Basiswert herum auf die Ziel-Params an.
+  // Wird eine Route deaktiviert/entfernt, wird der erfasste Basiswert genau
+  // einmal wiederhergestellt (kein "stuck param" wie beim Envelope-Follower).
+  // Frei laufend nach Wall-Clock (Rate in Hz), kein Transport-Sync in v1.
+  useEffect(() => {
+    let rafId: number;
+    // Param-spezifische Ranges + Defaults für base + Hub.
+    const PARAM_META: Record<
+      ModTargetParam,
+      { min: number; max: number; defBase: number; apply: (partId: string, v: number) => void }
+    > = {
+      volume:     { min: 0, max: 1, defBase: 0.85, apply: (p, v) => AudioEngine.setChannelVolume(p, v) },
+      pan:        { min: -1, max: 1, defBase: 0, apply: (p, v) => AudioEngine.setChannelPan(p, v) },
+      filterFreq: { min: 20, max: 20000, defBase: 8000, apply: (p, v) => AudioEngine.setChannelFilterFreq(p, v) },
+      reverbMix:  { min: 0, max: 1, defBase: 0, apply: (p, v) => AudioEngine.setChannelSend(p, "reverb", v) },
+      delayMix:   { min: 0, max: 1, defBase: 0, apply: (p, v) => AudioEngine.setChannelSend(p, "delay", v) },
+    };
+
+    // Erfasste Basiswerte je "partId::param" (zum Modulieren + Restore).
+    const baseValues = new Map<string, number>();
+    // Welche Targets waren im letzten Frame aktiv (für Restore-Erkennung).
+    let prevActiveKeys = new Set<string>();
+
+    // Liest Mixer-Volume/Pan eines Parts aus dem localStorage-Snapshot.
+    // Bewusst lazy + nur bei Erstaktivierung aufgerufen (nicht pro Frame).
+    function readMixerBase(partId: string, param: ModTargetParam): number | undefined {
+      if (param !== "volume" && param !== "pan") return undefined;
+      try {
+        const raw = window.localStorage.getItem("synthstudio:mixer:v1");
+        if (!raw) return undefined;
+        const parsed = JSON.parse(raw) as { channels?: Record<string, { volume?: number; pan?: number }> };
+        const ch = parsed.channels?.[partId];
+        if (!ch) return undefined;
+        if (param === "volume") return typeof ch.volume === "number" ? ch.volume : undefined;
+        if (param === "pan") return typeof ch.pan === "number" ? ch.pan : undefined;
+      } catch { /* ignore */ }
+      return undefined;
+    }
+
+    const tick = () => {
+      // Wall-Clock-Zeit in Sekunden für frei laufende LFOs (kein AudioContext
+      // nötig → isomorph Browser + Electron, läuft auch ohne User-Gesture).
+      const now = (typeof globalThis.performance !== "undefined" ? globalThis.performance.now() : Date.now()) / 1000;
+      const active = getActiveModRoutes();
+      const activeKeys = new Set<string>();
+
+      for (const { route, lfo } of active) {
+        const meta = PARAM_META[route.param];
+        if (!meta) continue;
+        const key = `${route.targetPartId}::${route.param}`;
+        activeKeys.add(key);
+
+        // Basiswert genau einmal erfassen (beim Aktivieren der Route).
+        if (!baseValues.has(key)) {
+          const fromMixer = readMixerBase(route.targetPartId, route.param);
+          baseValues.set(key, fromMixer ?? meta.defBase);
+        }
+        const base = baseValues.get(key)!;
+
+        const lfoVal = evaluateLfo(
+          { waveform: lfo.waveform, rateHz: lfo.rateHz, phase: lfo.phase },
+          now,
+        ) * Math.max(0, Math.min(1, lfo.depth));
+
+        const out = applyBipolarMod(base, lfoVal, route.amount, meta.min, meta.max);
+        meta.apply(route.targetPartId, out);
+      }
+
+      // Restore: Targets die NICHT mehr aktiv sind → Basiswert zurücksetzen.
+      for (const key of prevActiveKeys) {
+        if (activeKeys.has(key)) continue;
+        const base = baseValues.get(key);
+        if (base !== undefined) {
+          const [partId, param] = key.split("::") as [string, ModTargetParam];
+          PARAM_META[param]?.apply(partId, base);
+        }
+        baseValues.delete(key);
+      }
+
+      prevActiveKeys = activeKeys;
+      rafId = requestAnimationFrame(tick);
+    };
+    rafId = requestAnimationFrame(tick);
+    return () => {
+      cancelAnimationFrame(rafId);
+      // Beim Unmount alle modulierten Params auf Basis zurücksetzen.
+      for (const [key, base] of baseValues) {
+        const [partId, param] = key.split("::") as [string, ModTargetParam];
+        PARAM_META[param]?.apply(partId, base);
+      }
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
