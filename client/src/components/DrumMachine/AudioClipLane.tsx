@@ -112,7 +112,15 @@ export const AudioClipLane = memo(function AudioClipLane({
   }, []);
 
   // ── Playhead-Position (self-subscribed) ──────────────────────────────────
+  // TASK-252-FOLLOWUP: Beim (spaeten) Mount waehrend laufendem Transport — z.B.
+  // Tab-Wechsel auf den Sequencer waehrend Global-Play — liefert der Position-rAF
+  // den ersten Wert erst beim naechsten Frame. Ohne Seed blitzte der Playhead bei
+  // 0 auf, obwohl Audio laeuft. Wir fragen die Engine daher synchron ab und seeden
+  // pos01 sofort, falls der Track bereits spielt. Der rAF uebernimmt danach.
   useEffect(() => {
+    if (AudioEngine.isAudioTrackPlaying(track.id)) {
+      setPos01(AudioEngine.getAudioTrackPosition(track.id));
+    }
     const unsub = AudioEngine.onAudioTrackPosition(track.id, (p) => setPos01(p));
     return unsub;
   }, [track.id]);

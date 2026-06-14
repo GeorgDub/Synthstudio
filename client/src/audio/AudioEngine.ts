@@ -31,6 +31,10 @@ import {
   crossfadeGain as crossfadeGainFn,
 } from "../utils/patternCrossfade";
 import { type ArpOutputMode, type ArpStep, arpStepAt, arpMidiToFreq } from "../utils/arpeggiator";
+// TASK-252-FOLLOWUP: kanonische reine Positions-Formel (geteilt mit rAF-Tick +
+// getAudioTrackPosition). audioLaneHelpers importiert nur den TYP von hier
+// (erased at runtime) → kein Laufzeit-Zyklus.
+import { computeAudioTrackPos01 } from "../components/DrumMachine/audioLaneHelpers";
 import { MidiClockOut } from "./MidiClockOut";
 import { MidiNoteOut, type MidiPartConfig } from "./MidiNoteOut";
 import { MidiClickOut, type MidiClickConfig } from "./MidiClickOut";
@@ -5418,6 +5422,62 @@ class AudioEngineClass {
         this._stopAudioTrackPositionRaf(id);
       }
     };
+  }
+
+  /**
+   * `true` wenn fuer diesen Track aktuell eine Source (BufferSource ODER
+   * Worklet) aktiv ist. Synchroner Snapshot ohne Listener — wird beim
+   * spaeten Mount einer Lane konsultiert (TASK-252-FOLLOWUP), um zu
+   * entscheiden ob der Playhead sofort geseedet werden soll.
+   */
+  isAudioTrackPlaying(id: string): boolean {
+    return this.audioTrackSources.has(id) || this.audioTrackWorkletNodes.has(id);
+  }
+
+  /**
+   * Synchroner Positions-Snapshot `pos01` ∈ [0, 1) eines Audio-Tracks — ohne
+   * auf den naechsten rAF-Frame zu warten.
+   *
+   * TASK-252-FOLLOWUP: Wechselt man auf den Sequencer-Tab waehrend der globale
+   * Transport bereits laeuft, mountet die Lane spaet. `onAudioTrackPosition`
+   * startet zwar den rAF, liefert den ersten Wert aber erst beim naechsten
+   * Frame → der Playhead blitzt bei 0 auf. Mit diesem Getter seedet die Lane
+   * den Wert sofort beim Mount.
+   *
+   * Verwendet exakt dieselbe Formel wie der rAF-Tick (Buffer-Source-Pfad via
+   * `computeAudioTrackPos01`; Worklet-Pfad via samplePos), damit Snapshot und
+   * Stream nicht divergieren. Liefert 0 wenn der Track nicht spielt/unbekannt
+   * ist (additiv — keine Seiteneffekte, keine Listener-Mutation).
+   */
+  getAudioTrackPosition(id: string): number {
+    if (!this.ctx) return 0;
+    const buf = this.audioTrackBuffers.get(id);
+    if (!buf) return 0;
+    if (!this.isAudioTrackPlaying(id)) return 0;
+    const dur = buf.duration || 0;
+    if (dur <= 0) return 0;
+    const data = this.audioTrackData.get(id);
+
+    // Worklet-Pfad: Position kommt als samplePos via postMessage.
+    if (this.audioTrackWorkletNodes.has(id)) {
+      const samplePos = this.audioTrackWorkletPositions.get(id) ?? 0;
+      const sr = buf.sampleRate || this.ctx.sampleRate || 44100;
+      const sec = samplePos / sr;
+      let pos01 = sec / dur;
+      if (!Number.isFinite(pos01)) return 0;
+      if (data?.loop) pos01 = ((pos01 % 1) + 1) % 1;
+      else pos01 = Math.min(1, Math.max(0, pos01));
+      return pos01;
+    }
+
+    // Buffer-Source-Pfad: gemeinsame reine Formel mit dem rAF-Tick.
+    return computeAudioTrackPos01({
+      startMeta: this.audioTrackStartTimes.get(id) ?? null,
+      currentTime: this.ctx.currentTime,
+      rate: this._calcAudioTrackPlaybackRate(data),
+      durationSec: dur,
+      loop: data?.loop,
+    });
   }
 
   onAudioTrackEnded(id: string, cb: () => void): () => void {
