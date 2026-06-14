@@ -7,13 +7,12 @@
  *   - Strip hat einen Play/Stop-Button mit testid audio-track-play-<id>.
  *   - Klick togglet aria-pressed false → true → false (per-Track-local `playing`).
  *
- * NICHT geprüft (bewusst, mit korrigierter Begründung — siehe test.skip unten):
- *   - ob der Mixer-Per-Track-Button auf Global-Play reagiert. TASK-252 koppelte
- *     die Clip-Lane (AudioClipLane), NICHT diesen Mixer-Strip-Button: dessen
- *     aria-pressed ist absichtlich an component-local `playing` gebunden;
- *     Global-Transport fließt hier nur in die Waveform (effectivePlaying), nicht
- *     in den Button. Das gekoppelte Verhalten ist in audio-clip-lane.spec.ts
- *     abgedeckt.
+ * Global-Sync (TASK-261, gelandet):
+ *   - Der Mixer-Strip-Button koppelt jetzt — wie die Clip-Lane (TASK-252) — an
+ *     den globalen Transport: AudioTrackStrip abonniert AudioEngine.onPlayState-
+ *     Change, Global-Play setzt globalPlaying → effectivePlaying=true → Button
+ *     aria-pressed="true" + Toggle gesperrt (disabled). Reines UI-/State-Coupling,
+ *     kein Audio-Output → headless-deterministisch (Smoke unten).
  *
  * Flake-Schutz: der Button liest component-local `playing`. Ein 1-Sample-WAV
  * würde onAudioTrackEnded quasi sofort feuern und `playing` wieder auf false
@@ -101,18 +100,37 @@ test.describe("Per-Track Play/Stop im AudioTrackStrip (TASK-245)", () => {
     await expect(playBtn).toHaveAttribute("aria-pressed", "false");
   });
 
-  // BEWUSST geskippt (kein Wartezustand): TASK-252 ist gelandet, hat aber NUR
-  // die Clip-Lane (AudioClipLane) an den globalen Transport gekoppelt — NICHT
-  // diesen Mixer-AudioTrackStrip-Button. Hier ist aria-pressed={playing} an den
-  // component-local `playing`-State gebunden; der globale Transport fließt nur in
-  // `effectivePlaying = playing || isPlaying` und damit ausschließlich in den
-  // Waveform-Playhead, nie in den Button. Ein scharfes Assert auf den Button
-  // wäre daher entweder dauerhaft rot oder müsste auf die Waveform ausweichen
-  // (Test-to-pass). Das gekoppelte Verhalten ist deterministisch im Schwester-
-  // Spec audio-clip-lane.spec.ts ("Global-Play aktiviert die Lane-Wiedergabe")
-  // abgedeckt. Die Asymmetrie (Lane koppelt, Mixer-Strip nicht) ist als Befund
-  // an den Dev-Agent gemeldet.
-  test.skip("Global-Play koppelt den Mixer-Per-Track-Button NICHT (TASK-252 koppelte nur die Clip-Lane)", async () => {
-    // Intentionally empty — siehe Begründung oben.
+  // TASK-261 ist gelandet: AudioTrackStrip abonniert AudioEngine.onPlayState-
+  // Change (wie die Clip-Lane via TASK-252). Globaler Transport-Play setzt
+  // globalPlaying → effectivePlaying=true; der Mixer-Strip-Play-Button spiegelt
+  // das (aria-pressed) und sein Toggle ist gesperrt (disabled). Reines UI-/State-
+  // Coupling — kein Audio-Output nötig, daher headless-deterministisch.
+  test("Global-Play koppelt den Mixer-Per-Track-Button (TASK-261-Kopplung)", async ({ page }) => {
+    await gotoMixer(page);
+    const strip = await addAudioTrack(page, "playstop-global.wav");
+    const trackId = await strip.getAttribute("data-track-id");
+    const playBtn = strip.locator(`[data-testid="audio-track-play-${trackId}"]`);
+
+    // Ausgangslage: nicht spielend, Toggle frei.
+    await expect(playBtn).toHaveAttribute("aria-pressed", "false");
+    await expect(playBtn).toBeEnabled();
+
+    // Globaler Transport-Play. Der Toolbar-Button (App-Level, auf allen Tabs
+    // sichtbar) trägt title "Play (Space)"; der Strip-eigene Button trägt
+    // "Play (nur dieser Track)" → wir disambiguieren über das (Space)-Präfix,
+    // damit der Locator NICHT den Strip-Button trifft.
+    const globalPlay = page.locator('button[title^="Play (Space)"]').first();
+    await expect(globalPlay).toBeVisible();
+    await globalPlay.click();
+
+    // Kopplung: effectivePlaying=true → Strip-Button zeigt playing + ist gesperrt.
+    await expect(playBtn).toHaveAttribute("aria-pressed", "true");
+    await expect(playBtn).toBeDisabled();
+
+    // Globaler Stop entkoppelt wieder (Toolbar-Button heißt jetzt "Stop …").
+    const globalStop = page.locator('button[title^="Stop (Space)"]').first();
+    await globalStop.click();
+    await expect(playBtn).toHaveAttribute("aria-pressed", "false");
+    await expect(playBtn).toBeEnabled();
   });
 });

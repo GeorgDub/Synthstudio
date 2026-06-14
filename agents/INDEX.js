@@ -4222,6 +4222,22 @@ const INDEX = {
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
     {
+      agent:     "frontend",
+      timestamp: "2026-06-15T04:15:00.000Z",
+      done: [
+        "TASK-261: AudioTrackStrip.tsx (Mixer-Per-Track Play/Stop-Button) an globalen Transport gekoppelt — Asymmetrie zur AudioClipLane (TASK-252) geschlossen. Strip abonniert jetzt selbst AudioEngine.onPlayStateChange (self-subscribed, globalPlaying via useState, Init-Seed aus AudioEngine.isPlaying||isPlaying).",
+        "effectivePlaying = playing || globalPlaying (stale isPlaying-Prop bewusst AUS dem OR entfernt — MixerView reicht nur Render-Snapshot durch, re-rendert nicht bei Stop). Button: aria-pressed/label/title/icon + disabled={broken||globalPlaying} (Toggle gesperrt während Global-Play, konsistent zur Lane). handlePlayStop no-op't bei toggleLocked.",
+        "Conditions inline (kein Import von audioLaneHelpers) — vermeidet Mixer->DrumMachine-Layer-Edge (TASK-258-Hygiene). Nur semantische --ss-*-Token-Klassen.",
+        "Test scharf: tests/web/audio-track-play-stop.spec.ts test.skip -> scharfer test('Global-Play koppelt den Mixer-Per-Track-Button'): Global-Play (Toolbar button[title^='Play (Space)'], App-Level) -> aria-pressed='true' + disabled; Stop -> 'false' + enabled. UI-State-only, headless-deterministisch.",
+        "Verifiziert: pnpm check grün, pnpm test grün (10328 passed), Playwright-Spec 3/3 grün (kein skip mehr)."
+      ],
+      next: [
+        "MixerView reicht weiterhin isPlaying={AudioEngine.isPlaying} als stale Prop durch (nur noch Init-Seed-Fallback). Optional aufräumbar, aber harmlos — kein Handlungsbedarf.",
+        "Dieser Spec gehört in den HEADLESS-CI-Pfad (NICHT in HEADLESS_INCOMPATIBLE_SPECS von TASK-262) — er ist UI-State-only."
+      ],
+      changed: ["client/src/components/Mixer/AudioTrackStrip.tsx","tests/web/audio-track-play-stop.spec.ts"]
+    },
+    {
       agent:     "builder",
       timestamp: "2026-06-15T03:30:00.000Z",
       done: [
@@ -15044,9 +15060,12 @@ const INDEX = {
             type: "bugfix",
             priority: "low",
             agent: "frontend",
-            status: "open",
+            status: "done",
             createdAt: "2026-06-15T02:00:00.000Z",
             createdBy: "coordinator",
+            doneAt: "2026-06-15T04:15:00.000Z",
+            doneBy: "frontend",
+            doneNote: "AudioTrackStrip.tsx self-subscribed AudioEngine.onPlayStateChange (analog AudioClipLane/TASK-252): globalPlaying via useState (Seed aus AudioEngine.isPlaying), effectivePlaying=playing||globalPlaying (stale isPlaying-Prop aus OR entfernt), Button aria-pressed=effectivePlaying + disabled={broken||globalPlaying} + handlePlayStop no-op bei toggleLocked. Conditions inline (kein Cross-Layer-Import, TASK-258-Hygiene). test.skip in audio-track-play-stop.spec.ts -> scharfer UI-State-Test (aria-pressed true/false + disabled/enabled über Global-Play/Stop). pnpm check + 10328 Vitest grün, Playwright 3/3 grün. MixerView NICHT angefasst. Surgical staged.",
             title: "Mixer-Strip Play-Button koppelt nicht an Global-Transport (Asymmetrie zu Clip-Lane)",
             description: "TASK-259 deckte auf: AudioClipLane koppelt an global transport (onPlayStateChange -> aria-pressed/disabled), aber AudioTrackStrip.tsx Per-Track-Button bleibt component-local (aria-pressed={playing}); bei Global-Play zeigt der Mixer-Strip-Button nicht 'playing'. Entweder bewusst (dann dokumentieren) oder UX-Gap schließen: AudioTrackStrip an onPlayStateChange koppeln, dann den re-skippten Smoke in audio-track-play-stop.spec.ts scharf schalten. Dateien: client/src/components/Mixer/AudioTrackStrip.tsx, tests/web/audio-track-play-stop.spec.ts.",
         },
