@@ -22,13 +22,12 @@
  */
 import { useEffect, useRef } from "react";
 import type { MidiState, MidiActions } from "./useMidi";
+import { getPlayheadStep, subscribePlayhead } from "@/store/usePlayheadStore";
 
 export interface LaunchpadOptions {
   midi: MidiState & MidiActions;
   /** Aktuelle Steps (16 Werte, aktiv/inaktiv) */
   steps: Array<{ active: boolean; velocity: number }>;
-  /** Aktueller Playback-Step (0–15) */
-  currentStep: number;
   /** Callback wenn Grid-Button gedrückt */
   onStepToggle: (stepIndex: number) => void;
   /** Ob Integration aktiv ist */
@@ -65,7 +64,7 @@ function sendLedColor(
   try { output.send([0x90 | channel, note, color]); } catch { /* ignore */ }
 }
 
-export function useLaunchpad({ midi, steps, currentStep, onStepToggle, enabled }: LaunchpadOptions) {
+export function useLaunchpad({ midi, steps, onStepToggle, enabled }: LaunchpadOptions) {
   const outputRef = useRef<MIDIOutput | null>(null);
 
   // Ausgabe-Device finden (erstes Grid-Gerät)
@@ -81,25 +80,37 @@ export function useLaunchpad({ midi, steps, currentStep, onStepToggle, enabled }
     }).catch(() => { outputRef.current = null; });
   }, [enabled, midi.isEnabled, midi.outputDevices]);
 
-  // LED-Update wenn sich Steps oder currentStep ändern
+  // LED-Update wenn sich Steps ändern ODER der Playhead-Step tickt.
+  // TASK-251: Der Playhead-Step kommt NICHT mehr als Prop (das hätte einen
+  // App.tsx-Rerender pro Step erzwungen). Stattdessen abonnieren wir den
+  // usePlayheadStore imperativ via subscribePlayhead und lesen den Step bei
+  // jedem Tick mit getPlayheadStep() — kein React-Rerender involviert.
+  const stepsRef = useRef(steps);
+  stepsRef.current = steps;
   useEffect(() => {
-    if (!enabled || !outputRef.current) return;
-    const out = outputRef.current;
-
-    // Erste Reihe (Steps 0–7) updaten
-    for (let i = 0; i < Math.min(8, steps.length); i++) {
-      const isPlaying = i === currentStep;
-      const color = isPlaying ? 0x3F : steps[i]?.active ? 0x3C : 0x00;
-      sendLedColor(out, i, color);
-    }
-    // Zweite Reihe (Steps 8–15) updaten
-    for (let i = 8; i < Math.min(16, steps.length); i++) {
-      const note = 16 + (i - 8);
-      const isPlaying = i === currentStep;
-      const color = isPlaying ? 0x3F : steps[i]?.active ? 0x3C : 0x00;
-      sendLedColor(out, note, color);
-    }
-  }, [enabled, steps, currentStep]);
+    if (!enabled) return;
+    const renderLeds = () => {
+      const out = outputRef.current;
+      if (!out) return;
+      const s = stepsRef.current;
+      const currentStep = getPlayheadStep();
+      // Erste Reihe (Steps 0–7) updaten
+      for (let i = 0; i < Math.min(8, s.length); i++) {
+        const isPlaying = i === currentStep;
+        const color = isPlaying ? 0x3F : s[i]?.active ? 0x3C : 0x00;
+        sendLedColor(out, i, color);
+      }
+      // Zweite Reihe (Steps 8–15) updaten
+      for (let i = 8; i < Math.min(16, s.length); i++) {
+        const note = 16 + (i - 8);
+        const isPlaying = i === currentStep;
+        const color = isPlaying ? 0x3F : s[i]?.active ? 0x3C : 0x00;
+        sendLedColor(out, note, color);
+      }
+    };
+    renderLeds();
+    return subscribePlayhead(renderLeds);
+  }, [enabled, steps]);
 
   // Input-Handler: Grid-Buttons → Step-Toggle
   useEffect(() => {

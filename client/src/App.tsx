@@ -157,6 +157,7 @@ import { useGlobalKeyBindings, KB_ACTION_EVENT } from "@/hooks/useGlobalKeyBindi
 import { useScriptKeyBindings } from "@/hooks/useScriptKeyBindings";
 import { configureSandboxBridge } from "@/sandbox/scriptSandboxInstance";
 import { PatternLaunchPad } from "@/components/PerformanceMode/PatternLaunchPad";
+import { getPlayheadStep, subscribePlayhead, usePlayheadStep } from "@/store/usePlayheadStore";
 import { AutoMixPanel } from "@/components/AutoMix/AutoMixPanel";
 import { categorizeDrumName } from "@/utils/drumCategory";
 import { PatternVariationsBar } from "@/components/PatternVariation/PatternVariationsBar";
@@ -553,6 +554,19 @@ function ToolPopupReattachStub({
       </div>
     </div>
   );
+}
+
+/**
+ * TASK-251: Leaf-Wrapper für den Vollbild-PatternLaunchPad. Abonniert den
+ * Playhead-Step via usePlayheadStep() AUSSCHLIESSLICH hier — so re-rendert pro
+ * Step nur dieser Wrapper-Subtree, NICHT App.tsx. Würde App den Hook in seinem
+ * eigenen Body aufrufen, käme der per-Step-Rerender komplett zurück.
+ */
+function PlayheadPatternLaunchPad(
+  props: Omit<React.ComponentProps<typeof PatternLaunchPad>, "currentStep">,
+) {
+  const currentStep = usePlayheadStep();
+  return <PatternLaunchPad {...props} currentStep={currentStep} />;
 }
 
 export default function App() {
@@ -2543,7 +2557,10 @@ export default function App() {
       // Live Step Recording: MIDI-Note → Step im aktiven Pattern bei isRecording
       const pattern = dmRef.current.getActivePattern();
       if (!pattern || !projectRef.current.isRecording) return;
-      const step = dmRef.current.currentStep;
+      // TASK-251: Playhead aus dem dedizierten Store lesen — dm.currentStep wird
+      // nicht mehr pro Step gepflegt und wäre hier stale (würde die MIDI-Note auf
+      // den falschen Step schreiben).
+      const step = getPlayheadStep();
       // Overdub: Step aktivieren + Velocity aus MIDI setzen (kein blindes Toggle)
       const existingStep = pattern.parts.find(p => p.id === partId)?.steps[step];
       if (!existingStep?.active) {
@@ -3081,7 +3098,9 @@ export default function App() {
   useLaunchpad({
     midi,
     steps: (launchpadActivePart?.steps ?? []).map(s => ({ active: s.active, velocity: s.velocity ?? 100 })),
-    currentStep: dm.currentStep,
+    // TASK-251: currentStep nicht mehr als Prop — useLaunchpad abonniert den
+    // usePlayheadStore imperativ. Sonst hätte dm.currentStep hier App.tsx pro
+    // Step re-gerendert.
     onStepToggle: (i) => { if (dm.activePartId) dm.toggleStep(dm.activePartId, i); },
     enabled: launchpadEnabled,
   });
@@ -3809,16 +3828,34 @@ export default function App() {
   // ── Performance-Mode Popup State-Sync (ROADMAP feature) ──────────────────
   // Broadcastet den aktuellen Performance-relevanten State ins Popup-Fenster
   // wann immer sich etwas ändert. Nur aktiv wenn das Popup offen ist.
+  //
+  // TASK-251: currentStep ist NICHT mehr in den React-Deps (würde App.tsx pro
+  // Step re-rendern). Stattdessen halten wir den restlichen Payload in einem Ref
+  // und feuern den Per-Step-Broadcast imperativ über subscribePlayhead. Der
+  // Step wird beim Senden frisch aus getPlayheadStep() gelesen. (Der Popup ist
+  // ein eigener Renderer und re-rendert beim Empfang ohnehin pro Step — das ist
+  // eine cross-process-Grenze, die der Main-Prozess nicht aufheben kann.)
+  const perfPopupPayloadRef = useRef({
+    pads: performance.pads,
+    patterns: dm.patterns.map((p) => ({ id: p.id, name: p.name })),
+    activePatternId: dm.activePatternId ?? "",
+    queuedPatternId: performance.queuedPatternId,
+    quantizeMode: performance.quantizeMode,
+    bpm: project.bpm,
+  });
   useEffect(() => {
-    if (!electron.isElectron || !performancePopupOpen) return;
-    electron.sendPerfPopupState?.({
+    perfPopupPayloadRef.current = {
       pads: performance.pads,
       patterns: dm.patterns.map((p) => ({ id: p.id, name: p.name })),
       activePatternId: dm.activePatternId ?? "",
       queuedPatternId: performance.queuedPatternId,
       quantizeMode: performance.quantizeMode,
       bpm: project.bpm,
-      currentStep: dm.currentStep,
+    };
+    if (!electron.isElectron || !performancePopupOpen) return;
+    electron.sendPerfPopupState?.({
+      ...perfPopupPayloadRef.current,
+      currentStep: getPlayheadStep(),
     });
   }, [
     electron,
@@ -3828,9 +3865,20 @@ export default function App() {
     performance.quantizeMode,
     dm.patterns,
     dm.activePatternId,
-    dm.currentStep,
     project.bpm,
   ]);
+
+  // Per-Step-Broadcast in den Popup — imperativ, ohne App-Rerender.
+  useEffect(() => {
+    if (!electron.isElectron || !performancePopupOpen) return;
+    const send = () => {
+      electron.sendPerfPopupState?.({
+        ...perfPopupPayloadRef.current,
+        currentStep: getPlayheadStep(),
+      });
+    };
+    return subscribePlayhead(send);
+  }, [electron, performancePopupOpen]);
 
   // Listener: Actions aus dem Popup empfangen und in die Stores dispatchen.
   // Verwendet Refs für die Dispatcher damit der Listener Closure nicht mit
@@ -3900,7 +3948,8 @@ export default function App() {
             queuedPatternId: performance.queuedPatternId,
             quantizeMode: performance.quantizeMode,
             bpm: project.bpm,
-            currentStep: dm.currentStep,
+            // TASK-251: Step frisch aus dem Playhead-Store statt dm.currentStep.
+            currentStep: getPlayheadStep(),
           });
           break;
       }
@@ -3913,7 +3962,6 @@ export default function App() {
     performance.quantizeMode,
     dm.patterns,
     dm.activePatternId,
-    dm.currentStep,
     project.bpm,
   ]);
 
@@ -5297,7 +5345,7 @@ export default function App() {
 
       {/* ── Performance Mode (Vollbild-Pattern-Launchpad) ───────────────── */}
       {performanceActive && (
-        <PatternLaunchPad
+        <PlayheadPatternLaunchPad
           pads={performance.pads}
           patterns={dm.patterns.map((p) => ({ id: p.id, name: p.name }))}
           groups={patternGroups.groups.map((g) => ({ id: g.id, name: g.name }))}
@@ -5307,7 +5355,6 @@ export default function App() {
           queuedPatternId={performance.queuedPatternId}
           quantizeMode={performance.quantizeMode}
           bpm={project.bpm}
-          currentStep={dm.currentStep}
           onPadClick={performPatternSwitch}
           onQuantizeModeChange={setPerformanceQuantizeMode}
           onClose={() => setPerformanceActive(false)}

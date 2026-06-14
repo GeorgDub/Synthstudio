@@ -183,12 +183,16 @@ export function useTransport({
   useEffect(() => {
     const unsubscribe = AudioEngine.onPosition(step => {
       const d = dmRef.current;
-      d.setCurrentStep(step);
-      // TASK-247: Playhead-Store ZUSÄTZLICH speisen. Abonnierte Kinder der
-      // DrumMachine lesen den Step hierüber → der 4495-Zeilen-Parent muss
-      // nicht mehr pro Step re-rendern (memo überspringt currentStep-only).
+      // TASK-251: NUR noch den dedizierten Playhead-Store speisen. Früher rief
+      // dieser Callback ZUSÄTZLICH d.setCurrentStep(step) — das mutierte den
+      // geteilten useDrumMachineStore 8-16×/Sekunde und re-renderte App.tsx +
+      // den 4495-Zeilen-DrumMachine-Parent pro Step. Alle Step-Leser lesen den
+      // Playhead jetzt entweder via usePlayheadStep (memoisierte Leaf-Kinder)
+      // oder imperativ via getPlayheadStep()/subscribePlayhead (App-Callbacks,
+      // useLaunchpad). Der geteilte Store bleibt damit pro Step stabil.
       setPlayheadStep(step);
-      // Quantized Commit: beim nächsten Bar-Anfang (Step 0) einrasten
+      // Quantized Commit: beim nächsten Bar-Anfang (Step 0) einrasten. Liest den
+      // Step direkt aus dem Callback-Argument (nicht aus dem Store-State).
       if (step === 0 && d.commitPending) {
         d.commitLivePatternEdit();
       }

@@ -26,11 +26,40 @@
  *   - "Always on top" Toggle
  *   - Multiple Popup-Windows (z.B. ein Popup pro Pattern-Bank)
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore, type ComponentProps } from "react";
 import { useElectron } from "../../../../electron/useElectron";
 import { PatternLaunchPad, type PerformanceStoreActions } from "./PatternLaunchPad";
 import { DetachableWindowHeader } from "@/components/Window/DetachableWindowHeader";
 import type { PerformancePad, QuantizeMode } from "@/store/usePerformanceStore";
+
+// ─── Popup-lokaler Playhead-Store (TASK-251) ──────────────────────────────────
+// Der Popup ist ein eigener Electron-Renderer und kann den usePlayheadStore des
+// Haupt-Fensters NICHT erreichen — der Step kommt pro Step via IPC
+// (perf-sync:state). Früher floss currentStep in den großen React-State des
+// Popups → jede Step-Nachricht re-renderte das gesamte PerformancePopupApp.
+// Wir spiegeln daher das Playhead-Store-Pattern lokal: ein useSyncExternalStore-
+// Singleton, das NUR der kleine Launchpad-Leaf-Wrapper abonniert. Der Step wird
+// aus dem IPC-State herausgezogen und hierher geleitet — der restliche
+// PerfPopupState ändert sich pro Step nicht mehr, also re-rendert das Root nicht.
+let _popupStep = 0;
+const _popupStepListeners = new Set<() => void>();
+function setPopupPlayhead(step: number): void {
+  if (step === _popupStep) return;
+  _popupStep = step;
+  _popupStepListeners.forEach((fn) => fn());
+}
+function subscribePopupPlayhead(listener: () => void): () => void {
+  _popupStepListeners.add(listener);
+  return () => {
+    _popupStepListeners.delete(listener);
+  };
+}
+function getPopupPlayhead(): number {
+  return _popupStep;
+}
+function usePopupPlayhead(): number {
+  return useSyncExternalStore(subscribePopupPlayhead, getPopupPlayhead, getPopupPlayhead);
+}
 
 // ─── State-Sync-Schema ────────────────────────────────────────────────────────
 
@@ -71,6 +100,16 @@ const INITIAL_STATE: PerfPopupState = {
   currentStep: 0,
 };
 
+// ─── Leaf-Wrapper für den Playhead (TASK-251) ─────────────────────────────────
+// Abonniert den popup-lokalen Playhead-Store NUR hier. Re-rendert pro Step nur
+// dieser kleine Subtree, NICHT das PerformancePopupApp-Root.
+function PopupPlayheadLaunchPad(
+  props: Omit<ComponentProps<typeof PatternLaunchPad>, "currentStep">,
+) {
+  const currentStep = usePopupPlayhead();
+  return <PatternLaunchPad {...props} currentStep={currentStep} />;
+}
+
 // ─── Komponente ───────────────────────────────────────────────────────────────
 
 export function PerformancePopupApp() {
@@ -86,13 +125,36 @@ export function PerformancePopupApp() {
       // Defensive: Payload validieren bevor wir es in State packen
       if (!payload || typeof payload !== "object") return;
       const s = payload as Partial<PerfPopupState>;
-      setState((prev) => ({
-        ...prev,
-        ...s,
-        // Arrays defensiv prüfen (fallback auf existing wenn fehlt)
-        pads: Array.isArray(s.pads) ? s.pads : prev.pads,
-        patterns: Array.isArray(s.patterns) ? s.patterns : prev.patterns,
-      }));
+      // TASK-251: currentStep NICHT in den großen React-State — sonst re-rendert
+      // das gesamte Popup pro Step. Stattdessen in den popup-lokalen Playhead-
+      // Store leiten; nur der kleine Launchpad-Leaf abonniert ihn.
+      if (typeof s.currentStep === "number") {
+        setPopupPlayhead(s.currentStep);
+      }
+      setState((prev) => {
+        // currentStep aus dem Diff ausklammern — eine reine Step-Nachricht darf
+        // keinen Root-Rerender erzeugen.
+        const { currentStep: _ignored, ...rest } = s;
+        const next: PerfPopupState = {
+          ...prev,
+          ...rest,
+          // currentStep im React-State unverändert lassen (nur fürs IPC-Schema).
+          currentStep: prev.currentStep,
+          // Arrays defensiv prüfen (fallback auf existing wenn fehlt)
+          pads: Array.isArray(s.pads) ? s.pads : prev.pads,
+          patterns: Array.isArray(s.patterns) ? s.patterns : prev.patterns,
+        };
+        // Identitäts-Guard: wenn sich (ohne Step) nichts geändert hat, prev
+        // zurückgeben → kein Rerender.
+        const changed =
+          next.pads !== prev.pads ||
+          next.patterns !== prev.patterns ||
+          next.activePatternId !== prev.activePatternId ||
+          next.queuedPatternId !== prev.queuedPatternId ||
+          next.quantizeMode !== prev.quantizeMode ||
+          next.bpm !== prev.bpm;
+        return changed ? next : prev;
+      });
       setSynced(true);
     });
     return cleanup;
@@ -185,14 +247,13 @@ export function PerformancePopupApp() {
         testIdPrefix="perf-popup"
       />
 
-      <PatternLaunchPad
+      <PopupPlayheadLaunchPad
         pads={state.pads}
         patterns={state.patterns}
         activePatternId={state.activePatternId}
         queuedPatternId={state.queuedPatternId}
         quantizeMode={state.quantizeMode}
         bpm={state.bpm}
-        currentStep={state.currentStep}
         storeActions={storeActions}
         onPadClick={(patternId) => dispatchAction({ type: "pad-click", patternId })}
         onQuantizeModeChange={(mode) => dispatchAction({ type: "quantize-mode-change", mode })}

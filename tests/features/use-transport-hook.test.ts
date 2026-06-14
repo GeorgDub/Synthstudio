@@ -52,6 +52,7 @@ vi.mock("@/store/useMelodicPartStore", () => ({
 import { useTransport } from "@/hooks/useTransport";
 import { AudioEngine } from "@/audio/AudioEngine";
 import { __resetForTests as resetTranspose, setSemitones } from "@/store/useTransposeStore";
+import { getPlayheadStep, __resetPlayheadForTests } from "@/store/usePlayheadStore";
 
 // ─── Test-Fixtures ───────────────────────────────────────────────────────────
 
@@ -81,6 +82,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   localStorage.clear();
   resetTranspose();
+  __resetPlayheadForTests();
 });
 
 // ─── Mount-Behavior ──────────────────────────────────────────────────────────
@@ -254,7 +256,12 @@ describe("useTransport – BPM-Sync mit Pattern-Vorrang", () => {
 // ─── Position-Callback ───────────────────────────────────────────────────────
 
 describe("useTransport – Position-Callback", () => {
-  it("Bei jedem Step-Trigger wird dm.setCurrentStep aufgerufen", () => {
+  // TASK-251: Per-Step wird NUR noch der dedizierte usePlayheadStore gespeist —
+  // NICHT mehr dm.setCurrentStep. Dadurch erzeugt der geteilte DrumMachine-Store
+  // kein neues Objekt pro Step → App.tsx (und der DrumMachine-Parent) re-rendern
+  // nicht mehr 8-16×/Sekunde während Playback. Diese Assertion IST die
+  // Verifikation, dass useDrumMachineStore.notify() nicht mehr pro Step feuert.
+  it("Bei jedem Step-Trigger wird der Playhead-Store gespeist, NICHT dm.setCurrentStep", () => {
     let positionFn: ((step: number) => void) | null = null;
     (AudioEngine.onPosition as ReturnType<typeof vi.fn>).mockImplementationOnce((fn: (step: number) => void) => {
       positionFn = fn;
@@ -265,9 +272,11 @@ describe("useTransport – Position-Callback", () => {
 
     expect(positionFn).not.toBeNull();
     positionFn!(5);
+    expect(getPlayheadStep()).toBe(5);
     positionFn!(7);
-    expect(dm.setCurrentStep).toHaveBeenCalledWith(5);
-    expect(dm.setCurrentStep).toHaveBeenCalledWith(7);
+    expect(getPlayheadStep()).toBe(7);
+    // Der geteilte Store wird pro Step NICHT mehr mutiert (verhindert Full-Rerender).
+    expect(dm.setCurrentStep).not.toHaveBeenCalled();
   });
 
   it("Step 0 + commitPending=true → commitLivePatternEdit wird aufgerufen", () => {
