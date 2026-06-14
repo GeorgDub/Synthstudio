@@ -7,10 +7,13 @@
  *   - Strip hat einen Play/Stop-Button mit testid audio-track-play-<id>.
  *   - Klick togglet aria-pressed false → true → false (per-Track-local `playing`).
  *
- * NICHT geprüft (gehört TASK-252 / parallele Backend-Session):
- *   - ob der Per-Lane-/Per-Track-State auf Global-Play reagiert (effectivePlaying-
- *     Kopplung). Ein solcher Smoke ist unten als test.skip mit Begründung
- *     hinterlegt, damit er nicht bricht wenn 252 landet.
+ * NICHT geprüft (bewusst, mit korrigierter Begründung — siehe test.skip unten):
+ *   - ob der Mixer-Per-Track-Button auf Global-Play reagiert. TASK-252 koppelte
+ *     die Clip-Lane (AudioClipLane), NICHT diesen Mixer-Strip-Button: dessen
+ *     aria-pressed ist absichtlich an component-local `playing` gebunden;
+ *     Global-Transport fließt hier nur in die Waveform (effectivePlaying), nicht
+ *     in den Button. Das gekoppelte Verhalten ist in audio-clip-lane.spec.ts
+ *     abgedeckt.
  *
  * Flake-Schutz: der Button liest component-local `playing`. Ein 1-Sample-WAV
  * würde onAudioTrackEnded quasi sofort feuern und `playing` wieder auf false
@@ -98,11 +101,18 @@ test.describe("Per-Track Play/Stop im AudioTrackStrip (TASK-245)", () => {
     await expect(playBtn).toHaveAttribute("aria-pressed", "false");
   });
 
-  // Wartet auf TASK-252-Verhalten (Global-Transport ↔ Per-Track-Kopplung).
-  // Heute reagiert der Per-Track-`playing`-State NICHT auf den globalen
-  // Play-Button — nur `effectivePlaying` (Playhead) tut das. Erst wenn 252
-  // landet, ist ein scharfes Assert hier sinnvoll. Vorher würde es brechen.
-  test.skip("Global-Play setzt den Per-Track-Button auf playing (wartet auf TASK-252-Verhalten)", async () => {
+  // BEWUSST geskippt (kein Wartezustand): TASK-252 ist gelandet, hat aber NUR
+  // die Clip-Lane (AudioClipLane) an den globalen Transport gekoppelt — NICHT
+  // diesen Mixer-AudioTrackStrip-Button. Hier ist aria-pressed={playing} an den
+  // component-local `playing`-State gebunden; der globale Transport fließt nur in
+  // `effectivePlaying = playing || isPlaying` und damit ausschließlich in den
+  // Waveform-Playhead, nie in den Button. Ein scharfes Assert auf den Button
+  // wäre daher entweder dauerhaft rot oder müsste auf die Waveform ausweichen
+  // (Test-to-pass). Das gekoppelte Verhalten ist deterministisch im Schwester-
+  // Spec audio-clip-lane.spec.ts ("Global-Play aktiviert die Lane-Wiedergabe")
+  // abgedeckt. Die Asymmetrie (Lane koppelt, Mixer-Strip nicht) ist als Befund
+  // an den Dev-Agent gemeldet.
+  test.skip("Global-Play koppelt den Mixer-Per-Track-Button NICHT (TASK-252 koppelte nur die Clip-Lane)", async () => {
     // Intentionally empty — siehe Begründung oben.
   });
 });

@@ -12,8 +12,9 @@
  *   - Mute/Solo togglen aria-pressed (store-gebunden → race-frei).
  *   - Play togglet den per-Lane-local `playing`-State (false → true → false).
  *
- * NICHT geprüft (gehört TASK-252 / parallele Backend-Session):
- *   - Kopplung des Lane-Play-States an den globalen Transport. Skip unten.
+ * Global-Sync (TASK-252, gelandet):
+ *   - Globaler Transport-Play koppelt die Lane: effectivePlaying → Button
+ *     aria-pressed="true" + Toggle gesperrt (disabled). Smoke unten.
  *
  * Flake-Schutz: mehrsekündige WAV (sonst feuert onAudioTrackEnded mitten in
  * die Play-Toggle-Assertion → aria-pressed racet).
@@ -131,11 +132,40 @@ test.describe("Continuous Audio-Clip-Lane im Sequencer (TASK-246)", () => {
     await expect(playBtn).toHaveAttribute("aria-pressed", "false");
   });
 
-  // Wartet auf TASK-252-Verhalten: derzeit ist die Lane-WaveformDisplay an das
-  // per-Lane-local `playing` gebunden (isPlaying={playing}), NICHT an den
-  // globalen Transport. Erst nach TASK-252 koppelt der globale Play-Button den
-  // Lane-Play-State. Vorher würde ein scharfes Assert brechen.
-  test.skip("Global-Play aktiviert die Lane-Wiedergabe (wartet auf TASK-252-Verhalten)", async () => {
-    // Intentionally empty — siehe Begründung oben.
+  // TASK-252 ist gelandet: AudioClipLane abonniert AudioEngine.onPlayStateChange.
+  // Globaler Transport-Play setzt globalPlaying → effectivePlaying=true; der
+  // Lane-Play-Button spiegelt das (aria-pressed) und sein Toggle ist gesperrt
+  // (disabled). Reines UI-/State-Coupling — kein Audio-Output nötig, daher
+  // headless-deterministisch.
+  test("Global-Play aktiviert die Lane-Wiedergabe (TASK-252-Kopplung)", async ({ page }) => {
+    await seedAndOpen(page);
+    await addAudioTrackViaMixer(page, "clip-globalsync.wav");
+    await page.getByRole("tab", { name: "Sequencer" }).click();
+
+    const lane = page.locator('[data-testid^="audio-clip-lane-"][data-track-id]').first();
+    await expect(lane).toBeVisible({ timeout: 10_000 });
+    const trackId = await lane.getAttribute("data-track-id");
+    const playBtn = lane.locator(`[data-testid="audio-clip-lane-play-${trackId}"]`);
+
+    // Ausgangslage: nicht spielend, Toggle frei.
+    await expect(playBtn).toHaveAttribute("aria-pressed", "false");
+    await expect(playBtn).toBeEnabled();
+
+    // Globaler Transport-Play. Der Toolbar-Button trägt title "Play (Space) …";
+    // der Lane-eigene Button trägt "Play (nur dieser Clip)" → wir disambiguieren
+    // explizit über das (Space)-Präfix, damit der Locator NICHT die Lane trifft.
+    const globalPlay = page.locator('button[title^="Play (Space)"]').first();
+    await expect(globalPlay).toBeVisible();
+    await globalPlay.click();
+
+    // Kopplung: effectivePlaying=true → Lane-Button zeigt playing + ist gesperrt.
+    await expect(playBtn).toHaveAttribute("aria-pressed", "true");
+    await expect(playBtn).toBeDisabled();
+
+    // Globaler Stop entkoppelt wieder (Toolbar-Button heißt jetzt "Stop …").
+    const globalStop = page.locator('button[title^="Stop (Space)"]').first();
+    await globalStop.click();
+    await expect(playBtn).toHaveAttribute("aria-pressed", "false");
+    await expect(playBtn).toBeEnabled();
   });
 });
