@@ -4211,6 +4211,29 @@ const INDEX = {
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
     {
+      agent:     "coordinator",
+      timestamp: "2026-06-15T00:45:00.000Z",
+      done: [
+        "Runde 2026-06-15 UMSETZUNG (Ursprungs-Bug + Perf-Reste). Pflicht-Minimum TASK-252/251/256 + 252-FOLLOWUP alle gruen+committed. Parallel-Batch {252,251,256} write-path-disjunkt dispatcht (1 Turn), danach 252-FOLLOWUP seriell.",
+        "TASK-252 (backend, d1015ee): Audio-Clip-Lane an globalen Transport gekoppelt. ROOT-CAUSE-KORREKTUR: alte Premisse (playAllRegisteredAudioTracks nie auf transport:play) war FALSCH — Engine-Wiring existierte (play->_startPattern->playAllRegisteredAudioTracks @2876; stop->stopAllAudioTracks @2963). Echter Bug: AudioClipLane.playing rein component-local, abonnierte Global-Transport nicht -> Button/Playhead desync (Melodie nicht ausmachen). Fix: isomorpher onPlayStateChange-Seam in AudioEngine, globalPlaying self-subscribed in Lane, effectivePlaying treibt UI; per-Lane Play/Stop waehrend Global-Play gesperrt (Mute/Solo bleiben live). 10 Tests. Kein neuer IPC.",
+        "TASK-251 (frontend, 85fcd10): currentStep aus geteiltem useDrumMachineStore geloest. onPosition speist nur noch usePlayheadStore -> App.tsx + PerformancePopupApp rendern nicht mehr pro Step. 5 currentStep-Leser in App.tsx auf getPlayheadStep/usePlayheadStore umgestellt; useLaunchpad LED self-subscribed; PerfPopup popup-lokaler useSyncExternalStore. NEBENBEFUND-FIX: Live-Step-Recorder schrieb mit eingefrorenem dm.currentStep auf falschen Step.",
+        "TASK-256 (testing, d1166aa): useMixerStore +33 Tests (einzige echte Luecke); useAutomationStore/useMasterFxStore bereits abgedeckt (+3 isValidMasterFxSnapshot). Playwright-Smokes tests/web/audio-track-play-stop.spec.ts + audio-clip-lane.spec.ts gegen stabiles per-Lane-Verhalten (Global-Sync test.skip). pnpm test:web real 6 passed/2 skipped.",
+        "TASK-252-FOLLOWUP (backend, be67470): Clip-Lane-Playhead-Freeze bei Tab-Wechsel-waehrend-Play geschlossen (Lane seedet pos01 synchron beim Mount via Engine-Getter getAudioTrackPosition/isAudioTrackPlaying + pure computeAudioTrackPos01). git-blame: literaler rAF-Freeze schon durch 386b9ee mitigiert; dies schliesst Ein-Frame-0-Blitz. 7 Tests.",
+        "URSPRUNGS-BUG VOLLSTAENDIG GESCHLOSSEN (code-level): Global-Play startet+zeigt Audio-Clip-Lanes, Global-Stop stoppt sie, Playhead bewegt sich auch bei Tab-Wechsel-waehrend-Play. Restrisiko: hoerbarer Sync nur Live-/Audio-verifizierbar (pending User); Buffer-Preload-Race ist Timing-Edge, nicht das Symptom.",
+        "Integrierter Check nach allen 4 Commits: pnpm check gruen, pnpm test 440 Files / 10309 passed / 12 skipped / 0 fail.",
+        "INDEX.js am Rundenende sauber neu geschrieben (git checkout + frischer Coordinator-Block), da parallele 251/252-Sessions konkurrierend am workLog editiert hatten (redundant, hier vollstaendig reproduziert)."
+      ],
+      next: [
+        "TASK-254 (backend): _scheduleStep Allokationen eliminieren — naechste Runde zuerst (Budget-Priorisierung Pflicht-Minimum).",
+        "TASK-253 (refactor): systemisches Store-Rerender-Pattern (57 Stores ohne Selektoren) auditieren — naechste Runde.",
+        "TASK-258 (refactor, NEU): Layering-Wart aus 252-FOLLOWUP — AudioEngine.ts importiert (Typ) aus components/DrumMachine/audioLaneHelpers.ts. Laufzeit zyklusfrei, aber Schicht-Inversion. Pure-Helper nach client/src/utils/ verschieben.",
+        "TASK-259 (testing, NEU): 2 test.skip Playwright-Smokes (Global-Play<->Clip-Lane-Sync) scharf schalten jetzt wo 252 gelandet ist.",
+        "TASK-255 (refactor): uebergrosse Komponenten (DrumMachine 4495 LOC, MixerView) zerlegen.",
+        "TASK-257 (feature): Modulations-Matrix / LFO-Routing (echte Absenz)."
+      ],
+      changed: []
+    },
+    {
       agent: "coordinator",
       timestamp: "2026-06-14T23:50:00.000Z",
       done: [
@@ -14839,6 +14862,73 @@ const INDEX = {
   //     grep -L 'doneIn\|closedIn'
   // ───────────────────────────────────────────────────────
   openTasks: [
+        // ─── Runde 2026-06-15: 251/252/256 DONE (siehe workLog, commits d1015ee/85fcd10/d1166aa/be67470). Verbleibende + neue offene Tasks: ───
+        {
+            id: "TASK-253",
+            type: "refactor",
+            priority: "medium",
+            agent: "refactor",
+            status: "open",
+            createdAt: "2026-06-15T00:45:00.000Z",
+            createdBy: "coordinator",
+            title: "Systemisches Store-Rerender-Pattern (#5) auditieren",
+            description: "Custom-observer-Stores identifizieren, die ganze Komponenten pro Update re-rendern (analog Playhead). Selector-/Subscription-Pattern aus usePlayheadStore (useSyncExternalStore) als Vorlage. ~57 Stores ohne Selektoren. Konkrete risikoarme Verbesserungen umsetzen.",
+        },
+        {
+            id: "TASK-254",
+            type: "refactor",
+            priority: "medium",
+            agent: "backend",
+            status: "open",
+            createdAt: "2026-06-15T00:45:00.000Z",
+            createdBy: "coordinator",
+            title: "_scheduleStep Allokationen (#6) eliminieren",
+            description: "Allocation-Hot-Path im Audio-Scheduler (AudioEngine.ts ~3335): pro-Step erzeugte Arrays/Objekte/Closures vorab cachen. TASK-249 hat den Automation-Pfad bereits allokationsfrei gemacht; Rest auditieren. GC-Druck/Glitch-Risiko. NAECHSTE RUNDE ZUERST.",
+        },
+        {
+            id: "TASK-255",
+            type: "refactor",
+            priority: "low",
+            agent: "refactor",
+            status: "open",
+            createdAt: "2026-06-15T00:45:00.000Z",
+            createdBy: "coordinator",
+            title: "Uebergrosse Komponenten (#7) zerlegen",
+            description: "DrumMachine.tsx (~4495 LOC) und MixerView in kohaerente Sub-Komponenten/Hooks aufteilen, verhaltensneutral. Tests vor/nach gruen.",
+        },
+        {
+            id: "TASK-257",
+            type: "feature",
+            priority: "low",
+            agent: "backend",
+            status: "open",
+            createdAt: "2026-06-15T00:45:00.000Z",
+            createdBy: "coordinator",
+            title: "Modulations-Matrix / LFO-Routing (echte Absenz)",
+            description: "ModMatrix/LFO-Routing existiert gar nicht. Routing-Quellen (LFO/Env/Macro) auf Ziel-Params (Filter/Pitch/FX) mappbar machen.",
+        },
+        {
+            id: "TASK-258",
+            type: "refactor",
+            priority: "low",
+            agent: "refactor",
+            status: "open",
+            createdAt: "2026-06-15T00:45:00.000Z",
+            createdBy: "coordinator",
+            title: "Layering-Wart: AudioEngine importiert aus components/DrumMachine/audioLaneHelpers",
+            description: "252-FOLLOWUP fuehrte Typ-Import von client/src/audio/AudioEngine.ts auf client/src/components/DrumMachine/audioLaneHelpers.ts (computeAudioTrackPos01) ein. Laufzeit zyklusfrei, aber Schicht-Inversion (audio->components). Pure-Helper nach client/src/utils/ verschieben, beide Caller umbiegen.",
+        },
+        {
+            id: "TASK-259",
+            type: "test",
+            priority: "low",
+            agent: "testing",
+            status: "open",
+            createdAt: "2026-06-15T00:45:00.000Z",
+            createdBy: "coordinator",
+            title: "Global-Play <-> Clip-Lane-Sync Playwright-Smokes scharf schalten",
+            description: "tests/web/audio-track-play-stop.spec.ts + audio-clip-lane.spec.ts haben je 1 test.skip fuer Global-Transport-Kopplung (warteten auf TASK-252). 252 gelandet -> Skips entfernen, gegen gekoppeltes Verhalten scharf schalten.",
+        },
     // STRATEGIE-ROADMAP v2.83+ (KORG-zentrierte Live+Studio-DAW) — coordinator 2026-05-17
         {
             id: "TASK-230",
