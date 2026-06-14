@@ -1768,6 +1768,17 @@ class AudioEngineClass {
 
   private _midiOutCallback: ((note: number, velocity: number, partId: string) => void) | null = null;
   private _midiClockCallback: ((pulse: Uint8Array) => void) | null = null;
+  /**
+   * TASK-254: Konstante MIDI-Clock-Pulse-Bytes (0xF8) als Instanz-Feld vorab-
+   * alloziert. Vorher wurde pro getriggertem Voice ein neues `Uint8Array([0xF8])`
+   * erzeugt; die Bytes sind invariant, daher Wiederverwendung ohne Verhaltens-
+   * änderung (der Callback liest nur, mutiert nie). Plus ein vorab-gebundener
+   * Sender, damit die 6 Pulse-`setTimeout`s keine Closure pro Step allozieren.
+   */
+  private readonly _midiClockPulseBytes = new Uint8Array([0xf8]);
+  private readonly _sendMidiClockPulse = (): void => {
+    this._midiClockCallback?.(this._midiClockPulseBytes);
+  };
   private _midiProgramChangeCallback: ((program: number, channel: number) => void) | null = null;
   private _clockPulseCount = 0;  // 24 Pulse per Quarter Note
   /** Gestapelte Pattern-IDs die zusätzlich zum Haupt-Pattern abgespielt werden */
@@ -3444,8 +3455,19 @@ class AudioEngineClass {
     // Cross-Store Solo-Check (FOLLOWUP-102/B): Drum + Audio-Track Solo wirken zusammen.
     // Wenn irgendein Audio-Track soloed ist, werden alle nicht-soloed Drum-Parts
     // ebenfalls stumm — analog zum Mixer-Mute-Verhalten von _reapplyAudioTrackSoloMutes.
-    const anyDrumSolo = pattern.parts.some(p => p.soloed);
-    const anyAudioSolo = this.audioTracksGetter?.().some(t => t.soloed) ?? false;
+    // TASK-254: `.some()`-Closures durch allokationsfreie Schleifen ersetzt
+    // (identische Semantik: true sobald ein soloed-Eintrag gefunden wird).
+    let anyDrumSolo = false;
+    for (let i = 0; i < pattern.parts.length; i++) {
+      if (pattern.parts[i].soloed) { anyDrumSolo = true; break; }
+    }
+    let anyAudioSolo = false;
+    const _audioTracks = this.audioTracksGetter?.();
+    if (_audioTracks) {
+      for (let i = 0; i < _audioTracks.length; i++) {
+        if (_audioTracks[i].soloed) { anyAudioSolo = true; break; }
+      }
+    }
     const anySolo = anyDrumSolo || anyAudioSolo;
 
     // Arpeggiator-Snapshot (v3.268): einmal pro Step lesen — für Step-Suppression
@@ -3467,10 +3489,24 @@ class AudioEngineClass {
       if (br) readStep = br.readIndex(stepIndex);
     } catch { /* ignore */ }
 
-    pattern.parts.forEach((part, partIndex) => {
-      if (part.muted) return;
-      if (anySolo && !part.soloed) return;
-      if (arpSuppressedPartId && part.id === arpSuppressedPartId) return; // Arp treibt diesen Part
+    // TASK-254: Humanizer-Globalslot einmal pro Step lesen statt pro getriggertem
+    // Voice. Der Slot wird zur Laufzeit getoggelt → per-call lesen (nicht als
+    // Instanz-Feld cachen) bleibt korrekt; die Funktionsaufrufe pro Voice bleiben.
+    let _humanizer: { timing: (i: number, d: number, p?: number) => number; velocity: (i: number, p?: number) => number } | undefined;
+    try {
+      _humanizer = (globalThis as Record<string, unknown>)["__synthstudio_humanizer__"] as typeof _humanizer;
+    } catch { /* ignore */ }
+    // Step-Dauer einmal vorberechnen (Humanizer-Timing + MIDI-Clock-Pulse nutzen sie).
+    const _stepDur = this._stepDuration();
+
+    // TASK-254: forEach-Closure → indexierte Schleife (allokationsfrei). `part`
+    // bleibt block-scoped pro Iteration (die async Sample-IIFE captured partRef).
+    const _parts = pattern.parts;
+    for (let partIndex = 0; partIndex < _parts.length; partIndex++) {
+      const part = _parts[partIndex];
+      if (part.muted) continue;
+      if (anySolo && !part.soloed) continue;
+      if (arpSuppressedPartId && part.id === arpSuppressedPartId) continue; // Arp treibt diesen Part
 
       // Polymeter: bei eigener stepLength wrappt der Part modular.
       // readStep statt stepIndex → Beat-Repeat-Fenster greift. Das %steps.length
@@ -3482,24 +3518,21 @@ class AudioEngineClass {
         ? readStep % part.stepLength
         : (remapped ? readStep % Math.max(1, part.steps.length) : stepIndex);
       const step = part.steps[effIdx];
-      if (!step || !this.shouldTriggerStep(step, part.id, effIdx)) return;
+      if (!step || !this.shouldTriggerStep(step, part.id, effIdx)) continue;
 
       // Micro-Timing: zeitlicher Offset in ms (statisch pro Part)
       const microOffsetSec = (part.microTiming ?? 0) / 1000;
 
-      // Humanizer: Swing + Timing-Jitter (dynamisch)
+      // Humanizer: Swing + Timing-Jitter (dynamisch). Slot ist pro Step gelesen
+      // (TASK-254) — die Funktionsaufrufe bleiben pro Voice (state-abhängig).
       let humanizerTimingOffset = 0;
       let humanizerVelocityMult = 1.0;
-      try {
-        // Lazy require um Zirkular-Imports zu vermeiden
-        const hum = (globalThis as Record<string, unknown>)["__synthstudio_humanizer__"] as
-          | { timing: (i: number, d: number, p?: number) => number; velocity: (i: number, p?: number) => number }
-          | undefined;
-        if (hum) {
-          humanizerTimingOffset = hum.timing(effIdx, this._stepDuration(), partIndex);
-          humanizerVelocityMult = hum.velocity(effIdx, partIndex);
-        }
-      } catch { /* ignore */ }
+      if (_humanizer) {
+        try {
+          humanizerTimingOffset = _humanizer.timing(effIdx, _stepDur, partIndex);
+          humanizerVelocityMult = _humanizer.velocity(effIdx, partIndex);
+        } catch { /* ignore */ }
+      }
 
       const scheduledTime = time + microOffsetSec + humanizerTimingOffset;
       const humanizedVelocity = Math.max(1, Math.min(127, Math.round((step.velocity ?? 100) * humanizerVelocityMult)));
@@ -3514,7 +3547,8 @@ class AudioEngineClass {
         reverse: step.reverse ?? false,
       };
 
-      this.stepCallbacks.forEach(cb => cb(scheduled));
+      // TASK-254: forEach-Closure → indexierte Schleife (allokationsfrei).
+      for (let ci = 0; ci < this.stepCallbacks.length; ci++) this.stepCallbacks[ci](scheduled);
 
       // MIDI-Note-Out (TASK-240 / v2.92): wenn Part eine externe MIDI-Out-Config
       // hat (z.B. KORG Electribe), Note-On feuern. Note-Off läuft intern über
@@ -3522,12 +3556,15 @@ class AudioEngineClass {
       // shouldPlayLocalSound-Check weiter unten).
       this._midiNoteOut.triggerNote(part.id, scheduledTime, humanizedVelocity);
 
-      // MIDI Clock: 6 Pulse pro 1/16-Step (= 24 Pulse/Viertelnote)
+      // MIDI Clock: 6 Pulse pro 1/16-Step (= 24 Pulse/Viertelnote).
+      // TASK-254: konstante Bytes als Instanz-Feld + vorab-gebundener Sender →
+      // keine per-Pulse-Closure / kein per-Voice-Uint8Array mehr. `_stepDur`
+      // ersetzt die 6× `_stepDuration()`-Aufrufe (identischer Wert).
       if (this._midiClockCallback) {
-        const clockMsg = new Uint8Array([0xF8]);
+        const ctxNow = this.ctx?.currentTime ?? 0;
         for (let p = 0; p < 6; p++) {
-          const pulseTime = time + (p / 6) * this._stepDuration();
-          setTimeout(() => this._midiClockCallback?.(clockMsg), Math.max(0, (pulseTime - (this.ctx?.currentTime ?? 0)) * 1000));
+          const pulseTime = time + (p / 6) * _stepDur;
+          setTimeout(this._sendMidiClockPulse, Math.max(0, (pulseTime - ctxNow) * 1000));
         }
       }
 
@@ -3547,10 +3584,11 @@ class AudioEngineClass {
       // Gain-Automation auf die Ziel-Parts anwenden
       if (this.ctx) {
         const srcId = part.id;
-        this._sidechainSettings.forEach((sc, targetId) => {
-          if (sc.sourcePartId !== srcId || !sc.enabled) return;
+        // TASK-254: forEach-Closure → for-of (allokationsfrei, identische Semantik).
+        for (const [targetId, sc] of this._sidechainSettings) {
+          if (sc.sourcePartId !== srcId || !sc.enabled) continue;
           const targetNodes = this.channelNodes.get(targetId);
-          if (!targetNodes) return;
+          if (!targetNodes) continue;
           const g = targetNodes.sidechainGain.gain;
           const duckLevel = Math.max(0, 1 - sc.amount);
           // Sofortiger Duck zum Step-Zeitpunkt
@@ -3558,7 +3596,7 @@ class AudioEngineClass {
           g.setValueAtTime(duckLevel, time);
           // Linearer Ramp zurück zu 1 über release-Zeit
           g.linearRampToValueAtTime(1, time + sc.release);
-        });
+        }
       }
 
       // Local-Sound-Gate (TASK-240): wenn Part nur als MIDI-Out konfiguriert
@@ -3566,7 +3604,7 @@ class AudioEngineClass {
       // shouldPlayLocalSound liefert true wenn kein MIDI-Out-Config existiert
       // (Backwards-Compat) oder localSoundEnabled !== false.
       if (!this._midiNoteOut.shouldPlayLocalSound(part.id)) {
-        return;
+        continue;
       }
 
       // Synth-Pfad (TASK-129): Parts mit sourceType=wavetable/fm + synthParams
@@ -3595,28 +3633,30 @@ class AudioEngineClass {
           this._triggerBufferWithFx(playBuf, scheduled.time, vol, scheduled.pan, scheduled.pitch, partRef, stepLength);
         })();
       }
-    });
+    }
 
     // ─── Melodische Parts (Piano Roll) ────────────────────────────────────
     // Nutzt denselben cross-store Solo-Check wie der Drum-Loop oben.
     if (this.melodicGetter) {
-      pattern.parts.forEach((part) => {
-        if (part.muted) return;
-        if (anySolo && !part.soloed) return;
+      // TASK-254: forEach-Closure → indexierte Schleife (allokationsfrei).
+      for (let mi = 0; mi < _parts.length; mi++) {
+        const part = _parts[mi];
+        if (part.muted) continue;
+        if (anySolo && !part.soloed) continue;
 
         const melodicSteps = this.melodicGetter!(part.id);
-        if (!melodicSteps) return;
+        if (!melodicSteps) continue;
         const mIdx = part.stepLength && part.stepLength > 0
           ? stepIndex % part.stepLength
           : stepIndex;
         const mStep = melodicSteps[mIdx];
-        if (!mStep?.active) return;
+        if (!mStep?.active) continue;
 
         const vol = (mStep.velocity / 127) * (part.volume ?? 1.0);
         const transposedNote = Math.max(0, Math.min(127, mStep.note + this._globalTranspose));
         const freq = 440 * Math.pow(2, (transposedNote - 69) / 12);
         this._triggerMelodicNote(time, freq, vol, part.pan ?? 0, part);
-      });
+      }
     }
 
     // ─── Arpeggiator-Overlay (v3.268) ────────────────────────────────────────
