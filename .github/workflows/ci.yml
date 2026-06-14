@@ -44,10 +44,19 @@ jobs:
       - name: Build Web-App
         run: pnpm build
 
+  # TASK-262: Blocking-Pfad. Läuft mit CI_HEADLESS=1, sodass die 11
+  # headless-untauglichen Specs (echtes Web-Audio / WS-Sim-Loopback nötig) via
+  # testIgnore in playwright.web.config.ts ausgeschlossen werden. Dadurch ist
+  # dieser required Job deterministisch grün. Job-Key + name unverändert lassen
+  # (Branch-Protection kann hieran hängen).
   e2e-web:
     name: Playwright Browser-Tests
     runs-on: ubuntu-latest
     needs: test
+    env:
+      # Literal-String "1" — muss EXAKT mit der Prüfung in
+      # playwright.web.config.ts (process.env.CI_HEADLESS === "1") matchen.
+      CI_HEADLESS: "1"
     steps:
       - uses: actions/checkout@v4
 
@@ -62,12 +71,50 @@ jobs:
       - name: Install Playwright Browsers
         run: pnpm exec playwright install --with-deps chromium
 
-      - name: Run Playwright Browser Tests
+      - name: Run Playwright Browser Tests (headless-tauglich)
         run: pnpm test:web
 
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
           name: playwright-report
+          path: playwright-report/
+          retention-days: 7
+
+  # TASK-262: Non-blocking Coverage-Job. Läuft NUR die 11 headless-untauglichen
+  # Specs (CI_AUDIO_ONLY=1). Diese brauchen echtes Audio-Output / WS-Sim-Loopback,
+  # was in headless CI fehlt -> Timeouts erwartet. continue-on-error:true sorgt
+  # dafür, dass der Job-Check als success abschließt und den Gesamt-CI-Status
+  # NICHT rot macht — die Specs bleiben aber sichtbar lauffähig.
+  e2e-web-audio:
+    name: Playwright Browser-Tests (Audio/Sim, non-blocking)
+    runs-on: ubuntu-latest
+    needs: test
+    continue-on-error: true
+    env:
+      # Literal-String "1" — muss EXAKT mit der Prüfung in
+      # playwright.web.config.ts (process.env.CI_AUDIO_ONLY === "1") matchen.
+      CI_AUDIO_ONLY: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - uses: pnpm/action-setup@v4
+
+      - run: pnpm install --no-frozen-lockfile
+
+      - name: Install Playwright Browsers
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Run Playwright Browser Tests (Audio/Sim)
+        run: pnpm test:web
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-report-audio
           path: playwright-report/
           retention-days: 7
