@@ -4211,6 +4211,30 @@ const INDEX = {
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
     {
+      agent: "coordinator",
+      timestamp: "2026-06-14T23:50:00.000Z",
+      done: [
+        "Runde 2026-06-14 UMSETZUNG: 6 Tasks (TASK-245..250) abgearbeitet, alle grün getestet. Parallel-Batch {245,247,248} (write-path-disjoint verifiziert via grep) in einem Dispatch, danach 246 (serial, DrumMachine.tsx+AudioEngine.ts-Overlap), 249 (serial nach 246, AudioEngine _scheduleStep), 250.",
+        "TASK-245 (frontend, ae51902): Per-Track Play/Stop in AudioTrackStrip.tsx, component-local isPlaying via pure nextAudioTrackPlayState + onAudioTrackEnded. 11 Tests.",
+        "TASK-247 (frontend, d40bafb): usePlayheadStore.ts (useSyncExternalStore) + drumMachineMemo.ts Custom-Comparator + 5 memoisierte Playhead-Kinder. DrumMachine rendert nicht mehr pro Step. 14 Tests.",
+        "TASK-248 (refactor, e0c2d8a): Theme-Runtime-Cycle aufgelöst via neutralem utils/themeApply.ts (Blattmodul); useThemeStore+ThemeSettings+ThemeSwitcher+SettingsPanel umgebogen; applyTheme(any)->ThemeId. 7 Tests.",
+        "TASK-246 (frontend, bd5ada8): Option B Continuous-Clip-Lane. AudioClipLane.tsx + AudioClipLaneList + audioLaneHelpers.ts. M/S+Play/Stop+Per-Lane-Playhead, kein Step-Grid, keine neue IPC. 17 Tests.",
+        "TASK-249 (backend, fa93eaa): Automation-Lanes hörbar (alle 6 Targets); Hot-Path allokationsfrei via compileAutomationLanes. 19 Tests.",
+        "TASK-250: bereits erfüllt — theme-class-purity.test.ts grün 289/289, 0 in-scope-Verletzungen (68er-Count war stale). Kein Commit.",
+        "Voller Integrations-Check nach allen Commits: pnpm check grün, pnpm test 438 files / 10256 passed / 12 skipped / 0 fail. Release-Bump+Push siehe folgender Eintrag."
+      ],
+      next: [
+        "TASK-251 (frontend/refactor): App.tsx + useDrumMachineStore currentStep aus geteiltem Store lösen (Folge zu 247 — App.tsx re-rendert noch pro Step).",
+        "TASK-252 (backend): Global-Transport an Audio-Clip-Lanes koppeln (playAllRegisteredAudioTracks auf transport:play; Clip-Playhead während Global-Play) — Folge zu 246.",
+        "TASK-253 (refactor): systemisches Store-Rerender-Pattern (#5) auditieren — weitere Stores die ganze Komponenten triggern.",
+        "TASK-254 (backend/refactor): _scheduleStep Allokationen (#6) eliminieren.",
+        "TASK-255 (refactor): übergroße Komponenten (#7, DrumMachine 4495 LOC, MixerView) zerlegen.",
+        "TASK-256 (testing): fehlende Store-Tests (#8) nachziehen.",
+        "TASK-257 (feature): Modulations-Matrix / LFO-Routing (existiert gar nicht — echte Absenz)."
+      ],
+      changed: []
+    },
+    {
       agent:     "security",
       timestamp: "2026-06-08T00:00:00.000Z",
       done: [
@@ -14734,6 +14758,25 @@ const INDEX = {
         "client/src/components/SampleBrowser/SampleBrowser.tsx",
         "agents/INDEX.js"
       ]
+    },
+    {
+      agent:     "coordinator",
+      timestamp: "2026-06-14T00:00:00.000Z",
+      done: [
+        "Round 2026-06-14: Research+Plan-Runde fuer (1) Audio-Channel-Mixer-Bug, (2) Codebase-Optimierungs-Audit, (3) zu implementierende Funktionen. KEIN Code geschrieben (User trifft Produkt-Entscheidung zu TASK-246).",
+        "Audio-Channel-Bug diagnostiziert via Explore-Agent (current source, da INDEX bei v3.230 stale, git v3.272). ROOT CAUSE: Audio-Tracks (importiert UND aufgenommen) sind ein separates Subsystem (useAudioTrackStore + AudioTrackStrip), NICHT eine Channel-Type-Variante. Import- und Record-Pfad konvergieren in addAudioTrack (App.tsx:1845). Symptom 1 (kein Play-Button): Per-Track-Engine-API playAudioTrack/stopAudioTrack (AudioEngine.ts:5047/5280) existiert, ist aber an kein UI gebunden -> SMALL fix (TASK-245). Symptom 2 (keine Sequencer-Lane): Sequencer rendert nur aus pattern.parts (DrumMachine.tsx:4210); AudioTrackChannelData hat kein steps-Modell -> Architektur-Luecke, LARGE, braucht Produkt-Entscheidung (TASK-246).",
+        "Optimierungs-Audit via Explore-Agent: Top-10 priorisiert. Quick-Wins: #1 DrumMachine re-rendert 8-16x/sek bei Playback (useTransport.ts:182 -> shared dm-prop), #2 useThemeStore<->ThemeSettings runtime-Cycle, #3 Automation-Lanes erreichen Audio nie (half-dead), #4 68 hardcodierte Tailwind-Farben. Bestaetigt: Arpeggiator/Sidechain/Granular/Polyrhythm sind LIVE (nicht tot); ModMatrix/LFO-Routing existiert gar nicht (Absenz, kein Half-Feature).",
+        "6 Tasks erstellt: TASK-245 (Play-Button, open), TASK-246 (Sequencer-Lane, BLOCKED auf User-Entscheidung A/B/C), TASK-247 (DrumMachine-Rerender), TASK-248 (Theme-Cycle), TASK-249 (Automation wire/hide), TASK-250 (Tailwind-Tokens)."
+      ],
+      next: [
+        "USER-ENTSCHEIDUNG noetig fuer TASK-246: Option A (One-Shot-Step-Lane) / B (Continuous-Clip-Lane mit Play/Stop+Mute, keine Steps) / C (beide umschaltbar). Coordinator-Empfehlung: erst TASK-245 (SMALL, sofortiger Nutzen) + Option B, da AudioTrackChannelData bereits continuous ist.",
+        "Naechste Runde nach Entscheidung: TASK-245 + TASK-247 ggf parallel (Pfad-Ueberlapp DrumMachine.tsx beachten -> ggf sequenziell). TASK-248/TASK-250 (refactor) exklusiv.",
+        "USER-ENTSCHEIDUNG fuer TASK-249: Automation implementieren (medium) vs Panel verstecken bis dahin.",
+        "USER-SCOPE-KLAERUNG TASK-250: nur geregelter Token-Set (68) oder breiter inkl bg-black/text-white (113)."
+      ],
+      changed: [
+        "agents/INDEX.js"
+      ]
     }
   ],
 
@@ -15131,6 +15174,119 @@ const INDEX = {
             estimateHours: 0.5,
             note: "Defender-Exclusion waere echte Loesung, aber nicht code-automatisierbar. Workaround-Skript ist portable Alternative.",
             result: "scripts/clean-release.cjs (123 LOC): liest version aus package.json, loescht EXE+blockmap+__uninstaller-NSIS-*+.__uninstaller.exe der aktuellen Version, EBUSY-retry mit 200ms Atomics.wait. Hook in package.json:prebuild:electron:win. tests/features/clean-release-script.test.ts: 10 Tests gruen (current-only delete, blockmap, NSIS-wildcard, idempotenz, missing-dir-toleranz, version-substring-discrimination 3.23.0 vs 3.234.0)."
+        },
+        // --- ROUND 2026-06-14 (coordinator) Audio-Channel-Bug + Optimierungs-Audit ---
+        // Research+Plan-Runde. KEINE Implementierung -- User trifft Produkt-Entscheidung
+        // (TASK-246 Sequencer-Lane-Darstellung) bevor delegiert wird.
+        {
+            id: "TASK-245",
+            type: "bugfix",
+            priority: "high",
+            agent: "frontend",
+            status: "done",
+            doneCommit: "ae51902", doneNote: "Per-Track Play/Stop in AudioTrackStrip.tsx, component-local isPlaying via nextAudioTrackPlayState pure-fn + onAudioTrackEnded. 11 Tests. round-2026-06-14.",
+            createdAt: "2026-06-14T00:00:00.000Z",
+            createdBy: "coordinator",
+            title: "Audio-Track per-Channel Play/Stop-Button im Mixer (Bug Symptom 1)",
+            description: "User-Bug: Audio-File-Channel hat keinen eigenen Play-Button. ROOT CAUSE: AudioTrackStrip.tsx rendert keinen Play/Stop-Button; Audio-Track-Playback haengt nur an Global-Transport (AudioEngine.play -> playAllRegisteredAudioTracks, AudioEngine.ts:2876). Per-Track-Engine-API AudioEngine.playAudioTrack(id) (AudioEngine.ts:5047) + stopAudioTrack(id) (AudioEngine.ts:5280) EXISTIERT, ist aber an KEIN UI gebunden. Mute/Solo/Vol/Pan funktionieren bereits per Track (AudioTrackStrip.tsx:259-273).",
+            acceptance: [
+                "Play/Stop-Button pro Audio-Track, gewired an AudioEngine.playAudioTrack/stopAudioTrack",
+                "Per-Track isPlaying-State (aktuell nur global AudioEngine.isPlaying via MixerView.tsx:1380)",
+                "Test-First; pnpm check && pnpm test gruen",
+                "Isomorph: Browser-Fallback unveraendert"
+            ],
+            estimateEffort: "small",
+            note: "Engine-Arbeit bereits erledigt -- reine UI-Verdrahtung + per-track playing-state."
+        },
+        {
+            id: "TASK-246",
+            type: "feature",
+            priority: "high",
+            agent: "frontend",
+            status: "done",
+            doneCommit: "bd5ada8", resolvedAs: "Option B (Continuous-Clip-Lane)", doneNote: "NEU AudioClipLane.tsx + AudioClipLaneList (self-subscribes useAudioTrackStore) + audioLaneHelpers.ts (pure). Continuous Waveform-Lane je Audio-Track mit M/S + Play/Stop + Per-Lane-Playhead. Kein Step-Grid. KEINE neue IPC. 17 Tests. FOLLOWUP: Global-Transport startet Audio-Tracks nicht (playAllRegisteredAudioTracks nie auf transport:play).",
+            blockedBy: "PRODUKT-ENTSCHEIDUNG USER (Optionen A/B/C, siehe Coordinator-Report 2026-06-14)",
+            createdAt: "2026-06-14T00:00:00.000Z",
+            createdBy: "coordinator",
+            title: "Audio-Channel als eigene Sequencer-Lane (Bug Symptom 2)",
+            description: "User-Bug: Audio-File-Channel taucht nicht als eigene Lane im Sequencer auf. ROOT CAUSE (ARCHITEKTUR-LUECKE, kein Wiring-Gap): Sequencer rendert Lanes ausschliesslich aus pattern.parts.map (DrumMachine.tsx:4210-4247). Audio-Tracks leben in separatem Store (useAudioTrackStore); AudioTrackChannelData (AudioEngine.ts:324-465) hat KEIN steps/grid-Modell, das ChannelStrip benoetigt. Weder importierte NOCH aufgenommene Audio-Tracks erscheinen heute im Sequencer.",
+            acceptance: [
+                "OFFEN bis User Option waehlt: (A) One-Shot-Trigger mit eigener Step-Lane; (B) Continuous-Clip-Lane mit Mute/Solo + Play/Stop, keine Step-Lane; (C) beide Modi umschaltbar",
+                "Implementierung erst nach Entscheidung -- touch DrumMachine-Rendering + AudioTrackChannelData-Modell + Transport-Scheduling + Persistenz"
+            ],
+            estimateEffort: "large"
+        },
+        {
+            id: "TASK-247",
+            type: "refactor",
+            priority: "high",
+            agent: "frontend",
+            status: "done",
+            doneCommit: "d40bafb", doneNote: "usePlayheadStore.ts (useSyncExternalStore) + drumMachineMemo.ts Custom-Comparator + 5 memoisierte Playhead-Kind-Komponenten. DrumMachine rendert nicht mehr pro Step. 14 Tests. FOLLOWUP: App.tsx + useDrumMachineStore re-rendern noch pro Step (currentStep im geteilten Drum-Store).",
+            createdAt: "2026-06-14T00:00:00.000Z",
+            createdBy: "coordinator",
+            title: "DrumMachine Full-Rerender bei jedem Step waehrend Playback fixen",
+            description: "PERF #1 (hoechste ROI). dm.setCurrentStep (useTransport.ts:182) mutiert das geteilte dm-Prop-Objekt -> komplette 4495-Zeilen-DrumMachine re-rendert 8-16x/sek waehrend Playback (liest dm.currentStep an 2182, 2279, 4105, 4185). Fix: currentStep in dedizierte leichte Subscription (useSyncExternalStore-Selector) verschieben; Playhead nur in memoisierten Row/Step-Childs konsumieren. Keine Engine-Aenderung.",
+            acceptance: [
+                "DrumMachine re-rendert nicht mehr komplett pro Step",
+                "Playhead-Anzeige weiterhin korrekt",
+                "pnpm check && pnpm test gruen; kein Verhaltensregress"
+            ],
+            estimateEffort: "small-medium"
+        },
+        {
+            id: "TASK-248",
+            type: "refactor",
+            priority: "medium",
+            agent: "refactor",
+            status: "done",
+            doneCommit: "e0c2d8a", doneNote: "applyTheme/THEMES/ThemeId nach neutralem client/src/utils/themeApply.ts extrahiert (Blattmodul). useThemeStore+ThemeSettings+ThemeSwitcher+SettingsPanel umgebogen. applyTheme(any)->ThemeId. 7 Tests. Kein Cycle mehr.",
+            createdAt: "2026-06-14T00:00:00.000Z",
+            createdBy: "coordinator",
+            title: "Zirkulaeren Import useThemeStore <-> ThemeSettings aufloesen",
+            description: "Runtime-Value-Cycle: useThemeStore.ts:2 importiert applyTheme aus ThemeSettings; ThemeSettings.tsx:15 importiert zurueck. Fix: applyTheme/applyBaseTheme in neutrales utils/themeApply.ts extrahieren. Plus applyTheme(themeId: any) -> ThemeId-Union (useThemeStore.ts:189).",
+            acceptance: [
+                "Kein runtime-Import-Cycle mehr",
+                "applyTheme typisiert mit ThemeId statt any",
+                "Tests vor UND nach gruen"
+            ],
+            estimateEffort: "small"
+        },
+        {
+            id: "TASK-249",
+            type: "feature",
+            priority: "medium",
+            agent: "backend",
+            status: "done",
+            doneCommit: "fa93eaa", resolvedAs: "wire (implementiert)", doneNote: "Consumer war partiell (nur bpm+master-vol). Jetzt alle 6 Targets hoerbar: bpm/master-vol/vol:/pan:/send-rev:/send-dly:. Per-Step-Allokationen vermieden via compileAutomationLanes. NEU pure Exports + interpolate()-Tests. 19 Tests. KEINE neue IPC.",
+            createdAt: "2026-06-14T00:00:00.000Z",
+            createdBy: "coordinator",
+            title: "Automation-Lanes erreichen Audio nie -- entscheiden + fixen (Half-Dead-Feature)",
+            description: "useAutomationStore.interpolate() (useAutomationStore.ts:82) + AutomationView existieren, aber AudioEngine hat KEINEN Automation-Lane-Consumer -> Lanes werden authored aber nie abgespielt. Optionen: (1) automationGetter in _scheduleStep einwiren, ODER (2) Panel verstecken/WIP-flaggen. Store ohne Test. User-Entscheidung empfohlen.",
+            acceptance: [
+                "Entscheidung dokumentiert (wire vs hide)",
+                "Falls wire: Automation beeinflusst hoerbar Ziel-Param im Playback",
+                "useAutomationStore.interpolate() Unit-Test"
+            ],
+            estimateEffort: "medium"
+        },
+        {
+            id: "TASK-250",
+            type: "refactor",
+            priority: "low",
+            agent: "refactor",
+            status: "done",
+            doneCommit: null, resolvedAs: "bereits erfuellt (kein Diff)", doneNote: "68er-Audit-Count war stale. theme-class-purity.test.ts grün 289/289, 0 in-scope-Verletzungen. Vom Coordinator verifiziert.",
+            createdAt: "2026-06-14T00:00:00.000Z",
+            createdBy: "coordinator",
+            title: "68 hardcodierte Tailwind-Farben durch ss-Tokens ersetzen",
+            description: "68 Vorkommen in 25 Files verletzen die Token-Regel (theme-class-purity.test.ts). Worst: DrumMachine.tsx(15), MacroPanel.tsx(7), MuteSoloGroupPanel.tsx(7), AudioWorkbench.tsx(8). Mechanischer Replace mit semantischen Klassen. Breiterer Sweep inkl bg-black/text-white = 113 in 49 Files -- Scope vorab mit User klaeren.",
+            acceptance: [
+                "theme-class-purity.test.ts gruen",
+                "Kein visueller Regress in den 6 Built-In-Themes",
+                "pnpm check && pnpm test gruen"
+            ],
+            estimateEffort: "small-medium"
         }
     ],
 
