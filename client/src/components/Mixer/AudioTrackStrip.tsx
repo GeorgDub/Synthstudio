@@ -19,7 +19,7 @@
  * `useElectron()`-Hook.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { X, ZoomIn } from "lucide-react";
+import { X, ZoomIn, Play, Square } from "lucide-react";
 import { AudioEngine } from "@/audio/AudioEngine";
 import {
   updateAudioTrack,
@@ -114,9 +114,19 @@ export function AudioTrackStrip({
   const [draftName, setDraftName] = useState(track.name);
   const [pos01, setPos01] = useState(0);
 
+  // TASK-245: Per-Track Play/Stop. Component-local (kein Store) — Playback ist
+  // ephemer und darf DrumMachine/Global-Transport nicht berühren.
+  const [playing, setPlaying] = useState(false);
+
+  // Effektiver Playing-Zustand für Playhead/Waveform: per-Track-Button ODER
+  // Global-Transport. So bleibt der Playhead korrekt, egal welcher Pfad spielt.
+  const effectivePlaying = playing || isPlaying;
+
   // v3.67.0: Zoom-Edit-Mode — toggle between mini-WaveformDisplay and ZoomableWaveform.
   const [zoomEditOpen, setZoomEditOpen] = useState(false);
   const [editorCursorSample, setEditorCursorSample] = useState<number | null>(null);
+
+  const broken = runtime.broken === true;
 
   // Playhead-Position via Engine-Callback
   useEffect(() => {
@@ -126,10 +136,19 @@ export function AudioTrackStrip({
     return unsub;
   }, [track.id]);
 
-  // Wenn nicht aktiv, Playhead resetten
+  // Wenn nicht aktiv (weder per-Track noch global), Playhead resetten
   useEffect(() => {
-    if (!isPlaying) setPos01(0);
-  }, [isPlaying]);
+    if (!effectivePlaying) setPos01(0);
+  }, [effectivePlaying]);
+
+  // TASK-245: onEnded-Listener — wenn der Track natürlich zu Ende läuft
+  // (kein Loop), per-Track `playing` zurücksetzen. Idempotent.
+  useEffect(() => {
+    const unsub = AudioEngine.onAudioTrackEnded(track.id, () => {
+      setPlaying((p) => nextAudioTrackPlayState(p, "ended"));
+    });
+    return unsub;
+  }, [track.id]);
 
   // Draft-Name resync wenn extern geändert
   useEffect(() => {
@@ -271,6 +290,22 @@ export function AudioTrackStrip({
     setAudioTrackSoloed(track.id, next, opts.shiftKey);
     AudioEngine.setAudioTrackSolo(track.id, next);
   }, [track.id, track.soloed]);
+
+  // ── Play / Stop (TASK-245) ───────────────────────────────────────────────
+  // Per-Track-Playback gewired an die (isomorphe) Engine-API. Toggle-Verhalten:
+  // läuft der Track → stoppen, sonst → starten. broken-Tracks bleiben inert.
+  const handlePlayStop = useCallback(() => {
+    if (broken) return;
+    // Side-Effects außerhalb des setState-Updaters — React-19-StrictMode
+    // double-invoke't Updater im Dev, würde sonst playAudioTrack 2× feuern.
+    const next = nextAudioTrackPlayState(playing, "toggle", { broken });
+    if (next) {
+      AudioEngine.playAudioTrack(track.id);
+    } else {
+      AudioEngine.stopAudioTrack(track.id);
+    }
+    setPlaying(next);
+  }, [track.id, broken, playing]);
 
   // ── Sync-Mode ──────────────────────────────────────────────────────────────
   const handleSyncMode = useCallback(
@@ -428,7 +463,6 @@ export function AudioTrackStrip({
     peaksArr.current = Array.from(runtime.peaks);
   }
 
-  const broken = runtime.broken === true;
   const labelColor = broken
     ? "text-accent-danger"
     : track.muted
@@ -509,6 +543,28 @@ export function AudioTrackStrip({
             {track.name}
           </span>
         )}
+        {/* ── Play/Stop (TASK-245) ──────────────────────────────────────── */}
+        <button
+          type="button"
+          data-testid={`audio-track-play-${track.id}`}
+          onClick={(e) => {
+            e.stopPropagation();
+            handlePlayStop();
+          }}
+          disabled={broken}
+          aria-label={playing ? "Stop" : "Play"}
+          aria-pressed={playing}
+          title={playing ? "Stop" : "Play (nur dieser Track)"}
+          className={[
+            "w-5 h-5 flex items-center justify-center rounded transition-colors",
+            "disabled:opacity-40 disabled:cursor-not-allowed",
+            playing
+              ? "bg-accent-primary text-text-primary"
+              : "bg-bg-elevated text-text-dim hover:text-accent-primary",
+          ].join(" ")}
+        >
+          {playing ? <Square size={10} /> : <Play size={10} />}
+        </button>
         <button
           type="button"
           onClick={(e) => {
@@ -529,7 +585,7 @@ export function AudioTrackStrip({
           peaks={peaksArr.current}
           duration={runtime.durationSec ?? 0}
           playbackPosition={pos01}
-          isPlaying={isPlaying}
+          isPlaying={effectivePlaying}
           onSeek={handleSeek}
           height={48}
           zoomEnabled={false}
@@ -983,6 +1039,45 @@ export function AudioTrackStrip({
  */
 export function computePeaksFromBuffer(buffer: AudioBuffer, numPeaks = 200): Float32Array {
   return downsamplePeaks(buffer, numPeaks);
+}
+
+// ─── Per-Track Play/Stop State-Machine (TASK-245) ─────────────────────────────
+
+/** Mögliche Übergänge des component-local `playing`-Flags eines Audio-Tracks. */
+export type AudioTrackPlayAction = "play" | "stop" | "toggle" | "ended";
+
+/**
+ * Pure Transition-Funktion für den per-Track Play/Stop-State.
+ *
+ * Component-local State (kein Store, keine Persistence — Playback ist
+ * ephemer). Wird vom Play/Stop-Button + dem `onAudioTrackEnded`-Listener
+ * gefüttert.
+ *
+ *  - "play"   → immer true (Replay-idempotent: play während playing bleibt true)
+ *  - "stop"   → immer false (idempotent: stop während stopped bleibt false)
+ *  - "toggle" → invertiert den aktuellen Zustand
+ *  - "ended"  → false (Track ist natürlich zu Ende gelaufen)
+ *
+ * `broken` (Datei nicht gefunden) verhindert jeden Start: playAudioTrack
+ * no-op't ohne geladenen Buffer, daher bleibt der State konservativ false.
+ */
+export function nextAudioTrackPlayState(
+  current: boolean,
+  action: AudioTrackPlayAction,
+  opts?: { broken?: boolean },
+): boolean {
+  if (opts?.broken) return false;
+  switch (action) {
+    case "play":
+      return true;
+    case "stop":
+    case "ended":
+      return false;
+    case "toggle":
+      return !current;
+    default:
+      return current;
+  }
 }
 
 // ─── Sub-Component: AudioTrackZoomEditor (v3.67.0 + v3.70.0 loop-engine) ────
