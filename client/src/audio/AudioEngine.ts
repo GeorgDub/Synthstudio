@@ -31,10 +31,12 @@ import {
   crossfadeGain as crossfadeGainFn,
 } from "../utils/patternCrossfade";
 import { type ArpOutputMode, type ArpStep, arpStepAt, arpMidiToFreq } from "../utils/arpeggiator";
-// TASK-252-FOLLOWUP: kanonische reine Positions-Formel (geteilt mit rAF-Tick +
-// getAudioTrackPosition). audioLaneHelpers importiert nur den TYP von hier
-// (erased at runtime) → kein Laufzeit-Zyklus.
-import { computeAudioTrackPos01 } from "../components/DrumMachine/audioLaneHelpers";
+// TASK-252-FOLLOWUP / TASK-258: kanonische reine Positions-Formel (geteilt mit
+// rAF-Tick + getAudioTrackPosition). Liegt jetzt im neutralen Blattmodul
+// utils/audioLanePosition — die Audio-Schicht greift NICHT mehr in components/
+// (Schicht-Inversion aufgelöst). audioLaneHelpers re-exportiert das Symbol für
+// die Komponenten + Tests.
+import { computeAudioTrackPos01 } from "../utils/audioLanePosition";
 import { MidiClockOut } from "./MidiClockOut";
 import { MidiNoteOut, type MidiPartConfig } from "./MidiNoteOut";
 import { MidiClickOut, type MidiClickConfig } from "./MidiClickOut";
