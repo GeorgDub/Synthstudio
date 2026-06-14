@@ -581,3 +581,25 @@ describe("setAllMasterFx — Restore-Path", () => {
     expect(storeModule.getMasterReverb().decay).toBe(2.0);
   });
 });
+
+// ─── (7) isValidMasterFxSnapshot Type-Guard (TASK-256 — war ungetestet) ───────
+
+describe("isValidMasterFxSnapshot — Project-Restore Type-Guard", () => {
+  it("non-object / null / undefined → false", () => {
+    expect(storeModule.isValidMasterFxSnapshot(null)).toBe(false);
+    expect(storeModule.isValidMasterFxSnapshot(undefined)).toBe(false);
+    expect(storeModule.isValidMasterFxSnapshot("x")).toBe(false);
+    expect(storeModule.isValidMasterFxSnapshot(42)).toBe(false);
+  });
+
+  it("leeres Objekt → false (kein einziges FX-Sub-Feld)", () => {
+    expect(storeModule.isValidMasterFxSnapshot({})).toBe(false);
+  });
+
+  it("Objekt mit mind. einem FX-Sub-Feld (reverb/delay/eq/limiter) → true", () => {
+    expect(storeModule.isValidMasterFxSnapshot({ reverb: {} })).toBe(true);
+    expect(storeModule.isValidMasterFxSnapshot({ delay: {} })).toBe(true);
+    expect(storeModule.isValidMasterFxSnapshot({ eq: {} })).toBe(true);
+    expect(storeModule.isValidMasterFxSnapshot({ limiter: {} })).toBe(true);
+  });
+});
