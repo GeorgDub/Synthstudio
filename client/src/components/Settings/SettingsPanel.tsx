@@ -58,8 +58,8 @@ import {
   applyTheme as applyBaseThemeFromStore,
 } from "@/store/useThemeStore";
 import {
-  THEMES, applyTheme, loadSavedTheme, type ThemeId,
-} from "./ThemeSettings";
+  THEMES, loadSavedTheme, type ThemeId,
+} from "@/utils/themeApply";
 import { parseMidiLayoutJson, checkPartIdsExist } from "@/utils/midiLayoutImport";
 import {
   usePatchStore,

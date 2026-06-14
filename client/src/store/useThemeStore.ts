@@ -1,5 +1,7 @@
 ﻿import { useEffect, useReducer } from "react";
-import { applyTheme as applyBaseTheme } from "@/components/Settings/ThemeSettings";
+// TASK-248: Base-Apply aus dem neutralen Modul statt aus ThemeSettings.tsx
+// importieren — bricht den Runtime-Value-Cycle useThemeStore <-> ThemeSettings.
+import { applyTheme as applyBaseTheme, type ThemeId } from "@/utils/themeApply";
 
 export interface CustomTheme {
   id: string;
@@ -186,7 +188,7 @@ export function applyCustomTheme(id: string | null): void {
 }
 
 // When a base theme is applied, deactivate any custom theme
-export function applyTheme(themeId: any) {
+export function applyTheme(themeId: ThemeId) {
     applyCustomTheme(null);
     applyBaseTheme(themeId);
 }

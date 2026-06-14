@@ -1,5 +1,5 @@
 import { useState, useCallback } from "react";
-import { applyTheme, loadSavedTheme, type ThemeId } from "../Settings/ThemeSettings";
+import { applyTheme, loadSavedTheme, type ThemeId } from "@/utils/themeApply";
 
 const THEME_PREVIEWS: Record<ThemeId, { primary: string; secondary: string; bg: string }> = {
   dark:         { primary: "#f59e0b", secondary: "#06b6d4", bg: "#1e1e2a" },

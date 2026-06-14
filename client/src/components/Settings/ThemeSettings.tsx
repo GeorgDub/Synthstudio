@@ -16,106 +16,18 @@ import { useThemeStore, applyCustomTheme, deleteCustomTheme, applyTheme as apply
 import { CustomThemeCreator } from "./CustomThemeCreator";
 import { useApiSettingsStore, setApiKey, setAiModel } from "@/store/useApiSettingsStore";
 import { serializeTheme, parseTheme, defaultThemeFilename } from "@/utils/themeImportExport";
+// TASK-248: Base-Theme-Definitionen + reine Apply/Persistenz-Logik leben jetzt
+// im neutralen Modul themeApply.ts (löst den Runtime-Cycle mit useThemeStore).
+// Re-Export für Rückwärtskompatibilität bestehender Importeure.
+import { applyTheme, loadSavedTheme, THEMES, type ThemeId, type ThemeDef } from "@/utils/themeApply";
 
-// ─── Theme-Definition ─────────────────────────────────────────────────────────
-
-export type ThemeId = "dark" | "neon" | "analog" | "purple" | "warm" | "oled" | "daylight" | "paper" | "deuteranopia" | "protanopia";
-
-interface ThemeDef {
-  id: ThemeId;
-  name: string;
-  description: string;
-  /** Vorschau-Farben [hintergrund, akzent1, akzent2] */
-  preview: [string, string, string];
-}
-
-export const THEMES: ThemeDef[] = [
-  {
-    id: "dark",
-    name: "DarkStudio",
-    description: "Standard – Bernstein + Cyan",
-    preview: ["#121218", "#f59e0b", "#06b6d4"],
-  },
-  {
-    id: "neon",
-    name: "NeonCircuit",
-    description: "Techno – Cyan + Magenta",
-    preview: ["#0a0a0f", "#00fff5", "#ff00ff"],
-  },
-  {
-    id: "analog",
-    name: "AnalogHardware",
-    description: "Warm – Orange + Cyan",
-    preview: ["#1a1a2e", "#ff6b35", "#00f5d4"],
-  },
-  {
-    id: "purple",
-    name: "Nacht",
-    description: "Studio-Feeling – Dunkles Lila",
-    preview: ["#0a080f", "#a855f7", "#7c3aed"],
-  },
-  {
-    id: "warm",
-    name: "Sonnenuntergang",
-    description: "Bernstein / Terracotta Akzent",
-    preview: ["#0f0a08", "#f97316", "#fbbf24"],
-  },
-  {
-    id: "oled",
-    name: "OLED-Schwarz",
-    description: "Reines Schwarz, maximaler Kontrast",
-    preview: ["#000000", "#06b6d4", "#0284c7"],
-  },
-  {
-    id: "daylight",
-    name: "Daylight",
-    description: "Klares, neutrales Hell-Theme",
-    preview: ["#f8fafc", "#2563eb", "#db2777"],
-  },
-  {
-    id: "paper",
-    name: "Paper",
-    description: "Warmes, cremefarbenes Hell-Theme",
-    preview: ["#fdfdf8", "#d97706", "#059669"],
-  },
-  {
-    id: "deuteranopia",
-    name: "Deuteranopia",
-    description: "Farbenblind-gerecht: Okabe-Ito Palette (dunkel)",
-    preview: ["#0a0a12", "#0072b2", "#56b4e9"],
-  },
-  {
-    id: "protanopia",
-    name: "Protanopia",
-    description: "Farbenblind-gerecht: Hoher Kontrast (hell)",
-    preview: ["#f5f5f5", "#0072b2", "#009e73"],
-  },
-];
+// ─── Re-Exports (Back-Compat) ──────────────────────────────────────────────────
+export { applyTheme, loadSavedTheme, THEMES };
+export type { ThemeId, ThemeDef };
 
 const STORAGE_KEY = "ss-theme";
 
 // ─── Theme-Hilfsfunktionen ────────────────────────────────────────────────────
-
-export function applyTheme(theme: ThemeId): void {
-  if (theme === "dark") {
-    document.documentElement.removeAttribute("data-theme");
-  } else {
-    document.documentElement.setAttribute("data-theme", theme);
-  }
-  // MIG-3C: Browser-Mode cross-window DOM-Sync
-  void import("@/utils/popoutThemeSync").then(m => m.broadcastThemeToPopouts());
-  // MIG-3E: Electron-Mode — main re-syncht alle offenen popout-BrowserWindows
-  try {
-    (window as Window & { electronAPI?: { notifyThemeChanged?: () => void } })
-      .electronAPI?.notifyThemeChanged?.();
-  } catch { /* not in Electron */ }
-}
-
-export function loadSavedTheme(): ThemeId {
-  const saved = localStorage.getItem(STORAGE_KEY) as ThemeId | null;
-  if (saved && THEMES.some(t => t.id === saved)) return saved;
-  return "dark";
-}
 
 export function initTheme(): void {
     const customThemeStore = JSON.parse(localStorage.getItem("synthstudio:custom-themes:v1") || "{}");
