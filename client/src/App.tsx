@@ -285,7 +285,7 @@ import {
 import { setMyRole, setParticipantRole } from "@/store/useSessionStore";
 import { useLaunchpad, isGridDevice } from "@/hooks/useLaunchpad";
 import { useBpmDetection, autoTagFromFilename } from "@/hooks/useBpmDetection";
-import { getMacros, applyMacroBindings, setMacroValue, resetMacros, useMacroStore } from "@/store/useMacroStore";
+import { getMacros, applyMacroBindings, setMacroValue, resetMacros, useMacroValues } from "@/store/useMacroStore";
 import {
   getAllAudioTracks,
   loadAudioTracks,
@@ -607,7 +607,9 @@ export default function App() {
   // v2.26: OSC-Out-Config (BPM-Sync etc.) — Custom-Observer-Hook
   const oscOutConfig = useOscOutConfig();
   // v2.28: Reactive macro values für OSC-Out (separate vom getMacros()-Pull-Pfad)
-  const { macros: macroSnapshot } = useMacroStore();
+  // TASK-253: Selektor-Subscription — App.tsx braucht nur die Werte, daher kein
+  // Full-Rerender mehr bei Label-/Binding-/Mode-Änderungen (nur bei Wert-Change).
+  const macroValues = useMacroValues();
   // MIG-2B Feature-Flag: aktiviert den Dockview-Workspace für die migrierten Tabs.
   const workspaceMode = useWorkspaceMode();
   // ── Kollaborations-Session (für Sync) ─────────────────────────────────────────
@@ -2236,7 +2238,7 @@ export default function App() {
 
   const prevMacroPerfRef = useRef<number[]>([]);
   useEffect(() => {
-    const values = macroSnapshot.map(m => m.value);
+    const values = macroValues;
     for (let i = 0; i < values.length; i++) {
       const prev = prevMacroPerfRef.current[i];
       if (prev !== undefined && prev !== values[i]) {
@@ -2246,7 +2248,7 @@ export default function App() {
       }
     }
     prevMacroPerfRef.current = values;
-  }, [macroSnapshot]);
+  }, [macroValues]);
 
   // v2.30: Perf-Replay-Consumers — verarbeitet die "perf:replay"-Events die
   // PerformanceRecorderBadge.handlePlay() für jeden aufgezeichneten Event
@@ -2653,7 +2655,7 @@ export default function App() {
       volume: p.volume ?? 1,
     })) ?? null,
     activePatternId: dm.activePatternId,
-    macroValues: macroSnapshot.map(m => m.value),
+    macroValues: macroValues,
   });
 
   // v1.92 + v2.34: midi:pattern wird jetzt im useMidiEventBridge-Hook

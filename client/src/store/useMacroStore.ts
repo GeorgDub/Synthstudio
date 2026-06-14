@@ -13,7 +13,7 @@
  *  "lfo-rate"      → LFO-Rate eines Synth-Parts (partId)
  *  "lfo-depth"     → LFO-Tiefe eines Synth-Parts (partId)
  */
-import { useEffect, useReducer } from "react";
+import { useEffect, useReducer, useRef, useSyncExternalStore } from "react";
 
 const STORAGE_KEY = "ss-macros:v1";
 export const MACRO_COUNT = 8;
@@ -379,6 +379,15 @@ export function triggerMacroButtonRelease(macroIndex: number): void {
 
 export function getMacros(): Macro[] { return _macros; }
 
+/**
+ * Abonniert Macro-Änderungen für `useSyncExternalStore`. Gibt Unsubscribe zurück.
+ * (TASK-253: Foundation für Selektor-Subscriptions.)
+ */
+export function subscribeMacros(listener: Listener): () => void {
+  _listeners.add(listener);
+  return () => { _listeners.delete(listener); };
+}
+
 export function useMacroStore(): { macros: Macro[] } {
   const [, rerender] = useReducer((x: number) => x + 1, 0);
   useEffect(() => {
@@ -386,6 +395,55 @@ export function useMacroStore(): { macros: Macro[] } {
     return () => { _listeners.delete(rerender); };
   }, []);
   return { macros: _macros };
+}
+
+/**
+ * TASK-253 — Selektor-Subscription (additiv, Vorlage: usePlayheadStore).
+ *
+ * Abonniert nur eine abgeleitete Scheibe (`selector(_macros)`) und re-rendert
+ * den aufrufenden Consumer NUR wenn sich diese Scheibe laut `isEqual` ändert.
+ * Hintergrund: `setMacroValue` feuert pro MIDI-CC / Slider-Drag (kein Diff-Gate)
+ * und der ~5000-Zeilen-App.tsx-Tree abonnierte bisher das komplette `macros`-
+ * Array via `useMacroStore()` → Full-Rerender pro Macro-Tick.
+ *
+ * `useSyncExternalStore` vergleicht Snapshots mit `Object.is`. Damit ein
+ * Objekt-/Array-Slice (z.B. `number[]`) bei Gleichheit den Bail-out auslöst,
+ * cachen wir den letzten Wert und geben bei `isEqual===true` die STABILE
+ * Referenz zurück. Skalare Selektoren funktionieren ohne `isEqual` (Object.is).
+ */
+export function useMacroSelector<T>(
+  selector: (macros: Macro[]) => T,
+  isEqual: (a: T, b: T) => boolean = Object.is,
+): T {
+  const cacheRef = useRef<{ value: T } | null>(null);
+  const getSnapshot = (): T => {
+    const next = selector(_macros);
+    const cache = cacheRef.current;
+    if (cache !== null && isEqual(cache.value, next)) {
+      return cache.value; // stabile Referenz → Object.is-Bail-out
+    }
+    cacheRef.current = { value: next };
+    return next;
+  };
+  return useSyncExternalStore(subscribeMacros, getSnapshot, getSnapshot);
+}
+
+/** Flacher Array-Vergleich (für `number[]`-Slices). */
+function shallowArrayEqual(a: readonly number[], b: readonly number[]): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+
+/**
+ * TASK-253 — Convenience-Selektor: nur die 8 Macro-Werte (`number[]`).
+ * App.tsx braucht ausschließlich die Werte (nicht Labels/Bindings/Mode), daher
+ * re-rendert App.tsx jetzt nur noch wenn sich ein Wert tatsächlich ändert —
+ * nicht bei jedem Label-Edit oder Binding-Change.
+ */
+export function useMacroValues(): number[] {
+  return useMacroSelector((macros) => macros.map((m) => m.value), shallowArrayEqual);
 }
 
 // ─── Routing-Helfer ───────────────────────────────────────────────────────────

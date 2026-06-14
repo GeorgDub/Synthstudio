@@ -1,4 +1,4 @@
-import { useEffect, useReducer } from "react";
+import { useEffect, useReducer, useRef, useSyncExternalStore } from "react";
 import { type ArpMode, type ArpOctaves, type ArpOutputMode, type ArpStep, type ArpVelocityPattern, applyArp } from "../utils/arpeggiator";
 
 interface ArpState {
@@ -73,6 +73,15 @@ export function getArpState(): ArpState {
   return _state;
 }
 
+/**
+ * Abonniert Arp-State-Änderungen für `useSyncExternalStore`. Unsubscribe via
+ * Rückgabe. (TASK-253: Foundation für Selektor-Subscriptions.)
+ */
+export function subscribeArp(listener: Listener): () => void {
+  _listeners.add(listener);
+  return () => { _listeners.delete(listener); };
+}
+
 export function useArpStore(): ArpState {
   const [, rerender] = useReducer((x: number) => x + 1, 0);
   useEffect(() => {
@@ -80,4 +89,43 @@ export function useArpStore(): ArpState {
     return () => { _listeners.delete(rerender); };
   }, []);
   return _state;
+}
+
+/**
+ * TASK-253 — Selektor-Subscription (additiv, Vorlage: usePlayheadStore).
+ *
+ * Abonniert nur `selector(_state)` und re-rendert den Consumer NUR wenn sich
+ * diese Scheibe laut `isEqual` ändert. Hintergrund: Die 4495-Zeilen-DrumMachine
+ * abonniert via `useArpStore()` das KOMPLETTE Arp-State-Objekt, liest aber nur
+ * `arp.enabled` — d.h. jeder `setArpNotes`/`setArpMode`/… (u.a. live gehaltene
+ * Noten) löste bisher einen Full-Rerender der DrumMachine aus.
+ *
+ * `useSyncExternalStore` vergleicht Snapshots mit `Object.is`. Für Objekt-Slices
+ * cachen wir den letzten Wert und geben bei Gleichheit die stabile Referenz
+ * zurück; skalare Selektoren (z.B. `enabled: boolean`) brauchen kein `isEqual`.
+ */
+export function useArpSelector<T>(
+  selector: (state: ArpState) => T,
+  isEqual: (a: T, b: T) => boolean = Object.is,
+): T {
+  const cacheRef = useRef<{ value: T } | null>(null);
+  const getSnapshot = (): T => {
+    const next = selector(_state);
+    const cache = cacheRef.current;
+    if (cache !== null && isEqual(cache.value, next)) {
+      return cache.value; // stabile Referenz → Object.is-Bail-out
+    }
+    cacheRef.current = { value: next };
+    return next;
+  };
+  return useSyncExternalStore(subscribeArp, getSnapshot, getSnapshot);
+}
+
+/**
+ * TASK-253 — Convenience-Selektor: nur `enabled` (skalar). Für Consumer wie die
+ * DrumMachine-Toolbar, die nur den An/Aus-Zustand brauchen — kein Rerender mehr
+ * bei Mode-/Notes-/Octaves-Änderungen.
+ */
+export function useArpEnabled(): boolean {
+  return useArpSelector((state) => state.enabled);
 }
