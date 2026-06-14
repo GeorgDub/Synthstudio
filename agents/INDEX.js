@@ -298,6 +298,12 @@ const INDEX = {
   //     a new bare-path entry while old version-suffixed ones remain
   //     is the explicit transition path.
   files: {
+    // ─── TASK-260 (builder) — Agent-System CommonJS-Loader-Fix ──
+    "agents/package.json": {
+      role:     "TASK-260-Fix: {\"type\":\"commonjs\"}. Ueberschreibt den Parent-package.json type=module fuer das gesamte agents/-Verzeichnis, damit agents/INDEX.js (und kuenftige agents/*.js) wieder als CommonJS aufgeloest werden. Ohne diese Datei interpretiert node INDEX.js als ESM -> module.exports = No-Op -> require('./agents/INDEX.js') liefert leeres null-proto-Namespace-Objekt (0 keys) -> gesamtes Agent-State-System tot. NICHT loeschen. Verifikation: node -e \"console.log(Object.keys(require('./agents/INDEX.js')))\" muss 13 keys inkl. project + openTasks liefern.",
+      lastSeen: "2026-06-15T01:30:00.000Z",
+      ownedBy:  "builder"
+    },
     // ─── v3.229 Pure-Helpers (refactor) — Pattern-Comparable ──
     "client/src/utils/patternComparable.ts": {
       role:     "Pure-Helper fuer composite Pattern-vs-Pattern Vergleich. Kombiniert Strukturmetrik (zirkulaere Cross-Correlation auf active-Flags), Density-Aehnlichkeit und Flow-Richtung zu einem ComparisonResult mit qualitativer Klassifikation. Public API: comparePatterns(a: CompareStepLike[], b: CompareStepLike[]) -> ComparisonResult { overallSimilarity, structuralSimilarity, densitySimilarity, flowSimilarity, bestAlignment, classification: 'identical'|'very-similar'|'related'|'different' } UND Sub-Helpers structuralCompare(a,b):number + densityCompare(a,b):number. CompareStepLike = { active:boolean, velocity?:number (reserviert) }. Algorithmus: (1) truncate beide auf min(a.length,b.length); (2) structuralSimilarity via findBestStructuralAlignment (zirkulaerer Right-Shift Loop rotated[i]=b[(i-k+n)%n], strict > Tie-Break -> k=0 gewinnt bei identical); (3) densitySimilarity = clamp01(1 - |density(a)-density(b)|); (4) flowSimilarity per Halb-Density-Sign-Vergleich: dirA = sign(secondHalfDensity_a - firstHalfDensity_a), dirB analog, flowSimilarity = dirA===dirB ? 1.0 : 0.0; (5) overallSimilarity = clamp01(0.5*structural + 0.3*density + 0.2*flow); (6) classify per STRICT >= Thresholds: >=0.95 identical, >=0.7 very-similar, >=0.4 related, sonst different. 8 Pinned Choices via Advisor-Pre-Check: #1 structuralCompare liefert nur similarity:number, bestAlignment fliesst aus interner findBestStructuralAlignment in comparePatterns (keine Doppel-Iteration). #2 Step-Match-Definition NUR active-Flag (velocity ignored in v3.229, reserviert). #3 flowSimilarity exakt 1.0 oder 0.0 per Sign-Pair Vergleich (kein NaN). #4 Verschiedene Laengen -> truncate auf min-Length VOR jeder Analyse. #5 Empty-Input -> alle Felder 0, classification 'different'. #6 n=1 truncated -> second-half leer -> flowSimilarity = 1.0 (degeneriert beide flat), NICHT NaN. #7 Classification STRICT >= boundary-getestet bei 0.95/0.7/0.4. #8 Tie-Break im Structural-Loop STRICT > damit k=0 gewinnt bei identical (bestAlignment === 0 nicht n-1). Right-Rotation-Konvention identisch zu patternSequenceCorrelation v3.204. ABGRENZUNG: patternSequenceCorrelation v3.204 macht denselben Cross-Correlation-Loop auf rohem boolean[] - patternComparable arbeitet auf CompareStepLike[] und liefert composite Mehr-Achsen-Result. Duplicate-by-design analog sampleExciter/sampleDeesser-Pattern; Konvergenz Refactor-Owner-Thema. patternMoodVector v3.227 berechnet density-aehnliche Features fuer 5-axis Mood - kein direkter Overlap. Foundation fuer Pattern-Compare-Modal ('wie aehnlich sind diese Patterns?'), Pattern-Library-Search-Filter ('finde Patterns die >=0.7 aehnlich sind'), KI-Generator-Diversity-Filter ('verwerfe Patterns die >=0.95 zur aktuellen sind'), Arrangement-Engine ('finde related variation als B-Section'). ~287 LOC inkl. ausfuehrlicher JSDoc mit Pinned-Choices-Block.",
@@ -1048,8 +1054,8 @@ const INDEX = {
       ownedBy:  "frontend"
     },
     "client/src/store/useArpStore.ts": {
-      role:     "Arpeggiator-Settings (setArpEnabled/Mode/Octaves/Notes/StepCount + getArpSteps). Custom-Observer, in-memory (kein localStorage).",
-      lastSeen: "2026-05-19T16:55:48.843Z",
+      role:     "Arpeggiator-Settings (setArpEnabled/Mode/Octaves/Notes/StepCount + getArpSteps). Custom-Observer, in-memory (kein localStorage). TASK-253: additiv useArpSelector<T>(selector,isEqual?) + useArpEnabled():boolean (skalar) + subscribeArp — Selektor-Subscription via useSyncExternalStore (Vorlage usePlayheadStore); DrumMachine.tsx liest nur enabled.",
+      lastSeen: "2026-06-15T01:25:00.000Z",
       ownedBy:  "frontend"
     },
     "client/src/store/useAutomationStore.ts": {
@@ -3503,8 +3509,8 @@ const INDEX = {
       ownedBy:  "frontend"
     },
     "client/src/App.tsx": {
-      role:     "Root component, tab routing (F1-F6), AudioEngine.onPosition() automation callback. v1.22.0 (TASK-117): Macro-Setter-Bag um setLfoRate/setLfoDepth erweitert — onUnhandled-Warn-Spezialfall entfernt (jetzt generisch). v3.96.0: NEU Tempo-Map Wire-Up — useEffect mountet AudioEngine.setTempoMapResolver((atBar) => getCurrentBpm(getTempoMapState().events, atBar)); restoreProject lädt data.tempoMap via setAllTempoEvents wenn !== undefined (Pre-v1.35-Compat). v3.144+: useConfirm-Migration — KorgTemplatePicker-onSelect verwendet useConfirm() statt window.confirm() für destructiven Template-Override.",
-      lastSeen: "2026-05-19T21:00:00.000Z",
+      role:     "Root component, tab routing (F1-F6), AudioEngine.onPosition() automation callback. v1.22.0 (TASK-117): Macro-Setter-Bag um setLfoRate/setLfoDepth erweitert — onUnhandled-Warn-Spezialfall entfernt (jetzt generisch). v3.96.0: NEU Tempo-Map Wire-Up — useEffect mountet AudioEngine.setTempoMapResolver((atBar) => getCurrentBpm(getTempoMapState().events, atBar)); restoreProject lädt data.tempoMap via setAllTempoEvents wenn !== undefined (Pre-v1.35-Compat). v3.144+: useConfirm-Migration — KorgTemplatePicker-onSelect verwendet useConfirm() statt window.confirm() für destructiven Template-Override. TASK-253: useMacroStore()->useMacroValues() migriert (Selektor-Subscription; App rerendert nur noch bei Macro-Wert-Change, nicht bei Label/Binding/Mode).",
+      lastSeen: "2026-06-15T01:25:00.000Z",
       ownedBy:  "frontend"
     },
     "client/src/components/Settings/SettingsPanel.tsx": {
@@ -3538,8 +3544,13 @@ const INDEX = {
       ownedBy:  "frontend"
     },
     "client/src/audio/AudioEngine.ts": {
-      role:     "Web Audio API wrapper — synthesis, FX chains, playback scheduling. v1.22.0 (TASK-117): static SynthEngine-Import + lazy _synthEngine-Instanz + setPartLfoRate/Depth + getPartLfoRate/Depth Delegates für Macro-LFO-Routing.",
-      lastSeen: "2026-05-12T23:00:00.000Z",
+      role:     "Web Audio API wrapper — synthesis, FX chains, playback scheduling. v1.22.0 (TASK-117): static SynthEngine-Import + lazy _synthEngine-Instanz + setPartLfoRate/Depth + getPartLfoRate/Depth Delegates für Macro-LFO-Routing. TASK-258: importiert computeAudioTrackPos01 jetzt aus ../utils/audioLanePosition (statt components/), Schicht-Inversion behoben.",
+      lastSeen: "2026-06-15T01:12:00.000Z",
+      ownedBy:  "backend"
+    },
+    "client/src/utils/audioLanePosition.ts": {
+      role:     "TASK-258: neutrales Blattmodul — reine Positions-Formel computeAudioTrackPos01 + Typ AudioTrackPosInput (kein React/AudioContext/Store). Aus components/DrumMachine/audioLaneHelpers.ts extrahiert um Schicht-Inversion audio->components zu beheben. Konsumiert von AudioEngine + (via Re-Export) AudioClipLane + Tests.",
+      lastSeen: "2026-06-15T01:12:00.000Z",
       ownedBy:  "backend"
     },
     "client/src/audio/SynthEngine.ts": {
@@ -3583,8 +3594,8 @@ const INDEX = {
       ownedBy:  "frontend"
     },
     "client/src/store/useMacroStore.ts": {
-      role:     "8 Macro-Knöpfe (knob/button-Mode), Audio-Routing via applyMacroBindings, Script/Pad-Trigger via macro:button:trigger Event. v1.22.0 (TASK-118): MacroTriggerMode='edge'|'hold' (vorher type-only edge), neue Public-API setMacroTriggerMode + triggerMacroButtonRelease. triggerMacroButton-Event.detail enthält jetzt triggerMode für App.tsx-Loop-Entscheidung. Migration: alte/invalide triggerMode → 'edge'.",
-      lastSeen: "2026-05-12T23:45:00.000Z",
+      role:     "8 Macro-Knöpfe (knob/button-Mode), Audio-Routing via applyMacroBindings, Script/Pad-Trigger via macro:button:trigger Event. v1.22.0 (TASK-118): MacroTriggerMode='edge'|'hold' (vorher type-only edge), neue Public-API setMacroTriggerMode + triggerMacroButtonRelease. triggerMacroButton-Event.detail enthält jetzt triggerMode für App.tsx-Loop-Entscheidung. Migration: alte/invalide triggerMode → 'edge'. TASK-253: additiv useMacroSelector<T>(selector,isEqual?) + useMacroValues():number[] (shallowArrayEqual) + subscribeMacros — Selektor-Subscription via useSyncExternalStore; App.tsx abonniert nur noch die Werte statt des ganzen macros-Arrays.",
+      lastSeen: "2026-06-15T01:25:00.000Z",
       ownedBy:  "frontend"
     },
     "client/src/utils/macroHoldLoop.ts": {
@@ -4210,6 +4221,82 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "coordinator",
+      timestamp: "2026-06-15T02:05:00.000Z",
+      done: [
+        "Runde 2026-06-15 konsolidiert. Hygiene-Check 1: v3.274.0 Electron-Release-Run grün (success); main-CI-Rot ist vorbestehend+environment-bedingt (headless-Audio-Playwright), kein Regress -> als TASK-262 getrackt.",
+        "TASK-260 (root-cause): package.json type=module ließ agents/INDEX.js als ESM laden -> require() lieferte leeres null-proto-Objekt. Fix agents/package.json type=commonjs (commit 32a3a5c). Hypothese 'fehlendes Komma' war falsch.",
+        "Parallel-Batch {TASK-254 backend (AudioEngine.ts), TASK-259 testing (tests/web)} pfad-disjunkt dispatcht. Danach seriell TASK-258 (refactor, AudioEngine-Import) + TASK-253 (refactor, Stores).",
+        "Alle 5 Commits einzeln, surgical staged (examples/e2s + screenshots NICHT committed). pnpm check + pnpm test grün (10328 passed).",
+        "TASK-259 deckte Asymmetrie auf -> TASK-261 angelegt."
+      ],
+      next: [
+        "Release-Bump v3.275.0 -> tag -> push -> watch -> publish.",
+        "Nächste Runde: TASK-262 (main-CI grün), TASK-255 (übergroße Komponenten), TASK-257 (ModMatrix/LFO-Routing), TASK-263 (weitere Store-Selektoren), TASK-261 (Mixer-Strip-Kopplung)."
+      ],
+      changed: ["agents/package.json","client/src/audio/AudioEngine.ts","client/src/utils/audioLanePosition.ts","client/src/components/DrumMachine/audioLaneHelpers.ts","client/src/store/useArpStore.ts","client/src/store/useMacroStore.ts","client/src/App.tsx","client/src/components/DrumMachine/DrumMachine.tsx","tests/features/audio-schedule-step-alloc.test.ts","tests/web/audio-clip-lane.spec.ts","tests/web/audio-track-play-stop.spec.ts","tests/features/macro-selector.test.ts","tests/features/arp-selector.test.ts"]
+    },
+    {
+      agent:     "refactor",
+      timestamp: "2026-06-15T01:25:00.000Z",
+      done: [
+        "TASK-253 (perf): Selektor-Subscription (useSyncExternalStore, Vorlage usePlayheadStore) additiv fuer 2 audit-bestaetigte heisse Stores. Audit-Axis = Consumer-Fan-out, nicht Update-Frequenz: OmniTribeMeters/AudioPerformance/MidiSyncIn haben nur 1-2 dedizierte Panel-Consumer (+ bereits diff-gated) -> Selektor wertlos, bewusst SKIPPED.",
+        "useMacroStore: useMacroSelector<T>(selector, isEqual?) + useMacroValues(): number[] (shallowArrayEqual) + subscribeMacros. setMacroValue feuert pro MIDI-CC/Slider OHNE Diff-Gate; App.tsx (~5000 Z.) abonnierte das ganze macros-Array, braucht aber nur die Werte. App.tsx migriert: useMacroStore()->useMacroValues() (3 Read-Sites: Z.610/2239/2656).",
+        "useArpStore: useArpSelector<T>(selector, isEqual?) + useArpEnabled(): boolean (skalar) + subscribeArp. DrumMachine.tsx (4495 Z.) abonnierte das KOMPLETTE Arp-State-Objekt via useArpStore(), liest aber nur arp.enabled -> jedes setArpNotes/setArpMode loeste Full-Rerender. DrumMachine migriert auf useArpEnabled() (4 Read-Sites). App.tsx importiert nur resetArp (Action) -> unberuehrt.",
+        "Kein use-sync-external-store/with-selector verfuegbar (React 19 nativ ohne Selector-Variante; neue Dep = Builder-Scope) -> dependency-freier useRef-Snapshot-Cache: bei isEqual=true stabile Referenz -> Object.is-Bail-out. Skalare Selektoren brauchen kein isEqual.",
+        "Bewusste Skips: useMixerStore (useState-basiert, NICHT Singleton-Observer -> Semantik-Change, out of scope); usePerformanceStore (Pads user-driven, kalt); useTransposeStore (skalar + diff-gated + local-state-Hook, bereits optimal); MIDI-Monitor-Ringbuffer (single-consumer). AudioEngine.ts nicht angefasst.",
+        "Tests: tests/features/macro-selector.test.ts (7) + arp-selector.test.ts (6) je (a) Slice-Korrektheit (b) Equality-Short-Circuit/stabile-Ref/kein-spurioser-Rerender (c) Verhalten/Persistenz unveraendert. Baseline+nach: pnpm check gruen."
+      ],
+      next: [
+        "Frontend-Owner App.tsx + DrumMachine.tsx: Selektor-Hooks useMacroValues()/useArpEnabled() sind die bevorzugten Consume-Pfade fuer heisse Slices; useMacroStore()/useArpStore() (Vollabo) weiter verfuegbar fuer Consumer die das ganze Objekt brauchen (z.B. MacroPanel, ArpeggiatorPanel).",
+        "Weitere Consumer auf Selektoren migrieren falls sie nur Teilslices lesen (z.B. MacroPanel liest macros vollstaendig -> kein Gewinn, belassen).",
+        "Circular import useThemeStore.ts <-> ThemeSettings.tsx (hohe Prio) weiterhin offen — shared types nach types/themeTypes.ts."
+      ],
+      changed: [
+        "client/src/store/useMacroStore.ts",
+        "client/src/store/useArpStore.ts",
+        "client/src/App.tsx",
+        "client/src/components/DrumMachine/DrumMachine.tsx",
+        "tests/features/macro-selector.test.ts",
+        "tests/features/arp-selector.test.ts"
+      ]
+    },
+    {
+      agent:     "refactor",
+      timestamp: "2026-06-15T01:12:00.000Z",
+      done: [
+        "TASK-258 (layering hygiene, commit d43aa2d): Schicht-Inversion audio->components aufgeloest. Pure-Helper computeAudioTrackPos01 + Typ AudioTrackPosInput aus client/src/components/DrumMachine/audioLaneHelpers.ts in neues neutrales Blattmodul client/src/utils/audioLanePosition.ts verschoben (keine React-/AudioContext-/Store-Deps).",
+        "AudioEngine.ts importiert jetzt von ../utils/audioLanePosition statt aus components/; NOTE-Kommentar (Z.34-37) aktualisiert. Nur Import-Zeile + Kommentar angefasst, Logik/Call-Site unveraendert (TASK-254-Optimierung nicht gestoert).",
+        "audioLaneHelpers.ts re-exportiert beide Symbole aus dem utils-Modul -> AudioClipLane.tsx + tests/features/audio-clip-lane.test.ts + audio-track-global-transport.test.ts laufen UNVERAENDERT weiter (kein Repoint noetig, component-spezifische Helpers bleiben in audioLaneHelpers).",
+        "Baseline + nach Move: pnpm check gruen, voller pnpm test 441 Files / 10315 passed / 12 skipped (unveraendert). Surgical-Commit: nur audioLanePosition.ts (neu), audioLaneHelpers.ts, AudioEngine.ts gestaged."
+      ],
+      next: [
+        "Backend-Owner (AudioEngine.ts / audioLaneHelpers.ts): Pos-Formel lebt jetzt kanonisch in client/src/utils/audioLanePosition.ts — kuenftige Aenderungen dort, audioLaneHelpers ist nur noch Re-Export-Fassade fuer diese 2 Symbole.",
+        "Weitere Layering-Wartung pruefen: andere audio/ -> components/ Importe (Grep), falls vorhanden.",
+        "Circular import useThemeStore.ts <-> ThemeSettings.tsx (hohe Prio) weiterhin offen — shared types nach types/themeTypes.ts."
+      ],
+      changed: [
+        "client/src/utils/audioLanePosition.ts",
+        "client/src/components/DrumMachine/audioLaneHelpers.ts",
+        "client/src/audio/AudioEngine.ts"
+      ]
+    },
+    {
+      agent:     "builder",
+      timestamp: "2026-06-15T01:30:00.000Z",
+      done: [
+        "TASK-260 (critical): Agent-System-State-Loader repariert. Root-Cause (vom Coordinator diagnostiziert, bestaetigt): package.json hat type=module -> agents/INDEX.js wurde als ESM geladen, module.exports war No-Op, require('./agents/INDEX.js') lieferte leeres null-proto-Namespace-Objekt (0 keys).",
+        "Fix: agents/package.json mit {\"type\":\"commonjs\"} angelegt -> ueberschreibt Parent-Module-Type fuer das gesamte agents/-Verzeichnis. INDEX.js inhaltlich UNVERAENDERT.",
+        "Verifiziert: node -e require('./agents/INDEX.js') liefert jetzt 13 keys (project, rules, architecture, parallelism, files, features, bugs, workLog, openTasks, ipc, scriptAPI, claim, update) inkl. project UND openTasks. Zweiter Load-Smoke 'ok'.",
+        "Surgical-Commit 32a3a5c: nur agents/package.json gestaged; examples/e2s/ + screenshots/ bleiben untracked/uncommitted."
+      ],
+      next: [
+        "Agent-System wieder funktionsfaehig — Folge-Agenten koennen INDEX.js wieder per require() lesen.",
+        "Hinweis: agents/package.json bei kuenftigen Builds nicht versehentlich loeschen (Voraussetzung fuer CJS-Aufloesung der .js-Agent-Files)."
+      ],
+      changed: ["agents/package.json"]
+    },
     {
       agent:     "coordinator",
       timestamp: "2026-06-15T00:45:00.000Z",
@@ -14868,9 +14955,11 @@ const INDEX = {
             type: "refactor",
             priority: "medium",
             agent: "refactor",
-            status: "open",
+            status: "done",
             createdAt: "2026-06-15T00:45:00.000Z",
             createdBy: "coordinator",
+            doneCommit: "a7f675c",
+            doneNote: "Selektor-Subscription (useSyncExternalStore-Pattern wie usePlayheadStore) für useArpStore + useMacroStore. Additive Selector-Hooks (useArpEnabled/useArpSelector, useMacroValues/useMacroSelector). App.tsx+DrumMachine.tsx Consumer migriert. 13 Tests. Bewusst nur 2 echt-heiße Stores statt big-bang. round-2026-06-15.",
             title: "Systemisches Store-Rerender-Pattern (#5) auditieren",
             description: "Custom-observer-Stores identifizieren, die ganze Komponenten pro Update re-rendern (analog Playhead). Selector-/Subscription-Pattern aus usePlayheadStore (useSyncExternalStore) als Vorlage. ~57 Stores ohne Selektoren. Konkrete risikoarme Verbesserungen umsetzen.",
         },
@@ -14879,9 +14968,11 @@ const INDEX = {
             type: "refactor",
             priority: "medium",
             agent: "backend",
-            status: "open",
+            status: "done",
             createdAt: "2026-06-15T00:45:00.000Z",
             createdBy: "coordinator",
+            doneCommit: "ade64ff",
+            doneNote: "9 Allokationskategorien im _scheduleStep-Hotpath eliminiert (forEach->indexed loops, globalThis-Lookup gehoisted, MIDI-Clock setTimeout-Closures + Uint8Array pre-alloziert als Instanzfelder). 2 Allokationen bewusst belassen (scheduled-Objekt wg. async-await-Capture; position-callback setTimeout wg. parallel-pending). 6 Timing/Ordering-Regressionstests. pnpm check+test grün. round-2026-06-15.",
             title: "_scheduleStep Allokationen (#6) eliminieren",
             description: "Allocation-Hot-Path im Audio-Scheduler (AudioEngine.ts ~3335): pro-Step erzeugte Arrays/Objekte/Closures vorab cachen. TASK-249 hat den Automation-Pfad bereits allokationsfrei gemacht; Rest auditieren. GC-Druck/Glitch-Risiko. NAECHSTE RUNDE ZUERST.",
         },
@@ -14912,22 +15003,60 @@ const INDEX = {
             type: "refactor",
             priority: "low",
             agent: "refactor",
-            status: "open",
+            status: "done",
             createdAt: "2026-06-15T00:45:00.000Z",
             createdBy: "coordinator",
+            resolvedAt: "2026-06-15T01:10:00.000Z",
+            resolvedBy: "refactor",
+            resolvedCommit: "d43aa2d",
             title: "Layering-Wart: AudioEngine importiert aus components/DrumMachine/audioLaneHelpers",
-            description: "252-FOLLOWUP fuehrte Typ-Import von client/src/audio/AudioEngine.ts auf client/src/components/DrumMachine/audioLaneHelpers.ts (computeAudioTrackPos01) ein. Laufzeit zyklusfrei, aber Schicht-Inversion (audio->components). Pure-Helper nach client/src/utils/ verschieben, beide Caller umbiegen.",
+            description: "252-FOLLOWUP fuehrte Typ-Import von client/src/audio/AudioEngine.ts auf client/src/components/DrumMachine/audioLaneHelpers.ts (computeAudioTrackPos01) ein. Laufzeit zyklusfrei, aber Schicht-Inversion (audio->components). GELOEST in d43aa2d: computeAudioTrackPos01 + AudioTrackPosInput nach client/src/utils/audioLanePosition.ts (neutrales Blatt) verschoben. AudioEngine importiert von dort; audioLaneHelpers re-exportiert beide Symbole -> AudioClipLane.tsx + Tests unveraendert. check + 10315 Tests gruen.",
         },
         {
             id: "TASK-259",
             type: "test",
             priority: "low",
             agent: "testing",
-            status: "open",
+            status: "done",
             createdAt: "2026-06-15T00:45:00.000Z",
             createdBy: "coordinator",
+            doneCommit: "447e1b2",
+            doneNote: "audio-clip-lane.spec.ts Smoke scharf+grün (Global-Play koppelt Lane via onPlayStateChange, aria-pressed/disabled). audio-track-play-stop.spec.ts BEWUSST re-skipped mit korrigierter Begründung: TASK-252 koppelte die Lane, NICHT den Mixer-Strip-Button (dessen aria-pressed ist absichtlich component-local). round-2026-06-15.",
             title: "Global-Play <-> Clip-Lane-Sync Playwright-Smokes scharf schalten",
             description: "tests/web/audio-track-play-stop.spec.ts + audio-clip-lane.spec.ts haben je 1 test.skip fuer Global-Transport-Kopplung (warteten auf TASK-252). 252 gelandet -> Skips entfernen, gegen gekoppeltes Verhalten scharf schalten.",
+        },
+        {
+            id: "TASK-261",
+            type: "bugfix",
+            priority: "low",
+            agent: "frontend",
+            status: "open",
+            createdAt: "2026-06-15T02:00:00.000Z",
+            createdBy: "coordinator",
+            title: "Mixer-Strip Play-Button koppelt nicht an Global-Transport (Asymmetrie zu Clip-Lane)",
+            description: "TASK-259 deckte auf: AudioClipLane koppelt an global transport (onPlayStateChange -> aria-pressed/disabled), aber AudioTrackStrip.tsx Per-Track-Button bleibt component-local (aria-pressed={playing}); bei Global-Play zeigt der Mixer-Strip-Button nicht 'playing'. Entweder bewusst (dann dokumentieren) oder UX-Gap schließen: AudioTrackStrip an onPlayStateChange koppeln, dann den re-skippten Smoke in audio-track-play-stop.spec.ts scharf schalten. Dateien: client/src/components/Mixer/AudioTrackStrip.tsx, tests/web/audio-track-play-stop.spec.ts.",
+        },
+        {
+            id: "TASK-262",
+            type: "build",
+            priority: "medium",
+            agent: "builder",
+            status: "open",
+            createdAt: "2026-06-15T02:00:00.000Z",
+            createdBy: "coordinator",
+            title: "main-CI dauerhaft rot: headless-Playwright Audio/Sim-Tests timeouten",
+            description: "Der 'CI'-Workflow auf main ist seit >=v3.271.3 konstant failure (Electron-Release-Workflow ist grün). Ursache: ~50 Playwright-Browser-Tests brauchen echtes Web-Audio/Loopback in headless Chromium (arp-playback, automix LUFS, license-polish, omnitribe-sim, sim-*) -> 30s-Timeouts. Kein Regress dieser Runde. Optionen: (a) diese Tests in CI als test.skip/projektgetrennt markieren mit @audio-tag und nur lokal/electron laufen lassen, (b) deterministische UI-State-Asserts statt Audio-Output, (c) headless-Audio-Flag/virtuelles Audio-Device in CI. Entscheidung+Umsetzung nächste Runde.",
+        },
+        {
+            id: "TASK-263",
+            type: "refactor",
+            priority: "medium",
+            agent: "refactor",
+            status: "open",
+            createdAt: "2026-06-15T02:00:00.000Z",
+            createdBy: "coordinator",
+            title: "Weitere heiße Stores auf Selektor-Pattern migrieren (Folge TASK-253)",
+            description: "TASK-253 migrierte nur useArpStore+useMacroStore (bewusst eng). Nächste Kandidaten erst PROFILEN (Consumer-Fan-out x Update-Frequenz) bevor migriert: ggf. useMixerStore-Konsolidierung, Meter/Spectrum-Pfade. Optional: use-sync-external-store/with-selector als Dep einführen (Builder+Security-Review) statt manuellem useRef-Snapshot-Cache. Kein big-bang.",
         },
     // STRATEGIE-ROADMAP v2.83+ (KORG-zentrierte Live+Studio-DAW) — coordinator 2026-05-17
         {
