@@ -17,6 +17,7 @@ import { useTransposeStore } from "@/store/useTransposeStore";
 import { getArpState, getArpSteps } from "@/store/useArpStore";
 import { usePatternCrossfadeStore } from "@/store/usePatternCrossfadeStore";
 import { clearQueue as clearPerformanceQueue } from "@/store/usePerformanceStore";
+import { setPlayheadStep } from "@/store/usePlayheadStore";
 
 interface UseTransportOptions {
   isPlaying: boolean;
@@ -170,6 +171,9 @@ export function useTransport({
     } else {
       AudioEngine.stop();
       dm.setCurrentStep(0);
+      // TASK-247: Playhead-Store mitführen, damit abonnierte Kinder beim Stop
+      // korrekt auf Step 0 zurückspringen (sonst friert die Anzeige ein).
+      setPlayheadStep(0);
     }
   }, [isPlaying, bpm, dm, onPlayStateChange]);
 
@@ -180,6 +184,10 @@ export function useTransport({
     const unsubscribe = AudioEngine.onPosition(step => {
       const d = dmRef.current;
       d.setCurrentStep(step);
+      // TASK-247: Playhead-Store ZUSÄTZLICH speisen. Abonnierte Kinder der
+      // DrumMachine lesen den Step hierüber → der 4495-Zeilen-Parent muss
+      // nicht mehr pro Step re-rendern (memo überspringt currentStep-only).
+      setPlayheadStep(step);
       // Quantized Commit: beim nächsten Bar-Anfang (Step 0) einrasten
       if (step === 0 && d.commitPending) {
         d.commitLivePatternEdit();

@@ -11,8 +11,11 @@
  * - Sample-Picker per Drag & Drop
  */
 
-import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
+import React, { useState, useRef, useCallback, useEffect, useMemo, memo } from "react";
 import type { DrumMachineState, DrumMachineActions } from "@/store/useDrumMachineStore";
+// TASK-247: Playhead aus dem geteilten dm-Render-Pfad gelöst.
+import { usePlayheadStep, getPlayheadStep, subscribePlayhead } from "@/store/usePlayheadStore";
+import { drumMachinePropsAreEqual } from "./drumMachineMemo";
 import type { PartData, ChannelFx, StepResolution } from "@/audio/AudioEngine";
 import { AudioEngine } from "@/audio/AudioEngine";
 import { PianoRollModal } from "@/components/PianoRoll/PianoRollModal";
@@ -127,7 +130,7 @@ import { generateEmphasis, applyEmphasisVelocities, EMPHASIS_PRESET_LABELS, type
 import { FxPanel } from "./FxPanel";
 import { ResizableDrumPanel } from "./ResizableDrumPanel";
 import { StepInspector } from "./StepInspector";
-import { ChannelStrip } from "./ChannelStrip";
+import { ChannelStrip, type ChannelStripProps } from "./ChannelStrip";
 import { stepGroupBorder, getPageCount, getPageStepRange, getPageForStep, getPageRangeLabel } from "./drumMachineHelpers";
 
 // ─── Typen ────────────────────────────────────────────────────────────────────
@@ -1199,9 +1202,160 @@ function makeE2sSampleResolver(
   };
 }
 
+// ─── TASK-247: Playhead-abonnierende Kind-Komponenten ─────────────────────────
+// Diese kleinen Komponenten lesen den Playback-Step via usePlayheadStep() und
+// re-rendern pro Step selbst — der 4495-Zeilen-DrumMachine-Parent bleibt stehen.
+
+/** ChannelStrip-Wrapper, der currentStep selbst abonniert. */
+const PlayheadChannelStrip = memo(function PlayheadChannelStrip(
+  props: Omit<ChannelStripProps, "currentStep">,
+) {
+  const currentStep = usePlayheadStep();
+  return <ChannelStrip {...props} currentStep={currentStep} />;
+});
+
+/** PolyrhythmVisualizer-Wrapper, der currentStep selbst abonniert. */
+const PlayheadPolyrhythmVisualizer = memo(function PlayheadPolyrhythmVisualizer({
+  pattern,
+}: {
+  pattern: PatternData;
+}) {
+  const currentStep = usePlayheadStep();
+  return <PolyrhythmVisualizer pattern={pattern} currentStep={currentStep} />;
+});
+
+/** Page-Switcher mit Live-Page-Indikator (abonniert Playhead). */
+const PlayheadPageSwitcher = memo(function PlayheadPageSwitcher({
+  stepCount,
+  currentPatternPage,
+  onSelectPage,
+  isPlaying,
+  autoPageFollow,
+  onToggleAutoFollow,
+}: {
+  stepCount: number;
+  currentPatternPage: number;
+  onSelectPage: (p: number) => void;
+  isPlaying: boolean;
+  autoPageFollow: boolean;
+  onToggleAutoFollow: () => void;
+}) {
+  const currentStep = usePlayheadStep();
+  const pageCount = getPageCount(stepCount);
+  if (pageCount <= 1) return null;
+  const liveStepPage = getPageForStep(currentStep, stepCount);
+  return (
+    <div
+      className="flex items-center gap-2 px-2 py-1 bg-bg-panel border-b border-border-color/50"
+      data-testid="dm-page-switcher"
+    >
+      <span className="text-[10px] text-text-dim">Seite:</span>
+      <div className="flex items-center gap-1">
+        {Array.from({ length: pageCount }, (_, p) => {
+          const isActive = currentPatternPage === p;
+          const isLivePage = isPlaying && liveStepPage === p;
+          return (
+            <button
+              key={p}
+              type="button"
+              onClick={() => onSelectPage(p)}
+              data-testid={`dm-page-${p}`}
+              title={`Steps ${getPageRangeLabel(p, stepCount)} (Page ${p + 1}/${pageCount})`}
+              className={[
+                "px-2 py-0.5 rounded text-[10px] font-mono transition-colors relative",
+                isActive
+                  ? "bg-accent-primary text-white"
+                  : "bg-bg-elevated text-text-dim hover:text-text-primary ",
+              ].join(" ")}
+            >
+              {getPageRangeLabel(p, stepCount)}
+              {isLivePage && !isActive && (
+                <span
+                  className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full"
+                  style={{ background: "var(--ss-accent-secondary)" }}
+                />
+              )}
+            </button>
+          );
+        })}
+      </div>
+      <button
+        type="button"
+        onClick={onToggleAutoFollow}
+        data-testid="dm-page-autofollow"
+        title="Automatisch zur Page mit dem aktuellen Step springen während Playback"
+        className={[
+          "px-2 py-0.5 rounded text-[9px] font-mono transition-colors",
+          autoPageFollow
+            ? "bg-accent-secondary/30 text-accent-secondary"
+            : "bg-bg-elevated text-text-dim hover:text-text-primary",
+        ].join(" ")}
+      >
+        {autoPageFollow ? "Auto-Follow: AN" : "Auto-Follow: AUS"}
+      </button>
+      <span className="text-[9px] text-text-dim ml-auto">
+        {stepCount} Steps / {pageCount} Pages
+      </span>
+    </div>
+  );
+});
+
+/** Step-Nummern-Header-Zeile mit Playhead-Highlight (abonniert Playhead). */
+const PlayheadStepNumberRow = memo(function PlayheadStepNumberRow({
+  stepCount,
+  currentPatternPage,
+}: {
+  stepCount: number;
+  currentPatternPage: number;
+}) {
+  const currentStep = usePlayheadStep();
+  const { start, end } = getPageStepRange(stepCount, currentPatternPage);
+  return (
+    <>
+      {Array.from({ length: end - start }).map((_, idx) => {
+        const i = start + idx;
+        return (
+          <div
+            key={i}
+            className={[
+              "flex-1 text-center text-[8px] leading-none py-0.5 relative",
+              stepGroupBorder(idx, end - start),
+              i === currentStep ? "font-bold" : "text-text-dim",
+              i % 4 === 0 ? "text-text-dim" : "",
+            ].join(" ")}
+            style={{ color: i === currentStep ? "var(--ss-accent-secondary)" : undefined }}
+          >
+            {i % 4 === 0 ? i + 1 : "·"}
+            {i === currentStep && (
+              <div
+                className="absolute bottom-0 left-0 right-0 rounded-full"
+                style={{ height: 2, background: "var(--ss-accent-secondary)" }}
+              />
+            )}
+          </div>
+        );
+      })}
+    </>
+  );
+});
+
+/** Footer-Step-Anzeige "Step X/Y" (abonniert Playhead). */
+const PlayheadFooterStep = memo(function PlayheadFooterStep({
+  stepCount,
+}: {
+  stepCount: number;
+}) {
+  const currentStep = usePlayheadStep();
+  return (
+    <span>
+      Step {currentStep + 1}/{stepCount}
+    </span>
+  );
+});
+
 // ─── Haupt-Komponente ─────────────────────────────────────────────────────────
 
-export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChange, className = "", externalSyncEnabled, externalSyncStatus }: Props) {
+function DrumMachineInner({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChange, className = "", externalSyncEnabled, externalSyncStatus }: Props) {
   // v3.38.0 — BPM-Slider lock-state when external MIDI Clock-IN sync is active.
   const bpmLocked = isBpmExternallyLocked(externalSyncEnabled, externalSyncStatus);
   const pattern = dm.getActivePattern();
@@ -2179,7 +2333,8 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
     if (!activePattern) return;
     const len = activePattern.parts[0]?.steps.length ?? 16;
     // Buffer (für State/Anzeige) als Union über Parts ab dem aktuellen Playhead.
-    const start = dm.currentStep ?? 0;
+    // TASK-247: Playhead imperativ aus dem Store lesen (kein Render-Read).
+    const start = getPlayheadStep();
     const unionSteps = new Array<boolean>(len).fill(false);
     for (const part of activePattern.parts) {
       for (let i = 0; i < Math.min(len, part.steps.length); i++) {
@@ -2189,7 +2344,7 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
     const fresh = createBeatRepeatState(brBufferSteps);
     setBrState(triggerBeatRepeat(fresh, unionSteps, start));
     toast(`Beat-Repeat: ${brBufferSteps}-Step-Fenster ab Step ${start + 1}`, { kind: "info", duration: 1500 });
-  }, [dm.patterns, dm.activePatternId, dm.currentStep, brBufferSteps]);
+  }, [dm.patterns, dm.activePatternId, brBufferSteps]);
 
   const handleReleaseBR = useCallback(() => {
     setBrState((s) => releaseBeatRepeat(s));
@@ -2272,15 +2427,21 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
   // v3.40: Auto-Page-Follow während Playback — Page wechselt automatisch mit
   // currentStep wenn isPlaying && autoPageFollow && stepCount > 16. User kann
   // Follow per Toggle deaktivieren um manuell zu editieren während Playback.
+  // TASK-247: Imperativ über den Playhead-Store abonnieren statt dm.currentStep
+  // in den Deps zu führen — sonst bräuchte der Effekt einen Parent-Rerender pro
+  // Step und der Full-Rerender-Fix wäre wirkungslos. Funktionales setState →
+  // re-rendert nur, wenn sich die Page tatsächlich ändert.
+  const patternStepCount = pattern?.stepCount;
   useEffect(() => {
-    if (!pattern) return;
     if (!isPlaying || !autoPageFollow) return;
-    if (pattern.stepCount <= 16) return;
-    const targetPage = getPageForStep(dm.currentStep, pattern.stepCount);
-    if (targetPage !== currentPatternPage) {
-      setCurrentPatternPage(targetPage);
-    }
-  }, [isPlaying, autoPageFollow, dm.currentStep, pattern?.stepCount, currentPatternPage, pattern]);
+    if (!patternStepCount || patternStepCount <= 16) return;
+    const update = () => {
+      const target = getPageForStep(getPlayheadStep(), patternStepCount);
+      setCurrentPatternPage((prev) => (prev !== target ? target : prev));
+    };
+    update();
+    return subscribePlayhead(update);
+  }, [isPlaying, autoPageFollow, patternStepCount]);
 
   // Metronom-Panel schließen bei Klick außerhalb
   useEffect(() => {
@@ -4098,66 +4259,15 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
         </ResizableDrumPanel>
       )}
 
-      {/* ── v3.40: 64-Step Page-Switcher ─────────────────────────────────── */}
-      {(() => {
-        const pageCount = getPageCount(pattern.stepCount);
-        if (pageCount <= 1) return null;
-        const liveStepPage = getPageForStep(dm.currentStep, pattern.stepCount);
-        return (
-          <div
-            className="flex items-center gap-2 px-2 py-1 bg-bg-panel border-b border-border-color/50"
-            data-testid="dm-page-switcher"
-          >
-            <span className="text-[10px] text-text-dim">Seite:</span>
-            <div className="flex items-center gap-1">
-              {Array.from({ length: pageCount }, (_, p) => {
-                const isActive = currentPatternPage === p;
-                const isLivePage = isPlaying && liveStepPage === p;
-                return (
-                  <button
-                    key={p}
-                    type="button"
-                    onClick={() => setCurrentPatternPage(p)}
-                    data-testid={`dm-page-${p}`}
-                    title={`Steps ${getPageRangeLabel(p, pattern.stepCount)} (Page ${p + 1}/${pageCount})`}
-                    className={[
-                      "px-2 py-0.5 rounded text-[10px] font-mono transition-colors relative",
-                      isActive
-                        ? "bg-accent-primary text-white"
-                        : "bg-bg-elevated text-text-dim hover:text-text-primary ",
-                    ].join(" ")}
-                  >
-                    {getPageRangeLabel(p, pattern.stepCount)}
-                    {isLivePage && !isActive && (
-                      <span
-                        className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full"
-                        style={{ background: "var(--ss-accent-secondary)" }}
-                      />
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-            <button
-              type="button"
-              onClick={() => setAutoPageFollow(prev => !prev)}
-              data-testid="dm-page-autofollow"
-              title="Automatisch zur Page mit dem aktuellen Step springen während Playback"
-              className={[
-                "px-2 py-0.5 rounded text-[9px] font-mono transition-colors",
-                autoPageFollow
-                  ? "bg-accent-secondary/30 text-accent-secondary"
-                  : "bg-bg-elevated text-text-dim hover:text-text-primary",
-              ].join(" ")}
-            >
-              {autoPageFollow ? "Auto-Follow: AN" : "Auto-Follow: AUS"}
-            </button>
-            <span className="text-[9px] text-text-dim ml-auto">
-              {pattern.stepCount} Steps / {pageCount} Pages
-            </span>
-          </div>
-        );
-      })()}
+      {/* ── v3.40: 64-Step Page-Switcher (TASK-247: Playhead via Kind-Komp.) ── */}
+      <PlayheadPageSwitcher
+        stepCount={pattern.stepCount}
+        currentPatternPage={currentPatternPage}
+        onSelectPage={setCurrentPatternPage}
+        isPlaying={isPlaying}
+        autoPageFollow={autoPageFollow}
+        onToggleAutoFollow={() => setAutoPageFollow(prev => !prev)}
+      />
 
       {/* ── Step-Grid Header ─────────────────────────────────────────────── */}
       <div className="flex items-center gap-1 px-2 py-1 bg-bg-panel border-b border-border-color/50">
@@ -4170,32 +4280,12 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
         <div className="w-14 flex-shrink-0" />
         <div className="w-6 flex-shrink-0" />
 
-        {/* Step-Nummern (v3.40: paginiert wenn stepCount > 16) */}
+        {/* Step-Nummern (v3.40: paginiert; TASK-247: Playhead via Kind-Komp.) */}
         <div className="flex gap-[2px] flex-1 min-w-0">
-          {(() => {
-            const { start, end } = getPageStepRange(pattern.stepCount, currentPatternPage);
-            return Array.from({ length: end - start }).map((_, idx) => {
-              const i = start + idx;
-              return (
-                <div
-                  key={i}
-                  className={[
-                    "flex-1 text-center text-[8px] leading-none py-0.5 relative",
-                    stepGroupBorder(idx, end - start),
-                    i === dm.currentStep ? "font-bold" : "text-text-dim",
-                    i % 4 === 0 ? "text-text-dim" : "",
-                  ].join(" ")}
-                  style={{ color: i === dm.currentStep ? "var(--ss-accent-secondary)" : undefined }}
-                >
-                  {i % 4 === 0 ? i + 1 : "·"}
-                  {i === dm.currentStep && (
-                    <div className="absolute bottom-0 left-0 right-0 rounded-full"
-                      style={{ height: 2, background: "var(--ss-accent-secondary)" }} />
-                  )}
-                </div>
-              );
-            });
-          })()}
+          <PlayheadStepNumberRow
+            stepCount={pattern.stepCount}
+            currentPatternPage={currentPatternPage}
+          />
         </div>
       </div>
 
@@ -4208,13 +4298,12 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
             ? getPageStepRange(pattern.stepCount, currentPatternPage)
             : null;
           return pattern.parts.map((part, partIndex) => (
-          <ChannelStrip
+          <PlayheadChannelStrip
             key={part.id}
             part={part}
             partIndex={partIndex}
             stepCount={pattern.stepCount}
             visibleStepRange={visibleStepRange}
-            currentStep={dm.currentStep}
             isActive={dm.activePartId === part.id}
             velocityMode={dm.velocityMode}
             pitchMode={dm.pitchMode}
@@ -4341,7 +4430,7 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
         <ResizableDrumPanel storageKey="ss-panel-polyrhythm" defaultHeight={180} minHeight={100} maxHeight={380}
           title="Polyrhythm-Visualizer"
           onClose={() => setShowPolyrhythm(false)}>
-          <PolyrhythmVisualizer pattern={pattern} currentStep={dm.currentStep} />
+          <PlayheadPolyrhythmVisualizer pattern={pattern} />
         </ResizableDrumPanel>
       )}
 
@@ -4355,7 +4444,7 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
         <span>·</span>
         <span>{effectiveBpm} BPM{pattern.bpm !== null ? " (eigenes)" : ""}</span>
         <span>·</span>
-        <span>Step {dm.currentStep + 1}/{pattern.stepCount}</span>
+        <PlayheadFooterStep stepCount={pattern.stepCount} />
         {dm.velocityMode && <><span>·</span><span className="text-accent-secondary">VELOCITY-MODUS</span></>}
         {dm.pitchMode && <><span>·</span><span className="text-accent-secondary">PITCH-MODUS</span></>}
         {/* Time-Stretch für aktiven Kanal */}
@@ -4493,3 +4582,15 @@ export function DrumMachine({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChan
     </div>
   );
 }
+
+/**
+ * TASK-247: memoisierter Export. App.tsx besitzt den dm-State und erzeugt bei
+ * jedem Playback-Step ein frisches dm-Objekt → App re-rendert → DrumMachine
+ * würde komplett neu rendern. Der Comparator überspringt den Rerender, wenn
+ * sich AUSSCHLIESSLICH dm.currentStep unterscheidet; der Playhead läuft über
+ * usePlayheadStore in kleinen abonnierten Kindern weiter.
+ */
+export const DrumMachine = memo(
+  DrumMachineInner,
+  drumMachinePropsAreEqual as unknown as (p: Readonly<Props>, n: Readonly<Props>) => boolean,
+);
