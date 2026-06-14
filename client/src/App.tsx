@@ -180,7 +180,7 @@ import {
 } from "@/store/usePerformanceStore";
 import { useResizablePanel } from "@/hooks/useResizablePanel";
 import { ResizablePanelHandle } from "@/components/UI/ResizablePanelHandle";
-import { useAutomationStore } from "@/store/useAutomationStore";
+import { useAutomationStore, compileAutomationLanes, readCompiledValue, type CompiledAutomationLane } from "@/store/useAutomationStore";
 // v3.109.0 Song-Mode / Pattern-Chain-Sequencer
 import {
   advance as songModeAdvance,
@@ -2296,23 +2296,58 @@ export default function App() {
     return cleanup;
   }, [electron]);
 
-  // ── Automation: Position-Callback registrieren ───────────────────────────
-  // Feuert bei jedem Step (auch bei Stille) → ideal für Parameter-Automation
+  // ── Automation: Position-Callback registrieren (TASK-249) ────────────────
+  // Feuert bei jedem Step (auch bei Stille) → ideal für Parameter-Automation.
+  //
+  // PERFORMANCE (finding #6, _scheduleStep ist Allocation-Hot-Path):
+  // Lanes werden EINMAL pro Lanes/stepCount-Aenderung in dichte Wert-Arrays
+  // kompiliert (useMemo → Ref). Der onPosition-Callback macht KEINE
+  // Per-Step-Allokation: kein .find(), kein .slice(), kein Object.keys() —
+  // nur for-Loop + readCompiledValue (Index-Lookup) + Setter.
   const automationRef = useRef(automation);
   automationRef.current = automation;
+
+  // Kompilierte Lanes in einer Ref halten, damit der stabile onPosition-Callback
+  // sie lesen kann ohne in der Dependency-Liste zu haengen.
+  const compiledAutomation = useMemo(
+    () => compileAutomationLanes(automation.lanes, automation.stepCount),
+    [automation.lanes, automation.stepCount],
+  );
+  const compiledAutomationRef = useRef<CompiledAutomationLane[]>(compiledAutomation);
+  compiledAutomationRef.current = compiledAutomation;
+
   useEffect(() => {
     const unsubscribe = AudioEngine.onPosition((stepIndex) => {
-      const auto = automationRef.current;
-      // BPM-Automation
-      const bpmVal = auto.getValueAt("bpm", stepIndex);
-      if (bpmVal !== null) {
-        const rounded = Math.round(bpmVal);
-        AudioEngine.setBpm(rounded);
-        project.setBpm(rounded);
+      const lanes = compiledAutomationRef.current;
+      // Hot-Path: nur indizierter for-Loop, keine Allokationen.
+      for (let i = 0; i < lanes.length; i++) {
+        const lane = lanes[i];
+        const v = readCompiledValue(lane, stepIndex);
+        if (v === null) continue;
+        switch (lane.kind) {
+          case "bpm": {
+            const rounded = Math.round(v);
+            AudioEngine.setBpm(rounded);
+            project.setBpm(rounded);
+            break;
+          }
+          case "master-vol":
+            AudioEngine.setMasterVolume(v);
+            break;
+          case "vol":
+            if (lane.partId) AudioEngine.setChannelVolume(lane.partId, v);
+            break;
+          case "pan":
+            if (lane.partId) AudioEngine.setChannelPan(lane.partId, v);
+            break;
+          case "send-rev":
+            if (lane.partId) AudioEngine.setChannelSend(lane.partId, "reverb", v);
+            break;
+          case "send-dly":
+            if (lane.partId) AudioEngine.setChannelSend(lane.partId, "delay", v);
+            break;
+        }
       }
-      // Master-Volume
-      const masterVol = auto.getValueAt("master-vol", stepIndex);
-      if (masterVol !== null) AudioEngine.setMasterVolume(masterVol);
     });
     return unsubscribe;
   // eslint-disable-next-line react-hooks/exhaustive-deps

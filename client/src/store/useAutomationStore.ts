@@ -99,6 +99,91 @@ export function interpolate(points: Record<number, number>, step: number, _stepC
   return points[prev] + t * (points[next] - points[prev]);
 }
 
+// ─── Consumer-Mapping (TASK-249) ────────────────────────────────────────────
+//
+// Damit der Playback-Consumer (App.tsx onPosition) KEINE Per-Step-Allokationen
+// macht, werden Lanes EINMAL bei Aenderung in eine flache, dichte Struktur
+// kompiliert. Der Step-Hot-Path liest danach nur noch `values[step]` + dispatcht
+// per `kind`/`partId` — kein .find(), kein .slice(), kein Object.keys() pro Step.
+
+export type AutomationKind =
+  | "bpm"
+  | "master-vol"
+  | "vol"
+  | "pan"
+  | "send-rev"
+  | "send-dly";
+
+export interface ParsedAutomationTarget {
+  kind: AutomationKind;
+  /** Nur fuer kanal-bezogene Kinds (vol/pan/send-*); sonst null. */
+  partId: string | null;
+}
+
+/**
+ * Zerlegt ein AutomationTarget in {kind, partId}. Pure + isoliert testbar.
+ * Genau dieser String-Parse darf NICHT pro Step laufen → einmal beim Kompilieren.
+ */
+export function parseAutomationTarget(target: AutomationTarget): ParsedAutomationTarget {
+  if (target === "bpm")        return { kind: "bpm",        partId: null };
+  if (target === "master-vol") return { kind: "master-vol", partId: null };
+  if (target.startsWith("vol:"))      return { kind: "vol",      partId: target.slice(4) };
+  if (target.startsWith("pan:"))      return { kind: "pan",      partId: target.slice(4) };
+  if (target.startsWith("send-rev:")) return { kind: "send-rev", partId: target.slice(9) };
+  if (target.startsWith("send-dly:")) return { kind: "send-dly", partId: target.slice(9) };
+  // Unbekanntes Target → als master-vol-aehnlicher No-target-Fall behandeln.
+  // (Sollte durch die AutomationTarget-Union nie auftreten.)
+  return { kind: "master-vol", partId: null };
+}
+
+export interface CompiledAutomationLane {
+  kind: AutomationKind;
+  partId: string | null;
+  /**
+   * Dichte, vorab aufgeloeste Werte, Index = Step (0..stepCount-1).
+   * Index ausserhalb [0, length) wird vom Consumer auf den letzten Index
+   * geklemmt (gleiches Clamp-Verhalten wie interpolate's "nach letztem Punkt").
+   */
+  values: (number | null)[];
+}
+
+/**
+ * Kompiliert alle ENABLED, nicht-leeren Lanes in eine flache Liste mit dichten
+ * Wert-Arrays. Wird EINMAL pro Lanes/stepCount-Aenderung aufgerufen (useMemo),
+ * nicht pro Step. Allokationen hier sind erlaubt; der Step-Hot-Path liest nur.
+ */
+export function compileAutomationLanes(
+  lanes: AutomationLane[],
+  stepCount: number,
+): CompiledAutomationLane[] {
+  const out: CompiledAutomationLane[] = [];
+  for (const lane of lanes) {
+    if (!lane.enabled) continue;
+    if (Object.keys(lane.points).length === 0) continue;
+    const parsed = parseAutomationTarget(lane.target);
+    const values: (number | null)[] = new Array(stepCount);
+    for (let i = 0; i < stepCount; i++) {
+      values[i] = interpolate(lane.points, i, stepCount);
+    }
+    out.push({ kind: parsed.kind, partId: parsed.partId, values });
+  }
+  return out;
+}
+
+/**
+ * Liest den vorab kompilierten Wert eines Lanes an `step` — ALLOKATIONSFREI.
+ * Index wird auf [0, length-1] geklemmt (entspricht interpolate-Clamp rechts;
+ * links ist durch values[0] bereits abgedeckt). Leere values → null.
+ */
+export function readCompiledValue(lane: CompiledAutomationLane, step: number): number | null {
+  const len = lane.values.length;
+  if (len === 0) return null;
+  let idx = step;
+  if (idx < 0) idx = 0;
+  else if (idx >= len) idx = len - 1;
+  return lane.values[idx];
+}
+
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
 const DEFAULT_STATE: AutomationState = { lanes: [], stepCount: 16, recording: false };
