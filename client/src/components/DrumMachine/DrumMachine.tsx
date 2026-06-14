@@ -131,6 +131,7 @@ import { FxPanel } from "./FxPanel";
 import { ResizableDrumPanel } from "./ResizableDrumPanel";
 import { StepInspector } from "./StepInspector";
 import { ChannelStrip, type ChannelStripProps } from "./ChannelStrip";
+import { AudioClipLaneList } from "./AudioClipLane";
 import { stepGroupBorder, getPageCount, getPageStepRange, getPageForStep, getPageRangeLabel } from "./drumMachineHelpers";
 
 // ─── Typen ────────────────────────────────────────────────────────────────────
@@ -4335,6 +4336,13 @@ function DrumMachineInner({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChange
           />
           ));
         })()}
+
+        {/* ── Audio-Clip-Lanes (TASK-246, Option B) ──────────────────────────
+            Continuous-Wellenform-Lanes für importierte/aufgenommene Audio-Tracks.
+            KEIN Step-Grid (continuous AudioTrackChannelData-Modell). Eigene
+            memoisierte Liste, die den useAudioTrackStore selbst abonniert, damit
+            Track-Add/Remove/Mute den memoisierten DrumMachine nicht re-rendern. */}
+        <AudioClipLaneList />
       </div>
 
       {/* ── Step Inspector ───────────────────────────────────────────────── */}
