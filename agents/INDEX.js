@@ -4222,6 +4222,20 @@ const INDEX = {
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
     {
+      agent:     "builder",
+      timestamp: "2026-06-15T03:30:00.000Z",
+      done: [
+        "TASK-262: 11 headless-untaugliche Playwright-Specs in playwright.web.config.ts env-gegatet (single-source-of-truth Array HEADLESS_INCOMPATIBLE_SPECS). CI_HEADLESS=1 -> testIgnore schließt die 11 aus; CI_AUDIO_ONLY=1 -> testMatch läuft NUR die 11; kein Flag -> alles wie bisher.",
+        "ci.yml: e2e-web-Job (key+name unverändert, required) bekommt env CI_HEADLESS:'1' -> deterministisch grüner blocking-Pfad. NEUER additiver Job e2e-web-audio (CI_AUDIO_ONLY:'1', continue-on-error:true, needs:test) hält die Audio/Sim-Coverage sichtbar lauffähig OHNE den Gesamt-Status rot zu machen.",
+        "Verifiziert via --list: CI_HEADLESS=1 -> 177 tests/25 files (0 der 11 da); kein Gate -> 222 tests/36 files (alle 11 da, Delta exakt 11 Dateien); CI_AUDIO_ONLY=1 -> 45 tests/11 files. pnpm check grün (tsc --noEmit clean). Commit 95bdf7c, surgical staged (examples/e2s + screenshots NICHT committed)."
+      ],
+      next: [
+        "Green-Status pending erstem CI-Run auf main (Branch-Protection-Settings nicht aus Repo-Files prüfbar; continue-on-error macht den Audio-Job-Check strukturell grün). Coordinator: Release/Push triggert den Run.",
+        "Falls e2e-web-audio dauerhaft rot bleibt: Option (b) deterministische UI-State-Asserts statt Audio-Output erwägen (Frontend/Testing-Territorium)."
+      ],
+      changed: ["playwright.web.config.ts", ".github/workflows/ci.yml"]
+    },
+    {
       agent:     "coordinator",
       timestamp: "2026-06-15T02:05:00.000Z",
       done: [
@@ -15041,9 +15055,11 @@ const INDEX = {
             type: "build",
             priority: "medium",
             agent: "builder",
-            status: "open",
+            status: "done",
             createdAt: "2026-06-15T02:00:00.000Z",
             createdBy: "coordinator",
+            doneCommit: "95bdf7c",
+            doneNote: "Option (a) umgesetzt: env-Gate statt Spec-Löschen. playwright.web.config.ts HEADLESS_INCOMPATIBLE_SPECS (single source of truth) — CI_HEADLESS=1 testIgnore-t die 11, CI_AUDIO_ONLY=1 läuft NUR die 11, kein Flag = unverändert. ci.yml: e2e-web (required, unverändert benannt) +env CI_HEADLESS:'1' = deterministisch grün; neuer e2e-web-audio (continue-on-error:true, CI_AUDIO_ONLY:'1', needs:test) hält Coverage non-blocking sichtbar. --list verifiziert: gate 177/25, kein-gate 222/36 (Delta=11), audio-only 45/11. pnpm check grün. Green-Status pending erstem main-CI-Run.",
             title: "main-CI dauerhaft rot: headless-Playwright Audio/Sim-Tests timeouten",
             description: "Der 'CI'-Workflow auf main ist seit >=v3.271.3 konstant failure (Electron-Release-Workflow ist grün). Ursache: ~50 Playwright-Browser-Tests brauchen echtes Web-Audio/Loopback in headless Chromium (arp-playback, automix LUFS, license-polish, omnitribe-sim, sim-*) -> 30s-Timeouts. Kein Regress dieser Runde. Optionen: (a) diese Tests in CI als test.skip/projektgetrennt markieren mit @audio-tag und nur lokal/electron laufen lassen, (b) deterministische UI-State-Asserts statt Audio-Output, (c) headless-Audio-Flag/virtuelles Audio-Device in CI. Entscheidung+Umsetzung nächste Runde.",
         },
