@@ -64,6 +64,7 @@ import { KeyboardSamplerPanel } from "@/components/Tools/KeyboardSamplerPanel";
 import { AudioWorkbench } from "@/components/AudioWorkbench/AudioWorkbench";
 // v3.118.0: Project-Diff-Compare Tools-Subtab
 import { ProjectDiffPanel } from "@/components/ProjectDiff/ProjectDiffPanel";
+import { EsxToE2sConverter } from "@/components/Tools/EsxToE2sConverter";
 import { getKeyboardSamplerState } from "@/store/useKeyboardSamplerStore";
 import { getEnvelopeFollowerConfigs } from "@/store/useEnvelopeFollowerStore";
 
@@ -1906,7 +1907,7 @@ export default function App() {
     setActiveTab(tab);
     localStorage.setItem("ss-layout:active-tab", tab);
   }, []);
-  const [activeTool, setActiveTool] = useState<'prompt' | 'algorithmic' | 'chords' | 'sampler' | 'workbench' | 'automix' | 'library' | 'script' | 'omnitribe' | 'packs' | 'song' | 'liverec' | 'audioinput' | 'macroSnapshot' | 'diff'>('prompt');
+  const [activeTool, setActiveTool] = useState<'prompt' | 'algorithmic' | 'chords' | 'sampler' | 'workbench' | 'automix' | 'library' | 'script' | 'omnitribe' | 'packs' | 'song' | 'liverec' | 'audioinput' | 'macroSnapshot' | 'diff' | 'esx2e2s'>('prompt');
 
   // ── Dialog-State ─────────────────────────────────────────────────────────
   const [showMidiSettings, setShowMidiSettings] = useState(false);
@@ -4727,6 +4728,7 @@ export default function App() {
                       { id: "audioinput",  label: "🎤 Audio-In" },
                       { id: "script",      label: "⚡ Script" },
                       { id: "diff",        label: "📊 Diff" },
+                      { id: "esx2e2s",     label: "🔁 ESX→E2S" },
                       { id: "omnitribe",   label: "🎛 OmniTribe" },
                     ] as const).map(t => (
                       <button key={t.id} onClick={() => setActiveTool(t.id)}
@@ -4944,6 +4946,9 @@ export default function App() {
                     )}
                     {activeTool === 'diff' && (
                       <ProjectDiffPanel />
+                    )}
+                    {activeTool === 'esx2e2s' && (
+                      <EsxToE2sConverter />
                     )}
                   </div>
                 </div>
