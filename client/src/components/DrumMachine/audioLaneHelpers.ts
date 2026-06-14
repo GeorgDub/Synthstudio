@@ -98,5 +98,44 @@ export function audioLaneLabelColorClass(opts: {
   return "text-text-primary";
 }
 
+// ─── TASK-252: Global-Transport-Kopplung ─────────────────────────────────────
+
+/**
+ * Effektiver "spielt"-Zustand einer Audio-Clip-Lane.
+ *
+ * Eine Lane gilt als spielend, wenn ENTWEDER der globale Transport läuft
+ * (Global-Play startet via Engine alle registrierten Audio-Tracks parallel zum
+ * Step-Sequencer) ODER der lokale per-Lane Vorhör-Play aktiv ist.
+ *
+ * Vorher war der Lane-`playing`-State rein component-local — Global-Play/Stop
+ * wurde nicht reflektiert (Button-Label falsch, Playhead eingefroren). Diese
+ * reine Funktion ist die kanonische OR-Verknüpfung; sie wird in AudioClipLane
+ * mit dem (per Engine-Seam abonnierten) globalen Play-State und dem lokalen
+ * useState gespeist.
+ *
+ * Defensive: nicht-boolesche Eingaben werden truthy-koerziert; das Resultat ist
+ * immer ein echter boolean.
+ */
+export function shouldLaneFollowGlobalTransport(
+  globalPlaying: boolean,
+  laneLocalPlaying: boolean,
+): boolean {
+  return !!globalPlaying || !!laneLocalPlaying;
+}
+
+/**
+ * `true` wenn der per-Lane Play/Stop-Button gesperrt sein soll.
+ *
+ * Produkt-Entscheidung (TASK-252): Während der globale Transport läuft, gewinnt
+ * er die Anzeige + den Playhead der Lane. Der per-Lane-Button würde sonst
+ * widersprüchlich werden (er stoppt nur EINE Source, der effektive Zustand
+ * bliebe aber "spielend" weil global noch läuft → Button springt zurück). Daher
+ * wird der Toggle während Global-Play deaktiviert (No-Op) und dient nur dem
+ * isolierten Vorhören solange der globale Transport gestoppt ist.
+ */
+export function isLaneTransportToggleLocked(globalPlaying: boolean): boolean {
+  return !!globalPlaying;
+}
+
 /** Re-export des kanonischen Track-Typs für Consumer dieser Datei. */
 export type { AudioTrackChannelData };

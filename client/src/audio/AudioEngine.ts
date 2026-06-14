@@ -928,6 +928,14 @@ class AudioEngineClass {
 
   // Transport
   private _isPlaying = false;
+  /**
+   * TASK-252: Listener für den globalen Play/Stop-Zustand. Wird `true` gefeuert
+   * sobald der Step-Sequencer + die Audio-Tracks tatsächlich laufen (Ende von
+   * `_startPattern`, deckt auch den Count-In-Pfad ab) und `false` in `stop()`.
+   * Konsument: AudioClipLane koppelt seinen Anzeige-/Playhead-Zustand daran,
+   * damit Global-Play/Stop die Lane korrekt mitführt (isomorph, kein IPC).
+   */
+  private _playStateListeners = new Set<(playing: boolean) => void>();
   private _bpm = 120;
   private _steps = 16;
   private _currentStep = 0;
@@ -2831,6 +2839,27 @@ class AudioEngineClass {
     return () => { this.positionCallbacks = this.positionCallbacks.filter(c => c !== cb); };
   }
 
+  /**
+   * TASK-252: Abonniert den globalen Play/Stop-Zustand. Der Callback feuert mit
+   * `true` wenn der Transport (Step-Sequencer + parallele Audio-Tracks) startet
+   * und mit `false` beim Stop. Liefert eine Unsubscribe-Funktion.
+   *
+   * Genutzt von AudioClipLane, damit die continuous-Clip-Lanes ihren Anzeige-
+   * und Playhead-Zustand am globalen Transport ausrichten (Global-Play zeigt die
+   * Lane als spielend + bewegt den Playhead; Global-Stop setzt sie zurück).
+   */
+  onPlayStateChange(cb: (playing: boolean) => void) {
+    this._playStateListeners.add(cb);
+    return () => { this._playStateListeners.delete(cb); };
+  }
+
+  /** Feuert den globalen Play/Stop-Zustand an alle Listener (fehler-isoliert). */
+  private _emitPlayState(playing: boolean) {
+    this._playStateListeners.forEach((cb) => {
+      try { cb(playing); } catch { /* ignore listener errors */ }
+    });
+  }
+
   async play(fromStep = 0) {
     await this.init();
     await this.resume();
@@ -2874,6 +2903,11 @@ class AudioEngineClass {
 
     // Externe Audio-Tracks (Vocals, Songs) parallel zum Step-Sequencer starten.
     this.playAllRegisteredAudioTracks();
+
+    // TASK-252: Globalen Play-Zustand an UI-Listener (z.B. AudioClipLane) melden.
+    // Hier (Ende von _startPattern) statt in play(), damit auch der Count-In-Pfad
+    // (_startWithCountIn → _startPattern) korrekt erfasst wird.
+    this._emitPlayState(true);
   }
 
   /**
@@ -2967,6 +3001,9 @@ class AudioEngineClass {
     this.stopActiveVoices();
     this._lastSchedPatternId = null;
     this._isPlaying = false;
+    // TASK-252: Globalen Stop-Zustand an UI-Listener melden (AudioClipLane setzt
+    // dann Anzeige + Playhead zurück). Idempotent — stop() kann mehrfach laufen.
+    this._emitPlayState(false);
     // v3.269: Queued (quantisierten) Pattern-Switch beim Stop verwerfen — sonst
     // feuert er überraschend beim nächsten Play. Mid-Fade-Master-Gain restoren.
     this.queuedPatternId = null;

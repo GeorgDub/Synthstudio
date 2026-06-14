@@ -40,7 +40,9 @@ import { resolveChannelColor } from "@/utils/channelColors";
 import {
   audioLaneLabelColorClass,
   isAudioLaneAudible,
+  isLaneTransportToggleLocked,
   resolveAudioLanes,
+  shouldLaneFollowGlobalTransport,
 } from "./audioLaneHelpers";
 
 export interface AudioClipLaneProps {
@@ -78,9 +80,36 @@ export const AudioClipLane = memo(function AudioClipLane({
   audible = true,
 }: AudioClipLaneProps) {
   // Per-Lane Play/Stop — component-local (ephemer, kein Store), wie AudioTrackStrip.
+  // Dies ist der ISOLIERTE Vorhör-Zustand (per-Lane-Button), NICHT der globale.
   const [playing, setPlaying] = useState(false);
+  // TASK-252: Globaler Transport-Zustand (self-subscribed via Engine-Seam). Init
+  // aus dem Live-Getter, damit eine Lane die mid-playback gemountet wird (z.B.
+  // Track während laufendem Transport hinzugefügt) sofort korrekt startet.
+  const [globalPlaying, setGlobalPlaying] = useState(() => AudioEngine.isPlaying);
   const [pos01, setPos01] = useState(0);
   const broken = runtime.broken === true;
+
+  // Effektiver "spielt"-Zustand: globaler Transport ODER lokales Vorhören.
+  // Global gewinnt für Anzeige (Button-Label) + Playhead; der per-Lane-Button
+  // ist während Global-Play gesperrt (siehe handlePlayStop).
+  const effectivePlaying = shouldLaneFollowGlobalTransport(globalPlaying, playing);
+  const toggleLocked = isLaneTransportToggleLocked(globalPlaying);
+
+  // ── Globaler Play/Stop (self-subscribed) ─────────────────────────────────
+  // Koppelt die Lane an den globalen Transport: Global-Play startet via Engine
+  // alle registrierten Audio-Tracks (playAllRegisteredAudioTracks) parallel zum
+  // Step-Sequencer → die Lane muss das in Anzeige + Playhead spiegeln. Vorher
+  // war der Lane-Zustand rein lokal und fror bei Global-Play/Stop ein.
+  useEffect(() => {
+    const unsub = AudioEngine.onPlayStateChange((p) => {
+      setGlobalPlaying(p);
+      // Global-Stop räumt auch ein evtl. laufendes lokales Vorhören mit auf:
+      // Engine.stop() killt ALLE audioTrackSources (gemeinsame Source-Bahn), der
+      // lokale playing-State würde sonst hängenbleiben.
+      if (!p) setPlaying(false);
+    });
+    return unsub;
+  }, []);
 
   // ── Playhead-Position (self-subscribed) ──────────────────────────────────
   useEffect(() => {
@@ -96,14 +125,20 @@ export const AudioClipLane = memo(function AudioClipLane({
     return unsub;
   }, [track.id]);
 
-  // Wenn nicht aktiv → Playhead resetten.
+  // Wenn (effektiv) nicht aktiv → Playhead resetten. effectivePlaying statt
+  // playing, damit der Playhead bei Global-Play NICHT auf 0 zurückgesetzt wird
+  // (sonst würde der per onAudioTrackPosition gespeiste Playhead überschrieben).
   useEffect(() => {
-    if (!playing) setPos01(0);
-  }, [playing]);
+    if (!effectivePlaying) setPos01(0);
+  }, [effectivePlaying]);
 
-  // ── Play / Stop ──────────────────────────────────────────────────────────
+  // ── Play / Stop (isoliertes Vorhören) ─────────────────────────────────────
   const handlePlayStop = useCallback(() => {
     if (broken) return;
+    // TASK-252: Während der globale Transport läuft ist der per-Lane-Toggle
+    // gesperrt (global gewinnt Anzeige + Playhead). Der Button dient nur dem
+    // isolierten Vorhören solange global gestoppt ist.
+    if (toggleLocked) return;
     const next = nextAudioTrackPlayState(playing, "toggle", { broken });
     if (next) {
       AudioEngine.playAudioTrack(track.id);
@@ -111,7 +146,7 @@ export const AudioClipLane = memo(function AudioClipLane({
       AudioEngine.stopAudioTrack(track.id);
     }
     setPlaying(next);
-  }, [track.id, broken, playing]);
+  }, [track.id, broken, playing, toggleLocked]);
 
   // ── Mute / Solo (gleiche Solo-Gruppe wie AudioTrackStrip) ─────────────────
   const handleMute = useCallback(() => {
@@ -260,19 +295,25 @@ export const AudioClipLane = memo(function AudioClipLane({
           e.stopPropagation();
           handlePlayStop();
         }}
-        disabled={broken}
-        aria-label={playing ? "Stop" : "Play"}
-        aria-pressed={playing}
-        title={playing ? "Stop" : "Play (nur dieser Clip)"}
+        disabled={broken || toggleLocked}
+        aria-label={effectivePlaying ? "Stop" : "Play"}
+        aria-pressed={effectivePlaying}
+        title={
+          toggleLocked
+            ? "Steuerung über globalen Transport (Play/Stop)"
+            : effectivePlaying
+              ? "Stop"
+              : "Play (nur dieser Clip)"
+        }
         className={[
           "w-6 h-6 flex items-center justify-center rounded transition-colors flex-shrink-0",
           "disabled:opacity-40 disabled:cursor-not-allowed",
-          playing
+          effectivePlaying
             ? "bg-accent-primary text-text-primary"
             : "bg-bg-elevated text-text-dim hover:text-accent-primary",
         ].join(" ")}
       >
-        {playing ? <Square size={11} /> : <Play size={11} />}
+        {effectivePlaying ? <Square size={11} /> : <Play size={11} />}
       </button>
 
       {/* ── Continuous Waveform (füllt die restliche Breite) ─────────────── */}
@@ -281,7 +322,7 @@ export const AudioClipLane = memo(function AudioClipLane({
           peaks={peaks}
           duration={runtime.durationSec ?? 0}
           playbackPosition={pos01}
-          isPlaying={playing}
+          isPlaying={effectivePlaying}
           onSeek={handleSeek}
           height={40}
           color={waveColor}
