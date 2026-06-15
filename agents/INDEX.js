@@ -4232,6 +4232,26 @@ const INDEX = {
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
     {
+      agent:     "coordinator",
+      timestamp: "2026-06-15T19:40:00.000Z",
+      done: [
+        "Runde 2026-06-15 (Session 6) konsolidiert. Pflicht-Minimum (TASK-266 + TASK-264 + FxPanel-Token) plus beide optionalen (TASK-265 + TASK-257-FOLLOWUP-3) alle gruen gelandet, seriell committed (shared Working-Tree), je eigener Commit.",
+        "TASK-266 (refactor): KEIN Code-Change noetig — Zyklus useThemeStore<->ThemeSettings war bereits durch TASK-248 (e0c2d8a, v3.272) via client/src/utils/themeApply.ts aufgeloest. Primaerquellen-verifiziert (useThemeStore importiert nur react + @/utils/themeApply). workLog-high-prio-Notizen waren stale. Auf done gesetzt, kein Churn.",
+        "FxPanel-Token-Fix (refactor, 9600557): text-white -> text-text-primary in FxPanel.tsx Tab-Buttons (~Z136). theme-class-purity-Test gruen.",
+        "TASK-264 (frontend, f2a3fd7): useSubMixBus(busId)-Selektor in useSubMixStore (useSyncExternalStore, busesEqual per-Feld, useRef-Snapshot-Cache). SubMixBusStrip -> React.memo(busId,busIndex). App.tsx UNBERUEHRT (behaelt vollen State fuer syncSubMixState). +11 Tests. Rerender-Effekt: jeder Strip rerendert nur noch bei Mutation seines eigenen Bus statt bei jeder Bus-Mutation.",
+        "TASK-265 (refactor, 819fa55): PlaylistPanel verbatim aus SampleBrowser.tsx -> SampleBrowser/PlaylistPanel.tsx (179 LOC). SampleBrowser 5788->5616 (-172). Props-only, Playlist-Interface mitgezogen, kein Zirkel. +2 Tests.",
+        "TASK-257-FOLLOWUP-3 (backend, d950bb8): source: lfo|macro|env in ModRoute (default lfo, Migration alter persisted Routes via migrateRoute+routeSource-Guard). Pure-Helper utils/modSource.ts (macroToModValue, evaluateEnv ADSR, defaultEnvConfig). Engine-Seam in App.tsx-rAF-Loop verzweigt nach source; getActiveModRoutes-Bug gefixt (liess macro/env fallen). UICp im LfoModPanel gebaut (source-Picker + Macro-Select/ADSR). KEIN neuer IPC, KEINE neue Dependency -> kein Security-Gate. +20 Tests.",
+        "Release v3.281.0 (builder): published mit Latest-Badge, Electron-Release-Run success, CI blockierende Jobs gruen (Type-Check+Unit, Playwright-Headless). pnpm check + test final 450 files / 10445 passed / 12 skipped."
+      ],
+      next: [
+        "Folge-Session: weitere SampleBrowser-Extraktion (naechstes props-only Paeckchen, SampleBrowser noch ~5616 LOC) + DrumMachine.tsx weiter zerlegen.",
+        "Volle Mod-Matrix-UI (mehrere sources/Ziele uebersichtlich) als Ausbau von TASK-257-FOLLOWUP-3.",
+        "TASK-257-FOLLOWUP-3 Edge: Envelope laeuft frei (kein Note-/Transport-Trigger); macro-Route ohne LFO hat lfoId=\"\" -> Wechsel zurueck auf source lfo erst nach LFO-Auswahl aktiv. Als kleiner Folge-Task verfeinerbar.",
+        "Audio/Sim-Playwright-Job laeuft non-blocking rot (TASK-262-Env-Gate, OmniTribe-Sim braucht nicht-headless) — bewusst akzeptiert, kein Blocker."
+      ],
+      changed: []
+    },
+    {
       agent:     "builder",
       timestamp: "2026-06-15T19:25:00.000Z",
       done: [
@@ -15311,7 +15331,10 @@ const INDEX = {
             type: "refactor",
             priority: "low",
             agent: "refactor",
-            status: "open",
+            status: "done",
+            doneIn: "v3.281.0",
+            doneCommit: "819fa55",
+            doneNote: "PlaylistPanel verbatim-move aus SampleBrowser.tsx nach client/src/components/SampleBrowser/PlaylistPanel.tsx (179 LOC). SampleBrowser.tsx 5788->5616 (-172). Props-only, Playlist-Interface mitgezogen+exportiert, kein Zirkel. +2 theme-class-purity Tests. round-2026-06-15-s6",
             createdAt: "2026-06-15T07:45:00.000Z",
             createdBy: "coordinator",
             title: "Naechste SampleBrowser-Extraktion: PlaylistPanel (Folge TASK-255-FOLLOWUP)",
@@ -15342,6 +15365,40 @@ const INDEX = {
             doneNote: "OBSOLETE/already-resolved by TASK-248 (commit e0c2d8a, v3.272). Verifiziert 2026-06-15 vom refactor-Agent: useThemeStore.ts importiert NICHTS mehr aus ThemeSettings.tsx — nur 'react' (Z1) + '@/utils/themeApply' (Z4, Blattmodul ohne Rueck-Import). Grep nach ThemeSettings in useThemeStore.ts liefert nur Kommentar-Zeilen (Z2-3). Import-Kette ist ThemeSettings -> useThemeStore -> themeApply (leaf): kein Zyklus (weder value noch type). Die alten 'weiterhin offen'-workLog-Notizen sind stale (pre-TASK-248). KEIN themeTypes.ts angelegt — waere reine Churn ohne Cycle-Aufloesung + Risiko fuer die gruene Suite. Kein Commit fuer TASK-266.",
             title: "Circular import useThemeStore <-> ThemeSettings aufloesen",
             description: "Mehrfach im workLog als hohe Prio notiert: useThemeStore.ts importiert aus ThemeSettings.tsx (Zyklus). Shared Theme-Typen/Konstanten nach client/src/types/themeTypes.ts (neutrales Blatt) extrahieren, beide importieren von dort. Verhaltensneutral, Tests vor/nach gruen.",
+        },
+        // ─── Runde 2026-06-15 (Session 6): Folge-Tasks fuer naechste Session ───
+        {
+            id: "TASK-269",
+            type: "refactor",
+            priority: "low",
+            agent: "refactor",
+            status: "open",
+            createdAt: "2026-06-15T19:40:00.000Z",
+            createdBy: "coordinator",
+            title: "Naechste SampleBrowser-Extraktion (Folge TASK-265)",
+            description: "SampleBrowser.tsx noch ~5616 LOC. Naechstes sauberes props-only Paeckchen extrahieren (Scout fuer Kandidat nach Muster ImportProgress/PlaylistPanel). Verhaltensneutral, verbatim, Tests vor/nach gruen, EIN Paeckchen.",
+        },
+        {
+            id: "TASK-270",
+            type: "feature",
+            priority: "low",
+            agent: "frontend",
+            status: "open",
+            createdAt: "2026-06-15T19:40:00.000Z",
+            createdBy: "coordinator",
+            title: "Volle Mod-Matrix-UI (Ausbau TASK-257-FOLLOWUP-3)",
+            description: "Datenmodell unterstuetzt jetzt source lfo|macro|env. Uebersichtliches Matrix-/Routing-UI bauen (mehrere Quellen x Ziele), das die Einzel-Route-Editor-Sicht ergaenzt. Keine hardcodierten Farben, isomorph. Test-First.",
+        },
+        {
+            id: "TASK-271",
+            type: "feature",
+            priority: "low",
+            agent: "backend",
+            status: "open",
+            createdAt: "2026-06-15T19:40:00.000Z",
+            createdBy: "coordinator",
+            title: "Envelope-Mod-Quelle an Note/Transport-Trigger koppeln (Edge TASK-257-FOLLOWUP-3)",
+            description: "evaluateEnv laeuft aktuell frei (zyklisch, kein Trigger). Optional an Transport-/Note-Events koppeln (one-shot ab note-on). Zudem macro-Route ohne LFO hat lfoId=leer -> Wechsel zurueck auf source lfo erst nach LFO-Auswahl aktiv; round-trip-robuster machen. Test-First.",
         },
         {
             id: "TASK-255-FOLLOWUP",
