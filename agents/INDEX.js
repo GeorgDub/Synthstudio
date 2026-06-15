@@ -4222,6 +4222,36 @@ const INDEX = {
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
     {
+      agent:     "coordinator",
+      timestamp: "2026-06-15T05:30:00.000Z",
+      done: [
+        "Runde 2026-06-15 (Session 2) konsolidiert. Pflicht-Minimum TASK-262 + TASK-261 plus TASK-257 alle gruen gelandet.",
+        "Hygiene: CI-Rot per gh verifiziert (CI-Workflow konstant failure seit >=v3.271.3, Electron-Release gruen). Exakte failing-Spec-Menge per gh run view 27514470605 --log-failed gezogen: 11 Dateien (sim-step-cursor/sim-song-mode/sim-pitch-melody/sim-pattern-bank/sim-pattern-sequencer/sim-audio-trigger/license-polish/omnitribe-sim-streams/omnitribe-sim-connect/arp-playback/automix-panel). Dominant-Fehler: sim-status-connected nicht sichtbar (WS-Sim-Loopback fehlt) + echte LUFS/Audio-Events -> headless-untauglich, KEIN Regress.",
+        "Boundary geklaert VOR Dispatch: tests/web/audio-track-play-stop.spec.ts ist UI-State (aria-pressed), NICHT audio-dependent -> bleibt im CI-Pfad; TASK-261 schaltet dort scharf. Batch {TASK-261 frontend, TASK-262 builder} pfad-disjunkt -> parallel dispatcht. TASK-257 seriell danach.",
+        "Combined pnpm check ueber merged tree gruen. 4 Commits (95bdf7c/eb7255b builder, 92d6185 frontend, 199c2e9 backend) einzeln + surgical staged (examples/e2s + screenshots NIE committed)."
+      ],
+      next: [
+        "Release-Run watchen: BEWEISEN dass CI auf main jetzt gruen ist (erster Lauf mit env-Gate). Falls e2e-web rot -> --log-failed pruefen, Gate-Liste nachjustieren.",
+        "TASK-257-FOLLOWUP (Minimal-UI fuer LFO-Routing). Naechste Runde: TASK-255 (uebergrosse Komponenten), TASK-263 (weitere Store-Selektoren)."
+      ],
+      changed: []
+    },
+    {
+      agent:     "backend",
+      timestamp: "2026-06-15T05:10:00.000Z",
+      done: [
+        "TASK-257 v1 (LFO-Routing) gelandet. Datenmodell + Store: client/src/store/useLfoModStore.ts (lfos[]+routes[], Custom-Observer, localStorage ss-lfo-mod:v1, getActiveModRoutes() filtert aktive Route+LFO, removeLfo raeumt verwaiste Routes ab).",
+        "Pure LFO-Math: client/src/utils/lfo.ts (evaluateLfo sine/triangle/square/saw bipolar, applyBipolarMod um Basiswert + Clamp, timeSec als Param -> unit-testbar).",
+        "Engine-Seam: client/src/App.tsx Sibling-rAF-Loop. Mod auf volume/pan/filterFreq/reverbMix/delayMix via direkte AudioEngine-Setter. Basiswert bei Aktivierung erfasst, bei Deaktivierung/Unmount WIEDERHERGESTELLT (kein stuck param). performance.now() -> isomorph.",
+        "37 neue Tests (lfo.test.ts 22 + lfo-mod-store.test.ts 15). pnpm check gruen, pnpm test 10365 passed. Commit 199c2e9. KEIN neuer IPC-Channel, KEINE neue Runtime-Dep."
+      ],
+      next: [
+        "TASK-257-FOLLOWUP: Minimal-UI (Panel/ChannelInspector-Sektion) fuer LFO+Route-Editing.",
+        "Toter ModMatrixEntry/ModSource/ModTarget-Stub in AudioEngine.ts:91 unangetastet -> spaeter entfernen oder mergen."
+      ],
+      changed: ["client/src/utils/lfo.ts","client/src/store/useLfoModStore.ts","client/src/App.tsx","tests/features/lfo.test.ts","tests/features/lfo-mod-store.test.ts"]
+    },
+    {
       agent:     "frontend",
       timestamp: "2026-06-15T04:15:00.000Z",
       done: [
@@ -14981,6 +15011,17 @@ const INDEX = {
   openTasks: [
         // ─── Runde 2026-06-15: 251/252/256 DONE (siehe workLog, commits d1015ee/85fcd10/d1166aa/be67470). Verbleibende + neue offene Tasks: ───
         {
+            id: "TASK-257-FOLLOWUP",
+            type: "feature",
+            priority: "low",
+            agent: "frontend",
+            status: "open",
+            createdAt: "2026-06-15T05:30:00.000Z",
+            createdBy: "coordinator",
+            title: "Minimal-UI fuer LFO-Routing (Folge TASK-257 v1)",
+            description: "TASK-257 v1 landete Datenmodell + useLfoModStore + Engine-Seam (App.tsx) + 37 Tests, OHNE UI. Jetzt schlanke UI bauen: LFO-Liste (add/remove/enable, waveform/rateHz/depth) + Route-Editor (lfoId -> targetPartId/param/amount) fuer volume/pan/filterFreq/reverbMix/delayMix. KEINE grosse Matrix. Custom-Observer-Store schon da. Semantische --ss-*-Tokens, useElectron-Fallback. Playwright-Smoke (UI-State, headless-tauglich).",
+        },
+        {
             id: "TASK-253",
             type: "refactor",
             priority: "medium",
@@ -15022,9 +15063,11 @@ const INDEX = {
             type: "feature",
             priority: "low",
             agent: "backend",
-            status: "open",
+            status: "partially-done",
             createdAt: "2026-06-15T00:45:00.000Z",
             createdBy: "coordinator",
+            doneCommit: "199c2e9",
+            doneNote: "v1: Datenmodell + useLfoModStore + lfo.ts (pure) + App.tsx-rAF-Engine-Seam (volume/pan/filterFreq/reverbMix/delayMix) + 37 Tests. UI bewusst verschoben -> TASK-257-FOLLOWUP. round-2026-06-15-s2",
             title: "Modulations-Matrix / LFO-Routing (echte Absenz)",
             description: "ModMatrix/LFO-Routing existiert gar nicht. Routing-Quellen (LFO/Env/Macro) auf Ziel-Params (Filter/Pitch/FX) mappbar machen.",
         },
@@ -15065,6 +15108,7 @@ const INDEX = {
             createdBy: "coordinator",
             doneAt: "2026-06-15T04:15:00.000Z",
             doneBy: "frontend",
+            doneCommit: "92d6185",
             doneNote: "AudioTrackStrip.tsx self-subscribed AudioEngine.onPlayStateChange (analog AudioClipLane/TASK-252): globalPlaying via useState (Seed aus AudioEngine.isPlaying), effectivePlaying=playing||globalPlaying (stale isPlaying-Prop aus OR entfernt), Button aria-pressed=effectivePlaying + disabled={broken||globalPlaying} + handlePlayStop no-op bei toggleLocked. Conditions inline (kein Cross-Layer-Import, TASK-258-Hygiene). test.skip in audio-track-play-stop.spec.ts -> scharfer UI-State-Test (aria-pressed true/false + disabled/enabled über Global-Play/Stop). pnpm check + 10328 Vitest grün, Playwright 3/3 grün. MixerView NICHT angefasst. Surgical staged.",
             title: "Mixer-Strip Play-Button koppelt nicht an Global-Transport (Asymmetrie zu Clip-Lane)",
             description: "TASK-259 deckte auf: AudioClipLane koppelt an global transport (onPlayStateChange -> aria-pressed/disabled), aber AudioTrackStrip.tsx Per-Track-Button bleibt component-local (aria-pressed={playing}); bei Global-Play zeigt der Mixer-Strip-Button nicht 'playing'. Entweder bewusst (dann dokumentieren) oder UX-Gap schließen: AudioTrackStrip an onPlayStateChange koppeln, dann den re-skippten Smoke in audio-track-play-stop.spec.ts scharf schalten. Dateien: client/src/components/Mixer/AudioTrackStrip.tsx, tests/web/audio-track-play-stop.spec.ts.",
