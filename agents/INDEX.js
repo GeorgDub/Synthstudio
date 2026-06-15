@@ -4223,6 +4223,22 @@ const INDEX = {
   workLog: [
     {
       agent:     "coordinator",
+      timestamp: "2026-06-15T06:30:00.000Z",
+      done: [
+        "Runde 2026-06-15 (Session 3): TASK-257-FOLLOWUP (LFO/Mod-Panel-UI) + TASK-255 (ElectribePickerModal-Extraktion) gruen gelandet, je eigener Commit (eaaaed0, 9543489).",
+        "TASK-257 partially-done -> phase-1-done normalisiert. Release v3.277.0.",
+        "Audibility verifiziert: Target-Picker nutzt echte Mixer-Channel-IDs (dm.getActivePattern().parts) -> Engine-Seam setzt AudioEngine.setChannel* = hoerbar, nicht stiller No-Op.",
+        "Seriell statt parallel dispatcht (shared git working-tree -> surgical staging waere bei concurrent add kollidiert)."
+      ],
+      next: [
+        "TASK-255-FOLLOWUP (zweiter Riese SampleBrowser / weitere DrumMachine-Bloecke).",
+        "TASK-263 (weitere heisse Stores nach Profiling).",
+        "TASK-257-FOLLOWUP-2 (volle LFO-Mod-Matrix-UI + Macro/Env-Quellen)."
+      ],
+      changed: []
+    },
+    {
+      agent:     "coordinator",
       timestamp: "2026-06-15T05:30:00.000Z",
       done: [
         "Runde 2026-06-15 (Session 2) konsolidiert. Pflicht-Minimum TASK-262 + TASK-261 plus TASK-257 alle gruen gelandet.",
@@ -15010,14 +15026,42 @@ const INDEX = {
   // ───────────────────────────────────────────────────────
   openTasks: [
         // ─── Runde 2026-06-15: 251/252/256 DONE (siehe workLog, commits d1015ee/85fcd10/d1166aa/be67470). Verbleibende + neue offene Tasks: ───
+        // ─── Runde 2026-06-15 (Session 3): TASK-257-FOLLOWUP + TASK-255 DONE (v3.277.0). Neue Folge-Tasks: ───
+        {
+            id: "TASK-255-FOLLOWUP",
+            type: "refactor",
+            priority: "low",
+            agent: "refactor",
+            status: "open",
+            createdAt: "2026-06-15T06:30:00.000Z",
+            createdBy: "coordinator",
+            title: "Weitere Komponenten-Extraktion (Folge TASK-255)",
+            description: "Zweiter Riese / weitere Extraktion: SampleBrowser.tsx (~5836 LOC) ODER weitere DrumMachine-Bloecke (makeE2sSampleResolver -> utils, Playhead*-Sub-Komponenten ~Z1211-1355). Verhaltensneutral, Tests vor/nach gruen. Wieder nur EIN sauberes Paeckchen.",
+        },
+        {
+            id: "TASK-257-FOLLOWUP-2",
+            type: "feature",
+            priority: "low",
+            agent: "frontend",
+            status: "open",
+            createdAt: "2026-06-15T06:30:00.000Z",
+            createdBy: "coordinator",
+            title: "LFO-UI-Iteration: volle Mod-Matrix-Ansicht (Folge TASK-257-FOLLOWUP)",
+            description: "LFO-UI-Iteration: volle Mod-Matrix-Ansicht falls v1 zu minimal — mehrere Routes pro LFO uebersichtlicher, evtl. Live-Wert-Visualisierung der LFO-Schwingung, Macro/Env als zusaetzliche Quellen (aktuell nur LFO).",
+        },
         {
             id: "TASK-257-FOLLOWUP",
             type: "feature",
             priority: "low",
             agent: "frontend",
-            status: "open",
+            status: "done",
             createdAt: "2026-06-15T05:30:00.000Z",
             createdBy: "coordinator",
+            doneIn: "v3.277.0",
+            doneAt: "2026-06-15T06:30:00.000Z",
+            doneBy: "frontend",
+            doneCommit: "eaaaed0",
+            doneNote: "LfoModPanel.tsx als neuer Tools-Sub-Tab 'LFO/Mod'. LFO-Liste (add/remove/enable, waveform/rateHz/depth/phase) + Route-Editor (lfoId->targetPartId/param/amount). Target-Picker zieht part.id/part.name aus dm.getActivePattern().parts (gleiche Quelle wie MixerView) -> Engine-Seam ruft AudioEngine.setChannel* mit echten IDs = hörbar. Defaults non-zero (LFO sine 1Hz depth1, Route amount0.5). Nur --ss-*-Token, native Selects (headless-stabil). +5 vitest + 2 Playwright-Smokes (CI_HEADLESS-tauglich). round-2026-06-15-s3",
             title: "Minimal-UI fuer LFO-Routing (Folge TASK-257 v1)",
             description: "TASK-257 v1 landete Datenmodell + useLfoModStore + Engine-Seam (App.tsx) + 37 Tests, OHNE UI. Jetzt schlanke UI bauen: LFO-Liste (add/remove/enable, waveform/rateHz/depth) + Route-Editor (lfoId -> targetPartId/param/amount) fuer volume/pan/filterFreq/reverbMix/delayMix. KEINE grosse Matrix. Custom-Observer-Store schon da. Semantische --ss-*-Tokens, useElectron-Fallback. Playwright-Smoke (UI-State, headless-tauglich).",
         },
@@ -15052,9 +15096,14 @@ const INDEX = {
             type: "refactor",
             priority: "low",
             agent: "refactor",
-            status: "open",
+            status: "done",
             createdAt: "2026-06-15T00:45:00.000Z",
             createdBy: "coordinator",
+            doneIn: "v3.277.0",
+            doneAt: "2026-06-15T06:30:00.000Z",
+            doneBy: "refactor",
+            doneCommit: "9543489",
+            doneNote: "Erstes Extraktions-Paeckchen: ElectribePickerModal (props-only, null Parent-State-Kopplung) aus DrumMachine.tsx nach client/src/components/DrumMachine/ElectribePickerModal.tsx (129 LOC). DrumMachine.tsx 4606->4479 LOC (-127). Verbatim-Move, kein memo/Logik/Token geaendert. check gruen, test 10374 passed unveraendert. Verhaltensneutral. SampleBrowser.tsx + MixerView + Rest von DrumMachine bleiben offen -> TASK-255-FOLLOWUP. round-2026-06-15-s3",
             title: "Uebergrosse Komponenten (#7) zerlegen",
             description: "DrumMachine.tsx (~4495 LOC) und MixerView in kohaerente Sub-Komponenten/Hooks aufteilen, verhaltensneutral. Tests vor/nach gruen.",
         },
@@ -15063,7 +15112,7 @@ const INDEX = {
             type: "feature",
             priority: "low",
             agent: "backend",
-            status: "partially-done",
+            status: "phase-1-done",
             createdAt: "2026-06-15T00:45:00.000Z",
             createdBy: "coordinator",
             doneCommit: "199c2e9",
