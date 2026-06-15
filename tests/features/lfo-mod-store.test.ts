@@ -35,6 +35,7 @@ import {
   getModRoutes,
   getActiveModRoutes,
   routeSource,
+  resolveLfoIdForSwitch,
   __resetLfoModStoreForTests,
   type LfoConfig,
   type ModRoute,
@@ -288,5 +289,95 @@ describe("useLfoModStore – Mod-Source + Migration (FOLLOWUP-3)", () => {
     const parsed = JSON.parse(localStorageMock.getItem(STORAGE_KEY)!);
     expect(parsed.routes[0].source).toBe("macro");
     expect(parsed.routes[0].macroIndex).toBe(5);
+  });
+});
+
+// ─── resolveLfoIdForSwitch – lfoId-Round-Trip-Edge (TASK-271 Task B) ──────────
+
+describe("resolveLfoIdForSwitch – lfoId beim (Zurück-)Wechsel auf source 'lfo'", () => {
+  it("Happy: bestehender gültiger lfoId bleibt erhalten (kein Verlust beim Hin/Her)", () => {
+    const a = addLfo(baseLfo());
+    const b = addLfo({ ...baseLfo(), name: "LFO 2" });
+    // Route zeigt aktuell auf b → bleibt b, NICHT auf den ersten zurückgesetzt.
+    expect(resolveLfoIdForSwitch(b, getLfos())).toBe(b);
+    expect(resolveLfoIdForSwitch(a, getLfos())).toBe(a);
+  });
+
+  it("Edge: leerer lfoId (Route ohne verfügbaren LFO erstellt) → erster LFO", () => {
+    const a = addLfo(baseLfo());
+    expect(resolveLfoIdForSwitch("", getLfos())).toBe(a);
+    expect(resolveLfoIdForSwitch(undefined, getLfos())).toBe(a);
+  });
+
+  it("Edge: verwaister lfoId (LFO entfernt) → erster verfügbarer LFO", () => {
+    const a = addLfo(baseLfo());
+    expect(resolveLfoIdForSwitch("lfo-gone-123", getLfos())).toBe(a);
+  });
+
+  it("Edge: gar kein LFO vorhanden → '' (konsistent mit v1)", () => {
+    expect(resolveLfoIdForSwitch("", getLfos())).toBe("");
+    expect(resolveLfoIdForSwitch("whatever", getLfos())).toBe("");
+  });
+
+  it("Round-Trip: lfo→macro→lfo + persist/load reaktiviert Route ohne erneute LFO-Wahl", () => {
+    const lfoId = addLfo(baseLfo());
+    const rid = addModRoute({ ...baseRoute(lfoId), source: "lfo" });
+    expect(getActiveModRoutes()).toHaveLength(1); // lfo aktiv
+
+    // Wechsel auf macro (UI würde lfoId NICHT löschen → bleibt erhalten).
+    updateModRoute(rid, { source: "macro", macroIndex: 2 });
+    let parsed = JSON.parse(localStorageMock.getItem(STORAGE_KEY)!);
+    expect(parsed.routes[0].source).toBe("macro");
+    expect(parsed.routes[0].lfoId).toBe(lfoId); // lfoId bewahrt über persist
+
+    // Zurück auf lfo: resolveLfoIdForSwitch liefert gültigen lfoId (hier: bewahrt).
+    const route = getModRoutes().find((r) => r.id === rid)!;
+    const resolved = resolveLfoIdForSwitch(route.lfoId, getLfos());
+    updateModRoute(rid, { source: "lfo", lfoId: resolved });
+    parsed = JSON.parse(localStorageMock.getItem(STORAGE_KEY)!);
+    expect(parsed.routes[0].source).toBe("lfo");
+    expect(parsed.routes[0].lfoId).toBe(lfoId);
+    // Route ist sofort wieder aktiv — KEINE erneute manuelle LFO-Auswahl nötig.
+    expect(getActiveModRoutes()).toHaveLength(1);
+    expect(routeSource(getModRoutes()[0])).toBe("lfo");
+  });
+
+  it("Round-Trip robust auch wenn Route ohne LFO erstellt wurde (lfoId='')", () => {
+    // Route ohne verfügbaren LFO erstellt → lfoId "" (wie LfoModPanel addModRoute).
+    const rid = addModRoute({ ...baseRoute(""), source: "macro", macroIndex: 0 });
+    // Jetzt existiert ein LFO; Wechsel zurück auf lfo soll diesen wählen.
+    const lfoId = addLfo(baseLfo());
+    const route = getModRoutes().find((r) => r.id === rid)!;
+    const resolved = resolveLfoIdForSwitch(route.lfoId, getLfos());
+    expect(resolved).toBe(lfoId);
+    updateModRoute(rid, { source: "lfo", lfoId: resolved });
+    expect(getActiveModRoutes()).toHaveLength(1);
+  });
+});
+
+// ─── Regression: lfo/macro-Verhalten unverändert (TASK-271 Schutzgeländer) ────
+
+describe("Regression – lfo/macro-Routes durch TASK-271 unverändert", () => {
+  it("lfo-Route weiterhin aktiv mit enabled-LFO, inaktiv wenn LFO disabled", () => {
+    const lfoId = addLfo(baseLfo());
+    addModRoute({ ...baseRoute(lfoId), source: "lfo" });
+    expect(getActiveModRoutes()).toHaveLength(1);
+    updateLfo(lfoId, { enabled: false });
+    expect(getActiveModRoutes()).toHaveLength(0);
+  });
+
+  it("macro-Route braucht keinen LFO und bleibt aktiv (lfo: undefined im Result)", () => {
+    addModRoute({ ...baseRoute(""), source: "macro", macroIndex: 3 });
+    const active = getActiveModRoutes();
+    expect(active).toHaveLength(1);
+    expect(active[0].lfo).toBeUndefined();
+    expect(routeSource(active[0].route)).toBe("macro");
+  });
+
+  it("routeSource-Defaulting unverändert: fehlend/invalid → 'lfo'", () => {
+    expect(routeSource({ ...baseRoute("x"), id: "r1" } as ModRoute)).toBe("lfo");
+    expect(
+      routeSource({ ...baseRoute("x"), id: "r2", source: "bogus" } as unknown as ModRoute),
+    ).toBe("lfo");
   });
 });

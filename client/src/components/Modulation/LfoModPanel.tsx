@@ -32,6 +32,7 @@ import {
   removeModRoute,
   updateModRoute,
   routeSource,
+  resolveLfoIdForSwitch,
   type ModTargetParam,
   type ModSource,
 } from "@/store/useLfoModStore";
@@ -466,6 +467,10 @@ export function LfoModPanel({ parts }: LfoModPanelProps) {
                       const patch: Partial<typeof route> = { source: src };
                       if (src === "macro" && route.macroIndex === undefined) patch.macroIndex = 0;
                       if (src === "env" && !route.env) patch.env = defaultEnvConfig();
+                      // Beim (Zurück-)Wechsel auf "lfo" einen gültigen lfoId
+                      // sicherstellen (TASK-271 Task B: leerer/verwaister lfoId
+                      // bei macro/env-Routes → definierter Default).
+                      if (src === "lfo") patch.lfoId = resolveLfoIdForSwitch(route.lfoId, lfos);
                       updateModRoute(route.id, patch);
                     }}
                     className="bg-bg-panel border border-border-color rounded px-1 py-0.5 text-text-primary text-[10px]"

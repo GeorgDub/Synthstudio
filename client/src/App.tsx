@@ -70,7 +70,7 @@ import { getKeyboardSamplerState } from "@/store/useKeyboardSamplerStore";
 import { getEnvelopeFollowerConfigs } from "@/store/useEnvelopeFollowerStore";
 import { getActiveModRoutes, routeSource, type ModTargetParam } from "@/store/useLfoModStore";
 import { evaluateLfo, applyBipolarMod } from "@/utils/lfo";
-import { macroToModValue, evaluateEnv, defaultEnvConfig } from "@/utils/modSource";
+import { macroToModValue, evaluateEnvTriggered, nextEnvTrigger, defaultEnvConfig } from "@/utils/modSource";
 
 // ── Stores für neue Features ──────────────────────────────────────────────────
 import { useSongStore } from "@/store/useSongStore";
@@ -2427,6 +2427,14 @@ export default function App() {
     // Welche Targets waren im letzten Frame aktiv (für Restore-Erkennung).
     let prevActiveKeys = new Set<string>();
 
+    // ── env-Trigger (TASK-271) ────────────────────────────────────────────────
+    // Trigger-Timestamp (Sekunden) je env-Route-ID. null/fehlt = idle (kein
+    // Trigger → Envelope-Beitrag 0). Runtime-only, NICHT persistiert.
+    // One-shot ab Transport-Play (Rising-Edge von AudioEngine.isPlaying), plus
+    // sofortiger Trigger, falls eine env-Route mitten im Playback aktiv wird.
+    const envTriggerAt = new Map<string, number>();
+    let prevPlaying = false;
+
     // Liest Mixer-Volume/Pan eines Parts aus dem localStorage-Snapshot.
     // Bewusst lazy + nur bei Erstaktivierung aufgerufen (nicht pro Frame).
     function readMixerBase(partId: string, param: ModTargetParam): number | undefined {
@@ -2450,6 +2458,15 @@ export default function App() {
       const active = getActiveModRoutes();
       const activeKeys = new Set<string>();
 
+      // Transport-Rising-Edge (TASK-271): bei Play-Start alle aktiven env-Routes
+      // (re)triggern; bei Stop alle Trigger löschen (Envelope → idle).
+      const playing = AudioEngine.isPlaying;
+      const justStarted = playing && !prevPlaying;
+      if (!playing && prevPlaying) envTriggerAt.clear();
+      prevPlaying = playing;
+      // Set der env-Route-IDs, die in diesem Frame aktiv sind (für Trigger-GC).
+      const activeEnvRouteIds = new Set<string>();
+
       for (const { route, lfo } of active) {
         const meta = PARAM_META[route.param];
         if (!meta) continue;
@@ -2472,7 +2489,18 @@ export default function App() {
           const m = getMacros()[idx];
           modVal = macroToModValue(m ? m.value : 0);
         } else if (source === "env") {
-          modVal = evaluateEnv(route.env ?? defaultEnvConfig(), now);
+          activeEnvRouteIds.add(route.id);
+          // Trigger-Edge (reiner Helper, getestet): Stop→null, Play-Start→now
+          // (retrigger), mid-playback-aktiv→now, sonst unverändert.
+          const trig = nextEnvTrigger(
+            envTriggerAt.get(route.id) ?? null,
+            playing,
+            justStarted,
+            now,
+          );
+          if (trig === null) envTriggerAt.delete(route.id);
+          else envTriggerAt.set(route.id, trig);
+          modVal = evaluateEnvTriggered(route.env ?? defaultEnvConfig(), now, trig);
         } else if (lfo) {
           modVal =
             evaluateLfo(
@@ -2494,6 +2522,12 @@ export default function App() {
           PARAM_META[param]?.apply(partId, base);
         }
         baseValues.delete(key);
+      }
+
+      // Trigger-GC: env-Routes, die nicht mehr aktiv sind, aus der Trigger-Map
+      // entfernen, damit ein erneutes Aktivieren wieder frisch triggert.
+      for (const id of [...envTriggerAt.keys()]) {
+        if (!activeEnvRouteIds.has(id)) envTriggerAt.delete(id);
       }
 
       prevActiveKeys = activeKeys;

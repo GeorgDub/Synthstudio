@@ -100,6 +100,34 @@ export function routeSource(route: ModRoute): ModSource {
 }
 
 /**
+ * Wählt einen gültigen `lfoId` beim (Zurück-)Wechsel einer Route auf
+ * source==="lfo" (TASK-271, Task B).
+ *
+ * Problem (Round-Trip-Edge): Routes, die ohne verfügbaren LFO erstellt wurden
+ * (LfoModPanel addModRoute → `lfoId: lfo?.id ?? ""`), oder deren referenzierter
+ * LFO inzwischen entfernt wurde, tragen einen leeren/verwaisten `lfoId`. Wechselt
+ * man eine macro/env-Route zurück auf "lfo", wäre die Quelle ohne erneute manuelle
+ * LFO-Auswahl inaktiv (getActiveModRoutes verwirft sie).
+ *
+ * Verhalten:
+ *  - Ist der aktuelle `currentLfoId` weiterhin ein existierender LFO → unverändert
+ *    bewahren (kein Verlust der ursprünglichen Auswahl beim Hin-/Her-Wechseln).
+ *  - Sonst (leer / verwaist) → ersten verfügbaren LFO als definierten Default.
+ *  - Gibt es gar keinen LFO → `""` (UI zeigt leere Auswahl; konsistent mit v1).
+ *
+ * Rein/deterministisch → testbar ohne Browser.
+ */
+export function resolveLfoIdForSwitch(
+  currentLfoId: string | undefined,
+  lfos: LfoConfig[],
+): string {
+  if (currentLfoId && lfos.some((l) => l.id === currentLfoId)) {
+    return currentLfoId;
+  }
+  return lfos.length > 0 ? lfos[0].id : "";
+}
+
+/**
  * Migriert eine persisted Route aus TASK-257 v1 (kein `source`/`macroIndex`/
  * `env`) auf das erweiterte Modell (TASK-257-FOLLOWUP-3). Normalisiert das
  * `source`-Feld defensiv und setzt sinnvolle Sub-Felder, sodass die Engine

@@ -120,6 +120,81 @@ export function evaluateEnv(env: EnvConfig, elapsedSec: number): number {
   return s * (1 - k);
 }
 
+/**
+ * One-shot-Auswertung einer getriggerten Hüllkurve (TASK-271).
+ *
+ * Anders als `evaluateEnv` (frei laufend / zyklisch) rechnet diese Variante ab
+ * einem Trigger-Zeitpunkt und LOOPT NICHT: nach genau einem Durchlauf
+ * (A→D→S→R) hält die Kurve auf 0 (Release abgeschlossen). Der Sustain hält
+ * von Decay-Ende bis `relStart = period - release`, danach Release auf 0.
+ *
+ * Trigger-Semantik:
+ *  - `triggerTime === null`  → Envelope ist IDLE → 0 (Anfangswert, keine Bewegung).
+ *  - sonst rechnet sie ab `elapsedSinceTrigger = now - triggerTime`.
+ *
+ * `evaluateEnv` bleibt bewusst unverändert (abwärtskompatibel, bestehende
+ * Tests grün). Diese Funktion klemmt `elapsedSinceTrigger` auf [0, period],
+ * sodass es kein Wraparound gibt — nach `period` bleibt der Wert auf dem
+ * Endwert (0, da Release vollständig durchlaufen).
+ *
+ * Wall-Clock wird NICHT intern gelesen — `now` und `triggerTime` werden
+ * übergeben (deterministisch/mockbar in Node/Vitest).
+ */
+export function evaluateEnvTriggered(
+  env: EnvConfig,
+  now: number,
+  triggerTime: number | null,
+): number {
+  // Idle: noch kein Trigger → kein Modulationsbeitrag.
+  if (triggerTime === null || !Number.isFinite(triggerTime)) return 0;
+
+  const a = Math.max(0, Number.isFinite(env.attack) ? env.attack : 0);
+  const d = Math.max(0, Number.isFinite(env.decay) ? env.decay : 0);
+  const r = Math.max(0, Number.isFinite(env.release) ? env.release : 0);
+  const minPeriod = a + d + r;
+  const period = Math.max(minPeriod, Number.isFinite(env.loopSec) ? env.loopSec : 0);
+  if (period <= 0) return 0;
+
+  const nowSafe = Number.isFinite(now) ? now : 0;
+  let elapsed = nowSafe - triggerTime;
+  if (!Number.isFinite(elapsed) || elapsed < 0) elapsed = 0;
+  // One-shot: nicht wrappen. Nach Ablauf der Periode auf dem Endwert halten.
+  if (elapsed >= period) return 0;
+
+  // Phasen identisch zu evaluateEnv, aber ohne Modulo (elapsed schon in [0,period)).
+  return evaluateEnv(env, elapsed);
+}
+
+/**
+ * Reine Trigger-Edge-Entscheidung für eine getriggerte env-Route (TASK-271).
+ *
+ * Bestimmt den neuen Trigger-Timestamp einer Route aus dem bisherigen Wert und
+ * dem Transport-Zustand — extrahiert aus dem rAF-Seam in App.tsx, damit die
+ * Transport-Kopplung deterministisch/mockbar testbar ist (kein AudioContext/rAF).
+ *
+ * Regeln:
+ *  - Transport gestoppt (`playing === false`) → `null` (Envelope idle → 0).
+ *  - Transport-Start (Rising-Edge, `justStarted === true`) → `now` (retrigger,
+ *    auch wenn vorher schon ein Trigger lief — one-shot ab Play).
+ *  - env-Route wird mitten im Playback erstmals aktiv (`current === null`) → `now`.
+ *  - sonst (läuft bereits, kein Edge) → `current` unverändert.
+ *
+ * @param current     bisheriger Trigger-Timestamp (null = noch kein Trigger).
+ * @param playing      ist der Transport aktuell aktiv?
+ * @param justStarted  Rising-Edge: wurde der Transport in DIESEM Frame gestartet?
+ * @param now          aktueller Zeitstempel (Sekunden) für den neuen Trigger.
+ */
+export function nextEnvTrigger(
+  current: number | null,
+  playing: boolean,
+  justStarted: boolean,
+  now: number,
+): number | null {
+  if (!playing) return null;
+  if (justStarted || current === null) return now;
+  return current;
+}
+
 /** Sinnvolle Default-Hüllkurve für eine neue env-Route (hörbar, mittellanger Loop). */
 export function defaultEnvConfig(): EnvConfig {
   return { attack: 0.1, decay: 0.2, sustain: 0.5, release: 0.3, loopSec: 2 };
