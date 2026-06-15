@@ -66,3 +66,39 @@ test("LFO-Zeile zeigt eine Kurven-Vorschau (Canvas mit Maßen + aria-label)", as
   await expect(canvas).toHaveAttribute("width", "200");
   await expect(canvas).toHaveAttribute("height", "48");
 });
+
+test("Mod-Matrix: je Quelltyp eine Route anlegen → in eigener Gruppe sichtbar (TASK-270)", async ({
+  page,
+}) => {
+  await page.getByRole("tab", { name: /^Tools$/ }).click();
+  await page.getByTestId("tools-tab-lfomod").click();
+  await expect(page.getByTestId("lfomod-panel")).toBeVisible();
+
+  // Eine LFO für die lfo-Route (Sub-Select braucht eine Quelle).
+  await page.getByTestId("lfomod-add-lfo").click();
+  await expect(page.getByTestId("lfomod-lfo-row")).toHaveCount(1);
+
+  // Alle drei Quelltyp-Gruppen sind initial vorhanden (auch leer).
+  await expect(page.getByTestId("lfomod-group-lfo")).toBeVisible();
+  await expect(page.getByTestId("lfomod-group-macro")).toBeVisible();
+  await expect(page.getByTestId("lfomod-group-env")).toBeVisible();
+
+  // Je Quelltyp eine Route über den gruppen-eigenen "+"-Button anlegen.
+  await page.getByTestId("lfomod-add-route-lfo").click();
+  await page.getByTestId("lfomod-add-route-macro").click();
+  await page.getByTestId("lfomod-add-route-env").click();
+
+  // Drei Routen-Zeilen gesamt.
+  await expect(page.getByTestId("lfomod-route-row")).toHaveCount(3);
+
+  // Jede Gruppe enthält genau ihre eine Zeile.
+  await expect(
+    page.getByTestId("lfomod-group-lfo").getByTestId("lfomod-route-row"),
+  ).toHaveCount(1);
+  await expect(
+    page.getByTestId("lfomod-group-macro").getByTestId("lfomod-route-row"),
+  ).toHaveCount(1);
+  await expect(
+    page.getByTestId("lfomod-group-env").getByTestId("lfomod-route-row"),
+  ).toHaveCount(1);
+});

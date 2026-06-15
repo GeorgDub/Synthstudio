@@ -36,6 +36,7 @@ import {
   getActiveModRoutes,
   routeSource,
   resolveLfoIdForSwitch,
+  groupRoutesBySource,
   __resetLfoModStoreForTests,
   type LfoConfig,
   type ModRoute,
@@ -352,6 +353,46 @@ describe("resolveLfoIdForSwitch – lfoId beim (Zurück-)Wechsel auf source 'lfo
     expect(resolved).toBe(lfoId);
     updateModRoute(rid, { source: "lfo", lfoId: resolved });
     expect(getActiveModRoutes()).toHaveLength(1);
+  });
+});
+
+// ─── groupRoutesBySource – Mod-Matrix-Gruppierung (TASK-270) ──────────────────
+
+describe("groupRoutesBySource – Gruppierung nach Quelltyp (TASK-270)", () => {
+  it("Happy: sortiert Routen in lfo/macro/env-Gruppen", () => {
+    const lfoId = addLfo(baseLfo());
+    const rLfo = addModRoute({ ...baseRoute(lfoId), source: "lfo" });
+    const rMacro = addModRoute({ ...baseRoute(""), source: "macro", macroIndex: 1 });
+    const rEnv = addModRoute({ ...baseRoute(""), source: "env", env: defaultEnvConfig() });
+
+    const groups = groupRoutesBySource(getModRoutes());
+    expect(groups.lfo.map((r) => r.id)).toEqual([rLfo]);
+    expect(groups.macro.map((r) => r.id)).toEqual([rMacro]);
+    expect(groups.env.map((r) => r.id)).toEqual([rEnv]);
+  });
+
+  it("Edge: liefert immer alle drei Schlüssel (auch leer)", () => {
+    const groups = groupRoutesBySource([]);
+    expect(groups.lfo).toEqual([]);
+    expect(groups.macro).toEqual([]);
+    expect(groups.env).toEqual([]);
+  });
+
+  it("Edge: Route ohne/invalides source zählt als 'lfo'", () => {
+    const noSource = { ...baseRoute("x"), id: "r1" } as ModRoute;
+    const garbage = { ...baseRoute("x"), id: "r2", source: "bogus" as never } as ModRoute;
+    const groups = groupRoutesBySource([noSource, garbage]);
+    expect(groups.lfo.map((r) => r.id)).toEqual(["r1", "r2"]);
+    expect(groups.macro).toEqual([]);
+    expect(groups.env).toEqual([]);
+  });
+
+  it("Edge: bewahrt Eingabe-Reihenfolge innerhalb einer Gruppe", () => {
+    const lfoId = addLfo(baseLfo());
+    const a = addModRoute({ ...baseRoute(lfoId), source: "lfo" });
+    const b = addModRoute({ ...baseRoute(lfoId), source: "lfo" });
+    const groups = groupRoutesBySource(getModRoutes());
+    expect(groups.lfo.map((r) => r.id)).toEqual([a, b]);
   });
 });
 

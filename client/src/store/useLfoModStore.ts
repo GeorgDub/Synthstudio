@@ -262,6 +262,25 @@ export function getModRoutes(): ModRoute[] {
 }
 
 /**
+ * Gruppiert Routes nach effektiver Quelle (TASK-270, Mod-Matrix-UI).
+ *
+ * Rein/deterministisch → testbar ohne Browser. Bewahrt die Eingabe-Reihenfolge
+ * innerhalb jeder Gruppe. Routes ohne/mit invalidem `source` zählen via
+ * routeSource() als "lfo" (konsistent mit getActiveModRoutes + Engine-Seam).
+ * Es werden IMMER alle drei Schlüssel zurückgegeben (auch leere Arrays), damit
+ * die Matrix-UI stabile Gruppen-Header rendern kann.
+ */
+export function groupRoutesBySource(
+  routes: ModRoute[],
+): Record<ModSource, ModRoute[]> {
+  const groups: Record<ModSource, ModRoute[]> = { lfo: [], macro: [], env: [] };
+  for (const route of routes) {
+    groups[routeSource(route)].push(route);
+  }
+  return groups;
+}
+
+/**
  * Liefert aktive Routes für den Engine-Seam (TASK-257-FOLLOWUP-3).
  *
  * Aktivitäts-Prädikat je nach Quelle:

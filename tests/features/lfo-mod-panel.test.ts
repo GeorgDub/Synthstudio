@@ -33,11 +33,16 @@ import {
   removeLfo,
   addModRoute,
   updateModRoute,
+  removeModRoute,
   getLfos,
   getModRoutes,
   getActiveModRoutes,
+  groupRoutesBySource,
+  routeSource,
   __resetLfoModStoreForTests,
+  type ModSource,
 } from "@/store/useLfoModStore";
+import { defaultEnvConfig } from "@/utils/modSource";
 
 /** Spiegelt den "+ LFO"-Handler aus LfoModPanel. */
 function addLfoLikePanel(existingCount: number): string {
@@ -139,5 +144,101 @@ describe("LfoModPanel ↔ useLfoModStore", () => {
     const routeId = addRouteLikePanel(lfoId, "part-1", "Part 1");
     updateModRoute(routeId, { enabled: false });
     expect(getActiveModRoutes()).toHaveLength(0);
+  });
+});
+
+// ─── TASK-270: Mod-Matrix – Route je Quelltyp anlegen/togglen/entfernen ───────
+
+/**
+ * Spiegelt den per-Quelltyp "+ X"-Handler aus dem LfoModPanel
+ * (handleAddRouteForSource): hörbare Defaults + quelltyp-spezifische Sub-Felder.
+ */
+function addRouteForSourceLikePanel(
+  source: ModSource,
+  lfoId: string,
+  partId: string,
+  partName: string,
+): string {
+  return addModRoute({
+    enabled: true,
+    source,
+    lfoId: source === "lfo" ? lfoId : "",
+    macroIndex: source === "macro" ? 0 : undefined,
+    env: source === "env" ? defaultEnvConfig() : undefined,
+    targetPartId: partId,
+    targetPartName: partName,
+    param: "volume",
+    amount: 0.5,
+  });
+}
+
+describe("Mod-Matrix ↔ useLfoModStore (TASK-270)", () => {
+  beforeEach(() => {
+    __resetLfoModStoreForTests();
+  });
+
+  it("legt je Quelltyp (lfo/macro/env) eine Route mit passenden Sub-Defaults an", () => {
+    const lfoId = addLfoLikePanel(0);
+    const rLfo = addRouteForSourceLikePanel("lfo", lfoId, "p1", "P1");
+    const rMacro = addRouteForSourceLikePanel("macro", "", "p1", "P1");
+    const rEnv = addRouteForSourceLikePanel("env", "", "p1", "P1");
+
+    const byId = (id: string) => getModRoutes().find((r) => r.id === id)!;
+    expect(byId(rLfo).source).toBe("lfo");
+    expect(byId(rLfo).lfoId).toBe(lfoId);
+    expect(byId(rMacro).source).toBe("macro");
+    expect(byId(rMacro).macroIndex).toBe(0);
+    expect(byId(rEnv).source).toBe("env");
+    expect(byId(rEnv).env).toEqual(defaultEnvConfig());
+
+    // HÖRBARKEIT: amount > 0 je Quelltyp.
+    for (const id of [rLfo, rMacro, rEnv]) {
+      expect(byId(id).amount).toBeGreaterThan(0);
+    }
+  });
+
+  it("groupRoutesBySource verteilt die drei Routen in die richtigen Gruppen", () => {
+    const lfoId = addLfoLikePanel(0);
+    addRouteForSourceLikePanel("lfo", lfoId, "p1", "P1");
+    addRouteForSourceLikePanel("macro", "", "p1", "P1");
+    addRouteForSourceLikePanel("env", "", "p1", "P1");
+
+    const groups = groupRoutesBySource(getModRoutes());
+    expect(groups.lfo).toHaveLength(1);
+    expect(groups.macro).toHaveLength(1);
+    expect(groups.env).toHaveLength(1);
+    expect(routeSource(groups.macro[0])).toBe("macro");
+  });
+
+  it("enable-Toggle je Quelltyp wirkt auf getActiveModRoutes", () => {
+    const lfoId = addLfoLikePanel(0);
+    const rMacro = addRouteForSourceLikePanel("macro", "", "p1", "P1");
+    const rEnv = addRouteForSourceLikePanel("env", "", "p1", "P1");
+    // lfo + macro + env alle aktiv (lfo enabled).
+    addRouteForSourceLikePanel("lfo", lfoId, "p1", "P1");
+    expect(getActiveModRoutes()).toHaveLength(3);
+
+    updateModRoute(rMacro, { enabled: false });
+    expect(getActiveModRoutes()).toHaveLength(2);
+    updateModRoute(rEnv, { enabled: false });
+    expect(getActiveModRoutes()).toHaveLength(1);
+  });
+
+  it("remove je Quelltyp entfernt nur die gewählte Route", () => {
+    const lfoId = addLfoLikePanel(0);
+    const rLfo = addRouteForSourceLikePanel("lfo", lfoId, "p1", "P1");
+    const rMacro = addRouteForSourceLikePanel("macro", "", "p1", "P1");
+    const rEnv = addRouteForSourceLikePanel("env", "", "p1", "P1");
+    expect(getModRoutes()).toHaveLength(3);
+
+    removeModRoute(rMacro);
+    let groups = groupRoutesBySource(getModRoutes());
+    expect(groups.macro).toHaveLength(0);
+    expect(groups.lfo).toHaveLength(1);
+    expect(groups.env).toHaveLength(1);
+
+    removeModRoute(rLfo);
+    removeModRoute(rEnv);
+    expect(getModRoutes()).toHaveLength(0);
   });
 });
