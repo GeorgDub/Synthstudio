@@ -22,11 +22,12 @@
  * Kein direkter `window.electronAPI`-Zugriff — die Engine-API ist isomorph.
  */
 import React, { memo, useCallback, useEffect, useMemo, useState } from "react";
-import { Play, Square } from "lucide-react";
-import { AudioEngine, type AudioTrackChannelData } from "@/audio/AudioEngine";
+import { Play, Square, Sliders } from "lucide-react";
+import { AudioEngine, DEFAULT_CHANNEL_FX, type AudioTrackChannelData, type ChannelFx } from "@/audio/AudioEngine";
 import {
   updateAudioTrack,
   setAudioTrackSoloed,
+  setAudioTrackFx,
   getRuntimeState,
   useAudioTrackStore,
   type AudioTrackRuntimeState,
@@ -35,6 +36,7 @@ import {
   computePeaksFromBuffer,
   nextAudioTrackPlayState,
 } from "@/components/Mixer/AudioTrackStrip";
+import { FxPanelBody } from "@/components/DrumMachine/FxPanel";
 import { WaveformDisplay } from "@/components/WaveformDisplay/WaveformDisplay";
 import { resolveChannelColor } from "@/utils/channelColors";
 import {
@@ -94,6 +96,10 @@ export const AudioClipLane = memo(function AudioClipLane({
     }),
   );
   const [pos01, setPos01] = useState(0);
+  // TASK-268-FOLLOWUP: Insert-FX-Panel (collapsible) — gespiegelt vom Mixer-Strip.
+  // NUR der Toggle ist component-local; die FX-WERTE leben in track.fx (Store),
+  // damit Strip + Lane denselben State derselben Lane bidirektional teilen.
+  const [fxOpen, setFxOpen] = useState(false);
 
   // Effektiver "spielt"-Zustand = lokales playing (nach TASK-267 keine OR mehr).
   const effectivePlaying = playing;
@@ -183,6 +189,21 @@ export const AudioClipLane = memo(function AudioClipLane({
     [runtime.durationSec, track.id],
   );
 
+  // ── Insert-FX (TASK-268-FOLLOWUP) ────────────────────────────────────────
+  // Identische Dual-Call-Seam wie der Mixer-Strip (setAudioTrackFx → Store +
+  // AudioEngine.setAudioTrackFx → audible). Die WERTE kommen aus track.fx (NICHT
+  // local state) — dadurch teilen Strip-Panel und Lane-Panel denselben Store-
+  // State derselben Lane bidirektional (gleiche Mechanik wie Mute/Solo). Bei
+  // fehlender fx (Pre-TASK-268-Track) auf DEFAULT_CHANNEL_FX zurückfallen.
+  const trackFx: ChannelFx = track.fx ?? DEFAULT_CHANNEL_FX;
+  const handleFxChange = useCallback(
+    (partial: Partial<ChannelFx>) => {
+      setAudioTrackFx(track.id, partial);
+      AudioEngine.setAudioTrackFx(track.id, partial);
+    },
+    [track.id],
+  );
+
   // ── Peaks für die Wellenform ─────────────────────────────────────────────
   // Bevorzugt die im Store gecachten Runtime-Peaks; falls keine vorhanden,
   // einmalig aus dem Engine-Buffer berechnen (computePeaksFromBuffer aus
@@ -213,7 +234,7 @@ export const AudioClipLane = memo(function AudioClipLane({
       data-testid={`audio-clip-lane-${track.id}`}
       data-track-id={track.id}
       className={[
-        "flex items-center gap-1 px-2 py-1 border-b border-border-color/50 relative",
+        "flex flex-col border-b border-border-color/50 relative",
         "transition-colors duration-75",
         // Dim wenn gemutet ODER durch eine fremde Solo-Lane stummgeschaltet.
         track.muted || !audible ? "opacity-50" : "hover:bg-bg-panel/40",
@@ -223,6 +244,8 @@ export const AudioClipLane = memo(function AudioClipLane({
         boxShadow: `inset 2px 0 0 0 ${waveColor}`,
       }}
     >
+      {/* ── Obere Zeile: bestehende horizontale Row (Header/M/S/Play/FX/Waveform) ── */}
+      <div className="flex items-center gap-1 px-2 py-1">
       {/* ── Header-Spalte (gleiche Breite wie ChannelStrip: w-[88px]) ────── */}
       <div className="w-[88px] flex-shrink-0">
         <div className="flex items-center gap-1 leading-tight">
@@ -319,6 +342,27 @@ export const AudioClipLane = memo(function AudioClipLane({
         {effectivePlaying ? <Square size={11} /> : <Play size={11} />}
       </button>
 
+      {/* ── Insert-FX Toggle (TASK-268-FOLLOWUP) ─────────────────────────── */}
+      <button
+        type="button"
+        data-testid={`audio-clip-lane-fx-toggle-${track.id}`}
+        onClick={(e) => {
+          e.stopPropagation();
+          setFxOpen((v) => !v);
+        }}
+        aria-label="FX"
+        aria-pressed={fxOpen}
+        title="Insert-FX (Filter, EQ, Comp, Delay, Reverb)"
+        className={[
+          "w-6 h-6 flex items-center justify-center rounded transition-colors flex-shrink-0",
+          fxOpen
+            ? "bg-accent-secondary text-text-primary"
+            : "bg-bg-elevated text-text-dim hover:text-accent-secondary",
+        ].join(" ")}
+      >
+        <Sliders size={11} />
+      </button>
+
       {/* ── Continuous Waveform (füllt die restliche Breite) ─────────────── */}
       <div className="flex-1 min-w-0">
         <WaveformDisplay
@@ -333,6 +377,28 @@ export const AudioClipLane = memo(function AudioClipLane({
           zoomEnabled={false}
         />
       </div>
+      </div>
+
+      {/* ── Insert-FX-Panel (TASK-268-FOLLOWUP) ──────────────────────────── */}
+      {/* Volle Breite unter der Row. Dieselbe FxPanelBody + derselbe Right-Click-
+          MIDI-Learn (partId/partName) wie der Mixer-Strip. Die FX-WERTE kommen aus
+          track.fx (Store) — Strip und Lane teilen denselben State derselben Lane. */}
+      {fxOpen && (
+        <div
+          data-testid={`audio-clip-lane-fx-panel-${track.id}`}
+          onClick={(e) => e.stopPropagation()}
+          className="w-full px-2 pb-2 pt-1"
+        >
+          <div className="px-1.5 py-2 rounded border border-border-subtle bg-bg-elevated/60">
+            <FxPanelBody
+              fx={trackFx}
+              onFxChange={handleFxChange}
+              partId={track.id}
+              partName={track.name}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 });

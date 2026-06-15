@@ -179,4 +179,73 @@ test.describe("Continuous Audio-Clip-Lane im Sequencer (TASK-246)", () => {
     await expect(playBtn).toHaveAttribute("aria-pressed", "false");
     await expect(playBtn).toBeEnabled();
   });
+
+  // TASK-268-FOLLOWUP: Der Insert-FX-Einstieg ist jetzt auch an der Clip-Lane.
+  // AKZEPTANZKRITERIUM ist NICHT nur "Panel öffnet", sondern SHARED STATE: das
+  // Lane-Panel und der Mixer-Strip-Panel teilen denselben track.fx-State derselben
+  // Lane (kein local state). Wir setzen den "Filter"-Enable-Toggle im Lane-Panel
+  // und assert'en, dass der Strip-Panel-Toggle denselben Wert spiegelt.
+  //
+  // Warum der Filter-Enable-Toggle (role=switch) und kein Slider: die FxPanelBody-
+  // Knob-Slider haben weder aria-label noch testid — der Toggle ist als
+  // role="switch" mit Name "Filter" deterministisch + pure DOM (headless-safe).
+  // DEFAULT_CHANNEL_FX.filterEnabled ist `false`; toggeln→true und in BEIDEN
+  // Panels true zu lesen beweist Sharing (nicht Zufall mit dem Default).
+  test("Lane-FX-Panel teilt denselben State wie der Mixer-Strip (TASK-268-FOLLOWUP)", async ({ page }) => {
+    await seedAndOpen(page);
+    await addAudioTrackViaMixer(page, "clip-fx-shared.wav");
+
+    // Track-ID aus dem Strip greifen (selbe Lane in Mixer + Sequencer).
+    const strip = page.locator('[data-testid="audio-track-strip"][data-track-id]').first();
+    await expect(strip).toBeVisible({ timeout: 10_000 });
+    const trackId = await strip.getAttribute("data-track-id");
+    expect(trackId).toBeTruthy();
+
+    // ── Sequencer: Lane-FX öffnen ───────────────────────────────────────────
+    await page.getByRole("tab", { name: "Sequencer" }).click();
+    const lane = page.locator(`[data-testid="audio-clip-lane-${trackId}"][data-track-id]`);
+    await expect(lane).toBeVisible({ timeout: 10_000 });
+
+    const laneFxToggle = page.locator(`[data-testid="audio-clip-lane-fx-toggle-${trackId}"]`);
+    await expect(laneFxToggle).toHaveAttribute("aria-pressed", "false");
+    await laneFxToggle.click();
+    const lanePanel = page.locator(`[data-testid="audio-clip-lane-fx-panel-${trackId}"]`);
+    await expect(lanePanel).toBeVisible();
+
+    // Filter-Enable-Toggle im Lane-Panel (default-Tab "filter", default false).
+    const laneFilterSwitch = lanePanel.getByRole("switch", { name: /^Filter/ });
+    await expect(laneFilterSwitch).toHaveAttribute("aria-checked", "false");
+    await laneFilterSwitch.click();
+    await expect(laneFilterSwitch).toHaveAttribute("aria-checked", "true");
+
+    // ── Mixer: Strip-FX öffnen → muss den im Lane gesetzten Wert spiegeln ─────
+    await page.getByRole("tab", { name: "Mixer" }).click();
+    const stripFxToggle = page.locator(`[data-testid="audio-track-fx-toggle-${trackId}"]`);
+    await expect(stripFxToggle).toBeVisible({ timeout: 10_000 });
+    await stripFxToggle.click();
+    const stripPanel = page.locator(`[data-testid="audio-track-fx-panel-${trackId}"]`);
+    await expect(stripPanel).toBeVisible();
+
+    // SHARED STATE: der Strip-Panel-Filter-Toggle zeigt true (im Lane gesetzt).
+    const stripFilterSwitch = stripPanel.getByRole("switch", { name: /^Filter/ });
+    await expect(stripFilterSwitch).toHaveAttribute("aria-checked", "true");
+
+    // Gegenrichtung: im Strip ausschalten → zurück im Sequencer ist es aus.
+    await stripFilterSwitch.click();
+    await expect(stripFilterSwitch).toHaveAttribute("aria-checked", "false");
+
+    await page.getByRole("tab", { name: "Sequencer" }).click();
+    // fxOpen ist component-local (ephemer, wie der Strip) → beim Tab-Wechsel
+    // unmountet die Lane und der Toggle ist wieder zu. Re-öffnen; die FX-WERTE
+    // (track.fx) überleben den Tab-Wechsel im Store — das ist der Beweis.
+    const laneFxToggle2 = page.locator(`[data-testid="audio-clip-lane-fx-toggle-${trackId}"]`);
+    await expect(laneFxToggle2).toBeVisible({ timeout: 10_000 });
+    await laneFxToggle2.click();
+    const lanePanel2 = page.locator(`[data-testid="audio-clip-lane-fx-panel-${trackId}"]`);
+    await expect(lanePanel2).toBeVisible();
+    await expect(lanePanel2.getByRole("switch", { name: /^Filter/ })).toHaveAttribute(
+      "aria-checked",
+      "false",
+    );
+  });
 });
