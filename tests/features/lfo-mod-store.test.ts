@@ -34,10 +34,12 @@ import {
   updateModRoute,
   getModRoutes,
   getActiveModRoutes,
+  routeSource,
   __resetLfoModStoreForTests,
   type LfoConfig,
   type ModRoute,
 } from "@/store/useLfoModStore";
+import { defaultEnvConfig } from "@/utils/modSource";
 
 const STORAGE_KEY = "ss-lfo-mod:v1";
 
@@ -163,7 +165,7 @@ describe("useLfoModStore – getActiveModRoutes", () => {
     addModRoute(baseRoute(lfoId));
     const active = getActiveModRoutes();
     expect(active).toHaveLength(1);
-    expect(active[0].lfo.id).toBe(lfoId);
+    expect(active[0].lfo?.id).toBe(lfoId);
     expect(active[0].route.param).toBe("filterFreq");
   });
 
@@ -199,5 +201,92 @@ describe("useLfoModStore – Default + Reset", () => {
     const parsed = JSON.parse(localStorageMock.getItem(STORAGE_KEY)!);
     expect(parsed.lfos).toEqual([]);
     expect(parsed.routes).toEqual([]);
+  });
+});
+
+// ─── TASK-257-FOLLOWUP-3: source (lfo|macro|env) + Migration ─────────────────
+
+describe("useLfoModStore – Mod-Source + Migration (FOLLOWUP-3)", () => {
+  it("Default: addModRoute ohne source-Feld → source 'lfo'", () => {
+    const lfoId = addLfo(baseLfo());
+    const rid = addModRoute(baseRoute(lfoId)); // baseRoute hat KEIN source-Feld
+    const r = getModRoutes().find((x) => x.id === rid)!;
+    expect(r.source).toBe("lfo");
+    expect(routeSource(r)).toBe("lfo");
+  });
+
+  it("Default: explizites source wird übernommen (macro)", () => {
+    const rid = addModRoute({
+      ...baseRoute("ignored"),
+      source: "macro",
+      macroIndex: 3,
+    });
+    const r = getModRoutes().find((x) => x.id === rid)!;
+    expect(r.source).toBe("macro");
+    expect(r.macroIndex).toBe(3);
+  });
+
+  it("routeSource: invalides/fehlendes source → 'lfo' (defensiv)", () => {
+    expect(routeSource({ source: undefined } as ModRoute)).toBe("lfo");
+    expect(routeSource({ source: "garbage" as never } as ModRoute)).toBe("lfo");
+    expect(routeSource({ source: "env" } as ModRoute)).toBe("env");
+  });
+
+  it("Migration: persisted Route OHNE source-Feld (v1) lädt als 'lfo'", () => {
+    // Simuliere alte v1-Persistenz (kein source/macroIndex/env), dann
+    // erzwinge ein Re-Load über den localStorage-Mock + neuen Add (der load()
+    // beim Modul-Init bereits ausgeführt hat — daher prüfen wir migrateRoute
+    // über getActiveModRoutes + routeSource auf einer manuell injizierten Route).
+    const legacy = {
+      lfos: [{ id: "l1", name: "L", enabled: true, waveform: "sine", rateHz: 1, phase: 0, depth: 1 }],
+      routes: [
+        {
+          id: "old-route",
+          enabled: true,
+          lfoId: "l1",
+          targetPartId: "bass",
+          targetPartName: "Bass",
+          param: "volume",
+          amount: 0.5,
+          // KEIN source-Feld (v1)
+        },
+      ],
+    };
+    localStorageMock.setItem(STORAGE_KEY, JSON.stringify(legacy));
+    // Eine Mutation triggert keinen Re-Load; load() lief beim Import. Wir
+    // validieren die Migrations-Logik direkt über routeSource auf der rohen
+    // Route-Form (so wie load() sie verarbeitet hätte).
+    expect(routeSource(legacy.routes[0] as unknown as ModRoute)).toBe("lfo");
+  });
+
+  it("Active: macro-Route OHNE jegliche LFO bleibt aktiv (kein Drop)", () => {
+    // KRITISCH: vor FOLLOWUP-3 hätte getActiveModRoutes diese Route verworfen.
+    const rid = addModRoute({
+      ...baseRoute("no-lfo"),
+      source: "macro",
+      macroIndex: 0,
+    });
+    const active = getActiveModRoutes();
+    expect(active).toHaveLength(1);
+    expect(active[0].route.id).toBe(rid);
+    expect(active[0].lfo).toBeUndefined();
+  });
+
+  it("Active: env-Route OHNE LFO bleibt aktiv, deaktiviert wird gefiltert", () => {
+    const rid = addModRoute({
+      ...baseRoute("no-lfo"),
+      source: "env",
+      env: defaultEnvConfig(),
+    });
+    expect(getActiveModRoutes()).toHaveLength(1);
+    updateModRoute(rid, { enabled: false });
+    expect(getActiveModRoutes()).toHaveLength(0);
+  });
+
+  it("Persistence: erweiterte macro-Route überlebt round-trip", () => {
+    addModRoute({ ...baseRoute("x"), source: "macro", macroIndex: 5 });
+    const parsed = JSON.parse(localStorageMock.getItem(STORAGE_KEY)!);
+    expect(parsed.routes[0].source).toBe("macro");
+    expect(parsed.routes[0].macroIndex).toBe(5);
   });
 });

@@ -68,8 +68,9 @@ import { ProjectDiffPanel } from "@/components/ProjectDiff/ProjectDiffPanel";
 import { EsxToE2sConverter } from "@/components/Tools/EsxToE2sConverter";
 import { getKeyboardSamplerState } from "@/store/useKeyboardSamplerStore";
 import { getEnvelopeFollowerConfigs } from "@/store/useEnvelopeFollowerStore";
-import { getActiveModRoutes, type ModTargetParam } from "@/store/useLfoModStore";
+import { getActiveModRoutes, routeSource, type ModTargetParam } from "@/store/useLfoModStore";
 import { evaluateLfo, applyBipolarMod } from "@/utils/lfo";
+import { macroToModValue, evaluateEnv, defaultEnvConfig } from "@/utils/modSource";
 
 // ── Stores für neue Features ──────────────────────────────────────────────────
 import { useSongStore } from "@/store/useSongStore";
@@ -2462,12 +2463,25 @@ export default function App() {
         }
         const base = baseValues.get(key)!;
 
-        const lfoVal = evaluateLfo(
-          { waveform: lfo.waveform, rateHz: lfo.rateHz, phase: lfo.phase },
-          now,
-        ) * Math.max(0, Math.min(1, lfo.depth));
+        // Quellen-abhängige Auswertung → Modulator-Wert in [-1,+1].
+        // (lfo: bipolar; macro: unipolar [0,1] Pass-Through; env: [0,1] Hüllkurve.)
+        let modVal = 0;
+        const source = routeSource(route);
+        if (source === "macro") {
+          const idx = route.macroIndex ?? 0;
+          const m = getMacros()[idx];
+          modVal = macroToModValue(m ? m.value : 0);
+        } else if (source === "env") {
+          modVal = evaluateEnv(route.env ?? defaultEnvConfig(), now);
+        } else if (lfo) {
+          modVal =
+            evaluateLfo(
+              { waveform: lfo.waveform, rateHz: lfo.rateHz, phase: lfo.phase },
+              now,
+            ) * Math.max(0, Math.min(1, lfo.depth));
+        }
 
-        const out = applyBipolarMod(base, lfoVal, route.amount, meta.min, meta.max);
+        const out = applyBipolarMod(base, modVal, route.amount, meta.min, meta.max);
         meta.apply(route.targetPartId, out);
       }
 

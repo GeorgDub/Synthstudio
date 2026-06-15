@@ -31,10 +31,21 @@ import {
   addModRoute,
   removeModRoute,
   updateModRoute,
+  routeSource,
   type ModTargetParam,
+  type ModSource,
 } from "@/store/useLfoModStore";
+import { defaultEnvConfig } from "@/utils/modSource";
+import { MACRO_COUNT } from "@/store/useMacroStore";
 
 const WAVEFORMS: LfoWaveform[] = ["sine", "triangle", "square", "saw"];
+
+const MOD_SOURCES: ModSource[] = ["lfo", "macro", "env"];
+const SOURCE_LABELS: Record<ModSource, string> = {
+  lfo: "LFO",
+  macro: "Macro",
+  env: "Hüllkurve",
+};
 
 const WAVEFORM_LABELS: Record<LfoWaveform, string> = {
   sine: "Sinus",
@@ -227,13 +238,17 @@ export function LfoModPanel({ parts }: LfoModPanelProps) {
   }, [lfos.length]);
 
   // ── Route hinzufügen (hörbare Defaults: enabled, volume, amount 0.5) ──
+  // Existiert eine LFO → lfo-Route; sonst macro-Route (Quelle nachträglich
+  // per Picker wechselbar). Ein Ziel-Part wird immer benötigt.
   const handleAddRoute = useCallback(() => {
-    const lfo = lfos[0];
     const part = parts[0];
-    if (!lfo || !part) return;
+    if (!part) return;
+    const lfo = lfos[0];
     addModRoute({
       enabled: true,
-      lfoId: lfo.id,
+      source: lfo ? "lfo" : "macro",
+      lfoId: lfo?.id ?? "",
+      macroIndex: lfo ? undefined : 0,
       targetPartId: part.id,
       targetPartName: part.name,
       param: "volume",
@@ -241,7 +256,7 @@ export function LfoModPanel({ parts }: LfoModPanelProps) {
     });
   }, [lfos, parts]);
 
-  const canAddRoute = lfos.length > 0 && parts.length > 0;
+  const canAddRoute = parts.length > 0;
 
   return (
     <div className="flex flex-col gap-5 max-w-3xl" data-testid="lfomod-panel">
@@ -414,9 +429,7 @@ export function LfoModPanel({ parts }: LfoModPanelProps) {
 
         {!canAddRoute && (
           <div className="text-[10px] text-text-dim">
-            {lfos.length === 0
-              ? "Lege zuerst eine LFO an, um eine Route zu erstellen."
-              : "Kein Pattern-Part vorhanden — Routes brauchen ein Ziel."}
+            Kein Pattern-Part vorhanden — Routes brauchen ein Ziel.
           </div>
         )}
 
@@ -442,21 +455,105 @@ export function LfoModPanel({ parts }: LfoModPanelProps) {
                   An
                 </label>
 
-                {/* LFO-Auswahl */}
+                {/* Quelle (lfo / macro / env) */}
                 <label className="flex items-center gap-1 text-[10px] text-text-dim">
-                  LFO:
+                  Quelle:
                   <select
-                    value={route.lfoId}
-                    onChange={(e) => updateModRoute(route.id, { lfoId: e.target.value })}
+                    value={routeSource(route)}
+                    onChange={(e) => {
+                      const src = e.target.value as ModSource;
+                      // Bei Wechsel sinnvolle Sub-Defaults setzen, falls fehlend.
+                      const patch: Partial<typeof route> = { source: src };
+                      if (src === "macro" && route.macroIndex === undefined) patch.macroIndex = 0;
+                      if (src === "env" && !route.env) patch.env = defaultEnvConfig();
+                      updateModRoute(route.id, patch);
+                    }}
                     className="bg-bg-panel border border-border-color rounded px-1 py-0.5 text-text-primary text-[10px]"
+                    aria-label="Modulationsquelle"
                   >
-                    {lfos.map((l) => (
-                      <option key={l.id} value={l.id}>
-                        {l.name}
+                    {MOD_SOURCES.map((s) => (
+                      <option key={s} value={s}>
+                        {SOURCE_LABELS[s]}
                       </option>
                     ))}
                   </select>
                 </label>
+
+                {/* Quellen-spezifische Sub-Auswahl */}
+                {routeSource(route) === "lfo" && (
+                  <label className="flex items-center gap-1 text-[10px] text-text-dim">
+                    LFO:
+                    <select
+                      value={route.lfoId}
+                      onChange={(e) => updateModRoute(route.id, { lfoId: e.target.value })}
+                      className="bg-bg-panel border border-border-color rounded px-1 py-0.5 text-text-primary text-[10px]"
+                    >
+                      {lfos.map((l) => (
+                        <option key={l.id} value={l.id}>
+                          {l.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+
+                {routeSource(route) === "macro" && (
+                  <label className="flex items-center gap-1 text-[10px] text-text-dim">
+                    Macro:
+                    <select
+                      value={route.macroIndex ?? 0}
+                      onChange={(e) =>
+                        updateModRoute(route.id, { macroIndex: Number(e.target.value) })
+                      }
+                      className="bg-bg-panel border border-border-color rounded px-1 py-0.5 text-text-primary text-[10px]"
+                      aria-label="Macro-Index"
+                    >
+                      {Array.from({ length: MACRO_COUNT }, (_, i) => (
+                        <option key={i} value={i}>
+                          {i + 1}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+
+                {routeSource(route) === "env" && (
+                  <div className="flex items-center gap-2 flex-wrap text-[10px] text-text-dim">
+                    {(["attack", "decay", "sustain", "release", "loopSec"] as const).map((f) => {
+                      const env = route.env ?? defaultEnvConfig();
+                      const isSustain = f === "sustain";
+                      const labels: Record<string, string> = {
+                        attack: "A",
+                        decay: "D",
+                        sustain: "S",
+                        release: "R",
+                        loopSec: "Loop s",
+                      };
+                      return (
+                        <label key={f} className="flex items-center gap-0.5">
+                          {labels[f]}:
+                          <input
+                            type="range"
+                            min={0}
+                            max={isSustain ? 1 : 5}
+                            step={isSustain ? 0.01 : 0.05}
+                            value={env[f]}
+                            onChange={(e) =>
+                              updateModRoute(route.id, {
+                                env: { ...env, [f]: Number(e.target.value) },
+                              })
+                            }
+                            className="w-14 accent-accent-primary"
+                            aria-label={`Hüllkurve ${f}`}
+                          />
+                          <span className="font-mono w-7 text-text-primary">
+                            {env[f].toFixed(2)}
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
 
                 <span className="text-text-dim text-[10px]">→</span>
 

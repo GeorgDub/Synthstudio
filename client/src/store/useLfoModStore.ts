@@ -15,6 +15,7 @@
  */
 import { useEffect, useReducer } from "react";
 import type { LfoWaveform } from "@/utils/lfo";
+import { type EnvConfig, defaultEnvConfig } from "@/utils/modSource";
 
 const STORAGE_KEY = "ss-lfo-mod:v1";
 
@@ -25,6 +26,18 @@ export type ModTargetParam =
   | "filterFreq"
   | "reverbMix"
   | "delayMix";
+
+/**
+ * Modulationsquelle einer Route (TASK-257-FOLLOWUP-3).
+ *  - "lfo"   → frei laufender LFO (LfoConfig via route.lfoId). DEFAULT.
+ *  - "macro" → aktueller Wert eines Macro-Knobs (route.macroIndex, 0..7).
+ *  - "env"   → zyklische Hüllkurve (route.env, frei laufend nach Wall-Clock).
+ *
+ * Optionales Feld auf ModRoute mit Default "lfo" für Abwärtskompatibilität:
+ * persisted Routes ohne `source` (TASK-257 v1) werden beim Load als "lfo"
+ * migriert (siehe migrateRoute).
+ */
+export type ModSource = "lfo" | "macro" | "env";
 
 export interface LfoConfig {
   id: string;
@@ -43,8 +56,17 @@ export interface LfoConfig {
 export interface ModRoute {
   id: string;
   enabled: boolean;
-  /** Verweist auf LfoConfig.id. */
+  /**
+   * Modulationsquelle. Optional für Abwärtskompatibilität — fehlt das Feld
+   * (alte persisted Routes), wird beim Load "lfo" gesetzt (migrateRoute).
+   */
+  source?: ModSource;
+  /** Verweist auf LfoConfig.id (nur relevant wenn source === "lfo"). */
   lfoId: string;
+  /** Macro-Index 0..7 (nur relevant wenn source === "macro"). */
+  macroIndex?: number;
+  /** Hüllkurven-Parameter (nur relevant wenn source === "env"). */
+  env?: EnvConfig;
   /** Ziel-Part (Mixer-Channel / Drum-Part). */
   targetPartId: string;
   targetPartName: string;
@@ -68,6 +90,42 @@ function makeRouteId() {
   return `mr-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`;
 }
 
+/**
+ * Effektive Quelle einer Route. Alte Routes ohne `source`-Feld (TASK-257 v1)
+ * gelten als "lfo". Defensiv: invalide Strings → "lfo".
+ */
+export function routeSource(route: ModRoute): ModSource {
+  const s = route.source;
+  return s === "macro" || s === "env" ? s : "lfo";
+}
+
+/**
+ * Migriert eine persisted Route aus TASK-257 v1 (kein `source`/`macroIndex`/
+ * `env`) auf das erweiterte Modell (TASK-257-FOLLOWUP-3). Normalisiert das
+ * `source`-Feld defensiv und setzt sinnvolle Sub-Felder, sodass die Engine
+ * jede Route konsistent auswerten kann. Bewahrt die übrigen Felder verbatim.
+ */
+function migrateRoute(raw: ModRoute): ModRoute {
+  const source: ModSource =
+    raw.source === "macro" || raw.source === "env" ? raw.source : "lfo";
+  const macroIndex =
+    typeof raw.macroIndex === "number" &&
+    Number.isInteger(raw.macroIndex) &&
+    raw.macroIndex >= 0 &&
+    raw.macroIndex < 8
+      ? raw.macroIndex
+      : source === "macro"
+        ? 0
+        : raw.macroIndex;
+  const env =
+    raw.env && typeof raw.env === "object"
+      ? raw.env
+      : source === "env"
+        ? defaultEnvConfig()
+        : raw.env;
+  return { ...raw, source, macroIndex, env };
+}
+
 function load(): LfoModState {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -75,7 +133,9 @@ function load(): LfoModState {
       const parsed = JSON.parse(raw) as Partial<LfoModState>;
       return {
         lfos: Array.isArray(parsed.lfos) ? parsed.lfos : [],
-        routes: Array.isArray(parsed.routes) ? parsed.routes : [],
+        routes: Array.isArray(parsed.routes)
+          ? parsed.routes.map((r) => migrateRoute(r as ModRoute))
+          : [],
       };
     }
   } catch {
@@ -142,7 +202,10 @@ export function getLfoById(id: string): LfoConfig | undefined {
 
 export function addModRoute(route: Omit<ModRoute, "id">): string {
   const id = makeRouteId();
-  _state = { ..._state, routes: [..._state.routes, { ...route, id }] };
+  // source defaultet auf "lfo" (Abwärtskompatibilität: bestehende Aufrufer wie
+  // der "+Route"-Button im LfoModPanel übergeben kein source-Feld).
+  const withSource: ModRoute = { ...route, id, source: route.source ?? "lfo" };
+  _state = { ..._state, routes: [..._state.routes, withSource] };
   persist(_state);
   notify();
   return id;
@@ -170,14 +233,31 @@ export function getModRoutes(): ModRoute[] {
   return _state.routes;
 }
 
-/** Liefert nur Routes, deren Route UND zugehörige LFO aktiviert sind. */
-export function getActiveModRoutes(): Array<{ route: ModRoute; lfo: LfoConfig }> {
-  const out: Array<{ route: ModRoute; lfo: LfoConfig }> = [];
+/**
+ * Liefert aktive Routes für den Engine-Seam (TASK-257-FOLLOWUP-3).
+ *
+ * Aktivitäts-Prädikat je nach Quelle:
+ *  - "lfo":   Route enabled UND zugehörige LfoConfig existiert + ist enabled.
+ *  - "macro": Route enabled (Macro-Wert wird im Seam live gelesen).
+ *  - "env":   Route enabled (Hüllkurve läuft frei nach Wall-Clock).
+ *
+ * `lfo` ist nur für source==="lfo" gesetzt — für macro/env ist es `undefined`.
+ * (Vor FOLLOWUP-3 wurde JEDE Route ohne enabled-LFO verworfen; dadurch wären
+ * macro/env-Routes stumm geblieben — daher die Verzweigung.)
+ */
+export function getActiveModRoutes(): Array<{ route: ModRoute; lfo?: LfoConfig }> {
+  const out: Array<{ route: ModRoute; lfo?: LfoConfig }> = [];
   for (const route of _state.routes) {
     if (!route.enabled) continue;
-    const lfo = _state.lfos.find((l) => l.id === route.lfoId);
-    if (!lfo || !lfo.enabled) continue;
-    out.push({ route, lfo });
+    const source = routeSource(route);
+    if (source === "lfo") {
+      const lfo = _state.lfos.find((l) => l.id === route.lfoId);
+      if (!lfo || !lfo.enabled) continue;
+      out.push({ route, lfo });
+    } else {
+      // macro / env: kein LFO erforderlich.
+      out.push({ route });
+    }
   }
   return out;
 }
