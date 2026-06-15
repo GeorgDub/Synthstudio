@@ -28,7 +28,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.280.0",
+    version: "3.281.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -4231,6 +4231,23 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "builder",
+      timestamp: "2026-06-15T19:25:00.000Z",
+      done: [
+        "Release v3.281.0 (MINOR bump 3.280.0->3.281.0). Surgical staging: nur package.json gestaged/committet — examples/e2s/* + screenshots/ blieben untracked. Commit 91c1a81, annotated Tag v3.281.0, beide nach origin/main gepusht.",
+        "Electron-Release-Workflow-Run 27570187569 conclusion=success: Pre-Release Tests + Build windows/linux/mac alle gruen. 15 Artefakte (Win Setup.exe, mac dmg/zip Intel+ARM, Linux AppImage+deb, latest*.yml).",
+        "Published: gh release edit v3.281.0 --repo GeorgDub/Synthstudio-releases --draft=false --latest mit Release-Notes. isDraft=false, isLatest bestaetigt via latest.yml-Asset.",
+        "CI-Run main 27570187822 conclusion=success: BLOCKIERENDE Jobs gruen (Type-Check+Unit-Tests, Playwright Browser-Tests). Audio/Sim-Playwright (non-blocking) wie erwartet rot (continue-on-error, TASK-262-Env-Gate) — keine Regression."
+      ],
+      next: [
+        "Hardware-Verify der neuen Mod-Quellen (macro/env) durch User offen.",
+        "gh-CLI ist Win-Binary: --notes-file braucht Windows-Pfad (C:/Users/.../Temp), nicht Bash-/tmp — fuer kuenftige Releases beachten."
+      ],
+      changed: [
+        "package.json"
+      ]
+    },
     {
       agent:     "backend",
       timestamp: "2026-06-15T21:10:00.000Z",
