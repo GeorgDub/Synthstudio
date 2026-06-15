@@ -44,6 +44,7 @@ import {
   type SubMixBus,
   type SubMixBusFx,
   DEFAULT_BUS_FX,
+  useSubMixBus,
   removeBus,
   renameBus,
   setBusVolume,
@@ -73,7 +74,12 @@ function volToDb(vol: number): string {
 // ─── Props ───────────────────────────────────────────────────────────────────
 
 export interface SubMixBusStripProps {
-  bus: SubMixBus;
+  /**
+   * TASK-264: Stabile Bus-ID statt des Bus-Objekts. Der Strip abonniert seinen
+   * eigenen Bus selbst via `useSubMixBus(busId)` — so re-rendert er NUR bei
+   * Mutationen DIESES Bus, nicht bei jeder Bus-Mutation des Parents.
+   */
+  busId: string;
   /**
    * Bus-Index — wird für eine Default-Farbe genutzt, wenn `bus.color`
    * undefined ist. Pure visuell.
@@ -118,52 +124,64 @@ export function resolveBusFx(bus: SubMixBus): SubMixBusFx {
   };
 }
 
-export function SubMixBusStrip({ bus, busIndex }: SubMixBusStripProps): React.ReactElement {
-  const [editingName, setEditingName] = useState<string>(bus.name);
+function SubMixBusStripInner({ busId, busIndex }: SubMixBusStripProps): React.ReactElement | null {
+  // TASK-264: Per-Bus-Selektor-Subscription. Dieser Strip re-rendert nur, wenn
+  // sich Felder DIESES Bus ändern — Mutationen anderer Buses bailen via
+  // busesEqual (Referenz-Identität des unveränderten Bus-Objekts).
+  const bus = useSubMixBus(busId);
+
+  const [editingName, setEditingName] = useState<string>(bus?.name ?? "");
   const [fxExpanded, setFxExpanded] = useState<boolean>(false);
   const [fxModalOpen, setFxModalOpen] = useState<boolean>(false);
 
   // Lokaler Edit-State wird bei externer Mutation aufgefrischt (z.B. Project-
   // Load setzt einen neuen Namen). useState-init reicht nicht, daher manueller
   // sync via key-Vergleich.
+  const busName = bus?.name;
   React.useEffect(() => {
-    setEditingName(bus.name);
-  }, [bus.name]);
+    if (busName !== undefined) setEditingName(busName);
+  }, [busName]);
 
-  const fx = resolveBusFx(bus);
+  const memberCount = bus?.channelIds.length ?? 0;
 
-  const memberCount = bus.channelIds.length;
-  const resolvedColor = resolveBusColor(bus.color, busIndex);
-
-  // v3.81.0: Right-Click MIDI-Learn auf Bus-Controls
-  const volumeLearn = useMidiLearn({ type: "subMixBusVolume", busId: bus.id, busName: bus.name });
-  const panLearn    = useMidiLearn({ type: "subMixBusPan",    busId: bus.id, busName: bus.name });
-  const muteLearn   = useMidiLearn({ type: "subMixBusMute",   busId: bus.id, busName: bus.name });
-  const soloLearn   = useMidiLearn({ type: "subMixBusSolo",   busId: bus.id, busName: bus.name });
+  // v3.81.0: Right-Click MIDI-Learn auf Bus-Controls. Hooks müssen
+  // unkonditional VOR dem Null-Guard laufen (Rules of Hooks); busName-Fallback
+  // greift nur im flüchtigen Post-Remove-Frame.
+  const volumeLearn = useMidiLearn({ type: "subMixBusVolume", busId, busName: busName ?? "" });
+  const panLearn    = useMidiLearn({ type: "subMixBusPan",    busId, busName: busName ?? "" });
+  const muteLearn   = useMidiLearn({ type: "subMixBusMute",   busId, busName: busName ?? "" });
+  const soloLearn   = useMidiLearn({ type: "subMixBusSolo",   busId, busName: busName ?? "" });
 
   const confirm = useConfirm();
 
   // v3.81.0: Color-Picker — onColorChange → setBusColor (undefined = reset).
   const handleColorChange = useCallback(
     (color: string | undefined) => {
-      setBusColor(bus.id, color);
+      setBusColor(busId, color);
     },
-    [bus.id],
+    [busId],
   );
 
   const handleRemove = useCallback(async () => {
     if (memberCount > 0) {
       const ok = await confirm({
-        title: `Bus "${bus.name}" hat ${memberCount} Mitglied${memberCount === 1 ? "" : "er"}.`,
+        title: `Bus "${busName ?? ""}" hat ${memberCount} Mitglied${memberCount === 1 ? "" : "er"}.`,
         message: "Channels fallen auf Master zurück. Trotzdem entfernen?",
         confirmLabel: "Entfernen",
         destructive: true,
       });
       if (!ok) return;
     }
-    removeBus(bus.id);
-  }, [bus.id, bus.name, memberCount, confirm]);
+    removeBus(busId);
+  }, [busId, busName, memberCount, confirm]);
 
+  // Der Strip kann nach removeBus(busId) notified werden, BEVOR der Parent
+  // (MixerView, volle Subscription) ihn unmountet → defensiver Null-Guard.
+  // Steht NACH allen Hooks (Rules of Hooks).
+  if (!bus) return null;
+
+  const fx = resolveBusFx(bus);
+  const resolvedColor = resolveBusColor(bus.color, busIndex);
   const labelColor = bus.mute ? "text-text-dim" : bus.solo ? "text-accent-success" : "text-text-primary";
 
   return (
@@ -512,6 +530,18 @@ export function SubMixBusStrip({ bus, busIndex }: SubMixBusStripProps): React.Re
     </div>
   );
 }
+
+/**
+ * TASK-264: React.memo über primitiven Props (busId + busIndex). DIES liefert
+ * den eigentlichen Rerender-Win: MixerView behält seine volle Store-
+ * Subscription und re-rendert bei jeder Bus-Mutation, aber die memoisierten
+ * Strips bleiben gebailt (Props unverändert) und nur der intern via
+ * useSubMixBus self-subscribte Strip dessen Bus mutierte rendert neu.
+ * (busIndex shiftet korrekt bei add/remove → memo rendert die nachfolgenden
+ * Strips dann bewusst neu.)
+ */
+export const SubMixBusStrip = React.memo(SubMixBusStripInner);
+SubMixBusStrip.displayName = "SubMixBusStrip";
 
 // ─── Mini-Slider Helper (für inline-FX-Section) ────────────────────────────
 

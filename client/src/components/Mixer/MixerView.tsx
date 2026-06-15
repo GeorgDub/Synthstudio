@@ -1399,7 +1399,7 @@ export function MixerView({ dm, mixer, samples = [], bpm = 120, projectName = "S
             {subMixBuses.map((bus, busIndex) => (
               <SubMixBusStrip
                 key={bus.id}
-                bus={bus}
+                busId={bus.id}
                 busIndex={busIndex}
               />
             ))}

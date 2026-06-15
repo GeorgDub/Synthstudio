@@ -33,7 +33,7 @@
  *     Pre-v1.33-Buses ohne diese Felder → Defaults werden silent ergänzt.
  *   - Channels ohne Bus-Membership default zu master (additiv-Feature).
  */
-import { useEffect, useReducer } from "react";
+import { useEffect, useReducer, useRef, useSyncExternalStore } from "react";
 
 // ─── Typen ───────────────────────────────────────────────────────────────────
 
@@ -554,4 +554,92 @@ export function useSubMixStore(): SubMixState {
     return () => { _listeners.delete(forceRender); };
   }, []);
   return _state;
+}
+
+// ─── TASK-264: Per-Bus-Selektor-Subscription ─────────────────────────────────
+
+/**
+ * Abonniert Sub-Mix-Store-Änderungen für `useSyncExternalStore`. Gibt eine
+ * Unsubscribe-Funktion zurück. (Foundation für die Selektor-Subscriptions.)
+ */
+export function subscribeSubMix(listener: Listener): () => void {
+  _listeners.add(listener);
+  return () => { _listeners.delete(listener); };
+}
+
+/**
+ * TASK-264 — Generische Selektor-Subscription (additiv, Vorlage: usePlayheadStore /
+ * TASK-253/263). Abonniert nur eine abgeleitete Scheibe und re-rendert den
+ * Consumer NUR wenn sich diese laut `isEqual` ändert.
+ *
+ * `commit()` weist bei jeder Mutation ein FRISCHES `buses`-Array zu (Object.is
+ * bailt auf State-Ebene also nie). Die Setter mappen aber via
+ * `buses.map(b => b.id===id ? {...b} : b)` — UNveränderte Buses behalten ihre
+ * Referenz. Ein Selektor wie `s => s.buses.find(b => b.id === id)` liefert für
+ * Mutationen eines ANDEREN Bus daher exakt dieselbe Objekt-Referenz, und der
+ * Object.is-Default bailt für jenen Consumer ohne Rerender.
+ *
+ * Für Object-/Array-Slices cachen wir den letzten Wert via `cacheRef` und geben
+ * bei `isEqual`-Gleichheit die STABILE Referenz zurück — Pflicht, sonst läuft
+ * useSyncExternalStore in die "getSnapshot should be cached"-Schleife.
+ */
+export function useSubMixSelector<T>(
+  selector: (state: SubMixState) => T,
+  isEqual: (a: T, b: T) => boolean = Object.is,
+): T {
+  const cacheRef = useRef<{ value: T } | null>(null);
+  const getSnapshot = (): T => {
+    const next = selector(_state);
+    const cache = cacheRef.current;
+    if (cache !== null && isEqual(cache.value, next)) {
+      return cache.value; // stabile Referenz → Object.is-Bail-out
+    }
+    cacheRef.current = { value: next };
+    return next;
+  };
+  return useSyncExternalStore(subscribeSubMix, getSnapshot, getSnapshot);
+}
+
+/**
+ * TASK-264 — Strukturelle Gleichheit zweier Buses auf Feld-Ebene.
+ *
+ * Vergleicht die skalaren Felder per Object.is. `channelIds` und `fx` werden
+ * per REFERENZ verglichen (nicht deep): die Store-Setter erzeugen für diese
+ * Felder bei jeder echten Mutation neue Referenzen (`{...filtered}` bzw.
+ * `clampBusFx(...)`), sodass Reference-Equality korrekt ist und ein deep-Compare
+ * pro Render unnötiger Aufwand wäre. Behandelt undefined↔undefined sowie
+ * one-undefined (Bus existiert / existiert nicht).
+ */
+export function busesEqual(a: SubMixBus | undefined, b: SubMixBus | undefined): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return (
+    a.id === b.id &&
+    a.name === b.name &&
+    a.color === b.color &&
+    a.volume === b.volume &&
+    a.pan === b.pan &&
+    a.mute === b.mute &&
+    a.solo === b.solo &&
+    a.channelIds === b.channelIds && // Referenz-Vergleich (s. JSDoc)
+    a.fx === b.fx                    // Referenz-Vergleich (s. JSDoc)
+  );
+}
+
+/**
+ * TASK-264 — Convenience-Selektor: abonniert NUR den Bus mit `busId`. Der
+ * Consumer (SubMixBusStrip) re-rendert ausschließlich, wenn sich Felder DIESES
+ * Bus ändern — Mutationen anderer Buses bailen via `busesEqual` (Referenz-
+ * Identität des unveränderten Bus-Objekts).
+ *
+ * Liefert `undefined` wenn der Bus (noch) nicht existiert oder bereits entfernt
+ * wurde — Consumer müssen das null-handeln (z.B. `if (!bus) return null`), da
+ * der Strip nach `removeBus` notified werden kann, bevor der Parent ihn
+ * unmountet.
+ */
+export function useSubMixBus(busId: string): SubMixBus | undefined {
+  return useSubMixSelector(
+    (s) => s.buses.find((b) => b.id === busId),
+    busesEqual,
+  );
 }
