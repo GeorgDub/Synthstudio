@@ -30,7 +30,7 @@ import {
   type MacroTriggerMode,
 } from "@/store/useMacroStore";
 import { useScriptStore } from "@/store/useScriptStore";
-import { usePerformanceStore, PAD_COUNT, type PerformancePad } from "@/store/usePerformanceStore";
+import { usePerformancePads, PAD_COUNT, type PerformancePad } from "@/store/usePerformanceStore";
 import type { PartData } from "@/audio/AudioEngine";
 
 // ─── Target-Labels ───────────────────────────────────────────────────────────
@@ -273,7 +273,7 @@ function BindingEditor({ macro, parts, onClose }: { macro: Macro; parts: PartDat
   const [newMin, setNewMin] = useState(0);
   const [newMax, setNewMax] = useState(1);
   const { scripts } = useScriptStore();
-  const { pads } = usePerformanceStore();
+  const pads = usePerformancePads();
 
   const opt = TARGET_OPTIONS.find(o => o.value === newTarget);
 
@@ -639,7 +639,7 @@ interface MacroPanelProps {
 export function MacroPanel({ parts }: MacroPanelProps) {
   const { macros } = useMacroStore();
   const { scripts } = useScriptStore();
-  const { pads } = usePerformanceStore();
+  const pads = usePerformancePads();
   const [editIndex, setEditIndex] = useState<number | null>(null);
 
   const activeCount = macros.filter(m => {

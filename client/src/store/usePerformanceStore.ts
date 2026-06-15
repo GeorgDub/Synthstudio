@@ -15,7 +15,7 @@
  *   Falls in localStorage[STORAGE_KEY] alte Items ohne `color`/`label` existieren, werden
  *   sie tolerant geladen (fehlende Felder bleiben undefined).
  */
-import { useEffect, useReducer } from "react";
+import { useEffect, useReducer, useRef, useSyncExternalStore } from "react";
 
 export const PAD_COUNT = 16;
 const STORAGE_KEY = "ss-performance:v1";
@@ -379,4 +379,59 @@ export function usePerformanceStore(): PerformanceStoreView {
     queuedPatternId: _queuedPatternId,
     quantizeMode: _quantizeMode,
   };
+}
+
+/**
+ * Abonniert Performance-Store-Änderungen für `useSyncExternalStore`. Gibt
+ * Unsubscribe zurück. (TASK-263: Foundation für Selektor-Subscriptions.)
+ */
+export function subscribePerformance(listener: Listener): () => void {
+  _listeners.add(listener);
+  return () => { _listeners.delete(listener); };
+}
+
+/**
+ * TASK-263 — Selektor-Subscription (additiv, Vorlage: usePlayheadStore / TASK-253).
+ *
+ * Abonniert nur eine abgeleitete Scheibe und re-rendert den Consumer NUR wenn
+ * sich diese laut `isEqual` ändert. Hintergrund: `queuePattern` / `clearQueue`
+ * notifyen ohne `_pads` zu berühren — MacroPanel liest aber NUR `.pads` und
+ * re-renderte bisher bei jedem quantisierten Pattern-Queue-Toggle umsonst.
+ *
+ * Der Selektor bekommt den vollen View ({pads, queuedPatternId, quantizeMode}),
+ * damit beliebige Slices lesbar sind. `useSyncExternalStore` vergleicht
+ * Snapshots mit `Object.is`; für Objekt-/Array-Slices cachen wir den letzten
+ * Wert und geben bei Gleichheit die stabile Referenz zurück. Da `_pads` nur bei
+ * echten Pad-Mutationen neu zugewiesen wird (Setter erzeugen ein neues Array),
+ * reicht für `usePerformancePads()` der Object.is-Default.
+ */
+export function usePerformanceSelector<T>(
+  selector: (state: PerformanceStoreView) => T,
+  isEqual: (a: T, b: T) => boolean = Object.is,
+): T {
+  const cacheRef = useRef<{ value: T } | null>(null);
+  const getSnapshot = (): T => {
+    const view: PerformanceStoreView = {
+      pads: _pads,
+      queuedPatternId: _queuedPatternId,
+      quantizeMode: _quantizeMode,
+    };
+    const next = selector(view);
+    const cache = cacheRef.current;
+    if (cache !== null && isEqual(cache.value, next)) {
+      return cache.value; // stabile Referenz → Object.is-Bail-out
+    }
+    cacheRef.current = { value: next };
+    return next;
+  };
+  return useSyncExternalStore(subscribePerformance, getSnapshot, getSnapshot);
+}
+
+/**
+ * TASK-263 — Convenience-Selektor: nur die 16 Pads. `_pads` ist referenziell
+ * stabil solange keine Pad-Mutation passiert, daher reicht Object.is: MacroPanel
+ * re-rendert nicht mehr bei queuePattern/clearQueue/setQuantizeMode.
+ */
+export function usePerformancePads(): Array<PerformancePad | null> {
+  return usePerformanceSelector((s) => s.pads);
 }

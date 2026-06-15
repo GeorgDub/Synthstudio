@@ -4,7 +4,7 @@
  * Metronom-Einstellungen inkl. persistenter Custom-Sounds.
  * Audio-Daten werden als Base64-Data-URL in localStorage gespeichert (max ~2 MB).
  */
-import { useEffect, useReducer } from "react";
+import { useEffect, useReducer, useRef, useSyncExternalStore } from "react";
 
 const STORAGE_KEY = "ss-metronome:v2";
 
@@ -111,6 +111,15 @@ export function resetMetronome(): void {
 
 export function getMetronomeState(): MetronomeState { return _state; }
 
+/**
+ * Abonniert Metronom-Änderungen für `useSyncExternalStore`. Gibt Unsubscribe
+ * zurück. (TASK-263: Foundation für Selektor-Subscriptions.)
+ */
+export function subscribeMetronome(listener: Listener): () => void {
+  _listeners.add(listener);
+  return () => { _listeners.delete(listener); };
+}
+
 export function useMetronomeStore(): MetronomeState {
   const [, rerender] = useReducer((x: number) => x + 1, 0);
   useEffect(() => {
@@ -118,4 +127,49 @@ export function useMetronomeStore(): MetronomeState {
     return () => { _listeners.delete(rerender); };
   }, []);
   return _state;
+}
+
+/**
+ * TASK-263 — Selektor-Subscription (additiv, Vorlage: usePlayheadStore / TASK-253).
+ *
+ * Abonniert nur `selector(_state)` und re-rendert den Consumer NUR wenn sich
+ * diese Scheibe laut `isEqual` ändert. Hintergrund: `updateMetronome` mergt+
+ * notifyt bei JEDEM Feld-Change (Volume/Tone/Accent/BeatsPerBar-Slider in den
+ * Settings). App.tsx abonniert via `useMetronomeStore()` aber das KOMPLETTE
+ * State-Objekt, liest jedoch nur `customDownbeatUrl` + `customBeatUrl` (zwei
+ * skalare Felder für die AudioEngine-Sync-Effects). Ohne Selektor re-rendert
+ * der ~5000-Zeilen-App.tsx-Tree bei jedem Metronom-Slider-Drag.
+ *
+ * `useSyncExternalStore` vergleicht Snapshots mit `Object.is`. Für Objekt-Slices
+ * cachen wir den letzten Wert und geben bei Gleichheit die stabile Referenz
+ * zurück; skalare Selektoren (z.B. `string | null`) brauchen kein `isEqual`.
+ */
+export function useMetronomeSelector<T>(
+  selector: (state: MetronomeState) => T,
+  isEqual: (a: T, b: T) => boolean = Object.is,
+): T {
+  const cacheRef = useRef<{ value: T } | null>(null);
+  const getSnapshot = (): T => {
+    const next = selector(_state);
+    const cache = cacheRef.current;
+    if (cache !== null && isEqual(cache.value, next)) {
+      return cache.value; // stabile Referenz → Object.is-Bail-out
+    }
+    cacheRef.current = { value: next };
+    return next;
+  };
+  return useSyncExternalStore(subscribeMetronome, getSnapshot, getSnapshot);
+}
+
+/**
+ * TASK-263 — Convenience-Selektor: nur die Custom-Sound-URLs (Data-URL bzw.
+ * null). App.tsx nutzt diese, um die AudioEngine zu syncen — kein Rerender
+ * mehr bei Volume-/Tone-/Accent-/BeatsPerBar-Änderungen.
+ */
+export function useMetronomeCustomDownbeatUrl(): string | null {
+  return useMetronomeSelector((s) => s.customDownbeatUrl);
+}
+
+export function useMetronomeCustomBeatUrl(): string | null {
+  return useMetronomeSelector((s) => s.customBeatUrl);
 }

@@ -74,7 +74,7 @@ import { evaluateLfo, applyBipolarMod } from "@/utils/lfo";
 // ── Stores für neue Features ──────────────────────────────────────────────────
 import { useSongStore } from "@/store/useSongStore";
 import { useHumanizerStore, computeHumanizerTimingOffset, computeHumanizerVelocityMultiplier } from "@/store/useHumanizerStore";
-import { useMetronomeStore } from "@/store/useMetronomeStore";
+import { useMetronomeCustomDownbeatUrl, useMetronomeCustomBeatUrl } from "@/store/useMetronomeStore";
 import { useSubMixStore } from "@/store/useSubMixStore";
 import { useDrumMachineStore } from "@/store/useDrumMachineStore";
 import { useTransport } from "@/hooks/useTransport";
@@ -736,13 +736,17 @@ export default function App() {
   }, []);
 
   // ── Metronome Custom-Sounds ↔ AudioEngine ─────────────────────────────────
-  const metronome = useMetronomeStore();
+  // TASK-263: App.tsx liest nur die zwei Custom-Sound-URLs, abonniert daher nur
+  // diese skalaren Slices statt des kompletten Metronom-State. So re-rendert der
+  // App-Tree nicht mehr bei Volume-/Tone-/Accent-/BeatsPerBar-Slider-Drags.
+  const metronomeCustomDownbeatUrl = useMetronomeCustomDownbeatUrl();
+  const metronomeCustomBeatUrl = useMetronomeCustomBeatUrl();
   useEffect(() => {
-    void AudioEngine.setCustomClickSound("downbeat", metronome.customDownbeatUrl);
-  }, [metronome.customDownbeatUrl]);
+    void AudioEngine.setCustomClickSound("downbeat", metronomeCustomDownbeatUrl);
+  }, [metronomeCustomDownbeatUrl]);
   useEffect(() => {
-    void AudioEngine.setCustomClickSound("beat", metronome.customBeatUrl);
-  }, [metronome.customBeatUrl]);
+    void AudioEngine.setCustomClickSound("beat", metronomeCustomBeatUrl);
+  }, [metronomeCustomBeatUrl]);
 
   // ── Sub-Mix-Buses ↔ AudioEngine (v3.79.1) ─────────────────────────────────
   // Bei jeder State-Änderung des Sub-Mix-Stores syncen wir das volle Bus-
