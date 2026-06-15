@@ -28,7 +28,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.138.0",
+    version: "3.280.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -4221,6 +4221,71 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "coordinator",
+      timestamp: "2026-06-15T11:15:00.000Z",
+      done: [
+        "Runde 2026-06-15 (Session 5): TASK-268-FOLLOWUP gruen gelandet + released als v3.280.0. Einziger Pflicht-Task der Runde, sauber single-layer (frontend UI only), kein neuer IPC/keine neue Dependency -> kein Security-Gate noetig.",
+        "Frontend (a514bdb): FX-Einstieg (Toggle + FxPanelBody) vom Mixer-AudioTrackStrip auf die AudioClipLane im Sequencer gespiegelt. Advisor-gehaertete Constraints durchgesetzt: (1) FX-Werte aus track.fx, nur fxOpen local -> bidirektionaler Shared-State via setAudioTrackFx+AudioEngine.setAudioTrackFx (gleiche Mechanik wie das funktionierende Mute/Solo-Lane-Binding); (2) Lane-Layout NICHT 1:1 kopiert sondern zu flex-col restrukturiert (Row + collapsible Panel darunter, sonst Lane-Row-Deformation); (3) testid-Konvention der Lane (audio-clip-lane-fx-toggle/-panel-<id>); (4) FxPanel.tsx pre-existing text-white NICHT angefasst (Scope-Guard).",
+        "Playwright-Smoke verifiziert ECHT shared state (nicht nur Panel-oeffnet): Filter-Enable im Lane-Panel -> im Mixer-Strip-Panel true, + Gegenrichtung. Headless-deterministisch, NICHT in HEADLESS_INCOMPATIBLE_SPECS (blockierender CI-Pfad bleibt gruen). check clean, test 10412 passed/12 skipped, audio-clip-lane 6/6.",
+        "Release v3.280.0 (a23448b, Tag gepusht): package.json 3.279.0->3.280.0 (minor). Chirurgisch gestaged (NUR 2 Feature-Files im Feature-Commit, NUR package.json im Release-Commit; examples/e2s/* + screenshots/* NIE gestaged; INDEX.js nicht im Feature-Commit). CI + Electron-Release via push+tag getriggert."
+      ],
+      next: [
+        "Folge-Session: TASK-264 (per-Bus-Selektor-Sub SubMixBusStrip), TASK-265 (PlaylistPanel-Extraktion), TASK-266 (circular import useThemeStore<->ThemeSettings), TASK-257-FOLLOWUP-3 (Macro/Env als Mod-Quellen).",
+        "Low-Prio Tech-Debt (von frontend gemeldet): FxPanel.tsx Tab-Buttons nutzen hardcodiertes text-white (~Z136).",
+        "TASK-262-Residual: Audio/Sim-Playwright-Job laeuft non-blocking rot (OmniTribe-Sim braucht nicht-headless), bewusst akzeptiert; blockierende CI-Jobs gruen."
+      ],
+      changed: []
+    },
+    {
+      agent:     "frontend",
+      timestamp: "2026-06-15T13:00:00.000Z",
+      done: [
+        "TASK-268-FOLLOWUP: Insert-FX-Einstieg vom Mixer-Strip auf die Audio-Clip-Lane im Sequencer gespiegelt (reiner UI-Anschluss, KEINE neue Engine-/Store-Logik). Lane-Wrapper von 'flex items-center' auf 'flex flex-col' restrukturiert: obere Row (Header/M/S/Play/FX/Waveform) unveraendert, darunter collapsible Full-Width-FX-Panel. data-track-id/boxShadow-Tint bleiben am Wrapper.",
+        "FX-Toggle-Button (Sliders-Icon, semantische Tokens) + collapsible FxPanelBody mit derselben Dual-Call-Seam wie AudioTrackStrip: trackFx = track.fx ?? DEFAULT_CHANNEL_FX, handleFxChange ruft setAudioTrackFx (Store) + AudioEngine.setAudioTrackFx (audible). FX-WERTE liegen in track.fx (Store), NUR fxOpen ist local — dadurch teilen Strip + Lane denselben State bidirektional (updateAudioTrack ist immutable + notify).",
+        "Playwright-Smoke ergaenzt (audio-clip-lane.spec.ts): verifiziert SHARED STATE, nicht nur 'Panel oeffnet' — Filter-Enable im Lane-Panel setzen → im Mixer-Strip-Panel als true gespiegelt, + Gegenrichtung. Headless-deterministisch (role=switch/aria-checked, kein Audio/Slider-fill). NICHT in HEADLESS_INCOMPATIBLE_SPECS (bestehende Datei).",
+        "pnpm check clean. pnpm test: 448 files / 10412 passed / 12 skipped. Playwright audio-clip-lane: 6/6 passed."
+      ],
+      next: [
+        "FxPanel.tsx Tab-Buttons nutzen hardcodiertes 'text-white' (Zeile 136) — out-of-scope gelassen (Scope-Guard). Bei Gelegenheit auf text-text-primary umstellen.",
+        "Coordinator: TASK-268-FOLLOWUP ist staging-frei abgeschlossen — Commit/Release liegt beim Coordinator."
+      ],
+      changed: [
+        "client/src/components/DrumMachine/AudioClipLane.tsx",
+        "tests/web/audio-clip-lane.spec.ts"
+      ]
+    },
+    {
+      agent:     "coordinator",
+      timestamp: "2026-06-15T11:00:00.000Z",
+      done: [
+        "Runde 2026-06-15 (Audio-Lane-Komplex Forts.): TASK-267 + TASK-268 beide gruen gelandet, seriell (geteiltes Working-Tree: beide beruehren AudioEngine.ts + AudioClipLane/AudioTrackStrip), je eigener Commit.",
+        "TASK-267 (backend, f81fb73): Per-Lane Play/Stop entkoppelt vom Global-Transport. Single-Voice-Modell (KEIN separater Preview-Pool, Advisor-korrigiert). Neuer pure Helper laneStateOnGlobalChange(globalPlaying,{muted,broken}) -> globalPlaying ? (!muted && !broken) : false. globalPlaying-State in beiden Komponenten entfernt, effectivePlaying = nur lokales playing, toggleLocked + disabled-Lock weg. Semantik: Lane-Stop waehrend Global = transient (Voice stirbt, playing=false, kein Restart bis manuell/Global-Restart); persistentes Ausschliessen = mute. SUPERSEDED TASK-261 + TASK-252 (Coupling-Specs umgeschrieben, NICHT geloescht). +6 Unit-Tests (11->17). check+test gruen (10402).",
+        "TASK-268 (backend, 7bf4e90): Voller Insert-FX-Chain pro Audio-Lane (gleiche 16 Params + ChannelFx wie Drum-Parts). fx?:ChannelFx auf AudioTrackChannelData; neue Engine-API setAudioTrackFx(id,partial) (Sibling zu setPartFx, NICHT ueberladen); _applyFxToNodes explizit an allen 3 Audio-Track-Node-Sites (registerAudioTrack/playAudioTrack/_playAudioTrackViaWorklet) da _getOrCreateChannelNodes fx nur bei Erstellung anwendet. Store useAudioTrackStore.setAudioTrackFx (merge+persist). Persistenz pass-through in projectSerializer (+Guards+Legacy-Fallback DEFAULT_CHANNEL_FX). UI: FX-Toggle + FxPanelBody (wiederverwendet, partId/partName) auf AudioTrackStrip (Mixer-Strip = Kanal-Paritaet). MIDI-Learn GEMACHT (nicht verschoben): handleFxParam in useMidiEventBridge.ts routet audiotrack:-prefixed ids zu setAudioTrackFx. +10 Tests (10412). check+test gruen.",
+        "Release v3.279.0 (builder, 70f85f5, Tag gepusht): CI alle BLOCKIERENDEN Jobs gruen (Type-Check+Unit success, Playwright-Headless success), Electron-Release-Workflow success. Audio/Sim-Job (non-blocking, continue-on-error) failt wie seit v3.276 wg. OmniTribe-Sim-Headless-Connect-Timeout (TASK-262-Env-Gate), KEINE Regression (Change war nur version-String)."
+      ],
+      next: [
+        "Folge-Session: TASK-264 (per-Bus-Selektor-Sub SubMixBusStrip), TASK-265 (PlaylistPanel-Extraktion), TASK-266 (circular import useThemeStore<->ThemeSettings), TASK-257-FOLLOWUP-3 (Macro/Env als Mod-Quellen).",
+        "TASK-268-FOLLOWUP (optional, low): FX-Entry-Point auch auf AudioClipLane.tsx (Sequencer-View) spiegeln, aktuell nur Mixer-Strip. FxPanelBody ist bereits wiederverwendbar, reiner UI-Anschluss.",
+        "Offen aus TASK-262: Audio/Sim-Playwright-Job laeuft non-blocking rot (OmniTribe-Sim braucht echte HW/nicht-headless). Bewusst akzeptiert."
+      ],
+      changed: []
+    },
+    {
+      agent:     "builder",
+      timestamp: "2026-06-15T10:25:00.000Z",
+      done: [
+        "Release v3.279.0: package.json 3.278.0->3.279.0 (minor, zwei Features TASK-267+TASK-268). Kein dediziertes version-Bump-Script vorhanden (release-Script ist electron-builder-publish), daher package.json direkt editiert. pnpm-lock.yaml unberuehrt.",
+        "Pre-Commit-Gate gruen: pnpm check (tsc clean) + pnpm test = 448 files / 10412 passed / 12 skipped.",
+        "Chirurgisch gestaged (NUR package.json, via git diff --cached --stat verifiziert), Commit 70f85f5, Tag v3.279.0 gepusht. examples/e2s/* + screenshots/* bleiben untracked.",
+        "CI (ci.yml) + Electron Release (electron-release.yml) automatisch via push+tag getriggert — identisch zu v3.276-v3.278. Electron Release = success. Kein manuelles gh release create (matcht prior versions: GH-Release-Liste zeigt nur v1.10.x, v3.x werden NICHT als GH-Release publiziert)."
+      ],
+      next: [
+        "CI-Endkonklusion (ci.yml run 27539560132) verifizieren — Electron Release bereits gruen.",
+        "Folge-Tasks: TASK-264 (per-Bus-Selektor-Sub SubMixBusStrip), TASK-265 (PlaylistPanel-Extraktion), TASK-266 (circular import useThemeStore<->ThemeSettings)."
+      ],
+      changed: ["package.json"]
+    },
     {
       agent:     "coordinator",
       timestamp: "2026-06-15T07:45:00.000Z",
@@ -15066,6 +15131,54 @@ const INDEX = {
   //     grep -L 'doneIn\|closedIn'
   // ───────────────────────────────────────────────────────
   openTasks: [
+        {
+          id: "TASK-267",
+          type: "feature",
+          priority: "high",
+          agent: "backend",
+          status: "done",
+          createdAt: "2026-06-15T09:30:00.000Z",
+          createdBy: "coordinator",
+          doneIn: "v3.279.0",
+          doneAt: "2026-06-15T10:10:00.000Z",
+          doneBy: "backend",
+          doneCommit: "f81fb73",
+          doneNote: "Per-Lane Play/Stop entkoppelt vom Global-Transport. Single-Voice (kein Preview-Pool). Pure Helper laneStateOnGlobalChange(globalPlaying,{muted,broken}). globalPlaying-State entfernt, effectivePlaying=playing, toggleLocked weg, Button enabled waehrend Global. Lane-Stop=transient, persistentes Ausschliessen=mute. SUPERSEDED TASK-261+TASK-252 (Specs umgeschrieben nicht geloescht). +6 Tests. check+test gruen 10402.",
+          title: "Unabhaengiges Start/Stop pro Audio-Lane (Sequencer + Mixer)",
+          description: "User: Audio lanes separat im Sequenzer startbar/stoppbar, nicht nur global. Per-Lane-Toggle nicht mehr disabled waehrend Global-Play."
+        },
+        {
+          id: "TASK-268",
+          type: "feature",
+          priority: "high",
+          agent: "backend",
+          status: "done",
+          createdAt: "2026-06-15T09:30:00.000Z",
+          createdBy: "coordinator",
+          doneIn: "v3.279.0",
+          doneAt: "2026-06-15T10:50:00.000Z",
+          doneBy: "backend",
+          doneCommit: "7bf4e90",
+          doneNote: "Voller Insert-FX-Chain pro Audio-Lane (16 Params/ChannelFx wie Drum-Parts). fx?:ChannelFx auf AudioTrackChannelData; Engine setAudioTrackFx(id,partial) Sibling zu setPartFx; _applyFxToNodes explizit an 3 Audio-Track-Sites (register/play/worklet). Store-Setter merge+persist. Persistenz pass-through projectSerializer +Guards+Legacy-Fallback. UI FxPanelBody-Reuse + FX-Toggle auf AudioTrackStrip (Mixer-Strip). MIDI-Learn GEMACHT: handleFxParam routet audiotrack:-ids in useMidiEventBridge. +10 Tests. check+test gruen 10412.",
+          title: "Voller FX-Chain pro Audio-Lane",
+          description: "User: gleiche Effekte fuer Audio lanes wie fuer andere Kanaele. Per-Channel-FX-Chain (Filter/Dist/EQ/Comp/Delay/Reverb) + UI + Persistenz + MIDI-Learn."
+        },
+        {
+          id: "TASK-268-FOLLOWUP",
+          type: "feature",
+          priority: "low",
+          agent: "frontend",
+          status: "done",
+          doneIn: "v3.280.0",
+          doneAt: "2026-06-15T11:00:00.000Z",
+          doneBy: "frontend",
+          doneCommit: "a514bdb",
+          doneNote: "FX-Toggle + FxPanelBody vom Mixer-Strip auf AudioClipLane gespiegelt (reiner UI-Anschluss, KEINE neue Engine-/Store-Logik). FX-Werte aus track.fx (nur fxOpen local) -> Strip + Lane teilen denselben State bidirektional via setAudioTrackFx + AudioEngine.setAudioTrackFx. Lane-Wrapper zu flex-col restrukturiert. testids audio-clip-lane-fx-toggle/-panel-<id>, MIDI-Learn gratis via partId/partName. Playwright verifiziert shared state lane<->strip. check clean, test 10412, audio-clip-lane 6/6. round-2026-06-15-s5",
+          createdAt: "2026-06-15T11:00:00.000Z",
+          createdBy: "coordinator",
+          title: "FX-Entry-Point auch auf AudioClipLane (Sequencer-View) spiegeln",
+          description: "TASK-268 exponierte den Audio-Track-FX-Chain nur auf dem Mixer-Strip (AudioTrackStrip). FxPanelBody ist bereits generisch wiederverwendbar (partId/partName + onFxChange-Setter existieren). Reiner UI-Anschluss: FX-Toggle/Popover auf AudioClipLane.tsx (Clip-Lane im Sequencer) ergaenzen, gleiche store/Engine-Seam wie der Strip. Semantische --ss-*-Tokens, isomorph. Playwright-Smoke. Klein."
+        },
         // ─── Runde 2026-06-15: 251/252/256 DONE (siehe workLog, commits d1015ee/85fcd10/d1166aa/be67470). Verbleibende + neue offene Tasks: ───
         // ─── Runde 2026-06-15 (Session 3): TASK-257-FOLLOWUP + TASK-255 DONE (v3.277.0). Neue Folge-Tasks: ───
         // ─── Runde 2026-06-15 (Session 4): TASK-263 + TASK-255-FOLLOWUP + TASK-257-FOLLOWUP-2 DONE (v3.278.0). Neue Folge-Tasks: ───
