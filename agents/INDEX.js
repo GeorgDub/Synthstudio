@@ -1899,8 +1899,8 @@ const INDEX = {
       ownedBy:  "backend"
     },
     "client/src/store/useSubMixStore.ts (v3.88.0)": {
-      role:     "v3.88.0 ERWEITERT (+13 LOC, bestehende v3.86/v3.79 unverändert): NEU exported Setter setBusPostGain(id, postGain) — Convenience-Wrapper um setBusFx({postGain}) analog setBusReverbSend/setBusDelaySend. JSDoc dokumentiert Routing: 'wirkt im Audio-Graph ZWISCHEN compMix und bus.gain (also nach EQ+Compressor, aber VOR Volume/Mute/Solo) und skaliert NICHT die Sends'. Vorheriger v3.86-Stand: SubMixBusFx erweitert auf volle FX-Chain mit eq3/compressor/reverbSend/delaySend + clampBusEq3/clampBusCompressor + Setter setBusEq3/setBusCompressor/setBusReverbSend/setBusDelaySend (alle merge-update mit pre-clamping).",
-      lastSeen: "2026-05-19T07:18:00.000Z",
+      role:     "v3.88.0 ERWEITERT (+13 LOC, bestehende v3.86/v3.79 unverändert): NEU exported Setter setBusPostGain(id, postGain) — Convenience-Wrapper um setBusFx({postGain}) analog setBusReverbSend/setBusDelaySend. JSDoc dokumentiert Routing: 'wirkt im Audio-Graph ZWISCHEN compMix und bus.gain (also nach EQ+Compressor, aber VOR Volume/Mute/Solo) und skaliert NICHT die Sends'. Vorheriger v3.86-Stand: SubMixBusFx erweitert auf volle FX-Chain mit eq3/compressor/reverbSend/delaySend + clampBusEq3/clampBusCompressor + Setter setBusEq3/setBusCompressor/setBusReverbSend/setBusDelaySend (alle merge-update mit pre-clamping). TASK-264 (commit f2a3fd7): additiv +subscribeSubMix +useSubMixSelector<T>(selector,isEqual=Object.is) (useRef-Snapshot-Cache, stabile Referenz bei isEqual-Gleichheit → Object.is-Bail-out, exakt usePlayheadStore/TASK-253/263-Praezedenz) +busesEqual(a,b) (skalare Felder Object.is, channelIds/fx per Referenz da Setter neue Refs erzeugen, undefined↔undefined sicher) +useSubMixBus(busId) → SubMixBus|undefined. SubMixBusStrip abonniert damit nur seinen eigenen Bus statt das ganze buses-Array. App.tsx behaelt bewusst volle useSubMixStore()-Subscription (syncSubMixState).",
+      lastSeen: "2026-06-15T18:45:00.000Z",
       ownedBy:  "frontend"
     },
     "client/src/audio/AudioEngine.ts (v3.88.0 sub-mix-bus-postgain-wiring)": {
@@ -1909,8 +1909,13 @@ const INDEX = {
       ownedBy:  "frontend"
     },
     "client/src/components/Mixer/SubMixBusStrip.tsx (v3.88.0 bus-fx-midi-learn + postgain-ui)": {
-      role:     "v3.88.0 ERWEITERT (+~110 LOC, bestehende v3.86 FX-Chain-UI + v3.81 MIDI-Learn + v3.80 Layout bleibt). BusFxModal nutzt 7× useMidiLearn-Hook für die v3.87-Targets (subMixBusEqLowGain/MidGain/HighGain/CompThreshold/CompRatio/ReverbSend/DelaySend) jeweils mit busId+busName-Context. FxModalSlider-Interface erweitert um optionale Props onContextMenu/isMapped/mappedCC/menu — wenn gesetzt rendert ein ·CC<n>-Badge im Label + menu-ReactNode (Context-Menu vom useMidiLearn-Hook). Title-Attribut der Sliders enthält 'Rechtsklick: MIDI-Learn'-Hinweis wenn gebunden. NEU postGain-Section am unteren Modal-Ende ('Post-Comp Gain' Header, FxModalSlider 0..2 in 0.01-Steps, format '1.50×') wired auf setBusPostGain. Header-JSDoc-Block v3.86→v3.88 erweitert (Right-Click-Learn + postGain-Slider). Import setBusPostGain ergänzt. Comp-Attack/Release-Slider bleiben ohne MIDI-Learn (kein v3.87-Target dafür).",
-      lastSeen: "2026-05-19T07:18:00.000Z",
+      role:     "v3.88.0 ERWEITERT (+~110 LOC, bestehende v3.86 FX-Chain-UI + v3.81 MIDI-Learn + v3.80 Layout bleibt). BusFxModal nutzt 7× useMidiLearn-Hook für die v3.87-Targets (subMixBusEqLowGain/MidGain/HighGain/CompThreshold/CompRatio/ReverbSend/DelaySend) jeweils mit busId+busName-Context. FxModalSlider-Interface erweitert um optionale Props onContextMenu/isMapped/mappedCC/menu — wenn gesetzt rendert ein ·CC<n>-Badge im Label + menu-ReactNode (Context-Menu vom useMidiLearn-Hook). Title-Attribut der Sliders enthält 'Rechtsklick: MIDI-Learn'-Hinweis wenn gebunden. NEU postGain-Section am unteren Modal-Ende ('Post-Comp Gain' Header, FxModalSlider 0..2 in 0.01-Steps, format '1.50×') wired auf setBusPostGain. Header-JSDoc-Block v3.86→v3.88 erweitert (Right-Click-Learn + postGain-Slider). Import setBusPostGain ergänzt. Comp-Attack/Release-Slider bleiben ohne MIDI-Learn (kein v3.87-Target dafür). TASK-264 (commit f2a3fd7): Prop bus:SubMixBus → busId:string. Komponente in SubMixBusStripInner umbenannt, exportiert als React.memo(SubMixBusStripInner) (displayName SubMixBusStrip) über primitiven Props busId+busIndex — DAS liefert den Rerender-Win. Inner self-subscribt via useSubMixBus(busId); editingName/MIDI-Learn/useConfirm/useCallback-Hooks laufen unkonditional VOR dem Null-Guard (if(!bus) return null, fuer den fluechtigen Post-removeBus-Frame). Vorher re-renderte jede Bus-Mutation alle Strips (MixerView volle Sub); jetzt rendert nur der Strip dessen eigener Bus mutierte (busesEqual bailt Fremd-Bus per Referenz-Identitaet). add/remove shiften busIndex → memo rendert nachfolgende Strips korrekt neu.",
+      lastSeen: "2026-06-15T18:45:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "tests/features/sub-mix-bus-selector.test.ts (TASK-264)": {
+      role:     "TASK-264 NEU (11 Tests, 3 describes, @vitest-environment jsdom, renderHook/act aus @testing-library/react analog performance-selector.test.ts-Harness). (a) Slice-Korrektheit: useSubMixBus liefert genau den richtigen Bus (===getBusById, kein Clone), spiegelt eigene Mutation, useSubMixSelector liest beliebige Scheibe (Bus-Count). (b) Bail-out: Fremd-Bus-Mutation → stabile Referenz + 0 zusaetzliche Rerender; eigene Mutation (setBusMute) → genau +1 Rerender; fx-Mutation (setBusEq3) → +1 Rerender (fx-Referenz-Contract); busesEqual-Einheiten (undefined↔undefined true, one-undefined false, scalar-diff false, neue channelIds-Ref false). (c) subscribe/unsubscribe sauber (kein Notify nach unsub), undefined nach removeBus, undefined↔undefined kein Rerender (keine Endlosschleife).",
+      lastSeen: "2026-06-15T18:45:00.000Z",
       ownedBy:  "frontend"
     },
     "tests/features/sub-mix-bus-fx-midi.test.ts (v3.88.0)": {
@@ -2019,8 +2024,8 @@ const INDEX = {
       ownedBy:  "frontend"
     },
     "client/src/components/Mixer/MixerView.tsx (v3.80.0 sub-mix-ui-wiring)": {
-      role:     "v3.80.0 ERWEITERT (+~85 LOC, bestehende v3.79+v3.78+v3.74+v3.73+v3.63+v3.54+v3.53+v2.98 etc. bleibt): NEU `+ New Bus`-Button neben '+ Live Input' (border-accent-success/50, disabled wenn MAX_SUB_MIX_BUSES erreicht, Counter {N}/{MAX}, data-testid=mixer-add-sub-mix-bus). NEU `Send to Bus`-Dropdown im MixerChannel (rendered nur für non-Master + wenn subMixBuses.length > 0): <select> mit 'Master'-Default-Option + bus.name-Optionen, kleiner Color-Tag unterhalb mit bus.color (20% Alpha-bg + 40% Border) der den aktuell zugewiesenen Bus visualisiert, data-testid=mixer-channel-bus-select-<partId> + mixer-channel-bus-tag-<partId>. NEU `SubMixBusStrip` gerendert rechts neben Channel-Strips (parts + audioTracks + liveInputs), links vom Master — wenn 0 Buses keine extra column. NEU `useSubMixStore`-Hook-Subscription + handleAssignBus/handleCreateBus useCallbacks. MixerChannelProps um subMixBuses?/assignedBusId?/onAssignBus? erweitert (alle optional damit Master-Channel + Web-Mode-Stubs nicht crashen). Engine-Sync läuft automatisch via App.tsx v3.79.1-useEffect — die UI-Schicht ruft nur Store-Setter.",
-      lastSeen: "2026-05-19T05:10:00.000Z",
+      role:     "v3.80.0 ERWEITERT (+~85 LOC, bestehende v3.79+v3.78+v3.74+v3.73+v3.63+v3.54+v3.53+v2.98 etc. bleibt): NEU `+ New Bus`-Button neben '+ Live Input' (border-accent-success/50, disabled wenn MAX_SUB_MIX_BUSES erreicht, Counter {N}/{MAX}, data-testid=mixer-add-sub-mix-bus). NEU `Send to Bus`-Dropdown im MixerChannel (rendered nur für non-Master + wenn subMixBuses.length > 0): <select> mit 'Master'-Default-Option + bus.name-Optionen, kleiner Color-Tag unterhalb mit bus.color (20% Alpha-bg + 40% Border) der den aktuell zugewiesenen Bus visualisiert, data-testid=mixer-channel-bus-select-<partId> + mixer-channel-bus-tag-<partId>. NEU `SubMixBusStrip` gerendert rechts neben Channel-Strips (parts + audioTracks + liveInputs), links vom Master — wenn 0 Buses keine extra column. NEU `useSubMixStore`-Hook-Subscription + handleAssignBus/handleCreateBus useCallbacks. MixerChannelProps um subMixBuses?/assignedBusId?/onAssignBus? erweitert (alle optional damit Master-Channel + Web-Mode-Stubs nicht crashen). Engine-Sync läuft automatisch via App.tsx v3.79.1-useEffect — die UI-Schicht ruft nur Store-Setter. TASK-264 (commit f2a3fd7): SubMixBusStrip-Render gibt busId={bus.id} statt bus={bus} — der Strip self-subscribt seinen Bus via useSubMixBus(busId) (React.memo). MixerView behaelt seine volle useSubMixStore()-Subscription (braucht id-Liste + Reihenfolge + Count fuer den .map).",
+      lastSeen: "2026-06-15T18:45:00.000Z",
       ownedBy:  "frontend"
     },
     "tests/features/sub-mix-ui.test.ts (v3.80.0)": {
@@ -2465,7 +2470,12 @@ const INDEX = {
     },
     "client/src/components/SampleBrowser/SampleBrowser.tsx (v3.55.0)": {
       role:     "v3.226 ERWEITERT: Bulk-FreqShift-Action in Multi-Select-Bar (direkt nach EXC-Button v3.225). 1 Slider (shiftHz -500..500 step=10 default 50 = DEFAULT_SHIFT_HZ aus sampleFreqShift.ts) + FSH-Button data-testid='sample-browser-bulk-freqshift-apply'. State bulkFreqShift. handleBulkFreqShift useCallback: Early-Exit auf bulkFreqShift===0 (Identity weil cos(0)=1); AudioEngine.loadSample → applyFreqShift(buf, {shiftHz: bulkFreqShift}) → encodeWav → URL-Blob → OfflineAudioContext + copyToChannel → onTransformSample; Toast 'FreqShift <s>Hz: N Samples'. data-testids: sample-browser-bulk-freqshift (slider) + sample-browser-bulk-freqshift-apply (button). Import { applyFreqShift } aus @/utils/sampleFreqShift. v3.225 Bulk-Exciter + v3.224 Bulk-Haas + v3.222 Bulk-Bitcrush + v3.221 Bulk-TimeStretch + v3.219 Bulk-NoiseReduce + v3.218 Bulk-Granulize + v3.197 Bulk-Stereo-Width + v3.195 Bulk-Saturator + v3.194 Bulk-Pitch-Shift + v3.188-v3.193 Bulk-Compressor/Delay/Sidechain bleiben unveraendert.",
-      lastSeen: "2026-05-20T23:15:00.000Z",
+      lastSeen: "2026-06-15T20:55:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/components/SampleBrowser/PlaylistPanel.tsx (v3.280 TASK-265)": {
+      role:     "v3.280 (TASK-265): PlaylistPanel-Subkomponente verbatim aus SampleBrowser.tsx extrahiert (props-only + interner useState newName/editingId/editName/showAddMenu, keine Modul-Helfer/Konstanten/Hooks/Electron). Die Playlist-Typdefinition (id/name/sampleIds/createdAt) zog mit hierher und wird von hier exportiert (kein externer Importeur -> einseitiger Import von SampleBrowser, kein Zirkel). Importiert Sample-Typ aus ../../store/useProjectStore + useState aus react. Token-pur (theme-class-purity-Auto-Discovery gruen). Verhaltensneutral, identische Render-Ausgabe.",
+      lastSeen: "2026-06-15T20:55:00.000Z",
       ownedBy:  "frontend"
     },
     "client/src/store/useProjectStore.ts (v3.60.0)": {
@@ -4221,6 +4231,69 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "backend",
+      timestamp: "2026-06-15T21:10:00.000Z",
+      done: [
+        "TASK-257-FOLLOWUP-3: Macro + Envelope als zusaetzliche Mod-Quellen neben LFO. Reiner Store/Engine/Util-Seam — KEIN neuer IPC-Channel, KEINE neue Runtime-Dependency (kein Security-Gate noetig).",
+        "Datenmodell: ModRoute.source?: ModSource ('lfo'|'macro'|'env', optional, default 'lfo' via addModRoute). Sub-Felder: macroIndex?:number (0..7), env?:EnvConfig (ADSR + loopSec, zyklisch frei laufend). Neuer Typ ModSource + routeSource()-Helper (defensiver Default 'lfo').",
+        "Migration: migrateRoute() in load() normalisiert alte persisted v1-Routes ohne source-Feld -> 'lfo' (Abwaertskompat verifiziert per Test). KRITISCH gefixt: getActiveModRoutes() liess vorher JEDE Route ohne enabled-LFO fallen -> macro/env waeren stumm. Jetzt branch nach source, Rueckgabe {route; lfo?} (lfo optional).",
+        "Pure-Helper neu in client/src/utils/modSource.ts: macroToModValue (unipolar [0,1] Pass-Through, NICHT mapMacroValue-min/max) + evaluateEnv (zyklische ADSR ueber elapsedSec, deterministisch, kein note-on-Trigger) + defaultEnvConfig. Engine-Seam in App.tsx (rAF) verzweigt nach routeSource: macro liest getMacros()[idx].value, env -> evaluateEnv(now), lfo wie bisher; alles in applyBipolarMod.",
+        "UI gebaut JA: source-Picker pro Route im LfoModPanel.tsx + konditionale Sub-Controls (Macro-Index-Select / ADSR-Slider). +Route erlaubt jetzt auch ohne LFO (default macro). Nur --ss-*-Token-Klassen, native Selects/Inputs.",
+        "TEST-FIRST: tests/features/mod-source.test.ts (13 Tests: macroToModValue happy/clamp/non-finite, evaluateEnv ADSR-Phasen/Loop/negativ/Klemmung/Defaults) + lfo-mod-store.test.ts +7 (source-Default, routeSource defensiv, Migration v1->lfo, macro/env-Route bleibt aktiv ohne LFO, Persistence-Round-Trip). pnpm check gruen, pnpm test 450 files / 10445 passed / 12 skipped."
+      ],
+      next: [
+        "Optional: Envelope-Trigger an Transport/Note-Events koppeln statt frei laufendem Loop (aktuell bewusst frei laufend, da Seam keine Note-Events hat).",
+        "Folge-Tasks: TASK-264 (per-Bus-Selektor-Sub), TASK-266 (circular import useThemeStore<->ThemeSettings)."
+      ],
+      changed: [
+        "client/src/utils/modSource.ts",
+        "client/src/store/useLfoModStore.ts",
+        "client/src/App.tsx",
+        "client/src/components/Modulation/LfoModPanel.tsx",
+        "tests/features/mod-source.test.ts",
+        "tests/features/lfo-mod-store.test.ts"
+      ]
+    },
+    {
+      agent:     "refactor",
+      timestamp: "2026-06-15T20:55:00.000Z",
+      done: [
+        "TASK-265: PlaylistPanel (props-only Subkomponente, ~165 LOC) aus SampleBrowser.tsx nach client/src/components/SampleBrowser/PlaylistPanel.tsx (179 LOC inkl. Header/Imports) extrahiert. Verbatim-Move, identische Render-Ausgabe, kein Logik-/Token-Change. ImportProgress-Praezedenz (gleicher Ordner).",
+        "Kopplungs-Befund: PlaylistPanel ist props-only + nur interner useState (newName/editingId/editName/showAddMenu), keine Modul-Helfer/Konstanten/Hooks/Electron. Braucht Typen Playlist + Sample. Sample importiert von ../../store/useProjectStore.",
+        "Zirkel vermieden (Advisor-Hinweis, TASK-266-Anti-Pattern): Playlist-Interface war nur in SampleBrowser definiert+benutzt, KEIN externer Importeur (grep verifiziert). Interface MIT nach PlaylistPanel.tsx gezogen + dort exportiert; SampleBrowser importiert jetzt einseitig { PlaylistPanel, type Playlist } from './PlaylistPanel'. Keine Rueck-Kante.",
+        "SampleBrowser.tsx 5788 -> 5616 LOC (-172). check gruen (tsc clean). test 449 files / 10425 passed / 12 skipped (+2 vs Baseline 10423 = theme-class-purity-Auto-Discovery der neuen token-puren .tsx).",
+        "Chirurgisch gestaged (NUR SampleBrowser.tsx + PlaylistPanel.tsx, via git diff --cached --stat verifiziert), Commit 819fa55. examples/e2s/* + screenshots/* + vorbestehende agents/INDEX.js-Modifikation NICHT mitgestaged."
+      ],
+      next: [
+        "Owner-Hinweis (SampleBrowser-Owner): Playlist-Typ wohnt jetzt in ./PlaylistPanel.tsx (von dort exportiert), nicht mehr inline in SampleBrowser.tsx. Folge-Importe entsprechend.",
+        "Naechste SampleBrowser-Extraktion: CategorySidebar-Block (~Z440-461, vor PlaylistPanel) ist naechster props-only-Kandidat (cat.label/cat.id-Map). Pruefen ob CATEGORIES-Konstante mitzieht.",
+        "TASK-266 (circular import useThemeStore<->ThemeSettings) weiterhin offen — hoehere Prio/Risiko, shared types/themeTypes.ts noetig."
+      ],
+      changed: ["client/src/components/SampleBrowser/SampleBrowser.tsx", "client/src/components/SampleBrowser/PlaylistPanel.tsx"]
+    },
+    {
+      agent:     "frontend",
+      timestamp: "2026-06-15T18:45:00.000Z",
+      done: [
+        "TASK-264 (per-Bus-Selektor-Subscription useSubMixStore): additiv subscribeSubMix + generischer useSubMixSelector<T>(selector,isEqual?) mit useRef-Snapshot-Cache (Object.is-Bail-out, exakt TASK-253/263-Praezedenz, dependency-frei) + busesEqual(a,b) (skalare Felder per Object.is, channelIds/fx per Referenz, undefined-sicher) + Convenience useSubMixBus(busId). Commit f2a3fd7.",
+        "SubMixBusStrip.tsx: Prop bus -> busId umgestellt; Strip self-subscribed seinen Bus via useSubMixBus(busId) statt das Objekt vom Parent zu erhalten. Null-Guard (if(!bus) return null) NACH allen Hooks (Rules of Hooks) fuer den fluechtigen Post-removeBus-Frame. React.memo(SubMixBusStripInner) ueber primitiven Props (busId+busIndex) = der eigentliche Rerender-Win. MixerView gibt busId={bus.id} statt bus={bus}.",
+        "Rerender-Effekt: VORHER re-renderte jede Bus-Mutation (Volume/Pan/Mute/Solo/FX-Drag) MixerViews volle Subscription -> ALLE Strips neu. NACHHER bailt React.memo fuer unveraenderte Strips (Props gleich); nur der intern self-subscribte Strip dessen eigener Bus mutierte rendert neu (busesEqual bailt fuer Fremd-Bus via Referenz-Identitaet des unveraenderten map()-Bus-Objekts). add/remove shiften busIndex -> nachfolgende Strips rendern bewusst korrekt neu.",
+        "App.tsx UNANGETASTET (behaelt volle useSubMixStore()-Subscription fuer syncSubMixState — nicht in git status). MidiSettings.tsx ebenfalls unberuehrt (rein additive Export-Surface).",
+        "Test-First: tests/features/sub-mix-bus-selector.test.ts (11 Tests, 3 describes): Slice-Korrektheit, Bail-out bei Fremd-Bus, genau-1-Rerender bei eigener Mutation, fx-Referenz-Contract, busesEqual-Einheiten, subscribe/unsubscribe, undefined-Handling (removed bus). pnpm check clean; CI_HEADLESS=1 pnpm test 449 files / 10422 passed / 12 skipped (Baseline 10412 + 10... real 11 neue, +1 vs gemeldet).",
+        "Chirurgisch gestaged (NUR die 4 Dateien); examples/e2s/* + screenshots/ NIE gestaged, via git show --stat HEAD verifiziert (4 files, 317 ins / 21 del)."
+      ],
+      next: [
+        "Optionaler Folge-Win: weitere Mixer-Strip-Kopplungen (TASK-261) nach gleichem Diskriminator pruefen (Setter der notifyt ohne gelesene Slice zu aendern?).",
+        "ChannelStrip/MixerChannel sind useState/props-basiert -> Selektor-Migration waere Semantik-Change, weiter out of scope."
+      ],
+      changed: [
+        "client/src/store/useSubMixStore.ts",
+        "client/src/components/Mixer/SubMixBusStrip.tsx",
+        "client/src/components/Mixer/MixerView.tsx",
+        "tests/features/sub-mix-bus-selector.test.ts"
+      ]
+    },
     {
       agent:     "refactor",
       timestamp: "2026-06-15T18:35:00.000Z",
@@ -15206,9 +15279,13 @@ const INDEX = {
             type: "refactor",
             priority: "medium",
             agent: "frontend",
-            status: "open",
+            status: "done",
             createdAt: "2026-06-15T07:45:00.000Z",
             createdBy: "coordinator",
+            doneBy: "frontend",
+            doneAt: "2026-06-15T18:45:00.000Z",
+            doneCommit: "f2a3fd7",
+            doneNote: "Additiv subscribeSubMix + useSubMixSelector<T>(selector,isEqual?) (useRef-Snapshot-Cache, Object.is-Bail-out) + busesEqual (skalar Object.is, channelIds/fx per Referenz, undefined-sicher) + useSubMixBus(busId) in useSubMixStore.ts. SubMixBusStrip: Prop bus->busId, self-subscribe via useSubMixBus, Null-Guard nach allen Hooks, React.memo(busId+busIndex). MixerView gibt busId statt bus. App.tsx UNANGETASTET (volle Sub fuer syncSubMixState). +11 Tests (sub-mix-bus-selector.test.ts). pnpm check clean, 449 files/10422 passed/12 skipped.",
             title: "Per-Bus-Selektor-Subscription fuer useSubMixStore (echter Win, Folge TASK-263)",
             description: "TASK-263 liess useSubMixStore aus: .buses ist pro commit() ein frisches Array (Object.is bailt nie) und App.tsx braucht vollen State fuer syncSubMixState. Der echte spurious-Rerender-Win ist per-Bus: SubMixBusStrip.tsx soll nur seinen eigenen Bus via getBusById(id)-Selektor (mit isEqual auf Bus-Feld-Gleichheit) abonnieren statt das ganze buses-Array. Additiv, useSyncExternalStore-Pattern wie TASK-253/263, dependency-frei. Test-First.",
         },
@@ -15228,7 +15305,10 @@ const INDEX = {
             type: "feature",
             priority: "low",
             agent: "backend",
-            status: "open",
+            status: "done",
+            doneAt: "2026-06-15T21:10:00.000Z",
+            doneBy: "backend",
+            doneNote: "source?:ModSource ('lfo'|'macro'|'env', default 'lfo' + migrateRoute fuer alte v1-Routes) auf ModRoute; macroIndex?/env?-Subfelder. Neuer Pure-Util client/src/utils/modSource.ts (macroToModValue unipolar Pass-Through + evaluateEnv zyklische ADSR + defaultEnvConfig). KRITISCH: getActiveModRoutes() liess vorher Routes ohne enabled-LFO fallen -> jetzt branch nach source, return {route; lfo?}. Engine-Seam (App.tsx rAF) verzweigt nach source. UI: source-Picker + konditionale Sub-Controls im LfoModPanel.tsx (nur --ss-*-Token). KEIN neuer IPC, KEINE neue Dep. 20 neue Tests (mod-source.test.ts 13 + lfo-mod-store +7). check gruen, test 450 files/10445 passed. round-2026-06-15-s6",
             createdAt: "2026-06-15T07:45:00.000Z",
             createdBy: "coordinator",
             title: "Macro/Envelope als zusaetzliche Mod-Quellen (Folge TASK-257-FOLLOWUP-2)",
