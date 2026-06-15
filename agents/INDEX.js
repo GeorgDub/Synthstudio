@@ -1104,8 +1104,8 @@ const INDEX = {
       ownedBy:  "frontend"
     },
     "client/src/store/useMetronomeStore.ts": {
-      role:     "Metronome-Settings + Custom-Sound-Upload (updateMetronome/uploadCustomMetronomeSound/clearCustomMetronomeSound). Persist v2.",
-      lastSeen: "2026-05-19T16:55:48.843Z",
+      role:     "Metronome-Settings + Custom-Sound-Upload (updateMetronome/uploadCustomMetronomeSound/clearCustomMetronomeSound). Persist v2. TASK-263: additiv subscribeMetronome + useMetronomeSelector<T>(selector,isEqual?) + useMetronomeCustomDownbeatUrl()/useMetronomeCustomBeatUrl() (skalar, Object.is) — App.tsx abonniert nur die zwei Custom-Sound-URLs statt des ganzen State, kein App-Tree-Rerender mehr bei Volume-/Tone-/Accent-/BeatsPerBar-Drags.",
+      lastSeen: "2026-06-15T07:20:00.000Z",
       ownedBy:  "frontend"
     },
     "client/src/store/useMidiTemplateStore.ts": {
@@ -3509,8 +3509,8 @@ const INDEX = {
       ownedBy:  "frontend"
     },
     "client/src/App.tsx": {
-      role:     "Root component, tab routing (F1-F6), AudioEngine.onPosition() automation callback. v1.22.0 (TASK-117): Macro-Setter-Bag um setLfoRate/setLfoDepth erweitert — onUnhandled-Warn-Spezialfall entfernt (jetzt generisch). v3.96.0: NEU Tempo-Map Wire-Up — useEffect mountet AudioEngine.setTempoMapResolver((atBar) => getCurrentBpm(getTempoMapState().events, atBar)); restoreProject lädt data.tempoMap via setAllTempoEvents wenn !== undefined (Pre-v1.35-Compat). v3.144+: useConfirm-Migration — KorgTemplatePicker-onSelect verwendet useConfirm() statt window.confirm() für destructiven Template-Override. TASK-253: useMacroStore()->useMacroValues() migriert (Selektor-Subscription; App rerendert nur noch bei Macro-Wert-Change, nicht bei Label/Binding/Mode).",
-      lastSeen: "2026-06-15T01:25:00.000Z",
+      role:     "Root component, tab routing (F1-F6), AudioEngine.onPosition() automation callback. v1.22.0 (TASK-117): Macro-Setter-Bag um setLfoRate/setLfoDepth erweitert — onUnhandled-Warn-Spezialfall entfernt (jetzt generisch). v3.96.0: NEU Tempo-Map Wire-Up — useEffect mountet AudioEngine.setTempoMapResolver((atBar) => getCurrentBpm(getTempoMapState().events, atBar)); restoreProject lädt data.tempoMap via setAllTempoEvents wenn !== undefined (Pre-v1.35-Compat). v3.144+: useConfirm-Migration — KorgTemplatePicker-onSelect verwendet useConfirm() statt window.confirm() für destructiven Template-Override. TASK-253: useMacroStore()->useMacroValues() migriert (Selektor-Subscription; App rerendert nur noch bei Macro-Wert-Change, nicht bei Label/Binding/Mode). TASK-263: useMetronomeStore()->useMetronomeCustomDownbeatUrl()/useMetronomeCustomBeatUrl() (skalare Selektoren) migriert — kein App-Tree-Rerender mehr bei Metronom-Slider-Drags. usePerformanceStore() bleibt (App liest den ganzen View pads+queuedPatternId+quantizeMode).",
+      lastSeen: "2026-06-15T07:20:00.000Z",
       ownedBy:  "frontend"
     },
     "client/src/components/Settings/SettingsPanel.tsx": {
@@ -3579,8 +3579,8 @@ const INDEX = {
       ownedBy:  "frontend"
     },
     "client/src/store/usePerformanceStore.ts": {
-      role:     "Performance Mode pads (16), quantizeMode, queuedPatternId. movePad+moveMultiplePads (Insert-Semantik, v1.21.0/TASK-114) für Reorder mit Multi-Select. v1.22.0 (TASK-119): exportiert PAD_COLOR_VAR_NAMES (8 CSS-var-Namen --ss-pad-1..8) für theme-aware Default-Pad-Farben.",
-      lastSeen: "2026-05-12T23:30:00.000Z",
+      role:     "Performance Mode pads (16), quantizeMode, queuedPatternId. movePad+moveMultiplePads (Insert-Semantik, v1.21.0/TASK-114) für Reorder mit Multi-Select. v1.22.0 (TASK-119): exportiert PAD_COLOR_VAR_NAMES (8 CSS-var-Namen --ss-pad-1..8) für theme-aware Default-Pad-Farben. TASK-263: additiv subscribePerformance + usePerformanceSelector<T>(selector,isEqual?) + usePerformancePads() (Object.is) — Selektor-Subscription via useSyncExternalStore; MacroPanel abonniert nur .pads, kein Rerender mehr bei queuePattern/clearQueue/setQuantizeMode.",
+      lastSeen: "2026-06-15T07:20:00.000Z",
       ownedBy:  "frontend"
     },
     "client/src/components/PerformanceMode/PatternLaunchPad.tsx": {
@@ -3604,8 +3604,8 @@ const INDEX = {
       ownedBy:  "frontend"
     },
     "client/src/components/Macro/MacroPanel.tsx": {
-      role:     "MacroPanel UI: 8 MacroKnob/MacroButton + BindingEditor mit Mode-Toggle (Knob/Button), Trigger-Kind-Toggle (Script/Pad), Audio-Bindings, Script/Pad-Picker. v1.22.0 (TASK-118): neuer Trigger-Verhalten-Toggle (Edge/Hold) im Button-Mode, MacroButton zeigt 🔁-Icon-Overlay im Hold-Mode, onMouseUp/Leave/touchEnd ruft triggerMacroButtonRelease.",
-      lastSeen: "2026-05-12T23:45:00.000Z",
+      role:     "MacroPanel UI: 8 MacroKnob/MacroButton + BindingEditor mit Mode-Toggle (Knob/Button), Trigger-Kind-Toggle (Script/Pad), Audio-Bindings, Script/Pad-Picker. v1.22.0 (TASK-118): neuer Trigger-Verhalten-Toggle (Edge/Hold) im Button-Mode, MacroButton zeigt 🔁-Icon-Overlay im Hold-Mode, onMouseUp/Leave/touchEnd ruft triggerMacroButtonRelease. TASK-263: liest pads via usePerformancePads() (Selektor) statt usePerformanceStore() (beide read-sites).",
+      lastSeen: "2026-06-15T07:20:00.000Z",
       ownedBy:  "frontend"
     },
     "tests/web/pad-bank.spec.ts": {
@@ -4221,6 +4221,47 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "coordinator",
+      timestamp: "2026-06-15T07:45:00.000Z",
+      done: [
+        "Runde 2026-06-15 (Session 4) konsolidiert. Pflicht-Minimum TASK-263 + TASK-255-FOLLOWUP plus Bonus TASK-257-FOLLOWUP-2 alle gruen gelandet, je eigener Commit (4ebd3e4 refactor, d4b6506 refactor, 7bb78a7 frontend).",
+        "Profiling-first erzwungen (Explore-Scout) BEVOR TASK-263 editierte: gerankte Kandidaten useSubMixStore/usePerformanceStore/useMetronomeStore. Refactor migrierte usePerformanceStore + useMetronomeStore (echte slice-Wins), liess useSubMixStore bewusst aus (kein in-scope spurioser Rerender; .buses ist pro commit() frisches Array -> Object.is bailt nie; echter Win = per-Bus-Sub in SubMixBusStrip -> TASK-264).",
+        "TASK-255-FOLLOWUP: ImportProgress (props-only, null Modul-Kopplung, ElectribePickerModal-Praezedenz) aus SampleBrowser.tsx extrahiert. 5836->5788 LOC (-48). Verbatim-Move, +2 Tests sind theme-class-purity-Auto-Discovery (token-pur, kein Verhaltens-Change).",
+        "TASK-257-FOLLOWUP-2 (Bonus): Live-rAF LFO-Kurven-Canvas pro LFO-Row im Modulation/LfoModPanel.tsx (sampleLfoCycle in lfo.ts + 5 Unit-Tests, Playhead via evaluateLfo). Alle Canvas-Farben aus --ss-*-Tokens (getComputedStyle), kein Hardcode. Playwright-Smoke im HEADLESS-Pfad (NICHT in HEADLESS_INCOMPATIBLE_SPECS).",
+        "Scope-Disjunktheit vorab erzwungen: TASK-263 verboten in DrumMachine.tsx + SampleBrowser/; seriell dispatcht wegen shared Working-Tree (surgical staging). Jeder Commit einzeln + chirurgisch gestaged (examples/e2s + screenshots NIE committed, per git show --stat verifiziert).",
+        "Merged-Tree-Final: pnpm check gruen (tsc clean), CI_HEADLESS=1 pnpm test 448 files / 10396 passed / 12 skipped."
+      ],
+      next: [
+        "Release v3.278.0 -> tag -> push -> watch -> publish. BEWEISEN dass CI auf main gruen bleibt (env-Gate aus TASK-262 haelt seit v3.276/v3.277).",
+        "Folge-Tasks naechste Session: TASK-264 (per-Bus-Selektor-Sub SubMixBusStrip = echter useSubMixStore-Win), TASK-265 (weitere SampleBrowser-Extraktion: PlaylistPanel props-only), TASK-257-FOLLOWUP-3 (Macro/Env als zusaetzliche Mod-Quellen), TASK-266 (circular import useThemeStore<->ThemeSettings)."
+      ],
+      changed: []
+    },
+    {
+      agent:     "refactor",
+      timestamp: "2026-06-15T07:20:00.000Z",
+      done: [
+        "TASK-263: Selektor-Pattern (useSyncExternalStore, dependency-frei, useRef-Snapshot-Cache fuer Object.is-Bail-out) additiv auf 2 heisse Singleton-Observer-Stores portiert, exakt nach TASK-253-Praezedenz. Commit 4ebd3e4.",
+        "usePerformanceStore: +subscribePerformance/usePerformanceSelector/usePerformancePads. MacroPanel.tsx (2 read-sites, ~Z276 + ~Z642) von usePerformanceStore() auf usePerformancePads() migriert -> kein Rerender mehr bei queuePattern/clearQueue/setQuantizeMode (notify ohne _pads-Change). App.tsx bleibt bewusst auf vollem usePerformanceStore()-Hook (liest pads+queuedPatternId+quantizeMode = ganzer View).",
+        "useMetronomeStore: +subscribeMetronome/useMetronomeSelector/useMetronomeCustomDownbeatUrl/useMetronomeCustomBeatUrl. App.tsx (~Z739) von useMetronomeStore() auf die zwei skalaren URL-Selektoren migriert -> kein App-Tree-Rerender (~5000 Zeilen) mehr bei Volume-/Tone-/Accent-/BeatsPerBar-Slider-Drags.",
+        "useSubMixStore (Profiling-#1) NACH Pruefung NICHT migriert: alle In-Scope-Consumer brauchen entweder vollen State (App.tsx -> syncSubMixState rampt Gains, weniger feuern waere Behavior-Change) oder lesen .buses, das pro commit() ein frisches Array ist (Object.is bailt nie). Kein spurioser Rerender im Datei-Scope eliminierbar; echter Win = per-Bus-Subscription in SubMixBusStrip.tsx (out of scope).",
+        "pnpm check gruen; pnpm test 10389 passed/12 skipped (Baseline 10374 + 15 neue: performance-selector 8, metronome-selector 7).",
+        "DrumMachine.tsx + SampleBrowser/ NICHT angefasst (Scope-Constraint eingehalten)."
+      ],
+      next: [
+        "Per-Bus-Selektor-Subscription fuer useSubMixStore = echter Win, braucht aber SubMixBusStrip.tsx (jeder Strip abonniert nur seine Bus-ID via getBusById-Selektor). An frontend/Owner: lohnender Folge-Task, war fuer TASK-263 out of scope.",
+        "Restliche Singleton-Observer-Stores auf gleiches Diskriminator-Kriterium pruefen (gibt es einen Setter der notifyt ohne die gelesene Slice eines Consumers zu aendern?). useMixerStore/useDrumMachineStore sind useState-basiert -> Selektor-Migration waere Semantik-Change, weiter out of scope."
+      ],
+      changed: [
+        "client/src/store/usePerformanceStore.ts",
+        "client/src/store/useMetronomeStore.ts",
+        "client/src/components/Macro/MacroPanel.tsx",
+        "client/src/App.tsx",
+        "tests/features/performance-selector.test.ts",
+        "tests/features/metronome-selector.test.ts"
+      ]
+    },
     {
       agent:     "coordinator",
       timestamp: "2026-06-15T06:30:00.000Z",
@@ -15027,12 +15068,62 @@ const INDEX = {
   openTasks: [
         // ─── Runde 2026-06-15: 251/252/256 DONE (siehe workLog, commits d1015ee/85fcd10/d1166aa/be67470). Verbleibende + neue offene Tasks: ───
         // ─── Runde 2026-06-15 (Session 3): TASK-257-FOLLOWUP + TASK-255 DONE (v3.277.0). Neue Folge-Tasks: ───
+        // ─── Runde 2026-06-15 (Session 4): TASK-263 + TASK-255-FOLLOWUP + TASK-257-FOLLOWUP-2 DONE (v3.278.0). Neue Folge-Tasks: ───
+        {
+            id: "TASK-264",
+            type: "refactor",
+            priority: "medium",
+            agent: "frontend",
+            status: "open",
+            createdAt: "2026-06-15T07:45:00.000Z",
+            createdBy: "coordinator",
+            title: "Per-Bus-Selektor-Subscription fuer useSubMixStore (echter Win, Folge TASK-263)",
+            description: "TASK-263 liess useSubMixStore aus: .buses ist pro commit() ein frisches Array (Object.is bailt nie) und App.tsx braucht vollen State fuer syncSubMixState. Der echte spurious-Rerender-Win ist per-Bus: SubMixBusStrip.tsx soll nur seinen eigenen Bus via getBusById(id)-Selektor (mit isEqual auf Bus-Feld-Gleichheit) abonnieren statt das ganze buses-Array. Additiv, useSyncExternalStore-Pattern wie TASK-253/263, dependency-frei. Test-First.",
+        },
+        {
+            id: "TASK-265",
+            type: "refactor",
+            priority: "low",
+            agent: "refactor",
+            status: "open",
+            createdAt: "2026-06-15T07:45:00.000Z",
+            createdBy: "coordinator",
+            title: "Naechste SampleBrowser-Extraktion: PlaylistPanel (Folge TASK-255-FOLLOWUP)",
+            description: "Scout fand PlaylistPanel (~Z526-675, ~150 LOC) als naechsten sauberen Kandidaten: props-only + interne State, nutzt Playlist/Sample-Typen + Callbacks. Verhaltensneutraler Verbatim-Move nach client/src/components/SampleBrowser/PlaylistPanel.tsx, ggf. shared Typen mitziehen. Tests vor/nach gruen, identische Render-Ausgabe. Wieder EIN sauberes Paeckchen.",
+        },
+        {
+            id: "TASK-257-FOLLOWUP-3",
+            type: "feature",
+            priority: "low",
+            agent: "backend",
+            status: "open",
+            createdAt: "2026-06-15T07:45:00.000Z",
+            createdBy: "coordinator",
+            title: "Macro/Envelope als zusaetzliche Mod-Quellen (Folge TASK-257-FOLLOWUP-2)",
+            description: "Bisher nur LFO als Mod-Quelle (useLfoModStore + Engine-Seam). Macro-Werte (useMacroStore) und/oder einfache Envelopes als alternative source im Route-Editor mappbar machen (source: lfo|macro|env). Datenmodell + Engine-Seam erweitern, dann UI-Picker. Klein halten, kein ueberladenes Matrix-UI. Test-First.",
+        },
+        {
+            id: "TASK-266",
+            type: "refactor",
+            priority: "medium",
+            agent: "refactor",
+            status: "open",
+            createdAt: "2026-06-15T07:45:00.000Z",
+            createdBy: "coordinator",
+            title: "Circular import useThemeStore <-> ThemeSettings aufloesen",
+            description: "Mehrfach im workLog als hohe Prio notiert: useThemeStore.ts importiert aus ThemeSettings.tsx (Zyklus). Shared Theme-Typen/Konstanten nach client/src/types/themeTypes.ts (neutrales Blatt) extrahieren, beide importieren von dort. Verhaltensneutral, Tests vor/nach gruen.",
+        },
         {
             id: "TASK-255-FOLLOWUP",
             type: "refactor",
             priority: "low",
             agent: "refactor",
-            status: "open",
+            status: "done",
+            doneIn: "v3.278.0",
+            doneAt: "2026-06-15T07:30:00.000Z",
+            doneBy: "refactor",
+            doneCommit: "d4b6506",
+            doneNote: "ImportProgress-Subkomponente (props-only, null Modul-Kopplung: keine CATEGORIES/Helper/Hooks) aus SampleBrowser.tsx nach client/src/components/SampleBrowser/ImportProgress.tsx (51 LOC). Verbatim-Move. SampleBrowser.tsx 5836->5788 LOC (-48). +2 Tests = theme-class-purity-Auto-Discovery fuer die neue .tsx (token-pur). formatBytes/formatDuration verworfen (Naming-Kollision mit utils). PlaylistPanel = naechster sauberer Kandidat -> TASK-265. round-2026-06-15-s4",
             createdAt: "2026-06-15T06:30:00.000Z",
             createdBy: "coordinator",
             title: "Weitere Komponenten-Extraktion (Folge TASK-255)",
@@ -15043,7 +15134,12 @@ const INDEX = {
             type: "feature",
             priority: "low",
             agent: "frontend",
-            status: "open",
+            status: "done",
+            doneIn: "v3.278.0",
+            doneAt: "2026-06-15T07:30:00.000Z",
+            doneBy: "frontend",
+            doneCommit: "7bb78a7",
+            doneNote: "Live-rAF LFO-Kurven-Canvas pro LFO-Row im Modulation/LfoModPanel.tsx: 2 Zyklen via neuer pure sampleLfoCycle(shape,depth,points,cycles) in lfo.ts (+5 Unit-Tests) + bewegter Playhead via evaluateLfo, freeze bei rateHz<=0/disabled. Canvas-Farben aussschliesslich aus --ss-*-Tokens via getComputedStyle (curve accent-primary, grid border-subtle, zero text-dim, bg bg-base, playhead accent-secondary) - kein Hardcode. jsdom-safe (getContext null-guard). +1 Playwright-Smoke im HEADLESS-Pfad (canvas visible/dims/aria, NICHT in HEADLESS_INCOMPATIBLE_SPECS). 10391->10396. Macro/Env-Quellen bewusst NICHT (heavier half) -> TASK-257-FOLLOWUP-3. round-2026-06-15-s4",
             createdAt: "2026-06-15T06:30:00.000Z",
             createdBy: "coordinator",
             title: "LFO-UI-Iteration: volle Mod-Matrix-Ansicht (Folge TASK-257-FOLLOWUP)",
@@ -15180,7 +15276,12 @@ const INDEX = {
             type: "refactor",
             priority: "medium",
             agent: "refactor",
-            status: "open",
+            status: "done",
+            doneIn: "v3.278.0",
+            doneAt: "2026-06-15T07:30:00.000Z",
+            doneBy: "refactor",
+            doneCommit: "4ebd3e4",
+            doneNote: "Profiling-first (Explore-Scout): gerankte Singleton-Observer-Kandidaten. Migriert usePerformanceStore (+usePerformancePads, MacroPanel 2 read-sites) + useMetronomeStore (+2 skalare URL-Selektoren, App.tsx) auf useSyncExternalStore-Selektor-Pattern (dependency-frei, useRef-Snapshot-Cache, exakt TASK-253-Praezedenz). useSubMixStore (#1) bewusst NICHT migriert: .buses ist pro commit() frisches Array -> Object.is bailt nie, App braucht vollen State fuer syncSubMixState; echter Win = per-Bus-Sub in SubMixBusStrip -> TASK-264. +15 Tests (10374->10389). DrumMachine.tsx + SampleBrowser/ nicht angefasst. round-2026-06-15-s4",
             createdAt: "2026-06-15T02:00:00.000Z",
             createdBy: "coordinator",
             title: "Weitere heiße Stores auf Selektor-Pattern migrieren (Folge TASK-253)",
