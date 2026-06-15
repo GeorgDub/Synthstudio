@@ -133,7 +133,7 @@ export function FxPanelBody({ fx, onFxChange, partId, partName }: FxPanelBodyPro
             onClick={() => setTab(t)}
             className={[
               "px-2 py-0.5 rounded text-[10px] capitalize transition-colors",
-              tab === t ? "bg-accent-primary/70 text-white" : "text-text-dim hover:text-text-primary",
+              tab === t ? "bg-accent-primary/70 text-text-primary" : "text-text-dim hover:text-text-primary",
             ].join(" ")}
           >
             {t === "dynamics" ? "Comp" : t.charAt(0).toUpperCase() + t.slice(1)}
