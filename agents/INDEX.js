@@ -4222,6 +4222,25 @@ const INDEX = {
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
     {
+      agent:     "refactor",
+      timestamp: "2026-06-15T18:35:00.000Z",
+      done: [
+        "TASK-266 (circular import useThemeStore<->ThemeSettings): VERIFIZIERT BEREITS ERLEDIGT durch TASK-248 (commit e0c2d8a, v3.272). useThemeStore.ts importiert NICHTS mehr aus ThemeSettings.tsx — nur 'react' + '@/utils/themeApply' (neutrales Blattmodul). Grep nach ThemeSettings in useThemeStore.ts: nur Kommentar-Zeilen. Kette ThemeSettings -> useThemeStore -> themeApply(leaf): kein Zyklus. KEIN themeTypes.ts angelegt (waere reine Churn, kein Cycle aufzuloesen). Kein Commit fuer Task A. TASK-266 in tasks auf done gesetzt (doneNote).",
+        "Task B (FxPanel Token-Fix, commit 9600557): hardcodiertes text-white in FxPanelBody Tab-Buttons (FxPanel.tsx:136, aktiver Tab) ersetzt durch semantisches text-text-primary — konsistent mit dem hover-Zustand der inaktiven Tabs im selben Block. Chirurgisch gestaged (NUR FxPanel.tsx), examples/e2s/* + screenshots/* unangetastet, via git show --stat verifiziert (1 file, 1 ins/1 del).",
+        "Hinweis: theme-class-purity.test.ts faengt text-white NICHT (Regex verlangt numerischen Shade) — er bleibt gruen vor UND nach dem Fix, ist also Regressionsschutz, nicht echte Verifikation fuer genau diesen Token. Korrektheit ueber Tab-Konvention bestimmt.",
+        "Baseline + Verifikation: pnpm check clean, pnpm test 448 files / 10412 passed / 12 skipped — vor UND nach dem Edit identisch gruen."
+      ],
+      next: [
+        "TASK-266 endgueltig schliessbar/archivierbar — stale workLog-'offen'-Notizen (Z~4436/4459) ignorieren, live code (post-TASK-248) ist Source-of-Truth.",
+        "Owner-Hinweis frontend: FxPanel.tsx jetzt token-rein (kein text-white mehr in Tab-Buttons).",
+        "Offene Refactor-Tasks: TASK-264 (per-Bus-Selektor SubMixBusStrip), TASK-265 (PlaylistPanel-Extraktion)."
+      ],
+      changed: [
+        "client/src/components/DrumMachine/FxPanel.tsx",
+        "agents/INDEX.js"
+      ]
+    },
+    {
       agent:     "coordinator",
       timestamp: "2026-06-15T11:15:00.000Z",
       done: [
@@ -15220,9 +15239,10 @@ const INDEX = {
             type: "refactor",
             priority: "medium",
             agent: "refactor",
-            status: "open",
+            status: "done",
             createdAt: "2026-06-15T07:45:00.000Z",
             createdBy: "coordinator",
+            doneNote: "OBSOLETE/already-resolved by TASK-248 (commit e0c2d8a, v3.272). Verifiziert 2026-06-15 vom refactor-Agent: useThemeStore.ts importiert NICHTS mehr aus ThemeSettings.tsx — nur 'react' (Z1) + '@/utils/themeApply' (Z4, Blattmodul ohne Rueck-Import). Grep nach ThemeSettings in useThemeStore.ts liefert nur Kommentar-Zeilen (Z2-3). Import-Kette ist ThemeSettings -> useThemeStore -> themeApply (leaf): kein Zyklus (weder value noch type). Die alten 'weiterhin offen'-workLog-Notizen sind stale (pre-TASK-248). KEIN themeTypes.ts angelegt — waere reine Churn ohne Cycle-Aufloesung + Risiko fuer die gruene Suite. Kein Commit fuer TASK-266.",
             title: "Circular import useThemeStore <-> ThemeSettings aufloesen",
             description: "Mehrfach im workLog als hohe Prio notiert: useThemeStore.ts importiert aus ThemeSettings.tsx (Zyklus). Shared Theme-Typen/Konstanten nach client/src/types/themeTypes.ts (neutrales Blatt) extrahieren, beide importieren von dort. Verhaltensneutral, Tests vor/nach gruen.",
         },
