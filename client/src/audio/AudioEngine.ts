@@ -425,6 +425,18 @@ export interface AudioTrackChannelData {
    * beeinflusst keine Audio-Pfade.
    */
   color?: string;
+  /**
+   * TASK-268: Per-Channel Insert-FX-Kette (identisch zu Drum-Parts / Mixer-
+   * Kanälen — die 16 numerischen Params + Toggles in `ChannelFx`). Audio-Tracks
+   * werden ohnehin durch `_getOrCreateChannelNodes` geroutet (volle FX-Chain);
+   * dieses Feld macht die Chain per-Track konfigurierbar statt fix auf
+   * DEFAULT_CHANNEL_FX.
+   *
+   * Additiv-optional: Pre-TASK-268-Files (kein fx-Feld) → undefined → die
+   * Engine fällt an jeder Apply-Stelle auf `DEFAULT_CHANNEL_FX` zurück. Damit
+   * laden alte Projekte unverändert.
+   */
+  fx?: ChannelFx;
 }
 
 export interface PartData {
@@ -5107,7 +5119,12 @@ class AudioEngineClass {
     this.audioTrackData.set(data.id, { ...data });
     // Channel-Nodes anlegen damit Mixer-Routing direkt funktioniert.
     if (this.ctx) {
-      const nodes = this._getOrCreateChannelNodes(data.id, DEFAULT_CHANNEL_FX);
+      // TASK-268: Per-Track-FX. _getOrCreateChannelNodes wendet fx NUR beim
+      // ersten Anlegen an — re-registrierte (bereits existierende) Channels
+      // bekämen sonst die neue fx NICHT. Daher fx hier IMMER explizit applien.
+      const fx = data.fx ?? DEFAULT_CHANNEL_FX;
+      const nodes = this._getOrCreateChannelNodes(data.id, fx);
+      this._applyFxToNodes(nodes, fx);
       // Volume / Pan / Sends initial setzen.
       this.setChannelVolume(data.id, data.muted ? 0 : data.volume);
       this.setChannelPan(data.id, data.pan);
@@ -5185,7 +5202,12 @@ class AudioEngineClass {
 
     // Routing: source → [xfadeGain?] → channelNodes.input → FX → master
     // v3.72.0: Crossfade-Gain einfügen falls loop-crossfade aktiv.
-    const nodes = this._getOrCreateChannelNodes(id, DEFAULT_CHANNEL_FX);
+    // TASK-268: Track-eigene fx beim Start applien (Nodes existieren i.d.R.
+    // schon aus registerAudioTrack → _getOrCreateChannelNodes würde sie NICHT
+    // neu setzen, daher explizit).
+    const trackFx = data?.fx ?? DEFAULT_CHANNEL_FX;
+    const nodes = this._getOrCreateChannelNodes(id, trackFx);
+    this._applyFxToNodes(nodes, trackFx);
     // Alte Crossfade-Chain disposen (z.B. nach Restart via setAudioTrackLoopPoints).
     this._disposeAudioTrackXfade(id);
     const crossfadeMs = this._effectiveLoopCrossfadeMs(data, buf);
@@ -5341,7 +5363,10 @@ class AudioEngineClass {
     };
 
     // Routing: worklet → channelNodes.input → FX → master
-    const nodes = this._getOrCreateChannelNodes(id, DEFAULT_CHANNEL_FX);
+    // TASK-268: Track-eigene fx applien (siehe playAudioTrack).
+    const workletFx = data?.fx ?? DEFAULT_CHANNEL_FX;
+    const nodes = this._getOrCreateChannelNodes(id, workletFx);
+    this._applyFxToNodes(nodes, workletFx);
     try { node.connect(nodes.input); } catch (err) {
       console.warn("[AudioEngine] timestretch: connect error:", err);
     }
@@ -5401,6 +5426,25 @@ class AudioEngineClass {
     const data = this.audioTrackData.get(id);
     if (data) data.soloed = soloed;
     this._reapplyAudioTrackSoloMutes();
+  }
+
+  /**
+   * TASK-268: Patcht die Insert-FX-Kette eines Audio-Tracks (identisch zu
+   * Drum-Parts via setPartFx). `partial` wird in die gespeicherte fx gemergt
+   * (fehlende fx → DEFAULT_CHANNEL_FX als Basis), die Engine hält ihre eigene
+   * Kopie in `audioTrackData` damit ein nachfolgender playAudioTrack die
+   * frischen Werte liest. Auf die LIVE-Nodes wird nur appliziert wenn sie
+   * bereits existieren (kein Force-Create — analog setAudioTrackPan).
+   *
+   * Sibling zu setPartFx: KEIN Überladen von setPartFx mit Track-IDs.
+   */
+  setAudioTrackFx(id: string, partial: Partial<ChannelFx>): void {
+    const data = this.audioTrackData.get(id);
+    const base = data?.fx ?? DEFAULT_CHANNEL_FX;
+    const merged: ChannelFx = { ...base, ...partial };
+    if (data) data.fx = merged;
+    const nodes = this.channelNodes.get(id);
+    if (nodes) this._applyFxToNodes(nodes, merged);
   }
 
   /**

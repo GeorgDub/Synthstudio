@@ -368,6 +368,57 @@ describe("AudioTrack: setAudioTrackVolume", () => {
   });
 });
 
+describe("AudioTrack: setAudioTrackFx (TASK-268)", () => {
+  it("appliziert fx auf einen BEREITS registrierten Track (Node-Reapply-Trap)", async () => {
+    const id = "audiotrack:fx-existing";
+    await loadFakeBuffer(id, 5);
+    // Registriert eager → channelNodes existieren bereits.
+    AudioEngine.registerAudioTrack(makeTrackData({ id }));
+
+    // Private _applyFxToNodes muss bei setAudioTrackFx auf die LIVE-Nodes
+    // gerufen werden — sonst ändert sich der Sound für registrierte Tracks nie.
+    const applySpy = vi.spyOn(
+      AudioEngine as unknown as { _applyFxToNodes: (...a: unknown[]) => void },
+      "_applyFxToNodes",
+    );
+    AudioEngine.setAudioTrackFx(id, { filterEnabled: true, filterFreq: 1234 });
+    expect(applySpy).toHaveBeenCalled();
+    // Der gemergte fx-Wert (mit Patch) wurde übergeben.
+    const lastArgs = applySpy.mock.calls[applySpy.mock.calls.length - 1];
+    const passedFx = lastArgs[1] as { filterEnabled: boolean; filterFreq: number };
+    expect(passedFx.filterEnabled).toBe(true);
+    expect(passedFx.filterFreq).toBe(1234);
+
+    applySpy.mockRestore();
+    AudioEngine.disposeAudioTrack(id);
+  });
+
+  it("speichert fx in audioTrackData damit playAudioTrack die frischen Werte liest", async () => {
+    const id = "audiotrack:fx-play";
+    await loadFakeBuffer(id, 5);
+    AudioEngine.registerAudioTrack(makeTrackData({ id }));
+    AudioEngine.setAudioTrackFx(id, { reverbEnabled: true, reverbMix: 0.5 });
+
+    const applySpy = vi.spyOn(
+      AudioEngine as unknown as { _applyFxToNodes: (...a: unknown[]) => void },
+      "_applyFxToNodes",
+    );
+    AudioEngine.playAudioTrack(id);
+    // playAudioTrack appliziert die track-eigene fx (nicht DEFAULT).
+    const lastArgs = applySpy.mock.calls[applySpy.mock.calls.length - 1];
+    const passedFx = lastArgs[1] as { reverbEnabled: boolean; reverbMix: number };
+    expect(passedFx.reverbEnabled).toBe(true);
+    expect(passedFx.reverbMix).toBe(0.5);
+
+    applySpy.mockRestore();
+    AudioEngine.disposeAudioTrack(id);
+  });
+
+  it("ist no-op-sicher bei unbekannter Track-ID (kein Throw)", () => {
+    expect(() => AudioEngine.setAudioTrackFx("audiotrack:nope", { filterEnabled: true })).not.toThrow();
+  });
+});
+
 describe("AudioTrack: setBpm + playbackRate sync", () => {
   it("syncMode='stretch' + originalBpm=120: playbackRate = bpm / 120", async () => {
     const id = "audiotrack:stretch";

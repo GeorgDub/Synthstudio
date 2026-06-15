@@ -43,6 +43,7 @@ import { useEffect } from "react";
 import type { MutableRefObject } from "react";
 import { AudioEngine } from "@/audio/AudioEngine";
 import type { ChannelFx } from "@/audio/AudioEngine";
+import { setAudioTrackFx } from "@/store/useAudioTrackStore";
 import {
   getBusById,
   setBusVolume,
@@ -154,9 +155,17 @@ export function makeMidiBridgeHandlers(refs: MidiBridgeRefs): MidiBridgeHandlers
   const handleFxParam = (e: Event) => {
     const detail = (e as CustomEvent<{ partId: string; param: string; value: number }>).detail;
     if (!detail || typeof detail.partId !== "string" || typeof detail.param !== "string") return;
-    dmRef.current.setPartFx(detail.partId, {
-      [detail.param]: detail.value,
-    } as Partial<ChannelFx>);
+    const fxPatch = { [detail.param]: detail.value } as Partial<ChannelFx>;
+    // TASK-268: Audio-Tracks teilen die `midi:fxParam`-Seam mit Drum-Parts, sind
+    // aber an der `audiotrack:`-ID-Prefix erkennbar. Sie laufen NICHT durch den
+    // DrumMachine-Store (dort gibt es keinen Audio-Track-Part) — daher hier auf
+    // den Audio-Track-Store + Engine routen statt auf dm.setPartFx.
+    if (detail.partId.startsWith("audiotrack:")) {
+      setAudioTrackFx(detail.partId, fxPatch);
+      AudioEngine.setAudioTrackFx(detail.partId, fxPatch);
+      return;
+    }
+    dmRef.current.setPartFx(detail.partId, fxPatch);
   };
   const handleMute = (e: Event) => {
     const partId = (e as CustomEvent<string>).detail;

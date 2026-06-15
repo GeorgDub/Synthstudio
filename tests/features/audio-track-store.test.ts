@@ -66,11 +66,13 @@ import {
   getRuntimeState,
   setRuntimeWaveform,
   setAudioTrackSoloed,
+  setAudioTrackFx,
   useAudioTrackStore,
   MAX_AUDIO_TRACKS,
   __resetForTests,
   type AudioTrackChannelData,
 } from "../../client/src/store/useAudioTrackStore";
+import { DEFAULT_CHANNEL_FX } from "../../client/src/audio/AudioEngine";
 
 import {
   serializeProject,
@@ -583,5 +585,80 @@ describe("setAudioTrackSoloed (FOLLOWUP-102-3)", () => {
     const parsed = JSON.parse(raw!) as AudioTrackChannelData[];
     const aData = parsed.find((t) => t.id === a);
     expect(aData?.soloed).toBe(true);
+  });
+});
+
+// ─── Test-Suite: setAudioTrackFx (TASK-268) ──────────────────────────────────
+
+describe("setAudioTrackFx (TASK-268)", () => {
+  beforeEach(() => {
+    __resetForTests();
+    localStorageMock.clear();
+  });
+
+  it("setzt fx auf einem Track ohne vorherige fx (DEFAULT als Basis)", () => {
+    const a = addAudioTrack(makeTrackInput({ name: "A" }));
+    expect(getAudioTrack(a)?.fx).toBeUndefined();
+    setAudioTrackFx(a, { filterEnabled: true, filterFreq: 1200 });
+    const fx = getAudioTrack(a)?.fx;
+    expect(fx).toBeDefined();
+    // Patch-Werte gesetzt
+    expect(fx?.filterEnabled).toBe(true);
+    expect(fx?.filterFreq).toBe(1200);
+    // restliche Felder kommen aus DEFAULT_CHANNEL_FX
+    expect(fx?.reverbEnabled).toBe(DEFAULT_CHANNEL_FX.reverbEnabled);
+    expect(fx?.delayTime).toBe(DEFAULT_CHANNEL_FX.delayTime);
+  });
+
+  it("mergt einen Partial-Patch in bestehende fx (andere Felder bleiben)", () => {
+    const a = addAudioTrack(makeTrackInput({ name: "A" }));
+    setAudioTrackFx(a, { reverbEnabled: true, reverbMix: 0.4 });
+    setAudioTrackFx(a, { delayEnabled: true, delayFeedback: 0.6 });
+    const fx = getAudioTrack(a)?.fx;
+    // erster Patch bleibt erhalten
+    expect(fx?.reverbEnabled).toBe(true);
+    expect(fx?.reverbMix).toBe(0.4);
+    // zweiter Patch gemergt
+    expect(fx?.delayEnabled).toBe(true);
+    expect(fx?.delayFeedback).toBe(0.6);
+  });
+
+  it("ist no-op bei unbekannter Track-ID (kein Throw)", () => {
+    expect(() => setAudioTrackFx("audiotrack:nope", { filterEnabled: true })).not.toThrow();
+  });
+
+  it("persistiert fx via localStorage (round-trip)", () => {
+    const a = addAudioTrack(makeTrackInput({ name: "A" }));
+    setAudioTrackFx(a, { eqEnabled: true, eqHigh: 6 });
+    const raw = localStorageMock.getItem(STORAGE_KEY);
+    expect(raw).toBeTruthy();
+    const parsed = JSON.parse(raw!) as AudioTrackChannelData[];
+    const aData = parsed.find((t) => t.id === a);
+    expect(aData?.fx?.eqEnabled).toBe(true);
+    expect(aData?.fx?.eqHigh).toBe(6);
+  });
+
+  it("Serializer round-trip: fx überlebt serialize → toJson → parse", () => {
+    const a = addAudioTrack(makeTrackInput({ name: "A" }));
+    setAudioTrackFx(a, { filterEnabled: true, filterFreq: 800, distortionEnabled: true });
+    const tracks = getAllAudioTracks();
+    const project = serializeProject(makeBaseProject(tracks));
+    const reparsed = parseProject(toJson(project));
+    const track = reparsed.audioTracks?.find((t) => t.id === a);
+    expect(track?.fx?.filterEnabled).toBe(true);
+    expect(track?.fx?.filterFreq).toBe(800);
+    expect(track?.fx?.distortionEnabled).toBe(true);
+  });
+
+  it("alte Files OHNE fx-Feld laden sauber (fx bleibt undefined)", () => {
+    const legacy = makeTrackInput({ name: "Legacy" });
+    // Kein fx-Feld → simuliert Pre-TASK-268-Projekt
+    const project = serializeProject(
+      makeBaseProject([{ id: "audiotrack:legacy", ...legacy }]),
+    );
+    const reparsed = parseProject(toJson(project));
+    const track = reparsed.audioTracks?.find((t) => t.id === "audiotrack:legacy");
+    expect(track).toBeDefined();
+    expect(track?.fx).toBeUndefined();
   });
 });

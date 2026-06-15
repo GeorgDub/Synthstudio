@@ -19,9 +19,12 @@
  * `useElectron()`-Hook.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { X, ZoomIn, Play, Square } from "lucide-react";
-import { AudioEngine } from "@/audio/AudioEngine";
+import { X, ZoomIn, Play, Square, Sliders } from "lucide-react";
+import { AudioEngine, DEFAULT_CHANNEL_FX } from "@/audio/AudioEngine";
+import type { ChannelFx } from "@/audio/AudioEngine";
+import { FxPanelBody } from "@/components/DrumMachine/FxPanel";
 import {
+  setAudioTrackFx,
   updateAudioTrack,
   removeAudioTrack,
   markBroken,
@@ -137,6 +140,8 @@ export function AudioTrackStrip({
 
   // v3.67.0: Zoom-Edit-Mode — toggle between mini-WaveformDisplay and ZoomableWaveform.
   const [zoomEditOpen, setZoomEditOpen] = useState(false);
+  // TASK-268: Insert-FX-Panel (collapsible) — Parität zu Drum-Part/Mixer-Kanälen.
+  const [fxOpen, setFxOpen] = useState(false);
   const [editorCursorSample, setEditorCursorSample] = useState<number | null>(null);
 
   // TASK-267: Globaler Play/Stop (self-subscribed) — synct den lokalen `playing`
@@ -474,6 +479,19 @@ export function AudioTrackStrip({
     [track.id, track.sends],
   );
 
+  // ── Insert-FX (TASK-268) ──────────────────────────────────────────────────
+  // Gleiche Dual-Call-Seam wie handleVolume/handlePan: Store (persist) + Engine
+  // (audible). FxPanelBody erwartet eine volle ChannelFx → bei fehlender fx
+  // (alte Tracks) auf DEFAULT_CHANNEL_FX zurückfallen.
+  const trackFx: ChannelFx = track.fx ?? DEFAULT_CHANNEL_FX;
+  const handleFxChange = useCallback(
+    (partial: Partial<ChannelFx>) => {
+      setAudioTrackFx(track.id, partial);
+      AudioEngine.setAudioTrackFx(track.id, partial);
+    },
+    [track.id],
+  );
+
   // ── Seek ───────────────────────────────────────────────────────────────────
   const handleSeek = useCallback(
     (pos: number) => {
@@ -592,6 +610,26 @@ export function AudioTrackStrip({
           ].join(" ")}
         >
           {effectivePlaying ? <Square size={10} /> : <Play size={10} />}
+        </button>
+        {/* ── Insert-FX Toggle (TASK-268) ─────────────────────────────────── */}
+        <button
+          type="button"
+          data-testid={`audio-track-fx-toggle-${track.id}`}
+          onClick={(e) => {
+            e.stopPropagation();
+            setFxOpen((v) => !v);
+          }}
+          aria-label="FX"
+          aria-pressed={fxOpen}
+          title="Insert-FX (Filter, EQ, Comp, Delay, Reverb)"
+          className={[
+            "w-5 h-5 flex items-center justify-center rounded transition-colors",
+            fxOpen
+              ? "bg-accent-secondary text-text-primary"
+              : "bg-bg-elevated text-text-dim hover:text-accent-secondary",
+          ].join(" ")}
+        >
+          <Sliders size={10} />
         </button>
         <button
           type="button"
@@ -1057,6 +1095,25 @@ export function AudioTrackStrip({
           />
         </div>
       </div>
+
+      {/* ── Insert-FX-Panel (TASK-268) ────────────────────────────────────── */}
+      {/* Parität zu Drum-Part/Mixer-Kanälen: dieselbe FxPanelBody, derselbe
+          Right-Click-MIDI-Learn (partId/partName). Collapsible damit der Strip
+          schmal bleibt. */}
+      {fxOpen && (
+        <div
+          data-testid={`audio-track-fx-panel-${track.id}`}
+          onClick={(e) => e.stopPropagation()}
+          className="w-full mt-1 px-1.5 py-2 rounded border border-border-subtle bg-bg-elevated/60"
+        >
+          <FxPanelBody
+            fx={trackFx}
+            onFxChange={handleFxChange}
+            partId={track.id}
+            partName={track.name}
+          />
+        </div>
+      )}
     </div>
   );
 }

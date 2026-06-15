@@ -478,6 +478,13 @@ function isValidAudioTrackEntry(t: unknown): t is AudioTrackChannelData {
   if (o.loopCrossfadeMs !== undefined && typeof o.loopCrossfadeMs !== "number") {
     return false;
   }
+  // TASK-268: fx (Insert-FX-Kette). Optional, fehlt bei alten Files. Nur ein
+  // leichter Typ-Guard (object, nicht null) — einzelne FX-Felder werden NICHT
+  // tief validiert (die Engine liest sie defensiv mit ?? Default). serializeProject
+  // spreadet ...data, daher round-trippt fx ohne weitere Änderung.
+  if (o.fx !== undefined && (o.fx === null || typeof o.fx !== "object")) {
+    return false;
+  }
   return (
     typeof o.id === "string" &&
     typeof o.name === "string" &&

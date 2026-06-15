@@ -24,7 +24,8 @@
 
 import { useEffect, useReducer } from "react";
 import { nanoid } from "nanoid";
-import type { AudioTrackChannelData } from "@/audio/AudioEngine";
+import type { AudioTrackChannelData, ChannelFx } from "@/audio/AudioEngine";
+import { DEFAULT_CHANNEL_FX } from "@/audio/AudioEngine";
 import { normalizeChannelColor } from "@/utils/channelColors";
 
 // ─── Typen ───────────────────────────────────────────────────────────────────
@@ -138,6 +139,10 @@ function isValidTrack(t: unknown): t is AudioTrackChannelData {
   // v3.74.0 (v1.29): Channel-Strip Color (Hex). Optional, bei falschem Typ
   // → Track verwerfen. Hex-Validierung (Format) passiert nicht hier.
   if (o.color !== undefined && typeof o.color !== "string") return false;
+  // TASK-268: fx (Insert-FX-Kette). Optional — fehlt bei Pre-TASK-268-Files.
+  // Nur ein leichter Typ-Guard (object, nicht null); die einzelnen FX-Felder
+  // werden NICHT tief validiert (die Engine liest sie defensiv mit ?? Default).
+  if (o.fx !== undefined && (o.fx === null || typeof o.fx !== "object")) return false;
   return (
     typeof o.id === "string" &&
     o.id.startsWith(ID_PREFIX) &&
@@ -336,6 +341,29 @@ export function setAudioTrackColor(id: string, color: string | undefined): void 
   _tracks = [..._tracks.slice(0, idx), next, ..._tracks.slice(idx + 1)];
   persist();
   notify();
+}
+
+// ─── TASK-268: Per-Channel Insert-FX ─────────────────────────────────────────
+
+/**
+ * TASK-268: Patcht die Insert-FX-Kette eines Audio-Tracks (identisch zu den
+ * Drum-Part/Mixer-Kanälen). `partial` wird in die bestehende fx gemergt —
+ * fehlt sie (Pre-TASK-268-Track), wird `DEFAULT_CHANNEL_FX` als Basis genommen.
+ *
+ * Persistiert via updateAudioTrack → localStorage + .synth-Save-Pfad.
+ * NO-OP wenn Track-ID unbekannt (updateAudioTrack returnt dann).
+ *
+ * Hinweis: Dies aktualisiert NUR die Store-/Persistenz-Daten. Den hörbaren
+ * Effekt verdrahtet der Consumer (AudioTrackStrip) durch einen parallelen
+ * Aufruf von `AudioEngine.setAudioTrackFx(id, partial)` — exakt das Muster
+ * von handleVolume/handlePan (Store + Engine in einem Handler).
+ */
+export function setAudioTrackFx(id: string, partial: Partial<ChannelFx>): void {
+  const track = getAudioTrack(id);
+  if (!track) return;
+  const base: ChannelFx = track.fx ?? DEFAULT_CHANNEL_FX;
+  const merged: ChannelFx = { ...base, ...partial };
+  updateAudioTrack(id, { fx: merged });
 }
 
 /**

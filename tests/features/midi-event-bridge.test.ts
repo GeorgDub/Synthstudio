@@ -80,6 +80,18 @@ describe("makeMidiBridgeHandlers — Part-Volume / Pan / Solo / FX (v1.76)", () 
     expect(m.dm.setPartFx).toHaveBeenCalledWith("p1", { filterFreq: 8000 });
   });
 
+  it("handleFxParam routet `audiotrack:`-IDs NICHT an dm.setPartFx (TASK-268)", () => {
+    const m = makeMocks();
+    const h = makeMidiBridgeHandlers(m);
+    // Audio-Track teilt die midi:fxParam-Seam, ist aber an der ID-Prefix
+    // erkennbar → muss am DrumMachine-Store vorbei geroutet werden.
+    h.handleFxParam(ev({ partId: "audiotrack:abc", param: "filterFreq", value: 5000 }));
+    expect(m.dm.setPartFx).not.toHaveBeenCalled();
+    // Drum-Part-IDs gehen weiterhin an dm.setPartFx (Regression-Guard).
+    h.handleFxParam(ev({ partId: "p1", param: "reverbMix", value: 0.5 }));
+    expect(m.dm.setPartFx).toHaveBeenCalledWith("p1", { reverbMix: 0.5 });
+  });
+
   it("Ungültige Detail-Shapes werden ignoriert (kein Crash)", () => {
     const m = makeMocks();
     const h = makeMidiBridgeHandlers(m);
