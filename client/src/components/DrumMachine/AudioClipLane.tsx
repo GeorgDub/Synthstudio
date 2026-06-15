@@ -40,9 +40,8 @@ import { resolveChannelColor } from "@/utils/channelColors";
 import {
   audioLaneLabelColorClass,
   isAudioLaneAudible,
-  isLaneTransportToggleLocked,
+  laneStateOnGlobalChange,
   resolveAudioLanes,
-  shouldLaneFollowGlobalTransport,
 } from "./audioLaneHelpers";
 
 export interface AudioClipLaneProps {
@@ -80,36 +79,38 @@ export const AudioClipLane = memo(function AudioClipLane({
   audible = true,
 }: AudioClipLaneProps) {
   // Per-Lane Play/Stop — component-local (ephemer, kein Store), wie AudioTrackStrip.
-  // Dies ist der ISOLIERTE Vorhör-Zustand (per-Lane-Button), NICHT der globale.
-  const [playing, setPlaying] = useState(false);
-  // TASK-252: Globaler Transport-Zustand (self-subscribed via Engine-Seam). Init
-  // aus dem Live-Getter, damit eine Lane die mid-playback gemountet wird (z.B.
-  // Track während laufendem Transport hinzugefügt) sofort korrekt startet.
-  const [globalPlaying, setGlobalPlaying] = useState(() => AudioEngine.isPlaying);
-  const [pos01, setPos01] = useState(0);
+  // TASK-267: ENTKOPPELT vom globalen Transport — der per-Lane-Button kann jede
+  // Lane unabhängig starten/stoppen, auch während Global läuft. `playing` ist die
+  // alleinige Quelle für Button + Playhead; es wird via laneStateOnGlobalChange
+  // wahrheitsgemäß auf das gesynct, was die Engine bei Global-Play/-Stop TUT.
+  // Init aus dem Live-Getter, damit eine mid-playback gemountete Lane (Track
+  // während laufendem Transport hinzugefügt / Tab-Wechsel) sofort korrekt startet
+  // (onPlayStateChange feuert nur bei ÄNDERUNG, nicht beim Mount).
   const broken = runtime.broken === true;
+  const [playing, setPlaying] = useState(() =>
+    laneStateOnGlobalChange(AudioEngine.isPlaying, {
+      muted: track.muted,
+      broken,
+    }),
+  );
+  const [pos01, setPos01] = useState(0);
 
-  // Effektiver "spielt"-Zustand: globaler Transport ODER lokales Vorhören.
-  // Global gewinnt für Anzeige (Button-Label) + Playhead; der per-Lane-Button
-  // ist während Global-Play gesperrt (siehe handlePlayStop).
-  const effectivePlaying = shouldLaneFollowGlobalTransport(globalPlaying, playing);
-  const toggleLocked = isLaneTransportToggleLocked(globalPlaying);
+  // Effektiver "spielt"-Zustand = lokales playing (nach TASK-267 keine OR mehr).
+  const effectivePlaying = playing;
 
   // ── Globaler Play/Stop (self-subscribed) ─────────────────────────────────
-  // Koppelt die Lane an den globalen Transport: Global-Play startet via Engine
-  // alle registrierten Audio-Tracks (playAllRegisteredAudioTracks) parallel zum
-  // Step-Sequencer → die Lane muss das in Anzeige + Playhead spiegeln. Vorher
-  // war der Lane-Zustand rein lokal und fror bei Global-Play/Stop ein.
+  // TASK-267: Synct den lokalen `playing` auf das, was die Engine bei Global-Play
+  // tatsächlich startet — playAllRegisteredAudioTracks() startet diese Lane NUR
+  // wenn !muted && !broken; Global-Stop killt ALLE Voices. So bleibt der lokale
+  // State wahrheitsgemäß, der per-Lane-Button bleibt entkoppelt (siehe handlePlayStop).
+  // Deps: muted/broken werden gelesen → MÜSSEN in der Dep-Liste stehen (sonst
+  // stale-closure: erst muten, dann Global-Play würde fälschlich playing setzen).
   useEffect(() => {
     const unsub = AudioEngine.onPlayStateChange((p) => {
-      setGlobalPlaying(p);
-      // Global-Stop räumt auch ein evtl. laufendes lokales Vorhören mit auf:
-      // Engine.stop() killt ALLE audioTrackSources (gemeinsame Source-Bahn), der
-      // lokale playing-State würde sonst hängenbleiben.
-      if (!p) setPlaying(false);
+      setPlaying(laneStateOnGlobalChange(p, { muted: track.muted, broken }));
     });
     return unsub;
-  }, []);
+  }, [track.muted, broken]);
 
   // ── Playhead-Position (self-subscribed) ──────────────────────────────────
   // TASK-252-FOLLOWUP: Beim (spaeten) Mount waehrend laufendem Transport — z.B.
@@ -140,13 +141,13 @@ export const AudioClipLane = memo(function AudioClipLane({
     if (!effectivePlaying) setPos01(0);
   }, [effectivePlaying]);
 
-  // ── Play / Stop (isoliertes Vorhören) ─────────────────────────────────────
+  // ── Play / Stop (entkoppelter Lane-Transport, TASK-267) ───────────────────
+  // Startet/stoppt NUR diese Lane — unabhängig vom globalen Transport. Manueller
+  // Stop während Global läuft killt diese eine Voice; sie bleibt gestoppt bis zu
+  // einem manuellen Start ODER dem nächsten Global stop→play-Zyklus (der ruft
+  // playAllRegisteredAudioTracks erneut → onPlayStateChange-Sync oben).
   const handlePlayStop = useCallback(() => {
     if (broken) return;
-    // TASK-252: Während der globale Transport läuft ist der per-Lane-Toggle
-    // gesperrt (global gewinnt Anzeige + Playhead). Der Button dient nur dem
-    // isolierten Vorhören solange global gestoppt ist.
-    if (toggleLocked) return;
     const next = nextAudioTrackPlayState(playing, "toggle", { broken });
     if (next) {
       AudioEngine.playAudioTrack(track.id);
@@ -154,7 +155,7 @@ export const AudioClipLane = memo(function AudioClipLane({
       AudioEngine.stopAudioTrack(track.id);
     }
     setPlaying(next);
-  }, [track.id, broken, playing, toggleLocked]);
+  }, [track.id, broken, playing]);
 
   // ── Mute / Solo (gleiche Solo-Gruppe wie AudioTrackStrip) ─────────────────
   const handleMute = useCallback(() => {
@@ -303,16 +304,10 @@ export const AudioClipLane = memo(function AudioClipLane({
           e.stopPropagation();
           handlePlayStop();
         }}
-        disabled={broken || toggleLocked}
+        disabled={broken}
         aria-label={effectivePlaying ? "Stop" : "Play"}
         aria-pressed={effectivePlaying}
-        title={
-          toggleLocked
-            ? "Steuerung über globalen Transport (Play/Stop)"
-            : effectivePlaying
-              ? "Stop"
-              : "Play (nur dieser Clip)"
-        }
+        title={effectivePlaying ? "Stop (nur dieser Clip)" : "Play (nur dieser Clip)"}
         className={[
           "w-6 h-6 flex items-center justify-center rounded transition-colors flex-shrink-0",
           "disabled:opacity-40 disabled:cursor-not-allowed",

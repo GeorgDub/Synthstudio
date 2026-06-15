@@ -98,23 +98,47 @@ export function audioLaneLabelColorClass(opts: {
   return "text-text-primary";
 }
 
-// ─── TASK-252: Global-Transport-Kopplung ─────────────────────────────────────
+// ─── TASK-267: Per-Lane-Transport entkoppelt vom Global-Transport ────────────
 
 /**
- * Effektiver "spielt"-Zustand einer Audio-Clip-Lane.
+ * Berechnet den lokalen `playing`-State einer Audio-Lane/-Strips, wenn sich der
+ * globale Transport ändert (oder beim Mount synchron aus `AudioEngine.isPlaying`).
  *
- * Eine Lane gilt als spielend, wenn ENTWEDER der globale Transport läuft
- * (Global-Play startet via Engine alle registrierten Audio-Tracks parallel zum
- * Step-Sequencer) ODER der lokale per-Lane Vorhör-Play aktiv ist.
+ * Semantik (TASK-267): Global-Play startet via Engine
+ * `playAllRegisteredAudioTracks()` jede Lane, ABER nur wenn sie weder gemutet
+ * noch broken ist (gemutete Tracks werden übersprungen, bufferlose können nicht
+ * starten). Damit der lokale `playing`-State WAHRHAFTIG widerspiegelt, was die
+ * Engine tatsächlich tut:
+ *  - globalPlaying === true  → `true` NUR wenn !muted && !broken
+ *  - globalPlaying === false → `false` (Global-Stop killt ALLE Voices)
  *
- * Vorher war der Lane-`playing`-State rein component-local — Global-Play/Stop
- * wurde nicht reflektiert (Button-Label falsch, Playhead eingefroren). Diese
- * reine Funktion ist die kanonische OR-Verknüpfung; sie wird in AudioClipLane
- * mit dem (per Engine-Seam abonnierten) globalen Play-State und dem lokalen
- * useState gespeist.
+ * Dadurch macht der nächste manuelle Button-Klick das Richtige (Stop statt
+ * Re-Start), und eine mid-playback gemountete Lane zeigt sofort den korrekten
+ * Zustand. Reine Funktion → Node-testbar (siehe
+ * tests/features/audio-track-play-stop.test.ts).
  *
- * Defensive: nicht-boolesche Eingaben werden truthy-koerziert; das Resultat ist
- * immer ein echter boolean.
+ * Defensive: nicht-boolesche Eingaben werden truthy-koerziert; Resultat immer
+ * echter boolean.
+ */
+export function laneStateOnGlobalChange(
+  globalPlaying: boolean,
+  opts: { muted: boolean; broken: boolean },
+): boolean {
+  return globalPlaying ? !opts.muted && !opts.broken : false;
+}
+
+// ─── TASK-252: Global-Transport-Kopplung (DEPRECATED ab TASK-267) ────────────
+// Diese beiden Helper koppelten den per-Lane-Button an den globalen Transport
+// (effektiv-OR + Toggle-Lock während Global-Play). TASK-267 entkoppelt den
+// Button bewusst: jede Lane ist nun unabhängig vom globalen Transport start-/
+// stoppbar (User-Anforderung „separat im Sequenzer gestartet und gestoppt").
+// Die Funktionen bleiben exportiert (bestehende Tests/Consumer importieren sie),
+// werden aber von den Komponenten NICHT mehr verwendet. NICHT löschen.
+
+/**
+ * @deprecated Seit TASK-267 nicht mehr von den Komponenten verwendet — der
+ * per-Lane-Button ist jetzt vom globalen Transport entkoppelt. Bleibt für
+ * bestehende Tests/Consumer exportiert. Reine OR-Verknüpfung.
  */
 export function shouldLaneFollowGlobalTransport(
   globalPlaying: boolean,
@@ -124,14 +148,9 @@ export function shouldLaneFollowGlobalTransport(
 }
 
 /**
- * `true` wenn der per-Lane Play/Stop-Button gesperrt sein soll.
- *
- * Produkt-Entscheidung (TASK-252): Während der globale Transport läuft, gewinnt
- * er die Anzeige + den Playhead der Lane. Der per-Lane-Button würde sonst
- * widersprüchlich werden (er stoppt nur EINE Source, der effektive Zustand
- * bliebe aber "spielend" weil global noch läuft → Button springt zurück). Daher
- * wird der Toggle während Global-Play deaktiviert (No-Op) und dient nur dem
- * isolierten Vorhören solange der globale Transport gestoppt ist.
+ * @deprecated Seit TASK-267 nicht mehr von den Komponenten verwendet — der
+ * per-Lane Play/Stop-Button bleibt während Global-Play ENABLED (entkoppelt).
+ * Bleibt für bestehende Tests/Consumer exportiert.
  */
 export function isLaneTransportToggleLocked(globalPlaying: boolean): boolean {
   return !!globalPlaying;

@@ -12,9 +12,11 @@
  *   - Mute/Solo togglen aria-pressed (store-gebunden → race-frei).
  *   - Play togglet den per-Lane-local `playing`-State (false → true → false).
  *
- * Global-Sync (TASK-252, gelandet):
- *   - Globaler Transport-Play koppelt die Lane: effectivePlaying → Button
- *     aria-pressed="true" + Toggle gesperrt (disabled). Smoke unten.
+ * Global-Entkopplung (TASK-267 — SUPERSEDES TASK-252):
+ *   - Der per-Lane-Button ist NICHT mehr während Global-Play gesperrt. Jede Lane
+ *     ist unabhängig vom globalen Transport start-/stoppbar. Global-Play spiegelt
+ *     sich zwar im Button (aria-pressed=true), aber der Button bleibt ENABLED und
+ *     ein Klick stoppt NUR diese eine Lane — der globale Transport läuft weiter.
  *
  * Flake-Schutz: mehrsekündige WAV (sonst feuert onAudioTrackEnded mitten in
  * die Play-Toggle-Assertion → aria-pressed racet).
@@ -132,12 +134,13 @@ test.describe("Continuous Audio-Clip-Lane im Sequencer (TASK-246)", () => {
     await expect(playBtn).toHaveAttribute("aria-pressed", "false");
   });
 
-  // TASK-252 ist gelandet: AudioClipLane abonniert AudioEngine.onPlayStateChange.
-  // Globaler Transport-Play setzt globalPlaying → effectivePlaying=true; der
-  // Lane-Play-Button spiegelt das (aria-pressed) und sein Toggle ist gesperrt
-  // (disabled). Reines UI-/State-Coupling — kein Audio-Output nötig, daher
-  // headless-deterministisch.
-  test("Global-Play aktiviert die Lane-Wiedergabe (TASK-252-Kopplung)", async ({ page }) => {
+  // TASK-267 SUPERSEDES TASK-252: Die Lane ist vom globalen Transport ENTKOPPELT.
+  // Der per-Lane-Button bleibt während Global-Play ENABLED, und ein Klick stoppt
+  // NUR diese eine Lane — der globale Transport läuft dabei weiter. User-
+  // Anforderung: „Die Audio lanes sollen auch separat im Sequenzer gestartet und
+  // gestoppt werden und nicht nur global." Reines UI-/State-Coupling — kein
+  // Audio-Output nötig, daher headless-deterministisch.
+  test("Lane-Stop während Global-Play stoppt nur diese Lane, Button bleibt enabled (TASK-267)", async ({ page }) => {
     await seedAndOpen(page);
     await addAudioTrackViaMixer(page, "clip-globalsync.wav");
     await page.getByRole("tab", { name: "Sequencer" }).click();
@@ -158,11 +161,19 @@ test.describe("Continuous Audio-Clip-Lane im Sequencer (TASK-246)", () => {
     await expect(globalPlay).toBeVisible();
     await globalPlay.click();
 
-    // Kopplung: effectivePlaying=true → Lane-Button zeigt playing + ist gesperrt.
+    // Engine startet die (nicht-gemutete) Lane → Button spiegelt playing.
+    // ENTSCHEIDEND (TASK-267): Der Button bleibt ENABLED — nicht mehr gesperrt.
     await expect(playBtn).toHaveAttribute("aria-pressed", "true");
-    await expect(playBtn).toBeDisabled();
+    await expect(playBtn).toBeEnabled();
 
-    // Globaler Stop entkoppelt wieder (Toolbar-Button heißt jetzt "Stop …").
+    // Lane-Stop WÄHREND Global läuft: stoppt nur diese eine Voice.
+    await playBtn.click();
+    await expect(playBtn).toHaveAttribute("aria-pressed", "false");
+    // Der globale Transport wurde NICHT angefasst — der Toolbar-Button steht
+    // weiterhin auf "Stop (Space) …" (kein zweiter Global-Press ausgelöst).
+    await expect(page.locator('button[title^="Stop (Space)"]').first()).toBeVisible();
+
+    // Globaler Stop räumt den lokalen State wieder ab.
     const globalStop = page.locator('button[title^="Stop (Space)"]').first();
     await globalStop.click();
     await expect(playBtn).toHaveAttribute("aria-pressed", "false");

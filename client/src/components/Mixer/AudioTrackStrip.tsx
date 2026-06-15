@@ -52,6 +52,7 @@ import { WaveformDisplay } from "@/components/WaveformDisplay/WaveformDisplay";
 import { ZoomableWaveform } from "@/components/AudioTrack/ZoomableWaveform";
 import { ChannelColorPicker } from "@/components/Mixer/ChannelColorPicker";
 import { resolveChannelColor } from "@/utils/channelColors";
+import { laneStateOnGlobalChange } from "@/components/DrumMachine/audioLaneHelpers";
 import { useElectron } from "../../../../electron/useElectron";
 import { useConfirm } from "@/components/common/ConfirmDialog";
 
@@ -114,50 +115,42 @@ export function AudioTrackStrip({
   const [draftName, setDraftName] = useState(track.name);
   const [pos01, setPos01] = useState(0);
 
-  // TASK-245: Per-Track Play/Stop. Component-local (kein Store) — Playback ist
-  // ephemer und darf DrumMachine/Global-Transport nicht berühren.
-  const [playing, setPlaying] = useState(false);
+  const broken = runtime.broken === true;
 
-  // TASK-261: Globaler Transport-Zustand (self-subscribed via Engine-Seam),
-  // analog zur AudioClipLane (TASK-252). Der `isPlaying`-Prop ist nur ein
-  // Render-Snapshot (MixerView abonniert den Transport nicht und re-rendert bei
-  // Play/Stop nicht), würde also bei Global-Stop hängenbleiben. Deshalb ist der
-  // self-subscribete `globalPlaying` die kanonische, reaktive Global-Quelle.
+  // TASK-245 / TASK-267: Per-Track Play/Stop. Component-local (kein Store) —
+  // ephemer. TASK-267 ENTKOPPELT den Button vom globalen Transport: jeder Track
+  // ist unabhängig start-/stoppbar, auch während Global läuft. `playing` ist die
+  // alleinige Quelle für Button + Playhead; es wird via laneStateOnGlobalChange
+  // wahrheitsgemäß auf das gesynct, was die Engine bei Global-Play/-Stop TUT.
   // Init aus dem Live-Getter (mit Prop-Fallback), damit ein mid-playback
-  // gemounteter Strip sofort korrekt startet.
-  const [globalPlaying, setGlobalPlaying] = useState(
-    () => AudioEngine.isPlaying || isPlaying,
+  // gemounteter Strip sofort korrekt startet (onPlayStateChange feuert nur bei
+  // ÄNDERUNG, nicht beim Mount).
+  const [playing, setPlaying] = useState(() =>
+    laneStateOnGlobalChange(AudioEngine.isPlaying || isPlaying, {
+      muted: track.muted,
+      broken,
+    }),
   );
 
-  // Effektiver Playing-Zustand für Button + Playhead/Waveform: per-Track-Button
-  // ODER globaler Transport. So bleibt beides korrekt, egal welcher Pfad spielt.
-  // (Bewusst OHNE den stale `isPlaying`-Prop im OR — siehe globalPlaying-Kommentar.)
-  const effectivePlaying = playing || globalPlaying;
-
-  // TASK-261: Während der globale Transport läuft, ist der per-Track-Toggle
-  // gesperrt (global gewinnt Anzeige + Playhead) — konsistent zur AudioClipLane.
-  const toggleLocked = globalPlaying;
+  // Effektiver Playing-Zustand = lokales playing (nach TASK-267 keine OR mehr).
+  const effectivePlaying = playing;
 
   // v3.67.0: Zoom-Edit-Mode — toggle between mini-WaveformDisplay and ZoomableWaveform.
   const [zoomEditOpen, setZoomEditOpen] = useState(false);
   const [editorCursorSample, setEditorCursorSample] = useState<number | null>(null);
 
-  const broken = runtime.broken === true;
-
-  // TASK-261: Globaler Play/Stop (self-subscribed) — koppelt den Strip an den
-  // globalen Transport, analog zur AudioClipLane (TASK-252). Global-Play startet
-  // via Engine alle registrierten Audio-Tracks parallel zum Step-Sequencer; der
-  // Strip muss das in Button + Playhead spiegeln.
+  // TASK-267: Globaler Play/Stop (self-subscribed) — synct den lokalen `playing`
+  // auf das, was die Engine bei Global-Play tatsächlich startet
+  // (playAllRegisteredAudioTracks startet diesen Track NUR wenn !muted && !broken;
+  // Global-Stop killt ALLE Voices). Der per-Track-Button bleibt entkoppelt.
+  // Deps: muted/broken werden gelesen → MÜSSEN in der Dep-Liste stehen (sonst
+  // stale-closure: erst muten, dann Global-Play würde fälschlich playing setzen).
   useEffect(() => {
     const unsub = AudioEngine.onPlayStateChange((p) => {
-      setGlobalPlaying(p);
-      // Global-Stop räumt auch ein evtl. laufendes lokales Vorhören auf:
-      // Engine.stop() killt ALLE audioTrackSources, der lokale playing-State
-      // würde sonst hängenbleiben.
-      if (!p) setPlaying(false);
+      setPlaying(laneStateOnGlobalChange(p, { muted: track.muted, broken }));
     });
     return unsub;
-  }, []);
+  }, [track.muted, broken]);
 
   // Playhead-Position via Engine-Callback
   useEffect(() => {
@@ -327,10 +320,10 @@ export function AudioTrackStrip({
   // läuft der Track → stoppen, sonst → starten. broken-Tracks bleiben inert.
   const handlePlayStop = useCallback(() => {
     if (broken) return;
-    // TASK-261: Während der globale Transport läuft ist der per-Track-Toggle
-    // gesperrt (global gewinnt Anzeige + Playhead). Der Button dient nur dem
-    // isolierten Vorhören solange global gestoppt ist — konsistent zur Lane.
-    if (toggleLocked) return;
+    // TASK-267: Startet/stoppt NUR diesen Track — entkoppelt vom globalen
+    // Transport. Manueller Stop während Global läuft killt diese eine Voice; sie
+    // bleibt gestoppt bis zu einem manuellen Start ODER dem nächsten Global
+    // stop→play-Zyklus (playAllRegisteredAudioTracks → onPlayStateChange-Sync).
     // Side-Effects außerhalb des setState-Updaters — React-19-StrictMode
     // double-invoke't Updater im Dev, würde sonst playAudioTrack 2× feuern.
     const next = nextAudioTrackPlayState(playing, "toggle", { broken });
@@ -340,7 +333,7 @@ export function AudioTrackStrip({
       AudioEngine.stopAudioTrack(track.id);
     }
     setPlaying(next);
-  }, [track.id, broken, playing, toggleLocked]);
+  }, [track.id, broken, playing]);
 
   // ── Sync-Mode ──────────────────────────────────────────────────────────────
   const handleSyncMode = useCallback(
@@ -586,16 +579,10 @@ export function AudioTrackStrip({
             e.stopPropagation();
             handlePlayStop();
           }}
-          disabled={broken || toggleLocked}
+          disabled={broken}
           aria-label={effectivePlaying ? "Stop" : "Play"}
           aria-pressed={effectivePlaying}
-          title={
-            toggleLocked
-              ? "Steuerung über globalen Transport (Play/Stop)"
-              : effectivePlaying
-                ? "Stop"
-                : "Play (nur dieser Track)"
-          }
+          title={effectivePlaying ? "Stop (nur dieser Track)" : "Play (nur dieser Track)"}
           className={[
             "w-5 h-5 flex items-center justify-center rounded transition-colors",
             "disabled:opacity-40 disabled:cursor-not-allowed",

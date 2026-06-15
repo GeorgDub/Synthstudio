@@ -7,12 +7,12 @@
  *   - Strip hat einen Play/Stop-Button mit testid audio-track-play-<id>.
  *   - Klick togglet aria-pressed false → true → false (per-Track-local `playing`).
  *
- * Global-Sync (TASK-261, gelandet):
- *   - Der Mixer-Strip-Button koppelt jetzt — wie die Clip-Lane (TASK-252) — an
- *     den globalen Transport: AudioTrackStrip abonniert AudioEngine.onPlayState-
- *     Change, Global-Play setzt globalPlaying → effectivePlaying=true → Button
- *     aria-pressed="true" + Toggle gesperrt (disabled). Reines UI-/State-Coupling,
- *     kein Audio-Output → headless-deterministisch (Smoke unten).
+ * Global-Entkopplung (TASK-267 — SUPERSEDES TASK-261/TASK-252):
+ *   - Der per-Track-Button ist NICHT mehr während Global-Play gesperrt. Jeder
+ *     Audio-Track ist unabhängig vom globalen Transport start-/stoppbar. Global-
+ *     Play spiegelt sich zwar im Button (aria-pressed=true, weil die Engine den
+ *     Track tatsächlich startet), aber der Button bleibt ENABLED und ein Klick
+ *     stoppt NUR diese eine Voice — der globale Transport läuft dabei weiter.
  *
  * Flake-Schutz: der Button liest component-local `playing`. Ein 1-Sample-WAV
  * würde onAudioTrackEnded quasi sofort feuern und `playing` wieder auf false
@@ -100,12 +100,13 @@ test.describe("Per-Track Play/Stop im AudioTrackStrip (TASK-245)", () => {
     await expect(playBtn).toHaveAttribute("aria-pressed", "false");
   });
 
-  // TASK-261 ist gelandet: AudioTrackStrip abonniert AudioEngine.onPlayState-
-  // Change (wie die Clip-Lane via TASK-252). Globaler Transport-Play setzt
-  // globalPlaying → effectivePlaying=true; der Mixer-Strip-Play-Button spiegelt
-  // das (aria-pressed) und sein Toggle ist gesperrt (disabled). Reines UI-/State-
-  // Coupling — kein Audio-Output nötig, daher headless-deterministisch.
-  test("Global-Play koppelt den Mixer-Per-Track-Button (TASK-261-Kopplung)", async ({ page }) => {
+  // TASK-267 SUPERSEDES TASK-261 (+ TASK-252): Der per-Track-Button ist vom
+  // globalen Transport ENTKOPPELT. Er bleibt während Global-Play ENABLED, und ein
+  // Klick stoppt NUR diese eine Lane — der globale Transport läuft dabei weiter.
+  // User-Anforderung: „Die Audio lanes sollen auch separat im Sequenzer gestartet
+  // und gestoppt werden und nicht nur global." Reines UI-/State-Coupling — kein
+  // Audio-Output nötig, daher headless-deterministisch.
+  test("Lane-Stop während Global-Play stoppt nur diese Lane, Button bleibt enabled (TASK-267)", async ({ page }) => {
     await gotoMixer(page);
     const strip = await addAudioTrack(page, "playstop-global.wav");
     const trackId = await strip.getAttribute("data-track-id");
@@ -123,11 +124,19 @@ test.describe("Per-Track Play/Stop im AudioTrackStrip (TASK-245)", () => {
     await expect(globalPlay).toBeVisible();
     await globalPlay.click();
 
-    // Kopplung: effectivePlaying=true → Strip-Button zeigt playing + ist gesperrt.
+    // Engine startet den (nicht-gemuteten) Track → Strip-Button spiegelt playing.
+    // ENTSCHEIDEND (TASK-267): Der Button bleibt ENABLED — nicht mehr gesperrt.
     await expect(playBtn).toHaveAttribute("aria-pressed", "true");
-    await expect(playBtn).toBeDisabled();
+    await expect(playBtn).toBeEnabled();
 
-    // Globaler Stop entkoppelt wieder (Toolbar-Button heißt jetzt "Stop …").
+    // Lane-Stop WÄHREND Global läuft: stoppt nur diese eine Voice.
+    await playBtn.click();
+    await expect(playBtn).toHaveAttribute("aria-pressed", "false");
+    // Der globale Transport wurde NICHT angefasst — der Toolbar-Button steht
+    // weiterhin auf "Stop (Space) …" (kein zweiter Global-Press ausgelöst).
+    await expect(page.locator('button[title^="Stop (Space)"]').first()).toBeVisible();
+
+    // Globaler Stop räumt den lokalen State wieder ab.
     const globalStop = page.locator('button[title^="Stop (Space)"]').first();
     await globalStop.click();
     await expect(playBtn).toHaveAttribute("aria-pressed", "false");
