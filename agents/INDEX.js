@@ -28,7 +28,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.281.0",
+    version: "3.282.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -1076,6 +1076,16 @@ const INDEX = {
     "client/src/store/useEnvelopeFollowerStore.ts": {
       role:     "Envelope-Follower Routings (Source → Target via EnvelopeTarget). add/remove/updateEnvelopeFollower.",
       lastSeen: "2026-05-19T16:55:48.843Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/store/useLfoModStore.ts": {
+      role:     "LFO/Mod-Routing-Store (TASK-257ff): lfos[] + routes[] (source lfo|macro|env). add/remove/update LFO+Route, getActiveModRoutes (Engine-Seam), routeSource, resolveLfoIdForSwitch (TASK-271), groupRoutesBySource (TASK-270 Mod-Matrix). Custom-Observer + localStorage. ACHTUNG: backend editiert hier den Engine-Seam (App.tsx) — Helper-Aenderungen mit backend abstimmen.",
+      lastSeen: "2026-06-15T22:18:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/components/Modulation/LfoModPanel.tsx": {
+      role:     "LFO/Mod-Panel (Tools-Tab): LFO-Liste + Live-Kurven-Canvas + Mod-Matrix (TASK-270: Routen nach Quelltyp lfo/macro/env gruppiert, ModRouteRow-Komponente, per-Quelltyp '+ X'-Button). Token-pur, native Selects (headless-stabil).",
+      lastSeen: "2026-06-15T22:18:00.000Z",
       ownedBy:  "frontend"
     },
     "client/src/store/useHumanizerStore.ts": {
@@ -2469,8 +2479,13 @@ const INDEX = {
       ownedBy:  "frontend"
     },
     "client/src/components/SampleBrowser/SampleBrowser.tsx (v3.55.0)": {
-      role:     "v3.226 ERWEITERT: Bulk-FreqShift-Action in Multi-Select-Bar (direkt nach EXC-Button v3.225). 1 Slider (shiftHz -500..500 step=10 default 50 = DEFAULT_SHIFT_HZ aus sampleFreqShift.ts) + FSH-Button data-testid='sample-browser-bulk-freqshift-apply'. State bulkFreqShift. handleBulkFreqShift useCallback: Early-Exit auf bulkFreqShift===0 (Identity weil cos(0)=1); AudioEngine.loadSample → applyFreqShift(buf, {shiftHz: bulkFreqShift}) → encodeWav → URL-Blob → OfflineAudioContext + copyToChannel → onTransformSample; Toast 'FreqShift <s>Hz: N Samples'. data-testids: sample-browser-bulk-freqshift (slider) + sample-browser-bulk-freqshift-apply (button). Import { applyFreqShift } aus @/utils/sampleFreqShift. v3.225 Bulk-Exciter + v3.224 Bulk-Haas + v3.222 Bulk-Bitcrush + v3.221 Bulk-TimeStretch + v3.219 Bulk-NoiseReduce + v3.218 Bulk-Granulize + v3.197 Bulk-Stereo-Width + v3.195 Bulk-Saturator + v3.194 Bulk-Pitch-Shift + v3.188-v3.193 Bulk-Compressor/Delay/Sidechain bleiben unveraendert.",
-      lastSeen: "2026-06-15T20:55:00.000Z",
+      role:     "v3.281 (TASK-269): WaveformPanel-Subkomponente raus -> ./WaveformPanel.tsx (verbatim, props-only). SampleBrowser 5616->5475 LOC. getWaveformColor/CATEGORY_WAVEFORM_COLORS/formatDuration(single) + orphaned WaveformDisplay-Import entfernt. formatBytes bleibt (Sample-Liste). | v3.226: Bulk-FreqShift-Action in Multi-Select-Bar (Slider shiftHz -500..500 step=10 default 50 + FSH-Button). handleBulkFreqShift: AudioEngine.loadSample -> applyFreqShift -> encodeWav -> Blob -> OfflineAudioContext -> onTransformSample. v3.225 Bulk-Exciter + v3.224 Haas + v3.222 Bitcrush + v3.221 TimeStretch + v3.219 NoiseReduce + v3.218 Granulize + v3.197 Stereo-Width + v3.195 Saturator + v3.194 Pitch-Shift + v3.188-v3.193 Compressor/Delay/Sidechain unveraendert.",
+      lastSeen: "2026-06-15T21:50:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/components/SampleBrowser/WaveformPanel.tsx (v3.281 TASK-269)": {
+      role:     "v3.281 (TASK-269): WaveformPanel-Subkomponente verbatim aus SampleBrowser.tsx extrahiert (props-only, kein State/Hook/Effect/Electron, keine Modul-Kopplung an Parent). Rendert Sample-Name + Assign/Play/Transform-Buttons + WaveformDisplay + Sample-Details (Dauer/Samplerate/Kanaele/BPM/Groesse). WaveformPanel-exklusive Helfer getWaveformColor + CATEGORY_WAVEFORM_COLORS + formatDuration zogen mit hierher; formatBytes als private identische Kopie (Parent nutzt eigenes weiter -> kein Zirkel). Importiert type Sample aus ../../store/useProjectStore + WaveformDisplay aus ../WaveformDisplay. Exportiert { WaveformPanel, type WaveformPanelProps }. Token-pur (theme-class-purity-Auto-Discovery gruen). Verhaltensneutral, identische Render-Ausgabe.",
+      lastSeen: "2026-06-15T21:50:00.000Z",
       ownedBy:  "frontend"
     },
     "client/src/components/SampleBrowser/PlaylistPanel.tsx (v3.280 TASK-265)": {
@@ -4231,6 +4246,88 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "coordinator",
+      timestamp: "2026-06-15T22:30:00.000Z",
+      done: [
+        "Runde 2026-06-15 (Session 7) konsolidiert. Alle drei Low-Prio-Folge-Tasks gruen, seriell committed (shared Working-Tree, je eigener Commit): TASK-269 (971f2ad) + TASK-271 (84521b4) + TASK-270 (7868b9c). Pflicht-Minimum (269+271) UND optionales 270 erledigt.",
+        "TASK-269 (refactor, 971f2ad): WaveformPanel verbatim-move aus SampleBrowser/SampleBrowser.tsx -> SampleBrowser/WaveformPanel.tsx (157 LOC, props-only). SampleBrowser.tsx 5616->5475 (-141). Helfer getWaveformColor/CATEGORY_WAVEFORM_COLORS/formatDuration mitgezogen, formatBytes private Kopie kein Zirkel. +2 theme-class-purity Tests.",
+        "TASK-271 (backend, 84521b4): Envelope-Mod-Quelle jetzt TRANSPORT-getriggert (one-shot ab Rising-Edge AudioEngine.isPlaying im App.tsx-rAF-Seam) statt frei laufend. Note-on nicht angezapft (arpNote ist arp-only). Pure-Helper evaluateEnvTriggered+nextEnvTrigger in modSource.ts; evaluateEnv byte-identisch. macro-Route lfoId-Edge gefixt via resolveLfoIdForSwitch. LFO/macro-Verhalten unveraendert. +22 Tests. KEIN IPC/Dep.",
+        "TASK-270 (frontend, 7868b9c): Volle Mod-Matrix-UI im LfoModPanel — Routen nach Quelltyp gruppiert (LFO/Macro/Huellkurve), je Gruppe Header+Count+'+X'+Leerzustand. Einzel-Editor in ModRouteRow konsolidiert. Pure-Helper groupRoutesBySource. Token-pur, native Selects, isomorph. +8 Vitest +1 Playwright-Headless-Smoke. KEIN IPC/Dep.",
+        "Final auf committed Tree: pnpm check clean, pnpm test 450 files / 10477 passed / 12 skipped. Surgical staging — examples/e2s/* + screenshots/ NIE gestaged."
+      ],
+      next: [
+        "Folge-Session: weitere SampleBrowser-Extraktion (~5475 LOC) + DrumMachine.tsx (~4479 LOC) weiter zerlegen -> TASK-272/TASK-273.",
+        "Optional Mod-Matrix: einklappbare Gruppen (Accordion) / kompakte Tabellen-Ansicht bei vielen Routen.",
+        "Optional: Envelope an echten generischen note-on koppeln (aktuell nur Transport-Trigger).",
+        "Audio/Sim-Playwright non-blocking rot (TASK-262-Env-Gate) — bewusst akzeptiert."
+      ],
+      changed: []
+    },
+    {
+      agent:     "frontend",
+      timestamp: "2026-06-15T22:18:00.000Z",
+      done: [
+        "TASK-270 (frontend): Volle Mod-Matrix-UI im LfoModPanel.tsx (Ausbau von TASK-257-FOLLOWUP-3). Die Routen-Liste ist jetzt nach Quelltyp gruppiert: drei stabile Gruppen (LFO / Macro / Huellkurve), je mit Count + eigenem '+ X'-Button (data-testid lfomod-add-route-<source>) + Leerzustand. KONSOLIDIERT (nicht parallel): der bisherige Einzel-Route-Editor wurde in eine wiederverwendbare ModRouteRow-Komponente extrahiert und unter die Gruppen-Header gehaengt — selbe Felder (enable/source-Picker/Sub-Control/Ziel/Param/Amount/remove), keine Doppel-Struktur.",
+        "TASK-271-Verdrahtung BEWAHRT: resolveLfoIdForSwitch(route.lfoId, lfos) im Source-Switch onChange verbatim uebernommen (Wechsel auf 'lfo' setzt gueltigen lfoId). Backward-Compat: generischer '+ Route'-Button (lfomod-add-route) + lfomod-route-row-testid erhalten -> bestehende Smokes brechen nicht.",
+        "Neuer reiner Store-Helper groupRoutesBySource(routes) in useLfoModStore.ts: liefert IMMER {lfo,macro,env}, bewahrt Reihenfolge, routeSource-Defaulting (kein/invalid -> lfo). Rein/deterministisch.",
+        "Token-pur (theme-class-purity.test.ts gruen ueber die Datei), nur native <select>/<button> (headless-stabil, kein Radix-Portal), keine neue Dependency, kein IPC.",
+        "Tests: +8 Vitest (lfo-mod-store.test.ts +4 groupRoutesBySource happy/empty/invalid/order; lfo-mod-panel.test.ts +4 Mod-Matrix add/group/enable-toggle/remove je Quelltyp). +1 Playwright-Smoke (tests/web/lfo-mod-panel.spec.ts: je Quelltyp Route anlegen -> in eigener Gruppe sichtbar, headless verifiziert CI_HEADLESS=1 4/4 ok). pnpm check clean, pnpm test 450 files / 10477 passed (+8) / 12 skipped. NICHT committed (Coordinator committet seriell)."
+      ],
+      next: [
+        "Optional: Gruppen-Header koennten ein- /ausklappbar werden (Accordion) wenn die Matrix bei vielen Routen lang wird — rein UI, kein Store-Change.",
+        "Optional: kompakte Tabellen-Ansicht (Spalten Quelle/Ziel/Param/Amount) als Alternative zur Zeilen-Ansicht, falls gewuenscht."
+      ],
+      changed: [
+        "client/src/components/Modulation/LfoModPanel.tsx",
+        "client/src/store/useLfoModStore.ts",
+        "tests/features/lfo-mod-store.test.ts",
+        "tests/features/lfo-mod-panel.test.ts",
+        "tests/web/lfo-mod-panel.spec.ts"
+      ]
+    },
+    {
+      agent:     "backend",
+      timestamp: "2026-06-15T22:00:00.000Z",
+      done: [
+        "TASK-271 (backend): Envelope-Mod-Quelle an Transport-Trigger gekoppelt (war frei laufend). Neuer reiner Helper evaluateEnvTriggered(env, now, triggerTime|null) in client/src/utils/modSource.ts: triggerTime===null -> 0 (idle), sonst ADSR ab elapsedSinceTrigger = now-trigger, ONE-SHOT (kein Loop, nach Periode haelt 0). evaluateEnv() BYTE-IDENTISCH belassen (bestehende zyklische Tests gruen, abwaertskompatibel).",
+        "Engine-Seam: client/src/App.tsx rAF-Loop (LFO-Routing useEffect ~Z2411). KEIN neues Event/IPC. Trigger = Rising-Edge von AudioEngine.isPlaying (Getter, bereits genutzt Z795/1016). Per-Route Trigger-Map envTriggerAt (runtime-only, NICHT persistiert): Play-Start retriggert alle aktiven env-Routes; env-Route die mitten im Playback aktiv wird triggert sofort; Stop loescht alle Trigger (-> idle/0); GC entfernt Trigger inaktiver Routes. arpNote-Seam (AudioEngine.ts:3690) bewusst VERWORFEN (feuert nur im Arp-Pfad, kein general note-on; onPosition waere per-step = falsche Granularitaet fuer one-shot). -> Transport-Trigger ist Floor UND Ceiling.",
+        "TASK-271 Task B (lfoId-Round-Trip-Edge): neuer reiner Helper resolveLfoIdForSwitch(currentLfoId, lfos) in useLfoModStore.ts. Bewahrt gueltigen lfoId beim Hin/Her-Wechsel; leerer/verwaister lfoId beim Zurueckwechsel auf source 'lfo' -> erster verfuegbarer LFO als definierter Default (sonst ''). In LfoModPanel.tsx Source-Switch verdrahtet (patch.lfoId beim Wechsel auf 'lfo'). UI clearte lfoId vorher nie -> Edge lag an Erstellung ohne LFO (addModRoute lfoId:'').",
+        "Transport-Kopplung selbst getestet via reinem Helper nextEnvTrigger(current, playing, justStarted, now) in modSource.ts (extrahiert aus App.tsx rAF-Closure, da dort nicht unit-testbar): Stop->null, Play-Start->now (retrigger), mid-playback-aktiv->now, sonst unveraendert. App.tsx env-Branch ruft den Helper + set/delete der Trigger-Map daraus.",
+        "HARTE GRENZE eingehalten: lfo- und macro-Routes unveraendert (Regression-Tests beweisen). Tests: mod-source.test.ts 11->26 (+15: evaluateEnvTriggered + nextEnvTrigger + Integration), lfo-mod-store.test.ts +7 (resolveLfoIdForSwitch + Round-Trip + lfo/macro-Regression). pnpm check clean, pnpm test 450 files / 10469 passed (+22 vs Baseline 10447) / 12 skipped. NICHT committed (Coordinator committet seriell)."
+      ],
+      next: [
+        "Owner-Hinweis: evaluateEnvTriggered ist der getriggerte Pfad; evaluateEnv bleibt der frei-laufende (von keinem aktiven Code mehr aufgerufen, aber als Helper/Test-API erhalten). Falls echter note-on-Seam (step-trigger) entsteht: per-Route Trigger-Map in App.tsx ist bereits darauf ausgelegt (set timestamp on note-on statt transport-edge).",
+        "Optionaler UX-Ausbau: env-Route koennte einen 'retrigger per pattern-loop'-Modus bekommen (jetzt one-shot ab Play). Datenmodell-Feld + Helper-Param, keine Engine-Umbauten noetig."
+      ],
+      changed: [
+        "client/src/utils/modSource.ts",
+        "client/src/store/useLfoModStore.ts",
+        "client/src/components/Modulation/LfoModPanel.tsx",
+        "client/src/App.tsx",
+        "tests/features/mod-source.test.ts",
+        "tests/features/lfo-mod-store.test.ts"
+      ]
+    },
+    {
+      agent:     "refactor",
+      timestamp: "2026-06-15T21:50:00.000Z",
+      done: [
+        "TASK-269 (refactor): WaveformPanel verbatim aus SampleBrowser.tsx -> SampleBrowser/WaveformPanel.tsx (157 LOC). SampleBrowser 5616->5475 (-141). Props-only, kein interner State/Hook/Effect, identische Render-Ausgabe, ImportProgress/PlaylistPanel-Praezedenz (gleicher Ordner).",
+        "Zirkel vermieden: WaveformPanel-exklusive Helfer (getWaveformColor + CATEGORY_WAVEFORM_COLORS + formatDuration) zogen MIT in die neue Datei (grep-verifiziert: keine andere Parent-Nutzung). formatBytes bleibt im Parent (Sample-Liste Z5464) UND als private identische Kopie in WaveformPanel.tsx -> kein shared-util-Scope-Creep, keine Rueck-Kante. SampleBrowser importiert einseitig { WaveformPanel } from './WaveformPanel'.",
+        "Orphan-Imports im Parent bereinigt: WaveformDisplay-Import entfernt (war nur in WaveformPanel benutzt, 0 verbleibende <WaveformDisplay>-Stellen). Stale formatDuration-Kommentar (Z62-64) auf neue WaveformPanel-Heimat aktualisiert.",
+        "CategoryMenu als naechster Kandidat bewusst VERWORFEN: haengt an module-level CATEGORIES-const (parent-weit genutzt) -> genau die Modul-Kopplung die TASK-269 verbietet.",
+        "check gruen (tsc clean). test 450 files / 10447 passed / 12 skipped (+2 vs Baseline 10445 = theme-class-purity-Auto-Discovery der neuen token-puren .tsx). NICHT committed (Coordinator committet seriell)."
+      ],
+      next: [
+        "Owner-Hinweis (SampleBrowser-Owner frontend): WaveformPanel-Typ/Komponente wohnt jetzt in ./WaveformPanel.tsx (von dort exportiert), nicht mehr inline. getWaveformColor + CATEGORY_WAVEFORM_COLORS + formatDuration (single-sample) sind aus SampleBrowser.tsx raus -> falls woanders gebraucht, aus WaveformPanel.tsx importieren statt neu definieren.",
+        "Naechste SampleBrowser-Extraktion: CategoryMenu braucht erst Entkopplung von CATEGORIES (als Prop reinreichen ODER CATEGORIES in shared const-Datei auslagern) bevor props-only-Move moeglich. Danach SampleBrowser noch ~5475 LOC -> weitere Panel-Bloecke scouten."
+      ],
+      changed: [
+        "client/src/components/SampleBrowser/SampleBrowser.tsx",
+        "client/src/components/SampleBrowser/WaveformPanel.tsx"
+      ]
+    },
     {
       agent:     "coordinator",
       timestamp: "2026-06-15T19:40:00.000Z",
@@ -15372,7 +15469,11 @@ const INDEX = {
             type: "refactor",
             priority: "low",
             agent: "refactor",
-            status: "open",
+            status: "done",
+            doneIn: "v3.282.0",
+            doneBy: "refactor",
+            doneCommit: "971f2ad",
+            doneNote: "WaveformPanel verbatim-move SampleBrowser.tsx -> SampleBrowser/WaveformPanel.tsx (157 LOC). SampleBrowser 5616->5475 (-141). props-only, getWaveformColor/CATEGORY_WAVEFORM_COLORS/formatDuration mitgezogen, kein Zirkel. +2 Tests. round-2026-06-15-s7",
             createdAt: "2026-06-15T19:40:00.000Z",
             createdBy: "coordinator",
             title: "Naechste SampleBrowser-Extraktion (Folge TASK-265)",
@@ -15383,7 +15484,11 @@ const INDEX = {
             type: "feature",
             priority: "low",
             agent: "frontend",
-            status: "open",
+            status: "done",
+            doneIn: "v3.282.0",
+            doneBy: "frontend",
+            doneCommit: "7868b9c",
+            doneNote: "Volle Mod-Matrix-UI: Routen nach Quelltyp gruppiert (LFO/Macro/Huellkurve), je Gruppe +X-Button+Count+Leerzustand, Einzel-Editor in ModRouteRow konsolidiert. Pure-Helper groupRoutesBySource. Token-pur, native Selects. +8 Vitest +1 Playwright. round-2026-06-15-s7",
             createdAt: "2026-06-15T19:40:00.000Z",
             createdBy: "coordinator",
             title: "Volle Mod-Matrix-UI (Ausbau TASK-257-FOLLOWUP-3)",
@@ -15394,11 +15499,37 @@ const INDEX = {
             type: "feature",
             priority: "low",
             agent: "backend",
-            status: "open",
+            status: "done",
+            doneIn: "v3.282.0",
+            doneBy: "backend",
+            doneCommit: "84521b4",
+            doneNote: "Envelope TRANSPORT-getriggert (one-shot ab Rising-Edge AudioEngine.isPlaying im App.tsx-rAF). evaluateEnvTriggered+nextEnvTrigger neu, evaluateEnv byte-identisch. macro-lfoId-Edge via resolveLfoIdForSwitch. LFO/macro unveraendert. +22 Tests. round-2026-06-15-s7",
             createdAt: "2026-06-15T19:40:00.000Z",
             createdBy: "coordinator",
             title: "Envelope-Mod-Quelle an Note/Transport-Trigger koppeln (Edge TASK-257-FOLLOWUP-3)",
             description: "evaluateEnv laeuft aktuell frei (zyklisch, kein Trigger). Optional an Transport-/Note-Events koppeln (one-shot ab note-on). Zudem macro-Route ohne LFO hat lfoId=leer -> Wechsel zurueck auf source lfo erst nach LFO-Auswahl aktiv; round-trip-robuster machen. Test-First.",
+        },
+        {
+            id: "TASK-272",
+            type: "refactor",
+            priority: "low",
+            agent: "refactor",
+            status: "open",
+            createdAt: "2026-06-15T22:30:00.000Z",
+            createdBy: "coordinator",
+            title: "Naechste SampleBrowser-Extraktion (Folge TASK-269)",
+            description: "SampleBrowser.tsx noch ~5475 LOC. Naechstes sauberes props-only Paeckchen extrahieren (Scout, Muster ImportProgress/PlaylistPanel/WaveformPanel). CategoryMenu war wegen CATEGORIES-Kopplung verworfen — anderen Block waehlen. Verhaltensneutral, verbatim, Tests vor/nach gruen, EIN Paeckchen.",
+        },
+        {
+            id: "TASK-273",
+            type: "refactor",
+            priority: "low",
+            agent: "refactor",
+            status: "open",
+            createdAt: "2026-06-15T22:30:00.000Z",
+            createdBy: "coordinator",
+            title: "DrumMachine.tsx weiter zerlegen (Folge TASK-255)",
+            description: "DrumMachine.tsx (~4479 LOC nach ElectribePickerModal-Extraktion) weiter in props-only Sub-Komponenten/Hooks aufteilen (Scout: makeE2sSampleResolver->utils, Playhead*-Sub-Komponenten). Verhaltensneutral, Tests vor/nach gruen, EIN Paeckchen.",
         },
         {
             id: "TASK-255-FOLLOWUP",
