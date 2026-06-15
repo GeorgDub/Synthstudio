@@ -56,6 +56,7 @@ import { DrumMachine } from "@/components/DrumMachine";
 import { SessionPanel } from "@/components/CollabSession";
 import { PatternGeneratorPanel } from "@/components/PatternGenerator";
 import GeneratorView from "@/components/generator/GeneratorView.jsx"; // *** NEUER IMPORT ***
+import { LfoModPanel } from "@/components/Modulation/LfoModPanel";
 import { PatternLibrary } from "@/components/PatternLibrary/PatternLibrary";
 import { savePatternToLibrary } from "@/store/usePatternLibraryStore";
 import { ScriptRunner } from "@/components/Tools/ScriptRunner";
@@ -1925,7 +1926,7 @@ export default function App() {
     setActiveTab(tab);
     localStorage.setItem("ss-layout:active-tab", tab);
   }, []);
-  const [activeTool, setActiveTool] = useState<'prompt' | 'algorithmic' | 'chords' | 'sampler' | 'workbench' | 'automix' | 'library' | 'script' | 'omnitribe' | 'packs' | 'song' | 'liverec' | 'audioinput' | 'macroSnapshot' | 'diff' | 'esx2e2s'>('prompt');
+  const [activeTool, setActiveTool] = useState<'prompt' | 'algorithmic' | 'chords' | 'sampler' | 'workbench' | 'automix' | 'library' | 'script' | 'omnitribe' | 'packs' | 'song' | 'liverec' | 'audioinput' | 'macroSnapshot' | 'diff' | 'esx2e2s' | 'lfomod'>('prompt');
 
   // ── Dialog-State ─────────────────────────────────────────────────────────
   const [showMidiSettings, setShowMidiSettings] = useState(false);
@@ -4911,10 +4912,12 @@ export default function App() {
                       { id: "audioinput",  label: "🎤 Audio-In" },
                       { id: "script",      label: "⚡ Script" },
                       { id: "diff",        label: "📊 Diff" },
+                      { id: "lfomod",      label: "〰 LFO/Mod" },
                       { id: "esx2e2s",     label: "🔁 ESX→E2S" },
                       { id: "omnitribe",   label: "🎛 OmniTribe" },
                     ] as const).map(t => (
                       <button key={t.id} onClick={() => setActiveTool(t.id)}
+                        data-testid={`tools-tab-${t.id}`}
                         className={`px-4 py-2 text-xs font-medium border-b-2 transition-colors ${activeTool === t.id ? "border-accent-primary text-accent-primary bg-bg-elevated" : "border-transparent text-text-dim hover:text-text-muted"}`}>
                         {t.label}
                       </button>
@@ -4947,6 +4950,11 @@ export default function App() {
                     {activeTool === 'algorithmic' && (
                       <div className="h-full overflow-y-auto p-4">
                         <GeneratorView />
+                      </div>
+                    )}
+                    {activeTool === 'lfomod' && (
+                      <div className="h-full overflow-y-auto p-4">
+                        <LfoModPanel parts={dm.getActivePattern()?.parts ?? []} />
                       </div>
                     )}
                     {activeTool === 'chords' && (
