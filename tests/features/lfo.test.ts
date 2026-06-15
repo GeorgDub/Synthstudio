@@ -10,6 +10,7 @@ import {
   waveformValue,
   evaluateLfo,
   applyBipolarMod,
+  sampleLfoCycle,
   type LfoShape,
 } from "@/utils/lfo";
 
@@ -151,5 +152,64 @@ describe("applyBipolarMod", () => {
     // base 0, lfo 1, amount 1, span default = 1 → 0 + 1 = 1
     expect(applyBipolarMod(0, 1, 1, -1, 1)).toBeCloseTo(1);
     expect(applyBipolarMod(0, -1, 1, -1, 1)).toBeCloseTo(-1);
+  });
+});
+
+describe("sampleLfoCycle", () => {
+  const sine: LfoShape = { waveform: "sine", rateHz: 1, phase: 0 };
+
+  it("Happy: sine bleibt in [-depth,+depth] und kreuzt Null", () => {
+    const depth = 0.7;
+    const samples = sampleLfoCycle(sine, depth, 64);
+    expect(samples.length).toBe(64);
+    for (const v of samples) {
+      expect(v).toBeGreaterThanOrEqual(-depth - 1e-9);
+      expect(v).toBeLessThanOrEqual(depth + 1e-9);
+    }
+    // Sinus startet bei 0 (phase 0) → Nulldurchgang.
+    expect(samples[0]).toBeCloseTo(0);
+    // Erreicht das positive Maximum nahe +depth (Viertelzyklus).
+    expect(Math.max(...samples)).toBeCloseTo(depth, 1);
+    expect(Math.min(...samples)).toBeCloseTo(-depth, 1);
+  });
+
+  it("Edge: square ist bipolar (+depth / -depth, keine Zwischenwerte)", () => {
+    const square: LfoShape = { waveform: "square", rateHz: 1, phase: 0 };
+    const depth = 0.5;
+    const samples = sampleLfoCycle(square, depth, 32);
+    for (const v of samples) {
+      // Rechteck: nur +depth oder -depth.
+      expect(Math.abs(Math.abs(v) - depth)).toBeLessThan(1e-9);
+    }
+    // Erste Hälfte +depth, irgendwo schaltet es auf -depth um.
+    expect(samples[0]).toBeCloseTo(depth);
+    expect(samples.some((v) => v < 0)).toBe(true);
+  });
+
+  it("Edge: Phasen-Offset verschiebt die Samples", () => {
+    const base = sampleLfoCycle({ ...sine }, 1, 100);
+    const shifted = sampleLfoCycle({ ...sine, phase: 0.25 }, 1, 100);
+    // phase 0.25 → Sinus startet am positiven Maximum (cos-artig).
+    expect(base[0]).toBeCloseTo(0);
+    expect(shifted[0]).toBeCloseTo(1, 1);
+    expect(shifted[0]).not.toBeCloseTo(base[0]);
+  });
+
+  it("Edge: cycles > 1 packt mehrere Perioden in dieselbe Punktzahl", () => {
+    // 2 Zyklen Rechteck → mehr Vorzeichenwechsel als 1 Zyklus.
+    const sq: LfoShape = { waveform: "square", rateHz: 1, phase: 0 };
+    const flips = (arr: number[]) =>
+      arr.reduce((n, v, i) => (i > 0 && Math.sign(v) !== Math.sign(arr[i - 1]) ? n + 1 : n), 0);
+    expect(flips(sampleLfoCycle(sq, 1, 200, 2))).toBeGreaterThan(
+      flips(sampleLfoCycle(sq, 1, 200, 1)),
+    );
+  });
+
+  it("Edge: depth wird auf [0,1] geklemmt, points >= 2", () => {
+    const over = sampleLfoCycle(sine, 5, 1); // depth>1, points<2
+    expect(over.length).toBe(2);
+    for (const v of over) expect(Math.abs(v)).toBeLessThanOrEqual(1 + 1e-9);
+    const neg = sampleLfoCycle({ ...sine, phase: 0.25 }, -3, 4); // depth<0 → 0
+    for (const v of neg) expect(v).toBeCloseTo(0);
   });
 });

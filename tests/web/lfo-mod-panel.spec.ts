@@ -47,3 +47,22 @@ test('"+ LFO" und "+ Route" erzeugen je eine Zeile', async ({ page }) => {
   await addRoute.click();
   await expect(page.getByTestId("lfomod-route-row")).toHaveCount(1);
 });
+
+test("LFO-Zeile zeigt eine Kurven-Vorschau (Canvas mit Maßen + aria-label)", async ({
+  page,
+}) => {
+  await page.getByRole("tab", { name: /^Tools$/ }).click();
+  await page.getByTestId("tools-tab-lfomod").click();
+  await expect(page.getByTestId("lfomod-panel")).toBeVisible();
+
+  await page.getByTestId("lfomod-add-lfo").click();
+  await expect(page.getByTestId("lfomod-lfo-row")).toHaveCount(1);
+
+  // Deterministische, statische Asserts (keine Pixel/Playhead-Position):
+  // Canvas vorhanden, mit erwarteten Maßen + A11y-Label.
+  const canvas = page.getByTestId("lfomod-curve-canvas");
+  await expect(canvas).toBeVisible();
+  await expect(canvas).toHaveAttribute("aria-label", "LFO-Kurven-Vorschau");
+  await expect(canvas).toHaveAttribute("width", "200");
+  await expect(canvas).toHaveAttribute("height", "48");
+});

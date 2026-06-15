@@ -15,9 +15,14 @@
  * Nur semantische --ss-*-Token-Klassen, native Selects/Checkboxen (headless-
  * Playwright-tauglich, kein Radix-Portal).
  */
-import React, { useCallback } from "react";
+import React, { useCallback, useEffect, useRef } from "react";
 import type { PartData } from "@/audio/AudioEngine";
-import type { LfoWaveform } from "@/utils/lfo";
+import {
+  evaluateLfo,
+  sampleLfoCycle,
+  type LfoWaveform,
+  type LfoShape,
+} from "@/utils/lfo";
 import {
   useLfoModStore,
   addLfo,
@@ -45,6 +50,161 @@ const PARAM_LABELS: Record<ModTargetParam, string> = {
   reverbMix: "Reverb Mix",
   delayMix: "Delay Mix",
 };
+
+// ─── Live-Kurven-Visualisierung (Canvas) ────────────────────────────────────
+
+/** Anzahl voller Zyklen, die im Canvas gezeigt werden. */
+const CURVE_CYCLES = 2;
+/** Sample-Punkte über alle Zyklen (Auflösung der gezeichneten Kurve). */
+const CURVE_POINTS = 160;
+const CANVAS_W = 200;
+const CANVAS_H = 48;
+
+/**
+ * Liest ein --ss-*-Token von :root; `.trim()` entfernt führendes Leerzeichen.
+ * BEWUSST kein Hex-Fallback (Hard-Rule: keine hardcodierten Farben im Canvas).
+ * `draw()` läuft nur, wenn getContext("2d") != null (echter Browser) — dort
+ * sind alle --ss-*-Token aus index.css garantiert definiert.
+ */
+function token(name: string): string {
+  return getComputedStyle(document.documentElement)
+    .getPropertyValue(name)
+    .trim();
+}
+
+interface LfoCurveCanvasProps {
+  waveform: LfoWaveform;
+  rateHz: number;
+  depth: number;
+  phase: number;
+  enabled: boolean;
+}
+
+/**
+ * Zeichnet die LFO-Kurve (zwei Zyklen) plus einen mitlaufenden Playhead-Punkt.
+ * Reuse von sampleLfoCycle (Kurve) + evaluateLfo (Playhead-Y) — keine eigene
+ * Wellenform-Math. Farben kommen ausschließlich aus --ss-*-Tokens (das 2D-
+ * Canvas-Context kann keine Tailwind-Klassen nutzen). Eine rAF-Schleife pro
+ * Canvas, wird bei Unmount gecancelt; in jsdom (getContext → null) No-Op.
+ */
+function LfoCurveCanvas({
+  waveform,
+  rateHz,
+  depth,
+  phase,
+  enabled,
+}: LfoCurveCanvasProps) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  // Aktuelle Params via Ref, damit die rAF-Schleife nicht neu aufgesetzt wird.
+  const paramsRef = useRef({ waveform, rateHz, depth, phase, enabled });
+  paramsRef.current = { waveform, rateHz, depth, phase, enabled };
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return; // jsdom / headless ohne Canvas-Support → No-Op
+
+    let raf = 0;
+    const start = typeof performance !== "undefined" ? performance.now() : 0;
+
+    const draw = (now: number) => {
+      const p = paramsRef.current;
+      const w = CANVAS_W;
+      const h = CANVAS_H;
+      const mid = h / 2;
+      const amp = (h / 2) * 0.9; // 10% Rand oben/unten
+
+      const colCurve = token("--ss-accent-primary");
+      const colGrid = token("--ss-border-subtle");
+      const colZero = token("--ss-text-dim");
+      const colBg = token("--ss-bg-base");
+      const colHead = token("--ss-accent-secondary");
+
+      // Hintergrund
+      ctx.fillStyle = colBg;
+      ctx.fillRect(0, 0, w, h);
+
+      // Vertikales Raster (eine Linie pro Zyklus-Grenze)
+      ctx.strokeStyle = colGrid;
+      ctx.lineWidth = 1;
+      for (let c = 1; c < CURVE_CYCLES; c++) {
+        const x = (c / CURVE_CYCLES) * w;
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, h);
+        ctx.stroke();
+      }
+
+      // Null-Linie
+      ctx.strokeStyle = colZero;
+      ctx.beginPath();
+      ctx.moveTo(0, mid);
+      ctx.lineTo(w, mid);
+      ctx.stroke();
+
+      // Kurve (immer auf voller Amplitude [-1,1] gemappt, depth skaliert sie)
+      const shape: LfoShape = { waveform: p.waveform, rateHz: p.rateHz, phase: p.phase };
+      const samples = sampleLfoCycle(shape, p.depth, CURVE_POINTS, CURVE_CYCLES);
+      ctx.strokeStyle = colCurve;
+      ctx.lineWidth = 2;
+      ctx.globalAlpha = p.enabled ? 1 : 0.4;
+      ctx.beginPath();
+      for (let i = 0; i < samples.length; i++) {
+        const x = (i / (samples.length - 1)) * w;
+        const y = mid - samples[i] * amp;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+
+      // Mitlaufender Playhead — Phasenposition aus Wall-Clock.
+      // rateHz frei laufend; bei rateHz<=0 steht der Kopf still.
+      if (p.enabled && p.rateHz > 0) {
+        const elapsed = (now - start) / 1000;
+        // Position innerhalb der gezeigten Zyklen (0..CURVE_CYCLES).
+        const cyclePos = ((elapsed * p.rateHz) % CURVE_CYCLES + CURVE_CYCLES) % CURVE_CYCLES;
+        const headX = (cyclePos / CURVE_CYCLES) * w;
+        const headVal = evaluateLfo(shape, elapsed) * p.depth;
+        const headY = mid - headVal * amp;
+
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = colHead;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(headX, 0);
+        ctx.lineTo(headX, h);
+        ctx.stroke();
+
+        ctx.fillStyle = colHead;
+        ctx.beginPath();
+        ctx.arc(headX, headY, 3, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+
+      raf = requestAnimationFrame(draw);
+    };
+
+    raf = requestAnimationFrame(draw);
+    return () => {
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, []); // Params live via Ref → Schleife einmal aufsetzen, bei Unmount cancel.
+
+  return (
+    <canvas
+      ref={canvasRef}
+      width={CANVAS_W}
+      height={CANVAS_H}
+      data-testid="lfomod-curve-canvas"
+      aria-label="LFO-Kurven-Vorschau"
+      role="img"
+      className="rounded border border-border-color bg-bg-base"
+      style={{ width: CANVAS_W, height: CANVAS_H }}
+    />
+  );
+}
 
 interface LfoModPanelProps {
   /** Ziel-Parts — gleiche Quelle wie Mixer (dm.getActivePattern().parts). */
@@ -219,6 +379,15 @@ export function LfoModPanel({ parts }: LfoModPanelProps) {
                     </span>
                   </label>
                 </div>
+
+                {/* Live-Kurven-Vorschau (reagiert auf Waveform/Rate/Depth/Phase) */}
+                <LfoCurveCanvas
+                  waveform={lfo.waveform}
+                  rateHz={lfo.rateHz}
+                  depth={lfo.depth}
+                  phase={lfo.phase}
+                  enabled={lfo.enabled}
+                />
               </div>
             ))}
           </div>

@@ -72,6 +72,42 @@ export function evaluateLfo(shape: LfoShape, timeSec: number): number {
 }
 
 /**
+ * Sampelt eine LFO-Wellenform über `cycles` volle Zyklen für die Kurven-
+ * Visualisierung (Canvas). Reine, deterministische Funktion — kein rAF, kein
+ * AudioContext. Reuse von `waveformValue` (keine Re-Implementierung der Math).
+ *
+ * Der Phasen-Offset aus `shape.phase` verschiebt die Samples; `depth` (0..1)
+ * skaliert die Amplitude (Master-Scaler der LFO, lebt im Store nicht in
+ * LfoShape — daher als separater Parameter, bewusst KEIN Import von LfoConfig,
+ * um einen Zirkular-Import lfo.ts ↔ useLfoModStore zu vermeiden).
+ *
+ * @param shape   Wellenform + Phasen-Offset (rateHz wird hier ignoriert — die
+ *                X-Achse ist phasenbasiert, nicht zeitbasiert).
+ * @param depth   Amplituden-Scaler 0..1 (geklemmt).
+ * @param points  Anzahl Samples über alle Zyklen (>= 2).
+ * @param cycles  Anzahl voller Zyklen (Default 1).
+ * @returns       Array bipolarer Werte in [-depth, +depth].
+ */
+export function sampleLfoCycle(
+  shape: LfoShape,
+  depth: number,
+  points: number,
+  cycles = 1,
+): number[] {
+  const n = Math.max(2, Math.floor(points));
+  const cyc = Math.max(1, cycles);
+  const d = Math.max(0, Math.min(1, Number.isFinite(depth) ? depth : 0));
+  const phaseOffset = wrapPhase01(shape.phase ?? 0);
+  const out: number[] = new Array(n);
+  for (let i = 0; i < n; i++) {
+    // 0..cyc über die Breite; pro Zyklus eine volle Periode.
+    const t = (i / (n - 1)) * cyc + phaseOffset;
+    out[i] = waveformValue(shape.waveform, t) * d;
+  }
+  return out;
+}
+
+/**
  * Wendet eine bipolare Modulation um einen Basiswert an und klemmt das
  * Ergebnis in [min, max].
  *
