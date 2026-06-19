@@ -28,7 +28,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.282.0",
+    version: "3.283.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -4256,6 +4256,21 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "coordinator",
+      timestamp: "2026-06-19T14:40:00.000Z",
+      done: [
+        "Runde 2026-06-19 konsolidiert: zwei verhaltensneutrale Groessen-Refactors seriell committed (shared Working-Tree, je eigener Commit).",
+        "TASK-272 (refactor, 6c6dcc6): BulkProgressBar verbatim aus SampleBrowser.tsx -> SampleBrowser/BulkProgressBar.tsx (36 LOC, props-only label/current/total, KEINE Imports). SampleBrowser 5475->5463. +2 theme-class-purity Tests.",
+        "TASK-273 (refactor, 0b8526e): 5 Playhead-abonnierende memo-Komponenten verbatim aus DrumMachine.tsx -> DrumMachine/PlayheadComponents.tsx (163 LOC, props-only via usePlayheadStep, kein Parent-Closure-State). DrumMachine 4479->4333. +2 Tests.",
+        "Final committed Tree: pnpm check clean, pnpm test 450 files / 10481 passed / 12 skipped. Surgical staging — examples/e2s/* + screenshots/ NIE gestaged. Release v3.283.0."
+      ],
+      next: [
+        "Folge-Session: TASK-274 (SampleBrowser ~5463 LOC) + TASK-275 (DrumMachine ~4333 LOC) weiter zerlegen.",
+        "Audio/Sim-Playwright non-blocking rot (TASK-262-Env-Gate) — bewusst akzeptiert."
+      ],
+      changed: []
+    },
     {
       agent:     "refactor",
       timestamp: "2026-06-19T14:20:00.000Z",
@@ -15562,7 +15577,12 @@ const INDEX = {
             type: "refactor",
             priority: "low",
             agent: "refactor",
-            status: "open",
+            status: "done",
+            doneIn: "v3.283.0",
+            doneAt: "2026-06-19T14:40:00.000Z",
+            doneBy: "refactor",
+            doneCommit: "6c6dcc6",
+            doneNote: "BulkProgressBar verbatim-move aus SampleBrowser.tsx -> SampleBrowser/BulkProgressBar.tsx (36 LOC). 5475->5463. props-only, KEINE Imports/Helfer, kein Zirkel, token-pur. +2 theme-class-purity Tests.",
             createdAt: "2026-06-15T22:30:00.000Z",
             createdBy: "coordinator",
             title: "Naechste SampleBrowser-Extraktion (Folge TASK-269)",
@@ -15573,11 +15593,38 @@ const INDEX = {
             type: "refactor",
             priority: "low",
             agent: "refactor",
-            status: "open",
+            status: "done",
+            doneIn: "v3.283.0",
+            doneAt: "2026-06-19T14:40:00.000Z",
+            doneBy: "refactor",
+            doneCommit: "0b8526e",
+            doneNote: "PlayheadComponents (5 memo-Komponenten, Playhead-abonnierend, props-only via usePlayheadStep) verbatim aus DrumMachine.tsx -> DrumMachine/PlayheadComponents.tsx (163 LOC). 4479->4333. kein Zirkel, token-pur. +2 Tests.",
             createdAt: "2026-06-15T22:30:00.000Z",
             createdBy: "coordinator",
             title: "DrumMachine.tsx weiter zerlegen (Folge TASK-255)",
             description: "DrumMachine.tsx (~4479 LOC nach ElectribePickerModal-Extraktion) weiter in props-only Sub-Komponenten/Hooks aufteilen (Scout: makeE2sSampleResolver->utils, Playhead*-Sub-Komponenten). Verhaltensneutral, Tests vor/nach gruen, EIN Paeckchen.",
+        },
+        {
+            id: "TASK-274",
+            type: "refactor",
+            priority: "low",
+            agent: "refactor",
+            status: "open",
+            createdAt: "2026-06-19T14:40:00.000Z",
+            createdBy: "coordinator",
+            title: "Naechste SampleBrowser-Extraktion (Folge TASK-272)",
+            description: "SampleBrowser.tsx noch ~5463 LOC. Naechstes sauberes props-only Paeckchen extrahieren (Scout, Muster ImportProgress/PlaylistPanel/WaveformPanel/BulkProgressBar). CategoryMenu verworfen (CATEGORIES-Kopplung). Verhaltensneutral, verbatim, Tests vor/nach gruen, EIN Paeckchen.",
+        },
+        {
+            id: "TASK-275",
+            type: "refactor",
+            priority: "low",
+            agent: "refactor",
+            status: "open",
+            createdAt: "2026-06-19T14:40:00.000Z",
+            createdBy: "coordinator",
+            title: "Naechste DrumMachine-Extraktion (Folge TASK-273)",
+            description: "DrumMachine.tsx noch ~4333 LOC. Naechstes sauberes props-only Sub-Panel/Modal extrahieren (Scout, Muster ElectribePickerModal/PlayheadComponents; INDEX-Hinweis makeE2sSampleResolver->utils). Verhaltensneutral, verbatim, Tests vor/nach gruen, EIN Paeckchen.",
         },
         {
             id: "TASK-255-FOLLOWUP",
