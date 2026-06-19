@@ -42,6 +42,8 @@ import { ImportProgress } from "./ImportProgress";
 import { PlaylistPanel, type Playlist } from "./PlaylistPanel";
 // v3.281 (TASK-269): Waveform-Panel props-only ausgelagert (verbatim).
 import { WaveformPanel } from "./WaveformPanel";
+// v3.282 (TASK-272): Bulk-Action Floating Progress Bar props-only ausgelagert (verbatim).
+import { BulkProgressBar } from "./BulkProgressBar";
 import { AudioEngine } from "@/audio/AudioEngine";
 // v3.148: Sample-Sort-Modes.
 import {
@@ -3663,25 +3665,11 @@ export function SampleBrowser({
 
       {/* v3.231 ext-16: Bulk-Action Floating Progress Bar */}
       {bulkProgress && (
-        <div
-          data-testid="sample-browser-bulk-progress"
-          className="absolute bottom-2 right-2 bg-bg-panel border border-border-color rounded px-3 py-1.5 shadow z-10"
-        >
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] text-text-primary">{bulkProgress.label}</span>
-            <span className="text-[10px] font-mono text-text-muted">
-              {bulkProgress.current}/{bulkProgress.total}
-            </span>
-            <div className="w-24 h-1.5 bg-bg-elevated rounded overflow-hidden">
-              <div
-                className="h-full bg-accent-secondary transition-all"
-                style={{
-                  width: `${(bulkProgress.current / Math.max(1, bulkProgress.total)) * 100}%`,
-                }}
-              />
-            </div>
-          </div>
-        </div>
+        <BulkProgressBar
+          label={bulkProgress.label}
+          current={bulkProgress.current}
+          total={bulkProgress.total}
+        />
       )}
 
       {/* Kategorie-Kontextmenü */}

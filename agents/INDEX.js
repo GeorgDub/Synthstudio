@@ -2479,8 +2479,13 @@ const INDEX = {
       ownedBy:  "frontend"
     },
     "client/src/components/SampleBrowser/SampleBrowser.tsx (v3.55.0)": {
-      role:     "v3.281 (TASK-269): WaveformPanel-Subkomponente raus -> ./WaveformPanel.tsx (verbatim, props-only). SampleBrowser 5616->5475 LOC. getWaveformColor/CATEGORY_WAVEFORM_COLORS/formatDuration(single) + orphaned WaveformDisplay-Import entfernt. formatBytes bleibt (Sample-Liste). | v3.226: Bulk-FreqShift-Action in Multi-Select-Bar (Slider shiftHz -500..500 step=10 default 50 + FSH-Button). handleBulkFreqShift: AudioEngine.loadSample -> applyFreqShift -> encodeWav -> Blob -> OfflineAudioContext -> onTransformSample. v3.225 Bulk-Exciter + v3.224 Haas + v3.222 Bitcrush + v3.221 TimeStretch + v3.219 NoiseReduce + v3.218 Granulize + v3.197 Stereo-Width + v3.195 Saturator + v3.194 Pitch-Shift + v3.188-v3.193 Compressor/Delay/Sidechain unveraendert.",
-      lastSeen: "2026-06-15T21:50:00.000Z",
+      role:     "v3.282 (TASK-272): Bulk-Action Floating Progress Bar raus -> ./BulkProgressBar.tsx (verbatim, props-only label/current/total). SampleBrowser 5475->5463 LOC. Parent behaelt {bulkProgress && (...)}-Guard. | v3.281 (TASK-269): WaveformPanel-Subkomponente raus -> ./WaveformPanel.tsx (verbatim, props-only). SampleBrowser 5616->5475 LOC. getWaveformColor/CATEGORY_WAVEFORM_COLORS/formatDuration(single) + orphaned WaveformDisplay-Import entfernt. formatBytes bleibt (Sample-Liste). | v3.226: Bulk-FreqShift-Action in Multi-Select-Bar (Slider shiftHz -500..500 step=10 default 50 + FSH-Button). handleBulkFreqShift: AudioEngine.loadSample -> applyFreqShift -> encodeWav -> Blob -> OfflineAudioContext -> onTransformSample. v3.225 Bulk-Exciter + v3.224 Haas + v3.222 Bitcrush + v3.221 TimeStretch + v3.219 NoiseReduce + v3.218 Granulize + v3.197 Stereo-Width + v3.195 Saturator + v3.194 Pitch-Shift + v3.188-v3.193 Compressor/Delay/Sidechain unveraendert.",
+      lastSeen: "2026-06-19T14:10:00.000Z",
+      ownedBy:  "frontend"
+    },
+    "client/src/components/SampleBrowser/BulkProgressBar.tsx (v3.282 TASK-272)": {
+      role:     "v3.282 (TASK-272): Bulk-Action Floating Progress Bar verbatim aus SampleBrowser.tsx extrahiert (props-only label/current/total, KEIN State/Hook/Effect, KEINE Imports -> Zirkel by construction ausgeschlossen). Rendert absolut positioniertes Floating-Panel (bottom-2 right-2) mit Label + current/total + Progress-Bar (width = current/max(1,total)*100%). data-testid='sample-browser-bulk-progress' verbatim erhalten. Parent behaelt {bulkProgress && (...)}-Guard und reicht die drei Felder als Props. Token-pur (theme-class-purity-Auto-Discovery gruen). Verhaltensneutral, identische DOM-Ausgabe.",
+      lastSeen: "2026-06-19T14:10:00.000Z",
       ownedBy:  "frontend"
     },
     "client/src/components/SampleBrowser/WaveformPanel.tsx (v3.281 TASK-269)": {
@@ -4246,6 +4251,25 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "refactor",
+      timestamp: "2026-06-19T14:10:00.000Z",
+      done: [
+        "TASK-272 (refactor): Bulk-Action Floating Progress Bar verbatim aus SampleBrowser.tsx -> SampleBrowser/BulkProgressBar.tsx (36 LOC). Props-only (label/current/total Skalare), KEIN interner State/Hook/Effect, KEINE Modul-Helfer, KEINE Imports in der neuen Datei -> Zirkel ausgeschlossen by construction. Parent behaelt {bulkProgress && (...)}-Guard und reicht die drei Felder als Props. Identische DOM-Ausgabe inkl. data-testid='sample-browser-bulk-progress'.",
+        "SampleBrowser.tsx 5475 -> 5463 (-12 netto: -22 inline-Block, +2 Import-Zeilen, +8 Aufruf). Import einseitig { BulkProgressBar } from './BulkProgressBar'.",
+        "Block bewusst gewaehlt: token-pur (bg-bg-panel/bg-bg-elevated/bg-accent-secondary/text-text-primary/text-text-muted), null Closure-Kopplung. CategoryMenu (CATEGORIES-Kopplung) sowie Status-Leiste (teilt formatBulkDuration mit Z4009 -> shared-helper-Frage) bewusst VERWORFEN zugunsten des saubersten Schnitts.",
+        "Gates: check clean (vorher+nachher). test Baseline 450 files / 10477 passed / 12 skipped -> nachher 450 files / 10479 passed (+2 theme-class-purity Auto-Discovery der neuen token-puren .tsx: palette + hex describe) / 12 skipped. KEIN manueller Test-Edit noetig (Auto-Discovery deckt die +2-Pflicht). NICHT committed (Coordinator committet seriell)."
+      ],
+      next: [
+        "Owner-Hinweis (SampleBrowser-Owner frontend): Bulk-Progress-Bar wohnt jetzt in ./BulkProgressBar.tsx (props-only, von dort exportiert), nicht mehr inline. data-testid unveraendert.",
+        "Naechste SampleBrowser-Extraktion (noch ~5463 LOC): Header/Toolbar-Block (Z~3698-3739, callbacks-only: onImportFiles/Folder/Zip + isElectron + openSampleBrowserWindow, token-pur) ist sauberer naechster Kandidat. Status-Leiste braucht erst Entscheidung zu formatBulkDuration (private Kopie wie WaveformPanel/formatBytes ODER shared-util). CategoryMenu weiter blockiert durch CATEGORIES-Kopplung.",
+        "Audio/Sim-Playwright non-blocking rot (TASK-262-Env-Gate) — nicht jagen."
+      ],
+      changed: [
+        "client/src/components/SampleBrowser/SampleBrowser.tsx",
+        "client/src/components/SampleBrowser/BulkProgressBar.tsx"
+      ]
+    },
     {
       agent:     "coordinator",
       timestamp: "2026-06-15T22:30:00.000Z",
