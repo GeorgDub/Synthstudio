@@ -2483,6 +2483,11 @@ const INDEX = {
       lastSeen: "2026-06-19T14:10:00.000Z",
       ownedBy:  "frontend"
     },
+    "client/src/components/DrumMachine/PlayheadComponents.tsx (v3.282 TASK-273)": {
+      role:     "v3.282 (TASK-273): Cluster der 5 Playhead-abonnierenden Kind-Komponenten verbatim aus DrumMachine.tsx extrahiert (TASK-247-Origin). Exportiert { PlayheadChannelStrip, PlayheadPolyrhythmVisualizer, PlayheadPageSwitcher, PlayheadStepNumberRow, PlayheadFooterStep } — alle memo()-wrapped, props-only, lesen den Playback-Step selbst via usePlayheadStep()-Hook (KEINE Parent-Closure/State-Kopplung). KEINE exklusiven Helfer/Typen mitgezogen — alle Imports sind shared und werden vom Parent weiter genutzt (usePlayheadStep aus usePlayheadStore, type PatternData aus AudioEngine, PolyrhythmVisualizer/ChannelStrip+ChannelStripProps + stepGroupBorder/getPageCount/getPageStepRange/getPageForStep/getPageRangeLabel aus den DrumMachine-Sibling-Files). Importiert NIE aus DrumMachine.tsx -> Zirkel by construction ausgeschlossen. text-white verbatim belassen (kein Numeric-Shade -> theme-class-purity-Regex trippt nicht; Auto-Discovery gruen). Verhaltensneutral, identische Render-Ausgabe inkl. data-testids dm-page-switcher/dm-page-*/dm-page-autofollow.",
+      lastSeen: "2026-06-19T14:20:00.000Z",
+      ownedBy:  "frontend"
+    },
     "client/src/components/SampleBrowser/BulkProgressBar.tsx (v3.282 TASK-272)": {
       role:     "v3.282 (TASK-272): Bulk-Action Floating Progress Bar verbatim aus SampleBrowser.tsx extrahiert (props-only label/current/total, KEIN State/Hook/Effect, KEINE Imports -> Zirkel by construction ausgeschlossen). Rendert absolut positioniertes Floating-Panel (bottom-2 right-2) mit Label + current/total + Progress-Bar (width = current/max(1,total)*100%). data-testid='sample-browser-bulk-progress' verbatim erhalten. Parent behaelt {bulkProgress && (...)}-Guard und reicht die drei Felder als Props. Token-pur (theme-class-purity-Auto-Discovery gruen). Verhaltensneutral, identische DOM-Ausgabe.",
       lastSeen: "2026-06-19T14:10:00.000Z",
@@ -4251,6 +4256,25 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "refactor",
+      timestamp: "2026-06-19T14:20:00.000Z",
+      done: [
+        "TASK-273 (refactor): Playhead-abonnierende Kind-Komponenten-Cluster (TASK-247-Origin) verbatim aus DrumMachine.tsx -> DrumMachine/PlayheadComponents.tsx (163 LOC). 5 memo()-Komponenten exportiert: PlayheadChannelStrip, PlayheadPolyrhythmVisualizer, PlayheadPageSwitcher, PlayheadStepNumberRow, PlayheadFooterStep. Alle props-only + lesen Step via usePlayheadStep()-Hook (KEINE Parent-Closure/State-Kopplung). Identische Render-Ausgabe inkl. data-testid dm-page-switcher/dm-page-*/dm-page-autofollow.",
+        "Imports der neuen Datei nur abwaerts (usePlayheadStore, AudioEngine-Type, ./PolyrhythmVisualizer, ./ChannelStrip, ./drumMachineHelpers) -> KEIN Zirkel (PlayheadComponents importiert NIE aus DrumMachine.tsx). KEIN Token-Change: text-white (Zeile in PlayheadPageSwitcher) hat keinen Numeric-Shade -> trippt theme-class-purity-Regex nicht (verbatim belassen).",
+        "DrumMachine.tsx 4479 -> 4333 (-146 netto). Orphan-Imports nach Schnitt geprunt (noUnusedLocals): usePlayheadStep aus Z17 (getPlayheadStep/subscribePlayhead bleiben), ./PolyrhythmVisualizer + ./ChannelStrip(+ChannelStripProps) ganze Import-Zeilen entfernt, stepGroupBorder+getPageRangeLabel aus drumMachineHelpers-Import geprunt (getPageCount/getPageStepRange/getPageForStep bleiben — Z2144/2164/4023). Import { 5 Playhead* } from './PlayheadComponents' ergaenzt.",
+        "Gates: check clean (vorher+nachher). test Baseline 450 files / 10479 passed / 12 skipped -> nachher 450 files / 10481 passed (+2 theme-class-purity Auto-Discovery der neuen .tsx: palette + hex describe) / 12 skipped. DrumMachine.tsx weiter purity-gruen. NICHT committed (Coordinator committet seriell)."
+      ],
+      next: [
+        "Owner-Hinweis (DrumMachine-Owner frontend): 5 Playhead*-Wrapper wohnen jetzt in ./PlayheadComponents.tsx (von dort exportiert/importiert), nicht mehr inline. Render-Ausgabe + data-testids unveraendert.",
+        "Naechste DrumMachine-Extraktion (noch ~4333 LOC): makeE2sSampleResolver (Z~1049-1077, pure Funktion, 0 JSX, single call site ~1793) ist sauberster naechster Kandidat -> nach DrumMachine/audioLaneHelpers.ts oder neue e2sSampleResolver.ts. Weitere props-only Sub-Panels mit minimaler Closure-Kopplung pruefen.",
+        "Audio/Sim-Playwright non-blocking rot (TASK-262-Env-Gate) — nicht jagen."
+      ],
+      changed: [
+        "client/src/components/DrumMachine/DrumMachine.tsx",
+        "client/src/components/DrumMachine/PlayheadComponents.tsx"
+      ]
+    },
     {
       agent:     "refactor",
       timestamp: "2026-06-19T14:10:00.000Z",
