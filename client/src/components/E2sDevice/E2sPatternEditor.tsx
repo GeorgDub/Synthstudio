@@ -8,13 +8,14 @@
  * gestopptem Sequencer). Opake/unbekannte Bytes (inkl. Motion) bleiben erhalten.
  */
 import { useState } from "react";
-import { Save, RefreshCw } from "lucide-react";
+import { Save, RefreshCw, RotateCcw, RotateCw } from "lucide-react";
 import { useE2sDeviceStore } from "@/store/useE2sDeviceStore";
 import {
   setStepField,
   setPartField,
   setPatternBpm,
   setPatternName,
+  rotatePartSequence,
   type StepField,
 } from "@/utils/korg/e2PatternEdit";
 
@@ -91,6 +92,29 @@ export function E2sPatternEditor() {
         <span className="text-[10px] text-text-dim">
           {p?.activeCount ?? 0} aktiv · Osc {p?.sampleRef ?? 0}
         </span>
+        <div className="flex items-center gap-0.5 ml-auto">
+          <span className="text-[10px] text-text-dim">Seq</span>
+          <button
+            data-testid="e2s-seq-rot-left"
+            onClick={() =>
+              edit(rotatePartSequence(body, part, 1, dec.stepLength))
+            }
+            title="Sequenz um 1 Step nach links rotieren"
+            className="p-1 rounded bg-bg-base text-text-muted hover:text-text-primary transition-colors"
+          >
+            <RotateCcw size={12} />
+          </button>
+          <button
+            data-testid="e2s-seq-rot-right"
+            onClick={() =>
+              edit(rotatePartSequence(body, part, -1, dec.stepLength))
+            }
+            title="Sequenz um 1 Step nach rechts rotieren"
+            className="p-1 rounded bg-bg-base text-text-muted hover:text-text-primary transition-colors"
+          >
+            <RotateCw size={12} />
+          </button>
+        </div>
       </div>
 
       {p && (

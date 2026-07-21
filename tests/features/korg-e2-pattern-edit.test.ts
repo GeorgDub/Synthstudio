@@ -4,6 +4,7 @@ import {
   setPartField,
   setPatternBpm,
   setPatternName,
+  rotatePartSequence,
 } from "../../client/src/utils/korg/e2PatternEdit";
 import {
   decodePatternBody,
@@ -76,6 +77,41 @@ describe("setPartField", () => {
   it("sets sampleRef as u16 LE", () => {
     const body = setPartField(mkBody(), 0, "sampleRef", 519);
     expect(decodePatternBody(body).parts[0].sampleRef).toBe(519);
+  });
+});
+
+describe("rotatePartSequence", () => {
+  it("rotates the active step window left, carrying whole records (note+motion)", () => {
+    let body = mkBody();
+    // mark 3 distinct steps in part 1 within a 64-window
+    body = setStepField(body, 1, 0, "note", 10);
+    body = setStepField(body, 1, 1, "note", 20);
+    body = setStepField(body, 1, 2, "note", 30);
+    // seed motion on step 0 to prove records move whole
+    const m0 = stepBase(1, 0) + STEP_MOTION_OFFSET;
+    body[m0] = 0x55;
+    const out = rotatePartSequence(body, 1, 1, 64); // left by 1
+    const dec = decodePatternBody(out);
+    // step 0's content (note 10 + motion) is now at step 63 (wrapped)
+    expect(dec.parts[1].steps[63].note).toBe(10);
+    expect(out[stepBase(1, 63) + STEP_MOTION_OFFSET]).toBe(0x55);
+    // old step 1 → now step 0
+    expect(dec.parts[1].steps[0].note).toBe(20);
+    expect(dec.parts[1].steps[1].note).toBe(30);
+  });
+
+  it("wraps rotation modulo the window and is a no-op at 0", () => {
+    let body = mkBody();
+    body = setStepField(body, 0, 0, "note", 42);
+    // rotating by the full window returns the original
+    const full = rotatePartSequence(body, 0, 64, 64);
+    expect(decodePatternBody(full).parts[0].steps[0].note).toBe(42);
+    expect(rotatePartSequence(body, 0, 0, 64)).toEqual(body);
+  });
+
+  it("ignores out-of-range part", () => {
+    const body = mkBody();
+    expect(rotatePartSequence(body, 99, 1, 64)).toEqual(body);
   });
 });
 

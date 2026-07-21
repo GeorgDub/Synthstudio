@@ -104,6 +104,41 @@ export function setPartField(
   return out;
 }
 
+/**
+ * Rotiert die Step-Sequenz eines Parts um `rot` Schritte (links-positiv),
+ * innerhalb des aktiven Step-Fensters `stepCount` (16/32/64). Ganze 12-Byte-
+ * Step-Records werden umsortiert → Note/Velocity/Gate UND Motion wandern mit.
+ * Nicht-destruktive Kopie. Verifiziert gegen bangcorrupts e2seqrot.py (rotate =
+ * l[n:]+l[:n]), hier generalisiert auf die tatsächliche Pattern-Länge.
+ */
+export function rotatePartSequence(
+  body: Uint8Array,
+  part: number,
+  rot: number,
+  stepCount: number
+): Uint8Array {
+  const out = body.slice();
+  if (part < 0 || part >= PART_COUNT) return out;
+  const count = Math.max(
+    1,
+    Math.min(STEPS_PER_PART, Math.floor(stepCount) || 0)
+  );
+  const base = partBase(part) + PART_SEQ_OFFSET;
+  if (base + count * PART_SEQ_STEP_SIZE > out.length) return out;
+  const n = (((Math.floor(rot) || 0) % count) + count) % count;
+  if (n === 0) return out;
+  // Kopie der count Step-Records, dann links-rotiert zurückschreiben.
+  const recs: Uint8Array[] = [];
+  for (let i = 0; i < count; i++) {
+    const o = base + i * PART_SEQ_STEP_SIZE;
+    recs.push(out.slice(o, o + PART_SEQ_STEP_SIZE));
+  }
+  for (let i = 0; i < count; i++) {
+    out.set(recs[(i + n) % count], base + i * PART_SEQ_STEP_SIZE);
+  }
+  return out;
+}
+
 /** Setzt das BPM×10-Feld (u16 LE). z.B. 128.0 BPM → 1280. */
 export function setPatternBpm(body: Uint8Array, bpm: number): Uint8Array {
   const out = body.slice();
