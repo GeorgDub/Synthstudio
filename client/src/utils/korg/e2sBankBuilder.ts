@@ -89,7 +89,7 @@ import { floatToInt16LeBytes, sanitizeE2sSlotName } from "./audioProcessor";
 
 /** Eingabe-Spec für einen einzelnen Slot in `buildE2sBank`. */
 export interface E2sSlotInput {
-  /** Slot-Index in der 250-Entry-Offset-Table (0..249). */
+  /** Slot-Index in der 1002-Entry-Offset-Table (0..1001; hacktribe-User ≥ 501). */
   slotIndex: number;
   /**
    * Sample-Nummer, wie sie das Gerät anzeigt (esli-Body @ +0x56, u16 LE).

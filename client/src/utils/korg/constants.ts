@@ -90,8 +90,10 @@ export const ESX1_SIZE_FILE_MIN = 0x00250010;
 export const ESX1_EMPTY_OFFSET = 0xffffffff;
 
 // ─── E2S device limits ────────────────────────────────────────────────────────
-// SoT: constants.py:65-74
-export const E2S_MAX_SLOTS = 250;
+// SoT: ESX-Editor constants.py:66 (E2S_MAX_SLOTS = 1002). Der frühere Wert 250
+// war ein Fehl-Port der Vor-TASK-029-Analyse (siehe E2S_ALL_OFFSET_TABLE_START).
+// Die `.all`-Wire-Tabelle reserviert genau 1002 LE32-Einträge (0x0058..0x1000).
+export const E2S_MAX_SLOTS = 1002;
 /** Maximum user-visible sample name length im Device-UI; on-disk speichert das
  *  korg-chunk nur 16 Bytes (ESLI_NAME_LEN). */
 export const E2S_NAME_MAX_CHARS = 24;
@@ -108,16 +110,16 @@ export const E2S_ALL_SIGNATURE = new Uint8Array([
   0x6c, 0x6c, 0x1a, 0x00, // "ll\x1a\0"
 ]);
 export const E2S_ALL_SIGNATURE_LEN = E2S_ALL_SIGNATURE.length; // 16
-// ⚠️ DISKREPANZ zu Primärquellen (bitte gegen echte Geräte-`.all` prüfen):
-// Oe2sSLE (e2s_sample_all.py) UND hacktribe (`get_sample_pointer` = `i*4 + 0x10`)
-// lesen die Offset-Tabelle @ **0x0010** mit **1020** u32-Slots (füllt bis 0x1000).
-// Unser Wert 0x07E0 / 250 Slots weicht davon ab und deckelt bei 250 — hacktribe
-// braucht aber User-Sample-Slots ≥ 501. Der Kommentar oben behauptet
-// "verified gegen e2sSample.all 2026-05-17"; bevor hier etwas geändert wird, gegen
-// eine echte, aktuelle Geräte-Datei gegenprüfen. Siehe Omnitribe-Doc
-// docs/reverse/e2s_ecosystem_dossier.md §3/§7.
-export const E2S_ALL_OFFSET_TABLE_START = 0x07e0;
-export const E2S_ALL_OFFSET_TABLE_BYTES = E2S_MAX_SLOTS * 4; // 1000
+// FIXED (v3.x): Offset-Tabelle @ 0x0058 mit 1002 LE32-Einträgen, endet exakt bei
+// 0x1000 (Start der Sample-Area). SoT: ESX-Editor e2s_builder.py + constants.py,
+// bit-exakt round-trip-verifiziert gegen 14 echte Device-Dumps (TASK-029,
+// 2026-05-19). Der frühere Wert 0x07E0/250 war ein Artefakt: die *eine* damalige
+// Test-`.all` legte ihre 11 Factory-Samples bei Tabellen-Index 482 ab, und
+// 0x0058 + 482*4 == 0x07E0 — der erste Nicht-Null-Eintrag landete zufällig dort.
+// Bytes 0x0010..0x0058 = 72 B Null-Padding (reserved). (Oe2sSLE liest äquivalent
+// ab 0x0010/1020, inkl. dieser 18 Padding-Slots — dieselben Sample-Offsets.)
+export const E2S_ALL_OFFSET_TABLE_START = 0x0058;
+export const E2S_ALL_OFFSET_TABLE_BYTES = E2S_MAX_SLOTS * 4; // 1002 * 4 = 4008 → 0x0058+0xFA8 = 0x1000
 export const E2S_ALL_SAMPLE_AREA_START = 0x1000;
 
 // ─── korg/esli sub-chunk inside each E2S RIFF/WAVE ───────────────────────────
