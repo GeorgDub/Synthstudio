@@ -34,9 +34,11 @@ export const E2NrpnCategory = {
 } as const;
 
 /**
- * FX-Slot-Adressierung (0x00..0x20). hacktribe MIDI.md: "2 per part, one for
- * MFX". Annahme: Slot = part*2 + which (which 0/1 = IFX-A/-B), MFX = 0x20.
- * ⚠️ Gegen hacktribe-editor gegenprüfen, bevor als final behandelt.
+ * FX-Slot-Adressierung (0x00..0x20 = 33 Slots). Verifiziert: hacktribe MIDI.md
+ * ("FX Slot 0x00-0x20, 2 per part, one for MFX") + ht_fx_ram_format.py
+ * (33 Edit-Buffer, 0..0x1F IFX + 0x20 MFX). Also 16 Parts × 2 = 32 IFX-Slots
+ * (0..31) + MFX = 0x20. Slot = part*2 + which; which 0/1 = die zwei IFX pro Part
+ * (hier als IFX-A/-B benannt).
  */
 export const MFX_FX_SLOT = 0x20;
 export function ifxFxSlot(part: number, which: 0 | 1 = 0): number {
