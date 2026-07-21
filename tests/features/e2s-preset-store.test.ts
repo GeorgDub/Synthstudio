@@ -9,6 +9,8 @@ import {
   copyE2sPreset,
   restoreE2sBackup,
   removeE2sBackup,
+  updateE2sBackupBytes,
+  writeE2sPresetBytes,
   getE2sPresetState,
   __resetE2sPresetForTests,
 } from "../../client/src/store/useE2sPresetStore";
@@ -183,5 +185,33 @@ describe("useE2sPresetStore (via device bridge + fake hacktribe RAM)", () => {
     const id = getE2sPresetState().backups[0].id;
     removeE2sBackup(id);
     expect(getE2sPresetState().backups).toHaveLength(0);
+  });
+
+  it("updateBackupBytes replaces a backup's bytes in-place (field-edit)", async () => {
+    await connectE2sDevice(fakeHacktribeAccess().access);
+    await captureE2sPreset("ifx", 0);
+    const id = getE2sPresetState().backups[0].id;
+    const edited = getE2sPresetState().backups[0].bytes.slice();
+    edited[10] = 0x77;
+    updateE2sBackupBytes(id, edited);
+    expect(getE2sPresetState().backups[0].bytes[10]).toBe(0x77);
+    expect(getE2sPresetState().backups).toHaveLength(1);
+  });
+
+  it("writeE2sPresetBytes writes edited bytes into a slot (round-trip via RAM)", async () => {
+    const { access, ram } = fakeHacktribeAccess();
+    await connectE2sDevice(access);
+    await captureE2sPreset("ifx", 0);
+    const edited = getE2sPresetState().backups[0].bytes.slice();
+    edited[10] = 0x77;
+    const ok = await writeE2sPresetBytes("ifx", 3, edited);
+    expect(ok).toBe(true);
+    expect(ram.get(IFX_BASE_ADDR + IFX_STRIDE * 3 + 10)).toBe(0x77);
+  });
+
+  it("writeE2sPresetBytes returns false when no device is connected", async () => {
+    const ok = await writeE2sPresetBytes("ifx", 0, new Uint8Array(IFX_STRIDE));
+    expect(ok).toBe(false);
+    expect(getE2sPresetState().error).toMatch(/Kein Gerät/);
   });
 });

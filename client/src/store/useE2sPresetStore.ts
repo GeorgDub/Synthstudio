@@ -148,6 +148,39 @@ export function clearE2sBackups(): void {
   set({ backups: [] });
 }
 
+/**
+ * Ersetzt die Bytes eines Backups in-place (nach Feld-Editing). Der Editor
+ * dekodiert ein device-gelesenes Backup, ändert bekannte Offsets nicht-destruktiv
+ * und legt das Ergebnis hier ab — die Herkunft bleibt "vom Gerät gelesen".
+ */
+export function updateE2sBackupBytes(
+  backupId: number,
+  bytes: Uint8Array
+): void {
+  set({
+    backups: _state.backups.map(x => (x.id === backupId ? { ...x, bytes } : x)),
+  });
+}
+
+/**
+ * Schreibt einen (editierten) Preset-/Groove-Blob in einen Slot. Die Bytes
+ * stammen aus einem device-gelesenen Backup, das nur an bekannten Offsets
+ * nicht-destruktiv verändert wurde. Länge wird gegen das erwartete Format
+ * geprüft, bevor geschrieben wird. Wartet auf ACK.
+ */
+export async function writeE2sPresetBytes(
+  kind: PresetKind,
+  index: number,
+  bytes: Uint8Array
+): Promise<boolean> {
+  const r = await withBridge(`write ${kind} ${index}`, async b => {
+    if (kind === "ifx") await b.writeIfxPreset(index, bytes);
+    else await b.writeGrooveTemplate(index, bytes);
+    return true;
+  });
+  return r === true;
+}
+
 /** Test-Hook. */
 export function __resetE2sPresetForTests(): void {
   _state = defaultState();
@@ -163,6 +196,12 @@ export interface E2sPresetStoreApi extends E2sPresetState {
   restore: (backupId: number, toIndex: number) => Promise<void>;
   removeBackup: (backupId: number) => void;
   clearBackups: () => void;
+  updateBackupBytes: (backupId: number, bytes: Uint8Array) => void;
+  writeBytes: (
+    kind: PresetKind,
+    index: number,
+    bytes: Uint8Array
+  ) => Promise<boolean>;
 }
 
 export function useE2sPresetStore(): E2sPresetStoreApi {
@@ -181,5 +220,7 @@ export function useE2sPresetStore(): E2sPresetStoreApi {
     restore: restoreE2sBackup,
     removeBackup: removeE2sBackup,
     clearBackups: clearE2sBackups,
+    updateBackupBytes: updateE2sBackupBytes,
+    writeBytes: writeE2sPresetBytes,
   };
 }

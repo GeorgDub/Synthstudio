@@ -13,9 +13,11 @@ import {
   Trash2,
   RefreshCw,
   AlertTriangle,
+  Sliders,
 } from "lucide-react";
 import { useE2sDeviceStore } from "@/store/useE2sDeviceStore";
 import { useE2sPresetStore, type PresetKind } from "@/store/useE2sPresetStore";
+import { E2sPresetEditor } from "./E2sPresetEditor";
 
 const MAX_INDEX: Record<PresetKind, number> = { ifx: 99, groove: 127 };
 
@@ -82,6 +84,7 @@ export function E2sPresetPanel() {
   const [restoreTargets, setRestoreTargets] = useState<Record<number, number>>(
     {}
   );
+  const [editingId, setEditingId] = useState<number | null>(null);
 
   if (device.status !== "connected") return null;
 
@@ -153,46 +156,67 @@ export function E2sPresetPanel() {
           {preset.backups.map(b => {
             const max = b.kind === "ifx" ? 99 : 127;
             const target = restoreTargets[b.id] ?? b.index;
+            const editing = editingId === b.id;
             return (
-              <div
-                key={b.id}
-                className="flex items-center gap-1.5 p-1.5 rounded bg-bg-base border border-border-color"
-              >
-                <span className="text-[10px] text-text-muted flex-1">
-                  {b.kind.toUpperCase()} Slot {b.index} · {b.bytes.length} B
-                </span>
-                <input
-                  type="number"
-                  min={0}
-                  max={max}
-                  value={target}
-                  onChange={e =>
-                    setRestoreTargets(m => ({
-                      ...m,
-                      [b.id]: Math.max(
-                        0,
-                        Math.min(max, Number(e.target.value) || 0)
-                      ),
-                    }))
-                  }
-                  className="w-14 text-xs px-1.5 py-0.5 rounded bg-bg-elevated border border-border-color text-text-primary"
-                  aria-label="Ziel-Slot"
-                />
-                <button
-                  disabled={preset.busy}
-                  onClick={() => preset.restore(b.id, target)}
-                  className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-bg-elevated text-text-primary disabled:opacity-50 hover:bg-bg-panel transition-colors"
-                  title="Backup in Ziel-Slot schreiben"
-                >
-                  <RotateCcw size={11} /> Restore
-                </button>
-                <button
-                  onClick={() => preset.removeBackup(b.id)}
-                  className="text-text-dim hover:text-accent-danger transition-colors"
-                  aria-label="Backup entfernen"
-                >
-                  <Trash2 size={12} />
-                </button>
+              <div key={b.id} className="space-y-1">
+                <div className="flex items-center gap-1.5 p-1.5 rounded bg-bg-base border border-border-color">
+                  <span className="text-[10px] text-text-muted flex-1">
+                    {b.kind.toUpperCase()} Slot {b.index} · {b.bytes.length} B
+                  </span>
+                  <button
+                    data-testid={`e2s-backup-edit-${b.id}`}
+                    onClick={() => setEditingId(editing ? null : b.id)}
+                    className={`flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded transition-colors ${
+                      editing
+                        ? "bg-accent-primary text-text-primary"
+                        : "bg-bg-elevated text-text-primary hover:bg-bg-panel"
+                    }`}
+                    title="Felder editieren (bekannte Offsets)"
+                  >
+                    <Sliders size={11} /> Edit
+                  </button>
+                  <input
+                    type="number"
+                    min={0}
+                    max={max}
+                    value={target}
+                    onChange={e =>
+                      setRestoreTargets(m => ({
+                        ...m,
+                        [b.id]: Math.max(
+                          0,
+                          Math.min(max, Number(e.target.value) || 0)
+                        ),
+                      }))
+                    }
+                    className="w-14 text-xs px-1.5 py-0.5 rounded bg-bg-elevated border border-border-color text-text-primary"
+                    aria-label="Ziel-Slot"
+                  />
+                  <button
+                    disabled={preset.busy}
+                    onClick={() => preset.restore(b.id, target)}
+                    className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-bg-elevated text-text-primary disabled:opacity-50 hover:bg-bg-panel transition-colors"
+                    title="Backup in Ziel-Slot schreiben"
+                  >
+                    <RotateCcw size={11} /> Restore
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (editing) setEditingId(null);
+                      preset.removeBackup(b.id);
+                    }}
+                    className="text-text-dim hover:text-accent-danger transition-colors"
+                    aria-label="Backup entfernen"
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                </div>
+                {editing && (
+                  <E2sPresetEditor
+                    backup={b}
+                    onClose={() => setEditingId(null)}
+                  />
+                )}
               </div>
             );
           })}
