@@ -11,6 +11,8 @@ import {
   removeE2sBackup,
   updateE2sBackupBytes,
   writeE2sPresetBytes,
+  importE2sBackupBytes,
+  PRESET_BYTE_SIZE,
   getE2sPresetState,
   __resetE2sPresetForTests,
 } from "../../client/src/store/useE2sPresetStore";
@@ -213,5 +215,29 @@ describe("useE2sPresetStore (via device bridge + fake hacktribe RAM)", () => {
     const ok = await writeE2sPresetBytes("ifx", 0, new Uint8Array(IFX_STRIDE));
     expect(ok).toBe(false);
     expect(getE2sPresetState().error).toMatch(/Kein Gerät/);
+  });
+
+  it("importE2sBackupBytes infers kind from blob size (524 IFX / 320 Groove)", () => {
+    const ifxKind = importE2sBackupBytes(
+      new Uint8Array(PRESET_BYTE_SIZE.ifx),
+      7
+    );
+    expect(ifxKind).toBe("ifx");
+    const grooveKind = importE2sBackupBytes(
+      new Uint8Array(PRESET_BYTE_SIZE.groove),
+      3
+    );
+    expect(grooveKind).toBe("groove");
+    const backups = getE2sPresetState().backups;
+    expect(backups).toHaveLength(2);
+    expect(backups[0]).toMatchObject({ kind: "ifx", index: 7 });
+    expect(backups[1]).toMatchObject({ kind: "groove", index: 3 });
+  });
+
+  it("importE2sBackupBytes rejects an invalid size", () => {
+    const kind = importE2sBackupBytes(new Uint8Array(100));
+    expect(kind).toBeNull();
+    expect(getE2sPresetState().backups).toHaveLength(0);
+    expect(getE2sPresetState().error).toMatch(/Ungültige Größe/);
   });
 });

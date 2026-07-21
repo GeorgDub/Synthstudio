@@ -181,6 +181,35 @@ export async function writeE2sPresetBytes(
   return r === true;
 }
 
+/** Erwartete Blob-Größen je Preset-Art (zur Kind-Erkennung beim Datei-Import). */
+export const PRESET_BYTE_SIZE: Record<PresetKind, number> = {
+  ifx: 0x20c, // 524
+  groove: 0x140, // 320
+};
+
+/**
+ * Fügt einen aus einer Datei geladenen Blob als Backup hinzu. Die Art wird aus
+ * der Länge erkannt (524 = IFX, 320 = Groove); andere Längen werden abgelehnt.
+ * Gibt den erkannten Kind zurück oder null bei ungültiger Größe.
+ */
+export function importE2sBackupBytes(
+  bytes: Uint8Array,
+  index = 0
+): PresetKind | null {
+  const kind = (Object.keys(PRESET_BYTE_SIZE) as PresetKind[]).find(
+    k => PRESET_BYTE_SIZE[k] === bytes.length
+  );
+  if (!kind) {
+    set({
+      error: `Ungültige Größe ${bytes.length} B (erwartet 524 IFX oder 320 Groove)`,
+    });
+    return null;
+  }
+  set({ error: null });
+  pushBackup(kind, index, bytes.slice());
+  return kind;
+}
+
 /** Test-Hook. */
 export function __resetE2sPresetForTests(): void {
   _state = defaultState();
@@ -202,6 +231,7 @@ export interface E2sPresetStoreApi extends E2sPresetState {
     index: number,
     bytes: Uint8Array
   ) => Promise<boolean>;
+  importBytes: (bytes: Uint8Array, index?: number) => PresetKind | null;
 }
 
 export function useE2sPresetStore(): E2sPresetStoreApi {
@@ -222,5 +252,6 @@ export function useE2sPresetStore(): E2sPresetStoreApi {
     clearBackups: clearE2sBackups,
     updateBackupBytes: updateE2sBackupBytes,
     writeBytes: writeE2sPresetBytes,
+    importBytes: importE2sBackupBytes,
   };
 }

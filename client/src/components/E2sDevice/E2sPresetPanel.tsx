@@ -5,7 +5,7 @@
  * die vom Gerät gelesen wurden (kein Feld-Editing → kein Layout-Risiko).
  * Nutzt useE2sPresetStore (RAM-SysEx via die verbundene Bridge).
  */
-import { useState } from "react";
+import { useState, useRef } from "react";
 import {
   Download,
   Copy,
@@ -14,10 +14,27 @@ import {
   RefreshCw,
   AlertTriangle,
   Sliders,
+  Save,
+  FolderInput,
 } from "lucide-react";
 import { useE2sDeviceStore } from "@/store/useE2sDeviceStore";
 import { useE2sPresetStore, type PresetKind } from "@/store/useE2sPresetStore";
 import { E2sPresetEditor } from "./E2sPresetEditor";
+
+function downloadBytes(bytes: Uint8Array, filename: string): void {
+  const copy = new Uint8Array(bytes.byteLength);
+  copy.set(bytes);
+  const url = URL.createObjectURL(
+    new Blob([copy], { type: "application/octet-stream" })
+  );
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
 
 const MAX_INDEX: Record<PresetKind, number> = { ifx: 99, groove: 127 };
 
@@ -85,8 +102,17 @@ export function E2sPresetPanel() {
     {}
   );
   const [editingId, setEditingId] = useState<number | null>(null);
+  const importRef = useRef<HTMLInputElement>(null);
 
   if (device.status !== "connected") return null;
+
+  const onImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    e.target.value = "";
+    if (!f) return;
+    const bytes = new Uint8Array(await f.arrayBuffer());
+    preset.importBytes(bytes);
+  };
 
   return (
     <div
@@ -129,6 +155,28 @@ export function E2sPresetPanel() {
 
       <KindRow kind="ifx" label="IFX-Presets (0–99, je 0x20C B)" />
       <KindRow kind="groove" label="Groove-Templates (0–127, je 0x140 B)" />
+
+      <div className="flex items-center gap-1.5">
+        <button
+          data-testid="e2s-preset-import"
+          onClick={() => importRef.current?.click()}
+          className="flex items-center gap-1 text-xs px-2 py-1 rounded bg-bg-base text-text-primary hover:bg-bg-panel transition-colors"
+          title="IFX/Groove-.bin als Backup laden (Größe erkennt die Art)"
+        >
+          <FolderInput size={12} /> .bin importieren
+        </button>
+        <input
+          ref={importRef}
+          type="file"
+          accept=".bin,.syx,application/octet-stream"
+          className="hidden"
+          onChange={onImportFile}
+          data-testid="e2s-preset-import-input"
+        />
+        <span className="text-[10px] text-text-dim">
+          524 B → IFX · 320 B → Groove
+        </span>
+      </div>
 
       {preset.error && (
         <div
@@ -174,6 +222,16 @@ export function E2sPresetPanel() {
                     title="Felder editieren (bekannte Offsets)"
                   >
                     <Sliders size={11} /> Edit
+                  </button>
+                  <button
+                    data-testid={`e2s-backup-export-${b.id}`}
+                    onClick={() =>
+                      downloadBytes(b.bytes, `e2s-${b.kind}-${b.index}.bin`)
+                    }
+                    className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-bg-elevated text-text-primary hover:bg-bg-panel transition-colors"
+                    title="Backup als .bin speichern"
+                  >
+                    <Save size={11} /> .bin
                   </button>
                   <input
                     type="number"
