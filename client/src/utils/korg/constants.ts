@@ -108,6 +108,14 @@ export const E2S_ALL_SIGNATURE = new Uint8Array([
   0x6c, 0x6c, 0x1a, 0x00, // "ll\x1a\0"
 ]);
 export const E2S_ALL_SIGNATURE_LEN = E2S_ALL_SIGNATURE.length; // 16
+// ⚠️ DISKREPANZ zu Primärquellen (bitte gegen echte Geräte-`.all` prüfen):
+// Oe2sSLE (e2s_sample_all.py) UND hacktribe (`get_sample_pointer` = `i*4 + 0x10`)
+// lesen die Offset-Tabelle @ **0x0010** mit **1020** u32-Slots (füllt bis 0x1000).
+// Unser Wert 0x07E0 / 250 Slots weicht davon ab und deckelt bei 250 — hacktribe
+// braucht aber User-Sample-Slots ≥ 501. Der Kommentar oben behauptet
+// "verified gegen e2sSample.all 2026-05-17"; bevor hier etwas geändert wird, gegen
+// eine echte, aktuelle Geräte-Datei gegenprüfen. Siehe Omnitribe-Doc
+// docs/reverse/e2s_ecosystem_dossier.md §3/§7.
 export const E2S_ALL_OFFSET_TABLE_START = 0x07e0;
 export const E2S_ALL_OFFSET_TABLE_BYTES = E2S_MAX_SLOTS * 4; // 1000
 export const E2S_ALL_SAMPLE_AREA_START = 0x1000;
