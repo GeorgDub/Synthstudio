@@ -97,6 +97,8 @@ import { E2sDevicePanel } from "@/components/E2sDevice/E2sDevicePanel";
 import { E2sPresetPanel } from "@/components/E2sDevice/E2sPresetPanel";
 // Global-Data lesen/anzeigen/zurückschreiben (Korg 0x0E/0x51).
 import { E2sGlobalPanel } from "@/components/E2sDevice/E2sGlobalPanel";
+// Live-FX-Control über NRPN (hacktribe).
+import { E2sFxPanel } from "@/components/E2sDevice/E2sFxPanel";
 
 interface MidiSettingsProps {
   midi: MidiState & MidiActions;
@@ -2539,6 +2541,8 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
       </div>
       {/* ── Live-Verbindung zu echter E2/E2S über natives Korg-SysEx (Pull) ─ */}
       <E2sDevicePanel />
+      {/* ── Live-FX-Control über NRPN (hacktribe) ─ */}
+      <E2sFxPanel />
       {/* ── IFX/Groove-Preset-Manager (hacktribe RAM-SysEx) ─ */}
       <E2sPresetPanel />
       {/* ── Global-Data lesen/anzeigen/zurückschreiben ─ */}

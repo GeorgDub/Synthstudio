@@ -270,6 +270,19 @@ export function sendE2sFxParam(
   }
 }
 
+/**
+ * Liest den Live-FX-Edit-Buffer eines Slots (FX-Typ + aktuelle Param-Werte).
+ * Null wenn nicht verbunden oder Lesefehler.
+ */
+export async function readE2sFxBuffer(fxSlot: number) {
+  if (!_bridge || _state.status !== "connected") return null;
+  try {
+    return await _bridge.readFxEditBuffer(fxSlot);
+  } catch {
+    return null;
+  }
+}
+
 /** Test-Hooks. */
 export function __setE2sMidiAccessProviderForTests(
   p: MidiAccessProvider
@@ -294,6 +307,9 @@ export interface E2sDeviceStoreApi extends E2sDeviceState {
   pullGlobal: () => Promise<Uint8Array | null>;
   pushGlobal: (body: Uint8Array) => Promise<boolean>;
   sendFxParam: (fxSlot: number, paramIndex: number, value: number) => boolean;
+  readFxBuffer: (
+    fxSlot: number
+  ) => Promise<import("../utils/korg/e2FxParams").FxEditBuffer | null>;
 }
 
 export function useE2sDeviceStore(): E2sDeviceStoreApi {
@@ -315,5 +331,6 @@ export function useE2sDeviceStore(): E2sDeviceStoreApi {
     pullGlobal: pullE2sGlobal,
     pushGlobal: pushE2sGlobal,
     sendFxParam: sendE2sFxParam,
+    readFxBuffer: readE2sFxBuffer,
   };
 }

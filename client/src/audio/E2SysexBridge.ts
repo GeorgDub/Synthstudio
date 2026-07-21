@@ -40,7 +40,17 @@ import {
   type E2SysexParsed,
   type PatternSummary,
 } from "../utils/korg/e2Sysex";
-import { buildFxEdit, buildFxControlMap } from "../utils/korg/e2Nrpn";
+import {
+  buildFxEdit,
+  buildFxControlMap,
+  MFX_FX_SLOT,
+} from "../utils/korg/e2Nrpn";
+import {
+  fxEditBufferAddr,
+  decodeFxEditBuffer,
+  FX_EDIT_BUFFER_STRIDE,
+  type FxEditBuffer,
+} from "../utils/korg/e2FxParams";
 
 // ─── Transport ───────────────────────────────────────────────────────────────
 export interface E2Transport {
@@ -397,6 +407,19 @@ export class E2SysexBridge {
     this.sendRaw(
       buildFxControlMap(this.opts.globalChannel, fxSlot, mapParamIndex, value)
     );
+  }
+
+  /**
+   * Liest den Live-FX-Edit-Buffer eines Slots (hacktribe RAM, 0x72 B) und
+   * dekodiert ihn (FX-Typ + aktuelle Param-Werte). MFX-Slot (0x20) nutzt die
+   * MFX-Typ-Tabelle. Nur mit hacktribe-Firmware.
+   */
+  async readFxEditBuffer(fxSlot: number): Promise<FxEditBuffer> {
+    const bytes = await this.readCpuRam(
+      fxEditBufferAddr(fxSlot),
+      FX_EDIT_BUFFER_STRIDE
+    );
+    return decodeFxEditBuffer(bytes, fxSlot === MFX_FX_SLOT);
   }
 
   // ─── Web-MIDI-Adapter ────────────────────────────────────────────────────────
