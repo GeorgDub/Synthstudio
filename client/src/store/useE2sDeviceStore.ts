@@ -77,6 +77,11 @@ export function getE2sDeviceState(): E2sDeviceState {
   return _state;
 }
 
+/** Die aktive Bridge (oder null) — für andere Stores wie useE2sPresetStore. */
+export function getE2sBridge(): E2SysexBridge | null {
+  return _state.status === "connected" ? _bridge : null;
+}
+
 /**
  * Verbindet zu einem E2/E2S: sucht In/Out-Ports (Name enthält `nameMatch`),
  * bindet die Bridge und macht den Identity-Handshake.

@@ -22,8 +22,21 @@ import {
   buildCurrentPatternDump,
   buildPatternDump,
   buildGlobalDump,
+  buildReadCpuRamRequest,
+  buildSetWriteAddrRequest,
+  buildWriteCpuRamData,
   parseSysex,
   summarizePatternBody,
+  isWritablePresetRam,
+  ifxPresetAddr,
+  groovePresetAddr,
+  IFX_STRIDE,
+  IFX_MAX,
+  IFX_COUNT_ADDR,
+  GROOVE_STRIDE,
+  GROOVE_MAX,
+  GROOVE_COUNT_ADDR,
+  CPU_RAM_WRITE_CHUNK,
   type E2SysexParsed,
   type PatternSummary,
 } from "../utils/korg/e2Sysex";
@@ -274,6 +287,94 @@ export class E2SysexBridge {
     this.sendFrame(buildGlobalDump(body, this.frameOpts()));
     if ((await p).kind === "nak")
       throw new E2SysexError("device rejected global write");
+  }
+
+  // ─── CPU-RAM Read/Write (hacktribe) + IFX/Groove-Presets ────────────────────
+  /**
+   * Liest `len` Bytes CPU-RAM ab `addr` (hacktribe 0x52). Nur lesen → risikofrei.
+   * @returns exakt `len` Bytes (dekodiert).
+   */
+  async readCpuRam(addr: number, len: number): Promise<Uint8Array> {
+    const p = this.waitFor(
+      x => x.kind === "cpuRamData",
+      `CPU RAM @0x${addr.toString(16)}`
+    );
+    this.sendFrame(buildReadCpuRamRequest(addr, len, this.frameOpts()));
+    const r = await p;
+    if (r.kind !== "cpuRamData") throw new E2SysexError("unexpected reply");
+    return r.data.subarray(0, len);
+  }
+
+  /**
+   * Schreibt `data` nach CPU-RAM ab `addr` (hacktribe 0x53→0x54, in ≤0x100-Chunks
+   * wie set_ifx). **Guard:** nur in die IFX-/Groove-Preset-Bereiche — verhindert
+   * arbiträre RAM-Writes aus dem UI. Sequencer-Stop-Guard greift ebenfalls.
+   */
+  async writeCpuRam(addr: number, data: Uint8Array): Promise<void> {
+    this.guardWrite();
+    if (!isWritablePresetRam(addr, data.length)) {
+      throw new E2SysexError(
+        `refusing CPU-RAM write outside IFX/Groove preset range (0x${addr.toString(16)}+${data.length})`
+      );
+    }
+    for (let off = 0; off < data.length; off += CPU_RAM_WRITE_CHUNK) {
+      const chunk = data.subarray(
+        off,
+        Math.min(off + CPU_RAM_WRITE_CHUNK, data.length)
+      );
+      // 0x53 set addr+len, dann 0x54 data — nach jedem auf eine Geräte-Antwort warten.
+      const ack1 = this.waitFor(() => true, "write set-addr ack");
+      this.sendFrame(
+        buildSetWriteAddrRequest(addr + off, chunk.length, this.frameOpts())
+      );
+      await ack1;
+      const ack2 = this.waitFor(() => true, "write data ack");
+      this.sendFrame(buildWriteCpuRamData(chunk, this.frameOpts()));
+      const r = await ack2;
+      if (r.kind === "nak")
+        throw new E2SysexError("device rejected CPU-RAM write");
+    }
+  }
+
+  /** Liest einen IFX-Preset-Slot (0..99) → 0x20C rohe Bytes. */
+  async readIfxPreset(index: number): Promise<Uint8Array> {
+    if (index < 0 || index >= IFX_MAX)
+      throw new E2SysexError(`IFX index ${index} out of range`);
+    return this.readCpuRam(ifxPresetAddr(index), IFX_STRIDE);
+  }
+  /** Schreibt rohe Bytes (0x20C) in einen IFX-Preset-Slot (0..99). */
+  async writeIfxPreset(index: number, data: Uint8Array): Promise<void> {
+    if (index < 0 || index >= IFX_MAX)
+      throw new E2SysexError(`IFX index ${index} out of range`);
+    if (data.length !== IFX_STRIDE)
+      throw new E2SysexError(
+        `IFX preset must be ${IFX_STRIDE} bytes, got ${data.length}`
+      );
+    return this.writeCpuRam(ifxPresetAddr(index), data);
+  }
+  /** Liest ein Groove-Template (0..127) → 0x140 rohe Bytes. */
+  async readGrooveTemplate(index: number): Promise<Uint8Array> {
+    if (index < 0 || index >= GROOVE_MAX)
+      throw new E2SysexError(`Groove index ${index} out of range`);
+    return this.readCpuRam(groovePresetAddr(index), GROOVE_STRIDE);
+  }
+  /** Schreibt rohe Bytes (0x140) in ein Groove-Template (0..127). */
+  async writeGrooveTemplate(index: number, data: Uint8Array): Promise<void> {
+    if (index < 0 || index >= GROOVE_MAX)
+      throw new E2SysexError(`Groove index ${index} out of range`);
+    if (data.length !== GROOVE_STRIDE)
+      throw new E2SysexError(
+        `Groove template must be ${GROOVE_STRIDE} bytes, got ${data.length}`
+      );
+    return this.writeCpuRam(groovePresetAddr(index), data);
+  }
+  /** Liest den aktuellen IFX-Preset-Zähler (1 Byte). */
+  async readIfxCount(): Promise<number> {
+    return (await this.readCpuRam(IFX_COUNT_ADDR, 1))[0] ?? 0;
+  }
+  /** Liest den aktuellen Groove-Template-Zähler (1 Byte). */
+  async readGrooveCount(): Promise<number> {
+    return (await this.readCpuRam(GROOVE_COUNT_ADDR, 1))[0] ?? 0;
   }
 
   // ─── Web-MIDI-Adapter ────────────────────────────────────────────────────────

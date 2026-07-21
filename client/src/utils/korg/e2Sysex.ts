@@ -132,7 +132,9 @@ export function buildSearchRequest(): Uint8Array {
 }
 
 /** Request: Edit-Buffer (Current Pattern) dumpen → Reply 0x40. */
-export function buildCurrentPatternDumpRequest(opts: FrameOpts = {}): Uint8Array {
+export function buildCurrentPatternDumpRequest(
+  opts: FrameOpts = {}
+): Uint8Array {
   const { model = E2Model.SAMPLER, globalChannel = 0 } = opts;
   return Uint8Array.from([
     ...head(model, globalChannel, E2Func.CURRENT_PATTERN_DUMP_REQ),
@@ -141,7 +143,10 @@ export function buildCurrentPatternDumpRequest(opts: FrameOpts = {}): Uint8Array
 }
 
 /** Request: nummeriertes Pattern (0–249) dumpen → Reply 0x4C. */
-export function buildPatternDumpRequest(patternNumber: number, opts: FrameOpts = {}): Uint8Array {
+export function buildPatternDumpRequest(
+  patternNumber: number,
+  opts: FrameOpts = {}
+): Uint8Array {
   const { model = E2Model.SAMPLER, globalChannel = 0 } = opts;
   const [lsb, msb] = patternNumberToMidi(patternNumber);
   return Uint8Array.from([
@@ -155,14 +160,20 @@ export function buildPatternDumpRequest(patternNumber: number, opts: FrameOpts =
 /** Request: Global-Data dumpen → Reply 0x51. */
 export function buildGlobalDumpRequest(opts: FrameOpts = {}): Uint8Array {
   const { model = E2Model.SAMPLER, globalChannel = 0 } = opts;
-  return Uint8Array.from([...head(model, globalChannel, E2Func.GLOBAL_DUMP_REQ), SYSEX_END]);
+  return Uint8Array.from([
+    ...head(model, globalChannel, E2Func.GLOBAL_DUMP_REQ),
+    SYSEX_END,
+  ]);
 }
 
 /**
  * Datenrahmen: Body in den Edit-Buffer (Current Pattern) schreiben (0x40).
  * @param body Roh-Pattern-Body (0x4000 B, ohne 0x100-Dateiheader).
  */
-export function buildCurrentPatternDump(body: Uint8Array, opts: FrameOpts = {}): Uint8Array {
+export function buildCurrentPatternDump(
+  body: Uint8Array,
+  opts: FrameOpts = {}
+): Uint8Array {
   const { model = E2Model.SAMPLER, globalChannel = 0 } = opts;
   const enc = encode7in8(body);
   return Uint8Array.from([
@@ -178,7 +189,7 @@ export function buildCurrentPatternDump(body: Uint8Array, opts: FrameOpts = {}):
 export function buildPatternDump(
   patternNumber: number,
   body: Uint8Array,
-  opts: FrameOpts = {},
+  opts: FrameOpts = {}
 ): Uint8Array {
   const { model = E2Model.SAMPLER, globalChannel = 0 } = opts;
   const [lsb, msb] = patternNumberToMidi(patternNumber);
@@ -193,17 +204,26 @@ export function buildPatternDump(
 }
 
 /** Datenrahmen: Global-Data schreiben (0x51). */
-export function buildGlobalDump(body: Uint8Array, opts: FrameOpts = {}): Uint8Array {
+export function buildGlobalDump(
+  body: Uint8Array,
+  opts: FrameOpts = {}
+): Uint8Array {
   const { model = E2Model.SAMPLER, globalChannel = 0 } = opts;
   const enc = encode7in8(body);
-  return Uint8Array.from([...head(model, globalChannel, E2Func.GLOBAL_DUMP), ...enc, SYSEX_END]);
+  return Uint8Array.from([
+    ...head(model, globalChannel, E2Func.GLOBAL_DUMP),
+    ...enc,
+    SYSEX_END,
+  ]);
 }
 
 // ─── .e2pat/.e2spat-Datei ↔ Roh-Body ─────────────────────────────────────────
 /** Entfernt den 0x100-KORG-Dateiheader → Roh-Body (für Pattern-Dumps). */
 export function patternFileToBody(file: Uint8Array): Uint8Array {
   if (file.length < E2_FILE_HEADER_SIZE) {
-    throw new Error(`pattern file too short: ${file.length} < ${E2_FILE_HEADER_SIZE}`);
+    throw new Error(
+      `pattern file too short: ${file.length} < ${E2_FILE_HEADER_SIZE}`
+    );
   }
   return file.subarray(E2_FILE_HEADER_SIZE);
 }
@@ -213,7 +233,10 @@ export function patternFileToBody(file: Uint8Array): Uint8Array {
  * Header verbatim wie e2syx2pat.py: "KORG"(16) + tag(16) + 01 00 00 00 + 0xFF-Pad.
  * @param sampler true → "e2sampler"-Tag (E2S), false → "electribe"-Tag (E2 Synth).
  */
-export function bodyToPatternFile(body: Uint8Array, sampler = true): Uint8Array {
+export function bodyToPatternFile(
+  body: Uint8Array,
+  sampler = true
+): Uint8Array {
   const header = new Uint8Array(E2_FILE_HEADER_SIZE).fill(0xff);
   const korg = [0x4b, 0x4f, 0x52, 0x47]; // "KORG"
   header.set(korg, 0);
@@ -281,15 +304,112 @@ export interface PatternSummary {
   bodyLength: number;
 }
 export function summarizePatternBody(body: Uint8Array): PatternSummary {
-  return { name: readPatternName(body), oscRefs: readPartOscRefs(body), bodyLength: body.length };
+  return {
+    name: readPatternName(body),
+    oscRefs: readPartOscRefs(body),
+    bodyLength: body.length,
+  };
+}
+
+// ─── hacktribe-only: CPU-RAM Read/Write (0x52/0x53/0x54) ─────────────────────
+// Verbatim aus e2sysex.py. Adressen 32-bit LE, danach 7-in-8-kodiert.
+// NUR mit hacktribe-Firmware verfügbar. Writes gehen in DDR-RAM → Power-Cycle
+// stellt wieder her. Ziel-Bereiche: IFX-/Groove-Preset-Tabellen (siehe unten).
+
+/** uint32 → 4 Bytes Little-Endian (unsigned-safe für Adressen ≥ 0x80000000). */
+export function u32le(n: number): number[] {
+  const u = n >>> 0;
+  return [u & 0xff, (u >>> 8) & 0xff, (u >>> 16) & 0xff, (u >>> 24) & 0xff];
+}
+
+/** Request: CPU-RAM lesen (0x52) — addr+len 32-bit LE, 7-in-8-kodiert. */
+export function buildReadCpuRamRequest(
+  addr: number,
+  len: number,
+  opts: FrameOpts = {}
+): Uint8Array {
+  const { model = E2Model.SAMPLER, globalChannel = 0 } = opts;
+  const enc = encode7in8(Uint8Array.from([...u32le(addr), ...u32le(len)]));
+  return Uint8Array.from([
+    ...head(model, globalChannel, E2Func.READ_CPU_RAM),
+    ...enc,
+    SYSEX_END,
+  ]);
+}
+
+/** Request 1/2: Schreib-Adresse+Länge setzen (0x53). */
+export function buildSetWriteAddrRequest(
+  addr: number,
+  len: number,
+  opts: FrameOpts = {}
+): Uint8Array {
+  const { model = E2Model.SAMPLER, globalChannel = 0 } = opts;
+  const enc = encode7in8(Uint8Array.from([...u32le(addr), ...u32le(len)]));
+  return Uint8Array.from([
+    ...head(model, globalChannel, E2Func.SET_WRITE_ADDR),
+    ...enc,
+    SYSEX_END,
+  ]);
+}
+
+/** Request 2/2: Schreib-Daten senden (0x54) — 7-in-8-kodiert. */
+export function buildWriteCpuRamData(
+  data: Uint8Array,
+  opts: FrameOpts = {}
+): Uint8Array {
+  const { model = E2Model.SAMPLER, globalChannel = 0 } = opts;
+  const enc = encode7in8(data);
+  return Uint8Array.from([
+    ...head(model, globalChannel, E2Func.WRITE_CPU_RAM),
+    ...enc,
+    SYSEX_END,
+  ]);
+}
+
+// ─── IFX-Preset- & Groove-Template-Tabellen (hacktribe RAM) ──────────────────
+export const IFX_BASE_ADDR = 0xc00a80f0;
+export const IFX_STRIDE = 0x20c;
+export const IFX_MAX = 100; // Index 0..99
+export const IFX_COUNT_ADDR = 0xc003efdc; // 1 Byte: aktuelle Anzahl
+export const GROOVE_BASE_ADDR = 0xc0143b00;
+export const GROOVE_STRIDE = 0x140;
+export const GROOVE_MAX = 128; // Index 0..127
+export const GROOVE_COUNT_ADDR = 0xc007bb88; // 1 Byte: aktuelle Anzahl
+/** Max. Nutzlast pro 0x54-Write (set_ifx splittet bei 0x100). */
+export const CPU_RAM_WRITE_CHUNK = 0x100;
+
+/** RAM-Adresse eines IFX-Preset-Slots (0..99). */
+export function ifxPresetAddr(index: number): number {
+  return IFX_BASE_ADDR + IFX_STRIDE * index;
+}
+/** RAM-Adresse eines Groove-Template-Slots (0..127). */
+export function groovePresetAddr(index: number): number {
+  return GROOVE_BASE_ADDR + GROOVE_STRIDE * index;
+}
+
+/** true, wenn [addr, addr+len) vollständig in der IFX- ODER Groove-Tabelle liegt. */
+export function isWritablePresetRam(addr: number, len: number): boolean {
+  const inRange = (base: number, stride: number, max: number) =>
+    addr >= base && addr + len <= base + stride * max;
+  return (
+    inRange(IFX_BASE_ADDR, IFX_STRIDE, IFX_MAX) ||
+    inRange(GROOVE_BASE_ADDR, GROOVE_STRIDE, GROOVE_MAX)
+  );
 }
 
 // ─── Parsen eingehender SysEx ─────────────────────────────────────────────────
 export type E2SysexParsed =
-  | { kind: "identity"; globalChannel: number; model: number; versionMajor: number; versionMinor: number }
+  | {
+      kind: "identity";
+      globalChannel: number;
+      model: number;
+      versionMajor: number;
+      versionMinor: number;
+    }
   | { kind: "currentPattern"; body: Uint8Array }
   | { kind: "pattern"; patternNumber: number; body: Uint8Array }
   | { kind: "global"; body: Uint8Array }
+  | { kind: "cpuRamData"; data: Uint8Array }
   | { kind: "ack" }
   | { kind: "nak" }
   | { kind: "unknown"; func: number };
@@ -323,7 +443,10 @@ export function parseSysex(bytes: Uint8Array | number[]): E2SysexParsed | null {
 
   switch (func) {
     case E2Func.CURRENT_PATTERN_DUMP:
-      return { kind: "currentPattern", body: decode7in8(b.subarray(7, endIdx)) };
+      return {
+        kind: "currentPattern",
+        body: decode7in8(b.subarray(7, endIdx)),
+      };
     case E2Func.PATTERN_DUMP:
       return {
         kind: "pattern",
@@ -332,6 +455,9 @@ export function parseSysex(bytes: Uint8Array | number[]): E2SysexParsed | null {
       };
     case E2Func.GLOBAL_DUMP:
       return { kind: "global", body: decode7in8(b.subarray(7, endIdx)) };
+    case E2Func.READ_CPU_RAM:
+      // RAM-Read-Reply: Daten ab Index 9 (e2sysex.py: syx_dec(response[9:-1])).
+      return { kind: "cpuRamData", data: decode7in8(b.subarray(9, endIdx)) };
     case E2Func.ACK:
       return { kind: "ack" };
     case E2Func.NAK:
