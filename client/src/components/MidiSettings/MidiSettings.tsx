@@ -91,6 +91,8 @@ import {
   setE2sPatternSyncOutputPort,
   setE2sPatternSyncChannel,
 } from "@/store/useE2sPatternSyncStore";
+// Live-Verbindung zu echter E2/E2S über natives Korg-SysEx (Connect/Identity/Pull).
+import { E2sDevicePanel } from "@/components/E2sDevice/E2sDevicePanel";
 
 interface MidiSettingsProps {
   midi: MidiState & MidiActions;
@@ -2531,6 +2533,8 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
           </div>
         )}
       </div>
+      {/* ── Live-Verbindung zu echter E2/E2S über natives Korg-SysEx (Pull) ─ */}
+      <E2sDevicePanel />
       {/* ── v3.232: E2S Pattern Sync (Out) — Synthstudio -> KORG Electribe 2/2S ─ */}
       <div className="p-3 bg-bg-elevated rounded-lg" data-testid="e2s-pattern-sync-section">
         <div className="flex items-center justify-between mb-2">
