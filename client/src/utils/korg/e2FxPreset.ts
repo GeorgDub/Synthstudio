@@ -161,6 +161,81 @@ export function setIfxPresetName(bytes: Uint8Array, name: string): Uint8Array {
   return out;
 }
 
+// ─── Preset-eigene Control-Map (persistent, im 0x20C-Blob) ───────────────────
+// Quelle: ht_fx_preset_format.py `preset`-Struct: name@0x01(15) + Padding(2),
+// dann control_map = fx_control[10] @0x12. Jeder fx_control ist 28 B:
+// source_control@+0, chain_index@+1, target_param@+2, pad, min@+4, pad, max@+6, pad×21.
+// Anders als die LIVE-Map (e2FxParams, 6 B, im RAM-Buffer) bleibt DIESE im Preset
+// gespeichert und wirkt beim Laden. Andere Source-Enum-Werte (0x41..0x4A).
+export const PRESET_CONTROL_MAP_OFFSET = 0x12;
+export const PRESET_CONTROL_SLOT_SIZE = 0x1c; // 28
+export const PRESET_CONTROL_MAP_SLOTS = 10;
+
+/** Source-Controls im PRESET-Blob (nicht identisch mit der Live-RAM-Map!). */
+export const PRESET_FX_SOURCES: Record<number, string> = {
+  0x00: "none",
+  0x41: "FX On",
+  0x42: "FX Edit X",
+  0x43: "FX Edit Y",
+  0x44: "FX Edit X Hi",
+  0x45: "FX Edit X Lo",
+  0x46: "FX Edit Y Hi",
+  0x47: "FX Edit Y Lo",
+  0x48: "Key (Part)",
+  0x49: "Key (Global)",
+  0x4a: "Play/Start",
+};
+
+/** chain_index: auf welches Kettenglied der target_param zeigt. */
+export const PRESET_CHAIN_INDEX: Record<number, string> = {
+  0x00: "IFX 1",
+  0x01: "IFX 2",
+  0x02: "MFX",
+  0x07: "Input Level",
+  0x0a: "Output Level",
+};
+
+export interface PresetControlSlot {
+  sourceControl: number;
+  chainIndex: number; // welcher FX (ifx1/ifx2/mfx/…)
+  targetParam: number; // Param-Index im gewählten Kettenglied
+  minValue: number;
+  maxValue: number;
+}
+
+/** Dekodiert die 10 preset-eigenen Control-Map-Slots (@0x12, 28 B/Slot). */
+export function decodePresetControlMap(bytes: Uint8Array): PresetControlSlot[] {
+  const slots: PresetControlSlot[] = [];
+  for (let i = 0; i < PRESET_CONTROL_MAP_SLOTS; i++) {
+    const o = PRESET_CONTROL_MAP_OFFSET + i * PRESET_CONTROL_SLOT_SIZE;
+    slots.push({
+      sourceControl: bytes[o] ?? 0,
+      chainIndex: bytes[o + 1] ?? 0,
+      targetParam: bytes[o + 2] ?? 0,
+      minValue: bytes[o + 4] ?? 0,
+      maxValue: bytes[o + 6] ?? 0,
+    });
+  }
+  return slots;
+}
+
+/** Setzt einen preset-eigenen Control-Map-Slot (nicht-destruktive Kopie). */
+export function setPresetControlSlot(
+  bytes: Uint8Array,
+  slotIndex: number,
+  slot: PresetControlSlot
+): Uint8Array {
+  const out = bytes.slice();
+  if (slotIndex < 0 || slotIndex >= PRESET_CONTROL_MAP_SLOTS) return out;
+  const o = PRESET_CONTROL_MAP_OFFSET + slotIndex * PRESET_CONTROL_SLOT_SIZE;
+  out[o] = slot.sourceControl & 0xff;
+  out[o + 1] = slot.chainIndex & 0xff;
+  out[o + 2] = slot.targetParam & 0xff;
+  out[o + 4] = clamp7(slot.minValue);
+  out[o + 6] = clamp7(slot.maxValue);
+  return out;
+}
+
 // ─── Groove-Template (0x140) Layout ──────────────────────────────────────────
 export const GROOVE_SIZE = 0x140;
 const GROOVE_NAME_OFFSET = 0x010;

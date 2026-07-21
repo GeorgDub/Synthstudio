@@ -6,6 +6,11 @@ import {
   setIfxPresetLevel,
   setIfxPresetName,
   setIfxPresetDevice,
+  decodePresetControlMap,
+  setPresetControlSlot,
+  PRESET_CONTROL_MAP_OFFSET,
+  PRESET_CONTROL_SLOT_SIZE,
+  PRESET_FX_SOURCES,
   GROOVE_SIZE,
   GROOVE_STEP_COUNT,
   decodeGroove,
@@ -90,6 +95,68 @@ describe("preset editors (non-destructive)", () => {
     expect(dec.slots[0].deviceName).toBe("Filter");
     // the old param 14 slot is now zeroed
     expect(p[0x135 + 2 * 14]).toBe(0);
+  });
+});
+
+describe("preset control map (persistent, in-blob)", () => {
+  it("decodes 10 slots (source/chain/target/min/max) at 0x12, 28 B each", () => {
+    const b = new Uint8Array(IFX_PRESET_SIZE);
+    const o = PRESET_CONTROL_MAP_OFFSET;
+    b[o + 0] = 0x42; // FX Edit X
+    b[o + 1] = 0x00; // chain: IFX 1
+    b[o + 2] = 3; // target param 3
+    b[o + 4] = 0x10; // min
+    b[o + 6] = 0x70; // max
+    // slot 9
+    const o9 = PRESET_CONTROL_MAP_OFFSET + 9 * PRESET_CONTROL_SLOT_SIZE;
+    b[o9] = 0x4a; // Play/Start
+    const map = decodePresetControlMap(b);
+    expect(map).toHaveLength(10);
+    expect(map[0]).toEqual({
+      sourceControl: 0x42,
+      chainIndex: 0x00,
+      targetParam: 3,
+      minValue: 0x10,
+      maxValue: 0x70,
+    });
+    expect(map[9].sourceControl).toBe(0x4a);
+    expect(PRESET_FX_SOURCES[0x42]).toBe("FX Edit X");
+    // control map sits before the ifx1 device byte (0x12A)
+    expect(PRESET_CONTROL_MAP_OFFSET + 10 * PRESET_CONTROL_SLOT_SIZE).toBe(
+      0x12a
+    );
+  });
+
+  it("setPresetControlSlot writes a slot non-destructively + clamps min/max", () => {
+    const src = new Uint8Array(IFX_PRESET_SIZE);
+    const out = setPresetControlSlot(src, 2, {
+      sourceControl: 0x43,
+      chainIndex: 0x02,
+      targetParam: 5,
+      minValue: 0,
+      maxValue: 999,
+    });
+    const dec = decodePresetControlMap(out)[2];
+    expect(dec.sourceControl).toBe(0x43);
+    expect(dec.chainIndex).toBe(0x02);
+    expect(dec.targetParam).toBe(5);
+    expect(dec.maxValue).toBe(127); // clamped
+    // only slot 2's bytes changed
+    const changed = [...out].filter((v, i) => v !== src[i]).length;
+    expect(changed).toBe(4); // source, chain, target, max (min stayed 0)
+  });
+
+  it("ignores out-of-range slot index", () => {
+    const src = new Uint8Array(IFX_PRESET_SIZE);
+    expect(
+      setPresetControlSlot(src, 99, {
+        sourceControl: 1,
+        chainIndex: 0,
+        targetParam: 0,
+        minValue: 0,
+        maxValue: 0,
+      })
+    ).toEqual(src);
   });
 });
 

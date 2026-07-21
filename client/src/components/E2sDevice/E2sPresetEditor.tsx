@@ -25,9 +25,15 @@ import {
   setIfxPresetDevice,
   decodeGroove,
   setGrooveStep,
+  decodePresetControlMap,
+  setPresetControlSlot,
+  PRESET_CONTROL_MAP_SLOTS,
+  PRESET_FX_SOURCES,
+  PRESET_CHAIN_INDEX,
   GROOVE_STEP_COUNT,
   type PresetSlotRole,
   type GrooveStep,
+  type IfxPresetDecoded,
 } from "@/utils/korg/e2FxPreset";
 import { IFX_TYPES, MFX_TYPES } from "@/utils/korg/e2FxParams";
 
@@ -170,6 +176,136 @@ function IfxEditor({ backup }: { backup: PresetBackup }) {
           )}
         </div>
       ))}
+      <PresetControlMapEditor backup={backup} decoded={decoded} apply={apply} />
+    </div>
+  );
+}
+
+/** Ziel-Param-Namen je chain_index (welches Kettenglied). */
+function targetParamsForChain(
+  decoded: IfxPresetDecoded,
+  chainIndex: number
+): string[] {
+  if (chainIndex === 0x00) return decoded.slots[0].paramNames; // IFX 1
+  if (chainIndex === 0x01) return decoded.slots[1].paramNames; // IFX 2
+  if (chainIndex === 0x02) return decoded.slots[2].paramNames; // MFX
+  return []; // Input/Output Level → kein Param-Index
+}
+
+function PresetControlMapEditor({
+  backup,
+  decoded,
+  apply,
+}: {
+  backup: PresetBackup;
+  decoded: IfxPresetDecoded;
+  apply: (next: Uint8Array) => void;
+}) {
+  const [slotIdx, setSlotIdx] = useState(0);
+  const map = useMemo(
+    () => decodePresetControlMap(backup.bytes),
+    [backup.bytes]
+  );
+  const slot = map[slotIdx];
+  const targetNames = targetParamsForChain(decoded, slot.chainIndex);
+
+  const write = (patch: Partial<typeof slot>) =>
+    apply(setPresetControlSlot(backup.bytes, slotIdx, { ...slot, ...patch }));
+
+  return (
+    <div
+      className="p-2 rounded bg-bg-base border border-border-color space-y-1.5"
+      data-testid="e2s-preset-controlmap"
+    >
+      <div className="flex items-center gap-1.5">
+        <span className="text-[11px] font-medium text-text-primary">
+          Control-Map
+        </span>
+        <span className="text-[10px] text-text-dim">
+          (persistent im Preset)
+        </span>
+        <select
+          data-testid="e2s-pcmap-slot"
+          value={slotIdx}
+          onChange={e => setSlotIdx(Number(e.target.value))}
+          className="ml-auto text-[11px] px-1 py-0.5 rounded bg-bg-elevated border border-border-color text-text-primary"
+        >
+          {Array.from({ length: PRESET_CONTROL_MAP_SLOTS }, (_, i) => (
+            <option key={i} value={i}>
+              Slot {i}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="flex items-center gap-2">
+        <span className="text-[10px] text-text-muted w-20 shrink-0">
+          Source
+        </span>
+        <select
+          data-testid="e2s-pcmap-source"
+          value={slot.sourceControl}
+          onChange={e => write({ sourceControl: Number(e.target.value) })}
+          className="flex-1 text-[11px] px-1 py-0.5 rounded bg-bg-elevated border border-border-color text-text-primary"
+        >
+          {Object.entries(PRESET_FX_SOURCES).map(([id, name]) => (
+            <option key={id} value={id}>
+              {name}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="flex items-center gap-2">
+        <span className="text-[10px] text-text-muted w-20 shrink-0">Chain</span>
+        <select
+          data-testid="e2s-pcmap-chain"
+          value={slot.chainIndex}
+          onChange={e => write({ chainIndex: Number(e.target.value) })}
+          className="flex-1 text-[11px] px-1 py-0.5 rounded bg-bg-elevated border border-border-color text-text-primary"
+        >
+          {Object.entries(PRESET_CHAIN_INDEX).map(([id, name]) => (
+            <option key={id} value={id}>
+              {name}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="flex items-center gap-2">
+        <span className="text-[10px] text-text-muted w-20 shrink-0">
+          Ziel-Param
+        </span>
+        <select
+          data-testid="e2s-pcmap-target"
+          value={slot.targetParam}
+          onChange={e => write({ targetParam: Number(e.target.value) })}
+          className="flex-1 text-[11px] px-1 py-0.5 rounded bg-bg-elevated border border-border-color text-text-primary"
+        >
+          {targetNames.length === 0 ? (
+            <option value={slot.targetParam}>—</option>
+          ) : (
+            targetNames.map((name, i) => (
+              <option key={i} value={i}>
+                {i}: {name}
+              </option>
+            ))
+          )}
+        </select>
+      </div>
+      <Slider
+        label="min"
+        value={slot.minValue}
+        min={0}
+        max={127}
+        onChange={v => write({ minValue: v })}
+        testId="e2s-pcmap-min"
+      />
+      <Slider
+        label="max"
+        value={slot.maxValue}
+        min={0}
+        max={127}
+        onChange={v => write({ maxValue: v })}
+        testId="e2s-pcmap-max"
+      />
     </div>
   );
 }
