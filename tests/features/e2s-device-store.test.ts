@@ -5,11 +5,20 @@ import {
   pullE2sCurrentPattern,
   pullE2sPattern,
   applyE2sCurrentBodyEdit,
+  pushE2sCurrentBody,
   getE2sDeviceState,
   __setE2sMidiAccessProviderForTests,
   __resetE2sDeviceForTests,
 } from "../../client/src/store/useE2sDeviceStore";
-import { setPatternName } from "../../client/src/utils/korg/e2PatternEdit";
+import {
+  setPatternName,
+  setPartField,
+} from "../../client/src/utils/korg/e2PatternEdit";
+import {
+  decode7in8,
+  readPatternName,
+  decodePatternBody,
+} from "../../client/src/utils/korg/e2Sysex";
 import {
   E2Model,
   E2Func,
@@ -175,6 +184,38 @@ describe("useE2sDeviceStore", () => {
   it("does not pull when disconnected (guard)", async () => {
     expect(await pullE2sCurrentPattern()).toBeNull();
     expect(await pullE2sPattern(1)).toBeNull();
+  });
+
+  it("round-trips: pull → edit → push, the device receives the edited body", async () => {
+    let written: Uint8Array | null = null;
+    const ackReply = () =>
+      Uint8Array.from([0xf0, 0x42, 0x30, 0x00, 0x01, 0x24, E2Func.ACK, 0xf7]);
+    const responder = (frame: Uint8Array): Uint8Array[] | null => {
+      const f = funcOf(frame);
+      if (f === -1) return [identityReply()];
+      if (f === E2Func.CURRENT_PATTERN_DUMP_REQ)
+        return [buildCurrentPatternDump(makeBody("EDIT", { 0: 501 }))];
+      if (f === E2Func.CURRENT_PATTERN_DUMP) {
+        // host write of the edit-buffer — capture + ACK
+        written = decode7in8(frame.subarray(7, frame.length - 1));
+        return [ackReply()];
+      }
+      return null;
+    };
+    await connectE2sDevice(fakeAccess(responder));
+    await pullE2sCurrentPattern();
+    let body = getE2sDeviceState().currentBody!;
+    body = setPatternName(body, "PUSHED");
+    body = setPartField(body, 0, "volume", 99);
+    applyE2sCurrentBodyEdit(body);
+    const ok = await pushE2sCurrentBody(getE2sDeviceState().currentBody!);
+    expect(ok).toBe(true);
+    expect(written).not.toBeNull();
+    expect(readPatternName(written!)).toBe("PUSHED");
+    const dec = decodePatternBody(written!);
+    expect(dec.parts[0].volume).toBe(99);
+    // untouched osc ref survives the edit round-trip
+    expect(dec.parts[0].sampleRef).toBe(501);
   });
 
   it("disconnect resets to the default state", async () => {
