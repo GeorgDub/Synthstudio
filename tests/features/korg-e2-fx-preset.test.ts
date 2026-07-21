@@ -5,6 +5,7 @@ import {
   setIfxPresetParam,
   setIfxPresetLevel,
   setIfxPresetName,
+  setIfxPresetDevice,
   GROOVE_SIZE,
   GROOVE_STEP_COUNT,
   decodeGroove,
@@ -30,7 +31,7 @@ describe("decodeIfxPreset", () => {
   it("decodes name + 3 slots with device names and params", () => {
     const p = decodeIfxPreset(makePreset());
     expect(p.name).toBe("TESTFX");
-    expect(p.slots.map((s) => s.role)).toEqual(["ifx1", "ifx2", "mfx"]);
+    expect(p.slots.map(s => s.role)).toEqual(["ifx1", "ifx2", "mfx"]);
     expect(p.slots[0].deviceName).toBe("Filter");
     expect(p.slots[0].paramNames[2]).toBe("frequency");
     expect(p.slots[0].params[2]).toBe(64);
@@ -64,6 +65,31 @@ describe("preset editors (non-destructive)", () => {
 
   it("clamps param values to 0..127", () => {
     expect(setIfxPresetParam(makePreset(), "ifx1", 0, 999)[0x135]).toBe(127);
+  });
+
+  it("setIfxPresetDevice switches type + loads that type's defaults", () => {
+    // ifx1 starts as Filter (0x0a). Switch to Distortion (0x0f).
+    const out = setIfxPresetDevice(makePreset(), "ifx1", 0x0f);
+    const dec = decodeIfxPreset(out);
+    expect(dec.slots[0].device).toBe(0x0f);
+    expect(dec.slots[0].deviceName).toBe("Distortion");
+    // Distortion defaults: dry_wet=0, gain=64, ... (from hacktribe source)
+    expect(dec.slots[0].params[0]).toBe(0); // dry_wet
+    expect(dec.slots[0].params[1]).toBe(64); // gain
+    // pre/post level + name preserved
+    expect(dec.slots[0].preLevel).toBe(0x7f);
+    expect(dec.name).toBe("TESTFX");
+  });
+
+  it("setIfxPresetDevice zeros stale higher params when shrinking the type", () => {
+    // start Distortion (15 params) with a high param set, switch to Filter (4).
+    let p = setIfxPresetDevice(makePreset(), "ifx1", 0x0f);
+    p = setIfxPresetParam(p, "ifx1", 14, 120); // output_level
+    p = setIfxPresetDevice(p, "ifx1", 0x0a); // Filter (4 params)
+    const dec = decodeIfxPreset(p);
+    expect(dec.slots[0].deviceName).toBe("Filter");
+    // the old param 14 slot is now zeroed
+    expect(p[0x135 + 2 * 14]).toBe(0);
   });
 });
 

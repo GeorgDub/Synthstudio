@@ -22,12 +22,14 @@ import {
   setIfxPresetParam,
   setIfxPresetLevel,
   setIfxPresetName,
+  setIfxPresetDevice,
   decodeGroove,
   setGrooveStep,
   GROOVE_STEP_COUNT,
   type PresetSlotRole,
   type GrooveStep,
 } from "@/utils/korg/e2FxPreset";
+import { IFX_TYPES, MFX_TYPES } from "@/utils/korg/e2FxParams";
 
 function Slider({
   label,
@@ -93,9 +95,32 @@ function IfxEditor({ backup }: { backup: PresetBackup }) {
           className="p-2 rounded bg-bg-base border border-border-color space-y-1.5"
           data-testid={`e2s-ifx-slot-${slot.role}`}
         >
-          <div className="text-[11px] font-medium text-text-primary">
-            {slot.role.toUpperCase()} ·{" "}
-            <span className="text-accent-primary">{slot.deviceName}</span>
+          <div className="flex items-center gap-1.5">
+            <span className="text-[11px] font-medium text-text-primary">
+              {slot.role.toUpperCase()}
+            </span>
+            <select
+              data-testid={`e2s-ifx-${slot.role}-device`}
+              value={slot.device}
+              onChange={e =>
+                apply(
+                  setIfxPresetDevice(
+                    backup.bytes,
+                    slot.role,
+                    Number(e.target.value)
+                  )
+                )
+              }
+              className="flex-1 text-[11px] px-1 py-0.5 rounded bg-bg-elevated border border-border-color text-accent-primary"
+            >
+              {Object.entries(slot.role === "mfx" ? MFX_TYPES : IFX_TYPES).map(
+                ([id, def]) => (
+                  <option key={id} value={id}>
+                    {def.name}
+                  </option>
+                )
+              )}
+            </select>
           </div>
           <Slider
             label="pre level"

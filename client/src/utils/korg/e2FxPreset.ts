@@ -10,6 +10,7 @@
  * alle unbekannten/Reserved-Bytes bleiben exakt erhalten (Round-Trip-safe).
  */
 import { fxTypeDef } from "./e2FxParams";
+import { fxDefaults } from "./e2FxDefaults";
 
 // ─── IFX/MFX-Preset (0x20C) Layout ───────────────────────────────────────────
 export const IFX_PRESET_SIZE = 0x20c;
@@ -17,9 +18,27 @@ const PRESET_NAME_OFFSET = 0x001;
 const PRESET_NAME_LEN = 0x0f; // 15
 // Pro FX-Slot: device-Byte, pre/post-Level, params-Region (Wert @ region + 2*k).
 const SLOTS = {
-  ifx1: { device: 0x12a, postLevel: 0x12b, preLevel: 0x12f, params: 0x135, isMfx: false },
-  ifx2: { device: 0x174, postLevel: 0x175, preLevel: 0x179, params: 0x17f, isMfx: false },
-  mfx: { device: 0x1be, postLevel: 0x1bf, preLevel: 0x1c3, params: 0x1c9, isMfx: true },
+  ifx1: {
+    device: 0x12a,
+    postLevel: 0x12b,
+    preLevel: 0x12f,
+    params: 0x135,
+    isMfx: false,
+  },
+  ifx2: {
+    device: 0x174,
+    postLevel: 0x175,
+    preLevel: 0x179,
+    params: 0x17f,
+    isMfx: false,
+  },
+  mfx: {
+    device: 0x1be,
+    postLevel: 0x1bf,
+    preLevel: 0x1c3,
+    params: 0x1c9,
+    isMfx: true,
+  },
 } as const;
 export type PresetSlotRole = keyof typeof SLOTS;
 export const PRESET_SLOT_ROLES: PresetSlotRole[] = ["ifx1", "ifx2", "mfx"];
@@ -48,7 +67,10 @@ function readAscii(bytes: Uint8Array, off: number, len: number): string {
   return s.replace(/\s+$/, "");
 }
 
-function decodeSlot(bytes: Uint8Array, role: PresetSlotRole): PresetSlotDecoded {
+function decodeSlot(
+  bytes: Uint8Array,
+  role: PresetSlotRole
+): PresetSlotDecoded {
   const l = SLOTS[role];
   const device = bytes[l.device] ?? 0;
   const def = fxTypeDef(device, l.isMfx);
@@ -69,7 +91,7 @@ function decodeSlot(bytes: Uint8Array, role: PresetSlotRole): PresetSlotDecoded 
 export function decodeIfxPreset(bytes: Uint8Array): IfxPresetDecoded {
   return {
     name: readAscii(bytes, PRESET_NAME_OFFSET, PRESET_NAME_LEN),
-    slots: PRESET_SLOT_ROLES.map((r) => decodeSlot(bytes, r)),
+    slots: PRESET_SLOT_ROLES.map(r => decodeSlot(bytes, r)),
   };
 }
 
@@ -80,10 +102,39 @@ export function setIfxPresetParam(
   bytes: Uint8Array,
   role: PresetSlotRole,
   paramIndex: number,
-  value: number,
+  value: number
 ): Uint8Array {
   const out = bytes.slice();
   out[SLOTS[role].params + 2 * paramIndex] = clamp7(value);
+  return out;
+}
+
+/** Region-Ende (exklusiv) der Param-Bytes eines Slots — bis zum nächsten Feld. */
+function slotParamsEnd(role: PresetSlotRole): number {
+  if (role === "ifx1") return SLOTS.ifx2.device;
+  if (role === "ifx2") return SLOTS.mfx.device;
+  return IFX_PRESET_SIZE;
+}
+
+/**
+ * Wechselt den FX-Typ (device-Byte) eines Slots und initialisiert die Param-
+ * Region mit den werkseitigen Defaults dieses Typs (bit-exakt aus hacktribe).
+ * Höhere, vom alten (längeren) Typ übrig gebliebene Param-Slots werden genullt,
+ * damit kein Fremd-Zustand zurückbleibt. Pre/Post-Level + Name bleiben erhalten.
+ */
+export function setIfxPresetDevice(
+  bytes: Uint8Array,
+  role: PresetSlotRole,
+  deviceId: number
+): Uint8Array {
+  const out = bytes.slice();
+  const l = SLOTS[role];
+  out[l.device] = deviceId & 0xff;
+  const defs = fxDefaults(deviceId, l.isMfx);
+  const maxK = Math.floor((slotParamsEnd(role) - l.params) / 2);
+  for (let k = 0; k < maxK; k++) {
+    out[l.params + 2 * k] = k < defs.length ? clamp7(defs[k]) : 0;
+  }
   return out;
 }
 
@@ -92,10 +143,11 @@ export function setIfxPresetLevel(
   bytes: Uint8Array,
   role: PresetSlotRole,
   which: "pre" | "post",
-  value: number,
+  value: number
 ): Uint8Array {
   const out = bytes.slice();
-  out[which === "pre" ? SLOTS[role].preLevel : SLOTS[role].postLevel] = clamp7(value);
+  out[which === "pre" ? SLOTS[role].preLevel : SLOTS[role].postLevel] =
+    clamp7(value);
   return out;
 }
 
@@ -156,7 +208,7 @@ export function setGrooveStep(
   bytes: Uint8Array,
   stepIndex: number,
   field: keyof GrooveStep,
-  value: number,
+  value: number
 ): Uint8Array {
   const out = bytes.slice();
   const o = GROOVE_STEPS_OFFSET + stepIndex * GROOVE_STEP_STRIDE;

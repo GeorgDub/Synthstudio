@@ -50,6 +50,33 @@ describe("FX type/param tables", () => {
   });
 });
 
+describe("FX defaults alignment", () => {
+  it("every type's default array matches its param-name count (IFX + MFX)", async () => {
+    const { IFX_DEFAULTS, MFX_DEFAULTS } =
+      await import("../../client/src/utils/korg/e2FxDefaults");
+    for (const [id, def] of Object.entries(IFX_TYPES)) {
+      const d = IFX_DEFAULTS[Number(id)];
+      expect(
+        d,
+        `IFX 0x${Number(id).toString(16)} defaults present`
+      ).toBeDefined();
+      expect(d.length, `IFX 0x${Number(id).toString(16)} length`).toBe(
+        def.params.length
+      );
+    }
+    for (const [id, def] of Object.entries(MFX_TYPES)) {
+      const d = MFX_DEFAULTS[Number(id)];
+      expect(
+        d,
+        `MFX 0x${Number(id).toString(16)} defaults present`
+      ).toBeDefined();
+      expect(d.length, `MFX 0x${Number(id).toString(16)} length`).toBe(
+        def.params.length
+      );
+    }
+  });
+});
+
 describe("fxEditBufferAddr + decodeFxEditBuffer", () => {
   it("computes the RAM address per slot", () => {
     expect(fxEditBufferAddr(0)).toBe(FX_EDIT_BUFFER_BASE);
