@@ -11,12 +11,14 @@ import {
   Plug,
   Unplug,
   Download,
+  Upload,
   AlertTriangle,
   FolderInput,
 } from "lucide-react";
 import { useE2sDeviceStore } from "@/store/useE2sDeviceStore";
 import { useDrumMachineStore } from "@/store/useDrumMachineStore";
 import { e2PatternToSynthstudio } from "@/utils/korg/e2PatternToSynthstudio";
+import { synthstudioPatternToBody } from "@/utils/korg/synthstudioToE2Pattern";
 import type { PatternSummary, E2PatternDecoded } from "@/utils/korg/e2Sysex";
 
 function modelName(model: number): string {
@@ -108,6 +110,14 @@ export function E2sDevicePanel() {
   ) => {
     if (!decoded) return;
     dm.addPatternData(e2PatternToSynthstudio(decoded, { fallbackName }));
+  };
+
+  const pushActive = (target: "current" | "slot") => {
+    const pattern = dm.getActivePattern();
+    if (!pattern) return;
+    const body = synthstudioPatternToBody(pattern);
+    if (target === "current") device.pushCurrent(body);
+    else device.push(slot, body);
   };
 
   return (
@@ -250,9 +260,37 @@ export function E2sDevicePanel() {
               />
             ))}
 
-          <div className="text-[10px] text-text-dim">
-            Hinweis: Samples gehen nicht über SysEx — nur Patterns/Globals.
-            Voller Step-Import folgt (Step-Feld-Layout noch in Reverse).
+          {/* ── Push: aktives SynthStudio-Pattern → Gerät ── */}
+          <div
+            className="pt-2 mt-1 border-t border-border-color space-y-1.5"
+            data-testid="e2s-push-controls"
+          >
+            <div className="text-[10px] text-text-muted">
+              Aktives SynthStudio-Pattern aufs Gerät schreiben:
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                data-testid="e2s-push-current-btn"
+                disabled={device.busy}
+                onClick={() => pushActive("current")}
+                className="flex items-center gap-1 text-xs px-2 py-1 rounded bg-bg-base text-text-primary disabled:opacity-50 hover:bg-bg-panel transition-colors"
+              >
+                <Upload size={13} /> → Edit-Buffer
+              </button>
+              <button
+                data-testid="e2s-push-slot-btn"
+                disabled={device.busy}
+                onClick={() => pushActive("slot")}
+                className="flex items-center gap-1 text-xs px-2 py-1 rounded bg-bg-base text-text-primary disabled:opacity-50 hover:bg-bg-panel transition-colors"
+              >
+                <Upload size={13} /> → Slot {slot}
+              </button>
+            </div>
+            <div className="text-[10px] text-text-dim">
+              Wichtig: den Sequencer am Gerät stoppen (sonst lehnt es das
+              Schreiben ab). Samples gehen nicht über SysEx — nur
+              Patterns/Globals.
+            </div>
           </div>
         </div>
       )}

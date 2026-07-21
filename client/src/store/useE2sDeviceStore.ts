@@ -170,6 +170,47 @@ export async function pullE2sPattern(
   }
 }
 
+/**
+ * Schreibt einen Roh-Body in den Edit-Buffer des Geräts (0x40). Wartet auf ACK.
+ * Body kommt vom Caller (synthstudioPatternToBody). Bei laufendem Geräte-
+ * Sequencer antwortet das Gerät mit NAK → Fehler wird gemeldet.
+ */
+export async function pushE2sCurrentBody(body: Uint8Array): Promise<boolean> {
+  if (!_bridge || _state.status !== "connected") {
+    set({ error: "Kein Gerät verbunden" });
+    return false;
+  }
+  set({ busy: true, error: null });
+  try {
+    await _bridge.pushCurrentPattern(body);
+    set({ busy: false });
+    return true;
+  } catch (e) {
+    set({ busy: false, error: e instanceof Error ? e.message : String(e) });
+    return false;
+  }
+}
+
+/** Schreibt einen Roh-Body in einen nummerierten Slot (0..249). Wartet auf ACK. */
+export async function pushE2sBody(
+  slot: number,
+  body: Uint8Array
+): Promise<boolean> {
+  if (!_bridge || _state.status !== "connected") {
+    set({ error: "Kein Gerät verbunden" });
+    return false;
+  }
+  set({ busy: true, error: null });
+  try {
+    await _bridge.pushPattern(slot, body);
+    set({ busy: false });
+    return true;
+  } catch (e) {
+    set({ busy: false, error: e instanceof Error ? e.message : String(e) });
+    return false;
+  }
+}
+
 /** Test-Hooks. */
 export function __setE2sMidiAccessProviderForTests(
   p: MidiAccessProvider
@@ -189,6 +230,8 @@ export interface E2sDeviceStoreApi extends E2sDeviceState {
   disconnect: () => void;
   pullCurrent: () => Promise<PatternSummary | null>;
   pull: (n: number) => Promise<PatternSummary | null>;
+  pushCurrent: (body: Uint8Array) => Promise<boolean>;
+  push: (slot: number, body: Uint8Array) => Promise<boolean>;
 }
 
 export function useE2sDeviceStore(): E2sDeviceStoreApi {
@@ -205,5 +248,7 @@ export function useE2sDeviceStore(): E2sDeviceStoreApi {
     disconnect: disconnectE2sDevice,
     pullCurrent: pullE2sCurrentPattern,
     pull: pullE2sPattern,
+    pushCurrent: pushE2sCurrentBody,
+    push: pushE2sBody,
   };
 }
