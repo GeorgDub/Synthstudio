@@ -95,6 +95,8 @@ import {
 import { E2sDevicePanel } from "@/components/E2sDevice/E2sDevicePanel";
 // IFX/Groove-Preset-Manager über hacktribe-RAM-SysEx.
 import { E2sPresetPanel } from "@/components/E2sDevice/E2sPresetPanel";
+// Global-Data lesen/anzeigen/zurückschreiben (Korg 0x0E/0x51).
+import { E2sGlobalPanel } from "@/components/E2sDevice/E2sGlobalPanel";
 
 interface MidiSettingsProps {
   midi: MidiState & MidiActions;
@@ -2539,6 +2541,8 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
       <E2sDevicePanel />
       {/* ── IFX/Groove-Preset-Manager (hacktribe RAM-SysEx) ─ */}
       <E2sPresetPanel />
+      {/* ── Global-Data lesen/anzeigen/zurückschreiben ─ */}
+      <E2sGlobalPanel />
       {/* ── v3.232: E2S Pattern Sync (Out) — Synthstudio -> KORG Electribe 2/2S ─ */}
       <div className="p-3 bg-bg-elevated rounded-lg" data-testid="e2s-pattern-sync-section">
         <div className="flex items-center justify-between mb-2">

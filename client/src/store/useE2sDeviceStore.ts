@@ -41,6 +41,8 @@ export interface E2sDeviceState {
   currentDecoded: E2PatternDecoded | null;
   /** Voll dekodierte nummerierte Patterns, keyed by slot. */
   decoded: Record<number, E2PatternDecoded>;
+  /** Zuletzt gelesene Global-Data (opaker Blob, dekodiert). */
+  globalData: Uint8Array | null;
   /** true während eines laufenden Pull-Requests. */
   busy: boolean;
 }
@@ -54,6 +56,7 @@ function defaultState(): E2sDeviceState {
     patterns: {},
     currentDecoded: null,
     decoded: {},
+    globalData: null,
     busy: false,
   };
 }
@@ -211,6 +214,43 @@ export async function pushE2sBody(
   }
 }
 
+/** Liest die Global-Data (opaker Blob) und legt sie ab. */
+export async function pullE2sGlobal(): Promise<Uint8Array | null> {
+  if (!_bridge || _state.status !== "connected") {
+    set({ error: "Kein Gerät verbunden" });
+    return null;
+  }
+  set({ busy: true, error: null });
+  try {
+    const body = await _bridge.pullGlobal();
+    set({ busy: false, globalData: body });
+    return body;
+  } catch (e) {
+    set({ busy: false, error: e instanceof Error ? e.message : String(e) });
+    return null;
+  }
+}
+
+/**
+ * Schreibt einen Global-Data-Blob zurück (Round-Trip). Nur zuvor gelesene Bytes
+ * verwenden — wir kennen das interne Feld-Layout nicht. Wartet auf ACK.
+ */
+export async function pushE2sGlobal(body: Uint8Array): Promise<boolean> {
+  if (!_bridge || _state.status !== "connected") {
+    set({ error: "Kein Gerät verbunden" });
+    return false;
+  }
+  set({ busy: true, error: null });
+  try {
+    await _bridge.pushGlobal(body);
+    set({ busy: false });
+    return true;
+  } catch (e) {
+    set({ busy: false, error: e instanceof Error ? e.message : String(e) });
+    return false;
+  }
+}
+
 /** Test-Hooks. */
 export function __setE2sMidiAccessProviderForTests(
   p: MidiAccessProvider
@@ -232,6 +272,8 @@ export interface E2sDeviceStoreApi extends E2sDeviceState {
   pull: (n: number) => Promise<PatternSummary | null>;
   pushCurrent: (body: Uint8Array) => Promise<boolean>;
   push: (slot: number, body: Uint8Array) => Promise<boolean>;
+  pullGlobal: () => Promise<Uint8Array | null>;
+  pushGlobal: (body: Uint8Array) => Promise<boolean>;
 }
 
 export function useE2sDeviceStore(): E2sDeviceStoreApi {
@@ -250,5 +292,7 @@ export function useE2sDeviceStore(): E2sDeviceStoreApi {
     pull: pullE2sPattern,
     pushCurrent: pushE2sCurrentBody,
     push: pushE2sBody,
+    pullGlobal: pullE2sGlobal,
+    pushGlobal: pushE2sGlobal,
   };
 }
