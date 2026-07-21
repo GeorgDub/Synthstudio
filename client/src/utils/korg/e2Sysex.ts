@@ -233,6 +233,57 @@ export function bodyToPatternFile(body: Uint8Array, sampler = true): Uint8Array 
   return out;
 }
 
+// ─── Pattern-Body-Reader (verifizierte Offsets, body-relativ) ────────────────
+// Quelle: hacktribe/e2-scripts (e2all2pat.py, e2seqrot.py, e2_recode_sample_pat.py).
+// Body = Datei ohne 0x100-KORG-Header. Das *interne* Step-Feld-Layout (Note/
+// Velocity/Gate) ist noch NICHT reverse-engineert — hier nur die gesicherten
+// Felder: Pattern-Name + Part-OSC/Sample-Referenzen.
+export const PATTERN_NAME_OFFSET = 0x10; // body-relativ, 16 ASCII
+export const PATTERN_NAME_LEN = 16;
+export const PART_TABLE_OFFSET = 0x800; // body-relativ
+export const PART_COUNT = 16;
+export const PART_STRIDE = 0x330;
+export const PART_OSC_REF_OFFSET = 0x08; // u16 LE innerhalb eines Parts
+export const PART_SEQ_OFFSET = 0x30; // Sequenz-Sub-Block innerhalb eines Parts
+export const PART_SEQ_STEP_SIZE = 0x0c;
+export const PART_SEQ_STEPS = 16;
+
+/** Liest den Pattern-Namen aus dem Roh-Body (ASCII, null-/space-getrimmt). */
+export function readPatternName(body: Uint8Array): string {
+  if (body.length < PATTERN_NAME_OFFSET + PATTERN_NAME_LEN) return "";
+  let s = "";
+  for (let i = 0; i < PATTERN_NAME_LEN; i++) {
+    const b = body[PATTERN_NAME_OFFSET + i];
+    if (b === 0) break;
+    if (b >= 0x20 && b <= 0x7e) s += String.fromCharCode(b);
+  }
+  return s.replace(/\s+$/, "");
+}
+
+/**
+ * Liest die 16 Part-OSC/Sample-Referenzen (u16 LE @ Part+0x08).
+ * Das ist die Nummer, die auf ein Sample (501+) oder einen Oszillator zeigt —
+ * dieselbe, die hacktribes Remap-Tools umschreiben. -1 falls Part außerhalb.
+ */
+export function readPartOscRefs(body: Uint8Array): number[] {
+  const refs: number[] = [];
+  for (let p = 0; p < PART_COUNT; p++) {
+    const off = PART_TABLE_OFFSET + p * PART_STRIDE + PART_OSC_REF_OFFSET;
+    refs.push(off + 1 < body.length ? body[off] | (body[off + 1] << 8) : -1);
+  }
+  return refs;
+}
+
+/** Kompakte, sichere Zusammenfassung eines gepullten Pattern-Bodies. */
+export interface PatternSummary {
+  name: string;
+  oscRefs: number[]; // 16 Parts
+  bodyLength: number;
+}
+export function summarizePatternBody(body: Uint8Array): PatternSummary {
+  return { name: readPatternName(body), oscRefs: readPartOscRefs(body), bodyLength: body.length };
+}
+
 // ─── Parsen eingehender SysEx ─────────────────────────────────────────────────
 export type E2SysexParsed =
   | { kind: "identity"; globalChannel: number; model: number; versionMajor: number; versionMinor: number }

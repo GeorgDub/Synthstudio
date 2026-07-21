@@ -1,0 +1,292 @@
+/**
+ * E2SysexBridge.ts — Host-Session-Ebene für das native Korg-E2/E2S-SysEx.
+ *
+ * Setzt auf den reinen Frame-Buildern/Parsern in `utils/korg/e2Sysex.ts` auf und
+ * ergänzt das, was ein echtes Gerät braucht: Request/Response-Korrelation,
+ * Timeouts, ACK-Warten und einen Sequencer-Stop-Guard beim Schreiben.
+ *
+ * Abgrenzung: das ist die *Korg-native* Schicht (0x42) zum Reden mit einem
+ * echten E2/E2S — Stock oder hacktribe. NICHT das OmniTribe-OTP (0x7D,
+ * OmniTribeBridge.ts). Beide Bridges können parallel existieren.
+ *
+ * Transport-agnostisch (wie WsTransport in OmniTribeBridge): die Session nimmt
+ * ein `E2Transport` und ist damit ohne Web-MIDI in Node unit-testbar. Ein
+ * Web-MIDI-Adapter (`connectWebMidi`) ist als dünne Hülle dabei.
+ */
+import {
+  E2Model,
+  buildSearchRequest,
+  buildCurrentPatternDumpRequest,
+  buildPatternDumpRequest,
+  buildGlobalDumpRequest,
+  buildCurrentPatternDump,
+  buildPatternDump,
+  buildGlobalDump,
+  parseSysex,
+  summarizePatternBody,
+  type E2SysexParsed,
+  type PatternSummary,
+} from "../utils/korg/e2Sysex";
+
+// ─── Transport ───────────────────────────────────────────────────────────────
+export interface E2Transport {
+  send(data: Uint8Array): void;
+  onmessage?: ((data: Uint8Array) => void) | null;
+  close?(): void;
+}
+
+export interface E2Identity {
+  globalChannel: number;
+  model: number;
+  versionMajor: number;
+  versionMinor: number;
+}
+
+export interface E2BridgeOptions {
+  model?: E2Model;
+  globalChannel?: number;
+  /** Timeout pro Request in ms (Default 3000). */
+  timeoutMs?: number;
+  /**
+   * Max. Bytes pro Transport-`send()`. 0 = ganzen Frame in einem send() (Default,
+   * korrekt für Web-MIDI). >0 splittet für Transporte mit kleinem Puffer
+   * (RtMidi/amidi-Stil, siehe korg_e2_native_sysex.md §7).
+   */
+  maxChunkBytes?: number;
+  /** Liefert true, wenn der Gerät-Sequencer läuft → Schreib-Requests werden geblockt. */
+  isPlaying?: () => boolean;
+}
+
+/**
+ * Zerlegt einen Byte-Puffer in Stücke von max. `maxBytes`. `maxBytes <= 0`
+ * liefert den Puffer als ein einziges Stück (kein Chunking). Rein & getestet.
+ */
+export function chunkBytes(bytes: Uint8Array, maxBytes: number): Uint8Array[] {
+  if (maxBytes <= 0 || bytes.length <= maxBytes) return [bytes];
+  const out: Uint8Array[] = [];
+  for (let i = 0; i < bytes.length; i += maxBytes) {
+    out.push(bytes.subarray(i, Math.min(i + maxBytes, bytes.length)));
+  }
+  return out;
+}
+
+export class E2SysexError extends Error {}
+/** Fehler, wenn ein Schreib-Request bei laufendem Sequencer versucht wird. */
+export class E2SequencerRunningError extends E2SysexError {
+  constructor() {
+    super("E2 sequencer is running — stop it before writing patterns/globals");
+  }
+}
+
+interface Waiter {
+  match: (p: E2SysexParsed) => boolean;
+  resolve: (p: E2SysexParsed) => void;
+  reject: (e: Error) => void;
+  timer: ReturnType<typeof setTimeout>;
+}
+
+export class E2SysexBridge {
+  private transport: E2Transport | null = null;
+  private waiters: Waiter[] = [];
+  private readonly opts: Required<Omit<E2BridgeOptions, "isPlaying">> & {
+    isPlaying?: () => boolean;
+  };
+
+  constructor(options: E2BridgeOptions = {}) {
+    this.opts = {
+      model: options.model ?? E2Model.SAMPLER,
+      globalChannel: options.globalChannel ?? 0,
+      timeoutMs: options.timeoutMs ?? 3000,
+      maxChunkBytes: options.maxChunkBytes ?? 0,
+      isPlaying: options.isPlaying,
+    };
+  }
+
+  /** Bindet einen Transport an und routet dessen Nachrichten in die Session. */
+  attach(transport: E2Transport): void {
+    this.transport = transport;
+    transport.onmessage = (data: Uint8Array) => this.handleIncoming(data);
+  }
+
+  /** Löst den Transport, verwirft offene Waiter (mit Reject) und schließt ggf. */
+  detach(): void {
+    for (const w of this.waiters) {
+      clearTimeout(w.timer);
+      w.reject(new E2SysexError("bridge detached"));
+    }
+    this.waiters = [];
+    if (this.transport) {
+      this.transport.onmessage = null;
+      try {
+        this.transport.close?.();
+      } catch {
+        /* ignore */
+      }
+      this.transport = null;
+    }
+  }
+
+  get isConnected(): boolean {
+    return this.transport !== null;
+  }
+
+  /** Verarbeitet eingehende SysEx: parsen → ersten passenden Waiter auflösen. */
+  handleIncoming(data: Uint8Array): void {
+    const parsed = parseSysex(data);
+    if (!parsed) return;
+    const idx = this.waiters.findIndex((w) => w.match(parsed));
+    if (idx === -1) return;
+    const [w] = this.waiters.splice(idx, 1);
+    clearTimeout(w.timer);
+    w.resolve(parsed);
+  }
+
+  private frameOpts() {
+    return { model: this.opts.model, globalChannel: this.opts.globalChannel };
+  }
+
+  private sendFrame(frame: Uint8Array): void {
+    if (!this.transport) throw new E2SysexError("no transport attached");
+    for (const chunk of chunkBytes(frame, this.opts.maxChunkBytes)) {
+      this.transport.send(chunk);
+    }
+  }
+
+  private waitFor(match: (p: E2SysexParsed) => boolean, label: string): Promise<E2SysexParsed> {
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        const i = this.waiters.findIndex((w) => w.timer === timer);
+        if (i !== -1) this.waiters.splice(i, 1);
+        reject(new E2SysexError(`timeout waiting for ${label} (${this.opts.timeoutMs}ms)`));
+      }, this.opts.timeoutMs);
+      this.waiters.push({ match, resolve, reject, timer });
+    });
+  }
+
+  // ─── Identity-Handshake ─────────────────────────────────────────────────────
+  /** Sendet Search-Request und wartet auf die Identity-Antwort. */
+  async identify(): Promise<E2Identity> {
+    const p = this.waitFor((x) => x.kind === "identity", "identity");
+    this.sendFrame(buildSearchRequest());
+    const r = await p;
+    if (r.kind !== "identity") throw new E2SysexError("unexpected reply");
+    return {
+      globalChannel: r.globalChannel,
+      model: r.model,
+      versionMajor: r.versionMajor,
+      versionMinor: r.versionMinor,
+    };
+  }
+
+  // ─── Pattern-Pull ────────────────────────────────────────────────────────────
+  /** Holt den Edit-Buffer (Current Pattern) → dekodierter Roh-Body. */
+  async pullCurrentPattern(): Promise<Uint8Array> {
+    const p = this.waitFor(
+      (x) => x.kind === "currentPattern" || x.kind === "nak",
+      "current pattern",
+    );
+    this.sendFrame(buildCurrentPatternDumpRequest(this.frameOpts()));
+    const r = await p;
+    if (r.kind === "nak") throw new E2SysexError("device returned DATA LOAD ERROR");
+    if (r.kind !== "currentPattern") throw new E2SysexError("unexpected reply");
+    return r.body;
+  }
+
+  /** Holt ein nummeriertes Pattern (0–249) → dekodierter Roh-Body. */
+  async pullPattern(patternNumber: number): Promise<Uint8Array> {
+    const p = this.waitFor(
+      (x) =>
+        (x.kind === "pattern" && x.patternNumber === patternNumber) || x.kind === "nak",
+      `pattern ${patternNumber}`,
+    );
+    this.sendFrame(buildPatternDumpRequest(patternNumber, this.frameOpts()));
+    const r = await p;
+    if (r.kind === "nak") throw new E2SysexError("device returned DATA LOAD ERROR");
+    if (r.kind !== "pattern") throw new E2SysexError("unexpected reply");
+    return r.body;
+  }
+
+  /** Convenience: Pattern pullen + sichere Zusammenfassung (Name + OSC-Refs). */
+  async pullPatternSummary(patternNumber: number): Promise<PatternSummary> {
+    return summarizePatternBody(await this.pullPattern(patternNumber));
+  }
+
+  /** Holt die Global-Data → dekodierter Roh-Body. */
+  async pullGlobal(): Promise<Uint8Array> {
+    const p = this.waitFor((x) => x.kind === "global" || x.kind === "nak", "global data");
+    this.sendFrame(buildGlobalDumpRequest(this.frameOpts()));
+    const r = await p;
+    if (r.kind === "nak") throw new E2SysexError("device returned DATA LOAD ERROR");
+    if (r.kind !== "global") throw new E2SysexError("unexpected reply");
+    return r.body;
+  }
+
+  // ─── Pattern-Push (mit Sequencer-Stop-Guard + ACK-Wait) ──────────────────────
+  private guardWrite(): void {
+    if (this.opts.isPlaying?.()) throw new E2SequencerRunningError();
+  }
+
+  /** Schreibt einen Roh-Body in den Edit-Buffer. Wartet auf ACK/NAK. */
+  async pushCurrentPattern(body: Uint8Array): Promise<void> {
+    this.guardWrite();
+    const p = this.waitFor((x) => x.kind === "ack" || x.kind === "nak", "ACK (current pattern)");
+    this.sendFrame(buildCurrentPatternDump(body, this.frameOpts()));
+    if ((await p).kind === "nak") throw new E2SysexError("device rejected current-pattern write");
+  }
+
+  /** Schreibt einen Roh-Body in einen nummerierten Slot (0–249). Wartet auf ACK/NAK. */
+  async pushPattern(patternNumber: number, body: Uint8Array): Promise<void> {
+    this.guardWrite();
+    const p = this.waitFor((x) => x.kind === "ack" || x.kind === "nak", `ACK (pattern ${patternNumber})`);
+    this.sendFrame(buildPatternDump(patternNumber, body, this.frameOpts()));
+    if ((await p).kind === "nak") throw new E2SysexError(`device rejected pattern ${patternNumber} write`);
+  }
+
+  /** Schreibt Global-Data zurück. Wartet auf ACK/NAK. */
+  async pushGlobal(body: Uint8Array): Promise<void> {
+    this.guardWrite();
+    const p = this.waitFor((x) => x.kind === "ack" || x.kind === "nak", "ACK (global)");
+    this.sendFrame(buildGlobalDump(body, this.frameOpts()));
+    if ((await p).kind === "nak") throw new E2SysexError("device rejected global write");
+  }
+
+  // ─── Web-MIDI-Adapter ────────────────────────────────────────────────────────
+  /**
+   * Verbindet über Web-MIDI: sucht In/Out-Ports, deren Name `nameMatch` enthält
+   * (Default "electribe"), bindet sie als Transport und macht den Identity-
+   * Handshake. Liefert die Identity oder null, wenn keine Ports gefunden wurden.
+   * MIDIAccess muss mit `{ sysex: true }` erzeugt sein.
+   */
+  async connectWebMidi(
+    midiAccess: MIDIAccess,
+    nameMatch = "electribe",
+  ): Promise<E2Identity | null> {
+    const needle = nameMatch.toLowerCase();
+    let output: MIDIOutput | null = null;
+    let input: MIDIInput | null = null;
+    for (const o of midiAccess.outputs.values()) {
+      if (o.name?.toLowerCase().includes(needle)) output = o;
+    }
+    for (const i of midiAccess.inputs.values()) {
+      if (i.name?.toLowerCase().includes(needle)) input = i;
+    }
+    if (!output || !input) return null;
+
+    const transport: E2Transport = {
+      send: (data: Uint8Array) => output!.send(Array.from(data)),
+      close: () => {
+        input!.onmidimessage = null;
+      },
+    };
+    input.onmidimessage = (e: MIDIMessageEvent) => {
+      if (e.data) this.handleIncoming(e.data);
+    };
+    this.transport = transport;
+    try {
+      return await this.identify();
+    } catch {
+      // Ports offen lassen; Identity kann bei manchen Setups zeitlich verzögert sein.
+      return null;
+    }
+  }
+}
