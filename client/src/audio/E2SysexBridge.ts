@@ -134,7 +134,7 @@ export class E2SysexBridge {
   handleIncoming(data: Uint8Array): void {
     const parsed = parseSysex(data);
     if (!parsed) return;
-    const idx = this.waiters.findIndex((w) => w.match(parsed));
+    const idx = this.waiters.findIndex(w => w.match(parsed));
     if (idx === -1) return;
     const [w] = this.waiters.splice(idx, 1);
     clearTimeout(w.timer);
@@ -152,12 +152,19 @@ export class E2SysexBridge {
     }
   }
 
-  private waitFor(match: (p: E2SysexParsed) => boolean, label: string): Promise<E2SysexParsed> {
+  private waitFor(
+    match: (p: E2SysexParsed) => boolean,
+    label: string
+  ): Promise<E2SysexParsed> {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
-        const i = this.waiters.findIndex((w) => w.timer === timer);
+        const i = this.waiters.findIndex(w => w.timer === timer);
         if (i !== -1) this.waiters.splice(i, 1);
-        reject(new E2SysexError(`timeout waiting for ${label} (${this.opts.timeoutMs}ms)`));
+        reject(
+          new E2SysexError(
+            `timeout waiting for ${label} (${this.opts.timeoutMs}ms)`
+          )
+        );
       }, this.opts.timeoutMs);
       this.waiters.push({ match, resolve, reject, timer });
     });
@@ -166,7 +173,7 @@ export class E2SysexBridge {
   // ─── Identity-Handshake ─────────────────────────────────────────────────────
   /** Sendet Search-Request und wartet auf die Identity-Antwort. */
   async identify(): Promise<E2Identity> {
-    const p = this.waitFor((x) => x.kind === "identity", "identity");
+    const p = this.waitFor(x => x.kind === "identity", "identity");
     this.sendFrame(buildSearchRequest());
     const r = await p;
     if (r.kind !== "identity") throw new E2SysexError("unexpected reply");
@@ -182,12 +189,13 @@ export class E2SysexBridge {
   /** Holt den Edit-Buffer (Current Pattern) → dekodierter Roh-Body. */
   async pullCurrentPattern(): Promise<Uint8Array> {
     const p = this.waitFor(
-      (x) => x.kind === "currentPattern" || x.kind === "nak",
-      "current pattern",
+      x => x.kind === "currentPattern" || x.kind === "nak",
+      "current pattern"
     );
     this.sendFrame(buildCurrentPatternDumpRequest(this.frameOpts()));
     const r = await p;
-    if (r.kind === "nak") throw new E2SysexError("device returned DATA LOAD ERROR");
+    if (r.kind === "nak")
+      throw new E2SysexError("device returned DATA LOAD ERROR");
     if (r.kind !== "currentPattern") throw new E2SysexError("unexpected reply");
     return r.body;
   }
@@ -195,13 +203,15 @@ export class E2SysexBridge {
   /** Holt ein nummeriertes Pattern (0–249) → dekodierter Roh-Body. */
   async pullPattern(patternNumber: number): Promise<Uint8Array> {
     const p = this.waitFor(
-      (x) =>
-        (x.kind === "pattern" && x.patternNumber === patternNumber) || x.kind === "nak",
-      `pattern ${patternNumber}`,
+      x =>
+        (x.kind === "pattern" && x.patternNumber === patternNumber) ||
+        x.kind === "nak",
+      `pattern ${patternNumber}`
     );
     this.sendFrame(buildPatternDumpRequest(patternNumber, this.frameOpts()));
     const r = await p;
-    if (r.kind === "nak") throw new E2SysexError("device returned DATA LOAD ERROR");
+    if (r.kind === "nak")
+      throw new E2SysexError("device returned DATA LOAD ERROR");
     if (r.kind !== "pattern") throw new E2SysexError("unexpected reply");
     return r.body;
   }
@@ -213,10 +223,14 @@ export class E2SysexBridge {
 
   /** Holt die Global-Data → dekodierter Roh-Body. */
   async pullGlobal(): Promise<Uint8Array> {
-    const p = this.waitFor((x) => x.kind === "global" || x.kind === "nak", "global data");
+    const p = this.waitFor(
+      x => x.kind === "global" || x.kind === "nak",
+      "global data"
+    );
     this.sendFrame(buildGlobalDumpRequest(this.frameOpts()));
     const r = await p;
-    if (r.kind === "nak") throw new E2SysexError("device returned DATA LOAD ERROR");
+    if (r.kind === "nak")
+      throw new E2SysexError("device returned DATA LOAD ERROR");
     if (r.kind !== "global") throw new E2SysexError("unexpected reply");
     return r.body;
   }
@@ -229,25 +243,37 @@ export class E2SysexBridge {
   /** Schreibt einen Roh-Body in den Edit-Buffer. Wartet auf ACK/NAK. */
   async pushCurrentPattern(body: Uint8Array): Promise<void> {
     this.guardWrite();
-    const p = this.waitFor((x) => x.kind === "ack" || x.kind === "nak", "ACK (current pattern)");
+    const p = this.waitFor(
+      x => x.kind === "ack" || x.kind === "nak",
+      "ACK (current pattern)"
+    );
     this.sendFrame(buildCurrentPatternDump(body, this.frameOpts()));
-    if ((await p).kind === "nak") throw new E2SysexError("device rejected current-pattern write");
+    if ((await p).kind === "nak")
+      throw new E2SysexError("device rejected current-pattern write");
   }
 
   /** Schreibt einen Roh-Body in einen nummerierten Slot (0–249). Wartet auf ACK/NAK. */
   async pushPattern(patternNumber: number, body: Uint8Array): Promise<void> {
     this.guardWrite();
-    const p = this.waitFor((x) => x.kind === "ack" || x.kind === "nak", `ACK (pattern ${patternNumber})`);
+    const p = this.waitFor(
+      x => x.kind === "ack" || x.kind === "nak",
+      `ACK (pattern ${patternNumber})`
+    );
     this.sendFrame(buildPatternDump(patternNumber, body, this.frameOpts()));
-    if ((await p).kind === "nak") throw new E2SysexError(`device rejected pattern ${patternNumber} write`);
+    if ((await p).kind === "nak")
+      throw new E2SysexError(`device rejected pattern ${patternNumber} write`);
   }
 
   /** Schreibt Global-Data zurück. Wartet auf ACK/NAK. */
   async pushGlobal(body: Uint8Array): Promise<void> {
     this.guardWrite();
-    const p = this.waitFor((x) => x.kind === "ack" || x.kind === "nak", "ACK (global)");
+    const p = this.waitFor(
+      x => x.kind === "ack" || x.kind === "nak",
+      "ACK (global)"
+    );
     this.sendFrame(buildGlobalDump(body, this.frameOpts()));
-    if ((await p).kind === "nak") throw new E2SysexError("device rejected global write");
+    if ((await p).kind === "nak")
+      throw new E2SysexError("device rejected global write");
   }
 
   // ─── Web-MIDI-Adapter ────────────────────────────────────────────────────────
@@ -259,7 +285,7 @@ export class E2SysexBridge {
    */
   async connectWebMidi(
     midiAccess: MIDIAccess,
-    nameMatch = "electribe",
+    nameMatch = "electribe"
   ): Promise<E2Identity | null> {
     const needle = nameMatch.toLowerCase();
     let output: MIDIOutput | null = null;

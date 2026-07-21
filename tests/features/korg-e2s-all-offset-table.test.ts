@@ -17,7 +17,7 @@ describe(".all offset-table layout (regression)", () => {
     expect(E2S_MAX_SLOTS).toBe(1002);
     expect(E2S_ALL_OFFSET_TABLE_BYTES).toBe(1002 * 4);
     expect(E2S_ALL_OFFSET_TABLE_START + E2S_ALL_OFFSET_TABLE_BYTES).toBe(
-      E2S_ALL_SAMPLE_AREA_START,
+      E2S_ALL_SAMPLE_AREA_START
     );
     expect(E2S_ALL_SAMPLE_AREA_START).toBe(0x1000);
   });
@@ -49,6 +49,6 @@ describe(".all offset-table layout (regression)", () => {
     expect(bank.slots[501]?.name).toBe("HT501");
     expect(bank.slots[999]?.name).toBe("HT999");
     // Everything else empty.
-    expect(bank.slots.filter((s) => s !== null)).toHaveLength(2);
+    expect(bank.slots.filter(s => s !== null)).toHaveLength(2);
   });
 });
