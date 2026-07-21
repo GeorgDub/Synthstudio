@@ -6,9 +6,18 @@
  * host-seitig, brick-frei. Nur semantische Theme-Klassen (kein hardcoded Hex).
  */
 import { useState } from "react";
-import { RefreshCw, Plug, Unplug, Download, AlertTriangle } from "lucide-react";
+import {
+  RefreshCw,
+  Plug,
+  Unplug,
+  Download,
+  AlertTriangle,
+  FolderInput,
+} from "lucide-react";
 import { useE2sDeviceStore } from "@/store/useE2sDeviceStore";
-import type { PatternSummary } from "@/utils/korg/e2Sysex";
+import { useDrumMachineStore } from "@/store/useDrumMachineStore";
+import { e2PatternToSynthstudio } from "@/utils/korg/e2PatternToSynthstudio";
+import type { PatternSummary, E2PatternDecoded } from "@/utils/korg/e2Sysex";
 
 function modelName(model: number): string {
   if (model === 0x24) return "Electribe 2 Sampler";
@@ -28,9 +37,11 @@ function nonEmptyRefs(
 function PatternSummaryRow({
   label,
   summary,
+  onImport,
 }: {
   label: string;
   summary: PatternSummary;
+  onImport?: () => void;
 }) {
   const refs = nonEmptyRefs(summary);
   return (
@@ -40,11 +51,23 @@ function PatternSummaryRow({
     >
       <div className="flex items-center justify-between">
         <span className="text-xs text-text-muted">{label}</span>
-        <span className="text-sm font-medium text-text-primary">
-          {summary.name || (
-            <span className="text-text-dim italic">(ohne Namen)</span>
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-medium text-text-primary">
+            {summary.name || (
+              <span className="text-text-dim italic">(ohne Namen)</span>
+            )}
+          </span>
+          {onImport && (
+            <button
+              data-testid="e2s-import-btn"
+              onClick={onImport}
+              className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-accent-primary text-text-primary hover:opacity-90 transition-opacity"
+              title="Als SynthStudio-Pattern in die DrumMachine importieren"
+            >
+              <FolderInput size={11} /> Import
+            </button>
           )}
-        </span>
+        </div>
       </div>
       <div className="mt-0.5 text-[10px] text-text-dim">
         {summary.bpm.toFixed(1)} BPM · {summary.stepLength} Steps ·{" "}
@@ -73,10 +96,19 @@ function PatternSummaryRow({
 
 export function E2sDevicePanel() {
   const device = useE2sDeviceStore();
+  const dm = useDrumMachineStore();
   const [slot, setSlot] = useState(0);
 
   const connected = device.status === "connected";
   const connecting = device.status === "connecting";
+
+  const importDecoded = (
+    decoded: E2PatternDecoded | undefined,
+    fallbackName: string
+  ) => {
+    if (!decoded) return;
+    dm.addPatternData(e2PatternToSynthstudio(decoded, { fallbackName }));
+  };
 
   return (
     <div
@@ -197,6 +229,12 @@ export function E2sDevicePanel() {
             <PatternSummaryRow
               label="Edit-Buffer"
               summary={device.currentPattern}
+              onImport={() =>
+                importDecoded(
+                  device.currentDecoded ?? undefined,
+                  "E2 Edit-Buffer"
+                )
+              }
             />
           )}
           {Object.entries(device.patterns)
@@ -206,6 +244,9 @@ export function E2sDevicePanel() {
                 key={n}
                 label={`Slot ${n}`}
                 summary={summary}
+                onImport={() =>
+                  importDecoded(device.decoded[Number(n)], `E2 Slot ${n}`)
+                }
               />
             ))}
 

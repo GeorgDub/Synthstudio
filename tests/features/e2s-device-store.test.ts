@@ -141,6 +141,9 @@ describe("useE2sDeviceStore", () => {
     expect(summary?.name).toBe("EDIT");
     expect(getE2sDeviceState().currentPattern?.oscRefs[0]).toBe(501);
     expect(getE2sDeviceState().busy).toBe(false);
+    // decoded pattern is retained for import into the DrumMachine
+    expect(getE2sDeviceState().currentDecoded?.name).toBe("EDIT");
+    expect(getE2sDeviceState().currentDecoded?.parts).toHaveLength(16);
   });
 
   it("pulls a numbered pattern into the patterns map", async () => {

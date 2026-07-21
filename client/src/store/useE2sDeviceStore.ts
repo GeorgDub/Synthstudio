@@ -18,7 +18,9 @@ import { useEffect, useReducer } from "react";
 import { E2SysexBridge, type E2Identity } from "../audio/E2SysexBridge";
 import {
   summarizePatternBody,
+  decodePatternBody,
   type PatternSummary,
+  type E2PatternDecoded,
 } from "../utils/korg/e2Sysex";
 
 export type E2sConnStatus =
@@ -35,6 +37,10 @@ export interface E2sDeviceState {
   currentPattern: PatternSummary | null;
   /** Gepullte nummerierte Patterns, keyed by slot (0..249). */
   patterns: Record<number, PatternSummary>;
+  /** Voll dekodierter Edit-Buffer (für Import in die DrumMachine). */
+  currentDecoded: E2PatternDecoded | null;
+  /** Voll dekodierte nummerierte Patterns, keyed by slot. */
+  decoded: Record<number, E2PatternDecoded>;
   /** true während eines laufenden Pull-Requests. */
   busy: boolean;
 }
@@ -46,6 +52,8 @@ function defaultState(): E2sDeviceState {
     error: null,
     currentPattern: null,
     patterns: {},
+    currentDecoded: null,
+    decoded: {},
     busy: false,
   };
 }
@@ -127,8 +135,13 @@ export async function pullE2sCurrentPattern(): Promise<PatternSummary | null> {
   if (!_bridge || _state.status !== "connected") return null;
   set({ busy: true, error: null });
   try {
-    const summary = summarizePatternBody(await _bridge.pullCurrentPattern());
-    set({ busy: false, currentPattern: summary });
+    const body = await _bridge.pullCurrentPattern();
+    const summary = summarizePatternBody(body);
+    set({
+      busy: false,
+      currentPattern: summary,
+      currentDecoded: decodePatternBody(body),
+    });
     return summary;
   } catch (e) {
     set({ busy: false, error: e instanceof Error ? e.message : String(e) });
@@ -143,12 +156,12 @@ export async function pullE2sPattern(
   if (!_bridge || _state.status !== "connected") return null;
   set({ busy: true, error: null });
   try {
-    const summary = summarizePatternBody(
-      await _bridge.pullPattern(patternNumber)
-    );
+    const body = await _bridge.pullPattern(patternNumber);
+    const summary = summarizePatternBody(body);
     set({
       busy: false,
       patterns: { ..._state.patterns, [patternNumber]: summary },
+      decoded: { ..._state.decoded, [patternNumber]: decodePatternBody(body) },
     });
     return summary;
   } catch (e) {
