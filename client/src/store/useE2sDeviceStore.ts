@@ -251,6 +251,25 @@ export async function pushE2sGlobal(body: Uint8Array): Promise<boolean> {
   }
 }
 
+/**
+ * FX-Edit via NRPN (fire-and-forget, kein ACK): setzt in FX-Slot `fxSlot` den
+ * Parameter `paramIndex` auf `value` (0..127). Gibt false zurück, wenn nicht
+ * verbunden. Kein busy/error-State — NRPN ist Realtime, nicht anfragebasiert.
+ */
+export function sendE2sFxParam(
+  fxSlot: number,
+  paramIndex: number,
+  value: number
+): boolean {
+  if (!_bridge || _state.status !== "connected") return false;
+  try {
+    _bridge.sendFxEdit(fxSlot, paramIndex, value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Test-Hooks. */
 export function __setE2sMidiAccessProviderForTests(
   p: MidiAccessProvider
@@ -274,6 +293,7 @@ export interface E2sDeviceStoreApi extends E2sDeviceState {
   push: (slot: number, body: Uint8Array) => Promise<boolean>;
   pullGlobal: () => Promise<Uint8Array | null>;
   pushGlobal: (body: Uint8Array) => Promise<boolean>;
+  sendFxParam: (fxSlot: number, paramIndex: number, value: number) => boolean;
 }
 
 export function useE2sDeviceStore(): E2sDeviceStoreApi {
@@ -294,5 +314,6 @@ export function useE2sDeviceStore(): E2sDeviceStoreApi {
     push: pushE2sBody,
     pullGlobal: pullE2sGlobal,
     pushGlobal: pushE2sGlobal,
+    sendFxParam: sendE2sFxParam,
   };
 }

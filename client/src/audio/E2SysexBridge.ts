@@ -40,6 +40,7 @@ import {
   type E2SysexParsed,
   type PatternSummary,
 } from "../utils/korg/e2Sysex";
+import { buildFxEdit, buildFxControlMap } from "../utils/korg/e2Nrpn";
 
 // ─── Transport ───────────────────────────────────────────────────────────────
 export interface E2Transport {
@@ -375,6 +376,27 @@ export class E2SysexBridge {
   /** Liest den aktuellen Groove-Template-Zähler (1 Byte). */
   async readGrooveCount(): Promise<number> {
     return (await this.readCpuRam(GROOVE_COUNT_ADDR, 1))[0] ?? 0;
+  }
+
+  // ─── NRPN (FX-Control, fire-and-forget — kein ACK) ──────────────────────────
+  /** Sendet rohe MIDI-Bytes (z.B. NRPN-CCs) über den Transport. */
+  sendRaw(bytes: Uint8Array): void {
+    if (!this.transport) throw new E2SysexError("no transport attached");
+    this.transport.send(bytes);
+  }
+
+  /** FX-Edit via NRPN: FX-Slot `fxSlot`, Parameter `paramIndex` → `value`. */
+  sendFxEdit(fxSlot: number, paramIndex: number, value: number): void {
+    this.sendRaw(
+      buildFxEdit(this.opts.globalChannel, fxSlot, paramIndex, value)
+    );
+  }
+
+  /** FX-Control-Map via NRPN. */
+  sendFxControlMap(fxSlot: number, mapParamIndex: number, value: number): void {
+    this.sendRaw(
+      buildFxControlMap(this.opts.globalChannel, fxSlot, mapParamIndex, value)
+    );
   }
 
   // ─── Web-MIDI-Adapter ────────────────────────────────────────────────────────
