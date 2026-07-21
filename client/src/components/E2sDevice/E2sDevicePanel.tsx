@@ -46,6 +46,10 @@ function PatternSummaryRow({
           )}
         </span>
       </div>
+      <div className="mt-0.5 text-[10px] text-text-dim">
+        {summary.bpm.toFixed(1)} BPM · {summary.stepLength} Steps ·{" "}
+        {summary.totalActive} aktive Trigger
+      </div>
       <div className="mt-1 flex flex-wrap gap-1">
         {refs.length === 0 ? (
           <span className="text-[10px] text-text-dim">

@@ -266,10 +266,23 @@ export const PATTERN_NAME_LEN = 16;
 export const PART_TABLE_OFFSET = 0x800; // body-relativ
 export const PART_COUNT = 16;
 export const PART_STRIDE = 0x330;
-export const PART_OSC_REF_OFFSET = 0x08; // u16 LE innerhalb eines Parts
-export const PART_SEQ_OFFSET = 0x30; // Sequenz-Sub-Block innerhalb eines Parts
+export const PART_OSC_REF_OFFSET = 0x08; // u16 LE innerhalb eines Parts (Sample/OSC-Ref)
+export const PART_VOLUME_OFFSET = 0x15; // u8 0..127
+export const PART_PAN_OFFSET = 0x22; // u8 0..127 (64 = center)
+export const PART_SEQ_OFFSET = 0x30; // Sequenz-Block: 64 × 12 B = 0x300, füllt den Part
 export const PART_SEQ_STEP_SIZE = 0x0c;
-export const PART_SEQ_STEPS = 16;
+export const STEPS_PER_PART = 64; // Sequenz-Block hält bis zu 64 Steps
+// Step-Record-Feld-Offsets (verifiziert: e2sExport.ts-Writer + Daten-Analyse von
+// Stock-Init + Testbank — trigger/note/velocity/gate/gatelen).
+export const STEP_TRIGGER_OFFSET = 0;
+export const STEP_NOTE_OFFSET = 1;
+export const STEP_VELOCITY_OFFSET = 2;
+export const STEP_GATE_OFFSET = 3;
+export const STEP_GATELEN_OFFSET = 4;
+// Body-relative Pattern-Header-Felder.
+export const PATTERN_BPM_OFFSET = 0x22; // u16 LE, ×10 (z.B. 1200 = 120.0 BPM)
+export const PATTERN_STEPLEN_OFFSET = 0x25; // Code 0→16, 1→32, 3→64
+const STEP_LENGTH_FROM_CODE: Record<number, number> = { 0: 16, 1: 32, 3: 64 };
 
 /** Liest den Pattern-Namen aus dem Roh-Body (ASCII, null-/space-getrimmt). */
 export function readPatternName(body: Uint8Array): string {
@@ -297,17 +310,97 @@ export function readPartOscRefs(body: Uint8Array): number[] {
   return refs;
 }
 
-/** Kompakte, sichere Zusammenfassung eines gepullten Pattern-Bodies. */
+// ─── Voller Pattern-Decoder (verifiziertes Step/Part-Layout) ─────────────────
+export interface E2Step {
+  active: boolean;
+  note: number; // 0..127
+  velocity: number; // 0..127
+  gate: boolean; // gate-flag (byte 3) — muss bei aktiven Steps gesetzt sein
+  gateLen: number; // gate-length (byte 4)
+}
+export interface E2PartDecoded {
+  sampleRef: number; // u16 LE @ +0x08 (Sample/OSC-Nummer)
+  volume: number; // @ +0x15
+  pan: number; // @ +0x22 (64 = center)
+  steps: E2Step[]; // stepLength Einträge
+  activeCount: number;
+}
+export interface E2PatternDecoded {
+  name: string;
+  bpm: number; // dekodiert (×10 → Float)
+  stepLength: number; // 16 | 32 | 64
+  parts: E2PartDecoded[]; // 16
+}
+
+function readU16LE(body: Uint8Array, off: number): number {
+  return off + 1 < body.length ? body[off] | (body[off + 1] << 8) : 0;
+}
+
+/** Dekodiert einen einzelnen Step-Record (12 B) ab `off`. */
+export function decodeStep(body: Uint8Array, off: number): E2Step {
+  return {
+    active: (body[off + STEP_TRIGGER_OFFSET] ?? 0) !== 0,
+    note: body[off + STEP_NOTE_OFFSET] ?? 0,
+    velocity: body[off + STEP_VELOCITY_OFFSET] ?? 0,
+    gate: (body[off + STEP_GATE_OFFSET] ?? 0) !== 0,
+    gateLen: body[off + STEP_GATELEN_OFFSET] ?? 0,
+  };
+}
+
+/**
+ * Voll-Decode eines Roh-Pattern-Bodies (0x4000, ohne 0x100-Header) in
+ * strukturierte Parts + Steps. Layout verifiziert gegen e2sExport.ts (Writer)
+ * und Daten-Analyse (Stock-Init-Template + Testbank mit echten Triggern).
+ */
+export function decodePatternBody(body: Uint8Array): E2PatternDecoded {
+  const bpm = readU16LE(body, PATTERN_BPM_OFFSET) / 10;
+  const code = body[PATTERN_STEPLEN_OFFSET] ?? 0;
+  const stepLength = STEP_LENGTH_FROM_CODE[code] ?? 16;
+  const parts: E2PartDecoded[] = [];
+  for (let p = 0; p < PART_COUNT; p++) {
+    const base = PART_TABLE_OFFSET + p * PART_STRIDE;
+    const steps: E2Step[] = [];
+    let activeCount = 0;
+    for (let s = 0; s < stepLength && s < STEPS_PER_PART; s++) {
+      const step = decodeStep(
+        body,
+        base + PART_SEQ_OFFSET + s * PART_SEQ_STEP_SIZE
+      );
+      if (step.active) activeCount++;
+      steps.push(step);
+    }
+    parts.push({
+      sampleRef: readU16LE(body, base + PART_OSC_REF_OFFSET),
+      volume: body[base + PART_VOLUME_OFFSET] ?? 0,
+      pan: body[base + PART_PAN_OFFSET] ?? 0,
+      steps,
+      activeCount,
+    });
+  }
+  return { name: readPatternName(body), bpm, stepLength, parts };
+}
+
+/** Kompakte Zusammenfassung eines gepullten Pattern-Bodies (Name + dekodierte Steps). */
 export interface PatternSummary {
   name: string;
   oscRefs: number[]; // 16 Parts
   bodyLength: number;
+  bpm: number;
+  stepLength: number; // 16 | 32 | 64
+  activeSteps: number[]; // aktive Steps pro Part (16)
+  totalActive: number;
 }
 export function summarizePatternBody(body: Uint8Array): PatternSummary {
+  const dec = decodePatternBody(body);
+  const activeSteps = dec.parts.map(p => p.activeCount);
   return {
-    name: readPatternName(body),
+    name: dec.name,
     oscRefs: readPartOscRefs(body),
     bodyLength: body.length,
+    bpm: dec.bpm,
+    stepLength: dec.stepLength,
+    activeSteps,
+    totalActive: activeSteps.reduce((a, b) => a + b, 0),
   };
 }
 
