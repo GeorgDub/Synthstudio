@@ -4,10 +4,12 @@ import {
   disconnectE2sDevice,
   pullE2sCurrentPattern,
   pullE2sPattern,
+  applyE2sCurrentBodyEdit,
   getE2sDeviceState,
   __setE2sMidiAccessProviderForTests,
   __resetE2sDeviceForTests,
 } from "../../client/src/store/useE2sDeviceStore";
+import { setPatternName } from "../../client/src/utils/korg/e2PatternEdit";
 import {
   E2Model,
   E2Func,
@@ -144,6 +146,21 @@ describe("useE2sDeviceStore", () => {
     // decoded pattern is retained for import into the DrumMachine
     expect(getE2sDeviceState().currentDecoded?.name).toBe("EDIT");
     expect(getE2sDeviceState().currentDecoded?.parts).toHaveLength(16);
+    // raw body is retained for field editing
+    expect(getE2sDeviceState().currentBody).toBeInstanceOf(Uint8Array);
+  });
+
+  it("applyCurrentBodyEdit swaps the body + re-decodes for the UI", async () => {
+    await connectE2sDevice(
+      fakeAccess(deviceResponder({}, makeBody("EDIT", { 0: 501 })))
+    );
+    await pullE2sCurrentPattern();
+    const body = getE2sDeviceState().currentBody!;
+    applyE2sCurrentBodyEdit(setPatternName(body, "RENAMED"));
+    expect(getE2sDeviceState().currentDecoded?.name).toBe("RENAMED");
+    expect(getE2sDeviceState().currentPattern?.name).toBe("RENAMED");
+    // osc ref survives the non-destructive edit
+    expect(getE2sDeviceState().currentDecoded?.parts[0].sampleRef).toBe(501);
   });
 
   it("pulls a numbered pattern into the patterns map", async () => {

@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { useE2sDeviceStore } from "@/store/useE2sDeviceStore";
 import { useDrumMachineStore } from "@/store/useDrumMachineStore";
+import { E2sPatternEditor } from "./E2sPatternEditor";
 import { e2PatternToSynthstudio } from "@/utils/korg/e2PatternToSynthstudio";
 import { synthstudioPatternToBody } from "@/utils/korg/synthstudioToE2Pattern";
 import type { PatternSummary, E2PatternDecoded } from "@/utils/korg/e2Sysex";
@@ -247,6 +248,7 @@ export function E2sDevicePanel() {
               }
             />
           )}
+          {device.currentBody && <E2sPatternEditor />}
           {Object.entries(device.patterns)
             .sort((a, b) => Number(a[0]) - Number(b[0]))
             .map(([n, summary]) => (

@@ -39,6 +39,8 @@ export interface E2sDeviceState {
   patterns: Record<number, PatternSummary>;
   /** Voll dekodierter Edit-Buffer (für Import in die DrumMachine). */
   currentDecoded: E2PatternDecoded | null;
+  /** Roh-Body des zuletzt gepullten Edit-Buffers (für Feld-Editing + Push). */
+  currentBody: Uint8Array | null;
   /** Voll dekodierte nummerierte Patterns, keyed by slot. */
   decoded: Record<number, E2PatternDecoded>;
   /** Zuletzt gelesene Global-Data (opaker Blob, dekodiert). */
@@ -55,6 +57,7 @@ function defaultState(): E2sDeviceState {
     currentPattern: null,
     patterns: {},
     currentDecoded: null,
+    currentBody: null,
     decoded: {},
     globalData: null,
     busy: false,
@@ -144,6 +147,7 @@ export async function pullE2sCurrentPattern(): Promise<PatternSummary | null> {
       busy: false,
       currentPattern: summary,
       currentDecoded: decodePatternBody(body),
+      currentBody: body,
     });
     return summary;
   } catch (e) {
@@ -300,6 +304,19 @@ export function sendE2sFxControlMapSlot(
   }
 }
 
+/**
+ * Legt einen editierten Roh-Body als aktuellen Edit-Buffer ab (nach Feld-Editing
+ * über e2PatternEdit.ts) und re-dekodiert ihn für die UI. Schreibt NICHT ans
+ * Gerät — dafür pushCurrent(body) mit demselben Body aufrufen.
+ */
+export function applyE2sCurrentBodyEdit(edited: Uint8Array): void {
+  set({
+    currentBody: edited,
+    currentDecoded: decodePatternBody(edited),
+    currentPattern: summarizePatternBody(edited),
+  });
+}
+
 /** Test-Hooks. */
 export function __setE2sMidiAccessProviderForTests(
   p: MidiAccessProvider
@@ -331,6 +348,7 @@ export interface E2sDeviceStoreApi extends E2sDeviceState {
     fxSlot: number,
     spec: import("../utils/korg/e2Nrpn").FxControlMapSlotSpec
   ) => boolean;
+  applyCurrentBodyEdit: (edited: Uint8Array) => void;
 }
 
 export function useE2sDeviceStore(): E2sDeviceStoreApi {
@@ -354,5 +372,6 @@ export function useE2sDeviceStore(): E2sDeviceStoreApi {
     sendFxParam: sendE2sFxParam,
     readFxBuffer: readE2sFxBuffer,
     sendFxControlMapSlot: sendE2sFxControlMapSlot,
+    applyCurrentBodyEdit: applyE2sCurrentBodyEdit,
   };
 }
