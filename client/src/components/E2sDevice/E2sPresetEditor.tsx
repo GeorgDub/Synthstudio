@@ -331,6 +331,31 @@ function GrooveEditor({ backup }: { backup: PresetBackup }) {
       <div className="text-[10px] text-text-muted">
         Groove „{decoded.name || "—"}" · Länge {decoded.length}
       </div>
+      {/* 64-Step-Übersicht: Balkenhöhe ~ Velocity, Farbe markiert Micro-Timing */}
+      <div
+        className="grid gap-0.5"
+        style={{ gridTemplateColumns: "repeat(16, minmax(0, 1fr))" }}
+        data-testid="e2s-groove-grid"
+      >
+        {decoded.steps.map((gs, i) => {
+          const active = gs.velocity > 0 || gs.trigger !== 0 || gs.gate > 0;
+          return (
+            <button
+              key={i}
+              data-testid={`e2s-groove-cell-${i}`}
+              onClick={() => setStep(i)}
+              title={`Step ${i + 1}: trig ${gs.trigger}, vel ${gs.velocity}, gate ${gs.gate}`}
+              className={`h-5 rounded-sm text-[7px] leading-none flex items-end justify-center transition-colors ${
+                active
+                  ? "bg-accent-primary/70 text-text-primary"
+                  : "bg-bg-base text-text-dim hover:bg-bg-panel"
+              } ${step === i ? "ring-1 ring-accent-secondary" : ""}`}
+            >
+              {gs.trigger > 0 ? "▸" : gs.trigger < 0 ? "◂" : ""}
+            </button>
+          );
+        })}
+      </div>
       <div className="flex items-center gap-2">
         <span className="text-[10px] text-text-muted w-28 shrink-0">
           Step (0–{GROOVE_STEP_COUNT - 1})
