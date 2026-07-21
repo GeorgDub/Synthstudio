@@ -97,7 +97,7 @@ export function buildFxEdit(
   );
 }
 
-/** FX-Control-Map (Kategorie 0x02): Map-Parameter in FX-Slot setzen. */
+/** FX-Control-Map (Kategorie 0x02): einzelnen Map-Parameter in FX-Slot setzen. */
 export function buildFxControlMap(
   channel: number,
   fxSlot: number,
@@ -111,4 +111,46 @@ export function buildFxControlMap(
     mapParamIndex & 0x7f,
     clamp7(value)
   );
+}
+
+/**
+ * FX-Control-Map Parameter-Indizes (DATA-MSB in Kategorie 0x02).
+ * Quelle: hacktribe MIDI.md „FX Control Map parameters".
+ */
+export const FX_MAP_PARAM = {
+  MAP_SLOT: 0,
+  SOURCE_CONTROL: 1,
+  TARGET_PARAM: 2,
+  MIN_VALUE: 3,
+  MAX_VALUE: 4,
+} as const;
+
+export interface FxControlMapSlotSpec {
+  mapSlot: number; // 0..9 (10 Slots pro Preset)
+  sourceControl: number; // source_control-Enum
+  targetParam: number; // Index eines FX-Preset-Params
+  minValue: number; // Wert bei Source-Minimum
+  maxValue: number; // Wert bei Source-Maximum
+}
+
+/**
+ * Konfiguriert einen kompletten FX-Control-Map-Slot: sendet die fünf NRPN-
+ * Transaktionen (map_slot → source → target → min → max) als eine Byte-Sequenz.
+ * hacktribe wählt per map_slot (Index 0) den aktiven Slot, danach adressieren die
+ * übrigen Parameter genau diesen Slot (MIDI.md, „FX Control Map").
+ */
+export function buildFxControlMapSlot(
+  channel: number,
+  fxSlot: number,
+  spec: FxControlMapSlotSpec
+): Uint8Array {
+  const out: number[] = [];
+  const push = (paramIndex: number, value: number) =>
+    out.push(...buildFxControlMap(channel, fxSlot, paramIndex, value));
+  push(FX_MAP_PARAM.MAP_SLOT, spec.mapSlot);
+  push(FX_MAP_PARAM.SOURCE_CONTROL, spec.sourceControl);
+  push(FX_MAP_PARAM.TARGET_PARAM, spec.targetParam);
+  push(FX_MAP_PARAM.MIN_VALUE, spec.minValue);
+  push(FX_MAP_PARAM.MAX_VALUE, spec.maxValue);
+  return Uint8Array.from(out);
 }

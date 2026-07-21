@@ -770,11 +770,60 @@ export function fxEditBufferAddr(fxSlot: number): number {
   return FX_EDIT_BUFFER_BASE + FX_EDIT_BUFFER_STRIDE * fxSlot;
 }
 
+// ─── FX-Control-Map (im Live-Edit-Buffer, @0x36) ─────────────────────────────
+// Quelle: ht_fx_ram_format.py — ifx_buffer/mfx_buffer: nach Seek(50)=0x32,
+// input_level@0x33, output_level@0x35, dann control_map[10]. Jeder fx_control
+// ist 6 B: source_control, target_param, pad, min_value, pad, max_value.
+// 0x36 + 10*6 = 0x72 → füllt den Buffer exakt.
+export const FX_CONTROL_MAP_OFFSET = 0x36;
+export const FX_CONTROL_SLOT_SIZE = 6;
+export const FX_CONTROL_MAP_SLOTS = 10;
+
+/** FX-Control-Map Source-Controls (source_control-Enum, ht_fx_ram_format.py). */
+export const FX_SOURCE_CONTROLS: Record<number, string> = {
+  0x00: "none",
+  0x01: "FX On",
+  0x02: "FX Edit X",
+  0x03: "FX Edit Y",
+  0x04: "FX Edit X Hi",
+  0x05: "FX Edit X Lo",
+  0x06: "FX Edit Y Hi",
+  0x07: "FX Edit Y Lo",
+  0x0a: "Play/Start",
+};
+
+// Die NRPN-Parameter-Indizes der Control-Map (map_slot/source/target/min/max)
+// liegen kanonisch in e2Nrpn.ts (FX_MAP_PARAM) — dort werden sie zum Bauen der
+// NRPN-Sequenz benutzt.
+
+export interface FxControlSlot {
+  sourceControl: number; // source_control-Enum-Wert
+  targetParam: number; // Index eines Params im FX-Preset
+  minValue: number;
+  maxValue: number;
+}
+
+/** Dekodiert die 10 Control-Map-Slots aus einem 0x72-Buffer (@0x36, 6 B/Slot). */
+export function decodeFxControlMap(bytes: Uint8Array): FxControlSlot[] {
+  const slots: FxControlSlot[] = [];
+  for (let i = 0; i < FX_CONTROL_MAP_SLOTS; i++) {
+    const o = FX_CONTROL_MAP_OFFSET + i * FX_CONTROL_SLOT_SIZE;
+    slots.push({
+      sourceControl: bytes[o] ?? 0,
+      targetParam: bytes[o + 1] ?? 0,
+      minValue: bytes[o + 3] ?? 0,
+      maxValue: bytes[o + 5] ?? 0,
+    });
+  }
+  return slots;
+}
+
 export interface FxEditBuffer {
   device: number; // FX-Typ-ID @ +0x00
   params: number[]; // roh 0..127, an param-Index-Positionen
   inputLevel: number;
   outputLevel: number;
+  controlMap: FxControlSlot[]; // 10 Slots @0x36
 }
 
 /**
@@ -797,5 +846,6 @@ export function decodeFxEditBuffer(
     params,
     inputLevel: bytes[FX_BUF_INPUT_LEVEL] ?? 0,
     outputLevel: bytes[FX_BUF_OUTPUT_LEVEL] ?? 0,
+    controlMap: decodeFxControlMap(bytes),
   };
 }

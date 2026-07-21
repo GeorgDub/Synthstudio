@@ -283,6 +283,23 @@ export async function readE2sFxBuffer(fxSlot: number) {
   }
 }
 
+/**
+ * Konfiguriert einen kompletten FX-Control-Map-Slot via NRPN (fire-and-forget).
+ * false, wenn nicht verbunden.
+ */
+export function sendE2sFxControlMapSlot(
+  fxSlot: number,
+  spec: import("../utils/korg/e2Nrpn").FxControlMapSlotSpec
+): boolean {
+  if (!_bridge || _state.status !== "connected") return false;
+  try {
+    _bridge.sendFxControlMapSlot(fxSlot, spec);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Test-Hooks. */
 export function __setE2sMidiAccessProviderForTests(
   p: MidiAccessProvider
@@ -310,6 +327,10 @@ export interface E2sDeviceStoreApi extends E2sDeviceState {
   readFxBuffer: (
     fxSlot: number
   ) => Promise<import("../utils/korg/e2FxParams").FxEditBuffer | null>;
+  sendFxControlMapSlot: (
+    fxSlot: number,
+    spec: import("../utils/korg/e2Nrpn").FxControlMapSlotSpec
+  ) => boolean;
 }
 
 export function useE2sDeviceStore(): E2sDeviceStoreApi {
@@ -332,5 +353,6 @@ export function useE2sDeviceStore(): E2sDeviceStoreApi {
     pushGlobal: pushE2sGlobal,
     sendFxParam: sendE2sFxParam,
     readFxBuffer: readE2sFxBuffer,
+    sendFxControlMapSlot: sendE2sFxControlMapSlot,
   };
 }

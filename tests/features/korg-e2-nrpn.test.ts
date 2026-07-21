@@ -4,6 +4,8 @@ import {
   buildNrpn,
   buildFxEdit,
   buildFxControlMap,
+  buildFxControlMapSlot,
+  FX_MAP_PARAM,
   ifxFxSlot,
   MFX_FX_SLOT,
   NRPN_CC,
@@ -89,6 +91,48 @@ describe("buildFxControlMap", () => {
       99,
       E2NrpnCategory.FX_CONTROL_MAP,
     ]);
+  });
+});
+
+describe("buildFxControlMapSlot", () => {
+  it("emits five category-0x02 NRPN transactions in map-param order", () => {
+    const seq = buildFxControlMapSlot(0, 0x04, {
+      mapSlot: 3,
+      sourceControl: 0x02,
+      targetParam: 2,
+      minValue: 0,
+      maxValue: 127,
+    });
+    // 5 transactions × 12 bytes each (4 CCs incl. DATA-LSB)
+    expect(seq).toHaveLength(5 * 12);
+    // Split into the 5 transactions and check DATA-MSB (param index) + DATA-LSB.
+    const tx = Array.from({ length: 5 }, (_, i) =>
+      Array.from(seq.subarray(i * 12, i * 12 + 12))
+    );
+    // every transaction is category 0x02
+    tx.forEach(t => expect(t.slice(0, 3)).toEqual([0xb0, 99, 0x02]));
+    // DATA-MSB (index 8) walks map-param indices 0..4
+    expect(tx.map(t => t[8])).toEqual([
+      FX_MAP_PARAM.MAP_SLOT,
+      FX_MAP_PARAM.SOURCE_CONTROL,
+      FX_MAP_PARAM.TARGET_PARAM,
+      FX_MAP_PARAM.MIN_VALUE,
+      FX_MAP_PARAM.MAX_VALUE,
+    ]);
+    // DATA-LSB (index 11) carries the values
+    expect(tx.map(t => t[11])).toEqual([3, 0x02, 2, 0, 127]);
+  });
+
+  it("honours the global channel + clamps values", () => {
+    const seq = buildFxControlMapSlot(7, 0x20, {
+      mapSlot: 0,
+      sourceControl: 0x0a,
+      targetParam: 0,
+      minValue: 0,
+      maxValue: 999,
+    });
+    expect(seq[0]).toBe(0xb7); // channel 7
+    expect(seq[seq.length - 1]).toBe(127); // clamped max value
   });
 });
 

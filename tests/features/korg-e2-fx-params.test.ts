@@ -4,9 +4,13 @@ import {
   MFX_TYPES,
   fxTypeDef,
   decodeFxEditBuffer,
+  decodeFxControlMap,
   fxEditBufferAddr,
   FX_EDIT_BUFFER_BASE,
   FX_EDIT_BUFFER_STRIDE,
+  FX_CONTROL_MAP_OFFSET,
+  FX_CONTROL_SLOT_SIZE,
+  FX_SOURCE_CONTROLS,
 } from "../../client/src/utils/korg/e2FxParams";
 import {
   connectE2sDevice,
@@ -74,6 +78,44 @@ describe("fxEditBufferAddr + decodeFxEditBuffer", () => {
     const buf = new Uint8Array(FX_EDIT_BUFFER_STRIDE);
     buf[0] = 0x77;
     expect(decodeFxEditBuffer(buf, false).params).toEqual([]);
+  });
+});
+
+describe("decodeFxControlMap", () => {
+  it("reads 10 slots (source/target/min/max, 6 B each) from offset 0x36", () => {
+    const buf = new Uint8Array(FX_EDIT_BUFFER_STRIDE);
+    // slot 0: source=FX Edit X (0x02), target param 2, min 0x10, max 0x70
+    const o = FX_CONTROL_MAP_OFFSET;
+    buf[o + 0] = 0x02;
+    buf[o + 1] = 2;
+    buf[o + 3] = 0x10;
+    buf[o + 5] = 0x70;
+    // slot 9 (last): source=Play/Start (0x0a)
+    const o9 = FX_CONTROL_MAP_OFFSET + 9 * FX_CONTROL_SLOT_SIZE;
+    buf[o9] = 0x0a;
+    const map = decodeFxControlMap(buf);
+    expect(map).toHaveLength(10);
+    expect(map[0]).toEqual({
+      sourceControl: 0x02,
+      targetParam: 2,
+      minValue: 0x10,
+      maxValue: 0x70,
+    });
+    expect(map[9].sourceControl).toBe(0x0a);
+    expect(FX_SOURCE_CONTROLS[0x0a]).toBe("Play/Start");
+  });
+
+  it("is included in decodeFxEditBuffer and fills the buffer exactly to 0x72", () => {
+    // 0x36 + 10*6 = 0x72 → last map byte is the final buffer byte.
+    expect(FX_CONTROL_MAP_OFFSET + 10 * FX_CONTROL_SLOT_SIZE).toBe(
+      FX_EDIT_BUFFER_STRIDE
+    );
+    const buf = new Uint8Array(FX_EDIT_BUFFER_STRIDE);
+    buf[0] = 0x0a; // Filter
+    buf[FX_CONTROL_MAP_OFFSET + 1] = 3; // slot0 target param 3
+    const dec = decodeFxEditBuffer(buf, false);
+    expect(dec.controlMap).toHaveLength(10);
+    expect(dec.controlMap[0].targetParam).toBe(3);
   });
 });
 

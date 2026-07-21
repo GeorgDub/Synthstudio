@@ -6,16 +6,168 @@
  * sofort ein NRPN-FX-Edit ans Gerät. Nur mit hacktribe-Firmware (RAM-Zugriff).
  */
 import { useState } from "react";
-import { RefreshCw, AlertTriangle } from "lucide-react";
+import { RefreshCw, AlertTriangle, Send } from "lucide-react";
 import { useE2sDeviceStore } from "@/store/useE2sDeviceStore";
 import { ifxFxSlot, MFX_FX_SLOT } from "@/utils/korg/e2Nrpn";
-import { fxTypeDef, type FxEditBuffer } from "@/utils/korg/e2FxParams";
+import {
+  fxTypeDef,
+  FX_SOURCE_CONTROLS,
+  FX_CONTROL_MAP_SLOTS,
+  type FxEditBuffer,
+} from "@/utils/korg/e2FxParams";
 
 type SlotKind = "ifxA" | "ifxB" | "mfx";
 
 function resolveSlot(part: number, kind: SlotKind): number {
   if (kind === "mfx") return MFX_FX_SLOT;
   return ifxFxSlot(part, kind === "ifxB" ? 1 : 0);
+}
+
+/**
+ * FX-Control-Map-Editor: konfiguriert einen der 10 Map-Slots (Source → Target-
+ * Param, Min/Max) via NRPN. Zeigt die aus dem Live-Buffer dekodierten Slots und
+ * lässt einen davon setzen. Nur hacktribe.
+ */
+function FxControlMapEditor({
+  fxSlot,
+  buffer,
+  paramNames,
+}: {
+  fxSlot: number;
+  buffer: FxEditBuffer;
+  paramNames: string[];
+}) {
+  const device = useE2sDeviceStore();
+  const [mapSlot, setMapSlot] = useState(0);
+  const current = buffer.controlMap[mapSlot];
+  const [source, setSource] = useState(current?.sourceControl ?? 0);
+  const [target, setTarget] = useState(current?.targetParam ?? 0);
+  const [min, setMin] = useState(current?.minValue ?? 0);
+  const [max, setMax] = useState(current?.maxValue ?? 0x7f);
+
+  // Beim Wechsel des Map-Slots die Felder aus dem dekodierten Buffer laden.
+  const selectSlot = (n: number) => {
+    setMapSlot(n);
+    const s = buffer.controlMap[n];
+    setSource(s?.sourceControl ?? 0);
+    setTarget(s?.targetParam ?? 0);
+    setMin(s?.minValue ?? 0);
+    setMax(s?.maxValue ?? 0x7f);
+  };
+
+  const send = () =>
+    device.sendFxControlMapSlot(fxSlot, {
+      mapSlot,
+      sourceControl: source,
+      targetParam: target,
+      minValue: min,
+      maxValue: max,
+    });
+
+  return (
+    <div
+      className="space-y-1.5 pt-2 border-t border-border-color"
+      data-testid="e2s-fx-controlmap"
+    >
+      <div className="text-xs text-text-muted">
+        Control-Map{" "}
+        <span className="text-[10px] text-text-dim">
+          (XY/Pad → Param, 10 Slots)
+        </span>
+      </div>
+      <div className="flex flex-wrap items-center gap-1.5">
+        <label className="text-[10px] text-text-dim">Map-Slot</label>
+        <select
+          data-testid="e2s-cmap-slot"
+          value={mapSlot}
+          onChange={e => selectSlot(Number(e.target.value))}
+          className="text-xs px-1.5 py-1 rounded bg-bg-base border border-border-color text-text-primary"
+        >
+          {Array.from({ length: FX_CONTROL_MAP_SLOTS }, (_, i) => (
+            <option key={i} value={i}>
+              {i}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="flex items-center gap-2">
+        <span className="text-[10px] text-text-muted w-20 shrink-0">
+          Source
+        </span>
+        <select
+          data-testid="e2s-cmap-source"
+          value={source}
+          onChange={e => setSource(Number(e.target.value))}
+          className="flex-1 text-xs px-1.5 py-1 rounded bg-bg-base border border-border-color text-text-primary"
+        >
+          {Object.entries(FX_SOURCE_CONTROLS).map(([id, name]) => (
+            <option key={id} value={id}>
+              {name}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="flex items-center gap-2">
+        <span className="text-[10px] text-text-muted w-20 shrink-0">
+          Ziel-Param
+        </span>
+        <select
+          data-testid="e2s-cmap-target"
+          value={target}
+          onChange={e => setTarget(Number(e.target.value))}
+          className="flex-1 text-xs px-1.5 py-1 rounded bg-bg-base border border-border-color text-text-primary"
+        >
+          {paramNames.length === 0 ? (
+            <option value={0}>—</option>
+          ) : (
+            paramNames.map((name, i) => (
+              <option key={i} value={i}>
+                {i}: {name}
+              </option>
+            ))
+          )}
+        </select>
+      </div>
+      <div className="flex items-center gap-2">
+        <span className="text-[10px] text-text-muted w-20 shrink-0">Min</span>
+        <input
+          data-testid="e2s-cmap-min"
+          type="range"
+          min={0}
+          max={127}
+          value={min}
+          onChange={e => setMin(Number(e.target.value))}
+          className="flex-1 accent-accent-primary"
+        />
+        <span className="text-[10px] text-text-dim w-8 text-right tabular-nums">
+          {min}
+        </span>
+      </div>
+      <div className="flex items-center gap-2">
+        <span className="text-[10px] text-text-muted w-20 shrink-0">Max</span>
+        <input
+          data-testid="e2s-cmap-max"
+          type="range"
+          min={0}
+          max={127}
+          value={max}
+          onChange={e => setMax(Number(e.target.value))}
+          className="flex-1 accent-accent-primary"
+        />
+        <span className="text-[10px] text-text-dim w-8 text-right tabular-nums">
+          {max}
+        </span>
+      </div>
+      <button
+        data-testid="e2s-cmap-send"
+        onClick={send}
+        className="flex items-center gap-1 text-xs px-2 py-1 rounded bg-accent-primary text-text-primary hover:opacity-90 transition-opacity"
+        title="Map-Slot via NRPN ans Gerät senden"
+      >
+        <Send size={12} /> Map senden
+      </button>
+    </div>
+  );
 }
 
 export function E2sFxPanel() {
@@ -142,6 +294,11 @@ export function E2sFxPanel() {
               </div>
             ))
           )}
+          <FxControlMapEditor
+            fxSlot={fxSlot}
+            buffer={buffer}
+            paramNames={def?.params ?? []}
+          />
         </div>
       )}
 

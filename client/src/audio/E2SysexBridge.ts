@@ -43,6 +43,8 @@ import {
 import {
   buildFxEdit,
   buildFxControlMap,
+  buildFxControlMapSlot,
+  type FxControlMapSlotSpec,
   MFX_FX_SLOT,
 } from "../utils/korg/e2Nrpn";
 import {
@@ -402,11 +404,19 @@ export class E2SysexBridge {
     );
   }
 
-  /** FX-Control-Map via NRPN. */
+  /** FX-Control-Map via NRPN (einzelner Map-Parameter). */
   sendFxControlMap(fxSlot: number, mapParamIndex: number, value: number): void {
     this.sendRaw(
       buildFxControlMap(this.opts.globalChannel, fxSlot, mapParamIndex, value)
     );
+  }
+
+  /**
+   * Konfiguriert einen kompletten FX-Control-Map-Slot (map_slot/source/target/
+   * min/max) in einer NRPN-Sequenz.
+   */
+  sendFxControlMapSlot(fxSlot: number, spec: FxControlMapSlotSpec): void {
+    this.sendRaw(buildFxControlMapSlot(this.opts.globalChannel, fxSlot, spec));
   }
 
   /**
