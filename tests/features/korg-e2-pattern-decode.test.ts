@@ -4,6 +4,9 @@ import { fileURLToPath } from "node:url";
 import {
   decodePatternBody,
   decodeStep,
+  stepHasMotion,
+  STEP_MOTION_OFFSET,
+  STEP_MOTION_LEN,
 } from "../../client/src/utils/korg/e2Sysex";
 import { buildE2PatternBody } from "../../client/src/utils/e2sExport";
 
@@ -21,6 +24,18 @@ describe("decodeStep", () => {
     expect(s.velocity).toBe(0x50);
     expect(s.gate).toBe(true);
     expect(s.gateLen).toBe(0x3d);
+    expect(s.motion).toEqual([0, 0, 0, 0, 0, 0, 0]); // no motion in this tuple
+    expect(stepHasMotion(s)).toBe(false);
+  });
+
+  it("captures the opaque motion bytes +0x05..+0x0B non-destructively", () => {
+    // semantics unknown, but the 7 bytes must be preserved for future round-trips
+    const rec = new Uint8Array(12);
+    for (let i = 0; i < STEP_MOTION_LEN; i++)
+      rec[STEP_MOTION_OFFSET + i] = 0x10 + i;
+    const s = decodeStep(rec, 0);
+    expect(s.motion).toEqual([0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16]);
+    expect(stepHasMotion(s)).toBe(true);
   });
 
   it("decodes the inactive/default step template (00 48 60 ...)", () => {

@@ -317,6 +317,19 @@ export interface E2Step {
   velocity: number; // 0..127
   gate: boolean; // gate-flag (byte 3) — muss bei aktiven Steps gesetzt sein
   gateLen: number; // gate-length (byte 4)
+  /**
+   * Opake Step-Bytes +0x05..+0x0B (7 Bytes). SEMANTIK UNBEKANNT — vermutlich
+   * Motion-/Param-Lock, aber in allen verfügbaren Files (Stock-Init + Testbank,
+   * 250×16×64 Steps) durchgehend NULL, daher nicht reverse-engineert. Wird hier
+   * roh erhalten, damit ein Motion-haltiges Device-Pattern die Daten nicht still
+   * verliert. Siehe docs/reverse/pattern_format.md.
+   */
+  motion: number[]; // 7 Bytes
+}
+
+/** true, wenn ein Step Nicht-Null-Motion-Bytes trägt. */
+export function stepHasMotion(step: E2Step): boolean {
+  return step.motion.some(b => b !== 0);
 }
 export interface E2PartDecoded {
   sampleRef: number; // u16 LE @ +0x08 (Sample/OSC-Nummer)
@@ -336,14 +349,23 @@ function readU16LE(body: Uint8Array, off: number): number {
   return off + 1 < body.length ? body[off] | (body[off + 1] << 8) : 0;
 }
 
+/** Erstes Byte des opaken Motion-Bereichs im Step-Record. */
+export const STEP_MOTION_OFFSET = 0x05;
+export const STEP_MOTION_LEN = 7; // +0x05..+0x0B
+
 /** Dekodiert einen einzelnen Step-Record (12 B) ab `off`. */
 export function decodeStep(body: Uint8Array, off: number): E2Step {
+  const motion: number[] = [];
+  for (let i = 0; i < STEP_MOTION_LEN; i++) {
+    motion.push(body[off + STEP_MOTION_OFFSET + i] ?? 0);
+  }
   return {
     active: (body[off + STEP_TRIGGER_OFFSET] ?? 0) !== 0,
     note: body[off + STEP_NOTE_OFFSET] ?? 0,
     velocity: body[off + STEP_VELOCITY_OFFSET] ?? 0,
     gate: (body[off + STEP_GATE_OFFSET] ?? 0) !== 0,
     gateLen: body[off + STEP_GATELEN_OFFSET] ?? 0,
+    motion,
   };
 }
 
