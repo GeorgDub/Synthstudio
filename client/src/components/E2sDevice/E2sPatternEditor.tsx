@@ -127,7 +127,7 @@ export function E2sPatternEditor() {
             onChange={v => edit(setPartField(body, part, "volume", v))}
           />
           <NumField
-            label="Pan"
+            label="Pan (?)"
             testId="e2s-part-pan"
             value={p.pan}
             max={127}

@@ -80,8 +80,12 @@ export function setStepField(
 export type PartField = "volume" | "pan" | "sampleRef";
 
 /**
- * Setzt ein Part-Feld (nicht-destruktive Kopie). volume/pan 0..127 (pan 64 =
- * Mitte), sampleRef als u16 LE (Osc/Sample-Nummer, 0..999+).
+ * Setzt ein Part-Feld (nicht-destruktive Kopie). volume/sampleRef bestätigt
+ * (Factory-Init: Volume @+0x15 = 0x7F). ⚠️ `pan` @+0x22 ist UNVERIFIZIERT: das
+ * hacktribe-Factory-Init hat dort 0x14 (20), nicht 0x40 (Mitte) — der Offset
+ * könnte ein anderer Part-Param sein. Bis ein Device-Dump das klärt, nur mit
+ * Vorsicht nutzen (round-trip-sicher, aber evtl. nicht semantisch Pan).
+ * Siehe omnitribe docs/reverse/pattern_format.md.
  */
 export function setPartField(
   body: Uint8Array,
