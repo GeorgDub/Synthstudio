@@ -76,6 +76,7 @@ import { AudioWorkbench } from "@/components/AudioWorkbench/AudioWorkbench";
 import { ProjectDiffPanel } from "@/components/ProjectDiff/ProjectDiffPanel";
 import { EsxToE2sConverter } from "@/components/Tools/EsxToE2sConverter";
 import { E2sHacktribeRemap } from "@/components/Tools/E2sHacktribeRemap";
+import { E2sBankExport } from "@/components/Tools/E2sBankExport";
 import { getKeyboardSamplerState } from "@/store/useKeyboardSamplerStore";
 import { getEnvelopeFollowerConfigs } from "@/store/useEnvelopeFollowerStore";
 import {
@@ -1048,9 +1049,7 @@ export default function App() {
             packRegisterRoot?: (
               p: string
             ) => Promise<{ success: boolean; root?: string; error?: string }>;
-            packScanFolder?: (
-              p: string
-            ) => Promise<{
+            packScanFolder?: (p: string) => Promise<{
               success: boolean;
               root?: string;
               files?: Array<{ absolutePath: string }>;
@@ -2278,6 +2277,7 @@ export default function App() {
     | "diff"
     | "esx2e2s"
     | "e2sremap"
+    | "e2sbank"
     | "lfomod"
   >("prompt");
 
@@ -5818,6 +5818,7 @@ export default function App() {
                           { id: "lfomod", label: "〰 LFO/Mod" },
                           { id: "esx2e2s", label: "🔁 ESX→E2S" },
                           { id: "e2sremap", label: "🩹 HT-Remap" },
+                          { id: "e2sbank", label: "📦 Bank-Export" },
                           { id: "omnitribe", label: "🎛 OmniTribe" },
                         ] as const
                       ).map(t => (
@@ -6094,6 +6095,7 @@ export default function App() {
                       {activeTool === "diff" && <ProjectDiffPanel />}
                       {activeTool === "esx2e2s" && <EsxToE2sConverter />}
                       {activeTool === "e2sremap" && <E2sHacktribeRemap />}
+                      {activeTool === "e2sbank" && <E2sBankExport />}
                     </div>
                   </div>
                 )}
