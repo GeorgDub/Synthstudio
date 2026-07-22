@@ -1267,7 +1267,16 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
     // MIDI-Clock (alter Pfad, läuft parallel solange clockSync separat enabled).
     if (status === 0xf8) {
       if (clockSyncRef.current) {
-        const bpm = clockAnalyzer.current.tick(event.timeStamp);
+        // Web-MIDI liefert event.timeStamp; der native Backend-Pfad nicht →
+        // performance.now()-Fallback, damit externe Clock (E2S als Master) auch
+        // nativ ein BPM ergibt.
+        const clockTs =
+          typeof event.timeStamp === "number" && isFinite(event.timeStamp)
+            ? event.timeStamp
+            : typeof performance !== "undefined"
+              ? performance.now()
+              : Date.now();
+        const bpm = clockAnalyzer.current.tick(clockTs);
         if (bpm !== null && bpm > 20 && bpm < 300) {
           setExternalBpm(bpm);
           optionsRef.current.onClockBpm?.(bpm);
