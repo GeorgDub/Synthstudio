@@ -1,15 +1,15 @@
 /**
  * Synthstudio – useMidiBackendStore (Synth.md #11)
  *
- * Opt-in-Schalter für den MIDI-Backend-Pfad:
- *   - "web"    → Web-MIDI (navigator.requestMIDIAccess). DEFAULT. Funktioniert
- *                im Browser und im Electron-Renderer (Chromium-Backend) ohne
- *                Zusatz-Setup. Der bisherige, verifizierte Pfad.
+ * Schalter für den MIDI-Backend-Pfad:
+ *   - "web"    → Web-MIDI (navigator.requestMIDIAccess). Browser-DEFAULT.
+ *                Funktioniert im Browser und im Electron-Renderer ohne Setup.
  *   - "native" → nativer RtMidi-Layer (@julusian/midi) via Electron-IPC. Nur
- *                im Electron-Desktop verfügbar; robusteres SysEx-I/O für
- *                OmniTribe/KORG. **Opt-in**, weil ohne echte Hardware-E2E noch
- *                nicht als Default verifiziert (Risiko: lädt, liefert aber
- *                still keine Messages).
+ *                im Electron-Desktop; echtes MIDI (mehrere Geräte parallel, kein
+ *                Browser-SysEx-Prompt, niedrigere Latenz). **Electron-DEFAULT**
+ *                (siehe resolveBackend). Bei Fehlschlag fällt useMidi.enable()
+ *                automatisch auf Web-MIDI zurück; der Toggle erlaubt jederzeit
+ *                den manuellen Wechsel.
  *
  * WICHTIG: Der Schalter ändert NUR welchen Backend-Pfad neue connect()/enable()-
  * Aufrufe wählen. Ein Backend-Wechsel zur Laufzeit muss vom Consumer
@@ -31,14 +31,36 @@ let _backend: MidiBackend = DEFAULT_BACKEND;
 
 const _listeners = new Set<(b: MidiBackend) => void>();
 
+/** true, wenn wir im Electron-Desktop laufen (preload legt window.electronAPI an). */
+function _isElectron(): boolean {
+  return (
+    typeof window !== "undefined" &&
+    !!(window as { electronAPI?: unknown }).electronAPI
+  );
+}
+
+/**
+ * Reine Auflösung des Backends: expliziter (gültiger) gespeicherter Wunsch hat
+ * Vorrang; sonst im Electron-Desktop **nativ** (richtiges MIDI: mehrere Geräte,
+ * kein Browser-SysEx-Prompt, niedrigere Latenz), im Browser **web**. Bei
+ * Fehlschlag fällt `useMidi.enable()` ohnehin auf Web-MIDI zurück.
+ */
+export function resolveBackend(
+  stored: string | null,
+  isElectron: boolean
+): MidiBackend {
+  if (stored && VALID.has(stored as MidiBackend)) return stored as MidiBackend;
+  return isElectron ? "native" : "web";
+}
+
 function _readFromStorage(): MidiBackend {
+  let stored: string | null = null;
   try {
-    const v = localStorage.getItem(STORAGE_KEY);
-    if (v && VALID.has(v as MidiBackend)) return v as MidiBackend;
+    stored = localStorage.getItem(STORAGE_KEY);
   } catch {
     // localStorage nicht verfügbar
   }
-  return DEFAULT_BACKEND;
+  return resolveBackend(stored, _isElectron());
 }
 
 function _writeToStorage(): void {
@@ -50,7 +72,7 @@ function _writeToStorage(): void {
 }
 
 function _notify(): void {
-  _listeners.forEach((fn) => fn(_backend));
+  _listeners.forEach(fn => fn(_backend));
 }
 
 _backend = _readFromStorage();
@@ -99,7 +121,9 @@ export function useMidiBackendStore(): MidiBackendStoreApi {
     _listeners.add(handler);
     // Sync, falls sich der Wert zwischen initialem useState und Effekt änderte.
     setBackendState(_backend);
-    return () => { _listeners.delete(handler); };
+    return () => {
+      _listeners.delete(handler);
+    };
   }, []);
 
   const setBackend = useCallback((b: MidiBackend) => setMidiBackend(b), []);
