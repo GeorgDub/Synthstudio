@@ -14,8 +14,16 @@
  */
 
 import { useEffect, useRef, useCallback, useState } from "react";
-import { getChordMemoryState, buildChordNotes } from "@/store/useChordMemoryStore";
-import { AudioEngine, findFxParamRange, midiValueToFxParam, type FxParamKey } from "@/audio/AudioEngine";
+import {
+  getChordMemoryState,
+  buildChordNotes,
+} from "@/store/useChordMemoryStore";
+import {
+  AudioEngine,
+  findFxParamRange,
+  midiValueToFxParam,
+  type FxParamKey,
+} from "@/audio/AudioEngine";
 import { toast } from "@/store/useToastStore";
 import {
   loadClockOutputId,
@@ -37,11 +45,23 @@ import {
 import { useElectron } from "../../../electron/useElectron";
 import { isNativeMidiBackend } from "@/store/useMidiBackendStore";
 import {
+  getInputConfig,
+  enabledInputNames,
+  migrateSingleInput,
+  roleAcceptsCc,
+  roleAcceptsNote,
+  roleAcceptsSysex,
+  roleAcceptsClock,
+} from "@/store/useMidiInputsStore";
+import {
   createNativeMidiAccess,
   type NativeMidiAccess,
   type NativeMidiBridge,
 } from "@/utils/nativeMidiAccess";
-import { NanoKontrolFeedback, type NanoKontrolChannelState } from "@/audio/NanoKontrolFeedback";
+import {
+  NanoKontrolFeedback,
+  type NanoKontrolChannelState,
+} from "@/audio/NanoKontrolFeedback";
 import { MidiClockIn, type MidiClockInStatus } from "@/audio/MidiClockIn";
 // v3.111.0: MidiSyncIn — schlanke KORG-Master-Sync-Façade neben MidiClockIn.
 import { MidiSyncIn } from "@/audio/MidiSyncIn";
@@ -59,7 +79,11 @@ import {
   loadNeverList,
 } from "@/utils/midiDeviceDetection";
 import { getMidiFxChain } from "@/store/useMidiFxStore";
-import { applyMidiFx, MidiFxNoteTracker, type NoteOn } from "@/utils/midiFxEngine";
+import {
+  applyMidiFx,
+  MidiFxNoteTracker,
+  type NoteOn,
+} from "@/utils/midiFxEngine";
 
 // ─── Typen ────────────────────────────────────────────────────────────────────
 
@@ -80,20 +104,20 @@ export type MidiLearnTarget =
   | { type: "bpmDown" }
   | { type: "masterVolume" }
   // ── Parts ──────────────────────────────────────────────────────────────────
-  | { type: "volume";  partId: string; partName?: string }
-  | { type: "mute";    partId: string; partName?: string }
-  | { type: "solo";    partId: string; partName?: string }
-  | { type: "pan";     partId: string; partName?: string }
+  | { type: "volume"; partId: string; partName?: string }
+  | { type: "mute"; partId: string; partName?: string }
+  | { type: "solo"; partId: string; partName?: string }
+  | { type: "pan"; partId: string; partName?: string }
   /** v1.76: jeder numerische FX-Parameter eines Channels (filterFreq,
    *  reverbDecay, delayMix, eqLow, …). Siehe FX_PARAM_RANGES für die Liste. */
   | { type: "fxParam"; partId: string; partName?: string; param: FxParamKey }
   /** v2.1: Send-Bus-Level pro Channel (Reverb / Delay). */
   | { type: "send"; partId: string; partName?: string; bus: "reverb" | "delay" }
-  | { type: "step";    partId: string; stepIndex: number }
+  | { type: "step"; partId: string; stepIndex: number }
   | { type: "partUp" }
   | { type: "partDown" }
   // ── Pattern ─────────────────────────────────────────────────────────────────
-  | { type: "pattern";          patternIndex: number }
+  | { type: "pattern"; patternIndex: number }
   | { type: "patternNext" }
   | { type: "patternPrev" }
   | { type: "patternClear" }
@@ -169,22 +193,22 @@ export type MidiLearnTarget =
    * gemappt werden. Closes v3.80-Caveat "kein MIDI-Learn auf Bus-Strip".
    */
   | { type: "subMixBusVolume"; busId: string; busName?: string }
-  | { type: "subMixBusPan";    busId: string; busName?: string }
-  | { type: "subMixBusMute";   busId: string; busName?: string }
-  | { type: "subMixBusSolo";   busId: string; busName?: string }
+  | { type: "subMixBusPan"; busId: string; busName?: string }
+  | { type: "subMixBusMute"; busId: string; busName?: string }
+  | { type: "subMixBusSolo"; busId: string; busName?: string }
   // ── Sub-Mix-Bus FX (v3.87.0) ─────────────────────────────────────────────
   /**
    * v3.87: MIDI-Learn auf Sub-Mix-Bus FX-Params (EQ-3 Bands + Compressor
    * Threshold/Ratio + Reverb/Delay-Send). Closes v3.86-Caveat
    * "Bus FX-Chain ohne MIDI-Learn". Events: midi:subMixBusEqLowGain etc.
    */
-  | { type: "subMixBusEqLowGain";    busId: string; busName?: string }
-  | { type: "subMixBusEqMidGain";    busId: string; busName?: string }
-  | { type: "subMixBusEqHighGain";   busId: string; busName?: string }
+  | { type: "subMixBusEqLowGain"; busId: string; busName?: string }
+  | { type: "subMixBusEqMidGain"; busId: string; busName?: string }
+  | { type: "subMixBusEqHighGain"; busId: string; busName?: string }
   | { type: "subMixBusCompThreshold"; busId: string; busName?: string }
-  | { type: "subMixBusCompRatio";    busId: string; busName?: string }
-  | { type: "subMixBusReverbSend";   busId: string; busName?: string }
-  | { type: "subMixBusDelaySend";    busId: string; busName?: string }
+  | { type: "subMixBusCompRatio"; busId: string; busName?: string }
+  | { type: "subMixBusReverbSend"; busId: string; busName?: string }
+  | { type: "subMixBusDelaySend"; busId: string; busName?: string }
   // ── Mute/Solo Bus-Groups (v3.125.0) ─────────────────────────────────────
   /**
    * v3.125: MIDI-Learn auf Mute-Solo-Bus-Groups (one-click group-mute/solo).
@@ -341,6 +365,8 @@ export interface MidiActions {
   enable: () => Promise<void>;
   disable: () => void;
   setActiveDevice: (id: string | null) => void;
+  /** Multi-Device: (re)attacht handleMidiMessage an alle enabled Inputs. */
+  syncMultiInputs: () => void;
   setActiveOutputDevice: (id: string | null) => void;
   setMidiOutEnabled: (enabled: boolean) => void;
   setMidiOutChannel: (channel: number) => void;
@@ -363,7 +389,12 @@ export interface MidiActions {
   /** v1.83: Setter für den Auto-Learn Channel-Filter (0 = alle, 1-16). */
   setAutoLearnFilterChannel: (ch: number) => void;
   removeMapping: (cc: number, channel: number) => void;
-  addNoteMapping: (note: number, channel: number, partId: string, label: string) => void;
+  addNoteMapping: (
+    note: number,
+    channel: number,
+    partId: string,
+    label: string
+  ) => void;
   removeNoteMapping: (note: number, channel: number) => void;
   setClockSync: (enabled: boolean) => void;
   clearAllMappings: () => void;
@@ -421,57 +452,108 @@ export interface MidiActions {
  *  Auto-Learn-Progress angezeigt. Pure Funktion — keine Side-Effects. */
 export function labelForTarget(target: MidiLearnTarget): string {
   switch (target.type) {
-    case "bpm":             return "BPM (absolut)";
-    case "masterVolume":    return "Master Volume";
-    case "playStop":        return "Play / Stop";
-    case "record":          return "Record";
-    case "tapTempo":        return "Tap Tempo";
-    case "bpmUp":           return "BPM +1";
-    case "bpmDown":         return "BPM -1";
-    case "volume":          return `Volume: ${target.partName ?? target.partId.slice(0, 8)}`;
-    case "pan":             return `Pan: ${target.partName ?? target.partId.slice(0, 8)}`;
-    case "mute":            return `Mute: ${target.partName ?? target.partId.slice(0, 8)}`;
-    case "solo":            return `Solo: ${target.partName ?? target.partId.slice(0, 8)}`;
-    case "fxParam":         return `${findFxParamRange(target.param)?.label ?? target.param}: ${target.partName ?? target.partId.slice(0, 8)}`;
-    case "send":            return `${target.bus === "reverb" ? "Reverb Send" : "Delay Send"}: ${target.partName ?? target.partId.slice(0, 8)}`;
-    case "partUp":          return "Part ↑";
-    case "partDown":        return "Part ↓";
-    case "step":            return `Step ${target.stepIndex + 1}`;
-    case "pattern":         return `Pattern ${target.patternIndex + 1}`;
-    case "patternNext":     return "Pattern →";
-    case "patternPrev":     return "Pattern ←";
-    case "patternClear":    return "Pattern leeren";
-    case "patternFill":     return "Pattern füllen";
-    case "patternRandomize":return "Pattern zufällig";
-    case "patternDuplicate":return "Pattern duplizieren";
-    case "tab":             return `Tab: ${target.tabId}`;
-    case "toggleNoteRepeat":return "Note Repeat";
-    case "toggleMorph":     return "Pattern Morph";
-    case "commitLiveEdit":  return "Live Edit Commit";
-    case "scenelaunch":     return `Scene ${target.sceneIndex + 1}`;
-    case "openSettings":    return "Einstellungen öffnen";
-    case "macro":           return `Macro ${target.index + 1}${target.label ? `: ${target.label}` : ""}`;
-    case "morphAmount":     return "Macro-Snapshot Morph";
-    case "recallSnapshot":  return `Recall: ${target.snapshotName ?? target.snapshotId.slice(0, 8)}`;
-    case "runScript":       return `Script: ${target.scriptName ?? target.scriptId.slice(0, 8)}`;
-    case "chain":           return `Chain: ${target.label} (${target.steps.length} Schritte)`;
-    case "loopTrigger":     return `Loop ${target.loopIndex + 1} Trigger`;
-    case "loopErase":       return `Loop ${target.loopIndex + 1} Erase`;
-    case "playSlicePad":    return `Slice-Pad ${target.sliceIndex + 1}`;
-    case "subMixBusVolume": return `Bus Volume: ${target.busName ?? target.busId.slice(0, 8)}`;
-    case "subMixBusPan":    return `Bus Pan: ${target.busName ?? target.busId.slice(0, 8)}`;
-    case "subMixBusMute":   return `Bus Mute: ${target.busName ?? target.busId.slice(0, 8)}`;
-    case "subMixBusSolo":   return `Bus Solo: ${target.busName ?? target.busId.slice(0, 8)}`;
-    case "subMixBusEqLowGain":     return `Bus EQ Low: ${target.busName ?? target.busId.slice(0, 8)}`;
-    case "subMixBusEqMidGain":     return `Bus EQ Mid: ${target.busName ?? target.busId.slice(0, 8)}`;
-    case "subMixBusEqHighGain":    return `Bus EQ High: ${target.busName ?? target.busId.slice(0, 8)}`;
-    case "subMixBusCompThreshold": return `Bus Comp Threshold: ${target.busName ?? target.busId.slice(0, 8)}`;
-    case "subMixBusCompRatio":     return `Bus Comp Ratio: ${target.busName ?? target.busId.slice(0, 8)}`;
-    case "subMixBusReverbSend":    return `Bus Reverb Send: ${target.busName ?? target.busId.slice(0, 8)}`;
-    case "subMixBusDelaySend":     return `Bus Delay Send: ${target.busName ?? target.busId.slice(0, 8)}`;
-    case "muteGroup":              return `Mute-Group: ${target.groupName ?? target.groupId.slice(0, 8)}`;
-    case "soloGroup":              return `Solo-Group: ${target.groupName ?? target.groupId.slice(0, 8)}`;
-    default:                return "Unbekannt";
+    case "bpm":
+      return "BPM (absolut)";
+    case "masterVolume":
+      return "Master Volume";
+    case "playStop":
+      return "Play / Stop";
+    case "record":
+      return "Record";
+    case "tapTempo":
+      return "Tap Tempo";
+    case "bpmUp":
+      return "BPM +1";
+    case "bpmDown":
+      return "BPM -1";
+    case "volume":
+      return `Volume: ${target.partName ?? target.partId.slice(0, 8)}`;
+    case "pan":
+      return `Pan: ${target.partName ?? target.partId.slice(0, 8)}`;
+    case "mute":
+      return `Mute: ${target.partName ?? target.partId.slice(0, 8)}`;
+    case "solo":
+      return `Solo: ${target.partName ?? target.partId.slice(0, 8)}`;
+    case "fxParam":
+      return `${findFxParamRange(target.param)?.label ?? target.param}: ${target.partName ?? target.partId.slice(0, 8)}`;
+    case "send":
+      return `${target.bus === "reverb" ? "Reverb Send" : "Delay Send"}: ${target.partName ?? target.partId.slice(0, 8)}`;
+    case "partUp":
+      return "Part ↑";
+    case "partDown":
+      return "Part ↓";
+    case "step":
+      return `Step ${target.stepIndex + 1}`;
+    case "pattern":
+      return `Pattern ${target.patternIndex + 1}`;
+    case "patternNext":
+      return "Pattern →";
+    case "patternPrev":
+      return "Pattern ←";
+    case "patternClear":
+      return "Pattern leeren";
+    case "patternFill":
+      return "Pattern füllen";
+    case "patternRandomize":
+      return "Pattern zufällig";
+    case "patternDuplicate":
+      return "Pattern duplizieren";
+    case "tab":
+      return `Tab: ${target.tabId}`;
+    case "toggleNoteRepeat":
+      return "Note Repeat";
+    case "toggleMorph":
+      return "Pattern Morph";
+    case "commitLiveEdit":
+      return "Live Edit Commit";
+    case "scenelaunch":
+      return `Scene ${target.sceneIndex + 1}`;
+    case "openSettings":
+      return "Einstellungen öffnen";
+    case "macro":
+      return `Macro ${target.index + 1}${target.label ? `: ${target.label}` : ""}`;
+    case "morphAmount":
+      return "Macro-Snapshot Morph";
+    case "recallSnapshot":
+      return `Recall: ${target.snapshotName ?? target.snapshotId.slice(0, 8)}`;
+    case "runScript":
+      return `Script: ${target.scriptName ?? target.scriptId.slice(0, 8)}`;
+    case "chain":
+      return `Chain: ${target.label} (${target.steps.length} Schritte)`;
+    case "loopTrigger":
+      return `Loop ${target.loopIndex + 1} Trigger`;
+    case "loopErase":
+      return `Loop ${target.loopIndex + 1} Erase`;
+    case "playSlicePad":
+      return `Slice-Pad ${target.sliceIndex + 1}`;
+    case "subMixBusVolume":
+      return `Bus Volume: ${target.busName ?? target.busId.slice(0, 8)}`;
+    case "subMixBusPan":
+      return `Bus Pan: ${target.busName ?? target.busId.slice(0, 8)}`;
+    case "subMixBusMute":
+      return `Bus Mute: ${target.busName ?? target.busId.slice(0, 8)}`;
+    case "subMixBusSolo":
+      return `Bus Solo: ${target.busName ?? target.busId.slice(0, 8)}`;
+    case "subMixBusEqLowGain":
+      return `Bus EQ Low: ${target.busName ?? target.busId.slice(0, 8)}`;
+    case "subMixBusEqMidGain":
+      return `Bus EQ Mid: ${target.busName ?? target.busId.slice(0, 8)}`;
+    case "subMixBusEqHighGain":
+      return `Bus EQ High: ${target.busName ?? target.busId.slice(0, 8)}`;
+    case "subMixBusCompThreshold":
+      return `Bus Comp Threshold: ${target.busName ?? target.busId.slice(0, 8)}`;
+    case "subMixBusCompRatio":
+      return `Bus Comp Ratio: ${target.busName ?? target.busId.slice(0, 8)}`;
+    case "subMixBusReverbSend":
+      return `Bus Reverb Send: ${target.busName ?? target.busId.slice(0, 8)}`;
+    case "subMixBusDelaySend":
+      return `Bus Delay Send: ${target.busName ?? target.busId.slice(0, 8)}`;
+    case "muteGroup":
+      return `Mute-Group: ${target.groupName ?? target.groupId.slice(0, 8)}`;
+    case "soloGroup":
+      return `Solo-Group: ${target.groupName ?? target.groupId.slice(0, 8)}`;
+    default:
+      return "Unbekannt";
   }
 }
 
@@ -491,16 +573,22 @@ export function targetsMatch(a: MidiLearnTarget, b: MidiLearnTarget): boolean {
     case "pan":
       return a.partId === (b as { partId: string }).partId;
     case "fxParam":
-      return a.partId === (b as { partId: string; param: string }).partId &&
-             a.param === (b as { partId: string; param: string }).param;
+      return (
+        a.partId === (b as { partId: string; param: string }).partId &&
+        a.param === (b as { partId: string; param: string }).param
+      );
     case "send":
-      return a.partId === (b as { partId: string; bus: string }).partId &&
-             a.bus === (b as { partId: string; bus: string }).bus;
+      return (
+        a.partId === (b as { partId: string; bus: string }).partId &&
+        a.bus === (b as { partId: string; bus: string }).bus
+      );
     case "pattern":
       return a.patternIndex === (b as { patternIndex: number }).patternIndex;
     case "step":
-      return a.partId === (b as { partId: string; stepIndex: number }).partId &&
-             a.stepIndex === (b as { partId: string; stepIndex: number }).stepIndex;
+      return (
+        a.partId === (b as { partId: string; stepIndex: number }).partId &&
+        a.stepIndex === (b as { partId: string; stepIndex: number }).stepIndex
+      );
     case "tab":
       return a.tabId === (b as { tabId: string }).tabId;
     case "scenelaunch":
@@ -551,9 +639,9 @@ export function targetsMatch(a: MidiLearnTarget, b: MidiLearnTarget): boolean {
  */
 export function findMappingForTarget(
   mappings: MidiMapping[],
-  target: MidiLearnTarget,
+  target: MidiLearnTarget
 ): MidiMapping | undefined {
-  return mappings.find((m) => targetsMatch(m.target, target));
+  return mappings.find(m => targetsMatch(m.target, target));
 }
 
 /**
@@ -567,29 +655,39 @@ export function findMappingForTarget(
  */
 export interface ChainPlan {
   /** Geplant: ausgeführte Steps mit kumulativem Delay (in ms vom Chain-Start). */
-  triggers: Array<{ step: number; target: MidiLearnTarget; value: number; atMs: number }>;
+  triggers: Array<{
+    step: number;
+    target: MidiLearnTarget;
+    value: number;
+    atMs: number;
+  }>;
   /** Anzahl der wegen Nesting/Ungültigkeit übersprungenen Steps. */
   dropped: number;
 }
 
-export function planChainExecution(
-  steps: ChainStep[],
-): ChainPlan {
+export function planChainExecution(steps: ChainStep[]): ChainPlan {
   const triggers: ChainPlan["triggers"] = [];
   let dropped = 0;
   let cumDelay = 0;
   for (let i = 0; i < steps.length; i++) {
     const step = steps[i];
-    if (!step || !step.target) { dropped++; continue; }
+    if (!step || !step.target) {
+      dropped++;
+      continue;
+    }
     // Defensive: chain-of-chain blocken (TS verhindert es, aber JS-Caller könnte casten)
     // @ts-expect-error - prüfen ob jemand via Cast ein chain als Step durchgereicht hat
-    if (step.target.type === "chain") { dropped++; continue; }
+    if (step.target.type === "chain") {
+      dropped++;
+      continue;
+    }
     triggers.push({
       step: i,
       target: step.target,
-      value: typeof step.value === "number"
-        ? Math.max(0, Math.min(127, step.value))
-        : 127,
+      value:
+        typeof step.value === "number"
+          ? Math.max(0, Math.min(127, step.value))
+          : 127,
       atMs: cumDelay,
     });
     cumDelay += Math.max(0, Math.min(60_000, step.delayMs ?? 0));
@@ -622,7 +720,7 @@ export function nextAutoLearnEntry(
    * hat und der Auto-Learn deshalb 'falsche' Events von einem anderen
    * Gerät einfängt.
    */
-  filterChannel: number = 0,
+  filterChannel: number = 0
 ): {
   newQueue: AutoLearnEntry[];
   ccMapping?: MidiMapping;
@@ -717,14 +815,18 @@ function loadActiveDevice(): ActiveDevicePersist {
   try {
     const raw = localStorage.getItem(ACTIVE_DEVICE_STORAGE_KEY);
     if (raw) return JSON.parse(raw);
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
   return {};
 }
 
 function saveActiveDevice(d: ActiveDevicePersist) {
   try {
     localStorage.setItem(ACTIVE_DEVICE_STORAGE_KEY, JSON.stringify(d));
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
 }
 
 // ─── MIDI-Clock-Analyse ───────────────────────────────────────────────────────
@@ -788,7 +890,9 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
   const [devices, setDevices] = useState<MidiDevice[]>([]);
   const [activeDeviceId, setActiveDeviceId] = useState<string | null>(null);
   const [outputDevices, setOutputDevices] = useState<MidiDevice[]>([]);
-  const [activeOutputDeviceId, setActiveOutputDeviceId] = useState<string | null>(null);
+  const [activeOutputDeviceId, setActiveOutputDeviceId] = useState<
+    string | null
+  >(null);
   const [midiOutEnabled, setMidiOutEnabledState] = useState(false);
   const [midiOutChannel, setMidiOutChannelState] = useState(10); // Ch10 = Drums GM
   const [isLearning, setIsLearning] = useState(false);
@@ -799,24 +903,38 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
   // v2.83-Refactor: Tick-Generierung läuft jetzt drift-frei in der AudioEngine
   // (AudioContext.currentTime-basiert) — useMidi wirkt nur noch als Sender-
   // Provider + UI-State. Der alte setInterval-Pfad wurde entfernt.
-  const [clockOutEnabled, setClockOutEnabledState] = useState(() => loadClockOutEnabled());
+  const [clockOutEnabled, setClockOutEnabledState] = useState(() =>
+    loadClockOutEnabled()
+  );
   const [clockOutBpm, setClockOutBpmState] = useState(120);
-  const [clockOutputDeviceId, setClockOutputDeviceIdState] = useState<string | null>(() => loadClockOutputId());
+  const [clockOutputDeviceId, setClockOutputDeviceIdState] = useState<
+    string | null
+  >(() => loadClockOutputId());
   const clockOutEnabledRef = useRef(false);
   const clockOutBpmRef = useRef(120);
   const clockOutputDeviceIdRef = useRef<string | null>(null);
-  useEffect(() => { clockOutEnabledRef.current = clockOutEnabled; }, [clockOutEnabled]);
-  useEffect(() => { clockOutBpmRef.current = clockOutBpm; }, [clockOutBpm]);
-  useEffect(() => { clockOutputDeviceIdRef.current = clockOutputDeviceId; }, [clockOutputDeviceId]);
+  useEffect(() => {
+    clockOutEnabledRef.current = clockOutEnabled;
+  }, [clockOutEnabled]);
+  useEffect(() => {
+    clockOutBpmRef.current = clockOutBpm;
+  }, [clockOutBpm]);
+  useEffect(() => {
+    clockOutputDeviceIdRef.current = clockOutputDeviceId;
+  }, [clockOutputDeviceId]);
 
   // v3.35.0: External-Sync (MIDI-Clock-IN als Slave).
-  const [clockInEnabled, setClockInEnabledState] = useState<boolean>(() => loadClockInEnabled());
+  const [clockInEnabled, setClockInEnabledState] = useState<boolean>(() =>
+    loadClockInEnabled()
+  );
   const [clockInStatus, setClockInStatus] = useState<MidiClockInStatus>("off");
   // v3.36.0: SPP-Display-Position für UI-Anzeige.
   const [clockInSpp, setClockInSpp] = useState<number | null>(null);
   const clockInRef = useRef<MidiClockIn>(new MidiClockIn());
   const clockInEnabledRef = useRef(false);
-  useEffect(() => { clockInEnabledRef.current = clockInEnabled; }, [clockInEnabled]);
+  useEffect(() => {
+    clockInEnabledRef.current = clockInEnabled;
+  }, [clockInEnabled]);
 
   // v3.111.0: MidiSyncIn — alternative schlanke Façade (KORG-Master-Sync).
   // Laeuft parallel zu MidiClockIn: wenn der User Sync-In im Store aktiviert,
@@ -835,23 +953,39 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
           if (typeof detail?.bpm === "number") {
             setMidiSyncInDetectedBpm(detail.bpm);
             if (state.syncTempo) {
-              try { AudioEngine.applyDetectedBpm(detail.bpm); } catch { /* swallow */ }
+              try {
+                AudioEngine.applyDetectedBpm(detail.bpm);
+              } catch {
+                /* swallow */
+              }
             }
           }
           break;
         case "start":
           if (state.autoStartStop) {
-            try { AudioEngine.applyExternalStart(); } catch { /* swallow */ }
+            try {
+              AudioEngine.applyExternalStart();
+            } catch {
+              /* swallow */
+            }
           }
           break;
         case "stop":
           if (state.autoStartStop) {
-            try { AudioEngine.applyExternalStop(); } catch { /* swallow */ }
+            try {
+              AudioEngine.applyExternalStop();
+            } catch {
+              /* swallow */
+            }
           }
           break;
         case "continue":
           if (state.autoStartStop) {
-            try { AudioEngine.applyExternalContinue(); } catch { /* swallow */ }
+            try {
+              AudioEngine.applyExternalContinue();
+            } catch {
+              /* swallow */
+            }
           }
           break;
         // v3.112.0: SPP — Song Position Pointer (0xF2).
@@ -859,7 +993,11 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
           if (typeof detail?.midiBeats === "number") {
             setMidiSyncInLastSppMidiBeats(detail.midiBeats);
             if (state.syncPosition) {
-              try { AudioEngine.applyExternalPosition(detail.midiBeats); } catch { /* swallow */ }
+              try {
+                AudioEngine.applyExternalPosition(detail.midiBeats);
+              } catch {
+                /* swallow */
+              }
             }
           }
           break;
@@ -875,10 +1013,18 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
             typeof detail?.fps === "number"
           ) {
             setMidiSyncInLastMtcPosition({
-              hh: detail.hh, mm: detail.mm, ss: detail.ss, ff: detail.ff, fps: detail.fps,
+              hh: detail.hh,
+              mm: detail.mm,
+              ss: detail.ss,
+              ff: detail.ff,
+              fps: detail.fps,
             });
             if (state.syncPosition && typeof detail.positionMs === "number") {
-              try { AudioEngine.applyMtcLocate(detail.positionMs); } catch { /* swallow */ }
+              try {
+                AudioEngine.applyMtcLocate(detail.positionMs);
+              } catch {
+                /* swallow */
+              }
             }
           }
           break;
@@ -892,50 +1038,86 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
             typeof detail?.fps === "number"
           ) {
             setMidiSyncInLastMtcPosition({
-              hh: detail.hh, mm: detail.mm, ss: detail.ss, ff: detail.ff, fps: detail.fps,
+              hh: detail.hh,
+              mm: detail.mm,
+              ss: detail.ss,
+              ff: detail.ff,
+              fps: detail.fps,
             });
             if (state.syncPosition && typeof detail.positionMs === "number") {
-              try { AudioEngine.applyMtcLocate(detail.positionMs); } catch { /* swallow */ }
+              try {
+                AudioEngine.applyMtcLocate(detail.positionMs);
+              } catch {
+                /* swallow */
+              }
             }
           }
           break;
       }
     };
     // Register beim Engine fuer Telemetrie / Tests.
-    try { AudioEngine.setMidiSyncIn(sync); } catch { /* swallow */ }
+    try {
+      AudioEngine.setMidiSyncIn(sync);
+    } catch {
+      /* swallow */
+    }
     return () => {
-      try { AudioEngine.setMidiSyncIn(null); } catch { /* swallow */ }
+      try {
+        AudioEngine.setMidiSyncIn(null);
+      } catch {
+        /* swallow */
+      }
       sync.onSyncEvent = null;
     };
   }, []);
 
   // v2.84 (TASK-231): LED-Feedback-State + Scene-Mode.
-  const [feedbackOutputDeviceId, setFeedbackOutputDeviceIdState] = useState<string | null>(() => loadFeedbackOutputId());
-  const [feedbackEnabled, setFeedbackEnabledState] = useState<boolean>(() => loadFeedbackEnabled());
-  const [feedbackSceneMode, setFeedbackSceneModeState] = useState<boolean>(() => loadFeedbackSceneMode());
+  const [feedbackOutputDeviceId, setFeedbackOutputDeviceIdState] = useState<
+    string | null
+  >(() => loadFeedbackOutputId());
+  const [feedbackEnabled, setFeedbackEnabledState] = useState<boolean>(() =>
+    loadFeedbackEnabled()
+  );
+  const [feedbackSceneMode, setFeedbackSceneModeState] = useState<boolean>(() =>
+    loadFeedbackSceneMode()
+  );
   const feedbackOutputDeviceIdRef = useRef<string | null>(null);
   const feedbackEnabledRef = useRef(false);
   const feedbackSceneModeRef = useRef(false);
-  const nanoFeedbackRef = useRef<NanoKontrolFeedback>(new NanoKontrolFeedback());
-  useEffect(() => { feedbackOutputDeviceIdRef.current = feedbackOutputDeviceId; }, [feedbackOutputDeviceId]);
-  useEffect(() => { feedbackEnabledRef.current = feedbackEnabled; }, [feedbackEnabled]);
-  useEffect(() => { feedbackSceneModeRef.current = feedbackSceneMode; }, [feedbackSceneMode]);
+  const nanoFeedbackRef = useRef<NanoKontrolFeedback>(
+    new NanoKontrolFeedback()
+  );
+  useEffect(() => {
+    feedbackOutputDeviceIdRef.current = feedbackOutputDeviceId;
+  }, [feedbackOutputDeviceId]);
+  useEffect(() => {
+    feedbackEnabledRef.current = feedbackEnabled;
+  }, [feedbackEnabled]);
+  useEffect(() => {
+    feedbackSceneModeRef.current = feedbackSceneMode;
+  }, [feedbackSceneMode]);
   // Auto-Learn-Queue (v1.71)
   const [autoLearnQueue, setAutoLearnQueue] = useState<AutoLearnEntry[]>([]);
   const [autoLearnTotal, setAutoLearnTotal] = useState(0);
   const [autoLearnFilterChannel, setAutoLearnFilterChannelState] = useState(0);
   const autoLearnFilterChannelRef = useRef(0);
-  useEffect(() => { autoLearnFilterChannelRef.current = autoLearnFilterChannel; }, [autoLearnFilterChannel]);
+  useEffect(() => {
+    autoLearnFilterChannelRef.current = autoLearnFilterChannel;
+  }, [autoLearnFilterChannel]);
 
   const savedMappings = loadMappings();
   const [mappings, setMappings] = useState<MidiMapping[]>(savedMappings.cc);
-  const [noteMappings, setNoteMappings] = useState<MidiNoteMapping[]>(savedMappings.notes);
+  const [noteMappings, setNoteMappings] = useState<MidiNoteMapping[]>(
+    savedMappings.notes
+  );
 
   const midiAccessRef = useRef<MIDIAccess | null>(null);
   // #11: aktiver nativer Access-Shim (für Teardown). null = Web-MIDI-Pfad.
   const nativeAccessRef = useRef<NativeMidiAccess | null>(null);
   const electron = useElectron();
   const activeInputRef = useRef<MIDIInput | null>(null);
+  // Multi-Device: zusätzlich zu activeInputRef attachte Input-IDs (useMidiInputsStore).
+  const multiInputsRef = useRef<Set<string>>(new Set());
   const activeOutputRef = useRef<MIDIOutput | null>(null);
   const clockAnalyzer = useRef(new MidiClockAnalyzer());
   // v3.93.0: MIDI-FX Note-Off-Tracking. Mapped Original-Note → [expanded
@@ -943,7 +1125,10 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
   // gespeicherten Outputs released. Note-Repeat-Voices werden NICHT
   // getracked (siehe MidiFxNoteTracker.trackNoteOn-JSDoc).
   const midiFxTrackerRef = useRef<MidiFxNoteTracker>(new MidiFxNoteTracker());
-  const learnRef = useRef<{ isLearning: boolean; target: MidiLearnTarget | null }>({
+  const learnRef = useRef<{
+    isLearning: boolean;
+    target: MidiLearnTarget | null;
+  }>({
     isLearning: false,
     target: null,
   });
@@ -965,11 +1150,21 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
   const midiOutEnabledRef = useRef(midiOutEnabled);
   const midiOutChannelRef = useRef(midiOutChannel);
 
-  useEffect(() => { mappingsRef.current = mappings; }, [mappings]);
-  useEffect(() => { midiOutEnabledRef.current = midiOutEnabled; }, [midiOutEnabled]);
-  useEffect(() => { midiOutChannelRef.current = midiOutChannel; }, [midiOutChannel]);
-  useEffect(() => { noteMappingsRef.current = noteMappings; }, [noteMappings]);
-  useEffect(() => { clockSyncRef.current = clockSync; }, [clockSync]);
+  useEffect(() => {
+    mappingsRef.current = mappings;
+  }, [mappings]);
+  useEffect(() => {
+    midiOutEnabledRef.current = midiOutEnabled;
+  }, [midiOutEnabled]);
+  useEffect(() => {
+    midiOutChannelRef.current = midiOutChannel;
+  }, [midiOutChannel]);
+  useEffect(() => {
+    noteMappingsRef.current = noteMappings;
+  }, [noteMappings]);
+  useEffect(() => {
+    clockSyncRef.current = clockSync;
+  }, [clockSync]);
 
   // ─── MIDI-Nachricht verarbeiten ──────────────────────────────────────────
 
@@ -981,6 +1176,27 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
     const type = status & 0xf0;
     const channel = (status & 0x0f) + 1; // 1-16
 
+    // Multi-Device Rollen-Gate: filtert eingehende Nachrichten nach der Rolle
+    // des Quell-Geräts (useMidiInputsStore, keyed by name). Default-Rolle 'all'
+    // → dieser Block ist ein No-op (kein Verhaltenswechsel für Legacy-/Single-
+    // Device-Setups). Nur wenn der User einem Gerät eine engere Rolle gibt
+    // (z.B. Akai = 'controller'), werden dessen SysEx/Clock hier verworfen.
+    {
+      const srcName = (event.target as { name?: string } | undefined)?.name;
+      const role = srcName ? getInputConfig(srcName).role : "all";
+      if (role !== "all") {
+        if (status === 0xf0) {
+          if (!roleAcceptsSysex(role)) return;
+        } else if (status >= 0xf8) {
+          if (!roleAcceptsClock(role)) return; // Clock/Start/Continue/Stop/…
+        } else if (type === 0x90 || type === 0x80) {
+          if (!roleAcceptsNote(role)) return;
+        } else if (type === 0xb0) {
+          if (!roleAcceptsCc(role)) return;
+        }
+      }
+    }
+
     // v3.35.0: MIDI-Clock-IN External-Sync (Receiver-Klasse). Wenn aktiv,
     // schicken wir ALLE Real-Time-Messages an die Instance — sie kümmert sich
     // um BPM-EWMA + dispatched Events. Wir leiten den Tempo-Event hier in den
@@ -989,7 +1205,12 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
       clockInRef.current.handleMidiMessage(data);
       // ausgewählte Status-Bytes wollen wir hier KOMPLETT konsumieren damit
       // sie nicht doppelt verarbeitet werden (z.B. alter clockSync-Pfad).
-      if (status === 0xf8 || status === 0xfa || status === 0xfb || status === 0xfc) {
+      if (
+        status === 0xf8 ||
+        status === 0xfa ||
+        status === 0xfb ||
+        status === 0xfc
+      ) {
         return;
       }
     }
@@ -1015,13 +1236,20 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
           const ts =
             typeof event.timeStamp === "number" && isFinite(event.timeStamp)
               ? event.timeStamp
-              : (typeof performance !== "undefined" ? performance.now() : Date.now());
+              : typeof performance !== "undefined"
+                ? performance.now()
+                : Date.now();
           sync.handleMessage(data, ts);
           // Real-Time-Status-Bytes konsumieren (Clock, Start, Continue, Stop).
           // v3.112.0: + 0xF1 (MTC Quarter-Frame), 0xF2 (SPP), 0xF0 (Sysex-MTC).
           if (
-            status === 0xf8 || status === 0xfa || status === 0xfb || status === 0xfc ||
-            status === 0xf1 || status === 0xf2 || status === 0xf0
+            status === 0xf8 ||
+            status === 0xfa ||
+            status === 0xfb ||
+            status === 0xfc ||
+            status === 0xf1 ||
+            status === 0xf2 ||
+            status === 0xf0
           ) {
             return;
           }
@@ -1060,7 +1288,11 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
     const byte2 = data[2];
 
     // Raw MIDI message für MPE-Verarbeitung weiterleiten
-    window.dispatchEvent(new CustomEvent("midi:rawmessage", { detail: { type, channel, byte1, byte2 } }));
+    window.dispatchEvent(
+      new CustomEvent("midi:rawmessage", {
+        detail: { type, channel, byte1, byte2 },
+      })
+    );
 
     // ── TASK-231 (v2.84): nanoKONTROL2 Marker → Scene-Cycle ──────────────
     // Vor jeglicher Mapping-Verarbeitung: wenn Scene-Mode aktiv und das
@@ -1072,7 +1304,8 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
       feedbackSceneModeRef.current &&
       type === 0xb0 &&
       byte2 > 0 &&
-      (byte1 === NANO_KONTROL2.MARKER_PREV || byte1 === NANO_KONTROL2.MARKER_NEXT)
+      (byte1 === NANO_KONTROL2.MARKER_PREV ||
+        byte1 === NANO_KONTROL2.MARKER_NEXT)
     ) {
       const dir: 1 | -1 = byte1 === NANO_KONTROL2.MARKER_NEXT ? 1 : -1;
       cycleScene(dir);
@@ -1091,7 +1324,9 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
           label,
         };
         setMappings(prev => {
-          const filtered = prev.filter(m => !(m.cc === byte1 && m.channel === channel));
+          const filtered = prev.filter(
+            m => !(m.cc === byte1 && m.channel === channel)
+          );
           const next = [...filtered, newMapping];
           saveMappings(next, noteMappingsRef.current);
           return next;
@@ -1110,12 +1345,14 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
       const result = nextAutoLearnEntry(
         autoLearnRef.current,
         { type, byte1, byte2, channel },
-        autoLearnFilterChannelRef.current,
+        autoLearnFilterChannelRef.current
       );
       if (result.ccMapping) {
         const m = result.ccMapping;
         setMappings(prev => {
-          const filtered = prev.filter(x => !(x.cc === m.cc && x.channel === m.channel));
+          const filtered = prev.filter(
+            x => !(x.cc === m.cc && x.channel === m.channel)
+          );
           const next = [...filtered, m];
           saveMappings(next, noteMappingsRef.current);
           return next;
@@ -1124,7 +1361,9 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
       if (result.noteMapping) {
         const m = result.noteMapping;
         setNoteMappings(prev => {
-          const filtered = prev.filter(x => !(x.note === m.note && x.channel === m.channel));
+          const filtered = prev.filter(
+            x => !(x.note === m.note && x.channel === m.channel)
+          );
           const next = [...filtered, m];
           saveMappings(mappingsRef.current, next);
           return next;
@@ -1149,7 +1388,10 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
       const fxChain = getMidiFxChain();
       let fxEvents: NoteOn[];
       if (fxChain.length > 0) {
-        fxEvents = applyMidiFx({ note: byte1, velocity: byte2, channel }, fxChain);
+        fxEvents = applyMidiFx(
+          { note: byte1, velocity: byte2, channel },
+          fxChain
+        );
         // Tracker speichert nur t=0-Events ≠ Original (Chord-Expander/Octave-
         // Shift). Note-Repeat-Tail wird ignoriert (eigener Release).
         midiFxTrackerRef.current.trackNoteOn(byte1, channel, fxEvents);
@@ -1166,7 +1408,12 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
         const first = fxEvents[0];
         const rest = fxEvents.slice(1);
         const chordNotes = buildChordNotes(first.note, chordState);
-        const scheduleNote = (n: number, v: number, ch: number, offsetMs: number): void => {
+        const scheduleNote = (
+          n: number,
+          v: number,
+          ch: number,
+          offsetMs: number
+        ): void => {
           const dispatch = (): void => {
             optionsRef.current.onNoteOn?.(n, v, ch);
             const out = activeOutputRef.current;
@@ -1181,12 +1428,21 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
             dispatch();
           }
         };
-        chordNotes.forEach(n => scheduleNote(n, first.velocity, first.channel, first.timeOffsetMs ?? 0));
-        rest.forEach(ev => scheduleNote(ev.note, ev.velocity, ev.channel, ev.timeOffsetMs ?? 0));
+        chordNotes.forEach(n =>
+          scheduleNote(
+            n,
+            first.velocity,
+            first.channel,
+            first.timeOffsetMs ?? 0
+          )
+        );
+        rest.forEach(ev =>
+          scheduleNote(ev.note, ev.velocity, ev.channel, ev.timeOffsetMs ?? 0)
+        );
       } else {
         // Direkte Dispatch-Schleife — jedes FX-Event landet bei onNoteOn.
         // timeOffsetMs (von Note-Repeat) wird via setTimeout angewendet.
-        fxEvents.forEach((ev) => {
+        fxEvents.forEach(ev => {
           const offset = ev.timeOffsetMs ?? 0;
           const dispatch = (): void => {
             optionsRef.current.onNoteOn?.(ev.note, ev.velocity, ev.channel);
@@ -1199,11 +1455,19 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
         });
         // MIDI Step Input Event nutzt das Original-Event (Pre-FX), damit
         // Step-Input-Aufnahme unverändert bleibt.
-        window.dispatchEvent(new CustomEvent("stepinput:noteon", { detail: { note: byte1, velocity: byte2 } }));
+        window.dispatchEvent(
+          new CustomEvent("stepinput:noteon", {
+            detail: { note: byte1, velocity: byte2 },
+          })
+        );
         // v3.97.0: MIDI-Step-Recorder — eigener Event-Pfad für den
         // Auto-Advance-Recorder (siehe useMidiStepRecorderStore). App.tsx
         // listet diesen Event und schreibt direkt in den armed Channel.
-        window.dispatchEvent(new CustomEvent("midi:stepRecorder", { detail: { note: byte1, velocity: byte2, channel } }));
+        window.dispatchEvent(
+          new CustomEvent("midi:stepRecorder", {
+            detail: { note: byte1, velocity: byte2, channel },
+          })
+        );
       }
       // Note-Mapping → applyMapping(target) | Perf-Pad | Part-Trigger
       // Precedence (v2.79): target > performancePadIndex > partId
@@ -1218,13 +1482,15 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
           // Modulations-Amount verwenden können.
           applyMapping(
             { cc: -1, channel: nm.channel, target: nm.target, label: nm.label },
-            byte2,
+            byte2
           );
         } else if (nm.performancePadIndex !== undefined) {
           // v2.78: Perf-Pad-Trigger via CustomEvent (analog zu midi:scene)
-          window.dispatchEvent(new CustomEvent("midi:perfpad", {
-            detail: { padIndex: nm.performancePadIndex, velocity: byte2 },
-          }));
+          window.dispatchEvent(
+            new CustomEvent("midi:perfpad", {
+              detail: { padIndex: nm.performancePadIndex, velocity: byte2 },
+            })
+          );
         } else {
           optionsRef.current.onPartTrigger?.(nm.partId, byte2);
         }
@@ -1287,99 +1553,187 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
         break;
       }
       case "masterVolume": {
-        window.dispatchEvent(new CustomEvent("midi:masterVolume", { detail: value / 127 }));
+        window.dispatchEvent(
+          new CustomEvent("midi:masterVolume", { detail: value / 127 })
+        );
         break;
       }
-      case "playStop":        if (on) opts.onPlayStop?.(); break;
-      case "record":          if (on) dispatchAction("record"); break;
-      case "tapTempo":        if (on) dispatchAction("tap-tempo"); break;
-      case "bpmUp":           if (on) dispatchAction("bpm-up"); break;
-      case "bpmDown":         if (on) dispatchAction("bpm-down"); break;
+      case "playStop":
+        if (on) opts.onPlayStop?.();
+        break;
+      case "record":
+        if (on) dispatchAction("record");
+        break;
+      case "tapTempo":
+        if (on) dispatchAction("tap-tempo");
+        break;
+      case "bpmUp":
+        if (on) dispatchAction("bpm-up");
+        break;
+      case "bpmDown":
+        if (on) dispatchAction("bpm-down");
+        break;
       // ── Parts ──────────────────────────────────────────────────────────────
       case "volume": {
-        window.dispatchEvent(new CustomEvent("midi:partVolume", { detail: { partId: t.partId, value: value / 127 } }));
+        window.dispatchEvent(
+          new CustomEvent("midi:partVolume", {
+            detail: { partId: t.partId, value: value / 127 },
+          })
+        );
         break;
       }
       case "pan": {
-        window.dispatchEvent(new CustomEvent("midi:partPan", { detail: { partId: t.partId, value: (value / 127) * 2 - 1 } }));
+        window.dispatchEvent(
+          new CustomEvent("midi:partPan", {
+            detail: { partId: t.partId, value: (value / 127) * 2 - 1 },
+          })
+        );
         break;
       }
-      case "mute":   if (on) {
-        // v1.76: zusätzlich CustomEvent damit App.tsx ohne `onMute`-Prop hört
-        window.dispatchEvent(new CustomEvent("midi:partMute", { detail: t.partId }));
-        opts.onMute?.(t.partId);
-      } break;
-      case "solo":   if (on) window.dispatchEvent(new CustomEvent("midi:partSolo", { detail: t.partId })); break;
+      case "mute":
+        if (on) {
+          // v1.76: zusätzlich CustomEvent damit App.tsx ohne `onMute`-Prop hört
+          window.dispatchEvent(
+            new CustomEvent("midi:partMute", { detail: t.partId })
+          );
+          opts.onMute?.(t.partId);
+        }
+        break;
+      case "solo":
+        if (on)
+          window.dispatchEvent(
+            new CustomEvent("midi:partSolo", { detail: t.partId })
+          );
+        break;
       case "fxParam": {
         // v1.76: jeder numerische FX-Parameter (Filter/EQ/Reverb/Delay/…)
         // MIDI 0-127 → param-spezifischer Range über midiValueToFxParam.
         const range = findFxParamRange(t.param);
         if (range) {
           const scaled = midiValueToFxParam(value, range);
-          window.dispatchEvent(new CustomEvent("midi:fxParam", {
-            detail: { partId: t.partId, param: t.param, value: scaled },
-          }));
+          window.dispatchEvent(
+            new CustomEvent("midi:fxParam", {
+              detail: { partId: t.partId, param: t.param, value: scaled },
+            })
+          );
         }
         break;
       }
       case "send": {
         // v2.1: Send-Bus-Level (Reverb/Delay) pro Channel
-        window.dispatchEvent(new CustomEvent("midi:partSend", {
-          detail: { partId: t.partId, bus: t.bus, value: value / 127 },
-        }));
+        window.dispatchEvent(
+          new CustomEvent("midi:partSend", {
+            detail: { partId: t.partId, bus: t.bus, value: value / 127 },
+          })
+        );
         break;
       }
-      case "partUp":   if (on) dispatchAction("part-up"); break;
-      case "partDown": if (on) dispatchAction("part-down"); break;
-      case "step": if (on) {
-        // v1.99: pad-press → toggle a specific step in the active pattern.
-        // Super-mächtig für Live-Finger-Drumming auf physischen Pads.
-        window.dispatchEvent(new CustomEvent("midi:toggleStep", {
-          detail: { partId: t.partId, stepIndex: t.stepIndex },
-        }));
-      } break;
+      case "partUp":
+        if (on) dispatchAction("part-up");
+        break;
+      case "partDown":
+        if (on) dispatchAction("part-down");
+        break;
+      case "step":
+        if (on) {
+          // v1.99: pad-press → toggle a specific step in the active pattern.
+          // Super-mächtig für Live-Finger-Drumming auf physischen Pads.
+          window.dispatchEvent(
+            new CustomEvent("midi:toggleStep", {
+              detail: { partId: t.partId, stepIndex: t.stepIndex },
+            })
+          );
+        }
+        break;
       // ── Pattern ─────────────────────────────────────────────────────────────
-      case "pattern":          if (on) window.dispatchEvent(new CustomEvent("midi:pattern", { detail: t.patternIndex })); break;
-      case "patternNext":      if (on) dispatchAction("pattern-next"); break;
-      case "patternPrev":      if (on) dispatchAction("pattern-prev"); break;
-      case "patternClear":     if (on) dispatchAction("pattern-clear"); break;
-      case "patternFill":      if (on) dispatchAction("pattern-fill"); break;
-      case "patternRandomize": if (on) dispatchAction("pattern-randomize"); break;
-      case "patternDuplicate": if (on) dispatchAction("pattern-duplicate"); break;
+      case "pattern":
+        if (on)
+          window.dispatchEvent(
+            new CustomEvent("midi:pattern", { detail: t.patternIndex })
+          );
+        break;
+      case "patternNext":
+        if (on) dispatchAction("pattern-next");
+        break;
+      case "patternPrev":
+        if (on) dispatchAction("pattern-prev");
+        break;
+      case "patternClear":
+        if (on) dispatchAction("pattern-clear");
+        break;
+      case "patternFill":
+        if (on) dispatchAction("pattern-fill");
+        break;
+      case "patternRandomize":
+        if (on) dispatchAction("pattern-randomize");
+        break;
+      case "patternDuplicate":
+        if (on) dispatchAction("pattern-duplicate");
+        break;
       // ── Navigation ─────────────────────────────────────────────────────────
-      case "tab":         if (on) dispatchAction(`tab-${t.tabId}`); break;
+      case "tab":
+        if (on) dispatchAction(`tab-${t.tabId}`);
+        break;
       // ── Performance ────────────────────────────────────────────────────────
-      case "toggleNoteRepeat": if (on) dispatchAction("toggle-note-repeat"); break;
-      case "toggleMorph":      if (on) dispatchAction("toggle-morph"); break;
-      case "commitLiveEdit":   if (on) window.dispatchEvent(new CustomEvent("midi:commitLiveEdit")); break;
-      case "scenelaunch":      if (on) window.dispatchEvent(new CustomEvent("midi:scene", { detail: t.sceneIndex })); break;
-      case "openSettings":     if (on) window.dispatchEvent(new CustomEvent("kb:action", { detail: "open-settings" })); break;
+      case "toggleNoteRepeat":
+        if (on) dispatchAction("toggle-note-repeat");
+        break;
+      case "toggleMorph":
+        if (on) dispatchAction("toggle-morph");
+        break;
+      case "commitLiveEdit":
+        if (on) window.dispatchEvent(new CustomEvent("midi:commitLiveEdit"));
+        break;
+      case "scenelaunch":
+        if (on)
+          window.dispatchEvent(
+            new CustomEvent("midi:scene", { detail: t.sceneIndex })
+          );
+        break;
+      case "openSettings":
+        if (on)
+          window.dispatchEvent(
+            new CustomEvent("kb:action", { detail: "open-settings" })
+          );
+        break;
       case "macro": {
         // v1.88: direktes Steuern eines Makro-Wertes 0..1 via CC
-        window.dispatchEvent(new CustomEvent("midi:macroValue", {
-          detail: { index: t.index, value: value / 127 },
-        }));
+        window.dispatchEvent(
+          new CustomEvent("midi:macroValue", {
+            detail: { index: t.index, value: value / 127 },
+          })
+        );
         break;
       }
       case "morphAmount": {
         // v3.115.0: Macro-Snapshot Morph-Slider via CC. App.tsx hört
         // "midi:morphAmount" und ruft setMorphAmount + applyMorphedMacros.
-        window.dispatchEvent(new CustomEvent("midi:morphAmount", {
-          detail: value / 127,
-        }));
+        window.dispatchEvent(
+          new CustomEvent("midi:morphAmount", {
+            detail: value / 127,
+          })
+        );
         break;
       }
-      case "recallSnapshot": if (on) {
-        // v3.115.0: Snapshot-Recall via MIDI-Note oder CC>63.
-        window.dispatchEvent(new CustomEvent("midi:recallSnapshot", {
-          detail: t.snapshotId,
-        }));
-      } break;
-      case "runScript": if (on) {
-        // v1.78: User-Script auf MIDI-Trigger ausführen. App.tsx hört und
-        // ruft scriptSandbox.run() auf. ScriptId wird im detail mitgegeben.
-        window.dispatchEvent(new CustomEvent("midi:runScript", { detail: t.scriptId }));
-      } break;
+      case "recallSnapshot":
+        if (on) {
+          // v3.115.0: Snapshot-Recall via MIDI-Note oder CC>63.
+          window.dispatchEvent(
+            new CustomEvent("midi:recallSnapshot", {
+              detail: t.snapshotId,
+            })
+          );
+        }
+        break;
+      case "runScript":
+        if (on) {
+          // v1.78: User-Script auf MIDI-Trigger ausführen. App.tsx hört und
+          // ruft scriptSandbox.run() auf. ScriptId wird im detail mitgegeben.
+          window.dispatchEvent(
+            new CustomEvent("midi:runScript", { detail: t.scriptId })
+          );
+        }
+        break;
       case "chain": {
         // v1.77: Function-Chains — auf 'on' (CC>63 oder Note) eine Folge von
         // Sub-Targets der Reihe nach feuern, optional mit delayMs zwischen
@@ -1389,119 +1743,203 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
         if (!on) break;
         const plan = planChainExecution(t.steps);
         for (const tr of plan.triggers) {
-          const fire = () => applyMapping({ cc: 0, channel: 0, target: tr.target, label: "" }, tr.value);
+          const fire = () =>
+            applyMapping(
+              { cc: 0, channel: 0, target: tr.target, label: "" },
+              tr.value
+            );
           if (tr.atMs <= 0) fire();
           else setTimeout(fire, tr.atMs);
         }
         break;
       }
-      case "loopTrigger": if (on) {
-        // v2.87 (TASK-235): Live-Looper Trigger via Pad/Footswitch.
-        window.dispatchEvent(new CustomEvent("midi:loopTrigger", { detail: t.loopIndex }));
-      } break;
-      case "loopErase": if (on) {
-        // v2.87 (TASK-235): Loop-Erase via dedizierter MIDI-Action.
-        window.dispatchEvent(new CustomEvent("midi:loopErase", { detail: t.loopIndex }));
-      } break;
-      case "playSlicePad": if (on) {
-        // v2.91 (TASK-238-FOLLOWUP-1B): Slice-Pad-Trigger. App.tsx liest
-        // useSlicePadStore und ruft AudioEngine.playSliceBuffer.
-        window.dispatchEvent(new CustomEvent("midi:slicePad", { detail: t.sliceIndex }));
-      } break;
+      case "loopTrigger":
+        if (on) {
+          // v2.87 (TASK-235): Live-Looper Trigger via Pad/Footswitch.
+          window.dispatchEvent(
+            new CustomEvent("midi:loopTrigger", { detail: t.loopIndex })
+          );
+        }
+        break;
+      case "loopErase":
+        if (on) {
+          // v2.87 (TASK-235): Loop-Erase via dedizierter MIDI-Action.
+          window.dispatchEvent(
+            new CustomEvent("midi:loopErase", { detail: t.loopIndex })
+          );
+        }
+        break;
+      case "playSlicePad":
+        if (on) {
+          // v2.91 (TASK-238-FOLLOWUP-1B): Slice-Pad-Trigger. App.tsx liest
+          // useSlicePadStore und ruft AudioEngine.playSliceBuffer.
+          window.dispatchEvent(
+            new CustomEvent("midi:slicePad", { detail: t.sliceIndex })
+          );
+        }
+        break;
       // ── Sub-Mix-Bus (v3.81.0) ────────────────────────────────────────────
       case "subMixBusVolume": {
         // 0..127 → 0..2 (Bus-Volume-Range, vgl. useSubMixStore clampNum).
-        window.dispatchEvent(new CustomEvent("midi:subMixBusVolume", {
-          detail: { busId: t.busId, value: (value / 127) * 2 },
-        }));
+        window.dispatchEvent(
+          new CustomEvent("midi:subMixBusVolume", {
+            detail: { busId: t.busId, value: (value / 127) * 2 },
+          })
+        );
         break;
       }
       case "subMixBusPan": {
-        window.dispatchEvent(new CustomEvent("midi:subMixBusPan", {
-          detail: { busId: t.busId, value: (value / 127) * 2 - 1 },
-        }));
+        window.dispatchEvent(
+          new CustomEvent("midi:subMixBusPan", {
+            detail: { busId: t.busId, value: (value / 127) * 2 - 1 },
+          })
+        );
         break;
       }
-      case "subMixBusMute": if (on) {
-        window.dispatchEvent(new CustomEvent("midi:subMixBusMute", { detail: t.busId }));
-      } break;
-      case "subMixBusSolo": if (on) {
-        window.dispatchEvent(new CustomEvent("midi:subMixBusSolo", { detail: t.busId }));
-      } break;
+      case "subMixBusMute":
+        if (on) {
+          window.dispatchEvent(
+            new CustomEvent("midi:subMixBusMute", { detail: t.busId })
+          );
+        }
+        break;
+      case "subMixBusSolo":
+        if (on) {
+          window.dispatchEvent(
+            new CustomEvent("midi:subMixBusSolo", { detail: t.busId })
+          );
+        }
+        break;
       // ── Sub-Mix-Bus FX (v3.87.0) ─────────────────────────────────────────
       case "subMixBusEqLowGain": {
         // 0..127 → -24..+24 dB (linear)
-        window.dispatchEvent(new CustomEvent("midi:subMixBusEqLowGain", {
-          detail: { busId: t.busId, value: (value / 127) * 48 - 24 },
-        }));
+        window.dispatchEvent(
+          new CustomEvent("midi:subMixBusEqLowGain", {
+            detail: { busId: t.busId, value: (value / 127) * 48 - 24 },
+          })
+        );
         break;
       }
       case "subMixBusEqMidGain": {
-        window.dispatchEvent(new CustomEvent("midi:subMixBusEqMidGain", {
-          detail: { busId: t.busId, value: (value / 127) * 48 - 24 },
-        }));
+        window.dispatchEvent(
+          new CustomEvent("midi:subMixBusEqMidGain", {
+            detail: { busId: t.busId, value: (value / 127) * 48 - 24 },
+          })
+        );
         break;
       }
       case "subMixBusEqHighGain": {
-        window.dispatchEvent(new CustomEvent("midi:subMixBusEqHighGain", {
-          detail: { busId: t.busId, value: (value / 127) * 48 - 24 },
-        }));
+        window.dispatchEvent(
+          new CustomEvent("midi:subMixBusEqHighGain", {
+            detail: { busId: t.busId, value: (value / 127) * 48 - 24 },
+          })
+        );
         break;
       }
       case "subMixBusCompThreshold": {
         // 0..127 → -60..0 dB
-        window.dispatchEvent(new CustomEvent("midi:subMixBusCompThreshold", {
-          detail: { busId: t.busId, value: (value / 127) * 60 - 60 },
-        }));
+        window.dispatchEvent(
+          new CustomEvent("midi:subMixBusCompThreshold", {
+            detail: { busId: t.busId, value: (value / 127) * 60 - 60 },
+          })
+        );
         break;
       }
       case "subMixBusCompRatio": {
         // 0..127 → 1..20
-        window.dispatchEvent(new CustomEvent("midi:subMixBusCompRatio", {
-          detail: { busId: t.busId, value: 1 + (value / 127) * 19 },
-        }));
+        window.dispatchEvent(
+          new CustomEvent("midi:subMixBusCompRatio", {
+            detail: { busId: t.busId, value: 1 + (value / 127) * 19 },
+          })
+        );
         break;
       }
       case "subMixBusReverbSend": {
         // 0..127 → 0..1
-        window.dispatchEvent(new CustomEvent("midi:subMixBusReverbSend", {
-          detail: { busId: t.busId, value: value / 127 },
-        }));
+        window.dispatchEvent(
+          new CustomEvent("midi:subMixBusReverbSend", {
+            detail: { busId: t.busId, value: value / 127 },
+          })
+        );
         break;
       }
       case "subMixBusDelaySend": {
-        window.dispatchEvent(new CustomEvent("midi:subMixBusDelaySend", {
-          detail: { busId: t.busId, value: value / 127 },
-        }));
+        window.dispatchEvent(
+          new CustomEvent("midi:subMixBusDelaySend", {
+            detail: { busId: t.busId, value: value / 127 },
+          })
+        );
         break;
       }
       // ── Mute/Solo Bus-Groups (v3.125.0) ─────────────────────────────────
-      case "muteGroup": if (on) {
-        window.dispatchEvent(new CustomEvent("midi:muteGroup", { detail: t.groupId }));
-      } break;
-      case "soloGroup": if (on) {
-        window.dispatchEvent(new CustomEvent("midi:soloGroup", { detail: t.groupId }));
-      } break;
+      case "muteGroup":
+        if (on) {
+          window.dispatchEvent(
+            new CustomEvent("midi:muteGroup", { detail: t.groupId })
+          );
+        }
+        break;
+      case "soloGroup":
+        if (on) {
+          window.dispatchEvent(
+            new CustomEvent("midi:soloGroup", { detail: t.groupId })
+          );
+        }
+        break;
     }
   }
 
-
   // ─── Gerät verbinden ──────────────────────────────────────────────────────
 
-  const connectDevice = useCallback((deviceId: string | null) => {
-    // Altes Input-Listener entfernen
-    if (activeInputRef.current) {
-      activeInputRef.current.onmidimessage = null;
-      activeInputRef.current = null;
-    }
+  const connectDevice = useCallback(
+    (deviceId: string | null) => {
+      // Altes Input-Listener entfernen
+      if (activeInputRef.current) {
+        activeInputRef.current.onmidimessage = null;
+        activeInputRef.current = null;
+      }
 
-    if (!deviceId || !midiAccessRef.current) return;
+      if (!deviceId || !midiAccessRef.current) return;
 
-    const input = midiAccessRef.current.inputs.get(deviceId);
-    if (input) {
-      input.onmidimessage = handleMidiMessage;
-      activeInputRef.current = input;
-    }
+      const input = midiAccessRef.current.inputs.get(deviceId);
+      if (input) {
+        input.onmidimessage = handleMidiMessage;
+        activeInputRef.current = input;
+      }
+    },
+    [handleMidiMessage]
+  );
+
+  // ─── Multi-Device: alle enabled Inputs (useMidiInputsStore) attachen ────────
+  // Hängt handleMidiMessage an JEDES per-Store aktivierte Input-Gerät (by name),
+  // sodass z.B. E2S + Akai gleichzeitig empfangen. `onmidimessage`-Zuweisung ist
+  // idempotent → koexistiert konfliktfrei mit dem Legacy-Single-Device-Pfad
+  // (activeInputRef). Beim Deaktivieren wird nur detacht, was NICHT das Legacy-
+  // Aktiv-Gerät ist. Rollen-Filter passiert in handleMidiMessage.
+  const syncMultiInputs = useCallback(() => {
+    const access = midiAccessRef.current;
+    if (!access) return;
+    const enabled = new Set(enabledInputNames());
+    const desiredIds = new Set<string>();
+    access.inputs.forEach(input => {
+      const name = input.name ?? "";
+      if (enabled.has(name)) {
+        desiredIds.add(input.id);
+        if (!multiInputsRef.current.has(input.id)) {
+          input.onmidimessage = handleMidiMessage;
+          multiInputsRef.current.add(input.id);
+        }
+      }
+    });
+    multiInputsRef.current.forEach(id => {
+      if (!desiredIds.has(id)) {
+        const input = access.inputs.get(id);
+        if (input && input !== activeInputRef.current) {
+          input.onmidimessage = null;
+        }
+        multiInputsRef.current.delete(id);
+      }
+    });
   }, [handleMidiMessage]);
 
   // ─── Geräte-Liste aktualisieren ──────────────────────────────────────────
@@ -1542,7 +1980,10 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
       // Inputs: new (added) vs removed
       list.forEach(d => {
         if (!prevDevicesRef.current.has(d.id)) {
-          toast(`MIDI verbunden: ${d.name}${d.manufacturer ? ` (${d.manufacturer})` : ""}`, { kind: "success" });
+          toast(
+            `MIDI verbunden: ${d.name}${d.manufacturer ? ` (${d.manufacturer})` : ""}`,
+            { kind: "success" }
+          );
           newlyConnected.push(d.name);
         }
       });
@@ -1552,9 +1993,11 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
       // geprüft → kein Spam wenn User "Nie wieder" gewählt hat.
       if (newlyConnected.length > 0) {
         const neverList = loadNeverList();
-        detectTemplatesFromDeviceList(newlyConnected, neverList).forEach(match => {
-          dispatchTemplateSuggestion(match);
-        });
+        detectTemplatesFromDeviceList(newlyConnected, neverList).forEach(
+          match => {
+            dispatchTemplateSuggestion(match);
+          }
+        );
       }
       prevDevicesRef.current.forEach((name, id) => {
         if (!currentInIds.has(id)) {
@@ -1580,7 +2023,10 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
       // dafür dass User nicht genervt wird).
       if (list.length > 0) {
         const neverList = loadNeverList();
-        detectTemplatesFromDeviceList(list.map(d => d.name), neverList).forEach(match => {
+        detectTemplatesFromDeviceList(
+          list.map(d => d.name),
+          neverList
+        ).forEach(match => {
           dispatchTemplateSuggestion(match);
         });
       }
@@ -1599,9 +2045,10 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
         return prev;
       }
       if (persisted.input && list.length > 0) {
-        const match = list.find(d =>
-          d.name === persisted.input!.name &&
-          d.manufacturer === persisted.input!.manufacturer
+        const match = list.find(
+          d =>
+            d.name === persisted.input!.name &&
+            d.manufacturer === persisted.input!.manufacturer
         );
         if (match) {
           connectDevice(match.id);
@@ -1623,9 +2070,10 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
         return prev;
       }
       if (persisted.output && outList.length > 0) {
-        const match = outList.find(d =>
-          d.name === persisted.output!.name &&
-          d.manufacturer === persisted.output!.manufacturer
+        const match = outList.find(
+          d =>
+            d.name === persisted.output!.name &&
+            d.manufacturer === persisted.output!.manufacturer
         );
         if (match) {
           const output = midiAccessRef.current?.outputs.get(match.id);
@@ -1635,7 +2083,11 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
       }
       return prev;
     });
-  }, [connectDevice]);
+    // Multi-Device: neu verbundene/enabled Inputs (E2S + Akai …) attachen.
+    // Erstmigration: altes Single-Device als enabled 'all' übernehmen.
+    migrateSingleInput(persisted.input?.name ?? null);
+    syncMultiInputs();
+  }, [connectDevice, syncMultiInputs]);
 
   // ─── MIDI aktivieren ─────────────────────────────────────────────────────
 
@@ -1649,11 +2101,11 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
         if (status.available) {
           const bridge: NativeMidiBridge = {
             listMidiPorts: () => electron.listMidiPorts(),
-            openMidiInput: (i) => electron.openMidiInput(i),
-            openMidiOutput: (i) => electron.openMidiOutput(i),
+            openMidiInput: i => electron.openMidiInput(i),
+            openMidiOutput: i => electron.openMidiOutput(i),
             sendMidi: (h, b) => electron.sendMidi(h, b),
-            closeMidiPort: (h) => electron.closeMidiPort(h),
-            onMidiMessage: (cb) => electron.onMidiMessage(cb),
+            closeMidiPort: h => electron.closeMidiPort(h),
+            onMidiMessage: cb => electron.onMidiMessage(cb),
           };
           const access = await createNativeMidiAccess(bridge);
           if (access) {
@@ -1665,22 +2117,28 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
             refreshDevices();
             toast(
               `MIDI aktiviert (nativ): ${access.inputs.size} In / ${access.outputs.size} Out`,
-              { kind: "success" },
+              { kind: "success" }
             );
             return;
           }
         }
         toast(
           "Nativer MIDI-Layer nicht verfügbar — fällt auf Web-MIDI zurück",
-          { kind: "info", duration: 4000 },
+          { kind: "info", duration: 4000 }
         );
       } catch (err) {
-        console.warn("[MIDI] Nativer Pfad fehlgeschlagen, Web-MIDI-Fallback:", err);
+        console.warn(
+          "[MIDI] Nativer Pfad fehlgeschlagen, Web-MIDI-Fallback:",
+          err
+        );
       }
     }
     if (!navigator.requestMIDIAccess) {
       console.warn("[MIDI] Web MIDI API nicht verfügbar");
-      toast("Web MIDI API nicht verfügbar — Chrome/Edge empfohlen", { kind: "error", duration: 5000 });
+      toast("Web MIDI API nicht verfügbar — Chrome/Edge empfohlen", {
+        kind: "error",
+        duration: 5000,
+      });
       return;
     }
     try {
@@ -1699,7 +2157,10 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
     } catch (err) {
       console.error("[MIDI] Zugriff verweigert:", err);
       const msg = err instanceof Error ? err.message : String(err);
-      toast(`MIDI-Zugriff verweigert: ${msg}`, { kind: "error", duration: 5000 });
+      toast(`MIDI-Zugriff verweigert: ${msg}`, {
+        kind: "error",
+        duration: 5000,
+      });
     }
   }, [refreshDevices, electron]);
 
@@ -1748,7 +2209,7 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
       midiSendMessage(
         midiAccessRef.current as MidiAccessLike | null,
         targetId,
-        bytes,
+        bytes
       );
     };
     AudioEngine.setMidiClockOutSender(sender);
@@ -1772,7 +2233,7 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
       midiSendMessage(
         midiAccessRef.current as MidiAccessLike | null,
         outputId,
-        bytes,
+        bytes
       );
     };
     AudioEngine.setMidiNoteOutSender(sender);
@@ -1789,7 +2250,11 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
     const sender = (bytes: number[]) => {
       const out = activeOutputDeviceId;
       if (!out) return;
-      midiSendMessage(midiAccessRef.current as MidiAccessLike | null, out, bytes);
+      midiSendMessage(
+        midiAccessRef.current as MidiAccessLike | null,
+        out,
+        bytes
+      );
     };
     AudioEngine.setArpMidiSender(sender);
     return () => {
@@ -1807,7 +2272,7 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
       midiSendMessage(
         midiAccessRef.current as MidiAccessLike | null,
         outputId,
-        bytes,
+        bytes
       );
     };
     AudioEngine.setMidiClickOutSender(sender);
@@ -1823,11 +2288,11 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
   useEffect(() => {
     const fb = nanoFeedbackRef.current;
     if (feedbackEnabled && feedbackOutputDeviceId) {
-      fb.setSender((bytes) => {
+      fb.setSender(bytes => {
         midiSendMessage(
           midiAccessRef.current as MidiAccessLike | null,
           feedbackOutputDeviceIdRef.current,
-          bytes,
+          bytes
         );
       });
       fb.setEnabled(true);
@@ -1850,39 +2315,54 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
 
   // ─── Actions ─────────────────────────────────────────────────────────────
 
-  const setActiveDevice = useCallback((id: string | null) => {
-    setActiveDeviceId(id);
-    connectDevice(id);
-    // v1.84: Persistenz für Auto-Reconnect nach Reload
-    const persisted = loadActiveDevice();
-    if (id === null) {
-      saveActiveDevice({ ...persisted, input: undefined });
-    } else {
-      const dev = devices.find(d => d.id === id);
-      if (dev) {
-        saveActiveDevice({ ...persisted, input: { name: dev.name, manufacturer: dev.manufacturer } });
+  const setActiveDevice = useCallback(
+    (id: string | null) => {
+      setActiveDeviceId(id);
+      connectDevice(id);
+      // v1.84: Persistenz für Auto-Reconnect nach Reload
+      const persisted = loadActiveDevice();
+      if (id === null) {
+        saveActiveDevice({ ...persisted, input: undefined });
+      } else {
+        const dev = devices.find(d => d.id === id);
+        if (dev) {
+          saveActiveDevice({
+            ...persisted,
+            input: { name: dev.name, manufacturer: dev.manufacturer },
+          });
+        }
       }
-    }
-  }, [connectDevice, devices]);
+    },
+    [connectDevice, devices]
+  );
 
   // ─── MIDI Out Actions ────────────────────────────────────────────────────
 
-  const setActiveOutputDevice = useCallback((id: string | null) => {
-    setActiveOutputDeviceId(id);
-    if (!id || !midiAccessRef.current) { activeOutputRef.current = null; return; }
-    const output = midiAccessRef.current.outputs.get(id);
-    activeOutputRef.current = output ?? null;
-    // v1.84: Persistenz auch für Output-Device
-    const persisted = loadActiveDevice();
-    if (id === null) {
-      saveActiveDevice({ ...persisted, output: undefined });
-    } else {
-      const dev = outputDevices.find(d => d.id === id);
-      if (dev) {
-        saveActiveDevice({ ...persisted, output: { name: dev.name, manufacturer: dev.manufacturer } });
+  const setActiveOutputDevice = useCallback(
+    (id: string | null) => {
+      setActiveOutputDeviceId(id);
+      if (!id || !midiAccessRef.current) {
+        activeOutputRef.current = null;
+        return;
       }
-    }
-  }, [outputDevices]);
+      const output = midiAccessRef.current.outputs.get(id);
+      activeOutputRef.current = output ?? null;
+      // v1.84: Persistenz auch für Output-Device
+      const persisted = loadActiveDevice();
+      if (id === null) {
+        saveActiveDevice({ ...persisted, output: undefined });
+      } else {
+        const dev = outputDevices.find(d => d.id === id);
+        if (dev) {
+          saveActiveDevice({
+            ...persisted,
+            output: { name: dev.name, manufacturer: dev.manufacturer },
+          });
+        }
+      }
+    },
+    [outputDevices]
+  );
 
   const setMidiOutEnabled = useCallback((enabled: boolean) => {
     setMidiOutEnabledState(enabled);
@@ -1892,26 +2372,35 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
     setMidiOutChannelState(Math.max(1, Math.min(16, ch)));
   }, []);
 
-  const sendNoteOn = useCallback((note: number, velocity: number, channel?: number) => {
-    const out = activeOutputRef.current;
-    if (!out || !midiOutEnabled) return;
-    const ch = Math.max(0, ((channel ?? midiOutChannel) - 1)) & 0x0f;
-    out.send([0x90 | ch, note & 0x7f, velocity & 0x7f]);
-  }, [midiOutEnabled, midiOutChannel]);
+  const sendNoteOn = useCallback(
+    (note: number, velocity: number, channel?: number) => {
+      const out = activeOutputRef.current;
+      if (!out || !midiOutEnabled) return;
+      const ch = Math.max(0, (channel ?? midiOutChannel) - 1) & 0x0f;
+      out.send([0x90 | ch, note & 0x7f, velocity & 0x7f]);
+    },
+    [midiOutEnabled, midiOutChannel]
+  );
 
-  const sendNoteOff = useCallback((note: number, channel?: number) => {
-    const out = activeOutputRef.current;
-    if (!out || !midiOutEnabled) return;
-    const ch = Math.max(0, ((channel ?? midiOutChannel) - 1)) & 0x0f;
-    out.send([0x80 | ch, note & 0x7f, 0]);
-  }, [midiOutEnabled, midiOutChannel]);
+  const sendNoteOff = useCallback(
+    (note: number, channel?: number) => {
+      const out = activeOutputRef.current;
+      if (!out || !midiOutEnabled) return;
+      const ch = Math.max(0, (channel ?? midiOutChannel) - 1) & 0x0f;
+      out.send([0x80 | ch, note & 0x7f, 0]);
+    },
+    [midiOutEnabled, midiOutChannel]
+  );
 
-  const sendCC = useCallback((cc: number, value: number, channel?: number) => {
-    const out = activeOutputRef.current;
-    if (!out || !midiOutEnabled) return;
-    const ch = Math.max(0, ((channel ?? midiOutChannel) - 1)) & 0x0f;
-    out.send([0xb0 | ch, cc & 0x7f, value & 0x7f]);
-  }, [midiOutEnabled, midiOutChannel]);
+  const sendCC = useCallback(
+    (cc: number, value: number, channel?: number) => {
+      const out = activeOutputRef.current;
+      if (!out || !midiOutEnabled) return;
+      const ch = Math.max(0, (channel ?? midiOutChannel) - 1) & 0x0f;
+      out.send([0xb0 | ch, cc & 0x7f, value & 0x7f]);
+    },
+    [midiOutEnabled, midiOutChannel]
+  );
 
   const startLearn = useCallback((target: MidiLearnTarget) => {
     learnRef.current = { isLearning: true, target };
@@ -1964,18 +2453,25 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
     });
   }, []);
 
-  const addNoteMapping = useCallback((note: number, channel: number, partId: string, label: string) => {
-    setNoteMappings(prev => {
-      const filtered = prev.filter(m => !(m.note === note && m.channel === channel));
-      const next = [...filtered, { note, channel, partId, label }];
-      saveMappings(mappingsRef.current, next);
-      return next;
-    });
-  }, []);
+  const addNoteMapping = useCallback(
+    (note: number, channel: number, partId: string, label: string) => {
+      setNoteMappings(prev => {
+        const filtered = prev.filter(
+          m => !(m.note === note && m.channel === channel)
+        );
+        const next = [...filtered, { note, channel, partId, label }];
+        saveMappings(mappingsRef.current, next);
+        return next;
+      });
+    },
+    []
+  );
 
   const removeNoteMapping = useCallback((note: number, channel: number) => {
     setNoteMappings(prev => {
-      const next = prev.filter(m => !(m.note === note && m.channel === channel));
+      const next = prev.filter(
+        m => !(m.note === note && m.channel === channel)
+      );
       saveMappings(mappingsRef.current, next);
       return next;
     });
@@ -2079,15 +2575,22 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
       // play(0) führte und damit den Seek überschrieb), reichen wir den
       // positionStep direkt an onPlayStop weiter. App.tsx ist verantwortlich
       // play(positionStep) zu rufen — single-source-of-truth, kein Race.
-      const detail = (ev as CustomEvent).detail as { positionStep?: number } | undefined;
-      const pos = typeof detail?.positionStep === "number" ? detail.positionStep : 0;
+      const detail = (ev as CustomEvent).detail as
+        | { positionStep?: number }
+        | undefined;
+      const pos =
+        typeof detail?.positionStep === "number" ? detail.positionStep : 0;
       optionsRef.current.onPlayStop?.(pos);
     };
     // v3.36.0: Continue (0xFB) preserved aktuelle Position — KEIN seek.
     // Kein positionStep an onPlayStop → App.tsx triggert "vom alten Step
     // weiter" über die normale Toggle-Logik.
-    const onContinue = () => { optionsRef.current.onPlayStop?.(); };
-    const onStop = () => { optionsRef.current.onPlayStop?.(); };
+    const onContinue = () => {
+      optionsRef.current.onPlayStop?.();
+    };
+    const onStop = () => {
+      optionsRef.current.onPlayStop?.();
+    };
     const onSpp = (ev: Event) => {
       const detail = (ev as CustomEvent).detail as
         | { midiBeat: number; positionStep: number }
@@ -2102,13 +2605,13 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
     };
     window.addEventListener("midiclockin:tempo", onTempo as EventListener);
     window.addEventListener("midiclockin:start", onStart as EventListener);
-    window.addEventListener("midiclockin:stop",  onStop);
+    window.addEventListener("midiclockin:stop", onStop);
     window.addEventListener("midiclockin:continue", onContinue);
     window.addEventListener("midiclockin:spp", onSpp as EventListener);
     return () => {
       window.removeEventListener("midiclockin:tempo", onTempo as EventListener);
       window.removeEventListener("midiclockin:start", onStart as EventListener);
-      window.removeEventListener("midiclockin:stop",  onStop);
+      window.removeEventListener("midiclockin:stop", onStop);
       window.removeEventListener("midiclockin:continue", onContinue);
       window.removeEventListener("midiclockin:spp", onSpp as EventListener);
     };
@@ -2134,9 +2637,12 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
    * sind (Cache ist beim Enable noch leer = alle undefined → automatisch
    * Full-Sync).
    */
-  const syncFeedbackLeds = useCallback((channels: NanoKontrolChannelState[]) => {
-    nanoFeedbackRef.current.syncMixer(channels);
-  }, []);
+  const syncFeedbackLeds = useCallback(
+    (channels: NanoKontrolChannelState[]) => {
+      nanoFeedbackRef.current.syncMixer(channels);
+    },
+    []
+  );
 
   /**
    * v1.98: MIDI Panic — sendet Note Off + All Notes Off + All Sound Off
@@ -2158,7 +2664,9 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
         for (let note = 0; note < 128; note++) {
           out.send([0x80 | ch, note, 0]);
         }
-      } catch { /* ignore single-channel-failures */ }
+      } catch {
+        /* ignore single-channel-failures */
+      }
     }
   }, []);
 
@@ -2167,7 +2675,9 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
     setMappings(prev => {
       const next = [...prev];
       for (const m of newMappings) {
-        const idx = next.findIndex(x => x.cc === m.cc && x.channel === m.channel);
+        const idx = next.findIndex(
+          x => x.cc === m.cc && x.channel === m.channel
+        );
         if (idx >= 0) next[idx] = m;
         else next.push(m);
       }
@@ -2176,11 +2686,14 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
     });
   }, []);
 
-  const loadTemplate = useCallback((cc: MidiMapping[], notes: MidiNoteMapping[]) => {
-    setMappings(cc);
-    setNoteMappings(notes);
-    saveMappings(cc, notes);
-  }, []);
+  const loadTemplate = useCallback(
+    (cc: MidiMapping[], notes: MidiNoteMapping[]) => {
+      setMappings(cc);
+      setNoteMappings(notes);
+      saveMappings(cc, notes);
+    },
+    []
+  );
 
   return {
     // State
@@ -2205,6 +2718,7 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
     enable,
     disable,
     setActiveDevice,
+    syncMultiInputs,
     startLearn,
     cancelLearn,
     startAutoLearn,

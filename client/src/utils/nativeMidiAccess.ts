@@ -29,7 +29,10 @@
 
 // ─── Bridge-Interface (Subset von ElectronAPI) ──────────────────────────────
 
-export interface NativeMidiPort { index: number; name: string; }
+export interface NativeMidiPort {
+  index: number;
+  name: string;
+}
 
 export interface NativeMidiBridgeResult {
   success: boolean;
@@ -50,7 +53,10 @@ export interface NativeMidiBridge {
   listMidiPorts(): Promise<NativeMidiBridgeResult>;
   openMidiInput(portIndex: number): Promise<NativeMidiBridgeResult>;
   openMidiOutput(portIndex: number): Promise<NativeMidiBridgeResult>;
-  sendMidi(handle: string, bytes: number[]): Promise<{ success: boolean; error?: string }>;
+  sendMidi(
+    handle: string,
+    bytes: number[]
+  ): Promise<{ success: boolean; error?: string }>;
   closeMidiPort(handle: string): Promise<{ success: boolean; error?: string }>;
   onMidiMessage(cb: (msg: NativeMidiMessage) => void): () => void;
 }
@@ -66,7 +72,11 @@ export class NativeMidiManager {
 
   constructor(private bridge: NativeMidiBridge) {}
 
-  async listPorts(): Promise<{ inputs: NativeMidiPort[]; outputs: NativeMidiPort[]; error?: string }> {
+  async listPorts(): Promise<{
+    inputs: NativeMidiPort[];
+    outputs: NativeMidiPort[];
+    error?: string;
+  }> {
     const r = await this.bridge.listMidiPorts();
     if (!r.success) return { inputs: [], outputs: [], error: r.error };
     return { inputs: r.inputs ?? [], outputs: r.outputs ?? [] };
@@ -75,7 +85,7 @@ export class NativeMidiManager {
   /** Abonniert das globale midi:message-Event genau einmal. */
   private ensureSubscribed(): void {
     if (this.unsub) return;
-    this.unsub = this.bridge.onMidiMessage((msg) => {
+    this.unsub = this.bridge.onMidiMessage(msg => {
       this.routes.get(msg.handle)?.(msg.bytes, msg.deltaTime);
     });
   }
@@ -111,7 +121,9 @@ export class NativeMidiManager {
    */
   send(handle: string, bytes: number[] | Uint8Array): void {
     const arr = Array.from(bytes);
-    void this.bridge.sendMidi(handle, arr).catch(() => { /* device gone */ });
+    void this.bridge.sendMidi(handle, arr).catch(() => {
+      /* device gone */
+    });
   }
 
   isOpen(handle: string): boolean {
@@ -127,7 +139,11 @@ export class NativeMidiManager {
     if (!this.openHandles.has(handle)) return;
     this.routes.delete(handle);
     this.openHandles.delete(handle);
-    try { await this.bridge.closeMidiPort(handle); } catch { /* schon zu */ }
+    try {
+      await this.bridge.closeMidiPort(handle);
+    } catch {
+      /* schon zu */
+    }
   }
 
   /**
@@ -139,9 +155,16 @@ export class NativeMidiManager {
     this.routes.clear();
     this.openHandles.clear();
     for (const h of handles) {
-      try { await this.bridge.closeMidiPort(h); } catch { /* ignore */ }
+      try {
+        await this.bridge.closeMidiPort(h);
+      } catch {
+        /* ignore */
+      }
     }
-    if (this.unsub) { this.unsub(); this.unsub = null; }
+    if (this.unsub) {
+      this.unsub();
+      this.unsub = null;
+    }
   }
 }
 
@@ -154,7 +177,11 @@ export interface NativeMidiInput {
   manufacturer: string;
   state: "connected" | "disconnected";
   type: "input";
-  onmidimessage: ((event: { data: Uint8Array }) => void) | null;
+  // `target` spiegelt Web-MIDI: der Handler kann so das Quell-Gerät (name/id)
+  // lesen — nötig für Multi-Device-Rollen-Gate + Sync-In-Device-Filter.
+  onmidimessage:
+    | ((event: { data: Uint8Array; target?: NativeMidiInput }) => void)
+    | null;
 }
 
 /** Subset von MIDIOutput, das useMidi/midiOutput.ts liest. */
@@ -185,7 +212,7 @@ export interface NativeMidiAccess {
  * zurückfällt.
  */
 export async function createNativeMidiAccess(
-  bridge: NativeMidiBridge,
+  bridge: NativeMidiBridge
 ): Promise<NativeMidiAccess | null> {
   const manager = new NativeMidiManager(bridge);
   const ports = await manager.listPorts();
@@ -203,8 +230,8 @@ export async function createNativeMidiAccess(
       type: "input",
       onmidimessage: null,
     };
-    const handle = await manager.openInput(p.index, (bytes) => {
-      node.onmidimessage?.({ data: Uint8Array.from(bytes) });
+    const handle = await manager.openInput(p.index, bytes => {
+      node.onmidimessage?.({ data: Uint8Array.from(bytes), target: node });
     });
     if (!handle) continue; // Port belegt/exklusiv → überspringen
     node.id = handle;
@@ -220,7 +247,7 @@ export async function createNativeMidiAccess(
       manufacturer: "",
       state: "connected",
       type: "output",
-      send: (data) => manager.send(handle, data),
+      send: data => manager.send(handle, data),
     };
     outputs.set(handle, node);
   }
@@ -260,7 +287,7 @@ export interface NativeMidiStatusSummary {
  */
 export function describeNativeMidiStatus(
   status: NativeMidiStatusInput | null,
-  ports: { inputs?: NativeMidiPort[]; outputs?: NativeMidiPort[] } | null,
+  ports: { inputs?: NativeMidiPort[]; outputs?: NativeMidiPort[] } | null
 ): NativeMidiStatusSummary {
   const inputCount = ports?.inputs?.length ?? 0;
   const outputCount = ports?.outputs?.length ?? 0;
@@ -271,7 +298,10 @@ export function describeNativeMidiStatus(
     return {
       headline: "Nativer MIDI-Layer nicht verfügbar",
       level: "error",
-      inputCount, outputCount, openInputs, openOutputs,
+      inputCount,
+      outputCount,
+      openInputs,
+      openOutputs,
       notes: ["Nur in der Desktop-App; fällt sonst auf Web-MIDI zurück."],
     };
   }
@@ -279,21 +309,30 @@ export function describeNativeMidiStatus(
   const notes: string[] = [];
   let level: "ok" | "warn" = "ok";
   if (inputCount === 0) {
-    notes.push("Keine MIDI-Eingänge erkannt — eingehende Noten/CC/SysEx kommen nicht an. Gerät anschließen + Neu scannen.");
+    notes.push(
+      "Keine MIDI-Eingänge erkannt — eingehende Noten/CC/SysEx kommen nicht an. Gerät anschließen + Neu scannen."
+    );
     level = "warn";
   }
   if (outputCount === 0) {
-    notes.push("Keine MIDI-Ausgänge erkannt — kein Senden an Hardware möglich.");
+    notes.push(
+      "Keine MIDI-Ausgänge erkannt — kein Senden an Hardware möglich."
+    );
     level = "warn";
   }
   if (!status.virtualPortsSupported) {
-    notes.push("Virtuelle Ports auf dieser Plattform nicht unterstützt (Windows).");
+    notes.push(
+      "Virtuelle Ports auf dieser Plattform nicht unterstützt (Windows)."
+    );
   }
 
   return {
     headline: `Nativer MIDI-Layer aktiv — ${inputCount} In / ${outputCount} Out`,
     level,
-    inputCount, outputCount, openInputs, openOutputs,
+    inputCount,
+    outputCount,
+    openInputs,
+    openOutputs,
     notes,
   };
 }
@@ -305,13 +344,20 @@ export function describeNativeMidiStatus(
  * KORG-Bank-Logik). Lowercase-substring-Match.
  */
 export const OMNITRIBE_PORT_PATTERNS = [
-  "omnitribe", "electribe", "esx", "korg",
-  "es-1", "es-2", "es-9", "nu:tekt", "nts",
+  "omnitribe",
+  "electribe",
+  "esx",
+  "korg",
+  "es-1",
+  "es-2",
+  "es-9",
+  "nu:tekt",
+  "nts",
 ] as const;
 
 function matchPort(name: string, patterns: readonly string[]): boolean {
   const n = name.toLowerCase();
-  return patterns.some((p) => n.includes(p));
+  return patterns.some(p => n.includes(p));
 }
 
 /** Subset von WsTransport (siehe OmniTribeBridge.ts) — hier dupliziert, um
@@ -345,14 +391,14 @@ export interface OmniTribeNativeConnection {
  */
 export async function connectOmniTribeNative(
   bridge: NativeMidiBridge,
-  patterns: readonly string[] = OMNITRIBE_PORT_PATTERNS,
+  patterns: readonly string[] = OMNITRIBE_PORT_PATTERNS
 ): Promise<OmniTribeNativeConnection | null> {
   const manager = new NativeMidiManager(bridge);
   const ports = await manager.listPorts();
   if (ports.error) return null;
 
-  const inPort = ports.inputs.find((p) => matchPort(p.name, patterns));
-  const outPort = ports.outputs.find((p) => matchPort(p.name, patterns));
+  const inPort = ports.inputs.find(p => matchPort(p.name, patterns));
+  const outPort = ports.outputs.find(p => matchPort(p.name, patterns));
   if (!inPort || !outPort) return null;
 
   // Output ZUERST öffnen — er muss garantiert offen sein, bevor connectWebSocket
@@ -361,13 +407,15 @@ export async function connectOmniTribeNative(
   if (!outHandle) return null;
 
   const transport: NativeWsTransport = {
-    send: (data) => manager.send(outHandle, data),
-    close: () => { void manager.closeAll(); },
+    send: data => manager.send(outHandle, data),
+    close: () => {
+      void manager.closeAll();
+    },
     onmessage: null,
     onclose: null,
   };
 
-  const inHandle = await manager.openInput(inPort.index, (bytes) => {
+  const inHandle = await manager.openInput(inPort.index, bytes => {
     transport.onmessage?.(Uint8Array.from(bytes));
   });
   if (!inHandle) {
@@ -377,8 +425,11 @@ export async function connectOmniTribeNative(
   }
 
   return {
-    transport, manager,
-    inHandle, outHandle,
-    inName: inPort.name, outName: outPort.name,
+    transport,
+    manager,
+    inHandle,
+    outHandle,
+    inName: inPort.name,
+    outName: outPort.name,
   };
 }
