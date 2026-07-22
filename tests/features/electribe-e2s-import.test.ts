@@ -1,6 +1,11 @@
 import { describe, it, expect } from "vitest";
 import { e2sAllpatToImportResult } from "../../client/src/utils/imports/electribeImport";
 import {
+  writePatternBodyIntoAllpat,
+  allpatMinSizeFor,
+  ALLPAT_PATTERN_COUNT,
+} from "../../client/src/utils/korg/e2AllpatBuild";
+import {
   PATTERN_NAME_OFFSET,
   PART_TABLE_OFFSET,
   PART_STRIDE,
@@ -101,5 +106,22 @@ describe("e2sAllpatToImportResult", () => {
     const buf = makeAllpat({ 0: new Uint8Array(STRIDE) });
     const res = e2sAllpatToImportResult(buf, "empty.e2sallpat");
     expect(res.patterns).toHaveLength(1);
+  });
+
+  it("bank export ↔ import agree on container geometry (slot 5 round-trips)", () => {
+    // A full-size base bank (all 250 slots), then write one body into slot 5
+    // via the exporter, and read it back via the importer.
+    const base = new Uint8Array(allpatMinSizeFor(ALLPAT_PATTERN_COUNT - 1));
+    const body = makeBody("SLOT5", { part: 1, step: 7, vel: 88, osc: 600 });
+    const out = writePatternBodyIntoAllpat(base, 5, body);
+    const res = e2sAllpatToImportResult(out, "roundtrip.e2sallpat");
+    // exactly the one written slot has content
+    expect(res.patterns).toHaveLength(1);
+    expect(res.patterns[0].name).toBe("SLOT5");
+    expect(res.patterns[0].parts[1].steps[7]).toMatchObject({
+      active: true,
+      velocity: 88,
+    });
+    expect(res.patterns[0].parts[1].name).toBe("#600");
   });
 });
