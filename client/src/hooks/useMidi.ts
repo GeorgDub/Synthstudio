@@ -1181,8 +1181,11 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
     // → dieser Block ist ein No-op (kein Verhaltenswechsel für Legacy-/Single-
     // Device-Setups). Nur wenn der User einem Gerät eine engere Rolle gibt
     // (z.B. Akai = 'controller'), werden dessen SysEx/Clock hier verworfen.
+    // Quell-Geräte-Name einmal ermitteln — für das Rollen-Gate UND als Feld im
+    // midi:rawmessage-Detail (Per-Device-Durchsatz im Monitor). Beides liest nur
+    // den bereits vorhandenen String; keine zusätzliche Allokation.
+    const srcName = (event.target as { name?: string } | undefined)?.name;
     {
-      const srcName = (event.target as { name?: string } | undefined)?.name;
       const role = srcName ? getInputConfig(srcName).role : "all";
       if (role !== "all") {
         if (status === 0xf0) {
@@ -1299,7 +1302,7 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
     // Raw MIDI message für MPE-Verarbeitung weiterleiten
     window.dispatchEvent(
       new CustomEvent("midi:rawmessage", {
-        detail: { type, channel, byte1, byte2 },
+        detail: { type, channel, byte1, byte2, device: srcName },
       })
     );
 

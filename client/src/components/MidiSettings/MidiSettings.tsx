@@ -82,6 +82,10 @@ import {
   describeNativeMidiStatus,
   type NativeMidiStatusSummary,
 } from "@/utils/nativeMidiAccess";
+import {
+  MidiThroughputByDevice,
+  type ThroughputSnapshot,
+} from "@/utils/midiThroughput";
 import { MidiActivityIndicator } from "@/components/MidiSettings/MidiActivityIndicator";
 // v3.98.0: MIDI-Click-Out — externe Hardware-Sync via Beat-Notes.
 import {
@@ -356,6 +360,14 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
   React.useEffect(() => {
     monitorPausedRef.current = monitorPaused;
   }, [monitorPaused]);
+  // Stufe-3-Performance: Per-Device-Durchsatz-Messer. Reitet auf demselben
+  // midi:rawmessage-Strom (Noten/CC/Pitch-Bend) — KEINE zusätzliche Hot-Path-
+  // Last. `record` ist billig (Push + Prune); die UI liest nur periodisch.
+  const throughputRef = React.useRef(new MidiThroughputByDevice(1000));
+  const [throughput, setThroughput] = useState<{
+    total: ThroughputSnapshot;
+    perDevice: Array<{ key: string } & ThroughputSnapshot>;
+  } | null>(null);
   useEffect(() => {
     const handler = (e: Event) => {
       const detail = (
@@ -364,15 +376,18 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
           channel: number;
           byte1: number;
           byte2: number;
+          device?: string;
         }>
       ).detail;
       if (!detail) return;
-      setLastActivity({ ...detail, at: Date.now() });
+      const now = Date.now();
+      throughputRef.current.record(detail.device || "Unbekannt", now);
+      setLastActivity({ ...detail, at: now });
       setActivityPulse(true);
       setTimeout(() => setActivityPulse(false), 150);
       if (!monitorPausedRef.current) {
         setMonitorLog(prev => {
-          const next = [...prev, { ...detail, at: Date.now() }];
+          const next = [...prev, { ...detail, at: now }];
           // Ringbuffer-Cap: max 200 Events damit die UI nicht erstickt
           return next.length > 200 ? next.slice(-200) : next;
         });
@@ -473,6 +488,22 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
   const [activeTab, setActiveTab] = useState<
     "devices" | "templates" | "cc" | "notes" | "monitor" | "clock"
   >("devices");
+  // Throughput-Anzeige nur aktualisieren, wenn der Monitor-Tab offen ist —
+  // sonst nutzloses Re-Rendern. 500-ms-Takt: flüssig genug, ohne die UI zu
+  // fluten. Der Messer (throughputRef) sammelt unabhängig im Hintergrund.
+  useEffect(() => {
+    if (activeTab !== "monitor") return;
+    const tick = () => {
+      const now = Date.now();
+      setThroughput({
+        total: throughputRef.current.totalSnapshot(now),
+        perDevice: throughputRef.current.perDevice(now),
+      });
+    };
+    tick();
+    const id = setInterval(tick, 500);
+    return () => clearInterval(id);
+  }, [activeTab]);
   // v3.121.0: Templates-Library-Dialog (browse Hardware + User + Import/Export)
   const [templatesLibraryOpen, setTemplatesLibraryOpen] = useState(false);
   const [noteLearnPartId, setNoteLearnPartId] = useState<string | null>(null);
@@ -2589,9 +2620,66 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
         >
           🗑 Leeren
         </button>
+        <button
+          onClick={() => {
+            throughputRef.current.reset();
+            setThroughput({
+              total: throughputRef.current.totalSnapshot(Date.now()),
+              perDevice: [],
+            });
+          }}
+          className="px-3 py-1 text-xs bg-bg-elevated hover:brightness-125 text-text-primary rounded transition-colors"
+          data-testid="midi-monitor-throughput-reset"
+        >
+          ↺ Durchsatz-Reset
+        </button>
         <div className="text-[10px] text-text-dim ml-auto">
           {monitorLog.length}/200 Events
         </div>
+      </div>
+
+      {/* Stufe-3-Performance: Live-Durchsatz (Noten/CC/Pitch-Bend) pro Gerät.
+          Zeigt dem User bei Mehrgeräte-Setups (Electribe 2 + Akai), welches
+          Gerät wie viele Nachrichten/s schickt und wo Spitzen auftreten. */}
+      <div
+        className="bg-bg-elevated rounded p-2 space-y-1"
+        data-testid="midi-monitor-throughput"
+      >
+        <div className="flex items-center justify-between text-[11px]">
+          <span className="text-text-muted font-medium">
+            Durchsatz (Noten/CC)
+          </span>
+          <span className="font-mono text-text-primary">
+            {Math.round(throughput?.total.perSec ?? 0)}/s
+            <span className="text-text-dim">
+              {" "}
+              · Peak {Math.round(throughput?.total.peakPerSec ?? 0)}/s
+            </span>
+          </span>
+        </div>
+        {throughput && throughput.perDevice.length > 0 ? (
+          <div className="space-y-0.5">
+            {throughput.perDevice.map(row => (
+              <div
+                key={row.key}
+                className="flex items-center justify-between font-mono text-[10px] text-text-muted"
+              >
+                <span className="truncate mr-2">{row.key}</span>
+                <span className="shrink-0">
+                  {Math.round(row.perSec)}/s
+                  <span className="text-text-dim">
+                    {" "}
+                    · Peak {Math.round(row.peakPerSec)} · Σ {row.total}
+                  </span>
+                </span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="text-[10px] text-text-dim italic">
+            Noch keine Nachrichten gemessen.
+          </div>
+        )}
       </div>
       <div
         className="bg-bg-elevated rounded p-2 h-72 overflow-y-auto font-mono text-[11px] leading-tight"
