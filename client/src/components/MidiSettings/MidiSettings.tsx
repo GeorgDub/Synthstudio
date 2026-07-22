@@ -12,9 +12,19 @@
 
 import React, { useState, useEffect, useCallback } from "react";
 import { X } from "lucide-react";
-import type { MidiState, MidiActions, MidiLearnTarget, MidiNoteMapping, AutoLearnEntry } from "@/hooks/useMidi";
+import type {
+  MidiState,
+  MidiActions,
+  MidiLearnTarget,
+  MidiNoteMapping,
+  AutoLearnEntry,
+} from "@/hooks/useMidi";
 import { GM_DRUM_DEFAULTS } from "@/hooks/useMidi";
-import { MIDI_TEMPLATES, templateToMappings, getMidiTemplate } from "@/utils/midiTemplates";
+import {
+  MIDI_TEMPLATES,
+  templateToMappings,
+  getMidiTemplate,
+} from "@/utils/midiTemplates";
 import {
   MIDI_TEMPLATE_SUGGESTED_EVENT,
   isAutoDetectionEnabled,
@@ -22,7 +32,11 @@ import {
   addToNeverList,
   type MidiTemplateSuggestedDetail,
 } from "@/utils/midiDeviceDetection";
-import { buildMidiLayoutJson, sanitizeLayoutFileName, defaultLayoutNameForDevice } from "@/utils/midiLayoutExport";
+import {
+  buildMidiLayoutJson,
+  sanitizeLayoutFileName,
+  defaultLayoutNameForDevice,
+} from "@/utils/midiLayoutExport";
 import {
   MIDI_MAPPING_SHARE_SUFFIX,
   buildMidiMappingShareJson,
@@ -52,9 +66,18 @@ import {
 } from "@/store/useUserMidiTemplatesStore";
 // v3.121.0: Templates Library Dialog
 import { TemplatesLibrary } from "@/components/MidiSettings/TemplatesLibrary";
-import { useSubMixStore, MAX_SUB_MIX_BUSES, type SubMixBus } from "@/store/useSubMixStore";
+import {
+  useSubMixStore,
+  MAX_SUB_MIX_BUSES,
+  type SubMixBus,
+} from "@/store/useSubMixStore";
 import { useElectron } from "../../../../electron/useElectron";
 import { useMidiBackendStore } from "@/store/useMidiBackendStore";
+import {
+  useMidiInputsStore,
+  MIDI_INPUT_ROLES,
+  type MidiInputRole,
+} from "@/store/useMidiInputsStore";
 import {
   describeNativeMidiStatus,
   type NativeMidiStatusSummary,
@@ -110,39 +133,80 @@ interface MidiSettingsProps {
 
 function targetLabel(target: MidiLearnTarget): string {
   switch (target.type) {
-    case "bpm": return "BPM";
-    case "bpmUp": return "BPM +";
-    case "bpmDown": return "BPM −";
-    case "masterVolume": return "Master-Lautstärke";
-    case "volume": return `Lautstärke${target.partName ? ` (${target.partName})` : ""}`;
-    case "mute": return `Mute${target.partName ? ` (${target.partName})` : ""}`;
-    case "solo": return `Solo${target.partName ? ` (${target.partName})` : ""}`;
-    case "pan": return `Pan${target.partName ? ` (${target.partName})` : ""}`;
-    case "partUp": return "Part Up";
-    case "partDown": return "Part Down";
-    case "playStop": return "Play/Stop";
-    case "record": return "Record";
-    case "tapTempo": return "Tap Tempo";
-    case "pattern": return `Pattern ${target.patternIndex + 1}`;
-    case "patternNext": return "Pattern Next";
-    case "patternPrev": return "Pattern Prev";
-    case "patternClear": return "Pattern Clear";
-    case "patternFill": return "Pattern Fill";
-    case "patternRandomize": return "Pattern Randomize";
-    case "patternDuplicate": return "Pattern Duplicate";
-    case "tab": return `Tab: ${target.tabId}`;
-    case "toggleNoteRepeat": return "Note Repeat Toggle";
-    case "toggleMorph": return "Morph Toggle";
-    case "commitLiveEdit": return "Commit Live Edit";
-    case "scenelaunch": return `Scene ${target.sceneIndex + 1}`;
-    case "openSettings": return "Settings";
-    case "step": return `Step ${target.stepIndex + 1}`;
-    default: return "Unbekannt";
+    case "bpm":
+      return "BPM";
+    case "bpmUp":
+      return "BPM +";
+    case "bpmDown":
+      return "BPM −";
+    case "masterVolume":
+      return "Master-Lautstärke";
+    case "volume":
+      return `Lautstärke${target.partName ? ` (${target.partName})` : ""}`;
+    case "mute":
+      return `Mute${target.partName ? ` (${target.partName})` : ""}`;
+    case "solo":
+      return `Solo${target.partName ? ` (${target.partName})` : ""}`;
+    case "pan":
+      return `Pan${target.partName ? ` (${target.partName})` : ""}`;
+    case "partUp":
+      return "Part Up";
+    case "partDown":
+      return "Part Down";
+    case "playStop":
+      return "Play/Stop";
+    case "record":
+      return "Record";
+    case "tapTempo":
+      return "Tap Tempo";
+    case "pattern":
+      return `Pattern ${target.patternIndex + 1}`;
+    case "patternNext":
+      return "Pattern Next";
+    case "patternPrev":
+      return "Pattern Prev";
+    case "patternClear":
+      return "Pattern Clear";
+    case "patternFill":
+      return "Pattern Fill";
+    case "patternRandomize":
+      return "Pattern Randomize";
+    case "patternDuplicate":
+      return "Pattern Duplicate";
+    case "tab":
+      return `Tab: ${target.tabId}`;
+    case "toggleNoteRepeat":
+      return "Note Repeat Toggle";
+    case "toggleMorph":
+      return "Morph Toggle";
+    case "commitLiveEdit":
+      return "Commit Live Edit";
+    case "scenelaunch":
+      return `Scene ${target.sceneIndex + 1}`;
+    case "openSettings":
+      return "Settings";
+    case "step":
+      return `Step ${target.stepIndex + 1}`;
+    default:
+      return "Unbekannt";
   }
 }
 
 function noteToName(note: number): string {
-  const names = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+  const names = [
+    "C",
+    "C#",
+    "D",
+    "D#",
+    "E",
+    "F",
+    "F#",
+    "G",
+    "G#",
+    "A",
+    "A#",
+    "B",
+  ];
   const octave = Math.floor(note / 12) - 1;
   return `${names[note % 12]}${octave}`;
 }
@@ -167,15 +231,15 @@ function noteToName(note: number): string {
  */
 export function buildSubMixBusAutoLearnEntries(
   buses: ReadonlyArray<{ id: string; name: string }>,
-  withMute = true,
+  withMute = true
 ): AutoLearnEntry[] {
   const capped = buses.slice(0, MAX_SUB_MIX_BUSES);
-  const volEntries: AutoLearnEntry[] = capped.map((b) => ({
+  const volEntries: AutoLearnEntry[] = capped.map(b => ({
     kind: "cc" as const,
     target: { type: "subMixBusVolume" as const, busId: b.id, busName: b.name },
   }));
   if (!withMute) return volEntries;
-  const muteEntries: AutoLearnEntry[] = capped.map((b) => ({
+  const muteEntries: AutoLearnEntry[] = capped.map(b => ({
     kind: "note" as const,
     partId: `sub-mix-bus-${b.id}`,
     partName: `Bus Mute: ${b.name}`,
@@ -185,6 +249,21 @@ export function buildSubMixBusAutoLearnEntries(
 }
 
 // ─── Komponente ───────────────────────────────────────────────────────────────
+
+function roleLabel(role: MidiInputRole): string {
+  switch (role) {
+    case "all":
+      return "Alles";
+    case "controller":
+      return "Controller (CC+Noten)";
+    case "keys":
+      return "Nur Noten";
+    case "sysex":
+      return "Nur SysEx";
+    case "clock":
+      return "Nur Clock";
+  }
+}
 
 export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
   // v1.78: für Script-Run-Targets brauchen wir die Liste aller Scripts
@@ -196,7 +275,9 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
   const subMixBuses: ReadonlyArray<SubMixBus> = subMixState.buses;
   // #11: MIDI-Backend-Opt-in (Web-MIDI vs. nativer RtMidi-Layer).
   const electron = useElectron();
-  const { backend: midiBackend, setBackend: setMidiBackend } = useMidiBackendStore();
+  const { backend: midiBackend, setBackend: setMidiBackend } =
+    useMidiBackendStore();
+  const midiInputs = useMidiInputsStore();
   const switchMidiBackend = (next: "web" | "native") => {
     if (next === midiBackend) return;
     // Backend-Wechsel: erst sauber teardown, dann umschalten — der User
@@ -206,7 +287,8 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
   };
   // #11: Live-Diagnose des nativen MIDI-Layers (verfügbar? wie viele Ports?
   // wie viele offen?). Macht die "lädt aber liefert nichts"-Falle sichtbar.
-  const [nativeStatus, setNativeStatus] = useState<NativeMidiStatusSummary | null>(null);
+  const [nativeStatus, setNativeStatus] =
+    useState<NativeMidiStatusSummary | null>(null);
   const [nativeScanning, setNativeScanning] = useState(false);
   const refreshNativeStatus = useCallback(async () => {
     if (!electron.isElectron) return;
@@ -216,10 +298,14 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
         electron.getMidiStatus(),
         electron.listMidiPorts(),
       ]);
-      setNativeStatus(describeNativeMidiStatus(
-        status,
-        ports.success ? { inputs: ports.inputs, outputs: ports.outputs } : null,
-      ));
+      setNativeStatus(
+        describeNativeMidiStatus(
+          status,
+          ports.success
+            ? { inputs: ports.inputs, outputs: ports.outputs }
+            : null
+        )
+      );
     } catch {
       setNativeStatus(describeNativeMidiStatus(null, null));
     } finally {
@@ -256,21 +342,36 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
   const [activityPulse, setActivityPulse] = useState(false);
   // v1.81: Monitor-Tab — bewahrt einen ringbuffer der letzten 200 MIDI-Events
   // damit der User das genaue Verhalten seiner Hardware debuggen kann.
-  const [monitorLog, setMonitorLog] = useState<Array<{
-    type: number; channel: number; byte1: number; byte2: number; at: number;
-  }>>([]);
+  const [monitorLog, setMonitorLog] = useState<
+    Array<{
+      type: number;
+      channel: number;
+      byte1: number;
+      byte2: number;
+      at: number;
+    }>
+  >([]);
   const [monitorPaused, setMonitorPaused] = useState(false);
   const monitorPausedRef = React.useRef(false);
-  React.useEffect(() => { monitorPausedRef.current = monitorPaused; }, [monitorPaused]);
+  React.useEffect(() => {
+    monitorPausedRef.current = monitorPaused;
+  }, [monitorPaused]);
   useEffect(() => {
     const handler = (e: Event) => {
-      const detail = (e as CustomEvent<{ type: number; channel: number; byte1: number; byte2: number }>).detail;
+      const detail = (
+        e as CustomEvent<{
+          type: number;
+          channel: number;
+          byte1: number;
+          byte2: number;
+        }>
+      ).detail;
       if (!detail) return;
       setLastActivity({ ...detail, at: Date.now() });
       setActivityPulse(true);
       setTimeout(() => setActivityPulse(false), 150);
       if (!monitorPausedRef.current) {
-        setMonitorLog((prev) => {
+        setMonitorLog(prev => {
           const next = [...prev, { ...detail, at: Date.now() }];
           // Ringbuffer-Cap: max 200 Events damit die UI nicht erstickt
           return next.length > 200 ? next.slice(-200) : next;
@@ -285,8 +386,12 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
   // Events die useMidi.refreshDevices feuert wenn ein bekanntes Gerät
   // verbunden wird. Wir queuen Suggestions damit User mehrere Geräte
   // nacheinander beantworten kann (nano + Launchpad gleichzeitig stöpseln).
-  const [suggestionQueue, setSuggestionQueue] = useState<MidiTemplateSuggestedDetail[]>([]);
-  const [autoDetectEnabled, setAutoDetectEnabledState] = useState<boolean>(() => isAutoDetectionEnabled());
+  const [suggestionQueue, setSuggestionQueue] = useState<
+    MidiTemplateSuggestedDetail[]
+  >([]);
+  const [autoDetectEnabled, setAutoDetectEnabledState] = useState<boolean>(() =>
+    isAutoDetectionEnabled()
+  );
   useEffect(() => {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent<MidiTemplateSuggestedDetail>).detail;
@@ -298,7 +403,8 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
       });
     };
     window.addEventListener(MIDI_TEMPLATE_SUGGESTED_EVENT, handler);
-    return () => window.removeEventListener(MIDI_TEMPLATE_SUGGESTED_EVENT, handler);
+    return () =>
+      window.removeEventListener(MIDI_TEMPLATE_SUGGESTED_EVENT, handler);
   }, []);
   const currentSuggestion = suggestionQueue[0] ?? null;
 
@@ -321,16 +427,25 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
     const resolvedNotes = notes.map(n => {
       const partIndex = parseInt(n.partId.replace("part-", ""), 10);
       const realPart = parts[partIndex];
-      return { ...n, partId: realPart?.id ?? n.partId, label: realPart?.name ?? n.label };
+      return {
+        ...n,
+        partId: realPart?.id ?? n.partId,
+        label: realPart?.name ?? n.label,
+      };
     });
     midi.loadTemplate(cc, resolvedNotes);
-    toast(`Hardware-Template „${t.name}" angewendet (${cc.length} CC + ${resolvedNotes.length} Notes)`, { kind: "success" });
+    toast(
+      `Hardware-Template „${t.name}" angewendet (${cc.length} CC + ${resolvedNotes.length} Notes)`,
+      { kind: "success" }
+    );
     dismissCurrentSuggestion();
   }
 
   function neverAskAgain(detail: MidiTemplateSuggestedDetail) {
     addToNeverList(detail.deviceName);
-    toast(`Auto-Detection für „${detail.deviceName}" deaktiviert`, { kind: "info" });
+    toast(`Auto-Detection für „${detail.deviceName}" deaktiviert`, {
+      kind: "info",
+    });
     dismissCurrentSuggestion();
   }
 
@@ -344,17 +459,20 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
     else if (a.type === 0xb0) typeName = `CC ${a.byte1} = ${a.byte2}`;
     else if (a.type === 0xa0) typeName = `Poly AT ${a.byte1} = ${a.byte2}`;
     else if (a.type === 0xd0) typeName = `Ch AT ${a.byte1}`;
-    else if (a.type === 0xe0) typeName = `Pitch Bend ${(a.byte1 | (a.byte2 << 7))}`;
+    else if (a.type === 0xe0)
+      typeName = `Pitch Bend ${a.byte1 | (a.byte2 << 7)}`;
     else typeName = `Type 0x${a.type.toString(16)}`;
     return `${typeName} (Ch${a.channel}, vor ${ageStr})`;
   }
 
   /** v1.79: pure-helper aus midiLayoutExport mit Device-Name aus midi-State. */
   function defaultExportNameFromDevice(): string {
-    const dev = midi.devices.find((d) => d.id === midi.activeDeviceId);
+    const dev = midi.devices.find(d => d.id === midi.activeDeviceId);
     return defaultLayoutNameForDevice(dev?.name);
   }
-  const [activeTab, setActiveTab] = useState<"devices" | "templates" | "cc" | "notes" | "monitor" | "clock">("devices");
+  const [activeTab, setActiveTab] = useState<
+    "devices" | "templates" | "cc" | "notes" | "monitor" | "clock"
+  >("devices");
   // v3.121.0: Templates-Library-Dialog (browse Hardware + User + Import/Export)
   const [templatesLibraryOpen, setTemplatesLibraryOpen] = useState(false);
   const [noteLearnPartId, setNoteLearnPartId] = useState<string | null>(null);
@@ -371,10 +489,12 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
   // v1.80: Custom Chain Builder
   const [chainBuilderOpen, setChainBuilderOpen] = useState(false);
   const [chainBuilderName, setChainBuilderName] = useState("Mein Chain");
-  const [chainBuilderSteps, setChainBuilderSteps] = useState<Array<{
-    targetKey: string;
-    delayMs: number;
-  }>>([]);
+  const [chainBuilderSteps, setChainBuilderSteps] = useState<
+    Array<{
+      targetKey: string;
+      delayMs: number;
+    }>
+  >([]);
 
   // v2.79: Pad-Bank Builder — pro Pad einen beliebigen Target (perf-pad,
   // macro, script, atomic action) zuweisen, dann Auto-Learn fährt sie in
@@ -382,7 +502,9 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
   // v2.80: localStorage-Persistenz via loadPadBankSlots/savePadBankSlots
   //        (Schema + Helpers in utils/padBankPersistence.ts).
   const [padBankBuilderOpen, setPadBankBuilderOpen] = useState(false);
-  const [padBankSlots, setPadBankSlots] = useState<PadBankSlot[]>(() => loadPadBankSlots());
+  const [padBankSlots, setPadBankSlots] = useState<PadBankSlot[]>(() =>
+    loadPadBankSlots()
+  );
   useEffect(() => {
     savePadBankSlots(padBankSlots);
   }, [padBankSlots]);
@@ -428,7 +550,9 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
       const summary = `${midi.mappings.length} CC + ${midi.noteMappings.length} Notes`;
       setExportFeedback(`Gespeichert: ${a.download}`);
       setTimeout(() => setExportFeedback(null), 3000);
-      toast(`Layout exportiert: ${a.download} (${summary})`, { kind: "success" });
+      toast(`Layout exportiert: ${a.download} (${summary})`, {
+        kind: "success",
+      });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setExportFeedback(`Fehler: ${msg}`);
@@ -439,11 +563,12 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
   // ─── v3.64.0: MIDI-Mapping Share (v2 envelope) ───────────────────────────
   const [shareDescription, setShareDescription] = useState("");
   const [shareAuthor, setShareAuthor] = useState("");
-  const [shareImportMode, setShareImportMode] = useState<MidiMappingImportMode>("merge");
+  const [shareImportMode, setShareImportMode] =
+    useState<MidiMappingImportMode>("merge");
   const shareFileInputRef = React.useRef<HTMLInputElement | null>(null);
 
   const handleExportShare = () => {
-    const activeDevice = midi.devices.find((d) => d.id === midi.activeDeviceId);
+    const activeDevice = midi.devices.find(d => d.id === midi.activeDeviceId);
     const json = buildMidiMappingShareJson({
       meta: {
         name: exportName.trim() || "Mein MIDI-Setup",
@@ -468,7 +593,9 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
       const summary = `${midi.mappings.length} CC + ${midi.noteMappings.length} Notes`;
       setExportFeedback(`Gespeichert: ${a.download}`);
       setTimeout(() => setExportFeedback(null), 3000);
-      toast(`Mapping exportiert: ${a.download} (${summary})`, { kind: "success" });
+      toast(`Mapping exportiert: ${a.download} (${summary})`, {
+        kind: "success",
+      });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setExportFeedback(`Fehler: ${msg}`);
@@ -481,21 +608,24 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
       const text = await file.text();
       const r = parseMidiMappingShareJson(text);
       if (!r.success || !r.envelope) {
-        toast(r.errors[0] ?? "Import fehlgeschlagen", { kind: "error", duration: 5000 });
+        toast(r.errors[0] ?? "Import fehlgeschlagen", {
+          kind: "error",
+          duration: 5000,
+        });
         return;
       }
       const applied = applyMappingShareImport(
         r.envelope,
         { ccMappings: midi.mappings, noteMappings: midi.noteMappings },
         shareImportMode,
-        parts.map((p) => p.id),
+        parts.map(p => p.id)
       );
       midi.loadTemplate(applied.ccMappings, applied.noteMappings);
       const v1Tag = r.migratedFromV1 ? " (v1-migriert)" : "";
       const modeTag = shareImportMode === "replace" ? "ersetzt" : "gemerged";
       toast(
         `Mapping „${r.envelope.meta.name}" ${modeTag}${v1Tag}: +${applied.addedCount} neu, ${applied.replacedCount} überschrieben`,
-        { kind: "success" },
+        { kind: "success" }
       );
       for (const w of r.warnings.slice(0, 3)) {
         toast(w, { kind: "info" });
@@ -503,7 +633,7 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
       if (applied.missingPartIds.length > 0) {
         toast(
           `${applied.missingPartIds.length} unbekannte Part-IDs werden ignoriert: ${applied.missingPartIds.slice(0, 3).join(", ")}${applied.missingPartIds.length > 3 ? "…" : ""}`,
-          { kind: "warning", duration: 5000 },
+          { kind: "warning", duration: 5000 }
         );
       }
     } catch (err) {
@@ -519,7 +649,9 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
       {/* MIDI aktivieren */}
       <div className="flex items-center justify-between p-3 bg-bg-elevated rounded-lg">
         <div>
-          <div className="text-sm font-medium text-text-primary">Web MIDI API</div>
+          <div className="text-sm font-medium text-text-primary">
+            Web MIDI API
+          </div>
           <div className="text-xs text-text-muted mt-0.5">
             {midi.isAvailable
               ? "Verfügbar in diesem Browser"
@@ -544,13 +676,16 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
         <div className="p-3 bg-bg-elevated rounded-lg space-y-2">
           <div className="flex items-center justify-between">
             <div>
-              <div className="text-sm font-medium text-text-primary">MIDI-Backend</div>
+              <div className="text-sm font-medium text-text-primary">
+                MIDI-Backend
+              </div>
               <div className="text-xs text-text-muted mt-0.5">
-                Nativer Layer = robusteres SysEx für KORG/OmniTribe (experimentell)
+                Nativer Layer = robusteres SysEx für KORG/OmniTribe
+                (experimentell)
               </div>
             </div>
             <div className="flex rounded overflow-hidden border border-border-color">
-              {(["web", "native"] as const).map((b) => (
+              {(["web", "native"] as const).map(b => (
                 <button
                   key={b}
                   onClick={() => switchMidiBackend(b)}
@@ -568,8 +703,8 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
           {midiBackend === "native" && (
             <div className="space-y-2" data-testid="native-midi-status">
               <div className="text-xs text-accent-secondary">
-                ⚠ Nativ unterstützt kein Hotplug — Gerät vor dem Aktivieren anschließen.
-                Bei Problemen zurück auf Web-MIDI schalten.
+                ⚠ Nativ unterstützt kein Hotplug — Gerät vor dem Aktivieren
+                anschließen. Bei Problemen zurück auf Web-MIDI schalten.
               </div>
               {nativeStatus && (
                 <div
@@ -598,10 +733,13 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
                     </button>
                   </div>
                   <div className="mt-1 text-text-muted">
-                    Offen: {nativeStatus.openInputs} In / {nativeStatus.openOutputs} Out
+                    Offen: {nativeStatus.openInputs} In /{" "}
+                    {nativeStatus.openOutputs} Out
                   </div>
                   {nativeStatus.notes.map((n, i) => (
-                    <div key={i} className="mt-1 text-text-dim">• {n}</div>
+                    <div key={i} className="mt-1 text-text-dim">
+                      • {n}
+                    </div>
                   ))}
                 </div>
               )}
@@ -636,9 +774,11 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
               {midi.devices.map(device => (
                 <button
                   key={device.id}
-                  onClick={() => midi.setActiveDevice(
-                    midi.activeDeviceId === device.id ? null : device.id
-                  )}
+                  onClick={() =>
+                    midi.setActiveDevice(
+                      midi.activeDeviceId === device.id ? null : device.id
+                    )
+                  }
                   className={`w-full flex items-center justify-between p-3 rounded-lg text-left transition-colors ${
                     midi.activeDeviceId === device.id
                       ? "bg-accent-primary/20 border border-accent-primary"
@@ -646,14 +786,22 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
                   }`}
                 >
                   <div>
-                    <div className="text-sm text-text-primary">{device.name}</div>
+                    <div className="text-sm text-text-primary">
+                      {device.name}
+                    </div>
                     {device.manufacturer && (
-                      <div className="text-xs text-text-dim">{device.manufacturer}</div>
+                      <div className="text-xs text-text-dim">
+                        {device.manufacturer}
+                      </div>
                     )}
                   </div>
-                  <div className={`w-2 h-2 rounded-full ${
-                    device.state === "connected" ? "bg-accent-success" : "bg-bg-elevated"
-                  }`} />
+                  <div
+                    className={`w-2 h-2 rounded-full ${
+                      device.state === "connected"
+                        ? "bg-accent-success"
+                        : "bg-bg-elevated"
+                    }`}
+                  />
                 </button>
               ))}
             </div>
@@ -667,6 +815,65 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
           MIDI aktiv – Gerät verbunden
         </div>
       )}
+
+      {/* Parallel-Geräte (Multi-Device): E2S + Akai gleichzeitig */}
+      {midi.isEnabled && midi.devices.length > 0 && (
+        <div>
+          <label className="block text-xs font-medium text-text-muted mb-1 uppercase tracking-wider">
+            Parallel-Geräte (mehrere gleichzeitig)
+          </label>
+          <p className="text-[11px] text-text-dim mb-2">
+            Aktiviere mehrere Eingänge zusammen (z.B. Electribe 2 für
+            SysEx/Clock + Akai als Controller) und gib jedem eine Rolle.
+          </p>
+          <div className="space-y-1">
+            {midi.devices.map(device => {
+              const cfg = midiInputs.getConfig(device.name);
+              return (
+                <div
+                  key={`multi-${device.id}`}
+                  className="flex items-center gap-2 p-2 rounded-lg bg-bg-elevated"
+                  data-testid={`midi-multi-${device.id}`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={cfg.enabled}
+                    onChange={e => {
+                      midiInputs.setEnabled(device.name, e.target.checked);
+                      midi.syncMultiInputs();
+                    }}
+                    className="accent-accent-primary"
+                    aria-label={`${device.name} aktivieren`}
+                  />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm text-text-primary truncate">
+                      {device.name}
+                    </div>
+                  </div>
+                  <select
+                    value={cfg.role}
+                    onChange={e =>
+                      midiInputs.setRole(
+                        device.name,
+                        e.target.value as MidiInputRole
+                      )
+                    }
+                    disabled={!cfg.enabled}
+                    className="text-xs px-1.5 py-1 rounded bg-bg-base border border-border-color text-text-primary disabled:opacity-40"
+                    aria-label={`${device.name} Rolle`}
+                  >
+                    {MIDI_INPUT_ROLES.map(r => (
+                      <option key={r} value={r}>
+                        {roleLabel(r)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 
@@ -675,8 +882,14 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
   const learnTargets: Array<{ label: string; target: MidiLearnTarget }> = [
     { label: "Play/Stop", target: { type: "playStop" } },
     { label: "BPM", target: { type: "bpm" } },
-    ...parts.map(p => ({ label: `Lautstärke: ${p.name}`, target: { type: "volume" as const, partId: p.id } })),
-    ...parts.map(p => ({ label: `Mute: ${p.name}`, target: { type: "mute" as const, partId: p.id } })),
+    ...parts.map(p => ({
+      label: `Lautstärke: ${p.name}`,
+      target: { type: "volume" as const, partId: p.id },
+    })),
+    ...parts.map(p => ({
+      label: `Mute: ${p.name}`,
+      target: { type: "mute" as const, partId: p.id },
+    })),
   ];
 
   /**
@@ -685,31 +898,67 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
    * sie in ChainStep-Form. Wir whitelist nur die häufigsten Actions damit das
    * Dropdown übersichtlich bleibt.
    */
-  const CHAIN_BUILDER_ACTIONS: Array<{ key: string; label: string; target: Exclude<MidiLearnTarget, { type: "chain" }> }> = [
-    { key: "playStop",         label: "Play / Stop",          target: { type: "playStop" } },
-    { key: "record",           label: "Record toggle",        target: { type: "record" } },
-    { key: "tapTempo",         label: "Tap Tempo",            target: { type: "tapTempo" } },
-    { key: "bpmUp",            label: "BPM +1",               target: { type: "bpmUp" } },
-    { key: "bpmDown",          label: "BPM −1",               target: { type: "bpmDown" } },
-    { key: "patternNext",      label: "Pattern →",            target: { type: "patternNext" } },
-    { key: "patternPrev",      label: "Pattern ←",            target: { type: "patternPrev" } },
-    { key: "patternClear",     label: "Pattern leeren",       target: { type: "patternClear" } },
-    { key: "patternFill",      label: "Pattern füllen",       target: { type: "patternFill" } },
-    { key: "patternRandomize", label: "Pattern zufällig",     target: { type: "patternRandomize" } },
-    { key: "patternDuplicate", label: "Pattern duplizieren",  target: { type: "patternDuplicate" } },
-    { key: "partUp",           label: "Part ↑",               target: { type: "partUp" } },
-    { key: "partDown",         label: "Part ↓",               target: { type: "partDown" } },
-    { key: "toggleNoteRepeat", label: "Note Repeat Toggle",   target: { type: "toggleNoteRepeat" } },
-    { key: "toggleMorph",      label: "Morph Toggle",         target: { type: "toggleMorph" } },
-    { key: "commitLiveEdit",   label: "Live Edit Commit",     target: { type: "commitLiveEdit" } },
-    { key: "openSettings",     label: "Einstellungen öffnen", target: { type: "openSettings" } },
+  const CHAIN_BUILDER_ACTIONS: Array<{
+    key: string;
+    label: string;
+    target: Exclude<MidiLearnTarget, { type: "chain" }>;
+  }> = [
+    { key: "playStop", label: "Play / Stop", target: { type: "playStop" } },
+    { key: "record", label: "Record toggle", target: { type: "record" } },
+    { key: "tapTempo", label: "Tap Tempo", target: { type: "tapTempo" } },
+    { key: "bpmUp", label: "BPM +1", target: { type: "bpmUp" } },
+    { key: "bpmDown", label: "BPM −1", target: { type: "bpmDown" } },
+    { key: "patternNext", label: "Pattern →", target: { type: "patternNext" } },
+    { key: "patternPrev", label: "Pattern ←", target: { type: "patternPrev" } },
+    {
+      key: "patternClear",
+      label: "Pattern leeren",
+      target: { type: "patternClear" },
+    },
+    {
+      key: "patternFill",
+      label: "Pattern füllen",
+      target: { type: "patternFill" },
+    },
+    {
+      key: "patternRandomize",
+      label: "Pattern zufällig",
+      target: { type: "patternRandomize" },
+    },
+    {
+      key: "patternDuplicate",
+      label: "Pattern duplizieren",
+      target: { type: "patternDuplicate" },
+    },
+    { key: "partUp", label: "Part ↑", target: { type: "partUp" } },
+    { key: "partDown", label: "Part ↓", target: { type: "partDown" } },
+    {
+      key: "toggleNoteRepeat",
+      label: "Note Repeat Toggle",
+      target: { type: "toggleNoteRepeat" },
+    },
+    {
+      key: "toggleMorph",
+      label: "Morph Toggle",
+      target: { type: "toggleMorph" },
+    },
+    {
+      key: "commitLiveEdit",
+      label: "Live Edit Commit",
+      target: { type: "commitLiveEdit" },
+    },
+    {
+      key: "openSettings",
+      label: "Einstellungen öffnen",
+      target: { type: "openSettings" },
+    },
   ];
 
   /**
    * Findet einen Action-Eintrag per Key. v1.80.
    */
   const findChainAction = (key: string) =>
-    CHAIN_BUILDER_ACTIONS.find((a) => a.key === key);
+    CHAIN_BUILDER_ACTIONS.find(a => a.key === key);
 
   /**
    * Speichert den aktuellen Custom-Chain als MidiLearnTarget und startet
@@ -719,12 +968,22 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
   const handleChainBuilderLearn = () => {
     if (chainBuilderSteps.length === 0 || !midi.isEnabled) return;
     const steps = chainBuilderSteps
-      .map((s) => {
+      .map(s => {
         const action = findChainAction(s.targetKey);
         if (!action) return null;
-        return { target: action.target, delayMs: Math.max(0, Math.min(60000, s.delayMs)) };
+        return {
+          target: action.target,
+          delayMs: Math.max(0, Math.min(60000, s.delayMs)),
+        };
       })
-      .filter((s): s is { target: Exclude<MidiLearnTarget, { type: "chain" }>; delayMs: number } => s !== null);
+      .filter(
+        (
+          s
+        ): s is {
+          target: Exclude<MidiLearnTarget, { type: "chain" }>;
+          delayMs: number;
+        } => s !== null
+      );
     if (steps.length === 0) return;
     midi.startLearn({
       type: "chain",
@@ -736,7 +995,11 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
   // v1.77: Function-Chain-Presets — fertige Multi-Step-Actions die der User
   // auf eine Taste/Pad binden kann. Diese Liste ist absichtlich kurz und
   // hardcoded — komplette Custom-Chain-Builder kommt in einem späteren Release.
-  const chainPresets: Array<{ label: string; description: string; target: MidiLearnTarget }> = [
+  const chainPresets: Array<{
+    label: string;
+    description: string;
+    target: MidiLearnTarget;
+  }> = [
     {
       label: "Drop-Combo",
       description: "Play/Stop → 200ms → Clear → 100ms → Play",
@@ -797,7 +1060,9 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
   // mappt automatisch (CC für Slider/Knöpfe, Note für Pads).
   const ccEntries = (targets: MidiLearnTarget[]): AutoLearnEntry[] =>
     targets.map(t => ({ kind: "cc" as const, target: t }));
-  const noteEntries = (ps: Array<{ id: string; name: string }>): AutoLearnEntry[] =>
+  const noteEntries = (
+    ps: Array<{ id: string; name: string }>
+  ): AutoLearnEntry[] =>
     ps.map(p => ({ kind: "note" as const, partId: p.id, partName: p.name }));
 
   /**
@@ -818,16 +1083,21 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
    * v2.79: Pad-Bank-Slot → konkretes UI-Label für die Auto-Learn-Progress-
    * Karte und den Builder selbst.
    */
-  function padBankSlotLabel(slot: { kind: PadBankSlotKind; param: string }): string {
-    if (slot.kind === "perf-pad")  return `Perf-Pad ${Number(slot.param) + 1}`;
-    if (slot.kind === "macro")     return `Macro ${Number(slot.param) + 1}`;
+  function padBankSlotLabel(slot: {
+    kind: PadBankSlotKind;
+    param: string;
+  }): string {
+    if (slot.kind === "perf-pad") return `Perf-Pad ${Number(slot.param) + 1}`;
+    if (slot.kind === "macro") return `Macro ${Number(slot.param) + 1}`;
     if (slot.kind === "script") {
-      const s = scripts.find((x) => x.id === slot.param);
+      const s = scripts.find(x => x.id === slot.param);
       return s ? `Script: ${s.name}` : "Script: (unbekannt)";
     }
     if (slot.kind === "slice") {
       const idx = Number(slot.param);
-      return Number.isFinite(idx) ? `Slice-Pad ${idx + 1}` : "Slice-Pad (invalid)";
+      return Number.isFinite(idx)
+        ? `Slice-Pad ${idx + 1}`
+        : "Slice-Pad (invalid)";
     }
     // action
     const a = findChainAction(slot.param);
@@ -839,7 +1109,10 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
    * Bei perf-pad: legacy-Path über performancePadIndex (kein target nötig).
    * Bei anderen Kinds: target wird gesetzt, applyMapping greift im Note-Handler.
    */
-  function padBankSlotToEntry(slot: { kind: PadBankSlotKind; param: string }, index: number): AutoLearnEntry | null {
+  function padBankSlotToEntry(
+    slot: { kind: PadBankSlotKind; param: string },
+    index: number
+  ): AutoLearnEntry | null {
     const partId = `pad-bank-${index}`;
     const partName = padBankSlotLabel(slot);
     if (slot.kind === "perf-pad") {
@@ -850,12 +1123,26 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
     if (slot.kind === "macro") {
       const idx = Number(slot.param);
       if (!Number.isFinite(idx) || idx < 0 || idx > 7) return null;
-      return { kind: "note", partId, partName, target: { type: "macro", index: idx } };
+      return {
+        kind: "note",
+        partId,
+        partName,
+        target: { type: "macro", index: idx },
+      };
     }
     if (slot.kind === "script") {
       if (!slot.param) return null;
-      const s = scripts.find((x) => x.id === slot.param);
-      return { kind: "note", partId, partName, target: { type: "runScript", scriptId: slot.param, scriptName: s?.name } };
+      const s = scripts.find(x => x.id === slot.param);
+      return {
+        kind: "note",
+        partId,
+        partName,
+        target: {
+          type: "runScript",
+          scriptId: slot.param,
+          scriptName: s?.name,
+        },
+      };
     }
     if (slot.kind === "slice") {
       // v2.91: Slice-Index 0..15 → playSlicePad-Target. Out-of-range wird
@@ -863,8 +1150,16 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
       // Slot ueberspringt (User-Experience: lieber das nahe Pad lernen).
       const raw = Number(slot.param);
       if (!Number.isFinite(raw)) return null;
-      const sliceIndex = Math.max(0, Math.min(PAD_BANK_SLICE_MAX - 1, Math.trunc(raw)));
-      return { kind: "note", partId, partName, target: { type: "playSlicePad", sliceIndex } };
+      const sliceIndex = Math.max(
+        0,
+        Math.min(PAD_BANK_SLICE_MAX - 1, Math.trunc(raw))
+      );
+      return {
+        kind: "note",
+        partId,
+        partName,
+        target: { type: "playSlicePad", sliceIndex },
+      };
     }
     // action
     const action = findChainAction(slot.param);
@@ -879,27 +1174,33 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
   }
 
   function addPadBankSlot() {
-    setPadBankSlots((prev) => [
+    setPadBankSlots(prev => [
       ...prev,
       { kind: "perf-pad", param: String(Math.min(15, prev.length)) },
     ]);
   }
   function removePadBankSlot(index: number) {
-    setPadBankSlots((prev) => prev.filter((_, i) => i !== index));
+    setPadBankSlots(prev => prev.filter((_, i) => i !== index));
   }
-  function updatePadBankSlot(index: number, changes: Partial<{ kind: PadBankSlotKind; param: string }>) {
-    setPadBankSlots((prev) =>
+  function updatePadBankSlot(
+    index: number,
+    changes: Partial<{ kind: PadBankSlotKind; param: string }>
+  ) {
+    setPadBankSlots(prev =>
       prev.map((s, i) => {
         if (i !== index) return s;
         const next = { ...s, ...changes };
         // Kind-Wechsel: param auf sinnvollen Default zurücksetzen
         if (changes.kind && changes.kind !== s.kind) {
-          if (changes.kind === "perf-pad")  next.param = String(Math.min(15, i));
-          else if (changes.kind === "macro") next.param = String(Math.min(7, i));
+          if (changes.kind === "perf-pad") next.param = String(Math.min(15, i));
+          else if (changes.kind === "macro")
+            next.param = String(Math.min(7, i));
           else if (changes.kind === "script") next.param = scripts[0]?.id ?? "";
-          else if (changes.kind === "action") next.param = CHAIN_BUILDER_ACTIONS[0].key;
+          else if (changes.kind === "action")
+            next.param = CHAIN_BUILDER_ACTIONS[0].key;
           // v2.91: slice — 1:1-Mapping pad-index → slice-index (intuitiv)
-          else if (changes.kind === "slice")  next.param = String(Math.min(PAD_BANK_SLICE_MAX - 1, i));
+          else if (changes.kind === "slice")
+            next.param = String(Math.min(PAD_BANK_SLICE_MAX - 1, i));
         }
         return next;
       })
@@ -932,10 +1233,19 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
     {
       label: "Mixer (Volumes + Mutes)",
       description: `${parts.length} CC-Lautstärken + ${parts.length} CC-Mutes`,
-      build: () => ccEntries([
-        ...parts.map(p => ({ type: "volume" as const, partId: p.id, partName: p.name })),
-        ...parts.map(p => ({ type: "mute" as const, partId: p.id, partName: p.name })),
-      ]),
+      build: () =>
+        ccEntries([
+          ...parts.map(p => ({
+            type: "volume" as const,
+            partId: p.id,
+            partName: p.name,
+          })),
+          ...parts.map(p => ({
+            type: "mute" as const,
+            partId: p.id,
+            partName: p.name,
+          })),
+        ]),
     },
     {
       label: "Pads → Parts",
@@ -948,50 +1258,63 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
       build: () => [
         ...noteEntries(parts),
         ...ccEntries([
-          ...parts.map(p => ({ type: "volume" as const, partId: p.id, partName: p.name })),
-          ...parts.map(p => ({ type: "mute" as const, partId: p.id, partName: p.name })),
+          ...parts.map(p => ({
+            type: "volume" as const,
+            partId: p.id,
+            partName: p.name,
+          })),
+          ...parts.map(p => ({
+            type: "mute" as const,
+            partId: p.id,
+            partName: p.name,
+          })),
         ]),
       ],
     },
     {
       label: "Transport",
       description: "Play/Stop, Record, Tap-Tempo, BPM Up/Down (CC)",
-      build: () => ccEntries([
-        { type: "playStop" },
-        { type: "record" },
-        { type: "tapTempo" },
-        { type: "bpmUp" },
-        { type: "bpmDown" },
-      ]),
+      build: () =>
+        ccEntries([
+          { type: "playStop" },
+          { type: "record" },
+          { type: "tapTempo" },
+          { type: "bpmUp" },
+          { type: "bpmDown" },
+        ]),
     },
     {
       label: "Pattern-Navigation",
       description: "Next, Prev, Clear, Fill, Randomize (CC)",
-      build: () => ccEntries([
-        { type: "patternNext" },
-        { type: "patternPrev" },
-        { type: "patternClear" },
-        { type: "patternFill" },
-        { type: "patternRandomize" },
-      ]),
+      build: () =>
+        ccEntries([
+          { type: "patternNext" },
+          { type: "patternPrev" },
+          { type: "patternClear" },
+          { type: "patternFill" },
+          { type: "patternRandomize" },
+        ]),
     },
     {
       label: "Korg Electribe 2 → Performance-Pads (16)",
-      description: "16 Pads des Electribe 2 (oder anderer 16-Pad-Controller) auf das 4×4 Performance-Mode-Grid mappen (v2.78)",
+      description:
+        "16 Pads des Electribe 2 (oder anderer 16-Pad-Controller) auf das 4×4 Performance-Mode-Grid mappen (v2.78)",
       build: () => perfPadNoteEntries(16),
     },
     // v3.82: Sub-Mix-Buses-Preset — schließt v3.81 Caveat (kein Auto-Learn-
     // Preset für Sub-Mix-Bus-Faders/Mutes).
     {
       label: "Sub-Mix-Buses",
-      description: subMixBuses.length === 0
-        ? "Erstelle zuerst Buses im Mixer (max 8)"
-        : `${Math.min(subMixBuses.length, MAX_SUB_MIX_BUSES)} Faders → Bus-Volumes + ${Math.min(subMixBuses.length, MAX_SUB_MIX_BUSES)} Notes → Bus-Mutes`,
+      description:
+        subMixBuses.length === 0
+          ? "Erstelle zuerst Buses im Mixer (max 8)"
+          : `${Math.min(subMixBuses.length, MAX_SUB_MIX_BUSES)} Faders → Bus-Volumes + ${Math.min(subMixBuses.length, MAX_SUB_MIX_BUSES)} Notes → Bus-Mutes`,
       build: () => buildSubMixBusAutoLearnEntries(subMixBuses, true),
       disabled: subMixBuses.length === 0,
-      tooltip: subMixBuses.length === 0
-        ? "Erstelle zuerst Sub-Mix-Buses im Mixer (Button '+ New Bus')"
-        : `Lernt ${Math.min(subMixBuses.length, MAX_SUB_MIX_BUSES)} Faders → Bus-Volumes`,
+      tooltip:
+        subMixBuses.length === 0
+          ? "Erstelle zuerst Sub-Mix-Buses im Mixer (Button '+ New Bus')"
+          : `Lernt ${Math.min(subMixBuses.length, MAX_SUB_MIX_BUSES)} Faders → Bus-Volumes`,
     },
   ];
 
@@ -1008,13 +1331,65 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
    * v2.3: Bulk-Bind-Presets — generieren eine Liste von MidiLearnTargets
    * die dann mit konsekutiven CCs ab `startCC` bound werden.
    */
-  const bulkBindPresets: Record<string, { label: string; build: () => MidiLearnTarget[] }> = {
-    volumes:     { label: "Channel Volumes", build: () => parts.map(p => ({ type: "volume" as const, partId: p.id, partName: p.name })) },
-    mutes:       { label: "Channel Mutes",   build: () => parts.map(p => ({ type: "mute"   as const, partId: p.id, partName: p.name })) },
-    pans:        { label: "Channel Pans",    build: () => parts.map(p => ({ type: "pan"    as const, partId: p.id, partName: p.name })) },
-    macros:      { label: "8 Macros",        build: () => Array.from({ length: 8 }, (_, i) => ({ type: "macro" as const, index: i })) },
-    sendsReverb: { label: "Channel Reverb-Sends", build: () => parts.map(p => ({ type: "send" as const, partId: p.id, partName: p.name, bus: "reverb" as const })) },
-    sendsDelay:  { label: "Channel Delay-Sends",  build: () => parts.map(p => ({ type: "send" as const, partId: p.id, partName: p.name, bus: "delay"  as const })) },
+  const bulkBindPresets: Record<
+    string,
+    { label: string; build: () => MidiLearnTarget[] }
+  > = {
+    volumes: {
+      label: "Channel Volumes",
+      build: () =>
+        parts.map(p => ({
+          type: "volume" as const,
+          partId: p.id,
+          partName: p.name,
+        })),
+    },
+    mutes: {
+      label: "Channel Mutes",
+      build: () =>
+        parts.map(p => ({
+          type: "mute" as const,
+          partId: p.id,
+          partName: p.name,
+        })),
+    },
+    pans: {
+      label: "Channel Pans",
+      build: () =>
+        parts.map(p => ({
+          type: "pan" as const,
+          partId: p.id,
+          partName: p.name,
+        })),
+    },
+    macros: {
+      label: "8 Macros",
+      build: () =>
+        Array.from({ length: 8 }, (_, i) => ({
+          type: "macro" as const,
+          index: i,
+        })),
+    },
+    sendsReverb: {
+      label: "Channel Reverb-Sends",
+      build: () =>
+        parts.map(p => ({
+          type: "send" as const,
+          partId: p.id,
+          partName: p.name,
+          bus: "reverb" as const,
+        })),
+    },
+    sendsDelay: {
+      label: "Channel Delay-Sends",
+      build: () =>
+        parts.map(p => ({
+          type: "send" as const,
+          partId: p.id,
+          partName: p.name,
+          bus: "delay" as const,
+        })),
+    },
   };
 
   function handleBulkBind() {
@@ -1028,7 +1403,10 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
       label: targetLabel(t),
     }));
     midi.addMappings(mappings);
-    toast(`${mappings.length} Mappings gesetzt: ${preset.label} ab CC ${bulkBindStartCC}`, { kind: "success" });
+    toast(
+      `${mappings.length} Mappings gesetzt: ${preset.label} ab CC ${bulkBindStartCC}`,
+      { kind: "success" }
+    );
   }
 
   const renderCcTab = () => (
@@ -1045,7 +1423,8 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
                 Bewege/drücke jetzt den Controller für:
               </div>
               <div className="text-xs text-text-muted">
-                {midi.autoLearnTotal - midi.autoLearnQueue.length + 1} / {midi.autoLearnTotal}
+                {midi.autoLearnTotal - midi.autoLearnQueue.length + 1} /{" "}
+                {midi.autoLearnTotal}
               </div>
             </div>
             <div className="text-sm text-text-primary font-mono mb-3">
@@ -1068,7 +1447,11 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
             {/* Vorschau der verbleibenden Targets */}
             {midi.autoLearnQueue.length > 1 && (
               <div className="mt-3 pt-2 border-t border-accent-secondary/30 text-[10px] text-text-dim">
-                Nächste: {midi.autoLearnQueue.slice(1, 4).map(autoLearnEntryLabel).join(" → ")}
+                Nächste:{" "}
+                {midi.autoLearnQueue
+                  .slice(1, 4)
+                  .map(autoLearnEntryLabel)
+                  .join(" → ")}
                 {midi.autoLearnQueue.length > 4 && " …"}
               </div>
             )}
@@ -1076,22 +1459,26 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
         ) : (
           <div className="space-y-1.5">
             <div className="text-xs text-text-dim mb-2">
-              Wähle ein Preset und bewege/drücke dann nacheinander die Slider, Knöpfe
-              und Pads deines Geräts — Synthstudio verknüpft jedes Event mit dem
-              nächsten Target. CC-Einträge erwarten einen Slider/Knopf, Pad-Einträge
-              eine Note (z.B. ein Drum-Pad).
+              Wähle ein Preset und bewege/drücke dann nacheinander die Slider,
+              Knöpfe und Pads deines Geräts — Synthstudio verknüpft jedes Event
+              mit dem nächsten Target. CC-Einträge erwarten einen Slider/Knopf,
+              Pad-Einträge eine Note (z.B. ein Drum-Pad).
             </div>
             {/* v1.83: Channel-Filter — nur Events auf diesem Channel akzeptieren */}
             <div className="flex items-center gap-2 mb-2 text-xs">
               <label className="text-text-muted">Nur Channel:</label>
               <select
                 value={midi.autoLearnFilterChannel}
-                onChange={(e) => midi.setAutoLearnFilterChannel(Number(e.target.value))}
+                onChange={e =>
+                  midi.setAutoLearnFilterChannel(Number(e.target.value))
+                }
                 className="px-2 py-1 bg-bg-elevated border border-border-color rounded text-text-primary"
               >
                 <option value={0}>Alle Channels</option>
-                {Array.from({ length: 16 }, (_, i) => i + 1).map((ch) => (
-                  <option key={ch} value={ch}>Ch {ch}</option>
+                {Array.from({ length: 16 }, (_, i) => i + 1).map(ch => (
+                  <option key={ch} value={ch}>
+                    Ch {ch}
+                  </option>
                 ))}
               </select>
               {midi.autoLearnFilterChannel > 0 && (
@@ -1100,25 +1487,33 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
                 </span>
               )}
             </div>
-            {autoLearnPresets.map(({ label, description, build, disabled, tooltip }) => {
-              const isDisabled = !midi.isEnabled || disabled === true;
-              return (
-                <button
-                  key={label}
-                  data-testid={`auto-learn-preset-${label}`}
-                  onClick={() => !isDisabled && midi.startAutoLearn(build())}
-                  disabled={isDisabled}
-                  title={tooltip}
-                  className="w-full flex items-center justify-between p-2 rounded text-left text-xs bg-bg-elevated hover:bg-accent-primary/20 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                >
-                  <div>
-                    <div className="text-text-primary font-medium">{label}</div>
-                    <div className="text-text-dim text-[10px] mt-0.5">{description}</div>
-                  </div>
-                  <span className="text-accent-secondary text-[10px]">▶ Start</span>
-                </button>
-              );
-            })}
+            {autoLearnPresets.map(
+              ({ label, description, build, disabled, tooltip }) => {
+                const isDisabled = !midi.isEnabled || disabled === true;
+                return (
+                  <button
+                    key={label}
+                    data-testid={`auto-learn-preset-${label}`}
+                    onClick={() => !isDisabled && midi.startAutoLearn(build())}
+                    disabled={isDisabled}
+                    title={tooltip}
+                    className="w-full flex items-center justify-between p-2 rounded text-left text-xs bg-bg-elevated hover:bg-accent-primary/20 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                  >
+                    <div>
+                      <div className="text-text-primary font-medium">
+                        {label}
+                      </div>
+                      <div className="text-text-dim text-[10px] mt-0.5">
+                        {description}
+                      </div>
+                    </div>
+                    <span className="text-accent-secondary text-[10px]">
+                      ▶ Start
+                    </span>
+                  </button>
+                );
+              }
+            )}
           </div>
         )}
       </div>
@@ -1134,8 +1529,10 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
               Warte auf CC-Nachricht...
             </div>
             <div className="text-xs text-accent-secondary mb-3">
-              Bewege einen Regler oder Knopf an deinem MIDI-Controller.
-              Ziel: <strong>{midi.learnTarget ? targetLabel(midi.learnTarget) : "–"}</strong>
+              Bewege einen Regler oder Knopf an deinem MIDI-Controller. Ziel:{" "}
+              <strong>
+                {midi.learnTarget ? targetLabel(midi.learnTarget) : "–"}
+              </strong>
             </div>
             <button
               onClick={midi.cancelLearn}
@@ -1149,9 +1546,18 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
             {learnTargets.map(({ label, target }) => {
               const existing = midi.mappings.find(m => {
                 if (target.type === "bpm") return m.target.type === "bpm";
-                if (target.type === "playStop") return m.target.type === "playStop";
-                if (target.type === "volume") return m.target.type === "volume" && (m.target as any).partId === (target as any).partId;
-                if (target.type === "mute") return m.target.type === "mute" && (m.target as any).partId === (target as any).partId;
+                if (target.type === "playStop")
+                  return m.target.type === "playStop";
+                if (target.type === "volume")
+                  return (
+                    m.target.type === "volume" &&
+                    (m.target as any).partId === (target as any).partId
+                  );
+                if (target.type === "mute")
+                  return (
+                    m.target.type === "mute" &&
+                    (m.target as any).partId === (target as any).partId
+                  );
                 return false;
               });
               return (
@@ -1185,43 +1591,52 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
             FX-Parameter binden (v1.76)
           </div>
           <div className="text-xs text-text-dim mb-2">
-            Wähle einen Part, dann einen FX-Parameter — anschließend bewege
-            den Controller. Jeder Filter/EQ/Reverb/Delay/Distortion-Wert ist
-            an einen Slider/Knopf bindbar (MIDI 0-127 wird auf den jeweiligen
+            Wähle einen Part, dann einen FX-Parameter — anschließend bewege den
+            Controller. Jeder Filter/EQ/Reverb/Delay/Distortion-Wert ist an
+            einen Slider/Knopf bindbar (MIDI 0-127 wird auf den jeweiligen
             Param-Range gemappt).
           </div>
           <div className="flex items-center gap-2 mb-2">
             <label className="text-xs text-text-muted">Part:</label>
             <select
               value={fxParamPartId ?? ""}
-              onChange={(e) => setFxParamPartId(e.target.value || null)}
+              onChange={e => setFxParamPartId(e.target.value || null)}
               className="flex-1 px-2 py-1 bg-bg-elevated border border-border-color rounded text-xs text-text-primary focus:outline-none focus:border-accent-secondary"
             >
               <option value="">— Part wählen —</option>
-              {parts.map((p) => (
-                <option key={p.id} value={p.id}>{p.name}</option>
+              {parts.map(p => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
               ))}
             </select>
           </div>
           {fxParamPartId && (
             <div className="grid grid-cols-2 gap-1 max-h-48 overflow-y-auto">
-              {FX_PARAM_RANGES.map((r) => {
+              {FX_PARAM_RANGES.map(r => {
                 const targetPart = parts.find(p => p.id === fxParamPartId);
                 const target = {
                   type: "fxParam" as const,
                   partId: fxParamPartId,
                   partName: targetPart?.name,
-                  param: r.param as Extract<typeof r.param, import("@/audio/AudioEngine").FxParamKey>,
+                  param: r.param as Extract<
+                    typeof r.param,
+                    import("@/audio/AudioEngine").FxParamKey
+                  >,
                 };
-                const existing = midi.mappings.find(m =>
-                  m.target.type === "fxParam" &&
-                  m.target.partId === fxParamPartId &&
-                  m.target.param === r.param,
+                const existing = midi.mappings.find(
+                  m =>
+                    m.target.type === "fxParam" &&
+                    m.target.partId === fxParamPartId &&
+                    m.target.param === r.param
                 );
                 return (
                   <button
                     key={r.param}
-                    onClick={() => midi.isEnabled && midi.startLearn(target as MidiLearnTarget)}
+                    onClick={() =>
+                      midi.isEnabled &&
+                      midi.startLearn(target as MidiLearnTarget)
+                    }
                     disabled={!midi.isEnabled}
                     className={`flex items-center justify-between p-2 rounded text-left text-xs transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
                       existing
@@ -1250,20 +1665,23 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
             Function-Chains (v1.77)
           </div>
           <div className="text-xs text-text-dim mb-2">
-            Mehrere Actions auf einer Taste/einem Pad — klick einen Preset
-            an und bewege dann den Controller. Die ganze Sequenz wird bei
-            jedem Trigger ausgeführt.
+            Mehrere Actions auf einer Taste/einem Pad — klick einen Preset an
+            und bewege dann den Controller. Die ganze Sequenz wird bei jedem
+            Trigger ausgeführt.
           </div>
           <div className="space-y-1.5">
-            {chainPresets.map((preset) => {
-              const presetLabel = preset.target.type === "chain" ? preset.target.label : "";
-              const existing = midi.mappings.find(m =>
-                m.target.type === "chain" && m.target.label === presetLabel,
+            {chainPresets.map(preset => {
+              const presetLabel =
+                preset.target.type === "chain" ? preset.target.label : "";
+              const existing = midi.mappings.find(
+                m => m.target.type === "chain" && m.target.label === presetLabel
               );
               return (
                 <button
                   key={preset.label}
-                  onClick={() => midi.isEnabled && midi.startLearn(preset.target)}
+                  onClick={() =>
+                    midi.isEnabled && midi.startLearn(preset.target)
+                  }
                   disabled={!midi.isEnabled}
                   className={`w-full flex items-center justify-between p-2 rounded text-left text-xs transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
                     existing
@@ -1272,8 +1690,12 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
                   }`}
                 >
                   <div>
-                    <div className="text-text-primary font-medium">{preset.label}</div>
-                    <div className="text-[10px] text-text-dim mt-0.5">{preset.description}</div>
+                    <div className="text-text-primary font-medium">
+                      {preset.label}
+                    </div>
+                    <div className="text-[10px] text-text-dim mt-0.5">
+                      {preset.description}
+                    </div>
                   </div>
                   {existing && (
                     <span className="text-accent-secondary font-mono text-xs ml-1">
@@ -1300,39 +1722,49 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
           {bulkBindOpen && (
             <div className="space-y-2 p-3 bg-bg-elevated/50 rounded border border-border-color">
               <div className="text-xs text-text-dim">
-                Wähle einen Target-Preset und eine Start-CC. Synthstudio
-                bindet die Targets an konsekutive CCs (start, start+1, …)
-                ohne dass du den Controller bewegen musst.
+                Wähle einen Target-Preset und eine Start-CC. Synthstudio bindet
+                die Targets an konsekutive CCs (start, start+1, …) ohne dass du
+                den Controller bewegen musst.
               </div>
               <div className="flex items-center gap-2">
                 <label className="text-xs text-text-muted">Preset:</label>
                 <select
                   value={bulkBindPreset}
-                  onChange={(e) => setBulkBindPreset(e.target.value)}
+                  onChange={e => setBulkBindPreset(e.target.value)}
                   className="flex-1 px-2 py-1 bg-bg-elevated border border-border-color rounded text-xs text-text-primary"
                 >
                   {Object.entries(bulkBindPresets).map(([k, v]) => (
-                    <option key={k} value={k}>{v.label}</option>
+                    <option key={k} value={k}>
+                      {v.label}
+                    </option>
                   ))}
                 </select>
               </div>
               <div className="flex items-center gap-2">
                 <label className="text-xs text-text-muted">Start-CC:</label>
                 <input
-                  type="number" min={0} max={127}
+                  type="number"
+                  min={0}
+                  max={127}
                   value={bulkBindStartCC}
-                  onChange={(e) => setBulkBindStartCC(Math.max(0, Math.min(127, parseInt(e.target.value) || 0)))}
+                  onChange={e =>
+                    setBulkBindStartCC(
+                      Math.max(0, Math.min(127, parseInt(e.target.value) || 0))
+                    )
+                  }
                   className="w-16 px-2 py-1 bg-bg-elevated border border-border-color rounded text-xs text-text-primary"
                 />
                 <label className="text-xs text-text-muted ml-2">Channel:</label>
                 <select
                   value={bulkBindChannel}
-                  onChange={(e) => setBulkBindChannel(Number(e.target.value))}
+                  onChange={e => setBulkBindChannel(Number(e.target.value))}
                   className="px-2 py-1 bg-bg-elevated border border-border-color rounded text-xs text-text-primary"
                 >
                   <option value={0}>Alle</option>
                   {Array.from({ length: 16 }, (_, i) => i + 1).map(ch => (
-                    <option key={ch} value={ch}>Ch {ch}</option>
+                    <option key={ch} value={ch}>
+                      Ch {ch}
+                    </option>
                   ))}
                 </select>
                 <button
@@ -1343,9 +1775,17 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
                 </button>
               </div>
               <div className="text-[10px] text-text-dim">
-                Wird {bulkBindPresets[bulkBindPreset]?.build().length ?? 0} Mapping(s) anlegen:
-                CC {bulkBindStartCC} bis CC {Math.min(127, bulkBindStartCC + (bulkBindPresets[bulkBindPreset]?.build().length ?? 1) - 1)}
-                {bulkBindChannel > 0 ? ` auf Ch ${bulkBindChannel}` : " (alle Channels)"}
+                Wird {bulkBindPresets[bulkBindPreset]?.build().length ?? 0}{" "}
+                Mapping(s) anlegen: CC {bulkBindStartCC} bis CC{" "}
+                {Math.min(
+                  127,
+                  bulkBindStartCC +
+                    (bulkBindPresets[bulkBindPreset]?.build().length ?? 1) -
+                    1
+                )}
+                {bulkBindChannel > 0
+                  ? ` auf Ch ${bulkBindChannel}`
+                  : " (alle Channels)"}
               </div>
             </div>
           )}
@@ -1366,9 +1806,8 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
             <div className="space-y-2 p-3 bg-bg-elevated/50 rounded border border-border-color">
               <div className="text-xs text-text-dim">
                 Klicke "+ Schritt" um eine Action hinzuzufügen. Setze die
-                Verzögerung zum vorherigen Schritt in ms. Beim "Lernen"
-                bewege deinen Controller — die ganze Sequenz wird auf das CC
-                gebunden.
+                Verzögerung zum vorherigen Schritt in ms. Beim "Lernen" bewege
+                deinen Controller — die ganze Sequenz wird auf das CC gebunden.
               </div>
 
               <div className="flex items-center gap-2">
@@ -1376,7 +1815,7 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
                 <input
                   type="text"
                   value={chainBuilderName}
-                  onChange={(e) => setChainBuilderName(e.target.value)}
+                  onChange={e => setChainBuilderName(e.target.value)}
                   className="flex-1 px-2 py-1 bg-bg-elevated border border-border-color rounded text-xs text-text-primary"
                 />
               </div>
@@ -1388,19 +1827,29 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
               ) : (
                 <div className="space-y-1">
                   {chainBuilderSteps.map((step, idx) => (
-                    <div key={idx} className="flex items-center gap-1 p-1.5 bg-bg-panel rounded">
-                      <span className="text-[10px] text-text-dim font-mono w-6">#{idx + 1}</span>
+                    <div
+                      key={idx}
+                      className="flex items-center gap-1 p-1.5 bg-bg-panel rounded"
+                    >
+                      <span className="text-[10px] text-text-dim font-mono w-6">
+                        #{idx + 1}
+                      </span>
                       <select
                         value={step.targetKey}
-                        onChange={(e) => {
+                        onChange={e => {
                           const next = [...chainBuilderSteps];
-                          next[idx] = { ...next[idx], targetKey: e.target.value };
+                          next[idx] = {
+                            ...next[idx],
+                            targetKey: e.target.value,
+                          };
                           setChainBuilderSteps(next);
                         }}
                         className="flex-1 px-1 py-0.5 bg-bg-elevated border border-border-color rounded text-xs text-text-primary"
                       >
-                        {CHAIN_BUILDER_ACTIONS.map((a) => (
-                          <option key={a.key} value={a.key}>{a.label}</option>
+                        {CHAIN_BUILDER_ACTIONS.map(a => (
+                          <option key={a.key} value={a.key}>
+                            {a.label}
+                          </option>
                         ))}
                       </select>
                       <input
@@ -1409,9 +1858,12 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
                         max={60000}
                         step={50}
                         value={step.delayMs}
-                        onChange={(e) => {
+                        onChange={e => {
                           const next = [...chainBuilderSteps];
-                          next[idx] = { ...next[idx], delayMs: Math.max(0, parseInt(e.target.value) || 0) };
+                          next[idx] = {
+                            ...next[idx],
+                            delayMs: Math.max(0, parseInt(e.target.value) || 0),
+                          };
                           setChainBuilderSteps(next);
                         }}
                         className="w-16 px-1 py-0.5 bg-bg-elevated border border-border-color rounded text-xs text-text-primary"
@@ -1422,31 +1874,45 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
                         <button
                           onClick={() => {
                             const next = [...chainBuilderSteps];
-                            [next[idx - 1], next[idx]] = [next[idx], next[idx - 1]];
+                            [next[idx - 1], next[idx]] = [
+                              next[idx],
+                              next[idx - 1],
+                            ];
                             setChainBuilderSteps(next);
                           }}
                           title="Hoch"
                           className="text-xs text-text-dim hover:text-text-primary px-1"
-                        >▲</button>
+                        >
+                          ▲
+                        </button>
                       )}
                       {idx < chainBuilderSteps.length - 1 && (
                         <button
                           onClick={() => {
                             const next = [...chainBuilderSteps];
-                            [next[idx], next[idx + 1]] = [next[idx + 1], next[idx]];
+                            [next[idx], next[idx + 1]] = [
+                              next[idx + 1],
+                              next[idx],
+                            ];
                             setChainBuilderSteps(next);
                           }}
                           title="Runter"
                           className="text-xs text-text-dim hover:text-text-primary px-1"
-                        >▼</button>
+                        >
+                          ▼
+                        </button>
                       )}
                       <button
                         onClick={() => {
-                          setChainBuilderSteps(chainBuilderSteps.filter((_, i) => i !== idx));
+                          setChainBuilderSteps(
+                            chainBuilderSteps.filter((_, i) => i !== idx)
+                          );
                         }}
                         title="Entfernen"
                         className="text-xs text-accent-danger hover:opacity-70 px-1"
-                      >×</button>
+                      >
+                        ×
+                      </button>
                     </div>
                   ))}
                 </div>
@@ -1498,10 +1964,14 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
             className="text-xs text-text-muted uppercase tracking-wider hover:text-text-primary mb-2 flex items-center gap-1"
           >
             <span>{padBankBuilderOpen ? "▼" : "▶"}</span>
-            Custom Pad-Bank (v2.79) — Pads auf Chains / Scripts / Macros / Perf-Pads mappen
+            Custom Pad-Bank (v2.79) — Pads auf Chains / Scripts / Macros /
+            Perf-Pads mappen
           </button>
           {padBankBuilderOpen && (
-            <div data-testid="pad-bank-builder" className="space-y-2 p-3 bg-bg-elevated/50 rounded border border-border-color">
+            <div
+              data-testid="pad-bank-builder"
+              className="space-y-2 p-3 bg-bg-elevated/50 rounded border border-border-color"
+            >
               <div className="text-xs text-text-dim">
                 Pro Hardware-Pad einen Target-Typ wählen (Perf-Pad/Macro/Script/
                 Action/Slice), dann "Start Auto-Learn" klicken und die Pads in
@@ -1510,7 +1980,10 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
                 Slice-Buffer aus dem Sample-Slicer (v2.91).
               </div>
 
-              <div className="space-y-1 max-h-72 overflow-y-auto" data-testid="pad-bank-slots">
+              <div
+                className="space-y-1 max-h-72 overflow-y-auto"
+                data-testid="pad-bank-slots"
+              >
                 {padBankSlots.map((slot, idx) => (
                   <div
                     key={idx}
@@ -1519,10 +1992,16 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
                     data-pad-bank-slot-param={slot.param}
                     className="flex items-center gap-1 p-1.5 bg-bg-panel rounded"
                   >
-                    <span className="text-[10px] text-text-dim font-mono w-6">#{idx + 1}</span>
+                    <span className="text-[10px] text-text-dim font-mono w-6">
+                      #{idx + 1}
+                    </span>
                     <select
                       value={slot.kind}
-                      onChange={(e) => updatePadBankSlot(idx, { kind: e.target.value as PadBankSlotKind })}
+                      onChange={e =>
+                        updatePadBankSlot(idx, {
+                          kind: e.target.value as PadBankSlotKind,
+                        })
+                      }
                       data-testid={`pad-bank-slot-kind-${idx}`}
                       className="px-1.5 py-1 bg-bg-elevated border border-border-color rounded text-[11px] text-text-primary"
                     >
@@ -1535,66 +2014,86 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
                     {slot.kind === "perf-pad" && (
                       <select
                         value={slot.param}
-                        onChange={(e) => updatePadBankSlot(idx, { param: e.target.value })}
+                        onChange={e =>
+                          updatePadBankSlot(idx, { param: e.target.value })
+                        }
                         data-testid={`pad-bank-slot-param-${idx}`}
                         className="flex-1 px-1.5 py-1 bg-bg-elevated border border-border-color rounded text-[11px] text-text-primary"
                       >
                         {Array.from({ length: 16 }, (_, i) => (
-                          <option key={i} value={String(i)}>Perf-Pad {i + 1}</option>
+                          <option key={i} value={String(i)}>
+                            Perf-Pad {i + 1}
+                          </option>
                         ))}
                       </select>
                     )}
                     {slot.kind === "macro" && (
                       <select
                         value={slot.param}
-                        onChange={(e) => updatePadBankSlot(idx, { param: e.target.value })}
+                        onChange={e =>
+                          updatePadBankSlot(idx, { param: e.target.value })
+                        }
                         data-testid={`pad-bank-slot-param-${idx}`}
                         className="flex-1 px-1.5 py-1 bg-bg-elevated border border-border-color rounded text-[11px] text-text-primary"
                       >
                         {Array.from({ length: 8 }, (_, i) => (
-                          <option key={i} value={String(i)}>Macro {i + 1}</option>
+                          <option key={i} value={String(i)}>
+                            Macro {i + 1}
+                          </option>
                         ))}
                       </select>
                     )}
-                    {slot.kind === "script" && (
-                      scripts.length === 0 ? (
+                    {slot.kind === "script" &&
+                      (scripts.length === 0 ? (
                         <span className="flex-1 text-[10px] text-accent-danger italic">
-                          Keine Scripts vorhanden — erst eines im Script-Runner anlegen.
+                          Keine Scripts vorhanden — erst eines im Script-Runner
+                          anlegen.
                         </span>
                       ) : (
                         <select
                           value={slot.param}
-                          onChange={(e) => updatePadBankSlot(idx, { param: e.target.value })}
+                          onChange={e =>
+                            updatePadBankSlot(idx, { param: e.target.value })
+                          }
                           data-testid={`pad-bank-slot-param-${idx}`}
                           className="flex-1 px-1.5 py-1 bg-bg-elevated border border-border-color rounded text-[11px] text-text-primary"
                         >
-                          {scripts.map((s) => (
-                            <option key={s.id} value={s.id}>{s.name}</option>
+                          {scripts.map(s => (
+                            <option key={s.id} value={s.id}>
+                              {s.name}
+                            </option>
                           ))}
                         </select>
-                      )
-                    )}
+                      ))}
                     {slot.kind === "action" && (
                       <select
                         value={slot.param}
-                        onChange={(e) => updatePadBankSlot(idx, { param: e.target.value })}
+                        onChange={e =>
+                          updatePadBankSlot(idx, { param: e.target.value })
+                        }
                         data-testid={`pad-bank-slot-param-${idx}`}
                         className="flex-1 px-1.5 py-1 bg-bg-elevated border border-border-color rounded text-[11px] text-text-primary"
                       >
-                        {CHAIN_BUILDER_ACTIONS.map((a) => (
-                          <option key={a.key} value={a.key}>{a.label}</option>
+                        {CHAIN_BUILDER_ACTIONS.map(a => (
+                          <option key={a.key} value={a.key}>
+                            {a.label}
+                          </option>
                         ))}
                       </select>
                     )}
                     {slot.kind === "slice" && (
                       <select
                         value={slot.param}
-                        onChange={(e) => updatePadBankSlot(idx, { param: e.target.value })}
+                        onChange={e =>
+                          updatePadBankSlot(idx, { param: e.target.value })
+                        }
                         data-testid={`pad-bank-slot-param-${idx}`}
                         className="flex-1 px-1.5 py-1 bg-bg-elevated border border-border-color rounded text-[11px] text-text-primary"
                       >
                         {Array.from({ length: PAD_BANK_SLICE_MAX }, (_, i) => (
-                          <option key={i} value={String(i)}>Slice-Pad {i + 1}</option>
+                          <option key={i} value={String(i)}>
+                            Slice-Pad {i + 1}
+                          </option>
                         ))}
                       </select>
                     )}
@@ -1603,7 +2102,9 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
                       data-testid={`pad-bank-slot-remove-${idx}`}
                       className="px-2 py-0.5 text-[10px] text-accent-danger hover:opacity-70"
                       title="Slot entfernen"
-                    >×</button>
+                    >
+                      ×
+                    </button>
                   </div>
                 ))}
               </div>
@@ -1619,7 +2120,8 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
                 <button
                   onClick={() => {
                     const entries = buildPadBankEntries();
-                    if (entries.length > 0 && midi.isEnabled) midi.startAutoLearn(entries);
+                    if (entries.length > 0 && midi.isEnabled)
+                      midi.startAutoLearn(entries);
                   }}
                   disabled={!midi.isEnabled || padBankSlots.length === 0}
                   data-testid="pad-bank-start-auto-learn"
@@ -1657,22 +2159,25 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
           </div>
           <div className="text-xs text-text-dim mb-2">
             Klick ein Script an und bewege dann deinen Controller — bei jedem
-            Trigger wird das Script in der Sandbox ausgeführt. Funktioniert
-            mit jedem Built-In oder selbst-geschriebenen Script.
+            Trigger wird das Script in der Sandbox ausgeführt. Funktioniert mit
+            jedem Built-In oder selbst-geschriebenen Script.
           </div>
           <div className="space-y-1.5">
-            {scripts.map((s) => {
-              const existing = midi.mappings.find(m =>
-                m.target.type === "runScript" && m.target.scriptId === s.id,
+            {scripts.map(s => {
+              const existing = midi.mappings.find(
+                m => m.target.type === "runScript" && m.target.scriptId === s.id
               );
               return (
                 <button
                   key={s.id}
-                  onClick={() => midi.isEnabled && midi.startLearn({
-                    type: "runScript",
-                    scriptId: s.id,
-                    scriptName: s.name,
-                  })}
+                  onClick={() =>
+                    midi.isEnabled &&
+                    midi.startLearn({
+                      type: "runScript",
+                      scriptId: s.id,
+                      scriptName: s.name,
+                    })
+                  }
                   disabled={!midi.isEnabled}
                   className={`w-full flex items-center justify-between p-2 rounded text-left text-xs transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
                     existing
@@ -1681,9 +2186,12 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
                   }`}
                 >
                   <div>
-                    <div className="text-text-primary font-medium">{s.name}</div>
+                    <div className="text-text-primary font-medium">
+                      {s.name}
+                    </div>
                     <div className="text-[10px] text-text-dim mt-0.5">
-                      {s.enabled ? "✓ aktiviert" : "✗ deaktiviert"} · {s.code.length} Bytes
+                      {s.enabled ? "✓ aktiviert" : "✗ deaktiviert"} ·{" "}
+                      {s.code.length} Bytes
                     </div>
                   </div>
                   {existing && (
@@ -1711,7 +2219,9 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
                 className="flex items-center justify-between p-2 bg-bg-elevated rounded text-xs"
               >
                 <div>
-                  <span className="font-mono text-accent-secondary">CC{m.cc}</span>
+                  <span className="font-mono text-accent-secondary">
+                    CC{m.cc}
+                  </span>
                   {m.channel > 0 && (
                     <span className="text-text-dim ml-1">Ch{m.channel}</span>
                   )}
@@ -1730,7 +2240,10 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
           <button
             onClick={() => {
               const count = midi.mappings.length + midi.noteMappings.length;
-              if (count > 0 && confirm(`Wirklich ${count} Mapping(s) löschen?`)) {
+              if (
+                count > 0 &&
+                confirm(`Wirklich ${count} Mapping(s) löschen?`)
+              ) {
                 midi.clearAllMappings();
                 toast(`${count} Mapping(s) gelöscht`, { kind: "warning" });
               }
@@ -1750,14 +2263,17 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
           </div>
           <div className="text-xs text-text-dim mb-2">
             Exportiert die aktuellen CC- und Note-Mappings als JSON-Datei
-            (synthstudioLayout v1). Wieder importierbar über die Einstellungen
-            → „MIDI-Layout importieren". Kann zum Teilen weitergegeben werden.
+            (synthstudioLayout v1). Wieder importierbar über die Einstellungen →
+            „MIDI-Layout importieren". Kann zum Teilen weitergegeben werden.
           </div>
           <div className="flex items-center gap-2">
             <input
               type="text"
               value={exportName}
-              onChange={(e) => { setExportName(e.target.value); setExportNameTouched(true); }}
+              onChange={e => {
+                setExportName(e.target.value);
+                setExportNameTouched(true);
+              }}
               placeholder="Layout-Name"
               className="flex-1 px-2 py-1.5 bg-bg-elevated border border-border-color rounded text-xs text-text-primary placeholder:text-text-dim focus:outline-none focus:border-accent-secondary"
             />
@@ -1769,11 +2285,13 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
             </button>
           </div>
           {exportFeedback && (
-            <div className="mt-2 text-xs text-accent-success">{exportFeedback}</div>
+            <div className="mt-2 text-xs text-accent-success">
+              {exportFeedback}
+            </div>
           )}
           <div className="mt-2 text-[10px] text-text-dim">
-            {midi.mappings.length} CC-Mapping(s) + {midi.noteMappings.length} Note-Mapping(s)
-            werden exportiert.
+            {midi.mappings.length} CC-Mapping(s) + {midi.noteMappings.length}{" "}
+            Note-Mapping(s) werden exportiert.
           </div>
         </div>
       )}
@@ -1785,8 +2303,11 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
         </div>
         <div className="text-xs text-text-dim mb-2">
           Teile dein Mapping mit Metadaten (Name, Beschreibung, Hardware-Hint,
-          Autor) als <code className="text-accent-secondary">{MIDI_MAPPING_SHARE_SUFFIX}</code>.
-          Importiert wahlweise als <b>Merge</b> (additiv) oder <b>Replace</b>
+          Autor) als{" "}
+          <code className="text-accent-secondary">
+            {MIDI_MAPPING_SHARE_SUFFIX}
+          </code>
+          . Importiert wahlweise als <b>Merge</b> (additiv) oder <b>Replace</b>
           (alle bestehenden Mappings ersetzen). v1-Layouts werden automatisch
           migriert.
         </div>
@@ -1794,21 +2315,23 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
           <input
             type="text"
             value={shareDescription}
-            onChange={(e) => setShareDescription(e.target.value)}
+            onChange={e => setShareDescription(e.target.value)}
             placeholder="Beschreibung (optional)"
             className="w-full px-2 py-1.5 bg-bg-elevated border border-border-color rounded text-xs text-text-primary placeholder:text-text-dim focus:outline-none focus:border-accent-secondary"
           />
           <input
             type="text"
             value={shareAuthor}
-            onChange={(e) => setShareAuthor(e.target.value)}
+            onChange={e => setShareAuthor(e.target.value)}
             placeholder="Autor (optional)"
             className="w-full px-2 py-1.5 bg-bg-elevated border border-border-color rounded text-xs text-text-primary placeholder:text-text-dim focus:outline-none focus:border-accent-secondary"
           />
           <div className="flex flex-wrap items-center gap-2">
             <button
               onClick={handleExportShare}
-              disabled={midi.mappings.length === 0 && midi.noteMappings.length === 0}
+              disabled={
+                midi.mappings.length === 0 && midi.noteMappings.length === 0
+              }
               className="px-3 py-1.5 bg-accent-secondary/30 hover:bg-accent-secondary/50 disabled:opacity-40 disabled:cursor-not-allowed text-accent-secondary text-xs rounded font-medium transition-colors"
               title="Mappings als .synthmidi.json downloaden"
             >
@@ -1832,7 +2355,9 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
               <span>Import-Modus:</span>
               <select
                 value={shareImportMode}
-                onChange={(e) => setShareImportMode(e.target.value as MidiMappingImportMode)}
+                onChange={e =>
+                  setShareImportMode(e.target.value as MidiMappingImportMode)
+                }
                 className="px-1 py-0.5 bg-bg-elevated border border-border-color rounded text-xs text-text-primary focus:outline-none focus:border-accent-secondary"
               >
                 <option value="merge">Merge (additiv)</option>
@@ -1845,7 +2370,7 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
             type="file"
             accept=".json,application/json"
             className="hidden"
-            onChange={(e) => {
+            onChange={e => {
               const f = e.target.files?.[0];
               if (f) void handleImportShareFile(f);
               e.target.value = "";
@@ -1872,7 +2397,12 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
               parts.forEach((part, i) => {
                 const gm = GM_DRUM_DEFAULTS[i];
                 if (gm) {
-                  midi.addNoteMapping(gm.note, 0, part.id, `${part.name} (GM ${gm.note})`);
+                  midi.addNoteMapping(
+                    gm.note,
+                    0,
+                    part.id,
+                    `${part.name} (GM ${gm.note})`
+                  );
                 }
               });
             }}
@@ -1884,10 +2414,14 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
 
         {/* Manuelle Zuweisung */}
         <div className="p-3 bg-bg-elevated rounded-lg space-y-2 mb-3">
-          <div className="text-xs text-text-muted font-medium">Manuelle Zuweisung</div>
+          <div className="text-xs text-text-muted font-medium">
+            Manuelle Zuweisung
+          </div>
           <div className="grid grid-cols-3 gap-2">
             <div>
-              <label className="text-xs text-text-dim block mb-1">MIDI-Note</label>
+              <label className="text-xs text-text-dim block mb-1">
+                MIDI-Note
+              </label>
               <input
                 type="number"
                 min={0}
@@ -1896,10 +2430,14 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
                 onChange={e => setManualNote(Number(e.target.value))}
                 className="w-full bg-bg-elevated text-text-primary text-xs px-2 py-1 rounded border border-border-color"
               />
-              <div className="text-xs text-text-dim mt-0.5">{noteToName(manualNote)}</div>
+              <div className="text-xs text-text-dim mt-0.5">
+                {noteToName(manualNote)}
+              </div>
             </div>
             <div>
-              <label className="text-xs text-text-dim block mb-1">Kanal (0=alle)</label>
+              <label className="text-xs text-text-dim block mb-1">
+                Kanal (0=alle)
+              </label>
               <input
                 type="number"
                 min={0}
@@ -1912,12 +2450,14 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
             <div>
               <label className="text-xs text-text-dim block mb-1">Part</label>
               <select
-                value={noteLearnPartId ?? (parts[0]?.id ?? "")}
+                value={noteLearnPartId ?? parts[0]?.id ?? ""}
                 onChange={e => setNoteLearnPartId(e.target.value)}
                 className="w-full bg-bg-elevated text-text-primary text-xs px-2 py-1 rounded border border-border-color"
               >
                 {parts.map(p => (
-                  <option key={p.id} value={p.id}>{p.name}</option>
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
                 ))}
               </select>
             </div>
@@ -1927,7 +2467,12 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
               const partId = noteLearnPartId ?? parts[0]?.id;
               if (!partId) return;
               const partName = parts.find(p => p.id === partId)?.name ?? partId;
-              midi.addNoteMapping(manualNote, manualChannel, partId, `${partName} (${noteToName(manualNote)})`);
+              midi.addNoteMapping(
+                manualNote,
+                manualChannel,
+                partId,
+                `${partName} (${noteToName(manualNote)})`
+              );
             }}
             className="w-full py-1.5 bg-accent-primary/70 hover:bg-accent-primary text-bg-base text-xs rounded"
           >
@@ -1939,15 +2484,20 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
         {midi.noteMappings.length > 0 ? (
           <div className="space-y-1 max-h-48 overflow-y-auto">
             {midi.noteMappings.map((m, i) => {
-              const partName = parts.find(p => p.id === m.partId)?.name ?? m.partId;
+              const partName =
+                parts.find(p => p.id === m.partId)?.name ?? m.partId;
               return (
                 <div
                   key={i}
                   className="flex items-center justify-between p-2 bg-bg-elevated rounded text-xs"
                 >
                   <div>
-                    <span className="font-mono text-accent-secondary">{noteToName(m.note)}</span>
-                    <span className="text-text-dim ml-1 font-mono">(#{m.note})</span>
+                    <span className="font-mono text-accent-secondary">
+                      {noteToName(m.note)}
+                    </span>
+                    <span className="text-text-dim ml-1 font-mono">
+                      (#{m.note})
+                    </span>
                     {m.channel > 0 && (
                       <span className="text-text-dim ml-1">Ch{m.channel}</span>
                     )}
@@ -1977,19 +2527,29 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
   // ─── Tab: Monitor (v1.81) ──────────────────────────────────────────────
   /** Pretty-print für eine Monitor-Zeile. v1.95: zeigt zusätzlich das
    *  gebundene Target falls vorhanden (CC → "→ Volume: Kick" o.ä.). */
-  const formatMonitorEntry = (m: { type: number; channel: number; byte1: number; byte2: number; at: number }) => {
+  const formatMonitorEntry = (m: {
+    type: number;
+    channel: number;
+    byte1: number;
+    byte2: number;
+    at: number;
+  }) => {
     const time = new Date(m.at).toISOString().slice(11, 23); // HH:MM:SS.mmm
     let what: string;
     let bindingHint = "";
     if (m.type === 0x90) {
       what = `Note On  ${m.byte1.toString().padStart(3)} vel=${m.byte2}`;
-      const nm = midi.noteMappings.find(n => n.note === m.byte1 && (n.channel === 0 || n.channel === m.channel));
+      const nm = midi.noteMappings.find(
+        n => n.note === m.byte1 && (n.channel === 0 || n.channel === m.channel)
+      );
       if (nm) bindingHint = `  → Pad ${nm.label}`;
     } else if (m.type === 0x80) {
       what = `Note Off ${m.byte1.toString().padStart(3)}`;
     } else if (m.type === 0xb0) {
       what = `CC       ${m.byte1.toString().padStart(3)} = ${m.byte2}`;
-      const cm = midi.mappings.find(c => c.cc === m.byte1 && (c.channel === 0 || c.channel === m.channel));
+      const cm = midi.mappings.find(
+        c => c.cc === m.byte1 && (c.channel === 0 || c.channel === m.channel)
+      );
       if (cm) bindingHint = `  → ${cm.label}`;
     } else if (m.type === 0xa0) {
       what = `Poly AT  ${m.byte1.toString().padStart(3)} = ${m.byte2}`;
@@ -2006,9 +2566,9 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
   const renderMonitorTab = () => (
     <div className="space-y-3">
       <div className="text-xs text-text-dim">
-        Live-Log aller eingehender MIDI-Messages. Hilft beim Debuggen:
-        Welche CCs sendet dein Controller? Auf welchen Channels? Sind
-        Knobs/Slider 7-bit oder 14-bit?
+        Live-Log aller eingehender MIDI-Messages. Hilft beim Debuggen: Welche
+        CCs sendet dein Controller? Auf welchen Channels? Sind Knobs/Slider
+        7-bit oder 14-bit?
       </div>
       <div className="flex items-center gap-2">
         <button
@@ -2044,24 +2604,27 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
               : "MIDI ist nicht aktiviert. Geh zum Tab 'Geräte' und aktiviere Web MIDI."}
           </div>
         ) : (
-          monitorLog.slice().reverse().map((m, idx) => {
-            const fresh = Date.now() - m.at < 500;
-            return (
-              <div
-                key={idx}
-                className={`whitespace-pre transition-colors ${
-                  fresh ? "text-accent-secondary" : "text-text-muted"
-                }`}
-              >
-                {formatMonitorEntry(m)}
-              </div>
-            );
-          })
+          monitorLog
+            .slice()
+            .reverse()
+            .map((m, idx) => {
+              const fresh = Date.now() - m.at < 500;
+              return (
+                <div
+                  key={idx}
+                  className={`whitespace-pre transition-colors ${
+                    fresh ? "text-accent-secondary" : "text-text-muted"
+                  }`}
+                >
+                  {formatMonitorEntry(m)}
+                </div>
+              );
+            })
         )}
       </div>
       <div className="text-[10px] text-text-dim">
-        Format: <code>HH:MM:SS.mmm  Ch{"<n>"}  &lt;Type&gt;  &lt;Data&gt;</code> · Neueste oben ·
-        Max. 200 Events (Ringbuffer)
+        Format: <code>HH:MM:SS.mmm Ch{"<n>"} &lt;Type&gt; &lt;Data&gt;</code> ·
+        Neueste oben · Max. 200 Events (Ringbuffer)
       </div>
     </div>
   );
@@ -2072,14 +2635,21 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
       {/* Schlankere Alternative zur Clock-IN-Sektion unten. Speziell fuer
           KORG Electribe2 / OmniTribe-Master-Setup. Echo-Schutz: wenn Sync-In
           aktiv und Clock-Out aktiv → Warnung. */}
-      <div className="p-3 bg-bg-elevated rounded-lg border border-accent-secondary/40" data-testid="sync-in-section">
+      <div
+        className="p-3 bg-bg-elevated rounded-lg border border-accent-secondary/40"
+        data-testid="sync-in-section"
+      >
         <div className="flex items-center justify-between mb-2">
           <div>
             <div className="text-sm font-medium text-text-primary">
-              MIDI Sync In <span className="text-[10px] text-text-dim">(v3.111 · KORG-Master-Sync)</span>
+              MIDI Sync In{" "}
+              <span className="text-[10px] text-text-dim">
+                (v3.111 · KORG-Master-Sync)
+              </span>
             </div>
             <div className="text-xs text-text-muted mt-0.5">
-              Synthstudio reagiert auf externe MIDI-Clock (0xF8/0xFA/0xFC/0xFB) und folgt Tempo+Transport.
+              Synthstudio reagiert auf externe MIDI-Clock (0xF8/0xFA/0xFC/0xFB)
+              und folgt Tempo+Transport.
             </div>
           </div>
           <button
@@ -2090,9 +2660,11 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
             }`}
             aria-label="MIDI Sync In an/aus"
           >
-            <div className={`absolute top-0.5 w-4 h-4 bg-text-primary rounded-full shadow transition-transform ${
-              midiSyncInState.enabled ? "translate-x-5" : "translate-x-0.5"
-            }`} />
+            <div
+              className={`absolute top-0.5 w-4 h-4 bg-text-primary rounded-full shadow transition-transform ${
+                midiSyncInState.enabled ? "translate-x-5" : "translate-x-0.5"
+              }`}
+            />
           </button>
         </div>
 
@@ -2100,28 +2672,36 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
           <>
             {/* Echo-Schutz: Sync-In + Clock-Out gleichzeitig waere ein Loop. */}
             {midi.clockOutEnabled && (
-              <div className="mt-2 p-2 rounded bg-accent-danger/15 border border-accent-danger/40 text-xs text-accent-danger" data-testid="sync-in-echo-warning">
-                Achtung: Sync-In + Clock-Out gleichzeitig aktiv. Das erzeugt einen MIDI-Loop —
-                deaktiviere Clock-Out unten, oder route die Geraete getrennt.
+              <div
+                className="mt-2 p-2 rounded bg-accent-danger/15 border border-accent-danger/40 text-xs text-accent-danger"
+                data-testid="sync-in-echo-warning"
+              >
+                Achtung: Sync-In + Clock-Out gleichzeitig aktiv. Das erzeugt
+                einen MIDI-Loop — deaktiviere Clock-Out unten, oder route die
+                Geraete getrennt.
               </div>
             )}
 
             {/* Input-Device-Picker */}
             <div className="mt-3">
-              <label htmlFor="sync-in-device-select" className="text-xs text-text-muted block mb-1">
+              <label
+                htmlFor="sync-in-device-select"
+                className="text-xs text-text-muted block mb-1"
+              >
                 Input-Device (Master-Source)
               </label>
               <select
                 id="sync-in-device-select"
                 data-testid="sync-in-device-select"
                 value={midiSyncInState.inputDeviceId ?? ""}
-                onChange={(e) => setMidiSyncInInputDevice(e.target.value || null)}
+                onChange={e => setMidiSyncInInputDevice(e.target.value || null)}
                 className="w-full px-2 py-1.5 bg-bg-elevated border border-border-color rounded text-xs text-text-primary focus:outline-none focus:border-accent-primary"
               >
                 <option value="">(Alle aktiven Inputs)</option>
-                {midi.devices.map((d) => (
+                {midi.devices.map(d => (
                   <option key={d.id} value={d.id}>
-                    {d.name}{d.manufacturer ? ` — ${d.manufacturer}` : ""}
+                    {d.name}
+                    {d.manufacturer ? ` — ${d.manufacturer}` : ""}
                   </option>
                 ))}
               </select>
@@ -2137,65 +2717,97 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
               </div>
               <button
                 data-testid="sync-in-autostartstop-toggle"
-                onClick={() => setMidiSyncInAutoStartStop(!midiSyncInState.autoStartStop)}
+                onClick={() =>
+                  setMidiSyncInAutoStartStop(!midiSyncInState.autoStartStop)
+                }
                 className={`relative w-10 h-5 rounded-full transition-colors ${
-                  midiSyncInState.autoStartStop ? "bg-accent-primary" : "bg-bg-elevated"
+                  midiSyncInState.autoStartStop
+                    ? "bg-accent-primary"
+                    : "bg-bg-elevated"
                 }`}
                 aria-label="Auto-Start/Stop an/aus"
               >
-                <div className={`absolute top-0.5 w-4 h-4 bg-text-primary rounded-full shadow transition-transform ${
-                  midiSyncInState.autoStartStop ? "translate-x-5" : "translate-x-0.5"
-                }`} />
+                <div
+                  className={`absolute top-0.5 w-4 h-4 bg-text-primary rounded-full shadow transition-transform ${
+                    midiSyncInState.autoStartStop
+                      ? "translate-x-5"
+                      : "translate-x-0.5"
+                  }`}
+                />
               </button>
             </div>
 
             {/* Sync-Tempo-Toggle */}
             <div className="mt-2 flex items-center justify-between">
               <div>
-                <div className="text-xs text-text-primary">Sync Tempo (override internal BPM)</div>
+                <div className="text-xs text-text-primary">
+                  Sync Tempo (override internal BPM)
+                </div>
                 <div className="text-[10px] text-text-muted">
                   Aus = Transport-only, BPM bleibt manuell.
                 </div>
               </div>
               <button
                 data-testid="sync-in-synctempo-toggle"
-                onClick={() => setMidiSyncInSyncTempo(!midiSyncInState.syncTempo)}
+                onClick={() =>
+                  setMidiSyncInSyncTempo(!midiSyncInState.syncTempo)
+                }
                 className={`relative w-10 h-5 rounded-full transition-colors ${
-                  midiSyncInState.syncTempo ? "bg-accent-primary" : "bg-bg-elevated"
+                  midiSyncInState.syncTempo
+                    ? "bg-accent-primary"
+                    : "bg-bg-elevated"
                 }`}
                 aria-label="Sync Tempo an/aus"
               >
-                <div className={`absolute top-0.5 w-4 h-4 bg-text-primary rounded-full shadow transition-transform ${
-                  midiSyncInState.syncTempo ? "translate-x-5" : "translate-x-0.5"
-                }`} />
+                <div
+                  className={`absolute top-0.5 w-4 h-4 bg-text-primary rounded-full shadow transition-transform ${
+                    midiSyncInState.syncTempo
+                      ? "translate-x-5"
+                      : "translate-x-0.5"
+                  }`}
+                />
               </button>
             </div>
 
             {/* v3.112.0: Sync-Position-Toggle (SPP + MTC) */}
             <div className="mt-2 flex items-center justify-between">
               <div>
-                <div className="text-xs text-text-primary">Sync Position (SPP / MTC)</div>
+                <div className="text-xs text-text-primary">
+                  Sync Position (SPP / MTC)
+                </div>
                 <div className="text-[10px] text-text-muted">
-                  Opt-in: externer Master setzt Pattern-Position via 0xF2 (SPP) oder MTC.
+                  Opt-in: externer Master setzt Pattern-Position via 0xF2 (SPP)
+                  oder MTC.
                 </div>
               </div>
               <button
                 data-testid="sync-in-syncposition-toggle"
-                onClick={() => setMidiSyncInSyncPosition(!midiSyncInState.syncPosition)}
+                onClick={() =>
+                  setMidiSyncInSyncPosition(!midiSyncInState.syncPosition)
+                }
                 className={`relative w-10 h-5 rounded-full transition-colors ${
-                  midiSyncInState.syncPosition ? "bg-accent-primary" : "bg-bg-elevated"
+                  midiSyncInState.syncPosition
+                    ? "bg-accent-primary"
+                    : "bg-bg-elevated"
                 }`}
                 aria-label="Sync Position an/aus"
               >
-                <div className={`absolute top-0.5 w-4 h-4 bg-text-primary rounded-full shadow transition-transform ${
-                  midiSyncInState.syncPosition ? "translate-x-5" : "translate-x-0.5"
-                }`} />
+                <div
+                  className={`absolute top-0.5 w-4 h-4 bg-text-primary rounded-full shadow transition-transform ${
+                    midiSyncInState.syncPosition
+                      ? "translate-x-5"
+                      : "translate-x-0.5"
+                  }`}
+                />
               </button>
             </div>
 
             {/* v3.112.0: Live-Display SPP / MTC */}
             {midiSyncInState.syncPosition && (
-              <div className="mt-2 grid grid-cols-2 gap-2" data-testid="sync-in-position-display">
+              <div
+                className="mt-2 grid grid-cols-2 gap-2"
+                data-testid="sync-in-position-display"
+              >
                 {/* SPP-Display */}
                 <div className="p-2 bg-bg-elevated rounded text-center">
                   {midiSyncInState.lastSppMidiBeats !== null ? (
@@ -2204,7 +2816,9 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
                         Beat {midiSyncInState.lastSppMidiBeats}
                       </div>
                       <div className="text-[10px] text-text-muted">
-                        Bar {Math.floor(midiSyncInState.lastSppMidiBeats / 16) + 1} (SPP)
+                        Bar{" "}
+                        {Math.floor(midiSyncInState.lastSppMidiBeats / 16) + 1}{" "}
+                        (SPP)
                       </div>
                     </>
                   ) : (
@@ -2216,10 +2830,25 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
                   {midiSyncInState.lastMtcPosition !== null ? (
                     <>
                       <div className="text-xs font-mono text-accent-secondary font-bold">
-                        {String(midiSyncInState.lastMtcPosition.hh).padStart(2, "0")}:
-                        {String(midiSyncInState.lastMtcPosition.mm).padStart(2, "0")}:
-                        {String(midiSyncInState.lastMtcPosition.ss).padStart(2, "0")}:
-                        {String(midiSyncInState.lastMtcPosition.ff).padStart(2, "0")}
+                        {String(midiSyncInState.lastMtcPosition.hh).padStart(
+                          2,
+                          "0"
+                        )}
+                        :
+                        {String(midiSyncInState.lastMtcPosition.mm).padStart(
+                          2,
+                          "0"
+                        )}
+                        :
+                        {String(midiSyncInState.lastMtcPosition.ss).padStart(
+                          2,
+                          "0"
+                        )}
+                        :
+                        {String(midiSyncInState.lastMtcPosition.ff).padStart(
+                          2,
+                          "0"
+                        )}
                       </div>
                       <div className="text-[10px] text-text-muted">
                         MTC @ {midiSyncInState.lastMtcPosition.fps}fps
@@ -2233,7 +2862,10 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
             )}
 
             {/* Detected-BPM-Display */}
-            <div className="mt-3 p-2 bg-bg-elevated rounded text-center" data-testid="sync-in-bpm-display">
+            <div
+              className="mt-3 p-2 bg-bg-elevated rounded text-center"
+              data-testid="sync-in-bpm-display"
+            >
               {midiSyncInState.detectedBpm !== null ? (
                 <div>
                   <div className="text-2xl font-mono text-accent-secondary font-bold">
@@ -2242,13 +2874,16 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
                   <div className="text-xs text-text-muted">BPM (detected)</div>
                 </div>
               ) : (
-                <div className="text-xs text-text-muted">Warte auf MIDI-Clock-Signal vom Master…</div>
+                <div className="text-xs text-text-muted">
+                  Warte auf MIDI-Clock-Signal vom Master…
+                </div>
               )}
             </div>
 
             <div className="mt-3 text-[10px] text-text-muted">
-              KORG Electribe2 als Master: setze E2 auf MIDI-Clock-Master und verbinde MIDI-Out → Synthstudio-Input.
-              v3.99-Pre-Roll-Caveat ist hier geloest — der Master orchestriert das Pre-Roll.
+              KORG Electribe2 als Master: setze E2 auf MIDI-Clock-Master und
+              verbinde MIDI-Out → Synthstudio-Input. v3.99-Pre-Roll-Caveat ist
+              hier geloest — der Master orchestriert das Pre-Roll.
             </div>
           </>
         )}
@@ -2258,7 +2893,9 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
       <div className="p-3 bg-bg-elevated rounded-lg">
         <div className="flex items-center justify-between mb-2">
           <div>
-            <div className="text-sm font-medium text-text-primary">MIDI-Clock Sync (In)</div>
+            <div className="text-sm font-medium text-text-primary">
+              MIDI-Clock Sync (In)
+            </div>
             <div className="text-xs text-text-muted mt-0.5">
               BPM von externem Gerät oder DAW übernehmen
             </div>
@@ -2269,9 +2906,11 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
               midi.clockSync ? "bg-accent-primary" : "bg-bg-elevated"
             }`}
           >
-            <div className={`absolute top-0.5 w-4 h-4 bg-text-primary rounded-full shadow transition-transform ${
-              midi.clockSync ? "translate-x-5" : "translate-x-0.5"
-            }`} />
+            <div
+              className={`absolute top-0.5 w-4 h-4 bg-text-primary rounded-full shadow transition-transform ${
+                midi.clockSync ? "translate-x-5" : "translate-x-0.5"
+              }`}
+            />
           </button>
         </div>
 
@@ -2297,10 +2936,15 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
       {/* Komplement zu v2.83 Clock-Out: externer Master (Electribe, OmniTribe,
           DAW) sendet 24 PPQN + 0xFA/0xFC, Synthstudio folgt BPM + Transport.
           Tempo-Slider wird read-only solange aktiv. */}
-      <div className="p-3 bg-bg-elevated rounded-lg" data-testid="clock-in-section">
+      <div
+        className="p-3 bg-bg-elevated rounded-lg"
+        data-testid="clock-in-section"
+      >
         <div className="flex items-center justify-between mb-2">
           <div>
-            <div className="text-sm font-medium text-text-primary">MIDI-Clock-IN (External-Sync, Slave)</div>
+            <div className="text-sm font-medium text-text-primary">
+              MIDI-Clock-IN (External-Sync, Slave)
+            </div>
             <div className="text-xs text-text-muted mt-0.5">
               Synthstudio folgt externem MIDI-Master (Tempo + Start/Stop)
             </div>
@@ -2313,9 +2957,11 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
             }`}
             aria-label="External-Sync an/aus"
           >
-            <div className={`absolute top-0.5 w-4 h-4 bg-text-primary rounded-full shadow transition-transform ${
-              midi.clockInEnabled ? "translate-x-5" : "translate-x-0.5"
-            }`} />
+            <div
+              className={`absolute top-0.5 w-4 h-4 bg-text-primary rounded-full shadow transition-transform ${
+                midi.clockInEnabled ? "translate-x-5" : "translate-x-0.5"
+              }`}
+            />
           </button>
         </div>
 
@@ -2325,23 +2971,32 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
               <span
                 data-testid="clock-in-status-led"
                 className={`inline-block w-2 h-2 rounded-full ${
-                  midi.clockInStatus === "running"    ? "bg-accent-success"   :
-                  midi.clockInStatus === "tempo-only" ? "bg-accent-secondary" :
-                  midi.clockInStatus === "lost"       ? "bg-accent-danger"    :
-                                                        "bg-text-dim"
+                  midi.clockInStatus === "running"
+                    ? "bg-accent-success"
+                    : midi.clockInStatus === "tempo-only"
+                      ? "bg-accent-secondary"
+                      : midi.clockInStatus === "lost"
+                        ? "bg-accent-danger"
+                        : "bg-text-dim"
                 }`}
                 title={
-                  midi.clockInStatus === "running"    ? `Synced & running @ ${midi.externalBpm?.toFixed(1) ?? "?"} BPM` :
-                  midi.clockInStatus === "tempo-only" ? `Tempo only @ ${midi.externalBpm?.toFixed(1) ?? "?"} BPM` :
-                  midi.clockInStatus === "lost"       ? "Sync verloren — kein Tick > 500ms" :
-                                                        "Receiver aktiv, kein Master verbunden"
+                  midi.clockInStatus === "running"
+                    ? `Synced & running @ ${midi.externalBpm?.toFixed(1) ?? "?"} BPM`
+                    : midi.clockInStatus === "tempo-only"
+                      ? `Tempo only @ ${midi.externalBpm?.toFixed(1) ?? "?"} BPM`
+                      : midi.clockInStatus === "lost"
+                        ? "Sync verloren — kein Tick > 500ms"
+                        : "Receiver aktiv, kein Master verbunden"
                 }
               />
               <span className="text-xs text-text-muted">
-                {midi.clockInStatus === "running"    ? "Synced & running"    :
-                 midi.clockInStatus === "tempo-only" ? "Tempo only (no transport)" :
-                 midi.clockInStatus === "lost"       ? "Sync verloren (>500ms)" :
-                                                       "Warte auf Master…"}
+                {midi.clockInStatus === "running"
+                  ? "Synced & running"
+                  : midi.clockInStatus === "tempo-only"
+                    ? "Tempo only (no transport)"
+                    : midi.clockInStatus === "lost"
+                      ? "Sync verloren (>500ms)"
+                      : "Warte auf Master…"}
               </span>
             </div>
             {midi.externalBpm !== null ? (
@@ -2349,10 +3004,14 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
                 <div className="text-2xl font-mono text-accent-secondary font-bold">
                   {midi.externalBpm.toFixed(1)}
                 </div>
-                <div className="text-xs text-text-muted">BPM (extern, gemittelt)</div>
+                <div className="text-xs text-text-muted">
+                  BPM (extern, gemittelt)
+                </div>
               </div>
             ) : (
-              <div className="text-xs text-text-muted">Warte auf 0xF8-Ticks…</div>
+              <div className="text-xs text-text-muted">
+                Warte auf 0xF8-Ticks…
+              </div>
             )}
             {/* v3.36.0: SPP-Display — wenn der Master eine Song-Position gesendet
                 hat, zeigen wir Beat + Step + Bar.Beat-Notation an.
@@ -2360,48 +3019,56 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
                 wenn der externe Position-Pointer > stepCount ist (DAW-Song-Range
                 vs. Pattern-Loop), zeigt der Helper "Bar X.Y.Z (loop)" + den
                 effektiv klingenden Step. */}
-            {midi.clockInSpp !== null && (() => {
-              const display = formatPatternPosition(
-                midi.clockInSpp,
-                AudioEngine.stepCount,
-              );
-              return (
-                <div className="mt-2 pt-2 border-t border-border-subtle">
-                  <div
-                    data-testid="clock-in-spp-display"
-                    className="text-sm font-mono text-text-primary"
-                  >
-                    {display.label}
+            {midi.clockInSpp !== null &&
+              (() => {
+                const display = formatPatternPosition(
+                  midi.clockInSpp,
+                  AudioEngine.stepCount
+                );
+                return (
+                  <div className="mt-2 pt-2 border-t border-border-subtle">
+                    <div
+                      data-testid="clock-in-spp-display"
+                      className="text-sm font-mono text-text-primary"
+                    >
+                      {display.label}
+                    </div>
+                    <div className="text-xs text-text-muted">
+                      {display.isLooped
+                        ? `Step ${display.effectiveStep}/${AudioEngine.stepCount} · MIDI-Beat ${midi.clockInSpp} · Loop ${display.loopCount + 1}`
+                        : `Step ${midi.clockInSpp} · MIDI-Beat ${midi.clockInSpp}`}
+                    </div>
                   </div>
-                  <div className="text-xs text-text-muted">
-                    {display.isLooped
-                      ? `Step ${display.effectiveStep}/${AudioEngine.stepCount} · MIDI-Beat ${midi.clockInSpp} · Loop ${display.loopCount + 1}`
-                      : `Step ${midi.clockInSpp} · MIDI-Beat ${midi.clockInSpp}`}
-                  </div>
-                </div>
-              );
-            })()}
+                );
+              })()}
           </div>
         )}
 
         {midi.clockInEnabled && (
           <div className="mt-3 text-xs text-text-muted">
-            <span className="text-accent-secondary">Hinweis:</span> Tempo-Slider in der Toolbar ist
-            jetzt read-only — BPM kommt vom Master. Stoppt der Master, bleibt
-            der zuletzt gemessene Wert stehen. v3.36 Song-Position-Pointer
-            (SPP) wird empfangen und der Sequencer zur Master-Position gespult.
+            <span className="text-accent-secondary">Hinweis:</span> Tempo-Slider
+            in der Toolbar ist jetzt read-only — BPM kommt vom Master. Stoppt
+            der Master, bleibt der zuletzt gemessene Wert stehen. v3.36
+            Song-Position-Pointer (SPP) wird empfangen und der Sequencer zur
+            Master-Position gespult.
           </div>
         )}
       </div>
 
       {/* ── Clock-Out: Synthstudio als Master ─────────────────────────────── */}
       {/* TASK-230 (v2.83): 24 PPQN + Start/Stop/Continue an externes Gerät. */}
-      <div className="p-3 bg-bg-elevated rounded-lg" data-testid="clock-out-section">
+      <div
+        className="p-3 bg-bg-elevated rounded-lg"
+        data-testid="clock-out-section"
+      >
         <div className="flex items-center justify-between mb-2">
           <div>
-            <div className="text-sm font-medium text-text-primary">MIDI-Clock-Out (Master)</div>
+            <div className="text-sm font-medium text-text-primary">
+              MIDI-Clock-Out (Master)
+            </div>
             <div className="text-xs text-text-muted mt-0.5">
-              Synthstudio sendet 24 PPQN + Start/Stop an Hardware (Electribe, nanoKONTROL2 …)
+              Synthstudio sendet 24 PPQN + Start/Stop an Hardware (Electribe,
+              nanoKONTROL2 …)
             </div>
           </div>
           <button
@@ -2412,9 +3079,11 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
             }`}
             aria-label="MIDI-Clock-Out an/aus"
           >
-            <div className={`absolute top-0.5 w-4 h-4 bg-text-primary rounded-full shadow transition-transform ${
-              midi.clockOutEnabled ? "translate-x-5" : "translate-x-0.5"
-            }`} />
+            <div
+              className={`absolute top-0.5 w-4 h-4 bg-text-primary rounded-full shadow transition-transform ${
+                midi.clockOutEnabled ? "translate-x-5" : "translate-x-0.5"
+              }`}
+            />
           </button>
         </div>
 
@@ -2431,7 +3100,7 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
             id="clock-out-device-select"
             data-testid="clock-out-device-select"
             value={midi.clockOutputDeviceId ?? ""}
-            onChange={(e) => midi.setClockOutputDeviceId(e.target.value || null)}
+            onChange={e => midi.setClockOutputDeviceId(e.target.value || null)}
             className="w-full px-2 py-1.5 bg-bg-elevated border border-border-color rounded text-xs text-text-primary focus:outline-none focus:border-accent-primary"
           >
             <option value="">
@@ -2439,9 +3108,10 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
                 ? `(Standard: ${midi.outputDevices.find(d => d.id === midi.activeOutputDeviceId)?.name ?? "active output"})`
                 : "(kein Output gewählt)"}
             </option>
-            {midi.outputDevices.map((d) => (
+            {midi.outputDevices.map(d => (
               <option key={d.id} value={d.id}>
-                {d.name}{d.manufacturer ? ` — ${d.manufacturer}` : ""}
+                {d.name}
+                {d.manufacturer ? ` — ${d.manufacturer}` : ""}
               </option>
             ))}
           </select>
@@ -2461,12 +3131,18 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
       </div>
 
       {/* ── TASK-231 (v2.84): LED-Feedback (nanoKONTROL2 & co) ──────────────── */}
-      <div className="p-3 bg-bg-elevated rounded-lg" data-testid="feedback-out-section">
+      <div
+        className="p-3 bg-bg-elevated rounded-lg"
+        data-testid="feedback-out-section"
+      >
         <div className="flex items-center justify-between mb-2">
           <div>
-            <div className="text-sm font-medium text-text-primary">LED-Feedback (Mixer-Sync)</div>
+            <div className="text-sm font-medium text-text-primary">
+              LED-Feedback (Mixer-Sync)
+            </div>
             <div className="text-xs text-text-muted mt-0.5">
-              Mute/Solo-LEDs auf Hardware spiegeln (KORG nanoKONTROL2, Behringer X-Touch …)
+              Mute/Solo-LEDs auf Hardware spiegeln (KORG nanoKONTROL2, Behringer
+              X-Touch …)
             </div>
           </div>
           <button
@@ -2477,9 +3153,11 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
             }`}
             aria-label="LED-Feedback an/aus"
           >
-            <div className={`absolute top-0.5 w-4 h-4 bg-text-primary rounded-full shadow transition-transform ${
-              midi.feedbackEnabled ? "translate-x-5" : "translate-x-0.5"
-            }`} />
+            <div
+              className={`absolute top-0.5 w-4 h-4 bg-text-primary rounded-full shadow transition-transform ${
+                midi.feedbackEnabled ? "translate-x-5" : "translate-x-0.5"
+              }`}
+            />
           </button>
         </div>
 
@@ -2494,13 +3172,16 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
             id="feedback-out-device-select"
             data-testid="feedback-out-device-select"
             value={midi.feedbackOutputDeviceId ?? ""}
-            onChange={(e) => midi.setFeedbackOutputDeviceId(e.target.value || null)}
+            onChange={e =>
+              midi.setFeedbackOutputDeviceId(e.target.value || null)
+            }
             className="w-full px-2 py-1.5 bg-bg-elevated border border-border-color rounded text-xs text-text-primary focus:outline-none focus:border-accent-primary"
           >
             <option value="">(kein LED-Out gewählt)</option>
-            {midi.outputDevices.map((d) => (
+            {midi.outputDevices.map(d => (
               <option key={d.id} value={d.id}>
-                {d.name}{d.manufacturer ? ` — ${d.manufacturer}` : ""}
+                {d.name}
+                {d.manufacturer ? ` — ${d.manufacturer}` : ""}
               </option>
             ))}
           </select>
@@ -2509,7 +3190,9 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
         {/* Scene-Mode für Marker-Buttons */}
         <div className="mt-3 flex items-center justify-between">
           <div>
-            <div className="text-xs text-text-primary">Scene-Mode (Marker-Buttons)</div>
+            <div className="text-xs text-text-primary">
+              Scene-Mode (Marker-Buttons)
+            </div>
             <div className="text-xs text-text-muted mt-0.5">
               Marker ◄ / ► cyclen durch Scenes (CC 61/62, nanoKONTROL2-Default)
             </div>
@@ -2522,20 +3205,23 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
             }`}
             aria-label="Scene-Mode an/aus"
           >
-            <div className={`absolute top-0.5 w-4 h-4 bg-text-primary rounded-full shadow transition-transform ${
-              midi.feedbackSceneMode ? "translate-x-5" : "translate-x-0.5"
-            }`} />
+            <div
+              className={`absolute top-0.5 w-4 h-4 bg-text-primary rounded-full shadow transition-transform ${
+                midi.feedbackSceneMode ? "translate-x-5" : "translate-x-0.5"
+              }`}
+            />
           </button>
         </div>
 
         {midi.feedbackEnabled && midi.feedbackOutputDeviceId && (
           <div className="mt-3 p-2 bg-bg-elevated rounded text-xs text-text-muted">
             <span className="text-accent-success">●</span> LED-Feedback aktiv —
-            Mute/Solo der ersten 8 Parts werden auf die Hardware-LEDs gespiegelt.
+            Mute/Solo der ersten 8 Parts werden auf die Hardware-LEDs
+            gespiegelt.
             <br />
             <span className="text-accent-secondary">Hinweis:</span> nanoKONTROL2
-            braucht „External LED Mode" (KORG-Kontrol-Editor) damit die LEDs
-            auf MIDI-In reagieren.
+            braucht „External LED Mode" (KORG-Kontrol-Editor) damit die LEDs auf
+            MIDI-In reagieren.
           </div>
         )}
       </div>
@@ -2548,43 +3234,61 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
       {/* ── Global-Data lesen/anzeigen/zurückschreiben ─ */}
       <E2sGlobalPanel />
       {/* ── v3.232: E2S Pattern Sync (Out) — Synthstudio -> KORG Electribe 2/2S ─ */}
-      <div className="p-3 bg-bg-elevated rounded-lg" data-testid="e2s-pattern-sync-section">
+      <div
+        className="p-3 bg-bg-elevated rounded-lg"
+        data-testid="e2s-pattern-sync-section"
+      >
         <div className="flex items-center justify-between mb-2">
           <div>
-            <div className="text-sm font-medium text-text-primary">E2S Pattern Sync (Out)</div>
+            <div className="text-sm font-medium text-text-primary">
+              E2S Pattern Sync (Out)
+            </div>
             <div className="text-xs text-text-muted mt-0.5">
-              Schaltet Pattern auf der KORG Electribe 2/2S um wenn du in Synthstudio das Pattern wechselst.
+              Schaltet Pattern auf der KORG Electribe 2/2S um wenn du in
+              Synthstudio das Pattern wechselst.
             </div>
           </div>
           <button
             data-testid="e2s-pattern-sync-toggle"
-            onClick={() => setE2sPatternSyncEnabled(!e2sPatternSyncState.enabled)}
+            onClick={() =>
+              setE2sPatternSyncEnabled(!e2sPatternSyncState.enabled)
+            }
             className={`relative w-10 h-5 rounded-full transition-colors ${
-              e2sPatternSyncState.enabled ? "bg-accent-primary" : "bg-bg-elevated"
+              e2sPatternSyncState.enabled
+                ? "bg-accent-primary"
+                : "bg-bg-elevated"
             }`}
             aria-label="E2S Pattern Sync an/aus"
           >
-            <div className={`absolute top-0.5 w-4 h-4 bg-text-primary rounded-full shadow transition-transform ${
-              e2sPatternSyncState.enabled ? "translate-x-5" : "translate-x-0.5"
-            }`} />
+            <div
+              className={`absolute top-0.5 w-4 h-4 bg-text-primary rounded-full shadow transition-transform ${
+                e2sPatternSyncState.enabled
+                  ? "translate-x-5"
+                  : "translate-x-0.5"
+              }`}
+            />
           </button>
         </div>
 
         <div className="mt-3">
-          <label htmlFor="e2s-pattern-sync-device-select" className="text-xs text-text-muted block mb-1">
+          <label
+            htmlFor="e2s-pattern-sync-device-select"
+            className="text-xs text-text-muted block mb-1"
+          >
             MIDI-Output (zum E2S)
           </label>
           <select
             id="e2s-pattern-sync-device-select"
             data-testid="e2s-pattern-sync-device-select"
             value={e2sPatternSyncState.outputPortId ?? ""}
-            onChange={(e) => setE2sPatternSyncOutputPort(e.target.value || null)}
+            onChange={e => setE2sPatternSyncOutputPort(e.target.value || null)}
             className="w-full px-2 py-1.5 bg-bg-elevated border border-border-color rounded text-xs text-text-primary focus:outline-none focus:border-accent-primary"
           >
             <option value="">(kein Output gewaehlt)</option>
-            {midi.outputDevices.map((d) => (
+            {midi.outputDevices.map(d => (
               <option key={d.id} value={d.id}>
-                {d.name}{d.manufacturer ? ` — ${d.manufacturer}` : ""}
+                {d.name}
+                {d.manufacturer ? ` — ${d.manufacturer}` : ""}
               </option>
             ))}
           </select>
@@ -2592,7 +3296,10 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
 
         <div className="grid grid-cols-2 gap-3 mt-3">
           <div>
-            <label htmlFor="e2s-pattern-sync-channel-input" className="text-xs text-text-muted block mb-1">
+            <label
+              htmlFor="e2s-pattern-sync-channel-input"
+              className="text-xs text-text-muted block mb-1"
+            >
               Channel (1-16) — Global-MIDI-Ch des E2S
             </label>
             <input
@@ -2602,30 +3309,39 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
               min={1}
               max={16}
               value={e2sPatternSyncState.channel + 1}
-              onChange={(e) => setE2sPatternSyncChannel(Number(e.target.value) - 1)}
+              onChange={e =>
+                setE2sPatternSyncChannel(Number(e.target.value) - 1)
+              }
               className="w-full px-2 py-1.5 bg-bg-elevated border border-border-color rounded text-xs text-text-primary"
             />
           </div>
         </div>
 
         <div className="mt-3 p-2 bg-bg-elevated rounded text-xs text-text-muted">
-          <span className="text-accent-secondary">Hinweis:</span> Sendet CC 32 (Bank-LSB) + Program Change
-          fuer 250 Patterns (Bank 0 = P.001–P.128, Bank 1 = P.129–P.250).
+          <span className="text-accent-secondary">Hinweis:</span> Sendet CC 32
+          (Bank-LSB) + Program Change fuer 250 Patterns (Bank 0 = P.001–P.128,
+          Bank 1 = P.129–P.250).
           <br />
-          <span className="text-accent-danger">Hardware-Limitation:</span> die andere Richtung
-          (E2/E2S → Synthstudio) ist auf Stock-Firmware <strong>nicht moeglich</strong> — KORG sendet beim
-          lokalen Pattern-Wechsel nichts auf MIDI-Out.
+          <span className="text-accent-danger">Hardware-Limitation:</span> die
+          andere Richtung (E2/E2S → Synthstudio) ist auf Stock-Firmware{" "}
+          <strong>nicht moeglich</strong> — KORG sendet beim lokalen
+          Pattern-Wechsel nichts auf MIDI-Out.
         </div>
       </div>
 
-
       {/* ── v3.98.0: MIDI-Click-Track-Out — Metronome via MIDI ─────────────── */}
-      <div className="p-3 bg-bg-elevated rounded-lg" data-testid="click-out-section">
+      <div
+        className="p-3 bg-bg-elevated rounded-lg"
+        data-testid="click-out-section"
+      >
         <div className="flex items-center justify-between mb-2">
           <div>
-            <div className="text-sm font-medium text-text-primary">MIDI-Click-Out (Metronom)</div>
+            <div className="text-sm font-medium text-text-primary">
+              MIDI-Click-Out (Metronom)
+            </div>
             <div className="text-xs text-text-muted mt-0.5">
-              Sendet Beat-Notes an externe Hardware fuer Sync (KORG Volca, Drum-Machine)
+              Sendet Beat-Notes an externe Hardware fuer Sync (KORG Volca,
+              Drum-Machine)
             </div>
           </div>
           <button
@@ -2636,27 +3352,33 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
             }`}
             aria-label="MIDI-Click-Out an/aus"
           >
-            <div className={`absolute top-0.5 w-4 h-4 bg-text-primary rounded-full shadow transition-transform ${
-              midiClickState.enabled ? "translate-x-5" : "translate-x-0.5"
-            }`} />
+            <div
+              className={`absolute top-0.5 w-4 h-4 bg-text-primary rounded-full shadow transition-transform ${
+                midiClickState.enabled ? "translate-x-5" : "translate-x-0.5"
+              }`}
+            />
           </button>
         </div>
 
         <div className="mt-3">
-          <label htmlFor="click-out-device-select" className="text-xs text-text-muted block mb-1">
+          <label
+            htmlFor="click-out-device-select"
+            className="text-xs text-text-muted block mb-1"
+          >
             Click-Out-Geraet
           </label>
           <select
             id="click-out-device-select"
             data-testid="click-out-device-select"
             value={midiClickState.outputDeviceId ?? ""}
-            onChange={(e) => setMidiClickOutputDevice(e.target.value || null)}
+            onChange={e => setMidiClickOutputDevice(e.target.value || null)}
             className="w-full px-2 py-1.5 bg-bg-elevated border border-border-color rounded text-xs text-text-primary focus:outline-none focus:border-accent-primary"
           >
             <option value="">(kein Output gewaehlt)</option>
-            {midi.outputDevices.map((d) => (
+            {midi.outputDevices.map(d => (
               <option key={d.id} value={d.id}>
-                {d.name}{d.manufacturer ? ` — ${d.manufacturer}` : ""}
+                {d.name}
+                {d.manufacturer ? ` — ${d.manufacturer}` : ""}
               </option>
             ))}
           </select>
@@ -2664,7 +3386,10 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
 
         <div className="grid grid-cols-2 gap-3 mt-3">
           <div>
-            <label htmlFor="click-channel-input" className="text-xs text-text-muted block mb-1">
+            <label
+              htmlFor="click-channel-input"
+              className="text-xs text-text-muted block mb-1"
+            >
               Channel (1-16)
             </label>
             <input
@@ -2674,7 +3399,7 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
               min={1}
               max={16}
               value={midiClickState.channel + 1}
-              onChange={(e) => setMidiClickChannel(Number(e.target.value) - 1)}
+              onChange={e => setMidiClickChannel(Number(e.target.value) - 1)}
               className="w-full px-2 py-1.5 bg-bg-elevated border border-border-color rounded text-xs text-text-primary"
             />
           </div>
@@ -2682,7 +3407,10 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
 
         <div className="grid grid-cols-2 gap-3 mt-3">
           <div>
-            <label htmlFor="click-accent-note-input" className="text-xs text-text-muted block mb-1">
+            <label
+              htmlFor="click-accent-note-input"
+              className="text-xs text-text-muted block mb-1"
+            >
               Accent-Note (Bar 1) — {noteToName(midiClickState.accentNote)}
             </label>
             <input
@@ -2692,12 +3420,15 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
               min={0}
               max={127}
               value={midiClickState.accentNote}
-              onChange={(e) => setMidiClickAccentNote(Number(e.target.value))}
+              onChange={e => setMidiClickAccentNote(Number(e.target.value))}
               className="w-full px-2 py-1.5 bg-bg-elevated border border-border-color rounded text-xs text-text-primary"
             />
           </div>
           <div>
-            <label htmlFor="click-beat-note-input" className="text-xs text-text-muted block mb-1">
+            <label
+              htmlFor="click-beat-note-input"
+              className="text-xs text-text-muted block mb-1"
+            >
               Beat-Note (2/3/4) — {noteToName(midiClickState.beatNote)}
             </label>
             <input
@@ -2707,7 +3438,7 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
               min={0}
               max={127}
               value={midiClickState.beatNote}
-              onChange={(e) => setMidiClickBeatNote(Number(e.target.value))}
+              onChange={e => setMidiClickBeatNote(Number(e.target.value))}
               className="w-full px-2 py-1.5 bg-bg-elevated border border-border-color rounded text-xs text-text-primary"
             />
           </div>
@@ -2715,7 +3446,10 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
 
         <div className="grid grid-cols-2 gap-3 mt-3">
           <div>
-            <label htmlFor="click-vel-accent-input" className="text-xs text-text-muted block mb-1">
+            <label
+              htmlFor="click-vel-accent-input"
+              className="text-xs text-text-muted block mb-1"
+            >
               Velocity Accent — {midiClickState.velocityAccent}
             </label>
             <input
@@ -2725,12 +3459,15 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
               min={0}
               max={127}
               value={midiClickState.velocityAccent}
-              onChange={(e) => setMidiClickVelocityAccent(Number(e.target.value))}
+              onChange={e => setMidiClickVelocityAccent(Number(e.target.value))}
               className="w-full"
             />
           </div>
           <div>
-            <label htmlFor="click-vel-beat-input" className="text-xs text-text-muted block mb-1">
+            <label
+              htmlFor="click-vel-beat-input"
+              className="text-xs text-text-muted block mb-1"
+            >
               Velocity Beat — {midiClickState.velocityBeat}
             </label>
             <input
@@ -2740,7 +3477,7 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
               min={0}
               max={127}
               value={midiClickState.velocityBeat}
-              onChange={(e) => setMidiClickVelocityBeat(Number(e.target.value))}
+              onChange={e => setMidiClickVelocityBeat(Number(e.target.value))}
               className="w-full"
             />
           </div>
@@ -2748,7 +3485,10 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
 
         {/* v3.99.0: Note-Duration-Slider (10..500ms, default 50) */}
         <div className="mt-3">
-          <label htmlFor="click-note-duration-input" className="text-xs text-text-muted block mb-1">
+          <label
+            htmlFor="click-note-duration-input"
+            className="text-xs text-text-muted block mb-1"
+          >
             Note-Duration — {midiClickState.noteDurationMs} ms
           </label>
           <input
@@ -2759,11 +3499,12 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
             max={500}
             step={5}
             value={midiClickState.noteDurationMs}
-            onChange={(e) => setMidiClickNoteDurationMs(Number(e.target.value))}
+            onChange={e => setMidiClickNoteDurationMs(Number(e.target.value))}
             className="w-full"
           />
           <div className="text-[10px] text-text-dim mt-1">
-            Laenge der gesendeten MIDI-Note. Zu kurz (&lt; 10ms) → Trigger-In erkennt nicht. Zu lang &gt; halber Beat → ueberlappt.
+            Laenge der gesendeten MIDI-Note. Zu kurz (&lt; 10ms) → Trigger-In
+            erkennt nicht. Zu lang &gt; halber Beat → ueberlappt.
           </div>
         </div>
 
@@ -2771,33 +3512,47 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
         <div className="mt-4 pt-3 border-t border-border-subtle">
           <div className="flex items-center justify-between mb-2">
             <div>
-              <div className="text-xs font-medium text-text-primary">Count-In (Pre-Roll)</div>
+              <div className="text-xs font-medium text-text-primary">
+                Count-In (Pre-Roll)
+              </div>
               <div className="text-[10px] text-text-muted mt-0.5">
-                Spielt N Bars Click vor Pattern-Start (Tempo-Lock fuer Recording)
+                Spielt N Bars Click vor Pattern-Start (Tempo-Lock fuer
+                Recording)
               </div>
             </div>
             <button
               data-testid="count-in-toggle"
-              onClick={() => setMidiClickCountInEnabled(!midiClickState.countInEnabled)}
+              onClick={() =>
+                setMidiClickCountInEnabled(!midiClickState.countInEnabled)
+              }
               className={`relative w-10 h-5 rounded-full transition-colors ${
-                midiClickState.countInEnabled ? "bg-accent-primary" : "bg-bg-elevated"
+                midiClickState.countInEnabled
+                  ? "bg-accent-primary"
+                  : "bg-bg-elevated"
               }`}
               aria-label="Count-In an/aus"
             >
-              <div className={`absolute top-0.5 w-4 h-4 bg-text-primary rounded-full shadow transition-transform ${
-                midiClickState.countInEnabled ? "translate-x-5" : "translate-x-0.5"
-              }`} />
+              <div
+                className={`absolute top-0.5 w-4 h-4 bg-text-primary rounded-full shadow transition-transform ${
+                  midiClickState.countInEnabled
+                    ? "translate-x-5"
+                    : "translate-x-0.5"
+                }`}
+              />
             </button>
           </div>
           <div>
-            <label htmlFor="count-in-bars-input" className="text-xs text-text-muted block mb-1">
+            <label
+              htmlFor="count-in-bars-input"
+              className="text-xs text-text-muted block mb-1"
+            >
               Pre-Roll-Bars — {midiClickState.countInBars}
             </label>
             <select
               id="count-in-bars-input"
               data-testid="count-in-bars-input"
               value={midiClickState.countInBars}
-              onChange={(e) => setMidiClickCountInBars(Number(e.target.value))}
+              onChange={e => setMidiClickCountInBars(Number(e.target.value))}
               disabled={!midiClickState.countInEnabled}
               className="w-full px-2 py-1.5 bg-bg-elevated border border-border-color rounded text-xs text-text-primary focus:outline-none focus:border-accent-primary disabled:opacity-50"
             >
@@ -2812,7 +3567,8 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
         {midiClickState.enabled && midiClickState.outputDeviceId && (
           <div className="mt-3 p-2 bg-bg-elevated rounded text-xs text-text-muted">
             <span className="text-accent-success">●</span> Click-Out aktiv —
-            sendet pro Beat eine MIDI-Note (Accent auf Bar-Start, Beat auf 2/3/4).
+            sendet pro Beat eine MIDI-Note (Accent auf Bar-Start, Beat auf
+            2/3/4).
           </div>
         )}
         {midiClickState.enabled && !midiClickState.outputDeviceId && (
@@ -2827,9 +3583,15 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
         <div>• MIDI-Clock sendet 24 Pulse pro Viertelnote (PPQN)</div>
         <div>• Kompatibel mit DAWs: Ableton, FL Studio, Logic, Cubase</div>
         <div>• Hardware: Roland, Korg, Akai, Arturia MIDI-Controller</div>
-        <div>• MIDI-Start (0xFA) und Stop (0xFC) werden als Play/Stop interpretiert</div>
-        <div>• Clock-Out drift-frei via AudioContext-Timing (TASK-230 / v2.83)</div>
-        <div>• Click-Out sendet Beat-Notes parallel zum lokalen Metronom (v3.98)</div>
+        <div>
+          • MIDI-Start (0xFA) und Stop (0xFC) werden als Play/Stop interpretiert
+        </div>
+        <div>
+          • Clock-Out drift-frei via AudioContext-Timing (TASK-230 / v2.83)
+        </div>
+        <div>
+          • Click-Out sendet Beat-Notes parallel zum lokalen Metronom (v3.98)
+        </div>
       </div>
     </div>
   );
@@ -2838,18 +3600,45 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
 
   // v2.2: Tab-Labels enthalten Mapping-Counts für quick-Discoverability
   const tabs = [
-    { id: "devices"   as const, label: "Geräte", badge: midi.devices.length > 0 ? String(midi.devices.length) : "" },
-    { id: "templates" as const, label: "Vorlagen", badge: userTemplates.length > 0 ? String(userTemplates.length) : "" },
-    { id: "cc"        as const, label: "CC-Mapping", badge: midi.mappings.length > 0 ? String(midi.mappings.length) : "" },
-    { id: "notes"     as const, label: "Note-Mapping", badge: midi.noteMappings.length > 0 ? String(midi.noteMappings.length) : "" },
-    { id: "monitor"   as const, label: "Monitor", badge: monitorLog.length > 0 ? String(monitorLog.length) : "" },
-    { id: "clock"     as const, label: "Clock-Sync", badge: midi.clockSync ? "in" : midi.clockOutEnabled ? "out" : "" },
+    {
+      id: "devices" as const,
+      label: "Geräte",
+      badge: midi.devices.length > 0 ? String(midi.devices.length) : "",
+    },
+    {
+      id: "templates" as const,
+      label: "Vorlagen",
+      badge: userTemplates.length > 0 ? String(userTemplates.length) : "",
+    },
+    {
+      id: "cc" as const,
+      label: "CC-Mapping",
+      badge: midi.mappings.length > 0 ? String(midi.mappings.length) : "",
+    },
+    {
+      id: "notes" as const,
+      label: "Note-Mapping",
+      badge:
+        midi.noteMappings.length > 0 ? String(midi.noteMappings.length) : "",
+    },
+    {
+      id: "monitor" as const,
+      label: "Monitor",
+      badge: monitorLog.length > 0 ? String(monitorLog.length) : "",
+    },
+    {
+      id: "clock" as const,
+      label: "Clock-Sync",
+      badge: midi.clockSync ? "in" : midi.clockOutEnabled ? "out" : "",
+    },
   ];
 
   const renderTemplatesTab = () => (
     <div className="space-y-3">
       <div className="bg-bg-elevated rounded-lg p-3 text-xs text-text-muted">
-        Wähle eine Vorlage für deinen Hardware-Controller. <strong className="text-text-primary">Achtung:</strong> Alle aktuellen Mappings werden überschrieben.
+        Wähle eine Vorlage für deinen Hardware-Controller.{" "}
+        <strong className="text-text-primary">Achtung:</strong> Alle aktuellen
+        Mappings werden überschrieben.
       </div>
 
       {/* v3.121.0: Templates-Library-Eintrittspunkt — Browse aller Templates
@@ -2860,7 +3649,8 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
             <span aria-hidden>📚</span> Templates Library
           </div>
           <p className="text-[11px] text-text-muted mt-0.5 leading-snug">
-            Durchsuche Hardware-Templates, eigene Setups und importiere Community-Mappings.
+            Durchsuche Hardware-Templates, eigene Setups und importiere
+            Community-Mappings.
           </p>
         </div>
         <button
@@ -2879,20 +3669,24 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
             Aktuelles Setup speichern
           </div>
           <div className="text-xs text-text-dim mb-2">
-            {midi.mappings.length} CC + {midi.noteMappings.length} Note Mappings als wiederverwendbares Template ablegen.
+            {midi.mappings.length} CC + {midi.noteMappings.length} Note Mappings
+            als wiederverwendbares Template ablegen.
           </div>
           <div className="flex gap-2">
             <input
               type="text"
               value={userTplName}
-              onChange={(e) => setUserTplName(e.target.value)}
+              onChange={e => setUserTplName(e.target.value)}
               placeholder={defaultExportNameFromDevice()}
               className="flex-1 px-2 py-1.5 bg-bg-elevated border border-border-color rounded text-xs text-text-primary focus:outline-none focus:border-accent-secondary"
             />
             <button
               onClick={() => {
-                const name = userTplName.trim() || defaultExportNameFromDevice();
-                const dev = midi.devices.find(d => d.id === midi.activeDeviceId);
+                const name =
+                  userTplName.trim() || defaultExportNameFromDevice();
+                const dev = midi.devices.find(
+                  d => d.id === midi.activeDeviceId
+                );
                 saveUserMidiTemplate({
                   name,
                   deviceName: dev?.name,
@@ -2917,18 +3711,28 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
             Meine Templates ({userTemplates.length})
           </div>
           <div className="space-y-1.5">
-            {userTemplates.map((t) => (
-              <div key={t.id} className="border border-accent-primary/40 rounded p-2 bg-accent-primary/5">
+            {userTemplates.map(t => (
+              <div
+                key={t.id}
+                className="border border-accent-primary/40 rounded p-2 bg-accent-primary/5"
+              >
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className="text-sm font-semibold text-text-primary truncate">{t.name}</span>
+                      <span className="text-sm font-semibold text-text-primary truncate">
+                        {t.name}
+                      </span>
                       <span className="text-[10px] text-text-dim flex-shrink-0">
-                        {new Date(t.updatedAt).toLocaleString("de-DE", { dateStyle: "short", timeStyle: "short" })}
+                        {new Date(t.updatedAt).toLocaleString("de-DE", {
+                          dateStyle: "short",
+                          timeStyle: "short",
+                        })}
                       </span>
                     </div>
                     {t.deviceName && (
-                      <div className="text-[10px] text-text-dim mt-0.5">📡 {t.deviceName}</div>
+                      <div className="text-[10px] text-text-dim mt-0.5">
+                        📡 {t.deviceName}
+                      </div>
                     )}
                     <div className="flex gap-3 text-[10px] text-text-dim mt-1">
                       <span>{t.ccMappings.length} CC</span>
@@ -2939,9 +3743,16 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
                   <div className="flex gap-1 flex-shrink-0">
                     <button
                       onClick={() => {
-                        if (confirm(`Template "${t.name}" laden?\n\nDas ersetzt alle aktuellen Mappings.`)) {
+                        if (
+                          confirm(
+                            `Template "${t.name}" laden?\n\nDas ersetzt alle aktuellen Mappings.`
+                          )
+                        ) {
                           midi.loadTemplate(t.ccMappings, t.noteMappings);
-                          toast(`Template „${t.name}" geladen (${t.ccMappings.length} CC + ${t.noteMappings.length} Notes)`, { kind: "success" });
+                          toast(
+                            `Template „${t.name}" geladen (${t.ccMappings.length} CC + ${t.noteMappings.length} Notes)`,
+                            { kind: "success" }
+                          );
                         }
                       }}
                       className="px-2 py-1 text-xs rounded bg-accent-primary text-bg-base hover:bg-accent-primary/80"
@@ -2951,7 +3762,8 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
                     <button
                       onClick={() => {
                         const newName = window.prompt("Neuer Name:", t.name);
-                        if (newName && newName.trim().length > 0) renameUserMidiTemplate(t.id, newName);
+                        if (newName && newName.trim().length > 0)
+                          renameUserMidiTemplate(t.id, newName);
                       }}
                       className="px-1.5 py-1 text-[10px] text-text-dim hover:text-text-primary"
                       title="Umbenennen"
@@ -2962,7 +3774,9 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
                       onClick={() => {
                         if (confirm(`Template "${t.name}" löschen?`)) {
                           deleteUserMidiTemplate(t.id);
-                          toast(`Template „${t.name}" gelöscht`, { kind: "warning" });
+                          toast(`Template „${t.name}" gelöscht`, {
+                            kind: "warning",
+                          });
                         }
                       }}
                       className="px-1.5 py-1 text-[10px] text-text-dim hover:text-accent-danger"
@@ -2988,21 +3802,24 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
             Hardware-Auto-Detection
           </div>
           <p className="text-[11px] text-text-muted mt-0.5 leading-snug">
-            Erkennt bekannte Controller (nanoKONTROL2, Launchpad, Push, MPC, …) per Device-Name und schlägt das passende Template vor.
+            Erkennt bekannte Controller (nanoKONTROL2, Launchpad, Push, MPC, …)
+            per Device-Name und schlägt das passende Template vor.
           </p>
         </div>
         <label className="flex items-center gap-2 cursor-pointer flex-shrink-0">
           <input
             type="checkbox"
             checked={autoDetectEnabled}
-            onChange={(e) => {
+            onChange={e => {
               setAutoDetectEnabledState(e.target.checked);
               setAutoDetectionEnabled(e.target.checked);
             }}
             className="accent-accent-primary w-4 h-4"
             data-testid="midi-auto-detect-toggle"
           />
-          <span className="text-xs text-text-muted">{autoDetectEnabled ? "AN" : "AUS"}</span>
+          <span className="text-xs text-text-muted">
+            {autoDetectEnabled ? "AN" : "AUS"}
+          </span>
         </label>
       </div>
 
@@ -3015,13 +3832,16 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
           data-testid="midi-template-suggestion"
         >
           <div className="flex items-start gap-2">
-            <span className="text-base flex-shrink-0" aria-hidden>🎹</span>
+            <span className="text-base flex-shrink-0" aria-hidden>
+              🎹
+            </span>
             <div className="flex-1 min-w-0">
               <div className="text-sm font-semibold text-text-primary">
                 {currentSuggestion.displayName} erkannt
               </div>
               <p className="text-[11px] text-text-muted mt-0.5 leading-snug">
-                Soll das passende Template angewendet werden? Ersetzt aktuelle Mappings.
+                Soll das passende Template angewendet werden? Ersetzt aktuelle
+                Mappings.
               </p>
               <div className="flex flex-wrap gap-2 mt-2">
                 <button
@@ -3057,14 +3877,23 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
       </div>
       <div className="space-y-2">
         {MIDI_TEMPLATES.map(t => (
-          <div key={t.id} className="border border-border-color rounded-lg p-3 bg-bg-elevated/50">
+          <div
+            key={t.id}
+            className="border border-border-color rounded-lg p-3 bg-bg-elevated/50"
+          >
             <div className="flex items-start justify-between gap-3">
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
-                  <span className="text-sm font-semibold text-text-primary">{t.name}</span>
-                  <span className="text-[10px] text-text-dim">{t.manufacturer}</span>
+                  <span className="text-sm font-semibold text-text-primary">
+                    {t.name}
+                  </span>
+                  <span className="text-[10px] text-text-dim">
+                    {t.manufacturer}
+                  </span>
                 </div>
-                <p className="text-xs text-text-muted mt-1 leading-snug">{t.description}</p>
+                <p className="text-xs text-text-muted mt-1 leading-snug">
+                  {t.description}
+                </p>
                 <div className="flex gap-3 mt-2 text-[10px] text-text-dim">
                   <span>{t.ccMappings.length} CC-Mappings</span>
                   <span>·</span>
@@ -3073,7 +3902,11 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
               </div>
               <button
                 onClick={() => {
-                  if (confirm(`Vorlage "${t.name}" laden?\n\nDas ersetzt alle aktuellen Mappings.`)) {
+                  if (
+                    confirm(
+                      `Vorlage "${t.name}" laden?\n\nDas ersetzt alle aktuellen Mappings.`
+                    )
+                  ) {
                     const partResolver = (id: string) => {
                       const partIndex = parseInt(id.replace("part-", ""), 10);
                       return parts[partIndex]?.name ?? parts[partIndex]?.id;
@@ -3081,12 +3914,22 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
                     const { cc, notes } = templateToMappings(t, partResolver);
                     // Mappings auf reale Part-IDs übersetzen
                     const resolvedNotes = notes.map(n => {
-                      const partIndex = parseInt(n.partId.replace("part-", ""), 10);
+                      const partIndex = parseInt(
+                        n.partId.replace("part-", ""),
+                        10
+                      );
                       const realPart = parts[partIndex];
-                      return { ...n, partId: realPart?.id ?? n.partId, label: realPart?.name ?? n.label };
+                      return {
+                        ...n,
+                        partId: realPart?.id ?? n.partId,
+                        label: realPart?.name ?? n.label,
+                      };
                     });
                     midi.loadTemplate(cc, resolvedNotes);
-                    toast(`Hardware-Template „${t.name}" geladen (${cc.length} CC + ${resolvedNotes.length} Notes)`, { kind: "success" });
+                    toast(
+                      `Hardware-Template „${t.name}" geladen (${cc.length} CC + ${resolvedNotes.length} Notes)`,
+                      { kind: "success" }
+                    );
                   }
                 }}
                 className="px-3 py-1.5 rounded text-xs font-medium bg-accent-primary text-bg-base hover:bg-accent-primary/80 flex-shrink-0"
@@ -3107,7 +3950,9 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
         <div className="flex items-center justify-between px-5 py-4 border-b border-border-color">
           <div className="flex items-center gap-2">
             <span className="text-lg">🎹</span>
-            <h2 className="text-base font-semibold text-text-primary">MIDI-Einstellungen</h2>
+            <h2 className="text-base font-semibold text-text-primary">
+              MIDI-Einstellungen
+            </h2>
             {midi.isEnabled && (
               <span className="w-2 h-2 rounded-full bg-accent-success animate-pulse" />
             )}
@@ -3150,11 +3995,13 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
             >
               {tab.label}
               {tab.badge && (
-                <span className={`ml-1 px-1 rounded text-[9px] font-mono ${
-                  activeTab === tab.id
-                    ? "bg-accent-secondary text-bg-base"
-                    : "bg-bg-elevated text-text-dim"
-                }`}>
+                <span
+                  className={`ml-1 px-1 rounded text-[9px] font-mono ${
+                    activeTab === tab.id
+                      ? "bg-accent-secondary text-bg-base"
+                      : "bg-bg-elevated text-text-dim"
+                  }`}
+                >
                   {tab.badge}
                 </span>
               )}
@@ -3189,7 +4036,9 @@ export function MidiSettings({ midi, parts, onClose }: MidiSettingsProps) {
           parts={parts}
           currentCcMappings={midi.mappings}
           currentNoteMappings={midi.noteMappings}
-          activeDeviceName={midi.devices.find(d => d.id === midi.activeDeviceId)?.name ?? null}
+          activeDeviceName={
+            midi.devices.find(d => d.id === midi.activeDeviceId)?.name ?? null
+          }
           onApplyMappings={(cc, notes) => {
             midi.loadTemplate(cc, notes);
           }}
