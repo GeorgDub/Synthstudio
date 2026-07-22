@@ -120,7 +120,12 @@ export class NativeMidiManager {
    * des Sends entkoppelt werden).
    */
   send(handle: string, bytes: number[] | Uint8Array): void {
-    const arr = Array.from(bytes);
+    // Plain-Array direkt weiterreichen (kein redundantes Kopieren): der IPC-
+    // Layer strukturklont die Bytes ohnehin synchron beim invoke, und wir
+    // mutieren sie hier nicht. Nur Uint8Array muss auf number[] konvertiert
+    // werden (der Main-Validator iteriert als Array). Param-Sync sendet viele
+    // kleine Nachrichten — die eingesparte Allokation summiert sich.
+    const arr = Array.isArray(bytes) ? bytes : Array.from(bytes);
     void this.bridge.sendMidi(handle, arr).catch(() => {
       /* device gone */
     });

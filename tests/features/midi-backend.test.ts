@@ -196,6 +196,17 @@ describe("NativeMidiManager", () => {
     expect(fake.sent).toEqual([{ handle: "out:0", bytes: [0xf0, 0x7e, 0xf7] }]);
   });
 
+  it("send reicht ein plain number[] ohne Kopie durch (keine Allokation)", async () => {
+    const fake = makeFakeBridge({ outputs: ["O"] });
+    const mgr = new NativeMidiManager(fake.bridge);
+    const h = await mgr.openOutput(0);
+    const payload = [0xb0, 7, 100];
+    mgr.send(h!, payload);
+    await Promise.resolve();
+    // Dieselbe Referenz → kein redundantes Array.from-Kopieren im Hot-Path.
+    expect(fake.sent[0].bytes).toBe(payload);
+  });
+
   it("closeAll schließt alle Handles + entkoppelt den Listener", async () => {
     const fake = makeFakeBridge({ inputs: ["A"], outputs: ["O"] });
     const mgr = new NativeMidiManager(fake.bridge);
