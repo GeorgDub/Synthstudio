@@ -43,6 +43,20 @@ export function defaultInputConfig(): MidiInputConfig {
   return { enabled: false, role: "all" };
 }
 
+/**
+ * Geteilte, eingefrorene Default-Konfig für den Hot-Path-Miss (unbekanntes
+ * Gerät). `getInputConfig` läuft pro eingehender MIDI-Nachricht — der Miss-Fall
+ * ist der Normalfall bei Single-Device/'all'-Setups, in denen NICHTS konfiguriert
+ * ist. Ein frisches `defaultInputConfig()`-Objekt pro Nachricht wäre reine
+ * GC-Last; dieses Singleton vermeidet die Allokation. Eingefroren, damit ein
+ * versehentliches Mutieren sofort auffällt (Consumer lesen nur `.role`, und die
+ * Setter spreaden `prev` → kein legitimer Mutations-Pfad).
+ */
+const DEFAULT_INPUT_CONFIG: Readonly<MidiInputConfig> = Object.freeze({
+  enabled: false,
+  role: "all",
+});
+
 // ─── Rollen-Gates (rein, testbar) ─────────────────────────────────────────────
 export function roleAcceptsCc(role: MidiInputRole): boolean {
   return role === "all" || role === "controller";
@@ -109,9 +123,15 @@ export function getMidiInputsState(): MidiInputsState {
   return _state;
 }
 
-/** Konfiguration eines Geräts (Default, falls unbekannt). */
+/**
+ * Konfiguration eines Geräts (Default, falls unbekannt).
+ *
+ * Hot-Path (pro MIDI-Nachricht aufgerufen): der Miss-Fall liefert das geteilte,
+ * eingefrorene `DEFAULT_INPUT_CONFIG` — KEINE Allokation. Der zurückgegebene
+ * Wert darf nicht mutiert werden (Consumer lesen nur; Setter spreaden `prev`).
+ */
 export function getInputConfig(name: string): MidiInputConfig {
-  return _state.byName[name] ?? defaultInputConfig();
+  return _state.byName[name] ?? DEFAULT_INPUT_CONFIG;
 }
 
 /** true, wenn das Gerät aktiv geschaltet ist. */

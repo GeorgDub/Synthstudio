@@ -56,6 +56,16 @@ describe("useMidiInputsStore state", () => {
     expect(isInputEnabled("Unknown")).toBe(false);
   });
 
+  it("hot-path miss returns a stable, frozen default (no per-call allocation)", () => {
+    const a = getInputConfig("Unknown A");
+    const b = getInputConfig("Unknown B");
+    // Same shared reference across misses → keine Allokation pro MIDI-Nachricht.
+    expect(a).toBe(b);
+    expect(Object.isFrozen(a)).toBe(true);
+    // defaultInputConfig() bleibt eine Factory (frische, mutierbare Kopie).
+    expect(defaultInputConfig()).not.toBe(a);
+  });
+
   it("enable/disable + role, tracked by name (multi-device)", () => {
     setInputEnabled("Electribe 2", true);
     setInputRole("Electribe 2", "sysex");
