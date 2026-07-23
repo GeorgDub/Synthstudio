@@ -43,7 +43,12 @@ import {
   E2sBuildError,
   type E2sSlotInput,
 } from "@/utils/korg/e2sBankBuilder";
-import { parseE2sBank, E2sParseError } from "@/utils/korg/e2sBankReader";
+import {
+  parseE2sBank,
+  E2sParseError,
+  type E2sBank,
+} from "@/utils/korg/e2sBankReader";
+import { bundleE2sSamplesToZip } from "@/utils/korg/e2sSampleExport";
 import {
   convertToE2sSpec,
   AudioProcessError,
@@ -243,6 +248,9 @@ export function KorgBankEditor({
 
   // "edit" mode state
   const [openedSlots, setOpenedSlots] = useState<OpenedSlot[]>([]);
+  // v3.284 — die geparste E2S-Bank behalten, damit „Samples als WAV" das
+  // originale PCM exportieren kann (Oe2sSLE „Export sample to WAV").
+  const [e2sSourceBank, setE2sSourceBank] = useState<E2sBank | null>(null);
   const [openedSourceName, setOpenedSourceName] = useState<string>("");
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
 
@@ -355,6 +363,7 @@ export function KorgBankEditor({
     if (!open) {
       setNewSlots([]);
       setOpenedSlots([]);
+      setE2sSourceBank(null);
       setOpenedSourceName("");
       setSelectedRowId(null);
       setResultMsg(null);
@@ -585,6 +594,7 @@ export function KorgBankEditor({
       setNewSlots([]);
     } else if (mode === "edit") {
       setOpenedSlots([]);
+      setE2sSourceBank(null);
       setOpenedSourceName("");
       setSelectedRowId(null);
     } else if (mode === "esx") {
@@ -743,6 +753,7 @@ export function KorgBankEditor({
         const bank = parseE2sBank(ab, file.name, { preserveRawRiff: true });
         const slots = bankToOpenedSlots(bank);
         setOpenedSlots(slots);
+        setE2sSourceBank(bank);
         setOpenedSourceName(file.name);
         setMode("edit");
         // Pre-select first filled slot if any.
@@ -1584,6 +1595,53 @@ export function KorgBankEditor({
     return updated;
   }
 
+  // v3.284 — Oe2sSLE „Export all as wav": alle belegten Slots der geladenen
+  // E2S-Bank als WAV-ZIP herunterladen (originales PCM der geladenen Datei).
+  async function handleE2sExportSamples(): Promise<void> {
+    if (!e2sSourceBank) {
+      toast("Keine E2S-Bank geladen.", { kind: "warning" });
+      return;
+    }
+    setBusy(true);
+    try {
+      const res = await bundleE2sSamplesToZip(e2sSourceBank);
+      if (res.sampleCount === 0) {
+        toast("Keine Samples in dieser Bank zum Exportieren.", {
+          kind: "warning",
+        });
+        return;
+      }
+      const copy = new Uint8Array(res.zip.byteLength);
+      copy.set(new Uint8Array(res.zip));
+      const url = URL.createObjectURL(
+        new Blob([copy.buffer], { type: "application/zip" })
+      );
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = res.fileName;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+      toast(
+        `${res.sampleCount} Sample(s) als WAV exportiert → ${res.fileName}`,
+        {
+          kind: "success",
+          duration: 4000,
+        }
+      );
+    } catch (err) {
+      toast(
+        `Sample-Export fehlgeschlagen: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+        { kind: "error" }
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function handleSaveAs(): Promise<void> {
     if (!requireProFeature(PRO_FEATURE_KORG_BANK_WRITE)) return;
 
@@ -1998,19 +2056,32 @@ export function KorgBankEditor({
                 <ProLockBadge feature={PRO_FEATURE_KORG_BANK_WRITE} />
               </button>
             ) : (
-              <button
-                data-testid="korg-bank-editor-save"
-                onClick={handleSaveAs}
-                disabled={
-                  busy ||
-                  (mode === "new" && newSlots.length === 0) ||
-                  (mode === "edit" && filledCountOpened === 0)
-                }
-                className="px-3 py-1 rounded text-xs bg-accent-primary text-bg-base hover:opacity-90 transition-opacity disabled:opacity-40 flex items-center gap-2"
-              >
-                {busy ? "Speichere..." : "Als .all speichern"}
-                <ProLockBadge feature={PRO_FEATURE_KORG_BANK_WRITE} />
-              </button>
+              <>
+                {mode === "edit" && e2sSourceBank && (
+                  <button
+                    data-testid="korg-bank-editor-e2s-export-samples"
+                    onClick={handleE2sExportSamples}
+                    disabled={busy}
+                    className="px-3 py-1 rounded text-xs bg-bg-elevated text-text-primary hover:brightness-125 transition-all disabled:opacity-40 flex items-center gap-2"
+                    title="Alle Samples der geladenen Bank als WAV-ZIP exportieren"
+                  >
+                    🎵 Samples als WAV
+                  </button>
+                )}
+                <button
+                  data-testid="korg-bank-editor-save"
+                  onClick={handleSaveAs}
+                  disabled={
+                    busy ||
+                    (mode === "new" && newSlots.length === 0) ||
+                    (mode === "edit" && filledCountOpened === 0)
+                  }
+                  className="px-3 py-1 rounded text-xs bg-accent-primary text-bg-base hover:opacity-90 transition-opacity disabled:opacity-40 flex items-center gap-2"
+                >
+                  {busy ? "Speichere..." : "Als .all speichern"}
+                  <ProLockBadge feature={PRO_FEATURE_KORG_BANK_WRITE} />
+                </button>
+              </>
             )}
           </div>
         </footer>
