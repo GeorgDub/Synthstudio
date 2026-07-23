@@ -82,3 +82,33 @@ describe("E2S level round-trip (playVolume)", () => {
     expect(Math.abs(lvl - 100)).toBeLessThanOrEqual(1);
   });
 });
+
+describe("E2S loop-point byte↔frame convention", () => {
+  // Builder: End_byte = loopEndBytes - frameBytes (Oe2sSLE: End = letzter Frame).
+  // Reader: loopEnd(frames) = End_byte / frameBytes. Also round-trippt
+  //   loopStartBytes = startFrame * frameBytes
+  //   loopEndBytes   = (endFrame + 1) * frameBytes
+  it("Loop-Punkte (Frames) round-trippen über build→parse (mono)", () => {
+    const frameBytes = 2; // mono 16-bit
+    const startFrame = 8;
+    const endFrame = 40;
+    const inputs: E2sSlotInput[] = [
+      {
+        slotIndex: 0,
+        name: "LoopA",
+        pcmData: new Float32Array(64),
+        sampleRate: 44100,
+        channels: 1,
+        loopType: 2, // forward loop
+        loopStartBytes: startFrame * frameBytes,
+        loopEndBytes: (endFrame + 1) * frameBytes,
+      },
+    ];
+    const built = buildE2sBank(inputs);
+    const slot = parseE2sBank(built.buffer, "t.all").slots.find(
+      s => s && s.name === "LoopA"
+    );
+    expect(slot?.loopStart).toBe(startFrame);
+    expect(slot?.loopEnd).toBe(endFrame);
+  });
+});

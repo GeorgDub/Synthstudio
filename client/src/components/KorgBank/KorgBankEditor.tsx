@@ -2502,6 +2502,56 @@ export function KorgBankEditor({
                 />
               </label>
 
+              {/* Loop-Punkte (nur bei Forward-Loop, Oe2sSLE „Edit loop") */}
+              {!selectedSlot.oneshot && (
+                <div
+                  className="space-y-2 pt-2 border-t border-border-color"
+                  data-testid="korg-bank-editor-detail-loop"
+                >
+                  <div className="text-[11px] text-text-muted">
+                    Loop-Punkte (Frames · von {selectedSlot.frames ?? 0})
+                  </div>
+                  <label className="block text-xs text-text-muted">
+                    Loop-Start: {selectedSlot.loopStart}
+                    <input
+                      data-testid="korg-bank-editor-detail-loop-start"
+                      type="range"
+                      min={0}
+                      max={Math.max(0, (selectedSlot.frames ?? 1) - 1)}
+                      value={selectedSlot.loopStart}
+                      onChange={e =>
+                        editSlotPatch(selectedSlot.rowId, {
+                          loopStart: Math.min(
+                            Number(e.target.value),
+                            selectedSlot.loopEnd
+                          ),
+                        })
+                      }
+                      className="w-full mt-1 accent-accent-primary"
+                    />
+                  </label>
+                  <label className="block text-xs text-text-muted">
+                    Loop-Ende: {selectedSlot.loopEnd}
+                    <input
+                      data-testid="korg-bank-editor-detail-loop-end"
+                      type="range"
+                      min={0}
+                      max={Math.max(0, (selectedSlot.frames ?? 1) - 1)}
+                      value={selectedSlot.loopEnd}
+                      onChange={e =>
+                        editSlotPatch(selectedSlot.rowId, {
+                          loopEnd: Math.max(
+                            Number(e.target.value),
+                            selectedSlot.loopStart
+                          ),
+                        })
+                      }
+                      className="w-full mt-1 accent-accent-primary"
+                    />
+                  </label>
+                </div>
+              )}
+
               {/* Audio info + Replace */}
               <div className="text-xs text-text-muted space-y-1 pt-2 border-t border-border-color">
                 <p>

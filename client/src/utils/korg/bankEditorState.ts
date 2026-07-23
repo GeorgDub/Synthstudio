@@ -50,6 +50,11 @@ export interface OpenedSlot {
   sampleTune: number;
   /** playVolume-Level 0..127 (esli +0x2c, u16 normalisiert). */
   level: number;
+  /** Loop-Start in Frames (esli +0x34, relativ zu StartPoint). Nur bei
+   *  Forward-Loop (oneshot=false) relevant. */
+  loopStart: number;
+  /** Loop-/Sample-Ende in Frames (esli +0x38, letzter Frame inklusive). */
+  loopEnd: number;
 
   // — PCM + audio fields —
   pcmData?: Float32Array;
@@ -84,6 +89,8 @@ export interface OpenedSlotSnapshot {
   gain12db: boolean;
   sampleTune: number;
   level: number;
+  loopStart: number;
+  loopEnd: number;
   pcmData: Float32Array;
   sampleRate: number;
   channels: 1 | 2;
@@ -125,6 +132,8 @@ export function bankToOpenedSlots(
         gain12db: false,
         sampleTune: 0,
         level: 127,
+        loopStart: 0,
+        loopEnd: 0,
         slices: [],
         isDirty: false,
         original: null,
@@ -146,6 +155,8 @@ export function bankToOpenedSlots(
       gain12db: src.gain12db,
       sampleTune: src.sampleTune ?? 0, // v3.284: Reader dekodiert +0x55 i8
       level: src.level ?? 127, // v3.284: playVolume-Level durchreichen
+      loopStart: src.loopStart ?? 0, // v3.284: Loop-Punkte durchreichen
+      loopEnd: src.loopEnd ?? 0,
       pcmData: src.pcmData,
       sampleRate: src.sampleRate,
       channels: src.channels,
@@ -163,6 +174,8 @@ export function bankToOpenedSlots(
       gain12db: src.gain12db,
       sampleTune: src.sampleTune ?? 0,
       level: src.level ?? 127,
+      loopStart: src.loopStart ?? 0,
+      loopEnd: src.loopEnd ?? 0,
       pcmData: src.pcmData,
       sampleRate: src.sampleRate,
       channels: src.channels,
@@ -202,6 +215,8 @@ export function patchOpenedSlot(
       (patch.gain12db !== undefined && patch.gain12db !== s.gain12db) ||
       (patch.sampleTune !== undefined && patch.sampleTune !== s.sampleTune) ||
       (patch.level !== undefined && patch.level !== s.level) ||
+      (patch.loopStart !== undefined && patch.loopStart !== s.loopStart) ||
+      (patch.loopEnd !== undefined && patch.loopEnd !== s.loopEnd) ||
       patch.pcmData !== undefined ||
       patch.sampleRate !== undefined ||
       patch.channels !== undefined ||
@@ -283,6 +298,8 @@ export function deleteSlot(slots: OpenedSlot[], rowId: string): OpenedSlot[] {
           gain12db: false,
           sampleTune: 0,
           level: 127,
+          loopStart: 0,
+          loopEnd: 0,
           pcmData: undefined,
           sampleRate: undefined,
           channels: undefined,
@@ -314,6 +331,8 @@ export function revertSlot(slots: OpenedSlot[], rowId: string): OpenedSlot[] {
         gain12db: false,
         sampleTune: 0,
         level: 127,
+        loopStart: 0,
+        loopEnd: 0,
         pcmData: undefined,
         sampleRate: undefined,
         channels: undefined,
@@ -332,6 +351,8 @@ export function revertSlot(slots: OpenedSlot[], rowId: string): OpenedSlot[] {
       gain12db: o.gain12db,
       sampleTune: o.sampleTune,
       level: o.level,
+      loopStart: o.loopStart,
+      loopEnd: o.loopEnd,
       pcmData: o.pcmData,
       sampleRate: o.sampleRate,
       channels: o.channels,
@@ -380,6 +401,12 @@ export function openedSlotsToBuildInputs(
       droppedCount++;
       continue;
     }
+    // Loop-Punkte (Frames) → Bytes für den Builder. Konvention (round-trip-
+    // getestet, siehe e2s-sample-tune.test): loopStartBytes = startFrame*fB,
+    // loopEndBytes = (endFrame+1)*fB, weil der Builder End = loopEndBytes - fB
+    // schreibt (Oe2sSLE: End = letzter Frame). fB = frameBytes = channels*2.
+    const frameBytes = (s.channels === 2 ? 2 : 1) * 2;
+    const hasLoopPoints = s.loopEnd > 0;
     const input: E2sSlotInput = {
       slotIndex: s.slotIndex,
       name: s.name,
@@ -391,6 +418,12 @@ export function openedSlotsToBuildInputs(
       gain12db: s.gain12db,
       sampleTune: s.sampleTune,
       level: s.level,
+      loopStartBytes: hasLoopPoints
+        ? Math.max(0, Math.floor(s.loopStart)) * frameBytes
+        : undefined,
+      loopEndBytes: hasLoopPoints
+        ? (Math.floor(s.loopEnd) + 1) * frameBytes
+        : undefined,
       // v3.8.0 — Slices propagieren. Builder ignoriert sie für passthrough-Slots
       // (rawRiff bit-exact), aber bei dirty/re-encode werden sie korrekt
       // serialisiert (siehe e2sBankBuilder.ts:548).
