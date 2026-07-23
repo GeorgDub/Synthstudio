@@ -242,8 +242,19 @@ export interface EsxPattern {
   name: string;
   /** BPM (Hardware-Range 20..300). */
   bpm: number;
-  /** Step-Count (16 fuer alle bisherigen Real-Files). */
+  /** Last-Step innerhalb EINER Bank (1..16, aus Byte 13). */
   lengthSteps: number;
+  /**
+   * Pattern-Länge als Wiederhol-Multiplikator (1..8 = Length_1..Length_8, aus
+   * dem gepackten Byte 11). Verifiziert gegen open-electribe-editor.
+   */
+  patternLength: number;
+  /**
+   * Effektive Step-Länge = patternLength × 16 (16..128). Die ESX-1 kann bis 128
+   * (8 Bänke × 16), die E2S nur 64 (4 Bänke) — daher beim Konvertieren >64 → 64
+   * reduzieren.
+   */
+  effectiveSteps: number;
   /** Swing 0..100 (Best-Effort). */
   swing: number;
   /** 16 Parts (immer voll besetzt; leere Parts haben alle Steps inactive). */
@@ -361,7 +372,7 @@ function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
 function safeSlice(buf: Uint8Array, off: number, len: number): Uint8Array {
   if (off < 0 || off + len > buf.length) {
     throw new EsxParseError(
-      `Out-of-bounds read at 0x${off.toString(16)} (length ${len}, file ${buf.length})`,
+      `Out-of-bounds read at 0x${off.toString(16)} (length ${len}, file ${buf.length})`
     );
   }
   return buf.subarray(off, off + len);
@@ -632,7 +643,7 @@ function decodePitchByte(rawByte: number): number {
 /** Decoded part = 0..9 (Drum 1..10). Out-of-range → undefined (Defaults). */
 function decodeDrumPart(
   raw: Uint8Array,
-  partIndex: number,
+  partIndex: number
 ):
   | {
       sampleId: number;
@@ -651,7 +662,7 @@ function decodeDrumPart(
   const sidRaw = (raw[partOff] << 8) | raw[partOff + 1];
   // 0x8000 = unassigned. Lower 9 bits cover 0..511 valid slot range
   // (ESX-1: 256 mono + 128 stereo = 384 max).
-  const sampleId = sidRaw === ESX1_SAMPLEID_UNASSIGNED ? 0 : (sidRaw & 0x01ff);
+  const sampleId = sidRaw === ESX1_SAMPLEID_UNASSIGNED ? 0 : sidRaw & 0x01ff;
 
   // Pitch @ +8 (signed i8 around 0x40 = neutral)  — v3.20.0
   const pitch = decodePitchByte(raw[partOff + 8] ?? ESX1_PITCH_NEUTRAL_RAW);
@@ -691,7 +702,7 @@ function decodeStretchPart(raw: Uint8Array):
   if (partOff + ESX1_PART_STRIDE > raw.length) return undefined;
   // Same shape as drum-part. Just reuse the layout interpretation.
   const sidRaw = (raw[partOff] << 8) | raw[partOff + 1];
-  const sampleId = sidRaw === ESX1_SAMPLEID_UNASSIGNED ? 0 : (sidRaw & 0x01ff);
+  const sampleId = sidRaw === ESX1_SAMPLEID_UNASSIGNED ? 0 : sidRaw & 0x01ff;
   const pitch = decodePitchByte(raw[partOff + 8] ?? ESX1_PITCH_NEUTRAL_RAW);
   const volume = Math.max(0, Math.min(127, raw[partOff + 9] || 100));
   const pan = Math.max(0, Math.min(127, raw[partOff + 10] || 64));
@@ -711,7 +722,7 @@ function decodeStretchPart(raw: Uint8Array):
  */
 function decodeShortPart(
   raw: Uint8Array,
-  shortIndex: number,
+  shortIndex: number
 ):
   | {
       sampleId: number;
@@ -722,7 +733,8 @@ function decodeShortPart(
       steps: EsxStepEvent[];
     }
   | undefined {
-  if (shortIndex < 0 || shortIndex >= ESX1_SHORT_PART_OFFSETS.length) return undefined;
+  if (shortIndex < 0 || shortIndex >= ESX1_SHORT_PART_OFFSETS.length)
+    return undefined;
   const partOff = ESX1_SHORT_PART_OFFSETS[shortIndex];
   const blockSize = ESX1_SHORT_PART_HEADER_BYTES + ESX1_SHORT_PART_STEPS_BYTES;
   if (partOff + blockSize > raw.length) return undefined;
@@ -733,7 +745,7 @@ function decodeShortPart(
   //   +8     = pan (u8 0..127, 0x40 center)
   //   +10    = fxSend (u8 0..127)
   const sidRaw = (raw[partOff] << 8) | raw[partOff + 1];
-  const sampleId = sidRaw === ESX1_SAMPLEID_UNASSIGNED ? 0 : (sidRaw & 0x01ff);
+  const sampleId = sidRaw === ESX1_SAMPLEID_UNASSIGNED ? 0 : sidRaw & 0x01ff;
   const pitch = decodePitchByte(raw[partOff + 6] ?? ESX1_PITCH_NEUTRAL_RAW);
   const volume = Math.max(0, Math.min(127, raw[partOff + 7] || 100));
   const pan = Math.max(0, Math.min(127, raw[partOff + 8] || 64));
@@ -776,13 +788,32 @@ function decodeShortPart(
  *   Offset 12    : roll-type (init=0x00)
  *   Offset 15    : swing (init=0x3c)
  */
+/**
+ * Dekodiert die Pattern-Länge (patternLength = Length_1..Length_8) aus dem
+ * gepackten Byte 11 des ESX-1-Pattern-Blocks. Rein + testbar.
+ *
+ * Verifiziert gegen open-electribe-editor v1.2.0 (EsxUtil / esx.ecore:
+ * `PatternLength` EEnum-Literale Length_1..Length_8, gespeichert als 0..7) UND
+ * gegen reale .esx-Dateien (Byte 11 ∈ {0x00 → Length_1, 0x07 → Length_8}).
+ *
+ * Die ESX-1 speichert 16 Trigger-Steps pro Drum-Part; `patternLength` ist ein
+ * Wiederhol-/Längen-Multiplikator → effektive Länge = patternLength × 16.
+ */
+export function decodeEsxPatternLength(byte11: number): {
+  length: number;
+  effectiveSteps: number;
+} {
+  const length = (byte11 & 0x07) + 1; // low 3 bits = Length_1..Length_8 index
+  return { length, effectiveSteps: length * ESX1_DEFAULT_STEPS };
+}
+
 export function parseEsxPattern(
   raw: Uint8Array,
-  patternIndex: number,
+  patternIndex: number
 ): EsxPattern | null {
   if (raw.length !== ESX1_CHUNKSIZE_PATTERN) {
     throw new EsxParseError(
-      `parseEsxPattern: erwarte ${ESX1_CHUNKSIZE_PATTERN} bytes, bekam ${raw.length}`,
+      `parseEsxPattern: erwarte ${ESX1_CHUNKSIZE_PATTERN} bytes, bekam ${raw.length}`
     );
   }
   if (isEmptyEsxPattern(raw)) return null;
@@ -800,8 +831,15 @@ export function parseEsxPattern(
   // Wir klamern auf 1..64 als Hardware-plausibles Maximum.
   const stepIndicator = raw[13];
   let lengthSteps = (stepIndicator & 0x7f) + 1;
-  if (!Number.isFinite(lengthSteps) || lengthSteps < 1) lengthSteps = ESX1_DEFAULT_STEPS;
+  if (!Number.isFinite(lengthSteps) || lengthSteps < 1)
+    lengthSteps = ESX1_DEFAULT_STEPS;
   if (lengthSteps > 64) lengthSteps = ESX1_DEFAULT_STEPS;
+
+  // Pattern-Länge (Wiederhol-Multiplikator) aus Byte 11 — verifiziert gegen
+  // open-electribe-editor. effectiveSteps = patternLength × 16 (16..128).
+  const { length: patternLength, effectiveSteps } = decodeEsxPatternLength(
+    raw[11]
+  );
 
   // Swing: byte 15, Best-Effort, geklemmt 0..100.
   let swing = raw[15] & 0x7f;
@@ -863,6 +901,8 @@ export function parseEsxPattern(
     name,
     bpm,
     lengthSteps,
+    patternLength,
+    effectiveSteps,
     swing,
     parts,
     raw,
@@ -875,19 +915,19 @@ function readPcmRange(
   relStart: number,
   relEnd: number,
   slotIndex: number,
-  channelLabel: string,
+  channelLabel: string
 ): Uint8Array {
   const absStart = ESX1_ADDR_SAMPLE_DATA + relStart;
   const absEnd = ESX1_ADDR_SAMPLE_DATA + relEnd;
   if (absStart > buf.length || absEnd > buf.length) {
     throw new EsxParseError(
-      `slot ${slotIndex} (${channelLabel}): PCM range 0x${absStart.toString(16)}..0x${absEnd.toString(16)} escapes file (size 0x${buf.length.toString(16)})`,
+      `slot ${slotIndex} (${channelLabel}): PCM range 0x${absStart.toString(16)}..0x${absEnd.toString(16)} escapes file (size 0x${buf.length.toString(16)})`
     );
   }
   const length = relEnd - relStart;
   if (length > MAX_BYTES_PER_SLOT) {
     throw new EsxParseError(
-      `slot ${slotIndex} (${channelLabel}): pcm length ${length} bytes exceeds per-slot cap ${MAX_BYTES_PER_SLOT}`,
+      `slot ${slotIndex} (${channelLabel}): pcm length ${length} bytes exceeds per-slot cap ${MAX_BYTES_PER_SLOT}`
     );
   }
   return buf.subarray(absStart, absEnd);
@@ -995,11 +1035,11 @@ export function isEmptyEsxSong(raw: Uint8Array): boolean {
 export function parseEsxSong(
   raw: Uint8Array,
   songIndex: number,
-  events: EsxSongEvent[] = [],
+  events: EsxSongEvent[] = []
 ): EsxSong | null {
   if (raw.length !== ESX1_CHUNKSIZE_SONG) {
     throw new EsxParseError(
-      `parseEsxSong: erwarte ${ESX1_CHUNKSIZE_SONG} bytes, bekam ${raw.length}`,
+      `parseEsxSong: erwarte ${ESX1_CHUNKSIZE_SONG} bytes, bekam ${raw.length}`
     );
   }
   if (isEmptyEsxSong(raw)) return null;
@@ -1042,7 +1082,7 @@ export function parseEsxSong(
  */
 export function parseEsxSongEvents(
   buf: Uint8Array,
-  numSongs: number = ESX1_NUM_SONGS,
+  numSongs: number = ESX1_NUM_SONGS
 ): { eventsPerSong: EsxSongEvent[][]; warnings: string[] } {
   const eventsPerSong: EsxSongEvent[][] = new Array(numSongs);
   for (let i = 0; i < numSongs; i++) eventsPerSong[i] = [];
@@ -1051,7 +1091,7 @@ export function parseEsxSongEvents(
   const start = ESX1_ADDR_SONG_EVENT_DATA;
   if (start >= buf.length) {
     warnings.push(
-      `song-event region missing: file ${buf.length} < expected start 0x${start.toString(16)}`,
+      `song-event region missing: file ${buf.length} < expected start 0x${start.toString(16)}`
     );
     return { eventsPerSong, warnings };
   }
@@ -1061,7 +1101,7 @@ export function parseEsxSongEvents(
   const end = Math.min(0x1b0000, buf.length);
   if (end <= start) {
     warnings.push(
-      `song-event region empty: start 0x${start.toString(16)} >= end 0x${end.toString(16)}`,
+      `song-event region empty: start 0x${start.toString(16)} >= end 0x${end.toString(16)}`
     );
     return { eventsPerSong, warnings };
   }
@@ -1069,7 +1109,7 @@ export function parseEsxSongEvents(
   const maxBytes = end - start;
   const maxFrames = Math.min(
     Math.floor(maxBytes / ESX1_CHUNKSIZE_SONG_EVENT),
-    ESX1_MAX_TOTAL_EVENTS,
+    ESX1_MAX_TOTAL_EVENTS
   );
 
   let currentSong = 0;
@@ -1078,7 +1118,11 @@ export function parseEsxSongEvents(
   // out of the loop and warn — defends against corrupted files that have
   // 200,000+ non-terminator frames.
   let iterationsSinceLastEnd = 0;
-  const dv = new DataView(buf.buffer, buf.byteOffset + start, maxFrames * ESX1_CHUNKSIZE_SONG_EVENT);
+  const dv = new DataView(
+    buf.buffer,
+    buf.byteOffset + start,
+    maxFrames * ESX1_CHUNKSIZE_SONG_EVENT
+  );
   for (let f = 0; f < maxFrames; f++) {
     const off = f * ESX1_CHUNKSIZE_SONG_EVENT;
     const time = dv.getUint16(off, false);
@@ -1091,7 +1135,13 @@ export function parseEsxSongEvents(
     // ESX-1 event-regions are typically 480KB+ and zero-padded after real events.
     // We stop reading at the first all-zero frame to avoid filling songs with
     // pseudo-events.
-    if (time === 0 && pattern === 0 && length === 0 && flags === 0 && data === 0) {
+    if (
+      time === 0 &&
+      pattern === 0 &&
+      length === 0 &&
+      flags === 0 &&
+      data === 0
+    ) {
       break;
     }
 
@@ -1119,7 +1169,7 @@ export function parseEsxSongEvents(
     if (iterationsSinceLastEnd > ESX1_MAX_ITERATIONS_NO_END) {
       if (currentSong > 0) {
         warnings.push(
-          `song-event stream exceeded ${ESX1_MAX_ITERATIONS_NO_END} events without end-marker; aborting parse at frame ${f}`,
+          `song-event stream exceeded ${ESX1_MAX_ITERATIONS_NO_END} events without end-marker; aborting parse at frame ${f}`
         );
       }
       break;
@@ -1152,9 +1202,10 @@ export function parseEsxSongEvents(
  *
  * @returns Tuple [songs, warnings].
  */
-export function parseEsxSongs(
-  buf: Uint8Array,
-): { songs: EsxSong[]; warnings: string[] } {
+export function parseEsxSongs(buf: Uint8Array): {
+  songs: EsxSong[];
+  warnings: string[];
+} {
   const warnings: string[] = [];
   const songs: EsxSong[] = [];
 
@@ -1162,13 +1213,13 @@ export function parseEsxSongs(
   const songsEnd = songsStart + ESX1_NUM_SONGS * ESX1_CHUNKSIZE_SONG;
   if (songsStart >= buf.length) {
     warnings.push(
-      `song area missing: file ${buf.length} < expected start 0x${songsStart.toString(16)}`,
+      `song area missing: file ${buf.length} < expected start 0x${songsStart.toString(16)}`
     );
     return { songs, warnings };
   }
   if (songsEnd > buf.length) {
     warnings.push(
-      `song area truncated: file ${buf.length} < required end ${songsEnd}`,
+      `song area truncated: file ${buf.length} < required end ${songsEnd}`
     );
   }
 
@@ -1206,22 +1257,19 @@ export function parseEsxSongs(
  */
 export function parseEsxBank(
   input: ArrayBuffer | Uint8Array,
-  source = "<bytes>",
+  source = "<bytes>"
 ): EsxBank {
-  const buf =
-    input instanceof Uint8Array
-      ? input
-      : new Uint8Array(input);
+  const buf = input instanceof Uint8Array ? input : new Uint8Array(input);
 
   // ── 1. Size-Checks ────────────────────────────────────────────────────────
   if (buf.length < ESX1_SIZE_FILE_MIN) {
     throw new EsxParseError(
-      `file too small to be a valid .esx: ${buf.length} bytes (need >= ${ESX1_SIZE_FILE_MIN})`,
+      `file too small to be a valid .esx: ${buf.length} bytes (need >= ${ESX1_SIZE_FILE_MIN})`
     );
   }
   if (buf.length > ESX_FILE_MAX_BYTES) {
     throw new EsxParseError(
-      `file size ${buf.length} exceeds max ${ESX_FILE_MAX_BYTES}`,
+      `file size ${buf.length} exceeds max ${ESX_FILE_MAX_BYTES}`
     );
   }
 
@@ -1234,10 +1282,10 @@ export function parseEsxBank(
   const sig = safeSlice(buf, 0, 4);
   if (!bytesEqual(sig, ESX1_SIGNATURE)) {
     const sigHex = Array.from(sig)
-      .map((b) => b.toString(16).padStart(2, "0"))
+      .map(b => b.toString(16).padStart(2, "0"))
       .join(" ");
     const sigAscii = Array.from(sig)
-      .map((b) => (b >= 0x20 && b <= 0x7e ? String.fromCharCode(b) : "?"))
+      .map(b => (b >= 0x20 && b <= 0x7e ? String.fromCharCode(b) : "?"))
       .join("");
     return {
       source,
@@ -1255,7 +1303,7 @@ export function parseEsxBank(
   const submagic = safeSlice(buf, ESX1_SUBMAGIC_OFFSET, 4);
   if (!bytesEqual(submagic, ESX1_SUBMAGIC)) {
     const subHex = Array.from(submagic)
-      .map((b) => b.toString(16).padStart(2, "0"))
+      .map(b => b.toString(16).padStart(2, "0"))
       .join(" ");
     return {
       source,
@@ -1274,13 +1322,13 @@ export function parseEsxBank(
   // ── 3. Second magic at 0x001B0000 ─────────────────────────────────────────
   if (buf.length < ESX1_ADDR_VALID_CHECK_2 + 4) {
     throw new EsxParseError(
-      `file size ${buf.length} < expected sample-directory offset 0x${ESX1_ADDR_VALID_CHECK_2.toString(16)}`,
+      `file size ${buf.length} < expected sample-directory offset 0x${ESX1_ADDR_VALID_CHECK_2.toString(16)}`
     );
   }
   const check2 = safeSlice(buf, ESX1_ADDR_VALID_CHECK_2, 4);
   if (!bytesEqual(check2, ESX1_SIGNATURE)) {
     throw new EsxParseError(
-      `Invalid second magic at offset 0x${ESX1_ADDR_VALID_CHECK_2.toString(16)}: expected 'KORG'`,
+      `Invalid second magic at offset 0x${ESX1_ADDR_VALID_CHECK_2.toString(16)}: expected 'KORG'`
     );
   }
 
@@ -1288,7 +1336,7 @@ export function parseEsxBank(
   const countDv = new DataView(
     buf.buffer,
     buf.byteOffset + ESX1_ADDR_NUM_MONO_SAMPLES,
-    12,
+    12
   );
   const numMono = countDv.getUint32(0, false);
   const numStereo = countDv.getUint32(4, false);
@@ -1296,7 +1344,7 @@ export function parseEsxBank(
 
   if (numMono > ESX1_MAX_MONO_SLOTS || numStereo > ESX1_MAX_STEREO_SLOTS) {
     throw new EsxParseError(
-      `declared sample counts out of range: mono=${numMono} (cap ${ESX1_MAX_MONO_SLOTS}), stereo=${numStereo} (cap ${ESX1_MAX_STEREO_SLOTS})`,
+      `declared sample counts out of range: mono=${numMono} (cap ${ESX1_MAX_MONO_SLOTS}), stereo=${numStereo} (cap ${ESX1_MAX_STEREO_SLOTS})`
     );
   }
 
@@ -1324,7 +1372,7 @@ export function parseEsxBank(
       }
       if (f.off1End <= f.off1Start) {
         warnings.push(
-          `mono slot ${i}: offsetEnd (${f.off1End}) <= offsetStart (${f.off1Start}); skipped`,
+          `mono slot ${i}: offsetEnd (${f.off1End}) <= offsetStart (${f.off1Start}); skipped`
         );
         continue;
       }
@@ -1338,12 +1386,12 @@ export function parseEsxBank(
       // cap and soft-limit, emit a single warning per parse + continue.
       if (totalPcm > ESX1_SAMPLE_MEM_SOFT_LIMIT_BYTES) {
         throw new EsxParseError(
-          `cumulative PCM size ${totalPcm} exceeds ESX-1 soft-limit ${ESX1_SAMPLE_MEM_SOFT_LIMIT_BYTES}`,
+          `cumulative PCM size ${totalPcm} exceeds ESX-1 soft-limit ${ESX1_SAMPLE_MEM_SOFT_LIMIT_BYTES}`
         );
       }
       if (totalPcm > ESX1_MAX_SAMPLE_MEM_IN_BYTES && !pcmCapWarned) {
         warnings.push(
-          `cumulative PCM size ${totalPcm} exceeds ESX-1 hardware cap ${ESX1_MAX_SAMPLE_MEM_IN_BYTES} (within ${ESX1_SAMPLE_MEM_SOFT_LIMIT_BYTES} soft-limit, continuing)`,
+          `cumulative PCM size ${totalPcm} exceeds ESX-1 hardware cap ${ESX1_MAX_SAMPLE_MEM_IN_BYTES} (within ${ESX1_SAMPLE_MEM_SOFT_LIMIT_BYTES} soft-limit, continuing)`
         );
         pcmCapWarned = true;
       }
@@ -1361,7 +1409,10 @@ export function parseEsxBank(
         level: Math.max(0, Math.min(127, f.playLevel || 100)),
       });
     } catch (err) {
-      if (err instanceof EsxParseError && err.message.includes("escapes file")) {
+      if (
+        err instanceof EsxParseError &&
+        err.message.includes("escapes file")
+      ) {
         // Defensive: hostile slot, skip + warn (other slots may still be valid)
         warnings.push(`mono slot ${i}: ${err.message}`);
         continue;
@@ -1374,8 +1425,13 @@ export function parseEsxBank(
   const stereoTableStart = ESX1_ADDR_SAMPLE_HEADER_STEREO;
   for (let i = 0; i < ESX1_MAX_STEREO_SLOTS; i++) {
     try {
-      const headerOff = stereoTableStart + i * ESX1_CHUNKSIZE_SAMPLE_HEADER_STEREO;
-      const body = safeSlice(buf, headerOff, ESX1_CHUNKSIZE_SAMPLE_HEADER_STEREO);
+      const headerOff =
+        stereoTableStart + i * ESX1_CHUNKSIZE_SAMPLE_HEADER_STEREO;
+      const body = safeSlice(
+        buf,
+        headerOff,
+        ESX1_CHUNKSIZE_SAMPLE_HEADER_STEREO
+      );
       const name = decodeEsxName(body.subarray(0, 8));
       const f = readStereoHeaderFields(body);
       if (
@@ -1388,20 +1444,30 @@ export function parseEsxBank(
       }
       if (f.off1End <= f.off1Start || f.off2End <= f.off2Start) {
         warnings.push(
-          `stereo slot ${i}: zero-or-inverted offset range; skipped`,
+          `stereo slot ${i}: zero-or-inverted offset range; skipped`
         );
         continue;
       }
       if (f.off1End - f.off1Start !== f.off2End - f.off2Start) {
-        warnings.push(
-          `stereo slot ${i}: channel lengths differ; skipped`,
-        );
+        warnings.push(`stereo slot ${i}: channel lengths differ; skipped`);
         continue;
       }
 
       const slotIndex = ESX1_MAX_MONO_SLOTS + i;
-      const leftBytes = readPcmRange(buf, f.off1Start, f.off1End, slotIndex, "stereo-L");
-      const rightBytes = readPcmRange(buf, f.off2Start, f.off2End, slotIndex, "stereo-R");
+      const leftBytes = readPcmRange(
+        buf,
+        f.off1Start,
+        f.off1End,
+        slotIndex,
+        "stereo-L"
+      );
+      const rightBytes = readPcmRange(
+        buf,
+        f.off2Start,
+        f.off2End,
+        slotIndex,
+        "stereo-R"
+      );
       const left = be16PcmToFloat32(leftBytes);
       const right = be16PcmToFloat32(rightBytes);
       const frames = Math.min(left.length, right.length);
@@ -1414,12 +1480,12 @@ export function parseEsxBank(
       // v3.90.0: Same soft-limit/warning logic as mono path.
       if (totalPcm > ESX1_SAMPLE_MEM_SOFT_LIMIT_BYTES) {
         throw new EsxParseError(
-          `cumulative PCM size ${totalPcm} exceeds ESX-1 soft-limit ${ESX1_SAMPLE_MEM_SOFT_LIMIT_BYTES}`,
+          `cumulative PCM size ${totalPcm} exceeds ESX-1 soft-limit ${ESX1_SAMPLE_MEM_SOFT_LIMIT_BYTES}`
         );
       }
       if (totalPcm > ESX1_MAX_SAMPLE_MEM_IN_BYTES && !pcmCapWarned) {
         warnings.push(
-          `cumulative PCM size ${totalPcm} exceeds ESX-1 hardware cap ${ESX1_MAX_SAMPLE_MEM_IN_BYTES} (within ${ESX1_SAMPLE_MEM_SOFT_LIMIT_BYTES} soft-limit, continuing)`,
+          `cumulative PCM size ${totalPcm} exceeds ESX-1 hardware cap ${ESX1_MAX_SAMPLE_MEM_IN_BYTES} (within ${ESX1_SAMPLE_MEM_SOFT_LIMIT_BYTES} soft-limit, continuing)`
         );
         pcmCapWarned = true;
       }
@@ -1436,7 +1502,10 @@ export function parseEsxBank(
         level: Math.max(0, Math.min(127, f.playLevel || 100)),
       });
     } catch (err) {
-      if (err instanceof EsxParseError && err.message.includes("escapes file")) {
+      if (
+        err instanceof EsxParseError &&
+        err.message.includes("escapes file")
+      ) {
         warnings.push(`stereo slot ${i}: ${err.message}`);
         continue;
       }
@@ -1455,7 +1524,7 @@ export function parseEsxBank(
   const haveAllPatterns = patternsEnd <= buf.length;
   if (!haveAllPatterns) {
     warnings.push(
-      `pattern area truncated: file ${buf.length} < required end ${patternsEnd}`,
+      `pattern area truncated: file ${buf.length} < required end ${patternsEnd}`
     );
   }
   const usablePatternsEnd = Math.min(patternsEnd, buf.length);
@@ -1495,6 +1564,12 @@ export function isEsxBuffer(input: ArrayBuffer | Uint8Array): boolean {
   const buf = input instanceof Uint8Array ? input : new Uint8Array(input);
   if (buf.length < ESX1_SUBMAGIC_OFFSET + 4) return false;
   if (!bytesEqual(buf.subarray(0, 4), ESX1_SIGNATURE)) return false;
-  if (!bytesEqual(buf.subarray(ESX1_SUBMAGIC_OFFSET, ESX1_SUBMAGIC_OFFSET + 4), ESX1_SUBMAGIC)) return false;
+  if (
+    !bytesEqual(
+      buf.subarray(ESX1_SUBMAGIC_OFFSET, ESX1_SUBMAGIC_OFFSET + 4),
+      ESX1_SUBMAGIC
+    )
+  )
+    return false;
   return true;
 }
