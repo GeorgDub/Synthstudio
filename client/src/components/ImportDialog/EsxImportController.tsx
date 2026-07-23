@@ -182,12 +182,49 @@ export function EsxImportController({
     }
   };
 
+  const handleExportSamples = async () => {
+    setBusy(true);
+    try {
+      const { bundleEsxSamplesToZip } =
+        await import("@/utils/korg/esxSampleExport");
+      const res = await bundleEsxSamplesToZip(bank);
+      if (res.sampleCount === 0) {
+        onToast?.("Keine Samples in dieser Bank zum Exportieren.", "error");
+        return;
+      }
+      const copy = new Uint8Array(res.zip.byteLength);
+      copy.set(new Uint8Array(res.zip));
+      const url = URL.createObjectURL(
+        new Blob([copy.buffer], { type: "application/zip" })
+      );
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = res.fileName;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+      onToast?.(
+        `${res.sampleCount} Sample(s) als WAV exportiert → ${res.fileName}`,
+        "success"
+      );
+    } catch (err) {
+      onToast?.(
+        `Sample-Export fehlgeschlagen: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+        "error"
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <EsxImportDialog
       preview={preview}
       busy={busy}
       onConvert={handleConvert}
       onLoadToSequencer={handleLoad}
+      onExportSamples={handleExportSamples}
       onCancel={onClose}
     />
   );

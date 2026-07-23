@@ -27,6 +27,8 @@ export interface EsxImportDialogProps {
   onConvert: (strategy: StepReductionStrategy) => void;
   /** Lädt Patterns + Samples in den Sequenzer. */
   onLoadToSequencer: (strategy: StepReductionStrategy) => void;
+  /** Exportiert alle Bank-Samples als WAV-ZIP. */
+  onExportSamples?: () => void;
   onCancel: () => void;
   /** Läuft gerade eine Aktion? (deaktiviert die Buttons) */
   busy?: boolean;
@@ -36,6 +38,7 @@ export function EsxImportDialog({
   preview,
   onConvert,
   onLoadToSequencer,
+  onExportSamples,
   onCancel,
   busy = false,
 }: EsxImportDialogProps) {
@@ -156,6 +159,19 @@ export function EsxImportDialog({
           >
             Abbrechen
           </button>
+          {onExportSamples && (
+            <button
+              onClick={onExportSamples}
+              disabled={
+                busy || preview.monoSamples + preview.stereoSamples === 0
+              }
+              className="px-3 py-1.5 text-xs rounded bg-bg-elevated text-text-muted hover:text-text-primary transition-colors disabled:opacity-40"
+              data-testid="esx-import-export-samples"
+              title="Alle Bank-Samples als WAV-ZIP exportieren"
+            >
+              🎵 Samples als WAV
+            </button>
+          )}
           <div className="flex-1" />
           <button
             onClick={() => onConvert(strategy)}
