@@ -2082,9 +2082,12 @@ function DrumMachineInner({
         });
         return;
       }
+      const syncSuffix = res.tempoSynced
+        ? ` · Tempo-Sync an (${Math.round(res.detectedBpm ?? 0)} BPM → Projekt)`
+        : "";
       toast(
         mode === "loop"
-          ? `Loop-Sampler „${file.name}" hinzugefügt (läuft pattern-unabhängig)`
+          ? `Loop-Sampler „${file.name}" hinzugefügt (läuft pattern-unabhängig)${syncSuffix}`
           : `One-Shot „${file.name}" hinzugefügt`,
         { kind: "success", duration: 4000 }
       );

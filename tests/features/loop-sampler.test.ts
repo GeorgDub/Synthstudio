@@ -2,7 +2,9 @@ import { describe, it, expect } from "vitest";
 import {
   loopSamplerStemName,
   buildLoopSamplerTrackData,
+  warpFieldsForDetectedBpm,
   LOOP_SAMPLER_MODES,
+  LOOP_SYNC_CONFIDENCE_THRESHOLD,
 } from "../../client/src/utils/loopSampler";
 
 describe("loopSamplerStemName", () => {
@@ -69,5 +71,46 @@ describe("buildLoopSamplerTrackData", () => {
 
   it("exposes exactly the two supported modes", () => {
     expect(LOOP_SAMPLER_MODES).toEqual(["loop", "oneshot"]);
+  });
+});
+
+describe("warpFieldsForDetectedBpm (tempo-sync for melody loops)", () => {
+  it("loop + confident BPM → timestretch to that originalBpm", () => {
+    const w = warpFieldsForDetectedBpm("loop", { bpm: 128, confidence: 0.9 });
+    expect(w).toEqual({ originalBpm: 128, syncMode: "timestretch" });
+  });
+
+  it("one-shots are never warped (keep natural tempo/pitch)", () => {
+    expect(
+      warpFieldsForDetectedBpm("oneshot", { bpm: 128, confidence: 0.99 })
+    ).toBeNull();
+  });
+
+  it("low confidence → no warp (stays natural tempo)", () => {
+    expect(
+      warpFieldsForDetectedBpm("loop", {
+        bpm: 128,
+        confidence: LOOP_SYNC_CONFIDENCE_THRESHOLD - 0.01,
+      })
+    ).toBeNull();
+  });
+
+  it("threshold is inclusive", () => {
+    expect(
+      warpFieldsForDetectedBpm("loop", {
+        bpm: 90,
+        confidence: LOOP_SYNC_CONFIDENCE_THRESHOLD,
+      })
+    ).toEqual({ originalBpm: 90, syncMode: "timestretch" });
+  });
+
+  it("null / invalid BPM → no warp", () => {
+    expect(warpFieldsForDetectedBpm("loop", null)).toBeNull();
+    expect(
+      warpFieldsForDetectedBpm("loop", { bpm: 0, confidence: 1 })
+    ).toBeNull();
+    expect(
+      warpFieldsForDetectedBpm("loop", { bpm: NaN, confidence: 1 })
+    ).toBeNull();
   });
 });

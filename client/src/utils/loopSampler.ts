@@ -46,8 +46,36 @@ export function buildLoopSamplerTrackData(opts: {
     muted: false,
     soloed: false,
     sends: { reverb: 0, delay: 0 },
+    // Start "free"; der Ingest schaltet nach erfolgreicher BPM-Erkennung auf
+    // timestretch um (siehe warpFieldsForDetectedBpm). Ohne bekanntes
+    // originalBpm wäre timestretch nur unnötige Worklet-Last bei Rate 1.
     syncMode: "free",
     loop: looping,
     loopEnabled: looping,
   };
+}
+
+/** Mindest-Confidence, ab der ein erkanntes BPM den Loop automatisch warpt. */
+export const LOOP_SYNC_CONFIDENCE_THRESHOLD = 0.5;
+
+/**
+ * Bestimmt die Tempo-Sync-Felder für einen frisch erkannten BPM-Wert. Rein +
+ * testbar. Nur Loop-Modus wird gewarpt (One-Shots/Vocals sollen ihr Original-
+ * Tempo behalten). Bei zu geringer Confidence oder ungültigem BPM → null (der
+ * Track bleibt „free", spielt also im Naturtempo — kein Artefakt).
+ *
+ * `timestretch` = pitch-erhaltend: die Melodie folgt dem Projekt-BPM, ohne die
+ * Tonhöhe zu verziehen (`_calcAudioTrackPlaybackRate` nutzt projectBpm/originalBpm).
+ */
+export function warpFieldsForDetectedBpm(
+  mode: LoopSamplerMode,
+  detected: { bpm: number; confidence: number } | null
+): {
+  originalBpm: number;
+  syncMode: NonNullable<AudioTrackChannelData["syncMode"]>;
+} | null {
+  if (mode !== "loop" || !detected) return null;
+  if (!Number.isFinite(detected.bpm) || detected.bpm <= 0) return null;
+  if (detected.confidence < LOOP_SYNC_CONFIDENCE_THRESHOLD) return null;
+  return { originalBpm: detected.bpm, syncMode: "timestretch" };
 }
