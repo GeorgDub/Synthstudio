@@ -188,7 +188,7 @@ export const MAX_EMBEDDED_DATA_BYTES = 50 * 1024 * 1024;
 // ─── Typen ───────────────────────────────────────────────────────────────────
 
 export interface SynthProject {
-  version:     string;
+  version: string;
   /**
    * Stabile UUID v4 — einmal bei `newProject` generiert, immutable für
    * die Lebenszeit des Projekts (auch bei Rename). Wird von AutoSave
@@ -200,12 +200,12 @@ export interface SynthProject {
    * (Auto-Upgrade). Das Feld ist im Type nicht optional, weil
    * parseProject die Backward-Compat-Lücke beim Load schließt.
    */
-  projectId:   string;
+  projectId: string;
   projectName: string;
-  savedAt:     string;         // ISO-Timestamp
-  bpm:         number;
-  samples:     Sample[];
-  patterns:    PatternData[];
+  savedAt: string; // ISO-Timestamp
+  bpm: number;
+  samples: Sample[];
+  patterns: PatternData[];
   activePatternId: string;
   song: {
     slots: SongSlot[];
@@ -234,7 +234,7 @@ export interface SynthProject {
   };
   automation: {
     lanes: AutomationLane[];
-    stepCount: 16 | 32 | 64;
+    stepCount: 16 | 32 | 64 | 128;
   };
   /**
    * Externe Audio-Track-Channels (Vocals, Songs zum Remixen).
@@ -454,12 +454,15 @@ function isValidAudioTrackEntry(t: unknown): t is AudioTrackChannelData {
   }
   // v3.52.0 (v1.22): stretchRatio/pitchLocked/bpmHint sind alle optional.
   // Bei falschem Typ → Track verwerfen (defensive).
-  if (o.stretchRatio !== undefined && typeof o.stretchRatio !== "number") return false;
-  if (o.pitchLocked !== undefined && typeof o.pitchLocked !== "boolean") return false;
+  if (o.stretchRatio !== undefined && typeof o.stretchRatio !== "number")
+    return false;
+  if (o.pitchLocked !== undefined && typeof o.pitchLocked !== "boolean")
+    return false;
   if (o.bpmHint !== undefined && typeof o.bpmHint !== "number") return false;
   // v3.70.0 (v1.26): loopEnabled + loopStartSample/loopEndSample. Alle 3
   // additiv-optional. Invalide Typen → Track verwerfen.
-  if (o.loopEnabled !== undefined && typeof o.loopEnabled !== "boolean") return false;
+  if (o.loopEnabled !== undefined && typeof o.loopEnabled !== "boolean")
+    return false;
   if (
     o.loopStartSample !== undefined &&
     o.loopStartSample !== null &&
@@ -475,7 +478,10 @@ function isValidAudioTrackEntry(t: unknown): t is AudioTrackChannelData {
     return false;
   }
   // v3.72.0 (v1.27): loopCrossfadeMs (optional, number). Invalider Typ → Track verwerfen.
-  if (o.loopCrossfadeMs !== undefined && typeof o.loopCrossfadeMs !== "number") {
+  if (
+    o.loopCrossfadeMs !== undefined &&
+    typeof o.loopCrossfadeMs !== "number"
+  ) {
     return false;
   }
   // TASK-268: fx (Insert-FX-Kette). Optional, fehlt bei alten Files. Nur ein
@@ -528,7 +534,7 @@ export function sanitizeSampleEmbeddedData(sample: unknown): unknown {
   }
   if (raw.length > MAX_EMBEDDED_DATA_BYTES) {
     console.warn(
-      `[Serializer] embeddedData exceeds MAX_EMBEDDED_DATA_BYTES (${raw.length} > ${MAX_EMBEDDED_DATA_BYTES}) — dropping field.`,
+      `[Serializer] embeddedData exceeds MAX_EMBEDDED_DATA_BYTES (${raw.length} > ${MAX_EMBEDDED_DATA_BYTES}) — dropping field.`
     );
     delete s.embeddedData;
     return sample;
@@ -581,15 +587,23 @@ function isValidMidiPartConfigEntry(x: unknown): x is MidiPartConfig {
   if (typeof o.outputId !== "string" || !o.outputId) return false;
   if (typeof o.channel !== "number") return false;
   if (typeof o.note !== "number") return false;
-  if (o.noteDurationMs !== undefined && typeof o.noteDurationMs !== "number") return false;
-  if (o.localSoundEnabled !== undefined && typeof o.localSoundEnabled !== "boolean") return false;
+  if (o.noteDurationMs !== undefined && typeof o.noteDurationMs !== "number")
+    return false;
+  if (
+    o.localSoundEnabled !== undefined &&
+    typeof o.localSoundEnabled !== "boolean"
+  )
+    return false;
   return true;
 }
 
-function isValidSerializedSlicePadSlot(x: unknown): x is SerializedSlicePadSlot {
+function isValidSerializedSlicePadSlot(
+  x: unknown
+): x is SerializedSlicePadSlot {
   if (!x || typeof x !== "object") return false;
   const o = x as Record<string, unknown>;
-  if (typeof o.index !== "number" || !Number.isInteger(o.index) || o.index < 0) return false;
+  if (typeof o.index !== "number" || !Number.isInteger(o.index) || o.index < 0)
+    return false;
   if (typeof o.sampleRate !== "number" || o.sampleRate <= 0) return false;
   if (typeof o.sampleName !== "string") return false;
   if (typeof o.sliceIndex !== "number") return false;
@@ -601,8 +615,10 @@ function isValidSerializedSlicePadSlot(x: unknown): x is SerializedSlicePadSlot 
 // ─── Serialisierung ───────────────────────────────────────────────────────────
 
 export function serializeProject(
-  data: Omit<SynthProject, "version" | "savedAt" | "projectId"> & { projectId?: string },
-  opts: SerializeProjectOptions = {},
+  data: Omit<SynthProject, "version" | "savedAt" | "projectId"> & {
+    projectId?: string;
+  },
+  opts: SerializeProjectOptions = {}
 ): SynthProject {
   const includeSliceBuffers = opts.includeSliceBuffers ?? true;
   // v3.58.0: projectId ist immer erforderlich im Output — falls der Caller
@@ -621,8 +637,8 @@ export function serializeProject(
   // sampleName etc. bleiben erhalten damit beim Reload zumindest die
   // Slot-Belegung-Info da ist (für UI-Recovery).
   if (!includeSliceBuffers && result.slicePads) {
-    result.slicePads = result.slicePads.map((slot) =>
-      slot === null ? null : { ...slot, frames: null },
+    result.slicePads = result.slicePads.map(slot =>
+      slot === null ? null : { ...slot, frames: null }
     );
   }
   return result;
@@ -783,7 +799,7 @@ export function parseProject(json: string): SynthProject {
     data.audioTracks = [];
   } else if (!Array.isArray(rawTracks)) {
     console.warn(
-      "[Serializer] audioTracks ist kein Array – defaulte auf leere Liste.",
+      "[Serializer] audioTracks ist kein Array – defaulte auf leere Liste."
     );
     data.audioTracks = [];
   } else {
@@ -792,7 +808,10 @@ export function parseProject(json: string): SynthProject {
       if (isValidAudioTrackEntry(t)) {
         filtered.push(t);
       } else {
-        console.warn("[Serializer] Audio-Track invalid – wird übersprungen.", t);
+        console.warn(
+          "[Serializer] Audio-Track invalid – wird übersprungen.",
+          t
+        );
       }
     }
     data.audioTracks = filtered;
@@ -827,7 +846,9 @@ export function parseProject(json: string): SynthProject {
   } else if (rawLive === null || !Array.isArray(rawLive)) {
     delete (data as { liveInputs?: unknown }).liveInputs;
   } else {
-    const filtered = rawLive.filter(isValidLiveInputChannel) as LiveInputChannelData[];
+    const filtered = rawLive.filter(
+      isValidLiveInputChannel
+    ) as LiveInputChannelData[];
     data.liveInputs = filtered;
   }
 
@@ -838,20 +859,32 @@ export function parseProject(json: string): SynthProject {
   const rawMno = (data as { midiNoteOut?: unknown }).midiNoteOut;
   if (rawMno === undefined) {
     // nothing — bleibt undefined
-  } else if (rawMno === null || typeof rawMno !== "object" || Array.isArray(rawMno)) {
+  } else if (
+    rawMno === null ||
+    typeof rawMno !== "object" ||
+    Array.isArray(rawMno)
+  ) {
     delete (data as { midiNoteOut?: unknown }).midiNoteOut;
   } else {
     const mno = rawMno as { enabled?: unknown; configs?: unknown };
     const enabled = mno.enabled === true;
     const outConfigs: Record<string, MidiPartConfig> = {};
-    if (mno.configs && typeof mno.configs === "object" && !Array.isArray(mno.configs)) {
-      for (const [partId, cfg] of Object.entries(mno.configs as Record<string, unknown>)) {
+    if (
+      mno.configs &&
+      typeof mno.configs === "object" &&
+      !Array.isArray(mno.configs)
+    ) {
+      for (const [partId, cfg] of Object.entries(
+        mno.configs as Record<string, unknown>
+      )) {
         if (!isValidMidiPartConfigEntry(cfg)) continue;
         outConfigs[partId] = {
           outputId: cfg.outputId,
           channel: clampMidiChannel(cfg.channel),
           note: clampMidiNote(cfg.note),
-          noteDurationMs: clampNoteDuration(cfg.noteDurationMs ?? DEFAULT_NOTE_DURATION_MS),
+          noteDurationMs: clampNoteDuration(
+            cfg.noteDurationMs ?? DEFAULT_NOTE_DURATION_MS
+          ),
           localSoundEnabled: cfg.localSoundEnabled !== false,
         };
       }
@@ -869,7 +902,7 @@ export function parseProject(json: string): SynthProject {
   } else if (rawSlices === null || !Array.isArray(rawSlices)) {
     delete (data as { slicePads?: unknown }).slicePads;
   } else {
-    const filtered: SerializedSlicePads = rawSlices.map((slot) => {
+    const filtered: SerializedSlicePads = rawSlices.map(slot => {
       if (slot === null || slot === undefined) return null;
       if (!isValidSerializedSlicePadSlot(slot)) return null;
       return {
@@ -891,9 +924,16 @@ export function parseProject(json: string): SynthProject {
   // der MixerStore-Loader defaultet beim Re-Load auf {}.
   if (data.mixer && typeof data.mixer === "object") {
     const rawSlots = (data.mixer as { pluginSlots?: unknown }).pluginSlots;
-    if (rawSlots !== undefined && rawSlots !== null && typeof rawSlots === "object" && !Array.isArray(rawSlots)) {
+    if (
+      rawSlots !== undefined &&
+      rawSlots !== null &&
+      typeof rawSlots === "object" &&
+      !Array.isArray(rawSlots)
+    ) {
       const migrated: Record<string, unknown[]> = {};
-      for (const [partId, value] of Object.entries(rawSlots as Record<string, unknown>)) {
+      for (const [partId, value] of Object.entries(
+        rawSlots as Record<string, unknown>
+      )) {
         if (Array.isArray(value)) {
           migrated[partId] = value.slice(0, 4);
         } else if (value && typeof value === "object") {
@@ -918,7 +958,7 @@ export function parseProject(json: string): SynthProject {
     data.scripts = [];
   } else if (!Array.isArray(rawScripts)) {
     console.warn(
-      "[Serializer] scripts ist kein Array – defaulte auf leere Liste.",
+      "[Serializer] scripts ist kein Array – defaulte auf leere Liste."
     );
     data.scripts = [];
   } else {
@@ -946,7 +986,9 @@ export function parseProject(json: string): SynthProject {
   } else if (rawMacros === null || !Array.isArray(rawMacros)) {
     delete (data as { macros?: unknown }).macros;
   } else {
-    const filtered = (rawMacros as unknown[]).filter(isValidQuickActionMacro) as QuickActionMacro[];
+    const filtered = (rawMacros as unknown[]).filter(
+      isValidQuickActionMacro
+    ) as QuickActionMacro[];
     data.macros = filtered;
   }
 
@@ -958,7 +1000,11 @@ export function parseProject(json: string): SynthProject {
   const rawMasterFx = (data as { masterFx?: unknown }).masterFx;
   if (rawMasterFx === undefined) {
     // nothing — bleibt undefined
-  } else if (rawMasterFx === null || typeof rawMasterFx !== "object" || Array.isArray(rawMasterFx)) {
+  } else if (
+    rawMasterFx === null ||
+    typeof rawMasterFx !== "object" ||
+    Array.isArray(rawMasterFx)
+  ) {
     delete (data as { masterFx?: unknown }).masterFx;
   } else {
     data.masterFx = sanitizeMasterFx(rawMasterFx);
@@ -1026,9 +1072,9 @@ export function parseProject(json: string): SynthProject {
 export function downloadProjectFile(project: SynthProject): void {
   const json = toJson(project);
   const blob = new Blob([json], { type: "application/json" });
-  const url  = URL.createObjectURL(blob);
-  const a    = document.createElement("a");
-  a.href     = url;
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
   a.download = `${project.projectName.replace(/[^\w\s-]/g, "")}.synth`;
   document.body.appendChild(a);
   a.click();
@@ -1039,13 +1085,16 @@ export function downloadProjectFile(project: SynthProject): void {
 // ─── Browser: Datei öffnen ────────────────────────────────────────────────────
 
 export function openProjectFilePicker(): Promise<SynthProject | null> {
-  return new Promise((resolve) => {
+  return new Promise(resolve => {
     const input = document.createElement("input");
-    input.type  = "file";
+    input.type = "file";
     input.accept = ".synth,.json";
     input.onchange = async () => {
       const file = input.files?.[0];
-      if (!file) { resolve(null); return; }
+      if (!file) {
+        resolve(null);
+        return;
+      }
       try {
         const text = await file.text();
         resolve(parseProject(text));

@@ -3611,7 +3611,11 @@ export default function App() {
       }
       const partIds = pattern.parts.map(p => p.id);
       const auto = automationRef.current;
-      const targetStepCount: 16 | 32 | 64 = pattern.stepCount;
+      // Electribe-Motion ist ein Hardware-Pfad (max 64 Steps). Falls das
+      // Ziel-Pattern intern auf 128 steht (v3.285), auf 64 clampen — Motion-
+      // Import passiert ohnehin nur für Electribe-Patterns (≤64).
+      const targetStepCount: 16 | 32 | 64 =
+        pattern.stepCount === 128 ? 64 : pattern.stepCount;
 
       let added = 0;
       let skipped = 0;

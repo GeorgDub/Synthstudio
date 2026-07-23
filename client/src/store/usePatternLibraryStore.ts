@@ -18,7 +18,7 @@ export interface PatternLibraryEntry {
   genre: string;
   tags: string[];
   bpm: number;
-  stepCount: 16 | 32 | 64;
+  stepCount: 16 | 32 | 64 | 128;
   /** Serialisiertes PatternData */
   patternJson: string;
   createdAt: number;
@@ -28,22 +28,32 @@ export interface PatternLibraryEntry {
 
 type Listener = () => void;
 
-function makeId() { return `lib-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`; }
+function makeId() {
+  return `lib-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+}
 
 function load(): PatternLibraryEntry[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     return raw ? JSON.parse(raw) : [];
-  } catch { return []; }
+  } catch {
+    return [];
+  }
 }
 
 function persist(entries: PatternLibraryEntry[]) {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(entries)); } catch { /* ignore */ }
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
+  } catch {
+    /* ignore */
+  }
 }
 
 let _entries: PatternLibraryEntry[] = load();
 const _listeners = new Set<Listener>();
-function notify() { _listeners.forEach(l => l()); }
+function notify() {
+  _listeners.forEach(l => l());
+}
 
 export function savePatternToLibrary(
   pattern: PatternData,
@@ -73,8 +83,11 @@ export function deleteLibraryEntry(id: string): void {
   notify();
 }
 
-export function updateLibraryEntry(id: string, changes: Partial<PatternLibraryEntry>): void {
-  _entries = _entries.map(e => e.id === id ? { ...e, ...changes } : e);
+export function updateLibraryEntry(
+  id: string,
+  changes: Partial<PatternLibraryEntry>
+): void {
+  _entries = _entries.map(e => (e.id === id ? { ...e, ...changes } : e));
   persist(_entries);
   notify();
 }
@@ -83,10 +96,15 @@ export function getLibraryEntry(id: string): PatternLibraryEntry | undefined {
   return _entries.find(e => e.id === id);
 }
 
-export function searchLibrary(query: string, genre?: string): PatternLibraryEntry[] {
+export function searchLibrary(
+  query: string,
+  genre?: string
+): PatternLibraryEntry[] {
   const q = query.toLowerCase();
   return _entries.filter(e => {
-    const matchQuery = !q || e.name.toLowerCase().includes(q) ||
+    const matchQuery =
+      !q ||
+      e.name.toLowerCase().includes(q) ||
       e.tags.some(t => t.toLowerCase().includes(q)) ||
       e.genre.toLowerCase().includes(q);
     const matchGenre = !genre || e.genre === genre;
@@ -102,7 +120,10 @@ export function importLibrary(json: string, merge = true): void {
   const data = JSON.parse(json);
   const imported: PatternLibraryEntry[] = data.entries ?? [];
   _entries = merge
-    ? [...imported.filter(e => !_entries.find(x => x.id === e.id)), ..._entries].slice(0, MAX_ENTRIES)
+    ? [
+        ...imported.filter(e => !_entries.find(x => x.id === e.id)),
+        ..._entries,
+      ].slice(0, MAX_ENTRIES)
     : imported.slice(0, MAX_ENTRIES);
   persist(_entries);
   notify();
@@ -112,7 +133,9 @@ export function usePatternLibraryStore(): { entries: PatternLibraryEntry[] } {
   const [, rerender] = useReducer((x: number) => x + 1, 0);
   useEffect(() => {
     _listeners.add(rerender);
-    return () => { _listeners.delete(rerender); };
+    return () => {
+      _listeners.delete(rerender);
+    };
   }, []);
   return { entries: _entries };
 }

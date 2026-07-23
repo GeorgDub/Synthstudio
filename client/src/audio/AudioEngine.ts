@@ -524,10 +524,18 @@ export interface FollowAction {
   barsBeforeSwitch: number;
 }
 
+/**
+ * Synthstudio-INTERNES Pattern-Step-Modell. 128 ist ein reines
+ * Sequencer/UI-Feature (v3.285) — KEIN Hardware-Format-Limit. Konverter zu
+ * echten Korg-Formaten (.e2spat / E2-SysEx / ESX) clampen weiterhin auf ≤64,
+ * dem Hardware-Maximum. Nutze diesen Alias nur für das interne App-Modell.
+ */
+export type StepCount = 16 | 32 | 64 | 128;
+
 export interface PatternData {
   id: string;
   name: string;
-  stepCount: 16 | 32 | 64;
+  stepCount: StepCount;
   /** Standard-Step-Auflösung für alle Parts (kann pro Part überschrieben werden) */
   stepResolution: StepResolution;
   /** Eigenes BPM (null = globales BPM verwenden) */
@@ -1785,7 +1793,7 @@ class AudioEngineClass {
   get stepCount(): number {
     return this._steps;
   }
-  setSteps(steps: 16 | 32 | 64) {
+  setSteps(steps: StepCount) {
     this._steps = steps;
   }
   setStepResolution(res: StepResolution) {
@@ -1948,7 +1956,7 @@ class AudioEngineClass {
   smoothBpmTransition(
     targetBpm: number,
     bars: number,
-    stepCount: 16 | 32 | 64 = 16
+    stepCount: StepCount = 16
   ): void {
     const totalSteps = bars * stepCount;
     if (totalSteps <= 0 || Math.abs(this._bpm - targetBpm) < 0.1) {

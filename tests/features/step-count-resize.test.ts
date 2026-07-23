@@ -11,7 +11,11 @@ const mk = () => ({ active: false, velocity: 100, pitch: 0 });
 
 describe("resizeSteps", () => {
   it("Happy Path: 16 → 32 füllt mit Default-Steps auf", () => {
-    const steps = Array.from({ length: 16 }, () => ({ active: true, velocity: 64, pitch: 2 }));
+    const steps = Array.from({ length: 16 }, () => ({
+      active: true,
+      velocity: 64,
+      pitch: 2,
+    }));
     const out = resizeSteps(steps, 32, mk);
     expect(out).toHaveLength(32);
     // Bestehende Steps unverändert
@@ -21,7 +25,11 @@ describe("resizeSteps", () => {
   });
 
   it("64 → 16 schneidet hinten ab (behält die ersten 16)", () => {
-    const steps = Array.from({ length: 64 }, (_, i) => ({ active: i < 16, velocity: 100, pitch: 0 }));
+    const steps = Array.from({ length: 64 }, (_, i) => ({
+      active: i < 16,
+      velocity: 100,
+      pitch: 0,
+    }));
     const out = resizeSteps(steps, 16, mk);
     expect(out).toHaveLength(16);
     expect(out.every(s => s.active)).toBe(true);
@@ -45,5 +53,38 @@ describe("resizeSteps", () => {
     const out = resizeSteps([], 3, mk);
     out[0].active = true;
     expect(out[1].active).toBe(false);
+  });
+
+  // v3.285: 128-Step-Support (Sequencer-intern; alle auf einer Seite).
+  it("64 → 128 füllt auf 128 auf, behält die ersten 64", () => {
+    const steps = Array.from({ length: 64 }, (_, i) => ({
+      active: i % 4 === 0,
+      velocity: 100,
+      pitch: 0,
+    }));
+    const out = resizeSteps(steps, 128, mk);
+    expect(out).toHaveLength(128);
+    expect(out[0].active).toBe(true);
+    expect(out[4].active).toBe(true);
+    // Aufgefüllte Steps sind Default-inaktiv.
+    expect(out[64]).toEqual({ active: false, velocity: 100, pitch: 0 });
+    expect(out[127]).toEqual({ active: false, velocity: 100, pitch: 0 });
+  });
+
+  it("128 → 32 schneidet auf die ersten 32 zurück", () => {
+    const steps = Array.from({ length: 128 }, (_, i) => ({
+      active: true,
+      velocity: i,
+      pitch: 0,
+    }));
+    const out = resizeSteps(steps, 32, mk);
+    expect(out).toHaveLength(32);
+    expect(out[31].velocity).toBe(31);
+  });
+
+  it("16 → 128 ist ein 8-facher Ausbau (Default-Padding)", () => {
+    const out = resizeSteps(Array.from({ length: 16 }, mk), 128, mk);
+    expect(out).toHaveLength(128);
+    expect(out.filter(s => s.active)).toHaveLength(0);
   });
 });

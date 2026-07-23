@@ -52,7 +52,7 @@ export async function importProjectFile(file: File): Promise<ImportResult> {
 export function importResultToPatterns(result: ImportResult): Array<{
   id: string;
   name: string;
-  stepCount: 16 | 32 | 64;
+  stepCount: 16 | 32 | 64 | 128;
   stepResolution: "1/16";
   bpm: number | null;
   parts: Array<{

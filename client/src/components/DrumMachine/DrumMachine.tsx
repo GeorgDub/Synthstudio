@@ -99,7 +99,6 @@ import { DEFAULT_GRANULAR_PARAMS } from "@/audio/GranularEngine";
 import {
   PlayheadChannelStrip,
   PlayheadPolyrhythmVisualizer,
-  PlayheadPageSwitcher,
   PlayheadStepNumberRow,
   PlayheadFooterStep,
 } from "./PlayheadComponents";
@@ -186,11 +185,7 @@ import {
 import { EsxImportController } from "@/components/ImportDialog/EsxImportController";
 import { importResultToPatterns } from "@/utils/imports";
 import type { ImportResult } from "@/utils/imports/types";
-import {
-  getPageCount,
-  getPageStepRange,
-  getPageForStep,
-} from "./drumMachineHelpers";
+import { getPageCount, getPageForStep } from "./drumMachineHelpers";
 
 // ─── Typen ────────────────────────────────────────────────────────────────────
 
@@ -2088,7 +2083,29 @@ function DrumMachineInner({
     (result: ImportResult) => {
       const patterns = importResultToPatterns(result);
       if (patterns.length === 0) return;
-      dm.addPatternsData(patterns as Parameters<typeof dm.addPatternsData>[0]);
+      const newIds = dm.addPatternsData(
+        patterns as Parameters<typeof dm.addPatternsData>[0]
+      );
+      // v3.285-FIX: nach dem Import auf das INHALTSREICHSTE importierte Pattern
+      // springen (setActivePattern). Vorher blieb der User auf dem alten (leeren)
+      // Pattern → wirkte als wären die Steps „nicht geladen". Wahl analog zum
+      // FLP-Import (App.tsx): das Pattern mit den meisten aktiven Steps.
+      if (newIds.length > 0) {
+        let bestIdx = 0;
+        let bestActive = -1;
+        patterns.forEach((p, i) => {
+          const active = p.parts.reduce(
+            (a, pt) => a + pt.steps.filter(s => s.active).length,
+            0
+          );
+          if (active > bestActive) {
+            bestActive = active;
+            bestIdx = i;
+          }
+        });
+        const targetId = newIds[bestIdx] ?? newIds[0];
+        if (targetId) dm.setActivePattern(targetId);
+      }
     },
     [dm]
   );
@@ -3516,12 +3533,18 @@ function DrumMachineInner({
           className="flex items-center gap-1"
           data-testid="dm-step-count-toggle"
         >
-          {([16, 32, 64] as const).map(n => (
+          {([16, 32, 64, 128] as const).map(n => (
             <button
               key={n}
               onClick={() => dm.setStepCount(n)}
               data-testid={`dm-step-count-${n}`}
-              title={n === 64 ? "64 Steps (KORG ESX-1 / E2 Max)" : `${n} Steps`}
+              title={
+                n === 64
+                  ? "64 Steps (KORG ESX-1 / E2 Max)"
+                  : n === 128
+                    ? "128 Steps (Synthstudio — alle auf einer Seite, horizontal scrollbar)"
+                    : `${n} Steps`
+              }
               className={[
                 "px-2 py-0.5 rounded text-[10px] font-mono transition-colors",
                 pattern.stepCount === n
@@ -5090,105 +5113,114 @@ function DrumMachineInner({
         </ResizableDrumPanel>
       )}
 
-      {/* ── v3.40: 64-Step Page-Switcher (TASK-247: Playhead via Kind-Komp.) ── */}
-      <PlayheadPageSwitcher
-        stepCount={pattern.stepCount}
-        currentPatternPage={currentPatternPage}
-        onSelectPage={setCurrentPatternPage}
-        isPlaying={isPlaying}
-        autoPageFollow={autoPageFollow}
-        onToggleAutoFollow={() => setAutoPageFollow(prev => !prev)}
-      />
+      {/* ── v3.285: Single-Page Step-Grid (16/32/64/128 — ALLE auf einer Seite) ──
+          Kein Page-Switcher mehr. Header + Kanal-Zeilen liegen in EINEM
+          overflow-auto-Container mit gemeinsamer minWidth → horizontaler Scroll
+          bewegt Header und Zeilen synchron (Spalten bleiben ausgerichtet). Der
+          Header ist sticky und bleibt beim vertikalen Scrollen sichtbar. Bei 128
+          Steps wird die Reihe breiter als der Viewport → horizontal scrollbar,
+          Zellen behalten via minWidth eine klickbare Mindestbreite. */}
+      {(() => {
+        // Gutter (Kanal-Steuerung links) + Step-Spalten. Ab ~13px/Step wird die
+        // Reihe bei 128 Steps breiter als der Viewport → Container scrollt.
+        const GRID_GUTTER_PX = 296;
+        const MIN_STEP_PX = 13;
+        const gridMinWidth = GRID_GUTTER_PX + pattern.stepCount * MIN_STEP_PX;
+        // Single-Page: immer ALLE Steps rendern (kein Page-Fenster mehr).
+        const visibleStepRange = null;
+        return (
+          <div className="flex-1 overflow-auto min-h-0">
+            <div style={{ minWidth: gridMinWidth }}>
+              {/* Step-Grid Header (sticky — bleibt beim Scrollen oben) */}
+              <div className="sticky top-0 z-10 flex items-center gap-1 px-2 py-1 bg-bg-panel border-b border-border-color/50">
+                <div className="w-[88px] flex-shrink-0" />
+                <div className="w-5 flex-shrink-0" />
+                <div className="w-5 flex-shrink-0" />
+                <div className="w-12 flex-shrink-0" />
+                <div className="w-10 flex-shrink-0" />
+                <div className="w-14 flex-shrink-0" />
+                <div className="w-6 flex-shrink-0" />
+                <div className="flex gap-[2px] flex-1 min-w-0">
+                  <PlayheadStepNumberRow stepCount={pattern.stepCount} />
+                </div>
+              </div>
 
-      {/* ── Step-Grid Header ─────────────────────────────────────────────── */}
-      <div className="flex items-center gap-1 px-2 py-1 bg-bg-panel border-b border-border-color/50">
-        {/* Platzhalter für Kanal-Steuerung */}
-        <div className="w-[88px] flex-shrink-0" />
-        <div className="w-5 flex-shrink-0" />
-        <div className="w-5 flex-shrink-0" />
-        <div className="w-12 flex-shrink-0" />
-        <div className="w-10 flex-shrink-0" />
-        <div className="w-14 flex-shrink-0" />
-        <div className="w-6 flex-shrink-0" />
+              {/* Kanal-Zeilen */}
+              {pattern.parts.map((part, partIndex) => (
+                <PlayheadChannelStrip
+                  key={part.id}
+                  part={part}
+                  partIndex={partIndex}
+                  stepCount={pattern.stepCount}
+                  visibleStepRange={visibleStepRange}
+                  isActive={dm.activePartId === part.id}
+                  velocityMode={dm.velocityMode}
+                  pitchMode={dm.pitchMode}
+                  patternResolution={pattern.stepResolution}
+                  fxPanelOpen={dm.fxPanelPartId === part.id}
+                  samples={samples}
+                  onToggleStep={stepIndex => dm.toggleStep(part.id, stepIndex)}
+                  onSetVelocity={(stepIndex, v) =>
+                    dm.setStepVelocity(part.id, stepIndex, v)
+                  }
+                  onSetPitch={(stepIndex, p) =>
+                    dm.setStepPitch(part.id, stepIndex, p)
+                  }
+                  onMute={() => dm.setPartMuted(part.id, !part.muted)}
+                  onSolo={e =>
+                    dm.setPartSoloed(part.id, !part.soloed, !e.shiftKey)
+                  }
+                  onVolumeChange={v => dm.setPartVolume(part.id, v)}
+                  onPanChange={v => dm.setPartPan(part.id, v)}
+                  onSampleDrop={(url, name) =>
+                    dm.setPartSample(part.id, url, name)
+                  }
+                  onFxChange={fx => {
+                    dm.setPartFx(part.id, fx);
+                    const updatedPart = { ...part, fx: { ...part.fx, ...fx } };
+                    AudioEngine.updateChannelFx(part.id, updatedPart.fx);
+                  }}
+                  onFxToggle={() =>
+                    dm.setFxPanelPartId(
+                      dm.fxPanelPartId === part.id ? null : part.id
+                    )
+                  }
+                  onResolutionChange={res =>
+                    dm.setPartStepResolution(part.id, res)
+                  }
+                  onClick={() => dm.setActivePart(part.id)}
+                  onPianoRollOpen={() => setPianoRollPartId(part.id)}
+                  onStepSelect={stepIndex =>
+                    setSelectedStep({ partId: part.id, stepIndex })
+                  }
+                  selectedStepIndex={
+                    selectedStep?.partId === part.id
+                      ? selectedStep.stepIndex
+                      : null
+                  }
+                  onGranularOpen={() =>
+                    setGranularPartId(prev =>
+                      prev === part.id ? null : part.id
+                    )
+                  }
+                  onSourceTypeChange={type =>
+                    dm.setPartSourceType(part.id, type)
+                  }
+                  onColorChange={color => dm.setPartColor(part.id, color)}
+                />
+              ))}
 
-        {/* Step-Nummern (v3.40: paginiert; TASK-247: Playhead via Kind-Komp.) */}
-        <div className="flex gap-[2px] flex-1 min-w-0">
-          <PlayheadStepNumberRow
-            stepCount={pattern.stepCount}
-            currentPatternPage={currentPatternPage}
-          />
-        </div>
-      </div>
-
-      {/* ── Kanal-Zeilen ─────────────────────────────────────────────────── */}
-      <div className="flex-1 overflow-y-auto">
-        {(() => {
-          // v3.40: visibleStepRange wird im Channel-Strip-Renderer benutzt
-          // damit bei stepCount > 16 nur die aktuelle Page Cells rendert.
-          const visibleStepRange =
-            pattern.stepCount > 16
-              ? getPageStepRange(pattern.stepCount, currentPatternPage)
-              : null;
-          return pattern.parts.map((part, partIndex) => (
-            <PlayheadChannelStrip
-              key={part.id}
-              part={part}
-              partIndex={partIndex}
-              stepCount={pattern.stepCount}
-              visibleStepRange={visibleStepRange}
-              isActive={dm.activePartId === part.id}
-              velocityMode={dm.velocityMode}
-              pitchMode={dm.pitchMode}
-              patternResolution={pattern.stepResolution}
-              fxPanelOpen={dm.fxPanelPartId === part.id}
-              samples={samples}
-              onToggleStep={stepIndex => dm.toggleStep(part.id, stepIndex)}
-              onSetVelocity={(stepIndex, v) =>
-                dm.setStepVelocity(part.id, stepIndex, v)
-              }
-              onSetPitch={(stepIndex, p) =>
-                dm.setStepPitch(part.id, stepIndex, p)
-              }
-              onMute={() => dm.setPartMuted(part.id, !part.muted)}
-              onSolo={e => dm.setPartSoloed(part.id, !part.soloed, !e.shiftKey)}
-              onVolumeChange={v => dm.setPartVolume(part.id, v)}
-              onPanChange={v => dm.setPartPan(part.id, v)}
-              onSampleDrop={(url, name) => dm.setPartSample(part.id, url, name)}
-              onFxChange={fx => {
-                dm.setPartFx(part.id, fx);
-                const updatedPart = { ...part, fx: { ...part.fx, ...fx } };
-                AudioEngine.updateChannelFx(part.id, updatedPart.fx);
-              }}
-              onFxToggle={() =>
-                dm.setFxPanelPartId(
-                  dm.fxPanelPartId === part.id ? null : part.id
-                )
-              }
-              onResolutionChange={res => dm.setPartStepResolution(part.id, res)}
-              onClick={() => dm.setActivePart(part.id)}
-              onPianoRollOpen={() => setPianoRollPartId(part.id)}
-              onStepSelect={stepIndex =>
-                setSelectedStep({ partId: part.id, stepIndex })
-              }
-              selectedStepIndex={
-                selectedStep?.partId === part.id ? selectedStep.stepIndex : null
-              }
-              onGranularOpen={() =>
-                setGranularPartId(prev => (prev === part.id ? null : part.id))
-              }
-              onSourceTypeChange={type => dm.setPartSourceType(part.id, type)}
-              onColorChange={color => dm.setPartColor(part.id, color)}
-            />
-          ));
-        })()}
-
-        {/* ── Audio-Clip-Lanes (TASK-246, Option B) ──────────────────────────
-            Continuous-Wellenform-Lanes für importierte/aufgenommene Audio-Tracks.
-            KEIN Step-Grid (continuous AudioTrackChannelData-Modell). Eigene
-            memoisierte Liste, die den useAudioTrackStore selbst abonniert, damit
-            Track-Add/Remove/Mute den memoisierten DrumMachine nicht re-rendern. */}
-        <AudioClipLaneList />
-      </div>
+              {/* ── Audio-Clip-Lanes (TASK-246, Option B) ──────────────────────
+                  Continuous-Wellenform-Lanes für importierte/aufgenommene
+                  Audio-Tracks. KEIN Step-Grid (continuous AudioTrackChannelData-
+                  Modell). Eigene memoisierte Liste, die den useAudioTrackStore
+                  selbst abonniert, damit Track-Add/Remove/Mute den memoisierten
+                  DrumMachine nicht re-rendern. */}
+              <AudioClipLaneList />
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ── Step Inspector ───────────────────────────────────────────────── */}
       {selectedStep &&
