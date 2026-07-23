@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { trimE2sSlotPcm } from "../../client/src/utils/korg/e2sSampleEdit";
+import {
+  trimE2sSlotPcm,
+  stereoToMonoE2s,
+} from "../../client/src/utils/korg/e2sSampleEdit";
 import {
   bankToOpenedSlots,
   openedSlotsToBuildInputs,
@@ -91,5 +94,69 @@ describe("Trim → build → parse (voller Pipeline-Round-Trip)", () => {
     )!;
     expect(back.frames).toBe(20);
     expect(back.loopEnd).toBe(19);
+  });
+});
+
+describe("stereoToMonoE2s", () => {
+  // 3 Frames: (L,R) = (1,0),(0,1),(0.4,0.6)
+  const st = Float32Array.from([1, 0, 0, 1, 0.4, 0.6]);
+
+  it("mix=0 → zentriertes Mittel (0.5L + 0.5R)", () => {
+    const m = stereoToMonoE2s(st, 0);
+    expect(m.length).toBe(3);
+    expect(m[0]).toBeCloseTo(0.5);
+    expect(m[1]).toBeCloseTo(0.5);
+    expect(m[2]).toBeCloseTo(0.5);
+  });
+
+  it("mix=1 → nur rechter Kanal", () => {
+    const m = stereoToMonoE2s(st, 1);
+    expect(m[0]).toBeCloseTo(0);
+    expect(m[1]).toBeCloseTo(1);
+    expect(m[2]).toBeCloseTo(0.6);
+  });
+
+  it("Gewichte summieren zu 1 → kein Clipping über [-1,1]", () => {
+    const loud = Float32Array.from([1, 1, -1, -1]);
+    const m = stereoToMonoE2s(loud, 0.3);
+    for (const v of m) expect(Math.abs(v)).toBeLessThanOrEqual(1);
+  });
+
+  it("leer / nicht-stereo → leeres Ergebnis", () => {
+    expect(stereoToMonoE2s(new Float32Array(0)).length).toBe(0);
+  });
+});
+
+describe("Stereo → Mono → build → parse (Pipeline)", () => {
+  it("konvertierter Slot wird als Mono re-encoded (channels=1)", () => {
+    const frames = 32;
+    const inter = new Float32Array(frames * 2);
+    for (let i = 0; i < frames; i++) {
+      inter[i * 2] = Math.sin(i * 0.2) * 0.4; // L
+      inter[i * 2 + 1] = Math.sin(i * 0.2 + 1) * 0.4; // R
+    }
+    const built = buildE2sBank([
+      {
+        slotIndex: 0,
+        name: "Stereo",
+        pcmData: inter,
+        sampleRate: 44100,
+        channels: 2,
+      },
+    ]);
+    const slots = bankToOpenedSlots(parseE2sBank(built.buffer));
+    const row = slots.find(s => !s.empty)!;
+    expect(row.channels).toBe(2);
+    const mono = stereoToMonoE2s(row.pcmData!, 0);
+    const edited = patchOpenedSlot(slots, row.rowId, {
+      pcmData: mono,
+      channels: 1,
+    });
+    const { inputs } = openedSlotsToBuildInputs(edited);
+    const back = parseE2sBank(buildE2sBank(inputs).buffer).slots.find(
+      s => s && s.name === "Stereo"
+    )!;
+    expect(back.channels).toBe(1);
+    expect(back.frames).toBe(frames);
   });
 });

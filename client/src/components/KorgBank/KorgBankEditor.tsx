@@ -49,7 +49,7 @@ import {
   type E2sBank,
 } from "@/utils/korg/e2sBankReader";
 import { bundleE2sSamplesToZip } from "@/utils/korg/e2sSampleExport";
-import { trimE2sSlotPcm } from "@/utils/korg/e2sSampleEdit";
+import { trimE2sSlotPcm, stereoToMonoE2s } from "@/utils/korg/e2sSampleEdit";
 import {
   convertToE2sSpec,
   AudioProcessError,
@@ -873,6 +873,17 @@ export function KorgBankEditor({
         loopStart: 0,
         loopEnd: Math.max(0, frames - 1),
       });
+    });
+  }
+
+  // v3.284 — Oe2sSLE „Stereo → Mono": zentrierter Downmix (mix=0), setzt
+  // channels=1 (Builder schreibt dann useChan1=false). Frame-Zahl bleibt gleich.
+  function editSlotStereoToMono(rowId: string): void {
+    setOpenedSlots(prev => {
+      const slot = prev.find(s => s.rowId === rowId);
+      if (!slot || !slot.pcmData || slot.channels !== 2) return prev;
+      const mono = stereoToMonoE2s(slot.pcmData, 0);
+      return patchOpenedSlot(prev, rowId, { pcmData: mono, channels: 1 });
     });
   }
 
@@ -2593,14 +2604,27 @@ export function KorgBankEditor({
                   Audio: {selectedSlot.channels === 2 ? "Stereo" : "Mono"} ·{" "}
                   {selectedSlot.sampleRate} Hz · {selectedSlot.frames} frames
                 </p>
-                <button
-                  data-testid="korg-bank-editor-replace-sample"
-                  onClick={() => handleReplaceClick(selectedSlot.rowId)}
-                  disabled={busy}
-                  className="px-3 py-1 rounded text-xs bg-bg-elevated text-text-primary hover:text-accent-primary transition-colors disabled:opacity-40"
-                >
-                  🎵 Sample ersetzen…
-                </button>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    data-testid="korg-bank-editor-replace-sample"
+                    onClick={() => handleReplaceClick(selectedSlot.rowId)}
+                    disabled={busy}
+                    className="px-3 py-1 rounded text-xs bg-bg-elevated text-text-primary hover:text-accent-primary transition-colors disabled:opacity-40"
+                  >
+                    🎵 Sample ersetzen…
+                  </button>
+                  {selectedSlot.channels === 2 && (
+                    <button
+                      data-testid="korg-bank-editor-detail-stereo-to-mono"
+                      onClick={() => editSlotStereoToMono(selectedSlot.rowId)}
+                      disabled={busy}
+                      className="px-3 py-1 rounded text-xs bg-bg-elevated text-text-primary hover:text-accent-primary transition-colors disabled:opacity-40"
+                      title="Stereo auf Mono mischen (zentriert; per Revert rückgängig)"
+                    >
+                      ⇥ Stereo → Mono
+                    </button>
+                  )}
+                </div>
               </div>
 
               {/* v3.8.0 — Slices */}

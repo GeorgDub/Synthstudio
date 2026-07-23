@@ -58,3 +58,27 @@ export function trimE2sSlotPcm(
   const out = pcmData.slice(sliceStart, sliceEnd);
   return { pcmData: out, frames: e - s + 1 };
 }
+
+/**
+ * Oe2sSLE „Stereo → Mono": mischt ein interleaved Stereo-PCM auf einen Kanal.
+ * Gewichte exakt wie Oe2sSLE `_convert_to_mono`: `wL = (1-mix)/2`, `wR = 1-wL`.
+ *   - mix = 0   → wL = wR = 0.5 (zentriertes Mittel; sinnvoller Default)
+ *   - mix = 1   → wL = 0, wR = 1 (nur rechter Kanal)
+ * Die Gewichte summieren zu 1 → kein Clipping. Frame-Zahl bleibt gleich; nur
+ * die PCM-Länge halbiert sich (2 → 1 Kanal). Nicht-Stereo → Original zurück.
+ *
+ * @param pcmData Interleaved L,R,L,R,… Float32-PCM.
+ * @param mix     0..1 Pan-Mix (0 = zentriert). Wird auf [0,1] geklemmt.
+ */
+export function stereoToMonoE2s(pcmData: Float32Array, mix = 0): Float32Array {
+  const n = Math.floor(pcmData.length / 2);
+  if (n <= 0) return new Float32Array(0);
+  const m = Number.isFinite(mix) ? Math.max(0, Math.min(1, mix)) : 0;
+  const wL = (1 - m) / 2;
+  const wR = 1 - wL;
+  const out = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    out[i] = pcmData[i * 2] * wL + pcmData[i * 2 + 1] * wR;
+  }
+  return out;
+}
