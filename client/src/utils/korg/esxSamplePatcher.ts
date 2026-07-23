@@ -125,7 +125,7 @@ export class EsxSamplePatchError extends Error {
  */
 export function patchEsxBankSample(
   bankBuffer: ArrayBuffer | Uint8Array,
-  patch: EsxSamplePatchInput,
+  patch: EsxSamplePatchInput
 ): ArrayBuffer {
   // ── 1. Validate bank ─────────────────────────────────────────────────────
   const inputBytes = toUint8(bankBuffer);
@@ -137,19 +137,18 @@ export function patchEsxBankSample(
   // ── 3. Build PCM (BE int16) bytes from float32 ───────────────────────────
   const beBytes = float32ToBe16Pcm(patch.pcmData);
   const length = beBytes.byteLength; // bytes per channel for stereo
-  const channelBytes =
-    patch.channels === 1 ? length : length / 2; // for stereo we split L/R
+  const channelBytes = patch.channels === 1 ? length : length / 2; // for stereo we split L/R
 
   // Bytes per *channel* must be even (int16 alignment).
   if (channelBytes <= 0 || channelBytes % 2 !== 0) {
     throw new EsxSamplePatchError(
-      `invalid PCM byte length ${length} for ${patch.channels}-channel slot`,
+      `invalid PCM byte length ${length} for ${patch.channels}-channel slot`
     );
   }
 
   if (channelBytes > MAX_BYTES_PER_SLOT) {
     throw new EsxSamplePatchError(
-      `per-slot PCM length ${channelBytes} exceeds cap ${MAX_BYTES_PER_SLOT}`,
+      `per-slot PCM length ${channelBytes} exceeds cap ${MAX_BYTES_PER_SLOT}`
     );
   }
 
@@ -157,18 +156,15 @@ export function patchEsxBankSample(
   const inDv = new DataView(
     inputBytes.buffer,
     inputBytes.byteOffset,
-    inputBytes.byteLength,
+    inputBytes.byteLength
   );
   const numMono = inDv.getUint32(ESX1_ADDR_NUM_MONO_SAMPLES + 0, false);
   const numStereo = inDv.getUint32(ESX1_ADDR_NUM_MONO_SAMPLES + 4, false);
-  const currentOffset = inDv.getUint32(
-    ESX1_ADDR_NUM_MONO_SAMPLES + 8,
-    false,
-  );
+  const currentOffset = inDv.getUint32(ESX1_ADDR_NUM_MONO_SAMPLES + 8, false);
 
   if (numMono > ESX1_MAX_MONO_SLOTS || numStereo > ESX1_MAX_STEREO_SLOTS) {
     throw new EsxSamplePatchError(
-      `bank reports invalid counts: mono=${numMono} stereo=${numStereo}`,
+      `bank reports invalid counts: mono=${numMono} stereo=${numStereo}`
     );
   }
 
@@ -181,7 +177,7 @@ export function patchEsxBankSample(
   // overwrite the slice-data table that lives BEFORE 0x250000).
   const fileEndPcmRel = Math.max(
     0,
-    inputBytes.byteLength - ESX1_ADDR_SAMPLE_DATA,
+    inputBytes.byteLength - ESX1_ADDR_SAMPLE_DATA
   );
   // currentOffset must be plausible. If 0xFFFFFFFF (sentinel) or otherwise
   // larger than the file → fall back to file-end.
@@ -192,12 +188,11 @@ export function patchEsxBankSample(
   const appendRel = Math.max(safeCurrent, fileEndPcmRel);
 
   // Total PCM after this patch (cumulative cap is the 24 MB device cap).
-  const newPcmTotalBytes =
-    patch.channels === 1 ? length : channelBytes * 2; // stereo: L+R bytes
+  const newPcmTotalBytes = patch.channels === 1 ? length : channelBytes * 2; // stereo: L+R bytes
   const projectedCurrent = appendRel + newPcmTotalBytes;
   if (projectedCurrent > ESX1_MAX_SAMPLE_MEM_IN_BYTES) {
     throw new EsxSamplePatchError(
-      `cumulative PCM ${projectedCurrent} bytes exceeds ESX-1 cap ${ESX1_MAX_SAMPLE_MEM_IN_BYTES}`,
+      `cumulative PCM ${projectedCurrent} bytes exceeds ESX-1 cap ${ESX1_MAX_SAMPLE_MEM_IN_BYTES}`
     );
   }
 
@@ -206,7 +201,7 @@ export function patchEsxBankSample(
   const newSize = appendAbs + newPcmTotalBytes;
   if (newSize > ESX_FILE_MAX_BYTES) {
     throw new EsxSamplePatchError(
-      `resulting bank size ${newSize} exceeds ${ESX_FILE_MAX_BYTES}`,
+      `resulting bank size ${newSize} exceeds ${ESX_FILE_MAX_BYTES}`
     );
   }
 
@@ -250,7 +245,9 @@ export function patchEsxBankSample(
   const sr = clampInt(patch.sampleRate, 1, 0x7fffffff, 44100);
 
   if (patch.channels === 1) {
-    const off = ESX1_ADDR_SAMPLE_HEADER_MONO + patch.index * ESX1_CHUNKSIZE_SAMPLE_HEADER_MONO;
+    const off =
+      ESX1_ADDR_SAMPLE_HEADER_MONO +
+      patch.index * ESX1_CHUNKSIZE_SAMPLE_HEADER_MONO;
     // Name @ 0..7
     outBytes.set(nameBytes, off);
     // off1Start @ +8, off1End @ +12 (u32 BE)
@@ -275,7 +272,9 @@ export function patchEsxBankSample(
     outBytes[off + 38] = 0;
     outBytes[off + 39] = 0;
   } else {
-    const off = ESX1_ADDR_SAMPLE_HEADER_STEREO + patch.index * ESX1_CHUNKSIZE_SAMPLE_HEADER_STEREO;
+    const off =
+      ESX1_ADDR_SAMPLE_HEADER_STEREO +
+      patch.index * ESX1_CHUNKSIZE_SAMPLE_HEADER_STEREO;
     // Name @ 0..7
     outBytes.set(nameBytes, off);
     // off1Start @ +8, off1End @ +12 (u32 BE) — left channel
@@ -301,14 +300,86 @@ export function patchEsxBankSample(
   // ── 9. Update counters + currentOffset ───────────────────────────────────
   if (wasEmpty) {
     if (patch.channels === 1) {
-      outDv.setUint32(ESX1_ADDR_NUM_MONO_SAMPLES + 0, Math.min(numMono + 1, ESX1_MAX_MONO_SLOTS), false);
+      outDv.setUint32(
+        ESX1_ADDR_NUM_MONO_SAMPLES + 0,
+        Math.min(numMono + 1, ESX1_MAX_MONO_SLOTS),
+        false
+      );
     } else {
-      outDv.setUint32(ESX1_ADDR_NUM_MONO_SAMPLES + 4, Math.min(numStereo + 1, ESX1_MAX_STEREO_SLOTS), false);
+      outDv.setUint32(
+        ESX1_ADDR_NUM_MONO_SAMPLES + 4,
+        Math.min(numStereo + 1, ESX1_MAX_STEREO_SLOTS),
+        false
+      );
     }
   }
   outDv.setUint32(ESX1_ADDR_NUM_MONO_SAMPLES + 8, projectedCurrent, false);
 
   return outBuffer;
+}
+
+// ─── Sample-Rename (surgical, bit-exact) ─────────────────────────────────────
+
+/** Ein einzelner Slot-Rename: welcher Slot + neuer Name. */
+export interface EsxSampleRename {
+  /** Slot-Index 0..255 (mono) oder 0..127 (stereo). */
+  index: number;
+  /** 1 = mono, 2 = stereo (bestimmt die Header-Tabelle). */
+  channels: 1 | 2;
+  /** Neuer Slot-Name (ASCII, max 8 chars; non-printable → '?'). */
+  name: string;
+}
+
+/**
+ * Benennt einen einzelnen Sample-Slot um — **rein die 8 Name-Bytes** im
+ * Slot-Header werden überschrieben, ALLES andere bleibt bit-exakt (keine
+ * Datei-Vergrößerung, kein PCM-Anfassen). Der Name-Offset (+0..7) ist identisch
+ * zu dem, aus dem `parseEsxBank` liest → echter Round-Trip.
+ *
+ * @returns Neuer Buffer gleicher Größe, byte-identisch außer den 8 Name-Bytes.
+ * @throws  EsxSamplePatchError bei ungültiger Bank oder Slot-Index.
+ */
+export function renameEsxBankSample(
+  bankBuffer: ArrayBuffer | Uint8Array,
+  rename: EsxSampleRename
+): ArrayBuffer {
+  return renameEsxBankSamples(bankBuffer, [rename]);
+}
+
+/**
+ * Batch-Variante: mehrere Slot-Renames in einem einzigen kopierten Buffer.
+ * Reihenfolge = Eingabe-Reihenfolge; ein späterer Rename desselben Slots
+ * gewinnt. Bit-exakt für alle nicht angefassten Slots + alle anderen Regionen.
+ */
+export function renameEsxBankSamples(
+  bankBuffer: ArrayBuffer | Uint8Array,
+  renames: ReadonlyArray<EsxSampleRename>
+): ArrayBuffer {
+  const inputBytes = toUint8(bankBuffer);
+  validateBankBufferForSample(inputBytes);
+
+  const out = new Uint8Array(inputBytes.byteLength);
+  out.set(inputBytes, 0);
+
+  for (const r of renames) {
+    if (r.channels !== 1 && r.channels !== 2) {
+      throw new EsxSamplePatchError(
+        `rename.channels must be 1 or 2 (got ${r.channels})`
+      );
+    }
+    const off =
+      r.channels === 1
+        ? getEsxMonoHeaderOffset(r.index)
+        : getEsxStereoHeaderOffset(r.index);
+    if (off + ESX1_NAME_MAX_CHARS > out.byteLength) {
+      throw new EsxSamplePatchError(
+        `slot header for index ${r.index} (${r.channels}ch) is out of bounds`
+      );
+    }
+    out.set(encodeEsxName(r.name ?? ""), off);
+  }
+
+  return out.buffer;
 }
 
 // ─── Validators (also exported for tests) ────────────────────────────────────
@@ -318,29 +389,31 @@ export function patchEsxBankSample(
  * Verifies size + KORG/ESX magic + the second `KORG` magic at the start of
  * the sample-section (0x001B0000). PCM content is not decoded.
  */
-export function validateBankBufferForSample(buf: ArrayBuffer | Uint8Array): void {
+export function validateBankBufferForSample(
+  buf: ArrayBuffer | Uint8Array
+): void {
   const bytes = toUint8(buf);
   if (bytes.byteLength < ESX1_SIZE_FILE_MIN) {
     throw new EsxSamplePatchError(
-      `bank buffer too small: ${bytes.byteLength} bytes (need >= ${ESX1_SIZE_FILE_MIN})`,
+      `bank buffer too small: ${bytes.byteLength} bytes (need >= ${ESX1_SIZE_FILE_MIN})`
     );
   }
   if (bytes.byteLength > ESX_FILE_MAX_BYTES) {
     throw new EsxSamplePatchError(
-      `bank buffer size ${bytes.byteLength} exceeds max ${ESX_FILE_MAX_BYTES}`,
+      `bank buffer size ${bytes.byteLength} exceeds max ${ESX_FILE_MAX_BYTES}`
     );
   }
   for (let i = 0; i < ESX1_SIGNATURE.length; i++) {
     if (bytes[i] !== ESX1_SIGNATURE[i]) {
       throw new EsxSamplePatchError(
-        `invalid ESX-1 signature at offset 0x00 (expected 'KORG')`,
+        `invalid ESX-1 signature at offset 0x00 (expected 'KORG')`
       );
     }
   }
   for (let i = 0; i < ESX1_SUBMAGIC.length; i++) {
     if (bytes[ESX1_SUBMAGIC_OFFSET + i] !== ESX1_SUBMAGIC[i]) {
       throw new EsxSamplePatchError(
-        `invalid ESX-1 sub-magic at offset 0x${ESX1_SUBMAGIC_OFFSET.toString(16)} (expected 'ESX\\0')`,
+        `invalid ESX-1 sub-magic at offset 0x${ESX1_SUBMAGIC_OFFSET.toString(16)} (expected 'ESX\\0')`
       );
     }
   }
@@ -348,7 +421,7 @@ export function validateBankBufferForSample(buf: ArrayBuffer | Uint8Array): void
   for (let i = 0; i < ESX1_SIGNATURE.length; i++) {
     if (bytes[ESX1_ADDR_VALID_CHECK_2 + i] !== ESX1_SIGNATURE[i]) {
       throw new EsxSamplePatchError(
-        `invalid sample-section magic at 0x${ESX1_ADDR_VALID_CHECK_2.toString(16)}`,
+        `invalid sample-section magic at 0x${ESX1_ADDR_VALID_CHECK_2.toString(16)}`
       );
     }
   }
@@ -359,9 +432,12 @@ function validateSamplePatch(patch: EsxSamplePatchInput): void {
     throw new EsxSamplePatchError("patch must be an object");
   }
   if (patch.channels !== 1 && patch.channels !== 2) {
-    throw new EsxSamplePatchError(`patch.channels must be 1 or 2 (got ${patch.channels})`);
+    throw new EsxSamplePatchError(
+      `patch.channels must be 1 or 2 (got ${patch.channels})`
+    );
   }
-  const maxIndex = patch.channels === 1 ? ESX1_MAX_MONO_SLOTS : ESX1_MAX_STEREO_SLOTS;
+  const maxIndex =
+    patch.channels === 1 ? ESX1_MAX_MONO_SLOTS : ESX1_MAX_STEREO_SLOTS;
   if (
     typeof patch.index !== "number" ||
     !Number.isInteger(patch.index) ||
@@ -369,7 +445,7 @@ function validateSamplePatch(patch: EsxSamplePatchInput): void {
     patch.index >= maxIndex
   ) {
     throw new EsxSamplePatchError(
-      `patch.index ${patch.index} out of range [0,${maxIndex}) for ${patch.channels}-channel slot`,
+      `patch.index ${patch.index} out of range [0,${maxIndex}) for ${patch.channels}-channel slot`
     );
   }
   if (!(patch.pcmData instanceof Float32Array)) {
@@ -380,7 +456,7 @@ function validateSamplePatch(patch: EsxSamplePatchInput): void {
   }
   if (patch.channels === 2 && patch.pcmData.length % 2 !== 0) {
     throw new EsxSamplePatchError(
-      `stereo patch.pcmData must have even length (got ${patch.pcmData.length})`,
+      `stereo patch.pcmData must have even length (got ${patch.pcmData.length})`
     );
   }
   if (
@@ -388,7 +464,9 @@ function validateSamplePatch(patch: EsxSamplePatchInput): void {
     !Number.isFinite(patch.sampleRate) ||
     patch.sampleRate <= 0
   ) {
-    throw new EsxSamplePatchError(`patch.sampleRate invalid: ${patch.sampleRate}`);
+    throw new EsxSamplePatchError(
+      `patch.sampleRate invalid: ${patch.sampleRate}`
+    );
   }
   if (
     patch.level !== undefined &&
@@ -448,18 +526,21 @@ export function float32ToBe16Pcm(pcm: Float32Array): Uint8Array {
 export function isSlotEmpty(
   bankBuffer: ArrayBuffer | Uint8Array,
   index: number,
-  channels: 1 | 2,
+  channels: 1 | 2
 ): boolean {
   const bytes = toUint8(bankBuffer);
   const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   if (channels === 1) {
-    const off = ESX1_ADDR_SAMPLE_HEADER_MONO + index * ESX1_CHUNKSIZE_SAMPLE_HEADER_MONO;
+    const off =
+      ESX1_ADDR_SAMPLE_HEADER_MONO + index * ESX1_CHUNKSIZE_SAMPLE_HEADER_MONO;
     if (off + 16 > bytes.byteLength) return true;
     const s = dv.getUint32(off + 8, false);
     const e = dv.getUint32(off + 12, false);
     return s === ESX1_EMPTY_OFFSET || e === ESX1_EMPTY_OFFSET;
   }
-  const off = ESX1_ADDR_SAMPLE_HEADER_STEREO + index * ESX1_CHUNKSIZE_SAMPLE_HEADER_STEREO;
+  const off =
+    ESX1_ADDR_SAMPLE_HEADER_STEREO +
+    index * ESX1_CHUNKSIZE_SAMPLE_HEADER_STEREO;
   if (off + 24 > bytes.byteLength) return true;
   const s1 = dv.getUint32(off + 8, false);
   const e1 = dv.getUint32(off + 12, false);
@@ -487,10 +568,12 @@ export function getEsxMonoHeaderOffset(index: number): number {
     index >= ESX1_MAX_MONO_SLOTS
   ) {
     throw new EsxSamplePatchError(
-      `mono slot index ${index} out of range [0,${ESX1_MAX_MONO_SLOTS})`,
+      `mono slot index ${index} out of range [0,${ESX1_MAX_MONO_SLOTS})`
     );
   }
-  return ESX1_ADDR_SAMPLE_HEADER_MONO + index * ESX1_CHUNKSIZE_SAMPLE_HEADER_MONO;
+  return (
+    ESX1_ADDR_SAMPLE_HEADER_MONO + index * ESX1_CHUNKSIZE_SAMPLE_HEADER_MONO
+  );
 }
 
 /** Returns the absolute byte-offset of stereo-slot `index`'s header. */
@@ -502,10 +585,12 @@ export function getEsxStereoHeaderOffset(index: number): number {
     index >= ESX1_MAX_STEREO_SLOTS
   ) {
     throw new EsxSamplePatchError(
-      `stereo slot index ${index} out of range [0,${ESX1_MAX_STEREO_SLOTS})`,
+      `stereo slot index ${index} out of range [0,${ESX1_MAX_STEREO_SLOTS})`
     );
   }
-  return ESX1_ADDR_SAMPLE_HEADER_STEREO + index * ESX1_CHUNKSIZE_SAMPLE_HEADER_STEREO;
+  return (
+    ESX1_ADDR_SAMPLE_HEADER_STEREO + index * ESX1_CHUNKSIZE_SAMPLE_HEADER_STEREO
+  );
 }
 
 /** Re-export sample-data start address for callers + tests. */
@@ -525,7 +610,7 @@ function clampInt(
   v: number | undefined,
   lo: number,
   hi: number,
-  fallback: number,
+  fallback: number
 ): number {
   if (typeof v !== "number" || !Number.isFinite(v)) return fallback;
   let n = Math.round(v);
