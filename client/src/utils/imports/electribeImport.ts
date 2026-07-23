@@ -191,6 +191,9 @@ export function esxBankToImportResult(
         (dp): ImportedPart => ({
           name: dp.sampleHint,
           sampleName: dp.sampleHint,
+          // sampleId erhalten → der Controller kann das PCM des passenden
+          // Bank-Slots als Blob-URL nachreichen (hörbares „In Sequenzer laden").
+          sampleId: dp.sampleId,
           volume: dp.volume,
           pan: dp.pan,
           steps: dp.steps.map((active, i) => ({
@@ -210,8 +213,9 @@ export function esxBankToImportResult(
   );
   if (sampleCount > 0) {
     warnings.push(
-      "Sample-Audio wird über diesen Import-Pfad NICHT verlinkt — für hörbare " +
-        "Slots die Datei stattdessen über die KORG-Bank öffnen (Samples + Pattern + Audio)."
+      "Sample-Referenzen (sampleId) sind pro Part erhalten — der Import-" +
+        "Controller reicht die passenden Slot-Audios als Blob-URLs nach " +
+        "(hoerbares In-Sequenzer-Laden)."
     );
   }
   warnings.push(...bank.warnings);

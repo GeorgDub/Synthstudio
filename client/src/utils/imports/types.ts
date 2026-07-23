@@ -16,10 +16,22 @@ export interface ImportedPart {
   name: string;
   /** Optionaler Sample-Name (nicht-bindend, nur Metadata) */
   sampleName?: string;
+  /**
+   * Sample-Slot-Referenz aus dem Quellformat (ESX-1: part.sampleId ==
+   * EsxSample.index). Bleibt beim Load-Pfad erhalten, damit der Controller
+   * das PCM des passenden Bank-Slots als Blob-URL nachreichen kann.
+   */
+  sampleId?: number;
+  /**
+   * Blob-/Object-URL des zugeordneten Samples. Wird vom Import-Controller
+   * (Browser) via `attachSampleUrlsToImportResult` nachgereicht — dann spielt
+   * der Sequencer die importierten Steps HÖRBAR ab statt stumm.
+   */
+  sampleUrl?: string;
   /** Liste von Steps (i.d.R. 16 oder 32) */
   steps: ImportedStep[];
   volume?: number; // 0-1
-  pan?: number;    // -1..+1
+  pan?: number; // -1..+1
 }
 
 export interface ImportedPattern {
@@ -105,7 +117,10 @@ export interface ImportResult {
 }
 
 export class ImportError extends Error {
-  constructor(message: string, public format: string) {
+  constructor(
+    message: string,
+    public format: string
+  ) {
     super(message);
     this.name = "ImportError";
   }

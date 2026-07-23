@@ -133,14 +133,39 @@ export function EsxImportController({
       const { esxBankToImportResult } =
         await import("@/utils/imports/electribeImport");
       const result = esxBankToImportResult(bank, file.name);
-      const { result: reduced, reducedCount } = reduceImportResultSteps(
+
+      // Sample-Audio hörbar machen: PCM jedes Bank-Slots → WAV → Blob-URL,
+      // dann per sampleId an die Parts hängen (rein via attachSampleUrls).
+      // Encoding ist ein Browser-Seiteneffekt → hier im Controller.
+      const { buildEsxSampleWavMap } =
+        await import("@/utils/korg/esxSampleWav");
+      const { attachSampleUrlsToImportResult } =
+        await import("@/utils/imports/attachSampleUrls");
+      const wavMap = buildEsxSampleWavMap(bank);
+      const urlBySampleId = new Map<number, string>();
+      for (const [sampleId, bytes] of wavMap) {
+        // Frische Kopie → sauberer BlobPart (kein SharedArrayBuffer-Union).
+        const copy = new Uint8Array(bytes.byteLength);
+        copy.set(bytes);
+        urlBySampleId.set(
+          sampleId,
+          URL.createObjectURL(new Blob([copy.buffer], { type: "audio/wav" }))
+        );
+      }
+      const { result: linked, linkedCount } = attachSampleUrlsToImportResult(
         result,
+        urlBySampleId
+      );
+
+      const { result: reduced, reducedCount } = reduceImportResultSteps(
+        linked,
         E2_MAX_STEPS,
         strategy
       );
       onLoadResult(reduced);
       onToast?.(
         `${reduced.patterns.length} Pattern(s) in den Sequenzer geladen` +
+          (linkedCount > 0 ? `, ${linkedCount} Spur(en) mit Sample` : "") +
           (reducedCount > 0 ? ` (${reducedCount} auf 64 Steps reduziert)` : ""),
         "success"
       );
