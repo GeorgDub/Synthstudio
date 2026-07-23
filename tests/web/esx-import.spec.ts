@@ -20,7 +20,7 @@ test.describe("ESX-Import Toolbar-Einstieg", () => {
 
     const btn = page.getByTestId("esx-import-open");
     await expect(btn).toBeVisible({ timeout: 10_000 });
-    await expect(btn).toContainText("ESX Import");
+    await expect(btn).toContainText("Korg Import");
 
     const input = page.getByTestId("esx-import-input");
     await expect(input).toHaveAttribute("type", "file");

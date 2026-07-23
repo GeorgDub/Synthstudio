@@ -15,6 +15,8 @@
  */
 import { useState } from "react";
 import type { EsxImportPreview } from "@/utils/imports/esxImportPreview";
+import type { ImportResult } from "@/utils/imports/types";
+import { EsxPatternPreviewEditor } from "./EsxPatternPreviewEditor";
 import {
   type StepReductionStrategy,
   stepReductionLabel,
@@ -23,12 +25,23 @@ import {
 
 export interface EsxImportDialogProps {
   preview: EsxImportPreview;
+  /**
+   * v3.285: editierbares ImportResult (Steps). Wenn gesetzt, zeigt der Dialog
+   * eine editierbare Pattern/Step-Vorschau statt der Read-Only-Liste.
+   */
+  editable?: ImportResult | null;
+  selectedPatternIdx?: number;
+  onSelectPattern?: (idx: number) => void;
+  onToggleStep?: (patternIdx: number, partIdx: number, stepIdx: number) => void;
+  onClearPart?: (patternIdx: number, partIdx: number) => void;
   /** Konvertiert die Bank zu E2S (mit der gewählten Reduktions-Strategie). */
   onConvert: (strategy: StepReductionStrategy) => void;
   /** Lädt Patterns + Samples in den Sequenzer. */
   onLoadToSequencer: (strategy: StepReductionStrategy) => void;
   /** Exportiert alle Bank-Samples als WAV-ZIP. */
   onExportSamples?: () => void;
+  /** Öffnet den Bank/Sample-Editor (KorgBankModal) für diese Datei. */
+  onOpenBankEditor?: () => void;
   /** Lädt einen ESX-Song (per Song-Index) als Song-Arrangement. */
   onLoadSong?: (songIndex: number) => void;
   onCancel: () => void;
@@ -38,15 +51,28 @@ export interface EsxImportDialogProps {
 
 export function EsxImportDialog({
   preview,
+  editable,
+  selectedPatternIdx = 0,
+  onSelectPattern,
+  onToggleStep,
+  onClearPart,
   onConvert,
   onLoadToSequencer,
   onExportSamples,
+  onOpenBankEditor,
   onLoadSong,
   onCancel,
   busy = false,
 }: EsxImportDialogProps) {
   const [strategy, setStrategy] = useState<StepReductionStrategy>("decimate");
+  const [editMode, setEditMode] = useState(true);
   const needsReduction = preview.patternsNeedingReduction > 0;
+  const canEdit =
+    !!editable &&
+    !!onSelectPattern &&
+    !!onToggleStep &&
+    !!onClearPart &&
+    editable.patterns.length > 0;
 
   return (
     <div
@@ -55,16 +81,52 @@ export function EsxImportDialog({
       role="dialog"
       aria-modal="true"
     >
-      <div className="w-[min(680px,92vw)] max-h-[88vh] flex flex-col rounded-lg border border-border-color bg-bg-panel shadow-xl">
+      <div className="w-[min(920px,94vw)] h-[min(640px,88vh)] flex flex-col rounded-lg border border-border-color bg-bg-panel shadow-xl">
         {/* Header */}
-        <div className="px-4 py-3 border-b border-border-color">
-          <div className="text-sm font-bold text-text-primary">
-            ESX-Import — {preview.source}
+        <div className="px-4 py-3 border-b border-border-color flex items-center gap-3">
+          <div className="min-w-0">
+            <div className="text-sm font-bold text-text-primary truncate">
+              Korg-Import — {preview.source}
+            </div>
+            <div className="text-[11px] text-text-muted mt-0.5">
+              {preview.patternCount} Pattern(s) · {preview.monoSamples} Mono- +{" "}
+              {preview.stereoSamples} Stereo-Samples
+            </div>
           </div>
-          <div className="text-[11px] text-text-muted mt-0.5">
-            {preview.patternCount} Pattern(s) · {preview.monoSamples} Mono- +{" "}
-            {preview.stereoSamples} Stereo-Samples
-          </div>
+          <div className="flex-1" />
+          {canEdit && (
+            <div
+              className="flex items-center gap-1"
+              data-testid="esx-view-toggle"
+            >
+              <button
+                type="button"
+                onClick={() => setEditMode(true)}
+                className={[
+                  "px-2 py-1 rounded text-[11px] transition-colors",
+                  editMode
+                    ? "bg-accent-primary/25 text-accent-primary"
+                    : "bg-bg-elevated text-text-dim hover:text-text-primary",
+                ].join(" ")}
+                data-testid="esx-view-edit"
+              >
+                ✎ Bearbeiten
+              </button>
+              <button
+                type="button"
+                onClick={() => setEditMode(false)}
+                className={[
+                  "px-2 py-1 rounded text-[11px] transition-colors",
+                  !editMode
+                    ? "bg-accent-primary/25 text-accent-primary"
+                    : "bg-bg-elevated text-text-dim hover:text-text-primary",
+                ].join(" ")}
+                data-testid="esx-view-summary"
+              >
+                ☰ Übersicht
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Reduktions-Hinweis + Strategie */}
@@ -103,9 +165,32 @@ export function EsxImportDialog({
           </div>
         )}
 
-        {/* Pattern-Liste */}
+        {/* Editierbare Pattern/Step-Vorschau (v3.285) */}
+        {canEdit && editMode && (
+          <div className="flex-1 min-h-0 px-2 py-1">
+            <div className="text-[10px] text-text-dim px-1 pb-1">
+              Klick auf eine Zelle toggelt den Step · Klick auf den Part-Namen
+              leert die Spur. Änderungen landen beim „In Sequenzer laden".
+            </div>
+            <div className="h-[calc(100%-1.25rem)]">
+              {/* canEdit garantiert, dass editable + Callbacks gesetzt sind. */}
+              <EsxPatternPreviewEditor
+                result={editable!}
+                selectedPatternIdx={selectedPatternIdx}
+                onSelectPattern={onSelectPattern!}
+                onToggleStep={onToggleStep!}
+                onClearPart={onClearPart!}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Pattern-Liste (Read-Only-Übersicht) */}
         <div
-          className="flex-1 overflow-y-auto px-2 py-1"
+          className={[
+            "flex-1 overflow-y-auto px-2 py-1",
+            canEdit && editMode ? "hidden" : "",
+          ].join(" ")}
           data-testid="esx-import-pattern-list"
         >
           {preview.patterns.length === 0 ? (
@@ -209,6 +294,17 @@ export function EsxImportDialog({
               title="Alle Bank-Samples als WAV-ZIP exportieren"
             >
               🎵 Samples als WAV
+            </button>
+          )}
+          {onOpenBankEditor && (
+            <button
+              onClick={onOpenBankEditor}
+              disabled={busy}
+              className="px-3 py-1.5 text-xs rounded bg-bg-elevated text-text-muted hover:text-text-primary transition-colors disabled:opacity-40"
+              data-testid="esx-import-bank-editor"
+              title="Bank/Sample-Editor öffnen (umbenennen, Tune/Level/Loop, Trim, Stereo→Mono, Merge)"
+            >
+              🎛 Bank &amp; Samples
             </button>
           )}
           <div className="flex-1" />

@@ -20,6 +20,10 @@ import {
 import { reduceImportResultSteps } from "@/utils/imports/reduceImportedPattern";
 import type { ImportResult } from "@/utils/imports/types";
 import {
+  toggleImportedStep,
+  clearImportedPart,
+} from "@/utils/imports/editImportedPattern";
+import {
   E2_MAX_STEPS,
   type StepReductionStrategy,
 } from "@/utils/patternStepReduce";
@@ -75,12 +79,20 @@ export function EsxImportController({
   const [bank, setBank] = useState<
     import("@/utils/korg/esxParser").EsxBank | null
   >(null);
+  // v3.285: editierbare Vorschau. Wir bauen das ImportResult (mit echten Steps,
+  // OHNE Sample-URLs — die sind teuer und nur fürs hörbare Laden nötig) sofort
+  // beim Parsen und halten es als editierbaren State. Der User kann Steps VOR
+  // dem Laden togglen; die Sample-URLs werden erst in handleLoad nachgereicht.
+  const [editable, setEditable] = useState<ImportResult | null>(null);
+  const [selectedPatternIdx, setSelectedPatternIdx] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
     if (!file) {
       setPreview(null);
       setBank(null);
+      setEditable(null);
+      setSelectedPatternIdx(0);
       return;
     }
     (async () => {
@@ -91,6 +103,26 @@ export function EsxImportController({
         if (cancelled) return;
         setBank(parsed);
         setPreview(buildEsxImportPreview(parsed));
+        // Editierbares ImportResult (Steps, keine URLs) aufbauen.
+        const { esxBankToImportResult } =
+          await import("@/utils/imports/electribeImport");
+        if (cancelled) return;
+        const result = esxBankToImportResult(parsed, file.name);
+        setEditable(result);
+        // Auf das inhaltsreichste Pattern vorselektieren.
+        let bestIdx = 0;
+        let bestActive = -1;
+        result.patterns.forEach((p, i) => {
+          const a = p.parts.reduce(
+            (acc, pt) => acc + pt.steps.filter(s => s.active).length,
+            0
+          );
+          if (a > bestActive) {
+            bestActive = a;
+            bestIdx = i;
+          }
+        });
+        setSelectedPatternIdx(bestIdx);
       } catch (err) {
         if (cancelled) return;
         onToast?.(
@@ -108,6 +140,30 @@ export function EsxImportController({
   }, [file, onClose, onToast]);
 
   if (!file || !preview || !bank) return null;
+
+  const handleToggleStep = (
+    patternIdx: number,
+    partIdx: number,
+    stepIdx: number
+  ) => {
+    setEditable(prev =>
+      prev ? toggleImportedStep(prev, patternIdx, partIdx, stepIdx) : prev
+    );
+  };
+
+  const handleClearPart = (patternIdx: number, partIdx: number) => {
+    setEditable(prev =>
+      prev ? clearImportedPart(prev, patternIdx, partIdx) : prev
+    );
+  };
+
+  // Fallback: falls das editierbare Result (aus welchem Grund auch immer) noch
+  // nicht steht, frisch aus der Bank ableiten (ohne Edits).
+  const deriveResultFromBank = async (): Promise<ImportResult> => {
+    const { esxBankToImportResult } =
+      await import("@/utils/imports/electribeImport");
+    return esxBankToImportResult(bank, file.name);
+  };
 
   const handleConvert = async (strategy: StepReductionStrategy) => {
     setBusy(true);
@@ -141,9 +197,9 @@ export function EsxImportController({
   const handleLoad = async (strategy: StepReductionStrategy) => {
     setBusy(true);
     try {
-      const { esxBankToImportResult } =
-        await import("@/utils/imports/electribeImport");
-      const result = esxBankToImportResult(bank, file.name);
+      // v3.285: die (evtl. editierte) Vorschau laden, nicht neu aus der Bank
+      // ableiten — so landen die User-Edits im Sequenzer.
+      const result = editable ?? (await deriveResultFromBank());
 
       // Sample-Audio hörbar machen: PCM jedes Bank-Slots → WAV → Blob-URL,
       // dann per sampleId an die Parts hängen (rein via attachSampleUrls).
@@ -263,13 +319,32 @@ export function EsxImportController({
     }
   };
 
+  const handleOpenBankEditor = () => {
+    // Bank/Sample-Editor (KorgBankModal) für dieselbe Datei öffnen — via
+    // korg:bank:open, das App.tsx abfängt. Danach den Import-Dialog schließen.
+    try {
+      window.dispatchEvent(
+        new CustomEvent<File>("korg:bank:open", { detail: file })
+      );
+    } catch {
+      /* test-env without CustomEvent */
+    }
+    onClose();
+  };
+
   return (
     <EsxImportDialog
       preview={preview}
+      editable={editable}
+      selectedPatternIdx={selectedPatternIdx}
+      onSelectPattern={setSelectedPatternIdx}
+      onToggleStep={handleToggleStep}
+      onClearPart={handleClearPart}
       busy={busy}
       onConvert={handleConvert}
       onLoadToSequencer={handleLoad}
       onExportSamples={handleExportSamples}
+      onOpenBankEditor={handleOpenBankEditor}
       onLoadSong={onLoadSong ? handleLoadSong : undefined}
       onCancel={onClose}
     />

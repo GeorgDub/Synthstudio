@@ -86,7 +86,6 @@ import { encodeWavStereo } from "@/audio/wavEncoder";
 import {
   requireProFeature,
   PRO_FEATURE_ELECTRIBE_IMPORT,
-  PRO_FEATURE_KORG_BANK_IMPORT,
   PRO_FEATURE_KORG_BANK_WRITE,
   PRO_FEATURE_E2_PATTERN_EXPORT,
 } from "@/utils/proFeatures";
@@ -1396,7 +1395,6 @@ function DrumMachineInner({
   const midiImportRef = useRef<HTMLInputElement>(null);
   const flpImportRef = useRef<HTMLInputElement>(null);
   const electribeImportRef = useRef<HTMLInputElement>(null);
-  const korgBankImportRef = useRef<HTMLInputElement>(null);
   const sliceImportRef = useRef<HTMLInputElement>(null);
   const [selectedStep, setSelectedStep] = useState<{
     partId: string;
@@ -2075,7 +2073,21 @@ function DrumMachineInner({
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       e.target.value = "";
-      if (file) setEsxImportFile(file);
+      if (!file) return;
+      // v3.285: EIN Korg-Import-Button. .esx/.ess → editierbarer Pattern-Import-
+      // Dialog. .all (E2S-Bank) kann parseEsxBank nicht → direkt in den Bank/
+      // Sample-Editor (KorgBankModal via korg:bank:open).
+      if (/\.all$/i.test(file.name)) {
+        try {
+          window.dispatchEvent(
+            new CustomEvent<File>("korg:bank:open", { detail: file })
+          );
+        } catch {
+          /* test-env without CustomEvent */
+        }
+        return;
+      }
+      setEsxImportFile(file);
     },
     []
   );
@@ -4413,40 +4425,9 @@ function DrumMachineInner({
               data-testid="electribe-import-input"
             />
 
-            {/* KORG Sample-Bank-Import (v3.3.0) — ESX-1 .esx + E2S .all (Read-Only). */}
-            <button
-              onClick={() => korgBankImportRef.current?.click()}
-              title="KORG Sample-Bank importieren (.esx ESX-1 oder .all E2S)"
-              className="px-2 py-1 rounded text-[10px] bg-bg-elevated text-text-dim hover:text-text-primary transition-colors inline-flex items-center gap-1"
-              data-testid="korg-bank-import"
-            >
-              📦 KORG Bank
-              <ProLockBadge feature={PRO_FEATURE_KORG_BANK_IMPORT} />
-            </button>
-            <input
-              ref={korgBankImportRef}
-              type="file"
-              accept=".esx,.ess,.all"
-              className="hidden"
-              onChange={e => {
-                const file = e.target.files?.[0];
-                if (file) {
-                  if (!requireProFeature(PRO_FEATURE_KORG_BANK_IMPORT)) {
-                    e.target.value = "";
-                    return;
-                  }
-                  try {
-                    window.dispatchEvent(
-                      new CustomEvent<File>("korg:bank:open", { detail: file })
-                    );
-                  } catch {
-                    /* test-env without CustomEvent */
-                  }
-                }
-                e.target.value = "";
-              }}
-              data-testid="korg-bank-import-input"
-            />
+            {/* v3.285: „📦 KORG Bank" entfernt — der eine „📥 Korg Import"-
+                Button (neben One-Shot) übernimmt Bank/Sample/Pattern-Import;
+                der Bank/Sample-Editor ist aus dessen Dialog erreichbar. */}
 
             {/* KORG E2 Sampler EXPORT (v3.4.0) — Synthstudio → .all */}
             <button
@@ -4813,20 +4794,22 @@ function DrumMachineInner({
           data-testid="loop-sampler-input"
         />
 
-        {/* ESX-Import: Unified-Dialog (Pattern + Samples lesen → konvertieren
-            zu E2S ODER direkt in den Sequenzer laden, mit >64→64-Reduktion). */}
+        {/* v3.285: EIN Korg-Import-Button (ersetzt „📦 KORG Bank" + „📥 ESX
+            Import"). Öffnet den Unified-Dialog: editierbare Pattern/Step-
+            Vorschau → in Sequenzer laden ODER zu E2S konvertieren ODER Samples/
+            Bank-Editor öffnen. .all (E2S) geht direkt in den Bank-Editor. */}
         <button
           onClick={() => esxImportInputRef.current?.click()}
           className="px-2 py-1 rounded text-[10px] bg-bg-elevated text-text-dim hover:text-text-primary transition-colors"
-          title="Korg ESX-1 (.esx) importieren — Patterns + Samples, konvertieren oder direkt laden"
+          title="Korg importieren — ESX-1 (.esx/.ess) Patterns+Samples oder E2S (.all) Bank. Editierbare Vorschau, dann laden/konvertieren."
           data-testid="esx-import-open"
         >
-          📥 ESX Import
+          📥 Korg Import
         </button>
         <input
           ref={esxImportInputRef}
           type="file"
-          accept=".esx,.ess"
+          accept=".esx,.ess,.all"
           className="hidden"
           onChange={handleEsxImportPick}
           data-testid="esx-import-input"
