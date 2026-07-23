@@ -14,6 +14,15 @@
 
 import { encodeWav } from "@/audio/wavEncoder";
 import type { E2sBank, E2sSlot } from "./e2sBankReader";
+import { buildSmplChunk, buildCueChunk, appendWavChunks } from "./e2sWavChunks";
+
+/** Optionale WAV-Metadaten-Chunks (Oe2sSLE-Export-Optionen). */
+export interface E2sWavExportOpts {
+  /** `smpl`-Chunk (Loop-Punkt) einbetten, wenn ein echter Loop existiert. */
+  smpl?: boolean;
+  /** `cue `-Chunk (Slice-Marker) einbetten, wenn Slices existieren. */
+  cue?: boolean;
+}
 
 /** Sanitisiert einen E2S-Sample-Namen zu einem dateisystem-sicheren Stamm. */
 function sanitizeSampleName(name: string): string {
@@ -28,8 +37,12 @@ function sanitizeSampleName(name: string): string {
  * Kodiert ein E2S-Sample (interleaved Float32-PCM) zu WAV-Bytes. Mono → 1 Kanal;
  * Stereo → deinterleaved 2 Kanäle. `encodeWav` erwartet Kanal-Buffer-Arrays.
  */
-export function encodeE2sSlotToWav(slot: E2sSlot): Uint8Array {
+export function encodeE2sSlotToWav(
+  slot: E2sSlot,
+  opts: E2sWavExportOpts = {}
+): Uint8Array {
   const sr = slot.sampleRate > 0 ? slot.sampleRate : 44100;
+  let base: Uint8Array;
   if (slot.channels === 2) {
     const n = Math.floor(slot.pcmData.length / 2);
     const l = new Float32Array(n);
@@ -38,11 +51,23 @@ export function encodeE2sSlotToWav(slot: E2sSlot): Uint8Array {
       l[i] = slot.pcmData[i * 2];
       r[i] = slot.pcmData[i * 2 + 1];
     }
-    return new Uint8Array(encodeWav([l, r], { sampleRate: sr, channels: 2 }));
+    base = new Uint8Array(encodeWav([l, r], { sampleRate: sr, channels: 2 }));
+  } else {
+    base = new Uint8Array(
+      encodeWav([slot.pcmData], { sampleRate: sr, channels: 1 })
+    );
   }
-  return new Uint8Array(
-    encodeWav([slot.pcmData], { sampleRate: sr, channels: 1 })
-  );
+
+  // Optionale Oe2sSLE-Metadaten-Chunks (opt-in). smpl nur bei echtem Loop
+  // (loopEnd > loopStart), cue nur wenn Slices vorhanden.
+  const chunks: Uint8Array[] = [];
+  if (opts.smpl === true && slot.loopEnd > slot.loopStart) {
+    chunks.push(buildSmplChunk(sr, slot.loopStart, slot.loopEnd));
+  }
+  if (opts.cue === true && slot.slices && slot.slices.length > 0) {
+    chunks.push(buildCueChunk(slot.slices.map(s => ({ position: s.start }))));
+  }
+  return chunks.length > 0 ? appendWavChunks(base, chunks) : base;
 }
 
 /**
@@ -83,14 +108,17 @@ export interface E2sSampleWavFile {
  * Slot-Reihenfolge. Leere/kaputte Slots werden übersprungen; Dateinamen sind
  * innerhalb der Liste garantiert eindeutig.
  */
-export function buildE2sSampleWavFiles(bank: E2sBank): E2sSampleWavFile[] {
+export function buildE2sSampleWavFiles(
+  bank: E2sBank,
+  opts: E2sWavExportOpts = {}
+): E2sSampleWavFile[] {
   const files: E2sSampleWavFile[] = [];
   const seen = new Set<string>();
   for (const slot of bank.slots) {
     if (!slot || !slot.pcmData || slot.pcmData.length === 0) continue;
     let bytes: Uint8Array;
     try {
-      bytes = encodeE2sSlotToWav(slot);
+      bytes = encodeE2sSlotToWav(slot, opts);
     } catch {
       continue; // einzelnes Sample überspringen, Rest weiter exportieren
     }
@@ -171,9 +199,10 @@ export interface E2sSampleZipResult {
  */
 export async function bundleE2sSamplesToZip(
   bank: E2sBank,
-  JSZipImpl?: JSZipCtorLike
+  JSZipImpl?: JSZipCtorLike,
+  opts: E2sWavExportOpts = {}
 ): Promise<E2sSampleZipResult> {
-  const files = buildE2sSampleWavFiles(bank);
+  const files = buildE2sSampleWavFiles(bank, opts);
   const manifest = buildE2sSampleExportManifest(bank, files);
 
   let Ctor: JSZipCtorLike;

@@ -253,6 +253,8 @@ export function KorgBankEditor({
   // v3.284 — die geparste E2S-Bank behalten, damit „Samples als WAV" das
   // originale PCM exportieren kann (Oe2sSLE „Export sample to WAV").
   const [e2sSourceBank, setE2sSourceBank] = useState<E2sBank | null>(null);
+  // v3.284 — Oe2sSLE-Export-Option: Loop-/Slice-Metadaten (smpl/cue) einbetten.
+  const [e2sExportEmbedMeta, setE2sExportEmbedMeta] = useState(true);
   const [openedSourceName, setOpenedSourceName] = useState<string>("");
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
 
@@ -1651,7 +1653,10 @@ export function KorgBankEditor({
     }
     setBusy(true);
     try {
-      const res = await bundleE2sSamplesToZip(e2sSourceBank);
+      const res = await bundleE2sSamplesToZip(e2sSourceBank, undefined, {
+        smpl: e2sExportEmbedMeta,
+        cue: e2sExportEmbedMeta,
+      });
       if (res.sampleCount === 0) {
         toast("Keine Samples in dieser Bank zum Exportieren.", {
           kind: "warning",
@@ -2105,15 +2110,30 @@ export function KorgBankEditor({
             ) : (
               <>
                 {mode === "edit" && e2sSourceBank && (
-                  <button
-                    data-testid="korg-bank-editor-e2s-export-samples"
-                    onClick={handleE2sExportSamples}
-                    disabled={busy}
-                    className="px-3 py-1 rounded text-xs bg-bg-elevated text-text-primary hover:brightness-125 transition-all disabled:opacity-40 flex items-center gap-2"
-                    title="Alle Samples der geladenen Bank als WAV-ZIP exportieren"
-                  >
-                    🎵 Samples als WAV
-                  </button>
+                  <>
+                    <label
+                      className="flex items-center gap-1 text-[11px] text-text-muted"
+                      title="Oe2sSLE: Loop-Punkt (smpl) + Slice-Marker (cue) in die WAV einbetten"
+                    >
+                      <input
+                        data-testid="korg-bank-editor-e2s-export-meta"
+                        type="checkbox"
+                        checked={e2sExportEmbedMeta}
+                        onChange={e => setE2sExportEmbedMeta(e.target.checked)}
+                        className="accent-accent-primary"
+                      />
+                      smpl/cue
+                    </label>
+                    <button
+                      data-testid="korg-bank-editor-e2s-export-samples"
+                      onClick={handleE2sExportSamples}
+                      disabled={busy}
+                      className="px-3 py-1 rounded text-xs bg-bg-elevated text-text-primary hover:brightness-125 transition-all disabled:opacity-40 flex items-center gap-2"
+                      title="Alle Samples der geladenen Bank als WAV-ZIP exportieren"
+                    >
+                      🎵 Samples als WAV
+                    </button>
+                  </>
                 )}
                 <button
                   data-testid="korg-bank-editor-save"
