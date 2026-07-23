@@ -63,7 +63,11 @@ export interface WaveformSliceCanvasProps {
    * Die Komponente ruft `onAudition(sliceIndex, startFrame, endFrame)` —
    * tatsächliches Playback macht der Caller.
    */
-  onAudition?: (sliceIndex: number, startFrame: number, endFrame: number) => void;
+  onAudition?: (
+    sliceIndex: number,
+    startFrame: number,
+    endFrame: number
+  ) => void;
   /**
    * v3.9.0 — Highlight: Index der aktuell spielenden Slice-Region.
    * Caller setzt diesen Wert beim Start des Auditions und resettet ihn auf
@@ -81,6 +85,14 @@ export interface WaveformSliceCanvasProps {
    * Range). Wenn fehlend, fällt der Playhead auf die Region-Breite zurück.
    */
   playingDurationMs?: number | null;
+  /**
+   * v3.284 — Loop-Region-Overlay (Frames). Wird als getönte Band + zwei
+   * vertikale Linien (Start/Ende) über der Waveform gezeichnet, wenn
+   * `loopEnd > loopStart`. Rein visuell (kein Drag) — die Loop-Punkte werden
+   * über die Slider im Inspector editiert.
+   */
+  loopStart?: number | null;
+  loopEnd?: number | null;
 }
 
 const DEFAULT_HEIGHT = 120;
@@ -92,7 +104,7 @@ const ZC_SEARCH_RADIUS = 256;
  */
 function buildPeaks(
   channelData: Float32Array,
-  targetSize: number,
+  targetSize: number
 ): { mins: Float32Array; maxs: Float32Array } {
   const size = Math.max(1, targetSize | 0);
   const mins = new Float32Array(size);
@@ -119,7 +131,9 @@ function buildPeaks(
 
 function getCssVar(name: string, fallback: string): string {
   if (typeof window === "undefined") return fallback;
-  const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  const v = getComputedStyle(document.documentElement)
+    .getPropertyValue(name)
+    .trim();
   return v || fallback;
 }
 
@@ -137,6 +151,8 @@ export function WaveformSliceCanvas({
   playingSliceIndex = null,
   playingStartedAt = null,
   playingDurationMs = null,
+  loopStart = null,
+  loopEnd = null,
 }: WaveformSliceCanvasProps): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -149,7 +165,7 @@ export function WaveformSliceCanvas({
   useLayoutEffect(() => {
     const el = containerRef.current;
     if (!el || typeof ResizeObserver === "undefined") return;
-    const ro = new ResizeObserver((entries) => {
+    const ro = new ResizeObserver(entries => {
       for (const e of entries) {
         const w = Math.max(200, Math.floor(e.contentRect.width));
         setCanvasWidth(w);
@@ -162,7 +178,7 @@ export function WaveformSliceCanvas({
   // ── Peaks memo ───────────────────────────────────────────────────────────────
   const peaks = useMemo(
     () => buildPeaks(channelData, canvasWidth),
-    [channelData, canvasWidth],
+    [channelData, canvasWidth]
   );
 
   // ── Canvas-Render via RAF ───────────────────────────────────────────────────
@@ -171,7 +187,10 @@ export function WaveformSliceCanvas({
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const dpr = Math.min(2, typeof window !== "undefined" ? (window.devicePixelRatio || 1) : 1);
+    const dpr = Math.min(
+      2,
+      typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1
+    );
     const w = canvasWidth;
     const h = height;
     canvas.width = Math.floor(w * dpr);
@@ -208,7 +227,7 @@ export function WaveformSliceCanvas({
       ) {
         const sorted = [...onsets].sort((a, b) => a.frame - b.frame);
         const target = onsets[playingSliceIndex];
-        const sIdx = sorted.findIndex((o) => o.frame === target.frame);
+        const sIdx = sorted.findIndex(o => o.frame === target.frame);
         if (sIdx >= 0) {
           const sFrame = sorted[sIdx].frame;
           const eFrame =
@@ -244,6 +263,39 @@ export function WaveformSliceCanvas({
       }
       ctx.stroke();
 
+      // v3.284 — Loop-Region-Overlay (getöntes Band + Start/Ende-Linien).
+      if (
+        totalFrames > 0 &&
+        loopStart !== null &&
+        loopStart !== undefined &&
+        loopEnd !== null &&
+        loopEnd !== undefined &&
+        loopEnd > loopStart
+      ) {
+        const ls = Math.max(0, Math.min(loopStart, totalFrames));
+        const le = Math.max(0, Math.min(loopEnd, totalFrames));
+        const xls = Math.floor((ls / totalFrames) * w);
+        const xle = Math.floor((le / totalFrames) * w);
+        ctx.fillStyle = playheadColor; // accent-success
+        ctx.globalAlpha = 0.14;
+        ctx.fillRect(xls, 0, Math.max(1, xle - xls), h);
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = playheadColor;
+        ctx.lineWidth = 1.5;
+        for (const [x, label] of [
+          [xls, "L"],
+          [xle, "E"],
+        ] as const) {
+          ctx.beginPath();
+          ctx.moveTo(x + 0.5, 0);
+          ctx.lineTo(x + 0.5, h);
+          ctx.stroke();
+          ctx.fillStyle = playheadColor;
+          ctx.font = "10px monospace";
+          ctx.fillText(label, x + 3, h - 4);
+        }
+      }
+
       if (totalFrames > 0) {
         for (let idx = 0; idx < onsets.length; idx++) {
           const o = onsets[idx];
@@ -262,17 +314,25 @@ export function WaveformSliceCanvas({
         }
 
         // v3.9.0 — Playhead innerhalb der Playing-Region.
-        if (playingRegion && playingStartedAt !== null && playingStartedAt !== undefined) {
+        if (
+          playingRegion &&
+          playingStartedAt !== null &&
+          playingStartedAt !== undefined
+        ) {
           const elapsedMs =
-            (typeof performance !== "undefined" ? performance.now() : Date.now()) -
-            playingStartedAt;
+            (typeof performance !== "undefined"
+              ? performance.now()
+              : Date.now()) - playingStartedAt;
           const regionFrames =
             playingRegion.endFrame - playingRegion.startFrame;
           const regionDurationMs =
-            playingDurationMs ?? (regionFrames / Math.max(1, sampleRate)) * 1000;
-          const t = Math.min(1, Math.max(0, elapsedMs / Math.max(1, regionDurationMs)));
-          const phFrame =
-            playingRegion.startFrame + t * regionFrames;
+            playingDurationMs ??
+            (regionFrames / Math.max(1, sampleRate)) * 1000;
+          const t = Math.min(
+            1,
+            Math.max(0, elapsedMs / Math.max(1, regionDurationMs))
+          );
+          const phFrame = playingRegion.startFrame + t * regionFrames;
           const phX = Math.floor((phFrame / totalFrames) * w);
           ctx.strokeStyle = playheadColor;
           ctx.lineWidth = 2;
@@ -306,6 +366,8 @@ export function WaveformSliceCanvas({
     playingStartedAt,
     playingDurationMs,
     sampleRate,
+    loopStart,
+    loopEnd,
   ]);
 
   // ── Pointer-Mapping ─────────────────────────────────────────────────────────
@@ -318,7 +380,7 @@ export function WaveformSliceCanvas({
       const ratio = r.width > 0 ? rel / r.width : 0;
       return Math.floor(ratio * totalFrames);
     },
-    [totalFrames],
+    [totalFrames]
   );
 
   const findNearestOnset = useCallback(
@@ -334,7 +396,7 @@ export function WaveformSliceCanvas({
       }
       return best && bestDist <= tolerance ? best : null;
     },
-    [onsets],
+    [onsets]
   );
 
   const handleMouseDown = useCallback(
@@ -374,7 +436,14 @@ export function WaveformSliceCanvas({
 
       // v3.9.0 — Audition: Linksklick auf eine bestehende Slice-Region
       // (zwischen zwei Markern) spielt die Slice ab. Add-Geste = Alt/Ctrl-Mod.
-      if (e.button === 0 && onAudition && onsets.length > 0 && !e.altKey && !e.ctrlKey && !e.metaKey) {
+      if (
+        e.button === 0 &&
+        onAudition &&
+        onsets.length > 0 &&
+        !e.altKey &&
+        !e.ctrlKey &&
+        !e.metaKey
+      ) {
         const region = findSliceUnderFrame(onsets, frame, totalFrames);
         if (region) {
           onAudition(region.index, region.startFrame, region.endFrame);
@@ -387,7 +456,16 @@ export function WaveformSliceCanvas({
         onChange(addOnset(onsets, frame, maxSlices));
       }
     },
-    [canvasWidth, findNearestOnset, totalFrames, xToFrame, onsets, onChange, maxSlices, onAudition],
+    [
+      canvasWidth,
+      findNearestOnset,
+      totalFrames,
+      xToFrame,
+      onsets,
+      onChange,
+      maxSlices,
+      onAudition,
+    ]
   );
 
   const handleMouseMove = useCallback(
@@ -400,13 +478,17 @@ export function WaveformSliceCanvas({
       onChange(moveOnset(onsets, dragFrame, newFrame));
       setDragFrame(newFrame);
     },
-    [dragFrame, xToFrame, onChange, onsets],
+    [dragFrame, xToFrame, onChange, onsets]
   );
 
   const handleMouseUp = useCallback(() => {
     if (dragFrame === null) return;
     if (snapToZero && dragFrame !== 0) {
-      const snapped = snapToZeroCrossing(channelData, dragFrame, ZC_SEARCH_RADIUS);
+      const snapped = snapToZeroCrossing(
+        channelData,
+        dragFrame,
+        ZC_SEARCH_RADIUS
+      );
       if (snapped !== dragFrame) {
         onChange(moveOnset(onsets, dragFrame, snapped));
       }
@@ -439,15 +521,11 @@ export function WaveformSliceCanvas({
       // Prevent native context menu — Right-Click ist Remove-Geste.
       e.preventDefault();
     },
-    [],
+    []
   );
 
   return (
-    <div
-      ref={containerRef}
-      className={className}
-      data-testid={testId}
-    >
+    <div ref={containerRef} className={className} data-testid={testId}>
       <canvas
         ref={canvasRef}
         onMouseDown={handleMouseDown}

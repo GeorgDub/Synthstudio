@@ -69,6 +69,7 @@ import {
   displayCategory,
   displayName,
   hasUnsavedChanges,
+  mergeE2sBankIntoOpenedSlots,
   moveOrSwapSlot,
   openedSlotsToBuildInputs,
   patchOpenedSlot,
@@ -255,6 +256,9 @@ export function KorgBankEditor({
   const [e2sSourceBank, setE2sSourceBank] = useState<E2sBank | null>(null);
   // v3.284 — Oe2sSLE-Export-Option: Loop-/Slice-Metadaten (smpl/cue) einbetten.
   const [e2sExportEmbedMeta, setE2sExportEmbedMeta] = useState(true);
+  // v3.284 — Oe2sSLE „Import e2sSample.all": zweite Bank mergen (ab #Num).
+  const [e2sMergeFromNumber, setE2sMergeFromNumber] = useState(501);
+  const e2sMergeInputRef = useRef<HTMLInputElement | null>(null);
   const [openedSourceName, setOpenedSourceName] = useState<string>("");
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
 
@@ -1694,6 +1698,51 @@ export function KorgBankEditor({
     }
   }
 
+  // v3.284 — Oe2sSLE „Import e2sSample.all": eine zweite `.all`-Bank auswählen
+  // und ihre Samples in die freien Slots ab #Num mergen.
+  async function handleE2sMergeImportPick(
+    e: React.ChangeEvent<HTMLInputElement>
+  ): Promise<void> {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setBusy(true);
+    try {
+      const ab = await file.arrayBuffer();
+      const imported = parseE2sBank(ab, file.name);
+      const res = mergeE2sBankIntoOpenedSlots(
+        openedSlots,
+        imported.slots,
+        e2sMergeFromNumber
+      );
+      if (res.merged === 0) {
+        toast(
+          `Keine Samples gemergt (keine freien Slots ab #${e2sMergeFromNumber}?).`,
+          { kind: "warning" }
+        );
+        return;
+      }
+      setOpenedSlots(res.slots);
+      toast(
+        `${res.merged} Sample(s) aus ${file.name} gemergt` +
+          (res.skipped > 0
+            ? ` (${res.skipped} übersprungen — Slots voll)`
+            : ""),
+        { kind: "success", duration: 4000 }
+      );
+    } catch (err) {
+      const msg =
+        err instanceof E2sParseError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : String(err);
+      toast(`Merge-Import fehlgeschlagen: ${msg}`, { kind: "error" });
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function handleSaveAs(): Promise<void> {
     if (!requireProFeature(PRO_FEATURE_KORG_BANK_WRITE)) return;
 
@@ -2133,6 +2182,40 @@ export function KorgBankEditor({
                     >
                       🎵 Samples als WAV
                     </button>
+                    <span className="w-px h-5 bg-border-color" />
+                    <label
+                      className="flex items-center gap-1 text-[11px] text-text-muted"
+                      title="Start-Slot-Nummer für den Merge-Import"
+                    >
+                      ab #
+                      <input
+                        data-testid="korg-bank-editor-e2s-merge-from"
+                        type="number"
+                        min={0}
+                        max={E2S_MAX_SLOTS - 1}
+                        value={e2sMergeFromNumber}
+                        onChange={e =>
+                          setE2sMergeFromNumber(Number(e.target.value))
+                        }
+                        className="w-16 bg-bg-base border border-border-color rounded px-1 py-0.5 text-text-primary"
+                      />
+                    </label>
+                    <button
+                      data-testid="korg-bank-editor-e2s-merge-import"
+                      onClick={() => e2sMergeInputRef.current?.click()}
+                      disabled={busy}
+                      className="px-3 py-1 rounded text-xs bg-bg-elevated text-text-primary hover:brightness-125 transition-all disabled:opacity-40 flex items-center gap-2"
+                      title="Eine zweite .all-Bank auswählen und ihre Samples in freie Slots mergen"
+                    >
+                      📥 Bank mergen
+                    </button>
+                    <input
+                      ref={e2sMergeInputRef}
+                      type="file"
+                      accept=".all,.e2sallsample,application/octet-stream"
+                      className="hidden"
+                      onChange={handleE2sMergeImportPick}
+                    />
                   </>
                 )}
                 <button
@@ -3779,6 +3862,8 @@ export function KorgBankEditor({
           playingDurationMs={
             isPlayingThisSlot ? auditionState!.durationMs : null
           }
+          loopStart={slot.oneshot ? null : slot.loopStart}
+          loopEnd={slot.oneshot ? null : slot.loopEnd}
         />
 
         <p

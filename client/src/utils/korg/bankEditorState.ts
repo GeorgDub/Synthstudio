@@ -473,6 +473,86 @@ export function moveOrSwapSlot(
   });
 }
 
+// ─── Merge-Import einer zweiten .all-Bank (v3.284, Oe2sSLE „Import all") ───────
+
+/** E2sSlot (Reader-Output) → SlotContent (Editor-Inhalt). */
+function e2sSlotToContent(src: E2sSlot): SlotContent {
+  return {
+    empty: false,
+    name: src.name,
+    category: src.category,
+    oneshot: src.loopType === LOOP_TYPE_ONESHOT,
+    gain12db: src.gain12db,
+    sampleTune: src.sampleTune ?? 0,
+    level: src.level ?? 127,
+    loopStart: src.loopStart ?? 0,
+    loopEnd: src.loopEnd ?? 0,
+    pcmData: src.pcmData,
+    sampleRate: src.sampleRate,
+    channels: src.channels,
+    frames: src.frames,
+    slices: src.slices.map(sl => ({ ...sl })),
+  };
+}
+
+export interface E2sMergeResult {
+  slots: OpenedSlot[];
+  /** Wie viele importierte Samples platziert wurden. */
+  merged: number;
+  /** Wie viele mangels freier Slots übersprungen wurden. */
+  skipped: number;
+}
+
+/**
+ * Oe2sSLE „Import e2sSample.all": mergt die Samples einer ZWEITEN geparsten Bank
+ * in die aktuelle Editor-Slot-Liste. Belegte Slots der Quelle wandern der Reihe
+ * nach in die nächsten FREIEN Slot-Nummern ab `fromNumber` (renumbering).
+ * Positionen bleiben; jeder befüllte Ziel-Slot wird isDirty=true (Re-Encode mit
+ * der neuen Nummer). Reichen die freien Slots nicht, wird der Rest übersprungen.
+ *
+ * @param slots         Aktuelle Editor-Slots.
+ * @param importedSlots `parseE2sBank(otherFile).slots`.
+ * @param fromNumber    Start-Slot-Nummer für die Zuweisung (default 501).
+ */
+export function mergeE2sBankIntoOpenedSlots(
+  slots: OpenedSlot[],
+  importedSlots: ReadonlyArray<E2sSlot | null>,
+  fromNumber = 501
+): E2sMergeResult {
+  const start = Math.max(
+    0,
+    Math.min(E2S_MAX_SLOTS - 1, Math.floor(fromNumber))
+  );
+  const freeQueue = slots
+    .filter(s => s.empty && s.slotIndex >= start)
+    .map(s => s.slotIndex)
+    .sort((a, b) => a - b);
+
+  const sources = importedSlots.filter(
+    (s): s is E2sSlot => s != null && !!s.pcmData && s.pcmData.length > 0
+  );
+
+  const assignments = new Map<number, E2sSlot>();
+  let merged = 0;
+  let skipped = 0;
+  for (const src of sources) {
+    const target = freeQueue.shift();
+    if (target === undefined) {
+      skipped++;
+      continue;
+    }
+    assignments.set(target, src);
+    merged++;
+  }
+  if (merged === 0) return { slots, merged: 0, skipped };
+
+  const next = slots.map(row => {
+    const src = assignments.get(row.slotIndex);
+    return src ? withSlotContent(row, e2sSlotToContent(src)) : row;
+  });
+  return { slots: next, merged, skipped };
+}
+
 // ─── Save: OpenedSlot[] → E2sSlotInput[] ──────────────────────────────────────
 
 /**
