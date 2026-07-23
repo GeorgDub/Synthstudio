@@ -12,8 +12,7 @@
  * zur v3.3 Reader-Konvention):
  *
  *   0x0000..0x0010  16B signature  "e2s sample all\x1a\x00"
- *   0x0010..0x07E0  2032B zero-padding (reserved)
- *   0x07E0..0x0BC8  250 × LE32 offset table (0 = empty slot)
+ *   0x0010..0x1000  1020 × LE32 offset table (0 = empty slot; idx == OSC_0index)
  *   0x0BC8..0x1000  0x438 zero-padding to 4 KiB boundary
  *   0x1000..EOF     concatenated RIFF/WAVE chunks (one per non-empty slot)
  *
@@ -32,7 +31,7 @@
  *   Geänderte oder neu hinzugefügte Slots werden re-encoded wie in v3.4.
  *
  * Bounds-Checks:
- *   - max 250 Slots
+ *   - max E2S_MAX_SLOTS (1020) Slots
  *   - max 10 MB PCM pro Slot (per-slot cap MAX_BYTES_PER_SLOT)
  *   - max 224 MB total PCM (E2S_MAX_TOTAL_PCM_BYTES)
  *   - max 512 MB total Datei (E2S_FILE_MAX_BYTES)
@@ -89,7 +88,7 @@ import { floatToInt16LeBytes, sanitizeE2sSlotName } from "./audioProcessor";
 
 /** Eingabe-Spec für einen einzelnen Slot in `buildE2sBank`. */
 export interface E2sSlotInput {
-  /** Slot-Index in der 1002-Entry-Offset-Table (0..1001; hacktribe-User ≥ 501). */
+  /** Slot-Index = esli.OSC_0index in der 1020-Entry-Tabelle (0..1019; hacktribe-User ≥ 501). */
   slotIndex: number;
   /**
    * Sample-Nummer, wie sie das Gerät anzeigt (esli-Body @ +0x56, u16 LE).
@@ -280,8 +279,8 @@ export function buildE2sBank(
   for (let i = 0; i < E2S_MAX_SLOTS; i++) {
     dv.setUint32(E2S_ALL_OFFSET_TABLE_START + i * 4, offsetTable[i], true);
   }
-  // (Bytes zwischen Signature 0x10..0x07E0, und zwischen Table-End 0x0BC8..0x1000
-  //  sind bereits 0 dank Uint8Array-Default — kein expliziter memset nötig.)
+  // (Die Tabelle füllt 0x0010..0x1000 komplett; leere Slots sind 0 dank
+  //  Uint8Array-Default — kein expliziter memset nötig.)
 
   // ── Stage 3 — RIFF-Chunks ───────────────────────────────────────────────────
   for (const p of pending) {

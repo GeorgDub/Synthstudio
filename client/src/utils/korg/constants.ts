@@ -90,10 +90,12 @@ export const ESX1_SIZE_FILE_MIN = 0x00250010;
 export const ESX1_EMPTY_OFFSET = 0xffffffff;
 
 // ─── E2S device limits ────────────────────────────────────────────────────────
-// SoT: ESX-Editor constants.py:66 (E2S_MAX_SLOTS = 1002). Der frühere Wert 250
-// war ein Fehl-Port der Vor-TASK-029-Analyse (siehe E2S_ALL_OFFSET_TABLE_START).
-// Die `.all`-Wire-Tabelle reserviert genau 1002 LE32-Einträge (0x0058..0x1000).
-export const E2S_MAX_SLOTS = 1002;
+// SoT: Oe2sSLE `e2s_sample_all.py` load()/save() — die `.all`-Offset-Tabelle
+// reserviert genau 1020 LE32-Einträge (0x0010..0x1000), und der Tabellen-Index
+// i == esli.OSC_0index (0-basierte Geräte-Sample-Nummer). Wir richten uns exakt
+// an Oe2sSLE aus (bewährtes Referenz-Tool); frühere Werte 250 bzw. 1002/0x0058
+// waren Fehl-Ableitungen aus je einer einzelnen Test-Datei.
+export const E2S_MAX_SLOTS = 1020;
 /** Maximum user-visible sample name length im Device-UI; on-disk speichert das
  *  korg-chunk nur 16 Bytes (ESLI_NAME_LEN). */
 export const E2S_NAME_MAX_CHARS = 24;
@@ -104,22 +106,35 @@ export const E2S_GLOBAL_SECTION_SIZE = 256;
 // SoT: constants.py:76-85 (verified gegen e2sSample.all 2026-05-17)
 /** 16-byte signature: "e2s sample all\x1a\x00". */
 export const E2S_ALL_SIGNATURE = new Uint8Array([
-  0x65, 0x32, 0x73, 0x20, // "e2s "
-  0x73, 0x61, 0x6d, 0x70, // "samp"
-  0x6c, 0x65, 0x20, 0x61, // "le a"
-  0x6c, 0x6c, 0x1a, 0x00, // "ll\x1a\0"
+  0x65,
+  0x32,
+  0x73,
+  0x20, // "e2s "
+  0x73,
+  0x61,
+  0x6d,
+  0x70, // "samp"
+  0x6c,
+  0x65,
+  0x20,
+  0x61, // "le a"
+  0x6c,
+  0x6c,
+  0x1a,
+  0x00, // "ll\x1a\0"
 ]);
 export const E2S_ALL_SIGNATURE_LEN = E2S_ALL_SIGNATURE.length; // 16
-// FIXED (v3.x): Offset-Tabelle @ 0x0058 mit 1002 LE32-Einträgen, endet exakt bei
-// 0x1000 (Start der Sample-Area). SoT: ESX-Editor e2s_builder.py + constants.py,
-// bit-exakt round-trip-verifiziert gegen 14 echte Device-Dumps (TASK-029,
-// 2026-05-19). Der frühere Wert 0x07E0/250 war ein Artefakt: die *eine* damalige
-// Test-`.all` legte ihre 11 Factory-Samples bei Tabellen-Index 482 ab, und
-// 0x0058 + 482*4 == 0x07E0 — der erste Nicht-Null-Eintrag landete zufällig dort.
-// Bytes 0x0010..0x0058 = 72 B Null-Padding (reserved). (Oe2sSLE liest äquivalent
-// ab 0x0010/1020, inkl. dieser 18 Padding-Slots — dieselben Sample-Offsets.)
-export const E2S_ALL_OFFSET_TABLE_START = 0x0058;
-export const E2S_ALL_OFFSET_TABLE_BYTES = E2S_MAX_SLOTS * 4; // 1002 * 4 = 4008 → 0x0058+0xFA8 = 0x1000
+// Offset-Tabelle @ 0x0010 mit 1020 LE32-Einträgen, endet exakt bei 0x1000 (Start
+// der Sample-Area). SoT: Oe2sSLE `e2s_sample_all.py` — load() liest
+// `struct.unpack("<"+"I"*1020, f.read(4080))` ab 0x0010; Pointer eines Samples =
+// read_u32(0x10 + i*4), 0 = leerer Slot, Index i == esli.OSC_0index.
+// Hinweis: Unser früherer Wert 0x0058/1002 stammte aus EINER Datei, deren erstes
+// Sample bei OSC_0index 500 lag: 0x0010 + 500*4 == 0x07E0 — der „erste Nicht-
+// Null-Eintrag" wurde fälschlich als Tabellen-Start gedeutet. Bei leeren Slots
+// 0..17 sind beide Lesarten byte-gleich; die Oe2sSLE-Variante liest zusätzlich
+// die 18 niedrig nummerierten (Factory-)Slots korrekt mit.
+export const E2S_ALL_OFFSET_TABLE_START = 0x0010;
+export const E2S_ALL_OFFSET_TABLE_BYTES = E2S_MAX_SLOTS * 4; // 1020 * 4 = 4080 → 0x0010+0xFF0 = 0x1000
 export const E2S_ALL_SAMPLE_AREA_START = 0x1000;
 
 // ─── korg/esli sub-chunk inside each E2S RIFF/WAVE ───────────────────────────

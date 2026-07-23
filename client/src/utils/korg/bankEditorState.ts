@@ -34,7 +34,7 @@ import {
 export interface OpenedSlot {
   /** Stable React key. */
   rowId: string;
-  /** Slot-Index 0..249 in the on-disk offset-table. */
+  /** Slot-Index 0..1019 (== OSC_0index) in der on-disk Offset-Tabelle. */
   slotIndex: number;
   /** Slot is empty in the source bank (offset=0). UI shows "Empty" placeholder. */
   empty: boolean;
@@ -96,10 +96,10 @@ export interface OpenedSlotSnapshot {
 // ─── Bank → OpenedSlot[] ──────────────────────────────────────────────────────
 
 /**
- * Convert a parsed `E2sBank` into the editor's 250-row slot-list.
+ * Convert a parsed E2sBank into the editor slot-list (E2S_MAX_SLOTS rows).
  *
- * Every position 0..249 is represented — empty slots get `empty: true`
- * placeholders. All loaded slots start with `isDirty: false`.
+ * Every position 0..E2S_MAX_SLOTS-1 is represented — empty slots get
+ * `empty: true` placeholders. All loaded slots start with `isDirty: false`.
  *
  * @param bank Result von `parseE2sBank(buf, src, { preserveRawRiff: true })`.
  *             Wenn `bank.slots[i].rawRiff` undefined ist, kann der Slot bei
