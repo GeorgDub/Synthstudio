@@ -1,0 +1,169 @@
+/**
+ * EsxImportController.tsx — verbindet die ESX-Datei mit dem Import-Dialog.
+ *
+ * Nimmt eine `File`, parst sie (parseEsxBank), baut die Vorschau und rendert den
+ * `EsxImportDialog`. Führt die beiden Aktionen aus:
+ *   - Konvertieren → `.e2sallpat` + `.all` erzeugen und herunterladen.
+ *   - In Sequenzer laden → ESX-Bank → ImportResult, auf 64 Steps reduzieren (mit
+ *     der gewählten Strategie) und an `onLoadResult` durchreichen (der Parent
+ *     verdrahtet das an den DrumMachine-Store).
+ *
+ * Isomorph: der Download nutzt Blob + Object-URL (funktioniert im Browser UND im
+ * Electron-Renderer). Kein direkter window.electronAPI-Zugriff.
+ */
+import { useEffect, useState } from "react";
+import { EsxImportDialog } from "./EsxImportDialog";
+import {
+  buildEsxImportPreview,
+  type EsxImportPreview,
+} from "@/utils/imports/esxImportPreview";
+import { reduceImportResultSteps } from "@/utils/imports/reduceImportedPattern";
+import type { ImportResult } from "@/utils/imports/types";
+import {
+  E2_MAX_STEPS,
+  type StepReductionStrategy,
+} from "@/utils/patternStepReduce";
+
+export interface EsxImportControllerProps {
+  /** Zu importierende Datei; null = Dialog geschlossen. */
+  file: File | null;
+  onClose: () => void;
+  /**
+   * Wird beim „In Sequenzer laden" mit dem (bereits reduzierten) ImportResult
+   * aufgerufen. Der Parent macht daraus PatternData + addPatternsData.
+   */
+  onLoadResult: (result: ImportResult) => void;
+  /** Optionales Feedback (Toast) — Erfolg/Fehler. */
+  onToast?: (message: string, kind: "success" | "error") => void;
+}
+
+function downloadBytes(bytes: Uint8Array, fileName: string): void {
+  // Frische ArrayBuffer-Kopie → TS-sauber als BlobPart (vermeidet den
+  // SharedArrayBuffer-Union der generischen Uint8Array).
+  const copy = new Uint8Array(bytes.byteLength);
+  copy.set(bytes);
+  const blob = new Blob([copy.buffer], { type: "application/octet-stream" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = fileName;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+
+export function EsxImportController({
+  file,
+  onClose,
+  onLoadResult,
+  onToast,
+}: EsxImportControllerProps) {
+  const [preview, setPreview] = useState<EsxImportPreview | null>(null);
+  const [busy, setBusy] = useState(false);
+  // Der geparste Bank-Zustand lebt in einem Ref-artigen State, damit die
+  // Aktionen ihn ohne Reparse nutzen.
+  const [bank, setBank] = useState<
+    import("@/utils/korg/esxParser").EsxBank | null
+  >(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!file) {
+      setPreview(null);
+      setBank(null);
+      return;
+    }
+    (async () => {
+      try {
+        const buf = new Uint8Array(await file.arrayBuffer());
+        const { parseEsxBank } = await import("@/utils/korg/esxParser");
+        const parsed = parseEsxBank(buf, file.name);
+        if (cancelled) return;
+        setBank(parsed);
+        setPreview(buildEsxImportPreview(parsed));
+      } catch (err) {
+        if (cancelled) return;
+        onToast?.(
+          `ESX konnte nicht gelesen werden: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+          "error"
+        );
+        onClose();
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [file, onClose, onToast]);
+
+  if (!file || !preview || !bank) return null;
+
+  const handleConvert = async (strategy: StepReductionStrategy) => {
+    setBusy(true);
+    try {
+      const { convertEsxToE2sBank } = await import("@/utils/korg/esxToE2sBank");
+      const res = convertEsxToE2sBank(bank);
+      const stem = file.name.replace(/\.[^.]+$/, "");
+      downloadBytes(res.allpat, `${stem}.e2sallpat`);
+      downloadBytes(res.all, `${stem}.all`);
+      onToast?.(
+        `Konvertiert: ${res.stats.patterns} Pattern(s), ${res.stats.samples} Sample(s) → .e2sallpat + .all`,
+        "success"
+      );
+      // strategy fließt in die spätere Pattern-Reduktion beim Convert ein
+      // (aktuell nutzt convertEsxToE2sBank die 16-Step-Bodies direkt); der
+      // Parameter ist durchgereicht für die kommende >64-Konvertierung.
+      void strategy;
+      onClose();
+    } catch (err) {
+      onToast?.(
+        `Konvertieren fehlgeschlagen: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+        "error"
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleLoad = async (strategy: StepReductionStrategy) => {
+    setBusy(true);
+    try {
+      const { esxBankToImportResult } =
+        await import("@/utils/imports/electribeImport");
+      const result = esxBankToImportResult(bank, file.name);
+      const { result: reduced, reducedCount } = reduceImportResultSteps(
+        result,
+        E2_MAX_STEPS,
+        strategy
+      );
+      onLoadResult(reduced);
+      onToast?.(
+        `${reduced.patterns.length} Pattern(s) in den Sequenzer geladen` +
+          (reducedCount > 0 ? ` (${reducedCount} auf 64 Steps reduziert)` : ""),
+        "success"
+      );
+      onClose();
+    } catch (err) {
+      onToast?.(
+        `Laden fehlgeschlagen: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+        "error"
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <EsxImportDialog
+      preview={preview}
+      busy={busy}
+      onConvert={handleConvert}
+      onLoadToSequencer={handleLoad}
+      onCancel={onClose}
+    />
+  );
+}

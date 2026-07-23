@@ -183,6 +183,9 @@ import {
   ingestLoopSamplerFile,
   type LoopSamplerMode,
 } from "@/utils/loopSamplerIngest";
+import { EsxImportController } from "@/components/ImportDialog/EsxImportController";
+import { importResultToPatterns } from "@/utils/imports";
+import type { ImportResult } from "@/utils/imports/types";
 import {
   getPageCount,
   getPageStepRange,
@@ -2069,6 +2072,26 @@ function DrumMachineInner({
     loopSamplerModeRef.current = mode;
     loopSamplerInputRef.current?.click();
   }, []);
+
+  // ── ESX-Import (Unified-Dialog: konvertieren vs. direkt in Sequenzer) ────────
+  const esxImportInputRef = useRef<HTMLInputElement>(null);
+  const [esxImportFile, setEsxImportFile] = useState<File | null>(null);
+  const handleEsxImportPick = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      e.target.value = "";
+      if (file) setEsxImportFile(file);
+    },
+    []
+  );
+  const handleEsxLoadResult = useCallback(
+    (result: ImportResult) => {
+      const patterns = importResultToPatterns(result);
+      if (patterns.length === 0) return;
+      dm.addPatternsData(patterns as Parameters<typeof dm.addPatternsData>[0]);
+    },
+    [dm]
+  );
   const handleLoopSamplerImport = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
@@ -4748,6 +4771,25 @@ function DrumMachineInner({
           data-testid="loop-sampler-input"
         />
 
+        {/* ESX-Import: Unified-Dialog (Pattern + Samples lesen → konvertieren
+            zu E2S ODER direkt in den Sequenzer laden, mit >64→64-Reduktion). */}
+        <button
+          onClick={() => esxImportInputRef.current?.click()}
+          className="px-2 py-1 rounded text-[10px] bg-bg-elevated text-text-dim hover:text-text-primary transition-colors"
+          title="Korg ESX-1 (.esx) importieren — Patterns + Samples, konvertieren oder direkt laden"
+          data-testid="esx-import-open"
+        >
+          📥 ESX Import
+        </button>
+        <input
+          ref={esxImportInputRef}
+          type="file"
+          accept=".esx,.ess"
+          className="hidden"
+          onChange={handleEsxImportPick}
+          data-testid="esx-import-input"
+        />
+
         {/* Makro-Panel */}
         <button
           data-testid="toggle-macro-panel"
@@ -5415,6 +5457,14 @@ function DrumMachineInner({
           onReplaceSample={handleSliceFile}
         />
       )}
+
+      {/* ── ESX-Import (Unified-Dialog) ─────────────────────────────────── */}
+      <EsxImportController
+        file={esxImportFile}
+        onClose={() => setEsxImportFile(null)}
+        onLoadResult={handleEsxLoadResult}
+        onToast={(m, kind) => toast(m, { kind })}
+      />
 
       {/* ── Pattern als Bild exportieren (v3.66.0) ──────────────────────── */}
       <PatternImageExportModal
