@@ -11,7 +11,8 @@
  * Rein + seiteneffektfrei → in Node testbar; keine Kopplung an DOM/AudioEngine.
  */
 
-import type { EsxBank, EsxPattern } from "../korg/esxParser";
+import type { EsxBank, EsxPattern, EsxSong } from "../korg/esxParser";
+import { convertEsxSongToSynthstudio } from "../korg/esxPatternConvert";
 import { E2_MAX_STEPS } from "../patternStepReduce";
 
 export interface EsxImportPatternPreview {
@@ -28,6 +29,16 @@ export interface EsxImportPatternPreview {
   hasMelody: boolean;
 }
 
+/** Vorschau eines ESX-Songs (Arrangement aus Pattern-Referenzen). */
+export interface EsxImportSongPreview {
+  /** Song-Slot-Index 0..63 (== EsxSong.index). */
+  index: number;
+  name: string;
+  bpm: number;
+  /** Anzahl der Arrangement-Slots (non-end-Events → A..D-Referenzen). */
+  slotCount: number;
+}
+
 export interface EsxImportPreview {
   source: string;
   /** Anzahl belegter (non-empty) Patterns. */
@@ -37,7 +48,21 @@ export interface EsxImportPreview {
   /** Wie viele Patterns beim E2S-Export reduziert werden müssten (>64 Steps). */
   patternsNeedingReduction: number;
   patterns: EsxImportPatternPreview[];
+  /** Songs mit mindestens einem Arrangement-Slot (leere Slots ausgefiltert). */
+  songs: EsxImportSongPreview[];
   warnings: string[];
+}
+
+/** Vorschau eines einzelnen Songs. Rein. Liefert null bei leerem Arrangement. */
+export function previewEsxSong(song: EsxSong): EsxImportSongPreview | null {
+  const conv = convertEsxSongToSynthstudio(song);
+  if (conv.slots.length === 0) return null;
+  return {
+    index: song.index,
+    name: conv.name,
+    bpm: conv.bpm,
+    slotCount: conv.slots.length,
+  };
 }
 
 /** Vorschau eines einzelnen Patterns. Rein. */
@@ -71,6 +96,9 @@ export function buildEsxImportPreview(
   target: number = E2_MAX_STEPS
 ): EsxImportPreview {
   const patterns = bank.patterns.map(p => previewEsxPattern(p, target));
+  const songs = (bank.songs ?? [])
+    .map(previewEsxSong)
+    .filter((s): s is EsxImportSongPreview => s !== null);
   return {
     source: bank.source,
     patternCount: patterns.length,
@@ -78,6 +106,7 @@ export function buildEsxImportPreview(
     stereoSamples: bank.stereoSamples.length,
     patternsNeedingReduction: patterns.filter(p => p.needsReduction).length,
     patterns,
+    songs,
     warnings: bank.warnings,
   };
 }

@@ -33,6 +33,16 @@ export interface EsxImportControllerProps {
    * aufgerufen. Der Parent macht daraus PatternData + addPatternsData.
    */
   onLoadResult: (result: ImportResult) => void;
+  /**
+   * Wird beim „Song laden" mit dem konvertierten Arrangement aufgerufen. Der
+   * Parent verdrahtet das an useSongStore.createArrangement (via CustomEvent-
+   * Bridge in App.tsx).
+   */
+  onLoadSong?: (arrangement: {
+    name: string;
+    bpm: number;
+    slots: Array<{ bank: "A" | "B" | "C" | "D"; repeats: number }>;
+  }) => void;
   /** Optionales Feedback (Toast) — Erfolg/Fehler. */
   onToast?: (message: string, kind: "success" | "error") => void;
 }
@@ -55,6 +65,7 @@ export function EsxImportController({
   file,
   onClose,
   onLoadResult,
+  onLoadSong,
   onToast,
 }: EsxImportControllerProps) {
   const [preview, setPreview] = useState<EsxImportPreview | null>(null);
@@ -218,6 +229,40 @@ export function EsxImportController({
     }
   };
 
+  const handleLoadSong = async (songIndex: number) => {
+    if (!onLoadSong) return;
+    setBusy(true);
+    try {
+      const target = (bank.songs ?? []).find(s => s.index === songIndex);
+      if (!target) {
+        onToast?.("Song nicht gefunden.", "error");
+        return;
+      }
+      const { convertEsxSongToSynthstudio } =
+        await import("@/utils/korg/esxPatternConvert");
+      const arrangement = convertEsxSongToSynthstudio(target);
+      if (arrangement.slots.length === 0) {
+        onToast?.(`Song „${arrangement.name}" hat keine Slots.`, "error");
+        return;
+      }
+      onLoadSong(arrangement);
+      onToast?.(
+        `Song „${arrangement.name}" mit ${arrangement.slots.length} Slots geladen (Song-Modus)`,
+        "success"
+      );
+      onClose();
+    } catch (err) {
+      onToast?.(
+        `Song-Laden fehlgeschlagen: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+        "error"
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <EsxImportDialog
       preview={preview}
@@ -225,6 +270,7 @@ export function EsxImportController({
       onConvert={handleConvert}
       onLoadToSequencer={handleLoad}
       onExportSamples={handleExportSamples}
+      onLoadSong={onLoadSong ? handleLoadSong : undefined}
       onCancel={onClose}
     />
   );

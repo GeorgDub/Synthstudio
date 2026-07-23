@@ -2092,6 +2092,25 @@ function DrumMachineInner({
     },
     [dm]
   );
+  // ESX-Song → Song-Arrangement. DrumMachine kennt den Song-Store nicht;
+  // wir bridgen via CustomEvent nach App.tsx (analog electribe:motion-lanes),
+  // wo useSongStore.createArrangement + Song-Modus verdrahtet sind.
+  const handleEsxLoadSong = useCallback(
+    (arrangement: {
+      name: string;
+      bpm: number;
+      slots: Array<{ bank: "A" | "B" | "C" | "D"; repeats: number }>;
+    }) => {
+      try {
+        window.dispatchEvent(
+          new CustomEvent("esx:load-song", { detail: arrangement })
+        );
+      } catch (err) {
+        console.warn("[ESX Song] CustomEvent dispatch failed", err);
+      }
+    },
+    []
+  );
   const handleLoopSamplerImport = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
@@ -5463,6 +5482,7 @@ function DrumMachineInner({
         file={esxImportFile}
         onClose={() => setEsxImportFile(null)}
         onLoadResult={handleEsxLoadResult}
+        onLoadSong={handleEsxLoadSong}
         onToast={(m, kind) => toast(m, { kind })}
       />
 

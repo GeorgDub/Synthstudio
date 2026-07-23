@@ -3651,6 +3651,34 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // ESX-Song-Import: der Unified-ESX-Dialog (via DrumMachine) dispatcht
+  // `esx:load-song` mit dem konvertierten Arrangement. Hier landen die Slots im
+  // useSongStore und der Song-Modus wird aktiviert.
+  useEffect(() => {
+    const handleLoadSong = (e: Event) => {
+      const detail = (
+        e as CustomEvent<{
+          name?: string;
+          bpm?: number;
+          slots?: Array<{ bank: "A" | "B" | "C" | "D"; repeats: number }>;
+        }>
+      ).detail;
+      if (!detail || !Array.isArray(detail.slots) || detail.slots.length === 0)
+        return;
+      song.createArrangement(
+        detail.slots.map(s => ({ bank: s.bank, repeats: s.repeats }))
+      );
+      if (!song.songModeActive) song.toggleSongMode();
+      toast(
+        `ESX-Song „${detail.name || "Song"}" geladen: ${detail.slots.length} Slots (Song-Modus aktiv)`,
+        { kind: "success", duration: 3500 }
+      );
+    };
+    window.addEventListener("esx:load-song", handleLoadSong);
+    return () => window.removeEventListener("esx:load-song", handleLoadSong);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [song]);
+
   // v2.90 (TASK-238-FOLLOWUP-1): sample-slicer:apply — DrumMachine dispatcht
   // diesen Event nachdem der SampleSliceEditor "Apply" gedrueckt hat. Wir
   // legen die Slice-Buffer in useSlicePadStore ab (max 16 Pads). Mehr als 16

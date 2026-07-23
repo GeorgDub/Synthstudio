@@ -29,6 +29,8 @@ export interface EsxImportDialogProps {
   onLoadToSequencer: (strategy: StepReductionStrategy) => void;
   /** Exportiert alle Bank-Samples als WAV-ZIP. */
   onExportSamples?: () => void;
+  /** Lädt einen ESX-Song (per Song-Index) als Song-Arrangement. */
+  onLoadSong?: (songIndex: number) => void;
   onCancel: () => void;
   /** Läuft gerade eine Aktion? (deaktiviert die Buttons) */
   busy?: boolean;
@@ -39,6 +41,7 @@ export function EsxImportDialog({
   onConvert,
   onLoadToSequencer,
   onExportSamples,
+  onLoadSong,
   onCancel,
   busy = false,
 }: EsxImportDialogProps) {
@@ -148,6 +151,42 @@ export function EsxImportDialog({
             ))
           )}
         </div>
+
+        {/* Song-Liste (Arrangements) */}
+        {onLoadSong && preview.songs.length > 0 && (
+          <div
+            className="border-t border-border-color px-2 py-1 max-h-[22vh] overflow-y-auto"
+            data-testid="esx-import-song-list"
+          >
+            <div className="px-2 py-1 text-[11px] text-text-muted font-medium">
+              Songs (Arrangements) — laden aktiviert den Song-Modus:
+            </div>
+            {preview.songs.map(s => (
+              <div
+                key={s.index}
+                className="flex items-center gap-2 px-2 py-1 text-[11px] border-b border-border-subtle"
+              >
+                <span className="w-8 text-text-dim tabular-nums">
+                  ♫{s.index}
+                </span>
+                <span className="flex-1 truncate text-text-primary">
+                  {s.name || `SONG_${s.index}`}
+                </span>
+                <span className="text-text-muted tabular-nums">
+                  {s.slotCount} Slots
+                </span>
+                <button
+                  onClick={() => onLoadSong(s.index)}
+                  disabled={busy}
+                  className="px-2 py-0.5 rounded bg-accent-secondary/20 text-accent-secondary border border-accent-secondary/40 hover:bg-accent-secondary/30 transition-colors disabled:opacity-40"
+                  data-testid={`esx-import-song-${s.index}`}
+                >
+                  → Song laden
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* Aktionen */}
         <div className="px-4 py-3 border-t border-border-color flex items-center gap-2">

@@ -2,13 +2,28 @@ import { describe, it, expect } from "vitest";
 import {
   buildEsxImportPreview,
   previewEsxPattern,
+  previewEsxSong,
 } from "../../client/src/utils/imports/esxImportPreview";
 import type {
   EsxBank,
   EsxPattern,
   EsxPart,
   EsxKeyboardPart,
+  EsxSong,
+  EsxSongEvent,
 } from "../../client/src/utils/korg/esxParser";
+
+function songEvent(pattern: number, length: number): EsxSongEvent {
+  return { time: 0, pattern, length, flags: 0, data: 0 };
+}
+
+function song(
+  index: number,
+  events: EsxSongEvent[],
+  name = `SONG${index}`
+): EsxSong {
+  return { index, name, bpm: 120, eventCount: events.length, events };
+}
 
 function drumPart(activeSteps: number[]): EsxPart {
   const steps = Array.from({ length: 16 }, (_, i) => ({
@@ -62,13 +77,13 @@ function pattern(
   };
 }
 
-function bank(patterns: EsxPattern[]): EsxBank {
+function bank(patterns: EsxPattern[], songs: EsxSong[] = []): EsxBank {
   return {
     source: "test.esx",
     monoSamples: [{}, {}, {}] as never,
     stereoSamples: [{}] as never,
     patterns,
-    songs: [],
+    songs,
     declaredMonoCount: 3,
     declaredStereoCount: 1,
     warnings: ["w1"],
@@ -121,5 +136,36 @@ describe("buildEsxImportPreview", () => {
     const pv = buildEsxImportPreview(bank([]));
     expect(pv.patternCount).toBe(0);
     expect(pv.patternsNeedingReduction).toBe(0);
+    expect(pv.songs).toEqual([]);
+  });
+
+  it("belegte Songs erscheinen, leere werden gefiltert", () => {
+    const pv = buildEsxImportPreview(
+      bank(
+        [pattern(0, 16, { drums: [drumPart([0])] })],
+        [
+          song(0, [songEvent(5, 2), songEvent(70, 4)]), // 2 Slots (A + B)
+          song(1, []), // leer → gefiltert
+        ]
+      )
+    );
+    expect(pv.songs).toHaveLength(1);
+    expect(pv.songs[0]).toMatchObject({ index: 0, slotCount: 2 });
+  });
+});
+
+describe("previewEsxSong", () => {
+  it("Song mit Events → Slot-Count + Name + Index", () => {
+    const pv = previewEsxSong(
+      song(3, [songEvent(0, 1), songEvent(64, 2)], "MYSONG")
+    );
+    expect(pv).not.toBeNull();
+    expect(pv!.index).toBe(3);
+    expect(pv!.name).toBe("MYSONG");
+    expect(pv!.slotCount).toBe(2);
+  });
+
+  it("Song ohne Events → null (aus der Vorschau gefiltert)", () => {
+    expect(previewEsxSong(song(4, []))).toBeNull();
   });
 });
