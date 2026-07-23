@@ -14,14 +14,25 @@
  * 250 Slots.
  */
 
-export const ALLPAT_PATTERN_OFFSET = 0x10100;
-export const ALLPAT_PATTERN_STRIDE = 0x4000;
-export const ALLPAT_PATTERN_COUNT = 250;
-export const E2_PATTERN_BODY_SIZE = 0x4000;
+// Konstanten aus der gemeinsamen Layout-Quelle (e2Layout.ts). Namen bleiben
+// erhalten (Backward-Compat für Consumer + Tests); die Werte leben jetzt an
+// EINER Stelle.
+import {
+  E2_ALLPAT_PATTERN_OFFSET,
+  E2_ALLPAT_PATTERN_STRIDE,
+  E2_ALLPAT_SLOT_COUNT,
+  E2_PATTERN_BODY_SIZE as _E2_PATTERN_BODY_SIZE,
+  e2AllpatSlotOffset,
+} from "./e2Layout";
+
+export const ALLPAT_PATTERN_OFFSET = E2_ALLPAT_PATTERN_OFFSET;
+export const ALLPAT_PATTERN_STRIDE = E2_ALLPAT_PATTERN_STRIDE;
+export const ALLPAT_PATTERN_COUNT = E2_ALLPAT_SLOT_COUNT;
+export const E2_PATTERN_BODY_SIZE = _E2_PATTERN_BODY_SIZE;
 
 /** Byte-Offset des Pattern-Slots `i` (0..249) im Container. */
 export function allpatSlotOffset(index: number): number {
-  return ALLPAT_PATTERN_OFFSET + index * ALLPAT_PATTERN_STRIDE;
+  return e2AllpatSlotOffset(index);
 }
 
 /** Minimale Container-Größe, damit Slot `i` vollständig hineinpasst. */

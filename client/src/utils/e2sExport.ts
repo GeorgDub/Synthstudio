@@ -61,22 +61,31 @@
 
 import { E2S_INIT_BODY_B64, E2S_GLST_BLOCK_B64 } from "./e2sExportAssets";
 import type { E2PatternInput } from "./electribePatternBuilder";
+// Gemeinsame Layout-Quelle (e2Layout.ts) — Werte an EINER Stelle; die
+// bestehenden E2S_*-Namen bleiben als Re-Export erhalten.
+import {
+  E2_PATTERN_BODY_SIZE,
+  E2_FILE_HEADER_SIZE,
+  E2_SINGLE_FILE_SIZE,
+  E2_ALLPAT_PATTERN_OFFSET,
+  E2_ALLPAT_SLOT_COUNT,
+  E2_ALLPAT_FILE_SIZE,
+} from "./korg/e2Layout";
 
 // ─── Layout constants (verified against real KORG files) ─────────────────────
 
 /** One PTST pattern body. */
-export const E2S_BODY_SIZE = 0x4000; // 16384
+export const E2S_BODY_SIZE = E2_PATTERN_BODY_SIZE; // 16384
 /** Standalone .e2spat file header. */
-export const E2S_FILE_HEADER_SIZE = 0x100; // 256
+export const E2S_FILE_HEADER_SIZE = E2_FILE_HEADER_SIZE; // 256
 /** Standalone .e2spat total size. */
-export const E2S_SINGLE_FILE_SIZE = E2S_FILE_HEADER_SIZE + E2S_BODY_SIZE; // 16640
+export const E2S_SINGLE_FILE_SIZE = E2_SINGLE_FILE_SIZE; // 16640
 /** .e2sallpat prefix (header + GLST block + 0xFF pad). */
-export const E2S_ALLPAT_PREFIX_SIZE = 0x10100; // 65792
+export const E2S_ALLPAT_PREFIX_SIZE = E2_ALLPAT_PATTERN_OFFSET; // 65792
 /** Pattern slots in a bank (hardware-fixed). */
-export const E2S_ALLPAT_SLOT_COUNT = 250;
+export const E2S_ALLPAT_SLOT_COUNT = E2_ALLPAT_SLOT_COUNT;
 /** .e2sallpat total size. */
-export const E2S_ALLPAT_FILE_SIZE =
-  E2S_ALLPAT_PREFIX_SIZE + E2S_ALLPAT_SLOT_COUNT * E2S_BODY_SIZE; // 4_161_792
+export const E2S_ALLPAT_FILE_SIZE = E2_ALLPAT_FILE_SIZE; // 4_161_792
 
 const GLST_OFFSET = 0x100;
 
@@ -125,10 +134,19 @@ function b64ToBytes(b64: string): Uint8Array {
     return out;
   }
   // Node / SSR
-  return new Uint8Array((globalThis as { Buffer?: { from(s: string, e: string): Uint8Array } }).Buffer!.from(b64, "base64"));
+  return new Uint8Array(
+    (
+      globalThis as { Buffer?: { from(s: string, e: string): Uint8Array } }
+    ).Buffer!.from(b64, "base64")
+  );
 }
 
-function clampInt(value: unknown, min: number, max: number, fallback: number): number {
+function clampInt(
+  value: unknown,
+  min: number,
+  max: number,
+  fallback: number
+): number {
   if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
   const v = Math.floor(value);
   if (v < min) return min;
@@ -138,7 +156,12 @@ function clampInt(value: unknown, min: number, max: number, fallback: number): n
 
 /** Write `value` as printable ASCII into `bytes[offset..offset+length)`,
  *  NUL-padded after the content. Non-printable chars become '?'. */
-function writeAsciiNul(bytes: Uint8Array, offset: number, value: string, length: number): void {
+function writeAsciiNul(
+  bytes: Uint8Array,
+  offset: number,
+  value: string,
+  length: number
+): void {
   const safe = typeof value === "string" ? value : "";
   for (let i = 0; i < length; i++) {
     if (i < safe.length) {
@@ -181,10 +204,14 @@ export function buildE2PatternBody(input: E2PatternInput): Uint8Array {
 
   // BPM × 10 @ +0x22 (u16 LE)
   const bpmX10 = clampInt(
-    Math.round((typeof input.bpm === "number" && Number.isFinite(input.bpm) ? input.bpm : 120) * 10),
+    Math.round(
+      (typeof input.bpm === "number" && Number.isFinite(input.bpm)
+        ? input.bpm
+        : 120) * 10
+    ),
     BPM_MIN_X10,
     BPM_MAX_X10,
-    1200,
+    1200
   );
   view.setUint16(BPM_OFF, bpmX10, true);
 
@@ -208,7 +235,11 @@ export function buildE2PatternBody(input: E2PatternInput): Uint8Array {
     // provides one (e.g. repointing parts to imported user samples at 501+);
     // otherwise the template's factory sample assignment is preserved.
     if (typeof part.sampleId === "number" && Number.isFinite(part.sampleId)) {
-      view.setUint16(partStart + PART_SAMPLE_OFF, clampInt(part.sampleId, 0, 0xffff, 0), true);
+      view.setUint16(
+        partStart + PART_SAMPLE_OFF,
+        clampInt(part.sampleId, 0, 0xffff, 0),
+        true
+      );
     }
 
     const steps = Array.isArray(part.steps) ? part.steps : [];
@@ -218,7 +249,12 @@ export function buildE2PatternBody(input: E2PatternInput): Uint8Array {
       if (step && step.active) {
         body[so + STEP_TRIGGER] = 0x01;
         body[so + STEP_NOTE] = clampInt(step.note, 0, 127, DEFAULT_NOTE);
-        body[so + STEP_VELOCITY] = clampInt(step.velocity, 0, 127, DEFAULT_VELOCITY);
+        body[so + STEP_VELOCITY] = clampInt(
+          step.velocity,
+          0,
+          127,
+          DEFAULT_VELOCITY
+        );
         body[so + STEP_GATE] = 0x01; // gate ON — required or the step is silent
         body[so + STEP_GATELEN] = DEFAULT_GATELEN;
       } else {
@@ -283,18 +319,31 @@ export function buildE2AllPatFile(patterns: E2PatternInput[]): ArrayBuffer {
 // ─── Structural validators (mirror the IPC-side checks) ─────────────────────────
 
 /** Quick structural sanity-check for a built `.e2sallpat` buffer. */
-export function looksLikeE2AllPatFile(buffer: ArrayBuffer | Uint8Array): boolean {
+export function looksLikeE2AllPatFile(
+  buffer: ArrayBuffer | Uint8Array
+): boolean {
   try {
     const u8 = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
     if (u8.byteLength !== E2S_ALLPAT_FILE_SIZE) return false;
     // "KORG" @ 0x00
-    if (u8[0] !== 0x4b || u8[1] !== 0x4f || u8[2] !== 0x52 || u8[3] !== 0x47) return false;
+    if (u8[0] !== 0x4b || u8[1] !== 0x4f || u8[2] !== 0x52 || u8[3] !== 0x47)
+      return false;
     // "e2sa" @ 0x10
-    if (u8[0x10] !== 0x65 || u8[0x11] !== 0x32 || u8[0x12] !== 0x73 || u8[0x13] !== 0x61) {
+    if (
+      u8[0x10] !== 0x65 ||
+      u8[0x11] !== 0x32 ||
+      u8[0x12] !== 0x73 ||
+      u8[0x13] !== 0x61
+    ) {
       return false;
     }
     // "GLST" @ 0x100
-    if (u8[0x100] !== 0x47 || u8[0x101] !== 0x4c || u8[0x102] !== 0x53 || u8[0x103] !== 0x54) {
+    if (
+      u8[0x100] !== 0x47 ||
+      u8[0x101] !== 0x4c ||
+      u8[0x102] !== 0x53 ||
+      u8[0x103] !== 0x54
+    ) {
       return false;
     }
     // "PTST" @ first pattern slot (0x10100)

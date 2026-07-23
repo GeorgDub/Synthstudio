@@ -24,15 +24,17 @@ import { ImportError } from "./types";
 import { parseEsxBank, type EsxBank } from "../korg/esxParser";
 import { convertEsxPatternsToSynthstudio } from "../korg/esxPatternConvert";
 import { decodePatternBody, type E2PatternDecoded } from "../korg/e2Sysex";
-
 // ─── Echter E2/E2S-Decode-Pfad (.e2sallpat / .e2spat) ────────────────────────
-// Nutzt den verifizierten `decodePatternBody` (Name/BPM/Steps/Osc), statt die
-// alten ASCII/BPM-Heuristiken. E2-allpat: 250 Bodies @ 0x10100 + i*0x4000; ein
-// einzelnes .e2spat trägt den 0x100-KORG-Header vor dem 0x4000-Body.
-const E2_ALLPAT_PATTERN_OFFSET = 0x10100;
-const E2_PATTERN_STRIDE = 0x4000;
-const E2_ALLPAT_PATTERN_COUNT = 250;
-const E2_FILE_HEADER = 0x100;
+// Nutzt den verifizierten `decodePatternBody` (Name/BPM/Steps/Osc). Layout-
+// Konstanten kommen aus der gemeinsamen Quelle e2Layout.ts (nicht mehr lokal
+// dupliziert). E2-allpat: 250 Bodies @ 0x10100 + i*0x4000; ein einzelnes
+// .e2spat trägt den 0x100-KORG-Header vor dem 0x4000-Body.
+import {
+  E2_ALLPAT_PATTERN_OFFSET,
+  E2_ALLPAT_PATTERN_STRIDE as E2_PATTERN_STRIDE,
+  E2_ALLPAT_SLOT_COUNT as E2_ALLPAT_PATTERN_COUNT,
+  E2_FILE_HEADER_SIZE as E2_FILE_HEADER,
+} from "../korg/e2Layout";
 
 function e2PartToImported(
   part: E2PatternDecoded["parts"][number],
