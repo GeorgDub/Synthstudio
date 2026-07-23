@@ -7,6 +7,7 @@
  */
 import { describe, it, expect } from "vitest";
 import * as L from "../../client/src/utils/korg/e2Layout";
+import * as Sysex from "../../client/src/utils/korg/e2Sysex";
 import {
   ALLPAT_PATTERN_OFFSET,
   ALLPAT_PATTERN_STRIDE,
@@ -58,6 +59,24 @@ describe("e2Layout — kanonische Werte", () => {
     expect(L.e2AllpatSlotOffset(0)).toBe(0x10100);
     expect(L.e2AllpatSlotOffset(1)).toBe(0x10100 + 0x4000);
     expect(L.e2AllpatSlotOffset(249)).toBe(0x10100 + 249 * 0x4000);
+  });
+
+  it("Step-Record-Offsets = real-file-verifiziertes Layout", () => {
+    expect(L.E2_STEP_TRIGGER_OFFSET).toBe(0);
+    expect(L.E2_STEP_NOTE_OFFSET).toBe(1);
+    expect(L.E2_STEP_VELOCITY_OFFSET).toBe(2);
+    expect(L.E2_STEP_GATE_OFFSET).toBe(3);
+    expect(L.E2_STEP_GATELEN_OFFSET).toBe(4);
+  });
+
+  it("der kanonische Decoder (e2Sysex) teilt exakt dieses Step-Layout", () => {
+    // Lockt fest, dass e2Sysex das real-file-verifizierte Layout nutzt — der
+    // vereinheitlichte Import routet bewusst hierüber (nicht über System A).
+    expect(Sysex.STEP_TRIGGER_OFFSET).toBe(L.E2_STEP_TRIGGER_OFFSET);
+    expect(Sysex.STEP_NOTE_OFFSET).toBe(L.E2_STEP_NOTE_OFFSET);
+    expect(Sysex.STEP_VELOCITY_OFFSET).toBe(L.E2_STEP_VELOCITY_OFFSET);
+    expect(Sysex.STEP_GATE_OFFSET).toBe(L.E2_STEP_GATE_OFFSET);
+    expect(Sysex.STEP_GATELEN_OFFSET).toBe(L.E2_STEP_GATELEN_OFFSET);
   });
 });
 

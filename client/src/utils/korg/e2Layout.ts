@@ -13,17 +13,18 @@
  * und die Roundtrip-Tests verifiziert und über die Systeme A/B hinweg
  * BYTE-IDENTISCH — ihre Konsolidierung ändert kein Verhalten.
  *
- * ─── ⚠ UNGELÖSTER KONFLIKT (bewusst NICHT hier konsolidiert) ────────────────
- * Das interne Feld-Layout EINES 12-Byte-Step-Records widerspricht sich zwischen
- * den zwei Decodern und ist ohne einen gelabelten Device-Dump nicht auflösbar:
- *   - System A (electribeImport.ts): velocity @ +1, note @ +4
- *   - e2Sysex.ts:                    note     @ +1, velocity @ +2, gate @ +3
- * Beide tragen „verifiziert"-Kommentare + grüne Tests (unterschiedliche
- * Fixtures). trigger @ +0 und die Record-Größe (12 B) sind unstrittig und
- * stehen daher HIER; velocity/note bleiben absichtlich in den jeweiligen
- * Dateien, bis ein Dump mit bekannten Velocity/Note-Werten die Frage klärt.
- * Der vereinheitlichte Import routet über den roundtrip-verifizierten Reader
- * (System A).
+ * ─── Step-Record-Feld-Layout (GEKLÄRT gegen echte KORG-Dateien) ─────────────
+ * Das interne 12-Byte-Step-Record-Layout ist gegen REALE .e2spat-Dateien
+ * byte-diff-verifiziert (siehe e2sExport.ts v3.271 Header, "Korg e2s files/"):
+ *   byte 0 trigger · byte 1 note · byte 2 velocity · byte 3 gate · byte 4 gatelen
+ * `e2Sysex.ts` (decodePatternBody) und der e2sExport-Writer nutzen dieses
+ * korrekte Layout. `electribeImport.ts` (System A) trägt noch das ALTE, falsche
+ * Spec (velocity @ +1, note @ +4 — note/velocity vertauscht); sein Roundtrip-
+ * Test grünt nur, weil dort Reader und Writer dasselbe falsche Spec teilen.
+ * → Der vereinheitlichte Import routet über den real-file-verifizierten Decoder
+ *   (e2Sysex), NICHT über System A. Die kanonischen Offsets stehen unten; die
+ *   falschen bleiben vorerst in System A (Fix = eigener, test-begleiteter
+ *   Schritt, da dessen Tests aufs alte Spec geschrieben sind).
  */
 
 // ─── AllPat-Container (.e2sallpat) ───────────────────────────────────────────
@@ -83,8 +84,18 @@ export const E2_PART_SEQ_OFFSET = 0x30;
 export const E2_STEP_RECORD_SIZE = 0x0c; // 12
 export const E2_STEPS_PER_PART = 64;
 
-/** Step-Record: trigger-Flag @ +0 (0x01 = aktiv). Unstrittig. */
+// Step-Record-Feld-Offsets — verifiziert gegen echte KORG-Dateien (siehe
+// Kopf-Kommentar). Dies ist das kanonische Layout; e2Sysex.ts nutzt es bereits.
+/** trigger-Flag @ +0 (0x01 = aktiv). */
 export const E2_STEP_TRIGGER_OFFSET = 0;
+/** note @ +1 (0x48 = C5 default). */
+export const E2_STEP_NOTE_OFFSET = 1;
+/** velocity @ +2 (0x60 = 96 default, 0x7F max). */
+export const E2_STEP_VELOCITY_OFFSET = 2;
+/** gate-Flag @ +3 (1 auf aktiven Steps). */
+export const E2_STEP_GATE_OFFSET = 3;
+/** gate-length @ +4. */
+export const E2_STEP_GATELEN_OFFSET = 4;
 
 /** Byte-Offset des Pattern-Slots `i` (0..249) im AllPat-Container. */
 export function e2AllpatSlotOffset(index: number): number {
