@@ -49,6 +49,7 @@ import {
   type E2sBank,
 } from "@/utils/korg/e2sBankReader";
 import { bundleE2sSamplesToZip } from "@/utils/korg/e2sSampleExport";
+import { trimE2sSlotPcm } from "@/utils/korg/e2sSampleEdit";
 import {
   convertToE2sSpec,
   AudioProcessError,
@@ -850,6 +851,29 @@ export function KorgBankEditor({
 
   function editSlotRevert(rowId: string): void {
     setOpenedSlots(prev => revertSlot(prev, rowId));
+  }
+
+  // v3.284 — Oe2sSLE „Trim": PCM auf den Loop-Bereich [loopStart, loopEnd]
+  // schneiden, Loop-Punkte auf das neue Sample zurücksetzen. Nur sinnvoll bei
+  // einem echten Bereich (loopEnd > loopStart) mit vorhandenem PCM.
+  function editSlotTrimToLoop(rowId: string): void {
+    setOpenedSlots(prev => {
+      const slot = prev.find(s => s.rowId === rowId);
+      if (!slot || !slot.pcmData || slot.channels == null) return prev;
+      const { pcmData, frames } = trimE2sSlotPcm(
+        slot.pcmData,
+        slot.channels,
+        slot.loopStart,
+        slot.loopEnd
+      );
+      if (frames === slot.frames) return prev; // No-op → nichts markieren
+      return patchOpenedSlot(prev, rowId, {
+        pcmData,
+        frames,
+        loopStart: 0,
+        loopEnd: Math.max(0, frames - 1),
+      });
+    });
   }
 
   async function editSlotReplaceSample(
@@ -2549,6 +2573,17 @@ export function KorgBankEditor({
                       className="w-full mt-1 accent-accent-primary"
                     />
                   </label>
+                  <button
+                    data-testid="korg-bank-editor-detail-trim"
+                    onClick={() => editSlotTrimToLoop(selectedSlot.rowId)}
+                    disabled={
+                      busy || selectedSlot.loopEnd <= selectedSlot.loopStart
+                    }
+                    className="px-2 py-1 rounded text-[11px] bg-bg-elevated text-text-primary hover:text-accent-primary transition-colors disabled:opacity-40"
+                    title="PCM auf den Loop-Bereich schneiden (destruktiv, per Revert rückgängig)"
+                  >
+                    ✂ Auf Loop-Bereich trimmen
+                  </button>
                 </div>
               )}
 
