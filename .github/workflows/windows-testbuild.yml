@@ -1,0 +1,97 @@
+name: Windows Test Build
+
+# Baut einen installierbaren Windows-Setup (.exe / NSIS) aus dem aktuellen
+# Stand und hängt ihn als GitHub-Release (Prerelease) an DIESES Repo. Ein
+# Fallback-Artefakt am Workflow-Run stellt sicher, dass die .exe auch dann
+# abrufbar ist, wenn der Release-Schritt scheitert.
+#
+# Auslöser:
+#   - Tag `winbuild-*`  → baut + veröffentlicht Prerelease unter diesem Tag.
+#   - manuell (workflow_dispatch) → baut nur das Artefakt (kein Release).
+#
+# Hinweis: electron-builder wird mit `--publish never` gefahren. Die in
+# package.json hinterlegte publish-Config zeigt auf ein separates Repo
+# (Synthstudio-releases) und würde einen PAT brauchen — das umgehen wir
+# bewusst und nutzen für das Release das eingebaute GITHUB_TOKEN (contents:
+# write) auf dem aktuellen Repo.
+
+on:
+  push:
+    tags:
+      - "winbuild-*"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    name: Build Windows Setup (NSIS x64)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Node.js einrichten
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: pnpm einrichten
+        uses: pnpm/action-setup@v4
+
+      - name: Dependencies installieren
+        run: pnpm install --no-frozen-lockfile
+
+      - name: TypeScript-Check (App)
+        run: pnpm check
+
+      - name: Electron kompilieren (tsc → CJS + Bundles)
+        run: pnpm compile:electron
+
+      - name: React-App bauen (Vite)
+        run: pnpm exec vite build
+
+      - name: Staging vorbereiten (No-Op seit v1.0.5)
+        run: node scripts/prepare-electron-build.cjs
+
+      - name: Windows-Setup bauen (NSIS, unsigniert, kein Publish)
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: npx --yes electron-builder --win nsis --publish never
+
+      - name: Setup-Artefakt sichern (Fallback)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Synthstudio-Windows-Setup
+          path: |
+            release/**/*.exe
+            release/**/*.exe.blockmap
+            release/**/latest.yml
+          retention-days: 14
+          if-no-files-found: warn
+
+      - name: GitHub-Release (Prerelease) veröffentlichen
+        if: startsWith(github.ref, 'refs/tags/winbuild-')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: "Synthstudio ${{ github.ref_name }} (Windows Test Build)"
+          prerelease: true
+          fail_on_unmatched_files: true
+          files: |
+            release/**/*.exe
+          body: |
+            Automatischer Windows-Test-Build (NSIS-Installer, x64, **unsigniert**)
+            aus dem Feature-Branch `claude/electribe-2-sampler-research-8iepia`.
+
+            Enthält den kompletten Korg-E2/E2S-Stand: nativer SysEx-Layer (0x42),
+            `.esx`-Import (Audio + Sequencer), `.all`-Bank-Editor mit Tune/Level/
+            Loop/Trim/Stereo→Mono/Move/Merge-Import, WAV-Export mit smpl/cue-Chunks,
+            In-Bank-Sample-Rename und die Real-File-Regressions-Harness.
+
+            ⚠️ Unsigniert → Windows SmartScreen zeigt beim ersten Start eine
+            Warnung ("Weitere Informationen" → "Trotzdem ausführen").
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
