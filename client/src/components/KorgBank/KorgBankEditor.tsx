@@ -69,6 +69,7 @@ import {
   displayCategory,
   displayName,
   hasUnsavedChanges,
+  moveOrSwapSlot,
   openedSlotsToBuildInputs,
   patchOpenedSlot,
   replaceSlotSample,
@@ -874,6 +875,17 @@ export function KorgBankEditor({
         loopEnd: Math.max(0, frames - 1),
       });
     });
+  }
+
+  // v3.284 — Oe2sSLE „Move / Exchange / #Num": Inhalt eines Slots auf eine andere
+  // Nummer verschieben (Ziel frei) bzw. tauschen (Ziel belegt). Die Selektion
+  // folgt dem Inhalt zur Ziel-Nummer.
+  function editSlotMoveTo(rowId: string, toIndex: number): void {
+    const from = openedSlots.find(s => s.rowId === rowId);
+    const target = openedSlots.find(s => s.slotIndex === toIndex);
+    if (!from || !target || from.slotIndex === toIndex) return;
+    setOpenedSlots(prev => moveOrSwapSlot(prev, rowId, toIndex));
+    setSelectedRowId(target.rowId);
   }
 
   // v3.284 — Oe2sSLE „Stereo → Mono": zentrierter Downmix (mix=0), setzt
@@ -2625,6 +2637,32 @@ export function KorgBankEditor({
                     </button>
                   )}
                 </div>
+                {/* #Num verschieben/tauschen (Oe2sSLE Move/Exchange) */}
+                <label className="flex items-center gap-2 text-xs text-text-muted pt-1">
+                  <span>#Num (verschieben / tauschen):</span>
+                  <input
+                    key={selectedSlot.rowId}
+                    data-testid="korg-bank-editor-detail-move-num"
+                    type="number"
+                    min={0}
+                    max={E2S_MAX_SLOTS - 1}
+                    defaultValue={selectedSlot.slotIndex}
+                    disabled={busy}
+                    onKeyDown={e => {
+                      if (e.key === "Enter") {
+                        editSlotMoveTo(
+                          selectedSlot.rowId,
+                          Number((e.target as HTMLInputElement).value)
+                        );
+                      }
+                    }}
+                    onBlur={e =>
+                      editSlotMoveTo(selectedSlot.rowId, Number(e.target.value))
+                    }
+                    className="w-20 bg-bg-base border border-border-color rounded px-2 py-0.5 text-text-primary disabled:opacity-40"
+                    title="Ziel-Nummer eingeben + Enter: leer → verschieben, belegt → tauschen"
+                  />
+                </label>
               </div>
 
               {/* v3.8.0 — Slices */}

@@ -364,6 +364,115 @@ export function revertSlot(slots: OpenedSlot[], rowId: string): OpenedSlot[] {
   });
 }
 
+// ─── Move / Swap slot numbers (v3.284, Oe2sSLE „Move/Exchange/#Num") ──────────
+
+/** Die inhaltlichen Felder eines Slots (alles außer Position/rowId/original). */
+interface SlotContent {
+  empty: boolean;
+  name: string;
+  category: number;
+  oneshot: boolean;
+  gain12db: boolean;
+  sampleTune: number;
+  level: number;
+  loopStart: number;
+  loopEnd: number;
+  pcmData?: Float32Array;
+  sampleRate?: number;
+  channels?: 1 | 2;
+  frames?: number;
+  slices: E2sSlice[];
+}
+
+function extractSlotContent(s: OpenedSlot): SlotContent {
+  return {
+    empty: s.empty,
+    name: s.name,
+    category: s.category,
+    oneshot: s.oneshot,
+    gain12db: s.gain12db,
+    sampleTune: s.sampleTune,
+    level: s.level,
+    loopStart: s.loopStart,
+    loopEnd: s.loopEnd,
+    pcmData: s.pcmData,
+    sampleRate: s.sampleRate,
+    channels: s.channels,
+    frames: s.frames,
+    slices: s.slices.map(sl => ({ ...sl })),
+  };
+}
+
+/**
+ * Wendet fremden Inhalt auf einen Slot an. Position (slotIndex/rowId/original)
+ * bleibt; `rawRiff` wird gelöscht + `isDirty=true` gesetzt, weil sich die
+ * Slot-/Geräte-Nummer (== slotIndex) ändert und die esli neu geschrieben werden
+ * MUSS (der Builder schreibt OSC_0index = slotIndex).
+ */
+function withSlotContent(row: OpenedSlot, c: SlotContent): OpenedSlot {
+  return {
+    ...row,
+    empty: c.empty,
+    name: c.name,
+    category: c.category,
+    oneshot: c.oneshot,
+    gain12db: c.gain12db,
+    sampleTune: c.sampleTune,
+    level: c.level,
+    loopStart: c.loopStart,
+    loopEnd: c.loopEnd,
+    pcmData: c.pcmData,
+    sampleRate: c.sampleRate,
+    channels: c.channels,
+    frames: c.frames,
+    rawRiff: undefined,
+    slices: c.slices.map(sl => ({ ...sl })),
+    isDirty: true,
+  };
+}
+
+/**
+ * Oe2sSLE „Move / Exchange / #Num ändern": verschiebt/tauscht den Inhalt eines
+ * Slots auf eine andere Slot-Nummer (== OSC_0index nach der Offset-Tabellen-
+ * Angleichung). Ziel frei → Verschieben (Quelle wird leer); Ziel belegt →
+ * Tauschen. Positionen (slotIndex) bleiben; nur der Inhalt wandert. Beide
+ * betroffenen Rows werden isDirty=true (Re-Encode mit neuer Nummer).
+ *
+ * No-op (gleiche Referenz) bei: unbekannter rowId, Ziel out-of-range, Ziel ==
+ * Quelle, oder beide leer.
+ *
+ * @param slots      Aktuelle Slot-Liste.
+ * @param fromRowId  Quell-Row.
+ * @param toIndex    Ziel-Slot-Index (== gewünschte OSC_0index).
+ */
+export function moveOrSwapSlot(
+  slots: OpenedSlot[],
+  fromRowId: string,
+  toIndex: number
+): OpenedSlot[] {
+  const from = slots.find(s => s.rowId === fromRowId);
+  if (!from) return slots;
+  if (
+    !Number.isInteger(toIndex) ||
+    toIndex < 0 ||
+    toIndex >= E2S_MAX_SLOTS ||
+    toIndex === from.slotIndex
+  ) {
+    return slots;
+  }
+  const to = slots.find(s => s.slotIndex === toIndex);
+  if (!to) return slots;
+  if (from.empty && to.empty) return slots;
+
+  const contentFrom = extractSlotContent(from);
+  const contentTo = extractSlotContent(to);
+  return slots.map(s => {
+    if (s.rowId === from.rowId) return withSlotContent(s, contentTo);
+    if (s.rowId === to.rowId) return withSlotContent(s, contentFrom);
+    return s;
+  });
+}
+
 // ─── Save: OpenedSlot[] → E2sSlotInput[] ──────────────────────────────────────
 
 /**
