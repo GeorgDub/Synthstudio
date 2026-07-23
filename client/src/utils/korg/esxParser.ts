@@ -225,6 +225,26 @@ export interface EsxPart {
 }
 
 /**
+ * Ein Keyboard/Synth-Part des ESX-1 (2 pro Pattern). Anders als Drum-Parts
+ * trägt er ECHTE 128 Note- + 128 Gate-Werte (die realen 128-Step-Melodiedaten
+ * eines Length_8-Patterns). Verifiziert gegen open-electribe-editor v1.2.0.
+ */
+export interface EsxKeyboardPart {
+  /** 0..1 (die beiden Keyboard-Parts). */
+  partIndex: number;
+  /** Sample-Slot-Index (BE u16, 0 = keins). */
+  sampleId: number;
+  /** 0..127. */
+  volume: number;
+  /** 0..127 (64 = center). */
+  pan: number;
+  /** 128 Note-Bytes (roh — die Note-Semantik ist nicht öffentlich RE-d). */
+  note: Uint8Array;
+  /** 128 Gate-Bytes (roh — Gate-Länge pro Step). */
+  gate: Uint8Array;
+}
+
+/**
  * Ein Pattern aus dem ESX-1-Backup.
  *
  * Verified-Felder (v3.5, gegen 5 reale .esx-Files):
@@ -259,6 +279,11 @@ export interface EsxPattern {
   swing: number;
   /** 16 Parts (immer voll besetzt; leere Parts haben alle Steps inactive). */
   parts: EsxPart[];
+  /**
+   * 2 Keyboard/Synth-Parts mit je 128 Note/Gate-Bytes (echte 128-Step-Melodie-
+   * daten). Additiv zu `parts` — verifiziert gegen open-electribe-editor.
+   */
+  keyboardParts: EsxKeyboardPart[];
   /** Rohbytes des 4280-Byte Pattern-Blocks. Hilft beim Debugging + Diff. */
   raw?: Uint8Array;
 }
@@ -595,6 +620,20 @@ const ESX1_SHORT_PART_HEADER_BYTES = 16;
 const ESX1_SHORT_PART_STEPS_BYTES = 16;
 const ESX1_PITCH_NEUTRAL_RAW = 0x40;
 
+// ─── Keyboard-Parts (verifiziert gegen open-electribe-editor v1.2.0) ─────────
+// Der ESX-1 hat 2 Keyboard/Synth-Parts, jeder 274 Bytes, direkt nach den 9
+// Drum-Parts: Offset 330 (0x14A) + k*274. Anders als Drum-Parts (16 Trigger)
+// speichern sie ECHTE 128 Note- + 128 Gate-Bytes — das sind die realen 128-Step-
+// Melodiedaten eines Length_8-Patterns. Verifiziert: EsxUtil NUM_PARTS_KEYBOARD=2,
+// CHUNKSIZE_PARTS_KEYBOARD=274, NUM_SEQUENCE_DATA_NOTE/GATE=128; Offsets gegen
+// reale .esx bestätigt (KEYB0@0x14A / KEYB1@0x25C mit plausiblen Sample/Note/Gate).
+const ESX1_KEYBOARD_PART_OFFSET = 330;
+const ESX1_KEYBOARD_PART_STRIDE = 274;
+const ESX1_KEYBOARD_PART_COUNT = 2;
+const ESX1_KEYBOARD_NOTE_OFFSET = 18; // 128 Note-Bytes
+const ESX1_KEYBOARD_GATE_OFFSET = 146; // 128 Gate-Bytes
+const ESX1_KEYBOARD_SEQ_LEN = 128;
+
 /**
  * v3.23.0: Decoded ein einzelnes step-byte zu {active, velocity, accent}.
  *
@@ -760,6 +799,30 @@ function decodeShortPart(
 }
 
 /**
+ * Decoded einen Keyboard/Synth-Part (Index 0..1) @ 330 + k*274. Liefert Header
+ * (sampleId BE, level, pan) + die 128 Note- und 128 Gate-Bytes. Rohe Note/Gate-
+ * Bytes (Semantik nicht öffentlich RE-d). Verifiziert gegen open-electribe-editor.
+ */
+function decodeKeyboardPart(
+  raw: Uint8Array,
+  keyIndex: number
+): EsxKeyboardPart | undefined {
+  if (keyIndex < 0 || keyIndex >= ESX1_KEYBOARD_PART_COUNT) return undefined;
+  const partOff =
+    ESX1_KEYBOARD_PART_OFFSET + keyIndex * ESX1_KEYBOARD_PART_STRIDE;
+  if (partOff + ESX1_KEYBOARD_PART_STRIDE > raw.length) return undefined;
+  const sidRaw = (raw[partOff] << 8) | raw[partOff + 1]; // BE u16
+  const sampleId = sidRaw === ESX1_SAMPLEID_UNASSIGNED ? 0 : sidRaw & 0x01ff;
+  const volume = Math.max(0, Math.min(127, raw[partOff + 9] || 100));
+  const pan = Math.max(0, Math.min(127, raw[partOff + 10] || 64));
+  const noteOff = partOff + ESX1_KEYBOARD_NOTE_OFFSET;
+  const gateOff = partOff + ESX1_KEYBOARD_GATE_OFFSET;
+  const note = raw.slice(noteOff, noteOff + ESX1_KEYBOARD_SEQ_LEN);
+  const gate = raw.slice(gateOff, gateOff + ESX1_KEYBOARD_SEQ_LEN);
+  return { partIndex: keyIndex, sampleId, volume, pan, note, gate };
+}
+
+/**
  * Parst ein einzelnes Pattern aus dem 4280-Byte-Block.
  *
  * @param raw          Der 4280-Byte Pattern-Block (NICHT der ganze File-Buffer).
@@ -896,6 +959,13 @@ export function parseEsxPattern(
     }
   }
 
+  // Keyboard/Synth-Parts (additiv) — echte 128 Note/Gate-Werte.
+  const keyboardParts: EsxKeyboardPart[] = [];
+  for (let k = 0; k < ESX1_KEYBOARD_PART_COUNT; k++) {
+    const kp = decodeKeyboardPart(raw, k);
+    if (kp) keyboardParts.push(kp);
+  }
+
   return {
     index: patternIndex,
     name,
@@ -905,6 +975,7 @@ export function parseEsxPattern(
     effectiveSteps,
     swing,
     parts,
+    keyboardParts,
     raw,
   };
 }
