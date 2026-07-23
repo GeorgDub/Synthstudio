@@ -1326,11 +1326,26 @@ export function parseEsxSongs(buf: Uint8Array): {
  * Soft-Errors (z.B. Slot mit invertiertem Offset) führen NICHT zum Abbruch,
  * sondern landen in {@link EsxBank.warnings}.
  */
+/** Optionen für {@link parseEsxBank}. */
+export interface ParseEsxBankOptions {
+  /**
+   * v3.285 — Wenn true, wird das PCM NICHT zu Float32 dekodiert (pcmData bleibt
+   * leer). Alle Metadaten (Name/Index/Kanäle/Rate/Frames/Loop/Level, Patterns,
+   * Songs) werden trotzdem vollständig gelesen. Für schnelles Scannen großer
+   * Bänke / vieler Dateien (spart die 2×-Float32-Expansion pro Sample).
+   */
+  headersOnly?: boolean;
+}
+
+const EMPTY_F32 = new Float32Array(0);
+
 export function parseEsxBank(
   input: ArrayBuffer | Uint8Array,
-  source = "<bytes>"
+  source = "<bytes>",
+  opts: ParseEsxBankOptions = {}
 ): EsxBank {
   const buf = input instanceof Uint8Array ? input : new Uint8Array(input);
+  const headersOnly = opts.headersOnly === true;
 
   // ── 1. Size-Checks ────────────────────────────────────────────────────────
   if (buf.length < ESX1_SIZE_FILE_MIN) {
@@ -1449,7 +1464,7 @@ export function parseEsxBank(
       }
 
       const pcmBytes = readPcmRange(buf, f.off1Start, f.off1End, i, "mono");
-      const pcm = be16PcmToFloat32(pcmBytes);
+      const pcm = headersOnly ? EMPTY_F32 : be16PcmToFloat32(pcmBytes);
       totalPcm += pcmBytes.length;
       // v3.90.0: Defensive tolerance — KASSEL.esx and friends overflow the
       // 24 MiB hardware cap by a few hundred bytes (real-file-padding /
@@ -1467,7 +1482,7 @@ export function parseEsxBank(
         pcmCapWarned = true;
       }
 
-      const frames = pcm.length;
+      const frames = headersOnly ? pcmBytes.length >> 1 : pcm.length;
       monoSamples.push({
         index: i,
         name,
@@ -1539,13 +1554,20 @@ export function parseEsxBank(
         slotIndex,
         "stereo-R"
       );
-      const left = be16PcmToFloat32(leftBytes);
-      const right = be16PcmToFloat32(rightBytes);
-      const frames = Math.min(left.length, right.length);
-      const inter = new Float32Array(frames * 2);
-      for (let k = 0; k < frames; k++) {
-        inter[k * 2] = left[k];
-        inter[k * 2 + 1] = right[k];
+      let frames: number;
+      let inter: Float32Array;
+      if (headersOnly) {
+        frames = Math.min(leftBytes.length >> 1, rightBytes.length >> 1);
+        inter = EMPTY_F32;
+      } else {
+        const left = be16PcmToFloat32(leftBytes);
+        const right = be16PcmToFloat32(rightBytes);
+        frames = Math.min(left.length, right.length);
+        inter = new Float32Array(frames * 2);
+        for (let k = 0; k < frames; k++) {
+          inter[k * 2] = left[k];
+          inter[k * 2 + 1] = right[k];
+        }
       }
       totalPcm += leftBytes.length + rightBytes.length;
       // v3.90.0: Same soft-limit/warning logic as mono path.
