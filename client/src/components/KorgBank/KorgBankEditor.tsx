@@ -2466,14 +2466,14 @@ export function KorgBankEditor({
                 </label>
               </div>
 
-              {/* Sample-Tune */}
+              {/* Sample-Tune (Oe2sSLE Coarse-Tune -63..+63) */}
               <label className="block text-xs text-text-muted">
-                Sample-Tune (Semitones): {selectedSlot.sampleTune}
+                Sample-Tune: {selectedSlot.sampleTune}
                 <input
                   data-testid="korg-bank-editor-detail-tune"
                   type="range"
-                  min={-99}
-                  max={99}
+                  min={-63}
+                  max={63}
                   value={selectedSlot.sampleTune}
                   onChange={e =>
                     editSlotPatch(selectedSlot.rowId, {

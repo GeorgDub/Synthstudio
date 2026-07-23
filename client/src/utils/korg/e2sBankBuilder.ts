@@ -120,7 +120,8 @@ export interface E2sSlotInput {
   level?: number;
   /** +12 dB Gain-Flag (Default false). */
   gain12db?: boolean;
-  /** Sample-Tune in Cents [-99..+99] (Default 0). */
+  /** OSC_SampleTune (esli +0x55, i8): Coarse-Tune, Oe2sSLE-Range -63..+63
+   *  (Default 0). Werte außerhalb werden auf ±63 geclampt. */
   sampleTune?: number;
   /** Optional: bis zu 64 Slice-Records. */
   slices?: SliceInput[];
@@ -194,14 +195,14 @@ export class E2sBuildError extends Error {
  */
 export function buildE2sBank(
   slots: E2sSlotInput[],
-  opts: BuildE2sBankOptions = {},
+  opts: BuildE2sBankOptions = {}
 ): BuildResult {
   if (!Array.isArray(slots)) {
     throw new E2sBuildError("slots must be an array");
   }
   if (slots.length > E2S_MAX_SLOTS) {
     throw new E2sBuildError(
-      `too many slots: ${slots.length} > ${E2S_MAX_SLOTS}`,
+      `too many slots: ${slots.length} > ${E2S_MAX_SLOTS}`
     );
   }
 
@@ -238,7 +239,7 @@ export function buildE2sBank(
     totalPcm += pcmByteLen;
     if (totalPcm > E2S_MAX_TOTAL_PCM_BYTES) {
       throw new E2sBuildError(
-        `cumulative PCM payload ${totalPcm} > ${E2S_MAX_TOTAL_PCM_BYTES} (E2S total cap)`,
+        `cumulative PCM payload ${totalPcm} > ${E2S_MAX_TOTAL_PCM_BYTES} (E2S total cap)`
       );
     }
 
@@ -248,13 +249,13 @@ export function buildE2sBank(
       input.slotIndex >= E2S_MAX_SLOTS
     ) {
       warnings.push(
-        `slot ${i} index ${input.slotIndex} out of range [0,${E2S_MAX_SLOTS}); skipping`,
+        `slot ${i} index ${input.slotIndex} out of range [0,${E2S_MAX_SLOTS}); skipping`
       );
       continue;
     }
     if (offsetTable[input.slotIndex] !== 0) {
       warnings.push(
-        `slot_index ${input.slotIndex} appears more than once — keeping the first`,
+        `slot_index ${input.slotIndex} appears more than once — keeping the first`
       );
       continue;
     }
@@ -266,7 +267,7 @@ export function buildE2sBank(
   const totalSize = cursor;
   if (totalSize > E2S_FILE_MAX_BYTES) {
     throw new E2sBuildError(
-      `output file size ${totalSize} exceeds max ${E2S_FILE_MAX_BYTES}`,
+      `output file size ${totalSize} exceeds max ${E2S_FILE_MAX_BYTES}`
     );
   }
 
@@ -292,14 +293,14 @@ export function buildE2sBank(
     const off = offsetTable[i];
     if (off !== 0 && off < E2S_ALL_SAMPLE_AREA_START) {
       throw new E2sBuildError(
-        `internal: slot ${i} offset 0x${off.toString(16)} lies inside prelude`,
+        `internal: slot ${i} offset 0x${off.toString(16)} lies inside prelude`
       );
     }
   }
   // Sanity-Check: Offset-Table-Block ist exakt E2S_ALL_OFFSET_TABLE_BYTES groß.
   if (E2S_MAX_SLOTS * 4 !== E2S_ALL_OFFSET_TABLE_BYTES) {
     throw new E2sBuildError(
-      `internal: offset-table-size mismatch (${E2S_MAX_SLOTS * 4} != ${E2S_ALL_OFFSET_TABLE_BYTES})`,
+      `internal: offset-table-size mismatch (${E2S_MAX_SLOTS * 4} != ${E2S_ALL_OFFSET_TABLE_BYTES})`
     );
   }
 
@@ -327,16 +328,19 @@ export function buildE2sBank(
  */
 function passthroughRiff(
   slot: E2sSlotInput,
-  warnings: string[],
+  warnings: string[]
 ): { riff: Uint8Array; pcmByteLen: number } {
   const raw = slot.rawRiff!;
   // RIFF magic
   const isRiff =
     raw.length >= 12 &&
-    raw[0] === 0x52 && raw[1] === 0x49 && raw[2] === 0x46 && raw[3] === 0x46;
+    raw[0] === 0x52 &&
+    raw[1] === 0x49 &&
+    raw[2] === 0x46 &&
+    raw[3] === 0x46;
   if (!isRiff) {
     warnings.push(
-      `slot ${slot.slotIndex} rawRiff has invalid magic — falling back to re-encode`,
+      `slot ${slot.slotIndex} rawRiff has invalid magic — falling back to re-encode`
     );
     return buildRiffForSlot(slot, warnings);
   }
@@ -344,21 +348,28 @@ function passthroughRiff(
   const declaredSize = dv.getUint32(4, true);
   if (declaredSize + 8 !== raw.length) {
     warnings.push(
-      `slot ${slot.slotIndex} rawRiff size mismatch (${declaredSize}+8 != ${raw.length}) — re-encoding`,
+      `slot ${slot.slotIndex} rawRiff size mismatch (${declaredSize}+8 != ${raw.length}) — re-encoding`
     );
     return buildRiffForSlot(slot, warnings);
   }
   // WAVE marker (rawRiff[8..12])
-  if (!(raw[8] === 0x57 && raw[9] === 0x41 && raw[10] === 0x56 && raw[11] === 0x45)) {
+  if (
+    !(
+      raw[8] === 0x57 &&
+      raw[9] === 0x41 &&
+      raw[10] === 0x56 &&
+      raw[11] === 0x45
+    )
+  ) {
     warnings.push(
-      `slot ${slot.slotIndex} rawRiff missing WAVE marker — re-encoding`,
+      `slot ${slot.slotIndex} rawRiff missing WAVE marker — re-encoding`
     );
     return buildRiffForSlot(slot, warnings);
   }
   // Per-slot RIFF size cap (Defense gegen riesige durchgereichte Slots).
   if (raw.length > MAX_BYTES_PER_SLOT + 4096) {
     warnings.push(
-      `slot ${slot.slotIndex} rawRiff ${raw.length} bytes too large — re-encoding`,
+      `slot ${slot.slotIndex} rawRiff ${raw.length} bytes too large — re-encoding`
     );
     return buildRiffForSlot(slot, warnings);
   }
@@ -382,7 +393,7 @@ function passthroughRiff(
   }
   if (pcmByteLen > MAX_BYTES_PER_SLOT) {
     warnings.push(
-      `slot ${slot.slotIndex} rawRiff data-chunk ${pcmByteLen} > per-slot cap — re-encoding`,
+      `slot ${slot.slotIndex} rawRiff data-chunk ${pcmByteLen} > per-slot cap — re-encoding`
     );
     return buildRiffForSlot(slot, warnings);
   }
@@ -397,26 +408,28 @@ function passthroughRiff(
 
 function buildRiffForSlot(
   slot: E2sSlotInput,
-  warnings: string[],
+  warnings: string[]
 ): { riff: Uint8Array; pcmByteLen: number } {
   if (!(slot.pcmData instanceof Float32Array)) {
-    throw new E2sBuildError(`slot ${slot.slotIndex} pcmData must be Float32Array`);
+    throw new E2sBuildError(
+      `slot ${slot.slotIndex} pcmData must be Float32Array`
+    );
   }
   if (slot.channels !== 1 && slot.channels !== 2) {
     throw new E2sBuildError(
-      `slot ${slot.slotIndex} unsupported channels ${slot.channels}`,
+      `slot ${slot.slotIndex} unsupported channels ${slot.channels}`
     );
   }
   if (!Number.isFinite(slot.sampleRate) || slot.sampleRate <= 0) {
     throw new E2sBuildError(
-      `slot ${slot.slotIndex} invalid sampleRate ${slot.sampleRate}`,
+      `slot ${slot.slotIndex} invalid sampleRate ${slot.sampleRate}`
     );
   }
 
   const pcmBytes = floatToInt16LeBytes(slot.pcmData);
   if (pcmBytes.length > MAX_BYTES_PER_SLOT) {
     throw new E2sBuildError(
-      `slot ${slot.slotIndex} pcm ${pcmBytes.length} bytes exceeds per-slot cap ${MAX_BYTES_PER_SLOT}`,
+      `slot ${slot.slotIndex} pcm ${pcmBytes.length} bytes exceeds per-slot cap ${MAX_BYTES_PER_SLOT}`
     );
   }
 
@@ -464,12 +477,12 @@ function buildFmtSubchunk(sampleRate: number, channels: 1 | 2): Uint8Array {
   const dv = new DataView(chunk.buffer);
   dv.setUint32(4, bodyLen, true);
   // body
-  dv.setUint16(8, 1, true);                // PCM
+  dv.setUint16(8, 1, true); // PCM
   dv.setUint16(10, channels, true);
   dv.setUint32(12, sampleRate, true);
   dv.setUint32(16, byteRate, true);
   dv.setUint16(20, blockAlign, true);
-  dv.setUint16(22, 16, true);              // bps
+  dv.setUint16(22, 16, true); // bps
   return chunk;
 }
 
@@ -490,7 +503,7 @@ function buildDataSubchunk(pcmBytes: Uint8Array): Uint8Array {
 function buildKorgSubchunk(
   slot: E2sSlotInput,
   pcmByteLen: number,
-  warnings: string[],
+  warnings: string[]
 ): Uint8Array {
   const bodyLen = KORG_SUBCHUNK_BODY_SIZE;
   const chunk = new Uint8Array(8 + bodyLen);
@@ -520,7 +533,7 @@ function buildKorgSubchunk(
   const sanitized = sanitizeE2sSlotName(slot.name ?? "", ESLI_NAME_LEN);
   if (sanitized.length < (slot.name ?? "").length) {
     warnings.push(
-      `slot ${slot.slotIndex} name truncated/stripped: "${slot.name}" → "${sanitized}"`,
+      `slot ${slot.slotIndex} name truncated/stripped: "${slot.name}" → "${sanitized}"`
     );
   }
   for (let i = 0; i < sanitized.length && i < ESLI_NAME_LEN; i++) {
@@ -533,11 +546,19 @@ function buildKorgSubchunk(
   dv.setUint16(bodyOffset + ESLI_CATEGORY_OFFSET, cat, true);
 
   // OSC_importNum @ 0x1C (u16 LE) — in echten Bänken stets sampleNumber + 50.
-  dv.setUint16(bodyOffset + ESLI_IMPORT_NUM_OFFSET, Math.min(0xffff, sampleNumber + 50), true);
+  dv.setUint16(
+    bodyOffset + ESLI_IMPORT_NUM_OFFSET,
+    Math.min(0xffff, sampleNumber + 50),
+    true
+  );
 
   // playLogPeriod @ 0x2A (u16 LE) — frequenzabhängige Abspielrate. Ohne dies
   // hat das Sample keine definierte Rate → Gerät spielt/lädt es nicht.
-  dv.setUint16(bodyOffset + ESLI_PLAY_LOG_PERIOD_OFFSET, playLogPeriodForRate(slot.sampleRate), true);
+  dv.setUint16(
+    bodyOffset + ESLI_PLAY_LOG_PERIOD_OFFSET,
+    playLogPeriodForRate(slot.sampleRate),
+    true
+  );
 
   // PlayVolume @ 0x2C (u16 LE) — scale level [0..127] → [0..0xFFFF]
   const rawLevel = typeof slot.level === "number" ? slot.level : 127;
@@ -555,11 +576,17 @@ function buildKorgSubchunk(
   const loopStartBytes =
     slot.loopStartBytes != null ? clampU32(slot.loopStartBytes) : endAddr;
   const endBytes =
-    slot.loopEndBytes != null ? Math.max(0, clampU32(slot.loopEndBytes) - frameBytes) : endAddr;
+    slot.loopEndBytes != null
+      ? Math.max(0, clampU32(slot.loopEndBytes) - frameBytes)
+      : endAddr;
   dv.setUint32(bodyOffset + ESLI_START_POINT_OFFSET, 0, true);
   dv.setUint32(bodyOffset + ESLI_LOOP_START_OFFSET, loopStartBytes, true);
   dv.setUint32(bodyOffset + ESLI_END_OFFSET, endBytes, true);
-  dv.setUint32(bodyOffset + ESLI_WAV_DATA_SIZE_OFFSET, clampU32(pcmByteLen), true);
+  dv.setUint32(
+    bodyOffset + ESLI_WAV_DATA_SIZE_OFFSET,
+    clampU32(pcmByteLen),
+    true
+  );
 
   // Fixed-value fields the device expects (Oe2sSLE "_UFix"; verified constant
   // across real factory/user banks). Oe2sSLE warns if these differ → set them.
@@ -571,7 +598,8 @@ function buildKorgSubchunk(
 
   // Oneshot @ 0x3C — 0 für Forward-Loop, 1 für oneshot (default oneshot)
   const loopType = slot.loopType ?? 1; // 1 = oneshot default
-  chunk[bodyOffset + ESLI_ONESHOT_OFFSET] = loopType === LOOP_TYPE_FORWARD ? 0 : 1;
+  chunk[bodyOffset + ESLI_ONESHOT_OFFSET] =
+    loopType === LOOP_TYPE_FORWARD ? 0 : 1;
 
   // useChan0 / useChan1 (mono = chan0 only, stereo = both)
   chunk[bodyOffset + ESLI_USE_CHAN0_OFFSET] = 1;
@@ -581,12 +609,19 @@ function buildKorgSubchunk(
   chunk[bodyOffset + ESLI_PLUS12DB_OFFSET] = slot.gain12db ? 1 : 0;
 
   // Sampling-Freq @ 0x50 (u32 LE)
-  dv.setUint32(bodyOffset + ESLI_SAMPLING_FREQ_OFFSET, slot.sampleRate >>> 0, true);
+  dv.setUint32(
+    bodyOffset + ESLI_SAMPLING_FREQ_OFFSET,
+    slot.sampleRate >>> 0,
+    true
+  );
 
-  // SampleTune @ 0x55 (i8) — clamp [-99..+99]
-  let tune = typeof slot.sampleTune === "number" ? Math.round(slot.sampleTune) : 0;
-  if (tune > 99) tune = 99;
-  if (tune < -99) tune = -99;
+  // SampleTune @ 0x55 (i8) — Oe2sSLE „OSC_SampleTune" ist Coarse-Tune, GUI-Range
+  // -63..+63 (nicht Cents). Wir clampen exakt auf diesen Bereich (SoT:
+  // Oe2sSLE_GUI.py Tune-Spinbox), damit gebaute Banken im Geräte-Range bleiben.
+  let tune =
+    typeof slot.sampleTune === "number" ? Math.round(slot.sampleTune) : 0;
+  if (tune > 63) tune = 63;
+  if (tune < -63) tune = -63;
   // i8 sign-conversion
   chunk[bodyOffset + ESLI_SAMPLE_TUNE_OFFSET] = tune < 0 ? tune + 256 : tune;
 
@@ -598,7 +633,7 @@ function buildKorgSubchunk(
   const slices = slot.slices ?? [];
   if (slices.length > ESLI_SLICES_COUNT) {
     warnings.push(
-      `slot ${slot.slotIndex} ${slices.length} slices > ${ESLI_SLICES_COUNT}; truncating`,
+      `slot ${slot.slotIndex} ${slices.length} slices > ${ESLI_SLICES_COUNT}; truncating`
     );
   }
   const sliceCount = Math.min(slices.length, ESLI_SLICES_COUNT);
@@ -616,15 +651,19 @@ function buildKorgSubchunk(
   if (slot.sliceSteps && slot.sliceSteps.length > 0) {
     const stepBytes = slot.sliceSteps.subarray(
       0,
-      Math.min(slot.sliceSteps.length, ESLI_SLICE_STEPS_LEN),
+      Math.min(slot.sliceSteps.length, ESLI_SLICE_STEPS_LEN)
     );
     chunk.set(stepBytes, bodyOffset + ESLI_SLICE_STEPS_OFFSET);
   }
 
   // Slicing-Metadaten @ 0x498..0x49A (u8)
-  chunk[bodyOffset + ESLI_SLICING_NUM_STEPS_OFFSET] = clampU8(slot.slicingNumSteps ?? 0);
+  chunk[bodyOffset + ESLI_SLICING_NUM_STEPS_OFFSET] = clampU8(
+    slot.slicingNumSteps ?? 0
+  );
   chunk[bodyOffset + ESLI_SLICING_BEAT_OFFSET] = clampU8(slot.slicingBeat ?? 0);
-  chunk[bodyOffset + ESLI_SLICES_NUM_ACTIVE_OFFSET] = clampU8(slot.slicingNumActive ?? 0);
+  chunk[bodyOffset + ESLI_SLICES_NUM_ACTIVE_OFFSET] = clampU8(
+    slot.slicingNumActive ?? 0
+  );
 
   return chunk;
 }
@@ -648,7 +687,10 @@ function playLogPeriodForRate(sampleRate: number): number {
   if (sampleRate === 44100) return 15736;
   if (sampleRate === 48000) return 15360;
   const sr = sampleRate > 0 ? sampleRate : 44100;
-  return Math.max(0, Math.min(0xffff, Math.round(63132.68 - 3072 * Math.log2(sr))));
+  return Math.max(
+    0,
+    Math.min(0xffff, Math.round(63132.68 - 3072 * Math.log2(sr)))
+  );
 }
 
 function clampU32(n: number): number {

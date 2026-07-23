@@ -106,7 +106,7 @@ export interface OpenedSlotSnapshot {
  */
 export function bankToOpenedSlots(
   bank: E2sBank,
-  keyPrefix = "slot",
+  keyPrefix = "slot"
 ): OpenedSlot[] {
   const out: OpenedSlot[] = [];
   for (let i = 0; i < E2S_MAX_SLOTS; i++) {
@@ -129,7 +129,7 @@ export function bankToOpenedSlots(
     }
     // Defensive: kopiere Slices in eigene Objekte (Builder mutiert sie nicht,
     // aber wir wollen Snapshot-Isolation für Revert garantieren).
-    const slicesCopy: E2sSlice[] = src.slices.map((s) => ({
+    const slicesCopy: E2sSlice[] = src.slices.map(s => ({
       start: s.start,
       length: s.length,
       attackLength: s.attackLength,
@@ -140,13 +140,13 @@ export function bankToOpenedSlots(
       category: src.category,
       oneshot: src.loopType === LOOP_TYPE_ONESHOT,
       gain12db: src.gain12db,
-      sampleTune: 0, // reader does not yet decode sampleTune i8 — keep 0
+      sampleTune: src.sampleTune ?? 0, // v3.284: Reader dekodiert +0x55 i8
       pcmData: src.pcmData,
       sampleRate: src.sampleRate,
       channels: src.channels,
       frames: src.frames,
       rawRiff: src.rawRiff,
-      slices: slicesCopy.map((s) => ({ ...s })),
+      slices: slicesCopy.map(s => ({ ...s })),
     };
     out.push({
       rowId: `${keyPrefix}-${i}`,
@@ -156,7 +156,7 @@ export function bankToOpenedSlots(
       category: src.category,
       oneshot: src.loopType === LOOP_TYPE_ONESHOT,
       gain12db: src.gain12db,
-      sampleTune: 0,
+      sampleTune: src.sampleTune ?? 0,
       pcmData: src.pcmData,
       sampleRate: src.sampleRate,
       channels: src.channels,
@@ -185,9 +185,9 @@ export function bankToOpenedSlots(
 export function patchOpenedSlot(
   slots: OpenedSlot[],
   rowId: string,
-  patch: Partial<OpenedSlot>,
+  patch: Partial<OpenedSlot>
 ): OpenedSlot[] {
-  return slots.map((s) => {
+  return slots.map(s => {
     if (s.rowId !== rowId) return s;
     const editableTouched =
       (patch.name !== undefined && patch.name !== s.name) ||
@@ -214,12 +214,12 @@ export function patchOpenedSlot(
 export function setSlotSlices(
   slots: OpenedSlot[],
   rowId: string,
-  slices: E2sSlice[],
+  slices: E2sSlice[]
 ): OpenedSlot[] {
-  return slots.map((s) =>
+  return slots.map(s =>
     s.rowId === rowId
-      ? { ...s, slices: slices.map((sl) => ({ ...sl })), isDirty: true }
-      : s,
+      ? { ...s, slices: slices.map(sl => ({ ...sl })), isDirty: true }
+      : s
   );
 }
 
@@ -233,10 +233,10 @@ export function replaceSlotSample(
   rowId: string,
   pcmData: Float32Array,
   sampleRate: number,
-  channels: 1 | 2,
+  channels: 1 | 2
 ): OpenedSlot[] {
   const frames = Math.floor(pcmData.length / channels);
-  return slots.map((s) =>
+  return slots.map(s =>
     s.rowId === rowId
       ? {
           ...s,
@@ -251,7 +251,7 @@ export function replaceSlotSample(
           slices: [],
           isDirty: true,
         }
-      : s,
+      : s
   );
 }
 
@@ -264,7 +264,7 @@ export function replaceSlotSample(
  * This is the trade-off documented in the README caveat.
  */
 export function deleteSlot(slots: OpenedSlot[], rowId: string): OpenedSlot[] {
-  return slots.map((s) =>
+  return slots.map(s =>
     s.rowId === rowId
       ? {
           ...s,
@@ -283,7 +283,7 @@ export function deleteSlot(slots: OpenedSlot[], rowId: string): OpenedSlot[] {
           slices: [],
           isDirty: true,
         }
-      : s,
+      : s
   );
 }
 
@@ -292,7 +292,7 @@ export function deleteSlot(slots: OpenedSlot[], rowId: string): OpenedSlot[] {
  * No-op if the slot has no original (it was empty when loaded).
  */
 export function revertSlot(slots: OpenedSlot[], rowId: string): OpenedSlot[] {
-  return slots.map((s) => {
+  return slots.map(s => {
     if (s.rowId !== rowId) return s;
     const o = s.original;
     if (!o) {
@@ -327,7 +327,7 @@ export function revertSlot(slots: OpenedSlot[], rowId: string): OpenedSlot[] {
       channels: o.channels,
       frames: o.frames,
       rawRiff: o.rawRiff,
-      slices: o.slices.map((sl) => ({ ...sl })),
+      slices: o.slices.map(sl => ({ ...sl })),
       isDirty: false,
     };
   });
@@ -357,7 +357,7 @@ export interface OpenedSlotBuildResult {
 }
 
 export function openedSlotsToBuildInputs(
-  slots: OpenedSlot[],
+  slots: OpenedSlot[]
 ): OpenedSlotBuildResult {
   const inputs: E2sSlotInput[] = [];
   let dirtyCount = 0;
@@ -383,7 +383,7 @@ export function openedSlotsToBuildInputs(
       // v3.8.0 — Slices propagieren. Builder ignoriert sie für passthrough-Slots
       // (rawRiff bit-exact), aber bei dirty/re-encode werden sie korrekt
       // serialisiert (siehe e2sBankBuilder.ts:548).
-      slices: s.slices.length > 0 ? s.slices.map((sl) => ({ ...sl })) : undefined,
+      slices: s.slices.length > 0 ? s.slices.map(sl => ({ ...sl })) : undefined,
       rawRiff: s.rawRiff,
       isDirty: s.isDirty,
     };
@@ -410,7 +410,7 @@ export function countDirtySlots(slots: OpenedSlot[]): number {
 }
 
 export function hasUnsavedChanges(slots: OpenedSlot[]): boolean {
-  return slots.some((s) => s.isDirty);
+  return slots.some(s => s.isDirty);
 }
 
 /** UI-Helfer: name (oder fallback) für Slot-Browser. */

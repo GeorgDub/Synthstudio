@@ -37,6 +37,7 @@ function slot(
     loopEnd: frames,
     level: 100,
     gain12db: false,
+    sampleTune: 0,
     slices: [],
     sliceSteps: new Uint8Array(64),
     slicingNumSteps: 0,
