@@ -46,8 +46,10 @@ export interface OpenedSlot {
   oneshot: boolean;
   /** +12dB Gain flag. */
   gain12db: boolean;
-  /** Sample-Tune in semitones (-99..+99 in the spec's i8 cents/semitone field). */
+  /** OSC_SampleTune (esli +0x55, i8): Coarse-Tune, Oe2sSLE-Range -63..+63. */
   sampleTune: number;
+  /** playVolume-Level 0..127 (esli +0x2c, u16 normalisiert). */
+  level: number;
 
   // — PCM + audio fields —
   pcmData?: Float32Array;
@@ -81,6 +83,7 @@ export interface OpenedSlotSnapshot {
   oneshot: boolean;
   gain12db: boolean;
   sampleTune: number;
+  level: number;
   pcmData: Float32Array;
   sampleRate: number;
   channels: 1 | 2;
@@ -121,6 +124,7 @@ export function bankToOpenedSlots(
         oneshot: true,
         gain12db: false,
         sampleTune: 0,
+        level: 127,
         slices: [],
         isDirty: false,
         original: null,
@@ -141,6 +145,7 @@ export function bankToOpenedSlots(
       oneshot: src.loopType === LOOP_TYPE_ONESHOT,
       gain12db: src.gain12db,
       sampleTune: src.sampleTune ?? 0, // v3.284: Reader dekodiert +0x55 i8
+      level: src.level ?? 127, // v3.284: playVolume-Level durchreichen
       pcmData: src.pcmData,
       sampleRate: src.sampleRate,
       channels: src.channels,
@@ -157,6 +162,7 @@ export function bankToOpenedSlots(
       oneshot: src.loopType === LOOP_TYPE_ONESHOT,
       gain12db: src.gain12db,
       sampleTune: src.sampleTune ?? 0,
+      level: src.level ?? 127,
       pcmData: src.pcmData,
       sampleRate: src.sampleRate,
       channels: src.channels,
@@ -195,6 +201,7 @@ export function patchOpenedSlot(
       (patch.oneshot !== undefined && patch.oneshot !== s.oneshot) ||
       (patch.gain12db !== undefined && patch.gain12db !== s.gain12db) ||
       (patch.sampleTune !== undefined && patch.sampleTune !== s.sampleTune) ||
+      (patch.level !== undefined && patch.level !== s.level) ||
       patch.pcmData !== undefined ||
       patch.sampleRate !== undefined ||
       patch.channels !== undefined ||
@@ -275,6 +282,7 @@ export function deleteSlot(slots: OpenedSlot[], rowId: string): OpenedSlot[] {
           oneshot: true,
           gain12db: false,
           sampleTune: 0,
+          level: 127,
           pcmData: undefined,
           sampleRate: undefined,
           channels: undefined,
@@ -305,6 +313,7 @@ export function revertSlot(slots: OpenedSlot[], rowId: string): OpenedSlot[] {
         oneshot: true,
         gain12db: false,
         sampleTune: 0,
+        level: 127,
         pcmData: undefined,
         sampleRate: undefined,
         channels: undefined,
@@ -322,6 +331,7 @@ export function revertSlot(slots: OpenedSlot[], rowId: string): OpenedSlot[] {
       oneshot: o.oneshot,
       gain12db: o.gain12db,
       sampleTune: o.sampleTune,
+      level: o.level,
       pcmData: o.pcmData,
       sampleRate: o.sampleRate,
       channels: o.channels,
@@ -380,6 +390,7 @@ export function openedSlotsToBuildInputs(
       loopType: s.oneshot ? LOOP_TYPE_ONESHOT : LOOP_TYPE_FORWARD,
       gain12db: s.gain12db,
       sampleTune: s.sampleTune,
+      level: s.level,
       // v3.8.0 — Slices propagieren. Builder ignoriert sie für passthrough-Slots
       // (rawRiff bit-exact), aber bei dirty/re-encode werden sie korrekt
       // serialisiert (siehe e2sBankBuilder.ts:548).

@@ -2484,6 +2484,24 @@ export function KorgBankEditor({
                 />
               </label>
 
+              {/* Level (playVolume 0..127) */}
+              <label className="block text-xs text-text-muted">
+                Level: {selectedSlot.level}
+                <input
+                  data-testid="korg-bank-editor-detail-level"
+                  type="range"
+                  min={0}
+                  max={127}
+                  value={selectedSlot.level}
+                  onChange={e =>
+                    editSlotPatch(selectedSlot.rowId, {
+                      level: Number(e.target.value),
+                    })
+                  }
+                  className="w-full mt-1 accent-accent-primary"
+                />
+              </label>
+
               {/* Audio info + Replace */}
               <div className="text-xs text-text-muted space-y-1 pt-2 border-t border-border-color">
                 <p>

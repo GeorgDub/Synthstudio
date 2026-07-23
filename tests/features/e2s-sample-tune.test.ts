@@ -26,6 +26,22 @@ function bankWithTune(tune: number) {
   return bank.slots.find(s => s && s.name === "TuneA") ?? null;
 }
 
+function bankWithLevel(level: number) {
+  const inputs: E2sSlotInput[] = [
+    {
+      slotIndex: 0,
+      name: "LvlA",
+      pcmData: new Float32Array(32),
+      sampleRate: 44100,
+      channels: 1,
+      level,
+    },
+  ];
+  const built = buildE2sBank(inputs);
+  const bank = parseE2sBank(built.buffer, "t.all");
+  return bank.slots.find(s => s && s.name === "LvlA") ?? null;
+}
+
 describe("E2S sampleTune round-trip", () => {
   it("positiver Tune wird zurückgelesen", () => {
     expect(bankWithTune(12)?.sampleTune).toBe(12);
@@ -45,5 +61,24 @@ describe("E2S sampleTune round-trip", () => {
 
   it("Werte unter -63 werden auf -63 geclampt", () => {
     expect(bankWithTune(-120)?.sampleTune).toBe(-63);
+  });
+});
+
+describe("E2S level round-trip (playVolume)", () => {
+  // Level 0..127 ↔ playVolume 0..65535 hat ±1 Rundungsverlust durch die
+  // zwei floor-Skalierungen — wir prüfen, dass der Wert erhalten bleibt
+  // (nicht auf Builder-Default 127 zurückfällt), mit ±1 Toleranz.
+  it("mittlerer Level bleibt erhalten (±1)", () => {
+    const lvl = bankWithLevel(64)?.level ?? -1;
+    expect(Math.abs(lvl - 64)).toBeLessThanOrEqual(1);
+  });
+
+  it("Max-Level 127 → 127", () => {
+    expect(bankWithLevel(127)?.level).toBe(127);
+  });
+
+  it("hoher Level (100) bleibt hoch, nicht Default", () => {
+    const lvl = bankWithLevel(100)?.level ?? -1;
+    expect(Math.abs(lvl - 100)).toBeLessThanOrEqual(1);
   });
 });
