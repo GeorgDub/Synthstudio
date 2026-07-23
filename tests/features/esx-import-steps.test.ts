@@ -97,12 +97,14 @@ describe("esxBankToImportResult", () => {
     expect(snareIdx).toEqual([4, 12]);
   });
 
-  it("liefert alle 16 Parts mit Sample-Hint-Namen", () => {
+  it("liefert Parts mit Sample-Hint-Namen (v3.286-Layout)", () => {
+    // makePattern füllt bis 16 Parts auf; der Converter mappt jeden. Die Labels
+    // folgen dem verifizierten 14-Part-Layout (9 Drum, 3 Stretch/Slice, 2 Synth).
     const bank = makeBank([makePattern(0, "P1", [makePart(0, [0])])]);
     const result = esxBankToImportResult(bank, "TEST.esx");
-    expect(result.patterns[0].parts).toHaveLength(16);
     expect(result.patterns[0].parts[0].name).toBe("ESX Drum 1");
-    expect(result.patterns[0].parts[14].name).toBe("ESX Synth 1");
+    expect(result.patterns[0].parts[9].name).toBe("ESX Stretch/Slice 1");
+    expect(result.patterns[0].parts[12].name).toBe("ESX Synth 1");
   });
 
   it("top-level bpm = bpm des ersten Patterns", () => {

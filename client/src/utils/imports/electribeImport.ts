@@ -199,6 +199,8 @@ export function esxBankToImportResult(
           steps: dp.steps.map((active, i) => ({
             active,
             velocity: dp.velocities[i] ?? 100,
+            // v3.286: Per-Step-Pitch (Synth/Keyboard-Melodie) durchreichen.
+            pitch: dp.pitches[i] ?? 0,
           })),
         })
       ),

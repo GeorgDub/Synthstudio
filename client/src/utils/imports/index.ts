@@ -75,10 +75,14 @@ export function importResultToPatterns(result: ImportResult): Array<{
   return result.patterns.map(p => ({
     id: makeId("pat"),
     name: p.name,
-    stepCount: (p.stepCount === 64 ? 64 : p.stepCount === 32 ? 32 : 16) as
-      | 16
-      | 32
-      | 64,
+    // v3.286: 128 erhalten (vorher fiel alles ≠32/64 auf 16 → „auf 16 gekürzt").
+    stepCount: (p.stepCount === 128
+      ? 128
+      : p.stepCount === 64
+        ? 64
+        : p.stepCount === 32
+          ? 32
+          : 16) as 16 | 32 | 64 | 128,
     stepResolution: "1/16",
     bpm: p.bpm ?? null,
     parts: p.parts.map(part => ({

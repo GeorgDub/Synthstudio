@@ -16,6 +16,8 @@ import { countActiveSteps } from "@/utils/imports/editImportedPattern";
 export interface EsxPatternPreviewEditorProps {
   result: ImportResult;
   selectedPatternIdx: number;
+  /** v3.286: nur die ersten `stepCap` Steps anzeigen (128 = alle). */
+  stepCap?: number;
   onSelectPattern: (idx: number) => void;
   onToggleStep: (patternIdx: number, partIdx: number, stepIdx: number) => void;
   onClearPart: (patternIdx: number, partIdx: number) => void;
@@ -24,6 +26,7 @@ export interface EsxPatternPreviewEditorProps {
 export function EsxPatternPreviewEditor({
   result,
   selectedPatternIdx,
+  stepCap = 128,
   onSelectPattern,
   onToggleStep,
   onClearPart,
@@ -69,7 +72,10 @@ export function EsxPatternPreviewEditor({
         ) : (
           <div className="min-w-max">
             {pattern.parts.map((part, partIdx) => {
-              const partActive = part.steps.some(s => s.active);
+              const isSynth = part.steps.some(
+                s => s.active && typeof s.pitch === "number" && s.pitch !== 0
+              );
+              const shown = part.steps.slice(0, stepCap);
               return (
                 <div
                   key={partIdx}
@@ -82,10 +88,11 @@ export function EsxPatternPreviewEditor({
                     title="Diesen Part leeren"
                     className="w-28 flex-shrink-0 truncate text-left text-[10px] text-text-muted hover:text-accent-danger transition-colors"
                   >
+                    {isSynth ? "♪ " : ""}
                     {part.name}
                   </button>
                   <div className="flex gap-[2px]">
-                    {part.steps.map((step, stepIdx) => {
+                    {shown.map((step, stepIdx) => {
                       const isBeat = stepIdx % 4 === 0;
                       return (
                         <button
@@ -95,12 +102,18 @@ export function EsxPatternPreviewEditor({
                             onToggleStep(selectedPatternIdx, partIdx, stepIdx)
                           }
                           data-testid={`esx-preview-step-${partIdx}-${stepIdx}`}
-                          title={`Part „${part.name}" · Step ${stepIdx + 1}`}
+                          title={`Part „${part.name}" · Step ${stepIdx + 1}${
+                            step.active &&
+                            typeof step.pitch === "number" &&
+                            step.pitch !== 0
+                              ? ` · Note ${step.pitch > 0 ? "+" : ""}${step.pitch}`
+                              : ""
+                          }`}
                           className={[
                             "w-3 h-4 rounded-sm transition-colors",
                             step.active
-                              ? partActive
-                                ? "bg-accent-primary"
+                              ? isSynth
+                                ? "bg-accent-secondary"
                                 : "bg-accent-primary"
                               : isBeat
                                 ? "bg-bg-base hover:bg-bg-elevated"

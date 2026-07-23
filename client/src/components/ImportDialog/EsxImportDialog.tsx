@@ -34,6 +34,12 @@ export interface EsxImportDialogProps {
   onSelectPattern?: (idx: number) => void;
   onToggleStep?: (patternIdx: number, partIdx: number, stepIdx: number) => void;
   onClearPart?: (patternIdx: number, partIdx: number) => void;
+  /**
+   * v3.286: Step-Cap für Anzeige + Laden (128 = volle Länge; 64/32/16 = auf die
+   * ersten N Steps abschneiden).
+   */
+  stepCap?: 16 | 32 | 64 | 128;
+  onSetStepCap?: (cap: 16 | 32 | 64 | 128) => void;
   /** Konvertiert die Bank zu E2S (mit der gewählten Reduktions-Strategie). */
   onConvert: (strategy: StepReductionStrategy) => void;
   /** Lädt Patterns + Samples in den Sequenzer. */
@@ -56,6 +62,8 @@ export function EsxImportDialog({
   onSelectPattern,
   onToggleStep,
   onClearPart,
+  stepCap = 128,
+  onSetStepCap,
   onConvert,
   onLoadToSequencer,
   onExportSamples,
@@ -94,6 +102,31 @@ export function EsxImportDialog({
             </div>
           </div>
           <div className="flex-1" />
+          {canEdit && onSetStepCap && (
+            <div
+              className="flex items-center gap-1"
+              data-testid="esx-step-cap"
+              title="Wieviele Steps anzeigen/laden — 128 = volle Länge, 64/32/16 = auf die ersten N kürzen"
+            >
+              <span className="text-[10px] text-text-dim">Steps:</span>
+              {([16, 32, 64, 128] as const).map(n => (
+                <button
+                  key={n}
+                  type="button"
+                  onClick={() => onSetStepCap(n)}
+                  data-testid={`esx-step-cap-${n}`}
+                  className={[
+                    "px-1.5 py-0.5 rounded text-[10px] font-mono transition-colors",
+                    stepCap === n
+                      ? "bg-accent-primary/25 text-accent-primary"
+                      : "bg-bg-elevated text-text-dim hover:text-text-primary",
+                  ].join(" ")}
+                >
+                  {n}
+                </button>
+              ))}
+            </div>
+          )}
           {canEdit && (
             <div
               className="flex items-center gap-1"
@@ -177,6 +210,7 @@ export function EsxImportDialog({
               <EsxPatternPreviewEditor
                 result={editable!}
                 selectedPatternIdx={selectedPatternIdx}
+                stepCap={stepCap}
                 onSelectPattern={onSelectPattern!}
                 onToggleStep={onToggleStep!}
                 onClearPart={onClearPart!}

@@ -23,10 +23,7 @@ import {
   toggleImportedStep,
   clearImportedPart,
 } from "@/utils/imports/editImportedPattern";
-import {
-  E2_MAX_STEPS,
-  type StepReductionStrategy,
-} from "@/utils/patternStepReduce";
+import { type StepReductionStrategy } from "@/utils/patternStepReduce";
 
 export interface EsxImportControllerProps {
   /** Zu importierende Datei; null = Dialog geschlossen. */
@@ -85,6 +82,9 @@ export function EsxImportController({
   // dem Laden togglen; die Sample-URLs werden erst in handleLoad nachgereicht.
   const [editable, setEditable] = useState<ImportResult | null>(null);
   const [selectedPatternIdx, setSelectedPatternIdx] = useState(0);
+  // v3.286: Step-Cap für Anzeige + Laden. 128 = volle Länge (nichts kürzen);
+  // 64/32/16 = auf die ersten N Steps abschneiden.
+  const [stepCap, setStepCap] = useState<16 | 32 | 64 | 128>(128);
 
   useEffect(() => {
     let cancelled = false;
@@ -224,16 +224,19 @@ export function EsxImportController({
         urlBySampleId
       );
 
+      // v3.286: auf den gewählten Step-Cap kürzen (128 = volle Länge → No-op).
       const { result: reduced, reducedCount } = reduceImportResultSteps(
         linked,
-        E2_MAX_STEPS,
+        stepCap,
         strategy
       );
       onLoadResult(reduced);
       onToast?.(
         `${reduced.patterns.length} Pattern(s) in den Sequenzer geladen` +
           (linkedCount > 0 ? `, ${linkedCount} Spur(en) mit Sample` : "") +
-          (reducedCount > 0 ? ` (${reducedCount} auf 64 Steps reduziert)` : ""),
+          (reducedCount > 0
+            ? ` (${reducedCount} auf ${stepCap} Steps gekürzt)`
+            : ""),
         "success"
       );
       onClose();
@@ -340,6 +343,8 @@ export function EsxImportController({
       onSelectPattern={setSelectedPatternIdx}
       onToggleStep={handleToggleStep}
       onClearPart={handleClearPart}
+      stepCap={stepCap}
+      onSetStepCap={setStepCap}
       busy={busy}
       onConvert={handleConvert}
       onLoadToSequencer={handleLoad}
