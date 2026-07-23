@@ -389,6 +389,12 @@ export interface MidiActions {
   /** v1.83: Setter für den Auto-Learn Channel-Filter (0 = alle, 1-16). */
   setAutoLearnFilterChannel: (ch: number) => void;
   removeMapping: (cc: number, channel: number) => void;
+  /**
+   * Weist dem Mapping eines Targets einen anderen MIDI-Channel zu (0 = alle,
+   * 1–16 = fest). FL-Studio-artige Kanal-Wahl im Rechtsklick-Menü, damit ein
+   * Regler gezielt an ein Gerät (z.B. Akai MIDImix) gebunden werden kann.
+   */
+  setMappingChannel: (target: MidiLearnTarget, channel: number) => void;
   addNoteMapping: (
     note: number,
     channel: number,
@@ -642,6 +648,42 @@ export function findMappingForTarget(
   target: MidiLearnTarget
 ): MidiMapping | undefined {
   return mappings.find(m => targetsMatch(m.target, target));
+}
+
+/**
+ * Weist dem CC-Mapping eines Targets einen anderen MIDI-Channel zu (FL-Studio-
+ * artiges „Link to controller" mit Kanal-Wahl). Rein + testbar.
+ *
+ * `newChannel`: 0 = alle Kanäle, 1–16 = genau dieser Kanal. So kann der User ein
+ * gelerntes Mapping gezielt an EIN Gerät binden (z.B. den Fader-Kanal seiner
+ * Akai MIDImix) oder wieder auf „alle" öffnen.
+ *
+ * Kollisions-Regel (wie beim Learn): die (cc, channel)-Kombination ist eindeutig.
+ * Belegt bereits ein ANDERES Mapping dieselbe cc auf dem Ziel-Kanal, wird jenes
+ * verworfen — das explizit umgesteckte Mapping gewinnt. Gibt bei fehlendem
+ * Mapping oder No-op dieselbe Referenz zurück (kein unnötiges Persist/Rerender).
+ */
+export function remapMappingChannel(
+  mappings: MidiMapping[],
+  target: MidiLearnTarget,
+  newChannel: number
+): MidiMapping[] {
+  const clamped = Math.max(0, Math.min(16, Math.floor(newChannel)));
+  const existing = mappings.find(m => targetsMatch(m.target, target));
+  if (!existing) return mappings;
+  if (existing.channel === clamped) return mappings;
+  return mappings
+    .filter(
+      m =>
+        !(
+          m.cc === existing.cc &&
+          m.channel === clamped &&
+          !targetsMatch(m.target, target)
+        )
+    )
+    .map(m =>
+      targetsMatch(m.target, target) ? { ...m, channel: clamped } : m
+    );
 }
 
 /**
@@ -2465,6 +2507,17 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
     });
   }, []);
 
+  const setMappingChannel = useCallback(
+    (target: MidiLearnTarget, channel: number) => {
+      setMappings(prev => {
+        const next = remapMappingChannel(prev, target, channel);
+        if (next !== prev) saveMappings(next, noteMappingsRef.current);
+        return next;
+      });
+    },
+    []
+  );
+
   const addNoteMapping = useCallback(
     (note: number, channel: number, partId: string, label: string) => {
       setNoteMappings(prev => {
@@ -2738,6 +2791,7 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
     cancelAutoLearn,
     setAutoLearnFilterChannel,
     removeMapping,
+    setMappingChannel,
     addNoteMapping,
     removeNoteMapping,
     setClockSync,
